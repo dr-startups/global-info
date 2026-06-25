@@ -20,8 +20,9 @@ build
 # Local private storage (mounted as a volume at runtime).
 storage
 
-# Renderer has its own build context (./renderer).
-renderer
+# NOTE: renderer/ is intentionally NOT ignored — the renderer image builds from
+# the repo-root context (renderer/Dockerfile COPY renderer/...). It is small
+# (Python only) and harmless to include in the app context as well.
 
 # Logs / OS cruft
 *.log

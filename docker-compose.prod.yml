@@ -32,7 +32,9 @@ services:
 
   renderer:
     build:
-      context: ./renderer
+      # Repo-root context so renderer/Dockerfile matches the Railway build.
+      context: .
+      dockerfile: renderer/Dockerfile
     image: global-info-renderer
     container_name: dp-renderer
     init: true

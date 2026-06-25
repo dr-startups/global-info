@@ -1,4 +1,9 @@
 # Digital Profile report renderer: python-pptx + headless LibreOffice.
+#
+# Build context is the REPO ROOT (so the same Dockerfile works on Railway, where
+# the context is always the repo root, and in docker-compose which sets
+# context: . + dockerfile: renderer/Dockerfile). All COPY paths are therefore
+# prefixed with renderer/.
 FROM python:3.12-slim
 
 # LibreOffice Impress (for PPTX->PDF) + fonts + curl (for the healthcheck).
@@ -13,10 +18,10 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY renderer/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY renderer/ .
 
 ENV DATA_ROOT=/data
 ENV PYTHONUNBUFFERED=1

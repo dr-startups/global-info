@@ -10,7 +10,9 @@
 services:
   renderer:
     build:
-      context: ./renderer
+      # Repo-root context so renderer/Dockerfile matches the Railway build.
+      context: .
+      dockerfile: renderer/Dockerfile
     image: global-info-renderer
     container_name: global-info-renderer
     # Proper PID 1 / signal handling so LibreOffice children are reaped.
