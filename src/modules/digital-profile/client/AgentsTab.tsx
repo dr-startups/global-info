@@ -76,6 +76,8 @@ export function AgentsTab({
         <thead>
           <tr>
             <th>Agent</th>
+            <th>Type</th>
+            <th>Availability</th>
             <th>Last run</th>
             <th>Finished</th>
             <th />
@@ -88,13 +90,31 @@ export function AgentsTab({
                 <div>{a.displayName}</div>
                 <div className="dp-muted">{a.description}</div>
               </td>
+              <td>
+                <Badge tone={a.kind === "REAL" ? "ok" : "neutral"}>{a.kind}</Badge>
+              </td>
+              <td>
+                <Badge
+                  tone={
+                    a.availability.status === "ENABLED"
+                      ? "ok"
+                      : a.availability.status === "NOT_CONFIGURED"
+                        ? "warn"
+                        : "neutral"
+                  }
+                  title={a.availability.message}
+                >
+                  {a.availability.status.replace(/_/g, " ")}
+                </Badge>
+              </td>
               <td>{a.lastRun ? <StatusBadge status={a.lastRun.status} /> : <span className="dp-muted">—</span>}</td>
               <td className="dp-muted">{a.lastRun ? formatDate(a.lastRun.finishedAt) : "—"}</td>
               <td style={{ textAlign: "right" }}>
                 <button
                   className="dp-btn dp-btn-sm"
-                  disabled={auditing || busyAgent !== null}
+                  disabled={auditing || busyAgent !== null || !a.enabled}
                   onClick={() => run(a.name)}
+                  title={a.enabled ? "Run this agent" : a.availability.message}
                 >
                   {busyAgent === a.name ? "Running…" : "Run"}
                 </button>

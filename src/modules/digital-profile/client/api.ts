@@ -199,6 +199,7 @@ export interface WikipediaCheck {
   language: string | null;
   pageTitle: string | null;
   snapshot: unknown;
+  checkedBy: string | null;
   lastChecked: string;
 }
 
@@ -265,11 +266,21 @@ export interface AddSearchResultInput {
   classification?: string;
 }
 
+export type AgentKind = "MOCK" | "REAL";
+export type AvailabilityStatus = "ENABLED" | "DISABLED" | "NOT_CONFIGURED";
+
+export interface AgentAvailability {
+  status: AvailabilityStatus;
+  message?: string;
+}
+
 export interface AgentInfo {
   name: string;
   displayName: string;
   description: string;
+  kind: AgentKind;
   enabled: boolean;
+  availability: AgentAvailability;
   lastRun: {
     status: string;
     startedAt: string | null;
@@ -280,6 +291,7 @@ export interface AgentInfo {
 export interface AgentRun {
   id: string;
   agentName: string;
+  kind: AgentKind;
   status: string;
   summary: string | null;
   itemsSaved: number;
@@ -287,6 +299,12 @@ export interface AgentRun {
   startedAt: string | null;
   finishedAt: string | null;
   createdAt: string;
+}
+
+export interface ProviderAvailability {
+  name: "WIKIPEDIA" | "GOOGLE" | "YANDEX";
+  status: AvailabilityStatus;
+  message?: string;
 }
 
 export type FullAuditOutcome = "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED";
@@ -396,4 +414,8 @@ export function runFullAudit(caseId: string): Promise<FullAuditResult> {
   return request<FullAuditResult>(`/cases/${caseId}/audit/run`, {
     method: "POST",
   });
+}
+
+export function listProviders(): Promise<ProviderAvailability[]> {
+  return request<ProviderAvailability[]>("/providers");
 }

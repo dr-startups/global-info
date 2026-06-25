@@ -127,6 +127,7 @@ export interface WikipediaCheckDTO {
   language: string | null;
   pageTitle: string | null;
   snapshot: unknown;
+  checkedBy: string | null;
   lastChecked: Date;
 }
 
@@ -358,6 +359,7 @@ export async function addWikipediaCheck(
       language: true,
       pageTitle: true,
       snapshot: true,
+      checkedBy: true,
       lastChecked: true,
     },
   });
@@ -508,6 +510,7 @@ export async function listEvidence(caseId: string): Promise<CaseEvidenceDTO> {
         language: true,
         pageTitle: true,
         snapshot: true,
+        checkedBy: true,
         lastChecked: true,
       },
     }),

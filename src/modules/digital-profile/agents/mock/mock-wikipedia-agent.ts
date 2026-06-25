@@ -57,8 +57,9 @@ export class MockWikipediaAgent extends BaseMockAgent<Raw, Raw> {
   }
 
   async saveEvidence(ctx: AgentContext, norm: Raw): Promise<SavedEvidenceSummary> {
+    // Scope to this agent's own record so it never clobbers real-connector rows.
     const existing = await prisma.wikipediaCheck.findFirst({
-      where: { caseId: ctx.caseId },
+      where: { caseId: ctx.caseId, checkedBy: "mock:WIKIPEDIA" },
       select: { id: true },
     });
     const data = {

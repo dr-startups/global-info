@@ -48,10 +48,13 @@ async function main() {
   check("setup: case created", c.status === 201 && !!caseId);
   if (!caseId) process.exit(1);
 
-  // List agents (should be 6, none run yet)
+  // List agents (6 mock + real-wikipedia; none run yet)
   const agents0 = await req("GET", `${API}/cases/${caseId}/agents`);
-  check("GET agents -> 6 registered", agents0.json?.data?.length === 6, String(agents0.json?.data?.length));
-  check("agents have no lastRun yet", (agents0.json?.data ?? []).every((a) => a.lastRun === null));
+  const list0 = agents0.json?.data ?? [];
+  const mockCount = list0.filter((a) => a.kind === "MOCK").length;
+  check("GET agents -> 6 mock agents", mockCount === 6, String(mockCount));
+  check("GET agents -> real-wikipedia present", list0.some((a) => a.name === "REAL_WIKIPEDIA"));
+  check("agents have no lastRun yet", list0.every((a) => a.lastRun === null));
 
   // Run full audit
   const audit = await req("POST", `${API}/cases/${caseId}/audit/run`);

@@ -385,6 +385,7 @@ function WikipediaTab({ evidence }: { evidence: CaseEvidence }) {
           <thead>
             <tr>
               <th>Exists</th>
+              <th>Source</th>
               <th>Language</th>
               <th>Page title</th>
               <th>Notability</th>
@@ -393,9 +394,14 @@ function WikipediaTab({ evidence }: { evidence: CaseEvidence }) {
             </tr>
           </thead>
           <tbody>
-            {evidence.wikipediaChecks.map((w) => (
+            {evidence.wikipediaChecks.map((w) => {
+              const isReal = (w.checkedBy ?? "").startsWith("real");
+              return (
               <tr key={w.id}>
                 <td>{w.exists ? <Badge tone="ok">Yes</Badge> : <Badge tone="neutral">No</Badge>}</td>
+                <td>
+                  <Badge tone={isReal ? "ok" : "neutral"}>{isReal ? "REAL" : "MOCK"}</Badge>
+                </td>
                 <td>{w.language ?? "—"}</td>
                 <td>{w.pageTitle ?? "—"}</td>
                 <td>{notabilityOf(w.snapshot) ?? "—"}</td>
@@ -410,7 +416,8 @@ function WikipediaTab({ evidence }: { evidence: CaseEvidence }) {
                 </td>
                 <td className="dp-muted">{formatDate(w.lastChecked)}</td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       )}

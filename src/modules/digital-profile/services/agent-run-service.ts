@@ -15,12 +15,14 @@ import { NotFoundError, ValidationError } from "../http/errors";
 import { recordAudit } from "./audit-log-service";
 import type { ActorContext } from "./case-service";
 import { FULL_AUDIT_ORDER, getAgent, listAgentDefinitions } from "../agents/registry";
-import type { FullAuditOutcome } from "../agents/types";
+import type { AgentAvailability, AgentKind, FullAuditOutcome } from "../agents/types";
 import type { AgentContext, SavedEvidenceSummary } from "../types";
 
 export interface AgentRunDTO {
   id: string;
+  /** Agent slug (from agent_runs.input.agentId), falls back to the DB enum. */
   agentName: string;
+  kind: AgentKind;
   status: string;
   summary: string | null;
   itemsSaved: number;
@@ -34,7 +36,9 @@ export interface AgentInfoDTO {
   name: string;
   displayName: string;
   description: string;
+  kind: AgentKind;
   enabled: boolean;
+  availability: AgentAvailability;
   lastRun: {
     status: string;
     startedAt: Date | null;
@@ -50,6 +54,7 @@ export interface FullAuditResultDTO {
 const agentRunSelect = {
   id: true,
   agentName: true,
+  input: true,
   status: true,
   output: true,
   error: true,
@@ -70,13 +75,19 @@ function sumSaved(saved: SavedEvidenceSummary): number {
   return Object.values(saved).reduce<number>((a, n) => a + (typeof n === "number" ? n : 0), 0);
 }
 
+function runInput(row: { input: Prisma.JsonValue }): { agentId?: string; kind?: AgentKind } {
+  return (row.input ?? {}) as { agentId?: string; kind?: AgentKind };
+}
+
 function toRunDTO(
   row: Prisma.AgentRunGetPayload<{ select: typeof agentRunSelect }>
 ): AgentRunDTO {
   const output = (row.output ?? null) as { summary?: string } | null;
+  const input = runInput(row);
   return {
     id: row.id,
-    agentName: row.agentName,
+    agentName: input.agentId ?? row.agentName,
+    kind: input.kind ?? "MOCK",
     status: row.status,
     summary: output?.summary ?? null,
     itemsSaved: row.itemsSaved,
@@ -116,7 +127,8 @@ export async function runAgent(
   const run = await prisma.agentRun.create({
     data: {
       caseId,
-      agentName: agent.name,
+      agentName: agent.agentName,
+      input: { agentId: agent.name, kind: agent.kind },
       status: "RUNNING",
       startedAt: new Date(),
       triggeredBy: ctx.actorId ?? null,
@@ -198,6 +210,7 @@ export async function runFullAudit(
       runs.push({
         id: "",
         agentName: name,
+        kind: "MOCK",
         status: "FAILED",
         summary: null,
         itemsSaved: 0,
@@ -254,11 +267,13 @@ export async function listAgents(caseId: string): Promise<AgentInfoDTO[]> {
   const runs = await prisma.agentRun.findMany({
     where: { caseId },
     orderBy: { createdAt: "desc" },
-    select: { agentName: true, status: true, startedAt: true, finishedAt: true },
+    select: { agentName: true, input: true, status: true, startedAt: true, finishedAt: true },
   });
+  // Key by the agent slug (input.agentId) so mock + real Wikipedia stay distinct.
   const latest = new Map<string, (typeof runs)[number]>();
   for (const r of runs) {
-    if (!latest.has(r.agentName)) latest.set(r.agentName, r);
+    const key = runInput(r).agentId ?? r.agentName;
+    if (!latest.has(key)) latest.set(key, r);
   }
 
   return defs.map((d) => {
@@ -267,7 +282,9 @@ export async function listAgents(caseId: string): Promise<AgentInfoDTO[]> {
       name: d.name,
       displayName: d.displayName,
       description: d.description,
+      kind: d.kind,
       enabled: d.enabled,
+      availability: d.availability,
       lastRun: last
         ? { status: last.status, startedAt: last.startedAt, finishedAt: last.finishedAt }
         : null,

@@ -17,7 +17,8 @@
     "smoke:evidence": "node scripts/smoke-evidence.mjs",
     "smoke:report": "node scripts/smoke-report.mjs",
     "smoke:render": "node scripts/smoke-render.mjs",
-    "smoke:agents": "node scripts/smoke-agents.mjs"
+    "smoke:agents": "node scripts/smoke-agents.mjs",
+    "smoke:wikipedia": "node scripts/smoke-wikipedia.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -10,7 +10,9 @@ import { prisma } from "@/server/prisma/client";
 import { NotFoundError } from "../../http/errors";
 import { normalizeUrl } from "../../services/evidence-service";
 import type {
+  AgentAvailability,
   AgentContext,
+  AgentKind,
   AgentRunResult,
   CaseAgent,
   SavedEvidenceSummary,
@@ -94,10 +96,20 @@ function nowIso(): string {
  * throws — failures are captured into a FAILED AgentRunResult.
  */
 export abstract class BaseMockAgent<Raw, Norm> implements CaseAgent {
-  abstract readonly name: AgentNameValue;
+  abstract readonly name: string;
   abstract readonly displayName: string;
   abstract readonly description: string;
-  readonly enabled = true;
+  readonly kind: AgentKind = "MOCK";
+
+  /** Mock agents map their slug 1:1 to the DB enum. */
+  get agentName(): AgentNameValue {
+    return this.name as AgentNameValue;
+  }
+
+  /** Mock agents are always available. */
+  availability(): AgentAvailability {
+    return { status: "ENABLED" };
+  }
 
   /** Generate raw mock data (deterministic via the case-seeded RNG). */
   protected abstract collect(
@@ -126,7 +138,7 @@ export abstract class BaseMockAgent<Raw, Norm> implements CaseAgent {
       const normalized = await this.normalizeOutput(raw);
       const saved = await this.saveEvidence(ctx, normalized);
       return {
-        agentName: this.name,
+        agentName: this.agentName,
         status: "SUCCEEDED",
         output: { saved, demo: true },
         saved,
@@ -135,7 +147,7 @@ export abstract class BaseMockAgent<Raw, Norm> implements CaseAgent {
       };
     } catch (err) {
       return {
-        agentName: this.name,
+        agentName: this.agentName,
         status: "FAILED",
         saved: {},
         error: err instanceof Error ? err.message : "Agent failed",

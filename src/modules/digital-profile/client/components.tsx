@@ -10,8 +10,20 @@ import type { ReactNode } from "react";
 
 type BadgeTone = "neutral" | "ok" | "warn" | "danger" | "info";
 
-export function Badge({ tone = "neutral", children }: { tone?: BadgeTone; children: ReactNode }) {
-  return <span className={`dp-badge dp-badge-${tone}`}>{children}</span>;
+export function Badge({
+  tone = "neutral",
+  children,
+  title,
+}: {
+  tone?: BadgeTone;
+  children: ReactNode;
+  title?: string;
+}) {
+  return (
+    <span className={`dp-badge dp-badge-${tone}`} title={title}>
+      {children}
+    </span>
+  );
 }
 
 const STATUS_TONE: Record<string, BadgeTone> = {
