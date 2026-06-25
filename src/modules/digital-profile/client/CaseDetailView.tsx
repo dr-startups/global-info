@@ -8,7 +8,12 @@ import {
   getCase,
   getEvidence,
   getReport,
+  listAgentRuns,
+  listAgents,
   renderReport,
+  runFullAudit,
+  type AgentInfo,
+  type AgentRun,
   type CaseDetail,
   type CaseEvidence,
   type ReportVersion,
@@ -35,18 +40,25 @@ type LoadState =
 export function CaseDetailView({ caseId }: { caseId: string }) {
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [report, setReport] = useState<ReportVersion | null>(null);
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [auditing, setAuditing] = useState(false);
   const [banner, setBanner] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
 
   const loadAll = useCallback(async () => {
     setState({ kind: "loading" });
     try {
-      const [caseDetail, evidence, latestReport] = await Promise.all([
+      const [caseDetail, evidence, latestReport, agentList, runs] = await Promise.all([
         getCase(caseId),
         getEvidence(caseId),
         getReport(caseId),
+        listAgents(caseId),
+        listAgentRuns(caseId),
       ]);
       setReport(latestReport);
+      setAgents(agentList);
+      setAgentRuns(runs);
       setState({ kind: "ready", caseDetail, evidence });
     } catch (err) {
       if (err instanceof DigitalProfileApiError) {
@@ -69,6 +81,48 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
       // Non-fatal: keep existing data; tab-level errors are shown inline.
     }
   }, [caseId]);
+
+  // Refresh agents + runs + evidence together (after running agents).
+  const refreshAgents = useCallback(async () => {
+    try {
+      const [agentList, runs, evidence] = await Promise.all([
+        listAgents(caseId),
+        listAgentRuns(caseId),
+        getEvidence(caseId),
+      ]);
+      setAgents(agentList);
+      setAgentRuns(runs);
+      setState((prev) => (prev.kind === "ready" ? { ...prev, evidence } : prev));
+    } catch {
+      // Non-fatal: inline errors are surfaced by the action that triggered this.
+    }
+  }, [caseId]);
+
+  const handleRunAudit = useCallback(async () => {
+    if (auditing || generating) return;
+    setAuditing(true);
+    setBanner(null);
+    try {
+      const result = await runFullAudit(caseId);
+      await refreshAgents();
+      const ok = result.outcome === "SUCCESS";
+      setBanner({
+        kind: ok ? "ok" : "error",
+        text:
+          result.outcome === "SUCCESS"
+            ? "Full audit completed. Demo data populated across tabs."
+            : result.outcome === "PARTIAL_SUCCESS"
+              ? "Audit finished with warnings — some agents failed. See the Agents tab."
+              : "Audit failed — all agents errored. See the Agents tab.",
+      });
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
+      const msg = err instanceof Error ? err.message : "Failed to run audit";
+      setBanner({ kind: "error", text: errorMessage(code, msg) });
+    } finally {
+      setAuditing(false);
+    }
+  }, [auditing, generating, caseId, refreshAgents]);
 
   useEffect(() => {
     void loadAll();
@@ -148,6 +202,9 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
           caseDetail={state.caseDetail}
           onGenerate={handleHeaderGenerate}
           generating={generating}
+          onRunAudit={handleRunAudit}
+          auditing={auditing}
+          lastRunStatus={agentRuns[0]?.status ?? null}
         />
       </Card>
 
@@ -166,6 +223,11 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
           caseDetail={state.caseDetail}
           evidence={state.evidence}
           report={report}
+          agents={agents}
+          agentRuns={agentRuns}
+          auditing={auditing}
+          onRunFullAudit={handleRunAudit}
+          onAgentsChanged={() => void refreshAgents()}
           onEvidenceChanged={() => void refreshEvidence()}
           onReportChange={setReport}
         />

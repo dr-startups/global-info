@@ -5,6 +5,9 @@ import {
   addSearchResult,
   DigitalProfileApiError,
   reviewFinding,
+  type AgentInfo,
+  type AgentRun,
+  type AiProfile,
   type CaseDetail,
   type CaseEvidence,
   type ReportVersion,
@@ -19,9 +22,11 @@ import {
   formatDate,
 } from "./components";
 import { ReportPreviewPanel } from "./ReportPreviewPanel";
+import { AgentsTab } from "./AgentsTab";
 
 type TabKey =
   | "subject"
+  | "agents"
   | "search"
   | "screenshots"
   | "wikipedia"
@@ -36,12 +41,22 @@ export function CaseTabs({
   caseDetail,
   evidence,
   report,
+  agents,
+  agentRuns,
+  auditing,
+  onRunFullAudit,
+  onAgentsChanged,
   onEvidenceChanged,
   onReportChange,
 }: {
   caseDetail: CaseDetail;
   evidence: CaseEvidence;
   report: ReportVersion | null;
+  agents: AgentInfo[];
+  agentRuns: AgentRun[];
+  auditing: boolean;
+  onRunFullAudit: () => void;
+  onAgentsChanged: () => void;
   onEvidenceChanged: () => void;
   onReportChange: (r: ReportVersion) => void;
 }) {
@@ -49,10 +64,11 @@ export function CaseTabs({
 
   const tabs: { key: TabKey; label: string; count?: number }[] = [
     { key: "subject", label: "Subject" },
+    { key: "agents", label: "Agents", count: agents.length },
     { key: "search", label: "Search Results", count: evidence.searchResults.length },
     { key: "screenshots", label: "Screenshots", count: evidence.screenshots.length },
     { key: "wikipedia", label: "Wikipedia", count: evidence.wikipediaChecks.length },
-    { key: "ai", label: "AI Profile", count: 0 },
+    { key: "ai", label: "AI Profile", count: evidence.aiProfiles.length },
     { key: "compliance", label: "Compliance Databases", count: evidence.databaseProfiles.length },
     { key: "risk", label: "Risk Findings", count: evidence.riskFindings.length },
     { key: "report", label: "Report Preview" },
@@ -76,6 +92,16 @@ export function CaseTabs({
       </div>
 
       {tab === "subject" ? <SubjectTab caseDetail={caseDetail} /> : null}
+      {tab === "agents" ? (
+        <AgentsTab
+          caseId={caseDetail.id}
+          agents={agents}
+          agentRuns={agentRuns}
+          auditing={auditing}
+          onRunFullAudit={onRunFullAudit}
+          onChanged={onAgentsChanged}
+        />
+      ) : null}
       {tab === "search" ? (
         <SearchResultsTab
           caseId={caseDetail.id}
@@ -85,7 +111,7 @@ export function CaseTabs({
       ) : null}
       {tab === "screenshots" ? <ScreenshotsTab evidence={evidence} /> : null}
       {tab === "wikipedia" ? <WikipediaTab evidence={evidence} /> : null}
-      {tab === "ai" ? <AiProfileTab /> : null}
+      {tab === "ai" ? <AiProfileTab evidence={evidence} /> : null}
       {tab === "compliance" ? <ComplianceTab evidence={evidence} /> : null}
       {tab === "risk" ? (
         <RiskFindingsTab evidence={evidence} onChanged={onEvidenceChanged} />
@@ -340,6 +366,14 @@ function ScreenshotsTab({ evidence }: { evidence: CaseEvidence }) {
 // Wikipedia
 // ---------------------------------------------------------------------------
 
+function notabilityOf(snapshot: unknown): number | null {
+  if (snapshot && typeof snapshot === "object") {
+    const v = (snapshot as Record<string, unknown>).notabilityScore;
+    if (typeof v === "number") return v;
+  }
+  return null;
+}
+
 function WikipediaTab({ evidence }: { evidence: CaseEvidence }) {
   return (
     <div>
@@ -353,6 +387,7 @@ function WikipediaTab({ evidence }: { evidence: CaseEvidence }) {
               <th>Exists</th>
               <th>Language</th>
               <th>Page title</th>
+              <th>Notability</th>
               <th>URL</th>
               <th>Checked</th>
             </tr>
@@ -363,6 +398,7 @@ function WikipediaTab({ evidence }: { evidence: CaseEvidence }) {
                 <td>{w.exists ? <Badge tone="ok">Yes</Badge> : <Badge tone="neutral">No</Badge>}</td>
                 <td>{w.language ?? "—"}</td>
                 <td>{w.pageTitle ?? "—"}</td>
+                <td>{notabilityOf(w.snapshot) ?? "—"}</td>
                 <td>
                   {w.url ? (
                     <a href={w.url} target="_blank" rel="noopener noreferrer">
@@ -383,17 +419,46 @@ function WikipediaTab({ evidence }: { evidence: CaseEvidence }) {
 }
 
 // ---------------------------------------------------------------------------
-// AI Profile (no endpoint yet — display-only empty state)
+// AI Profile (display saved ai_profiles; never calls an LLM from the UI)
 // ---------------------------------------------------------------------------
 
-function AiProfileTab() {
+function citedSourcesOf(classifications: unknown): number | null {
+  if (classifications && typeof classifications === "object") {
+    const v = (classifications as Record<string, unknown>).citedSources;
+    if (typeof v === "number") return v;
+  }
+  return null;
+}
+
+function AiProfileTab({ evidence }: { evidence: CaseEvidence }) {
   return (
     <div>
       <h2 className="dp-h2">AI Profile</h2>
-      <EmptyState
-        title="No AI profiles"
-        hint="AI summaries are evidence-based and not generated in this UI. This section will display saved ai_profiles in a later step."
-      />
+      {evidence.aiProfiles.length === 0 ? (
+        <EmptyState
+          title="No AI profiles"
+          hint="AI summaries are evidence-based. Run the audit (Agents tab) to generate demo profiles."
+        />
+      ) : (
+        <div className="dp-stack">
+          {evidence.aiProfiles.map((p: AiProfile) => {
+            const cited = citedSourcesOf(p.classifications);
+            return (
+              <div key={p.id} className="dp-card" style={{ padding: 14 }}>
+                <div className="dp-inline" style={{ justifyContent: "space-between" }}>
+                  <Badge tone="info">{p.model}</Badge>
+                  <span className="dp-muted">{formatDate(p.createdAt)}</span>
+                </div>
+                <p style={{ marginTop: 10 }}>{p.summary ?? "—"}</p>
+                <div className="dp-muted" style={{ marginTop: 8 }}>
+                  {cited !== null ? `Cited sources: ${cited} · ` : ""}
+                  {p.disclaimer}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

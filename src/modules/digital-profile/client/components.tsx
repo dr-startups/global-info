@@ -25,6 +25,12 @@ const STATUS_TONE: Record<string, BadgeTone> = {
   FINAL: "ok",
   GENERATING: "info",
   FAILED: "danger",
+  // agent runs
+  RUNNING: "info",
+  SUCCEEDED: "ok",
+  SUCCESS: "ok",
+  PARTIAL_SUCCESS: "warn",
+  CANCELLED: "neutral",
   // consent
   OBTAINED: "ok",
   NOT_REQUIRED: "neutral",

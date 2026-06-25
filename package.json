@@ -16,7 +16,8 @@
     "smoke:dp": "node scripts/smoke-digital-profile.mjs",
     "smoke:evidence": "node scripts/smoke-evidence.mjs",
     "smoke:report": "node scripts/smoke-report.mjs",
-    "smoke:render": "node scripts/smoke-render.mjs"
+    "smoke:render": "node scripts/smoke-render.mjs",
+    "smoke:agents": "node scripts/smoke-agents.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

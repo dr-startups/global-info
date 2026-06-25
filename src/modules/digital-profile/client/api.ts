@@ -198,7 +198,17 @@ export interface WikipediaCheck {
   url: string | null;
   language: string | null;
   pageTitle: string | null;
+  snapshot: unknown;
   lastChecked: string;
+}
+
+export interface AiProfile {
+  id: string;
+  model: string;
+  summary: string | null;
+  classifications: unknown;
+  disclaimer: string;
+  createdAt: string;
 }
 
 export interface RiskFinding {
@@ -220,6 +230,7 @@ export interface CaseEvidence {
   screenshots: Screenshot[];
   databaseProfiles: DatabaseProfile[];
   wikipediaChecks: WikipediaCheck[];
+  aiProfiles: AiProfile[];
   riskFindings: RiskFinding[];
 }
 
@@ -252,6 +263,37 @@ export interface AddSearchResultInput {
   url: string;
   title?: string;
   classification?: string;
+}
+
+export interface AgentInfo {
+  name: string;
+  displayName: string;
+  description: string;
+  enabled: boolean;
+  lastRun: {
+    status: string;
+    startedAt: string | null;
+    finishedAt: string | null;
+  } | null;
+}
+
+export interface AgentRun {
+  id: string;
+  agentName: string;
+  status: string;
+  summary: string | null;
+  itemsSaved: number;
+  error: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+}
+
+export type FullAuditOutcome = "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED";
+
+export interface FullAuditResult {
+  outcome: FullAuditOutcome;
+  runs: AgentRun[];
 }
 
 // ---------------------------------------------------------------------------
@@ -328,6 +370,30 @@ export function generateReport(caseId: string): Promise<ReportVersion> {
 
 export function renderReport(caseId: string): Promise<RenderedReport> {
   return request<RenderedReport>(`/cases/${caseId}/report/render`, {
+    method: "POST",
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Stage G — agents
+// ---------------------------------------------------------------------------
+
+export function listAgents(caseId: string): Promise<AgentInfo[]> {
+  return request<AgentInfo[]>(`/cases/${caseId}/agents`);
+}
+
+export function listAgentRuns(caseId: string): Promise<AgentRun[]> {
+  return request<AgentRun[]>(`/cases/${caseId}/agent-runs`);
+}
+
+export function runAgent(caseId: string, agentName: string): Promise<AgentRun> {
+  return request<AgentRun>(`/cases/${caseId}/agents/${agentName}/run`, {
+    method: "POST",
+  });
+}
+
+export function runFullAudit(caseId: string): Promise<FullAuditResult> {
+  return request<FullAuditResult>(`/cases/${caseId}/audit/run`, {
     method: "POST",
   });
 }

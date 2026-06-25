@@ -30,7 +30,14 @@ export type AuditAction =
   | "REPORT_VIEWED"
   // Stage E — report renderer
   | "REPORT_RENDERED"
-  | "REPORT_DOWNLOADED";
+  | "REPORT_DOWNLOADED"
+  // Stage G — mock agents & orchestration
+  | "AGENT_RUN_STARTED"
+  | "AGENT_RUN_SUCCEEDED"
+  | "AGENT_RUN_FAILED"
+  | "FULL_AUDIT_STARTED"
+  | "FULL_AUDIT_COMPLETED"
+  | "FULL_AUDIT_FAILED";
 
 export interface RecordAuditInput {
   caseId?: string | null;

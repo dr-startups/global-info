@@ -126,7 +126,17 @@ export interface WikipediaCheckDTO {
   url: string | null;
   language: string | null;
   pageTitle: string | null;
+  snapshot: unknown;
   lastChecked: Date;
+}
+
+export interface AiProfileDTO {
+  id: string;
+  model: string;
+  summary: string | null;
+  classifications: unknown;
+  disclaimer: string;
+  createdAt: Date;
 }
 
 export interface RiskFindingDTO {
@@ -148,6 +158,7 @@ export interface CaseEvidenceDTO {
   screenshots: ScreenshotDTO[];
   databaseProfiles: DatabaseProfileDTO[];
   wikipediaChecks: WikipediaCheckDTO[];
+  aiProfiles: AiProfileDTO[];
   riskFindings: RiskFindingDTO[];
 }
 
@@ -346,6 +357,7 @@ export async function addWikipediaCheck(
       url: true,
       language: true,
       pageTitle: true,
+      snapshot: true,
       lastChecked: true,
     },
   });
@@ -440,6 +452,7 @@ export async function listEvidence(caseId: string): Promise<CaseEvidenceDTO> {
     screenshots,
     databaseProfiles,
     wikipediaChecks,
+    aiProfiles,
     riskFindings,
   ] = await Promise.all([
     prisma.searchQuery.findMany({
@@ -494,7 +507,20 @@ export async function listEvidence(caseId: string): Promise<CaseEvidenceDTO> {
         url: true,
         language: true,
         pageTitle: true,
+        snapshot: true,
         lastChecked: true,
+      },
+    }),
+    prisma.aiProfile.findMany({
+      where: { caseId },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        model: true,
+        summary: true,
+        classifications: true,
+        disclaimer: true,
+        createdAt: true,
       },
     }),
     prisma.riskFinding.findMany({
@@ -522,6 +548,7 @@ export async function listEvidence(caseId: string): Promise<CaseEvidenceDTO> {
       evidenceRefs: asEvidenceRefs(d.evidenceRefs),
     })),
     wikipediaChecks,
+    aiProfiles,
     riskFindings: riskFindings.map((r) => ({
       ...r,
       evidenceRefs: asEvidenceRefs(r.evidenceRefs),

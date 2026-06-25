@@ -9,9 +9,9 @@
  *   B) Case CRUD
  *   C) Manual evidence input
  *   D) report_json builder
- *   E) Report renderer (PPTX template -> PDF)    <-- current
+ *   E) Report renderer (PPTX template -> PDF)
  *   F) Admin UI
- *   G) Mock agents
+ *   G) Mock agents + orchestration              <-- current
  *   H) Real collectors (official APIs / manual import only)
  */
 
@@ -52,8 +52,16 @@ export { buildStaticPages } from "./report/static-pages";
 // Stage E — report renderer (PPTX/PDF via renderer microservice)
 export * as reportRendererService from "./services/report-renderer-service";
 
+// Stage G — mock agents + orchestration
+export * as agentRunService from "./services/agent-run-service";
+export {
+  FULL_AUDIT_ORDER,
+  getAgent,
+  listAgentDefinitions,
+} from "./agents/registry";
+
 export const DIGITAL_PROFILE_MODULE = {
   name: "digital-profile",
   /** Bumped as stages land. */
-  stage: "F",
+  stage: "G",
 } as const;
