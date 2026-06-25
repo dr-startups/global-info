@@ -26,6 +26,13 @@ export interface DigitalProfileConfig {
   rendererUrl: string;
   /** Default report template version used by the renderer. */
   reportTemplateVersion: string;
+  /** Default Admin UI locale ("ru" | "en"); UI-only, falls back to "ru". */
+  defaultLocale: "ru" | "en";
+}
+
+function envLocale(value: string | undefined): "ru" | "en" {
+  const v = value?.trim().toLowerCase().slice(0, 2);
+  return v === "en" ? "en" : "ru";
 }
 
 export const digitalProfileConfig: DigitalProfileConfig = {
@@ -50,6 +57,7 @@ export const digitalProfileConfig: DigitalProfileConfig = {
     "http://localhost:8080",
   reportTemplateVersion:
     process.env.DIGITAL_PROFILE_REPORT_TEMPLATE_VERSION ?? "report-template-v1",
+  defaultLocale: envLocale(process.env.DIGITAL_PROFILE_DEFAULT_LOCALE),
 };
 
 /** Master feature flag check. Use this everywhere before exposing the module. */

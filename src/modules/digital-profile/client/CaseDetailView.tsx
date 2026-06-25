@@ -27,10 +27,10 @@ import {
   Loading,
   Notice,
   SuccessBox,
-  errorMessage,
 } from "./components";
 import { CaseHeader } from "./CaseHeader";
 import { CaseTabs } from "./CaseTabs";
+import { useDigitalProfileI18n } from "./i18n-provider";
 
 type LoadState =
   | { kind: "loading" }
@@ -40,6 +40,7 @@ type LoadState =
   | { kind: "ready"; caseDetail: CaseDetail; evidence: CaseEvidence };
 
 export function CaseDetailView({ caseId }: { caseId: string }) {
+  const { t, tError } = useDigitalProfileI18n();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [report, setReport] = useState<ReportVersion | null>(null);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -70,11 +71,11 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
         if (err.code === "MODULE_DISABLED") return setState({ kind: "disabled" });
         if (err.code === "NOT_FOUND") return setState({ kind: "notFound" });
       }
-      const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
-      const msg = err instanceof Error ? err.message : "Failed to load case";
-      setState({ kind: "error", message: errorMessage(code, msg) });
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setState({ kind: "error", message: tError(code, msg) });
     }
-  }, [caseId]);
+  }, [caseId, tError]);
 
   const refreshEvidence = useCallback(async () => {
     try {
@@ -125,19 +126,19 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
         kind: ok ? "ok" : "error",
         text:
           result.outcome === "SUCCESS"
-            ? "Full audit completed. Demo data populated across tabs."
+            ? t("agents.auditDone")
             : result.outcome === "PARTIAL_SUCCESS"
-              ? "Audit finished with warnings — some agents failed. See the Agents tab."
-              : "Audit failed — all agents errored. See the Agents tab.",
+              ? t("agents.auditPartial")
+              : t("agents.auditFailed"),
       });
     } catch (err) {
-      const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
-      const msg = err instanceof Error ? err.message : "Failed to run audit";
-      setBanner({ kind: "error", text: errorMessage(code, msg) });
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setBanner({ kind: "error", text: tError(code, msg) });
     } finally {
       setAuditing(false);
     }
-  }, [auditing, generating, caseId, refreshAgents]);
+  }, [auditing, generating, caseId, refreshAgents, t, tError]);
 
   useEffect(() => {
     void loadAll();
@@ -153,20 +154,23 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
       setReport(generated);
       const rendered = await renderReport(caseId);
       setReport({ ...generated, ...rendered });
-      setBanner({ kind: "ok", text: `Report v${rendered.version} generated and rendered.` });
+      setBanner({
+        kind: "ok",
+        text: t("report.generatedShort", { version: rendered.version }),
+      });
     } catch (err) {
-      const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
-      const msg = err instanceof Error ? err.message : "Failed to generate report";
-      setBanner({ kind: "error", text: errorMessage(code, msg) });
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setBanner({ kind: "error", text: tError(code, msg) });
     } finally {
       setGenerating(false);
     }
-  }, [caseId, generating]);
+  }, [caseId, generating, t, tError]);
 
   if (state.kind === "loading") {
     return (
       <Card>
-        <Loading label="Loading case…" />
+        <Loading />
       </Card>
     );
   }
@@ -174,10 +178,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
   if (state.kind === "disabled") {
     return (
       <Card>
-        <Notice>
-          The Digital Profile module is disabled. Set{" "}
-          <code className="dp-mono">DIGITAL_PROFILE_ENABLED=true</code> and restart.
-        </Notice>
+        <Notice>{t("cases.moduleDisabled")}</Notice>
       </Card>
     );
   }
@@ -185,10 +186,10 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
   if (state.kind === "notFound") {
     return (
       <Card>
-        <EmptyState title="Case not found" hint="It may have been deleted or never existed." />
+        <EmptyState title={t("cases.notFoundTitle")} hint={t("cases.notFoundHint")} />
         <div style={{ marginTop: 12 }}>
           <Link className="dp-btn" href="/admin/digital-profile">
-            ← Back to cases
+            ← {t("common.back")}
           </Link>
         </div>
       </Card>
@@ -202,7 +203,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
           <ErrorBox>{state.message}</ErrorBox>
           <div>
             <button className="dp-btn" onClick={() => void loadAll()}>
-              Retry
+              {t("common.retry")}
             </button>
           </div>
         </div>

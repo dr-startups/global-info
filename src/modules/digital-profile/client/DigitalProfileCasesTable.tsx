@@ -2,18 +2,20 @@
 
 import Link from "next/link";
 import type { CaseListItem } from "./api";
-import { StatusBadge, formatDate } from "./components";
+import { StatusBadge } from "./components";
+import { useDigitalProfileI18n } from "./i18n-provider";
 
 export function DigitalProfileCasesTable({ cases }: { cases: CaseListItem[] }) {
+  const { t, fmtDate } = useDigitalProfileI18n();
   return (
     <table className="dp-table">
       <thead>
         <tr>
-          <th>Case</th>
-          <th>Subject</th>
-          <th>Status</th>
-          <th>Consent</th>
-          <th>Created</th>
+          <th>{t("cases.case")}</th>
+          <th>{t("cases.subject")}</th>
+          <th>{t("cases.status")}</th>
+          <th>{t("cases.consent")}</th>
+          <th>{t("cases.created")}</th>
           <th aria-label="actions" />
         </tr>
       </thead>
@@ -30,10 +32,10 @@ export function DigitalProfileCasesTable({ cases }: { cases: CaseListItem[] }) {
             <td>
               <StatusBadge status={c.consentStatus} />
             </td>
-            <td className="dp-muted">{formatDate(c.createdAt)}</td>
+            <td className="dp-muted">{fmtDate(c.createdAt)}</td>
             <td style={{ textAlign: "right" }}>
               <Link className="dp-btn dp-btn-sm" href={`/admin/digital-profile/${c.id}`}>
-                Open
+                {t("common.open")}
               </Link>
             </td>
           </tr>

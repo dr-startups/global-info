@@ -11,7 +11,8 @@ import {
   type SearchSurfaceSource,
   type SearchSurfaceType,
 } from "./api";
-import { Badge, EmptyState, ErrorBox, StatusBadge, errorMessage, formatDate } from "./components";
+import { Badge, EmptyState, ErrorBox, StatusBadge } from "./components";
+import { useDigitalProfileI18n } from "./i18n-provider";
 
 type FieldKey = "query" | "title" | "snippet" | "url" | "imageUrl" | "videoUrl";
 
@@ -26,21 +27,14 @@ const FIELD_CONFIG: Record<SearchSurfaceType, FieldKey[]> = {
   MANUAL_NOTE: ["title", "snippet"],
 };
 
-const FIELD_LABEL: Record<FieldKey, string> = {
-  query: "Query text",
-  title: "Title",
-  snippet: "Description",
-  url: "URL",
-  imageUrl: "Image URL",
-  videoUrl: "Video URL",
+const FIELD_LABEL_KEY: Record<FieldKey, string> = {
+  query: "surfaces.queryText",
+  title: "surfaces.titleField",
+  snippet: "surfaces.description",
+  url: "surfaces.url",
+  imageUrl: "surfaces.imageUrl",
+  videoUrl: "surfaces.videoUrl",
 };
-
-function sourceBadge(source: SearchSurfaceSource) {
-  if (source === "MOCK") return <Badge tone="neutral">MOCK</Badge>;
-  if (source.startsWith("REAL_")) return <Badge tone="ok">REAL</Badge>;
-  if (source === "SYNTHETIC_SNAPSHOT") return <Badge tone="warn">SYNTHETIC</Badge>;
-  return <Badge tone="info">MANUAL</Badge>;
-}
 
 export function SurfacesTab({
   type,
@@ -55,6 +49,7 @@ export function SurfacesTab({
   caseId: string;
   onChanged: () => void;
 }) {
+  const { t, tError, tSource } = useDigitalProfileI18n();
   const fields = FIELD_CONFIG[type];
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -63,6 +58,13 @@ export function SurfacesTab({
   const [info, setInfo] = useState<string | null>(null);
 
   const required: FieldKey = fields.includes("query") ? "query" : "title";
+
+  function sourceBadge(source: SearchSurfaceSource) {
+    if (source === "MOCK") return <Badge tone="neutral">{tSource("MOCK")}</Badge>;
+    if (source.startsWith("REAL_")) return <Badge tone="ok">{tSource("REAL")}</Badge>;
+    if (source === "SYNTHETIC_SNAPSHOT") return <Badge tone="warn">{tSource("SYNTHETIC")}</Badge>;
+    return <Badge tone="info">{tSource("MANUAL")}</Badge>;
+  }
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -77,13 +79,13 @@ export function SurfacesTab({
         if (v) (input as unknown as Record<string, string>)[f] = v;
       }
       const res = await createSearchSurface(caseId, input);
-      setInfo(res.deduplicated ? "Duplicate — existing item reused." : `${label} item added.`);
+      setInfo(res.deduplicated ? t("surfaces.duplicate") : t("surfaces.itemAdded"));
       setValues({});
       onChanged();
     } catch (err) {
-      const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
-      const msg = err instanceof Error ? err.message : "Failed to add item";
-      setError(errorMessage(code, msg));
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setError(tError(code, msg));
     } finally {
       setBusy(false);
     }
@@ -97,9 +99,9 @@ export function SurfacesTab({
       await fn();
       onChanged();
     } catch (err) {
-      const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
-      const msg = err instanceof Error ? err.message : "Action failed";
-      setError(errorMessage(code, msg));
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setError(tError(code, msg));
     } finally {
       setBusyId(null);
     }
@@ -116,7 +118,7 @@ export function SurfacesTab({
           {fields.map((f) => (
             <div key={f} className={f === "snippet" ? "dp-field dp-field-full" : "dp-field"}>
               <label>
-                {FIELD_LABEL[f]}
+                {t(FIELD_LABEL_KEY[f])}
                 {f === required ? " *" : ""}
               </label>
               <input
@@ -132,7 +134,7 @@ export function SurfacesTab({
             className="dp-btn dp-btn-primary dp-btn-sm"
             disabled={busy || !(values[required] ?? "").trim()}
           >
-            {busy ? "Adding…" : `Add ${label.toLowerCase()}`}
+            {busy ? t("common.adding") : `${t("surfaces.add")}: ${label}`}
           </button>
           {info ? <span className="dp-muted">{info}</span> : null}
         </div>
@@ -144,7 +146,7 @@ export function SurfacesTab({
       </form>
 
       {items.length === 0 ? (
-        <EmptyState title={`No ${label.toLowerCase()} yet`} hint="Add items manually above or run a surface agent." />
+        <EmptyState title={`${label} — ${t("common.empty")}`} hint={t("surfaces.emptyHint")} />
       ) : isMedia ? (
         <div className="dp-grid-cards">
           {items.map((it) => (
@@ -170,7 +172,7 @@ export function SurfacesTab({
                 className="dp-muted"
                 style={{ fontSize: 12 }}
               >
-                {type === "VIDEO_RESULT" ? "Open video" : "Open"}
+                {type === "VIDEO_RESULT" ? t("surfaces.openVideo") : t("surfaces.open")}
               </a>
               <div className="dp-inline" style={{ marginTop: 8 }}>
                 {it.reviewStatus === "PENDING" ? (
@@ -179,7 +181,7 @@ export function SurfacesTab({
                     disabled={busyId === it.id}
                     onClick={() => act(it.id, () => reviewSearchSurface(it.id, "REVIEWED"))}
                   >
-                    Review
+                    {t("common.review")}
                   </button>
                 ) : null}
                 <button
@@ -187,7 +189,7 @@ export function SurfacesTab({
                   disabled={busyId === it.id}
                   onClick={() => act(it.id, () => deleteSearchSurface(it.id))}
                 >
-                  Delete
+                  {t("common.delete")}
                 </button>
               </div>
             </div>
@@ -197,9 +199,9 @@ export function SurfacesTab({
         <table className="dp-table">
           <thead>
             <tr>
-              <th>{fields.includes("query") ? "Query" : "Title"}</th>
-              <th>Source</th>
-              <th>Review</th>
+              <th>{fields.includes("query") ? t("surfaces.query") : t("surfaces.title")}</th>
+              <th>{t("common.source")}</th>
+              <th>{t("surfaces.reviewCol")}</th>
               <th />
             </tr>
           </thead>
@@ -222,7 +224,7 @@ export function SurfacesTab({
                         disabled={busyId === it.id}
                         onClick={() => act(it.id, () => reviewSearchSurface(it.id, "REVIEWED"))}
                       >
-                        Review
+                        {t("common.review")}
                       </button>
                     ) : null}
                     <button
@@ -230,7 +232,7 @@ export function SurfacesTab({
                       disabled={busyId === it.id}
                       onClick={() => act(it.id, () => deleteSearchSurface(it.id))}
                     >
-                      Delete
+                      {t("common.delete")}
                     </button>
                   </div>
                 </td>

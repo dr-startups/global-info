@@ -7,6 +7,7 @@
  */
 
 import type { ReactNode } from "react";
+import { useDigitalProfileI18n } from "./i18n-provider";
 
 type BadgeTone = "neutral" | "ok" | "warn" | "danger" | "info";
 
@@ -54,8 +55,13 @@ const STATUS_TONE: Record<string, BadgeTone> = {
 };
 
 export function StatusBadge({ status }: { status: string | null | undefined }) {
+  const { tStatus } = useDigitalProfileI18n();
   if (!status) return <span className="dp-muted">—</span>;
-  return <Badge tone={STATUS_TONE[status] ?? "neutral"}>{status.replace(/_/g, " ")}</Badge>;
+  return (
+    <Badge tone={STATUS_TONE[status] ?? "neutral"} title={status}>
+      {tStatus(status)}
+    </Badge>
+  );
 }
 
 const RISK_TONE: Record<string, BadgeTone> = {
@@ -67,8 +73,13 @@ const RISK_TONE: Record<string, BadgeTone> = {
 };
 
 export function RiskBadge({ severity }: { severity: string | null | undefined }) {
+  const { tRisk } = useDigitalProfileI18n();
   if (!severity) return <span className="dp-muted">—</span>;
-  return <Badge tone={RISK_TONE[severity] ?? "neutral"}>{severity}</Badge>;
+  return (
+    <Badge tone={RISK_TONE[severity] ?? "neutral"} title={severity}>
+      {tRisk(severity)}
+    </Badge>
+  );
 }
 
 export function EmptyState({ title, hint }: { title: string; hint?: string }) {
@@ -92,10 +103,11 @@ export function SuccessBox({ children }: { children: ReactNode }) {
   return <div className="dp-success">{children}</div>;
 }
 
-export function Loading({ label = "Loading…" }: { label?: string }) {
+export function Loading({ label }: { label?: string }) {
+  const { dictionary } = useDigitalProfileI18n();
   return (
     <div className="dp-loading">
-      <span className="dp-spinner" /> {label}
+      <span className="dp-spinner" /> {label ?? dictionary.common.loading}
     </div>
   );
 }
@@ -104,23 +116,5 @@ export function Card({ children }: { children: ReactNode }) {
   return <div className="dp-card">{children}</div>;
 }
 
-export function formatDate(value: string | null | undefined): string {
-  if (!value) return "—";
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString();
-}
-
-/** Human-readable message for an API error code. */
-export function errorMessage(code: string, fallback: string): string {
-  switch (code) {
-    case "MODULE_DISABLED":
-      return "The Digital Profile module is disabled. Set DIGITAL_PROFILE_ENABLED=true and restart.";
-    case "RENDERER_UNAVAILABLE":
-      return "Renderer is unavailable. Start the Docker renderer and try again.";
-    case "NETWORK_ERROR":
-      return "Could not reach the server. Check that the dev server is running.";
-    default:
-      return fallback;
-  }
-}
+// Date formatting and API-error messages are now locale-aware via the i18n
+// provider (see i18n-provider.tsx: fmtDate / tError). Legacy helpers removed.

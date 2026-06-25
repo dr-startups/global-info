@@ -13,10 +13,10 @@ import {
   ErrorBox,
   Loading,
   Notice,
-  errorMessage,
 } from "./components";
 import { CreateCaseForm } from "./CreateCaseForm";
 import { DigitalProfileCasesTable } from "./DigitalProfileCasesTable";
+import { useDigitalProfileI18n } from "./i18n-provider";
 
 type LoadState =
   | { kind: "loading" }
@@ -26,6 +26,7 @@ type LoadState =
 
 export function CasesView() {
   const router = useRouter();
+  const { t, tError } = useDigitalProfileI18n();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [creating, setCreating] = useState(false);
 
@@ -39,11 +40,11 @@ export function CasesView() {
         setState({ kind: "disabled" });
         return;
       }
-      const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
-      const msg = err instanceof Error ? err.message : "Failed to load cases";
-      setState({ kind: "error", message: errorMessage(code, msg) });
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setState({ kind: "error", message: tError(code, msg) });
     }
-  }, []);
+  }, [tError]);
 
   useEffect(() => {
     void load();
@@ -53,12 +54,12 @@ export function CasesView() {
     <div>
       <div className="dp-row" style={{ marginBottom: 20 }}>
         <div>
-          <h1 className="dp-h1">Digital Profile Audit</h1>
-          <div className="dp-muted">Evidence-based case management & report generation</div>
+          <h1 className="dp-h1">{t("page.title")}</h1>
+          <div className="dp-muted">{t("page.subtitle")}</div>
         </div>
         {state.kind === "ready" && !creating ? (
           <button className="dp-btn dp-btn-primary" onClick={() => setCreating(true)}>
-            Create case
+            {t("cases.createCase")}
           </button>
         ) : null}
       </div>
@@ -74,22 +75,16 @@ export function CasesView() {
 
       {!creating ? (
         <Card>
-          {state.kind === "loading" ? <Loading label="Loading cases…" /> : null}
+          {state.kind === "loading" ? <Loading label={t("cases.loadingCases")} /> : null}
 
-          {state.kind === "disabled" ? (
-            <Notice>
-              The Digital Profile module is disabled. Set{" "}
-              <code className="dp-mono">DIGITAL_PROFILE_ENABLED=true</code> in your environment and
-              restart the server.
-            </Notice>
-          ) : null}
+          {state.kind === "disabled" ? <Notice>{t("cases.moduleDisabled")}</Notice> : null}
 
           {state.kind === "error" ? (
             <div className="dp-stack">
               <ErrorBox>{state.message}</ErrorBox>
               <div>
                 <button className="dp-btn" onClick={() => void load()}>
-                  Retry
+                  {t("common.retry")}
                 </button>
               </div>
             </div>
@@ -97,8 +92,8 @@ export function CasesView() {
 
           {state.kind === "ready" && state.cases.length === 0 ? (
             <EmptyState
-              title="No cases yet"
-              hint="Create your first Digital Profile Audit case to get started."
+              title={t("cases.emptyTitle")}
+              hint={t("cases.emptyDescription")}
             />
           ) : null}
 

@@ -19,7 +19,9 @@
  *   J)  Audit Summary builder (deterministic, evidence-derived)
  *   K1) ORION-like report template v1 (dynamic analytics + offer pages)
  *   K2) Full 36-page dynamic audit template v2 + offer block
- *   K3) Polished template v3 + final commercial block + audience/watermark  <-- current
+ *   K3) Polished template v3 + final commercial block + audience/watermark
+ *   K4) Production hardening + demo readiness
+ *   L1) Admin UI i18n (RU/EN) — UI-only language switcher  <-- current
  */
 
 export * from "./types";
@@ -121,5 +123,5 @@ export { buildOfferConfig } from "./report/offer-config";
 export const DIGITAL_PROFILE_MODULE = {
   name: "digital-profile",
   /** Bumped as stages land. */
-  stage: "K3",
+  stage: "L1",
 } as const;

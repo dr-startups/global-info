@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { createCase, DigitalProfileApiError, type CaseDetail } from "./api";
-import { ErrorBox, errorMessage } from "./components";
+import { ErrorBox } from "./components";
+import { useDigitalProfileI18n } from "./i18n-provider";
 
 const LAWFUL_BASIS = [
   "CONSENT",
@@ -28,6 +29,7 @@ export function CreateCaseForm({
   onCreated: (c: CaseDetail) => void;
   onCancel: () => void;
 }) {
+  const { t, tStatus, tError } = useDigitalProfileI18n();
   const [fullName, setFullName] = useState("");
   const [aliases, setAliases] = useState("");
   const [birthDate, setBirthDate] = useState("");
@@ -43,7 +45,7 @@ export function CreateCaseForm({
     e.preventDefault();
     if (submitting) return; // guard against double-submit
     if (!fullName.trim()) {
-      setError("Full name is required.");
+      setError(t("createCase.fullNameRequired"));
       return;
     }
     setSubmitting(true);
@@ -60,16 +62,16 @@ export function CreateCaseForm({
       });
       onCreated(created);
     } catch (err) {
-      const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
-      const msg = err instanceof Error ? err.message : "Failed to create case";
-      setError(errorMessage(code, msg));
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setError(tError(code, msg));
       setSubmitting(false);
     }
   }
 
   return (
     <form onSubmit={handleSubmit}>
-      <h2 className="dp-h2">Create case</h2>
+      <h2 className="dp-h2">{t("createCase.title")}</h2>
       {error ? (
         <div style={{ marginBottom: 14 }}>
           <ErrorBox>{error}</ErrorBox>
@@ -78,29 +80,29 @@ export function CreateCaseForm({
       <div className="dp-form-grid">
         <div className="dp-field dp-field-full">
           <label>
-            Full name <span className="dp-req">*</span>
+            {t("createCase.fullName")} <span className="dp-req">*</span>
           </label>
           <input
             className="dp-input"
             value={fullName}
             onChange={(e) => setFullName(e.target.value)}
-            placeholder="e.g. John A. Sample"
+            placeholder={t("createCase.fullNamePlaceholder")}
             required
           />
         </div>
 
         <div className="dp-field dp-field-full">
-          <label>Aliases (comma or newline separated)</label>
+          <label>{t("createCase.aliases")}</label>
           <textarea
             className="dp-textarea"
             value={aliases}
             onChange={(e) => setAliases(e.target.value)}
-            placeholder="J. Sample, Johnny Sample"
+            placeholder={t("createCase.aliasesPlaceholder")}
           />
         </div>
 
         <div className="dp-field">
-          <label>Birth date</label>
+          <label>{t("createCase.birthDate")}</label>
           <input
             className="dp-input"
             type="date"
@@ -110,18 +112,18 @@ export function CreateCaseForm({
         </div>
 
         <div className="dp-field">
-          <label>Target regions (comma separated)</label>
+          <label>{t("createCase.targetRegions")}</label>
           <input
             className="dp-input"
             value={targetRegions}
             onChange={(e) => setTargetRegions(e.target.value)}
-            placeholder="RU, UAE"
+            placeholder={t("createCase.targetRegionsPlaceholder")}
           />
         </div>
 
         <div className="dp-field">
           <label>
-            Lawful basis <span className="dp-req">*</span>
+            {t("createCase.lawfulBasis")} <span className="dp-req">*</span>
           </label>
           <select
             className="dp-select"
@@ -138,7 +140,7 @@ export function CreateCaseForm({
 
         <div className="dp-field">
           <label>
-            Consent status <span className="dp-req">*</span>
+            {t("createCase.consentStatus")} <span className="dp-req">*</span>
           </label>
           <select
             className="dp-select"
@@ -147,14 +149,14 @@ export function CreateCaseForm({
           >
             {CONSENT_STATUS.map((v) => (
               <option key={v} value={v}>
-                {v.replace(/_/g, " ")}
+                {tStatus(v)}
               </option>
             ))}
           </select>
         </div>
 
         <div className="dp-field dp-field-full">
-          <label>Notes</label>
+          <label>{t("createCase.notes")}</label>
           <textarea
             className="dp-textarea"
             value={notes}
@@ -166,10 +168,10 @@ export function CreateCaseForm({
       <div className="dp-inline" style={{ marginTop: 16 }}>
         <button type="submit" className="dp-btn dp-btn-primary" disabled={submitting}>
           {submitting ? <span className="dp-spinner" /> : null}
-          {submitting ? "Creating…" : "Create case"}
+          {submitting ? t("cases.creating") : t("cases.createCase")}
         </button>
         <button type="button" className="dp-btn" onClick={onCancel} disabled={submitting}>
-          Cancel
+          {t("common.cancel")}
         </button>
       </div>
     </form>

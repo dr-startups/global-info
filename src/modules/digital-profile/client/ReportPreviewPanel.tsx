@@ -13,9 +13,8 @@ import {
   Notice,
   StatusBadge,
   SuccessBox,
-  errorMessage,
-  formatDate,
 } from "./components";
+import { useDigitalProfileI18n } from "./i18n-provider";
 
 /**
  * Report Preview: shows the latest report version and drives generation.
@@ -33,6 +32,7 @@ export function ReportPreviewPanel({
   report: ReportVersion | null;
   onReportChange: (r: ReportVersion) => void;
 }) {
+  const { t, tError, tTemplate, fmtDate } = useDigitalProfileI18n();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -73,12 +73,16 @@ export function ReportPreviewPanel({
         watermarkMode: rendered.watermarkMode ?? watermarkMode,
       });
       setSuccess(
-        `Report v${rendered.version} generated and rendered with ${rendered.templateVersion ?? templateVersion} (${rendered.slideCount ?? 0} slides).`
+        t("report.successMessage", {
+          version: rendered.version,
+          template: tTemplate(rendered.templateVersion ?? templateVersion),
+          slides: rendered.slideCount ?? 0,
+        })
       );
     } catch (err) {
-      const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
-      const msg = err instanceof Error ? err.message : "Failed to generate report";
-      setError(errorMessage(code, msg));
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setError(tError(code, msg));
     } finally {
       setBusy(false);
     }
@@ -88,7 +92,7 @@ export function ReportPreviewPanel({
     <div>
       <div className="dp-row" style={{ marginBottom: 16 }}>
         <h2 className="dp-h2" style={{ margin: 0 }}>
-          Report preview
+          {t("report.title")}
         </h2>
         <div className="dp-inline">
           <select
@@ -97,12 +101,12 @@ export function ReportPreviewPanel({
             value={templateVersion}
             onChange={(e) => setTemplateVersion(e.target.value)}
             disabled={busy}
-            aria-label="Template version"
+            aria-label={t("report.templateVersion")}
           >
-            <option value="report-template-v3">Template v3 (polished + offer)</option>
-            <option value="report-template-v2">Template v2 (full audit)</option>
-            <option value="report-template-v1">Template v1 (corporate)</option>
-            <option value="simple">Simple (generic)</option>
+            <option value="report-template-v3">{tTemplate("report-template-v3")}</option>
+            <option value="report-template-v2">{tTemplate("report-template-v2")}</option>
+            <option value="report-template-v1">{tTemplate("report-template-v1")}</option>
+            <option value="simple">{tTemplate("simple")}</option>
           </select>
           <select
             className="dp-select"
@@ -110,25 +114,25 @@ export function ReportPreviewPanel({
             value={audience}
             onChange={(e) => setAudience(e.target.value as "internal" | "client")}
             disabled={busy}
-            aria-label="Audience"
+            aria-label={t("report.audience")}
           >
-            <option value="internal">Internal</option>
-            <option value="client">Client</option>
+            <option value="internal">{t("report.internal")}</option>
+            <option value="client">{t("report.client")}</option>
           </select>
           <select
             className="dp-select"
-            style={{ maxWidth: 150 }}
+            style={{ maxWidth: 170 }}
             value={watermarkMode}
             onChange={(e) => setWatermarkMode(e.target.value as "draft" | "none")}
             disabled={busy}
-            aria-label="Watermark"
+            aria-label={t("report.watermark")}
           >
-            <option value="draft">Watermark: Draft</option>
-            <option value="none">Watermark: None</option>
+            <option value="draft">{t("report.watermark")}: {t("report.draft")}</option>
+            <option value="none">{t("report.watermark")}: {t("report.none")}</option>
           </select>
           <button className="dp-btn dp-btn-primary" onClick={handleGenerate} disabled={busy}>
             {busy ? <span className="dp-spinner" /> : null}
-            {busy ? "Working…" : report ? "Re-generate report" : "Generate report"}
+            {busy ? t("common.working") : report ? t("report.regenerateReport") : t("report.generateReport")}
           </button>
         </div>
       </div>
@@ -146,7 +150,7 @@ export function ReportPreviewPanel({
       {warnings.length > 0 ? (
         <div style={{ marginBottom: 14 }}>
           <Notice>
-            <strong>Renderer warnings ({warnings.length}):</strong>
+            <strong>{t("report.warnings")} ({warnings.length}):</strong>
             <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
               {warnings.slice(0, 6).map((w, i) => (
                 <li key={i}>{w}</li>
@@ -157,37 +161,38 @@ export function ReportPreviewPanel({
       ) : null}
 
       {!report ? (
-        <EmptyState
-          title="No report generated yet"
-          hint="Click “Generate report” to build the report and render PPTX/PDF."
-        />
+        <EmptyState title={t("report.emptyTitle")} hint={t("report.emptyHint")} />
       ) : (
         <>
           <dl className="dp-kv">
-            <dt>Version</dt>
+            <dt>{t("report.version")}</dt>
             <dd>v{report.version}</dd>
-            <dt>Status</dt>
+            <dt>{t("cases.status")}</dt>
             <dd>
               <StatusBadge status={report.status} />
             </dd>
-            <dt>Watermark</dt>
+            <dt>{t("report.watermark")}</dt>
             <dd>{report.watermark ?? "—"}</dd>
-            <dt>Rendered at</dt>
-            <dd>{report.renderedAt ? formatDate(report.renderedAt) : "Not rendered yet"}</dd>
+            <dt>{t("report.renderedAt")}</dt>
+            <dd>{report.renderedAt ? fmtDate(report.renderedAt) : t("report.notRendered")}</dd>
             {renderInfo ? (
               <>
-                <dt>Template</dt>
-                <dd>{renderInfo.template}</dd>
-                <dt>Slides</dt>
+                <dt>{t("report.template")}</dt>
+                <dd>{tTemplate(renderInfo.template)}</dd>
+                <dt>{t("report.slideCount")}</dt>
                 <dd>{renderInfo.slides}</dd>
-                <dt>Audience</dt>
-                <dd>{renderInfo.audience}</dd>
-                <dt>Watermark mode</dt>
-                <dd>{renderInfo.watermarkMode}</dd>
+                <dt>{t("report.audience")}</dt>
+                <dd>
+                  {renderInfo.audience === "client" ? t("report.client") : t("report.internal")}
+                </dd>
+                <dt>{t("report.watermarkMode")}</dt>
+                <dd>
+                  {renderInfo.watermarkMode === "none" ? t("report.none") : t("report.draft")}
+                </dd>
               </>
             ) : null}
-            <dt>Created at</dt>
-            <dd>{formatDate(report.createdAt)}</dd>
+            <dt>{t("cases.created")}</dt>
+            <dd>{fmtDate(report.createdAt)}</dd>
           </dl>
 
           <div className="dp-inline" style={{ marginTop: 18 }}>
@@ -198,11 +203,11 @@ export function ReportPreviewPanel({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Download PDF
+                {t("report.downloadPdf")}
               </a>
             ) : (
-              <button className="dp-btn" disabled title="Render the report first">
-                Download PDF
+              <button className="dp-btn" disabled title={t("report.renderFirst")}>
+                {t("report.downloadPdf")}
               </button>
             )}
             {report.pptxDownloadUrl ? (
@@ -212,11 +217,11 @@ export function ReportPreviewPanel({
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Download PPTX
+                {t("report.downloadPptx")}
               </a>
             ) : (
-              <button className="dp-btn" disabled title="Render the report first">
-                Download PPTX
+              <button className="dp-btn" disabled title={t("report.renderFirst")}>
+                {t("report.downloadPptx")}
               </button>
             )}
           </div>

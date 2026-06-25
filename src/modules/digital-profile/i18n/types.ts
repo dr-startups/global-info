@@ -1,0 +1,315 @@
+/**
+ * i18n types for the Digital Profile admin UI (Stage L1).
+ *
+ * UI-only localization: no backend schema, API enum, agent, provider or renderer
+ * changes. Dictionaries are typed and nested; `Dictionary` is the contract both
+ * `en` and `ru` must satisfy.
+ */
+
+export type Locale = "en" | "ru";
+
+export const LOCALES: Locale[] = ["en", "ru"];
+
+/** Localized labels for API/DB enum values (display only — values never change). */
+export interface EnumLabels {
+  status: Record<string, string>;
+  risk: Record<string, string>;
+  kind: Record<string, string>;
+  source: Record<string, string>;
+}
+
+export interface Dictionary {
+  common: {
+    create: string;
+    open: string;
+    save: string;
+    cancel: string;
+    back: string;
+    loading: string;
+    error: string;
+    empty: string;
+    enabled: string;
+    disabled: string;
+    notConfigured: string;
+    run: string;
+    download: string;
+    generate: string;
+    refresh: string;
+    delete: string;
+    review: string;
+    dismiss: string;
+    retry: string;
+    yes: string;
+    no: string;
+    of: string;
+    adding: string;
+    working: string;
+    none: string;
+    source: string;
+  };
+  page: {
+    title: string;
+    subtitle: string;
+  };
+  cases: {
+    createCase: string;
+    creating: string;
+    case: string;
+    subject: string;
+    status: string;
+    consent: string;
+    created: string;
+    updated: string;
+    emptyTitle: string;
+    emptyDescription: string;
+    loadingCases: string;
+    notFoundTitle: string;
+    notFoundHint: string;
+    moduleDisabled: string;
+  };
+  tabs: {
+    subject: string;
+    agents: string;
+    searchResults: string;
+    suggestions: string;
+    relatedQueries: string;
+    images: string;
+    videos: string;
+    knowledgeBlock: string;
+    screenshots: string;
+    wikipedia: string;
+    aiProfile: string;
+    complianceDatabases: string;
+    riskFindings: string;
+    auditSummary: string;
+    reportPreview: string;
+  };
+  agents: {
+    title: string;
+    mockSuffix: string;
+    runAudit: string;
+    runningAudit: string;
+    runFullAudit: string;
+    auditDone: string;
+    auditPartial: string;
+    auditFailed: string;
+    lastRun: string;
+    recentRuns: string;
+    noRuns: string;
+    noRunsHint: string;
+    agent: string;
+    type: string;
+    availability: string;
+    finished: string;
+    started: string;
+    summary: string;
+    running: string;
+    mock: string;
+    real: string;
+    system: string;
+    providerStatus: string;
+  };
+  report: {
+    title: string;
+    template: string;
+    audience: string;
+    watermark: string;
+    internal: string;
+    client: string;
+    draft: string;
+    none: string;
+    generateReport: string;
+    generating: string;
+    regenerateReport: string;
+    downloadPptx: string;
+    downloadPdf: string;
+    rendererUnavailable: string;
+    warnings: string;
+    slideCount: string;
+    templateVersion: string;
+    version: string;
+    renderedAt: string;
+    notRendered: string;
+    watermarkMode: string;
+    emptyTitle: string;
+    emptyHint: string;
+    successMessage: string;
+    generatedShort: string;
+    renderFirst: string;
+  };
+  risk: {
+    title: string;
+    classifyRisks: string;
+    classifying: string;
+    rebuildAfterReview: string;
+    rebuilding: string;
+    evidence: string;
+    confidence: string;
+    rationale: string;
+    severity: string;
+    theme: string;
+    finding: string;
+    reviewCol: string;
+    markReviewed: string;
+    total: string;
+    pending: string;
+    reviewed: string;
+    dismissed: string;
+    highestRisk: string;
+    emptyTitle: string;
+    emptyHint: string;
+    noMatch: string;
+    noMatchHint: string;
+    why: string;
+    classifyResult: string;
+    rebuildResult: string;
+  };
+  auditSummary: {
+    title: string;
+    build: string;
+    building: string;
+    rebuildAfterReview: string;
+    overallRiskLevel: string;
+    tone: string;
+    evidenceItems: string;
+    findingsActive: string;
+    executiveSummary: string;
+    searchProfile: string;
+    totalResults: string;
+    negativeShare: string;
+    uniqueNegativeUrls: string;
+    negativeDomains: string;
+    searchSurfaces: string;
+    suggestionsNegTotal: string;
+    imagesNegTotal: string;
+    videosNegTotal: string;
+    syntheticSnapshots: string;
+    regions: string;
+    region: string;
+    organicNegTotal: string;
+    wikiBlock: string;
+    risk: string;
+    keyFindings: string;
+    recommendedActions: string;
+    dataQuality: string;
+    providers: string;
+    exists: string;
+    notabilityScore: string;
+    page: string;
+    emptyTitle: string;
+    emptyHint: string;
+    generatedNote: string;
+    rebuiltMessage: string;
+  };
+  subject: {
+    title: string;
+    fullName: string;
+    aliases: string;
+    birthDate: string;
+    targetRegions: string;
+    lawfulBasis: string;
+    consentStatus: string;
+    notes: string;
+  };
+  search: {
+    title: string;
+    engine: string;
+    classification: string;
+    url: string;
+    titleField: string;
+    addResult: string;
+    added: string;
+    duplicate: string;
+    domain: string;
+    reviewCol: string;
+    emptyTitle: string;
+    emptyHint: string;
+  };
+  surfaces: {
+    queryText: string;
+    titleField: string;
+    description: string;
+    url: string;
+    imageUrl: string;
+    videoUrl: string;
+    add: string;
+    itemAdded: string;
+    duplicate: string;
+    query: string;
+    title: string;
+    reviewCol: string;
+    openVideo: string;
+    open: string;
+    emptyHint: string;
+  };
+  screenshots: {
+    title: string;
+    notice: string;
+    emptyTitle: string;
+    emptyHint: string;
+    sourceUrl: string;
+    type: string;
+    captured: string;
+    view: string;
+  };
+  wikipedia: {
+    title: string;
+    emptyTitle: string;
+    emptyHint: string;
+    exists: string;
+    language: string;
+    pageTitle: string;
+    notability: string;
+    checked: string;
+    open: string;
+  };
+  ai: {
+    title: string;
+    emptyTitle: string;
+    emptyHint: string;
+    citedSources: string;
+  };
+  compliance: {
+    title: string;
+    emptyTitle: string;
+    emptyHint: string;
+    provider: string;
+    importMethod: string;
+    matchType: string;
+    score: string;
+    evidence: string;
+    imported: string;
+  };
+  createCase: {
+    title: string;
+    fullName: string;
+    fullNamePlaceholder: string;
+    aliases: string;
+    aliasesPlaceholder: string;
+    birthDate: string;
+    targetRegions: string;
+    targetRegionsPlaceholder: string;
+    lawfulBasis: string;
+    consentStatus: string;
+    notes: string;
+    fullNameRequired: string;
+  };
+  language: {
+    label: string;
+    ru: string;
+    en: string;
+  };
+  errors: {
+    MODULE_DISABLED: string;
+    NOT_FOUND: string;
+    VALIDATION_ERROR: string;
+    CONFLICT: string;
+    RENDERER_UNAVAILABLE: string;
+    NETWORK_ERROR: string;
+    PROVIDER_NOT_CONFIGURED: string;
+    PROVIDER_DISABLED: string;
+    UNKNOWN: string;
+  };
+  enums: EnumLabels;
+  templates: Record<string, string>;
+}

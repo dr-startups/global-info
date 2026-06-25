@@ -23,13 +23,12 @@ import {
   RiskBadge,
   StatusBadge,
   SuccessBox,
-  errorMessage,
-  formatDate,
 } from "./components";
 import { ReportPreviewPanel } from "./ReportPreviewPanel";
 import { AgentsTab } from "./AgentsTab";
 import { SurfacesTab } from "./SurfacesTab";
 import { AuditSummaryTab } from "./AuditSummaryTab";
+import { useDigitalProfileI18n } from "./i18n-provider";
 
 type TabKey =
   | "subject"
@@ -47,8 +46,6 @@ type TabKey =
   | "risk"
   | "audit"
   | "report";
-
-const NEXT_STEP_HINT = "Data input for this section will be available in the next step.";
 
 export function CaseTabs({
   caseDetail,
@@ -77,9 +74,10 @@ export function CaseTabs({
   onSurfacesChanged: () => void;
   onReportChange: (r: ReportVersion) => void;
 }) {
+  const { t } = useDigitalProfileI18n();
   const [tab, setTab] = useState<TabKey>("subject");
 
-  const byType = (t: SearchSurfaceItem["type"]) => surfaces.filter((s) => s.type === t);
+  const byType = (ty: SearchSurfaceItem["type"]) => surfaces.filter((s) => s.type === ty);
   const suggestions = byType("SUGGESTION");
   const related = byType("RELATED_QUERY");
   const images = byType("IMAGE_RESULT");
@@ -87,21 +85,21 @@ export function CaseTabs({
   const knowledge = byType("KNOWLEDGE_BLOCK");
 
   const tabs: { key: TabKey; label: string; count?: number }[] = [
-    { key: "subject", label: "Subject" },
-    { key: "agents", label: "Agents", count: agents.length },
-    { key: "search", label: "Search Results", count: evidence.searchResults.length },
-    { key: "suggestions", label: "Suggestions", count: suggestions.length },
-    { key: "related", label: "Related Queries", count: related.length },
-    { key: "images", label: "Images", count: images.length },
-    { key: "videos", label: "Videos", count: videos.length },
-    { key: "knowledge", label: "Knowledge Block", count: knowledge.length },
-    { key: "screenshots", label: "Screenshots", count: evidence.screenshots.length },
-    { key: "wikipedia", label: "Wikipedia", count: evidence.wikipediaChecks.length },
-    { key: "ai", label: "AI Profile", count: evidence.aiProfiles.length },
-    { key: "compliance", label: "Compliance Databases", count: evidence.databaseProfiles.length },
-    { key: "risk", label: "Risk Findings", count: evidence.riskFindings.length },
-    { key: "audit", label: "Audit Summary" },
-    { key: "report", label: "Report Preview" },
+    { key: "subject", label: t("tabs.subject") },
+    { key: "agents", label: t("tabs.agents"), count: agents.length },
+    { key: "search", label: t("tabs.searchResults"), count: evidence.searchResults.length },
+    { key: "suggestions", label: t("tabs.suggestions"), count: suggestions.length },
+    { key: "related", label: t("tabs.relatedQueries"), count: related.length },
+    { key: "images", label: t("tabs.images"), count: images.length },
+    { key: "videos", label: t("tabs.videos"), count: videos.length },
+    { key: "knowledge", label: t("tabs.knowledgeBlock"), count: knowledge.length },
+    { key: "screenshots", label: t("tabs.screenshots"), count: evidence.screenshots.length },
+    { key: "wikipedia", label: t("tabs.wikipedia"), count: evidence.wikipediaChecks.length },
+    { key: "ai", label: t("tabs.aiProfile"), count: evidence.aiProfiles.length },
+    { key: "compliance", label: t("tabs.complianceDatabases"), count: evidence.databaseProfiles.length },
+    { key: "risk", label: t("tabs.riskFindings"), count: evidence.riskFindings.length },
+    { key: "audit", label: t("tabs.auditSummary") },
+    { key: "report", label: t("tabs.reportPreview") },
   ];
 
   return (
@@ -140,19 +138,19 @@ export function CaseTabs({
         />
       ) : null}
       {tab === "suggestions" ? (
-        <SurfacesTab type="SUGGESTION" label="Suggestions" items={suggestions} caseId={caseDetail.id} onChanged={onSurfacesChanged} />
+        <SurfacesTab type="SUGGESTION" label={t("tabs.suggestions")} items={suggestions} caseId={caseDetail.id} onChanged={onSurfacesChanged} />
       ) : null}
       {tab === "related" ? (
-        <SurfacesTab type="RELATED_QUERY" label="Related Queries" items={related} caseId={caseDetail.id} onChanged={onSurfacesChanged} />
+        <SurfacesTab type="RELATED_QUERY" label={t("tabs.relatedQueries")} items={related} caseId={caseDetail.id} onChanged={onSurfacesChanged} />
       ) : null}
       {tab === "images" ? (
-        <SurfacesTab type="IMAGE_RESULT" label="Images" items={images} caseId={caseDetail.id} onChanged={onSurfacesChanged} />
+        <SurfacesTab type="IMAGE_RESULT" label={t("tabs.images")} items={images} caseId={caseDetail.id} onChanged={onSurfacesChanged} />
       ) : null}
       {tab === "videos" ? (
-        <SurfacesTab type="VIDEO_RESULT" label="Videos" items={videos} caseId={caseDetail.id} onChanged={onSurfacesChanged} />
+        <SurfacesTab type="VIDEO_RESULT" label={t("tabs.videos")} items={videos} caseId={caseDetail.id} onChanged={onSurfacesChanged} />
       ) : null}
       {tab === "knowledge" ? (
-        <SurfacesTab type="KNOWLEDGE_BLOCK" label="Knowledge Block" items={knowledge} caseId={caseDetail.id} onChanged={onSurfacesChanged} />
+        <SurfacesTab type="KNOWLEDGE_BLOCK" label={t("tabs.knowledgeBlock")} items={knowledge} caseId={caseDetail.id} onChanged={onSurfacesChanged} />
       ) : null}
       {tab === "screenshots" ? <ScreenshotsTab evidence={evidence} /> : null}
       {tab === "wikipedia" ? <WikipediaTab evidence={evidence} /> : null}
@@ -179,26 +177,27 @@ export function CaseTabs({
 // ---------------------------------------------------------------------------
 
 function SubjectTab({ caseDetail }: { caseDetail: CaseDetail }) {
+  const { t, fmtDate } = useDigitalProfileI18n();
   const s = caseDetail.subject;
   return (
     <div>
-      <h2 className="dp-h2">Subject</h2>
+      <h2 className="dp-h2">{t("subject.title")}</h2>
       <dl className="dp-kv">
-        <dt>Full name</dt>
+        <dt>{t("subject.fullName")}</dt>
         <dd>{s?.fullName ?? "—"}</dd>
-        <dt>Aliases</dt>
+        <dt>{t("subject.aliases")}</dt>
         <dd>{s?.aliases?.length ? s.aliases.join(", ") : "—"}</dd>
-        <dt>Birth date</dt>
-        <dd>{s?.dateOfBirth ? formatDate(s.dateOfBirth) : "—"}</dd>
-        <dt>Target regions</dt>
+        <dt>{t("subject.birthDate")}</dt>
+        <dd>{s?.dateOfBirth ? fmtDate(s.dateOfBirth) : "—"}</dd>
+        <dt>{t("subject.targetRegions")}</dt>
         <dd>{caseDetail.targetRegions.length ? caseDetail.targetRegions.join(", ") : "—"}</dd>
-        <dt>Lawful basis</dt>
+        <dt>{t("subject.lawfulBasis")}</dt>
         <dd>{caseDetail.lawfulBasis ? caseDetail.lawfulBasis.replace(/_/g, " ") : "—"}</dd>
-        <dt>Consent status</dt>
+        <dt>{t("subject.consentStatus")}</dt>
         <dd>
           <StatusBadge status={caseDetail.consentStatus} />
         </dd>
-        <dt>Notes</dt>
+        <dt>{t("subject.notes")}</dt>
         <dd>{caseDetail.notes ?? "—"}</dd>
       </dl>
     </div>
@@ -237,6 +236,7 @@ function SearchResultsTab({
   evidence: CaseEvidence;
   onChanged: () => void;
 }) {
+  const { t, tError, tSource } = useDigitalProfileI18n();
   const [engine, setEngine] = useState("GOOGLE");
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
@@ -268,14 +268,14 @@ function SearchResultsTab({
         title: title.trim() || undefined,
         classification,
       });
-      setInfo(res.deduplicated ? "Duplicate URL — existing result reused." : "Search result added.");
+      setInfo(res.deduplicated ? t("search.duplicate") : t("search.added"));
       setUrl("");
       setTitle("");
       onChanged();
     } catch (err) {
-      const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
-      const msg = err instanceof Error ? err.message : "Failed to add search result";
-      setError(errorMessage(code, msg));
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setError(tError(code, msg));
     } finally {
       setBusy(false);
     }
@@ -283,12 +283,12 @@ function SearchResultsTab({
 
   return (
     <div>
-      <h2 className="dp-h2">Search results</h2>
+      <h2 className="dp-h2">{t("search.title")}</h2>
 
       <form onSubmit={add} style={{ marginBottom: 18 }}>
         <div className="dp-form-grid">
           <div className="dp-field">
-            <label>Engine</label>
+            <label>{t("search.engine")}</label>
             <select className="dp-select" value={engine} onChange={(e) => setEngine(e.target.value)}>
               {ENGINES.map((v) => (
                 <option key={v}>{v}</option>
@@ -296,7 +296,7 @@ function SearchResultsTab({
             </select>
           </div>
           <div className="dp-field">
-            <label>Classification</label>
+            <label>{t("search.classification")}</label>
             <select
               className="dp-select"
               value={classification}
@@ -308,7 +308,7 @@ function SearchResultsTab({
             </select>
           </div>
           <div className="dp-field dp-field-full">
-            <label>URL</label>
+            <label>{t("search.url")}</label>
             <input
               className="dp-input"
               value={url}
@@ -317,13 +317,13 @@ function SearchResultsTab({
             />
           </div>
           <div className="dp-field dp-field-full">
-            <label>Title</label>
+            <label>{t("search.titleField")}</label>
             <input className="dp-input" value={title} onChange={(e) => setTitle(e.target.value)} />
           </div>
         </div>
         <div className="dp-inline" style={{ marginTop: 12 }}>
           <button className="dp-btn dp-btn-primary dp-btn-sm" disabled={busy || !url.trim()}>
-            {busy ? "Adding…" : "Add search result"}
+            {busy ? t("common.adding") : t("search.addResult")}
           </button>
           {info ? <span className="dp-muted">{info}</span> : null}
         </div>
@@ -336,7 +336,7 @@ function SearchResultsTab({
 
       <div className="dp-inline" style={{ marginBottom: 10 }}>
         <label className="dp-muted" style={{ fontSize: 13 }}>
-          Source
+          {t("common.source")}
         </label>
         <select
           className="dp-select"
@@ -345,26 +345,28 @@ function SearchResultsTab({
           onChange={(e) => setSourceFilter(e.target.value as "ALL" | "MOCK" | "REAL" | "MANUAL")}
         >
           {["ALL", "MOCK", "REAL", "MANUAL"].map((v) => (
-            <option key={v}>{v}</option>
+            <option key={v} value={v}>
+              {tSource(v)}
+            </option>
           ))}
         </select>
         <span className="dp-muted" style={{ fontSize: 12 }}>
-          {visibleResults.length} of {evidence.searchResults.length}
+          {visibleResults.length} {t("common.of")} {evidence.searchResults.length}
         </span>
       </div>
 
       {visibleResults.length === 0 ? (
-        <EmptyState title="No search results" hint="Add results manually above or adjust the source filter." />
+        <EmptyState title={t("search.emptyTitle")} hint={t("search.emptyHint")} />
       ) : (
         <table className="dp-table">
           <thead>
             <tr>
-              <th>Engine</th>
-              <th>Source</th>
-              <th>Title</th>
-              <th>Domain</th>
-              <th>Classification</th>
-              <th>Review</th>
+              <th>{t("search.engine")}</th>
+              <th>{t("common.source")}</th>
+              <th>{t("search.titleField")}</th>
+              <th>{t("search.domain")}</th>
+              <th>{t("search.classification")}</th>
+              <th>{t("search.reviewCol")}</th>
             </tr>
           </thead>
           <tbody>
@@ -374,7 +376,7 @@ function SearchResultsTab({
               <tr key={r.id}>
                 <td>{r.engine}</td>
                 <td>
-                  <Badge tone={isReal ? "ok" : "neutral"}>{isReal ? "REAL" : "MOCK"}</Badge>
+                  <Badge tone={isReal ? "ok" : "neutral"}>{isReal ? tSource("REAL") : tSource("MOCK")}</Badge>
                 </td>
                 <td>
                   <a href={r.url} target="_blank" rel="noopener noreferrer">
@@ -403,22 +405,20 @@ function SearchResultsTab({
 // ---------------------------------------------------------------------------
 
 function ScreenshotsTab({ evidence }: { evidence: CaseEvidence }) {
+  const { t, fmtDate } = useDigitalProfileI18n();
   return (
     <div>
-      <h2 className="dp-h2">Screenshots</h2>
-      <Notice>
-        Automatic SERP screenshots are not enabled. Upload/import screenshots manually or use
-        synthetic snapshots (generated from API results, not live SERP captures).
-      </Notice>
+      <h2 className="dp-h2">{t("screenshots.title")}</h2>
+      <Notice>{t("screenshots.notice")}</Notice>
       {evidence.screenshots.length === 0 ? (
-        <EmptyState title="No screenshots" hint="Screenshot uploads are done via the API/agents." />
+        <EmptyState title={t("screenshots.emptyTitle")} hint={t("screenshots.emptyHint")} />
       ) : (
         <table className="dp-table">
           <thead>
             <tr>
-              <th>Source URL</th>
-              <th>Type</th>
-              <th>Captured</th>
+              <th>{t("screenshots.sourceUrl")}</th>
+              <th>{t("screenshots.type")}</th>
+              <th>{t("screenshots.captured")}</th>
               <th>SHA-256</th>
               <th />
             </tr>
@@ -428,7 +428,7 @@ function ScreenshotsTab({ evidence }: { evidence: CaseEvidence }) {
               <tr key={s.id}>
                 <td>{s.sourceUrl ?? <span className="dp-muted">—</span>}</td>
                 <td className="dp-muted">{s.mimeType}</td>
-                <td className="dp-muted">{formatDate(s.capturedAt)}</td>
+                <td className="dp-muted">{fmtDate(s.capturedAt)}</td>
                 <td className="dp-mono">{s.sha256.slice(0, 12)}…</td>
                 <td style={{ textAlign: "right" }}>
                   <a
@@ -437,7 +437,7 @@ function ScreenshotsTab({ evidence }: { evidence: CaseEvidence }) {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    View
+                    {t("screenshots.view")}
                   </a>
                 </td>
               </tr>
@@ -462,22 +462,23 @@ function notabilityOf(snapshot: unknown): number | null {
 }
 
 function WikipediaTab({ evidence }: { evidence: CaseEvidence }) {
+  const { t, fmtDate, tSource } = useDigitalProfileI18n();
   return (
     <div>
-      <h2 className="dp-h2">Wikipedia</h2>
+      <h2 className="dp-h2">{t("wikipedia.title")}</h2>
       {evidence.wikipediaChecks.length === 0 ? (
-        <EmptyState title="No Wikipedia checks" hint={NEXT_STEP_HINT} />
+        <EmptyState title={t("wikipedia.emptyTitle")} hint={t("wikipedia.emptyHint")} />
       ) : (
         <table className="dp-table">
           <thead>
             <tr>
-              <th>Exists</th>
-              <th>Source</th>
-              <th>Language</th>
-              <th>Page title</th>
-              <th>Notability</th>
-              <th>URL</th>
-              <th>Checked</th>
+              <th>{t("wikipedia.exists")}</th>
+              <th>{t("common.source")}</th>
+              <th>{t("wikipedia.language")}</th>
+              <th>{t("wikipedia.pageTitle")}</th>
+              <th>{t("wikipedia.notability")}</th>
+              <th>{t("search.url")}</th>
+              <th>{t("wikipedia.checked")}</th>
             </tr>
           </thead>
           <tbody>
@@ -485,9 +486,9 @@ function WikipediaTab({ evidence }: { evidence: CaseEvidence }) {
               const isReal = (w.checkedBy ?? "").startsWith("real");
               return (
               <tr key={w.id}>
-                <td>{w.exists ? <Badge tone="ok">Yes</Badge> : <Badge tone="neutral">No</Badge>}</td>
+                <td>{w.exists ? <Badge tone="ok">{t("common.yes")}</Badge> : <Badge tone="neutral">{t("common.no")}</Badge>}</td>
                 <td>
-                  <Badge tone={isReal ? "ok" : "neutral"}>{isReal ? "REAL" : "MOCK"}</Badge>
+                  <Badge tone={isReal ? "ok" : "neutral"}>{isReal ? tSource("REAL") : tSource("MOCK")}</Badge>
                 </td>
                 <td>{w.language ?? "—"}</td>
                 <td>{w.pageTitle ?? "—"}</td>
@@ -495,13 +496,13 @@ function WikipediaTab({ evidence }: { evidence: CaseEvidence }) {
                 <td>
                   {w.url ? (
                     <a href={w.url} target="_blank" rel="noopener noreferrer">
-                      open
+                      {t("wikipedia.open")}
                     </a>
                   ) : (
                     "—"
                   )}
                 </td>
-                <td className="dp-muted">{formatDate(w.lastChecked)}</td>
+                <td className="dp-muted">{fmtDate(w.lastChecked)}</td>
               </tr>
               );
             })}
@@ -525,14 +526,12 @@ function citedSourcesOf(classifications: unknown): number | null {
 }
 
 function AiProfileTab({ evidence }: { evidence: CaseEvidence }) {
+  const { t, fmtDate } = useDigitalProfileI18n();
   return (
     <div>
-      <h2 className="dp-h2">AI Profile</h2>
+      <h2 className="dp-h2">{t("ai.title")}</h2>
       {evidence.aiProfiles.length === 0 ? (
-        <EmptyState
-          title="No AI profiles"
-          hint="AI summaries are evidence-based. Run the audit (Agents tab) to generate demo profiles."
-        />
+        <EmptyState title={t("ai.emptyTitle")} hint={t("ai.emptyHint")} />
       ) : (
         <div className="dp-stack">
           {evidence.aiProfiles.map((p: AiProfile) => {
@@ -541,11 +540,11 @@ function AiProfileTab({ evidence }: { evidence: CaseEvidence }) {
               <div key={p.id} className="dp-card" style={{ padding: 14 }}>
                 <div className="dp-inline" style={{ justifyContent: "space-between" }}>
                   <Badge tone="info">{p.model}</Badge>
-                  <span className="dp-muted">{formatDate(p.createdAt)}</span>
+                  <span className="dp-muted">{fmtDate(p.createdAt)}</span>
                 </div>
                 <p style={{ marginTop: 10 }}>{p.summary ?? "—"}</p>
                 <div className="dp-muted" style={{ marginTop: 8 }}>
-                  {cited !== null ? `Cited sources: ${cited} · ` : ""}
+                  {cited !== null ? `${t("ai.citedSources")}: ${cited} · ` : ""}
                   {p.disclaimer}
                 </div>
               </div>
@@ -562,24 +561,22 @@ function AiProfileTab({ evidence }: { evidence: CaseEvidence }) {
 // ---------------------------------------------------------------------------
 
 function ComplianceTab({ evidence }: { evidence: CaseEvidence }) {
+  const { t, fmtDate } = useDigitalProfileI18n();
   return (
     <div>
-      <h2 className="dp-h2">Compliance databases</h2>
+      <h2 className="dp-h2">{t("compliance.title")}</h2>
       {evidence.databaseProfiles.length === 0 ? (
-        <EmptyState
-          title="No database profiles"
-          hint="LexisNexis / Dow Jones / World-Check profiles are added via official API or manual import."
-        />
+        <EmptyState title={t("compliance.emptyTitle")} hint={t("compliance.emptyHint")} />
       ) : (
         <table className="dp-table">
           <thead>
             <tr>
-              <th>Provider</th>
-              <th>Import method</th>
-              <th>Match type</th>
-              <th>Score</th>
-              <th>Evidence</th>
-              <th>Imported</th>
+              <th>{t("compliance.provider")}</th>
+              <th>{t("compliance.importMethod")}</th>
+              <th>{t("compliance.matchType")}</th>
+              <th>{t("compliance.score")}</th>
+              <th>{t("compliance.evidence")}</th>
+              <th>{t("compliance.imported")}</th>
             </tr>
           </thead>
           <tbody>
@@ -592,7 +589,7 @@ function ComplianceTab({ evidence }: { evidence: CaseEvidence }) {
                 <td>{d.matchType ?? "—"}</td>
                 <td>{d.matchScore ?? "—"}</td>
                 <td>{d.evidenceRefs.length}</td>
-                <td className="dp-muted">{formatDate(d.importedAt)}</td>
+                <td className="dp-muted">{fmtDate(d.importedAt)}</td>
               </tr>
             ))}
           </tbody>
@@ -618,6 +615,7 @@ function RiskFindingsTab({
   evidence: CaseEvidence;
   onChanged: () => void;
 }) {
+  const { t, tError, tRisk, tStatus, tSource } = useDigitalProfileI18n();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [classifying, setClassifying] = useState(false);
@@ -654,13 +652,19 @@ function RiskFindingsTab({
     try {
       const s = await classifyRisks(caseId);
       setInfo(
-        `Classified: ${s.findingsCreated} created, ${s.findingsUpdated} updated, ${s.findingsSkippedReviewed} kept (reviewed), ${s.findingsDismissedIgnored} ignored (dismissed). Highest: ${s.highestRiskLevel}.`
+        t("risk.classifyResult", {
+          created: s.findingsCreated,
+          updated: s.findingsUpdated,
+          kept: s.findingsSkippedReviewed,
+          ignored: s.findingsDismissedIgnored,
+          highest: tRisk(s.highestRiskLevel),
+        })
       );
       onChanged();
     } catch (err) {
-      const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
-      const msg = err instanceof Error ? err.message : "Failed to classify risks";
-      setError(errorMessage(code, msg));
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setError(tError(code, msg));
     } finally {
       setClassifying(false);
     }
@@ -674,12 +678,12 @@ function RiskFindingsTab({
     try {
       const res = await buildAuditSummary(caseId);
       setInfo(
-        `Audit summary rebuilt — dismissed findings excluded from top findings. Overall risk: ${res.auditSummary.overallRiskLevel}.`
+        t("risk.rebuildResult", { risk: tRisk(res.auditSummary.overallRiskLevel) })
       );
     } catch (err) {
-      const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
-      const msg = err instanceof Error ? err.message : "Failed to rebuild audit summary";
-      setError(errorMessage(code, msg));
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setError(tError(code, msg));
     } finally {
       setRebuilding(false);
     }
@@ -693,9 +697,9 @@ function RiskFindingsTab({
       await reviewFinding(id, status);
       onChanged();
     } catch (err) {
-      const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
-      const msg = err instanceof Error ? err.message : "Failed to update finding";
-      setError(errorMessage(code, msg));
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setError(tError(code, msg));
     } finally {
       setBusyId(null);
     }
@@ -705,37 +709,37 @@ function RiskFindingsTab({
     <div>
       <div className="dp-inline" style={{ justifyContent: "space-between", alignItems: "center" }}>
         <h2 className="dp-h2" style={{ margin: 0 }}>
-          Risk findings
+          {t("risk.title")}
         </h2>
         <div className="dp-inline">
           <button className="dp-btn dp-btn-sm" disabled={rebuilding} onClick={rebuildSummary}>
-            {rebuilding ? "Rebuilding…" : "Rebuild audit summary after review"}
+            {rebuilding ? t("risk.rebuilding") : t("risk.rebuildAfterReview")}
           </button>
           <button className="dp-btn dp-btn-primary dp-btn-sm" disabled={classifying} onClick={classify}>
-            {classifying ? "Classifying…" : "Classify risks"}
+            {classifying ? t("risk.classifying") : t("risk.classifyRisks")}
           </button>
         </div>
       </div>
 
       <div className="dp-grid-cards" style={{ margin: "12px 0" }}>
         <div className="dp-card" style={{ padding: 12 }}>
-          <div className="dp-muted">Total</div>
+          <div className="dp-muted">{t("risk.total")}</div>
           <div style={{ fontSize: 22 }}>{counts.total}</div>
         </div>
         <div className="dp-card" style={{ padding: 12 }}>
-          <div className="dp-muted">Pending</div>
+          <div className="dp-muted">{t("risk.pending")}</div>
           <div style={{ fontSize: 22 }}>{counts.pending}</div>
         </div>
         <div className="dp-card" style={{ padding: 12 }}>
-          <div className="dp-muted">Reviewed</div>
+          <div className="dp-muted">{t("risk.reviewed")}</div>
           <div style={{ fontSize: 22 }}>{counts.reviewed}</div>
         </div>
         <div className="dp-card" style={{ padding: 12 }}>
-          <div className="dp-muted">Dismissed</div>
+          <div className="dp-muted">{t("risk.dismissed")}</div>
           <div style={{ fontSize: 22 }}>{counts.dismissed}</div>
         </div>
         <div className="dp-card" style={{ padding: 12 }}>
-          <div className="dp-muted">Highest risk</div>
+          <div className="dp-muted">{t("risk.highestRisk")}</div>
           <div style={{ marginTop: 4 }}>
             <RiskBadge severity={highestLabel} />
           </div>
@@ -756,41 +760,38 @@ function RiskFindingsTab({
       <div className="dp-inline" style={{ marginBottom: 12, flexWrap: "wrap" }}>
         <select className="dp-select" style={{ maxWidth: 160 }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           {["ALL", "PENDING", "REVIEWED", "DISMISSED"].map((v) => (
-            <option key={v}>{v}</option>
+            <option key={v} value={v}>{v === "ALL" ? tSource("ALL") : tStatus(v)}</option>
           ))}
         </select>
         <select className="dp-select" style={{ maxWidth: 160 }} value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)}>
           {["ALL", ...RISK_LEVELS].map((v) => (
-            <option key={v}>{v}</option>
+            <option key={v} value={v}>{v === "ALL" ? tSource("ALL") : tRisk(v)}</option>
           ))}
         </select>
         <select className="dp-select" style={{ maxWidth: 200 }} value={themeFilter} onChange={(e) => setThemeFilter(e.target.value)}>
           {["ALL", ...themes].map((v) => (
-            <option key={v}>{v}</option>
+            <option key={v} value={v}>{v === "ALL" ? tSource("ALL") : v}</option>
           ))}
         </select>
         <span className="dp-muted" style={{ fontSize: 12 }}>
-          {visible.length} of {findings.length}
+          {visible.length} {t("common.of")} {findings.length}
         </span>
       </div>
 
       {findings.length === 0 ? (
-        <EmptyState
-          title="No risk findings"
-          hint="Click “Classify risks” to derive evidence-first findings, or add manual findings via the API. All findings require human review before the report."
-        />
+        <EmptyState title={t("risk.emptyTitle")} hint={t("risk.emptyHint")} />
       ) : visible.length === 0 ? (
-        <EmptyState title="No findings match the filters" hint="Adjust the filters above." />
+        <EmptyState title={t("risk.noMatch")} hint={t("risk.noMatchHint")} />
       ) : (
         <table className="dp-table">
           <thead>
             <tr>
-              <th>Severity</th>
-              <th>Theme</th>
-              <th>Finding</th>
-              <th>Conf.</th>
-              <th>Evidence</th>
-              <th>Review</th>
+              <th>{t("risk.severity")}</th>
+              <th>{t("risk.theme")}</th>
+              <th>{t("risk.finding")}</th>
+              <th>{t("risk.confidence")}</th>
+              <th>{t("risk.evidence")}</th>
+              <th>{t("risk.reviewCol")}</th>
               <th />
             </tr>
           </thead>
@@ -811,7 +812,7 @@ function RiskFindingsTab({
                   {f.summary ? <div className="dp-muted">{f.summary}</div> : null}
                   {f.rationale ? (
                     <div className="dp-muted" style={{ fontSize: 11, marginTop: 2 }}>
-                      Why: {f.rationale}
+                      {t("risk.why")}: {f.rationale}
                     </div>
                   ) : null}
                   {f.evidenceRefs.length > 0 ? (
@@ -844,14 +845,14 @@ function RiskFindingsTab({
                         disabled={busyId === f.id}
                         onClick={() => review(f.id, "REVIEWED")}
                       >
-                        Mark reviewed
+                        {t("risk.markReviewed")}
                       </button>
                       <button
                         className="dp-btn dp-btn-sm dp-btn-danger"
                         disabled={busyId === f.id}
                         onClick={() => review(f.id, "DISMISSED")}
                       >
-                        Dismiss
+                        {t("common.dismiss")}
                       </button>
                     </div>
                   ) : (
