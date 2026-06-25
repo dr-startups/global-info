@@ -19,6 +19,7 @@ from pydantic import BaseModel
 
 from convert_pdf import convert_to_pdf
 from render_pptx import build_pptx
+from report_i18n import normalize_lang
 
 DATA_ROOT = os.environ.get("DATA_ROOT", "/data")
 
@@ -32,6 +33,7 @@ class RenderRequest(BaseModel):
     templateVersion: str | None = None
     audience: str | None = None
     watermarkMode: str | None = None
+    reportLanguage: str | None = None
 
 
 class FileInfo(BaseModel):
@@ -47,6 +49,7 @@ class RenderResponse(BaseModel):
     slideCount: int = 0
     audience: str = "internal"
     watermarkMode: str = "draft"
+    reportLanguage: str = "ru"
     warnings: list[str] = []
 
 
@@ -84,9 +87,20 @@ def render(req: RenderRequest) -> RenderResponse:
     audience = (req.audience or "internal").strip().lower()
     watermark_mode = (req.watermarkMode or "draft").strip().lower()
 
+    # Report language: explicit request wins, else what report_json already carries.
+    report_json = req.reportJson
+    embedded_lang = report_json.get("reportLanguage") or (
+        report_json.get("meta", {}) or {}
+    ).get("language")
+    report_language = normalize_lang(req.reportLanguage or embedded_lang)
+    report_json["reportLanguage"] = report_language
+    meta = report_json.get("meta")
+    if isinstance(meta, dict):
+        meta["language"] = report_language
+
     try:
         warnings, slide_count = build_pptx(
-            req.reportJson, pptx_path, DATA_ROOT, version, audience, watermark_mode
+            report_json, pptx_path, DATA_ROOT, version, audience, watermark_mode
         )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"PPTX build failed: {exc}")
@@ -103,5 +117,6 @@ def render(req: RenderRequest) -> RenderResponse:
         slideCount=slide_count,
         audience=audience,
         watermarkMode=watermark_mode,
+        reportLanguage=report_language,
         warnings=warnings or [],
     )

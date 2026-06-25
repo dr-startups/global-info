@@ -34,14 +34,19 @@ from report_template_v1 import (
     _section,
     _table,
     _textbox,
+    set_table_strings,
 )
 from pptx.util import Emu, Pt
 
 
 # --- shared mini helpers -----------------------------------------------------
 
+# Localized "Metric"/"Value" headers for key/value tables, set per render.
+_KV_HEADERS = ["Metric", "Value"]
+
+
 def _kv_table(slide, top, pairs: list[tuple[str, Any]]):
-    return _table(slide, top, ["Metric", "Value"], [[k, v] for k, v in pairs])
+    return _table(slide, top, list(_KV_HEADERS), [[k, v] for k, v in pairs])
 
 
 def _note(slide, top, text: str):
@@ -73,7 +78,7 @@ def _p_cover(prs, vm):
     r.font.color.rgb = WHITE
     for text, size, color in [
         (c["subjectFullName"], 26, (0x9E, 0xC2, 0xF0)),
-        (f"Audit date: {c['auditDate']}", 14, (0xC9, 0xD6, 0xEA)),
+        (f"{vm['labels']['audit_date']}: {c['auditDate']}", 14, (0xC9, 0xD6, 0xEA)),
         (c["brand"], 14, (0xC9, 0xD6, 0xEA)),
         (" · ".join(x for x in [c.get("website", ""), c.get("contact", "")] if x), 12, (0x8A, 0x9C, 0xBC)),
     ]:
@@ -99,15 +104,17 @@ def _p_cover(prs, vm):
 
 
 def _p_contents(prs, vm):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
-    top = _header(slide, "Contents")
+    top = _header(slide, L["contents"])
     _bullets(slide, top, vm["contents"]["sections"])
 
 
 def _p_executive(prs, vm):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     e = vm["executiveSummary"]
-    top = _header(slide, "Executive summary", f"Overall risk: {e['overallRiskLevel']}")
+    top = _header(slide, L["executive_summary"], f"{L['overall_risk']}: {e['overallRiskLevel']}")
     _risk_badge(slide, Emu(7000000), Emu(228600), e["overallRiskLevel"])
     lines = list(e.get("bullets", []))
     for g in e.get("keyFindings", [])[:5]:
@@ -115,32 +122,34 @@ def _p_executive(prs, vm):
             lines.append(g["title"])
     top = _bullets(slide, top, lines[:10])
     if e.get("dataQualityWarning"):
-        _note(slide, top, f"Data quality: {e['dataQualityWarning']}")
+        _note(slide, top, f"{L['pg_data_quality_plain']}: {e['dataQualityWarning']}")
 
 
 def _p_risk_matrix(prs, vm):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     rm = vm["riskMatrix"]
-    top = _header(slide, "Compliance risk matrix", rm["subject"])
+    top = _header(slide, L["compliance_risk_matrix"], rm["subject"])
     _risk_badge(slide, Emu(7000000), Emu(228600), rm["overallRiskLevel"])
     rows = [[r["area"], r["problems"], r["level"], r["consequences"]] for r in rm["rows"]]
-    _table(slide, top, ["Compliance area", "Problems & risks", "Risk", "Possible consequences"], rows)
+    _table(slide, top, [L["th_compliance_area"], L["th_problems_risks"], L["th_risk"], L["th_consequences"]], rows)
 
 
 def _p_overview(prs, vm):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     o = vm["overview"]
-    top = _header(slide, "Digital profile overview")
+    top = _header(slide, L["digital_profile_overview"])
     _risk_badge(slide, Emu(7000000), Emu(228600), o.get("overallRiskLevel", "UNKNOWN"))
     _kv_table(
         slide,
         top,
         [
-            ("RU negative share", o.get("negativeShareRu", "0%")),
-            ("UAE negative share", o.get("negativeShareUae", "0%")),
-            ("Search results (total / negative)", f"{o.get('searchTotal', 0)} / {o.get('searchNegative', 0)}"),
-            ("Wikipedia", o.get("wikipediaStatus", "")),
-            ("Compliance", o.get("complianceSummary", "")),
+            (L["m_ru_negative_share"], o.get("negativeShareRu", "0%")),
+            (L["m_uae_negative_share"], o.get("negativeShareUae", "0%")),
+            (L["ov_search_total_neg"], f"{o.get('searchTotal', 0)} / {o.get('searchNegative', 0)}"),
+            (L["area_wikipedia"], o.get("wikipediaStatus", "")),
+            (L["sec_compliance"], o.get("complianceSummary", "")),
         ],
     )
 
@@ -151,14 +160,14 @@ def _p_overview(prs, vm):
 
 def _rb(block_key: str, builder: Callable[[Any, dict, dict], None], title: str, subtitle: str | None = None) -> Callable:
     def page(prs, vm):
+        L = vm["labels"]
         slide = _section(prs, vm, vm["meta"].get("watermark"))
         blk = vm[block_key]
-        sub = subtitle
         full_title = title.replace("{label}", blk["label"])
-        top = _header(slide, full_title, sub)
+        top = _header(slide, full_title, subtitle)
         _risk_badge(slide, Emu(7000000), Emu(228600), blk["riskLevel"])
         if not blk["present"]:
-            _note(slide, top, blk["noDataText"] or "No evidence collected for this region.")
+            _note(slide, top, blk["noDataText"] or L["no_evidence_region"].format(label=blk["label"]))
             return
         builder(slide, blk, vm)
 
@@ -166,51 +175,55 @@ def _rb(block_key: str, builder: Callable[[Any, dict, dict], None], title: str, 
 
 
 def _b_summary(slide, blk, vm):
+    L = vm["labels"]
     s = blk["summary"]
     top = Emu(1280160)
     top = _kv_table(
         slide,
         top,
         [
-            ("Organic total", s.get("organicTotal", 0)),
-            ("Organic negative", s.get("organicNegative", 0)),
-            ("Negative share", s.get("organicNegativeShare", "0%")),
-            ("Suggestions (neg/total)", s.get("suggestions", "0/0")),
-            ("Images (neg/total)", s.get("images", "0/0")),
-            ("Videos (neg/total)", s.get("videos", "0/0")),
-            ("Knowledge block", s.get("knowledgeBlockStatus", "ABSENT")),
+            (L["m_organic_total"], s.get("organicTotal", 0)),
+            (L["m_organic_negative"], s.get("organicNegative", 0)),
+            (L["m_negative_share"], s.get("organicNegativeShare", "0%")),
+            (L["m_suggestions_nt"], s.get("suggestions", "0/0")),
+            (L["m_images_nt"], s.get("images", "0/0")),
+            (L["m_videos_nt"], s.get("videos", "0/0")),
+            (L["m_knowledge"], s.get("knowledgeBlockStatus", "ABSENT")),
         ],
     )
     _bullets(slide, top, [blk["conclusion"]] if blk["conclusion"] else [])
 
 
 def _b_organic_overview(slide, blk, vm):
+    L = vm["labels"]
     o = blk["organicOverview"]
     top = Emu(1280160)
     top = _kv_table(
         slide,
         top,
         [
-            ("Organic total", o.get("organicTotal", 0)),
-            ("Organic negative", o.get("organicNegative", 0)),
-            ("Unique negative URLs", o.get("uniqueNegativeUrls", 0)),
-            ("Total unique URLs", o.get("totalUniqueUrls", 0)),
-            ("Negative share", o.get("negativeShare", "0%")),
+            (L["m_organic_total"], o.get("organicTotal", 0)),
+            (L["m_organic_negative"], o.get("organicNegative", 0)),
+            (L["m_unique_neg_urls"], o.get("uniqueNegativeUrls", 0)),
+            (L["m_unique_neg_urls"], o.get("totalUniqueUrls", 0)),
+            (L["m_negative_share"], o.get("negativeShare", "0%")),
         ],
     )
     if o.get("observedQueries"):
-        _bullets(slide, top, ["Observed suggestions/queries:"] + o["observedQueries"])
+        _bullets(slide, top, [L["observed_queries"]] + o["observedQueries"])
 
 
 def _b_top_results(slide, blk, vm):
+    L = vm["labels"]
     rows = [[x["provider"], x["rank"], x["domain"], x["title"], x["classification"]] for x in blk["topResults"]]
     if rows:
-        _table(slide, Emu(1280160), ["Provider", "Rank", "Domain", "Title", "Class"], rows)
+        _table(slide, Emu(1280160), [L["th_provider"], L["th_rank"], L["th_domain"], L["th_title"], L["th_class"]], rows)
     else:
-        _note(slide, Emu(1280160), "No organic results collected for this region.")
+        _note(slide, Emu(1280160), L["nd_no_organic_region"])
 
 
 def _b_themes(slide, blk, vm):
+    L = vm["labels"]
     t = blk["themes"]
     top = Emu(1280160)
     themes = [f"{x['theme']} ({x['count']})" for x in t["topThemes"]]
@@ -218,80 +231,85 @@ def _b_themes(slide, blk, vm):
         slide,
         top,
         [
-            "Top themes: " + (", ".join(themes) or "—"),
-            "Negative domains: " + (", ".join(t["negativeDomains"]) or "—"),
+            L["top_themes"] + " " + (", ".join(themes) or "—"),
+            L["negative_domains"] + " " + (", ".join(t["negativeDomains"]) or "—"),
         ],
     )
     rows = [[u["title"], u["domain"], u["classification"]] for u in t["negativeUrls"]]
     if rows:
-        _table(slide, top, ["Title", "Domain", "Class"], rows)
+        _table(slide, top, [L["th_title"], L["th_domain"], L["th_class"]], rows)
     else:
-        _note(slide, top, "No negative URLs detected.")
+        _note(slide, top, L["nd_no_negative_urls"])
 
 
 def _b_snapshots(slide, blk, vm):
+    L = vm["labels"]
     _bullets(
         slide,
         Emu(1280160),
         [
-            f"Knowledge block status: {blk['summary'].get('knowledgeBlockStatus', 'ABSENT')}.",
-            "Screenshot evidence is shown where captured and stored privately.",
-            "Synthetic snapshots are generated from API data — they are NOT live SERP screenshots.",
-            "Live browser automation / scraping is not used by this audit.",
+            L["knowledge_block_status"].format(status=blk["summary"].get("knowledgeBlockStatus", "ABSENT")),
+            *L["snapshot_lines"],
         ],
     )
 
 
 def _b_suggestions(slide, blk, vm):
+    L = vm["labels"]
     sg = blk["suggestions"]
-    top = _header_metrics(slide, f"Total: {sg['total']}  ·  Negative: {sg['negative']}")
+    top = _header_metrics(slide, f"{L['m_total']}: {sg['total']}  ·  {L['m_negative']}: {sg['negative']}")
     if sg["list"]:
         _bullets(slide, top, sg["list"])
     else:
-        _note(slide, top, "No suggestions collected for this region.")
+        _note(slide, top, L["nd_no_suggestions"])
 
 
 def _b_related(slide, blk, vm):
+    L = vm["labels"]
     rq = blk["relatedQueries"]
-    top = _header_metrics(slide, f"Total: {rq['total']}  ·  Negative: {rq['negative']}")
+    top = _header_metrics(slide, f"{L['m_total']}: {rq['total']}  ·  {L['m_negative']}: {rq['negative']}")
     if rq["list"]:
         _bullets(slide, top, rq["list"])
     else:
-        _note(slide, top, "No related queries collected for this region.")
+        _note(slide, top, L["nd_no_related"])
 
 
 def _b_images(slide, blk, vm):
+    L = vm["labels"]
     im = blk["images"]
-    top = _header_metrics(slide, f"Images total: {im['total']}  ·  Negative: {im['negative']}")
+    top = _header_metrics(slide, f"{L['m_images_total']}: {im['total']}  ·  {L['m_negative']}: {im['negative']}")
     rows = [[i["title"], i["source"]] for i in im["items"]]
     if rows:
-        _table(slide, top, ["Image title", "Source"], rows)
+        _table(slide, top, [L["th_image_title"], L["th_source"]], rows)
     else:
-        _note(slide, top, "No image results collected for this region.")
+        _note(slide, top, L["nd_no_images"])
 
 
 def _b_videos(slide, blk, vm):
+    L = vm["labels"]
     vi = blk["videos"]
-    top = _header_metrics(slide, f"Videos total: {vi['total']}  ·  Negative: {vi['negative']}")
+    top = _header_metrics(slide, f"{L['m_videos_total']}: {vi['total']}  ·  {L['m_negative']}: {vi['negative']}")
     rows = [[v["title"], v["source"]] for v in vi["items"]]
     if rows:
-        _table(slide, top, ["Video title", "Source"], rows)
+        _table(slide, top, [L["th_video_title"], L["th_source"]], rows)
     else:
-        _note(slide, top, "No video results collected for this region.")
+        _note(slide, top, L["nd_no_videos"])
 
 
 def _b_images_videos(slide, blk, vm):
+    L = vm["labels"]
     im, vi = blk["images"], blk["videos"]
-    top = _header_metrics(slide, f"Images: {im['negative']}/{im['total']}  ·  Videos: {vi['negative']}/{vi['total']}")
+    top = _header_metrics(slide, f"{L['m_images_nt']}: {im['negative']}/{im['total']}  ·  {L['m_videos_nt']}: {vi['negative']}/{vi['total']}")
     rows = [["Image", i["title"], i["source"]] for i in im["items"]]
     rows += [["Video", v["title"], v["source"]] for v in vi["items"]]
     if rows:
-        _table(slide, top, ["Type", "Title", "Source"], rows)
+        _table(slide, top, [L["th_type"], L["th_title"], L["th_source"]], rows)
     else:
-        _note(slide, top, "No image/video results collected for this region.")
+        _note(slide, top, L["nd_no_media"])
 
 
 def _b_knowledge(slide, blk, vm):
+    L = vm["labels"]
     kb = blk["knowledgeBlock"]
     top = Emu(1280160)
     if kb and kb.get("title"):
@@ -299,18 +317,19 @@ def _b_knowledge(slide, blk, vm):
             slide,
             top,
             [
-                ("Status", kb.get("status", "ABSENT")),
-                ("Title", kb.get("title", "")),
-                ("Source", kb.get("source", "") or "—"),
+                (L["m_status"], kb.get("status", "ABSENT")),
+                (L["th_title"], kb.get("title", "")),
+                (L["th_source"], kb.get("source", "") or "—"),
             ],
         )
         if kb.get("snippet"):
             _bullets(slide, top, [kb["snippet"]])
     else:
-        _note(slide, top, f"Knowledge block status: {(kb or {}).get('status', 'ABSENT')}. No knowledge block content collected.")
+        _note(slide, top, L["no_knowledge_content"].format(status=(kb or {}).get("status", "ABSENT")))
 
 
 def _b_wikipedia(slide, blk, vm):
+    L = vm["labels"]
     w = blk["wikipedia"]
     top = Emu(1280160)
     if w.get("exists"):
@@ -318,79 +337,79 @@ def _b_wikipedia(slide, blk, vm):
             slide,
             top,
             [
-                ("Page URL", w.get("pageUrl") or "—"),
-                ("Language", w.get("language") or "—"),
-                ("Notability score", w.get("notabilityScore", 0)),
+                ("URL", w.get("pageUrl") or "—"),
+                (L["m_language"], w.get("language") or "—"),
+                (L["m_notability"], w.get("notabilityScore", 0)),
             ],
         )
         _bullets(slide, top, [w.get("conclusion", "")])
     else:
-        _bullets(
-            slide,
-            top,
-            [
-                "Wikipedia article not found.",
-                "This indicates the absence of a controlled authoritative profile — it is a low/medium profile risk, NOT an adverse fact.",
-            ],
-        )
+        _bullets(slide, top, [L["wiki_not_found_title"] + ".", *L["wiki_not_found_lines"]])
 
 
 def _b_wiki_knowledge(slide, blk, vm):
+    L = vm["labels"]
     w = blk["wikipedia"]
     kb = blk["knowledgeBlock"]
     top = Emu(1280160)
+    state = L["wiki_page_exists"] if w.get("exists") else L["wiki_no_page"]
     _bullets(
         slide,
         top,
         [
-            f"Wikipedia: {'page exists' if w.get('exists') else 'no page found'} (language: {w.get('language') or '—'}).",
-            f"Knowledge block status: {(kb or {}).get('status', 'ABSENT')}.",
-            "Relevant language versions are reviewed where available; no data is treated as neutral.",
+            L["wiki_context_line"].format(state=state, lang=w.get("language") or "—"),
+            L["wiki_kb_line"].format(status=(kb or {}).get("status", "ABSENT")),
+            L["wiki_review_line"],
         ],
     )
 
 
 def _b_findings(slide, blk, vm):
+    L = vm["labels"]
     rows = [[f["severity"], f["theme"], f["title"], f["reviewStatus"], f["evidenceCount"]] for f in blk["riskFindings"]]
     if rows:
-        _table(slide, Emu(1280160), ["Severity", "Theme", "Finding", "Review", "Evidence"], rows)
+        _table(slide, Emu(1280160), [L["th_severity"], L["th_theme"], L["th_finding"], L["th_review"], L["th_evidence"]], rows)
     else:
-        _note(slide, Emu(1280160), "No risk findings for this region. Run the Risk Classifier to populate.")
+        _note(slide, Emu(1280160), L["nd_no_findings_region"])
 
 
 def _b_data_quality(slide, blk, vm):
+    L = vm["labels"]
     dq = blk["dataQuality"]
     top = _kv_table(
         slide,
         Emu(1280160),
         [
-            ("Organic evidence", dq.get("organic", 0)),
-            ("Surface evidence", dq.get("surfaces", 0)),
+            (L["m_organic_evidence"], dq.get("organic", 0)),
+            (L["m_surface_evidence"], dq.get("surfaces", 0)),
         ],
     )
-    _bullets(slide, top, dq.get("warnings") or ["Evidence coverage is adequate for a preliminary regional assessment."])
+    _bullets(slide, top, dq.get("warnings") or [L["coverage_adequate_region"]])
 
 
 def _b_recommended(slide, blk, vm):
-    _bullets(slide, Emu(1280160), blk.get("recommendedActions") or ["Expand data collection for this region."])
+    L = vm["labels"]
+    _bullets(slide, Emu(1280160), blk.get("recommendedActions") or [L["expand_region_collection"]])
 
 
 def _b_evidence(slide, blk, vm):
+    L = vm["labels"]
     rows = [[e["title"], e["domain"], e["provider"], e["classification"]] for e in blk["evidenceAppendix"]]
     if rows:
-        _table(slide, Emu(1280160), ["Title", "Domain", "Provider", "Class"], rows)
+        _table(slide, Emu(1280160), [L["th_title"], L["th_domain"], L["th_provider"], L["th_class"]], rows)
     else:
-        _note(slide, Emu(1280160), "No evidence to list for this region.")
+        _note(slide, Emu(1280160), L["nd_no_evidence_region"])
 
 
 def _b_conclusion(slide, blk, vm):
+    L = vm["labels"]
     top = Emu(1280160)
     _bullets(
         slide,
         top,
         [
-            f"Region risk level: {blk['riskLevel']}.",
-            blk["conclusion"] or "Region assessment is preliminary and requires manual confirmation.",
+            f"{L['region_risk']}: {blk['riskLevel']}.",
+            blk["conclusion"] or L["interim_conclusion_fallback"],
         ],
     )
 
@@ -410,57 +429,61 @@ def _header_metrics(slide, subtitle: str):
 # ===========================================================================
 
 def _p_compliance_overview(prs, vm):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     c = vm["compliance"]
-    top = _header(slide, "Compliance databases — overview")
+    top = _header(slide, L["compliance_overview_title"])
     top = _kv_table(
         slide,
         top,
         [
-            ("Providers checked", ", ".join(c["providersChecked"]) or "—"),
-            ("Active matches", c["activeMatches"]),
-            ("PEP / RCA", f"{c['pepMatches']} / {c['rcaMatches']}"),
-            ("Sanctions", c["sanctionsMatches"]),
-            ("Adverse media", c["adverseMediaMatches"]),
+            (L["providers_checked"], ", ".join(c["providersChecked"]) or "—"),
+            (L["m_active_matches"], c["activeMatches"]),
+            (L["m_pep_rca"], f"{c['pepMatches']} / {c['rcaMatches']}"),
+            (L["m_sanctions"], c["sanctionsMatches"]),
+            (L["m_adverse_media"], c["adverseMediaMatches"]),
         ],
     )
     _bullets(slide, top, [c["conclusion"]] if c["conclusion"] else [])
 
 
 def _p_compliance_provider(prs, vm, key: str, title: str):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     c = vm["compliance"]
     top = _header(slide, title)
     rows = [[r["provider"], r["importMethod"], r["matchType"], r["score"]] for r in c[key]]
     if rows:
-        _table(slide, top, ["Provider", "Source method", "Category", "Score"], rows)
+        _table(slide, top, [L["th_provider"], L["th_source_method"], L["th_category"], L["th_score"]], rows)
     else:
-        _note(slide, top, "No screening records for these providers (manual import or official API required).")
+        _note(slide, top, L["nd_no_screening"])
 
 
 def _p_compliance_findings(prs, vm):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     c = vm["compliance"]
-    top = _header(slide, "Compliance database — risk findings")
+    top = _header(slide, L["compliance_findings_title"])
     rows = [[f["severity"], f["theme"], f["title"], f["reviewStatus"], f["evidenceCount"]] for f in c["findings"]]
     if rows:
-        _table(slide, top, ["Severity", "Theme", "Finding", "Review", "Evidence"], rows)
+        _table(slide, top, [L["th_severity"], L["th_theme"], L["th_finding"], L["th_review"], L["th_evidence"]], rows)
     else:
-        _note(slide, top, "No compliance-database risk findings recorded.")
+        _note(slide, top, L["nd_no_compliance_findings"])
 
 
 def _p_final(prs, vm):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     f = vm["finalConclusion"]
-    top = _header(slide, "Final dynamic audit conclusion", f"Overall risk: {f['overallRiskLevel']}")
+    top = _header(slide, L["final_title"], f"{L['overall_risk']}: {f['overallRiskLevel']}")
     _risk_badge(slide, Emu(7000000), Emu(228600), f["overallRiskLevel"])
     themes = ", ".join(f"{t['theme']} ({t['count']})" for t in f.get("topThemes", [])) or "—"
-    lines = [f"Highest risk themes: {themes}"]
+    lines = [L["highest_risk_themes_inline"].format(themes=themes)]
     lines += list(f.get("recommendedActions", []))[:5]
     if f.get("missingSections"):
-        lines.append("Missing sections: " + ", ".join(f["missingSections"]))
+        lines.append(L["missing_sections_inline"].format(items=", ".join(f["missingSections"])))
     top = _bullets(slide, top, lines)
-    _note(slide, top, "The following pages present our services and proposed remediation plan.")
+    _note(slide, top, L["next_pages_note"])
 
 
 # ===========================================================================
@@ -468,58 +491,17 @@ def _p_final(prs, vm):
 # ===========================================================================
 
 def _p_offer(prs, vm):
-    offer = vm["offer"]
-
-    def slide_with(title, subtitle, bullets=None, table=None):
+    # Render the already-localized offer pages from the view model so the
+    # commercial block follows the report language (RU / EN).
+    for page in vm["offerPages"]:
         slide = prs.slides.add_slide(_blank(prs))
         _bg(slide, WHITE)
-        top = _header(slide, title, subtitle)
-        if bullets:
-            top = _bullets(slide, top, bullets)
-        if table:
-            _table(slide, top, table[0], table[1])
-
-    name = offer.get("productName", "Digital Profile Audit")
-    company = offer.get("companyName", name)
-    slide_with(name, "Services & solutions", ["Evidence-first digital profile and compliance audits."])
-    slide_with("Product overview", company, [
-        "Open-source search audit across regions.",
-        "Compliance database screening via official API or manual import.",
-        "Deterministic risk classification with human review.",
-    ])
-    slide_with("Solution 1 — Digital Profile", offer.get("solution1Title", "Basic"), [
-        "RU + international search audit.", "Search surfaces and negative-link analysis.",
-    ])
-    slide_with("Solution 1 — Work plan", offer.get("solution1Title", "Basic"), [
-        "Scope & lawful basis.", "Search + surfaces collection.", "Risk findings & review.",
-    ])
-    slide_with("Solution 1 — Expected results", offer.get("solution1Title", "Basic"), [
-        "Clear map of the digital footprint.", "Prioritised negative items to address.",
-    ])
-    slide_with("Solution 1 — Pricing", _price(offer, offer.get("solution1Price")), [offer.get("pricingNotes", "")])
-    slide_with("Solution 2 — Compliance Databases", offer.get("solution2Title", "Standard"), [
-        "Dow Jones / LexisNexis / World-Check screening.", "PEP / RCA / sanctions / adverse-media categorization.",
-    ])
-    slide_with("Solution 2 — Work plan", offer.get("solution2Title", "Standard"), [
-        "Provider screening (official API / manual import).", "Match verification & documentation.",
-    ])
-    slide_with("Solution 2 — Pricing", _price(offer, offer.get("solution2Price")), [offer.get("pricingNotes", "")])
-    slide_with("Solution 3 — Wikipedia & Authority", offer.get("solution3Title", "Enterprise"), [
-        "Authoritative profile assessment.", "Knowledge-panel consistency checks.",
-    ])
-    slide_with("Solution 3 — Work plan", offer.get("solution3Title", "Enterprise"), [
-        "Notability review.", "Authoritative source strategy.", "Ongoing monitoring.",
-    ])
-    slide_with("Solution 3 — Pricing", _price(offer, offer.get("solution3Price")), [offer.get("pricingNotes", "")])
-    slide_with("Process / Timeline", "How an engagement runs", [
-        "1. Scope & lawful basis.", "2. Evidence collection.", "3. Risk classification.",
-        "4. Analyst review.", "5. Report delivery (PPTX/PDF).",
-    ])
-    slide_with("About / Contacts", company, [
-        f"Contact: {offer.get('contactEmail', '')}",
-        f"Website: {offer.get('website', '')}",
-        "Reports are advisory; all findings require manual verification.",
-    ])
+        top = _header(slide, page.get("title", ""), page.get("subtitle"))
+        if page.get("bullets"):
+            top = _bullets(slide, top, page["bullets"])
+        tbl = page.get("table")
+        if tbl and tbl.get("columns"):
+            _table(slide, top, tbl["columns"], tbl.get("rows", []))
 
 
 # ===========================================================================
@@ -527,38 +509,42 @@ def _p_offer(prs, vm):
 # ===========================================================================
 
 def build_report_v2(report_json: dict, prs, data_root: str, warnings: list[str]) -> None:
+    global _KV_HEADERS
     vm, vm_warnings = build_view_model_v2(report_json)
     warnings.extend(vm_warnings)
+    L = vm["labels"]
+    set_table_strings(L["showing_top"])
+    _KV_HEADERS = [L["th_metric"], L["th_value"]]
 
     ru_pages = [
-        ("ru_summary", _rb("ru", _b_summary, "{label} — audit summary")),
-        ("ru_organic", _rb("ru", _b_organic_overview, "{label} — organic search overview")),
-        ("ru_results", _rb("ru", _b_top_results, "{label} — top search results")),
-        ("ru_themes", _rb("ru", _b_themes, "{label} — negative publications & themes")),
-        ("ru_snapshots", _rb("ru", _b_snapshots, "{label} — search screens / snapshots")),
-        ("ru_suggestions", _rb("ru", _b_suggestions, "{label} — search suggestions")),
-        ("ru_related", _rb("ru", _b_related, "{label} — related queries")),
-        ("ru_images", _rb("ru", _b_images, "{label} — images")),
-        ("ru_videos", _rb("ru", _b_videos, "{label} — videos")),
-        ("ru_knowledge", _rb("ru", _b_knowledge, "{label} — knowledge block")),
-        ("ru_wikipedia", _rb("ru", _b_wikipedia, "{label} — Wikipedia")),
-        ("ru_findings", _rb("ru", _b_findings, "{label} — risk findings")),
-        ("ru_quality", _rb("ru", _b_data_quality, "{label} — data quality")),
-        ("ru_recommended", _rb("ru", _b_recommended, "{label} — recommended actions")),
-        ("ru_evidence", _rb("ru", _b_evidence, "{label} — evidence appendix")),
-        ("ru_conclusion", _rb("ru", _b_conclusion, "{label} — interim conclusion")),
+        ("ru_summary", _rb("ru", _b_summary, L["pg_audit_summary"])),
+        ("ru_organic", _rb("ru", _b_organic_overview, L["pg_organic_overview"])),
+        ("ru_results", _rb("ru", _b_top_results, L["pg_top_results"])),
+        ("ru_themes", _rb("ru", _b_themes, L["pg_neg_publications"])),
+        ("ru_snapshots", _rb("ru", _b_snapshots, L["pg_search_screens"])),
+        ("ru_suggestions", _rb("ru", _b_suggestions, L["pg_suggestions"])),
+        ("ru_related", _rb("ru", _b_related, L["pg_related_queries"])),
+        ("ru_images", _rb("ru", _b_images, L["pg_images"])),
+        ("ru_videos", _rb("ru", _b_videos, L["pg_videos"])),
+        ("ru_knowledge", _rb("ru", _b_knowledge, L["pg_knowledge_block"])),
+        ("ru_wikipedia", _rb("ru", _b_wikipedia, L["pg_wikipedia"])),
+        ("ru_findings", _rb("ru", _b_findings, L["pg_risk_findings"])),
+        ("ru_quality", _rb("ru", _b_data_quality, L["pg_data_quality"])),
+        ("ru_recommended", _rb("ru", _b_recommended, L["pg_recommended"])),
+        ("ru_evidence", _rb("ru", _b_evidence, L["pg_evidence_appendix"])),
+        ("ru_conclusion", _rb("ru", _b_conclusion, L["pg_interim_conclusion"])),
     ]
     intl_pages = [
-        ("intl_summary", _rb("intl", _b_summary, "{label} — audit summary")),
-        ("intl_organic", _rb("intl", _b_organic_overview, "{label} — organic search overview")),
-        ("intl_results", _rb("intl", _b_top_results, "{label} — top search results")),
-        ("intl_themes", _rb("intl", _b_themes, "{label} — negative themes")),
-        ("intl_suggestions", _rb("intl", _b_suggestions, "{label} — suggestions")),
-        ("intl_media", _rb("intl", _b_images_videos, "{label} — images & videos")),
-        ("intl_wiki", _rb("intl", _b_wiki_knowledge, "{label} — Wikipedia / knowledge context")),
-        ("intl_findings", _rb("intl", _b_findings, "{label} — risk findings")),
-        ("intl_quality", _rb("intl", _b_data_quality, "{label} — data quality")),
-        ("intl_conclusion", _rb("intl", _b_conclusion, "{label} — conclusion")),
+        ("intl_summary", _rb("intl", _b_summary, L["pg_audit_summary"])),
+        ("intl_organic", _rb("intl", _b_organic_overview, L["pg_organic_overview"])),
+        ("intl_results", _rb("intl", _b_top_results, L["pg_top_results"])),
+        ("intl_themes", _rb("intl", _b_themes, L["pg_neg_themes"])),
+        ("intl_suggestions", _rb("intl", _b_suggestions, L["pg_suggestions"])),
+        ("intl_media", _rb("intl", _b_images_videos, L["pg_images_videos"])),
+        ("intl_wiki", _rb("intl", _b_wiki_knowledge, L["pg_wiki_knowledge"])),
+        ("intl_findings", _rb("intl", _b_findings, L["pg_risk_findings"])),
+        ("intl_quality", _rb("intl", _b_data_quality, L["pg_data_quality"])),
+        ("intl_conclusion", _rb("intl", _b_conclusion, L["pg_conclusion"])),
     ]
 
     builders: list[tuple[str, Callable]] = [
@@ -570,8 +556,8 @@ def build_report_v2(report_json: dict, prs, data_root: str, warnings: list[str])
         *ru_pages,
         *intl_pages,
         ("compliance_overview", _p_compliance_overview),
-        ("compliance_dow_world", lambda prs_, vm_: _p_compliance_provider(prs_, vm_, "dowWorldRows", "Dow Jones / World-Check summary")),
-        ("compliance_lexis", lambda prs_, vm_: _p_compliance_provider(prs_, vm_, "lexisRows", "LexisNexis summary")),
+        ("compliance_dow_world", lambda prs_, vm_: _p_compliance_provider(prs_, vm_, "dowWorldRows", L["dow_world_title"])),
+        ("compliance_lexis", lambda prs_, vm_: _p_compliance_provider(prs_, vm_, "lexisRows", L["lexis_title"])),
         ("compliance_findings", _p_compliance_findings),
         ("final_conclusion", _p_final),
         ("offer_block", _p_offer),

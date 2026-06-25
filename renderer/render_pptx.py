@@ -25,6 +25,7 @@ from pptx.util import Emu, Pt
 from report_template_v1 import build_report_v1
 from report_template_v2 import build_report_v2
 from report_template_v3 import build_report_v3
+from report_i18n import normalize_lang, watermark_text
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "template.pptx")
 TEMPLATE_V1_PATH = os.path.join(
@@ -175,7 +176,8 @@ def _render_page(prs: Presentation, page: dict, data_root: str, watermark: str |
 def _build_simple(report_json: dict, prs: Presentation, data_root: str) -> None:
     """The original generic renderer: one slide per report_json page."""
     meta = report_json.get("meta", {})
-    watermark = meta.get("watermark")
+    lang = normalize_lang(report_json.get("reportLanguage") or meta.get("language"))
+    watermark = watermark_text(lang, meta.get("watermark"))
     for page in report_json.get("dynamicPages", []):
         _render_page(prs, page, data_root, watermark)
     for page in report_json.get("staticPages", []):

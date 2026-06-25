@@ -288,6 +288,7 @@ export interface RenderedReport {
   slideCount?: number;
   audience?: string;
   watermarkMode?: string;
+  reportLanguage?: string;
   warnings?: string[];
 }
 
@@ -611,6 +612,7 @@ export interface RenderReportOptions {
   templateVersion?: string;
   audience?: "internal" | "client";
   watermarkMode?: "draft" | "none";
+  reportLanguage?: "ru" | "en";
 }
 
 export function renderReport(

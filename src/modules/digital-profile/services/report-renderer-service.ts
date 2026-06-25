@@ -21,6 +21,12 @@ import {
   verifySignedToken,
 } from "../storage/signed-url";
 import { loadFile } from "../storage/private-store";
+import { buildAuditSummary } from "../audit-summary/builder";
+import { buildOfferConfig } from "../report/offer-config";
+import {
+  normalizeReportLanguage,
+  type ReportLanguage,
+} from "../report/i18n/report-dictionary";
 import type { ActorContext } from "./case-service";
 import type { ReportJson, ReportStatus } from "../types";
 
@@ -37,6 +43,7 @@ export interface RenderedReportDTO {
   slideCount: number;
   audience: string;
   watermarkMode: string;
+  reportLanguage: string;
   warnings: string[];
 }
 
@@ -52,6 +59,7 @@ interface RendererResponse {
   slideCount?: number;
   audience?: string;
   watermarkMode?: string;
+  reportLanguage?: string;
   warnings?: string[];
 }
 
@@ -62,6 +70,7 @@ async function callRenderer(body: {
   templateVersion?: string;
   audience?: string;
   watermarkMode?: string;
+  reportLanguage?: string;
 }): Promise<RendererResponse> {
   const url = `${digitalProfileConfig.rendererUrl}/render`;
   let res: Response;
@@ -101,6 +110,35 @@ export interface RenderOptions {
   templateVersion?: string;
   audience?: "internal" | "client";
   watermarkMode?: "draft" | "none";
+  reportLanguage?: ReportLanguage;
+}
+
+/**
+ * Re-localizes a stored report_json into the requested report language so the
+ * renderer produces a RU or EN deck. Raw evidence (URLs, titles, snippets,
+ * dynamicPages) is never translated — only the system-generated audit summary,
+ * offer block and language metadata are rebuilt. Best-effort: failures keep the
+ * stored summary so a deck is always produced.
+ */
+async function localizeReportJson(
+  caseId: string,
+  reportJson: ReportJson,
+  reportLanguage: ReportLanguage
+): Promise<ReportJson> {
+  const localized: ReportJson = {
+    ...reportJson,
+    reportLanguage,
+    meta: { ...reportJson.meta, language: reportLanguage },
+    offer: buildOfferConfig(reportLanguage),
+  };
+  try {
+    localized.auditSummary = await buildAuditSummary(caseId, {
+      locale: reportLanguage,
+    });
+  } catch {
+    // Keep the stored summary; labels still localize in the renderer.
+  }
+  return localized;
 }
 
 export async function renderReportVersion(
@@ -112,6 +150,10 @@ export async function renderReportVersion(
   const templateVersion = options.templateVersion;
   const audience = options.audience ?? "internal";
   const watermarkMode = options.watermarkMode ?? "draft";
+  const reportLanguage = normalizeReportLanguage(
+    options.reportLanguage,
+    digitalProfileConfig.defaultLocale
+  );
   const reportVersion = await prisma.reportVersion.findFirst({
     where: { caseId, ...(version != null ? { version } : {}) },
     orderBy: { version: "desc" },
@@ -127,13 +169,20 @@ export async function renderReportVersion(
   const pptxKey = `${caseId}/reports/v${reportVersion.version}.pptx`;
   const pdfKey = `${caseId}/reports/v${reportVersion.version}.pdf`;
 
+  const localizedReportJson = await localizeReportJson(
+    caseId,
+    reportVersion.reportJson as unknown as ReportJson,
+    reportLanguage
+  );
+
   const result = await callRenderer({
-    reportJson: reportVersion.reportJson as unknown as ReportJson,
+    reportJson: localizedReportJson,
     pptxKey,
     pdfKey,
     templateVersion: resolvedTemplate,
     audience,
     watermarkMode,
+    reportLanguage,
   });
 
   const warnings = result.warnings ?? [];
@@ -141,6 +190,10 @@ export async function renderReportVersion(
   const slideCount = result.slideCount ?? 0;
   const usedAudience = result.audience ?? audience;
   const usedWatermarkMode = result.watermarkMode ?? watermarkMode;
+  const usedReportLanguage = normalizeReportLanguage(
+    result.reportLanguage,
+    reportLanguage
+  );
 
   const updated = await prisma.$transaction(async (tx) => {
     const row = await tx.reportVersion.update({
@@ -178,6 +231,7 @@ export async function renderReportVersion(
           slideCount,
           audience: usedAudience,
           watermarkMode: usedWatermarkMode,
+          reportLanguage: usedReportLanguage,
           warnings,
         },
       },
@@ -203,6 +257,7 @@ export async function renderReportVersion(
     slideCount,
     audience: usedAudience,
     watermarkMode: usedWatermarkMode,
+    reportLanguage: usedReportLanguage,
     warnings: Array.isArray(updated.renderWarnings)
       ? (updated.renderWarnings as unknown as string[])
       : [],

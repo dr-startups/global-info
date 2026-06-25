@@ -71,6 +71,16 @@ GUTTER = Emu(137160)            # ~0.15" gap between cards
 ROUNDED_RECT = 5
 RECT = 1
 
+# Localizable table footnote ("Showing top N of M."). Set per-render via
+# ``set_table_strings`` so v3 tables honour the report language.
+_SHOWING_TOP = "Showing top {n} of {total}."
+
+
+def set_table_strings(showing_top: str | None) -> None:
+    global _SHOWING_TOP
+    if showing_top:
+        _SHOWING_TOP = showing_top
+
 
 # ---------------------------------------------------------------------------
 # Base helpers
@@ -352,7 +362,7 @@ def table(
     bottom = Emu(int(top) + int(height) + 110000)
     label = note_text
     if total > max_rows:
-        label = f"Showing top {max_rows} of {total}." + (f" {note_text}" if note_text else "")
+        label = _SHOWING_TOP.format(n=max_rows, total=total) + (f" {note_text}" if note_text else "")
     if label:
         bottom = note(slide, bottom, label, "source")
     return bottom

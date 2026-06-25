@@ -46,6 +46,16 @@ MARGIN = Emu(457200)
 CONTENT_W = Emu(8229600)
 MAX_TABLE_ROWS = 12
 
+# Localizable table footnote ("Showing top N of M."), shared with v2. Set per
+# render via ``set_table_strings`` so v1/v2 tables honour the report language.
+_SHOWING_TOP = "Showing top {n} of {total}."
+
+
+def set_table_strings(showing_top: str | None) -> None:
+    global _SHOWING_TOP
+    if showing_top:
+        _SHOWING_TOP = showing_top
+
 
 def _blank(prs):
     layouts = prs.slide_layouts
@@ -158,7 +168,7 @@ def _table(slide, top: Emu, columns: list[str], rows: list[list[Any]], note: str
     bottom = Emu(int(top) + int(height) + 120000)
     label = note
     if total > MAX_TABLE_ROWS:
-        label = f"Showing top {MAX_TABLE_ROWS} of {total}." + (f" {note}" if note else "")
+        label = _SHOWING_TOP.format(n=MAX_TABLE_ROWS, total=total) + (f" {note}" if note else "")
     if label:
         box = _textbox(slide, MARGIN, bottom, CONTENT_W, Emu(360000))
         run = box.text_frame.paragraphs[0].add_run()
@@ -200,7 +210,7 @@ def _slide_cover(prs, vm, _dr):
     r2.font.color.rgb = RGBColor(0x9E, 0xC2, 0xF0)
     p3 = tf.add_paragraph()
     r3 = p3.add_run()
-    r3.text = f"Audit date: {cover['auditDate']}   ·   {cover['brand']}"
+    r3.text = f"{vm['labels']['audit_date']}: {cover['auditDate']}   ·   {cover['brand']}"
     r3.font.size = Pt(14)
     r3.font.color.rgb = RGBColor(0xC9, 0xD6, 0xEA)
     _risk_badge(slide, MARGIN, Emu(5000000), cover["overallRiskLevel"])
@@ -222,79 +232,72 @@ def _section(prs, vm, watermark):
 
 
 def _slide_contents(prs, vm, _dr):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
-    top = _header(slide, "Contents")
-    _bullets(slide, top, [
-        "1. Executive summary",
-        "2. Compliance risk matrix",
-        "3. Digital profile overview",
-        "4. RU search audit",
-        "5. Wikipedia",
-        "6. UAE / international search audit",
-        "7. Compliance databases",
-        "8. Risk findings",
-        "9. Data quality",
-        "10. Recommended actions",
-        "11. Services & pricing",
-    ])
+    top = _header(slide, L["contents"])
+    _bullets(slide, top, list(L["contents_list_v1"]))
 
 
 def _slide_executive(prs, vm, _dr):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
-    top = _header(slide, "Executive summary", f"Overall risk: {vm['executiveSummary']['overallRiskLevel']}")
+    top = _header(slide, L["executive_summary"], f"{L['overall_risk']}: {vm['executiveSummary']['overallRiskLevel']}")
     _risk_badge(slide, Emu(7000000), Emu(228600), vm["executiveSummary"]["overallRiskLevel"])
     _bullets(slide, top, vm["executiveSummary"]["bullets"])
 
 
 def _slide_risk_matrix(prs, vm, _dr):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     rm = vm["riskMatrix"]
-    top = _header(slide, "Compliance risk matrix", rm["subject"])
+    top = _header(slide, L["compliance_risk_matrix"], rm["subject"])
     _risk_badge(slide, Emu(7000000), Emu(228600), rm["overallRiskLevel"])
     rows = [[k, str(v)] for k, v in (rm.get("byLevel") or {}).items()]
     if not rows:
-        rows = [["No findings", "0"]]
-    top = _table(slide, top, ["Risk level", "Findings"], rows)
+        rows = [[L["rm_no_findings"], "0"]]
+    top = _table(slide, top, [L["th_risk_level"], L["th_findings"]], rows)
     themes = ", ".join(f"{t['theme']} ({t['count']})" for t in rm.get("topThemes", [])) or "—"
     _bullets(slide, top, [
-        f"Highest risk level: {rm['highestRiskLevel']}",
-        f"Total findings: {rm['totalFindings']}",
-        f"Top themes: {themes}",
-        "Possible consequences: " + "; ".join(rm.get("consequences", [])),
+        L["rm_highest_risk"].format(level=rm["highestRiskLevel"]),
+        L["rm_total_findings"].format(n=rm["totalFindings"]),
+        L["rm_top_themes"].format(themes=themes),
+        L["rm_consequences"].format(items="; ".join(rm.get("consequences", []))),
     ])
 
 
 def _slide_overview(prs, vm, _dr):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     o = vm["digitalProfileOverview"]
-    top = _header(slide, "Digital profile overview")
+    top = _header(slide, L["digital_profile_overview"])
     _bullets(slide, top, [
-        f"RU negative share: {o['negativeShareRu']}  ·  UAE negative share: {o['negativeShareUae']}",
-        f"Organic results: {o['searchTotal']} total, {o['searchNegative']} negative ({o['searchNegativeShare']}).",
-        f"Wikipedia: {o['wikipediaStatus']}.",
-        f"Compliance: {o['complianceSummary']}",
+        L["ov_shares"].format(ru=o["negativeShareRu"], uae=o["negativeShareUae"]),
+        L["ov_results"].format(total=o["searchTotal"], neg=o["searchNegative"], share=o["searchNegativeShare"]),
+        L["ov_wikipedia"].format(status=o["wikipediaStatus"]),
+        L["ov_compliance"].format(summary=o["complianceSummary"]),
     ])
 
 
 def _region_summary_slide(code: str) -> Callable:
     def builder(prs, vm, _dr):
+        L = vm["labels"]
         slide = _section(prs, vm, vm["meta"].get("watermark"))
         r = vm["regions"][code]
-        title = "RU search audit" if code == "RU" else "UAE / international search audit"
-        top = _header(slide, title, f"Region risk: {r['riskLevel']}")
+        title = L["pg_ru_search_audit"] if code == "RU" else L["pg_uae_search_audit"]
+        top = _header(slide, title, f"{L['region_risk']}: {r['riskLevel']}")
         _risk_badge(slide, Emu(7000000), Emu(228600), r["riskLevel"])
         if not r["present"]:
-            _empty_note(slide, top, f"No evidence collected for this region ({code}).")
+            _empty_note(slide, top, L["no_evidence_region"].format(label=code))
             return
-        top = _table(slide, top, ["Metric", "Value"], [
-            ["Organic total", r["organicTotal"]],
-            ["Organic negative", r["organicNegative"]],
-            ["Negative share", r["organicNegativeShare"]],
-            ["Unique negative URLs", r["uniqueNegativeUrls"]],
-            ["Suggestions (neg/total)", r["suggestions"]],
-            ["Images (neg/total)", r["images"]],
-            ["Videos (neg/total)", r["videos"]],
-            ["Knowledge block", r["knowledgeBlockStatus"]],
+        top = _table(slide, top, [L["th_metric"], L["th_value"]], [
+            [L["m_organic_total"], r["organicTotal"]],
+            [L["m_organic_negative"], r["organicNegative"]],
+            [L["m_negative_share"], r["organicNegativeShare"]],
+            [L["m_unique_neg_urls"], r["uniqueNegativeUrls"]],
+            [L["m_suggestions_nt"], r["suggestions"]],
+            [L["m_images_nt"], r["images"]],
+            [L["m_videos_nt"], r["videos"]],
+            [L["m_knowledge"], r["knowledgeBlockStatus"]],
         ])
         _bullets(slide, top, [r["conclusion"]] if r["conclusion"] else [])
     return builder
@@ -302,123 +305,133 @@ def _region_summary_slide(code: str) -> Callable:
 
 def _region_results_slide(code: str) -> Callable:
     def builder(prs, vm, _dr):
+        L = vm["labels"]
         slide = _section(prs, vm, vm["meta"].get("watermark"))
         r = vm["regions"][code]
-        title = f"{code} top search results"
+        title = L["pg_top_search_results"].format(label=code)
         top = _header(slide, title)
         rows = [[x["provider"], x["rank"], x["domain"], x["title"], x["classification"]] for x in r["topResults"]]
         if not rows:
-            _empty_note(slide, top, "No organic results collected for this region.")
+            _empty_note(slide, top, L["nd_no_organic_region"])
             return
-        _table(slide, top, ["Provider", "Rank", "Domain", "Title", "Class"], rows)
+        _table(slide, top, [L["th_provider"], L["th_rank"], L["th_domain"], L["th_title"], L["th_class"]], rows)
     return builder
 
 
 def _slide_ru_themes(prs, vm, _dr):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     s = vm["search"]
-    top = _header(slide, "RU negative themes & domains")
+    top = _header(slide, L["pg_ru_themes"])
     themes = [f"{t['theme']} ({t['count']})" for t in s["topNegativeThemes"]]
-    top = _bullets(slide, top, ["Top themes: " + (", ".join(themes) or "—"),
-                                "Negative domains: " + (", ".join(s["negativeDomains"]) or "—")])
+    top = _bullets(slide, top, [L["top_themes"] + " " + (", ".join(themes) or "—"),
+                                L["negative_domains"] + " " + (", ".join(s["negativeDomains"]) or "—")])
     rows = [[u["title"], u["url"]] for u in s["topNegativeUrls"]]
     if rows:
-        _table(slide, top, ["Title", "Domain"], rows)
+        _table(slide, top, [L["th_title"], L["th_domain"]], rows)
     else:
-        _empty_note(slide, top, "No negative URLs detected.")
+        _empty_note(slide, top, L["nd_no_negative_urls"])
 
 
 def _slide_ru_suggestions(prs, vm, _dr):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     r = vm["regions"]["RU"]
-    top = _header(slide, "RU suggestions & related queries", f"Suggestions (neg/total): {r['suggestions']}")
+    top = _header(slide, L["pg_ru_suggestions"], f"{L['m_suggestions_nt']}: {r['suggestions']}")
     if r["topSuggestions"]:
         _bullets(slide, top, r["topSuggestions"])
     else:
-        _empty_note(slide, top, "No suggestions collected for this region.")
+        _empty_note(slide, top, L["nd_no_suggestions"])
 
 
 def _slide_ru_media(prs, vm, _dr):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     r = vm["regions"]["RU"]
-    top = _header(slide, "RU images & videos", f"Images: {r['images']}  ·  Videos: {r['videos']}")
+    top = _header(slide, L["pg_ru_media"], f"{L['m_images_nt']}: {r['images']}  ·  {L['m_videos_nt']}: {r['videos']}")
     rows = [["Image", i["title"], i["url"]] for i in r["topImages"]]
     rows += [["Video", v["title"], v["url"]] for v in r["topVideos"]]
     if rows:
-        _table(slide, top, ["Type", "Title", "Source"], rows)
+        _table(slide, top, [L["th_type"], L["th_title"], L["th_source"]], rows)
     else:
-        _empty_note(slide, top, "No image/video results collected for this region.")
+        _empty_note(slide, top, L["nd_no_media"])
 
 
 def _slide_ru_knowledge(prs, vm, _dr):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     r = vm["regions"]["RU"]
     su = vm["surfaces"]
-    top = _header(slide, "RU knowledge block & screenshots")
+    top = _header(slide, L["pg_ru_knowledge"])
     _bullets(slide, top, [
-        f"Knowledge block status: {r['knowledgeBlockStatus']}.",
-        f"Knowledge blocks: {su['knowledgeBlocks']} (mismatches: {su['knowledgeMismatches']}).",
-        f"Screenshots: {su['screenshots']}.",
-        f"Synthetic snapshots: {su['syntheticSnapshots']} (generated previews, not live captures).",
+        L["knowledge_block_status"].format(status=r["knowledgeBlockStatus"]),
+        f"{L['m_knowledge']}: {su['knowledgeBlocks']} ({su['knowledgeMismatches']}).",
+        f"{L['th_source']}: {su['screenshots']}.",
+        *L["snapshot_lines"][:1],
     ])
 
 
 def _slide_wikipedia(prs, vm, _dr):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     w = vm["wikipedia"]
-    top = _header(slide, "Wikipedia summary", w["status"])
-    top = _table(slide, top, ["Field", "Value"], [
-        ["Exists", "Yes" if w["exists"] else "No"],
-        ["Page URL", w["pageUrl"] or "—"],
-        ["Language", w["language"] or "—"],
-        ["Notability score", w["notabilityScore"]],
+    top = _header(slide, L["pg_wikipedia_summary"], w["status"])
+    top = _table(slide, top, [L["th_field"], L["th_value"]], [
+        [L["m_exists"], L["yes"] if w["exists"] else L["no"]],
+        ["URL", w["pageUrl"] or "—"],
+        [L["m_language"], w["language"] or "—"],
+        [L["m_notability"], w["notabilityScore"]],
     ])
     _bullets(slide, top, [w["conclusion"]] if w["conclusion"] else [])
 
 
 def _slide_compliance(prs, vm, _dr):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     c = vm["complianceDatabases"]
-    top = _header(slide, "Compliance databases")
-    top = _table(slide, top, ["Metric", "Value"], [
-        ["Providers checked", ", ".join(c["providersChecked"]) or "—"],
-        ["Active matches", c["activeMatches"]],
-        ["PEP matches", c["pepMatches"]],
-        ["RCA matches", c["rcaMatches"]],
-        ["Sanctions matches", c["sanctionsMatches"]],
-        ["Adverse media matches", c["adverseMediaMatches"]],
+    top = _header(slide, L["pg_compliance_databases"])
+    top = _table(slide, top, [L["th_metric"], L["th_value"]], [
+        [L["providers_checked"], ", ".join(c["providersChecked"]) or "—"],
+        [L["m_active_matches"], c["activeMatches"]],
+        ["PEP", c["pepMatches"]],
+        ["RCA", c["rcaMatches"]],
+        [L["m_sanctions"], c["sanctionsMatches"]],
+        [L["m_adverse_media"], c["adverseMediaMatches"]],
     ])
     _bullets(slide, top, [c["conclusion"]] if c["conclusion"] else [])
 
 
 def _slide_risk_findings(prs, vm, _dr):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     rf = vm["riskFindings"]
-    top = _header(slide, "Risk findings", f"Active findings: {rf['totalFindings']}")
+    top = _header(slide, L["pg_risk_findings_plain"], L["rf_active_findings"].format(n=rf["totalFindings"]))
     rows = [[f["severity"], f["theme"], f["title"], f["reviewStatus"], f["evidenceCount"]] for f in rf["topFindings"]]
     if rows:
-        _table(slide, top, ["Severity", "Theme", "Finding", "Review", "Evidence"], rows)
+        _table(slide, top, [L["th_severity"], L["th_theme"], L["th_finding"], L["th_review"], L["th_evidence"]], rows)
     else:
-        _empty_note(slide, top, "No risk findings. Run the Risk Classifier to populate this section.")
+        _empty_note(slide, top, L["nd_no_findings_global"])
 
 
 def _slide_data_quality(prs, vm, _dr):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
     d = vm["dataQuality"]
-    top = _header(slide, "Data quality")
-    top = _table(slide, top, ["Metric", "Value"], [
-        ["Evidence items", d["evidenceCount"]],
-        ["Reviewed findings", d["reviewedFindings"]],
-        ["Pending findings", d["pendingFindings"]],
-        ["Dismissed findings", d["dismissedFindings"]],
-        ["Missing sections", ", ".join(d["missingSections"]) or "none"],
+    top = _header(slide, L["pg_data_quality_plain"])
+    top = _table(slide, top, [L["th_metric"], L["th_value"]], [
+        [L["dq_evidence_items"], d["evidenceCount"]],
+        [L["dq_reviewed"], d["reviewedFindings"]],
+        [L["dq_pending"], d["pendingFindings"]],
+        [L["dq_dismissed"], d["dismissedFindings"]],
+        [L["dq_missing_sections"], ", ".join(d["missingSections"]) or L["dq_none"]],
     ])
-    _bullets(slide, top, d["warnings"] or ["Evidence coverage is adequate for a preliminary assessment."])
+    _bullets(slide, top, d["warnings"] or [L["dq_coverage_adequate"]])
 
 
 def _slide_recommended(prs, vm, _dr):
+    L = vm["labels"]
     slide = _section(prs, vm, vm["meta"].get("watermark"))
-    top = _header(slide, "Recommended actions & next steps")
+    top = _header(slide, L["pg_recommended_plain"])
     _bullets(slide, top, vm["recommendedActions"])
 
 
@@ -438,6 +451,7 @@ def _offer_slide(page: dict) -> Callable:
 def build_report_v1(report_json: dict, prs, data_root: str, warnings: list[str]) -> None:
     vm, vm_warnings = build_view_model(report_json)
     warnings.extend(vm_warnings)
+    set_table_strings(vm["labels"]["showing_top"])
 
     builders: list[tuple[str, Callable]] = [
         ("cover", _slide_cover),

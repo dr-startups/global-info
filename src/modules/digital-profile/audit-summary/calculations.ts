@@ -12,6 +12,7 @@ import {
 } from "../risk-classifier/dictionaries";
 import { RISK_LEVEL_RANK } from "../risk-classifier/types";
 import type { RiskTheme } from "../risk-classifier/types";
+import { auditPhrases, type ReportLanguage } from "../report/i18n/report-dictionary";
 import type {
   ComplianceDatabaseSummary,
   DataQualitySummary,
@@ -216,7 +217,11 @@ export function computeSurfacesSummary(
 // Wikipedia summary
 // ---------------------------------------------------------------------------
 
-export function computeWikipediaSummary(wikis: LoadedWiki[]): WikipediaSummary {
+export function computeWikipediaSummary(
+  wikis: LoadedWiki[],
+  locale: ReportLanguage = "ru"
+): WikipediaSummary {
+  const p = auditPhrases(locale);
   // Prefer an existing page if any check found one.
   const present = wikis.find((w) => w.exists) ?? null;
   const any = wikis[0] ?? null;
@@ -228,10 +233,10 @@ export function computeWikipediaSummary(wikis: LoadedWiki[]): WikipediaSummary {
     if (notabilityScore > 100) notabilityScore = 100;
   }
   const conclusion = exists
-    ? "An authoritative Wikipedia profile exists; its contents should be reviewed manually for accuracy and tone."
+    ? p.wikiExists()
     : wikis.length === 0
-      ? "Wikipedia presence has not been checked yet; requires verification."
-      : "No authoritative Wikipedia profile was found. This is the absence of a controlled profile, not an adverse signal.";
+      ? p.wikiNotChecked()
+      : p.wikiAbsent();
 
   return {
     exists,
@@ -246,7 +251,11 @@ export function computeWikipediaSummary(wikis: LoadedWiki[]): WikipediaSummary {
 // Compliance database summary
 // ---------------------------------------------------------------------------
 
-export function computeComplianceSummary(dbs: LoadedDb[]): ComplianceDatabaseSummary {
+export function computeComplianceSummary(
+  dbs: LoadedDb[],
+  locale: ReportLanguage = "ru"
+): ComplianceDatabaseSummary {
+  const p = auditPhrases(locale);
   const providersChecked = Array.from(new Set(dbs.map((d) => d.provider)));
   const cat = (d: LoadedDb) => (d.matchType ?? "").toUpperCase();
   const pepMatches = dbs.filter((d) => /PEP/.test(cat(d))).length;
@@ -259,15 +268,15 @@ export function computeComplianceSummary(dbs: LoadedDb[]): ComplianceDatabaseSum
 
   let conclusion: string;
   if (dbs.length === 0) {
-    conclusion = "No compliance database screening recorded yet; official-API or manual import required.";
+    conclusion = p.compNone();
   } else if (sanctionsMatches > 0) {
-    conclusion = "Compliance screening contains sanctions-related records; mandatory manual verification before any conclusion.";
+    conclusion = p.compSanctions();
   } else if (pepMatches + rcaMatches > 0) {
-    conclusion = "Compliance screening contains PEP/RCA-related records; requires manual verification.";
+    conclusion = p.compPepRca();
   } else if (activeMatches > 0) {
-    conclusion = "Compliance screening returned potential matches; requires manual review.";
+    conclusion = p.compActive();
   } else {
-    conclusion = "No material compliance matches recorded; results should still be confirmed manually.";
+    conclusion = p.compNoMaterial();
   }
 
   return {
@@ -381,8 +390,10 @@ const REGION_LANG: Record<RegionCode, string> = { RU: "ru", UAE: "en" };
 
 export function computeRegions(
   organic: LoadedOrganic[],
-  surfaces: LoadedSurface[]
+  surfaces: LoadedSurface[],
+  locale: ReportLanguage = "ru"
 ): RegionAuditSummary[] {
+  const p = auditPhrases(locale);
   return REGIONS.map((region) => {
     const ro = organic.filter((r) => regionOfOrganic(r) === region);
     const rs = surfaces.filter((s) => regionOfSurface(s) === region);
@@ -413,10 +424,10 @@ export function computeRegions(
 
     const regionConclusion =
       ro.length + rs.length === 0
-        ? `No ${region} search data collected yet; requires data gathering.`
+        ? p.regionNoData(region)
         : negatives.length > 0
-          ? `In the ${region} search space, ${negatives.length} of ${ro.length} organic result(s) contain potentially adverse mentions; requires manual review.`
-          : `In the ${region} search space, no clearly adverse organic results were detected; results should still be confirmed manually.`;
+          ? p.regionNegative(region, negatives.length, ro.length)
+          : p.regionNoAdverse(region);
 
     return {
       region,
@@ -523,7 +534,9 @@ export function computeDataQuality(params: {
   surfacesCount: number;
   wikiCount: number;
   dbCount: number;
+  locale?: ReportLanguage;
 }): DataQualitySummary {
+  const p = auditPhrases(params.locale ?? "ru");
   const reviewedFindings = params.findings.filter((f) => f.reviewStatus === "REVIEWED").length;
   const pendingFindings = params.findings.filter((f) => f.reviewStatus === "PENDING").length;
   const dismissedFindings = params.findings.filter((f) => f.reviewStatus === "DISMISSED").length;
@@ -536,18 +549,18 @@ export function computeDataQuality(params: {
 
   const warnings: string[] = [];
   if (params.evidenceCount === 0) {
-    warnings.push("No evidence has been collected yet; the summary is not reliable.");
+    warnings.push(p.dqNoEvidence());
   } else if (params.evidenceCount < 5) {
-    warnings.push("Very little evidence collected; conclusions are preliminary and require expansion.");
+    warnings.push(p.dqLittleEvidence());
   }
   if (params.organicCount > 0 && params.organicCount < 5) {
-    warnings.push("Few organic search results; negative-share metrics may be unstable.");
+    warnings.push(p.dqFewOrganic());
   }
   if (pendingFindings > 0) {
-    warnings.push(`${pendingFindings} risk finding(s) are still pending human review.`);
+    warnings.push(p.dqPending(pendingFindings));
   }
   if (missingSections.length > 0) {
-    warnings.push(`Missing evidence sections: ${missingSections.join(", ")}.`);
+    warnings.push(p.dqMissing(missingSections.join(", ")));
   }
 
   return {

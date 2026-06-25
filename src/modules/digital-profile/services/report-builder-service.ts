@@ -18,10 +18,14 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/server/prisma/client";
 import { NotFoundError } from "../http/errors";
 import { recordAudit } from "./audit-log-service";
-import { reportPricing } from "../config";
+import { digitalProfileConfig, reportPricing } from "../config";
 import { buildStaticPages } from "../report/static-pages";
 import { buildAuditSummary } from "../audit-summary/builder";
 import { buildOfferConfig } from "../report/offer-config";
+import {
+  normalizeReportLanguage,
+  type ReportLanguage,
+} from "../report/i18n/report-dictionary";
 import {
   buildReportDownloadUrl,
   buildScreenshotDownloadUrl,
@@ -77,8 +81,10 @@ export interface ReportVersionDTO {
 export async function buildReportJson(
   caseId: string,
   version: number,
-  status: ReportStatus = "DRAFT"
+  status: ReportStatus = "DRAFT",
+  language: ReportLanguage | string = digitalProfileConfig.defaultLocale
 ): Promise<ReportJson> {
+  const reportLanguage = normalizeReportLanguage(language, digitalProfileConfig.defaultLocale);
   const caseRow = await prisma.case.findFirst({
     where: { id: caseId, deletedAt: null },
     select: {
@@ -409,9 +415,10 @@ export async function buildReportJson(
   };
 
   // Stage J — full deterministic audit summary (best-effort; never blocks report).
+  // Stage L2 — built in the report language so its prose matches the report.
   let auditSummary;
   try {
-    auditSummary = await buildAuditSummary(caseId);
+    auditSummary = await buildAuditSummary(caseId, { locale: reportLanguage });
   } catch {
     auditSummary = undefined;
   }
@@ -424,7 +431,7 @@ export async function buildReportJson(
       version,
       status,
       watermark,
-      language: "en",
+      language: reportLanguage,
     },
     subject,
     dynamicPages,
@@ -432,7 +439,8 @@ export async function buildReportJson(
     pricing: reportPricing,
     riskSummary,
     auditSummary,
-    offer: buildOfferConfig(),
+    offer: buildOfferConfig(reportLanguage),
+    reportLanguage,
   };
 }
 

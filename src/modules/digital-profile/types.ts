@@ -364,6 +364,8 @@ export interface ReportJson {
   auditSummary?: AuditSummary;
   /** Stage K1 — commercial offer block (prices from config, never hardcoded). */
   offer?: ReportOffer;
+  /** Stage L2 — language the report (PPTX/PDF) is rendered in. */
+  reportLanguage?: "ru" | "en";
 }
 
 // ----------------------------------------------------------------------------

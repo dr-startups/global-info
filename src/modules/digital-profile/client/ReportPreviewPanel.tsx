@@ -32,19 +32,24 @@ export function ReportPreviewPanel({
   report: ReportVersion | null;
   onReportChange: (r: ReportVersion) => void;
 }) {
-  const { t, tError, tTemplate, fmtDate } = useDigitalProfileI18n();
+  const { t, tError, tTemplate, fmtDate, locale } = useDigitalProfileI18n();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [templateVersion, setTemplateVersion] = useState("report-template-v3");
   const [audience, setAudience] = useState<"internal" | "client">("internal");
   const [watermarkMode, setWatermarkMode] = useState<"draft" | "none">("draft");
+  // Report language defaults to the current UI locale but can be chosen separately.
+  const [reportLanguage, setReportLanguage] = useState<"ru" | "en">(
+    locale === "en" ? "en" : "ru"
+  );
   const [warnings, setWarnings] = useState<string[]>([]);
   const [renderInfo, setRenderInfo] = useState<{
     template: string;
     slides: number;
     audience: string;
     watermarkMode: string;
+    reportLanguage: string;
   } | null>(null);
 
   async function handleGenerate() {
@@ -63,6 +68,7 @@ export function ReportPreviewPanel({
         templateVersion,
         audience,
         watermarkMode,
+        reportLanguage,
       });
       onReportChange({ ...generated, ...rendered });
       setWarnings(rendered.warnings ?? []);
@@ -71,6 +77,7 @@ export function ReportPreviewPanel({
         slides: rendered.slideCount ?? 0,
         audience: rendered.audience ?? audience,
         watermarkMode: rendered.watermarkMode ?? watermarkMode,
+        reportLanguage: rendered.reportLanguage ?? reportLanguage,
       });
       setSuccess(
         t("report.successMessage", {
@@ -130,6 +137,17 @@ export function ReportPreviewPanel({
             <option value="draft">{t("report.watermark")}: {t("report.draft")}</option>
             <option value="none">{t("report.watermark")}: {t("report.none")}</option>
           </select>
+          <select
+            className="dp-select"
+            style={{ maxWidth: 150 }}
+            value={reportLanguage}
+            onChange={(e) => setReportLanguage(e.target.value as "ru" | "en")}
+            disabled={busy}
+            aria-label={t("report.reportLanguage")}
+          >
+            <option value="ru">{t("report.reportLanguage")}: {t("report.langRu")}</option>
+            <option value="en">{t("report.reportLanguage")}: {t("report.langEn")}</option>
+          </select>
           <button className="dp-btn dp-btn-primary" onClick={handleGenerate} disabled={busy}>
             {busy ? <span className="dp-spinner" /> : null}
             {busy ? t("common.working") : report ? t("report.regenerateReport") : t("report.generateReport")}
@@ -188,6 +206,10 @@ export function ReportPreviewPanel({
                 <dt>{t("report.watermarkMode")}</dt>
                 <dd>
                   {renderInfo.watermarkMode === "none" ? t("report.none") : t("report.draft")}
+                </dd>
+                <dt>{t("report.reportLanguage")}</dt>
+                <dd>
+                  {renderInfo.reportLanguage === "en" ? t("report.langEn") : t("report.langRu")}
                 </dd>
               </>
             ) : null}

@@ -118,6 +118,9 @@ export interface Dictionary {
     client: string;
     draft: string;
     none: string;
+    reportLanguage: string;
+    langRu: string;
+    langEn: string;
     generateReport: string;
     generating: string;
     regenerateReport: string;

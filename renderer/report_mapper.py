@@ -13,6 +13,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from report_i18n import labels as i18n_labels, normalize_lang, watermark_text
+
+
+def _report_lang(report_json: dict) -> str:
+    meta = report_json.get("meta", {}) or {}
+    return normalize_lang(report_json.get("reportLanguage") or meta.get("language"))
+
 
 def _get(d: Any, *path: str, default: Any = None) -> Any:
     cur = d
@@ -71,6 +78,8 @@ def _region(regions: list[dict], code: str) -> dict | None:
 
 def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
     warnings: list[str] = []
+    lang = _report_lang(report_json)
+    L = i18n_labels(lang)
     meta = report_json.get("meta", {}) or {}
     subject = report_json.get("subject", {}) or {}
     audit = report_json.get("auditSummary") or {}
@@ -106,7 +115,7 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
                 "videos": "0/0",
                 "knowledgeBlockStatus": "ABSENT",
                 "riskLevel": "UNKNOWN",
-                "conclusion": f"No evidence collected for this region ({code}).",
+                "conclusion": L["no_evidence_region"].format(label=code),
                 "topResults": [],
                 "topSuggestions": [],
                 "topImages": [],
@@ -160,100 +169,81 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
         except (TypeError, ValueError):
             return f"0 {currency}"
 
+    product = offer.get("productName", L["op_default_product"])
     offer_pages = [
         {
-            "title": "Product overview",
-            "subtitle": offer.get("productName", "Digital Profile Audit"),
-            "bullets": [
-                "Evidence-first digital profile and compliance audits.",
-                "Every statement references verifiable evidence (URL, screenshot, record).",
-                "Official-API or manual import only — no scraping, no leaked databases.",
-            ],
+            "title": L["offer_product_overview"],
+            "subtitle": product,
+            "bullets": list(L["op_product_overview_bullets"]),
         },
         {
-            "title": "Solution 1 — Digital Profile",
-            "subtitle": f"{offer.get('solution1Title', 'Basic')} — {price(offer.get('solution1Price'))}",
-            "bullets": [
-                "Open-source search audit across regions.",
-                "Search surfaces: suggestions, images, videos, knowledge blocks.",
-                "Risk findings with human review.",
-            ],
+            "title": L["op_solution1_title"],
+            "subtitle": f"{offer.get('solution1Title', '')} — {price(offer.get('solution1Price'))}",
+            "bullets": list(L["op_solution1_bullets"]),
         },
         {
-            "title": "Solution 2 — Compliance Databases",
-            "subtitle": f"{offer.get('solution2Title', 'Standard')} — {price(offer.get('solution2Price'))}",
-            "bullets": [
-                "Screening via LexisNexis / Dow Jones / World-Check (official API or manual import).",
-                "PEP / RCA / sanctions / adverse-media categorization.",
-                "Documented match status and evidence.",
-            ],
+            "title": L["op_solution2_title"],
+            "subtitle": f"{offer.get('solution2Title', '')} — {price(offer.get('solution2Price'))}",
+            "bullets": list(L["op_solution2_bullets"]),
         },
         {
-            "title": "Solution 3 — Wikipedia & Authority",
-            "subtitle": f"{offer.get('solution3Title', 'Enterprise')} — {price(offer.get('solution3Price'))}",
-            "bullets": [
-                "Authoritative profile assessment and notability review.",
-                "Knowledge-panel consistency checks.",
-                "Ongoing monitoring of the digital footprint.",
-            ],
+            "title": L["op_solution3_title"],
+            "subtitle": f"{offer.get('solution3Title', '')} — {price(offer.get('solution3Price'))}",
+            "bullets": list(L["op_solution3_bullets"]),
         },
         {
-            "title": "Process",
-            "subtitle": "How an engagement runs",
-            "bullets": [
-                "1. Scope & lawful basis.",
-                "2. Evidence collection (search, surfaces, compliance).",
-                "3. Deterministic risk classification.",
-                "4. Analyst review.",
-                "5. Report delivery (PPTX / PDF).",
-            ],
+            "title": L["op_process_title"],
+            "subtitle": L["op_process_subtitle"],
+            "bullets": list(L["op_process_bullets"]),
         },
         {
-            "title": "Pricing",
+            "title": L["op_pricing_title"],
             "subtitle": offer.get("pricingNotes", ""),
             "table": {
-                "columns": ["Package", "Price"],
+                "columns": [L["th_package"], L["th_price"]],
                 "rows": [
-                    [offer.get("solution1Title", "Basic"), price(offer.get("solution1Price"))],
-                    [offer.get("solution2Title", "Standard"), price(offer.get("solution2Price"))],
-                    [offer.get("solution3Title", "Enterprise"), price(offer.get("solution3Price"))],
+                    [offer.get("solution1Title", ""), price(offer.get("solution1Price"))],
+                    [offer.get("solution2Title", ""), price(offer.get("solution2Price"))],
+                    [offer.get("solution3Title", ""), price(offer.get("solution3Price"))],
                 ],
             },
             "bullets": [],
         },
         {
-            "title": "About",
-            "subtitle": offer.get("companyName", "Digital Profile Audit"),
+            "title": L["op_about_title"],
+            "subtitle": offer.get("companyName", product),
             "bullets": [
-                f"Contact: {offer.get('contactEmail', '')}",
-                f"Website: {offer.get('website', '')}",
-                "Reports are advisory; all findings require manual verification.",
+                L["op_contact"].format(email=offer.get("contactEmail", "")),
+                L["op_website"].format(website=offer.get("website", "")),
+                L["op_about_note"],
             ],
         },
     ]
 
     view_model = {
+        "report_language": lang,
+        "labels": L,
         "meta": {
-            "watermark": meta.get("watermark"),
+            "watermark": watermark_text(lang, meta.get("watermark")),
             "caseNumber": meta.get("caseNumber", ""),
-            "title": meta.get("title", "Digital Profile Audit"),
+            "title": meta.get("title", L["op_default_product"]),
             "generatedAt": fmt_date(meta.get("generatedAt") or audit.get("generatedAt")),
-            "brand": offer.get("companyName", "Digital Profile Audit"),
+            "brand": offer.get("companyName", L["op_default_product"]),
         },
         "cover": {
-            "reportTitle": meta.get("title", "Digital Profile Audit"),
-            "subjectFullName": subject.get("fullName", audit.get("subjectFullName", "Unknown subject")),
+            "reportTitle": meta.get("title", L["op_default_product"]),
+            "subjectFullName": subject.get("fullName", audit.get("subjectFullName", L["unknown_subject"])),
             "auditDate": fmt_date(meta.get("generatedAt") or audit.get("generatedAt")),
-            "brand": offer.get("companyName", "Digital Profile Audit"),
+            "brand": offer.get("companyName", L["op_default_product"]),
             "overallRiskLevel": overall_risk,
         },
         "executiveSummary": {
-            "bullets": list(audit.get("executiveSummary", []) or []) or ["No audit summary available yet."],
+            "bullets": list(audit.get("executiveSummary", []) or []) or [L["no_audit_summary"]],
             "keyFindings": list(audit.get("keyFindings", []) or []),
             "overallRiskLevel": overall_risk,
         },
         "riskMatrix": {
-            "subject": subject.get("fullName", "Unknown subject"),
+            "subject": subject.get("fullName", L["unknown_subject"]),
             "overallRiskLevel": overall_risk,
             "highestRiskLevel": risk_level(risk.get("highestRiskLevel", overall_risk)),
             "totalFindings": (audit.get("riskSummary", {}) or risk).get("totalFindings", 0),
@@ -262,11 +252,7 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
                 for t in (search.get("topNegativeThemes", []) or [])
             ],
             "byLevel": (audit.get("riskSummary", {}) or risk).get("findingsByLevel", {}) or {},
-            "consequences": [
-                "Reputational exposure in open-source search.",
-                "Compliance review obligations if matches are confirmed.",
-                "Potential onboarding / due-diligence delays.",
-            ],
+            "consequences": list(L["rm_default_consequences"]),
         },
         "digitalProfileOverview": {
             "negativeShareRu": pct((_region(regions_raw, "RU") or {}).get("organicNegativeShare", 0)),
@@ -274,8 +260,8 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
             "searchTotal": search.get("totalResults", 0),
             "searchNegative": search.get("negativeResults", 0),
             "searchNegativeShare": pct(search.get("negativeShare", 0)),
-            "complianceSummary": compliance.get("conclusion", "No compliance screening recorded."),
-            "wikipediaStatus": "Present" if wiki.get("exists") else "Not found",
+            "complianceSummary": compliance.get("conclusion", L["no_compliance_recorded"]),
+            "wikipediaStatus": L["present"] if wiki.get("exists") else L["not_found"],
         },
         "regions": {"RU": region_vm("RU"), "UAE": region_vm("UAE")},
         "search": {
@@ -297,7 +283,7 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
         },
         "wikipedia": {
             "exists": bool(wiki.get("exists")),
-            "status": "Page exists" if wiki.get("exists") else "No page found",
+            "status": L["present"] if wiki.get("exists") else L["not_found"],
             "pageUrl": wiki.get("pageUrl") or "",
             "language": wiki.get("language") or "",
             "notabilityScore": wiki.get("notabilityScore", 0),
@@ -334,7 +320,7 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
             "warnings": list(data_quality.get("warnings", []) or []),
         },
         "recommendedActions": list(audit.get("recommendedActions", []) or [])
-        or ["Expand data collection and re-run the audit."],
+        or [L["recommended_fallback"]],
         "offerPages": offer_pages,
     }
 
@@ -355,15 +341,18 @@ def _dynamic_page(report_json: dict, kind: str) -> dict | None:
     return None
 
 
-def _region_block(r: dict | None, code: str, label: str, wiki: dict, findings: list[dict]) -> dict:
+def _region_block(
+    r: dict | None, code: str, label: str, wiki: dict, findings: list[dict], L: dict
+) -> dict:
     if not r:
+        no_data = L["no_evidence_region"].format(label=label)
         return {
             "code": code,
             "label": label,
             "present": False,
-            "noDataText": f"No evidence collected for this region ({label}).",
+            "noDataText": no_data,
             "riskLevel": "UNKNOWN",
-            "conclusion": f"No evidence collected for this region ({label}).",
+            "conclusion": no_data,
             "summary": {},
             "organicOverview": {},
             "topResults": [],
@@ -375,7 +364,7 @@ def _region_block(r: dict | None, code: str, label: str, wiki: dict, findings: l
             "knowledgeBlock": None,
             "wikipedia": wiki,
             "riskFindings": [],
-            "dataQuality": {"organic": 0, "surfaces": 0, "warnings": [f"No {label} data collected."]},
+            "dataQuality": {"organic": 0, "surfaces": 0, "warnings": [L["no_region_data"].format(label=label)]},
             "recommendedActions": [],
             "evidenceAppendix": [],
         }
@@ -393,7 +382,7 @@ def _region_block(r: dict | None, code: str, label: str, wiki: dict, findings: l
         "code": code,
         "label": label,
         "present": present,
-        "noDataText": "" if present else f"No evidence collected for this region ({label}).",
+        "noDataText": "" if present else L["no_evidence_region"].format(label=label),
         "riskLevel": risk_level(r.get("regionRiskLevel")),
         "conclusion": r.get("regionConclusion", ""),
         "summary": {
@@ -479,7 +468,7 @@ def _region_block(r: dict | None, code: str, label: str, wiki: dict, findings: l
         "dataQuality": {
             "organic": organic_total,
             "surfaces": surfaces_total,
-            "warnings": [] if present else [f"No {label} data collected."],
+            "warnings": [] if present else [L["no_region_data"].format(label=label)],
         },
         "recommendedActions": [],
         "evidenceAppendix": [
@@ -496,6 +485,8 @@ def _region_block(r: dict | None, code: str, label: str, wiki: dict, findings: l
 
 def build_view_model_v2(report_json: dict) -> tuple[dict, list[str]]:
     base, warnings = build_view_model(report_json)
+    lang = base["report_language"]
+    L = base["labels"]
     audit = report_json.get("auditSummary") or {}
     offer = report_json.get("offer") or {}
     regions_raw = audit.get("regions", []) or []
@@ -516,8 +507,8 @@ def build_view_model_v2(report_json: dict) -> tuple[dict, list[str]]:
     wiki = base["wikipedia"]
     recommended = base["recommendedActions"]
 
-    ru = _region_block(_region(regions_raw, "RU"), "RU", "Russia", wiki, search_findings)
-    intl = _region_block(_region(regions_raw, "UAE"), "UAE", "UAE / International", wiki, search_findings)
+    ru = _region_block(_region(regions_raw, "RU"), "RU", L["region_ru"], wiki, search_findings, L)
+    intl = _region_block(_region(regions_raw, "UAE"), "UAE", L["region_intl"], wiki, search_findings, L)
     ru["recommendedActions"] = recommended
     intl["recommendedActions"] = recommended
 
@@ -558,16 +549,7 @@ def build_view_model_v2(report_json: dict) -> tuple[dict, list[str]]:
         "contact": offer.get("contactEmail", ""),
     }
 
-    contents = {
-        "sections": [
-            "1. Executive Summary",
-            "2. Russia: Digital Profile",
-            "3. UAE / International: Digital Profile",
-            "4. Compliance Databases",
-            "5. Offer / Solutions",
-            "6. About",
-        ]
-    }
+    contents = {"sections": list(L["contents_list"])}
 
     executive = {
         **base["executiveSummary"],
@@ -581,6 +563,8 @@ def build_view_model_v2(report_json: dict) -> tuple[dict, list[str]]:
     risk_matrix = _build_risk_matrix_rows(base, ru, intl, wiki)
 
     vm = {
+        "report_language": lang,
+        "labels": L,
         "meta": base["meta"],
         "cover": cover,
         "contents": contents,
@@ -608,9 +592,9 @@ def _fmt_price(value: Any, currency: str) -> str:
         return f"0 {currency}"
 
 
-def _offer_block(offer: dict) -> dict:
+def _offer_block(offer: dict, L: dict) -> dict:
     currency = offer.get("currency", "EUR")
-    brand = offer.get("brandName") or offer.get("companyName") or "Digital Profile Audit"
+    brand = offer.get("brandName") or offer.get("companyName") or L["op_default_product"]
 
     solutions_raw = offer.get("solutions") or []
     if not solutions_raw:
@@ -653,14 +637,14 @@ def _offer_block(offer: dict) -> dict:
     return {
         "cover": {
             "title": offer.get("productName", brand),
-            "subtitle": offer.get("reportSubtitle", "Services & solutions"),
+            "subtitle": offer.get("reportSubtitle", L["offer_default_subtitle"]),
             "brand": brand,
         },
         "productOverview": {
             "description": offer.get("companyDescription", ""),
             "includedItems": [s["subtitle"] for s in solutions],
-            "value": "Evidence-first methodology with human review at every step.",
-            "audienceNote": "For individuals, executives and organisations managing reputational and compliance risk.",
+            "value": L["offer_value"],
+            "audienceNote": L["offer_audience_note"],
         },
         "solutions": solutions,
         "process": {"steps": list(offer.get("processSteps", []) or [])},
@@ -678,46 +662,54 @@ def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[
     vm, warnings = build_view_model_v2(report_json)
     offer = report_json.get("offer") or {}
     vm["audience"] = "client" if str(audience).lower() == "client" else "internal"
-    vm["offerBlock"] = _offer_block(offer)
+    vm["offerBlock"] = _offer_block(offer, vm["labels"])
     return vm, warnings
 
 
 def _build_risk_matrix_rows(base: dict, ru: dict, intl: dict, wiki: dict) -> dict:
     cdb = base["complianceDatabases"]
+    L = base["labels"]
+    uae_share = intl["summary"].get("organicNegativeShare", "0%") if intl["present"] else L["rm_no_data"]
     rows = [
         {
-            "area": "Search profile (Google/Yandex)",
-            "problems": f"RU negative share {ru['summary'].get('organicNegativeShare', '0%')}, "
-            f"UAE {intl['summary'].get('organicNegativeShare', '0%') if intl['present'] else 'no data'}",
+            "area": L["area_search_profile"],
+            "problems": L["rm_problems_search"].format(
+                ru=ru["summary"].get("organicNegativeShare", "0%"), uae=uae_share
+            ),
             "level": risk_level(
                 ru["riskLevel"] if ru["present"] else (intl["riskLevel"] if intl["present"] else "UNKNOWN")
             ),
-            "consequences": "Reputational exposure in open-source search.",
+            "consequences": L["cons_reputational"],
         },
         {
-            "area": "Wikipedia",
-            "problems": "Authoritative page exists" if wiki.get("exists") else "No authoritative page found",
+            "area": L["area_wikipedia"],
+            "problems": L["rm_wiki_exists"] if wiki.get("exists") else L["rm_wiki_absent"],
             "level": "LOW" if wiki.get("exists") else "MEDIUM",
-            "consequences": "Limited control over the public narrative.",
+            "consequences": L["cons_narrative"],
         },
         {
-            "area": "Sanctions / compliance mentions",
-            "problems": f"{cdb['sanctionsMatches']} sanctions, {cdb['pepMatches']} PEP, {cdb['rcaMatches']} RCA match(es)",
+            "area": L["area_sanctions"],
+            "problems": L["rm_problems_sanctions"].format(
+                s=cdb["sanctionsMatches"], p=cdb["pepMatches"], r=cdb["rcaMatches"]
+            ),
             "level": "CRITICAL" if cdb["sanctionsMatches"] > 0 else ("HIGH" if cdb["pepMatches"] + cdb["rcaMatches"] > 0 else "LOW"),
-            "consequences": "Compliance obligations and onboarding delays if confirmed.",
+            "consequences": L["cons_compliance"],
         },
         {
-            "area": "International compliance databases",
-            "problems": f"{cdb['activeMatches']} active match(es) across {len(cdb['providersChecked'])} provider(s)",
+            "area": L["area_intl_compliance"],
+            "problems": L["rm_problems_intl"].format(
+                a=cdb["activeMatches"], n=len(cdb["providersChecked"])
+            ),
             "level": "HIGH" if cdb["activeMatches"] > 0 else ("LOW" if cdb["providersChecked"] else "UNKNOWN"),
-            "consequences": "Enhanced due-diligence may be required.",
+            "consequences": L["cons_edd"],
         },
         {
-            "area": "Other sources / search surfaces",
-            "problems": f"Negative suggestions/images/videos detected: "
-            f"{ru['suggestions']['negative'] + ru['images']['negative'] + ru['videos']['negative']}",
+            "area": L["area_other_sources"],
+            "problems": L["rm_problems_other"].format(
+                n=ru["suggestions"]["negative"] + ru["images"]["negative"] + ru["videos"]["negative"]
+            ),
             "level": risk_level(ru["riskLevel"]) if ru["present"] else "UNKNOWN",
-            "consequences": "Secondary reputational signals to monitor.",
+            "consequences": L["cons_secondary"],
         },
     ]
     return {

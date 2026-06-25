@@ -30,8 +30,20 @@ import {
   deriveTone,
 } from "./text-builder";
 import type { AuditSummary } from "./types";
+import {
+  normalizeReportLanguage,
+  type ReportLanguage,
+} from "../report/i18n/report-dictionary";
 
-export async function buildAuditSummary(caseId: string): Promise<AuditSummary> {
+export interface BuildAuditSummaryOptions {
+  locale?: ReportLanguage;
+}
+
+export async function buildAuditSummary(
+  caseId: string,
+  options: BuildAuditSummaryOptions = {}
+): Promise<AuditSummary> {
+  const locale = normalizeReportLanguage(options.locale);
   const caseRow = await prisma.case.findFirst({
     where: { id: caseId, deletedAt: null },
     select: {
@@ -141,10 +153,10 @@ export async function buildAuditSummary(caseId: string): Promise<AuditSummary> {
 
   const searchSummary = computeSearchSummary(organic, findings);
   const surfacesSummary = computeSurfacesSummary(surfaces, screenshots);
-  const wikipediaSummary = computeWikipediaSummary(wikis);
-  const complianceDatabaseSummary = computeComplianceSummary(dbs);
+  const wikipediaSummary = computeWikipediaSummary(wikis, locale);
+  const complianceDatabaseSummary = computeComplianceSummary(dbs, locale);
   const riskSummary = computeRiskSummary(findings);
-  const regions = computeRegions(organic, surfaces);
+  const regions = computeRegions(organic, surfaces, locale);
 
   const evidenceCount =
     organic.length + surfaces.length + wikis.length + dbs.length + screenshots;
@@ -156,6 +168,7 @@ export async function buildAuditSummary(caseId: string): Promise<AuditSummary> {
     surfacesCount: surfaces.length,
     wikiCount: wikis.length,
     dbCount: dbs.length,
+    locale,
   });
 
   const overallRiskLevel = calculateOverallRiskLevel({
@@ -180,6 +193,7 @@ export async function buildAuditSummary(caseId: string): Promise<AuditSummary> {
     wikipedia: wikipediaSummary,
     compliance: complianceDatabaseSummary,
     dataQuality: dataQualitySummary,
+    locale,
   });
   const keyFindings = buildKeyFindings({
     search: searchSummary,
@@ -187,12 +201,14 @@ export async function buildAuditSummary(caseId: string): Promise<AuditSummary> {
     wikipedia: wikipediaSummary,
     compliance: complianceDatabaseSummary,
     dataQuality: dataQualitySummary,
+    locale,
   });
   const recommendedActions = buildRecommendedActions({
     overallRiskLevel,
     wikipedia: wikipediaSummary,
     compliance: complianceDatabaseSummary,
     dataQuality: dataQualitySummary,
+    locale,
   });
 
   return {

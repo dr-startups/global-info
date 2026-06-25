@@ -7,7 +7,8 @@
  *   "version": number,
  *   "templateVersion": string,
  *   "audience": "internal" | "client",
- *   "watermarkMode": "draft" | "none"
+ *   "watermarkMode": "draft" | "none",
+ *   "reportLanguage": "ru" | "en"
  * }.
  */
 
@@ -26,6 +27,7 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   let templateVersion: string | undefined;
   let audience: "internal" | "client" | undefined;
   let watermarkMode: "draft" | "none" | undefined;
+  let reportLanguage: "ru" | "en" | undefined;
   try {
     const body = (await req.json()) as
       | {
@@ -33,6 +35,7 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
           templateVersion?: string;
           audience?: string;
           watermarkMode?: string;
+          reportLanguage?: string;
         }
       | null;
     if (body && typeof body.version === "number") version = body.version;
@@ -45,6 +48,9 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
     if (body && (body.watermarkMode === "draft" || body.watermarkMode === "none")) {
       watermarkMode = body.watermarkMode;
     }
+    if (body && (body.reportLanguage === "ru" || body.reportLanguage === "en")) {
+      reportLanguage = body.reportLanguage;
+    }
   } catch {
     // No/invalid body: render the latest version with defaults.
   }
@@ -52,6 +58,7 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
     templateVersion,
     audience,
     watermarkMode,
+    reportLanguage,
   });
   return jsonOk(data, 201);
 });
