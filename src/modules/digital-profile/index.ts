@@ -7,8 +7,8 @@
  * Implementation stages:
  *   A) DB schema + core types + empty module
  *   B) Case CRUD
- *   C) Manual evidence input                    <-- current
- *   D) report_json builder
+ *   C) Manual evidence input
+ *   D) report_json builder                       <-- current
  *   E) Report renderer (PPTX template -> PDF)
  *   F) Admin UI
  *   G) Mock agents
@@ -45,8 +45,12 @@ export {
   ReviewRiskFindingSchema,
 } from "./validation/evidence-schemas";
 
+// Stage D — report_json builder
+export * as reportBuilderService from "./services/report-builder-service";
+export { buildStaticPages } from "./report/static-pages";
+
 export const DIGITAL_PROFILE_MODULE = {
   name: "digital-profile",
   /** Bumped as stages land. */
-  stage: "C",
+  stage: "D",
 } as const;

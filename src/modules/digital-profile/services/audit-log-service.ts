@@ -24,7 +24,10 @@ export type AuditAction =
   | "DATABASE_PROFILE_IMPORTED"
   | "WIKIPEDIA_CHECK_ADDED"
   | "RISK_FINDING_CREATED"
-  | "RISK_FINDING_REVIEWED";
+  | "RISK_FINDING_REVIEWED"
+  // Stage D — report_json builder
+  | "REPORT_GENERATED"
+  | "REPORT_VIEWED";
 
 export interface RecordAuditInput {
   caseId?: string | null;

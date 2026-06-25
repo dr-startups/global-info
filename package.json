@@ -14,7 +14,8 @@
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
     "smoke:dp": "node scripts/smoke-digital-profile.mjs",
-    "smoke:evidence": "node scripts/smoke-evidence.mjs"
+    "smoke:evidence": "node scripts/smoke-evidence.mjs",
+    "smoke:report": "node scripts/smoke-report.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
