@@ -4,6 +4,7 @@ import Link from "next/link";
 import type { CaseDetail } from "./api";
 import { StatusBadge } from "./components";
 import { useDigitalProfileI18n } from "./i18n-provider";
+import { useDpAuth } from "./auth-provider";
 
 export function CaseHeader({
   caseDetail,
@@ -21,6 +22,7 @@ export function CaseHeader({
   lastRunStatus: string | null;
 }) {
   const { t, fmtDate } = useDigitalProfileI18n();
+  const { can } = useDpAuth();
   const subjectName = caseDetail.subject?.fullName ?? caseDetail.title;
   return (
     <div>
@@ -48,22 +50,26 @@ export function CaseHeader({
           </div>
         </div>
         <div className="dp-inline">
-          <button
-            className="dp-btn"
-            onClick={onRunAudit}
-            disabled={auditing || generating}
-          >
-            {auditing ? <span className="dp-spinner" /> : null}
-            {auditing ? t("agents.runningAudit") : t("agents.runAudit")}
-          </button>
-          <button
-            className="dp-btn dp-btn-primary"
-            onClick={onGenerate}
-            disabled={generating || auditing}
-          >
-            {generating ? <span className="dp-spinner" /> : null}
-            {generating ? t("report.generating") : t("report.generateReport")}
-          </button>
+          {can("agents.run") ? (
+            <button
+              className="dp-btn"
+              onClick={onRunAudit}
+              disabled={auditing || generating}
+            >
+              {auditing ? <span className="dp-spinner" /> : null}
+              {auditing ? t("agents.runningAudit") : t("agents.runAudit")}
+            </button>
+          ) : null}
+          {can("report.generateInternal") ? (
+            <button
+              className="dp-btn dp-btn-primary"
+              onClick={onGenerate}
+              disabled={generating || auditing}
+            >
+              {generating ? <span className="dp-spinner" /> : null}
+              {generating ? t("report.generating") : t("report.generateReport")}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

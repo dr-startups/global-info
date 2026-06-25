@@ -14,7 +14,12 @@
 
 import type { NextRequest } from "next/server";
 import { jsonOk, withModule } from "@/modules/digital-profile/http/errors";
-import { getActorContext } from "@/modules/digital-profile/http/request";
+import {
+  actorOf,
+  requireCaseAccess,
+  requireDigitalProfileUser,
+  requireRole,
+} from "@/modules/digital-profile/auth/guard";
 import { renderReportVersion } from "@/modules/digital-profile/services/report-renderer-service";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +59,14 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   } catch {
     // No/invalid body: render the latest version with defaults.
   }
-  const data = await renderReportVersion(id, version, getActorContext(req), {
+  const user = await requireDigitalProfileUser(req);
+  // Client-facing renders need the stricter client-report permission.
+  requireRole(
+    user,
+    audience === "client" ? "report.generateClient" : "report.generateInternal"
+  );
+  await requireCaseAccess(user, id, "VIEWER");
+  const data = await renderReportVersion(id, version, actorOf(user), {
     templateVersion,
     audience,
     watermarkMode,

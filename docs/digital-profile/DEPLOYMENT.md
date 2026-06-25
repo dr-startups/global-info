@@ -33,9 +33,24 @@ See `.env.example` for the full, commented list. Key ones:
 | `DIGITAL_PROFILE_GOOGLE_ENABLED` + `GOOGLE_SEARCH_API_KEY` + `GOOGLE_SEARCH_ENGINE_ID` | Google official API |
 | `DIGITAL_PROFILE_YANDEX_ENABLED` + `YANDEX_SEARCH_API_KEY` + `YANDEX_SEARCH_FOLDER_ID` + `YANDEX_SEARCH_REGION` | Yandex official API |
 | `DIGITAL_PROFILE_PROVIDER_TIMEOUT_MS` / `DIGITAL_PROFILE_PROVIDER_MAX_RESULTS` | Keyed provider HTTP limits |
+| `DIGITAL_PROFILE_AUTH_ENABLED` | Auth + roles master switch (default `false`) |
+| `DIGITAL_PROFILE_SESSION_SECRET` | HMAC secret for the session cookie (required when auth enabled) |
+| `DIGITAL_PROFILE_DEMO_ADMIN_EMAIL` / `DIGITAL_PROFILE_DEMO_ADMIN_PASSWORD` | Seed-only demo admin (DEMO-ONLY) |
 
 **Production:** always set a strong, unique `DIGITAL_PROFILE_SIGNED_URL_SECRET`
 and a non-default `DATABASE_URL`. Never commit real secrets.
+
+### Auth (Stage M1)
+
+- `DIGITAL_PROFILE_AUTH_ENABLED=false` (default) → no login; every actor is a
+  synthetic `SUPER_ADMIN`. Use only for local demo / CI smoke.
+- `DIGITAL_PROFILE_AUTH_ENABLED=true` → login required, roles + per-case access
+  enforced, page routes redirect to `/admin/digital-profile/login`.
+- **Production must enable auth** and set a strong `DIGITAL_PROFILE_SESSION_SECRET`
+  (>=16 chars, e.g. `openssl rand -base64 32`). With auth enabled in production,
+  a missing/default secret aborts startup (fail-closed).
+- Roles: `SUPER_ADMIN`, `ADMIN`, `ANALYST`, `REVIEWER`, `CLIENT_VIEWER` — see
+  `SECURITY.md` for the full permission matrix and demo users.
 
 ## Migrations
 
@@ -73,4 +88,5 @@ docker compose logs -f renderer
   auto-publishes).
 - Report branding is a neutral "Digital Profile Audit" brand — no third-party
   logos/brands.
-- No auth/roles, queues, or background jobs in this module (out of scope).
+- Auth is a minimal session-cookie + RBAC layer (Stage M1): no OAuth/SAML, no
+  org hierarchy, no billing. Queues / background jobs remain out of scope.

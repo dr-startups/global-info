@@ -10,7 +10,12 @@ import {
   ValidationError,
   withModule,
 } from "@/modules/digital-profile/http/errors";
-import { getActorContext } from "@/modules/digital-profile/http/request";
+import {
+  actorOf,
+  requireCaseAccess,
+  requireDigitalProfileUser,
+  requireRole,
+} from "@/modules/digital-profile/auth/guard";
 import { listEvidence } from "@/modules/digital-profile/services/evidence-service";
 import { addScreenshot } from "@/modules/digital-profile/services/screenshot-service";
 import { ScreenshotUploadMetaSchema } from "@/modules/digital-profile/validation/evidence-schemas";
@@ -23,6 +28,9 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
+  const user = await requireDigitalProfileUser(req);
+  requireRole(user, "evidence.create");
+  await requireCaseAccess(user, id, "EDITOR");
 
   const form = await req.formData().catch(() => {
     throw new ValidationError("Expected multipart/form-data with a 'file' field");
@@ -49,13 +57,16 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const data = await addScreenshot(
     id,
     { buffer, mimeType, ...meta },
-    getActorContext(req)
+    actorOf(user)
   );
   return jsonOk(data, 201);
 });
 
-export const GET = withModule(async (_req: NextRequest, ctx: RouteContext) => {
+export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
+  const user = await requireDigitalProfileUser(req);
+  requireRole(user, "evidence.viewRaw");
+  await requireCaseAccess(user, id, "VIEWER");
   const evidence = await listEvidence(id);
   return jsonOk(evidence.screenshots);
 });

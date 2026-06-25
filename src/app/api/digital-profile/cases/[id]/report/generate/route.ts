@@ -6,7 +6,12 @@
 
 import type { NextRequest } from "next/server";
 import { jsonOk, withModule } from "@/modules/digital-profile/http/errors";
-import { getActorContext } from "@/modules/digital-profile/http/request";
+import {
+  actorOf,
+  requireCaseAccess,
+  requireDigitalProfileUser,
+  requireRole,
+} from "@/modules/digital-profile/auth/guard";
 import { createReportVersion } from "@/modules/digital-profile/services/report-builder-service";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +20,9 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
-  const data = await createReportVersion(id, getActorContext(req));
+  const user = await requireDigitalProfileUser(req);
+  requireRole(user, "report.generateInternal");
+  await requireCaseAccess(user, id, "VIEWER");
+  const data = await createReportVersion(id, actorOf(user));
   return jsonOk(data, 201);
 });

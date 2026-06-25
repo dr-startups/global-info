@@ -29,7 +29,8 @@
     "smoke:report-template-v3": "node scripts/smoke-report-template-v3.mjs",
     "smoke:report-i18n": "node scripts/smoke-report-i18n.mjs",
     "smoke:i18n": "tsx scripts/smoke-i18n.ts",
-    "smoke:suite": "tsx scripts/smoke-i18n.ts && node scripts/smoke-agents.mjs && node scripts/smoke-wikipedia.mjs && tsx scripts/smoke-search-providers.ts && node scripts/smoke-search-surfaces.mjs && node scripts/smoke-risk-classifier.mjs && node scripts/smoke-audit-summary.mjs && node scripts/smoke-render.mjs && node scripts/smoke-report-template.mjs && node scripts/smoke-report-template-v2.mjs && node scripts/smoke-report-template-v3.mjs && node scripts/smoke-report-i18n.mjs",
+    "smoke:auth": "tsx scripts/smoke-auth.ts",
+    "smoke:suite": "tsx scripts/smoke-i18n.ts && tsx scripts/smoke-auth.ts && node scripts/smoke-agents.mjs && node scripts/smoke-wikipedia.mjs && tsx scripts/smoke-search-providers.ts && node scripts/smoke-search-surfaces.mjs && node scripts/smoke-risk-classifier.mjs && node scripts/smoke-audit-summary.mjs && node scripts/smoke-render.mjs && node scripts/smoke-report-template.mjs && node scripts/smoke-report-template-v2.mjs && node scripts/smoke-report-template-v3.mjs && node scripts/smoke-report-i18n.mjs",
     "smoke:all": "npm run typecheck && npm run build && npm run smoke:suite",
     "smoke:all:with-renderer": "docker compose up -d --build renderer && npm run smoke:all"
   },

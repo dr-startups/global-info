@@ -275,12 +275,20 @@ const MIME: Record<"pptx" | "pdf", string> = {
   pdf: "application/pdf",
 };
 
+/** Metadata passed to the optional download authorization hook (Stage M1). */
+export interface ReportDownloadMeta {
+  caseId: string;
+  status: string;
+  watermark: string | null;
+}
+
 /** Validates a signed token and returns the rendered file bytes for download. */
 export async function getReportFileForDownload(
   reportVersionId: string,
   type: string,
   token: string,
-  ctx: ActorContext = {}
+  ctx: ActorContext = {},
+  authorize?: (meta: ReportDownloadMeta) => Promise<void> | void
 ): Promise<ReportFile> {
   if (type !== "pptx" && type !== "pdf") {
     throw new ValidationError("type must be 'pptx' or 'pdf'");
@@ -291,6 +299,8 @@ export async function getReportFileForDownload(
     select: {
       caseId: true,
       version: true,
+      status: true,
+      watermark: true,
       pptxStorageKey: true,
       pdfStorageKey: true,
     },
@@ -300,6 +310,16 @@ export async function getReportFileForDownload(
 
   if (!verifySignedToken(storageKey, token)) {
     throw new NotFoundError("Report file not found");
+  }
+
+  // Auth/access control runs only after the signed token is validated, so a
+  // valid token can never bypass authorization when auth is enabled.
+  if (authorize) {
+    await authorize({
+      caseId: row.caseId,
+      status: String(row.status),
+      watermark: row.watermark ?? null,
+    });
   }
 
   const buffer = await loadFile(storageKey).catch(() => {

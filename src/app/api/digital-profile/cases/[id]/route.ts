@@ -9,10 +9,13 @@
 
 import type { NextRequest } from "next/server";
 import { jsonOk, withModule } from "@/modules/digital-profile/http/errors";
+import { readJsonBody } from "@/modules/digital-profile/http/request";
 import {
-  getActorContext,
-  readJsonBody,
-} from "@/modules/digital-profile/http/request";
+  actorOf,
+  requireCaseAccess,
+  requireDigitalProfileUser,
+  requireRole,
+} from "@/modules/digital-profile/auth/guard";
 import {
   deleteCaseSoft,
   getCaseById,
@@ -27,7 +30,10 @@ type RouteContext = { params: Promise<{ id: string }> };
 export const GET = withModule(
   async (req: NextRequest, ctx: RouteContext) => {
     const { id } = await ctx.params;
-    const data = await getCaseById(id, getActorContext(req));
+    const user = await requireDigitalProfileUser(req);
+    requireRole(user, "case.view");
+    await requireCaseAccess(user, id, "VIEWER");
+    const data = await getCaseById(id, actorOf(user));
     return jsonOk(data);
   }
 );
@@ -35,9 +41,12 @@ export const GET = withModule(
 export const PATCH = withModule(
   async (req: NextRequest, ctx: RouteContext) => {
     const { id } = await ctx.params;
+    const user = await requireDigitalProfileUser(req);
+    requireRole(user, "case.update");
+    await requireCaseAccess(user, id, "EDITOR");
     const body = await readJsonBody(req);
     const input = UpdateDigitalProfileCaseSchema.parse(body);
-    const data = await updateCase(id, input, getActorContext(req));
+    const data = await updateCase(id, input, actorOf(user));
     return jsonOk(data);
   }
 );
@@ -45,7 +54,10 @@ export const PATCH = withModule(
 export const DELETE = withModule(
   async (req: NextRequest, ctx: RouteContext) => {
     const { id } = await ctx.params;
-    const data = await deleteCaseSoft(id, getActorContext(req));
+    const user = await requireDigitalProfileUser(req);
+    requireRole(user, "case.delete");
+    await requireCaseAccess(user, id, "EDITOR");
+    const data = await deleteCaseSoft(id, actorOf(user));
     return jsonOk(data);
   }
 );

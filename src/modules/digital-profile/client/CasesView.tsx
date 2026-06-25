@@ -17,6 +17,7 @@ import {
 import { CreateCaseForm } from "./CreateCaseForm";
 import { DigitalProfileCasesTable } from "./DigitalProfileCasesTable";
 import { useDigitalProfileI18n } from "./i18n-provider";
+import { useDpAuth } from "./auth-provider";
 
 type LoadState =
   | { kind: "loading" }
@@ -27,6 +28,7 @@ type LoadState =
 export function CasesView() {
   const router = useRouter();
   const { t, tError } = useDigitalProfileI18n();
+  const { can } = useDpAuth();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [creating, setCreating] = useState(false);
 
@@ -57,7 +59,7 @@ export function CasesView() {
           <h1 className="dp-h1">{t("page.title")}</h1>
           <div className="dp-muted">{t("page.subtitle")}</div>
         </div>
-        {state.kind === "ready" && !creating ? (
+        {state.kind === "ready" && !creating && can("case.create") ? (
           <button className="dp-btn dp-btn-primary" onClick={() => setCreating(true)}>
             {t("cases.createCase")}
           </button>

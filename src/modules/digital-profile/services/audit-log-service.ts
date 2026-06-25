@@ -46,7 +46,12 @@ export type AuditAction =
   // Stage I — risk classifier v1
   | "RISK_CLASSIFY_RUN"
   // Stage J — audit summary
-  | "AUDIT_SUMMARY_BUILT";
+  | "AUDIT_SUMMARY_BUILT"
+  // Stage M1 — auth + access control
+  | "LOGIN"
+  | "LOGIN_FAILED"
+  | "LOGOUT"
+  | "ACCESS_DENIED";
 
 export interface RecordAuditInput {
   caseId?: string | null;

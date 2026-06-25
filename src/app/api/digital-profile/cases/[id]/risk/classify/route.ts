@@ -6,7 +6,12 @@
 
 import type { NextRequest } from "next/server";
 import { jsonOk, withModule } from "@/modules/digital-profile/http/errors";
-import { getActorContext } from "@/modules/digital-profile/http/request";
+import {
+  actorOf,
+  requireCaseAccess,
+  requireDigitalProfileUser,
+  requireRole,
+} from "@/modules/digital-profile/auth/guard";
 import { classifyCaseRisks } from "@/modules/digital-profile/services/risk-finding-service";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +20,9 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
-  const summary = await classifyCaseRisks(id, getActorContext(req));
+  const user = await requireDigitalProfileUser(req);
+  requireRole(user, "risk.classify");
+  await requireCaseAccess(user, id, "VIEWER");
+  const summary = await classifyCaseRisks(id, actorOf(user));
   return jsonOk(summary);
 });

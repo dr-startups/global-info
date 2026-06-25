@@ -26,6 +26,10 @@ Core principles:
 - **Lawful only.** Compliance databases (LexisNexis, Dow Jones, World-Check) are
   integrated strictly via official API connectors or manual import. No leaked or
   illegal datasets. No automated Wikipedia publishing.
+- **Auth & roles (Stage M1).** Optional session-cookie auth (`DIGITAL_PROFILE_AUTH_ENABLED`)
+  with roles `SUPER_ADMIN`/`ADMIN`/`ANALYST`/`REVIEWER`/`CLIENT_VIEWER` and
+  per-case access. Disabled by default (demo); **enable in production**. See
+  [Security & privacy](docs/digital-profile/SECURITY.md).
 
 ## Getting started
 
@@ -39,7 +43,7 @@ cp .env.example .env   # then edit DATABASE_URL etc.
 # 3. Set up the database
 npm run db:generate
 npm run db:migrate
-npm run db:seed          # 3 demo cases
+npm run db:seed          # 3 demo cases + 4 demo users (auth)
 
 # 4. Start the report renderer (Docker)
 docker compose up -d --build renderer
@@ -56,7 +60,8 @@ npm run dev
 | `npm run dev` | Start Next.js dev server |
 | `npm run typecheck` | TypeScript type checking |
 | `npm run db:migrate` | Create/apply a dev migration |
-| `npm run db:seed` | Insert 3 demo cases |
+| `npm run db:seed` | Insert 3 demo cases + 4 demo users |
 | `npm run db:studio` | Open Prisma Studio |
+| `npm run smoke:auth` | Auth + RBAC smoke (roles, password, session, access) |
 | `npm run smoke:all` | typecheck + build + full smoke suite (needs dev server + renderer) |
 | `npm run smoke:all:with-renderer` | builds/starts the Docker renderer, then `smoke:all` |

@@ -233,12 +233,20 @@ export async function createCase(
 }
 
 export async function listCases(
-  params: ListDigitalProfileCasesQuery
+  params: ListDigitalProfileCasesQuery,
+  opts: { restrictToCaseIds?: string[] | null } = {}
 ): Promise<PaginatedCases> {
   const { page, pageSize, status, q, includeDeleted } = params;
 
+  // CLIENT_VIEWER (or any restricted user) only ever sees granted cases. An
+  // empty array means "no accessible cases" -> empty page.
+  if (opts.restrictToCaseIds && opts.restrictToCaseIds.length === 0) {
+    return { items: [], total: 0, page, pageSize };
+  }
+
   const where: Prisma.CaseWhereInput = {
     ...(includeDeleted ? {} : { deletedAt: null }),
+    ...(opts.restrictToCaseIds ? { id: { in: opts.restrictToCaseIds } } : {}),
     ...(status ? { status } : {}),
     ...(q
       ? {

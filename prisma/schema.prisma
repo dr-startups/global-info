@@ -144,6 +144,22 @@ enum ReportStatus {
   FINAL
 }
 
+// Stage M1 — auth, roles and access control.
+enum DpRole {
+  SUPER_ADMIN
+  ADMIN
+  ANALYST
+  REVIEWER
+  CLIENT_VIEWER
+}
+
+enum DpAccessLevel {
+  OWNER
+  EDITOR
+  REVIEWER
+  VIEWER
+}
+
 // ----------------------------------------------------------------------------
 // 1. cases
 // ----------------------------------------------------------------------------
@@ -181,6 +197,7 @@ model Case {
   aiProfiles         AiProfile[]
   reportVersions     ReportVersion[]
   auditLogs        AuditLog[]
+  caseAccess         DpCaseAccess[]
 
   @@index([status])
   @@index([deletedAt])
@@ -519,4 +536,50 @@ model AuditLog {
   @@index([caseId])
   @@index([actorId])
   @@map("dp_audit_logs")
+}
+
+// ----------------------------------------------------------------------------
+// 13. users (Stage M1 — auth + roles)
+// ----------------------------------------------------------------------------
+
+model DpUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  role         DpRole   @default(ANALYST)
+  // scrypt password hash ("scrypt$N$r$p$salt$hash"). Never store plain passwords.
+  passwordHash String
+  isActive     Boolean  @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  caseAccess DpCaseAccess[]
+
+  @@index([role])
+  @@map("dp_users")
+}
+
+// ----------------------------------------------------------------------------
+// 14. case access grants (Stage M1)
+//     Per-case access for users (primarily CLIENT_VIEWER). Staff roles
+//     (SUPER_ADMIN/ADMIN/ANALYST/REVIEWER) get global access via their role; a
+//     grant row narrows or explicitly assigns a specific case to a user.
+// ----------------------------------------------------------------------------
+
+model DpCaseAccess {
+  id          String        @id @default(cuid())
+  caseId      String
+  userId      String
+  accessLevel DpAccessLevel @default(VIEWER)
+  createdBy   String?
+  createdAt   DateTime      @default(now())
+
+  case Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  user DpUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, userId])
+  @@index([userId])
+  @@index([caseId])
+  @@map("dp_case_access")
 }

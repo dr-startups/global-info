@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   DigitalProfileApiError,
   generateReport,
@@ -15,6 +15,7 @@ import {
   SuccessBox,
 } from "./components";
 import { useDigitalProfileI18n } from "./i18n-provider";
+import { useDpAuth } from "./auth-provider";
 
 /**
  * Report Preview: shows the latest report version and drives generation.
@@ -33,11 +34,21 @@ export function ReportPreviewPanel({
   onReportChange: (r: ReportVersion) => void;
 }) {
   const { t, tError, tTemplate, fmtDate, locale } = useDigitalProfileI18n();
+  const { can } = useDpAuth();
+  const canGenerateInternal = can("report.generateInternal");
+  const canGenerateClient = can("report.generateClient");
+  const canGenerate = canGenerateInternal || canGenerateClient;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [templateVersion, setTemplateVersion] = useState("report-template-v3");
   const [audience, setAudience] = useState<"internal" | "client">("internal");
+  // Reviewers can only produce client reports — coerce the default once auth loads.
+  useEffect(() => {
+    if (audience === "internal" && !canGenerateInternal && canGenerateClient) {
+      setAudience("client");
+    }
+  }, [audience, canGenerateInternal, canGenerateClient]);
   const [watermarkMode, setWatermarkMode] = useState<"draft" | "none">("draft");
   // Report language defaults to the current UI locale but can be chosen separately.
   const [reportLanguage, setReportLanguage] = useState<"ru" | "en">(
@@ -101,6 +112,7 @@ export function ReportPreviewPanel({
         <h2 className="dp-h2" style={{ margin: 0 }}>
           {t("report.title")}
         </h2>
+        {canGenerate ? (
         <div className="dp-inline">
           <select
             className="dp-select"
@@ -123,8 +135,12 @@ export function ReportPreviewPanel({
             disabled={busy}
             aria-label={t("report.audience")}
           >
-            <option value="internal">{t("report.internal")}</option>
-            <option value="client">{t("report.client")}</option>
+            {canGenerateInternal ? (
+              <option value="internal">{t("report.internal")}</option>
+            ) : null}
+            {canGenerateClient ? (
+              <option value="client">{t("report.client")}</option>
+            ) : null}
           </select>
           <select
             className="dp-select"
@@ -148,11 +164,19 @@ export function ReportPreviewPanel({
             <option value="ru">{t("report.reportLanguage")}: {t("report.langRu")}</option>
             <option value="en">{t("report.reportLanguage")}: {t("report.langEn")}</option>
           </select>
-          <button className="dp-btn dp-btn-primary" onClick={handleGenerate} disabled={busy}>
+          <button
+            className="dp-btn dp-btn-primary"
+            onClick={handleGenerate}
+            disabled={
+              busy ||
+              (audience === "client" ? !canGenerateClient : !canGenerateInternal)
+            }
+          >
             {busy ? <span className="dp-spinner" /> : null}
             {busy ? t("common.working") : report ? t("report.regenerateReport") : t("report.generateReport")}
           </button>
         </div>
+        ) : null}
       </div>
 
       {error ? (

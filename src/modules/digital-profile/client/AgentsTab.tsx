@@ -9,6 +9,7 @@ import {
 } from "./api";
 import { Badge, EmptyState, ErrorBox, StatusBadge } from "./components";
 import { useDigitalProfileI18n } from "./i18n-provider";
+import { useDpAuth } from "./auth-provider";
 
 /**
  * Agents tab: lists the (mock) agents, lets the user run one agent or the full
@@ -32,6 +33,8 @@ export function AgentsTab({
   onChanged: () => void;
 }) {
   const { t, tError, tKind, tStatus, fmtDate } = useDigitalProfileI18n();
+  const { can } = useDpAuth();
+  const canRun = can("agents.run");
   const [busyAgent, setBusyAgent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,14 +60,16 @@ export function AgentsTab({
         <h2 className="dp-h2" style={{ margin: 0 }}>
           {t("agents.title")} <span className="dp-muted">{t("agents.mockSuffix")}</span>
         </h2>
-        <button
-          className="dp-btn dp-btn-primary"
-          onClick={onRunFullAudit}
-          disabled={auditing || busyAgent !== null}
-        >
-          {auditing ? <span className="dp-spinner" /> : null}
-          {auditing ? t("agents.runningAudit") : t("agents.runFullAudit")}
-        </button>
+        {canRun ? (
+          <button
+            className="dp-btn dp-btn-primary"
+            onClick={onRunFullAudit}
+            disabled={auditing || busyAgent !== null}
+          >
+            {auditing ? <span className="dp-spinner" /> : null}
+            {auditing ? t("agents.runningAudit") : t("agents.runFullAudit")}
+          </button>
+        ) : null}
       </div>
 
       {error ? (
@@ -111,14 +116,18 @@ export function AgentsTab({
               <td>{a.lastRun ? <StatusBadge status={a.lastRun.status} /> : <span className="dp-muted">—</span>}</td>
               <td className="dp-muted">{a.lastRun ? fmtDate(a.lastRun.finishedAt) : "—"}</td>
               <td style={{ textAlign: "right" }}>
-                <button
-                  className="dp-btn dp-btn-sm"
-                  disabled={auditing || busyAgent !== null || !a.enabled}
-                  onClick={() => run(a.name)}
-                  title={a.enabled ? t("common.run") : a.availability.message}
-                >
-                  {busyAgent === a.name ? t("agents.running") : t("common.run")}
-                </button>
+                {canRun ? (
+                  <button
+                    className="dp-btn dp-btn-sm"
+                    disabled={auditing || busyAgent !== null || !a.enabled}
+                    onClick={() => run(a.name)}
+                    title={a.enabled ? t("common.run") : a.availability.message}
+                  >
+                    {busyAgent === a.name ? t("agents.running") : t("common.run")}
+                  </button>
+                ) : (
+                  <span className="dp-muted">—</span>
+                )}
               </td>
             </tr>
           ))}

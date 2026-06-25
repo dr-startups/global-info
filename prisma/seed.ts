@@ -19,6 +19,8 @@
  */
 
 import { PrismaClient } from "@prisma/client";
+// Relative import (no path alias / no app prisma client) so the seed runs under tsx.
+import { hashPassword } from "../src/modules/digital-profile/auth/password";
 
 const prisma = new PrismaClient();
 
@@ -26,6 +28,51 @@ const SEED_ACTOR = "seed-script";
 const CASE_RICH = "DPA-2026-0001";
 const CASE_EMPTY = "DPA-2026-0002";
 const CASE_MIXED = "DPA-2026-0003";
+
+// ---------------------------------------------------------------------------
+// Demo users (Stage M1). DEMO-ONLY credentials — never use in production.
+// The superadmin can be overridden via DIGITAL_PROFILE_DEMO_ADMIN_EMAIL/PASSWORD.
+// ---------------------------------------------------------------------------
+
+const DEMO_USERS = [
+  {
+    email: process.env.DIGITAL_PROFILE_DEMO_ADMIN_EMAIL?.trim() || "superadmin@demo.local",
+    password: process.env.DIGITAL_PROFILE_DEMO_ADMIN_PASSWORD || "demo-Admin-12345",
+    name: "Demo Super Admin",
+    role: "SUPER_ADMIN" as const,
+  },
+  { email: "analyst@demo.local", password: "demo-Analyst-12345", name: "Demo Analyst", role: "ANALYST" as const },
+  { email: "reviewer@demo.local", password: "demo-Reviewer-12345", name: "Demo Reviewer", role: "REVIEWER" as const },
+  { email: "client@demo.local", password: "demo-Client-12345", name: "Demo Client Viewer", role: "CLIENT_VIEWER" as const },
+];
+
+async function seedDemoUsers() {
+  for (const u of DEMO_USERS) {
+    const email = u.email.toLowerCase();
+    const passwordHash = await hashPassword(u.password);
+    await prisma.dpUser.upsert({
+      where: { email },
+      create: { email, name: u.name, role: u.role, passwordHash, isActive: true },
+      update: { name: u.name, role: u.role, passwordHash, isActive: true },
+    });
+  }
+
+  // Grant the client viewer access to exactly ONE demo case (the rich case).
+  const client = await prisma.dpUser.findUnique({ where: { email: "client@demo.local" } });
+  const richCase = await prisma.case.findUnique({ where: { caseNumber: CASE_RICH } });
+  if (client && richCase) {
+    await prisma.dpCaseAccess.upsert({
+      where: { caseId_userId: { caseId: richCase.id, userId: client.id } },
+      create: {
+        caseId: richCase.id,
+        userId: client.id,
+        accessLevel: "VIEWER",
+        createdBy: SEED_ACTOR,
+      },
+      update: { accessLevel: "VIEWER" },
+    });
+  }
+}
 
 async function seedRichMockCase() {
   const c = await prisma.case.create({
@@ -400,10 +447,15 @@ async function main() {
   const empty = await seedEmptyCase();
   const mixed = await seedMixedRealSafeCase();
 
+  await seedDemoUsers();
+
   console.log("Seeded demo cases:");
   console.log(`  - ${rich}  (rich mock — ready for Template v3 generation)`);
   console.log(`  - ${empty}  (empty/clean — data-quality warnings)`);
   console.log(`  - ${mixed}  (mixed real-safe — Wikipedia-ready + manual evidence)`);
+  console.log("Seeded demo users (DEMO-ONLY credentials — see docs):");
+  for (const u of DEMO_USERS) console.log(`  - ${u.email}  [${u.role}]`);
+  console.log("  client@demo.local granted VIEWER access to DPA-2026-0001 only.");
 }
 
 main()

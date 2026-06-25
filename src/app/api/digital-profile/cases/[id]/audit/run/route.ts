@@ -6,7 +6,13 @@
 
 import type { NextRequest } from "next/server";
 import { jsonOk, withModule } from "@/modules/digital-profile/http/errors";
-import { getActorContext } from "@/modules/digital-profile/http/request";
+import {
+  actorOf,
+  requireCaseAccess,
+  requireDigitalProfileUser,
+  requireRole,
+} from "@/modules/digital-profile/auth/guard";
+import { digitalProfileConfig } from "@/modules/digital-profile/config";
 import { runFullAudit } from "@/modules/digital-profile/services/agent-run-service";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +21,11 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
-  const data = await runFullAudit(id, getActorContext(req));
+  const user = await requireDigitalProfileUser(req);
+  requireRole(user, "agents.run");
+  // Running real (non-mock) providers requires the stronger permission.
+  if (!digitalProfileConfig.mockAgents) requireRole(user, "agents.runReal");
+  await requireCaseAccess(user, id, "VIEWER");
+  const data = await runFullAudit(id, actorOf(user));
   return jsonOk(data, 201);
 });

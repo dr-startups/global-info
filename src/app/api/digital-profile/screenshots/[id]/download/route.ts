@@ -7,7 +7,11 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 import { withModule } from "@/modules/digital-profile/http/errors";
-import { getActorContext } from "@/modules/digital-profile/http/request";
+import {
+  actorOf,
+  requireDigitalProfileUser,
+  requireRole,
+} from "@/modules/digital-profile/auth/guard";
 import { getScreenshotForDownload } from "@/modules/digital-profile/services/screenshot-service";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +20,12 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
+  // Screenshots are raw evidence — staff only, never CLIENT_VIEWER (even with a
+  // valid signed token).
+  const user = await requireDigitalProfileUser(req);
+  requireRole(user, "evidence.viewRaw");
   const token = req.nextUrl.searchParams.get("token") ?? "";
-  const file = await getScreenshotForDownload(id, token, getActorContext(req));
+  const file = await getScreenshotForDownload(id, token, actorOf(user));
 
   return new NextResponse(new Uint8Array(file.buffer), {
     status: 200,

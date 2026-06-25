@@ -15,12 +15,15 @@ const ACTOR_HEADERS: Record<string, string> = { "x-actor-id": "admin-ui" };
 export type ApiErrorCode =
   | "MODULE_DISABLED"
   | "VALIDATION_ERROR"
+  | "UNAUTHORIZED"
   | "FORBIDDEN"
   | "NOT_FOUND"
   | "CONFLICT"
   | "RENDERER_UNAVAILABLE"
   | "INTERNAL_ERROR"
   | "NETWORK_ERROR";
+
+const LOGIN_PATH = "/admin/digital-profile/login";
 
 export class DigitalProfileApiError extends Error {
   readonly code: ApiErrorCode;
@@ -73,12 +76,62 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (body.ok) return body.data;
 
+  // When auth is enabled and the session is missing/expired, bounce to login
+  // (skip the auth endpoints themselves to avoid redirect loops).
+  if (
+    body.error.code === "UNAUTHORIZED" &&
+    typeof window !== "undefined" &&
+    !path.startsWith("/auth/") &&
+    !window.location.pathname.startsWith(LOGIN_PATH)
+  ) {
+    const next = encodeURIComponent(window.location.pathname);
+    window.location.assign(`${LOGIN_PATH}?next=${next}`);
+  }
+
   throw new DigitalProfileApiError(
     body.error.code ?? "INTERNAL_ERROR",
     res.status,
     body.error.message ?? "Request failed",
     body.error.details
   );
+}
+
+// ---------------------------------------------------------------------------
+// Auth (Stage M1)
+// ---------------------------------------------------------------------------
+
+export type DpRole =
+  | "SUPER_ADMIN"
+  | "ADMIN"
+  | "ANALYST"
+  | "REVIEWER"
+  | "CLIENT_VIEWER";
+
+export interface CurrentUser {
+  id: string;
+  email: string;
+  name: string;
+  role: DpRole;
+}
+
+export interface MeResponse {
+  authEnabled: boolean;
+  user: CurrentUser | null;
+}
+
+export function getMe(): Promise<MeResponse> {
+  return request<MeResponse>("/auth/me");
+}
+
+export function login(email: string, password: string): Promise<CurrentUser> {
+  return request<CurrentUser>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function logout(): Promise<{ ok: boolean }> {
+  return request<{ ok: boolean }>("/auth/logout", { method: "POST" });
 }
 
 // ---------------------------------------------------------------------------

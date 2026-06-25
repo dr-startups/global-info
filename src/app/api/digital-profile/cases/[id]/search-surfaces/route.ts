@@ -6,7 +6,13 @@
 
 import type { NextRequest } from "next/server";
 import { jsonOk, withModule } from "@/modules/digital-profile/http/errors";
-import { getActorContext, readJsonBody } from "@/modules/digital-profile/http/request";
+import { readJsonBody } from "@/modules/digital-profile/http/request";
+import {
+  actorOf,
+  requireCaseAccess,
+  requireDigitalProfileUser,
+  requireRole,
+} from "@/modules/digital-profile/auth/guard";
 import {
   createSearchSurfaceItem,
   listSearchSurfaceItems,
@@ -22,6 +28,9 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
+  const user = await requireDigitalProfileUser(req);
+  requireRole(user, "evidence.viewRaw");
+  await requireCaseAccess(user, id, "VIEWER");
   const sp = req.nextUrl.searchParams;
   const filters = ListSearchSurfacesQuerySchema.parse({
     type: sp.get("type") ?? undefined,
@@ -34,7 +43,10 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
 
 export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
+  const user = await requireDigitalProfileUser(req);
+  requireRole(user, "evidence.create");
+  await requireCaseAccess(user, id, "EDITOR");
   const input = CreateSearchSurfaceItemSchema.parse(await readJsonBody(req));
-  const { item, deduplicated } = await createSearchSurfaceItem(id, input, getActorContext(req));
+  const { item, deduplicated } = await createSearchSurfaceItem(id, input, actorOf(user));
   return jsonOk({ item, deduplicated }, deduplicated ? 200 : 201);
 });

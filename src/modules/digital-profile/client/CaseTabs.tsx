@@ -29,6 +29,7 @@ import { AgentsTab } from "./AgentsTab";
 import { SurfacesTab } from "./SurfacesTab";
 import { AuditSummaryTab } from "./AuditSummaryTab";
 import { useDigitalProfileI18n } from "./i18n-provider";
+import { useDpAuth } from "./auth-provider";
 
 type TabKey =
   | "subject"
@@ -75,6 +76,10 @@ export function CaseTabs({
   onReportChange: (r: ReportVersion) => void;
 }) {
   const { t } = useDigitalProfileI18n();
+  const { can } = useDpAuth();
+  // Raw evidence + agent/debug internals require the staff "view raw" permission;
+  // CLIENT_VIEWER only ever sees the subject overview and the report.
+  const canViewRaw = can("evidence.viewRaw");
   const [tab, setTab] = useState<TabKey>("subject");
 
   const byType = (ty: SearchSurfaceItem["type"]) => surfaces.filter((s) => s.type === ty);
@@ -84,23 +89,24 @@ export function CaseTabs({
   const videos = byType("VIDEO_RESULT");
   const knowledge = byType("KNOWLEDGE_BLOCK");
 
-  const tabs: { key: TabKey; label: string; count?: number }[] = [
+  const allTabs: { key: TabKey; label: string; count?: number; raw?: boolean }[] = [
     { key: "subject", label: t("tabs.subject") },
-    { key: "agents", label: t("tabs.agents"), count: agents.length },
-    { key: "search", label: t("tabs.searchResults"), count: evidence.searchResults.length },
-    { key: "suggestions", label: t("tabs.suggestions"), count: suggestions.length },
-    { key: "related", label: t("tabs.relatedQueries"), count: related.length },
-    { key: "images", label: t("tabs.images"), count: images.length },
-    { key: "videos", label: t("tabs.videos"), count: videos.length },
-    { key: "knowledge", label: t("tabs.knowledgeBlock"), count: knowledge.length },
-    { key: "screenshots", label: t("tabs.screenshots"), count: evidence.screenshots.length },
-    { key: "wikipedia", label: t("tabs.wikipedia"), count: evidence.wikipediaChecks.length },
-    { key: "ai", label: t("tabs.aiProfile"), count: evidence.aiProfiles.length },
-    { key: "compliance", label: t("tabs.complianceDatabases"), count: evidence.databaseProfiles.length },
-    { key: "risk", label: t("tabs.riskFindings"), count: evidence.riskFindings.length },
-    { key: "audit", label: t("tabs.auditSummary") },
+    { key: "agents", label: t("tabs.agents"), count: agents.length, raw: true },
+    { key: "search", label: t("tabs.searchResults"), count: evidence.searchResults.length, raw: true },
+    { key: "suggestions", label: t("tabs.suggestions"), count: suggestions.length, raw: true },
+    { key: "related", label: t("tabs.relatedQueries"), count: related.length, raw: true },
+    { key: "images", label: t("tabs.images"), count: images.length, raw: true },
+    { key: "videos", label: t("tabs.videos"), count: videos.length, raw: true },
+    { key: "knowledge", label: t("tabs.knowledgeBlock"), count: knowledge.length, raw: true },
+    { key: "screenshots", label: t("tabs.screenshots"), count: evidence.screenshots.length, raw: true },
+    { key: "wikipedia", label: t("tabs.wikipedia"), count: evidence.wikipediaChecks.length, raw: true },
+    { key: "ai", label: t("tabs.aiProfile"), count: evidence.aiProfiles.length, raw: true },
+    { key: "compliance", label: t("tabs.complianceDatabases"), count: evidence.databaseProfiles.length, raw: true },
+    { key: "risk", label: t("tabs.riskFindings"), count: evidence.riskFindings.length, raw: true },
+    { key: "audit", label: t("tabs.auditSummary"), raw: true },
     { key: "report", label: t("tabs.reportPreview") },
   ];
+  const tabs = allTabs.filter((tb) => canViewRaw || !tb.raw);
 
   return (
     <div>
@@ -237,6 +243,7 @@ function SearchResultsTab({
   onChanged: () => void;
 }) {
   const { t, tError, tSource } = useDigitalProfileI18n();
+  const { can } = useDpAuth();
   const [engine, setEngine] = useState("GOOGLE");
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
@@ -285,6 +292,7 @@ function SearchResultsTab({
     <div>
       <h2 className="dp-h2">{t("search.title")}</h2>
 
+      {can("evidence.create") ? (
       <form onSubmit={add} style={{ marginBottom: 18 }}>
         <div className="dp-form-grid">
           <div className="dp-field">
@@ -333,6 +341,7 @@ function SearchResultsTab({
           </div>
         ) : null}
       </form>
+      ) : null}
 
       <div className="dp-inline" style={{ marginBottom: 10 }}>
         <label className="dp-muted" style={{ fontSize: 13 }}>
@@ -616,6 +625,7 @@ function RiskFindingsTab({
   onChanged: () => void;
 }) {
   const { t, tError, tRisk, tStatus, tSource } = useDigitalProfileI18n();
+  const { can } = useDpAuth();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [classifying, setClassifying] = useState(false);
@@ -712,12 +722,16 @@ function RiskFindingsTab({
           {t("risk.title")}
         </h2>
         <div className="dp-inline">
-          <button className="dp-btn dp-btn-sm" disabled={rebuilding} onClick={rebuildSummary}>
-            {rebuilding ? t("risk.rebuilding") : t("risk.rebuildAfterReview")}
-          </button>
-          <button className="dp-btn dp-btn-primary dp-btn-sm" disabled={classifying} onClick={classify}>
-            {classifying ? t("risk.classifying") : t("risk.classifyRisks")}
-          </button>
+          {can("report.generateInternal") ? (
+            <button className="dp-btn dp-btn-sm" disabled={rebuilding} onClick={rebuildSummary}>
+              {rebuilding ? t("risk.rebuilding") : t("risk.rebuildAfterReview")}
+            </button>
+          ) : null}
+          {can("risk.classify") ? (
+            <button className="dp-btn dp-btn-primary dp-btn-sm" disabled={classifying} onClick={classify}>
+              {classifying ? t("risk.classifying") : t("risk.classifyRisks")}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -838,7 +852,7 @@ function RiskFindingsTab({
                   <StatusBadge status={f.reviewStatus} />
                 </td>
                 <td style={{ textAlign: "right" }}>
-                  {f.reviewStatus === "PENDING" ? (
+                  {f.reviewStatus === "PENDING" && can("risk.review") ? (
                     <div className="dp-inline" style={{ justifyContent: "flex-end" }}>
                       <button
                         className="dp-btn dp-btn-sm"

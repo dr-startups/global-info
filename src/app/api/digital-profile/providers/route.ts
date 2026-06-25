@@ -7,10 +7,17 @@
 
 import type { NextRequest } from "next/server";
 import { jsonOk, withModule } from "@/modules/digital-profile/http/errors";
+import {
+  requireDigitalProfileUser,
+  requireRole,
+} from "@/modules/digital-profile/auth/guard";
 import { listProviderStatus } from "@/modules/digital-profile/providers/config";
 
 export const dynamic = "force-dynamic";
 
-export const GET = withModule(async (_req: NextRequest) => {
+export const GET = withModule(async (req: NextRequest) => {
+  const user = await requireDigitalProfileUser(req);
+  // Provider/connector internals are staff-only.
+  requireRole(user, "evidence.viewRaw");
   return jsonOk(listProviderStatus());
 });

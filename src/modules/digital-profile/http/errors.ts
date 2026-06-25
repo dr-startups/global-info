@@ -14,6 +14,7 @@ import { isDigitalProfileEnabled } from "../config";
 export type ErrorCode =
   | "MODULE_DISABLED"
   | "VALIDATION_ERROR"
+  | "UNAUTHORIZED"
   | "FORBIDDEN"
   | "NOT_FOUND"
   | "CONFLICT"
@@ -48,6 +49,12 @@ export class ModuleDisabledError extends AppError {
 export class ValidationError extends AppError {
   constructor(message = "Invalid request payload", details?: unknown) {
     super("VALIDATION_ERROR", 400, message, details);
+  }
+}
+
+export class UnauthorizedError extends AppError {
+  constructor(message = "Authentication required") {
+    super("UNAUTHORIZED", 401, message);
   }
 }
 

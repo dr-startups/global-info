@@ -46,6 +46,29 @@ Run through this end-to-end before a demo or pilot. Expected result in brackets.
 23. [ ] Temporarily set `DIGITAL_PROFILE_ENABLED="false"`, hit any module route
         (→ `404 MODULE_DISABLED`). Re-enable after.
 
+## Auth + roles (Stage M1)
+
+Run with `DIGITAL_PROFILE_AUTH_ENABLED="true"` and a set
+`DIGITAL_PROFILE_SESSION_SECRET`, after `npm run db:seed` (creates demo users).
+
+26. [ ] `npm run db:migrate && npm run db:seed` (→ `dp_users` + `dp_case_access`
+        seeded; 4 demo users printed)
+27. [ ] Open `/admin/digital-profile` without logging in (→ redirected to
+        `/admin/digital-profile/login`)
+28. [ ] Log in as `superadmin@demo.local` (→ full access; user + role badge shown)
+29. [ ] Log in as `analyst@demo.local` (→ can add evidence / run agents / classify;
+        **Delete** and admin-only actions hidden; delete API → `403`)
+30. [ ] Log in as `reviewer@demo.local` (→ can review/dismiss findings + generate
+        **client** report; cannot classify or run agents)
+31. [ ] Log in as `client@demo.local` (→ sees **only** `DPA-2026-0001`; no Agents
+        / raw Evidence / mock/debug tabs; can view report tab only)
+32. [ ] As client viewer, attempt to download an internal/draft report (→ blocked /
+        `403`); raw screenshot/evidence download blocked even with a valid token
+33. [ ] Sign out (→ redirected to login; session cookie cleared)
+34. [ ] `npm run smoke:auth` → `smoke:auth PASSED`
+35. [ ] Set `DIGITAL_PROFILE_AUTH_ENABLED="false"` again → demo flow works without
+        login (synthetic admin); smoke suite still green
+
 ## Regression
 
 24. [ ] `npm run smoke:all:with-renderer` → `ALL CHECKS PASSED`
