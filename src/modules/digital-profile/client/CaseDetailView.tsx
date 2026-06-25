@@ -10,6 +10,7 @@ import {
   getReport,
   listAgentRuns,
   listAgents,
+  listSearchSurfaces,
   renderReport,
   runFullAudit,
   type AgentInfo,
@@ -17,6 +18,7 @@ import {
   type CaseDetail,
   type CaseEvidence,
   type ReportVersion,
+  type SearchSurfaceItem,
 } from "./api";
 import {
   Card,
@@ -42,6 +44,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
   const [report, setReport] = useState<ReportVersion | null>(null);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
+  const [surfaces, setSurfaces] = useState<SearchSurfaceItem[]>([]);
   const [generating, setGenerating] = useState(false);
   const [auditing, setAuditing] = useState(false);
   const [banner, setBanner] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
@@ -49,16 +52,18 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
   const loadAll = useCallback(async () => {
     setState({ kind: "loading" });
     try {
-      const [caseDetail, evidence, latestReport, agentList, runs] = await Promise.all([
+      const [caseDetail, evidence, latestReport, agentList, runs, surfaceList] = await Promise.all([
         getCase(caseId),
         getEvidence(caseId),
         getReport(caseId),
         listAgents(caseId),
         listAgentRuns(caseId),
+        listSearchSurfaces(caseId),
       ]);
       setReport(latestReport);
       setAgents(agentList);
       setAgentRuns(runs);
+      setSurfaces(surfaceList);
       setState({ kind: "ready", caseDetail, evidence });
     } catch (err) {
       if (err instanceof DigitalProfileApiError) {
@@ -82,16 +87,26 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
     }
   }, [caseId]);
 
-  // Refresh agents + runs + evidence together (after running agents).
+  const refreshSurfaces = useCallback(async () => {
+    try {
+      setSurfaces(await listSearchSurfaces(caseId));
+    } catch {
+      // Non-fatal: inline errors are surfaced by the triggering action.
+    }
+  }, [caseId]);
+
+  // Refresh agents + runs + evidence + surfaces together (after running agents).
   const refreshAgents = useCallback(async () => {
     try {
-      const [agentList, runs, evidence] = await Promise.all([
+      const [agentList, runs, evidence, surfaceList] = await Promise.all([
         listAgents(caseId),
         listAgentRuns(caseId),
         getEvidence(caseId),
+        listSearchSurfaces(caseId),
       ]);
       setAgents(agentList);
       setAgentRuns(runs);
+      setSurfaces(surfaceList);
       setState((prev) => (prev.kind === "ready" ? { ...prev, evidence } : prev));
     } catch {
       // Non-fatal: inline errors are surfaced by the action that triggered this.
@@ -222,6 +237,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
         <CaseTabs
           caseDetail={state.caseDetail}
           evidence={state.evidence}
+          surfaces={surfaces}
           report={report}
           agents={agents}
           agentRuns={agentRuns}
@@ -229,6 +245,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
           onRunFullAudit={handleRunAudit}
           onAgentsChanged={() => void refreshAgents()}
           onEvidenceChanged={() => void refreshEvidence()}
+          onSurfacesChanged={() => void refreshSurfaces()}
           onReportChange={setReport}
         />
       </Card>

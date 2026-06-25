@@ -52,7 +52,8 @@ async function main() {
   const agents0 = await req("GET", `${API}/cases/${caseId}/agents`);
   const list0 = agents0.json?.data ?? [];
   const mockCount = list0.filter((a) => a.kind === "MOCK").length;
-  check("GET agents -> 6 mock agents", mockCount === 6, String(mockCount));
+  // 6 collector/classifier mocks + MockSearchSurfaceAgent (Stage H3) = 7.
+  check("GET agents -> 7 mock agents", mockCount === 7, String(mockCount));
   check("GET agents -> real-wikipedia present", list0.some((a) => a.name === "REAL_WIKIPEDIA"));
   check("agents have no lastRun yet", list0.every((a) => a.lastRun === null));
 

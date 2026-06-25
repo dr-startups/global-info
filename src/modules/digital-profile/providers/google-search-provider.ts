@@ -8,8 +8,9 @@
  */
 
 import { providerConfig, getProviderAvailability } from "./config";
+import { getProviderCapabilities } from "./capabilities";
 import { getJson, toProviderError } from "./http";
-import type { SearchProvider } from "./search-provider";
+import type { SearchProvider, SurfaceMethodResult } from "./search-provider";
 import type {
   AvailabilityStatus,
   ProviderRunResult,
@@ -17,6 +18,7 @@ import type {
   SearchProviderResult,
 } from "./types";
 import { domainOf } from "./types";
+import type { ProviderCapabilities } from "../search-surfaces/types";
 
 const ENDPOINT = "https://www.googleapis.com/customsearch/v1";
 const MAX_PER_PAGE = 10; // Custom Search API hard limit per request.
@@ -115,6 +117,29 @@ export class GoogleSearchProvider implements SearchProvider {
       results: results.slice(0, limit),
       rawSnapshot: snapshots,
     };
+  }
+
+  capabilities(): ProviderCapabilities {
+    return getProviderCapabilities("GOOGLE");
+  }
+
+  // Surface-specific methods. The current official adapter only does organic
+  // search; everything else is NOT_SUPPORTED here (no scraping fallback).
+  async searchImages(): Promise<SurfaceMethodResult> {
+    return this.notSupported();
+  }
+  async searchVideos(): Promise<SurfaceMethodResult> {
+    return this.notSupported();
+  }
+  async getSuggestions(): Promise<SurfaceMethodResult> {
+    return this.notSupported();
+  }
+  async getRelatedQueries(): Promise<SurfaceMethodResult> {
+    return this.notSupported();
+  }
+
+  private notSupported(): SurfaceMethodResult {
+    return { status: "NOT_SUPPORTED", provider: this.name, method: "NOT_SUPPORTED", results: [] };
   }
 
   normalize(raw: unknown, request: SearchProviderRequest): SearchProviderResult[] {

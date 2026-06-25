@@ -42,7 +42,8 @@ export type AgentNameValue =
   | "AI_PROFILE"
   | "COMPLIANCE_DATABASE"
   | "RISK_CLASSIFIER"
-  | "REPORT_SYNTHESIS";
+  | "REPORT_SYNTHESIS"
+  | "SEARCH_SURFACES";
 
 export type AgentRunStatus =
   | "PENDING"
@@ -369,6 +370,7 @@ export interface AgentContext {
 
 export interface SavedEvidenceSummary {
   searchResults?: number;
+  searchSurfaceItems?: number;
   screenshots?: number;
   databaseProfiles?: number;
   wikipediaChecks?: number;

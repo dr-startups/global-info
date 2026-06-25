@@ -302,6 +302,24 @@ export interface AgentRun {
   createdAt: string;
 }
 
+export type CapabilityMethod = "OFFICIAL_API" | "MANUAL_IMPORT" | "NOT_SUPPORTED" | "SYNTHETIC";
+
+export interface SurfaceCapability {
+  supported: boolean;
+  method: CapabilityMethod;
+}
+
+export interface ProviderCapabilities {
+  organicSearch: SurfaceCapability;
+  imageSearch: SurfaceCapability;
+  videoSearch: SurfaceCapability;
+  suggestions: SurfaceCapability;
+  relatedQueries: SurfaceCapability;
+  knowledgeBlock: SurfaceCapability;
+  screenshots: SurfaceCapability;
+  manualImport: SurfaceCapability;
+}
+
 export interface ProviderStatus {
   name: "WIKIPEDIA" | "GOOGLE" | "YANDEX";
   kind: "REAL";
@@ -311,6 +329,73 @@ export interface ProviderStatus {
   missingConfigKeys: string[];
   supportsRealCalls: boolean;
   notes: string;
+  capabilities: ProviderCapabilities;
+}
+
+// ---------------------------------------------------------------------------
+// Stage H3 — search surfaces
+// ---------------------------------------------------------------------------
+
+export type SearchSurfaceType =
+  | "ORGANIC_RESULT"
+  | "SUGGESTION"
+  | "RELATED_QUERY"
+  | "IMAGE_RESULT"
+  | "VIDEO_RESULT"
+  | "KNOWLEDGE_BLOCK"
+  | "SERP_SCREENSHOT"
+  | "MANUAL_NOTE";
+
+export type SearchSurfaceSource =
+  | "MOCK"
+  | "REAL_GOOGLE"
+  | "REAL_YANDEX"
+  | "REAL_WIKIPEDIA"
+  | "MANUAL_IMPORT"
+  | "SYNTHETIC_SNAPSHOT";
+
+export interface SearchSurfaceItem {
+  id: string;
+  caseId: string;
+  type: SearchSurfaceType;
+  provider: string | null;
+  source: SearchSurfaceSource;
+  query: string | null;
+  region: string | null;
+  language: string | null;
+  title: string | null;
+  snippet: string | null;
+  url: string | null;
+  domain: string | null;
+  imageUrl: string | null;
+  thumbnailUrl: string | null;
+  videoUrl: string | null;
+  rank: number | null;
+  classification: string | null;
+  riskTheme: string | null;
+  rawMetadata: unknown;
+  capturedAt: string;
+  demo: boolean;
+  reviewStatus: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSurfaceInput {
+  type: SearchSurfaceType;
+  source?: SearchSurfaceSource;
+  provider?: string;
+  query?: string;
+  region?: string;
+  language?: string;
+  title?: string;
+  snippet?: string;
+  url?: string;
+  imageUrl?: string;
+  thumbnailUrl?: string;
+  videoUrl?: string;
+  classification?: string;
+  riskTheme?: string;
 }
 
 export type FullAuditOutcome = "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED";
@@ -424,4 +509,44 @@ export function runFullAudit(caseId: string): Promise<FullAuditResult> {
 
 export function listProviders(): Promise<ProviderStatus[]> {
   return request<ProviderStatus[]>("/providers");
+}
+
+// ---------------------------------------------------------------------------
+// Stage H3 — search surfaces
+// ---------------------------------------------------------------------------
+
+export function listSearchSurfaces(
+  caseId: string,
+  filters?: { type?: SearchSurfaceType; source?: SearchSurfaceSource; provider?: string }
+): Promise<SearchSurfaceItem[]> {
+  const sp = new URLSearchParams();
+  if (filters?.type) sp.set("type", filters.type);
+  if (filters?.source) sp.set("source", filters.source);
+  if (filters?.provider) sp.set("provider", filters.provider);
+  const qs = sp.toString();
+  return request<SearchSurfaceItem[]>(`/cases/${caseId}/search-surfaces${qs ? `?${qs}` : ""}`);
+}
+
+export function createSearchSurface(
+  caseId: string,
+  input: CreateSurfaceInput
+): Promise<{ item: SearchSurfaceItem; deduplicated: boolean }> {
+  return request(`/cases/${caseId}/search-surfaces`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function reviewSearchSurface(
+  surfaceId: string,
+  reviewStatus: "PENDING" | "REVIEWED" | "DISMISSED"
+): Promise<SearchSurfaceItem> {
+  return request<SearchSurfaceItem>(`/search-surfaces/${surfaceId}/review`, {
+    method: "PATCH",
+    body: JSON.stringify({ reviewStatus }),
+  });
+}
+
+export function deleteSearchSurface(surfaceId: string): Promise<{ id: string }> {
+  return request(`/search-surfaces/${surfaceId}`, { method: "DELETE" });
 }

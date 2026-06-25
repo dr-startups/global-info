@@ -13,8 +13,9 @@
  *   F) Admin UI
  *   G) Mock agents + orchestration
  *   H1) Real connector layer + live Wikipedia
- *   H2) Real Google/Yandex search connectors (official APIs)  <-- current
- *   H3+) Compliance connectors (official APIs / manual import only)
+ *   H2) Real Google/Yandex search connectors (official APIs)
+ *   H3) Search surface expansion (suggestions/related/images/videos/knowledge)  <-- current
+ *   H4+) Compliance connectors (official APIs / manual import only)
  */
 
 export * from "./types";
@@ -78,9 +79,26 @@ export { wikipediaProvider } from "./providers/wikipedia-provider";
 export { googleSearchProvider } from "./providers/google-search-provider";
 export { yandexSearchProvider } from "./providers/yandex-search-provider";
 export { buildPersonSearchQueries } from "./providers/query-builder";
+export { getProviderCapabilities } from "./providers/capabilities";
+
+// Stage H3 — search surface expansion (suggestions/related/images/videos/knowledge)
+export * from "./search-surfaces/types";
+export {
+  listSearchSurfaceItems,
+  createSearchSurfaceItem,
+  createManySearchSurfaceItems,
+  markSearchSurfaceItemReviewed,
+  deleteSearchSurfaceItemSoft,
+  surfaceDedupHash,
+} from "./services/search-surface-service";
+export { buildSurfacesReportSection } from "./report/surfaces-summary";
+export {
+  buildSyntheticSnapshotModel,
+  createSyntheticSnapshot,
+} from "./services/synthetic-snapshot-service";
 
 export const DIGITAL_PROFILE_MODULE = {
   name: "digital-profile",
   /** Bumped as stages land. */
-  stage: "H2",
+  stage: "H3",
 } as const;

@@ -37,7 +37,12 @@ export type AuditAction =
   | "AGENT_RUN_FAILED"
   | "FULL_AUDIT_STARTED"
   | "FULL_AUDIT_COMPLETED"
-  | "FULL_AUDIT_FAILED";
+  | "FULL_AUDIT_FAILED"
+  // Stage H3 — search surfaces
+  | "SEARCH_SURFACE_ADDED"
+  | "SEARCH_SURFACE_BULK_ADDED"
+  | "SEARCH_SURFACE_REVIEWED"
+  | "SEARCH_SURFACE_SOFT_DELETED";
 
 export interface RecordAuditInput {
   caseId?: string | null;

@@ -14,6 +14,19 @@ import type {
   SearchProviderRequest,
   SearchProviderResult,
 } from "./types";
+import type { ProviderCapabilities } from "../search-surfaces/types";
+
+/**
+ * Result of a surface-specific method (image/video/suggestions/related). On H3
+ * the official adapters only support organic search, so these resolve to
+ * NOT_SUPPORTED rather than scraping.
+ */
+export interface SurfaceMethodResult {
+  status: "OFFICIAL_API" | "NOT_SUPPORTED";
+  provider: SearchProviderName;
+  method: "OFFICIAL_API" | "NOT_SUPPORTED";
+  results: SearchProviderResult[];
+}
 
 export interface SearchProvider {
   readonly name: SearchProviderName;
@@ -27,9 +40,18 @@ export interface SearchProvider {
   /** Throws/returns a structured error description if config is invalid. */
   validateConfig(): { ok: boolean; message?: string };
 
-  /** Execute a search. Must resolve (never reject) with a ProviderRunResult. */
+  /** Execute an organic search. Must resolve (never reject) with a ProviderRunResult. */
   search(request: SearchProviderRequest): Promise<ProviderRunResult>;
 
   /** Map a raw provider payload into normalized results. */
   normalize(raw: unknown, request: SearchProviderRequest): SearchProviderResult[];
+
+  /** Declared surface capabilities (no network). */
+  capabilities(): ProviderCapabilities;
+
+  /** Surface-specific methods (NOT_SUPPORTED on H3 unless the API supports it). */
+  searchImages(request: SearchProviderRequest): Promise<SurfaceMethodResult>;
+  searchVideos(request: SearchProviderRequest): Promise<SurfaceMethodResult>;
+  getSuggestions(request: SearchProviderRequest): Promise<SurfaceMethodResult>;
+  getRelatedQueries(request: SearchProviderRequest): Promise<SurfaceMethodResult>;
 }

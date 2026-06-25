@@ -11,6 +11,7 @@
  */
 
 import type { AvailabilityStatus } from "./types";
+import { getProviderCapabilities } from "./capabilities";
 
 function envBool(value: string | undefined, fallback = false): boolean {
   if (value == null) return fallback;
@@ -158,6 +159,7 @@ export interface ProviderStatus {
   missingConfigKeys: string[];
   supportsRealCalls: boolean;
   notes: string;
+  capabilities: import("../search-surfaces/types").ProviderCapabilities;
 }
 
 const PROVIDER_NOTES: Record<ProviderName, string> = {
@@ -184,6 +186,7 @@ export function getProviderStatus(name: ProviderName): ProviderStatus {
     missingConfigKeys: missing,
     supportsRealCalls: name !== "WIKIPEDIA",
     notes: PROVIDER_NOTES[name],
+    capabilities: getProviderCapabilities(name),
   };
 }
 

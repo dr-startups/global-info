@@ -8,8 +8,9 @@
  */
 
 import { providerConfig, getProviderAvailability } from "./config";
+import { getProviderCapabilities } from "./capabilities";
 import { getText, toProviderError } from "./http";
-import type { SearchProvider } from "./search-provider";
+import type { SearchProvider, SurfaceMethodResult } from "./search-provider";
 import type {
   AvailabilityStatus,
   ProviderRunResult,
@@ -17,6 +18,7 @@ import type {
   SearchProviderResult,
 } from "./types";
 import { domainOf } from "./types";
+import type { ProviderCapabilities } from "../search-surfaces/types";
 
 const ENDPOINT = "https://yandex.com/search/xml";
 const MAX_PER_PAGE = 10;
@@ -146,6 +148,27 @@ export class YandexSearchProvider implements SearchProvider {
       results: results.slice(0, limit),
       rawSnapshot: snapshots,
     };
+  }
+
+  capabilities(): ProviderCapabilities {
+    return getProviderCapabilities("YANDEX");
+  }
+
+  async searchImages(): Promise<SurfaceMethodResult> {
+    return this.notSupported();
+  }
+  async searchVideos(): Promise<SurfaceMethodResult> {
+    return this.notSupported();
+  }
+  async getSuggestions(): Promise<SurfaceMethodResult> {
+    return this.notSupported();
+  }
+  async getRelatedQueries(): Promise<SurfaceMethodResult> {
+    return this.notSupported();
+  }
+
+  private notSupported(): SurfaceMethodResult {
+    return { status: "NOT_SUPPORTED", provider: this.name, method: "NOT_SUPPORTED", results: [] };
   }
 
   /** Parses the Yandex XML response into normalized results. */

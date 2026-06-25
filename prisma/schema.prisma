@@ -50,6 +50,28 @@ enum AgentName {
   COMPLIANCE_DATABASE
   RISK_CLASSIFIER
   REPORT_SYNTHESIS
+  SEARCH_SURFACES
+}
+
+// Stage H3 — additional search surfaces beyond organic results.
+enum SearchSurfaceType {
+  ORGANIC_RESULT
+  SUGGESTION
+  RELATED_QUERY
+  IMAGE_RESULT
+  VIDEO_RESULT
+  KNOWLEDGE_BLOCK
+  SERP_SCREENSHOT
+  MANUAL_NOTE
+}
+
+enum SearchSurfaceSource {
+  MOCK
+  REAL_GOOGLE
+  REAL_YANDEX
+  REAL_WIKIPEDIA
+  MANUAL_IMPORT
+  SYNTHETIC_SNAPSHOT
 }
 
 enum AgentRunStatus {
@@ -147,16 +169,17 @@ model Case {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  subjects         Subject[]
-  agentRuns        AgentRun[]
-  searchQueries    SearchQuery[]
-  searchResults    SearchResult[]
-  screenshots      Screenshot[]
-  riskFindings     RiskFinding[]
-  databaseProfiles DatabaseProfile[]
-  wikipediaChecks  WikipediaCheck[]
-  aiProfiles       AiProfile[]
-  reportVersions   ReportVersion[]
+  subjects           Subject[]
+  agentRuns          AgentRun[]
+  searchQueries      SearchQuery[]
+  searchResults      SearchResult[]
+  searchSurfaceItems SearchSurfaceItem[]
+  screenshots        Screenshot[]
+  riskFindings       RiskFinding[]
+  databaseProfiles   DatabaseProfile[]
+  wikipediaChecks    WikipediaCheck[]
+  aiProfiles         AiProfile[]
+  reportVersions     ReportVersion[]
   auditLogs        AuditLog[]
 
   @@index([status])
@@ -264,6 +287,57 @@ model SearchResult {
   @@unique([caseId, dedupHash])
   @@index([caseId, classification])
   @@map("dp_search_results")
+}
+
+// ----------------------------------------------------------------------------
+// 5b. search_surface_items (Stage H3 — suggestions, related, images, videos,
+//     knowledge blocks, SERP screenshots, manual notes). Evidence-first: every
+//     row records provider/source/query/region/language/capturedAt/rawMetadata.
+// ----------------------------------------------------------------------------
+
+model SearchSurfaceItem {
+  id             String              @id @default(cuid())
+  caseId         String
+  type           SearchSurfaceType
+  // Free-form provider label (GOOGLE/YANDEX/WIKIPEDIA/MANUAL), not the SearchEngine enum.
+  provider       String?
+  source         SearchSurfaceSource
+  query          String?
+  region         String?
+  language       String?
+  title          String?
+  snippet        String?
+  url            String?
+  domain         String?
+  imageUrl       String?
+  thumbnailUrl   String?
+  videoUrl       String?
+  rank           Int?
+  classification String?
+  riskTheme      String?
+  // Source-attributed raw payload (evidence-first). Never rendered raw.
+  rawMetadata    Json?
+  // Soft dedup within a case (hash of type|source|url|query|title).
+  dedupHash      String
+  capturedAt     DateTime            @default(now())
+  demo           Boolean             @default(false)
+  reviewStatus   ReviewStatus        @default(PENDING)
+  // Evidence is never hard-deleted without an explicit admin action.
+  deletedAt      DateTime?
+  deletedBy      String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, dedupHash])
+  @@index([caseId])
+  @@index([type])
+  @@index([provider])
+  @@index([source])
+  @@index([caseId, type])
+  @@index([caseId, provider])
+  @@map("dp_search_surface_items")
 }
 
 // ----------------------------------------------------------------------------

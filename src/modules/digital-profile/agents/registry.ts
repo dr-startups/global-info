@@ -11,9 +11,11 @@ import { MockWikipediaAgent } from "./mock/mock-wikipedia-agent";
 import { MockAiProfileAgent } from "./mock/mock-ai-profile-agent";
 import { MockComplianceDatabaseAgent } from "./mock/mock-compliance-database-agent";
 import { MockRiskClassifierAgent } from "./mock/mock-risk-classifier-agent";
+import { MockSearchSurfaceAgent } from "./mock/mock-search-surface-agent";
 import { RealWikipediaAgent } from "./real/real-wikipedia-agent";
 import { RealGoogleSearchAgent } from "./real/real-google-search-agent";
 import { RealYandexSearchAgent } from "./real/real-yandex-search-agent";
+import { RealSearchSurfaceAgent } from "./real/real-search-surface-agent";
 
 const AGENT_LIST: CaseAgent[] = [
   new MockYandexSearchAgent(),
@@ -22,9 +24,11 @@ const AGENT_LIST: CaseAgent[] = [
   new MockAiProfileAgent(),
   new MockComplianceDatabaseAgent(),
   new MockRiskClassifierAgent(),
+  new MockSearchSurfaceAgent(),
   new RealWikipediaAgent(),
   new RealGoogleSearchAgent(),
   new RealYandexSearchAgent(),
+  new RealSearchSurfaceAgent(),
 ];
 
 const AGENTS: Map<string, CaseAgent> = new Map(AGENT_LIST.map((a) => [a.name, a]));
@@ -47,6 +51,7 @@ export const REAL_SAFE_AUDIT_ORDER: string[] = [
   "REAL_WIKIPEDIA",
   "REAL_GOOGLE_SEARCH",
   "REAL_YANDEX_SEARCH",
+  "REAL_SEARCH_SURFACES",
 ];
 
 /** Back-compat alias used by the orchestrator/full-audit service. */

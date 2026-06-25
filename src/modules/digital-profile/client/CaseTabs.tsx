@@ -11,11 +11,13 @@ import {
   type CaseDetail,
   type CaseEvidence,
   type ReportVersion,
+  type SearchSurfaceItem,
 } from "./api";
 import {
   Badge,
   EmptyState,
   ErrorBox,
+  Notice,
   RiskBadge,
   StatusBadge,
   errorMessage,
@@ -23,11 +25,17 @@ import {
 } from "./components";
 import { ReportPreviewPanel } from "./ReportPreviewPanel";
 import { AgentsTab } from "./AgentsTab";
+import { SurfacesTab } from "./SurfacesTab";
 
 type TabKey =
   | "subject"
   | "agents"
   | "search"
+  | "suggestions"
+  | "related"
+  | "images"
+  | "videos"
+  | "knowledge"
   | "screenshots"
   | "wikipedia"
   | "ai"
@@ -40,6 +48,7 @@ const NEXT_STEP_HINT = "Data input for this section will be available in the nex
 export function CaseTabs({
   caseDetail,
   evidence,
+  surfaces,
   report,
   agents,
   agentRuns,
@@ -47,10 +56,12 @@ export function CaseTabs({
   onRunFullAudit,
   onAgentsChanged,
   onEvidenceChanged,
+  onSurfacesChanged,
   onReportChange,
 }: {
   caseDetail: CaseDetail;
   evidence: CaseEvidence;
+  surfaces: SearchSurfaceItem[];
   report: ReportVersion | null;
   agents: AgentInfo[];
   agentRuns: AgentRun[];
@@ -58,14 +69,27 @@ export function CaseTabs({
   onRunFullAudit: () => void;
   onAgentsChanged: () => void;
   onEvidenceChanged: () => void;
+  onSurfacesChanged: () => void;
   onReportChange: (r: ReportVersion) => void;
 }) {
   const [tab, setTab] = useState<TabKey>("subject");
+
+  const byType = (t: SearchSurfaceItem["type"]) => surfaces.filter((s) => s.type === t);
+  const suggestions = byType("SUGGESTION");
+  const related = byType("RELATED_QUERY");
+  const images = byType("IMAGE_RESULT");
+  const videos = byType("VIDEO_RESULT");
+  const knowledge = byType("KNOWLEDGE_BLOCK");
 
   const tabs: { key: TabKey; label: string; count?: number }[] = [
     { key: "subject", label: "Subject" },
     { key: "agents", label: "Agents", count: agents.length },
     { key: "search", label: "Search Results", count: evidence.searchResults.length },
+    { key: "suggestions", label: "Suggestions", count: suggestions.length },
+    { key: "related", label: "Related Queries", count: related.length },
+    { key: "images", label: "Images", count: images.length },
+    { key: "videos", label: "Videos", count: videos.length },
+    { key: "knowledge", label: "Knowledge Block", count: knowledge.length },
     { key: "screenshots", label: "Screenshots", count: evidence.screenshots.length },
     { key: "wikipedia", label: "Wikipedia", count: evidence.wikipediaChecks.length },
     { key: "ai", label: "AI Profile", count: evidence.aiProfiles.length },
@@ -108,6 +132,21 @@ export function CaseTabs({
           evidence={evidence}
           onChanged={onEvidenceChanged}
         />
+      ) : null}
+      {tab === "suggestions" ? (
+        <SurfacesTab type="SUGGESTION" label="Suggestions" items={suggestions} caseId={caseDetail.id} onChanged={onSurfacesChanged} />
+      ) : null}
+      {tab === "related" ? (
+        <SurfacesTab type="RELATED_QUERY" label="Related Queries" items={related} caseId={caseDetail.id} onChanged={onSurfacesChanged} />
+      ) : null}
+      {tab === "images" ? (
+        <SurfacesTab type="IMAGE_RESULT" label="Images" items={images} caseId={caseDetail.id} onChanged={onSurfacesChanged} />
+      ) : null}
+      {tab === "videos" ? (
+        <SurfacesTab type="VIDEO_RESULT" label="Videos" items={videos} caseId={caseDetail.id} onChanged={onSurfacesChanged} />
+      ) : null}
+      {tab === "knowledge" ? (
+        <SurfacesTab type="KNOWLEDGE_BLOCK" label="Knowledge Block" items={knowledge} caseId={caseDetail.id} onChanged={onSurfacesChanged} />
       ) : null}
       {tab === "screenshots" ? <ScreenshotsTab evidence={evidence} /> : null}
       {tab === "wikipedia" ? <WikipediaTab evidence={evidence} /> : null}
@@ -194,9 +233,19 @@ function SearchResultsTab({
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
   const [classification, setClassification] = useState("UNCLASSIFIED");
+  const [sourceFilter, setSourceFilter] = useState<"ALL" | "MOCK" | "REAL" | "MANUAL">("ALL");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  function sourceKind(src: string | null): "MOCK" | "REAL" | "MANUAL" {
+    if ((src ?? "").startsWith("real")) return "REAL";
+    if ((src ?? "").startsWith("mock")) return "MOCK";
+    return "MANUAL";
+  }
+  const visibleResults = evidence.searchResults.filter(
+    (r) => sourceFilter === "ALL" || sourceKind(r.source) === sourceFilter
+  );
 
   async function add(e: React.FormEvent) {
     e.preventDefault();
@@ -277,8 +326,27 @@ function SearchResultsTab({
         ) : null}
       </form>
 
-      {evidence.searchResults.length === 0 ? (
-        <EmptyState title="No search results yet" hint="Add results manually above." />
+      <div className="dp-inline" style={{ marginBottom: 10 }}>
+        <label className="dp-muted" style={{ fontSize: 13 }}>
+          Source
+        </label>
+        <select
+          className="dp-select"
+          style={{ maxWidth: 160 }}
+          value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value as "ALL" | "MOCK" | "REAL" | "MANUAL")}
+        >
+          {["ALL", "MOCK", "REAL", "MANUAL"].map((v) => (
+            <option key={v}>{v}</option>
+          ))}
+        </select>
+        <span className="dp-muted" style={{ fontSize: 12 }}>
+          {visibleResults.length} of {evidence.searchResults.length}
+        </span>
+      </div>
+
+      {visibleResults.length === 0 ? (
+        <EmptyState title="No search results" hint="Add results manually above or adjust the source filter." />
       ) : (
         <table className="dp-table">
           <thead>
@@ -292,7 +360,7 @@ function SearchResultsTab({
             </tr>
           </thead>
           <tbody>
-            {evidence.searchResults.map((r) => {
+            {visibleResults.map((r) => {
               const isReal = (r.source ?? "").startsWith("real");
               return (
               <tr key={r.id}>
@@ -330,6 +398,10 @@ function ScreenshotsTab({ evidence }: { evidence: CaseEvidence }) {
   return (
     <div>
       <h2 className="dp-h2">Screenshots</h2>
+      <Notice>
+        Automatic SERP screenshots are not enabled. Upload/import screenshots manually or use
+        synthetic snapshots (generated from API results, not live SERP captures).
+      </Notice>
       {evidence.screenshots.length === 0 ? (
         <EmptyState title="No screenshots" hint="Screenshot uploads are done via the API/agents." />
       ) : (
