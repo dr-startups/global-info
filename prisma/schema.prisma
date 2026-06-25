@@ -1,0 +1,420 @@
+// Prisma schema for the Global Info platform.
+//
+// Digital Profile Audit module — evidence-first data model.
+// All tables in this file belong to the digital-profile module and are namespaced
+// with the `dp_` table prefix to keep the module isolated from future modules.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Enums
+// ----------------------------------------------------------------------------
+
+enum CaseStatus {
+  DRAFT
+  COLLECTING
+  REVIEW
+  REPORT_READY
+  CLOSED
+  ARCHIVED
+}
+
+enum ConsentStatus {
+  NOT_REQUIRED
+  PENDING
+  OBTAINED
+  REFUSED
+}
+
+enum LawfulBasis {
+  CONSENT
+  CONTRACT
+  LEGAL_OBLIGATION
+  LEGITIMATE_INTEREST
+  PUBLIC_INTEREST
+  VITAL_INTEREST
+}
+
+enum AgentName {
+  GOOGLE_SEARCH
+  YANDEX_SEARCH
+  WIKIPEDIA
+  AI_PROFILE
+  COMPLIANCE_DATABASE
+  RISK_CLASSIFIER
+  REPORT_SYNTHESIS
+}
+
+enum AgentRunStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum SearchEngine {
+  GOOGLE
+  YANDEX
+  BING
+  OTHER
+}
+
+enum QuerySource {
+  MANUAL
+  GENERATED
+}
+
+enum ResultClassification {
+  UNCLASSIFIED
+  RELEVANT
+  IRRELEVANT
+  ADVERSE_MEDIA
+  SOCIAL_PROFILE
+  CORPORATE
+  LEGAL
+  DUPLICATE
+}
+
+enum EvidenceType {
+  URL
+  SCREENSHOT
+  IMPORTED_FILE
+  DATABASE_RECORD
+}
+
+enum RiskSeverity {
+  INFO
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ReviewStatus {
+  PENDING
+  REVIEWED
+  DISMISSED
+}
+
+enum DatabaseProvider {
+  LEXISNEXIS
+  DOW_JONES
+  WORLD_CHECK
+  OTHER
+}
+
+enum ImportMethod {
+  OFFICIAL_API
+  MANUAL_IMPORT
+}
+
+enum ReportStatus {
+  DRAFT
+  IN_REVIEW
+  FINAL
+}
+
+// ----------------------------------------------------------------------------
+// 1. cases
+// ----------------------------------------------------------------------------
+
+model Case {
+  id            String        @id @default(cuid())
+  caseNumber    String        @unique
+  title         String
+  status        CaseStatus    @default(DRAFT)
+  // Compliance / legal
+  lawfulBasis   LawfulBasis?
+  consentStatus ConsentStatus @default(PENDING)
+  // Ownership / review
+  createdBy     String
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  notes         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  subjects         Subject[]
+  agentRuns        AgentRun[]
+  searchQueries    SearchQuery[]
+  searchResults    SearchResult[]
+  screenshots      Screenshot[]
+  riskFindings     RiskFinding[]
+  databaseProfiles DatabaseProfile[]
+  wikipediaChecks  WikipediaCheck[]
+  aiProfiles       AiProfile[]
+  reportVersions   ReportVersion[]
+  auditLogs        AuditLog[]
+
+  @@index([status])
+  @@map("dp_cases")
+}
+
+// ----------------------------------------------------------------------------
+// 2. subjects
+// ----------------------------------------------------------------------------
+
+model Subject {
+  id          String    @id @default(cuid())
+  caseId      String
+  fullName    String
+  aliases     String[]  @default([])
+  dateOfBirth DateTime?
+  nationality String?
+  country     String?
+  emails      String[]  @default([])
+  phones      String[]  @default([])
+  identifiers Json? // passport, tax id, etc. (structured, source-attributed)
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@map("dp_subjects")
+}
+
+// ----------------------------------------------------------------------------
+// 3. agent_runs
+// ----------------------------------------------------------------------------
+
+model AgentRun {
+  id         String         @id @default(cuid())
+  caseId     String
+  agentName  AgentName
+  status     AgentRunStatus @default(PENDING)
+  input      Json?
+  output     Json?
+  error      String?
+  itemsSaved Int            @default(0)
+  startedAt  DateTime?
+  finishedAt DateTime?
+  triggeredBy String?
+  createdAt  DateTime       @default(now())
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, agentName])
+  @@map("dp_agent_runs")
+}
+
+// ----------------------------------------------------------------------------
+// 4. search_queries
+// ----------------------------------------------------------------------------
+
+model SearchQuery {
+  id        String       @id @default(cuid())
+  caseId    String
+  engine    SearchEngine
+  queryText String
+  source    QuerySource  @default(GENERATED)
+  createdBy String?
+  createdAt DateTime     @default(now())
+
+  case    Case           @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  results SearchResult[]
+
+  @@index([caseId])
+  @@map("dp_search_queries")
+}
+
+// ----------------------------------------------------------------------------
+// 5. search_results
+// ----------------------------------------------------------------------------
+
+model SearchResult {
+  id             String               @id @default(cuid())
+  caseId         String
+  queryId        String?
+  engine         SearchEngine
+  url            String
+  normalizedUrl  String // used for de-duplication
+  dedupHash      String // hash of normalizedUrl for fast dedup
+  title          String?
+  snippet        String?
+  rank           Int?
+  classification ResultClassification @default(UNCLASSIFIED)
+  reviewStatus   ReviewStatus         @default(PENDING)
+  createdAt      DateTime             @default(now())
+
+  case        Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  query       SearchQuery? @relation(fields: [queryId], references: [id], onDelete: SetNull)
+  screenshots Screenshot[]
+
+  @@unique([caseId, dedupHash])
+  @@index([caseId, classification])
+  @@map("dp_search_results")
+}
+
+// ----------------------------------------------------------------------------
+// 6. screenshots
+// ----------------------------------------------------------------------------
+
+model Screenshot {
+  id         String   @id @default(cuid())
+  caseId     String
+  resultId   String?
+  // Private storage only — never a public URL. Signed URLs generated on demand.
+  storageKey String
+  mimeType   String   @default("image/png")
+  sha256     String // integrity / tamper-evidence
+  sizeBytes  Int?
+  sourceUrl  String? // page the screenshot was captured from
+  capturedAt DateTime @default(now())
+  capturedBy String?
+  // Evidence must not be deleted without an explicit admin action.
+  deletedAt  DateTime?
+  deletedBy  String?
+
+  case   Case          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  result SearchResult? @relation(fields: [resultId], references: [id], onDelete: SetNull)
+
+  @@index([caseId])
+  @@map("dp_screenshots")
+}
+
+// ----------------------------------------------------------------------------
+// 7. risk_findings
+// ----------------------------------------------------------------------------
+
+model RiskFinding {
+  id           String       @id @default(cuid())
+  caseId       String
+  category     String
+  severity     RiskSeverity @default(INFO)
+  title        String
+  summary      String?
+  // Evidence references are mandatory for every finding.
+  evidenceRefs Json         @default("[]") // EvidenceRef[]
+  reviewStatus ReviewStatus @default(PENDING)
+  reviewedBy   String?
+  reviewedAt   DateTime?
+  createdBy    String? // agent name or user id
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, severity])
+  @@map("dp_risk_findings")
+}
+
+// ----------------------------------------------------------------------------
+// 8. database_profiles
+// ----------------------------------------------------------------------------
+
+model DatabaseProfile {
+  id           String           @id @default(cuid())
+  caseId       String
+  provider     DatabaseProvider
+  importMethod ImportMethod
+  matchType    String? // e.g. PEP, sanction, adverse-media
+  matchScore   Float?
+  rawPayload   Json? // raw provider response or imported record
+  evidenceRefs Json             @default("[]") // EvidenceRef[]
+  importedBy   String?
+  importedAt   DateTime         @default(now())
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId, provider])
+  @@map("dp_database_profiles")
+}
+
+// ----------------------------------------------------------------------------
+// 9. wikipedia_checks
+// ----------------------------------------------------------------------------
+
+model WikipediaCheck {
+  id          String   @id @default(cuid())
+  caseId      String
+  exists      Boolean  @default(false)
+  url         String?
+  language    String?  @default("en")
+  pageTitle   String?
+  snapshot    Json? // captured summary/metadata (read-only; never auto-published)
+  lastChecked DateTime @default(now())
+  checkedBy   String?
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@map("dp_wikipedia_checks")
+}
+
+// ----------------------------------------------------------------------------
+// 10. ai_profiles
+// ----------------------------------------------------------------------------
+
+model AiProfile {
+  id              String   @id @default(cuid())
+  caseId          String
+  model           String
+  summary         String?
+  classifications Json? // structured AI output derived ONLY from evidence
+  // LLM is not a source of fact — outputs must reference underlying evidence.
+  evidenceRefs    Json     @default("[]") // EvidenceRef[]
+  disclaimer      String   @default("AI-generated summary based on collected evidence. Not a source of fact.")
+  createdAt       DateTime @default(now())
+  createdBy       String?
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@map("dp_ai_profiles")
+}
+
+// ----------------------------------------------------------------------------
+// 11. report_versions
+// ----------------------------------------------------------------------------
+
+model ReportVersion {
+  id         String       @id @default(cuid())
+  caseId     String
+  version    Int
+  status     ReportStatus @default(DRAFT)
+  reportJson Json // ReportJson — single source for the renderer
+  pptxUrl    String?
+  pdfUrl     String?
+  // Watermark "Draft" until final review is complete.
+  watermark  String?      @default("DRAFT")
+  createdBy  String?
+  createdAt  DateTime     @default(now())
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, version])
+  @@index([caseId])
+  @@map("dp_report_versions")
+}
+
+// ----------------------------------------------------------------------------
+// 12. audit_logs
+// ----------------------------------------------------------------------------
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  caseId     String?
+  actorId    String
+  action     String // e.g. CASE_CREATED, FINDING_REVIEWED, EVIDENCE_DELETED
+  targetType String?
+  targetId   String?
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  case Case? @relation(fields: [caseId], references: [id], onDelete: SetNull)
+
+  @@index([caseId])
+  @@index([actorId])
+  @@map("dp_audit_logs")
+}
