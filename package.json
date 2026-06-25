@@ -21,7 +21,8 @@
     "smoke:wikipedia": "node scripts/smoke-wikipedia.mjs",
     "smoke:search-providers": "tsx scripts/smoke-search-providers.ts",
     "smoke:search-providers:live": "node scripts/smoke-search-providers-live.mjs",
-    "smoke:search-surfaces": "node scripts/smoke-search-surfaces.mjs"
+    "smoke:search-surfaces": "node scripts/smoke-search-surfaces.mjs",
+    "smoke:risk-classifier": "node scripts/smoke-risk-classifier.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

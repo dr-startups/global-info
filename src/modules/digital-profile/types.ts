@@ -297,6 +297,19 @@ export interface ReportMeta {
  * Dynamic pages come from collected evidence; static commercial pages and
  * pricing are merged in from config/templates.
  */
+export interface ReportRiskSummary {
+  highestRiskLevel: string;
+  totalFindings: number;
+  findingsByLevel: Record<string, number>;
+  findingsByTheme: Record<string, number>;
+  topFindings: {
+    severity: string;
+    theme: string;
+    title: string;
+    evidenceCount: number;
+  }[];
+}
+
 export interface ReportJson {
   meta: ReportMeta;
   subject: SubjectProfile;
@@ -305,6 +318,8 @@ export interface ReportJson {
   /** Static commercial pages (services offering), filled from templates. */
   staticPages: ReportPageData[];
   pricing: ReportPriceItem[];
+  /** Stage I — aggregated risk summary (review-gated findings). */
+  riskSummary?: ReportRiskSummary;
 }
 
 // ----------------------------------------------------------------------------

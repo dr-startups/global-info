@@ -384,11 +384,21 @@ model RiskFinding {
   reviewedBy   String?
   reviewedAt   DateTime?
   createdBy    String? // agent name or user id
+  // Stage I — Risk Classifier v1 structured fields (null for legacy/manual rows).
+  signalType   String?
+  riskTheme    String?
+  confidence   Float?
+  rationale    String?
+  demo         Boolean      @default(false)
+  // Idempotency key for the deterministic classifier (null for manual findings;
+  // Postgres treats multiple NULLs as distinct, so manual rows are unaffected).
+  dedupHash    String?
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
 
   case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
+  @@unique([caseId, dedupHash])
   @@index([caseId, severity])
   @@map("dp_risk_findings")
 }

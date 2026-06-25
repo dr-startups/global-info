@@ -14,8 +14,9 @@
  *   G) Mock agents + orchestration
  *   H1) Real connector layer + live Wikipedia
  *   H2) Real Google/Yandex search connectors (official APIs)
- *   H3) Search surface expansion (suggestions/related/images/videos/knowledge)  <-- current
- *   H4+) Compliance connectors (official APIs / manual import only)
+ *   H3) Search surface expansion (suggestions/related/images/videos/knowledge)
+ *   I)  Risk Classifier v1 (deterministic, evidence-first findings)  <-- current
+ *   K+) Full audit summary + ORION-like report template
  */
 
 export * from "./types";
@@ -97,8 +98,18 @@ export {
   createSyntheticSnapshot,
 } from "./services/synthetic-snapshot-service";
 
+// Stage I — deterministic Risk Classifier v1
+export * from "./risk-classifier/types";
+export { classifyEvidence } from "./risk-classifier/classifier";
+export { loadCaseEvidence } from "./risk-classifier/evidence-loader";
+export {
+  classifyCaseRisks,
+  listRiskFindings,
+  RISK_CLASSIFIER_OWNER,
+} from "./services/risk-finding-service";
+
 export const DIGITAL_PROFILE_MODULE = {
   name: "digital-profile",
   /** Bumped as stages land. */
-  stage: "H3",
+  stage: "I",
 } as const;

@@ -213,17 +213,43 @@ export interface AiProfile {
   createdAt: string;
 }
 
+/** Permissive evidence ref covering legacy EvidenceRef and classifier refs. */
+export interface FindingEvidenceRef {
+  type?: string;
+  id?: string;
+  refId?: string;
+  url?: string;
+  title?: string;
+  label?: string;
+  provider?: string;
+  source?: string;
+}
+
 export interface RiskFinding {
   id: string;
   category: string;
   severity: string;
   title: string;
   summary: string | null;
-  evidenceRefs: EvidenceRef[];
+  evidenceRefs: FindingEvidenceRef[];
   reviewStatus: string;
   reviewedBy: string | null;
   reviewedAt: string | null;
+  signalType?: string | null;
+  riskTheme?: string | null;
+  confidence?: number | null;
+  rationale?: string | null;
+  demo?: boolean;
   createdAt: string;
+}
+
+export interface RiskClassifySummary {
+  totalEvidenceScanned: number;
+  findingsCreated: number;
+  findingsUpdated: number;
+  findingsSkippedReviewed: number;
+  findingsDismissedIgnored: number;
+  highestRiskLevel: string;
 }
 
 export interface CaseEvidence {
@@ -456,6 +482,12 @@ export function reviewFinding(
   return request<RiskFinding>(`/findings/${findingId}/review`, {
     method: "POST",
     body: JSON.stringify({ reviewStatus }),
+  });
+}
+
+export function classifyRisks(caseId: string): Promise<RiskClassifySummary> {
+  return request<RiskClassifySummary>(`/cases/${caseId}/risk/classify`, {
+    method: "POST",
   });
 }
 

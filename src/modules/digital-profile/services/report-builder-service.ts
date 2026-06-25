@@ -29,6 +29,7 @@ import type {
   EvidenceRef,
   ReportJson,
   ReportPageData,
+  ReportRiskSummary,
   ReportStatus,
   RiskSeverity,
   SubjectProfile,
@@ -206,6 +207,7 @@ export async function buildReportJson(
           title: true,
           summary: true,
           evidenceRefs: true,
+          riskTheme: true,
         },
       }),
     ]);
@@ -383,6 +385,27 @@ export async function buildReportJson(
     });
   }
 
+  // Stage I — aggregated risk summary over review-gated findings.
+  const findingsByLevel: Record<string, number> = {};
+  const findingsByTheme: Record<string, number> = {};
+  for (const f of findings) {
+    findingsByLevel[f.severity] = (findingsByLevel[f.severity] ?? 0) + 1;
+    const theme = f.riskTheme ?? f.category;
+    findingsByTheme[theme] = (findingsByTheme[theme] ?? 0) + 1;
+  }
+  const riskSummary: ReportRiskSummary = {
+    highestRiskLevel: overallRisk,
+    totalFindings: findings.length,
+    findingsByLevel,
+    findingsByTheme,
+    topFindings: findings.slice(0, 5).map((f) => ({
+      severity: f.severity,
+      theme: f.riskTheme ?? f.category,
+      title: f.title,
+      evidenceCount: asEvidenceRefs(f.evidenceRefs).length,
+    })),
+  };
+
   return {
     meta: {
       caseNumber: caseRow.caseNumber,
@@ -397,6 +420,7 @@ export async function buildReportJson(
     dynamicPages,
     staticPages: buildStaticPages(reportPricing),
     pricing: reportPricing,
+    riskSummary,
   };
 }
 

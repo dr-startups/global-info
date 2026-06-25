@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   addSearchResult,
+  classifyRisks,
   DigitalProfileApiError,
   reviewFinding,
   type AgentInfo,
@@ -20,6 +21,7 @@ import {
   Notice,
   RiskBadge,
   StatusBadge,
+  SuccessBox,
   errorMessage,
   formatDate,
 } from "./components";
@@ -153,7 +155,7 @@ export function CaseTabs({
       {tab === "ai" ? <AiProfileTab evidence={evidence} /> : null}
       {tab === "compliance" ? <ComplianceTab evidence={evidence} /> : null}
       {tab === "risk" ? (
-        <RiskFindingsTab evidence={evidence} onChanged={onEvidenceChanged} />
+        <RiskFindingsTab caseId={caseDetail.id} evidence={evidence} onChanged={onEvidenceChanged} />
       ) : null}
       {tab === "report" ? (
         <ReportPreviewPanel
@@ -598,15 +600,64 @@ function ComplianceTab({ evidence }: { evidence: CaseEvidence }) {
 // Risk findings (+ review)
 // ---------------------------------------------------------------------------
 
+const RISK_LEVELS = ["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"];
+const RISK_RANK: Record<string, number> = { INFO: 0, LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
+
 function RiskFindingsTab({
+  caseId,
   evidence,
   onChanged,
 }: {
+  caseId: string;
   evidence: CaseEvidence;
   onChanged: () => void;
 }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [classifying, setClassifying] = useState(false);
+  const [info, setInfo] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [levelFilter, setLevelFilter] = useState("ALL");
+  const [themeFilter, setThemeFilter] = useState("ALL");
+
+  const findings = evidence.riskFindings;
+  const counts = {
+    total: findings.length,
+    pending: findings.filter((f) => f.reviewStatus === "PENDING").length,
+    reviewed: findings.filter((f) => f.reviewStatus === "REVIEWED").length,
+    dismissed: findings.filter((f) => f.reviewStatus === "DISMISSED").length,
+  };
+  const highest =
+    findings.reduce((acc, f) => Math.max(acc, RISK_RANK[f.severity] ?? 0), 0) || 0;
+  const highestLabel = RISK_LEVELS[highest] ?? "NONE";
+  const themes = Array.from(new Set(findings.map((f) => f.riskTheme ?? f.category))).sort();
+
+  const visible = findings.filter(
+    (f) =>
+      (statusFilter === "ALL" || f.reviewStatus === statusFilter) &&
+      (levelFilter === "ALL" || f.severity === levelFilter) &&
+      (themeFilter === "ALL" || (f.riskTheme ?? f.category) === themeFilter)
+  );
+
+  async function classify() {
+    if (classifying) return;
+    setClassifying(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const s = await classifyRisks(caseId);
+      setInfo(
+        `Classified: ${s.findingsCreated} created, ${s.findingsUpdated} updated, ${s.findingsSkippedReviewed} kept (reviewed), ${s.findingsDismissedIgnored} ignored (dismissed). Highest: ${s.highestRiskLevel}.`
+      );
+      onChanged();
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
+      const msg = err instanceof Error ? err.message : "Failed to classify risks";
+      setError(errorMessage(code, msg));
+    } finally {
+      setClassifying(false);
+    }
+  }
 
   async function review(id: string, status: "REVIEWED" | "DISMISSED") {
     if (busyId) return;
@@ -626,40 +677,130 @@ function RiskFindingsTab({
 
   return (
     <div>
-      <h2 className="dp-h2">Risk findings</h2>
+      <div className="dp-inline" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <h2 className="dp-h2" style={{ margin: 0 }}>
+          Risk findings
+        </h2>
+        <button className="dp-btn dp-btn-primary dp-btn-sm" disabled={classifying} onClick={classify}>
+          {classifying ? "Classifying…" : "Classify risks"}
+        </button>
+      </div>
+
+      <div className="dp-grid-cards" style={{ margin: "12px 0" }}>
+        <div className="dp-card" style={{ padding: 12 }}>
+          <div className="dp-muted">Total</div>
+          <div style={{ fontSize: 22 }}>{counts.total}</div>
+        </div>
+        <div className="dp-card" style={{ padding: 12 }}>
+          <div className="dp-muted">Pending</div>
+          <div style={{ fontSize: 22 }}>{counts.pending}</div>
+        </div>
+        <div className="dp-card" style={{ padding: 12 }}>
+          <div className="dp-muted">Reviewed</div>
+          <div style={{ fontSize: 22 }}>{counts.reviewed}</div>
+        </div>
+        <div className="dp-card" style={{ padding: 12 }}>
+          <div className="dp-muted">Dismissed</div>
+          <div style={{ fontSize: 22 }}>{counts.dismissed}</div>
+        </div>
+        <div className="dp-card" style={{ padding: 12 }}>
+          <div className="dp-muted">Highest risk</div>
+          <div style={{ marginTop: 4 }}>
+            <RiskBadge severity={highestLabel} />
+          </div>
+        </div>
+      </div>
+
+      {info ? (
+        <div style={{ marginBottom: 12 }}>
+          <SuccessBox>{info}</SuccessBox>
+        </div>
+      ) : null}
       {error ? (
         <div style={{ marginBottom: 12 }}>
           <ErrorBox>{error}</ErrorBox>
         </div>
       ) : null}
-      {evidence.riskFindings.length === 0 ? (
+
+      <div className="dp-inline" style={{ marginBottom: 12, flexWrap: "wrap" }}>
+        <select className="dp-select" style={{ maxWidth: 160 }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          {["ALL", "PENDING", "REVIEWED", "DISMISSED"].map((v) => (
+            <option key={v}>{v}</option>
+          ))}
+        </select>
+        <select className="dp-select" style={{ maxWidth: 160 }} value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)}>
+          {["ALL", ...RISK_LEVELS].map((v) => (
+            <option key={v}>{v}</option>
+          ))}
+        </select>
+        <select className="dp-select" style={{ maxWidth: 200 }} value={themeFilter} onChange={(e) => setThemeFilter(e.target.value)}>
+          {["ALL", ...themes].map((v) => (
+            <option key={v}>{v}</option>
+          ))}
+        </select>
+        <span className="dp-muted" style={{ fontSize: 12 }}>
+          {visible.length} of {findings.length}
+        </span>
+      </div>
+
+      {findings.length === 0 ? (
         <EmptyState
           title="No risk findings"
-          hint="Findings are evidence-first and require human review before inclusion in the report."
+          hint="Click “Classify risks” to derive evidence-first findings, or add manual findings via the API. All findings require human review before the report."
         />
+      ) : visible.length === 0 ? (
+        <EmptyState title="No findings match the filters" hint="Adjust the filters above." />
       ) : (
         <table className="dp-table">
           <thead>
             <tr>
               <th>Severity</th>
-              <th>Category</th>
+              <th>Theme</th>
               <th>Finding</th>
+              <th>Conf.</th>
               <th>Evidence</th>
               <th>Review</th>
               <th />
             </tr>
           </thead>
           <tbody>
-            {evidence.riskFindings.map((f) => (
+            {visible.map((f) => (
               <tr key={f.id}>
                 <td>
                   <RiskBadge severity={f.severity} />
+                  {f.demo ? (
+                    <div style={{ marginTop: 4 }}>
+                      <Badge tone="neutral">demo</Badge>
+                    </div>
+                  ) : null}
                 </td>
-                <td>{f.category}</td>
+                <td>{f.riskTheme ?? f.category}</td>
                 <td>
                   <div>{f.title}</div>
                   {f.summary ? <div className="dp-muted">{f.summary}</div> : null}
+                  {f.rationale ? (
+                    <div className="dp-muted" style={{ fontSize: 11, marginTop: 2 }}>
+                      Why: {f.rationale}
+                    </div>
+                  ) : null}
+                  {f.evidenceRefs.length > 0 ? (
+                    <div className="dp-muted" style={{ fontSize: 11, marginTop: 4 }}>
+                      {f.evidenceRefs.slice(0, 3).map((e, i) => (
+                        <div key={i}>
+                          {e.provider ? `[${e.provider}] ` : ""}
+                          {e.url ? (
+                            <a href={e.url} target="_blank" rel="noopener noreferrer">
+                              {e.title ?? e.label ?? e.url}
+                            </a>
+                          ) : (
+                            e.title ?? e.label ?? e.type ?? "evidence"
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                 </td>
+                <td className="dp-muted">{f.confidence != null ? f.confidence.toFixed(2) : "—"}</td>
                 <td>{f.evidenceRefs.length}</td>
                 <td>
                   <StatusBadge status={f.reviewStatus} />

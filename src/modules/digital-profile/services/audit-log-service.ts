@@ -42,7 +42,9 @@ export type AuditAction =
   | "SEARCH_SURFACE_ADDED"
   | "SEARCH_SURFACE_BULK_ADDED"
   | "SEARCH_SURFACE_REVIEWED"
-  | "SEARCH_SURFACE_SOFT_DELETED";
+  | "SEARCH_SURFACE_SOFT_DELETED"
+  // Stage I — risk classifier v1
+  | "RISK_CLASSIFY_RUN";
 
 export interface RecordAuditInput {
   caseId?: string | null;

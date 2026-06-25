@@ -151,6 +151,11 @@ export interface RiskFindingDTO {
   reviewStatus: string;
   reviewedBy: string | null;
   reviewedAt: Date | null;
+  signalType: string | null;
+  riskTheme: string | null;
+  confidence: number | null;
+  rationale: string | null;
+  demo: boolean;
   createdAt: Date;
 }
 
@@ -388,6 +393,11 @@ const riskFindingSelect = {
   reviewStatus: true,
   reviewedBy: true,
   reviewedAt: true,
+  signalType: true,
+  riskTheme: true,
+  confidence: true,
+  rationale: true,
+  demo: true,
   createdAt: true,
 } satisfies Prisma.RiskFindingSelect;
 
