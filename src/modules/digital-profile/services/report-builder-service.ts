@@ -20,7 +20,10 @@ import { NotFoundError } from "../http/errors";
 import { recordAudit } from "./audit-log-service";
 import { reportPricing } from "../config";
 import { buildStaticPages } from "../report/static-pages";
-import { buildScreenshotDownloadUrl } from "../storage/signed-url";
+import {
+  buildReportDownloadUrl,
+  buildScreenshotDownloadUrl,
+} from "../storage/signed-url";
 import type { ActorContext } from "./case-service";
 import type {
   EvidenceRef,
@@ -57,8 +60,9 @@ export interface ReportVersionDTO {
   version: number;
   status: ReportStatus;
   watermark: string | null;
-  pptxUrl: string | null;
-  pdfUrl: string | null;
+  renderedAt: Date | null;
+  pptxDownloadUrl: string | null;
+  pdfDownloadUrl: string | null;
   createdAt: Date;
   reportJson: ReportJson;
 }
@@ -402,8 +406,9 @@ const reportVersionSelect = {
   version: true,
   status: true,
   watermark: true,
-  pptxUrl: true,
-  pdfUrl: true,
+  pptxStorageKey: true,
+  pdfStorageKey: true,
+  renderedAt: true,
   createdAt: true,
   reportJson: true,
 } satisfies Prisma.ReportVersionSelect;
@@ -417,8 +422,13 @@ function toReportVersionDTO(
     version: row.version,
     status: row.status as ReportStatus,
     watermark: row.watermark,
-    pptxUrl: row.pptxUrl,
-    pdfUrl: row.pdfUrl,
+    renderedAt: row.renderedAt,
+    pptxDownloadUrl: row.pptxStorageKey
+      ? buildReportDownloadUrl(row.id, row.pptxStorageKey, "pptx")
+      : null,
+    pdfDownloadUrl: row.pdfStorageKey
+      ? buildReportDownloadUrl(row.id, row.pdfStorageKey, "pdf")
+      : null,
     createdAt: row.createdAt,
     reportJson: row.reportJson as unknown as ReportJson,
   };

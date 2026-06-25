@@ -17,6 +17,7 @@ export type ErrorCode =
   | "FORBIDDEN"
   | "NOT_FOUND"
   | "CONFLICT"
+  | "RENDERER_UNAVAILABLE"
   | "INTERNAL_ERROR";
 
 export class AppError extends Error {
@@ -65,6 +66,12 @@ export class NotFoundError extends AppError {
 export class ConflictError extends AppError {
   constructor(message = "Resource conflict") {
     super("CONFLICT", 409, message);
+  }
+}
+
+export class RendererUnavailableError extends AppError {
+  constructor(message = "Report renderer is unavailable", details?: unknown) {
+    super("RENDERER_UNAVAILABLE", 502, message, details);
   }
 }
 

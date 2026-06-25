@@ -8,8 +8,8 @@
  *   A) DB schema + core types + empty module
  *   B) Case CRUD
  *   C) Manual evidence input
- *   D) report_json builder                       <-- current
- *   E) Report renderer (PPTX template -> PDF)
+ *   D) report_json builder
+ *   E) Report renderer (PPTX template -> PDF)    <-- current
  *   F) Admin UI
  *   G) Mock agents
  *   H) Real collectors (official APIs / manual import only)
@@ -49,8 +49,11 @@ export {
 export * as reportBuilderService from "./services/report-builder-service";
 export { buildStaticPages } from "./report/static-pages";
 
+// Stage E — report renderer (PPTX/PDF via renderer microservice)
+export * as reportRendererService from "./services/report-renderer-service";
+
 export const DIGITAL_PROFILE_MODULE = {
   name: "digital-profile",
   /** Bumped as stages land. */
-  stage: "D",
+  stage: "E",
 } as const;

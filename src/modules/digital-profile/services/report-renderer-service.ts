@@ -1,0 +1,215 @@
+/**
+ * Report renderer integration (Stage E).
+ *
+ * Calls the isolated Python renderer microservice (python-pptx + headless
+ * LibreOffice) to turn a stored report version's `report_json` into a PPTX + PDF
+ * written to shared PRIVATE storage. Persists the resulting storage keys on the
+ * report version and serves the files only via signed-URL download routes.
+ */
+
+import { Prisma } from "@prisma/client";
+import { prisma } from "@/server/prisma/client";
+import {
+  NotFoundError,
+  RendererUnavailableError,
+  ValidationError,
+} from "../http/errors";
+import { recordAudit } from "./audit-log-service";
+import { digitalProfileConfig } from "../config";
+import {
+  buildReportDownloadUrl,
+  verifySignedToken,
+} from "../storage/signed-url";
+import { loadFile } from "../storage/private-store";
+import type { ActorContext } from "./case-service";
+import type { ReportJson, ReportStatus } from "../types";
+
+export interface RenderedReportDTO {
+  id: string;
+  caseId: string;
+  version: number;
+  status: ReportStatus;
+  watermark: string | null;
+  renderedAt: Date | null;
+  pptxDownloadUrl: string | null;
+  pdfDownloadUrl: string | null;
+}
+
+interface RendererFileInfo {
+  storageKey: string;
+  sizeBytes: number;
+  sha256: string;
+}
+interface RendererResponse {
+  pptx: RendererFileInfo;
+  pdf: RendererFileInfo;
+}
+
+async function callRenderer(body: {
+  reportJson: ReportJson;
+  pptxKey: string;
+  pdfKey: string;
+}): Promise<RendererResponse> {
+  const url = `${digitalProfileConfig.rendererUrl}/render`;
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      // Renderer + LibreOffice can take a while on first call.
+      signal: AbortSignal.timeout(120_000),
+    });
+  } catch (err) {
+    throw new RendererUnavailableError(
+      "Could not reach the report renderer",
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+
+  if (!res.ok) {
+    let detail: unknown;
+    try {
+      detail = await res.json();
+    } catch {
+      detail = await res.text().catch(() => undefined);
+    }
+    throw new RendererUnavailableError("Renderer returned an error", detail);
+  }
+
+  return (await res.json()) as RendererResponse;
+}
+
+/**
+ * Renders a report version (defaults to the latest) into PPTX + PDF and stores
+ * the artifact keys. Returns signed download URLs.
+ */
+export async function renderReportVersion(
+  caseId: string,
+  version: number | undefined,
+  ctx: ActorContext = {}
+): Promise<RenderedReportDTO> {
+  const reportVersion = await prisma.reportVersion.findFirst({
+    where: { caseId, ...(version != null ? { version } : {}) },
+    orderBy: { version: "desc" },
+    select: { id: true, version: true, reportJson: true, status: true },
+  });
+  if (!reportVersion) {
+    throw new NotFoundError("No report version to render");
+  }
+
+  const pptxKey = `${caseId}/reports/v${reportVersion.version}.pptx`;
+  const pdfKey = `${caseId}/reports/v${reportVersion.version}.pdf`;
+
+  const result = await callRenderer({
+    reportJson: reportVersion.reportJson as unknown as ReportJson,
+    pptxKey,
+    pdfKey,
+  });
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.reportVersion.update({
+      where: { id: reportVersion.id },
+      data: {
+        pptxStorageKey: result.pptx.storageKey,
+        pdfStorageKey: result.pdf.storageKey,
+        renderedAt: new Date(),
+      },
+      select: {
+        id: true,
+        caseId: true,
+        version: true,
+        status: true,
+        watermark: true,
+        renderedAt: true,
+        pptxStorageKey: true,
+        pdfStorageKey: true,
+      },
+    });
+    await recordAudit(
+      {
+        caseId,
+        action: "REPORT_RENDERED",
+        actorId: ctx.actorId,
+        metadata: {
+          version: row.version,
+          pptxSha256: result.pptx.sha256,
+          pdfSha256: result.pdf.sha256,
+        },
+      },
+      tx
+    );
+    return row;
+  });
+
+  return {
+    id: updated.id,
+    caseId: updated.caseId,
+    version: updated.version,
+    status: updated.status as ReportStatus,
+    watermark: updated.watermark,
+    renderedAt: updated.renderedAt,
+    pptxDownloadUrl: updated.pptxStorageKey
+      ? buildReportDownloadUrl(updated.id, updated.pptxStorageKey, "pptx")
+      : null,
+    pdfDownloadUrl: updated.pdfStorageKey
+      ? buildReportDownloadUrl(updated.id, updated.pdfStorageKey, "pdf")
+      : null,
+  };
+}
+
+export interface ReportFile {
+  buffer: Buffer;
+  mimeType: string;
+  filename: string;
+}
+
+const MIME: Record<"pptx" | "pdf", string> = {
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  pdf: "application/pdf",
+};
+
+/** Validates a signed token and returns the rendered file bytes for download. */
+export async function getReportFileForDownload(
+  reportVersionId: string,
+  type: string,
+  token: string,
+  ctx: ActorContext = {}
+): Promise<ReportFile> {
+  if (type !== "pptx" && type !== "pdf") {
+    throw new ValidationError("type must be 'pptx' or 'pdf'");
+  }
+
+  const row = await prisma.reportVersion.findUnique({
+    where: { id: reportVersionId },
+    select: {
+      caseId: true,
+      version: true,
+      pptxStorageKey: true,
+      pdfStorageKey: true,
+    },
+  });
+  const storageKey = type === "pptx" ? row?.pptxStorageKey : row?.pdfStorageKey;
+  if (!row || !storageKey) throw new NotFoundError("Report file not found");
+
+  if (!verifySignedToken(storageKey, token)) {
+    throw new NotFoundError("Report file not found");
+  }
+
+  const buffer = await loadFile(storageKey).catch(() => {
+    throw new NotFoundError("Report file not found");
+  });
+
+  await recordAudit({
+    caseId: row.caseId,
+    action: "REPORT_DOWNLOADED",
+    actorId: ctx.actorId,
+    metadata: { reportVersionId, type },
+  });
+
+  return {
+    buffer,
+    mimeType: MIME[type],
+    filename: `report-v${row.version}.${type}`,
+  };
+}

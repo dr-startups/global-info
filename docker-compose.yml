@@ -1,0 +1,24 @@
+# Local infrastructure for the Digital Profile module.
+#
+# Only the report renderer is defined here. PostgreSQL is run separately (see
+# README) to avoid clashing with an already-running container on port 5432.
+#
+# Usage:
+#   docker compose up -d --build renderer
+#   curl http://localhost:8080/health
+
+services:
+  renderer:
+    build:
+      context: ./renderer
+    image: global-info-renderer
+    container_name: global-info-renderer
+    ports:
+      - "8080:8080"
+    volumes:
+      # Shared private storage: Node writes report_json/screenshots, the renderer
+      # writes pptx/pdf, both via the same storage keys.
+      - ./storage/digital-profile:/data
+    environment:
+      DATA_ROOT: /data
+    restart: unless-stopped

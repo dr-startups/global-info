@@ -22,6 +22,8 @@ export interface DigitalProfileConfig {
   priceCurrency: string;
   /** Mock mode: agents must not call external APIs. Defaults to true until Stage H. */
   mockAgents: boolean;
+  /** Base URL of the PPTX/PDF renderer microservice. */
+  rendererUrl: string;
 }
 
 export const digitalProfileConfig: DigitalProfileConfig = {
@@ -35,6 +37,7 @@ export const digitalProfileConfig: DigitalProfileConfig = {
   },
   priceCurrency: process.env.DIGITAL_PROFILE_PRICE_CURRENCY ?? "EUR",
   mockAgents: envBool(process.env.DIGITAL_PROFILE_MOCK_AGENTS, true),
+  rendererUrl: process.env.RENDERER_URL ?? "http://localhost:8080",
 };
 
 /** Master feature flag check. Use this everywhere before exposing the module. */

@@ -57,3 +57,16 @@ export function buildScreenshotDownloadUrl(
     token
   )}`;
 }
+
+/** Builds the relative download URL for a rendered report file (pptx|pdf). */
+export function buildReportDownloadUrl(
+  reportVersionId: string,
+  storageKey: string,
+  type: "pptx" | "pdf",
+  ttlSeconds?: number
+): string {
+  const { token } = createSignedToken(storageKey, ttlSeconds);
+  return `/api/digital-profile/reports/${reportVersionId}/download?type=${type}&token=${encodeURIComponent(
+    token
+  )}`;
+}

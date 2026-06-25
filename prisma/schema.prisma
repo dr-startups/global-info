@@ -389,8 +389,12 @@ model ReportVersion {
   version    Int
   status     ReportStatus @default(DRAFT)
   reportJson Json // ReportJson — single source for the renderer
-  pptxUrl    String?
-  pdfUrl     String?
+  // Rendered artifacts live in PRIVATE storage; served only via signed URLs.
+  pptxUrl        String? // legacy/optional snapshot URL (unused; see storage keys)
+  pdfUrl         String? // legacy/optional snapshot URL (unused; see storage keys)
+  pptxStorageKey String?
+  pdfStorageKey  String?
+  renderedAt     DateTime?
   // Watermark "Draft" until final review is complete.
   watermark  String?      @default("DRAFT")
   createdBy  String?

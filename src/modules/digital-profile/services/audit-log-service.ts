@@ -27,7 +27,10 @@ export type AuditAction =
   | "RISK_FINDING_REVIEWED"
   // Stage D — report_json builder
   | "REPORT_GENERATED"
-  | "REPORT_VIEWED";
+  | "REPORT_VIEWED"
+  // Stage E — report renderer
+  | "REPORT_RENDERED"
+  | "REPORT_DOWNLOADED";
 
 export interface RecordAuditInput {
   caseId?: string | null;
