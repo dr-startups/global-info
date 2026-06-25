@@ -6,15 +6,30 @@
  */
 
 import type { ReportPriceItem } from "./types";
+import type { StorageDriver } from "./storage/types";
 
 function envBool(value: string | undefined, fallback = false): boolean {
   if (value == null) return fallback;
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 }
 
+const KNOWN_DRIVERS: StorageDriver[] = ["local", "s3", "r2", "supabase"];
+function envDriver(value: string | undefined): StorageDriver {
+  const v = (value ?? "").trim().toLowerCase();
+  return (KNOWN_DRIVERS as string[]).includes(v) ? (v as StorageDriver) : "local";
+}
+
 export interface DigitalProfileConfig {
   enabled: boolean;
   storageDir: string;
+  /** Stage M2 storage abstraction config. `root` mirrors `storageDir`. */
+  storage: {
+    driver: StorageDriver;
+    root: string;
+    /** Optional base URL for a public CDN/bucket (unused by the local driver). */
+    publicBaseUrl: string | null;
+    signedUrlTtlSeconds: number;
+  };
   signedUrl: {
     secret: string;
     ttlSeconds: number;
@@ -35,10 +50,29 @@ function envLocale(value: string | undefined): "ru" | "en" {
   return v === "en" ? "en" : "ru";
 }
 
+const STORAGE_ROOT =
+  process.env.DIGITAL_PROFILE_STORAGE_ROOT ??
+  process.env.DIGITAL_PROFILE_STORAGE_DIR ??
+  "./storage/digital-profile";
+
+// One canonical signed-URL TTL governs all private download links.
+const SIGNED_URL_TTL_SECONDS = Number(
+  process.env.DIGITAL_PROFILE_STORAGE_SIGNED_URL_TTL_SECONDS ??
+    process.env.DIGITAL_PROFILE_SIGNED_URL_TTL ??
+    900
+);
+
 export const digitalProfileConfig: DigitalProfileConfig = {
   enabled: envBool(process.env.DIGITAL_PROFILE_ENABLED, false),
-  storageDir:
-    process.env.DIGITAL_PROFILE_STORAGE_DIR ?? "./storage/digital-profile",
+  // Back-compat alias: storageDir === storage.root.
+  storageDir: STORAGE_ROOT,
+  storage: {
+    driver: envDriver(process.env.DIGITAL_PROFILE_STORAGE_DRIVER),
+    root: STORAGE_ROOT,
+    publicBaseUrl:
+      process.env.DIGITAL_PROFILE_STORAGE_PUBLIC_BASE_URL?.trim() || null,
+    signedUrlTtlSeconds: SIGNED_URL_TTL_SECONDS,
+  },
   signedUrl: {
     // Canonical: DIGITAL_PROFILE_SIGNED_URL_SECRET. DIGITAL_PROFILE_SIGNING_SECRET
     // is accepted as an alias for convenience.
@@ -46,7 +80,7 @@ export const digitalProfileConfig: DigitalProfileConfig = {
       process.env.DIGITAL_PROFILE_SIGNED_URL_SECRET ??
       process.env.DIGITAL_PROFILE_SIGNING_SECRET ??
       "change-me-in-production",
-    ttlSeconds: Number(process.env.DIGITAL_PROFILE_SIGNED_URL_TTL ?? 600),
+    ttlSeconds: SIGNED_URL_TTL_SECONDS,
   },
   priceCurrency: process.env.DIGITAL_PROFILE_PRICE_CURRENCY ?? "EUR",
   mockAgents: envBool(process.env.DIGITAL_PROFILE_MOCK_AGENTS, true),

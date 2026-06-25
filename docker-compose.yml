@@ -13,12 +13,24 @@ services:
       context: ./renderer
     image: global-info-renderer
     container_name: global-info-renderer
+    # Proper PID 1 / signal handling so LibreOffice children are reaped.
+    init: true
     ports:
       - "8080:8080"
     volumes:
-      # Shared private storage: Node writes report_json/screenshots, the renderer
-      # writes pptx/pdf, both via the same storage keys.
+      # Shared PRIVATE storage: Node writes report_json/screenshots, the renderer
+      # writes pptx/pdf, both via the same storage keys. Never expose publicly.
       - ./storage/digital-profile:/data
+    # Scratch space for LibreOffice profiles/temp; wiped on restart.
+    tmpfs:
+      - /tmp
     environment:
       DATA_ROOT: /data
+    # No secrets are needed by the renderer; do not add credentials here.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
     restart: unless-stopped

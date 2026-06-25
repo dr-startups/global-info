@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -22,8 +23,14 @@ from render_pptx import build_pptx
 from report_i18n import normalize_lang
 
 DATA_ROOT = os.environ.get("DATA_ROOT", "/data")
+SERVICE_NAME = "digital-profile-renderer"
+SERVICE_VERSION = "1.0.0"
 
-app = FastAPI(title="Digital Profile Renderer", version="1.0.0")
+app = FastAPI(title="Digital Profile Renderer", version=SERVICE_VERSION)
+
+
+def _libreoffice_available() -> bool:
+    return any(shutil.which(name) for name in ("soffice", "libreoffice"))
 
 
 class RenderRequest(BaseModel):
@@ -73,7 +80,13 @@ def _file_info(key: str, path: str) -> FileInfo:
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True}
+    lo_ok = _libreoffice_available()
+    return {
+        "ok": lo_ok,
+        "service": SERVICE_NAME,
+        "libreOfficeAvailable": lo_ok,
+        "version": SERVICE_VERSION,
+    }
 
 
 DEFAULT_TEMPLATE_VERSION = "report-template-v1"

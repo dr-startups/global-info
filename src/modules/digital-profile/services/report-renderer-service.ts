@@ -21,6 +21,7 @@ import {
   verifySignedToken,
 } from "../storage/signed-url";
 import { loadFile } from "../storage/private-store";
+import { buildStorageKey } from "../storage/keys";
 import { buildAuditSummary } from "../audit-summary/builder";
 import { buildOfferConfig } from "../report/offer-config";
 import {
@@ -166,8 +167,9 @@ export async function renderReportVersion(
   const resolvedTemplate =
     templateVersion ?? digitalProfileConfig.reportTemplateVersion;
 
-  const pptxKey = `${caseId}/reports/v${reportVersion.version}.pptx`;
-  const pdfKey = `${caseId}/reports/v${reportVersion.version}.pdf`;
+  // Stage M2 key convention: cases/{caseId}/reports/{reportVersionId}/report.{ext}
+  const pptxKey = buildStorageKey.reportArtifact(caseId, reportVersion.id, "pptx");
+  const pdfKey = buildStorageKey.reportArtifact(caseId, reportVersion.id, "pdf");
 
   const localizedReportJson = await localizeReportJson(
     caseId,

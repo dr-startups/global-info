@@ -69,6 +69,30 @@ Run with `DIGITAL_PROFILE_AUTH_ENABLED="true"` and a set
 35. [ ] Set `DIGITAL_PROFILE_AUTH_ENABLED="false"` again → demo flow works without
         login (synthetic admin); smoke suite still green
 
+## Storage + deployment hardening (Stage M2)
+
+36. [ ] `npm run db:migrate && npm run db:seed`
+37. [ ] `docker compose up -d --build renderer` →
+        `docker inspect --format '{{.State.Health.Status}}' global-info-renderer`
+        becomes `healthy`
+38. [ ] `npm run dev`, log in as `superadmin@demo.local`
+39. [ ] Generate a **Template v3** report; download PPTX **and** PDF (→ both open;
+        artifacts land under `storage/digital-profile/cases/{caseId}/reports/...`)
+40. [ ] Log in as `client@demo.local` → only the assigned client report is
+        downloadable; internal/draft report download → `403`/blocked
+41. [ ] Tamper a download token (→ `404`); wait past TTL / use an expired token
+        (→ `404`)
+42. [ ] Stop the renderer (`docker compose stop renderer`); open
+        `GET /api/digital-profile/health` (→ `"renderer":"unavailable"`, still
+        `200` while DB+storage ok). Generating a report shows a graceful
+        `RENDERER_UNAVAILABLE` message.
+43. [ ] Restart the renderer; `GET /api/digital-profile/health` →
+        `{"ok":true,"database":"ok","storage":"ok","renderer":"ok",...}`
+44. [ ] Renderer `GET http://localhost:8080/health` →
+        `{"ok":true,"libreOfficeAvailable":true,...}`
+45. [ ] `npm run smoke:storage` → `smoke:storage OK`
+46. [ ] `npm run smoke:health` → `smoke:health OK`
+
 ## Regression
 
 24. [ ] `npm run smoke:all:with-renderer` → `ALL CHECKS PASSED`

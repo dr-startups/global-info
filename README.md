@@ -30,6 +30,11 @@ Core principles:
   with roles `SUPER_ADMIN`/`ADMIN`/`ANALYST`/`REVIEWER`/`CLIENT_VIEWER` and
   per-case access. Disabled by default (demo); **enable in production**. See
   [Security & privacy](docs/digital-profile/SECURITY.md).
+- **Private storage & deploy hardening (Stage M2).** All files go through a
+  `StorageProvider` (local/private driver; S3/R2-ready interface), with
+  traversal-safe keys, signed downloads that never bypass authorization, and
+  health endpoints (`/api/digital-profile/health`, renderer `/health`). See
+  [Deployment](docs/digital-profile/DEPLOYMENT.md).
 
 ## Getting started
 
@@ -63,5 +68,7 @@ npm run dev
 | `npm run db:seed` | Insert 3 demo cases + 4 demo users |
 | `npm run db:studio` | Open Prisma Studio |
 | `npm run smoke:auth` | Auth + RBAC smoke (roles, password, session, access) |
+| `npm run smoke:storage` | Storage abstraction + key/path-traversal + signed tokens + download policy |
+| `npm run smoke:health` | Health checks (storage round-trip, renderer ping, compose) |
 | `npm run smoke:all` | typecheck + build + full smoke suite (needs dev server + renderer) |
 | `npm run smoke:all:with-renderer` | builds/starts the Docker renderer, then `smoke:all` |

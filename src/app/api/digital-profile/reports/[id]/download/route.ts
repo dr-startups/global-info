@@ -15,7 +15,10 @@ import {
   requireCaseAccess,
   requireDigitalProfileUser,
 } from "@/modules/digital-profile/auth/guard";
-import { can } from "@/modules/digital-profile/auth/roles";
+import {
+  authorizeReportDownload,
+  isReportDraft,
+} from "@/modules/digital-profile/auth/download-policy";
 import { getReportFileForDownload } from "@/modules/digital-profile/services/report-renderer-service";
 
 export const dynamic = "force-dynamic";
@@ -35,19 +38,13 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
     token,
     actorOf(user),
     async (meta) => {
-      const isDraft =
-        meta.status !== "FINAL" || !!(meta.watermark && meta.watermark.trim());
+      // Case access first (DB-backed), then the pure role/draft policy.
       await requireCaseAccess(user, meta.caseId, "VIEWER");
-
-      if (user.role === "CLIENT_VIEWER") {
-        // Client viewers: client-safe reports only, never internal drafts.
-        if (isDraft || !can(user.role, "report.downloadClient")) {
-          throw new ForbiddenError("Report not available for download");
-        }
-        return;
-      }
-      // Staff need at least the internal-download capability.
-      if (!can(user.role, "report.downloadInternal")) {
+      const decision = authorizeReportDownload({
+        role: user.role,
+        isDraft: isReportDraft(meta.status, meta.watermark),
+      });
+      if (!decision.allowed) {
         throw new ForbiddenError("Report not available for download");
       }
     }

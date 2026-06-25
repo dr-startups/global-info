@@ -104,6 +104,28 @@ sees only cases with an explicit grant (`OWNER`/`EDITOR`/`REVIEWER`/`VIEWER`).
 - [x] Auth events are audit-logged with `actorId`: `LOGIN`, `LOGIN_FAILED`,
       `LOGOUT`, plus the existing case/evidence/report/download actions.
 
+## Storage & downloads hardening (Stage M2)
+
+- [x] All file I/O goes through a `StorageProvider` (local/private driver). Keys
+      are validated against **path traversal** and **absolute paths** before any
+      read/write, and the resolved path is re-checked to stay inside the root.
+- [x] Canonical, case-namespaced keys
+      (`cases/{caseId}/reports/{reportVersionId}/report.{pptx|pdf}`,
+      `cases/{caseId}/screenshots/{screenshotId}.{ext}`) keep objects organized
+      and access-checkable. Only `local` is implemented; remote drivers fail fast.
+- [x] Signed download tokens are HMAC-signed over the storage key + expiry; the
+      key embeds `caseId` / `reportVersionId` / artifact type, so a token is bound
+      to exactly one resource. Tampered/expired/foreign-key tokens → `404`.
+- [x] One TTL (`DIGITAL_PROFILE_STORAGE_SIGNED_URL_TTL_SECONDS`, default 900s)
+      governs all private links.
+- [x] Renderer handoff: the renderer writes **only** into the shared private
+      storage (`/data`), never a public path; it uses a per-call temp profile dir
+      that auto-cleans, and errors are normalized (the Node side maps failures to
+      `RendererUnavailable` without leaking internals).
+- [x] Health endpoints (`/api/digital-profile/health`, renderer `/health`) expose
+      only component status + `authEnabled` — **no secrets**, no connection
+      strings.
+
 ## Demo users (DEMO-ONLY — never use in production)
 
 `npm run db:seed` creates four demo users (override the admin via

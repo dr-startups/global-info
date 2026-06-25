@@ -7,12 +7,12 @@
  * evidence files are never removed from disk here.
  */
 
-import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/server/prisma/client";
 import { NotFoundError } from "../http/errors";
 import { recordAudit } from "./audit-log-service";
-import { loadFile, saveFile } from "../storage/private-store";
+import { loadFile, saveFile, sha256 } from "../storage/private-store";
+import { buildStorageKey } from "../storage/keys";
 import { buildScreenshotDownloadUrl, verifySignedToken } from "../storage/signed-url";
 import type { ActorContext } from "./case-service";
 
@@ -57,21 +57,29 @@ export async function addScreenshot(
   await ensureActiveCase(caseId);
 
   const ext = EXT_BY_MIME[input.mimeType] ?? "bin";
-  const fileId = randomUUID();
-  const storageKey = `${caseId}/screenshots/${fileId}.${ext}`;
-  const saved = await saveFile(storageKey, input.buffer);
 
-  const row = await prisma.screenshot.create({
+  // Create the row first so the storage key can use the real screenshot id
+  // (Stage M2 convention: cases/{caseId}/screenshots/{screenshotId}.{ext}).
+  const created = await prisma.screenshot.create({
     data: {
       caseId,
       resultId: input.resultId ?? null,
-      storageKey: saved.storageKey,
+      storageKey: "",
       mimeType: input.mimeType,
-      sha256: saved.sha256,
-      sizeBytes: saved.sizeBytes,
+      sha256: sha256(input.buffer),
+      sizeBytes: input.buffer.byteLength,
       sourceUrl: input.sourceUrl ?? null,
       capturedBy: ctx.actorId ?? null,
     },
+    select: { id: true },
+  });
+
+  const storageKey = buildStorageKey.screenshot(caseId, created.id, ext);
+  await saveFile(storageKey, input.buffer);
+
+  const row = await prisma.screenshot.update({
+    where: { id: created.id },
+    data: { storageKey },
     select: {
       id: true,
       mimeType: true,
