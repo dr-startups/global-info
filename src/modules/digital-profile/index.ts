@@ -55,5 +55,5 @@ export * as reportRendererService from "./services/report-renderer-service";
 export const DIGITAL_PROFILE_MODULE = {
   name: "digital-profile",
   /** Bumped as stages land. */
-  stage: "E",
+  stage: "F",
 } as const;
