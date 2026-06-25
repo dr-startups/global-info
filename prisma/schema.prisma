@@ -134,11 +134,16 @@ model Case {
   // Compliance / legal
   lawfulBasis   LawfulBasis?
   consentStatus ConsentStatus @default(PENDING)
+  // Audit scope
+  targetRegions String[]      @default([])
   // Ownership / review
   createdBy     String
   reviewedBy    String?
   reviewedAt    DateTime?
   notes         String?
+  // Soft delete (evidence is never hard-deleted without an explicit admin action)
+  deletedAt     DateTime?
+  deletedBy     String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -155,6 +160,7 @@ model Case {
   auditLogs        AuditLog[]
 
   @@index([status])
+  @@index([deletedAt])
   @@map("dp_cases")
 }
 
