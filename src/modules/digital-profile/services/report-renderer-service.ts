@@ -20,7 +20,7 @@ import {
   buildReportDownloadUrl,
   verifySignedToken,
 } from "../storage/signed-url";
-import { loadFile } from "../storage/private-store";
+import { loadFile, saveFile } from "../storage/private-store";
 import { buildStorageKey } from "../storage/keys";
 import { buildAuditSummary } from "../audit-summary/builder";
 import { buildOfferConfig } from "../report/offer-config";
@@ -52,6 +52,8 @@ interface RendererFileInfo {
   storageKey: string;
   sizeBytes: number;
   sha256: string;
+  /** Base64-encoded file bytes returned over HTTP (renderer is stateless). */
+  contentBase64?: string;
 }
 interface RendererResponse {
   pptx: RendererFileInfo;
@@ -187,6 +189,17 @@ export async function renderReportVersion(
     reportLanguage,
   });
 
+  // Stateless renderer: it returns the file bytes; the app persists them via its
+  // own storage provider (no shared volume between app and renderer).
+  if (!result.pptx.contentBase64 || !result.pdf.contentBase64) {
+    throw new RendererUnavailableError(
+      "Renderer did not return file content",
+      "Expected base64 pptx/pdf bytes from the renderer"
+    );
+  }
+  await saveFile(pptxKey, Buffer.from(result.pptx.contentBase64, "base64"));
+  await saveFile(pdfKey, Buffer.from(result.pdf.contentBase64, "base64"));
+
   const warnings = result.warnings ?? [];
   const usedTemplate = result.templateVersion ?? resolvedTemplate;
   const slideCount = result.slideCount ?? 0;
@@ -201,8 +214,8 @@ export async function renderReportVersion(
     const row = await tx.reportVersion.update({
       where: { id: reportVersion.id },
       data: {
-        pptxStorageKey: result.pptx.storageKey,
-        pdfStorageKey: result.pdf.storageKey,
+        pptxStorageKey: pptxKey,
+        pdfStorageKey: pdfKey,
         renderedAt: new Date(),
         templateVersion: usedTemplate,
         renderWarnings: warnings as unknown as Prisma.InputJsonValue,

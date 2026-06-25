@@ -1,19 +1,24 @@
 """Digital Profile report renderer service.
 
-A small, isolated HTTP service that turns a `report_json` into a PPTX (via
-python-pptx) and a PDF (via headless LibreOffice). It writes both files into the
-SHARED private storage volume (mounted at DATA_ROOT) using the storage keys
-provided by the caller, then returns each file's size + SHA-256.
+A small, STATELESS HTTP service that turns a `report_json` into a PPTX (via
+python-pptx) and a PDF (via headless LibreOffice). It renders into a temporary
+directory, returns each file's bytes (base64) + size + SHA-256, then deletes the
+temp dir. The Node app receives the bytes and persists them through its storage
+provider — the renderer never depends on a persistent/shared volume and never
+exposes any file publicly.
 
-The Node app calls this service; the files land in the same private storage the
-Node app serves via signed URLs. No file is ever exposed publicly here.
+DATA_ROOT (optional) is used only as a read-only base to resolve input images
+(e.g. screenshots) referenced by report_json. When it is absent (e.g. a split
+Railway deployment) missing images are skipped gracefully.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 import shutil
+import tempfile
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -22,6 +27,7 @@ from convert_pdf import convert_to_pdf
 from render_pptx import build_pptx
 from report_i18n import normalize_lang
 
+# Read-only base for input images only; outputs are never written here.
 DATA_ROOT = os.environ.get("DATA_ROOT", "/data")
 SERVICE_NAME = "digital-profile-renderer"
 SERVICE_VERSION = "1.0.0"
@@ -47,6 +53,9 @@ class FileInfo(BaseModel):
     storageKey: str
     sizeBytes: int
     sha256: str
+    # Base64-encoded file bytes returned over HTTP so the caller (Node) can
+    # persist them via its own storage provider (no shared volume needed).
+    contentBase64: str
 
 
 class RenderResponse(BaseModel):
@@ -60,14 +69,6 @@ class RenderResponse(BaseModel):
     warnings: list[str] = []
 
 
-def _safe_path(key: str) -> str:
-    full = os.path.realpath(os.path.join(DATA_ROOT, key))
-    root = os.path.realpath(DATA_ROOT)
-    if full != root and not full.startswith(root + os.sep):
-        raise HTTPException(status_code=400, detail="Invalid storage key")
-    return full
-
-
 def _file_info(key: str, path: str) -> FileInfo:
     with open(path, "rb") as fh:
         data = fh.read()
@@ -75,6 +76,7 @@ def _file_info(key: str, path: str) -> FileInfo:
         storageKey=key,
         sizeBytes=len(data),
         sha256=hashlib.sha256(data).hexdigest(),
+        contentBase64=base64.b64encode(data).decode("ascii"),
     )
 
 
@@ -94,8 +96,6 @@ DEFAULT_TEMPLATE_VERSION = "report-template-v1"
 
 @app.post("/render", response_model=RenderResponse)
 def render(req: RenderRequest) -> RenderResponse:
-    pptx_path = _safe_path(req.pptxKey)
-    pdf_path = _safe_path(req.pdfKey)
     version = (req.templateVersion or DEFAULT_TEMPLATE_VERSION).strip()
     audience = (req.audience or "internal").strip().lower()
     watermark_mode = (req.watermarkMode or "draft").strip().lower()
@@ -111,21 +111,31 @@ def render(req: RenderRequest) -> RenderResponse:
     if isinstance(meta, dict):
         meta["language"] = report_language
 
-    try:
-        warnings, slide_count = build_pptx(
-            report_json, pptx_path, DATA_ROOT, version, audience, watermark_mode
-        )
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"PPTX build failed: {exc}")
+    # Render into a throwaway temp dir; the bytes are returned over HTTP and the
+    # temp dir is removed on exit, so no persistent/shared volume is required.
+    with tempfile.TemporaryDirectory(prefix="dp-render-") as tmp:
+        pptx_path = os.path.join(tmp, "report.pptx")
+        pdf_path = os.path.join(tmp, "report.pdf")
 
-    try:
-        convert_to_pdf(pptx_path, pdf_path)
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=500, detail=f"PDF conversion failed: {exc}")
+        try:
+            warnings, slide_count = build_pptx(
+                report_json, pptx_path, DATA_ROOT, version, audience, watermark_mode
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"PPTX build failed: {exc}")
+
+        try:
+            convert_to_pdf(pptx_path, pdf_path)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=500, detail=f"PDF conversion failed: {exc}")
+
+        # The caller's keys are echoed back so it can persist under its own keys.
+        pptx_info = _file_info(req.pptxKey or "report.pptx", pptx_path)
+        pdf_info = _file_info(req.pdfKey or "report.pdf", pdf_path)
 
     return RenderResponse(
-        pptx=_file_info(req.pptxKey, pptx_path),
-        pdf=_file_info(req.pdfKey, pdf_path),
+        pptx=pptx_info,
+        pdf=pdf_info,
         templateVersion=version,
         slideCount=slide_count,
         audience=audience,

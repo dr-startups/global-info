@@ -39,10 +39,14 @@ services:
     tmpfs:
       - /tmp
     volumes:
-      # Shared PRIVATE storage with the app (renderer writes pptx/pdf at /data).
-      - dp_storage:/data
+      # READ-ONLY input base only (e.g. screenshots for embedding). The renderer
+      # is stateless: it renders to a temp dir and returns bytes over HTTP — it
+      # never writes outputs here. On Railway it has no volume at all.
+      - dp_storage:/data:ro
     environment:
       DATA_ROOT: /data
+      # Docker bridge is IPv4-only; bind 0.0.0.0 here (Railway uses the :: default).
+      RENDERER_HOST: "0.0.0.0"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 30s

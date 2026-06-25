@@ -39,6 +39,11 @@ Core principles:
   full `docker-compose.prod.yml` (app + postgres + renderer), runtime env
   validation (fail-fast in production), `admin:create`, and `smoke:prod`. See
   [Deployment](docs/digital-profile/DEPLOYMENT.md#production-like-deployment-docker-compose--stage-m3).
+- **Railway deployment (Stage M4).** Config-as-code (`railway.app.json`,
+  `railway.renderer.json`) for a 3-service Railway project with a **stateless
+  renderer** (returns PPTX/PDF over HTTP; app persists them on its Volume),
+  private renderer/Postgres and a public app domain. See
+  [Railway deployment](docs/digital-profile/RAILWAY_DEPLOYMENT.md).
 
 ## Getting started
 

@@ -117,6 +117,27 @@ Run with `DIGITAL_PROFILE_AUTH_ENABLED="true"` and a set
 61. [ ] Env validation: with auth on and a weak `DIGITAL_PROFILE_SESSION_SECRET`,
         the **production** app refuses to start (fail-fast); dev only warns
 
+## Railway deployment (Stage M4)
+
+Pre-deploy (local): `npm run typecheck`, `npm run build`, both `railway.*.json`
+valid, renderer returns bytes (stateless handoff verified).
+
+62. [ ] app + renderer build from the same repo with Custom Config Paths
+        `/railway.app.json` and `/railway.renderer.json`
+63. [ ] app has a public domain; renderer has a **private domain only**
+64. [ ] Postgres is managed and has **no public TCP proxy**
+65. [ ] app Volume mounted at `/app/storage/digital-profile`; renderer has **no** Volume
+66. [ ] app deployment ACTIVE/SUCCESS; renderer deployment ACTIVE/SUCCESS
+67. [ ] `GET https://<app-domain>/api/digital-profile/health` →
+        `database=ok storage=ok renderer=ok authEnabled=true`
+68. [ ] unauthorized admin route redirects to login; admin login works
+        (`railway ssh -s app` → `npm run admin:create`, hidden password)
+69. [ ] create a case, generate RU Template v3, download PPTX + PDF
+70. [ ] restart app → report still downloadable (persisted on Volume)
+71. [ ] invalid download token rejected
+72. [ ] logs contain no passwords / tokens / API keys
+73. [ ] PostgreSQL + app Volume backups enabled; first manual backup taken
+
 ## Regression
 
 24. [ ] `npm run smoke:all:with-renderer` → `ALL CHECKS PASSED`

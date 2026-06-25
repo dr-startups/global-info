@@ -26,6 +26,8 @@ services:
       - /tmp
     environment:
       DATA_ROOT: /data
+      # Docker bridge is IPv4-only; bind 0.0.0.0 (the image defaults to :: for Railway).
+      RENDERER_HOST: "0.0.0.0"
     # No secrets are needed by the renderer; do not add credentials here.
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]

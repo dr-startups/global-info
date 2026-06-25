@@ -121,6 +121,15 @@ Hardening (Stage M2):
 - `init: true` reaps LibreOffice child processes.
 - The image contains **no secrets**; the renderer only needs `DATA_ROOT`.
 
+## Railway (managed) deployment — Stage M4
+
+For a managed cloud deployment (app + renderer + Postgres as Railway services),
+see **[RAILWAY_DEPLOYMENT.md](RAILWAY_DEPLOYMENT.md)**. On Railway the renderer is
+**stateless** (no shared Volume): it returns PPTX/PDF bytes over HTTP and the app
+persists them via its storage provider onto the app-only Volume. The same
+stateless handoff is used by Docker Compose (the renderer mounts storage
+read-only for input images only).
+
 ## Production-like deployment (Docker Compose) — Stage M3
 
 `docker-compose.prod.yml` brings up the full stack — **app** (Next.js), **postgres**

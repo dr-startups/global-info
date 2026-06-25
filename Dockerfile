@@ -40,7 +40,9 @@ COPY --from=build /app/scripts ./scripts
 
 EXPOSE 3000
 
+# Uses $PORT so it works locally (default 3000) and on Railway (assigned PORT).
+# `next start` binds 0.0.0.0 and respects $PORT.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD curl -fsS "http://localhost:3000/api/digital-profile/health" || exit 1
+    CMD curl -fsS "http://localhost:${PORT:-3000}/api/digital-profile/health" || exit 1
 
 CMD ["npm", "run", "start"]
