@@ -491,6 +491,99 @@ export function classifyRisks(caseId: string): Promise<RiskClassifySummary> {
   });
 }
 
+export interface AuditSummary {
+  caseId: string;
+  subjectFullName: string;
+  generatedAt: string;
+  overallRiskLevel: string;
+  overallTone: string;
+  executiveSummary: string[];
+  keyFindings: { group: string; title: string; points: string[] }[];
+  recommendedActions: string[];
+  regions: {
+    region: string;
+    language: string;
+    organicTotal: number;
+    organicNegative: number;
+    organicNegativeShare: number;
+    uniqueNegativeUrls: number;
+    suggestionsTotal: number;
+    suggestionsNegative: number;
+    imagesTotal: number;
+    imagesNegative: number;
+    videosTotal: number;
+    videosNegative: number;
+    knowledgeBlockStatus: string;
+    regionRiskLevel: string;
+    regionConclusion: string;
+  }[];
+  searchSummary: {
+    totalResults: number;
+    uniqueUrls: number;
+    negativeResults: number;
+    negativeShare: number;
+    negativeDomains: string[];
+    topNegativeThemes: { theme: string; count: number }[];
+    topNegativeUrls: { url: string; title: string | null }[];
+  };
+  surfacesSummary: {
+    suggestions: { total: number; negative: number; negativeShare: number };
+    relatedQueries: { total: number; negative: number; negativeShare: number };
+    images: { total: number; negative: number; negativeShare: number };
+    videos: { total: number; negative: number; negativeShare: number };
+    knowledgeBlocks: { total: number; mismatches: number };
+    screenshots: number;
+    syntheticSnapshots: number;
+  };
+  wikipediaSummary: {
+    exists: boolean;
+    pageUrl: string | null;
+    language: string | null;
+    notabilityScore: number;
+    conclusion: string;
+  };
+  complianceDatabaseSummary: {
+    providersChecked: string[];
+    activeMatches: number;
+    pepMatches: number;
+    rcaMatches: number;
+    sanctionsMatches: number;
+    adverseMediaMatches: number;
+    conclusion: string;
+  };
+  riskSummary: {
+    highestRiskLevel: string;
+    totalFindings: number;
+    findingsByLevel: Record<string, number>;
+    findingsByTheme: Record<string, number>;
+    topFindings: {
+      severity: string;
+      theme: string;
+      title: string;
+      reviewStatus: string;
+      evidenceCount: number;
+    }[];
+  };
+  dataQualitySummary: {
+    evidenceCount: number;
+    reviewedFindings: number;
+    pendingFindings: number;
+    dismissedFindings: number;
+    missingSections: string[];
+    warnings: string[];
+  };
+}
+
+export function buildAuditSummary(caseId: string): Promise<{ auditSummary: AuditSummary }> {
+  return request<{ auditSummary: AuditSummary }>(`/cases/${caseId}/audit-summary/build`, {
+    method: "POST",
+  });
+}
+
+export function getAuditSummary(caseId: string): Promise<{ auditSummary: AuditSummary }> {
+  return request<{ auditSummary: AuditSummary }>(`/cases/${caseId}/audit-summary`);
+}
+
 /** Returns the latest report version, or null if none has been generated. */
 export async function getReport(caseId: string): Promise<ReportVersion | null> {
   try {

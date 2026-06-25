@@ -9,6 +9,8 @@
  * via `EvidenceRef`. The LLM is never a source of fact.
  */
 
+import type { AuditSummary } from "./audit-summary/types";
+
 // ----------------------------------------------------------------------------
 // Enums (string unions, kept in sync with prisma/schema.prisma)
 // ----------------------------------------------------------------------------
@@ -320,6 +322,8 @@ export interface ReportJson {
   pricing: ReportPriceItem[];
   /** Stage I — aggregated risk summary (review-gated findings). */
   riskSummary?: ReportRiskSummary;
+  /** Stage J — full deterministic audit summary (evidence-derived). */
+  auditSummary?: AuditSummary;
 }
 
 // ----------------------------------------------------------------------------

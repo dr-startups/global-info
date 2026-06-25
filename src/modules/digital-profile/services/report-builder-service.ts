@@ -20,6 +20,7 @@ import { NotFoundError } from "../http/errors";
 import { recordAudit } from "./audit-log-service";
 import { reportPricing } from "../config";
 import { buildStaticPages } from "../report/static-pages";
+import { buildAuditSummary } from "../audit-summary/builder";
 import {
   buildReportDownloadUrl,
   buildScreenshotDownloadUrl,
@@ -406,6 +407,14 @@ export async function buildReportJson(
     })),
   };
 
+  // Stage J — full deterministic audit summary (best-effort; never blocks report).
+  let auditSummary;
+  try {
+    auditSummary = await buildAuditSummary(caseId);
+  } catch {
+    auditSummary = undefined;
+  }
+
   return {
     meta: {
       caseNumber: caseRow.caseNumber,
@@ -421,6 +430,7 @@ export async function buildReportJson(
     staticPages: buildStaticPages(reportPricing),
     pricing: reportPricing,
     riskSummary,
+    auditSummary,
   };
 }
 

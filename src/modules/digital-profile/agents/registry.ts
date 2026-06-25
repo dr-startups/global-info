@@ -17,6 +17,7 @@ import { RealGoogleSearchAgent } from "./real/real-google-search-agent";
 import { RealYandexSearchAgent } from "./real/real-yandex-search-agent";
 import { RealSearchSurfaceAgent } from "./real/real-search-surface-agent";
 import { RiskClassifierV1Agent } from "./real/risk-classifier-agent";
+import { AuditSummaryBuilderAgent } from "./real/audit-summary-agent";
 
 const AGENT_LIST: CaseAgent[] = [
   new MockYandexSearchAgent(),
@@ -31,6 +32,7 @@ const AGENT_LIST: CaseAgent[] = [
   new RealYandexSearchAgent(),
   new RealSearchSurfaceAgent(),
   new RiskClassifierV1Agent(),
+  new AuditSummaryBuilderAgent(),
 ];
 
 const AGENTS: Map<string, CaseAgent> = new Map(AGENT_LIST.map((a) => [a.name, a]));
@@ -55,6 +57,7 @@ export const REAL_SAFE_AUDIT_ORDER: string[] = [
   "REAL_YANDEX_SEARCH",
   "REAL_SEARCH_SURFACES",
   "RISK_CLASSIFIER_V1",
+  "AUDIT_SUMMARY_BUILDER",
 ];
 
 /** Back-compat alias used by the orchestrator/full-audit service. */

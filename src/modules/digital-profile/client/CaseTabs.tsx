@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   addSearchResult,
+  buildAuditSummary,
   classifyRisks,
   DigitalProfileApiError,
   reviewFinding,
@@ -28,6 +29,7 @@ import {
 import { ReportPreviewPanel } from "./ReportPreviewPanel";
 import { AgentsTab } from "./AgentsTab";
 import { SurfacesTab } from "./SurfacesTab";
+import { AuditSummaryTab } from "./AuditSummaryTab";
 
 type TabKey =
   | "subject"
@@ -43,6 +45,7 @@ type TabKey =
   | "ai"
   | "compliance"
   | "risk"
+  | "audit"
   | "report";
 
 const NEXT_STEP_HINT = "Data input for this section will be available in the next step.";
@@ -97,6 +100,7 @@ export function CaseTabs({
     { key: "ai", label: "AI Profile", count: evidence.aiProfiles.length },
     { key: "compliance", label: "Compliance Databases", count: evidence.databaseProfiles.length },
     { key: "risk", label: "Risk Findings", count: evidence.riskFindings.length },
+    { key: "audit", label: "Audit Summary" },
     { key: "report", label: "Report Preview" },
   ];
 
@@ -157,6 +161,8 @@ export function CaseTabs({
       {tab === "risk" ? (
         <RiskFindingsTab caseId={caseDetail.id} evidence={evidence} onChanged={onEvidenceChanged} />
       ) : null}
+
+      {tab === "audit" ? <AuditSummaryTab caseId={caseDetail.id} /> : null}
       {tab === "report" ? (
         <ReportPreviewPanel
           caseId={caseDetail.id}
@@ -615,6 +621,7 @@ function RiskFindingsTab({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [classifying, setClassifying] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [levelFilter, setLevelFilter] = useState("ALL");
@@ -659,6 +666,25 @@ function RiskFindingsTab({
     }
   }
 
+  async function rebuildSummary() {
+    if (rebuilding) return;
+    setRebuilding(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const res = await buildAuditSummary(caseId);
+      setInfo(
+        `Audit summary rebuilt — dismissed findings excluded from top findings. Overall risk: ${res.auditSummary.overallRiskLevel}.`
+      );
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
+      const msg = err instanceof Error ? err.message : "Failed to rebuild audit summary";
+      setError(errorMessage(code, msg));
+    } finally {
+      setRebuilding(false);
+    }
+  }
+
   async function review(id: string, status: "REVIEWED" | "DISMISSED") {
     if (busyId) return;
     setBusyId(id);
@@ -681,9 +707,14 @@ function RiskFindingsTab({
         <h2 className="dp-h2" style={{ margin: 0 }}>
           Risk findings
         </h2>
-        <button className="dp-btn dp-btn-primary dp-btn-sm" disabled={classifying} onClick={classify}>
-          {classifying ? "Classifying…" : "Classify risks"}
-        </button>
+        <div className="dp-inline">
+          <button className="dp-btn dp-btn-sm" disabled={rebuilding} onClick={rebuildSummary}>
+            {rebuilding ? "Rebuilding…" : "Rebuild audit summary after review"}
+          </button>
+          <button className="dp-btn dp-btn-primary dp-btn-sm" disabled={classifying} onClick={classify}>
+            {classifying ? "Classifying…" : "Classify risks"}
+          </button>
+        </div>
       </div>
 
       <div className="dp-grid-cards" style={{ margin: "12px 0" }}>
