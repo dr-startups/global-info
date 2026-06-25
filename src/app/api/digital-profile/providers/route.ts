@@ -7,10 +7,10 @@
 
 import type { NextRequest } from "next/server";
 import { jsonOk, withModule } from "@/modules/digital-profile/http/errors";
-import { listProviderAvailability } from "@/modules/digital-profile/providers/config";
+import { listProviderStatus } from "@/modules/digital-profile/providers/config";
 
 export const dynamic = "force-dynamic";
 
 export const GET = withModule(async (_req: NextRequest) => {
-  return jsonOk(listProviderAvailability());
+  return jsonOk(listProviderStatus());
 });

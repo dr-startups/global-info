@@ -96,6 +96,7 @@ export interface SearchResultDTO {
   rank: number | null;
   classification: string;
   reviewStatus: string;
+  source: string | null;
   createdAt: Date;
 }
 
@@ -221,6 +222,7 @@ const searchResultSelect = {
   rank: true,
   classification: true,
   reviewStatus: true,
+  source: true,
   createdAt: true,
 } satisfies Prisma.SearchResultSelect;
 

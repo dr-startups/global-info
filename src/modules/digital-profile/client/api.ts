@@ -168,6 +168,7 @@ export interface SearchResult {
   rank: number | null;
   classification: string;
   reviewStatus: string;
+  source: string | null;
   createdAt: string;
 }
 
@@ -301,10 +302,15 @@ export interface AgentRun {
   createdAt: string;
 }
 
-export interface ProviderAvailability {
+export interface ProviderStatus {
   name: "WIKIPEDIA" | "GOOGLE" | "YANDEX";
+  kind: "REAL";
+  enabled: boolean;
+  configured: boolean;
   status: AvailabilityStatus;
-  message?: string;
+  missingConfigKeys: string[];
+  supportsRealCalls: boolean;
+  notes: string;
 }
 
 export type FullAuditOutcome = "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED";
@@ -416,6 +422,6 @@ export function runFullAudit(caseId: string): Promise<FullAuditResult> {
   });
 }
 
-export function listProviders(): Promise<ProviderAvailability[]> {
-  return request<ProviderAvailability[]>("/providers");
+export function listProviders(): Promise<ProviderStatus[]> {
+  return request<ProviderStatus[]>("/providers");
 }

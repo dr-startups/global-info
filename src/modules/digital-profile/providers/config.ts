@@ -25,6 +25,10 @@ function envStr(value: string | undefined): string | undefined {
 export interface ProviderConfig {
   /** Master switch for keyed SERP providers (Google/Yandex). */
   realConnectorsEnabled: boolean;
+  /** HTTP timeout for keyed provider calls, ms. */
+  timeoutMs: number;
+  /** Default cap on results returned per provider run. */
+  maxResults: number;
   wikipedia: {
     enabled: boolean;
     /** Languages to check, in priority order. */
@@ -43,11 +47,14 @@ export interface ProviderConfig {
     enabled: boolean;
     apiKey?: string;
     folderId?: string;
+    region?: string;
   };
 }
 
 export const providerConfig: ProviderConfig = {
   realConnectorsEnabled: envBool(process.env.DIGITAL_PROFILE_REAL_CONNECTORS_ENABLED, false),
+  timeoutMs: Number(process.env.DIGITAL_PROFILE_PROVIDER_TIMEOUT_MS ?? 15000),
+  maxResults: Number(process.env.DIGITAL_PROFILE_PROVIDER_MAX_RESULTS ?? 20),
   wikipedia: {
     enabled: envBool(process.env.DIGITAL_PROFILE_WIKIPEDIA_ENABLED, true),
     languages: (envStr(process.env.DIGITAL_PROFILE_WIKIPEDIA_LANGS) ?? "ru,en")
@@ -68,43 +75,123 @@ export const providerConfig: ProviderConfig = {
     enabled: envBool(process.env.DIGITAL_PROFILE_YANDEX_ENABLED, false),
     apiKey: envStr(process.env.YANDEX_SEARCH_API_KEY),
     folderId: envStr(process.env.YANDEX_SEARCH_FOLDER_ID),
+    region: envStr(process.env.YANDEX_SEARCH_REGION),
   },
 };
 
+export type ProviderName = "WIKIPEDIA" | "GOOGLE" | "YANDEX";
+
 export interface ProviderAvailability {
-  name: "WIKIPEDIA" | "GOOGLE" | "YANDEX";
+  name: ProviderName;
   status: AvailabilityStatus;
   message?: string;
 }
 
-/** Resolves the availability of a provider from config (no network calls). */
-export function getProviderAvailability(
-  name: "WIKIPEDIA" | "GOOGLE" | "YANDEX"
-): ProviderAvailability {
+/**
+ * Pure availability resolver — unit-testable without touching process.env.
+ * `masterEnabled` is the realConnectorsEnabled switch (ignored for Wikipedia).
+ */
+export function computeAvailability(
+  name: ProviderName,
+  input: { masterEnabled: boolean; enabled: boolean; hasKeys: boolean }
+): { status: AvailabilityStatus; message?: string } {
   if (name === "WIKIPEDIA") {
-    return providerConfig.wikipedia.enabled
-      ? { name, status: "ENABLED" }
-      : { name, status: "DISABLED", message: "Wikipedia connector is disabled." };
+    return input.enabled
+      ? { status: "ENABLED" }
+      : { status: "DISABLED", message: "Wikipedia connector is disabled." };
   }
-
-  const cfg = name === "GOOGLE" ? providerConfig.google : providerConfig.yandex;
-  if (!providerConfig.realConnectorsEnabled || !cfg.enabled) {
-    return { name, status: "DISABLED", message: `${name} connector is disabled.` };
+  if (!input.masterEnabled || !input.enabled) {
+    return { status: "DISABLED", message: `${name} connector is disabled.` };
   }
-  const hasKeys =
-    name === "GOOGLE"
-      ? Boolean(providerConfig.google.apiKey && providerConfig.google.engineId)
-      : Boolean(providerConfig.yandex.apiKey && providerConfig.yandex.folderId);
-  if (!hasKeys) {
-    return {
-      name,
-      status: "NOT_CONFIGURED",
-      message: `${name} API credentials are missing.`,
-    };
+  if (!input.hasKeys) {
+    return { status: "NOT_CONFIGURED", message: `${name} API credentials are missing.` };
   }
-  return { name, status: "ENABLED" };
+  return { status: "ENABLED" };
 }
 
+/** Config keys required by a provider that are currently missing (no values). */
+export function missingConfigKeys(name: ProviderName): string[] {
+  if (name === "GOOGLE") {
+    const missing: string[] = [];
+    if (!providerConfig.google.apiKey) missing.push("GOOGLE_SEARCH_API_KEY");
+    if (!providerConfig.google.engineId) missing.push("GOOGLE_SEARCH_ENGINE_ID");
+    return missing;
+  }
+  if (name === "YANDEX") {
+    const missing: string[] = [];
+    if (!providerConfig.yandex.apiKey) missing.push("YANDEX_SEARCH_API_KEY");
+    if (!providerConfig.yandex.folderId) missing.push("YANDEX_SEARCH_FOLDER_ID");
+    return missing;
+  }
+  return [];
+}
+
+/** Resolves the availability of a provider from config (no network calls). */
+export function getProviderAvailability(name: ProviderName): ProviderAvailability {
+  if (name === "WIKIPEDIA") {
+    return {
+      name,
+      ...computeAvailability(name, {
+        masterEnabled: true,
+        enabled: providerConfig.wikipedia.enabled,
+        hasKeys: true,
+      }),
+    };
+  }
+  const cfg = name === "GOOGLE" ? providerConfig.google : providerConfig.yandex;
+  return {
+    name,
+    ...computeAvailability(name, {
+      masterEnabled: providerConfig.realConnectorsEnabled,
+      enabled: cfg.enabled,
+      hasKeys: missingConfigKeys(name).length === 0,
+    }),
+  };
+}
+
+export interface ProviderStatus {
+  name: ProviderName;
+  kind: "REAL";
+  enabled: boolean;
+  configured: boolean;
+  status: AvailabilityStatus;
+  missingConfigKeys: string[];
+  supportsRealCalls: boolean;
+  notes: string;
+}
+
+const PROVIDER_NOTES: Record<ProviderName, string> = {
+  WIKIPEDIA: "Public MediaWiki/REST API. No API key required.",
+  GOOGLE: "Google Programmable Search (Custom Search JSON API).",
+  YANDEX: "Yandex Search API (XML).",
+};
+
+export function getProviderStatus(name: ProviderName): ProviderStatus {
+  const availability = getProviderAvailability(name);
+  const missing = missingConfigKeys(name);
+  const cfgEnabled =
+    name === "WIKIPEDIA"
+      ? providerConfig.wikipedia.enabled
+      : name === "GOOGLE"
+        ? providerConfig.google.enabled
+        : providerConfig.yandex.enabled;
+  return {
+    name,
+    kind: "REAL",
+    enabled: cfgEnabled,
+    configured: missing.length === 0,
+    status: availability.status,
+    missingConfigKeys: missing,
+    supportsRealCalls: name !== "WIKIPEDIA",
+    notes: PROVIDER_NOTES[name],
+  };
+}
+
+export function listProviderStatus(): ProviderStatus[] {
+  return [getProviderStatus("WIKIPEDIA"), getProviderStatus("GOOGLE"), getProviderStatus("YANDEX")];
+}
+
+/** @deprecated use listProviderStatus(); kept for older callers. */
 export function listProviderAvailability(): ProviderAvailability[] {
   return [
     getProviderAvailability("WIKIPEDIA"),

@@ -18,7 +18,9 @@
     "smoke:report": "node scripts/smoke-report.mjs",
     "smoke:render": "node scripts/smoke-render.mjs",
     "smoke:agents": "node scripts/smoke-agents.mjs",
-    "smoke:wikipedia": "node scripts/smoke-wikipedia.mjs"
+    "smoke:wikipedia": "node scripts/smoke-wikipedia.mjs",
+    "smoke:search-providers": "tsx scripts/smoke-search-providers.ts",
+    "smoke:search-providers:live": "node scripts/smoke-search-providers-live.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

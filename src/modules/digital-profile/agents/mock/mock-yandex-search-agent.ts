@@ -69,6 +69,7 @@ export class MockYandexSearchAgent extends BaseMockAgent<Raw, Raw> {
           snippet,
           rank: i + 1,
           classification,
+          source: "mock:YANDEX_SEARCH",
         })
       );
     }

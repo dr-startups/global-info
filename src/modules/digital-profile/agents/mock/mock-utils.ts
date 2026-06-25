@@ -175,6 +175,7 @@ export function buildSearchResultRow(params: {
     | "CORPORATE"
     | "LEGAL"
     | "DUPLICATE";
+  source?: string;
 }) {
   const normalizedUrl = normalizeUrl(params.url);
   return {
@@ -187,5 +188,7 @@ export function buildSearchResultRow(params: {
     snippet: `${DEMO_TAG} ${params.snippet}`,
     rank: params.rank,
     classification: params.classification,
+    source: params.source ?? "mock",
+    rawMetadata: { demo: true },
   };
 }

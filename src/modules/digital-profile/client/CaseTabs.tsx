@@ -284,6 +284,7 @@ function SearchResultsTab({
           <thead>
             <tr>
               <th>Engine</th>
+              <th>Source</th>
               <th>Title</th>
               <th>Domain</th>
               <th>Classification</th>
@@ -291,9 +292,14 @@ function SearchResultsTab({
             </tr>
           </thead>
           <tbody>
-            {evidence.searchResults.map((r) => (
+            {evidence.searchResults.map((r) => {
+              const isReal = (r.source ?? "").startsWith("real");
+              return (
               <tr key={r.id}>
                 <td>{r.engine}</td>
+                <td>
+                  <Badge tone={isReal ? "ok" : "neutral"}>{isReal ? "REAL" : "MOCK"}</Badge>
+                </td>
                 <td>
                   <a href={r.url} target="_blank" rel="noopener noreferrer">
                     {r.title ?? r.url}
@@ -307,7 +313,8 @@ function SearchResultsTab({
                   <StatusBadge status={r.reviewStatus} />
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       )}

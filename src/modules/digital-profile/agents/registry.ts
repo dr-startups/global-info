@@ -12,6 +12,8 @@ import { MockAiProfileAgent } from "./mock/mock-ai-profile-agent";
 import { MockComplianceDatabaseAgent } from "./mock/mock-compliance-database-agent";
 import { MockRiskClassifierAgent } from "./mock/mock-risk-classifier-agent";
 import { RealWikipediaAgent } from "./real/real-wikipedia-agent";
+import { RealGoogleSearchAgent } from "./real/real-google-search-agent";
+import { RealYandexSearchAgent } from "./real/real-yandex-search-agent";
 
 const AGENT_LIST: CaseAgent[] = [
   new MockYandexSearchAgent(),
@@ -21,6 +23,8 @@ const AGENT_LIST: CaseAgent[] = [
   new MockComplianceDatabaseAgent(),
   new MockRiskClassifierAgent(),
   new RealWikipediaAgent(),
+  new RealGoogleSearchAgent(),
+  new RealYandexSearchAgent(),
 ];
 
 const AGENTS: Map<string, CaseAgent> = new Map(AGENT_LIST.map((a) => [a.name, a]));
@@ -38,8 +42,12 @@ export const MOCK_FULL_AUDIT_ORDER: string[] = [
   "RISK_CLASSIFIER",
 ];
 
-/** Real connectors that are safe to run automatically (public APIs only). */
-export const REAL_SAFE_AUDIT_ORDER: string[] = ["REAL_WIKIPEDIA"];
+/** Real connectors that are safe to run as an opt-in real audit (official APIs). */
+export const REAL_SAFE_AUDIT_ORDER: string[] = [
+  "REAL_WIKIPEDIA",
+  "REAL_GOOGLE_SEARCH",
+  "REAL_YANDEX_SEARCH",
+];
 
 /** Back-compat alias used by the orchestrator/full-audit service. */
 export const FULL_AUDIT_ORDER = MOCK_FULL_AUDIT_ORDER;

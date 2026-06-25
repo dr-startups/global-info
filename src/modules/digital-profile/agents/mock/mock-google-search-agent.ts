@@ -67,6 +67,7 @@ export class MockGoogleSearchAgent extends BaseMockAgent<Raw, Raw> {
           snippet: `${region} mention (page ${page})`,
           rank: i + 1,
           classification,
+          source: "mock:GOOGLE_SEARCH",
         })
       );
     }

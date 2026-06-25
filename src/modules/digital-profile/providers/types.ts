@@ -35,13 +35,18 @@ export interface SearchProviderResult {
   capturedAt: string;
 }
 
+export type ProviderErrorCode =
+  | "PROVIDER_DISABLED"
+  | "PROVIDER_NOT_CONFIGURED"
+  | "PROVIDER_REQUEST_FAILED"
+  | "PROVIDER_RATE_LIMITED"
+  | "PROVIDER_INVALID_RESPONSE"
+  | "PROVIDER_BAD_RESPONSE"
+  | "PROVIDER_TIMEOUT"
+  | "PROVIDER_NETWORK_ERROR";
+
 export interface ProviderError {
-  code:
-    | "PROVIDER_DISABLED"
-    | "PROVIDER_NOT_CONFIGURED"
-    | "PROVIDER_REQUEST_FAILED"
-    | "PROVIDER_RATE_LIMITED"
-    | "PROVIDER_INVALID_RESPONSE";
+  code: ProviderErrorCode;
   message: string;
   retryable: boolean;
   provider: SearchProviderName;

@@ -250,6 +250,11 @@ model SearchResult {
   rank           Int?
   classification ResultClassification @default(UNCLASSIFIED)
   reviewStatus   ReviewStatus         @default(PENDING)
+  // Provenance: e.g. "mock:GOOGLE_SEARCH", "real:GOOGLE". Distinguishes demo vs
+  // real evidence without changing the engine semantics.
+  source         String?
+  // Raw, source-attributed provider payload (evidence-first). Never rendered raw.
+  rawMetadata    Json?
   createdAt      DateTime             @default(now())
 
   case        Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)

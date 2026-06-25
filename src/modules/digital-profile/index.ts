@@ -12,8 +12,9 @@
  *   E) Report renderer (PPTX template -> PDF)
  *   F) Admin UI
  *   G) Mock agents + orchestration
- *   H1) Real connector layer + live Wikipedia    <-- current
- *   H2+) Google/Yandex live search, compliance connectors (official APIs only)
+ *   H1) Real connector layer + live Wikipedia
+ *   H2) Real Google/Yandex search connectors (official APIs)  <-- current
+ *   H3+) Compliance connectors (official APIs / manual import only)
  */
 
 export * from "./types";
@@ -63,18 +64,23 @@ export {
   listAgentDefinitions,
 } from "./agents/registry";
 
-// Stage H1 — real connector provider layer (Wikipedia live; Google/Yandex safe placeholders)
+// Stage H1/H2 — real connector provider layer (Wikipedia + Google/Yandex official APIs)
 export {
   providerConfig,
   getProviderAvailability,
+  computeAvailability,
+  missingConfigKeys,
+  getProviderStatus,
+  listProviderStatus,
   listProviderAvailability,
 } from "./providers/config";
 export { wikipediaProvider } from "./providers/wikipedia-provider";
 export { googleSearchProvider } from "./providers/google-search-provider";
 export { yandexSearchProvider } from "./providers/yandex-search-provider";
+export { buildPersonSearchQueries } from "./providers/query-builder";
 
 export const DIGITAL_PROFILE_MODULE = {
   name: "digital-profile",
   /** Bumped as stages land. */
-  stage: "H1",
+  stage: "H2",
 } as const;
