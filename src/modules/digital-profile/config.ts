@@ -33,13 +33,21 @@ export const digitalProfileConfig: DigitalProfileConfig = {
   storageDir:
     process.env.DIGITAL_PROFILE_STORAGE_DIR ?? "./storage/digital-profile",
   signedUrl: {
+    // Canonical: DIGITAL_PROFILE_SIGNED_URL_SECRET. DIGITAL_PROFILE_SIGNING_SECRET
+    // is accepted as an alias for convenience.
     secret:
-      process.env.DIGITAL_PROFILE_SIGNED_URL_SECRET ?? "change-me-in-production",
+      process.env.DIGITAL_PROFILE_SIGNED_URL_SECRET ??
+      process.env.DIGITAL_PROFILE_SIGNING_SECRET ??
+      "change-me-in-production",
     ttlSeconds: Number(process.env.DIGITAL_PROFILE_SIGNED_URL_TTL ?? 600),
   },
   priceCurrency: process.env.DIGITAL_PROFILE_PRICE_CURRENCY ?? "EUR",
   mockAgents: envBool(process.env.DIGITAL_PROFILE_MOCK_AGENTS, true),
-  rendererUrl: process.env.RENDERER_URL ?? "http://localhost:8080",
+  // Canonical: RENDERER_URL. DIGITAL_PROFILE_RENDERER_URL is accepted as an alias.
+  rendererUrl:
+    process.env.RENDERER_URL ??
+    process.env.DIGITAL_PROFILE_RENDERER_URL ??
+    "http://localhost:8080",
   reportTemplateVersion:
     process.env.DIGITAL_PROFILE_REPORT_TEMPLATE_VERSION ?? "report-template-v1",
 };

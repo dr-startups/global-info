@@ -10,6 +10,13 @@ Evidence-first system that produces a corporate compliance-style PDF report abou
 person's digital profile. The module is **isolated behind a feature flag** and ships
 in stages — see `src/modules/digital-profile/README.md`.
 
+Full module documentation lives in [`docs/digital-profile/`](docs/digital-profile/README.md):
+[Architecture](docs/digital-profile/ARCHITECTURE.md) ·
+[Deployment](docs/digital-profile/DEPLOYMENT.md) ·
+[QA](docs/digital-profile/QA.md) ·
+[Final QA checklist](docs/digital-profile/FINAL_QA.md) ·
+[Security & privacy](docs/digital-profile/SECURITY.md).
+
 Core principles:
 
 - **Evidence-first.** Every statement in a report must reference evidence: a URL,
@@ -32,10 +39,14 @@ cp .env.example .env   # then edit DATABASE_URL etc.
 # 3. Set up the database
 npm run db:generate
 npm run db:migrate
-npm run db:seed
+npm run db:seed          # 3 demo cases
 
-# 4. Run the app
+# 4. Start the report renderer (Docker)
+docker compose up -d --build renderer
+
+# 5. Run the app
 npm run dev
+# open http://localhost:3000/admin/digital-profile
 ```
 
 ## Useful scripts
@@ -45,5 +56,7 @@ npm run dev
 | `npm run dev` | Start Next.js dev server |
 | `npm run typecheck` | TypeScript type checking |
 | `npm run db:migrate` | Create/apply a dev migration |
-| `npm run db:seed` | Insert sample data (one subject) |
+| `npm run db:seed` | Insert 3 demo cases |
 | `npm run db:studio` | Open Prisma Studio |
+| `npm run smoke:all` | typecheck + build + full smoke suite (needs dev server + renderer) |
+| `npm run smoke:all:with-renderer` | builds/starts the Docker renderer, then `smoke:all` |
