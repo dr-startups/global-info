@@ -34,6 +34,7 @@ export interface RenderedReportDTO {
   pptxDownloadUrl: string | null;
   pdfDownloadUrl: string | null;
   templateVersion: string | null;
+  slideCount: number;
   warnings: string[];
 }
 
@@ -46,6 +47,7 @@ interface RendererResponse {
   pptx: RendererFileInfo;
   pdf: RendererFileInfo;
   templateVersion?: string;
+  slideCount?: number;
   warnings?: string[];
 }
 
@@ -119,6 +121,7 @@ export async function renderReportVersion(
 
   const warnings = result.warnings ?? [];
   const usedTemplate = result.templateVersion ?? resolvedTemplate;
+  const slideCount = result.slideCount ?? 0;
 
   const updated = await prisma.$transaction(async (tx) => {
     const row = await tx.reportVersion.update({
@@ -153,6 +156,7 @@ export async function renderReportVersion(
           pptxSha256: result.pptx.sha256,
           pdfSha256: result.pdf.sha256,
           templateVersion: usedTemplate,
+          slideCount,
           warnings,
         },
       },
@@ -175,6 +179,7 @@ export async function renderReportVersion(
       ? buildReportDownloadUrl(updated.id, updated.pdfStorageKey, "pdf")
       : null,
     templateVersion: updated.templateVersion,
+    slideCount,
     warnings: Array.isArray(updated.renderWarnings)
       ? (updated.renderWarnings as unknown as string[])
       : [],

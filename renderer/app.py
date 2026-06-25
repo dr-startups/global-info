@@ -42,6 +42,7 @@ class RenderResponse(BaseModel):
     pptx: FileInfo
     pdf: FileInfo
     templateVersion: str
+    slideCount: int = 0
     warnings: list[str] = []
 
 
@@ -78,7 +79,7 @@ def render(req: RenderRequest) -> RenderResponse:
     version = (req.templateVersion or DEFAULT_TEMPLATE_VERSION).strip()
 
     try:
-        warnings = build_pptx(req.reportJson, pptx_path, DATA_ROOT, version)
+        warnings, slide_count = build_pptx(req.reportJson, pptx_path, DATA_ROOT, version)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"PPTX build failed: {exc}")
 
@@ -91,5 +92,6 @@ def render(req: RenderRequest) -> RenderResponse:
         pptx=_file_info(req.pptxKey, pptx_path),
         pdf=_file_info(req.pdfKey, pdf_path),
         templateVersion=version,
+        slideCount=slide_count,
         warnings=warnings or [],
     )

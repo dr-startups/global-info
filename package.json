@@ -24,7 +24,8 @@
     "smoke:search-surfaces": "node scripts/smoke-search-surfaces.mjs",
     "smoke:risk-classifier": "node scripts/smoke-risk-classifier.mjs",
     "smoke:audit-summary": "node scripts/smoke-audit-summary.mjs",
-    "smoke:report-template": "node scripts/smoke-report-template.mjs"
+    "smoke:report-template": "node scripts/smoke-report-template.mjs",
+    "smoke:report-template-v2": "node scripts/smoke-report-template-v2.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

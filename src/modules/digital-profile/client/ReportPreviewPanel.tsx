@@ -36,8 +36,9 @@ export function ReportPreviewPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [templateVersion, setTemplateVersion] = useState("report-template-v1");
+  const [templateVersion, setTemplateVersion] = useState("report-template-v2");
   const [warnings, setWarnings] = useState<string[]>([]);
+  const [renderInfo, setRenderInfo] = useState<{ template: string; slides: number } | null>(null);
 
   async function handleGenerate() {
     if (busy) return;
@@ -45,6 +46,7 @@ export function ReportPreviewPanel({
     setError(null);
     setSuccess(null);
     setWarnings([]);
+    setRenderInfo(null);
     try {
       // 1) Build the report_json (a new DRAFT version).
       const generated = await generateReport(caseId);
@@ -53,8 +55,12 @@ export function ReportPreviewPanel({
       const rendered = await renderReport(caseId, templateVersion);
       onReportChange({ ...generated, ...rendered });
       setWarnings(rendered.warnings ?? []);
+      setRenderInfo({
+        template: rendered.templateVersion ?? templateVersion,
+        slides: rendered.slideCount ?? 0,
+      });
       setSuccess(
-        `Report v${rendered.version} generated and rendered with ${rendered.templateVersion ?? templateVersion}.`
+        `Report v${rendered.version} generated and rendered with ${rendered.templateVersion ?? templateVersion} (${rendered.slideCount ?? 0} slides).`
       );
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
@@ -80,6 +86,7 @@ export function ReportPreviewPanel({
             disabled={busy}
             aria-label="Template version"
           >
+            <option value="report-template-v2">Template v2 (full audit)</option>
             <option value="report-template-v1">Template v1 (corporate)</option>
             <option value="simple">Simple (generic)</option>
           </select>
@@ -131,6 +138,14 @@ export function ReportPreviewPanel({
             <dd>{report.watermark ?? "—"}</dd>
             <dt>Rendered at</dt>
             <dd>{report.renderedAt ? formatDate(report.renderedAt) : "Not rendered yet"}</dd>
+            {renderInfo ? (
+              <>
+                <dt>Template</dt>
+                <dd>{renderInfo.template}</dd>
+                <dt>Slides</dt>
+                <dd>{renderInfo.slides}</dd>
+              </>
+            ) : null}
             <dt>Created at</dt>
             <dd>{formatDate(report.createdAt)}</dd>
           </dl>

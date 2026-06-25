@@ -110,6 +110,18 @@ export interface RegionAuditSummary {
   topSuggestions: string[];
   topImages: { title: string; url: string | null }[];
   topVideos: { title: string; url: string | null }[];
+  /** Stage K2 — additional bounded region detail for full audit pages. */
+  topThemes: { theme: string; count: number }[];
+  topNegativeDomains: string[];
+  topNegativeUrls: { title: string; domain: string; classification: string }[];
+  topRelatedQueries: string[];
+  knowledgeBlock: { title: string; snippet: string; source: string } | null;
+  evidenceAppendix: {
+    title: string;
+    domain: string;
+    provider: string;
+    classification: string;
+  }[];
 }
 
 export interface KeyFindingGroup {

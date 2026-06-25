@@ -23,10 +23,14 @@ from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Pt
 
 from report_template_v1 import build_report_v1
+from report_template_v2 import build_report_v2
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "template.pptx")
 TEMPLATE_V1_PATH = os.path.join(
     os.path.dirname(__file__), "templates", "report-template-v1.pptx"
+)
+TEMPLATE_V2_PATH = os.path.join(
+    os.path.dirname(__file__), "templates", "report-template-v2.pptx"
 )
 DEFAULT_TEMPLATE_VERSION = "report-template-v1"
 
@@ -179,15 +183,16 @@ def build_pptx(
     out_path: str,
     data_root: str,
     template_version: str | None = None,
-) -> list[str]:
+) -> tuple[list[str], int]:
     """Render report_json into a PPTX saved at out_path.
 
     template_version:
       - "simple"            -> original generic page-per-slide renderer
       - "report-template-v1"-> corporate audit template (default)
+      - "report-template-v2"-> full 36-page dynamic audit template
 
-    Returns a list of non-fatal warnings. If the v1 template fails entirely it
-    falls back to the simple renderer so a deck is always produced.
+    Returns (warnings, slide_count). If a template fails entirely it falls back
+    to the simple renderer so a deck is always produced.
     """
     version = (template_version or DEFAULT_TEMPLATE_VERSION).strip()
     warnings: list[str] = []
@@ -197,7 +202,21 @@ def build_pptx(
         _build_simple(report_json, prs, data_root)
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         prs.save(out_path)
-        return warnings
+        return warnings, len(prs.slides)
+
+    if version == "report-template-v2":
+        prs = _new_presentation(TEMPLATE_V2_PATH)
+        try:
+            build_report_v2(report_json, prs, data_root, warnings)
+            if len(prs.slides) == 0:
+                raise RuntimeError("template v2 produced no slides")
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"template v2 failed ({exc}); fell back to simple renderer")
+            prs = _new_presentation()
+            _build_simple(report_json, prs, data_root)
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        prs.save(out_path)
+        return warnings, len(prs.slides)
 
     # report-template-v1 (default)
     prs = _new_presentation(TEMPLATE_V1_PATH)
@@ -212,4 +231,4 @@ def build_pptx(
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     prs.save(out_path)
-    return warnings
+    return warnings, len(prs.slides)

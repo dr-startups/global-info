@@ -460,8 +460,56 @@ export function computeRegions(
       topVideos: vid
         .slice(0, 10)
         .map((s) => ({ title: s.title ?? s.query ?? "video", url: s.videoUrl ?? s.url })),
+      topThemes: computeRegionThemes(negatives, rs),
+      topNegativeDomains: Array.from(
+        new Set(negatives.map((r) => domainOf(r.url)).filter(Boolean))
+      ).slice(0, 10),
+      topNegativeUrls: negatives.slice(0, 10).map((r) => ({
+        title: r.title ?? r.url,
+        domain: domainOf(r.url),
+        classification: r.classification,
+      })),
+      topRelatedQueries: rel
+        .map((s) => s.query ?? s.title ?? "")
+        .filter(Boolean)
+        .slice(0, 15),
+      knowledgeBlock:
+        kb.length === 0
+          ? null
+          : {
+              title: kb[0].title ?? kb[0].query ?? "Knowledge block",
+              snippet: kb[0].snippet ?? "",
+              source: kb[0].source ?? "",
+            },
+      evidenceAppendix: ro.slice(0, 15).map((r) => ({
+        title: r.title ?? r.url,
+        domain: domainOf(r.url),
+        provider: r.engine,
+        classification: r.classification,
+      })),
     };
   });
+}
+
+/** Region-scoped negative theme counts (deterministic, bounded). */
+function computeRegionThemes(
+  negatives: LoadedOrganic[],
+  surfaces: LoadedSurface[]
+): { theme: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const s of surfaces) {
+    if (!isNegativeSurface(s)) continue;
+    const t = s.riskTheme ?? "search_profile";
+    counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  for (const r of negatives) {
+    const t = r.classification === "ADVERSE_MEDIA" ? "adverse_media" : "search_profile";
+    counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([theme, count]) => ({ theme, count }));
 }
 
 // ---------------------------------------------------------------------------

@@ -285,6 +285,7 @@ export interface RenderedReport {
   pptxDownloadUrl: string | null;
   pdfDownloadUrl: string | null;
   templateVersion?: string | null;
+  slideCount?: number;
   warnings?: string[];
 }
 

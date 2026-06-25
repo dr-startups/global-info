@@ -339,3 +339,305 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
     }
 
     return view_model, warnings
+
+
+# ===========================================================================
+# Template v2 — full 36-page dynamic audit view model (Stage K2)
+# ===========================================================================
+
+COMPLIANCE_THEMES = {"sanctions", "pep_rca", "compliance_database"}
+
+
+def _dynamic_page(report_json: dict, kind: str) -> dict | None:
+    for p in report_json.get("dynamicPages", []) or []:
+        if p.get("kind") == kind:
+            return p
+    return None
+
+
+def _region_block(r: dict | None, code: str, label: str, wiki: dict, findings: list[dict]) -> dict:
+    if not r:
+        return {
+            "code": code,
+            "label": label,
+            "present": False,
+            "noDataText": f"No evidence collected for this region ({label}).",
+            "riskLevel": "UNKNOWN",
+            "conclusion": f"No evidence collected for this region ({label}).",
+            "summary": {},
+            "organicOverview": {},
+            "topResults": [],
+            "themes": {"topThemes": [], "negativeDomains": [], "negativeUrls": []},
+            "suggestions": {"total": 0, "negative": 0, "list": []},
+            "relatedQueries": {"total": 0, "negative": 0, "list": []},
+            "images": {"total": 0, "negative": 0, "items": []},
+            "videos": {"total": 0, "negative": 0, "items": []},
+            "knowledgeBlock": None,
+            "wikipedia": wiki,
+            "riskFindings": [],
+            "dataQuality": {"organic": 0, "surfaces": 0, "warnings": [f"No {label} data collected."]},
+            "recommendedActions": [],
+            "evidenceAppendix": [],
+        }
+
+    organic_total = r.get("organicTotal", 0) or 0
+    surfaces_total = (
+        (r.get("suggestionsTotal", 0) or 0)
+        + (r.get("relatedQueriesTotal", 0) or 0)
+        + (r.get("imagesTotal", 0) or 0)
+        + (r.get("videosTotal", 0) or 0)
+    )
+    present = organic_total + surfaces_total > 0
+
+    return {
+        "code": code,
+        "label": label,
+        "present": present,
+        "noDataText": "" if present else f"No evidence collected for this region ({label}).",
+        "riskLevel": risk_level(r.get("regionRiskLevel")),
+        "conclusion": r.get("regionConclusion", ""),
+        "summary": {
+            "organicTotal": organic_total,
+            "organicNegative": r.get("organicNegative", 0),
+            "organicNegativeShare": pct(r.get("organicNegativeShare", 0)),
+            "suggestions": f"{r.get('suggestionsNegative', 0)}/{r.get('suggestionsTotal', 0)}",
+            "images": f"{r.get('imagesNegative', 0)}/{r.get('imagesTotal', 0)}",
+            "videos": f"{r.get('videosNegative', 0)}/{r.get('videosTotal', 0)}",
+            "knowledgeBlockStatus": r.get("knowledgeBlockStatus", "ABSENT"),
+        },
+        "organicOverview": {
+            "organicTotal": organic_total,
+            "organicNegative": r.get("organicNegative", 0),
+            "uniqueNegativeUrls": r.get("uniqueNegativeUrls", 0),
+            "totalUniqueUrls": r.get("totalUniqueUrls", 0),
+            "negativeShare": pct(r.get("organicNegativeShare", 0)),
+            "observedQueries": [truncate(s, 70) for s in (r.get("topSuggestions", []) or [])[:8]],
+        },
+        "topResults": [
+            {
+                "provider": str(x.get("provider", "")),
+                "rank": "" if x.get("rank") is None else str(x.get("rank")),
+                "domain": domain(x.get("domain") or x.get("url")),
+                "title": truncate(x.get("title"), 60),
+                "classification": str(x.get("classification", "")),
+            }
+            for x in (r.get("topResults", []) or [])[:20]
+        ],
+        "themes": {
+            "topThemes": [
+                {"theme": str(t.get("theme", "")), "count": t.get("count", 0)}
+                for t in (r.get("topThemes", []) or [])
+            ],
+            "negativeDomains": list(r.get("topNegativeDomains", []) or [])[:10],
+            "negativeUrls": [
+                {
+                    "title": truncate(u.get("title"), 60),
+                    "domain": domain(u.get("domain") or u.get("url")),
+                    "classification": str(u.get("classification", "")),
+                }
+                for u in (r.get("topNegativeUrls", []) or [])[:10]
+            ],
+        },
+        "suggestions": {
+            "total": r.get("suggestionsTotal", 0),
+            "negative": r.get("suggestionsNegative", 0),
+            "list": [truncate(s, 80) for s in (r.get("topSuggestions", []) or [])[:15]],
+        },
+        "relatedQueries": {
+            "total": r.get("relatedQueriesTotal", 0),
+            "negative": r.get("relatedQueriesNegative", 0),
+            "list": [truncate(s, 80) for s in (r.get("topRelatedQueries", []) or [])[:15]],
+        },
+        "images": {
+            "total": r.get("imagesTotal", 0),
+            "negative": r.get("imagesNegative", 0),
+            "items": [
+                {"title": truncate(i.get("title"), 50), "source": domain(i.get("url"))}
+                for i in (r.get("topImages", []) or [])[:10]
+            ],
+        },
+        "videos": {
+            "total": r.get("videosTotal", 0),
+            "negative": r.get("videosNegative", 0),
+            "items": [
+                {"title": truncate(v.get("title"), 50), "source": domain(v.get("url"))}
+                for v in (r.get("topVideos", []) or [])[:10]
+            ],
+        },
+        "knowledgeBlock": (
+            {
+                "status": r.get("knowledgeBlockStatus", "ABSENT"),
+                "title": truncate((r.get("knowledgeBlock") or {}).get("title"), 80),
+                "snippet": truncate((r.get("knowledgeBlock") or {}).get("snippet"), 180),
+                "source": domain((r.get("knowledgeBlock") or {}).get("source")),
+            }
+            if r.get("knowledgeBlock")
+            else {"status": r.get("knowledgeBlockStatus", "ABSENT"), "title": "", "snippet": "", "source": ""}
+        ),
+        "wikipedia": wiki,
+        "riskFindings": findings,
+        "dataQuality": {
+            "organic": organic_total,
+            "surfaces": surfaces_total,
+            "warnings": [] if present else [f"No {label} data collected."],
+        },
+        "recommendedActions": [],
+        "evidenceAppendix": [
+            {
+                "title": truncate(e.get("title"), 55),
+                "domain": domain(e.get("domain")),
+                "provider": str(e.get("provider", "")),
+                "classification": str(e.get("classification", "")),
+            }
+            for e in (r.get("evidenceAppendix", []) or [])[:15]
+        ],
+    }
+
+
+def build_view_model_v2(report_json: dict) -> tuple[dict, list[str]]:
+    base, warnings = build_view_model(report_json)
+    audit = report_json.get("auditSummary") or {}
+    offer = report_json.get("offer") or {}
+    regions_raw = audit.get("regions", []) or []
+
+    top_findings = [
+        {
+            "severity": risk_level(f.get("severity")),
+            "theme": str(f.get("theme", "")),
+            "title": truncate(f.get("title"), 70),
+            "reviewStatus": str(f.get("reviewStatus", "PENDING")),
+            "evidenceCount": f.get("evidenceCount", 0),
+        }
+        for f in ((audit.get("riskSummary", {}) or {}).get("topFindings", []) or [])
+    ]
+    search_findings = [f for f in top_findings if f["theme"] not in COMPLIANCE_THEMES]
+    compliance_findings = [f for f in top_findings if f["theme"] in COMPLIANCE_THEMES]
+
+    wiki = base["wikipedia"]
+    recommended = base["recommendedActions"]
+
+    ru = _region_block(_region(regions_raw, "RU"), "RU", "Russia", wiki, search_findings)
+    intl = _region_block(_region(regions_raw, "UAE"), "UAE", "UAE / International", wiki, search_findings)
+    ru["recommendedActions"] = recommended
+    intl["recommendedActions"] = recommended
+
+    # Compliance per-provider rows come from the report's compliance dynamic page.
+    comp_page = _dynamic_page(report_json, "COMPLIANCE_DATABASES")
+    comp_rows = []
+    if comp_page and comp_page.get("table"):
+        for row in comp_page["table"].get("rows", []) or []:
+            comp_rows.append(
+                {
+                    "provider": str(row[0]) if len(row) > 0 else "",
+                    "importMethod": str(row[1]) if len(row) > 1 else "",
+                    "matchType": str(row[2]) if len(row) > 2 else "",
+                    "score": str(row[3]) if len(row) > 3 else "",
+                }
+            )
+    cdb = base["complianceDatabases"]
+    compliance = {
+        **cdb,
+        "rows": comp_rows,
+        "dowWorldRows": [r for r in comp_rows if r["provider"] in ("DOW_JONES", "WORLD_CHECK")],
+        "lexisRows": [r for r in comp_rows if r["provider"] == "LEXISNEXIS"],
+        "findings": compliance_findings,
+        "dataQuality": base["dataQuality"],
+    }
+
+    final_conclusion = {
+        "overallRiskLevel": base["cover"]["overallRiskLevel"],
+        "topThemes": base["riskMatrix"].get("topThemes", []),
+        "recommendedActions": recommended,
+        "warnings": base["dataQuality"]["warnings"],
+        "missingSections": base["dataQuality"]["missingSections"],
+    }
+
+    cover = {
+        **base["cover"],
+        "website": offer.get("website", ""),
+        "contact": offer.get("contactEmail", ""),
+    }
+
+    contents = {
+        "sections": [
+            "1. Executive Summary",
+            "2. Russia: Digital Profile",
+            "3. UAE / International: Digital Profile",
+            "4. Compliance Databases",
+            "5. Offer / Solutions",
+            "6. About",
+        ]
+    }
+
+    executive = {
+        **base["executiveSummary"],
+        "keyFindings": [
+            {"title": str(g.get("title", "")), "points": list(g.get("points", []) or [])}
+            for g in (audit.get("keyFindings", []) or [])
+        ][:5],
+        "dataQualityWarning": (base["dataQuality"]["warnings"] or [""])[0],
+    }
+
+    risk_matrix = _build_risk_matrix_rows(base, ru, intl, wiki)
+
+    vm = {
+        "meta": base["meta"],
+        "cover": cover,
+        "contents": contents,
+        "executiveSummary": executive,
+        "riskMatrix": risk_matrix,
+        "overview": base["digitalProfileOverview"] | {"overallRiskLevel": base["cover"]["overallRiskLevel"]},
+        "ru": ru,
+        "intl": intl,
+        "compliance": compliance,
+        "finalConclusion": final_conclusion,
+        "offerPages": base["offerPages"],
+        "offer": offer,
+    }
+    return vm, warnings
+
+
+def _build_risk_matrix_rows(base: dict, ru: dict, intl: dict, wiki: dict) -> dict:
+    cdb = base["complianceDatabases"]
+    rows = [
+        {
+            "area": "Search profile (Google/Yandex)",
+            "problems": f"RU negative share {ru['summary'].get('organicNegativeShare', '0%')}, "
+            f"UAE {intl['summary'].get('organicNegativeShare', '0%') if intl['present'] else 'no data'}",
+            "level": risk_level(
+                ru["riskLevel"] if ru["present"] else (intl["riskLevel"] if intl["present"] else "UNKNOWN")
+            ),
+            "consequences": "Reputational exposure in open-source search.",
+        },
+        {
+            "area": "Wikipedia",
+            "problems": "Authoritative page exists" if wiki.get("exists") else "No authoritative page found",
+            "level": "LOW" if wiki.get("exists") else "MEDIUM",
+            "consequences": "Limited control over the public narrative.",
+        },
+        {
+            "area": "Sanctions / compliance mentions",
+            "problems": f"{cdb['sanctionsMatches']} sanctions, {cdb['pepMatches']} PEP, {cdb['rcaMatches']} RCA match(es)",
+            "level": "CRITICAL" if cdb["sanctionsMatches"] > 0 else ("HIGH" if cdb["pepMatches"] + cdb["rcaMatches"] > 0 else "LOW"),
+            "consequences": "Compliance obligations and onboarding delays if confirmed.",
+        },
+        {
+            "area": "International compliance databases",
+            "problems": f"{cdb['activeMatches']} active match(es) across {len(cdb['providersChecked'])} provider(s)",
+            "level": "HIGH" if cdb["activeMatches"] > 0 else ("LOW" if cdb["providersChecked"] else "UNKNOWN"),
+            "consequences": "Enhanced due-diligence may be required.",
+        },
+        {
+            "area": "Other sources / search surfaces",
+            "problems": f"Negative suggestions/images/videos detected: "
+            f"{ru['suggestions']['negative'] + ru['images']['negative'] + ru['videos']['negative']}",
+            "level": risk_level(ru["riskLevel"]) if ru["present"] else "UNKNOWN",
+            "consequences": "Secondary reputational signals to monitor.",
+        },
+    ]
+    return {
+        "subject": base["riskMatrix"]["subject"],
+        "overallRiskLevel": base["cover"]["overallRiskLevel"],
+        "rows": rows,
+        "topThemes": base["riskMatrix"].get("topThemes", []),
+    }
