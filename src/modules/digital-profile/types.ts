@@ -312,6 +312,21 @@ export interface ReportRiskSummary {
   }[];
 }
 
+export interface ReportOfferSolution {
+  key: string;
+  title: string;
+  subtitle: string;
+  objective: string;
+  price: number;
+  currency: string;
+  duration: string;
+  includedItems: string[];
+  deliverables: string[];
+  expectedResults: string[];
+  workPlan: string[];
+  pricingNotes: string;
+}
+
 export interface ReportOffer {
   productName: string;
   solution1Title: string;
@@ -325,6 +340,14 @@ export interface ReportOffer {
   companyName: string;
   contactEmail: string;
   website: string;
+  // Stage K3 — structured commercial block (additive; v1/v2 use flat fields).
+  brandName?: string;
+  reportSubtitle?: string;
+  companyDescription?: string;
+  solutions?: ReportOfferSolution[];
+  processSteps?: string[];
+  callToAction?: string;
+  disclaimers?: string[];
 }
 
 export interface ReportJson {

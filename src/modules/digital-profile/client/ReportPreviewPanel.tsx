@@ -36,9 +36,16 @@ export function ReportPreviewPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [templateVersion, setTemplateVersion] = useState("report-template-v2");
+  const [templateVersion, setTemplateVersion] = useState("report-template-v3");
+  const [audience, setAudience] = useState<"internal" | "client">("internal");
+  const [watermarkMode, setWatermarkMode] = useState<"draft" | "none">("draft");
   const [warnings, setWarnings] = useState<string[]>([]);
-  const [renderInfo, setRenderInfo] = useState<{ template: string; slides: number } | null>(null);
+  const [renderInfo, setRenderInfo] = useState<{
+    template: string;
+    slides: number;
+    audience: string;
+    watermarkMode: string;
+  } | null>(null);
 
   async function handleGenerate() {
     if (busy) return;
@@ -52,12 +59,18 @@ export function ReportPreviewPanel({
       const generated = await generateReport(caseId);
       onReportChange(generated);
       // 2) Render PPTX + PDF for that version using the chosen template.
-      const rendered = await renderReport(caseId, templateVersion);
+      const rendered = await renderReport(caseId, {
+        templateVersion,
+        audience,
+        watermarkMode,
+      });
       onReportChange({ ...generated, ...rendered });
       setWarnings(rendered.warnings ?? []);
       setRenderInfo({
         template: rendered.templateVersion ?? templateVersion,
         slides: rendered.slideCount ?? 0,
+        audience: rendered.audience ?? audience,
+        watermarkMode: rendered.watermarkMode ?? watermarkMode,
       });
       setSuccess(
         `Report v${rendered.version} generated and rendered with ${rendered.templateVersion ?? templateVersion} (${rendered.slideCount ?? 0} slides).`
@@ -86,9 +99,32 @@ export function ReportPreviewPanel({
             disabled={busy}
             aria-label="Template version"
           >
+            <option value="report-template-v3">Template v3 (polished + offer)</option>
             <option value="report-template-v2">Template v2 (full audit)</option>
             <option value="report-template-v1">Template v1 (corporate)</option>
             <option value="simple">Simple (generic)</option>
+          </select>
+          <select
+            className="dp-select"
+            style={{ maxWidth: 150 }}
+            value={audience}
+            onChange={(e) => setAudience(e.target.value as "internal" | "client")}
+            disabled={busy}
+            aria-label="Audience"
+          >
+            <option value="internal">Internal</option>
+            <option value="client">Client</option>
+          </select>
+          <select
+            className="dp-select"
+            style={{ maxWidth: 150 }}
+            value={watermarkMode}
+            onChange={(e) => setWatermarkMode(e.target.value as "draft" | "none")}
+            disabled={busy}
+            aria-label="Watermark"
+          >
+            <option value="draft">Watermark: Draft</option>
+            <option value="none">Watermark: None</option>
           </select>
           <button className="dp-btn dp-btn-primary" onClick={handleGenerate} disabled={busy}>
             {busy ? <span className="dp-spinner" /> : null}
@@ -144,6 +180,10 @@ export function ReportPreviewPanel({
                 <dd>{renderInfo.template}</dd>
                 <dt>Slides</dt>
                 <dd>{renderInfo.slides}</dd>
+                <dt>Audience</dt>
+                <dd>{renderInfo.audience}</dd>
+                <dt>Watermark mode</dt>
+                <dd>{renderInfo.watermarkMode}</dd>
               </>
             ) : null}
             <dt>Created at</dt>

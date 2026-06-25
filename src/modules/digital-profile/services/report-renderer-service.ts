@@ -35,6 +35,8 @@ export interface RenderedReportDTO {
   pdfDownloadUrl: string | null;
   templateVersion: string | null;
   slideCount: number;
+  audience: string;
+  watermarkMode: string;
   warnings: string[];
 }
 
@@ -48,6 +50,8 @@ interface RendererResponse {
   pdf: RendererFileInfo;
   templateVersion?: string;
   slideCount?: number;
+  audience?: string;
+  watermarkMode?: string;
   warnings?: string[];
 }
 
@@ -56,6 +60,8 @@ async function callRenderer(body: {
   pptxKey: string;
   pdfKey: string;
   templateVersion?: string;
+  audience?: string;
+  watermarkMode?: string;
 }): Promise<RendererResponse> {
   const url = `${digitalProfileConfig.rendererUrl}/render`;
   let res: Response;
@@ -91,12 +97,21 @@ async function callRenderer(body: {
  * Renders a report version (defaults to the latest) into PPTX + PDF and stores
  * the artifact keys. Returns signed download URLs.
  */
+export interface RenderOptions {
+  templateVersion?: string;
+  audience?: "internal" | "client";
+  watermarkMode?: "draft" | "none";
+}
+
 export async function renderReportVersion(
   caseId: string,
   version: number | undefined,
   ctx: ActorContext = {},
-  templateVersion?: string
+  options: RenderOptions = {}
 ): Promise<RenderedReportDTO> {
+  const templateVersion = options.templateVersion;
+  const audience = options.audience ?? "internal";
+  const watermarkMode = options.watermarkMode ?? "draft";
   const reportVersion = await prisma.reportVersion.findFirst({
     where: { caseId, ...(version != null ? { version } : {}) },
     orderBy: { version: "desc" },
@@ -117,11 +132,15 @@ export async function renderReportVersion(
     pptxKey,
     pdfKey,
     templateVersion: resolvedTemplate,
+    audience,
+    watermarkMode,
   });
 
   const warnings = result.warnings ?? [];
   const usedTemplate = result.templateVersion ?? resolvedTemplate;
   const slideCount = result.slideCount ?? 0;
+  const usedAudience = result.audience ?? audience;
+  const usedWatermarkMode = result.watermarkMode ?? watermarkMode;
 
   const updated = await prisma.$transaction(async (tx) => {
     const row = await tx.reportVersion.update({
@@ -157,6 +176,8 @@ export async function renderReportVersion(
           pdfSha256: result.pdf.sha256,
           templateVersion: usedTemplate,
           slideCount,
+          audience: usedAudience,
+          watermarkMode: usedWatermarkMode,
           warnings,
         },
       },
@@ -180,6 +201,8 @@ export async function renderReportVersion(
       : null,
     templateVersion: updated.templateVersion,
     slideCount,
+    audience: usedAudience,
+    watermarkMode: usedWatermarkMode,
     warnings: Array.isArray(updated.renderWarnings)
       ? (updated.renderWarnings as unknown as string[])
       : [],

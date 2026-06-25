@@ -597,6 +597,91 @@ def build_view_model_v2(report_json: dict) -> tuple[dict, list[str]]:
     return vm, warnings
 
 
+# ===========================================================================
+# Template v3 — polished view model: adds a structured commercial offerBlock
+# ===========================================================================
+
+def _fmt_price(value: Any, currency: str) -> str:
+    try:
+        return f"{int(value):,} {currency}"
+    except (TypeError, ValueError):
+        return f"0 {currency}"
+
+
+def _offer_block(offer: dict) -> dict:
+    currency = offer.get("currency", "EUR")
+    brand = offer.get("brandName") or offer.get("companyName") or "Digital Profile Audit"
+
+    solutions_raw = offer.get("solutions") or []
+    if not solutions_raw:
+        # Fallback to flat fields so the block is never empty.
+        solutions_raw = [
+            {
+                "title": "Solution 1 — Digital Profile",
+                "subtitle": offer.get("solution1Title", "Basic"),
+                "price": offer.get("solution1Price", 0),
+            },
+            {
+                "title": "Solution 2 — Compliance Databases",
+                "subtitle": offer.get("solution2Title", "Standard"),
+                "price": offer.get("solution2Price", 0),
+            },
+            {
+                "title": "Solution 3 — Wikipedia & Authority",
+                "subtitle": offer.get("solution3Title", "Enterprise"),
+                "price": offer.get("solution3Price", 0),
+            },
+        ]
+
+    solutions = []
+    for s in solutions_raw:
+        solutions.append(
+            {
+                "title": s.get("title", ""),
+                "subtitle": s.get("subtitle", ""),
+                "objective": s.get("objective", ""),
+                "price": _fmt_price(s.get("price"), s.get("currency", currency)),
+                "duration": s.get("duration", "—"),
+                "includedItems": list(s.get("includedItems", []) or []),
+                "deliverables": list(s.get("deliverables", []) or []),
+                "expectedResults": list(s.get("expectedResults", []) or []),
+                "workPlan": list(s.get("workPlan", []) or []),
+                "pricingNotes": s.get("pricingNotes", offer.get("pricingNotes", "")),
+            }
+        )
+
+    return {
+        "cover": {
+            "title": offer.get("productName", brand),
+            "subtitle": offer.get("reportSubtitle", "Services & solutions"),
+            "brand": brand,
+        },
+        "productOverview": {
+            "description": offer.get("companyDescription", ""),
+            "includedItems": [s["subtitle"] for s in solutions],
+            "value": "Evidence-first methodology with human review at every step.",
+            "audienceNote": "For individuals, executives and organisations managing reputational and compliance risk.",
+        },
+        "solutions": solutions,
+        "process": {"steps": list(offer.get("processSteps", []) or [])},
+        "contact": {
+            "company": offer.get("companyName", brand),
+            "email": offer.get("contactEmail", ""),
+            "website": offer.get("website", ""),
+            "cta": offer.get("callToAction", ""),
+            "disclaimers": list(offer.get("disclaimers", []) or []),
+        },
+    }
+
+
+def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[dict, list[str]]:
+    vm, warnings = build_view_model_v2(report_json)
+    offer = report_json.get("offer") or {}
+    vm["audience"] = "client" if str(audience).lower() == "client" else "internal"
+    vm["offerBlock"] = _offer_block(offer)
+    return vm, warnings
+
+
 def _build_risk_matrix_rows(base: dict, ru: dict, intl: dict, wiki: dict) -> dict:
     cdb = base["complianceDatabases"]
     rows = [

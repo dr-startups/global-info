@@ -30,6 +30,8 @@ class RenderRequest(BaseModel):
     pptxKey: str
     pdfKey: str
     templateVersion: str | None = None
+    audience: str | None = None
+    watermarkMode: str | None = None
 
 
 class FileInfo(BaseModel):
@@ -43,6 +45,8 @@ class RenderResponse(BaseModel):
     pdf: FileInfo
     templateVersion: str
     slideCount: int = 0
+    audience: str = "internal"
+    watermarkMode: str = "draft"
     warnings: list[str] = []
 
 
@@ -77,9 +81,13 @@ def render(req: RenderRequest) -> RenderResponse:
     pptx_path = _safe_path(req.pptxKey)
     pdf_path = _safe_path(req.pdfKey)
     version = (req.templateVersion or DEFAULT_TEMPLATE_VERSION).strip()
+    audience = (req.audience or "internal").strip().lower()
+    watermark_mode = (req.watermarkMode or "draft").strip().lower()
 
     try:
-        warnings, slide_count = build_pptx(req.reportJson, pptx_path, DATA_ROOT, version)
+        warnings, slide_count = build_pptx(
+            req.reportJson, pptx_path, DATA_ROOT, version, audience, watermark_mode
+        )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"PPTX build failed: {exc}")
 
@@ -93,5 +101,7 @@ def render(req: RenderRequest) -> RenderResponse:
         pdf=_file_info(req.pdfKey, pdf_path),
         templateVersion=version,
         slideCount=slide_count,
+        audience=audience,
+        watermarkMode=watermark_mode,
         warnings=warnings or [],
     )

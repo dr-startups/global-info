@@ -286,6 +286,8 @@ export interface RenderedReport {
   pdfDownloadUrl: string | null;
   templateVersion?: string | null;
   slideCount?: number;
+  audience?: string;
+  watermarkMode?: string;
   warnings?: string[];
 }
 
@@ -605,13 +607,19 @@ export function generateReport(caseId: string): Promise<ReportVersion> {
   });
 }
 
+export interface RenderReportOptions {
+  templateVersion?: string;
+  audience?: "internal" | "client";
+  watermarkMode?: "draft" | "none";
+}
+
 export function renderReport(
   caseId: string,
-  templateVersion?: string
+  options?: RenderReportOptions
 ): Promise<RenderedReport> {
   return request<RenderedReport>(`/cases/${caseId}/report/render`, {
     method: "POST",
-    body: templateVersion ? JSON.stringify({ templateVersion }) : undefined,
+    body: options ? JSON.stringify(options) : undefined,
   });
 }
 
