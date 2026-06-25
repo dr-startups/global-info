@@ -93,6 +93,30 @@ Run with `DIGITAL_PROFILE_AUTH_ENABLED="true"` and a set
 45. [ ] `npm run smoke:storage` → `smoke:storage OK`
 46. [ ] `npm run smoke:health` → `smoke:health OK`
 
+## Production deploy rehearsal (Stage M3)
+
+47. [ ] `git status` clean
+48. [ ] `cp .env.production.example .env.production` and fill in real secrets
+        (strong `POSTGRES_PASSWORD`, `DATABASE_URL`, `DIGITAL_PROFILE_SESSION_SECRET`,
+        `DIGITAL_PROFILE_SIGNED_URL_SECRET`)
+49. [ ] `docker compose -f docker-compose.prod.yml up -d --build`
+50. [ ] `docker compose -f docker-compose.prod.yml ps` → postgres/renderer/app **healthy**
+51. [ ] `curl http://localhost:3000/api/digital-profile/health` → `200` ok
+52. [ ] `curl http://localhost:8080/health` → `{"ok":true,...}`
+53. [ ] `docker compose -f docker-compose.prod.yml exec app npm run db:deploy`
+54. [ ] Create admin: `... exec -e ADMIN_EMAIL=... -e ADMIN_PASSWORD=... app npm run admin:create`
+        (or, demo only, `... exec app npm run db:seed:demo`)
+55. [ ] Open `/admin/digital-profile`, log in
+56. [ ] Open a rich demo case (or create one); generate Template **v3** in RU and EN
+57. [ ] Download PPTX + PDF (both open)
+58. [ ] `docker compose -f docker-compose.prod.yml stop renderer` → health shows
+        `"renderer":"unavailable"` (still `200` while db+storage ok)
+59. [ ] `docker compose -f docker-compose.prod.yml start renderer` → health all `ok`
+60. [ ] `SMOKE_ADMIN_EMAIL=... SMOKE_ADMIN_PASSWORD=... npm run smoke:prod` →
+        `smoke:prod OK`
+61. [ ] Env validation: with auth on and a weak `DIGITAL_PROFILE_SESSION_SECRET`,
+        the **production** app refuses to start (fail-fast); dev only warns
+
 ## Regression
 
 24. [ ] `npm run smoke:all:with-renderer` → `ALL CHECKS PASSED`

@@ -35,6 +35,10 @@ Core principles:
   traversal-safe keys, signed downloads that never bypass authorization, and
   health endpoints (`/api/digital-profile/health`, renderer `/health`). See
   [Deployment](docs/digital-profile/DEPLOYMENT.md).
+- **Production deploy rehearsal (Stage M3).** Containerized app (`Dockerfile`) +
+  full `docker-compose.prod.yml` (app + postgres + renderer), runtime env
+  validation (fail-fast in production), `admin:create`, and `smoke:prod`. See
+  [Deployment](docs/digital-profile/DEPLOYMENT.md#production-like-deployment-docker-compose--stage-m3).
 
 ## Getting started
 
@@ -70,5 +74,8 @@ npm run dev
 | `npm run smoke:auth` | Auth + RBAC smoke (roles, password, session, access) |
 | `npm run smoke:storage` | Storage abstraction + key/path-traversal + signed tokens + download policy |
 | `npm run smoke:health` | Health checks (storage round-trip, renderer ping, compose) |
+| `npm run admin:create` | Create the first SUPER_ADMIN (env `ADMIN_EMAIL`/`ADMIN_PASSWORD`/`ADMIN_NAME`) |
+| `npm run db:deploy` | `prisma migrate deploy` (production migrations) |
+| `npm run smoke:prod` | Smoke a running deployment (health, auth, no secret leak, invalid token) |
 | `npm run smoke:all` | typecheck + build + full smoke suite (needs dev server + renderer) |
 | `npm run smoke:all:with-renderer` | builds/starts the Docker renderer, then `smoke:all` |

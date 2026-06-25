@@ -1,0 +1,30 @@
+# Keep the app image small and secret-free.
+node_modules
+.next
+out
+build
+
+# Secrets / local env — NEVER copy into the image.
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# VCS / tooling
+.git
+.gitignore
+.github
+.vscode
+.idea
+
+# Local private storage (mounted as a volume at runtime).
+storage
+
+# Renderer has its own build context (./renderer).
+renderer
+
+# Logs / OS cruft
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db

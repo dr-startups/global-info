@@ -22,6 +22,10 @@ yarn-error.log*
 # local env files
 .env
 .env*.local
+# production env (real secrets — never commit). The *.example is safe to commit.
+.env.production
+.env.production.*
+!.env.production.example
 
 # typescript
 *.tsbuildinfo
