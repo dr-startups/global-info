@@ -99,6 +99,17 @@ export interface RegionAuditSummary {
   knowledgeBlockStatus: "PRESENT" | "MISMATCH" | "ABSENT";
   regionRiskLevel: OverallRiskLevel;
   regionConclusion: string;
+  /** Compact rows for the report tables (bounded). */
+  topResults: {
+    provider: string;
+    rank: number | null;
+    domain: string;
+    title: string;
+    classification: string;
+  }[];
+  topSuggestions: string[];
+  topImages: { title: string; url: string | null }[];
+  topVideos: { title: string; url: string | null }[];
 }
 
 export interface KeyFindingGroup {

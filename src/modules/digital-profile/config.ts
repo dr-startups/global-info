@@ -24,6 +24,8 @@ export interface DigitalProfileConfig {
   mockAgents: boolean;
   /** Base URL of the PPTX/PDF renderer microservice. */
   rendererUrl: string;
+  /** Default report template version used by the renderer. */
+  reportTemplateVersion: string;
 }
 
 export const digitalProfileConfig: DigitalProfileConfig = {
@@ -38,6 +40,8 @@ export const digitalProfileConfig: DigitalProfileConfig = {
   priceCurrency: process.env.DIGITAL_PROFILE_PRICE_CURRENCY ?? "EUR",
   mockAgents: envBool(process.env.DIGITAL_PROFILE_MOCK_AGENTS, true),
   rendererUrl: process.env.RENDERER_URL ?? "http://localhost:8080",
+  reportTemplateVersion:
+    process.env.DIGITAL_PROFILE_REPORT_TEMPLATE_VERSION ?? "report-template-v1",
 };
 
 /** Master feature flag check. Use this everywhere before exposing the module. */

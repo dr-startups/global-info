@@ -57,6 +57,7 @@ export async function buildAuditSummary(caseId: string): Promise<AuditSummary> {
           snippet: true,
           classification: true,
           source: true,
+          rank: true,
         },
       }),
       prisma.searchSurfaceItem.findMany({
@@ -71,6 +72,8 @@ export async function buildAuditSummary(caseId: string): Promise<AuditSummary> {
           title: true,
           snippet: true,
           url: true,
+          imageUrl: true,
+          videoUrl: true,
           classification: true,
           riskTheme: true,
           rawMetadata: true,
@@ -107,6 +110,7 @@ export async function buildAuditSummary(caseId: string): Promise<AuditSummary> {
     snippet: r.snippet,
     classification: r.classification,
     source: r.source,
+    rank: r.rank,
   }));
   const surfaces: LoadedSurface[] = surfaceRows.map((s) => ({
     id: s.id,
@@ -118,6 +122,8 @@ export async function buildAuditSummary(caseId: string): Promise<AuditSummary> {
     title: s.title,
     snippet: s.snippet,
     url: s.url,
+    imageUrl: s.imageUrl,
+    videoUrl: s.videoUrl,
     classification: s.classification,
     riskTheme: s.riskTheme,
     rawMetadata: s.rawMetadata,

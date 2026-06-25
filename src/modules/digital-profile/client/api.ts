@@ -284,6 +284,8 @@ export interface RenderedReport {
   renderedAt: string | null;
   pptxDownloadUrl: string | null;
   pdfDownloadUrl: string | null;
+  templateVersion?: string | null;
+  warnings?: string[];
 }
 
 export interface AddSearchResultInput {
@@ -602,9 +604,13 @@ export function generateReport(caseId: string): Promise<ReportVersion> {
   });
 }
 
-export function renderReport(caseId: string): Promise<RenderedReport> {
+export function renderReport(
+  caseId: string,
+  templateVersion?: string
+): Promise<RenderedReport> {
   return request<RenderedReport>(`/cases/${caseId}/report/render`, {
     method: "POST",
+    body: templateVersion ? JSON.stringify({ templateVersion }) : undefined,
   });
 }
 

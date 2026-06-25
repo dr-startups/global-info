@@ -10,6 +10,7 @@ import {
 import {
   EmptyState,
   ErrorBox,
+  Notice,
   StatusBadge,
   SuccessBox,
   errorMessage,
@@ -35,20 +36,26 @@ export function ReportPreviewPanel({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [templateVersion, setTemplateVersion] = useState("report-template-v1");
+  const [warnings, setWarnings] = useState<string[]>([]);
 
   async function handleGenerate() {
     if (busy) return;
     setBusy(true);
     setError(null);
     setSuccess(null);
+    setWarnings([]);
     try {
       // 1) Build the report_json (a new DRAFT version).
       const generated = await generateReport(caseId);
       onReportChange(generated);
-      // 2) Render PPTX + PDF for that version.
-      const rendered = await renderReport(caseId);
+      // 2) Render PPTX + PDF for that version using the chosen template.
+      const rendered = await renderReport(caseId, templateVersion);
       onReportChange({ ...generated, ...rendered });
-      setSuccess(`Report v${rendered.version} generated and rendered.`);
+      setWarnings(rendered.warnings ?? []);
+      setSuccess(
+        `Report v${rendered.version} generated and rendered with ${rendered.templateVersion ?? templateVersion}.`
+      );
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "INTERNAL_ERROR";
       const msg = err instanceof Error ? err.message : "Failed to generate report";
@@ -64,10 +71,23 @@ export function ReportPreviewPanel({
         <h2 className="dp-h2" style={{ margin: 0 }}>
           Report preview
         </h2>
-        <button className="dp-btn dp-btn-primary" onClick={handleGenerate} disabled={busy}>
-          {busy ? <span className="dp-spinner" /> : null}
-          {busy ? "Working…" : report ? "Re-generate report" : "Generate report"}
-        </button>
+        <div className="dp-inline">
+          <select
+            className="dp-select"
+            style={{ maxWidth: 220 }}
+            value={templateVersion}
+            onChange={(e) => setTemplateVersion(e.target.value)}
+            disabled={busy}
+            aria-label="Template version"
+          >
+            <option value="report-template-v1">Template v1 (corporate)</option>
+            <option value="simple">Simple (generic)</option>
+          </select>
+          <button className="dp-btn dp-btn-primary" onClick={handleGenerate} disabled={busy}>
+            {busy ? <span className="dp-spinner" /> : null}
+            {busy ? "Working…" : report ? "Re-generate report" : "Generate report"}
+          </button>
+        </div>
       </div>
 
       {error ? (
@@ -78,6 +98,18 @@ export function ReportPreviewPanel({
       {success ? (
         <div style={{ marginBottom: 14 }}>
           <SuccessBox>{success}</SuccessBox>
+        </div>
+      ) : null}
+      {warnings.length > 0 ? (
+        <div style={{ marginBottom: 14 }}>
+          <Notice>
+            <strong>Renderer warnings ({warnings.length}):</strong>
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              {warnings.slice(0, 6).map((w, i) => (
+                <li key={i}>{w}</li>
+              ))}
+            </ul>
+          </Notice>
         </div>
       ) : null}
 

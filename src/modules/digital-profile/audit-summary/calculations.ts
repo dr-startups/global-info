@@ -36,6 +36,7 @@ export interface LoadedOrganic {
   snippet: string | null;
   classification: string;
   source: string | null;
+  rank: number | null;
 }
 
 export interface LoadedSurface {
@@ -48,6 +49,8 @@ export interface LoadedSurface {
   title: string | null;
   snippet: string | null;
   url: string | null;
+  imageUrl: string | null;
+  videoUrl: string | null;
   classification: string | null;
   riskTheme: string | null;
   rawMetadata: unknown;
@@ -436,6 +439,27 @@ export function computeRegions(
       knowledgeBlockStatus: kb.length === 0 ? "ABSENT" : kbMismatch ? "MISMATCH" : "PRESENT",
       regionRiskLevel,
       regionConclusion,
+      topResults: ro
+        .slice()
+        .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999))
+        .slice(0, 20)
+        .map((r) => ({
+          provider: r.engine,
+          rank: r.rank,
+          domain: domainOf(r.url),
+          title: r.title ?? r.url,
+          classification: r.classification,
+        })),
+      topSuggestions: sug
+        .map((s) => s.query ?? s.title ?? "")
+        .filter(Boolean)
+        .slice(0, 15),
+      topImages: img
+        .slice(0, 10)
+        .map((s) => ({ title: s.title ?? s.query ?? "image", url: s.imageUrl ?? s.url })),
+      topVideos: vid
+        .slice(0, 10)
+        .map((s) => ({ title: s.title ?? s.query ?? "video", url: s.videoUrl ?? s.url })),
     };
   });
 }

@@ -3,7 +3,7 @@
  *   POST — render the latest (or specified) report version into PPTX + PDF via
  *          the renderer microservice and store the artifact keys.
  *
- * Optional JSON body: { "version": number }.
+ * Optional JSON body: { "version": number, "templateVersion": string }.
  */
 
 import type { NextRequest } from "next/server";
@@ -18,12 +18,23 @@ type RouteContext = { params: Promise<{ id: string }> };
 export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
   let version: number | undefined;
+  let templateVersion: string | undefined;
   try {
-    const body = (await req.json()) as { version?: number } | null;
+    const body = (await req.json()) as
+      | { version?: number; templateVersion?: string }
+      | null;
     if (body && typeof body.version === "number") version = body.version;
+    if (body && typeof body.templateVersion === "string") {
+      templateVersion = body.templateVersion;
+    }
   } catch {
-    // No/invalid body: render the latest version.
+    // No/invalid body: render the latest version with the default template.
   }
-  const data = await renderReportVersion(id, version, getActorContext(req));
+  const data = await renderReportVersion(
+    id,
+    version,
+    getActorContext(req),
+    templateVersion
+  );
   return jsonOk(data, 201);
 });

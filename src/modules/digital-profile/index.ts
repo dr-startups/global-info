@@ -16,8 +16,9 @@
  *   H2) Real Google/Yandex search connectors (official APIs)
  *   H3) Search surface expansion (suggestions/related/images/videos/knowledge)
  *   I)  Risk Classifier v1 (deterministic, evidence-first findings)
- *   J)  Audit Summary builder (deterministic, evidence-derived)  <-- current
- *   K+) ORION-like full report template (36 dynamic pages + commercial block)
+ *   J)  Audit Summary builder (deterministic, evidence-derived)
+ *   K1) ORION-like report template v1 (dynamic analytics + offer pages)  <-- current
+ *   K2) Full 36-page template + final commercial block
  */
 
 export * from "./types";
@@ -113,8 +114,11 @@ export {
 export * from "./audit-summary/types";
 export { buildAuditSummary } from "./audit-summary/builder";
 
+// Stage K1 — ORION-like report template v1 (offer config)
+export { buildOfferConfig } from "./report/offer-config";
+
 export const DIGITAL_PROFILE_MODULE = {
   name: "digital-profile",
   /** Bumped as stages land. */
-  stage: "J",
+  stage: "K1",
 } as const;

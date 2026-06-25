@@ -23,7 +23,8 @@
     "smoke:search-providers:live": "node scripts/smoke-search-providers-live.mjs",
     "smoke:search-surfaces": "node scripts/smoke-search-surfaces.mjs",
     "smoke:risk-classifier": "node scripts/smoke-risk-classifier.mjs",
-    "smoke:audit-summary": "node scripts/smoke-audit-summary.mjs"
+    "smoke:audit-summary": "node scripts/smoke-audit-summary.mjs",
+    "smoke:report-template": "node scripts/smoke-report-template.mjs"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

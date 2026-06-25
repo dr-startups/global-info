@@ -312,6 +312,21 @@ export interface ReportRiskSummary {
   }[];
 }
 
+export interface ReportOffer {
+  productName: string;
+  solution1Title: string;
+  solution1Price: number;
+  solution2Title: string;
+  solution2Price: number;
+  solution3Title: string;
+  solution3Price: number;
+  currency: string;
+  pricingNotes: string;
+  companyName: string;
+  contactEmail: string;
+  website: string;
+}
+
 export interface ReportJson {
   meta: ReportMeta;
   subject: SubjectProfile;
@@ -324,6 +339,8 @@ export interface ReportJson {
   riskSummary?: ReportRiskSummary;
   /** Stage J — full deterministic audit summary (evidence-derived). */
   auditSummary?: AuditSummary;
+  /** Stage K1 — commercial offer block (prices from config, never hardcoded). */
+  offer?: ReportOffer;
 }
 
 // ----------------------------------------------------------------------------

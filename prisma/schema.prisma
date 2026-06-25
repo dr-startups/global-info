@@ -484,6 +484,9 @@ model ReportVersion {
   pptxStorageKey String?
   pdfStorageKey  String?
   renderedAt     DateTime?
+  // Stage K1 — which template rendered this version + non-fatal renderer warnings.
+  templateVersion String?
+  renderWarnings  Json?
   // Watermark "Draft" until final review is complete.
   watermark  String?      @default("DRAFT")
   createdBy  String?

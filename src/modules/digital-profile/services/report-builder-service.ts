@@ -21,6 +21,7 @@ import { recordAudit } from "./audit-log-service";
 import { reportPricing } from "../config";
 import { buildStaticPages } from "../report/static-pages";
 import { buildAuditSummary } from "../audit-summary/builder";
+import { buildOfferConfig } from "../report/offer-config";
 import {
   buildReportDownloadUrl,
   buildScreenshotDownloadUrl,
@@ -431,6 +432,7 @@ export async function buildReportJson(
     pricing: reportPricing,
     riskSummary,
     auditSummary,
+    offer: buildOfferConfig(),
   };
 }
 

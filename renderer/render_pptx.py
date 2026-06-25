@@ -22,7 +22,13 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Pt
 
+from report_template_v1 import build_report_v1
+
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "template.pptx")
+TEMPLATE_V1_PATH = os.path.join(
+    os.path.dirname(__file__), "templates", "report-template-v1.pptx"
+)
+DEFAULT_TEMPLATE_VERSION = "report-template-v1"
 
 SLIDE_W = Emu(9144000)  # 10 in
 SLIDE_H = Emu(6858000)  # 7.5 in
@@ -32,9 +38,15 @@ MUTED = RGBColor(0x66, 0x66, 0x66)
 WATERMARK_COLOR = RGBColor(0xD9, 0xD9, 0xD9)
 
 
-def _new_presentation() -> Presentation:
-    if os.path.exists(TEMPLATE_PATH):
-        return Presentation(TEMPLATE_PATH)
+def _new_presentation(base_path: str | None = None) -> Presentation:
+    path = base_path if base_path and os.path.exists(base_path) else TEMPLATE_PATH
+    if os.path.exists(path):
+        prs = Presentation(path)
+        # Reuse the base only for its master/branding; drop any starter slides.
+        xml_slides = prs.slides._sldIdLst  # noqa: SLF001
+        for sld in list(xml_slides):
+            xml_slides.remove(sld)
+        return prs
     prs = Presentation()
     prs.slide_width = SLIDE_W
     prs.slide_height = SLIDE_H
@@ -152,19 +164,52 @@ def _render_page(prs: Presentation, page: dict, data_root: str, watermark: str |
         _add_images(slide, top, data_root, page["images"])
 
 
-def build_pptx(report_json: dict, out_path: str, data_root: str) -> None:
-    """Render report_json into a PPTX saved at out_path. data_root is the storage
-    root where screenshot/image files referenced by storageKey live."""
-    prs = _new_presentation()
+def _build_simple(report_json: dict, prs: Presentation, data_root: str) -> None:
+    """The original generic renderer: one slide per report_json page."""
     meta = report_json.get("meta", {})
     watermark = meta.get("watermark")
-
     for page in report_json.get("dynamicPages", []):
         _render_page(prs, page, data_root, watermark)
     for page in report_json.get("staticPages", []):
-        # Static commercial pages are not watermarked as evidence, but keep the
-        # draft mark consistent across the deck while not final.
         _render_page(prs, page, data_root, watermark)
+
+
+def build_pptx(
+    report_json: dict,
+    out_path: str,
+    data_root: str,
+    template_version: str | None = None,
+) -> list[str]:
+    """Render report_json into a PPTX saved at out_path.
+
+    template_version:
+      - "simple"            -> original generic page-per-slide renderer
+      - "report-template-v1"-> corporate audit template (default)
+
+    Returns a list of non-fatal warnings. If the v1 template fails entirely it
+    falls back to the simple renderer so a deck is always produced.
+    """
+    version = (template_version or DEFAULT_TEMPLATE_VERSION).strip()
+    warnings: list[str] = []
+
+    if version == "simple":
+        prs = _new_presentation()
+        _build_simple(report_json, prs, data_root)
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        prs.save(out_path)
+        return warnings
+
+    # report-template-v1 (default)
+    prs = _new_presentation(TEMPLATE_V1_PATH)
+    try:
+        build_report_v1(report_json, prs, data_root, warnings)
+        if len(prs.slides) == 0:
+            raise RuntimeError("template v1 produced no slides")
+    except Exception as exc:  # noqa: BLE001
+        warnings.append(f"template v1 failed ({exc}); fell back to simple renderer")
+        prs = _new_presentation()
+        _build_simple(report_json, prs, data_root)
 
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
     prs.save(out_path)
+    return warnings

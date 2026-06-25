@@ -33,6 +33,8 @@ export interface RenderedReportDTO {
   renderedAt: Date | null;
   pptxDownloadUrl: string | null;
   pdfDownloadUrl: string | null;
+  templateVersion: string | null;
+  warnings: string[];
 }
 
 interface RendererFileInfo {
@@ -43,12 +45,15 @@ interface RendererFileInfo {
 interface RendererResponse {
   pptx: RendererFileInfo;
   pdf: RendererFileInfo;
+  templateVersion?: string;
+  warnings?: string[];
 }
 
 async function callRenderer(body: {
   reportJson: ReportJson;
   pptxKey: string;
   pdfKey: string;
+  templateVersion?: string;
 }): Promise<RendererResponse> {
   const url = `${digitalProfileConfig.rendererUrl}/render`;
   let res: Response;
@@ -87,7 +92,8 @@ async function callRenderer(body: {
 export async function renderReportVersion(
   caseId: string,
   version: number | undefined,
-  ctx: ActorContext = {}
+  ctx: ActorContext = {},
+  templateVersion?: string
 ): Promise<RenderedReportDTO> {
   const reportVersion = await prisma.reportVersion.findFirst({
     where: { caseId, ...(version != null ? { version } : {}) },
@@ -98,6 +104,9 @@ export async function renderReportVersion(
     throw new NotFoundError("No report version to render");
   }
 
+  const resolvedTemplate =
+    templateVersion ?? digitalProfileConfig.reportTemplateVersion;
+
   const pptxKey = `${caseId}/reports/v${reportVersion.version}.pptx`;
   const pdfKey = `${caseId}/reports/v${reportVersion.version}.pdf`;
 
@@ -105,7 +114,11 @@ export async function renderReportVersion(
     reportJson: reportVersion.reportJson as unknown as ReportJson,
     pptxKey,
     pdfKey,
+    templateVersion: resolvedTemplate,
   });
+
+  const warnings = result.warnings ?? [];
+  const usedTemplate = result.templateVersion ?? resolvedTemplate;
 
   const updated = await prisma.$transaction(async (tx) => {
     const row = await tx.reportVersion.update({
@@ -114,6 +127,8 @@ export async function renderReportVersion(
         pptxStorageKey: result.pptx.storageKey,
         pdfStorageKey: result.pdf.storageKey,
         renderedAt: new Date(),
+        templateVersion: usedTemplate,
+        renderWarnings: warnings as unknown as Prisma.InputJsonValue,
       },
       select: {
         id: true,
@@ -124,6 +139,8 @@ export async function renderReportVersion(
         renderedAt: true,
         pptxStorageKey: true,
         pdfStorageKey: true,
+        templateVersion: true,
+        renderWarnings: true,
       },
     });
     await recordAudit(
@@ -135,6 +152,8 @@ export async function renderReportVersion(
           version: row.version,
           pptxSha256: result.pptx.sha256,
           pdfSha256: result.pdf.sha256,
+          templateVersion: usedTemplate,
+          warnings,
         },
       },
       tx
@@ -155,6 +174,10 @@ export async function renderReportVersion(
     pdfDownloadUrl: updated.pdfStorageKey
       ? buildReportDownloadUrl(updated.id, updated.pdfStorageKey, "pdf")
       : null,
+    templateVersion: updated.templateVersion,
+    warnings: Array.isArray(updated.renderWarnings)
+      ? (updated.renderWarnings as unknown as string[])
+      : [],
   };
 }
 
