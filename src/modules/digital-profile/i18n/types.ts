@@ -232,6 +232,18 @@ export interface Dictionary {
     reviewCol: string;
     emptyTitle: string;
     emptyHint: string;
+    riskCol: string;
+    themeCol: string;
+    classifyResults: string;
+    classifying: string;
+    classifyResult: string;
+    manualMarker: string;
+    markAdverse: string;
+    markNeutral: string;
+    assignTheme: string;
+    clearManual: string;
+    actions: string;
+    classifyNote: string;
   };
   surfaces: {
     queryText: string;

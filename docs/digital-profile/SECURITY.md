@@ -32,6 +32,23 @@ design. This checklist captures the guarantees and the operational rules.
 - [x] The Yandex XML response is parsed with a regex normalizer (no entity-
       expanding XML parser); decoding additionally **rejects `DOCTYPE`/`ENTITY`**
       (XXE guard) and caps the payload size.
+- [x] **Stage N1.3 — result classification:** the search-result classifier is
+      **deterministic** (RU/EN keyword dictionaries, no LLM, no network). It runs
+      only over already-stored evidence; it never fetches or scrapes anything.
+- [x] A search result is an **evidence candidate, not a verified fact**. An
+      adverse flag requires the deterministic classifier *or* an analyst manual
+      review; a single weak topical term yields only `LOW` confidence and **never**
+      auto-highlights. Classifier wording is cautious ("potential match / requires
+      review") — never a categorical conclusion about a person.
+- [x] **Red frames** in the ORION snapshot mean "risk-classified or analyst-
+      reviewed", **not** a final legal conclusion. Manual override (analyst) is
+      authoritative over the automatic classifier in both directions; a manual
+      *neutral* mark excludes a result from highlights.
+- [x] N1.3 classification + manual override are stored in
+      `SearchResult.rawMetadata.riskClassification` and `reviewStatus`; raw
+      provider payloads are **never** surfaced to the UI/report. Audit entries
+      (`SEARCH_RESULTS_CLASSIFIED_RUN`, `SEARCH_RESULT_MANUAL_CLASSIFIED`,
+      `SEARCH_RESULT_MANUAL_CLEARED`) carry **no API keys and no secrets**.
 
 ## Lawfulness (hard rules)
 

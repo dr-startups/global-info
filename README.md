@@ -57,6 +57,16 @@ Core principles:
   selects real-vs-mock per engine; the result, metadata and `report_json` expose
   `sourceMode` (`REAL_ONLY` / `MIXED` / `MOCK_ONLY` / `EMPTY`) plus a `perEngine`
   breakdown, and the image carries a secrets-free source label.
+- **Result classification + ORION highlights (Stage N1.3).** A **deterministic**
+  (no-LLM) classifier tags each `search_result` (RELEVANT / NEUTRAL / NEWS /
+  CORPORATE / SOCIAL_PROFILE / ADVERSE_MEDIA / SANCTIONS / PEP / CRIMINAL /
+  LEGAL_DISPUTE / HIGH_RISK) with a `riskTheme` + `confidence` from RU/EN keyword
+  dictionaries. Analysts can **manually** mark a result adverse/neutral, assign a
+  theme, or clear the override. The ORION snapshot draws a **red frame** only when
+  a result is manually adverse, linked to an active `risk_finding`, or auto-classified
+  risky at MEDIUM/HIGH confidence — never on a single weak term. A search result is
+  an evidence candidate, not a verified fact; a red frame is not a final legal
+  conclusion. Offline: `npm run smoke:real-result-classifier`.
 
 ## Getting started
 
@@ -92,6 +102,7 @@ npm run dev
 | `npm run smoke:auth` | Auth + RBAC smoke (roles, password, session, access) |
 | `npm run smoke:yandex-provider` | Real Yandex v2 provider smoke (offline: availability, XML decode, XXE guard, status mapping, sourceMode) |
 | `npm run smoke:serp-snapshot-real-source` | SERP snapshot source preference (offline: prefer_real/real_only/mock_only/mixed, perEngine, sourceMode) |
+| `npm run smoke:real-result-classifier` | N1.3 result classifier + highlight resolver (offline: neutral vs risky, confidence, manual override, findings, theme grouping) |
 | `npm run smoke:storage` | Storage abstraction + key/path-traversal + signed tokens + download policy |
 | `npm run smoke:health` | Health checks (storage round-trip, renderer ping, compose) |
 | `npm run admin:create` | Create the first SUPER_ADMIN (env `ADMIN_EMAIL`/`ADMIN_PASSWORD`/`ADMIN_NAME`) |

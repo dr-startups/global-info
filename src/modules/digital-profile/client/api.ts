@@ -211,6 +211,29 @@ export interface SearchQuery {
   createdAt: string;
 }
 
+export interface ResultRiskClassification {
+  auto: {
+    classification: string;
+    riskTheme: string | null;
+    confidence: string;
+    rationale: string;
+  } | null;
+  manual: {
+    classification: string;
+    riskTheme: string | null;
+    rationale: string | null;
+    reviewedBy: string | null;
+    reviewedAt: string;
+  } | null;
+  effective: {
+    classification: string;
+    riskTheme: string | null;
+    confidence: string | null;
+    source: "manual" | "auto" | "none";
+    manualOverride: boolean;
+  };
+}
+
 export interface SearchResult {
   id: string;
   queryId: string | null;
@@ -223,7 +246,43 @@ export interface SearchResult {
   reviewStatus: string;
   source: string | null;
   createdAt: string;
+  riskClassification?: ResultRiskClassification;
 }
+
+export interface ClassifyResultsSummary {
+  totalScanned: number;
+  classified: number;
+  risky: number;
+  findingsCreated: number;
+  findingsUpdated: number;
+  findingsSkippedReviewed: number;
+  findingsDismissedIgnored: number;
+}
+
+export type ManualResultClass =
+  | "RELEVANT"
+  | "NEUTRAL"
+  | "SOCIAL_PROFILE"
+  | "CORPORATE"
+  | "NEWS"
+  | "ADVERSE_MEDIA"
+  | "SANCTIONS"
+  | "PEP"
+  | "CRIMINAL"
+  | "LEGAL_DISPUTE"
+  | "HIGH_RISK"
+  | "UNKNOWN";
+
+export type ResultRiskThemeKey =
+  | "sanctions"
+  | "pep"
+  | "legal_dispute"
+  | "adverse_media"
+  | "criminal"
+  | "reputation"
+  | "political_exposure"
+  | "business_conflict"
+  | "other";
 
 export interface Screenshot {
   id: string;
@@ -548,6 +607,29 @@ export function reviewFinding(
 export function classifyRisks(caseId: string): Promise<RiskClassifySummary> {
   return request<RiskClassifySummary>(`/cases/${caseId}/risk/classify`, {
     method: "POST",
+  });
+}
+
+// Stage N1.3 — search-result classification + manual override.
+export function classifySearchResults(caseId: string): Promise<ClassifyResultsSummary> {
+  return request<ClassifyResultsSummary>(`/cases/${caseId}/search-results/classify`, {
+    method: "POST",
+  });
+}
+
+export function setManualResultClassification(
+  resultId: string,
+  input: { classification: ManualResultClass; riskTheme?: ResultRiskThemeKey; rationale?: string }
+): Promise<{ caseId: string }> {
+  return request<{ caseId: string }>(`/search-results/${resultId}/classification`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function clearManualResultClassification(resultId: string): Promise<{ caseId: string }> {
+  return request<{ caseId: string }>(`/search-results/${resultId}/classification`, {
+    method: "DELETE",
   });
 }
 

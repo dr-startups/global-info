@@ -222,6 +222,20 @@ export const ru: Dictionary = {
     reviewCol: "Проверка",
     emptyTitle: "Результатов поиска нет",
     emptyHint: "Добавьте результаты вручную выше или измените фильтр источника.",
+    riskCol: "Риск",
+    themeCol: "Тема",
+    classifyResults: "Классифицировать результаты",
+    classifying: "Классификация…",
+    classifyResult:
+      "Классифицировано {classified} из {scanned}; рисковых {risky}, находки +{created}/~{updated}.",
+    manualMarker: "ручная",
+    markAdverse: "Пометить как риск",
+    markNeutral: "Пометить нейтральным",
+    assignTheme: "Назначить тему",
+    clearManual: "Сбросить",
+    actions: "Действия",
+    classifyNote:
+      "Результаты поиска — кандидаты-доказательства, а не подтверждённые факты. Красные рамки отмечают классифицированные или вручную проверенные результаты, а не окончательный вывод.",
   },
   surfaces: {
     queryText: "Текст запроса",

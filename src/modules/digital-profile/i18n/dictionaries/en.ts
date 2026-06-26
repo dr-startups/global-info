@@ -222,6 +222,20 @@ export const en: Dictionary = {
     reviewCol: "Review",
     emptyTitle: "No search results",
     emptyHint: "Add results manually above or adjust the source filter.",
+    riskCol: "Risk",
+    themeCol: "Theme",
+    classifyResults: "Classify results",
+    classifying: "Classifying…",
+    classifyResult:
+      "Classified {classified} of {scanned}; {risky} risky, findings +{created}/~{updated}.",
+    manualMarker: "manual",
+    markAdverse: "Mark adverse",
+    markNeutral: "Mark neutral",
+    assignTheme: "Assign theme",
+    clearManual: "Clear",
+    actions: "Actions",
+    classifyNote:
+      "Search results are evidence candidates, not verified facts. Red frames mark risk-classified or manually reviewed results — not a final conclusion.",
   },
   surfaces: {
     queryText: "Query text",

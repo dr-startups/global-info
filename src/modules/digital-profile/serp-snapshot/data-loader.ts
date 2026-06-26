@@ -7,6 +7,8 @@
 
 import { prisma } from "@/server/prisma/client";
 import { NotFoundError } from "../http/errors";
+import { readRiskClassification } from "../risk-classifier/result-classifier";
+import { resolveHighlight, type LinkedFinding } from "./highlight-resolver";
 import {
   DEFAULT_SOURCE_PREFERENCE,
   type EngineSourceMode,
@@ -91,6 +93,38 @@ function riskThemeOf(rawMetadata: unknown): string | null {
   return null;
 }
 
+/** Pulls SEARCH_RESULT evidence ids out of a finding's evidenceRefs JSON. */
+function resultIdsOf(evidenceRefs: unknown): string[] {
+  if (!Array.isArray(evidenceRefs)) return [];
+  const ids: string[] = [];
+  for (const ref of evidenceRefs) {
+    if (ref && typeof ref === "object") {
+      const r = ref as Record<string, unknown>;
+      if (typeof r.id === "string" && (r.type === undefined || r.type === "SEARCH_RESULT")) {
+        ids.push(r.id);
+      }
+    }
+  }
+  return ids;
+}
+
+/** Builds resultId -> linked findings map for a case (Stage N1.3 highlights). */
+async function loadFindingsByResult(caseId: string): Promise<Map<string, LinkedFinding[]>> {
+  const findings = await prisma.riskFinding.findMany({
+    where: { caseId },
+    select: { reviewStatus: true, riskTheme: true, evidenceRefs: true },
+  });
+  const map = new Map<string, LinkedFinding[]>();
+  for (const f of findings) {
+    for (const id of resultIdsOf(f.evidenceRefs)) {
+      const list = map.get(id) ?? [];
+      list.push({ reviewStatus: f.reviewStatus, riskTheme: f.riskTheme });
+      map.set(id, list);
+    }
+  }
+  return map;
+}
+
 /**
  * Upper bound on rows fetched per engine BEFORE the source preference is applied.
  * We over-fetch so that, e.g., real rows are not lost behind higher-ranked mock
@@ -124,6 +158,7 @@ export async function loadCaseResults(
   if (!found) throw new NotFoundError("Case not found");
 
   const subjectName = found.subjects[0]?.fullName ?? "";
+  const findingsByResult = await loadFindingsByResult(caseId);
 
   async function loadEngine(engine: SerpEngine): Promise<LoadedResult[]> {
     const rows = await prisma.searchResult.findMany({
@@ -138,26 +173,40 @@ export async function loadCaseResults(
         url: true,
         snippet: true,
         classification: true,
+        reviewStatus: true,
         source: true,
         rawMetadata: true,
         createdAt: true,
       },
     });
-    const mapped: LoadedResult[] = rows.map((r) => ({
-      id: r.id,
-      engine,
-      rank: r.rank,
-      title: r.title,
-      url: r.url,
-      domain: domainOf(r.url),
-      snippet: r.snippet,
-      classification: String(r.classification),
-      riskTheme: riskThemeOf(r.rawMetadata),
-      region: null,
-      language: null,
-      source: r.source,
-      createdAt: r.createdAt,
-    }));
+    const mapped: LoadedResult[] = rows.map((r) => {
+      // Stage N1.3 — resolve red-frame highlight (manual > findings > auto > enum).
+      const riskClassification = readRiskClassification(r.rawMetadata);
+      const decision = resolveHighlight({
+        enumClassification: String(r.classification),
+        riskClassification,
+        findings: findingsByResult.get(r.id) ?? [],
+      });
+      return {
+        id: r.id,
+        engine,
+        rank: r.rank,
+        title: r.title,
+        url: r.url,
+        domain: domainOf(r.url),
+        snippet: r.snippet,
+        classification: String(r.classification),
+        riskTheme: decision.isHighlighted
+          ? (decision.riskTheme as string | null) ?? riskThemeOf(r.rawMetadata)
+          : null,
+        region: null,
+        language: null,
+        source: r.source,
+        createdAt: r.createdAt,
+        isHighlighted: decision.isHighlighted,
+        themeTitle: null,
+      };
+    });
     // Stage N1.2 — pick real/mock per the preference, then cap.
     return selectByPreference(mapped, sourcePreference).slice(0, maxPerEngine);
   }

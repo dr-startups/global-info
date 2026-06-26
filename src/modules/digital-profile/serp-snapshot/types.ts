@@ -78,6 +78,14 @@ export interface LoadedResult {
   language: string | null;
   source: string | null;
   createdAt: Date;
+  /**
+   * Stage N1.3 — resolved highlight decision (manual > findings > auto > enum).
+   * When true the result gets a red frame; `riskTheme`/`themeTitle` carry the
+   * effective theme used for grouping. `false` for neutral/unknown/dismissed.
+   */
+  isHighlighted: boolean;
+  /** Human-readable theme title hint for the left-column grouping, if any. */
+  themeTitle: string | null;
 }
 
 /** Results grouped per engine after loading + applying the source preference. */
