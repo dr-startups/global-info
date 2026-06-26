@@ -47,6 +47,8 @@ export type AuditAction =
   | "RISK_CLASSIFY_RUN"
   // Stage J — audit summary
   | "AUDIT_SUMMARY_BUILT"
+  // Stage S1 — synthetic ORION-style SERP snapshot
+  | "SERP_SNAPSHOT_GENERATED"
   // Stage M1 — auth + access control
   | "LOGIN"
   | "LOGIN_FAILED"

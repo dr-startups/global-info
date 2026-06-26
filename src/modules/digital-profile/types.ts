@@ -366,6 +366,29 @@ export interface ReportJson {
   offer?: ReportOffer;
   /** Stage L2 — language the report (PPTX/PDF) is rendered in. */
   reportLanguage?: "ru" | "en";
+  /**
+   * Stage S1 — reference to the latest synthetic ORION-style SERP snapshot, when
+   * one exists. Additive + optional: the renderer/templates ignore unknown keys,
+   * so this does not change the existing report layout.
+   */
+  serpSnapshot?: ReportSerpSnapshot;
+}
+
+/** Stage S1 — minimal SERP snapshot reference embedded in report_json. */
+export interface ReportSerpSnapshot {
+  storageKey: string;
+  query: string;
+  mode: "SYNTHETIC";
+  metadata: {
+    engines: string[];
+    language: "ru" | "en";
+    themeCount: number;
+    highlightedCount: number;
+    resultCount: number;
+    width: number;
+    height: number;
+    generatedAt: string;
+  };
 }
 
 // ----------------------------------------------------------------------------

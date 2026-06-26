@@ -27,6 +27,7 @@ import {
 import { ReportPreviewPanel } from "./ReportPreviewPanel";
 import { AgentsTab } from "./AgentsTab";
 import { SurfacesTab } from "./SurfacesTab";
+import { SerpSnapshotTab } from "./SerpSnapshotTab";
 import { AuditSummaryTab } from "./AuditSummaryTab";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
@@ -41,6 +42,7 @@ type TabKey =
   | "videos"
   | "knowledge"
   | "screenshots"
+  | "serpSnapshot"
   | "wikipedia"
   | "ai"
   | "compliance"
@@ -99,6 +101,7 @@ export function CaseTabs({
     { key: "videos", label: t("tabs.videos"), count: videos.length, raw: true },
     { key: "knowledge", label: t("tabs.knowledgeBlock"), count: knowledge.length, raw: true },
     { key: "screenshots", label: t("tabs.screenshots"), count: evidence.screenshots.length, raw: true },
+    { key: "serpSnapshot", label: t("tabs.serpSnapshot"), raw: true },
     { key: "wikipedia", label: t("tabs.wikipedia"), count: evidence.wikipediaChecks.length, raw: true },
     { key: "ai", label: t("tabs.aiProfile"), count: evidence.aiProfiles.length, raw: true },
     { key: "compliance", label: t("tabs.complianceDatabases"), count: evidence.databaseProfiles.length, raw: true },
@@ -159,6 +162,9 @@ export function CaseTabs({
         <SurfacesTab type="KNOWLEDGE_BLOCK" label={t("tabs.knowledgeBlock")} items={knowledge} caseId={caseDetail.id} onChanged={onSurfacesChanged} />
       ) : null}
       {tab === "screenshots" ? <ScreenshotsTab evidence={evidence} /> : null}
+      {tab === "serpSnapshot" ? (
+        <SerpSnapshotTab caseId={caseDetail.id} subjectName={caseDetail.subject?.fullName ?? ""} />
+      ) : null}
       {tab === "wikipedia" ? <WikipediaTab evidence={evidence} /> : null}
       {tab === "ai" ? <AiProfileTab evidence={evidence} /> : null}
       {tab === "compliance" ? <ComplianceTab evidence={evidence} /> : null}
