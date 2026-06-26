@@ -486,7 +486,13 @@ export async function listEvidence(caseId: string): Promise<CaseEvidenceDTO> {
       select: searchResultSelect,
     }),
     prisma.screenshot.findMany({
-      where: { caseId, deletedAt: null },
+      // Exclude synthetic SERP snapshots (Stage S1) — they are a generated
+      // artifact, not raw captured evidence, and have their own tab.
+      where: {
+        caseId,
+        deletedAt: null,
+        NOT: { storageKey: { contains: "/serp-snapshots/" } },
+      },
       orderBy: { capturedAt: "desc" },
       select: {
         id: true,

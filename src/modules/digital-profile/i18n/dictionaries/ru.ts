@@ -60,6 +60,7 @@ export const ru: Dictionary = {
     videos: "Видео",
     knowledgeBlock: "Блок знаний",
     screenshots: "Скриншоты",
+    serpSnapshot: "Скриншот выдачи",
     wikipedia: "Википедия",
     aiProfile: "AI-профиль",
     complianceDatabases: "Комплаенс-базы",
@@ -123,6 +124,9 @@ export const ru: Dictionary = {
       "Отчёт v{version} собран и отрендерен шаблоном {template} ({slides} слайд(ов)).",
     generatedShort: "Отчёт v{version} собран и отрендерен.",
     renderFirst: "Сначала отрендерите отчёт",
+    serpSnapshotIncluded: "SERP snapshot будет включён в отчёт.",
+    serpSnapshotMissing:
+      "Сгенерируйте SERP Snapshot, чтобы включить ORION-style страницу в отчёт.",
   },
   risk: {
     title: "Риск-находки",
@@ -243,6 +247,28 @@ export const ru: Dictionary = {
     type: "Тип",
     captured: "Снято",
     view: "Открыть",
+  },
+  serpSnapshot: {
+    title: "Скриншот выдачи",
+    subtitle:
+      "Синтетический снимок на основе сохранённых результатов поиска. Не является реальным скриншотом выдачи.",
+    queryLabel: "Поисковый запрос",
+    queryPlaceholder: "ФИО субъекта",
+    generate: "Сгенерировать ORION-style скриншот",
+    generating: "Генерация…",
+    regenerate: "Сгенерировать заново",
+    view: "Открыть PNG",
+    download: "Скачать",
+    emptyTitle: "Скриншот ещё не сгенерирован",
+    emptyHint: "Нажмите «Сгенерировать», чтобы создать синтетический снимок выдачи.",
+    syntheticNote:
+      "Синтетический снимок на основе сохранённых результатов поиска. Не является реальным скриншотом выдачи.",
+    mode: "Режим",
+    themeCount: "Тем",
+    highlightedCount: "Выделено результатов",
+    resultCount: "Всего результатов",
+    generatedAt: "Сформировано",
+    generated: "Скриншот сформирован",
   },
   wikipedia: {
     title: "Википедия",

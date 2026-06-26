@@ -17,8 +17,10 @@ No LLM, no scraping, no live SERP screenshots — only lays out report_json data
 
 from __future__ import annotations
 
+import io
 from typing import Any, Callable
 
+from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Pt
 
 import theme as T
@@ -249,10 +251,81 @@ def _b_themes(slide, top, blk, vm, ctx):
         T.no_data_card(slide, top, L["nd_no_negative_urls"])
 
 
-def _b_snapshots(slide, top, blk, vm, ctx):
+def _serp_caption(slide, top: Emu, ss: dict, L: dict) -> None:
+    box = T.textbox(slide, T.MARGIN, top, T.CONTENT_W, Emu(360000))
+    tf = box.text_frame
+    p = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.CENTER
+    T._run(p, ss.get("caption") or L["serp_snapshot_caption"], T.FS_NOTE, T.NEUTRAL_GRAY, italic=True)
+    detail = " · ".join(x for x in [ss.get("query", ""), ss.get("generatedAt", "")] if x)
+    if detail:
+        sp = tf.add_paragraph()
+        sp.alignment = PP_ALIGN.CENTER
+        T._run(sp, detail, T.FS_FOOTER, T.NEUTRAL_GRAY)
+
+
+def _place_serp_image(slide, top: Emu, ss: dict, L: dict) -> None:
+    """Embed the ORION-style PNG: contain-scaled, centred, above the footer."""
+    caption_reserve = 460000  # room for the caption below the image
+    gap = 90000
+    avail_w = int(T.CONTENT_W)
+    avail_top = int(top)
+    avail_h = max(1, int(T.FOOTER_Y) - avail_top - caption_reserve - gap)
+
+    stream = io.BytesIO(ss["image_bytes"])
+    img_w = int(ss.get("width") or 0)
+    img_h = int(ss.get("height") or 0)
+
+    if img_w > 0 and img_h > 0:
+        scale = min(avail_w / img_w, avail_h / img_h)
+        draw_w = max(1, int(img_w * scale))
+        draw_h = max(1, int(img_h * scale))
+        left = Emu(int(T.MARGIN) + (avail_w - draw_w) // 2)
+        slide.shapes.add_picture(stream, left, top, width=Emu(draw_w), height=Emu(draw_h))
+        cap_top = Emu(avail_top + draw_h + gap)
+    else:
+        # Unknown native size: add by width, then clamp height if needed.
+        pic = slide.shapes.add_picture(stream, T.MARGIN, top, width=Emu(avail_w))
+        if int(pic.height) > avail_h:
+            ratio = avail_h / int(pic.height)
+            pic.width = Emu(int(int(pic.width) * ratio))
+            pic.height = Emu(avail_h)
+        pic.left = Emu(int(T.MARGIN) + (avail_w - int(pic.width)) // 2)
+        pic.top = top
+        cap_top = Emu(int(pic.top) + int(pic.height) + gap)
+
+    _serp_caption(slide, cap_top, ss, L)
+
+
+def _p_snapshots(prs, vm, ctx):
+    """Search screens / snapshots page (Stage S1.5).
+
+    If a synthetic ORION-style SERP snapshot exists, render the image almost
+    full-width (contain-scaled, centred) under a localized title/subtitle, with a
+    small synthetic-source caption. Otherwise fall back to the original
+    informational card so the page (and the 50-slide count) never changes.
+    The watermark is drawn by the page frame, so it stays consistent (draft shows
+    through around the image; none never appears).
+    """
     L = vm["labels"]
+    ss = vm.get("serp_snapshot") or {}
+    blk = vm.get("ru") or {}
+
+    if ss.get("exists") and ss.get("image_bytes"):
+        slide, top = _section(prs, ctx, ss.get("title") or L["search_screens_title"], ss.get("subtitle"))
+        try:
+            _place_serp_image(slide, top, ss, L)
+            return
+        except Exception:  # noqa: BLE001 - never crash the deck on an image issue
+            T.no_data_card(slide, top, L["serp_snapshot_missing"])
+            return
+
+    # Fallback: original search-screens page (title + informational card).
+    title = L["pg_search_screens"].replace("{label}", blk.get("label", ""))
+    slide, top = _section(prs, ctx, title)
+    summary = blk.get("summary") or {}
     T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(2100000), L["search_screens_title"], [
-        L["knowledge_block_status"].format(status=blk["summary"].get("knowledgeBlockStatus", "ABSENT")),
+        L["knowledge_block_status"].format(status=summary.get("knowledgeBlockStatus", "ABSENT")),
         *L["snapshot_lines"],
     ])
 
@@ -596,7 +669,7 @@ def build_report_v3(
         _rb("ru", _b_organic, L["pg_organic_overview"]),
         _rb("ru", _b_results, L["pg_top_results"]),
         _rb("ru", _b_themes, L["pg_neg_publications"]),
-        _rb("ru", _b_snapshots, L["pg_search_screens"]),
+        _p_snapshots,
         _rb("ru", _b_suggestions, L["pg_suggestions"]),
         _rb("ru", _b_related, L["pg_related_queries"]),
         _rb("ru", _b_images, L["pg_images"]),

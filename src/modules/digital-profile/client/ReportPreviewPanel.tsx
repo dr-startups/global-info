@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   DigitalProfileApiError,
   generateReport,
+  getSerpSnapshot,
   renderReport,
   type ReportVersion,
 } from "./api";
@@ -55,6 +56,9 @@ export function ReportPreviewPanel({
     locale === "en" ? "en" : "ru"
   );
   const [warnings, setWarnings] = useState<string[]>([]);
+  // Stage S1.5 — whether a SERP snapshot exists for this case (drives the hint
+  // about the ORION-style page being included in the rendered report).
+  const [hasSnapshot, setHasSnapshot] = useState<boolean | null>(null);
   const [renderInfo, setRenderInfo] = useState<{
     template: string;
     slides: number;
@@ -62,6 +66,20 @@ export function ReportPreviewPanel({
     watermarkMode: string;
     reportLanguage: string;
   } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getSerpSnapshot(caseId)
+      .then((res) => {
+        if (!cancelled) setHasSnapshot(!!res.snapshot);
+      })
+      .catch(() => {
+        if (!cancelled) setHasSnapshot(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [caseId]);
 
   async function handleGenerate() {
     if (busy) return;
@@ -178,6 +196,16 @@ export function ReportPreviewPanel({
         </div>
         ) : null}
       </div>
+
+      {hasSnapshot !== null ? (
+        <div style={{ marginBottom: 14 }}>
+          <Notice>
+            {hasSnapshot
+              ? t("report.serpSnapshotIncluded")
+              : t("report.serpSnapshotMissing")}
+          </Notice>
+        </div>
+      ) : null}
 
       {error ? (
         <div style={{ marginBottom: 14 }}>

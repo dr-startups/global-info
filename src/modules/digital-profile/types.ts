@@ -366,6 +366,39 @@ export interface ReportJson {
   offer?: ReportOffer;
   /** Stage L2 — language the report (PPTX/PDF) is rendered in. */
   reportLanguage?: "ru" | "en";
+  /**
+   * Stage S1 — reference to the latest synthetic ORION-style SERP snapshot, when
+   * one exists. Additive + optional: the renderer/templates ignore unknown keys,
+   * so this does not change the existing report layout.
+   */
+  serpSnapshot?: ReportSerpSnapshot;
+}
+
+/** Stage S1 — minimal SERP snapshot reference embedded in report_json. */
+export interface ReportSerpSnapshot {
+  /** Screenshot-row id of the snapshot (Stage S1.5). */
+  id: string;
+  storageKey: string;
+  query: string;
+  mode: "SYNTHETIC";
+  /**
+   * Stage S1.5 — render-time only. Base64-encoded PNG bytes injected by the
+   * renderer service right before calling the (stateless) Python renderer so it
+   * can embed the ORION-style page image. It is NEVER persisted in the stored
+   * report_json (kept lightweight); the persisted value only carries the
+   * storageKey reference. Optional so the stored reference stays small.
+   */
+  imageBase64?: string;
+  metadata: {
+    engines: string[];
+    language: "ru" | "en";
+    themeCount: number;
+    highlightedCount: number;
+    resultCount: number;
+    width: number;
+    height: number;
+    generatedAt: string;
+  };
 }
 
 // ----------------------------------------------------------------------------

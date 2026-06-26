@@ -144,6 +144,29 @@ async function localizeReportJson(
   return localized;
 }
 
+/**
+ * Stage S1.5 — best-effort: loads the latest SERP snapshot PNG from private
+ * storage and attaches it as base64 to a wire-only copy of report_json so the
+ * stateless renderer can embed it. Never mutates/persists the stored report_json
+ * and never throws: on any failure the reference is left without bytes and the
+ * renderer falls back to the no-data card + a renderWarning.
+ */
+async function attachSerpSnapshotImage(
+  reportJson: ReportJson
+): Promise<ReportJson> {
+  const ss = reportJson.serpSnapshot;
+  if (!ss?.storageKey) return reportJson;
+  try {
+    const bytes = await loadFile(ss.storageKey);
+    return {
+      ...reportJson,
+      serpSnapshot: { ...ss, imageBase64: bytes.toString("base64") },
+    };
+  } catch {
+    return reportJson;
+  }
+}
+
 export async function renderReportVersion(
   caseId: string,
   version: number | undefined,
@@ -178,9 +201,14 @@ export async function renderReportVersion(
     reportVersion.reportJson as unknown as ReportJson,
     reportLanguage
   );
+  // Stage S1.5: the renderer is stateless and has no access to private storage,
+  // so the SERP snapshot PNG travels inside report_json as base64. This is added
+  // only on the wire (not persisted in the stored report_json, which stays
+  // lightweight). If the image is unreadable the renderer falls back + warns.
+  const renderReportJson = await attachSerpSnapshotImage(localizedReportJson);
 
   const result = await callRenderer({
-    reportJson: localizedReportJson,
+    reportJson: renderReportJson,
     pptxKey,
     pdfKey,
     templateVersion: resolvedTemplate,

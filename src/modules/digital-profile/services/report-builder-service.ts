@@ -30,6 +30,7 @@ import {
   buildReportDownloadUrl,
   buildScreenshotDownloadUrl,
 } from "../storage/signed-url";
+import { getLatestSerpSnapshot } from "../serp-snapshot";
 import type { ActorContext } from "./case-service";
 import type {
   EvidenceRef,
@@ -165,7 +166,13 @@ export async function buildReportJson(
         },
       }),
       prisma.screenshot.findMany({
-        where: { caseId, deletedAt: null },
+        // Exclude synthetic SERP snapshots (Stage S1) from the raw-screenshot page;
+        // they are surfaced separately via report_json.serpSnapshot.
+        where: {
+          caseId,
+          deletedAt: null,
+          NOT: { storageKey: { contains: "/serp-snapshots/" } },
+        },
         orderBy: { capturedAt: "desc" },
         select: {
           id: true,
@@ -423,6 +430,33 @@ export async function buildReportJson(
     auditSummary = undefined;
   }
 
+  // Stage S1 — embed a reference to the latest synthetic SERP snapshot if one
+  // exists (additive/optional; renderer ignores unknown keys). Best-effort.
+  let serpSnapshot: ReportJson["serpSnapshot"];
+  try {
+    const latest = await getLatestSerpSnapshot(caseId);
+    if (latest) {
+      serpSnapshot = {
+        id: latest.id,
+        storageKey: latest.storageKey,
+        query: latest.query,
+        mode: "SYNTHETIC",
+        metadata: {
+          engines: latest.engines,
+          language: latest.language,
+          themeCount: latest.themeCount,
+          highlightedCount: latest.highlightedCount,
+          resultCount: latest.resultCount,
+          width: latest.width,
+          height: latest.height,
+          generatedAt: latest.generatedAt,
+        },
+      };
+    }
+  } catch {
+    serpSnapshot = undefined;
+  }
+
   return {
     meta: {
       caseNumber: caseRow.caseNumber,
@@ -441,6 +475,7 @@ export async function buildReportJson(
     auditSummary,
     offer: buildOfferConfig(reportLanguage),
     reportLanguage,
+    serpSnapshot,
   };
 }
 

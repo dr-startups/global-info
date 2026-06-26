@@ -75,6 +75,13 @@ function seg(value: string, label: string): string {
 
 export type ReportArtifact = "pptx" | "pdf";
 
+/**
+ * Storage-key substring that marks a screenshot row as a synthetic SERP snapshot
+ * (Stage S1). Used to keep snapshots out of the raw-evidence screenshot listing
+ * and to look them up without a dedicated table/migration.
+ */
+export const SERP_SNAPSHOT_KEY_MARKER = "/serp-snapshots/";
+
 /** Builders for the canonical storage keys. All inputs are validated. */
 export const buildStorageKey = {
   reportArtifact(caseId: string, reportVersionId: string, type: ReportArtifact): string {
@@ -90,6 +97,14 @@ export const buildStorageKey = {
   },
   export(caseId: string, exportId: string, filename: string): string {
     return `cases/${seg(caseId, "caseId")}/exports/${seg(exportId, "exportId")}/${seg(filename, "filename")}`;
+  },
+  /** Stage S1 — synthetic ORION-style SERP snapshot image. */
+  serpSnapshot(caseId: string, snapshotId: string, ext: string): string {
+    return `cases/${seg(caseId, "caseId")}/serp-snapshots/${seg(snapshotId, "snapshotId")}/orion-serp-snapshot.${seg(ext, "ext")}`;
+  },
+  /** Stage S1 — sidecar metadata for a SERP snapshot. */
+  serpSnapshotMetadata(caseId: string, snapshotId: string): string {
+    return `cases/${seg(caseId, "caseId")}/serp-snapshots/${seg(snapshotId, "snapshotId")}/metadata.json`;
   },
   /** Reserved prefix for ephemeral health-check probes. */
   healthProbe(token: string): string {

@@ -77,6 +77,7 @@ export interface Dictionary {
     videos: string;
     knowledgeBlock: string;
     screenshots: string;
+    serpSnapshot: string;
     wikipedia: string;
     aiProfile: string;
     complianceDatabases: string;
@@ -139,6 +140,8 @@ export interface Dictionary {
     successMessage: string;
     generatedShort: string;
     renderFirst: string;
+    serpSnapshotIncluded: string;
+    serpSnapshotMissing: string;
   };
   risk: {
     title: string;
@@ -254,6 +257,26 @@ export interface Dictionary {
     type: string;
     captured: string;
     view: string;
+  };
+  serpSnapshot: {
+    title: string;
+    subtitle: string;
+    queryLabel: string;
+    queryPlaceholder: string;
+    generate: string;
+    generating: string;
+    regenerate: string;
+    view: string;
+    download: string;
+    emptyTitle: string;
+    emptyHint: string;
+    syntheticNote: string;
+    mode: string;
+    themeCount: string;
+    highlightedCount: string;
+    resultCount: string;
+    generatedAt: string;
+    generated: string;
   };
   wikipedia: {
     title: string;

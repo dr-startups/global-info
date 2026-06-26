@@ -8,8 +8,11 @@
 # ---- base ------------------------------------------------------------------
 FROM node:22-slim AS base
 # openssl: required by Prisma engines. curl: container healthcheck.
+# fonts-dejavu-core + fontconfig: needed by sharp/librsvg to rasterize text in
+# the synthetic SERP snapshot SVGs (Stage S1); without fonts text would not render.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends openssl ca-certificates curl \
+       fonts-dejavu-core fontconfig \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1

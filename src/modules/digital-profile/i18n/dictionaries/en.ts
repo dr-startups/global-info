@@ -60,6 +60,7 @@ export const en: Dictionary = {
     videos: "Videos",
     knowledgeBlock: "Knowledge Block",
     screenshots: "Screenshots",
+    serpSnapshot: "SERP Snapshot",
     wikipedia: "Wikipedia",
     aiProfile: "AI Profile",
     complianceDatabases: "Compliance Databases",
@@ -123,6 +124,9 @@ export const en: Dictionary = {
       "Report v{version} generated and rendered with {template} ({slides} slides).",
     generatedShort: "Report v{version} generated and rendered.",
     renderFirst: "Render the report first",
+    serpSnapshotIncluded: "SERP snapshot will be included in the report.",
+    serpSnapshotMissing:
+      "Generate a SERP Snapshot to include the ORION-style page in the report.",
   },
   risk: {
     title: "Risk findings",
@@ -243,6 +247,28 @@ export const en: Dictionary = {
     type: "Type",
     captured: "Captured",
     view: "View",
+  },
+  serpSnapshot: {
+    title: "SERP Snapshot",
+    subtitle:
+      "Synthetic snapshot based on stored search evidence. Not a live SERP screenshot.",
+    queryLabel: "Search query",
+    queryPlaceholder: "Subject full name",
+    generate: "Generate ORION-style snapshot",
+    generating: "Generating…",
+    regenerate: "Regenerate snapshot",
+    view: "Open PNG",
+    download: "Download",
+    emptyTitle: "No snapshot generated yet",
+    emptyHint: "Click Generate to create a synthetic SERP snapshot.",
+    syntheticNote:
+      "Synthetic snapshot based on stored search evidence. Not a live SERP screenshot.",
+    mode: "Mode",
+    themeCount: "Themes",
+    highlightedCount: "Highlighted results",
+    resultCount: "Total results",
+    generatedAt: "Generated at",
+    generated: "Snapshot generated",
   },
   wikipedia: {
     title: "Wikipedia",

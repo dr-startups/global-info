@@ -745,3 +745,39 @@ export function reviewSearchSurface(
 export function deleteSearchSurface(surfaceId: string): Promise<{ id: string }> {
   return request(`/search-surfaces/${surfaceId}`, { method: "DELETE" });
 }
+
+// ---------------------------------------------------------------------------
+// Stage S1 — ORION-style synthetic SERP snapshot
+// ---------------------------------------------------------------------------
+
+export interface SerpSnapshot {
+  id: string;
+  storageKey: string;
+  signedUrl: string;
+  query: string;
+  mode: "SYNTHETIC";
+  engines: ("YANDEX" | "GOOGLE")[];
+  language: "ru" | "en";
+  themeCount: number;
+  highlightedCount: number;
+  resultCount: number;
+  width: number;
+  height: number;
+  generatedAt: string;
+  sha256: string;
+  sizeBytes: number;
+}
+
+export function generateSerpSnapshot(
+  caseId: string,
+  options?: { query?: string; language?: "ru" | "en" }
+): Promise<{ snapshot: SerpSnapshot }> {
+  return request<{ snapshot: SerpSnapshot }>(`/cases/${caseId}/serp-snapshot/generate`, {
+    method: "POST",
+    body: JSON.stringify(options ?? {}),
+  });
+}
+
+export function getSerpSnapshot(caseId: string): Promise<{ snapshot: SerpSnapshot | null }> {
+  return request<{ snapshot: SerpSnapshot | null }>(`/cases/${caseId}/serp-snapshot`);
+}
