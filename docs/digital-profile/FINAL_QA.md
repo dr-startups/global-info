@@ -46,6 +46,30 @@ R7. [ ] Generate **SERP Snapshot** → "Includes real search results" badge;
 R8. [ ] Audit log has `REAL_YANDEX_SEARCH_RUN` with counts/duration — **no key**
 R9. [ ] A non-ADMIN/ANALYST role cannot run the real agent (403)
 
+## SERP snapshot source preference (Stage N1.2)
+
+> Builds the ORION snapshot from real `search_results` when available, with a
+> predictable fallback. Offline logic is covered by
+> `npm run smoke:serp-snapshot-real-source`.
+
+S1. [ ] `npm run smoke:serp-snapshot-real-source` → ALL PASS (offline, no keys)
+S2. [ ] SERP Snapshot tab shows a **Data source** selector
+        (Auto / Real only / Demo-mock only / Mixed; RU + EN)
+S3. [ ] Case with real Yandex rows + a mock Google row:
+        - **Auto (prefer_real)** → `MIXED` (Yandex REAL, Google MOCK)
+        - **Real only** → `REAL_ONLY` (Google block empty / no data)
+        - **Demo/mock only** → `MOCK_ONLY` (real Yandex excluded)
+S4. [ ] Badge reflects the mode: real / mixed / demo-mock / no-data
+S5. [ ] When real rows exist but `highlightedCount = 0`, the no-highlights
+        warning is shown (RU/EN); no auto negative classification happens
+S6. [ ] Snapshot image footer shows a secrets-free source label
+        (e.g. "Источник: реальные данные Yandex Search API / demo Google");
+        **no** API key / folder id / env names / raw XML
+S7. [ ] Report Template v3 page 10 caption matches `sourceMode`
+        (real / mixed / mock / empty) in RU + EN
+S8. [ ] `report_json.serpSnapshot.metadata` carries `sourceMode` + `perEngine`
+        and contains **no** provider secrets
+
 ## Empty / data-quality case
 
 16. [ ] Open `DPA-2026-0002` (Ivan Pustov — DEMO empty) → Build Audit Summary

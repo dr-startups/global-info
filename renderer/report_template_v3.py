@@ -252,11 +252,17 @@ def _b_themes(slide, top, blk, vm, ctx):
 
 
 def _serp_caption(slide, top: Emu, ss: dict, L: dict) -> None:
-    box = T.textbox(slide, T.MARGIN, top, T.CONTENT_W, Emu(360000))
+    box = T.textbox(slide, T.MARGIN, top, T.CONTENT_W, Emu(540000))
     tf = box.text_frame
     p = tf.paragraphs[0]
     p.alignment = PP_ALIGN.CENTER
     T._run(p, ss.get("caption") or L["serp_snapshot_caption"], T.FS_NOTE, T.NEUTRAL_GRAY, italic=True)
+    # Stage N1.2 — provenance line (real / mixed / mock / empty).
+    source_note = ss.get("source_note")
+    if source_note:
+        snp = tf.add_paragraph()
+        snp.alignment = PP_ALIGN.CENTER
+        T._run(snp, source_note, T.FS_NOTE, T.NEUTRAL_GRAY)
     detail = " · ".join(x for x in [ss.get("query", ""), ss.get("generatedAt", "")] if x)
     if detail:
         sp = tf.add_paragraph()
@@ -266,7 +272,7 @@ def _serp_caption(slide, top: Emu, ss: dict, L: dict) -> None:
 
 def _place_serp_image(slide, top: Emu, ss: dict, L: dict) -> None:
     """Embed the ORION-style PNG: contain-scaled, centred, above the footer."""
-    caption_reserve = 460000  # room for the caption below the image
+    caption_reserve = 600000  # room for the caption + provenance line below the image
     gap = 90000
     avail_w = int(T.CONTENT_W)
     avail_top = int(top)

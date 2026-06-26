@@ -51,6 +51,12 @@ Core principles:
   (`DIGITAL_PROFILE_YANDEX_REAL_ENABLED=false`); it is a **paid** API and the key
   is never logged/stored. Results are evidence candidates, not verified facts.
   See [Deployment](docs/digital-profile/DEPLOYMENT.md#real-yandex-search-stage-n1).
+- **SERP snapshot source preference (Stage N1.2).** The ORION snapshot prefers
+  real `search_results` when present, with a predictable fallback. A
+  `sourcePreference` (`prefer_real` default / `real_only` / `mock_only` / `mixed`)
+  selects real-vs-mock per engine; the result, metadata and `report_json` expose
+  `sourceMode` (`REAL_ONLY` / `MIXED` / `MOCK_ONLY` / `EMPTY`) plus a `perEngine`
+  breakdown, and the image carries a secrets-free source label.
 
 ## Getting started
 
@@ -85,6 +91,7 @@ npm run dev
 | `npm run db:studio` | Open Prisma Studio |
 | `npm run smoke:auth` | Auth + RBAC smoke (roles, password, session, access) |
 | `npm run smoke:yandex-provider` | Real Yandex v2 provider smoke (offline: availability, XML decode, XXE guard, status mapping, sourceMode) |
+| `npm run smoke:serp-snapshot-real-source` | SERP snapshot source preference (offline: prefer_real/real_only/mock_only/mixed, perEngine, sourceMode) |
 | `npm run smoke:storage` | Storage abstraction + key/path-traversal + signed tokens + download policy |
 | `npm run smoke:health` | Health checks (storage round-trip, renderer ping, compose) |
 | `npm run admin:create` | Create the first SUPER_ADMIN (env `ADMIN_EMAIL`/`ADMIN_PASSWORD`/`ADMIN_NAME`) |

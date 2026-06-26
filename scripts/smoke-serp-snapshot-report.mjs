@@ -116,6 +116,10 @@ async function main() {
   check("snapshot mode SYNTHETIC", s?.mode === "SYNTHETIC", s?.mode);
   check("snapshot has storageKey", typeof s?.storageKey === "string" && s.storageKey.includes("/serp-snapshots/"));
   check("snapshot highlightedCount > 0 (rich case)", (s?.highlightedCount ?? 0) > 0, `highlighted ${s?.highlightedCount}`);
+  // Stage N1.2 — manual results have no real source -> MOCK_ONLY; default pref prefer_real.
+  check("snapshot sourceMode MOCK_ONLY (manual rows)", s?.sourceMode === "MOCK_ONLY", s?.sourceMode);
+  check("snapshot sourcePreference defaults to prefer_real", s?.sourcePreference === "prefer_real", s?.sourcePreference);
+  check("snapshot perEngine present", !!s?.perEngine?.yandex && !!s?.perEngine?.google);
 
   // --- 3. report_json carries the serpSnapshot reference ---
   const gen = await req("POST", `${API}/cases/${caseId}/report/generate`);
@@ -132,6 +136,13 @@ async function main() {
     ss?.metadata?.highlightedCount !== undefined &&
     ss?.metadata?.generatedAt !== undefined);
   check("serpSnapshot does NOT carry imageBase64 in stored report_json", ss?.imageBase64 === undefined);
+  // Stage N1.2 — report_json carries sourceMode + per-engine breakdown.
+  check("serpSnapshot.metadata.sourceMode present", ss?.metadata?.sourceMode === "MOCK_ONLY", ss?.metadata?.sourceMode);
+  check("serpSnapshot.metadata.perEngine present", !!ss?.metadata?.perEngine?.yandex);
+  // Stage N1.2 — no provider secrets leak into report_json.
+  const reportStr = JSON.stringify(gen.json?.data?.reportJson ?? {});
+  check("report_json has no secret-like tokens",
+    !/api[-_ ]?key|folderId|YANDEX_SEARCH_API_KEY/i.test(reportStr));
 
   // --- 4/5. Render v3 RU / internal / draft — image embedded, 50 slides ---
   const render = await req("POST", `${API}/cases/${caseId}/report/render`, {

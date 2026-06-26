@@ -274,6 +274,17 @@ export const en: Dictionary = {
     generated: "Snapshot generated",
     realBadge: "Includes real search results",
     mixedSources: "mock + real",
+    dataSourceLabel: "Data source",
+    dsAuto: "Auto: prefer real when available",
+    dsRealOnly: "Real only",
+    dsMockOnly: "Demo/mock only",
+    dsMixed: "Mixed",
+    badgeReal: "Using real search results",
+    badgeMixed: "Mixed mode: real + mock",
+    badgeMock: "Demo/mock only",
+    badgeEmpty: "No data",
+    noHighlightsWarning:
+      "Real results were collected, but no risky publications were detected. Run classification or manual review to show red frames.",
   },
   wikipedia: {
     title: "Wikipedia",

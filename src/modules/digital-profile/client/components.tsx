@@ -103,6 +103,23 @@ export function SuccessBox({ children }: { children: ReactNode }) {
   return <div className="dp-success">{children}</div>;
 }
 
+export function WarningBox({ children }: { children: ReactNode }) {
+  return (
+    <div
+      style={{
+        background: "#fffbeb",
+        border: "1px solid #fcd34d",
+        color: "#92400e",
+        borderRadius: 6,
+        padding: "10px 12px",
+        fontSize: 13,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function Loading({ label }: { label?: string }) {
   const { dictionary } = useDigitalProfileI18n();
   return (

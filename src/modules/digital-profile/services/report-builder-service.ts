@@ -450,6 +450,8 @@ export async function buildReportJson(
           width: latest.width,
           height: latest.height,
           generatedAt: latest.generatedAt,
+          sourceMode: latest.sourceMode,
+          perEngine: latest.perEngine,
         },
       };
     }

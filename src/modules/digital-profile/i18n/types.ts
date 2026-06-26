@@ -281,6 +281,16 @@ export interface Dictionary {
     generated: string;
     realBadge: string;
     mixedSources: string;
+    dataSourceLabel: string;
+    dsAuto: string;
+    dsRealOnly: string;
+    dsMockOnly: string;
+    dsMixed: string;
+    badgeReal: string;
+    badgeMixed: string;
+    badgeMock: string;
+    badgeEmpty: string;
+    noHighlightsWarning: string;
   };
   wikipedia: {
     title: string;

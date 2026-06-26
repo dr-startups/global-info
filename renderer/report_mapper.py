@@ -676,6 +676,14 @@ def _serp_snapshot_vm(ss: dict | None, L: dict) -> dict:
         except Exception:  # noqa: BLE001 - any decode error -> treat as missing
             image_bytes = None
     meta = ss.get("metadata") or {}
+    # Stage N1.2 — map sourceMode to a localized provenance sentence.
+    source_mode = str(meta.get("sourceMode") or "MOCK_ONLY").upper()
+    source_note_map = {
+        "REAL_ONLY": L["serp_snapshot_source_real"],
+        "MIXED": L["serp_snapshot_source_mixed"],
+        "MOCK_ONLY": L["serp_snapshot_source_mock"],
+        "EMPTY": L["serp_snapshot_source_empty"],
+    }
     return {
         "exists": bool(image_bytes),
         "image_bytes": image_bytes,
@@ -691,6 +699,8 @@ def _serp_snapshot_vm(ss: dict | None, L: dict) -> dict:
         "title": L["serp_snapshot_page_title"],
         "subtitle": L["serp_snapshot_page_subtitle"],
         "caption": L["serp_snapshot_caption"],
+        "source_mode": source_mode,
+        "source_note": source_note_map.get(source_mode, L["serp_snapshot_source_mock"]),
     }
 
 

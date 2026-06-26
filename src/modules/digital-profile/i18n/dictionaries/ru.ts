@@ -274,6 +274,17 @@ export const ru: Dictionary = {
     generated: "Скриншот сформирован",
     realBadge: "Содержит реальные результаты поиска",
     mixedSources: "демо + реальные",
+    dataSourceLabel: "Источник данных",
+    dsAuto: "Авто: реальные, если есть",
+    dsRealOnly: "Только реальные",
+    dsMockOnly: "Только demo/mock",
+    dsMixed: "Смешанные",
+    badgeReal: "Используются реальные поисковые результаты",
+    badgeMixed: "Смешанный режим: real + mock",
+    badgeMock: "Только demo/mock",
+    badgeEmpty: "Нет данных",
+    noHighlightsWarning:
+      "Реальные результаты получены, но рискованные публикации не обнаружены. Для красных рамок нужна классификация или ручная разметка.",
   },
   wikipedia: {
     title: "Википедия",

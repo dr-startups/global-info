@@ -163,6 +163,11 @@ _EN = {
     "serp_snapshot_page_subtitle": "Synthetic snapshot based on stored search evidence",
     "serp_snapshot_caption": "Synthetic snapshot based on stored search evidence. Not a live SERP screenshot.",
     "serp_snapshot_missing": "SERP snapshot is unavailable for this report.",
+    # Stage N1.2 — source-mode aware caption line.
+    "serp_snapshot_source_real": "Data was collected from a real search API.",
+    "serp_snapshot_source_mixed": "Some data was collected from a real search API; the rest is demo/mock.",
+    "serp_snapshot_source_mock": "Demo/mock data is used.",
+    "serp_snapshot_source_empty": "No search data is available.",
     "knowledge_block_default": "Knowledge block",
     "no_knowledge_content": "Knowledge block status: {status}. No content collected.",
     "wiki_not_found_title": "Wikipedia article not found",
@@ -480,6 +485,11 @@ _RU = {
     "serp_snapshot_page_subtitle": "Синтетический снимок на основе сохранённых результатов поиска",
     "serp_snapshot_caption": "Синтетический снимок на основе сохранённых поисковых данных. Не является live SERP-скриншотом.",
     "serp_snapshot_missing": "Снимок поисковой выдачи недоступен для этого отчёта.",
+    # Stage N1.2 — подпись с учётом источника данных.
+    "serp_snapshot_source_real": "Данные получены из реального поискового API.",
+    "serp_snapshot_source_mixed": "Часть данных получена из реального API, часть — demo/mock.",
+    "serp_snapshot_source_mock": "Используются demo/mock-данные.",
+    "serp_snapshot_source_empty": "Поисковые данные отсутствуют.",
     "knowledge_block_default": "Блок знаний",
     "no_knowledge_content": "Статус блока знаний: {status}. Содержимое не собрано.",
     "wiki_not_found_title": "Статья в Википедии не найдена",

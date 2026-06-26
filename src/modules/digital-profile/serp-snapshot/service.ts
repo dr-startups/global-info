@@ -16,17 +16,22 @@ import { groupThemes } from "./theme-grouper";
 import { resolveQuery } from "./query";
 import { renderSerpSnapshotPng } from "./renderer";
 import { persistSnapshot, getLatestSnapshot } from "./storage";
-import type {
-  LoadedResult,
-  ResultView,
-  SerpEngine,
-  SerpEngineView,
-  SerpLanguage,
-  SerpSnapshotMetadata,
-  SerpSnapshotRequest,
-  SerpSnapshotResult,
-  SerpSnapshotViewModel,
-  ThemeGrouping,
+import {
+  DEFAULT_SOURCE_PREFERENCE,
+  type EngineSourceMode,
+  type LoadedResult,
+  type PerEngineSource,
+  type ResultView,
+  type SerpEngine,
+  type SerpEngineView,
+  type SerpLanguage,
+  type SerpSnapshotMetadata,
+  type SerpSnapshotRequest,
+  type SerpSnapshotResult,
+  type SerpSnapshotViewModel,
+  type SerpSourceMode,
+  type SourcePreference,
+  type ThemeGrouping,
 } from "./types";
 
 function ensureEnabled(): void {
@@ -61,6 +66,43 @@ function footerNote(language: SerpLanguage): string {
   return language === "ru"
     ? "Синтетический снимок, сформированный из сохранённых результатов поиска. Не является реальным скриншотом выдачи."
     : "Synthetic snapshot generated from stored search evidence. Not a live SERP screenshot.";
+}
+
+/**
+ * Stage N1.2 — small, secrets-free attribution drawn into the snapshot footer.
+ * Never exposes API keys, folder ids, env names or raw payloads.
+ */
+function buildSourceLabel(
+  overall: SerpSourceMode,
+  perEngine: { yandex: EngineSourceMode; google: EngineSourceMode },
+  language: SerpLanguage
+): string {
+  const ru = language === "ru";
+  if (overall === "EMPTY") {
+    return ru ? "Источник: нет данных" : "Source: no data";
+  }
+  if (overall === "MOCK_ONLY") {
+    return ru ? "Источник: demo/mock-данные" : "Source: demo/mock data";
+  }
+  if (overall === "REAL_ONLY") {
+    return ru ? "Источник: реальные поисковые данные" : "Source: real search data";
+  }
+  // MIXED — the common real-Yandex / mock-Google case gets an explicit label.
+  if (perEngine.yandex === "REAL" && perEngine.google === "MOCK") {
+    return ru
+      ? "Источник: реальные данные Yandex Search API / demo Google"
+      : "Source: real Yandex Search API data / demo Google";
+  }
+  return ru ? "Источник: реальные и demo-данные" : "Source: real and demo data";
+}
+
+/** Counts how many of the given rows ended up highlighted (per-engine). */
+function countHighlighted(rows: LoadedResult[], grouping: ThemeGrouping): number {
+  let n = 0;
+  for (const r of rows) {
+    if (grouping.highlights.has(r.id)) n += 1;
+  }
+  return n;
 }
 
 function toResultView(r: LoadedResult, grouping: ThemeGrouping): ResultView {
@@ -106,16 +148,31 @@ export async function buildSnapshot(
   ensureEnabled();
   const language: SerpLanguage = request.language === "en" ? "en" : "ru";
   const engines = request.engines?.length ? request.engines : DEFAULT_ENGINES;
+  const sourcePreference: SourcePreference =
+    request.sourcePreference ?? DEFAULT_SOURCE_PREFERENCE;
   const maxPerEngine = Math.min(
     request.maxResultsPerEngine ?? serpSnapshotConfig.maxResultsPerEngine,
     serpSnapshotConfig.maxResultsPerEngine
   );
 
-  const loaded = await loadCaseResults(request.caseId, maxPerEngine);
+  const loaded = await loadCaseResults(request.caseId, maxPerEngine, sourcePreference);
   const query = resolveQuery(request.query, request.subjectName || loaded.subjectName);
 
   const combined = [...loaded.yandex, ...loaded.google];
   const grouping = groupThemes(combined, language);
+
+  const perEngine: PerEngineSource = {
+    yandex: {
+      sourceMode: loaded.perEngine.yandex,
+      resultCount: loaded.yandex.length,
+      highlightedCount: countHighlighted(loaded.yandex, grouping),
+    },
+    google: {
+      sourceMode: loaded.perEngine.google,
+      resultCount: loaded.google.length,
+      highlightedCount: countHighlighted(loaded.google, grouping),
+    },
+  };
 
   const generatedAt = new Date();
   const viewModel: SerpSnapshotViewModel = {
@@ -133,6 +190,7 @@ export async function buildSnapshot(
     width: serpSnapshotConfig.width,
     height: serpSnapshotConfig.height,
     footerNote: footerNote(language),
+    sourceLabel: buildSourceLabel(loaded.sourceMode, loaded.perEngine, language),
   };
 
   const metadata: SerpSnapshotMetadata = {
@@ -149,6 +207,8 @@ export async function buildSnapshot(
     generatedAt: generatedAt.toISOString(),
     synthetic: true,
     sourceMode: loaded.sourceMode,
+    sourcePreference,
+    perEngine,
   };
 
   return { viewModel, metadata, grouping };
@@ -178,6 +238,7 @@ export async function generateSerpSnapshot(
       highlightedCount: metadata.highlightedCount,
       resultCount: metadata.resultCount,
       sourceMode: metadata.sourceMode,
+      sourcePreference: metadata.sourcePreference,
     },
   });
 
@@ -198,6 +259,8 @@ export async function generateSerpSnapshot(
     sha256: persisted.sha256,
     sizeBytes: persisted.sizeBytes,
     sourceMode: metadata.sourceMode,
+    sourcePreference: metadata.sourcePreference,
+    perEngine: metadata.perEngine,
   };
 }
 
@@ -208,6 +271,7 @@ export async function getLatestSerpSnapshot(
   const latest = await getLatestSnapshot(caseId);
   if (!latest) return null;
   const md = latest.metadata;
+  const emptyEngine = { sourceMode: "EMPTY" as EngineSourceMode, resultCount: 0, highlightedCount: 0 };
   return {
     id: latest.id,
     storageKey: latest.storageKey,
@@ -225,5 +289,7 @@ export async function getLatestSerpSnapshot(
     sha256: latest.sha256,
     sizeBytes: latest.sizeBytes ?? 0,
     sourceMode: md?.sourceMode ?? "MOCK_ONLY",
+    sourcePreference: md?.sourcePreference ?? DEFAULT_SOURCE_PREFERENCE,
+    perEngine: md?.perEngine ?? { yandex: emptyEngine, google: emptyEngine },
   };
 }

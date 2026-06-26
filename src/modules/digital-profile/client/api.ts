@@ -768,12 +768,27 @@ export interface SerpSnapshot {
   sha256: string;
   sizeBytes: number;
   /** Stage N1 — provenance of the underlying search_results. */
-  sourceMode: "MOCK_ONLY" | "REAL_ONLY" | "MIXED";
+  sourceMode: "MOCK_ONLY" | "REAL_ONLY" | "MIXED" | "EMPTY";
+  /** Stage N1.2 — selection strategy that produced this snapshot. */
+  sourcePreference: SourcePreference;
+  /** Stage N1.2 — per-engine source breakdown. */
+  perEngine: {
+    yandex: SerpEnginePerSource;
+    google: SerpEnginePerSource;
+  };
+}
+
+export type SourcePreference = "prefer_real" | "real_only" | "mock_only" | "mixed";
+
+export interface SerpEnginePerSource {
+  sourceMode: "REAL" | "MOCK" | "EMPTY";
+  resultCount: number;
+  highlightedCount: number;
 }
 
 export function generateSerpSnapshot(
   caseId: string,
-  options?: { query?: string; language?: "ru" | "en" }
+  options?: { query?: string; language?: "ru" | "en"; sourcePreference?: SourcePreference }
 ): Promise<{ snapshot: SerpSnapshot }> {
   return request<{ snapshot: SerpSnapshot }>(`/cases/${caseId}/serp-snapshot/generate`, {
     method: "POST",

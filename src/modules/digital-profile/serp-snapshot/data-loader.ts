@@ -7,15 +7,60 @@
 
 import { prisma } from "@/server/prisma/client";
 import { NotFoundError } from "../http/errors";
-import type { LoadedResult, LoadedResults, SerpEngine, SerpSourceMode } from "./types";
+import {
+  DEFAULT_SOURCE_PREFERENCE,
+  type EngineSourceMode,
+  type LoadedResult,
+  type LoadedResults,
+  type SerpEngine,
+  type SerpSourceMode,
+  type SourcePreference,
+} from "./types";
 
 /** A row is "real" when an agent tagged its source as real:<PROVIDER>. */
-function isRealSource(source: string | null): boolean {
+export function isRealSource(source: string | null | undefined): boolean {
   return typeof source === "string" && source.toLowerCase().startsWith("real:");
 }
 
-/** Derives MOCK_ONLY / REAL_ONLY / MIXED from the loaded rows' source field. */
+/**
+ * Stage N1.2 — applies the source preference to one engine's rows (already
+ * ordered by rank/recency). PURE + deterministic so the smoke test can exercise
+ * it without a database:
+ *  - prefer_real: real rows when any exist, otherwise the mock rows (fallback).
+ *  - real_only:   only real rows (empty when none).
+ *  - mock_only:   only mock/demo rows.
+ *  - mixed:       every row, original order preserved.
+ */
+export function selectByPreference<T extends { source: string | null }>(
+  rows: T[],
+  preference: SourcePreference
+): T[] {
+  const real = rows.filter((r) => isRealSource(r.source));
+  const mock = rows.filter((r) => !isRealSource(r.source));
+  switch (preference) {
+    case "real_only":
+      return real;
+    case "mock_only":
+      return mock;
+    case "mixed":
+      return rows;
+    case "prefer_real":
+    default:
+      return real.length > 0 ? real : mock;
+  }
+}
+
+/** Per-engine source mode for an already-selected set of rows (Stage N1.2). */
+export function engineSourceModeOf(rows: { source: string | null }[]): EngineSourceMode {
+  if (rows.length === 0) return "EMPTY";
+  // If a real row survived the selection, the engine is treated as REAL (the
+  // overall MIXED mode captures any cross-engine real+mock combination).
+  return rows.some((r) => isRealSource(r.source)) ? "REAL" : "MOCK";
+}
+
+/** Derives MOCK_ONLY / REAL_ONLY / MIXED / EMPTY from selected rows (Stage N1/N1.2). */
 export function deriveSourceMode(rows: { source: string | null }[]): SerpSourceMode {
+  if (rows.length === 0) return "EMPTY";
   let real = false;
   let nonReal = false;
   for (const r of rows) {
@@ -47,13 +92,23 @@ function riskThemeOf(rawMetadata: unknown): string | null {
 }
 
 /**
- * Loads up to `maxPerEngine` results per engine (YANDEX + GOOGLE), ordered by
- * rank then recency. Also resolves the subject full name for the header/query.
+ * Upper bound on rows fetched per engine BEFORE the source preference is applied.
+ * We over-fetch so that, e.g., real rows are not lost behind higher-ranked mock
+ * rows when prefer_real/real_only is requested; the final list is sliced to
+ * `maxPerEngine` afterwards.
+ */
+const FETCH_CAP_PER_ENGINE = 200;
+
+/**
+ * Loads results per engine (YANDEX + GOOGLE), ordered by rank then recency, then
+ * applies the Stage N1.2 source preference and keeps up to `maxPerEngine` rows.
+ * Also resolves the subject full name for the header/query.
  * Throws NotFound if the case is missing or soft-deleted.
  */
 export async function loadCaseResults(
   caseId: string,
-  maxPerEngine: number
+  maxPerEngine: number,
+  sourcePreference: SourcePreference = DEFAULT_SOURCE_PREFERENCE
 ): Promise<LoadedResults> {
   const found = await prisma.case.findFirst({
     where: { id: caseId, deletedAt: null },
@@ -74,7 +129,7 @@ export async function loadCaseResults(
     const rows = await prisma.searchResult.findMany({
       where: { caseId, engine },
       orderBy: [{ rank: "asc" }, { createdAt: "asc" }],
-      take: maxPerEngine,
+      take: FETCH_CAP_PER_ENGINE,
       select: {
         id: true,
         engine: true,
@@ -88,7 +143,7 @@ export async function loadCaseResults(
         createdAt: true,
       },
     });
-    return rows.map((r) => ({
+    const mapped: LoadedResult[] = rows.map((r) => ({
       id: r.id,
       engine,
       rank: r.rank,
@@ -103,6 +158,8 @@ export async function loadCaseResults(
       source: r.source,
       createdAt: r.createdAt,
     }));
+    // Stage N1.2 — pick real/mock per the preference, then cap.
+    return selectByPreference(mapped, sourcePreference).slice(0, maxPerEngine);
   }
 
   const [yandex, google] = await Promise.all([loadEngine("YANDEX"), loadEngine("GOOGLE")]);
@@ -116,6 +173,11 @@ export async function loadCaseResults(
     google,
     total: combined.length,
     sourceMode,
-    hasRealResults: sourceMode !== "MOCK_ONLY",
+    hasRealResults: combined.some((r) => isRealSource(r.source)),
+    sourcePreference,
+    perEngine: {
+      yandex: engineSourceModeOf(yandex),
+      google: engineSourceModeOf(google),
+    },
   };
 }

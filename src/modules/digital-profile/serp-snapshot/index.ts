@@ -10,7 +10,14 @@ export { serpSnapshotConfig, DEFAULT_ENGINES, snapshotMimeType, snapshotExtensio
 export { buildSerpSnapshotSvg, renderSerpSnapshotPng } from "./renderer";
 export { groupThemes, NO_NEGATIVES_MESSAGE, isNegative } from "./theme-grouper";
 export { resolveQuery, sanitizeQueryText } from "./query";
-export { loadCaseResults } from "./data-loader";
+export {
+  loadCaseResults,
+  selectByPreference,
+  deriveSourceMode,
+  engineSourceModeOf,
+  isRealSource,
+} from "./data-loader";
+export { DEFAULT_SOURCE_PREFERENCE } from "./types";
 export {
   buildSnapshot,
   generateSerpSnapshot,
@@ -31,4 +38,9 @@ export type {
   ThemeGrouping,
   LoadedResult,
   LoadedResults,
+  SerpSourceMode,
+  SourcePreference,
+  EngineSourceMode,
+  EnginePerSource,
+  PerEngineSource,
 } from "./types";
