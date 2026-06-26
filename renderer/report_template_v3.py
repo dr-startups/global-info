@@ -60,6 +60,11 @@ def _risk_card_value(level: str, L: dict) -> Any:
     return {"label": L["m_risk_level"], "value": str(level or "UNKNOWN"), "tone": T.RISK_COLORS.get(str(level or "UNKNOWN").upper(), T.NEUTRAL_GRAY)}
 
 
+def _norm(text: Any) -> str:
+    """Normalize text for duplicate detection (case/space-insensitive)."""
+    return " ".join(str(text or "").split()).strip().lower()
+
+
 # ===========================================================================
 # 1-5 front matter
 # ===========================================================================
@@ -126,9 +131,16 @@ def _p_executive(prs, vm, ctx):
         {"label": L["m_compliance_matches"], "value": c.get("activeMatches", 0), "tone": T.DANGER if c.get("activeMatches") else T.NEUTRAL_GRAY},
     ]
     top = T.metric_cards(slide, top, cards, per_row=4)
-    top = T.bullets(slide, top, e.get("bullets", [])[:6])
-    if ctx.internal and e.get("dataQualityWarning"):
-        T.note(slide, top, e["dataQualityWarning"], "warning")
+    bullet_lines = [b for b in e.get("bullets", [])[:6] if b]
+    warning = e.get("dataQualityWarning") if ctx.internal else None
+    # Drop the warning if it merely repeats the last bullet (no duplication).
+    if warning and bullet_lines and _norm(warning) == _norm(bullet_lines[-1]):
+        warning = None
+    # Stack sequentially by computed text height; bullets() returns the bottom Y
+    # (incl. a safe gap), so the warning always sits below the list.
+    top = T.bullets(slide, top, bullet_lines)
+    if warning:
+        T.note(slide, top, warning, "warning")
 
 
 def _p_risk_matrix(prs, vm, ctx):

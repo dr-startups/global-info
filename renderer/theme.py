@@ -178,6 +178,45 @@ def _watermark(slide, text: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Text-height estimation (python-pptx cannot measure rendered text, so we
+# approximate wrapped line counts to stack elements without overlap).
+# ---------------------------------------------------------------------------
+
+EMU_PER_PT = 12700
+# Default text-frame left+right insets (~0.1" each).
+_TEXT_INSET_PT = 14.0
+# Conservative average glyph advance as a fraction of the font size. Slightly
+# high on purpose so we over- rather than under-estimate height (no overlap).
+_CHAR_W_FACTOR = 0.55
+# Vertical gap kept below stacked blocks.
+_BLOCK_GAP = Emu(140000)
+
+
+def _emu_to_pt(emu: Emu) -> float:
+    return int(emu) / EMU_PER_PT
+
+
+def _wrapped_lines(text: str, size: int, width: Emu) -> int:
+    """Estimate how many visual lines `text` occupies at `size` within `width`."""
+    usable_pt = max(1.0, _emu_to_pt(width) - _TEXT_INSET_PT)
+    char_w = max(1.0, size * _CHAR_W_FACTOR)
+    chars_per_line = max(1, int(usable_pt / char_w))
+    length = max(1, len(text or ""))
+    return max(1, -(-length // chars_per_line))  # ceil division
+
+
+def text_block_height(lines: list[str], size: int, width: Emu,
+                      space_after_pt: float = 5.0, pad_pt: float = 12.0) -> Emu:
+    """Estimated rendered height of a stacked set of paragraphs."""
+    line_h_pt = size * 1.2
+    total_pt = pad_pt
+    for line in lines:
+        vis = _wrapped_lines(line, size, width)
+        total_pt += vis * line_h_pt + space_after_pt
+    return Emu(int(total_pt * EMU_PER_PT))
+
+
+# ---------------------------------------------------------------------------
 # Bullets
 # ---------------------------------------------------------------------------
 
@@ -186,13 +225,15 @@ def bullets(slide, top: Emu, lines: list[str], size: int = FS_BODY, width: Emu |
     if not lines:
         return top
     w = width or CONTENT_W
-    box = textbox(slide, MARGIN, top, w, Emu(3600000))
+    rendered = [f"\u2022 {line}" for line in lines]
+    h = text_block_height(rendered, size, w)
+    box = textbox(slide, MARGIN, top, w, h)
     tf = box.text_frame
-    for i, line in enumerate(lines):
+    for i, line in enumerate(rendered):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        _run(p, f"\u2022 {line}", size, NEUTRAL_DARK)
+        _run(p, line, size, NEUTRAL_DARK)
         p.space_after = Pt(5)
-    return Emu(int(top) + int(Pt(size)) * 2 * max(1, len(lines)) + 120000)
+    return Emu(int(top) + int(h) + int(_BLOCK_GAP))
 
 
 # ---------------------------------------------------------------------------
@@ -294,12 +335,14 @@ def note(slide, top: Emu, text: str, kind: str = "info") -> Emu:
     if not text:
         return top
     tone = NOTE_TONES.get(kind, ACCENT)
-    box = textbox(slide, MARGIN, top, CONTENT_W, Emu(420000))
+    prefix = {"warning": "\u26a0 ", "disclaimer": "", "source": "Source: ", "info": ""}.get(kind, "")
+    full = f"{prefix}{text}"
+    h = text_block_height([full], FS_NOTE, CONTENT_W, space_after_pt=0.0, pad_pt=10.0)
+    box = textbox(slide, MARGIN, top, CONTENT_W, h)
     tf = box.text_frame
     p = tf.paragraphs[0]
-    prefix = {"warning": "\u26a0 ", "disclaimer": "", "source": "Source: ", "info": ""}.get(kind, "")
-    _run(p, f"{prefix}{text}", FS_NOTE, tone, italic=(kind != "warning"))
-    return Emu(int(top) + 360000)
+    _run(p, full, FS_NOTE, tone, italic=(kind != "warning"))
+    return Emu(int(top) + int(h) + int(_BLOCK_GAP))
 
 
 # ---------------------------------------------------------------------------
