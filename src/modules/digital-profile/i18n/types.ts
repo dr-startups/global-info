@@ -109,6 +109,8 @@ export interface Dictionary {
     real: string;
     system: string;
     providerStatus: string;
+    realRunConfirm: string;
+    realYandexHint: string;
   };
   report: {
     title: string;
@@ -277,6 +279,8 @@ export interface Dictionary {
     resultCount: string;
     generatedAt: string;
     generated: string;
+    realBadge: string;
+    mixedSources: string;
   };
   wikipedia: {
     title: string;

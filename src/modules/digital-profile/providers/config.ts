@@ -23,6 +23,14 @@ function envStr(value: string | undefined): string | undefined {
   return v && v.length > 0 ? v : undefined;
 }
 
+function envInt(value: string | undefined, fallback: number, min: number, max: number): number {
+  const raw = (value ?? "").trim();
+  if (raw === "") return fallback; // Number("") === 0 — must fall back, not clamp.
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
 export interface ProviderConfig {
   /** Master switch for keyed SERP providers (Google/Yandex). */
   realConnectorsEnabled: boolean;
@@ -45,10 +53,21 @@ export interface ProviderConfig {
     engineId?: string;
   };
   yandex: {
+    /** Legacy master-switch-gated flag (Stage H2, XML GET endpoint). */
     enabled: boolean;
+    /**
+     * Stage N1 — dedicated switch for the official Yandex Cloud Search API v2
+     * (POST /v2/web/search, Api-Key header). Independent of the H2 master switch.
+     */
+    realEnabled: boolean;
     apiKey?: string;
     folderId?: string;
     region?: string;
+    /** Stage N1 — Cloud Search API v2 tuning. */
+    timeoutMs: number;
+    maxQueriesPerAudit: number;
+    resultsPerQuery: number;
+    localization: string;
   };
 }
 
@@ -74,9 +93,14 @@ export const providerConfig: ProviderConfig = {
   },
   yandex: {
     enabled: envBool(process.env.DIGITAL_PROFILE_YANDEX_ENABLED, false),
+    realEnabled: envBool(process.env.DIGITAL_PROFILE_YANDEX_REAL_ENABLED, false),
     apiKey: envStr(process.env.YANDEX_SEARCH_API_KEY),
     folderId: envStr(process.env.YANDEX_SEARCH_FOLDER_ID),
-    region: envStr(process.env.YANDEX_SEARCH_REGION),
+    region: envStr(process.env.YANDEX_SEARCH_REGION) ?? "ru",
+    timeoutMs: envInt(process.env.YANDEX_SEARCH_TIMEOUT_MS, 15000, 1000, 60000),
+    maxQueriesPerAudit: envInt(process.env.YANDEX_SEARCH_MAX_QUERIES_PER_AUDIT, 5, 1, 20),
+    resultsPerQuery: envInt(process.env.YANDEX_SEARCH_RESULTS_PER_QUERY, 10, 1, 50),
+    localization: envStr(process.env.YANDEX_SEARCH_LOCALIZATION) ?? "ru",
   },
 };
 
@@ -139,20 +163,36 @@ export function getProviderAvailability(name: ProviderName): ProviderAvailabilit
       }),
     };
   }
-  const cfg = name === "GOOGLE" ? providerConfig.google : providerConfig.yandex;
+  // Stage N1: Yandex real availability is gated solely by its dedicated flag
+  // (DIGITAL_PROFILE_YANDEX_REAL_ENABLED), independent of the H2 master switch.
+  if (name === "YANDEX") {
+    return {
+      name,
+      ...computeAvailability(name, {
+        masterEnabled: true,
+        enabled: providerConfig.yandex.realEnabled,
+        hasKeys: missingConfigKeys(name).length === 0,
+      }),
+    };
+  }
   return {
     name,
     ...computeAvailability(name, {
       masterEnabled: providerConfig.realConnectorsEnabled,
-      enabled: cfg.enabled,
+      enabled: providerConfig.google.enabled,
       hasKeys: missingConfigKeys(name).length === 0,
     }),
   };
 }
 
+export type ProviderKind = "MOCK" | "REAL";
+
 export interface ProviderStatus {
   name: ProviderName;
-  kind: "REAL";
+  /** Stage N1 — label so the UI can show Mock vs Real connectors side by side. */
+  kind: ProviderKind;
+  /** Human label, e.g. "Yandex Search Real". */
+  label: string;
   enabled: boolean;
   configured: boolean;
   status: AvailabilityStatus;
@@ -168,6 +208,12 @@ const PROVIDER_NOTES: Record<ProviderName, string> = {
   YANDEX: "Yandex Search API (XML).",
 };
 
+const REAL_LABELS: Record<ProviderName, string> = {
+  WIKIPEDIA: "Wikipedia",
+  GOOGLE: "Google Search Real",
+  YANDEX: "Yandex Search Real",
+};
+
 export function getProviderStatus(name: ProviderName): ProviderStatus {
   const availability = getProviderAvailability(name);
   const missing = missingConfigKeys(name);
@@ -176,22 +222,47 @@ export function getProviderStatus(name: ProviderName): ProviderStatus {
       ? providerConfig.wikipedia.enabled
       : name === "GOOGLE"
         ? providerConfig.google.enabled
-        : providerConfig.yandex.enabled;
+        : providerConfig.yandex.realEnabled;
   return {
     name,
     kind: "REAL",
+    label: REAL_LABELS[name],
     enabled: cfgEnabled,
     configured: missing.length === 0,
     status: availability.status,
     missingConfigKeys: missing,
-    supportsRealCalls: name !== "WIKIPEDIA",
+    // supportsRealCalls is only true when enabled AND fully configured.
+    supportsRealCalls:
+      name !== "WIKIPEDIA" ? cfgEnabled && missing.length === 0 : availability.status === "ENABLED",
     notes: PROVIDER_NOTES[name],
     capabilities: getProviderCapabilities(name),
   };
 }
 
+/** Mock connectors are always available and never call out or need keys. */
+function getMockProviderStatus(name: ProviderName, label: string): ProviderStatus {
+  return {
+    name,
+    kind: "MOCK",
+    label,
+    enabled: true,
+    configured: true,
+    status: "ENABLED",
+    missingConfigKeys: [],
+    supportsRealCalls: false,
+    notes: "Deterministic mock connector. No network, no API key.",
+    capabilities: getProviderCapabilities(name),
+  };
+}
+
 export function listProviderStatus(): ProviderStatus[] {
-  return [getProviderStatus("WIKIPEDIA"), getProviderStatus("GOOGLE"), getProviderStatus("YANDEX")];
+  return [
+    getMockProviderStatus("YANDEX", "Yandex Search Mock"),
+    getMockProviderStatus("GOOGLE", "Google Search Mock"),
+    getProviderStatus("WIKIPEDIA"),
+    getProviderStatus("GOOGLE"),
+    getProviderStatus("YANDEX"),
+  ];
 }
 
 /** @deprecated use listProviderStatus(); kept for older callers. */

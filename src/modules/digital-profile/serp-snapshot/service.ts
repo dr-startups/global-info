@@ -148,6 +148,7 @@ export async function buildSnapshot(
     height: viewModel.height,
     generatedAt: generatedAt.toISOString(),
     synthetic: true,
+    sourceMode: loaded.sourceMode,
   };
 
   return { viewModel, metadata, grouping };
@@ -176,6 +177,7 @@ export async function generateSerpSnapshot(
       themeCount: metadata.themeCount,
       highlightedCount: metadata.highlightedCount,
       resultCount: metadata.resultCount,
+      sourceMode: metadata.sourceMode,
     },
   });
 
@@ -195,6 +197,7 @@ export async function generateSerpSnapshot(
     generatedAt: metadata.generatedAt,
     sha256: persisted.sha256,
     sizeBytes: persisted.sizeBytes,
+    sourceMode: metadata.sourceMode,
   };
 }
 
@@ -221,5 +224,6 @@ export async function getLatestSerpSnapshot(
     generatedAt: md?.generatedAt ?? latest.capturedAt.toISOString(),
     sha256: latest.sha256,
     sizeBytes: latest.sizeBytes ?? 0,
+    sourceMode: md?.sourceMode ?? "MOCK_ONLY",
   };
 }

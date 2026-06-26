@@ -7,7 +7,25 @@
 
 import { prisma } from "@/server/prisma/client";
 import { NotFoundError } from "../http/errors";
-import type { LoadedResult, LoadedResults, SerpEngine } from "./types";
+import type { LoadedResult, LoadedResults, SerpEngine, SerpSourceMode } from "./types";
+
+/** A row is "real" when an agent tagged its source as real:<PROVIDER>. */
+function isRealSource(source: string | null): boolean {
+  return typeof source === "string" && source.toLowerCase().startsWith("real:");
+}
+
+/** Derives MOCK_ONLY / REAL_ONLY / MIXED from the loaded rows' source field. */
+export function deriveSourceMode(rows: { source: string | null }[]): SerpSourceMode {
+  let real = false;
+  let nonReal = false;
+  for (const r of rows) {
+    if (isRealSource(r.source)) real = true;
+    else nonReal = true;
+  }
+  if (real && nonReal) return "MIXED";
+  if (real) return "REAL_ONLY";
+  return "MOCK_ONLY";
+}
 
 function domainOf(url: string): string | null {
   try {
@@ -89,10 +107,15 @@ export async function loadCaseResults(
 
   const [yandex, google] = await Promise.all([loadEngine("YANDEX"), loadEngine("GOOGLE")]);
 
+  const combined = [...yandex, ...google];
+  const sourceMode = deriveSourceMode(combined);
+
   return {
     subjectName,
     yandex,
     google,
-    total: yandex.length + google.length,
+    total: combined.length,
+    sourceMode,
+    hasRealResults: sourceMode !== "MOCK_ONLY",
   };
 }

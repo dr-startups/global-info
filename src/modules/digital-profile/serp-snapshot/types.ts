@@ -13,6 +13,13 @@ export type SerpLanguage = "ru" | "en";
 
 export type SerpSnapshotMode = "SYNTHETIC";
 
+/**
+ * Stage N1 — provenance of the underlying search_results that fed the snapshot.
+ * The image is always SYNTHETIC; this only records whether the data behind it
+ * came from mock agents, the real Yandex Cloud Search API, or a mix.
+ */
+export type SerpSourceMode = "MOCK_ONLY" | "REAL_ONLY" | "MIXED";
+
 /** Request accepted by the generator (route layer validates + narrows this). */
 export interface SerpSnapshotRequest {
   caseId: string;
@@ -49,6 +56,10 @@ export interface LoadedResults {
   yandex: LoadedResult[];
   google: LoadedResult[];
   total: number;
+  /** Stage N1 — provenance derived from the rows' `source` field. */
+  sourceMode: SerpSourceMode;
+  /** True when at least one row came from a real provider (source="real:..."). */
+  hasRealResults: boolean;
 }
 
 /** A deterministic risk theme grouping (left-column table row). */
@@ -124,6 +135,8 @@ export interface SerpSnapshotMetadata {
   generatedAt: string;
   /** Always synthetic — never a live capture. */
   synthetic: true;
+  /** Stage N1 — provenance of the underlying search_results. */
+  sourceMode: SerpSourceMode;
 }
 
 /** Result returned by the service / API layer. */
@@ -143,4 +156,6 @@ export interface SerpSnapshotResult {
   generatedAt: string;
   sha256: string;
   sizeBytes: number;
+  /** Stage N1 — provenance of the underlying search_results. */
+  sourceMode: SerpSourceMode;
 }

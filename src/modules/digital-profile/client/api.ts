@@ -407,7 +407,8 @@ export interface ProviderCapabilities {
 
 export interface ProviderStatus {
   name: "WIKIPEDIA" | "GOOGLE" | "YANDEX";
-  kind: "REAL";
+  kind: "MOCK" | "REAL";
+  label: string;
   enabled: boolean;
   configured: boolean;
   status: AvailabilityStatus;
@@ -766,6 +767,8 @@ export interface SerpSnapshot {
   generatedAt: string;
   sha256: string;
   sizeBytes: number;
+  /** Stage N1 — provenance of the underlying search_results. */
+  sourceMode: "MOCK_ONLY" | "REAL_ONLY" | "MIXED";
 }
 
 export function generateSerpSnapshot(

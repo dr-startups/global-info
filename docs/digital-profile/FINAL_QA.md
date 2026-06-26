@@ -26,6 +26,26 @@ Run through this end-to-end before a demo or pilot. Expected result in brackets.
 15. [ ] Re-generate with Audience **Client**, Watermark **None**
        (→ technical notes softened; no watermark)
 
+## Real Yandex Search (Stage N1) — optional, paid API
+
+> Only run with a real Yandex Cloud API key + folder id. The flag must be ON.
+
+R1. [ ] With the flag OFF: `GET /api/digital-profile/providers` shows
+        `Yandex Search Real` → `enabled=false`, `supportsRealCalls=false`
+R2. [ ] Without keys (flag ON): provider shows `NOT_CONFIGURED` +
+        `missingConfigKeys` (names only, no values)
+R3. [ ] `npm run smoke:yandex-provider` → ALL CHECKS PASSED (offline)
+R4. [ ] Set `DIGITAL_PROFILE_YANDEX_REAL_ENABLED=true` + key/folder → provider
+        shows `enabled=true, configured=true, supportsRealCalls=true`
+R5. [ ] Agents tab → **Yandex Search (real)** → Run → confirm cost dialog
+        (RU/EN) → success shows queries/results saved
+R6. [ ] `search_results` now contain rows with `source = real:YANDEX`
+        (mock rows untouched); re-run does **not** duplicate
+R7. [ ] Generate **SERP Snapshot** → "Includes real search results" badge;
+        `sourceMode = REAL_ONLY` or `MIXED`
+R8. [ ] Audit log has `REAL_YANDEX_SEARCH_RUN` with counts/duration — **no key**
+R9. [ ] A non-ADMIN/ANALYST role cannot run the real agent (403)
+
 ## Empty / data-quality case
 
 16. [ ] Open `DPA-2026-0002` (Ivan Pustov — DEMO empty) → Build Audit Summary

@@ -92,6 +92,9 @@ export const ru: Dictionary = {
     real: "Реальный",
     system: "Системный",
     providerStatus: "Статус провайдера",
+    realRunConfirm: "Будет выполнен реальный запрос к внешнему поисковому API. Возможны расходы.",
+    realYandexHint:
+      "Реальный поиск Яндекса завершён. Теперь можно сгенерировать SERP Snapshot — он будет построен на реальных результатах Яндекса.",
   },
   report: {
     title: "Предпросмотр отчёта",
@@ -269,6 +272,8 @@ export const ru: Dictionary = {
     resultCount: "Всего результатов",
     generatedAt: "Сформировано",
     generated: "Скриншот сформирован",
+    realBadge: "Содержит реальные результаты поиска",
+    mixedSources: "демо + реальные",
   },
   wikipedia: {
     title: "Википедия",

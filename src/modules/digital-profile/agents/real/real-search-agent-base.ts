@@ -19,7 +19,8 @@ import { normalizeUrl } from "../../services/evidence-service";
 import { buildPersonSearchQueries } from "../../providers/query-builder";
 import type { SearchProvider } from "../../providers/search-provider";
 import type { SearchProviderResult } from "../../providers/types";
-import { loadCaseSubject } from "../mock/mock-utils";
+import { recordAudit, type AuditAction } from "../../services/audit-log-service";
+import { loadCaseSubject, type CaseSubjectInfo } from "../mock/mock-utils";
 import type {
   AgentAvailability,
   AgentContext,
@@ -33,6 +34,18 @@ function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+/**
+ * Decides whether adverse ("negative") queries are permitted for a case.
+ * Conservative by default: requires an explicit lawful basis, and when the basis
+ * is CONSENT the consent must be GRANTED.
+ */
+function allowsNegativeQueries(subject: CaseSubjectInfo): boolean {
+  const basis = (subject.lawfulBasis ?? "").toUpperCase();
+  if (!basis) return false;
+  if (basis === "CONSENT") return (subject.consentStatus ?? "").toUpperCase() === "GRANTED";
+  return ["LEGITIMATE_INTEREST", "LEGAL_OBLIGATION", "PUBLIC_INTEREST", "CONTRACT"].includes(basis);
+}
+
 export abstract class RealSearchAgentBase implements CaseAgent {
   abstract readonly name: string;
   abstract readonly displayName: string;
@@ -44,6 +57,16 @@ export abstract class RealSearchAgentBase implements CaseAgent {
   protected abstract readonly provider: SearchProvider;
   /** The DB SearchEngine value for stored rows. */
   protected abstract readonly engine: SearchEngine;
+
+  /** Max distinct person queries per audit (subclasses may cap from config). */
+  protected maxQueriesPerAudit(): number | undefined {
+    return undefined;
+  }
+
+  /** Dedicated audit action for this engine's real run, if any. */
+  protected auditAction(): AuditAction | undefined {
+    return undefined;
+  }
 
   availability(): AgentAvailability {
     const a = this.provider.availability();
@@ -104,17 +127,46 @@ export abstract class RealSearchAgentBase implements CaseAgent {
 
   async run(ctx: AgentContext): Promise<AgentRunResult> {
     const startedAt = new Date().toISOString();
+    const startedMs = Date.now();
+    const audit = async (
+      outcome: "SUCCEEDED" | "FAILED",
+      meta: { queryCount: number; resultCount: number; errorCode?: string }
+    ) => {
+      const action = this.auditAction();
+      if (!action) return;
+      await recordAudit({
+        caseId: ctx.caseId,
+        action,
+        actorId: ctx.actorId,
+        metadata: {
+          provider: this.provider.name,
+          queryCount: meta.queryCount,
+          resultCount: meta.resultCount,
+          durationMs: Date.now() - startedMs,
+          outcome,
+          ...(meta.errorCode ? { errorCode: meta.errorCode } : {}),
+        },
+      });
+    };
     try {
       const subject = await loadCaseSubject(ctx.caseId);
-      const specs = buildPersonSearchQueries({
-        fullName: subject.fullName,
-        aliases: subject.aliases,
-        targetRegions: subject.targetRegions,
-      });
+      const specs = buildPersonSearchQueries(
+        {
+          fullName: subject.fullName,
+          aliases: subject.aliases,
+          targetRegions: subject.targetRegions,
+          location: subject.location,
+        },
+        {
+          maxQueries: this.maxQueriesPerAudit(),
+          includeNegative: allowsNegativeQueries(subject),
+        }
+      );
 
       const allResults: SearchProviderResult[] = [];
       let anySuccess = false;
       let lastError: string | undefined;
+      let lastErrorCode: string | undefined;
 
       for (const spec of specs) {
         const run = await this.provider.search({
@@ -130,12 +182,14 @@ export abstract class RealSearchAgentBase implements CaseAgent {
           allResults.push(...run.results);
         } else {
           lastError = run.error ? `${run.error.code}: ${run.error.message}` : run.status;
+          lastErrorCode = run.error?.code ?? run.status;
           // DISABLED / NOT_CONFIGURED affect all queries — stop early.
           if (run.status === "DISABLED" || run.status === "NOT_CONFIGURED") break;
         }
       }
 
       if (!anySuccess) {
+        await audit("FAILED", { queryCount: specs.length, resultCount: 0, errorCode: lastErrorCode });
         return {
           agentName: this.agentName,
           status: "FAILED",
@@ -152,6 +206,10 @@ export abstract class RealSearchAgentBase implements CaseAgent {
       });
       const saved = await this.saveEvidence(ctx, normalized);
 
+      await audit("SUCCEEDED", {
+        queryCount: specs.length,
+        resultCount: saved.searchResults ?? allResults.length,
+      });
       return {
         agentName: this.agentName,
         status: "SUCCEEDED",
@@ -167,6 +225,7 @@ export abstract class RealSearchAgentBase implements CaseAgent {
         finishedAt: new Date().toISOString(),
       };
     } catch (err) {
+      await audit("FAILED", { queryCount: 0, resultCount: 0, errorCode: "AGENT_ERROR" });
       return {
         agentName: this.agentName,
         status: "FAILED",

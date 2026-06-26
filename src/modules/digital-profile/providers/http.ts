@@ -34,11 +34,45 @@ export interface TimedFetchOptions {
   headers?: Record<string, string>;
 }
 
-async function timedFetch(url: string, options: TimedFetchOptions): Promise<Response> {
+/** Hard cap on a provider response body we are willing to read (anti-DoS). */
+export const MAX_PROVIDER_RESPONSE_BYTES = 8 * 1024 * 1024; // 8 MB
+
+/**
+ * Maps an HTTP status to a typed provider error. Pure + exported so the smoke
+ * test can assert 401/403/429/5xx handling without making a network call.
+ */
+export function mapStatusToProviderError(status: number): ProviderHttpError | null {
+  if (status === 429) {
+    return new ProviderHttpError("PROVIDER_RATE_LIMITED", "Provider rate limited (HTTP 429).", true);
+  }
+  if (status === 401 || status === 403) {
+    return new ProviderHttpError(
+      "PROVIDER_BAD_RESPONSE",
+      `Provider rejected the request (HTTP ${status}). Check API key / folder id.`,
+      false
+    );
+  }
+  if (status >= 500) {
+    return new ProviderHttpError("PROVIDER_BAD_RESPONSE", `Provider returned HTTP ${status}.`, true);
+  }
+  if (status >= 400) {
+    return new ProviderHttpError("PROVIDER_BAD_RESPONSE", `Provider returned HTTP ${status}.`, false);
+  }
+  return null;
+}
+
+interface TimedFetchInit extends TimedFetchOptions {
+  method?: string;
+  body?: string;
+}
+
+async function timedFetch(url: string, options: TimedFetchInit): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs);
   try {
     return await fetch(url, {
+      method: options.method ?? "GET",
+      body: options.body,
       signal: controller.signal,
       headers: { Accept: "application/json", ...options.headers },
     });
@@ -71,6 +105,34 @@ export async function getJson(url: string, options: TimedFetchOptions): Promise<
   }
   try {
     return await res.json();
+  } catch {
+    throw new ProviderHttpError("PROVIDER_INVALID_RESPONSE", "Invalid JSON from provider.", false);
+  }
+}
+
+/**
+ * POST JSON with timeout + status mapping + a hard response-size cap. Secrets are
+ * passed via headers and never logged. Throws ProviderHttpError on failure.
+ */
+export async function postJson(
+  url: string,
+  body: unknown,
+  options: TimedFetchOptions
+): Promise<unknown> {
+  const res = await timedFetch(url, {
+    ...options,
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: { "content-type": "application/json", ...options.headers },
+  });
+  const mapped = mapStatusToProviderError(res.status);
+  if (mapped) throw mapped;
+  const text = await res.text();
+  if (text.length > MAX_PROVIDER_RESPONSE_BYTES) {
+    throw new ProviderHttpError("PROVIDER_BAD_RESPONSE", "Provider response too large.", false);
+  }
+  try {
+    return JSON.parse(text);
   } catch {
     throw new ProviderHttpError("PROVIDER_INVALID_RESPONSE", "Invalid JSON from provider.", false);
   }

@@ -49,6 +49,9 @@ export type AuditAction =
   | "AUDIT_SUMMARY_BUILT"
   // Stage S1 — synthetic ORION-style SERP snapshot
   | "SERP_SNAPSHOT_GENERATED"
+  // Stage N1 — real Yandex/Google Cloud Search API runs
+  | "REAL_YANDEX_SEARCH_RUN"
+  | "REAL_GOOGLE_SEARCH_RUN"
   // Stage M1 — auth + access control
   | "LOGIN"
   | "LOGIN_FAILED"

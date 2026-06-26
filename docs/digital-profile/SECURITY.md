@@ -22,6 +22,16 @@ design. This checklist captures the guarantees and the operational rules.
 - [x] Errors return a safe envelope `{ ok:false, error:{ code, message } }` —
       **no stack traces** are exposed to clients (`http/errors.ts`).
 - [x] Production must set a strong unique `DIGITAL_PROFILE_SIGNED_URL_SECRET`.
+- [x] **Stage N1 — Yandex real API:** `YANDEX_SEARCH_API_KEY` is sent only in the
+      `Authorization: Api-Key` request **header** (never in the URL/query, never
+      logged). It is **never** stored in the DB or in `rawMetadata`, and appears in
+      docs only as an empty placeholder.
+- [x] `REAL_YANDEX_SEARCH_RUN` audit entries record only
+      `actorId / caseId / queryCount / resultCount / durationMs / outcome /
+      errorCode` — **no API key, no raw XML, no secrets**.
+- [x] The Yandex XML response is parsed with a regex normalizer (no entity-
+      expanding XML parser); decoding additionally **rejects `DOCTYPE`/`ENTITY`**
+      (XXE guard) and caps the payload size.
 
 ## Lawfulness (hard rules)
 
@@ -33,7 +43,10 @@ design. This checklist captures the guarantees and the operational rules.
 - [x] Compliance databases (LexisNexis / Dow Jones / World-Check) integrated via
       **official API or manual import only**.
 - [x] Google/Yandex via **official APIs only**; missing keys → `NOT_CONFIGURED`
-      (never a fake call).
+      (never a fake call). The Stage N1 real Yandex provider uses the official
+      Yandex Cloud Search API v2 only; results are **evidence candidates, not
+      verified facts**, and only an `ADMIN`/`SUPER_ADMIN` (real-agent permission)
+      may trigger it after case-access + lawful-basis checks.
 - [x] Wikipedia via the **public** MediaWiki/REST API; read-only, never
       auto-publishes.
 

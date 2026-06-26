@@ -60,6 +60,11 @@ export interface CaseSubjectInfo {
   fullName: string;
   aliases: string[];
   targetRegions: string[];
+  /** Stage N1 — optional location term (subject country) for query building. */
+  location: string | null;
+  /** Stage N1 — compliance gating for adverse (negative) queries. */
+  lawfulBasis: string | null;
+  consentStatus: string | null;
 }
 
 /** Loads the case's first subject + scope. Throws NotFound if the case is gone. */
@@ -69,8 +74,10 @@ export async function loadCaseSubject(caseId: string): Promise<CaseSubjectInfo> 
     select: {
       id: true,
       targetRegions: true,
+      lawfulBasis: true,
+      consentStatus: true,
       subjects: {
-        select: { fullName: true, aliases: true },
+        select: { fullName: true, aliases: true, country: true },
         orderBy: { createdAt: "asc" },
         take: 1,
       },
@@ -83,6 +90,9 @@ export async function loadCaseSubject(caseId: string): Promise<CaseSubjectInfo> 
     fullName: subject?.fullName ?? "Unknown Subject",
     aliases: subject?.aliases ?? [],
     targetRegions: row.targetRegions,
+    location: subject?.country ?? null,
+    lawfulBasis: row.lawfulBasis ?? null,
+    consentStatus: row.consentStatus ?? null,
   };
 }
 

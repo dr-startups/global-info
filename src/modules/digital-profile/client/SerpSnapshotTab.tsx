@@ -7,7 +7,7 @@ import {
   DigitalProfileApiError,
   type SerpSnapshot,
 } from "./api";
-import { EmptyState, ErrorBox, Notice, SuccessBox } from "./components";
+import { Badge, EmptyState, ErrorBox, Notice, SuccessBox } from "./components";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
 
@@ -112,6 +112,14 @@ export function SerpSnapshotTab({
         <p className="dp-muted">{t("common.loading")}</p>
       ) : snapshot ? (
         <div>
+          {snapshot.sourceMode !== "MOCK_ONLY" ? (
+            <div style={{ marginBottom: 12 }}>
+              <Badge tone="ok">
+                {t("serpSnapshot.realBadge")}
+                {snapshot.sourceMode === "MIXED" ? ` (${t("serpSnapshot.mixedSources")})` : ""}
+              </Badge>
+            </div>
+          ) : null}
           <div className="dp-grid-cards" style={{ marginBottom: 12 }}>
             <div className="dp-card" style={{ padding: 12 }}>
               <div className="dp-muted">{t("serpSnapshot.mode")}</div>

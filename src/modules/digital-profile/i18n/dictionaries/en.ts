@@ -92,6 +92,9 @@ export const en: Dictionary = {
     real: "Real",
     system: "System",
     providerStatus: "Provider status",
+    realRunConfirm: "This will run a real external search API request. Costs may apply.",
+    realYandexHint:
+      "Real Yandex search finished. You can now generate a SERP Snapshot — it will be built on real Yandex results.",
   },
   report: {
     title: "Report preview",
@@ -269,6 +272,8 @@ export const en: Dictionary = {
     resultCount: "Total results",
     generatedAt: "Generated at",
     generated: "Snapshot generated",
+    realBadge: "Includes real search results",
+    mixedSources: "mock + real",
   },
   wikipedia: {
     title: "Wikipedia",
