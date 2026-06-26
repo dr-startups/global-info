@@ -140,6 +140,8 @@ export interface Dictionary {
     successMessage: string;
     generatedShort: string;
     renderFirst: string;
+    serpSnapshotIncluded: string;
+    serpSnapshotMissing: string;
   };
   risk: {
     title: string;

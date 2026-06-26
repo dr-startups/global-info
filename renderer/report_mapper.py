@@ -10,6 +10,7 @@ No LLM, no network — pure transformation of the data passed in report_json.
 
 from __future__ import annotations
 
+import base64
 from datetime import datetime
 from typing import Any
 
@@ -658,11 +659,51 @@ def _offer_block(offer: dict, L: dict) -> dict:
     }
 
 
+def _serp_snapshot_vm(ss: dict | None, L: dict) -> dict:
+    """Normalize the optional report_json.serpSnapshot into a safe view model.
+
+    The image arrives as render-time base64 (``imageBase64``) injected by the
+    Node renderer service — the stateless renderer has no access to private
+    storage. ``exists`` is true only when bytes are present and decodable, so a
+    missing/unreadable image safely falls back to the no-data card.
+    """
+    ss = ss or {}
+    image_b64 = ss.get("imageBase64")
+    image_bytes = None
+    if image_b64:
+        try:
+            image_bytes = base64.b64decode(image_b64)
+        except Exception:  # noqa: BLE001 - any decode error -> treat as missing
+            image_bytes = None
+    meta = ss.get("metadata") or {}
+    return {
+        "exists": bool(image_bytes),
+        "image_bytes": image_bytes,
+        "id": str(ss.get("id", "")),
+        "query": str(ss.get("query", "")),
+        "mode": str(ss.get("mode", "SYNTHETIC")),
+        "themeCount": meta.get("themeCount", 0) or 0,
+        "highlightedCount": meta.get("highlightedCount", 0) or 0,
+        "engines": list(meta.get("engines", []) or []),
+        "generatedAt": fmt_date(meta.get("generatedAt")),
+        "width": int(meta.get("width", 0) or 0),
+        "height": int(meta.get("height", 0) or 0),
+        "title": L["serp_snapshot_page_title"],
+        "subtitle": L["serp_snapshot_page_subtitle"],
+        "caption": L["serp_snapshot_caption"],
+    }
+
+
 def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[dict, list[str]]:
     vm, warnings = build_view_model_v2(report_json)
     offer = report_json.get("offer") or {}
     vm["audience"] = "client" if str(audience).lower() == "client" else "internal"
     vm["offerBlock"] = _offer_block(offer, vm["labels"])
+    serp = _serp_snapshot_vm(report_json.get("serpSnapshot"), vm["labels"])
+    vm["serp_snapshot"] = serp
+    if not serp["exists"]:
+        # Stage S1.5 renderWarning: the ORION-style page uses fallback text.
+        warnings.append("SERP snapshot is missing; search-screens page uses fallback text.")
     return vm, warnings
 
 

@@ -124,6 +124,9 @@ export const en: Dictionary = {
       "Report v{version} generated and rendered with {template} ({slides} slides).",
     generatedShort: "Report v{version} generated and rendered.",
     renderFirst: "Render the report first",
+    serpSnapshotIncluded: "SERP snapshot will be included in the report.",
+    serpSnapshotMissing:
+      "Generate a SERP Snapshot to include the ORION-style page in the report.",
   },
   risk: {
     title: "Risk findings",

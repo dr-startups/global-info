@@ -437,6 +437,7 @@ export async function buildReportJson(
     const latest = await getLatestSerpSnapshot(caseId);
     if (latest) {
       serpSnapshot = {
+        id: latest.id,
         storageKey: latest.storageKey,
         query: latest.query,
         mode: "SYNTHETIC",

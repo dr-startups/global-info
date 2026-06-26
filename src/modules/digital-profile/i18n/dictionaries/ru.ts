@@ -124,6 +124,9 @@ export const ru: Dictionary = {
       "Отчёт v{version} собран и отрендерен шаблоном {template} ({slides} слайд(ов)).",
     generatedShort: "Отчёт v{version} собран и отрендерен.",
     renderFirst: "Сначала отрендерите отчёт",
+    serpSnapshotIncluded: "SERP snapshot будет включён в отчёт.",
+    serpSnapshotMissing:
+      "Сгенерируйте SERP Snapshot, чтобы включить ORION-style страницу в отчёт.",
   },
   risk: {
     title: "Риск-находки",

@@ -158,6 +158,11 @@ _EN = {
         "Synthetic snapshots are generated from API data — they are NOT live SERP screenshots.",
         "Live browser automation / scraping is not used by this audit.",
     ],
+    # Stage S1.5 — ORION-style synthetic SERP snapshot page
+    "serp_snapshot_page_title": "Search results: Yandex and Google",
+    "serp_snapshot_page_subtitle": "Synthetic snapshot based on stored search evidence",
+    "serp_snapshot_caption": "Synthetic snapshot based on stored search evidence. Not a live SERP screenshot.",
+    "serp_snapshot_missing": "SERP snapshot is unavailable for this report.",
     "knowledge_block_default": "Knowledge block",
     "no_knowledge_content": "Knowledge block status: {status}. No content collected.",
     "wiki_not_found_title": "Wikipedia article not found",
@@ -470,6 +475,11 @@ _RU = {
         "Синтетические снимки сгенерированы из данных API — это НЕ живые скриншоты выдачи.",
         "Живая браузерная автоматизация / скрейпинг в этом аудите не используются.",
     ],
+    # Stage S1.5 — ORION-style synthetic SERP snapshot page
+    "serp_snapshot_page_title": "Поисковая выдача: Яндекс и Google",
+    "serp_snapshot_page_subtitle": "Синтетический снимок на основе сохранённых результатов поиска",
+    "serp_snapshot_caption": "Синтетический снимок на основе сохранённых поисковых данных. Не является live SERP-скриншотом.",
+    "serp_snapshot_missing": "Снимок поисковой выдачи недоступен для этого отчёта.",
     "knowledge_block_default": "Блок знаний",
     "no_knowledge_content": "Статус блока знаний: {status}. Содержимое не собрано.",
     "wiki_not_found_title": "Статья в Википедии не найдена",
