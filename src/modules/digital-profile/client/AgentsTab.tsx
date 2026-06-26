@@ -7,7 +7,7 @@ import {
   type AgentInfo,
   type AgentRun,
 } from "./api";
-import { Badge, EmptyState, ErrorBox, StatusBadge } from "./components";
+import { Badge, EmptyState, ErrorBox, StatusBadge, SuccessBox } from "./components";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
 
@@ -37,13 +37,21 @@ export function AgentsTab({
   const canRun = can("agents.run");
   const [busyAgent, setBusyAgent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
 
   async function run(name: string) {
     if (busyAgent || auditing) return;
+    const agent = agents.find((a) => a.name === name);
+    // Real connectors hit a paid external API — confirm before spending.
+    if (agent?.kind === "REAL" && typeof window !== "undefined") {
+      if (!window.confirm(t("agents.realRunConfirm"))) return;
+    }
     setBusyAgent(name);
     setError(null);
+    setInfo(null);
     try {
       await runAgentApi(caseId, name);
+      if (name === "REAL_YANDEX_SEARCH") setInfo(t("agents.realYandexHint"));
       onChanged();
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
@@ -75,6 +83,11 @@ export function AgentsTab({
       {error ? (
         <div style={{ margin: "12px 0" }}>
           <ErrorBox>{error}</ErrorBox>
+        </div>
+      ) : null}
+      {info ? (
+        <div style={{ margin: "12px 0" }}>
+          <SuccessBox>{info}</SuccessBox>
         </div>
       ) : null}
 

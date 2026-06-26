@@ -18,6 +18,10 @@ export type AuditAction =
   | "SEARCH_QUERY_ADDED"
   | "SEARCH_RESULT_ADDED"
   | "SEARCH_RESULT_CLASSIFIED"
+  // Stage N1.3 — search-result classifier + manual override
+  | "SEARCH_RESULTS_CLASSIFIED_RUN"
+  | "SEARCH_RESULT_MANUAL_CLASSIFIED"
+  | "SEARCH_RESULT_MANUAL_CLEARED"
   | "SCREENSHOT_ADDED"
   | "SCREENSHOT_DOWNLOADED"
   | "SCREENSHOT_SOFT_DELETED"
@@ -49,6 +53,9 @@ export type AuditAction =
   | "AUDIT_SUMMARY_BUILT"
   // Stage S1 — synthetic ORION-style SERP snapshot
   | "SERP_SNAPSHOT_GENERATED"
+  // Stage N1 — real Yandex/Google Cloud Search API runs
+  | "REAL_YANDEX_SEARCH_RUN"
+  | "REAL_GOOGLE_SEARCH_RUN"
   // Stage M1 — auth + access control
   | "LOGIN"
   | "LOGIN_FAILED"

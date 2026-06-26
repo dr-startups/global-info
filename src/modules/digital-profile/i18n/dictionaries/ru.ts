@@ -92,6 +92,9 @@ export const ru: Dictionary = {
     real: "Реальный",
     system: "Системный",
     providerStatus: "Статус провайдера",
+    realRunConfirm: "Будет выполнен реальный запрос к внешнему поисковому API. Возможны расходы.",
+    realYandexHint:
+      "Реальный поиск Яндекса завершён. Теперь можно сгенерировать SERP Snapshot — он будет построен на реальных результатах Яндекса.",
   },
   report: {
     title: "Предпросмотр отчёта",
@@ -219,6 +222,20 @@ export const ru: Dictionary = {
     reviewCol: "Проверка",
     emptyTitle: "Результатов поиска нет",
     emptyHint: "Добавьте результаты вручную выше или измените фильтр источника.",
+    riskCol: "Риск",
+    themeCol: "Тема",
+    classifyResults: "Классифицировать результаты",
+    classifying: "Классификация…",
+    classifyResult:
+      "Классифицировано {classified} из {scanned}; рисковых {risky}, находки +{created}/~{updated}.",
+    manualMarker: "ручная",
+    markAdverse: "Пометить как риск",
+    markNeutral: "Пометить нейтральным",
+    assignTheme: "Назначить тему",
+    clearManual: "Сбросить",
+    actions: "Действия",
+    classifyNote:
+      "Результаты поиска — кандидаты-доказательства, а не подтверждённые факты. Красные рамки отмечают классифицированные или вручную проверенные результаты, а не окончательный вывод.",
   },
   surfaces: {
     queryText: "Текст запроса",
@@ -269,6 +286,19 @@ export const ru: Dictionary = {
     resultCount: "Всего результатов",
     generatedAt: "Сформировано",
     generated: "Скриншот сформирован",
+    realBadge: "Содержит реальные результаты поиска",
+    mixedSources: "демо + реальные",
+    dataSourceLabel: "Источник данных",
+    dsAuto: "Авто: реальные, если есть",
+    dsRealOnly: "Только реальные",
+    dsMockOnly: "Только demo/mock",
+    dsMixed: "Смешанные",
+    badgeReal: "Используются реальные поисковые результаты",
+    badgeMixed: "Смешанный режим: real + mock",
+    badgeMock: "Только demo/mock",
+    badgeEmpty: "Нет данных",
+    noHighlightsWarning:
+      "Реальные результаты получены, но рискованные публикации не обнаружены. Для красных рамок нужна классификация или ручная разметка.",
   },
   wikipedia: {
     title: "Википедия",

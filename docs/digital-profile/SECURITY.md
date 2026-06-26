@@ -22,6 +22,33 @@ design. This checklist captures the guarantees and the operational rules.
 - [x] Errors return a safe envelope `{ ok:false, error:{ code, message } }` —
       **no stack traces** are exposed to clients (`http/errors.ts`).
 - [x] Production must set a strong unique `DIGITAL_PROFILE_SIGNED_URL_SECRET`.
+- [x] **Stage N1 — Yandex real API:** `YANDEX_SEARCH_API_KEY` is sent only in the
+      `Authorization: Api-Key` request **header** (never in the URL/query, never
+      logged). It is **never** stored in the DB or in `rawMetadata`, and appears in
+      docs only as an empty placeholder.
+- [x] `REAL_YANDEX_SEARCH_RUN` audit entries record only
+      `actorId / caseId / queryCount / resultCount / durationMs / outcome /
+      errorCode` — **no API key, no raw XML, no secrets**.
+- [x] The Yandex XML response is parsed with a regex normalizer (no entity-
+      expanding XML parser); decoding additionally **rejects `DOCTYPE`/`ENTITY`**
+      (XXE guard) and caps the payload size.
+- [x] **Stage N1.3 — result classification:** the search-result classifier is
+      **deterministic** (RU/EN keyword dictionaries, no LLM, no network). It runs
+      only over already-stored evidence; it never fetches or scrapes anything.
+- [x] A search result is an **evidence candidate, not a verified fact**. An
+      adverse flag requires the deterministic classifier *or* an analyst manual
+      review; a single weak topical term yields only `LOW` confidence and **never**
+      auto-highlights. Classifier wording is cautious ("potential match / requires
+      review") — never a categorical conclusion about a person.
+- [x] **Red frames** in the ORION snapshot mean "risk-classified or analyst-
+      reviewed", **not** a final legal conclusion. Manual override (analyst) is
+      authoritative over the automatic classifier in both directions; a manual
+      *neutral* mark excludes a result from highlights.
+- [x] N1.3 classification + manual override are stored in
+      `SearchResult.rawMetadata.riskClassification` and `reviewStatus`; raw
+      provider payloads are **never** surfaced to the UI/report. Audit entries
+      (`SEARCH_RESULTS_CLASSIFIED_RUN`, `SEARCH_RESULT_MANUAL_CLASSIFIED`,
+      `SEARCH_RESULT_MANUAL_CLEARED`) carry **no API keys and no secrets**.
 
 ## Lawfulness (hard rules)
 
@@ -33,7 +60,10 @@ design. This checklist captures the guarantees and the operational rules.
 - [x] Compliance databases (LexisNexis / Dow Jones / World-Check) integrated via
       **official API or manual import only**.
 - [x] Google/Yandex via **official APIs only**; missing keys → `NOT_CONFIGURED`
-      (never a fake call).
+      (never a fake call). The Stage N1 real Yandex provider uses the official
+      Yandex Cloud Search API v2 only; results are **evidence candidates, not
+      verified facts**, and only an `ADMIN`/`SUPER_ADMIN` (real-agent permission)
+      may trigger it after case-access + lawful-basis checks.
 - [x] Wikipedia via the **public** MediaWiki/REST API; read-only, never
       auto-publishes.
 

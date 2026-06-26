@@ -27,6 +27,10 @@ type RouteContext = { params: Promise<{ id: string }> };
 const BodySchema = z.object({
   query: z.string().trim().max(200).optional(),
   language: z.enum(["ru", "en"]).optional(),
+  // Stage N1.2 — real-vs-mock selection strategy (defaults to prefer_real).
+  sourcePreference: z
+    .enum(["prefer_real", "real_only", "mock_only", "mixed"])
+    .optional(),
 });
 
 export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
@@ -42,7 +46,12 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   }
 
   const snapshot = await generateSerpSnapshot(
-    { caseId: id, query: body.data.query, language: body.data.language },
+    {
+      caseId: id,
+      query: body.data.query,
+      language: body.data.language,
+      sourcePreference: body.data.sourcePreference,
+    },
     actorOf(user)
   );
 

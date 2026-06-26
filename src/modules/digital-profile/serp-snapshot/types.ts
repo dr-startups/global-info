@@ -13,6 +13,41 @@ export type SerpLanguage = "ru" | "en";
 
 export type SerpSnapshotMode = "SYNTHETIC";
 
+/**
+ * Stage N1 — provenance of the underlying search_results that fed the snapshot.
+ * The image is always SYNTHETIC; this only records whether the data behind it
+ * came from mock agents, the real Yandex Cloud Search API, or a mix.
+ * Stage N1.2 adds EMPTY for the no-data state.
+ */
+export type SerpSourceMode = "MOCK_ONLY" | "REAL_ONLY" | "MIXED" | "EMPTY";
+
+/** Per-engine provenance after applying the source preference (Stage N1.2). */
+export type EngineSourceMode = "REAL" | "MOCK" | "EMPTY";
+
+/**
+ * Stage N1.2 — how the snapshot picks between real and mock rows per engine.
+ *  - prefer_real (default): use real:* rows when present, else fall back to mock.
+ *  - real_only:  use only real:* rows (engine is EMPTY when none exist).
+ *  - mock_only:  use only mock/demo rows.
+ *  - mixed:      use every stored row (legacy behaviour).
+ */
+export type SourcePreference = "prefer_real" | "real_only" | "mock_only" | "mixed";
+
+export const DEFAULT_SOURCE_PREFERENCE: SourcePreference = "prefer_real";
+
+/** Per-engine source breakdown surfaced in metadata / the API response. */
+export interface EnginePerSource {
+  sourceMode: EngineSourceMode;
+  resultCount: number;
+  highlightedCount: number;
+}
+
+/** Both engines' source breakdown. */
+export interface PerEngineSource {
+  yandex: EnginePerSource;
+  google: EnginePerSource;
+}
+
 /** Request accepted by the generator (route layer validates + narrows this). */
 export interface SerpSnapshotRequest {
   caseId: string;
@@ -23,6 +58,8 @@ export interface SerpSnapshotRequest {
   engines?: SerpEngine[];
   language?: SerpLanguage;
   maxResultsPerEngine?: number;
+  /** Stage N1.2 — real-vs-mock selection strategy. Defaults to prefer_real. */
+  sourcePreference?: SourcePreference;
 }
 
 /** A single stored search result loaded for snapshot rendering. */
@@ -41,14 +78,30 @@ export interface LoadedResult {
   language: string | null;
   source: string | null;
   createdAt: Date;
+  /**
+   * Stage N1.3 — resolved highlight decision (manual > findings > auto > enum).
+   * When true the result gets a red frame; `riskTheme`/`themeTitle` carry the
+   * effective theme used for grouping. `false` for neutral/unknown/dismissed.
+   */
+  isHighlighted: boolean;
+  /** Human-readable theme title hint for the left-column grouping, if any. */
+  themeTitle: string | null;
 }
 
-/** Results grouped per engine after loading + de-duplication. */
+/** Results grouped per engine after loading + applying the source preference. */
 export interface LoadedResults {
   subjectName: string;
   yandex: LoadedResult[];
   google: LoadedResult[];
   total: number;
+  /** Stage N1 — provenance derived from the selected rows' `source` field. */
+  sourceMode: SerpSourceMode;
+  /** True when at least one selected row came from a real provider. */
+  hasRealResults: boolean;
+  /** Stage N1.2 — preference that was applied to produce this selection. */
+  sourcePreference: SourcePreference;
+  /** Stage N1.2 — per-engine source mode (highlightedCount filled later). */
+  perEngine: { yandex: EngineSourceMode; google: EngineSourceMode };
 }
 
 /** A deterministic risk theme grouping (left-column table row). */
@@ -107,6 +160,11 @@ export interface SerpSnapshotViewModel {
   width: number;
   height: number;
   footerNote: string;
+  /**
+   * Stage N1.2 — small, secrets-free source attribution drawn in the footer
+   * (e.g. "Источник: реальные данные Yandex Search API / demo Google").
+   */
+  sourceLabel: string;
 }
 
 /** Persisted metadata sidecar (metadata.json). */
@@ -124,6 +182,12 @@ export interface SerpSnapshotMetadata {
   generatedAt: string;
   /** Always synthetic — never a live capture. */
   synthetic: true;
+  /** Stage N1 — provenance of the underlying search_results. */
+  sourceMode: SerpSourceMode;
+  /** Stage N1.2 — selection strategy that produced this snapshot. */
+  sourcePreference: SourcePreference;
+  /** Stage N1.2 — per-engine source breakdown. */
+  perEngine: PerEngineSource;
 }
 
 /** Result returned by the service / API layer. */
@@ -143,4 +207,10 @@ export interface SerpSnapshotResult {
   generatedAt: string;
   sha256: string;
   sizeBytes: number;
+  /** Stage N1 — provenance of the underlying search_results. */
+  sourceMode: SerpSourceMode;
+  /** Stage N1.2 — selection strategy that produced this snapshot. */
+  sourcePreference: SourcePreference;
+  /** Stage N1.2 — per-engine source breakdown. */
+  perEngine: PerEngineSource;
 }

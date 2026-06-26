@@ -10,6 +10,10 @@ export interface QuerySubject {
   fullName: string;
   aliases?: string[];
   targetRegions?: string[];
+  /** Stage N1 — optional context terms for richer person queries. */
+  company?: string | null;
+  position?: string | null;
+  location?: string | null;
 }
 
 export interface SearchQuerySpec {
@@ -18,7 +22,22 @@ export interface SearchQuerySpec {
   region?: string;
 }
 
+export interface BuildQueriesOptions {
+  maxQueries?: number;
+  /**
+   * Stage N1 — append adverse-context queries (investigation / lawsuit / fraud /
+   * sanctions). Only enable when the case lawful basis permits and never for
+   * client-facing actors (gated by the caller, not here).
+   */
+  includeNegative?: boolean;
+}
+
 const DEFAULT_MAX_QUERIES = 6;
+
+const NEGATIVE_TERMS: Record<string, string[]> = {
+  ru: ["расследование", "суд", "мошенничество", "санкции"],
+  en: ["investigation", "lawsuit", "fraud", "sanctions"],
+};
 
 function hasCyrillic(value: string): boolean {
   return /[\u0400-\u04FF]/.test(value);
@@ -56,12 +75,15 @@ function resolveLanguages(subject: QuerySubject): string[] {
 
 export function buildPersonSearchQueries(
   subject: QuerySubject,
-  options?: { maxQueries?: number }
+  options?: BuildQueriesOptions
 ): SearchQuerySpec[] {
   const max = options?.maxQueries ?? DEFAULT_MAX_QUERIES;
   const languages = resolveLanguages(subject);
   const primaryRegion = subject.targetRegions?.[0];
   const aliases = (subject.aliases ?? []).map((a) => a.trim()).filter(Boolean);
+  const company = subject.company?.trim();
+  const position = subject.position?.trim();
+  const location = subject.location?.trim();
 
   const specs: SearchQuerySpec[] = [];
   const push = (query: string, language: string) => {
@@ -73,11 +95,19 @@ export function buildPersonSearchQueries(
     push(subject.fullName, language);
     const rev = reversedName(subject.fullName);
     if (rev) push(rev, language);
+    if (company) push(`${subject.fullName} ${company}`, language);
+    if (position) push(`${subject.fullName} ${position}`, language);
+    if (location) push(`${subject.fullName} ${location}`, language);
     push(`${subject.fullName} ${bioTerm(language)}`, language);
     push(`${subject.fullName} ${language === "ru" ? "бизнес" : "business"}`, language);
     for (const alias of aliases) {
       push(alias, language);
       push(`${alias} ${bioTerm(language)}`, language);
+    }
+    if (options?.includeNegative) {
+      for (const term of NEGATIVE_TERMS[language] ?? NEGATIVE_TERMS.en) {
+        push(`${subject.fullName} ${term}`, language);
+      }
     }
   }
 

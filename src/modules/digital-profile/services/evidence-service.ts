@@ -14,6 +14,7 @@ import { prisma } from "@/server/prisma/client";
 import { NotFoundError } from "../http/errors";
 import { recordAudit } from "./audit-log-service";
 import { buildScreenshotDownloadUrl } from "../storage/signed-url";
+import { readRiskClassification } from "../risk-classifier/result-classifier";
 import type { ActorContext } from "./case-service";
 import type { EvidenceRef } from "../types";
 import type {
@@ -98,6 +99,34 @@ export interface SearchResultDTO {
   reviewStatus: string;
   source: string | null;
   createdAt: Date;
+  /**
+   * Stage N1.3 — derived risk classification (auto + manual override + the
+   * effective decision). Never exposes the raw provider payload.
+   */
+  riskClassification?: ResultRiskClassificationDTO;
+}
+
+export interface ResultRiskClassificationDTO {
+  auto: {
+    classification: string;
+    riskTheme: string | null;
+    confidence: string;
+    rationale: string;
+  } | null;
+  manual: {
+    classification: string;
+    riskTheme: string | null;
+    rationale: string | null;
+    reviewedBy: string | null;
+    reviewedAt: string;
+  } | null;
+  effective: {
+    classification: string;
+    riskTheme: string | null;
+    confidence: string | null;
+    source: "manual" | "auto" | "none";
+    manualOverride: boolean;
+  };
 }
 
 export interface ScreenshotDTO {
@@ -230,6 +259,60 @@ const searchResultSelect = {
   source: true,
   createdAt: true,
 } satisfies Prisma.SearchResultSelect;
+
+// Stage N1.3 — listing also reads rawMetadata to derive (never expose) the
+// risk classification block.
+const searchResultListSelect = {
+  ...searchResultSelect,
+  rawMetadata: true,
+} satisfies Prisma.SearchResultSelect;
+
+/** Builds the safe, derived risk-classification DTO from a row's rawMetadata. */
+function toRiskClassificationDTO(rawMetadata: unknown): ResultRiskClassificationDTO | undefined {
+  const block = readRiskClassification(rawMetadata);
+  if (!block || (!block.auto && !block.manual)) return undefined;
+  const auto = block.auto
+    ? {
+        classification: block.auto.classification,
+        riskTheme: block.auto.riskTheme,
+        confidence: block.auto.confidence,
+        rationale: block.auto.rationale,
+      }
+    : null;
+  const manual = block.manual
+    ? {
+        classification: block.manual.classification,
+        riskTheme: block.manual.riskTheme,
+        rationale: block.manual.rationale,
+        reviewedBy: block.manual.reviewedBy,
+        reviewedAt: block.manual.reviewedAt,
+      }
+    : null;
+  const effective = manual
+    ? {
+        classification: manual.classification,
+        riskTheme: manual.riskTheme,
+        confidence: null as string | null,
+        source: "manual" as const,
+        manualOverride: true,
+      }
+    : auto
+      ? {
+          classification: auto.classification,
+          riskTheme: auto.riskTheme,
+          confidence: auto.confidence,
+          source: "auto" as const,
+          manualOverride: false,
+        }
+      : {
+          classification: "UNKNOWN",
+          riskTheme: null,
+          confidence: null,
+          source: "none" as const,
+          manualOverride: false,
+        };
+  return { auto, manual, effective };
+}
 
 export async function addSearchResult(
   caseId: string,
@@ -483,7 +566,7 @@ export async function listEvidence(caseId: string): Promise<CaseEvidenceDTO> {
     prisma.searchResult.findMany({
       where: { caseId },
       orderBy: { createdAt: "desc" },
-      select: searchResultSelect,
+      select: searchResultListSelect,
     }),
     prisma.screenshot.findMany({
       // Exclude synthetic SERP snapshots (Stage S1) — they are a generated
@@ -553,7 +636,10 @@ export async function listEvidence(caseId: string): Promise<CaseEvidenceDTO> {
 
   return {
     searchQueries,
-    searchResults,
+    searchResults: searchResults.map(({ rawMetadata, ...r }) => ({
+      ...r,
+      riskClassification: toRiskClassificationDTO(rawMetadata),
+    })),
     screenshots: screenshots.map((s) => ({
       id: s.id,
       resultId: s.resultId,

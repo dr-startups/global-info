@@ -26,6 +26,78 @@ Run through this end-to-end before a demo or pilot. Expected result in brackets.
 15. [ ] Re-generate with Audience **Client**, Watermark **None**
        (→ technical notes softened; no watermark)
 
+## Real Yandex Search (Stage N1) — optional, paid API
+
+> Only run with a real Yandex Cloud API key + folder id. The flag must be ON.
+
+R1. [ ] With the flag OFF: `GET /api/digital-profile/providers` shows
+        `Yandex Search Real` → `enabled=false`, `supportsRealCalls=false`
+R2. [ ] Without keys (flag ON): provider shows `NOT_CONFIGURED` +
+        `missingConfigKeys` (names only, no values)
+R3. [ ] `npm run smoke:yandex-provider` → ALL CHECKS PASSED (offline)
+R4. [ ] Set `DIGITAL_PROFILE_YANDEX_REAL_ENABLED=true` + key/folder → provider
+        shows `enabled=true, configured=true, supportsRealCalls=true`
+R5. [ ] Agents tab → **Yandex Search (real)** → Run → confirm cost dialog
+        (RU/EN) → success shows queries/results saved
+R6. [ ] `search_results` now contain rows with `source = real:YANDEX`
+        (mock rows untouched); re-run does **not** duplicate
+R7. [ ] Generate **SERP Snapshot** → "Includes real search results" badge;
+        `sourceMode = REAL_ONLY` or `MIXED`
+R8. [ ] Audit log has `REAL_YANDEX_SEARCH_RUN` with counts/duration — **no key**
+R9. [ ] A non-ADMIN/ANALYST role cannot run the real agent (403)
+
+## SERP snapshot source preference (Stage N1.2)
+
+> Builds the ORION snapshot from real `search_results` when available, with a
+> predictable fallback. Offline logic is covered by
+> `npm run smoke:serp-snapshot-real-source`.
+
+S1. [ ] `npm run smoke:serp-snapshot-real-source` → ALL PASS (offline, no keys)
+S2. [ ] SERP Snapshot tab shows a **Data source** selector
+        (Auto / Real only / Demo-mock only / Mixed; RU + EN)
+S3. [ ] Case with real Yandex rows + a mock Google row:
+        - **Auto (prefer_real)** → `MIXED` (Yandex REAL, Google MOCK)
+        - **Real only** → `REAL_ONLY` (Google block empty / no data)
+        - **Demo/mock only** → `MOCK_ONLY` (real Yandex excluded)
+S4. [ ] Badge reflects the mode: real / mixed / demo-mock / no-data
+S5. [ ] When real rows exist but `highlightedCount = 0`, the no-highlights
+        warning is shown (RU/EN); no auto negative classification happens
+S6. [ ] Snapshot image footer shows a secrets-free source label
+        (e.g. "Источник: реальные данные Yandex Search API / demo Google");
+        **no** API key / folder id / env names / raw XML
+S7. [ ] Report Template v3 page 10 caption matches `sourceMode`
+        (real / mixed / mock / empty) in RU + EN
+S8. [ ] `report_json.serpSnapshot.metadata` carries `sourceMode` + `perEngine`
+        and contains **no** provider secrets
+
+## Search-result classification + ORION highlights (Stage N1.3)
+
+> Deterministic (no LLM) classification + analyst manual override decide which
+> real `search_results` get red frames in the ORION snapshot. Search results are
+> **evidence candidates, not verified facts**; a red frame means "risk-classified
+> or reviewed", never a final legal conclusion. Offline logic is covered by
+> `npm run smoke:real-result-classifier`.
+
+N1. [ ] `npm run smoke:real-result-classifier` → ALL PASS (offline, no keys,
+        fictional fixtures only)
+N2. [ ] Open a case with real Yandex rows → Search Results shows `source=real:YANDEX`
+N3. [ ] Click **Classify results** → Wikipedia/biography/plain-news rows stay
+        neutral (no red badge); sanctions/fraud rows get a risk class + confidence
+N4. [ ] A single weak term (e.g. one "суд"/"court") stays LOW → **not** highlighted
+N5. [ ] Manually **Mark adverse** + **Assign theme** on one result → manual marker shown
+N6. [ ] SERP Snapshot → Data source = Auto/prefer real → Generate:
+        - real Yandex block built from real rows
+        - manually-marked result is framed red; Тема N appears on the left
+        - badge / `sourceMode` correct; source label carries **no** secrets
+N7. [ ] **Mark neutral** on an auto-adverse row → red frame disappears (manual wins)
+N8. [ ] `risk_findings` created for adverse classifications; REVIEWED/DISMISSED
+        findings are never overwritten on re-run
+N9. [ ] Report Preview → Template v3 RU Draft → page 10 renders with the snapshot;
+        download PDF/PPTX
+N10.[ ] **Clear** the manual mark → regenerate → frame disappears
+N11.[ ] No API key / folder id / env names appear in evidence payloads, snapshot
+        labels, findings, or `report_json`
+
 ## Empty / data-quality case
 
 16. [ ] Open `DPA-2026-0002` (Ivan Pustov — DEMO empty) → Build Audit Summary

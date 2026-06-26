@@ -123,6 +123,15 @@ export function validateDigitalProfileEnv(
     }
   }
 
+  // Stage N1 — official Yandex Cloud Search API v2 (independent dedicated flag).
+  if (bool(env.DIGITAL_PROFILE_YANDEX_REAL_ENABLED)) {
+    if (!env.YANDEX_SEARCH_API_KEY || !env.YANDEX_SEARCH_FOLDER_ID) {
+      warnings.push(
+        "DIGITAL_PROFILE_YANDEX_REAL_ENABLED=true but YANDEX_SEARCH_API_KEY / YANDEX_SEARCH_FOLDER_ID are missing; the real Yandex provider will resolve to NOT_CONFIGURED."
+      );
+    }
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 

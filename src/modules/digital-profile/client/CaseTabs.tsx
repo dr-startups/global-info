@@ -5,6 +5,9 @@ import {
   addSearchResult,
   buildAuditSummary,
   classifyRisks,
+  classifySearchResults,
+  clearManualResultClassification,
+  setManualResultClassification,
   DigitalProfileApiError,
   reviewFinding,
   type AgentInfo,
@@ -12,7 +15,10 @@ import {
   type AiProfile,
   type CaseDetail,
   type CaseEvidence,
+  type ManualResultClass,
   type ReportVersion,
+  type ResultRiskThemeKey,
+  type SearchResult,
   type SearchSurfaceItem,
 } from "./api";
 import {
@@ -221,6 +227,15 @@ function SubjectTab({ caseDetail }: { caseDetail: CaseDetail }) {
 // ---------------------------------------------------------------------------
 
 const ENGINES = ["GOOGLE", "YANDEX", "BING", "OTHER"];
+// Stage N1.3 — richer classes that imply a risk highlight in the UI badge.
+const RISKY_CLASS_SET = new Set([
+  "ADVERSE_MEDIA",
+  "SANCTIONS",
+  "PEP",
+  "CRIMINAL",
+  "LEGAL_DISPUTE",
+  "HIGH_RISK",
+]);
 const CLASSIFICATIONS = [
   "UNCLASSIFIED",
   "RELEVANT",
@@ -256,8 +271,106 @@ function SearchResultsTab({
   const [classification, setClassification] = useState("UNCLASSIFIED");
   const [sourceFilter, setSourceFilter] = useState<"ALL" | "MOCK" | "REAL" | "MANUAL">("ALL");
   const [busy, setBusy] = useState(false);
+  const [classifying, setClassifying] = useState(false);
+  const [actingId, setActingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  const RESULT_THEMES: ResultRiskThemeKey[] = [
+    "adverse_media",
+    "sanctions",
+    "criminal",
+    "legal_dispute",
+    "pep",
+    "political_exposure",
+    "reputation",
+    "business_conflict",
+    "other",
+  ];
+
+  async function classify() {
+    if (classifying) return;
+    setClassifying(true);
+    setError(null);
+    setInfo(null);
+    try {
+      const s = await classifySearchResults(caseId);
+      setInfo(
+        t("search.classifyResult", {
+          classified: s.classified,
+          scanned: s.totalScanned,
+          risky: s.risky,
+          created: s.findingsCreated,
+          updated: s.findingsUpdated,
+        })
+      );
+      onChanged();
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setError(tError(code, msg));
+    } finally {
+      setClassifying(false);
+    }
+  }
+
+  async function markResult(r: SearchResult, classification: ManualResultClass) {
+    if (actingId) return;
+    setActingId(r.id);
+    setError(null);
+    try {
+      if (classification === "ADVERSE_MEDIA") {
+        const theme = window.prompt(t("search.assignTheme"), "adverse_media");
+        await setManualResultClassification(r.id, {
+          classification,
+          riskTheme: (theme?.trim() || undefined) as ResultRiskThemeKey | undefined,
+        });
+      } else {
+        await setManualResultClassification(r.id, { classification });
+      }
+      onChanged();
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      setError(tError(code, err instanceof Error ? err.message : undefined));
+    } finally {
+      setActingId(null);
+    }
+  }
+
+  async function assignTheme(r: SearchResult) {
+    if (actingId) return;
+    const theme = window.prompt(`${t("search.assignTheme")} (${RESULT_THEMES.join(", ")})`, r.riskClassification?.effective.riskTheme ?? "adverse_media");
+    if (!theme || !theme.trim()) return;
+    setActingId(r.id);
+    setError(null);
+    try {
+      await setManualResultClassification(r.id, {
+        classification: "ADVERSE_MEDIA",
+        riskTheme: theme.trim() as ResultRiskThemeKey,
+      });
+      onChanged();
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      setError(tError(code, err instanceof Error ? err.message : undefined));
+    } finally {
+      setActingId(null);
+    }
+  }
+
+  async function clearManual(r: SearchResult) {
+    if (actingId) return;
+    setActingId(r.id);
+    setError(null);
+    try {
+      await clearManualResultClassification(r.id);
+      onChanged();
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      setError(tError(code, err instanceof Error ? err.message : undefined));
+    } finally {
+      setActingId(null);
+    }
+  }
 
   function sourceKind(src: string | null): "MOCK" | "REAL" | "MANUAL" {
     if ((src ?? "").startsWith("real")) return "REAL";
@@ -296,10 +409,18 @@ function SearchResultsTab({
 
   return (
     <div>
-      <h2 className="dp-h2">{t("search.title")}</h2>
+      <div className="dp-inline" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <h2 className="dp-h2" style={{ margin: 0 }}>{t("search.title")}</h2>
+        {can("risk.classify") ? (
+          <button className="dp-btn dp-btn-primary dp-btn-sm" disabled={classifying} onClick={classify}>
+            {classifying ? t("search.classifying") : t("search.classifyResults")}
+          </button>
+        ) : null}
+      </div>
+      <Notice>{t("search.classifyNote")}</Notice>
 
       {can("evidence.create") ? (
-      <form onSubmit={add} style={{ marginBottom: 18 }}>
+      <form onSubmit={add} style={{ marginBottom: 18, marginTop: 14 }}>
         <div className="dp-form-grid">
           <div className="dp-field">
             <label>{t("search.engine")}</label>
@@ -380,13 +501,19 @@ function SearchResultsTab({
               <th>{t("common.source")}</th>
               <th>{t("search.titleField")}</th>
               <th>{t("search.domain")}</th>
-              <th>{t("search.classification")}</th>
-              <th>{t("search.reviewCol")}</th>
+              <th>{t("search.riskCol")}</th>
+              <th>{t("search.themeCol")}</th>
+              {can("evidence.create") ? <th>{t("search.actions")}</th> : null}
             </tr>
           </thead>
           <tbody>
             {visibleResults.map((r) => {
               const isReal = (r.source ?? "").startsWith("real");
+              const rc = r.riskClassification;
+              const eff = rc?.effective;
+              const cls = eff?.classification ?? r.classification;
+              const risky = !!eff && eff.source !== "none" && RISKY_CLASS_SET.has(eff.classification);
+              const acting = actingId === r.id;
               return (
               <tr key={r.id}>
                 <td>{r.engine}</td>
@@ -400,11 +527,37 @@ function SearchResultsTab({
                 </td>
                 <td className="dp-muted">{domainOf(r.url)}</td>
                 <td>
-                  <Badge tone="neutral">{r.classification}</Badge>
+                  <Badge tone={risky ? "danger" : "neutral"}>{cls}</Badge>
+                  {eff?.confidence ? (
+                    <span className="dp-muted" style={{ fontSize: 11, marginLeft: 6 }}>{eff.confidence}</span>
+                  ) : null}
+                  {eff?.manualOverride ? (
+                    <span style={{ marginLeft: 6 }}>
+                      <Badge tone="info">{t("search.manualMarker")}</Badge>
+                    </span>
+                  ) : null}
                 </td>
-                <td>
-                  <StatusBadge status={r.reviewStatus} />
-                </td>
+                <td className="dp-muted">{eff?.riskTheme ?? "—"}</td>
+                {can("evidence.create") ? (
+                  <td>
+                    <div className="dp-inline" style={{ flexWrap: "wrap", gap: 4 }}>
+                      <button className="dp-btn dp-btn-xs" disabled={acting} onClick={() => markResult(r, "ADVERSE_MEDIA")}>
+                        {t("search.markAdverse")}
+                      </button>
+                      <button className="dp-btn dp-btn-xs" disabled={acting} onClick={() => markResult(r, "NEUTRAL")}>
+                        {t("search.markNeutral")}
+                      </button>
+                      <button className="dp-btn dp-btn-xs" disabled={acting} onClick={() => assignTheme(r)}>
+                        {t("search.assignTheme")}
+                      </button>
+                      {rc?.manual ? (
+                        <button className="dp-btn dp-btn-xs" disabled={acting} onClick={() => clearManual(r)}>
+                          {t("search.clearManual")}
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
+                ) : null}
               </tr>
               );
             })}

@@ -36,7 +36,9 @@ See `.env.example` for the full, commented list. Key ones:
 | `DIGITAL_PROFILE_REAL_CONNECTORS_ENABLED` | Master switch for keyed SERP providers |
 | `DIGITAL_PROFILE_WIKIPEDIA_ENABLED` | Wikipedia (public API; independent) |
 | `DIGITAL_PROFILE_GOOGLE_ENABLED` + `GOOGLE_SEARCH_API_KEY` + `GOOGLE_SEARCH_ENGINE_ID` | Google official API |
-| `DIGITAL_PROFILE_YANDEX_ENABLED` + `YANDEX_SEARCH_API_KEY` + `YANDEX_SEARCH_FOLDER_ID` + `YANDEX_SEARCH_REGION` | Yandex official API |
+| `DIGITAL_PROFILE_YANDEX_ENABLED` + `YANDEX_SEARCH_API_KEY` + `YANDEX_SEARCH_FOLDER_ID` + `YANDEX_SEARCH_REGION` | Yandex legacy XML API (H2) |
+| `DIGITAL_PROFILE_YANDEX_REAL_ENABLED` + `YANDEX_SEARCH_API_KEY` + `YANDEX_SEARCH_FOLDER_ID` | **Stage N1** — official Yandex Cloud Search API v2 (`REAL_YANDEX_SEARCH`) |
+| `YANDEX_SEARCH_TIMEOUT_MS` / `YANDEX_SEARCH_MAX_QUERIES_PER_AUDIT` / `YANDEX_SEARCH_RESULTS_PER_QUERY` / `YANDEX_SEARCH_LOCALIZATION` | Yandex real-provider tuning (optional) |
 | `DIGITAL_PROFILE_PROVIDER_TIMEOUT_MS` / `DIGITAL_PROFILE_PROVIDER_MAX_RESULTS` | Keyed provider HTTP limits |
 | `DIGITAL_PROFILE_AUTH_ENABLED` | Auth + roles master switch (default `false`) |
 | `DIGITAL_PROFILE_SESSION_SECRET` | HMAC secret for the session cookie (required when auth enabled) |
@@ -292,6 +294,38 @@ and the `authEnabled` flag.
   silently lost. Hard deletion of evidence is an admin/superadmin-only operation.
 - Treat evidence/report deletion with legal/compliance caution — deleting may be
   irreversible and could affect an ongoing engagement.
+
+## Real Yandex Search (Stage N1)
+
+The `REAL_YANDEX_SEARCH` agent populates `search_results` with **real** evidence
+from the official [Yandex Cloud Search API v2](https://yandex.cloud/docs/search-api/)
+(`POST /v2/web/search`, `Authorization: Api-Key`). The ORION-style SERP snapshot
+then builds its (still synthetic) image from that real evidence.
+
+To enable in Railway, set these **Variables** on the `app` service:
+
+| Variable | Value |
+| --- | --- |
+| `DIGITAL_PROFILE_YANDEX_REAL_ENABLED` | `true` |
+| `YANDEX_SEARCH_API_KEY` | *(secret — service-account API key)* |
+| `YANDEX_SEARCH_FOLDER_ID` | *(Yandex Cloud folder id)* |
+| `YANDEX_SEARCH_TIMEOUT_MS` | `15000` (optional) |
+| `YANDEX_SEARCH_MAX_QUERIES_PER_AUDIT` | `5` (optional) |
+| `YANDEX_SEARCH_RESULTS_PER_QUERY` | `10` (optional) |
+| `YANDEX_SEARCH_LOCALIZATION` | `ru` (optional) |
+| `YANDEX_SEARCH_REGION` | `ru` (optional) |
+
+Notes:
+
+- **Paid API.** Each run issues up to `YANDEX_SEARCH_MAX_QUERIES_PER_AUDIT`
+  billable queries. Keep the flag OFF by default; enable only for real audits.
+- The API key travels in the `Authorization` header only — never in URLs, logs,
+  the DB, or `rawMetadata`. Set it via Railway secrets, never in git.
+- Provider status is visible at `GET /api/digital-profile/providers`
+  (`Yandex Search Real`: `kind=REAL`, `enabled`/`configured`/`supportsRealCalls`).
+- Search results are **evidence candidates, not verified facts**. The ORION
+  snapshot remains a synthetic visual built from this real API evidence — it is
+  not a live SERP screenshot.
 
 ## Known limitations
 

@@ -398,6 +398,13 @@ export interface ReportSerpSnapshot {
     width: number;
     height: number;
     generatedAt: string;
+    /** Stage N1.2 — provenance of the underlying search_results. */
+    sourceMode?: "MOCK_ONLY" | "REAL_ONLY" | "MIXED" | "EMPTY";
+    /** Stage N1.2 — per-engine source breakdown. */
+    perEngine?: {
+      yandex: { sourceMode: "REAL" | "MOCK" | "EMPTY"; resultCount: number; highlightedCount: number };
+      google: { sourceMode: "REAL" | "MOCK" | "EMPTY"; resultCount: number; highlightedCount: number };
+    };
   };
 }
 

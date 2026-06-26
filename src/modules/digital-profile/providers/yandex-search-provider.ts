@@ -1,7 +1,11 @@
 /**
- * Yandex Search API provider (XML) — real connector.
+ * Yandex Search API provider — real connector (Stage N1).
  *
- * Official API only: https://yandex.com/search/xml (Yandex Cloud Search API).
+ * Official Yandex Cloud Search API v2 only:
+ *   POST https://searchapi.api.cloud.yandex.net/v2/web/search
+ *   Authorization: Api-Key <key>   (header — never logged, never in the URL)
+ * The sync endpoint returns `{ rawData: <base64 XML> }`; we decode + parse it.
+ *
  * No scraping, no browser automation, no SERP screenshots. Secrets are never
  * logged or returned. When disabled/unconfigured it resolves to a structured
  * ProviderRunResult instead of throwing.
@@ -9,7 +13,15 @@
 
 import { providerConfig, getProviderAvailability } from "./config";
 import { getProviderCapabilities } from "./capabilities";
-import { getText, toProviderError } from "./http";
+import { postJson, toProviderError, ProviderHttpError } from "./http";
+import {
+  YANDEX_V2_ENDPOINT,
+  buildYandexV2Body,
+  decodeYandexV2RawData,
+  toLocalization,
+  toSearchType,
+  YandexV2ParseError,
+} from "./yandex-v2";
 import type { SearchProvider, SurfaceMethodResult } from "./search-provider";
 import type {
   AvailabilityStatus,
@@ -20,7 +32,6 @@ import type {
 import { domainOf } from "./types";
 import type { ProviderCapabilities } from "../search-surfaces/types";
 
-const ENDPOINT = "https://yandex.com/search/xml";
 const MAX_PER_PAGE = 10;
 
 function decodeEntities(value: string): string {
@@ -59,18 +70,22 @@ export class YandexSearchProvider implements SearchProvider {
     return { ok: a.status === "ENABLED", message: a.message };
   }
 
-  private buildUrl(request: SearchProviderRequest, page: number): string {
-    const params = new URLSearchParams({
-      folderid: providerConfig.yandex.folderId ?? "",
-      apikey: providerConfig.yandex.apiKey ?? "",
-      query: request.query,
-      page: String(page),
+  /** Calls the v2 endpoint for one page and returns the decoded XML string. */
+  private async fetchPageXml(request: SearchProviderRequest, page: number): Promise<string> {
+    const cfg = providerConfig.yandex;
+    const body = buildYandexV2Body({
+      queryText: request.query,
+      folderId: cfg.folderId ?? "",
+      page,
+      searchType: toSearchType(request.region ?? cfg.region),
+      localization: toLocalization(request.language ?? cfg.localization),
     });
-    const l10n = request.language === "ru" ? "ru" : "en";
-    params.set("l10n", l10n);
-    const lr = providerConfig.yandex.region;
-    if (lr) params.set("lr", lr);
-    return `${ENDPOINT}?${params.toString()}`;
+    const json = await postJson(YANDEX_V2_ENDPOINT, body, {
+      timeoutMs: cfg.timeoutMs,
+      // Secret travels in the header only; never logged, never in the URL.
+      headers: { Authorization: `Api-Key ${cfg.apiKey ?? ""}` },
+    });
+    return decodeYandexV2RawData(json);
   }
 
   async search(request: SearchProviderRequest): Promise<ProviderRunResult> {
@@ -89,25 +104,21 @@ export class YandexSearchProvider implements SearchProvider {
       };
     }
 
-    const limit = Math.min(request.limit ?? providerConfig.maxResults, providerConfig.maxResults);
-    const snapshots: unknown[] = [];
+    const limit = Math.min(
+      request.limit ?? providerConfig.yandex.resultsPerQuery,
+      providerConfig.yandex.resultsPerQuery
+    );
     const results: SearchProviderResult[] = [];
 
     try {
-      let page = request.page && request.page > 1 ? request.page - 1 : 0; // Yandex page is 0-based
+      let page = request.page && request.page > 1 ? request.page - 1 : 0; // 0-based
       while (results.length < limit) {
-        const xml = await getText(this.buildUrl(request, page), {
-          timeoutMs: providerConfig.timeoutMs,
-        });
-        snapshots.push(xml);
+        const xml = await this.fetchPageXml(request, page);
         const error = firstTag(xml, "error");
         if (error) {
           // Yandex signals quota/auth issues via <error code="...">.
           const isRate = /limit|quota|too many/i.test(error);
-          throw Object.assign(new Error(stripTags(error)), {
-            __yandex: true,
-            isRate,
-          });
+          throw Object.assign(new Error(stripTags(error)), { __yandex: true, isRate });
         }
         const mapped = this.normalize(xml, request).map((r) => ({
           ...r,
@@ -124,7 +135,7 @@ export class YandexSearchProvider implements SearchProvider {
           status: "FAILED",
           provider: this.name,
           results,
-          rawSnapshot: snapshots,
+          // rawSnapshot intentionally omitted: never persist raw XML/secrets.
           error: {
             code: e.isRate ? "PROVIDER_RATE_LIMITED" : "PROVIDER_BAD_RESPONSE",
             message: e.message,
@@ -133,11 +144,31 @@ export class YandexSearchProvider implements SearchProvider {
           },
         };
       }
+      if (err instanceof YandexV2ParseError) {
+        return {
+          status: "FAILED",
+          provider: this.name,
+          results,
+          error: {
+            code: "PROVIDER_INVALID_RESPONSE",
+            message: err.message,
+            retryable: false,
+            provider: this.name,
+          },
+        };
+      }
+      if (err instanceof ProviderHttpError) {
+        return {
+          status: "FAILED",
+          provider: this.name,
+          results,
+          error: { code: err.code, message: err.message, retryable: err.retryable, provider: this.name },
+        };
+      }
       return {
         status: "FAILED",
         provider: this.name,
         results,
-        rawSnapshot: snapshots,
         error: toProviderError(err, this.name),
       };
     }
@@ -146,7 +177,6 @@ export class YandexSearchProvider implements SearchProvider {
       status: "SUCCESS",
       provider: this.name,
       results: results.slice(0, limit),
-      rawSnapshot: snapshots,
     };
   }
 

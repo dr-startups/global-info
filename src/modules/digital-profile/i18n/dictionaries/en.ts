@@ -92,6 +92,9 @@ export const en: Dictionary = {
     real: "Real",
     system: "System",
     providerStatus: "Provider status",
+    realRunConfirm: "This will run a real external search API request. Costs may apply.",
+    realYandexHint:
+      "Real Yandex search finished. You can now generate a SERP Snapshot — it will be built on real Yandex results.",
   },
   report: {
     title: "Report preview",
@@ -219,6 +222,20 @@ export const en: Dictionary = {
     reviewCol: "Review",
     emptyTitle: "No search results",
     emptyHint: "Add results manually above or adjust the source filter.",
+    riskCol: "Risk",
+    themeCol: "Theme",
+    classifyResults: "Classify results",
+    classifying: "Classifying…",
+    classifyResult:
+      "Classified {classified} of {scanned}; {risky} risky, findings +{created}/~{updated}.",
+    manualMarker: "manual",
+    markAdverse: "Mark adverse",
+    markNeutral: "Mark neutral",
+    assignTheme: "Assign theme",
+    clearManual: "Clear",
+    actions: "Actions",
+    classifyNote:
+      "Search results are evidence candidates, not verified facts. Red frames mark risk-classified or manually reviewed results — not a final conclusion.",
   },
   surfaces: {
     queryText: "Query text",
@@ -269,6 +286,19 @@ export const en: Dictionary = {
     resultCount: "Total results",
     generatedAt: "Generated at",
     generated: "Snapshot generated",
+    realBadge: "Includes real search results",
+    mixedSources: "mock + real",
+    dataSourceLabel: "Data source",
+    dsAuto: "Auto: prefer real when available",
+    dsRealOnly: "Real only",
+    dsMockOnly: "Demo/mock only",
+    dsMixed: "Mixed",
+    badgeReal: "Using real search results",
+    badgeMixed: "Mixed mode: real + mock",
+    badgeMock: "Demo/mock only",
+    badgeEmpty: "No data",
+    noHighlightsWarning:
+      "Real results were collected, but no risky publications were detected. Run classification or manual review to show red frames.",
   },
   wikipedia: {
     title: "Wikipedia",

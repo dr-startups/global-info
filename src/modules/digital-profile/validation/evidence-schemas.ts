@@ -91,6 +91,42 @@ export const ClassifySearchResultSchema = z
     message: "Provide classification and/or reviewStatus",
   });
 
+// Stage N1.3 — richer (rawMetadata-backed) manual classification taxonomy.
+export const RESULT_CLASS_N13_VALUES = [
+  "RELEVANT",
+  "NEUTRAL",
+  "SOCIAL_PROFILE",
+  "CORPORATE",
+  "NEWS",
+  "ADVERSE_MEDIA",
+  "SANCTIONS",
+  "PEP",
+  "CRIMINAL",
+  "LEGAL_DISPUTE",
+  "HIGH_RISK",
+  "UNKNOWN",
+] as const;
+
+export const RESULT_RISK_THEME_VALUES = [
+  "sanctions",
+  "pep",
+  "legal_dispute",
+  "adverse_media",
+  "criminal",
+  "reputation",
+  "political_exposure",
+  "business_conflict",
+  "other",
+] as const;
+
+export const ManualResultClassificationSchema = z.object({
+  classification: z.enum(RESULT_CLASS_N13_VALUES),
+  riskTheme: z.enum(RESULT_RISK_THEME_VALUES).optional(),
+  rationale: z.string().trim().max(2000).optional(),
+});
+
+export type ManualResultClassificationInput = z.infer<typeof ManualResultClassificationSchema>;
+
 export const AddDatabaseProfileSchema = z.object({
   provider: z.enum(DATABASE_PROVIDER_VALUES),
   importMethod: z.enum(IMPORT_METHOD_VALUES).default("MANUAL_IMPORT"),

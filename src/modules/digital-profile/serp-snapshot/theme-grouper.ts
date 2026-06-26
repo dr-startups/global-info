@@ -17,8 +17,30 @@ import type {
 
 const THEME_COLOR = "#d1342f";
 
+/**
+ * Human titles for risk-theme keys (Stage N1.3) and legacy classification keys.
+ * Keys are matched case-insensitively in `titleForKey`.
+ */
 const CLASSIFICATION_LABELS: Record<SerpLanguage, Record<string, string>> = {
   ru: {
+    // N1.3 risk-theme keys
+    sanctions: "Санкционные списки",
+    pep: "Публичные должностные лица (PEP)",
+    political_exposure: "Политическая значимость (PEP)",
+    legal_dispute: "Судебные и правовые споры",
+    adverse_media: "Негативные публикации в СМИ",
+    criminal: "Криминальные материалы",
+    reputation: "Репутационные источники",
+    business_conflict: "Деловые конфликты",
+    other: "Потенциально негативные публикации",
+    // legacy classifier theme keys
+    pep_rca: "Публичные должностные лица (PEP)",
+    legal: "Судебные и правовые материалы",
+    criminal_allegation: "Криминальные материалы",
+    politics: "Политическая значимость",
+    offshore: "Офшорные структуры",
+    compliance_database: "Базы комплаенс-проверки",
+    // legacy enum classifications
     ADVERSE_MEDIA: "Негативные публикации в СМИ",
     LEGAL: "Судебные и правовые материалы",
     SANCTIONS: "Санкционные списки",
@@ -28,6 +50,21 @@ const CLASSIFICATION_LABELS: Record<SerpLanguage, Record<string, string>> = {
     CRIMINAL: "Криминальные материалы",
   },
   en: {
+    sanctions: "Sanctions lists",
+    pep: "Politically exposed persons (PEP)",
+    political_exposure: "Political exposure (PEP)",
+    legal_dispute: "Legal disputes & court records",
+    adverse_media: "Adverse media coverage",
+    criminal: "Criminal records",
+    reputation: "Reputation sources",
+    business_conflict: "Business conflicts",
+    other: "Potentially negative publications",
+    pep_rca: "Politically exposed persons (PEP)",
+    legal: "Legal & court records",
+    criminal_allegation: "Criminal records",
+    politics: "Political exposure",
+    offshore: "Offshore structures",
+    compliance_database: "Compliance screening databases",
     ADVERSE_MEDIA: "Adverse media coverage",
     LEGAL: "Legal & court records",
     SANCTIONS: "Sanctions lists",
@@ -55,24 +92,24 @@ export function themeLabel(language: SerpLanguage, themeNumber: number): string 
   return `${THEME_WORD[language]} ${themeNumber}`;
 }
 
-function normalizeClassification(value: string): string {
-  return value.trim().toUpperCase();
-}
-
-/** True when a result counts as negative/risky per the configured classes. */
+/**
+ * True when a result should get a red frame. Stage N1.3: the decision is resolved
+ * upstream (manual > findings > auto MEDIUM/HIGH > legacy enum) and carried on the
+ * loaded row, so grouping no longer re-derives risk from the raw classification.
+ */
 export function isNegative(result: LoadedResult): boolean {
-  return serpSnapshotConfig.highlightClassifications.includes(
-    normalizeClassification(result.classification)
-  );
+  return result.isHighlighted === true;
 }
 
-/** Human-readable theme title for a grouping key. */
-function titleForKey(
-  key: { kind: "theme"; value: string } | { kind: "class"; value: string },
-  language: SerpLanguage
-): string {
-  if (key.kind === "theme") return key.value;
-  return CLASSIFICATION_LABELS[language][key.value] ?? FALLBACK_TITLE[language];
+/** Human-readable theme title for a grouping key (theme key or legacy enum). */
+function titleForKey(key: string, language: SerpLanguage): string {
+  const labels = CLASSIFICATION_LABELS[language];
+  return (
+    labels[key] ??
+    labels[key.toLowerCase()] ??
+    labels[key.toUpperCase()] ??
+    FALLBACK_TITLE[language]
+  );
 }
 
 interface Bucket {
@@ -97,18 +134,19 @@ export function groupThemes(
 
   for (const r of results) {
     if (!isNegative(r)) continue;
-    // Group by explicit riskTheme when present, else by classification.
-    const key =
-      r.riskTheme && r.riskTheme.trim() !== ""
-        ? ({ kind: "theme", value: r.riskTheme.trim() } as const)
-        : ({ kind: "class", value: normalizeClassification(r.classification) } as const);
-    const groupKey = `${key.kind}:${key.value.toLowerCase()}`;
+    // Group by the resolved risk theme (Stage N1.3), falling back to the raw
+    // classification or "other" when no theme is available.
+    const themeKey =
+      (r.riskTheme && r.riskTheme.trim() !== "" && r.riskTheme.trim()) ||
+      (r.classification && r.classification.trim() !== "" && r.classification.trim()) ||
+      "other";
+    const groupKey = themeKey.toLowerCase();
 
     let bucket = buckets.get(groupKey);
     if (!bucket) {
       bucket = {
         groupKey,
-        title: titleForKey(key, language),
+        title: r.themeTitle ?? titleForKey(themeKey, language),
         resultIds: [],
         firstSeen: order++,
       };

@@ -6,8 +6,9 @@ import {
   getSerpSnapshot,
   DigitalProfileApiError,
   type SerpSnapshot,
+  type SourcePreference,
 } from "./api";
-import { EmptyState, ErrorBox, Notice, SuccessBox } from "./components";
+import { Badge, EmptyState, ErrorBox, Notice, SuccessBox, WarningBox } from "./components";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
 
@@ -24,6 +25,7 @@ export function SerpSnapshotTab({
 
   const [snapshot, setSnapshot] = useState<SerpSnapshot | null>(null);
   const [query, setQuery] = useState(subjectName ?? "");
+  const [sourcePreference, setSourcePreference] = useState<SourcePreference>("prefer_real");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +56,10 @@ export function SerpSnapshotTab({
     setError(null);
     setInfo(null);
     try {
-      const res = await generateSerpSnapshot(caseId, { query: query.trim() || undefined });
+      const res = await generateSerpSnapshot(caseId, {
+        query: query.trim() || undefined,
+        sourcePreference,
+      });
       setSnapshot(res.snapshot);
       setInfo(t("serpSnapshot.generated"));
     } catch (err) {
@@ -81,6 +86,19 @@ export function SerpSnapshotTab({
               placeholder={t("serpSnapshot.queryPlaceholder")}
               onChange={(e) => setQuery(e.target.value)}
             />
+          </div>
+          <div className="dp-field dp-field-full">
+            <label>{t("serpSnapshot.dataSourceLabel")}</label>
+            <select
+              className="dp-input"
+              value={sourcePreference}
+              onChange={(e) => setSourcePreference(e.target.value as SourcePreference)}
+            >
+              <option value="prefer_real">{t("serpSnapshot.dsAuto")}</option>
+              <option value="real_only">{t("serpSnapshot.dsRealOnly")}</option>
+              <option value="mock_only">{t("serpSnapshot.dsMockOnly")}</option>
+              <option value="mixed">{t("serpSnapshot.dsMixed")}</option>
+            </select>
           </div>
         </div>
       ) : null}
@@ -112,6 +130,23 @@ export function SerpSnapshotTab({
         <p className="dp-muted">{t("common.loading")}</p>
       ) : snapshot ? (
         <div>
+          <div style={{ marginBottom: 12 }}>
+            {snapshot.sourceMode === "REAL_ONLY" ? (
+              <Badge tone="ok">{t("serpSnapshot.badgeReal")}</Badge>
+            ) : snapshot.sourceMode === "MIXED" ? (
+              <Badge tone="warn">{t("serpSnapshot.badgeMixed")}</Badge>
+            ) : snapshot.sourceMode === "EMPTY" ? (
+              <Badge tone="danger">{t("serpSnapshot.badgeEmpty")}</Badge>
+            ) : (
+              <Badge tone="neutral">{t("serpSnapshot.badgeMock")}</Badge>
+            )}
+          </div>
+          {(snapshot.sourceMode === "REAL_ONLY" || snapshot.sourceMode === "MIXED") &&
+          snapshot.highlightedCount === 0 ? (
+            <div style={{ marginBottom: 12 }}>
+              <WarningBox>{t("serpSnapshot.noHighlightsWarning")}</WarningBox>
+            </div>
+          ) : null}
           <div className="dp-grid-cards" style={{ marginBottom: 12 }}>
             <div className="dp-card" style={{ padding: 12 }}>
               <div className="dp-muted">{t("serpSnapshot.mode")}</div>

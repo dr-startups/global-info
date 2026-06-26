@@ -410,6 +410,17 @@ function renderFooter(vm: SerpSnapshotViewModel, L: SnapshotLayout): string {
   parts.push(
     svgText(L.pad, L.footerY, vm.footerNote, { size: FS.footer, fill: COLORS.muted, opacity: 0.85 })
   );
+  // Stage N1.2 — secrets-free source attribution, right-aligned on the same row.
+  if (vm.sourceLabel) {
+    parts.push(
+      svgText(vm.width - L.pad, L.footerY, vm.sourceLabel, {
+        size: FS.footer,
+        fill: COLORS.muted,
+        anchor: "end",
+        opacity: 0.85,
+      })
+    );
+  }
   return parts.join("\n");
 }
 

@@ -109,6 +109,8 @@ export interface Dictionary {
     real: string;
     system: string;
     providerStatus: string;
+    realRunConfirm: string;
+    realYandexHint: string;
   };
   report: {
     title: string;
@@ -230,6 +232,18 @@ export interface Dictionary {
     reviewCol: string;
     emptyTitle: string;
     emptyHint: string;
+    riskCol: string;
+    themeCol: string;
+    classifyResults: string;
+    classifying: string;
+    classifyResult: string;
+    manualMarker: string;
+    markAdverse: string;
+    markNeutral: string;
+    assignTheme: string;
+    clearManual: string;
+    actions: string;
+    classifyNote: string;
   };
   surfaces: {
     queryText: string;
@@ -277,6 +291,18 @@ export interface Dictionary {
     resultCount: string;
     generatedAt: string;
     generated: string;
+    realBadge: string;
+    mixedSources: string;
+    dataSourceLabel: string;
+    dsAuto: string;
+    dsRealOnly: string;
+    dsMockOnly: string;
+    dsMixed: string;
+    badgeReal: string;
+    badgeMixed: string;
+    badgeMock: string;
+    badgeEmpty: string;
+    noHighlightsWarning: string;
   };
   wikipedia: {
     title: string;
