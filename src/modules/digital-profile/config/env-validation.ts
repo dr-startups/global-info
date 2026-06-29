@@ -132,6 +132,32 @@ export function validateDigitalProfileEnv(
     }
   }
 
+  // Stage N2 — real Google connector (independent dedicated flag + strategy).
+  if (bool(env.DIGITAL_PROFILE_GOOGLE_REAL_ENABLED)) {
+    const strategy = (env.GOOGLE_SEARCH_PROVIDER ?? "").trim().toLowerCase();
+    if (strategy !== "custom_search" && strategy !== "external_serp") {
+      warnings.push(
+        "DIGITAL_PROFILE_GOOGLE_REAL_ENABLED=true but GOOGLE_SEARCH_PROVIDER is not set to 'custom_search' or 'external_serp'; the real Google provider will resolve to DISABLED."
+      );
+    } else if (strategy === "custom_search") {
+      if (!env.GOOGLE_SEARCH_API_KEY || !env.GOOGLE_SEARCH_ENGINE_ID) {
+        warnings.push(
+          "GOOGLE_SEARCH_PROVIDER=custom_search but GOOGLE_SEARCH_API_KEY / GOOGLE_SEARCH_ENGINE_ID are missing; the real Google provider will resolve to NOT_CONFIGURED."
+        );
+      }
+    } else if (strategy === "external_serp") {
+      if (!env.GOOGLE_EXTERNAL_SERP_PROVIDER) {
+        warnings.push(
+          "GOOGLE_SEARCH_PROVIDER=external_serp but GOOGLE_EXTERNAL_SERP_PROVIDER is not selected; the real Google provider will resolve to NOT_CONFIGURED."
+        );
+      } else if (!env.GOOGLE_EXTERNAL_SERP_API_KEY) {
+        warnings.push(
+          "GOOGLE_EXTERNAL_SERP_PROVIDER is selected but GOOGLE_EXTERNAL_SERP_API_KEY is missing; the real Google provider will resolve to NOT_CONFIGURED."
+        );
+      }
+    }
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 

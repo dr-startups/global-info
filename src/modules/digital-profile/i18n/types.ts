@@ -111,6 +111,7 @@ export interface Dictionary {
     providerStatus: string;
     realRunConfirm: string;
     realYandexHint: string;
+    realGoogleHint: string;
   };
   report: {
     title: string;

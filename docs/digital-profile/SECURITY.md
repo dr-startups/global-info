@@ -35,6 +35,17 @@ design. This checklist captures the guarantees and the operational rules.
 - [x] **Stage N1.3 — result classification:** the search-result classifier is
       **deterministic** (RU/EN keyword dictionaries, no LLM, no network). It runs
       only over already-stored evidence; it never fetches or scrapes anything.
+- [x] **Stage N2 — Google real API:** `GOOGLE_SEARCH_API_KEY` / `GOOGLE_SEARCH_ENGINE_ID`
+      (`cx`) are required as query params by the Custom Search API, but request URLs
+      are **redacted** before any logging and the secrets are **never** stored in the
+      DB or `rawMetadata`; docs show empty placeholders only. **No scraping, no
+      Playwright** — official API only. `external_serp` is an enum-named skeleton
+      (no arbitrary URLs from env → SSRF guard) and never falls back to mock.
+- [x] `REAL_GOOGLE_SEARCH_RUN` audit entries record only
+      `actorId / caseId / providerType / queryCount / resultCount / durationMs /
+      outcome / errorCode` — **no API key, no engine id, no raw provider response**.
+      Google API errors (401/403 no-access, quota/429, timeout) surface as
+      **normalized errors** and are **never hidden under a mock fallback**.
 - [x] A search result is an **evidence candidate, not a verified fact**. An
       adverse flag requires the deterministic classifier *or* an analyst manual
       review; a single weak topical term yields only `LOW` confidence and **never**
@@ -61,9 +72,11 @@ design. This checklist captures the guarantees and the operational rules.
       **official API or manual import only**.
 - [x] Google/Yandex via **official APIs only**; missing keys → `NOT_CONFIGURED`
       (never a fake call). The Stage N1 real Yandex provider uses the official
-      Yandex Cloud Search API v2 only; results are **evidence candidates, not
-      verified facts**, and only an `ADMIN`/`SUPER_ADMIN` (real-agent permission)
-      may trigger it after case-access + lawful-basis checks.
+      Yandex Cloud Search API v2 only; the Stage N2 real Google provider uses the
+      Custom Search JSON API (or a separately-selected external SERP API). Results
+      are **evidence candidates, not verified facts**, and only an
+      `ADMIN`/`SUPER_ADMIN` (real-agent permission) may trigger them after
+      case-access + lawful-basis checks.
 - [x] Wikipedia via the **public** MediaWiki/REST API; read-only, never
       auto-publishes.
 

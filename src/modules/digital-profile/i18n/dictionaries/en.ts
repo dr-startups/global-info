@@ -95,6 +95,8 @@ export const en: Dictionary = {
     realRunConfirm: "This will run a real external search API request. Costs may apply.",
     realYandexHint:
       "Real Yandex search finished. You can now generate a SERP Snapshot — it will be built on real Yandex results.",
+    realGoogleHint:
+      "Real Google search finished. The SERP Snapshot will now use real Google results.",
   },
   report: {
     title: "Report preview",

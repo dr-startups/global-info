@@ -39,6 +39,10 @@ See `.env.example` for the full, commented list. Key ones:
 | `DIGITAL_PROFILE_YANDEX_ENABLED` + `YANDEX_SEARCH_API_KEY` + `YANDEX_SEARCH_FOLDER_ID` + `YANDEX_SEARCH_REGION` | Yandex legacy XML API (H2) |
 | `DIGITAL_PROFILE_YANDEX_REAL_ENABLED` + `YANDEX_SEARCH_API_KEY` + `YANDEX_SEARCH_FOLDER_ID` | **Stage N1** — official Yandex Cloud Search API v2 (`REAL_YANDEX_SEARCH`) |
 | `YANDEX_SEARCH_TIMEOUT_MS` / `YANDEX_SEARCH_MAX_QUERIES_PER_AUDIT` / `YANDEX_SEARCH_RESULTS_PER_QUERY` / `YANDEX_SEARCH_LOCALIZATION` | Yandex real-provider tuning (optional) |
+| `DIGITAL_PROFILE_GOOGLE_REAL_ENABLED` + `GOOGLE_SEARCH_PROVIDER` | **Stage N2** — real Google search (`REAL_GOOGLE_SEARCH`); strategy `custom_search` / `external_serp` / `disabled` |
+| `GOOGLE_SEARCH_API_KEY` + `GOOGLE_SEARCH_ENGINE_ID` | Custom Search credentials (when `GOOGLE_SEARCH_PROVIDER=custom_search`) |
+| `GOOGLE_SEARCH_TIMEOUT_MS` / `GOOGLE_SEARCH_MAX_QUERIES_PER_AUDIT` / `GOOGLE_SEARCH_RESULTS_PER_QUERY` / `GOOGLE_SEARCH_GL` / `GOOGLE_SEARCH_HL` | Google real-provider tuning (optional) |
+| `GOOGLE_EXTERNAL_SERP_PROVIDER` + `GOOGLE_EXTERNAL_SERP_API_KEY` | External SERP API (enum name only; skeleton, not wired) |
 | `DIGITAL_PROFILE_PROVIDER_TIMEOUT_MS` / `DIGITAL_PROFILE_PROVIDER_MAX_RESULTS` | Keyed provider HTTP limits |
 | `DIGITAL_PROFILE_AUTH_ENABLED` | Auth + roles master switch (default `false`) |
 | `DIGITAL_PROFILE_SESSION_SECRET` | HMAC secret for the session cookie (required when auth enabled) |
@@ -326,6 +330,51 @@ Notes:
 - Search results are **evidence candidates, not verified facts**. The ORION
   snapshot remains a synthetic visual built from this real API evidence — it is
   not a live SERP screenshot.
+
+## Real Google Search (Stage N2)
+
+The `REAL_GOOGLE_SEARCH` agent populates `search_results` with **real** evidence
+(`source=real:GOOGLE`) using a **provider-agnostic** strategy. There is **no
+browser scraping and no Playwright** — official APIs only.
+
+`GOOGLE_SEARCH_PROVIDER` selects the strategy:
+
+- `custom_search` — Google Programmable Search [Custom Search JSON API](https://developers.google.com/custom-search/v1/overview)
+  (`GET https://www.googleapis.com/customsearch/v1`, `key` + `cx`).
+- `external_serp` — a separately-selected paid SERP API. This build ships only an
+  **interface/skeleton** (`ExternalGoogleSerpProvider`); no concrete vendor is
+  wired. Selecting it without an implemented adapter resolves to a clear provider
+  error — it **never** silently falls back to mock.
+- `disabled` (default) — no real Google.
+
+To enable real Google (Custom Search) set:
+
+| Variable | Value |
+| --- | --- |
+| `DIGITAL_PROFILE_GOOGLE_REAL_ENABLED` | `true` |
+| `GOOGLE_SEARCH_PROVIDER` | `custom_search` |
+| `GOOGLE_SEARCH_API_KEY` | *(secret — Google API key)* |
+| `GOOGLE_SEARCH_ENGINE_ID` | *(Programmable Search engine id / `cx`)* |
+| `GOOGLE_SEARCH_TIMEOUT_MS` | `15000` (optional) |
+| `GOOGLE_SEARCH_MAX_QUERIES_PER_AUDIT` | `3` (optional) |
+| `GOOGLE_SEARCH_RESULTS_PER_QUERY` | `10` (optional) |
+| `GOOGLE_SEARCH_GL` / `GOOGLE_SEARCH_HL` | `ru` (optional) |
+
+Notes:
+
+- **Migration risk.** The Custom Search JSON API may be unavailable to **new**
+  Google Cloud projects, or limited to a configured site list. Verify access
+  before relying on it; a 403 "access not configured" surfaces as a normalized
+  provider error in the UI (never hidden under mock).
+- **Full-web coverage** may require an external SERP provider chosen separately.
+- **Paid API.** Each run issues up to `GOOGLE_SEARCH_MAX_QUERIES_PER_AUDIT`
+  billable queries. Keep the flag OFF by default; enable only for real audits.
+- `key`/`cx` are required as query params by Google, but are **never** logged
+  (URLs are redacted) and **never** stored in the DB or `rawMetadata`.
+- Provider status: `GET /api/digital-profile/providers` (`Google Search Real`:
+  `kind=REAL`, `enabled`/`configured`/`supportsRealCalls`, `missingConfigKeys`).
+- With real Yandex + real Google present, the SERP snapshot becomes `REAL_ONLY`
+  and the footer reads "real Yandex Search API data / real Google Search API data".
 
 ## Known limitations
 

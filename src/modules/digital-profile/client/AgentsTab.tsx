@@ -52,6 +52,7 @@ export function AgentsTab({
     try {
       await runAgentApi(caseId, name);
       if (name === "REAL_YANDEX_SEARCH") setInfo(t("agents.realYandexHint"));
+      if (name === "REAL_GOOGLE_SEARCH") setInfo(t("agents.realGoogleHint"));
       onChanged();
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
