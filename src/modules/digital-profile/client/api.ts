@@ -303,7 +303,38 @@ export interface DatabaseProfile {
   matchScore: number | null;
   evidenceRefs: EvidenceRef[];
   importedAt: string;
+  importedBy?: string | null;
+  hitSource?: string;
+  subjectName?: string | null;
+  matchedName?: string | null;
+  riskTypes?: string[];
+  countries?: string[];
+  confidence?: string | null;
+  profileUrl?: string | null;
+  summary?: string | null;
+  reviewStatus?: string;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  riskFindingId?: string | null;
 }
+
+export type ComplianceRiskType =
+  | "SANCTIONS"
+  | "PEP"
+  | "ADVERSE_MEDIA"
+  | "WATCHLIST"
+  | "LAW_ENFORCEMENT"
+  | "LEGAL"
+  | "INSOLVENCY"
+  | "POLITICAL_EXPOSURE"
+  | "OTHER";
+
+export type ComplianceHitReviewStatus =
+  | "PENDING"
+  | "MATCH_CONFIRMED"
+  | "FALSE_POSITIVE"
+  | "NEEDS_REVIEW"
+  | "DISMISSED";
 
 export interface WikipediaCheck {
   id: string;
@@ -465,8 +496,8 @@ export interface ProviderCapabilities {
 }
 
 export interface ProviderStatus {
-  name: "WIKIPEDIA" | "GOOGLE" | "YANDEX";
-  kind: "MOCK" | "REAL";
+  name: "WIKIPEDIA" | "GOOGLE" | "YANDEX" | "DOW_JONES" | "LEXISNEXIS" | "WORLD_CHECK" | "MANUAL_IMPORT";
+  kind: "MOCK" | "REAL" | "MANUAL";
   label: string;
   enabled: boolean;
   configured: boolean;
@@ -474,7 +505,7 @@ export interface ProviderStatus {
   missingConfigKeys: string[];
   supportsRealCalls: boolean;
   notes: string;
-  capabilities: ProviderCapabilities;
+  capabilities?: ProviderCapabilities;
 }
 
 // ---------------------------------------------------------------------------
@@ -787,6 +818,49 @@ export function runFullAudit(caseId: string): Promise<FullAuditResult> {
 
 export function listProviders(): Promise<ProviderStatus[]> {
   return request<ProviderStatus[]>("/providers");
+}
+
+export function runComplianceScreening(
+  caseId: string,
+  provider: "DOW_JONES" | "LEXISNEXIS" | "WORLD_CHECK"
+): Promise<{ status: string; hits: unknown[]; error?: { code: string; message: string } }> {
+  return request(`/cases/${caseId}/compliance/screen`, {
+    method: "POST",
+    body: JSON.stringify({ provider }),
+  });
+}
+
+export function importManualComplianceHit(
+  caseId: string,
+  input: {
+    provider: string;
+    matchedName: string;
+    profileUrl?: string;
+    profileId?: string;
+    categories?: string[];
+    riskTypes: ComplianceRiskType[];
+    countries?: string[];
+    datesOfBirth?: string[];
+    summary?: string;
+    evidenceUrl?: string;
+    matchScore?: number;
+    confidence?: "LOW" | "MEDIUM" | "HIGH";
+  }
+): Promise<DatabaseProfile> {
+  return request<DatabaseProfile>(`/cases/${caseId}/compliance/manual-import`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function reviewComplianceHit(
+  hitId: string,
+  reviewStatus: ComplianceHitReviewStatus
+): Promise<DatabaseProfile> {
+  return request<DatabaseProfile>(`/database-profiles/${hitId}/review`, {
+    method: "PATCH",
+    body: JSON.stringify({ reviewStatus }),
+  });
 }
 
 // ---------------------------------------------------------------------------

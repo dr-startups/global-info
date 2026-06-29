@@ -148,6 +148,19 @@ export interface DatabaseProfileDTO {
   matchScore: number | null;
   evidenceRefs: EvidenceRef[];
   importedAt: Date;
+  importedBy?: string | null;
+  hitSource?: string;
+  subjectName?: string | null;
+  matchedName?: string | null;
+  riskTypes?: string[];
+  countries?: string[];
+  confidence?: string | null;
+  profileUrl?: string | null;
+  summary?: string | null;
+  reviewStatus?: string;
+  reviewedBy?: string | null;
+  reviewedAt?: Date | null;
+  riskFindingId?: string | null;
 }
 
 export interface WikipediaCheckDTO {
@@ -599,6 +612,19 @@ export async function listEvidence(caseId: string): Promise<CaseEvidenceDTO> {
         matchScore: true,
         evidenceRefs: true,
         importedAt: true,
+        importedBy: true,
+        hitSource: true,
+        subjectName: true,
+        matchedName: true,
+        riskTypes: true,
+        countries: true,
+        confidence: true,
+        profileUrl: true,
+        summary: true,
+        reviewStatus: true,
+        reviewedBy: true,
+        reviewedAt: true,
+        riskFindingId: true,
       },
     }),
     prisma.wikipediaCheck.findMany({
@@ -653,6 +679,8 @@ export async function listEvidence(caseId: string): Promise<CaseEvidenceDTO> {
     databaseProfiles: databaseProfiles.map((d) => ({
       ...d,
       evidenceRefs: asEvidenceRefs(d.evidenceRefs),
+      riskTypes: Array.isArray(d.riskTypes) ? (d.riskTypes as string[]) : [],
+      countries: Array.isArray(d.countries) ? (d.countries as string[]) : [],
     })),
     wikipediaChecks,
     aiProfiles,

@@ -266,26 +266,37 @@ export function classifyWikipedia(w: LoadedWikipediaCheck): RiskClassificationRe
 // ---------------------------------------------------------------------------
 
 export function classifyDatabaseProfile(d: LoadedDatabaseProfile): RiskClassificationResult[] {
-  const matchType = (d.matchType ?? "").toUpperCase();
-  const category = matchType;
-  const isMaterial =
-    /PEP|RCA|SANCTION|ADVERSE/.test(category) || (d.matchScore ?? 0) >= 60;
-  if (!isMaterial) return [];
+  const reviewStatus = d.reviewStatus ?? "PENDING";
+  if (reviewStatus === "FALSE_POSITIVE" || reviewStatus === "DISMISSED") return [];
 
-  const isSanction = /SANCTION/.test(category);
-  const level: RiskLevel = isSanction || d.provider === "WORLD_CHECK" ? "CRITICAL" : "HIGH";
+  const riskTypes = d.riskTypes ?? [];
+  const matchType = (d.matchType ?? "").toUpperCase();
+  const hasMaterialRisk =
+    riskTypes.some((rt) =>
+      ["SANCTIONS", "PEP", "WATCHLIST", "LAW_ENFORCEMENT", "ADVERSE_MEDIA"].includes(rt)
+    ) || /PEP|RCA|SANCTION|ADVERSE/.test(matchType);
+
+  if (!hasMaterialRisk && (d.matchScore ?? 0) < 45) return [];
+
+  const isSanction = riskTypes.includes("SANCTIONS") || /SANCTION/.test(matchType);
+  const level: RiskLevel =
+    reviewStatus === "MATCH_CONFIRMED" && isSanction
+      ? "CRITICAL"
+      : reviewStatus === "MATCH_CONFIRMED"
+        ? "HIGH"
+        : "LOW";
   const theme: RiskTheme = isSanction
     ? "sanctions"
-    : /PEP|RCA/.test(category)
+    : riskTypes.includes("PEP") || /PEP|RCA/.test(matchType)
       ? "pep_rca"
-      : /ADVERSE/.test(category)
+      : riskTypes.includes("ADVERSE_MEDIA") || /ADVERSE/.test(matchType)
         ? "adverse_media"
         : "compliance_database";
 
   const ref: RiskEvidenceRef = {
     type: "DATABASE_PROFILE",
     id: d.id,
-    title: `${d.provider} ${d.matchType ?? "record"}`,
+    title: `${d.provider} ${d.matchType ?? "potential match"}`,
     provider: d.provider,
   };
   return [
@@ -293,11 +304,11 @@ export function classifyDatabaseProfile(d: LoadedDatabaseProfile): RiskClassific
       "COMPLIANCE_DATABASE_MATCH",
       theme,
       level,
-      `Compliance database match — ${d.provider}`,
-      `A ${d.matchType ?? "match"} record was found in ${d.provider} screening${d.matchScore != null ? ` (score ${d.matchScore})` : ""}. Requires manual verification before any conclusion.`,
+      `Potential compliance match — ${d.provider}`,
+      `A potential ${d.matchType ?? "match"} in ${d.provider} requires analyst review before any conclusion.${d.matchScore != null ? ` Match score ${d.matchScore} (not verified).` : ""}`,
       [ref],
-      0.7,
-      "Compliance database profile has a material match category/score.",
+      0.5,
+      "Compliance database potential match — review required.",
       false
     ),
   ];

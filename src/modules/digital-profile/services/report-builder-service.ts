@@ -21,6 +21,7 @@ import { recordAudit } from "./audit-log-service";
 import { digitalProfileConfig, reportPricing } from "../config";
 import { buildStaticPages } from "../report/static-pages";
 import { buildAuditSummary } from "../audit-summary/builder";
+import { buildComplianceSummaryBlock } from "../compliance-providers";
 import { buildOfferConfig } from "../report/offer-config";
 import {
   normalizeReportLanguage,
@@ -200,6 +201,10 @@ export async function buildReportJson(
           matchType: true,
           matchScore: true,
           evidenceRefs: true,
+          hitSource: true,
+          matchedName: true,
+          riskTypes: true,
+          reviewStatus: true,
         },
       }),
       prisma.aiProfile.findMany({
@@ -361,13 +366,19 @@ export async function buildReportJson(
       kind: "COMPLIANCE_DATABASES",
       templateSlide: "compliance_databases",
       title: "Compliance database screening",
+      subtitle:
+        reportLanguage === "ru"
+          ? "Совпадения являются потенциальными и требуют ручной проверки."
+          : "Hits are potential matches and require manual analyst review.",
       table: {
-        columns: ["Provider", "Import method", "Match type", "Score"],
+        columns: ["Provider", "Source", "Matched name", "Risk types", "Score", "Review"],
         rows: dbProfiles.map((d) => [
           d.provider,
-          d.importMethod,
-          d.matchType ?? "—",
+          d.hitSource ?? d.importMethod,
+          d.matchedName ?? "—",
+          Array.isArray(d.riskTypes) ? (d.riskTypes as string[]).join(", ") : d.matchType ?? "—",
           d.matchScore ?? "—",
+          d.reviewStatus ?? "PENDING",
         ]),
       },
       evidence: dbProfiles.flatMap((d) => asEvidenceRefs(d.evidenceRefs)),
@@ -459,6 +470,13 @@ export async function buildReportJson(
     serpSnapshot = undefined;
   }
 
+  let complianceSummary: ReportJson["complianceSummary"];
+  try {
+    complianceSummary = await buildComplianceSummaryBlock(caseId, reportLanguage);
+  } catch {
+    complianceSummary = undefined;
+  }
+
   return {
     meta: {
       caseNumber: caseRow.caseNumber,
@@ -478,6 +496,7 @@ export async function buildReportJson(
     offer: buildOfferConfig(reportLanguage),
     reportLanguage,
     serpSnapshot,
+    complianceSummary,
   };
 }
 

@@ -32,6 +32,7 @@ import {
 } from "./components";
 import { ReportPreviewPanel } from "./ReportPreviewPanel";
 import { AgentsTab } from "./AgentsTab";
+import { ComplianceTab } from "./ComplianceTab";
 import { SurfacesTab } from "./SurfacesTab";
 import { SerpSnapshotTab } from "./SerpSnapshotTab";
 import { AuditSummaryTab } from "./AuditSummaryTab";
@@ -173,7 +174,9 @@ export function CaseTabs({
       ) : null}
       {tab === "wikipedia" ? <WikipediaTab evidence={evidence} /> : null}
       {tab === "ai" ? <AiProfileTab evidence={evidence} /> : null}
-      {tab === "compliance" ? <ComplianceTab evidence={evidence} /> : null}
+      {tab === "compliance" ? (
+        <ComplianceTab caseId={caseDetail.id} evidence={evidence} onChanged={onEvidenceChanged} />
+      ) : null}
       {tab === "risk" ? (
         <RiskFindingsTab caseId={caseDetail.id} evidence={evidence} onChanged={onEvidenceChanged} />
       ) : null}
@@ -719,49 +722,6 @@ function AiProfileTab({ evidence }: { evidence: CaseEvidence }) {
             );
           })}
         </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Compliance databases
-// ---------------------------------------------------------------------------
-
-function ComplianceTab({ evidence }: { evidence: CaseEvidence }) {
-  const { t, fmtDate } = useDigitalProfileI18n();
-  return (
-    <div>
-      <h2 className="dp-h2">{t("compliance.title")}</h2>
-      {evidence.databaseProfiles.length === 0 ? (
-        <EmptyState title={t("compliance.emptyTitle")} hint={t("compliance.emptyHint")} />
-      ) : (
-        <table className="dp-table">
-          <thead>
-            <tr>
-              <th>{t("compliance.provider")}</th>
-              <th>{t("compliance.importMethod")}</th>
-              <th>{t("compliance.matchType")}</th>
-              <th>{t("compliance.score")}</th>
-              <th>{t("compliance.evidence")}</th>
-              <th>{t("compliance.imported")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {evidence.databaseProfiles.map((d) => (
-              <tr key={d.id}>
-                <td>{d.provider}</td>
-                <td>
-                  <Badge tone="info">{d.importMethod.replace(/_/g, " ")}</Badge>
-                </td>
-                <td>{d.matchType ?? "—"}</td>
-                <td>{d.matchScore ?? "—"}</td>
-                <td>{d.evidenceRefs.length}</td>
-                <td className="dp-muted">{fmtDate(d.importedAt)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
       )}
     </div>
   );

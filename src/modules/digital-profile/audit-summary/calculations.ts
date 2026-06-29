@@ -69,6 +69,23 @@ export interface LoadedDb {
   provider: string;
   matchType: string | null;
   matchScore: number | null;
+  reviewStatus?: string;
+  riskTypes?: string[];
+  hitSource?: string;
+}
+
+function isActiveComplianceHit(d: LoadedDb): boolean {
+  const rs = d.reviewStatus ?? "PENDING";
+  return rs !== "FALSE_POSITIVE" && rs !== "DISMISSED";
+}
+
+function riskTypesOf(d: LoadedDb): string[] {
+  if (d.riskTypes && d.riskTypes.length > 0) return d.riskTypes;
+  const mt = (d.matchType ?? "").toUpperCase();
+  if (/SANCTION/.test(mt)) return ["SANCTIONS"];
+  if (/PEP/.test(mt)) return ["PEP"];
+  if (/ADVERSE/.test(mt)) return ["ADVERSE_MEDIA"];
+  return [];
 }
 
 export interface LoadedFinding {
@@ -256,14 +273,16 @@ export function computeComplianceSummary(
   locale: ReportLanguage = "ru"
 ): ComplianceDatabaseSummary {
   const p = auditPhrases(locale);
+  const active = dbs.filter(isActiveComplianceHit);
   const providersChecked = Array.from(new Set(dbs.map((d) => d.provider)));
-  const cat = (d: LoadedDb) => (d.matchType ?? "").toUpperCase();
-  const pepMatches = dbs.filter((d) => /PEP/.test(cat(d))).length;
-  const rcaMatches = dbs.filter((d) => /RCA/.test(cat(d))).length;
-  const sanctionsMatches = dbs.filter((d) => /SANCTION/.test(cat(d))).length;
-  const adverseMediaMatches = dbs.filter((d) => /ADVERSE/.test(cat(d))).length;
-  const activeMatches = dbs.filter(
-    (d) => (d.matchScore ?? 0) >= 60 || /PEP|RCA|SANCTION|ADVERSE/.test(cat(d))
+  const pepMatches = active.filter((d) => riskTypesOf(d).includes("PEP")).length;
+  const rcaMatches = active.filter((d) => /RCA/.test((d.matchType ?? "").toUpperCase())).length;
+  const sanctionsMatches = active.filter((d) => riskTypesOf(d).includes("SANCTIONS")).length;
+  const adverseMediaMatches = active.filter((d) => riskTypesOf(d).includes("ADVERSE_MEDIA")).length;
+  const activeMatches = active.filter(
+    (d) =>
+      (d.matchScore ?? 0) >= 45 ||
+      riskTypesOf(d).some((rt) => ["SANCTIONS", "PEP", "WATCHLIST", "ADVERSE_MEDIA"].includes(rt))
   ).length;
 
   let conclusion: string;
@@ -275,6 +294,11 @@ export function computeComplianceSummary(
     conclusion = p.compPepRca();
   } else if (activeMatches > 0) {
     conclusion = p.compActive();
+  } else if (dbs.some((d) => d.reviewStatus === "PENDING" || d.reviewStatus === "NEEDS_REVIEW")) {
+    conclusion =
+      locale === "ru"
+        ? "Есть потенциальные совпадения, ожидающие проверки аналитиком."
+        : "Potential matches pending analyst review.";
   } else {
     conclusion = p.compNoMaterial();
   }

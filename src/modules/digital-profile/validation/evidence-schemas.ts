@@ -57,6 +57,32 @@ export const DATABASE_PROVIDER_VALUES = [
 
 export const IMPORT_METHOD_VALUES = ["OFFICIAL_API", "MANUAL_IMPORT"] as const;
 
+export const COMPLIANCE_RISK_TYPE_VALUES = [
+  "SANCTIONS",
+  "PEP",
+  "ADVERSE_MEDIA",
+  "WATCHLIST",
+  "LAW_ENFORCEMENT",
+  "LEGAL",
+  "INSOLVENCY",
+  "POLITICAL_EXPOSURE",
+  "OTHER",
+] as const;
+
+export const COMPLIANCE_HIT_REVIEW_STATUS_VALUES = [
+  "PENDING",
+  "MATCH_CONFIRMED",
+  "FALSE_POSITIVE",
+  "NEEDS_REVIEW",
+  "DISMISSED",
+] as const;
+
+export const COMPLIANCE_PROVIDER_SCREEN_VALUES = [
+  "DOW_JONES",
+  "LEXISNEXIS",
+  "WORLD_CHECK",
+] as const;
+
 export const EvidenceRefSchema = z.object({
   type: z.enum(EVIDENCE_TYPE_VALUES),
   refId: z.string().trim().min(1).optional(),
@@ -136,6 +162,31 @@ export const AddDatabaseProfileSchema = z.object({
   evidenceRefs: z.array(EvidenceRefSchema).min(1, "At least one evidence reference is required"),
 });
 
+/** Stage C1 — manual compliance hit import (primary C1 path). */
+export const ManualComplianceImportSchema = z.object({
+  provider: z.enum(DATABASE_PROVIDER_VALUES),
+  matchedName: z.string().trim().min(1).max(300),
+  profileUrl: z.string().url().optional(),
+  profileId: z.string().trim().max(200).optional(),
+  categories: z.array(z.string().trim().max(120)).max(20).optional(),
+  riskTypes: z.array(z.enum(COMPLIANCE_RISK_TYPE_VALUES)).min(1),
+  countries: z.array(z.string().trim().max(80)).max(20).optional(),
+  datesOfBirth: z.array(z.string().trim().max(40)).max(5).optional(),
+  summary: z.string().trim().max(5000).optional(),
+  evidenceUrl: z.string().url().optional(),
+  matchScore: z.number().min(0).max(100).optional(),
+  confidence: z.enum(["LOW", "MEDIUM", "HIGH"]).optional(),
+  reviewStatus: z.enum(COMPLIANCE_HIT_REVIEW_STATUS_VALUES).optional(),
+});
+
+export const ComplianceScreeningSchema = z.object({
+  provider: z.enum(COMPLIANCE_PROVIDER_SCREEN_VALUES),
+});
+
+export const ComplianceHitReviewSchema = z.object({
+  reviewStatus: z.enum(COMPLIANCE_HIT_REVIEW_STATUS_VALUES),
+});
+
 export const AddWikipediaCheckSchema = z.object({
   exists: z.boolean(),
   url: z.string().url().optional(),
@@ -167,6 +218,8 @@ export type AddSearchQueryInput = z.infer<typeof AddSearchQuerySchema>;
 export type AddSearchResultInput = z.infer<typeof AddSearchResultSchema>;
 export type ClassifySearchResultInput = z.infer<typeof ClassifySearchResultSchema>;
 export type AddDatabaseProfileInput = z.infer<typeof AddDatabaseProfileSchema>;
+export type ManualComplianceImportInput = z.infer<typeof ManualComplianceImportSchema>;
+export type ComplianceHitReviewInput = z.infer<typeof ComplianceHitReviewSchema>;
 export type AddWikipediaCheckInput = z.infer<typeof AddWikipediaCheckSchema>;
 export type AddRiskFindingInput = z.infer<typeof AddRiskFindingSchema>;
 export type ReviewRiskFindingInput = z.infer<typeof ReviewRiskFindingSchema>;

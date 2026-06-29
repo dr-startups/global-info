@@ -362,6 +362,8 @@ export interface ReportJson {
   riskSummary?: ReportRiskSummary;
   /** Stage J — full deterministic audit summary (evidence-derived). */
   auditSummary?: AuditSummary;
+  /** Stage C1 — compliance databases evidence layer summary. */
+  complianceSummary?: import("./compliance-providers/types").ComplianceSummaryBlock;
   /** Stage K1 — commercial offer block (prices from config, never hardcoded). */
   offer?: ReportOffer;
   /** Stage L2 — language the report (PPTX/PDF) is rendered in. */

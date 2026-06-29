@@ -56,6 +56,12 @@ export type AuditAction =
   // Stage N1 — real Yandex/Google Cloud Search API runs
   | "REAL_YANDEX_SEARCH_RUN"
   | "REAL_GOOGLE_SEARCH_RUN"
+  // Stage C1 — compliance databases
+  | "COMPLIANCE_SCREENING_RUN"
+  | "COMPLIANCE_MANUAL_IMPORT"
+  | "COMPLIANCE_HIT_REVIEWED"
+  | "COMPLIANCE_HIT_FALSE_POSITIVE"
+  | "COMPLIANCE_RISK_FINDING_CREATED"
   // Stage M1 — auth + access control
   | "LOGIN"
   | "LOGIN_FAILED"

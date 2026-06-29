@@ -527,6 +527,7 @@ def build_view_model_v2(report_json: dict) -> tuple[dict, list[str]]:
                 }
             )
     cdb = base["complianceDatabases"]
+    comp_layer = report_json.get("complianceSummary") or {}
     compliance = {
         **cdb,
         "rows": comp_rows,
@@ -534,6 +535,11 @@ def build_view_model_v2(report_json: dict) -> tuple[dict, list[str]]:
         "lexisRows": [r for r in comp_rows if r["provider"] == "LEXISNEXIS"],
         "findings": compliance_findings,
         "dataQuality": base["dataQuality"],
+        "reviewRequiredWarning": comp_layer.get("reviewRequiredWarning", ""),
+        "pendingHits": comp_layer.get("pendingHits", 0),
+        "confirmedHits": comp_layer.get("confirmedHits", 0),
+        "falsePositives": comp_layer.get("falsePositives", 0),
+        "totalHits": comp_layer.get("totalHits", len(comp_rows)),
     }
 
     final_conclusion = {

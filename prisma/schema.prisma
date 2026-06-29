@@ -138,6 +138,27 @@ enum ImportMethod {
   MANUAL_IMPORT
 }
 
+// Stage C1 — compliance database hits (manual import + future official API).
+enum ComplianceReviewStatus {
+  PENDING
+  MATCH_CONFIRMED
+  FALSE_POSITIVE
+  NEEDS_REVIEW
+  DISMISSED
+}
+
+enum ComplianceHitSource {
+  MANUAL
+  OFFICIAL_API
+  MOCK
+}
+
+enum ComplianceConfidence {
+  LOW
+  MEDIUM
+  HIGH
+}
+
 enum ReportStatus {
   DRAFT
   IN_REVIEW
@@ -193,6 +214,7 @@ model Case {
   screenshots        Screenshot[]
   riskFindings       RiskFinding[]
   databaseProfiles   DatabaseProfile[]
+  complianceScreeningRuns ComplianceScreeningRun[]
   wikipediaChecks    WikipediaCheck[]
   aiProfiles         AiProfile[]
   reportVersions     ReportVersion[]
@@ -421,24 +443,65 @@ model RiskFinding {
 }
 
 // ----------------------------------------------------------------------------
-// 8. database_profiles
+// 8. database_profiles (compliance hits)
 // ----------------------------------------------------------------------------
 
-model DatabaseProfile {
+model ComplianceScreeningRun {
   id           String           @id @default(cuid())
   caseId       String
   provider     DatabaseProvider
-  importMethod ImportMethod
-  matchType    String? // e.g. PEP, sanction, adverse-media
-  matchScore   Float?
-  rawPayload   Json? // raw provider response or imported record
-  evidenceRefs Json             @default("[]") // EvidenceRef[]
-  importedBy   String?
-  importedAt   DateTime         @default(now())
+  status       String // SUCCESS | FAILED | NOT_CONFIGURED | DISABLED
+  subjectName  String
+  hitCount     Int              @default(0)
+  errorCode    String?
+  errorMessage String?
+  runBy        String?
+  startedAt    DateTime         @default(now())
+  finishedAt   DateTime?
 
-  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  case Case              @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  hits DatabaseProfile[]
 
   @@index([caseId, provider])
+  @@map("dp_compliance_screening_runs")
+}
+
+model DatabaseProfile {
+  id              String                  @id @default(cuid())
+  caseId          String
+  provider        DatabaseProvider
+  importMethod    ImportMethod
+  matchType       String? // legacy category label; e.g. PEP, sanction
+  matchScore      Float?
+  rawPayload      Json? // deprecated — prefer rawMetadataSafe
+  evidenceRefs    Json                    @default("[]") // EvidenceRef[]
+  importedBy      String?
+  importedAt      DateTime                @default(now())
+  // Stage C1 — normalized compliance hit fields
+  screeningRunId  String?
+  hitSource       ComplianceHitSource     @default(MANUAL)
+  subjectName     String?
+  matchedName     String?
+  aliases         Json                    @default("[]")
+  categories      Json                    @default("[]")
+  riskTypes       Json                    @default("[]")
+  countries       Json                    @default("[]")
+  datesOfBirth    Json                    @default("[]")
+  confidence      ComplianceConfidence?
+  profileId       String?
+  profileUrl      String?
+  summary         String?
+  reviewStatus    ComplianceReviewStatus  @default(PENDING)
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  riskFindingId   String?
+  rawMetadataSafe Json?
+
+  case           Case                    @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  screeningRun   ComplianceScreeningRun? @relation(fields: [screeningRunId], references: [id], onDelete: SetNull)
+
+  @@index([caseId, provider])
+  @@index([caseId, reviewStatus])
   @@map("dp_database_profiles")
 }
 

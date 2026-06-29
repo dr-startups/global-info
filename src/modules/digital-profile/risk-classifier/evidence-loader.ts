@@ -47,6 +47,8 @@ export interface LoadedDatabaseProfile {
   provider: string;
   matchType: string | null;
   matchScore: number | null;
+  reviewStatus?: string;
+  riskTypes?: string[];
 }
 
 export interface LoadedExistingFinding {
@@ -123,7 +125,14 @@ export async function loadCaseEvidence(caseId: string): Promise<LoadedCaseEviden
       }),
       prisma.databaseProfile.findMany({
         where: { caseId },
-        select: { id: true, provider: true, matchType: true, matchScore: true },
+        select: {
+          id: true,
+          provider: true,
+          matchType: true,
+          matchScore: true,
+          reviewStatus: true,
+          riskTypes: true,
+        },
       }),
       prisma.riskFinding.findMany({
         where: { caseId },
@@ -144,7 +153,10 @@ export async function loadCaseEvidence(caseId: string): Promise<LoadedCaseEviden
     searchResults,
     searchSurfaceItems,
     wikipediaChecks,
-    databaseProfiles,
+    databaseProfiles: databaseProfiles.map((d) => ({
+      ...d,
+      riskTypes: Array.isArray(d.riskTypes) ? (d.riskTypes as string[]) : [],
+    })),
     existingRiskFindings,
   };
 }

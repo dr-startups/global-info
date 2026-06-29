@@ -506,7 +506,9 @@ def _p_compliance_overview(prs, vm, ctx):
     ]
     top = T.metric_cards(slide, top, cards, per_row=4)
     top = T.bullets(slide, top, [L["providers_checked"] + ": " + (", ".join(c["providersChecked"]) or "—")])
-    if c.get("conclusion"):
+    if c.get("reviewRequiredWarning"):
+        T.note(slide, top, c["reviewRequiredWarning"], "warning")
+    elif c.get("conclusion"):
         T.note(slide, top, c["conclusion"], "info")
 
 

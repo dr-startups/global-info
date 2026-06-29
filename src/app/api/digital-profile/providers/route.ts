@@ -12,6 +12,7 @@ import {
   requireRole,
 } from "@/modules/digital-profile/auth/guard";
 import { listProviderStatus } from "@/modules/digital-profile/providers/config";
+import { listComplianceProviderStatus } from "@/modules/digital-profile/compliance-providers";
 
 export const dynamic = "force-dynamic";
 
@@ -19,5 +20,5 @@ export const GET = withModule(async (req: NextRequest) => {
   const user = await requireDigitalProfileUser(req);
   // Provider/connector internals are staff-only.
   requireRole(user, "evidence.viewRaw");
-  return jsonOk(listProviderStatus());
+  return jsonOk([...listProviderStatus(), ...listComplianceProviderStatus()]);
 });

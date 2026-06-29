@@ -332,6 +332,27 @@ export interface Dictionary {
     score: string;
     evidence: string;
     imported: string;
+    reviewWarning: string;
+    runScreening: string;
+    addManualHit: string;
+    manualImportTitle: string;
+    matchedName: string;
+    profileUrl: string;
+    riskTypes: string;
+    summary: string;
+    evidenceUrl: string;
+    manualImportHint: string;
+    saveHit: string;
+    confidence: string;
+    reviewStatus: string;
+    source: string;
+    sourceManual: string;
+    confirmMatch: string;
+    falsePositive: string;
+    needsReview: string;
+    dismiss: string;
+    importSuccess: string;
+    screenSuccess: string;
   };
   createCase: {
     title: string;

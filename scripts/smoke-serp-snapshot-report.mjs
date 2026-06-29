@@ -139,10 +139,27 @@ async function main() {
   // Stage N1.2 — report_json carries sourceMode + per-engine breakdown.
   check("serpSnapshot.metadata.sourceMode present", ss?.metadata?.sourceMode === "MOCK_ONLY", ss?.metadata?.sourceMode);
   check("serpSnapshot.metadata.perEngine present", !!ss?.metadata?.perEngine?.yandex);
-  // Stage N1.2 — no provider secrets leak into report_json.
-  const reportStr = JSON.stringify(gen.json?.data?.reportJson ?? {});
-  check("report_json has no secret-like tokens",
-    !/api[-_ ]?key|folderId|YANDEX_SEARCH_API_KEY/i.test(reportStr));
+  // Stage C1 — complianceSummary present (env key *names* only in missingConfigKeys, never values).
+  const rj = gen.json?.data?.reportJson ?? {};
+  check("report_json.complianceSummary present", !!rj.complianceSummary);
+  check(
+    "complianceSummary.reviewRequiredWarning present",
+    typeof rj.complianceSummary?.reviewRequiredWarning === "string" &&
+      rj.complianceSummary.reviewRequiredWarning.length > 0
+  );
+  // Stage N1.2 / C1 — no provider secret *values* leak into report_json.
+  const forSecretScan = JSON.parse(JSON.stringify(rj));
+  if (forSecretScan.complianceSummary?.providerStatuses) {
+    for (const p of forSecretScan.complianceSummary.providerStatuses) {
+      delete p.missingConfigKeys;
+      delete p.notes;
+    }
+  }
+  const reportStr = JSON.stringify(forSecretScan);
+  check(
+    "report_json has no secret-like tokens",
+    !/api[-_ ]?key|folderId|YANDEX_SEARCH_API_KEY|AIzaSy|"clientSecret"\s*:\s*"[^"]{8,}"/i.test(reportStr)
+  );
 
   // --- 4/5. Render v3 RU / internal / draft — image embedded, 50 slides ---
   const render = await req("POST", `${API}/cases/${caseId}/report/render`, {

@@ -13,7 +13,7 @@ import { prisma } from "@/server/prisma/client";
 import type { Prisma } from "@prisma/client";
 import type { AgentContext, SavedEvidenceSummary } from "../types";
 import type { AgentNameValue } from "../../types";
-import { BaseMockAgent, type CaseSubjectInfo } from "./mock-utils";
+import { BaseMockAgent, loadCaseSubject, type CaseSubjectInfo } from "./mock-utils";
 
 const OWNER = "mock:COMPLIANCE_DATABASE";
 
@@ -76,6 +76,7 @@ export class MockComplianceDatabaseAgent extends BaseMockAgent<Raw, Raw> {
   }
 
   async saveEvidence(ctx: AgentContext, norm: Raw): Promise<SavedEvidenceSummary> {
+    const subject = await loadCaseSubject(ctx.caseId);
     await prisma.databaseProfile.deleteMany({
       where: { caseId: ctx.caseId, importedBy: OWNER },
     });
@@ -86,7 +87,20 @@ export class MockComplianceDatabaseAgent extends BaseMockAgent<Raw, Raw> {
         importMethod: "MANUAL_IMPORT" as const,
         matchType: p.matchType,
         matchScore: p.matchScore,
+        hitSource: "MOCK" as const,
+        matchedName: subject.fullName,
+        subjectName: subject.fullName,
+        riskTypes: [
+          p.matchType === "SANCTIONS"
+            ? "SANCTIONS"
+            : p.matchType === "PEP"
+              ? "PEP"
+              : "ADVERSE_MEDIA",
+        ],
+        reviewStatus: "PENDING" as const,
+        summary: `Demo ${p.provider} screening — potential match only.`,
         rawPayload: p.rawPayload,
+        rawMetadataSafe: { demo: true, provider: p.provider },
         evidenceRefs: p.evidenceRefs,
         importedBy: OWNER,
       })),

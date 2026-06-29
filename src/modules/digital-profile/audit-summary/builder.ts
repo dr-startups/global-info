@@ -98,7 +98,14 @@ export async function buildAuditSummary(
       }),
       prisma.databaseProfile.findMany({
         where: { caseId },
-        select: { provider: true, matchType: true, matchScore: true },
+        select: {
+          provider: true,
+          matchType: true,
+          matchScore: true,
+          reviewStatus: true,
+          riskTypes: true,
+          hitSource: true,
+        },
       }),
       prisma.riskFinding.findMany({
         where: { caseId },
@@ -141,7 +148,10 @@ export async function buildAuditSummary(
     rawMetadata: s.rawMetadata,
   }));
   const wikis: LoadedWiki[] = wikiRows;
-  const dbs: LoadedDb[] = dbRows;
+  const dbs: LoadedDb[] = dbRows.map((d) => ({
+    ...d,
+    riskTypes: Array.isArray(d.riskTypes) ? (d.riskTypes as string[]) : [],
+  }));
   const findings: LoadedFinding[] = findingRows.map((f) => ({
     severity: f.severity,
     riskTheme: f.riskTheme,
