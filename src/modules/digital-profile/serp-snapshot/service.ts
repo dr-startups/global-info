@@ -85,13 +85,31 @@ function buildSourceLabel(
     return ru ? "Источник: demo/mock-данные" : "Source: demo/mock data";
   }
   if (overall === "REAL_ONLY") {
-    return ru ? "Источник: реальные поисковые данные" : "Source: real search data";
+    // Stage N2 — when both engines are real, name both official APIs.
+    if (perEngine.yandex === "REAL" && perEngine.google === "REAL") {
+      return ru
+        ? "Источник: реальные данные Yandex Search API / Google Search API"
+        : "Source: real Yandex Search API data / real Google Search API data";
+    }
+    if (perEngine.google === "REAL") {
+      return ru
+        ? "Источник: реальные данные Google Search API"
+        : "Source: real Google Search API data";
+    }
+    return ru
+      ? "Источник: реальные данные Yandex Search API"
+      : "Source: real Yandex Search API data";
   }
-  // MIXED — the common real-Yandex / mock-Google case gets an explicit label.
+  // MIXED — name which engine is real vs demo (no secrets).
   if (perEngine.yandex === "REAL" && perEngine.google === "MOCK") {
     return ru
       ? "Источник: реальные данные Yandex Search API / demo Google"
       : "Source: real Yandex Search API data / demo Google";
+  }
+  if (perEngine.google === "REAL" && perEngine.yandex === "MOCK") {
+    return ru
+      ? "Источник: реальные данные Google Search API / demo Yandex"
+      : "Source: real Google Search API data / demo Yandex";
   }
   return ru ? "Источник: реальные и demo-данные" : "Source: real and demo data";
 }

@@ -31,6 +31,21 @@ function envInt(value: string | undefined, fallback: number, min: number, max: n
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
+/** Stage N2 — real Google strategy (no scraping option exists by design). */
+export type GoogleProviderStrategy = "custom_search" | "external_serp" | "disabled";
+
+function toGoogleStrategy(value: string | undefined): GoogleProviderStrategy {
+  const v = (value ?? "").trim().toLowerCase();
+  if (v === "custom_search" || v === "external_serp") return v;
+  return "disabled";
+}
+
+/**
+ * Allowlisted external SERP provider names. Only these enum values are accepted;
+ * arbitrary URLs are never read from env (SSRF guard).
+ */
+export const ALLOWED_EXTERNAL_SERP_PROVIDERS = ["serpapi", "serper", "zenserp", "searchapi"] as const;
+
 export interface ProviderConfig {
   /** Master switch for keyed SERP providers (Google/Yandex). */
   realConnectorsEnabled: boolean;
@@ -48,9 +63,33 @@ export interface ProviderConfig {
     minRequestIntervalMs: number;
   };
   google: {
+    /** Legacy Stage H2 master-switch-gated flag. */
     enabled: boolean;
+    /**
+     * Stage N2 — dedicated switch for the real Google connector (independent of
+     * the H2 master switch), mirroring the Yandex real flag.
+     */
+    realEnabled: boolean;
+    /**
+     * Stage N2 — provider strategy. `custom_search` = Google Programmable Search
+     * JSON API; `external_serp` = a separately-selected paid SERP API (skeleton);
+     * `disabled` = no real Google. NEVER browser scraping.
+     */
+    provider: GoogleProviderStrategy;
     apiKey?: string;
     engineId?: string;
+    /** Stage N2 — Custom Search tuning. */
+    timeoutMs: number;
+    maxQueriesPerAudit: number;
+    resultsPerQuery: number;
+    gl: string;
+    hl: string;
+    /** Stage N2 — external SERP provider (future-ready; enum name + key only). */
+    external: {
+      provider?: string;
+      apiKey?: string;
+      timeoutMs: number;
+    };
   };
   yandex: {
     /** Legacy master-switch-gated flag (Stage H2, XML GET endpoint). */
@@ -88,8 +127,22 @@ export const providerConfig: ProviderConfig = {
   },
   google: {
     enabled: envBool(process.env.DIGITAL_PROFILE_GOOGLE_ENABLED, false),
+    realEnabled: envBool(process.env.DIGITAL_PROFILE_GOOGLE_REAL_ENABLED, false),
+    provider: toGoogleStrategy(process.env.GOOGLE_SEARCH_PROVIDER),
     apiKey: envStr(process.env.GOOGLE_SEARCH_API_KEY),
     engineId: envStr(process.env.GOOGLE_SEARCH_ENGINE_ID),
+    timeoutMs: envInt(process.env.GOOGLE_SEARCH_TIMEOUT_MS, 15000, 1000, 60000),
+    maxQueriesPerAudit: envInt(process.env.GOOGLE_SEARCH_MAX_QUERIES_PER_AUDIT, 3, 1, 20),
+    resultsPerQuery: envInt(process.env.GOOGLE_SEARCH_RESULTS_PER_QUERY, 10, 1, 50),
+    gl: (envStr(process.env.GOOGLE_SEARCH_GL) ?? "ru").toLowerCase(),
+    hl: (envStr(process.env.GOOGLE_SEARCH_HL) ?? "ru").toLowerCase(),
+    external: {
+      // Only an enum provider NAME is read from env — never an arbitrary URL
+      // (prevents SSRF). The concrete adapter is selected separately.
+      provider: envStr(process.env.GOOGLE_EXTERNAL_SERP_PROVIDER)?.toLowerCase(),
+      apiKey: envStr(process.env.GOOGLE_EXTERNAL_SERP_API_KEY),
+      timeoutMs: envInt(process.env.GOOGLE_EXTERNAL_SERP_TIMEOUT_MS, 15000, 1000, 60000),
+    },
   },
   yandex: {
     enabled: envBool(process.env.DIGITAL_PROFILE_YANDEX_ENABLED, false),
@@ -137,9 +190,21 @@ export function computeAvailability(
 /** Config keys required by a provider that are currently missing (no values). */
 export function missingConfigKeys(name: ProviderName): string[] {
   if (name === "GOOGLE") {
+    const g = providerConfig.google;
     const missing: string[] = [];
-    if (!providerConfig.google.apiKey) missing.push("GOOGLE_SEARCH_API_KEY");
-    if (!providerConfig.google.engineId) missing.push("GOOGLE_SEARCH_ENGINE_ID");
+    if (g.provider === "disabled") {
+      // Strategy not selected — the single thing that must be set first.
+      missing.push("GOOGLE_SEARCH_PROVIDER");
+      return missing;
+    }
+    if (g.provider === "custom_search") {
+      if (!g.apiKey) missing.push("GOOGLE_SEARCH_API_KEY");
+      if (!g.engineId) missing.push("GOOGLE_SEARCH_ENGINE_ID");
+      return missing;
+    }
+    // external_serp
+    if (!g.external.provider) missing.push("GOOGLE_EXTERNAL_SERP_PROVIDER");
+    else if (!g.external.apiKey) missing.push("GOOGLE_EXTERNAL_SERP_API_KEY");
     return missing;
   }
   if (name === "YANDEX") {
@@ -175,11 +240,14 @@ export function getProviderAvailability(name: ProviderName): ProviderAvailabilit
       }),
     };
   }
+  // Stage N2 — Google real availability is gated solely by its dedicated flag
+  // (DIGITAL_PROFILE_GOOGLE_REAL_ENABLED) + a selected strategy, independent of
+  // the H2 master switch (mirrors the Yandex real model).
   return {
     name,
     ...computeAvailability(name, {
-      masterEnabled: providerConfig.realConnectorsEnabled,
-      enabled: providerConfig.google.enabled,
+      masterEnabled: true,
+      enabled: providerConfig.google.realEnabled && providerConfig.google.provider !== "disabled",
       hasKeys: missingConfigKeys(name).length === 0,
     }),
   };
@@ -204,7 +272,8 @@ export interface ProviderStatus {
 
 const PROVIDER_NOTES: Record<ProviderName, string> = {
   WIKIPEDIA: "Public MediaWiki/REST API. No API key required.",
-  GOOGLE: "Google Programmable Search (Custom Search JSON API).",
+  GOOGLE:
+    "Google real search. Strategy via GOOGLE_SEARCH_PROVIDER: custom_search (Programmable Search JSON API) or external_serp (separately-selected paid SERP API). No scraping.",
   YANDEX: "Yandex Search API (XML).",
 };
 
@@ -221,7 +290,7 @@ export function getProviderStatus(name: ProviderName): ProviderStatus {
     name === "WIKIPEDIA"
       ? providerConfig.wikipedia.enabled
       : name === "GOOGLE"
-        ? providerConfig.google.enabled
+        ? providerConfig.google.realEnabled
         : providerConfig.yandex.realEnabled;
   return {
     name,

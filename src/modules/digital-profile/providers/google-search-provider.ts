@@ -9,6 +9,7 @@
 
 import { providerConfig, getProviderAvailability } from "./config";
 import { getProviderCapabilities } from "./capabilities";
+import { externalGoogleSerpProvider } from "./external-google-serp-provider";
 import { getJson, toProviderError } from "./http";
 import type { SearchProvider, SurfaceMethodResult } from "./search-provider";
 import type {
@@ -53,15 +54,19 @@ export class GoogleSearchProvider implements SearchProvider {
   }
 
   private buildUrl(request: SearchProviderRequest, start: number, num: number): string {
+    const cfg = providerConfig.google;
+    // NOTE: key/cx must travel in the query for the Custom Search API. They are
+    // never logged (redactUrl) and never persisted into rawMetadata.
     const params = new URLSearchParams({
-      key: providerConfig.google.apiKey ?? "",
-      cx: providerConfig.google.engineId ?? "",
+      key: cfg.apiKey ?? "",
+      cx: cfg.engineId ?? "",
       q: request.query,
       num: String(num),
       start: String(start),
+      safe: "active",
     });
-    if (request.language) params.set("hl", request.language);
-    if (request.region) params.set("gl", request.region.toLowerCase());
+    params.set("hl", request.language ?? cfg.hl);
+    params.set("gl", (request.region ?? cfg.gl).toLowerCase());
     return `${ENDPOINT}?${params.toString()}`;
   }
 
@@ -81,7 +86,16 @@ export class GoogleSearchProvider implements SearchProvider {
       };
     }
 
-    const limit = Math.min(request.limit ?? providerConfig.maxResults, providerConfig.maxResults);
+    // Stage N2 — dispatch by selected strategy. external_serp routes to Serper (or
+    // another allowlisted adapter); never silently falls back to mock data.
+    if (providerConfig.google.provider === "external_serp") {
+      return externalGoogleSerpProvider.search(request);
+    }
+
+    const limit = Math.min(
+      request.limit ?? providerConfig.google.resultsPerQuery,
+      providerConfig.google.resultsPerQuery
+    );
     const snapshots: unknown[] = [];
     const results: SearchProviderResult[] = [];
 
@@ -90,7 +104,7 @@ export class GoogleSearchProvider implements SearchProvider {
       while (results.length < limit) {
         const num = Math.min(MAX_PER_PAGE, limit - results.length);
         const raw = (await getJson(this.buildUrl(request, start, num), {
-          timeoutMs: providerConfig.timeoutMs,
+          timeoutMs: providerConfig.google.timeoutMs,
         })) as GoogleResponse;
         snapshots.push(raw);
         const mapped = this.normalize(raw, request).map((r) => ({
@@ -143,7 +157,8 @@ export class GoogleSearchProvider implements SearchProvider {
   }
 
   normalize(raw: unknown, request: SearchProviderRequest): SearchProviderResult[] {
-    const items = (raw as GoogleResponse)?.items ?? [];
+    const rawItems = (raw as GoogleResponse)?.items;
+    const items: GoogleItem[] = Array.isArray(rawItems) ? rawItems : [];
     const capturedAt = new Date().toISOString();
     return items.map((item, i) => {
       const url = String(item.link ?? "");

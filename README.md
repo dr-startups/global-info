@@ -67,6 +67,17 @@ Core principles:
   risky at MEDIUM/HIGH confidence — never on a single weak term. A search result is
   an evidence candidate, not a verified fact; a red frame is not a final legal
   conclusion. Offline: `npm run smoke:real-result-classifier`.
+- **Real Google search (Stage N2).** Optional `REAL_GOOGLE_SEARCH` agent with a
+  **provider-agnostic** strategy (`GOOGLE_SEARCH_PROVIDER`): `custom_search`
+  (Google Programmable Search / Custom Search JSON API) or `external_serp` (paid
+  SERP API; **Serper implemented**). **No scraping, no Playwright.**
+  Results are stored as `source=real:GOOGLE` and flow into the SERP snapshot, so
+  real Yandex + real Google make page 10 `REAL_ONLY`. API errors (no-access / quota /
+  timeout) surface as normalized errors and are **never** hidden under mock. Keys
+  (`key`/`cx`) are never logged or persisted. Note: the Custom Search API may be
+  unavailable to new Google Cloud projects (migration risk). Offline:
+  `npm run smoke:google-provider`. See
+  [Deployment](docs/digital-profile/DEPLOYMENT.md#real-google-search-stage-n2).
 
 ## Getting started
 
@@ -101,6 +112,7 @@ npm run dev
 | `npm run db:studio` | Open Prisma Studio |
 | `npm run smoke:auth` | Auth + RBAC smoke (roles, password, session, access) |
 | `npm run smoke:yandex-provider` | Real Yandex v2 provider smoke (offline: availability, XML decode, XXE guard, status mapping, sourceMode) |
+| `npm run smoke:google-provider` | Real Google provider smoke (offline: strategy gating, Custom Search + Serper normalize, URL redaction, sourceMode) |
 | `npm run smoke:serp-snapshot-real-source` | SERP snapshot source preference (offline: prefer_real/real_only/mock_only/mixed, perEngine, sourceMode) |
 | `npm run smoke:real-result-classifier` | N1.3 result classifier + highlight resolver (offline: neutral vs risky, confidence, manual override, findings, theme grouping) |
 | `npm run smoke:storage` | Storage abstraction + key/path-traversal + signed tokens + download policy |

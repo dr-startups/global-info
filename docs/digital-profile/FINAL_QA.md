@@ -98,6 +98,36 @@ N10.[ ] **Clear** the manual mark → regenerate → frame disappears
 N11.[ ] No API key / folder id / env names appear in evidence payloads, snapshot
         labels, findings, or `report_json`
 
+
+## Real Google Search (Stage N2) — optional, paid API
+
+> Only run with a real Google strategy + credentials. The flag must be ON.
+> No scraping, no Playwright — official APIs only.
+
+G0. [ ] `npm run smoke:google-provider` → ALL CHECKS PASSED (offline, no keys)
+G1. [ ] Flag OFF: `GET /api/digital-profile/providers` shows `Google Search Real`
+        → `enabled=false`, `supportsRealCalls=false`
+G2. [ ] `DIGITAL_PROFILE_GOOGLE_REAL_ENABLED=true` but `GOOGLE_SEARCH_PROVIDER=disabled`
+        → status `DISABLED`, `missingConfigKeys=[GOOGLE_SEARCH_PROVIDER]`
+G3. [ ] `GOOGLE_SEARCH_PROVIDER=custom_search` without keys → `NOT_CONFIGURED` +
+        `missingConfigKeys` (names only, no values)
+G4. [ ] Add `GOOGLE_SEARCH_API_KEY` + `GOOGLE_SEARCH_ENGINE_ID` → provider shows
+        `enabled=true, configured=true, supportsRealCalls=true`
+G5. [ ] Agents tab → **Google Search (real)** → Run → confirm cost dialog (RU/EN)
+        → success shows queries/results + "SERP Snapshot will use real Google" hint
+G6. [ ] `search_results` now contain rows with `source = real:GOOGLE` (mock rows
+        untouched); re-run does **not** duplicate
+G7. [ ] SERP Snapshot → Auto (prefer real): Google block uses real results
+G8. [ ] Real Yandex + real Google → `sourceMode = REAL_ONLY`; footer reads
+        "real Yandex Search API data / real Google Search API data" (no secrets)
+G9. [ ] Real Yandex + mock Google (no real Google) → `sourceMode = MIXED`
+G10.[ ] Manually **Mark adverse** a real:GOOGLE result → regenerate → red frame appears
+G11.[ ] Audit log has `REAL_GOOGLE_SEARCH_RUN` with counts/duration — **no key / cx**
+G12.[ ] A 403 "access not configured" / quota error surfaces as a **normalized error**
+        in the UI — **not** silently replaced by mock
+G13.[ ] `external_serp` selected without an adapter → clear provider error (never mock)
+G14.[ ] A non-ADMIN/ANALYST role cannot run the real Google agent (403)
+
 ## Empty / data-quality case
 
 16. [ ] Open `DPA-2026-0002` (Ivan Pustov — DEMO empty) → Build Audit Summary
