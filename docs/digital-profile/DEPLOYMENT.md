@@ -341,13 +341,20 @@ browser scraping and no Playwright** — official APIs only.
 
 - `custom_search` — Google Programmable Search [Custom Search JSON API](https://developers.google.com/custom-search/v1/overview)
   (`GET https://www.googleapis.com/customsearch/v1`, `key` + `cx`).
-- `external_serp` — a separately-selected paid SERP API. This build ships only an
-  **interface/skeleton** (`ExternalGoogleSerpProvider`); no concrete vendor is
-  wired. Selecting it without an implemented adapter resolves to a clear provider
-  error — it **never** silently falls back to mock.
+- `external_serp` — a separately-selected paid SERP API. **Serper** (`GOOGLE_EXTERNAL_SERP_PROVIDER=serper`) is implemented in this build; other allowlisted vendors (`serpapi`, `zenserp`, `searchapi`) return a clear not-implemented error until wired.
 - `disabled` (default) — no real Google.
 
-To enable real Google (Custom Search) set:
+To enable real Google via **Serper** (full-web Google, recommended):
+
+| Variable | Value |
+| --- | --- |
+| `DIGITAL_PROFILE_GOOGLE_REAL_ENABLED` | `true` |
+| `GOOGLE_SEARCH_PROVIDER` | `external_serp` |
+| `GOOGLE_EXTERNAL_SERP_PROVIDER` | `serper` |
+| `GOOGLE_EXTERNAL_SERP_API_KEY` | *(secret — from serper.dev)* |
+| `GOOGLE_EXTERNAL_SERP_TIMEOUT_MS` | `15000` (optional) |
+
+To enable real Google (Custom Search — site-restricted only for new accounts) set:
 
 | Variable | Value |
 | --- | --- |

@@ -1,0 +1,31 @@
+{
+  "searchParameters": {
+    "q": "Test Person",
+    "gl": "ru",
+    "hl": "ru",
+    "type": "search",
+    "num": 10
+  },
+  "organic": [
+    {
+      "title": "Test Person — fictional fraud investigation example",
+      "link": "https://news.example.test/test-person-fraud",
+      "snippet": "Fictional adverse example used for testing only.",
+      "position": 1
+    },
+    {
+      "title": "Test Person — company profile",
+      "link": "https://corp.example.test/test-person",
+      "snippet": "Fictional corporate profile for testing.",
+      "position": 2
+    },
+    {
+      "title": "Test Person — Wikipedia",
+      "link": "https://en.wikipedia.org/wiki/Test_Person",
+      "snippet": "Fictional biography for testing.",
+      "position": 3,
+      "date": "Jan 1, 2026"
+    }
+  ],
+  "credits": 1
+}

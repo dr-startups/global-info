@@ -86,8 +86,8 @@ export class GoogleSearchProvider implements SearchProvider {
       };
     }
 
-    // Stage N2 — dispatch by selected strategy. external_serp is a skeleton and
-    // never silently falls back to mock data.
+    // Stage N2 — dispatch by selected strategy. external_serp routes to Serper (or
+    // another allowlisted adapter); never silently falls back to mock data.
     if (providerConfig.google.provider === "external_serp") {
       return externalGoogleSerpProvider.search(request);
     }

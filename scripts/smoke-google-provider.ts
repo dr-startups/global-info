@@ -3,7 +3,7 @@
  *
  * Pure/offline unit checks — NO API keys, NO dev server, NO DB, NO network:
  *   - availability / config gating (flag off, strategy disabled, missing creds);
- *   - strategy dispatch (custom_search vs external_serp skeleton);
+ *   - strategy dispatch (custom_search vs external_serp / Serper normalize);
  *   - Custom Search normalize() on success / empty / malformed fixtures;
  *   - URL secret redaction (key/cx never logged) + rawMetadata carries no secret;
  *   - HTTP status mapping (401/403/429/5xx, quota, timeout error code);
@@ -25,6 +25,11 @@ import {
 import { buildPersonSearchQueries } from "../src/modules/digital-profile/providers/query-builder";
 import { googleSearchProvider } from "../src/modules/digital-profile/providers/google-search-provider";
 import { externalGoogleSerpProvider } from "../src/modules/digital-profile/providers/external-google-serp-provider";
+import {
+  buildSerperSearchBody,
+  normalizeSerperResponse,
+  SERPER_SEARCH_ENDPOINT,
+} from "../src/modules/digital-profile/providers/serper-search-provider";
 import { mapStatusToProviderError, redactUrl } from "../src/modules/digital-profile/providers/http";
 import { deriveSourceMode } from "../src/modules/digital-profile/serp-snapshot/data-loader";
 import type { SearchProviderRequest } from "../src/modules/digital-profile/providers/types";
@@ -36,7 +41,9 @@ function check(name: string, ok: boolean, extra?: string) {
 }
 
 const FIX = join(process.cwd(), "tests", "fixtures", "google");
+const SERPER_FIX = join(process.cwd(), "tests", "fixtures", "serper");
 const fixture = (name: string) => JSON.parse(readFileSync(join(FIX, name), "utf8"));
+const serperFixture = (name: string) => JSON.parse(readFileSync(join(SERPER_FIX, name), "utf8"));
 
 const req: SearchProviderRequest = {
   caseId: "c1",
@@ -127,7 +134,7 @@ async function main() {
   check("quota fixture has error code 429", fixture("error-429-quota.json").error.code === 429);
   check("access fixture has error code 403", fixture("error-403.json").error.code === 403);
 
-  // 11. External SERP skeleton — never silently uses mock; clear states.
+  // 11. External SERP — config gating + Serper normalize (offline fixtures).
   const ext = await externalGoogleSerpProvider.search(req);
   check("external (not selected) -> NOT_CONFIGURED", ext.status === "NOT_CONFIGURED", ext.status);
   check("external never returns mock results", ext.results.length === 0);
@@ -135,6 +142,34 @@ async function main() {
     "external allowlist is enum-only (SSRF guard)",
     ALLOWED_EXTERNAL_SERP_PROVIDERS.length > 0 &&
       ALLOWED_EXTERNAL_SERP_PROVIDERS.every((p) => /^[a-z0-9_]+$/.test(p))
+  );
+  check("serper endpoint hardcoded (no env URL)", SERPER_SEARCH_ENDPOINT === "https://google.serper.dev/search");
+  const serperBody = buildSerperSearchBody(req, 10);
+  const serperBodyStr = JSON.stringify(serperBody);
+  check("serper body carries query + gl/hl", serperBody.q === "Test Person" && serperBody.gl === "ru");
+  check("serper body never contains api key", !/api[-_]?key|x-api-key/i.test(serperBodyStr));
+  const serperOk = normalizeSerperResponse(serperFixture("success.json"), req);
+  check("serper success -> 3 results", serperOk.length === 3, String(serperOk.length));
+  check(
+    "serper maps url/domain/provider/rank",
+    serperOk[0].url === "https://news.example.test/test-person-fraud" &&
+      serperOk[0].domain === "news.example.test" &&
+      serperOk[0].provider === "GOOGLE" &&
+      serperOk[0].rank === 1
+  );
+  check(
+    "serper rawMetadata safe (source=serper, no api key)",
+    (serperOk[0].rawMetadata as { source?: string }).source === "serper" &&
+      !/api[-_]?key/i.test(JSON.stringify(serperOk[0].rawMetadata))
+  );
+  check("serper empty -> 0 results", normalizeSerperResponse(serperFixture("empty.json"), req).length === 0);
+  check(
+    "serper malformed -> 0 results (no crash)",
+    normalizeSerperResponse(serperFixture("malformed.json"), req).length === 0
+  );
+  check(
+    "serper deterministic urls (idempotent saves)",
+    normalizeSerperResponse(serperFixture("success.json"), req)[0].url === serperOk[0].url
   );
 
   // 12. Snapshot sourceMode derivation (real Google flows into snapshots).
