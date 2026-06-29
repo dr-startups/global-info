@@ -334,6 +334,216 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
 
 COMPLIANCE_THEMES = {"sanctions", "pep_rca", "compliance_database"}
 
+COMPLIANCE_RISK_TYPES = (
+    "SANCTIONS",
+    "PEP",
+    "WATCHLIST",
+    "ADVERSE_MEDIA",
+    "LAW_ENFORCEMENT",
+    "LEGAL",
+    "OTHER",
+)
+
+_PROVIDER_LABELS = {
+    "DOW_JONES": "Dow Jones",
+    "LEXISNEXIS": "LexisNexis",
+    "WORLD_CHECK": "World-Check",
+    "MANUAL_IMPORT": "Manual Import",
+    "OTHER": "Other",
+}
+
+
+def _parse_risk_types(raw: Any) -> list[str]:
+    if isinstance(raw, list):
+        return [str(x).strip().upper() for x in raw if str(x).strip()]
+    if raw is None:
+        return []
+    text = str(raw).strip()
+    if not text or text == "—":
+        return []
+    return [p.strip().upper() for p in text.replace(";", ",").split(",") if p.strip()]
+
+
+def _review_status_label(status: str, L: dict) -> str:
+    key = str(status or "PENDING").upper()
+    mapping = {
+        "PENDING": L["rev_pending"],
+        "NEEDS_REVIEW": L["rev_needs_review"],
+        "MATCH_CONFIRMED": L["rev_match_confirmed"],
+        "FALSE_POSITIVE": L["rev_false_positive"],
+        "DISMISSED": L["rev_dismissed"],
+    }
+    return mapping.get(key, key.replace("_", " ").title())
+
+
+def _hit_source_label(source: str, import_method: str, L: dict) -> str:
+    src = str(source or import_method or "").upper()
+    if src in ("MANUAL", "MANUAL_IMPORT") or "MANUAL" in str(import_method or "").upper():
+        return L["src_manual_import"]
+    if src == "MOCK" or "MOCK" in src:
+        return L["src_mock_demo"]
+    if src in ("OFFICIAL_API", "REAL"):
+        return L["src_real_api"]
+    return L["src_manual_import"]
+
+
+def _provider_source_type(ps: dict, L: dict) -> str:
+    name = str(ps.get("name", "")).upper()
+    if name == "MANUAL_IMPORT":
+        return L["src_manual_import"]
+    status = str(ps.get("status", "")).upper()
+    if status in ("DISABLED", "NOT_CONFIGURED"):
+        return L["src_not_configured"]
+    if ps.get("supportsRealCalls") and ps.get("configured") and ps.get("enabled"):
+        if status == "PROVIDER_NOT_IMPLEMENTED":
+            return L["src_stub"]
+        return L["src_real_api"]
+    if status == "PROVIDER_NOT_IMPLEMENTED":
+        return L["src_stub"]
+    return L["src_not_configured"]
+
+
+def _provider_status_label(ps: dict, L: dict) -> str:
+    status = str(ps.get("status", "")).upper()
+    if status in ("DISABLED", "NOT_CONFIGURED"):
+        return L["src_not_configured"]
+    if status == "ENABLED":
+        return L["src_real_api"] if ps.get("supportsRealCalls") else L["src_manual_import"]
+    if status == "PROVIDER_NOT_IMPLEMENTED":
+        return L["src_stub"]
+    return status.replace("_", " ").title()
+
+
+def _parse_comp_row(row: list) -> dict:
+    """Parse COMPLIANCE_DATABASES table row (legacy 4-col or current 6-col)."""
+    if len(row) >= 6:
+        return {
+            "provider": str(row[0] or ""),
+            "source": str(row[1] or ""),
+            "matchedName": str(row[2] or ""),
+            "riskTypes": str(row[3] or ""),
+            "score": str(row[4] if row[4] is not None else "—"),
+            "reviewStatus": str(row[5] or "PENDING"),
+            "importMethod": str(row[1] or ""),
+            "matchType": str(row[3] or ""),
+        }
+    return {
+        "provider": str(row[0]) if len(row) > 0 else "",
+        "importMethod": str(row[1]) if len(row) > 1 else "",
+        "matchType": str(row[2]) if len(row) > 2 else "",
+        "score": str(row[3]) if len(row) > 3 else "—",
+        "source": str(row[1]) if len(row) > 1 else "",
+        "matchedName": "",
+        "riskTypes": str(row[2]) if len(row) > 2 else "",
+        "reviewStatus": "PENDING",
+    }
+
+
+def _risk_type_breakdown(rows: list[dict]) -> list[dict]:
+    stats = {rt: {"riskType": rt, "total": 0, "pending": 0, "confirmed": 0, "falsePositive": 0} for rt in COMPLIANCE_RISK_TYPES}
+    for r in rows:
+        rts = _parse_risk_types(r.get("riskTypes") or r.get("matchType"))
+        if not rts:
+            rts = ["OTHER"]
+        status = str(r.get("reviewStatus", "PENDING")).upper()
+        for rt in rts:
+            if rt not in stats:
+                stats[rt] = {"riskType": rt, "total": 0, "pending": 0, "confirmed": 0, "falsePositive": 0}
+            stats[rt]["total"] += 1
+            if status in ("PENDING", "NEEDS_REVIEW"):
+                stats[rt]["pending"] += 1
+            elif status == "MATCH_CONFIRMED":
+                stats[rt]["confirmed"] += 1
+            elif status in ("FALSE_POSITIVE", "DISMISSED"):
+                stats[rt]["falsePositive"] += 1
+    return [stats[rt] for rt in COMPLIANCE_RISK_TYPES if stats[rt]["total"] > 0]
+
+
+def _safe_compliance_finding_title(f: dict, L: dict) -> str:
+    status = str(f.get("reviewStatus", "PENDING")).upper()
+    theme = str(f.get("theme", "") or "compliance")
+    if status == "MATCH_CONFIRMED":
+        return L["finding_confirmed"].format(theme=theme)
+    return L["finding_potential"].format(theme=theme)
+
+
+def _build_compliance_vm(comp_rows: list[dict], comp_layer: dict, cdb: dict, compliance_findings: list[dict], L: dict) -> dict:
+    provider_statuses = comp_layer.get("providerStatuses") or []
+    top_hits_raw = comp_layer.get("topHits") or []
+
+    provider_table = []
+    for ps in provider_statuses:
+        name = str(ps.get("name", ""))
+        provider_table.append(
+            {
+                "provider": _PROVIDER_LABELS.get(name, ps.get("label") or name),
+                "status": _provider_status_label(ps, L),
+                "sourceType": _provider_source_type(ps, L),
+            }
+        )
+
+    top_hits = []
+    for h in top_hits_raw:
+        src = _hit_source_label(str(h.get("source", "")), "", L)
+        top_hits.append(
+            {
+                "provider": _PROVIDER_LABELS.get(str(h.get("provider", "")), str(h.get("provider", ""))),
+                "matchedName": truncate(h.get("matchedName"), 48),
+                "riskTypes": ", ".join(_parse_risk_types(h.get("riskTypes"))) or "—",
+                "score": h.get("matchScore") if h.get("matchScore") is not None else "—",
+                "confidence": str(h.get("confidence") or "—"),
+                "reviewStatus": _review_status_label(str(h.get("reviewStatus", "PENDING")), L),
+                "source": src,
+            }
+        )
+
+    if not top_hits and comp_rows:
+        for r in comp_rows[:10]:
+            top_hits.append(
+                {
+                    "provider": _PROVIDER_LABELS.get(r.get("provider", ""), r.get("provider", "")),
+                    "matchedName": truncate(r.get("matchedName") or "—", 48),
+                    "riskTypes": ", ".join(_parse_risk_types(r.get("riskTypes") or r.get("matchType"))) or "—",
+                    "score": r.get("score", "—"),
+                    "confidence": "—",
+                    "reviewStatus": _review_status_label(r.get("reviewStatus", "PENDING"), L),
+                    "source": _hit_source_label(r.get("source", ""), r.get("importMethod", ""), L),
+                }
+            )
+
+    findings = [
+        {
+            **f,
+            "title": _safe_compliance_finding_title(f, L),
+            "reviewStatus": _review_status_label(f.get("reviewStatus", "PENDING"), L),
+        }
+        for f in compliance_findings
+    ]
+
+    dq_warnings = list(comp_layer.get("dataQualityWarnings") or [])
+    if comp_layer.get("reviewRequiredWarning") and comp_layer["reviewRequiredWarning"] not in dq_warnings:
+        dq_warnings.insert(0, comp_layer["reviewRequiredWarning"])
+    dq_warnings.append(L["warn_not_legal"])
+
+    return {
+        **cdb,
+        "rows": comp_rows,
+        "dowWorldRows": [r for r in comp_rows if r.get("provider") in ("DOW_JONES", "WORLD_CHECK")],
+        "lexisRows": [r for r in comp_rows if r.get("provider") == "LEXISNEXIS"],
+        "findings": findings,
+        "allFindingsCount": len(compliance_findings),
+        "excludedFalsePositives": comp_layer.get("falsePositives", 0),
+        "reviewRequiredWarning": comp_layer.get("reviewRequiredWarning", L["warn_potential_review"]),
+        "pendingHits": comp_layer.get("pendingHits", 0),
+        "confirmedHits": comp_layer.get("confirmedHits", 0),
+        "falsePositives": comp_layer.get("falsePositives", 0),
+        "totalHits": comp_layer.get("totalHits", len(comp_rows)),
+        "providerTable": provider_table,
+        "riskTypeBreakdown": _risk_type_breakdown(comp_rows),
+        "topHits": top_hits,
+        "dataQualityWarnings": dq_warnings,
+    }
+
 
 def _dynamic_page(report_json: dict, kind: str) -> dict | None:
     for p in report_json.get("dynamicPages", []) or []:
@@ -518,29 +728,11 @@ def build_view_model_v2(report_json: dict) -> tuple[dict, list[str]]:
     comp_rows = []
     if comp_page and comp_page.get("table"):
         for row in comp_page["table"].get("rows", []) or []:
-            comp_rows.append(
-                {
-                    "provider": str(row[0]) if len(row) > 0 else "",
-                    "importMethod": str(row[1]) if len(row) > 1 else "",
-                    "matchType": str(row[2]) if len(row) > 2 else "",
-                    "score": str(row[3]) if len(row) > 3 else "",
-                }
-            )
+            comp_rows.append(_parse_comp_row(list(row)))
     cdb = base["complianceDatabases"]
     comp_layer = report_json.get("complianceSummary") or {}
-    compliance = {
-        **cdb,
-        "rows": comp_rows,
-        "dowWorldRows": [r for r in comp_rows if r["provider"] in ("DOW_JONES", "WORLD_CHECK")],
-        "lexisRows": [r for r in comp_rows if r["provider"] == "LEXISNEXIS"],
-        "findings": compliance_findings,
-        "dataQuality": base["dataQuality"],
-        "reviewRequiredWarning": comp_layer.get("reviewRequiredWarning", ""),
-        "pendingHits": comp_layer.get("pendingHits", 0),
-        "confirmedHits": comp_layer.get("confirmedHits", 0),
-        "falsePositives": comp_layer.get("falsePositives", 0),
-        "totalHits": comp_layer.get("totalHits", len(comp_rows)),
-    }
+    compliance = _build_compliance_vm(comp_rows, comp_layer, cdb, compliance_findings, L)
+    compliance["dataQuality"] = base["dataQuality"]
 
     final_conclusion = {
         "overallRiskLevel": base["cover"]["overallRiskLevel"],

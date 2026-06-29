@@ -45,6 +45,24 @@ RISK_COLORS = {
     "NONE": NEUTRAL_GRAY,
 }
 
+# Review-status badge tones (match enum keys after uppercasing).
+REVIEW_STATUS_COLORS = {
+    "PENDING": WARNING,
+    "NEEDS_REVIEW": WARNING,
+    "MATCH_CONFIRMED": DANGER,
+    "FALSE_POSITIVE": SUCCESS,
+    "DISMISSED": NEUTRAL_GRAY,
+}
+
+# Source-type badge tones for compliance tables.
+SOURCE_TYPE_COLORS = {
+    "REAL API": ACCENT,
+    "MANUAL IMPORT": RGBColor(0x15, 0x65, 0xC0),
+    "MOCK/DEMO": NEUTRAL_GRAY,
+    "NOT CONFIGURED": NEUTRAL_GRAY,
+    "STUB": NEUTRAL_GRAY,
+}
+
 # ---------------------------------------------------------------------------
 # Typography (pt) and spacing (EMU; 914400 = 1 inch)
 # ---------------------------------------------------------------------------
@@ -253,6 +271,64 @@ def risk_badge(slide, x: Emu, y: Emu, level: str, w: Emu = Emu(1500000), h: Emu 
     _run(p, lvl, 13, WHITE, bold=True)
 
 
+def _pill_badge(slide, x: Emu, y: Emu, text: str, tone: RGBColor, w: Emu = Emu(1700000), h: Emu = Emu(420000)) -> None:
+    shape = slide.shapes.add_shape(ROUNDED_RECT, x, y, w, h)
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = tone
+    shape.line.fill.background()
+    tf = shape.text_frame
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    p = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.CENTER
+    _run(p, truncate(text, 22), 10, WHITE, bold=True)
+
+
+def review_status_badge(slide, x: Emu, y: Emu, status: str, label: str | None = None) -> None:
+    key = str(status or "PENDING").upper()
+    _pill_badge(slide, x, y, label or key, REVIEW_STATUS_COLORS.get(key, NEUTRAL_GRAY))
+
+
+def source_badge(slide, x: Emu, y: Emu, source_type: str, label: str | None = None) -> None:
+    key = str(source_type or "").upper()
+    tone = SOURCE_TYPE_COLORS.get(key, NEUTRAL_GRAY)
+    for k, v in SOURCE_TYPE_COLORS.items():
+        if k in key:
+            tone = v
+            break
+    _pill_badge(slide, x, y, label or source_type, tone, w=Emu(1900000))
+
+
+def metric_card(slide, top: Emu, label: str, value: Any, tone: RGBColor = ACCENT) -> Emu:
+    return metric_cards(slide, top, [{"label": label, "value": value, "tone": tone}], per_row=1)
+
+
+def warning_card(slide, top: Emu, text: str) -> Emu:
+    if not text:
+        return top
+    h = 820000
+    shape = slide.shapes.add_shape(ROUNDED_RECT, MARGIN, top, CONTENT_W, Emu(h))
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = BG_PANEL
+    shape.line.color.rgb = WARNING
+    shape.line.width = Pt(1.25)
+    strip = slide.shapes.add_shape(RECT, MARGIN, top, Emu(64008), Emu(h))
+    strip.fill.solid()
+    strip.fill.fore_color.rgb = WARNING
+    strip.line.fill.background()
+    box = textbox(slide, Emu(int(MARGIN) + 160000), Emu(int(top) + 90000), Emu(int(CONTENT_W) - 240000), Emu(h - 160000))
+    tf = box.text_frame
+    _run(tf.paragraphs[0], text, FS_NOTE + 1, NEUTRAL_DARK)
+    return Emu(int(top) + h + 80000)
+
+
+def source_note(slide, top: Emu, text: str) -> Emu:
+    return note(slide, top, text, "source")
+
+
+def polished_table(slide, top: Emu, columns: list[str], rows: list[list[Any]], **kwargs) -> Emu:
+    return table(slide, top, columns, rows, **kwargs)
+
+
 # ---------------------------------------------------------------------------
 # Cards / metrics
 # ---------------------------------------------------------------------------
@@ -314,12 +390,51 @@ def no_data_card(slide, top: Emu, text: str) -> Emu:
     shape.fill.fore_color.rgb = BG_PANEL
     shape.line.color.rgb = NEUTRAL_LINE
     shape.line.width = Pt(0.75)
+    icon = slide.shapes.add_shape(ROUNDED_RECT, Emu(int(MARGIN) + 180000), Emu(int(top) + 280000), Emu(90000), Emu(90000))
+    icon.fill.solid()
+    icon.fill.fore_color.rgb = NEUTRAL_LINE
+    icon.line.fill.background()
     tf = shape.text_frame
     tf.vertical_anchor = MSO_ANCHOR.MIDDLE
     p = tf.paragraphs[0]
     p.alignment = PP_ALIGN.CENTER
     _run(p, text, FS_BODY - 1, NEUTRAL_GRAY, italic=True)
     return Emu(int(top) + h + 80000)
+
+
+def step_cards(slide, top: Emu, steps: list[str], per_row: int = 1) -> Emu:
+    """Numbered process/timeline blocks for commercial pages."""
+    if not steps:
+        return top
+    per_row = max(1, min(per_row, 2))
+    gap = int(GUTTER)
+    card_w = (int(CONTENT_W) - gap * (per_row - 1)) // per_row
+    card_h = 720000
+    y = int(top)
+    for idx, step in enumerate(steps):
+        col = idx % per_row
+        if col == 0 and idx > 0:
+            y += card_h + gap
+        x = int(MARGIN) + col * (card_w + gap)
+        shape = slide.shapes.add_shape(ROUNDED_RECT, Emu(x), Emu(y), Emu(card_w), Emu(card_h))
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = BG_PANEL
+        shape.line.color.rgb = NEUTRAL_LINE
+        shape.line.width = Pt(0.75)
+        num = slide.shapes.add_shape(ROUNDED_RECT, Emu(x + 90000), Emu(y + 90000), Emu(340000), Emu(340000))
+        num.fill.solid()
+        num.fill.fore_color.rgb = ACCENT
+        num.line.fill.background()
+        ntf = num.text_frame
+        ntf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        np = ntf.paragraphs[0]
+        np.alignment = PP_ALIGN.CENTER
+        _run(np, str(idx + 1), 12, WHITE, bold=True)
+        box = textbox(slide, Emu(x + 480000), Emu(y + 80000), Emu(card_w - 560000), Emu(card_h - 140000))
+        tf = box.text_frame
+        _run(tf.paragraphs[0], truncate(step, 120), FS_BODY - 2, NEUTRAL_DARK)
+    rows = (len(steps) + per_row - 1) // per_row
+    return Emu(int(top) + rows * (card_h + gap) + 60000)
 
 
 # kind -> (border tone, label)
@@ -350,6 +465,28 @@ def note(slide, top: Emu, text: str, kind: str = "info") -> Emu:
 # ---------------------------------------------------------------------------
 
 _RISK_WORDS = {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+_REVIEW_WORDS = {"PENDING", "NEEDS REVIEW", "MATCH CONFIRMED", "FALSE POSITIVE", "DISMISSED"}
+_SOURCE_WORDS = {
+    "REAL API", "MANUAL IMPORT", "MOCK/DEMO", "NOT CONFIGURED", "STUB",
+    "РЕАЛЬНЫЙ API", "РУЧНОЙ ИМПОРТ", "MOCK", "DEMO",
+}
+
+
+def _cell_color(val: str) -> RGBColor | None:
+    up = str(val).upper().strip()
+    if up in _RISK_WORDS:
+        return RISK_COLORS.get(up, NEUTRAL_DARK)
+    for key, color in REVIEW_STATUS_COLORS.items():
+        if key.replace("_", " ") in up or up == key:
+            return color
+    for src, color in SOURCE_TYPE_COLORS.items():
+        if src in up:
+            return color
+    if up in _REVIEW_WORDS:
+        return WARNING
+    if any(s in up for s in _SOURCE_WORDS):
+        return ACCENT
+    return None
 
 
 def table(
@@ -392,9 +529,9 @@ def table(
             cell.text = "" if val is None else str(val)
             para = cell.text_frame.paragraphs[0]
             para.font.size = Pt(FS_TABLE_BODY)
-            up = str(val).upper().strip()
-            if up in _RISK_WORDS:
-                para.font.color.rgb = RISK_COLORS.get(up, NEUTRAL_DARK)
+            tone = _cell_color(str(val))
+            if tone:
+                para.font.color.rgb = tone
                 para.font.bold = True
             else:
                 para.font.color.rgb = NEUTRAL_DARK

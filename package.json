@@ -36,6 +36,7 @@
     "smoke:report-template": "node scripts/smoke-report-template.mjs",
     "smoke:report-template-v2": "node scripts/smoke-report-template-v2.mjs",
     "smoke:report-template-v3": "node scripts/smoke-report-template-v3.mjs",
+    "smoke:report-polish-r1": "node scripts/smoke-report-polish-r1.mjs",
     "smoke:report-i18n": "node scripts/smoke-report-i18n.mjs",
     "smoke:i18n": "tsx scripts/smoke-i18n.ts",
     "smoke:auth": "tsx scripts/smoke-auth.ts",

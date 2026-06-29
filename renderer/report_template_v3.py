@@ -491,7 +491,7 @@ def _b_conclusion(slide, top, blk, vm, ctx):
 
 
 # ===========================================================================
-# 32-36 compliance + final
+# 32-36 compliance (R1 enterprise due diligence layout)
 # ===========================================================================
 
 def _p_compliance_overview(prs, vm, ctx):
@@ -499,43 +499,99 @@ def _p_compliance_overview(prs, vm, ctx):
     c = vm["compliance"]
     slide, top = _section(prs, ctx, L["compliance_overview_title"])
     cards = [
-        {"label": L["m_active_matches"], "value": c["activeMatches"], "tone": T.DANGER if c["activeMatches"] else T.NEUTRAL_GRAY},
-        {"label": L["m_sanctions"], "value": c["sanctionsMatches"], "tone": T.DANGER if c["sanctionsMatches"] else T.NEUTRAL_GRAY},
-        {"label": L["m_pep_rca"], "value": f"{c['pepMatches']}/{c['rcaMatches']}"},
-        {"label": L["m_adverse_media"], "value": c["adverseMediaMatches"]},
+        {"label": L["m_total_hits"], "value": c.get("totalHits", 0), "tone": T.ACCENT if c.get("totalHits") else T.NEUTRAL_GRAY},
+        {"label": L["m_pending_review"], "value": c.get("pendingHits", 0), "tone": T.WARNING if c.get("pendingHits") else T.NEUTRAL_GRAY},
+        {"label": L["m_confirmed_matches"], "value": c.get("confirmedHits", 0), "tone": T.DANGER if c.get("confirmedHits") else T.NEUTRAL_GRAY},
+        {"label": L["m_false_positives"], "value": c.get("falsePositives", 0), "tone": T.SUCCESS if c.get("falsePositives") else T.NEUTRAL_GRAY},
     ]
     top = T.metric_cards(slide, top, cards, per_row=4)
-    top = T.bullets(slide, top, [L["providers_checked"] + ": " + (", ".join(c["providersChecked"]) or "—")])
-    if c.get("reviewRequiredWarning"):
-        T.note(slide, top, c["reviewRequiredWarning"], "warning")
-    elif c.get("conclusion"):
-        T.note(slide, top, c["conclusion"], "info")
+    rows = [[p["provider"], p["status"], p["sourceType"]] for p in c.get("providerTable", [])]
+    if rows:
+        top = T.polished_table(slide, top, [L["th_provider"], L["th_provider_status"], L["th_source_type"]], rows,
+                               col_widths=[0.34, 0.33, 0.33])
+    else:
+        top = T.no_data_card(slide, top, L["nd_no_compliance_hits"])
+    T.warning_card(slide, top, c.get("reviewRequiredWarning") or L["warn_potential_review"])
 
 
-def _p_compliance_provider(prs, vm, ctx, key: str, title: str):
+def _p_compliance_risk_types(prs, vm, ctx):
     L = vm["labels"]
     c = vm["compliance"]
-    slide, top = _section(prs, ctx, title)
-    rows = [[r["provider"], r["importMethod"], r["matchType"], r["score"]] for r in c[key]]
+    slide, top = _section(prs, ctx, L["compliance_risk_types_title"])
+    breakdown = c.get("riskTypeBreakdown") or []
+    rows = [
+        [b["riskType"], b["total"], b["pending"], b["confirmed"], b["falsePositive"]]
+        for b in breakdown
+    ]
     if rows:
-        T.table(slide, top, [L["th_provider"], L["th_source_method"], L["th_category"], L["th_score"]], rows, col_widths=[0.3, 0.3, 0.25, 0.15])
+        T.polished_table(slide, top, [L["th_risk_type"], L["th_total"], L["th_pending"], L["th_confirmed"], L["th_false_positive"]],
+                         rows, col_widths=[0.28, 0.18, 0.18, 0.18, 0.18])
     else:
-        T.no_data_card(slide, top, L["nd_no_screening"])
+        T.no_data_card(slide, top, L["nd_no_risk_type_hits"])
+
+
+def _p_compliance_top_matches(prs, vm, ctx):
+    L = vm["labels"]
+    c = vm["compliance"]
+    slide, top = _section(prs, ctx, L["compliance_top_matches_title"])
+    hits = c.get("topHits") or []
+    rows = [
+        [h["provider"], h["matchedName"], h["riskTypes"], h["score"], h["confidence"], h["reviewStatus"], h["source"]]
+        for h in hits
+    ]
+    if rows:
+        top = T.polished_table(
+            slide, top,
+            [L["th_provider"], L["th_matched_name"], L["th_risk_type"], L["th_score"], L["th_confidence"], L["th_review"], L["th_source"]],
+            rows, max_rows=8, col_widths=[0.14, 0.20, 0.16, 0.08, 0.12, 0.16, 0.14],
+        )
+        if any("manual" in str(h.get("source", "")).lower() or "ручн" in str(h.get("source", "")).lower() for h in hits):
+            T.source_note(slide, top, L["manual_import_note"])
+    else:
+        T.no_data_card(slide, top, L["nd_no_compliance_hits"])
+
+
+def _p_compliance_review_quality(prs, vm, ctx):
+    L = vm["labels"]
+    c = vm["compliance"]
+    slide, top = _section(prs, ctx, L["compliance_review_quality_title"])
+    warnings = [w for w in (c.get("dataQualityWarnings") or []) if w]
+    if c.get("pendingHits", 0) > 0:
+        warnings.insert(0, L["lang_requires_review"])
+    not_configured = [p["provider"] for p in c.get("providerTable", []) if L["src_not_configured"] in str(p.get("sourceType", ""))]
+    if not_configured:
+        warnings.append(f"{L['warn_provider_not_queried']} ({', '.join(not_configured[:4])})")
+    if not warnings:
+        warnings = [L["dq_coverage_adequate"], L["warn_not_legal"]]
+    top = T.bullets(slide, top, warnings[:8])
+    T.warning_card(slide, top, L["warn_not_legal"])
 
 
 def _p_compliance_findings(prs, vm, ctx):
     L = vm["labels"]
     c = vm["compliance"]
-    slide, top = _section(prs, ctx, L["compliance_findings_title"])
-    rows = [[f["severity"], f["theme"], T.truncate(f["title"], 46), f["reviewStatus"], f["evidenceCount"]] for f in c["findings"]]
+    f = vm["finalConclusion"]
+    slide, top = _section(prs, ctx, L["compliance_risk_findings_title"], f"{L['overall_risk']}: {f.get('overallRiskLevel', 'UNKNOWN')}")
+    rows = [
+        [fnd["severity"], T.truncate(fnd["title"], 52), fnd["reviewStatus"], fnd.get("evidenceCount", 0)]
+        for fnd in c.get("findings", [])
+    ]
     if rows:
-        T.table(slide, top, [L["th_severity"], L["th_theme"], L["th_finding"], L["th_review"], L["th_evidence"]], rows,
-                col_widths=[0.14, 0.20, 0.38, 0.16, 0.12])
+        top = T.polished_table(slide, top, [L["th_severity"], L["th_finding"], L["th_review"], L["th_evidence"]], rows,
+                               col_widths=[0.14, 0.52, 0.22, 0.12])
     else:
-        T.no_data_card(slide, top, L["nd_no_compliance_findings"])
+        top = T.no_data_card(slide, top, L["nd_no_compliance_findings"])
+    if c.get("excludedFalsePositives", 0) > 0:
+        top = T.note(slide, top, L["finding_excluded_fp"], "info")
+    themes = ", ".join(f"{t['theme']} ({t['count']})" for t in f.get("topThemes", [])) or "—"
+    top = T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(900000), L["highest_risk_themes"], [themes]) or top
+    if f.get("recommendedActions"):
+        T.bullets(slide, Emu(int(top) + 980000) if top else top, list(f.get("recommendedActions", []))[:4])
+    T.note(slide, top, L["warn_not_legal"], "disclaimer")
 
 
 def _p_final(prs, vm, ctx):
+    """Legacy final slide — kept for v2 parity; v3 folds conclusion into compliance findings."""
     L = vm["labels"]
     f = vm["finalConclusion"]
     slide, top = _section(prs, ctx, L["final_title"], f"{L['overall_risk']}: {f['overallRiskLevel']}")
@@ -570,9 +626,12 @@ def _p_product_overview(prs, vm, ctx):
     L = vm["labels"]
     ob = vm["offerBlock"]["productOverview"]
     slide, top = _section(prs, ctx, L["offer_product_overview"], vm["offerBlock"]["cover"]["brand"])
-    top = T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(1300000), L["offer_what_we_do"], [T.truncate(ob.get("description", ""), 220)]) or top
-    top = Emu(int(top) + 1380000)
-    top = T.bullets(slide, top, [L["offer_includes"] + " " + ", ".join(ob.get("includedItems", []))])
+    top = T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(1200000), L["offer_what_we_do"], [T.truncate(ob.get("description", ""), 220)]) or top
+    top = Emu(int(top) + 1280000)
+    inc = ob.get("includedItems", [])
+    if inc:
+        top = T.metric_cards(slide, top, [{"label": L["offer_includes"], "value": T.truncate(inc[0], 24), "tone": T.ACCENT}], per_row=1)
+        top = T.bullets(slide, top, inc[1:4])
     T.note(slide, top, ob.get("audienceNote", ""), "info")
 
 
@@ -580,11 +639,11 @@ def _p_pricing_summary(prs, vm, ctx):
     L = vm["labels"]
     sols = vm["offerBlock"]["solutions"]
     slide, top = _section(prs, ctx, L["offer_solutions_pricing"], L["offer_indicative"])
-    cards = [{"label": T.truncate(s["title"], 28), "value": s["price"], "tone": T.ACCENT} for s in sols[:4]]
-    top = T.metric_cards(slide, top, cards, per_row=max(1, len(cards)))
+    cards = [{"label": T.truncate(s["title"], 28), "value": s["price"], "tone": T.ACCENT} for s in sols[:3]]
+    top = T.metric_cards(slide, top, cards, per_row=3)
     rows = [[T.truncate(s["title"], 36), s["duration"], s["price"]] for s in sols]
     if rows:
-        top = T.table(slide, top, [L["th_solution"], L["th_duration"], L["th_price"]], rows, col_widths=[0.5, 0.25, 0.25])
+        top = T.polished_table(slide, top, [L["th_solution"], L["th_duration"], L["th_price"]], rows, col_widths=[0.5, 0.25, 0.25])
     T.note(slide, top, vm["offerBlock"]["solutions"][0].get("pricingNotes", "") if sols else "", "disclaimer")
 
 
@@ -592,20 +651,21 @@ def _p_solution_objective(prs, vm, ctx, idx: int):
     L = vm["labels"]
     s = _solution(vm, idx)
     slide, top = _section(prs, ctx, s["title"], s["subtitle"])
-    top = T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(1000000), L["offer_objective"], [T.truncate(s["objective"], 200)]) or top
-    top = Emu(int(top) + 1080000)
-    top = T.bullets(slide, top, [L["offer_included_work"]] + s["includedItems"])
+    top = T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(950000), L["offer_objective"], [T.truncate(s["objective"], 200)]) or top
+    top = Emu(int(top) + 1030000)
+    top = T.bullets(slide, top, [L["offer_included_work"]] + s["includedItems"][:5])
     if s["deliverables"]:
-        T.bullets(slide, top, [L["offer_deliverables"]] + s["deliverables"])
+        top = T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(850000), L["offer_deliverables"], s["deliverables"][:4]) or top
 
 
 def _p_solution_workplan(prs, vm, ctx, idx: int):
     L = vm["labels"]
     s = _solution(vm, idx)
     slide, top = _section(prs, ctx, s["title"] + L["offer_workplan_suffix"], L["offer_duration"].format(d=s["duration"]))
-    top = T.bullets(slide, top, s["workPlan"] or [L["offer_workplan_default"]])
+    steps = s["workPlan"] or [L["offer_workplan_default"]]
+    top = T.step_cards(slide, top, steps[:5], per_row=1)
     if s["expectedResults"]:
-        T.bullets(slide, top, [L["offer_expected_results"]] + s["expectedResults"])
+        T.bullets(slide, top, [L["offer_expected_results"]] + s["expectedResults"][:4])
 
 
 def _p_solution_pricing(prs, vm, ctx, idx: int):
@@ -613,7 +673,7 @@ def _p_solution_pricing(prs, vm, ctx, idx: int):
     s = _solution(vm, idx)
     slide, top = _section(prs, ctx, s["title"] + L["offer_pricing_suffix"], s["subtitle"])
     top = T.metric_cards(slide, top, [{"label": L["m_package_price"], "value": s["price"], "tone": T.ACCENT}], per_row=1)
-    top = T.bullets(slide, top, [L["offer_included"]] + s["includedItems"])
+    top = T.bullets(slide, top, [L["offer_included"]] + s["includedItems"][:5])
     T.note(slide, top, s.get("pricingNotes", ""), "disclaimer")
 
 
@@ -622,7 +682,8 @@ def _p_process(prs, vm, ctx):
     ob = vm["offerBlock"]["process"]
     slide, top = _section(prs, ctx, L["offer_process_title"], L["offer_process_subtitle"])
     steps = ob.get("steps", []) or list(L["op_process_bullets"])
-    T.bullets(slide, top, steps)
+    top = T.step_cards(slide, top, steps[:5], per_row=1)
+    T.note(slide, top, L["offer_value"], "info")
 
 
 def _p_about(prs, vm, ctx):
@@ -724,10 +785,10 @@ def build_report_v3(
         *ru_pages,
         *intl_pages,
         _p_compliance_overview,
-        lambda prs_, vm_, ctx_: _p_compliance_provider(prs_, vm_, ctx_, "dowWorldRows", L["dow_world_title"]),
-        lambda prs_, vm_, ctx_: _p_compliance_provider(prs_, vm_, ctx_, "lexisRows", L["lexis_title"]),
+        _p_compliance_risk_types,
+        _p_compliance_top_matches,
+        _p_compliance_review_quality,
         _p_compliance_findings,
-        _p_final,
         *offer_pages,
     ]
 
