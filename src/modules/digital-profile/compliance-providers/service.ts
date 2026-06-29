@@ -424,17 +424,28 @@ export async function reviewComplianceHit(
 
 export async function buildComplianceSummaryBlock(
   caseId: string,
-  locale: "ru" | "en" = "ru"
+  locale: "ru" | "en" = "ru",
+  options: { includeDemoData?: boolean } = {}
 ): Promise<ComplianceSummaryBlock> {
-  const hits = await prisma.databaseProfile.findMany({
+  const includeDemo = options.includeDemoData === true;
+  const allHits = await prisma.databaseProfile.findMany({
     where: { caseId },
     orderBy: { importedAt: "desc" },
   });
 
+  const hits = includeDemo
+    ? allHits
+    : allHits.filter(
+        (h) =>
+          h.hitSource !== "MOCK" &&
+          !(h.importedBy ?? "").startsWith("mock:") &&
+          !(h.rawMetadataSafe as { demo?: boolean } | null)?.demo
+      );
+
   const reviewRequiredWarning =
     locale === "ru"
-      ? "Совпадения в compliance-базах являются потенциальными и требуют ручной проверки."
-      : "Compliance database hits are potential matches and require manual review.";
+      ? "Совпадения в compliance-базах являются потенциальными и требуют проверки аналитиком."
+      : "Compliance database hits are potential matches and require analyst review.";
 
   const byRiskType: Record<string, number> = {};
   let pendingHits = 0;
@@ -451,7 +462,15 @@ export async function buildComplianceSummaryBlock(
 
   const warnings: string[] = [];
   if (hits.length === 0) {
-    warnings.push(locale === "ru" ? "Комплаенс-скрининг не выполнен." : "No compliance screening recorded.");
+    if (allHits.length > 0 && !includeDemo) {
+      warnings.push(
+        locale === "ru"
+          ? "Ручные compliance-записи не добавлены. Реальные провайдеры не настроены."
+          : "No manual compliance records added. Real providers are not configured."
+      );
+    } else {
+      warnings.push(locale === "ru" ? "Комплаенс-скрининг не выполнен." : "No compliance screening recorded.");
+    }
   }
   if (pendingHits > 0) warnings.push(reviewRequiredWarning);
 

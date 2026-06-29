@@ -90,7 +90,7 @@ export const digitalProfileConfig: DigitalProfileConfig = {
     process.env.DIGITAL_PROFILE_RENDERER_URL ??
     "http://localhost:8080",
   reportTemplateVersion:
-    process.env.DIGITAL_PROFILE_REPORT_TEMPLATE_VERSION ?? "report-template-v1",
+    process.env.DIGITAL_PROFILE_REPORT_TEMPLATE_VERSION ?? "report-template-v3",
   defaultLocale: envLocale(process.env.DIGITAL_PROFILE_DEFAULT_LOCALE),
 };
 

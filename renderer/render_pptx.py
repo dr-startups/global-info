@@ -37,7 +37,7 @@ TEMPLATE_V2_PATH = os.path.join(
 TEMPLATE_V3_PATH = os.path.join(
     os.path.dirname(__file__), "templates", "report-template-v3.pptx"
 )
-DEFAULT_TEMPLATE_VERSION = "report-template-v1"
+DEFAULT_TEMPLATE_VERSION = "report-template-v3"
 
 SLIDE_W = Emu(9144000)  # 10 in
 SLIDE_H = Emu(6858000)  # 7.5 in

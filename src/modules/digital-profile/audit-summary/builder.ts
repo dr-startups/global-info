@@ -34,9 +34,20 @@ import {
   normalizeReportLanguage,
   type ReportLanguage,
 } from "../report/i18n/report-dictionary";
+import {
+  filterComplianceForReport,
+  filterSearchResultsForReport,
+  isDemoComplianceHit,
+  isDemoFinding,
+  isDemoSearchRow,
+  isDemoSurface,
+  resolveReportDataPolicy,
+} from "../report/report-data-policy";
 
 export interface BuildAuditSummaryOptions {
   locale?: ReportLanguage;
+  /** Include mock/demo fixtures in metrics (default: false). */
+  demo?: boolean;
 }
 
 export async function buildAuditSummary(
@@ -44,6 +55,7 @@ export async function buildAuditSummary(
   options: BuildAuditSummaryOptions = {}
 ): Promise<AuditSummary> {
   const locale = normalizeReportLanguage(options.locale);
+  const policy = resolveReportDataPolicy({ demo: options.demo });
   const caseRow = await prisma.case.findFirst({
     where: { id: caseId, deletedAt: null },
     select: {
@@ -70,6 +82,7 @@ export async function buildAuditSummary(
           classification: true,
           source: true,
           rank: true,
+          rawMetadata: true,
         },
       }),
       prisma.searchSurfaceItem.findMany({
@@ -105,6 +118,9 @@ export async function buildAuditSummary(
           reviewStatus: true,
           riskTypes: true,
           hitSource: true,
+          importedBy: true,
+          rawMetadataSafe: true,
+          rawPayload: true,
         },
       }),
       prisma.riskFinding.findMany({
@@ -116,12 +132,13 @@ export async function buildAuditSummary(
           title: true,
           reviewStatus: true,
           evidenceRefs: true,
+          demo: true,
         },
       }),
       prisma.screenshot.count({ where: { caseId, deletedAt: null } }),
     ]);
 
-  const organic: LoadedOrganic[] = organicRows.map((r) => ({
+  const organicRaw: LoadedOrganic[] = organicRows.map((r) => ({
     id: r.id,
     engine: r.engine,
     url: r.url,
@@ -130,8 +147,12 @@ export async function buildAuditSummary(
     classification: r.classification,
     source: r.source,
     rank: r.rank,
+    rawMetadata: r.rawMetadata,
   }));
-  const surfaces: LoadedSurface[] = surfaceRows.map((s) => ({
+  const searchFiltered = filterSearchResultsForReport(organicRaw, isDemoSearchRow, policy);
+  const organic: LoadedOrganic[] = searchFiltered.rows;
+
+  const surfacesRaw: LoadedSurface[] = surfaceRows.map((s) => ({
     id: s.id,
     type: s.type,
     source: s.source,
@@ -147,19 +168,30 @@ export async function buildAuditSummary(
     riskTheme: s.riskTheme,
     rawMetadata: s.rawMetadata,
   }));
+  const surfaces = policy.includeDemoData
+    ? surfacesRaw
+    : surfacesRaw.filter((s) => !isDemoSurface(s));
+
   const wikis: LoadedWiki[] = wikiRows;
-  const dbs: LoadedDb[] = dbRows.map((d) => ({
-    ...d,
-    riskTypes: Array.isArray(d.riskTypes) ? (d.riskTypes as string[]) : [],
-  }));
-  const findings: LoadedFinding[] = findingRows.map((f) => ({
-    severity: f.severity,
-    riskTheme: f.riskTheme,
-    category: f.category,
-    title: f.title,
-    reviewStatus: f.reviewStatus,
-    evidenceCount: Array.isArray(f.evidenceRefs) ? (f.evidenceRefs as unknown[]).length : 0,
-  }));
+  const dbFiltered = filterComplianceForReport(
+    dbRows.map((d) => ({
+      ...d,
+      riskTypes: Array.isArray(d.riskTypes) ? (d.riskTypes as string[]) : [],
+    })),
+    isDemoComplianceHit,
+    policy
+  );
+  const dbs: LoadedDb[] = dbFiltered.rows;
+  const findings: LoadedFinding[] = findingRows
+    .filter((f) => policy.includeDemoData || !isDemoFinding(f))
+    .map((f) => ({
+      severity: f.severity,
+      riskTheme: f.riskTheme,
+      category: f.category,
+      title: f.title,
+      reviewStatus: f.reviewStatus,
+      evidenceCount: Array.isArray(f.evidenceRefs) ? (f.evidenceRefs as unknown[]).length : 0,
+    }));
 
   const searchSummary = computeSearchSummary(organic, findings);
   const surfacesSummary = computeSurfacesSummary(surfaces, screenshots);
@@ -180,6 +212,9 @@ export async function buildAuditSummary(
     dbCount: dbs.length,
     locale,
   });
+
+  // Hygiene exclusion notes live in meta.reportWarnings (internal audience only).
+  // Do not inject them into dataQualitySummary — they must not appear in client executive bullets.
 
   const overallRiskLevel = calculateOverallRiskLevel({
     findings,

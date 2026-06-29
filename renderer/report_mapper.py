@@ -11,10 +11,57 @@ No LLM, no network — pure transformation of the data passed in report_json.
 from __future__ import annotations
 
 import base64
+import re
 from datetime import datetime
 from typing import Any
 
 from report_i18n import labels as i18n_labels, normalize_lang, watermark_text
+
+_INTERNAL_HYGIENE_RE = re.compile(
+    r"demo\s*/\s*mock|mock rows|excluded from production|исключены из метрик|"
+    r"data hygiene|fixture|sourcemode|provideradapter|raw metadata",
+    re.I,
+)
+
+
+def _is_internal_hygiene_text(text: str) -> bool:
+    return bool(_INTERNAL_HYGIENE_RE.search(str(text or "")))
+
+
+def _has_cyrillic(text: str) -> bool:
+    return bool(re.search(r"[\u0400-\u04FF]", str(text or "")))
+
+
+def _filter_client_text_lines(lines: list[str], lang: str) -> list[str]:
+    out: list[str] = []
+    for line in lines:
+        t = str(line or "")
+        if _is_internal_hygiene_text(t):
+            continue
+        if lang == "en" and _has_cyrillic(t):
+            continue
+        out.append(line)
+    return out
+
+
+def _normalize_report_warning_item(item: Any) -> tuple[str, str]:
+    """Return (text, audience) from structured or legacy warning entry."""
+    if isinstance(item, dict):
+        return str(item.get("text", "")), str(item.get("audience", "all"))
+    return str(item), "internal" if _is_internal_hygiene_text(str(item)) else "all"
+
+
+def _warnings_for_render(raw: list[Any] | None, internal: bool) -> list[str]:
+    out: list[str] = []
+    for item in raw or []:
+        text, aud = _normalize_report_warning_item(item)
+        if not text.strip():
+            continue
+        if not internal and (aud == "internal" or _is_internal_hygiene_text(text)):
+            continue
+        if text not in out:
+            out.append(text)
+    return out
 
 
 def _report_lang(report_json: dict) -> str:
@@ -467,7 +514,21 @@ def _safe_compliance_finding_title(f: dict, L: dict) -> str:
     return L["finding_potential"].format(theme=theme)
 
 
-def _build_compliance_vm(comp_rows: list[dict], comp_layer: dict, cdb: dict, compliance_findings: list[dict], L: dict) -> dict:
+def _is_demo_comp_row(row: dict) -> bool:
+    src = str(row.get("source", "") or row.get("importMethod", "")).upper()
+    if src == "MOCK" or "MOCK" in src:
+        return True
+    return False
+
+
+def _filter_comp_rows(rows: list[dict], include_demo: bool) -> list[dict]:
+    if include_demo:
+        return rows
+    return [r for r in rows if not _is_demo_comp_row(r)]
+
+
+def _build_compliance_vm(comp_rows: list[dict], comp_layer: dict, cdb: dict, compliance_findings: list[dict], L: dict, include_demo: bool = False) -> dict:
+    comp_rows = _filter_comp_rows(comp_rows, include_demo)
     provider_statuses = comp_layer.get("providerStatuses") or []
     top_hits_raw = comp_layer.get("topHits") or []
 
@@ -520,10 +581,13 @@ def _build_compliance_vm(comp_rows: list[dict], comp_layer: dict, cdb: dict, com
         for f in compliance_findings
     ]
 
-    dq_warnings = list(comp_layer.get("dataQualityWarnings") or [])
-    if comp_layer.get("reviewRequiredWarning") and comp_layer["reviewRequiredWarning"] not in dq_warnings:
-        dq_warnings.insert(0, comp_layer["reviewRequiredWarning"])
-    dq_warnings.append(L["warn_not_legal"])
+    dq_warnings: list[str] = []
+    total_hits = int(comp_layer.get("totalHits", len(comp_rows)) or 0)
+    pending_hits = int(comp_layer.get("pendingHits", 0) or 0)
+    if total_hits == 0 and not comp_rows:
+        dq_warnings.append(L["nd_no_compliance_hits"])
+    elif pending_hits > 0 or total_hits > 0:
+        dq_warnings.append(L["warn_potential_review"])
 
     return {
         **cdb,
@@ -533,7 +597,7 @@ def _build_compliance_vm(comp_rows: list[dict], comp_layer: dict, cdb: dict, com
         "findings": findings,
         "allFindingsCount": len(compliance_findings),
         "excludedFalsePositives": comp_layer.get("falsePositives", 0),
-        "reviewRequiredWarning": comp_layer.get("reviewRequiredWarning", L["warn_potential_review"]),
+        "reviewRequiredWarning": L["warn_potential_review"],
         "pendingHits": comp_layer.get("pendingHits", 0),
         "confirmedHits": comp_layer.get("confirmedHits", 0),
         "falsePositives": comp_layer.get("falsePositives", 0),
@@ -731,7 +795,13 @@ def build_view_model_v2(report_json: dict) -> tuple[dict, list[str]]:
             comp_rows.append(_parse_comp_row(list(row)))
     cdb = base["complianceDatabases"]
     comp_layer = report_json.get("complianceSummary") or {}
-    compliance = _build_compliance_vm(comp_rows, comp_layer, cdb, compliance_findings, L)
+    include_demo = bool((report_json.get("meta") or {}).get("demo"))
+    if not include_demo:
+        compliance_findings = [
+            f for f in compliance_findings
+            if not str(f.get("title", "")).upper().startswith("[DEMO]")
+        ]
+    compliance = _build_compliance_vm(comp_rows, comp_layer, cdb, compliance_findings, L, include_demo)
     compliance["dataQuality"] = base["dataQuality"]
 
     final_conclusion = {
@@ -857,7 +927,12 @@ def _offer_block(offer: dict, L: dict) -> dict:
     }
 
 
-def _serp_snapshot_vm(ss: dict | None, L: dict) -> dict:
+def _serp_snapshot_vm(
+    ss: dict | None,
+    L: dict,
+    audience: str = "internal",
+    audit_search: dict | None = None,
+) -> dict:
     """Normalize the optional report_json.serpSnapshot into a safe view model.
 
     The image arrives as render-time base64 (``imageBase64``) injected by the
@@ -874,14 +949,30 @@ def _serp_snapshot_vm(ss: dict | None, L: dict) -> dict:
         except Exception:  # noqa: BLE001 - any decode error -> treat as missing
             image_bytes = None
     meta = ss.get("metadata") or {}
+    audit_search = audit_search or {}
     # Stage N1.2 — map sourceMode to a localized provenance sentence.
     source_mode = str(meta.get("sourceMode") or "MOCK_ONLY").upper()
-    source_note_map = {
-        "REAL_ONLY": L["serp_snapshot_source_real"],
-        "MIXED": L["serp_snapshot_source_mixed"],
-        "MOCK_ONLY": L["serp_snapshot_source_mock"],
-        "EMPTY": L["serp_snapshot_source_empty"],
-    }
+    has_real = bool(meta.get("hasRealResults"))
+    report_count = int(meta.get("reportResultCount") or audit_search.get("totalResults") or 0)
+    internal = str(audience).lower() != "client"
+
+    if internal:
+        source_note_map = {
+            "REAL_ONLY": L["serp_snapshot_source_real"],
+            "MIXED": L["serp_snapshot_source_mixed"],
+            "MOCK_ONLY": L["serp_snapshot_source_mock"],
+            "EMPTY": L["serp_snapshot_source_empty"],
+        }
+        source_note = source_note_map.get(source_mode, L["serp_snapshot_source_mock"])
+        if source_mode in ("MIXED", "MOCK_ONLY") and report_count > 0:
+            source_note = L.get("serp_snapshot_source_internal_filtered", source_note)
+    else:
+        if report_count <= 0:
+            source_note = L["serp_snapshot_source_client_empty"]
+        elif has_real and source_mode == "REAL_ONLY":
+            source_note = L["serp_snapshot_source_client_real"]
+        else:
+            source_note = L["serp_snapshot_source_client_available"]
     return {
         "exists": bool(image_bytes),
         "image_bytes": image_bytes,
@@ -898,20 +989,43 @@ def _serp_snapshot_vm(ss: dict | None, L: dict) -> dict:
         "subtitle": L["serp_snapshot_page_subtitle"],
         "caption": L["serp_snapshot_caption"],
         "source_mode": source_mode,
-        "source_note": source_note_map.get(source_mode, L["serp_snapshot_source_mock"]),
+        "source_note": source_note,
     }
 
 
 def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[dict, list[str]]:
     vm, warnings = build_view_model_v2(report_json)
-    offer = report_json.get("offer") or {}
-    vm["audience"] = "client" if str(audience).lower() == "client" else "internal"
-    vm["offerBlock"] = _offer_block(offer, vm["labels"])
-    serp = _serp_snapshot_vm(report_json.get("serpSnapshot"), vm["labels"])
+    internal = str(audience).lower() != "client"
+    lang = vm.get("report_language") or _report_lang(report_json)
+    vm["audience"] = "client" if not internal else "internal"
+    vm["offerBlock"] = _offer_block(report_json.get("offer") or {}, vm["labels"])
+    audit_search = (report_json.get("auditSummary") or {}).get("searchSummary") or {}
+    serp = _serp_snapshot_vm(report_json.get("serpSnapshot"), vm["labels"], audience, audit_search)
     vm["serp_snapshot"] = serp
     if not serp["exists"]:
         # Stage S1.5 renderWarning: the ORION-style page uses fallback text.
         warnings.append("SERP snapshot is missing; search-screens page uses fallback text.")
+
+    executive = dict(vm.get("executiveSummary") or {})
+    bullets = list(executive.get("bullets") or [])
+    if internal:
+        executive["bullets"] = bullets
+    else:
+        executive["bullets"] = _filter_client_text_lines(bullets, lang)
+        executive["dataQualityWarning"] = None
+    vm["executiveSummary"] = executive
+
+    compliance = vm.get("compliance") or {}
+    if not internal and compliance.get("dataQualityWarnings"):
+        compliance = dict(compliance)
+        compliance["dataQualityWarnings"] = _filter_client_text_lines(
+            list(compliance.get("dataQualityWarnings") or []), lang
+        )
+        vm["compliance"] = compliance
+
+    for w in _warnings_for_render((report_json.get("meta") or {}).get("reportWarnings"), internal):
+        if w not in warnings:
+            warnings.append(w)
     return vm, warnings
 
 

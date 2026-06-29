@@ -23,6 +23,15 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const user = await requireDigitalProfileUser(req);
   requireRole(user, "report.generateInternal");
   await requireCaseAccess(user, id, "VIEWER");
-  const data = await createReportVersion(id, actorOf(user));
+  let reportLanguage: "ru" | "en" | undefined;
+  try {
+    const body = (await req.json()) as { reportLanguage?: string } | null;
+    if (body?.reportLanguage === "ru" || body?.reportLanguage === "en") {
+      reportLanguage = body.reportLanguage;
+    }
+  } catch {
+    /* no body */
+  }
+  const data = await createReportVersion(id, actorOf(user), { language: reportLanguage });
   return jsonOk(data, 201);
 });

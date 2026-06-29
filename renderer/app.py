@@ -91,7 +91,7 @@ def health() -> dict:
     }
 
 
-DEFAULT_TEMPLATE_VERSION = "report-template-v1"
+DEFAULT_TEMPLATE_VERSION = "report-template-v3"
 
 
 @app.post("/render", response_model=RenderResponse)

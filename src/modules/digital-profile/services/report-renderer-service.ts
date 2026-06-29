@@ -23,6 +23,7 @@ import {
 import { loadFile, saveFile } from "../storage/private-store";
 import { buildStorageKey } from "../storage/keys";
 import { buildAuditSummary } from "../audit-summary/builder";
+import { buildComplianceSummaryBlock } from "../compliance-providers";
 import { buildOfferConfig } from "../report/offer-config";
 import {
   normalizeReportLanguage,
@@ -140,6 +141,13 @@ async function localizeReportJson(
     });
   } catch {
     // Keep the stored summary; labels still localize in the renderer.
+  }
+  try {
+    localized.complianceSummary = await buildComplianceSummaryBlock(caseId, reportLanguage, {
+      includeDemoData: reportJson.meta?.demo === true,
+    });
+  } catch {
+    // Keep stored compliance block; mapper still localizes labels at render time.
   }
   return localized;
 }

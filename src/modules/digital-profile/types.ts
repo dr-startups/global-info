@@ -283,6 +283,8 @@ export interface ReportPriceItem {
   note?: string;
 }
 
+import type { ReportWarning } from "./report/report-data-policy";
+
 export interface ReportMeta {
   caseNumber: string;
   title: string;
@@ -292,6 +294,10 @@ export interface ReportMeta {
   /** Watermark text; "DRAFT" until final review. Empty/undefined when FINAL. */
   watermark?: string;
   language: string;
+  /** When true, mock/demo fixtures may appear in factual report sections. */
+  demo?: boolean;
+  /** Non-fatal notes surfaced to renderer / QA (structured; legacy string[] supported). */
+  reportWarnings?: ReportWarning[] | string[];
 }
 
 /**
@@ -407,6 +413,9 @@ export interface ReportSerpSnapshot {
       yandex: { sourceMode: "REAL" | "MOCK" | "EMPTY"; resultCount: number; highlightedCount: number };
       google: { sourceMode: "REAL" | "MOCK" | "EMPTY"; resultCount: number; highlightedCount: number };
     };
+    /** Stage R1.1.1 — report-filtered search evidence (excludes demo/mock). */
+    hasRealResults?: boolean;
+    reportResultCount?: number;
   };
 }
 

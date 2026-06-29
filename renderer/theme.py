@@ -378,7 +378,9 @@ def metric_cards(slide, top: Emu, cards: list[dict], per_row: int = 4) -> Emu:
         tf = box.text_frame
         _run(tf.paragraphs[0], str(c.get("label", "")), FS_METRIC_LABEL, NEUTRAL_GRAY)
         vp = tf.add_paragraph()
-        _run(vp, str(c.get("value", "")), FS_METRIC_VALUE, c.get("tone", ACCENT), bold=True)
+        val = str(c.get("value", ""))
+        val_size = FS_METRIC_VALUE - (8 if len(val) > 12 else 0) - (4 if len(val) > 8 else 0)
+        _run(vp, val, max(14, val_size), c.get("tone", ACCENT), bold=True)
     rows = (len(cards) + per_row - 1) // per_row
     return Emu(int(top) + rows * (card_h + gap) + 60000)
 
@@ -539,7 +541,7 @@ def table(
                 cell.fill.solid()
                 cell.fill.fore_color.rgb = TABLE_ZEBRA
 
-    bottom = Emu(int(top) + int(height) + 110000)
+    bottom = Emu(int(top) + int(height) + 140000)
     label = note_text
     if total > max_rows:
         label = _SHOWING_TOP.format(n=max_rows, total=total) + (f" {note_text}" if note_text else "")

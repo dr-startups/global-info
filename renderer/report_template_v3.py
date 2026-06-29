@@ -111,7 +111,7 @@ def _p_contents(prs, vm, ctx):
     cards = [
         {"label": f"{sec} 1", "value": L["sec_executive"]},
         {"label": f"{sec} 2", "value": L["sec_russia"]},
-        {"label": f"{sec} 3", "value": L["sec_international"]},
+        {"label": f"{sec} 3", "value": L.get("sec_international_short", L["sec_international"])},
         {"label": f"{sec} 4", "value": L["sec_compliance"]},
         {"label": f"{sec} 5", "value": L["sec_solutions"]},
         {"label": f"{sec} 6", "value": L["sec_about"]},
@@ -178,8 +178,10 @@ def _p_overview(prs, vm, ctx):
 def _rb(block_key: str, builder: Callable, title: str, subtitle: str | None = None) -> Callable:
     def page(prs, vm, ctx):
         blk = vm[block_key]
-        slide, top = _section(prs, ctx, title.replace("{label}", blk["label"]), subtitle)
-        T.risk_badge(slide, Emu(int(T.SLIDE_W) - int(T.MARGIN) - 1500000), Emu(250000), blk["riskLevel"])
+        page_title = title.replace("{label}", blk["label"])
+        slide, top = _section(prs, ctx, page_title, subtitle)
+        badge_y = Emu(340000 if len(page_title) > 42 else 250000)
+        T.risk_badge(slide, Emu(int(T.SLIDE_W) - int(T.MARGIN) - 1500000), badge_y, blk["riskLevel"])
         if not blk["present"]:
             T.no_data_card(
                 slide, top,

@@ -38,6 +38,7 @@ export interface LoadedOrganic {
   classification: string;
   source: string | null;
   rank: number | null;
+  rawMetadata?: unknown;
 }
 
 export interface LoadedSurface {
@@ -86,6 +87,17 @@ function riskTypesOf(d: LoadedDb): string[] {
   if (/PEP/.test(mt)) return ["PEP"];
   if (/ADVERSE/.test(mt)) return ["ADVERSE_MEDIA"];
   return [];
+}
+
+/** Providers actually queried (manual import or official API) — not mock/stub rows. */
+export function providersQueriedFromCompliance(dbs: LoadedDb[]): string[] {
+  return Array.from(
+    new Set(
+      dbs
+        .filter((d) => d.hitSource === "MANUAL" || d.hitSource === "OFFICIAL_API")
+        .map((d) => d.provider)
+    )
+  );
 }
 
 export interface LoadedFinding {
@@ -274,7 +286,7 @@ export function computeComplianceSummary(
 ): ComplianceDatabaseSummary {
   const p = auditPhrases(locale);
   const active = dbs.filter(isActiveComplianceHit);
-  const providersChecked = Array.from(new Set(dbs.map((d) => d.provider)));
+  const providersChecked = providersQueriedFromCompliance(dbs);
   const pepMatches = active.filter((d) => riskTypesOf(d).includes("PEP")).length;
   const rcaMatches = active.filter((d) => /RCA/.test((d.matchType ?? "").toUpperCase())).length;
   const sanctionsMatches = active.filter((d) => riskTypesOf(d).includes("SANCTIONS")).length;

@@ -24,6 +24,18 @@ import { buildAuditSummary } from "../audit-summary/builder";
 import { buildComplianceSummaryBlock } from "../compliance-providers";
 import { buildOfferConfig } from "../report/offer-config";
 import {
+  createInternalHygieneWarning,
+  filterComplianceForReport,
+  filterSearchResultsForReport,
+  isDemoComplianceHit,
+  isDemoFinding,
+  isDemoSearchRow,
+  REPORT_WARNING_DEMO_COMPLIANCE_EXCLUDED,
+  REPORT_WARNING_DEMO_SEARCH_EXCLUDED,
+  resolveReportDataPolicy,
+  type ReportWarning,
+} from "../report/report-data-policy";
+import {
   normalizeReportLanguage,
   type ReportLanguage,
 } from "../report/i18n/report-dictionary";
@@ -84,9 +96,12 @@ export async function buildReportJson(
   caseId: string,
   version: number,
   status: ReportStatus = "DRAFT",
-  language: ReportLanguage | string = digitalProfileConfig.defaultLocale
+  language: ReportLanguage | string = digitalProfileConfig.defaultLocale,
+  options: { demo?: boolean } = {}
 ): Promise<ReportJson> {
   const reportLanguage = normalizeReportLanguage(language, digitalProfileConfig.defaultLocale);
+  const policy = resolveReportDataPolicy({ demo: options.demo });
+  const reportWarnings: ReportWarning[] = [];
   const caseRow = await prisma.case.findFirst({
     where: { id: caseId, deletedAt: null },
     select: {
@@ -164,6 +179,9 @@ export async function buildReportJson(
           snippet: true,
           classification: true,
           reviewStatus: true,
+          engine: true,
+          source: true,
+          rawMetadata: true,
         },
       }),
       prisma.screenshot.findMany({
@@ -205,6 +223,9 @@ export async function buildReportJson(
           matchedName: true,
           riskTypes: true,
           reviewStatus: true,
+          importedBy: true,
+          rawMetadataSafe: true,
+          rawPayload: true,
         },
       }),
       prisma.aiProfile.findMany({
@@ -228,14 +249,43 @@ export async function buildReportJson(
           summary: true,
           evidenceRefs: true,
           riskTheme: true,
+          demo: true,
         },
       }),
     ]);
 
+  const searchFiltered = filterSearchResultsForReport(searchResults, isDemoSearchRow, policy);
+  if (searchFiltered.excluded > 0) {
+    reportWarnings.push(
+      createInternalHygieneWarning(
+        reportLanguage === "ru"
+          ? REPORT_WARNING_DEMO_SEARCH_EXCLUDED.ru
+          : REPORT_WARNING_DEMO_SEARCH_EXCLUDED.en
+      )
+    );
+  }
+  const productionSearchResults = searchFiltered.rows;
+
+  const complianceFiltered = filterComplianceForReport(dbProfiles, isDemoComplianceHit, policy);
+  if (complianceFiltered.excluded > 0) {
+    reportWarnings.push(
+      createInternalHygieneWarning(
+        reportLanguage === "ru"
+          ? REPORT_WARNING_DEMO_COMPLIANCE_EXCLUDED.ru
+          : REPORT_WARNING_DEMO_COMPLIANCE_EXCLUDED.en
+      )
+    );
+  }
+  const productionDbProfiles = complianceFiltered.rows;
+
+  const productionFindings = policy.includeDemoData
+    ? findings
+    : findings.filter((f) => !isDemoFinding(f));
+
   const overallRisk =
-    findings.length === 0
+    productionFindings.length === 0
       ? "NONE"
-      : findings
+      : productionFindings
           .map((f) => f.severity as RiskSeverity)
           .reduce((a, b) => (SEVERITY_RANK[b] > SEVERITY_RANK[a] ? b : a), "INFO");
 
@@ -262,12 +312,12 @@ export async function buildReportJson(
     table: {
       columns: ["Evidence type", "Count"],
       rows: [
-        ["Search results (relevant)", searchResults.length],
+        ["Search results (relevant)", productionSearchResults.length],
         ["Screenshots", screenshots.length],
         ["Wikipedia checks", wikiChecks.length],
-        ["Compliance database profiles", dbProfiles.length],
+        ["Compliance database profiles", productionDbProfiles.length],
         ["AI summaries", aiProfiles.length],
-        ["Risk findings (reviewed)", findings.length],
+        ["Risk findings (reviewed)", productionFindings.length],
       ],
     },
   });
@@ -290,21 +340,21 @@ export async function buildReportJson(
   });
 
   // Search results
-  if (searchResults.length > 0) {
+  if (productionSearchResults.length > 0) {
     dynamicPages.push({
       kind: "SEARCH_RESULTS",
       templateSlide: "search_results",
       title: "Open-source search results",
       table: {
         columns: ["Title", "URL", "Classification", "Reviewed"],
-        rows: searchResults.map((r) => [
+        rows: productionSearchResults.map((r) => [
           r.title ?? "—",
           r.url,
           r.classification,
           r.reviewStatus,
         ]),
       },
-      evidence: searchResults.map<EvidenceRef>((r) => ({
+      evidence: productionSearchResults.map<EvidenceRef>((r) => ({
         type: "URL",
         refId: r.id,
         url: r.url,
@@ -361,7 +411,7 @@ export async function buildReportJson(
   }
 
   // Compliance databases
-  if (dbProfiles.length > 0) {
+  if (productionDbProfiles.length > 0) {
     dynamicPages.push({
       kind: "COMPLIANCE_DATABASES",
       templateSlide: "compliance_databases",
@@ -372,7 +422,7 @@ export async function buildReportJson(
           : "Hits are potential matches and require manual analyst review.",
       table: {
         columns: ["Provider", "Source", "Matched name", "Risk types", "Score", "Review"],
-        rows: dbProfiles.map((d) => [
+        rows: productionDbProfiles.map((d) => [
           d.provider,
           d.hitSource ?? d.importMethod,
           d.matchedName ?? "—",
@@ -381,7 +431,7 @@ export async function buildReportJson(
           d.reviewStatus ?? "PENDING",
         ]),
       },
-      evidence: dbProfiles.flatMap((d) => asEvidenceRefs(d.evidenceRefs)),
+      evidence: productionDbProfiles.flatMap((d) => asEvidenceRefs(d.evidenceRefs)),
     });
   }
 
@@ -398,33 +448,32 @@ export async function buildReportJson(
   }
 
   // Risk findings (reviewed only)
-  if (findings.length > 0) {
+  if (productionFindings.length > 0) {
     dynamicPages.push({
       kind: "RISK_FINDINGS",
       templateSlide: "risk_findings",
       title: "Risk findings",
       table: {
         columns: ["Severity", "Category", "Finding"],
-        rows: findings.map((f) => [f.severity, f.category, f.title]),
+        rows: productionFindings.map((f) => [f.severity, f.category, f.title]),
       },
-      evidence: findings.flatMap((f) => asEvidenceRefs(f.evidenceRefs)),
+      evidence: productionFindings.flatMap((f) => asEvidenceRefs(f.evidenceRefs)),
     });
   }
 
-  // Stage I — aggregated risk summary over review-gated findings.
   const findingsByLevel: Record<string, number> = {};
   const findingsByTheme: Record<string, number> = {};
-  for (const f of findings) {
+  for (const f of productionFindings) {
     findingsByLevel[f.severity] = (findingsByLevel[f.severity] ?? 0) + 1;
     const theme = f.riskTheme ?? f.category;
     findingsByTheme[theme] = (findingsByTheme[theme] ?? 0) + 1;
   }
   const riskSummary: ReportRiskSummary = {
     highestRiskLevel: overallRisk,
-    totalFindings: findings.length,
+    totalFindings: productionFindings.length,
     findingsByLevel,
     findingsByTheme,
-    topFindings: findings.slice(0, 5).map((f) => ({
+    topFindings: productionFindings.slice(0, 5).map((f) => ({
       severity: f.severity,
       theme: f.riskTheme ?? f.category,
       title: f.title,
@@ -436,7 +485,7 @@ export async function buildReportJson(
   // Stage L2 — built in the report language so its prose matches the report.
   let auditSummary;
   try {
-    auditSummary = await buildAuditSummary(caseId, { locale: reportLanguage });
+    auditSummary = await buildAuditSummary(caseId, { locale: reportLanguage, demo: options.demo });
   } catch {
     auditSummary = undefined;
   }
@@ -463,6 +512,10 @@ export async function buildReportJson(
           generatedAt: latest.generatedAt,
           sourceMode: latest.sourceMode,
           perEngine: latest.perEngine,
+          hasRealResults: productionSearchResults.some((r) =>
+            String(r.source ?? "").toLowerCase().startsWith("real:")
+          ),
+          reportResultCount: productionSearchResults.length,
         },
       };
     }
@@ -472,7 +525,9 @@ export async function buildReportJson(
 
   let complianceSummary: ReportJson["complianceSummary"];
   try {
-    complianceSummary = await buildComplianceSummaryBlock(caseId, reportLanguage);
+    complianceSummary = await buildComplianceSummaryBlock(caseId, reportLanguage, {
+      includeDemoData: policy.includeDemoData,
+    });
   } catch {
     complianceSummary = undefined;
   }
@@ -486,6 +541,8 @@ export async function buildReportJson(
       status,
       watermark,
       language: reportLanguage,
+      demo: policy.includeDemoData || undefined,
+      reportWarnings: reportWarnings.length > 0 ? reportWarnings : undefined,
     },
     subject,
     dynamicPages,
@@ -537,7 +594,8 @@ function toReportVersionDTO(
 /** Builds a fresh report_json and stores it as a new DRAFT report version. */
 export async function createReportVersion(
   caseId: string,
-  ctx: ActorContext = {}
+  ctx: ActorContext = {},
+  options: { language?: ReportLanguage } = {}
 ): Promise<ReportVersionDTO> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
@@ -547,7 +605,12 @@ export async function createReportVersion(
       });
       const nextVersion = (agg._max.version ?? 0) + 1;
 
-      const reportJson = await buildReportJson(caseId, nextVersion, "DRAFT");
+      const reportJson = await buildReportJson(
+        caseId,
+        nextVersion,
+        "DRAFT",
+        options.language ?? digitalProfileConfig.defaultLocale
+      );
 
       const row = await prisma.$transaction(async (tx) => {
         const created = await tx.reportVersion.create({
