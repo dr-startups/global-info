@@ -165,13 +165,13 @@ function resultIdsOf(evidenceRefs: unknown): string[] {
 async function loadFindingsByResult(caseId: string): Promise<Map<string, LinkedFinding[]>> {
   const findings = await prisma.riskFinding.findMany({
     where: { caseId },
-    select: { reviewStatus: true, riskTheme: true, evidenceRefs: true },
+    select: { reviewStatus: true, riskTheme: true, severity: true, evidenceRefs: true },
   });
   const map = new Map<string, LinkedFinding[]>();
   for (const f of findings) {
     for (const id of resultIdsOf(f.evidenceRefs)) {
       const list = map.get(id) ?? [];
-      list.push({ reviewStatus: f.reviewStatus, riskTheme: f.riskTheme });
+      list.push({ reviewStatus: f.reviewStatus, riskTheme: f.riskTheme, severity: f.severity });
       map.set(id, list);
     }
   }
@@ -239,6 +239,7 @@ export async function loadCaseResults(
         enumClassification: String(r.classification),
         riskClassification,
         findings: findingsByResult.get(r.id) ?? [],
+        sourceIsMock: !(r.source ?? "").toLowerCase().startsWith("real:"),
       });
       return {
         id: r.id,

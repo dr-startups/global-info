@@ -13,6 +13,7 @@ import type { ActorContext } from "../services/case-service";
 import { DEFAULT_ENGINES, serpSnapshotConfig } from "./config";
 import { loadCaseResults } from "./data-loader";
 import { buildConsistentThemeGrouping } from "./snapshot-consistency";
+import { SERP_SNAPSHOT_GENERATOR_VERSION } from "./snapshot-freshness";
 import { resolveQuery } from "./query";
 import { renderSerpSnapshotPng } from "./renderer";
 import { persistSnapshot, getLatestSnapshot } from "./storage";
@@ -178,6 +179,7 @@ export async function buildSnapshot(
 
   const combined = [...loaded.yandex, ...loaded.google];
   const grouping = buildConsistentThemeGrouping(combined, language);
+  const visibleHighlightedCount = combined.filter((r) => r.isHighlighted).length;
 
   const perEngine: PerEngineSource = {
     yandex: {
@@ -227,6 +229,9 @@ export async function buildSnapshot(
     sourceMode: loaded.sourceMode,
     sourcePreference,
     perEngine,
+    generatorVersion: SERP_SNAPSHOT_GENERATOR_VERSION,
+    visibleHighlightedCount,
+    themeLabels: grouping.themes.map((t) => t.title),
   };
 
   return { viewModel, metadata, grouping };

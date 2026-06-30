@@ -416,6 +416,8 @@ export interface ReportSerpSnapshot {
     /** Stage R1.1.1 — report-filtered search evidence (excludes demo/mock). */
     hasRealResults?: boolean;
     reportResultCount?: number;
+    wasRegeneratedForReport?: boolean;
+    staleReason?: string;
   };
 }
 

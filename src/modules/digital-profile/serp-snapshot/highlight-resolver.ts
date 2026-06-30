@@ -1,63 +1,60 @@
 /**
- * Stage N1.3 — deterministic ORION-snapshot highlight resolver.
+ * Stage N1.3 + R1.1.3 — deterministic ORION-snapshot highlight resolver.
  *
- * PURE. Decides whether one search result should be drawn with a red frame and,
- * if so, which risk theme it belongs to. Conservative + evidence-first.
- *
- * Precedence (highest wins):
- *   1. Manual override (analyst): adverse → highlight; neutral → never highlight.
- *   2. Linked risk_findings: an active (PENDING/REVIEWED) finding → highlight;
- *      if every linked finding is DISMISSED → suppress (human said "not risk").
- *   3. Automatic classifier: risky class with MEDIUM/HIGH confidence → highlight.
- *   4. Legacy enum fallback: classification ADVERSE_MEDIA/LEGAL → highlight
- *      (keeps existing mock/manual-enum cases working).
- *   5. Otherwise: not highlighted.
+ * Red frames = confirmed/strong risk only:
+ *   1. Manual adverse override by analyst
+ *   2. REVIEWED linked finding, or PENDING with HIGH/CRITICAL severity
+ *   3. Automatic classifier: risky class + HIGH riskConfidence + identity not LOW
+ *   4. Legacy enum on mock/demo rows only (no structured classification)
  */
 
 import {
   isRiskyResultClass,
+  isStrongAutoSnapshotRisk,
   themeForClass,
-  type ResultConfidence,
-  type ResultRiskTheme,
   type StoredRiskClassification,
 } from "../risk-classifier/result-classifier";
 
 export interface LinkedFinding {
-  reviewStatus: string; // PENDING | REVIEWED | DISMISSED
+  reviewStatus: string;
   riskTheme: string | null;
+  severity?: string | null;
 }
 
 export interface HighlightInput {
-  /** Prisma enum classification on the row (e.g. ADVERSE_MEDIA). */
   enumClassification: string | null;
-  /** Namespaced rawMetadata.riskClassification (auto + manual). */
   riskClassification: StoredRiskClassification | null;
-  /** Findings whose evidenceRefs reference this result id. */
   findings: LinkedFinding[];
+  /** When true, legacy enum fallback is allowed (mock/demo rows). */
+  sourceIsMock?: boolean;
 }
 
 export type HighlightSource = "manual" | "finding" | "auto" | "enum" | "none";
 
 export interface HighlightDecision {
   isHighlighted: boolean;
-  /** Effective risk theme key when highlighted, else null. */
-  riskTheme: ResultRiskTheme | string | null;
+  riskTheme: string | null;
   source: HighlightSource;
 }
 
-const STRONG_CONFIDENCE: ReadonlySet<ResultConfidence> = new Set<ResultConfidence>(["MEDIUM", "HIGH"]);
 const LEGACY_RISKY_ENUM = new Set(["ADVERSE_MEDIA", "LEGAL"]);
 
 function notHighlighted(source: HighlightSource): HighlightDecision {
   return { isHighlighted: false, riskTheme: null, source };
 }
 
+function isStrongLinkedFinding(f: LinkedFinding): boolean {
+  if (f.reviewStatus === "REVIEWED") return true;
+  if (f.reviewStatus === "DISMISSED") return false;
+  const sev = (f.severity ?? "").toUpperCase();
+  return sev === "HIGH" || sev === "CRITICAL";
+}
+
 export function resolveHighlight(input: HighlightInput): HighlightDecision {
   const manual = input.riskClassification?.manual ?? null;
   const auto = input.riskClassification?.auto ?? null;
 
-  // 1. Manual override is decisive in both directions.
-  if (manual && manual.classification) {
+  if (manual?.classification) {
     if (isRiskyResultClass(manual.classification)) {
       return {
         isHighlighted: true,
@@ -65,27 +62,23 @@ export function resolveHighlight(input: HighlightInput): HighlightDecision {
         source: "manual",
       };
     }
-    // Manual neutral (or any non-risky manual class) excludes from highlights.
     return notHighlighted("manual");
   }
 
-  // 2. Linked findings: active wins; all-dismissed suppresses.
   if (input.findings.length > 0) {
     const active = input.findings.filter((f) => f.reviewStatus !== "DISMISSED");
-    if (active.length > 0) {
-      const themed = active.find((f) => f.riskTheme && f.riskTheme.trim() !== "");
+    if (active.length === 0) {
+      return notHighlighted("finding");
+    }
+    const strong = active.filter(isStrongLinkedFinding);
+    if (strong.length > 0) {
+      const themed = strong.find((f) => f.riskTheme && f.riskTheme.trim() !== "");
       return { isHighlighted: true, riskTheme: themed?.riskTheme ?? "other", source: "finding" };
     }
-    // Every linked finding was dismissed by a reviewer → not a risk highlight.
-    return notHighlighted("finding");
+    // Weak/pending linked findings do not highlight; fall through to auto/manual.
   }
 
-  // 3. Automatic classifier — only MEDIUM/HIGH risky classes highlight.
-  if (
-    auto &&
-    isRiskyResultClass(auto.classification) &&
-    STRONG_CONFIDENCE.has(auto.confidence)
-  ) {
+  if (auto && isStrongAutoSnapshotRisk(auto)) {
     return {
       isHighlighted: true,
       riskTheme: auto.riskTheme ?? themeForClass(auto.classification),
@@ -93,9 +86,8 @@ export function resolveHighlight(input: HighlightInput): HighlightDecision {
     };
   }
 
-  // 4. Legacy enum fallback (mock/manual-enum cases without structured data).
   const enumClass = (input.enumClassification ?? "").toUpperCase();
-  if (!auto && !manual && LEGACY_RISKY_ENUM.has(enumClass)) {
+  if (!auto && !manual && input.sourceIsMock && LEGACY_RISKY_ENUM.has(enumClass)) {
     return { isHighlighted: true, riskTheme: themeForClass(enumClass), source: "enum" };
   }
 

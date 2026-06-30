@@ -221,19 +221,85 @@ export const adverseMediaDict: ClassifierThemeDict = {
 
 export const legalDisputeDict: ClassifierThemeDict = {
   strong: [
-    "иск к",
     "судебное дело",
+    "судебный",
+    "арбитражный суд",
     "арбитражн",
-    "взыскан",
+    "иск к",
+    "истец",
+    "ответчик",
+    "дело №",
+    "дело n",
+    "исполнительное производство",
+    "пристав",
+    "фссп",
+    "kad.arbitr",
+    "sudact",
+    "mos-gorsud",
     "lawsuit",
     "litigation",
     "court ruling",
-    "штраф",
-    "penalty",
-    "fined",
+    "court case",
+    "plaintiff",
+    "defendant",
+    "fssp",
+    "arbitr",
   ],
-  weak: ["суд", "иск", "истец", "ответчик", "court", "plaintiff", "defendant"],
+  weak: ["суд", "иск", "court"],
 };
+
+/** Business-registry / directory hosts — informational, not legal risk on their own. */
+export const corporateRegistryDomains = [
+  "rusprofile.ru",
+  "klerk.ru",
+  "audit-it.ru",
+  "audit-it.com",
+  "kontur.ru",
+  "focus.kontur",
+  "sravni.ru",
+  "egrul",
+  "egrip",
+  "spark-interfax",
+  "list-org.com",
+  "checko.ru",
+  "zachestnyibiznes.ru",
+  "companies.rbc.ru",
+  "tbank.ru/business",
+];
+
+/** Weak registry/business terms that must not alone imply legal/adverse risk. */
+export const weakRegistryTerms = [
+  "ип ",
+  " инн ",
+  "инн:",
+  "огрн",
+  "rusprofile",
+  "klerk",
+  "audit-it",
+  "контур",
+  "sravni",
+  "ликвидирован",
+  "прекратил деятельность",
+  "предприниматель",
+  "регистрация",
+  "ооо ",
+  "зао ",
+  "пао ",
+];
+
+/** Authority / biography contexts that are not adverse without strong risk terms. */
+export const authorityBiographyHints = [
+  "известные ученые",
+  "семь искусств",
+  "ииет ран",
+  "истина мгу",
+  "история сыродела",
+  "ученый",
+  "академик",
+  "профессор",
+  "dissertation",
+  "scientist",
+];
 
 export const bankruptcyDict: ClassifierThemeDict = {
   strong: ["банкрот", "несостоятельност", "bankrupt", "bankruptcy", "insolvency"],

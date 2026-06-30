@@ -1,20 +1,18 @@
 /**
- * Stage N1.3 — deterministic search-result classifier for ORION snapshot
+ * Stage N1.3 + R1.1.3 — deterministic search-result classifier for ORION snapshot
  * highlighting.
  *
- * PURE + deterministic. No LLM, no network, no scraping. Classifies a single
- * stored search result into a richer taxonomy than the Prisma enum allows; the
- * result is persisted in `SearchResult.rawMetadata.riskClassification` (additive,
- * no migration). Wording is evidence-first and conservative: keyword hits are
- * "potential matches requiring manual review", never categorical conclusions.
- * A single weak topical hint never yields an adverse highlight on its own.
+ * PURE + deterministic. Conservative: registry/social/biography/namesake rows
+ * never auto-highlight; legal/adverse requires strong keywords + identity match.
  */
 
 import {
   adverseMediaDict,
+  authorityBiographyHints,
   bankruptcyDict,
   biographyHints,
   corporateHints,
+  corporateRegistryDomains,
   criminalDict,
   investigationDict,
   legalDisputeDict,
@@ -23,16 +21,28 @@ import {
   pepDict,
   sanctionsDict,
   socialDomains,
+  weakRegistryTerms,
   wikipediaDomains,
   type ClassifierThemeDict,
 } from "./dictionaries";
+import {
+  assessIdentityMatch,
+  isLikelyNamesake,
+  parseSubjectName,
+  type IdentityConfidence,
+} from "./entity-disambiguation";
 
 export type ResultClass =
   | "RELEVANT"
   | "NEUTRAL"
   | "SOCIAL_PROFILE"
   | "CORPORATE"
+  | "CORPORATE_REGISTRY"
   | "NEWS"
+  | "BIOGRAPHY"
+  | "AUTHORITY"
+  | "NAMESAKE"
+  | "ENTITY_MISMATCH"
   | "ADVERSE_MEDIA"
   | "SANCTIONS"
   | "PEP"
@@ -54,7 +64,7 @@ export type ResultRiskTheme =
 
 export type ResultConfidence = "LOW" | "MEDIUM" | "HIGH";
 
-/** Classes that, with sufficient confidence/override, draw a red frame. */
+/** Classes that may draw a red frame when combined with strong identity + HIGH risk confidence. */
 export const RISKY_RESULT_CLASSES: ReadonlySet<ResultClass> = new Set<ResultClass>([
   "ADVERSE_MEDIA",
   "SANCTIONS",
@@ -99,14 +109,21 @@ export interface ClassifyResultInput {
   query?: string | null;
   language?: string | null;
   region?: string | null;
+  /** Audit subject full name — enables namesake / identity guards (R1.1.3). */
+  subjectFullName?: string | null;
 }
 
 export interface ResultClassification {
   classification: ResultClass;
   riskTheme: ResultRiskTheme | null;
   confidence: ResultConfidence;
+  /** Alias of confidence for snapshot highlight policy. */
+  riskConfidence: ResultConfidence;
+  identityConfidence: IdentityConfidence;
   rationale: string;
   matchedTerms: string[];
+  /** True when the row may appear in review queues but must not auto-highlight. */
+  potentialRiskForReview: boolean;
 }
 
 function hostnameOf(url: string | null | undefined, fallback: string | null | undefined): string {
@@ -123,44 +140,94 @@ function hits(text: string, dict: ClassifierThemeDict): { strong: string[]; weak
   return { strong: matchesAny(text, dict.strong), weak: matchesAny(text, dict.weak) };
 }
 
+function isRegistryDomain(domain: string): boolean {
+  return corporateRegistryDomains.some((d) => domain.includes(d));
+}
+
+function hasOnlyWeakRegistrySignals(text: string): boolean {
+  const weak = matchesAny(text, weakRegistryTerms);
+  const legal = hits(text, legalDisputeDict);
+  const criminal = hits(text, criminalDict);
+  const adverse = hits(text, adverseMediaDict);
+  const sanctions = hits(text, sanctionsDict);
+  const strongRisk =
+    legal.strong.length +
+      criminal.strong.length +
+      adverse.strong.length +
+      sanctions.strong.length >
+    0;
+  return weak.length > 0 && !strongRisk;
+}
+
 const NEUTRAL_RATIONALE = "No adverse signals detected; treated as non-risk evidence candidate.";
 
 /**
- * Classifies one search result. Deterministic precedence:
- *   sanctions → criminal → adverse-media/corruption/fraud → legal/bankruptcy
- *   → PEP → neutral buckets (relevant/social/corporate/news) → neutral/unknown.
- * Risk classes only reach MEDIUM/HIGH when a *strong* term (or multiple signals)
- * is present; a lone weak hint stays LOW (no auto highlight).
+ * Classifies one search result. R1.1.3 tightens auto-risk: registry/social/
+ * biography/namesake buckets first; strong keywords + identity match for highlights.
  */
 export function classifySearchResultRecord(input: ClassifyResultInput): ResultClassification {
   const title = (input.title ?? "").trim();
   const snippet = (input.snippet ?? "").trim();
   const text = `${title} ${snippet}`.toLowerCase();
   const domain = hostnameOf(input.url, input.domain);
-
   const hasText = text.trim().length > 0;
 
-  // --- Risk signals (strong wins; conservative confidence) ---
+  const subject = input.subjectFullName?.trim()
+    ? parseSubjectName(input.subjectFullName.trim())
+    : null;
+  const identityConfidence = assessIdentityMatch(text, subject);
+
+  // --- Corporate registry / business directory rows (before namesake guard) ---
+  if (isRegistryDomain(domain) || hasOnlyWeakRegistrySignals(text)) {
+    if (isRegistryDomain(domain) || matchesAny(text, weakRegistryTerms).length >= 2) {
+      return neutralClass(
+        "CORPORATE_REGISTRY",
+        "LOW",
+        identityConfidence,
+        "Business registry or directory listing; informational unless strong legal/enforcement terms are present."
+      );
+    }
+  }
+
+  if (socialDomains.some((d) => domain.includes(d))) {
+    return neutralClass("SOCIAL_PROFILE", "LOW", identityConfidence, "Social/profile page; informational, non-adverse.");
+  }
+
+  // --- Namesake / entity mismatch ---
+  if (subject && isLikelyNamesake(text, subject)) {
+    return neutralClass("NAMESAKE", "LOW", identityConfidence, "Different person with similar surname/name; not treated as the audit subject.");
+  }
+
+  if (
+    wikipediaDomains.some((d) => domain.includes(d)) ||
+    biographyHints.some((b) => text.includes(b)) ||
+    authorityBiographyHints.some((b) => text.includes(b))
+  ) {
+    return neutralClass("BIOGRAPHY", "LOW", identityConfidence, "Biographical/authority source; informational, non-adverse.");
+  }
+
+  // --- Risk signals (strong only; identity gates auto highlight downstream) ---
   const sanctions = hits(text, sanctionsDict);
-  if (sanctions.strong.length > 0) {
-    return risky("SANCTIONS", "sanctions", "HIGH", sanctions.strong, "sanctions");
+  if (sanctions.strong.length > 0 && identityConfidence !== "LOW") {
+    return risky("SANCTIONS", "sanctions", "HIGH", identityConfidence, sanctions.strong, "sanctions");
   }
 
   const criminal = hits(text, criminalDict);
-  if (criminal.strong.length > 0) {
+  if (criminal.strong.length > 0 && identityConfidence !== "LOW") {
     const conf: ResultConfidence = criminal.strong.length >= 2 ? "HIGH" : "MEDIUM";
-    return risky("CRIMINAL", "criminal", conf, criminal.strong, "criminal");
+    return risky("CRIMINAL", "criminal", conf, identityConfidence, criminal.strong, "criminal");
   }
 
   const adverse = hits(text, adverseMediaDict);
   const investigation = hits(text, investigationDict);
-  if (adverse.strong.length > 0) {
+  if (adverse.strong.length > 0 && identityConfidence !== "LOW") {
     const signals = adverse.strong.length + (investigation.weak.length > 0 ? 1 : 0);
     const conf: ResultConfidence = signals >= 2 ? "HIGH" : "MEDIUM";
     return risky(
       "ADVERSE_MEDIA",
       "adverse_media",
       conf,
+      identityConfidence,
       [...adverse.strong, ...investigation.weak],
       "adverse media"
     );
@@ -168,13 +235,13 @@ export function classifySearchResultRecord(input: ClassifyResultInput): ResultCl
 
   const legal = hits(text, legalDisputeDict);
   const bankruptcy = hits(text, bankruptcyDict);
-  if (legal.strong.length > 0 || bankruptcy.strong.length > 0) {
+  if ((legal.strong.length > 0 || bankruptcy.strong.length > 0) && identityConfidence !== "LOW") {
     const matched = [...legal.strong, ...bankruptcy.strong];
     const conf: ResultConfidence = matched.length >= 2 ? "HIGH" : "MEDIUM";
-    return risky("LEGAL_DISPUTE", "legal_dispute", conf, matched, "legal dispute");
+    return risky("LEGAL_DISPUTE", "legal_dispute", conf, identityConfidence, matched, "legal dispute");
   }
 
-  // Weak-only adverse/legal/investigation hints → LOW, non-highlighting.
+  // Weak-only hints → review candidate, never auto-highlight.
   const weakAdverse = [
     ...adverse.weak,
     ...legal.weak,
@@ -184,73 +251,91 @@ export function classifySearchResultRecord(input: ClassifyResultInput): ResultCl
   ];
   if (weakAdverse.length > 0) {
     return {
-      classification: weakAdverse.length >= 3 ? "ADVERSE_MEDIA" : "NEUTRAL",
-      riskTheme: weakAdverse.length >= 3 ? "adverse_media" : null,
+      classification: "NEUTRAL",
+      riskTheme: null,
       confidence: "LOW",
+      riskConfidence: "LOW",
+      identityConfidence,
       rationale: `Weak topical hint(s) only (${weakAdverse.slice(0, 3).join(", ")}); requires manual review — not treated as adverse.`,
       matchedTerms: weakAdverse.slice(0, 5),
+      potentialRiskForReview: weakAdverse.length >= 2,
     };
   }
 
-  // PEP / political exposure — risk-relevant but not adverse. Conservative: a
-  // lone PEP term stays LOW (no auto highlight); strong markers reach MEDIUM.
   const pep = hits(text, pepDict);
-  if (pep.strong.length > 0) {
-    return risky("PEP", "political_exposure", "MEDIUM", pep.strong, "political exposure");
+  if (pep.strong.length > 0 && identityConfidence !== "LOW") {
+    return risky("PEP", "political_exposure", "MEDIUM", identityConfidence, pep.strong, "political exposure");
   }
   if (pep.weak.length > 0) {
     return {
       classification: "PEP",
       riskTheme: "political_exposure",
       confidence: "LOW",
+      riskConfidence: "LOW",
+      identityConfidence,
       rationale: `Possible political-exposure term(s) (${pep.weak.slice(0, 3).join(", ")}); requires manual review.`,
       matchedTerms: pep.weak.slice(0, 5),
+      potentialRiskForReview: true,
     };
   }
 
-  // --- Neutral buckets (no risk signals) ---
-  if (wikipediaDomains.some((d) => domain.includes(d)) || biographyHints.some((b) => text.includes(b))) {
-    return neutral("RELEVANT", "Authoritative/biographical profile; informational, non-adverse.");
-  }
-  if (socialDomains.some((d) => domain.includes(d))) {
-    return neutral("SOCIAL_PROFILE", "Social/profile page; informational, non-adverse.");
-  }
   if (corporateHints.some((h) => text.includes(h))) {
-    return neutral("CORPORATE", "Corporate/company profile; informational, non-adverse.");
+    return neutralClass("CORPORATE", "LOW", identityConfidence, "Corporate/company profile; informational, non-adverse.");
   }
   if (newsDomainHints.some((d) => domain.includes(d))) {
-    return neutral("NEWS", "News article without adverse terms; informational.");
+    return neutralClass("NEWS", "LOW", identityConfidence, "News article without adverse terms; informational.");
   }
   if (!hasText) {
     return {
       classification: "UNKNOWN",
       riskTheme: null,
       confidence: "LOW",
+      riskConfidence: "LOW",
+      identityConfidence,
       rationale: "Insufficient text to classify; requires manual review.",
       matchedTerms: [],
+      potentialRiskForReview: false,
     };
   }
-  return neutral("NEUTRAL", NEUTRAL_RATIONALE);
+  return neutralClass("NEUTRAL", "LOW", identityConfidence, NEUTRAL_RATIONALE);
 }
 
 function risky(
   classification: ResultClass,
   theme: ResultRiskTheme,
-  confidence: ResultConfidence,
+  riskConfidence: ResultConfidence,
+  identityConfidence: IdentityConfidence,
   matched: string[],
   label: string
 ): ResultClassification {
   return {
     classification,
     riskTheme: theme,
-    confidence,
+    confidence: riskConfidence,
+    riskConfidence,
+    identityConfidence,
     rationale: `Potential ${label} match (terms: ${matched.slice(0, 3).join(", ")}). Requires manual verification; not a confirmed fact.`,
     matchedTerms: Array.from(new Set(matched)).slice(0, 5),
+    potentialRiskForReview: riskConfidence !== "HIGH" || identityConfidence === "LOW",
   };
 }
 
-function neutral(classification: ResultClass, rationale: string): ResultClassification {
-  return { classification, riskTheme: null, confidence: "LOW", rationale, matchedTerms: [] };
+function neutralClass(
+  classification: ResultClass,
+  riskConfidence: ResultConfidence,
+  identityConfidence: IdentityConfidence,
+  rationale: string
+): ResultClassification {
+  return {
+    classification,
+    riskTheme: null,
+    confidence: riskConfidence,
+    riskConfidence,
+    identityConfidence,
+    rationale,
+    matchedTerms: [],
+    potentialRiskForReview: false,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -294,4 +379,12 @@ export function mergeRiskClassification(
   const prev = (base.riskClassification as StoredRiskClassification) ?? {};
   base.riskClassification = { ...prev, ...next };
   return base;
+}
+
+/** R1.1.3 — whether automatic classification qualifies for snapshot red frames. */
+export function isStrongAutoSnapshotRisk(auto: AutoResultClassification | null | undefined): boolean {
+  if (!auto || !isRiskyResultClass(auto.classification)) return false;
+  const riskConf = auto.riskConfidence ?? auto.confidence;
+  const identity = auto.identityConfidence ?? "LOW";
+  return riskConf === "HIGH" && identity !== "LOW";
 }

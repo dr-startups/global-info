@@ -9,14 +9,16 @@
 import {
   allNegativeKeywords,
   bankruptcyKeywords,
+  corporateRegistryDomains,
   criminalAllegationKeywords,
-  legalKeywords,
+  legalDisputeDict,
   matchesAny,
   neutralSafeDomains,
   offshoreKeywords,
   pepKeywords,
   reputationDomains,
   sanctionsKeywords,
+  weakRegistryTerms,
 } from "./dictionaries";
 import type {
   RiskClassificationResult,
@@ -77,13 +79,21 @@ const SEARCH_KEYWORD_RULES: KeywordRule[] = [
   { signalType: "CRIMINAL_ALLEGATION", theme: "criminal_allegation", level: "HIGH", keywords: criminalAllegationKeywords, label: "criminal-allegation" },
   { signalType: "PEP_RCA_MENTION", theme: "pep_rca", level: "MEDIUM", keywords: pepKeywords, label: "PEP/RCA" },
   { signalType: "OFFSHORE_MENTION", theme: "offshore", level: "MEDIUM", keywords: offshoreKeywords, label: "offshore" },
-  { signalType: "LEGAL_DISPUTE", theme: "legal", level: "MEDIUM", keywords: legalKeywords, label: "legal-dispute" },
+  { signalType: "LEGAL_DISPUTE", theme: "legal", level: "MEDIUM", keywords: legalDisputeDict.strong, label: "legal-dispute" },
   { signalType: "BANKRUPTCY_MENTION", theme: "legal", level: "MEDIUM", keywords: bankruptcyKeywords, label: "bankruptcy" },
 ];
+
+function isRegistryContext(r: LoadedSearchResult): boolean {
+  const domain = domainOf(r.url);
+  if (corporateRegistryDomains.some((d) => domain.includes(d))) return true;
+  const text = `${r.title ?? ""} ${r.snippet ?? ""}`.toLowerCase();
+  return matchesAny(text, weakRegistryTerms).length >= 2;
+}
 
 export function classifySearchResult(r: LoadedSearchResult): RiskClassificationResult[] {
   const text = `${r.title ?? ""} ${r.snippet ?? ""} ${r.url}`;
   const demo = (r.source ?? "").startsWith("mock");
+  if (isRegistryContext(r)) return [];
   const ref: RiskEvidenceRef = {
     type: "SEARCH_RESULT",
     id: r.id,

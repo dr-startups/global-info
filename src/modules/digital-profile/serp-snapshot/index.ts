@@ -29,6 +29,11 @@ export {
   generateSerpSnapshot,
   getLatestSerpSnapshot,
 } from "./service";
+export {
+  ensureFreshSerpSnapshotForReport,
+  SERP_SNAPSHOT_GENERATOR_VERSION,
+  staleEmbedBlockedWarning,
+} from "./snapshot-freshness";
 export { getLatestSnapshot, persistSnapshot } from "./storage";
 export type {
   SerpEngine,

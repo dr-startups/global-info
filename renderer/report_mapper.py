@@ -20,7 +20,8 @@ from report_i18n import labels as i18n_labels, normalize_lang, watermark_text
 _INTERNAL_HYGIENE_RE = re.compile(
     r"demo\s*/\s*mock|mock rows|excluded from production|исключены из метрик|"
     r"data hygiene|fixture|sourcemode|provideradapter|raw metadata|"
-    r"unlinked risk findings|несвязанн",
+    r"unlinked risk findings|несвязанн|serp snapshot.*refresh|stale or inconsistent serp|"
+    r"serp snapshot не удалось|устаревший.*serp snapshot",
     re.I,
 )
 

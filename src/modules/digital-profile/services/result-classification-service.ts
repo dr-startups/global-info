@@ -20,6 +20,7 @@ import type { ActorContext } from "./case-service";
 import {
   classifySearchResultRecord,
   isRiskyResultClass,
+  isStrongAutoSnapshotRisk,
   mergeRiskClassification,
   readRiskClassification,
   themeForClass,
@@ -74,7 +75,7 @@ export async function classifyCaseSearchResults(
 ): Promise<ClassifyResultsSummary> {
   await ensureActiveCase(caseId);
 
-  const [rows, existingFindings] = await Promise.all([
+  const [rows, existingFindings, subjectRow] = await Promise.all([
     prisma.searchResult.findMany({
       where: { caseId },
       select: {
@@ -92,7 +93,13 @@ export async function classifyCaseSearchResults(
       where: { caseId, createdBy: RESULT_CLASSIFIER_OWNER },
       select: { id: true, dedupHash: true, reviewStatus: true },
     }),
+    prisma.case.findFirst({
+      where: { id: caseId },
+      select: { subjects: { orderBy: { createdAt: "asc" }, take: 1, select: { fullName: true } } },
+    }),
   ]);
+
+  const subjectFullName = subjectRow?.subjects[0]?.fullName ?? null;
 
   const existingByHash = new Map<string, { id: string; reviewStatus: string }>();
   for (const f of existingFindings) {
@@ -117,6 +124,7 @@ export async function classifyCaseSearchResults(
       snippet: r.snippet,
       provider: r.engine,
       source: r.source,
+      subjectFullName,
     });
     const auto: AutoResultClassification = { ...result, classifiedAt };
 
@@ -129,11 +137,9 @@ export async function classifyCaseSearchResults(
     });
     summary.classified += 1;
 
-    // Upsert a finding only for risky MEDIUM/HIGH auto classifications. Manual
-    // overrides are authoritative for highlighting and are handled separately.
-    const isRisky =
-      isRiskyResultClass(result.classification) &&
-      (result.confidence === "MEDIUM" || result.confidence === "HIGH");
+    // Upsert findings only for strong auto-risk (HIGH + identity); weak hits stay for review only.
+    const autoBlock: AutoResultClassification = { ...result, classifiedAt };
+    const isRisky = isStrongAutoSnapshotRisk(autoBlock);
     if (!isRisky) continue;
     summary.risky += 1;
 

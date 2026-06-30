@@ -199,16 +199,20 @@ async function main() {
   check(`EN slideCount === ${SLIDE_COUNT}`, (re?.slideCount ?? 0) === SLIDE_COUNT, `slides ${re?.slideCount}`);
   check("EN snapshot embedded (no missing warning)", !hasMissingWarning(re?.warnings));
 
-  // --- 7. Case WITHOUT a snapshot must not crash + must warn ---
+  // --- 7. R1.1.3 — empty case: report build auto-generates SERP snapshot ---
   const noSnapId = await newCase("No Snapshot Case");
-  await req("POST", `${API}/cases/${noSnapId}/report/generate`);
+  const genNo = await req("POST", `${API}/cases/${noSnapId}/report/generate`);
+  check(
+    "empty case report auto-creates serpSnapshot",
+    !!genNo.json?.data?.reportJson?.serpSnapshot?.id
+  );
   const renderNo = await req("POST", `${API}/cases/${noSnapId}/report/render`, {
     templateVersion: "report-template-v3",
   });
   const rn = renderNo.json?.data;
-  check("no-snapshot case render -> 201 (no crash)", renderNo.status === 201, `status ${renderNo.status}`);
-  check(`no-snapshot slideCount === ${SLIDE_COUNT}`, (rn?.slideCount ?? 0) === SLIDE_COUNT, `slides ${rn?.slideCount}`);
-  check("no-snapshot surfaces missing renderWarning", hasMissingWarning(rn?.warnings),
+  check("empty case render -> 201 (no crash)", renderNo.status === 201, `status ${renderNo.status}`);
+  check(`empty case slideCount === ${SLIDE_COUNT}`, (rn?.slideCount ?? 0) === SLIDE_COUNT, `slides ${rn?.slideCount}`);
+  check("empty case snapshot embedded via auto-regen", !hasMissingWarning(rn?.warnings),
     `warnings ${JSON.stringify(rn?.warnings ?? [])}`);
   if (rn?.pdfDownloadUrl) {
     const pdf = await downloadSig(rn.pdfDownloadUrl, 5);

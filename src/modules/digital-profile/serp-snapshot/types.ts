@@ -188,6 +188,12 @@ export interface SerpSnapshotMetadata {
   sourcePreference: SourcePreference;
   /** Stage N1.2 — per-engine source breakdown. */
   perEngine: PerEngineSource;
+  /** Stage R1.1.3 — generator semver for staleness checks. */
+  generatorVersion?: string;
+  visibleHighlightedCount?: number;
+  themeLabels?: string[];
+  wasRegeneratedForReport?: boolean;
+  staleReason?: string;
 }
 
 /** Result returned by the service / API layer. */

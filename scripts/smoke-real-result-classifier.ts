@@ -58,7 +58,7 @@ function main() {
     url: "https://ru.wikipedia.org/wiki/Test_Person",
     snippet: "Биография вымышленного публичного деятеля.",
   });
-  check("wikipedia ⇒ RELEVANT", wiki.classification === "RELEVANT", wiki.classification);
+  check("wikipedia ⇒ BIOGRAPHY/RELEVANT", ["RELEVANT", "BIOGRAPHY"].includes(wiki.classification), wiki.classification);
   check("wikipedia not risky", !isRiskyResultClass(wiki.classification));
 
   // --- 2. Plain news without adverse words ⇒ NEWS/NEUTRAL ---
@@ -99,7 +99,17 @@ function main() {
 
   // --- 5. Manual adverse overrides neutral auto ---
   const neutralAuto: StoredRiskClassification = {
-    auto: { classification: "NEUTRAL", riskTheme: null, confidence: "LOW", rationale: "", matchedTerms: [], classifiedAt: "" },
+    auto: {
+      classification: "NEUTRAL",
+      riskTheme: null,
+      confidence: "LOW",
+      riskConfidence: "LOW",
+      identityConfidence: "MEDIUM",
+      rationale: "",
+      matchedTerms: [],
+      classifiedAt: "",
+      potentialRiskForReview: false,
+    },
     manual: { classification: "ADVERSE_MEDIA", riskTheme: "adverse_media", rationale: null, reviewedBy: "analyst", reviewedAt: "" },
   };
   const m1 = resolveHighlight({ enumClassification: null, riskClassification: neutralAuto, findings: [] });
@@ -107,7 +117,17 @@ function main() {
 
   // --- 6. Manual neutral overrides automatic adverse ---
   const adverseAuto: StoredRiskClassification = {
-    auto: { classification: "ADVERSE_MEDIA", riskTheme: "adverse_media", confidence: "HIGH", rationale: "", matchedTerms: [], classifiedAt: "" },
+    auto: {
+      classification: "ADVERSE_MEDIA",
+      riskTheme: "adverse_media",
+      confidence: "HIGH",
+      riskConfidence: "HIGH",
+      identityConfidence: "HIGH",
+      rationale: "",
+      matchedTerms: [],
+      classifiedAt: "",
+      potentialRiskForReview: false,
+    },
     manual: { classification: "NEUTRAL", riskTheme: null, rationale: null, reviewedBy: "analyst", reviewedAt: "" },
   };
   const m2 = resolveHighlight({ enumClassification: null, riskClassification: adverseAuto, findings: [] });
@@ -116,29 +136,73 @@ function main() {
   // --- 7. Auto MEDIUM/HIGH highlights; LOW does not ---
   const autoHi = resolveHighlight({
     enumClassification: null,
-    riskClassification: { auto: { classification: "SANCTIONS", riskTheme: "sanctions", confidence: "HIGH", rationale: "", matchedTerms: [], classifiedAt: "" } },
+    riskClassification: {
+      auto: {
+        classification: "SANCTIONS",
+        riskTheme: "sanctions",
+        confidence: "HIGH",
+        riskConfidence: "HIGH",
+        identityConfidence: "HIGH",
+        rationale: "",
+        matchedTerms: [],
+        classifiedAt: "",
+        potentialRiskForReview: false,
+      },
+    },
     findings: [],
   });
   check("auto HIGH sanctions ⇒ highlight", autoHi.isHighlighted && autoHi.source === "auto");
   const autoLo = resolveHighlight({
     enumClassification: null,
-    riskClassification: { auto: { classification: "PEP", riskTheme: "political_exposure", confidence: "LOW", rationale: "", matchedTerms: [], classifiedAt: "" } },
+    riskClassification: {
+      auto: {
+        classification: "PEP",
+        riskTheme: "political_exposure",
+        confidence: "LOW",
+        riskConfidence: "LOW",
+        identityConfidence: "MEDIUM",
+        rationale: "",
+        matchedTerms: [],
+        classifiedAt: "",
+        potentialRiskForReview: true,
+      },
+    },
     findings: [],
   });
   check("auto LOW ⇒ not highlighted", !autoLo.isHighlighted);
 
-  // --- 8. Findings: active highlights, all-dismissed suppresses ---
-  const active = resolveHighlight({ enumClassification: null, riskClassification: null, findings: [{ reviewStatus: "PENDING", riskTheme: "criminal" }] });
-  check("active finding ⇒ highlight (theme criminal)", active.isHighlighted && active.riskTheme === "criminal");
+  const active = resolveHighlight({
+    enumClassification: null,
+    riskClassification: null,
+    findings: [{ reviewStatus: "REVIEWED", riskTheme: "criminal", severity: "HIGH" }],
+  });
+  check("reviewed finding ⇒ highlight (theme criminal)", active.isHighlighted && active.riskTheme === "criminal");
   const dismissed = resolveHighlight({
     enumClassification: "ADVERSE_MEDIA",
-    riskClassification: { auto: { classification: "ADVERSE_MEDIA", riskTheme: "adverse_media", confidence: "HIGH", rationale: "", matchedTerms: [], classifiedAt: "" } },
+    riskClassification: {
+      auto: {
+        classification: "ADVERSE_MEDIA",
+        riskTheme: "adverse_media",
+        confidence: "HIGH",
+        riskConfidence: "HIGH",
+        identityConfidence: "HIGH",
+        rationale: "",
+        matchedTerms: [],
+        classifiedAt: "",
+        potentialRiskForReview: false,
+      },
+    },
     findings: [{ reviewStatus: "DISMISSED", riskTheme: "adverse_media" }],
   });
   check("all-dismissed finding ⇒ suppressed", !dismissed.isHighlighted && dismissed.source === "finding");
 
   // --- 8b. Legacy enum fallback ---
-  const legacy = resolveHighlight({ enumClassification: "ADVERSE_MEDIA", riskClassification: null, findings: [] });
+  const legacy = resolveHighlight({
+    enumClassification: "ADVERSE_MEDIA",
+    riskClassification: null,
+    findings: [],
+    sourceIsMock: true,
+  });
   check("legacy enum ADVERSE_MEDIA ⇒ highlight", legacy.isHighlighted && legacy.source === "enum");
 
   // --- 9. Theme grouping: red frames + Theme N labels; empty ⇒ none ---

@@ -44,7 +44,10 @@ import {
   buildReportDownloadUrl,
   buildScreenshotDownloadUrl,
 } from "../storage/signed-url";
-import { getLatestSerpSnapshot } from "../serp-snapshot";
+import {
+  ensureFreshSerpSnapshotForReport,
+  staleEmbedBlockedWarning,
+} from "../serp-snapshot/snapshot-freshness";
 import { countUnlinkedActiveRiskFindings } from "../serp-snapshot/data-loader";
 import type { ActorContext } from "./case-service";
 import type {
@@ -503,11 +506,18 @@ export async function buildReportJson(
     auditSummary = undefined;
   }
 
-  // Stage S1 — embed a reference to the latest synthetic SERP snapshot if one
-  // exists (additive/optional; renderer ignores unknown keys). Best-effort.
+  // Stage S1 + R1.1.3 — fresh synthetic SERP snapshot for report embedding.
   let serpSnapshot: ReportJson["serpSnapshot"];
   try {
-    const latest = await getLatestSerpSnapshot(caseId);
+    const subjectName = caseRow.subjects[0]?.fullName ?? "";
+    const fresh = await ensureFreshSerpSnapshotForReport(caseId, reportLanguage, {
+      subjectName,
+      actorId: undefined,
+    });
+    if (fresh.internalWarning) {
+      reportWarnings.push(fresh.internalWarning);
+    }
+    const latest = fresh.snapshot;
     if (latest) {
       serpSnapshot = {
         id: latest.id,
@@ -529,8 +539,13 @@ export async function buildReportJson(
             String(r.source ?? "").toLowerCase().startsWith("real:")
           ),
           reportResultCount: productionSearchResults.length,
+          wasRegeneratedForReport: fresh.wasRegenerated,
+          staleReason: fresh.staleReason,
         },
       };
+    } else if (fresh.regenerateFailed || fresh.staleReason) {
+      reportWarnings.push(staleEmbedBlockedWarning(reportLanguage));
+      serpSnapshot = undefined;
     }
   } catch {
     serpSnapshot = undefined;

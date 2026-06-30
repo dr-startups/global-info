@@ -199,6 +199,10 @@ const INTERNAL_HYGIENE_PATTERNS = [
   /raw metadata/i,
   /unlinked risk findings/i,
   /несвязанн/i,
+  /serp snapshot.*refresh/i,
+  /serp snapshot не удалось/i,
+  /stale or inconsistent serp/i,
+  /устаревший.*serp snapshot/i,
 ] as const;
 
 export function isInternalHygieneText(text: string): boolean {
