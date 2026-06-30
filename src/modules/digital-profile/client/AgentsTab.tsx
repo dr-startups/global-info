@@ -53,6 +53,9 @@ export function AgentsTab({
       await runAgentApi(caseId, name);
       if (name === "REAL_YANDEX_SEARCH") setInfo(t("agents.realYandexHint"));
       if (name === "REAL_GOOGLE_SEARCH") setInfo(t("agents.realGoogleHint"));
+      if (name === "REAL_ORION_SEARCH_PROFILE") setInfo(t("agents.realOrionProfileHint"));
+      if (name === "REAL_ORION_GOOGLE_SURFACES") setInfo(t("agents.realOrionSurfacesHint"));
+      if (name === "REAL_ORION_UAE_INTERNATIONAL") setInfo(t("agents.realOrionUaeHint"));
       onChanged();
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";

@@ -97,6 +97,12 @@ export const en: Dictionary = {
       "Real Yandex search finished. You can now generate a SERP Snapshot — it will be built on real Yandex results.",
     realGoogleHint:
       "Real Google search finished. The SERP Snapshot will now use real Google results.",
+    realOrionProfileHint:
+      "ORION search profile finished. Multi-query matrix and Google surfaces saved — regenerate the report to embed them.",
+    realOrionSurfacesHint:
+      "Google surfaces (suggestions, images, videos, knowledge) collected via Serper.",
+    realOrionUaeHint:
+      "UAE / International search profile collected. Regenerate the report to refresh regional pages.",
   },
   report: {
     title: "Report preview",

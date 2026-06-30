@@ -41,6 +41,7 @@
     "smoke:serp-snapshot-highlight-consistency": "tsx scripts/smoke-serp-snapshot-highlight-consistency.ts",
     "smoke:risk-classifier-precision": "tsx scripts/smoke-risk-classifier-precision.ts",
     "smoke:serp-snapshot-auto-regen-report": "tsx scripts/smoke-serp-snapshot-auto-regen-report.ts",
+    "smoke:orion-search-surfaces-foundation": "tsx scripts/smoke-orion-search-surfaces-foundation.ts",
     "smoke:report-i18n": "node scripts/smoke-report-i18n.mjs",
     "smoke:i18n": "tsx scripts/smoke-i18n.ts",
     "smoke:auth": "tsx scripts/smoke-auth.ts",

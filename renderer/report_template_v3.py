@@ -210,6 +210,21 @@ def _b_summary(slide, top, blk, vm, ctx):
         {"label": L["m_knowledge"], "value": s.get("knowledgeBlockStatus", "ABSENT")},
     ]
     top = T.metric_cards(slide, top, cards2, per_row=4)
+    subs = blk.get("subregions") or {}
+    if subs:
+        parts = []
+        for key in ("uae", "international"):
+            sub = subs.get(key) or {}
+            if sub.get("present"):
+                ssub = sub.get("summary") or {}
+                parts.append(
+                    f"{sub.get('label', key)}: "
+                    f"{L['m_organic_total']} {ssub.get('organicTotal', 0)}, "
+                    f"{L['m_suggestions_nt']} {ssub.get('suggestions', '0/0')}, "
+                    f"related {(sub.get('relatedQueries') or {}).get('total', 0)}"
+                )
+        if parts:
+            top = T.bullets(slide, top, parts)
     if blk["conclusion"]:
         T.note(slide, top, blk["conclusion"], "info")
 
@@ -358,8 +373,24 @@ def _b_related(slide, top, blk, vm, ctx):
         {"label": L["m_total"], "value": rq["total"]},
         {"label": L["m_negative"], "value": rq["negative"], "tone": T.DANGER},
     ], per_row=2)
+    subs = blk.get("subregions") or {}
+    if subs and rq.get("total", 0) > 0:
+        parts = []
+        for key in ("uae", "international"):
+            sub = subs.get(key) or {}
+            sr = sub.get("relatedQueries") or {}
+            if (sr.get("total") or 0) > 0:
+                parts.append(f"{sub.get('label', key)} ({sr.get('total', 0)}):")
+                parts.extend(sr.get("list") or [])
+        if parts:
+            T.bullets(slide, top, parts)
+            return
     if rq["list"]:
         T.bullets(slide, top, rq["list"])
+    elif str(rq.get("collectionStatus", "")).upper() == "COLLECTED":
+        T.no_data_card(slide, top, L.get("nd_none_found_related", L["nd_no_related"]))
+    elif str(rq.get("collectionStatus", "")).upper() in ("NOT_QUERIED", "NOT_CONFIGURED", "NOT_SUPPORTED"):
+        T.no_data_card(slide, top, rq.get("statusMessage") or L.get("nd_not_queried_surface", L["nd_no_related"]))
     else:
         T.no_data_card(slide, top, L["nd_no_related"])
 

@@ -150,6 +150,11 @@ export function isNegativeSurface(s: LoadedSurface): boolean {
 }
 
 export function regionOfOrganic(r: LoadedOrganic): RegionCode {
+  const meta = (r.rawMetadata ?? {}) as Record<string, unknown>;
+  const orion = String(meta.orionRegion ?? meta.region ?? "").toUpperCase();
+  if (orion === "RU") return "RU";
+  if (orion === "INTERNATIONAL" || orion === "INTL") return "INTERNATIONAL";
+  if (orion === "UAE" || orion === "AE") return "UAE";
   if (r.engine === "YANDEX") return "RU";
   const text = `${r.title ?? ""} ${r.snippet ?? ""}`;
   return hasCyrillic(text) ? "RU" : "UAE";
@@ -158,7 +163,13 @@ export function regionOfOrganic(r: LoadedOrganic): RegionCode {
 export function regionOfSurface(s: LoadedSurface): RegionCode {
   const reg = (s.region ?? "").toUpperCase();
   if (reg.includes("RU")) return "RU";
+  if (reg.includes("INTERNATIONAL") || reg.includes("INTL")) return "INTERNATIONAL";
   if (reg.includes("AE") || reg.includes("UAE")) return "UAE";
+  const meta = (s.rawMetadata ?? {}) as Record<string, unknown>;
+  const orion = String(meta.orionRegion ?? "").toUpperCase();
+  if (orion === "INTERNATIONAL" || orion === "INTL") return "INTERNATIONAL";
+  if (orion === "UAE" || orion === "AE") return "UAE";
+  if (orion === "RU") return "RU";
   if ((s.language ?? "").toLowerCase().startsWith("ru")) return "RU";
   const text = `${s.query ?? ""} ${s.title ?? ""}`;
   return hasCyrillic(text) ? "RU" : "UAE";
@@ -418,11 +429,11 @@ export function calculateOverallRiskLevel(input: OverallRiskInput): OverallRiskL
 }
 
 // ---------------------------------------------------------------------------
-// Regions (RU / UAE)
+// Regions (RU / UAE / INTERNATIONAL)
 // ---------------------------------------------------------------------------
 
-const REGIONS: RegionCode[] = ["RU", "UAE"];
-const REGION_LANG: Record<RegionCode, string> = { RU: "ru", UAE: "en" };
+const REGIONS: RegionCode[] = ["RU", "UAE", "INTERNATIONAL"];
+const REGION_LANG: Record<RegionCode, string> = { RU: "ru", UAE: "en", INTERNATIONAL: "en" };
 
 export function computeRegions(
   organic: LoadedOrganic[],

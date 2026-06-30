@@ -24,6 +24,10 @@ import { buildAuditSummary } from "../audit-summary/builder";
 import { buildComplianceSummaryBlock } from "../compliance-providers";
 import { buildOfferConfig } from "../report/offer-config";
 import {
+  buildSearchSurfacesReportBlock,
+  regionBlockToAuditRegion,
+} from "../report/search-surfaces-report-builder";
+import {
   createInternalHygieneWarning,
   filterComplianceForReport,
   filterSearchResultsForReport,
@@ -560,6 +564,33 @@ export async function buildReportJson(
     complianceSummary = undefined;
   }
 
+  // Stage O4 — ORION search surfaces block (best-effort).
+  let searchSurfaces: ReportJson["searchSurfaces"];
+  try {
+    searchSurfaces = await buildSearchSurfacesReportBlock(caseId, {
+      includeDemo: policy.includeDemoData,
+    });
+    if (auditSummary && searchSurfaces) {
+      const mergedRegions = [];
+      for (const [code, block] of [
+        ["RU", searchSurfaces.regions.ru],
+        ["UAE", searchSurfaces.regions.uae],
+        ["INTERNATIONAL", searchSurfaces.regions.international],
+      ] as const) {
+        const mapped = regionBlockToAuditRegion(block);
+        if (mapped) mergedRegions.push({ ...mapped, region: code });
+      }
+      if (mergedRegions.length > 0) {
+        auditSummary = {
+          ...auditSummary,
+          regions: mergedRegions as typeof auditSummary.regions,
+        };
+      }
+    }
+  } catch {
+    searchSurfaces = undefined;
+  }
+
   return {
     meta: {
       caseNumber: caseRow.caseNumber,
@@ -582,6 +613,7 @@ export async function buildReportJson(
     reportLanguage,
     serpSnapshot,
     complianceSummary,
+    searchSurfaces,
   };
 }
 

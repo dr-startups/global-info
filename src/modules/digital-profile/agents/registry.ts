@@ -16,6 +16,11 @@ import { RealWikipediaAgent } from "./real/real-wikipedia-agent";
 import { RealGoogleSearchAgent } from "./real/real-google-search-agent";
 import { RealYandexSearchAgent } from "./real/real-yandex-search-agent";
 import { RealSearchSurfaceAgent } from "./real/real-search-surface-agent";
+import {
+  RealOrionGoogleSurfacesAgent,
+  RealOrionSearchProfileAgent,
+  RealOrionUaeInternationalAgent,
+} from "./real/real-orion-search-profile-agent";
 import { RiskClassifierV1Agent } from "./real/risk-classifier-agent";
 import { AuditSummaryBuilderAgent } from "./real/audit-summary-agent";
 
@@ -31,6 +36,9 @@ const AGENT_LIST: CaseAgent[] = [
   new RealGoogleSearchAgent(),
   new RealYandexSearchAgent(),
   new RealSearchSurfaceAgent(),
+  new RealOrionSearchProfileAgent(),
+  new RealOrionGoogleSurfacesAgent(),
+  new RealOrionUaeInternationalAgent(),
   new RiskClassifierV1Agent(),
   new AuditSummaryBuilderAgent(),
 ];
@@ -53,6 +61,7 @@ export const MOCK_FULL_AUDIT_ORDER: string[] = [
 /** Real connectors that are safe to run as an opt-in real audit (official APIs). */
 export const REAL_SAFE_AUDIT_ORDER: string[] = [
   "REAL_WIKIPEDIA",
+  "REAL_ORION_SEARCH_PROFILE",
   "REAL_GOOGLE_SEARCH",
   "REAL_YANDEX_SEARCH",
   "REAL_SEARCH_SURFACES",

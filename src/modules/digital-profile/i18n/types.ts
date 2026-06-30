@@ -112,6 +112,9 @@ export interface Dictionary {
     realRunConfirm: string;
     realYandexHint: string;
     realGoogleHint: string;
+    realOrionProfileHint: string;
+    realOrionSurfacesHint: string;
+    realOrionUaeHint: string;
   };
   report: {
     title: string;

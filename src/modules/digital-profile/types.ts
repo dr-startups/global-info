@@ -380,6 +380,8 @@ export interface ReportJson {
    * so this does not change the existing report layout.
    */
   serpSnapshot?: ReportSerpSnapshot;
+  /** Stage O4 — ORION search surfaces per region (additive). */
+  searchSurfaces?: import("./report/search-surfaces-report-builder").SearchSurfacesReportBlock;
 }
 
 /** Stage S1 — minimal SERP snapshot reference embedded in report_json. */

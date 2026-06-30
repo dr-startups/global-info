@@ -91,6 +91,10 @@ export interface ProviderConfig {
       timeoutMs: number;
     };
   };
+  orion: {
+    maxPrimaryQueriesPerRegion: number;
+    includeRiskProbes: boolean;
+  };
   yandex: {
     /** Legacy master-switch-gated flag (Stage H2, XML GET endpoint). */
     enabled: boolean;
@@ -140,9 +144,17 @@ export const providerConfig: ProviderConfig = {
       // Only an enum provider NAME is read from env — never an arbitrary URL
       // (prevents SSRF). The concrete adapter is selected separately.
       provider: envStr(process.env.GOOGLE_EXTERNAL_SERP_PROVIDER)?.toLowerCase(),
-      apiKey: envStr(process.env.GOOGLE_EXTERNAL_SERP_API_KEY),
+      // Primary key name; SERPER_API_KEY is a backward-compatible alias.
+      apiKey:
+        envStr(process.env.GOOGLE_EXTERNAL_SERP_API_KEY) ??
+        envStr(process.env.SERPER_API_KEY),
       timeoutMs: envInt(process.env.GOOGLE_EXTERNAL_SERP_TIMEOUT_MS, 15000, 1000, 60000),
     },
+  },
+  /** Stage O1–O4 — ORION multi-query / surfaces tuning. */
+  orion: {
+    maxPrimaryQueriesPerRegion: envInt(process.env.ORION_MAX_PRIMARY_QUERIES_PER_REGION, 5, 1, 20),
+    includeRiskProbes: envBool(process.env.ORION_INCLUDE_RISK_PROBES, false),
   },
   yandex: {
     enabled: envBool(process.env.DIGITAL_PROFILE_YANDEX_ENABLED, false),

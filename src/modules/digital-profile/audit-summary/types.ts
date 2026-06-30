@@ -13,7 +13,7 @@ export type OverallRiskLevel = RiskLevel | "UNKNOWN";
 
 export type AuditTone = "neutral" | "caution" | "elevated" | "insufficient_data";
 
-export type RegionCode = "RU" | "UAE";
+export type RegionCode = "RU" | "UAE" | "INTERNATIONAL";
 
 export interface SearchSummary {
   totalResults: number;
@@ -96,7 +96,10 @@ export interface RegionAuditSummary {
   imagesNegative: number;
   videosTotal: number;
   videosNegative: number;
-  knowledgeBlockStatus: "PRESENT" | "MISMATCH" | "ABSENT";
+  knowledgeBlockStatus: "PRESENT" | "MISMATCH" | "ABSENT" | "NOT_COLLECTED";
+  /** Stage O4.1 — whether this region was actually queried. */
+  collectionStatus?: "COLLECTED" | "NOT_QUERIED" | "NOT_CONFIGURED" | "NOT_SUPPORTED" | "PARTIAL";
+  statusMessage?: string;
   regionRiskLevel: OverallRiskLevel;
   regionConclusion: string;
   /** Compact rows for the report tables (bounded). */

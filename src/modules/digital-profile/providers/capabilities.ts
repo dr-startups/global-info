@@ -1,29 +1,36 @@
 /**
- * Provider surface capabilities (Stage H3).
+ * Provider surface capabilities (Stage H3 + O2).
  *
- * Declares, per provider, which search surfaces are deliverable and how:
- *  - OFFICIAL_API  — supported by the current official-API adapter
- *  - MANUAL_IMPORT — only available via analyst manual import
- *  - SYNTHETIC     — can be produced as a safe synthetic snapshot (not a live SERP)
- *  - NOT_SUPPORTED — not available through any safe/official path here
- *
- * We deliberately mark surfaces the current adapters do NOT yet implement as
- * NOT_SUPPORTED (rather than pretending). No scraping/browser fallbacks exist.
+ * Declares, per provider, which search surfaces are deliverable and how.
+ * Google capabilities reflect Serper availability when external_serp is configured.
  */
 
 import type { ProviderName } from "./config";
-import type { ProviderCapabilities } from "../search-surfaces/types";
+import { providerConfig } from "./config";
+import type { ProviderCapabilities, SurfaceCapability } from "../search-surfaces/types";
 
-const GOOGLE: ProviderCapabilities = {
-  organicSearch: { supported: true, method: "OFFICIAL_API" },
-  imageSearch: { supported: false, method: "NOT_SUPPORTED" },
-  videoSearch: { supported: false, method: "NOT_SUPPORTED" },
-  suggestions: { supported: false, method: "NOT_SUPPORTED" },
-  relatedQueries: { supported: false, method: "NOT_SUPPORTED" },
-  knowledgeBlock: { supported: true, method: "MANUAL_IMPORT" },
-  screenshots: { supported: true, method: "SYNTHETIC" },
-  manualImport: { supported: true, method: "MANUAL_IMPORT" },
-};
+function cap(supported: boolean, method: SurfaceCapability["method"]): SurfaceCapability {
+  return { supported, method };
+}
+
+function serperReady(): boolean {
+  const ext = providerConfig.google.external;
+  return ext.provider === "serper" && Boolean(ext.apiKey?.trim());
+}
+
+function buildGoogleCapabilities(): ProviderCapabilities {
+  const ready = serperReady();
+  return {
+    organicSearch: cap(ready, "OFFICIAL_API"),
+    imageSearch: cap(ready, ready ? "OFFICIAL_API" : "NOT_SUPPORTED"),
+    videoSearch: cap(ready, ready ? "OFFICIAL_API" : "NOT_SUPPORTED"),
+    suggestions: cap(ready, ready ? "OFFICIAL_API" : "NOT_SUPPORTED"),
+    relatedQueries: cap(ready, ready ? "OFFICIAL_API" : "NOT_SUPPORTED"),
+    knowledgeBlock: cap(ready, ready ? "OFFICIAL_API" : "MANUAL_IMPORT"),
+    screenshots: cap(true, "SYNTHETIC"),
+    manualImport: cap(true, "MANUAL_IMPORT"),
+  };
+}
 
 const YANDEX: ProviderCapabilities = {
   organicSearch: { supported: true, method: "OFFICIAL_API" },
@@ -47,12 +54,8 @@ const WIKIPEDIA: ProviderCapabilities = {
   manualImport: { supported: true, method: "MANUAL_IMPORT" },
 };
 
-const CAPABILITIES: Record<ProviderName, ProviderCapabilities> = {
-  GOOGLE,
-  YANDEX,
-  WIKIPEDIA,
-};
-
 export function getProviderCapabilities(name: ProviderName): ProviderCapabilities {
-  return CAPABILITIES[name];
+  if (name === "GOOGLE") return buildGoogleCapabilities();
+  if (name === "YANDEX") return YANDEX;
+  return WIKIPEDIA;
 }

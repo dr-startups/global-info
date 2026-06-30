@@ -150,9 +150,9 @@ export function validateDigitalProfileEnv(
         warnings.push(
           "GOOGLE_SEARCH_PROVIDER=external_serp but GOOGLE_EXTERNAL_SERP_PROVIDER is not selected; the real Google provider will resolve to NOT_CONFIGURED."
         );
-      } else if (!env.GOOGLE_EXTERNAL_SERP_API_KEY) {
+      } else if (!env.GOOGLE_EXTERNAL_SERP_API_KEY && !env.SERPER_API_KEY) {
         warnings.push(
-          "GOOGLE_EXTERNAL_SERP_PROVIDER is selected but GOOGLE_EXTERNAL_SERP_API_KEY is missing; the real Google provider will resolve to NOT_CONFIGURED."
+          "GOOGLE_EXTERNAL_SERP_PROVIDER is selected but GOOGLE_EXTERNAL_SERP_API_KEY (or SERPER_API_KEY alias) is missing; the real Google provider will resolve to NOT_CONFIGURED."
         );
       }
     }

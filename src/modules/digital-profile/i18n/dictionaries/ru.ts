@@ -97,6 +97,12 @@ export const ru: Dictionary = {
       "Реальный поиск Яндекса завершён. Теперь можно сгенерировать SERP Snapshot — он будет построен на реальных результатах Яндекса.",
     realGoogleHint:
       "Реальный поиск Google завершён. Теперь SERP Snapshot будет использовать реальные результаты Google.",
+    realOrionProfileHint:
+      "ORION search profile завершён. Матрица запросов и поверхности Google сохранены — пересоберите отчёт.",
+    realOrionSurfacesHint:
+      "Поверхности Google (подсказки, изображения, видео, knowledge panel) собраны через Serper.",
+    realOrionUaeHint:
+      "Поиск UAE / International завершён. Пересоберите отчёт для обновления региональных страниц.",
   },
   report: {
     title: "Предпросмотр отчёта",

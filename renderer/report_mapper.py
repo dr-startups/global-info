@@ -126,6 +126,74 @@ def _region(regions: list[dict], code: str) -> dict | None:
     return None
 
 
+def _merge_surface_section(a: dict, b: dict) -> dict:
+    """Merge a surface bucket (relatedQueries, suggestions, etc.) from two region blocks."""
+    return {
+        "total": (a.get("total") or 0) + (b.get("total") or 0),
+        "negative": (a.get("negative") or 0) + (b.get("negative") or 0),
+        "list": list(a.get("list") or []) + list(b.get("list") or []),
+        "items": list(a.get("items") or []) + list(b.get("items") or []),
+        "collectionStatus": "COLLECTED"
+        if (a.get("collectionStatus") == "COLLECTED" or b.get("collectionStatus") == "COLLECTED")
+        else (a.get("collectionStatus") or b.get("collectionStatus") or ""),
+        "statusMessage": a.get("statusMessage") or b.get("statusMessage") or "",
+    }
+
+
+def _combine_intl_block(uae: dict, international: dict, label: str) -> dict:
+    """Visual UAE/International section (pages 22–31) with separate subregion data."""
+    present = bool(uae.get("present") or international.get("present"))
+    base = international if international.get("present") else uae
+    uae_sum = uae.get("summary") or {}
+    intl_sum = international.get("summary") or {}
+    merged_summary = {
+        "organicTotal": (uae_sum.get("organicTotal") or 0) + (intl_sum.get("organicTotal") or 0),
+        "organicNegative": (uae_sum.get("organicNegative") or 0) + (intl_sum.get("organicNegative") or 0),
+        "organicNegativeShare": base.get("summary", {}).get("organicNegativeShare", "0%"),
+        "suggestions": f"{(uae.get('suggestions') or {}).get('negative', 0) + (international.get('suggestions') or {}).get('negative', 0)}/{(uae.get('suggestions') or {}).get('total', 0) + (international.get('suggestions') or {}).get('total', 0)}",
+        "images": f"{(uae.get('images') or {}).get('negative', 0) + (international.get('images') or {}).get('negative', 0)}/{(uae.get('images') or {}).get('total', 0) + (international.get('images') or {}).get('total', 0)}",
+        "videos": f"{(uae.get('videos') or {}).get('negative', 0) + (international.get('videos') or {}).get('negative', 0)}/{(uae.get('videos') or {}).get('total', 0) + (international.get('videos') or {}).get('total', 0)}",
+        "knowledgeBlockStatus": base.get("summary", {}).get("knowledgeBlockStatus", "ABSENT"),
+        "uaeOrganicTotal": uae_sum.get("organicTotal", 0),
+        "internationalOrganicTotal": intl_sum.get("organicTotal", 0),
+        "uaeRelatedTotal": (uae.get("relatedQueries") or {}).get("total", 0),
+        "internationalRelatedTotal": (international.get("relatedQueries") or {}).get("total", 0),
+    }
+    return {
+        **base,
+        "code": "INTL",
+        "label": label,
+        "present": present,
+        "noDataText": "" if present else (uae.get("noDataText") or international.get("noDataText") or ""),
+        "subregions": {"uae": uae, "international": international},
+        "summary": merged_summary,
+        "relatedQueries": _merge_surface_section(
+            uae.get("relatedQueries") or {}, international.get("relatedQueries") or {}
+        ),
+        "suggestions": _merge_surface_section(
+            uae.get("suggestions") or {}, international.get("suggestions") or {}
+        ),
+        "images": _merge_surface_section(uae.get("images") or {}, international.get("images") or {}),
+        "videos": _merge_surface_section(uae.get("videos") or {}, international.get("videos") or {}),
+        "organicOverview": {
+            "organicTotal": merged_summary["organicTotal"],
+            "organicNegative": merged_summary["organicNegative"],
+            "uniqueNegativeUrls": (uae.get("organicOverview") or {}).get("uniqueNegativeUrls", 0)
+            + (international.get("organicOverview") or {}).get("uniqueNegativeUrls", 0),
+            "totalUniqueUrls": (uae.get("organicOverview") or {}).get("totalUniqueUrls", 0)
+            + (international.get("organicOverview") or {}).get("totalUniqueUrls", 0),
+            "negativeShare": merged_summary["organicNegativeShare"],
+            "observedQueries": list(
+                dict.fromkeys(
+                    list((uae.get("organicOverview") or {}).get("observedQueries") or [])
+                    + list((international.get("organicOverview") or {}).get("observedQueries") or [])
+                )
+            )[:8],
+        },
+        "topResults": list(uae.get("topResults") or []) + list(international.get("topResults") or [])[:20],
+    }
+
+
 def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
     warnings: list[str] = []
     lang = _report_lang(report_json)
@@ -173,7 +241,14 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
             }
         return {
             "code": code,
-            "present": (r.get("organicTotal", 0) or 0) + len(r.get("topSuggestions", []) or []) > 0,
+            "present": (
+                (r.get("organicTotal", 0) or 0)
+                + (r.get("relatedQueriesTotal", 0) or 0)
+                + (r.get("suggestionsTotal", 0) or 0)
+                + len(r.get("topSuggestions", []) or [])
+                > 0
+                or str(r.get("collectionStatus", "")).upper() == "COLLECTED"
+            ),
             "language": r.get("language", "en"),
             "organicTotal": r.get("organicTotal", 0),
             "organicNegative": r.get("organicNegative", 0),
@@ -307,13 +382,20 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
         "digitalProfileOverview": {
             "negativeShareRu": pct((_region(regions_raw, "RU") or {}).get("organicNegativeShare", 0)),
             "negativeShareUae": pct((_region(regions_raw, "UAE") or {}).get("organicNegativeShare", 0)),
+            "negativeShareInternational": pct(
+                (_region(regions_raw, "INTERNATIONAL") or {}).get("organicNegativeShare", 0)
+            ),
             "searchTotal": search.get("totalResults", 0),
             "searchNegative": search.get("negativeResults", 0),
             "searchNegativeShare": pct(search.get("negativeShare", 0)),
             "complianceSummary": compliance.get("conclusion", L["no_compliance_recorded"]),
             "wikipediaStatus": L["present"] if wiki.get("exists") else L["not_found"],
         },
-        "regions": {"RU": region_vm("RU"), "UAE": region_vm("UAE")},
+        "regions": {
+            "RU": region_vm("RU"),
+            "UAE": region_vm("UAE"),
+            "INTERNATIONAL": region_vm("INTERNATIONAL"),
+        },
         "search": {
             "negativeDomains": list(search.get("negativeDomains", []) or [])[:10],
             "topNegativeThemes": [
@@ -653,13 +735,23 @@ def _region_block(
         + (r.get("imagesTotal", 0) or 0)
         + (r.get("videosTotal", 0) or 0)
     )
-    present = organic_total + surfaces_total > 0
+    collection_status = str(r.get("collectionStatus", "") or "").upper()
+    not_collected = collection_status in ("NOT_QUERIED", "NOT_CONFIGURED", "NOT_SUPPORTED")
+    if collection_status == "COLLECTED":
+        present = True
+    elif not_collected:
+        present = False
+    else:
+        present = organic_total + surfaces_total > 0
+    no_data_text = ""
+    if not present:
+        no_data_text = r.get("statusMessage") or L["no_evidence_region"].format(label=label)
 
     return {
         "code": code,
         "label": label,
         "present": present,
-        "noDataText": "" if present else L["no_evidence_region"].format(label=label),
+        "noDataText": no_data_text,
         "riskLevel": risk_level(r.get("regionRiskLevel")),
         "conclusion": r.get("regionConclusion", ""),
         "summary": {
@@ -712,7 +804,9 @@ def _region_block(
         "relatedQueries": {
             "total": r.get("relatedQueriesTotal", 0),
             "negative": r.get("relatedQueriesNegative", 0),
-            "list": [truncate(s, 80) for s in (r.get("topRelatedQueries", []) or [])[:15]],
+            "list": [truncate(s, 80) for s in (r.get("topRelatedQueries") or [])[:15]],
+            "collectionStatus": collection_status,
+            "statusMessage": r.get("statusMessage", ""),
         },
         "images": {
             "total": r.get("imagesTotal", 0),
@@ -785,7 +879,18 @@ def build_view_model_v2(report_json: dict) -> tuple[dict, list[str]]:
     recommended = base["recommendedActions"]
 
     ru = _region_block(_region(regions_raw, "RU"), "RU", L["region_ru"], wiki, search_findings, L)
-    intl = _region_block(_region(regions_raw, "UAE"), "UAE", L["region_intl"], wiki, search_findings, L)
+    uae_sub = _region_block(
+        _region(regions_raw, "UAE"), "UAE", L.get("region_uae", L["region_intl"]), wiki, search_findings, L
+    )
+    intl_sub = _region_block(
+        _region(regions_raw, "INTERNATIONAL"),
+        "INTERNATIONAL",
+        L.get("region_international", L["region_intl"]),
+        wiki,
+        search_findings,
+        L,
+    )
+    intl = _combine_intl_block(uae_sub, intl_sub, L["region_intl"])
     ru["recommendedActions"] = recommended
     intl["recommendedActions"] = recommended
 

@@ -1,0 +1,462 @@
+/**
+ * Stage O1–O3 — ORION search profile orchestrator.
+ *
+ * Runs multi-query organic search (Yandex RU + Google Serper) and collects
+ * additional Serper surfaces (suggestions, related, images, videos, knowledge).
+ * Classifies evidence deterministically (R1.1.3 rules). No LLM, no scraping.
+ */
+
+import { createHash } from "node:crypto";
+import { Prisma, SearchEngine } from "@prisma/client";
+import { prisma } from "@/server/prisma/client";
+import { externalGoogleSerpProvider } from "../providers/external-google-serp-provider";
+import { providerConfig } from "../providers/config";
+import { yandexSearchProvider } from "../providers/yandex-search-provider";
+import type { SearchProviderRequest, SearchProviderResult } from "../providers/types";
+import { normalizeUrl } from "./evidence-service";
+import { createManySearchSurfaceItems } from "./search-surface-service";
+import {
+  buildOrionQueryPlan,
+  primaryQueriesForRegion,
+  type OrionQuerySpec,
+  type OrionRegionCode,
+} from "../search-surfaces/orion-query-plan";
+import { regionProfile, type RegionCollectionStatus } from "../search-surfaces/region-profiles";
+import {
+  serperAllSurfacesForQuery,
+  type SerperSurfaceItem,
+} from "../providers/serper-surfaces";
+import {
+  classifySearchResultRecord,
+  isRiskyResultClass,
+} from "../risk-classifier/result-classifier";
+import {
+  assessIdentityMatch,
+  parseSubjectName,
+} from "../risk-classifier/entity-disambiguation";
+import type { SearchSurfaceInput, SearchSurfaceType } from "../search-surfaces/types";
+import { loadCaseSubject, type CaseSubjectInfo } from "../agents/mock/mock-utils";
+
+function sha256(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+export interface OrionProfileRunOptions {
+  regions?: OrionRegionCode[];
+  includeRiskProbes?: boolean;
+  maxPrimaryPerRegion?: number;
+  /** When set, only run these surface kinds (default: all). */
+  surfacesOnly?: boolean;
+  /** Skip organic matrix — surfaces collection only. */
+  surfacesOnlyMode?: boolean;
+}
+
+export interface OrionRegionRunSummary {
+  region: OrionRegionCode;
+  collectionStatus: RegionCollectionStatus;
+  statusMessage: string;
+  queriesRun: number;
+  organicRows: number;
+  surfaceRows: number;
+  googleStatus: string;
+  yandexStatus: string;
+}
+
+export interface OrionProfileRunResult {
+  plan: OrionQuerySpec[];
+  regions: OrionRegionRunSummary[];
+  organicInserted: number;
+  surfacesInserted: number;
+  warnings: string[];
+}
+
+function allowsNegativeQueries(subject: CaseSubjectInfo): boolean {
+  const basis = (subject.lawfulBasis ?? "").toUpperCase();
+  if (!basis) return false;
+  if (basis === "CONSENT") return (subject.consentStatus ?? "").toUpperCase() === "GRANTED";
+  return ["LEGITIMATE_INTEREST", "LEGAL_OBLIGATION", "PUBLIC_INTEREST", "CONTRACT"].includes(basis);
+}
+
+function googleReady(): boolean {
+  return externalGoogleSerpProvider.status().state === "READY";
+}
+
+function yandexReady(): boolean {
+  return yandexSearchProvider.availability().status === "ENABLED";
+}
+
+function surfaceTypeForKind(kind: SerperSurfaceItem["kind"]): SearchSurfaceType {
+  switch (kind) {
+    case "autocomplete":
+      return "SUGGESTION";
+    case "relatedQueries":
+      return "RELATED_QUERY";
+    case "images":
+      return "IMAGE_RESULT";
+    case "videos":
+      return "VIDEO_RESULT";
+    case "knowledgePanel":
+      return "KNOWLEDGE_BLOCK";
+    default:
+      return "ORGANIC_RESULT";
+  }
+}
+
+function classifySurfaceText(
+  subjectFullName: string,
+  title: string,
+  snippet: string,
+  url: string | null,
+  kind: SerperSurfaceItem["kind"]
+) {
+  const text = `${title} ${snippet}`.trim();
+  const subject = parseSubjectName(subjectFullName);
+
+  if (kind === "knowledgePanel") {
+    const identity = assessIdentityMatch(text, subject);
+    if (identity === "LOW") {
+      return {
+        classification: "ENTITY_CONFUSION",
+        riskTheme: null as string | null,
+        identityConfidence: identity,
+      };
+    }
+  }
+
+  const result = classifySearchResultRecord({
+    title,
+    snippet,
+    url: url ?? "",
+    subjectFullName,
+  });
+
+  return {
+    classification: result.classification,
+    riskTheme: result.riskTheme ?? null,
+    identityConfidence: result.identityConfidence ?? assessIdentityMatch(text, subject),
+  };
+}
+
+function serperItemToSurfaceInput(
+  item: SerperSurfaceItem,
+  subjectFullName: string
+): SearchSurfaceInput {
+  const cls = classifySurfaceText(
+    subjectFullName,
+    item.title,
+    item.snippet,
+    item.url,
+    item.kind
+  );
+  return {
+    type: surfaceTypeForKind(item.kind),
+    source: "REAL_GOOGLE",
+    provider: "GOOGLE",
+    query: item.kind === "autocomplete" || item.kind === "relatedQueries" ? item.title : item.query,
+    region: item.region,
+    language: item.language,
+    title: item.title,
+    snippet: item.snippet || null,
+    url: item.url,
+    domain: item.domain,
+    imageUrl: item.imageUrl,
+    thumbnailUrl: item.thumbnailUrl,
+    videoUrl: item.videoUrl,
+    rank: item.rank,
+    classification: cls.classification,
+    riskTheme: cls.riskTheme,
+    demo: false,
+    rawMetadata: {
+      ...item.rawMetadataSafe,
+      orionRegion: item.region,
+      parentQuery: item.query,
+      identityConfidence: cls.identityConfidence,
+      providerAdapter: "serper",
+    },
+  };
+}
+
+async function persistOrganicResults(
+  caseId: string,
+  engine: SearchEngine,
+  results: SearchProviderResult[],
+  orionRegion: OrionRegionCode,
+  query: string
+): Promise<number> {
+  const source = engine === "GOOGLE" ? "real:GOOGLE" : "real:YANDEX";
+  const rows = results.map((r) => {
+    const normUrl = normalizeUrl(r.url);
+    return {
+      caseId,
+      engine,
+      url: r.url,
+      normalizedUrl: normUrl,
+      dedupHash: sha256(`${normUrl}|${query}|${orionRegion}`),
+      title: r.title || null,
+      snippet: r.snippet || null,
+      rank: r.rank,
+      source,
+      rawMetadata: {
+        demo: false,
+        provider: r.provider,
+        query,
+        orionQuery: query,
+        orionRegion,
+        region: orionRegion,
+        providerLimit: providerConfig.google.resultsPerQuery,
+        ...(r.rawMetadata as object),
+      } as Prisma.InputJsonValue,
+    };
+  });
+  const inserted = await prisma.searchResult.createMany({ data: rows, skipDuplicates: true });
+  return inserted.count;
+}
+
+async function runRegionOrganic(
+  caseId: string,
+  subject: CaseSubjectInfo,
+  queries: OrionQuerySpec[],
+  region: OrionRegionCode
+): Promise<{ organic: number; googleStatus: string; yandexStatus: string }> {
+  let organic = 0;
+  let googleStatus = "NOT_QUERIED";
+  let yandexStatus = "NOT_QUERIED";
+  const profile = regionProfile(region);
+  const limit = Math.max(
+    providerConfig.google.resultsPerQuery,
+    providerConfig.yandex.resultsPerQuery,
+    20
+  );
+
+  for (const spec of queries) {
+    const req: SearchProviderRequest = {
+      caseId,
+      subjectFullName: subject.fullName,
+      aliases: subject.aliases ?? [],
+      query: spec.query,
+      language: spec.language,
+      region: profile.googleGl,
+      limit,
+    };
+
+    if (profile.yandexSupported && yandexReady()) {
+      const run = await yandexSearchProvider.search(req);
+      if (run.status === "SUCCESS") {
+        yandexStatus = "COLLECTED";
+        organic += await persistOrganicResults(caseId, "YANDEX", run.results, region, spec.query);
+      } else if (run.status === "NOT_CONFIGURED" || run.status === "DISABLED") {
+        yandexStatus = run.status === "NOT_CONFIGURED" ? "NOT_CONFIGURED" : "NOT_SUPPORTED";
+      } else if (yandexStatus !== "COLLECTED") {
+        yandexStatus = "FAILED";
+      }
+    } else if (profile.yandexSupported) {
+      yandexStatus = "NOT_CONFIGURED";
+    } else {
+      yandexStatus = "NOT_SUPPORTED";
+    }
+
+    if (googleReady()) {
+      const run = await externalGoogleSerpProvider.search({
+        ...req,
+        region: profile.googleGl,
+        language: profile.googleHl,
+      });
+      if (run.status === "SUCCESS") {
+        googleStatus = "COLLECTED";
+        organic += await persistOrganicResults(caseId, "GOOGLE", run.results, region, spec.query);
+      } else if (run.status === "NOT_CONFIGURED" || run.status === "DISABLED") {
+        googleStatus = run.status === "NOT_CONFIGURED" ? "NOT_CONFIGURED" : "NOT_QUERIED";
+      } else if (googleStatus !== "COLLECTED") {
+        googleStatus = "FAILED";
+      }
+    } else {
+      googleStatus = "NOT_CONFIGURED";
+    }
+  }
+
+  return { organic, googleStatus, yandexStatus };
+}
+
+async function runRegionSurfaces(
+  caseId: string,
+  subject: CaseSubjectInfo,
+  region: OrionRegionCode,
+  primaryQueries: OrionQuerySpec[]
+): Promise<{ surfaces: SearchSurfaceInput[]; googleStatus: string }> {
+  if (!googleReady()) {
+    return { surfaces: [], googleStatus: "NOT_CONFIGURED" };
+  }
+
+  const limit = Math.min(20, providerConfig.google.resultsPerQuery);
+  const all: SearchSurfaceInput[] = [];
+  let anySuccess = false;
+
+  for (const spec of primaryQueries) {
+    const req: SearchProviderRequest = {
+      caseId,
+      subjectFullName: subject.fullName,
+      aliases: subject.aliases ?? [],
+      query: spec.query,
+      language: spec.language,
+      region: regionProfile(region).googleGl,
+      limit,
+    };
+    const batch = await serperAllSurfacesForQuery(req, region, limit);
+    for (const key of ["organic", "images", "videos", "autocomplete"] as const) {
+      const result = batch[key];
+      if (result.status === "SUCCESS" && result.items.length > 0) {
+        anySuccess = true;
+        for (const item of result.items) {
+          if (item.kind === "organic") continue; // organic stored in search_results
+          all.push(serperItemToSurfaceInput(item, subject.fullName));
+        }
+      }
+      // related + knowledge come from organic batch
+      if (key === "organic" && result.status === "SUCCESS") {
+        for (const item of result.items) {
+          if (item.kind === "relatedQueries" || item.kind === "knowledgePanel") {
+            all.push(serperItemToSurfaceInput(item, subject.fullName));
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    surfaces: all,
+    googleStatus: anySuccess ? "COLLECTED" : googleReady() ? "NOT_QUERIED" : "NOT_CONFIGURED",
+  };
+}
+
+function deriveCollectionStatus(
+  organic: number,
+  surfaces: number,
+  googleStatus: string,
+  yandexStatus: string,
+  region: OrionRegionCode
+): { status: RegionCollectionStatus; message: string } {
+  if (organic + surfaces > 0) {
+    return { status: "COLLECTED", message: "Search data collected for this region." };
+  }
+  const profile = regionProfile(region);
+  if (!profile.yandexSupported && googleStatus === "NOT_CONFIGURED") {
+    return {
+      status: "NOT_CONFIGURED",
+      message: "Google/Serper provider not configured — region not queried.",
+    };
+  }
+  if (profile.yandexSupported && yandexStatus === "NOT_CONFIGURED" && googleStatus === "NOT_CONFIGURED") {
+    return {
+      status: "NOT_CONFIGURED",
+      message: "Search providers not configured — region not queried.",
+    };
+  }
+  if (googleStatus === "NOT_SUPPORTED" || (profile.yandexSupported && yandexStatus === "NOT_SUPPORTED")) {
+    return { status: "NOT_SUPPORTED", message: "Provider not supported for this region." };
+  }
+  if (googleStatus === "FAILED" || yandexStatus === "FAILED") {
+    return { status: "PARTIAL", message: "Provider errors — no complete data collected." };
+  }
+  return { status: "NOT_QUERIED", message: "Region not queried in this run." };
+}
+
+export async function runOrionSearchProfile(
+  caseId: string,
+  options: OrionProfileRunOptions = {}
+): Promise<OrionProfileRunResult> {
+  const subject = await loadCaseSubject(caseId);
+  const plan = buildOrionQueryPlan(
+    {
+      fullName: subject.fullName,
+      aliases: subject.aliases,
+      targetRegions: subject.targetRegions,
+      location: subject.location,
+    },
+    {
+      maxPrimaryPerRegion: options.maxPrimaryPerRegion ?? providerConfig.orion.maxPrimaryQueriesPerRegion,
+      includeRiskProbes:
+        options.includeRiskProbes ??
+        (providerConfig.orion.includeRiskProbes && allowsNegativeQueries(subject)),
+      regions: options.regions,
+    }
+  );
+
+  const regionsToRun = options.regions ?? [...new Set(plan.map((q) => q.region))];
+  const regionSummaries: OrionRegionRunSummary[] = [];
+  let organicInserted = 0;
+  let surfacesInserted = 0;
+  const warnings: string[] = [];
+
+  // Store generated queries scoped to orion agent
+  await prisma.searchQuery.deleteMany({
+    where: { caseId, source: "GENERATED", createdBy: "REAL_ORION_SEARCH_PROFILE" },
+  });
+  await prisma.searchQuery.createMany({
+    data: plan.map((q) => ({
+      caseId,
+      engine: q.region === "RU" ? ("YANDEX" as const) : ("GOOGLE" as const),
+      queryText: q.query,
+      source: "GENERATED" as const,
+      createdBy: "REAL_ORION_SEARCH_PROFILE",
+    })),
+  });
+
+  for (const region of regionsToRun) {
+    const regionQueries = plan.filter((q) => q.region === region);
+    const primary = primaryQueriesForRegion(plan, region);
+
+    let organic = 0;
+    let googleStatus = "NOT_QUERIED";
+    let yandexStatus = "NOT_QUERIED";
+    let surfaceInputs: SearchSurfaceInput[] = [];
+
+    if (!options.surfacesOnlyMode) {
+      const organicRun = await runRegionOrganic(caseId, subject, regionQueries, region);
+      organic = organicRun.organic;
+      googleStatus = organicRun.googleStatus;
+      yandexStatus = organicRun.yandexStatus;
+      organicInserted += organic;
+    }
+
+    if (!options.surfacesOnly) {
+      const surfaceRun = await runRegionSurfaces(caseId, subject, region, primary);
+      surfaceInputs = surfaceRun.surfaces;
+      if (surfaceRun.googleStatus === "COLLECTED") googleStatus = "COLLECTED";
+    }
+
+    if (surfaceInputs.length > 0) {
+      const { created } = await createManySearchSurfaceItems(caseId, surfaceInputs, {
+        actorId: "real:ORION_SEARCH_PROFILE",
+      });
+      surfacesInserted += created;
+    }
+
+    const derived = deriveCollectionStatus(
+      organic,
+      surfaceInputs.length,
+      googleStatus,
+      yandexStatus,
+      region
+    );
+
+    regionSummaries.push({
+      region,
+      collectionStatus: derived.status,
+      statusMessage: derived.message,
+      queriesRun: regionQueries.length,
+      organicRows: organic,
+      surfaceRows: surfaceInputs.length,
+      googleStatus,
+      yandexStatus,
+    });
+  }
+
+  return { plan, regions: regionSummaries, organicInserted, surfacesInserted, warnings };
+}
+
+/** Count adverse surface items from classification. */
+export function isAdverseSurface(classification: string | null | undefined): boolean {
+  if (!classification) return false;
+  if (classification === "ENTITY_CONFUSION" || classification === "CAPABILITY_NOTE") return false;
+  return isRiskyResultClass(classification as Parameters<typeof isRiskyResultClass>[0]);
+}
