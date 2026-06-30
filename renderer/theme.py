@@ -580,12 +580,18 @@ def image_grid(
         left = int(MARGIN) + col * (cell_w + gap)
         cell_top = Emu(y0 + row * row_stride)
 
-        b64 = item.get("thumbnailBase64")
+        b64 = item.get("thumbnailBytesBase64") or item.get("thumbnailBase64")
+        source_url = str(item.get("sourcePageUrl") or item.get("url") or "")
         if b64:
             try:
                 stream = io.BytesIO(base64.b64decode(b64))
                 slide.shapes.add_picture(stream, Emu(left), cell_top, width=Emu(cell_w), height=Emu(thumb_h))
             except Exception:
+                fallback_lines = [truncate(item.get("source"), 40)]
+                if source_url:
+                    fallback_lines.append(truncate(source_url, 48))
+                else:
+                    fallback_lines.append("thumbnail unavailable")
                 card(
                     slide,
                     Emu(left),
@@ -593,10 +599,15 @@ def image_grid(
                     Emu(cell_w),
                     Emu(thumb_h),
                     truncate(item.get("title"), 40),
-                    [truncate(item.get("source"), 40)],
+                    fallback_lines,
                     tone=NEUTRAL_GRAY,
                 )
         else:
+            fallback_lines = [truncate(item.get("source"), 40)]
+            if source_url:
+                fallback_lines.append(truncate(source_url, 48))
+            else:
+                fallback_lines.append("thumbnail unavailable")
             card(
                 slide,
                 Emu(left),
@@ -604,7 +615,7 @@ def image_grid(
                 Emu(cell_w),
                 Emu(thumb_h),
                 truncate(item.get("title"), 40),
-                [truncate(item.get("source"), 40)],
+                fallback_lines,
                 tone=NEUTRAL_GRAY,
             )
 
@@ -637,13 +648,16 @@ def video_cards(
     y = int(top)
     for item in picked:
         title = truncate(item.get("title"), 70)
-        url = str(item.get("url") or "")
+        url = str(item.get("url") or item.get("sourcePageUrl") or "")
         domain_txt = truncate(item.get("source") or url, 48)
         reason = str(item.get("selectionReason") or item.get("identityDecision") or "")
         lines = [f"{domain_txt}"]
         if reason:
             lines.append(reason)
-        card_bottom = card(slide, T.MARGIN, Emu(y), T.CONTENT_W, Emu(card_h), title, lines)
+        if url.startswith("http"):
+            lines.append(truncate(url, 72))
+        card(slide, MARGIN, Emu(y), CONTENT_W, Emu(card_h), title, lines)
+        card_bottom = Emu(y + card_h)
         if url.startswith("http"):
             link_box = textbox(slide, MARGIN, card_bottom, CONTENT_W, Emu(280000))
             tf = link_box.text_frame
@@ -653,7 +667,10 @@ def video_cards(
             run.font.size = Pt(FS_NOTE)
             run.font.color.rgb = ACCENT
             run.font.underline = True
-            run.hyperlink.address = url
+            try:
+                run.hyperlink.address = url
+            except Exception:
+                pass
             card_bottom = Emu(int(card_bottom) + 300000)
         y = int(card_bottom) + gap
     return Emu(y)

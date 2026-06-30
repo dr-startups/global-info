@@ -188,37 +188,190 @@ async function localizeReportJson(
   return localized;
 }
 
-/**
- * Stage S1.5 — best-effort: loads the latest SERP snapshot PNG from private
- * storage and attaches it as base64 to a wire-only copy of report_json so the
- * stateless renderer can embed it. Never mutates/persists the stored report_json
- * and never throws: on any failure the reference is left without bytes and the
- * renderer falls back to the no-data card + a renderWarning.
- */
-async function attachImageThumbnails(reportJson: ReportJson): Promise<ReportJson> {
-  const audit = reportJson.auditSummary as { regions?: Array<Record<string, unknown>> } | undefined;
-  if (!audit?.regions?.length) return reportJson;
+type ThumbnailWirePayload = { base64: string; mimeType: string };
 
+function mimeTypeForThumbnailKey(storageKey: string): string {
+  const lower = storageKey.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  return "image/jpeg";
+}
+
+function applyThumbnailWireFields(
+  target: Record<string, unknown>,
+  payload: ThumbnailWirePayload
+): void {
+  target.thumbnailBytesBase64 = payload.base64;
+  target.thumbnailMimeType = payload.mimeType;
+  // Backward compat for mapper/theme that read thumbnailBase64.
+  target.thumbnailBase64 = payload.base64;
+  target.hasThumbnail = true;
+}
+
+/**
+ * O5.4.1 — loads selected image thumbnail bytes from app private storage and
+ * attaches wire-only base64 fields for the stateless renderer. Never persisted
+ * in stored report_json or exposed on client GET /report.
+ */
+async function attachSelectedImageThumbnailBytes(
+  reportJson: ReportJson
+): Promise<{ json: ReportJson; warnings: string[] }> {
+  const warnings: string[] = [];
   const next = JSON.parse(JSON.stringify(reportJson)) as ReportJson & {
     auditSummary?: { regions?: Array<Record<string, unknown>> };
+    selectedEvidence?: {
+      images?: { selectedSubjectMatched?: Array<Record<string, unknown>> };
+      regions?: Record<
+        string,
+        { images?: Array<Record<string, unknown>> } | undefined
+      >;
+    };
   };
+
+  const keyCache = new Map<string, ThumbnailWirePayload | null>();
+
+  async function resolveThumbnail(
+    storageKey: string,
+    label: string
+  ): Promise<ThumbnailWirePayload | null> {
+    const cached = keyCache.get(storageKey);
+    if (cached !== undefined) return cached;
+    try {
+      const bytes = await loadFile(storageKey);
+      const payload = {
+        base64: bytes.toString("base64"),
+        mimeType: mimeTypeForThumbnailKey(storageKey),
+      };
+      keyCache.set(storageKey, payload);
+      return payload;
+    } catch {
+      keyCache.set(storageKey, null);
+      warnings.push(`Thumbnail unavailable for ${label}`);
+      return null;
+    }
+  }
+
+  async function attachToImageRecord(
+    item: Record<string, unknown> | undefined,
+    label: string
+  ): Promise<void> {
+    if (!item) return;
+    const key = item.thumbnailStorageKey;
+    if (typeof key !== "string" || !key.trim()) return;
+    const payload = await resolveThumbnail(key, label);
+    if (payload) applyThumbnailWireFields(item, payload);
+  }
+
+  for (const img of next.selectedEvidence?.images?.selectedSubjectMatched ?? []) {
+    await attachToImageRecord(
+      img as unknown as Record<string, unknown>,
+      String(img.title ?? img.thumbnailStorageKey ?? "selected image")
+    );
+  }
+
+  for (const regionKey of ["ru", "uae", "international"] as const) {
+    for (const img of next.selectedEvidence?.regions?.[regionKey]?.images ?? []) {
+      await attachToImageRecord(
+        img as unknown as Record<string, unknown>,
+        String(img.title ?? img.thumbnailStorageKey ?? `${regionKey} image`)
+      );
+    }
+  }
 
   for (const region of next.auditSummary?.regions ?? []) {
     const topImages = region.topImages;
     if (!Array.isArray(topImages)) continue;
     for (const item of topImages) {
       if (!item || typeof item !== "object") continue;
-      const key = (item as Record<string, unknown>).thumbnailStorageKey;
-      if (typeof key !== "string" || !key.trim()) continue;
-      try {
-        const bytes = await loadFile(key);
-        (item as Record<string, unknown>).thumbnailBase64 = bytes.toString("base64");
-      } catch {
-        // Renderer falls back to title/source row.
-      }
+      const rec = item as Record<string, unknown>;
+      await attachToImageRecord(rec, String(rec.title ?? rec.thumbnailStorageKey ?? "image"));
     }
   }
-  return next;
+
+  return { json: next as ReportJson, warnings };
+}
+
+/**
+ * O5.4.1 — defensive check: when selectedEvidence exists, renderer payload must
+ * use patched audit regions (not raw collected topImages/topVideos).
+ */
+function assertRenderPayloadUsesSelectedEvidence(
+  reportJson: ReportJson,
+  warnings: string[]
+): void {
+  const selected = reportJson.selectedEvidence;
+  if (!selected) return;
+
+  const selectedImages =
+    selected.images?.metrics?.imagesSelected ??
+    selected.images?.selectedSubjectMatched?.length ??
+    0;
+  const selectedVideos =
+    selected.videos?.metrics?.videosSelected ??
+    selected.videos?.selectedSubjectMatched?.length ??
+    0;
+
+  const regions = reportJson.auditSummary?.regions ?? [];
+  const ru = regions.find((r) => r.region === "RU") as
+    | (Record<string, unknown> & { region: string })
+    | undefined;
+  const intl = regions.find((r) => r.region === "INTERNATIONAL") as
+    | (Record<string, unknown> & { region: string })
+    | undefined;
+
+  if (selectedImages > 0 && ru) {
+    const topImages = Array.isArray(ru.topImages) ? ru.topImages : [];
+    const imagesTotal = typeof ru.imagesTotal === "number" ? ru.imagesTotal : null;
+    const imagesSelected =
+      typeof ru.imagesSelected === "number" ? ru.imagesSelected : topImages.length;
+
+    if (topImages.length === 0) {
+      warnings.push(
+        "RENDER_INTEGRITY: selectedEvidence has images but audit RU topImages is empty"
+      );
+    } else if (
+      imagesTotal != null &&
+      topImages.length === imagesTotal &&
+      imagesSelected < imagesTotal
+    ) {
+      warnings.push(
+        "RENDER_INTEGRITY: RU topImages appears to use raw collected set, not selected evidence"
+      );
+    }
+  }
+
+  if (selectedVideos > 0 && ru) {
+    const topVideos = Array.isArray(ru.topVideos) ? ru.topVideos : [];
+    const videosTotal = typeof ru.videosTotal === "number" ? ru.videosTotal : null;
+    const videosSelected =
+      typeof ru.videosSelected === "number" ? ru.videosSelected : topVideos.length;
+
+    if (topVideos.length === 0) {
+      warnings.push(
+        "RENDER_INTEGRITY: selectedEvidence has videos but audit RU topVideos is empty"
+      );
+    } else if (
+      videosTotal != null &&
+      topVideos.length === videosTotal &&
+      videosSelected < videosTotal
+    ) {
+      warnings.push(
+        "RENDER_INTEGRITY: RU topVideos appears to use raw collected set, not selected evidence"
+      );
+    }
+  }
+
+  if (selected.regions?.international?.noIntlSubjectResults && intl) {
+    const intlImages = Array.isArray(intl.topImages) ? intl.topImages.length : 0;
+    const intlVideos = Array.isArray(intl.topVideos) ? intl.topVideos.length : 0;
+    const intlOrganic = Array.isArray(intl.topResults) ? intl.topResults.length : 0;
+    if (intlImages + intlVideos + intlOrganic > 0) {
+      warnings.push(
+        "RENDER_INTEGRITY: international region has rendered rows despite noIntlSubjectResults"
+      );
+    }
+  }
 }
 
 async function attachSerpSnapshotImage(
@@ -302,7 +455,10 @@ export async function renderReportVersion(
   // so the SERP snapshot PNG travels inside report_json as base64. This is added
   // only on the wire (not persisted in the stored report_json, which stays
   // lightweight). If the image is unreadable the renderer falls back + warns.
-  const withThumbnails = await attachImageThumbnails(audienceReportJson);
+  const { json: withThumbnails, warnings: thumbnailWarnings } =
+    await attachSelectedImageThumbnailBytes(audienceReportJson);
+  const renderPayloadWarnings: string[] = [...thumbnailWarnings];
+  assertRenderPayloadUsesSelectedEvidence(withThumbnails, renderPayloadWarnings);
   const renderReportJson = await attachSerpSnapshotImage(withThumbnails);
 
   const result = await callRenderer({
@@ -326,7 +482,7 @@ export async function renderReportVersion(
   await saveFile(pptxKey, Buffer.from(result.pptx.contentBase64, "base64"));
   await saveFile(pdfKey, Buffer.from(result.pdf.contentBase64, "base64"));
 
-  const warnings = result.warnings ?? [];
+  const warnings = [...renderPayloadWarnings, ...(result.warnings ?? [])];
   const usedTemplate = result.templateVersion ?? resolvedTemplate;
   const slideCount = result.slideCount ?? 0;
   const usedAudience = result.audience ?? audience;

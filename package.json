@@ -45,6 +45,7 @@
     "smoke:evidence-quality-gate-o5": "tsx scripts/smoke-evidence-quality-gate-o5.ts",
     "smoke:strict-identity-and-images-o53": "tsx scripts/smoke-strict-identity-and-images-o53.ts",
     "smoke:report-selected-evidence-rendering-o54": "tsx scripts/smoke-report-selected-evidence-rendering-o54.ts",
+    "smoke:report-artifact-integrity-o541": "tsx scripts/smoke-report-artifact-integrity-o541.ts",
     "smoke:report-i18n": "node scripts/smoke-report-i18n.mjs",
     "smoke:i18n": "tsx scripts/smoke-i18n.ts",
     "smoke:auth": "tsx scripts/smoke-auth.ts",

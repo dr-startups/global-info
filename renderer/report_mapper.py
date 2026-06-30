@@ -372,10 +372,7 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
             "overallRiskLevel": overall_risk,
             "highestRiskLevel": risk_level(risk.get("highestRiskLevel", overall_risk)),
             "totalFindings": (audit.get("riskSummary", {}) or risk).get("totalFindings", 0),
-            "topThemes": [
-                {"theme": str(t.get("theme", "")), "count": t.get("count", 0)}
-                for t in (search.get("topNegativeThemes", []) or [])
-            ],
+            "topThemes": _selected_risk_themes(report_json, audit),
             "byLevel": (audit.get("riskSummary", {}) or risk).get("findingsByLevel", {}) or {},
             "consequences": list(L["rm_default_consequences"]),
         },
@@ -483,6 +480,130 @@ def _compliance_stale_title(title: str) -> bool:
 
 def _selected_evidence_meta(report_json: dict) -> dict:
     return report_json.get("selectedEvidence") or {}
+
+
+def _selected_risk_themes(report_json: dict, audit: dict) -> list[dict]:
+    """O5.4.1 — top themes for page 36 from selected subject-matched findings only."""
+    selected = _selected_evidence_meta(report_json)
+    findings = selected.get("riskFindings", {}).get("selectedSubjectMatchedOnly") or []
+    compliance_active = _compliance_evidence_active(report_json)
+    counts: dict[str, int] = {}
+    for f in findings:
+        theme = str(f.get("theme", "") or "").strip()
+        if not theme:
+            continue
+        tl = theme.lower()
+        if not compliance_active and tl in COMPLIANCE_THEMES:
+            continue
+        if _compliance_stale_title(str(f.get("title", ""))):
+            continue
+        counts[tl] = counts.get(tl, 0) + max(1, int(f.get("evidenceCount", 1) or 1))
+    return [{"theme": k, "count": v} for k, v in sorted(counts.items(), key=lambda x: (-x[1], x[0]))][:8]
+
+
+def _image_thumbnail_b64(item: dict) -> str | None:
+    return item.get("thumbnailBytesBase64") or item.get("thumbnailBase64")
+
+
+def _map_selected_image_item(card: dict) -> dict:
+    url = card.get("sourceUrl") or card.get("url") or ""
+    b64 = _image_thumbnail_b64(card)
+    return {
+        "title": truncate(card.get("title"), 50),
+        "source": card.get("sourceDomain") or domain(url),
+        "sourcePageUrl": url,
+        "url": url,
+        "thumbnailStorageKey": card.get("thumbnailStorageKey"),
+        "thumbnailBase64": b64,
+        "thumbnailBytesBase64": card.get("thumbnailBytesBase64") or b64,
+        "thumbnailMimeType": card.get("thumbnailMimeType"),
+        "identityDecision": card.get("identityDecision") or "",
+        "hasThumbnail": bool(b64),
+        "subjectMatched": bool(card.get("subjectMatched", True)),
+    }
+
+
+def _map_selected_video_item(card: dict) -> dict:
+    url = card.get("url") or card.get("sourcePageUrl") or ""
+    return {
+        "title": truncate(card.get("title"), 50),
+        "source": card.get("sourceDomain") or domain(url),
+        "url": url,
+        "identityDecision": card.get("identityDecision") or "",
+        "selectionReason": card.get("selectionReason") or "",
+    }
+
+
+def _apply_selected_evidence_vm_overrides(report_json: dict, vm: dict) -> None:
+    """O5.4.1 — sync selected image/video/organic cards onto region VM blocks."""
+    se = _selected_evidence_meta(report_json)
+    if not se:
+        return
+
+    region_cards = {
+        "ru": se.get("regions", {}).get("ru") or {},
+        "intl": se.get("regions", {}).get("international") or {},
+    }
+
+    for blk_key, cards in region_cards.items():
+        blk = vm.get(blk_key)
+        if not blk:
+            continue
+        img_cards = list(cards.get("images") or [])
+        vid_cards = list(cards.get("videos") or [])
+        organic_cards = list(cards.get("organicSelected") or [])
+        if img_cards:
+            mapped = [_map_selected_image_item(c) for c in img_cards]
+            blk["images"] = {
+                **(blk.get("images") or {}),
+                "items": mapped,
+                "selected": len(mapped),
+            }
+        if vid_cards:
+            mapped_v = [_map_selected_video_item(c) for c in vid_cards]
+            blk["videos"] = {
+                **(blk.get("videos") or {}),
+                "items": mapped_v,
+                "selected": len(mapped_v),
+            }
+        if cards.get("noIntlSubjectResults"):
+            blk["noIntlSubjectResults"] = True
+            blk["topResults"] = []
+        elif organic_cards and blk_key == "intl":
+            blk["topResults"] = [
+                {
+                    "provider": "GOOGLE",
+                    "rank": str(idx + 1),
+                    "domain": domain(item.get("domain") or item.get("url")),
+                    "title": truncate(item.get("title"), 60),
+                    "classification": str(item.get("classification", "")),
+                }
+                for idx, item in enumerate(organic_cards[:20])
+            ]
+
+    # Global selectedEvidence image list — fallback when region sync is sparse.
+    global_images = se.get("images", {}).get("selectedSubjectMatched") or []
+    ru_blk = vm.get("ru")
+    if ru_blk and global_images:
+        ru_items = list((ru_blk.get("images") or {}).get("items") or [])
+        if len(global_images) > len(ru_items):
+            mapped = [_map_selected_image_item(c) for c in global_images]
+            ru_blk["images"] = {
+                **(ru_blk.get("images") or {}),
+                "items": mapped,
+                "selected": len(mapped),
+            }
+
+    global_videos = se.get("videos", {}).get("selectedSubjectMatched") or []
+    if ru_blk and global_videos:
+        ru_vids = list((ru_blk.get("videos") or {}).get("items") or [])
+        if len(global_videos) > len(ru_vids):
+            mapped_v = [_map_selected_video_item(c) for c in global_videos]
+            ru_blk["videos"] = {
+                **(ru_blk.get("videos") or {}),
+                "items": mapped_v,
+                "selected": len(mapped_v),
+            }
 
 
 def _compliance_evidence_active(report_json: dict) -> bool:
@@ -852,9 +973,13 @@ def _region_block(
                     "title": truncate(i.get("title"), 50),
                     "source": i.get("source") or domain(i.get("url")),
                     "sourcePageUrl": i.get("sourcePageUrl") or i.get("url") or "",
-                    "thumbnailBase64": i.get("thumbnailBase64"),
+                    "url": i.get("sourcePageUrl") or i.get("url") or "",
+                    "thumbnailStorageKey": i.get("thumbnailStorageKey"),
+                    "thumbnailBase64": _image_thumbnail_b64(i),
+                    "thumbnailBytesBase64": i.get("thumbnailBytesBase64") or i.get("thumbnailBase64"),
+                    "thumbnailMimeType": i.get("thumbnailMimeType"),
                     "identityDecision": i.get("identityDecision") or "",
-                    "hasThumbnail": bool(i.get("thumbnailBase64")),
+                    "hasThumbnail": bool(_image_thumbnail_b64(i)),
                     "subjectMatched": str(i.get("identityDecision") or "") in ("EXACT_SUBJECT", "LIKELY_SUBJECT"),
                 }
                 for i in (r.get("topImages", []) or [])[:9]
@@ -1011,11 +1136,7 @@ def build_view_model_v2(report_json: dict) -> tuple[dict, list[str]]:
 
     final_conclusion = {
         "overallRiskLevel": base["cover"]["overallRiskLevel"],
-        "topThemes": [
-            t
-            for t in base["riskMatrix"].get("topThemes", [])
-            if compliance_active or str(t.get("theme", "")).lower() not in COMPLIANCE_THEMES
-        ],
+        "topThemes": _selected_risk_themes(report_json, audit),
         "recommendedActions": recommended,
         "warnings": base["dataQuality"]["warnings"],
         "missingSections": base["dataQuality"]["missingSections"],
@@ -1056,6 +1177,7 @@ def build_view_model_v2(report_json: dict) -> tuple[dict, list[str]]:
         "offerPages": base["offerPages"],
         "offer": offer,
     }
+    _apply_selected_evidence_vm_overrides(report_json, vm)
     return vm, warnings
 
 

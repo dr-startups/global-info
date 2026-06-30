@@ -239,6 +239,10 @@ const CLIENT_FORBIDDEN_JSON_KEYS = new Set([
   "reportEligibility",
   "contentClass",
   "debug",
+  "thumbnailBase64",
+  "thumbnailBytesBase64",
+  "thumbnailMimeType",
+  "imageBase64",
 ]);
 
 export type ReportJsonAudience = "internal" | "client";

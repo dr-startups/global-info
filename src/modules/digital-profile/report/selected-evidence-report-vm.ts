@@ -168,6 +168,23 @@ function isStrictMediaSubjectMatch(item: SurfaceReportItem): boolean {
   return hasSurname && hasGiven;
 }
 
+const WEAK_INTL_TITLE =
+  /romanovich|lomonosov|rbml\s*collections|abramovich|tomlinson|anatoli\s+romanovich|prince\s+nicholas|nikita\s+romanovich|mikhail\s+romanovich/i;
+
+/** O5.4.1 — international/UAE organic requires Tomilin+Konstantin anchor, not Romanovich-only noise. */
+function isStrictIntlOrganicMatch(item: SurfaceReportItem): boolean {
+  if (!isSubjectMatchedItem(item)) return false;
+  const text = item.title ?? "";
+  if (WEAK_INTL_TITLE.test(text)) return false;
+  if (item.identityDecision === "EXACT_SUBJECT" || item.identityDecision === "LIKELY_SUBJECT") {
+    const lower = text.toLowerCase();
+    const hasSurname = lower.includes("томилин") || lower.includes("tomilin");
+    const hasGiven = lower.includes("константин") || lower.includes("konstantin");
+    return hasSurname && hasGiven;
+  }
+  return item.reportEligibility === "CLIENT_INCLUDE";
+}
+
 function isNegativeSelected(item: SurfaceReportItem): boolean {
   return Boolean(
     item.classification &&
@@ -260,7 +277,9 @@ function buildRegionVm(
   audience: ReportAudience
 ): SelectedEvidenceRegionVm {
   const organicSelected = filterItemsForAudience(
-    block.organic.items.filter(isSubjectMatchedItem),
+    block.organic.items.filter(
+      code === "RU" ? isSubjectMatchedItem : isStrictIntlOrganicMatch
+    ),
     audience
   );
   const organicNegativeSelected = organicSelected.filter(isNegativeSelected);
