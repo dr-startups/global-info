@@ -11,11 +11,13 @@ import {
   filterComplianceForReport,
   filterReportWarningsForAudience,
   filterSearchResultsForReport,
+  isClientSafeReportJson,
   isDemoComplianceHit,
   isDemoSearchRow,
   normalizeReportWarnings,
   reportWarningTexts,
   resolveReportDataPolicy,
+  sanitizeReportJsonForAudience,
 } from "../src/modules/digital-profile/report/report-data-policy";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
@@ -93,6 +95,22 @@ function offlinePolicyChecks() {
     "internal audience keeps hygiene warnings",
     filterReportWarningsForAudience(hygiene, "internal").length === 1
   );
+
+  const dirtyJson = {
+    serpSnapshot: {
+      metadata: {
+        sourceMode: "REAL_ONLY",
+        sourcePreference: "prefer_real",
+        perEngine: { google: { sourceMode: "REAL", resultCount: 1, highlightedCount: 0 } },
+      },
+    },
+    meta: { reportWarnings: hygiene },
+    evidenceQuality: { totals: { collected: 1 }, reviewQueue: [{ id: "1" }] },
+  };
+  const clientJson = sanitizeReportJsonForAudience(dirtyJson, "client");
+  check("sanitizer removes sourceMode", !JSON.stringify(clientJson).includes("sourceMode"));
+  check("sanitizer removes reviewQueue", !JSON.stringify(clientJson).includes("reviewQueue"));
+  check("client-safe helper", isClientSafeReportJson(JSON.stringify(clientJson)));
 }
 
 async function main() {
@@ -226,6 +244,23 @@ async function main() {
     "EN render warnings exclude internal hygiene",
     !(en?.warnings ?? []).some((w) => /demo\/mock|excluded from production/i.test(w)),
     (en?.warnings ?? []).join("; ")
+  );
+
+  const clientReport = await req("GET", `${API}/cases/${caseId}/report?audience=client`);
+  const clientJson = data<{ reportJson: Record<string, unknown> }>(clientReport.json)?.reportJson;
+  const clientStr = JSON.stringify(clientJson ?? {});
+  check("client GET report_json has no sourceMode", !clientStr.includes("sourceMode"));
+  check("client GET report_json has no rawMetadata", !clientStr.includes("rawMetadata"));
+  check("client GET report_json has no providerAdapter", !clientStr.includes("providerAdapter"));
+  check("client GET report_json has no reviewQueue", !clientStr.includes("reviewQueue"));
+  check("client GET report_json clean helper", isClientSafeReportJson(clientStr));
+
+  const internalReport = await req("GET", `${API}/cases/${caseId}/report?audience=internal`);
+  const internalJson = data<{ reportJson: Record<string, unknown> }>(internalReport.json)?.reportJson;
+  check(
+    "internal GET may keep sourceMode",
+    JSON.stringify(internalJson ?? {}).includes("sourceMode") ||
+      !((internalJson?.serpSnapshot as { metadata?: unknown } | undefined)?.metadata)
   );
 
   if (en?.pptxDownloadUrl) {

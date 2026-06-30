@@ -402,12 +402,13 @@ export function calculateOverallRiskLevel(input: OverallRiskInput): OverallRiskL
   if (input.evidenceCount === 0) return "UNKNOWN";
 
   const active = input.findings.filter((f) => f.reviewStatus !== "DISMISSED");
-  const has = (lvl: string) => active.some((f) => f.severity === lvl);
+  const reviewed = active.filter((f) => f.reviewStatus === "REVIEWED");
+  const hasReviewed = (lvl: string) => reviewed.some((f) => f.severity === lvl);
 
-  if (has("CRITICAL") || input.compliance.sanctionsMatches > 0) return "CRITICAL";
+  if (hasReviewed("CRITICAL") || input.compliance.sanctionsMatches > 0) return "CRITICAL";
 
   if (
-    has("HIGH") ||
+    hasReviewed("HIGH") ||
     input.compliance.pepMatches + input.compliance.rcaMatches > 0 ||
     input.searchNegativeShare >= 0.25
   ) {

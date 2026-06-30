@@ -382,6 +382,8 @@ export interface ReportJson {
   serpSnapshot?: ReportSerpSnapshot;
   /** Stage O4 — ORION search surfaces per region (additive). */
   searchSurfaces?: import("./report/search-surfaces-report-builder").SearchSurfacesReportBlock;
+  /** Stage O5 — evidence quality gate summary (additive). */
+  evidenceQuality?: import("./evidence-quality/types").EvidenceQualitySummary;
 }
 
 /** Stage S1 — minimal SERP snapshot reference embedded in report_json. */

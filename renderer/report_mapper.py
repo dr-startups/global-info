@@ -1100,6 +1100,38 @@ def _serp_snapshot_vm(
     }
 
 
+def _filter_client_region_block(blk: dict) -> dict:
+    """O5 — client report shows only CLIENT_INCLUDE surface items."""
+    out = dict(blk)
+    for key in ("suggestions", "relatedQueries", "images", "videos"):
+        section = dict(out.get(key) or {})
+        items_key = "items" if key in ("images", "videos") else "list"
+        raw = list(section.get(items_key) or [])
+        if items_key == "list":
+            section[items_key] = raw
+        else:
+            section[items_key] = raw
+        out[key] = section
+    return out
+
+
+def _evidence_quality_vm(eq: dict | None, L: dict, internal: bool) -> dict:
+    if not eq or not internal:
+        return {"present": False}
+    totals = eq.get("totals") or {}
+    return {
+        "present": True,
+        "collected": totals.get("collected", 0),
+        "clientIncluded": totals.get("clientIncluded", 0),
+        "reviewRequired": totals.get("reviewRequired", 0),
+        "excluded": totals.get("excluded", 0),
+        "duplicates": totals.get("duplicates", 0),
+        "topExclusionReasons": list(eq.get("topExclusionReasons") or [])[:5],
+        "reviewQueueCount": len(eq.get("reviewQueue") or []),
+        "title": L.get("evidence_quality_title", "Evidence quality"),
+    }
+
+
 def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[dict, list[str]]:
     vm, warnings = build_view_model_v2(report_json)
     internal = str(audience).lower() != "client"
@@ -1133,6 +1165,14 @@ def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[
     for w in _warnings_for_render((report_json.get("meta") or {}).get("reportWarnings"), internal):
         if w not in warnings:
             warnings.append(w)
+
+    vm["evidenceQuality"] = _evidence_quality_vm(report_json.get("evidenceQuality"), vm["labels"], internal)
+    if not internal:
+        for key in ("ru", "intl"):
+            blk = vm.get(key)
+            if blk:
+                vm[key] = _filter_client_region_block(blk)
+
     return vm, warnings
 
 

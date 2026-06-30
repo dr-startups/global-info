@@ -36,6 +36,7 @@ import { ComplianceTab } from "./ComplianceTab";
 import { SurfacesTab } from "./SurfacesTab";
 import { SerpSnapshotTab } from "./SerpSnapshotTab";
 import { AuditSummaryTab } from "./AuditSummaryTab";
+import { EvidenceQualityTab } from "./EvidenceQualityTab";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
 
@@ -54,6 +55,7 @@ type TabKey =
   | "ai"
   | "compliance"
   | "risk"
+  | "evidenceQuality"
   | "audit"
   | "report";
 
@@ -113,6 +115,7 @@ export function CaseTabs({
     { key: "ai", label: t("tabs.aiProfile"), count: evidence.aiProfiles.length, raw: true },
     { key: "compliance", label: t("tabs.complianceDatabases"), count: evidence.databaseProfiles.length, raw: true },
     { key: "risk", label: t("tabs.riskFindings"), count: evidence.riskFindings.length, raw: true },
+    { key: "evidenceQuality", label: t("tabs.evidenceQuality"), raw: true },
     { key: "audit", label: t("tabs.auditSummary"), raw: true },
     { key: "report", label: t("tabs.reportPreview") },
   ];
@@ -179,6 +182,9 @@ export function CaseTabs({
       ) : null}
       {tab === "risk" ? (
         <RiskFindingsTab caseId={caseDetail.id} evidence={evidence} onChanged={onEvidenceChanged} />
+      ) : null}
+      {tab === "evidenceQuality" ? (
+        <EvidenceQualityTab caseId={caseDetail.id} onChanged={onSurfacesChanged} />
       ) : null}
 
       {tab === "audit" ? <AuditSummaryTab caseId={caseDetail.id} /> : null}

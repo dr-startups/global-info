@@ -27,6 +27,8 @@ import {
   buildSearchSurfacesReportBlock,
   regionBlockToAuditRegion,
 } from "../report/search-surfaces-report-builder";
+import { buildCaseEvidenceQuality } from "../evidence-quality/case-service";
+import { capOverallRiskFromQuality } from "../evidence-quality/build-summary";
 import {
   createInternalHygieneWarning,
   filterComplianceForReport,
@@ -38,6 +40,8 @@ import {
   REPORT_WARNING_DEMO_SEARCH_EXCLUDED,
   REPORT_WARNING_UNLINKED_FINDINGS_EXCLUDED,
   resolveReportDataPolicy,
+  sanitizeReportJsonForAudience,
+  type ReportJsonAudience,
   type ReportWarning,
 } from "../report/report-data-policy";
 import {
@@ -591,6 +595,25 @@ export async function buildReportJson(
     searchSurfaces = undefined;
   }
 
+  // Stage O5 — evidence quality summary (best-effort).
+  let evidenceQuality: ReportJson["evidenceQuality"];
+  try {
+    evidenceQuality = await buildCaseEvidenceQuality(caseId);
+    if (auditSummary && evidenceQuality) {
+      const reviewedHigh = (riskSummary?.findingsByLevel?.HIGH ?? 0) + (riskSummary?.findingsByLevel?.CRITICAL ?? 0);
+      const capped = capOverallRiskFromQuality(
+        auditSummary.overallRiskLevel,
+        evidenceQuality,
+        reviewedHigh
+      );
+      if (capped !== auditSummary.overallRiskLevel) {
+        auditSummary = { ...auditSummary, overallRiskLevel: capped as typeof auditSummary.overallRiskLevel };
+      }
+    }
+  } catch {
+    evidenceQuality = undefined;
+  }
+
   return {
     meta: {
       caseNumber: caseRow.caseNumber,
@@ -614,6 +637,7 @@ export async function buildReportJson(
     serpSnapshot,
     complianceSummary,
     searchSurfaces,
+    evidenceQuality,
   };
 }
 
@@ -631,8 +655,10 @@ const reportVersionSelect = {
 } satisfies Prisma.ReportVersionSelect;
 
 function toReportVersionDTO(
-  row: Prisma.ReportVersionGetPayload<{ select: typeof reportVersionSelect }>
+  row: Prisma.ReportVersionGetPayload<{ select: typeof reportVersionSelect }>,
+  options: { audience?: ReportJsonAudience } = {}
 ): ReportVersionDTO {
+  const reportJson = row.reportJson as unknown as ReportJson;
   return {
     id: row.id,
     caseId: row.caseId,
@@ -647,7 +673,10 @@ function toReportVersionDTO(
       ? buildReportDownloadUrl(row.id, row.pdfStorageKey, "pdf")
       : null,
     createdAt: row.createdAt,
-    reportJson: row.reportJson as unknown as ReportJson,
+    reportJson: sanitizeReportJsonForAudience(
+      reportJson as unknown as Record<string, unknown>,
+      options.audience ?? "internal"
+    ) as unknown as ReportJson,
   };
 }
 
@@ -711,7 +740,8 @@ export async function createReportVersion(
 /** Returns the latest report version for a case, or throws NotFound. */
 export async function getLatestReport(
   caseId: string,
-  ctx: ActorContext = {}
+  ctx: ActorContext = {},
+  options: { audience?: ReportJsonAudience } = {}
 ): Promise<ReportVersionDTO> {
   const row = await prisma.reportVersion.findFirst({
     where: { caseId },
@@ -724,8 +754,8 @@ export async function getLatestReport(
     caseId,
     action: "REPORT_VIEWED",
     actorId: ctx.actorId,
-    metadata: { version: row.version },
+    metadata: { version: row.version, audience: options.audience ?? "internal" },
   });
 
-  return toReportVersionDTO(row);
+  return toReportVersionDTO(row, options);
 }

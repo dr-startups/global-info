@@ -26,6 +26,9 @@ import { buildAuditSummary } from "../audit-summary/builder";
 import { buildComplianceSummaryBlock } from "../compliance-providers";
 import { buildOfferConfig } from "../report/offer-config";
 import {
+  sanitizeReportJsonForAudience,
+} from "../report/report-data-policy";
+import {
   normalizeReportLanguage,
   type ReportLanguage,
 } from "../report/i18n/report-dictionary";
@@ -209,11 +212,18 @@ export async function renderReportVersion(
     reportVersion.reportJson as unknown as ReportJson,
     reportLanguage
   );
+  const audienceReportJson =
+    audience === "client"
+      ? (sanitizeReportJsonForAudience(
+          localizedReportJson as unknown as Record<string, unknown>,
+          "client"
+        ) as unknown as ReportJson)
+      : localizedReportJson;
   // Stage S1.5: the renderer is stateless and has no access to private storage,
   // so the SERP snapshot PNG travels inside report_json as base64. This is added
   // only on the wire (not persisted in the stored report_json, which stays
   // lightweight). If the image is unreadable the renderer falls back + warns.
-  const renderReportJson = await attachSerpSnapshotImage(localizedReportJson);
+  const renderReportJson = await attachSerpSnapshotImage(audienceReportJson);
 
   const result = await callRenderer({
     reportJson: renderReportJson,

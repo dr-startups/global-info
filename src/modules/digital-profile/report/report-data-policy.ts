@@ -226,3 +226,200 @@ export const REPORT_WARNING_UNLINKED_FINDINGS_EXCLUDED = {
 export function reportWarningTexts(warnings: ReportWarning[]): string[] {
   return warnings.map((w) => w.text);
 }
+
+/** Keys stripped from client-facing report_json at any depth. */
+const CLIENT_FORBIDDEN_JSON_KEYS = new Set([
+  "sourceMode",
+  "sourcePreference",
+  "providerAdapter",
+  "rawMetadata",
+  "rawMetadataSafe",
+  "staleReason",
+  "wasRegeneratedForReport",
+  "reportEligibility",
+  "contentClass",
+  "debug",
+]);
+
+export type ReportJsonAudience = "internal" | "client";
+
+function stripForbiddenKeysDeep(value: unknown, forbidden: Set<string>): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripForbiddenKeysDeep(item, forbidden));
+  }
+  if (!value || typeof value !== "object") return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if (forbidden.has(key)) continue;
+    out[key] = stripForbiddenKeysDeep(child, forbidden);
+  }
+  return out;
+}
+
+function sanitizeSerpSnapshotMetadata(
+  metadata: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!metadata) return metadata;
+  const meta = { ...metadata };
+  delete meta.sourceMode;
+  delete meta.sourcePreference;
+  delete meta.staleReason;
+  delete meta.wasRegeneratedForReport;
+  if (meta.perEngine && typeof meta.perEngine === "object") {
+    const perEngine: Record<string, unknown> = {};
+    for (const [engine, stats] of Object.entries(meta.perEngine as Record<string, unknown>)) {
+      if (stats && typeof stats === "object") {
+        const { sourceMode: _sm, ...rest } = stats as Record<string, unknown>;
+        perEngine[engine] = rest;
+      }
+    }
+    meta.perEngine = perEngine;
+  }
+  return meta;
+}
+
+function sanitizeSearchSurfacesForClient(
+  searchSurfaces: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!searchSurfaces) return searchSurfaces;
+  const out = { ...searchSurfaces };
+  const regions = out.regions as Record<string, Record<string, unknown>> | undefined;
+  if (regions) {
+    const nextRegions: Record<string, Record<string, unknown>> = {};
+    for (const [code, block] of Object.entries(regions)) {
+      const nextBlock = { ...block };
+      for (const bucketKey of [
+        "organic",
+        "suggestions",
+        "relatedQueries",
+        "images",
+        "videos",
+        "knowledgePanel",
+      ]) {
+        const bucket = nextBlock[bucketKey] as Record<string, unknown> | undefined;
+        if (!bucket) continue;
+        const items = Array.isArray(bucket.items) ? bucket.items : [];
+        const clientItems = items
+          .filter((item) => {
+            const row = item as Record<string, unknown>;
+            const el = row.reportEligibility;
+            return !el || el === "CLIENT_INCLUDE";
+          })
+          .map((item) => {
+            const { reportEligibility: _re, contentClass: _cc, ...rest } = item as Record<
+              string,
+              unknown
+            >;
+            return rest;
+          });
+        const stats = bucket.qualityStats as Record<string, unknown> | undefined;
+        nextBlock[bucketKey] = {
+          ...bucket,
+          items: clientItems,
+          qualityStats: stats
+            ? {
+                totalCollected: stats.totalCollected,
+                selectedForReport: stats.selectedForReport,
+                clientIncluded: stats.clientIncluded,
+                dataQualityStatus: stats.dataQualityStatus,
+              }
+            : undefined,
+        };
+      }
+      nextRegions[code] = nextBlock;
+    }
+    out.regions = nextRegions;
+  }
+  if (Array.isArray(out.dataQualityWarnings)) {
+    out.dataQualityWarnings = out.dataQualityWarnings.filter(
+      (w) => !isInternalHygieneText(String(w))
+    );
+  }
+  return out;
+}
+
+function sanitizeEvidenceQualityForClient(
+  evidenceQuality: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!evidenceQuality) return evidenceQuality;
+  const totals = evidenceQuality.totals;
+  if (!totals || typeof totals !== "object") return undefined;
+  return { totals };
+}
+
+/**
+ * O5.2 — remove internal/debug fields from client-facing report_json.
+ * Internal audience receives the stored payload unchanged.
+ */
+export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>(
+  reportJson: T,
+  audience: ReportJsonAudience
+): T {
+  if (audience === "internal") return reportJson;
+
+  const copy = JSON.parse(JSON.stringify(reportJson)) as T & {
+    meta?: { reportWarnings?: unknown };
+    auditSummary?: { dataQualitySummary?: { warnings?: string[] } };
+    serpSnapshot?: { metadata?: Record<string, unknown> };
+    searchSurfaces?: Record<string, unknown>;
+    evidenceQuality?: Record<string, unknown>;
+  };
+
+  if (copy.meta) {
+    copy.meta = {
+      ...copy.meta,
+      reportWarnings: filterReportWarningsForAudience(
+        normalizeReportWarnings(copy.meta.reportWarnings),
+        "client"
+      ),
+    };
+  }
+
+  if (copy.auditSummary?.dataQualitySummary?.warnings) {
+    copy.auditSummary = {
+      ...copy.auditSummary,
+      dataQualitySummary: {
+        ...copy.auditSummary.dataQualitySummary,
+        warnings: copy.auditSummary.dataQualitySummary.warnings.filter(
+          (t) => !isInternalHygieneText(t)
+        ),
+      },
+    };
+  }
+
+  if (copy.serpSnapshot?.metadata) {
+    copy.serpSnapshot = {
+      ...copy.serpSnapshot,
+      metadata: sanitizeSerpSnapshotMetadata(copy.serpSnapshot.metadata),
+    };
+  }
+
+  if (copy.searchSurfaces) {
+    copy.searchSurfaces = sanitizeSearchSurfacesForClient(copy.searchSurfaces);
+  }
+
+  copy.evidenceQuality = sanitizeEvidenceQualityForClient(copy.evidenceQuality);
+
+  return stripForbiddenKeysDeep(copy, CLIENT_FORBIDDEN_JSON_KEYS) as T;
+}
+
+/** Assert client report_json string has no internal/debug markers. */
+export function isClientSafeReportJson(jsonStr: string): boolean {
+  const forbidden = [
+    "sourceMode",
+    "sourcePreference",
+    "providerAdapter",
+    "mock fixture",
+    "debug",
+    "rawMetadata",
+    "rawMetadataSafe",
+    "reviewQueue",
+    "topExclusionReasons",
+    "reportEligibility",
+    "contentClass",
+    "staleReason",
+    "wasRegeneratedForReport",
+  ];
+  const lower = jsonStr.toLowerCase();
+  return !forbidden.some((f) => lower.includes(f.toLowerCase()));
+}

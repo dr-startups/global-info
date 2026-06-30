@@ -82,6 +82,7 @@ export interface Dictionary {
     aiProfile: string;
     complianceDatabases: string;
     riskFindings: string;
+    evidenceQuality: string;
     auditSummary: string;
     reportPreview: string;
   };
@@ -356,6 +357,21 @@ export interface Dictionary {
     dismiss: string;
     importSuccess: string;
     screenSuccess: string;
+  };
+  evidenceQuality: {
+    collected: string;
+    clientIncluded: string;
+    reviewRequired: string;
+    excluded: string;
+    reviewQueue: string;
+    emptyQueue: string;
+    titleCol: string;
+    surfaceCol: string;
+    classCol: string;
+    reasonCol: string;
+    actionsCol: string;
+    includeClient: string;
+    exclude: string;
   };
   createCase: {
     title: string;

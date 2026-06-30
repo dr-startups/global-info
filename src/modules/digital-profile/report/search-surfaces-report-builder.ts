@@ -19,6 +19,11 @@ import {
   readRiskClassification,
 } from "../risk-classifier/result-classifier";
 import type { SearchSurfaceType } from "../search-surfaces/types";
+import { evaluateEvidenceItem } from "../evidence-quality/gate";
+import { dedupeEvidenceItems, pickBestRepresentatives } from "../evidence-quality/dedupe";
+import { selectEvidenceForReport } from "../evidence-quality/selection-policy";
+import type { EvidenceSurfaceType, SurfaceQualityStats } from "../evidence-quality/types";
+import type { GatedEvidenceItem } from "../evidence-quality/types";
 
 export interface SurfaceBucketSummary {
   total: number;
@@ -26,6 +31,8 @@ export interface SurfaceBucketSummary {
   collectionStatus: RegionCollectionStatus;
   statusMessage: string;
   items: SurfaceReportItem[];
+  /** Stage O5 — quality-gated selection stats. */
+  qualityStats?: SurfaceQualityStats;
 }
 
 export interface SurfaceReportItem {
@@ -38,6 +45,9 @@ export interface SurfaceReportItem {
   riskTheme: string | null;
   query: string | null;
   rank: number | null;
+  /** O5 — report eligibility for client/internal filtering at render. */
+  reportEligibility?: string;
+  contentClass?: string;
 }
 
 export interface RegionSearchSurfacesBlock {
@@ -91,7 +101,138 @@ export interface SearchSurfacesReportBlock {
 function isNegativeOrganic(classification: string | null, rawMetadata: unknown): boolean {
   const rc = readRiskClassification(rawMetadata);
   const cls = rc?.manual?.classification ?? rc?.auto?.classification ?? classification;
-  return cls ? isRiskyResultClass(cls) : false;
+  if (!cls) return false;
+  const q = evaluateEvidenceItem({
+    surfaceType: "SEARCH_RESULT",
+    classification: cls,
+    rawMetadata,
+  });
+  return q.isAdverseForReport;
+}
+
+const SURFACE_EVIDENCE_TYPE: Partial<Record<SearchSurfaceType, EvidenceSurfaceType>> = {
+  SUGGESTION: "SEARCH_SUGGESTION",
+  RELATED_QUERY: "RELATED_QUERY",
+  IMAGE_RESULT: "IMAGE_RESULT",
+  VIDEO_RESULT: "VIDEO_RESULT",
+  KNOWLEDGE_BLOCK: "KNOWLEDGE_BLOCK",
+};
+
+function bucketFromGatedRows(
+  rows: Array<{
+    id?: string;
+    title: string | null;
+    snippet: string | null;
+    url: string | null;
+    domain: string | null;
+    thumbnailUrl: string | null;
+    imageUrl: string | null;
+    classification: string | null;
+    riskTheme: string | null;
+    query: string | null;
+    rank: number | null;
+    rawMetadata?: unknown;
+    reviewStatus?: string | null;
+    region?: string | null;
+  }>,
+  surfaceType: EvidenceSurfaceType,
+  regionStatus: RegionCollectionStatus,
+  regionMessage: string,
+  subjectFullName: string | null,
+  limit = 20
+): SurfaceBucketSummary {
+  const gated: GatedEvidenceItem[] = dedupeEvidenceItems(
+    rows.map((r) => ({
+      id: r.id,
+      surfaceType,
+      title: r.title,
+      url: r.url,
+      domain: r.domain,
+      snippet: r.snippet,
+      classification: r.classification,
+      riskTheme: r.riskTheme,
+      query: r.query,
+      region: r.region,
+      rawMetadata: r.rawMetadata,
+      reviewStatus: r.reviewStatus,
+      subjectFullName,
+    })),
+    subjectFullName
+  ).items;
+
+  const selected = selectEvidenceForReport(gated, "INTERNAL").selected;
+  const picked = pickBestRepresentatives(selected, limit);
+  const adverse = picked.filter((r) => r.quality.isAdverseForReport).length;
+  const excluded = gated.length - picked.length;
+  const reviewRequired = gated.filter((r) => r.quality.reportEligibility === "REVIEW_REQUIRED").length;
+  const duplicates = gated.filter((r) => r.quality.selectionReason === "duplicate_url").length;
+
+  const qualityStats: SurfaceQualityStats = {
+    totalCollected: rows.length,
+    selectedForReport: picked.length,
+    excludedAsNoise: excluded,
+    reviewRequired,
+    duplicatesCollapsed: duplicates,
+    clientIncluded: picked.filter((r) => r.quality.reportEligibility === "CLIENT_INCLUDE").length,
+    dataQualityStatus: rows.length > 0 ? "COLLECTED" : regionStatus === "COLLECTED" ? "EMPTY" : regionStatus,
+  };
+
+  if (rows.length > 0) {
+    return {
+      total: rows.length,
+      adverse,
+      collectionStatus: "COLLECTED",
+      statusMessage: "Data collected.",
+      items: picked.map((r, idx) => ({
+        title: r.title ?? r.query ?? "",
+        snippet: r.snippet ?? null,
+        url: r.url ?? null,
+        domain: r.domain ?? null,
+        thumbnailUrl: (r as { thumbnailUrl?: string | null }).thumbnailUrl ?? null,
+        classification: r.classification ?? null,
+        riskTheme: r.riskTheme ?? null,
+        query: r.query ?? null,
+        rank: idx + 1,
+        reportEligibility: r.quality.reportEligibility,
+        contentClass: r.quality.contentClass,
+      })),
+      qualityStats,
+    };
+  }
+  if (regionStatus === "COLLECTED") {
+    return {
+      total: 0,
+      adverse: 0,
+      collectionStatus: "COLLECTED",
+      statusMessage: "Queried — none found for this surface.",
+      items: [],
+      qualityStats: {
+        totalCollected: 0,
+        selectedForReport: 0,
+        excludedAsNoise: 0,
+        reviewRequired: 0,
+        duplicatesCollapsed: 0,
+        clientIncluded: 0,
+        dataQualityStatus: "EMPTY",
+      },
+    };
+  }
+  return {
+    total: 0,
+    adverse: 0,
+    collectionStatus: regionStatus,
+    statusMessage: regionMessage,
+    items: [],
+    qualityStats: {
+      totalCollected: 0,
+      selectedForReport: 0,
+      excludedAsNoise: 0,
+      reviewRequired: 0,
+      duplicatesCollapsed: 0,
+      clientIncluded: 0,
+      dataQualityStatus: regionStatus,
+    },
+  };
 }
 
 function emptyBucket(status: RegionCollectionStatus, message: string): SurfaceBucketSummary {
@@ -218,7 +359,8 @@ function buildRegionBlock(
   region: OrionRegionCode,
   organicRows: Awaited<ReturnType<typeof loadOrganic>>,
   surfaceRows: Awaited<ReturnType<typeof loadSurfaces>>,
-  wikiRows: Awaited<ReturnType<typeof loadWiki>>
+  wikiRows: Awaited<ReturnType<typeof loadWiki>>,
+  subjectFullName: string | null
 ): RegionSearchSurfacesBlock {
   const profile = regionProfile(region);
   const regionOrganic = filterMatrixInputsByRegion(
@@ -247,6 +389,34 @@ function buildRegionBlock(
     isNegativeOrganic(r.classification, r.rawMetadata)
   );
 
+  const surfaceInput = (type: SearchSurfaceType) =>
+    byType(type).map((s) => ({
+      id: (s as { id?: string }).id,
+      title: s.title,
+      snippet: s.snippet,
+      url: s.url,
+      domain: s.domain,
+      thumbnailUrl: s.thumbnailUrl,
+      imageUrl: s.imageUrl,
+      classification: s.classification,
+      riskTheme: s.riskTheme,
+      query: s.query,
+      rank: s.rank,
+      rawMetadata: s.rawMetadata,
+      reviewStatus: s.reviewStatus,
+      region,
+    }));
+
+  const gatedBucket = (type: SearchSurfaceType) =>
+    bucketFromGatedRows(
+      surfaceInput(type),
+      SURFACE_EVIDENCE_TYPE[type] ?? "SEARCH_SUGGESTION",
+      derived.status,
+      derived.message,
+      subjectFullName,
+      type === "RELATED_QUERY" ? 15 : 20
+    );
+
   const wikiLang = region === "RU" ? "ru" : "en";
   const wiki = wikiRows.filter((w) => (w.language ?? "").toLowerCase().startsWith(wikiLang));
 
@@ -256,8 +426,9 @@ function buildRegionBlock(
     language: profile.language,
     collectionStatus: derived.status,
     statusMessage: derived.message,
-    organic: bucketFromRows(
+    organic: bucketFromGatedRows(
       regionOrganic.map((r) => ({
+        id: r.id,
         title: r.title,
         snippet: r.snippet,
         url: r.url,
@@ -268,15 +439,21 @@ function buildRegionBlock(
         riskTheme: null,
         query: ((r.rawMetadata ?? {}) as Record<string, unknown>).orionQuery as string | null ?? null,
         rank: r.rank,
+        rawMetadata: r.rawMetadata,
+        reviewStatus: null,
+        region,
       })),
+      "SEARCH_RESULT",
       derived.status,
-      derived.message
+      derived.message,
+      subjectFullName,
+      20
     ),
-    suggestions: bucketFromRows(byType("SUGGESTION"), derived.status, derived.message),
-    relatedQueries: bucketFromRows(byType("RELATED_QUERY"), derived.status, derived.message),
-    images: bucketFromRows(byType("IMAGE_RESULT"), derived.status, derived.message),
-    videos: bucketFromRows(byType("VIDEO_RESULT"), derived.status, derived.message),
-    knowledgePanel: bucketFromRows(byType("KNOWLEDGE_BLOCK"), derived.status, derived.message),
+    suggestions: gatedBucket("SUGGESTION"),
+    relatedQueries: gatedBucket("RELATED_QUERY"),
+    images: gatedBucket("IMAGE_RESULT"),
+    videos: gatedBucket("VIDEO_RESULT"),
+    knowledgePanel: gatedBucket("KNOWLEDGE_BLOCK"),
     wikipedia: {
       total: wiki.length,
       adverse: 0,
@@ -330,6 +507,7 @@ async function loadSurfaces(caseId: string) {
   return prisma.searchSurfaceItem.findMany({
     where: { caseId, deletedAt: null, demo: false, type: { not: "MANUAL_NOTE" } },
     select: {
+      id: true,
       type: true,
       region: true,
       title: true,
@@ -342,6 +520,8 @@ async function loadSurfaces(caseId: string) {
       riskTheme: true,
       query: true,
       rank: true,
+      reviewStatus: true,
+      rawMetadata: true,
     },
   });
 }
@@ -357,6 +537,12 @@ export async function buildSearchSurfacesReportBlock(
   caseId: string,
   options: { includeDemo?: boolean } = {}
 ): Promise<SearchSurfacesReportBlock> {
+  const subjectRow = await prisma.case.findFirst({
+    where: { id: caseId },
+    select: { subjects: { orderBy: { createdAt: "asc" }, take: 1, select: { fullName: true } } },
+  });
+  const subjectFullName = subjectRow?.subjects[0]?.fullName ?? null;
+
   const [organicRows, surfaceRows, wikiRows] = await Promise.all([
     loadOrganic(caseId),
     loadSurfaces(caseId),
@@ -367,9 +553,9 @@ export async function buildSearchSurfacesReportBlock(
     ? organicRows
     : organicRows.filter((r) => !String(r.source ?? "").includes("mock"));
 
-  const ru = buildRegionBlock("RU", organic, surfaceRows, wikiRows);
-  const uae = buildRegionBlock("UAE", organic, surfaceRows, wikiRows);
-  const international = buildRegionBlock("INTERNATIONAL", organic, surfaceRows, wikiRows);
+  const ru = buildRegionBlock("RU", organic, surfaceRows, wikiRows, subjectFullName);
+  const uae = buildRegionBlock("UAE", organic, surfaceRows, wikiRows, subjectFullName);
+  const international = buildRegionBlock("INTERNATIONAL", organic, surfaceRows, wikiRows, subjectFullName);
 
   const blocks = [ru, uae, international];
   const warnings: string[] = [];
@@ -490,7 +676,15 @@ export function regionBlockToAuditRegion(
     topThemes: block.summary.topAdverseThemes.map((t) => ({ theme: t.theme, count: t.count })),
     topNegativeDomains: block.summary.topAdverseDomains.map((d) => d.domain),
     topNegativeUrls: block.organic.items
-      .filter((i) => isAdverseSurface(i.classification))
+      .filter((i) => {
+        const q = evaluateEvidenceItem({
+          surfaceType: "SEARCH_RESULT",
+          title: i.title,
+          classification: i.classification,
+          subjectFullName: null,
+        });
+        return q.isAdverseForReport;
+      })
       .slice(0, 10)
       .map((i) => ({
         title: i.title,
