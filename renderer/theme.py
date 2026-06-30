@@ -148,6 +148,7 @@ def page_frame(
     page_no: int | None = None,
     total: int | None = None,
     watermark: str | None = None,
+    title_width: Emu | None = None,
 ) -> Emu:
     set_bg(slide, BG_LIGHT)
     # top accent bar
@@ -159,7 +160,8 @@ def page_frame(
     if watermark:
         _watermark(slide, watermark)
 
-    box = textbox(slide, MARGIN, Emu(228600), CONTENT_W, Emu(960120))
+    tw = title_width or CONTENT_W
+    box = textbox(slide, MARGIN, Emu(228600), tw, Emu(960120))
     tf = box.text_frame
     _run(tf.paragraphs[0], title or "", FS_MAIN_TITLE, BRAND_PRIMARY, bold=True)
     if subtitle:
@@ -550,84 +552,350 @@ def table(
     return bottom
 
 
+# O5.4.2 — content must stay above footer safe line (0.2" above footer rule).
+CONTENT_SAFE_BOTTOM = Emu(int(FOOTER_Y) - 182880)
+CARD_PAD = Emu(91440)  # ~0.1"
+# Vertical gaps between fixed caption zones inside media cards (~8 px).
+CARD_ZONE_GAP = Emu(101600)
+IMG_TITLE_ZONE_H = Emu(266700)   # max ~2 title lines
+IMG_DOMAIN_ZONE_H = Emu(139700)  # 1 domain line
+IMG_BADGE_ZONE_H = Emu(139700)   # 1 identity badge line (extra line height)
+VID_TITLE_ZONE_H = Emu(139700)   # 1 title line (compact)
+VID_DOMAIN_ZONE_H = Emu(127000)
+VID_BADGE_ZONE_H = Emu(127000)
+VID_BUTTON_ZONE_H = Emu(165100)
+
+
+def assert_shape_within_safe_area(
+    shape,
+    context: str,
+    warnings: list[str] | None = None,
+    *,
+    strict: bool = False,
+) -> bool:
+    """Layout guard: shape bottom must not intrude on footer/page-number band."""
+    try:
+        bottom = int(shape.top) + int(shape.height)
+    except Exception:
+        return True
+    limit = int(CONTENT_SAFE_BOTTOM)
+    ok = bottom <= limit
+    if not ok:
+        msg = f"Layout safe-area overflow ({context}): bottom={bottom} > {limit}"
+        if strict:
+            raise ValueError(msg)
+        if warnings is not None:
+            warnings.append(msg)
+    return ok
+
+
+def short_display_url(url: str, max_len: int = 38) -> str:
+    from urllib.parse import urlparse
+
+    try:
+        p = urlparse(str(url or "").strip())
+        host = (p.netloc or "").replace("www.", "")
+        path = (p.path or "").strip("/")
+        display = f"{host}/{path}" if path else host
+        return truncate(display or url, max_len)
+    except Exception:
+        return truncate(url, max_len)
+
+
+def _fit_picture_contain(slide, stream, box_left: int, box_top: int, box_w: int, box_h: int):
+    """Place image scaled to fit box; preserve aspect ratio; center in box."""
+    if hasattr(stream, "seek"):
+        stream.seek(0)
+    pic = slide.shapes.add_picture(stream, box_left, box_top)
+    scale = min(box_w / max(pic.width, 1), box_h / max(pic.height, 1), 1.0)
+    pic.width = int(pic.width * scale)
+    pic.height = int(pic.height * scale)
+    pic.left = box_left + (box_w - pic.width) // 2
+    pic.top = box_top + (box_h - pic.height) // 2
+    return pic
+
+
+def _card_text_zone(
+    slide,
+    x: int,
+    y: int,
+    w: int,
+    h: int,
+    text: str,
+    size: int,
+    color: RGBColor,
+    *,
+    bold: bool = False,
+    italic: bool = False,
+    hyperlink: str | None = None,
+    layout_warnings: list[str] | None = None,
+    context: str = "card_zone",
+    word_wrap: bool = True,
+):
+    """Single-line (or fixed-height) text zone — never shares a box with other rows."""
+    box = textbox(slide, Emu(x), Emu(y), Emu(w), Emu(h))
+    tf = box.text_frame
+    tf.word_wrap = word_wrap
+    tf.auto_size = None
+    tf.vertical_anchor = MSO_ANCHOR.TOP
+    p = tf.paragraphs[0]
+    p.line_spacing = 1.0
+    p.space_after = Pt(0)
+    if hyperlink and text:
+        run = p.add_run()
+        run.text = text
+        run.font.size = Pt(size)
+        run.font.color.rgb = color
+        run.font.bold = bold
+        run.font.italic = italic
+        run.font.underline = True
+        try:
+            run.hyperlink.address = hyperlink
+        except Exception:
+            pass
+    else:
+        _run(p, text, size, color, bold=bold, italic=italic)
+    assert_shape_within_safe_area(box, context, layout_warnings)
+    return box
+
+
+def _image_card_caption_heights(show_identity: bool) -> tuple[int, int, int, int]:
+    """Return title_h, domain_h, badge_h, caption_stack_h (incl. gaps)."""
+    gap = int(CARD_ZONE_GAP)
+    title_h = int(IMG_TITLE_ZONE_H)
+    domain_h = int(IMG_DOMAIN_ZONE_H)
+    badge_h = int(IMG_BADGE_ZONE_H) if show_identity else 0
+    stack = title_h + gap + domain_h
+    if show_identity:
+        stack += gap + badge_h
+    return title_h, domain_h, badge_h, stack
+
+
+def add_image_card(
+    slide,
+    x: Emu,
+    y: Emu,
+    w: Emu,
+    h: Emu,
+    item: dict[str, Any],
+    *,
+    show_identity: bool = False,
+    link_label: str = "Source",
+    layout_warnings: list[str] | None = None,
+) -> None:
+    """O5.4.2 — image card with fixed vertical zones (title / domain / badge)."""
+    import base64
+    import io
+
+    ix, iy, iw, ih = int(x), int(y), int(w), int(h)
+    pad = int(CARD_PAD)
+    gap = int(CARD_ZONE_GAP)
+    inner_w = max(1, iw - 2 * pad)
+    inner_x = ix + pad
+    title_h, domain_h, badge_h, cap_stack = _image_card_caption_heights(show_identity)
+    cap_top = iy + ih - pad - cap_stack
+    img_top = iy + pad
+    img_box_h = max(1, cap_top - gap - img_top)
+
+    frame = slide.shapes.add_shape(ROUNDED_RECT, Emu(ix), Emu(iy), Emu(iw), Emu(ih))
+    frame.fill.solid()
+    frame.fill.fore_color.rgb = BG_LIGHT
+    frame.line.color.rgb = NEUTRAL_LINE
+    frame.line.width = Pt(0.75)
+    assert_shape_within_safe_area(frame, "image_card_frame", layout_warnings)
+
+    b64 = item.get("thumbnailBytesBase64") or item.get("thumbnailBase64")
+    source_url = str(item.get("sourcePageUrl") or item.get("url") or "")
+    domain = truncate(item.get("source") or short_display_url(source_url), 36)
+    title = truncate(item.get("title"), 58)
+
+    if b64:
+        try:
+            stream = io.BytesIO(base64.b64decode(b64))
+            pic = _fit_picture_contain(slide, stream, inner_x, img_top, inner_w, img_box_h)
+            assert_shape_within_safe_area(pic, "image_card_picture", layout_warnings)
+        except Exception:
+            ph = slide.shapes.add_shape(ROUNDED_RECT, Emu(inner_x), Emu(img_top), Emu(inner_w), Emu(img_box_h))
+            ph.fill.solid()
+            ph.fill.fore_color.rgb = BG_PANEL
+            ph.line.color.rgb = NEUTRAL_LINE
+            _card_text_zone(
+                slide, inner_x, img_top + img_box_h // 3, inner_w, img_box_h // 2,
+                "thumbnail unavailable", FS_NOTE, NEUTRAL_GRAY, italic=True,
+                layout_warnings=layout_warnings, context="image_card_placeholder",
+            )
+    else:
+        ph = slide.shapes.add_shape(ROUNDED_RECT, Emu(inner_x), Emu(img_top), Emu(inner_w), Emu(img_box_h))
+        ph.fill.solid()
+        ph.fill.fore_color.rgb = BG_PANEL
+        ph.line.color.rgb = NEUTRAL_LINE
+        _card_text_zone(
+            slide, inner_x, img_top + img_box_h // 3, inner_w, img_box_h // 2,
+            truncate(title, 40), FS_NOTE, NEUTRAL_GRAY,
+            layout_warnings=layout_warnings, context="image_card_placeholder",
+        )
+
+    y_cursor = cap_top
+    _card_text_zone(
+        slide, inner_x, y_cursor, inner_w, title_h,
+        title, FS_NOTE, BRAND_PRIMARY, bold=True,
+        layout_warnings=layout_warnings, context="image_card_title",
+    )
+    y_cursor += title_h + gap
+    _card_text_zone(
+        slide, inner_x, y_cursor, inner_w, domain_h,
+        domain, FS_NOTE, ACCENT if source_url.startswith("http") else NEUTRAL_GRAY,
+        hyperlink=source_url if source_url.startswith("http") else None,
+        word_wrap=False,
+        layout_warnings=layout_warnings, context="image_card_domain",
+    )
+    if show_identity and item.get("identityDecision"):
+        y_cursor += domain_h + gap
+        _card_text_zone(
+            slide, inner_x, y_cursor, inner_w, badge_h,
+            truncate(str(item.get("identityDecision")), 22), FS_NOTE - 1, NEUTRAL_GRAY,
+            italic=True, word_wrap=False,
+            layout_warnings=layout_warnings, context="image_card_badge",
+        )
+
+
+def add_video_card(
+    slide,
+    x: Emu,
+    y: Emu,
+    w: Emu,
+    h: Emu,
+    item: dict[str, Any],
+    link_label: str = "Open source",
+    layout_warnings: list[str] | None = None,
+) -> None:
+    """O5.4.2 — video card with fixed zones; hyperlink on button only."""
+    ix, iy, iw, ih = int(x), int(y), int(w), int(h)
+    pad = int(CARD_PAD)
+    gap = int(CARD_ZONE_GAP)
+    inner_w = max(1, iw - 2 * pad)
+    inner_x = ix + pad
+    url = str(item.get("url") or item.get("sourcePageUrl") or "")
+    title = truncate(item.get("title"), 38)
+    domain = truncate(item.get("source") or short_display_url(url), 36)
+    identity = truncate(item.get("selectionReason") or item.get("identityDecision") or "", 22)
+    has_badge = bool(identity)
+
+    btn_h = int(VID_BUTTON_ZONE_H)
+    badge_h = int(VID_BADGE_ZONE_H) if has_badge else 0
+    domain_h = int(VID_DOMAIN_ZONE_H)
+
+    btn_top = iy + ih - pad - btn_h
+    badge_top = btn_top - gap - badge_h if has_badge else btn_top
+    domain_top = badge_top - gap - domain_h
+    title_top = iy + pad
+    title_h = max(90000, domain_top - gap - title_top)
+
+    frame = slide.shapes.add_shape(ROUNDED_RECT, Emu(ix), Emu(iy), Emu(iw), Emu(ih))
+    frame.fill.solid()
+    frame.fill.fore_color.rgb = BG_LIGHT
+    frame.line.color.rgb = NEUTRAL_LINE
+    frame.line.width = Pt(0.75)
+
+    _card_text_zone(
+        slide, inner_x, title_top, inner_w, title_h,
+        title, FS_NOTE, BRAND_PRIMARY, bold=True, word_wrap=False,
+        layout_warnings=layout_warnings, context="video_card_title",
+    )
+    _card_text_zone(
+        slide, inner_x, domain_top, inner_w, domain_h,
+        domain, FS_NOTE, NEUTRAL_GRAY, word_wrap=False,
+        layout_warnings=layout_warnings, context="video_card_domain",
+    )
+    if has_badge:
+        _card_text_zone(
+            slide, inner_x, badge_top, inner_w, badge_h,
+            identity, FS_NOTE - 1, NEUTRAL_GRAY, italic=True, word_wrap=False,
+            layout_warnings=layout_warnings, context="video_card_badge",
+        )
+    _card_text_zone(
+        slide, inner_x, btn_top, inner_w, btn_h,
+        link_label, FS_NOTE, ACCENT if url.startswith("http") else NEUTRAL_GRAY,
+        bold=True, hyperlink=url if url.startswith("http") else None, word_wrap=False,
+        layout_warnings=layout_warnings, context="video_card_button",
+    )
+
+    assert_shape_within_safe_area(frame, "video_card", layout_warnings)
+
+
+def _grid_geometry(
+    count: int,
+    top: Emu,
+    *,
+    max_shown: int = 6,
+    min_row_h: int = 560000,
+    max_row_h: int = 1150000,
+) -> tuple[int, int, int, int]:
+    """Return cols, rows, cell_w, row_h fitting within footer safe area."""
+    shown = min(count, max_shown)
+    cols = 2 if shown <= 4 else 3
+    rows = max(1, (shown + cols - 1) // cols)
+    gap = int(GUTTER)
+    note_reserve = 260000 if count > max_shown else 0  # overflow note below grid only
+    avail_h = max(1, int(CONTENT_SAFE_BOTTOM) - int(top) - note_reserve)
+    row_h = (avail_h - gap * max(0, rows - 1)) // max(rows, 1)
+    row_h = max(min_row_h, min(row_h, max_row_h))
+    cell_w = (int(CONTENT_W) - gap * (cols - 1)) // cols
+    return cols, rows, cell_w, row_h
+
+
 def image_grid(
     slide,
     top: Emu,
     items: list[dict[str, Any]],
     *,
     cols: int = 3,
-    max_items: int = 9,
+    max_items: int = 6,
     show_identity: bool = False,
+    labels: dict[str, str] | None = None,
+    layout_warnings: list[str] | None = None,
 ) -> Emu:
-    """O5.3 — compact thumbnail grid with title + source captions."""
-    import base64
-    import io
-
+    """O5.4.2 — image evidence grid with aspect-ratio-safe cards."""
+    labels = labels or {}
+    link_label = labels.get("media_source_link", "Source")
+    total = len(items)
     picked = items[:max_items]
     if not picked:
         return top
 
+    _, _, _, cap_stack = _image_card_caption_heights(show_identity)
+    min_row = cap_stack + 2 * int(CARD_PAD) + 400000
+    cols, rows, cell_w, row_h = _grid_geometry(
+        len(picked), top, max_shown=max_items, min_row_h=min_row, max_row_h=980000,
+    )
+    avail_h = max(1, int(CONTENT_SAFE_BOTTOM) - int(top))
+    max_fit = (avail_h - int(GUTTER) * max(0, rows - 1)) // max(rows, 1)
+    if row_h > max_fit:
+        row_h = max_fit
     gap = int(GUTTER)
-    cols = max(1, min(cols, 3))
-    cell_w = (int(CONTENT_W) - gap * (cols - 1)) // cols
-    thumb_h = 720000
-    caption_h = 280000
-    row_stride = thumb_h + caption_h + gap
-
     y0 = int(top)
+
     for idx, item in enumerate(picked):
         row, col = divmod(idx, cols)
         left = int(MARGIN) + col * (cell_w + gap)
-        cell_top = Emu(y0 + row * row_stride)
+        cell_top = y0 + row * (row_h + gap)
+        add_image_card(
+            slide,
+            Emu(left),
+            Emu(cell_top),
+            Emu(cell_w),
+            Emu(row_h),
+            item,
+            show_identity=show_identity,
+            link_label=link_label,
+            layout_warnings=layout_warnings,
+        )
 
-        b64 = item.get("thumbnailBytesBase64") or item.get("thumbnailBase64")
-        source_url = str(item.get("sourcePageUrl") or item.get("url") or "")
-        if b64:
-            try:
-                stream = io.BytesIO(base64.b64decode(b64))
-                slide.shapes.add_picture(stream, Emu(left), cell_top, width=Emu(cell_w), height=Emu(thumb_h))
-            except Exception:
-                fallback_lines = [truncate(item.get("source"), 40)]
-                if source_url:
-                    fallback_lines.append(truncate(source_url, 48))
-                else:
-                    fallback_lines.append("thumbnail unavailable")
-                card(
-                    slide,
-                    Emu(left),
-                    cell_top,
-                    Emu(cell_w),
-                    Emu(thumb_h),
-                    truncate(item.get("title"), 40),
-                    fallback_lines,
-                    tone=NEUTRAL_GRAY,
-                )
-        else:
-            fallback_lines = [truncate(item.get("source"), 40)]
-            if source_url:
-                fallback_lines.append(truncate(source_url, 48))
-            else:
-                fallback_lines.append("thumbnail unavailable")
-            card(
-                slide,
-                Emu(left),
-                cell_top,
-                Emu(cell_w),
-                Emu(thumb_h),
-                truncate(item.get("title"), 40),
-                fallback_lines,
-                tone=NEUTRAL_GRAY,
-            )
-
-        cap = truncate(item.get("title"), 42)
-        src = truncate(item.get("source"), 36)
-        cap_lines = [cap, src]
-        if show_identity and item.get("identityDecision"):
-            cap_lines.append(str(item.get("identityDecision")))
-        note(slide, Emu(y0 + row * row_stride + thumb_h + 40000), " · ".join(cap_lines), "source")
-
-    rows = (len(picked) + cols - 1) // cols
-    return Emu(y0 + rows * row_stride + 80000)
+    bottom = Emu(y0 + rows * (row_h + gap))
+    if total > len(picked):
+        tpl = labels.get("media_showing_images", "Showing {shown} of {total} subject-matched images.")
+        bottom = note(slide, bottom, tpl.format(shown=len(picked), total=total), "info")
+    return bottom
 
 
 def video_cards(
@@ -636,41 +904,50 @@ def video_cards(
     items: list[dict[str, Any]],
     link_label: str = "Open source",
     *,
-    max_items: int = 8,
+    max_items: int = 6,
+    labels: dict[str, str] | None = None,
+    layout_warnings: list[str] | None = None,
 ) -> Emu:
-    """O5.4 — video cards with clickable hyperlinks."""
+    """O5.4.2 — compact 2-column video card grid with button hyperlinks."""
+    labels = labels or {}
+    total = len(items)
     picked = items[:max_items]
     if not picked:
         return top
 
-    card_h = 720000
+    cols = 2
+    rows = max(1, (len(picked) + cols - 1) // cols)
     gap = int(GUTTER)
-    y = int(top)
-    for item in picked:
-        title = truncate(item.get("title"), 70)
-        url = str(item.get("url") or item.get("sourcePageUrl") or "")
-        domain_txt = truncate(item.get("source") or url, 48)
-        reason = str(item.get("selectionReason") or item.get("identityDecision") or "")
-        lines = [f"{domain_txt}"]
-        if reason:
-            lines.append(reason)
-        if url.startswith("http"):
-            lines.append(truncate(url, 72))
-        card(slide, MARGIN, Emu(y), CONTENT_W, Emu(card_h), title, lines)
-        card_bottom = Emu(y + card_h)
-        if url.startswith("http"):
-            link_box = textbox(slide, MARGIN, card_bottom, CONTENT_W, Emu(280000))
-            tf = link_box.text_frame
-            p = tf.paragraphs[0]
-            run = p.add_run()
-            run.text = link_label
-            run.font.size = Pt(FS_NOTE)
-            run.font.color.rgb = ACCENT
-            run.font.underline = True
-            try:
-                run.hyperlink.address = url
-            except Exception:
-                pass
-            card_bottom = Emu(int(card_bottom) + 300000)
-        y = int(card_bottom) + gap
-    return Emu(y)
+    note_reserve = 260000 if total > max_items else 0
+    avail_h = max(1, int(CONTENT_SAFE_BOTTOM) - int(top) - note_reserve)
+    min_row = (
+        int(VID_TITLE_ZONE_H) + int(VID_DOMAIN_ZONE_H) + int(VID_BADGE_ZONE_H)
+        + int(VID_BUTTON_ZONE_H) + 3 * int(CARD_ZONE_GAP) + 2 * int(CARD_PAD)
+    )
+    max_fit = (avail_h - gap * max(0, rows - 1)) // max(rows, 1)
+    row_h = min(max_fit, 980000)
+    if row_h < min_row:
+        row_h = max_fit  # always fit grid inside safe area
+    cell_w = (int(CONTENT_W) - gap) // cols
+    y0 = int(top)
+
+    for idx, item in enumerate(picked):
+        row, col = divmod(idx, cols)
+        left = int(MARGIN) + col * (cell_w + gap)
+        cell_top = y0 + row * (row_h + gap)
+        add_video_card(
+            slide,
+            Emu(left),
+            Emu(cell_top),
+            Emu(cell_w),
+            Emu(row_h),
+            item,
+            link_label=link_label,
+            layout_warnings=layout_warnings,
+        )
+
+    bottom = Emu(y0 + rows * (row_h + gap))
+    if total > len(picked):
+        tpl = labels.get("media_showing_videos", "Showing {shown} of {total} subject-matched videos.")
+        bottom = note(slide, bottom, tpl.format(shown=len(picked), total=total), "info")
+    return bottom

@@ -34,13 +34,14 @@ class Ctx:
         self.internal = internal
         self.page = 1
         self.total = 0
+        self.layout_warnings: list[str] = []
 
 
 # ---------------------------------------------------------------------------
 # small helpers
 # ---------------------------------------------------------------------------
 
-def _frame(slide, ctx: Ctx, title: str, subtitle: str | None = None) -> Emu:
+def _frame(slide, ctx: Ctx, title: str, subtitle: str | None = None, title_width: Emu | None = None) -> Emu:
     return T.page_frame(
         slide,
         title,
@@ -49,12 +50,13 @@ def _frame(slide, ctx: Ctx, title: str, subtitle: str | None = None) -> Emu:
         page_no=ctx.page,
         total=ctx.total,
         watermark=ctx.watermark,
+        title_width=title_width,
     )
 
 
-def _section(prs, ctx: Ctx, title: str, subtitle: str | None = None):
+def _section(prs, ctx: Ctx, title: str, subtitle: str | None = None, title_width: Emu | None = None):
     slide = T.blank_slide(prs)
-    top = _frame(slide, ctx, title, subtitle)
+    top = _frame(slide, ctx, title, subtitle, title_width=title_width)
     return slide, top
 
 
@@ -179,9 +181,14 @@ def _rb(block_key: str, builder: Callable, title: str, subtitle: str | None = No
     def page(prs, vm, ctx):
         blk = vm[block_key]
         page_title = title.replace("{label}", blk["label"])
-        slide, top = _section(prs, ctx, page_title, subtitle)
-        badge_y = Emu(340000 if len(page_title) > 42 else 250000)
-        T.risk_badge(slide, Emu(int(T.SLIDE_W) - int(T.MARGIN) - 1500000), badge_y, blk["riskLevel"])
+        title_w = Emu(int(T.CONTENT_W) - 1700000)
+        slide, top = _section(prs, ctx, page_title, subtitle, title_width=title_w)
+        T.risk_badge(
+            slide,
+            Emu(int(T.SLIDE_W) - int(T.MARGIN) - 1500000),
+            Emu(228600),
+            blk["riskLevel"],
+        )
         if not blk["present"]:
             T.no_data_card(
                 slide, top,
@@ -420,9 +427,12 @@ def _b_images(slide, top, blk, vm, ctx):
     ], per_row=3)
     items = im.get("items") or []
     if items:
-        top = T.image_grid(slide, top, items, cols=3, max_items=9, show_identity=internal)
+        lw = ctx.layout_warnings
         if internal and im.get("selectionNote"):
-            top = T.note(slide, top, im["selectionNote"], "source")
+            top = T.note(slide, top, im["selectionNote"], "info")
+        top = T.image_grid(
+            slide, top, items, show_identity=internal, labels=L, layout_warnings=lw
+        )
     else:
         T.no_data_card(slide, top, L.get("nd_no_relevant_images", L["nd_no_images"]))
 
@@ -440,9 +450,16 @@ def _b_videos(slide, top, blk, vm, ctx):
     ], per_row=3)
     items = vi.get("items") or []
     if items:
-        top = T.video_cards(slide, top, items, L.get("video_open_source", "Open source"))
         if vi.get("selectionNote"):
-            top = T.note(slide, top, vi["selectionNote"], "source")
+            top = T.note(slide, top, vi["selectionNote"], "info")
+        top = T.video_cards(
+            slide,
+            top,
+            items,
+            L.get("video_open_source", "Open source"),
+            labels=L,
+            layout_warnings=ctx.layout_warnings,
+        )
     else:
         T.no_data_card(slide, top, L.get("nd_no_relevant_videos", L["nd_no_videos"]))
 
@@ -464,9 +481,23 @@ def _b_media(slide, top, blk, vm, ctx):
         T.no_data_card(slide, top, L.get("nd_no_intl_subject_results", L.get("nd_no_relevant_media", L["nd_no_media"])))
         return
     if img_items:
-        top = T.image_grid(slide, top, img_items, cols=3, max_items=6, show_identity=internal)
+        top = T.image_grid(
+            slide,
+            top,
+            img_items,
+            show_identity=internal,
+            labels=L,
+            layout_warnings=ctx.layout_warnings,
+        )
     if vid_items:
-        top = T.video_cards(slide, top, vid_items, L.get("video_open_source", "Open source"))
+        top = T.video_cards(
+            slide,
+            top,
+            vid_items,
+            L.get("video_open_source", "Open source"),
+            labels=L,
+            layout_warnings=ctx.layout_warnings,
+        )
     elif not img_items:
         T.no_data_card(slide, top, L.get("nd_no_relevant_media", L["nd_no_media"]))
 
@@ -908,8 +939,12 @@ def build_report_v3(
     ctx.total = len(builders)
     for i, fn in enumerate(builders):
         ctx.page = i + 1
+        ctx.layout_warnings = []
         try:
             fn(prs, vm, ctx)
+            for w in ctx.layout_warnings:
+                if w not in warnings:
+                    warnings.append(w)
         except Exception as exc:  # noqa: BLE001
             warnings.append(f"Slide {ctx.page} failed: {exc}")
             try:
