@@ -12,7 +12,7 @@ import { recordAudit } from "../services/audit-log-service";
 import type { ActorContext } from "../services/case-service";
 import { DEFAULT_ENGINES, serpSnapshotConfig } from "./config";
 import { loadCaseResults } from "./data-loader";
-import { groupThemes } from "./theme-grouper";
+import { buildConsistentThemeGrouping } from "./snapshot-consistency";
 import { resolveQuery } from "./query";
 import { renderSerpSnapshotPng } from "./renderer";
 import { persistSnapshot, getLatestSnapshot } from "./storage";
@@ -177,7 +177,7 @@ export async function buildSnapshot(
   const query = resolveQuery(request.query, request.subjectName || loaded.subjectName);
 
   const combined = [...loaded.yandex, ...loaded.google];
-  const grouping = groupThemes(combined, language);
+  const grouping = buildConsistentThemeGrouping(combined, language);
 
   const perEngine: PerEngineSource = {
     yandex: {

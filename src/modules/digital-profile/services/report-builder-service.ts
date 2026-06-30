@@ -32,6 +32,7 @@ import {
   isDemoSearchRow,
   REPORT_WARNING_DEMO_COMPLIANCE_EXCLUDED,
   REPORT_WARNING_DEMO_SEARCH_EXCLUDED,
+  REPORT_WARNING_UNLINKED_FINDINGS_EXCLUDED,
   resolveReportDataPolicy,
   type ReportWarning,
 } from "../report/report-data-policy";
@@ -44,6 +45,7 @@ import {
   buildScreenshotDownloadUrl,
 } from "../storage/signed-url";
 import { getLatestSerpSnapshot } from "../serp-snapshot";
+import { countUnlinkedActiveRiskFindings } from "../serp-snapshot/data-loader";
 import type { ActorContext } from "./case-service";
 import type {
   EvidenceRef,
@@ -277,6 +279,17 @@ export async function buildReportJson(
     );
   }
   const productionDbProfiles = complianceFiltered.rows;
+
+  const unlinkedFindings = await countUnlinkedActiveRiskFindings(caseId);
+  if (unlinkedFindings > 0) {
+    reportWarnings.push(
+      createInternalHygieneWarning(
+        reportLanguage === "ru"
+          ? REPORT_WARNING_UNLINKED_FINDINGS_EXCLUDED.ru
+          : REPORT_WARNING_UNLINKED_FINDINGS_EXCLUDED.en
+      )
+    );
+  }
 
   const productionFindings = policy.includeDemoData
     ? findings

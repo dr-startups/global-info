@@ -13,10 +13,16 @@ export { resolveQuery, sanitizeQueryText } from "./query";
 export {
   loadCaseResults,
   selectByPreference,
+  selectEngineRowsForSnapshot,
+  countUnlinkedActiveRiskFindings,
   deriveSourceMode,
   engineSourceModeOf,
   isRealSource,
 } from "./data-loader";
+export {
+  buildConsistentThemeGrouping,
+  assertSnapshotHighlightInvariant,
+} from "./snapshot-consistency";
 export { DEFAULT_SOURCE_PREFERENCE } from "./types";
 export {
   buildSnapshot,

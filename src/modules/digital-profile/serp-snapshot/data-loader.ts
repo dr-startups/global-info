@@ -94,6 +94,59 @@ function riskThemeOf(rawMetadata: unknown): string | null {
 }
 
 /** Pulls SEARCH_RESULT evidence ids out of a finding's evidenceRefs JSON. */
+export function searchResultIdsFromEvidence(evidenceRefs: unknown): string[] {
+  return resultIdsOf(evidenceRefs);
+}
+
+function byRankThenAge(a: LoadedResult, b: LoadedResult): number {
+  const ra = a.rank ?? 9999;
+  const rb = b.rank ?? 9999;
+  if (ra !== rb) return ra - rb;
+  return a.createdAt.getTime() - b.createdAt.getTime();
+}
+
+/**
+ * Stage R1.1.2 — applies source preference, then keeps highlighted rows in the
+ * visible cap even when their rank is outside the normal top-N window.
+ */
+export function selectEngineRowsForSnapshot(
+  mapped: LoadedResult[],
+  sourcePreference: SourcePreference,
+  maxPerEngine: number
+): LoadedResult[] {
+  const selected = selectByPreference(mapped, sourcePreference);
+  const highlighted = selected.filter((r) => r.isHighlighted).sort(byRankThenAge);
+  const normal = selected.filter((r) => !r.isHighlighted).sort(byRankThenAge);
+
+  const out: LoadedResult[] = [];
+  const seen = new Set<string>();
+
+  for (const row of highlighted) {
+    if (out.length >= maxPerEngine) break;
+    out.push(row);
+    seen.add(row.id);
+  }
+  for (const row of normal) {
+    if (out.length >= maxPerEngine) break;
+    if (seen.has(row.id)) continue;
+    out.push(row);
+    seen.add(row.id);
+  }
+  return out;
+}
+
+/** Active findings with no SEARCH_RESULT evidence link (phantom-theme guard). */
+export async function countUnlinkedActiveRiskFindings(caseId: string): Promise<number> {
+  const findings = await prisma.riskFinding.findMany({
+    where: { caseId, reviewStatus: { not: "DISMISSED" } },
+    select: { evidenceRefs: true },
+  });
+  let n = 0;
+  for (const f of findings) {
+    if (searchResultIdsFromEvidence(f.evidenceRefs).length === 0) n += 1;
+  }
+  return n;
+}
 function resultIdsOf(evidenceRefs: unknown): string[] {
   if (!Array.isArray(evidenceRefs)) return [];
   const ids: string[] = [];
@@ -207,8 +260,8 @@ export async function loadCaseResults(
         themeTitle: null,
       };
     });
-    // Stage N1.2 — pick real/mock per the preference, then cap.
-    return selectByPreference(mapped, sourcePreference).slice(0, maxPerEngine);
+    // Stage N1.2 — pick real/mock per the preference, then cap with highlighted-first ordering (R1.1.2).
+    return selectEngineRowsForSnapshot(mapped, sourcePreference, maxPerEngine);
   }
 
   const [yandex, google] = await Promise.all([loadEngine("YANDEX"), loadEngine("GOOGLE")]);

@@ -197,6 +197,8 @@ const INTERNAL_HYGIENE_PATTERNS = [
   /sourcemode/i,
   /provideradapter/i,
   /raw metadata/i,
+  /unlinked risk findings/i,
+  /несвязанн/i,
 ] as const;
 
 export function isInternalHygieneText(text: string): boolean {
@@ -211,6 +213,11 @@ export function filterReportWarningsForAudience(
   if (audience === "internal") return warnings;
   return warnings.filter((w) => w.audience !== "internal");
 }
+
+export const REPORT_WARNING_UNLINKED_FINDINGS_EXCLUDED = {
+  en: "Unlinked risk findings were excluded from SERP snapshot themes.",
+  ru: "Несвязанные риск-находки исключены из тем SERP snapshot.",
+} as const;
 
 export function reportWarningTexts(warnings: ReportWarning[]): string[] {
   return warnings.map((w) => w.text);
