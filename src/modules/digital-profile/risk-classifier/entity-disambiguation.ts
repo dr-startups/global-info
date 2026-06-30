@@ -6,7 +6,7 @@
  * — as adverse hits on the audit subject.
  */
 
-export type IdentityConfidence = "HIGH" | "MEDIUM" | "LOW";
+export type IdentityConfidence = "HIGH" | "MEDIUM" | "LOW" | "NONE";
 
 export interface SubjectIdentity {
   fullName: string;

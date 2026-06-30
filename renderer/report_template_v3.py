@@ -356,11 +356,22 @@ def _p_snapshots(prs, vm, ctx):
 def _b_suggestions(slide, top, blk, vm, ctx):
     L = vm["labels"]
     sg = blk["suggestions"]
+    internal = vm.get("audience") == "internal"
     top = T.metric_cards(slide, top, [
         {"label": L["m_total"], "value": sg["total"]},
         {"label": L["m_negative"], "value": sg["negative"], "tone": T.DANGER},
     ], per_row=2)
-    if sg["list"]:
+    disclaimer = sg.get("exposureDisclaimer") or L.get("autocomplete_disclaimer", "")
+    if disclaimer:
+        top = T.note(slide, top, disclaimer, "source")
+    groups = sg.get("groups") or []
+    if groups:
+        for grp in groups:
+            if grp.get("label"):
+                top = T.note(slide, top, grp["label"], "section")
+            if grp.get("items"):
+                top = T.bullets(slide, top, grp["items"])
+    elif sg["list"]:
         T.bullets(slide, top, sg["list"])
     else:
         T.no_data_card(slide, top, L["nd_no_suggestions"])
@@ -398,15 +409,18 @@ def _b_related(slide, top, blk, vm, ctx):
 def _b_images(slide, top, blk, vm, ctx):
     L = vm["labels"]
     im = blk["images"]
+    internal = vm.get("audience") == "internal"
     top = T.metric_cards(slide, top, [
         {"label": L["m_images_total"], "value": im["total"]},
         {"label": L["m_negative"], "value": im["negative"], "tone": T.DANGER},
     ], per_row=2)
-    rows = [[T.truncate(i["title"], 60), i["source"]] for i in im["items"]]
-    if rows:
-        T.table(slide, top, [L["th_image_title"], L["th_source"]], rows, col_widths=[0.65, 0.35])
+    items = im.get("items") or []
+    if items:
+        top = T.image_grid(slide, top, items, cols=3, max_items=9, show_identity=internal)
+        if internal and im.get("selectionNote"):
+            top = T.note(slide, top, im["selectionNote"], "source")
     else:
-        T.no_data_card(slide, top, L["nd_no_images"])
+        T.no_data_card(slide, top, L.get("nd_no_relevant_images", L["nd_no_images"]))
 
 
 def _b_videos(slide, top, blk, vm, ctx):
@@ -426,16 +440,19 @@ def _b_videos(slide, top, blk, vm, ctx):
 def _b_media(slide, top, blk, vm, ctx):
     L = vm["labels"]
     im, vi = blk["images"], blk["videos"]
+    internal = vm.get("audience") == "internal"
     top = T.metric_cards(slide, top, [
         {"label": L["m_images_nt"], "value": f"{im['negative']}/{im['total']}"},
         {"label": L["m_videos_nt"], "value": f"{vi['negative']}/{vi['total']}"},
     ], per_row=2)
-    rows = [["Image", T.truncate(i["title"], 50), i["source"]] for i in im["items"]]
-    rows += [["Video", T.truncate(v["title"], 50), v["source"]] for v in vi["items"]]
-    if rows:
-        T.table(slide, top, [L["th_type"], L["th_title"], L["th_source"]], rows, col_widths=[0.14, 0.56, 0.30])
-    else:
-        T.no_data_card(slide, top, L["nd_no_media"])
+    img_items = im.get("items") or []
+    if img_items:
+        top = T.image_grid(slide, top, img_items, cols=3, max_items=6, show_identity=internal)
+    vid_rows = [["Video", T.truncate(v["title"], 50), v["source"]] for v in vi.get("items") or []]
+    if vid_rows:
+        top = T.table(slide, top, [L["th_type"], L["th_title"], L["th_source"]], vid_rows, col_widths=[0.14, 0.56, 0.30])
+    elif not img_items:
+        T.no_data_card(slide, top, L.get("nd_no_relevant_media", L["nd_no_media"]))
 
 
 def _b_knowledge(slide, top, blk, vm, ctx):

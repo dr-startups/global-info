@@ -14,15 +14,19 @@ import {
 } from "../risk-classifier/result-classifier";
 import type { IdentityConfidence } from "../risk-classifier/entity-disambiguation";
 import {
-  isLikelyNamesake,
-  parseSubjectName,
-} from "../risk-classifier/entity-disambiguation";
-import {
   isAdverseContentClass,
   isExcludedContentClass,
   isUsefulProfileContentClass,
   mapResultClassToContentClass,
 } from "./content-class";
+import { classifyAutocompleteQuery } from "./autocomplete-class";
+import {
+  buildSubjectFingerprint,
+  evaluateIdentityDecision,
+  identityDecisionToConfidence,
+  type IdentityDecision,
+} from "./subject-fingerprint";
+import { readThumbnailStatus } from "./image-thumbnail-service";
 import type {
   EvidenceItemInput,
   EvidenceQualityAssessment,
@@ -32,69 +36,98 @@ import type {
   SelectionReason,
 } from "./types";
 
-const USEFUL_PROFILE_MIN_IDENTITY: IdentityConfidence[] = ["HIGH", "MEDIUM"];
+const AUTOCOMPLETE_SURFACES: EvidenceSurfaceType[] = ["SEARCH_SUGGESTION", "RELATED_QUERY"];
+const STRICT_EXCLUDE: IdentityDecision[] = ["NAMESAKE", "ENTITY_MISMATCH", "INSUFFICIENT_MATCH"];
 
-function isMeaningfulRelatedQuery(title: string | null | undefined): boolean {
-  const t = (title ?? "").trim();
-  return t.length >= 3 && !/^[\d\s\-_.]+$/i.test(t);
+/** O5.3 — identity from result content; search query must not anchor unrelated hits. */
+function identityEvidenceText(input: EvidenceItemInput): string {
+  if (isAutocompleteSurface(input.surfaceType)) {
+    return [input.title, input.snippet, input.query, input.url].filter(Boolean).join(" ");
+  }
+  return [input.title, input.snippet, input.url, input.domain].filter(Boolean).join(" ");
 }
 
-function queryHasSubjectAssociation(
-  text: string,
-  subjectFullName: string | null | undefined
-): boolean {
-  if (!subjectFullName?.trim()) return false;
-  const subject = parseSubjectName(subjectFullName.trim());
-  const hay = text.toLowerCase().replace(/ё/g, "е");
-  const has = (token: string | null) =>
-    !!token && hay.includes(token.toLowerCase().replace(/ё/g, "е"));
-  return has(subject.surname) || has(subject.givenName) || has(subject.patronymic);
+function isAutocompleteSurface(surfaceType: EvidenceSurfaceType): boolean {
+  return AUTOCOMPLETE_SURFACES.includes(surfaceType);
 }
 
-/** O5.1 — associative surfaces: related queries are not exact-FIO evidence. */
-function deriveRelatedQueryEligibility(params: {
+/** O5.3 — suggestions/related: exposure only, never subject evidence or risk. */
+function deriveAutocompleteExposureEligibility(params: {
+  reportEligibilityOverride?: ReportEligibility | null;
+  isDuplicate: boolean;
+  isFalsePositive: boolean;
+  autocompleteClass: ReturnType<typeof classifyAutocompleteQuery>;
+}): ReportEligibility {
+  if (params.reportEligibilityOverride) return params.reportEligibilityOverride;
+  if (params.isDuplicate) return "EXCLUDE";
+  if (params.isFalsePositive) return "EXCLUDE";
+  if (params.autocompleteClass === "IRRELEVANT_QUERY") return "REVIEW_REQUIRED";
+  return "INTERNAL_ONLY";
+}
+
+/** O5.3 — strict identity gate for organic/images/videos/knowledge. */
+function deriveStrictIdentityEligibility(params: {
+  surfaceType: EvidenceSurfaceType;
   contentClass: ReturnType<typeof mapResultClassToContentClass>;
+  identityDecision: IdentityDecision;
   identityConfidence: IdentityConfidence;
   riskConfidence: RiskConfidence;
   manualClassification: string | null;
   isFalsePositive: boolean;
   auto: AutoResultClassification | null;
+  reviewStatus: string | null;
   isDuplicate: boolean;
   reportEligibilityOverride?: ReportEligibility | null;
-  title?: string | null;
-  subjectFullName?: string | null;
 }): ReportEligibility {
   if (params.reportEligibilityOverride) return params.reportEligibilityOverride;
   if (params.isDuplicate) return "EXCLUDE";
   if (params.isFalsePositive) return "EXCLUDE";
-  if (params.contentClass === "NAMESAKE" || params.contentClass === "ENTITY_MISMATCH") {
-    return "EXCLUDE";
-  }
+  if (STRICT_EXCLUDE.includes(params.identityDecision)) return "EXCLUDE";
+  if (isExcludedContentClass(params.contentClass)) return "EXCLUDE";
 
   if (params.manualClassification && isRiskyResultClass(params.manualClassification)) {
+    if (params.identityDecision === "POSSIBLE_SUBJECT") return "REVIEW_REQUIRED";
     return "CLIENT_INCLUDE";
   }
 
   if (isAdverseContentClass(params.contentClass)) {
-    if (params.identityConfidence === "LOW") return "EXCLUDE";
-    if (
-      params.auto &&
-      isStrongAutoSnapshotRisk(params.auto) &&
-      params.riskConfidence === "HIGH"
-    ) {
+    if (params.identityDecision === "POSSIBLE_SUBJECT") return "REVIEW_REQUIRED";
+    if (params.identityDecision === "LIKELY_SUBJECT" || params.identityDecision === "EXACT_SUBJECT") {
+      if (
+        params.auto &&
+        isStrongAutoSnapshotRisk(params.auto) &&
+        params.riskConfidence === "HIGH"
+      ) {
+        return "CLIENT_INCLUDE";
+      }
+      return "REVIEW_REQUIRED";
+    }
+    return "EXCLUDE";
+  }
+
+  if (
+    isUsefulProfileContentClass(params.contentClass) &&
+    (params.identityDecision === "EXACT_SUBJECT" || params.identityDecision === "LIKELY_SUBJECT")
+  ) {
+    return "CLIENT_INCLUDE";
+  }
+
+  if (params.identityDecision === "EXACT_SUBJECT" || params.identityDecision === "LIKELY_SUBJECT") {
+    if (params.surfaceType === "IMAGE_RESULT" || params.surfaceType === "VIDEO_RESULT") {
       return "CLIENT_INCLUDE";
+    }
+    return params.reviewStatus === "REVIEWED" ? "CLIENT_INCLUDE" : "INTERNAL_ONLY";
+  }
+
+  if (params.identityDecision === "POSSIBLE_SUBJECT") {
+    if (params.surfaceType === "IMAGE_RESULT" || params.surfaceType === "VIDEO_RESULT") {
+      return "EXCLUDE";
     }
     return "REVIEW_REQUIRED";
   }
 
-  const meaningful = isMeaningfulRelatedQuery(params.title);
-  const associated = queryHasSubjectAssociation(params.title ?? "", params.subjectFullName);
-
-  if (!meaningful) return "REVIEW_REQUIRED";
-  if (params.identityConfidence === "HIGH") return "CLIENT_INCLUDE";
-  if (params.identityConfidence === "MEDIUM") return "CLIENT_INCLUDE";
-  if (associated) return "INTERNAL_ONLY";
-  return "REVIEW_REQUIRED";
+  if (params.auto?.potentialRiskForReview) return "REVIEW_REQUIRED";
+  return "EXCLUDE";
 }
 
 function readManualClassification(rawMetadata: unknown): {
@@ -137,6 +170,7 @@ function deriveSelectionReason(params: {
   isDuplicate: boolean;
   reportEligibilityOverride?: ReportEligibility | null;
   surfaceType?: EvidenceSurfaceType;
+  identityDecision?: IdentityDecision;
 }): SelectionReason {
   if (params.reportEligibilityOverride === "EXCLUDE") return "manual_false_positive";
   if (params.isDuplicate) return "duplicate_url";
@@ -147,9 +181,10 @@ function deriveSelectionReason(params: {
   if (params.contentClass === "NAMESAKE") return "namesake_detected";
   if (params.contentClass === "ENTITY_MISMATCH") return "entity_mismatch";
   if (params.contentClass === "CORPORATE_REGISTRY") return "weak_registry_only";
-  if (params.surfaceType === "RELATED_QUERY" && !isAdverseContentClass(params.contentClass)) {
-    return "useful_profile_material";
+  if (params.surfaceType && isAutocompleteSurface(params.surfaceType)) {
+    return "autocomplete_exposure";
   }
+  if (params.identityDecision === "INSUFFICIENT_MATCH") return "insufficient_match";
   if (params.auto?.potentialRiskForReview) return "weak_adverse_terms";
   if (isUsefulProfileContentClass(params.contentClass)) return "useful_profile_material";
   if (params.identityConfidence === "HIGH") return "exact_subject_match";
@@ -167,6 +202,7 @@ function deriveReportEligibility(params: {
   surfaceType: EvidenceSurfaceType;
   contentClass: ReturnType<typeof mapResultClassToContentClass>;
   identityConfidence: IdentityConfidence;
+  identityDecision: IdentityDecision;
   riskConfidence: RiskConfidence;
   manualClassification: string | null;
   isFalsePositive: boolean;
@@ -176,53 +212,17 @@ function deriveReportEligibility(params: {
   reportEligibilityOverride?: ReportEligibility | null;
   title?: string | null;
   subjectFullName?: string | null;
+  autocompleteClass?: ReturnType<typeof classifyAutocompleteQuery>;
 }): ReportEligibility {
-  if (params.surfaceType === "RELATED_QUERY") {
-    return deriveRelatedQueryEligibility(params);
+  if (isAutocompleteSurface(params.surfaceType)) {
+    return deriveAutocompleteExposureEligibility({
+      reportEligibilityOverride: params.reportEligibilityOverride,
+      isDuplicate: params.isDuplicate,
+      isFalsePositive: params.isFalsePositive,
+      autocompleteClass: params.autocompleteClass ?? "GENERIC_QUERY",
+    });
   }
-  if (params.reportEligibilityOverride) return params.reportEligibilityOverride;
-  if (params.isDuplicate) return "EXCLUDE";
-  if (params.isFalsePositive) return "EXCLUDE";
-  if (isExcludedContentClass(params.contentClass)) return "EXCLUDE";
-
-  if (params.manualClassification && isRiskyResultClass(params.manualClassification)) {
-    return "CLIENT_INCLUDE";
-  }
-
-  if (isAdverseContentClass(params.contentClass)) {
-    if (params.identityConfidence === "LOW") return "EXCLUDE";
-    if (
-      params.auto &&
-      isStrongAutoSnapshotRisk(params.auto) &&
-      params.riskConfidence === "HIGH"
-    ) {
-      return "CLIENT_INCLUDE";
-    }
-    if (params.auto?.potentialRiskForReview || params.riskConfidence !== "HIGH") {
-      return "REVIEW_REQUIRED";
-    }
-    return "REVIEW_REQUIRED";
-  }
-
-  if (
-    isUsefulProfileContentClass(params.contentClass) &&
-    USEFUL_PROFILE_MIN_IDENTITY.includes(params.identityConfidence)
-  ) {
-    return "CLIENT_INCLUDE";
-  }
-
-  if (params.auto?.potentialRiskForReview) return "REVIEW_REQUIRED";
-
-  if (
-    params.contentClass === "UNKNOWN" ||
-    params.contentClass === "LOW_VALUE" ||
-    params.identityConfidence === "LOW"
-  ) {
-    return params.reviewStatus === "REVIEWED" ? "INTERNAL_ONLY" : "EXCLUDE";
-  }
-
-  if (params.reviewStatus === "REVIEWED") return "INTERNAL_ONLY";
-  return "INTERNAL_ONLY";
+  return deriveStrictIdentityEligibility(params);
 }
 
 /** Evaluates one evidence item through the quality gate. */
@@ -254,23 +254,38 @@ export function evaluateEvidenceItem(
     autoBlock = { ...classified, classifiedAt: new Date().toISOString() };
   }
 
-  const contentClass = mapResultClassToContentClass(classification, input.surfaceType);
-  const queryText = (input.title ?? input.query ?? "").trim();
-  const subjectParsed = input.subjectFullName?.trim()
-    ? parseSubjectName(input.subjectFullName.trim())
+  const textForIdentity = identityEvidenceText(input);
+  const fingerprint = input.subjectFullName?.trim()
+    ? buildSubjectFingerprint({ fullName: input.subjectFullName.trim() })
     : null;
 
-  if (input.surfaceType === "RELATED_QUERY" && subjectParsed) {
-    if (isLikelyNamesake(queryText, subjectParsed)) {
-      identityConfidence = "LOW";
-    } else if (contentClass === "NAMESAKE") {
-      classification = "NEUTRAL";
-    }
+  let identityDecision: IdentityDecision = "POSSIBLE_SUBJECT";
+  let identityReason = "default";
+  let autocompleteClass: ReturnType<typeof classifyAutocompleteQuery> | undefined;
+
+  if (isAutocompleteSurface(input.surfaceType)) {
+    autocompleteClass = classifyAutocompleteQuery(textForIdentity, input.subjectFullName);
+    const id = evaluateIdentityDecision(textForIdentity, fingerprint);
+    identityDecision = id.decision;
+    identityReason = id.reason;
+    identityConfidence = identityDecisionToConfidence(id.decision);
+  } else {
+    const id = evaluateIdentityDecision(textForIdentity, fingerprint);
+    identityDecision = id.decision;
+    identityReason = id.reason;
+    identityConfidence = identityDecisionToConfidence(id.decision);
   }
 
   const resolvedClass = mapResultClassToContentClass(classification, input.surfaceType);
-  if (resolvedClass === "NAMESAKE" || resolvedClass === "ENTITY_MISMATCH") {
-    identityConfidence = "LOW";
+  if (!isAutocompleteSurface(input.surfaceType)) {
+    if (resolvedClass === "NAMESAKE" || identityDecision === "NAMESAKE") {
+      identityDecision = "NAMESAKE";
+      identityConfidence = "NONE";
+    }
+    if (resolvedClass === "ENTITY_MISMATCH" || identityDecision === "ENTITY_MISMATCH") {
+      identityDecision = "ENTITY_MISMATCH";
+      identityConfidence = "NONE";
+    }
   }
   const riskConfidence = riskConfidenceFrom(autoBlock, resolvedClass, manual.classification);
   const selectionReason = deriveSelectionReason({
@@ -282,11 +297,13 @@ export function evaluateEvidenceItem(
     isDuplicate: options.isDuplicate ?? false,
     reportEligibilityOverride: override,
     surfaceType: input.surfaceType,
+    identityDecision,
   });
   const reportEligibility = deriveReportEligibility({
     surfaceType: input.surfaceType,
     contentClass: resolvedClass,
     identityConfidence,
+    identityDecision,
     riskConfidence,
     manualClassification: manual.classification,
     isFalsePositive: manual.isFalsePositive,
@@ -296,9 +313,16 @@ export function evaluateEvidenceItem(
     reportEligibilityOverride: override,
     title: input.title ?? input.query,
     subjectFullName: input.subjectFullName,
+    autocompleteClass,
   });
 
+  const isSubjectEvidence =
+    !isAutocompleteSurface(input.surfaceType) &&
+    !STRICT_EXCLUDE.includes(identityDecision) &&
+    reportEligibility !== "EXCLUDE";
+
   const isAdverseForReport =
+    isSubjectEvidence &&
     reportEligibility === "CLIENT_INCLUDE" &&
     (manual.classification
       ? isRiskyResultClass(manual.classification)
@@ -307,9 +331,9 @@ export function evaluateEvidenceItem(
         : isAdverseContentClass(resolvedClass) && riskConfidence === "HIGH");
 
   const isUsefulProfileMaterial =
+    isSubjectEvidence &&
     (reportEligibility === "CLIENT_INCLUDE" || reportEligibility === "INTERNAL_ONLY") &&
-    (isUsefulProfileContentClass(resolvedClass) ||
-      (input.surfaceType === "RELATED_QUERY" && !isAdverseContentClass(resolvedClass)));
+    isUsefulProfileContentClass(resolvedClass);
 
   return {
     identityConfidence,
@@ -320,6 +344,11 @@ export function evaluateEvidenceItem(
     isAdverseForReport,
     isUsefulProfileMaterial,
     duplicateOf: options.isDuplicate ? "dedupe" : null,
+    identityDecision,
+    identityReason,
+    autocompleteClass,
+    isSubjectEvidence,
+    thumbnailStatus: readThumbnailStatus(input.rawMetadata),
   };
 }
 
@@ -353,6 +382,11 @@ export function mergeEvidenceQualityMetadata(
     contentClass: quality.contentClass,
     reportEligibility: quality.reportEligibility,
     selectionReason: quality.selectionReason,
+    identityDecision: quality.identityDecision,
+    identityReason: quality.identityReason,
+    autocompleteClass: quality.autocompleteClass,
+    isSubjectEvidence: quality.isSubjectEvidence,
+    thumbnailStatus: quality.thumbnailStatus,
     assessedAt: new Date().toISOString(),
   };
   return base;

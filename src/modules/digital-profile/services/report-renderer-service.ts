@@ -162,6 +162,32 @@ async function localizeReportJson(
  * and never throws: on any failure the reference is left without bytes and the
  * renderer falls back to the no-data card + a renderWarning.
  */
+async function attachImageThumbnails(reportJson: ReportJson): Promise<ReportJson> {
+  const audit = reportJson.auditSummary as { regions?: Array<Record<string, unknown>> } | undefined;
+  if (!audit?.regions?.length) return reportJson;
+
+  const next = JSON.parse(JSON.stringify(reportJson)) as ReportJson & {
+    auditSummary?: { regions?: Array<Record<string, unknown>> };
+  };
+
+  for (const region of next.auditSummary?.regions ?? []) {
+    const topImages = region.topImages;
+    if (!Array.isArray(topImages)) continue;
+    for (const item of topImages) {
+      if (!item || typeof item !== "object") continue;
+      const key = (item as Record<string, unknown>).thumbnailStorageKey;
+      if (typeof key !== "string" || !key.trim()) continue;
+      try {
+        const bytes = await loadFile(key);
+        (item as Record<string, unknown>).thumbnailBase64 = bytes.toString("base64");
+      } catch {
+        // Renderer falls back to title/source row.
+      }
+    }
+  }
+  return next;
+}
+
 async function attachSerpSnapshotImage(
   reportJson: ReportJson
 ): Promise<ReportJson> {
@@ -223,7 +249,8 @@ export async function renderReportVersion(
   // so the SERP snapshot PNG travels inside report_json as base64. This is added
   // only on the wire (not persisted in the stored report_json, which stays
   // lightweight). If the image is unreadable the renderer falls back + warns.
-  const renderReportJson = await attachSerpSnapshotImage(audienceReportJson);
+  const withThumbnails = await attachImageThumbnails(audienceReportJson);
+  const renderReportJson = await attachSerpSnapshotImage(withThumbnails);
 
   const result = await callRenderer({
     reportJson: renderReportJson,

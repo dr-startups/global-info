@@ -84,7 +84,8 @@ function main() {
     subjectFullName: SUBJECT,
     classification: "NAMESAKE",
   });
-  check("3 namesake LOW identity", namesake.identityConfidence === "LOW");
+  check("3 namesake NONE identity", namesake.identityConfidence === "NONE");
+  check("3 namesake decision", namesake.identityDecision === "NAMESAKE");
   check("3 namesake not adverse", !namesake.isAdverseForReport);
   check("3 namesake EXCLUDE", namesake.reportEligibility === "EXCLUDE");
 
@@ -165,7 +166,13 @@ function main() {
     subjectFullName: SUBJECT,
     classification: "NAMESAKE",
   });
-  check("O5.1 namesake related EXCLUDE", namesakeRelated.reportEligibility === "EXCLUDE");
+  check("O5.1 namesake related exposure not EXCLUDE", namesakeRelated.reportEligibility !== "EXCLUDE");
+  check(
+    "O5.1 namesake related autocomplete class",
+    namesakeRelated.autocompleteClass === "ADJACENT_PERSON_QUERY" ||
+      namesakeRelated.autocompleteClass === "NAMESAKE_QUERY"
+  );
+  check("O5.1 namesake related not evidence", !namesakeRelated.isSubjectEvidence);
 
   const intlRelated = [
     { surfaceType: "RELATED_QUERY" as const, title: "Tomilin Konstantin", region: "INTERNATIONAL", subjectFullName: SUBJECT },
@@ -189,10 +196,10 @@ function main() {
     !ruRelated.isAdverseForReport
   );
 
-  // 8. Manual adverse
+  // 8. Manual adverse (subject-matched)
   const manual = evaluateEvidenceItem({
     surfaceType: "SEARCH_RESULT",
-    title: "Result",
+    title: "Томилин Константин Романович — судебный спор",
     url: "https://example.com/a",
     subjectFullName: SUBJECT,
     rawMetadata: mergeRiskClassification(null, {
@@ -207,6 +214,26 @@ function main() {
   });
   check("8 manual adverse CLIENT_INCLUDE", manual.reportEligibility === "CLIENT_INCLUDE");
   check("8 manual adverse isAdverseForReport", manual.isAdverseForReport);
+
+  const manualUnmatched = evaluateEvidenceItem({
+    surfaceType: "SEARCH_RESULT",
+    title: "Result",
+    url: "https://example.com/a2",
+    subjectFullName: SUBJECT,
+    rawMetadata: mergeRiskClassification(null, {
+      manual: {
+        classification: "LEGAL_DISPUTE",
+        riskTheme: "legal_dispute",
+        rationale: "confirmed",
+        reviewedBy: "analyst",
+        reviewedAt: new Date().toISOString(),
+      },
+    }),
+  });
+  check(
+    "8 manual unmatched not client include",
+    manualUnmatched.reportEligibility !== "CLIENT_INCLUDE"
+  );
 
   // 9. Manual clear
   const cleared = evaluateEvidenceItem({

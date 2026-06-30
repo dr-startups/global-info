@@ -132,11 +132,12 @@ async function apiChecks() {
   }
 
   const caseRes = await req("POST", `${API}/cases`, {
-    fullName: "R1.1.2 Highlight Consistency",
+    fullName: "R1.1.2 Highlight Consistency Subject",
     lawfulBasis: "LEGITIMATE_INTEREST",
     consentStatus: "NOT_REQUIRED",
   });
   const caseId = data<{ id: string }>(caseRes.json)?.id;
+  const subjectLabel = "R1.1.2 Highlight Consistency Subject";
   check("case created", !!caseId);
   if (!caseId) return;
 
@@ -145,7 +146,7 @@ async function apiChecks() {
     await req("POST", `${API}/cases/${caseId}/search-results`, {
       engine: "YANDEX",
       url: `https://lenta.ru/r112-neutral-${i}`,
-      title: `Neutral article ${i}`,
+      title: `${subjectLabel} — neutral article ${i}`,
       classification: "UNCLASSIFIED",
     });
   }

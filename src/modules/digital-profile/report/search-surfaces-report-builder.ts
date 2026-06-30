@@ -22,18 +22,16 @@ import type { SearchSurfaceType } from "../search-surfaces/types";
 import { evaluateEvidenceItem } from "../evidence-quality/gate";
 import { dedupeEvidenceItems, pickBestRepresentatives } from "../evidence-quality/dedupe";
 import { selectEvidenceForReport } from "../evidence-quality/selection-policy";
-import type { EvidenceSurfaceType, SurfaceQualityStats } from "../evidence-quality/types";
+import {
+  AUTOCOMPLETE_EXPOSURE_GROUPS,
+  autocompleteGroupLabel,
+} from "../evidence-quality/autocomplete-class";
+import {
+  ensureImageThumbnail,
+} from "../evidence-quality/image-thumbnail-service";
+import type { AutocompleteClass, EvidenceSurfaceType, SurfaceQualityStats } from "../evidence-quality/types";
 import type { GatedEvidenceItem } from "../evidence-quality/types";
-
-export interface SurfaceBucketSummary {
-  total: number;
-  adverse: number;
-  collectionStatus: RegionCollectionStatus;
-  statusMessage: string;
-  items: SurfaceReportItem[];
-  /** Stage O5 — quality-gated selection stats. */
-  qualityStats?: SurfaceQualityStats;
-}
+import { Prisma } from "@prisma/client";
 
 export interface SurfaceReportItem {
   title: string;
@@ -48,6 +46,34 @@ export interface SurfaceReportItem {
   /** O5 — report eligibility for client/internal filtering at render. */
   reportEligibility?: string;
   contentClass?: string;
+  /** O5.3 — identity / autocomplete exposure metadata. */
+  identityDecision?: string;
+  autocompleteClass?: string;
+  autocompleteGroup?: string;
+  thumbnailStorageKey?: string | null;
+  thumbnailStatus?: string;
+  sourcePageUrl?: string | null;
+}
+
+export interface AutocompleteSuggestionGroup {
+  key: "exact" | "adjacent" | "typo" | "other";
+  label: string;
+  items: string[];
+}
+
+export interface SurfaceBucketSummary {
+  total: number;
+  adverse: number;
+  collectionStatus: RegionCollectionStatus;
+  statusMessage: string;
+  items: SurfaceReportItem[];
+  /** Stage O5 — quality-gated selection stats. */
+  qualityStats?: SurfaceQualityStats;
+  /** O5.3 — grouped autocomplete exposure (suggestions / related). */
+  suggestionGroups?: AutocompleteSuggestionGroup[];
+  exposureDisclaimer?: string;
+  /** O5.3 — internal image selection stats. */
+  imageSelectionNote?: string;
 }
 
 export interface RegionSearchSurfacesBlock {
@@ -98,16 +124,73 @@ export interface SearchSurfacesReportBlock {
   dataQualityWarnings: string[];
 }
 
-function isNegativeOrganic(classification: string | null, rawMetadata: unknown): boolean {
+function isNegativeOrganic(
+  classification: string | null,
+  rawMetadata: unknown,
+  subjectFullName: string | null,
+  title?: string | null,
+  snippet?: string | null
+): boolean {
   const rc = readRiskClassification(rawMetadata);
   const cls = rc?.manual?.classification ?? rc?.auto?.classification ?? classification;
   if (!cls) return false;
   const q = evaluateEvidenceItem({
     surfaceType: "SEARCH_RESULT",
+    title,
+    snippet,
     classification: cls,
     rawMetadata,
+    subjectFullName,
   });
   return q.isAdverseForReport;
+}
+
+type SurfaceRowInput = {
+  id?: string;
+  title: string | null;
+  snippet: string | null;
+  url: string | null;
+  domain: string | null;
+  thumbnailUrl: string | null;
+  imageUrl: string | null;
+  classification: string | null;
+  riskTheme: string | null;
+  query: string | null;
+  rank: number | null;
+  rawMetadata?: unknown;
+  reviewStatus?: string | null;
+  region?: string | null;
+};
+
+function mapGatedToReportItem(
+  r: GatedEvidenceItem & { thumbnailUrl?: string | null; imageUrl?: string | null },
+  idx: number
+): SurfaceReportItem {
+  const ac = r.quality.autocompleteClass;
+  const group = ac ? AUTOCOMPLETE_EXPOSURE_GROUPS[ac as AutocompleteClass] : undefined;
+  const eq =
+    r.rawMetadata && typeof r.rawMetadata === "object"
+      ? ((r.rawMetadata as Record<string, unknown>).evidenceQuality as Record<string, unknown> | undefined)
+      : undefined;
+  return {
+    title: r.title ?? r.query ?? "",
+    snippet: r.snippet ?? null,
+    url: r.url ?? null,
+    domain: r.domain ?? null,
+    thumbnailUrl: r.thumbnailUrl ?? r.imageUrl ?? null,
+    classification: r.classification ?? null,
+    riskTheme: r.riskTheme ?? null,
+    query: r.query ?? null,
+    rank: idx + 1,
+    reportEligibility: r.quality.reportEligibility,
+    contentClass: r.quality.contentClass,
+    identityDecision: r.quality.identityDecision,
+    autocompleteClass: ac,
+    autocompleteGroup: group,
+    thumbnailStorageKey: typeof eq?.thumbnailStorageKey === "string" ? eq.thumbnailStorageKey : null,
+    thumbnailStatus: (eq?.thumbnailStatus as string) ?? r.quality.thumbnailStatus,
+    sourcePageUrl: r.url ?? null,
+  };
 }
 
 const SURFACE_EVIDENCE_TYPE: Partial<Record<SearchSurfaceType, EvidenceSurfaceType>> = {
@@ -118,27 +201,16 @@ const SURFACE_EVIDENCE_TYPE: Partial<Record<SearchSurfaceType, EvidenceSurfaceTy
   KNOWLEDGE_BLOCK: "KNOWLEDGE_BLOCK",
 };
 
-function bucketFromGatedRows(
-  rows: Array<{
-    id?: string;
-    title: string | null;
-    snippet: string | null;
-    url: string | null;
-    domain: string | null;
-    thumbnailUrl: string | null;
-    imageUrl: string | null;
-    classification: string | null;
-    riskTheme: string | null;
-    query: string | null;
-    rank: number | null;
-    rawMetadata?: unknown;
-    reviewStatus?: string | null;
-    region?: string | null;
-  }>,
+const EXPOSURE_DISCLAIMER =
+  "Подсказки отражают ассоциации поисковика при вводе похожих запросов и не являются подтверждёнными материалами о субъекте.";
+
+function bucketFromAutocompleteRows(
+  rows: SurfaceRowInput[],
   surfaceType: EvidenceSurfaceType,
   regionStatus: RegionCollectionStatus,
   regionMessage: string,
   subjectFullName: string | null,
+  reportLanguage: "ru" | "en",
   limit = 20
 ): SurfaceBucketSummary {
   const gated: GatedEvidenceItem[] = dedupeEvidenceItems(
@@ -149,6 +221,121 @@ function bucketFromGatedRows(
       url: r.url,
       domain: r.domain,
       snippet: r.snippet,
+      thumbnailUrl: r.thumbnailUrl,
+      classification: r.classification,
+      riskTheme: r.riskTheme,
+      query: r.query,
+      region: r.region,
+      rawMetadata: r.rawMetadata,
+      reviewStatus: r.reviewStatus,
+      subjectFullName,
+    })),
+    subjectFullName
+  ).items;
+
+  const exposure = gated.filter((r) => r.quality.reportEligibility !== "EXCLUDE");
+  const picked = pickBestRepresentatives(exposure, limit);
+  const excluded = gated.length - picked.length;
+  const duplicates = gated.filter((r) => r.quality.selectionReason === "duplicate_url").length;
+
+  const groupBuckets: Record<"exact" | "adjacent" | "typo" | "other", string[]> = {
+    exact: [],
+    adjacent: [],
+    typo: [],
+    other: [],
+  };
+  for (const r of picked) {
+    const ac = (r.quality.autocompleteClass ?? "GENERIC_QUERY") as AutocompleteClass;
+    const grp = AUTOCOMPLETE_EXPOSURE_GROUPS[ac];
+    groupBuckets[grp].push(r.title ?? r.query ?? "");
+  }
+
+  const suggestionGroups: AutocompleteSuggestionGroup[] = (
+    ["exact", "adjacent", "typo", "other"] as const
+  )
+    .filter((key) => groupBuckets[key].length > 0)
+    .map((key) => ({
+      key,
+      label: autocompleteGroupLabel(key, reportLanguage),
+      items: groupBuckets[key],
+    }));
+
+  const qualityStats: SurfaceQualityStats = {
+    totalCollected: rows.length,
+    selectedForReport: picked.length,
+    excludedAsNoise: excluded,
+    reviewRequired: gated.filter((r) => r.quality.reportEligibility === "REVIEW_REQUIRED").length,
+    duplicatesCollapsed: duplicates,
+    clientIncluded: 0,
+    dataQualityStatus: rows.length > 0 ? "COLLECTED" : regionStatus === "COLLECTED" ? "EMPTY" : regionStatus,
+  };
+
+  if (rows.length > 0) {
+    return {
+      total: rows.length,
+      adverse: 0,
+      collectionStatus: "COLLECTED",
+      statusMessage: "Data collected.",
+      items: picked.map(mapGatedToReportItem),
+      qualityStats,
+      suggestionGroups,
+      exposureDisclaimer: EXPOSURE_DISCLAIMER,
+    };
+  }
+  if (regionStatus === "COLLECTED") {
+    return {
+      total: 0,
+      adverse: 0,
+      collectionStatus: "COLLECTED",
+      statusMessage: "Queried — none found for this surface.",
+      items: [],
+      qualityStats: {
+        totalCollected: 0,
+        selectedForReport: 0,
+        excludedAsNoise: 0,
+        reviewRequired: 0,
+        duplicatesCollapsed: 0,
+        clientIncluded: 0,
+        dataQualityStatus: "EMPTY",
+      },
+    };
+  }
+  return {
+    total: 0,
+    adverse: 0,
+    collectionStatus: regionStatus,
+    statusMessage: regionMessage,
+    items: [],
+    qualityStats: {
+      totalCollected: 0,
+      selectedForReport: 0,
+      excludedAsNoise: 0,
+      reviewRequired: 0,
+      duplicatesCollapsed: 0,
+      clientIncluded: 0,
+      dataQualityStatus: regionStatus,
+    },
+  };
+}
+
+async function bucketFromGatedRows(
+  rows: SurfaceRowInput[],
+  surfaceType: EvidenceSurfaceType,
+  regionStatus: RegionCollectionStatus,
+  regionMessage: string,
+  subjectFullName: string | null,
+  limit = 20,
+  options: { caseId?: string; fetchThumbnails?: boolean } = {}
+): Promise<SurfaceBucketSummary> {
+  const gated: GatedEvidenceItem[] = dedupeEvidenceItems(
+    rows.map((r) => ({
+      id: r.id,
+      surfaceType,
+      title: r.title,
+      url: r.url,
+      domain: r.domain,
+      snippet: r.snippet,
+      thumbnailUrl: r.thumbnailUrl,
       classification: r.classification,
       riskTheme: r.riskTheme,
       query: r.query,
@@ -162,6 +349,31 @@ function bucketFromGatedRows(
 
   const selected = selectEvidenceForReport(gated, "INTERNAL").selected;
   const picked = pickBestRepresentatives(selected, limit);
+
+  if (options.fetchThumbnails && options.caseId && surfaceType === "IMAGE_RESULT") {
+    for (const r of picked) {
+      if (!r.id) continue;
+      const thumb = await ensureImageThumbnail({
+        caseId: options.caseId,
+        surfaceId: r.id,
+        imageUrl: (r as { imageUrl?: string | null }).imageUrl,
+        thumbnailUrl: (r as { thumbnailUrl?: string | null }).thumbnailUrl,
+        rawMetadata: r.rawMetadata,
+      });
+      r.rawMetadata = thumb.rawMetadata;
+      r.quality = {
+        ...r.quality,
+        thumbnailStatus: thumb.status,
+      };
+      if (thumb.storageKey && r.id) {
+        await prisma.searchSurfaceItem.update({
+          where: { id: r.id },
+          data: { rawMetadata: thumb.rawMetadata as Prisma.InputJsonValue },
+        });
+      }
+    }
+  }
+
   const adverse = picked.filter((r) => r.quality.isAdverseForReport).length;
   const excluded = gated.length - picked.length;
   const reviewRequired = gated.filter((r) => r.quality.reportEligibility === "REVIEW_REQUIRED").length;
@@ -183,19 +395,7 @@ function bucketFromGatedRows(
       adverse,
       collectionStatus: "COLLECTED",
       statusMessage: "Data collected.",
-      items: picked.map((r, idx) => ({
-        title: r.title ?? r.query ?? "",
-        snippet: r.snippet ?? null,
-        url: r.url ?? null,
-        domain: r.domain ?? null,
-        thumbnailUrl: (r as { thumbnailUrl?: string | null }).thumbnailUrl ?? null,
-        classification: r.classification ?? null,
-        riskTheme: r.riskTheme ?? null,
-        query: r.query ?? null,
-        rank: idx + 1,
-        reportEligibility: r.quality.reportEligibility,
-        contentClass: r.quality.contentClass,
-      })),
+      items: picked.map(mapGatedToReportItem),
       qualityStats,
     };
   }
@@ -360,8 +560,30 @@ function buildRegionBlock(
   organicRows: Awaited<ReturnType<typeof loadOrganic>>,
   surfaceRows: Awaited<ReturnType<typeof loadSurfaces>>,
   wikiRows: Awaited<ReturnType<typeof loadWiki>>,
-  subjectFullName: string | null
-): RegionSearchSurfacesBlock {
+  subjectFullName: string | null,
+  caseId: string,
+  reportLanguage: "ru" | "en" = "ru"
+): Promise<RegionSearchSurfacesBlock> {
+  return buildRegionBlockAsync(
+    region,
+    organicRows,
+    surfaceRows,
+    wikiRows,
+    subjectFullName,
+    caseId,
+    reportLanguage
+  );
+}
+
+async function buildRegionBlockAsync(
+  region: OrionRegionCode,
+  organicRows: Awaited<ReturnType<typeof loadOrganic>>,
+  surfaceRows: Awaited<ReturnType<typeof loadSurfaces>>,
+  wikiRows: Awaited<ReturnType<typeof loadWiki>>,
+  subjectFullName: string | null,
+  caseId: string,
+  reportLanguage: "ru" | "en" = "ru"
+): Promise<RegionSearchSurfacesBlock> {
   const profile = regionProfile(region);
   const regionOrganic = filterMatrixInputsByRegion(
     organicRows.map((r) => ({
@@ -386,12 +608,12 @@ function buildRegionBlock(
     regionSurfaces.filter((s) => s.type === type);
 
   const organicAdverse = regionOrganic.filter((r) =>
-    isNegativeOrganic(r.classification, r.rawMetadata)
+    isNegativeOrganic(r.classification, r.rawMetadata, subjectFullName, r.title, r.snippet)
   );
 
   const surfaceInput = (type: SearchSurfaceType) =>
     byType(type).map((s) => ({
-      id: (s as { id?: string }).id,
+      id: s.id,
       title: s.title,
       snippet: s.snippet,
       url: s.url,
@@ -407,18 +629,59 @@ function buildRegionBlock(
       region,
     }));
 
-  const gatedBucket = (type: SearchSurfaceType) =>
+  const autocompleteBucket = (type: SearchSurfaceType, limit = 20) =>
+    bucketFromAutocompleteRows(
+      surfaceInput(type),
+      SURFACE_EVIDENCE_TYPE[type] ?? "SEARCH_SUGGESTION",
+      derived.status,
+      derived.message,
+      subjectFullName,
+      reportLanguage,
+      limit
+    );
+
+  const gatedBucket = (type: SearchSurfaceType, limit = 20, fetchThumbnails = false) =>
     bucketFromGatedRows(
       surfaceInput(type),
       SURFACE_EVIDENCE_TYPE[type] ?? "SEARCH_SUGGESTION",
       derived.status,
       derived.message,
       subjectFullName,
-      type === "RELATED_QUERY" ? 15 : 20
+      limit,
+      { caseId, fetchThumbnails }
     );
 
   const wikiLang = region === "RU" ? "ru" : "en";
   const wiki = wikiRows.filter((w) => (w.language ?? "").toLowerCase().startsWith(wikiLang));
+
+  const organicBucket = await bucketFromGatedRows(
+    regionOrganic.map((r) => ({
+      id: r.id,
+      title: r.title,
+      snippet: r.snippet,
+      url: r.url,
+      domain: null,
+      thumbnailUrl: null,
+      imageUrl: null,
+      classification: r.classification,
+      riskTheme: null,
+      query: ((r.rawMetadata ?? {}) as Record<string, unknown>).orionQuery as string | null ?? null,
+      rank: r.rank,
+      rawMetadata: r.rawMetadata,
+      reviewStatus: null,
+      region,
+    })),
+    "SEARCH_RESULT",
+    derived.status,
+    derived.message,
+    subjectFullName,
+    20
+  );
+  const images = await gatedBucket("IMAGE_RESULT", 9, true);
+  const imageNote =
+    images.qualityStats && images.qualityStats.totalCollected > 0
+      ? `${images.qualityStats.totalCollected} collected, ${images.qualityStats.selectedForReport} selected, ${images.qualityStats.excludedAsNoise} excluded as namesakes/noise.`
+      : undefined;
 
   return {
     region,
@@ -426,34 +689,12 @@ function buildRegionBlock(
     language: profile.language,
     collectionStatus: derived.status,
     statusMessage: derived.message,
-    organic: bucketFromGatedRows(
-      regionOrganic.map((r) => ({
-        id: r.id,
-        title: r.title,
-        snippet: r.snippet,
-        url: r.url,
-        domain: null,
-        thumbnailUrl: null,
-        imageUrl: null,
-        classification: r.classification,
-        riskTheme: null,
-        query: ((r.rawMetadata ?? {}) as Record<string, unknown>).orionQuery as string | null ?? null,
-        rank: r.rank,
-        rawMetadata: r.rawMetadata,
-        reviewStatus: null,
-        region,
-      })),
-      "SEARCH_RESULT",
-      derived.status,
-      derived.message,
-      subjectFullName,
-      20
-    ),
-    suggestions: gatedBucket("SUGGESTION"),
-    relatedQueries: gatedBucket("RELATED_QUERY"),
-    images: gatedBucket("IMAGE_RESULT"),
-    videos: gatedBucket("VIDEO_RESULT"),
-    knowledgePanel: gatedBucket("KNOWLEDGE_BLOCK"),
+    organic: organicBucket,
+    suggestions: autocompleteBucket("SUGGESTION"),
+    relatedQueries: autocompleteBucket("RELATED_QUERY", 15),
+    images: { ...images, imageSelectionNote: imageNote },
+    videos: await gatedBucket("VIDEO_RESULT"),
+    knowledgePanel: await gatedBucket("KNOWLEDGE_BLOCK"),
     wikipedia: {
       total: wiki.length,
       adverse: 0,
@@ -553,9 +794,16 @@ export async function buildSearchSurfacesReportBlock(
     ? organicRows
     : organicRows.filter((r) => !String(r.source ?? "").includes("mock"));
 
-  const ru = buildRegionBlock("RU", organic, surfaceRows, wikiRows, subjectFullName);
-  const uae = buildRegionBlock("UAE", organic, surfaceRows, wikiRows, subjectFullName);
-  const international = buildRegionBlock("INTERNATIONAL", organic, surfaceRows, wikiRows, subjectFullName);
+  const ru = await buildRegionBlock("RU", organic, surfaceRows, wikiRows, subjectFullName, caseId);
+  const uae = await buildRegionBlock("UAE", organic, surfaceRows, wikiRows, subjectFullName, caseId);
+  const international = await buildRegionBlock(
+    "INTERNATIONAL",
+    organic,
+    surfaceRows,
+    wikiRows,
+    subjectFullName,
+    caseId
+  );
 
   const blocks = [ru, uae, international];
   const warnings: string[] = [];
@@ -664,11 +912,20 @@ export function regionBlockToAuditRegion(
       classification: i.classification,
     })),
     topSuggestions: block.suggestions.items.map((i) => i.title),
+    suggestionGroups: block.suggestions.suggestionGroups ?? [],
+    exposureDisclaimer: block.suggestions.exposureDisclaimer ?? null,
     topRelatedQueries: block.relatedQueries.items.map((i) => i.title),
+    relatedSuggestionGroups: block.relatedQueries.suggestionGroups ?? [],
     topImages: block.images.items.map((i) => ({
       title: i.title,
       url: i.thumbnailUrl ?? i.url,
+      source: i.domain ?? "",
+      thumbnailStorageKey: i.thumbnailStorageKey ?? null,
+      identityDecision: i.identityDecision ?? null,
+      thumbnailStatus: i.thumbnailStatus ?? null,
+      sourcePageUrl: i.sourcePageUrl ?? i.url,
     })),
+    imageSelectionNote: block.images.imageSelectionNote ?? null,
     topVideos: block.videos.items.map((i) => ({
       title: i.title,
       url: i.thumbnailUrl ?? i.url,

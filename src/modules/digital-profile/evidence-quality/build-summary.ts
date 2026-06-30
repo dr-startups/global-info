@@ -40,6 +40,42 @@ export function buildEvidenceQualitySummary(
   const highConfidenceRisks: EvidenceQualitySummary["highConfidenceRisks"] = [];
   const reviewQueue: EvidenceQualitySummary["reviewQueue"] = [];
 
+  const identityMetrics = {
+    collectedTotal: 0,
+    subjectMatchedTotal: 0,
+    exactSubject: 0,
+    likelySubject: 0,
+    possibleSubject: 0,
+    namesakesExcluded: 0,
+    entityMismatchesExcluded: 0,
+    insufficientMatchesExcluded: 0,
+    lowValueExcluded: 0,
+    selectedForClient: 0,
+    selectedForInternalReview: 0,
+  };
+
+  const autocompleteMetrics = {
+    total: 0,
+    exactSubjectQueries: 0,
+    adjacentPersonQueries: 0,
+    typoOrSimilarQueries: 0,
+    riskQueries: 0,
+    clientShown: 0,
+    excludedFromEvidence: 0,
+  };
+
+  const imageMetrics = {
+    collected: 0,
+    thumbnailsFetched: 0,
+    thumbnailsAvailable: 0,
+    subjectMatched: 0,
+    selectedForReport: 0,
+    excludedNamesakeOrNoise: 0,
+    fetchFailed: 0,
+  };
+
+  const AUTOCOMPLETE_SURFACES: EvidenceSurfaceType[] = ["SEARCH_SUGGESTION", "RELATED_QUERY"];
+
   for (const item of gated) {
     const q = item.quality;
     switch (q.reportEligibility) {
@@ -121,7 +157,58 @@ export function buildEvidenceQualitySummary(
         contentClass: q.contentClass,
         selectionReason: q.selectionReason,
         region: item.region,
+        identityDecision: q.identityDecision,
+        autocompleteClass: q.autocompleteClass,
       });
+    }
+
+    if (AUTOCOMPLETE_SURFACES.includes(item.surfaceType)) {
+      autocompleteMetrics.total += 1;
+      const ac = q.autocompleteClass;
+      if (ac === "EXACT_SUBJECT_QUERY" || ac === "SUBJECT_BROAD_QUERY") {
+        autocompleteMetrics.exactSubjectQueries += 1;
+      } else if (ac === "ADJACENT_PERSON_QUERY" || ac === "NAMESAKE_QUERY") {
+        autocompleteMetrics.adjacentPersonQueries += 1;
+      } else if (ac === "TYPO_OR_SIMILAR_QUERY") {
+        autocompleteMetrics.typoOrSimilarQueries += 1;
+      } else if (ac === "RISK_QUERY") {
+        autocompleteMetrics.riskQueries += 1;
+      }
+      if (q.reportEligibility !== "EXCLUDE") autocompleteMetrics.clientShown += 1;
+      autocompleteMetrics.excludedFromEvidence += 1;
+    } else {
+      identityMetrics.collectedTotal += 1;
+      const id = q.identityDecision;
+      if (id === "EXACT_SUBJECT") identityMetrics.exactSubject += 1;
+      else if (id === "LIKELY_SUBJECT") identityMetrics.likelySubject += 1;
+      else if (id === "POSSIBLE_SUBJECT") identityMetrics.possibleSubject += 1;
+      else if (id === "NAMESAKE") identityMetrics.namesakesExcluded += 1;
+      else if (id === "ENTITY_MISMATCH") identityMetrics.entityMismatchesExcluded += 1;
+      else if (id === "INSUFFICIENT_MATCH") identityMetrics.insufficientMatchesExcluded += 1;
+      if (q.contentClass === "LOW_VALUE" && q.reportEligibility === "EXCLUDE") {
+        identityMetrics.lowValueExcluded += 1;
+      }
+      if (q.isSubjectEvidence) identityMetrics.subjectMatchedTotal += 1;
+      if (q.reportEligibility === "CLIENT_INCLUDE") identityMetrics.selectedForClient += 1;
+      if (q.reportEligibility === "REVIEW_REQUIRED" || q.reportEligibility === "INTERNAL_ONLY") {
+        identityMetrics.selectedForInternalReview += 1;
+      }
+    }
+
+    if (item.surfaceType === "IMAGE_RESULT") {
+      imageMetrics.collected += 1;
+      const thumbStatus = q.thumbnailStatus ?? readThumbFromMeta(item.rawMetadata);
+      if (thumbStatus === "AVAILABLE") {
+        imageMetrics.thumbnailsAvailable += 1;
+        imageMetrics.thumbnailsFetched += 1;
+      } else if (thumbStatus === "FAILED" || thumbStatus === "BLOCKED" || thumbStatus === "UNSAFE") {
+        imageMetrics.fetchFailed += 1;
+      }
+      if (q.isSubjectEvidence) imageMetrics.subjectMatched += 1;
+      if (q.reportEligibility === "CLIENT_INCLUDE" || q.reportEligibility === "INTERNAL_ONLY") {
+        imageMetrics.selectedForReport += 1;
+      }
+      if (q.reportEligibility === "EXCLUDE") imageMetrics.excludedNamesakeOrNoise += 1;
     }
   }
 
@@ -138,7 +225,18 @@ export function buildEvidenceQualitySummary(
     usefulProfileMaterials: usefulProfileMaterials.slice(0, 20),
     highConfidenceRisks: highConfidenceRisks.slice(0, 15),
     reviewQueue: reviewQueue.slice(0, 50),
+    identity: identityMetrics,
+    autocompleteExposure: autocompleteMetrics,
+    imageEvidence: imageMetrics,
   };
+}
+
+function readThumbFromMeta(rawMetadata: unknown): string | undefined {
+  if (!rawMetadata || typeof rawMetadata !== "object") return undefined;
+  const eq = (rawMetadata as Record<string, unknown>).evidenceQuality;
+  if (!eq || typeof eq !== "object") return undefined;
+  const st = (eq as Record<string, unknown>).thumbnailStatus;
+  return typeof st === "string" ? st : undefined;
 }
 
 export function gateItemsForReport(

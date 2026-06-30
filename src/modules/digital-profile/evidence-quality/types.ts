@@ -61,7 +61,34 @@ export type SelectionReason =
   | "provider_not_configured"
   | "weak_adverse_terms"
   | "entity_mismatch"
-  | "pending_review";
+  | "pending_review"
+  | "insufficient_match"
+  | "autocomplete_exposure";
+
+export type IdentityDecision =
+  | "EXACT_SUBJECT"
+  | "LIKELY_SUBJECT"
+  | "POSSIBLE_SUBJECT"
+  | "NAMESAKE"
+  | "ENTITY_MISMATCH"
+  | "INSUFFICIENT_MATCH";
+
+export type AutocompleteClass =
+  | "EXACT_SUBJECT_QUERY"
+  | "SUBJECT_BROAD_QUERY"
+  | "ADJACENT_PERSON_QUERY"
+  | "NAMESAKE_QUERY"
+  | "TYPO_OR_SIMILAR_QUERY"
+  | "GENERIC_QUERY"
+  | "IRRELEVANT_QUERY"
+  | "RISK_QUERY";
+
+export type ThumbnailStatus =
+  | "AVAILABLE"
+  | "FAILED"
+  | "NOT_FETCHED"
+  | "BLOCKED"
+  | "UNSAFE";
 
 export type ReportAudience = "INTERNAL" | "CLIENT";
 
@@ -94,6 +121,13 @@ export interface EvidenceQualityAssessment {
   isAdverseForReport: boolean;
   isUsefulProfileMaterial: boolean;
   duplicateOf?: string | null;
+  /** O5.3 — strict identity decision for evidence surfaces. */
+  identityDecision?: IdentityDecision;
+  identityReason?: string;
+  /** O5.3 — autocomplete exposure class (suggestions / related queries). */
+  autocompleteClass?: AutocompleteClass;
+  isSubjectEvidence?: boolean;
+  thumbnailStatus?: ThumbnailStatus;
 }
 
 export interface GatedEvidenceItem extends EvidenceItemInput {
@@ -133,5 +167,39 @@ export interface EvidenceQualitySummary {
     contentClass: ContentClass;
     selectionReason: SelectionReason;
     region?: string | null;
+    identityDecision?: IdentityDecision;
+    autocompleteClass?: AutocompleteClass;
   }>;
+  /** O5.3 — identity precision metrics. */
+  identity?: {
+    collectedTotal: number;
+    subjectMatchedTotal: number;
+    exactSubject: number;
+    likelySubject: number;
+    possibleSubject: number;
+    namesakesExcluded: number;
+    entityMismatchesExcluded: number;
+    insufficientMatchesExcluded: number;
+    lowValueExcluded: number;
+    selectedForClient: number;
+    selectedForInternalReview: number;
+  };
+  autocompleteExposure?: {
+    total: number;
+    exactSubjectQueries: number;
+    adjacentPersonQueries: number;
+    typoOrSimilarQueries: number;
+    riskQueries: number;
+    clientShown: number;
+    excludedFromEvidence: number;
+  };
+  imageEvidence?: {
+    collected: number;
+    thumbnailsFetched: number;
+    thumbnailsAvailable: number;
+    subjectMatched: number;
+    selectedForReport: number;
+    excludedNamesakeOrNoise: number;
+    fetchFailed: number;
+  };
 }

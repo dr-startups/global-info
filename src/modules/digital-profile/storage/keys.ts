@@ -106,6 +106,10 @@ export const buildStorageKey = {
   serpSnapshotMetadata(caseId: string, snapshotId: string): string {
     return `cases/${seg(caseId, "caseId")}/serp-snapshots/${seg(snapshotId, "snapshotId")}/metadata.json`;
   },
+  /** O5.3 — cached image thumbnail for report evidence grid. */
+  imageThumbnail(caseId: string, hash: string, ext: string): string {
+    return `cases/${seg(caseId, "caseId")}/image-thumbnails/${seg(hash, "hash")}.${seg(ext, "ext")}`;
+  },
   /** Reserved prefix for ephemeral health-check probes. */
   healthProbe(token: string): string {
     return `_health/${seg(token, "token")}`;

@@ -8,6 +8,7 @@
 import { prisma } from "@/server/prisma/client";
 import { NotFoundError } from "../http/errors";
 import { readRiskClassification } from "../risk-classifier/result-classifier";
+import { buildSubjectFingerprint, evaluateIdentityDecision } from "../evidence-quality/subject-fingerprint";
 import { resolveHighlight, type LinkedFinding } from "./highlight-resolver";
 import {
   DEFAULT_SOURCE_PREFERENCE,
@@ -211,7 +212,14 @@ export async function loadCaseResults(
   if (!found) throw new NotFoundError("Case not found");
 
   const subjectName = found.subjects[0]?.fullName ?? "";
+  const fingerprint = subjectName.trim() ? buildSubjectFingerprint({ fullName: subjectName }) : null;
   const findingsByResult = await loadFindingsByResult(caseId);
+
+  function isSubjectMatchedForSnapshot(text: string): boolean {
+    if (!fingerprint) return true;
+    const id = evaluateIdentityDecision(text, fingerprint);
+    return id.decision === "EXACT_SUBJECT" || id.decision === "LIKELY_SUBJECT";
+  }
 
   async function loadEngine(engine: SerpEngine): Promise<LoadedResult[]> {
     const rows = await prisma.searchResult.findMany({
@@ -232,7 +240,11 @@ export async function loadCaseResults(
         createdAt: true,
       },
     });
-    const mapped: LoadedResult[] = rows.map((r) => {
+    const mapped: LoadedResult[] = rows
+      .filter((r) =>
+        isSubjectMatchedForSnapshot([r.title, r.snippet, r.url].filter(Boolean).join(" "))
+      )
+      .map((r) => {
       // Stage N1.3 — resolve red-frame highlight (manual > findings > auto > enum).
       const riskClassification = readRiskClassification(r.rawMetadata);
       const decision = resolveHighlight({

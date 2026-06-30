@@ -800,6 +800,14 @@ def _region_block(
             "total": r.get("suggestionsTotal", 0),
             "negative": r.get("suggestionsNegative", 0),
             "list": [truncate(s, 80) for s in (r.get("topSuggestions", []) or [])[:15]],
+            "groups": [
+                {
+                    "label": str(g.get("label", "")),
+                    "items": [truncate(x, 80) for x in (g.get("items") or [])],
+                }
+                for g in (r.get("suggestionGroups") or [])
+            ],
+            "exposureDisclaimer": str(r.get("exposureDisclaimer") or ""),
         },
         "relatedQueries": {
             "total": r.get("relatedQueriesTotal", 0),
@@ -812,9 +820,17 @@ def _region_block(
             "total": r.get("imagesTotal", 0),
             "negative": r.get("imagesNegative", 0),
             "items": [
-                {"title": truncate(i.get("title"), 50), "source": domain(i.get("url"))}
-                for i in (r.get("topImages", []) or [])[:10]
+                {
+                    "title": truncate(i.get("title"), 50),
+                    "source": i.get("source") or domain(i.get("url")),
+                    "sourcePageUrl": i.get("sourcePageUrl") or i.get("url") or "",
+                    "thumbnailBase64": i.get("thumbnailBase64"),
+                    "identityDecision": i.get("identityDecision") or "",
+                    "hasThumbnail": bool(i.get("thumbnailBase64")),
+                }
+                for i in (r.get("topImages", []) or [])[:9]
             ],
+            "selectionNote": str(r.get("imageSelectionNote") or ""),
         },
         "videos": {
             "total": r.get("videosTotal", 0),

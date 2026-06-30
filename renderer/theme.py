@@ -548,3 +548,72 @@ def table(
     if label:
         bottom = note(slide, bottom, label, "source")
     return bottom
+
+
+def image_grid(
+    slide,
+    top: Emu,
+    items: list[dict[str, Any]],
+    *,
+    cols: int = 3,
+    max_items: int = 9,
+    show_identity: bool = False,
+) -> Emu:
+    """O5.3 — compact thumbnail grid with title + source captions."""
+    import base64
+    import io
+
+    picked = items[:max_items]
+    if not picked:
+        return top
+
+    gap = int(GUTTER)
+    cols = max(1, min(cols, 3))
+    cell_w = (int(CONTENT_W) - gap * (cols - 1)) // cols
+    thumb_h = 720000
+    caption_h = 280000
+    row_stride = thumb_h + caption_h + gap
+
+    y0 = int(top)
+    for idx, item in enumerate(picked):
+        row, col = divmod(idx, cols)
+        left = int(MARGIN) + col * (cell_w + gap)
+        cell_top = Emu(y0 + row * row_stride)
+
+        b64 = item.get("thumbnailBase64")
+        if b64:
+            try:
+                stream = io.BytesIO(base64.b64decode(b64))
+                slide.shapes.add_picture(stream, Emu(left), cell_top, width=Emu(cell_w), height=Emu(thumb_h))
+            except Exception:
+                card(
+                    slide,
+                    Emu(left),
+                    cell_top,
+                    Emu(cell_w),
+                    Emu(thumb_h),
+                    truncate(item.get("title"), 40),
+                    [truncate(item.get("source"), 40)],
+                    tone=NEUTRAL_GRAY,
+                )
+        else:
+            card(
+                slide,
+                Emu(left),
+                cell_top,
+                Emu(cell_w),
+                Emu(thumb_h),
+                truncate(item.get("title"), 40),
+                [truncate(item.get("source"), 40)],
+                tone=NEUTRAL_GRAY,
+            )
+
+        cap = truncate(item.get("title"), 42)
+        src = truncate(item.get("source"), 36)
+        cap_lines = [cap, src]
+        if show_identity and item.get("identityDecision"):
+            cap_lines.append(str(item.get("identityDecision")))
+        note(slide, Emu(y0 + row * row_stride + thumb_h + 40000), " · ".join(cap_lines), "source")
+
+    rows = (len(picked) + cols - 1) // cols
+    return Emu(y0 + rows * row_stride + 80000)

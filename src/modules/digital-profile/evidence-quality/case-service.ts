@@ -114,6 +114,14 @@ export async function getCaseReviewQueue(caseId: string) {
   const internal = selectEvidenceForReport(gated, "INTERNAL");
   return {
     summary: buildEvidenceQualitySummary(items, subjectFullName),
+    items: gated.slice(0, 500).map((item) => ({
+      id: item.id,
+      title: item.title ?? item.query ?? "",
+      surfaceType: item.surfaceType,
+      region: item.region,
+      thumbnailUrl: item.thumbnailUrl,
+      quality: item.quality,
+    })),
     reviewRequired: internal.reviewRequired,
     selected: internal.selected.slice(0, 100),
     excluded: internal.excluded.slice(0, 50),

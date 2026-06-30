@@ -372,6 +372,17 @@ export interface Dictionary {
     actionsCol: string;
     includeClient: string;
     exclude: string;
+    identityMetrics: string;
+    autocompleteMetrics: string;
+    imageMetrics: string;
+    filterIdentity: string;
+    filterAutocomplete: string;
+    filterThumbnail: string;
+    filterAll: string;
+    showNamesakes: string;
+    allItems: string;
+    identityCol: string;
+    includeImage: string;
   };
   createCase: {
     title: string;
