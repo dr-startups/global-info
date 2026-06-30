@@ -410,10 +410,14 @@ def _b_images(slide, top, blk, vm, ctx):
     L = vm["labels"]
     im = blk["images"]
     internal = vm.get("audience") == "internal"
+    collected = im.get("total", 0)
+    selected = im.get("selected", len(im.get("items") or []))
+    excluded = max(0, collected - selected)
     top = T.metric_cards(slide, top, [
-        {"label": L["m_images_total"], "value": im["total"]},
-        {"label": L["m_negative"], "value": im["negative"], "tone": T.DANGER},
-    ], per_row=2)
+        {"label": L.get("m_images_collected", L["m_images_total"]), "value": collected},
+        {"label": L.get("m_images_subject_matched", "Subject-matched"), "value": selected, "tone": T.SUCCESS if selected else T.NEUTRAL_GRAY},
+        {"label": L.get("m_images_excluded", "Excluded"), "value": excluded, "tone": T.NEUTRAL_GRAY},
+    ], per_row=3)
     items = im.get("items") or []
     if items:
         top = T.image_grid(slide, top, items, cols=3, max_items=9, show_identity=internal)
@@ -426,31 +430,43 @@ def _b_images(slide, top, blk, vm, ctx):
 def _b_videos(slide, top, blk, vm, ctx):
     L = vm["labels"]
     vi = blk["videos"]
+    collected = vi.get("total", 0)
+    selected = vi.get("selected", len(vi.get("items") or []))
+    excluded = max(0, collected - selected)
     top = T.metric_cards(slide, top, [
-        {"label": L["m_videos_total"], "value": vi["total"]},
-        {"label": L["m_negative"], "value": vi["negative"], "tone": T.DANGER},
-    ], per_row=2)
-    rows = [[T.truncate(v["title"], 60), v["source"]] for v in vi["items"]]
-    if rows:
-        T.table(slide, top, [L["th_video_title"], L["th_source"]], rows, col_widths=[0.65, 0.35])
+        {"label": L.get("m_videos_collected", L["m_videos_total"]), "value": collected},
+        {"label": L.get("m_videos_subject_matched", "Subject-matched"), "value": selected, "tone": T.SUCCESS if selected else T.NEUTRAL_GRAY},
+        {"label": L.get("m_videos_excluded", "Excluded"), "value": excluded, "tone": T.NEUTRAL_GRAY},
+    ], per_row=3)
+    items = vi.get("items") or []
+    if items:
+        top = T.video_cards(slide, top, items, L.get("video_open_source", "Open source"))
+        if vi.get("selectionNote"):
+            top = T.note(slide, top, vi["selectionNote"], "source")
     else:
-        T.no_data_card(slide, top, L["nd_no_videos"])
+        T.no_data_card(slide, top, L.get("nd_no_relevant_videos", L["nd_no_videos"]))
 
 
 def _b_media(slide, top, blk, vm, ctx):
     L = vm["labels"]
     im, vi = blk["images"], blk["videos"]
     internal = vm.get("audience") == "internal"
+    no_intl = blk.get("noIntlSubjectResults") or (
+        not (im.get("items") or []) and not (vi.get("items") or []) and blk.get("code") == "INTL"
+    )
     top = T.metric_cards(slide, top, [
-        {"label": L["m_images_nt"], "value": f"{im['negative']}/{im['total']}"},
-        {"label": L["m_videos_nt"], "value": f"{vi['negative']}/{vi['total']}"},
+        {"label": L.get("m_images_collected", L["m_images_nt"]), "value": f"{im.get('selected', 0)}/{im.get('total', 0)}"},
+        {"label": L.get("m_videos_collected", L["m_videos_nt"]), "value": f"{vi.get('selected', 0)}/{vi.get('total', 0)}"},
     ], per_row=2)
     img_items = im.get("items") or []
+    vid_items = vi.get("items") or []
+    if no_intl and not img_items and not vid_items:
+        T.no_data_card(slide, top, L.get("nd_no_intl_subject_results", L.get("nd_no_relevant_media", L["nd_no_media"])))
+        return
     if img_items:
         top = T.image_grid(slide, top, img_items, cols=3, max_items=6, show_identity=internal)
-    vid_rows = [["Video", T.truncate(v["title"], 50), v["source"]] for v in vi.get("items") or []]
-    if vid_rows:
-        top = T.table(slide, top, [L["th_type"], L["th_title"], L["th_source"]], vid_rows, col_widths=[0.14, 0.56, 0.30])
+    if vid_items:
+        top = T.video_cards(slide, top, vid_items, L.get("video_open_source", "Open source"))
     elif not img_items:
         T.no_data_card(slide, top, L.get("nd_no_relevant_media", L["nd_no_media"]))
 
@@ -526,11 +542,58 @@ def _b_recommended(slide, top, blk, vm, ctx):
 
 def _b_evidence(slide, top, blk, vm, ctx):
     L = vm["labels"]
-    rows = [[T.truncate(e["title"], 50), e["domain"], e["provider"], e["classification"]] for e in blk["evidenceAppendix"]]
-    if rows:
-        T.table(slide, top, [L["th_title"], L["th_domain"], L["th_provider"], L["th_class"]], rows, col_widths=[0.42, 0.26, 0.16, 0.16])
+    internal = vm.get("audience") == "internal"
+    confirmed = blk.get("evidenceAppendix") or []
+    excluded = blk.get("excludedAppendix") or []
+    if confirmed:
+        top = T.note(slide, top, L.get("appendix_confirmed_title", "Confirmed / likely subject evidence"), "info")
+        rows = [
+            [
+                T.truncate(e["title"], 40),
+                e["domain"],
+                e.get("type", ""),
+                e.get("identity", ""),
+                e.get("classification", e.get("class", "")),
+                e.get("review", ""),
+                T.truncate(e.get("link", ""), 36),
+            ]
+            for e in confirmed
+        ]
+        top = T.table(
+            slide,
+            top,
+            [
+                L.get("th_evidence", "Evidence"),
+                L["th_domain"],
+                L.get("th_type", "Type"),
+                L.get("th_identity", "Identity"),
+                L["th_class"],
+                L.get("th_review", "Review"),
+                L.get("th_link", "Link"),
+            ],
+            rows,
+            col_widths=[0.22, 0.14, 0.08, 0.12, 0.12, 0.12, 0.20],
+        )
     else:
-        T.no_data_card(slide, top, L["nd_no_evidence_region"])
+        top = T.no_data_card(slide, top, L.get("nd_no_confirmed_evidence", L["nd_no_evidence_region"]))
+    if internal and excluded:
+        top = T.note(slide, top, L.get("appendix_excluded_title", "Excluded / not subject (internal only)"), "warning")
+        ex_rows = [
+            [T.truncate(e["title"], 44), e["domain"], e.get("reason", ""), e.get("identityDecision", "")]
+            for e in excluded
+        ]
+        T.table(
+            slide,
+            top,
+            [
+                L.get("th_excluded_item", "Excluded item"),
+                L["th_domain"],
+                L.get("th_reason", "Reason"),
+                L.get("th_identity", "Identity"),
+            ],
+            ex_rows,
+            col_widths=[0.36, 0.18, 0.24, 0.22],
+        )
 
 
 def _b_conclusion(slide, top, blk, vm, ctx):

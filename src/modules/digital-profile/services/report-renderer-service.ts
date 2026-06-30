@@ -29,6 +29,10 @@ import {
   sanitizeReportJsonForAudience,
 } from "../report/report-data-policy";
 import {
+  buildSelectedEvidenceReportVm,
+  patchAuditSummaryWithSelectedEvidence,
+} from "../report/selected-evidence-report-vm";
+import {
   normalizeReportLanguage,
   type ReportLanguage,
 } from "../report/i18n/report-dictionary";
@@ -132,6 +136,11 @@ async function localizeReportJson(
   reportJson: ReportJson,
   reportLanguage: ReportLanguage
 ): Promise<ReportJson> {
+  const storedSelected = reportJson.selectedEvidence;
+  const storedSearchSurfaces = reportJson.searchSurfaces;
+  const storedRiskSummary = reportJson.riskSummary;
+  const storedEvidenceQuality = reportJson.evidenceQuality;
+
   const localized: ReportJson = {
     ...reportJson,
     reportLanguage,
@@ -152,6 +161,30 @@ async function localizeReportJson(
   } catch {
     // Keep stored compliance block; mapper still localizes labels at render time.
   }
+
+  // O5.4 — always rebuild selected evidence at render (stored VM may be stale).
+  const searchSurfaces = localized.searchSurfaces ?? storedSearchSurfaces;
+  if (searchSurfaces && localized.auditSummary) {
+    const selectedEvidence = buildSelectedEvidenceReportVm({
+      searchSurfaces,
+      reportAudience: "INTERNAL",
+      riskSummary: storedRiskSummary ?? localized.riskSummary,
+      complianceSummary: localized.complianceSummary ?? reportJson.complianceSummary,
+      evidenceQuality: storedEvidenceQuality ?? localized.evidenceQuality,
+    });
+    localized.selectedEvidence = selectedEvidence;
+    localized.auditSummary = patchAuditSummaryWithSelectedEvidence(
+      localized.auditSummary,
+      selectedEvidence
+    );
+  } else if (storedSelected && localized.auditSummary) {
+    localized.selectedEvidence = storedSelected;
+    localized.auditSummary = patchAuditSummaryWithSelectedEvidence(
+      localized.auditSummary,
+      storedSelected
+    );
+  }
+
   return localized;
 }
 
@@ -245,6 +278,26 @@ export async function renderReportVersion(
           "client"
         ) as unknown as ReportJson)
       : localizedReportJson;
+
+  // Re-patch client audience selection onto audit regions after sanitization.
+  if (
+    audience === "client" &&
+    localizedReportJson.searchSurfaces &&
+    audienceReportJson.auditSummary
+  ) {
+    const clientVm = buildSelectedEvidenceReportVm({
+      searchSurfaces: localizedReportJson.searchSurfaces,
+      reportAudience: "CLIENT",
+      riskSummary: localizedReportJson.riskSummary,
+      complianceSummary: localizedReportJson.complianceSummary,
+      evidenceQuality: localizedReportJson.evidenceQuality,
+    });
+    audienceReportJson.selectedEvidence = clientVm;
+    audienceReportJson.auditSummary = patchAuditSummaryWithSelectedEvidence(
+      audienceReportJson.auditSummary,
+      clientVm
+    );
+  }
   // Stage S1.5: the renderer is stateless and has no access to private storage,
   // so the SERP snapshot PNG travels inside report_json as base64. This is added
   // only on the wire (not persisted in the stored report_json, which stays

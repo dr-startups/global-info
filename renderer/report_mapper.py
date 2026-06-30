@@ -463,7 +463,34 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
 # Template v2 — full 36-page dynamic audit view model (Stage K2)
 # ===========================================================================
 
-COMPLIANCE_THEMES = {"sanctions", "pep_rca", "compliance_database"}
+COMPLIANCE_THEMES = {"sanctions", "pep_rca", "compliance_database", "pep", "rca", "adverse_media"}
+
+
+def _compliance_stale_title(title: str) -> bool:
+    t = str(title or "").upper()
+    markers = (
+        "WORLD_CHECK",
+        "DOW_JONES",
+        "LEXIS",
+        "SANCTIONS",
+        " PEP ",
+        "RCA",
+        "POTENTIAL PEP",
+        "POTENTIAL SANCTIONS",
+    )
+    return any(m in t for m in markers)
+
+
+def _selected_evidence_meta(report_json: dict) -> dict:
+    return report_json.get("selectedEvidence") or {}
+
+
+def _compliance_evidence_active(report_json: dict) -> bool:
+    meta = (_selected_evidence_meta(report_json).get("compliance") or {})
+    if meta.get("manualConfirmedOnly") or meta.get("providersRun"):
+        return True
+    comp = report_json.get("complianceSummary") or {}
+    return int(comp.get("totalHits") or 0) > 0 or int(comp.get("confirmedHits") or 0) > 0
 
 COMPLIANCE_RISK_TYPES = (
     "SANCTIONS",
@@ -818,6 +845,7 @@ def _region_block(
         },
         "images": {
             "total": r.get("imagesTotal", 0),
+            "selected": r.get("imagesSelected", len(r.get("topImages", []) or [])),
             "negative": r.get("imagesNegative", 0),
             "items": [
                 {
@@ -827,6 +855,7 @@ def _region_block(
                     "thumbnailBase64": i.get("thumbnailBase64"),
                     "identityDecision": i.get("identityDecision") or "",
                     "hasThumbnail": bool(i.get("thumbnailBase64")),
+                    "subjectMatched": str(i.get("identityDecision") or "") in ("EXACT_SUBJECT", "LIKELY_SUBJECT"),
                 }
                 for i in (r.get("topImages", []) or [])[:9]
             ],
@@ -834,9 +863,25 @@ def _region_block(
         },
         "videos": {
             "total": r.get("videosTotal", 0),
+            "selected": r.get("videosSelected", len(r.get("topVideos", []) or [])),
             "negative": r.get("videosNegative", 0),
+            "selectionNote": str(r.get("videoSelectionNote") or ""),
             "items": [
-                {"title": truncate(v.get("title"), 50), "source": domain(v.get("url"))}
+                {
+                    "title": truncate(v.get("title"), 50),
+                    "source": v.get("source") or domain(v.get("url")),
+                    "url": v.get("url") or "",
+                    "identityDecision": v.get("identityDecision") or "",
+                    "selectionReason": (
+                        "exact subject"
+                        if str(v.get("identityDecision") or "") == "EXACT_SUBJECT"
+                        else "likely subject"
+                        if str(v.get("identityDecision") or "") == "LIKELY_SUBJECT"
+                        else "manual include"
+                        if str(v.get("reportEligibility") or "") == "CLIENT_INCLUDE"
+                        else "selected"
+                    ),
+                }
                 for v in (r.get("topVideos", []) or [])[:10]
             ],
         },
@@ -863,10 +908,24 @@ def _region_block(
                 "title": truncate(e.get("title"), 55),
                 "domain": domain(e.get("domain")),
                 "provider": str(e.get("provider", "")),
-                "classification": str(e.get("classification", "")),
+                "classification": str(e.get("classification") or e.get("class") or ""),
+                "type": str(e.get("type", "ORGANIC")),
+                "identity": str(e.get("identity") or ""),
+                "review": str(e.get("review") or ""),
+                "link": str(e.get("link") or ""),
             }
-            for e in (r.get("evidenceAppendix", []) or [])[:15]
+            for e in (r.get("evidenceAppendix", []) or [])[:20]
         ],
+        "excludedAppendix": [
+            {
+                "title": truncate(e.get("title"), 55),
+                "domain": domain(e.get("domain")),
+                "reason": str(e.get("reason", "")),
+                "identityDecision": str(e.get("identityDecision", "")),
+            }
+            for e in (r.get("excludedAppendix", []) or [])[:20]
+        ],
+        "noIntlSubjectResults": bool(r.get("noIntlSubjectResults")),
     }
 
 
@@ -888,8 +947,31 @@ def build_view_model_v2(report_json: dict) -> tuple[dict, list[str]]:
         }
         for f in ((audit.get("riskSummary", {}) or {}).get("topFindings", []) or [])
     ]
-    search_findings = [f for f in top_findings if f["theme"] not in COMPLIANCE_THEMES]
-    compliance_findings = [f for f in top_findings if f["theme"] in COMPLIANCE_THEMES]
+    selected = _selected_evidence_meta(report_json)
+    if selected.get("riskFindings"):
+        top_findings = [
+            {
+                "severity": risk_level(f.get("severity")),
+                "theme": str(f.get("theme", "")),
+                "title": truncate(f.get("title"), 70),
+                "reviewStatus": str(f.get("reviewStatus", "PENDING")),
+                "evidenceCount": f.get("evidenceCount", 0),
+            }
+            for f in (selected.get("riskFindings", {}).get("selectedSubjectMatchedOnly") or [])
+        ]
+    compliance_active = _compliance_evidence_active(report_json)
+    search_findings = [
+        f
+        for f in top_findings
+        if f["theme"].lower() not in COMPLIANCE_THEMES and not _compliance_stale_title(f.get("title", ""))
+    ]
+    if compliance_active:
+        compliance_findings = [f for f in top_findings if f["theme"].lower() in COMPLIANCE_THEMES]
+    else:
+        compliance_findings = []
+        search_findings = [
+            f for f in search_findings if not _compliance_stale_title(f.get("title", ""))
+        ]
 
     wiki = base["wikipedia"]
     recommended = base["recommendedActions"]
@@ -929,7 +1011,11 @@ def build_view_model_v2(report_json: dict) -> tuple[dict, list[str]]:
 
     final_conclusion = {
         "overallRiskLevel": base["cover"]["overallRiskLevel"],
-        "topThemes": base["riskMatrix"].get("topThemes", []),
+        "topThemes": [
+            t
+            for t in base["riskMatrix"].get("topThemes", [])
+            if compliance_active or str(t.get("theme", "")).lower() not in COMPLIANCE_THEMES
+        ],
         "recommendedActions": recommended,
         "warnings": base["dataQuality"]["warnings"],
         "missingSections": base["dataQuality"]["missingSections"],
@@ -952,7 +1038,7 @@ def build_view_model_v2(report_json: dict) -> tuple[dict, list[str]]:
         "dataQualityWarning": (base["dataQuality"]["warnings"] or [""])[0],
     }
 
-    risk_matrix = _build_risk_matrix_rows(base, ru, intl, wiki)
+    risk_matrix = _build_risk_matrix_rows(base, ru, intl, wiki, compliance_active=compliance_active)
 
     vm = {
         "report_language": lang,
@@ -1192,10 +1278,17 @@ def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[
     return vm, warnings
 
 
-def _build_risk_matrix_rows(base: dict, ru: dict, intl: dict, wiki: dict) -> dict:
+def _build_risk_matrix_rows(base: dict, ru: dict, intl: dict, wiki: dict, compliance_active: bool = True) -> dict:
     cdb = base["complianceDatabases"]
     L = base["labels"]
     uae_share = intl["summary"].get("organicNegativeShare", "0%") if intl["present"] else L["rm_no_data"]
+    sanctions_level = "LOW"
+    if compliance_active:
+        sanctions_level = (
+            "CRITICAL"
+            if cdb["sanctionsMatches"] > 0
+            else ("HIGH" if cdb["pepMatches"] + cdb["rcaMatches"] > 0 else "LOW")
+        )
     rows = [
         {
             "area": L["area_search_profile"],
@@ -1218,15 +1311,15 @@ def _build_risk_matrix_rows(base: dict, ru: dict, intl: dict, wiki: dict) -> dic
             "problems": L["rm_problems_sanctions"].format(
                 s=cdb["sanctionsMatches"], p=cdb["pepMatches"], r=cdb["rcaMatches"]
             ),
-            "level": "CRITICAL" if cdb["sanctionsMatches"] > 0 else ("HIGH" if cdb["pepMatches"] + cdb["rcaMatches"] > 0 else "LOW"),
+            "level": sanctions_level,
             "consequences": L["cons_compliance"],
         },
         {
             "area": L["area_intl_compliance"],
             "problems": L["rm_problems_intl"].format(
-                a=cdb["activeMatches"], n=len(cdb["providersChecked"])
+                a=cdb["activeMatches"] if compliance_active else 0, n=len(cdb["providersChecked"])
             ),
-            "level": "HIGH" if cdb["activeMatches"] > 0 else ("LOW" if cdb["providersChecked"] else "UNKNOWN"),
+            "level": "HIGH" if compliance_active and cdb["activeMatches"] > 0 else ("LOW" if cdb["providersChecked"] else "UNKNOWN"),
             "consequences": L["cons_edd"],
         },
         {

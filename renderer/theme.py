@@ -617,3 +617,43 @@ def image_grid(
 
     rows = (len(picked) + cols - 1) // cols
     return Emu(y0 + rows * row_stride + 80000)
+
+
+def video_cards(
+    slide,
+    top: Emu,
+    items: list[dict[str, Any]],
+    link_label: str = "Open source",
+    *,
+    max_items: int = 8,
+) -> Emu:
+    """O5.4 — video cards with clickable hyperlinks."""
+    picked = items[:max_items]
+    if not picked:
+        return top
+
+    card_h = 720000
+    gap = int(GUTTER)
+    y = int(top)
+    for item in picked:
+        title = truncate(item.get("title"), 70)
+        url = str(item.get("url") or "")
+        domain_txt = truncate(item.get("source") or url, 48)
+        reason = str(item.get("selectionReason") or item.get("identityDecision") or "")
+        lines = [f"{domain_txt}"]
+        if reason:
+            lines.append(reason)
+        card_bottom = card(slide, T.MARGIN, Emu(y), T.CONTENT_W, Emu(card_h), title, lines)
+        if url.startswith("http"):
+            link_box = textbox(slide, MARGIN, card_bottom, CONTENT_W, Emu(280000))
+            tf = link_box.text_frame
+            p = tf.paragraphs[0]
+            run = p.add_run()
+            run.text = link_label
+            run.font.size = Pt(FS_NOTE)
+            run.font.color.rgb = ACCENT
+            run.font.underline = True
+            run.hyperlink.address = url
+            card_bottom = Emu(int(card_bottom) + 300000)
+        y = int(card_bottom) + gap
+    return Emu(y)

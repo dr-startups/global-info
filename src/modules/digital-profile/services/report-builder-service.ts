@@ -25,10 +25,13 @@ import { buildComplianceSummaryBlock } from "../compliance-providers";
 import { buildOfferConfig } from "../report/offer-config";
 import {
   buildSearchSurfacesReportBlock,
-  regionBlockToAuditRegion,
 } from "../report/search-surfaces-report-builder";
 import { buildCaseEvidenceQuality } from "../evidence-quality/case-service";
 import { capOverallRiskFromQuality } from "../evidence-quality/build-summary";
+import {
+  buildSelectedEvidenceReportVm,
+  patchAuditSummaryWithSelectedEvidence,
+} from "../report/selected-evidence-report-vm";
 import {
   createInternalHygieneWarning,
   filterComplianceForReport,
@@ -574,23 +577,6 @@ export async function buildReportJson(
     searchSurfaces = await buildSearchSurfacesReportBlock(caseId, {
       includeDemo: policy.includeDemoData,
     });
-    if (auditSummary && searchSurfaces) {
-      const mergedRegions = [];
-      for (const [code, block] of [
-        ["RU", searchSurfaces.regions.ru],
-        ["UAE", searchSurfaces.regions.uae],
-        ["INTERNATIONAL", searchSurfaces.regions.international],
-      ] as const) {
-        const mapped = regionBlockToAuditRegion(block);
-        if (mapped) mergedRegions.push({ ...mapped, region: code });
-      }
-      if (mergedRegions.length > 0) {
-        auditSummary = {
-          ...auditSummary,
-          regions: mergedRegions as typeof auditSummary.regions,
-        };
-      }
-    }
   } catch {
     searchSurfaces = undefined;
   }
@@ -612,6 +598,21 @@ export async function buildReportJson(
     }
   } catch {
     evidenceQuality = undefined;
+  }
+
+  // Stage O5.4 — central selected evidence VM; renderer must not read raw rows.
+  let selectedEvidence: ReportJson["selectedEvidence"];
+  if (searchSurfaces) {
+    selectedEvidence = buildSelectedEvidenceReportVm({
+      searchSurfaces,
+      reportAudience: "INTERNAL",
+      riskSummary,
+      complianceSummary,
+      evidenceQuality,
+    });
+    if (auditSummary) {
+      auditSummary = patchAuditSummaryWithSelectedEvidence(auditSummary, selectedEvidence);
+    }
   }
 
   return {
@@ -638,6 +639,7 @@ export async function buildReportJson(
     complianceSummary,
     searchSurfaces,
     evidenceQuality,
+    selectedEvidence,
   };
 }
 

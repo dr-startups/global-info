@@ -363,6 +363,7 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
     serpSnapshot?: { metadata?: Record<string, unknown> };
     searchSurfaces?: Record<string, unknown>;
     evidenceQuality?: Record<string, unknown>;
+    selectedEvidence?: Record<string, unknown>;
   };
 
   if (copy.meta) {
@@ -399,6 +400,20 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
   }
 
   copy.evidenceQuality = sanitizeEvidenceQualityForClient(copy.evidenceQuality);
+
+  if (copy.selectedEvidence && typeof copy.selectedEvidence === "object") {
+    const se = copy.selectedEvidence as Record<string, unknown>;
+    copy.selectedEvidence = {
+      metrics: se.metrics,
+      images: se.images,
+      videos: se.videos,
+      appendix: {
+        confirmedSubjectEvidence: (se.appendix as Record<string, unknown> | undefined)
+          ?.confirmedSubjectEvidence,
+      },
+      compliance: se.compliance,
+    };
+  }
 
   return stripForbiddenKeysDeep(copy, CLIENT_FORBIDDEN_JSON_KEYS) as T;
 }

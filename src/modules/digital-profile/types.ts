@@ -384,6 +384,8 @@ export interface ReportJson {
   searchSurfaces?: import("./report/search-surfaces-report-builder").SearchSurfacesReportBlock;
   /** Stage O5 — evidence quality gate summary (additive). */
   evidenceQuality?: import("./evidence-quality/types").EvidenceQualitySummary;
+  /** Stage O5.4 — selected evidence VM for renderer enforcement. */
+  selectedEvidence?: import("./report/selected-evidence-report-vm").SelectedEvidenceReportVm;
 }
 
 /** Stage S1 — minimal SERP snapshot reference embedded in report_json. */

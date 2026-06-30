@@ -74,6 +74,8 @@ export interface SurfaceBucketSummary {
   exposureDisclaimer?: string;
   /** O5.3 — internal image selection stats. */
   imageSelectionNote?: string;
+  /** O5.4 — excluded namesakes/noise (internal appendix only). */
+  excludedItems?: SurfaceReportItem[];
 }
 
 export interface RegionSearchSurfacesBlock {
@@ -347,8 +349,17 @@ async function bucketFromGatedRows(
     subjectFullName
   ).items;
 
-  const selected = selectEvidenceForReport(gated, "INTERNAL").selected;
-  const picked = pickBestRepresentatives(selected, limit);
+  const selection = selectEvidenceForReport(gated, "INTERNAL");
+  const picked = pickBestRepresentatives(selection.selected, limit);
+
+  const excludedItems = selection.excluded
+    .filter((r) =>
+      ["NAMESAKE", "ENTITY_MISMATCH", "INSUFFICIENT_MATCH"].includes(
+        r.quality.identityDecision ?? ""
+      )
+    )
+    .slice(0, 25)
+    .map((r, idx) => mapGatedToReportItem(r, idx));
 
   if (options.fetchThumbnails && options.caseId && surfaceType === "IMAGE_RESULT") {
     for (const r of picked) {
@@ -397,6 +408,7 @@ async function bucketFromGatedRows(
       statusMessage: "Data collected.",
       items: picked.map(mapGatedToReportItem),
       qualityStats,
+      excludedItems,
     };
   }
   if (regionStatus === "COLLECTED") {
@@ -871,29 +883,97 @@ function regionHasEvidence(block: RegionSearchSurfacesBlock): boolean {
 }
 
 /** Maps searchSurfaces region block onto auditSummary-compatible region dict. */
+export interface RegionAuditMapOptions {
+  audience?: "CLIENT" | "INTERNAL";
+  confirmedAppendix?: Array<{
+    title: string;
+    domain: string;
+    type?: string;
+    identity?: string;
+    class?: string;
+    review?: string;
+    link?: string;
+    provider?: string;
+    classification?: string;
+  }>;
+  excludedAppendix?: Array<{
+    title: string;
+    domain: string;
+    reason: string;
+    identityDecision: string;
+  }>;
+  organicSelected?: SurfaceReportItem[];
+  imagesSelected?: SurfaceReportItem[];
+  videosSelected?: SurfaceReportItem[];
+}
+
 export function regionBlockToAuditRegion(
-  block: RegionSearchSurfacesBlock
+  block: RegionSearchSurfacesBlock,
+  options: RegionAuditMapOptions = {}
 ): Record<string, unknown> | null {
   if (block.collectionStatus !== "COLLECTED" && !regionHasEvidence(block)) {
     return null;
   }
+
+  const organicItems = options.organicSelected ?? block.organic.items;
+  const imageItems = options.imagesSelected ?? block.images.items;
+  const videoItems = options.videosSelected ?? block.videos.items;
+
+  const imagesCollected = block.images.qualityStats?.totalCollected ?? block.images.total;
+  const imagesSelectedCount = imageItems.length;
+  const videosCollected = block.videos.qualityStats?.totalCollected ?? block.videos.total;
+  const videosSelectedCount = videoItems.length;
+
+  const imageSelectionNote =
+    block.images.imageSelectionNote ??
+    (imagesCollected > 0
+      ? `Collected images: ${imagesCollected}; subject-matched: ${imagesSelectedCount}; excluded: ${Math.max(0, imagesCollected - imagesSelectedCount)}.`
+      : null);
+
+  const videoSelectionNote =
+    videosCollected > 0
+      ? `Collected videos: ${videosCollected}; subject-matched: ${videosSelectedCount}; excluded: ${Math.max(0, videosCollected - videosSelectedCount)}.`
+      : null;
+
+  const confirmedAppendix =
+    options.confirmedAppendix ??
+    organicItems.slice(0, 15).map((i) => ({
+      title: i.title,
+      domain: i.domain ?? "",
+      provider: "GOOGLE",
+      classification: i.classification ?? "",
+      type: "ORGANIC",
+      identity: i.identityDecision ?? "",
+      class: i.classification ?? "",
+      review: i.reportEligibility ?? "",
+      link: i.sourcePageUrl ?? i.url ?? "",
+    }));
+
   return {
     region: block.region,
     language: block.language,
-    organicTotal: block.organic.total,
-    organicNegative: block.organic.adverse,
+    organicTotal: block.organic.qualityStats?.totalCollected ?? block.organic.total,
+    organicNegative: organicItems.filter((i) =>
+      isNegativeOrganic(i.classification, null, null, i.title, i.snippet)
+    ).length,
     organicNegativeShare:
-      block.organic.total > 0 ? block.organic.adverse / block.organic.total : 0,
+      organicItems.length > 0
+        ? organicItems.filter((i) =>
+            isNegativeOrganic(i.classification, null, null, i.title, i.snippet)
+          ).length / organicItems.length
+        : 0,
     uniqueNegativeUrls: block.summary.uniqueAdverseUrls,
     totalUniqueUrls: block.summary.uniqueUrls,
     suggestionsTotal: block.suggestions.total,
     suggestionsNegative: block.suggestions.adverse,
     relatedQueriesTotal: block.relatedQueries.total,
     relatedQueriesNegative: block.relatedQueries.adverse,
-    imagesTotal: block.images.total,
-    imagesNegative: block.images.adverse,
-    videosTotal: block.videos.total,
-    videosNegative: block.videos.adverse,
+    imagesTotal: imagesCollected,
+    imagesSelected: imagesSelectedCount,
+    imagesNegative: imageItems.filter((i) => isAdverseSurface(i.classification)).length,
+    videosTotal: videosCollected,
+    videosSelected: videosSelectedCount,
+    videosNegative: videoItems.filter((i) => isAdverseSurface(i.classification)).length,
     knowledgeBlockStatus:
       block.knowledgePanel.total > 0
         ? block.knowledgePanel.items.some((i) => i.classification === "ENTITY_CONFUSION")
@@ -904,19 +984,20 @@ export function regionBlockToAuditRegion(
           : "NOT_COLLECTED",
     collectionStatus: block.collectionStatus,
     statusMessage: block.statusMessage,
-    topResults: block.organic.items.slice(0, 20).map((i, idx) => ({
+    topResults: organicItems.slice(0, 20).map((i, idx) => ({
       provider: "GOOGLE",
       rank: i.rank ?? idx + 1,
       domain: i.domain ?? "",
       title: i.title,
       classification: i.classification,
+      identityDecision: i.identityDecision ?? null,
     })),
     topSuggestions: block.suggestions.items.map((i) => i.title),
     suggestionGroups: block.suggestions.suggestionGroups ?? [],
     exposureDisclaimer: block.suggestions.exposureDisclaimer ?? null,
     topRelatedQueries: block.relatedQueries.items.map((i) => i.title),
     relatedSuggestionGroups: block.relatedQueries.suggestionGroups ?? [],
-    topImages: block.images.items.map((i) => ({
+    topImages: imageItems.map((i) => ({
       title: i.title,
       url: i.thumbnailUrl ?? i.url,
       source: i.domain ?? "",
@@ -925,23 +1006,22 @@ export function regionBlockToAuditRegion(
       thumbnailStatus: i.thumbnailStatus ?? null,
       sourcePageUrl: i.sourcePageUrl ?? i.url,
     })),
-    imageSelectionNote: block.images.imageSelectionNote ?? null,
-    topVideos: block.videos.items.map((i) => ({
+    imageSelectionNote,
+    videoSelectionNote,
+    topVideos: videoItems.map((i) => ({
       title: i.title,
-      url: i.thumbnailUrl ?? i.url,
+      url: i.sourcePageUrl ?? i.url ?? "",
+      source: i.domain ?? "",
+      thumbnailUrl: i.thumbnailUrl,
+      identityDecision: i.identityDecision ?? null,
+      reportEligibility: i.reportEligibility ?? null,
     })),
     topThemes: block.summary.topAdverseThemes.map((t) => ({ theme: t.theme, count: t.count })),
     topNegativeDomains: block.summary.topAdverseDomains.map((d) => d.domain),
-    topNegativeUrls: block.organic.items
-      .filter((i) => {
-        const q = evaluateEvidenceItem({
-          surfaceType: "SEARCH_RESULT",
-          title: i.title,
-          classification: i.classification,
-          subjectFullName: null,
-        });
-        return q.isAdverseForReport;
-      })
+    topNegativeUrls: organicItems
+      .filter((i) =>
+        isNegativeOrganic(i.classification, null, null, i.title, i.snippet)
+      )
       .slice(0, 10)
       .map((i) => ({
         title: i.title,
@@ -951,9 +1031,15 @@ export function regionBlockToAuditRegion(
     regionConclusion:
       block.collectionStatus === "NOT_QUERIED" || block.collectionStatus === "NOT_CONFIGURED"
         ? block.statusMessage
-        : block.organic.adverse > 0
-          ? `Adverse organic content detected (${block.organic.adverse}/${block.organic.total}).`
-          : "No adverse organic content in collected results.",
+        : block.region !== "RU" &&
+            organicItems.length === 0 &&
+            imageItems.length === 0 &&
+            videoItems.length === 0 &&
+            block.collectionStatus === "COLLECTED"
+          ? "No international subject-matched results in collected data."
+          : block.organic.adverse > 0
+            ? `Adverse organic content detected (${block.organic.adverse}/${block.organic.total}).`
+            : "No adverse organic content in selected subject-matched results.",
     regionRiskLevel:
       block.collectionStatus !== "COLLECTED" && block.organic.total === 0
         ? "UNKNOWN"
@@ -962,5 +1048,7 @@ export function regionBlockToAuditRegion(
           : block.summary.adversePercentage >= 10
             ? "MEDIUM"
             : "LOW",
+    evidenceAppendix: confirmedAppendix,
+    excludedAppendix: options.excludedAppendix ?? [],
   };
 }
