@@ -21,6 +21,7 @@ import {
   verifySignedToken,
 } from "../storage/signed-url";
 import { loadFile, saveFile } from "../storage/private-store";
+import { fetchImageThumbnail } from "../evidence-quality/image-thumbnail-service";
 import { buildStorageKey } from "../storage/keys";
 import { buildAuditSummary } from "../audit-summary/builder";
 import { buildComplianceSummaryBlock } from "../compliance-providers";
@@ -190,6 +191,12 @@ async function localizeReportJson(
 
 type ThumbnailWirePayload = { base64: string; mimeType: string };
 
+const MIN_RENDER_THUMB_B64_LEN = 6000;
+
+function isLikelyTinyThumbnail(payload: ThumbnailWirePayload): boolean {
+  return payload.base64.length < MIN_RENDER_THUMB_B64_LEN;
+}
+
 function mimeTypeForThumbnailKey(storageKey: string): string {
   const lower = storageKey.toLowerCase();
   if (lower.endsWith(".png")) return "image/png";
@@ -215,7 +222,8 @@ function applyThumbnailWireFields(
  * in stored report_json or exposed on client GET /report.
  */
 async function attachSelectedImageThumbnailBytes(
-  reportJson: ReportJson
+  reportJson: ReportJson,
+  caseId: string
 ): Promise<{ json: ReportJson; warnings: string[] }> {
   const warnings: string[] = [];
   const next = JSON.parse(JSON.stringify(reportJson)) as ReportJson & {
@@ -258,8 +266,27 @@ async function attachSelectedImageThumbnailBytes(
   ): Promise<void> {
     if (!item) return;
     const key = item.thumbnailStorageKey;
-    if (typeof key !== "string" || !key.trim()) return;
-    const payload = await resolveThumbnail(key, label);
+    let payload: ThumbnailWirePayload | null = null;
+    if (typeof key === "string" && key.trim()) {
+      payload = await resolveThumbnail(key, label);
+    }
+    if (payload && !isLikelyTinyThumbnail(payload)) {
+      applyThumbnailWireFields(item, payload);
+      return;
+    }
+    const imageUrl = String(
+      item.imageUrl ?? item.thumbnailUrl ?? item.url ?? ""
+    ).trim();
+    if (caseId && imageUrl.startsWith("http")) {
+      const fetched = await fetchImageThumbnail({ caseId, imageUrl });
+      if (fetched.storageKey) {
+        const alt = await resolveThumbnail(fetched.storageKey, label);
+        if (alt && !isLikelyTinyThumbnail(alt)) {
+          applyThumbnailWireFields(item, alt);
+          return;
+        }
+      }
+    }
     if (payload) applyThumbnailWireFields(item, payload);
   }
 
@@ -456,7 +483,7 @@ export async function renderReportVersion(
   // only on the wire (not persisted in the stored report_json, which stays
   // lightweight). If the image is unreadable the renderer falls back + warns.
   const { json: withThumbnails, warnings: thumbnailWarnings } =
-    await attachSelectedImageThumbnailBytes(audienceReportJson);
+    await attachSelectedImageThumbnailBytes(audienceReportJson, caseId);
   const renderPayloadWarnings: string[] = [...thumbnailWarnings];
   assertRenderPayloadUsesSelectedEvidence(withThumbnails, renderPayloadWarnings);
   const renderReportJson = await attachSerpSnapshotImage(withThumbnails);

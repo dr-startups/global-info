@@ -85,6 +85,8 @@ CONTENT_W = Emu(int(SLIDE_W) - 2 * int(MARGIN))
 CONTENT_TOP = Emu(1310640)      # where content starts under the header
 FOOTER_Y = Emu(6492240)
 GUTTER = Emu(137160)            # ~0.15" gap between cards
+# Content must stay above footer band (0.2" above footer rule).
+CONTENT_SAFE_BOTTOM = Emu(int(FOOTER_Y) - 182880)
 
 ROUNDED_RECT = 5
 RECT = 1
@@ -236,16 +238,71 @@ def text_block_height(lines: list[str], size: int, width: Emu,
     return Emu(int(total_pt * EMU_PER_PT))
 
 
+def assert_shape_within_safe_area(
+    shape,
+    context: str,
+    warnings: list[str] | None = None,
+    *,
+    strict: bool = False,
+) -> bool:
+    """Layout guard: shape bottom must not intrude on footer/page-number band."""
+    try:
+        bottom = int(shape.top) + int(shape.height)
+    except Exception:
+        return True
+    limit = int(CONTENT_SAFE_BOTTOM)
+    ok = bottom <= limit
+    if not ok:
+        msg = f"Layout safe-area overflow ({context}): bottom={bottom} > {limit}"
+        if strict:
+            raise ValueError(msg)
+        if warnings is not None:
+            warnings.append(msg)
+    return ok
+
+
 # ---------------------------------------------------------------------------
 # Bullets
 # ---------------------------------------------------------------------------
 
-def bullets(slide, top: Emu, lines: list[str], size: int = FS_BODY, width: Emu | None = None) -> Emu:
+def bullets(
+    slide,
+    top: Emu,
+    lines: list[str],
+    size: int = FS_BODY,
+    width: Emu | None = None,
+    *,
+    max_items: int = 8,
+    bottom_limit: Emu | None = None,
+    overflow_note: str | None = None,
+    layout_warnings: list[str] | None = None,
+) -> Emu:
+    """Bounded bullet list — never draws below footer safe line."""
     lines = [l for l in lines if l]
     if not lines:
         return top
     w = width or CONTENT_W
-    rendered = [f"\u2022 {line}" for line in lines]
+    limit = int(bottom_limit or CONTENT_SAFE_BOTTOM)
+    cap = max(1, max_items)
+    overflow_tpl = overflow_note or "+ {n} more items preserved in evidence."
+    overflow_reserve = int(
+        text_block_height([overflow_tpl.format(n=99)], FS_NOTE, w, space_after_pt=0.0, pad_pt=8.0)
+    ) + int(_BLOCK_GAP)
+
+    shown: list[str] = []
+    for line in lines[:cap]:
+        trial = shown + [line]
+        rendered = [f"\u2022 {x}" for x in trial]
+        h = text_block_height(rendered, size, w)
+        need_overflow = len(lines) > len(trial)
+        reserve = overflow_reserve if need_overflow else 0
+        if int(top) + int(h) + reserve > limit:
+            break
+        shown.append(line)
+    if not shown:
+        shown = [lines[0]]
+
+    rendered = [f"\u2022 {line}" for line in shown]
     h = text_block_height(rendered, size, w)
     box = textbox(slide, MARGIN, top, w, h)
     tf = box.text_frame
@@ -253,7 +310,12 @@ def bullets(slide, top: Emu, lines: list[str], size: int = FS_BODY, width: Emu |
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
         _run(p, line, size, NEUTRAL_DARK)
         p.space_after = Pt(5)
-    return Emu(int(top) + int(h) + int(_BLOCK_GAP))
+    bottom = Emu(int(top) + int(h) + int(_BLOCK_GAP))
+    assert_shape_within_safe_area(box, "bullets", layout_warnings)
+    remaining = len(lines) - len(shown)
+    if remaining > 0:
+        bottom = note(slide, bottom, overflow_tpl.format(n=remaining), "info")
+    return bottom
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +397,7 @@ def polished_table(slide, top: Emu, columns: list[str], rows: list[list[Any]], *
 # Cards / metrics
 # ---------------------------------------------------------------------------
 
-def card(slide, x: Emu, y: Emu, w: Emu, h: Emu, title: str, lines: list[str], tone: RGBColor = ACCENT):
+def card(slide, x: Emu, y: Emu, w: Emu, h: Emu, title: str, lines: list[str], tone: RGBColor = ACCENT) -> Emu:
     shape = slide.shapes.add_shape(ROUNDED_RECT, x, y, w, h)
     shape.fill.solid()
     shape.fill.fore_color.rgb = BG_PANEL
@@ -355,6 +417,7 @@ def card(slide, x: Emu, y: Emu, w: Emu, h: Emu, title: str, lines: list[str], to
         p = tf.add_paragraph() if (title or i > 0) else tf.paragraphs[0]
         _run(p, line, FS_BODY - 2, NEUTRAL_DARK)
         p.space_after = Pt(2)
+    return Emu(int(y) + int(h) + int(_BLOCK_GAP))
 
 
 def metric_cards(slide, top: Emu, cards: list[dict], per_row: int = 4) -> Emu:
@@ -493,6 +556,29 @@ def _cell_color(val: str) -> RGBColor | None:
     return None
 
 
+TABLE_ROW_H = 335280
+TABLE_NOTE_GAP = 140000
+
+
+def _table_footnote(total: int, shown: int, note_text: str | None) -> str | None:
+    if total > shown:
+        base = _SHOWING_TOP.format(n=shown, total=total)
+        return f"{base} {note_text}".strip() if note_text else base
+    return note_text
+
+
+def _table_footnote_height(label: str | None) -> int:
+    if not label:
+        return 0
+    return int(text_block_height([f"Source: {label}"], FS_NOTE, CONTENT_W, space_after_pt=0.0, pad_pt=10.0)) + TABLE_NOTE_GAP
+
+
+def _max_table_data_rows(top: Emu, footnote: str | None) -> int:
+    reserve = _table_footnote_height(footnote)
+    avail = max(0, int(CONTENT_SAFE_BOTTOM) - int(top) - reserve)
+    return max(1, avail // TABLE_ROW_H - 1)
+
+
 def table(
     slide,
     top: Emu,
@@ -501,12 +587,18 @@ def table(
     max_rows: int = 12,
     col_widths: list[float] | None = None,
     note_text: str | None = None,
+    *,
+    layout_warnings: list[str] | None = None,
 ) -> Emu:
+    """Safe-area table: rows paginated; source note always below table, never overlapping."""
     total = len(rows)
-    rows = rows[:max_rows]
+    footnote = _table_footnote(total, min(total, max_rows), note_text)
+    space_rows = _max_table_data_rows(top, footnote)
+    shown_count = min(total, max_rows, space_rows)
+    rows = rows[:shown_count]
     n_rows = len(rows) + 1
     n_cols = max(1, len(columns))
-    height = Emu(min(335280 * n_rows, 4200000))
+    height = Emu(TABLE_ROW_H * n_rows)
     graphic = slide.shapes.add_table(n_rows, n_cols, MARGIN, top, CONTENT_W, height)
     tbl = graphic.table
 
@@ -543,17 +635,15 @@ def table(
                 cell.fill.solid()
                 cell.fill.fore_color.rgb = TABLE_ZEBRA
 
-    bottom = Emu(int(top) + int(height) + 140000)
-    label = note_text
-    if total > max_rows:
-        label = _SHOWING_TOP.format(n=max_rows, total=total) + (f" {note_text}" if note_text else "")
+    assert_shape_within_safe_area(graphic, "table", layout_warnings)
+    bottom = Emu(int(top) + int(height) + TABLE_NOTE_GAP)
+    label = _table_footnote(total, shown_count, note_text)
     if label:
         bottom = note(slide, bottom, label, "source")
     return bottom
 
 
-# O5.4.2 — content must stay above footer safe line (0.2" above footer rule).
-CONTENT_SAFE_BOTTOM = Emu(int(FOOTER_Y) - 182880)
+# O5.4.2 / v16 — media card layout constants.
 CARD_PAD = Emu(91440)  # ~0.1"
 # Vertical gaps between fixed caption zones inside media cards (~8 px).
 CARD_ZONE_GAP = Emu(101600)
@@ -564,29 +654,16 @@ VID_TITLE_ZONE_H = Emu(139700)   # 1 title line (compact)
 VID_DOMAIN_ZONE_H = Emu(127000)
 VID_BADGE_ZONE_H = Emu(127000)
 VID_BUTTON_ZONE_H = Emu(165100)
-
-
-def assert_shape_within_safe_area(
-    shape,
-    context: str,
-    warnings: list[str] | None = None,
-    *,
-    strict: bool = False,
-) -> bool:
-    """Layout guard: shape bottom must not intrude on footer/page-number band."""
-    try:
-        bottom = int(shape.top) + int(shape.height)
-    except Exception:
-        return True
-    limit = int(CONTENT_SAFE_BOTTOM)
-    ok = bottom <= limit
-    if not ok:
-        msg = f"Layout safe-area overflow ({context}): bottom={bottom} > {limit}"
-        if strict:
-            raise ValueError(msg)
-        if warnings is not None:
-            warnings.append(msg)
-    return ok
+IMAGE_AREA_FRAC = 0.60
+MIN_IMAGE_VISUAL_EMU = 1333350  # ~140px at 96dpi on 10" slide width
+# Gallery acceptance (~96 dpi on 10" slide): min 120px tall × 160px wide visible crop.
+MIN_GALLERY_IMG_H = 1143000
+MIN_GALLERY_IMG_W = 1524000
+MIN_GALLERY_CARD_IMG_FRAC = 0.55
+GAL_TITLE_ZONE_H = 139700   # 1 title line
+GAL_DOMAIN_ZONE_H = 114300
+GAL_BADGE_ZONE_H = 114300
+MIN_THUMB_B64_LEN = 2000
 
 
 def short_display_url(url: str, max_len: int = 38) -> str:
@@ -600,6 +677,33 @@ def short_display_url(url: str, max_len: int = 38) -> str:
         return truncate(display or url, max_len)
     except Exception:
         return truncate(url, max_len)
+
+
+def _fit_picture_cover(slide, stream, box_left: int, box_top: int, box_w: int, box_h: int):
+    """Cover-crop image into box; preserve aspect ratio; center; clip to box."""
+    if hasattr(stream, "seek"):
+        stream.seek(0)
+    pic = slide.shapes.add_picture(stream, box_left, box_top)
+    scale = max(box_w / max(pic.width, 1), box_h / max(pic.height, 1))
+    sw = int(pic.width * scale)
+    sh = int(pic.height * scale)
+    pic.width = sw
+    pic.height = sh
+    pic.left = box_left + (box_w - sw) // 2
+    pic.top = box_top + (box_h - sh) // 2
+    if sw > box_w:
+        crop = (sw - box_w) / max(sw, 1)
+        pic.crop_left = crop / 2
+        pic.crop_right = crop / 2
+    if sh > box_h:
+        crop = (sh - box_h) / max(sh, 1)
+        pic.crop_top = crop / 2
+        pic.crop_bottom = crop / 2
+    pic.left = box_left
+    pic.top = box_top
+    pic.width = box_w
+    pic.height = box_h
+    return pic
 
 
 def _fit_picture_contain(slide, stream, box_left: int, box_top: int, box_w: int, box_h: int):
@@ -659,6 +763,18 @@ def _card_text_zone(
     return box
 
 
+def _image_bytes_from_item(item: dict[str, Any]) -> bytes | None:
+    import base64
+
+    b64 = item.get("thumbnailBytesBase64") or item.get("thumbnailBase64")
+    if not b64 or len(str(b64)) < MIN_THUMB_B64_LEN:
+        return None
+    try:
+        return base64.b64decode(b64)
+    except Exception:
+        return None
+
+
 def _image_card_caption_heights(show_identity: bool) -> tuple[int, int, int, int]:
     """Return title_h, domain_h, badge_h, caption_stack_h (incl. gaps)."""
     gap = int(CARD_ZONE_GAP)
@@ -669,6 +785,78 @@ def _image_card_caption_heights(show_identity: bool) -> tuple[int, int, int, int
     if show_identity:
         stack += gap + badge_h
     return title_h, domain_h, badge_h, stack
+
+
+def _gallery_caption_heights(show_identity: bool) -> tuple[int, int, int, int]:
+    """Compact caption stack for evidence gallery cards."""
+    gap = int(CARD_ZONE_GAP)
+    title_h = int(GAL_TITLE_ZONE_H)
+    domain_h = int(GAL_DOMAIN_ZONE_H)
+    badge_h = int(GAL_BADGE_ZONE_H) if show_identity else 0
+    stack = title_h + gap + domain_h
+    if show_identity:
+        stack += gap + badge_h
+    return title_h, domain_h, badge_h, stack
+
+
+def _image_card_min_height(show_identity: bool) -> int:
+    _, _, _, cap_stack = _gallery_caption_heights(show_identity)
+    pad = int(CARD_PAD)
+    gap = int(CARD_ZONE_GAP)
+    return 2 * pad + MIN_GALLERY_IMG_H + cap_stack + gap
+
+
+def _plan_image_gallery(
+    count: int,
+    top: Emu,
+    *,
+    show_identity: bool = False,
+    max_shown: int = 6,
+) -> tuple[int, int, int, int, int]:
+    """Pick cols/rows/count so each card meets minimum thumbnail height within safe area."""
+    usable = min(count, max_shown)
+    gap = int(GUTTER)
+    note_reserve = 260000 if count > max_shown else 0
+    avail_h = max(1, int(CONTENT_SAFE_BOTTOM) - int(top) - note_reserve)
+    min_card_h = _image_card_min_height(show_identity)
+    inner_min_w = MIN_GALLERY_IMG_W
+
+    for try_n in range(usable, 0, -1):
+        if try_n == 3:
+            layout_candidates = [(3, 1), (2, 2)]
+        elif try_n <= 1:
+            layout_candidates = [(1, 1)]
+        elif try_n <= 2:
+            layout_candidates = [(2, 1)]
+        elif try_n <= 4:
+            layout_candidates = [(2, 2)]
+        else:
+            layout_candidates = [(3, (try_n + 2) // 3)]
+        for cols, rows in layout_candidates:
+            max_row = (avail_h - gap * max(0, rows - 1)) // max(rows, 1)
+            if max_row < min_card_h:
+                continue
+            cell_w = (int(CONTENT_W) - gap * (cols - 1)) // cols
+            if cell_w - 2 * int(CARD_PAD) < inner_min_w:
+                continue
+            return try_n, cols, rows, cell_w, max_row
+    return 0, 0, 0, 0, 0
+
+
+def _image_gallery_geometry(
+    count: int,
+    top: Emu,
+    *,
+    show_identity: bool = False,
+    max_shown: int = 6,
+) -> tuple[int, int, int, int]:
+    """Backward-compatible wrapper — returns geometry for the best-fit plan."""
+    n, cols, rows, cell_w, row_h = _plan_image_gallery(
+        count, top, show_identity=show_identity, max_shown=max_shown,
+    )
+    if n <= 0:
+        return 2, 1, int(CONTENT_W), _image_card_min_height(show_identity)
+    return cols, rows, cell_w, row_h
 
 
 def add_image_card(
@@ -682,20 +870,24 @@ def add_image_card(
     show_identity: bool = False,
     link_label: str = "Source",
     layout_warnings: list[str] | None = None,
-) -> None:
-    """O5.4.2 — image card with fixed vertical zones (title / domain / badge)."""
-    import base64
+) -> bool:
+    """v16 — image-first card with large cover-cropped thumbnail."""
     import io
 
     ix, iy, iw, ih = int(x), int(y), int(w), int(h)
     pad = int(CARD_PAD)
     gap = int(CARD_ZONE_GAP)
     inner_w = max(1, iw - 2 * pad)
+    inner_h = max(1, ih - 2 * pad)
     inner_x = ix + pad
-    title_h, domain_h, badge_h, cap_stack = _image_card_caption_heights(show_identity)
-    cap_top = iy + ih - pad - cap_stack
+    title_h, domain_h, badge_h, cap_stack = _gallery_caption_heights(show_identity)
     img_top = iy + pad
-    img_box_h = max(1, cap_top - gap - img_top)
+    img_box_h = inner_h - cap_stack - gap
+    if img_box_h < MIN_GALLERY_IMG_H or inner_w < MIN_GALLERY_IMG_W:
+        return False
+    if img_box_h < int(inner_h * MIN_GALLERY_CARD_IMG_FRAC):
+        return False
+    cap_top = img_top + img_box_h + gap
 
     frame = slide.shapes.add_shape(ROUNDED_RECT, Emu(ix), Emu(iy), Emu(iw), Emu(ih))
     frame.fill.solid()
@@ -704,36 +896,30 @@ def add_image_card(
     frame.line.width = Pt(0.75)
     assert_shape_within_safe_area(frame, "image_card_frame", layout_warnings)
 
-    b64 = item.get("thumbnailBytesBase64") or item.get("thumbnailBase64")
-    source_url = str(item.get("sourcePageUrl") or item.get("url") or "")
+    source_url = str(item.get("sourcePageUrl") or item.get("url") or item.get("imageUrl") or "")
     domain = truncate(item.get("source") or short_display_url(source_url), 36)
     title = truncate(item.get("title"), 58)
-
-    if b64:
+    raw = _image_bytes_from_item(item)
+    pic_ok = False
+    if raw:
         try:
-            stream = io.BytesIO(base64.b64decode(b64))
-            pic = _fit_picture_contain(slide, stream, inner_x, img_top, inner_w, img_box_h)
-            assert_shape_within_safe_area(pic, "image_card_picture", layout_warnings)
+            pic = _fit_picture_cover(slide, io.BytesIO(raw), inner_x, img_top, inner_w, img_box_h)
+            pic_ok = int(pic.width) >= MIN_GALLERY_IMG_W and int(pic.height) >= MIN_GALLERY_IMG_H
+            if pic_ok:
+                assert_shape_within_safe_area(pic, "image_card_picture", layout_warnings)
+            else:
+                try:
+                    slide.shapes._spTree.remove(pic._element)
+                except Exception:
+                    pass
         except Exception:
-            ph = slide.shapes.add_shape(ROUNDED_RECT, Emu(inner_x), Emu(img_top), Emu(inner_w), Emu(img_box_h))
-            ph.fill.solid()
-            ph.fill.fore_color.rgb = BG_PANEL
-            ph.line.color.rgb = NEUTRAL_LINE
-            _card_text_zone(
-                slide, inner_x, img_top + img_box_h // 3, inner_w, img_box_h // 2,
-                "thumbnail unavailable", FS_NOTE, NEUTRAL_GRAY, italic=True,
-                layout_warnings=layout_warnings, context="image_card_placeholder",
-            )
-    else:
-        ph = slide.shapes.add_shape(ROUNDED_RECT, Emu(inner_x), Emu(img_top), Emu(inner_w), Emu(img_box_h))
-        ph.fill.solid()
-        ph.fill.fore_color.rgb = BG_PANEL
-        ph.line.color.rgb = NEUTRAL_LINE
-        _card_text_zone(
-            slide, inner_x, img_top + img_box_h // 3, inner_w, img_box_h // 2,
-            truncate(title, 40), FS_NOTE, NEUTRAL_GRAY,
-            layout_warnings=layout_warnings, context="image_card_placeholder",
-        )
+            pic_ok = False
+    if not pic_ok:
+        try:
+            slide.shapes._spTree.remove(frame._element)
+        except Exception:
+            pass
+        return False
 
     y_cursor = cap_top
     _card_text_zone(
@@ -757,6 +943,7 @@ def add_image_card(
             italic=True, word_wrap=False,
             layout_warnings=layout_warnings, context="image_card_badge",
         )
+    return True
 
 
 def add_video_card(
@@ -769,7 +956,9 @@ def add_video_card(
     link_label: str = "Open source",
     layout_warnings: list[str] | None = None,
 ) -> None:
-    """O5.4.2 — video card with fixed zones; hyperlink on button only."""
+    """v16 — video card with optional thumbnail / play placeholder."""
+    import io
+
     ix, iy, iw, ih = int(x), int(y), int(w), int(h)
     pad = int(CARD_PAD)
     gap = int(CARD_ZONE_GAP)
@@ -784,11 +973,12 @@ def add_video_card(
     btn_h = int(VID_BUTTON_ZONE_H)
     badge_h = int(VID_BADGE_ZONE_H) if has_badge else 0
     domain_h = int(VID_DOMAIN_ZONE_H)
+    thumb_h = max(360000, int((ih - 2 * pad) * 0.32))
 
     btn_top = iy + ih - pad - btn_h
     badge_top = btn_top - gap - badge_h if has_badge else btn_top
     domain_top = badge_top - gap - domain_h
-    title_top = iy + pad
+    title_top = iy + pad + thumb_h + gap
     title_h = max(90000, domain_top - gap - title_top)
 
     frame = slide.shapes.add_shape(ROUNDED_RECT, Emu(ix), Emu(iy), Emu(iw), Emu(ih))
@@ -797,6 +987,26 @@ def add_video_card(
     frame.line.color.rgb = NEUTRAL_LINE
     frame.line.width = Pt(0.75)
 
+    thumb_box = slide.shapes.add_shape(ROUNDED_RECT, Emu(inner_x), Emu(iy + pad), Emu(inner_w), Emu(thumb_h))
+    thumb_box.fill.solid()
+    thumb_box.fill.fore_color.rgb = BG_PANEL
+    thumb_box.line.color.rgb = NEUTRAL_LINE
+    raw = _image_bytes_from_item(item)
+    if raw:
+        try:
+            _fit_picture_cover(slide, io.BytesIO(raw), inner_x, iy + pad, inner_w, thumb_h)
+        except Exception:
+            _card_text_zone(
+                slide, inner_x, iy + pad + thumb_h // 3, inner_w, 120000,
+                "\u25b6", FS_SECTION_TITLE, NEUTRAL_GRAY, word_wrap=False,
+                layout_warnings=layout_warnings, context="video_card_play",
+            )
+    else:
+        _card_text_zone(
+            slide, inner_x, iy + pad + thumb_h // 3, inner_w, 120000,
+            "\u25b6", FS_SECTION_TITLE, NEUTRAL_GRAY, word_wrap=False,
+            layout_warnings=layout_warnings, context="video_card_play",
+        )
     _card_text_zone(
         slide, inner_x, title_top, inner_w, title_h,
         title, FS_NOTE, BRAND_PRIMARY, bold=True, word_wrap=False,
@@ -855,46 +1065,52 @@ def image_grid(
     labels: dict[str, str] | None = None,
     layout_warnings: list[str] | None = None,
 ) -> Emu:
-    """O5.4.2 — image evidence grid with aspect-ratio-safe cards."""
+    """v16.1 — image-first evidence gallery with minimum useful thumbnail size."""
     labels = labels or {}
-    link_label = labels.get("media_source_link", "Source")
     total = len(items)
-    picked = items[:max_items]
-    if not picked:
+    usable = [it for it in items if _image_bytes_from_item(it)]
+    skipped_bytes = total - len(usable)
+    if not usable:
+        if total > 0:
+            msg = labels.get("nd_gallery_no_usable_images", "Selected images unavailable for gallery display.")
+            return note(slide, top, msg, "info")
         return top
 
-    _, _, _, cap_stack = _image_card_caption_heights(show_identity)
-    min_row = cap_stack + 2 * int(CARD_PAD) + 400000
-    cols, rows, cell_w, row_h = _grid_geometry(
-        len(picked), top, max_shown=max_items, min_row_h=min_row, max_row_h=980000,
+    plan_n, cols, rows, cell_w, row_h = _plan_image_gallery(
+        len(usable), top, show_identity=show_identity, max_shown=max_items,
     )
-    avail_h = max(1, int(CONTENT_SAFE_BOTTOM) - int(top))
-    max_fit = (avail_h - int(GUTTER) * max(0, rows - 1)) // max(rows, 1)
-    if row_h > max_fit:
-        row_h = max_fit
+    if plan_n <= 0:
+        msg = labels.get("nd_gallery_no_usable_images", "Selected images unavailable for gallery display.")
+        return note(slide, top, msg, "info")
+
     gap = int(GUTTER)
     y0 = int(top)
+    rendered = 0
+    to_render = usable[:plan_n]
 
-    for idx, item in enumerate(picked):
+    for idx, item in enumerate(to_render):
         row, col = divmod(idx, cols)
         left = int(MARGIN) + col * (cell_w + gap)
         cell_top = y0 + row * (row_h + gap)
-        add_image_card(
-            slide,
-            Emu(left),
-            Emu(cell_top),
-            Emu(cell_w),
-            Emu(row_h),
-            item,
-            show_identity=show_identity,
-            link_label=link_label,
+        if add_image_card(
+            slide, Emu(left), Emu(cell_top), Emu(cell_w), Emu(row_h),
+            item, show_identity=show_identity,
+            link_label=labels.get("media_source_link", "Source"),
             layout_warnings=layout_warnings,
-        )
+        ):
+            rendered += 1
 
     bottom = Emu(y0 + rows * (row_h + gap))
-    if total > len(picked):
+    skipped = skipped_bytes + (len(usable) - rendered)
+    if skipped > 0:
+        tpl = labels.get("media_gallery_skipped", "{n} images skipped (thumbnail too small or unavailable).")
+        bottom = note(slide, bottom, tpl.format(n=skipped), "info")
+    if total > rendered:
         tpl = labels.get("media_showing_images", "Showing {shown} of {total} subject-matched images.")
-        bottom = note(slide, bottom, tpl.format(shown=len(picked), total=total), "info")
+        bottom = note(slide, bottom, tpl.format(shown=rendered, total=total), "info")
+    if rendered == 0:
+        msg = labels.get("nd_gallery_no_usable_images", "Selected images unavailable for gallery display.")
+        return note(slide, top, msg, "info")
     return bottom
 
 
@@ -921,13 +1137,12 @@ def video_cards(
     note_reserve = 260000 if total > max_items else 0
     avail_h = max(1, int(CONTENT_SAFE_BOTTOM) - int(top) - note_reserve)
     min_row = (
-        int(VID_TITLE_ZONE_H) + int(VID_DOMAIN_ZONE_H) + int(VID_BADGE_ZONE_H)
-        + int(VID_BUTTON_ZONE_H) + 3 * int(CARD_ZONE_GAP) + 2 * int(CARD_PAD)
+        360000 + int(VID_TITLE_ZONE_H) + int(VID_DOMAIN_ZONE_H) + int(VID_BADGE_ZONE_H)
+        + int(VID_BUTTON_ZONE_H) + 4 * int(CARD_ZONE_GAP) + 2 * int(CARD_PAD)
     )
     max_fit = (avail_h - gap * max(0, rows - 1)) // max(rows, 1)
-    row_h = min(max_fit, 980000)
-    if row_h < min_row:
-        row_h = max_fit  # always fit grid inside safe area
+    row_h = min(max_fit, 1150000)
+    row_h = max(row_h, min(min_row, max_fit))
     cell_w = (int(CONTENT_W) - gap) // cols
     y0 = int(top)
 

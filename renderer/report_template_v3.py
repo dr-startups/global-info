@@ -255,7 +255,7 @@ def _b_results(slide, top, blk, vm, ctx):
     rows = [[x["provider"], x["rank"], x["domain"], T.truncate(x["title"], 46), x["classification"]] for x in blk["topResults"]]
     if rows:
         T.table(slide, top, [L["th_provider"], L["th_rank"], L["th_domain"], L["th_title"], L["th_class"]], rows,
-                col_widths=[0.13, 0.08, 0.22, 0.37, 0.20])
+                col_widths=[0.13, 0.08, 0.22, 0.37, 0.20], layout_warnings=ctx.layout_warnings)
     else:
         T.no_data_card(slide, top, L["nd_no_organic_region"])
 
@@ -270,7 +270,8 @@ def _b_themes(slide, top, blk, vm, ctx):
     ])
     rows = [[T.truncate(u["title"], 56), u["domain"], u["classification"]] for u in t["negativeUrls"]]
     if rows:
-        T.table(slide, top, [L["th_title"], L["th_domain"], L["th_class"]], rows, col_widths=[0.5, 0.3, 0.2])
+        T.table(slide, top, [L["th_title"], L["th_domain"], L["th_class"]], rows, col_widths=[0.5, 0.3, 0.2],
+                layout_warnings=ctx.layout_warnings)
     else:
         T.no_data_card(slide, top, L["nd_no_negative_urls"])
 
@@ -364,6 +365,7 @@ def _b_suggestions(slide, top, blk, vm, ctx):
     L = vm["labels"]
     sg = blk["suggestions"]
     internal = vm.get("audience") == "internal"
+    lw = ctx.layout_warnings
     top = T.metric_cards(slide, top, [
         {"label": L["m_total"], "value": sg["total"]},
         {"label": L["m_negative"], "value": sg["negative"], "tone": T.DANGER},
@@ -371,15 +373,16 @@ def _b_suggestions(slide, top, blk, vm, ctx):
     disclaimer = sg.get("exposureDisclaimer") or L.get("autocomplete_disclaimer", "")
     if disclaimer:
         top = T.note(slide, top, disclaimer, "source")
+    overflow = L.get("bullets_overflow_note", "+ {n} more suggestions preserved in evidence.")
     groups = sg.get("groups") or []
     if groups:
         for grp in groups:
             if grp.get("label"):
                 top = T.note(slide, top, grp["label"], "section")
             if grp.get("items"):
-                top = T.bullets(slide, top, grp["items"])
+                top = T.bullets(slide, top, grp["items"], max_items=8, overflow_note=overflow, layout_warnings=lw)
     elif sg["list"]:
-        T.bullets(slide, top, sg["list"])
+        top = T.bullets(slide, top, sg["list"], max_items=8, overflow_note=overflow, layout_warnings=lw)
     else:
         T.no_data_card(slide, top, L["nd_no_suggestions"])
 
@@ -401,10 +404,18 @@ def _b_related(slide, top, blk, vm, ctx):
                 parts.append(f"{sub.get('label', key)} ({sr.get('total', 0)}):")
                 parts.extend(sr.get("list") or [])
         if parts:
-            T.bullets(slide, top, parts)
+            top = T.bullets(
+                slide, top, parts, max_items=8,
+                overflow_note=L.get("bullets_overflow_note", "+ {n} more items preserved in evidence."),
+                layout_warnings=ctx.layout_warnings,
+            )
             return
     if rq["list"]:
-        T.bullets(slide, top, rq["list"])
+        top = T.bullets(
+            slide, top, rq["list"], max_items=8,
+            overflow_note=L.get("bullets_overflow_note", "+ {n} more items preserved in evidence."),
+            layout_warnings=ctx.layout_warnings,
+        )
     elif str(rq.get("collectionStatus", "")).upper() == "COLLECTED":
         T.no_data_card(slide, top, L.get("nd_none_found_related", L["nd_no_related"]))
     elif str(rq.get("collectionStatus", "")).upper() in ("NOT_QUERIED", "NOT_CONFIGURED", "NOT_SUPPORTED"):
@@ -580,13 +591,11 @@ def _b_evidence(slide, top, blk, vm, ctx):
         top = T.note(slide, top, L.get("appendix_confirmed_title", "Confirmed / likely subject evidence"), "info")
         rows = [
             [
-                T.truncate(e["title"], 40),
+                T.truncate(e["title"], 48),
                 e["domain"],
-                e.get("type", ""),
                 e.get("identity", ""),
-                e.get("classification", e.get("class", "")),
-                e.get("review", ""),
-                T.truncate(e.get("link", ""), 36),
+                e.get("review", e.get("classification", "")),
+                T.truncate(e.get("link", ""), 32),
             ]
             for e in confirmed
         ]
@@ -594,16 +603,16 @@ def _b_evidence(slide, top, blk, vm, ctx):
             slide,
             top,
             [
-                L.get("th_evidence", "Evidence"),
+                L.get("th_evidence", "Material"),
                 L["th_domain"],
-                L.get("th_type", "Type"),
                 L.get("th_identity", "Identity"),
-                L["th_class"],
                 L.get("th_review", "Review"),
                 L.get("th_link", "Link"),
             ],
             rows,
-            col_widths=[0.22, 0.14, 0.08, 0.12, 0.12, 0.12, 0.20],
+            col_widths=[0.30, 0.16, 0.14, 0.14, 0.26],
+            max_rows=10,
+            layout_warnings=ctx.layout_warnings,
         )
     else:
         top = T.no_data_card(slide, top, L.get("nd_no_confirmed_evidence", L["nd_no_evidence_region"]))
@@ -624,6 +633,8 @@ def _b_evidence(slide, top, blk, vm, ctx):
             ],
             ex_rows,
             col_widths=[0.36, 0.18, 0.24, 0.22],
+            max_rows=8,
+            layout_warnings=ctx.layout_warnings,
         )
 
 
@@ -707,7 +718,7 @@ def _p_compliance_review_quality(prs, vm, ctx):
         warnings.append(f"{L['warn_provider_not_queried']} ({', '.join(not_configured[:4])})")
     if not warnings:
         warnings = [L["dq_coverage_adequate"], L["warn_not_legal"]]
-    top = T.bullets(slide, top, warnings[:8])
+    top = T.bullets(slide, top, warnings[:8], max_items=8, layout_warnings=ctx.layout_warnings)
     T.warning_card(slide, top, L["warn_not_legal"])
 
 
@@ -715,6 +726,7 @@ def _p_compliance_findings(prs, vm, ctx):
     L = vm["labels"]
     c = vm["compliance"]
     f = vm["finalConclusion"]
+    lw = ctx.layout_warnings
     slide, top = _section(prs, ctx, L["compliance_risk_findings_title"], f"{L['overall_risk']}: {f.get('overallRiskLevel', 'UNKNOWN')}")
     rows = [
         [fnd["severity"], T.truncate(fnd["title"], 52), fnd["reviewStatus"], fnd.get("evidenceCount", 0)]
@@ -722,16 +734,16 @@ def _p_compliance_findings(prs, vm, ctx):
     ]
     if rows:
         top = T.polished_table(slide, top, [L["th_severity"], L["th_finding"], L["th_review"], L["th_evidence"]], rows,
-                               col_widths=[0.14, 0.52, 0.22, 0.12])
+                               col_widths=[0.14, 0.52, 0.22, 0.12], layout_warnings=lw)
     else:
         top = T.no_data_card(slide, top, L["nd_no_compliance_findings"])
     if c.get("excludedFalsePositives", 0) > 0:
         top = T.note(slide, top, L["finding_excluded_fp"], "info")
     themes = ", ".join(f"{t['theme']} ({t['count']})" for t in f.get("topThemes", [])) or "—"
-    top = T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(900000), L["highest_risk_themes"], [themes]) or top
+    top = T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(900000), L["highest_risk_themes"], [themes])
     if f.get("recommendedActions"):
-        T.bullets(slide, Emu(int(top) + 980000) if top else top, list(f.get("recommendedActions", []))[:4])
-    T.note(slide, top, L["warn_not_legal"], "disclaimer")
+        top = T.bullets(slide, top, list(f.get("recommendedActions", []))[:4], max_items=4, layout_warnings=lw)
+    T.warning_card(slide, top, L["warn_not_legal"])
 
 
 def _p_final(prs, vm, ctx):

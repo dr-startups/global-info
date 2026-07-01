@@ -70,22 +70,84 @@ FOOTER_BAND_TOP = 6380000  # ignore shapes in footer/page-number band when measu
 ZONE_MIN_GAP = 76000  # minimum vertical gap between stacked caption zones (~6pt)
 
 
+def _shape_block_bottom(block: str) -> int | None:
+    off_m = re.search(r'<a:off x="(\d+)" y="(\d+)"', block)
+    ext_m = re.search(r'<a:ext cx="(\d+)" cy="(\d+)"', block)
+    if not off_m or not ext_m:
+        return None
+    y = int(off_m.group(2))
+    if y >= FOOTER_BAND_TOP:
+        return None
+    return y + int(ext_m.group(2))
+
+
 def max_shape_bottom(xml: str) -> int:
     max_b = 0
-    for sp in re.findall(r"<p:sp\b.*?</p:sp>", xml, flags=re.DOTALL):
-        off_m = re.search(r'<a:off x="(\d+)" y="(\d+)"', sp)
-        ext_m = re.search(r'<a:ext cx="(\d+)" cy="(\d+)"', sp)
-        if off_m and ext_m:
-            y = int(off_m.group(2))
-            if y >= FOOTER_BAND_TOP:
-                continue
-            bottom = y + int(ext_m.group(2))
+    for tag in (r"<p:sp\b.*?</p:sp>", r"<p:pic\b.*?</p:pic>", r"<p:graphicFrame\b.*?</p:graphicFrame>"):
+        for block in re.findall(tag, xml, flags=re.DOTALL):
+            bottom = _shape_block_bottom(block)
+            if bottom is not None:
+                max_b = max(max_b, bottom)
+    return max_b
+
+
+def table_bottom(xml: str) -> int:
+    max_b = 0
+    for gf in re.findall(r"<p:graphicFrame\b.*?</p:graphicFrame>", xml, flags=re.DOTALL):
+        if "<a:tbl" not in gf:
+            continue
+        bottom = _shape_block_bottom(gf)
+        if bottom is not None:
             max_b = max(max_b, bottom)
     return max_b
 
 
-def pic_aspect_ratios_ok(xml: str, lo: float = 0.35, hi: float = 2.8) -> bool:
-    """Reject extreme stretch ratios typical of fixed width+height add_picture."""
+def source_note_below_table(xml: str, min_gap: int = 40000) -> bool:
+    tbl_b = table_bottom(xml)
+    if tbl_b <= 0:
+        return True
+    for shape in text_shapes(xml):
+        if re.search(r"Source:|Источник|source note|источник данных", shape["text"], re.I):
+            if shape["y"] < tbl_b + min_gap:
+                return False
+    return True
+
+
+def disclaimer_not_overlapping_cards(shapes: list[dict]) -> bool:
+    cards = [
+        s
+        for s in shapes
+        if re.search(
+            r"Наивысшие|Highest risk|риск-тем|compliance|соответств",
+            s["text"],
+            re.I,
+        )
+    ]
+    legal = [
+        s
+        for s in shapes
+        if re.search(
+            r"юридическ|legal conclusion|not legal|Не является",
+            s["text"],
+            re.I,
+        )
+    ]
+    for card in cards:
+        for leg in legal:
+            if shapes_horizontally_overlap(card, leg) and shapes_vertically_too_close(card, leg, 80000):
+                return False
+    return True
+
+
+def bullets_overflow_note_present_or_bounded(xml: str) -> bool:
+    text = plain_text(xml)
+    if re.search(r"ещё подсказок|more suggestions|saved in evidence", text, re.I):
+        return max_shape_bottom(xml) <= FOOTER_SAFE_BOTTOM
+    return max_shape_bottom(xml) <= FOOTER_SAFE_BOTTOM
+
+
+def pic_aspect_ratios_ok(xml: str, lo: float = 0.12, hi: float = 8.5) -> bool:
+    """Reject extreme stretch ratios; allow wide cover-crop gallery boxes."""
     found = False
     for block in re.findall(r"<p:pic\b.*?</p:pic>", xml, flags=re.DOTALL):
         ext_m = re.search(r'<a:ext cx="(\d+)" cy="(\d+)"', block)
@@ -144,8 +206,12 @@ def selection_note_above_grid(xml: str) -> bool:
     if pic_y is None:
         return True
     for shape in text_shapes(xml):
-        if re.search(r"collected|собран|selected|исключ|relevant", shape["text"], re.I):
-            if shape["bottom"] > pic_y - 80000:
+        if re.search(
+            r"subject-matched|субъект|relevant evidence|релевант|selected for report|отобран|collected.*selected",
+            shape["text"],
+            re.I,
+        ):
+            if shape["bottom"] > pic_y - 40000:
                 return False
     return True
 
@@ -175,6 +241,79 @@ def risk_badge_not_over_title(shapes: list[dict]) -> bool:
     return True
 
 
+def pic_dimensions_all(xml: str) -> list[tuple[int, int]]:
+    dims: list[tuple[int, int]] = []
+    for pic in re.findall(r"<p:pic\b.*?</p:pic>", xml, flags=re.DOTALL):
+        ext_m = re.search(r'<a:ext cx="(\d+)" cy="(\d+)"', pic)
+        if ext_m:
+            dims.append((int(ext_m.group(1)), int(ext_m.group(2))))
+    return dims
+
+
+def max_pic_dimensions(xml: str) -> tuple[int, int]:
+    dims = pic_dimensions_all(xml)
+    if not dims:
+        return 0, 0
+    return max(w for w, _ in dims), max(h for _, h in dims)
+
+
+MIN_GALLERY_IMG_H_EMU = 1143000  # ~120px at 96dpi on 10" slide
+MIN_GALLERY_IMG_W_EMU = 1524000  # ~160px
+MIN_GALLERY_IMG_AREA_EMU = MIN_GALLERY_IMG_H_EMU * MIN_GALLERY_IMG_W_EMU
+MIN_GALLERY_CARD_IMG_FRAC = 0.45
+
+
+def gallery_pics_meet_min_size(xml: str) -> tuple[bool, str]:
+    dims = pic_dimensions_all(xml)
+    if not dims:
+        return True, "no pics"
+    for i, (w, h) in enumerate(dims):
+        if w < MIN_GALLERY_IMG_W_EMU or h < MIN_GALLERY_IMG_H_EMU:
+            return False, f"pic[{i}]={w}x{h} need>={MIN_GALLERY_IMG_W_EMU}x{MIN_GALLERY_IMG_H_EMU}"
+        if w * h < MIN_GALLERY_IMG_AREA_EMU:
+            return False, f"pic[{i}] area={w * h} too small"
+    return True, f"count={len(dims)}"
+
+
+def gallery_pics_min_card_fraction(xml: str) -> tuple[bool, str]:
+    """Each pic height should be >= ~45% of its card frame (rounded rect) height."""
+    pics: list[dict] = []
+    for pic in re.findall(r"<p:pic\b.*?</p:pic>", xml, flags=re.DOTALL):
+        off_m = re.search(r'<a:off x="(\d+)" y="(\d+)"', pic)
+        ext_m = re.search(r'<a:ext cx="(\d+)" cy="(\d+)"', pic)
+        if off_m and ext_m:
+            pics.append(
+                {
+                    "y": int(off_m.group(2)),
+                    "h": int(ext_m.group(2)),
+                    "bottom": int(off_m.group(2)) + int(ext_m.group(2)),
+                }
+            )
+    frames: list[dict] = []
+    for sp in re.findall(r"<p:sp\b.*?</p:sp>", xml, flags=re.DOTALL):
+        if "ROUNDED_RECT" not in sp and "roundRect" not in sp.lower():
+            prst = re.search(r'prst="(\w+)"', sp)
+            if not prst or prst.group(1) not in ("roundRect", "rect"):
+                continue
+        off_m = re.search(r'<a:off x="(\d+)" y="(\d+)"', sp)
+        ext_m = re.search(r'<a:ext cx="(\d+)" cy="(\d+)"', sp)
+        if off_m and ext_m:
+            cy = int(ext_m.group(2))
+            if cy < 400000:
+                continue
+            frames.append({"y": int(off_m.group(2)), "h": cy})
+    if not pics:
+        return True, "no pics"
+    for i, pic in enumerate(pics):
+        candidates = [f for f in frames if abs(f["y"] - pic["y"]) < 120000]
+        if not candidates:
+            continue
+        card = min(candidates, key=lambda f: abs(f["y"] - pic["y"]))
+        if pic["h"] < int(card["h"] * MIN_GALLERY_CARD_IMG_FRAC):
+            return False, f"pic[{i}] h={pic['h']} < {MIN_GALLERY_CARD_IMG_FRAC:.0%} of card h={card['h']}"
+    return True, "ok"
+
+
 def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True) -> dict:
     checks: list[dict] = []
     meta: dict = {}
@@ -193,10 +332,13 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
         meta["slideCount"] = slide_count
         meta["mediaCount"] = len(media_files(z))
 
+        s8 = slide_xml(z, 8)
+        s11 = slide_xml(z, 11)
         s13 = slide_xml(z, 13)
         s14 = slide_xml(z, 14)
         s20 = slide_xml(z, 20)
         s24 = slide_xml(z, 24)
+        s26 = slide_xml(z, 26)
         s27 = slide_xml(z, 27)
         s36 = slide_xml(z, 36)
         s10 = slide_xml(z, 10)
@@ -305,6 +447,22 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                     "Slide 13 image aspect ratios not stretched",
                     pic_aspect_ratios_ok(s13),
                 )
+                mw13, mh13 = max_pic_dimensions(s13)
+                meta["slide13MaxPicW"] = mw13
+                meta["slide13MaxPicH"] = mh13
+                meta["slide13PicDims"] = pic_dimensions_all(s13)
+                ok13, det13 = gallery_pics_meet_min_size(s13)
+                add(
+                    "Slide 13 gallery image min width and height",
+                    ok13,
+                    det13,
+                )
+                ok13f, det13f = gallery_pics_min_card_fraction(s13)
+                add(
+                    "Slide 13 gallery image >= 45% card height",
+                    ok13f,
+                    det13f,
+                )
             s13_bottom = max_shape_bottom(s13)
             meta["slide13MaxBottom"] = s13_bottom
             add(
@@ -373,6 +531,88 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                 risk_badge_not_over_title(s27_shapes),
             )
             add("Slide 27 no raw https URL text", "https://" not in p27)
+            if intl_images > 0 and count_pics(s27) > 0:
+                mw27, mh27 = max_pic_dimensions(s27)
+                meta["slide27MaxPicW"] = mw27
+                meta["slide27MaxPicH"] = mh27
+                meta["slide27PicDims"] = pic_dimensions_all(s27)
+                ok27, det27 = gallery_pics_meet_min_size(s27)
+                add(
+                    "Slide 27 gallery image min width and height",
+                    ok27,
+                    det27,
+                )
+                ok27f, det27f = gallery_pics_min_card_fraction(s27)
+                add(
+                    "Slide 27 gallery image >= 45% card height",
+                    ok27f,
+                    det27f,
+                )
+
+            s8_bottom = max_shape_bottom(s8)
+            meta["slide8MaxBottom"] = s8_bottom
+            add(
+                "Slide 8 within footer safe area",
+                s8_bottom <= FOOTER_SAFE_BOTTOM,
+                f"max_bottom={s8_bottom}",
+            )
+            add(
+                "Slide 8 source note below table (no overlap)",
+                source_note_below_table(s8),
+            )
+
+            s11_bottom = max_shape_bottom(s11)
+            meta["slide11MaxBottom"] = s11_bottom
+            add(
+                "Slide 11 suggestions within footer safe area",
+                s11_bottom <= FOOTER_SAFE_BOTTOM,
+                f"max_bottom={s11_bottom}",
+            )
+            add(
+                "Slide 11 bullet list bounded (no footer clip)",
+                bullets_overflow_note_present_or_bounded(s11),
+            )
+
+            s20_bottom = max_shape_bottom(s20)
+            meta["slide20MaxBottom"] = s20_bottom
+            add(
+                "Slide 20 evidence appendix within footer safe area",
+                s20_bottom <= FOOTER_SAFE_BOTTOM,
+                f"max_bottom={s20_bottom}",
+            )
+            add(
+                "Slide 20 source note below table (no overlap)",
+                source_note_below_table(s20),
+            )
+            add(
+                "Slide 20 uses compact 5-column evidence layout",
+                "Class" not in plain_text(s20) and "Тип материала" not in plain_text(s20),
+            )
+
+            s26_bottom = max_shape_bottom(s26)
+            meta["slide26MaxBottom"] = s26_bottom
+            add(
+                "Slide 26 intl suggestions within footer safe area",
+                s26_bottom <= FOOTER_SAFE_BOTTOM,
+                f"max_bottom={s26_bottom}",
+            )
+            add(
+                "Slide 26 bullet list bounded (no footer clip)",
+                bullets_overflow_note_present_or_bounded(s26),
+            )
+
+            s36_bottom = max_shape_bottom(s36)
+            meta["slide36MaxBottom"] = s36_bottom
+            s36_shapes = text_shapes(s36)
+            add(
+                "Slide 36 within footer safe area",
+                s36_bottom <= FOOTER_SAFE_BOTTOM,
+                f"max_bottom={s36_bottom}",
+            )
+            add(
+                "Slide 36 disclaimer not overlapping risk cards",
+                disclaimer_not_overlapping_cards(s36_shapes),
+            )
 
     return {"checks": checks, "meta": meta, "passed": all(c["ok"] for c in checks)}
 

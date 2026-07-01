@@ -47,6 +47,7 @@
     "smoke:report-selected-evidence-rendering-o54": "tsx scripts/smoke-report-selected-evidence-rendering-o54.ts",
     "smoke:report-artifact-integrity-o541": "tsx scripts/smoke-report-artifact-integrity-o541.ts",
     "smoke:report-media-layout-o542": "tsx scripts/smoke-report-media-layout-o542.ts",
+    "smoke:report-visual-overflow-v16": "tsx scripts/smoke-report-visual-overflow-v16.ts",
     "smoke:report-i18n": "node scripts/smoke-report-i18n.mjs",
     "smoke:i18n": "tsx scripts/smoke-i18n.ts",
     "smoke:auth": "tsx scripts/smoke-auth.ts",
