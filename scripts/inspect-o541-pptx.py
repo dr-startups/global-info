@@ -156,15 +156,204 @@ def card_frames(xml: str) -> list[dict]:
 def gallery_card_frames(xml: str) -> list[dict]:
     frames = card_frames(xml)
     pics = pics_in_xml(xml)
-    out: list[dict] = []
+    candidates: list[dict] = []
     for frame in frames:
         if frame["y"] < 1800000:
             continue
-        if (frame["bottom"] - frame["y"]) < 700000:
+        fw = frame["right"] - frame["x"]
+        fh = frame["bottom"] - frame["y"]
+        if fh < 900000 or fw < 2200000:
             continue
         if any(shape_inside(p, frame) for p in pics):
+            candidates.append(frame)
+    out: list[dict] = []
+    for frame in candidates:
+        nested = False
+        for other in candidates:
+            if frame is other:
+                continue
+            if shape_inside(frame, other) and (other["bottom"] - other["y"]) > (frame["bottom"] - frame["y"]):
+                nested = True
+                break
+        if not nested:
             out.append(frame)
     return out
+
+
+def sp_shapes(xml: str) -> list[dict]:
+    shapes: list[dict] = []
+    for sp in re.findall(r"<p:sp\b.*?</p:sp>", xml, flags=re.DOTALL):
+        off_m = re.search(r'<a:off x="(\d+)" y="(\d+)"', sp)
+        ext_m = re.search(r'<a:ext cx="(\d+)" cy="(\d+)"', sp)
+        text_m = re.search(r"<a:t>([^<]*)</a:t>", sp)
+        if off_m and ext_m:
+            x, y = int(off_m.group(1)), int(off_m.group(2))
+            cx, cy = int(ext_m.group(1)), int(ext_m.group(2))
+            shapes.append(
+                {
+                    "x": x,
+                    "y": y,
+                    "right": x + cx,
+                    "bottom": y + cy,
+                    "w": cx,
+                    "h": cy,
+                    "text": text_m.group(1) if text_m else "",
+                    "round": "roundRect" in sp.lower(),
+                }
+            )
+    return shapes
+
+
+def video_card_frames(xml: str) -> list[dict]:
+    """Outer video cards on slide 14 — detected via Open-source button inside frame."""
+    shapes = text_shapes(xml)
+    button_shapes = [
+        s
+        for s in shapes
+        if re.search(r"Open source|Открыть источник", s["text"], re.I) and s["y"] > 2400000
+    ]
+    candidates: list[dict] = []
+    for frame in card_frames(xml):
+        if frame["y"] < 2400000:
+            continue
+        fw = frame["right"] - frame["x"]
+        fh = frame["bottom"] - frame["y"]
+        if fh < 600000 or fw < 3200000:
+            continue
+        if any(shape_inside(b, frame) for b in button_shapes):
+            candidates.append(frame)
+    out: list[dict] = []
+    for frame in candidates:
+        nested = False
+        for other in candidates:
+            if frame is other:
+                continue
+            if shape_inside(frame, other) and (other["bottom"] - other["y"]) > (frame["bottom"] - frame["y"]):
+                nested = True
+                break
+        if not nested:
+            out.append(frame)
+    return out
+
+
+VIDEO_FAKE_THUMB_MIN_H = 200000
+
+
+def video_no_fake_thumb_bars(xml: str) -> tuple[bool, str]:
+    """Cards without a real thumbnail must not contain a tall empty panel bar."""
+    frames = video_card_frames(xml)
+    if not frames:
+        return True, "no video cards"
+    pics = pics_in_xml(xml)
+    panels = [s for s in sp_shapes(xml) if s["round"]]
+    for i, frame in enumerate(frames):
+        inner_pics = [p for p in pics if shape_inside(p, frame)]
+        if inner_pics:
+            continue
+        frame_h = frame["bottom"] - frame["y"]
+        for panel in panels:
+            if not shape_inside(panel, frame):
+                continue
+            if panel["h"] < VIDEO_FAKE_THUMB_MIN_H:
+                continue
+            if panel["y"] > frame["y"] + frame_h * 0.55:
+                continue
+            if any(shape_inside(p, panel) for p in pics):
+                continue
+            return False, f"card[{i}] fake thumb bar h={panel['h']} y={panel['y']}"
+    return True, f"cards={len(frames)}"
+
+
+def video_card_inner_zones_ok(xml: str) -> tuple[bool, str]:
+    """Video cards: play/domain header, title, button — no vertical overlap."""
+    frames = video_card_frames(xml)
+    if not frames:
+        return True, "no video cards"
+    shapes = text_shapes(xml)
+    pics = pics_in_xml(xml)
+    domain_re = re.compile(r"youtube|vimeo|\.(com|ru|net|org)", re.I)
+    button_re = re.compile(r"Open source|Открыть источник", re.I)
+    play_re = re.compile(r"^\s*\u25b6|▶")
+    for i, frame in enumerate(frames):
+        inner_pics = [p for p in pics if shape_inside(p, frame)]
+        inner_text = [s for s in shapes if shape_inside(s, frame)]
+        if inner_pics and inner_text:
+            pic_bottom = max(p["bottom"] for p in inner_pics)
+            text_top = min(s["y"] for s in inner_text)
+            if pic_bottom + ZONE_MIN_GAP > text_top:
+                return False, f"card[{i}] thumb overlaps text"
+        buttons = [s for s in inner_text if button_re.search(s["text"])]
+        headers = [s for s in inner_text if play_re.search(s["text"]) and s not in buttons]
+        domains = [
+            s for s in inner_text
+            if domain_re.search(s["text"]) and s not in buttons and s not in headers
+        ]
+        titles = [
+            s
+            for s in inner_text
+            if s not in buttons and s not in domains and s not in headers
+        ]
+        for title in titles:
+            for domain in domains:
+                if shapes_horizontally_overlap(title, domain) and shapes_vertically_too_close(
+                    title, domain, ZONE_MIN_GAP,
+                ):
+                    return False, f"card[{i}] title/domain overlap"
+        for title in titles:
+            for btn in buttons:
+                if shapes_horizontally_overlap(title, btn) and shapes_vertically_too_close(
+                    title, btn, ZONE_MIN_GAP,
+                ):
+                    return False, f"card[{i}] title/button overlap"
+        ordered = inner_pics + sorted(inner_text, key=lambda s: s["y"])
+        for a, b in zip(ordered, ordered[1:]):
+            if vertical_overlap(a, b):
+                return False, f"card[{i}] inner overlap y={a['y']}-{a['bottom']} vs {b['y']}"
+    return True, f"cards={len(frames)}"
+
+
+def video_overflow_notes(xml: str) -> list[dict]:
+    return [
+        s
+        for s in text_shapes(xml)
+        if re.search(
+            r"Показаны.*видео|Showing.*video|видео сохранено|videos saved in evidence",
+            s["text"],
+            re.I,
+        )
+        and not re.search(
+            r"Collected videos|Собрано видео|collected.*subject-matched",
+            s["text"],
+            re.I,
+        )
+    ]
+
+
+def slide14_video_layout_ok(xml: str) -> tuple[bool, str]:
+    frames = video_card_frames(xml)
+    if not frames:
+        return True, "no video cards"
+    if len(frames) > 4:
+        return False, f"too many video cards={len(frames)}"
+    grid_bottom = max(f["bottom"] for f in frames)
+    grid_top = min(f["y"] for f in frames)
+    for i, frame in enumerate(frames):
+        if frame["bottom"] > CONTENT_SAFE_BOTTOM_EMU:
+            return False, f"card[{i}] bottom={frame['bottom']} > safe"
+    ok_fake, det_fake = video_no_fake_thumb_bars(xml)
+    if not ok_fake:
+        return False, det_fake
+    ok_inner, det_inner = video_card_inner_zones_ok(xml)
+    if not ok_inner:
+        return False, det_inner
+    for note in video_overflow_notes(xml):
+        if note["y"] < grid_top - 40000:
+            continue
+        if note["y"] < grid_bottom + PDF_SAFE_TABLE_NOTE_GAP // 2:
+            return False, f"note overlaps grid y={note['y']} grid={grid_top}-{grid_bottom}"
+        if note["bottom"] > FOOTER_SAFE_BOTTOM:
+            return False, f"note overlaps footer bottom={note['bottom']}"
+    return True, f"cards={len(frames)} grid_bottom={grid_bottom}"
 
 
 def pics_in_xml(xml: str) -> list[dict]:
@@ -232,7 +421,93 @@ def duplicate_pics_count(xml: str) -> int:
     return dup
 
 
-SLIDE_W_EMU = 9144000
+CONTENT_SAFE_BOTTOM_EMU = 6309360
+
+
+def gallery_overflow_notes(xml: str) -> list[dict]:
+    """Overflow/skipped notes rendered below the gallery grid (not the selection note above)."""
+    return [
+        s
+        for s in text_shapes(xml)
+        if re.search(
+            r"Показаны|Showing|skipped|сохранен|saved in evidence",
+            s["text"],
+            re.I,
+        )
+        and not re.search(
+            r"collected.*selected|собрано.*отобран|отобран.*собран",
+            s["text"],
+            re.I,
+        )
+    ]
+
+
+def gallery_notes_shapes(xml: str) -> list[dict]:
+    return gallery_overflow_notes(xml)
+
+
+def gallery_card_inner_zones_ok(xml: str) -> tuple[bool, str]:
+    """Gallery cards: image in frame; title above domain; no inner vertical overlap."""
+    frames = gallery_card_frames(xml)
+    if not frames:
+        return True, "no gallery cards"
+    shapes = text_shapes(xml)
+    pics = pics_in_xml(xml)
+    domain_re = re.compile(r"\.(com|ru|net|org|edu|gov|ua|by|kz|io)|^https?://|www\.", re.I)
+    badge_re = re.compile(r"LIKELY|EXACT|likely subject|вероятно|точное", re.I)
+    for i, frame in enumerate(frames):
+        inner_pics = [p for p in pics if shape_inside(p, frame)]
+        inner_text = [s for s in shapes if shape_inside(s, frame)]
+        for pic in inner_pics:
+            if not shape_inside(pic, frame, tol=120000):
+                return False, f"card[{i}] image outside card frame"
+        if inner_pics and inner_text:
+            pic_bottom = max(p["bottom"] for p in inner_pics)
+            text_top = min(s["y"] for s in inner_text)
+            if pic_bottom + ZONE_MIN_GAP > text_top:
+                return False, f"card[{i}] image overlaps text"
+        domains = [s for s in inner_text if domain_re.search(s["text"])]
+        titles = [s for s in inner_text if s not in domains and not badge_re.search(s["text"])]
+        for title in titles:
+            for domain in domains:
+                if shapes_horizontally_overlap(title, domain) and shapes_vertically_too_close(
+                    title, domain, ZONE_MIN_GAP,
+                ):
+                    return False, f"card[{i}] title/domain overlap"
+        ordered = inner_pics + sorted(inner_text, key=lambda s: s["y"])
+        for a, b in zip(ordered, ordered[1:]):
+            if vertical_overlap(a, b):
+                return False, f"card[{i}] inner overlap y={a['y']}-{a['bottom']} vs {b['y']}"
+    return True, f"cards={len(frames)}"
+
+
+def slide13_gallery_layout_ok(xml: str) -> tuple[bool, str]:
+    """Strict slide-13 gallery checks: cards in safe area; notes below grid only."""
+    frames = gallery_card_frames(xml)
+    pics = pics_in_xml(xml)
+    if pics and not frames:
+        return False, "pics present but no gallery card frames detected"
+    if not frames:
+        return True, "no gallery cards"
+    if len(frames) > 4:
+        return False, f"too many gallery cards={len(frames)}"
+    grid_bottom = max(f["bottom"] for f in frames)
+    grid_top = min(f["y"] for f in frames)
+    for i, frame in enumerate(frames):
+        if frame["bottom"] > CONTENT_SAFE_BOTTOM_EMU:
+            return False, f"card[{i}] bottom={frame['bottom']} > safe"
+    ok_inner, det_inner = gallery_card_inner_zones_ok(xml)
+    if not ok_inner:
+        return False, det_inner
+    notes = gallery_overflow_notes(xml)
+    for note in notes:
+        if note["y"] < grid_top - 40000:
+            continue
+        if note["y"] < grid_bottom + PDF_SAFE_TABLE_NOTE_GAP // 2:
+            return False, f"note overlaps grid y={note['y']} grid={grid_top}-{grid_bottom}"
+        if note["bottom"] > FOOTER_SAFE_BOTTOM:
+            return False, f"note overlaps footer bottom={note['bottom']}"
+    return True, f"cards={len(frames)} grid_bottom={grid_bottom}"
 SLIDE_H_EMU = 6858000
 MAX_INTL_PIC_FRAC = 0.60
 
@@ -289,6 +564,31 @@ def bullets_overflow_note_present_or_bounded(xml: str) -> bool:
     if re.search(r"ещё подсказок|more suggestions|saved in evidence", text, re.I):
         return max_shape_bottom(xml) <= FOOTER_SAFE_BOTTOM
     return max_shape_bottom(xml) <= FOOTER_SAFE_BOTTOM
+
+
+def suggestions_overflow_notes(xml: str) -> list[dict]:
+    return [
+        s
+        for s in text_shapes(xml)
+        if re.search(
+            r"\+.*?(ещё.*подсказок|more suggestions preserved|more items preserved)",
+            s["text"],
+            re.I,
+        )
+    ]
+
+
+def slide_suggestions_overflow_ok(xml: str) -> tuple[bool, str]:
+    """At most one overflow note; note must not overlap footer/content safe area."""
+    notes = suggestions_overflow_notes(xml)
+    if len(notes) > 1:
+        return False, f"duplicate overflow notes={len(notes)}"
+    for note in notes:
+        if note["bottom"] > FOOTER_SAFE_BOTTOM:
+            return False, f"note/footer overlap bottom={note['bottom']}"
+        if note["bottom"] > CONTENT_SAFE_BOTTOM_EMU:
+            return False, f"note below content safe bottom={note['bottom']}"
+    return True, f"overflow_notes={len(notes)}"
 
 
 def pic_aspect_ratios_ok(xml: str, lo: float = 0.12, hi: float = 8.5) -> bool:
@@ -404,18 +704,22 @@ def max_pic_dimensions(xml: str) -> tuple[int, int]:
 
 MIN_GALLERY_IMG_H_EMU = 1143000  # ~120px at 96dpi on 10" slide
 MIN_GALLERY_IMG_W_EMU = 1524000  # ~160px
+MIN_GALLERY_CONTAIN_W_EMU = 1100000
+MIN_GALLERY_CONTAIN_H_EMU = 850000
 MIN_GALLERY_IMG_AREA_EMU = MIN_GALLERY_IMG_H_EMU * MIN_GALLERY_IMG_W_EMU
 MIN_GALLERY_CARD_IMG_FRAC = 0.45
 
 
-def gallery_pics_meet_min_size(xml: str) -> tuple[bool, str]:
+def gallery_pics_meet_min_size(xml: str, *, contained: bool = False) -> tuple[bool, str]:
     dims = pic_dimensions_all(xml)
     if not dims:
         return True, "no pics"
+    min_w = MIN_GALLERY_CONTAIN_W_EMU if contained else MIN_GALLERY_IMG_W_EMU
+    min_h = MIN_GALLERY_CONTAIN_H_EMU if contained else MIN_GALLERY_IMG_H_EMU
     for i, (w, h) in enumerate(dims):
-        if w < MIN_GALLERY_IMG_W_EMU or h < MIN_GALLERY_IMG_H_EMU:
-            return False, f"pic[{i}]={w}x{h} need>={MIN_GALLERY_IMG_W_EMU}x{MIN_GALLERY_IMG_H_EMU}"
-        if w * h < MIN_GALLERY_IMG_AREA_EMU:
+        if w < min_w or h < min_h:
+            return False, f"pic[{i}]={w}x{h} need>={min_w}x{min_h}"
+        if not contained and w * h < MIN_GALLERY_IMG_AREA_EMU:
             return False, f"pic[{i}] area={w * h} too small"
     return True, f"count={len(dims)}"
 
@@ -596,7 +900,7 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                 meta["slide13MaxPicW"] = mw13
                 meta["slide13MaxPicH"] = mh13
                 meta["slide13PicDims"] = pic_dimensions_all(s13)
-                ok13, det13 = gallery_pics_meet_min_size(s13)
+                ok13, det13 = gallery_pics_meet_min_size(s13, contained=True)
                 add(
                     "Slide 13 gallery image min width and height",
                     ok13,
@@ -636,6 +940,10 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                 duplicate_pics_count(s13) <= 1 or pics13 <= 4,
                 f"dup={duplicate_pics_count(s13)} pics={pics13}",
             )
+            ok13g, det13g = slide13_gallery_layout_ok(s13)
+            add("Slide 13 gallery cards/notes in safe area", ok13g, det13g)
+            ok13z, det13z = gallery_card_inner_zones_ok(s13)
+            add("Slide 13 gallery image/title/domain zones", ok13z, det13z)
             gallery_frames = gallery_card_frames(s13)
             add(
                 "Slide 13 max 4 gallery cards",
@@ -669,6 +977,18 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                 )
                 ok14c, det14c = card_media_layout_ok(s14)
                 add("Slide 14 video card zones no vertical overlap", ok14c, det14c)
+                ok14v, det14v = slide14_video_layout_ok(s14)
+                add("Slide 14 video cards/notes in safe area", ok14v, det14v)
+                ok14f, det14f = video_no_fake_thumb_bars(s14)
+                add("Slide 14 no fake video thumbnail bars", ok14f, det14f)
+                ok14z, det14z = video_card_inner_zones_ok(s14)
+                add("Slide 14 video play/domain/title/button zones", ok14z, det14z)
+                video_frames = video_card_frames(s14)
+                add(
+                    "Slide 14 max 4 video cards",
+                    len(video_frames) <= 4,
+                    f"video_frames={len(video_frames)}",
+                )
 
             p27 = plain_text(s27)
             s27_shapes = text_shapes(s27)
@@ -740,6 +1060,8 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                 "Slide 11 section headings not at footer",
                 section_heading_above_footer(s11),
             )
+            ok11o, det11o = slide_suggestions_overflow_ok(s11)
+            add("Slide 11 single overflow note / no footer overlap", ok11o, det11o)
 
             s20_bottom = max_shape_bottom(s20)
             meta["slide20MaxBottom"] = s20_bottom
@@ -772,6 +1094,8 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                 "Slide 26 section headings not at footer",
                 section_heading_above_footer(s26),
             )
+            ok26o, det26o = slide_suggestions_overflow_ok(s26)
+            add("Slide 26 single overflow note / no footer overlap", ok26o, det26o)
 
             s36_bottom = max_shape_bottom(s36)
             meta["slide36MaxBottom"] = s36_bottom

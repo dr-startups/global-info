@@ -445,7 +445,8 @@ def _b_images(slide, top, blk, vm, ctx):
         if internal and im.get("selectionNote"):
             top = T.note(slide, top, im["selectionNote"], "info")
         top = T.image_grid(
-            slide, top, items, show_identity=internal, labels=L, layout_warnings=lw
+            slide, top, items, show_identity=internal, labels=L, layout_warnings=lw,
+            allow_cover=False,
         )
     else:
         T.no_data_card(slide, top, L.get("nd_no_relevant_images", L["nd_no_images"]))
