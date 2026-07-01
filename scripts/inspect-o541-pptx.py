@@ -68,6 +68,7 @@ def media_files(z: zipfile.ZipFile) -> list[str]:
 FOOTER_SAFE_BOTTOM = 6315360  # FOOTER_Y - 0.2"
 FOOTER_BAND_TOP = 6380000  # ignore shapes in footer/page-number band when measuring content
 ZONE_MIN_GAP = 76000  # minimum vertical gap between stacked caption zones (~6pt)
+PDF_SAFE_TABLE_NOTE_GAP = 260000  # conservative gap for LibreOffice PDF export fidelity
 
 
 def _shape_block_bottom(block: str) -> int | None:
@@ -102,13 +103,157 @@ def table_bottom(xml: str) -> int:
     return max_b
 
 
-def source_note_below_table(xml: str, min_gap: int = 40000) -> bool:
+def source_note_below_table(xml: str, min_gap: int = 80000) -> bool:
     tbl_b = table_bottom(xml)
     if tbl_b <= 0:
         return True
     for shape in text_shapes(xml):
-        if re.search(r"Source:|Источник|source note|источник данных", shape["text"], re.I):
+        if re.search(
+            r"Source:|Источник|Показаны|Showing top|Showing \d|сохранен|evidence",
+            shape["text"],
+            re.I,
+        ):
             if shape["y"] < tbl_b + min_gap:
+                return False
+            if shape["bottom"] > FOOTER_SAFE_BOTTOM:
+                return False
+    return True
+
+
+def table_rows_not_over_footnote(xml: str, min_gap: int = 80000) -> bool:
+    """No table cell text shape should sit below pagination footnote top."""
+    footnotes = [
+        s
+        for s in text_shapes(xml)
+        if re.search(r"Показаны|Showing top|Showing \d", s["text"], re.I)
+    ]
+    if not footnotes:
+        return True
+    fn_top = min(s["y"] for s in footnotes)
+    tbl_b = table_bottom(xml)
+    return tbl_b + min_gap <= fn_top
+
+
+def card_frames(xml: str) -> list[dict]:
+    frames: list[dict] = []
+    for sp in re.findall(r"<p:sp\b.*?</p:sp>", xml, flags=re.DOTALL):
+        if "roundRect" not in sp.lower() and "ROUNDED_RECT" not in sp:
+            prst = re.search(r'prst="(\w+)"', sp)
+            if not prst or prst.group(1) not in ("roundRect", "rect"):
+                continue
+        off_m = re.search(r'<a:off x="(\d+)" y="(\d+)"', sp)
+        ext_m = re.search(r'<a:ext cx="(\d+)" cy="(\d+)"', sp)
+        if off_m and ext_m:
+            cy = int(ext_m.group(2))
+            if cy < 400000:
+                continue
+            x, y = int(off_m.group(1)), int(off_m.group(2))
+            cx = int(ext_m.group(1))
+            frames.append({"x": x, "y": y, "right": x + cx, "bottom": y + cy})
+    return frames
+
+
+def gallery_card_frames(xml: str) -> list[dict]:
+    frames = card_frames(xml)
+    pics = pics_in_xml(xml)
+    out: list[dict] = []
+    for frame in frames:
+        if frame["y"] < 1800000:
+            continue
+        if (frame["bottom"] - frame["y"]) < 700000:
+            continue
+        if any(shape_inside(p, frame) for p in pics):
+            out.append(frame)
+    return out
+
+
+def pics_in_xml(xml: str) -> list[dict]:
+    pics: list[dict] = []
+    for pic in re.findall(r"<p:pic\b.*?</p:pic>", xml, flags=re.DOTALL):
+        off_m = re.search(r'<a:off x="(\d+)" y="(\d+)"', pic)
+        ext_m = re.search(r'<a:ext cx="(\d+)" cy="(\d+)"', pic)
+        if off_m and ext_m:
+            x, y = int(off_m.group(1)), int(off_m.group(2))
+            cx, cy = int(ext_m.group(1)), int(ext_m.group(2))
+            pics.append({"x": x, "y": y, "right": x + cx, "bottom": y + cy, "w": cx, "h": cy})
+    return pics
+
+
+def shape_inside(inner: dict, outer: dict, tol: int = 80000) -> bool:
+    return (
+        inner["x"] >= outer["x"] - tol
+        and inner["y"] >= outer["y"] - tol
+        and inner["right"] <= outer["right"] + tol
+        and inner["bottom"] <= outer["bottom"] + tol
+    )
+
+
+def vertical_overlap(a: dict, b: dict, min_gap: int = ZONE_MIN_GAP) -> bool:
+    if not shapes_horizontally_overlap(a, b):
+        return False
+    if a["y"] <= b["y"]:
+        return (a["bottom"] + min_gap) > b["y"]
+    return (b["bottom"] + min_gap) > a["y"]
+
+
+def card_media_layout_ok(xml: str) -> tuple[bool, str]:
+    """Inside each gallery card: image above title above domain; no vertical overlap."""
+    frames = card_frames(xml)
+    shapes = text_shapes(xml)
+    pics = pics_in_xml(xml)
+    if not frames:
+        return True, "no cards"
+    for i, frame in enumerate(frames):
+        inner_text = [s for s in shapes if shape_inside(s, frame)]
+        inner_pics = [p for p in pics if shape_inside(p, frame)]
+        if not inner_text and not inner_pics:
+            continue
+        ordered = inner_pics + inner_text
+        ordered.sort(key=lambda s: s["y"])
+        for a, b in zip(ordered, ordered[1:]):
+            if vertical_overlap(a, b):
+                return False, f"card[{i}] overlap y={a['y']}-{a['bottom']} vs {b['y']}"
+        if inner_pics and inner_text:
+            pic_bottom = max(p["bottom"] for p in inner_pics)
+            text_top = min(s["y"] for s in inner_text)
+            if pic_bottom + ZONE_MIN_GAP > text_top:
+                return False, f"card[{i}] image overlaps text"
+    return True, f"cards={len(frames)}"
+
+
+def duplicate_pics_count(xml: str) -> int:
+    dims = pic_dimensions_all(xml)
+    seen: set[tuple[int, int]] = set()
+    dup = 0
+    for d in dims:
+        if d in seen:
+            dup += 1
+        seen.add(d)
+    return dup
+
+
+SLIDE_W_EMU = 9144000
+SLIDE_H_EMU = 6858000
+MAX_INTL_PIC_FRAC = 0.60
+
+
+def intl_slide_no_giant_pic(xml: str) -> tuple[bool, str]:
+    pics = pics_in_xml(xml)
+    if not pics:
+        return True, "no pics"
+    max_w = max(p["w"] for p in pics)
+    max_h = max(p["h"] for p in pics)
+    if max_w > SLIDE_W_EMU * MAX_INTL_PIC_FRAC or max_h > SLIDE_H_EMU * MAX_INTL_PIC_FRAC:
+        return False, f"max={max_w}x{max_h}"
+    return True, f"max={max_w}x{max_h}"
+
+
+def section_heading_above_footer(xml: str) -> bool:
+    for shape in text_shapes(xml):
+        if re.search(r"Смежные|однофамиль|Adjacent|similar name", shape["text"], re.I):
+            if shape["y"] > FOOTER_SAFE_BOTTOM - 400000:
+                return False
+            if shape["bottom"] > FOOTER_SAFE_BOTTOM:
                 return False
     return True
 
@@ -484,6 +629,19 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                     r"LIKELY|EXACT|likely subject",
                 ),
             )
+            ok13c, det13c = card_media_layout_ok(s13)
+            add("Slide 13 card zones no vertical overlap", ok13c, det13c)
+            add(
+                "Slide 13 no duplicate pic dimensions",
+                duplicate_pics_count(s13) <= 1 or pics13 <= 4,
+                f"dup={duplicate_pics_count(s13)} pics={pics13}",
+            )
+            gallery_frames = gallery_card_frames(s13)
+            add(
+                "Slide 13 max 4 gallery cards",
+                len(gallery_frames) <= 4,
+                f"gallery_frames={len(gallery_frames)}",
+            )
 
             if videos_selected > 0:
                 p14 = plain_text(s14)
@@ -509,6 +667,8 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                         r"Open source|Открыть источник",
                     ),
                 )
+                ok14c, det14c = card_media_layout_ok(s14)
+                add("Slide 14 video card zones no vertical overlap", ok14c, det14c)
 
             p27 = plain_text(s27)
             s27_shapes = text_shapes(s27)
@@ -548,6 +708,8 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                     ok27f,
                     det27f,
                 )
+                ok27g, det27g = intl_slide_no_giant_pic(s27)
+                add("Slide 27 no giant upscaled intl image", ok27g, det27g)
 
             s8_bottom = max_shape_bottom(s8)
             meta["slide8MaxBottom"] = s8_bottom
@@ -558,7 +720,9 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
             )
             add(
                 "Slide 8 source note below table (no overlap)",
-                source_note_below_table(s8),
+                source_note_below_table(s8, min_gap=PDF_SAFE_TABLE_NOTE_GAP)
+                and table_rows_not_over_footnote(s8, min_gap=PDF_SAFE_TABLE_NOTE_GAP),
+                f"pdf_safe_gap>={PDF_SAFE_TABLE_NOTE_GAP}",
             )
 
             s11_bottom = max_shape_bottom(s11)
@@ -572,6 +736,10 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                 "Slide 11 bullet list bounded (no footer clip)",
                 bullets_overflow_note_present_or_bounded(s11),
             )
+            add(
+                "Slide 11 section headings not at footer",
+                section_heading_above_footer(s11),
+            )
 
             s20_bottom = max_shape_bottom(s20)
             meta["slide20MaxBottom"] = s20_bottom
@@ -582,11 +750,11 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
             )
             add(
                 "Slide 20 source note below table (no overlap)",
-                source_note_below_table(s20),
+                source_note_below_table(s20) and table_rows_not_over_footnote(s20),
             )
             add(
-                "Slide 20 uses compact 5-column evidence layout",
-                "Class" not in plain_text(s20) and "Тип материала" not in plain_text(s20),
+                "Slide 20 uses compact 4-column evidence layout",
+                "Link" not in plain_text(s20) and "Ссылка" not in plain_text(s20),
             )
 
             s26_bottom = max_shape_bottom(s26)
@@ -599,6 +767,10 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
             add(
                 "Slide 26 bullet list bounded (no footer clip)",
                 bullets_overflow_note_present_or_bounded(s26),
+            )
+            add(
+                "Slide 26 section headings not at footer",
+                section_heading_above_footer(s26),
             )
 
             s36_bottom = max_shape_bottom(s36)

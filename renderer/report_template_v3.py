@@ -255,7 +255,8 @@ def _b_results(slide, top, blk, vm, ctx):
     rows = [[x["provider"], x["rank"], x["domain"], T.truncate(x["title"], 46), x["classification"]] for x in blk["topResults"]]
     if rows:
         T.table(slide, top, [L["th_provider"], L["th_rank"], L["th_domain"], L["th_title"], L["th_class"]], rows,
-                col_widths=[0.13, 0.08, 0.22, 0.37, 0.20], layout_warnings=ctx.layout_warnings)
+                col_widths=[0.13, 0.08, 0.22, 0.37, 0.20], max_rows=10,
+                layout_warnings=ctx.layout_warnings)
     else:
         T.no_data_card(slide, top, L["nd_no_organic_region"])
 
@@ -271,7 +272,7 @@ def _b_themes(slide, top, blk, vm, ctx):
     rows = [[T.truncate(u["title"], 56), u["domain"], u["classification"]] for u in t["negativeUrls"]]
     if rows:
         T.table(slide, top, [L["th_title"], L["th_domain"], L["th_class"]], rows, col_widths=[0.5, 0.3, 0.2],
-                layout_warnings=ctx.layout_warnings)
+                max_rows=11, layout_warnings=ctx.layout_warnings)
     else:
         T.no_data_card(slide, top, L["nd_no_negative_urls"])
 
@@ -376,11 +377,13 @@ def _b_suggestions(slide, top, blk, vm, ctx):
     overflow = L.get("bullets_overflow_note", "+ {n} more suggestions preserved in evidence.")
     groups = sg.get("groups") or []
     if groups:
-        for grp in groups:
-            if grp.get("label"):
-                top = T.note(slide, top, grp["label"], "section")
-            if grp.get("items"):
-                top = T.bullets(slide, top, grp["items"], max_items=8, overflow_note=overflow, layout_warnings=lw)
+        sections = [{"label": g.get("label"), "items": g.get("items") or []} for g in groups if g.get("items") or g.get("label")]
+        top = T.bounded_bullet_sections(
+            slide, top, sections,
+            max_items_per_section=8,
+            overflow_note=overflow,
+            layout_warnings=lw,
+        )
     elif sg["list"]:
         top = T.bullets(slide, top, sg["list"], max_items=8, overflow_note=overflow, layout_warnings=lw)
     else:
@@ -499,6 +502,9 @@ def _b_media(slide, top, blk, vm, ctx):
             show_identity=internal,
             labels=L,
             layout_warnings=ctx.layout_warnings,
+            intl_compact=True,
+            allow_cover=False,
+            max_items=2,
         )
     if vid_items:
         top = T.video_cards(
@@ -591,11 +597,10 @@ def _b_evidence(slide, top, blk, vm, ctx):
         top = T.note(slide, top, L.get("appendix_confirmed_title", "Confirmed / likely subject evidence"), "info")
         rows = [
             [
-                T.truncate(e["title"], 48),
+                T.truncate(e["title"], 52),
                 e["domain"],
-                e.get("identity", ""),
-                e.get("review", e.get("classification", "")),
-                T.truncate(e.get("link", ""), 32),
+                T.truncate(e.get("identity", ""), 18),
+                T.truncate(e.get("review", e.get("classification", "")), 16),
             ]
             for e in confirmed
         ]
@@ -603,39 +608,42 @@ def _b_evidence(slide, top, blk, vm, ctx):
             slide,
             top,
             [
-                L.get("th_evidence", "Material"),
+                L.get("th_evidence_material", L.get("th_evidence", "Material")),
                 L["th_domain"],
                 L.get("th_identity", "Identity"),
-                L.get("th_review", "Review"),
-                L.get("th_link", "Link"),
+                L.get("th_status", L.get("th_review", "Status")),
             ],
             rows,
-            col_widths=[0.30, 0.16, 0.14, 0.14, 0.26],
-            max_rows=10,
+            col_widths=[0.38, 0.22, 0.20, 0.20],
+            max_rows=6,
             layout_warnings=ctx.layout_warnings,
         )
     else:
         top = T.no_data_card(slide, top, L.get("nd_no_confirmed_evidence", L["nd_no_evidence_region"]))
     if internal and excluded:
-        top = T.note(slide, top, L.get("appendix_excluded_title", "Excluded / not subject (internal only)"), "warning")
-        ex_rows = [
-            [T.truncate(e["title"], 44), e["domain"], e.get("reason", ""), e.get("identityDecision", "")]
-            for e in excluded
-        ]
-        T.table(
-            slide,
-            top,
-            [
-                L.get("th_excluded_item", "Excluded item"),
-                L["th_domain"],
-                L.get("th_reason", "Reason"),
-                L.get("th_identity", "Identity"),
-            ],
-            ex_rows,
-            col_widths=[0.36, 0.18, 0.24, 0.22],
-            max_rows=8,
-            layout_warnings=ctx.layout_warnings,
-        )
+        remaining = int(T.CONTENT_SAFE_BOTTOM) - int(top) - 500000
+        if remaining >= 1200000:
+            top = T.note(slide, top, L.get("appendix_excluded_title", "Excluded / not subject (internal only)"), "warning")
+            ex_rows = [
+                [T.truncate(e["title"], 44), e["domain"], T.truncate(e.get("reason", ""), 24)]
+                for e in excluded
+            ]
+            T.table(
+                slide,
+                top,
+                [
+                    L.get("th_excluded_item", "Excluded item"),
+                    L["th_domain"],
+                    L.get("th_reason", "Reason"),
+                ],
+                ex_rows,
+                col_widths=[0.42, 0.28, 0.30],
+                max_rows=4,
+                layout_warnings=ctx.layout_warnings,
+            )
+        elif excluded:
+            tpl = L.get("appendix_excluded_overflow", "+ {n} excluded items preserved in evidence.")
+            T.note(slide, top, tpl.format(n=len(excluded)), "info")
 
 
 def _b_conclusion(slide, top, blk, vm, ctx):
