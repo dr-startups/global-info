@@ -520,6 +520,30 @@ def r2_status_pill(value: str, labels: dict | None = None) -> str:
     return r2_truncate_cell_text(txt, 28)
 
 
+def r2_result_class_label(value: Any, labels: dict | None = None) -> str:
+    """Convert raw top-results class/status enum to client-safe label."""
+    labels = labels or {}
+    raw = str(value or "").strip()
+    key = raw.upper().strip()
+    mapping = {
+        "UNCLASSIFIED": labels.get("class_unclassified_compact", "Neutral"),
+        "RISK": labels.get("class_risk", "Risk"),
+        "NEGATIVE": labels.get("class_negative", "Negative"),
+        "EXACT_SUBJECT": labels.get("class_exact_subject_compact", "Exact"),
+        "LIKELY_SUBJECT": labels.get("class_likely_subject_compact", "Likely"),
+        "NAMESAKE": labels.get("class_namesake_compact", "Namesake"),
+        "INSUFFICIENT": labels.get("class_insufficient_compact", "Insuff."),
+    }
+    if key in mapping:
+        return mapping[key]
+    if not raw:
+        return labels.get("class_unclassified_compact", "Neutral")
+    # Keep unknown values readable but non-technical.
+    if "_" in raw:
+        raw = raw.replace("_", " ").title()
+    return r2_truncate_cell_text(raw, 10)
+
+
 def r2_domain_text(value: Any, max_len: int = 34) -> str:
     """Normalize URL/domain text for compact appendix tables."""
     from urllib.parse import urlparse
@@ -534,6 +558,76 @@ def r2_domain_text(value: Any, max_len: int = 34) -> str:
     except Exception:
         host = raw.replace("http://", "").replace("https://", "").split("/")[0].lower()
     return r2_truncate_cell_text(host, max_len)
+
+
+def r2_top_results_table(
+    slide,
+    top: Emu,
+    *,
+    rows: list[dict],
+    region: str,
+    max_rows: int,
+    labels: dict,
+    layout_warnings: list[str] | None = None,
+) -> Emu:
+    """Standardized compact top-results table for RU/INTL pages."""
+    _ = region  # reserved for future region-specific variants
+    internal_label_re = re.compile(
+        r"CLIENT_INCLUDE|REVIEW_REQUIRED|EXCLUDE|RELATED_QUERY|SEARCH_SUGGESTION"
+        r"|sourceMode|rawMetadata|reviewQueue|providerAdapter|contentClass",
+        re.I,
+    )
+
+    def _sanitize_text(text: Any) -> str:
+        s = str(text or "")
+        s = re.sub(r"https?://\S+", "", s, flags=re.I)
+        s = internal_label_re.sub("", s)
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
+
+    def _extract_domain_fallback(text: str) -> str:
+        m = re.search(r"[A-Za-zА-Яа-я0-9-]+\.[A-Za-zА-Яа-я0-9-]+", text or "")
+        if not m:
+            return ""
+        return r2_domain_text(m.group(0), 28)
+
+    safe_rows: list[list[str]] = []
+    for item in rows:
+        rank = r2_truncate_cell_text(_sanitize_text(item.get("rank")), 8)
+        title_src = _sanitize_text(item.get("title"))
+        domain_txt = r2_domain_text(item.get("domain") or item.get("url") or "", 28)
+        if not domain_txt:
+            domain_txt = _extract_domain_fallback(title_src)
+        if not domain_txt:
+            domain_txt = "—"
+        title_txt = r2_truncate_cell_text(title_src, 56)
+        cls_txt = r2_result_class_label(_sanitize_text(item.get("classification")), labels)
+        safe_rows.append([rank, domain_txt, title_txt, cls_txt])
+
+    if not safe_rows:
+        return top
+
+    total = len(safe_rows)
+    shown = min(total, max_rows)
+    note_tpl = labels.get("table_showing_first", labels.get("showing_top", "Showing first {n} of {total}."))
+
+    while shown > 0:
+        foot = note_tpl.format(shown=shown, total=total, n=shown)
+        if shown <= _max_table_data_rows(top, foot):
+            break
+        shown -= 1
+    shown = max(1, shown)
+
+    bottom = table(
+        slide,
+        top,
+        [labels.get("th_rank_compact", "#"), labels["th_domain"], labels["th_title"], labels["th_class"]],
+        safe_rows[:shown],
+        col_widths=[0.07, 0.21, 0.54, 0.18],
+        max_rows=shown,
+        layout_warnings=layout_warnings,
+    )
+    return r2_table_overflow_note(slide, bottom, shown=shown, total=total, template=note_tpl)
 
 
 def r2_table_overflow_note(

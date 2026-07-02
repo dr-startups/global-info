@@ -304,6 +304,24 @@ def _b_results(slide, top, blk, vm, ctx):
         T.no_data_card(slide, top, L["nd_no_organic_region"])
 
 
+def _b_results_r23(slide, top, blk, vm, ctx):
+    """R2.3c polish: compact client-safe top-results table (slides 8 and 24)."""
+    L = vm["labels"]
+    rows = list(blk.get("topResults") or [])
+    if not rows:
+        T.no_data_card(slide, top, L["nd_no_organic_region"])
+        return
+    T.r2_top_results_table(
+        slide,
+        top,
+        rows=rows,
+        region=str(blk.get("label") or ""),
+        max_rows=8,
+        labels=L,
+        layout_warnings=ctx.layout_warnings,
+    )
+
+
 def _b_themes(slide, top, blk, vm, ctx):
     L = vm["labels"]
     t = blk["themes"]
@@ -1113,7 +1131,7 @@ def build_report_v3(
     ru_pages = [
         _rb("ru", _b_summary, L["pg_audit_summary"]),
         _rb("ru", _b_organic, L["pg_organic_overview"]),
-        _rb("ru", _b_results, L["pg_top_results"]),
+        _rb("ru", _b_results_r23, L["pg_top_results"]),
         _rb("ru", _b_themes, L["pg_neg_publications"]),
         _p_snapshots,
         _rb("ru", _b_suggestions, L["pg_suggestions"]),
@@ -1131,7 +1149,7 @@ def build_report_v3(
     intl_pages = [
         _rb("intl", _b_summary, L["pg_audit_summary"]),
         _rb("intl", _b_organic, L["pg_organic_overview"]),
-        _rb("intl", _b_results, L["pg_top_results"]),
+        _rb("intl", _b_results_r23, L["pg_top_results"]),
         _rb("intl", _b_themes, L["pg_neg_themes"]),
         _rb("intl", _b_suggestions, L["pg_suggestions"]),
         _p_intl_media_r2,

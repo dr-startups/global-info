@@ -805,6 +805,14 @@ SLIDE20_INTERNAL_LABEL_RE = re.compile(
     r"|sourceMode|rawMetadata|reviewQueue|providerAdapter|contentClass",
     re.I,
 )
+TOP_RESULTS_INTERNAL_LABEL_RE = re.compile(
+    r"CLIENT_INCLUDE|REVIEW_REQUIRED|EXCLUDE|RELATED_QUERY|SEARCH_SUGGESTION"
+    r"|sourceMode|rawMetadata|reviewQueue|providerAdapter|contentClass",
+    re.I,
+)
+TOP_RESULTS_RAW_ENUM_RE = re.compile(
+    r"\b(UNCLASSIFIED|NEGATIVE|RISK|EXACT_SUBJECT|LIKELY_SUBJECT|NAMESAKE|INSUFFICIENT)\b"
+)
 
 
 def slide14_no_internal_labels(xml: str) -> tuple[bool, str]:
@@ -1225,6 +1233,74 @@ def slide8_r2_table_contract_ok(xml: str) -> tuple[bool, str]:
     if "топ результатов поиска" not in t and "top search results" not in t:
         return False, "missing top-results title marker"
     return True, det_tbl
+
+
+def _top_results_contract_ok(
+    xml: str,
+    *,
+    page_no: int,
+    lang: str,
+    expected_total: int | None = None,
+) -> tuple[bool, str]:
+    t = plain_text(xml)
+    compact = t.replace(" ", "")
+    if f"{page_no} / 50" not in t and f"{page_no}/50" not in compact:
+        return False, f"footer page {page_no}/50 missing"
+    if max_shape_bottom(xml) > FOOTER_SAFE_BOTTOM:
+        return False, f"content below footer safe area: {max_shape_bottom(xml)}"
+    if TOP_RESULTS_INTERNAL_LABEL_RE.search(t):
+        return False, "internal/debug labels visible"
+    if "http://" in t or "https://" in t:
+        return False, "raw url visible in table body"
+    if not source_note_below_table(xml, min_gap=PDF_SAFE_TABLE_NOTE_GAP):
+        return False, "continuation note overlaps table rows"
+    if not table_rows_not_over_footnote(xml, min_gap=PDF_SAFE_TABLE_NOTE_GAP):
+        return False, "table rows overlap continuation note"
+
+    _ = lang
+    headers_ru = ["Провайдер", "Позиция", "Домен", "Заголовок", "Класс"]
+    headers_en = ["Provider", "Position", "Domain", "Title", "Class"]
+    no_data_markers = [
+        "Органические результаты по этому региону не собраны",
+        "No organic results collected for this region",
+    ]
+    safe_labels = [
+        "Не классифицировано", "Риск", "Негатив", "Точное совпадение",
+        "Вероятное совпадение", "Однофамилец", "Недостаточно данных",
+        "Unclassified", "Risk", "Negative", "Exact subject",
+        "Likely subject", "Namesake", "Insufficient data",
+    ]
+    header_count = sum(1 for h in (headers_ru + headers_en) if h in t)
+    if header_count == 0 and any(m in t for m in no_data_markers):
+        return True, "no-data state"
+    if header_count < 4 or header_count > 5:
+        return False, f"readability columns invalid: headers={header_count}"
+
+    domains = re.findall(r"[A-Za-zА-Яа-я0-9-]+\.[A-Za-zА-Яа-я0-9-]+", t)
+    if not domains:
+        return False, "normalized domains not found"
+    if any("/" in d for d in domains):
+        return False, "domain column contains path-like values"
+
+    if TOP_RESULTS_RAW_ENUM_RE.search(t):
+        return False, "raw class/status enums visible"
+    if not any(lbl in t for lbl in safe_labels) and not re.search(r"Не классифиц", t):
+        return False, "client-safe class labels missing"
+
+    if expected_total is not None and expected_total > 10:
+        if not re.search(r"Показаны первые \d+ из \d+|Showing first \d+ of \d+|Показаны первые \d+ из \d+\.", t):
+            return False, "continuation note missing for hidden rows"
+    return True, f"headers={header_count} domains={len(domains)}"
+
+
+def slide8_r23_top_results_contract_ok(xml: str, expected_total: int | None = None) -> tuple[bool, str]:
+    """R2.3c contract for slide 8 RU top search results."""
+    return _top_results_contract_ok(xml, page_no=8, lang="ru", expected_total=expected_total)
+
+
+def slide24_r23_top_results_contract_ok(xml: str, expected_total: int | None = None) -> tuple[bool, str]:
+    """R2.3c contract for slide 24 INTL top search results."""
+    return _top_results_contract_ok(xml, page_no=24, lang="en", expected_total=expected_total)
 
 
 def _is_watermark_text(s: dict) -> bool:
@@ -1659,6 +1735,9 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
     compliance_active = int(compliance.get("activeMatches") or 0) > 0 or int(
         compliance.get("providersChecked") or 0
     ) > 0
+    sections = (report_json or {}).get("sections") or {}
+    ru_top_total = len((sections.get("ru") or {}).get("topResults") or [])
+    intl_top_total = len((sections.get("international") or {}).get("topResults") or [])
 
     with zipfile.ZipFile(pptx, "r") as z:
         slide_count = len([n for n in z.namelist() if re.fullmatch(r"ppt/slides/slide\d+\.xml", n)])
@@ -1915,6 +1994,8 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
             add("Slide 5 R2 contract", ok5r2, det5r2)
             ok8r2, det8r2 = slide8_r2_table_contract_ok(s8)
             add("Slide 8 R2 table contract", ok8r2, det8r2)
+            ok8r23, det8r23 = slide8_r23_top_results_contract_ok(s8, expected_total=ru_top_total)
+            add("Slide 8 R2.3 top results contract", ok8r23, det8r23)
             add(
                 "Slide 8 within footer safe area",
                 s8_bottom <= FOOTER_SAFE_BOTTOM,
@@ -1955,6 +2036,16 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
             ok20r23, det20r23 = slide20_r23_evidence_contract_ok(s20, report_json, audience=audience)
             add("Slide 20 R2.3 evidence contract", ok20r23, det20r23)
             add("Slide 20 uses compact 4-column evidence layout", "Link" not in t20 and "Ссылка" not in t20)
+
+            s24_bottom = max_shape_bottom(s24)
+            meta["slide24MaxBottom"] = s24_bottom
+            ok24r23, det24r23 = slide24_r23_top_results_contract_ok(s24, expected_total=intl_top_total)
+            add("Slide 24 R2.3 top results contract", ok24r23, det24r23)
+            add(
+                "Slide 24 within footer safe area",
+                s24_bottom <= FOOTER_SAFE_BOTTOM,
+                f"max_bottom={s24_bottom}",
+            )
 
             s26_bottom = max_shape_bottom(s26)
             meta["slide26MaxBottom"] = s26_bottom
