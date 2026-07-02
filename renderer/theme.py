@@ -728,6 +728,157 @@ def r2_provider_source_text(value: Any, *, labels: dict | None = None) -> str:
     return r2_truncate_cell_text(raw, 28)
 
 
+def r2_risk_level_label(value: Any, labels: dict | None = None) -> str:
+    """Normalize risk level value to client-safe localized label."""
+    labels = labels or {}
+    raw = str(value or "").strip()
+    key = raw.lower().replace("_", " ")
+    if not key:
+        return labels.get("risk_level_unknown", "Unknown")
+    if any(tok in key for tok in ("critical", "крит")):
+        return labels.get("risk_level_critical", "Critical")
+    if any(tok in key for tok in ("high", "высок")):
+        return labels.get("risk_level_high", "High")
+    if any(tok in key for tok in ("medium", "сред")):
+        return labels.get("risk_level_medium", "Medium")
+    if any(tok in key for tok in ("low", "низк")):
+        return labels.get("risk_level_low", "Low")
+    if any(tok in key for tok in ("unknown", "undefined", "unclassified", "не определ", "не классиф")):
+        return labels.get("risk_level_unknown", "Unknown")
+    return labels.get("risk_level_unknown", "Unknown")
+
+
+def r2_source_label(value: Any, *, labels: dict | None = None) -> str:
+    """Normalize source text: no raw URLs, no technical/debug tokens."""
+    labels = labels or {}
+    raw = str(value or "").strip()
+    if not raw:
+        return labels.get("source_not_specified", "Source not specified")
+    clean = re.sub(
+        r"providerAdapter|sourceMode|rawMetadata|reviewQueue|classifier|internal|debug|contentClass",
+        "",
+        raw,
+        flags=re.I,
+    )
+    clean = re.sub(r"\s+", " ", clean).strip(" -,:;")
+    if not clean:
+        return labels.get("source_not_specified", "Source not specified")
+    if "http://" in clean or "https://" in clean or "www." in clean.lower():
+        host = r2_domain_text(clean, 28)
+        return host or labels.get("source_not_specified", "Source not specified")
+    up = clean.upper().replace("-", "_").replace(" ", "_")
+    mapping = {
+        "MANUAL_IMPORT": labels.get("src_manual_import", "Manual import"),
+        "GOOGLE_SEARCH_PROVIDER": labels.get("src_google", "Google"),
+        "GOOGLE": labels.get("src_google", "Google"),
+        "WIKIPEDIA": "Wikipedia",
+        "YOUTUBE": "YouTube",
+        "ADVERSE_MEDIA": labels.get("comp_type_adverse_media", "Adverse media"),
+        "ADVERSE_PUBLICITY": labels.get("comp_type_adverse_media", "Adverse media"),
+        "LEGAL": labels.get("comp_type_legal", "Legal"),
+        "WATCHLIST": labels.get("comp_type_watchlist", "Watchlist"),
+        "SANCTIONS": labels.get("comp_type_sanctions", "Sanctions"),
+        "REPUTATION": labels.get("rf_source_reputation", "Reputational sources"),
+        "LITIGATION": labels.get("rf_source_litigation", "Litigation sources"),
+        "OWNERSHIP": labels.get("rf_source_corporate", "Corporate records"),
+        "CONTROL": labels.get("rf_source_corporate", "Corporate records"),
+        "REGULATORY": labels.get("rf_source_regulatory", "Regulatory sources"),
+    }
+    if up in mapping:
+        return mapping[up]
+    if "_" in clean and " " not in clean:
+        clean = clean.replace("_", " ")
+    if re.fullmatch(r"[A-Z0-9_]{3,}", clean):
+        clean = clean.replace("_", " ").title()
+    return r2_truncate_cell_text(clean, 30)
+
+
+def r2_risk_action_label(value: Any, labels: dict | None = None) -> str:
+    """Normalize review/internal status into client-safe action wording."""
+    labels = labels or {}
+    raw = str(value or "").strip()
+    key = raw.lower().replace("_", " ")
+    if any(tok in key for tok in ("confirm", "подтвержд")):
+        return labels.get("rf_action_no_action", "No action needed")
+    if any(tok in key for tok in ("false", "dismiss", "exclude", "исключ", "ложн", "отклон")):
+        return labels.get("rf_action_exclude_noise", "Exclude as noise")
+    if any(tok in key for tok in ("pending", "review", "needs", "требует", "ожида")):
+        return labels.get("rf_action_review_source", "Review source")
+    if not key:
+        return labels.get("rf_action_assess_relevance", "Assess relevance")
+    return labels.get("rf_action_assess_relevance", "Assess relevance")
+
+
+def r2_risk_findings_table(
+    slide,
+    top: Emu,
+    *,
+    rows: list[dict[str, Any]],
+    labels: dict,
+    max_rows: int = 6,
+    col_widths: list[float] | None = None,
+    layout_warnings: list[str] | None = None,
+) -> Emu:
+    """Compact report-grade risk findings table used on slides 17/29."""
+    internal_re = re.compile(
+        r"reviewStatus|sourceMode|rawMetadata|providerAdapter|classifier|UNCLASSIFIED|internal|debug",
+        re.I,
+    )
+
+    def _clean_text(value: Any, limit: int) -> str:
+        s = str(value or "").strip()
+        s = internal_re.sub("", s)
+        s = re.sub(r"https?://\S+", "", s, flags=re.I)
+        s = re.sub(r"\s+", " ", s).strip(" -,:;")
+        return r2_truncate_cell_text(s, limit)
+
+    safe_rows: list[list[str]] = []
+    for item in rows:
+        finding = _clean_text(item.get("title"), 74)
+        source_raw = item.get("source") or item.get("theme")
+        source = r2_source_label(source_raw, labels=labels)
+        level = r2_risk_level_label(item.get("severity"), labels=labels)
+        action = r2_risk_action_label(item.get("reviewStatus"), labels=labels)
+        safe_rows.append(
+            [
+                finding or "—",
+                source,
+                r2_truncate_cell_text(level, 22),
+                r2_truncate_cell_text(action, 24),
+            ]
+        )
+    if not safe_rows:
+        return top
+
+    widths = col_widths or [0.46, 0.22, 0.14, 0.18]
+    total = len(safe_rows)
+    shown = min(max_rows, total)
+    note_tpl = labels.get("table_showing_first", labels.get("showing_top", "Showing first {n} of {total}."))
+    while shown > 0:
+        note = note_tpl.format(shown=shown, total=total, n=shown)
+        if shown <= _max_table_data_rows(top, note):
+            break
+        shown -= 1
+    shown = max(1, shown)
+
+    bottom = table(
+        slide,
+        top,
+        [
+            labels.get("th_finding", "Finding"),
+            labels.get("th_source", "Source"),
+            labels.get("th_level", "Level"),
+            labels.get("th_action", "Action"),
+        ],
+        safe_rows[:shown],
+        col_widths=widths,
+        max_rows=shown,
+        semantic_colors=False,
+        layout_warnings=layout_warnings,
+    )
+    return r2_table_overflow_note(slide, bottom, shown=shown, total=total, template=note_tpl)
+
+
 def r2_compliance_table(
     slide,
     top: Emu,
@@ -854,6 +1005,79 @@ def r2_compliance_empty_state(
             color=NEUTRAL_GRAY,
             italic=True,
         )
+    return Emu(int(card_y) + int(card_h) + 120000)
+
+
+def r2_risk_findings_empty_state(
+    slide,
+    top: Emu,
+    *,
+    headline: str,
+    body: str,
+    width_ratio: float = 0.70,
+) -> Emu:
+    """Premium no-data card with strict non-overlapping title/body zones."""
+    ratio = max(0.66, min(0.72, width_ratio))
+    card_w = Emu(int(CONTENT_W) * ratio)
+    card_x = Emu(int(MARGIN) + (int(CONTENT_W) - int(card_w)) // 2)
+    card_y = Emu(max(int(top), 1650000))
+
+    CARD_PAD_TOP = 190000
+    CARD_PAD_BOTTOM = 240000
+    CARD_PAD_LEFT = 260000
+    CARD_PAD_RIGHT = 260000
+    ICON_SIZE = 128000
+    ICON_TO_TEXT_GAP = 240000
+    TITLE_H = 430000
+    TITLE_BODY_GAP = 90000
+    BODY_H = 430000
+
+    card_h = Emu(CARD_PAD_TOP + TITLE_H + TITLE_BODY_GAP + BODY_H + CARD_PAD_BOTTOM)
+
+    card = slide.shapes.add_shape(ROUNDED_RECT, card_x, card_y, card_w, card_h)
+    card.fill.solid()
+    card.fill.fore_color.rgb = BG_PANEL
+    card.line.color.rgb = NEUTRAL_LINE
+    card.line.width = Pt(0.9)
+
+    icon_d = Emu(ICON_SIZE)
+    icon_x = Emu(int(card_x) + 180000)
+    icon_y = Emu(int(card_y) + 190000)
+    icon = slide.shapes.add_shape(OVAL, icon_x, icon_y, icon_d, icon_d)
+    icon.fill.solid()
+    icon.fill.fore_color.rgb = ACCENT_SOFT
+    icon.line.color.rgb = ACCENT
+    icon.line.width = Pt(0.8)
+
+    title_x = Emu(int(card_x) + CARD_PAD_LEFT + ICON_SIZE + ICON_TO_TEXT_GAP)
+    title_y = Emu(int(card_y) + CARD_PAD_TOP)
+    title_h = Emu(TITLE_H)
+    text_w = Emu(int(card_w) - (int(title_x) - int(card_x)) - CARD_PAD_RIGHT)
+
+    r2_text_box(
+        slide,
+        title_x,
+        title_y,
+        text_w,
+        title_h,
+        r2_truncate_lines(headline, max_lines=2, line_len=60),
+        size=FS_SECTION_TITLE - 1,
+        color=BRAND_PRIMARY,
+        bold=True,
+    )
+
+    body_y = Emu(int(title_y) + TITLE_H + TITLE_BODY_GAP)
+    body_h = Emu(BODY_H)
+    body_box = textbox(slide, title_x, body_y, text_w, body_h)
+    body_tf = body_box.text_frame
+    body_p = body_tf.paragraphs[0]
+    body_p.line_spacing = 1.15
+    _run(
+        body_p,
+        r2_truncate_lines(body, max_lines=2, line_len=76),
+        FS_BODY - 2,
+        NEUTRAL_GRAY,
+    )
     return Emu(int(card_y) + int(card_h) + 120000)
 
 

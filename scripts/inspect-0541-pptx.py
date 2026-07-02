@@ -21,6 +21,8 @@ URL_RE = re.compile(r"https?://\S{8,}|www\.\S{8,}", re.I)
 NULLISH_RE = re.compile(r"\b(None|null|undefined)\b", re.I)
 CONTINUATION_RE = re.compile(r"Показаны первые\s+\d+\s+из\s+\d+|Showing first\s+\d+\s+of\s+\d+", re.I)
 SLIDE34_RAW_ENUM_RE = re.compile(r"\b(SANCTIONS|PEP_RCA|ADVERSE_MEDIA|WATCHLIST|LEGAL|REVIEW_REQUIRED)\b")
+R23E_INTERNAL_RE = re.compile(r"reviewStatus|sourceMode|rawMetadata|providerAdapter|classifier|UNCLASSIFIED|internal|debug", re.I)
+R23E_RAW_LEVEL_ENUM_RE = re.compile(r"\b(LOW|MEDIUM|HIGH|CRITICAL)\b")
 
 
 def _plain_text(xml: str) -> str:
@@ -71,7 +73,7 @@ def _text_shapes(xml: str) -> list[dict[str, Any]]:
         ext = re.search(r'<a:ext cx="(\d+)" cy="(\d+)"', block)
         if not off or not ext:
             continue
-        text = " ".join(re.findall(r"<a:t>(.*?)</a:t>", block))
+        text = " ".join(re.findall(r"<a:t>(.*?)</a:t>", block, flags=re.S))
         text = re.sub(r"\s+", " ", text).strip()
         if not text:
             continue
@@ -91,6 +93,14 @@ def _table_col_counts(xml: str) -> list[int]:
             continue
         counts.append(len(re.findall(r"<a:gridCol\b", grid.group(1))))
     return counts
+
+
+def _table_text(xml: str) -> str:
+    parts = re.findall(r"<a:tbl\b.*?</a:tbl>", xml, flags=re.S)
+    if not parts:
+        return ""
+    joined = " ".join(parts)
+    return _plain_text(joined)
 
 
 def _slide_hash(z: zipfile.ZipFile, slide_n: int) -> str:
@@ -151,6 +161,106 @@ def compliance_empty_state_card_ok(
     ]
     if tiny_marks:
         issues.append(f"Slide {slide_n} tiny broken marker artifact detected")
+    return issues
+
+
+def risk_no_data_card_layout_ok(
+    xml: str,
+    *,
+    slide_n: int,
+    title_tokens: tuple[str, ...],
+    body_tokens: tuple[str, ...],
+) -> list[str]:
+    """Validate no-data title/body geometry separation inside one card."""
+    issues: list[str] = []
+    text_boxes = _text_shapes(xml)
+    boxes = _shape_boxes(xml)
+
+    def _pick(tokens: tuple[str, ...]) -> dict[str, Any] | None:
+        for shape in text_boxes:
+            low = shape["text"].lower()
+            if any(tok.lower() in low for tok in tokens):
+                return shape
+        return None
+
+    title = _pick(title_tokens)
+    body = _pick(body_tokens)
+    if not title:
+        issues.append(f"Slide {slide_n} no-data title box not found")
+        return issues
+    if not body:
+        # Fallback: infer body box by geometry under the title.
+        candidates = [
+            shape
+            for shape in text_boxes
+            if shape["y"] >= title["bottom"] + 20000
+            and abs(shape["x"] - title["x"]) <= 120000
+            and not re.search(r"\b\d+\s*/\s*\d+\b", shape["text"])
+            and shape["text"].strip().lower() not in {"low", "medium", "high", "critical"}
+        ]
+        if candidates:
+            body = sorted(candidates, key=lambda s: s["y"])[0]
+        else:
+            issues.append(f"Slide {slide_n} no-data body box not found")
+            return issues
+    if body["y"] < title["bottom"] + 70000:
+        issues.append(f"Slide {slide_n} no-data body overlaps title zone")
+
+    card = None
+    for b in boxes:
+        if (
+            b["x"] <= title["x"]
+            and b["x"] <= body["x"]
+            and b["right"] >= title["right"]
+            and b["right"] >= body["right"]
+            and b["y"] <= title["y"]
+            and b["y"] <= body["y"]
+            and b["bottom"] >= title["bottom"]
+            and b["bottom"] >= body["bottom"]
+        ):
+            card = b
+            break
+    if card is None:
+        issues.append(f"Slide {slide_n} no-data card bbox not enclosing title/body")
+    else:
+        if card["bottom"] > FOOTER_SAFE_BOTTOM:
+            issues.append(f"Slide {slide_n} no-data card intrudes footer safe area")
+        if body["bottom"] > card["bottom"] - 160000:
+            issues.append(f"Slide {slide_n} no-data body touches card bottom")
+        # Icon should be inside card bounds as well.
+        icon_ok = any(
+            b["w"] <= 180000
+            and b["h"] <= 180000
+            and b["x"] >= card["x"]
+            and b["right"] <= card["right"]
+            and b["y"] >= card["y"]
+            and b["bottom"] <= card["bottom"]
+            and abs(b["y"] - title["y"]) <= 220000
+            for b in boxes
+        )
+        if not icon_ok:
+            issues.append(f"Slide {slide_n} no-data icon not contained in card")
+        # All text boxes in the card zone must remain inside card bounds.
+        for shape in text_boxes:
+            in_zone = (
+                shape["x"] >= card["x"] - 20000
+                and shape["right"] <= card["right"] + 20000
+                and shape["y"] >= card["y"] - 20000
+                and shape["y"] <= card["bottom"] + 20000
+            )
+            if not in_zone:
+                continue
+            if (
+                shape["x"] < card["x"]
+                or shape["right"] > card["right"]
+                or shape["y"] < card["y"]
+                or shape["bottom"] > card["bottom"]
+            ):
+                issues.append(f"Slide {slide_n} no-data text escapes card bounds")
+                break
+    body_lines = [ln for ln in re.split(r"\r?\n", body["text"]) if ln.strip()]
+    if len(body_lines) > 2 or body["h"] > 460000:
+        issues.append(f"Slide {slide_n} no-data body exceeds 2 lines")
     return issues
 
 
@@ -284,10 +394,100 @@ def slide36_r23_compliance_contract_ok(xml: str, text: str, report_json: dict[st
     return issues
 
 
+def slide17_r23_risk_findings_contract_ok(xml: str, text: str, report_json: dict[str, Any]) -> list[str]:
+    issues = _common_contract_issues(xml, text, 17, require_low_badge=False)
+    if not any(b in text for b in ("LOW", "MEDIUM", "HIGH", "CRITICAL")):
+        issues.append("Slide 17 risk badge missing")
+    no_data = "риск-находки по российскому сегменту не зафиксированы" in text.lower() or "no russian-segment risk findings detected" in text.lower()
+    if "<a:tbl" not in xml and not no_data:
+        issues.append("Slide 17 risk findings table missing")
+    cols = _table_col_counts(xml)
+    if cols and max(cols) > 4:
+        issues.append(f"Slide 17 risk findings table too dense: columns={max(cols)}")
+    tbl_text = _table_text(xml)
+    if URL_RE.search(tbl_text):
+        issues.append("Slide 17 has raw URL in findings table")
+    if R23E_INTERNAL_RE.search(tbl_text) or NULLISH_RE.search(tbl_text):
+        issues.append("Slide 17 has internal/debug labels in findings table")
+    if R23E_RAW_LEVEL_ENUM_RE.search(tbl_text):
+        issues.append("Slide 17 has raw risk level enums in findings table")
+    rows_total = len((((report_json.get("selectedEvidence") or {}).get("riskFindings") or {}).get("selectedSubjectMatchedOnly") or []))
+    if rows_total > 6 and not CONTINUATION_RE.search(text):
+        issues.append("Slide 17 continuation note missing for capped rows")
+    if rows_total > 0:
+        level_markers = ("Низкий", "Средний", "Высокий", "Критический", "Low", "Medium", "High", "Critical")
+        if not any(marker in tbl_text for marker in level_markers):
+            issues.append("Slide 17 client-safe level labels missing")
+    if no_data:
+        issues.extend(
+            compliance_empty_state_card_ok(
+                xml,
+                text,
+                slide_n=17,
+                headline_tokens=("Риск-находки по российскому сегменту не зафиксированы", "No Russian-segment risk findings detected"),
+                body_tokens=("подтверждённых находок", "confirmed findings"),
+            )
+        )
+        issues.extend(
+            risk_no_data_card_layout_ok(
+                xml,
+                slide_n=17,
+                title_tokens=("Риск-находки по российскому сегменту не зафиксированы", "No Russian-segment risk findings detected"),
+                body_tokens=("подтверждённых находок", "separate reporting"),
+            )
+        )
+    return issues
+
+
+def slide29_r23_risk_findings_contract_ok(xml: str, text: str, report_json: dict[str, Any]) -> list[str]:
+    issues = _common_contract_issues(xml, text, 29, require_low_badge=False)
+    if not any(b in text for b in ("LOW", "MEDIUM", "HIGH", "CRITICAL")):
+        issues.append("Slide 29 risk badge missing")
+    no_data = "международные риск-находки не зафиксированы" in text.lower() or "no international risk findings detected" in text.lower()
+    if "<a:tbl" not in xml and not no_data:
+        issues.append("Slide 29 risk findings table missing")
+    cols = _table_col_counts(xml)
+    if cols and max(cols) > 4:
+        issues.append(f"Slide 29 risk findings table too dense: columns={max(cols)}")
+    tbl_text = _table_text(xml)
+    if URL_RE.search(tbl_text):
+        issues.append("Slide 29 has raw URL in findings table")
+    if R23E_INTERNAL_RE.search(tbl_text) or NULLISH_RE.search(tbl_text):
+        issues.append("Slide 29 has internal/debug labels in findings table")
+    if R23E_RAW_LEVEL_ENUM_RE.search(tbl_text):
+        issues.append("Slide 29 has raw risk level enums in findings table")
+    rows_total = len((((report_json.get("selectedEvidence") or {}).get("riskFindings") or {}).get("selectedSubjectMatchedOnly") or []))
+    if rows_total > 6 and not CONTINUATION_RE.search(text):
+        issues.append("Slide 29 continuation note missing for capped rows")
+    if rows_total > 0:
+        level_markers = ("Низкий", "Средний", "Высокий", "Критический", "Low", "Medium", "High", "Critical")
+        if not any(marker in tbl_text for marker in level_markers):
+            issues.append("Slide 29 client-safe level labels missing")
+    if no_data:
+        issues.extend(
+            compliance_empty_state_card_ok(
+                xml,
+                text,
+                slide_n=29,
+                headline_tokens=("Международные риск-находки не зафиксированы", "No international risk findings detected"),
+                body_tokens=("международных находок", "international findings"),
+            )
+        )
+        issues.extend(
+            risk_no_data_card_layout_ok(
+                xml,
+                slide_n=29,
+                title_tokens=("Международные риск-находки не зафиксированы", "No international risk findings detected"),
+                body_tokens=("международному сегменту", "international findings"),
+            )
+        )
+    return issues
+
+
 def _regression_lock_checks(pptx_path: Path, baseline_path: Path) -> tuple[int, list[str]]:
     if not baseline_path.exists():
         return 1, [f"[FAIL] Regression baseline deck missing: {baseline_path}"]
-    locked = [3, 5, 8, 10, 13, 14, 17, 20, 24, 27, 29]
+    locked = [3, 5, 8, 10, 13, 14, 20, 24, 27, 32, 33, 34, 36]
     fails: list[str] = []
     with zipfile.ZipFile(pptx_path, "r") as cur, zipfile.ZipFile(baseline_path, "r") as base:
         cur_slides = len([n for n in cur.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml")])
@@ -382,6 +582,32 @@ def _r23d_compliance_checks(pptx_path: Path, report_json_path: Path) -> tuple[in
     return 0, lines
 
 
+def _r23e_risk_findings_checks(pptx_path: Path, report_json_path: Path) -> tuple[int, list[str]]:
+    report_json: dict[str, Any] = {}
+    if report_json_path.exists():
+        report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+    fails: list[str] = []
+    with zipfile.ZipFile(pptx_path, "r") as z:
+        s17 = _slide_xml(z, 17)
+        s29 = _slide_xml(z, 29)
+        checks = [
+            ("Slide 17 R2.3e risk findings contract", slide17_r23_risk_findings_contract_ok(s17, _plain_text(s17), report_json)),
+            ("Slide 29 R2.3e risk findings contract", slide29_r23_risk_findings_contract_ok(s29, _plain_text(s29), report_json)),
+        ]
+        for title, issues in checks:
+            if issues:
+                for issue in issues:
+                    fails.append(f"{title} — {issue}")
+    lines: list[str] = []
+    if fails:
+        for f in fails:
+            lines.append(f"[FAIL] {f}")
+        return 1, lines
+    lines.append("[PASS] Slide 17 R2.3e risk findings contract")
+    lines.append("[PASS] Slide 29 R2.3e risk findings contract")
+    return 0, lines
+
+
 def main() -> int:
     target = Path(__file__).with_name("inspect-o541-pptx.py")
     cmd = [sys.executable, str(target), *sys.argv[1:]]
@@ -417,15 +643,18 @@ def main() -> int:
     r23d_rc, r23d_lines = _r23d_compliance_checks(pptx_path, report_json_path)
     for line in r23d_lines:
         print(line)
+    r23e_rc, r23e_lines = _r23e_risk_findings_checks(pptx_path, report_json_path)
+    for line in r23e_lines:
+        print(line)
     reg_rc = 0
     if is_fixture:
         print("[PASS] Fixture mode — regression locks skipped by design")
     else:
-        baseline = Path("storage/digital-profile/qa-r2-3c-top-results/report-v17-ru-internal-draft.pptx")
+        baseline = Path("storage/digital-profile/qa-r2-3d-compliance/report-v17-ru-internal-draft.pptx")
         reg_rc, reg_lines = _regression_lock_checks(pptx_path, baseline)
         for line in reg_lines:
             print(line)
-    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or reg_rc != 0) else 0
+    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or reg_rc != 0) else 0
 
 
 if __name__ == "__main__":

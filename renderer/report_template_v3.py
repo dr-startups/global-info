@@ -734,12 +734,37 @@ def _b_wiki_knowledge(slide, top, blk, vm, ctx):
 
 def _b_findings(slide, top, blk, vm, ctx):
     L = vm["labels"]
-    rows = [[f["severity"], f["theme"], T.truncate(f["title"], 46), f["reviewStatus"], f["evidenceCount"]] for f in blk["riskFindings"]]
-    if rows:
-        T.table(slide, top, [L["th_severity"], L["th_theme"], L["th_finding"], L["th_review"], L["th_evidence"]], rows,
-                col_widths=[0.14, 0.20, 0.38, 0.16, 0.12])
-    else:
-        T.no_data_card(slide, top, L["nd_no_findings_region"])
+    findings = list(blk.get("riskFindings") or [])
+    if findings:
+        T.r2_risk_findings_table(
+            slide,
+            top,
+            rows=findings,
+            labels=L,
+            max_rows=6,
+            col_widths=[0.46, 0.22, 0.14, 0.18],
+            layout_warnings=ctx.layout_warnings,
+        )
+        return
+
+    is_ru = str(blk.get("code", "")).upper() == "RU"
+    T.r2_risk_findings_empty_state(
+        slide,
+        top,
+        headline=L.get(
+            "rf_empty_ru_title" if is_ru else "rf_empty_intl_title",
+            "Риск-находки по российскому сегменту не зафиксированы" if is_ru else "Международные риск-находки не зафиксированы",
+        ),
+        body=L.get(
+            "rf_empty_ru_body" if is_ru else "rf_empty_intl_body",
+            (
+                "В доступных источниках нет подтверждённых находок, требующих отдельного вывода."
+                if is_ru
+                else "По международному сегменту нет подтверждённых находок, требующих отдельного вывода."
+            ),
+        ),
+        width_ratio=0.70 if is_ru else 0.72,
+    )
 
 
 def _b_data_quality(slide, top, blk, vm, ctx):
