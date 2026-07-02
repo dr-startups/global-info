@@ -1529,6 +1529,223 @@ def _p_about(prs, vm, ctx):
         top = T.note(slide, top, d, "disclaimer")
 
 
+def _r31_evidence_rows(entries: list[dict], L: dict, *, include_reason: bool = False) -> list[list[str]]:
+    def _safe_identity(raw: Any) -> str:
+        s = str(raw or "").lower()
+        if any(tok in s for tok in ("exact", "confirmed", "match confirmed", "подтверж")):
+            return L.get("status_confirmed", "Подтверждено")
+        if any(tok in s for tok in ("likely", "возможно", "вероят")):
+            return L.get("status_likely_subject", "Вероятно относится к субъекту")
+        if any(tok in s for tok in ("review", "pending", "needs", "провер")):
+            return L.get("status_needs_review", "Требует проверки")
+        return "—"
+
+    def _safe_status(raw: Any) -> str:
+        s = str(raw or "").lower()
+        if any(tok in s for tok in ("excluded", "noise", "false", "dismiss", "исключ")):
+            return L.get("status_excluded_noise", "Исключено / шум")
+        if any(tok in s for tok in ("review", "pending", "needs", "провер")):
+            return L.get("status_needs_review", "Требует проверки")
+        return L.get("status_confirmed", "Подтверждено")
+
+    rows: list[list[str]] = []
+    for e in entries:
+        title = T.r2_truncate_cell_text(e.get("title"), 54)
+        domain = T.r2_domain_text(str(e.get("domain") or e.get("link") or ""), 30)
+        if include_reason:
+            reason = T.r2_truncate_cell_text(e.get("reason") or L.get("r31_reason_filtered", "Отфильтровано"), 28)
+            status = L.get("status_excluded_noise", "Исключено / шум")
+            rows.append([title, domain, reason, status])
+        else:
+            identity = _safe_identity(e.get("identity") or e.get("classification"))
+            status = _safe_status(e.get("review") or e.get("classification"))
+            rows.append([title, domain, identity, status])
+    return rows
+
+
+def _p_r31_appendix_cover(prs, vm, ctx):
+    L = vm["labels"]
+    slide, top = _section(
+        prs,
+        ctx,
+        L.get("r31_appendix_cover_title", "Расширенное приложение с доказательствами"),
+        L.get("r31_appendix_cover_subtitle", "Структурированная навигация по подтверждённым и спорным материалам"),
+    )
+    top = T.card(
+        slide,
+        T.MARGIN,
+        top,
+        T.CONTENT_W,
+        Emu(1650000),
+        L.get("r31_appendix_cover_card_title", "Назначение раздела"),
+        [
+            L.get("r31_appendix_cover_line_1", "Раздел объединяет подтверждённые материалы, очередь аналитической проверки и исключённые совпадения."),
+            L.get("r31_appendix_cover_line_2", "Все блоки показываются в клиент-safe формате без технических внутренних обозначений."),
+        ],
+        tone=T.ACCENT,
+    )
+    T.note(slide, top, L.get("r31_appendix_cover_note", "Подробные материалы сохраняются для последующей аналитической трассируемости."), "disclaimer")
+
+
+def _p_r31_appendix_overview(prs, vm, ctx):
+    L = vm["labels"]
+    ov = vm.get("appendixOverview") or {}
+    slide, top = _section(prs, ctx, L.get("r31_appendix_overview_title", "Структура расширенного приложения"))
+    cards = list(ov.get("cards") or [])
+    if cards:
+        top = T.metric_cards(slide, top, cards[:4], per_row=4)
+    lines = list(ov.get("lines") or [])
+    if lines:
+        top = T.bullets(slide, top, lines[:6], max_items=6, layout_warnings=ctx.layout_warnings)
+    else:
+        top = T.no_data_card(slide, top, L.get("r31_no_data_overview", "Достаточные структурированные материалы для обзора не зафиксированы."))
+    T.note(slide, top, L.get("r31_appendix_overview_note", "Каждый блок раздела готов к отдельному экспертному разбору."), "info")
+
+
+def _p_r31_region_evidence(prs, vm, ctx, *, title_key: str, subtitle_key: str, entries: list[dict], include_reason: bool = False):
+    L = vm["labels"]
+    slide, top = _section(prs, ctx, L.get(title_key, "Раздел"), L.get(subtitle_key, ""))
+    rows = _r31_evidence_rows(entries, L, include_reason=include_reason)
+    if rows:
+        if include_reason:
+            top = T.table(
+                slide,
+                top,
+                [L.get("th_evidence_material", "Материал"), L["th_domain"], L.get("th_reason", "Причина"), L.get("th_status", "Статус")],
+                rows,
+                max_rows=8,
+                col_widths=[0.40, 0.20, 0.22, 0.18],
+                note_text=L.get("r31_table_note", "Показаны приоритетные записи; полный перечень сохранён в материалах проверки."),
+                layout_warnings=ctx.layout_warnings,
+            )
+        else:
+            top = T.table(
+                slide,
+                top,
+                [L.get("th_evidence_material", "Материал"), L["th_domain"], L.get("th_identity", "Идентичность"), L.get("th_status", "Статус")],
+                rows,
+                max_rows=8,
+                col_widths=[0.40, 0.20, 0.20, 0.20],
+                note_text=L.get("r31_table_note", "Показаны приоритетные записи; полный перечень сохранён в материалах проверки."),
+                layout_warnings=ctx.layout_warnings,
+            )
+    else:
+        top = T.no_data_card(slide, top, L.get("r31_no_data_region_evidence", "По текущему сегменту релевантные записи не зафиксированы."))
+    T.note(
+        slide,
+        top,
+        L.get(
+            "r31_region_evidence_note",
+            "Материалы представлены в клиент-safe формате и сохраняют трассируемость для экспертной проверки.",
+        ),
+        "disclaimer",
+    )
+
+
+def _p_r31_media_overview(prs, vm, ctx):
+    L = vm["labels"]
+    md = vm.get("mediaEvidenceOverview") or {}
+    slide, top = _section(prs, ctx, L.get("r31_media_overview_title", "Сводка по медиа-доказательствам"))
+    cards = list(md.get("cards") or [])
+    if cards:
+        top = T.metric_cards(slide, top, cards[:4], per_row=4)
+    narrative = list(md.get("lines") or [])
+    if narrative:
+        top = T.card(
+            slide,
+            T.MARGIN,
+            top,
+            T.CONTENT_W,
+            Emu(1650000),
+            L.get("r31_media_narrative_title", "Ключевые наблюдения"),
+            narrative[:3],
+            tone=T.ACCENT,
+        )
+    else:
+        top = T.no_data_card(slide, top, L.get("r31_no_data_media", "Подтверждённые медиа-материалы для отдельной сводки не зафиксированы."))
+    T.note(slide, top, L.get("r31_media_note", "Источник и контекст каждого медиа-материала доступны в приложении."), "info")
+
+
+def _p_r31_risk_reasoning_overview(prs, vm, ctx):
+    L = vm["labels"]
+    rr = vm.get("riskReasoningOverview") or {}
+    slide, top = _section(prs, ctx, L.get("r31_risk_reasoning_overview_title", "Обоснование итогового уровня риска"))
+    top = T.metric_cards(
+        slide,
+        top,
+        [
+            _risk_card_value(rr.get("overallRiskLevel", "UNKNOWN"), L),
+            {"label": L.get("r31_risk_reasoning_themes", "Ключевые темы"), "value": len(rr.get("topThemes") or [])},
+            {"label": L.get("r31_risk_reasoning_signals", "Опорные сигналы"), "value": len(rr.get("rows") or [])},
+            {"label": L.get("r31_risk_reasoning_actions", "Рекомендуемые действия"), "value": len(rr.get("recommendedActions") or [])},
+        ],
+        per_row=4,
+    )
+    lines = list(rr.get("supportingSignals") or [])
+    if lines:
+        top = T.bullets(slide, top, lines[:6], max_items=6, layout_warnings=ctx.layout_warnings)
+    themes = [str(t.get("theme", "")) for t in (rr.get("topThemes") or []) if str(t.get("theme", ""))]
+    if themes:
+        T.note(slide, top, L.get("r31_risk_reasoning_top_themes", "Приоритетные темы: {themes}.").format(themes=", ".join(themes[:4])), "disclaimer")
+
+
+def _p_r31_risk_reasoning_by_region(prs, vm, ctx):
+    L = vm["labels"]
+    rr = vm.get("riskReasoningByRegion") or {}
+    slide, top = _section(prs, ctx, L.get("r31_risk_reasoning_region_title", "Региональная детализация обоснования"))
+    ru = rr.get("ru") or {}
+    intl = rr.get("intl") or {}
+    top = T.metric_cards(
+        slide,
+        top,
+        [
+            {"label": f"{ru.get('label', 'RU')} — {L['region_risk']}", "value": ru.get("riskLevel", "UNKNOWN"), "tone": T.RISK_COLORS.get(str(ru.get("riskLevel", "UNKNOWN")).upper(), T.NEUTRAL_GRAY)},
+            {"label": f"{intl.get('label', 'INTL')} — {L['region_risk']}", "value": intl.get("riskLevel", "UNKNOWN"), "tone": T.RISK_COLORS.get(str(intl.get("riskLevel", "UNKNOWN")).upper(), T.NEUTRAL_GRAY)},
+        ],
+        per_row=2,
+    )
+    ru_lines = [ru.get("conclusion", "")] + list(ru.get("signals") or [])[:2]
+    intl_lines = [intl.get("conclusion", "")] + list(intl.get("signals") or [])[:2]
+    top = T.card(slide, T.MARGIN, top, Emu(int(T.CONTENT_W * 0.49)), Emu(1700000), ru.get("label", "RU"), [x for x in ru_lines if x], tone=T.ACCENT)
+    T.card(
+        slide,
+        Emu(int(T.MARGIN) + int(T.CONTENT_W * 0.51)),
+        Emu(int(top) - 1780000),
+        Emu(int(T.CONTENT_W * 0.49)),
+        Emu(1700000),
+        intl.get("label", "INTL"),
+        [x for x in intl_lines if x],
+        tone=T.ACCENT_SOFT,
+    )
+    T.note(slide, Emu(int(top) + 80000), L.get("r31_risk_reasoning_region_note", "Региональные выводы отражают текущий объём подтверждённых сигналов и требуют периодической актуализации."), "disclaimer")
+
+
+def _p_r31_appendix_conclusion(prs, vm, ctx):
+    L = vm["labels"]
+    ac = vm.get("appendixConclusion") or {}
+    slide, top = _section(prs, ctx, L.get("r31_appendix_conclusion_title", "Навигация по расширенному приложению"))
+    lines = list(ac.get("lines") or [])
+    if lines:
+        top = T.card(
+            slide,
+            T.MARGIN,
+            top,
+            T.CONTENT_W,
+            Emu(1650000),
+            L.get("r31_appendix_conclusion_card_title", "Итог раздела"),
+            lines[:3],
+            tone=T.ACCENT,
+        )
+    else:
+        top = T.no_data_card(slide, top, L.get("r31_no_data_conclusion", "Итоговые материалы приложения не сформированы."))
+    T.note(
+        slide,
+        top,
+        L.get("r31_appendix_conclusion_note", "Детальные материалы сохранены для аналитической проверки и доказательной трассируемости."),
+        "disclaimer",
+    )
+
+
 def _solution(vm, idx: int) -> dict:
     sols = vm["offerBlock"]["solutions"]
     if idx < len(sols):
@@ -1608,6 +1825,64 @@ def build_report_v3(
         _p_process,
         _p_about,
     ]
+    r31_pages = [
+        _p_r31_appendix_cover,
+        _p_r31_appendix_overview,
+        lambda prs_, vm_, ctx_: _p_r31_region_evidence(
+            prs_,
+            vm_,
+            ctx_,
+            title_key="r31_ru_confirmed_title",
+            subtitle_key="r31_ru_confirmed_subtitle",
+            entries=list((vm_.get("evidenceConfirmedRu") or {}).get("confirmed") or []),
+        ),
+        lambda prs_, vm_, ctx_: _p_r31_region_evidence(
+            prs_,
+            vm_,
+            ctx_,
+            title_key="r31_ru_review_title",
+            subtitle_key="r31_ru_review_subtitle",
+            entries=list((vm_.get("evidenceReviewRu") or {}).get("rows") or []),
+        ),
+        lambda prs_, vm_, ctx_: _p_r31_region_evidence(
+            prs_,
+            vm_,
+            ctx_,
+            title_key="r31_ru_excluded_title",
+            subtitle_key="r31_ru_excluded_subtitle",
+            entries=list((vm_.get("evidenceExcludedRu") or {}).get("rows") or []),
+            include_reason=True,
+        ),
+        lambda prs_, vm_, ctx_: _p_r31_region_evidence(
+            prs_,
+            vm_,
+            ctx_,
+            title_key="r31_intl_confirmed_title",
+            subtitle_key="r31_intl_confirmed_subtitle",
+            entries=list((vm_.get("evidenceConfirmedIntl") or {}).get("confirmed") or []),
+        ),
+        lambda prs_, vm_, ctx_: _p_r31_region_evidence(
+            prs_,
+            vm_,
+            ctx_,
+            title_key="r31_intl_review_title",
+            subtitle_key="r31_intl_review_subtitle",
+            entries=list((vm_.get("evidenceReviewIntl") or {}).get("rows") or []),
+        ),
+        lambda prs_, vm_, ctx_: _p_r31_region_evidence(
+            prs_,
+            vm_,
+            ctx_,
+            title_key="r31_intl_excluded_title",
+            subtitle_key="r31_intl_excluded_subtitle",
+            entries=list((vm_.get("evidenceExcludedIntl") or {}).get("rows") or []),
+            include_reason=True,
+        ),
+        _p_r31_media_overview,
+        _p_r31_risk_reasoning_overview,
+        _p_r31_risk_reasoning_by_region,
+        _p_r31_appendix_conclusion,
+    ]
 
     builders: list[Callable] = [
         _p_cover, _p_contents, _p_executive, _p_risk_matrix, _p_overview,
@@ -1619,6 +1894,7 @@ def build_report_v3(
         _p_compliance_review_quality,
         _p_compliance_findings,
         *offer_pages,
+        *r31_pages,
     ]
 
     ctx.total = len(builders)

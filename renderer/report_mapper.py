@@ -1539,6 +1539,105 @@ def enrich_ru_orion_images(blk: dict, report_json: dict, *, subject: str, audit_
     }
 
 
+def _is_review_appendix_entry(entry: dict) -> bool:
+    v = " ".join(
+        str(entry.get(k, "") or "")
+        for k in ("review", "classification", "identity")
+    ).lower()
+    return any(tok in v for tok in ("review", "pending", "needs", "провер"))
+
+
+def _appendix_region_vm(blk: dict) -> dict:
+    evidence_rows = list(blk.get("evidenceAppendix") or [])
+    excluded_rows = list(blk.get("excludedAppendix") or [])
+    confirmed = [e for e in evidence_rows if not _is_review_appendix_entry(e)]
+    review = [e for e in evidence_rows if _is_review_appendix_entry(e)]
+    return {
+        "label": blk.get("label", ""),
+        "riskLevel": blk.get("riskLevel", "UNKNOWN"),
+        "confirmed": confirmed,
+        "review": review,
+        "excluded": excluded_rows,
+    }
+
+
+def _appendix_overview_vm(vm: dict, L: dict) -> dict:
+    ru = _appendix_region_vm(vm.get("ru") or {})
+    intl = _appendix_region_vm(vm.get("intl") or {})
+    return {
+        "title": L.get("r31_appendix_overview_title", "Evidence appendix overview"),
+        "cards": [
+            {"label": L.get("r31_appendix_card_confirmed", "Confirmed evidence"), "value": len(ru["confirmed"]) + len(intl["confirmed"])},
+            {"label": L.get("r31_appendix_card_review", "Review queue"), "value": len(ru["review"]) + len(intl["review"])},
+            {"label": L.get("r31_appendix_card_excluded", "Excluded / noise"), "value": len(ru["excluded"]) + len(intl["excluded"])},
+            {"label": L.get("r31_appendix_card_media", "Media evidence"), "value": int((vm.get("ru") or {}).get("images", {}).get("selected", 0) or 0) + int((vm.get("ru") or {}).get("videos", {}).get("selected", 0) or 0) + int((vm.get("intl") or {}).get("images", {}).get("selected", 0) or 0) + int((vm.get("intl") or {}).get("videos", {}).get("selected", 0) or 0)},
+        ],
+        "lines": [
+            L.get("r31_appendix_overview_line_confirmed", "Confirmed materials are grouped separately from items pending analyst review."),
+            L.get("r31_appendix_overview_line_excluded", "Excluded and noise materials are preserved for traceability and quality control."),
+            L.get("r31_appendix_overview_line_media", "Media evidence is summarized across Russian and international segments."),
+        ],
+    }
+
+
+def _media_evidence_overview_vm(vm: dict, L: dict) -> dict:
+    ru = vm.get("ru") or {}
+    intl = vm.get("intl") or {}
+    ru_img = ru.get("images") or {}
+    ru_vid = ru.get("videos") or {}
+    in_img = intl.get("images") or {}
+    in_vid = intl.get("videos") or {}
+    return {
+        "cards": [
+            {"label": L.get("r31_media_images_total", "Images selected"), "value": int(ru_img.get("selected", 0) or 0) + int(in_img.get("selected", 0) or 0)},
+            {"label": L.get("r31_media_videos_total", "Videos selected"), "value": int(ru_vid.get("selected", 0) or 0) + int(in_vid.get("selected", 0) or 0)},
+            {"label": L.get("r31_media_ru_coverage", "RU media coverage"), "value": f"{int(ru_img.get('selected', 0) or 0)}/{int((ru_img.get('total', 0) or 0) + (ru_vid.get('total', 0) or 0))}"},
+            {"label": L.get("r31_media_intl_coverage", "INTL media coverage"), "value": f"{int(in_img.get('selected', 0) or 0)}/{int((in_img.get('total', 0) or 0) + (in_vid.get('total', 0) or 0))}"},
+        ],
+        "lines": [
+            L.get("r31_media_line_images", "Image search evidence is prioritized by relevance to the subject."),
+            L.get("r31_media_line_videos", "Video evidence is retained with source references for analyst verification."),
+            L.get("r31_media_line_sources", "Coverage combines Russian and international source sets without duplicate leakage."),
+        ],
+    }
+
+
+def _risk_reasoning_overview_vm(vm: dict, L: dict) -> dict:
+    final = vm.get("finalConclusion") or {}
+    rows = list((vm.get("riskMatrix") or {}).get("rows") or [])
+    return {
+        "overallRiskLevel": final.get("overallRiskLevel", "UNKNOWN"),
+        "topThemes": list(final.get("topThemes") or []),
+        "rows": rows,
+        "recommendedActions": list(final.get("recommendedActions") or []),
+        "warnings": list(final.get("warnings") or []),
+        "supportingSignals": [
+            L.get("r31_risk_signal_search", "Search profile signals"),
+            L.get("r31_risk_signal_compliance", "Compliance and regulatory signals"),
+            L.get("r31_risk_signal_media", "Media and narrative signals"),
+        ],
+    }
+
+
+def _risk_reasoning_by_region_vm(vm: dict, L: dict) -> dict:
+    def _one(blk: dict) -> dict:
+        summary = blk.get("summary") or {}
+        themes = list((blk.get("themes") or {}).get("topThemes") or [])
+        return {
+            "label": blk.get("label", ""),
+            "riskLevel": blk.get("riskLevel", "UNKNOWN"),
+            "conclusion": blk.get("conclusion") or L.get("interim_conclusion_fallback", ""),
+            "signals": [
+                f"{L.get('m_organic_negative', 'Negative organic')}: {summary.get('organicNegative', 0)}",
+                f"{L.get('m_suggestions_nt', 'Suggestions')}: {summary.get('suggestions', '0/0')}",
+                f"{L.get('m_images_nt', 'Images')}: {summary.get('images', '0/0')}",
+            ],
+            "themes": [str(t.get("theme", "")) for t in themes[:3] if str(t.get("theme", ""))],
+        }
+
+    return {"ru": _one(vm.get("ru") or {}), "intl": _one(vm.get("intl") or {})}
+
+
 def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[dict, list[str]]:
     vm, warnings = build_view_model_v2(report_json)
     internal = str(audience).lower() != "client"
@@ -1589,6 +1688,30 @@ def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[
             audit_date=str((vm.get("cover") or {}).get("auditDate") or ""),
             L=vm["labels"],
         )
+
+    vm["evidenceConfirmedRu"] = _appendix_region_vm(vm.get("ru") or {})
+    vm["evidenceReviewRu"] = {"rows": list(vm["evidenceConfirmedRu"]["review"])}
+    vm["evidenceExcludedRu"] = {"rows": list(vm["evidenceConfirmedRu"]["excluded"])}
+    vm["evidenceConfirmedIntl"] = _appendix_region_vm(vm.get("intl") or {})
+    vm["evidenceReviewIntl"] = {"rows": list(vm["evidenceConfirmedIntl"]["review"])}
+    vm["evidenceExcludedIntl"] = {"rows": list(vm["evidenceConfirmedIntl"]["excluded"])}
+    vm["appendixOverview"] = _appendix_overview_vm(vm, vm["labels"])
+    vm["mediaEvidenceOverview"] = _media_evidence_overview_vm(vm, vm["labels"])
+    vm["riskReasoningOverview"] = _risk_reasoning_overview_vm(vm, vm["labels"])
+    vm["riskReasoningByRegion"] = _risk_reasoning_by_region_vm(vm, vm["labels"])
+    vm["appendixConclusion"] = {
+        "title": vm["labels"].get("r31_appendix_conclusion_title", "Appendix conclusion"),
+        "lines": [
+            vm["labels"].get(
+                "r31_appendix_conclusion_line_1",
+                "Detailed evidence is retained for analyst verification and traceability.",
+            ),
+            vm["labels"].get(
+                "r31_appendix_conclusion_line_2",
+                "The appendix structure supports transparent navigation between confirmed materials and review items.",
+            ),
+        ],
+    }
 
     return vm, warnings
 

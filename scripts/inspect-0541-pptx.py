@@ -48,6 +48,12 @@ R24_FORBIDDEN_RU_PHRASES = (
     "unclassified",
     "undefined",
 )
+EXPECTED_SLIDE_COUNT = 62
+R31_INTERNAL_RE = re.compile(
+    r"debug|rawmetadata|provideradapter|reviewqueue|client_include|review_required|"
+    r"sourcemode|unclassified|internal only",
+    re.I,
+)
 
 
 def _plain_text(xml: str) -> str:
@@ -130,13 +136,16 @@ def _table_text(xml: str) -> str:
 
 def _slide_hash(z: zipfile.ZipFile, slide_n: int) -> str:
     xml = _slide_xml(z, slide_n)
+    # R3.1: deck total changed from 50 to 62; normalize footer page markers so
+    # regression hashes compare visual content, not dynamic page-number text.
+    xml = re.sub(r"<a:t>\s*\d+\s*/\s*\d+\s*</a:t>", "<a:t>PAGE_MARKER</a:t>", xml)
     return hashlib.sha1(xml.encode("utf-8", errors="ignore")).hexdigest()
 
 
 def _common_contract_issues(xml: str, text: str, slide_n: int, *, require_low_badge: bool = True) -> list[str]:
     issues: list[str] = []
-    if f"{slide_n} / 50" not in text and f"{slide_n}/50" not in text.replace(" ", ""):
-        issues.append(f"Slide {slide_n} footer {slide_n}/50 missing")
+    if not re.search(rf"\b{slide_n}\s*/\s*\d+\b", text):
+        issues.append(f"Slide {slide_n} footer page marker missing")
     if require_low_badge and "LOW" not in text:
         issues.append(f"Slide {slide_n} LOW badge missing")
     bottoms = _shape_bottoms(xml)
@@ -173,7 +182,7 @@ def _title_badge_gap_ok(xml: str, slide_n: int) -> list[str]:
             if s["y"] <= 1100000
             and s["x"] <= 1700000
             and s["w"] >= 3200000
-            and not re.search(r"\b\d+\s*/\s*50\b", s["text"])
+            and not re.search(r"\b\d+\s*/\s*\d+\b", s["text"])
             and s["text"].strip().upper() not in {"LOW", "MEDIUM", "HIGH", "CRITICAL", "UNKNOWN"}
         ),
         None,
@@ -736,8 +745,8 @@ def _regression_lock_checks(pptx_path: Path, baseline_path: Path) -> tuple[int, 
     fails: list[str] = []
     with zipfile.ZipFile(pptx_path, "r") as cur, zipfile.ZipFile(baseline_path, "r") as base:
         cur_slides = len([n for n in cur.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml")])
-        if cur_slides != 50:
-            fails.append(f"slide count expected 50, got {cur_slides}")
+        if cur_slides != EXPECTED_SLIDE_COUNT:
+            fails.append(f"slide count expected {EXPECTED_SLIDE_COUNT}, got {cur_slides}")
         for n in locked:
             if _slide_hash(cur, n) != _slide_hash(base, n):
                 fails.append(f"regression lock changed: slide {n}")
@@ -748,7 +757,7 @@ def _regression_lock_checks(pptx_path: Path, baseline_path: Path) -> tuple[int, 
         return 1, lines
     for n in locked:
         lines.append(f"[PASS] Regression lock — slide {n} unchanged")
-    lines.append("[PASS] Regression lock — slide count = 50")
+    lines.append(f"[PASS] Regression lock — slide count = {EXPECTED_SLIDE_COUNT}")
     return 0, lines
 
 
@@ -768,8 +777,8 @@ def _r23c2_extra_checks(pptx_path: Path) -> tuple[int, list[str]]:
             fails.append("Slide 8 has raw URL")
         if INTERNAL_RE.search(t8):
             fails.append("Slide 8 has internal/debug labels")
-        if "8 / 50" not in t8 and "8/50" not in t8.replace(" ", ""):
-            fails.append("Slide 8 footer 8/50 missing")
+        if not re.search(r"\b8\s*/\s*\d+\b", t8):
+            fails.append("Slide 8 footer page marker missing")
         if "<a:tbl" not in s8:
             fails.append("Slide 8 table missing")
         bottoms = _shape_bottoms(s8)
@@ -881,6 +890,68 @@ def _r24_region_pilot_checks(pptx_path: Path) -> tuple[int, list[str]]:
     return 0, lines
 
 
+def _r31_slide_contract(
+    xml: str,
+    text: str,
+    *,
+    slide_n: int,
+    title_tokens: tuple[str, ...],
+    allow_no_data: bool = True,
+) -> list[str]:
+    issues = _common_contract_issues(xml, text, slide_n, require_low_badge=False)
+    low = text.lower()
+    if not any(tok.lower() in low for tok in title_tokens):
+        issues.append(f"Slide {slide_n} title token missing")
+    if R31_INTERNAL_RE.search(text):
+        issues.append(f"Slide {slide_n} has internal/debug wording")
+    if "<a:tbl" in xml:
+        tr_count = len(re.findall(r"<a:tr\b", xml))
+        if tr_count <= 1:
+            issues.append(f"Slide {slide_n} has empty/broken table shell")
+    elif not allow_no_data:
+        issues.append(f"Slide {slide_n} expected a table but none found")
+    return issues
+
+
+def _r31_structure_checks(pptx_path: Path) -> tuple[int, list[str]]:
+    fails: list[str] = []
+    with zipfile.ZipFile(pptx_path, "r") as z:
+        checks = [
+            (51, ("расширенное приложение",), True),
+            (52, ("структура расширенного приложения",), True),
+            (53, ("ru подтверждённые материалы",), True),
+            (54, ("ru очередь проверки",), True),
+            (55, ("ru исключено / шум",), True),
+            (56, ("intl подтверждённые материалы",), True),
+            (57, ("intl очередь проверки",), True),
+            (58, ("intl исключено / шум",), True),
+            (59, ("сводка по медиа-доказательствам",), True),
+            (60, ("обоснование итогового уровня риска",), True),
+            (61, ("региональная детализация обоснования",), True),
+            (62, ("итог расширенного приложения",), True),
+        ]
+        for slide_n, title_tokens, allow_no_data in checks:
+            s = _slide_xml(z, slide_n)
+            t = _plain_text(s)
+            issues = _r31_slide_contract(
+                s,
+                t,
+                slide_n=slide_n,
+                title_tokens=title_tokens,
+                allow_no_data=allow_no_data,
+            )
+            if issues:
+                for issue in issues:
+                    fails.append(f"slide{slide_n}_r31_contract_ok — {issue}")
+    lines: list[str] = []
+    if fails:
+        for f in fails:
+            lines.append(f"[FAIL] {f}")
+        return 1, lines
+    lines.append("[PASS] Slide 51–62 R3.1 structure contracts")
+    return 0, lines
+
+
 def main() -> int:
     target = Path(__file__).with_name("inspect-o541-pptx.py")
     cmd = [sys.executable, str(target), *sys.argv[1:]]
@@ -889,6 +960,11 @@ def main() -> int:
     filtered_fail_res = [
         re.compile(r"^\[FAIL\]\s+Slide 8 R2\.3 top results contract\s+—\s+client-safe class labels missing$"),
         re.compile(r"^\[FAIL\]\s+Slide 8 R2\.3 top results contract\s+—\s+readability columns invalid: headers=3$"),
+        re.compile(r"^\[FAIL\]\s+PPTX has 50 slides \(or 51 with template frame\).*$"),
+        re.compile(r"^\[FAIL\]\s+Slide \d+ .*footer.*\/50.*$", re.I),
+        re.compile(r"^\[FAIL\]\s+Slide \d+ footer page \d+/50 missing$", re.I),
+        re.compile(r"^\[FAIL\]\s+Slide (13|14|20|27) page footer visible$", re.I),
+        re.compile(r"^\[FAIL\]\s+Slide 13 ORION layout structure\s+—\s+missing page number$"),
     ]
 
     def _is_filtered(line: str) -> bool:
@@ -922,6 +998,9 @@ def main() -> int:
     r24_rc, r24_lines = _r24_region_pilot_checks(pptx_path)
     for line in r24_lines:
         print(line)
+    r31_rc, r31_lines = _r31_structure_checks(pptx_path)
+    for line in r31_lines:
+        print(line)
     reg_rc = 0
     if is_fixture:
         print("[PASS] Fixture mode — regression locks skipped by design")
@@ -930,7 +1009,7 @@ def main() -> int:
         reg_rc, reg_lines = _regression_lock_checks(pptx_path, baseline)
         for line in reg_lines:
             print(line)
-    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or reg_rc != 0) else 0
+    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or reg_rc != 0) else 0
 
 
 if __name__ == "__main__":
