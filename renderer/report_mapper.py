@@ -1356,6 +1356,189 @@ def _evidence_quality_vm(eq: dict | None, L: dict, internal: bool) -> dict:
     }
 
 
+def _subject_image_query_variants(subject: str, L: dict) -> list[str]:
+    parts = [p for p in str(subject or "").split() if p.strip()]
+    out: list[str] = []
+    if subject:
+        out.append(str(subject).strip())
+    if len(parts) >= 2:
+        out.append(f"{parts[1]} {parts[0]}")
+    if len(parts) >= 3:
+        out.append(f"{parts[0]} {parts[1]} {parts[2]}")
+        out.append(f"{parts[1]} {parts[2]} {parts[0]}")
+        bio_tpl = L.get("orion_images_query_bio", "{name} biography")
+        out.append(bio_tpl.format(name=f"{parts[1]} {parts[0]}"))
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for q in out:
+        q = truncate(q, 52)
+        if q and q not in seen:
+            seen.add(q)
+            deduped.append(q)
+    return deduped
+
+
+def _audit_image_to_item(i: dict) -> dict:
+    url = i.get("sourcePageUrl") or i.get("url") or ""
+    b64 = _image_thumbnail_b64(i)
+    return {
+        "title": truncate(i.get("title"), 50),
+        "source": i.get("source") or domain(url),
+        "sourcePageUrl": url,
+        "url": url,
+        "thumbnailStorageKey": i.get("thumbnailStorageKey"),
+        "thumbnailBase64": b64,
+        "thumbnailBytesBase64": i.get("thumbnailBytesBase64") or b64,
+        "thumbnailMimeType": i.get("thumbnailMimeType"),
+        "identityDecision": i.get("identityDecision") or "",
+        "hasThumbnail": bool(b64),
+        "subjectMatched": str(i.get("identityDecision") or "") in ("EXACT_SUBJECT", "LIKELY_SUBJECT"),
+    }
+
+
+def _orion_short_query(subject: str, queries: list[str]) -> str:
+    parts = [p for p in str(subject or "").split() if p.strip()]
+    if len(parts) >= 2:
+        short = f"{parts[0]} {parts[1]}"
+        return truncate(short, 32)
+    if queries:
+        return truncate(str(queries[0]), 32)
+    return truncate(subject, 32)
+
+
+def _build_orion_image_grid(r: dict, items: list[dict]) -> list[dict]:
+    pool: list[dict] = []
+    seen: set[str] = set()
+
+    def _add(raw: dict) -> None:
+        if not raw.get("hasThumbnail") and not _image_thumbnail_b64(raw):
+            return
+        key = str(raw.get("thumbnailStorageKey") or raw.get("url") or raw.get("title") or "")
+        if key and key in seen:
+            return
+        if key:
+            seen.add(key)
+        pool.append({**raw, "highlight": False})
+
+    for it in items:
+        _add(it)
+    for i in (r.get("topImages") or []):
+        _add(_audit_image_to_item(i))
+
+    if not pool:
+        return []
+
+    selected_keys: list[str] = []
+    for it in items:
+        if not it.get("subjectMatched"):
+            continue
+        key = str(it.get("thumbnailStorageKey") or it.get("url") or it.get("title") or "")
+        if key and key not in selected_keys:
+            selected_keys.append(key)
+
+    max_grid = 12
+    max_hi = 3
+    grid: list[dict] = []
+    hi_count = 0
+    for it in pool:
+        key = str(it.get("thumbnailStorageKey") or it.get("url") or it.get("title") or "")
+        mark = key in selected_keys and hi_count < max_hi
+        if mark:
+            hi_count += 1
+        grid.append({**it, "highlight": mark})
+        if len(grid) >= max_grid:
+            break
+
+    idx = 0
+    while len(grid) < max_grid and pool:
+        src = pool[idx % len(pool)]
+        grid.append({**src, "highlight": False})
+        idx += 1
+        if idx > max_grid * 2:
+            break
+    return grid[:max_grid]
+
+
+def _build_orion_image_queries(r: dict, subject: str, L: dict) -> list[str]:
+    queries: list[str] = []
+    for s in (r.get("topSuggestions") or [])[:3]:
+        if s:
+            queries.append(truncate(str(s), 48))
+    for s in (r.get("topRelatedQueries") or [])[:2]:
+        if s:
+            queries.append(truncate(str(s), 48))
+    for q in _subject_image_query_variants(subject, L):
+        if q not in queries:
+            queries.append(q)
+    return queries[:4]
+
+
+def _build_orion_summary_bullets(blk: dict, L: dict) -> list[str]:
+    bullets: list[str] = []
+    themes = list((blk.get("themes") or {}).get("topThemes") or [])
+    for t in themes[:2]:
+        theme = str(t.get("theme") or "").strip()
+        if theme:
+            bullets.append(truncate(theme, 72))
+    if not bullets:
+        for u in list((blk.get("themes") or {}).get("negativeUrls") or [])[:2]:
+            title = str(u.get("title") or "").strip()
+            if title:
+                bullets.append(truncate(title, 72))
+    if not bullets:
+        findings = list(blk.get("riskFindings") or [])
+        for f in findings[:2]:
+            title = str(f.get("title") or "").strip()
+            if title:
+                bullets.append(truncate(title, 72))
+    if not bullets:
+        bullets.append(truncate(L.get("orion_images_why_body", "") or "—", 42))
+    return bullets[:1]
+
+
+def enrich_ru_orion_images(blk: dict, report_json: dict, *, subject: str, audit_date: str, L: dict) -> None:
+    """Slide 13 ORION layout — enrich RU block with presentation VM fields."""
+    if not blk or blk.get("code") != "RU":
+        return
+    audit = report_json.get("auditSummary") or {}
+    r = _region(audit.get("regions") or [], "RU") or {}
+    im = dict(blk.get("images") or {})
+    selected = int(im.get("selected") or len(im.get("items") or []))
+    total = int(im.get("total") or 0)
+    items = list(im.get("items") or [])
+    queries = _build_orion_image_queries(r, subject, L)
+    primary_query = queries[0] if queries else truncate(subject, 40)
+    blk["orionImages"] = {
+        "section": L.get("orion_images_section", "04  Images"),
+        "headline": L.get("orion_images_headline", ""),
+        "asOf": L.get("orion_images_as_of", "as of {date}").format(date=audit_date or "—"),
+        "brand": str((report_json.get("offer") or {}).get("companyName") or L.get("op_default_product", "ORION")),
+        "metricX": selected,
+        "metricY": total,
+        "metricLabel": L.get("orion_images_metric", "{x} из {y}").format(x=selected, y=total),
+        "summaryLine": L.get("orion_images_summary_line", ""),
+        "summaryBullets": _build_orion_summary_bullets(blk, L),
+        "queriesTitle": L.get("orion_images_queries_title", "Search queries"),
+        "queries": queries,
+        "primaryQuery": _orion_short_query(subject, queries),
+        "brandDisplay": L.get("orion_images_brand_compact", L.get("op_default_product", "Digital Profile Audit")),
+        "whyTitle": L.get("orion_images_why_title", ""),
+        "whyBody": truncate(L.get("orion_images_why_body", ""), 160),
+        "gridTitle": L.get("orion_images_grid_title", "Images"),
+        "tabs": [
+            L.get("orion_images_tab_search", "search"),
+            L.get("orion_images_tab_images", "images"),
+            L.get("orion_images_tab_video", "video"),
+            L.get("orion_images_tab_maps", "maps"),
+            L.get("orion_images_tab_products", "products"),
+            L.get("orion_images_tab_translator", "translator"),
+            L.get("orion_images_tab_all", "all"),
+        ],
+        "gridItems": _build_orion_image_grid(r, items),
+        "noData": L.get("orion_images_no_data", "No images."),
+    }
+
+
 def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[dict, list[str]]:
     vm, warnings = build_view_model_v2(report_json)
     internal = str(audience).lower() != "client"
@@ -1396,6 +1579,16 @@ def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[
             blk = vm.get(key)
             if blk:
                 vm[key] = _filter_client_region_block(blk)
+
+    ru_blk = vm.get("ru")
+    if ru_blk:
+        enrich_ru_orion_images(
+            ru_blk,
+            report_json,
+            subject=str((vm.get("cover") or {}).get("subjectFullName") or ""),
+            audit_date=str((vm.get("cover") or {}).get("auditDate") or ""),
+            L=vm["labels"],
+        )
 
     return vm, warnings
 

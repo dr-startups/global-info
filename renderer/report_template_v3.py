@@ -427,26 +427,47 @@ def _b_related(slide, top, blk, vm, ctx):
         T.no_data_card(slide, top, L["nd_no_related"])
 
 
+def _p_ru_images_orion(prs, vm, ctx):
+    """Slide 13 — ORION-style images page (replaces gallery card layout)."""
+    L = vm["labels"]
+    blk = vm["ru"]
+    slide = T.blank_slide(prs)
+    if not blk.get("present"):
+        top = T.page_frame(
+            slide,
+            L["pg_images"].replace("{label}", blk["label"]),
+            brand=ctx.brand,
+            page_no=ctx.page,
+            total=ctx.total,
+            watermark=ctx.watermark,
+        )
+        T.no_data_card(
+            slide, top,
+            blk.get("noDataText") or L["no_evidence_region"].format(label=blk["label"]),
+        )
+        return
+    T.orion_images_slide(slide, blk, vm, ctx, layout_warnings=ctx.layout_warnings)
+
+
 def _b_images(slide, top, blk, vm, ctx):
     L = vm["labels"]
     im = blk["images"]
-    internal = vm.get("audience") == "internal"
     collected = im.get("total", 0)
-    selected = im.get("selected", len(im.get("items") or []))
+    items = im.get("items") or []
+    selected = im.get("selected", len(items))
     excluded = max(0, collected - selected)
     top = T.metric_cards(slide, top, [
         {"label": L.get("m_images_collected", L["m_images_total"]), "value": collected},
         {"label": L.get("m_images_subject_matched", "Subject-matched"), "value": selected, "tone": T.SUCCESS if selected else T.NEUTRAL_GRAY},
         {"label": L.get("m_images_excluded", "Excluded"), "value": excluded, "tone": T.NEUTRAL_GRAY},
     ], per_row=3)
-    items = im.get("items") or []
     if items:
         lw = ctx.layout_warnings
-        if internal and im.get("selectionNote"):
-            top = T.note(slide, top, im["selectionNote"], "info")
         top = T.image_grid(
-            slide, top, items, show_identity=internal, labels=L, layout_warnings=lw,
-            allow_cover=False,
+            slide, top, items,
+            show_identity=False,
+            labels=L, layout_warnings=lw,
+            orion_gallery=True,
         )
     else:
         T.no_data_card(slide, top, L.get("nd_no_relevant_images", L["nd_no_images"]))
@@ -906,7 +927,7 @@ def build_report_v3(
         _p_snapshots,
         _rb("ru", _b_suggestions, L["pg_suggestions"]),
         _rb("ru", _b_related, L["pg_related_queries"]),
-        _rb("ru", _b_images, L["pg_images"]),
+        _p_ru_images_orion,
         _rb("ru", _b_videos, L["pg_videos"]),
         _rb("ru", _b_knowledge, L["pg_knowledge_block"]),
         _rb("ru", _b_wikipedia, L["pg_wikipedia"]),

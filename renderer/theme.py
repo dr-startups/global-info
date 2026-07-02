@@ -789,6 +789,13 @@ MAX_VIDEO_ITEMS = 4
 MAX_UPSCALE_RATIO = 2.0
 MAX_INTL_SLIDE_FRAC = 0.55
 IMG_SLOT_FRAC = 0.50
+GAL_ORION_IMG_FRAC = 0.65
+GAL_ORION_IMG_FRAC_TALL = 0.72  # single-row 2-up — image dominates card
+GAL_ORION_MIN_IMG_FRAC = 0.55
+GAL_ORION_MIN_FRAME_H = 1333500  # ~140 px at 96 dpi
+GAL_ORION_MAX_FRAME_ASPECT = 2.35  # reject banner-like image frames (w/h)
+GAL_ASPECT_CONTAIN_LO = 0.55
+GAL_ASPECT_CONTAIN_HI = 2.2
 CARD_BOTTOM_PAD = 91440
 GAL_TITLE_ZONE_H = 228600   # max 2 title lines
 GAL_DOMAIN_ZONE_H = 101600  # 1 domain line
@@ -953,6 +960,8 @@ def _layout_image_card_zones(
     *,
     show_identity: bool,
     intl_compact: bool = False,
+    orion_tile: bool = False,
+    orion_tall: bool = False,
 ) -> dict[str, tuple[int, int]] | None:
     """Return fixed y-zones (top, bottom) relative to card top for image + captions."""
     pad = int(CARD_PAD)
@@ -960,16 +969,23 @@ def _layout_image_card_zones(
     inner_h = max(1, ih - 2 * pad)
     title_h = _gallery_title_zone_h(inner_h)
     domain_h = int(GAL_DOMAIN_ZONE_H)
-    badge_h = int(GAL_BADGE_ZONE_H) if show_identity else 0
+    badge_h = int(GAL_BADGE_ZONE_H) if show_identity and not orion_tile else 0
     bottom_pad = int(CARD_BOTTOM_PAD)
     text_stack = title_h + gap + domain_h + bottom_pad
-    if show_identity:
+    if show_identity and not orion_tile:
         text_stack += gap + badge_h
-    slot_frac = 0.42 if intl_compact else IMG_SLOT_FRAC
+    if orion_tile:
+        slot_frac = GAL_ORION_IMG_FRAC_TALL if orion_tall else GAL_ORION_IMG_FRAC
+        min_img = max(int(inner_h * GAL_ORION_MIN_IMG_FRAC), 450000)
+    elif intl_compact:
+        slot_frac = 0.42
+        min_img = min(int(MIN_GALLERY_IMG_H), max(450000, int(inner_h * 0.38)))
+    else:
+        slot_frac = IMG_SLOT_FRAC
+        min_img = min(int(MIN_GALLERY_IMG_H), max(450000, int(inner_h * 0.38)))
     max_img_h = inner_h - text_stack - gap
     if max_img_h < 400000:
         return None
-    min_img = min(int(MIN_GALLERY_IMG_H), max(450000, int(inner_h * 0.38)))
     img_h = min(int(inner_h * slot_frac), max_img_h)
     if img_h < min_img:
         if max_img_h >= min_img:
@@ -984,7 +1000,7 @@ def _layout_image_card_zones(
     zones["title"] = (y, y + title_h)
     y = zones["title"][1] + gap
     zones["domain"] = (y, y + domain_h)
-    if show_identity:
+    if show_identity and not orion_tile:
         y = zones["domain"][1] + gap
         zones["badge"] = (y, y + badge_h)
     if not assert_no_vertical_overlap(list(zones.values())):
@@ -992,6 +1008,60 @@ def _layout_image_card_zones(
     if zones[list(zones.keys())[-1]][1] > ih - bottom_pad:
         return None
     return zones
+
+
+def _gallery_image_acceptable(raw: bytes, slot_w: int, slot_h: int) -> bool:
+    """Reject thumbnails that would upscale into blurry gallery tiles."""
+    size = _image_native_size(raw)
+    if not size:
+        return len(raw) >= MIN_THUMB_B64_LEN * 3 // 4
+    nw, nh = size
+    if nw <= 0 or nh <= 0:
+        return False
+    return max(slot_w / nw, slot_h / nh) <= MAX_UPSCALE_RATIO
+
+
+def _gallery_image_fit_mode(nw: int, nh: int, box_w: int, box_h: int) -> str:
+    """Cover when safe; contain for banners, upscale, or portrait-in-wide-box (no eye-strip crop)."""
+    if nw <= 0 or nh <= 0:
+        return "contain"
+    img_aspect = nw / nh
+    box_aspect = box_w / max(box_h, 1)
+    if max(box_w / nw, box_h / nh) > MAX_UPSCALE_RATIO:
+        return "contain"
+    if img_aspect > GAL_ASPECT_CONTAIN_HI or img_aspect < GAL_ASPECT_CONTAIN_LO:
+        return "contain"
+    # Portrait headshot in a wide short frame — letterbox instead of horizontal strip crop.
+    if img_aspect < 1.05 and box_aspect > 1.08:
+        return "contain"
+    if img_aspect < 0.90 and box_aspect > img_aspect * 1.35:
+        return "contain"
+    return "cover"
+
+
+def _fit_gallery_image(
+    slide,
+    stream,
+    box_left: int,
+    box_top: int,
+    box_w: int,
+    box_h: int,
+):
+    """Smart gallery fit — cover when safe, else letterboxed contain."""
+    if hasattr(stream, "seek"):
+        stream.seek(0)
+    pic = slide.shapes.add_picture(stream, box_left, box_top)
+    nw, nh = int(pic.width), int(pic.height)
+    mode = _gallery_image_fit_mode(nw, nh, box_w, box_h)
+    try:
+        slide.shapes._spTree.remove(pic._element)
+    except Exception:
+        pass
+    if hasattr(stream, "seek"):
+        stream.seek(0)
+    if mode == "cover":
+        return _fit_picture_cover(slide, stream, box_left, box_top, box_w, box_h)
+    return _fit_picture_contain(slide, stream, box_left, box_top, box_w, box_h)
 
 
 def _fit_picture_for_card(
@@ -1053,11 +1123,15 @@ def _gallery_caption_heights(show_identity: bool, inner_h: int | None = None) ->
     return title_h, domain_h, badge_h, stack
 
 
-def _image_card_min_height(show_identity: bool) -> int:
-    _, _, _, cap_stack = _gallery_caption_heights(show_identity, inner_h=0)
+def _image_card_min_height(show_identity: bool, *, orion_tile: bool = False) -> int:
+    _, _, _, cap_stack = _gallery_caption_heights(show_identity and not orion_tile, inner_h=0)
     pad = int(CARD_PAD)
     gap = int(CARD_ZONE_GAP)
-    return 2 * pad + MIN_GALLERY_IMG_H + cap_stack + gap
+    if orion_tile:
+        min_img = 550000
+    else:
+        min_img = MIN_GALLERY_IMG_H
+    return 2 * pad + min_img + cap_stack + gap
 
 
 def _gallery_notes_reserve_height(
@@ -1065,10 +1139,22 @@ def _gallery_notes_reserve_height(
     total: int,
     *,
     max_shown: int = MAX_GALLERY_ITEMS,
+    orion_gallery: bool = False,
+    planned_shown: int | None = None,
 ) -> int:
     """Conservative vertical reserve for overflow notes below the gallery grid."""
     if total <= 0:
         return 0
+    if orion_gallery:
+        shown = planned_shown if planned_shown is not None else min(total, max_shown)
+        if shown >= total:
+            return 0
+        tpl = labels.get(
+            "media_gallery_footer_note",
+            "Showing {shown} of {total} relevant images. Others saved in evidence.",
+        )
+        line = tpl.format(shown=shown, total=total)
+        return int(text_block_height([line], FS_NOTE, CONTENT_W, space_after_pt=0.0, pad_pt=8.0)) + int(_BLOCK_GAP) + 100000
     candidates: list[str] = []
     if total > max_shown:
         candidates.append(
@@ -1090,7 +1176,37 @@ def _gallery_notes_reserve_height(
     return h + 100000
 
 
-def _gallery_layout_candidates(try_n: int) -> list[tuple[int, int]]:
+def _orion_image_frame_ok(cell_w: int, row_h: int, *, orion_tall: bool = False) -> bool:
+    """True when the ORION image zone is tall enough and not a banner strip."""
+    zones = _layout_image_card_zones(
+        row_h, show_identity=False, orion_tile=True, orion_tall=orion_tall,
+    )
+    if not zones:
+        return False
+    pad = int(CARD_PAD)
+    inner_w = max(1, cell_w - 2 * pad)
+    img_h = zones["img"][1] - zones["img"][0]
+    if img_h < GAL_ORION_MIN_FRAME_H:
+        return False
+    if inner_w / max(img_h, 1) > GAL_ORION_MAX_FRAME_ASPECT:
+        return False
+    return True
+
+
+def _orion_gallery_layout_candidates(usable: int) -> list[tuple[int, int, int]]:
+    """ORION preference: 2x2 only when frames qualify; else 2-up large cards."""
+    if usable >= 4:
+        return [(2, 2, 4), (2, 1, 2)]
+    if usable == 3:
+        return [(2, 2, 3), (2, 1, 2)]
+    if usable == 2:
+        return [(2, 1, 2)]
+    return [(1, 1, min(usable, 1))]
+
+
+def _gallery_layout_candidates(try_n: int, *, orion_gallery: bool = False) -> list[tuple[int, int]]:
+    if orion_gallery:
+        return [(c, r) for c, r, _ in _orion_gallery_layout_candidates(try_n)]
     if try_n <= 1:
         return [(1, 1)]
     if try_n == 2:
@@ -1113,16 +1229,55 @@ def _plan_image_gallery(
     show_identity: bool = False,
     max_shown: int = MAX_GALLERY_ITEMS,
     labels: dict[str, str] | None = None,
-) -> tuple[int, int, int, int, int]:
+    orion_gallery: bool = False,
+) -> tuple[int, int, int, int, int, bool]:
     """Pick cols/rows/count so the full grid + notes fit within CONTENT_SAFE_BOTTOM."""
     labels = labels or {}
     usable = min(count, max_shown)
     gap = int(GUTTER)
-    note_reserve = _gallery_notes_reserve_height(labels, count, max_shown=max_shown)
+    note_reserve = _gallery_notes_reserve_height(
+        labels, count, max_shown=max_shown, orion_gallery=orion_gallery,
+        planned_shown=2 if orion_gallery and count >= 4 else None,
+    )
     safe_bottom = int(CONTENT_SAFE_BOTTOM)
     top_i = int(top)
-    min_card_h = _image_card_min_height(show_identity)
+    min_card_h = _image_card_min_height(show_identity, orion_tile=orion_gallery)
     inner_min_w = MIN_GALLERY_IMG_W
+
+    if orion_gallery:
+        for cols, rows, plan_n in _orion_gallery_layout_candidates(usable):
+            plan_n = min(plan_n, usable)
+            orion_tall = rows == 1 and cols == 2
+            if cols == 2 and rows == 2:
+                probe_note = _gallery_notes_reserve_height(
+                    labels, count, max_shown=plan_n, orion_gallery=True,
+                    planned_shown=plan_n,
+                )
+            else:
+                probe_note = _gallery_notes_reserve_height(
+                    labels, count, orion_gallery=True, planned_shown=plan_n,
+                )
+            avail_h = max(1, safe_bottom - top_i - probe_note)
+            max_row = (avail_h - gap * max(0, rows - 1)) // max(rows, 1)
+            if max_row < min_card_h:
+                continue
+            cell_w = (int(CONTENT_W) - gap * (cols - 1)) // cols
+            if cell_w - 2 * int(CARD_PAD) < inner_min_w:
+                continue
+            if not _orion_image_frame_ok(cell_w, max_row, orion_tall=orion_tall):
+                continue
+            grid_bottom = _gallery_grid_bottom(top_i, rows, max_row, gap)
+            if grid_bottom > safe_bottom - probe_note:
+                continue
+            if _layout_image_card_zones(
+                max_row,
+                show_identity=show_identity,
+                orion_tile=True,
+                orion_tall=orion_tall,
+            ) is None:
+                continue
+            return plan_n, cols, rows, cell_w, max_row, orion_tall
+        return 0, 0, 0, 0, 0, False
 
     for try_n in range(usable, 0, -1):
         for cols, rows in _gallery_layout_candidates(try_n):
@@ -1136,10 +1291,14 @@ def _plan_image_gallery(
             grid_bottom = _gallery_grid_bottom(top_i, rows, max_row, gap)
             if grid_bottom > safe_bottom - note_reserve:
                 continue
-            if _layout_image_card_zones(max_row, show_identity=show_identity) is None:
+            if _layout_image_card_zones(
+                max_row,
+                show_identity=show_identity,
+                orion_tile=orion_gallery,
+            ) is None:
                 continue
-            return try_n, cols, rows, cell_w, max_row
-    return 0, 0, 0, 0, 0
+            return try_n, cols, rows, cell_w, max_row, False
+    return 0, 0, 0, 0, 0, False
 
 
 def _image_gallery_geometry(
@@ -1150,7 +1309,7 @@ def _image_gallery_geometry(
     max_shown: int = 6,
 ) -> tuple[int, int, int, int]:
     """Backward-compatible wrapper — returns geometry for the best-fit plan."""
-    n, cols, rows, cell_w, row_h = _plan_image_gallery(
+    n, cols, rows, cell_w, row_h, _ = _plan_image_gallery(
         count, top, show_identity=show_identity, max_shown=max_shown,
     )
     if n <= 0:
@@ -1325,8 +1484,10 @@ def add_image_card(
     layout_warnings: list[str] | None = None,
     intl_compact: bool = False,
     allow_cover: bool = True,
+    orion_tile: bool = False,
+    orion_tall: bool = False,
 ) -> bool:
-    """Image card with fixed zones — title/domain/badge never overlap image or each other."""
+    """Image evidence tile — ORION single-frame gallery or legacy nested slot."""
     import io
 
     ix, iy, iw, ih = int(x), int(y), int(w), int(h)
@@ -1334,10 +1495,18 @@ def add_image_card(
     gap = int(CARD_ZONE_GAP)
     inner_w = max(1, iw - 2 * pad)
     inner_x = ix + pad
-    zones = _layout_image_card_zones(ih, show_identity=show_identity, intl_compact=intl_compact)
+    if orion_tile:
+        show_identity = False
+    zones = _layout_image_card_zones(
+        ih, show_identity=show_identity, intl_compact=intl_compact,
+        orion_tile=orion_tile, orion_tall=orion_tall,
+    )
     if not zones and show_identity:
         show_identity = False
-        zones = _layout_image_card_zones(ih, show_identity=False, intl_compact=intl_compact)
+        zones = _layout_image_card_zones(
+            ih, show_identity=False, intl_compact=intl_compact,
+            orion_tile=orion_tile, orion_tall=orion_tall,
+        )
     if not zones:
         return False
     if iy + ih > int(CONTENT_SAFE_BOTTOM):
@@ -1346,7 +1515,10 @@ def add_image_card(
     raw = _image_bytes_from_item(item)
     if not raw:
         return False
-    if intl_compact and not _intl_image_acceptable(raw, inner_w, zones["img"][1] - zones["img"][0]):
+
+    img_top, img_bottom = zones["img"]
+    img_box_h = img_bottom - img_top
+    if intl_compact and not _intl_image_acceptable(raw, inner_w, img_box_h):
         return False
 
     frame = slide.shapes.add_shape(ROUNDED_RECT, Emu(ix), Emu(iy), Emu(iw), Emu(ih))
@@ -1355,20 +1527,26 @@ def add_image_card(
     frame.line.color.rgb = NEUTRAL_LINE
     frame.line.width = Pt(0.75)
 
-    img_top, img_bottom = zones["img"]
-    img_box_h = img_bottom - img_top
-    img_slot = slide.shapes.add_shape(
-        ROUNDED_RECT, Emu(inner_x), Emu(iy + img_top), Emu(inner_w), Emu(img_box_h),
-    )
-    img_slot.fill.solid()
-    img_slot.fill.fore_color.rgb = BG_PANEL
-    img_slot.line.color.rgb = NEUTRAL_LINE
+    img_slot = None
+    if not orion_tile:
+        img_slot = slide.shapes.add_shape(
+            ROUNDED_RECT, Emu(inner_x), Emu(iy + img_top), Emu(inner_w), Emu(img_box_h),
+        )
+        img_slot.fill.solid()
+        img_slot.fill.fore_color.rgb = BG_PANEL
+        img_slot.line.color.rgb = NEUTRAL_LINE
+
     pic_ok = False
     try:
-        pic = _fit_picture_for_card(
-            slide, io.BytesIO(raw), inner_x, iy + img_top, inner_w, img_box_h,
-            allow_cover=allow_cover and not intl_compact,
-        )
+        if orion_tile:
+            pic = _fit_gallery_image(
+                slide, io.BytesIO(raw), inner_x, iy + img_top, inner_w, img_box_h,
+            )
+        else:
+            pic = _fit_picture_for_card(
+                slide, io.BytesIO(raw), inner_x, iy + img_top, inner_w, img_box_h,
+                allow_cover=allow_cover and not intl_compact,
+            )
         pic_ok = int(pic.width) >= 1 and int(pic.height) >= 1
         pic_bottom = int(pic.top) + int(pic.height)
         pic_right = int(pic.left) + int(pic.width)
@@ -1379,7 +1557,14 @@ def add_image_card(
             or pic_right > inner_x + inner_w + 5000
         ):
             pic_ok = False
-        if pic_ok and not intl_compact and allow_cover:
+        if pic_ok and orion_tile:
+            pic.width = min(int(pic.width), inner_w)
+            pic.height = min(int(pic.height), img_box_h)
+            pic.left = max(inner_x, min(int(pic.left), inner_x + inner_w - int(pic.width)))
+            pic.top = max(iy + img_top, min(int(pic.top), iy + img_bottom - int(pic.height)))
+            if int(pic.height) < img_box_h * 0.22 or int(pic.width) < inner_w * 0.18:
+                pic_ok = False
+        if pic_ok and not orion_tile and not intl_compact and allow_cover:
             pic_ok = int(pic.width) >= MIN_GALLERY_IMG_W // 3 and int(pic.height) >= MIN_GALLERY_IMG_H // 3
         if pic_ok:
             assert_shape_within_safe_area(pic, "image_card_picture", layout_warnings)
@@ -1392,10 +1577,11 @@ def add_image_card(
         pic_ok = False
     if not pic_ok:
         for shape in (frame, img_slot):
-            try:
-                slide.shapes._spTree.remove(shape._element)
-            except Exception:
-                pass
+            if shape is not None:
+                try:
+                    slide.shapes._spTree.remove(shape._element)
+                except Exception:
+                    pass
         return False
 
     source_url = str(item.get("sourcePageUrl") or item.get("url") or item.get("imageUrl") or "")
@@ -1619,6 +1805,7 @@ def image_grid(
     layout_warnings: list[str] | None = None,
     intl_compact: bool = False,
     allow_cover: bool = False,
+    orion_gallery: bool = False,
 ) -> Emu:
     """Image evidence gallery — max 4 validated cards, deduped; grid + notes stay in safe area."""
     labels = labels or {}
@@ -1633,8 +1820,9 @@ def image_grid(
             return note(slide, top, msg, "info")
         return top
 
-    plan_n, cols, rows, cell_w, row_h = _plan_image_gallery(
+    plan_n, cols, rows, cell_w, row_h, orion_tall = _plan_image_gallery(
         len(usable), top, show_identity=show_identity, max_shown=max_items, labels=labels,
+        orion_gallery=orion_gallery,
     )
     if plan_n <= 0:
         msg = labels.get("nd_gallery_no_usable_images", "Selected images unavailable for gallery display.")
@@ -1662,6 +1850,8 @@ def image_grid(
             layout_warnings=layout_warnings,
             intl_compact=intl_compact,
             allow_cover=allow_cover,
+            orion_tile=orion_gallery,
+            orion_tall=orion_tall,
         ):
             rendered += 1
         else:
@@ -1672,19 +1862,27 @@ def image_grid(
         return note(slide, top, msg, "info")
 
     actual_rows = max(1, (rendered + cols - 1) // cols)
-    bottom = Emu(_gallery_grid_bottom(y0, actual_rows, row_h, gap))
+    bottom = Emu(_gallery_grid_bottom(y0, actual_rows, row_h, gap) + int(_BLOCK_GAP))
     skipped = skipped_bytes + skipped_layout + dup_skipped + max(0, len(usable) - candidate_idx)
     hidden = max(0, total - rendered)
-    if skipped > 0:
-        tpl = labels.get("media_gallery_skipped", "{n} images skipped (thumbnail too small or unavailable).")
-        bottom = _safe_gallery_note(slide, bottom, tpl.format(n=skipped))
-    if total > rendered:
-        tpl = labels.get("media_showing_images", "Showing {shown} of {total} subject-matched images.")
-        bottom = _safe_gallery_note(slide, bottom, tpl.format(shown=rendered, total=total))
-    if hidden > 0:
-        extra = labels.get("media_saved_in_evidence", "+ {n} saved in evidence.")
-        if extra:
-            bottom = _safe_gallery_note(slide, bottom, extra.format(n=hidden))
+    if orion_gallery:
+        if hidden > 0:
+            tpl = labels.get(
+                "media_gallery_footer_note",
+                "Showing {shown} of {total} relevant images. Others saved in evidence.",
+            )
+            bottom = _safe_gallery_note(slide, bottom, tpl.format(shown=rendered, total=total))
+    else:
+        if skipped > 0:
+            tpl = labels.get("media_gallery_skipped", "{n} images skipped (thumbnail too small or unavailable).")
+            bottom = _safe_gallery_note(slide, bottom, tpl.format(n=skipped))
+        if total > rendered:
+            tpl = labels.get("media_showing_images", "Showing {shown} of {total} subject-matched images.")
+            bottom = _safe_gallery_note(slide, bottom, tpl.format(shown=rendered, total=total))
+        if hidden > 0:
+            extra = labels.get("media_saved_in_evidence", "+ {n} saved in evidence.")
+            if extra:
+                bottom = _safe_gallery_note(slide, bottom, extra.format(n=hidden))
     return bottom
 
 
@@ -1745,3 +1943,639 @@ def video_cards(
         if extra:
             bottom = _safe_gallery_note(slide, bottom, extra.format(n=hidden))
     return bottom
+
+
+# ---------------------------------------------------------------------------
+# ORION-style slide 13 — compact fixed-grid layout (4:3)
+# ---------------------------------------------------------------------------
+
+YANDEX_RED = RGBColor(0xFC, 0x3F, 0x1C)
+
+# Zone fractions (content width)
+ORION_LEFT_FRAC = 0.45
+ORION_RIGHT_FRAC = 0.48
+ORION_GUTTER_FRAC = 0.035
+
+# Header / content zones (EMU)
+ORION_MARKER_TOP = 140000
+ORION_MARKER_H = 85000
+ORION_HEADLINE_Y = 335000
+ORION_HEADLINE_H = 300000
+ORION_HEADLINE_W_FRAC = 0.70
+ORION_CONTENT_Y = 1500000
+ORION_HEADER_GAP = 180000
+
+# Left column block geometry (fixed Y offsets from CONTENT_Y)
+ORION_SUMMARY_H = 880000
+ORION_SUMMARY_GAP = 230000
+ORION_QUERY_TITLE_H = 140000
+ORION_TITLE_CHIP_GAP = 80000
+ORION_CHIP_H = 285000
+ORION_CHIP_GAP = 70000
+ORION_QUERY_GAP = 250000
+ORION_EXPLAINER_H = 1050000
+
+# Left column internal padding (ORION premium spacing)
+ORION_SUMMARY_PAD_X = 95000
+ORION_SUMMARY_PAD_TOP = 75000
+ORION_SUMMARY_METRIC_H = 340000
+ORION_SUMMARY_METRIC_BODY_GAP = 60000
+ORION_SUMMARY_PAD_BOTTOM = 120000
+ORION_CHIP_PAD_X = 70000
+ORION_CHIP_ICON_W = 68000
+ORION_CHIP_TEXT_GAP = 55000
+ORION_EXPLAINER_PAD_X = 100000
+ORION_EXPLAINER_PAD_TOP = 90000
+ORION_EXPLAINER_PAD_BOTTOM = 95000
+ORION_EXPLAINER_BODY_LINE_SPACING = 1.2
+ORION_CHIP_LINE_SPACING = 1.05
+
+# Right panel — content-driven outer frame (generous inset)
+ORION_PANEL_Y_OFFSET = 50000
+ORION_PANEL_SIDE_PAD = 110000
+ORION_PANEL_TOP_PAD = 125000
+ORION_PANEL_BOTTOM_PAD = 140000
+ORION_SEARCH_BAND_H = 180000
+ORION_TABS_GAP = 45000
+ORION_TABS_BAND_H = 70000
+ORION_TITLE_GAP = 60000
+ORION_TITLE_BAND_H = 90000
+ORION_GRID_TOP_GAP = 80000
+ORION_BADGE_SIZE = 76000
+ORION_HIGHLIGHT_BADGE = 44000
+ORION_HIGHLIGHT_RING_PAD = 12000
+ORION_GRID_GAP = 36000
+ORION_FRAME_CORNER_ADJ = 0.035
+
+# Typography (pt) — compact ORION
+FS_ORION_MARKER = 7
+FS_ORION_DATE = 7
+FS_ORION_BRAND = 10
+FS_ORION_HEADLINE = 16
+FS_ORION_METRIC = 26
+FS_ORION_BODY = 8
+FS_ORION_CHIP_TITLE = 9
+FS_ORION_CHIP = 8
+FS_ORION_TAB = 5
+FS_ORION_LABEL = 9
+FS_ORION_INPUT = 7
+FS_ORION_WHY_TITLE = 11
+
+ORION_MIN_CELL = 210000
+ORION_MAX_GRID = 9
+ORION_MAX_HIGHLIGHTS = 3
+
+
+def _orion_compact_layout() -> dict[str, int]:
+    """Fixed zone coordinates — no dynamic stacking."""
+    cw = int(CONTENT_W)
+    left_w = int(cw * ORION_LEFT_FRAC)
+    gutter = max(int(cw * ORION_GUTTER_FRAC), int(GUTTER))
+    right_w = int(cw * ORION_RIGHT_FRAC)
+    left_x = int(MARGIN)
+    right_x = left_x + left_w + gutter
+    content_y = ORION_CONTENT_Y
+    panel_y = content_y + ORION_PANEL_Y_OFFSET
+    content_bottom = int(CONTENT_SAFE_BOTTOM)
+
+    summary_y = content_y
+    summary_bottom = summary_y + ORION_SUMMARY_H
+    query_title_y = summary_bottom + ORION_SUMMARY_GAP
+    chips_y = query_title_y + ORION_QUERY_TITLE_H + ORION_TITLE_CHIP_GAP
+    chips_bottom = chips_y + 2 * ORION_CHIP_H + ORION_CHIP_GAP
+    explainer_y = chips_bottom + ORION_QUERY_GAP
+    explainer_h = min(ORION_EXPLAINER_H, content_bottom - explainer_y)
+    explainer_bottom = explainer_y + explainer_h
+
+    headline_w = int(int(SLIDE_W) * ORION_HEADLINE_W_FRAC)
+    headline_bottom = ORION_HEADLINE_Y + ORION_HEADLINE_H
+
+    return {
+        "left_x": left_x,
+        "left_w": left_w,
+        "right_x": right_x,
+        "right_w": right_w,
+        "gutter": gutter,
+        "content_y": content_y,
+        "panel_y": panel_y,
+        "content_bottom": content_bottom,
+        "panel_max_bottom": content_bottom - 70000,
+        "headline_w": headline_w,
+        "headline_bottom": headline_bottom,
+        "summary_y": summary_y,
+        "summary_bottom": summary_bottom,
+        "query_title_y": query_title_y,
+        "chips_y": chips_y,
+        "chips_bottom": chips_bottom,
+        "explainer_y": explainer_y,
+        "explainer_h": explainer_h,
+        "explainer_bottom": explainer_bottom,
+    }
+
+
+def _orion_screenshot_frame(slide, x: int, y: int, w: int, h: int):
+    """Visible outer screenshot card — shadow (rect) then rounded frame behind content."""
+    shadow = slide.shapes.add_shape(RECT, Emu(x + 8000), Emu(y + 12000), Emu(w), Emu(h))
+    shadow.fill.solid()
+    shadow.fill.fore_color.rgb = RGBColor(0xE4, 0xE9, 0xF0)
+    shadow.line.fill.background()
+    card = slide.shapes.add_shape(ROUNDED_RECT, Emu(x), Emu(y), Emu(w), Emu(h))
+    card.fill.solid()
+    card.fill.fore_color.rgb = WHITE
+    card.line.color.rgb = NEUTRAL_LINE
+    card.line.width = Pt(1.0)
+    try:
+        if card.adjustments:
+            card.adjustments[0] = ORION_FRAME_CORNER_ADJ
+    except Exception:
+        pass
+    return card
+
+
+def _orion_shadow_card(slide, x: int, y: int, w: int, h: int, *, radius: int = ROUNDED_RECT):
+    return _orion_screenshot_frame(slide, x, y, w, h)
+
+
+def _orion_yandex_badge(slide, x: int, y: int, size: int = 85000) -> None:
+    badge = slide.shapes.add_shape(1, Emu(x), Emu(y), Emu(size), Emu(size))
+    badge.fill.solid()
+    badge.fill.fore_color.rgb = YANDEX_RED
+    badge.line.fill.background()
+    tf = badge.text_frame
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    p = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.CENTER
+    _run(p, "Я", max(7, int(size / 12700 * 0.5)), WHITE, bold=True)
+
+
+def _orion_header(
+    slide,
+    oi: dict,
+    brand: str,
+    layout: dict[str, int],
+    layout_warnings: list[str] | None,
+) -> None:
+    """Compact ORION header — fixed zones only."""
+    x0 = int(MARGIN)
+    y0 = ORION_MARKER_TOP
+    right_x = layout["right_x"]
+    right_w = layout["right_w"]
+
+    marker = textbox(slide, Emu(x0), Emu(y0), Emu(layout["left_w"]), Emu(ORION_MARKER_H))
+    sec = str(oi.get("section") or "04  Images")
+    num, _, label = sec.partition("  ")
+    if not label:
+        label, num = sec, "04"
+    _run(marker.text_frame.paragraphs[0], f"{num.strip()}  {label.strip()}", FS_ORION_MARKER, ACCENT, bold=True)
+
+    headline = textbox(
+        slide, Emu(x0), Emu(ORION_HEADLINE_Y), Emu(layout["headline_w"]), Emu(ORION_HEADLINE_H),
+    )
+    htf = headline.text_frame
+    htf.word_wrap = False
+    headline_text = str(oi.get("headline") or "")
+    headline_lines = [ln.strip() for ln in headline_text.split("\n") if ln.strip()]
+    if not headline_lines:
+        headline_lines = [""]
+    _run(htf.paragraphs[0], headline_lines[0], FS_ORION_HEADLINE, NEUTRAL_DARK, bold=True)
+    for ln in headline_lines[1:]:
+        _run(htf.add_paragraph(), ln, FS_ORION_HEADLINE, NEUTRAL_DARK, bold=True)
+
+    date_box = textbox(slide, Emu(right_x), Emu(y0), Emu(right_w), Emu(90000))
+    dp = date_box.text_frame.paragraphs[0]
+    dp.alignment = PP_ALIGN.RIGHT
+    _run(dp, str(oi.get("asOf") or ""), FS_ORION_DATE, NEUTRAL_GRAY)
+
+    brand_label = str(oi.get("brandDisplay") or brand or "Digital Profile Audit")
+    brand_box = textbox(slide, Emu(right_x), Emu(y0 + 82000), Emu(right_w), Emu(105000))
+    btf = brand_box.text_frame
+    btf.word_wrap = False
+    bp = btf.paragraphs[0]
+    bp.alignment = PP_ALIGN.RIGHT
+    _run(bp, truncate(brand_label, 28), FS_ORION_BRAND, NEUTRAL_DARK, bold=True)
+
+
+def _orion_summary_box(slide, layout: dict[str, int], oi: dict) -> None:
+    x, y, w = layout["left_x"], layout["summary_y"], layout["left_w"]
+    h = ORION_SUMMARY_H
+    frame = slide.shapes.add_shape(ROUNDED_RECT, Emu(x), Emu(y), Emu(w), Emu(h))
+    frame.fill.solid()
+    frame.fill.fore_color.rgb = BG_LIGHT
+    frame.line.color.rgb = ACCENT_SOFT
+    frame.line.width = Pt(0.75)
+
+    pad_x = ORION_SUMMARY_PAD_X
+    inner_w = w - 2 * pad_x
+
+    metric = str(oi.get("metricLabel") or f"{oi.get('metricX', 0)} / {oi.get('metricY', 0)}")
+    metric_box = textbox(slide, Emu(x + pad_x), Emu(y + ORION_SUMMARY_PAD_TOP), Emu(inner_w), Emu(ORION_SUMMARY_METRIC_H))
+    mtf = metric_box.text_frame
+    mtf.word_wrap = True
+    mtf.margin_top = 0
+    mtf.margin_bottom = 0
+    _run(mtf.paragraphs[0], metric, FS_ORION_METRIC, RGBColor(0xE6, 0x5C, 0x00), bold=True)
+
+    body_y = y + ORION_SUMMARY_PAD_TOP + ORION_SUMMARY_METRIC_H + ORION_SUMMARY_METRIC_BODY_GAP
+    body_h = h - (ORION_SUMMARY_PAD_TOP + ORION_SUMMARY_METRIC_H + ORION_SUMMARY_METRIC_BODY_GAP) - ORION_SUMMARY_PAD_BOTTOM
+    body_box = textbox(slide, Emu(x + pad_x), Emu(body_y), Emu(inner_w), Emu(body_h))
+    btf = body_box.text_frame
+    btf.word_wrap = True
+    btf.margin_top = 0
+    btf.margin_bottom = 0
+    bp = btf.paragraphs[0]
+    bp.line_spacing = 1.15
+    _run(bp, truncate(str(oi.get("summaryLine") or ""), 72), FS_ORION_BODY, NEUTRAL_DARK)
+
+
+def _orion_query_chips(slide, layout: dict[str, int], oi: dict) -> None:
+    x, w = layout["left_x"], layout["left_w"]
+    y = layout["query_title_y"]
+    tb = textbox(slide, Emu(x), Emu(y), Emu(w), Emu(ORION_QUERY_TITLE_H))
+    _run(tb.text_frame.paragraphs[0], str(oi.get("queriesTitle") or ""), FS_ORION_CHIP_TITLE, NEUTRAL_DARK, bold=True)
+
+    queries = list(oi.get("queries") or [])[:4]
+    if not queries:
+        return
+    chip_y = layout["chips_y"]
+    gap = ORION_CHIP_GAP
+    chip_h = ORION_CHIP_H
+    cols = 2
+    chip_w = (w - gap) // cols
+    pad_x = ORION_CHIP_PAD_X
+    icon_w = ORION_CHIP_ICON_W
+    for idx, q in enumerate(queries):
+        row, col = divmod(idx, cols)
+        cx = x + col * (chip_w + gap)
+        cy = chip_y + row * (chip_h + gap)
+        chip = slide.shapes.add_shape(ROUNDED_RECT, Emu(cx), Emu(cy), Emu(chip_w), Emu(chip_h))
+        chip.fill.solid()
+        chip.fill.fore_color.rgb = WHITE
+        chip.line.color.rgb = NEUTRAL_LINE
+        chip.line.width = Pt(0.5)
+        icon = textbox(slide, Emu(cx + pad_x), Emu(cy + (chip_h - icon_w) // 2), Emu(icon_w), Emu(icon_w))
+        itf = icon.text_frame
+        itf.margin_top = 0
+        itf.margin_bottom = 0
+        ip = itf.paragraphs[0]
+        ip.alignment = PP_ALIGN.CENTER
+        _run(ip, "⌕", FS_ORION_CHIP, ACCENT)
+        text_x = cx + pad_x + icon_w + ORION_CHIP_TEXT_GAP
+        text_w = cx + chip_w - pad_x - text_x
+        qbox = textbox(slide, Emu(text_x), Emu(cy), Emu(text_w), Emu(chip_h))
+        qtf = qbox.text_frame
+        qtf.word_wrap = True
+        qtf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        qtf.margin_left = 0
+        qtf.margin_right = 0
+        qtf.margin_top = 0
+        qtf.margin_bottom = 0
+        qp = qtf.paragraphs[0]
+        qp.line_spacing = ORION_CHIP_LINE_SPACING
+        _run(qp, truncate(q, 42), FS_ORION_CHIP, NEUTRAL_DARK)
+
+
+def _orion_explainer_box(slide, layout: dict[str, int], oi: dict) -> None:
+    x, y, w = layout["left_x"], layout["explainer_y"], layout["left_w"]
+    h = layout["explainer_h"]
+    box = slide.shapes.add_shape(ROUNDED_RECT, Emu(x), Emu(y), Emu(w), Emu(h))
+    box.fill.solid()
+    box.fill.fore_color.rgb = BG_PANEL
+    box.line.fill.background()
+    pad_x = ORION_EXPLAINER_PAD_X
+    inner = textbox(
+        slide,
+        Emu(x + pad_x),
+        Emu(y + ORION_EXPLAINER_PAD_TOP),
+        Emu(w - 2 * pad_x),
+        Emu(h - ORION_EXPLAINER_PAD_TOP - ORION_EXPLAINER_PAD_BOTTOM),
+    )
+    tf = inner.text_frame
+    tf.word_wrap = True
+    tf.margin_top = 0
+    tf.margin_bottom = 0
+    _run(tf.paragraphs[0], str(oi.get("whyTitle") or ""), FS_ORION_WHY_TITLE, NEUTRAL_DARK, bold=True)
+    body_p = tf.add_paragraph()
+    body_p.line_spacing = ORION_EXPLAINER_BODY_LINE_SPACING
+    body_p.space_before = Pt(4)
+    _run(body_p, truncate(str(oi.get("whyBody") or ""), 150), FS_ORION_BODY, NEUTRAL_GRAY)
+
+
+def _orion_screenshot_plan(layout: dict[str, int], oi: dict) -> dict[str, int | list]:
+    """Content-driven outer frame — union of internal bands + explicit outer padding."""
+    panel_x = layout["right_x"]
+    panel_w = layout["right_w"]
+    panel_y = layout["panel_y"]
+    footer_limit = layout["panel_max_bottom"]
+
+    side = ORION_PANEL_SIDE_PAD
+    top = ORION_PANEL_TOP_PAD
+    inner_x = panel_x + side
+    inner_w = max(1, panel_w - 2 * side)
+
+    search_y = panel_y + top
+    search_h = ORION_SEARCH_BAND_H
+    tabs_y = search_y + search_h + ORION_TABS_GAP
+    tabs_h = ORION_TABS_BAND_H
+    title_y = tabs_y + tabs_h + ORION_TITLE_GAP
+    title_h = ORION_TITLE_BAND_H
+    grid_y = title_y + title_h + ORION_GRID_TOP_GAP
+
+    items = list(oi.get("gridItems") or [])[:ORION_MAX_GRID]
+    grid_limit_y = footer_limit - ORION_PANEL_BOTTOM_PAD - 110000
+    avail_h = max(1, grid_limit_y - grid_y)
+    cols, rows, cell_w, cell_h, gap = _orion_grid_geometry(inner_w, avail_h, len(items))
+    slots = min(len(items), cols * rows, ORION_MAX_GRID)
+    rows_used = 0 if slots <= 0 else (slots - 1) // cols + 1
+
+    badge_size = ORION_BADGE_SIZE
+    badge_y = search_y + (search_h - badge_size) // 2
+    search_x = inner_x + badge_size + 50000
+    search_w = inner_w - badge_size - 50000
+
+    tab_widths = (210000, 380000, 210000, 210000)
+    tab_gap = 35000
+    tabs_right = inner_x + sum(tab_widths) + tab_gap * (len(tab_widths) - 1)
+    tabs_right = min(inner_x + inner_w, tabs_right)
+
+    ring_out = 3500 + ORION_HIGHLIGHT_RING_PAD
+    content_boxes: list[dict[str, int]] = [
+        {"x": inner_x, "y": badge_y, "right": inner_x + badge_size, "bottom": badge_y + badge_size},
+        {"x": search_x, "y": search_y, "right": search_x + search_w, "bottom": search_y + search_h},
+        {"x": inner_x, "y": tabs_y, "right": tabs_right, "bottom": tabs_y + tabs_h},
+        {"x": inner_x, "y": title_y, "right": inner_x + inner_w, "bottom": title_y + title_h},
+    ]
+    for idx in range(slots):
+        row, col = divmod(idx, cols)
+        cx = inner_x + col * (cell_w + gap)
+        cy = grid_y + row * (cell_h + gap)
+        item = items[idx]
+        highlight = bool(item.get("highlight"))
+        badge_extra = ORION_HIGHLIGHT_BADGE + 3000 if highlight else 0
+        content_boxes.append(
+            {
+                "x": cx - ring_out,
+                "y": cy - ring_out,
+                "right": cx + cell_w + ring_out,
+                "bottom": cy + cell_h + ring_out + badge_extra,
+            }
+        )
+
+    min_x = min(b["x"] for b in content_boxes)
+    min_y = min(b["y"] for b in content_boxes)
+    max_x = max(b["right"] for b in content_boxes)
+    max_y = max(b["bottom"] for b in content_boxes)
+
+    out_l = out_t = out_r = 100000
+    out_b = 120000
+    frame_x = min_x - out_l
+    frame_y = min_y - out_t
+    frame_right = max_x + out_r
+    frame_bottom = max_y + out_b
+    if frame_bottom > footer_limit:
+        frame_bottom = footer_limit
+    frame_w = frame_right - frame_x
+    frame_h = frame_bottom - frame_y
+
+    grid_bottom = max_y if slots > 0 else grid_y
+
+    return {
+        "frame_x": frame_x,
+        "frame_y": frame_y,
+        "frame_w": frame_w,
+        "frame_h": frame_h,
+        "panel_x": frame_x,
+        "panel_y": frame_y,
+        "panel_w": frame_w,
+        "panel_h": frame_h,
+        "panel_bottom": frame_bottom,
+        "inner_x": inner_x,
+        "inner_w": inner_w,
+        "search_y": search_y,
+        "search_h": search_h,
+        "search_x": search_x,
+        "search_w": search_w,
+        "tabs_y": tabs_y,
+        "tabs_h": tabs_h,
+        "title_y": title_y,
+        "title_h": title_h,
+        "grid_y": grid_y,
+        "grid_bottom": grid_bottom,
+        "cols": cols,
+        "rows": rows,
+        "rows_used": rows_used,
+        "cell_w": cell_w,
+        "cell_h": cell_h,
+        "gap": gap,
+        "slots": slots,
+        "items": items,
+        "content_left": min_x,
+        "content_right": max_x,
+        "content_top": min_y,
+        "content_bottom": max_y,
+    }
+
+
+def _orion_centered_input_text(slide, x: int, y: int, w: int, h: int, text: str, size: int, color: RGBColor) -> None:
+    box = textbox(slide, Emu(x), Emu(y), Emu(w), Emu(h))
+    tf = box.text_frame
+    tf.word_wrap = False
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    tf.margin_top = 0
+    tf.margin_bottom = 0
+    _run(tf.paragraphs[0], text, size, color)
+
+
+def _orion_search_tabs(slide, x: int, y: int, w: int, h: int, tabs: list[str], active_idx: int = 1) -> None:
+    shown = [tabs[0], tabs[1], tabs[2], tabs[3]] if len(tabs) >= 4 else tabs[:4]
+    widths = (210000, 380000, 210000, 210000)
+    gap = 35000
+    cx = x
+    for i, tab in enumerate(shown):
+        tw = widths[i] if i < len(widths) else 210000
+        tb = textbox(slide, Emu(cx), Emu(y), Emu(tw), Emu(h))
+        tf = tb.text_frame
+        tf.word_wrap = False
+        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        tf.margin_left = 0
+        tf.margin_right = 0
+        p = tf.paragraphs[0]
+        idx = tabs.index(tab) if tab in tabs else i
+        color = NEUTRAL_DARK if idx == active_idx else NEUTRAL_GRAY
+        _run(p, tab, FS_ORION_TAB, color, bold=(idx == active_idx))
+        cx += tw + gap
+        if cx > x + w - 60000:
+            break
+
+
+def _orion_grid_geometry(inner_w: int, inner_h: int, item_count: int) -> tuple[int, int, int, int, int]:
+    """Prefer 3×3, degrade to 2×3 → 2×2."""
+    n = min(max(item_count, 1), ORION_MAX_GRID)
+    for cols, rows in ((3, 3), (2, 3), (2, 2)):
+        if cols * rows < min(n, 4):
+            continue
+        gap = ORION_GRID_GAP
+        cell_w = (inner_w - gap * (cols - 1)) // cols
+        cell_h = (inner_h - gap * (rows - 1)) // rows
+        if cell_w >= ORION_MIN_CELL and cell_h >= ORION_MIN_CELL:
+            return cols, rows, cell_w, cell_h, gap
+    gap = ORION_GRID_GAP
+    cols, rows = 2, 2
+    cell_w = (inner_w - gap) // cols
+    cell_h = (inner_h - gap) // rows
+    return cols, rows, cell_w, cell_h, gap
+
+
+def _orion_thumb_in_cell(
+    slide,
+    item: dict[str, Any],
+    cell_x: int,
+    cell_y: int,
+    cell_w: int,
+    cell_h: int,
+    *,
+    highlight: bool = False,
+) -> bool:
+    import io
+
+    pad = 4000
+    ix, iy, iw, ih = cell_x + pad, cell_y + pad, cell_w - 2 * pad, cell_h - 2 * pad
+    raw = _image_bytes_from_item(item)
+    if not raw:
+        return False
+    try:
+        pic = _fit_picture_contain(slide, io.BytesIO(raw), ix, iy, iw, ih)
+        if int(pic.width) <= 0 or int(pic.height) <= 0:
+            return False
+    except Exception:
+        return False
+
+    if highlight:
+        ring = slide.shapes.add_shape(ROUNDED_RECT, Emu(ix - 3500), Emu(iy - 3500), Emu(iw + 7000), Emu(ih + 7000))
+        ring.fill.background()
+        ring.line.color.rgb = DANGER
+        ring.line.width = Pt(0.75)
+        bs = ORION_HIGHLIGHT_BADGE
+        badge = slide.shapes.add_shape(1, Emu(ix + 3000), Emu(iy + 3000), Emu(bs), Emu(bs))
+        badge.fill.solid()
+        badge.fill.fore_color.rgb = DANGER
+        badge.line.fill.background()
+        btf = badge.text_frame
+        btf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        bp = btf.paragraphs[0]
+        bp.alignment = PP_ALIGN.CENTER
+        _run(bp, "×", 7, WHITE, bold=True)
+    return True
+
+
+def _orion_synthetic_image_panel(
+    slide,
+    layout: dict[str, int],
+    oi: dict,
+    *,
+    layout_warnings: list[str] | None = None,
+) -> None:
+    plan = _orion_screenshot_plan(layout, oi)
+    fx = int(plan["frame_x"])
+    fy = int(plan["frame_y"])
+    fw = int(plan["frame_w"])
+    fh = int(plan["frame_h"])
+    _orion_screenshot_frame(slide, fx, fy, fw, fh)
+
+    inner_x = int(plan["inner_x"])
+    inner_w = int(plan["inner_w"])
+    search_y = int(plan["search_y"])
+    search_h = int(plan["search_h"])
+    search_x = int(plan["search_x"])
+    search_w = int(plan["search_w"])
+
+    badge_size = ORION_BADGE_SIZE
+    badge_y = search_y + (search_h - badge_size) // 2
+    _orion_yandex_badge(slide, inner_x, badge_y, badge_size)
+    bar = slide.shapes.add_shape(ROUNDED_RECT, Emu(search_x), Emu(search_y), Emu(search_w), Emu(search_h))
+    bar.fill.solid()
+    bar.fill.fore_color.rgb = WHITE
+    bar.line.color.rgb = NEUTRAL_LINE
+    bar.line.width = Pt(0.5)
+
+    close_w = 55000
+    inp_pad = 60000
+    query_text = truncate(str(oi.get("primaryQuery") or ""), 28)
+    _orion_centered_input_text(
+        slide,
+        search_x + inp_pad,
+        search_y,
+        search_w - inp_pad - close_w - 20000,
+        search_h,
+        query_text,
+        FS_ORION_INPUT,
+        NEUTRAL_DARK,
+    )
+    _orion_centered_input_text(
+        slide,
+        search_x + search_w - close_w,
+        search_y,
+        close_w,
+        search_h,
+        "×",
+        FS_ORION_TAB + 1,
+        NEUTRAL_GRAY,
+    )
+
+    _orion_search_tabs(
+        slide, inner_x, int(plan["tabs_y"]), inner_w, int(plan["tabs_h"]),
+        list(oi.get("tabs") or []), active_idx=1,
+    )
+    lbl = textbox(slide, Emu(inner_x), Emu(int(plan["title_y"])), Emu(inner_w), Emu(int(plan["title_h"])))
+    ltf = lbl.text_frame
+    ltf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    ltf.margin_top = 0
+    ltf.margin_bottom = 0
+    _run(ltf.paragraphs[0], str(oi.get("gridTitle") or ""), FS_ORION_LABEL, NEUTRAL_DARK, bold=True)
+
+    grid_top = int(plan["grid_y"])
+    cols = int(plan["cols"])
+    cell_w = int(plan["cell_w"])
+    cell_h = int(plan["cell_h"])
+    gap = int(plan["gap"])
+    slots = int(plan["slots"])
+    items = list(plan["items"])
+    hi_used = 0
+    for idx in range(slots):
+        row, col = divmod(idx, cols)
+        cx = inner_x + col * (cell_w + gap)
+        cy = grid_top + row * (cell_h + gap)
+        item = items[idx]
+        highlight = bool(item.get("highlight")) and hi_used < ORION_MAX_HIGHLIGHTS
+        if highlight:
+            hi_used += 1
+        _orion_thumb_in_cell(slide, item, cx, cy, cell_w, cell_h, highlight=highlight)
+
+
+def orion_images_slide(
+    slide,
+    blk: dict[str, Any],
+    vm: dict[str, Any],
+    ctx,
+    *,
+    layout_warnings: list[str] | None = None,
+) -> None:
+    """Full ORION-style slide 13 — compact fixed-grid analytical layout."""
+    L = vm.get("labels") or {}
+    oi = dict(blk.get("orionImages") or {})
+    brand = str(getattr(ctx, "brand", None) or vm.get("meta", {}).get("brand", ""))
+    layout = _orion_compact_layout()
+
+    set_bg(slide, BG_LIGHT)
+    footer(slide, brand, getattr(ctx, "page", None), getattr(ctx, "total", None))
+
+    _orion_header(slide, oi, brand, layout, layout_warnings)
+
+    if not oi.get("gridItems"):
+        nd = textbox(slide, MARGIN, Emu(layout["content_y"] + 120000), CONTENT_W, Emu(400000))
+        _run(nd.text_frame.paragraphs[0], str(oi.get("noData") or L.get("nd_no_relevant_images", "")), FS_BODY, NEUTRAL_GRAY, italic=True)
+        return
+
+    _orion_summary_box(slide, layout, oi)
+    _orion_query_chips(slide, layout, oi)
+    _orion_explainer_box(slide, layout, oi)
+    _orion_synthetic_image_panel(slide, layout, oi, layout_warnings=layout_warnings)

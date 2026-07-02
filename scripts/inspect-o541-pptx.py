@@ -180,6 +180,487 @@ def gallery_card_frames(xml: str) -> list[dict]:
     return out
 
 
+GALLERY_NESTED_SLOT_MIN_H = 180000
+GAL_ORION_MIN_CARD_IMG_FRAC = 0.50
+GAL_ORION_CONTAIN_MIN_H = 680000
+
+
+def gallery_no_nested_image_slots(xml: str) -> tuple[bool, str]:
+    """ORION tiles: one outer card frame per image, no inner gray image slot."""
+    frames = gallery_card_frames(xml)
+    if not frames:
+        return True, "no gallery cards"
+    panels = [s for s in sp_shapes(xml) if s["round"]]
+    for i, frame in enumerate(frames):
+        frame_h = frame["bottom"] - frame["y"]
+        for panel in panels:
+            if not shape_inside(panel, frame):
+                continue
+            if panel["h"] < GALLERY_NESTED_SLOT_MIN_H:
+                continue
+            if panel["h"] >= frame_h - 250000:
+                continue
+            return False, f"card[{i}] nested image slot h={panel['h']} y={panel['y']}"
+    return True, f"cards={len(frames)}"
+
+
+def slide13_no_identity_badges(xml: str) -> tuple[bool, str]:
+    for shape in text_shapes(xml):
+        if re.search(r"LIKELY_SUBJECT|EXACT_SUBJECT|likely subject", shape["text"], re.I):
+            return False, f"identity badge text={shape['text'][:40]!r}"
+    return True, "ok"
+
+
+def slide13_no_english_metrics_note(xml: str) -> tuple[bool, str]:
+    for shape in text_shapes(xml):
+        if re.search(r"collected,\s*\d+\s*selected|namesakes/noise|excluded as namesakes", shape["text"], re.I):
+            return False, f"english note={shape['text'][:60]!r}"
+    return True, "ok"
+
+
+GAL_ORION_MAX_PIC_ASPECT = 2.5
+
+# Slide 13 ORION compact grid — must match renderer/theme.py
+ORION_CONTENT_Y = 1500000
+ORION_HEADLINE_Y = 335000
+ORION_HEADLINE_H = 300000
+ORION_HEADLINE_BOTTOM = ORION_HEADLINE_Y + ORION_HEADLINE_H
+ORION_SUMMARY_H = 880000
+ORION_SUMMARY_GAP = 230000
+ORION_QUERY_TITLE_H = 140000
+ORION_TITLE_CHIP_GAP = 80000
+ORION_CHIP_H = 285000
+ORION_CHIP_GAP = 70000
+ORION_QUERY_GAP = 250000
+ORION_EXPLAINER_H = 1050000
+ORION_MIN_BLOCK_GAP = 180000
+ORION_PANEL_Y_OFFSET = 50000
+ORION_PANEL_SIDE_PAD = 110000
+ORION_PANEL_TOP_PAD = 125000
+ORION_PANEL_BOTTOM_PAD = 140000
+ORION_MIN_PANEL_INSET = 60000
+ORION_FRAME_SEARCH_LEFT_INSET = 80000
+ORION_FRAME_SEARCH_TOP_INSET = 70000
+ORION_FRAME_SEARCH_RIGHT_INSET = 80000
+ORION_FRAME_GRID_SIDE_INSET = 80000
+ORION_FRAME_GRID_BOTTOM_INSET = 100000
+ORION_SEARCH_BAND_H = 180000
+ORION_TABS_GAP = 45000
+ORION_TABS_BAND_H = 70000
+ORION_TITLE_GAP = 60000
+ORION_TITLE_BAND_H = 90000
+ORION_GRID_TOP_GAP = 80000
+ORION_MAX_THUMBS = 9
+ORION_MAX_HIGHLIGHTS = 3
+ORION_MIN_BAND_GAP = 60000
+
+
+def _orion_zone_layout() -> dict[str, int]:
+    cw = 8046720  # CONTENT_W EMU at 10" slide
+    left_w = int(cw * 0.45)
+    gutter = int(cw * 0.035)
+    right_w = int(cw * 0.48)
+    left_x = 548640
+    right_x = left_x + left_w + gutter
+    summary_y = ORION_CONTENT_Y
+    summary_bottom = summary_y + ORION_SUMMARY_H
+    query_title_y = summary_bottom + ORION_SUMMARY_GAP
+    chips_y = query_title_y + ORION_QUERY_TITLE_H + ORION_TITLE_CHIP_GAP
+    chips_bottom = chips_y + 2 * ORION_CHIP_H + ORION_CHIP_GAP
+    explainer_y = chips_bottom + ORION_QUERY_GAP
+    explainer_bottom = explainer_y + ORION_EXPLAINER_H
+    panel_y = ORION_CONTENT_Y + ORION_PANEL_Y_OFFSET
+    return {
+        "summary_y": summary_y,
+        "summary_bottom": summary_bottom,
+        "query_title_y": query_title_y,
+        "chips_y": chips_y,
+        "chips_bottom": chips_bottom,
+        "explainer_y": explainer_y,
+        "explainer_bottom": explainer_bottom,
+        "right_x": right_x,
+        "right_w": right_w,
+        "panel_y": panel_y,
+        "panel_bottom": FOOTER_SAFE_BOTTOM,
+    }
+
+
+def _summary_has_provider_badge(xml: str, zone: dict) -> bool:
+    """Red Yandex 'Я' badge must not appear inside left summary box."""
+    for sp in re.findall(r"<p:sp\b.*?</p:sp>", xml, flags=re.DOTALL):
+        if not re.search(r"<a:t>Я</a:t>", sp):
+            continue
+        off_m = re.search(r'<a:off x="(\d+)" y="(\d+)"', sp)
+        ext_m = re.search(r'<a:ext cx="(\d+)" cy="(\d+)"', sp)
+        if not off_m or not ext_m:
+            continue
+        x, y = int(off_m.group(1)), int(off_m.group(2))
+        if x >= zone["right_x"]:
+            continue
+        if zone["summary_y"] <= y <= zone["summary_bottom"] + 80000:
+            if "FC3F1C" in sp.upper() or "fc3f1c" in sp.lower():
+                return True
+    return False
+
+
+def _panel_band_geometry(zone: dict) -> dict[str, int]:
+    inner_y = zone["panel_y"] + ORION_PANEL_TOP_PAD
+    search_bottom = inner_y + ORION_SEARCH_BAND_H
+    tabs_y = search_bottom + ORION_TABS_GAP
+    tabs_bottom = tabs_y + ORION_TABS_BAND_H
+    title_y = tabs_bottom + ORION_TITLE_GAP
+    title_bottom = title_y + ORION_TITLE_BAND_H
+    grid_y = title_bottom + ORION_GRID_TOP_GAP
+    return {
+        "search_bottom": search_bottom,
+        "tabs_y": tabs_y,
+        "tabs_bottom": tabs_bottom,
+        "title_y": title_y,
+        "title_bottom": title_bottom,
+        "grid_y": grid_y,
+    }
+
+
+def _orion_panel_card(shapes: list[dict], zone: dict) -> dict | None:
+    """Main white screenshot card on the right column (largest rounded rect)."""
+    candidates = [
+        s
+        for s in shapes
+        if s["round"]
+        and s["x"] >= zone["right_x"] - 120000
+        and s["w"] >= zone["right_w"] - 150000
+        and s["h"] >= 2000000
+        and s["y"] >= zone["panel_y"] - 120000
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda s: s["w"] * s["h"])
+
+
+def _orion_search_bar(shapes: list[dict], zone: dict) -> dict | None:
+    """Search input rounded bar inside screenshot panel."""
+    candidates = [
+        s
+        for s in shapes
+        if s["round"]
+        and s["x"] >= zone["right_x"]
+        and ORION_SEARCH_BAND_H - 25000 <= s["h"] <= ORION_SEARCH_BAND_H + 50000
+        and s["w"] >= 1500000
+        and zone["panel_y"] <= s["y"] <= zone["panel_y"] + 350000
+    ]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda s: s["y"])
+
+
+def _orion_frame_insets_ok(
+    frame: dict,
+    search: dict | None,
+    pics: list[dict],
+    badges: list[dict],
+) -> tuple[bool, str]:
+    """Hard QA — outer screenshot frame must wrap all panel content with generous insets."""
+    fx, fy, fr, fb = frame["x"], frame["y"], frame["right"], frame["bottom"]
+    if search:
+        sl = search["x"] - fx
+        st = search["y"] - fy
+        sr = fr - search["right"]
+        if sl < ORION_FRAME_SEARCH_LEFT_INSET - 10000:
+            return False, f"search left inset={sl} need>={ORION_FRAME_SEARCH_LEFT_INSET}"
+        if st < ORION_FRAME_SEARCH_TOP_INSET - 10000:
+            return False, f"search top inset={st} need>={ORION_FRAME_SEARCH_TOP_INSET}"
+        if sr < ORION_FRAME_SEARCH_RIGHT_INSET - 10000:
+            return False, f"search right inset={sr} need>={ORION_FRAME_SEARCH_RIGHT_INSET}"
+    if not pics:
+        return False, "no panel thumbnails"
+    grid = {
+        "x": min(p["x"] for p in pics),
+        "y": min(p["y"] for p in pics),
+        "right": max(p["right"] for p in pics),
+        "bottom": max(p["bottom"] for p in pics),
+    }
+    gl = grid["x"] - fx
+    gr = fr - grid["right"]
+    gb = fb - grid["bottom"]
+    if gl < ORION_FRAME_GRID_SIDE_INSET - 10000:
+        return False, f"grid left inset={gl} need>={ORION_FRAME_GRID_SIDE_INSET}"
+    if gr < ORION_FRAME_GRID_SIDE_INSET - 10000:
+        return False, f"grid right inset={gr} need>={ORION_FRAME_GRID_SIDE_INSET}"
+    if gb < ORION_FRAME_GRID_BOTTOM_INSET - 10000:
+        return False, f"grid bottom inset={gb} need>={ORION_FRAME_GRID_BOTTOM_INSET}"
+    for i, pic in enumerate(pics):
+        for edge, val in (
+            ("left", pic["x"] - fx),
+            ("top", pic["y"] - fy),
+            ("right", fr - pic["right"]),
+            ("bottom", fb - pic["bottom"]),
+        ):
+            if val < ORION_MIN_PANEL_INSET - 10000:
+                return False, f"thumb[{i}] {edge} inset={val} need>={ORION_MIN_PANEL_INSET}"
+    for i, badge in enumerate(badges):
+        if badge["x"] < fx or badge["y"] < fy or badge["right"] > fr or badge["bottom"] > fb:
+            return False, f"badge[{i}] outside frame"
+    return True, "frame insets ok"
+
+
+def _panel_children_inset_ok(
+    panel: dict,
+    pics: list[dict],
+    badges: list[dict],
+    *,
+    min_inset: int = ORION_MIN_PANEL_INSET,
+) -> tuple[bool, str]:
+    px, py, pr, pb = panel["x"], panel["y"], panel["right"], panel["bottom"]
+    tol = 10000
+    children = list(pics) + list(badges)
+    if not children:
+        return True, "no panel media children"
+    for i, c in enumerate(children):
+        if c["x"] < px + min_inset - tol:
+            return False, f"child[{i}] left inset={c['x'] - px}"
+        if c["y"] < py + min_inset - tol:
+            return False, f"child[{i}] top inset={c['y'] - py}"
+        if c["right"] > pr - min_inset + tol:
+            return False, f"child[{i}] right inset={pr - c['right']}"
+        if c["bottom"] > pb - min_inset + tol:
+            return False, f"child[{i}] bottom inset={pb - c['bottom']}"
+    return True, "panel insets ok"
+
+
+def _highlight_badges_in_panel(xml: str, zone: dict) -> list[dict]:
+    badges: list[dict] = []
+    for sp in re.findall(r"<p:sp\b.*?</p:sp>", xml, flags=re.DOTALL):
+        if not re.search(r"<a:t>×</a:t>", sp):
+            continue
+        if "FC3F1C" not in sp.upper() and "E65C00" not in sp.upper():
+            continue
+        off_m = re.search(r'<a:off x="(\d+)" y="(\d+)"', sp)
+        ext_m = re.search(r'<a:ext cx="(\d+)" cy="(\d+)"', sp)
+        if not off_m or not ext_m:
+            continue
+        x, y = int(off_m.group(1)), int(off_m.group(2))
+        if x < zone["right_x"] - 50000:
+            continue
+        if y < zone["panel_y"]:
+            continue
+        badges.append(
+            {
+                "x": x,
+                "y": y,
+                "right": x + int(ext_m.group(1)),
+                "bottom": y + int(ext_m.group(2)),
+            }
+        )
+    return badges
+
+
+def _orion_left_column_gaps_ok(shapes: list[dict], zone: dict) -> tuple[bool, str]:
+    """Left analytical column blocks must have premium, non-overlapping vertical rhythm."""
+    right_x = zone["right_x"]
+    blocks = [
+        s
+        for s in shapes
+        if s["round"]
+        and s["x"] < right_x - 50000
+        and s["y"] >= zone["summary_y"] - 20000
+        and s["w"] > 900000
+        and s["h"] > 300000
+    ]
+    if not blocks:
+        return True, "no left-column card blocks"
+    summary = min(blocks, key=lambda s: s["y"])
+    explainers = [b for b in blocks if b["y"] > summary["bottom"] + 200000]
+    if explainers:
+        explainer = max(explainers, key=lambda s: s["h"])
+        gap = explainer["y"] - summary["bottom"]
+        if gap < ORION_MIN_BLOCK_GAP:
+            return False, f"summary->explainer gap={gap} need>={ORION_MIN_BLOCK_GAP}"
+        if explainer["bottom"] > FOOTER_SAFE_BOTTOM:
+            return False, f"explainer bottom={explainer['bottom']} > footer_safe"
+    for i, a in enumerate(blocks):
+        for b in blocks[i + 1:]:
+            v_overlap = min(a["bottom"], b["bottom"]) - max(a["y"], b["y"])
+            h_overlap = min(a["right"], b["right"]) - max(a["x"], b["x"])
+            if v_overlap > 20000 and h_overlap > 20000:
+                return False, f"left blocks overlap v={v_overlap} h={h_overlap}"
+    return True, "left column rhythm ok"
+
+
+def _orion_chip_frames(shapes: list[dict], zone: dict) -> list[dict]:
+    """Query chip pills — small white rounded rects in the chips band."""
+    chips_y = zone["chips_y"]
+    chips_bottom = zone["chips_bottom"]
+    return [
+        s
+        for s in shapes
+        if s["round"]
+        and s["x"] < zone["right_x"] - 50000
+        and chips_y - 40000 <= s["y"] <= chips_bottom
+        and 500000 < s["w"] < 2400000
+        and ORION_CHIP_H - 60000 <= s["h"] <= ORION_CHIP_H + 60000
+    ]
+
+
+def _orion_chips_ok(shapes: list[dict], zone: dict) -> tuple[bool, str]:
+    """Query chips must not overlap and keep a safe horizontal/vertical gutter."""
+    chips = _orion_chip_frames(shapes, zone)
+    if len(chips) < 2:
+        return True, f"chips={len(chips)}"
+    for i, a in enumerate(chips):
+        for b in chips[i + 1:]:
+            v_overlap = min(a["bottom"], b["bottom"]) - max(a["y"], b["y"])
+            h_overlap = min(a["right"], b["right"]) - max(a["x"], b["x"])
+            if v_overlap > 15000 and h_overlap > 15000:
+                return False, "chip pills overlap"
+    return True, f"chips={len(chips)} no overlap"
+
+
+def _danger_highlight_count(xml: str) -> int:
+    """Count red highlight rings (danger fill badges excluding search close)."""
+    count = 0
+    for sp in re.findall(r"<p:sp\b.*?</p:sp>", xml, flags=re.DOTALL):
+        if "FC3F1C" not in sp.upper() and "E65C00" not in sp.upper():
+            continue
+        if re.search(r"<a:t>×</a:t>", sp):
+            off_m = re.search(r'<a:off x="(\d+)" y="(\d+)"', sp)
+            if off_m and int(off_m.group(2)) > ORION_CONTENT_Y + 200000:
+                count += 1
+    return count
+
+
+def slide13_orion_layout_ok(xml: str) -> tuple[bool, str]:
+    """Slide 13 ORION images page — compact fixed-grid zone checks."""
+    t = plain_text(xml)
+    tl = t.lower()
+    if "поисковые запросы" not in tl and "search queries" not in tl:
+        return False, "missing queries block"
+    if "изображения" not in tl and "images" not in tl:
+        return False, "missing grid title"
+    if "картинки" not in tl and "images" not in tl:
+        return False, "missing section marker"
+    pics = pics_in_xml(xml)
+    if len(pics) < 2:
+        return False, f"pics={len(pics)}"
+    if len(pics) > ORION_MAX_THUMBS:
+        return False, f"too many pics={len(pics)}"
+    if max_shape_bottom(xml) > FOOTER_SAFE_BOTTOM:
+        return False, "overflow footer"
+
+    zone = _orion_zone_layout()
+    shapes = sp_shapes(xml)
+
+    def _find_text(sub: str) -> list[dict]:
+        return [s for s in shapes if sub.lower() in s["text"].lower()]
+
+    markers = _find_text("04")
+    headlines = [s for s in shapes if "впечатление" in s["text"].lower() or "impressions" in s["text"].lower()]
+    if headlines:
+        hb = max(s["bottom"] for s in headlines)
+        if hb >= zone["summary_y"]:
+            return False, f"headline_bottom={hb} >= content_y={zone['summary_y']}"
+        para_count = sum(s["text"].count("\n") + 1 for s in headlines)
+        if para_count > 2 and "\n" not in headlines[0]["text"]:
+            pass  # two separate shapes ok
+
+    summary_frames = [s for s in shapes if s["round"] and zone["summary_y"] <= s["y"] <= zone["summary_y"] + 80000]
+    if summary_frames:
+        sy = min(s["y"] for s in summary_frames)
+        if sy < zone["summary_y"] - 50000:
+            return False, f"summary_y={sy} < content_y"
+
+    query_titles = _find_text("поисковые запросы") or _find_text("search queries")
+    if query_titles:
+        qy = min(s["y"] for s in query_titles)
+        if qy < zone["summary_bottom"]:
+            return False, f"query_title_y={qy} < summary_bottom={zone['summary_bottom']}"
+
+    explainers = _find_text("почему картинки") or _find_text("why do images")
+    if explainers:
+        ey = min(s["y"] for s in explainers)
+        if ey < zone["chips_bottom"]:
+            return False, f"explainer_y={ey} < chips_bottom={zone['chips_bottom']}"
+        eb = max(s["bottom"] for s in explainers)
+        if eb > FOOTER_SAFE_BOTTOM:
+            return False, f"explainer_bottom={eb} > footer_safe"
+
+    panel_frames = [
+        s for s in shapes if s["round"] and s["x"] >= zone["right_x"] - 50000 and s["y"] <= zone["panel_y"] + 80000
+    ]
+    if panel_frames:
+        py = min(s["y"] for s in panel_frames)
+        if py < zone["panel_y"] - 50000:
+            return False, f"panel_y={py} < expected={zone['panel_y']}"
+
+    if _summary_has_provider_badge(xml, zone):
+        return False, "summary box contains provider badge"
+
+    bands = _panel_band_geometry(zone)
+    panel_pics = [p for p in pics if p["x"] >= zone["right_x"] - 50000]
+    titles = [s for s in shapes if s["text"] in ("Изображения", "Images") and s["x"] >= zone["right_x"] - 50000]
+    if titles and panel_pics:
+        tb = max(s["bottom"] for s in titles)
+        min_pic_y = min(p["y"] for p in panel_pics)
+        if min_pic_y < tb + ORION_MIN_BAND_GAP:
+            return False, f"thumbnails overlap title pic_y={min_pic_y} title_bottom={tb}"
+    if panel_pics:
+        min_pic_y = min(p["y"] for p in panel_pics)
+        if min_pic_y < bands["grid_y"] - ORION_MIN_BAND_GAP:
+            return False, f"thumbnail above grid band pic_y={min_pic_y} grid_y={bands['grid_y']}"
+
+    left_ok, left_det = _orion_left_column_gaps_ok(shapes, zone)
+    if not left_ok:
+        return False, f"left column: {left_det}"
+
+    chips_ok, chips_det = _orion_chips_ok(shapes, zone)
+    if not chips_ok:
+        return False, f"chips: {chips_det}"
+
+    badges = _highlight_badges_in_panel(xml, zone)
+    panel_card = _orion_panel_card(shapes, zone)
+    if not panel_card:
+        return False, "missing screenshot panel card"
+
+    search_bar = _orion_search_bar(shapes, zone)
+    frame_ok, frame_det = _orion_frame_insets_ok(panel_card, search_bar, panel_pics, badges)
+    if not frame_ok:
+        return False, f"frame inset: {frame_det}"
+
+    if len(badges) > ORION_MAX_HIGHLIGHTS:
+        return False, f"highlights={len(badges)}"
+    for badge in badges:
+        if badge["bottom"] > panel_card["bottom"] - ORION_MIN_PANEL_INSET + 10000:
+            return False, "highlight badge outside panel"
+        attached = any(
+            abs(badge["x"] - pic["x"]) < 120000 and abs(badge["y"] - pic["y"]) < 120000
+            for pic in panel_pics
+        )
+        if panel_pics and not attached:
+            return False, "highlight badge not attached to thumbnail"
+
+    inset_ok, inset_det = _panel_children_inset_ok(panel_card, panel_pics, badges)
+    if not inset_ok:
+        return False, f"panel inset: {inset_det}"
+
+    hi = len(badges)
+
+    if "13 / 50" not in t and "13/50" not in t.replace(" ", ""):
+        return False, "missing page number"
+
+    return True, f"pics={len(pics)} highlights={hi}"
+
+
+def slide13_gallery_not_banner_strips(xml: str) -> tuple[bool, str]:
+    """Gallery pics should not be wide horizontal strips (eyes-only crop artifact)."""
+    pics = pics_in_xml(xml)
+    if not pics:
+        return True, "no pics"
+    for i, pic in enumerate(pics):
+        aspect = pic["w"] / max(pic["h"], 1)
+        if aspect > GAL_ORION_MAX_PIC_ASPECT:
+            return False, f"pic[{i}] banner aspect={aspect:.2f} ({pic['w']}x{pic['h']})"
+    return True, f"pics={len(pics)}"
+
+
 def sp_shapes(xml: str) -> list[dict]:
     shapes: list[dict] = []
     for sp in re.findall(r"<p:sp\b.*?</p:sp>", xml, flags=re.DOTALL):
@@ -198,7 +679,7 @@ def sp_shapes(xml: str) -> list[dict]:
                     "w": cx,
                     "h": cy,
                     "text": text_m.group(1) if text_m else "",
-                    "round": "roundRect" in sp.lower(),
+                    "round": "roundrect" in sp.lower(),
                 }
             )
     return shapes
@@ -430,7 +911,7 @@ def gallery_overflow_notes(xml: str) -> list[dict]:
         s
         for s in text_shapes(xml)
         if re.search(
-            r"Показаны|Showing|skipped|сохранен|saved in evidence",
+            r"Показаны|Showing|skipped|сохранен|saved in evidence|Остальные сохранены|Others saved",
             s["text"],
             re.I,
         )
@@ -656,6 +1137,8 @@ def selection_note_above_grid(xml: str) -> bool:
             shape["text"],
             re.I,
         ):
+            if shape["y"] >= pic_y:
+                continue
             if shape["bottom"] > pic_y - 40000:
                 return False
     return True
@@ -710,12 +1193,20 @@ MIN_GALLERY_IMG_AREA_EMU = MIN_GALLERY_IMG_H_EMU * MIN_GALLERY_IMG_W_EMU
 MIN_GALLERY_CARD_IMG_FRAC = 0.45
 
 
-def gallery_pics_meet_min_size(xml: str, *, contained: bool = False) -> tuple[bool, str]:
+def gallery_pics_meet_min_size(
+    xml: str,
+    *,
+    contained: bool = False,
+    min_w: int | None = None,
+    min_h: int | None = None,
+) -> tuple[bool, str]:
     dims = pic_dimensions_all(xml)
     if not dims:
         return True, "no pics"
-    min_w = MIN_GALLERY_CONTAIN_W_EMU if contained else MIN_GALLERY_IMG_W_EMU
-    min_h = MIN_GALLERY_CONTAIN_H_EMU if contained else MIN_GALLERY_IMG_H_EMU
+    if min_w is None:
+        min_w = MIN_GALLERY_CONTAIN_W_EMU if contained else MIN_GALLERY_IMG_W_EMU
+    if min_h is None:
+        min_h = MIN_GALLERY_CONTAIN_H_EMU if contained else MIN_GALLERY_IMG_H_EMU
     for i, (w, h) in enumerate(dims):
         if w < min_w or h < min_h:
             return False, f"pic[{i}]={w}x{h} need>={min_w}x{min_h}"
@@ -724,8 +1215,31 @@ def gallery_pics_meet_min_size(xml: str, *, contained: bool = False) -> tuple[bo
     return True, f"count={len(dims)}"
 
 
-def gallery_pics_min_card_fraction(xml: str) -> tuple[bool, str]:
-    """Each pic height should be >= ~45% of its card frame (rounded rect) height."""
+def gallery_orion_pic_card_fraction(xml: str) -> tuple[bool, str]:
+    """ORION slide 13: cover-fit pics fill >=50% card; wide letterboxed banners >=35%."""
+    pics = pics_in_xml(xml)
+    if not pics:
+        return True, "no pics"
+    frames = gallery_card_frames(xml)
+    if not frames:
+        return True, "no frames"
+    for i, pic in enumerate(pics):
+        candidates = [f for f in frames if abs(f["y"] - pic["y"]) < 120000]
+        if not candidates:
+            continue
+        card = min(candidates, key=lambda f: abs(f["y"] - pic["y"]))
+        card_h = card["bottom"] - card["y"]
+        aspect = pic["w"] / pic["h"] if pic["h"] else 99.0
+        min_frac = 0.35 if aspect > 1.75 else GAL_ORION_MIN_CARD_IMG_FRAC
+        if pic["h"] < int(card_h * min_frac):
+            return False, (
+                f"pic[{i}] h={pic['h']} < {min_frac:.0%} of card h={card_h} aspect={aspect:.2f}"
+            )
+    return True, "ok"
+
+
+def gallery_pics_min_card_fraction(xml: str, *, min_frac: float = MIN_GALLERY_CARD_IMG_FRAC) -> tuple[bool, str]:
+    """Each pic height should be >= min_frac of its card frame (rounded rect) height."""
     pics: list[dict] = []
     for pic in re.findall(r"<p:pic\b.*?</p:pic>", xml, flags=re.DOTALL):
         off_m = re.search(r'<a:off x="(\d+)" y="(\d+)"', pic)
@@ -758,8 +1272,8 @@ def gallery_pics_min_card_fraction(xml: str) -> tuple[bool, str]:
         if not candidates:
             continue
         card = min(candidates, key=lambda f: abs(f["y"] - pic["y"]))
-        if pic["h"] < int(card["h"] * MIN_GALLERY_CARD_IMG_FRAC):
-            return False, f"pic[{i}] h={pic['h']} < {MIN_GALLERY_CARD_IMG_FRAC:.0%} of card h={card['h']}"
+        if pic["h"] < int(card["h"] * min_frac):
+            return False, f"pic[{i}] h={pic['h']} < {min_frac:.0%} of card h={card['h']}"
     return True, "ok"
 
 
@@ -891,6 +1405,8 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                 p13.count("Source:") <= 1 and "Source: Source:" not in p13,
                 f"count={p13.count('Source:')}",
             )
+            ok13o, det13o = slide13_orion_layout_ok(s13)
+            add("Slide 13 ORION layout structure", ok13o, det13o)
             if images_selected > 0 and pics13 > 0:
                 add(
                     "Slide 13 image aspect ratios not stretched",
@@ -900,18 +1416,11 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                 meta["slide13MaxPicW"] = mw13
                 meta["slide13MaxPicH"] = mh13
                 meta["slide13PicDims"] = pic_dimensions_all(s13)
-                ok13, det13 = gallery_pics_meet_min_size(s13, contained=True)
-                add(
-                    "Slide 13 gallery image min width and height",
-                    ok13,
-                    det13,
-                )
-                ok13f, det13f = gallery_pics_min_card_fraction(s13)
-                add(
-                    "Slide 13 gallery image >= 45% card height",
-                    ok13f,
-                    det13f,
-                )
+                meta["slide13PicCount"] = pics13
+                ok13b, det13b = slide13_no_identity_badges(s13)
+                add("Slide 13 no internal identity badges", ok13b, det13b)
+                ok13e, det13e = slide13_no_english_metrics_note(s13)
+                add("Slide 13 no English selection metrics note", ok13e, det13e)
             s13_bottom = max_shape_bottom(s13)
             meta["slide13MaxBottom"] = s13_bottom
             add(
@@ -920,35 +1429,9 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                 f"max_bottom={s13_bottom}",
             )
             add("Slide 13 page footer visible", "/ 50" in p13 or "50" in p13)
-            s13_shapes = text_shapes(s13)
             add(
-                "Slide 13 selection note above image grid",
-                selection_note_above_grid(s13),
-            )
-            add(
-                "Slide 13 domain and identity badge zones separated",
-                caption_zones_have_gap(
-                    s13_shapes,
-                    r"\.(com|ru|net|org|edu|linkedin|youtube)",
-                    r"LIKELY|EXACT|likely subject",
-                ),
-            )
-            ok13c, det13c = card_media_layout_ok(s13)
-            add("Slide 13 card zones no vertical overlap", ok13c, det13c)
-            add(
-                "Slide 13 no duplicate pic dimensions",
-                duplicate_pics_count(s13) <= 1 or pics13 <= 4,
-                f"dup={duplicate_pics_count(s13)} pics={pics13}",
-            )
-            ok13g, det13g = slide13_gallery_layout_ok(s13)
-            add("Slide 13 gallery cards/notes in safe area", ok13g, det13g)
-            ok13z, det13z = gallery_card_inner_zones_ok(s13)
-            add("Slide 13 gallery image/title/domain zones", ok13z, det13z)
-            gallery_frames = gallery_card_frames(s13)
-            add(
-                "Slide 13 max 4 gallery cards",
-                len(gallery_frames) <= 4,
-                f"gallery_frames={len(gallery_frames)}",
+                "Slide 13 no LIKELY_SUBJECT badges",
+                "LIKELY_SUBJECT" not in p13 and "likely subject" not in p13.lower(),
             )
 
             if videos_selected > 0:
