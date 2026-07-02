@@ -125,16 +125,7 @@ def _p_contents(prs, vm, ctx):
 def _p_executive(prs, vm, ctx):
     L = vm["labels"]
     e = vm["executiveSummary"]
-    slide = T.blank_slide(prs)
-    top = T.r2_page_header(
-        slide,
-        title=L["executive_summary"],
-        subtitle=f"{L['overall_risk']}: {e['overallRiskLevel']}",
-        section_marker=L.get("section"),
-    )
-    T.r2_page_footer(slide, brand=ctx.brand, page_no=ctx.page, total=ctx.total)
-    if ctx.watermark:
-        T._watermark(slide, str(ctx.watermark))
+    slide, top = _section(prs, ctx, L["executive_summary"], f"{L['overall_risk']}: {e['overallRiskLevel']}")
     o = vm["overview"]
     c = vm["compliance"]
     cards = [
@@ -143,7 +134,7 @@ def _p_executive(prs, vm, ctx):
         {"label": L["m_uae_negative"], "value": o.get("negativeShareUae", "0%")},
         {"label": L["m_compliance_matches"], "value": c.get("activeMatches", 0), "tone": T.DANGER if c.get("activeMatches") else T.NEUTRAL_GRAY},
     ]
-    top = T.r2_metric_cards(slide, top, cards, per_row=4)
+    top = T.metric_cards(slide, top, cards, per_row=4)
     bullet_lines = [b for b in e.get("bullets", [])[:6] if b]
     warning = e.get("dataQualityWarning") if ctx.internal else None
     # Drop the warning if it merely repeats the last bullet (no duplication).
@@ -153,7 +144,7 @@ def _p_executive(prs, vm, ctx):
     # (incl. a safe gap), so the warning always sits below the list.
     top = T.bullets(slide, top, bullet_lines)
     if warning:
-        T.r2_warning_card(slide, top, warning)
+        T.note(slide, top, warning, "warning")
 
 
 def _p_risk_matrix(prs, vm, ctx):
@@ -168,38 +159,18 @@ def _p_risk_matrix(prs, vm, ctx):
 def _p_overview(prs, vm, ctx):
     L = vm["labels"]
     o = vm["overview"]
-    slide = T.blank_slide(prs)
-    top = T.r2_page_header(
-        slide,
-        title=L["digital_profile_overview"],
-        section_marker=L.get("section"),
-    )
-    T.r2_page_footer(slide, brand=ctx.brand, page_no=ctx.page, total=ctx.total)
-    if ctx.watermark:
-        T._watermark(slide, str(ctx.watermark))
+    slide, top = _section(prs, ctx, L["digital_profile_overview"])
     cards = [
         {"label": L["m_ru_negative_share"], "value": o.get("negativeShareRu", "0%")},
         {"label": L["m_uae_negative_share"], "value": o.get("negativeShareUae", "0%")},
         {"label": L["m_search_neg_total"], "value": f"{o.get('searchNegative', 0)}/{o.get('searchTotal', 0)}"},
         _risk_card_value(o.get("overallRiskLevel", "UNKNOWN"), L),
     ]
-    top = T.r2_metric_cards(slide, top, cards, per_row=4)
-    summary_text = (
-        f"{L['profile_summary']}\n"
-        f"{L['wikipedia_label']} {o.get('wikipediaStatus', '')}\n"
-        f"{T.truncate(o.get('complianceSummary', ''), 140)}"
-    )
-    T.r2_text_box(
-        slide,
-        T.MARGIN,
-        top,
-        T.CONTENT_W,
-        Emu(1400000),
-        summary_text,
-        font_pt=T.R2_TYPO_BODY,
-        color=T.TEXT,
-        line_spacing=1.2,
-    )
+    top = T.metric_cards(slide, top, cards, per_row=4)
+    T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(1500000), L["profile_summary"], [
+        f"{L['wikipedia_label']} {o.get('wikipediaStatus', '')}",
+        T.truncate(o.get("complianceSummary", ""), 120),
+    ])
 
 
 def _b_results_r2(slide, top, blk, vm, ctx):
@@ -209,14 +180,13 @@ def _b_results_r2(slide, top, blk, vm, ctx):
     if not rows:
         T.r2_no_data_state(slide, top, L["nd_no_organic_region"])
         return
-    T.r2_safe_table(
+    T.table(
         slide,
         top,
         [L["th_provider"], L["th_rank"], L["th_domain"], L["th_title"], L["th_class"]],
         rows,
         col_widths=[0.13, 0.08, 0.22, 0.37, 0.20],
         max_rows=10,
-        overflow_note=L.get("showing_top", "Показаны первые {n} из {total}."),
         layout_warnings=ctx.layout_warnings,
     )
 
@@ -614,6 +584,95 @@ def _b_media(slide, top, blk, vm, ctx):
         T.no_data_card(slide, top, L.get("nd_no_relevant_media", L["nd_no_media"]))
 
 
+def _b_intl_media_r2(slide, top, blk, vm, ctx):
+    """R2.2c: intl media cleanup with polished empty-state."""
+    L = vm["labels"]
+    im, vi = blk["images"], blk["videos"]
+    img_items = list(im.get("items") or [])
+    vid_items = list(vi.get("items") or [])
+    raw_rel_img = int(im.get("selected", len(img_items)) or 0)
+    raw_rel_vid = int(vi.get("selected", len(vid_items)) or 0)
+    no_media = blk.get("noIntlSubjectResults") or (not img_items and not vid_items)
+    rel_img = 0 if no_media else raw_rel_img
+    rel_vid = 0 if no_media else raw_rel_vid
+    total = int(im.get("total", 0) or 0) + int(vi.get("total", 0) or 0)
+    relevant = rel_img + rel_vid
+    excluded = max(0, total - relevant)
+    top = T.r2_metric_cards(slide, top, [
+        {"label": L.get("m_intl_images_relevant", "Relevant images"), "value": rel_img, "tone": T.SUCCESS if rel_img else T.NEUTRAL_GRAY},
+        {"label": L.get("m_intl_videos_relevant", "Relevant videos"), "value": rel_vid, "tone": T.SUCCESS if rel_vid else T.NEUTRAL_GRAY},
+        {"label": L.get("m_intl_excluded", "Excluded"), "value": excluded, "tone": T.NEUTRAL_GRAY},
+    ], per_row=3)
+
+    if no_media:
+        T.r2_media_empty_state(
+            slide,
+            top,
+            message=L.get(
+                "nd_no_relevant_intl_media_subject",
+                "No relevant international images or videos were found for the subject.",
+            ),
+            detail=L.get(
+                "nd_intl_media_partial_saved",
+                "Partial-name or patronymic-only materials are saved in internal evidence and excluded from the client report.",
+            ),
+        )
+        return
+
+    shown_img = 0
+    shown_vid = 0
+    if img_items:
+        shown_img = min(2, len(img_items))
+        top = T.image_grid(
+            slide,
+            top,
+            img_items,
+            show_identity=False,
+            labels=L,
+            layout_warnings=ctx.layout_warnings,
+            intl_compact=True,
+            allow_cover=False,
+            max_items=2,
+        )
+    if vid_items:
+        shown_vid = min(2, len(vid_items))
+        top = T.video_cards(
+            slide,
+            top,
+            vid_items,
+            L.get("video_open_source", "Open source"),
+            labels=L,
+            layout_warnings=ctx.layout_warnings,
+            max_items=2,
+        )
+    shown_total = shown_img + shown_vid
+    if relevant > shown_total and shown_total > 0:
+        tpl = L.get("media_showing_intl_compact", "Showing {shown} of {total} relevant media sources.")
+        T.r2_overflow_note(slide, top, tpl.format(shown=shown_total, total=relevant))
+
+
+def _p_intl_media_r2(prs, vm, ctx):
+    """R2.2c: isolated intl media page path (slide 27)."""
+    blk = vm["intl"]
+    L = vm["labels"]
+    page_title = L["pg_images_videos"].replace("{label}", blk["label"])
+    title_w = Emu(int(T.CONTENT_W) - 1700000)
+    slide, top = _section(prs, ctx, page_title, title_width=title_w)
+    T.risk_badge(
+        slide,
+        Emu(int(T.SLIDE_W) - int(T.MARGIN) - 1500000),
+        Emu(228600),
+        blk["riskLevel"],
+    )
+    if not blk["present"]:
+        T.no_data_card(
+            slide, top,
+            blk["noDataText"] or vm["labels"]["no_evidence_region"].format(label=blk["label"]),
+        )
+        return
+    _b_intl_media_r2(slide, top, blk, vm, ctx)
+
+
 def _b_knowledge(slide, top, blk, vm, ctx):
     L = vm["labels"]
     kb = blk["knowledgeBlock"]
@@ -995,7 +1054,7 @@ def build_report_v3(
     ru_pages = [
         _rb("ru", _b_summary, L["pg_audit_summary"]),
         _rb("ru", _b_organic, L["pg_organic_overview"]),
-        _p_ru_results_r2,
+        _rb("ru", _b_results, L["pg_top_results"]),
         _rb("ru", _b_themes, L["pg_neg_publications"]),
         _p_snapshots,
         _rb("ru", _b_suggestions, L["pg_suggestions"]),
@@ -1016,7 +1075,7 @@ def build_report_v3(
         _rb("intl", _b_results, L["pg_top_results"]),
         _rb("intl", _b_themes, L["pg_neg_themes"]),
         _rb("intl", _b_suggestions, L["pg_suggestions"]),
-        _rb("intl", _b_media, L["pg_images_videos"]),
+        _p_intl_media_r2,
         _rb("intl", _b_wiki_knowledge, L["pg_wiki_knowledge"]),
         _rb("intl", _b_findings, L["pg_risk_findings"]),
         _rb("intl", _b_data_quality, L["pg_data_quality"]),

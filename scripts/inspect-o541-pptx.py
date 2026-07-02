@@ -795,6 +795,11 @@ VIDEO_INTERNAL_LABEL_RE = re.compile(
     r"|sourceMode|rawMetadata|internalOnly|providerAdapter|Collected videos:",
     re.I,
 )
+SLIDE27_INTERNAL_LABEL_RE = re.compile(
+    r"LIKELY_SUBJECT|POSSIBLE_SUBJECT|CLIENT_INCLUDE|EXCLUDE|REVIEW_REQUIRED"
+    r"|sourceMode|rawMetadata|reviewQueue",
+    re.I,
+)
 
 
 def slide14_no_internal_labels(xml: str) -> tuple[bool, str]:
@@ -817,6 +822,59 @@ def slide14_buttons_per_card(xml: str) -> tuple[bool, str]:
         if not any(shape_inside(b, frame) for b in buttons):
             return False, f"card[{i}] missing open-source button"
     return True, f"cards={len(frames)} all have buttons"
+
+
+def slide27_r2_media_contract_ok(
+    xml: str,
+    rel_xml: str,
+    *,
+    expect_no_media: bool,
+) -> tuple[bool, str]:
+    """R2.2c contract for intl media page cleanliness."""
+    t = plain_text(xml)
+    if "27 / 50" not in t and "27/50" not in t.replace(" ", ""):
+        return False, "footer page 27/50 missing"
+    ok_safe, det_safe = check_footer_safe_area(xml)
+    if not ok_safe:
+        return False, det_safe
+    if "http://" in t or "https://" in t:
+        return False, "raw url visible"
+    m = SLIDE27_INTERNAL_LABEL_RE.search(t)
+    if m:
+        return False, f"internal label visible: {m.group(0)!r}"
+    for weak in ("Romanovich", "Анатоли", "Принц Николай"):
+        if weak.lower() in t.lower():
+            return False, f"weak-match marker visible: {weak}"
+    ok_giant, det_giant = intl_slide_no_giant_pic(xml)
+    if not ok_giant:
+        return False, f"giant image: {det_giant}"
+    if not pic_aspect_ratios_ok(xml, lo=0.2, hi=4.5):
+        return False, "stretched media aspect ratio"
+    pics = count_pics(xml)
+    cards = video_card_frames(xml)
+    if pics > 0 or cards:
+        ok_overlap, det_overlap = card_media_layout_ok(xml)
+        if not ok_overlap:
+            return False, f"media/text overlap: {det_overlap}"
+    buttons = [
+        s
+        for s in text_shapes(xml)
+        if re.search(r"Open source|Открыть источник", s["text"], re.I)
+    ]
+    hlinks = count_hyperlink_rels(rel_xml)
+
+    if expect_no_media:
+        if pics > 0 or cards:
+            return False, f"no-media expected but pics={pics} cards={len(cards)}"
+        if not (
+            re.search(r"Релевантные международные изображения и видео", t)
+            or re.search(r"No relevant international images or videos", t)
+            or re.search(r"Релевантные международные результаты по субъекту не обнаружены", t)
+        ):
+            return False, "empty-state message missing"
+    elif buttons and hlinks != len(buttons):
+        return False, f"video buttons={len(buttons)} rels={hlinks}"
+    return True, f"pics={pics} cards={len(cards)} hlinks={hlinks}"
 
 
 def video_card_inner_zones_ok(xml: str) -> tuple[bool, str]:
@@ -1526,6 +1584,7 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
     images_selected = len(selected.get("images", {}).get("selectedSubjectMatched") or [])
     videos_selected = len(selected.get("videos", {}).get("selectedSubjectMatched") or [])
     intl_images = len((selected.get("regions") or {}).get("international", {}).get("images") or [])
+    intl_videos = len((selected.get("regions") or {}).get("international", {}).get("videos") or [])
     compliance = (report_json or {}).get("complianceSummary") or {}
     compliance_active = int(compliance.get("activeMatches") or 0) > 0 or int(
         compliance.get("providersChecked") or 0
@@ -1551,6 +1610,7 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
 
         r13 = slide_rels(z, 13)
         r14 = slide_rels(z, 14)
+        r27 = slide_rels(z, 27)
 
         pics13 = count_pics(s13)
         hlinks14 = max(count_hyperlink_rels(r14), count_hlink_clicks(s14))
@@ -1728,7 +1788,7 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
 
             p27 = plain_text(s27)
             s27_shapes = text_shapes(s27)
-            if intl_images > 0 or videos_selected > 0:
+            if intl_images > 0 or intl_videos > 0:
                 s27 = slide_xml(z, 27)
                 add(
                     "Slide 27 within footer safe area",
@@ -1766,6 +1826,12 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                 )
                 ok27g, det27g = intl_slide_no_giant_pic(s27)
                 add("Slide 27 no giant upscaled intl image", ok27g, det27g)
+            ok27r2, det27r2 = slide27_r2_media_contract_ok(
+                s27,
+                r27,
+                expect_no_media=(intl_images + intl_videos == 0),
+            )
+            add("Slide 27 R2 media contract", ok27r2, det27r2)
 
             s8_bottom = max_shape_bottom(s8)
             meta["slide8MaxBottom"] = s8_bottom

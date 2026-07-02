@@ -423,6 +423,47 @@ def r2_warning_card(slide, top: Emu, text: str) -> Emu:
     return warning_card(slide, top, text)
 
 
+def r2_media_empty_state(
+    slide,
+    top: Emu,
+    *,
+    message: str,
+    detail: str | None = None,
+) -> Emu:
+    """Centered premium no-media state card for client-facing pages."""
+    card_h = Emu(1280000 if detail else 980000)
+    if int(top) + int(card_h) > int(R2_FOOTER_SAFE_BOTTOM):
+        card_h = Emu(max(760000, int(R2_FOOTER_SAFE_BOTTOM) - int(top) - 60000))
+    r2_card(slide, MARGIN, top, CONTENT_W, card_h, fill=BG_LIGHT, border=NEUTRAL_LINE)
+    msg = r2_truncate_lines(message, max_lines=3, line_len=72)
+    r2_text_box(
+        slide,
+        Emu(int(MARGIN) + 180000),
+        Emu(int(top) + 150000),
+        Emu(int(CONTENT_W) - 360000),
+        Emu(360000),
+        msg,
+        size=R2_TYPO_BODY,
+        color=BRAND_PRIMARY,
+        bold=True,
+        align=PP_ALIGN.CENTER,
+    )
+    if detail:
+        det = r2_truncate_lines(detail, max_lines=3, line_len=96)
+        r2_text_box(
+            slide,
+            Emu(int(MARGIN) + 180000),
+            Emu(int(top) + 540000),
+            Emu(int(CONTENT_W) - 360000),
+            Emu(max(200000, int(card_h) - 640000)),
+            det,
+            size=R2_TYPO_NOTE,
+            color=R2_TEXT_MUTED,
+            align=PP_ALIGN.CENTER,
+        )
+    return Emu(int(top) + int(card_h) + int(_BLOCK_GAP))
+
+
 def r2_safe_table(
     slide,
     top: Emu,
