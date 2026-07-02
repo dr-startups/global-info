@@ -10,6 +10,7 @@ No LLM, no network — pure layout helpers over python-pptx.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pptx.dml.color import RGBColor
@@ -489,6 +490,164 @@ def r2_safe_table(
         line = overflow_note or _SHOWING_TOP.format(n=max_rows, total=len(rows))
         bottom = r2_overflow_note(slide, bottom, line)
     return bottom
+
+
+def r2_truncate_cell_text(text: Any, max_len: int = 56) -> str:
+    """Truncate table-cell text with stable ellipsis behavior."""
+    raw = str(text or "").strip()
+    if len(raw) <= max_len:
+        return raw
+    if max_len <= 1:
+        return raw[:max_len]
+    return raw[: max_len - 1].rstrip() + "…"
+
+
+def r2_status_pill(value: str, labels: dict | None = None) -> str:
+    """Return client-safe localized status label for evidence rows."""
+    labels = labels or {}
+    v = (value or "").strip().upper()
+    if v in ("EXACT_SUBJECT", "MATCH_CONFIRMED", "CONFIRMED", "ПОДТВЕРЖДЕНО"):
+        return labels.get("status_confirmed", "Подтверждено")
+    if v in ("LIKELY_SUBJECT", "LIKELY", "VERIFIED_LIKELY"):
+        return labels.get("status_likely_subject", "Вероятно относится к субъекту")
+    if v in ("PENDING", "NEEDS_REVIEW", "REVIEW_REQUIRED", "ON_REVIEW"):
+        return labels.get("status_needs_review", "Требует проверки")
+    txt = (value or "").strip()
+    if not txt:
+        return labels.get("status_confirmed", "Подтверждено")
+    if "review" in txt.lower() or "провер" in txt.lower():
+        return labels.get("status_needs_review", "Требует проверки")
+    return r2_truncate_cell_text(txt, 28)
+
+
+def r2_domain_text(value: Any, max_len: int = 34) -> str:
+    """Normalize URL/domain text for compact appendix tables."""
+    from urllib.parse import urlparse
+
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+        host = (parsed.netloc or parsed.path or "").strip().lower()
+        host = host.replace("www.", "").split("/")[0]
+    except Exception:
+        host = raw.replace("http://", "").replace("https://", "").split("/")[0].lower()
+    return r2_truncate_cell_text(host, max_len)
+
+
+def r2_table_overflow_note(
+    slide,
+    top: Emu,
+    *,
+    shown: int,
+    total: int,
+    template: str | None = None,
+) -> Emu:
+    """Place continuation note below table without footer collision."""
+    if total <= shown:
+        return top
+    tpl = template or _SHOWING_TOP
+    msg = tpl.format(shown=shown, total=total, n=shown)
+    return r2_overflow_note(slide, top, msg)
+
+
+def r2_evidence_appendix_table(
+    slide,
+    top: Emu,
+    *,
+    columns: list[str],
+    rows: list[list[Any]],
+    col_widths: list[float],
+    max_rows: int,
+    audience: str,
+    section_kind: str,
+    labels: dict,
+    layout_warnings: list[str] | None = None,
+) -> tuple[Emu, int]:
+    """Appendix-specific safe table with per-section overflow note."""
+    def _sanitize_cell(text: Any) -> str:
+        raw = str(text or "")
+        replacements = {
+            "CLIENT_INCLUDE": labels.get("status_confirmed", "Подтверждено"),
+            "REVIEW_REQUIRED": labels.get("status_needs_review", "Требует проверки"),
+            "EXCLUDE": labels.get("status_excluded_noise", "Исключено / шум"),
+            "RELATED_QUERY": "",
+            "SEARCH_SUGGESTION": "",
+            "sourceMode": "",
+            "rawMetadata": "",
+            "reviewQueue": "",
+            "providerAdapter": "",
+            "contentClass": "",
+        }
+        out = raw
+        for key, val in replacements.items():
+            out = re.sub(key, val, out, flags=re.I)
+        out = re.sub(r"\s+", " ", out).strip()
+        return out
+
+    safe_rows: list[list[str]] = []
+    for row in rows:
+        cells = [r2_truncate_cell_text(_sanitize_cell(c), 64) for c in row]
+        if len(cells) >= 2:
+            cells[1] = r2_domain_text(cells[1], 34) or cells[1]
+        if audience == "client":
+            cells = [c.replace("http://", "").replace("https://", "") for c in cells]
+        safe_rows.append(cells)
+
+    shown = min(len(safe_rows), max_rows)
+    table_bottom = table(
+        slide,
+        top,
+        columns,
+        safe_rows,
+        col_widths=col_widths,
+        max_rows=max_rows,
+        layout_warnings=layout_warnings,
+    )
+    return table_bottom, shown
+
+
+def r2_grouped_evidence_sections(
+    slide,
+    top: Emu,
+    *,
+    groups: list[dict],
+    audience: str,
+    labels: dict,
+    layout_warnings: list[str] | None = None,
+) -> Emu:
+    """Render grouped evidence sections with audience-aware gating."""
+    for group in groups:
+        rows = list(group.get("rows") or [])
+        if not rows:
+            continue
+        kind = str(group.get("kind") or "")
+        if audience == "client" and kind == "excluded":
+            continue
+        header = r2_truncate_lines(str(group.get("title") or ""), max_lines=1, line_len=72)
+        # Skip section when it cannot fit safely above footer.
+        if int(top) + 1000000 > int(CONTENT_SAFE_BOTTOM):
+            msg_tpl = labels.get(
+                "appendix_section_hidden_overflow",
+                "Section \"{title}\" is preserved in internal evidence.",
+            )
+            top = _safe_content_note(slide, top, msg_tpl.format(title=header), "disclaimer")
+            continue
+        top = note(slide, top, header, "info" if kind != "excluded" else "warning")
+        top, _ = r2_evidence_appendix_table(
+            slide,
+            top,
+            columns=list(group.get("columns") or []),
+            rows=rows,
+            col_widths=list(group.get("col_widths") or [0.4, 0.2, 0.2, 0.2]),
+            max_rows=int(group.get("max_rows") or 6),
+            audience=audience,
+            section_kind=kind,
+            labels=labels,
+            layout_warnings=layout_warnings,
+        )
+    return top
 
 
 # ---------------------------------------------------------------------------

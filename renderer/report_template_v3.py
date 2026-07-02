@@ -744,60 +744,119 @@ def _b_recommended(slide, top, blk, vm, ctx):
 
 def _b_evidence(slide, top, blk, vm, ctx):
     L = vm["labels"]
-    internal = vm.get("audience") == "internal"
-    confirmed = blk.get("evidenceAppendix") or []
-    excluded = blk.get("excludedAppendix") or []
-    if confirmed:
-        top = T.note(slide, top, L.get("appendix_confirmed_title", "Confirmed / likely subject evidence"), "info")
-        rows = [
-            [
-                T.truncate(e["title"], 52),
-                e["domain"],
-                T.truncate(e.get("identity", ""), 18),
-                T.truncate(e.get("review", e.get("classification", "")), 16),
-            ]
-            for e in confirmed
+    audience = vm.get("audience") or ("internal" if getattr(ctx, "internal", False) else "client")
+    internal = audience == "internal"
+    evidence_rows = list(blk.get("evidenceAppendix") or [])
+    excluded_rows = list(blk.get("excludedAppendix") or [])
+
+    def _is_review_entry(e: dict) -> bool:
+        v = " ".join(
+            str(e.get(k, "") or "")
+            for k in ("review", "classification", "identity")
+        ).lower()
+        return any(tok in v for tok in ("review", "pending", "needs", "провер"))
+
+    confirmed_rows = [e for e in evidence_rows if not _is_review_entry(e)]
+    review_rows = [e for e in evidence_rows if _is_review_entry(e)]
+
+    top = T.metric_cards(slide, top, [
+        {"label": L.get("m_evidence_confirmed", "Подтверждено"), "value": len(confirmed_rows), "tone": T.SUCCESS if confirmed_rows else T.NEUTRAL_GRAY},
+        {"label": L.get("m_evidence_review", "На проверке"), "value": len(review_rows), "tone": T.WARNING if review_rows else T.NEUTRAL_GRAY},
+        {"label": L.get("m_evidence_excluded", "Исключено"), "value": len(excluded_rows), "tone": T.NEUTRAL_GRAY},
+    ], per_row=3)
+
+    def _to_table_row(e: dict) -> list[str]:
+        identity_raw = str(e.get("identity") or e.get("classification") or "")
+        status_raw = str(e.get("review") or e.get("classification") or "")
+        identity = T.r2_status_pill(identity_raw, L)
+        status = T.r2_status_pill(status_raw, L)
+        return [
+            T.r2_truncate_cell_text(e.get("title"), 58),
+            T.r2_domain_text(str(e.get("domain") or e.get("link") or ""), 34),
+            identity,
+            status,
         ]
-        top = T.table(
+
+    groups: list[dict] = []
+    if confirmed_rows:
+        groups.append(
+            {
+                "kind": "confirmed",
+                "title": L.get("appendix_section_confirmed", L.get("appendix_confirmed_title", "Подтверждённые материалы")),
+                "columns": [
+                    L.get("th_evidence_material", "Материал"),
+                    L["th_domain"],
+                    L.get("th_identity", "Идентичность"),
+                    L.get("th_status", "Статус"),
+                ],
+                "rows": [_to_table_row(e) for e in confirmed_rows],
+                "col_widths": [0.40, 0.20, 0.20, 0.20],
+                "max_rows": 4,
+            }
+        )
+    if internal and review_rows:
+        groups.append(
+            {
+                "kind": "review",
+                "title": L.get("appendix_section_review", "Требуют проверки"),
+                "columns": [
+                    L.get("th_evidence_material", "Материал"),
+                    L["th_domain"],
+                    L.get("th_identity", "Идентичность"),
+                    L.get("th_status", "Статус"),
+                ],
+                "rows": [_to_table_row(e) for e in review_rows],
+                "col_widths": [0.40, 0.20, 0.20, 0.20],
+                "max_rows": 2,
+            }
+        )
+    if internal and excluded_rows:
+        groups.append(
+            {
+                "kind": "excluded",
+                "title": L.get("appendix_section_excluded", L.get("appendix_excluded_title", "Исключено / шум")),
+                "columns": [
+                    L.get("th_evidence_material", "Материал"),
+                    L["th_domain"],
+                    L.get("th_reason", "Причина"),
+                    L.get("th_status", "Статус"),
+                ],
+                "rows": [
+                    [
+                        T.r2_truncate_cell_text(e.get("title"), 52),
+                        T.r2_domain_text(str(e.get("domain") or ""), 34),
+                        T.r2_truncate_cell_text(e.get("reason"), 26),
+                        L.get("status_excluded_noise", "Исключено / шум"),
+                    ]
+                    for e in excluded_rows
+                ],
+                "col_widths": [0.40, 0.20, 0.22, 0.18],
+                "max_rows": 2,
+            }
+        )
+
+    if groups:
+        top = T.r2_grouped_evidence_sections(
             slide,
             top,
-            [
-                L.get("th_evidence_material", L.get("th_evidence", "Material")),
-                L["th_domain"],
-                L.get("th_identity", "Identity"),
-                L.get("th_status", L.get("th_review", "Status")),
-            ],
-            rows,
-            col_widths=[0.38, 0.22, 0.20, 0.20],
-            max_rows=6,
+            groups=groups,
+            audience=audience,
+            labels=L,
             layout_warnings=ctx.layout_warnings,
         )
     else:
         top = T.no_data_card(slide, top, L.get("nd_no_confirmed_evidence", L["nd_no_evidence_region"]))
-    if internal and excluded:
-        remaining = int(T.CONTENT_SAFE_BOTTOM) - int(top) - 500000
-        if remaining >= 1200000:
-            top = T.note(slide, top, L.get("appendix_excluded_title", "Excluded / not subject (internal only)"), "warning")
-            ex_rows = [
-                [T.truncate(e["title"], 44), e["domain"], T.truncate(e.get("reason", ""), 24)]
-                for e in excluded
-            ]
-            T.table(
-                slide,
-                top,
-                [
-                    L.get("th_excluded_item", "Excluded item"),
-                    L["th_domain"],
-                    L.get("th_reason", "Reason"),
-                ],
-                ex_rows,
-                col_widths=[0.42, 0.28, 0.30],
-                max_rows=4,
-                layout_warnings=ctx.layout_warnings,
-            )
-        elif excluded:
-            tpl = L.get("appendix_excluded_overflow", "+ {n} excluded items preserved in evidence.")
-            T.note(slide, top, tpl.format(n=len(excluded)), "info")
+
+    if not internal and (review_rows or excluded_rows):
+        T.note(
+            slide,
+            top,
+            L.get(
+                "appendix_client_hidden_note",
+                "Исключённые и спорные совпадения сохранены во внутреннем evidence и не включены в клиентский отчёт.",
+            ),
+            "disclaimer",
+        )
 
 
 def _b_conclusion(slide, top, blk, vm, ctx):

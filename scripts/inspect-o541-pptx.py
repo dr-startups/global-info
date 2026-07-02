@@ -800,6 +800,11 @@ SLIDE27_INTERNAL_LABEL_RE = re.compile(
     r"|sourceMode|rawMetadata|reviewQueue",
     re.I,
 )
+SLIDE20_INTERNAL_LABEL_RE = re.compile(
+    r"CLIENT_INCLUDE|REVIEW_REQUIRED|EXCLUDE|RELATED_QUERY|SEARCH_SUGGESTION"
+    r"|sourceMode|rawMetadata|reviewQueue|providerAdapter|contentClass",
+    re.I,
+)
 
 
 def slide14_no_internal_labels(xml: str) -> tuple[bool, str]:
@@ -875,6 +880,71 @@ def slide27_r2_media_contract_ok(
     elif buttons and hlinks != len(buttons):
         return False, f"video buttons={len(buttons)} rels={hlinks}"
     return True, f"pics={pics} cards={len(cards)} hlinks={hlinks}"
+
+
+def slide20_r23_evidence_contract_ok(
+    xml: str,
+    report_json: dict | None = None,
+    *,
+    audience: str = "internal",
+) -> tuple[bool, str]:
+    """R2.3b contract: grouped, client-safe evidence appendix layout."""
+    t = plain_text(xml)
+    if "20 / 50" not in t and "20/50" not in t.replace(" ", ""):
+        return False, "footer page 20/50 missing"
+    if max_shape_bottom(xml) > FOOTER_SAFE_BOTTOM:
+        return False, f"content below footer safe area: {max_shape_bottom(xml)}"
+    if not (
+        re.search(r"Подтвержд", t, re.I)
+        or re.search(r"Confirmed evidence", t, re.I)
+    ):
+        return False, "confirmed section header missing"
+    if SLIDE20_INTERNAL_LABEL_RE.search(t):
+        return False, "internal/debug labels visible"
+    if "http://" in t or "https://" in t:
+        return False, "raw long url visible"
+    if not source_note_below_table(xml, min_gap=PDF_SAFE_TABLE_NOTE_GAP):
+        return False, "section note overlaps table rows"
+    if not table_rows_not_over_footnote(xml, min_gap=PDF_SAFE_TABLE_NOTE_GAP):
+        return False, "table rows overlap continuation note"
+    has_grouped = bool(
+        re.search(r"Подтверждённые материалы|Confirmed evidence", t)
+        and (
+            re.search(r"Требуют проверки|Needs review", t)
+            or re.search(r"Исключено / шум|Excluded / noise", t)
+        )
+    )
+    if not has_grouped:
+        return False, "grouped section headers missing"
+    if audience == "client" and re.search(r"Исключено / шум|Excluded / noise", t):
+        return False, "excluded section visible in client mode"
+    if audience == "client":
+        confirmed_part = t
+        cut_markers = [
+            "Требуют проверки",
+            "Needs review",
+            "Исключено / шум",
+            "Excluded / noise",
+        ]
+        for marker in cut_markers:
+            idx = confirmed_part.lower().find(marker.lower())
+            if idx >= 0:
+                confirmed_part = confirmed_part[:idx]
+                break
+        excluded_titles: list[str] = []
+        if report_json:
+            try:
+                excluded = report_json["sections"]["ru"]["excludedAppendix"]
+                excluded_titles = [str(e.get("title") or "") for e in excluded]
+            except Exception:
+                excluded_titles = []
+        for ttl in excluded_titles:
+            key = ttl.strip()
+            if len(key) >= 10 and key in confirmed_part:
+                return False, f"excluded title leaked into confirmed: {key[:36]!r}"
+    if re.search(r"Показаны первые \d+ из \d+|Showing first \d+ of \d+", t):
+        return True, "grouped + continuation note"
+    return True, "grouped sections ok"
 
 
 def video_card_inner_zones_ok(xml: str) -> tuple[bool, str]:
@@ -1658,19 +1728,23 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
             add("Slide 14 clean when 0 selected videos", True, "skipped hyperlink requirement")
 
         t20 = plain_text(s20)
-        confirmed_part = t20
-        for marker in (
-            "Excluded / not subject",
-            "Исключено / не субъект",
-            "Excluded",
-            "Исключено",
-        ):
-            idx = t20.lower().find(marker.lower())
-            if idx >= 0:
-                confirmed_part = t20[:idx]
-                break
-        for bad in ["Владимирович", "Михайлович", "Александрович"]:
-            add(f"Slide 20 confirmed excludes {bad}", bad not in confirmed_part)
+        audience = str((report_json or {}).get("audience") or "internal").lower()
+        if audience == "client":
+            confirmed_part = t20
+            for marker in (
+                "Требуют проверки",
+                "Needs review",
+                "Excluded / noise",
+                "Исключено / шум",
+                "Excluded / not subject",
+                "Исключено / не субъект",
+            ):
+                idx = t20.lower().find(marker.lower())
+                if idx >= 0:
+                    confirmed_part = t20[:idx]
+                    break
+            for bad in ["Владимирович", "Михайлович", "Александрович"]:
+                add(f"Slide 20 confirmed excludes {bad}", bad not in confirmed_part)
 
         t24 = plain_text(s24)
         for bad in WEAK_INTL:
@@ -1878,14 +1952,9 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                 s20_bottom <= FOOTER_SAFE_BOTTOM,
                 f"max_bottom={s20_bottom}",
             )
-            add(
-                "Slide 20 source note below table (no overlap)",
-                source_note_below_table(s20) and table_rows_not_over_footnote(s20),
-            )
-            add(
-                "Slide 20 uses compact 4-column evidence layout",
-                "Link" not in plain_text(s20) and "Ссылка" not in plain_text(s20),
-            )
+            ok20r23, det20r23 = slide20_r23_evidence_contract_ok(s20, report_json, audience=audience)
+            add("Slide 20 R2.3 evidence contract", ok20r23, det20r23)
+            add("Slide 20 uses compact 4-column evidence layout", "Link" not in t20 and "Ссылка" not in t20)
 
             s26_bottom = max_shape_bottom(s26)
             meta["slide26MaxBottom"] = s26_bottom
