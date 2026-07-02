@@ -630,6 +630,233 @@ def r2_top_results_table(
     return r2_table_overflow_note(slide, bottom, shown=shown, total=total, template=note_tpl)
 
 
+def r2_compliance_status_label(value: Any, labels: dict | None = None) -> str:
+    """Normalize compliance status/severity/review to client-safe label."""
+    labels = labels or {}
+    raw = str(value or "").strip()
+    key = raw.lower().replace("_", " ")
+    if not key:
+        return labels.get("class_unclassified_compact", "Unclassified")
+    if any(tok in key for tok in ("confirm", "ok", "pass", "подтвержд")):
+        return labels.get("comp_status_confirmed", "Подтверждено")
+    if any(tok in key for tok in ("pending", "review", "на проверке", "needs", "требует", "ожида")):
+        return labels.get("comp_status_review", "На проверке")
+    if any(tok in key for tok in ("exclude", "noise", "исключ", "false", "ложн", "dismiss", "отклон")):
+        return labels.get("comp_status_excluded", "Исключено")
+    if "high" in key or "высок" in key:
+        return labels.get("comp_level_high", "Высокий")
+    if "medium" in key or "сред" in key:
+        return labels.get("comp_level_medium", "Средний")
+    if "low" in key or "низк" in key:
+        return labels.get("comp_level_low", "Низкий")
+    if any(tok in key for tok in ("unknown", "unclassified", "не классиф")):
+        return labels.get("comp_level_unclassified", "Не классиф.")
+    return r2_truncate_cell_text(raw, 22)
+
+
+def r2_compliance_status_pill(value: Any, labels: dict | None = None, *, compact: bool = False) -> str:
+    """Readable status token for compliance table cells."""
+    txt = r2_compliance_status_label(value, labels)
+    level_short_map = {
+        labels.get("comp_level_high", "Высокий"): labels.get("comp_level_high_short", "Выс."),
+        labels.get("comp_level_medium", "Средний"): labels.get("comp_level_medium_short", "Ср."),
+        labels.get("comp_level_low", "Низкий"): labels.get("comp_level_low_short", "Низ."),
+        labels.get("comp_level_unclassified", "Не классиф."): labels.get("comp_level_unclassified_short", "Не класс."),
+    }
+    if compact:
+        if txt in level_short_map:
+            return r2_truncate_cell_text(level_short_map[txt], 10)
+        short_map = {
+            labels.get("comp_status_confirmed", "Подтверждено"): labels.get("comp_status_confirmed_short", "Подтв."),
+            labels.get("comp_status_review", "На проверке"): labels.get("comp_status_review_short", "Проверка"),
+            labels.get("comp_status_excluded", "Исключено"): labels.get("comp_status_excluded_short", "Искл."),
+        }
+        return r2_truncate_cell_text(short_map.get(txt, txt), 14)
+    return r2_truncate_cell_text(txt, 28)
+
+
+def r2_compliance_type_label(value: Any, labels: dict | None = None) -> str:
+    """Normalize compliance type enums to client-safe labels."""
+    labels = labels or {}
+    text = str(value or "").strip()
+    if not text:
+        return labels.get("comp_level_unclassified", "Не классиф.")
+
+    mapping = {
+        "SANCTIONS": labels.get("comp_type_sanctions", "Санкции"),
+        "PEP": labels.get("comp_type_pep", "Политически значимое лицо"),
+        "PEP_RCA": labels.get("comp_type_pep_rca", "Связанные лица PEP"),
+        "ADVERSE_MEDIA": labels.get("comp_type_adverse_media", "Негативные публикации"),
+        "LEGAL": labels.get("comp_type_legal", "Правовые материалы"),
+        "WATCHLIST": labels.get("comp_type_watchlist", "Списки наблюдения"),
+        "COMPLIANCE": labels.get("comp_type_compliance", "Комплаенс"),
+        "BUSINESS": labels.get("comp_type_business", "Деловые связи"),
+    }
+    split_tokens = re.split(r"[,/|;]+", text)
+    out: list[str] = []
+    for token in split_tokens:
+        tok = token.strip().upper().replace("-", "_").replace(" ", "_")
+        if not tok:
+            continue
+        out.append(mapping.get(tok, ""))
+    out = [x for x in out if x]
+    if not out:
+        return labels.get("comp_level_unclassified", "Не классиф.")
+
+    # Compact special-case for combined SANCTIONS + PEP_RCA.
+    up = {t.strip().upper().replace("-", "_").replace(" ", "_") for t in split_tokens if t.strip()}
+    if "SANCTIONS" in up and "PEP_RCA" in up:
+        return labels.get("comp_type_sanctions_pep_compact", "Санкции / PEP-связи")
+    return r2_truncate_cell_text(" / ".join(dict.fromkeys(out)), 28)
+
+
+def r2_provider_source_text(value: Any, *, labels: dict | None = None) -> str:
+    """Normalize provider/source strings to compact readable text."""
+    labels = labels or {}
+    raw = str(value or "").strip()
+    if not raw:
+        return "—"
+    raw = re.sub(r"https?://\S+", "", raw, flags=re.I)
+    raw = re.sub(r"providerAdapter|sourceMode|rawMetadata|reviewQueue|warn_potential_review|contentClass", "", raw, flags=re.I)
+    raw = re.sub(r"\s+", " ", raw).strip(" -,:;")
+    if not raw:
+        return "—"
+    if re.fullmatch(r"manual[_\s-]*import", raw, flags=re.I):
+        return labels.get("src_manual_import", "Manual import")
+    # Keep known provider labels concise.
+    raw = raw.replace("Не настроен / не запрашивался", "Не настроен")
+    return r2_truncate_cell_text(raw, 28)
+
+
+def r2_compliance_table(
+    slide,
+    top: Emu,
+    *,
+    columns: list[str],
+    rows: list[list[Any]],
+    max_rows: int,
+    labels: dict,
+    col_widths: list[float] | None = None,
+    note: str | None = None,
+    compact: bool = True,
+    semantic_colors: bool = False,
+    layout_warnings: list[str] | None = None,
+) -> Emu:
+    """Compliance-safe table wrapper with footer-safe continuation note."""
+    internal_re = re.compile(
+        r"CLIENT_INCLUDE|REVIEW_REQUIRED|EXCLUDE|RELATED_QUERY|SEARCH_SUGGESTION"
+        r"|sourceMode|rawMetadata|reviewQueue|providerAdapter|warn_potential_review|contentClass",
+        re.I,
+    )
+
+    def _clean_cell(val: Any, col_idx: int) -> str:
+        s = str(val or "").strip()
+        s = internal_re.sub("", s)
+        s = re.sub(r"\s+", " ", s).strip()
+        if "http://" in s or "https://" in s:
+            s = r2_domain_text(s, 28)
+        if col_idx == 0:
+            return r2_provider_source_text(s, labels=labels)
+        return r2_truncate_cell_text(s, 44 if compact else 56)
+
+    safe_rows: list[list[str]] = []
+    for row in rows:
+        safe_rows.append([_clean_cell(v, i) for i, v in enumerate(row)])
+    if not safe_rows:
+        return top
+
+    shown = min(max_rows, len(safe_rows))
+    bottom = table(
+        slide,
+        top,
+        columns,
+        safe_rows[:shown],
+        max_rows=shown,
+        col_widths=col_widths,
+        semantic_colors=semantic_colors,
+        layout_warnings=layout_warnings,
+    )
+    note_tpl = labels.get("table_showing_first", labels.get("showing_top", "Showing first {n} of {total}."))
+    bottom = r2_table_overflow_note(slide, bottom, shown=shown, total=len(safe_rows), template=note_tpl)
+    if note:
+        bottom = _safe_content_note(slide, bottom, note, "disclaimer")
+    return bottom
+
+
+def r2_compliance_empty_state(
+    slide,
+    top: Emu,
+    *,
+    headline: str,
+    body: str,
+    labels: dict | None = None,
+    checked: str | None = None,
+    result: str | None = None,
+    width_ratio: float = 0.78,
+) -> Emu:
+    """Premium no-data card for compliance slides."""
+    _ = labels
+    ratio = max(0.72, min(0.82, width_ratio))
+    card_w = Emu(int(CONTENT_W) * ratio)
+    card_h = Emu(1180000 if not (checked and result) else 1420000)
+    card_x = Emu(int(MARGIN) + (int(CONTENT_W) - int(card_w)) // 2)
+    card_y = top
+
+    card = slide.shapes.add_shape(ROUNDED_RECT, card_x, card_y, card_w, card_h)
+    card.fill.solid()
+    card.fill.fore_color.rgb = BG_PANEL
+    card.line.color.rgb = NEUTRAL_LINE
+    card.line.width = Pt(0.9)
+
+    marker_d = Emu(160000)
+    marker_x = Emu(int(card_x) + 170000)
+    marker_y = Emu(int(card_y) + 170000)
+    marker = slide.shapes.add_shape(OVAL, marker_x, marker_y, marker_d, marker_d)
+    marker.fill.solid()
+    marker.fill.fore_color.rgb = ACCENT_SOFT
+    marker.line.color.rgb = ACCENT
+    marker.line.width = Pt(0.8)
+
+    text_x = Emu(int(card_x) + 420000)
+    text_w = Emu(int(card_w) - 520000)
+    r2_text_box(
+        slide,
+        text_x,
+        Emu(int(card_y) + 145000),
+        text_w,
+        Emu(340000),
+        r2_truncate_lines(headline, max_lines=1, line_len=72),
+        size=FS_SECTION_TITLE - 2,
+        color=BRAND_PRIMARY,
+        bold=True,
+    )
+    r2_text_box(
+        slide,
+        text_x,
+        Emu(int(card_y) + 490000),
+        text_w,
+        Emu(420000),
+        r2_truncate_lines(body, max_lines=2, line_len=88),
+        size=FS_BODY - 2,
+        color=NEUTRAL_GRAY,
+    )
+
+    if checked and result:
+        meta = f"{truncate(checked, 24)}: {truncate(result, 32)}"
+        r2_text_box(
+            slide,
+            text_x,
+            Emu(int(card_y) + 910000),
+            text_w,
+            Emu(260000),
+            meta,
+            size=FS_NOTE,
+            color=NEUTRAL_GRAY,
+            italic=True,
+        )
+    return Emu(int(card_y) + int(card_h) + 120000)
+
+
 def r2_table_overflow_note(
     slide,
     top: Emu,
@@ -1247,6 +1474,7 @@ def table(
     col_widths: list[float] | None = None,
     note_text: str | None = None,
     *,
+    semantic_colors: bool = True,
     layout_warnings: list[str] | None = None,
 ) -> Emu:
     """Safe-area table: rows paginated; footnote always below table, never overlapping."""
@@ -1296,12 +1524,14 @@ def table(
             para = cell.text_frame.paragraphs[0]
             para.font.size = Pt(FS_TABLE_BODY)
             para.word_wrap = False
-            tone = _cell_color(str(val))
-            if tone:
+            tone = _cell_color(str(val)) if semantic_colors else None
+            if semantic_colors and tone:
                 para.font.color.rgb = tone
                 para.font.bold = True
             else:
                 para.font.color.rgb = NEUTRAL_DARK
+                if not semantic_colors:
+                    para.font.bold = False
             if r % 2 == 0:
                 cell.fill.solid()
                 cell.fill.fore_color.rgb = TABLE_ZEBRA

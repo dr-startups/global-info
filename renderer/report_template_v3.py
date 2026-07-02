@@ -892,57 +892,155 @@ def _p_compliance_overview(prs, vm, ctx):
     L = vm["labels"]
     c = vm["compliance"]
     slide, top = _section(prs, ctx, L["compliance_overview_title"])
+    T.risk_badge(slide, Emu(int(T.SLIDE_W) - int(T.MARGIN) - 1700000), Emu(250000), "LOW", w=Emu(1700000))
     cards = [
         {"label": L["m_total_hits"], "value": c.get("totalHits", 0), "tone": T.ACCENT if c.get("totalHits") else T.NEUTRAL_GRAY},
         {"label": L["m_pending_review"], "value": c.get("pendingHits", 0), "tone": T.WARNING if c.get("pendingHits") else T.NEUTRAL_GRAY},
         {"label": L["m_confirmed_matches"], "value": c.get("confirmedHits", 0), "tone": T.DANGER if c.get("confirmedHits") else T.NEUTRAL_GRAY},
-        {"label": L["m_false_positives"], "value": c.get("falsePositives", 0), "tone": T.SUCCESS if c.get("falsePositives") else T.NEUTRAL_GRAY},
     ]
-    top = T.metric_cards(slide, top, cards, per_row=4)
-    rows = [[p["provider"], p["status"], p["sourceType"]] for p in c.get("providerTable", [])]
+    top = T.metric_cards(slide, top, cards, per_row=3)
+    rows = [
+        [
+            T.r2_provider_source_text(p.get("provider"), labels=L),
+            T.r2_compliance_status_pill(p.get("status"), L),
+            T.r2_provider_source_text(p.get("sourceType"), labels=L),
+            L.get("comp_comment_manual_review", "Часть материалов требует ручной проверки перед финальной интерпретацией.")
+            if "ручн" in str(p.get("sourceType", "")).lower() or "manual" in str(p.get("sourceType", "")).lower()
+            else "—",
+        ]
+        for p in c.get("providerTable", [])
+    ]
     if rows:
-        top = T.polished_table(slide, top, [L["th_provider"], L["th_provider_status"], L["th_source_type"]], rows,
-                               col_widths=[0.34, 0.33, 0.33])
+        top = T.r2_compliance_table(
+            slide,
+            top,
+            columns=[
+                L.get("th_source_compact", L["th_source"]),
+                L.get("th_status_compact", L["th_status"]),
+                L.get("th_materials", "Материалы"),
+                L.get("th_comment", "Комментарий"),
+            ],
+            rows=rows,
+            max_rows=6,
+            labels=L,
+            col_widths=[0.27, 0.17, 0.18, 0.38],
+            layout_warnings=ctx.layout_warnings,
+        )
     else:
         top = T.no_data_card(slide, top, L["nd_no_compliance_hits"])
-    T.warning_card(slide, top, c.get("reviewRequiredWarning") or L["warn_potential_review"])
+    T.warning_card(slide, top, L.get("comp_manual_review_note", "Часть материалов требует ручной проверки перед финальной интерпретацией."))
 
 
 def _p_compliance_risk_types(prs, vm, ctx):
     L = vm["labels"]
     c = vm["compliance"]
     slide, top = _section(prs, ctx, L["compliance_risk_types_title"])
+    T.risk_badge(slide, Emu(int(T.SLIDE_W) - int(T.MARGIN) - 1700000), Emu(250000), "LOW", w=Emu(1700000))
     breakdown = c.get("riskTypeBreakdown") or []
-    rows = [
-        [b["riskType"], b["total"], b["pending"], b["confirmed"], b["falsePositive"]]
-        for b in breakdown
-    ]
+    rows = []
+    for b in breakdown:
+        found = int(b.get("total", 0) or 0)
+        pending = int(b.get("pending", 0) or 0)
+        confirmed = int(b.get("confirmed", 0) or 0)
+        if confirmed > 0:
+            level = L.get("comp_level_high", "Высокий")
+        elif pending > 0:
+            level = L.get("comp_level_medium", "Средний")
+        else:
+            level = L.get("comp_level_low", "Низкий")
+        rows.append([
+            T.r2_compliance_type_label(b.get("riskType"), L),
+            found,
+            confirmed,
+            pending,
+            T.r2_compliance_status_pill(level, L, compact=True),
+        ])
     if rows:
-        T.polished_table(slide, top, [L["th_risk_type"], L["th_total"], L["th_pending"], L["th_confirmed"], L["th_false_positive"]],
-                         rows, col_widths=[0.28, 0.18, 0.18, 0.18, 0.18])
+        T.r2_compliance_table(
+            slide,
+            top,
+            columns=[
+                L.get("th_risk_type", "Тип риска"),
+                L.get("th_found", L.get("th_total", "Найдено")),
+                L.get("th_confirmed_short", L.get("th_confirmed", "Подтв.")),
+                L.get("th_review_short", L.get("th_pending", "На проверке")),
+                L.get("th_level", "Уровень"),
+            ],
+            rows=rows,
+            max_rows=8,
+            labels=L,
+            col_widths=[0.33, 0.14, 0.14, 0.17, 0.22],
+            layout_warnings=ctx.layout_warnings,
+        )
     else:
-        T.no_data_card(slide, top, L["nd_no_risk_type_hits"])
+        T.r2_compliance_empty_state(
+            slide,
+            top,
+            headline=L.get("comp_empty_risk_types_title", "По типам риска совпадений не найдено"),
+            body=L.get(
+                "comp_empty_risk_types_body",
+                "В доступных комплаенс-источниках не зафиксированы категории риска, требующие отдельной группировки.",
+            ),
+        )
 
 
 def _p_compliance_top_matches(prs, vm, ctx):
     L = vm["labels"]
     c = vm["compliance"]
-    slide, top = _section(prs, ctx, L["compliance_top_matches_title"])
+    title = L["compliance_top_matches_title"]
+    if "Ключевые комплаенс-совпадения" in title:
+        title = "Ключевые комплаенс-\nсовпадения"
+    slide, top = _section(prs, ctx, title, title_width=Emu(int(T.CONTENT_W) - 2300000))
+    T.risk_badge(slide, Emu(int(T.SLIDE_W) - int(T.MARGIN) - 1700000), Emu(250000), "LOW", w=Emu(1700000))
     hits = c.get("topHits") or []
-    rows = [
-        [h["provider"], h["matchedName"], h["riskTypes"], h["score"], h["confidence"], h["reviewStatus"], h["source"]]
-        for h in hits
-    ]
+    rows = []
+    for h in hits:
+        score = float(h.get("score", 0) or 0)
+        if score >= 80:
+            level = L.get("comp_level_high", "Высокий")
+        elif score >= 50:
+            level = L.get("comp_level_medium", "Средний")
+        else:
+            level = L.get("comp_level_low", "Низкий")
+        src_primary = h.get("provider") or h.get("source") or "—"
+        rows.append([
+            T.r2_provider_source_text(src_primary, labels=L),
+            T.r2_truncate_cell_text(h.get("matchedName"), 52),
+            T.r2_compliance_type_label(h.get("riskTypes"), L),
+            T.r2_compliance_status_pill(level, L, compact=False),
+            T.r2_compliance_status_pill(h.get("reviewStatus"), L, compact=False),
+        ])
     if rows:
-        top = T.polished_table(
-            slide, top,
-            [L["th_provider"], L["th_matched_name"], L["th_risk_type"], L["th_score"], L["th_confidence"], L["th_review"], L["th_source"]],
-            rows, max_rows=8, col_widths=[0.14, 0.20, 0.16, 0.08, 0.12, 0.16, 0.14],
+        top = T.r2_compliance_table(
+            slide,
+            top,
+            columns=[
+                L.get("th_source_compact", L["th_source"]),
+                L.get("th_match", L.get("th_matched_name", "Совпадение")),
+                L.get("th_type", L.get("th_risk_type", "Тип")),
+                L.get("th_level", "Уровень"),
+                L.get("th_check", L.get("th_review", "Проверка")),
+            ],
+            rows=rows,
+            max_rows=5,
+            labels=L,
+            col_widths=[0.14, 0.33, 0.19, 0.14, 0.20],
+            note=L.get(
+                "comp_top_matches_note",
+                "Показаны ключевые совпадения, требующие аналитической проверки.",
+            ),
+            layout_warnings=ctx.layout_warnings,
         )
-        if any("manual" in str(h.get("source", "")).lower() or "ручн" in str(h.get("source", "")).lower() for h in hits):
-            T.source_note(slide, top, L["manual_import_note"])
     else:
-        T.no_data_card(slide, top, L["nd_no_compliance_hits"])
+        T.r2_compliance_empty_state(
+            slide,
+            top,
+            headline=L.get("comp_empty_top_matches_title", "Ключевые комплаенс-совпадения не найдены"),
+            body=L.get(
+                "comp_empty_top_matches_body",
+                "По проверенным источникам нет совпадений, которые требуют вынесения в таблицу ключевых результатов.",
+            ),
+        )
 
 
 def _p_compliance_review_quality(prs, vm, ctx):
@@ -967,22 +1065,51 @@ def _p_compliance_findings(prs, vm, ctx):
     f = vm["finalConclusion"]
     lw = ctx.layout_warnings
     slide, top = _section(prs, ctx, L["compliance_risk_findings_title"], f"{L['overall_risk']}: {f.get('overallRiskLevel', 'UNKNOWN')}")
+    T.risk_badge(slide, Emu(int(T.SLIDE_W) - int(T.MARGIN) - 1700000), Emu(250000), "LOW", w=Emu(1700000))
     rows = [
-        [fnd["severity"], T.truncate(fnd["title"], 52), fnd["reviewStatus"], fnd.get("evidenceCount", 0)]
+        [
+            T.r2_truncate_cell_text(fnd.get("title"), 54),
+            T.r2_provider_source_text(fnd.get("source") or fnd.get("riskType"), labels=L),
+            T.r2_compliance_status_pill(fnd.get("severity"), L, compact=True),
+            T.r2_compliance_status_pill(fnd.get("reviewStatus"), L, compact=False),
+        ]
         for fnd in c.get("findings", [])
     ]
     if rows:
-        top = T.polished_table(slide, top, [L["th_severity"], L["th_finding"], L["th_review"], L["th_evidence"]], rows,
-                               col_widths=[0.14, 0.52, 0.22, 0.12], layout_warnings=lw)
+        top = T.r2_compliance_table(
+            slide,
+            top,
+            columns=[
+                L.get("th_finding", "Находка"),
+                L.get("th_source_compact", L["th_source"]),
+                L.get("th_level", "Уровень"),
+                L.get("th_action", "Действие"),
+            ],
+            rows=rows,
+            max_rows=7,
+            labels=L,
+            col_widths=[0.48, 0.24, 0.12, 0.16],
+            layout_warnings=lw,
+        )
     else:
-        top = T.no_data_card(slide, top, L["nd_no_compliance_findings"])
-    if c.get("excludedFalsePositives", 0) > 0:
-        top = T.note(slide, top, L["finding_excluded_fp"], "info")
-    themes = ", ".join(f"{t['theme']} ({t['count']})" for t in f.get("topThemes", [])) or "—"
-    top = T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(900000), L["highest_risk_themes"], [themes])
-    if f.get("recommendedActions"):
-        top = T.bullets(slide, top, list(f.get("recommendedActions", []))[:4], max_items=4, layout_warnings=lw)
-    T.warning_card(slide, top, L["warn_not_legal"])
+        top = T.r2_compliance_empty_state(
+            slide,
+            top,
+            headline=L.get("comp_empty_findings_title", "Комплаенс-риск-находки не зафиксированы"),
+            body=L.get(
+                "comp_empty_findings_body",
+                "Материалы не содержат подтверждённых риск-находок по комплаенс-базам на момент формирования отчёта.",
+            ),
+        )
+    T.note(
+        slide,
+        Emu(int(top) + 60000),
+        L.get(
+            "comp_analytical_summary_note",
+            "Материалы являются аналитической сводкой и требуют проверки перед использованием в юридически значимых решениях.",
+        ),
+        "disclaimer",
+    )
 
 
 def _p_final(prs, vm, ctx):
