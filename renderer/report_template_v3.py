@@ -486,8 +486,7 @@ def _b_videos(slide, top, blk, vm, ctx):
     ], per_row=3)
     items = vi.get("items") or []
     if items:
-        if vi.get("selectionNote"):
-            top = T.note(slide, top, vi["selectionNote"], "info")
+        note_key = "media_videos_note" if ctx.internal else "media_videos_note_client"
         top = T.video_cards(
             slide,
             top,
@@ -495,6 +494,7 @@ def _b_videos(slide, top, blk, vm, ctx):
             L.get("video_open_source", "Open source"),
             labels=L,
             layout_warnings=ctx.layout_warnings,
+            note_template=L.get(note_key),
         )
     else:
         T.no_data_card(slide, top, L.get("nd_no_relevant_videos", L["nd_no_videos"]))

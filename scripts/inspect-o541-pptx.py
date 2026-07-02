@@ -685,6 +685,24 @@ def sp_shapes(xml: str) -> list[dict]:
     return shapes
 
 
+def round_rect_frames(xml: str) -> list[dict]:
+    """Rounded-rect shapes only — excludes plain rects like the DRAFT watermark box."""
+    frames: list[dict] = []
+    for sp in re.findall(r"<p:sp\b.*?</p:sp>", xml, flags=re.DOTALL):
+        prst = re.search(r'prst="(\w+)"', sp)
+        if not prst or prst.group(1) != "roundRect":
+            continue
+        off_m = re.search(r'<a:off x="(\d+)" y="(\d+)"', sp)
+        ext_m = re.search(r'<a:ext cx="(\d+)" cy="(\d+)"', sp)
+        if off_m and ext_m:
+            cy = int(ext_m.group(2))
+            if cy < 400000:
+                continue
+            x, y = int(off_m.group(1)), int(off_m.group(2))
+            frames.append({"x": x, "y": y, "right": x + int(ext_m.group(1)), "bottom": y + cy})
+    return frames
+
+
 def video_card_frames(xml: str) -> list[dict]:
     """Outer video cards on slide 14 — detected via Open-source button inside frame."""
     shapes = text_shapes(xml)
@@ -694,7 +712,7 @@ def video_card_frames(xml: str) -> list[dict]:
         if re.search(r"Open source|Открыть источник", s["text"], re.I) and s["y"] > 2400000
     ]
     candidates: list[dict] = []
-    for frame in card_frames(xml):
+    for frame in round_rect_frames(xml):
         if frame["y"] < 2400000:
             continue
         fw = frame["right"] - frame["x"]
@@ -720,19 +738,43 @@ def video_card_frames(xml: str) -> list[dict]:
 VIDEO_FAKE_THUMB_MIN_H = 200000
 
 
+def ellipse_shapes(xml: str) -> list[dict]:
+    """Ellipse shapes (e.g. designed play-icon circles) with bbox."""
+    out: list[dict] = []
+    for sp in re.findall(r"<p:sp\b.*?</p:sp>", xml, flags=re.DOTALL):
+        prst = re.search(r'prst="(\w+)"', sp)
+        if not prst or prst.group(1) != "ellipse":
+            continue
+        off_m = re.search(r'<a:off x="(\d+)" y="(\d+)"', sp)
+        ext_m = re.search(r'<a:ext cx="(\d+)" cy="(\d+)"', sp)
+        if off_m and ext_m:
+            x, y = int(off_m.group(1)), int(off_m.group(2))
+            out.append({"x": x, "y": y, "right": x + int(ext_m.group(1)), "bottom": y + int(ext_m.group(2))})
+    return out
+
+
+def _same_bbox(a: dict, b: dict, tol: int = 20000) -> bool:
+    return (
+        abs(a["x"] - b["x"]) <= tol
+        and abs(a["y"] - b["y"]) <= tol
+        and abs(a["right"] - b["right"]) <= tol
+        and abs(a["bottom"] - b["bottom"]) <= tol
+    )
+
+
 def video_no_fake_thumb_bars(xml: str) -> tuple[bool, str]:
-    """Cards without a real thumbnail must not contain a tall empty panel bar."""
+    """Preview panels must be intentional: contain a real pic or a designed play circle."""
     frames = video_card_frames(xml)
     if not frames:
         return True, "no video cards"
     pics = pics_in_xml(xml)
+    circles = ellipse_shapes(xml)
     panels = [s for s in sp_shapes(xml) if s["round"]]
     for i, frame in enumerate(frames):
-        inner_pics = [p for p in pics if shape_inside(p, frame)]
-        if inner_pics:
-            continue
         frame_h = frame["bottom"] - frame["y"]
         for panel in panels:
+            if _same_bbox(panel, frame):
+                continue  # the card frame itself
             if not shape_inside(panel, frame):
                 continue
             if panel["h"] < VIDEO_FAKE_THUMB_MIN_H:
@@ -740,9 +782,40 @@ def video_no_fake_thumb_bars(xml: str) -> tuple[bool, str]:
             if panel["y"] > frame["y"] + frame_h * 0.55:
                 continue
             if any(shape_inside(p, panel) for p in pics):
-                continue
+                continue  # real thumbnail inside — intentional
+            if any(shape_inside(c, panel) for c in circles):
+                continue  # designed play-circle placeholder — intentional
             return False, f"card[{i}] fake thumb bar h={panel['h']} y={panel['y']}"
     return True, f"cards={len(frames)}"
+
+
+VIDEO_INTERNAL_LABEL_RE = re.compile(
+    r"likely[ _]subject|possible[ _]subject|review[ _]required|exact[ _]subject"
+    r"|sourceMode|rawMetadata|internalOnly|providerAdapter|Collected videos:",
+    re.I,
+)
+
+
+def slide14_no_internal_labels(xml: str) -> tuple[bool, str]:
+    """Client-visible slide 14 must not print identity/debug labels."""
+    t = plain_text(xml)
+    m = VIDEO_INTERNAL_LABEL_RE.search(t)
+    if m:
+        return False, f"internal label visible: {m.group(0)!r}"
+    return True, "no internal labels"
+
+
+def slide14_buttons_per_card(xml: str) -> tuple[bool, str]:
+    """Every video card must contain a visible open-source button."""
+    frames = video_card_frames(xml)
+    if not frames:
+        return True, "no video cards"
+    button_re = re.compile(r"Open source|Открыть источник", re.I)
+    buttons = [s for s in text_shapes(xml) if button_re.search(s["text"])]
+    for i, frame in enumerate(frames):
+        if not any(shape_inside(b, frame) for b in buttons):
+            return False, f"card[{i}] missing open-source button"
+    return True, f"cards={len(frames)} all have buttons"
 
 
 def video_card_inner_zones_ok(xml: str) -> tuple[bool, str]:
@@ -866,10 +939,18 @@ def vertical_overlap(a: dict, b: dict, min_gap: int = ZONE_MIN_GAP) -> bool:
     return (b["bottom"] + min_gap) > a["y"]
 
 
+def _is_watermark_text(s: dict) -> bool:
+    return s.get("text", "").strip().upper() in ("ЧЕРНОВИК", "DRAFT")
+
+
 def card_media_layout_ok(xml: str) -> tuple[bool, str]:
     """Inside each gallery card: image above title above domain; no vertical overlap."""
-    frames = card_frames(xml)
-    shapes = text_shapes(xml)
+    watermarks = [s for s in text_shapes(xml) if _is_watermark_text(s)]
+    frames = [
+        f for f in card_frames(xml)
+        if not any(_same_bbox(f, wm) for wm in watermarks)
+    ]
+    shapes = [s for s in text_shapes(xml) if not _is_watermark_text(s)]
     pics = pics_in_xml(xml)
     if not frames:
         return True, "no cards"
@@ -1472,6 +1553,16 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
                     len(video_frames) <= 4,
                     f"video_frames={len(video_frames)}",
                 )
+                ok14i, det14i = slide14_no_internal_labels(s14)
+                add("Slide 14 no internal/debug labels", ok14i, det14i)
+                ok14b, det14b2 = slide14_buttons_per_card(s14)
+                add("Slide 14 open-source button on every card", ok14b, det14b2)
+                rel14 = slide_rels(z, 14)
+                add(
+                    "Slide 14 hyperlink rels cover visible cards",
+                    count_hyperlink_rels(rel14) >= len(video_frames),
+                    f"hlinks={count_hyperlink_rels(rel14)} cards={len(video_frames)}",
+                )
 
             p27 = plain_text(s27)
             s27_shapes = text_shapes(s27)
@@ -1597,6 +1688,12 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
 
 
 def main() -> int:
+    # Windows consoles may default to cp1251 which cannot encode glyphs like "▶".
+    import io
+
+    if hasattr(sys.stdout, "buffer"):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+
     if len(sys.argv) < 2:
         print("Usage: inspect-o541-pptx.py <pptx-path> [report-json-path]")
         return 1

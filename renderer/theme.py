@@ -807,14 +807,21 @@ def _gallery_title_zone_h(inner_h: int) -> int:
     return int(GAL_TITLE_ZONE_H) if inner_h >= GAL_TWO_LINE_INNER_H else int(GAL_DOMAIN_ZONE_H)
 
 
-VID_PLAY_DOMAIN_ZONE_H = 101600  # play icon + domain row (text-only cards)
+VID_PLAY_DOMAIN_ZONE_H = 101600  # legacy: play icon + domain row (text-only cards)
 VID_TITLE_ZONE_H = 228600        # max 2 title lines
-VID_DOMAIN_ZONE_H = 101600         # domain under real thumbnail
+VID_DOMAIN_ZONE_H = 101600         # domain row under preview
 VID_BADGE_ZONE_H = 101600
-VID_BUTTON_ZONE_H = 165100
+VID_BUTTON_ZONE_H = 190000
 VID_THUMB_MIN_H = 280000
 VID_TWO_LINE_INNER_H = 2000000
 MIN_THUMB_B64_LEN = 2000
+
+# ORION-like video evidence card — preview band + domain + title + button
+VID_PREVIEW_MIN_H = 380000       # min designed preview/placeholder band height
+VID_PREVIEW_MAX_H = 900000       # cap so preview stays balanced vs. text zones
+VID_PLAY_CIRCLE_D = 260000       # play-icon circle diameter inside preview
+VID_BUTTON_W = 1650000           # fixed "open source" button width
+OVAL = 9
 
 
 def _video_title_zone_h(inner_h: int) -> int:
@@ -1320,82 +1327,65 @@ def _image_gallery_geometry(
 def _layout_video_card_zones(
     ih: int,
     *,
-    show_badge: bool,
-    has_thumb: bool,
+    show_badge: bool = False,
+    has_thumb: bool = False,
 ) -> dict[str, tuple[int, int]] | None:
-    """Video card zones — text-only (play+domain) or thumbnail + captions + button."""
+    """ORION video card zones — preview band, domain row, title, button (top→bottom)."""
     pad = int(CARD_PAD)
     gap = int(CARD_ZONE_GAP)
     bottom_pad = int(CARD_BOTTOM_PAD)
-    inner_h = max(1, ih - 2 * pad)
     btn_h = int(VID_BUTTON_ZONE_H)
-    title_h = _video_title_zone_h(inner_h)
-    badge_h = int(VID_BADGE_ZONE_H) if show_badge else 0
+    title_h = int(VID_TITLE_ZONE_H)
+    domain_h = int(VID_DOMAIN_ZONE_H)
 
     y = ih - pad - bottom_pad
     button = (y - btn_h, y)
     y = button[0] - gap
-    if show_badge:
-        badge = (y - badge_h, y)
-        y = badge[0] - gap
-    else:
-        badge = None
     title = (y - title_h, y)
     y = title[0] - gap
+    domain = (y - domain_h, y)
+    y = domain[0] - gap
 
-    zones: dict[str, tuple[int, int]] = {"title": title, "button": button}
-    if badge:
-        zones["badge"] = badge
+    preview_top = pad
+    preview_bottom = y
+    preview_h = preview_bottom - preview_top
+    if preview_h < int(VID_PREVIEW_MIN_H):
+        return None
+    if preview_h > int(VID_PREVIEW_MAX_H):
+        preview_top = preview_bottom - int(VID_PREVIEW_MAX_H)
 
-    if has_thumb:
-        domain_h = int(VID_DOMAIN_ZONE_H)
-        domain = (y - domain_h, y)
-        y = domain[0] - gap
-        thumb_bottom = y
-        if thumb_bottom - pad < int(VID_THUMB_MIN_H):
-            return None
-        zones["thumb"] = (pad, thumb_bottom)
-        zones["domain"] = domain
-    else:
-        header_h = int(VID_PLAY_DOMAIN_ZONE_H)
-        header = (y - header_h, y)
-        if header[0] < pad:
-            return None
-        zones["header"] = header
-
+    zones: dict[str, tuple[int, int]] = {
+        "preview": (preview_top, preview_bottom),
+        "domain": domain,
+        "title": title,
+        "button": button,
+    }
     if not assert_no_vertical_overlap(sorted(zones.values(), key=lambda z: z[0])):
         return None
     return zones
 
 
-def _video_card_min_height(*, show_badge: bool, has_thumb: bool = False) -> int:
+def _video_card_min_height(*, show_badge: bool = False, has_thumb: bool = False) -> int:
     pad = 2 * int(CARD_PAD)
     gap = int(CARD_ZONE_GAP)
     bottom = int(CARD_BOTTOM_PAD)
-    stack = int(VID_PLAY_DOMAIN_ZONE_H) + gap + int(VID_TITLE_ZONE_H) + gap + int(VID_BUTTON_ZONE_H) + bottom
-    if show_badge:
-        stack += gap + int(VID_BADGE_ZONE_H)
-    if has_thumb:
-        stack += gap + int(VID_THUMB_MIN_H) + int(VID_DOMAIN_ZONE_H) + gap
+    stack = (
+        int(VID_PREVIEW_MIN_H) + gap
+        + int(VID_DOMAIN_ZONE_H) + gap
+        + int(VID_TITLE_ZONE_H) + gap
+        + int(VID_BUTTON_ZONE_H) + bottom
+    )
     return pad + stack
 
 
 def _video_notes_reserve_height(labels: dict[str, str], total: int, *, max_shown: int) -> int:
     if total <= max_shown:
         return 0
-    candidates = [
-        labels.get("media_showing_videos", "Showing {shown} of {total} subject-matched videos.").format(
-            shown=max_shown, total=total,
-        ),
-        labels.get("media_videos_saved_evidence", "+ {n} videos saved in evidence.").format(n=max(1, total - max_shown)),
-    ]
-    h = 0
-    for line in candidates:
-        if not line:
-            continue
-        h += int(text_block_height([line], FS_NOTE, CONTENT_W, space_after_pt=0.0, pad_pt=8.0))
-        h += int(_BLOCK_GAP)
-    return h + 100000
+    line = labels.get(
+        "media_videos_note", "Showing {shown} of {total} relevant video sources. + {n} saved in evidence.",
+    ).format(shown=max_shown, total=total, n=max(1, total - max_shown))
+    h = int(text_block_height([line], FS_NOTE, CONTENT_W, space_after_pt=0.0, pad_pt=8.0))
+    return h + int(_BLOCK_GAP) + 100000
 
 
 def _plan_video_grid(
@@ -1626,6 +1616,27 @@ def add_image_card(
     return True
 
 
+def _video_preview_placeholder(slide, x: int, y: int, w: int, h: int) -> None:
+    """Designed neutral preview — light band with a centered play circle."""
+    circle_d = min(int(VID_PLAY_CIRCLE_D), max(1, h - 60000))
+    cx = x + (w - circle_d) // 2
+    cy = y + (h - circle_d) // 2
+    circle = slide.shapes.add_shape(OVAL, Emu(cx), Emu(cy), Emu(circle_d), Emu(circle_d))
+    circle.fill.solid()
+    circle.fill.fore_color.rgb = WHITE
+    circle.line.color.rgb = ACCENT_SOFT
+    circle.line.width = Pt(1.0)
+    ctf = circle.text_frame
+    ctf.margin_left = 0
+    ctf.margin_right = 0
+    ctf.margin_top = 0
+    ctf.margin_bottom = 0
+    ctf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    cp = ctf.paragraphs[0]
+    cp.alignment = PP_ALIGN.CENTER
+    _run(cp, "\u25b6", 9, ACCENT)
+
+
 def add_video_card(
     slide,
     x: Emu,
@@ -1636,7 +1647,7 @@ def add_video_card(
     link_label: str = "Open source",
     layout_warnings: list[str] | None = None,
 ) -> bool:
-    """Video card — text-only (play+domain, title, button) or real thumbnail when available."""
+    """ORION video evidence card — preview band, domain, 2-line title, link button."""
     import io
 
     ix, iy, iw, ih = int(x), int(y), int(w), int(h)
@@ -1645,28 +1656,15 @@ def add_video_card(
     inner_x = ix + pad
     url = str(item.get("url") or item.get("sourcePageUrl") or "")
     domain = truncate(item.get("source") or short_display_url(url), 32)
-    identity = truncate(item.get("selectionReason") or item.get("identityDecision") or "", 22)
-    has_badge = bool(identity)
     raw = _image_bytes_from_item(item)
-    has_thumb = bool(raw)
 
-    zones = _layout_video_card_zones(ih, show_badge=has_badge, has_thumb=has_thumb)
-    if not zones and has_badge:
-        has_badge = False
-        identity = ""
-        zones = _layout_video_card_zones(ih, show_badge=False, has_thumb=has_thumb)
-    if not zones and has_thumb:
-        has_thumb = False
-        zones = _layout_video_card_zones(ih, show_badge=has_badge, has_thumb=False)
+    zones = _layout_video_card_zones(ih)
     if not zones:
         return False
     if iy + ih > int(CONTENT_SAFE_BOTTOM):
         return False
 
-    title_top, title_bottom = zones["title"]
-    title_zone_h = title_bottom - title_top
-    two_line_title = title_zone_h >= int(VID_TITLE_ZONE_H) - 5000
-    title = truncate(item.get("title"), 44 if two_line_title else 26)
+    title = truncate(item.get("title"), 44)
 
     frame = slide.shapes.add_shape(ROUNDED_RECT, Emu(ix), Emu(iy), Emu(iw), Emu(ih))
     frame.fill.solid()
@@ -1674,19 +1672,22 @@ def add_video_card(
     frame.line.color.rgb = NEUTRAL_LINE
     frame.line.width = Pt(0.75)
 
+    p_top, p_bottom = zones["preview"]
+    preview_h = p_bottom - p_top
+    preview = slide.shapes.add_shape(
+        ROUNDED_RECT, Emu(inner_x), Emu(iy + p_top), Emu(inner_w), Emu(preview_h),
+    )
+    preview.fill.solid()
+    preview.fill.fore_color.rgb = BG_PANEL
+    preview.line.color.rgb = NEUTRAL_LINE
+    preview.line.width = Pt(0.5)
+
     thumb_ok = False
-    if has_thumb and "thumb" in zones:
-        t_top, t_bottom = zones["thumb"]
-        thumb_h = t_bottom - t_top
-        thumb_box = slide.shapes.add_shape(
-            ROUNDED_RECT, Emu(inner_x), Emu(iy + t_top), Emu(inner_w), Emu(thumb_h),
-        )
-        thumb_box.fill.solid()
-        thumb_box.fill.fore_color.rgb = BG_PANEL
-        thumb_box.line.color.rgb = NEUTRAL_LINE
+    if raw:
         try:
             pic = _fit_picture_for_card(
-                slide, io.BytesIO(raw), inner_x, iy + t_top, inner_w, thumb_h, allow_cover=True,
+                slide, io.BytesIO(raw), inner_x, iy + p_top, inner_w, preview_h,
+                allow_cover=False,
             )
             thumb_ok = int(pic.width) >= 1 and int(pic.height) >= 1
             if not thumb_ok:
@@ -1696,61 +1697,47 @@ def add_video_card(
                     pass
         except Exception:
             thumb_ok = False
-        if not thumb_ok:
-            for shape in (thumb_box,):
-                try:
-                    slide.shapes._spTree.remove(shape._element)
-                except Exception:
-                    pass
-            try:
-                slide.shapes._spTree.remove(frame._element)
-            except Exception:
-                pass
-            return add_video_card(
-                slide, x, y, w, h, {**item, "thumbnailBytesBase64": None, "thumbnailBase64": None},
-                link_label=link_label, layout_warnings=layout_warnings,
-            )
+    if not thumb_ok:
+        _video_preview_placeholder(slide, inner_x, iy + p_top, inner_w, preview_h)
 
-    if has_thumb and thumb_ok and "domain" in zones:
-        d_top, d_bottom = zones["domain"]
-        _card_text_zone(
-            slide, inner_x, iy + d_top, inner_w, d_bottom - d_top,
-            domain, FS_NOTE, NEUTRAL_GRAY, word_wrap=False,
-            layout_warnings=layout_warnings, context="video_card_domain",
-        )
-    elif "header" in zones:
-        h_top, h_bottom = zones["header"]
-        h_h = h_bottom - h_top
-        _card_text_zone(
-            slide, inner_x, iy + h_top, inner_w, h_h,
-            f"\u25b6  {domain}", FS_NOTE, NEUTRAL_GRAY, word_wrap=False,
-            layout_warnings=layout_warnings, context="video_card_header",
-        )
-
+    d_top, d_bottom = zones["domain"]
     _card_text_zone(
-        slide, inner_x, iy + title_top, inner_w, title_zone_h,
-        title, FS_NOTE, BRAND_PRIMARY, bold=True, word_wrap=two_line_title,
+        slide, inner_x, iy + d_top, inner_w, d_bottom - d_top,
+        domain, FS_NOTE - 1, NEUTRAL_GRAY, word_wrap=False,
+        layout_warnings=layout_warnings, context="video_card_domain",
+    )
+
+    title_top, title_bottom = zones["title"]
+    _card_text_zone(
+        slide, inner_x, iy + title_top, inner_w, title_bottom - title_top,
+        title, FS_NOTE, BRAND_PRIMARY, bold=True, word_wrap=True,
         layout_warnings=layout_warnings, context="video_card_title",
     )
-    if has_badge and "badge" in zones:
-        b_top, b_bottom = zones["badge"]
-        _card_text_zone(
-            slide, inner_x, iy + b_top, inner_w, b_bottom - b_top,
-            identity, FS_NOTE - 1, NEUTRAL_GRAY, italic=True, word_wrap=False,
-            layout_warnings=layout_warnings, context="video_card_badge",
-        )
-    btn_top, btn_bottom = zones["button"]
-    _card_text_zone(
-        slide, inner_x, iy + btn_top, inner_w, btn_bottom - btn_top,
-        link_label, FS_NOTE, ACCENT if url.startswith("http") else NEUTRAL_GRAY,
-        bold=True, hyperlink=url if url.startswith("http") else None, word_wrap=False,
-        layout_warnings=layout_warnings, context="video_card_button",
-    )
 
-    zone_keys = (["thumb"] if thumb_ok else []) + (["domain"] if thumb_ok else ["header"])
-    zone_keys += ["title"] + (["badge"] if has_badge else []) + ["button"]
-    zone_keys = [k for k in zone_keys if k in zones]
-    zone_pts = sorted([(iy + zones[k][0], iy + zones[k][1]) for k in zone_keys], key=lambda z: z[0])
+    btn_top, btn_bottom = zones["button"]
+    btn_h = btn_bottom - btn_top
+    btn_w = min(int(VID_BUTTON_W), inner_w)
+    has_link = url.startswith("http")
+    button = slide.shapes.add_shape(ROUNDED_RECT, Emu(inner_x), Emu(iy + btn_top), Emu(btn_w), Emu(btn_h))
+    button.fill.solid()
+    button.fill.fore_color.rgb = RGBColor(0xEA, 0xF1, 0xFB)
+    button.line.color.rgb = ACCENT if has_link else NEUTRAL_LINE
+    button.line.width = Pt(0.75)
+    btf = button.text_frame
+    btf.margin_top = 0
+    btf.margin_bottom = 0
+    btf.word_wrap = False
+    btf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    bp = btf.paragraphs[0]
+    bp.alignment = PP_ALIGN.CENTER
+    brun = _run(bp, link_label, FS_NOTE - 1, ACCENT if has_link else NEUTRAL_GRAY, bold=True)
+    if has_link:
+        try:
+            brun.hyperlink.address = url
+        except Exception:
+            pass
+
+    zone_pts = sorted([(iy + z[0], iy + z[1]) for z in zones.values()], key=lambda z: z[0])
     if not assert_no_vertical_overlap(zone_pts):
         try:
             slide.shapes._spTree.remove(frame._element)
@@ -1895,8 +1882,9 @@ def video_cards(
     max_items: int = MAX_VIDEO_ITEMS,
     labels: dict[str, str] | None = None,
     layout_warnings: list[str] | None = None,
+    note_template: str | None = None,
 ) -> Emu:
-    """Compact 2-column video grid — max 4 cards; text-only when no real thumbnail."""
+    """ORION 2-column video evidence grid — max 4 cards with preview bands."""
     labels = labels or {}
     total = len(items)
     if not items:
@@ -1935,13 +1923,11 @@ def video_cards(
     actual_rows = max(1, (rendered + cols - 1) // cols)
     bottom = Emu(_gallery_grid_bottom(y0, actual_rows, row_h, gap) + int(_BLOCK_GAP))
     hidden = max(0, total - rendered)
-    if total > rendered:
-        tpl = labels.get("media_showing_videos", "Showing {shown} of {total} subject-matched videos.")
-        bottom = _safe_gallery_note(slide, bottom, tpl.format(shown=rendered, total=total))
     if hidden > 0:
-        extra = labels.get("media_videos_saved_evidence", "+ {n} videos saved in evidence.")
-        if extra:
-            bottom = _safe_gallery_note(slide, bottom, extra.format(n=hidden))
+        tpl = note_template or labels.get(
+            "media_videos_note", "Showing {shown} of {total} relevant video sources. + {n} saved in evidence.",
+        )
+        bottom = _safe_gallery_note(slide, bottom, tpl.format(shown=rendered, total=total, n=hidden))
     return bottom
 
 
