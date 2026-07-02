@@ -419,6 +419,182 @@ def r2_no_data_state(slide, top: Emu, text: str, *, tone: str = "info") -> Emu:
     return no_data_card(slide, top, text or "No relevant data available for this section.")
 
 
+R2_REGION_INTERNAL_RE = re.compile(
+    r"internal|debug|classifier|providerAdapter|sourceMode|rawMetadata|reviewQueue|UNCLASSIFIED"
+    r"|not collected|unavailable|undefined|null|none",
+    re.I,
+)
+R2_REGION_URL_RE = re.compile(r"https?://\S+|www\.\S+", re.I)
+
+
+def r2_region_safe_text(value: Any, *, labels: dict | None = None, max_len: int = 220) -> str:
+    """Sanitize region-page copy to client-safe visible wording."""
+    labels = labels or {}
+    raw = " ".join(str(value or "").split())
+    if not raw:
+        return ""
+    safe = raw
+    if R2_REGION_URL_RE.search(safe):
+        safe = R2_REGION_URL_RE.sub(lambda m: r2_domain_text(m.group(0), 36), safe)
+    safe = re.sub(r"\{label\}", "", safe, flags=re.I)
+    safe = re.sub(r"\bSource:\s*", labels.get("region_source_prefix", "Примечание: "), safe, flags=re.I)
+    safe = re.sub(r"\bevidence\b", labels.get("region_review_word", "проверки"), safe, flags=re.I)
+    safe = re.sub(r"\bABSENT\b", labels.get("metric_not_found", "НЕ НАЙДЕНО"), safe, flags=re.I)
+    safe = re.sub(r"\bn/ ?t\b|н/в", "", safe, flags=re.I)
+    safe = re.sub(r"\brelated:\s*\d+\b", "", safe, flags=re.I)
+    safe = re.sub(
+        r"No international subject-matched results in collected data\.",
+        labels.get("region_international_no_subject_results", "Подтверждённых международных материалов по субъекту не выявлено."),
+        safe,
+        flags=re.I,
+    )
+    safe = re.sub(
+        r"No adverse organic content in selected subject-matched results\.",
+        labels.get("region_no_adverse_organic", "Негативных органических материалов по выбранным релевантным результатам не выявлено."),
+        safe,
+        flags=re.I,
+    )
+    safe = R2_REGION_INTERNAL_RE.sub("", safe)
+    safe = re.sub(r"\s+", " ", safe).strip(" -,:;")
+    if not safe:
+        safe = labels.get("r24_fallback_no_data", "Insufficient data for a confident conclusion.")
+    return truncate(safe, max_len)
+
+
+def r2_ru_plural_suggestions(n: int) -> str:
+    """Russian plural form for 'подсказка'."""
+    n10 = n % 10
+    n100 = n % 100
+    if n10 == 1 and n100 != 11:
+        return "подсказка"
+    if 2 <= n10 <= 4 and not (12 <= n100 <= 14):
+        return "подсказки"
+    return "подсказок"
+
+
+def r2_region_metric_value(value: Any, *, labels: dict | None = None) -> str:
+    """Normalize metric values for client-safe region cards."""
+    labels = labels or {}
+    raw = str(value or "").strip()
+    up = raw.upper()
+    if up in {"ABSENT", "NONE", "NO_DATA", "UNKNOWN"}:
+        return labels.get("metric_no_data", "НЕТ")
+    return r2_region_safe_text(raw, labels=labels, max_len=26) or labels.get("metric_no_data", "НЕТ ДАННЫХ")
+
+
+def r2_region_header(
+    slide,
+    *,
+    title: str,
+    risk_level: str,
+    section_marker: str | None = None,
+    subtitle: str | None = None,
+) -> Emu:
+    """Consistent region-page header with protected title/badge spacing."""
+    top = r2_page_header(
+        slide,
+        title=title,
+        subtitle=subtitle,
+        section_marker=section_marker,
+        right_meta=" ",
+    )
+    risk_badge(
+        slide,
+        Emu(int(SLIDE_W) - int(MARGIN) - 1500000),
+        Emu(228600),
+        risk_level or "UNKNOWN",
+    )
+    return top
+
+
+def r2_region_metric_row(slide, top: Emu, cards: list[dict], *, per_row: int = 3) -> Emu:
+    """Region KPI row primitive with stable equal-height cards."""
+    return r2_metric_cards(slide, top, cards, per_row=per_row)
+
+
+def r2_region_summary_card(
+    slide,
+    top: Emu,
+    *,
+    title: str,
+    lines: list[str],
+    labels: dict | None = None,
+    card_h: Emu = Emu(1320000),
+) -> Emu:
+    """Short analytical summary card (max 4 concise lines)."""
+    labels = labels or {}
+    body = [r2_region_safe_text(x, labels=labels, max_len=140) for x in (lines or []) if str(x or "").strip()]
+    return card(slide, MARGIN, top, CONTENT_W, card_h, title, body[:4])
+
+
+def r2_region_bullet_sections(
+    slide,
+    top: Emu,
+    sections: list[dict[str, Any]],
+    *,
+    labels: dict | None = None,
+    max_items_per_section: int = 5,
+    layout_warnings: list[str] | None = None,
+) -> Emu:
+    """Bounded grouped bullets with overflow continuation note."""
+    labels = labels or {}
+    cleaned: list[dict[str, Any]] = []
+    for sec in sections:
+        raw_items = sec.get("items") or []
+        items = [r2_region_safe_text(x, labels=labels, max_len=120) for x in raw_items if str(x or "").strip()]
+        cleaned.append(
+            {
+                "label": r2_region_safe_text(sec.get("label"), labels=labels, max_len=56),
+                "items": items,
+            }
+        )
+    return bounded_bullet_sections(
+        slide,
+        top,
+        cleaned,
+        max_items_per_section=max_items_per_section,
+        overflow_note=labels.get("bullets_overflow_note", "+ {n} more items preserved in evidence."),
+        layout_warnings=layout_warnings,
+    )
+
+
+def r2_region_no_data_state(
+    slide,
+    top: Emu,
+    *,
+    headline: str,
+    body: str,
+    width_ratio: float = 0.70,
+) -> Emu:
+    """Premium region no-data card with separated title/body zones."""
+    return r2_risk_findings_empty_state(
+        slide,
+        top,
+        headline=headline,
+        body=body,
+        width_ratio=width_ratio,
+    )
+
+
+def r2_region_note(slide, top: Emu, text: str, *, labels: dict | None = None, kind: str = "disclaimer") -> Emu:
+    """Client-safe region note style wrapper."""
+    safe = r2_region_safe_text(text, labels=labels, max_len=240)
+    if not safe:
+        return top
+    return note(slide, top, safe, kind)
+
+
+def r2_region_two_column(slide, top: Emu) -> tuple[Emu, Emu, Emu]:
+    """Two-column layout helper: left/right anchors plus shared bottom."""
+    gutter = Emu(220000)
+    left_w = Emu((int(CONTENT_W) - int(gutter)) // 2)
+    right_x = Emu(int(MARGIN) + int(left_w) + int(gutter))
+    right_w = Emu(int(CONTENT_W) - int(left_w) - int(gutter))
+    r2_card(slide, MARGIN, top, left_w, Emu(2160000), fill=WHITE)
+    r2_card(slide, right_x, top, right_w, Emu(2160000), fill=WHITE)
+    return Emu(int(top) + 180000), Emu(int(top) + 180000), Emu(int(top) + 2240000)
+
+
 def r2_warning_card(slide, top: Emu, text: str) -> Emu:
     """R2 warning/recommendation primitive."""
     return warning_card(slide, top, text)

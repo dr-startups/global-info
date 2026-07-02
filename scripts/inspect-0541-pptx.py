@@ -23,6 +23,31 @@ CONTINUATION_RE = re.compile(r"Показаны первые\s+\d+\s+из\s+\d+|
 SLIDE34_RAW_ENUM_RE = re.compile(r"\b(SANCTIONS|PEP_RCA|ADVERSE_MEDIA|WATCHLIST|LEGAL|REVIEW_REQUIRED)\b")
 R23E_INTERNAL_RE = re.compile(r"reviewStatus|sourceMode|rawMetadata|providerAdapter|classifier|UNCLASSIFIED|internal|debug", re.I)
 R23E_RAW_LEVEL_ENUM_RE = re.compile(r"\b(LOW|MEDIUM|HIGH|CRITICAL)\b")
+R24_INTERNAL_RE = re.compile(
+    r"internal|debug|classifier|providerAdapter|sourceMode|rawMetadata|reviewQueue|UNCLASSIFIED|not collected|unavailable",
+    re.I,
+)
+R24_FORBIDDEN_RU_PHRASES = (
+    "{label}",
+    "source:",
+    "evidence",
+    "related:",
+    "absent",
+    "н/в",
+    "no international",
+    "no adverse",
+    "not collected",
+    "unavailable",
+    "internal",
+    "debug",
+    "classifier",
+    "sourcemode",
+    "rawmetadata",
+    "provideradapter",
+    "reviewqueue",
+    "unclassified",
+    "undefined",
+)
 
 
 def _plain_text(xml: str) -> str:
@@ -123,6 +148,226 @@ def _common_contract_issues(xml: str, text: str, slide_n: int, *, require_low_ba
         issues.append(f"Slide {slide_n} has internal/debug labels")
     if NULLISH_RE.search(text):
         issues.append(f"Slide {slide_n} has None/null/undefined text")
+    return issues
+
+
+def _title_badge_gap_ok(xml: str, slide_n: int) -> list[str]:
+    issues: list[str] = []
+    shapes = _text_shapes(xml)
+    badge = next(
+        (
+            s
+            for s in shapes
+            if s["x"] >= 7000000
+            and s["y"] <= 700000
+            and s["text"].strip().upper() in {"LOW", "MEDIUM", "HIGH", "CRITICAL", "UNKNOWN"}
+        ),
+        None,
+    )
+    if badge is None:
+        return [f"Slide {slide_n} risk badge shape not found"]
+    title = next(
+        (
+            s
+            for s in shapes
+            if s["y"] <= 1100000
+            and s["x"] <= 1700000
+            and s["w"] >= 3200000
+            and not re.search(r"\b\d+\s*/\s*50\b", s["text"])
+            and s["text"].strip().upper() not in {"LOW", "MEDIUM", "HIGH", "CRITICAL", "UNKNOWN"}
+        ),
+        None,
+    )
+    if title is None:
+        return [f"Slide {slide_n} title shape not found"]
+    if title["right"] > badge["x"] - 50000:
+        issues.append(f"Slide {slide_n} title overlaps risk badge zone")
+    return issues
+
+
+def _metric_cards_equal_height_ok(xml: str, slide_n: int) -> list[str]:
+    issues: list[str] = []
+    boxes = _shape_boxes(xml)
+    candidates = [
+        b
+        for b in boxes
+        if 900000 <= b["y"] <= 3500000
+        and 320000 <= b["h"] <= 920000
+        and 1300000 <= b["w"] <= 2400000
+    ]
+    if len(candidates) < 2:
+        return issues
+    heights = sorted(b["h"] for b in candidates)
+    if heights[-1] - heights[0] > 18000:
+        issues.append(f"Slide {slide_n} metric cards unequal height")
+    return issues
+
+
+def _r24_common_region_contract(xml: str, text: str, slide_n: int) -> list[str]:
+    issues = _common_contract_issues(xml, text, slide_n, require_low_badge=False)
+    if not any(tok in text for tok in ("LOW", "MEDIUM", "HIGH", "CRITICAL", "UNKNOWN")):
+        issues.append(f"Slide {slide_n} risk badge missing")
+    issues.extend(_title_badge_gap_ok(xml, slide_n))
+    if R24_INTERNAL_RE.search(text):
+        issues.append(f"Slide {slide_n} has internal/debug wording")
+    return issues
+
+
+def _r24_client_safe_ok(text: str, slide_n: int) -> list[str]:
+    low = text.lower()
+    issues: list[str] = []
+    for token in R24_FORBIDDEN_RU_PHRASES:
+        if token in low:
+            issues.append(f"Slide {slide_n} contains forbidden token: {token}")
+    return issues
+
+
+def _heading_not_bullet_ok(xml: str, heading: str, slide_n: int) -> list[str]:
+    """Heading should be rendered as section label, not bullet item."""
+    low_xml = xml.lower()
+    h = heading.lower()
+    if f"• {h}" in low_xml:
+        return [f"Slide {slide_n} heading rendered as bullet"]
+    return []
+
+
+def slide7_r24_heading_not_bullet_ok(xml: str) -> list[str]:
+    return _heading_not_bullet_ok(xml, "Наблюдаемые подсказки / запросы", 7)
+
+
+def slide23_r24_heading_not_bullet_ok(xml: str) -> list[str]:
+    return _heading_not_bullet_ok(xml, "Наблюдаемые подсказки / запросы", 23)
+
+
+def slide22_r24_no_duplicate_conclusion_ok(text: str) -> list[str]:
+    phrase = "подтверждённых международных материалов по субъекту не выявлено"
+    if text.lower().count(phrase) > 1:
+        return ["Slide 22 has duplicated intl no-subject conclusion"]
+    return []
+
+
+def slide30_r24_no_clipped_quality_text_ok(text: str) -> list[str]:
+    low = text.lower()
+    issues: list[str] = []
+    required = "сводка покрытия доступна для аналитической проверки"
+    if required not in low:
+        issues.append("Slide 30 quality-card sentence missing or clipped")
+    if "аналитиче..." in low or "..." in low:
+        issues.append("Slide 30 quality-card sentence visibly clipped")
+    return issues
+
+
+def slide6_r24_client_safe_ok(text: str) -> list[str]:
+    return _r24_client_safe_ok(text, 6)
+
+
+def slide7_r24_client_safe_ok(text: str) -> list[str]:
+    return _r24_client_safe_ok(text, 7)
+
+
+def slide11_r24_client_safe_ok(text: str) -> list[str]:
+    return _r24_client_safe_ok(text, 11)
+
+
+def slide22_r24_client_safe_ok(text: str) -> list[str]:
+    return _r24_client_safe_ok(text, 22)
+
+
+def slide26_r24_no_placeholder_ok(text: str) -> list[str]:
+    issues: list[str] = []
+    if "{label}" in text.lower():
+        issues.append("Slide 26 still shows {label} placeholder")
+    return issues
+
+
+def slide31_r24_client_safe_ok(text: str) -> list[str]:
+    return _r24_client_safe_ok(text, 31)
+
+
+def slide6_r24_region_summary_contract_ok(xml: str, text: str) -> list[str]:
+    issues = _r24_common_region_contract(xml, text, 6)
+    issues.extend(_metric_cards_equal_height_ok(xml, 6))
+    issues.extend(slide6_r24_client_safe_ok(text))
+    low = text.lower()
+    if "не найдено" not in low and "нет данных" not in low and "блок знаний нет" not in low:
+        issues.append("Slide 6 knowledge missing-state label not localized")
+    return issues
+
+
+def slide7_r24_region_organic_contract_ok(xml: str, text: str) -> list[str]:
+    issues = _r24_common_region_contract(xml, text, 7)
+    issues.extend(_metric_cards_equal_height_ok(xml, 7))
+    issues.extend(slide7_r24_client_safe_ok(text))
+    issues.extend(slide7_r24_heading_not_bullet_ok(xml))
+    if "наблюдаем" not in text.lower() and "observed" not in text.lower() and "не зафиксированы" not in text.lower():
+        issues.append("Slide 7 organic observations marker missing")
+    return issues
+
+
+def slide11_r24_region_suggestions_contract_ok(xml: str, text: str) -> list[str]:
+    issues = _r24_common_region_contract(xml, text, 11)
+    issues.extend(_metric_cards_equal_height_ok(xml, 11))
+    issues.extend(slide11_r24_client_safe_ok(text))
+    if "подсказ" not in text.lower() and "suggest" not in text.lower():
+        issues.append("Slide 11 suggestions context missing")
+    return issues
+
+
+def slide12_r24_region_related_contract_ok(xml: str, text: str) -> list[str]:
+    issues = _r24_common_region_contract(xml, text, 12)
+    issues.extend(_metric_cards_equal_height_ok(xml, 12))
+    issues.extend(_r24_client_safe_ok(text, 12))
+    if "запрос" not in text.lower() and "related" not in text.lower():
+        issues.append("Slide 12 related queries context missing")
+    return issues
+
+
+def slide22_r24_region_summary_contract_ok(xml: str, text: str) -> list[str]:
+    issues = _r24_common_region_contract(xml, text, 22)
+    issues.extend(_metric_cards_equal_height_ok(xml, 22))
+    issues.extend(slide22_r24_client_safe_ok(text))
+    issues.extend(slide22_r24_no_duplicate_conclusion_ok(text))
+    return issues
+
+
+def slide23_r24_region_organic_contract_ok(xml: str, text: str) -> list[str]:
+    issues = _r24_common_region_contract(xml, text, 23)
+    issues.extend(_metric_cards_equal_height_ok(xml, 23))
+    issues.extend(_r24_client_safe_ok(text, 23))
+    issues.extend(slide23_r24_heading_not_bullet_ok(xml))
+    return issues
+
+
+def slide26_r24_region_suggestions_contract_ok(xml: str, text: str) -> list[str]:
+    issues = _r24_common_region_contract(xml, text, 26)
+    issues.extend(_metric_cards_equal_height_ok(xml, 26))
+    issues.extend(_r24_client_safe_ok(text, 26))
+    issues.extend(slide26_r24_no_placeholder_ok(text))
+    return issues
+
+
+def slide30_r24_region_data_quality_contract_ok(xml: str, text: str) -> list[str]:
+    issues = _r24_common_region_contract(xml, text, 30)
+    issues.extend(_metric_cards_equal_height_ok(xml, 30))
+    issues.extend(_r24_client_safe_ok(text, 30))
+    if "качеств" not in text.lower() and "quality" not in text.lower():
+        issues.append("Slide 30 data quality marker missing")
+    issues.extend(slide30_r24_no_clipped_quality_text_ok(text))
+    text_boxes = _text_shapes(xml)
+    card = next((s for s in text_boxes if "качество данных" in s["text"].lower()), None)
+    note = next((s for s in text_boxes if "сводка по покрытию доказательств" in s["text"].lower()), None)
+    if card and note:
+        # If separate note exists above card, keep safe vertical gap.
+        if note["y"] < card["y"] and note["bottom"] > card["y"] - 80000:
+            issues.append("Slide 30 note is too close to data-quality card")
+    return issues
+
+
+def slide31_r24_region_conclusion_contract_ok(xml: str, text: str) -> list[str]:
+    issues = _r24_common_region_contract(xml, text, 31)
+    issues.extend(slide31_r24_client_safe_ok(text))
+    if "вывод" not in text.lower() and "conclusion" not in text.lower():
+        issues.append("Slide 31 conclusion marker missing")
     return issues
 
 
@@ -487,7 +732,7 @@ def slide29_r23_risk_findings_contract_ok(xml: str, text: str, report_json: dict
 def _regression_lock_checks(pptx_path: Path, baseline_path: Path) -> tuple[int, list[str]]:
     if not baseline_path.exists():
         return 1, [f"[FAIL] Regression baseline deck missing: {baseline_path}"]
-    locked = [3, 5, 8, 10, 13, 14, 20, 24, 27, 32, 33, 34, 36]
+    locked = [3, 5, 8, 10, 13, 14, 17, 20, 24, 27, 29, 32, 33, 34, 36]
     fails: list[str] = []
     with zipfile.ZipFile(pptx_path, "r") as cur, zipfile.ZipFile(baseline_path, "r") as base:
         cur_slides = len([n for n in cur.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml")])
@@ -608,6 +853,34 @@ def _r23e_risk_findings_checks(pptx_path: Path, report_json_path: Path) -> tuple
     return 0, lines
 
 
+def _r24_region_pilot_checks(pptx_path: Path) -> tuple[int, list[str]]:
+    fails: list[str] = []
+    with zipfile.ZipFile(pptx_path, "r") as z:
+        checks = [
+            ("slide6_r24_region_summary_contract_ok", slide6_r24_region_summary_contract_ok(_slide_xml(z, 6), _plain_text(_slide_xml(z, 6)))),
+            ("slide7_r24_region_organic_contract_ok", slide7_r24_region_organic_contract_ok(_slide_xml(z, 7), _plain_text(_slide_xml(z, 7)))),
+            ("slide11_r24_region_suggestions_contract_ok", slide11_r24_region_suggestions_contract_ok(_slide_xml(z, 11), _plain_text(_slide_xml(z, 11)))),
+            ("slide12_r24_region_related_contract_ok", slide12_r24_region_related_contract_ok(_slide_xml(z, 12), _plain_text(_slide_xml(z, 12)))),
+            ("slide22_r24_region_summary_contract_ok", slide22_r24_region_summary_contract_ok(_slide_xml(z, 22), _plain_text(_slide_xml(z, 22)))),
+            ("slide23_r24_region_organic_contract_ok", slide23_r24_region_organic_contract_ok(_slide_xml(z, 23), _plain_text(_slide_xml(z, 23)))),
+            ("slide26_r24_region_suggestions_contract_ok", slide26_r24_region_suggestions_contract_ok(_slide_xml(z, 26), _plain_text(_slide_xml(z, 26)))),
+            ("slide30_r24_region_data_quality_contract_ok", slide30_r24_region_data_quality_contract_ok(_slide_xml(z, 30), _plain_text(_slide_xml(z, 30)))),
+            ("slide31_r24_region_conclusion_contract_ok", slide31_r24_region_conclusion_contract_ok(_slide_xml(z, 31), _plain_text(_slide_xml(z, 31)))),
+        ]
+        for title, issues in checks:
+            if issues:
+                for issue in issues:
+                    fails.append(f"{title} — {issue}")
+    lines: list[str] = []
+    if fails:
+        for f in fails:
+            lines.append(f"[FAIL] {f}")
+        return 1, lines
+    lines.append("[PASS] Slide 6/7/11/12 R2.4 RU pilot contracts")
+    lines.append("[PASS] Slide 22/23/26/30/31 R2.4 INTL pilot contracts")
+    return 0, lines
+
+
 def main() -> int:
     target = Path(__file__).with_name("inspect-o541-pptx.py")
     cmd = [sys.executable, str(target), *sys.argv[1:]]
@@ -646,15 +919,18 @@ def main() -> int:
     r23e_rc, r23e_lines = _r23e_risk_findings_checks(pptx_path, report_json_path)
     for line in r23e_lines:
         print(line)
+    r24_rc, r24_lines = _r24_region_pilot_checks(pptx_path)
+    for line in r24_lines:
+        print(line)
     reg_rc = 0
     if is_fixture:
         print("[PASS] Fixture mode — regression locks skipped by design")
     else:
-        baseline = Path("storage/digital-profile/qa-r2-3d-compliance/report-v17-ru-internal-draft.pptx")
+        baseline = Path("storage/digital-profile/qa-r2-3e-risk-findings/report-v17-ru-internal-draft.pptx")
         reg_rc, reg_lines = _regression_lock_checks(pptx_path, baseline)
         for line in reg_lines:
             print(line)
-    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or reg_rc != 0) else 0
+    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or reg_rc != 0) else 0
 
 
 if __name__ == "__main__":

@@ -18,6 +18,7 @@ No LLM, no scraping, no live SERP screenshots — only lays out report_json data
 from __future__ import annotations
 
 import io
+import re
 from typing import Any, Callable
 
 from pptx.enum.text import PP_ALIGN
@@ -67,6 +68,14 @@ def _risk_card_value(level: str, L: dict) -> Any:
 def _norm(text: Any) -> str:
     """Normalize text for duplicate detection (case/space-insensitive)."""
     return " ".join(str(text or "").split()).strip().lower()
+
+
+def _region_saved_for_review_note(hidden: int, L: dict) -> str:
+    if hidden <= 0:
+        return ""
+    if "подсказ" in str(L.get("metric_suggestions", "")).lower():
+        return f"+ ещё {hidden} {T.r2_ru_plural_suggestions(hidden)} сохранены для проверки."
+    return L.get("region_saved_for_review", "+ ещё {n} записей сохранены для проверки.").format(n=hidden)
 
 
 # ===========================================================================
@@ -243,6 +252,42 @@ def _rb(block_key: str, builder: Callable, title: str, subtitle: str | None = No
     return page
 
 
+def _rb_r24(block_key: str, builder: Callable, title: str, subtitle: str | None = None) -> Callable:
+    """R2.4 pilot wrapper: region header rhythm + premium no-data state."""
+
+    def page(prs, vm, ctx):
+        blk = vm[block_key]
+        L = vm["labels"]
+        page_title = title.replace("{label}", blk["label"])
+        page_title = page_title.replace("{label}", "").strip(" —-")
+        if block_key == "intl" and title == L.get("pg_suggestions"):
+            page_title = L.get("r24_intl_suggestions_title", "Международные поисковые подсказки")
+        slide = T.blank_slide(prs)
+        top = T.r2_region_header(
+            slide,
+            title=page_title,
+            subtitle=subtitle,
+            section_marker=L.get("section"),
+            risk_level=blk.get("riskLevel") or "UNKNOWN",
+        )
+        T.r2_page_footer(slide, brand=ctx.brand, page_no=ctx.page, total=ctx.total)
+        if ctx.watermark:
+            T._watermark(slide, str(ctx.watermark))
+        if not blk["present"]:
+            body = blk.get("noDataText") or L.get("r24_region_no_data_body", L["no_evidence_region"].format(label=blk["label"]))
+            T.r2_region_no_data_state(
+                slide,
+                top,
+                headline=L.get("r24_region_no_data_title", "Данные по этому региону не зафиксированы."),
+                body=T.r2_region_safe_text(body, labels=L, max_len=170),
+                width_ratio=0.70 if str(blk.get("code", "")).upper() == "RU" else 0.72,
+            )
+            return
+        builder(slide, top, blk, vm, ctx)
+
+    return page
+
+
 def _b_summary(slide, top, blk, vm, ctx):
     L = vm["labels"]
     s = blk["summary"]
@@ -279,6 +324,52 @@ def _b_summary(slide, top, blk, vm, ctx):
         T.note(slide, top, blk["conclusion"], "info")
 
 
+def _b_summary_r24(slide, top, blk, vm, ctx):
+    L = vm["labels"]
+    s = blk["summary"]
+    cards = [
+        {"label": L["m_organic_total"], "value": s.get("organicTotal", 0)},
+        {"label": L["m_organic_negative"], "value": s.get("organicNegative", 0), "tone": T.DANGER},
+        {"label": L["m_negative_share"], "value": s.get("organicNegativeShare", "0%")},
+        _risk_card_value(blk["riskLevel"], L),
+    ]
+    top = T.r2_region_metric_row(slide, top, cards, per_row=4)
+    cards2 = [
+        {"label": L.get("metric_suggestions", L["m_suggestions_nt"]), "value": s.get("suggestions", "0/0")},
+        {"label": L.get("metric_images", L["m_images_nt"]), "value": s.get("images", "0/0")},
+        {"label": L.get("metric_videos", L["m_videos_nt"]), "value": s.get("videos", "0/0")},
+        {"label": L.get("metric_knowledge", L["m_knowledge"]), "value": T.r2_region_metric_value(s.get("knowledgeBlockStatus", "ABSENT"), labels=L)},
+    ]
+    top = T.r2_region_metric_row(slide, top, cards2, per_row=4)
+    is_ru = str(blk.get("code", "")).upper() == "RU"
+    if not is_ru:
+        top = T.r2_region_bullet_sections(
+            slide,
+            top,
+            [
+                {
+                    "label": L.get("region_international_segment", "Международный сегмент"),
+                    "items": [
+                        f"Органических материалов: {s.get('organicTotal', 0)}",
+                        f"Подсказок для проверки: {s.get('suggestions', '0/0')}",
+                        L.get("region_international_no_subject_results", "Подтверждённых международных материалов по субъекту не выявлено."),
+                    ],
+                }
+            ],
+            labels=L,
+            max_items_per_section=4,
+            layout_warnings=ctx.layout_warnings,
+        )
+        return
+    T.r2_region_note(
+        slide,
+        top,
+        L.get("region_no_adverse_organic", "Негативных органических материалов по выбранным релевантным результатам не выявлено."),
+        labels=L,
+        kind="info",
+    )
+
+
 def _b_organic(slide, top, blk, vm, ctx):
     L = vm["labels"]
     o = blk["organicOverview"]
@@ -291,6 +382,44 @@ def _b_organic(slide, top, blk, vm, ctx):
     top = T.metric_cards(slide, top, cards, per_row=4)
     if o.get("observedQueries"):
         T.bullets(slide, top, [L["observed_queries"]] + o["observedQueries"])
+
+
+def _b_organic_r24(slide, top, blk, vm, ctx):
+    L = vm["labels"]
+    o = blk["organicOverview"]
+    cards = [
+        {"label": L["m_organic_total"], "value": o.get("organicTotal", 0)},
+        {"label": L["m_negative"], "value": o.get("organicNegative", 0), "tone": T.DANGER},
+        {"label": L["m_unique_neg_urls"], "value": o.get("uniqueNegativeUrls", 0)},
+        {"label": L["m_negative_share"], "value": o.get("negativeShare", "0%")},
+    ]
+    top = T.r2_region_metric_row(slide, top, cards, per_row=4)
+    observed = [T.r2_region_safe_text(x, labels=L, max_len=86) for x in (o.get("observedQueries") or []) if x]
+    if observed:
+        top = T.note(slide, top, L["observed_queries"].rstrip(" :"), "section")
+        shown_out: list[int] = []
+        top = T.bullets(
+            slide,
+            top,
+            observed,
+            max_items=7,
+            overflow_note="+ {n} hidden",
+            emit_overflow_note=False,
+            shown_out=shown_out,
+            layout_warnings=ctx.layout_warnings,
+        )
+        hidden = max(0, 1 + len(observed) - (shown_out[0] if shown_out else 0))
+        note = _region_saved_for_review_note(hidden, L)
+        if note:
+            T.r2_region_note(slide, top, note, labels=L, kind="info")
+    else:
+        T.r2_region_no_data_state(
+            slide,
+            top,
+            headline=L.get("r24_organic_empty_title", "Органические наблюдения не зафиксированы"),
+            body=L.get("r24_organic_empty_body", "Подтверждённых материалов для отдельного вывода не выявлено."),
+            width_ratio=0.70 if str(blk.get("code", "")).upper() == "RU" else 0.72,
+        )
 
 
 def _b_results(slide, top, blk, vm, ctx):
@@ -451,6 +580,70 @@ def _b_suggestions(slide, top, blk, vm, ctx):
         T.no_data_card(slide, top, L["nd_no_suggestions"])
 
 
+def _b_suggestions_r24(slide, top, blk, vm, ctx):
+    L = vm["labels"]
+    sg = blk["suggestions"]
+    top = T.r2_region_metric_row(
+        slide,
+        top,
+        [
+            {"label": L["m_total"], "value": sg["total"]},
+            {"label": L["m_negative"], "value": sg["negative"], "tone": T.DANGER},
+        ],
+        per_row=2,
+    )
+    disclaimer = L.get("region_search_suggestions_note") or sg.get("exposureDisclaimer") or L.get("autocomplete_disclaimer", "")
+    if disclaimer:
+        top = T.r2_region_note(slide, top, disclaimer, labels=L, kind="disclaimer")
+    groups = sg.get("groups") or []
+    if groups:
+        sections = [{"label": g.get("label"), "items": g.get("items") or []} for g in groups if g.get("items") or g.get("label")]
+        flat: list[str] = []
+        for sec in sections:
+            if sec.get("label"):
+                flat.append(str(sec["label"]))
+            flat.extend([str(x) for x in (sec.get("items") or []) if x])
+        shown_out: list[int] = []
+        top = T.bullets(
+            slide,
+            top,
+            [T.r2_region_safe_text(x, labels=L, max_len=120) for x in flat if str(x).strip()],
+            max_items=8,
+            overflow_note="+ {n} hidden",
+            emit_overflow_note=False,
+            shown_out=shown_out,
+            layout_warnings=ctx.layout_warnings,
+        )
+        hidden = max(0, len(flat) - (shown_out[0] if shown_out else 0))
+        note = _region_saved_for_review_note(hidden, L)
+        if note:
+            T.r2_region_note(slide, top, note, labels=L, kind="info")
+    elif sg["list"]:
+        shown_out: list[int] = []
+        top = T.bullets(
+            slide,
+            top,
+            [T.r2_region_safe_text(x, labels=L, max_len=120) for x in sg["list"]],
+            max_items=7,
+            overflow_note="+ {n} hidden",
+            emit_overflow_note=False,
+            shown_out=shown_out,
+            layout_warnings=ctx.layout_warnings,
+        )
+        hidden = max(0, len(sg["list"]) - (shown_out[0] if shown_out else 0))
+        note = _region_saved_for_review_note(hidden, L)
+        if note:
+            T.r2_region_note(slide, top, note, labels=L, kind="info")
+    else:
+        T.r2_region_no_data_state(
+            slide,
+            top,
+            headline=L.get("r24_suggestions_empty_title", "Рекомендации по подсказкам не зафиксированы"),
+            body=L.get("r24_suggestions_empty_body", "Подтверждённых материалов для отдельного вывода не выявлено."),
+            width_ratio=0.70 if str(blk.get("code", "")).upper() == "RU" else 0.72,
+        )
+
+
 def _b_related(slide, top, blk, vm, ctx):
     L = vm["labels"]
     rq = blk["relatedQueries"]
@@ -486,6 +679,46 @@ def _b_related(slide, top, blk, vm, ctx):
         T.no_data_card(slide, top, rq.get("statusMessage") or L.get("nd_not_queried_surface", L["nd_no_related"]))
     else:
         T.no_data_card(slide, top, L["nd_no_related"])
+
+
+def _b_related_r24(slide, top, blk, vm, ctx):
+    L = vm["labels"]
+    rq = blk["relatedQueries"]
+    top = T.r2_region_metric_row(
+        slide,
+        top,
+        [
+            {"label": L["m_total"], "value": rq["total"]},
+            {"label": L["m_negative"], "value": rq["negative"], "tone": T.DANGER},
+        ],
+        per_row=2,
+    )
+    if rq["list"]:
+        top = T.r2_region_bullet_sections(
+            slide,
+            top,
+            [{"label": L.get("pg_related_queries", "Related queries"), "items": rq["list"]}],
+            labels=L,
+            max_items_per_section=7,
+            layout_warnings=ctx.layout_warnings,
+        )
+    elif str(rq.get("collectionStatus", "")).upper() == "COLLECTED":
+        T.r2_region_no_data_state(
+            slide,
+            top,
+            headline=L.get("r24_related_empty_title", "Связанные запросы не зафиксированы"),
+            body=L.get("r24_related_empty_body", "Подтверждённых материалов для отдельного вывода не выявлено."),
+            width_ratio=0.70,
+        )
+    else:
+        body = rq.get("statusMessage") or L.get("r24_region_no_data_body", L["nd_no_related"])
+        T.r2_region_no_data_state(
+            slide,
+            top,
+            headline=L.get("r24_region_no_data_title", "Данные по этому региону не зафиксированы."),
+            body=T.r2_region_safe_text(body, labels=L, max_len=170),
+            width_ratio=0.70,
+        )
 
 
 def _p_ru_images_orion(prs, vm, ctx):
@@ -780,6 +1013,33 @@ def _b_data_quality(slide, top, blk, vm, ctx):
         T.note(slide, top, L["coverage_on_request"], "disclaimer")
 
 
+def _b_data_quality_r24(slide, top, blk, vm, ctx):
+    L = vm["labels"]
+    dq = blk["dataQuality"]
+    top = T.r2_region_metric_row(
+        slide,
+        top,
+        [
+            {"label": L["m_organic_evidence"], "value": dq.get("organic", 0)},
+            {"label": L["m_surface_evidence"], "value": dq.get("surfaces", 0)},
+        ],
+        per_row=2,
+    )
+    T.r2_region_summary_card(
+        slide,
+        Emu(int(top) + 160000),
+        title=L.get("region_data_quality_title", "Качество данных"),
+        lines=[
+            L.get(
+                "r24_data_quality_body",
+                "Данные собраны из доступных источников; спорные совпадения требуют ручной проверки. Сводка покрытия доступна для аналитической проверки.",
+            )
+        ],
+        labels=L,
+        card_h=Emu(1440000),
+    )
+
+
 def _b_recommended(slide, top, blk, vm, ctx):
     L = vm["labels"]
     T.bullets(slide, top, blk.get("recommendedActions") or [L["expand_region_collection"]])
@@ -907,6 +1167,28 @@ def _b_conclusion(slide, top, blk, vm, ctx):
     T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(1700000), f"{L['region_risk']}: {blk['riskLevel']}", [
         blk["conclusion"] or L["interim_conclusion_fallback"],
     ], tone=T.RISK_COLORS.get(str(blk["riskLevel"]).upper(), T.NEUTRAL_GRAY))
+
+
+def _b_conclusion_r24(slide, top, blk, vm, ctx):
+    L = vm["labels"]
+    summary_line = blk["conclusion"] or L["interim_conclusion_fallback"]
+    if str(blk.get("code", "")).upper() == "INTL":
+        if re.search(r"No international subject-matched results in collected data\.?", str(summary_line), flags=re.I):
+            summary_line = L.get("region_international_no_subject_results", summary_line)
+    top = T.r2_region_summary_card(
+        slide,
+        top,
+        title=f"{L['region_risk']}: {blk['riskLevel']}",
+        lines=[summary_line],
+        labels=L,
+    )
+    T.r2_region_note(
+        slide,
+        top,
+        L.get("r24_conclusion_note", "Дополнительные материалы сохранены для проверки."),
+        labels=L,
+        kind="disclaimer",
+    )
 
 
 # ===========================================================================
@@ -1281,13 +1563,13 @@ def build_report_v3(
     ctx = Ctx(brand=brand, watermark=effective_wm, internal=(str(audience).lower() != "client"))
 
     ru_pages = [
-        _rb("ru", _b_summary, L["pg_audit_summary"]),
-        _rb("ru", _b_organic, L["pg_organic_overview"]),
+        _rb_r24("ru", _b_summary_r24, L["pg_audit_summary"]),
+        _rb_r24("ru", _b_organic_r24, L["pg_organic_overview"]),
         _rb("ru", _b_results_r23, L["pg_top_results"]),
         _rb("ru", _b_themes, L["pg_neg_publications"]),
         _p_snapshots,
-        _rb("ru", _b_suggestions, L["pg_suggestions"]),
-        _rb("ru", _b_related, L["pg_related_queries"]),
+        _rb_r24("ru", _b_suggestions_r24, L["pg_suggestions"]),
+        _rb_r24("ru", _b_related_r24, L["pg_related_queries"]),
         _p_ru_images_orion,
         _rb("ru", _b_videos, L["pg_videos"]),
         _rb("ru", _b_knowledge, L["pg_knowledge_block"]),
@@ -1299,16 +1581,16 @@ def build_report_v3(
         _rb("ru", _b_conclusion, L["pg_interim_conclusion"]),
     ]
     intl_pages = [
-        _rb("intl", _b_summary, L["pg_audit_summary"]),
-        _rb("intl", _b_organic, L["pg_organic_overview"]),
+        _rb_r24("intl", _b_summary_r24, L["pg_audit_summary"]),
+        _rb_r24("intl", _b_organic_r24, L["pg_organic_overview"]),
         _rb("intl", _b_results_r23, L["pg_top_results"]),
         _rb("intl", _b_themes, L["pg_neg_themes"]),
-        _rb("intl", _b_suggestions, L["pg_suggestions"]),
+        _rb_r24("intl", _b_suggestions_r24, L["pg_suggestions"]),
         _p_intl_media_r2,
         _rb("intl", _b_wiki_knowledge, L["pg_wiki_knowledge"]),
         _rb("intl", _b_findings, L["pg_risk_findings"]),
-        _rb("intl", _b_data_quality, L["pg_data_quality"]),
-        _rb("intl", _b_conclusion, L["pg_conclusion"]),
+        _rb_r24("intl", _b_data_quality_r24, L["pg_data_quality"]),
+        _rb_r24("intl", _b_conclusion_r24, L["pg_conclusion"]),
     ]
     offer_pages = [
         _p_offer_cover,
