@@ -346,6 +346,11 @@ def r2_page_header(
     right_meta: str | None = None,
 ) -> Emu:
     """R2 header primitive; returns body top anchor."""
+    set_bg(slide, BG_LIGHT)
+    bar = slide.shapes.add_shape(RECT, Emu(0), Emu(0), SLIDE_W, Emu(73152))
+    bar.fill.solid()
+    bar.fill.fore_color.rgb = R2_ACCENT
+    bar.line.fill.background()
     if section_marker:
         m = r2_text_box(
             slide,

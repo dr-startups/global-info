@@ -125,7 +125,16 @@ def _p_contents(prs, vm, ctx):
 def _p_executive(prs, vm, ctx):
     L = vm["labels"]
     e = vm["executiveSummary"]
-    slide, top = _section(prs, ctx, L["executive_summary"], f"{L['overall_risk']}: {e['overallRiskLevel']}")
+    slide = T.blank_slide(prs)
+    top = T.r2_page_header(
+        slide,
+        title=L["executive_summary"],
+        subtitle=f"{L['overall_risk']}: {e['overallRiskLevel']}",
+        section_marker=L.get("section"),
+    )
+    T.r2_page_footer(slide, brand=ctx.brand, page_no=ctx.page, total=ctx.total)
+    if ctx.watermark:
+        T._watermark(slide, str(ctx.watermark))
     o = vm["overview"]
     c = vm["compliance"]
     cards = [
@@ -134,7 +143,7 @@ def _p_executive(prs, vm, ctx):
         {"label": L["m_uae_negative"], "value": o.get("negativeShareUae", "0%")},
         {"label": L["m_compliance_matches"], "value": c.get("activeMatches", 0), "tone": T.DANGER if c.get("activeMatches") else T.NEUTRAL_GRAY},
     ]
-    top = T.metric_cards(slide, top, cards, per_row=4)
+    top = T.r2_metric_cards(slide, top, cards, per_row=4)
     bullet_lines = [b for b in e.get("bullets", [])[:6] if b]
     warning = e.get("dataQualityWarning") if ctx.internal else None
     # Drop the warning if it merely repeats the last bullet (no duplication).
@@ -144,7 +153,7 @@ def _p_executive(prs, vm, ctx):
     # (incl. a safe gap), so the warning always sits below the list.
     top = T.bullets(slide, top, bullet_lines)
     if warning:
-        T.note(slide, top, warning, "warning")
+        T.r2_warning_card(slide, top, warning)
 
 
 def _p_risk_matrix(prs, vm, ctx):
@@ -159,18 +168,82 @@ def _p_risk_matrix(prs, vm, ctx):
 def _p_overview(prs, vm, ctx):
     L = vm["labels"]
     o = vm["overview"]
-    slide, top = _section(prs, ctx, L["digital_profile_overview"])
+    slide = T.blank_slide(prs)
+    top = T.r2_page_header(
+        slide,
+        title=L["digital_profile_overview"],
+        section_marker=L.get("section"),
+    )
+    T.r2_page_footer(slide, brand=ctx.brand, page_no=ctx.page, total=ctx.total)
+    if ctx.watermark:
+        T._watermark(slide, str(ctx.watermark))
     cards = [
         {"label": L["m_ru_negative_share"], "value": o.get("negativeShareRu", "0%")},
         {"label": L["m_uae_negative_share"], "value": o.get("negativeShareUae", "0%")},
         {"label": L["m_search_neg_total"], "value": f"{o.get('searchNegative', 0)}/{o.get('searchTotal', 0)}"},
         _risk_card_value(o.get("overallRiskLevel", "UNKNOWN"), L),
     ]
-    top = T.metric_cards(slide, top, cards, per_row=4)
-    T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(1500000), L["profile_summary"], [
-        f"{L['wikipedia_label']} {o.get('wikipediaStatus', '')}",
-        T.truncate(o.get("complianceSummary", ""), 120),
-    ])
+    top = T.r2_metric_cards(slide, top, cards, per_row=4)
+    summary_text = (
+        f"{L['profile_summary']}\n"
+        f"{L['wikipedia_label']} {o.get('wikipediaStatus', '')}\n"
+        f"{T.truncate(o.get('complianceSummary', ''), 140)}"
+    )
+    T.r2_text_box(
+        slide,
+        T.MARGIN,
+        top,
+        T.CONTENT_W,
+        Emu(1400000),
+        summary_text,
+        font_pt=T.R2_TYPO_BODY,
+        color=T.TEXT,
+        line_spacing=1.2,
+    )
+
+
+def _b_results_r2(slide, top, blk, vm, ctx):
+    """R2 pilot for RU top-search-results table (slide 8 only)."""
+    L = vm["labels"]
+    rows = [[x["provider"], x["rank"], x["domain"], T.truncate(x["title"], 46), x["classification"]] for x in blk["topResults"]]
+    if not rows:
+        T.r2_no_data_state(slide, top, L["nd_no_organic_region"])
+        return
+    T.r2_safe_table(
+        slide,
+        top,
+        [L["th_provider"], L["th_rank"], L["th_domain"], L["th_title"], L["th_class"]],
+        rows,
+        col_widths=[0.13, 0.08, 0.22, 0.37, 0.20],
+        max_rows=10,
+        overflow_note=L.get("showing_top", "Показаны первые {n} из {total}."),
+        layout_warnings=ctx.layout_warnings,
+    )
+
+
+def _p_ru_results_r2(prs, vm, ctx):
+    """R2 pilot page wrapper for RU top search results (slide 8)."""
+    L = vm["labels"]
+    blk = vm["ru"]
+    title = L["pg_top_results"].replace("{label}", blk["label"])
+    slide = T.blank_slide(prs)
+    top = T.r2_page_header(slide, title=title, section_marker=L.get("section"))
+    T.r2_page_footer(slide, brand=ctx.brand, page_no=ctx.page, total=ctx.total)
+    if ctx.watermark:
+        T._watermark(slide, str(ctx.watermark))
+    T.risk_badge(
+        slide,
+        Emu(int(T.SLIDE_W) - int(T.MARGIN) - 1500000),
+        Emu(228600),
+        blk["riskLevel"],
+    )
+    if not blk["present"]:
+        T.r2_no_data_state(
+            slide, top,
+            blk.get("noDataText") or L["no_evidence_region"].format(label=blk["label"]),
+        )
+        return
+    _b_results_r2(slide, top, blk, vm, ctx)
 
 
 # ===========================================================================
@@ -922,7 +995,7 @@ def build_report_v3(
     ru_pages = [
         _rb("ru", _b_summary, L["pg_audit_summary"]),
         _rb("ru", _b_organic, L["pg_organic_overview"]),
-        _rb("ru", _b_results, L["pg_top_results"]),
+        _p_ru_results_r2,
         _rb("ru", _b_themes, L["pg_neg_publications"]),
         _p_snapshots,
         _rb("ru", _b_suggestions, L["pg_suggestions"]),

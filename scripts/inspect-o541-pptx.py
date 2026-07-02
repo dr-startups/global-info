@@ -1037,6 +1037,68 @@ def compare_slide_xml_hash(pptx_a: Path, pptx_b: Path, slide_no: int) -> tuple[b
     return (ha == hb), f"slide{slide_no} hash a={ha[:8]} b={hb[:8]}"
 
 
+def slide3_r2_contract_ok(xml: str) -> tuple[bool, str]:
+    """Pilot R2 contract for slide 3 (executive summary)."""
+    ok_hf, det_hf = check_header_footer_contract(xml)
+    if not ok_hf:
+        return False, f"header/footer: {det_hf}"
+    ok_mc, det_mc = check_metric_card_grid(xml, min_cards=4)
+    if not ok_mc:
+        return False, f"metrics: {det_mc}"
+    ok_urls, det_urls = check_no_raw_urls_in_card_body(xml)
+    if not ok_urls:
+        return False, det_urls
+    ok_lbl, det_lbl = check_no_internal_labels_client_visible(xml)
+    if not ok_lbl:
+        return False, det_lbl
+    t = plain_text(xml).lower()
+    if "резюме" not in t and "executive" not in t:
+        return False, "missing executive-summary title marker"
+    return True, det_hf
+
+
+def slide5_r2_contract_ok(xml: str) -> tuple[bool, str]:
+    """Pilot R2 contract for slide 5 (digital profile overview)."""
+    ok_hf, det_hf = check_header_footer_contract(xml)
+    if not ok_hf:
+        return False, f"header/footer: {det_hf}"
+    cards = []
+    for c in round_rect_frames(xml):
+        w = c["right"] - c["x"]
+        if 600000 <= c["y"] <= 2600000 and 1400000 <= w <= 2600000:
+            cards.append(c)
+    if len(cards) < 4:
+        return False, f"metrics: expected >=4 top-row cards, found {len(cards)}"
+    top4 = sorted(cards, key=lambda c: c["x"])[:4]
+    hs = [c["bottom"] - c["y"] for c in top4]
+    if max(hs) - min(hs) > 60000:
+        return False, f"metrics: top-row height variance too high: {min(hs)}..{max(hs)}"
+    ok_lbl, det_lbl = check_no_internal_labels_client_visible(xml)
+    if not ok_lbl:
+        return False, det_lbl
+    t = plain_text(xml).lower()
+    if "обзор цифрового профиля" not in t and "digital profile overview" not in t:
+        return False, "missing overview title marker"
+    return True, det_hf
+
+
+def slide8_r2_table_contract_ok(xml: str) -> tuple[bool, str]:
+    """Pilot R2 contract for slide 8 (RU top search results table)."""
+    ok_hf, det_hf = check_header_footer_contract(xml)
+    if not ok_hf:
+        return False, f"header/footer: {det_hf}"
+    ok_tbl, det_tbl = check_table_overflow_contract(xml)
+    if not ok_tbl:
+        return False, f"table: {det_tbl}"
+    ok_lbl, det_lbl = check_no_internal_labels_client_visible(xml)
+    if not ok_lbl:
+        return False, det_lbl
+    t = plain_text(xml).lower()
+    if "топ результатов поиска" not in t and "top search results" not in t:
+        return False, "missing top-results title marker"
+    return True, det_tbl
+
+
 def _is_watermark_text(s: dict) -> bool:
     return s.get("text", "").strip().upper() in ("ЧЕРНОВИК", "DRAFT")
 
@@ -1474,6 +1536,8 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
         meta["slideCount"] = slide_count
         meta["mediaCount"] = len(media_files(z))
 
+        s3 = slide_xml(z, 3)
+        s5 = slide_xml(z, 5)
         s8 = slide_xml(z, 8)
         s11 = slide_xml(z, 11)
         s13 = slide_xml(z, 13)
@@ -1705,6 +1769,12 @@ def inspect(pptx: Path, report_json: dict | None = None, *, layout: bool = True)
 
             s8_bottom = max_shape_bottom(s8)
             meta["slide8MaxBottom"] = s8_bottom
+            ok3r2, det3r2 = slide3_r2_contract_ok(s3)
+            add("Slide 3 R2 contract", ok3r2, det3r2)
+            ok5r2, det5r2 = slide5_r2_contract_ok(s5)
+            add("Slide 5 R2 contract", ok5r2, det5r2)
+            ok8r2, det8r2 = slide8_r2_table_contract_ok(s8)
+            add("Slide 8 R2 table contract", ok8r2, det8r2)
             add(
                 "Slide 8 within footer safe area",
                 s8_bottom <= FOOTER_SAFE_BOTTOM,
