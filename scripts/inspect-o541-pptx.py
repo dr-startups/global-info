@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import sys
 import zipfile
@@ -937,6 +938,103 @@ def vertical_overlap(a: dict, b: dict, min_gap: int = ZONE_MIN_GAP) -> bool:
     if a["y"] <= b["y"]:
         return (a["bottom"] + min_gap) > b["y"]
     return (b["bottom"] + min_gap) > a["y"]
+
+
+def check_footer_safe_area(xml: str, *, safe_bottom: int = FOOTER_SAFE_BOTTOM) -> tuple[bool, str]:
+    """Generic footer-safe-area check for any slide XML."""
+    bottom = max_shape_bottom(xml)
+    if bottom <= safe_bottom:
+        return True, f"max_bottom={bottom}"
+    return False, f"max_bottom={bottom} > safe_bottom={safe_bottom}"
+
+
+def check_header_footer_contract(xml: str) -> tuple[bool, str]:
+    """Basic page-frame contract: top accent + footer line + safe area."""
+    has_top_bar = bool(re.search(r"<a:off x=\"0\" y=\"0\".*?<a:ext cx=\"9144000\" cy=\"73152\"", xml, re.S))
+    has_footer_line = bool(re.search(r"<a:off x=\"548640\" y=\"6492240\".*?<a:ext cx=\"8046720\" cy=\"12700\"", xml, re.S))
+    ok_safe, det_safe = check_footer_safe_area(xml)
+    if not has_top_bar:
+        return False, "missing top accent bar"
+    if not has_footer_line:
+        return False, "missing footer line"
+    if not ok_safe:
+        return False, det_safe
+    return True, det_safe
+
+
+def check_metric_card_grid(xml: str, *, min_cards: int = 2, min_w: int = 1200000, min_h: int = 450000) -> tuple[bool, str]:
+    """Heuristic metric-card grid check (equal-ish card heights, no overlap)."""
+    shapes = [
+        s for s in sp_shapes(xml)
+        if s["round"] and s["w"] >= min_w and s["h"] >= min_h and s["y"] < 3200000
+    ]
+    if len(shapes) < min_cards:
+        return True, f"metric_cards={len(shapes)}"
+    hs = sorted(s["h"] for s in shapes)
+    if hs[-1] - hs[0] > 120000:
+        return False, f"metric height variance too high: {hs[0]}..{hs[-1]}"
+    for i, a in enumerate(shapes):
+        for b in shapes[i + 1:]:
+            if vertical_overlap(a, b, min_gap=0) and shapes_horizontally_overlap(a, b):
+                return False, "metric cards overlap"
+    return True, f"metric_cards={len(shapes)}"
+
+
+def check_table_overflow_contract(xml: str) -> tuple[bool, str]:
+    """Table and notes should not collide with footer and each other."""
+    if not source_note_below_table(xml, min_gap=PDF_SAFE_TABLE_NOTE_GAP // 2):
+        return False, "source/overflow note too close to table"
+    if not table_rows_not_over_footnote(xml, min_gap=PDF_SAFE_TABLE_NOTE_GAP // 2):
+        return False, "table rows collide with footer note"
+    ok_safe, det = check_footer_safe_area(xml)
+    if not ok_safe:
+        return False, det
+    return True, det
+
+
+def check_no_data_contract(xml: str) -> tuple[bool, str]:
+    """No-data cards should be visible and above footer safe area."""
+    shapes = text_shapes(xml)
+    nd = [s for s in shapes if re.search(r"no data|не обнаруж|не найден|not found|not available", s["text"], re.I)]
+    if not nd:
+        return True, "no no-data card"
+    for s in nd:
+        if s["bottom"] > FOOTER_SAFE_BOTTOM:
+            return False, f"no-data text below safe area bottom={s['bottom']}"
+    return True, f"no_data_cards={len(nd)}"
+
+
+def check_no_raw_urls_in_card_body(xml: str) -> tuple[bool, str]:
+    """Card body text should not expose raw http/https URLs."""
+    for s in text_shapes(xml):
+        txt = s["text"]
+        if re.search(r"https?://", txt, re.I):
+            return False, f"raw url in text: {txt[:64]!r}"
+    return True, "no raw urls"
+
+
+def check_no_internal_labels_client_visible(xml: str) -> tuple[bool, str]:
+    """Client-visible slides should not leak internal/debug labels."""
+    t = plain_text(xml)
+    bad = re.search(
+        r"likely[ _]subject|possible[ _]subject|review[ _]required|sourceMode|rawMetadata|providerAdapter|internalOnly",
+        t,
+        re.I,
+    )
+    if bad:
+        return False, f"internal label visible: {bad.group(0)!r}"
+    return True, "no internal labels"
+
+
+def compare_slide_xml_hash(pptx_a: Path, pptx_b: Path, slide_no: int) -> tuple[bool, str]:
+    """Compare exact XML hash for a slide between two PPTX artifacts."""
+    name = f"ppt/slides/slide{slide_no}.xml"
+    with zipfile.ZipFile(pptx_a) as za, zipfile.ZipFile(pptx_b) as zb:
+        if name not in za.namelist() or name not in zb.namelist():
+            return False, f"missing {name} in one of artifacts"
+        ha = hashlib.sha256(za.read(name)).hexdigest()
+        hb = hashlib.sha256(zb.read(name)).hexdigest()
+    return (ha == hb), f"slide{slide_no} hash a={ha[:8]} b={hb[:8]}"
 
 
 def _is_watermark_text(s: dict) -> bool:

@@ -91,6 +91,60 @@ CONTENT_SAFE_BOTTOM = Emu(int(FOOTER_Y) - 182880)
 ROUNDED_RECT = 5
 RECT = 1
 
+# ---------------------------------------------------------------------------
+# R2 Design System Foundation (tokens only; backward-compatible, unused by default)
+# ---------------------------------------------------------------------------
+
+# R2 typography scale (pt)
+R2_TYPO_SECTION_MARKER = 9
+R2_TYPO_PAGE_TITLE = 28
+R2_TYPO_SUBTITLE = 13
+R2_TYPO_BODY = 11
+R2_TYPO_METRIC_LABEL = 10
+R2_TYPO_METRIC_VALUE = 28
+R2_TYPO_TABLE_HEADER = 11
+R2_TYPO_TABLE_BODY = 10
+R2_TYPO_NOTE = 10
+R2_TYPO_BUTTON = 10
+
+# R2 spacing scale (EMU)
+R2_SPACE_XS = Emu(45720)     # 0.05"
+R2_SPACE_SM = Emu(91440)     # 0.10"
+R2_SPACE_MD = Emu(137160)    # 0.15"
+R2_SPACE_LG = Emu(182880)    # 0.20"
+R2_SPACE_XL = Emu(274320)    # 0.30"
+R2_CARD_PADDING = Emu(114300)
+R2_SECTION_GAP = Emu(160000)
+R2_TABLE_CELL_PAD = Emu(80000)
+R2_FOOTER_GAP = Emu(182880)
+R2_MEDIA_CARD_GAP = Emu(137160)
+
+# R2 safe-area zones
+R2_SLIDE_LEFT = MARGIN
+R2_SLIDE_RIGHT = Emu(int(SLIDE_W) - int(MARGIN))
+R2_CONTENT_LEFT = MARGIN
+R2_CONTENT_RIGHT = Emu(int(MARGIN) + int(CONTENT_W))
+R2_HEADER_TOP = Emu(131064)
+R2_HEADER_BOTTOM = Emu(1219200)
+R2_BODY_TOP = CONTENT_TOP
+R2_BODY_BOTTOM = CONTENT_SAFE_BOTTOM
+R2_FOOTER_TOP = FOOTER_Y
+R2_FOOTER_BOTTOM = Emu(int(SLIDE_H) - 36000)
+R2_FOOTER_SAFE_BOTTOM = CONTENT_SAFE_BOTTOM
+R2_MIN_GAP_BEFORE_FOOTER = Emu(182880)
+
+# R2 visual style tokens
+R2_CARD_RADIUS = ROUNDED_RECT
+R2_CARD_BORDER_WIDTH_PT = 0.75
+R2_CARD_SHADOW_DX = Emu(8000)
+R2_CARD_SHADOW_DY = Emu(12000)
+R2_BG_LIGHT = BG_LIGHT
+R2_TEXT_MUTED = NEUTRAL_GRAY
+R2_ACCENT = ACCENT
+R2_WARNING = WARNING
+R2_SUCCESS = SUCCESS
+R2_DANGER = DANGER
+
 # Localizable table footnote ("Showing top N of M."). Set per-render via
 # ``set_table_strings`` so v3 tables honour the report language.
 _SHOWING_TOP = "Showing top {n} of {total}."
@@ -197,6 +251,198 @@ def _watermark(slide, text: str) -> None:
     p = box.text_frame.paragraphs[0]
     p.alignment = PP_ALIGN.CENTER
     _run(p, text, 66, WATERMARK_COLOR, bold=True)
+
+
+# ---------------------------------------------------------------------------
+# R2 primitives (foundation only; intentionally not wired into slide builders yet)
+# ---------------------------------------------------------------------------
+
+def r2_truncate_lines(text: Any, max_lines: int = 2, line_len: int = 64) -> str:
+    """Conservative line-cap truncation for stable card/table text zones."""
+    s = " ".join(str(text or "").split())
+    if not s:
+        return ""
+    words = s.split(" ")
+    lines: list[str] = []
+    current = ""
+    for w in words:
+        candidate = (current + " " + w).strip()
+        if len(candidate) <= line_len:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+        current = w
+        if len(lines) >= max_lines:
+            break
+    if current and len(lines) < max_lines:
+        lines.append(current)
+    joined = "\n".join(lines[:max_lines])
+    if len(" ".join(words)) > len(" ".join(" ".join(lines).split())):
+        return truncate(joined.replace("\n", " "), max_lines * line_len)
+    return joined
+
+
+def r2_text_box(
+    slide,
+    x: Emu,
+    y: Emu,
+    w: Emu,
+    h: Emu,
+    text: str,
+    *,
+    size: int = R2_TYPO_BODY,
+    color: RGBColor = NEUTRAL_DARK,
+    bold: bool = False,
+    italic: bool = False,
+    align: PP_ALIGN | None = None,
+):
+    """Simple typed text-box primitive with R2 defaults."""
+    box = textbox(slide, x, y, w, h)
+    tf = box.text_frame
+    p = tf.paragraphs[0]
+    if align is not None:
+        p.alignment = align
+    _run(p, text, size, color, bold=bold, italic=italic)
+    return box
+
+
+def r2_card(
+    slide,
+    x: Emu,
+    y: Emu,
+    w: Emu,
+    h: Emu,
+    *,
+    fill: RGBColor = R2_BG_LIGHT,
+    border: RGBColor = NEUTRAL_LINE,
+    radius: int = R2_CARD_RADIUS,
+):
+    """Base rounded card primitive for future slide migration."""
+    shp = slide.shapes.add_shape(radius, x, y, w, h)
+    shp.fill.solid()
+    shp.fill.fore_color.rgb = fill
+    shp.line.color.rgb = border
+    shp.line.width = Pt(R2_CARD_BORDER_WIDTH_PT)
+    return shp
+
+
+def r2_overflow_note(slide, top: Emu, text: str) -> Emu:
+    """R2 overflow note primitive; draw only if safe area allows."""
+    if not text:
+        return top
+    h = int(text_block_height([text], R2_TYPO_NOTE, CONTENT_W, space_after_pt=0.0, pad_pt=8.0))
+    if int(top) + h > int(R2_FOOTER_SAFE_BOTTOM):
+        return top
+    return note(slide, top, text, "info")
+
+
+def r2_page_header(
+    slide,
+    *,
+    title: str,
+    subtitle: str | None = None,
+    section_marker: str | None = None,
+    right_meta: str | None = None,
+) -> Emu:
+    """R2 header primitive; returns body top anchor."""
+    if section_marker:
+        m = r2_text_box(
+            slide,
+            R2_CONTENT_LEFT,
+            Emu(165000),
+            Emu(2200000),
+            Emu(140000),
+            section_marker,
+            size=R2_TYPO_SECTION_MARKER,
+            color=R2_ACCENT,
+            bold=True,
+        )
+        del m
+    title_w = Emu(int(CONTENT_W) - 1700000 if right_meta else int(CONTENT_W))
+    r2_text_box(
+        slide,
+        R2_CONTENT_LEFT,
+        Emu(250000),
+        title_w,
+        Emu(900000),
+        r2_truncate_lines(title, max_lines=2, line_len=56),
+        size=R2_TYPO_PAGE_TITLE,
+        color=BRAND_PRIMARY,
+        bold=True,
+    )
+    if subtitle:
+        r2_text_box(
+            slide,
+            R2_CONTENT_LEFT,
+            Emu(760000),
+            title_w,
+            Emu(260000),
+            truncate(subtitle, 90),
+            size=R2_TYPO_SUBTITLE,
+            color=R2_TEXT_MUTED,
+        )
+    if right_meta:
+        r2_text_box(
+            slide,
+            Emu(int(SLIDE_W) - int(MARGIN) - 1700000),
+            Emu(250000),
+            Emu(1700000),
+            Emu(260000),
+            truncate(right_meta, 42),
+            size=R2_TYPO_NOTE,
+            color=R2_TEXT_MUTED,
+            align=PP_ALIGN.RIGHT,
+        )
+    return R2_BODY_TOP
+
+
+def r2_page_footer(slide, *, brand: str, page_no: int | None, total: int | None) -> None:
+    """R2 footer primitive with fixed safe-area behavior."""
+    footer(slide, brand, page_no, total)
+
+
+def r2_metric_cards(slide, top: Emu, cards: list[dict], per_row: int = 4) -> Emu:
+    """R2 metric cards primitive (wrapper over stable existing renderer)."""
+    return metric_cards(slide, top, cards, per_row=per_row)
+
+
+def r2_no_data_state(slide, top: Emu, text: str, *, tone: str = "info") -> Emu:
+    """R2 no-data primitive with client-safe default copy."""
+    _ = tone  # reserved for future palette variants
+    return no_data_card(slide, top, text or "No relevant data available for this section.")
+
+
+def r2_warning_card(slide, top: Emu, text: str) -> Emu:
+    """R2 warning/recommendation primitive."""
+    return warning_card(slide, top, text)
+
+
+def r2_safe_table(
+    slide,
+    top: Emu,
+    columns: list[str],
+    rows: list[list[Any]],
+    *,
+    col_widths: list[float] | None = None,
+    max_rows: int | None = None,
+    overflow_note: str | None = None,
+    layout_warnings: list[str] | None = None,
+) -> Emu:
+    """R2 table primitive with optional overflow note below the table."""
+    bottom = table(
+        slide,
+        top,
+        columns,
+        rows,
+        col_widths=col_widths,
+        max_rows=max_rows,
+        layout_warnings=layout_warnings,
+    )
+    if max_rows is not None and len(rows) > max_rows:
+        line = overflow_note or _SHOWING_TOP.format(n=max_rows, total=len(rows))
+        bottom = r2_overflow_note(slide, bottom, line)
+    return bottom
 
 
 # ---------------------------------------------------------------------------
