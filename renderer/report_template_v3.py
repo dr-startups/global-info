@@ -1746,6 +1746,69 @@ def _p_r31_appendix_conclusion(prs, vm, ctx):
     )
 
 
+def _p_r32_provider_diagnostics(prs, vm, ctx):
+    if not ctx.internal:
+        return
+    L = vm["labels"]
+    pd = vm.get("providerDiagnostics") or {}
+    slide, top = _section(
+        prs,
+        ctx,
+        L.get("r32_provider_diag_title", "Диагностика источников"),
+        L.get(
+            "r32_provider_diag_subtitle",
+            "Матрица доступности источников по текущей конфигурации и режиму выполнения.",
+        ),
+    )
+    cards = list(pd.get("cards") or [])
+    if cards:
+        top = T.metric_cards(slide, top, cards[:4], per_row=4)
+    rows = []
+    for r in list(pd.get("rows") or []):
+        rows.append(
+            [
+                T.r2_truncate_cell_text(r.get("source"), 28),
+                T.r2_truncate_cell_text(r.get("category"), 16),
+                T.r2_truncate_cell_text(r.get("mode"), 14),
+                T.r2_truncate_cell_text(r.get("status"), 16),
+                T.r2_truncate_cell_text(r.get("risk"), 10),
+                T.r2_truncate_cell_text(r.get("note"), 48),
+            ]
+        )
+    if rows:
+        top = T.table(
+            slide,
+            top,
+            [
+                L.get("r32_diag_th_source", "Источник"),
+                L.get("r32_diag_th_category", "Категория"),
+                L.get("r32_diag_th_mode", "Режим"),
+                L.get("r32_diag_th_status", "Статус"),
+                L.get("r32_diag_th_risk", "Риск"),
+                L.get("r32_diag_th_note", "Комментарий"),
+            ],
+            rows,
+            max_rows=8,
+            col_widths=[0.18, 0.12, 0.11, 0.14, 0.10, 0.35],
+            note_text=L.get("r32_provider_diag_table_note", "Показаны ключевые источники и текущая готовность."),
+            layout_warnings=ctx.layout_warnings,
+        )
+    else:
+        top = T.no_data_card(slide, top, L.get("r32_provider_diag_no_data", "Диагностические данные недоступны."))
+    notes = [str(x) for x in list(pd.get("auditNotes") or []) if str(x).strip()]
+    if notes:
+        top = T.bullets(slide, top, notes[:3], max_items=3, layout_warnings=ctx.layout_warnings)
+    T.note(
+        slide,
+        top,
+        L.get(
+            "r32_provider_diag_note",
+            "Технические детали ограничены безопасным описанием, без URL, ключей и секретов.",
+        ),
+        "disclaimer",
+    )
+
+
 def _solution(vm, idx: int) -> dict:
     sols = vm["offerBlock"]["solutions"]
     if idx < len(sols):
@@ -1883,6 +1946,7 @@ def build_report_v3(
         _p_r31_risk_reasoning_by_region,
         _p_r31_appendix_conclusion,
     ]
+    diagnostics_pages = [_p_r32_provider_diagnostics] if ctx.internal else []
 
     builders: list[Callable] = [
         _p_cover, _p_contents, _p_executive, _p_risk_matrix, _p_overview,
@@ -1895,6 +1959,7 @@ def build_report_v3(
         _p_compliance_findings,
         *offer_pages,
         *r31_pages,
+        *diagnostics_pages,
     ]
 
     ctx.total = len(builders)

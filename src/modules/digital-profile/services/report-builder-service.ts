@@ -32,6 +32,7 @@ import {
   buildSelectedEvidenceReportVm,
   patchAuditSummaryWithSelectedEvidence,
 } from "../report/selected-evidence-report-vm";
+import { buildProviderDiagnostics } from "../report/provider-diagnostics";
 import {
   createInternalHygieneWarning,
   filterComplianceForReport,
@@ -615,6 +616,9 @@ export async function buildReportJson(
     }
   }
 
+  // Stage R3.2b — provider health/capability matrix (no network calls).
+  const providerDiagnostics = buildProviderDiagnostics();
+
   return {
     meta: {
       caseNumber: caseRow.caseNumber,
@@ -640,6 +644,7 @@ export async function buildReportJson(
     searchSurfaces,
     evidenceQuality,
     selectedEvidence,
+    providerDiagnostics,
   };
 }
 

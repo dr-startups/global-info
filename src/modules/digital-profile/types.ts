@@ -386,6 +386,66 @@ export interface ReportJson {
   evidenceQuality?: import("./evidence-quality/types").EvidenceQualitySummary;
   /** Stage O5.4 — selected evidence VM for renderer enforcement. */
   selectedEvidence?: import("./report/selected-evidence-report-vm").SelectedEvidenceReportVm;
+  /** Stage R3.2b — provider/runtime diagnostics block (no external calls). */
+  providerDiagnostics?: ReportProviderDiagnostics;
+}
+
+export type ProviderDiagnosticCategory =
+  | "search"
+  | "surface"
+  | "knowledge"
+  | "compliance"
+  | "screenshot"
+  | "pipeline";
+
+export type ProviderDiagnosticStatus =
+  | "ready"
+  | "configured"
+  | "not_configured"
+  | "stub"
+  | "mock"
+  | "fallback"
+  | "failed"
+  | "unknown";
+
+export type ProviderDiagnosticRuntimeMode =
+  | "real"
+  | "mock"
+  | "mixed"
+  | "manual"
+  | "synthetic"
+  | "unknown";
+
+export type ProviderDiagnosticRisk = "low" | "medium" | "high";
+
+export interface ReportProviderDiagnosticItem {
+  id: string;
+  label: string;
+  category: ProviderDiagnosticCategory;
+  status: ProviderDiagnosticStatus;
+  runtimeMode: ProviderDiagnosticRuntimeMode;
+  reachesReport: boolean;
+  clientVisible: boolean;
+  risk: ProviderDiagnosticRisk;
+  message: string;
+  safeDetail?: string;
+  internalDetail?: string;
+}
+
+export interface ReportProviderDiagnostics {
+  auditMode: {
+    fullAuditOrderMode: "mock_first" | "real_first" | "mixed" | "unknown";
+    isMockDefault: boolean;
+    notes: string[];
+  };
+  providers: ReportProviderDiagnosticItem[];
+  summary: {
+    readyCount: number;
+    realCount: number;
+    mockOrStubCount: number;
+    highRiskCount: number;
+    productionReady: boolean;
+  };
 }
 
 /** Stage S1 — minimal SERP snapshot reference embedded in report_json. */

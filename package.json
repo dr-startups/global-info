@@ -46,6 +46,8 @@
     "smoke:strict-identity-and-images-o53": "tsx scripts/smoke-strict-identity-and-images-o53.ts",
     "smoke:report-selected-evidence-rendering-o54": "tsx scripts/smoke-report-selected-evidence-rendering-o54.ts",
     "smoke:report-artifact-integrity-o541": "tsx scripts/smoke-report-artifact-integrity-o541.ts",
+    "smoke:provider-diagnostics-r32b": "tsx scripts/smoke-provider-diagnostics-r32b.ts",
+    "qa:r3-2b-provider-health": "tsx scripts/qa-r3-2b-provider-health.ts",
     "smoke:report-media-layout-o542": "tsx scripts/smoke-report-media-layout-o542.ts",
     "smoke:report-visual-overflow-v16": "tsx scripts/smoke-report-visual-overflow-v16.ts",
     "smoke:report-i18n": "node scripts/smoke-report-i18n.mjs",

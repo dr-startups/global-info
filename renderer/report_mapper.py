@@ -1638,6 +1638,58 @@ def _risk_reasoning_by_region_vm(vm: dict, L: dict) -> dict:
     return {"ru": _one(vm.get("ru") or {}), "intl": _one(vm.get("intl") or {})}
 
 
+def _provider_diagnostics_vm(block: dict, L: dict, internal: bool) -> dict:
+    src = block or {}
+    summary = src.get("summary") or {}
+    rows = []
+    for p in list(src.get("providers") or []):
+        rows.append(
+            {
+                "source": str(p.get("label") or p.get("id") or "—"),
+                "category": str(p.get("category") or "unknown"),
+                "mode": str(p.get("runtimeMode") or "unknown"),
+                "status": str(p.get("status") or "unknown"),
+                "risk": str(p.get("risk") or "unknown"),
+                "note": str(
+                    p.get("internalDetail")
+                    if internal and p.get("internalDetail")
+                    else p.get("safeDetail")
+                    or p.get("message")
+                    or "—"
+                ),
+            }
+        )
+    return {
+        "title": L.get("r32_provider_diag_title", "Provider diagnostics"),
+        "subtitle": L.get(
+            "r32_provider_diag_subtitle",
+            "Runtime capability matrix from current configuration and resolver state.",
+        ),
+        "cards": [
+            {
+                "label": L.get("r32_provider_diag_real_ready", "Real / Ready"),
+                "value": f"{int(summary.get('realCount', 0) or 0)} / {int(summary.get('readyCount', 0) or 0)}",
+            },
+            {
+                "label": L.get("r32_provider_diag_mock_stub", "Mock / Stub"),
+                "value": int(summary.get("mockOrStubCount", 0) or 0),
+            },
+            {
+                "label": L.get("r32_provider_diag_high_risk", "High risk"),
+                "value": int(summary.get("highRiskCount", 0) or 0),
+            },
+            {
+                "label": L.get("r32_provider_diag_prod_ready", "Production ready"),
+                "value": L.get("yes", "Yes")
+                if bool(summary.get("productionReady"))
+                else L.get("no", "No"),
+            },
+        ],
+        "rows": rows,
+        "auditNotes": list((src.get("auditMode") or {}).get("notes") or []),
+    }
+
+
 def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[dict, list[str]]:
     vm, warnings = build_view_model_v2(report_json)
     internal = str(audience).lower() != "client"
@@ -1699,6 +1751,11 @@ def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[
     vm["mediaEvidenceOverview"] = _media_evidence_overview_vm(vm, vm["labels"])
     vm["riskReasoningOverview"] = _risk_reasoning_overview_vm(vm, vm["labels"])
     vm["riskReasoningByRegion"] = _risk_reasoning_by_region_vm(vm, vm["labels"])
+    vm["providerDiagnostics"] = _provider_diagnostics_vm(
+        report_json.get("providerDiagnostics") or {},
+        vm["labels"],
+        internal,
+    )
     vm["appendixConclusion"] = {
         "title": vm["labels"].get("r31_appendix_conclusion_title", "Appendix conclusion"),
         "lines": [
