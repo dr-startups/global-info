@@ -1881,6 +1881,46 @@ def _r61_offer_block_checks(pptx_path: Path) -> tuple[int, list[str]]:
     return 0, lines
 
 
+def _r62_full_visual_polish_checks(pptx_path: Path) -> tuple[int, list[str]]:
+    fails: list[str] = []
+    with zipfile.ZipFile(pptx_path, "r") as z:
+        slide_count = sum(1 for n in z.namelist() if re.match(r"ppt/slides/slide\d+\.xml$", n))
+        for slide_n in range(1, slide_count + 1):
+            xml = _slide_xml(z, slide_n)
+            text = _plain_text(xml)
+            if not re.search(rf"\b{slide_n}\s*/\s*\d+\b", text):
+                fails.append(f"slide {slide_n} footer marker missing")
+            if URL_RE.search(text):
+                fails.append(f"slide {slide_n} raw URL visible")
+            if NULLISH_RE.search(text):
+                fails.append(f"slide {slide_n} has None/null/undefined text")
+
+            title_shape = next(
+                (
+                    s
+                    for s in _text_shapes(xml)
+                    if s["y"] <= 3200000
+                    and s["x"] <= 1900000
+                    and s["w"] >= 2200000
+                    and len(s["text"].strip()) >= 6
+                    and not re.search(r"\b\d+\s*/\s*\d+\b", s["text"])
+                    and s["text"].strip().upper() not in {"LOW", "MEDIUM", "HIGH", "CRITICAL", "UNKNOWN"}
+                    and s["text"].strip().upper() not in {"ЧЕРНОВИК", "DRAFT"}
+                ),
+                None,
+            )
+            if title_shape is None:
+                fails.append(f"slide {slide_n} title unreadable/missing")
+
+    lines: list[str] = []
+    if fails:
+        for f in fails:
+            lines.append(f"[FAIL] R6.2 {f}")
+        return 1, lines
+    lines.append("[PASS] R6.2 full visual polish — footer markers, title readability and URL hygiene verified")
+    return 0, lines
+
+
 def _r36_production_gate_checks(pptx_path: Path, report_json_path: Path) -> tuple[int, list[str]]:
     fails: list[str] = []
     report_json: dict[str, Any] = {}
@@ -2049,6 +2089,9 @@ def main() -> int:
     r61_rc, r61_lines = _r61_offer_block_checks(pptx_path)
     for line in r61_lines:
         print(line)
+    r62_rc, r62_lines = _r62_full_visual_polish_checks(pptx_path)
+    for line in r62_lines:
+        print(line)
     # R3.6 — regression locks use an internal baseline; client/production artifacts
     # legitimately differ on audience-gated slides, so lock only internal artifacts.
     _reg_report_json: dict[str, Any] = {}
@@ -2078,7 +2121,7 @@ def main() -> int:
     )
     for line in s13_sem_lines:
         print(line)
-    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or r42_rc != 0 or r43_rc != 0 or r51_rc != 0 or r53_rc != 0 or r54_rc != 0 or r61_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
+    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or r42_rc != 0 or r43_rc != 0 or r51_rc != 0 or r53_rc != 0 or r54_rc != 0 or r61_rc != 0 or r62_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
 
 
 if __name__ == "__main__":

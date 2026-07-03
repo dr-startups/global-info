@@ -88,6 +88,8 @@ def _p_cover(prs, vm, ctx):
     T.set_bg(slide, T.BRAND_PRIMARY)
     c = vm["cover"]
     ob = vm["offerBlock"]
+    # R6.2: keep the cover premium, but still follow the global page-marker contract.
+    T.footer(slide, c.get("brand", ctx.brand), ctx.page, ctx.total)
     # accent rule
     rule = slide.shapes.add_shape(T.RECT, T.MARGIN, Emu(1700000), Emu(2200000), Emu(54864))
     rule.fill.solid()
@@ -103,7 +105,8 @@ def _p_cover(prs, vm, ctx):
     p.space_before = Pt(14)
     T._run(tf.add_paragraph(), f"{L['audit_date']}: {c.get('auditDate', '')}", T.FS_SUBTITLE, T.ACCENT_SOFT)
     T._run(tf.add_paragraph(), c.get("brand", ""), T.FS_SUBTITLE, T.ACCENT_SOFT)
-    contact = " · ".join(x for x in [c.get("website", ""), c.get("contact", "")] if x)
+    safe_website = re.sub(r"^https?://", "", str(c.get("website", "")).strip(), flags=re.I)
+    contact = " · ".join(x for x in [safe_website, c.get("contact", "")] if x)
     if contact:
         T._run(tf.add_paragraph(), contact, T.FS_NOTE + 1, T.NEUTRAL_GRAY)
 

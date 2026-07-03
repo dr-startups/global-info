@@ -73,6 +73,7 @@
     "qa:r5-3-live-providers": "tsx scripts/qa-r5-3-live-providers.ts",
     "qa:r5-4-source-quality": "tsx scripts/qa-r5-4-source-quality.ts",
     "qa:r6-1-offer-block": "tsx scripts/qa-r6-1-offer-block.ts",
+    "qa:r6-2-visual-polish": "tsx scripts/qa-r6-2-visual-polish.ts",
     "smoke:report-media-layout-o542": "tsx scripts/smoke-report-media-layout-o542.ts",
     "smoke:report-visual-overflow-v16": "tsx scripts/smoke-report-visual-overflow-v16.ts",
     "smoke:report-i18n": "node scripts/smoke-report-i18n.mjs",
