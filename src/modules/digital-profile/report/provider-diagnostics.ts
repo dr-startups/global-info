@@ -10,10 +10,12 @@ import {
 } from "../providers/config";
 import { externalGoogleSerpProvider } from "../providers/external-google-serp-provider";
 import type {
+  ProviderReadinessStatus,
   ProviderRuntimeKind,
   ProviderSupportMatrix,
   ReportProviderDiagnosticItem,
   ReportProviderDiagnostics,
+  ReportProviderReadinessSummary,
   ReportSourceProvenanceRow,
 } from "../types";
 
@@ -48,6 +50,15 @@ const PROVIDER_SUPPORTS: Record<string, Partial<ProviderSupportMatrix>> = {
   synthetic_serp: { screenshots: true },
 };
 
+function sanitizeMissingKeyNames(keys: string[] | undefined): string[] {
+  return (keys ?? []).map((k) =>
+    String(k)
+      .replace(/_API_KEY\b/g, "_CREDENTIAL")
+      .replace(/_SECRET\b/g, "_CREDENTIAL")
+      .replace(/_TOKEN\b/g, "_CREDENTIAL")
+  );
+}
+
 function supportMatrix(id: string): ProviderSupportMatrix {
   return { ...NO_SUPPORT, ...(PROVIDER_SUPPORTS[id] ?? {}) };
 }
@@ -58,21 +69,44 @@ function supportMatrix(id: string): ProviderSupportMatrix {
  */
 function enrichCapability(
   item: ReportProviderDiagnosticItem,
-  input: { runtimeKind: ProviderRuntimeKind; requiresSecrets: boolean; hasCredentials: boolean }
+  input: {
+    runtimeKind: ProviderRuntimeKind;
+    requiresSecrets: boolean;
+    hasCredentials: boolean;
+    missingConfigKeys?: string[];
+    warnings?: string[];
+    recommendedAction?: string;
+  }
 ): ReportProviderDiagnosticItem {
   // A provider is "available" when it can contribute to the report — only
   // unconfigured or failed providers are unavailable. Manual/stub/synthetic
   // paths still reach the report.
   const available = item.status !== "not_configured" && item.status !== "failed";
   const productionReady = item.status === "ready" && item.risk === "low";
+  let readinessStatus: ProviderReadinessStatus = "unknown";
+  if (item.status === "ready") readinessStatus = "ready";
+  else if (item.status === "not_configured") readinessStatus = "missing_config";
+  else if (item.status === "failed") readinessStatus = "unavailable";
+  else if (item.runtimeKind === "manual") readinessStatus = "manual_only";
+  else if (item.runtimeKind === "synthetic") readinessStatus = "synthetic_only";
+  else if (item.status === "fallback" || item.status === "stub") readinessStatus = "fallback_only";
+  else if (item.status === "mock") readinessStatus = "fallback_only";
+  else if (item.status === "configured") readinessStatus = "disabled";
   return {
     ...item,
     runtimeKind: input.runtimeKind,
     requiresSecrets: input.requiresSecrets,
     hasCredentials: input.hasCredentials,
+    credentialsPresent: input.hasCredentials,
     available,
     productionReady,
     supports: supportMatrix(item.id),
+    readinessStatus,
+    safeReason: item.safeDetail ?? item.message,
+    internalReason: item.internalDetail,
+    missingConfigKeys: sanitizeMissingKeyNames(input.missingConfigKeys),
+    warnings: input.warnings ?? [],
+    recommendedAction: input.recommendedAction,
   };
 }
 
@@ -123,6 +157,14 @@ function normalizeProviderStatus(
     runtimeKind: status.kind === "MOCK" ? "mock" : "real",
     requiresSecrets,
     hasCredentials: requiresSecrets ? status.missingConfigKeys.length === 0 : true,
+    missingConfigKeys: status.missingConfigKeys,
+    warnings: skippedReason ? [skippedReason] : [],
+    recommendedAction:
+      status.missingConfigKeys.length > 0
+        ? "Configure missing provider keys or keep fallback/manual collection."
+        : selectedByStrategy
+          ? "Provider is included in current runtime strategy."
+          : "Provider is currently outside selected runtime order.",
   });
 }
 
@@ -172,6 +214,18 @@ function buildSerperDiagnostics(
     runtimeKind: ready ? "real" : "stub",
     requiresSecrets: true,
     hasCredentials: Boolean(providerConfig.google.external.apiKey),
+    missingConfigKeys:
+      selectedExternal && !providerConfig.google.external.provider
+        ? ["GOOGLE_EXTERNAL_SERP_PROVIDER"]
+        : selectedExternal && !providerConfig.google.external.apiKey
+          ? ["GOOGLE_EXTERNAL_SERP_API_KEY"]
+          : [],
+    warnings: selectedExternal && !ready ? ["External SERP adapter not ready."] : [],
+    recommendedAction: selectedExternal
+      ? ready
+        ? "External SERP adapter ready for real-first runtime."
+        : "Complete external SERP provider setup or use custom_search."
+      : "Enable external_serp strategy only if required.",
   });
 }
 
@@ -209,6 +263,12 @@ function buildComplianceDiagnostics(
     runtimeKind: "manual",
     requiresSecrets: true,
     hasCredentials: configuredReal > 0,
+    missingConfigKeys: sanitizeMissingKeyNames(statuses.flatMap((s) =>
+      s.kind === "REAL" ? s.missingConfigKeys : []
+    )),
+    warnings: ["Real compliance adapters are not active in this build; manual path is used."],
+    recommendedAction:
+      "Use manual import for production runs in this build; real adapters remain informational.",
   });
 }
 
@@ -255,6 +315,18 @@ export function summarizeProviderDiagnostics(
   ).length;
   const productionReadyCount = providers.filter((p) => p.productionReady === true).length;
   const fallbackUsedCount = runtime ? runtime.fallbackEvents.length : undefined;
+  const realReadyCount = providers.filter(
+    (p) => p.runtimeKind === "real" && p.readinessStatus === "ready"
+  ).length;
+  const fallbackOnlyCount = providers.filter(
+    (p) => p.readinessStatus === "fallback_only"
+  ).length;
+  const missingConfigCount = providers.filter(
+    (p) => p.readinessStatus === "missing_config"
+  ).length;
+  const syntheticOnlyCount = providers.filter(
+    (p) => p.readinessStatus === "synthetic_only"
+  ).length;
   return {
     readyCount,
     realCount,
@@ -266,6 +338,62 @@ export function summarizeProviderDiagnostics(
     unavailableCount,
     productionReadyCount,
     fallbackUsedCount,
+    realReadyCount,
+    fallbackOnlyCount,
+    missingConfigCount,
+    syntheticOnlyCount,
+  };
+}
+
+function buildProviderReadinessSummary(
+  providers: ReportProviderDiagnosticItem[],
+  runtime: ReturnType<typeof resolveRuntimeStrategy>
+): ReportProviderReadinessSummary {
+  const byCategory: Record<string, number> = {};
+  const byRuntimeKind: Record<string, number> = {};
+  for (const p of providers) {
+    byCategory[p.category] = (byCategory[p.category] ?? 0) + 1;
+    const rk = p.runtimeKind ?? "unknown";
+    byRuntimeKind[rk] = (byRuntimeKind[rk] ?? 0) + 1;
+  }
+  const totalProviders = providers.length;
+  const readyCount = providers.filter((p) => p.readinessStatus === "ready").length;
+  const realReadyCount = providers.filter(
+    (p) => p.runtimeKind === "real" && p.readinessStatus === "ready"
+  ).length;
+  const fallbackOnlyCount = providers.filter(
+    (p) => p.readinessStatus === "fallback_only"
+  ).length;
+  const unavailableCount = providers.filter(
+    (p) => p.readinessStatus === "unavailable"
+  ).length;
+  const manualOnlyCount = providers.filter((p) => p.readinessStatus === "manual_only").length;
+  const syntheticOnlyCount = providers.filter(
+    (p) => p.readinessStatus === "synthetic_only"
+  ).length;
+  const missingConfigCount = providers.filter(
+    (p) => p.readinessStatus === "missing_config"
+  ).length;
+  const productionReadyCount = providers.filter((p) => p.productionReady === true).length;
+  const warnings = [
+    ...runtime.warnings,
+    ...providers.flatMap((p) => p.warnings ?? []),
+  ].filter(Boolean);
+  return {
+    totalProviders,
+    readyCount,
+    realReadyCount,
+    fallbackOnlyCount,
+    unavailableCount,
+    manualOnlyCount,
+    syntheticOnlyCount,
+    missingConfigCount,
+    productionReadyCount,
+    byCategory,
+    byRuntimeKind,
+    warnings,
+    safeSummaryLabel: `${readyCount}/${totalProviders} providers ready for current runtime.`,
+    readySourcesLabel: `${realReadyCount} real-ready sources in selected mode.`,
   };
 }
 
@@ -441,5 +569,6 @@ export function buildProviderDiagnostics(
     providers,
     summary: summarizeProviderDiagnostics(providers, runtime),
     sourceProvenance: buildSourceProvenance(providers, runtime, options.surfaceTotals),
+    providerReadinessSummary: buildProviderReadinessSummary(providers, runtime),
   };
 }

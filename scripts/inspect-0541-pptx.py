@@ -1476,6 +1476,15 @@ R36_PLACEHOLDER_RE = re.compile(r"\{[a-zA-Z_][a-zA-Z0-9_]*\}")
 R36_DIAG_TITLE_RE = re.compile(r"Диагностика источников|Provider diagnostics", re.I)
 
 
+def _mask_allowed_env_key_names(payload: str) -> str:
+    """Mask credential key *names* so secret-value regexes don't false-positive.
+
+    R5.1 allows internal diagnostics to expose missing configuration key names
+    (e.g. DOW_JONES_CLIENT_SECRET) as long as values are never exposed.
+    """
+    return re.sub(r'"[A-Z0-9_]+_(?:API_KEY|SECRET|TOKEN)"', '"CONFIG_KEY_NAME"', payload)
+
+
 def _r41_provider_runtime_checks(report_json_path: Path) -> tuple[int, list[str]]:
     """R4.1 — provider capability matrix, source provenance, richer summary.
 
@@ -1528,7 +1537,7 @@ def _r41_provider_runtime_checks(report_json_path: Path) -> tuple[int, list[str]
                 fails.append(f"provenance {row.get('sourceProvider')}: invalid inclusionDecision '{dec}'")
 
     # No secrets/env values anywhere in the diagnostics block.
-    diag_str = json.dumps(diag, ensure_ascii=False)
+    diag_str = _mask_allowed_env_key_names(json.dumps(diag, ensure_ascii=False))
     if R36_SECRET_RE.search(diag_str):
         m = R36_SECRET_RE.search(diag_str)
         fails.append(f"providerDiagnostics secret/env leakage: {m.group(0) if m else ''}")
@@ -1676,6 +1685,61 @@ def _r43_search_provenance_checks(report_json_path: Path) -> tuple[int, list[str
     return 0, lines
 
 
+def _r51_provider_readiness_checks(report_json_path: Path) -> tuple[int, list[str]]:
+    fails: list[str] = []
+    report_json: dict[str, Any] = {}
+    if report_json_path.exists():
+        report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+
+    is_client = "providerDiagnostics" not in report_json
+    raw = json.dumps(report_json, ensure_ascii=False)
+    readiness = report_json.get("providerReadinessSummary")
+
+    if not isinstance(readiness, dict):
+        fails.append("providerReadinessSummary missing")
+    else:
+        required = ["totalProviders", "readyCount", "realReadyCount", "unavailableCount"]
+        for key in required:
+            if not isinstance(readiness.get(key), int):
+                fails.append(f"providerReadinessSummary missing/invalid {key}")
+
+    if is_client:
+        forbidden = [
+            "missingConfigKeys",
+            "internalReason",
+            "recommendedAction",
+            "runtimeKind",
+        ]
+        leaked = [k for k in forbidden if f'"{k}"' in raw]
+        if leaked:
+            fails.append(f"client readiness leakage: {leaked}")
+    else:
+        block = report_json.get("providerDiagnostics") or {}
+        providers = block.get("providers") if isinstance(block, dict) else None
+        if not isinstance(providers, list) or len(providers) == 0:
+            fails.append("providerDiagnostics.providers missing for internal readiness audit")
+        else:
+            sample = providers[0] if isinstance(providers[0], dict) else {}
+            for key in (
+                "readinessStatus",
+                "credentialsPresent",
+                "requiresSecrets",
+                "productionReady",
+            ):
+                if key not in sample:
+                    fails.append(f"provider row missing R5.1 field: {key}")
+
+    lines: list[str] = []
+    if fails:
+        for f in fails:
+            lines.append(f"[FAIL] R5.1 {f}")
+        return 1, lines
+    lines.append(
+        "[PASS] R5.1 provider readiness — deterministic summary and client-safe diagnostics separation"
+    )
+    return 0, lines
+
+
 def _r36_production_gate_checks(pptx_path: Path, report_json_path: Path) -> tuple[int, list[str]]:
     fails: list[str] = []
     report_json: dict[str, Any] = {}
@@ -1710,7 +1774,9 @@ def _r36_production_gate_checks(pptx_path: Path, report_json_path: Path) -> tupl
     if not audience_is_client:
         # internal JSON may carry internalDetail/adapter fields, but never
         # secrets/env values or stack traces.
-        diag_str = json.dumps(report_json.get("providerDiagnostics") or {}, ensure_ascii=False)
+        diag_str = _mask_allowed_env_key_names(
+            json.dumps(report_json.get("providerDiagnostics") or {}, ensure_ascii=False)
+        )
         if R36_SECRET_RE.search(diag_str):
             m = R36_SECRET_RE.search(diag_str)
             fails.append(f"providerDiagnostics — secret/env leakage: {m.group(0) if m else ''}")
@@ -1830,6 +1896,9 @@ def main() -> int:
     r43_rc, r43_lines = _r43_search_provenance_checks(report_json_path)
     for line in r43_lines:
         print(line)
+    r51_rc, r51_lines = _r51_provider_readiness_checks(report_json_path)
+    for line in r51_lines:
+        print(line)
     # R3.6 — regression locks use an internal baseline; client/production artifacts
     # legitimately differ on audience-gated slides, so lock only internal artifacts.
     _reg_report_json: dict[str, Any] = {}
@@ -1859,7 +1928,7 @@ def main() -> int:
     )
     for line in s13_sem_lines:
         print(line)
-    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or r42_rc != 0 or r43_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
+    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or r42_rc != 0 or r43_rc != 0 or r51_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
 
 
 if __name__ == "__main__":

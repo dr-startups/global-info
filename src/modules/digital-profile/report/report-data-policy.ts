@@ -269,6 +269,7 @@ const CLIENT_FORBIDDEN_JSON_KEYS = new Set([
   "missingConfigKeys",
   "requiredEnv",
   "requiredEnvKeys",
+  "recommendedAction",
 ]);
 
 export type ReportJsonAudience = "internal" | "client";
@@ -377,6 +378,7 @@ export const CLIENT_FORBIDDEN_TEXT_MARKERS: string[] = [
   "missingConfigKeys",
   "requiredEnv",
   "requiredEnvKeys",
+  "runtimeKind",
   "topExclusionReasons",
   "process.env",
   ".env",
@@ -592,6 +594,22 @@ function sanitizeSearchProvenanceForClient(
   };
 }
 
+function sanitizeProviderReadinessSummaryForClient(
+  block: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!block) return block;
+  return {
+    totalProviders: block.totalProviders,
+    readyCount: block.readyCount,
+    realReadyCount: block.realReadyCount,
+    unavailableCount: block.unavailableCount,
+    safeSummaryLabel:
+      block.safeSummaryLabel ?? "Provider source readiness is summarized for this report.",
+    readySourcesLabel:
+      block.readySourcesLabel ?? "Real source readiness is available in internal diagnostics.",
+  };
+}
+
 function sanitizeEvidenceQualityForClient(
   evidenceQuality: Record<string, unknown> | undefined
 ): Record<string, unknown> | undefined {
@@ -659,6 +677,7 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
     sourceQualitySummary?: Record<string, unknown>;
     searchProvenanceSummary?: Record<string, unknown>;
     searchProvenance?: Record<string, unknown>;
+    providerReadinessSummary?: Record<string, unknown>;
     providerDiagnostics?: Record<string, unknown>;
     entityFiltering?: Record<string, unknown>;
     complianceRiskIntel?: Record<string, unknown>;
@@ -703,6 +722,9 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
   copy.sourceQualitySummary = sanitizeSourceQualitySummaryForClient(copy.sourceQualitySummary);
   copy.searchProvenanceSummary = sanitizeSearchProvenanceSummaryForClient(copy.searchProvenanceSummary);
   copy.searchProvenance = sanitizeSearchProvenanceForClient(copy.searchProvenance);
+  copy.providerReadinessSummary = sanitizeProviderReadinessSummaryForClient(
+    copy.providerReadinessSummary
+  );
   // Stage R3.6 — provider/runtime diagnostics are internal-only; never in client JSON.
   stripInternalDiagnostics(copy);
 

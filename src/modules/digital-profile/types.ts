@@ -397,6 +397,8 @@ export interface ReportJson {
   };
   /** Stage R3.2b — provider/runtime diagnostics block (no external calls). */
   providerDiagnostics?: ReportProviderDiagnostics;
+  /** Stage R5.1 — provider readiness rollup (internal rich, client-safe subset). */
+  providerReadinessSummary?: ReportProviderReadinessSummary;
   /** Stage R3.3 — entity/FIO filtering diagnostics (safe additive). */
   entityFiltering?: ReportEntityFilteringDiagnostics;
   /** Stage R3.5 — normalized compliance/risk intelligence (display-level, client-safe). */
@@ -567,6 +569,34 @@ export interface ReportSearchProvenanceSummary {
   screenshotSummaryLabel?: string;
   safeNote?: string;
 }
+
+export type ProviderReadinessStatus =
+  | "ready"
+  | "missing_config"
+  | "unavailable"
+  | "fallback_only"
+  | "manual_only"
+  | "synthetic_only"
+  | "disabled"
+  | "unknown";
+
+export interface ReportProviderReadinessSummary {
+  totalProviders: number;
+  readyCount: number;
+  realReadyCount: number;
+  fallbackOnlyCount: number;
+  unavailableCount: number;
+  manualOnlyCount: number;
+  syntheticOnlyCount: number;
+  missingConfigCount: number;
+  productionReadyCount: number;
+  byCategory: Record<string, number>;
+  byRuntimeKind: Record<string, number>;
+  warnings: string[];
+  /** Optional client-safe rollup fields. */
+  safeSummaryLabel?: string;
+  readySourcesLabel?: string;
+}
 export type ProviderRuntimeMode =
   | "legacy_mock_first"
   | "real_first_with_fallback"
@@ -602,6 +632,15 @@ export interface ReportProviderDiagnosticItem {
   available?: boolean;
   productionReady?: boolean;
   supports?: ProviderSupportMatrix;
+  /** Stage R5.1 — normalized readiness metadata. */
+  readinessStatus?: ProviderReadinessStatus;
+  credentialsPresent?: boolean;
+  safeReason?: string;
+  internalReason?: string;
+  /** Key names only; never values. Internal diagnostics only. */
+  missingConfigKeys?: string[];
+  warnings?: string[];
+  recommendedAction?: string;
 }
 
 export interface ReportProviderDiagnostics {
@@ -638,9 +677,16 @@ export interface ReportProviderDiagnostics {
     unavailableCount?: number;
     fallbackUsedCount?: number;
     productionReadyCount?: number;
+    /** Stage R5.1 — readiness-focused additive fields. */
+    realReadyCount?: number;
+    fallbackOnlyCount?: number;
+    missingConfigCount?: number;
+    syntheticOnlyCount?: number;
   };
   /** Stage R4.1 — per-provider source provenance (internal-only). */
   sourceProvenance?: ReportSourceProvenanceRow[];
+  /** Stage R5.1 — deterministic provider readiness summary. */
+  providerReadinessSummary?: ReportProviderReadinessSummary;
 }
 
 export interface ReportEntityFilteringDiagnostics {

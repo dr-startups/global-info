@@ -795,6 +795,7 @@ export async function buildReportJson(
       screenshotProvenance,
     },
     providerDiagnostics,
+    providerReadinessSummary: providerDiagnostics.providerReadinessSummary,
     entityFiltering,
     complianceRiskIntel,
   };
