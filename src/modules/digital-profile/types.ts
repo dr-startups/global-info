@@ -399,6 +399,8 @@ export interface ReportJson {
   providerDiagnostics?: ReportProviderDiagnostics;
   /** Stage R5.1 — provider readiness rollup (internal rich, client-safe subset). */
   providerReadinessSummary?: ReportProviderReadinessSummary;
+  /** Stage R5.2 — deterministic query planning diagnostics (internal-only). */
+  queryPlanDiagnostics?: ReportQueryPlanDiagnostics;
   /** Stage R3.3 — entity/FIO filtering diagnostics (safe additive). */
   entityFiltering?: ReportEntityFilteringDiagnostics;
   /** Stage R3.5 — normalized compliance/risk intelligence (display-level, client-safe). */
@@ -473,6 +475,7 @@ export interface ReportSourceProvenanceRow {
 
 export interface ReportQueryLineageRow {
   queryId: string;
+  queryPlanId?: string;
   queryText: string;
   normalizedQuery: string;
   queryLanguage: string;
@@ -596,6 +599,50 @@ export interface ReportProviderReadinessSummary {
   /** Optional client-safe rollup fields. */
   safeSummaryLabel?: string;
   readySourcesLabel?: string;
+}
+
+export interface ReportQueryPlanDiagnosticsRow {
+  queryId: string;
+  queryText: string;
+  normalizedQuery: string;
+  region: string;
+  language: string;
+  purpose:
+    | "subject_lookup"
+    | "adverse_lookup"
+    | "business_lookup"
+    | "media_lookup"
+    | "image_lookup"
+    | "video_lookup"
+    | "suggestion_lookup"
+    | "related_lookup"
+    | "wikipedia_lookup"
+    | "compliance_lookup"
+    | "unknown";
+  providerPreference: string[];
+  requiredTokens: string[];
+  optionalTokens: string[];
+  identityStrictness: "strict" | "balanced" | "broad" | "exploratory";
+  maxResultsHint: number;
+  clientVisible: boolean;
+  internalReason?: string;
+}
+
+export interface ReportQueryPlanDiagnostics {
+  queryPlanId: string;
+  totalQueries: number;
+  byPurpose: Record<string, number>;
+  byProviderPreference: Record<string, number>;
+  byRegion: Record<string, number>;
+  byLanguage: Record<string, number>;
+  byIdentityStrictness: Record<string, number>;
+  weakQuerySuppressedCount: number;
+  transliterationVariantCount: number;
+  regionHintCount: number;
+  providerUnavailableQueryCount: number;
+  fallbackEligibleQueryCount: number;
+  warnings: string[];
+  queryRows: ReportQueryPlanDiagnosticsRow[];
 }
 export type ProviderRuntimeMode =
   | "legacy_mock_first"

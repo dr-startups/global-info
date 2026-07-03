@@ -26,6 +26,8 @@ import { buildOfferConfig } from "../report/offer-config";
 import {
   buildSearchSurfacesReportBlock,
 } from "../report/search-surfaces-report-builder";
+import { buildOrionQueryPlanDetailed } from "../search-surfaces/orion-query-plan";
+import { buildQueryPlanDiagnostics } from "../search-surfaces/query-plan-diagnostics";
 import { buildReportSourceQualitySummary } from "../report/source-quality-diagnostics";
 import { buildScreenshotProvenance } from "../report/screenshot-provenance";
 import { buildSearchProvenance } from "../report/search-provenance";
@@ -211,6 +213,7 @@ export async function buildReportJson(
       id: true,
       caseNumber: true,
       title: true,
+      targetRegions: true,
       subjects: {
         orderBy: { createdAt: "asc" },
         take: 1,
@@ -722,6 +725,15 @@ export async function buildReportJson(
   const providerDiagnostics = buildProviderDiagnostics({
     surfaceTotals: computeProviderSurfaceTotals(searchSurfaces, complianceSummary),
   });
+  const queryPlanDetails = buildOrionQueryPlanDetailed({
+    fullName: subject.fullName,
+    aliases: subject.aliases,
+    targetRegions: caseRow.targetRegions ?? [],
+  });
+  const queryPlanDiagnostics = buildQueryPlanDiagnostics({
+    details: queryPlanDetails,
+    providerDiagnostics,
+  });
   const screenshotProvenance = buildScreenshotProvenance({
     serpSnapshot: serpSnapshot as { id?: string; mode?: string; metadata?: Record<string, unknown> } | null,
     screenshots: screenshots.map((s) => ({
@@ -739,6 +751,7 @@ export async function buildReportJson(
       engine: q.engine,
       source: q.source,
     })),
+    queryPlanDiagnostics,
     providerDiagnostics,
     sourceProvenance: providerDiagnostics.sourceProvenance,
     screenshotProvenance,
@@ -796,6 +809,7 @@ export async function buildReportJson(
     },
     providerDiagnostics,
     providerReadinessSummary: providerDiagnostics.providerReadinessSummary,
+    queryPlanDiagnostics,
     entityFiltering,
     complianceRiskIntel,
   };

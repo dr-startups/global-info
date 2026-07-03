@@ -261,6 +261,7 @@ const CLIENT_FORBIDDEN_JSON_KEYS = new Set([
   "internalCaption",
   "warningCodes",
   "queryId",
+  "queryPlanId",
   "screenshotId",
   "surfaceId",
   "sourceSurfaceIds",
@@ -330,7 +331,7 @@ export function getReportAudiencePolicy(
 }
 
 /** Report_json blocks that are internal-only and must never reach the client. */
-const INTERNAL_ONLY_REPORT_BLOCKS = ["providerDiagnostics"] as const;
+const INTERNAL_ONLY_REPORT_BLOCKS = ["providerDiagnostics", "queryPlanDiagnostics"] as const;
 
 /** Remove internal-only diagnostics blocks from a client report_json copy. */
 export function stripInternalDiagnostics<T extends Record<string, unknown>>(copy: T): T {
@@ -370,6 +371,7 @@ export const CLIENT_FORBIDDEN_TEXT_MARKERS: string[] = [
   "internalCaption",
   "warningCodes",
   "queryId",
+  "queryPlanId",
   "screenshotId",
   "surfaceId",
   "sourceSurfaceIds",
@@ -678,6 +680,7 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
     searchProvenanceSummary?: Record<string, unknown>;
     searchProvenance?: Record<string, unknown>;
     providerReadinessSummary?: Record<string, unknown>;
+    queryPlanDiagnostics?: Record<string, unknown>;
     providerDiagnostics?: Record<string, unknown>;
     entityFiltering?: Record<string, unknown>;
     complianceRiskIntel?: Record<string, unknown>;

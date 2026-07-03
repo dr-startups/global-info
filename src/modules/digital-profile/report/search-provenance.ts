@@ -1,5 +1,6 @@
 import type {
   ReportProviderDiagnostics,
+  ReportQueryPlanDiagnostics,
   ReportQueryLineageRow,
   ReportSearchProvenanceSummary,
   ReportSearchSurfaceProvenanceRow,
@@ -84,6 +85,7 @@ function mkQueryId(providerId: string, region: string, queryText: string): strin
 export function buildSearchProvenance(input: {
   searchSurfaces?: SearchSurfacesReportBlock;
   searchQueries?: SearchQueryRow[];
+  queryPlanDiagnostics?: ReportQueryPlanDiagnostics;
   providerDiagnostics?: ReportProviderDiagnostics;
   sourceProvenance?: ReportSourceProvenanceRow[];
   screenshotProvenance?: ReportScreenshotProvenanceRow[];
@@ -94,6 +96,12 @@ export function buildSearchProvenance(input: {
   summary: ReportSearchProvenanceSummary;
 } {
   const surfaces = input.searchSurfaces;
+  const queryPlanRows = input.queryPlanDiagnostics?.queryRows ?? [];
+  const queryPlanByText = new Map<string, (typeof queryPlanRows)[number]>();
+  for (const row of queryPlanRows) {
+    const key = `${String(row.region ?? "").toUpperCase()}|${normalizeQuery(String(row.queryText ?? ""))}`;
+    if (!queryPlanByText.has(key)) queryPlanByText.set(key, row);
+  }
   const ru = input.reportLanguage !== "en";
   if (!surfaces) {
     return {
@@ -178,6 +186,8 @@ export function buildSearchProvenance(input: {
       if (!ex) {
         queryMap.set(qId, {
           queryId: qId,
+          queryPlanId:
+            queryPlanByText.get(`${rec.region}|${normalizeQuery(qText)}`)?.queryId ?? undefined,
           queryText: qText,
           normalizedQuery: normalizeQuery(qText),
           queryLanguage: rec.language,
@@ -216,14 +226,29 @@ export function buildSearchProvenance(input: {
           : "unknown";
     const queryRegion = providerId === "yandex" ? "RU" : "INTERNATIONAL";
     const queryId = mkQueryId(providerId, queryRegion, q.queryText);
+    const planMeta = queryPlanByText.get(`${queryRegion}|${normalizeQuery(q.queryText)}`);
     if (!queryMap.has(queryId)) {
       queryMap.set(queryId, {
         queryId,
+        queryPlanId: planMeta?.queryId,
         queryText: q.queryText,
         normalizedQuery: normalizeQuery(q.queryText),
         queryLanguage: queryRegion === "RU" ? "ru" : "en",
         queryRegion,
-        queryPurpose: queryPurpose(q.queryText, "organic"),
+        queryPurpose:
+          planMeta?.purpose === "adverse_lookup"
+            ? "adverse_lookup"
+            : planMeta?.purpose === "media_lookup" ||
+                planMeta?.purpose === "image_lookup" ||
+                planMeta?.purpose === "video_lookup"
+              ? "media_lookup"
+              : planMeta?.purpose === "suggestion_lookup"
+                ? "suggestion_lookup"
+                : planMeta?.purpose === "related_lookup"
+                  ? "related_lookup"
+                  : planMeta?.purpose === "wikipedia_lookup"
+                    ? "wikipedia_lookup"
+                    : queryPurpose(q.queryText, "organic"),
         providerId,
         providerLabel: providerLabel(providerId),
         providerRuntimeKind:
