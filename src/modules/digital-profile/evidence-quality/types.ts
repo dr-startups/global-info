@@ -47,6 +47,9 @@ export type ReportEligibility =
   | "EXCLUDE";
 
 export type SelectionReason =
+  | "override_selected"
+  | "manual_review_required"
+  | "weak_identity_override"
   | "exact_subject_match"
   | "partial_subject_match"
   | "namesake_detected"
@@ -108,6 +111,10 @@ export interface EvidenceItemInput {
   source?: string | null;
   rawMetadata?: unknown;
   subjectFullName?: string | null;
+  subjectAliases?: string[];
+  subjectCountry?: string | null;
+  subjectNationality?: string | null;
+  subjectRegionHints?: string[];
   /** Manual report override stored on item (surfaces / results). */
   reportEligibilityOverride?: ReportEligibility | null;
 }
@@ -128,6 +135,22 @@ export interface EvidenceQualityAssessment {
   autocompleteClass?: AutocompleteClass;
   isSubjectEvidence?: boolean;
   thumbnailStatus?: ThumbnailStatus;
+  entityMatch?: {
+    decision:
+      | "strict_subject"
+      | "likely_subject"
+      | "possible_subject"
+      | "namesake"
+      | "not_subject"
+      | "insufficient_identity";
+    confidence: number;
+    reasons: string[];
+    matchedTokens: string[];
+    missingCriticalTokens: string[];
+    conflictingTokens: string[];
+    patronymicStatus: "match" | "missing" | "conflict" | "not_applicable";
+    regionStatus: "match" | "weak" | "conflict" | "unknown";
+  };
 }
 
 export interface GatedEvidenceItem extends EvidenceItemInput {

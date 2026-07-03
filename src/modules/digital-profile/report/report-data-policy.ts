@@ -372,6 +372,25 @@ function sanitizeProviderDiagnosticsForClient(
   };
 }
 
+function sanitizeEntityFilteringForClient(
+  block: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!block) return block;
+  const subjectIdentitySummary =
+    block.subjectIdentitySummary && typeof block.subjectIdentitySummary === "object"
+      ? (block.subjectIdentitySummary as Record<string, unknown>)
+      : undefined;
+  const counts =
+    block.counts && typeof block.counts === "object"
+      ? (block.counts as Record<string, unknown>)
+      : undefined;
+  return {
+    enabled: Boolean(block.enabled),
+    subjectIdentitySummary,
+    counts,
+  };
+}
+
 /**
  * O5.2 — remove internal/debug fields from client-facing report_json.
  * Internal audience receives the stored payload unchanged.
@@ -390,6 +409,7 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
     evidenceQuality?: Record<string, unknown>;
     selectedEvidence?: Record<string, unknown>;
     providerDiagnostics?: Record<string, unknown>;
+    entityFiltering?: Record<string, unknown>;
   };
 
   if (copy.meta) {
@@ -427,6 +447,7 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
 
   copy.evidenceQuality = sanitizeEvidenceQualityForClient(copy.evidenceQuality);
   copy.providerDiagnostics = sanitizeProviderDiagnosticsForClient(copy.providerDiagnostics);
+  copy.entityFiltering = sanitizeEntityFilteringForClient(copy.entityFiltering);
 
   if (copy.selectedEvidence && typeof copy.selectedEvidence === "object") {
     const se = copy.selectedEvidence as Record<string, unknown>;

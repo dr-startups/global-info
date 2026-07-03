@@ -388,6 +388,8 @@ export interface ReportJson {
   selectedEvidence?: import("./report/selected-evidence-report-vm").SelectedEvidenceReportVm;
   /** Stage R3.2b — provider/runtime diagnostics block (no external calls). */
   providerDiagnostics?: ReportProviderDiagnostics;
+  /** Stage R3.3 — entity/FIO filtering diagnostics (safe additive). */
+  entityFiltering?: ReportEntityFilteringDiagnostics;
 }
 
 export type ProviderDiagnosticCategory =
@@ -476,6 +478,28 @@ export interface ReportProviderDiagnostics {
     highRiskCount: number;
     productionReady: boolean;
   };
+}
+
+export interface ReportEntityFilteringDiagnostics {
+  enabled: boolean;
+  subjectIdentitySummary: {
+    hasPatronymic: boolean;
+    hasLatinAliases: boolean;
+    hasRegionHints: boolean;
+  };
+  counts: {
+    strictSubject: number;
+    likelySubject: number;
+    possibleSubject: number;
+    namesake: number;
+    notSubject: number;
+    insufficientIdentity: number;
+    excludedByIdentity: number;
+  };
+  topExclusionReasons: Array<{ reason: string; count: number }>;
+  internationalSuppressionCount: number;
+  mediaSuppressionCount: number;
+  complianceReviewCount: number;
 }
 
 /** Stage S1 — minimal SERP snapshot reference embedded in report_json. */

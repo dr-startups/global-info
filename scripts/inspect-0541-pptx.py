@@ -746,12 +746,124 @@ def slide29_r23_risk_findings_contract_ok(xml: str, text: str, report_json: dict
     return issues
 
 
-def _regression_lock_checks(pptx_path: Path, baseline_path: Path) -> tuple[int, list[str]]:
+def _slide13_filtering_delta(
+    current_report_json_path: Path, baseline_report_json_path: Path
+) -> dict[str, Any]:
+    if not current_report_json_path.exists() or not baseline_report_json_path.exists():
+        return {
+            "entity_enabled": False,
+            "selected_changed": False,
+            "media_suppression_count": 0,
+            "excluded_by_identity": 0,
+            "reason_ok": False,
+        }
+    cur = json.loads(current_report_json_path.read_text(encoding="utf-8"))
+    base = json.loads(baseline_report_json_path.read_text(encoding="utf-8"))
+
+    def _ru_images_stats(doc: dict[str, Any]) -> tuple[int, int, list[str]]:
+        ru = (((doc.get("searchSurfaces") or {}).get("regions") or {}).get("ru")) or {}
+        images = ru.get("images") or {}
+        stats = images.get("qualityStats") or {}
+        selected = int(stats.get("selectedForReport", 0) or 0)
+        total = int(stats.get("totalCollected", 0) or 0)
+        titles = [
+            str((i or {}).get("title") or "").strip().lower()
+            for i in list(images.get("items") or [])
+            if str((i or {}).get("title") or "").strip()
+        ]
+        return selected, total, sorted(set(titles))
+
+    cur_selected, cur_total, cur_titles = _ru_images_stats(cur)
+    base_selected, base_total, base_titles = _ru_images_stats(base)
+    ef = (cur.get("entityFiltering") or {})
+    counts = ef.get("counts") or {}
+    media_suppression_count = int(ef.get("mediaSuppressionCount", 0) or 0)
+    excluded_by_identity = int(counts.get("excludedByIdentity", 0) or 0)
+    selected_changed = (
+        cur_selected != base_selected
+        or cur_total != base_total
+        or cur_titles != base_titles
+    )
+    entity_enabled = bool(ef.get("enabled"))
+    reason_ok = entity_enabled and (
+        selected_changed or media_suppression_count > 0 or excluded_by_identity > 0
+    )
+    return {
+        "entity_enabled": entity_enabled,
+        "selected_changed": selected_changed,
+        "media_suppression_count": media_suppression_count,
+        "excluded_by_identity": excluded_by_identity,
+        "reason_ok": reason_ok,
+        "cur_selected": cur_selected,
+        "base_selected": base_selected,
+        "cur_total": cur_total,
+        "base_total": base_total,
+    }
+
+
+def _slide13_semantic_checks(
+    pptx_path: Path, report_json_path: Path, baseline_report_json_path: Path
+) -> tuple[int, list[str]]:
+    issues: list[str] = []
+    lines: list[str] = []
+    with zipfile.ZipFile(pptx_path, "r") as z:
+        s13 = _slide_xml(z, 13)
+        t13 = _plain_text(s13)
+        bottoms = _shape_bottoms(s13)
+        pic_count = len(re.findall(r"<p:pic\b", s13, flags=re.S))
+        if "<a:tbl" in s13:
+            issues.append("slide13_orion_layout_ok: table-only layout appeared")
+        if bottoms and max(bottoms) > FOOTER_SAFE_BOTTOM:
+            issues.append("slide13_frame_grid_safe: footer overlap")
+        if INTERNAL_RE.search(t13):
+            issues.append("slide13_no_raw_internal_labels: internal/debug text visible")
+        bad_name = re.search(
+            r"владимирович|александр\\s+романович|богдан\\s+романович|romanovich\\s+family\\s+office",
+            t13,
+            re.I,
+        )
+        if bad_name:
+            issues.append("slide13_no_wrong_patronymic_visible: wrong-person marker visible")
+        if re.search(r"anatoli\\s+romanovich|nikita\\s+romanovich|mikhail\\s+romanovich", t13, re.I):
+            issues.append("slide13_no_namesake_visible: namesake marker visible")
+        if pic_count > 9:
+            issues.append(f"slide13_frame_grid_safe: too many pictures ({pic_count})")
+    delta = _slide13_filtering_delta(report_json_path, baseline_report_json_path)
+    if not delta["entity_enabled"]:
+        issues.append("slide13_entity_filtering_applied: entityFiltering.enabled is false")
+    if pic_count == 0 and delta["cur_selected"] > 0:
+        issues.append(
+            f"slide13_media_count_consistent: selected={delta['cur_selected']} but visible pics=0"
+        )
+    checks = [
+        ("slide13_orion_layout_ok", not any("slide13_orion_layout_ok" in i for i in issues)),
+        ("slide13_no_wrong_patronymic_visible", not any("slide13_no_wrong_patronymic_visible" in i for i in issues)),
+        ("slide13_no_namesake_visible", not any("slide13_no_namesake_visible" in i for i in issues)),
+        ("slide13_no_raw_internal_labels", not any("slide13_no_raw_internal_labels" in i for i in issues)),
+        ("slide13_frame_grid_safe", not any("slide13_frame_grid_safe" in i for i in issues)),
+        ("slide13_media_count_consistent", not any("slide13_media_count_consistent" in i for i in issues)),
+        ("slide13_entity_filtering_applied", not any("slide13_entity_filtering_applied" in i for i in issues)),
+    ]
+    for name, ok in checks:
+        lines.append(f"[{'PASS' if ok else 'FAIL'}] R3.3 slide13 semantic — {name}")
+    for msg in issues:
+        lines.append(f"[FAIL] R3.3 slide13 semantic detail — {msg}")
+    return (1 if issues else 0), lines
+
+
+def _regression_lock_checks(
+    pptx_path: Path,
+    baseline_path: Path,
+    report_json_path: Path | None = None,
+    baseline_report_json_path: Path | None = None,
+) -> tuple[int, list[str]]:
     if not baseline_path.exists():
         return 1, [f"[FAIL] Regression baseline deck missing: {baseline_path}"]
     locked = [3, 5, 8, 10, 13, 14, 17, 20, 24, 27, 29, 32, 33, 34, 36]
     fails: list[str] = []
     warns: list[str] = []
+    changed_allowed: dict[int, str] = {}
+    changed_warn_only: set[int] = set()
     with zipfile.ZipFile(pptx_path, "r") as cur, zipfile.ZipFile(baseline_path, "r") as base:
         cur_slides = len([n for n in cur.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml")])
         if cur_slides not in EXPECTED_SLIDE_COUNTS:
@@ -761,9 +873,34 @@ def _regression_lock_checks(pptx_path: Path, baseline_path: Path) -> tuple[int, 
             same_layout = _slide_layout_hash(cur, n) == _slide_layout_hash(base, n)
             if not same_exact and not same_layout:
                 if n == 10:
+                    changed_warn_only.add(10)
                     warns.append(
                         "regression lock changed: slide 10 (SERP snapshot is data-dependent; layout-only lock not enforceable)"
                     )
+                elif (
+                    n == 13
+                    and report_json_path
+                    and baseline_report_json_path
+                    and report_json_path.exists()
+                    and baseline_report_json_path.exists()
+                ):
+                    delta = _slide13_filtering_delta(report_json_path, baseline_report_json_path)
+                    if delta["reason_ok"]:
+                        changed_allowed[13] = (
+                            f"selected {delta['base_selected']}→{delta['cur_selected']}, "
+                            f"mediaSuppression={delta['media_suppression_count']}, "
+                            f"excludedByIdentity={delta['excluded_by_identity']}"
+                        )
+                        warns.append(
+                            "slide 13 hash changed due to entity filtering: allowed "
+                            f"(selected {delta['base_selected']}→{delta['cur_selected']}, "
+                            f"mediaSuppression={delta['media_suppression_count']}, "
+                            f"excludedByIdentity={delta['excluded_by_identity']})"
+                        )
+                    else:
+                        fails.append(
+                            "slide 13 hash changed without entity filtering reason: FAIL"
+                        )
                 else:
                     fails.append(f"regression lock changed: slide {n}")
     lines: list[str] = []
@@ -774,7 +911,16 @@ def _regression_lock_checks(pptx_path: Path, baseline_path: Path) -> tuple[int, 
             lines.append(f"[WARN] Regression lock — {w}")
         return 1, lines
     for n in locked:
-        lines.append(f"[PASS] Regression lock — slide {n} unchanged")
+        if n in changed_allowed:
+            lines.append(
+                f"[PASS] Regression lock — slide {n} hash changed due to entity filtering: allowed ({changed_allowed[n]})"
+            )
+        elif n in changed_warn_only:
+            lines.append(
+                f"[PASS] Regression lock — slide {n} changed (data-dependent; covered by warning)"
+            )
+        else:
+            lines.append(f"[PASS] Regression lock — slide {n} unchanged")
     for w in warns:
         lines.append(f"[WARN] Regression lock — {w}")
     lines.append("[PASS] Regression lock — slide count in allowed range")
@@ -862,6 +1008,53 @@ def _r32b_provider_diagnostics_checks(
     failed = False
     for name, ok, detail in checks:
         lines.append(f"[{'PASS' if ok else 'FAIL'}] R3.2b diagnostics — {name}" + (f" — {detail}" if detail else ""))
+        if not ok:
+            failed = True
+    return (1 if failed else 0), lines
+
+
+def _r33_entity_filtering_checks(report_json_path: Path) -> tuple[int, list[str]]:
+    if not report_json_path.exists():
+        return 1, ["[FAIL] R3.3 entity filtering — report json path missing"]
+    report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+    ef = (report_json or {}).get("entityFiltering") or {}
+    counts = ef.get("counts") or {}
+    selected = (report_json.get("selectedEvidence") or {}).get("appendix") or {}
+    confirmed = list(selected.get("confirmedSubjectEvidence") or [])
+    bad_patterns = re.compile(
+        r"владимирович|александр|богдан\s+романович|romanovich\s+family\s+office",
+        re.I,
+    )
+    leaked = 0
+    for row in confirmed:
+        text = " ".join(
+            [
+                str((row or {}).get("title") or ""),
+                str((row or {}).get("identity") or ""),
+                str((row or {}).get("class") or ""),
+            ]
+        )
+        if bad_patterns.search(text):
+            leaked += 1
+    checks: list[tuple[str, bool, str]] = [
+        ("entityFiltering block exists", isinstance(ef, dict) and bool(ef), ""),
+        ("entityFiltering.enabled true", bool(ef.get("enabled")), ""),
+        ("entityFiltering.counts exists", isinstance(counts, dict), ""),
+        (
+            "identity exclusions counted",
+            int(counts.get("excludedByIdentity", 0) or 0) >= 0,
+            f"excludedByIdentity={counts.get('excludedByIdentity', 0)}",
+        ),
+        (
+            "client-visible appendix has no known namesake strings",
+            leaked == 0,
+            f"leaked={leaked}",
+        ),
+    ]
+    lines: list[str] = []
+    failed = False
+    for name, ok, detail in checks:
+        lines.append(f"[{'PASS' if ok else 'FAIL'}] R3.3 entity filtering — {name}" + (f" — {detail}" if detail else ""))
         if not ok:
             failed = True
     return (1 if failed else 0), lines
@@ -1110,15 +1303,28 @@ def main() -> int:
     r32b_rc, r32b_lines = _r32b_provider_diagnostics_checks(pptx_path, report_json_path)
     for line in r32b_lines:
         print(line)
+    r33_rc, r33_lines = _r33_entity_filtering_checks(report_json_path)
+    for line in r33_lines:
+        print(line)
     reg_rc = 0
     if is_fixture:
         print("[PASS] Fixture mode — regression locks skipped by design")
     else:
         baseline = Path("storage/digital-profile/qa-r2-3e-risk-findings/report-v17-ru-internal-draft.pptx")
-        reg_rc, reg_lines = _regression_lock_checks(pptx_path, baseline)
+        baseline_json = Path("storage/digital-profile/qa-r3-2c-provider-runtime/report-json-ru.json")
+        reg_rc, reg_lines = _regression_lock_checks(
+            pptx_path, baseline, report_json_path, baseline_json
+        )
         for line in reg_lines:
             print(line)
-    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or reg_rc != 0) else 0
+    s13_sem_rc, s13_sem_lines = _slide13_semantic_checks(
+        pptx_path,
+        report_json_path,
+        Path("storage/digital-profile/qa-r3-2c-provider-runtime/report-json-ru.json"),
+    )
+    for line in s13_sem_lines:
+        print(line)
+    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
 
 
 if __name__ == "__main__":

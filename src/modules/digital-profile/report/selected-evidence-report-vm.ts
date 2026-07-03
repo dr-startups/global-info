@@ -156,15 +156,24 @@ function isSubjectMatchedItem(item: SurfaceReportItem): boolean {
 }
 
 /** O5.4 — images/videos need a visible subject anchor, not weak LIKELY on social noise. */
-function isStrictMediaSubjectMatch(item: SurfaceReportItem): boolean {
+function isStrictMediaSubjectMatch(item: SurfaceReportItem, audience: ReportAudience): boolean {
+  const text = `${item.title ?? ""} ${item.query ?? ""}`.toLowerCase();
+  const hasSurname = text.includes("томилин") || text.includes("tomilin");
+  const hasGiven = text.includes("константин") || text.includes("konstantin");
   if (item.identityDecision === "EXACT_SUBJECT") return true;
   if (item.reportEligibility === "CLIENT_INCLUDE" && item.identityDecision !== "LIKELY_SUBJECT") {
     return true;
   }
-  if (!SUBJECT_IDENTITY.has(item.identityDecision ?? "")) return false;
-  const text = item.title.toLowerCase();
-  const hasSurname = text.includes("томилин") || text.includes("tomilin");
-  const hasGiven = text.includes("константин") || text.includes("konstantin");
+  if (!SUBJECT_IDENTITY.has(item.identityDecision ?? "")) {
+    if (
+      audience === "INTERNAL" &&
+      item.identityDecision === "POSSIBLE_SUBJECT" &&
+      item.reportEligibility === "REVIEW_REQUIRED"
+    ) {
+      return hasSurname && hasGiven && !WEAK_INTL_TITLE.test(text);
+    }
+    return false;
+  }
   return hasSurname && hasGiven;
 }
 
@@ -285,11 +294,11 @@ function buildRegionVm(
   const organicNegativeSelected = organicSelected.filter(isNegativeSelected);
 
   const imagesSelected = filterItemsForAudience(
-    block.images.items.filter(isStrictMediaSubjectMatch),
+    block.images.items.filter((i) => isStrictMediaSubjectMatch(i, audience)),
     audience
   );
   const videosSelected = filterItemsForAudience(
-    block.videos.items.filter(isStrictMediaSubjectMatch),
+    block.videos.items.filter((i) => isStrictMediaSubjectMatch(i, audience)),
     audience
   );
 

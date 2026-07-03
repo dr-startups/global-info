@@ -24,7 +24,19 @@ export async function loadCaseEvidenceItems(caseId: string): Promise<{
   const [subjectRow, organic, surfaces] = await Promise.all([
     prisma.case.findFirst({
       where: { id: caseId },
-      select: { subjects: { orderBy: { createdAt: "asc" }, take: 1, select: { fullName: true } } },
+      select: {
+        targetRegions: true,
+        subjects: {
+          orderBy: { createdAt: "asc" },
+          take: 1,
+          select: {
+            fullName: true,
+            aliases: true,
+            country: true,
+            nationality: true,
+          },
+        },
+      },
     }),
     prisma.searchResult.findMany({
       where: { caseId },
@@ -61,7 +73,12 @@ export async function loadCaseEvidenceItems(caseId: string): Promise<{
     }),
   ]);
 
-  const subjectFullName = subjectRow?.subjects[0]?.fullName ?? null;
+  const subject = subjectRow?.subjects[0];
+  const subjectFullName = subject?.fullName ?? null;
+  const subjectAliases = (subject?.aliases ?? []).filter(Boolean);
+  const subjectCountry = subject?.country ?? null;
+  const subjectNationality = subject?.nationality ?? null;
+  const subjectRegionHints = (subjectRow?.targetRegions ?? []).filter(Boolean);
   const items: EvidenceItemInput[] = [];
 
   for (const r of organic) {
@@ -76,6 +93,10 @@ export async function loadCaseEvidenceItems(caseId: string): Promise<{
       source: r.source,
       rawMetadata: r.rawMetadata,
       subjectFullName,
+      subjectAliases,
+      subjectCountry,
+      subjectNationality,
+      subjectRegionHints,
     });
   }
 
@@ -97,6 +118,10 @@ export async function loadCaseEvidenceItems(caseId: string): Promise<{
       source: s.source,
       rawMetadata: s.rawMetadata,
       subjectFullName,
+      subjectAliases,
+      subjectCountry,
+      subjectNationality,
+      subjectRegionHints,
     });
   }
 

@@ -162,12 +162,31 @@ type SurfaceRowInput = {
   rawMetadata?: unknown;
   reviewStatus?: string | null;
   region?: string | null;
+  subjectAliases?: string[];
+  subjectCountry?: string | null;
+  subjectNationality?: string | null;
+  subjectRegionHints?: string[];
+};
+
+type SubjectIdentityContext = {
+  fullName: string | null;
+  aliases: string[];
+  country: string | null;
+  nationality: string | null;
+  regionHints: string[];
 };
 
 function mapGatedToReportItem(
   r: GatedEvidenceItem & { thumbnailUrl?: string | null; imageUrl?: string | null },
   idx: number
 ): SurfaceReportItem {
+  const rawUrl = (r.url ?? "").trim();
+  const sourceUrl =
+    rawUrl.startsWith("http://") || rawUrl.startsWith("https://")
+      ? rawUrl
+      : rawUrl.startsWith("/goto?url=")
+        ? `https://www.google.com/search?q=${encodeURIComponent(r.title ?? r.query ?? "source")}`
+        : rawUrl || null;
   const ac = r.quality.autocompleteClass;
   const group = ac ? AUTOCOMPLETE_EXPOSURE_GROUPS[ac as AutocompleteClass] : undefined;
   const eq =
@@ -191,7 +210,7 @@ function mapGatedToReportItem(
     autocompleteGroup: group,
     thumbnailStorageKey: typeof eq?.thumbnailStorageKey === "string" ? eq.thumbnailStorageKey : null,
     thumbnailStatus: (eq?.thumbnailStatus as string) ?? r.quality.thumbnailStatus,
-    sourcePageUrl: r.url ?? null,
+    sourcePageUrl: sourceUrl,
   };
 }
 
@@ -211,7 +230,7 @@ function bucketFromAutocompleteRows(
   surfaceType: EvidenceSurfaceType,
   regionStatus: RegionCollectionStatus,
   regionMessage: string,
-  subjectFullName: string | null,
+  subject: SubjectIdentityContext,
   reportLanguage: "ru" | "en",
   limit = 20
 ): SurfaceBucketSummary {
@@ -230,9 +249,13 @@ function bucketFromAutocompleteRows(
       region: r.region,
       rawMetadata: r.rawMetadata,
       reviewStatus: r.reviewStatus,
-      subjectFullName,
+      subjectFullName: subject.fullName,
+      subjectAliases: r.subjectAliases ?? subject.aliases,
+      subjectCountry: r.subjectCountry ?? subject.country,
+      subjectNationality: r.subjectNationality ?? subject.nationality,
+      subjectRegionHints: r.subjectRegionHints ?? subject.regionHints,
     })),
-    subjectFullName
+    subject.fullName
   ).items;
 
   const exposure = gated.filter((r) => r.quality.reportEligibility !== "EXCLUDE");
@@ -325,7 +348,7 @@ async function bucketFromGatedRows(
   surfaceType: EvidenceSurfaceType,
   regionStatus: RegionCollectionStatus,
   regionMessage: string,
-  subjectFullName: string | null,
+  subject: SubjectIdentityContext,
   limit = 20,
   options: { caseId?: string; fetchThumbnails?: boolean } = {}
 ): Promise<SurfaceBucketSummary> {
@@ -344,9 +367,13 @@ async function bucketFromGatedRows(
       region: r.region,
       rawMetadata: r.rawMetadata,
       reviewStatus: r.reviewStatus,
-      subjectFullName,
+      subjectFullName: subject.fullName,
+      subjectAliases: r.subjectAliases ?? subject.aliases,
+      subjectCountry: r.subjectCountry ?? subject.country,
+      subjectNationality: r.subjectNationality ?? subject.nationality,
+      subjectRegionHints: r.subjectRegionHints ?? subject.regionHints,
     })),
-    subjectFullName
+    subject.fullName
   ).items;
 
   const selection = selectEvidenceForReport(gated, "INTERNAL");
@@ -572,7 +599,7 @@ function buildRegionBlock(
   organicRows: Awaited<ReturnType<typeof loadOrganic>>,
   surfaceRows: Awaited<ReturnType<typeof loadSurfaces>>,
   wikiRows: Awaited<ReturnType<typeof loadWiki>>,
-  subjectFullName: string | null,
+  subject: SubjectIdentityContext,
   caseId: string,
   reportLanguage: "ru" | "en" = "ru"
 ): Promise<RegionSearchSurfacesBlock> {
@@ -581,7 +608,7 @@ function buildRegionBlock(
     organicRows,
     surfaceRows,
     wikiRows,
-    subjectFullName,
+    subject,
     caseId,
     reportLanguage
   );
@@ -592,7 +619,7 @@ async function buildRegionBlockAsync(
   organicRows: Awaited<ReturnType<typeof loadOrganic>>,
   surfaceRows: Awaited<ReturnType<typeof loadSurfaces>>,
   wikiRows: Awaited<ReturnType<typeof loadWiki>>,
-  subjectFullName: string | null,
+  subject: SubjectIdentityContext,
   caseId: string,
   reportLanguage: "ru" | "en" = "ru"
 ): Promise<RegionSearchSurfacesBlock> {
@@ -620,7 +647,7 @@ async function buildRegionBlockAsync(
     regionSurfaces.filter((s) => s.type === type);
 
   const organicAdverse = regionOrganic.filter((r) =>
-    isNegativeOrganic(r.classification, r.rawMetadata, subjectFullName, r.title, r.snippet)
+    isNegativeOrganic(r.classification, r.rawMetadata, subject.fullName, r.title, r.snippet)
   );
 
   const surfaceInput = (type: SearchSurfaceType) =>
@@ -639,6 +666,10 @@ async function buildRegionBlockAsync(
       rawMetadata: s.rawMetadata,
       reviewStatus: s.reviewStatus,
       region,
+      subjectAliases: subject.aliases,
+      subjectCountry: subject.country,
+      subjectNationality: subject.nationality,
+      subjectRegionHints: subject.regionHints,
     }));
 
   const autocompleteBucket = (type: SearchSurfaceType, limit = 20) =>
@@ -647,7 +678,7 @@ async function buildRegionBlockAsync(
       SURFACE_EVIDENCE_TYPE[type] ?? "SEARCH_SUGGESTION",
       derived.status,
       derived.message,
-      subjectFullName,
+      subject,
       reportLanguage,
       limit
     );
@@ -658,7 +689,7 @@ async function buildRegionBlockAsync(
       SURFACE_EVIDENCE_TYPE[type] ?? "SEARCH_SUGGESTION",
       derived.status,
       derived.message,
-      subjectFullName,
+      subject,
       limit,
       { caseId, fetchThumbnails }
     );
@@ -682,11 +713,15 @@ async function buildRegionBlockAsync(
       rawMetadata: r.rawMetadata,
       reviewStatus: null,
       region,
+      subjectAliases: subject.aliases,
+      subjectCountry: subject.country,
+      subjectNationality: subject.nationality,
+      subjectRegionHints: subject.regionHints,
     })),
     "SEARCH_RESULT",
     derived.status,
     derived.message,
-    subjectFullName,
+    subject,
     20
   );
   const images = await gatedBucket("IMAGE_RESULT", 9, true);
@@ -792,9 +827,23 @@ export async function buildSearchSurfacesReportBlock(
 ): Promise<SearchSurfacesReportBlock> {
   const subjectRow = await prisma.case.findFirst({
     where: { id: caseId },
-    select: { subjects: { orderBy: { createdAt: "asc" }, take: 1, select: { fullName: true } } },
+    select: {
+      targetRegions: true,
+      subjects: {
+        orderBy: { createdAt: "asc" },
+        take: 1,
+        select: { fullName: true, aliases: true, country: true, nationality: true },
+      },
+    },
   });
-  const subjectFullName = subjectRow?.subjects[0]?.fullName ?? null;
+  const subject = subjectRow?.subjects[0];
+  const subjectContext: SubjectIdentityContext = {
+    fullName: subject?.fullName ?? null,
+    aliases: subject?.aliases ?? [],
+    country: subject?.country ?? null,
+    nationality: subject?.nationality ?? null,
+    regionHints: subjectRow?.targetRegions ?? [],
+  };
 
   const [organicRows, surfaceRows, wikiRows] = await Promise.all([
     loadOrganic(caseId),
@@ -806,14 +855,14 @@ export async function buildSearchSurfacesReportBlock(
     ? organicRows
     : organicRows.filter((r) => !String(r.source ?? "").includes("mock"));
 
-  const ru = await buildRegionBlock("RU", organic, surfaceRows, wikiRows, subjectFullName, caseId);
-  const uae = await buildRegionBlock("UAE", organic, surfaceRows, wikiRows, subjectFullName, caseId);
+  const ru = await buildRegionBlock("RU", organic, surfaceRows, wikiRows, subjectContext, caseId);
+  const uae = await buildRegionBlock("UAE", organic, surfaceRows, wikiRows, subjectContext, caseId);
   const international = await buildRegionBlock(
     "INTERNATIONAL",
     organic,
     surfaceRows,
     wikiRows,
-    subjectFullName,
+    subjectContext,
     caseId
   );
 

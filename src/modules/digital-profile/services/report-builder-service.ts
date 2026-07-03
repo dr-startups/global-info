@@ -33,6 +33,7 @@ import {
   patchAuditSummaryWithSelectedEvidence,
 } from "../report/selected-evidence-report-vm";
 import { buildProviderDiagnostics } from "../report/provider-diagnostics";
+import { buildEntityFilteringDiagnostics } from "../report/entity-filtering-diagnostics";
 import {
   createInternalHygieneWarning,
   filterComplianceForReport,
@@ -618,6 +619,16 @@ export async function buildReportJson(
 
   // Stage R3.2b — provider health/capability matrix (no network calls).
   const providerDiagnostics = buildProviderDiagnostics();
+  // Stage R3.3 — entity/FIO filtering diagnostics.
+  const entityFiltering = buildEntityFilteringDiagnostics({
+    subject: {
+      fullName: subject.fullName,
+      aliases: subject.aliases,
+      nationality: subject.nationality,
+      country: subject.country,
+    },
+    evidenceQuality,
+  });
 
   return {
     meta: {
@@ -645,6 +656,7 @@ export async function buildReportJson(
     evidenceQuality,
     selectedEvidence,
     providerDiagnostics,
+    entityFiltering,
   };
 }
 

@@ -1771,6 +1771,7 @@ def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[
         vm["labels"],
         internal,
     )
+    vm["entityFiltering"] = report_json.get("entityFiltering") or {}
     vm["appendixConclusion"] = {
         "title": vm["labels"].get("r31_appendix_conclusion_title", "Appendix conclusion"),
         "lines": [
