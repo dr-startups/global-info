@@ -55,9 +55,10 @@ export function CaseHeader({
               className="dp-btn"
               onClick={onRunAudit}
               disabled={auditing || generating}
+              title={t("agents.fullAuditScopeHint")}
             >
               {auditing ? <span className="dp-spinner" /> : null}
-              {auditing ? t("agents.runningAudit") : t("agents.runAudit")}
+              {auditing ? t("agents.runningAudit") : t("agents.runFullAudit")}
             </button>
           ) : null}
           {can("report.generateInternal") ? (

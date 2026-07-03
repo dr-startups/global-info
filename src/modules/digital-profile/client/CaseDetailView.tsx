@@ -17,6 +17,7 @@ import {
   type AgentRun,
   type CaseDetail,
   type CaseEvidence,
+  type FullAuditRunSummaryItem,
   type ReportVersion,
   type SearchSurfaceItem,
 } from "./api";
@@ -49,6 +50,10 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
   const [generating, setGenerating] = useState(false);
   const [auditing, setAuditing] = useState(false);
   const [banner, setBanner] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
+  const [lastFullAuditSummary, setLastFullAuditSummary] = useState<{
+    mode: "legacy_mock_first" | "real_first_with_fallback" | "real_only" | "mock_only";
+    items: FullAuditRunSummaryItem[];
+  } | null>(null);
 
   const loadAll = useCallback(async () => {
     setState({ kind: "loading" });
@@ -121,15 +126,31 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
     try {
       const result = await runFullAudit(caseId);
       await refreshAgents();
+      setLastFullAuditSummary({
+        mode: result.runtimeStrategy?.mode ?? "real_first_with_fallback",
+        items: result.runSummary ?? [],
+      });
+      const completedCount = result.runSummary?.filter((item) => item.status === "completed").length ?? 0;
+      const skippedCount =
+        result.runSummary?.filter((item) => item.status === "skipped" || item.status === "unavailable")
+          .length ?? 0;
+      const failedCount = result.runSummary?.filter((item) => item.status === "failed").length ?? 0;
+      const mode = result.runtimeStrategy?.mode ?? "real_first_with_fallback";
       const ok = result.outcome === "SUCCESS";
+      const baseText =
+        result.outcome === "SUCCESS"
+          ? t("agents.auditDone")
+          : result.outcome === "PARTIAL_SUCCESS"
+            ? t("agents.auditPartial")
+            : t("agents.auditFailed");
       setBanner({
         kind: ok ? "ok" : "error",
-        text:
-          result.outcome === "SUCCESS"
-            ? t("agents.auditDone")
-            : result.outcome === "PARTIAL_SUCCESS"
-              ? t("agents.auditPartial")
-              : t("agents.auditFailed"),
+        text: `${baseText} ${t("agents.auditRunStats", {
+          completed: completedCount,
+          skipped: skippedCount,
+          failed: failedCount,
+          mode,
+        })}`,
       });
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
@@ -243,6 +264,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
           agents={agents}
           agentRuns={agentRuns}
           auditing={auditing}
+          lastFullAuditSummary={lastFullAuditSummary}
           onRunFullAudit={handleRunAudit}
           onAgentsChanged={() => void refreshAgents()}
           onEvidenceChanged={() => void refreshEvidence()}

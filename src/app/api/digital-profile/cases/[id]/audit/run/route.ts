@@ -1,7 +1,7 @@
 /**
  * /api/digital-profile/cases/[id]/audit/run
- *   POST — run the full (mock) audit: all agents in order. A failing agent does
- *   not abort the others; the response carries the overall outcome.
+ *   POST — run the orchestrated full audit across all eligible agents.
+ *   A failing agent does not abort the others; response includes run summary.
  */
 
 import type { NextRequest } from "next/server";

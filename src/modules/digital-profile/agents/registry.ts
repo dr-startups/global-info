@@ -70,7 +70,19 @@ export const REAL_SAFE_AUDIT_ORDER: string[] = [
 ];
 
 /** Back-compat alias used by the orchestrator/full-audit service. */
-export const FULL_AUDIT_ORDER = MOCK_FULL_AUDIT_ORDER;
+export const FULL_AUDIT_ORDER: string[] = [
+  "REAL_YANDEX_SEARCH",
+  "REAL_GOOGLE_SEARCH",
+  "REAL_WIKIPEDIA",
+  "REAL_ORION_SEARCH_PROFILE",
+  "REAL_ORION_UAE_INTERNATIONAL",
+  "REAL_SEARCH_SURFACES",
+  "REAL_ORION_GOOGLE_SURFACES",
+  "AI_PROFILE",
+  "COMPLIANCE_DATABASE",
+  "RISK_CLASSIFIER_V1",
+  "AUDIT_SUMMARY_BUILDER",
+];
 
 export function getAgent(name: string): CaseAgent | undefined {
   return AGENTS.get(name);

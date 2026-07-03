@@ -576,9 +576,44 @@ export interface CreateSurfaceInput {
 
 export type FullAuditOutcome = "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED";
 
+export interface FullAuditRunSummaryItem {
+  providerId: string;
+  phase: "collection" | "surfaces" | "enrichment" | "report";
+  status: "completed" | "failed" | "skipped" | "unavailable";
+  runtime: "real" | "mock" | "none";
+  agentName?: string;
+  fallbackAgent?: string;
+  reason: string;
+  runId?: string;
+}
+
 export interface FullAuditResult {
   outcome: FullAuditOutcome;
   runs: AgentRun[];
+  runSummary?: FullAuditRunSummaryItem[];
+  runtimeStrategy?: {
+    mode: "legacy_mock_first" | "real_first_with_fallback" | "real_only" | "mock_only";
+    selectedOrder: string[];
+    fallbackPolicy: "allow_mock_fallback" | "allow_empty_fallback" | "no_mock_fallback";
+    realProvidersAvailable: number;
+    mockProvidersAvailable: number;
+    fallbackEvents: Array<{
+      providerId: string;
+      reason: string;
+      from: "real" | "mock" | "none";
+      to: "real" | "mock" | "none";
+    }>;
+    warnings: string[];
+    decisions: Array<{
+      providerId: string;
+      phase: "collection" | "surfaces" | "enrichment" | "report";
+      status: "selected" | "skipped_unavailable" | "skipped_by_mode";
+      selectedAgent?: string;
+      selectedRuntime?: "real" | "mock";
+      fallbackAgent?: string;
+      reason: string;
+    }>;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -810,9 +845,13 @@ export function runAgent(caseId: string, agentName: string): Promise<AgentRun> {
   });
 }
 
-export function runFullAudit(caseId: string): Promise<FullAuditResult> {
+export function runFullAudit(
+  caseId: string,
+  options?: { runtimeMode?: "legacy_mock_first" | "real_first_with_fallback" | "real_only" | "mock_only" }
+): Promise<FullAuditResult> {
   return request<FullAuditResult>(`/cases/${caseId}/audit/run`, {
     method: "POST",
+    body: options ? JSON.stringify(options) : undefined,
   });
 }
 

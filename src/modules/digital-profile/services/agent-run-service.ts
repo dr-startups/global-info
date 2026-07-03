@@ -15,7 +15,7 @@ import { NotFoundError, ValidationError } from "../http/errors";
 import { recordAudit } from "./audit-log-service";
 import type { ActorContext } from "./case-service";
 import { getAgent, listAgentDefinitions } from "../agents/registry";
-import { resolveRuntimeStrategy } from "../agents/runtime-strategy";
+import { FULL_AUDIT_DEFAULT_RUNTIME_MODE, resolveRuntimeStrategy } from "../agents/runtime-strategy";
 import type { AgentAvailability, AgentKind, FullAuditOutcome } from "../agents/types";
 import type { AgentContext, SavedEvidenceSummary } from "../types";
 import type { ProviderRuntimeMode } from "../types";
@@ -51,6 +51,7 @@ export interface AgentInfoDTO {
 export interface FullAuditResultDTO {
   outcome: FullAuditOutcome;
   runs: AgentRunDTO[];
+  runSummary: FullAuditRunSummaryItem[];
   runtimeStrategy: {
     mode: ProviderRuntimeMode;
     selectedOrder: string[];
@@ -64,7 +65,27 @@ export interface FullAuditResultDTO {
       to: "real" | "mock" | "none";
     }>;
     warnings: string[];
+    decisions: Array<{
+      providerId: string;
+      phase: "collection" | "surfaces" | "enrichment" | "report";
+      status: "selected" | "skipped_unavailable" | "skipped_by_mode";
+      selectedAgent?: string;
+      selectedRuntime?: "real" | "mock";
+      fallbackAgent?: string;
+      reason: string;
+    }>;
   };
+}
+
+export interface FullAuditRunSummaryItem {
+  providerId: string;
+  phase: "collection" | "surfaces" | "enrichment" | "report";
+  status: "completed" | "failed" | "skipped" | "unavailable";
+  runtime: "real" | "mock" | "none";
+  agentName?: string;
+  fallbackAgent?: string;
+  reason: string;
+  runId?: string;
 }
 
 const agentRunSelect = {
@@ -136,7 +157,7 @@ export async function runAgent(
   const agentCtx: AgentContext = {
     caseId,
     actorId: ctx.actorId ?? "system",
-    mock: true,
+    mock: agent.kind === "MOCK",
   };
   await agent.validateInput(agentCtx);
 
@@ -211,8 +232,9 @@ export async function runFullAudit(
   options: { runtimeMode?: ProviderRuntimeMode } = {}
 ): Promise<FullAuditResultDTO> {
   await ensureActiveCase(caseId);
+  const runtimeMode = options.runtimeMode ?? FULL_AUDIT_DEFAULT_RUNTIME_MODE;
   const runtimeStrategy = resolveRuntimeStrategy({
-    mode: options.runtimeMode,
+    mode: runtimeMode,
     requestedBy: options.runtimeMode ? "request" : "default",
   });
   await recordAudit({
@@ -225,15 +247,47 @@ export async function runFullAudit(
         mode: runtimeStrategy.mode,
         fallbackPolicy: runtimeStrategy.fallbackPolicy,
         warnings: runtimeStrategy.warnings,
+        decisions: runtimeStrategy.decisions,
       },
-    },
+    } as unknown as Prisma.InputJsonValue,
   });
 
   const runs: AgentRunDTO[] = [];
+  const runSummary: FullAuditRunSummaryItem[] = runtimeStrategy.decisions.map((decision) => {
+    if (decision.status === "selected") {
+      return {
+        providerId: decision.providerId,
+        phase: decision.phase,
+        status: "skipped",
+        runtime: decision.selectedRuntime ?? "none",
+        agentName: decision.selectedAgent,
+        fallbackAgent: decision.fallbackAgent,
+        reason: `Planned: ${decision.reason}`,
+      };
+    }
+    return {
+      providerId: decision.providerId,
+      phase: decision.phase,
+      status: decision.status === "skipped_unavailable" ? "unavailable" : "skipped",
+      runtime: "none",
+      reason: decision.reason,
+    };
+  });
+
+  const summaryByProvider = new Map<string, FullAuditRunSummaryItem>(
+    runSummary.map((item) => [item.providerId, item])
+  );
+
   for (const step of runtimeStrategy.steps) {
     try {
       const firstRun = await runAgent(caseId, step.primaryAgent, ctx);
       runs.push(firstRun);
+      const summaryItem = summaryByProvider.get(step.providerId);
+      if (summaryItem) {
+        summaryItem.agentName = step.primaryAgent;
+        summaryItem.runtime = step.primaryRuntime;
+        summaryItem.runId = firstRun.id || undefined;
+      }
       if (
         runtimeStrategy.mode === "real_first_with_fallback" &&
         firstRun.status !== "SUCCEEDED" &&
@@ -242,12 +296,29 @@ export async function runFullAudit(
       ) {
         const fallbackRun = await runAgent(caseId, step.fallbackAgent, ctx);
         runs.push(fallbackRun);
+        if (summaryItem) {
+          summaryItem.fallbackAgent = step.fallbackAgent;
+          summaryItem.agentName = fallbackRun.status === "SUCCEEDED" ? step.fallbackAgent : step.primaryAgent;
+          summaryItem.runtime = fallbackRun.status === "SUCCEEDED" ? "mock" : "real";
+          summaryItem.runId = fallbackRun.id || summaryItem.runId;
+          summaryItem.status = fallbackRun.status === "SUCCEEDED" ? "completed" : "failed";
+          summaryItem.reason =
+            fallbackRun.status === "SUCCEEDED"
+              ? `Primary real agent ${step.primaryAgent} failed; fallback ${step.fallbackAgent} completed.`
+              : `Primary real agent ${step.primaryAgent} failed and fallback ${step.fallbackAgent} failed.`;
+        }
         runtimeStrategy.fallbackEvents.push({
           providerId: step.providerId,
           reason: `Primary real agent ${step.primaryAgent} failed; fallback agent ${step.fallbackAgent} executed.`,
           from: "real",
           to: "mock",
         });
+      } else if (summaryItem) {
+        summaryItem.status = firstRun.status === "SUCCEEDED" ? "completed" : "failed";
+        summaryItem.reason =
+          firstRun.status === "SUCCEEDED"
+            ? `${step.primaryAgent} completed successfully.`
+            : `${step.primaryAgent} failed${firstRun.error ? `: ${firstRun.error}` : "."}`;
       }
     } catch (err) {
       // Defensive: runAgent normally captures agent errors itself.
@@ -263,6 +334,13 @@ export async function runFullAudit(
         finishedAt: null,
         createdAt: new Date(),
       });
+      const summaryItem = summaryByProvider.get(step.providerId);
+      if (summaryItem) {
+        summaryItem.status = "failed";
+        summaryItem.reason = `${step.primaryAgent} threw before completion${
+          err instanceof Error ? `: ${err.message}` : "."
+        }`;
+      }
       if (
         runtimeStrategy.mode === "real_first_with_fallback" &&
         step.primaryRuntime === "real" &&
@@ -271,6 +349,17 @@ export async function runFullAudit(
         try {
           const fallbackRun = await runAgent(caseId, step.fallbackAgent, ctx);
           runs.push(fallbackRun);
+          if (summaryItem) {
+            summaryItem.fallbackAgent = step.fallbackAgent;
+            summaryItem.agentName = fallbackRun.status === "SUCCEEDED" ? step.fallbackAgent : step.primaryAgent;
+            summaryItem.runtime = fallbackRun.status === "SUCCEEDED" ? "mock" : "real";
+            summaryItem.runId = fallbackRun.id || summaryItem.runId;
+            summaryItem.status = fallbackRun.status === "SUCCEEDED" ? "completed" : "failed";
+            summaryItem.reason =
+              fallbackRun.status === "SUCCEEDED"
+                ? `Primary real agent ${step.primaryAgent} threw; fallback ${step.fallbackAgent} completed.`
+                : `Primary real agent ${step.primaryAgent} threw and fallback ${step.fallbackAgent} failed.`;
+          }
           runtimeStrategy.fallbackEvents.push({
             providerId: step.providerId,
             reason: `Primary real agent ${step.primaryAgent} threw; fallback ${step.fallbackAgent} executed.`,
@@ -284,6 +373,10 @@ export async function runFullAudit(
             from: "real",
             to: "none",
           });
+          if (summaryItem) {
+            summaryItem.status = "failed";
+            summaryItem.reason = `Primary real agent ${step.primaryAgent} failed and fallback ${step.fallbackAgent} failed.`;
+          }
         }
       }
     }
@@ -300,18 +393,21 @@ export async function runFullAudit(
     metadata: {
       outcome,
       results: runs.map((r) => ({ agent: r.agentName, status: r.status })),
+      runSummary,
       runtimeStrategy: {
         mode: runtimeStrategy.mode,
         fallbackPolicy: runtimeStrategy.fallbackPolicy,
         fallbackEvents: runtimeStrategy.fallbackEvents,
         warnings: runtimeStrategy.warnings,
+        decisions: runtimeStrategy.decisions,
       },
-    },
+    } as unknown as Prisma.InputJsonValue,
   });
 
   return {
     outcome,
     runs,
+    runSummary,
     runtimeStrategy: {
       mode: runtimeStrategy.mode,
       selectedOrder: runtimeStrategy.selectedOrder,
@@ -320,6 +416,7 @@ export async function runFullAudit(
       mockProvidersAvailable: runtimeStrategy.mockProvidersAvailable,
       fallbackEvents: runtimeStrategy.fallbackEvents,
       warnings: runtimeStrategy.warnings,
+      decisions: runtimeStrategy.decisions,
     },
   };
 }

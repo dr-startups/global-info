@@ -89,13 +89,19 @@ export interface Dictionary {
   agents: {
     title: string;
     mockSuffix: string;
+    fullAuditScopeHint: string;
     runAudit: string;
     runningAudit: string;
     runFullAudit: string;
     auditDone: string;
     auditPartial: string;
     auditFailed: string;
+    auditRunStats: string;
     lastRun: string;
+    lastFullAuditSummary: string;
+    runtimeModeLabel: string;
+    provider: string;
+    phase: string;
     recentRuns: string;
     noRuns: string;
     noRunsHint: string;

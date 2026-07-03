@@ -6,13 +6,14 @@ import {
   runAgent as runAgentApi,
   type AgentInfo,
   type AgentRun,
+  type FullAuditRunSummaryItem,
 } from "./api";
 import { Badge, EmptyState, ErrorBox, StatusBadge, SuccessBox } from "./components";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
 
 /**
- * Agents tab: lists the (mock) agents, lets the user run one agent or the full
+ * Agents tab: lists all agents, lets the user run one agent or the full
  * audit, and shows recent agent_runs. The full audit is owned by the parent so
  * the header button and this tab share one loading state; single-agent runs are
  * handled locally and then ask the parent to refresh.
@@ -22,6 +23,7 @@ export function AgentsTab({
   agents,
   agentRuns,
   auditing,
+  lastFullAuditSummary,
   onRunFullAudit,
   onChanged,
 }: {
@@ -29,6 +31,10 @@ export function AgentsTab({
   agents: AgentInfo[];
   agentRuns: AgentRun[];
   auditing: boolean;
+  lastFullAuditSummary: {
+    mode: "legacy_mock_first" | "real_first_with_fallback" | "real_only" | "mock_only";
+    items: FullAuditRunSummaryItem[];
+  } | null;
   onRunFullAudit: () => void;
   onChanged: () => void;
 }) {
@@ -70,7 +76,7 @@ export function AgentsTab({
     <div>
       <div className="dp-row" style={{ alignItems: "center" }}>
         <h2 className="dp-h2" style={{ margin: 0 }}>
-          {t("agents.title")} <span className="dp-muted">{t("agents.mockSuffix")}</span>
+          {t("agents.title")} <span className="dp-muted">{t("agents.fullAuditScopeHint")}</span>
         </h2>
         {canRun ? (
           <button
@@ -92,6 +98,55 @@ export function AgentsTab({
       {info ? (
         <div style={{ margin: "12px 0" }}>
           <SuccessBox>{info}</SuccessBox>
+        </div>
+      ) : null}
+      {lastFullAuditSummary ? (
+        <div style={{ margin: "12px 0" }}>
+          <h3 className="dp-h2" style={{ fontSize: 16, marginBottom: 8 }}>
+            {t("agents.lastFullAuditSummary")}
+          </h3>
+          <div className="dp-muted" style={{ marginBottom: 8 }}>
+            {t("agents.runtimeModeLabel", { mode: lastFullAuditSummary.mode })}
+          </div>
+          <table className="dp-table">
+            <thead>
+              <tr>
+                <th>{t("agents.provider")}</th>
+                <th>{t("agents.phase")}</th>
+                <th>{t("agents.type")}</th>
+                <th>{t("cases.status")}</th>
+                <th>{t("agents.summary")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lastFullAuditSummary.items.map((item) => (
+                <tr key={`${item.providerId}-${item.phase}`}>
+                  <td>{item.providerId}</td>
+                  <td>{item.phase}</td>
+                  <td>
+                    <Badge tone={item.runtime === "real" ? "ok" : item.runtime === "mock" ? "neutral" : "warn"}>
+                      {item.runtime.toUpperCase()}
+                    </Badge>
+                  </td>
+                  <td>
+                    <StatusBadge
+                      status={
+                        item.status === "completed"
+                          ? "SUCCEEDED"
+                          : item.status === "failed"
+                            ? "FAILED"
+                            : "PENDING"
+                      }
+                    />
+                  </td>
+                  <td className="dp-muted">
+                    {item.agentName ? `${item.agentName}. ` : ""}
+                    {item.reason}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       ) : null}
 

@@ -15,6 +15,7 @@ import {
   type AiProfile,
   type CaseDetail,
   type CaseEvidence,
+  type FullAuditRunSummaryItem,
   type ManualResultClass,
   type ReportVersion,
   type ResultRiskThemeKey,
@@ -67,6 +68,7 @@ export function CaseTabs({
   agents,
   agentRuns,
   auditing,
+  lastFullAuditSummary,
   onRunFullAudit,
   onAgentsChanged,
   onEvidenceChanged,
@@ -80,6 +82,10 @@ export function CaseTabs({
   agents: AgentInfo[];
   agentRuns: AgentRun[];
   auditing: boolean;
+  lastFullAuditSummary: {
+    mode: "legacy_mock_first" | "real_first_with_fallback" | "real_only" | "mock_only";
+    items: FullAuditRunSummaryItem[];
+  } | null;
   onRunFullAudit: () => void;
   onAgentsChanged: () => void;
   onEvidenceChanged: () => void;
@@ -145,6 +151,7 @@ export function CaseTabs({
           agents={agents}
           agentRuns={agentRuns}
           auditing={auditing}
+          lastFullAuditSummary={lastFullAuditSummary}
           onRunFullAudit={onRunFullAudit}
           onChanged={onAgentsChanged}
         />
