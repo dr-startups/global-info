@@ -136,11 +136,15 @@ export interface SourceFingerprint {
 
 /** Stage R4.2 — explainable source-quality metadata. */
 export interface SourceQualityMetadata extends SourceFingerprint {
+  sourceRank?: number;
+  sourceScoreBucket?: "high" | "medium" | "low" | "unknown";
   sourceQualityDecision: SourceQualityDecision;
   sourceQualityReason: SourceQualityReason;
   confidenceLabel: SourceConfidenceLabel;
   clientSafeReason: string;
   internalReason?: string;
+  rankingFactors?: Record<string, number>;
+  limitingFactors?: string[];
 }
 
 export type AutocompleteClass =
@@ -306,11 +310,17 @@ export interface EvidenceQualitySummary {
     bySurfaceType: Partial<Record<SourceSurfaceType, number>>;
     byProvider: Record<string, number>;
     topDuplicateDomains: Array<{ domain: string; count: number }>;
+    bySourceScoreBucket?: Record<string, number>;
+    byDecision?: Record<string, number>;
+    byQueryPurpose?: Record<string, number>;
     highConfidenceCount: number;
     mediumConfidenceCount: number;
     lowConfidenceCount: number;
     unknownConfidenceCount: number;
     namesakeSuppressionCount?: number;
     fallbackSourceCount?: number;
+    weakMatchSuppressedCount?: number;
+    mediaCandidateSuppressedCount?: number;
+    warnings?: string[];
   };
 }

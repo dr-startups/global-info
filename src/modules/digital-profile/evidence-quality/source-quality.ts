@@ -8,6 +8,7 @@ import type {
   SourceSurfaceType,
 } from "./types";
 import { buildSourceFingerprint, detectDuplicateGroups } from "./source-dedup";
+import { rankSourceItem } from "./source-ranking";
 
 export type ReportLang = "ru" | "en";
 
@@ -24,12 +25,18 @@ export interface SourceQualitySummary {
   bySurfaceType: Partial<Record<SourceSurfaceType, number>>;
   byProvider: Record<string, number>;
   topDuplicateDomains: Array<{ domain: string; count: number }>;
+  bySourceScoreBucket?: Record<string, number>;
+  byDecision?: Record<string, number>;
+  byQueryPurpose?: Record<string, number>;
   highConfidenceCount: number;
   mediumConfidenceCount: number;
   lowConfidenceCount: number;
   unknownConfidenceCount: number;
   namesakeSuppressionCount?: number;
   fallbackSourceCount?: number;
+  weakMatchSuppressedCount?: number;
+  mediaCandidateSuppressedCount?: number;
+  warnings?: string[];
 }
 
 const REASON_TEXT: Record<ReportLang, Partial<Record<SourceQualityReason, string>>> = {
@@ -81,18 +88,6 @@ function confidenceLabel(item: GatedEvidenceItem): SourceConfidenceLabel {
   return "unknown";
 }
 
-function mapDecision(item: GatedEvidenceItem, dup: boolean): SourceQualityDecision {
-  if (dup) return "duplicate";
-  if (item.quality.selectionReason === "provider_not_configured") return "unavailable";
-  if (item.quality.selectionReason === "manual_review_required") return "review";
-  if (item.quality.selectionReason === "weak_adverse_terms") return "review";
-  if (item.quality.selectionReason === "weak_identity_override") return "review";
-  if (item.quality.reportEligibility === "CLIENT_INCLUDE") return "include";
-  if (item.quality.reportEligibility === "INTERNAL_ONLY") return "review";
-  if (item.quality.reportEligibility === "REVIEW_REQUIRED") return "review";
-  return "exclude";
-}
-
 function mapReason(item: GatedEvidenceItem, dup: boolean): SourceQualityReason {
   const text = `${item.title ?? ""} ${item.snippet ?? ""}`.toLowerCase();
   if (dup) return "duplicate_source";
@@ -125,18 +120,24 @@ function withSourceQuality(
   decision: SourceQualityDecision,
   reason: SourceQualityReason,
   lang: ReportLang,
-  duplicateMeta?: { duplicateGroupId: string; duplicateRank: number; duplicateReason: string }
+  duplicateMeta: { duplicateGroupId: string; duplicateRank: number; duplicateReason: string } | undefined,
+  ranking: ReturnType<typeof rankSourceItem>
 ): SourceQualityMetadata {
   return {
     ...fingerprint,
     duplicateGroupId: duplicateMeta?.duplicateGroupId ?? null,
     duplicateRank: duplicateMeta?.duplicateRank ?? null,
     duplicateReason: duplicateMeta?.duplicateReason ?? null,
+    sourceRank: ranking.sourceRank,
+    sourceScoreBucket: ranking.sourceScoreBucket,
     sourceQualityDecision: decision,
     sourceQualityReason: reason,
     confidenceLabel: confidenceLabel(item),
-    clientSafeReason: localizedReason(lang, reason),
-    internalReason: `${decision}:${reason}`,
+    clientSafeReason:
+      localizedReason(lang, reason) || ranking.clientSafeReasonHint,
+    internalReason: `${decision}:${reason}:${ranking.internalReasonHint}`,
+    rankingFactors: ranking.rankingFactors,
+    limitingFactors: ranking.limitingFactors,
   };
 }
 
@@ -149,8 +150,9 @@ export function annotateSourceQuality(
     const fp = buildSourceFingerprint(item);
     const d = dup.get(idx);
     const isDup = Boolean(d && d.duplicateRank > 1);
-    const decision = mapDecision(item, isDup);
-    const reason = mapReason(item, isDup);
+    const ranking = rankSourceItem(item, isDup);
+    const decision = ranking.sourceQualityDecision;
+    const reason = ranking.sourceQualityReason || mapReason(item, isDup);
     const next = {
       ...item,
       quality: {
@@ -159,7 +161,7 @@ export function annotateSourceQuality(
         // while still retained with diagnostics metadata.
         reportEligibility: isDup ? "EXCLUDE" : item.quality.reportEligibility,
         selectionReason: isDup ? "duplicate_url" : item.quality.selectionReason,
-        sourceQuality: withSourceQuality(item, fp, decision, reason, lang, d),
+        sourceQuality: withSourceQuality(item, fp, decision, reason, lang, d, ranking),
       },
     };
     return next;
@@ -170,6 +172,9 @@ export function summarizeSourceQuality(items: GatedEvidenceItem[]): SourceQualit
   const bySurfaceType: Partial<Record<SourceSurfaceType, number>> = {};
   const byProvider: SummaryCounter = {};
   const duplicateDomains: SummaryCounter = {};
+  const bySourceScoreBucket: SummaryCounter = {};
+  const byDecision: SummaryCounter = {};
+  const byQueryPurpose: SummaryCounter = {};
   let duplicateCount = 0;
   let include = 0;
   let review = 0;
@@ -181,6 +186,8 @@ export function summarizeSourceQuality(items: GatedEvidenceItem[]): SourceQualit
   let unknown = 0;
   let namesakeSuppression = 0;
   let fallbackCount = 0;
+  let weakMatchSuppressed = 0;
+  let mediaSuppressed = 0;
 
   const uniqueKeys = new Set<string>();
   for (const item of items) {
@@ -189,6 +196,13 @@ export function summarizeSourceQuality(items: GatedEvidenceItem[]): SourceQualit
     uniqueKeys.add(sq.sourceFingerprint);
     bySurfaceType[sq.surfaceType] = (bySurfaceType[sq.surfaceType] ?? 0) + 1;
     byProvider[sq.providerKey] = (byProvider[sq.providerKey] ?? 0) + 1;
+    bySourceScoreBucket[sq.sourceScoreBucket ?? "unknown"] =
+      (bySourceScoreBucket[sq.sourceScoreBucket ?? "unknown"] ?? 0) + 1;
+    byDecision[sq.sourceQualityDecision] = (byDecision[sq.sourceQualityDecision] ?? 0) + 1;
+    const purpose = String(
+      (item.rawMetadata as Record<string, unknown> | undefined)?.queryPurpose ?? "unknown"
+    ).toLowerCase();
+    byQueryPurpose[purpose || "unknown"] = (byQueryPurpose[purpose || "unknown"] ?? 0) + 1;
     if (sq.sourceQualityDecision === "duplicate") {
       duplicateCount += 1;
       if (sq.canonicalDomain) {
@@ -201,6 +215,13 @@ export function summarizeSourceQuality(items: GatedEvidenceItem[]): SourceQualit
     else if (sq.sourceQualityDecision === "fallback") fallbackCount += 1;
 
     if (sq.sourceQualityReason === "namesake_risk") namesakeSuppression += 1;
+    if (sq.sourceQualityReason === "weak_identity_match") weakMatchSuppressed += 1;
+    if (
+      (item.surfaceType === "IMAGE_RESULT" || item.surfaceType === "VIDEO_RESULT") &&
+      (sq.sourceQualityDecision === "exclude" || sq.sourceQualityDecision === "review")
+    ) {
+      mediaSuppressed += 1;
+    }
     if (sq.confidenceLabel === "high") high += 1;
     else if (sq.confidenceLabel === "medium") medium += 1;
     else if (sq.confidenceLabel === "low") low += 1;
@@ -223,11 +244,17 @@ export function summarizeSourceQuality(items: GatedEvidenceItem[]): SourceQualit
     bySurfaceType,
     byProvider,
     topDuplicateDomains,
+    bySourceScoreBucket,
+    byDecision,
+    byQueryPurpose,
     highConfidenceCount: high,
     mediumConfidenceCount: medium,
     lowConfidenceCount: low,
     unknownConfidenceCount: unknown,
     namesakeSuppressionCount: namesakeSuppression,
     fallbackSourceCount: fallbackCount || undefined,
+    weakMatchSuppressedCount: weakMatchSuppressed || undefined,
+    mediaCandidateSuppressedCount: mediaSuppressed || undefined,
+    warnings: duplicateCount > include + review ? ["high_duplicate_ratio"] : undefined,
   };
 }

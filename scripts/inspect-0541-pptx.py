@@ -1780,6 +1780,52 @@ def _r53_live_provider_smoke_checks(report_json_path: Path) -> tuple[int, list[s
     return 0, lines
 
 
+def _r54_source_ranking_checks(report_json_path: Path) -> tuple[int, list[str]]:
+    fails: list[str] = []
+    report_json: dict[str, Any] = {}
+    if report_json_path.exists():
+        report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+
+    is_client = "providerDiagnostics" not in report_json
+    raw = json.dumps(report_json, ensure_ascii=False)
+    sq = report_json.get("sourceQualitySummary")
+    if not isinstance(sq, dict):
+        fails.append("sourceQualitySummary missing")
+    else:
+        for key in ("includedCount", "reviewCount", "excludedCount", "duplicateCount"):
+            if key not in sq:
+                fails.append(f"sourceQualitySummary missing field: {key}")
+
+    if is_client:
+        leaked = [
+            k
+            for k in (
+                "rankingFactors",
+                "limitingFactors",
+                "sourceRank",
+                "sourceScoreBucket",
+                "sourceFingerprint",
+                "duplicateGroupId",
+                "internalReason",
+            )
+            if f'"{k}"' in raw
+        ]
+        if leaked:
+            fails.append(f"client source-ranking leakage: {leaked}")
+    else:
+        # Internal artifact should retain ranking diagnostics in at least one row.
+        if "rankingFactors" not in raw:
+            fails.append("internal source ranking factors missing")
+
+    lines: list[str] = []
+    if fails:
+        for f in fails:
+            lines.append(f"[FAIL] R5.4 {f}")
+        return 1, lines
+    lines.append("[PASS] R5.4 source ranking — deterministic quality summary and client-safe stripping")
+    return 0, lines
+
+
 def _r36_production_gate_checks(pptx_path: Path, report_json_path: Path) -> tuple[int, list[str]]:
     fails: list[str] = []
     report_json: dict[str, Any] = {}
@@ -1942,6 +1988,9 @@ def main() -> int:
     r53_rc, r53_lines = _r53_live_provider_smoke_checks(report_json_path)
     for line in r53_lines:
         print(line)
+    r54_rc, r54_lines = _r54_source_ranking_checks(report_json_path)
+    for line in r54_lines:
+        print(line)
     # R3.6 — regression locks use an internal baseline; client/production artifacts
     # legitimately differ on audience-gated slides, so lock only internal artifacts.
     _reg_report_json: dict[str, Any] = {}
@@ -1971,7 +2020,7 @@ def main() -> int:
     )
     for line in s13_sem_lines:
         print(line)
-    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or r42_rc != 0 or r43_rc != 0 or r51_rc != 0 or r53_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
+    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or r42_rc != 0 or r43_rc != 0 or r51_rc != 0 or r53_rc != 0 or r54_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
 
 
 if __name__ == "__main__":

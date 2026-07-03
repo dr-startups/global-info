@@ -276,6 +276,10 @@ const CLIENT_FORBIDDEN_JSON_KEYS = new Set([
   "safeStatusCode",
   "safeErrorClass",
   "fallbackProviderId",
+  "rankingFactors",
+  "limitingFactors",
+  "sourceRank",
+  "sourceScoreBucket",
 ]);
 
 export type ReportJsonAudience = "internal" | "client";
@@ -395,6 +399,10 @@ export const CLIENT_FORBIDDEN_TEXT_MARKERS: string[] = [
   "safeStatusCode",
   "safeErrorClass",
   "fallbackProviderId",
+  "rankingFactors",
+  "limitingFactors",
+  "sourceRank",
+  "sourceScoreBucket",
   "topExclusionReasons",
   "process.env",
   ".env",
@@ -502,6 +510,10 @@ function sanitizeSearchSurfacesForClient(
               duplicateGroupId: _dg,
               duplicateRank: _dr,
               duplicateReason: _dgr,
+              sourceRank: _sr,
+              sourceScoreBucket: _ssb,
+              rankingFactors: _rf,
+              limitingFactors: _lf,
               internalReason: _ir,
               ...rest
             } = item as Record<

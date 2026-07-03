@@ -11,12 +11,18 @@ export interface ReportSourceQualitySummary {
   bySurfaceType: Record<string, number>;
   byProvider: Record<string, number>;
   topDuplicateDomains: Array<{ domain: string; count: number }>;
+  bySourceScoreBucket?: Record<string, number>;
+  byDecision?: Record<string, number>;
+  byQueryPurpose?: Record<string, number>;
   highConfidenceCount: number;
   mediumConfidenceCount: number;
   lowConfidenceCount: number;
   unknownConfidenceCount: number;
   namesakeSuppressionCount?: number;
   fallbackSourceCount?: number;
+  weakMatchSuppressedCount?: number;
+  mediaCandidateSuppressedCount?: number;
+  warnings?: string[];
   explanation: { ru: string; en: string };
 }
 
@@ -68,6 +74,11 @@ export function buildReportSourceQualitySummary(
   let unknown = 0;
   let namesakeSuppression = 0;
   let fallback = 0;
+  let weakMatchSuppressed = 0;
+  let mediaSuppressed = 0;
+  const bySourceScoreBucket: Record<string, number> = {};
+  const byDecision: Record<string, number> = {};
+  const byQueryPurpose: Record<string, number> = {};
 
   for (const r of rows) {
     const fp = r.sourceFingerprint ?? r.canonicalUrlKey ?? `${r.domain ?? ""}|${r.title ?? ""}`;
@@ -77,6 +88,7 @@ export function buildReportSourceQualitySummary(
     const provider = String(r.providerKey ?? "unknown");
     byProvider[provider] = (byProvider[provider] ?? 0) + 1;
     const decision = String(r.sourceQualityDecision ?? "");
+    byDecision[decision || "unknown"] = (byDecision[decision || "unknown"] ?? 0) + 1;
     if (decision === "duplicate") {
       duplicateCount += 1;
       const d = String(r.canonicalDomain ?? r.domain ?? "");
@@ -88,6 +100,17 @@ export function buildReportSourceQualitySummary(
     else if (decision === "fallback") fallback += 1;
 
     if (String(r.sourceQualityReason ?? "") === "namesake_risk") namesakeSuppression += 1;
+    if (String(r.sourceQualityReason ?? "") === "weak_identity_match") weakMatchSuppressed += 1;
+    if (
+      (String(r.sourceSurfaceType ?? "") === "image" || String(r.sourceSurfaceType ?? "") === "video") &&
+      (decision === "exclude" || decision === "review")
+    ) {
+      mediaSuppressed += 1;
+    }
+    const bucket = String(r.sourceScoreBucket ?? "unknown");
+    bySourceScoreBucket[bucket] = (bySourceScoreBucket[bucket] ?? 0) + 1;
+    const purpose = String(r.queryPurpose ?? "unknown").toLowerCase();
+    byQueryPurpose[purpose] = (byQueryPurpose[purpose] ?? 0) + 1;
     const c = String(r.confidenceLabel ?? "unknown");
     if (c === "high") high += 1;
     else if (c === "medium") medium += 1;
@@ -111,12 +134,18 @@ export function buildReportSourceQualitySummary(
     bySurfaceType,
     byProvider,
     topDuplicateDomains,
+    bySourceScoreBucket,
+    byDecision,
+    byQueryPurpose,
     highConfidenceCount: high,
     mediumConfidenceCount: medium,
     lowConfidenceCount: low,
     unknownConfidenceCount: unknown,
     namesakeSuppressionCount: namesakeSuppression || undefined,
     fallbackSourceCount: fallback || undefined,
+    weakMatchSuppressedCount: weakMatchSuppressed || undefined,
+    mediaCandidateSuppressedCount: mediaSuppressed || undefined,
+    warnings: duplicateCount > includedCount + reviewCount ? ["high_duplicate_ratio"] : undefined,
     explanation: {
       ru: "Повторы и нерелевантные совпадения отфильтрованы; включены только приоритетные материалы.",
       en: "Duplicate and low-relevance matches are filtered; priority evidence is retained.",

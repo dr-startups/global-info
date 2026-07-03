@@ -203,6 +203,33 @@ function isNegativeSelected(item: SurfaceReportItem): boolean {
   );
 }
 
+function decisionPriority(decision: string | undefined): number {
+  if (decision === "include") return 4;
+  if (decision === "review") return 3;
+  if (decision === "fallback") return 2;
+  if (decision === "duplicate") return 1;
+  return 0;
+}
+
+function identityPriority(identity: string | undefined): number {
+  if (identity === "EXACT_SUBJECT") return 3;
+  if (identity === "LIKELY_SUBJECT") return 2;
+  if (identity === "POSSIBLE_SUBJECT") return 1;
+  return 0;
+}
+
+function sortByEvidenceRank(items: SurfaceReportItem[]): SurfaceReportItem[] {
+  return [...items].sort((a, b) => {
+    const d = decisionPriority(b.sourceQualityDecision) - decisionPriority(a.sourceQualityDecision);
+    if (d !== 0) return d;
+    const i = identityPriority(b.identityDecision) - identityPriority(a.identityDecision);
+    if (i !== 0) return i;
+    const r = (b.sourceRank ?? 0) - (a.sourceRank ?? 0);
+    if (r !== 0) return r;
+    return (a.title ?? "").localeCompare(b.title ?? "");
+  });
+}
+
 function surfaceTypeLabel(item: SurfaceReportItem, bucket: "organic" | "image" | "video"): string {
   if (bucket === "image") return "IMAGE";
   if (bucket === "video") return "VIDEO";
@@ -286,22 +313,22 @@ function buildRegionVm(
   code: "RU" | "UAE" | "INTERNATIONAL",
   audience: ReportAudience
 ): SelectedEvidenceRegionVm {
-  const organicSelected = filterItemsForAudience(
+  const organicSelected = sortByEvidenceRank(filterItemsForAudience(
     block.organic.items.filter(
       code === "RU" ? isSubjectMatchedItem : isStrictIntlOrganicMatch
     ),
     audience
-  );
+  ));
   const organicNegativeSelected = organicSelected.filter(isNegativeSelected);
 
-  const imagesSelected = filterItemsForAudience(
+  const imagesSelected = sortByEvidenceRank(filterItemsForAudience(
     block.images.items.filter((i) => isStrictMediaSubjectMatch(i, audience)),
     audience
-  );
-  const videosSelected = filterItemsForAudience(
+  ));
+  const videosSelected = sortByEvidenceRank(filterItemsForAudience(
     block.videos.items.filter((i) => isStrictMediaSubjectMatch(i, audience)),
     audience
-  );
+  ));
 
   const confirmedAppendix: SelectedEvidenceAppendixRow[] = [];
   const seen = new Set<string>();

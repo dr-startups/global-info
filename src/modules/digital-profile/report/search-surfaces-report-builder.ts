@@ -69,8 +69,12 @@ export interface SurfaceReportItem {
   sourceQualityDecision?: string;
   sourceQualityReason?: string;
   confidenceLabel?: string;
+  sourceRank?: number;
+  sourceScoreBucket?: string;
   clientSafeReason?: string;
   internalReason?: string;
+  rankingFactors?: Record<string, number>;
+  limitingFactors?: string[];
   /** Stage R4.3 — query/screenshot provenance linkage. */
   queryId?: string;
   queryPurpose?: string;
@@ -241,16 +245,22 @@ function mapGatedToReportItem(
         .slice(0, 32)
         .replace(/[^a-z0-9]+/g, "-")}`
     : undefined;
+  const queryPurposeFromMeta =
+    r.rawMetadata && typeof r.rawMetadata === "object"
+      ? (r.rawMetadata as Record<string, unknown>).queryPurpose
+      : undefined;
   const queryPurpose =
-    r.surfaceType === "IMAGE_RESULT"
-      ? "media_lookup"
-      : r.surfaceType === "VIDEO_RESULT"
+    typeof queryPurposeFromMeta === "string" && queryPurposeFromMeta.trim()
+      ? queryPurposeFromMeta
+      : r.surfaceType === "IMAGE_RESULT"
         ? "media_lookup"
-        : r.surfaceType === "SEARCH_SUGGESTION"
-          ? "suggestion_lookup"
-          : r.surfaceType === "RELATED_QUERY"
-            ? "related_lookup"
-            : "subject_lookup";
+        : r.surfaceType === "VIDEO_RESULT"
+          ? "media_lookup"
+          : r.surfaceType === "SEARCH_SUGGESTION"
+            ? "suggestion_lookup"
+            : r.surfaceType === "RELATED_QUERY"
+              ? "related_lookup"
+              : "subject_lookup";
   const surfaceId =
     typeof r.id === "string" && r.id
       ? r.id
@@ -287,8 +297,19 @@ function mapGatedToReportItem(
     sourceQualityDecision: typeof sq?.sourceQualityDecision === "string" ? sq.sourceQualityDecision : undefined,
     sourceQualityReason: typeof sq?.sourceQualityReason === "string" ? sq.sourceQualityReason : undefined,
     confidenceLabel: typeof sq?.confidenceLabel === "string" ? sq.confidenceLabel : undefined,
+    sourceRank: typeof sq?.sourceRank === "number" ? sq.sourceRank : undefined,
+    sourceScoreBucket:
+      typeof sq?.sourceScoreBucket === "string" ? sq.sourceScoreBucket : undefined,
     clientSafeReason: typeof sq?.clientSafeReason === "string" ? sq.clientSafeReason : undefined,
     internalReason: typeof sq?.internalReason === "string" ? sq.internalReason : undefined,
+    rankingFactors:
+      sq?.rankingFactors && typeof sq.rankingFactors === "object"
+        ? (sq.rankingFactors as Record<string, number>)
+        : undefined,
+    limitingFactors:
+      Array.isArray(sq?.limitingFactors) && sq?.limitingFactors.every((v) => typeof v === "string")
+        ? (sq.limitingFactors as string[])
+        : undefined,
     queryId,
     queryPurpose,
     providerLabel,
