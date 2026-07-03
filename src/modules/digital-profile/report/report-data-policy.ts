@@ -243,9 +243,136 @@ const CLIENT_FORBIDDEN_JSON_KEYS = new Set([
   "thumbnailBytesBase64",
   "thumbnailMimeType",
   "imageBase64",
+  // Stage R3.6 — defensive deep-strip of internal-only detail fields.
+  "internalDetail",
+  "internalReason",
+  "topExclusionReasons",
+  "skippedReason",
+  "fallbackReason",
 ]);
 
 export type ReportJsonAudience = "internal" | "client";
+
+/**
+ * Stage R3.6 — production report mode. "production" is a client-safe alias that
+ * enforces strict sanitization; it never relaxes client hardening.
+ */
+export type ReportProductionMode = "internal" | "client" | "production";
+
+export interface ReportAudiencePolicy {
+  audience: ReportJsonAudience;
+  /** Whether the internal-only diagnostics page is rendered. */
+  includeDiagnosticsPage: boolean;
+  /** Whether internal diagnostics blocks may travel in report_json. */
+  includeInternalDiagnostics: boolean;
+  /** Whether internal-only analyst notes may be shown. */
+  allowInternalNotes: boolean;
+  /** Deterministic slide count contract for this audience. */
+  expectedSlideCount: number;
+}
+
+/** Internal report renders the diagnostics page as the final internal-only slide. */
+export const REPORT_INTERNAL_SLIDE_COUNT = 73;
+export const REPORT_CLIENT_SLIDE_COUNT = 72;
+
+/** Normalize any requested report mode into a concrete audience. */
+export function normalizeProductionReportMode(
+  mode: string | null | undefined
+): ReportJsonAudience {
+  const m = String(mode ?? "").toLowerCase();
+  // production is client-safe by contract; unknown modes default to client (safe).
+  if (m === "internal") return "internal";
+  return "client";
+}
+
+/** Resolve the display/report policy for an audience (or production mode). */
+export function getReportAudiencePolicy(
+  mode: ReportProductionMode | string | null | undefined
+): ReportAudiencePolicy {
+  const audience = normalizeProductionReportMode(mode);
+  if (audience === "internal") {
+    return {
+      audience,
+      includeDiagnosticsPage: true,
+      includeInternalDiagnostics: true,
+      allowInternalNotes: true,
+      expectedSlideCount: REPORT_INTERNAL_SLIDE_COUNT,
+    };
+  }
+  return {
+    audience,
+    includeDiagnosticsPage: false,
+    includeInternalDiagnostics: false,
+    allowInternalNotes: false,
+    expectedSlideCount: REPORT_CLIENT_SLIDE_COUNT,
+  };
+}
+
+/** Report_json blocks that are internal-only and must never reach the client. */
+const INTERNAL_ONLY_REPORT_BLOCKS = ["providerDiagnostics"] as const;
+
+/** Remove internal-only diagnostics blocks from a client report_json copy. */
+export function stripInternalDiagnostics<T extends Record<string, unknown>>(copy: T): T {
+  for (const key of INTERNAL_ONLY_REPORT_BLOCKS) {
+    if (key in copy) delete (copy as Record<string, unknown>)[key];
+  }
+  return copy;
+}
+
+/**
+ * Raw enum / debug tokens that must never appear in client report_json text.
+ * Kept separate from field-name stripping so we can scan serialized JSON too.
+ */
+export const CLIENT_FORBIDDEN_TEXT_MARKERS: string[] = [
+  "MATCH_CONFIRMED",
+  "NEEDS_REVIEW",
+  "FALSE_POSITIVE",
+  "LIKELY_SUBJECT",
+  "NOT_SUBJECT",
+  "POSSIBLE_SUBJECT",
+  "INSUFFICIENT_IDENTITY",
+  "WARN_POTENTIAL_REVIEW",
+  "UNCLASSIFIED",
+  "PROVIDER_NOT_IMPLEMENTED",
+  "providerAdapter",
+  "sourceMode",
+  "sourcePreference",
+  "rawMetadata",
+  "internalDetail",
+  "internalReason",
+  "topExclusionReasons",
+  "process.env",
+  ".env",
+  "localhost",
+  "127.0.0.1",
+  "Traceback (most recent call last)",
+];
+
+/** Find client-report policy violations in a serialized report_json string. */
+export function findClientReportPolicyViolations(jsonStr: string): string[] {
+  const violations: string[] = [];
+  for (const marker of CLIENT_FORBIDDEN_TEXT_MARKERS) {
+    if (jsonStr.includes(marker)) violations.push(marker);
+  }
+  return violations;
+}
+
+/**
+ * Assert client report_json is production-safe. Returns violations; optionally
+ * throws so a production render can fail loudly instead of leaking internals.
+ */
+export function assertClientReportPolicy(
+  jsonStr: string,
+  options: { throwOnViolation?: boolean } = {}
+): string[] {
+  const violations = findClientReportPolicyViolations(jsonStr);
+  if (violations.length > 0 && options.throwOnViolation) {
+    throw new Error(
+      `Client report policy violation — forbidden markers present: ${violations.join(", ")}`
+    );
+  }
+  return violations;
+}
 
 function stripForbiddenKeysDeep(value: unknown, forbidden: Set<string>): unknown {
   if (Array.isArray(value)) {
@@ -317,7 +444,7 @@ function sanitizeSearchSurfacesForClient(
             return rest;
           });
         const stats = bucket.qualityStats as Record<string, unknown> | undefined;
-        nextBlock[bucketKey] = {
+        const nextBucket: Record<string, unknown> = {
           ...bucket,
           items: clientItems,
           qualityStats: stats
@@ -329,6 +456,11 @@ function sanitizeSearchSurfacesForClient(
               }
             : undefined,
         };
+        // R3.6 — excluded/review/noise detail is internal-only (count-only for client).
+        delete nextBucket.excludedItems;
+        delete nextBucket.reviewItems;
+        delete nextBucket.noiseItems;
+        nextBlock[bucketKey] = nextBucket;
       }
       nextRegions[code] = nextBlock;
     }
@@ -349,27 +481,6 @@ function sanitizeEvidenceQualityForClient(
   const totals = evidenceQuality.totals;
   if (!totals || typeof totals !== "object") return undefined;
   return { totals };
-}
-
-function sanitizeProviderDiagnosticsForClient(
-  diagnostics: Record<string, unknown> | undefined
-): Record<string, unknown> | undefined {
-  if (!diagnostics) return diagnostics;
-  const providers = Array.isArray(diagnostics.providers) ? diagnostics.providers : [];
-  const safeProviders = providers.map((item) => {
-    const row = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
-    const { internalDetail: _internalDetail, ...rest } = row;
-    return rest;
-  });
-  const summary =
-    diagnostics.summary && typeof diagnostics.summary === "object"
-      ? (diagnostics.summary as Record<string, unknown>)
-      : undefined;
-  return {
-    ...diagnostics,
-    providers: safeProviders,
-    summary,
-  };
 }
 
 function sanitizeComplianceRiskIntelForClient(
@@ -466,9 +577,10 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
   }
 
   copy.evidenceQuality = sanitizeEvidenceQualityForClient(copy.evidenceQuality);
-  copy.providerDiagnostics = sanitizeProviderDiagnosticsForClient(copy.providerDiagnostics);
   copy.entityFiltering = sanitizeEntityFilteringForClient(copy.entityFiltering);
   copy.complianceRiskIntel = sanitizeComplianceRiskIntelForClient(copy.complianceRiskIntel);
+  // Stage R3.6 — provider/runtime diagnostics are internal-only; never in client JSON.
+  stripInternalDiagnostics(copy);
 
   if (copy.selectedEvidence && typeof copy.selectedEvidence === "object") {
     const se = copy.selectedEvidence as Record<string, unknown>;
@@ -484,7 +596,48 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
     };
   }
 
-  return stripForbiddenKeysDeep(copy, CLIENT_FORBIDDEN_JSON_KEYS) as T;
+  const stripped = stripForbiddenKeysDeep(copy, CLIENT_FORBIDDEN_JSON_KEYS);
+  // Stage R3.6 — replace raw internal classification/decision enums with
+  // client-safe tokens. The renderer maps these tokens back to the same display
+  // labels, so client visuals are unchanged while the JSON carries no raw enums.
+  return normalizeInternalEnumsDeep(stripped) as T;
+}
+
+/**
+ * Raw internal enum values (identity/classification/review/provider) mapped to
+ * client-safe tokens. The renderer recognizes these tokens for display so labels
+ * and subject highlighting stay identical to the internal report.
+ */
+const RAW_ENUM_SAFE_MAP: Record<string, string> = {
+  EXACT_SUBJECT: "subject_confirmed",
+  LIKELY_SUBJECT: "subject_likely",
+  POSSIBLE_SUBJECT: "subject_possible",
+  INSUFFICIENT_IDENTITY: "identity_low",
+  NOT_SUBJECT: "not_related",
+  UNCLASSIFIED: "neutral",
+  MATCH_CONFIRMED: "confirmed",
+  NEEDS_REVIEW: "review",
+  FALSE_POSITIVE: "excluded",
+  WARN_POTENTIAL_REVIEW: "review",
+  PROVIDER_NOT_IMPLEMENTED: "unavailable",
+};
+
+/** Deeply replace any string leaf that exactly matches a raw internal enum. */
+function normalizeInternalEnumsDeep(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeInternalEnumsDeep(item));
+  }
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      out[key] = normalizeInternalEnumsDeep(child);
+    }
+    return out;
+  }
+  if (typeof value === "string" && Object.prototype.hasOwnProperty.call(RAW_ENUM_SAFE_MAP, value)) {
+    return RAW_ENUM_SAFE_MAP[value];
+  }
+  return value;
 }
 
 /** Assert client report_json string has no internal/debug markers. */
@@ -503,7 +656,11 @@ export function isClientSafeReportJson(jsonStr: string): boolean {
     "contentClass",
     "staleReason",
     "wasRegeneratedForReport",
+    "internalDetail",
+    "internalReason",
   ];
   const lower = jsonStr.toLowerCase();
-  return !forbidden.some((f) => lower.includes(f.toLowerCase()));
+  if (forbidden.some((f) => lower.includes(f.toLowerCase()))) return false;
+  // Stage R3.6 — also block raw enum / env / stack-trace markers.
+  return findClientReportPolicyViolations(jsonStr).length === 0;
 }

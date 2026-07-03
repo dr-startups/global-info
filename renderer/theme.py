@@ -709,6 +709,14 @@ def r2_result_class_label(value: Any, labels: dict | None = None) -> str:
         "LIKELY_SUBJECT": labels.get("class_likely_subject_compact", "Likely"),
         "NAMESAKE": labels.get("class_namesake_compact", "Namesake"),
         "INSUFFICIENT": labels.get("class_insufficient_compact", "Insuff."),
+        # R3.6 — client-safe tokens (see report-data-policy RAW_ENUM_SAFE_MAP) map
+        # back to the same compact labels so client tables match the internal report.
+        "NEUTRAL": labels.get("class_unclassified_compact", "Neutral"),
+        "SUBJECT_CONFIRMED": labels.get("class_exact_subject_compact", "Exact"),
+        "SUBJECT_LIKELY": labels.get("class_likely_subject_compact", "Likely"),
+        "SUBJECT_POSSIBLE": labels.get("class_likely_subject_compact", "Likely"),
+        "IDENTITY_LOW": labels.get("class_insufficient_compact", "Insuff."),
+        "NOT_RELATED": labels.get("class_namesake_compact", "Namesake"),
     }
     if key in mapping:
         return mapping[key]

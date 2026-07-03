@@ -937,6 +937,13 @@ def _r32b_provider_diagnostics_checks(
     if not report_json_path.exists():
         return 1, ["[FAIL] R3.2b provider diagnostics — report json path missing"]
     report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+    # R3.6 — client/production artifacts intentionally omit providerDiagnostics
+    # (internal-only). Treat its absence as a client artifact and skip diagnostics
+    # assertions instead of failing.
+    if "providerDiagnostics" not in (report_json or {}):
+        return 0, [
+            "[PASS] R3.2b diagnostics — client artifact (providerDiagnostics internal-only, skipped)"
+        ]
     diag = (report_json or {}).get("providerDiagnostics") or {}
     providers = list(diag.get("providers") or [])
     ids = {str((p or {}).get("id") or "").lower() for p in providers}
@@ -1097,13 +1104,17 @@ def _r34_appendix_checks(pptx_path: Path, report_json_path: Path) -> tuple[int, 
         report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
 
     # R3.x diagnostic blocks must survive R3.4 (additive-only).
+    # R3.6 — client/production artifacts intentionally omit providerDiagnostics
+    # (internal-only), so only assert those blocks for internal artifacts.
+    is_client_artifact = "providerDiagnostics" not in (report_json or {})
     diag = (report_json or {}).get("providerDiagnostics") or {}
     runtime = diag.get("runtimeStrategy") or {}
     ef = (report_json or {}).get("entityFiltering") or {}
-    if not diag:
-        fails.append("R3.2 providerDiagnostics block missing")
-    if not isinstance(runtime, dict) or not runtime:
-        fails.append("R3.2c runtimeStrategy block missing")
+    if not is_client_artifact:
+        if not diag:
+            fails.append("R3.2 providerDiagnostics block missing")
+        if not isinstance(runtime, dict) or not runtime:
+            fails.append("R3.2c runtimeStrategy block missing")
     if not ef:
         fails.append("R3.3 entityFiltering block missing")
 
@@ -1436,6 +1447,116 @@ def _r35_compliance_risk_checks(pptx_path: Path, report_json_path: Path) -> tupl
     return 0, lines
 
 
+# R3.6 — production / release gate: global leakage sweep + RU/EN parity.
+# Tokens that must NEVER appear in any rendered slide (client or internal).
+R36_NEVER_RE = re.compile(
+    r"providerAdapter|sourceMode|sourcePreference|rawMetadata|internalDetail|internalReason"
+    r"|process\.env|\.env\b|localhost|127\.0\.0\.1|Traceback \(most recent call last\)",
+    re.I,
+)
+# Raw enum labels that must never surface as visible text on any slide.
+R36_ENUM_RE = re.compile(
+    r"MATCH_CONFIRMED|FALSE_POSITIVE|NEEDS_REVIEW|WARN_POTENTIAL_REVIEW|UNCLASSIFIED"
+    r"|LIKELY_SUBJECT|NOT_SUBJECT|POSSIBLE_SUBJECT|INSUFFICIENT_IDENTITY|PROVIDER_NOT_IMPLEMENTED",
+    re.I,
+)
+# Secrets / env / stack traces are forbidden even in internal report_json.
+# Match real credential var names (key/secret/token suffixes), env, stack traces —
+# NOT agent/provider ids like YANDEX_SEARCH or GOOGLE_SEARCH.
+R36_SECRET_RE = re.compile(
+    r"[A-Z0-9]+_API_KEY|\bAPI_KEY\b|[A-Z0-9]+_SECRET|[A-Z0-9]+_TOKEN|SERPER_API_KEY"
+    r"|BEARER\s+[A-Za-z0-9._-]{8,}|process\.env|(?<![A-Za-z0-9])\.env\b"
+    r"|\blocalhost\b|127\.0\.0\.1|Traceback \(most recent call last\)",
+    re.I,
+)
+# Debug/mock words allowed only on the internal diagnostics page.
+R36_DEBUG_WORD_RE = re.compile(r"\b(mock|stub|debug)\b", re.I)
+# Unresolved i18n format placeholders leaking into rendered text.
+R36_PLACEHOLDER_RE = re.compile(r"\{[a-zA-Z_][a-zA-Z0-9_]*\}")
+R36_DIAG_TITLE_RE = re.compile(r"Диагностика источников|Provider diagnostics", re.I)
+
+
+def _r36_production_gate_checks(pptx_path: Path, report_json_path: Path) -> tuple[int, list[str]]:
+    fails: list[str] = []
+    report_json: dict[str, Any] = {}
+    if report_json_path.exists():
+        report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+
+    # --- 1) RU/EN i18n parity (report_i18n is the single source of truth) ---
+    try:
+        renderer_dir = str((Path(__file__).resolve().parent.parent / "renderer"))
+        if renderer_dir not in sys.path:
+            sys.path.insert(0, renderer_dir)
+        import report_i18n as _i18n  # type: ignore
+
+        en = dict(getattr(_i18n, "_EN", {}))
+        ru = dict(getattr(_i18n, "_RU", {}))
+        en_only = sorted(set(en) - set(ru))
+        ru_only = sorted(set(ru) - set(en))
+        if en_only:
+            fails.append(f"i18n parity — keys missing in RU: {en_only[:8]}")
+        if ru_only:
+            fails.append(f"i18n parity — keys missing in EN: {ru_only[:8]}")
+        empty = sorted(k for k in en if not str(en[k]).strip()) + sorted(
+            k for k in ru if not str(ru[k]).strip()
+        )
+        if empty:
+            fails.append(f"i18n parity — empty label values: {empty[:8]}")
+    except Exception as exc:  # pragma: no cover - defensive
+        fails.append(f"i18n parity — could not load report_i18n: {exc}")
+
+    # --- 2) provider diagnostics is internal-only in report_json ---
+    audience_is_client = "providerDiagnostics" not in report_json
+    if not audience_is_client:
+        # internal JSON may carry internalDetail/adapter fields, but never
+        # secrets/env values or stack traces.
+        diag_str = json.dumps(report_json.get("providerDiagnostics") or {}, ensure_ascii=False)
+        if R36_SECRET_RE.search(diag_str):
+            m = R36_SECRET_RE.search(diag_str)
+            fails.append(f"providerDiagnostics — secret/env leakage: {m.group(0) if m else ''}")
+
+    # --- 3) global visible-text leakage sweep across all slides ---
+    with zipfile.ZipFile(pptx_path, "r") as z:
+        slide_count = sum(1 for n in z.namelist() if re.match(r"ppt/slides/slide\d+\.xml$", n))
+        diag_idx = None
+        for n in range(slide_count, 0, -1):
+            if R36_DIAG_TITLE_RE.search(_plain_text(_slide_xml(z, n))):
+                diag_idx = n
+                break
+        for n in range(1, slide_count + 1):
+            text = _plain_text(_slide_xml(z, n))
+            if R36_NEVER_RE.search(text):
+                m = R36_NEVER_RE.search(text)
+                fails.append(f"Slide {n} R3.6 leakage — forbidden token: {m.group(0) if m else ''}")
+            if R36_ENUM_RE.search(text):
+                m = R36_ENUM_RE.search(text)
+                fails.append(f"Slide {n} R3.6 leakage — raw enum: {m.group(0) if m else ''}")
+            if R36_PLACEHOLDER_RE.search(text):
+                m = R36_PLACEHOLDER_RE.search(text)
+                fails.append(f"Slide {n} R3.6 leakage — unresolved placeholder: {m.group(0) if m else ''}")
+            # mock/stub/debug words only tolerated on the internal diagnostics page.
+            if n != diag_idx and R36_DEBUG_WORD_RE.search(text):
+                m = R36_DEBUG_WORD_RE.search(text)
+                fails.append(f"Slide {n} R3.6 leakage — debug/mock word: {m.group(0) if m else ''}")
+
+    # --- 4) deterministic page-count contract (72 client / 73 internal) ---
+    if audience_is_client:
+        if slide_count != 72:
+            fails.append(f"client page count must be 72, got {slide_count}")
+    else:
+        if slide_count != 73:
+            fails.append(f"internal page count must be 73, got {slide_count}")
+
+    lines: list[str] = []
+    if fails:
+        for f in fails:
+            lines.append(f"[FAIL] {f}")
+        return 1, lines
+    mode = "client(72)" if audience_is_client else "internal(73)"
+    lines.append(f"[PASS] R3.6 production gate — {mode}, RU/EN parity, no leakage")
+    return 0, lines
+
+
 def main() -> int:
     target = Path(__file__).with_name("inspect-o541-pptx.py")
     cmd = [sys.executable, str(target), *sys.argv[1:]]
@@ -1497,9 +1618,23 @@ def main() -> int:
     r35_rc, r35_lines = _r35_compliance_risk_checks(pptx_path, report_json_path)
     for line in r35_lines:
         print(line)
+    r36_rc, r36_lines = _r36_production_gate_checks(pptx_path, report_json_path)
+    for line in r36_lines:
+        print(line)
+    # R3.6 — regression locks use an internal baseline; client/production artifacts
+    # legitimately differ on audience-gated slides, so lock only internal artifacts.
+    _reg_report_json: dict[str, Any] = {}
+    if report_json_path.exists():
+        try:
+            _reg_report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+        except Exception:
+            _reg_report_json = {}
+    is_client_artifact = "providerDiagnostics" not in _reg_report_json
     reg_rc = 0
     if is_fixture:
         print("[PASS] Fixture mode — regression locks skipped by design")
+    elif is_client_artifact:
+        print("[PASS] Client artifact — internal-baseline regression locks skipped by design")
     else:
         baseline = Path("storage/digital-profile/qa-r2-3e-risk-findings/report-v17-ru-internal-draft.pptx")
         baseline_json = Path("storage/digital-profile/qa-r3-2c-provider-runtime/report-json-ru.json")
@@ -1515,7 +1650,7 @@ def main() -> int:
     )
     for line in s13_sem_lines:
         print(line)
-    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
+    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
 
 
 if __name__ == "__main__":

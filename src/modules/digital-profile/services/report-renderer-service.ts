@@ -28,6 +28,8 @@ import { buildComplianceSummaryBlock } from "../compliance-providers";
 import { buildOfferConfig } from "../report/offer-config";
 import {
   sanitizeReportJsonForAudience,
+  normalizeProductionReportMode,
+  assertClientReportPolicy,
 } from "../report/report-data-policy";
 import {
   buildSelectedEvidenceReportVm,
@@ -424,8 +426,13 @@ export async function renderReportVersion(
   options: RenderOptions = {}
 ): Promise<RenderedReportDTO> {
   const templateVersion = options.templateVersion;
-  const audience = options.audience ?? "internal";
+  // Stage R3.6 — normalize production mode: only "internal" stays internal; every
+  // other requested mode ("client"/"production"/unknown) resolves to client-safe.
+  const audience: "internal" | "client" = options.audience
+    ? normalizeProductionReportMode(options.audience)
+    : "internal";
   const watermarkMode = options.watermarkMode ?? "draft";
+  const productionPolicyWarnings: string[] = [];
   const reportLanguage = normalizeReportLanguage(
     options.reportLanguage,
     digitalProfileConfig.defaultLocale
@@ -478,13 +485,28 @@ export async function renderReportVersion(
       clientVm
     );
   }
+
+  // Stage R3.6 — production release gate: loudly flag any internal-only markers
+  // that survived sanitization for a client/production render.
+  if (audience === "client") {
+    const violations = assertClientReportPolicy(
+      JSON.stringify(audienceReportJson ?? {})
+    );
+    if (violations.length > 0) {
+      productionPolicyWarnings.push(
+        `Client report policy: internal-only markers detected and suppressed at render (${violations
+          .slice(0, 8)
+          .join(", ")})`
+      );
+    }
+  }
   // Stage S1.5: the renderer is stateless and has no access to private storage,
   // so the SERP snapshot PNG travels inside report_json as base64. This is added
   // only on the wire (not persisted in the stored report_json, which stays
   // lightweight). If the image is unreadable the renderer falls back + warns.
   const { json: withThumbnails, warnings: thumbnailWarnings } =
     await attachSelectedImageThumbnailBytes(audienceReportJson, caseId);
-  const renderPayloadWarnings: string[] = [...thumbnailWarnings];
+  const renderPayloadWarnings: string[] = [...productionPolicyWarnings, ...thumbnailWarnings];
   assertRenderPayloadUsesSelectedEvidence(withThumbnails, renderPayloadWarnings);
   const renderReportJson = await attachSerpSnapshotImage(withThumbnails);
 

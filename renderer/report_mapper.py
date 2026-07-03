@@ -30,6 +30,25 @@ def _is_internal_hygiene_text(text: str) -> bool:
     return bool(_INTERNAL_HYGIENE_RE.search(str(text or "")))
 
 
+# R3.6 — identityDecision may arrive as internal raw enums (internal audience) or
+# as client-safe tokens after client sanitization. Both must resolve identically
+# so client image/video highlighting matches internal selection.
+_ID_EXACT = ("EXACT_SUBJECT", "subject_confirmed")
+_ID_LIKELY = ("LIKELY_SUBJECT", "subject_likely")
+
+
+def _id_is_exact(value: Any) -> bool:
+    return str(value or "") in _ID_EXACT
+
+
+def _id_is_likely(value: Any) -> bool:
+    return str(value or "") in _ID_LIKELY
+
+
+def _id_is_subject(value: Any) -> bool:
+    return _id_is_exact(value) or _id_is_likely(value)
+
+
 def _has_cyrillic(text: str) -> bool:
     return bool(re.search(r"[\u0400-\u04FF]", str(text or "")))
 
@@ -980,7 +999,7 @@ def _region_block(
                     "thumbnailMimeType": i.get("thumbnailMimeType"),
                     "identityDecision": i.get("identityDecision") or "",
                     "hasThumbnail": bool(_image_thumbnail_b64(i)),
-                    "subjectMatched": str(i.get("identityDecision") or "") in ("EXACT_SUBJECT", "LIKELY_SUBJECT"),
+                    "subjectMatched": _id_is_subject(i.get("identityDecision")),
                 }
                 for i in (r.get("topImages", []) or [])[:9]
             ],
@@ -999,9 +1018,9 @@ def _region_block(
                     "identityDecision": v.get("identityDecision") or "",
                     "selectionReason": (
                         "exact subject"
-                        if str(v.get("identityDecision") or "") == "EXACT_SUBJECT"
+                        if _id_is_exact(v.get("identityDecision"))
                         else "likely subject"
-                        if str(v.get("identityDecision") or "") == "LIKELY_SUBJECT"
+                        if _id_is_likely(v.get("identityDecision"))
                         else "manual include"
                         if str(v.get("reportEligibility") or "") == "CLIENT_INCLUDE"
                         else "selected"
@@ -1392,7 +1411,7 @@ def _audit_image_to_item(i: dict) -> dict:
         "thumbnailMimeType": i.get("thumbnailMimeType"),
         "identityDecision": i.get("identityDecision") or "",
         "hasThumbnail": bool(b64),
-        "subjectMatched": str(i.get("identityDecision") or "") in ("EXACT_SUBJECT", "LIKELY_SUBJECT"),
+        "subjectMatched": _id_is_subject(i.get("identityDecision")),
     }
 
 
