@@ -422,6 +422,41 @@ export type ProviderDiagnosticRuntimeMode =
 
 export type ProviderDiagnosticRisk = "low" | "medium" | "high";
 export type ProviderCapabilityLevel = "full" | "partial" | "stub" | "mock" | "none";
+
+/** Stage R4.1 — normalized runtime nature of a provider (no secrets). */
+export type ProviderRuntimeKind = "real" | "mock" | "stub" | "manual" | "synthetic";
+
+/** Stage R4.1 — capability support flags per provider (display-level). */
+export interface ProviderSupportMatrix {
+  organicSearch: boolean;
+  suggestions: boolean;
+  relatedQueries: boolean;
+  images: boolean;
+  videos: boolean;
+  knowledge: boolean;
+  wikipedia: boolean;
+  compliance: boolean;
+  screenshots: boolean;
+  manualImport: boolean;
+}
+
+/** Stage R4.1 — per-provider source provenance row (internal-only via diagnostics). */
+export interface ReportSourceProvenanceRow {
+  sourceProvider: string;
+  sourceProviderLabel: string;
+  sourceCategory: ProviderDiagnosticCategory;
+  sourceRuntimeKind: ProviderRuntimeKind;
+  collectionMode: ProviderRuntimeKind | "fallback" | "unavailable";
+  inclusionDecision: "included" | "review" | "excluded" | "fallback" | "unavailable";
+  inclusionReason?: string;
+  fallbackReason?: string;
+  collected?: number;
+  included?: number;
+  review?: number;
+  excluded?: number;
+  safeNote?: string;
+  internalNote?: string;
+}
 export type ProviderRuntimeMode =
   | "legacy_mock_first"
   | "real_first_with_fallback"
@@ -449,6 +484,14 @@ export interface ReportProviderDiagnosticItem {
   fallbackReason?: string;
   configured?: boolean;
   capabilityLevel?: ProviderCapabilityLevel;
+  /** Stage R4.1 — normalized capability/readiness fields (all client-safe booleans). */
+  runtimeKind?: ProviderRuntimeKind;
+  requiresSecrets?: boolean;
+  /** True only when required credentials are present — never exposes the values. */
+  hasCredentials?: boolean;
+  available?: boolean;
+  productionReady?: boolean;
+  supports?: ProviderSupportMatrix;
 }
 
 export interface ReportProviderDiagnostics {
@@ -479,7 +522,15 @@ export interface ReportProviderDiagnostics {
     mockOrStubCount: number;
     highRiskCount: number;
     productionReady: boolean;
+    /** Stage R4.1 — richer, additive counts (optional for back-compat). */
+    totalProviders?: number;
+    manualCount?: number;
+    unavailableCount?: number;
+    fallbackUsedCount?: number;
+    productionReadyCount?: number;
   };
+  /** Stage R4.1 — per-provider source provenance (internal-only). */
+  sourceProvenance?: ReportSourceProvenanceRow[];
 }
 
 export interface ReportEntityFilteringDiagnostics {

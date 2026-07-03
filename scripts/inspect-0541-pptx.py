@@ -1476,6 +1476,75 @@ R36_PLACEHOLDER_RE = re.compile(r"\{[a-zA-Z_][a-zA-Z0-9_]*\}")
 R36_DIAG_TITLE_RE = re.compile(r"Диагностика источников|Provider diagnostics", re.I)
 
 
+def _r41_provider_runtime_checks(report_json_path: Path) -> tuple[int, list[str]]:
+    """R4.1 — provider capability matrix, source provenance, richer summary.
+
+    Internal artifacts must expose a normalized capability matrix and provenance
+    without secrets. Client artifacts (no providerDiagnostics) are skipped.
+    """
+    fails: list[str] = []
+    report_json: dict[str, Any] = {}
+    if report_json_path.exists():
+        report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+
+    diag = report_json.get("providerDiagnostics")
+    if not isinstance(diag, dict):
+        return 0, ["[PASS] R4.1 provider runtime — client/absent diagnostics, skipped by design"]
+
+    providers = list(diag.get("providers") or [])
+    ids = {str(p.get("id") or "") for p in providers}
+    expected = ["yandex", "google", "serper", "wikipedia", "compliance", "screenshots", "synthetic_serp"]
+    missing = [e for e in expected if e not in ids]
+    if missing:
+        fails.append(f"capability matrix missing providers: {missing}")
+
+    # Every provider must carry the R4.1 normalized capability fields.
+    for p in providers:
+        pid = str(p.get("id") or "?")
+        if not isinstance(p.get("supports"), dict):
+            fails.append(f"{pid}: missing supports matrix")
+        if str(p.get("runtimeKind") or "") not in {"real", "mock", "stub", "manual", "synthetic"}:
+            fails.append(f"{pid}: invalid/missing runtimeKind")
+        if not isinstance(p.get("hasCredentials"), bool):
+            fails.append(f"{pid}: hasCredentials must be a boolean (no secret values)")
+
+    # Summary must include the R4.1 additive counts.
+    summary = diag.get("summary") or {}
+    for key in ("totalProviders", "manualCount", "unavailableCount", "productionReadyCount"):
+        if not isinstance(summary.get(key), int):
+            fails.append(f"summary missing R4.1 count: {key}")
+    if isinstance(summary.get("totalProviders"), int) and summary["totalProviders"] != len(providers):
+        fails.append("summary.totalProviders does not match provider count")
+
+    # Source provenance must exist with one row per provider and safe decisions.
+    provenance = list(diag.get("sourceProvenance") or [])
+    if not provenance:
+        fails.append("sourceProvenance is missing/empty")
+    else:
+        valid_decisions = {"included", "review", "excluded", "fallback", "unavailable"}
+        for row in provenance:
+            dec = str(row.get("inclusionDecision") or "")
+            if dec not in valid_decisions:
+                fails.append(f"provenance {row.get('sourceProvider')}: invalid inclusionDecision '{dec}'")
+
+    # No secrets/env values anywhere in the diagnostics block.
+    diag_str = json.dumps(diag, ensure_ascii=False)
+    if R36_SECRET_RE.search(diag_str):
+        m = R36_SECRET_RE.search(diag_str)
+        fails.append(f"providerDiagnostics secret/env leakage: {m.group(0) if m else ''}")
+
+    lines: list[str] = []
+    if fails:
+        for f in fails:
+            lines.append(f"[FAIL] R4.1 {f}")
+        return 1, lines
+    lines.append(
+        f"[PASS] R4.1 provider runtime — {len(providers)} providers, "
+        f"{len(provenance)} provenance rows, capability matrix + summary counts present"
+    )
+    return 0, lines
+
+
 def _r36_production_gate_checks(pptx_path: Path, report_json_path: Path) -> tuple[int, list[str]]:
     fails: list[str] = []
     report_json: dict[str, Any] = {}
@@ -1621,6 +1690,9 @@ def main() -> int:
     r36_rc, r36_lines = _r36_production_gate_checks(pptx_path, report_json_path)
     for line in r36_lines:
         print(line)
+    r41_rc, r41_lines = _r41_provider_runtime_checks(report_json_path)
+    for line in r41_lines:
+        print(line)
     # R3.6 — regression locks use an internal baseline; client/production artifacts
     # legitimately differ on audience-gated slides, so lock only internal artifacts.
     _reg_report_json: dict[str, Any] = {}
@@ -1650,7 +1722,7 @@ def main() -> int:
     )
     for line in s13_sem_lines:
         print(line)
-    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
+    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
 
 
 if __name__ == "__main__":

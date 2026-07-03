@@ -10,9 +10,71 @@ import {
 } from "../providers/config";
 import { externalGoogleSerpProvider } from "../providers/external-google-serp-provider";
 import type {
+  ProviderRuntimeKind,
+  ProviderSupportMatrix,
   ReportProviderDiagnosticItem,
   ReportProviderDiagnostics,
+  ReportSourceProvenanceRow,
 } from "../types";
+
+const NO_SUPPORT: ProviderSupportMatrix = {
+  organicSearch: false,
+  suggestions: false,
+  relatedQueries: false,
+  images: false,
+  videos: false,
+  knowledge: false,
+  wikipedia: false,
+  compliance: false,
+  screenshots: false,
+  manualImport: false,
+};
+
+/** Static capability support per provider id (display-level; no secrets). */
+const PROVIDER_SUPPORTS: Record<string, Partial<ProviderSupportMatrix>> = {
+  yandex: { organicSearch: true, suggestions: true, relatedQueries: true, images: true, videos: true },
+  google: {
+    organicSearch: true,
+    suggestions: true,
+    relatedQueries: true,
+    images: true,
+    videos: true,
+    knowledge: true,
+  },
+  serper: { organicSearch: true, images: true, videos: true, knowledge: true },
+  wikipedia: { wikipedia: true, knowledge: true },
+  compliance: { compliance: true, manualImport: true },
+  screenshots: { screenshots: true, manualImport: true },
+  synthetic_serp: { screenshots: true },
+};
+
+function supportMatrix(id: string): ProviderSupportMatrix {
+  return { ...NO_SUPPORT, ...(PROVIDER_SUPPORTS[id] ?? {}) };
+}
+
+/**
+ * Fill the R4.1 normalized capability fields on a diagnostics item. Never reads
+ * or exposes secret values — `hasCredentials` is a boolean only.
+ */
+function enrichCapability(
+  item: ReportProviderDiagnosticItem,
+  input: { runtimeKind: ProviderRuntimeKind; requiresSecrets: boolean; hasCredentials: boolean }
+): ReportProviderDiagnosticItem {
+  // A provider is "available" when it can contribute to the report — only
+  // unconfigured or failed providers are unavailable. Manual/stub/synthetic
+  // paths still reach the report.
+  const available = item.status !== "not_configured" && item.status !== "failed";
+  const productionReady = item.status === "ready" && item.risk === "low";
+  return {
+    ...item,
+    runtimeKind: input.runtimeKind,
+    requiresSecrets: input.requiresSecrets,
+    hasCredentials: input.hasCredentials,
+    available,
+    productionReady,
+    supports: supportMatrix(item.id),
+  };
+}
 
 function normalizeProviderStatus(
   status: ProviderStatus,
@@ -27,7 +89,7 @@ function normalizeProviderStatus(
     !selectedByStrategy && runtime.mode !== "legacy_mock_first"
       ? `Skipped by strategy mode ${runtime.mode}.`
       : undefined;
-  return {
+  const item: ReportProviderDiagnosticItem = {
     id: providerId,
     label: status.label,
     category: status.name === "WIKIPEDIA" ? "knowledge" : "search",
@@ -56,6 +118,12 @@ function normalizeProviderStatus(
     capabilityLevel:
       status.kind === "MOCK" ? "mock" : activeReal ? "full" : status.configured ? "partial" : "none",
   };
+  const requiresSecrets = status.name !== "WIKIPEDIA";
+  return enrichCapability(item, {
+    runtimeKind: status.kind === "MOCK" ? "mock" : "real",
+    requiresSecrets,
+    hasCredentials: requiresSecrets ? status.missingConfigKeys.length === 0 : true,
+  });
 }
 
 function buildSerperDiagnostics(
@@ -76,7 +144,7 @@ function buildSerperDiagnostics(
     : selectedExternal
       ? "medium"
       : "low";
-  return {
+  const item: ReportProviderDiagnosticItem = {
     id: "serper",
     label: "Serper external strategy",
     category: "surface",
@@ -100,6 +168,11 @@ function buildSerperDiagnostics(
     configured: selectedExternal ? Boolean(providerConfig.google.external.apiKey) : false,
     capabilityLevel: ready ? "full" : selectedExternal ? "partial" : "none",
   };
+  return enrichCapability(item, {
+    runtimeKind: ready ? "real" : "stub",
+    requiresSecrets: true,
+    hasCredentials: Boolean(providerConfig.google.external.apiKey),
+  });
 }
 
 function buildComplianceDiagnostics(
@@ -109,7 +182,7 @@ function buildComplianceDiagnostics(
   const realStatuses = statuses.filter((s) => s.kind === "REAL");
   const configuredReal = realStatuses.filter((s) => s.status === "ENABLED").length;
   const missingBuckets = realStatuses.filter((s) => s.missingConfigKeys.length > 0).length;
-  return {
+  const item: ReportProviderDiagnosticItem = {
     id: "compliance",
     label: "Compliance providers",
     category: "compliance",
@@ -127,11 +200,16 @@ function buildComplianceDiagnostics(
     internalDetail:
       missingBuckets > 0
         ? `${missingBuckets} compliance provider(s) have missing configuration groups.`
-        : "Compliance real adapters resolve to PROVIDER_NOT_IMPLEMENTED stubs in this build.",
+        : "Compliance real adapters resolve to not-implemented stubs in this build.",
     selectedByStrategy: runtime.steps.some((step) => step.providerId === "compliance"),
     configured: configuredReal > 0,
     capabilityLevel: "stub",
   };
+  return enrichCapability(item, {
+    runtimeKind: "manual",
+    requiresSecrets: true,
+    hasCredentials: configuredReal > 0,
+  });
 }
 
 function auditMode(runtime: ReturnType<typeof resolveRuntimeStrategy>): ReportProviderDiagnostics["auditMode"] {
@@ -157,7 +235,8 @@ function auditMode(runtime: ReturnType<typeof resolveRuntimeStrategy>): ReportPr
 }
 
 export function summarizeProviderDiagnostics(
-  providers: ReportProviderDiagnosticItem[]
+  providers: ReportProviderDiagnosticItem[],
+  runtime?: ReturnType<typeof resolveRuntimeStrategy>
 ): ReportProviderDiagnostics["summary"] {
   const readyCount = providers.filter((p) => p.status === "ready").length;
   const realCount = providers.filter((p) => p.runtimeMode === "real").length;
@@ -166,7 +245,103 @@ export function summarizeProviderDiagnostics(
   ).length;
   const highRiskCount = providers.filter((p) => p.risk === "high").length;
   const productionReady = highRiskCount === 0 && readyCount >= 3;
-  return { readyCount, realCount, mockOrStubCount, highRiskCount, productionReady };
+  // R4.1 — richer additive counts.
+  const totalProviders = providers.length;
+  const manualCount = providers.filter(
+    (p) => p.runtimeKind === "manual" || p.runtimeMode === "manual"
+  ).length;
+  const unavailableCount = providers.filter(
+    (p) => p.available === false || p.status === "not_configured" || p.status === "failed"
+  ).length;
+  const productionReadyCount = providers.filter((p) => p.productionReady === true).length;
+  const fallbackUsedCount = runtime ? runtime.fallbackEvents.length : undefined;
+  return {
+    readyCount,
+    realCount,
+    mockOrStubCount,
+    highRiskCount,
+    productionReady,
+    totalProviders,
+    manualCount,
+    unavailableCount,
+    productionReadyCount,
+    fallbackUsedCount,
+  };
+}
+
+/** Surface collection totals used to derive per-provider provenance counts. */
+export interface ProviderSurfaceTotals {
+  organicCollected?: number;
+  organicIncluded?: number;
+  organicReview?: number;
+  organicExcluded?: number;
+  mediaCollected?: number;
+  mediaIncluded?: number;
+  wikipediaCollected?: number;
+  wikipediaIncluded?: number;
+  complianceCollected?: number;
+  complianceIncluded?: number;
+  complianceReview?: number;
+  complianceExcluded?: number;
+}
+
+/**
+ * Build per-provider source provenance rows from the diagnostics providers and
+ * (optionally) surface collection totals. Deterministic; no scoring changes.
+ */
+export function buildSourceProvenance(
+  providers: ReportProviderDiagnosticItem[],
+  runtime: ReturnType<typeof resolveRuntimeStrategy>,
+  totals: ProviderSurfaceTotals = {}
+): ReportSourceProvenanceRow[] {
+  const rows: ReportSourceProvenanceRow[] = [];
+  for (const p of providers) {
+    const fallback = runtime.fallbackEvents.find((e) => e.providerId === p.id);
+    const collectionMode: ReportSourceProvenanceRow["collectionMode"] = fallback
+      ? "fallback"
+      : p.available === false
+        ? "unavailable"
+        : (p.runtimeKind ?? "mock");
+    const inclusionDecision: ReportSourceProvenanceRow["inclusionDecision"] =
+      p.available === false
+        ? "unavailable"
+        : fallback
+          ? "fallback"
+          : p.status === "stub" || p.runtimeMode === "manual"
+            ? "review"
+            : "included";
+    const row: ReportSourceProvenanceRow = {
+      sourceProvider: p.id,
+      sourceProviderLabel: p.label,
+      sourceCategory: p.category,
+      sourceRuntimeKind: p.runtimeKind ?? "mock",
+      collectionMode,
+      inclusionDecision,
+      inclusionReason: p.message,
+      fallbackReason: fallback?.reason,
+      safeNote: p.safeDetail,
+      internalNote: p.internalDetail,
+    };
+    if (p.id === "yandex" || p.id === "google" || p.id === "serper") {
+      row.collected = totals.organicCollected;
+      row.included = totals.organicIncluded;
+      row.review = totals.organicReview;
+      row.excluded = totals.organicExcluded;
+    } else if (p.id === "wikipedia") {
+      row.collected = totals.wikipediaCollected;
+      row.included = totals.wikipediaIncluded;
+    } else if (p.id === "compliance") {
+      row.collected = totals.complianceCollected;
+      row.included = totals.complianceIncluded;
+      row.review = totals.complianceReview;
+      row.excluded = totals.complianceExcluded;
+    } else if (p.id === "screenshots" || p.id === "synthetic_serp") {
+      row.collected = totals.mediaCollected;
+      row.included = totals.mediaIncluded;
+    }
+    rows.push(row);
+  }
+  return rows;
 }
 
 export function buildProviderDiagnosticsFixture(input: {
@@ -182,8 +357,21 @@ export function buildProviderDiagnosticsFixture(input: {
   };
 }
 
-export function buildProviderDiagnostics(): ReportProviderDiagnostics {
-  const runtime = resolveRuntimeStrategy();
+export interface BuildProviderDiagnosticsOptions {
+  /** Optional runtime mode; defaults to the resolver default (legacy_mock_first). */
+  mode?: import("../types").ProviderRuntimeMode;
+  requestedBy?: "default" | "request" | "config" | "test";
+  /** Optional surface totals for source provenance counts. */
+  surfaceTotals?: ProviderSurfaceTotals;
+}
+
+export function buildProviderDiagnostics(
+  options: BuildProviderDiagnosticsOptions = {}
+): ReportProviderDiagnostics {
+  const runtime = resolveRuntimeStrategy({
+    mode: options.mode,
+    requestedBy: options.requestedBy ?? (options.mode ? "config" : "default"),
+  });
   const providers: ReportProviderDiagnosticItem[] = [];
   const yandex = normalizeProviderStatus(getProviderStatus("YANDEX"), runtime);
   const google = normalizeProviderStatus(getProviderStatus("GOOGLE"), runtime);
@@ -191,36 +379,46 @@ export function buildProviderDiagnostics(): ReportProviderDiagnostics {
   const serper = buildSerperDiagnostics(runtime);
   const compliance = buildComplianceDiagnostics(listComplianceProviderStatus(), runtime);
   providers.push(yandex, google, serper, wikipedia, compliance);
-  providers.push({
-    id: "screenshots",
-    label: "Screenshots",
-    category: "screenshot",
-    status: "ready",
-    runtimeMode: "manual",
-    reachesReport: true,
-    clientVisible: true,
-    risk: "low",
-    message: "Manual screenshot uploads are available.",
-    safeDetail: "Captured files are stored and linked as evidence.",
-    selectedByStrategy: runtime.steps.some((step) => step.providerId === "surfaces"),
-    configured: true,
-    capabilityLevel: "partial",
-  });
-  providers.push({
-    id: "synthetic_serp",
-    label: "Synthetic SERP snapshot",
-    category: "pipeline",
-    status: "fallback",
-    runtimeMode: "synthetic",
-    reachesReport: true,
-    clientVisible: true,
-    risk: "medium",
-    message: "Synthetic SERP visual is used when available from stored evidence.",
-    safeDetail: "Snapshot page uses generated visual from collected rows.",
-    selectedByStrategy: runtime.steps.some((step) => step.providerId === "surfaces"),
-    configured: true,
-    capabilityLevel: "stub",
-  });
+  providers.push(
+    enrichCapability(
+      {
+        id: "screenshots",
+        label: "Screenshots",
+        category: "screenshot",
+        status: "ready",
+        runtimeMode: "manual",
+        reachesReport: true,
+        clientVisible: true,
+        risk: "low",
+        message: "Manual screenshot uploads are available.",
+        safeDetail: "Captured files are stored and linked as evidence.",
+        selectedByStrategy: runtime.steps.some((step) => step.providerId === "surfaces"),
+        configured: true,
+        capabilityLevel: "partial",
+      },
+      { runtimeKind: "manual", requiresSecrets: false, hasCredentials: true }
+    )
+  );
+  providers.push(
+    enrichCapability(
+      {
+        id: "synthetic_serp",
+        label: "Synthetic SERP snapshot",
+        category: "pipeline",
+        status: "fallback",
+        runtimeMode: "synthetic",
+        reachesReport: true,
+        clientVisible: true,
+        risk: "medium",
+        message: "Synthetic SERP visual is used when available from stored evidence.",
+        safeDetail: "Snapshot page uses generated visual from collected rows.",
+        selectedByStrategy: runtime.steps.some((step) => step.providerId === "surfaces"),
+        configured: true,
+        capabilityLevel: "stub",
+      },
+      { runtimeKind: "synthetic", requiresSecrets: false, hasCredentials: false }
+    )
+  );
   return {
     auditMode: auditMode(runtime),
     runtimeStrategy: {
@@ -234,6 +432,7 @@ export function buildProviderDiagnostics(): ReportProviderDiagnostics {
       warnings: runtime.warnings,
     },
     providers,
-    summary: summarizeProviderDiagnostics(providers),
+    summary: summarizeProviderDiagnostics(providers, runtime),
+    sourceProvenance: buildSourceProvenance(providers, runtime, options.surfaceTotals),
   };
 }

@@ -1764,6 +1764,21 @@ def _provider_diagnostics_vm(block: dict, L: dict, internal: bool) -> dict:
         capability = str(p.get("capabilityLevel") or "none")
         selected = bool(p.get("selectedByStrategy"))
         fallback_reason = str(p.get("fallbackReason") or "").strip()
+        runtime_kind = str(p.get("runtimeKind") or "").strip()
+        prod_ready = bool(p.get("productionReady"))
+        note = str(
+            p.get("internalDetail")
+            if internal and p.get("internalDetail")
+            else p.get("safeDetail")
+            or p.get("message")
+            or "—"
+        )
+        note += f" | capability={capability}; selected={str(selected).lower()}"
+        if runtime_kind:
+            note += f"; kind={runtime_kind}"
+        note += f"; prod_ready={str(prod_ready).lower()}"
+        if fallback_reason:
+            note += f"; fallback={fallback_reason}"
         rows.append(
             {
                 "source": str(p.get("label") or p.get("id") or "—"),
@@ -1771,15 +1786,7 @@ def _provider_diagnostics_vm(block: dict, L: dict, internal: bool) -> dict:
                 "mode": str(p.get("runtimeMode") or "unknown"),
                 "status": str(p.get("status") or "unknown"),
                 "risk": str(p.get("risk") or "unknown"),
-                "note": str(
-                    p.get("internalDetail")
-                    if internal and p.get("internalDetail")
-                    else p.get("safeDetail")
-                    or p.get("message")
-                    or "—"
-                )
-                + f" | capability={capability}; selected={str(selected).lower()}"
-                + (f"; fallback={fallback_reason}" if fallback_reason else ""),
+                "note": note,
             }
         )
     runtime_notes = [
@@ -1791,6 +1798,31 @@ def _provider_diagnostics_vm(block: dict, L: dict, internal: bool) -> dict:
     fallback_events = list(runtime.get("fallbackEvents") or [])
     if fallback_events:
         runtime_notes.append(f"Fallback events: {len(fallback_events)}")
+    # R4.1 — richer summary + source provenance overview (internal-only).
+    total_providers = int(summary.get("totalProviders", len(rows)) or 0)
+    manual_count = int(summary.get("manualCount", 0) or 0)
+    unavailable_count = int(summary.get("unavailableCount", 0) or 0)
+    prod_ready_count = int(summary.get("productionReadyCount", 0) or 0)
+    runtime_notes.append(
+        f"Providers: {total_providers} total; {prod_ready_count} production-ready; "
+        f"{manual_count} manual; {unavailable_count} unavailable."
+    )
+    provenance = list(src.get("sourceProvenance") or [])
+    if provenance:
+        prov_bits = []
+        for row in provenance:
+            collected = row.get("collected")
+            included = row.get("included")
+            label = str(row.get("sourceProviderLabel") or row.get("sourceProvider") or "—")
+            decision = str(row.get("inclusionDecision") or "")
+            if collected is not None or included is not None:
+                prov_bits.append(
+                    f"{label}: {int(included or 0)}/{int(collected or 0)} ({decision})"
+                )
+            else:
+                prov_bits.append(f"{label}: {decision}")
+        if prov_bits:
+            runtime_notes.append("Source provenance — " + "; ".join(prov_bits))
     return {
         "title": L.get("r32_provider_diag_title", "Provider diagnostics"),
         "subtitle": L.get(

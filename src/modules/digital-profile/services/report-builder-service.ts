@@ -32,7 +32,10 @@ import {
   buildSelectedEvidenceReportVm,
   patchAuditSummaryWithSelectedEvidence,
 } from "../report/selected-evidence-report-vm";
-import { buildProviderDiagnostics } from "../report/provider-diagnostics";
+import {
+  buildProviderDiagnostics,
+  type ProviderSurfaceTotals,
+} from "../report/provider-diagnostics";
 import { buildEntityFilteringDiagnostics } from "../report/entity-filtering-diagnostics";
 import { buildComplianceRiskIntel } from "../report/compliance-risk-intel";
 import {
@@ -81,6 +84,64 @@ const SEVERITY_RANK: Record<RiskSeverity, number> = {
   HIGH: 3,
   CRITICAL: 4,
 };
+
+/**
+ * Stage R4.1 — derive per-provider surface collection totals from already
+ * collected data (no new queries). Feeds provider source provenance.
+ */
+function computeProviderSurfaceTotals(
+  searchSurfaces: ReportJson["searchSurfaces"],
+  complianceSummary: ReportJson["complianceSummary"]
+): ProviderSurfaceTotals {
+  const totals: ProviderSurfaceTotals = {};
+  const regions = (searchSurfaces as { regions?: Record<string, unknown> } | undefined)?.regions;
+  if (regions && typeof regions === "object") {
+    let organicCollected = 0;
+    let organicIncluded = 0;
+    let mediaCollected = 0;
+    let mediaIncluded = 0;
+    let wikipediaCollected = 0;
+    let wikipediaIncluded = 0;
+    const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+    const stats = (bucket: unknown): { totalCollected?: number; selectedForReport?: number } =>
+      ((bucket as { qualityStats?: Record<string, unknown> } | undefined)?.qualityStats ?? {}) as {
+        totalCollected?: number;
+        selectedForReport?: number;
+      };
+    for (const block of Object.values(regions as Record<string, Record<string, unknown>>)) {
+      const organic = stats(block.organic);
+      organicCollected += num(organic.totalCollected);
+      organicIncluded += num(organic.selectedForReport);
+      for (const key of ["images", "videos"]) {
+        const media = stats(block[key]);
+        mediaCollected += num(media.totalCollected);
+        mediaIncluded += num(media.selectedForReport);
+      }
+      const knowledge = stats(block.knowledgePanel);
+      wikipediaCollected += num(knowledge.totalCollected);
+      wikipediaIncluded += num(knowledge.selectedForReport);
+    }
+    totals.organicCollected = organicCollected;
+    totals.organicIncluded = organicIncluded;
+    totals.mediaCollected = mediaCollected;
+    totals.mediaIncluded = mediaIncluded;
+    totals.wikipediaCollected = wikipediaCollected;
+    totals.wikipediaIncluded = wikipediaIncluded;
+  }
+  if (complianceSummary) {
+    const c = complianceSummary as {
+      totalHits?: number;
+      confirmedHits?: number;
+      pendingHits?: number;
+      falsePositives?: number;
+    };
+    totals.complianceCollected = c.totalHits ?? 0;
+    totals.complianceIncluded = c.confirmedHits ?? 0;
+    totals.complianceReview = c.pendingHits ?? 0;
+    totals.complianceExcluded = c.falsePositives ?? 0;
+  }
+  return totals;
+}
 
 function iso(d: Date | null | undefined): string | null {
   return d ? d.toISOString() : null;
@@ -618,8 +679,11 @@ export async function buildReportJson(
     }
   }
 
-  // Stage R3.2b — provider health/capability matrix (no network calls).
-  const providerDiagnostics = buildProviderDiagnostics();
+  // Stage R3.2b/R4.1 — provider health/capability matrix + source provenance
+  // (no network calls). Surface totals are derived from already-collected data.
+  const providerDiagnostics = buildProviderDiagnostics({
+    surfaceTotals: computeProviderSurfaceTotals(searchSurfaces, complianceSummary),
+  });
   // Stage R3.3 — entity/FIO filtering diagnostics.
   const entityFiltering = buildEntityFilteringDiagnostics({
     subject: {
