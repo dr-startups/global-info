@@ -1354,15 +1354,32 @@ def _p_compliance_review_quality(prs, vm, ctx):
     L = vm["labels"]
     c = vm["compliance"]
     slide, top = _section(prs, ctx, L["compliance_review_quality_title"])
+    intel = vm.get("complianceRiskIntel") or {}
+    counts = intel.get("counts") or {}
+    manual = intel.get("manualImport") or {}
+    # R3.5 — make review/data-quality analytical: show buckets, not just warnings.
+    if counts:
+        top = T.metric_cards(
+            slide,
+            top,
+            [
+                {"label": L.get("r35_bucket_confirmed", "Подтверждено"), "value": int(counts.get("confirmed", 0) or 0), "tone": T.DANGER if counts.get("confirmed") else T.NEUTRAL_GRAY},
+                {"label": L.get("r35_bucket_review", "На проверке"), "value": int(counts.get("review", 0) or 0), "tone": T.WARNING if counts.get("review") else T.NEUTRAL_GRAY},
+                {"label": L.get("r35_bucket_excluded", "Исключено"), "value": int(counts.get("excluded", 0) or 0), "tone": T.NEUTRAL_GRAY},
+            ],
+            per_row=3,
+        )
     warnings = [w for w in (c.get("dataQualityWarnings") or []) if w]
     if c.get("pendingHits", 0) > 0:
         warnings.insert(0, L["lang_requires_review"])
     not_configured = [p["provider"] for p in c.get("providerTable", []) if L["src_not_configured"] in str(p.get("sourceType", ""))]
     if not_configured:
         warnings.append(f"{L['warn_provider_not_queried']} ({', '.join(not_configured[:4])})")
+    if int(manual.get("review", 0) or 0) > 0:
+        warnings.append(L.get("r35_manual_import_note", "Материалы ручного импорта требуют проверки."))
     if not warnings:
         warnings = [L["dq_coverage_adequate"], L["warn_not_legal"]]
-    top = T.bullets(slide, top, warnings[:8], max_items=8, layout_warnings=ctx.layout_warnings)
+    top = T.bullets(slide, top, warnings[:6], max_items=6, layout_warnings=ctx.layout_warnings)
     T.warning_card(slide, top, L["warn_not_legal"])
 
 
@@ -1670,6 +1687,45 @@ def _p_r31_risk_reasoning_overview(prs, vm, ctx):
     L = vm["labels"]
     rr = vm.get("riskReasoningOverview") or {}
     slide, top = _section(prs, ctx, L.get("r31_risk_reasoning_overview_title", "Обоснование итогового уровня риска"))
+    # R3.5 — connect the overall risk level to evidence buckets (client-safe).
+    buckets = rr.get("evidenceBuckets") or {}
+    reasoning_summary = str(rr.get("reasoningSummary") or "")
+    if reasoning_summary or buckets:
+        top = T.metric_cards(
+            slide,
+            top,
+            [
+                _risk_card_value(rr.get("overallRiskLevel", "UNKNOWN"), L),
+                {"label": L.get("r35_bucket_confirmed", "Подтверждено"), "value": int(buckets.get("confirmed", 0) or 0), "tone": T.DANGER if buckets.get("confirmed") else T.NEUTRAL_GRAY},
+                {"label": L.get("r35_bucket_review", "На проверке"), "value": int(buckets.get("review", 0) or 0), "tone": T.WARNING if buckets.get("review") else T.NEUTRAL_GRAY},
+                {"label": L.get("r35_bucket_excluded", "Исключено"), "value": int(buckets.get("excluded", 0) or 0), "tone": T.NEUTRAL_GRAY},
+            ],
+            per_row=4,
+        )
+        summary_lines = [reasoning_summary] if reasoning_summary else list(rr.get("supportingSignals") or [])[:2]
+        if summary_lines:
+            top = T.card(
+                slide,
+                T.MARGIN,
+                top,
+                T.CONTENT_W,
+                Emu(1150000),
+                L.get("r35_reasoning_summary_title", "Обоснование"),
+                summary_lines,
+                tone=T.ACCENT,
+            )
+            top = Emu(int(top) + 1230000)
+        limiting = [x for x in (rr.get("limitingFactors") or []) if x]
+        if limiting:
+            top = T.bullets(slide, top, limiting[:3], max_items=3, layout_warnings=ctx.layout_warnings)
+        T.note(
+            slide,
+            top,
+            str(rr.get("legalSafeDisclaimer") or L.get("r35_legal_safe_note", "")),
+            "disclaimer",
+        )
+        return
+    # Fallback (pre-R3.5 data): original supporting-signals layout.
     top = T.metric_cards(
         slide,
         top,

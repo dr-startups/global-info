@@ -34,6 +34,7 @@ import {
 } from "../report/selected-evidence-report-vm";
 import { buildProviderDiagnostics } from "../report/provider-diagnostics";
 import { buildEntityFilteringDiagnostics } from "../report/entity-filtering-diagnostics";
+import { buildComplianceRiskIntel } from "../report/compliance-risk-intel";
 import {
   createInternalHygieneWarning,
   filterComplianceForReport,
@@ -629,6 +630,13 @@ export async function buildReportJson(
     },
     evidenceQuality,
   });
+  // Stage R3.5 — normalized compliance/risk intelligence (display-level only).
+  const complianceRiskIntel = buildComplianceRiskIntel({
+    complianceSummary,
+    riskSummary,
+    evidenceQuality,
+    reportLanguage,
+  });
 
   return {
     meta: {
@@ -657,6 +665,7 @@ export async function buildReportJson(
     selectedEvidence,
     providerDiagnostics,
     entityFiltering,
+    complianceRiskIntel,
   };
 }
 

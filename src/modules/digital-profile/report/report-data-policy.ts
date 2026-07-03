@@ -372,6 +372,25 @@ function sanitizeProviderDiagnosticsForClient(
   };
 }
 
+function sanitizeComplianceRiskIntelForClient(
+  block: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!block) return block;
+  const hits = Array.isArray(block.complianceHits) ? block.complianceHits : [];
+  const safeHits = hits
+    .map((item) => (item && typeof item === "object" ? (item as Record<string, unknown>) : {}))
+    // R3.5: excluded/noise hits are never client-confirmed evidence.
+    .filter((row) => row.isClientVisible !== false && row.isExcludedNoise !== true)
+    .map((row) => {
+      const { internalReason: _internalReason, ...rest } = row;
+      return rest;
+    });
+  return {
+    ...block,
+    complianceHits: safeHits,
+  };
+}
+
 function sanitizeEntityFilteringForClient(
   block: Record<string, unknown> | undefined
 ): Record<string, unknown> | undefined {
@@ -410,6 +429,7 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
     selectedEvidence?: Record<string, unknown>;
     providerDiagnostics?: Record<string, unknown>;
     entityFiltering?: Record<string, unknown>;
+    complianceRiskIntel?: Record<string, unknown>;
   };
 
   if (copy.meta) {
@@ -448,6 +468,7 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
   copy.evidenceQuality = sanitizeEvidenceQualityForClient(copy.evidenceQuality);
   copy.providerDiagnostics = sanitizeProviderDiagnosticsForClient(copy.providerDiagnostics);
   copy.entityFiltering = sanitizeEntityFilteringForClient(copy.entityFiltering);
+  copy.complianceRiskIntel = sanitizeComplianceRiskIntelForClient(copy.complianceRiskIntel);
 
   if (copy.selectedEvidence && typeof copy.selectedEvidence === "object") {
     const se = copy.selectedEvidence as Record<string, unknown>;

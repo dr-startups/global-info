@@ -1605,6 +1605,7 @@ def _media_evidence_overview_vm(vm: dict, L: dict) -> dict:
 def _risk_reasoning_overview_vm(vm: dict, L: dict) -> dict:
     final = vm.get("finalConclusion") or {}
     rows = list((vm.get("riskMatrix") or {}).get("rows") or [])
+    intel = (vm.get("complianceRiskIntel") or {}).get("riskReasoning") or {}
     return {
         "overallRiskLevel": final.get("overallRiskLevel", "UNKNOWN"),
         "topThemes": list(final.get("topThemes") or []),
@@ -1616,6 +1617,21 @@ def _risk_reasoning_overview_vm(vm: dict, L: dict) -> dict:
             L.get("r31_risk_signal_compliance", "Compliance and regulatory signals"),
             L.get("r31_risk_signal_media", "Media and narrative signals"),
         ],
+        # Stage R3.5 — client-safe reasoning intelligence (already localized in TS).
+        "reasoningSummary": str(intel.get("reasoningSummary") or ""),
+        "recommendedAction": str(intel.get("recommendedAction") or ""),
+        "legalSafeDisclaimer": str(intel.get("legalSafeDisclaimer") or ""),
+        "limitingFactors": [str(x) for x in (intel.get("limitingFactors") or []) if str(x)],
+        "evidenceBuckets": {
+            "confirmed": int(intel.get("confirmedCount", 0) or 0),
+            "review": int(intel.get("reviewCount", 0) or 0),
+            "excluded": int(intel.get("excludedCount", 0) or 0),
+        },
+        "signalBuckets": {
+            "compliance": int(intel.get("complianceSignals", 0) or 0),
+            "media": int(intel.get("mediaSignals", 0) or 0),
+            "organic": int(intel.get("organicSignals", 0) or 0),
+        },
     }
 
 
@@ -1846,6 +1862,8 @@ def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[
     vm["evidenceExcludedIntl"] = {"rows": list(vm["evidenceConfirmedIntl"]["excluded"])}
     vm["appendixOverview"] = _appendix_overview_vm(vm, vm["labels"])
     vm["mediaEvidenceOverview"] = _media_evidence_overview_vm(vm, vm["labels"])
+    # Stage R3.5 — normalized compliance/risk intelligence (client-safe display model).
+    vm["complianceRiskIntel"] = report_json.get("complianceRiskIntel") or {}
     vm["riskReasoningOverview"] = _risk_reasoning_overview_vm(vm, vm["labels"])
     vm["riskReasoningByRegion"] = _risk_reasoning_by_region_vm(vm, vm["labels"])
     vm["providerDiagnostics"] = _provider_diagnostics_vm(

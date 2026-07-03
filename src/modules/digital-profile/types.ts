@@ -390,6 +390,8 @@ export interface ReportJson {
   providerDiagnostics?: ReportProviderDiagnostics;
   /** Stage R3.3 — entity/FIO filtering diagnostics (safe additive). */
   entityFiltering?: ReportEntityFilteringDiagnostics;
+  /** Stage R3.5 — normalized compliance/risk intelligence (display-level, client-safe). */
+  complianceRiskIntel?: import("./report/compliance-risk-intel").ComplianceRiskIntel;
 }
 
 export type ProviderDiagnosticCategory =

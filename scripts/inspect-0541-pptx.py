@@ -1370,6 +1370,72 @@ def _r31_structure_checks(pptx_path: Path) -> tuple[int, list[str]]:
     return 0, lines
 
 
+# R3.5 — compliance / risk intelligence polish: client-safe wording + no raw enums.
+R35_PAGES = (32, 33, 34, 35, 36, 60, 61)
+R35_ENUM_RE = re.compile(
+    r"MATCH_CONFIRMED|FALSE_POSITIVE|NEEDS_REVIEW|WARN_POTENTIAL_REVIEW|UNCLASSIFIED"
+    r"|LIKELY_SUBJECT|NOT_SUBJECT|PROVIDER_NOT_IMPLEMENTED|internalReason",
+    re.I,
+)
+R35_LEGAL_RE = re.compile(
+    r"\bcriminal\b|\bguilty\b|\billegal\b|\bfraudster\b|\bproven\b|sanctioned\s+person"
+    r"|преступник|виновен|мошенник|доказан(?:о|а)\b",
+    re.I,
+)
+
+
+def _r35_compliance_risk_checks(pptx_path: Path, report_json_path: Path) -> tuple[int, list[str]]:
+    report_json: dict[str, Any] = {}
+    if report_json_path.exists():
+        report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+    fails: list[str] = []
+
+    # 1) normalized intelligence block present + client-safe.
+    intel = report_json.get("complianceRiskIntel")
+    if isinstance(intel, dict) and intel.get("enabled"):
+        hits = intel.get("complianceHits") or []
+        excluded_visible = [h for h in hits if isinstance(h, dict) and h.get("isExcludedNoise")]
+        if excluded_visible and report_json.get("_audience") == "client":
+            fails.append("complianceRiskIntel — excluded/noise hits present in client payload")
+        rr = intel.get("riskReasoning") or {}
+        if not str(rr.get("legalSafeDisclaimer") or ""):
+            fails.append("complianceRiskIntel — risk reasoning missing legal-safe disclaimer")
+    else:
+        # additive block; absence is tolerated for legacy artifacts but noted.
+        fails.append("complianceRiskIntel block missing/disabled in report JSON")
+
+    # 2) per-page wording/layout contracts for compliance + risk-reasoning pages.
+    with zipfile.ZipFile(pptx_path, "r") as z:
+        try:
+            total = len(z.namelist())  # noqa: F841 (kept for parity)
+        except Exception:
+            pass
+        for n in R35_PAGES:
+            try:
+                xml = _slide_xml(z, n)
+            except Exception:
+                fails.append(f"Slide {n} R3.5 contract — slide unavailable")
+                continue
+            text = _plain_text(xml)
+            for issue in _common_contract_issues(xml, text, n, require_low_badge=False):
+                fails.append(f"Slide {n} R3.5 contract — {issue}")
+            if R35_ENUM_RE.search(text):
+                m = R35_ENUM_RE.search(text)
+                fails.append(f"Slide {n} R3.5 contract — raw enum leakage: {m.group(0) if m else ''}")
+            if R35_LEGAL_RE.search(text):
+                m = R35_LEGAL_RE.search(text)
+                fails.append(f"Slide {n} R3.5 contract — legal overclaiming term: {m.group(0) if m else ''}")
+
+    lines: list[str] = []
+    if fails:
+        for f in fails:
+            lines.append(f"[FAIL] {f}")
+        return 1, lines
+    lines.append("[PASS] R3.5 compliance/risk intelligence block present + client-safe")
+    lines.append("[PASS] Slide 32–36/60–61 R3.5 wording & layout contracts")
+    return 0, lines
+
+
 def main() -> int:
     target = Path(__file__).with_name("inspect-o541-pptx.py")
     cmd = [sys.executable, str(target), *sys.argv[1:]]
@@ -1428,6 +1494,9 @@ def main() -> int:
     r34_rc, r34_lines = _r34_appendix_checks(pptx_path, report_json_path)
     for line in r34_lines:
         print(line)
+    r35_rc, r35_lines = _r35_compliance_risk_checks(pptx_path, report_json_path)
+    for line in r35_lines:
+        print(line)
     reg_rc = 0
     if is_fixture:
         print("[PASS] Fixture mode — regression locks skipped by design")
@@ -1446,7 +1515,7 @@ def main() -> int:
     )
     for line in s13_sem_lines:
         print(line)
-    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
+    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
 
 
 if __name__ == "__main__":
