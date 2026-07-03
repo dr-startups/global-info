@@ -1545,6 +1545,83 @@ def _r41_provider_runtime_checks(report_json_path: Path) -> tuple[int, list[str]
     return 0, lines
 
 
+def _r42_source_quality_checks(report_json_path: Path) -> tuple[int, list[str]]:
+    """R4.2 — source quality/dedup/inclusion reasoning contracts."""
+    fails: list[str] = []
+    report_json: dict[str, Any] = {}
+    if report_json_path.exists():
+        report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+
+    is_client = "providerDiagnostics" not in report_json
+    raw = json.dumps(report_json, ensure_ascii=False)
+
+    if not is_client:
+        sq = report_json.get("sourceQualitySummary")
+        if not isinstance(sq, dict):
+            fails.append("sourceQualitySummary missing in internal report_json")
+        else:
+            for k in (
+                "totalCollected",
+                "uniqueSources",
+                "duplicateCount",
+                "includedCount",
+                "reviewCount",
+                "excludedCount",
+            ):
+                if not isinstance(sq.get(k), int):
+                    fails.append(f"sourceQualitySummary missing/invalid {k}")
+        ss = report_json.get("searchSurfaces") or {}
+        regions = (ss.get("regions") if isinstance(ss, dict) else None) or {}
+        checked_rows = 0
+        for block in regions.values():
+            if not isinstance(block, dict):
+                continue
+            for bucket_key in (
+                "organic",
+                "suggestions",
+                "relatedQueries",
+                "images",
+                "videos",
+                "knowledgePanel",
+                "wikipedia",
+            ):
+                bucket = block.get(bucket_key) if isinstance(block, dict) else None
+                if not isinstance(bucket, dict):
+                    continue
+                for row in bucket.get("items") or []:
+                    if not isinstance(row, dict):
+                        continue
+                    if row.get("sourceQualityDecision"):
+                        checked_rows += 1
+        if checked_rows == 0:
+            fails.append("no sourceQualityDecision found in searchSurfaces items")
+    else:
+        # Client must not carry raw internal source-quality diagnostics fields.
+        forbidden_client = [
+            "sourceQualityReason",
+            "internalReason",
+            "sourceFingerprint",
+            "duplicateGroupId",
+            "duplicateRank",
+            "duplicateReason",
+            "canonicalUrlKey",
+            "canonicalTitleKey",
+        ]
+        leaked = [k for k in forbidden_client if f'"{k}"' in raw]
+        if leaked:
+            fails.append(f"client source-quality leakage: {leaked}")
+
+    lines: list[str] = []
+    if fails:
+        for f in fails:
+            lines.append(f"[FAIL] R4.2 {f}")
+        return 1, lines
+    lines.append(
+        "[PASS] R4.2 source quality — internal summary/decisions present and client leakage blocked"
+    )
+    return 0, lines
+
+
 def _r36_production_gate_checks(pptx_path: Path, report_json_path: Path) -> tuple[int, list[str]]:
     fails: list[str] = []
     report_json: dict[str, Any] = {}
@@ -1693,6 +1770,9 @@ def main() -> int:
     r41_rc, r41_lines = _r41_provider_runtime_checks(report_json_path)
     for line in r41_lines:
         print(line)
+    r42_rc, r42_lines = _r42_source_quality_checks(report_json_path)
+    for line in r42_lines:
+        print(line)
     # R3.6 — regression locks use an internal baseline; client/production artifacts
     # legitimately differ on audience-gated slides, so lock only internal artifacts.
     _reg_report_json: dict[str, Any] = {}
@@ -1722,7 +1802,7 @@ def main() -> int:
     )
     for line in s13_sem_lines:
         print(line)
-    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
+    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or r42_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
 
 
 if __name__ == "__main__":

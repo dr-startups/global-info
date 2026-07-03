@@ -226,7 +226,8 @@ function toAppendixRow(
 
 function toExcludedRow(item: SurfaceReportItem): ExcludedEvidenceRow {
   const reason =
-    item.identityDecision === "NAMESAKE"
+    item.clientSafeReason ??
+    (item.identityDecision === "NAMESAKE"
       ? "namesake"
       : item.identityDecision === "ENTITY_MISMATCH"
         ? "entity mismatch"
@@ -234,7 +235,7 @@ function toExcludedRow(item: SurfaceReportItem): ExcludedEvidenceRow {
           ? "insufficient match / Romanovich-only"
           : item.reportEligibility === "EXCLUDE"
             ? "excluded"
-            : "not subject";
+            : "not subject");
   return {
     title: item.title,
     domain: item.domain ?? domainOf(item.url),
@@ -303,9 +304,19 @@ function buildRegionVm(
   );
 
   const confirmedAppendix: SelectedEvidenceAppendixRow[] = [];
-  for (const item of organicSelected) confirmedAppendix.push(toAppendixRow(item, "organic"));
-  for (const item of imagesSelected) confirmedAppendix.push(toAppendixRow(item, "image"));
-  for (const item of videosSelected) confirmedAppendix.push(toAppendixRow(item, "video"));
+  const seen = new Set<string>();
+  const appendUnique = (item: SurfaceReportItem, bucket: "organic" | "image" | "video") => {
+    const key =
+      item.sourceFingerprint ??
+      item.canonicalUrlKey ??
+      `${item.domain ?? ""}|${item.title ?? ""}|${bucket}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    confirmedAppendix.push(toAppendixRow(item, bucket));
+  };
+  for (const item of organicSelected) appendUnique(item, "organic");
+  for (const item of imagesSelected) appendUnique(item, "image");
+  for (const item of videosSelected) appendUnique(item, "video");
 
   const excludedAppendix: ExcludedEvidenceRow[] = [];
   if (audience === "INTERNAL") {

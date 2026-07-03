@@ -249,6 +249,14 @@ const CLIENT_FORBIDDEN_JSON_KEYS = new Set([
   "topExclusionReasons",
   "skippedReason",
   "fallbackReason",
+  // Stage R4.2 — internal source-quality details.
+  "sourceQualityReason",
+  "sourceFingerprint",
+  "canonicalUrlKey",
+  "canonicalTitleKey",
+  "duplicateGroupId",
+  "duplicateRank",
+  "duplicateReason",
 ]);
 
 export type ReportJsonAudience = "internal" | "client";
@@ -340,6 +348,11 @@ export const CLIENT_FORBIDDEN_TEXT_MARKERS: string[] = [
   "rawMetadata",
   "internalDetail",
   "internalReason",
+  "sourceQualityReason",
+  "sourceFingerprint",
+  "duplicateGroupId",
+  "duplicateRank",
+  "duplicateReason",
   "topExclusionReasons",
   "process.env",
   ".env",
@@ -437,7 +450,19 @@ function sanitizeSearchSurfacesForClient(
             return !el || el === "CLIENT_INCLUDE";
           })
           .map((item) => {
-            const { reportEligibility: _re, contentClass: _cc, ...rest } = item as Record<
+            const {
+              reportEligibility: _re,
+              contentClass: _cc,
+              sourceQualityReason: _sqr,
+              sourceFingerprint: _sf,
+              canonicalUrlKey: _cuk,
+              canonicalTitleKey: _ctk,
+              duplicateGroupId: _dg,
+              duplicateRank: _dr,
+              duplicateReason: _dgr,
+              internalReason: _ir,
+              ...rest
+            } = item as Record<
               string,
               unknown
             >;
@@ -472,6 +497,23 @@ function sanitizeSearchSurfacesForClient(
     );
   }
   return out;
+}
+
+function sanitizeSourceQualitySummaryForClient(
+  block: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!block) return block;
+  return {
+    uniqueSources: block.uniqueSources,
+    includedCount: block.includedCount,
+    reviewCount: block.reviewCount,
+    excludedCount: block.excludedCount,
+    duplicateCount: block.duplicateCount,
+    explanation:
+      (block.explanation as Record<string, unknown> | undefined)?.ru ??
+      (block.explanation as Record<string, unknown> | undefined)?.en ??
+      "Duplicate and low-relevance matches are filtered.",
+  };
 }
 
 function sanitizeEvidenceQualityForClient(
@@ -538,6 +580,7 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
     searchSurfaces?: Record<string, unknown>;
     evidenceQuality?: Record<string, unknown>;
     selectedEvidence?: Record<string, unknown>;
+    sourceQualitySummary?: Record<string, unknown>;
     providerDiagnostics?: Record<string, unknown>;
     entityFiltering?: Record<string, unknown>;
     complianceRiskIntel?: Record<string, unknown>;
@@ -579,6 +622,7 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
   copy.evidenceQuality = sanitizeEvidenceQualityForClient(copy.evidenceQuality);
   copy.entityFiltering = sanitizeEntityFilteringForClient(copy.entityFiltering);
   copy.complianceRiskIntel = sanitizeComplianceRiskIntelForClient(copy.complianceRiskIntel);
+  copy.sourceQualitySummary = sanitizeSourceQualitySummaryForClient(copy.sourceQualitySummary);
   // Stage R3.6 — provider/runtime diagnostics are internal-only; never in client JSON.
   stripInternalDiagnostics(copy);
 

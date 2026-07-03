@@ -26,6 +26,7 @@ import { buildOfferConfig } from "../report/offer-config";
 import {
   buildSearchSurfacesReportBlock,
 } from "../report/search-surfaces-report-builder";
+import { buildReportSourceQualitySummary } from "../report/source-quality-diagnostics";
 import { buildCaseEvidenceQuality } from "../evidence-quality/case-service";
 import { capOverallRiskFromQuality } from "../evidence-quality/build-summary";
 import {
@@ -98,24 +99,41 @@ function computeProviderSurfaceTotals(
   if (regions && typeof regions === "object") {
     let organicCollected = 0;
     let organicIncluded = 0;
+    let organicReview = 0;
+    let organicExcluded = 0;
     let mediaCollected = 0;
     let mediaIncluded = 0;
     let wikipediaCollected = 0;
     let wikipediaIncluded = 0;
     const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
-    const stats = (bucket: unknown): { totalCollected?: number; selectedForReport?: number } =>
+    const stats = (
+      bucket: unknown
+    ): {
+      totalCollected?: number;
+      selectedForReport?: number;
+      reviewRequired?: number;
+      excludedAsNoise?: number;
+      duplicatesCollapsed?: number;
+    } =>
       ((bucket as { qualityStats?: Record<string, unknown> } | undefined)?.qualityStats ?? {}) as {
         totalCollected?: number;
         selectedForReport?: number;
+        reviewRequired?: number;
+        excludedAsNoise?: number;
+        duplicatesCollapsed?: number;
       };
     for (const block of Object.values(regions as Record<string, Record<string, unknown>>)) {
       const organic = stats(block.organic);
       organicCollected += num(organic.totalCollected);
       organicIncluded += num(organic.selectedForReport);
+      organicReview += num(organic.reviewRequired);
+      organicExcluded += num(organic.excludedAsNoise);
+      totals.organicDuplicates = (totals.organicDuplicates ?? 0) + num(organic.duplicatesCollapsed);
       for (const key of ["images", "videos"]) {
         const media = stats(block[key]);
         mediaCollected += num(media.totalCollected);
         mediaIncluded += num(media.selectedForReport);
+        totals.mediaDuplicates = (totals.mediaDuplicates ?? 0) + num(media.duplicatesCollapsed);
       }
       const knowledge = stats(block.knowledgePanel);
       wikipediaCollected += num(knowledge.totalCollected);
@@ -123,6 +141,8 @@ function computeProviderSurfaceTotals(
     }
     totals.organicCollected = organicCollected;
     totals.organicIncluded = organicIncluded;
+    totals.organicReview = organicReview;
+    totals.organicExcluded = organicExcluded;
     totals.mediaCollected = mediaCollected;
     totals.mediaIncluded = mediaIncluded;
     totals.wikipediaCollected = wikipediaCollected;
@@ -139,6 +159,7 @@ function computeProviderSurfaceTotals(
     totals.complianceIncluded = c.confirmedHits ?? 0;
     totals.complianceReview = c.pendingHits ?? 0;
     totals.complianceExcluded = c.falsePositives ?? 0;
+    totals.complianceDuplicates = 0;
   }
   return totals;
 }
@@ -637,12 +658,18 @@ export async function buildReportJson(
 
   // Stage O4 — ORION search surfaces block (best-effort).
   let searchSurfaces: ReportJson["searchSurfaces"];
+  let sourceQualitySummary: ReportJson["sourceQualitySummary"];
   try {
     searchSurfaces = await buildSearchSurfacesReportBlock(caseId, {
       includeDemo: policy.includeDemoData,
     });
+    if (searchSurfaces) {
+      sourceQualitySummary = buildReportSourceQualitySummary(searchSurfaces);
+      searchSurfaces.sourceQualitySummary = sourceQualitySummary;
+    }
   } catch {
     searchSurfaces = undefined;
+    sourceQualitySummary = undefined;
   }
 
   // Stage O5 — evidence quality summary (best-effort).
@@ -727,6 +754,7 @@ export async function buildReportJson(
     searchSurfaces,
     evidenceQuality,
     selectedEvidence,
+    sourceQualitySummary,
     providerDiagnostics,
     entityFiltering,
     complianceRiskIntel,

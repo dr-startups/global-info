@@ -283,6 +283,9 @@ export interface ProviderSurfaceTotals {
   complianceIncluded?: number;
   complianceReview?: number;
   complianceExcluded?: number;
+  organicDuplicates?: number;
+  mediaDuplicates?: number;
+  complianceDuplicates?: number;
 }
 
 /**
@@ -317,6 +320,7 @@ export function buildSourceProvenance(
       sourceRuntimeKind: p.runtimeKind ?? "mock",
       collectionMode,
       inclusionDecision,
+      sourceQualityDecision: inclusionDecision,
       inclusionReason: p.message,
       fallbackReason: fallback?.reason,
       safeNote: p.safeDetail,
@@ -327,6 +331,7 @@ export function buildSourceProvenance(
       row.included = totals.organicIncluded;
       row.review = totals.organicReview;
       row.excluded = totals.organicExcluded;
+      row.duplicateCount = totals.organicDuplicates;
     } else if (p.id === "wikipedia") {
       row.collected = totals.wikipediaCollected;
       row.included = totals.wikipediaIncluded;
@@ -335,9 +340,11 @@ export function buildSourceProvenance(
       row.included = totals.complianceIncluded;
       row.review = totals.complianceReview;
       row.excluded = totals.complianceExcluded;
+      row.duplicateCount = totals.complianceDuplicates;
     } else if (p.id === "screenshots" || p.id === "synthetic_serp") {
       row.collected = totals.mediaCollected;
       row.included = totals.mediaIncluded;
+      row.duplicateCount = totals.mediaDuplicates;
     }
     rows.push(row);
   }

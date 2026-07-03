@@ -31,6 +31,7 @@ import {
 } from "../evidence-quality/image-thumbnail-service";
 import type { AutocompleteClass, EvidenceSurfaceType, SurfaceQualityStats } from "../evidence-quality/types";
 import type { GatedEvidenceItem } from "../evidence-quality/types";
+import { annotateSourceQuality, type SourceQualitySummary } from "../evidence-quality/source-quality";
 import { Prisma } from "@prisma/client";
 
 export interface SurfaceReportItem {
@@ -53,6 +54,23 @@ export interface SurfaceReportItem {
   thumbnailStorageKey?: string | null;
   thumbnailStatus?: string;
   sourcePageUrl?: string | null;
+  /** Stage R4.2 — normalized source-quality and dedup metadata. */
+  sourceFingerprint?: string;
+  canonicalUrlKey?: string | null;
+  canonicalDomain?: string | null;
+  canonicalTitleKey?: string | null;
+  providerKey?: string;
+  sourceSurfaceType?: string;
+  language?: string | null;
+  sourceRegion?: string | null;
+  duplicateGroupId?: string | null;
+  duplicateRank?: number | null;
+  duplicateReason?: string | null;
+  sourceQualityDecision?: string;
+  sourceQualityReason?: string;
+  confidenceLabel?: string;
+  clientSafeReason?: string;
+  internalReason?: string;
 }
 
 export interface AutocompleteSuggestionGroup {
@@ -124,6 +142,8 @@ export interface SearchSurfacesReportBlock {
     knowledgePanelStatus: "PRESENT" | "ABSENT" | "NOT_COLLECTED" | "MISMATCH";
   };
   dataQualityWarnings: string[];
+  /** Stage R4.2 — report-level source quality summary. */
+  sourceQualitySummary?: SourceQualitySummary;
 }
 
 function isNegativeOrganic(
@@ -193,6 +213,10 @@ function mapGatedToReportItem(
     r.rawMetadata && typeof r.rawMetadata === "object"
       ? ((r.rawMetadata as Record<string, unknown>).evidenceQuality as Record<string, unknown> | undefined)
       : undefined;
+  const sq = ((r.quality as { sourceQuality?: Record<string, unknown> }).sourceQuality ??
+    (eq?.sourceQuality as Record<string, unknown> | undefined)) as
+    | Record<string, unknown>
+    | undefined;
   return {
     title: r.title ?? r.query ?? "",
     snippet: r.snippet ?? null,
@@ -211,6 +235,22 @@ function mapGatedToReportItem(
     thumbnailStorageKey: typeof eq?.thumbnailStorageKey === "string" ? eq.thumbnailStorageKey : null,
     thumbnailStatus: (eq?.thumbnailStatus as string) ?? r.quality.thumbnailStatus,
     sourcePageUrl: sourceUrl,
+    sourceFingerprint: typeof sq?.sourceFingerprint === "string" ? sq.sourceFingerprint : undefined,
+    canonicalUrlKey: typeof sq?.canonicalUrlKey === "string" ? sq.canonicalUrlKey : null,
+    canonicalDomain: typeof sq?.canonicalDomain === "string" ? sq.canonicalDomain : null,
+    canonicalTitleKey: typeof sq?.canonicalTitleKey === "string" ? sq.canonicalTitleKey : null,
+    providerKey: typeof sq?.providerKey === "string" ? sq.providerKey : undefined,
+    sourceSurfaceType: typeof sq?.surfaceType === "string" ? sq.surfaceType : undefined,
+    language: typeof sq?.language === "string" ? sq.language : null,
+    sourceRegion: typeof sq?.region === "string" ? sq.region : null,
+    duplicateGroupId: typeof sq?.duplicateGroupId === "string" ? sq.duplicateGroupId : null,
+    duplicateRank: typeof sq?.duplicateRank === "number" ? sq.duplicateRank : null,
+    duplicateReason: typeof sq?.duplicateReason === "string" ? sq.duplicateReason : null,
+    sourceQualityDecision: typeof sq?.sourceQualityDecision === "string" ? sq.sourceQualityDecision : undefined,
+    sourceQualityReason: typeof sq?.sourceQualityReason === "string" ? sq.sourceQualityReason : undefined,
+    confidenceLabel: typeof sq?.confidenceLabel === "string" ? sq.confidenceLabel : undefined,
+    clientSafeReason: typeof sq?.clientSafeReason === "string" ? sq.clientSafeReason : undefined,
+    internalReason: typeof sq?.internalReason === "string" ? sq.internalReason : undefined,
   };
 }
 
@@ -234,7 +274,7 @@ function bucketFromAutocompleteRows(
   reportLanguage: "ru" | "en",
   limit = 20
 ): SurfaceBucketSummary {
-  const gated: GatedEvidenceItem[] = dedupeEvidenceItems(
+  const gatedRaw: GatedEvidenceItem[] = dedupeEvidenceItems(
     rows.map((r) => ({
       id: r.id,
       surfaceType,
@@ -257,6 +297,7 @@ function bucketFromAutocompleteRows(
     })),
     subject.fullName
   ).items;
+  const gated = annotateSourceQuality(gatedRaw, reportLanguage);
 
   const exposure = gated.filter((r) => r.quality.reportEligibility !== "EXCLUDE");
   const picked = pickBestRepresentatives(exposure, limit);
@@ -349,10 +390,11 @@ async function bucketFromGatedRows(
   regionStatus: RegionCollectionStatus,
   regionMessage: string,
   subject: SubjectIdentityContext,
+  reportLanguage: "ru" | "en",
   limit = 20,
   options: { caseId?: string; fetchThumbnails?: boolean } = {}
 ): Promise<SurfaceBucketSummary> {
-  const gated: GatedEvidenceItem[] = dedupeEvidenceItems(
+  const gatedRaw: GatedEvidenceItem[] = dedupeEvidenceItems(
     rows.map((r) => ({
       id: r.id,
       surfaceType,
@@ -375,6 +417,7 @@ async function bucketFromGatedRows(
     })),
     subject.fullName
   ).items;
+  const gated = annotateSourceQuality(gatedRaw, reportLanguage);
 
   const selection = selectEvidenceForReport(gated, "INTERNAL");
   const picked = pickBestRepresentatives(selection.selected, limit);
@@ -690,6 +733,7 @@ async function buildRegionBlockAsync(
       derived.status,
       derived.message,
       subject,
+      reportLanguage,
       limit,
       { caseId, fetchThumbnails }
     );
@@ -722,6 +766,7 @@ async function buildRegionBlockAsync(
     derived.status,
     derived.message,
     subject,
+    reportLanguage,
     20
   );
   const images = await gatedBucket("IMAGE_RESULT", 9, true);

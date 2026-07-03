@@ -386,6 +386,8 @@ export interface ReportJson {
   evidenceQuality?: import("./evidence-quality/types").EvidenceQualitySummary;
   /** Stage O5.4 — selected evidence VM for renderer enforcement. */
   selectedEvidence?: import("./report/selected-evidence-report-vm").SelectedEvidenceReportVm;
+  /** Stage R4.2 — dedup/source-quality explainability summary. */
+  sourceQualitySummary?: import("./report/source-quality-diagnostics").ReportSourceQualitySummary;
   /** Stage R3.2b — provider/runtime diagnostics block (no external calls). */
   providerDiagnostics?: ReportProviderDiagnostics;
   /** Stage R3.3 — entity/FIO filtering diagnostics (safe additive). */
@@ -450,6 +452,8 @@ export interface ReportSourceProvenanceRow {
   inclusionDecision: "included" | "review" | "excluded" | "fallback" | "unavailable";
   inclusionReason?: string;
   fallbackReason?: string;
+  sourceQualityDecision?: "included" | "review" | "excluded" | "fallback" | "unavailable";
+  duplicateCount?: number;
   collected?: number;
   included?: number;
   review?: number;
