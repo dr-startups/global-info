@@ -151,6 +151,10 @@ _EN = {
     # inline phrases
     "top_themes": "Top themes:",
     "negative_domains": "Negative domains:",
+    "risk_topic_political_exposure": "Political exposure",
+    "risk_topic_criminal": "Criminal-law risks",
+    "risk_topic_legal_dispute": "Legal disputes",
+    "risk_topic_sanctions": "Sanctions signals",
     "observed_queries": "Observed suggestions / queries:",
     "wikipedia_label": "Wikipedia:",
     "compliance_label": "Compliance:",
@@ -204,6 +208,11 @@ _EN = {
     "expand_region_collection": "Expand data collection for this region.",
     "region_section": "Region segment",
     "region_no_adverse_organic": "No adverse organic content in selected subject-matched results.",
+    "region_adverse_organic_detected": "Detected {neg} potentially adverse material(s) ({neg}/{total}); analyst review is recommended.",
+    "region_no_confirmed_urls_but_signals": (
+        "No confirmed adverse URLs were detected in the primary list, "
+        "but thematic risk signals and domains require analyst review."
+    ),
     "region_saved_for_review": "+ {n} more suggestions retained for review.",
     "region_search_suggestions_note": "Note: Suggestions reflect search-engine associations for similar queries and are not confirmed subject materials.",
     "region_international_no_subject_results": "No confirmed international subject-matched materials were identified.",
@@ -275,6 +284,10 @@ _EN = {
     # no-data messages
     "nd_no_organic_region": "No organic results collected for this region.",
     "nd_no_negative_urls": "No negative URLs detected.",
+    "nd_no_confirmed_negative_urls_with_signals": (
+        "Confirmed adverse URLs are not recorded in this section. "
+        "Thematic signals and domains are retained for analyst review."
+    ),
     "nd_no_suggestions": "No suggestions collected for this region.",
     "nd_no_related": "No related queries collected for this region.",
     "nd_none_found_related": "Related queries were checked — none found.",
@@ -901,6 +914,10 @@ _RU = {
     "m_exists": "Существует",
     "top_themes": "Топ темы:",
     "negative_domains": "Негативные домены:",
+    "risk_topic_political_exposure": "Политическая экспозиция",
+    "risk_topic_criminal": "Уголовно-правовые риски",
+    "risk_topic_legal_dispute": "Судебные / правовые споры",
+    "risk_topic_sanctions": "Санкционные сигналы",
     "observed_queries": "Наблюдаемые подсказки / запросы:",
     "wikipedia_label": "Википедия:",
     "compliance_label": "Комплаенс:",
@@ -954,6 +971,11 @@ _RU = {
     "expand_region_collection": "Расширить сбор данных по этому региону.",
     "region_section": "Сегмент региона",
     "region_no_adverse_organic": "Негативных органических материалов по выбранным релевантным результатам не выявлено.",
+    "region_adverse_organic_detected": "Выявлено {neg} материалов, которые система относит к потенциально нежелательным ({neg}/{total}) и рекомендует для дополнительной проверки.",
+    "region_no_confirmed_urls_but_signals": (
+        "Подтверждённых негативных URL в основном списке не выявлено, "
+        "однако обнаружены тематические риск-сигналы и домены, требующие аналитической проверки."
+    ),
     "region_saved_for_review": "+ ещё {n} подсказок сохранены для проверки.",
     "region_search_suggestions_note": "Примечание: Подсказки отражают ассоциации поисковика при вводе похожих запросов и не являются подтверждёнными материалами о субъекте.",
     "region_international_no_subject_results": "Подтверждённых международных материалов по субъекту не выявлено.",
@@ -1023,6 +1045,10 @@ _RU = {
     "th_findings": "Находки",
     "nd_no_organic_region": "Органические результаты по этому региону не собраны.",
     "nd_no_negative_urls": "Негативные URL не обнаружены.",
+    "nd_no_confirmed_negative_urls_with_signals": (
+        "Подтверждённые негативные URL в этом разделе не зафиксированы. "
+        "Тематические сигналы и домены сохранены для аналитической проверки."
+    ),
     "nd_no_suggestions": "Подсказки по этому региону не собраны.",
     "nd_no_related": "Похожие запросы по этому региону не собраны.",
     "nd_none_found_related": "Похожие запросы проверены — ничего не найдено.",

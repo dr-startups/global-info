@@ -311,7 +311,8 @@ function filterItemsForAudience(items: SurfaceReportItem[], audience: ReportAudi
 function buildRegionVm(
   block: RegionSearchSurfacesBlock,
   code: "RU" | "UAE" | "INTERNATIONAL",
-  audience: ReportAudience
+  audience: ReportAudience,
+  reportLanguage: "ru" | "en"
 ): SelectedEvidenceRegionVm {
   const organicSelected = sortByEvidenceRank(filterItemsForAudience(
     block.organic.items.filter(
@@ -363,6 +364,7 @@ function buildRegionVm(
 
   const auditRegion = regionBlockToAuditRegion(block, {
     audience,
+    reportLanguage,
     confirmedAppendix,
     excludedAppendix,
     organicSelected,
@@ -463,14 +465,21 @@ export function filterReportRiskFindings(
 export function buildSelectedEvidenceReportVm(input: {
   searchSurfaces: SearchSurfacesReportBlock;
   reportAudience?: ReportAudience;
+  reportLanguage?: "ru" | "en";
   riskSummary?: ReportRiskSummary | null;
   complianceSummary?: ComplianceSummaryBlock | null;
   evidenceQuality?: EvidenceQualitySummary | null;
 }): SelectedEvidenceReportVm {
   const audience = input.reportAudience ?? "INTERNAL";
-  const ru = buildRegionVm(input.searchSurfaces.regions.ru, "RU", audience);
-  const uae = buildRegionVm(input.searchSurfaces.regions.uae, "UAE", audience);
-  const intl = buildRegionVm(input.searchSurfaces.regions.international, "INTERNATIONAL", audience);
+  const reportLanguage = input.reportLanguage ?? "ru";
+  const ru = buildRegionVm(input.searchSurfaces.regions.ru, "RU", audience, reportLanguage);
+  const uae = buildRegionVm(input.searchSurfaces.regions.uae, "UAE", audience, reportLanguage);
+  const intl = buildRegionVm(
+    input.searchSurfaces.regions.international,
+    "INTERNATIONAL",
+    audience,
+    reportLanguage
+  );
 
   const allOrganic = [...ru.organicSelected, ...uae.organicSelected, ...intl.organicSelected];
   const allImages = [...ru.images, ...uae.images, ...intl.images];

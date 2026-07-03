@@ -1691,6 +1691,32 @@ def card(slide, x: Emu, y: Emu, w: Emu, h: Emu, title: str, lines: list[str], to
     return Emu(int(y) + int(h) + int(_BLOCK_GAP))
 
 
+def card_auto(
+    slide,
+    x: Emu,
+    y: Emu,
+    w: Emu,
+    title: str,
+    lines: list[str],
+    *,
+    tone: RGBColor = ACCENT,
+    min_h: int = 560000,
+    max_h: int | None = None,
+    layout_warnings: list[str] | None = None,
+) -> Emu:
+    """Content-driven card height with footer-safe clamp."""
+    safe_lines = [str(line or "").strip() for line in (lines or []) if str(line or "").strip()]
+    content_w = Emu(max(1, int(w) - 240000))
+    body_h = int(text_block_height(safe_lines or ["—"], FS_BODY - 2, content_w, space_after_pt=2.0, pad_pt=8.0))
+    title_h = int(text_block_height([title], FS_SECTION_TITLE - 2, content_w, space_after_pt=2.0, pad_pt=6.0)) if title else 0
+    desired_h = max(min_h, body_h + title_h + 170000)
+    cap_by_footer = int(CONTENT_SAFE_BOTTOM) - int(y) - int(_BLOCK_GAP)
+    if max_h is not None:
+        cap_by_footer = min(cap_by_footer, int(max_h))
+    h = max(min_h, min(desired_h, max(min_h, cap_by_footer)))
+    return card(slide, x, y, w, Emu(h), title, safe_lines or ["—"], tone=tone)
+
+
 def metric_cards(slide, top: Emu, cards: list[dict], per_row: int = 4) -> Emu:
     """cards: [{label, value, tone?}]. Lays a responsive grid of metric cards."""
     if not cards:
@@ -1698,27 +1724,41 @@ def metric_cards(slide, top: Emu, cards: list[dict], per_row: int = 4) -> Emu:
     per_row = max(1, min(per_row, len(cards)))
     gap = int(GUTTER)
     card_w = (int(CONTENT_W) - gap * (per_row - 1)) // per_row
-    card_h = 980000
     y = int(top)
-    for idx, c in enumerate(cards):
-        col = idx % per_row
-        if col == 0 and idx > 0:
-            y += card_h + gap
-        x = int(MARGIN) + col * (card_w + gap)
-        shape = slide.shapes.add_shape(ROUNDED_RECT, Emu(x), Emu(y), Emu(card_w), Emu(card_h))
-        shape.fill.solid()
-        shape.fill.fore_color.rgb = BG_PANEL
-        shape.line.color.rgb = NEUTRAL_LINE
-        shape.line.width = Pt(0.75)
-        box = textbox(slide, Emu(x + 110000), Emu(y + 90000), Emu(card_w - 180000), Emu(card_h - 160000))
-        tf = box.text_frame
-        _run(tf.paragraphs[0], str(c.get("label", "")), FS_METRIC_LABEL, NEUTRAL_GRAY)
-        vp = tf.add_paragraph()
-        val = str(c.get("value", ""))
-        val_size = FS_METRIC_VALUE - (8 if len(val) > 12 else 0) - (4 if len(val) > 8 else 0)
-        _run(vp, val, max(14, val_size), c.get("tone", ACCENT), bold=True)
+    row_bottom = y
+    for row_start in range(0, len(cards), per_row):
+        row_cards = cards[row_start : row_start + per_row]
+        content_w = Emu(max(1, card_w - 180000))
+        row_h = 0
+        for c in row_cards:
+            label = str(c.get("label", ""))
+            val = str(c.get("value", ""))
+            val_size = FS_METRIC_VALUE - (8 if len(val) > 12 else 0) - (4 if len(val) > 8 else 0)
+            est = int(text_block_height([label], FS_METRIC_LABEL, content_w, space_after_pt=1.0, pad_pt=6.0))
+            est += int(text_block_height([val], max(14, val_size), content_w, space_after_pt=1.0, pad_pt=6.0))
+            est += 190000
+            row_h = max(row_h, max(760000, min(est, 1280000)))
+        for col, c in enumerate(row_cards):
+            x = int(MARGIN) + col * (card_w + gap)
+            shape = slide.shapes.add_shape(ROUNDED_RECT, Emu(x), Emu(y), Emu(card_w), Emu(row_h))
+            shape.fill.solid()
+            shape.fill.fore_color.rgb = BG_PANEL
+            shape.line.color.rgb = NEUTRAL_LINE
+            shape.line.width = Pt(0.75)
+            box = textbox(slide, Emu(x + 110000), Emu(y + 90000), Emu(card_w - 180000), Emu(row_h - 160000))
+            tf = box.text_frame
+            tf.word_wrap = True
+            _run(tf.paragraphs[0], str(c.get("label", "")), FS_METRIC_LABEL, NEUTRAL_GRAY)
+            vp = tf.add_paragraph()
+            val = str(c.get("value", ""))
+            val_size = FS_METRIC_VALUE - (8 if len(val) > 12 else 0) - (4 if len(val) > 8 else 0)
+            _run(vp, val, max(14, val_size), c.get("tone", ACCENT), bold=True)
+            vp.line_spacing = 1.05
+        y += row_h + gap
+        row_bottom = y
     rows = (len(cards) + per_row - 1) // per_row
-    return Emu(int(top) + rows * (card_h + gap) + 60000)
+    _ = rows
+    return Emu(row_bottom + 60000)
 
 
 def no_data_card(slide, top: Emu, text: str) -> Emu:
@@ -1747,32 +1787,40 @@ def step_cards(slide, top: Emu, steps: list[str], per_row: int = 1) -> Emu:
     per_row = max(1, min(per_row, 2))
     gap = int(GUTTER)
     card_w = (int(CONTENT_W) - gap * (per_row - 1)) // per_row
-    card_h = 720000
     y = int(top)
-    for idx, step in enumerate(steps):
-        col = idx % per_row
-        if col == 0 and idx > 0:
-            y += card_h + gap
-        x = int(MARGIN) + col * (card_w + gap)
-        shape = slide.shapes.add_shape(ROUNDED_RECT, Emu(x), Emu(y), Emu(card_w), Emu(card_h))
-        shape.fill.solid()
-        shape.fill.fore_color.rgb = BG_PANEL
-        shape.line.color.rgb = NEUTRAL_LINE
-        shape.line.width = Pt(0.75)
-        num = slide.shapes.add_shape(ROUNDED_RECT, Emu(x + 90000), Emu(y + 90000), Emu(340000), Emu(340000))
-        num.fill.solid()
-        num.fill.fore_color.rgb = ACCENT
-        num.line.fill.background()
-        ntf = num.text_frame
-        ntf.vertical_anchor = MSO_ANCHOR.MIDDLE
-        np = ntf.paragraphs[0]
-        np.alignment = PP_ALIGN.CENTER
-        _run(np, str(idx + 1), 12, WHITE, bold=True)
-        box = textbox(slide, Emu(x + 480000), Emu(y + 80000), Emu(card_w - 560000), Emu(card_h - 140000))
-        tf = box.text_frame
-        _run(tf.paragraphs[0], truncate(step, 120), FS_BODY - 2, NEUTRAL_DARK)
-    rows = (len(steps) + per_row - 1) // per_row
-    return Emu(int(top) + rows * (card_h + gap) + 60000)
+    row_bottom = y
+    for row_start in range(0, len(steps), per_row):
+        row_steps = steps[row_start : row_start + per_row]
+        text_w = Emu(max(1, card_w - 560000))
+        row_h = 0
+        for step in row_steps:
+            est = int(text_block_height([str(step or "")], FS_BODY - 2, text_w, space_after_pt=1.0, pad_pt=8.0))
+            est += 220000
+            row_h = max(row_h, max(620000, min(est, 1220000)))
+        for col, step in enumerate(row_steps):
+            idx = row_start + col
+            x = int(MARGIN) + col * (card_w + gap)
+            shape = slide.shapes.add_shape(ROUNDED_RECT, Emu(x), Emu(y), Emu(card_w), Emu(row_h))
+            shape.fill.solid()
+            shape.fill.fore_color.rgb = BG_PANEL
+            shape.line.color.rgb = NEUTRAL_LINE
+            shape.line.width = Pt(0.75)
+            num = slide.shapes.add_shape(ROUNDED_RECT, Emu(x + 90000), Emu(y + 90000), Emu(340000), Emu(340000))
+            num.fill.solid()
+            num.fill.fore_color.rgb = ACCENT
+            num.line.fill.background()
+            ntf = num.text_frame
+            ntf.vertical_anchor = MSO_ANCHOR.MIDDLE
+            np = ntf.paragraphs[0]
+            np.alignment = PP_ALIGN.CENTER
+            _run(np, str(idx + 1), 12, WHITE, bold=True)
+            box = textbox(slide, Emu(x + 480000), Emu(y + 80000), Emu(card_w - 560000), Emu(row_h - 140000))
+            tf = box.text_frame
+            tf.word_wrap = True
+            _run(tf.paragraphs[0], str(step or ""), FS_BODY - 2, NEUTRAL_DARK)
+        y += row_h + gap
+        row_bottom = y
+    return Emu(row_bottom + 60000)
 
 
 # kind -> (border tone, label)
@@ -3210,11 +3258,6 @@ def _orion_compact_layout() -> dict[str, int]:
     summary_y = content_y
     summary_bottom = summary_y + ORION_SUMMARY_H
     query_title_y = summary_bottom + ORION_SUMMARY_GAP
-    chips_y = query_title_y + ORION_QUERY_TITLE_H + ORION_TITLE_CHIP_GAP
-    chips_bottom = chips_y + 2 * ORION_CHIP_H + ORION_CHIP_GAP
-    explainer_y = chips_bottom + ORION_QUERY_GAP
-    explainer_h = min(ORION_EXPLAINER_H, content_bottom - explainer_y)
-    explainer_bottom = explainer_y + explainer_h
 
     headline_w = int(int(SLIDE_W) * ORION_HEADLINE_W_FRAC)
     headline_bottom = ORION_HEADLINE_Y + ORION_HEADLINE_H
@@ -3234,11 +3277,6 @@ def _orion_compact_layout() -> dict[str, int]:
         "summary_y": summary_y,
         "summary_bottom": summary_bottom,
         "query_title_y": query_title_y,
-        "chips_y": chips_y,
-        "chips_bottom": chips_bottom,
-        "explainer_y": explainer_y,
-        "explainer_h": explainer_h,
-        "explainer_bottom": explainer_bottom,
     }
 
 
@@ -3356,7 +3394,7 @@ def _orion_summary_box(slide, layout: dict[str, int], oi: dict) -> None:
     _run(bp, truncate(str(oi.get("summaryLine") or ""), 72), FS_ORION_BODY, NEUTRAL_DARK)
 
 
-def _orion_query_chips(slide, layout: dict[str, int], oi: dict) -> None:
+def _orion_query_chips(slide, layout: dict[str, int], oi: dict) -> int:
     x, w = layout["left_x"], layout["left_w"]
     y = layout["query_title_y"]
     tb = textbox(slide, Emu(x), Emu(y), Emu(w), Emu(ORION_QUERY_TITLE_H))
@@ -3364,14 +3402,21 @@ def _orion_query_chips(slide, layout: dict[str, int], oi: dict) -> None:
 
     queries = list(oi.get("queries") or [])[:4]
     if not queries:
-        return
-    chip_y = layout["chips_y"]
+        return y + ORION_QUERY_TITLE_H + ORION_TITLE_CHIP_GAP
+    chip_y = y + ORION_QUERY_TITLE_H + ORION_TITLE_CHIP_GAP
     gap = ORION_CHIP_GAP
-    chip_h = ORION_CHIP_H
     cols = 2
     chip_w = (w - gap) // cols
     pad_x = ORION_CHIP_PAD_X
     icon_w = ORION_CHIP_ICON_W
+    text_w = max(1, chip_w - (pad_x + icon_w + ORION_CHIP_TEXT_GAP + pad_x))
+    # Content-driven chip height with a conservative range.
+    line_heights = [
+        int(text_block_height([truncate(str(q), 120)], FS_ORION_CHIP, Emu(text_w), space_after_pt=0.0, pad_pt=5.0))
+        for q in queries
+    ]
+    chip_h = max(ORION_CHIP_H, min(max(line_heights) + 30000, ORION_CHIP_H + 260000))
+    rendered_bottom = chip_y
     for idx, q in enumerate(queries):
         row, col = divmod(idx, cols)
         cx = x + col * (chip_w + gap)
@@ -3389,7 +3434,6 @@ def _orion_query_chips(slide, layout: dict[str, int], oi: dict) -> None:
         ip.alignment = PP_ALIGN.CENTER
         _run(ip, "⌕", FS_ORION_CHIP, ACCENT)
         text_x = cx + pad_x + icon_w + ORION_CHIP_TEXT_GAP
-        text_w = cx + chip_w - pad_x - text_x
         qbox = textbox(slide, Emu(text_x), Emu(cy), Emu(text_w), Emu(chip_h))
         qtf = qbox.text_frame
         qtf.word_wrap = True
@@ -3400,12 +3444,19 @@ def _orion_query_chips(slide, layout: dict[str, int], oi: dict) -> None:
         qtf.margin_bottom = 0
         qp = qtf.paragraphs[0]
         qp.line_spacing = ORION_CHIP_LINE_SPACING
-        _run(qp, truncate(q, 42), FS_ORION_CHIP, NEUTRAL_DARK)
+        _run(qp, truncate(q, 120), FS_ORION_CHIP, NEUTRAL_DARK)
+        rendered_bottom = max(rendered_bottom, cy + chip_h)
+    return rendered_bottom
 
 
-def _orion_explainer_box(slide, layout: dict[str, int], oi: dict) -> None:
-    x, y, w = layout["left_x"], layout["explainer_y"], layout["left_w"]
-    h = layout["explainer_h"]
+def _orion_explainer_box(slide, layout: dict[str, int], oi: dict, start_y: int) -> int:
+    x, w = layout["left_x"], layout["left_w"]
+    y = start_y + ORION_QUERY_GAP
+    max_h = max(360000, layout["content_bottom"] - y)
+    title_h = int(text_block_height([str(oi.get("whyTitle") or "")], FS_ORION_WHY_TITLE, Emu(w - 2 * ORION_EXPLAINER_PAD_X), space_after_pt=1.0, pad_pt=4.0))
+    body_h = int(text_block_height([str(oi.get("whyBody") or "")], FS_ORION_BODY, Emu(w - 2 * ORION_EXPLAINER_PAD_X), space_after_pt=1.0, pad_pt=6.0))
+    desired_h = title_h + body_h + ORION_EXPLAINER_PAD_TOP + ORION_EXPLAINER_PAD_BOTTOM + 40000
+    h = max(360000, min(desired_h, min(ORION_EXPLAINER_H + 220000, max_h)))
     box = slide.shapes.add_shape(ROUNDED_RECT, Emu(x), Emu(y), Emu(w), Emu(h))
     box.fill.solid()
     box.fill.fore_color.rgb = BG_PANEL
@@ -3426,7 +3477,8 @@ def _orion_explainer_box(slide, layout: dict[str, int], oi: dict) -> None:
     body_p = tf.add_paragraph()
     body_p.line_spacing = ORION_EXPLAINER_BODY_LINE_SPACING
     body_p.space_before = Pt(4)
-    _run(body_p, truncate(str(oi.get("whyBody") or ""), 150), FS_ORION_BODY, NEUTRAL_GRAY)
+    _run(body_p, truncate(str(oi.get("whyBody") or ""), 240), FS_ORION_BODY, NEUTRAL_GRAY)
+    return y + h
 
 
 def _orion_screenshot_plan(layout: dict[str, int], oi: dict) -> dict[str, int | list]:
@@ -3745,6 +3797,6 @@ def orion_images_slide(
         return
 
     _orion_summary_box(slide, layout, oi)
-    _orion_query_chips(slide, layout, oi)
-    _orion_explainer_box(slide, layout, oi)
+    chips_bottom = _orion_query_chips(slide, layout, oi)
+    _orion_explainer_box(slide, layout, oi, chips_bottom)
     _orion_synthetic_image_panel(slide, layout, oi, layout_warnings=layout_warnings)

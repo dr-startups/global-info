@@ -138,6 +138,93 @@ def domain(url: Any) -> str:
     return s.split("/")[0][:60]
 
 
+def _normalized_domain(value: Any) -> str:
+    """Best-effort host normalization from URL/domain-like values."""
+    s = str(value or "").strip()
+    if not s:
+        return ""
+    s = re.sub(r"^https?://", "", s, flags=re.I)
+    s = s.split("/")[0].strip().lower()
+    s = re.sub(r"^www\.", "", s, flags=re.I)
+    if not s or "." not in s:
+        return ""
+    return s[:60]
+
+
+def _domain_from_candidates(*values: Any) -> str:
+    for v in values:
+        d = _normalized_domain(v)
+        if d:
+            return d
+    return ""
+
+
+def _topic_label(key: Any, L: dict) -> str:
+    k = str(key or "").strip().lower()
+    if not k:
+        return ""
+    return L.get(f"risk_topic_{k}", k.replace("_", " ").strip())
+
+
+def _theme_signal_present(r: dict) -> bool:
+    if list(r.get("topThemes") or []):
+        return True
+    if list(r.get("topNegativeDomains") or []):
+        return True
+    for k in ("suggestionsNegative", "relatedQueriesNegative", "imagesNegative", "videosNegative"):
+        if int(r.get(k, 0) or 0) > 0:
+            return True
+    return False
+
+
+_ADVERSE_CONCLUSION_RE = re.compile(
+    r"Adverse organic content detected\s*\((?P<neg>\d+)\s*/\s*(?P<tot>\d+)\)\.?",
+    re.I,
+)
+_NO_ADVERSE_RE = re.compile(r"No adverse organic content in selected subject-matched results\.?", re.I)
+
+
+def _localize_known_conclusion(text: Any, L: dict) -> str:
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    if re.search(r"No international subject-matched results in collected data\.?", raw, flags=re.I):
+        return L.get("region_international_no_subject_results", raw)
+    if _NO_ADVERSE_RE.search(raw):
+        return L.get("region_no_adverse_organic", raw)
+    m = _ADVERSE_CONCLUSION_RE.search(raw)
+    if m:
+        neg = int(m.group("neg"))
+        total = int(m.group("tot"))
+        return L.get("region_adverse_organic_detected", "Adverse organic content detected ({neg}/{total}).").format(
+            neg=neg, total=total
+        )
+    return raw
+
+
+def _consistent_region_conclusion(r: dict, L: dict) -> str:
+    """Client-safe conclusion with no contradiction vs. theme/domain signals."""
+    raw = _localize_known_conclusion(r.get("regionConclusion"), L)
+
+    organic_negative = int(r.get("organicNegative", 0) or 0)
+    organic_total = int(r.get("organicTotal", 0) or 0)
+    confirmed_negative_urls = len(list(r.get("topNegativeUrls") or []))
+    has_signals = _theme_signal_present(r)
+
+    if organic_negative > 0:
+        return L.get("region_adverse_organic_detected", "Adverse organic content detected ({neg}/{total}).").format(
+            neg=organic_negative, total=organic_total
+        )
+    if confirmed_negative_urls == 0 and has_signals:
+        return L.get(
+            "region_no_confirmed_urls_but_signals",
+            "Confirmed negative URLs were not detected in the primary list, but thematic risk signals and domains require analyst review.",
+        )
+    if raw:
+        return raw
+    return L.get("region_no_adverse_organic", "No adverse organic content in selected subject-matched results.")
+
+
 def _region(regions: list[dict], code: str) -> dict | None:
     for r in regions:
         if str(r.get("region", "")).upper() == code:
@@ -278,12 +365,20 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
             "videos": f"{r.get('videosNegative', 0)}/{r.get('videosTotal', 0)}",
             "knowledgeBlockStatus": r.get("knowledgeBlockStatus", "ABSENT"),
             "riskLevel": risk_level(r.get("regionRiskLevel")),
-            "conclusion": r.get("regionConclusion", ""),
+            "conclusion": _consistent_region_conclusion(r, L),
             "topResults": [
                 {
                     "provider": str(x.get("provider", "")),
                     "rank": "" if x.get("rank") is None else str(x.get("rank")),
-                    "domain": domain(x.get("domain") or x.get("url")),
+                    "domain": _domain_from_candidates(
+                        x.get("canonicalDomain"),
+                        x.get("domain"),
+                        x.get("sourcePageUrl"),
+                        x.get("url"),
+                        x.get("hostname"),
+                        x.get("normalizedDomain"),
+                    )
+                    or "—",
                     "title": truncate(x.get("title"), 70),
                     "classification": str(x.get("classification", "")),
                 }
@@ -415,7 +510,7 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
         "search": {
             "negativeDomains": list(search.get("negativeDomains", []) or [])[:10],
             "topNegativeThemes": [
-                {"theme": str(t.get("theme", "")), "count": t.get("count", 0)}
+                {"theme": _topic_label(t.get("theme"), L), "count": t.get("count", 0)}
                 for t in (search.get("topNegativeThemes", []) or [])
             ],
             "topNegativeUrls": [
@@ -517,7 +612,8 @@ def _selected_risk_themes(report_json: dict, audit: dict) -> list[dict]:
         if _compliance_stale_title(str(f.get("title", ""))):
             continue
         counts[tl] = counts.get(tl, 0) + max(1, int(f.get("evidenceCount", 1) or 1))
-    return [{"theme": k, "count": v} for k, v in sorted(counts.items(), key=lambda x: (-x[1], x[0]))][:8]
+    L = i18n_labels(_report_lang(report_json))
+    return [{"theme": _topic_label(k, L), "count": v} for k, v in sorted(counts.items(), key=lambda x: (-x[1], x[0]))][:8]
 
 
 def _image_thumbnail_b64(item: dict) -> str | None:
@@ -593,7 +689,13 @@ def _apply_selected_evidence_vm_overrides(report_json: dict, vm: dict) -> None:
                 {
                     "provider": "GOOGLE",
                     "rank": str(idx + 1),
-                    "domain": domain(item.get("domain") or item.get("url")),
+                    "domain": _domain_from_candidates(
+                        item.get("canonicalDomain"),
+                        item.get("domain"),
+                        item.get("sourcePageUrl"),
+                        item.get("url"),
+                    )
+                    or "—",
                     "title": truncate(item.get("title"), 60),
                     "classification": str(item.get("classification", "")),
                 }
@@ -920,7 +1022,7 @@ def _region_block(
         "present": present,
         "noDataText": no_data_text,
         "riskLevel": risk_level(r.get("regionRiskLevel")),
-        "conclusion": r.get("regionConclusion", ""),
+        "conclusion": _consistent_region_conclusion(r, L),
         "summary": {
             "organicTotal": organic_total,
             "organicNegative": r.get("organicNegative", 0),
@@ -942,7 +1044,15 @@ def _region_block(
             {
                 "provider": str(x.get("provider", "")),
                 "rank": "" if x.get("rank") is None else str(x.get("rank")),
-                "domain": domain(x.get("domain") or x.get("url")),
+                "domain": _domain_from_candidates(
+                    x.get("canonicalDomain"),
+                    x.get("domain"),
+                    x.get("sourcePageUrl"),
+                    x.get("url"),
+                    x.get("hostname"),
+                    x.get("normalizedDomain"),
+                )
+                or "—",
                 "title": truncate(x.get("title"), 60),
                 "classification": str(x.get("classification", "")),
             }
@@ -950,14 +1060,22 @@ def _region_block(
         ],
         "themes": {
             "topThemes": [
-                {"theme": str(t.get("theme", "")), "count": t.get("count", 0)}
+                {"theme": _topic_label(t.get("theme"), L), "count": t.get("count", 0)}
                 for t in (r.get("topThemes", []) or [])
             ],
             "negativeDomains": list(r.get("topNegativeDomains", []) or [])[:10],
             "negativeUrls": [
                 {
                     "title": truncate(u.get("title"), 60),
-                    "domain": domain(u.get("domain") or u.get("url")),
+                    "domain": _domain_from_candidates(
+                        u.get("canonicalDomain"),
+                        u.get("domain"),
+                        u.get("sourcePageUrl"),
+                        u.get("url"),
+                        u.get("hostname"),
+                        u.get("normalizedDomain"),
+                    )
+                    or "—",
                     "classification": str(u.get("classification", "")),
                 }
                 for u in (r.get("topNegativeUrls", []) or [])[:10]
@@ -1718,7 +1836,10 @@ def _risk_reasoning_by_region_vm(vm: dict, L: dict) -> dict:
         return {
             "label": blk.get("label", ""),
             "riskLevel": blk.get("riskLevel", "UNKNOWN"),
-            "conclusion": blk.get("conclusion") or L.get("interim_conclusion_fallback", ""),
+            "conclusion": _localize_known_conclusion(
+                blk.get("conclusion") or L.get("interim_conclusion_fallback", ""),
+                L,
+            ),
             "signals": [
                 f"{L.get('m_organic_negative', 'Negative organic')}: {summary.get('organicNegative', 0)}",
                 f"{L.get('m_suggestions_nt', 'Suggestions')}: {summary.get('suggestions', '0/0')}",

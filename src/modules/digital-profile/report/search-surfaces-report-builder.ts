@@ -156,6 +156,129 @@ export interface SearchSurfacesReportBlock {
   sourceQualitySummary?: SourceQualitySummary;
 }
 
+function normalizeDomainCandidate(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  const withoutScheme = raw.replace(/^https?:\/\//i, "");
+  const host = withoutScheme.split("/")[0]?.trim().replace(/^www\./i, "") ?? "";
+  if (!host) return null;
+  const normalized = host.toLowerCase();
+  if (!/[a-z0-9-]+\.[a-z]{2,}/i.test(normalized)) return null;
+  return normalized;
+}
+
+function extractDomainFromMetadata(meta: unknown): string | null {
+  if (!meta || typeof meta !== "object") return null;
+  const rec = meta as Record<string, unknown>;
+  const candidates = [
+    rec.canonicalDomain,
+    rec.hostname,
+    rec.normalizedDomain,
+    rec.displayDomain,
+    rec.sourceDomain,
+    rec.sourceHost,
+    rec.canonicalUrl,
+    rec.sourcePageUrl,
+    rec.url,
+  ];
+  for (const candidate of candidates) {
+    const parsed = normalizeDomainCandidate(candidate);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function resolveSurfaceDomain(input: {
+  domain?: string | null;
+  canonicalDomain?: string | null;
+  canonicalUrl?: string | null;
+  sourcePageUrl?: string | null;
+  url?: string | null;
+  hostname?: string | null;
+  normalizedDomain?: string | null;
+  rawMetadata?: unknown;
+}): string | null {
+  const candidates: unknown[] = [
+    input.canonicalDomain,
+    input.domain,
+    input.canonicalUrl,
+    input.sourcePageUrl,
+    input.url,
+    input.hostname,
+    input.normalizedDomain,
+  ];
+  for (const candidate of candidates) {
+    const parsed = normalizeDomainCandidate(candidate);
+    if (parsed) return parsed;
+  }
+  return extractDomainFromMetadata(input.rawMetadata);
+}
+
+function hasCyrillic(value: string): boolean {
+  return /[\u0400-\u04FF]/.test(value);
+}
+
+function topicLabel(theme: string | null | undefined, ru: boolean): string {
+  const key = String(theme ?? "").trim().toLowerCase();
+  if (!key) return "";
+  const ruMap: Record<string, string> = {
+    political_exposure: "Политическая экспозиция",
+    criminal: "Уголовно-правовые риски",
+    legal_dispute: "Судебные / правовые споры",
+    sanctions: "Санкционные сигналы",
+  };
+  const enMap: Record<string, string> = {
+    political_exposure: "Political exposure",
+    criminal: "Criminal-law risks",
+    legal_dispute: "Legal disputes",
+    sanctions: "Sanctions signals",
+  };
+  const mapped = (ru ? ruMap : enMap)[key];
+  return mapped ?? key.replace(/_/g, " ");
+}
+
+function buildRegionConclusion(
+  block: RegionSearchSurfacesBlock,
+  organicSelected: SurfaceReportItem[],
+  imageItems: SurfaceReportItem[],
+  videoItems: SurfaceReportItem[],
+  reportLanguage: "ru" | "en"
+): string {
+  const ruReport = reportLanguage === "ru";
+  const noIntlSubjectResults =
+    block.region !== "RU" &&
+    organicSelected.length === 0 &&
+    imageItems.length === 0 &&
+    videoItems.length === 0 &&
+    block.collectionStatus === "COLLECTED";
+  if (block.collectionStatus === "NOT_QUERIED" || block.collectionStatus === "NOT_CONFIGURED") {
+    return block.statusMessage;
+  }
+  if (noIntlSubjectResults) {
+    return ruReport
+      ? "Подтверждённых международных материалов по субъекту не выявлено."
+      : "No international subject-matched results in collected data.";
+  }
+  const adverseCount = block.organic.adverse;
+  const hasRiskSignals =
+    (block.summary.topAdverseThemes?.length ?? 0) > 0 ||
+    (block.summary.topAdverseDomains?.length ?? 0) > 0;
+  if (adverseCount > 0) {
+    return ruReport
+      ? `Выявлено ${adverseCount} материалов, которые система относит к потенциально нежелательным (${adverseCount}/${Math.max(1, block.organic.total)}) и рекомендует для дополнительной проверки.`
+      : `Detected ${adverseCount} potentially adverse material(s) (${adverseCount}/${Math.max(1, block.organic.total)}); analyst review is recommended.`;
+  }
+  if (hasRiskSignals) {
+    return ruReport
+      ? "Подтверждённых негативных URL в основном списке не выявлено, однако обнаружены тематические риск-сигналы и домены, требующие аналитической проверки."
+      : "No confirmed adverse URLs were detected in the primary list, but thematic risk signals and domains require analyst review.";
+  }
+  return ruReport
+    ? "Негативных органических материалов по выбранным релевантным результатам не выявлено."
+    : "No adverse organic content in selected subject-matched results.";
+}
+
 function isNegativeOrganic(
   classification: string | null,
   rawMetadata: unknown,
@@ -265,11 +388,25 @@ function mapGatedToReportItem(
     typeof r.id === "string" && r.id
       ? r.id
       : `surface-${String(r.surfaceType ?? "unknown").toLowerCase()}-${idx + 1}`;
+  const canonicalUrl =
+    typeof sq?.canonicalUrl === "string"
+      ? sq.canonicalUrl
+      : typeof sq?.canonicalUrlKey === "string"
+        ? sq.canonicalUrlKey
+        : null;
+  const domain = resolveSurfaceDomain({
+    domain: r.domain ?? null,
+    canonicalDomain: typeof sq?.canonicalDomain === "string" ? sq.canonicalDomain : null,
+    canonicalUrl,
+    sourcePageUrl: sourceUrl,
+    url: r.url ?? null,
+    rawMetadata: r.rawMetadata,
+  });
   return {
     title: r.title ?? r.query ?? "",
     snippet: r.snippet ?? null,
     url: r.url ?? null,
-    domain: r.domain ?? null,
+    domain,
     thumbnailUrl: r.thumbnailUrl ?? r.imageUrl ?? null,
     classification: r.classification ?? null,
     riskTheme: r.riskTheme ?? null,
@@ -1043,6 +1180,7 @@ function regionHasEvidence(block: RegionSearchSurfacesBlock): boolean {
 /** Maps searchSurfaces region block onto auditSummary-compatible region dict. */
 export interface RegionAuditMapOptions {
   audience?: "CLIENT" | "INTERNAL";
+  reportLanguage?: "ru" | "en";
   confirmedAppendix?: Array<{
     title: string;
     domain: string;
@@ -1107,6 +1245,9 @@ export function regionBlockToAuditRegion(
       link: i.sourcePageUrl ?? i.url ?? "",
     }));
 
+  const languageHint = options.reportLanguage ?? (hasCyrillic(String(block.label ?? "")) ? "ru" : "en");
+  const regionConclusion = buildRegionConclusion(block, organicItems, imageItems, videoItems, languageHint);
+  const ruReport = languageHint === "ru";
   return {
     region: block.region,
     language: block.language,
@@ -1145,7 +1286,13 @@ export function regionBlockToAuditRegion(
     topResults: organicItems.slice(0, 20).map((i, idx) => ({
       provider: "GOOGLE",
       rank: i.rank ?? idx + 1,
-      domain: i.domain ?? "",
+      domain:
+        resolveSurfaceDomain({
+          domain: i.domain,
+          canonicalDomain: i.canonicalDomain ?? null,
+          sourcePageUrl: i.sourcePageUrl ?? null,
+          url: i.url ?? null,
+        }) ?? "—",
       title: i.title,
       classification: i.classification,
       identityDecision: i.identityDecision ?? null,
@@ -1174,7 +1321,10 @@ export function regionBlockToAuditRegion(
       identityDecision: i.identityDecision ?? null,
       reportEligibility: i.reportEligibility ?? null,
     })),
-    topThemes: block.summary.topAdverseThemes.map((t) => ({ theme: t.theme, count: t.count })),
+    topThemes: block.summary.topAdverseThemes.map((t) => ({
+      theme: topicLabel(t.theme, ruReport),
+      count: t.count,
+    })),
     topNegativeDomains: block.summary.topAdverseDomains.map((d) => d.domain),
     topNegativeUrls: organicItems
       .filter((i) =>
@@ -1186,18 +1336,7 @@ export function regionBlockToAuditRegion(
         domain: i.domain ?? "",
         classification: i.classification,
       })),
-    regionConclusion:
-      block.collectionStatus === "NOT_QUERIED" || block.collectionStatus === "NOT_CONFIGURED"
-        ? block.statusMessage
-        : block.region !== "RU" &&
-            organicItems.length === 0 &&
-            imageItems.length === 0 &&
-            videoItems.length === 0 &&
-            block.collectionStatus === "COLLECTED"
-          ? "No international subject-matched results in collected data."
-          : block.organic.adverse > 0
-            ? `Adverse organic content detected (${block.organic.adverse}/${block.organic.total}).`
-            : "No adverse organic content in selected subject-matched results.",
+    regionConclusion,
     regionRiskLevel:
       block.collectionStatus !== "COLLECTED" && block.organic.total === 0
         ? "UNKNOWN"

@@ -76,6 +76,7 @@
     "qa:r6-1-offer-block": "tsx scripts/qa-r6-1-offer-block.ts",
     "qa:r6-2-visual-polish": "tsx scripts/qa-r6-2-visual-polish.ts",
     "qa:r7-1-release-gate": "tsx scripts/qa-r7-1-release-gate.ts",
+    "qa:r7-2-consistency-layout": "tsx scripts/qa-r7-2-consistency-layout.ts",
     "smoke:report-media-layout-o542": "tsx scripts/smoke-report-media-layout-o542.ts",
     "smoke:report-visual-overflow-v16": "tsx scripts/smoke-report-visual-overflow-v16.ts",
     "smoke:report-i18n": "node scripts/smoke-report-i18n.mjs",

@@ -91,6 +91,99 @@ const SEVERITY_RANK: Record<RiskSeverity, number> = {
   CRITICAL: 4,
 };
 
+function normalizeDomainForReport(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const raw = value.trim();
+  if (!raw) return "";
+  const noScheme = raw.replace(/^https?:\/\//i, "");
+  const host = noScheme.split("/")[0]?.replace(/^www\./i, "").toLowerCase() ?? "";
+  return host.includes(".") ? host : "";
+}
+
+function mapRiskThemeLabel(theme: unknown, reportLanguage: ReportLanguage): string {
+  const key = String(theme ?? "").trim().toLowerCase();
+  if (!key) return "";
+  const ruMap: Record<string, string> = {
+    political_exposure: "Политическая экспозиция",
+    criminal: "Уголовно-правовые риски",
+    legal_dispute: "Судебные / правовые споры",
+    sanctions: "Санкционные сигналы",
+  };
+  const enMap: Record<string, string> = {
+    political_exposure: "Political exposure",
+    criminal: "Criminal-law risks",
+    legal_dispute: "Legal disputes",
+    sanctions: "Sanctions signals",
+  };
+  const mapped = (reportLanguage === "ru" ? ruMap : enMap)[key];
+  return mapped ?? key.replace(/_/g, " ");
+}
+
+function normalizeRegionConclusion(
+  region: Record<string, unknown>,
+  reportLanguage: ReportLanguage
+): string {
+  const ru = reportLanguage === "ru";
+  const adverse = Number(region.organicNegative ?? 0);
+  const total = Number(region.organicTotal ?? 0);
+  const topThemes = Array.isArray(region.topThemes) ? region.topThemes : [];
+  const topDomains = Array.isArray(region.topNegativeDomains) ? region.topNegativeDomains : [];
+  const topNegativeUrls = Array.isArray(region.topNegativeUrls) ? region.topNegativeUrls : [];
+  const hasSignals = topThemes.length > 0 || topDomains.length > 0;
+  const noIntl = String(region.noIntlSubjectResults ?? "").toLowerCase() === "true";
+  if (noIntl) {
+    return ru
+      ? "Подтверждённых международных материалов по субъекту не выявлено."
+      : "No international subject-matched results in collected data.";
+  }
+  if (adverse > 0) {
+    return ru
+      ? `Выявлено ${adverse} материалов, которые система относит к потенциально нежелательным (${adverse}/${Math.max(1, total)}) и рекомендует для дополнительной проверки.`
+      : `Detected ${adverse} potentially adverse material(s) (${adverse}/${Math.max(1, total)}); analyst review is recommended.`;
+  }
+  if (topNegativeUrls.length === 0 && hasSignals) {
+    return ru
+      ? "Подтверждённых негативных URL в основном списке не выявлено, однако обнаружены тематические риск-сигналы и домены, требующие аналитической проверки."
+      : "No confirmed adverse URLs were detected in the primary list, but thematic risk signals and domains require analyst review.";
+  }
+  return ru
+    ? "Негативных органических материалов по выбранным релевантным результатам не выявлено."
+    : "No adverse organic content in selected subject-matched results.";
+}
+
+function normalizeAuditSummaryReadable(
+  auditSummary: ReportJson["auditSummary"] | undefined,
+  reportLanguage: ReportLanguage
+): ReportJson["auditSummary"] | undefined {
+  if (!auditSummary?.regions) return auditSummary;
+  const regions = auditSummary.regions.map((region) => {
+    const topThemes = (region.topThemes ?? []).map((t) => ({
+      ...t,
+      theme: mapRiskThemeLabel(t.theme, reportLanguage),
+    }));
+    const topResults = (region.topResults ?? []).map((row) => {
+      const typed = row as Record<string, unknown>;
+      const domain =
+        normalizeDomainForReport(typed.domain) ||
+        normalizeDomainForReport(typed.url) ||
+        "—";
+      return { ...row, domain };
+    });
+    const normalizedRegion = {
+      ...region,
+      topThemes,
+      topResults,
+    } as unknown as Record<string, unknown>;
+    return {
+      ...region,
+      topThemes,
+      topResults,
+      regionConclusion: normalizeRegionConclusion(normalizedRegion, reportLanguage),
+    };
+  });
+  return { ...auditSummary, regions };
+}
+
 /**
  * Stage R4.1 — derive per-provider surface collection totals from already
  * collected data (no new queries). Feeds provider source provenance.
@@ -712,12 +805,14 @@ export async function buildReportJson(
     selectedEvidence = buildSelectedEvidenceReportVm({
       searchSurfaces,
       reportAudience: "INTERNAL",
+      reportLanguage,
       riskSummary,
       complianceSummary,
       evidenceQuality,
     });
     if (auditSummary) {
       auditSummary = patchAuditSummaryWithSelectedEvidence(auditSummary, selectedEvidence);
+      auditSummary = normalizeAuditSummaryReadable(auditSummary, reportLanguage);
     }
   }
 

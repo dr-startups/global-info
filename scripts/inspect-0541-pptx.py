@@ -58,6 +58,11 @@ R31_INTERNAL_RE = re.compile(
     r"sourcemode|unclassified|internal only",
     re.I,
 )
+R72_RAW_TOPIC_KEY_RE = re.compile(r"\b(political_exposure|criminal|legal_dispute|sanctions)\b", re.I)
+R72_RU_ENGLISH_FALLBACK_RE = re.compile(
+    r"Adverse organic content detected|No adverse organic content|Top themes:|No negative URLs detected",
+    re.I,
+)
 
 
 def _plain_text(xml: str) -> str:
@@ -1921,6 +1926,63 @@ def _r62_full_visual_polish_checks(pptx_path: Path) -> tuple[int, list[str]]:
     return 0, lines
 
 
+def _r72_consistency_layout_checks(pptx_path: Path, report_json_path: Path) -> tuple[int, list[str]]:
+    fails: list[str] = []
+    report_json: dict[str, Any] = {}
+    if report_json_path.exists():
+        report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+    is_client = "providerDiagnostics" not in report_json
+    if not is_client:
+        return 0, ["[PASS] R7.2 consistency checks skipped for internal artifact by design"]
+
+    ru_region = {}
+    for r in (report_json.get("auditSummary", {}) or {}).get("regions", []) or []:
+        if str((r or {}).get("region", "")).upper() == "RU":
+            ru_region = r or {}
+            break
+    has_signal_themes = bool(list((ru_region.get("topThemes") or [])))
+    has_signal_domains = bool(list((ru_region.get("topNegativeDomains") or [])))
+    confirmed_negative_urls = len(list((ru_region.get("topNegativeUrls") or [])))
+
+    top_results = list((ru_region.get("topResults") or []))
+    missing_domains = [
+        idx + 1
+        for idx, row in enumerate(top_results)
+        if str((row or {}).get("domain", "") or "").strip() in {"", "—"}
+    ]
+    if top_results and missing_domains and len(missing_domains) > max(1, len(top_results) // 3):
+        fails.append(
+            "RU top results have too many missing domains "
+            f"({len(missing_domains)}/{len(top_results)})"
+        )
+
+    with zipfile.ZipFile(pptx_path, "r") as z:
+        slide_count = sum(1 for n in z.namelist() if re.match(r"ppt/slides/slide\d+\.xml$", n))
+        for slide_n in range(1, slide_count + 1):
+            text = _plain_text(_slide_xml(z, slide_n))
+            if R72_RAW_TOPIC_KEY_RE.search(text):
+                fails.append(f"slide {slide_n} shows raw topic key")
+            if R72_RU_ENGLISH_FALLBACK_RE.search(text):
+                fails.append(f"slide {slide_n} has English fallback in RU client deck")
+            if (
+                has_signal_themes
+                and has_signal_domains
+                and confirmed_negative_urls == 0
+                and "Негативные URL не обнаружены" in text
+            ):
+                fails.append(
+                    f"slide {slide_n} contradicts risk signals with 'Негативные URL не обнаружены'"
+                )
+
+    lines: list[str] = []
+    if fails:
+        for f in fails:
+            lines.append(f"[FAIL] R7.2 {f}")
+        return 1, lines
+    lines.append("[PASS] R7.2 consistency/layout — no raw topic keys, RU-safe wording, and domain population checks passed")
+    return 0, lines
+
+
 def _r36_production_gate_checks(pptx_path: Path, report_json_path: Path) -> tuple[int, list[str]]:
     fails: list[str] = []
     report_json: dict[str, Any] = {}
@@ -2092,6 +2154,9 @@ def main() -> int:
     r62_rc, r62_lines = _r62_full_visual_polish_checks(pptx_path)
     for line in r62_lines:
         print(line)
+    r72_rc, r72_lines = _r72_consistency_layout_checks(pptx_path, report_json_path)
+    for line in r72_lines:
+        print(line)
     # R3.6 — regression locks use an internal baseline; client/production artifacts
     # legitimately differ on audience-gated slides, so lock only internal artifacts.
     _reg_report_json: dict[str, Any] = {}
@@ -2121,7 +2186,7 @@ def main() -> int:
     )
     for line in s13_sem_lines:
         print(line)
-    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or r42_rc != 0 or r43_rc != 0 or r51_rc != 0 or r53_rc != 0 or r54_rc != 0 or r61_rc != 0 or r62_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
+    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or r42_rc != 0 or r43_rc != 0 or r51_rc != 0 or r53_rc != 0 or r54_rc != 0 or r61_rc != 0 or r62_rc != 0 or r72_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
 
 
 if __name__ == "__main__":
