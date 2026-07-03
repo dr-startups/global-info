@@ -1457,6 +1457,11 @@ def _p_offer_cover(prs, vm, ctx):
     ob = vm["offerBlock"]
     slide = T.blank_slide(prs)
     T.set_bg(slide, T.BRAND_PRIMARY)
+    T.footer(slide, ctx.brand, ctx.page, ctx.total)
+    title_box = T.textbox(slide, T.MARGIN, Emu(380000), T.CONTENT_W, Emu(560000))
+    ttf = title_box.text_frame
+    T._run(ttf.paragraphs[0], ob["cover"]["title"], T.FS_MAIN_TITLE + 2, T.WHITE, bold=True)
+    T._run(ttf.add_paragraph(), ob["cover"]["subtitle"], T.FS_SUBTITLE, T.ACCENT_SOFT)
     rule = slide.shapes.add_shape(T.RECT, T.MARGIN, Emu(2300000), Emu(2200000), Emu(54864))
     rule.fill.solid()
     rule.fill.fore_color.rgb = T.ACCENT
@@ -1466,18 +1471,47 @@ def _p_offer_cover(prs, vm, ctx):
     T._run(tf.paragraphs[0], ob["cover"]["title"], T.FS_COVER_TITLE - 6, T.WHITE, bold=True)
     T._run(tf.add_paragraph(), ob["cover"]["subtitle"], T.FS_SUBTITLE + 2, T.ACCENT_SOFT)
     T._run(tf.add_paragraph(), ob["cover"]["brand"], T.FS_SUBTITLE, T.NEUTRAL_GRAY)
+    T._run(tf.add_paragraph(), T.truncate(ob["cover"].get("valueProposition", ""), 180), T.FS_BODY - 1, T.WHITE)
+    outcomes = ob["cover"].get("outcomeCards", [])[:3]
+    if outcomes:
+        cards = [
+            {
+                "label": T.truncate(str(c.get("title", "")), 26),
+                "value": T.truncate(str(c.get("text", "")), 44),
+                "tone": T.ACCENT,
+            }
+            for c in outcomes
+        ]
+        T.metric_cards(slide, Emu(4960000), cards, per_row=3)
 
 
 def _p_product_overview(prs, vm, ctx):
     L = vm["labels"]
     ob = vm["offerBlock"]["productOverview"]
     slide, top = _section(prs, ctx, L["offer_product_overview"], vm["offerBlock"]["cover"]["brand"])
-    top = T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(1200000), L["offer_what_we_do"], [T.truncate(ob.get("description", ""), 220)]) or top
-    top = Emu(int(top) + 1280000)
-    inc = ob.get("includedItems", [])
+    top = T.card(
+        slide,
+        T.MARGIN,
+        top,
+        T.CONTENT_W,
+        Emu(940000),
+        L["offer_what_we_do"],
+        [T.truncate(ob.get("description", ""), 190)],
+    ) or top
+    caps = ob.get("capabilities", [])
+    if caps:
+        cards = [
+            {
+                "label": T.truncate(str(c.get("title", "")), 28),
+                "value": T.truncate(str(c.get("text", "")), 48),
+                "tone": T.ACCENT,
+            }
+            for c in caps[:4]
+        ]
+        top = T.metric_cards(slide, top, cards, per_row=2)
+    inc = ob.get("includedItems", [])[:3]
     if inc:
-        top = T.metric_cards(slide, top, [{"label": L["offer_includes"], "value": T.truncate(inc[0], 24), "tone": T.ACCENT}], per_row=1)
-        top = T.bullets(slide, top, inc[1:4])
+        top = T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(560000), L["offer_includes"], [T.truncate(x, 88) for x in inc[:2]]) or top
     T.note(slide, top, ob.get("audienceNote", ""), "info")
 
 
@@ -1485,9 +1519,16 @@ def _p_pricing_summary(prs, vm, ctx):
     L = vm["labels"]
     sols = vm["offerBlock"]["solutions"]
     slide, top = _section(prs, ctx, L["offer_solutions_pricing"], L["offer_indicative"])
-    cards = [{"label": T.truncate(s["title"], 28), "value": s["price"], "tone": T.ACCENT} for s in sols[:3]]
+    cards = [
+        {
+            "label": T.truncate(s["title"], 26),
+            "value": f"{s['price']} · {T.truncate(s.get('duration', '—'), 16)}",
+            "tone": T.ACCENT,
+        }
+        for s in sols[:3]
+    ]
     top = T.metric_cards(slide, top, cards, per_row=3)
-    rows = [[T.truncate(s["title"], 36), s["duration"], s["price"]] for s in sols]
+    rows = [[T.truncate(s["title"], 34), T.truncate(s["duration"], 18), s["price"]] for s in sols]
     if rows:
         top = T.polished_table(slide, top, [L["th_solution"], L["th_duration"], L["th_price"]], rows, col_widths=[0.5, 0.25, 0.25])
     T.note(slide, top, vm["offerBlock"]["solutions"][0].get("pricingNotes", "") if sols else "", "disclaimer")
@@ -1497,11 +1538,44 @@ def _p_solution_objective(prs, vm, ctx, idx: int):
     L = vm["labels"]
     s = _solution(vm, idx)
     slide, top = _section(prs, ctx, s["title"], s["subtitle"])
-    top = T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(950000), L["offer_objective"], [T.truncate(s["objective"], 200)]) or top
-    top = Emu(int(top) + 1030000)
-    top = T.bullets(slide, top, [L["offer_included_work"]] + s["includedItems"][:5])
-    if s["deliverables"]:
-        top = T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(850000), L["offer_deliverables"], s["deliverables"][:4]) or top
+    top = T.card(
+        slide,
+        T.MARGIN,
+        top,
+        T.CONTENT_W,
+        Emu(820000),
+        L["offer_objective"],
+        [T.truncate(s["objective"], 176)],
+    ) or top
+    top = T.card(
+        slide,
+        T.MARGIN,
+        top,
+        T.CONTENT_W,
+        Emu(700000),
+        L.get("offer_business_value", "Business value"),
+        [T.truncate(s.get("businessValue", s.get("expectedResults", [""])[0] if s.get("expectedResults") else ""), 172)],
+    ) or top
+    col_w = Emu((int(T.CONTENT_W) - int(T.GUTTER)) // 2)
+    left = T.card(
+        slide,
+        T.MARGIN,
+        top,
+        col_w,
+        Emu(1040000),
+        L["offer_deliverables"],
+        [T.truncate(x, 64) for x in (s["deliverables"] or ["—"])[:3]],
+    ) or top
+    T.card(
+        slide,
+        Emu(int(T.MARGIN) + int(col_w) + int(T.GUTTER)),
+        top,
+        col_w,
+        Emu(1040000),
+        L["offer_expected_results"],
+        [T.truncate(x, 64) for x in (s["expectedResults"] or ["—"])[:3]],
+    )
+    top = left
 
 
 def _p_solution_workplan(prs, vm, ctx, idx: int):
@@ -1509,17 +1583,41 @@ def _p_solution_workplan(prs, vm, ctx, idx: int):
     s = _solution(vm, idx)
     slide, top = _section(prs, ctx, s["title"] + L["offer_workplan_suffix"], L["offer_duration"].format(d=s["duration"]))
     steps = s["workPlan"] or [L["offer_workplan_default"]]
-    top = T.step_cards(slide, top, steps[:5], per_row=1)
+    top = T.step_cards(slide, top, [T.truncate(step, 84) for step in steps[:5]], per_row=2)
     if s["expectedResults"]:
-        T.bullets(slide, top, [L["offer_expected_results"]] + s["expectedResults"][:4])
+        top = T.card(
+            slide,
+            T.MARGIN,
+            top,
+            T.CONTENT_W,
+            Emu(760000),
+            L["offer_expected_results"],
+            [T.truncate(x, 88) for x in s["expectedResults"][:3]],
+        ) or top
 
 
 def _p_solution_pricing(prs, vm, ctx, idx: int):
     L = vm["labels"]
     s = _solution(vm, idx)
     slide, top = _section(prs, ctx, s["title"] + L["offer_pricing_suffix"], s["subtitle"])
-    top = T.metric_cards(slide, top, [{"label": L["m_package_price"], "value": s["price"], "tone": T.ACCENT}], per_row=1)
-    top = T.bullets(slide, top, [L["offer_included"]] + s["includedItems"][:5])
+    top = T.metric_cards(
+        slide,
+        top,
+        [
+            {"label": L["m_package_price"], "value": s["price"], "tone": T.ACCENT},
+            {"label": L["th_duration"], "value": T.truncate(s.get("duration", "—"), 22), "tone": T.NEUTRAL_DARK},
+        ],
+        per_row=2,
+    )
+    top = T.card(
+        slide,
+        T.MARGIN,
+        top,
+        T.CONTENT_W,
+        Emu(980000),
+        L["offer_included"],
+        [T.truncate(x, 88) for x in (s["includedItems"] or ["—"])[:4]],
+    ) or top
     T.note(slide, top, s.get("pricingNotes", ""), "disclaimer")
 
 
@@ -1528,7 +1626,18 @@ def _p_process(prs, vm, ctx):
     ob = vm["offerBlock"]["process"]
     slide, top = _section(prs, ctx, L["offer_process_title"], L["offer_process_subtitle"])
     steps = ob.get("steps", []) or list(L["op_process_bullets"])
-    top = T.step_cards(slide, top, steps[:5], per_row=1)
+    top = T.step_cards(slide, top, [T.truncate(step, 82) for step in steps[:5]], per_row=2)
+    outcomes = [x for x in (ob.get("outcomes", []) or []) if str(x).strip()]
+    if outcomes:
+        top = T.card(
+            slide,
+            T.MARGIN,
+            top,
+            T.CONTENT_W,
+            Emu(760000),
+            L.get("offer_expected_results", "Expected results"),
+            [T.truncate(x, 88) for x in outcomes[:3]],
+        ) or top
     T.note(slide, top, L["offer_value"], "info")
 
 
@@ -1536,12 +1645,36 @@ def _p_about(prs, vm, ctx):
     L = vm["labels"]
     ob = vm["offerBlock"]["contact"]
     slide, top = _section(prs, ctx, L["offer_about_title"], ob.get("company", ""))
-    top = T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(1300000), L["offer_next_step"], [
-        ob.get("cta", L["offer_contact_default"]),
-        L["offer_email"].format(email=ob.get("email", "")),
-        L["offer_website"].format(website=ob.get("website", "")),
-    ], tone=T.ACCENT) or top
-    top = Emu(int(top) + 1380000)
+    top = T.card(
+        slide,
+        T.MARGIN,
+        top,
+        T.CONTENT_W,
+        Emu(980000),
+        L["offer_next_step"],
+        [T.truncate(ob.get("cta", L["offer_contact_default"]), 176)],
+        tone=T.ACCENT,
+    ) or top
+    safe_website = re.sub(r"^https?://", "", str(ob.get("website", "")).strip(), flags=re.I)
+    top = T.metric_cards(
+        slide,
+        top,
+        [
+            {"label": L.get("offer_email_label", "Email"), "value": T.truncate(ob.get("email", ""), 34), "tone": T.ACCENT},
+            {"label": L.get("offer_website_label", "Website"), "value": T.truncate(safe_website, 34), "tone": T.NEUTRAL_DARK},
+        ],
+        per_row=2,
+    )
+    if ob.get("deliveryNote") or ob.get("responseSla"):
+        top = T.card(
+            slide,
+            T.MARGIN,
+            top,
+            T.CONTENT_W,
+            Emu(700000),
+            L.get("offer_delivery_title", "Delivery"),
+            [T.truncate(ob.get("deliveryNote", ""), 172), T.truncate(ob.get("responseSla", ""), 172)],
+        ) or top
     for d in ob.get("disclaimers", []):
         top = T.note(slide, top, d, "disclaimer")
 

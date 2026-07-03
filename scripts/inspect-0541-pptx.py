@@ -1826,6 +1826,61 @@ def _r54_source_ranking_checks(report_json_path: Path) -> tuple[int, list[str]]:
     return 0, lines
 
 
+def _r61_offer_block_checks(pptx_path: Path) -> tuple[int, list[str]]:
+    fails: list[str] = []
+    offer_pages = list(range(37, 51))
+    required_markers: dict[int, tuple[str, ...]] = {
+        37: ("аудит", "audit", "services", "solutions", "решени"),
+        38: ("обзор", "overview", "capability"),
+        39: ("цен", "pricing", "price"),
+        49: ("процесс", "timeline", "process"),
+        50: ("контакт", "contact", "email", "website"),
+    }
+    with zipfile.ZipFile(pptx_path, "r") as z:
+        for slide_n in offer_pages:
+            xml = _slide_xml(z, slide_n)
+            if not xml:
+                fails.append(f"offer slide {slide_n} missing")
+                continue
+            text = _plain_text(xml)
+            if not re.search(rf"\b{slide_n}\s*/\s*\d+\b", text):
+                fails.append(f"offer slide {slide_n} footer page marker missing")
+            bottoms = _shape_bottoms(xml)
+            if bottoms and max(bottoms) > FOOTER_SAFE_BOTTOM:
+                fails.append(f"offer slide {slide_n} content over footer safe area: {max(bottoms)}")
+            if URL_RE.search(text):
+                fails.append(f"offer slide {slide_n} has raw URL")
+            if INTERNAL_RE.search(text):
+                fails.append(f"offer slide {slide_n} has internal/debug labels")
+            if NULLISH_RE.search(text):
+                fails.append(f"offer slide {slide_n} has None/null/undefined text")
+            text_shapes = _text_shapes(xml)
+            title = next(
+                (
+                    s
+                    for s in text_shapes
+                    if s["y"] <= 1100000
+                    and s["x"] <= 1700000
+                    and s["w"] >= 2400000
+                    and not re.search(r"\b\d+\s*/\s*\d+\b", s["text"])
+                ),
+                None,
+            )
+            if title is None or len(title["text"].strip()) < 8:
+                fails.append(f"offer slide {slide_n} title unreadable/missing")
+            markers = required_markers.get(slide_n)
+            if markers and not any(m in text.lower() for m in markers):
+                fails.append(f"offer slide {slide_n} expected marker missing: {markers[0]}")
+
+    lines: list[str] = []
+    if fails:
+        for f in fails:
+            lines.append(f"[FAIL] R6.1 {f}")
+        return 1, lines
+    lines.append("[PASS] R6.1 offer block — pages 37–50 footer-safe, readable and client-safe")
+    return 0, lines
+
+
 def _r36_production_gate_checks(pptx_path: Path, report_json_path: Path) -> tuple[int, list[str]]:
     fails: list[str] = []
     report_json: dict[str, Any] = {}
@@ -1991,6 +2046,9 @@ def main() -> int:
     r54_rc, r54_lines = _r54_source_ranking_checks(report_json_path)
     for line in r54_lines:
         print(line)
+    r61_rc, r61_lines = _r61_offer_block_checks(pptx_path)
+    for line in r61_lines:
+        print(line)
     # R3.6 — regression locks use an internal baseline; client/production artifacts
     # legitimately differ on audience-gated slides, so lock only internal artifacts.
     _reg_report_json: dict[str, Any] = {}
@@ -2020,7 +2078,7 @@ def main() -> int:
     )
     for line in s13_sem_lines:
         print(line)
-    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or r42_rc != 0 or r43_rc != 0 or r51_rc != 0 or r53_rc != 0 or r54_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
+    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or r42_rc != 0 or r43_rc != 0 or r51_rc != 0 or r53_rc != 0 or r54_rc != 0 or r61_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
 
 
 if __name__ == "__main__":

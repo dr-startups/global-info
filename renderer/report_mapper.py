@@ -1238,16 +1238,18 @@ def _offer_block(offer: dict, L: dict) -> dict:
 
     solutions = []
     for s in solutions_raw:
+        expected = list(s.get("expectedResults", []) or [])
         solutions.append(
             {
                 "title": s.get("title", ""),
                 "subtitle": s.get("subtitle", ""),
                 "objective": s.get("objective", ""),
+                "businessValue": s.get("businessValue", expected[0] if expected else ""),
                 "price": _fmt_price(s.get("price"), s.get("currency", currency)),
                 "duration": s.get("duration", "—"),
                 "includedItems": list(s.get("includedItems", []) or []),
                 "deliverables": list(s.get("deliverables", []) or []),
-                "expectedResults": list(s.get("expectedResults", []) or []),
+                "expectedResults": expected,
                 "workPlan": list(s.get("workPlan", []) or []),
                 "pricingNotes": s.get("pricingNotes", offer.get("pricingNotes", "")),
             }
@@ -1258,21 +1260,67 @@ def _offer_block(offer: dict, L: dict) -> dict:
             "title": offer.get("productName", brand),
             "subtitle": offer.get("reportSubtitle", L["offer_default_subtitle"]),
             "brand": brand,
+            "valueProposition": L.get("offer_cover_value_prop", L.get("offer_value", "")),
+            "outcomeCards": [
+                {
+                    "title": L.get("offer_cover_outcome_1_title", "Evidence map"),
+                    "text": L.get("offer_cover_outcome_1_text", ""),
+                },
+                {
+                    "title": L.get("offer_cover_outcome_2_title", "Risk priorities"),
+                    "text": L.get("offer_cover_outcome_2_text", ""),
+                },
+                {
+                    "title": L.get("offer_cover_outcome_3_title", "Action plan"),
+                    "text": L.get("offer_cover_outcome_3_text", ""),
+                },
+            ],
         },
         "productOverview": {
             "description": offer.get("companyDescription", ""),
             "includedItems": [s["subtitle"] for s in solutions],
             "value": L["offer_value"],
             "audienceNote": L["offer_audience_note"],
+            "capabilities": [
+                {
+                    "title": L.get("offer_capability_1_title", "Digital profile audit"),
+                    "text": L.get("offer_capability_1_text", ""),
+                },
+                {
+                    "title": L.get("offer_capability_2_title", "Source collection"),
+                    "text": L.get("offer_capability_2_text", ""),
+                },
+                {
+                    "title": L.get("offer_capability_3_title", "Evidence appendix"),
+                    "text": L.get("offer_capability_3_text", ""),
+                },
+                {
+                    "title": L.get("offer_capability_4_title", "Risk reasoning"),
+                    "text": L.get("offer_capability_4_text", ""),
+                },
+                {
+                    "title": L.get("offer_capability_5_title", "Client/internal export"),
+                    "text": L.get("offer_capability_5_text", ""),
+                },
+            ],
         },
         "solutions": solutions,
-        "process": {"steps": list(offer.get("processSteps", []) or [])},
+        "process": {
+            "steps": list(offer.get("processSteps", []) or []),
+            "outcomes": [
+                L.get("offer_process_outcome_1", ""),
+                L.get("offer_process_outcome_2", ""),
+                L.get("offer_process_outcome_3", ""),
+            ],
+        },
         "contact": {
             "company": offer.get("companyName", brand),
             "email": offer.get("contactEmail", ""),
             "website": offer.get("website", ""),
             "cta": offer.get("callToAction", ""),
             "disclaimers": list(offer.get("disclaimers", []) or []),
+            "deliveryNote": L.get("offer_contact_delivery_note", ""),
+            "responseSla": L.get("offer_contact_response_sla", ""),
         },
     }
 
