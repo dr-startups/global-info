@@ -1638,6 +1638,88 @@ def _risk_reasoning_by_region_vm(vm: dict, L: dict) -> dict:
     return {"ru": _one(vm.get("ru") or {}), "intl": _one(vm.get("intl") or {})}
 
 
+def _r34_raw_cards(entries: list[dict]) -> list[dict]:
+    """Client-safe raw card payloads for R3.4 source cards (formatting done in template)."""
+    cards: list[dict] = []
+    for e in entries or []:
+        cards.append(
+            {
+                "title": str(e.get("title") or ""),
+                "domain": str(e.get("domain") or e.get("link") or ""),
+                "reason": str(e.get("reason") or ""),
+            }
+        )
+    return cards
+
+
+def _r34_appendix_vm(vm: dict, L: dict, internal: bool) -> dict:
+    """R3.4 — deeper evidence appendix display groups (additive, reuses R3.1/R3.3 VM)."""
+    ef = vm.get("entityFiltering") or {}
+    counts = ef.get("counts") or {}
+    conf_ru = vm.get("evidenceConfirmedRu") or {}
+    rev_ru = vm.get("evidenceReviewRu") or {}
+    exc_ru = vm.get("evidenceExcludedRu") or {}
+    conf_intl = vm.get("evidenceConfirmedIntl") or {}
+    rev_intl = vm.get("evidenceReviewIntl") or {}
+    exc_intl = vm.get("evidenceExcludedIntl") or {}
+    media_ov = vm.get("mediaEvidenceOverview") or {}
+    risk_ov = vm.get("riskReasoningOverview") or {}
+
+    n_confirmed = len(conf_ru.get("confirmed") or []) + len(conf_intl.get("confirmed") or [])
+    n_review = len(rev_ru.get("rows") or []) + len(rev_intl.get("rows") or [])
+    n_excluded = len(exc_ru.get("rows") or []) + len(exc_intl.get("rows") or [])
+    n_media = int(counts.get("strictSubject", 0) or 0)  # placeholder if unused
+    media_cards = list(media_ov.get("cards") or [])
+
+    nav_cards = [
+        {"label": L.get("r31_appendix_card_confirmed", "Confirmed evidence"), "value": n_confirmed},
+        {"label": L.get("r31_appendix_card_review", "Review queue"), "value": n_review},
+        {"label": L.get("r31_appendix_card_excluded", "Excluded / noise"), "value": n_excluded},
+        {"label": L.get("r31_appendix_card_media", "Media evidence"), "value": (media_cards[0].get("value") if media_cards else 0)},
+    ]
+    sections = [
+        L.get("r34_map_section_confirmed", ""),
+        L.get("r34_map_section_review", ""),
+        L.get("r34_map_section_excluded", ""),
+        L.get("r34_map_section_media", ""),
+        L.get("r34_map_section_provenance", ""),
+        L.get("r34_map_section_risk", ""),
+    ]
+
+    excluded_cards = [
+        {"label": L.get("r34_excluded_card_excluded", "Excluded by identity"), "value": int(counts.get("excludedByIdentity", 0) or 0)},
+        {"label": L.get("r34_excluded_card_namesake", "Namesakes"), "value": int(counts.get("namesake", 0) or 0)},
+        {"label": L.get("r34_excluded_card_intl", "International suppressed"), "value": int(ef.get("internationalSuppressionCount", 0) or 0)},
+        {"label": L.get("r34_excluded_card_media", "Media suppressed"), "value": int(ef.get("mediaSuppressionCount", 0) or 0)},
+    ]
+    # topExclusionReasons is internal-only (sanitized out for client audience upstream).
+    excluded_reasons: list[str] = []
+    if internal:
+        for r in list(ef.get("topExclusionReasons") or [])[:4]:
+            reason = str((r or {}).get("reason") or "").strip()
+            cnt = int((r or {}).get("count", 0) or 0)
+            if reason:
+                # Humanize raw snake_case reason codes into compact analyst-safe wording.
+                human = reason.replace("_", " ").strip().capitalize()
+                excluded_reasons.append(f"{human} — {cnt}")
+
+    return {
+        "navCards": nav_cards,
+        "sections": [s for s in sections if s],
+        "confirmedRu": _r34_raw_cards(list(conf_ru.get("confirmed") or [])),
+        "reviewRu": _r34_raw_cards(list(rev_ru.get("rows") or [])),
+        "confirmedIntl": _r34_raw_cards(list(conf_intl.get("confirmed") or [])),
+        "reviewIntl": _r34_raw_cards(list(rev_intl.get("rows") or [])),
+        "excluded": {"cards": excluded_cards, "reasons": excluded_reasons},
+        "media": {"cards": media_cards[:4], "lines": list(media_ov.get("lines") or [])[:3]},
+        "risk": {
+            "overallRiskLevel": risk_ov.get("overallRiskLevel", "UNKNOWN"),
+            "topThemes": list(risk_ov.get("topThemes") or []),
+            "recommendedActions": list(risk_ov.get("recommendedActions") or []),
+        },
+    }
+
+
 def _provider_diagnostics_vm(block: dict, L: dict, internal: bool) -> dict:
     src = block or {}
     summary = src.get("summary") or {}
@@ -1785,6 +1867,7 @@ def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[
             ),
         ],
     }
+    vm["r34Appendix"] = _r34_appendix_vm(vm, vm["labels"], internal)
 
     return vm, warnings
 

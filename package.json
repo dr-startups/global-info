@@ -52,6 +52,7 @@
     "qa:r3-2b-provider-health": "tsx scripts/qa-r3-2b-provider-health.ts",
     "qa:r3-2c-provider-runtime": "tsx scripts/qa-r3-2c-provider-runtime.ts",
     "qa:r3-3-entity-filtering": "tsx scripts/qa-r3-3-entity-filtering.ts",
+    "qa:r3-4-evidence-appendix": "tsx scripts/qa-r3-4-evidence-appendix.ts",
     "smoke:report-media-layout-o542": "tsx scripts/smoke-report-media-layout-o542.ts",
     "smoke:report-visual-overflow-v16": "tsx scripts/smoke-report-visual-overflow-v16.ts",
     "smoke:report-i18n": "node scripts/smoke-report-i18n.mjs",

@@ -1809,6 +1809,204 @@ def _p_r32_provider_diagnostics(prs, vm, ctx):
     )
 
 
+# ===========================================================================
+# R3.4 — ORION-like evidence appendix expansion (additive card-style pages)
+# ===========================================================================
+
+_R34_CARD_H = Emu(1180000)
+_R34_NOTE_RESERVE = 820000
+
+
+def _r34_source_card_lines(raw: dict, L: dict, kind: str) -> tuple[str, list[str], Any]:
+    """Return (card_title, body_lines, accent_tone) for one client-safe source card."""
+    title = T.r2_truncate_cell_text(raw.get("title") or L.get("th_evidence_material", "Материал"), 64)
+    domain = T.r2_domain_text(str(raw.get("domain") or ""), 40)
+    lines: list[str] = []
+    if domain and domain not in ("—", ""):
+        lines.append(f"{L.get('r34_source_label', 'Источник')}: {domain}")
+    if kind == "confirmed":
+        status = L.get("r34_status_confirmed", "Подтверждённые материалы")
+        tone = T.SUCCESS
+    elif kind == "review":
+        status = L.get("r34_status_review", "Требует проверки")
+        tone = T.WARNING
+    else:
+        status = L.get("r34_status_excluded", "Исключено как шум")
+        tone = T.NEUTRAL_GRAY
+    lines.append(f"{L.get('th_status', 'Статус')}: {status}")
+    if kind == "review":
+        lines.append(L.get("r34_requires_analyst", "Требуется аналитическая проверка"))
+    return title, lines[:3], tone
+
+
+def _r34_source_cards_page(prs, vm, ctx, *, title_key, subtitle_key, entries, kind, empty_key):
+    L = vm["labels"]
+    slide, top = _section(prs, ctx, L.get(title_key, "Раздел"), L.get(subtitle_key, ""))
+    cards = [_r34_source_card_lines(e, L, kind) for e in (entries or [])]
+    shown = 0
+    for ctitle, lines, tone in cards:
+        if int(top) + int(_R34_CARD_H) + _R34_NOTE_RESERVE > int(T.CONTENT_SAFE_BOTTOM):
+            break
+        top = T.card(slide, T.MARGIN, top, T.CONTENT_W, _R34_CARD_H, ctitle, lines, tone=tone)
+        shown += 1
+    if shown == 0:
+        top = T.no_data_card(slide, top, L.get(empty_key, L.get("r34_no_confirmed", "Материалы отсутствуют.")))
+    hidden = len(cards) - shown
+    if hidden > 0:
+        top = T.note(slide, top, L.get("r34_more_saved", "+ ещё {n} материалов сохранены для проверки.").format(n=hidden), "info")
+    T.note(slide, top, L.get("r34_traceability_note", "Материалы показаны в клиент-safe формате и сохраняют трассируемость."), "disclaimer")
+
+
+def _p_r34_map(prs, vm, ctx):
+    L = vm["labels"]
+    r34 = vm.get("r34Appendix") or {}
+    slide, top = _section(prs, ctx, L.get("r34_map_title", "Карта раздела доказательств"), L.get("r34_map_subtitle", ""))
+    cards = list(r34.get("navCards") or [])
+    if cards:
+        top = T.metric_cards(slide, top, cards[:4], per_row=4)
+    sections = [s for s in (r34.get("sections") or []) if str(s).strip()]
+    if sections:
+        top = T.bullets(slide, top, sections[:6], max_items=6, layout_warnings=ctx.layout_warnings)
+    else:
+        top = T.no_data_card(slide, top, L.get("r34_no_confirmed", "Материалы отсутствуют."))
+    T.note(slide, top, L.get("r34_map_note", "Каждый слой можно рассматривать отдельно."), "info")
+
+
+def _p_r34_confirmed_ru(prs, vm, ctx):
+    r34 = vm.get("r34Appendix") or {}
+    _r34_source_cards_page(
+        prs, vm, ctx,
+        title_key="r34_confirmed_ru_title", subtitle_key="r34_confirmed_ru_subtitle",
+        entries=list(r34.get("confirmedRu") or []), kind="confirmed", empty_key="r34_no_confirmed",
+    )
+
+
+def _p_r34_review_ru(prs, vm, ctx):
+    r34 = vm.get("r34Appendix") or {}
+    _r34_source_cards_page(
+        prs, vm, ctx,
+        title_key="r34_review_ru_title", subtitle_key="r34_review_ru_subtitle",
+        entries=list(r34.get("reviewRu") or []), kind="review", empty_key="r34_no_review",
+    )
+
+
+def _p_r34_confirmed_intl(prs, vm, ctx):
+    r34 = vm.get("r34Appendix") or {}
+    _r34_source_cards_page(
+        prs, vm, ctx,
+        title_key="r34_confirmed_intl_title", subtitle_key="r34_confirmed_intl_subtitle",
+        entries=list(r34.get("confirmedIntl") or []), kind="confirmed", empty_key="r34_no_confirmed",
+    )
+
+
+def _p_r34_review_intl(prs, vm, ctx):
+    r34 = vm.get("r34Appendix") or {}
+    _r34_source_cards_page(
+        prs, vm, ctx,
+        title_key="r34_review_intl_title", subtitle_key="r34_review_intl_subtitle",
+        entries=list(r34.get("reviewIntl") or []), kind="review", empty_key="r34_no_review",
+    )
+
+
+def _p_r34_excluded(prs, vm, ctx):
+    L = vm["labels"]
+    r34 = vm.get("r34Appendix") or {}
+    exc = r34.get("excluded") or {}
+    slide, top = _section(prs, ctx, L.get("r34_excluded_title", "Сводка по исключённым материалам"), L.get("r34_excluded_subtitle", ""))
+    cards = list(exc.get("cards") or [])
+    if cards:
+        top = T.metric_cards(slide, top, cards[:4], per_row=4)
+    top = T.card(
+        slide, T.MARGIN, top, T.CONTENT_W, Emu(1500000),
+        L.get("r34_status_excluded", "Исключено как шум"),
+        [
+            L.get("r34_excluded_line_1", ""),
+            L.get("r34_excluded_line_2", ""),
+        ],
+        tone=T.NEUTRAL_GRAY,
+    )
+    reasons = [str(x) for x in (exc.get("reasons") or []) if str(x).strip()]
+    if ctx.internal and reasons:
+        top = T.bullets(slide, top, reasons[:4], max_items=4, layout_warnings=ctx.layout_warnings)
+    T.note(slide, top, L.get("r34_traceability_note", "Материалы сохраняют трассируемость."), "disclaimer")
+
+
+def _p_r34_media(prs, vm, ctx):
+    L = vm["labels"]
+    r34 = vm.get("r34Appendix") or {}
+    media = r34.get("media") or {}
+    slide, top = _section(prs, ctx, L.get("r34_media_title", "Карточки медиа-доказательств"), L.get("r34_media_subtitle", ""))
+    cards = list(media.get("cards") or [])
+    if cards:
+        top = T.metric_cards(slide, top, cards[:4], per_row=4)
+    lines = [x for x in [L.get("r34_media_line_1", ""), L.get("r34_media_line_2", "")] if x]
+    extra = [str(x) for x in (media.get("lines") or []) if str(x).strip()]
+    body = (lines + extra)[:3]
+    if body:
+        top = T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(1550000), L.get("r34_media_card_title", "Логика отбора медиа"), body, tone=T.ACCENT)
+    else:
+        top = T.no_data_card(slide, top, L.get("r34_no_media", "Медиа-доказательства отсутствуют."))
+    T.note(slide, top, L.get("r34_traceability_note", "Материалы сохраняют трассируемость."), "info")
+
+
+def _p_r34_provenance(prs, vm, ctx):
+    L = vm["labels"]
+    slide, top = _section(prs, ctx, L.get("r34_provenance_title", "Происхождение источников и скриншотов"), L.get("r34_provenance_subtitle", ""))
+    top = T.card(
+        slide, T.MARGIN, top, T.CONTENT_W, Emu(2050000),
+        L.get("r34_provenance_card_title", "Сводка о происхождении"),
+        [
+            L.get("r34_provenance_line_1", ""),
+            L.get("r34_provenance_line_2", ""),
+            L.get("r34_provenance_line_3", ""),
+        ],
+        tone=T.ACCENT,
+    )
+    T.note(slide, top, L.get("r34_traceability_note", "Материалы сохраняют трассируемость."), "disclaimer")
+
+
+def _p_r34_risk(prs, vm, ctx):
+    L = vm["labels"]
+    r34 = vm.get("r34Appendix") or {}
+    risk = r34.get("risk") or {}
+    slide, top = _section(prs, ctx, L.get("r34_risk_title", "Обоснование риска по доказательствам"), L.get("r34_risk_subtitle", ""))
+    top = T.metric_cards(
+        slide, top,
+        [
+            _risk_card_value(risk.get("overallRiskLevel", "UNKNOWN"), L),
+            {"label": L.get("r31_risk_reasoning_themes", "Ключевые темы"), "value": len(risk.get("topThemes") or [])},
+            {"label": L.get("r31_risk_reasoning_actions", "Рекомендуемые действия"), "value": len(risk.get("recommendedActions") or [])},
+        ],
+        per_row=3,
+    )
+    top = T.card(
+        slide, T.MARGIN, top, T.CONTENT_W, Emu(1550000),
+        L.get("r34_risk_card_title", "Сводка обоснования"),
+        [
+            L.get("r34_risk_line_1", ""),
+            L.get("r34_risk_line_2", ""),
+        ],
+        tone=T.ACCENT,
+    )
+    T.note(slide, top, L.get("r34_traceability_note", "Материалы сохраняют трассируемость."), "disclaimer")
+
+
+def _p_r34_conclusion(prs, vm, ctx):
+    L = vm["labels"]
+    slide, top = _section(prs, ctx, L.get("r34_conclusion_title", "Итог приложения и трассируемость"), L.get("r34_conclusion_subtitle", ""))
+    top = T.card(
+        slide, T.MARGIN, top, T.CONTENT_W, Emu(2050000),
+        L.get("r34_conclusion_card_title", "Заметка о трассируемости"),
+        [
+            L.get("r34_conclusion_line_1", ""),
+            L.get("r34_conclusion_line_2", ""),
+            L.get("r34_conclusion_line_3", ""),
+        ],
+        tone=T.ACCENT,
+    )
+    T.note(slide, top, L.get("r34_stored_internal", "Материалы сохранены для внутренней проверки."), "disclaimer")
+
+
 def _solution(vm, idx: int) -> dict:
     sols = vm["offerBlock"]["solutions"]
     if idx < len(sols):
@@ -1946,6 +2144,18 @@ def build_report_v3(
         _p_r31_risk_reasoning_by_region,
         _p_r31_appendix_conclusion,
     ]
+    r34_pages = [
+        _p_r34_map,
+        _p_r34_confirmed_ru,
+        _p_r34_review_ru,
+        _p_r34_excluded,
+        _p_r34_confirmed_intl,
+        _p_r34_review_intl,
+        _p_r34_media,
+        _p_r34_provenance,
+        _p_r34_risk,
+        _p_r34_conclusion,
+    ]
     diagnostics_pages = [_p_r32_provider_diagnostics] if ctx.internal else []
 
     builders: list[Callable] = [
@@ -1959,6 +2169,7 @@ def build_report_v3(
         _p_compliance_findings,
         *offer_pages,
         *r31_pages,
+        *r34_pages,
         *diagnostics_pages,
     ]
 

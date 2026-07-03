@@ -48,7 +48,11 @@ R24_FORBIDDEN_RU_PHRASES = (
     "unclassified",
     "undefined",
 )
-EXPECTED_SLIDE_COUNTS = {62, 63}
+EXPECTED_SLIDE_COUNTS = {72, 73}
+# R3.4 — ORION-like evidence appendix expansion adds 10 appendix pages after R3.1
+# (client 62->72, internal 63->73). Keep within the 70..75 target band.
+R34_MIN_SLIDES = 70
+R34_MAX_SLIDES = 75
 R31_INTERNAL_RE = re.compile(
     r"debug|rawmetadata|provideradapter|reviewqueue|client_include|review_required|"
     r"sourcemode|unclassified|internal only",
@@ -976,31 +980,37 @@ def _r32b_provider_diagnostics_checks(
         )
         checks.append(
             (
-                "slide count valid (62 client / 63 internal)",
+                "slide count valid (72 client / 73 internal)",
                 slide_count in EXPECTED_SLIDE_COUNTS,
                 f"count={slide_count}",
             )
         )
-        if slide_count >= 63:
-            last_xml = _slide_xml(z, slide_count)
-            last_text = _plain_text(last_xml)
-            checks.append(
-                (
-                    "diagnostics slide title present",
-                    ("Диагностика источников" in last_text) or ("Provider diagnostics" in last_text),
-                    "",
-                )
-            )
+        diag_idx = None
+        for n in range(slide_count, 0, -1):
+            t = _plain_text(_slide_xml(z, n))
+            if ("Диагностика источников" in t) or ("Provider diagnostics" in t):
+                diag_idx = n
+                break
+        if diag_idx is not None:
+            diag_text = _plain_text(_slide_xml(z, diag_idx))
+            checks.append(("diagnostics slide title present", True, f"slide={diag_idx}"))
             checks.append(
                 (
                     "diagnostics slide has no secret/env labels",
                     re.search(
                         r"DIGITAL_PROFILE_|GOOGLE_SEARCH_|YANDEX_SEARCH_|SERPER_API_KEY|API_KEY|SECRET|TOKEN",
-                        last_text,
+                        diag_text,
                         re.I,
                     )
                     is None,
                     "",
+                )
+            )
+            checks.append(
+                (
+                    "diagnostics slide is internal-only (last page)",
+                    diag_idx == slide_count,
+                    f"diag={diag_idx}, total={slide_count}",
                 )
             )
 
@@ -1058,6 +1068,115 @@ def _r33_entity_filtering_checks(report_json_path: Path) -> tuple[int, list[str]
         if not ok:
             failed = True
     return (1 if failed else 0), lines
+
+
+R34_NAMESAKE_RE = re.compile(
+    r"владимирович|александр\s+романович|богдан\s+романович|romanovich\s+family\s+office",
+    re.I,
+)
+R34_REVIEW_TOKENS_RE = re.compile(r"провер|review|аналит", re.I)
+# R3.4 appendix pages, matched by title tokens (all tokens must be present).
+R34_PAGE_SPECS: list[tuple[str, tuple[str, ...]]] = [
+    ("map", ("карта раздела",)),
+    ("confirmed_ru", ("подтверждённые источники", "россий")),
+    ("review_ru", ("очередь проверки", "россий")),
+    ("excluded", ("исключённым материалам",)),
+    ("confirmed_intl", ("подтверждённые источники", "международн")),
+    ("review_intl", ("очередь проверки", "международн")),
+    ("media", ("карточки медиа",)),
+    ("provenance", ("происхождение источников",)),
+    ("risk", ("обоснование риска",)),
+    ("conclusion", ("итог приложения",)),
+]
+
+
+def _r34_appendix_checks(pptx_path: Path, report_json_path: Path) -> tuple[int, list[str]]:
+    fails: list[str] = []
+    report_json: dict[str, Any] = {}
+    if report_json_path.exists():
+        report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+
+    # R3.x diagnostic blocks must survive R3.4 (additive-only).
+    diag = (report_json or {}).get("providerDiagnostics") or {}
+    runtime = diag.get("runtimeStrategy") or {}
+    ef = (report_json or {}).get("entityFiltering") or {}
+    if not diag:
+        fails.append("R3.2 providerDiagnostics block missing")
+    if not isinstance(runtime, dict) or not runtime:
+        fails.append("R3.2c runtimeStrategy block missing")
+    if not ef:
+        fails.append("R3.3 entityFiltering block missing")
+
+    with zipfile.ZipFile(pptx_path, "r") as z:
+        slide_count = len(
+            [n for n in z.namelist() if n.startswith("ppt/slides/slide") and n.endswith(".xml")]
+        )
+        if not (R34_MIN_SLIDES <= slide_count <= R34_MAX_SLIDES):
+            fails.append(
+                f"slide count out of R3.4 band [{R34_MIN_SLIDES}..{R34_MAX_SLIDES}]: {slide_count}"
+            )
+
+        texts = {n: _plain_text(_slide_xml(z, n)) for n in range(1, slide_count + 1)}
+        xmls = {n: _slide_xml(z, n) for n in range(1, slide_count + 1)}
+
+        found: dict[str, int] = {}
+        for kind, tokens in R34_PAGE_SPECS:
+            match_n = None
+            for n in range(1, slide_count + 1):
+                low = texts[n].lower()
+                if all(tok in low for tok in tokens):
+                    match_n = n
+                    break
+            if match_n is None:
+                fails.append(f"R3.4 page not found: {kind} (tokens={tokens})")
+                continue
+            found[kind] = match_n
+
+            xml = xmls[match_n]
+            text = texts[match_n]
+            # Footer page marker present.
+            if not re.search(rf"\b{match_n}\s*/\s*\d+\b", text):
+                fails.append(f"R3.4 {kind} (slide {match_n}) footer page marker missing")
+            # No raw URLs in visible body.
+            if URL_RE.search(text):
+                fails.append(f"R3.4 {kind} (slide {match_n}) has raw URL")
+            # No None/null/undefined leaks.
+            if NULLISH_RE.search(text):
+                fails.append(f"R3.4 {kind} (slide {match_n}) has None/null/undefined text")
+            # Content within footer safe area.
+            bottoms = _shape_bottoms(xml)
+            if bottoms and max(bottoms) > FOOTER_SAFE_BOTTOM:
+                fails.append(
+                    f"R3.4 {kind} (slide {match_n}) content over footer safe area: {max(bottoms)}"
+                )
+            # No broken empty table shell.
+            if "<a:tbl" in xml and len(re.findall(r"<a:tr\b", xml)) <= 1:
+                fails.append(f"R3.4 {kind} (slide {match_n}) has empty/broken table shell")
+            # Internal/debug labels: excluded page may show compact analyst reasons
+            # (internal mode), so relax the generic label regex only there.
+            if kind != "excluded" and INTERNAL_RE.search(text):
+                fails.append(f"R3.4 {kind} (slide {match_n}) has internal/debug labels")
+
+        # Confirmed pages must not surface known namesake / wrong-patronymic evidence.
+        for kind in ("confirmed_ru", "confirmed_intl"):
+            n = found.get(kind)
+            if n is not None and R34_NAMESAKE_RE.search(texts[n]):
+                fails.append(f"R3.4 {kind} (slide {n}) shows namesake/wrong-person evidence")
+
+        # Review pages must use review language, not confirmed-only wording.
+        for kind in ("review_ru", "review_intl"):
+            n = found.get(kind)
+            if n is not None and not R34_REVIEW_TOKENS_RE.search(texts[n]):
+                fails.append(f"R3.4 {kind} (slide {n}) missing review language")
+
+    lines: list[str] = []
+    if fails:
+        for f in fails:
+            lines.append(f"[FAIL] R3.4 appendix — {f}")
+        return 1, lines
+    lines.append("[PASS] R3.4 appendix — 10 evidence pages present, client-safe, within slide band")
+    lines.append("[PASS] R3.4 appendix — R3.2/R3.2c/R3.3 diagnostic blocks preserved")
+    return 0, lines
 
 
 def _r23c2_extra_checks(pptx_path: Path) -> tuple[int, list[str]]:
@@ -1306,6 +1425,9 @@ def main() -> int:
     r33_rc, r33_lines = _r33_entity_filtering_checks(report_json_path)
     for line in r33_lines:
         print(line)
+    r34_rc, r34_lines = _r34_appendix_checks(pptx_path, report_json_path)
+    for line in r34_lines:
+        print(line)
     reg_rc = 0
     if is_fixture:
         print("[PASS] Fixture mode — regression locks skipped by design")
@@ -1324,7 +1446,7 @@ def main() -> int:
     )
     for line in s13_sem_lines:
         print(line)
-    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
+    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
 
 
 if __name__ == "__main__":
