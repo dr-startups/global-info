@@ -46,6 +46,16 @@ function buildScenario(
 ) {
   const diag = buildProviderDiagnosticsFixture({
     auditMode: { fullAuditOrderMode: auditMode, isMockDefault: auditMode === "mock_first", notes: [] },
+    runtimeStrategy: {
+      mode: "legacy_mock_first",
+      selectedOrder: ["YANDEX_SEARCH", "GOOGLE_SEARCH"],
+      fallbackPolicy: "allow_mock_fallback",
+      requestedBy: "test",
+      realProvidersAvailable: 0,
+      mockProvidersAvailable: 2,
+      fallbackEvents: [],
+      warnings: [],
+    },
     providers,
   });
   check(`${name}: providers non-empty`, diag.providers.length > 0);

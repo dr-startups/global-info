@@ -1,8 +1,4 @@
-import {
-  FULL_AUDIT_ORDER,
-  MOCK_FULL_AUDIT_ORDER,
-  REAL_SAFE_AUDIT_ORDER,
-} from "../agents/registry";
+import { resolveRuntimeStrategy } from "../agents/runtime-strategy";
 import {
   listComplianceProviderStatus,
   type ComplianceProviderStatus,
@@ -18,11 +14,21 @@ import type {
   ReportProviderDiagnostics,
 } from "../types";
 
-function normalizeProviderStatus(status: ProviderStatus): ReportProviderDiagnosticItem {
+function normalizeProviderStatus(
+  status: ProviderStatus,
+  runtime: ReturnType<typeof resolveRuntimeStrategy>
+): ReportProviderDiagnosticItem {
   const missingCount = status.missingConfigKeys.length;
   const activeReal = status.status === "ENABLED" && status.supportsRealCalls;
+  const providerId = status.name.toLowerCase();
+  const fallback = runtime.fallbackEvents.find((e) => e.providerId === providerId);
+  const selectedByStrategy = runtime.steps.some((s) => s.providerId === providerId);
+  const skippedReason =
+    !selectedByStrategy && runtime.mode !== "legacy_mock_first"
+      ? `Skipped by strategy mode ${runtime.mode}.`
+      : undefined;
   return {
-    id: status.name.toLowerCase(),
+    id: providerId,
     label: status.label,
     category: status.name === "WIKIPEDIA" ? "knowledge" : "search",
     status: activeReal ? "ready" : status.status === "ENABLED" ? "configured" : "not_configured",
@@ -43,10 +49,18 @@ function normalizeProviderStatus(status: ProviderStatus): ReportProviderDiagnost
       missingCount > 0
         ? `Missing configuration class: ${status.name} credentials/settings incomplete.`
         : undefined,
+    selectedByStrategy,
+    skippedReason,
+    fallbackReason: fallback?.reason,
+    configured: status.configured,
+    capabilityLevel:
+      status.kind === "MOCK" ? "mock" : activeReal ? "full" : status.configured ? "partial" : "none",
   };
 }
 
-function buildSerperDiagnostics(): ReportProviderDiagnosticItem {
+function buildSerperDiagnostics(
+  runtime: ReturnType<typeof resolveRuntimeStrategy>
+): ReportProviderDiagnosticItem {
   const s = externalGoogleSerpProvider.status();
   const strategy = providerConfig.google.provider;
   const selectedExternal = strategy === "external_serp";
@@ -82,11 +96,15 @@ function buildSerperDiagnostics(): ReportProviderDiagnosticItem {
       selectedExternal && !ready
         ? `External adapter state: ${s.state.toLowerCase().replaceAll("_", " ")}.`
         : undefined,
+    selectedByStrategy: runtime.steps.some((step) => step.providerId === "google"),
+    configured: selectedExternal ? Boolean(providerConfig.google.external.apiKey) : false,
+    capabilityLevel: ready ? "full" : selectedExternal ? "partial" : "none",
   };
 }
 
 function buildComplianceDiagnostics(
-  statuses: ComplianceProviderStatus[]
+  statuses: ComplianceProviderStatus[],
+  runtime: ReturnType<typeof resolveRuntimeStrategy>
 ): ReportProviderDiagnosticItem {
   const realStatuses = statuses.filter((s) => s.kind === "REAL");
   const configuredReal = realStatuses.filter((s) => s.status === "ENABLED").length;
@@ -110,27 +128,31 @@ function buildComplianceDiagnostics(
       missingBuckets > 0
         ? `${missingBuckets} compliance provider(s) have missing configuration groups.`
         : "Compliance real adapters resolve to PROVIDER_NOT_IMPLEMENTED stubs in this build.",
+    selectedByStrategy: runtime.steps.some((step) => step.providerId === "compliance"),
+    configured: configuredReal > 0,
+    capabilityLevel: "stub",
   };
 }
 
-function auditMode(): ReportProviderDiagnostics["auditMode"] {
-  const sameAsMock =
-    FULL_AUDIT_ORDER.length === MOCK_FULL_AUDIT_ORDER.length &&
-    FULL_AUDIT_ORDER.every((v, i) => v === MOCK_FULL_AUDIT_ORDER[i]);
-  const sameAsReal =
-    FULL_AUDIT_ORDER.length === REAL_SAFE_AUDIT_ORDER.length &&
-    FULL_AUDIT_ORDER.every((v, i) => v === REAL_SAFE_AUDIT_ORDER[i]);
-  const mode = sameAsMock ? "mock_first" : sameAsReal ? "real_first" : "mixed";
+function auditMode(runtime: ReturnType<typeof resolveRuntimeStrategy>): ReportProviderDiagnostics["auditMode"] {
+  const mode =
+    runtime.mode === "legacy_mock_first"
+      ? "mock_first"
+      : runtime.mode === "real_only" || runtime.mode === "real_first_with_fallback"
+        ? "real_first"
+        : "mixed";
   const notes =
-    mode === "mock_first"
+    runtime.mode === "legacy_mock_first"
       ? ["Full audit currently resolves to mock-first execution order."]
-      : mode === "real_first"
-        ? ["Full audit currently resolves to real-first execution order."]
-        : ["Full audit order includes mixed or custom agent sequence."];
+      : runtime.mode === "real_first_with_fallback"
+        ? ["Runtime prefers real agents and allows deterministic mock fallback."]
+        : runtime.mode === "real_only"
+          ? ["Runtime executes only real agents; unavailable providers are skipped."]
+          : ["Runtime executes mock-only strategy for deterministic test runs."];
   return {
     fullAuditOrderMode: mode,
-    isMockDefault: mode === "mock_first",
-    notes,
+    isMockDefault: runtime.mode === "legacy_mock_first",
+    notes: [...notes, ...runtime.warnings],
   };
 }
 
@@ -149,22 +171,25 @@ export function summarizeProviderDiagnostics(
 
 export function buildProviderDiagnosticsFixture(input: {
   auditMode: ReportProviderDiagnostics["auditMode"];
+  runtimeStrategy: ReportProviderDiagnostics["runtimeStrategy"];
   providers: ReportProviderDiagnosticItem[];
 }): ReportProviderDiagnostics {
   return {
     auditMode: input.auditMode,
+    runtimeStrategy: input.runtimeStrategy,
     providers: input.providers,
     summary: summarizeProviderDiagnostics(input.providers),
   };
 }
 
 export function buildProviderDiagnostics(): ReportProviderDiagnostics {
+  const runtime = resolveRuntimeStrategy();
   const providers: ReportProviderDiagnosticItem[] = [];
-  const yandex = normalizeProviderStatus(getProviderStatus("YANDEX"));
-  const google = normalizeProviderStatus(getProviderStatus("GOOGLE"));
-  const wikipedia = normalizeProviderStatus(getProviderStatus("WIKIPEDIA"));
-  const serper = buildSerperDiagnostics();
-  const compliance = buildComplianceDiagnostics(listComplianceProviderStatus());
+  const yandex = normalizeProviderStatus(getProviderStatus("YANDEX"), runtime);
+  const google = normalizeProviderStatus(getProviderStatus("GOOGLE"), runtime);
+  const wikipedia = normalizeProviderStatus(getProviderStatus("WIKIPEDIA"), runtime);
+  const serper = buildSerperDiagnostics(runtime);
+  const compliance = buildComplianceDiagnostics(listComplianceProviderStatus(), runtime);
   providers.push(yandex, google, serper, wikipedia, compliance);
   providers.push({
     id: "screenshots",
@@ -177,6 +202,9 @@ export function buildProviderDiagnostics(): ReportProviderDiagnostics {
     risk: "low",
     message: "Manual screenshot uploads are available.",
     safeDetail: "Captured files are stored and linked as evidence.",
+    selectedByStrategy: runtime.steps.some((step) => step.providerId === "surfaces"),
+    configured: true,
+    capabilityLevel: "partial",
   });
   providers.push({
     id: "synthetic_serp",
@@ -189,9 +217,22 @@ export function buildProviderDiagnostics(): ReportProviderDiagnostics {
     risk: "medium",
     message: "Synthetic SERP visual is used when available from stored evidence.",
     safeDetail: "Snapshot page uses generated visual from collected rows.",
+    selectedByStrategy: runtime.steps.some((step) => step.providerId === "surfaces"),
+    configured: true,
+    capabilityLevel: "stub",
   });
   return {
-    auditMode: auditMode(),
+    auditMode: auditMode(runtime),
+    runtimeStrategy: {
+      mode: runtime.mode,
+      selectedOrder: runtime.selectedOrder,
+      fallbackPolicy: runtime.fallbackPolicy,
+      requestedBy: runtime.requestedBy,
+      realProvidersAvailable: runtime.realProvidersAvailable,
+      mockProvidersAvailable: runtime.mockProvidersAvailable,
+      fallbackEvents: runtime.fallbackEvents,
+      warnings: runtime.warnings,
+    },
     providers,
     summary: summarizeProviderDiagnostics(providers),
   };

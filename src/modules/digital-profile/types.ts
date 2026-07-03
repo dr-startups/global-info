@@ -417,6 +417,16 @@ export type ProviderDiagnosticRuntimeMode =
   | "unknown";
 
 export type ProviderDiagnosticRisk = "low" | "medium" | "high";
+export type ProviderCapabilityLevel = "full" | "partial" | "stub" | "mock" | "none";
+export type ProviderRuntimeMode =
+  | "legacy_mock_first"
+  | "real_first_with_fallback"
+  | "real_only"
+  | "mock_only";
+export type ProviderFallbackPolicy =
+  | "allow_mock_fallback"
+  | "allow_empty_fallback"
+  | "no_mock_fallback";
 
 export interface ReportProviderDiagnosticItem {
   id: string;
@@ -430,6 +440,11 @@ export interface ReportProviderDiagnosticItem {
   message: string;
   safeDetail?: string;
   internalDetail?: string;
+  selectedByStrategy?: boolean;
+  skippedReason?: string;
+  fallbackReason?: string;
+  configured?: boolean;
+  capabilityLevel?: ProviderCapabilityLevel;
 }
 
 export interface ReportProviderDiagnostics {
@@ -437,6 +452,21 @@ export interface ReportProviderDiagnostics {
     fullAuditOrderMode: "mock_first" | "real_first" | "mixed" | "unknown";
     isMockDefault: boolean;
     notes: string[];
+  };
+  runtimeStrategy: {
+    mode: ProviderRuntimeMode;
+    selectedOrder: string[];
+    fallbackPolicy: ProviderFallbackPolicy;
+    requestedBy: "default" | "request" | "config" | "test";
+    realProvidersAvailable: number;
+    mockProvidersAvailable: number;
+    fallbackEvents: Array<{
+      providerId: string;
+      reason: string;
+      from: "real" | "mock" | "none";
+      to: "real" | "mock" | "none";
+    }>;
+    warnings: string[];
   };
   providers: ReportProviderDiagnosticItem[];
   summary: {

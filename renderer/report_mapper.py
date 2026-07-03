@@ -1641,8 +1641,12 @@ def _risk_reasoning_by_region_vm(vm: dict, L: dict) -> dict:
 def _provider_diagnostics_vm(block: dict, L: dict, internal: bool) -> dict:
     src = block or {}
     summary = src.get("summary") or {}
+    runtime = src.get("runtimeStrategy") or {}
     rows = []
     for p in list(src.get("providers") or []):
+        capability = str(p.get("capabilityLevel") or "none")
+        selected = bool(p.get("selectedByStrategy"))
+        fallback_reason = str(p.get("fallbackReason") or "").strip()
         rows.append(
             {
                 "source": str(p.get("label") or p.get("id") or "—"),
@@ -1656,9 +1660,20 @@ def _provider_diagnostics_vm(block: dict, L: dict, internal: bool) -> dict:
                     else p.get("safeDetail")
                     or p.get("message")
                     or "—"
-                ),
+                )
+                + f" | capability={capability}; selected={str(selected).lower()}"
+                + (f"; fallback={fallback_reason}" if fallback_reason else ""),
             }
         )
+    runtime_notes = [
+        f"Runtime mode: {str(runtime.get('mode') or 'legacy_mock_first')}",
+        f"Fallback policy: {str(runtime.get('fallbackPolicy') or 'allow_mock_fallback')}",
+        f"Selected order: {', '.join([str(x) for x in list(runtime.get('selectedOrder') or [])]) or '—'}",
+    ]
+    runtime_notes.extend([str(x) for x in list(runtime.get("warnings") or []) if str(x)])
+    fallback_events = list(runtime.get("fallbackEvents") or [])
+    if fallback_events:
+        runtime_notes.append(f"Fallback events: {len(fallback_events)}")
     return {
         "title": L.get("r32_provider_diag_title", "Provider diagnostics"),
         "subtitle": L.get(
@@ -1686,7 +1701,7 @@ def _provider_diagnostics_vm(block: dict, L: dict, internal: bool) -> dict:
             },
         ],
         "rows": rows,
-        "auditNotes": list((src.get("auditMode") or {}).get("notes") or []),
+        "auditNotes": runtime_notes + list((src.get("auditMode") or {}).get("notes") or []),
     }
 
 

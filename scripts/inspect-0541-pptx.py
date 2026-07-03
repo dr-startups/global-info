@@ -792,9 +792,11 @@ def _r32b_provider_diagnostics_checks(
     ids = {str((p or {}).get("id") or "").lower() for p in providers}
     summary = diag.get("summary") or {}
     mode = (diag.get("auditMode") or {}).get("fullAuditOrderMode")
+    runtime = diag.get("runtimeStrategy") or {}
     checks: list[tuple[str, bool, str]] = [
         ("providerDiagnostics exists", bool(diag), ""),
         ("providerDiagnostics.summary exists", isinstance(summary, dict), ""),
+        ("providerDiagnostics.runtimeStrategy exists", isinstance(runtime, dict), ""),
         ("providerDiagnostics.providers non-empty", len(providers) > 0, f"count={len(providers)}"),
         ("provider diagnostics includes yandex", "yandex" in ids, ""),
         ("provider diagnostics includes google", "google" in ids or "serper" in ids, ""),
@@ -804,6 +806,21 @@ def _r32b_provider_diagnostics_checks(
             "audit mode represented",
             mode in {"mock_first", "real_first", "mixed", "unknown"},
             str(mode),
+        ),
+        (
+            "runtime strategy mode represented",
+            str(runtime.get("mode") or "") in {
+                "legacy_mock_first",
+                "real_first_with_fallback",
+                "real_only",
+                "mock_only",
+            },
+            str(runtime.get("mode")),
+        ),
+        (
+            "runtime selected order exists",
+            isinstance(runtime.get("selectedOrder"), list),
+            f"count={len(runtime.get('selectedOrder') or []) if isinstance(runtime.get('selectedOrder'), list) else 0}",
         ),
     ]
 

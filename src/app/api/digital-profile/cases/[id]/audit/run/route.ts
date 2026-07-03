@@ -13,6 +13,7 @@ import {
   requireRole,
 } from "@/modules/digital-profile/auth/guard";
 import { digitalProfileConfig } from "@/modules/digital-profile/config";
+import { parseRuntimeMode } from "@/modules/digital-profile/agents/runtime-strategy";
 import { runFullAudit } from "@/modules/digital-profile/services/agent-run-service";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,8 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   // Running real (non-mock) providers requires the stronger permission.
   if (!digitalProfileConfig.mockAgents) requireRole(user, "agents.runReal");
   await requireCaseAccess(user, id, "VIEWER");
-  const data = await runFullAudit(id, actorOf(user));
+  const body = await req.json().catch(() => ({} as Record<string, unknown>));
+  const mode = parseRuntimeMode((body as { runtimeMode?: unknown }).runtimeMode);
+  const data = await runFullAudit(id, actorOf(user), { runtimeMode: mode });
   return jsonOk(data, 201);
 });
