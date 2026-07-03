@@ -401,6 +401,8 @@ export interface ReportJson {
   providerReadinessSummary?: ReportProviderReadinessSummary;
   /** Stage R5.2 — deterministic query planning diagnostics (internal-only). */
   queryPlanDiagnostics?: ReportQueryPlanDiagnostics;
+  /** Stage R5.3 — live-provider smoke diagnostics (internal-only). */
+  liveProviderSmoke?: ReportLiveProviderSmokeDiagnostics;
   /** Stage R3.3 — entity/FIO filtering diagnostics (safe additive). */
   entityFiltering?: ReportEntityFilteringDiagnostics;
   /** Stage R3.5 — normalized compliance/risk intelligence (display-level, client-safe). */
@@ -643,6 +645,43 @@ export interface ReportQueryPlanDiagnostics {
   fallbackEligibleQueryCount: number;
   warnings: string[];
   queryRows: ReportQueryPlanDiagnosticsRow[];
+}
+
+export interface ReportLiveProviderSmokeRow {
+  providerId: string;
+  providerLabel: string;
+  category: string;
+  runtimeKind: "real" | "mock" | "stub" | "manual" | "synthetic";
+  configured: boolean;
+  credentialsPresent: boolean;
+  smokeAttempted: boolean;
+  smokeSkippedReason?: string;
+  smokeStatus: "pass" | "fail" | "skipped" | "unavailable" | "fallback" | "not_supported";
+  safeStatusCode?: number;
+  safeErrorClass?: string;
+  latencyBucket: "none" | "fast" | "normal" | "slow" | "timeout";
+  resultCountBucket: "none" | "zero" | "one_to_five" | "six_to_twenty" | "many";
+  fallbackUsed: boolean;
+  fallbackProviderId?: string;
+  warningCodes?: string[];
+}
+
+export interface ReportLiveProviderSmokeDiagnostics {
+  smokeRunId: string;
+  requestedRuntimeMode: ProviderRuntimeMode;
+  resolvedRuntimeMode: ProviderRuntimeMode;
+  providerRows: ReportLiveProviderSmokeRow[];
+  summary: {
+    attemptedCount: number;
+    passCount: number;
+    failCount: number;
+    skippedCount: number;
+    unavailableCount: number;
+    fallbackCount: number;
+    realAttemptCount: number;
+    mockAttemptCount: number;
+    warningCount: number;
+  };
 }
 export type ProviderRuntimeMode =
   | "legacy_mock_first"

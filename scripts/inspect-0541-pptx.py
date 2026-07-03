@@ -1740,6 +1740,46 @@ def _r51_provider_readiness_checks(report_json_path: Path) -> tuple[int, list[st
     return 0, lines
 
 
+def _r53_live_provider_smoke_checks(report_json_path: Path) -> tuple[int, list[str]]:
+    fails: list[str] = []
+    report_json: dict[str, Any] = {}
+    if report_json_path.exists():
+        report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+
+    is_client = "providerDiagnostics" not in report_json
+    raw = json.dumps(report_json, ensure_ascii=False)
+    smoke = report_json.get("liveProviderSmoke")
+
+    if is_client:
+        leaked_tokens = [k for k in ["liveProviderSmoke", "smokeRunId", "safeErrorClass", "safeStatusCode"] if k in raw]
+        if leaked_tokens:
+            fails.append(f"client live-provider-smoke leakage: {leaked_tokens}")
+    else:
+        if not isinstance(smoke, dict):
+            fails.append("liveProviderSmoke missing in internal report_json")
+        else:
+            required_top = ["smokeRunId", "requestedRuntimeMode", "resolvedRuntimeMode", "providerRows", "summary"]
+            for key in required_top:
+                if key not in smoke:
+                    fails.append(f"liveProviderSmoke missing field: {key}")
+            rows = smoke.get("providerRows")
+            if not isinstance(rows, list) or len(rows) == 0:
+                fails.append("liveProviderSmoke.providerRows missing/empty")
+            else:
+                sample = rows[0] if isinstance(rows[0], dict) else {}
+                for key in ("providerId", "runtimeKind", "smokeStatus", "smokeAttempted", "fallbackUsed"):
+                    if key not in sample:
+                        fails.append(f"liveProviderSmoke provider row missing field: {key}")
+
+    lines: list[str] = []
+    if fails:
+        for f in fails:
+            lines.append(f"[FAIL] R5.3 {f}")
+        return 1, lines
+    lines.append("[PASS] R5.3 live provider smoke — internal diagnostics present and client leakage blocked")
+    return 0, lines
+
+
 def _r36_production_gate_checks(pptx_path: Path, report_json_path: Path) -> tuple[int, list[str]]:
     fails: list[str] = []
     report_json: dict[str, Any] = {}
@@ -1899,6 +1939,9 @@ def main() -> int:
     r51_rc, r51_lines = _r51_provider_readiness_checks(report_json_path)
     for line in r51_lines:
         print(line)
+    r53_rc, r53_lines = _r53_live_provider_smoke_checks(report_json_path)
+    for line in r53_lines:
+        print(line)
     # R3.6 — regression locks use an internal baseline; client/production artifacts
     # legitimately differ on audience-gated slides, so lock only internal artifacts.
     _reg_report_json: dict[str, Any] = {}
@@ -1928,7 +1971,7 @@ def main() -> int:
     )
     for line in s13_sem_lines:
         print(line)
-    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or r42_rc != 0 or r43_rc != 0 or r51_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
+    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or r42_rc != 0 or r43_rc != 0 or r51_rc != 0 or r53_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
 
 
 if __name__ == "__main__":

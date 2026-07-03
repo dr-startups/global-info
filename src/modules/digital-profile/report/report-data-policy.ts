@@ -271,6 +271,11 @@ const CLIENT_FORBIDDEN_JSON_KEYS = new Set([
   "requiredEnv",
   "requiredEnvKeys",
   "recommendedAction",
+  "liveProviderSmoke",
+  "smokeRunId",
+  "safeStatusCode",
+  "safeErrorClass",
+  "fallbackProviderId",
 ]);
 
 export type ReportJsonAudience = "internal" | "client";
@@ -331,7 +336,11 @@ export function getReportAudiencePolicy(
 }
 
 /** Report_json blocks that are internal-only and must never reach the client. */
-const INTERNAL_ONLY_REPORT_BLOCKS = ["providerDiagnostics", "queryPlanDiagnostics"] as const;
+const INTERNAL_ONLY_REPORT_BLOCKS = [
+  "providerDiagnostics",
+  "queryPlanDiagnostics",
+  "liveProviderSmoke",
+] as const;
 
 /** Remove internal-only diagnostics blocks from a client report_json copy. */
 export function stripInternalDiagnostics<T extends Record<string, unknown>>(copy: T): T {
@@ -381,6 +390,11 @@ export const CLIENT_FORBIDDEN_TEXT_MARKERS: string[] = [
   "requiredEnv",
   "requiredEnvKeys",
   "runtimeKind",
+  "liveProviderSmoke",
+  "smokeRunId",
+  "safeStatusCode",
+  "safeErrorClass",
+  "fallbackProviderId",
   "topExclusionReasons",
   "process.env",
   ".env",

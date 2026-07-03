@@ -41,6 +41,7 @@ import {
   buildProviderDiagnostics,
   type ProviderSurfaceTotals,
 } from "../report/provider-diagnostics";
+import { runLiveProviderSmoke } from "../providers/live-provider-smoke";
 import { buildEntityFilteringDiagnostics } from "../report/entity-filtering-diagnostics";
 import { buildComplianceRiskIntel } from "../report/compliance-risk-intel";
 import {
@@ -734,6 +735,10 @@ export async function buildReportJson(
     details: queryPlanDetails,
     providerDiagnostics,
   });
+  const liveProviderSmoke = await runLiveProviderSmoke({
+    requestedRuntimeMode: providerDiagnostics.runtimeStrategy.mode,
+    allowLiveCalls: false,
+  });
   const screenshotProvenance = buildScreenshotProvenance({
     serpSnapshot: serpSnapshot as { id?: string; mode?: string; metadata?: Record<string, unknown> } | null,
     screenshots: screenshots.map((s) => ({
@@ -810,6 +815,7 @@ export async function buildReportJson(
     providerDiagnostics,
     providerReadinessSummary: providerDiagnostics.providerReadinessSummary,
     queryPlanDiagnostics,
+    liveProviderSmoke,
     entityFiltering,
     complianceRiskIntel,
   };

@@ -268,6 +268,19 @@ export function buildSearchProvenance(input: {
   const queryLineage = [...queryMap.values()].sort((a, b) =>
     a.queryId.localeCompare(b.queryId)
   );
+  const fallbackByProvider = new Map(
+    (input.providerDiagnostics?.runtimeStrategy?.fallbackEvents ?? []).map((evt) => [
+      String(evt.providerId ?? ""),
+      String(evt.reason ?? ""),
+    ])
+  );
+  for (const q of queryLineage) {
+    const reason = fallbackByProvider.get(String(q.providerId ?? ""));
+    if (reason) {
+      q.fallbackUsed = true;
+      q.fallbackReason = reason;
+    }
+  }
   const relatedScreenshotIds = (input.screenshotProvenance ?? [])
     .map((s) => s.screenshotId)
     .filter(Boolean);
