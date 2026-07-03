@@ -1622,6 +1622,60 @@ def _r42_source_quality_checks(report_json_path: Path) -> tuple[int, list[str]]:
     return 0, lines
 
 
+def _r43_search_provenance_checks(report_json_path: Path) -> tuple[int, list[str]]:
+    fails: list[str] = []
+    report_json: dict[str, Any] = {}
+    if report_json_path.exists():
+        report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+
+    is_client = "providerDiagnostics" not in report_json
+    raw = json.dumps(report_json, ensure_ascii=False)
+    summary = report_json.get("searchProvenanceSummary")
+    block = report_json.get("searchProvenance")
+
+    if not is_client:
+        if not isinstance(summary, dict):
+            fails.append("searchProvenanceSummary missing in internal report_json")
+        else:
+            for key in ("queryCount", "surfaceCount", "screenshotCount", "linkedEvidenceCount"):
+                if not isinstance(summary.get(key), int):
+                    fails.append(f"searchProvenanceSummary missing/invalid {key}")
+        if not isinstance(block, dict):
+            fails.append("searchProvenance block missing in internal report_json")
+        else:
+            if not isinstance(block.get("queryLineage"), list):
+                fails.append("searchProvenance.queryLineage missing")
+            if not isinstance(block.get("surfaceProvenance"), list):
+                fails.append("searchProvenance.surfaceProvenance missing")
+            if not isinstance(block.get("screenshotProvenance"), list):
+                fails.append("searchProvenance.screenshotProvenance missing")
+    else:
+        # Client artifact may keep only safe subset. It must not contain internals.
+        forbidden = [
+            "queryId",
+            "surfaceId",
+            "sourceSurfaceIds",
+            "relatedScreenshotIds",
+            "internalCaption",
+            "artifactPathInternal",
+            "warningCodes",
+            "fallbackReason",
+        ]
+        leaked = [k for k in forbidden if f'"{k}"' in raw]
+        if leaked:
+            fails.append(f"client search provenance leakage: {leaked}")
+
+    lines: list[str] = []
+    if fails:
+        for f in fails:
+            lines.append(f"[FAIL] R4.3 {f}")
+        return 1, lines
+    lines.append(
+        "[PASS] R4.3 search provenance — lineage/screenshot metadata present internally and client leakage blocked"
+    )
+    return 0, lines
+
+
 def _r36_production_gate_checks(pptx_path: Path, report_json_path: Path) -> tuple[int, list[str]]:
     fails: list[str] = []
     report_json: dict[str, Any] = {}
@@ -1773,6 +1827,9 @@ def main() -> int:
     r42_rc, r42_lines = _r42_source_quality_checks(report_json_path)
     for line in r42_lines:
         print(line)
+    r43_rc, r43_lines = _r43_search_provenance_checks(report_json_path)
+    for line in r43_lines:
+        print(line)
     # R3.6 — regression locks use an internal baseline; client/production artifacts
     # legitimately differ on audience-gated slides, so lock only internal artifacts.
     _reg_report_json: dict[str, Any] = {}
@@ -1802,7 +1859,7 @@ def main() -> int:
     )
     for line in s13_sem_lines:
         print(line)
-    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or r42_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
+    return 1 if (base_fail_lines or extra_rc != 0 or r23d_rc != 0 or r23e_rc != 0 or r24_rc != 0 or r31_rc != 0 or r32b_rc != 0 or r33_rc != 0 or r34_rc != 0 or r35_rc != 0 or r36_rc != 0 or r41_rc != 0 or r42_rc != 0 or r43_rc != 0 or reg_rc != 0 or s13_sem_rc != 0) else 0
 
 
 if __name__ == "__main__":

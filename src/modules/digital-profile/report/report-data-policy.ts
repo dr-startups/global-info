@@ -257,6 +257,14 @@ const CLIENT_FORBIDDEN_JSON_KEYS = new Set([
   "duplicateGroupId",
   "duplicateRank",
   "duplicateReason",
+  "artifactPathInternal",
+  "internalCaption",
+  "warningCodes",
+  "queryId",
+  "surfaceId",
+  "sourceSurfaceIds",
+  "relatedScreenshotIds",
+  "fallbackReason",
 ]);
 
 export type ReportJsonAudience = "internal" | "client";
@@ -353,6 +361,14 @@ export const CLIENT_FORBIDDEN_TEXT_MARKERS: string[] = [
   "duplicateGroupId",
   "duplicateRank",
   "duplicateReason",
+  "artifactPathInternal",
+  "internalCaption",
+  "warningCodes",
+  "queryId",
+  "surfaceId",
+  "sourceSurfaceIds",
+  "relatedScreenshotIds",
+  "fallbackReason",
   "topExclusionReasons",
   "process.env",
   ".env",
@@ -516,6 +532,58 @@ function sanitizeSourceQualitySummaryForClient(
   };
 }
 
+function sanitizeSearchProvenanceSummaryForClient(
+  block: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!block) return block;
+  return {
+    searchSourcesReviewed: block.searchSourcesReviewed ?? block.queryCount,
+    evidenceLinkedCount: block.evidenceLinkedCount ?? block.linkedEvidenceCount,
+    screenshotSummaryLabel:
+      block.screenshotSummaryLabel ??
+      "Search snapshots are generated from collected search results.",
+    safeNote:
+      block.safeNote ??
+      "Search snapshots are generated from collected search results.",
+  };
+}
+
+function sanitizeSearchProvenanceForClient(
+  block: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!block) return block;
+  const surfaces = Array.isArray(block.surfaceProvenance)
+    ? block.surfaceProvenance.map((row) => {
+        const r = row as Record<string, unknown>;
+        return {
+          surfaceType: r.surfaceType,
+          region: r.region,
+          language: r.language,
+          providerLabel: r.providerLabel,
+          sourceQualityDecision: r.sourceQualityDecision,
+          clientSafeReason: r.clientSafeReason,
+        };
+      })
+    : [];
+  const screenshots = Array.isArray(block.screenshotProvenance)
+    ? block.screenshotProvenance.map((row) => {
+        const r = row as Record<string, unknown>;
+        return {
+          screenshotKind: r.screenshotKind,
+          providerId: r.providerId,
+          region: r.region,
+          language: r.language,
+          clientSafeCaption: r.clientSafeCaption,
+          containsHighlightedEvidence: r.containsHighlightedEvidence,
+        };
+      })
+    : [];
+  return {
+    surfaceProvenance: surfaces,
+    screenshotProvenance: screenshots,
+  };
+}
+
 function sanitizeEvidenceQualityForClient(
   evidenceQuality: Record<string, unknown> | undefined
 ): Record<string, unknown> | undefined {
@@ -581,6 +649,8 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
     evidenceQuality?: Record<string, unknown>;
     selectedEvidence?: Record<string, unknown>;
     sourceQualitySummary?: Record<string, unknown>;
+    searchProvenanceSummary?: Record<string, unknown>;
+    searchProvenance?: Record<string, unknown>;
     providerDiagnostics?: Record<string, unknown>;
     entityFiltering?: Record<string, unknown>;
     complianceRiskIntel?: Record<string, unknown>;
@@ -623,6 +693,8 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
   copy.entityFiltering = sanitizeEntityFilteringForClient(copy.entityFiltering);
   copy.complianceRiskIntel = sanitizeComplianceRiskIntelForClient(copy.complianceRiskIntel);
   copy.sourceQualitySummary = sanitizeSourceQualitySummaryForClient(copy.sourceQualitySummary);
+  copy.searchProvenanceSummary = sanitizeSearchProvenanceSummaryForClient(copy.searchProvenanceSummary);
+  copy.searchProvenance = sanitizeSearchProvenanceForClient(copy.searchProvenance);
   // Stage R3.6 — provider/runtime diagnostics are internal-only; never in client JSON.
   stripInternalDiagnostics(copy);
 

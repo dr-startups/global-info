@@ -388,6 +388,13 @@ export interface ReportJson {
   selectedEvidence?: import("./report/selected-evidence-report-vm").SelectedEvidenceReportVm;
   /** Stage R4.2 — dedup/source-quality explainability summary. */
   sourceQualitySummary?: import("./report/source-quality-diagnostics").ReportSourceQualitySummary;
+  /** Stage R4.3 — query/surface/screenshot provenance summary + lineage. */
+  searchProvenanceSummary?: ReportSearchProvenanceSummary;
+  searchProvenance?: {
+    queryLineage: ReportQueryLineageRow[];
+    surfaceProvenance: ReportSearchSurfaceProvenanceRow[];
+    screenshotProvenance: ReportScreenshotProvenanceRow[];
+  };
   /** Stage R3.2b — provider/runtime diagnostics block (no external calls). */
   providerDiagnostics?: ReportProviderDiagnostics;
   /** Stage R3.3 — entity/FIO filtering diagnostics (safe additive). */
@@ -460,6 +467,105 @@ export interface ReportSourceProvenanceRow {
   excluded?: number;
   safeNote?: string;
   internalNote?: string;
+}
+
+export interface ReportQueryLineageRow {
+  queryId: string;
+  queryText: string;
+  normalizedQuery: string;
+  queryLanguage: string;
+  queryRegion: string;
+  queryPurpose:
+    | "subject_lookup"
+    | "adverse_lookup"
+    | "media_lookup"
+    | "suggestion_lookup"
+    | "related_lookup"
+    | "wikipedia_lookup"
+    | "compliance_lookup"
+    | "unknown";
+  providerId: string;
+  providerLabel: string;
+  providerRuntimeKind?: ProviderRuntimeKind;
+  issuedAtLabel: string;
+  resultCount: number;
+  selectedCount: number;
+  excludedCount: number;
+  duplicateCount: number;
+  fallbackUsed: boolean;
+  fallbackReason?: string;
+  sourceSurfaceIds: string[];
+  relatedScreenshotIds: string[];
+}
+
+export interface ReportSearchSurfaceProvenanceRow {
+  surfaceId: string;
+  surfaceType:
+    | "organic"
+    | "suggestion"
+    | "related"
+    | "image"
+    | "video"
+    | "wikipedia"
+    | "screenshot"
+    | "compliance"
+    | "manual"
+    | "unknown";
+  region: string;
+  language: string;
+  providerId: string;
+  providerLabel: string;
+  queryId?: string;
+  sourceFingerprint?: string;
+  duplicateGroupId?: string;
+  sourceQualityDecision?: string;
+  inclusionReason?: string;
+  clientSafeReason?: string;
+  screenshotId?: string;
+  evidencePageRefs?: string[];
+  reportPageRefs?: number[];
+}
+
+export interface ReportScreenshotProvenanceRow {
+  screenshotId: string;
+  screenshotKind: "real_serp" | "synthetic_serp" | "fallback_serp" | "media_thumbnail" | "none";
+  providerId: string;
+  queryId?: string;
+  region: string;
+  language: string;
+  sourceSurfaceIds: string[];
+  generatedFrom:
+    | "live_browser"
+    | "synthetic_renderer"
+    | "stored_result_data"
+    | "fallback_empty_state"
+    | "unknown";
+  fallbackReason?: string;
+  containsHighlightedEvidence: boolean;
+  highlightedSourceFingerprints?: string[];
+  clientSafeCaption: string;
+  internalCaption?: string;
+  artifactPathInternal?: string;
+  warningCodes?: string[];
+}
+
+export interface ReportSearchProvenanceSummary {
+  queryCount: number;
+  surfaceCount: number;
+  screenshotCount: number;
+  realScreenshotCount: number;
+  syntheticScreenshotCount: number;
+  fallbackScreenshotCount: number;
+  linkedEvidenceCount: number;
+  unlinkedEvidenceCount: number;
+  byProvider: Record<string, number>;
+  bySurfaceType: Record<string, number>;
+  byRegion: Record<string, number>;
+  warnings: string[];
+  searchSourcesReviewed?: number;
+  evidenceLinkedCount?: number;
+  screenshotSummaryLabel?: string;
+  safeNote?: string;
 }
 export type ProviderRuntimeMode =
   | "legacy_mock_first"

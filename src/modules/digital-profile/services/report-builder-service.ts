@@ -27,6 +27,8 @@ import {
   buildSearchSurfacesReportBlock,
 } from "../report/search-surfaces-report-builder";
 import { buildReportSourceQualitySummary } from "../report/source-quality-diagnostics";
+import { buildScreenshotProvenance } from "../report/screenshot-provenance";
+import { buildSearchProvenance } from "../report/search-provenance";
 import { buildCaseEvidenceQuality } from "../evidence-quality/case-service";
 import { capOverallRiskFromQuality } from "../evidence-quality/build-summary";
 import {
@@ -265,7 +267,7 @@ export async function buildReportJson(
         updatedAt: new Date().toISOString(),
       };
 
-  const [searchResults, screenshots, wikiChecks, dbProfiles, aiProfiles, findings] =
+  const [searchResults, screenshots, wikiChecks, dbProfiles, aiProfiles, findings, searchQueries] =
     await Promise.all([
       prisma.searchResult.findMany({
         where: {
@@ -351,6 +353,15 @@ export async function buildReportJson(
           evidenceRefs: true,
           riskTheme: true,
           demo: true,
+        },
+      }),
+      prisma.searchQuery.findMany({
+        where: { caseId },
+        select: {
+          id: true,
+          queryText: true,
+          engine: true,
+          source: true,
         },
       }),
     ]);
@@ -711,6 +722,28 @@ export async function buildReportJson(
   const providerDiagnostics = buildProviderDiagnostics({
     surfaceTotals: computeProviderSurfaceTotals(searchSurfaces, complianceSummary),
   });
+  const screenshotProvenance = buildScreenshotProvenance({
+    serpSnapshot: serpSnapshot as { id?: string; mode?: string; metadata?: Record<string, unknown> } | null,
+    screenshots: screenshots.map((s) => ({
+      id: s.id,
+      storageKey: s.storageKey,
+      sourceUrl: s.sourceUrl,
+    })),
+    reportLanguage,
+  });
+  const searchProvenance = buildSearchProvenance({
+    searchSurfaces,
+    searchQueries: searchQueries.map((q) => ({
+      id: q.id,
+      queryText: q.queryText,
+      engine: q.engine,
+      source: q.source,
+    })),
+    providerDiagnostics,
+    sourceProvenance: providerDiagnostics.sourceProvenance,
+    screenshotProvenance,
+    reportLanguage,
+  });
   // Stage R3.3 — entity/FIO filtering diagnostics.
   const entityFiltering = buildEntityFilteringDiagnostics({
     subject: {
@@ -755,6 +788,12 @@ export async function buildReportJson(
     evidenceQuality,
     selectedEvidence,
     sourceQualitySummary,
+    searchProvenanceSummary: searchProvenance.summary,
+    searchProvenance: {
+      queryLineage: searchProvenance.queryLineage,
+      surfaceProvenance: searchProvenance.surfaceProvenance,
+      screenshotProvenance,
+    },
     providerDiagnostics,
     entityFiltering,
     complianceRiskIntel,

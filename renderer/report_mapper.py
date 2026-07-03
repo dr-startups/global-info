@@ -1282,6 +1282,7 @@ def _serp_snapshot_vm(
     L: dict,
     audience: str = "internal",
     audit_search: dict | None = None,
+    search_provenance_summary: dict | None = None,
 ) -> dict:
     """Normalize the optional report_json.serpSnapshot into a safe view model.
 
@@ -1300,6 +1301,7 @@ def _serp_snapshot_vm(
             image_bytes = None
     meta = ss.get("metadata") or {}
     audit_search = audit_search or {}
+    search_provenance_summary = search_provenance_summary or {}
     # Stage N1.2 — map sourceMode to a localized provenance sentence.
     source_mode = str(meta.get("sourceMode") or "MOCK_ONLY").upper()
     has_real = bool(meta.get("hasRealResults"))
@@ -1323,6 +1325,13 @@ def _serp_snapshot_vm(
             source_note = L["serp_snapshot_source_client_real"]
         else:
             source_note = L["serp_snapshot_source_client_available"]
+    safe_note = str(search_provenance_summary.get("safeNote") or "").strip()
+    screenshot_label = str(search_provenance_summary.get("screenshotSummaryLabel") or "").strip()
+    caption = L["serp_snapshot_caption"]
+    if safe_note:
+        caption = f"{caption} {safe_note}"
+    elif screenshot_label:
+        caption = f"{caption} {screenshot_label}"
     return {
         "exists": bool(image_bytes),
         "image_bytes": image_bytes,
@@ -1337,7 +1346,7 @@ def _serp_snapshot_vm(
         "height": int(meta.get("height", 0) or 0),
         "title": L["serp_snapshot_page_title"],
         "subtitle": L["serp_snapshot_page_subtitle"],
-        "caption": L["serp_snapshot_caption"],
+        "caption": caption,
         "source_mode": source_mode,
         "source_note": source_note,
     }
@@ -1755,7 +1764,9 @@ def _r34_appendix_vm(vm: dict, L: dict, internal: bool) -> dict:
     }
 
 
-def _provider_diagnostics_vm(block: dict, L: dict, internal: bool) -> dict:
+def _provider_diagnostics_vm(
+    block: dict, L: dict, internal: bool, search_provenance_summary: dict | None = None
+) -> dict:
     src = block or {}
     summary = src.get("summary") or {}
     runtime = src.get("runtimeStrategy") or {}
@@ -1795,6 +1806,7 @@ def _provider_diagnostics_vm(block: dict, L: dict, internal: bool) -> dict:
         f"Selected order: {', '.join([str(x) for x in list(runtime.get('selectedOrder') or [])]) or '—'}",
     ]
     runtime_notes.extend([str(x) for x in list(runtime.get("warnings") or []) if str(x)])
+    search_provenance_summary = search_provenance_summary or {}
     fallback_events = list(runtime.get("fallbackEvents") or [])
     if fallback_events:
         runtime_notes.append(f"Fallback events: {len(fallback_events)}")
@@ -1823,6 +1835,13 @@ def _provider_diagnostics_vm(block: dict, L: dict, internal: bool) -> dict:
                 prov_bits.append(f"{label}: {decision}")
         if prov_bits:
             runtime_notes.append("Source provenance — " + "; ".join(prov_bits))
+    if search_provenance_summary:
+        runtime_notes.append(
+            "Search provenance — "
+            + f"queries={int(search_provenance_summary.get('queryCount', 0) or 0)}, "
+            + f"surfaces={int(search_provenance_summary.get('surfaceCount', 0) or 0)}, "
+            + f"screenshots={int(search_provenance_summary.get('screenshotCount', 0) or 0)}"
+        )
     return {
         "title": L.get("r32_provider_diag_title", "Provider diagnostics"),
         "subtitle": L.get(
@@ -1861,7 +1880,13 @@ def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[
     vm["audience"] = "client" if not internal else "internal"
     vm["offerBlock"] = _offer_block(report_json.get("offer") or {}, vm["labels"])
     audit_search = (report_json.get("auditSummary") or {}).get("searchSummary") or {}
-    serp = _serp_snapshot_vm(report_json.get("serpSnapshot"), vm["labels"], audience, audit_search)
+    serp = _serp_snapshot_vm(
+        report_json.get("serpSnapshot"),
+        vm["labels"],
+        audience,
+        audit_search,
+        report_json.get("searchProvenanceSummary") or {},
+    )
     vm["serp_snapshot"] = serp
     if not serp["exists"]:
         # Stage S1.5 renderWarning: the ORION-style page uses fallback text.
@@ -1921,6 +1946,7 @@ def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[
         report_json.get("providerDiagnostics") or {},
         vm["labels"],
         internal,
+        report_json.get("searchProvenanceSummary") or {},
     )
     vm["entityFiltering"] = report_json.get("entityFiltering") or {}
     vm["appendixConclusion"] = {

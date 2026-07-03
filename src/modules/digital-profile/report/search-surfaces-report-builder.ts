@@ -71,6 +71,12 @@ export interface SurfaceReportItem {
   confidenceLabel?: string;
   clientSafeReason?: string;
   internalReason?: string;
+  /** Stage R4.3 — query/screenshot provenance linkage. */
+  queryId?: string;
+  queryPurpose?: string;
+  providerLabel?: string;
+  screenshotId?: string | null;
+  surfaceId?: string;
 }
 
 export interface AutocompleteSuggestionGroup {
@@ -217,6 +223,38 @@ function mapGatedToReportItem(
     (eq?.sourceQuality as Record<string, unknown> | undefined)) as
     | Record<string, unknown>
     | undefined;
+  const providerKey = (typeof sq?.providerKey === "string" ? sq.providerKey : "unknown").toLowerCase();
+  const providerLabel =
+    providerKey === "google"
+      ? "Google"
+      : providerKey === "yandex"
+        ? "Yandex"
+        : providerKey === "serper"
+          ? "Serper"
+          : providerKey === "wikipedia"
+            ? "Wikipedia"
+            : providerKey;
+  const qText = String(r.query ?? "").trim();
+  const qNorm = qText.toLowerCase().replace(/\s+/g, " ");
+  const queryId = qNorm
+    ? `q-${providerKey}-${String(r.region ?? "UNKNOWN").toUpperCase()}-${qNorm
+        .slice(0, 32)
+        .replace(/[^a-z0-9]+/g, "-")}`
+    : undefined;
+  const queryPurpose =
+    r.surfaceType === "IMAGE_RESULT"
+      ? "media_lookup"
+      : r.surfaceType === "VIDEO_RESULT"
+        ? "media_lookup"
+        : r.surfaceType === "SEARCH_SUGGESTION"
+          ? "suggestion_lookup"
+          : r.surfaceType === "RELATED_QUERY"
+            ? "related_lookup"
+            : "subject_lookup";
+  const surfaceId =
+    typeof r.id === "string" && r.id
+      ? r.id
+      : `surface-${String(r.surfaceType ?? "unknown").toLowerCase()}-${idx + 1}`;
   return {
     title: r.title ?? r.query ?? "",
     snippet: r.snippet ?? null,
@@ -251,6 +289,11 @@ function mapGatedToReportItem(
     confidenceLabel: typeof sq?.confidenceLabel === "string" ? sq.confidenceLabel : undefined,
     clientSafeReason: typeof sq?.clientSafeReason === "string" ? sq.clientSafeReason : undefined,
     internalReason: typeof sq?.internalReason === "string" ? sq.internalReason : undefined,
+    queryId,
+    queryPurpose,
+    providerLabel,
+    screenshotId: null,
+    surfaceId,
   };
 }
 
