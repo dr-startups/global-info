@@ -367,6 +367,16 @@ export const en: Dictionary = {
     dismiss: "Dismiss",
     importSuccess: "Compliance hit imported.",
     screenSuccess: "Screening completed ({count} hits).",
+    uploadLexisNexis: "Upload LexisNexis Report",
+    lexisUploaded: "Uploaded",
+    lexisConverting: "Converting",
+    lexisParsing: "Analyzing",
+    lexisReady: "Ready for report inclusion",
+    lexisReviewRequired: "Manual review required",
+    lexisError: "Processing error",
+    lexisCompactSummary:
+      "Pages: {pages}, signals: {signals}, review required: {review}, parser: {parser}, conversion: {conversion}.",
+    lexisLastImportTitle: "Latest LexisNexis import",
   },
   evidenceQuality: {
     collected: "Collected",

@@ -75,6 +75,8 @@ import { countUnlinkedActiveRiskFindings } from "../serp-snapshot/data-loader";
 import type { ActorContext } from "./case-service";
 import type {
   EvidenceRef,
+  ImportedEvidenceDocument,
+  LexisNexisHybridReportBlock,
   ReportJson,
   ReportPageData,
   ReportRiskSummary,
@@ -260,6 +262,81 @@ function computeProviderSurfaceTotals(
     totals.complianceDuplicates = 0;
   }
   return totals;
+}
+
+function isLexisHybridMasterRow(row: { rawMetadataSafe: Prisma.JsonValue | null }): boolean {
+  const safe = (row.rawMetadataSafe ?? {}) as Record<string, unknown>;
+  const hybrid = (safe.lexisNexisHybrid ?? {}) as Record<string, unknown>;
+  return String(hybrid.kind ?? "") === "lexisnexis_report";
+}
+
+function isLexisSignalRow(row: { rawMetadataSafe: Prisma.JsonValue | null }): boolean {
+  const safe = (row.rawMetadataSafe ?? {}) as Record<string, unknown>;
+  return safe.lexisNexisSignal === true;
+}
+
+function buildLexisNexisHybridBlock(
+  dbProfiles: Array<{
+    rawMetadataSafe: Prisma.JsonValue | null;
+  }>
+): LexisNexisHybridReportBlock | undefined {
+  const masters = dbProfiles
+    .filter((row) => isLexisHybridMasterRow(row))
+    .map((row) => {
+      const safe = (row.rawMetadataSafe ?? {}) as Record<string, unknown>;
+      return (safe.lexisNexisHybrid ?? null) as ImportedEvidenceDocument | null;
+    })
+    .filter((doc): doc is ImportedEvidenceDocument => Boolean(doc));
+  if (masters.length === 0) return undefined;
+  const signals = dbProfiles
+    .filter((row) => isLexisSignalRow(row))
+    .map((row) => {
+      const safe = (row.rawMetadataSafe ?? {}) as Record<string, unknown>;
+      const payload = (safe.signal ?? (safe.lexisNexisSignal as unknown)) as Record<string, unknown>;
+      return payload;
+    })
+    .filter((x) => Boolean(x));
+  const totalSignals = masters.reduce(
+    (acc, doc) => acc + Number(doc.parsedAnalytics?.signalCounts?.totalSignals ?? 0),
+    0
+  );
+  const reviewRequired = masters.reduce(
+    (acc, doc) => acc + Number(doc.parsedAnalytics?.signalCounts?.reviewRequired ?? 0),
+    0
+  );
+  const parserStatus =
+    masters.some((doc) => doc.parsedAnalytics.parserStatus === "failed")
+      ? "failed"
+      : masters.some(
+            (doc) =>
+              doc.parsedAnalytics.parserStatus === "warning" ||
+              doc.parsedAnalytics.parserStatus === "partial"
+          )
+        ? "warning"
+        : "parsed";
+  const conversionStatus =
+    masters.some((doc) => doc.status === "failed")
+      ? "failed"
+      : masters.some((doc) => doc.status === "conversion_warning")
+        ? "warning"
+        : "ready";
+  const executiveSummaryClient =
+    masters[0]?.parsedAnalytics?.executiveSummaryClient ??
+    "Импортированный отчёт LexisNexis добавлен в приложение. Автоматический разбор выполнен частично; материалы требуют ручной проверки.";
+  return {
+    sourceLabel: "LexisNexis",
+    legalSafeDisclaimer:
+      "Материалы LexisNexis являются сигналами из импортированного отчёта, требуют аналитической проверки и не являются юридическим заключением.",
+    documents: masters,
+    parsedSignalSummary: {
+      totalDocuments: masters.length,
+      totalSignals,
+      reviewRequired,
+      parserStatus,
+      conversionStatus,
+      executiveSummaryClient,
+    },
+  };
 }
 
 function iso(d: Date | null | undefined): string | null {
@@ -485,7 +562,7 @@ export async function buildReportJson(
       )
     );
   }
-  const productionDbProfiles = complianceFiltered.rows;
+  const productionDbProfiles = complianceFiltered.rows.filter((row) => !isLexisHybridMasterRow(row));
 
   const unlinkedFindings = await countUnlinkedActiveRiskFindings(caseId);
   if (unlinkedFindings > 0) {
@@ -868,11 +945,13 @@ export async function buildReportJson(
     evidenceQuality,
   });
   // Stage R3.5 — normalized compliance/risk intelligence (display-level only).
+  const lexisNexisHybrid = buildLexisNexisHybridBlock(dbProfiles);
   const complianceRiskIntel = buildComplianceRiskIntel({
     complianceSummary,
     riskSummary,
     evidenceQuality,
     reportLanguage,
+    lexisNexisHybrid,
   });
 
   return {
@@ -913,6 +992,7 @@ export async function buildReportJson(
     liveProviderSmoke,
     entityFiltering,
     complianceRiskIntel,
+    lexisNexisHybrid,
   };
 }
 

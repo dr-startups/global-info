@@ -44,6 +44,7 @@ type Envelope<T> =
   | { ok: false; error: { code: ApiErrorCode; message: string; details?: unknown } };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const isFormData = typeof FormData !== "undefined" && init?.body instanceof FormData;
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, {
@@ -51,7 +52,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       headers: {
         Accept: "application/json",
         ...ACTOR_HEADERS,
-        ...(init?.body ? { "content-type": "application/json" } : {}),
+        ...(init?.body && !isFormData ? { "content-type": "application/json" } : {}),
         ...(init?.headers ?? {}),
       },
       cache: "no-store",
@@ -316,6 +317,30 @@ export interface DatabaseProfile {
   reviewedBy?: string | null;
   reviewedAt?: string | null;
   riskFindingId?: string | null;
+  rawMetadataSafe?: unknown;
+}
+
+export interface LexisNexisHybridImportResult {
+  document: {
+    id: string;
+    status:
+      | "uploaded"
+      | "converting"
+      | "parsing"
+      | "ready"
+      | "conversion_warning"
+      | "parse_warning"
+      | "failed";
+    pageCount: number;
+    parsedAnalytics: {
+      parserStatus: "parsed" | "partial" | "warning" | "failed";
+      signalCounts: { totalSignals: number; reviewRequired: number };
+    };
+  };
+  parsedSignalsCreated: number;
+  reviewRequiredCount: number;
+  parserStatus: "parsed" | "partial" | "warning" | "failed";
+  conversionStatus: "ready" | "warning" | "failed";
 }
 
 export type ComplianceRiskType =
@@ -889,6 +914,18 @@ export function importManualComplianceHit(
   return request<DatabaseProfile>(`/cases/${caseId}/compliance/manual-import`, {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+export async function importLexisNexisDocx(
+  caseId: string,
+  file: File
+): Promise<LexisNexisHybridImportResult> {
+  const body = new FormData();
+  body.append("file", file);
+  return request<LexisNexisHybridImportResult>(`/cases/${caseId}/compliance/lexisnexis-import`, {
+    method: "POST",
+    body,
   });
 }
 

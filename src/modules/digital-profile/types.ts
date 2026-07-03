@@ -407,6 +407,128 @@ export interface ReportJson {
   entityFiltering?: ReportEntityFilteringDiagnostics;
   /** Stage R3.5 — normalized compliance/risk intelligence (display-level, client-safe). */
   complianceRiskIntel?: import("./report/compliance-risk-intel").ComplianceRiskIntel;
+  /** Stage R7.4 — LexisNexis hybrid import (visual pages + parsed analytics). */
+  lexisNexisHybrid?: LexisNexisHybridReportBlock;
+}
+
+export type ImportedEvidenceDocumentStatus =
+  | "uploaded"
+  | "converting"
+  | "parsing"
+  | "ready"
+  | "conversion_warning"
+  | "parse_warning"
+  | "failed";
+
+export interface RenderedDocumentPage {
+  pageNumber: number;
+  storageKey?: string;
+  imageBase64?: string;
+  width: number;
+  height: number;
+  renderStatus: "ready" | "warning" | "failed";
+  renderWarning?: string;
+}
+
+export interface LexisNexisSignal {
+  id: string;
+  sourceLabel: "LexisNexis";
+  matchName: string;
+  normalizedName: string;
+  category:
+    | "sanctions_watchlist"
+    | "pep_political_exposure"
+    | "adverse_media"
+    | "legal_regulatory"
+    | "corporate_ownership"
+    | "identity_match"
+    | "unknown";
+  categoryLabelRu: string;
+  categoryLabelEn: string;
+  riskLevel: "low" | "medium" | "high" | "unknown";
+  reviewStatus: "review_required" | "potential_match" | "excluded";
+  confidenceLabel: "high" | "medium" | "low" | "unknown";
+  clientSafeFinding: string;
+  clientSafeReason: string;
+  internalReason?: string;
+  snippetShort?: string;
+  sourceDate?: string;
+  sourceDomain?: string;
+  pageRef?: number;
+  evidenceDocumentId: string;
+  requiresReview: boolean;
+  isConfirmed: boolean;
+  isExcludedNoise: boolean;
+}
+
+export interface LexisNexisParsedAnalytics {
+  parserVersion: string;
+  parserStatus: "parsed" | "partial" | "warning" | "failed";
+  subjectNameDetected?: string;
+  reportDateDetected?: string;
+  executiveSummaryClient: string;
+  executiveSummaryInternal?: string;
+  overallReviewStatus:
+    | "no_relevant_findings"
+    | "review_required"
+    | "confirmed_materials_present"
+    | "parse_uncertain";
+  riskLevelSuggestion: "low" | "medium" | "high" | "unknown";
+  confidenceLabel: "high" | "medium" | "low" | "unknown";
+  signalCounts: {
+    totalSignals: number;
+    reviewRequired: number;
+    potentialMatches: number;
+    adverseMedia: number;
+    sanctionsOrWatchlist: number;
+    legalOrRegulatory: number;
+    pepOrPoliticalExposure: number;
+    corporateOrOwnership: number;
+    unknown: number;
+  };
+  signals: LexisNexisSignal[];
+  parserWarnings?: string[];
+  provenance?: {
+    extractedTextLength?: number;
+    parserRuntimeMs?: number;
+    source: "lexisnexis_docx_import";
+  };
+}
+
+export interface ImportedEvidenceDocument {
+  id: string;
+  caseId: string;
+  kind: "lexisnexis_report";
+  sourceLabel: "LexisNexis";
+  fileName: string;
+  storageKey: string;
+  importedAt: string;
+  importedBy?: string | null;
+  status: ImportedEvidenceDocumentStatus;
+  pageCount: number;
+  renderedPages: RenderedDocumentPage[];
+  parsedAnalytics: LexisNexisParsedAnalytics;
+  clientVisible: boolean;
+  internalNotes?: string[];
+  provenance?: {
+    importMethod: "manual_upload";
+    parserVersion: string;
+    conversionAvailable: boolean;
+  };
+}
+
+export interface LexisNexisHybridReportBlock {
+  sourceLabel: "LexisNexis";
+  legalSafeDisclaimer: string;
+  documents: ImportedEvidenceDocument[];
+  parsedSignalSummary: {
+    totalDocuments: number;
+    totalSignals: number;
+    reviewRequired: number;
+    parserStatus: "parsed" | "partial" | "warning" | "failed";
+    conversionStatus: "ready" | "warning" | "failed";
+    executiveSummaryClient: string;
+  };
 }
 
 export type ProviderDiagnosticCategory =

@@ -321,6 +321,34 @@ async function attachSelectedImageThumbnailBytes(
   return { json: next as ReportJson, warnings };
 }
 
+async function attachLexisNexisPageImages(
+  reportJson: ReportJson
+): Promise<{ json: ReportJson; warnings: string[] }> {
+  const warnings: string[] = [];
+  const next = JSON.parse(JSON.stringify(reportJson)) as ReportJson & {
+    lexisNexisHybrid?: {
+      documents?: Array<{
+        renderedPages?: Array<Record<string, unknown>>;
+      }>;
+    };
+  };
+  const docs = next.lexisNexisHybrid?.documents ?? [];
+  for (const doc of docs) {
+    const pages = doc.renderedPages ?? [];
+    for (const page of pages) {
+      const key = String(page.storageKey ?? "");
+      if (!key) continue;
+      try {
+        const bytes = await loadFile(key);
+        page.imageBase64 = bytes.toString("base64");
+      } catch {
+        warnings.push(`LexisNexis rendered page unavailable: ${key}`);
+      }
+    }
+  }
+  return { json: next, warnings };
+}
+
 /**
  * O5.4.1 — defensive check: when selectedEvidence exists, renderer payload must
  * use patched audit regions (not raw collected topImages/topVideos).
@@ -458,13 +486,16 @@ export async function renderReportVersion(
     reportVersion.reportJson as unknown as ReportJson,
     reportLanguage
   );
+  const { json: withLexisPages, warnings: lexisWarnings } = await attachLexisNexisPageImages(
+    localizedReportJson
+  );
   const audienceReportJson =
     audience === "client"
       ? (sanitizeReportJsonForAudience(
-          localizedReportJson as unknown as Record<string, unknown>,
+          withLexisPages as unknown as Record<string, unknown>,
           "client"
         ) as unknown as ReportJson)
-      : localizedReportJson;
+      : withLexisPages;
 
   // Re-patch client audience selection onto audit regions after sanitization.
   if (
@@ -506,7 +537,11 @@ export async function renderReportVersion(
   // lightweight). If the image is unreadable the renderer falls back + warns.
   const { json: withThumbnails, warnings: thumbnailWarnings } =
     await attachSelectedImageThumbnailBytes(audienceReportJson, caseId);
-  const renderPayloadWarnings: string[] = [...productionPolicyWarnings, ...thumbnailWarnings];
+  const renderPayloadWarnings: string[] = [
+    ...productionPolicyWarnings,
+    ...thumbnailWarnings,
+    ...lexisWarnings,
+  ];
   assertRenderPayloadUsesSelectedEvidence(withThumbnails, renderPayloadWarnings);
   const renderReportJson = await attachSerpSnapshotImage(withThumbnails);
 

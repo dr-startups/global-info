@@ -2042,6 +2042,92 @@ def _provider_diagnostics_vm(
     }
 
 
+def _lexis_hybrid_vm(block: dict | None, L: dict, internal: bool) -> dict:
+    src = block or {}
+    docs: list[dict] = []
+    for d in list(src.get("documents") or []):
+        if not isinstance(d, dict):
+            continue
+        parsed = d.get("parsedAnalytics") or {}
+        pages: list[dict] = []
+        for p in list(d.get("renderedPages") or []):
+            if not isinstance(p, dict):
+                continue
+            image_bytes = None
+            raw_b64 = p.get("imageBase64")
+            if raw_b64:
+                try:
+                    image_bytes = base64.b64decode(str(raw_b64))
+                except Exception:  # noqa: BLE001
+                    image_bytes = None
+            pages.append(
+                {
+                    "pageNumber": int(p.get("pageNumber") or 0),
+                    "width": int(p.get("width") or 0),
+                    "height": int(p.get("height") or 0),
+                    "renderStatus": str(p.get("renderStatus") or "ready"),
+                    "imageBytes": image_bytes,
+                }
+            )
+        signals = []
+        for s in list(parsed.get("signals") or []):
+            if not isinstance(s, dict):
+                continue
+            signals.append(
+                {
+                    "categoryLabelRu": str(s.get("categoryLabelRu") or ""),
+                    "categoryLabelEn": str(s.get("categoryLabelEn") or ""),
+                    "clientSafeFinding": str(s.get("clientSafeFinding") or ""),
+                    "clientSafeReason": str(s.get("clientSafeReason") or ""),
+                    "reviewStatus": str(s.get("reviewStatus") or "review_required"),
+                    "confidenceLabel": str(s.get("confidenceLabel") or "unknown"),
+                    "pageRef": int(s.get("pageRef") or 0) if s.get("pageRef") else None,
+                }
+            )
+        docs.append(
+            {
+                "id": str(d.get("id") or ""),
+                "fileName": str(d.get("fileName") or "LexisNexis import"),
+                "status": str(d.get("status") or "unknown"),
+                "pageCount": int(d.get("pageCount") or len(pages)),
+                "pages": pages,
+                "parsedAnalytics": {
+                    "executiveSummaryClient": str(parsed.get("executiveSummaryClient") or ""),
+                    "executiveSummaryInternal": str(parsed.get("executiveSummaryInternal") or ""),
+                    "parserStatus": str(parsed.get("parserStatus") or "unknown"),
+                    "signalCounts": parsed.get("signalCounts") or {},
+                    "signals": signals,
+                },
+            }
+        )
+    summary = src.get("parsedSignalSummary") or {}
+    return {
+        "present": len(docs) > 0,
+        "sourceLabel": str(src.get("sourceLabel") or "LexisNexis"),
+        "legalSafeDisclaimer": str(
+            src.get("legalSafeDisclaimer")
+            or "Материалы требуют аналитической проверки и не являются юридическим заключением."
+        ),
+        "summary": {
+            "totalDocuments": int(summary.get("totalDocuments") or len(docs)),
+            "totalSignals": int(summary.get("totalSignals") or 0),
+            "reviewRequired": int(summary.get("reviewRequired") or 0),
+            "parserStatus": str(summary.get("parserStatus") or "unknown"),
+            "conversionStatus": str(summary.get("conversionStatus") or "unknown"),
+            "executiveSummaryClient": str(summary.get("executiveSummaryClient") or ""),
+        },
+        "documents": docs,
+        "internal": internal,
+        "labels": {
+            "introTitle": L.get("r74_intro_title", "Импортированный отчёт LexisNexis"),
+            "introBody": L.get("r74_intro_body", "Оригинальный документ включён в приложение в визуальном виде."),
+            "analyticsTitle": L.get("r74_analytics_title", "Аналитика импортированного отчёта"),
+            "signalsTitle": L.get("r74_signals_title", "Сигналы из импортированного отчёта"),
+            "visualTitle": L.get("r74_visual_title", "Страница импортированного документа"),
+        },
+    }
+
+
 def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[dict, list[str]]:
     vm, warnings = build_view_model_v2(report_json)
     internal = str(audience).lower() != "client"
@@ -2118,6 +2204,7 @@ def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[
         report_json.get("searchProvenanceSummary") or {},
     )
     vm["entityFiltering"] = report_json.get("entityFiltering") or {}
+    vm["lexisHybrid"] = _lexis_hybrid_vm(report_json.get("lexisNexisHybrid"), vm["labels"], internal)
     vm["appendixConclusion"] = {
         "title": vm["labels"].get("r31_appendix_conclusion_title", "Appendix conclusion"),
         "lines": [

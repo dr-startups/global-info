@@ -23,6 +23,7 @@ export {
   getComplianceProvider,
   runComplianceScreening,
   importManualComplianceHit,
+  importLexisNexisHybridReport,
   reviewComplianceHit,
   syncComplianceRiskFinding,
   buildComplianceSummaryBlock,

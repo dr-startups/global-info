@@ -367,6 +367,16 @@ export const ru: Dictionary = {
     dismiss: "Снять",
     importSuccess: "Compliance-hit импортирован.",
     screenSuccess: "Скрининг завершён ({count} hits).",
+    uploadLexisNexis: "Загрузить отчёт LexisNexis",
+    lexisUploaded: "Загружен",
+    lexisConverting: "Конвертируется",
+    lexisParsing: "Анализируется",
+    lexisReady: "Готов к включению в отчёт",
+    lexisReviewRequired: "Требуется ручная проверка",
+    lexisError: "Ошибка обработки",
+    lexisCompactSummary:
+      "Страниц: {pages}, сигналов: {signals}, на проверке: {review}, parser: {parser}, conversion: {conversion}.",
+    lexisLastImportTitle: "Последний импорт LexisNexis",
   },
   evidenceQuality: {
     collected: "Собрано",

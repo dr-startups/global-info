@@ -2221,6 +2221,117 @@ def _solution(vm, idx: int) -> dict:
 
 
 # ===========================================================================
+# R7.4 — LexisNexis hybrid appendix (visual + parsed analytics)
+# ===========================================================================
+
+def _p_r74_lexis_intro(prs, vm, ctx):
+    lx = vm.get("lexisHybrid") or {}
+    if not lx.get("present"):
+        return
+    L = vm["labels"]
+    labels = lx.get("labels") or {}
+    slide, top = _section(prs, ctx, labels.get("introTitle", L.get("r74_intro_title", "Импортированный отчёт LexisNexis")))
+    summary = lx.get("summary") or {}
+    top = T.metric_cards(
+        slide,
+        top,
+        [
+            {"label": L.get("r74_docs", "Документы"), "value": int(summary.get("totalDocuments") or 0)},
+            {"label": L.get("r74_signals", "Сигналы"), "value": int(summary.get("totalSignals") or 0)},
+            {"label": L.get("r74_review_required", "Требуют проверки"), "value": int(summary.get("reviewRequired") or 0), "tone": T.WARNING},
+            {"label": L.get("r74_parser_status", "Статус парсера"), "value": str(summary.get("parserStatus") or "unknown")},
+        ],
+        per_row=4,
+    )
+    top = T.card(
+        slide,
+        T.MARGIN,
+        top,
+        T.CONTENT_W,
+        Emu(1550000),
+        labels.get("introTitle", L.get("r74_intro_title", "Импортированный отчёт LexisNexis")),
+        [
+            labels.get("introBody", L.get("r74_intro_body", "Оригинальный документ включён в приложение в визуальном виде.")),
+            str(summary.get("executiveSummaryClient") or ""),
+        ],
+        tone=T.ACCENT,
+    )
+    T.note(slide, top, lx.get("legalSafeDisclaimer") or L.get("r74_legal_disclaimer", ""), "disclaimer")
+
+
+def _p_r74_lexis_analytics(prs, vm, ctx):
+    lx = vm.get("lexisHybrid") or {}
+    if not lx.get("present"):
+        return
+    labels = lx.get("labels") or {}
+    slide, top = _section(prs, ctx, labels.get("analyticsTitle", "Аналитика импортированного отчёта"))
+    docs = list(lx.get("documents") or [])
+    if not docs:
+        T.no_data_card(slide, top, "Данные отсутствуют.")
+        return
+    doc = docs[0]
+    pa = doc.get("parsedAnalytics") or {}
+    counts = pa.get("signalCounts") or {}
+    top = T.metric_cards(
+        slide,
+        top,
+        [
+            {"label": "Parser", "value": str(pa.get("parserStatus") or "unknown")},
+            {"label": "Signals", "value": int(counts.get("totalSignals") or 0)},
+            {"label": "Review required", "value": int(counts.get("reviewRequired") or 0), "tone": T.WARNING},
+            {"label": "Pages", "value": int(doc.get("pageCount") or 0)},
+        ],
+        per_row=4,
+    )
+    rows = []
+    for s in list(pa.get("signals") or [])[:10]:
+        rows.append(
+            [
+                T.r2_truncate_cell_text(s.get("categoryLabelRu") or s.get("categoryLabelEn") or "—", 26),
+                T.r2_truncate_cell_text(s.get("clientSafeFinding") or "—", 40),
+                T.r2_truncate_cell_text(s.get("reviewStatus") or "review_required", 18),
+                T.r2_truncate_cell_text(s.get("confidenceLabel") or "unknown", 12),
+                f"p.{s.get('pageRef')}" if s.get("pageRef") else "—",
+            ]
+        )
+    if rows:
+        top = T.table(
+            slide,
+            top,
+            ["Категория", "Сигнал", "Статус", "Уверенность", "Стр."],
+            rows,
+            col_widths=[0.20, 0.40, 0.16, 0.12, 0.12],
+            max_rows=10,
+            layout_warnings=ctx.layout_warnings,
+        )
+    else:
+        top = T.no_data_card(slide, top, "Сигналы не выделены.")
+    if pa.get("executiveSummaryClient"):
+        T.note(slide, top, str(pa.get("executiveSummaryClient")), "info")
+
+
+def _p_r74_lexis_visual_page(prs, vm, ctx, doc: dict, page: dict):
+    labels = (vm.get("lexisHybrid") or {}).get("labels") or {}
+    title = labels.get("visualTitle", "Страница импортированного документа")
+    slide, top = _section(prs, ctx, title, f"{doc.get('fileName', 'LexisNexis')} · page {page.get('pageNumber', 0)}")
+    raw = page.get("imageBytes")
+    if raw:
+        box_h = Emu(int(T.CONTENT_SAFE_BOTTOM) - int(top) - 250000)
+        try:
+            T._fit_picture_contain(slide, io.BytesIO(raw), int(T.MARGIN), int(top), int(T.CONTENT_W), int(box_h))
+        except Exception:  # noqa: BLE001
+            T.no_data_card(slide, top, "Не удалось визуализировать страницу.")
+    else:
+        T.no_data_card(slide, top, "Визуальная страница недоступна.")
+    T.note(
+        slide,
+        Emu(int(T.CONTENT_SAFE_BOTTOM) - 220000),
+        f"LexisNexis · page {page.get('pageNumber', 0)}",
+        "disclaimer",
+    )
+
+
+# ===========================================================================
 # orchestration
 # ===========================================================================
 
@@ -2359,6 +2470,15 @@ def build_report_v3(
         _p_r34_conclusion,
     ]
     diagnostics_pages = [_p_r32_provider_diagnostics] if ctx.internal else []
+    lexis_pages: list[Callable] = []
+    lx = vm.get("lexisHybrid") or {}
+    if lx.get("present"):
+        lexis_pages.extend([_p_r74_lexis_intro, _p_r74_lexis_analytics])
+        for doc in list(lx.get("documents") or []):
+            for page in list(doc.get("pages") or []):
+                lexis_pages.append(
+                    lambda prs_, vm_, ctx_, d=doc, p=page: _p_r74_lexis_visual_page(prs_, vm_, ctx_, d, p)
+                )
 
     builders: list[Callable] = [
         _p_cover, _p_contents, _p_executive, _p_risk_matrix, _p_overview,
@@ -2369,6 +2489,7 @@ def build_report_v3(
         _p_compliance_top_matches,
         _p_compliance_review_quality,
         _p_compliance_findings,
+        *lexis_pages,
         *offer_pages,
         *r31_pages,
         *r34_pages,

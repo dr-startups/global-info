@@ -280,6 +280,16 @@ const CLIENT_FORBIDDEN_JSON_KEYS = new Set([
   "limitingFactors",
   "sourceRank",
   "sourceScoreBucket",
+  // R7.4 LexisNexis hybrid import internal fields.
+  "rawExtractedText",
+  "parserWarnings",
+  "conversionLogs",
+  "internalNotes",
+  "renderWarning",
+  "originalFilePath",
+  "filePath",
+  "storageKey",
+  "localPath",
 ]);
 
 export type ReportJsonAudience = "internal" | "client";
@@ -403,6 +413,9 @@ export const CLIENT_FORBIDDEN_TEXT_MARKERS: string[] = [
   "limitingFactors",
   "sourceRank",
   "sourceScoreBucket",
+  "parserWarnings",
+  "rawExtractedText",
+  "conversionLogs",
   "topExclusionReasons",
   "process.env",
   ".env",
@@ -666,6 +679,77 @@ function sanitizeComplianceRiskIntelForClient(
   };
 }
 
+function sanitizeLexisNexisHybridForClient(
+  block: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!block) return block;
+  const docs = Array.isArray(block.documents) ? block.documents : [];
+  return {
+    sourceLabel: block.sourceLabel,
+    legalSafeDisclaimer: block.legalSafeDisclaimer,
+    parsedSignalSummary: block.parsedSignalSummary,
+    documents: docs.map((raw) => {
+      const doc = raw as Record<string, unknown>;
+      const analytics = (doc.parsedAnalytics ?? {}) as Record<string, unknown>;
+      const signals = Array.isArray(analytics.signals) ? analytics.signals : [];
+      return {
+        id: doc.id,
+        kind: doc.kind,
+        sourceLabel: doc.sourceLabel,
+        fileName: doc.fileName,
+        importedAt: doc.importedAt,
+        status: doc.status,
+        pageCount: doc.pageCount,
+        renderedPages: (Array.isArray(doc.renderedPages) ? doc.renderedPages : []).map((page) => {
+          const p = page as Record<string, unknown>;
+          return {
+            pageNumber: p.pageNumber,
+            width: p.width,
+            height: p.height,
+            renderStatus: p.renderStatus,
+            imageBase64: p.imageBase64,
+          };
+        }),
+        parsedAnalytics: {
+          parserVersion: analytics.parserVersion,
+          parserStatus: analytics.parserStatus,
+          subjectNameDetected: analytics.subjectNameDetected,
+          reportDateDetected: analytics.reportDateDetected,
+          executiveSummaryClient: analytics.executiveSummaryClient,
+          overallReviewStatus: analytics.overallReviewStatus,
+          riskLevelSuggestion: analytics.riskLevelSuggestion,
+          confidenceLabel: analytics.confidenceLabel,
+          signalCounts: analytics.signalCounts,
+          signals: signals.map((s) => {
+            const row = s as Record<string, unknown>;
+            return {
+              id: row.id,
+              sourceLabel: row.sourceLabel,
+              matchName: row.matchName,
+              normalizedName: row.normalizedName,
+              category: row.category,
+              categoryLabelRu: row.categoryLabelRu,
+              categoryLabelEn: row.categoryLabelEn,
+              riskLevel: row.riskLevel,
+              reviewStatus: row.reviewStatus,
+              confidenceLabel: row.confidenceLabel,
+              clientSafeFinding: row.clientSafeFinding,
+              clientSafeReason: row.clientSafeReason,
+              snippetShort: row.snippetShort,
+              sourceDate: row.sourceDate,
+              sourceDomain: row.sourceDomain,
+              pageRef: row.pageRef,
+              requiresReview: row.requiresReview,
+              isConfirmed: row.isConfirmed,
+              isExcludedNoise: row.isExcludedNoise,
+            };
+          }),
+        },
+      };
+    }),
+  };
+}
+
 function sanitizeEntityFilteringForClient(
   block: Record<string, unknown> | undefined
 ): Record<string, unknown> | undefined {
@@ -710,6 +794,7 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
     providerDiagnostics?: Record<string, unknown>;
     entityFiltering?: Record<string, unknown>;
     complianceRiskIntel?: Record<string, unknown>;
+    lexisNexisHybrid?: Record<string, unknown>;
   };
 
   if (copy.meta) {
@@ -748,6 +833,7 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
   copy.evidenceQuality = sanitizeEvidenceQualityForClient(copy.evidenceQuality);
   copy.entityFiltering = sanitizeEntityFilteringForClient(copy.entityFiltering);
   copy.complianceRiskIntel = sanitizeComplianceRiskIntelForClient(copy.complianceRiskIntel);
+  copy.lexisNexisHybrid = sanitizeLexisNexisHybridForClient(copy.lexisNexisHybrid);
   copy.sourceQualitySummary = sanitizeSourceQualitySummaryForClient(copy.sourceQualitySummary);
   copy.searchProvenanceSummary = sanitizeSearchProvenanceSummaryForClient(copy.searchProvenanceSummary);
   copy.searchProvenance = sanitizeSearchProvenanceForClient(copy.searchProvenance);

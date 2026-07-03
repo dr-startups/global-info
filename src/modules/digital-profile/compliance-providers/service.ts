@@ -8,6 +8,8 @@ import type { DatabaseProvider, Prisma } from "@prisma/client";
 import { NotFoundError } from "../http/errors";
 import { recordAudit } from "../services/audit-log-service";
 import type { ActorContext } from "../services/case-service";
+import { saveFile } from "../storage/private-store";
+import { buildStorageKey } from "../storage/keys";
 import { loadCaseSubject } from "../agents/mock/mock-utils";
 import { listComplianceProviderStatus, getComplianceProviderStatus } from "./config";
 import { dowJonesProvider } from "./dow-jones-provider";
@@ -25,6 +27,12 @@ import type {
   ComplianceSummaryBlock,
   ManualComplianceImportInput,
 } from "./types";
+import {
+  buildFallbackLexisDocument,
+  processLexisNexisDocx,
+  toRenderedPageModel,
+} from "./lexisnexis-hybrid-import";
+import type { ImportedEvidenceDocument, LexisNexisSignal } from "../types";
 
 export const COMPLIANCE_FINDING_OWNER = "compliance-layer-v1";
 
@@ -311,6 +319,256 @@ export async function importManualComplianceHit(
   return row;
 }
 
+export interface LexisNexisHybridImportResult {
+  document: ImportedEvidenceDocument;
+  parsedSignalsCreated: number;
+  reviewRequiredCount: number;
+  parserStatus: "parsed" | "partial" | "warning" | "failed";
+  conversionStatus: "ready" | "warning" | "failed";
+}
+
+function signalToRiskTypes(signal: LexisNexisSignal): ComplianceRiskType[] {
+  switch (signal.category) {
+    case "sanctions_watchlist":
+      return ["SANCTIONS", "WATCHLIST"];
+    case "pep_political_exposure":
+      return ["PEP", "POLITICAL_EXPOSURE"];
+    case "adverse_media":
+      return ["ADVERSE_MEDIA"];
+    case "legal_regulatory":
+      return ["LEGAL", "LAW_ENFORCEMENT"];
+    case "corporate_ownership":
+      return ["OTHER"];
+    case "identity_match":
+      return ["OTHER"];
+    default:
+      return ["OTHER"];
+  }
+}
+
+function isLexisHybridMaster(row: {
+  rawMetadataSafe: Prisma.JsonValue | null;
+}): boolean {
+  const safe = (row.rawMetadataSafe ?? {}) as Record<string, unknown>;
+  const hybrid = (safe.lexisNexisHybrid ?? {}) as Record<string, unknown>;
+  return String(hybrid.kind ?? "") === "lexisnexis_report";
+}
+
+export async function importLexisNexisHybridReport(
+  caseId: string,
+  input: {
+    fileName: string;
+    mimeType: string;
+    buffer: Buffer;
+  },
+  ctx: ActorContext = {}
+): Promise<LexisNexisHybridImportResult> {
+  await loadCaseSubject(caseId);
+  const now = new Date();
+  const documentRow = await prisma.databaseProfile.create({
+    data: {
+      caseId,
+      provider: "LEXISNEXIS",
+      importMethod: "MANUAL_IMPORT",
+      matchType: "LEXISNEXIS_IMPORTED_REPORT",
+      matchScore: null,
+      hitSource: "MANUAL",
+      subjectName: "Imported LexisNexis report",
+      matchedName: input.fileName,
+      aliases: toJson([]),
+      categories: toJson(["IMPORTED_REPORT"]),
+      riskTypes: toJson([]),
+      countries: toJson([]),
+      datesOfBirth: toJson([]),
+      confidence: "LOW",
+      profileId: null,
+      profileUrl: null,
+      summary:
+        "Импортированный отчёт LexisNexis добавлен в приложение. Материал требует аналитической проверки и не является юридическим заключением.",
+      reviewStatus: "DISMISSED",
+      rawMetadataSafe: toJson({
+        lexisNexisHybrid: {
+          kind: "lexisnexis_report",
+          sourceLabel: "LexisNexis",
+          status: "uploaded",
+        },
+      }),
+      evidenceRefs: toJson([]),
+      importedBy: ctx.actorId ?? null,
+      importedAt: now,
+    },
+    select: { id: true, importedAt: true },
+  });
+
+  const originalStorageKey = buildStorageKey.evidence(
+    caseId,
+    documentRow.id,
+    "lexisnexis-original.docx"
+  );
+  await saveFile(originalStorageKey, input.buffer);
+  const processing = processLexisNexisDocx({
+    documentId: documentRow.id,
+    fileBuffer: input.buffer,
+    originalFileName: input.fileName,
+  });
+  const renderedPages: ImportedEvidenceDocument["renderedPages"] = [];
+  const renderedEvidenceRefs: Array<Record<string, unknown>> = [
+    {
+      type: "IMPORTED_FILE",
+      refId: documentRow.id,
+      storageKey: originalStorageKey,
+      label: input.fileName,
+      capturedAt: now.toISOString(),
+    },
+  ];
+
+  for (const page of processing.renderedPageFiles) {
+    const pageStorageKey = buildStorageKey.evidence(
+      caseId,
+      documentRow.id,
+      `lexisnexis-page-${String(page.pageNumber).padStart(3, "0")}.png`
+    );
+    await saveFile(pageStorageKey, page.fileBytes);
+    renderedPages.push(toRenderedPageModel(page, pageStorageKey));
+    renderedEvidenceRefs.push({
+      type: "IMPORTED_FILE",
+      refId: `${documentRow.id}:page:${page.pageNumber}`,
+      storageKey: pageStorageKey,
+      label: `LexisNexis page ${page.pageNumber}`,
+      capturedAt: now.toISOString(),
+    });
+  }
+
+  const parsedSignals = processing.parsedAnalytics.signals;
+  let parsedSignalsCreated = 0;
+  for (const signal of parsedSignals) {
+    const row = await prisma.databaseProfile.create({
+      data: {
+        caseId,
+        provider: "LEXISNEXIS",
+        importMethod: "MANUAL_IMPORT",
+        matchType: "LEXISNEXIS_SIGNAL",
+        matchScore:
+          signal.riskLevel === "high" ? 85 : signal.riskLevel === "medium" ? 65 : 45,
+        hitSource: "MANUAL",
+        subjectName: processing.parsedAnalytics.subjectNameDetected ?? "Imported LexisNexis signal",
+        matchedName: signal.matchName,
+        aliases: toJson([]),
+        categories: toJson([signal.category]),
+        riskTypes: toJson(signalToRiskTypes(signal)),
+        countries: toJson([]),
+        datesOfBirth: toJson([]),
+        confidence:
+          signal.confidenceLabel === "high"
+            ? "HIGH"
+            : signal.confidenceLabel === "medium"
+              ? "MEDIUM"
+              : "LOW",
+        profileId: null,
+        profileUrl: null,
+        summary: `${signal.clientSafeFinding} ${signal.clientSafeReason}`,
+        reviewStatus: "NEEDS_REVIEW",
+        rawMetadataSafe: toJson({
+          lexisNexisSignal: true,
+          evidenceDocumentId: documentRow.id,
+          signal,
+        }),
+        evidenceRefs: toJson([
+          {
+            type: "IMPORTED_FILE",
+            refId: documentRow.id,
+            storageKey: originalStorageKey,
+            label: input.fileName,
+            capturedAt: now.toISOString(),
+          },
+        ]),
+        importedBy: ctx.actorId ?? null,
+        importedAt: now,
+      },
+      select: { id: true },
+    });
+    parsedSignalsCreated += 1;
+    await syncComplianceRiskFinding(caseId, row.id, ctx);
+  }
+
+  const conversionStatus: "ready" | "warning" | "failed" =
+    processing.renderedPageFiles.length > 0
+      ? processing.conversionWarnings.length > 0
+        ? "warning"
+        : "ready"
+      : "failed";
+  const document =
+    processing.parsedAnalytics.signals.length === 0 && processing.status === "failed"
+      ? buildFallbackLexisDocument(
+          {
+            documentId: documentRow.id,
+            caseId,
+            fileName: input.fileName,
+            storageKey: originalStorageKey,
+            importedAt: documentRow.importedAt.toISOString(),
+            importedBy: ctx.actorId ?? null,
+          },
+          "hybrid_import_failed"
+        )
+      : {
+          id: documentRow.id,
+          caseId,
+          kind: "lexisnexis_report" as const,
+          sourceLabel: "LexisNexis" as const,
+          fileName: input.fileName,
+          storageKey: originalStorageKey,
+          importedAt: documentRow.importedAt.toISOString(),
+          importedBy: ctx.actorId ?? null,
+          status: processing.status,
+          pageCount: renderedPages.length,
+          renderedPages,
+          parsedAnalytics: processing.parsedAnalytics,
+          clientVisible: true,
+          internalNotes: Array.from(
+            new Set([...processing.parserWarnings, ...processing.conversionWarnings])
+          ),
+          provenance: {
+            importMethod: "manual_upload" as const,
+            parserVersion: processing.parsedAnalytics.parserVersion,
+            conversionAvailable: processing.renderedPageFiles.length > 0,
+          },
+        };
+
+  await prisma.databaseProfile.update({
+    where: { id: documentRow.id },
+    data: {
+      rawMetadataSafe: toJson({
+        lexisNexisHybrid: document,
+      }),
+      evidenceRefs: toJson(renderedEvidenceRefs),
+      reviewStatus: "DISMISSED",
+    },
+  });
+
+  await recordAudit({
+    caseId,
+    action: "COMPLIANCE_MANUAL_IMPORT",
+    actorId: ctx.actorId,
+    metadata: {
+      hitId: documentRow.id,
+      provider: "LEXISNEXIS",
+      importType: "LEXISNEXIS_HYBRID_DOCX",
+      parserStatus: document.parsedAnalytics.parserStatus,
+      conversionStatus,
+      pages: document.pageCount,
+      signals: document.parsedAnalytics.signalCounts.totalSignals,
+    },
+  });
+
+  return {
+    document,
+    parsedSignalsCreated,
+    reviewRequiredCount: document.parsedAnalytics.signalCounts.reviewRequired,
+    parserStatus: document.parsedAnalytics.parserStatus,
+    conversionStatus,
+  };
+}
+
 export async function syncComplianceRiskFinding(
   caseId: string,
   hitId: string,
@@ -441,6 +699,7 @@ export async function buildComplianceSummaryBlock(
           !(h.importedBy ?? "").startsWith("mock:") &&
           !(h.rawMetadataSafe as { demo?: boolean } | null)?.demo
       );
+  const filteredHits = hits.filter((h) => !isLexisHybridMaster(h));
 
   const reviewRequiredWarning =
     locale === "ru"
@@ -452,7 +711,7 @@ export async function buildComplianceSummaryBlock(
   let confirmedHits = 0;
   let falsePositives = 0;
 
-  for (const h of hits) {
+  for (const h of filteredHits) {
     const rts = (Array.isArray(h.riskTypes) ? h.riskTypes : []) as string[];
     for (const rt of rts) byRiskType[rt] = (byRiskType[rt] ?? 0) + 1;
     if (h.reviewStatus === "PENDING" || h.reviewStatus === "NEEDS_REVIEW") pendingHits++;
@@ -461,7 +720,7 @@ export async function buildComplianceSummaryBlock(
   }
 
   const warnings: string[] = [];
-  if (hits.length === 0) {
+  if (filteredHits.length === 0) {
     if (allHits.length > 0 && !includeDemo) {
       warnings.push(
         locale === "ru"
@@ -474,11 +733,11 @@ export async function buildComplianceSummaryBlock(
   }
   if (pendingHits > 0) warnings.push(reviewRequiredWarning);
 
-  const activeHits = hits.filter((h) => isActiveReview(h.reviewStatus));
+  const activeHits = filteredHits.filter((h) => isActiveReview(h.reviewStatus));
 
   return {
     providerStatuses: listComplianceProviderStatus(),
-    totalHits: hits.length,
+    totalHits: filteredHits.length,
     pendingHits,
     confirmedHits,
     falsePositives,

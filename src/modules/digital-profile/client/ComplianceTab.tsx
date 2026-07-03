@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   DigitalProfileApiError,
+  importLexisNexisDocx,
   importManualComplianceHit,
   listProviders,
   reviewComplianceHit,
@@ -56,6 +57,8 @@ export function ComplianceTab({
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [lexisBusy, setLexisBusy] = useState(false);
+  const [lexisStatus, setLexisStatus] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     provider: "DOW_JONES" as (typeof DB_PROVIDERS)[number],
@@ -141,7 +144,47 @@ export function ComplianceTab({
     }
   }
 
+  async function handleLexisUpload(file: File) {
+    if (lexisBusy) return;
+    setLexisBusy(true);
+    setError(null);
+    setLexisStatus(t("compliance.lexisUploaded"));
+    try {
+      setLexisStatus(t("compliance.lexisConverting"));
+      const result = await importLexisNexisDocx(caseId, file);
+      setLexisStatus(t("compliance.lexisParsing"));
+      const finalLabel =
+        result.document.status === "ready"
+          ? t("compliance.lexisReady")
+          : result.document.status === "conversion_warning" ||
+              result.document.status === "parse_warning"
+            ? t("compliance.lexisReviewRequired")
+            : t("compliance.lexisError");
+      setInfo(
+        `${finalLabel} ${t("compliance.lexisCompactSummary", {
+          pages: result.document.pageCount,
+          signals: result.document.parsedAnalytics.signalCounts.totalSignals,
+          review: result.document.parsedAnalytics.signalCounts.reviewRequired,
+          parser: result.parserStatus,
+          conversion: result.conversionStatus,
+        })}`
+      );
+      setLexisStatus(finalLabel);
+      onChanged();
+    } catch (err) {
+      setLexisStatus(t("compliance.lexisError"));
+      setError(err instanceof DigitalProfileApiError ? err.message : t("errors.UNKNOWN"));
+    } finally {
+      setLexisBusy(false);
+    }
+  }
+
   const hits = evidence.databaseProfiles;
+  const lexisImports = hits.filter((h) => {
+    const safe = (h.rawMetadataSafe ?? {}) as Record<string, unknown>;
+    const hybrid = (safe.lexisNexisHybrid ?? {}) as Record<string, unknown>;
+    return String(hybrid.kind ?? "") === "lexisnexis_report";
+  });
 
   return (
     <div>
@@ -185,6 +228,50 @@ export function ComplianceTab({
           <button type="button" className="dp-btn dp-btn-primary" onClick={() => setShowForm((v) => !v)}>
             {t("compliance.addManualHit")}
           </button>
+          <label className="dp-btn" style={{ marginLeft: 8, cursor: "pointer" }}>
+            {t("compliance.uploadLexisNexis")}
+            <input
+              type="file"
+              accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              style={{ display: "none" }}
+              disabled={lexisBusy}
+              onChange={(e) => {
+                const file = e.currentTarget.files?.[0];
+                if (file) void handleLexisUpload(file);
+                e.currentTarget.value = "";
+              }}
+            />
+          </label>
+          {lexisStatus ? (
+            <span className="dp-muted" style={{ marginLeft: 8 }}>
+              {lexisStatus}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+      {lexisImports.length > 0 ? (
+        <div className="dp-card" style={{ marginBottom: "1rem", padding: "0.75rem 1rem" }}>
+          <strong>{t("compliance.lexisLastImportTitle")}</strong>
+          {lexisImports.slice(0, 1).map((row) => {
+            const safe = (row.rawMetadataSafe ?? {}) as Record<string, unknown>;
+            const hybrid = (safe.lexisNexisHybrid ?? {}) as Record<string, unknown>;
+            const parsed = (hybrid.parsedAnalytics ?? {}) as Record<string, unknown>;
+            const counts = (parsed.signalCounts ?? {}) as Record<string, unknown>;
+            return (
+              <div key={row.id} className="dp-muted" style={{ marginTop: 6, fontSize: 13 }}>
+                {t("compliance.lexisCompactSummary", {
+                  pages: Number(hybrid.pageCount ?? 0),
+                  signals: Number(counts.totalSignals ?? 0),
+                  review: Number(counts.reviewRequired ?? 0),
+                  parser: String(parsed.parserStatus ?? "unknown"),
+                  conversion:
+                    String(hybrid.status ?? "").includes("conversion") || Number(hybrid.pageCount ?? 0) === 0
+                      ? "warning"
+                      : "ready",
+                })}
+              </div>
+            );
+          })}
         </div>
       ) : null}
 

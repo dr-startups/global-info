@@ -363,6 +363,15 @@ export interface Dictionary {
     dismiss: string;
     importSuccess: string;
     screenSuccess: string;
+    uploadLexisNexis: string;
+    lexisUploaded: string;
+    lexisConverting: string;
+    lexisParsing: string;
+    lexisReady: string;
+    lexisReviewRequired: string;
+    lexisError: string;
+    lexisCompactSummary: string;
+    lexisLastImportTitle: string;
   };
   evidenceQuality: {
     collected: string;

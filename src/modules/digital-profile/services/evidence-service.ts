@@ -161,6 +161,7 @@ export interface DatabaseProfileDTO {
   reviewedBy?: string | null;
   reviewedAt?: Date | null;
   riskFindingId?: string | null;
+  rawMetadataSafe?: unknown;
 }
 
 export interface WikipediaCheckDTO {
@@ -625,6 +626,7 @@ export async function listEvidence(caseId: string): Promise<CaseEvidenceDTO> {
         reviewedBy: true,
         reviewedAt: true,
         riskFindingId: true,
+        rawMetadataSafe: true,
       },
     }),
     prisma.wikipediaCheck.findMany({

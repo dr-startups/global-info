@@ -83,6 +83,7 @@ export interface ComplianceRiskIntel {
   complianceHits: ComplianceIntelHit[];
   riskReasoning: RiskReasoningIntel;
   manualImport: ManualImportSemantics;
+  lexisNexisHybridSummary?: string;
   legalSafeDisclaimer: string;
 }
 
@@ -463,6 +464,9 @@ export interface BuildComplianceRiskIntelInput {
   riskSummary?: ReportRiskSummary;
   evidenceQuality?: EvidenceQualitySummary;
   reportLanguage?: IntelLang;
+  lexisNexisHybrid?: {
+    parsedSignalSummary?: { totalDocuments?: number; totalSignals?: number; reviewRequired?: number };
+  };
 }
 
 export function buildComplianceRiskIntel(
@@ -493,6 +497,21 @@ export function buildComplianceRiskIntel(
     complianceHits,
     L
   );
+  const lexisSummary = input.lexisNexisHybrid?.parsedSignalSummary;
+  const lexisNexisHybridSummary =
+    lexisSummary && Number(lexisSummary.totalDocuments ?? 0) > 0
+      ? language === "ru"
+        ? `Импортированный отчёт LexisNexis: документов ${Number(
+            lexisSummary.totalDocuments ?? 0
+          )}, сигналов ${Number(lexisSummary.totalSignals ?? 0)}, на проверке ${Number(
+            lexisSummary.reviewRequired ?? 0
+          )}.`
+        : `Imported LexisNexis report: documents ${Number(
+            lexisSummary.totalDocuments ?? 0
+          )}, signals ${Number(lexisSummary.totalSignals ?? 0)}, review required ${Number(
+            lexisSummary.reviewRequired ?? 0
+          )}.`
+      : undefined;
 
   return {
     enabled: true,
@@ -506,6 +525,7 @@ export function buildComplianceRiskIntel(
     complianceHits,
     riskReasoning,
     manualImport,
+    lexisNexisHybridSummary,
     legalSafeDisclaimer: L.legalSafeDisclaimer,
   };
 }
