@@ -143,27 +143,82 @@ def _normalized_domain(value: Any) -> str:
     s = str(value or "").strip()
     if not s:
         return ""
+    if re.match(r"^[a-z]:\\", s, flags=re.I) or s.startswith("\\\\") or s.startswith("/"):
+        return ""
+    if "localhost" in s.lower():
+        return ""
+    s = s.split("?")[0].split("#")[0]
     s = re.sub(r"^https?://", "", s, flags=re.I)
+    if "@" in s and "/" not in s:
+        s = s.split("@")[-1]
+    if "\\" in s:
+        return ""
     s = s.split("/")[0].strip().lower()
     s = re.sub(r"^www\.", "", s, flags=re.I)
     if not s or "." not in s:
         return ""
+    if ":" in s:
+        s = s.split(":")[0]
     return s[:60]
+
+
+def _iter_domain_values(value: Any):
+    if value is None:
+        return
+    if isinstance(value, dict):
+        keys = (
+            "canonicalDomain",
+            "domain",
+            "sourceDomain",
+            "normalizedDomain",
+            "displayDomain",
+            "hostname",
+            "sourceHost",
+            "host",
+            "canonicalUrl",
+            "sourcePageUrl",
+            "url",
+            "link",
+        )
+        for key in keys:
+            if key in value:
+                yield value.get(key)
+        nested = value.get("rawMetadataSafe") or value.get("rawMetadata") or {}
+        if isinstance(nested, dict):
+            for key in ("url", "sourceUrl", "sourcePageUrl", "canonicalUrl", "sourceDomain", "domain", "hostname"):
+                if key in nested:
+                    yield nested.get(key)
+        evidence_ref = value.get("evidenceRef") or {}
+        if isinstance(evidence_ref, dict):
+            for key in ("url", "link", "sourceUrl"):
+                if key in evidence_ref:
+                    yield evidence_ref.get(key)
+        return
+    if isinstance(value, list):
+        for item in value[:8]:
+            yield from _iter_domain_values(item)
+        return
+    yield value
 
 
 def _domain_from_candidates(*values: Any) -> str:
     for v in values:
-        d = _normalized_domain(v)
-        if d:
-            return d
+        for raw in _iter_domain_values(v):
+            d = _normalized_domain(raw)
+            if d:
+                return d
     return ""
+
+
+def _domain_or_fallback(L: dict, *values: Any) -> str:
+    return _domain_from_candidates(*values) or L.get("domain_unavailable", "domain unavailable")
 
 
 def _topic_label(key: Any, L: dict) -> str:
     k = str(key or "").strip().lower()
     if not k:
-        return ""
-    return L.get(f"risk_topic_{k}", k.replace("_", " ").strip())
+        return L.get("risk_topic_unknown", "Theme requires classification")
+    return L.get(f"risk_topic_{k}", L.get("risk_topic_unknown", "Theme requires classification"))
 
 
 def _theme_signal_present(r: dict) -> bool:
@@ -188,8 +243,10 @@ def _localize_known_conclusion(text: Any, L: dict) -> str:
     raw = str(text or "").strip()
     if not raw:
         return ""
-    if re.search(r"No international subject-matched results in collected data\.?", raw, flags=re.I):
+    if re.search(r"No international subject-matched results (in collected data|found)\.?", raw, flags=re.I):
         return L.get("region_international_no_subject_results", raw)
+    if re.search(r"No confirmed materials were found in related queries\.?", raw, flags=re.I):
+        return L.get("nd_none_found_related", raw)
     if _NO_ADVERSE_RE.search(raw):
         return L.get("region_no_adverse_organic", raw)
     m = _ADVERSE_CONCLUSION_RE.search(raw)
@@ -370,15 +427,15 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
                 {
                     "provider": str(x.get("provider", "")),
                     "rank": "" if x.get("rank") is None else str(x.get("rank")),
-                    "domain": _domain_from_candidates(
+                    "domain": _domain_or_fallback(
+                        L,
                         x.get("canonicalDomain"),
                         x.get("domain"),
                         x.get("sourcePageUrl"),
                         x.get("url"),
                         x.get("hostname"),
                         x.get("normalizedDomain"),
-                    )
-                    or "—",
+                    ),
                     "title": truncate(x.get("title"), 70),
                     "classification": str(x.get("classification", "")),
                 }
@@ -689,13 +746,13 @@ def _apply_selected_evidence_vm_overrides(report_json: dict, vm: dict) -> None:
                 {
                     "provider": "GOOGLE",
                     "rank": str(idx + 1),
-                    "domain": _domain_from_candidates(
+                    "domain": _domain_or_fallback(
+                        L,
                         item.get("canonicalDomain"),
                         item.get("domain"),
                         item.get("sourcePageUrl"),
                         item.get("url"),
-                    )
-                    or "—",
+                    ),
                     "title": truncate(item.get("title"), 60),
                     "classification": str(item.get("classification", "")),
                 }
@@ -1044,15 +1101,15 @@ def _region_block(
             {
                 "provider": str(x.get("provider", "")),
                 "rank": "" if x.get("rank") is None else str(x.get("rank")),
-                "domain": _domain_from_candidates(
+                "domain": _domain_or_fallback(
+                    L,
                     x.get("canonicalDomain"),
                     x.get("domain"),
                     x.get("sourcePageUrl"),
                     x.get("url"),
                     x.get("hostname"),
                     x.get("normalizedDomain"),
-                )
-                or "—",
+                ),
                 "title": truncate(x.get("title"), 60),
                 "classification": str(x.get("classification", "")),
             }
@@ -1067,15 +1124,15 @@ def _region_block(
             "negativeUrls": [
                 {
                     "title": truncate(u.get("title"), 60),
-                    "domain": _domain_from_candidates(
+                    "domain": _domain_or_fallback(
+                        L,
                         u.get("canonicalDomain"),
                         u.get("domain"),
                         u.get("sourcePageUrl"),
                         u.get("url"),
                         u.get("hostname"),
                         u.get("normalizedDomain"),
-                    )
-                    or "—",
+                    ),
                     "classification": str(u.get("classification", "")),
                 }
                 for u in (r.get("topNegativeUrls", []) or [])[:10]

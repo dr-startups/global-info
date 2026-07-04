@@ -224,18 +224,28 @@ function topicLabel(theme: string | null | undefined, ru: boolean): string {
   if (!key) return "";
   const ruMap: Record<string, string> = {
     political_exposure: "Политическая экспозиция",
-    criminal: "Уголовно-правовые риски",
+    criminal: "Уголовно-правовые упоминания",
     legal_dispute: "Судебные / правовые споры",
-    sanctions: "Санкционные сигналы",
+    sanctions: "Санкционные / watchlist-сигналы",
+    sanctions_watchlist: "Санкционные / watchlist-сигналы",
+    adverse_media: "Негативные публикации",
+    regulatory: "Регуляторные упоминания",
+    corporate_ownership: "Корпоративные и имущественные связи",
+    unknown: "Тема требует классификации",
   };
   const enMap: Record<string, string> = {
     political_exposure: "Political exposure",
-    criminal: "Criminal-law risks",
+    criminal: "Criminal-law mentions",
     legal_dispute: "Legal disputes",
-    sanctions: "Sanctions signals",
+    sanctions: "Sanctions / watchlist signals",
+    sanctions_watchlist: "Sanctions / watchlist signals",
+    adverse_media: "Adverse media coverage",
+    regulatory: "Regulatory mentions",
+    corporate_ownership: "Corporate and ownership links",
+    unknown: "Theme requires classification",
   };
   const mapped = (ru ? ruMap : enMap)[key];
-  return mapped ?? key.replace(/_/g, " ");
+  return mapped ?? (ru ? "Тема требует классификации" : "Theme requires classification");
 }
 
 function buildRegionConclusion(
@@ -266,7 +276,7 @@ function buildRegionConclusion(
     (block.summary.topAdverseDomains?.length ?? 0) > 0;
   if (adverseCount > 0) {
     return ruReport
-      ? `Выявлено ${adverseCount} материалов, которые система относит к потенциально нежелательным (${adverseCount}/${Math.max(1, block.organic.total)}) и рекомендует для дополнительной проверки.`
+      ? `В открытых источниках обнаружены материалы, требующие аналитической проверки (${adverseCount}/${Math.max(1, block.organic.total)}). Часть сигналов может относиться к совпадениям по имени или контексту, поэтому итоговая оценка должна подтверждаться вручную.`
       : `Detected ${adverseCount} potentially adverse material(s) (${adverseCount}/${Math.max(1, block.organic.total)}); analyst review is recommended.`;
   }
   if (hasRiskSignals) {
@@ -275,7 +285,7 @@ function buildRegionConclusion(
       : "No confirmed adverse URLs were detected in the primary list, but thematic risk signals and domains require analyst review.";
   }
   return ruReport
-    ? "Негативных органических материалов по выбранным релевантным результатам не выявлено."
+    ? "Подтверждённых негативных материалов по выбранным релевантным результатам не выявлено. Отдельные сигналы сохранены для аналитической проверки."
     : "No adverse organic content in selected subject-matched results.";
 }
 
@@ -1292,7 +1302,7 @@ export function regionBlockToAuditRegion(
           canonicalDomain: i.canonicalDomain ?? null,
           sourcePageUrl: i.sourcePageUrl ?? null,
           url: i.url ?? null,
-        }) ?? "—",
+        }) ?? (ruReport ? "домен не указан" : "domain unavailable"),
       title: i.title,
       classification: i.classification,
       identityDecision: i.identityDecision ?? null,

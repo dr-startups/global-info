@@ -294,6 +294,59 @@ const CLIENT_FORBIDDEN_JSON_KEYS = new Set([
 
 export type ReportJsonAudience = "internal" | "client";
 
+type ReportLocale = "ru" | "en";
+
+const CLIENT_THEME_LABELS: Record<ReportLocale, Record<string, string>> = {
+  ru: {
+    political_exposure: "Политическая экспозиция",
+    pep_political_exposure: "Политическая экспозиция",
+    pep_rca: "PEP / RCA упоминания",
+    criminal: "Уголовно-правовые упоминания",
+    legal: "Судебные / правовые споры",
+    legal_dispute: "Судебные / правовые споры",
+    sanctions: "Санкционные / watchlist-сигналы",
+    sanctions_watchlist: "Санкционные / watchlist-сигналы",
+    adverse_media: "Негативные публикации",
+    regulatory: "Регуляторные упоминания",
+    corporate_ownership: "Корпоративные и имущественные связи",
+    unknown: "Тема требует классификации",
+  },
+  en: {
+    political_exposure: "Political exposure",
+    pep_political_exposure: "Political exposure",
+    pep_rca: "PEP / RCA mentions",
+    criminal: "Criminal/legal mentions",
+    legal: "Legal disputes",
+    legal_dispute: "Legal disputes",
+    sanctions: "Sanctions / watchlist signals",
+    sanctions_watchlist: "Sanctions / watchlist signals",
+    adverse_media: "Adverse media",
+    regulatory: "Regulatory mentions",
+    corporate_ownership: "Corporate and ownership links",
+    unknown: "Theme requires classification",
+  },
+};
+
+const RAW_THEME_TOKEN_PATTERN = /\b(political_exposure|pep_political_exposure|pep_rca|criminal|legal_dispute|legal|sanctions_watchlist|sanctions|adverse_media|regulatory|corporate_ownership|unknown)\b/gi;
+
+function resolveReportLocale(reportJson: {
+  reportLanguage?: unknown;
+  meta?: Record<string, unknown>;
+}): ReportLocale {
+  const raw = String(reportJson.reportLanguage ?? reportJson.meta?.language ?? "").toLowerCase();
+  return raw.startsWith("ru") ? "ru" : "en";
+}
+
+function localizeThemeToken(value: unknown, locale: ReportLocale): string {
+  const key = String(value ?? "").trim().toLowerCase();
+  if (!key) return "";
+  return CLIENT_THEME_LABELS[locale][key] ?? String(value ?? "");
+}
+
+function replaceRawThemeTokensInText(text: string, locale: ReportLocale): string {
+  return text.replace(RAW_THEME_TOKEN_PATTERN, (token) => localizeThemeToken(token, locale));
+}
+
 /**
  * Stage R3.6 — production report mode. "production" is a client-safe alias that
  * enforces strict sanitization; it never relaxes client hardening.
@@ -635,6 +688,74 @@ function sanitizeSearchProvenanceForClient(
   };
 }
 
+function sanitizeAuditSummaryForClient(
+  block: Record<string, unknown> | undefined,
+  locale: ReportLocale
+): Record<string, unknown> | undefined {
+  if (!block) return block;
+  const out = { ...block };
+
+  if (Array.isArray(out.regions)) {
+    out.regions = out.regions.map((rawRegion) => {
+      const region = rawRegion && typeof rawRegion === "object" ? { ...(rawRegion as Record<string, unknown>) } : {};
+      if (Array.isArray(region.topThemes)) {
+        region.topThemes = region.topThemes.map((rawTheme) => {
+          const row = rawTheme && typeof rawTheme === "object" ? { ...(rawTheme as Record<string, unknown>) } : {};
+          if ("theme" in row) row.theme = localizeThemeToken(row.theme, locale);
+          return row;
+        });
+      }
+      return region;
+    });
+  }
+
+  if (Array.isArray(out.keyFindings)) {
+    out.keyFindings = out.keyFindings.map((rawFinding) => {
+      const finding = rawFinding && typeof rawFinding === "object" ? { ...(rawFinding as Record<string, unknown>) } : {};
+      if (Array.isArray(finding.points)) {
+        finding.points = finding.points.map((point) =>
+          typeof point === "string" ? replaceRawThemeTokensInText(point, locale) : point
+        );
+      }
+      return finding;
+    });
+  }
+
+  const searchSummary =
+    out.searchSummary && typeof out.searchSummary === "object"
+      ? { ...(out.searchSummary as Record<string, unknown>) }
+      : undefined;
+  if (searchSummary && Array.isArray(searchSummary.topNegativeThemes)) {
+    searchSummary.topNegativeThemes = searchSummary.topNegativeThemes.map((rawTheme) => {
+      const row = rawTheme && typeof rawTheme === "object" ? { ...(rawTheme as Record<string, unknown>) } : {};
+      if ("theme" in row) row.theme = localizeThemeToken(row.theme, locale);
+      return row;
+    });
+    out.searchSummary = searchSummary;
+  }
+
+  if (out.riskSummary && typeof out.riskSummary === "object") {
+    const riskSummary = { ...(out.riskSummary as Record<string, unknown>) };
+    const byTheme =
+      riskSummary.findingsByTheme && typeof riskSummary.findingsByTheme === "object"
+        ? (riskSummary.findingsByTheme as Record<string, unknown>)
+        : undefined;
+    if (byTheme) {
+      const normalized: Record<string, unknown> = {};
+      for (const [themeKey, value] of Object.entries(byTheme)) {
+        const label = localizeThemeToken(themeKey, locale);
+        const prev = Number(normalized[label] ?? 0);
+        const next = Number(value ?? 0);
+        normalized[label] = Number.isFinite(prev + next) ? prev + next : value;
+      }
+      riskSummary.findingsByTheme = normalized;
+    }
+    out.riskSummary = riskSummary;
+  }
+
+  return out;
+}
+
 function sanitizeProviderReadinessSummaryForClient(
   block: Record<string, unknown> | undefined
 ): Record<string, unknown> | undefined {
@@ -679,8 +800,39 @@ function sanitizeComplianceRiskIntelForClient(
   };
 }
 
+function sanitizeRiskSummaryForClient(
+  block: Record<string, unknown> | undefined,
+  locale: ReportLocale
+): Record<string, unknown> | undefined {
+  if (!block) return block;
+  const out = { ...block };
+  const byTheme =
+    out.findingsByTheme && typeof out.findingsByTheme === "object"
+      ? (out.findingsByTheme as Record<string, unknown>)
+      : undefined;
+  if (byTheme) {
+    const normalized: Record<string, unknown> = {};
+    for (const [themeKey, value] of Object.entries(byTheme)) {
+      const label = localizeThemeToken(themeKey, locale);
+      const prev = Number(normalized[label] ?? 0);
+      const next = Number(value ?? 0);
+      normalized[label] = Number.isFinite(prev + next) ? prev + next : value;
+    }
+    out.findingsByTheme = normalized;
+  }
+  if (Array.isArray(out.topFindings)) {
+    out.topFindings = out.topFindings.map((raw) => {
+      const row = raw && typeof raw === "object" ? { ...(raw as Record<string, unknown>) } : {};
+      if ("theme" in row) row.theme = localizeThemeToken(row.theme, locale);
+      return row;
+    });
+  }
+  return out;
+}
+
 function sanitizeLexisNexisHybridForClient(
-  block: Record<string, unknown> | undefined
+  block: Record<string, unknown> | undefined,
+  locale: ReportLocale
 ): Record<string, unknown> | undefined {
   if (!block) return block;
   const docs = Array.isArray(block.documents) ? block.documents : [];
@@ -727,7 +879,9 @@ function sanitizeLexisNexisHybridForClient(
               sourceLabel: row.sourceLabel,
               matchName: row.matchName,
               normalizedName: row.normalizedName,
-              category: row.category,
+              category:
+                (locale === "ru" ? row.categoryLabelRu : row.categoryLabelEn) ??
+                localizeThemeToken(row.category, locale),
               categoryLabelRu: row.categoryLabelRu,
               categoryLabelEn: row.categoryLabelEn,
               riskLevel: row.riskLevel,
@@ -795,7 +949,9 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
     entityFiltering?: Record<string, unknown>;
     complianceRiskIntel?: Record<string, unknown>;
     lexisNexisHybrid?: Record<string, unknown>;
+    riskSummary?: Record<string, unknown>;
   };
+  const locale = resolveReportLocale(copy);
 
   if (copy.meta) {
     copy.meta = {
@@ -818,6 +974,7 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
       },
     };
   }
+  copy.auditSummary = sanitizeAuditSummaryForClient(copy.auditSummary as Record<string, unknown> | undefined, locale);
 
   if (copy.serpSnapshot?.metadata) {
     copy.serpSnapshot = {
@@ -832,8 +989,9 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
 
   copy.evidenceQuality = sanitizeEvidenceQualityForClient(copy.evidenceQuality);
   copy.entityFiltering = sanitizeEntityFilteringForClient(copy.entityFiltering);
+  copy.riskSummary = sanitizeRiskSummaryForClient(copy.riskSummary, locale);
   copy.complianceRiskIntel = sanitizeComplianceRiskIntelForClient(copy.complianceRiskIntel);
-  copy.lexisNexisHybrid = sanitizeLexisNexisHybridForClient(copy.lexisNexisHybrid);
+  copy.lexisNexisHybrid = sanitizeLexisNexisHybridForClient(copy.lexisNexisHybrid, locale);
   copy.sourceQualitySummary = sanitizeSourceQualitySummaryForClient(copy.sourceQualitySummary);
   copy.searchProvenanceSummary = sanitizeSearchProvenanceSummaryForClient(copy.searchProvenanceSummary);
   copy.searchProvenance = sanitizeSearchProvenanceForClient(copy.searchProvenance);

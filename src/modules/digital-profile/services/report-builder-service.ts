@@ -107,18 +107,28 @@ function mapRiskThemeLabel(theme: unknown, reportLanguage: ReportLanguage): stri
   if (!key) return "";
   const ruMap: Record<string, string> = {
     political_exposure: "Политическая экспозиция",
-    criminal: "Уголовно-правовые риски",
+    criminal: "Уголовно-правовые упоминания",
     legal_dispute: "Судебные / правовые споры",
-    sanctions: "Санкционные сигналы",
+    sanctions: "Санкционные / watchlist-сигналы",
+    sanctions_watchlist: "Санкционные / watchlist-сигналы",
+    adverse_media: "Негативные публикации",
+    regulatory: "Регуляторные упоминания",
+    corporate_ownership: "Корпоративные и имущественные связи",
+    unknown: "Тема требует классификации",
   };
   const enMap: Record<string, string> = {
     political_exposure: "Political exposure",
-    criminal: "Criminal-law risks",
+    criminal: "Criminal-law mentions",
     legal_dispute: "Legal disputes",
-    sanctions: "Sanctions signals",
+    sanctions: "Sanctions / watchlist signals",
+    sanctions_watchlist: "Sanctions / watchlist signals",
+    adverse_media: "Adverse media coverage",
+    regulatory: "Regulatory mentions",
+    corporate_ownership: "Corporate and ownership links",
+    unknown: "Theme requires classification",
   };
   const mapped = (reportLanguage === "ru" ? ruMap : enMap)[key];
-  return mapped ?? key.replace(/_/g, " ");
+  return mapped ?? (reportLanguage === "ru" ? "Тема требует классификации" : "Theme requires classification");
 }
 
 function normalizeRegionConclusion(
@@ -140,7 +150,7 @@ function normalizeRegionConclusion(
   }
   if (adverse > 0) {
     return ru
-      ? `Выявлено ${adverse} материалов, которые система относит к потенциально нежелательным (${adverse}/${Math.max(1, total)}) и рекомендует для дополнительной проверки.`
+      ? `В открытых источниках обнаружены материалы, требующие аналитической проверки (${adverse}/${Math.max(1, total)}). Часть сигналов может относиться к совпадениям по имени или контексту, поэтому итоговая оценка должна подтверждаться вручную.`
       : `Detected ${adverse} potentially adverse material(s) (${adverse}/${Math.max(1, total)}); analyst review is recommended.`;
   }
   if (topNegativeUrls.length === 0 && hasSignals) {
@@ -149,7 +159,7 @@ function normalizeRegionConclusion(
       : "No confirmed adverse URLs were detected in the primary list, but thematic risk signals and domains require analyst review.";
   }
   return ru
-    ? "Негативных органических материалов по выбранным релевантным результатам не выявлено."
+    ? "Подтверждённых негативных материалов по выбранным релевантным результатам не выявлено. Отдельные сигналы сохранены для аналитической проверки."
     : "No adverse organic content in selected subject-matched results.";
 }
 
@@ -168,7 +178,7 @@ function normalizeAuditSummaryReadable(
       const domain =
         normalizeDomainForReport(typed.domain) ||
         normalizeDomainForReport(typed.url) ||
-        "—";
+        (reportLanguage === "ru" ? "домен не указан" : "domain unavailable");
       return { ...row, domain };
     });
     const normalizedRegion = {

@@ -149,12 +149,19 @@ R2_DANGER = DANGER
 # Localizable table footnote ("Showing top N of M."). Set per-render via
 # ``set_table_strings`` so v3 tables honour the report language.
 _SHOWING_TOP = "Showing top {n} of {total}."
+_SOURCE_PREFIX = "Source: "
 
 
 def set_table_strings(showing_top: str | None) -> None:
     global _SHOWING_TOP
     if showing_top:
         _SHOWING_TOP = showing_top
+
+
+def set_note_strings(source_prefix: str | None) -> None:
+    global _SOURCE_PREFIX
+    if source_prefix:
+        _SOURCE_PREFIX = source_prefix
 
 
 # ---------------------------------------------------------------------------
@@ -1762,7 +1769,10 @@ def metric_cards(slide, top: Emu, cards: list[dict], per_row: int = 4) -> Emu:
 
 
 def no_data_card(slide, top: Emu, text: str) -> Emu:
-    h = 760000
+    content_h = int(text_block_height([text or "—"], FS_BODY - 1, CONTENT_W, space_after_pt=1.0, pad_pt=14.0))
+    desired = max(560000, min(980000, content_h + 160000))
+    cap = max(560000, int(CONTENT_SAFE_BOTTOM) - int(top) - int(_BLOCK_GAP))
+    h = max(560000, min(desired, cap))
     shape = slide.shapes.add_shape(ROUNDED_RECT, MARGIN, top, CONTENT_W, Emu(h))
     shape.fill.solid()
     shape.fill.fore_color.rgb = BG_PANEL
@@ -1836,7 +1846,7 @@ def note(slide, top: Emu, text: str, kind: str = "info") -> Emu:
     if not text:
         return top
     tone = NOTE_TONES.get(kind, ACCENT)
-    prefix = {"warning": "\u26a0 ", "disclaimer": "", "source": "Source: ", "info": ""}.get(kind, "")
+    prefix = {"warning": "\u26a0 ", "disclaimer": "", "source": _SOURCE_PREFIX, "info": ""}.get(kind, "")
     full = f"{prefix}{text}"
     h = text_block_height([full], FS_NOTE, CONTENT_W, space_after_pt=0.0, pad_pt=10.0)
     box = textbox(slide, MARGIN, top, CONTENT_W, h)
@@ -1851,7 +1861,7 @@ def _safe_content_note(slide, top: Emu, text: str, kind: str = "info") -> Emu:
     if not text:
         return top
     tone = NOTE_TONES.get(kind, ACCENT)
-    prefix = {"warning": "\u26a0 ", "disclaimer": "", "source": "Source: ", "info": ""}.get(kind, "")
+    prefix = {"warning": "\u26a0 ", "disclaimer": "", "source": _SOURCE_PREFIX, "info": ""}.get(kind, "")
     full = f"{prefix}{text}"
     h = int(text_block_height([full], FS_NOTE, CONTENT_W, space_after_pt=0.0, pad_pt=10.0))
     if int(top) + h > int(CONTENT_SAFE_BOTTOM):

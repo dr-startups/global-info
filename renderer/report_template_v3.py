@@ -179,10 +179,18 @@ def _p_overview(prs, vm, ctx):
         _risk_card_value(o.get("overallRiskLevel", "UNKNOWN"), L),
     ]
     top = T.metric_cards(slide, top, cards, per_row=4)
-    T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(1500000), L["profile_summary"], [
-        f"{L['wikipedia_label']} {o.get('wikipediaStatus', '')}",
-        T.truncate(o.get("complianceSummary", ""), 120),
-    ])
+    T.card_auto(
+        slide,
+        T.MARGIN,
+        top,
+        T.CONTENT_W,
+        L["profile_summary"],
+        [
+            f"{L['wikipedia_label']} {o.get('wikipediaStatus', '')}",
+            T.truncate(o.get("complianceSummary", ""), 120),
+        ],
+        min_h=560000,
+    )
 
 
 def _b_results_r2(slide, top, blk, vm, ctx):
@@ -305,7 +313,7 @@ def _b_summary(slide, top, blk, vm, ctx):
         {"label": L["m_suggestions_nt"], "value": s.get("suggestions", "0/0")},
         {"label": L["m_images_nt"], "value": s.get("images", "0/0")},
         {"label": L["m_videos_nt"], "value": s.get("videos", "0/0")},
-        {"label": L["m_knowledge"], "value": s.get("knowledgeBlockStatus", "ABSENT")},
+        {"label": L["m_knowledge"], "value": T.r2_region_metric_value(s.get("knowledgeBlockStatus", "ABSENT"), labels=L)},
     ]
     top = T.metric_cards(slide, top, cards2, per_row=4)
     subs = blk.get("subregions") or {}
@@ -556,10 +564,20 @@ def _p_snapshots(prs, vm, ctx):
     title = L["pg_search_screens"].replace("{label}", blk.get("label", ""))
     slide, top = _section(prs, ctx, title)
     summary = blk.get("summary") or {}
-    T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(2100000), L["search_screens_title"], [
-        L["knowledge_block_status"].format(status=summary.get("knowledgeBlockStatus", "ABSENT")),
-        *L["snapshot_lines"],
-    ])
+    T.card_auto(
+        slide,
+        T.MARGIN,
+        top,
+        T.CONTENT_W,
+        L["search_screens_title"],
+        [
+            L["knowledge_block_status"].format(
+                status=T.r2_region_metric_value(summary.get("knowledgeBlockStatus", "ABSENT"), labels=L)
+            ),
+            *L["snapshot_lines"],
+        ],
+        min_h=720000,
+    )
 
 
 def _b_suggestions(slide, top, blk, vm, ctx):
@@ -938,13 +956,27 @@ def _b_knowledge(slide, top, blk, vm, ctx):
     L = vm["labels"]
     kb = blk["knowledgeBlock"]
     if kb and kb.get("title"):
-        T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(2000000), kb.get("title", L["knowledge_block_default"]), [
-            f"{L['m_status']}: {kb.get('status', 'ABSENT')}",
-            f"{L['th_source']}: {kb.get('source', '') or '—'}",
-            T.truncate(kb.get("snippet", ""), 160),
-        ])
+        T.card_auto(
+            slide,
+            T.MARGIN,
+            top,
+            T.CONTENT_W,
+            kb.get("title", L["knowledge_block_default"]),
+            [
+                f"{L['m_status']}: {T.r2_region_metric_value(kb.get('status', 'ABSENT'), labels=L)}",
+                f"{L['th_source']}: {kb.get('source', '') or L.get('domain_unavailable', 'домен не указан')}",
+                T.truncate(kb.get("snippet", ""), 160),
+            ],
+            min_h=620000,
+        )
     else:
-        T.no_data_card(slide, top, L["no_knowledge_content"].format(status=(kb or {}).get("status", "ABSENT")))
+        T.no_data_card(
+            slide,
+            top,
+            L["no_knowledge_content"].format(
+                status=T.r2_region_metric_value((kb or {}).get("status", "ABSENT"), labels=L)
+            ),
+        )
 
 
 def _b_wikipedia(slide, top, blk, vm, ctx):
@@ -959,8 +991,16 @@ def _b_wikipedia(slide, top, blk, vm, ctx):
         top = T.metric_cards(slide, top, cards, per_row=3)
         top = T.bullets(slide, top, [w.get("pageUrl", ""), w.get("conclusion", "")])
     else:
-        T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(1500000), L["wiki_not_found_title"],
-               list(L["wiki_not_found_lines"]), tone=T.WARNING)
+        T.card_auto(
+            slide,
+            T.MARGIN,
+            top,
+            T.CONTENT_W,
+            L["wiki_not_found_title"],
+            list(L["wiki_not_found_lines"]),
+            tone=T.WARNING,
+            min_h=600000,
+        )
 
 
 def _b_wiki_knowledge(slide, top, blk, vm, ctx):
@@ -968,11 +1008,21 @@ def _b_wiki_knowledge(slide, top, blk, vm, ctx):
     w = blk["wikipedia"]
     kb = blk["knowledgeBlock"]
     state = L["wiki_page_exists"] if w.get("exists") else L["wiki_no_page"]
-    T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(1900000), L["wiki_knowledge_title"], [
-        L["wiki_context_line"].format(state=state, lang=w.get("language") or "—"),
-        L["wiki_kb_line"].format(status=(kb or {}).get("status", "ABSENT")),
-        L["wiki_review_line"],
-    ])
+    T.card_auto(
+        slide,
+        T.MARGIN,
+        top,
+        T.CONTENT_W,
+        L["wiki_knowledge_title"],
+        [
+            L["wiki_context_line"].format(state=state, lang=w.get("language") or "—"),
+            L["wiki_kb_line"].format(
+                status=T.r2_region_metric_value((kb or {}).get("status", "ABSENT"), labels=L)
+            ),
+            L["wiki_review_line"],
+        ],
+        min_h=620000,
+    )
 
 
 def _b_findings(slide, top, blk, vm, ctx):
@@ -1189,7 +1239,11 @@ def _b_conclusion_r24(slide, top, blk, vm, ctx):
     L = vm["labels"]
     summary_line = blk["conclusion"] or L["interim_conclusion_fallback"]
     if str(blk.get("code", "")).upper() == "INTL":
-        if re.search(r"No international subject-matched results in collected data\.?", str(summary_line), flags=re.I):
+        if re.search(
+            r"No international subject-matched results (in collected data|found)\.?",
+            str(summary_line),
+            flags=re.I,
+        ):
             summary_line = L.get("region_international_no_subject_results", summary_line)
     top = T.r2_region_summary_card(
         slide,
@@ -1459,8 +1513,16 @@ def _p_final(prs, vm, ctx):
     slide, top = _section(prs, ctx, L["final_title"], f"{L['overall_risk']}: {f['overallRiskLevel']}")
     T.risk_badge(slide, Emu(int(T.SLIDE_W) - int(T.MARGIN) - 1700000), Emu(250000), f["overallRiskLevel"], w=Emu(1700000))
     themes = ", ".join(f"{t['theme']} ({t['count']})" for t in f.get("topThemes", [])) or "—"
-    top = T.card(slide, T.MARGIN, top, T.CONTENT_W, Emu(1100000), L["highest_risk_themes"], [themes]) or top
-    top = T.bullets(slide, Emu(int(top) + 1180000) if top else top, list(f.get("recommendedActions", []))[:5])
+    top = T.card_auto(
+        slide,
+        T.MARGIN,
+        top,
+        T.CONTENT_W,
+        L["highest_risk_themes"],
+        [themes],
+        min_h=460000,
+    ) or top
+    top = T.bullets(slide, top, list(f.get("recommendedActions", []))[:5])
     if ctx.internal and f.get("missingSections"):
         T.note(slide, top, L["missing_sections_inline"].format(items=", ".join(f["missingSections"])), "warning")
 
@@ -2243,18 +2305,18 @@ def _p_r74_lexis_intro(prs, vm, ctx):
         ],
         per_row=4,
     )
-    top = T.card(
+    top = T.card_auto(
         slide,
         T.MARGIN,
         top,
         T.CONTENT_W,
-        Emu(1550000),
         labels.get("introTitle", L.get("r74_intro_title", "Импортированный отчёт LexisNexis")),
         [
-            labels.get("introBody", L.get("r74_intro_body", "Оригинальный документ включён в приложение в визуальном виде.")),
+            labels.get("introBody", L.get("r74_intro_body", "Импортированный отчёт LexisNexis добавлен как доказательный материал. Автоматический разбор выделил сигналы для проверки; выводы не являются юридическим заключением.")),
             str(summary.get("executiveSummaryClient") or ""),
         ],
         tone=T.ACCENT,
+        min_h=620000,
     )
     T.note(slide, top, lx.get("legalSafeDisclaimer") or L.get("r74_legal_disclaimer", ""), "disclaimer")
 
@@ -2263,6 +2325,7 @@ def _p_r74_lexis_analytics(prs, vm, ctx):
     lx = vm.get("lexisHybrid") or {}
     if not lx.get("present"):
         return
+    L = vm["labels"]
     labels = lx.get("labels") or {}
     slide, top = _section(prs, ctx, labels.get("analyticsTitle", "Аналитика импортированного отчёта"))
     docs = list(lx.get("documents") or [])
@@ -2276,10 +2339,10 @@ def _p_r74_lexis_analytics(prs, vm, ctx):
         slide,
         top,
         [
-            {"label": "Parser", "value": str(pa.get("parserStatus") or "unknown")},
-            {"label": "Signals", "value": int(counts.get("totalSignals") or 0)},
-            {"label": "Review required", "value": int(counts.get("reviewRequired") or 0), "tone": T.WARNING},
-            {"label": "Pages", "value": int(doc.get("pageCount") or 0)},
+            {"label": L.get("r74_parser_status", "Статус парсера"), "value": str(pa.get("parserStatus") or "unknown")},
+            {"label": L.get("r74_signals", "Сигналы"), "value": int(counts.get("totalSignals") or 0)},
+            {"label": L.get("r74_review_required", "Требуют проверки"), "value": int(counts.get("reviewRequired") or 0), "tone": T.WARNING},
+            {"label": L.get("r74_pages", "Страницы"), "value": int(doc.get("pageCount") or 0)},
         ],
         per_row=4,
     )
@@ -2347,6 +2410,7 @@ def build_report_v3(
     warnings.extend(vm_warnings)
     L = vm["labels"]
     T.set_table_strings(L["showing_top"])
+    T.set_note_strings(L.get("source_prefix", "Source: "))
 
     brand = vm["offerBlock"]["cover"]["brand"]
     meta_wm = vm["meta"].get("watermark")
