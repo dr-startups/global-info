@@ -60,6 +60,7 @@ export interface DigitalProfileConfig {
     maxOutputTokens: number;
     openAiApiKey?: string;
   };
+  orionPipelineStore: "file" | "db";
 }
 
 function envLocale(value: string | undefined): "ru" | "en" {
@@ -121,6 +122,10 @@ export const digitalProfileConfig: DigitalProfileConfig = {
     maxOutputTokens: envInt(process.env.DIGITAL_PROFILE_AI_ANALYST_MAX_OUTPUT_TOKENS, 1400, 200, 4000),
     openAiApiKey: process.env.OPENAI_API_KEY?.trim() || undefined,
   },
+  orionPipelineStore:
+    String(process.env.DIGITAL_PROFILE_ORION_PIPELINE_STORE ?? "").trim().toLowerCase() === "db"
+      ? "db"
+      : "file",
 };
 
 /** Master feature flag check. Use this everywhere before exposing the module. */

@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { loadOrionBlueprint } from "./orion-blueprint";
@@ -8,6 +8,7 @@ import { buildDeterministicMicrostageAnalysis } from "./deterministic-microstage
 import { buildMicroStageSlideManifest } from "./slide-manifest-builder";
 import { composeFinalDeckManifest } from "./deck-composer";
 import { runOrionConsistencyChecks } from "./consistency-checker";
+import { createOrionPipelineStore, type OrionStoreMode } from "./persistence";
 import {
   loadRealCaseContext,
   mapCaseDataToMicroStageInputs,
@@ -30,6 +31,7 @@ export interface RunExactOrionPipelineOptions {
   renderSeedArtifactsFrom?: string;
   useRealCaseData?: boolean;
   r93Gpt55Validate?: boolean;
+  storeMode?: OrionStoreMode;
 }
 
 const R93_GPT55_STAGE_KEYS = new Set([
@@ -44,10 +46,6 @@ const R93_GPT55_STAGE_KEYS = new Set([
 
 function ensureDir(path: string): void {
   mkdirSync(path, { recursive: true });
-}
-
-function writeJson(path: string, data: unknown): void {
-  writeFileSync(path, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
 }
 
 function safeArray(value: unknown): Array<Record<string, unknown>> {
@@ -184,14 +182,36 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
     .filter((s) => s.macroSectionKey !== "cover" && s.macroSectionKey !== "toc_global")
     .map((s, idx) => `${String(idx + 1).padStart(2, "0")}-${s.macroSectionKey.replace(/_/g, "-")}`);
   const microStages = blueprint.macroSections.flatMap((s) => s.microStages);
+  const store = createOrionPipelineStore({ mode: options.storeMode });
 
   createStorageSkeleton(
     root,
     macroSectionKeys,
     microStages.map((s) => s.microStageKey)
   );
-  writeJson(join(root, "run-manifest.json"), run);
-  writeJson(join(root, "blueprint.json"), blueprint);
+  await store.createRun({ caseId, reportRunId: run.runId, outputRoot: root, run });
+  await store.saveBlueprint({
+    caseId,
+    reportRunId: run.runId,
+    outputRoot: root,
+    status: "ready",
+    payloadJson: blueprint,
+    metadataJson: { mode: blueprint.mode, version: blueprint.version },
+    internalOnly: true,
+  });
+  for (const macro of blueprint.macroSections) {
+    if (macro.macroSectionKey === "cover" || macro.macroSectionKey === "toc_global") continue;
+    await store.saveMacroSection({
+      caseId,
+      reportRunId: run.runId,
+      outputRoot: root,
+      macroSectionKey: macro.macroSectionKey,
+      orderIndex: macro.order,
+      status: "planned",
+      payloadJson: macro,
+      metadataJson: { sectionNumber: macro.sectionNumber, titleRu: macro.titleRu },
+    });
+  }
 
   let microStageInputs: Record<string, OrionMicroStageInput> = {};
   let realSubject: { fullName: string; aliases: string[] } | null = null;
@@ -202,7 +222,7 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
       });
       realSubject = realContext.subject;
       microStageInputs = mapCaseDataToMicroStageInputs(realContext, blueprint);
-      writeJson(join(root, "real-case-context-inspection.json"), {
+      await store.writeArtifact(join(root, "real-case-context-inspection.json"), {
         caseId: realContext.caseId,
         locale: realContext.locale,
         subject: realContext.subject,
@@ -215,7 +235,7 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
         providerAvailability: realContext.providerAvailability,
         lexis: realContext.lexis,
       });
-      writeJson(join(root, "micro-stage-mapping-inspection.json"), {
+      await store.writeArtifact(join(root, "micro-stage-mapping-inspection.json"), {
         stageCount: Object.keys(microStageInputs).length,
         mappedStages: Object.values(microStageInputs).map((x) => ({
           microStageKey: x.microStageKey,
@@ -262,7 +282,16 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
       const raw = (stageInput?.rawEvidence?.length ?? 0) > 0
         ? stageInput.rawEvidence
         : syntheticEvidenceFromSeed(stage, options.reportJsonSeed);
-      writeJson(join(stageDir, "raw-evidence.json"), raw);
+      await store.saveRawEvidence({
+        caseId,
+        reportRunId: run.runId,
+        outputRoot: root,
+        microStageKey: stage.microStageKey,
+        macroSectionKey: stage.macroSectionKey,
+        orderIndex: stage.order,
+        status: stageRun.status,
+        payloadJson: raw,
+      });
 
       stageRun.status = "normalizing";
       const lexisVisualPageCount = raw.filter((x) => x.type === "lexis_visual_page").length;
@@ -294,18 +323,70 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
             ? Math.max(lexisVisualPageCount, 200)
             : undefined,
       });
-      writeJson(join(stageDir, "normalized-evidence.json"), packed.normalized);
+      await store.saveNormalizedEvidence({
+        caseId,
+        reportRunId: run.runId,
+        outputRoot: root,
+        microStageKey: stage.microStageKey,
+        macroSectionKey: stage.macroSectionKey,
+        orderIndex: stage.order,
+        status: "normalized",
+        payloadJson: packed.normalized,
+      });
 
       stageRun.status = "selected";
-      writeJson(join(stageDir, "selected-evidence.json"), packed.selected);
-      writeJson(join(stageDir, "excluded-evidence.json"), packed.excluded);
+      await store.saveSelectedEvidence({
+        caseId,
+        reportRunId: run.runId,
+        outputRoot: root,
+        microStageKey: stage.microStageKey,
+        macroSectionKey: stage.macroSectionKey,
+        orderIndex: stage.order,
+        status: "selected",
+        payloadJson: packed.selected,
+      });
+      await store.saveExcludedEvidence({
+        caseId,
+        reportRunId: run.runId,
+        outputRoot: root,
+        microStageKey: stage.microStageKey,
+        macroSectionKey: stage.macroSectionKey,
+        orderIndex: stage.order,
+        status: "selected",
+        payloadJson: packed.excluded,
+      });
 
       stageRun.status = "building_evidence_pack";
-      writeJson(join(stageDir, "evidence-pack.json"), packed.evidencePack);
+      await store.saveEvidencePack({
+        caseId,
+        reportRunId: run.runId,
+        outputRoot: root,
+        microStageKey: stage.microStageKey,
+        macroSectionKey: stage.macroSectionKey,
+        orderIndex: stage.order,
+        status: "evidence_pack_ready",
+        payloadJson: packed.evidencePack,
+      });
+      await store.saveEvidenceFile({
+        caseId,
+        reportRunId: run.runId,
+        outputRoot: root,
+        microStageKey: stage.microStageKey,
+        macroSectionKey: stage.macroSectionKey,
+        orderIndex: stage.order,
+        status: "ready",
+        payloadJson: packed.evidencePack.topResults
+          .filter((x) => x.visualRef || x.screenshotRef)
+          .map((x) => ({
+            safeEvidenceId: x.safeEvidenceId,
+            visualRef: x.visualRef,
+            screenshotRef: x.screenshotRef,
+          })),
+      });
 
       stageRun.status = "analyzing";
       const deterministic = buildDeterministicMicrostageAnalysis({ microStage: stage, evidencePack: packed.evidencePack });
-      writeJson(join(stageDir, "deterministic-analysis.json"), deterministic);
+      await store.writeArtifact(join(stageDir, "deterministic-analysis.json"), deterministic);
       const selectedForGpt55 = r93GptEnabled && R93_GPT55_STAGE_KEYS.has(stage.microStageKey);
       let retries = 0;
       let finalAnalysis = deterministic;
@@ -326,8 +407,17 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
           diagnostics = second.diagnostics;
         }
       }
-      writeJson(join(stageDir, "gpt55-analysis.json"), selectedForGpt55 ? finalAnalysis : deterministic);
-      writeJson(join(stageDir, "final-analysis.json"), finalAnalysis);
+      await store.writeArtifact(join(stageDir, "gpt55-analysis.json"), selectedForGpt55 ? finalAnalysis : deterministic);
+      await store.saveSectionAnalysis({
+        caseId,
+        reportRunId: run.runId,
+        outputRoot: root,
+        microStageKey: stage.microStageKey,
+        macroSectionKey: stage.macroSectionKey,
+        orderIndex: stage.order,
+        status: finalAnalysis.status,
+        payloadJson: finalAnalysis,
+      });
       analyses.push(finalAnalysis);
       gptInspectionRows.push({
         microStageKey: stage.microStageKey,
@@ -344,11 +434,28 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
 
       stageRun.status = "building_slide_manifest";
       const manifest = buildMicroStageSlideManifest({ microStage: stage, analysis: finalAnalysis });
-      writeJson(join(stageDir, "slide-manifest.json"), manifest);
+      await store.saveSlideManifest({
+        caseId,
+        reportRunId: run.runId,
+        outputRoot: root,
+        microStageKey: stage.microStageKey,
+        macroSectionKey: stage.macroSectionKey,
+        orderIndex: stage.order,
+        status: "slide_manifest_ready",
+        payloadJson: manifest,
+      });
       slideManifests.push(manifest);
       stageRun.status = "slide_manifest_ready";
 
-      writeJson(join(stageDir, "stage-inspection.json"), {
+      await store.saveMicroStage({
+        caseId,
+        reportRunId: run.runId,
+        outputRoot: root,
+        microStageKey: stage.microStageKey,
+        macroSectionKey: stage.macroSectionKey,
+        orderIndex: stage.order,
+        status: stageRun.status,
+        payloadJson: {
         microStageKey: stage.microStageKey,
         status: stageRun.status,
         gpt55: {
@@ -359,14 +466,37 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
           retries,
         },
         warnings: [...stageRun.warnings, ...finalAnalysis.warnings],
+        },
       });
+      for (const agent of stageRun.agentRuns) {
+        await store.saveAgentRun({
+          caseId,
+          reportRunId: run.runId,
+          outputRoot: root,
+          microStageKey: stage.microStageKey,
+          macroSectionKey: stage.macroSectionKey,
+          orderIndex: stage.order,
+          status: agent.status,
+          payloadJson: agent,
+          metadataJson: { providerId: agent.providerId, agentName: agent.agentName, reason: agent.reason },
+        });
+      }
     } catch (error) {
       stageRun.status = "failed";
       stageRun.errors.push(error instanceof Error ? error.message : "unknown-stage-error");
-      writeJson(join(stageDir, "stage-inspection.json"), {
+      await store.saveMicroStage({
+        caseId,
+        reportRunId: run.runId,
+        outputRoot: root,
+        microStageKey: stage.microStageKey,
+        macroSectionKey: stage.macroSectionKey,
+        orderIndex: stage.order,
+        status: "failed",
+        payloadJson: {
         microStageKey: stage.microStageKey,
         status: "failed",
         errors: stageRun.errors,
+        },
       });
       run.errors.push(`stage-failed:${stage.microStageKey}`);
     } finally {
@@ -470,21 +600,49 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
 
   const composedDir = join(root, "composed");
   ensureDir(composedDir);
-  writeJson(join(composedDir, "final-deck-manifest.json"), composed.finalManifest);
+  await store.saveFinalDeckManifest({
+    caseId,
+    reportRunId: run.runId,
+    outputRoot: root,
+    status: "ready",
+    payloadJson: composed.finalManifest,
+  });
   const internalJsonPath = join(composedDir, "final-report-json-internal.json");
   const clientJsonPath = join(composedDir, "final-report-json-client.json");
-  writeJson(internalJsonPath, finalReportJsonInternal);
-  writeJson(clientJsonPath, finalReportJsonClient);
-  writeJson(join(composedDir, "composition-inspection.json"), composed.compositionInspection);
-  writeJson(join(composedDir, "consistency-inspection.json"), consistencyInspection);
-  writeJson(join(composedDir, "client-policy-inspection.json"), {
+  await store.saveReportJsonVersion({
+    caseId,
+    reportRunId: run.runId,
+    outputRoot: root,
+    status: "ready",
+    audience: "internal",
+    internalOnly: true,
+    payloadJson: finalReportJsonInternal,
+  });
+  await store.saveReportJsonVersion({
+    caseId,
+    reportRunId: run.runId,
+    outputRoot: root,
+    status: "ready",
+    audience: "client",
+    internalOnly: false,
+    payloadJson: finalReportJsonClient,
+  });
+  await store.writeArtifact(join(composedDir, "composition-inspection.json"), composed.compositionInspection);
+  await store.saveConsistencyCheck({
+    caseId,
+    reportRunId: run.runId,
+    outputRoot: root,
+    status: consistencyInspection.status,
+    payloadJson: consistencyInspection,
+  });
+  await store.writeArtifact(join(composedDir, "client-policy-inspection.json"), {
     status:
       consistencyInspection.violations.filter((x) => x.section === "client-policy").length === 0
         ? "PASS"
         : "BLOCKED",
     violations: consistencyInspection.violations.filter((x) => x.section === "client-policy"),
   });
-  writeJson(join(root, "gpt55-narrative-inspection.json"), {
+  await store.writeArtifact(join(root, "gpt55-narrative-inspection.json"), {
     enabled: r93GptEnabled,
     selectedStages: [...R93_GPT55_STAGE_KEYS],
     rows: gptInspectionRows,
@@ -509,7 +667,7 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
   } catch {
     legacySummary = { status: "legacy-report-json-unavailable" };
   }
-  writeJson(join(composedDir, "r7-r9-comparison-inspection.json"), {
+  await store.writeArtifact(join(composedDir, "r7-r9-comparison-inspection.json"), {
     legacy: legacySummary,
     r9: {
       pageCountInternal: composed.compositionInspection.finalInternalPageCount,
@@ -547,14 +705,14 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
   const clientRenderError = runR9Renderer(clientJsonPath, clientPptx, clientPdf, clientPages);
   if (clientRenderError) run.warnings.push(clientRenderError);
 
-  writeJson(join(root, "run-manifest.json"), {
+  await store.writeArtifact(join(root, "run-manifest.json"), {
     ...run,
     status: consistencyInspection.status === "PASS" ? "composed" : "failed",
     finishedAt: new Date().toISOString(),
   });
 
   // keep filesystem mapping documentation for future DB migration.
-  writeJson(join(root, "supabase-schema-plan.json"), {
+  await store.writeArtifact(join(root, "supabase-schema-plan.json"), {
     mode: blueprint.mode,
     generatedAt: new Date().toISOString(),
     mapping: {

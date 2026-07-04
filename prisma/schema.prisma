@@ -220,6 +220,22 @@ model Case {
   reportVersions     ReportVersion[]
   auditLogs        AuditLog[]
   caseAccess         DpCaseAccess[]
+  orionReportRuns    OrionReportRun[]
+  orionMacroSections OrionReportMacroSection[]
+  orionMicroStages   OrionReportMicroStage[]
+  orionSectionAgentRuns OrionSectionAgentRun[]
+  orionRawEvidence OrionRawEvidence[]
+  orionNormalizedEvidence OrionNormalizedEvidence[]
+  orionSelectedEvidence OrionSelectedEvidence[]
+  orionExcludedEvidence OrionExcludedEvidence[]
+  orionEvidenceFiles OrionEvidenceFile[]
+  orionSectionEvidencePacks OrionSectionEvidencePack[]
+  orionSectionAnalyses OrionSectionAnalysis[]
+  orionSectionSlideManifests OrionSectionSlideManifest[]
+  orionSectionDeckArtifacts OrionSectionDeckArtifact[]
+  orionFinalDeckManifests OrionFinalDeckManifest[]
+  orionReportJsonVersions OrionReportJsonVersion[]
+  orionReportConsistencyChecks OrionReportConsistencyCheck[]
 
   @@index([status])
   @@index([deletedAt])
@@ -577,6 +593,430 @@ model ReportVersion {
   @@unique([caseId, version])
   @@index([caseId])
   @@map("dp_report_versions")
+}
+
+// ----------------------------------------------------------------------------
+// 11b. ORION section pipeline persistence (R9.4 additive, experimental)
+// ----------------------------------------------------------------------------
+
+model OrionReportRun {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportVersionId String?
+  mode        String
+  storeMode   String   @default("file")
+  status      String
+  internalOnly Boolean @default(true)
+  metadataJson Json?
+  warningsJson Json?
+  errorsJson  Json?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  macroSections OrionReportMacroSection[]
+  microStages OrionReportMicroStage[]
+  sectionAgentRuns OrionSectionAgentRun[]
+  rawEvidence OrionRawEvidence[]
+  normalizedEvidence OrionNormalizedEvidence[]
+  selectedEvidence OrionSelectedEvidence[]
+  excludedEvidence OrionExcludedEvidence[]
+  evidenceFiles OrionEvidenceFile[]
+  sectionEvidencePacks OrionSectionEvidencePack[]
+  sectionAnalyses OrionSectionAnalysis[]
+  sectionSlideManifests OrionSectionSlideManifest[]
+  sectionDeckArtifacts OrionSectionDeckArtifact[]
+  finalDeckManifests OrionFinalDeckManifest[]
+  reportJsonVersions OrionReportJsonVersion[]
+  consistencyChecks OrionReportConsistencyCheck[]
+
+  @@index([caseId])
+  @@index([reportVersionId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("dp_orion_report_runs")
+}
+
+model OrionReportMacroSection {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportRunId String
+  macroSectionKey String
+  sectionNumber String?
+  orderIndex  Int
+  status      String
+  titleRu     String
+  internalOnly Boolean @default(true)
+  payloadJson Json?
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  microStages OrionReportMicroStage[]
+  sectionDeckArtifacts OrionSectionDeckArtifact[]
+
+  @@index([caseId])
+  @@index([reportRunId])
+  @@index([macroSectionKey])
+  @@index([status])
+  @@index([orderIndex])
+  @@index([createdAt])
+  @@map("dp_orion_report_macro_sections")
+}
+
+model OrionReportMicroStage {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportRunId String
+  macroSectionId String?
+  macroSectionKey String
+  microStageKey String
+  sectionNumber String?
+  orderIndex  Int
+  status      String
+  internalOnly Boolean @default(true)
+  metadataJson Json?
+  payloadJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  macroSection OrionReportMacroSection? @relation(fields: [macroSectionId], references: [id], onDelete: SetNull)
+  agentRuns OrionSectionAgentRun[]
+  rawEvidence OrionRawEvidence[]
+  normalizedEvidence OrionNormalizedEvidence[]
+  selectedEvidence OrionSelectedEvidence[]
+  excludedEvidence OrionExcludedEvidence[]
+  evidenceFiles OrionEvidenceFile[]
+  evidencePacks OrionSectionEvidencePack[]
+  analyses OrionSectionAnalysis[]
+  slideManifests OrionSectionSlideManifest[]
+
+  @@index([caseId])
+  @@index([reportRunId])
+  @@index([macroSectionKey])
+  @@index([microStageKey])
+  @@index([status])
+  @@index([orderIndex])
+  @@index([createdAt])
+  @@map("dp_orion_report_micro_stages")
+}
+
+model OrionSectionAgentRun {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportRunId String
+  microStageId String
+  providerId  String
+  agentName   String
+  status      String
+  reason      String?
+  internalOnly Boolean @default(true)
+  payloadJson Json?
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  microStage OrionReportMicroStage @relation(fields: [microStageId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([reportRunId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("dp_orion_section_agent_runs")
+}
+
+model OrionRawEvidence {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportRunId String
+  microStageId String
+  orderIndex  Int?
+  status      String?
+  internalOnly Boolean @default(true)
+  payloadJson Json
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  microStage OrionReportMicroStage @relation(fields: [microStageId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([reportRunId])
+  @@index([status])
+  @@index([orderIndex])
+  @@index([createdAt])
+  @@map("dp_orion_raw_evidence")
+}
+
+model OrionNormalizedEvidence {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportRunId String
+  microStageId String
+  orderIndex  Int?
+  status      String?
+  internalOnly Boolean @default(true)
+  payloadJson Json
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  microStage OrionReportMicroStage @relation(fields: [microStageId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([reportRunId])
+  @@index([status])
+  @@index([orderIndex])
+  @@index([createdAt])
+  @@map("dp_orion_normalized_evidence")
+}
+
+model OrionSelectedEvidence {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportRunId String
+  microStageId String
+  orderIndex  Int?
+  status      String?
+  internalOnly Boolean @default(true)
+  payloadJson Json
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  microStage OrionReportMicroStage @relation(fields: [microStageId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([reportRunId])
+  @@index([status])
+  @@index([orderIndex])
+  @@index([createdAt])
+  @@map("dp_orion_selected_evidence")
+}
+
+model OrionExcludedEvidence {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportRunId String
+  microStageId String
+  orderIndex  Int?
+  status      String?
+  internalOnly Boolean @default(true)
+  payloadJson Json
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  microStage OrionReportMicroStage @relation(fields: [microStageId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([reportRunId])
+  @@index([status])
+  @@index([orderIndex])
+  @@index([createdAt])
+  @@map("dp_orion_excluded_evidence")
+}
+
+model OrionEvidenceFile {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportRunId String
+  microStageId String
+  status      String?
+  orderIndex  Int?
+  internalOnly Boolean @default(true)
+  payloadJson Json
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  microStage OrionReportMicroStage @relation(fields: [microStageId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([reportRunId])
+  @@index([status])
+  @@index([orderIndex])
+  @@index([createdAt])
+  @@map("dp_orion_evidence_files")
+}
+
+model OrionSectionEvidencePack {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportRunId String
+  microStageId String
+  status      String?
+  internalOnly Boolean @default(true)
+  payloadJson Json
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  microStage OrionReportMicroStage @relation(fields: [microStageId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([reportRunId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("dp_orion_section_evidence_packs")
+}
+
+model OrionSectionAnalysis {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportRunId String
+  microStageId String
+  status      String?
+  internalOnly Boolean @default(true)
+  payloadJson Json
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  microStage OrionReportMicroStage @relation(fields: [microStageId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([reportRunId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("dp_orion_section_analyses")
+}
+
+model OrionSectionSlideManifest {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportRunId String
+  microStageId String
+  status      String?
+  internalOnly Boolean @default(true)
+  payloadJson Json
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  microStage OrionReportMicroStage @relation(fields: [microStageId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([reportRunId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("dp_orion_section_slide_manifests")
+}
+
+model OrionSectionDeckArtifact {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportRunId String
+  macroSectionId String
+  status      String?
+  audience    String
+  orderIndex  Int?
+  internalOnly Boolean @default(true)
+  payloadJson Json
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  macroSection OrionReportMacroSection @relation(fields: [macroSectionId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([reportRunId])
+  @@index([status])
+  @@index([orderIndex])
+  @@index([createdAt])
+  @@map("dp_orion_section_deck_artifacts")
+}
+
+model OrionFinalDeckManifest {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportRunId String
+  status      String?
+  internalOnly Boolean @default(true)
+  payloadJson Json
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([reportRunId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("dp_orion_final_deck_manifests")
+}
+
+model OrionReportJsonVersion {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportRunId String
+  status      String?
+  audience    String
+  orderIndex  Int?
+  internalOnly Boolean @default(false)
+  payloadJson Json
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([reportRunId])
+  @@index([status])
+  @@index([orderIndex])
+  @@index([createdAt])
+  @@map("dp_orion_report_json_versions")
+}
+
+model OrionReportConsistencyCheck {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportRunId String
+  status      String
+  internalOnly Boolean @default(true)
+  payloadJson Json
+  metadataJson Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([reportRunId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("dp_orion_report_consistency_checks")
 }
 
 // ----------------------------------------------------------------------------
