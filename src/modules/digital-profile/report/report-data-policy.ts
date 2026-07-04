@@ -146,13 +146,13 @@ export interface ReportWarning {
 }
 
 export const REPORT_WARNING_DEMO_SEARCH_EXCLUDED = {
-  en: "Demo/mock search rows were excluded from production report metrics.",
-  ru: "Demo/mock строки поиска исключены из метрик production-отчёта.",
+  en: "Synthetic search rows were excluded from report metrics.",
+  ru: "Синтетические строки поиска исключены из метрик отчёта.",
 } as const;
 
 export const REPORT_WARNING_DEMO_COMPLIANCE_EXCLUDED = {
-  en: "Demo/mock compliance hits were excluded from production report metrics.",
-  ru: "Demo/mock compliance-записи исключены из метрик production-отчёта.",
+  en: "Synthetic compliance rows were excluded from report metrics.",
+  ru: "Синтетические записи compliance исключены из метрик отчёта.",
 } as const;
 
 export function createInternalHygieneWarning(

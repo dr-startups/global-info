@@ -122,6 +122,11 @@ export interface Dictionary {
     realOrionProfileHint: string;
     realOrionSurfacesHint: string;
     realOrionUaeHint: string;
+    summaryCompleted: string;
+    summarySkipped: string;
+    summaryUnavailable: string;
+    summaryFallback: string;
+    summaryFailed: string;
   };
   report: {
     title: string;
@@ -372,6 +377,10 @@ export interface Dictionary {
     lexisError: string;
     lexisCompactSummary: string;
     lexisLastImportTitle: string;
+    lexisInvalidFileType: string;
+    lexisReadyMessage: string;
+    lexisConversionWarningMessage: string;
+    lexisResultLine: string;
   };
   evidenceQuality: {
     collected: string;

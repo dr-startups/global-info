@@ -79,7 +79,8 @@ export const en: Dictionary = {
     auditDone: "Full audit completed. Demo data populated across tabs.",
     auditPartial: "Audit finished with warnings — some agents failed. See the Agents tab.",
     auditFailed: "Audit failed — all agents errored. See the Agents tab.",
-    auditRunStats: "Summary: completed={completed}, skipped={skipped}, failed={failed}, mode={mode}.",
+    auditRunStats:
+      "Summary: completed={completed}, skipped={skipped}, unavailable={unavailable}, fallback={fallback}, failed={failed}, mode={mode}.",
     lastRun: "Last run",
     lastFullAuditSummary: "Last full audit diagnostics",
     runtimeModeLabel: "Runtime mode: {mode}",
@@ -110,6 +111,11 @@ export const en: Dictionary = {
       "Google surfaces (suggestions, images, videos, knowledge) collected via Serper.",
     realOrionUaeHint:
       "UAE / International search profile collected. Regenerate the report to refresh regional pages.",
+    summaryCompleted: "completed",
+    summarySkipped: "skipped",
+    summaryUnavailable: "unavailable / configuration required",
+    summaryFallback: "fallback",
+    summaryFailed: "failed",
   },
   report: {
     title: "Report preview",
@@ -377,6 +383,10 @@ export const en: Dictionary = {
     lexisCompactSummary:
       "Pages: {pages}, signals: {signals}, review required: {review}, parser: {parser}, conversion: {conversion}.",
     lexisLastImportTitle: "Latest LexisNexis import",
+    lexisInvalidFileType: "Only .docx files are supported.",
+    lexisReadyMessage: "Document is ready for report inclusion.",
+    lexisConversionWarningMessage: "Document uploaded, but visual pages are not generated yet.",
+    lexisResultLine: "Source: {source}, file: {file}.",
   },
   evidenceQuality: {
     collected: "Collected",

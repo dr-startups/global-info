@@ -124,17 +124,19 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
     setAuditing(true);
     setBanner(null);
     try {
-      const result = await runFullAudit(caseId);
+      const result = await runFullAudit(caseId, {
+        runtimeMode: "real_first_with_fallback",
+      });
       await refreshAgents();
       setLastFullAuditSummary({
         mode: result.runtimeStrategy?.mode ?? "real_first_with_fallback",
         items: result.runSummary ?? [],
       });
       const completedCount = result.runSummary?.filter((item) => item.status === "completed").length ?? 0;
-      const skippedCount =
-        result.runSummary?.filter((item) => item.status === "skipped" || item.status === "unavailable")
-          .length ?? 0;
+      const skippedCount = result.runSummary?.filter((item) => item.status === "skipped").length ?? 0;
+      const unavailableCount = result.runSummary?.filter((item) => item.status === "unavailable").length ?? 0;
       const failedCount = result.runSummary?.filter((item) => item.status === "failed").length ?? 0;
+      const fallbackCount = result.runSummary?.filter((item) => !!item.fallbackAgent).length ?? 0;
       const mode = result.runtimeStrategy?.mode ?? "real_first_with_fallback";
       const ok = result.outcome === "SUCCESS";
       const baseText =
@@ -148,6 +150,8 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
         text: `${baseText} ${t("agents.auditRunStats", {
           completed: completedCount,
           skipped: skippedCount,
+          unavailable: unavailableCount,
+          fallback: fallbackCount,
           failed: failedCount,
           mode,
         })}`,

@@ -79,7 +79,8 @@ export const ru: Dictionary = {
     auditDone: "Полный аудит завершён. Демо-данные заполнены во всех вкладках.",
     auditPartial: "Аудит завершён с предупреждениями — часть агентов упала. См. вкладку «Агенты».",
     auditFailed: "Аудит не удался — все агенты завершились с ошибкой. См. вкладку «Агенты».",
-    auditRunStats: "Итог: completed={completed}, skipped={skipped}, failed={failed}, mode={mode}.",
+    auditRunStats:
+      "Итог: completed={completed}, skipped={skipped}, unavailable={unavailable}, fallback={fallback}, failed={failed}, mode={mode}.",
     lastRun: "Последний запуск",
     lastFullAuditSummary: "Диагностика последнего полного аудита",
     runtimeModeLabel: "Runtime mode: {mode}",
@@ -110,6 +111,11 @@ export const ru: Dictionary = {
       "Поверхности Google (подсказки, изображения, видео, knowledge panel) собраны через Serper.",
     realOrionUaeHint:
       "Поиск UAE / International завершён. Пересоберите отчёт для обновления региональных страниц.",
+    summaryCompleted: "выполнен",
+    summarySkipped: "пропущен",
+    summaryUnavailable: "недоступен / требуется настройка",
+    summaryFallback: "fallback",
+    summaryFailed: "ошибка",
   },
   report: {
     title: "Предпросмотр отчёта",
@@ -377,6 +383,10 @@ export const ru: Dictionary = {
     lexisCompactSummary:
       "Страниц: {pages}, сигналов: {signals}, на проверке: {review}, parser: {parser}, conversion: {conversion}.",
     lexisLastImportTitle: "Последний импорт LexisNexis",
+    lexisInvalidFileType: "Поддерживаются только файлы формата .docx.",
+    lexisReadyMessage: "Документ готов к включению в отчёт.",
+    lexisConversionWarningMessage: "Документ загружен, но визуальные страницы пока не сформированы.",
+    lexisResultLine: "Источник: {source}, файл: {file}.",
   },
   evidenceQuality: {
     collected: "Собрано",

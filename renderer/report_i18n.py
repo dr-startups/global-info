@@ -173,9 +173,9 @@ _EN = {
     # Stage N1.2 — source-mode aware caption line.
     "serp_snapshot_source_real": "Data was collected from a real search API.",
     "serp_snapshot_source_mixed": "Some data was collected from a real search API; the rest is demo/mock.",
-    "serp_snapshot_source_mock": "Demo/mock data is used.",
+    "serp_snapshot_source_mock": "Synthetic data is used.",
     "serp_snapshot_source_empty": "No search data is available.",
-    "serp_snapshot_source_internal_filtered": "Demo/mock rows were excluded from report metrics.",
+    "serp_snapshot_source_internal_filtered": "Synthetic rows were excluded from report metrics.",
     "serp_snapshot_source_client_real": "Search visual generated from saved real search results.",
     "serp_snapshot_source_client_available": "Search visual generated from saved search results available for this report.",
     "serp_snapshot_source_client_empty": "Search data was not collected for this report.",
@@ -936,9 +936,9 @@ _RU = {
     # Stage N1.2 — подпись с учётом источника данных.
     "serp_snapshot_source_real": "Данные получены из реального поискового API.",
     "serp_snapshot_source_mixed": "Часть данных получена из реального API, часть — demo/mock.",
-    "serp_snapshot_source_mock": "Используются demo/mock-данные.",
+    "serp_snapshot_source_mock": "Используются синтетические данные.",
     "serp_snapshot_source_empty": "Поисковые данные отсутствуют.",
-    "serp_snapshot_source_internal_filtered": "Demo/mock строки исключены из метрик отчёта.",
+    "serp_snapshot_source_internal_filtered": "Синтетические строки исключены из метрик отчёта.",
     "serp_snapshot_source_client_real": "Визуализация сформирована на основе сохранённых реальных поисковых результатов.",
     "serp_snapshot_source_client_available": "Визуализация сформирована на основе сохранённых поисковых результатов, доступных для отчёта.",
     "serp_snapshot_source_client_empty": "Поисковые данные для отчёта не собирались.",

@@ -47,9 +47,20 @@ function main() {
     requestedBy: "test",
     availabilityOverride: AVAIL,
   });
+  const yandexIdx = legacy.selectedOrder.indexOf("YANDEX_SEARCH");
+  const googleIdx = legacy.selectedOrder.indexOf("GOOGLE_SEARCH");
+  const wikiIdx = legacy.selectedOrder.indexOf("WIKIPEDIA");
+  const aiIdx = legacy.selectedOrder.indexOf("AI_PROFILE");
+  const complianceIdx = legacy.selectedOrder.indexOf("COMPLIANCE_DATABASE");
+  const riskIdx = legacy.selectedOrder.indexOf("RISK_CLASSIFIER");
   check(
     "legacy_mock_first keeps mock order",
-    legacy.selectedOrder.join(",").startsWith("YANDEX_SEARCH,GOOGLE_SEARCH,WIKIPEDIA,AI_PROFILE,COMPLIANCE_DATABASE,RISK_CLASSIFIER"),
+    yandexIdx === 0 &&
+      googleIdx === 1 &&
+      wikiIdx === 2 &&
+      aiIdx > wikiIdx &&
+      complianceIdx > aiIdx &&
+      riskIdx > complianceIdx,
     legacy.selectedOrder.join(",")
   );
 

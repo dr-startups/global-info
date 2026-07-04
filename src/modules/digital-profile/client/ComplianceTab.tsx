@@ -31,6 +31,11 @@ const RISK_TYPES: ComplianceRiskType[] = [
   "OTHER",
 ];
 const DB_PROVIDERS = ["DOW_JONES", "LEXISNEXIS", "WORLD_CHECK", "OTHER"] as const;
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+function isDocxFile(file: File): boolean {
+  return /\.docx$/i.test(file.name) || file.type === DOCX_MIME;
+}
 
 function reviewTone(status: string): "warn" | "ok" | "danger" | "info" | "neutral" {
   if (status === "MATCH_CONFIRMED") return "ok";
@@ -146,13 +151,23 @@ export function ComplianceTab({
 
   async function handleLexisUpload(file: File) {
     if (lexisBusy) return;
+    if (!isDocxFile(file)) {
+      setLexisStatus(t("compliance.lexisError"));
+      setError(t("compliance.lexisInvalidFileType"));
+      return;
+    }
     setLexisBusy(true);
     setError(null);
+    setInfo(null);
     setLexisStatus(t("compliance.lexisUploaded"));
     try {
       setLexisStatus(t("compliance.lexisConverting"));
       const result = await importLexisNexisDocx(caseId, file);
       setLexisStatus(t("compliance.lexisParsing"));
+      const conversionWarning =
+        result.conversionStatus !== "ready" ||
+        result.document.status === "conversion_warning" ||
+        result.document.pageCount <= 0;
       const finalLabel =
         result.document.status === "ready"
           ? t("compliance.lexisReady")
@@ -160,14 +175,21 @@ export function ComplianceTab({
               result.document.status === "parse_warning"
             ? t("compliance.lexisReviewRequired")
             : t("compliance.lexisError");
+      const resultLine = t("compliance.lexisResultLine", {
+        source: result.document.sourceLabel || "LexisNexis",
+        file: result.document.fileName || file.name,
+      });
+      const compactSummary = t("compliance.lexisCompactSummary", {
+        pages: result.document.pageCount,
+        signals: result.document.parsedAnalytics.signalCounts.totalSignals,
+        review: result.document.parsedAnalytics.signalCounts.reviewRequired,
+        parser: result.parserStatus,
+        conversion: result.conversionStatus,
+      });
       setInfo(
-        `${finalLabel} ${t("compliance.lexisCompactSummary", {
-          pages: result.document.pageCount,
-          signals: result.document.parsedAnalytics.signalCounts.totalSignals,
-          review: result.document.parsedAnalytics.signalCounts.reviewRequired,
-          parser: result.parserStatus,
-          conversion: result.conversionStatus,
-        })}`
+        conversionWarning
+          ? `${t("compliance.lexisConversionWarningMessage")} ${resultLine} ${compactSummary}`
+          : `${t("compliance.lexisReadyMessage")} ${resultLine} ${compactSummary}`
       );
       setLexisStatus(finalLabel);
       onChanged();
@@ -259,6 +281,7 @@ export function ComplianceTab({
             const counts = (parsed.signalCounts ?? {}) as Record<string, unknown>;
             return (
               <div key={row.id} className="dp-muted" style={{ marginTop: 6, fontSize: 13 }}>
+                <div>{t("compliance.lexisResultLine", { source: String(hybrid.sourceLabel ?? "LexisNexis"), file: String(hybrid.fileName ?? "—") })}</div>
                 {t("compliance.lexisCompactSummary", {
                   pages: Number(hybrid.pageCount ?? 0),
                   signals: Number(counts.totalSignals ?? 0),

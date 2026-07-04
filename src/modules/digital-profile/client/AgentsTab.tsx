@@ -129,15 +129,30 @@ export function AgentsTab({
                     </Badge>
                   </td>
                   <td>
-                    <StatusBadge
-                      status={
+                    <Badge
+                      tone={
                         item.status === "completed"
-                          ? "SUCCEEDED"
+                          ? "ok"
                           : item.status === "failed"
-                            ? "FAILED"
-                            : "PENDING"
+                            ? "danger"
+                            : item.status === "unavailable"
+                              ? "warn"
+                              : "neutral"
                       }
-                    />
+                    >
+                      {item.status === "completed"
+                        ? t("agents.summaryCompleted")
+                        : item.status === "failed"
+                          ? t("agents.summaryFailed")
+                          : item.status === "unavailable"
+                            ? t("agents.summaryUnavailable")
+                            : t("agents.summarySkipped")}
+                    </Badge>
+                    {item.fallbackAgent ? (
+                      <span style={{ marginLeft: 6 }}>
+                        <Badge tone="info">{t("agents.summaryFallback")}</Badge>
+                      </span>
+                    ) : null}
                   </td>
                   <td className="dp-muted">
                     {item.agentName ? `${item.agentName}. ` : ""}

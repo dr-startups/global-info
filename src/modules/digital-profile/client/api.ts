@@ -323,6 +323,8 @@ export interface DatabaseProfile {
 export interface LexisNexisHybridImportResult {
   document: {
     id: string;
+    sourceLabel?: string;
+    fileName?: string;
     status:
       | "uploaded"
       | "converting"
