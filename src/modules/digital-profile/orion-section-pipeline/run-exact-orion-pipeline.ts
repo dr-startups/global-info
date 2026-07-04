@@ -29,7 +29,18 @@ export interface RunExactOrionPipelineOptions {
   renderMode?: "manifest_renderer_v1";
   renderSeedArtifactsFrom?: string;
   useRealCaseData?: boolean;
+  r93Gpt55Validate?: boolean;
 }
+
+const R93_GPT55_STAGE_KEYS = new Set([
+  "executive_narrative_summary",
+  "ru_audit_summary",
+  "ru_search_links_overview",
+  "uae_audit_summary",
+  "compliance_risk_matrix",
+  "lexisnexis_profile_overview",
+  "compliance_database_summary_for_risk_matrix",
+]);
 
 function ensureDir(path: string): void {
   mkdirSync(path, { recursive: true });
@@ -224,6 +235,20 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
   const stageRuns: OrionMicroStageRun[] = [];
   const analyses: OrionGpt55SectionAnalysis[] = [];
   const slideManifests: OrionSlideManifest[] = [];
+  const gptInspectionRows: Array<{
+    microStageKey: string;
+    selectedForGpt55: boolean;
+    generatedBy: string;
+    status: string;
+    provider: string;
+    model: string;
+    reason?: string;
+    evidenceItemsUsed: number;
+    truncatedInput: boolean;
+    retries: number;
+  }> = [];
+
+  const r93GptEnabled = options.r93Gpt55Validate ?? process.env.R9_3_GPT55_VALIDATE === "true";
 
   run.status = "collecting";
   for (const stage of microStages.sort((a, b) => a.order - b.order)) {
@@ -240,6 +265,7 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
       writeJson(join(stageDir, "raw-evidence.json"), raw);
 
       stageRun.status = "normalizing";
+      const lexisVisualPageCount = raw.filter((x) => x.type === "lexis_visual_page").length;
       const packed = buildMicroStageEvidencePack({
         microStage: stage,
         subject: {
@@ -263,6 +289,10 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
         ],
         queryVariants: stageInput?.queryVariants,
         resultCounts: stageInput?.resultCounts,
+        maxItems:
+          stage.microStageKey === "lexisnexis_visual_pages" && lexisVisualPageCount > 0
+            ? Math.max(lexisVisualPageCount, 200)
+            : undefined,
       });
       writeJson(join(stageDir, "normalized-evidence.json"), packed.normalized);
 
@@ -276,13 +306,44 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
       stageRun.status = "analyzing";
       const deterministic = buildDeterministicMicrostageAnalysis({ microStage: stage, evidencePack: packed.evidencePack });
       writeJson(join(stageDir, "deterministic-analysis.json"), deterministic);
-      const gpt = await analyzeMicroStageWithGpt55({ microStage: stage, evidencePack: packed.evidencePack });
-      writeJson(join(stageDir, "gpt55-analysis.json"), gpt.analysis);
-      writeJson(join(stageDir, "final-analysis.json"), gpt.analysis);
-      analyses.push(gpt.analysis);
+      const selectedForGpt55 = r93GptEnabled && R93_GPT55_STAGE_KEYS.has(stage.microStageKey);
+      let retries = 0;
+      let finalAnalysis = deterministic;
+      let diagnostics: { provider: "openai" | "none"; model: string; status: "ready" | "fallback" | "unavailable"; reason?: string } = {
+        provider: "none",
+        model: "gpt-5.5",
+        status: "fallback",
+        reason: selectedForGpt55 ? "gpt-runtime-skipped" : "stage-not-selected",
+      };
+      if (selectedForGpt55) {
+        const first = await analyzeMicroStageWithGpt55({ microStage: stage, evidencePack: packed.evidencePack });
+        finalAnalysis = first.analysis;
+        diagnostics = first.diagnostics;
+        if (first.diagnostics.status !== "ready") {
+          retries = 1;
+          const second = await analyzeMicroStageWithGpt55({ microStage: stage, evidencePack: packed.evidencePack });
+          finalAnalysis = second.analysis;
+          diagnostics = second.diagnostics;
+        }
+      }
+      writeJson(join(stageDir, "gpt55-analysis.json"), selectedForGpt55 ? finalAnalysis : deterministic);
+      writeJson(join(stageDir, "final-analysis.json"), finalAnalysis);
+      analyses.push(finalAnalysis);
+      gptInspectionRows.push({
+        microStageKey: stage.microStageKey,
+        selectedForGpt55,
+        generatedBy: finalAnalysis.generatedBy,
+        status: finalAnalysis.status,
+        provider: diagnostics.provider,
+        model: diagnostics.model,
+        reason: diagnostics.reason,
+        evidenceItemsUsed: packed.evidencePack.topResults.length,
+        truncatedInput: packed.evidencePack.topResults.length > 40,
+        retries,
+      });
 
       stageRun.status = "building_slide_manifest";
-      const manifest = buildMicroStageSlideManifest({ microStage: stage, analysis: gpt.analysis });
+      const manifest = buildMicroStageSlideManifest({ microStage: stage, analysis: finalAnalysis });
       writeJson(join(stageDir, "slide-manifest.json"), manifest);
       slideManifests.push(manifest);
       stageRun.status = "slide_manifest_ready";
@@ -290,7 +351,14 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
       writeJson(join(stageDir, "stage-inspection.json"), {
         microStageKey: stage.microStageKey,
         status: stageRun.status,
-        warnings: [...stageRun.warnings, ...gpt.analysis.warnings],
+        gpt55: {
+          selectedForGpt55,
+          generatedBy: finalAnalysis.generatedBy,
+          status: finalAnalysis.status,
+          diagnostics,
+          retries,
+        },
+        warnings: [...stageRun.warnings, ...finalAnalysis.warnings],
       });
     } catch (error) {
       stageRun.status = "failed";
@@ -315,7 +383,7 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
 
   const finalReportJsonInternal = {
     reportMode: "orion_section_pipeline_v1",
-    orionBlueprintVersion: "r9.1",
+    orionBlueprintVersion: "r9.3",
     meta: {
       mode: blueprint.mode,
       runId: run.runId,
@@ -323,8 +391,8 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
       language: options.locale ?? "ru",
     },
     subject: {
-      fullName: String((options.reportJsonSeed?.subject as { fullName?: string } | undefined)?.fullName ?? "Unknown subject"),
-      aliases: [],
+      fullName: String((options.reportJsonSeed?.subject as { fullName?: string } | undefined)?.fullName ?? realSubject?.fullName ?? "Unknown subject"),
+      aliases: realSubject?.aliases ?? [],
     },
     toc: {
       entries: composed.finalManifest.tocEntries,
@@ -415,6 +483,18 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
         ? "PASS"
         : "BLOCKED",
     violations: consistencyInspection.violations.filter((x) => x.section === "client-policy"),
+  });
+  writeJson(join(root, "gpt55-narrative-inspection.json"), {
+    enabled: r93GptEnabled,
+    selectedStages: [...R93_GPT55_STAGE_KEYS],
+    rows: gptInspectionRows,
+    summary: {
+      totalStages: gptInspectionRows.length,
+      selected: gptInspectionRows.filter((x) => x.selectedForGpt55).length,
+      ready: gptInspectionRows.filter((x) => x.selectedForGpt55 && x.generatedBy === "gpt-5.5").length,
+      fallback: gptInspectionRows.filter((x) => x.generatedBy !== "gpt-5.5").length,
+      skipped: gptInspectionRows.filter((x) => !x.selectedForGpt55).length,
+    },
   });
 
   const legacyReportPath = join(process.cwd(), "storage", "digital-profile", "qa-r8-3-gpt55-analyst-narrative", "report-json-ru-internal.json");

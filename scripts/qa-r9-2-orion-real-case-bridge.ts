@@ -34,7 +34,17 @@ function runInspect(pptx: string, reportJson: string, outPath: string): number {
 
 function resolveLexisFixturePath(): string | null {
   const candidates = [
+    process.env.LEXISNEXIS_FIXTURE_PATH,
     process.env.LEXIS_FIXTURE_PATH,
+    process.env.LEXIS_DOCX_FIXTURE_PATH,
+    join(
+      process.cwd(),
+      "storage",
+      "digital-profile",
+      "qa-r7-4a-real-lexisnexis-docx",
+      "fixtures",
+      "LexisNexis_Дерипаска.docx"
+    ),
     join(process.cwd(), "storage", "digital-profile", "fixtures", "lexisnexis-sample.docx"),
     join(process.cwd(), "storage", "digital-profile", "fixtures", "lexis-sample.docx"),
   ].filter((x): x is string => Boolean(x && x.trim()));

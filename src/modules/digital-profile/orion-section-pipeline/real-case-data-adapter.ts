@@ -269,17 +269,25 @@ function pickLatestLexisDocument(dbProfiles: DbProfileRow[]): {
   uploadExists: boolean;
 } {
   const docs = dbProfiles
-    .map((r) => asObj(r.rawMetadataSafe).lexisNexisHybrid)
-    .filter((x): x is Record<string, unknown> => Boolean(x && typeof x === "object" && !Array.isArray(x)));
-  const sorted = docs.sort((a, b) => String(b.importedAt ?? "").localeCompare(String(a.importedAt ?? "")));
-  const latestAny = sorted[0] ?? null;
+    .map((r) => {
+      const doc = asObj(r.rawMetadataSafe).lexisNexisHybrid;
+      if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
+      return {
+        doc: doc as Record<string, unknown>,
+        importedAt: r.importedAt.toISOString(),
+      };
+    })
+    .filter((x): x is { doc: Record<string, unknown>; importedAt: string } => Boolean(x));
+  const sorted = docs.sort((a, b) => b.importedAt.localeCompare(a.importedAt));
+  const latestAny = sorted[0]?.doc ?? null;
   const latestReady =
     sorted.find(
       (d) =>
-        String(d.status ?? "") === "ready" &&
-        String((d.parsedAnalytics as Record<string, unknown> | undefined)?.parserStatus ?? "") === "parsed"
-    ) ?? null;
-  return { latestReady, latestAny, uploadExists: sorted.length > 0 };
+        String(d.doc.status ?? "") === "ready" &&
+        String((d.doc.parsedAnalytics as Record<string, unknown> | undefined)?.parserStatus ?? "") === "parsed" &&
+        (Array.isArray(d.doc.renderedPages) ? d.doc.renderedPages.length > 0 : false)
+    )?.doc ?? null;
+  return { latestReady, latestAny, uploadExists: docs.length > 0 };
 }
 
 export async function loadRealCaseContext(
@@ -597,6 +605,7 @@ export function extractMicroStageLexisEvidence(
         },
       ];
     }
+    const total = renderedPages.length;
     return renderedPages.map((p, idx) => ({
       evidenceId: mkEvidenceId(stageKey, `page-${idx + 1}`),
       type: "lexis_visual_page",
@@ -606,6 +615,12 @@ export function extractMicroStageLexisEvidence(
       visualRef: typeof p.storageKey === "string" ? p.storageKey : undefined,
       classification: "potential",
       themeLabel: "LexisNexis visual",
+      metadata: {
+        pageNumber: Number(p.pageNumber ?? idx + 1),
+        firstPage: idx === 0,
+        lastPage: idx === total - 1,
+        totalPages: total,
+      },
     }));
   }
   return [
