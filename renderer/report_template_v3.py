@@ -1532,6 +1532,7 @@ def _p_final(prs, vm, ctx):
 # ===========================================================================
 
 def _p_offer_cover(prs, vm, ctx):
+    L = vm["labels"]
     ob = vm["offerBlock"]
     slide = T.blank_slide(prs)
     T.set_bg(slide, T.BRAND_PRIMARY)
@@ -1560,7 +1561,10 @@ def _p_offer_cover(prs, vm, ctx):
             }
             for c in outcomes
         ]
-        T.metric_cards(slide, Emu(4960000), cards, per_row=3)
+        T.metric_cards(slide, Emu(4960000), cards, per_row=2)
+    lead_note = T.truncate(ob["cover"].get("valueProposition", ""), 220)
+    if lead_note:
+        T._safe_content_note(slide, Emu(6060000), f"{L.get('offer_next_step', 'Следующий шаг')}: {lead_note}", "info")
 
 
 def _p_product_overview(prs, vm, ctx):
@@ -1588,7 +1592,7 @@ def _p_product_overview(prs, vm, ctx):
         top = T.metric_cards(slide, top, cards, per_row=2)
     inc = ob.get("includedItems", [])[:3]
     if inc:
-        top = T.card_auto(slide, T.MARGIN, top, T.CONTENT_W, L["offer_includes"], [x for x in inc[:2]], min_h=420000) or top
+        top = T.card_auto(slide, T.MARGIN, top, T.CONTENT_W, L["offer_includes"], [x for x in inc[:3]], min_h=520000) or top
     T.note(slide, top, ob.get("audienceNote", ""), "info")
 
 
@@ -1605,9 +1609,16 @@ def _p_pricing_summary(prs, vm, ctx):
         for s in sols[:3]
     ]
     top = T.metric_cards(slide, top, cards, per_row=3)
-    rows = [[T.truncate(s["title"], 34), T.truncate(s["duration"], 18), s["price"]] for s in sols]
+    rows = [[T.truncate(s["title"], 34), T.truncate(s["duration"], 18), s["price"]] for s in sols[:4]]
     if rows:
         top = T.polished_table(slide, top, [L["th_solution"], L["th_duration"], L["th_price"]], rows, col_widths=[0.5, 0.25, 0.25])
+    if len(sols) > len(rows):
+        T.note(
+            slide,
+            top,
+            L.get("table_showing_first", "Показаны первые {shown} из {total}.").format(shown=len(rows), total=len(sols), n=len(rows)),
+            "disclaimer",
+        )
     T.note(slide, top, vm["offerBlock"]["solutions"][0].get("pricingNotes", "") if sols else "", "disclaimer")
 
 
@@ -1659,7 +1670,7 @@ def _p_solution_workplan(prs, vm, ctx, idx: int):
     s = _solution(vm, idx)
     slide, top = _section(prs, ctx, s["title"] + L["offer_workplan_suffix"], L["offer_duration"].format(d=s["duration"]))
     steps = s["workPlan"] or [L["offer_workplan_default"]]
-    top = T.step_cards(slide, top, [T.truncate(step, 84) for step in steps[:5]], per_row=2)
+    top = T.step_cards(slide, top, [T.truncate(step, 84) for step in steps[:5]], per_row=1)
     if s["expectedResults"]:
         top = T.card_auto(
             slide,
