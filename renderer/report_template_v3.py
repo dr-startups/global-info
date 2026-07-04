@@ -26,6 +26,7 @@ from pptx.util import Emu, Pt
 
 import theme as T
 from report_mapper import build_view_model_v3
+import report_i18n as I
 
 
 class Ctx:
@@ -2500,6 +2501,57 @@ def _p_r74_lexis_visual_page(prs, vm, ctx, doc: dict, page: dict):
     )
 
 
+def _p_orion_manifest_slide(prs, ctx, slide_payload: dict):
+    title = str(slide_payload.get("title") or slide_payload.get("slideType") or "ORION stage")
+    subtitle = str(slide_payload.get("subtitle") or "")
+    slide, top = _section(prs, ctx, title, subtitle or None)
+    metric_cards = list(slide_payload.get("metrics") or [])
+    if metric_cards:
+        cards = []
+        for m in metric_cards[:6]:
+            if isinstance(m, dict):
+                cards.append({
+                    "label": str(m.get("label") or "Метрика"),
+                    "value": str(m.get("value") or ""),
+                    "tone": T.ACCENT,
+                })
+        if cards:
+            top = T.metric_cards(slide, top, cards, per_row=min(3, max(1, len(cards))))
+    narratives = list(slide_payload.get("narrativeBlocks") or [])
+    if narratives:
+        lines = []
+        for n in narratives[:8]:
+            if isinstance(n, dict):
+                txt = str(n.get("text") or n.get("title") or "")
+            else:
+                txt = str(n or "")
+            txt = txt.strip()
+            if txt:
+                lines.append(txt)
+        if lines:
+            top = T.bullets(slide, top, lines, title="Ключевые выводы", line_len=84, max_lines=8)
+    table_rows = []
+    for row in list(slide_payload.get("tables") or [])[:12]:
+        if isinstance(row, dict):
+            key = str(row.get("label") or row.get("key") or "row")
+            val = str(row.get("value") or row.get("text") or "")
+            table_rows.append([key, val])
+    if table_rows:
+        top = T.table(
+            slide,
+            top,
+            ["Поле", "Значение"],
+            table_rows,
+            max_rows=12,
+            col_widths=[0.35, 0.65],
+        )
+    if not metric_cards and not narratives and not table_rows:
+        T.no_data_card(slide, top, "Слайд сформирован из section manifest.")
+    refs = list(slide_payload.get("evidenceRefs") or [])
+    if refs:
+        T.note(slide, Emu(int(T.CONTENT_SAFE_BOTTOM) - 320000), f"Evidence refs: {len(refs)}", "disclaimer")
+
+
 # ===========================================================================
 # orchestration
 # ===========================================================================
@@ -2512,6 +2564,27 @@ def build_report_v3(
     audience: str = "internal",
     watermark_mode: str = "draft",
 ) -> None:
+    if str(report_json.get("reportMode") or "") == "orion_section_pipeline_v1":
+        meta = report_json.get("meta") or {}
+        lang = str(meta.get("language") or report_json.get("reportLanguage") or "ru")
+        labels = I.labels(lang)
+        wm = I.watermark_text(lang, meta.get("watermark"))
+        effective_wm = None if str(watermark_mode).lower() == "none" else wm
+        ctx = Ctx(brand="ORION", watermark=effective_wm, internal=(str(audience).lower() != "client"))
+        manifest = report_json.get("finalDeckManifest") or report_json.get("orionFinalDeckManifest") or {}
+        sections = list(manifest.get("sections") or [])
+        cover = {"title": "Цифровой профиль", "subtitle": "ORION section pipeline", "slideType": "cover_orion"}
+        toc = {"title": labels.get("contents", "Содержание"), "subtitle": "ORION", "slideType": "toc_orion"}
+        flat_slides = [cover, toc]
+        for sec in sections:
+            for s in list(sec.get("slides") or []):
+                flat_slides.append(s)
+        ctx.total = len(flat_slides)
+        for i, s in enumerate(flat_slides):
+            ctx.page = i + 1
+            _p_orion_manifest_slide(prs, ctx, s)
+        return
+
     vm, vm_warnings = build_view_model_v3(report_json, audience)
     warnings.extend(vm_warnings)
     L = vm["labels"]

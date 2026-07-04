@@ -2176,7 +2176,220 @@ def _r36_production_gate_checks(pptx_path: Path, report_json_path: Path) -> tupl
     return 0, lines
 
 
+def _r91_is_mode(report_json: dict[str, Any]) -> bool:
+    mode = str(report_json.get("reportMode") or (report_json.get("meta") or {}).get("mode") or "")
+    if mode == "orion_section_pipeline_v1":
+        return True
+    if report_json.get("finalDeckManifest") or report_json.get("orionFinalDeckManifest"):
+        return True
+    if report_json.get("compositionInspection"):
+        return True
+    return False
+
+
+def _r91_slide_texts(pptx_path: Path) -> list[str]:
+    texts: list[str] = []
+    with zipfile.ZipFile(pptx_path, "r") as z:
+        slide_count = sum(1 for n in z.namelist() if re.match(r"ppt/slides/slide\d+\.xml$", n))
+        for n in range(1, slide_count + 1):
+            texts.append(_plain_text(_slide_xml(z, n)))
+    return texts
+
+
+def _r91_inspect(pptx_path: Path, report_json_path: Path) -> tuple[int, list[str]]:
+    if not report_json_path.exists():
+        return 1, ["[FAIL] R9 inspect — report json path missing"]
+    report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+    manifest = report_json.get("finalDeckManifest") or report_json.get("orionFinalDeckManifest") or {}
+    comp = report_json.get("compositionInspection") or {}
+    texts = _r91_slide_texts(pptx_path)
+    flat_text = "\n".join(texts).lower()
+    slide_count = len(texts)
+    lines: list[str] = []
+    violations: list[str] = []
+    warnings: list[str] = []
+
+    macro_expected = [
+        "cover",
+        "toc_global",
+        "executive",
+        "ru_profile",
+        "uae_profile",
+        "compliance_databases",
+        "offer",
+        "about",
+    ]
+    macro_found = list(comp.get("macroSections") or [])
+    if not macro_found:
+        macro_found = ["cover", "toc_global"] + [s.get("macroSectionKey") for s in (manifest.get("sections") or [])]
+    missing_macro = [k for k in macro_expected if k not in macro_found]
+    if missing_macro:
+        violations.append(f"missing macro sections: {missing_macro}")
+    else:
+        lines.append("[PASS] R9 macro sections present in ORION order")
+
+    # Cover + global toc checks
+    if slide_count < 2:
+        violations.append("deck has fewer than 2 slides (missing cover/toc)")
+    elif "цифров" not in texts[0].lower():
+        violations.append("cover slide title not detected on first slide")
+    elif "содерж" not in texts[1].lower():
+        violations.append("global TOC not detected on second slide")
+    else:
+        lines.append("[PASS] cover and global TOC detected")
+
+    # Footer sequence n/total.
+    footer_pairs: list[tuple[int, int]] = []
+    for txt in texts:
+        m = re.search(r"\b(\d{1,3})/(\d{1,3})\b", txt)
+        if m:
+            footer_pairs.append((int(m.group(1)), int(m.group(2))))
+    if not footer_pairs:
+        violations.append("no footer page markers found")
+    else:
+        totals = {b for _, b in footer_pairs}
+        if len(totals) != 1:
+            violations.append("footer total page markers inconsistent")
+        else:
+            total = list(totals)[0]
+            nums = [a for a, _ in footer_pairs]
+            if nums != sorted(nums):
+                violations.append("footer page numbers are not sequential")
+            if total != slide_count:
+                violations.append(f"footer total {total} != actual slide count {slide_count}")
+            if nums and (nums[0] != 1 or nums[-1] != slide_count):
+                violations.append("footer range does not start at 1/end at slide_count")
+            if not violations:
+                lines.append("[PASS] footer page markers are sequential")
+
+    # Composition vs actual page count.
+    if "client" in str(report_json_path).lower():
+        expected_pages = int(comp.get("clientPageCount") or comp.get("finalClientPageCount") or 0)
+    else:
+        expected_pages = int(comp.get("internalPageCount") or comp.get("finalInternalPageCount") or 0)
+    if expected_pages > 0 and expected_pages != slide_count:
+        violations.append(f"composition page count mismatch: expected {expected_pages} got {slide_count}")
+
+    # TOC page alignment.
+    toc_entries = list(manifest.get("tocEntries") or comp.get("tocEntries") or [])
+    macro_starts = dict(comp.get("macroSectionStartPages") or {})
+    for entry in toc_entries:
+        title = str(entry.get("title") or "")
+        page = int(entry.get("page") or 0)
+        matched_key = None
+        for k in macro_starts:
+            if k.replace("_", " ").split()[0] in title.lower():
+                matched_key = k
+                break
+        if matched_key and macro_starts.get(matched_key) != page:
+            violations.append(f"TOC mismatch: {matched_key} expected {macro_starts.get(matched_key)} got {page}")
+    if not any(v.startswith("TOC mismatch") for v in violations):
+        lines.append("[PASS] TOC page numbers align with section starts")
+
+    report_str = json.dumps(report_json, ensure_ascii=False).lower()
+    forbidden_tokens = [
+        "c:\\",
+        "/mnt/",
+        "storage/digital-profile",
+        "storagekey",
+        "x-amz-signature",
+        "openai_api_key",
+        "rawmodelresponse",
+        "prompt",
+    ]
+    for t in forbidden_tokens:
+        if t in report_str or t in flat_text:
+            violations.append(f"forbidden token detected: {t}")
+
+    client_like = "runid" not in report_str and "report-json-client" in str(report_json_path).lower()
+    if client_like:
+        for t in ["mock", "fallback", "debug", "provider", "runtime"]:
+            if re.search(rf"\b{re.escape(t)}\b", flat_text):
+                violations.append(f"raw provider/debug label in client deck: {t}")
+        if re.search(r"https?://", flat_text):
+            warnings.append("raw URLs detected in client deck; verify intentional exposure")
+
+    raw_theme = re.compile(r"\b(sanctions_watchlist|political_exposure|legal_dispute|adverse_media|pep_political_exposure|pep_rca)\b")
+    if raw_theme.search(report_str):
+        violations.append("raw theme keys found in report json")
+    generic_count = flat_text.count("тема требует классификации")
+    if generic_count > 1:
+        violations.append(f"repeated generic theme phrase count={generic_count}")
+
+    if "report-json-client" in str(report_json_path).lower() and str((report_json.get("meta") or {}).get("language") or "ru").lower().startswith("ru"):
+        allowed = {"orion", "google", "yandex", "dow", "jones", "world-check", "lexisnexis", "pep", "rca", "kyc"}
+        words = re.findall(r"[A-Za-z][A-Za-z\-]{3,}", "\n".join(texts))
+        leakage = [w for w in words if w.lower() not in allowed]
+        if leakage:
+            warnings.append(f"potential english leakage: {sorted(set(leakage))[:8]}")
+
+    # Lexis checks.
+    has_lexis_section = any("lexis" in str(x).lower() for x in macro_found) or "lexis" in report_str
+    if not has_lexis_section:
+        violations.append("LexisNexis section not detected")
+    lexis_visual_expected = int(comp.get("lexisNexisVisualPageCount") or manifest.get("lexisNexisVisualPageCount") or 0)
+    slide_types = [
+        str(s.get("slideType") or "").lower()
+        for sec in (manifest.get("sections") or [])
+        for s in (sec.get("slides") or [])
+    ]
+    lexis_visual_actual = sum(1 for t in slide_types if t == "lexisnexis_visual_page")
+    if lexis_visual_expected > 0 and lexis_visual_actual <= 0:
+        violations.append("Lexis visual pages expected but missing in slides")
+    if lexis_visual_expected == 0 and "lexisnexis_unavailable_fallback" not in slide_types:
+        violations.append("Lexis visual unavailable fallback missing")
+
+    # Contradictions.
+    requires_review_total = 0
+    for a in report_json.get("sectionAnalyses") or []:
+        es = (a or {}).get("evidenceSummary") or {}
+        requires_review_total += int(es.get("requiresReview") or 0)
+    if requires_review_total > 0 and "нет рисков" in flat_text:
+        violations.append("contradiction: 'нет рисков' while requiresReview > 0")
+    if ("не собрано" in flat_text or "not collected" in flat_text) and requires_review_total > 0:
+        warnings.append("possible contradiction: 'не собрано' text while data exists")
+    if ("lexisnexis не запрош" in flat_text) and ("lexis" in report_str):
+        violations.append("contradiction: LexisNexis reported as not requested while section data exists")
+
+    summary = {
+        "r9ModeDetected": True,
+        "macroSectionsFound": macro_found,
+        "missingMacroSections": missing_macro,
+        "microStagesFound": len(report_json.get("microStages") or []),
+        "missingMicroStages": list(comp.get("missingMicroStages") or []),
+        "pageCount": slide_count,
+        "clientPolicyViolations": [v for v in violations if "forbidden token" in v or "raw" in v or "client deck" in v],
+        "consistencyViolations": [v for v in violations if "forbidden token" not in v and "raw" not in v and "client deck" not in v],
+        "warnings": warnings,
+    }
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+
+    if violations:
+        for v in violations:
+            lines.append(f"[FAIL] R9 inspect — {v}")
+        return 1, lines
+    lines.append("[PASS] R9 inspect contracts passed")
+    for w in warnings:
+        lines.append(f"[WARN] R9 inspect — {w}")
+    return 0, lines
+
+
 def main() -> int:
+    report_json_path = Path(sys.argv[2]) if len(sys.argv) > 2 else Path()
+    if report_json_path.exists():
+        try:
+            report_json = json.loads(report_json_path.read_text(encoding="utf-8"))
+        except Exception:
+            report_json = {}
+        if _r91_is_mode(report_json):
+            if len(sys.argv) < 2:
+                return 1
+            pptx_path = Path(sys.argv[1])
+            rc, lines = _r91_inspect(pptx_path, report_json_path)
+            for line in lines:
+                print(line)
+            return rc
+
     target = Path(__file__).with_name("inspect-o541-pptx.py")
     cmd = [sys.executable, str(target), *sys.argv[1:]]
     base = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
