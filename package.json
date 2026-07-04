@@ -61,6 +61,7 @@
     "smoke:ui-lexisnexis-e2e-r75": "tsx scripts/smoke-ui-lexisnexis-e2e-r75.ts",
     "smoke:report-content-polish-r76": "tsx scripts/smoke-report-content-polish-r76.ts",
     "smoke:visual-orion-qa-r77": "tsx scripts/smoke-visual-orion-qa-r77.ts",
+    "smoke:preview-deploy-r81": "tsx scripts/smoke-preview-deploy-r81.ts",
     "smoke:offer-block-r61": "tsx scripts/smoke-offer-block-r61.ts",
     "smoke:release-gate-r71": "tsx scripts/smoke-release-gate-r71.ts",
     "smoke:full-audit-orchestration-r73": "tsx scripts/smoke-full-audit-orchestration-r73.ts",
