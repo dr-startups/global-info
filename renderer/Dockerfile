@@ -6,11 +6,12 @@
 # prefixed with renderer/.
 FROM python:3.12-slim
 
-# LibreOffice Impress (for PPTX->PDF) + fonts + curl (for the healthcheck).
+# LibreOffice Impress/Writer + fonts + curl (for the healthcheck).
 # Kept minimal to limit image size.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         libreoffice-impress \
+        libreoffice-writer \
         fonts-dejavu \
         fonts-liberation \
         curl \

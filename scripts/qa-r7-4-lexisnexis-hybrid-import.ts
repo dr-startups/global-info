@@ -8,7 +8,9 @@ import {
 
 const BASE = process.env.DIGITAL_PROFILE_API_BASE ?? "http://localhost:3000/api/digital-profile";
 const APP_ORIGIN = BASE.replace(/\/api\/digital-profile\/?$/, "");
-const OUT = join(process.cwd(), "storage/digital-profile/qa-r7-4-lexisnexis-hybrid-import");
+const OUT = process.env.R74_QA_OUT
+  ? join(process.cwd(), process.env.R74_QA_OUT)
+  : join(process.cwd(), "storage/digital-profile/qa-r7-4b-real-lexisnexis-visual-conversion");
 const PAGES_OUT = join(OUT, "pages-pdf");
 const CLIENT_PAGES_OUT = join(OUT, "client-pages-pdf");
 const H = { "Content-Type": "application/json", "x-actor-id": "qa-r7-4-lexis-hybrid" };
@@ -51,6 +53,29 @@ async function uploadLexisIfAvailable(caseId: string): Promise<{ uploaded: boole
     return { uploaded: false, note: `Import endpoint returned ${res.status}. Continuing without fixture.` };
   }
   return { uploaded: true, note: `Imported fixture: ${fixture}` };
+}
+
+async function createIsolatedQaCase(): Promise<string> {
+  const suffix = new Date().toISOString().replace(/[-:.TZ]/g, "").slice(0, 14);
+  const created = await api("/cases", {
+    method: "POST",
+    body: JSON.stringify({
+      fullName: `R7.4b Lexis QA ${suffix}`,
+      aliases: [],
+      targetRegions: ["RU", "INTERNATIONAL"],
+      lawfulBasis: "LEGITIMATE_INTEREST",
+      consentStatus: "NOT_REQUIRED",
+      notes: "R7.4b isolated real DOCX conversion QA case",
+    }),
+  });
+  const caseId = String(
+    (created as { id?: unknown }).id ??
+      ((created as { case?: { id?: unknown } }).case?.id ?? "")
+  );
+  if (!caseId) {
+    throw new Error("Could not resolve case ID from create case response");
+  }
+  return caseId;
 }
 
 async function downloadArtifact(url: string, dest: string): Promise<void> {
@@ -101,7 +126,7 @@ async function main() {
   mkdirSync(OUT, { recursive: true });
   mkdirSync(PAGES_OUT, { recursive: true });
   mkdirSync(CLIENT_PAGES_OUT, { recursive: true });
-  const caseId = process.argv[2] ?? process.env.R74_CASE_ID ?? "cmqzz1vbr00d2vdrsrjsgie2g";
+  const caseId = process.argv[2] ?? process.env.R74_CASE_ID ?? (await createIsolatedQaCase());
   const importResult = await uploadLexisIfAvailable(caseId);
 
   await api(`/cases/${caseId}/report/generate`, {
@@ -132,6 +157,21 @@ async function main() {
   );
   const clientJsonPath = join(OUT, "report-json-ru-client.json");
   writeFileSync(clientJsonPath, JSON.stringify(clientJson, null, 2));
+  const lexisBlock = (internalJson.lexisNexisHybrid ?? {}) as Record<string, unknown>;
+  const docs = Array.isArray(lexisBlock.documents) ? (lexisBlock.documents as Array<Record<string, unknown>>) : [];
+  const latest = docs
+    .slice()
+    .sort((a, b) =>
+      String(a.importedAt ?? "").localeCompare(String(b.importedAt ?? ""))
+    )
+    .slice(-1)[0];
+  const latestStatus = String(latest?.status ?? "");
+  const latestPageCount = Number(latest?.pageCount ?? 0);
+  const latestRenderedPages = Array.isArray(latest?.renderedPages) ? latest.renderedPages.length : 0;
+  const latestParserStatus = String(((latest?.parsedAnalytics as Record<string, unknown> | undefined)?.parserStatus ?? ""));
+  const readyCount = docs.filter((d) => String(d.status ?? "") === "ready").length;
+  const warningCount = docs.filter((d) => String(d.status ?? "").includes("warning")).length;
+  const failedCount = docs.filter((d) => String(d.status ?? "") === "failed").length;
 
   exportPages(internalPdf, PAGES_OUT, Math.max(1, internalSlides));
   exportPages(clientPdf, CLIENT_PAGES_OUT, Math.max(1, clientSlides));
@@ -179,11 +219,25 @@ async function main() {
     noRawLeak,
     internalSlides,
     clientSlides,
+    readyCount,
+    warningCount,
+    failedCount,
+    latestImportStatus: latestStatus || "missing",
+    latestImportPageCount: latestPageCount,
+    latestRenderedPages,
+    latestParserStatus: latestParserStatus || "missing",
     inspectInternalExit: inspectInternal.status,
     inspectClientExit: inspectClient.status,
     clientPolicyViolations: clientViolations.length,
     status:
-      inspectInternal.status === 0 && inspectClient.status === 0 && clientViolations.length === 0
+      importResult.uploaded &&
+      latestStatus === "ready" &&
+      latestPageCount > 0 &&
+      latestRenderedPages > 0 &&
+      (latestParserStatus === "parsed" || latestParserStatus === "partial") &&
+      inspectInternal.status === 0 &&
+      inspectClient.status === 0 &&
+      clientViolations.length === 0
         ? "PASS"
         : "BLOCKED",
   };
@@ -211,6 +265,13 @@ async function main() {
         importResult,
         internalSlides,
         clientSlides,
+        readyCount,
+        warningCount,
+        failedCount,
+        latestImportStatus: latestStatus || "missing",
+        latestImportPageCount: latestPageCount,
+        latestRenderedPages,
+        latestParserStatus: latestParserStatus || "missing",
         inspectInternalExit: inspectInternal.status,
         inspectClientExit: inspectClient.status,
         hasLexisInternal,
@@ -221,7 +282,15 @@ async function main() {
     )
   );
 
-  const ok = inspectInternal.status === 0 && inspectClient.status === 0 && clientViolations.length === 0;
+  const ok =
+    importResult.uploaded &&
+    latestStatus === "ready" &&
+    latestPageCount > 0 &&
+    latestRenderedPages > 0 &&
+    (latestParserStatus === "parsed" || latestParserStatus === "partial") &&
+    inspectInternal.status === 0 &&
+    inspectClient.status === 0 &&
+    clientViolations.length === 0;
   process.exit(ok ? 0 : 1);
 }
 

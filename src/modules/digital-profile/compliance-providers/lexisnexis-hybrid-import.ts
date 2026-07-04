@@ -199,6 +199,64 @@ function extractDocxText(docxPath: string): { text: string; warnings: string[] }
   }
 }
 
+function dockerAvailable(): boolean {
+  const res = spawnSync("docker", ["--version"], { encoding: "utf-8" });
+  return res.status === 0;
+}
+
+function dockerImageExists(image: string): boolean {
+  const res = spawnSync("docker", ["image", "inspect", image], {
+    encoding: "utf-8",
+  });
+  return res.status === 0;
+}
+
+function convertDocxToPdfViaRendererContainer(
+  docxPath: string,
+  outDir: string
+): { ok: boolean; pdfPath?: string; warning?: string } {
+  if (!dockerAvailable()) {
+    return { ok: false, warning: "docker_unavailable_for_docx_conversion" };
+  }
+  const imageCandidates = [
+    process.env.DIGITAL_PROFILE_RENDERER_IMAGE,
+    "global-info-renderer",
+    "digital-profile-renderer",
+  ].filter((x): x is string => Boolean(x && String(x).trim()));
+  const image = imageCandidates.find((img) => dockerImageExists(img));
+  if (!image) {
+    return { ok: false, warning: "renderer_image_unavailable_for_docx_conversion" };
+  }
+  const sourceName = "source.docx";
+  const expectedPdf = "source.pdf";
+  const args = [
+    "run",
+    "--rm",
+    "-v",
+    `${outDir}:/work`,
+    image,
+    "soffice",
+    "--headless",
+    "--convert-to",
+    "pdf",
+    "--outdir",
+    "/work",
+    `/work/${sourceName}`,
+  ];
+  const res = spawnSync("docker", args, { encoding: "utf-8" });
+  if (res.status !== 0) {
+    return { ok: false, warning: "renderer_docx_to_pdf_failed" };
+  }
+  const pdfPath = join(outDir, expectedPdf);
+  try {
+    const buf = readFileSync(pdfPath);
+    if (buf.length > 0) return { ok: true, pdfPath };
+  } catch {
+    // keep warning below
+  }
+  return { ok: false, warning: "renderer_docx_to_pdf_output_missing" };
+}
+
 function tryConvertDocxToPdf(docxPath: string, outDir: string): { ok: boolean; pdfPath?: string; warning?: string } {
   const commands: Array<{ cmd: string; args: string[] }> = [
     { cmd: "soffice", args: ["--headless", "--convert-to", "pdf", "--outdir", outDir, docxPath] },
@@ -225,7 +283,14 @@ function tryConvertDocxToPdf(docxPath: string, outDir: string): { ok: boolean; p
       }
     }
   }
-  return { ok: false, warning: "docx_converter_unavailable" };
+  const container = convertDocxToPdfViaRendererContainer(docxPath, outDir);
+  if (container.ok) {
+    return container;
+  }
+  return {
+    ok: false,
+    warning: container.warning ?? "docx_converter_unavailable",
+  };
 }
 
 function renderPdfToPngPages(pdfPath: string, outDir: string): {
