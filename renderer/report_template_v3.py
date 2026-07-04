@@ -2546,7 +2546,7 @@ def _p_orion_manifest_slide(prs, ctx, slide_payload: dict):
             col_widths=[0.35, 0.65],
         )
     if not metric_cards and not narratives and not table_rows:
-        T.no_data_card(slide, top, "Слайд сформирован из section manifest.")
+        T.no_data_card(slide, top, "Слайд сформирован из структуры раздела.")
     refs = list(slide_payload.get("evidenceRefs") or [])
     if refs:
         T.note(slide, Emu(int(T.CONTENT_SAFE_BOTTOM) - 320000), f"Evidence refs: {len(refs)}", "disclaimer")

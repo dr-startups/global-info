@@ -16,7 +16,7 @@ export function buildMicroStageSlideManifest(input: {
     isLexisVisualStage && !hasLexisVisuals
       ? "lexisnexis_unavailable_fallback"
       : microStage.slideTemplateKey;
-  const slide: OrionManifestSlide = {
+  const baseSlide: OrionManifestSlide = {
     slideId: `${microStage.microStageKey}-01`,
     slideType: resolvedSlideType,
     title: analysis.slideContent.headline || microStage.titleRu,
@@ -32,11 +32,28 @@ export function buildMicroStageSlideManifest(input: {
     internalOnly: false,
   };
 
+  const slides: OrionManifestSlide[] =
+    isLexisVisualStage && hasLexisVisuals
+      ? analysis.slideContent.visualRefs.map((ref, idx) => ({
+          ...baseSlide,
+          slideId: `${microStage.microStageKey}-${String(idx + 1).padStart(2, "0")}`,
+          slideType: "lexisnexis_visual_page",
+          title: `${analysis.slideContent.headline || microStage.titleRu} — стр. ${idx + 1}`,
+          subtitle: "Импортированная визуальная страница LexisNexis",
+          visuals: [ref],
+          screenshots: [],
+          narrativeBlocks:
+            idx === 0
+              ? analysis.slideContent.narrativeBlocks
+              : [{ title: "Комментарий", text: "Страница импортирована из загруженного документа." }],
+        }))
+      : [baseSlide];
+
   return {
     microStageKey: microStage.microStageKey,
     macroSectionKey: microStage.macroSectionKey,
     order: microStage.order,
-    slides: [slide],
+    slides,
   };
 }
 

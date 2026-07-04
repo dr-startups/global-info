@@ -10,4 +10,5 @@ export * from "./consistency-checker";
 export * from "./supabase-schema-plan";
 export * from "./run-exact-orion-pipeline";
 export * from "./slide-template-mapping";
+export * from "./real-case-data-adapter";
 

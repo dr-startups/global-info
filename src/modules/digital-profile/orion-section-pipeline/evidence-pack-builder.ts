@@ -13,6 +13,13 @@ export interface BuildEvidencePackInput {
   locale: "ru" | "en";
   region: string;
   rawEvidence: OrionRawEvidence[];
+  sourceAvailability?: {
+    used: string[];
+    unavailable: string[];
+  };
+  sourceProvidersUsed?: string[];
+  queryVariants?: string[];
+  resultCounts?: Record<string, number>;
   maxItems?: number;
 }
 
@@ -47,6 +54,36 @@ function normalizeEvidence(raw: OrionRawEvidence[]): OrionNormalizedEvidence[] {
       subjectMatched: status !== "wrong_subject" && status !== "excluded_noise",
       status,
     };
+  });
+}
+
+function sanitizeEvidence(rows: OrionRawEvidence[]): OrionRawEvidence[] {
+  return rows.map((row) => {
+    const safe: OrionRawEvidence = { ...row };
+    if (typeof safe.url === "string" && (/storage\/digital-profile/i.test(safe.url) || /^https?:\/\/[^ ]*x-amz-/i.test(safe.url))) {
+      safe.url = undefined;
+    }
+    if (typeof safe.domain === "string" && /c:\\|\/mnt\//i.test(safe.domain)) {
+      safe.domain = "";
+    }
+    if (typeof safe.snippet === "string") {
+      safe.snippet = safe.snippet
+        .replace(/openai[_-]?api[_-]?key/gi, "")
+        .replace(/sk-[A-Za-z0-9]{12,}/g, "")
+        .replace(/storage\/digital-profile\/[^\s]+/gi, "")
+        .replace(/c:\\[^\s]+/gi, "")
+        .trim();
+    }
+    if (safe.metadata && typeof safe.metadata === "object") {
+      const md = { ...safe.metadata };
+      for (const key of Object.keys(md)) {
+        if (/key|token|secret|signed|storage|path/i.test(key)) {
+          delete md[key];
+        }
+      }
+      safe.metadata = md;
+    }
+    return safe;
   });
 }
 
@@ -113,15 +150,43 @@ export function buildMicroStageEvidencePack(input: BuildEvidencePackInput): {
   excluded: OrionExcludedEvidence;
   evidencePack: OrionEvidencePack;
 } {
-  const normalized = normalizeEvidence(input.rawEvidence);
+  const normalized = normalizeEvidence(sanitizeEvidence(input.rawEvidence));
   const { selected, excluded } = selectEvidence(normalized, input.maxItems ?? 40);
   const keyDomains = topDomains(selected.items);
   const themeGroups = topThemes(selected.items);
   const queryVariants = [
     input.subject.fullName,
     ...(input.subject.aliases ?? []),
+    ...(input.queryVariants ?? []),
     ...selected.items.map((x) => String(x.query ?? "").trim()).filter(Boolean),
   ].slice(0, 12);
+  const sourceProvidersUsed = [
+    ...(input.sourceProvidersUsed ?? []),
+    ...selected.items.map((x) => String(x.source ?? "")).filter(Boolean),
+  ];
+  const dedupProviders = [...new Set(sourceProvidersUsed)];
+  const reviewRequiredEvidence = selected.items
+    .filter((x) => x.status === "requires_review")
+    .slice(0, 12)
+    .map((x) => ({
+      safeEvidenceId: x.safeEvidenceId,
+      source: x.source,
+      title: x.title,
+      snippet: x.snippet,
+      themeLabel: x.themeLabel,
+    }));
+  const lexisParsedSafeSignals = selected.items
+    .filter((x) => x.type === "lexis_signal" || x.type === "lexis_import_status")
+    .slice(0, 20)
+    .map((x) => ({
+      title: String(x.title ?? "LexisNexis signal"),
+      reason: String(x.snippet ?? ""),
+      reviewRequired: x.status !== "confirmed",
+    }));
+  const lexisVisualPageRefs = selected.items
+    .filter((x) => x.type === "lexis_visual_page")
+    .map((x) => String(x.visualRef ?? x.screenshotRef ?? ""))
+    .filter(Boolean);
 
   const evidencePack: OrionEvidencePack = {
     microStageKey: input.microStage.microStageKey,
@@ -132,7 +197,10 @@ export function buildMicroStageEvidencePack(input: BuildEvidencePackInput): {
     },
     locale: input.locale,
     region: input.region,
+    sourceProvidersUsed: dedupProviders,
+    sourceAvailability: input.sourceAvailability,
     queryVariants,
+    resultCounts: input.resultCounts,
     topResults: selected.items.map((item) => ({
       safeEvidenceId: item.safeEvidenceId,
       source: item.source,
@@ -148,6 +216,9 @@ export function buildMicroStageEvidencePack(input: BuildEvidencePackInput): {
     counts: selected.summary,
     themeGroups,
     keyDomains,
+    reviewRequiredEvidence,
+    lexisParsedSafeSignals,
+    lexisVisualPageRefs,
     exclusionSummary: excluded.reasons,
   };
 

@@ -166,7 +166,13 @@ export interface OrionEvidencePack {
   };
   locale: "ru" | "en";
   region: string;
+  sourceProvidersUsed?: string[];
+  sourceAvailability?: {
+    used: string[];
+    unavailable: string[];
+  };
   queryVariants: string[];
+  resultCounts?: Record<string, number>;
   topResults: Array<{
     safeEvidenceId: string;
     source: string;
@@ -182,6 +188,19 @@ export interface OrionEvidencePack {
   counts: OrionSelectedEvidence["summary"];
   themeGroups: Array<{ label: string; count: number }>;
   keyDomains: string[];
+  reviewRequiredEvidence?: Array<{
+    safeEvidenceId: string;
+    source: string;
+    title?: string;
+    snippet?: string;
+    themeLabel?: string;
+  }>;
+  lexisParsedSafeSignals?: Array<{
+    title: string;
+    reason: string;
+    reviewRequired: boolean;
+  }>;
+  lexisVisualPageRefs?: string[];
   exclusionSummary: OrionExcludedEvidence["reasons"];
 }
 

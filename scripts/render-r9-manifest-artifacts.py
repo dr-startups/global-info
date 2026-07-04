@@ -120,7 +120,7 @@ def _write_pptx_fallback(report_json: dict, pptx_path: Path) -> int:
             if text:
                 bullets.append(text)
         if not bullets:
-            bullets = ["Раздел сформирован из micro-stage manifest."]
+            bullets = ["Раздел сформирован из структуры слайдов по этапам анализа."]
         for b_i, line in enumerate(bullets[:8]):
             pp = btf.paragraphs[0] if b_i == 0 else btf.add_paragraph()
             rr = pp.add_run()

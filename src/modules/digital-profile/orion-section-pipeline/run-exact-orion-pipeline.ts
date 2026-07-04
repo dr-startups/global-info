@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { loadOrionBlueprint } from "./orion-blueprint";
@@ -8,6 +8,11 @@ import { buildDeterministicMicrostageAnalysis } from "./deterministic-microstage
 import { buildMicroStageSlideManifest } from "./slide-manifest-builder";
 import { composeFinalDeckManifest } from "./deck-composer";
 import { runOrionConsistencyChecks } from "./consistency-checker";
+import {
+  loadRealCaseContext,
+  mapCaseDataToMicroStageInputs,
+  type OrionMicroStageInput,
+} from "./real-case-data-adapter";
 import type {
   OrionGpt55SectionAnalysis,
   OrionMicroStage,
@@ -23,6 +28,7 @@ export interface RunExactOrionPipelineOptions {
   reportJsonSeed?: Record<string, unknown>;
   renderMode?: "manifest_renderer_v1";
   renderSeedArtifactsFrom?: string;
+  useRealCaseData?: boolean;
 }
 
 function ensureDir(path: string): void {
@@ -176,6 +182,45 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
   writeJson(join(root, "run-manifest.json"), run);
   writeJson(join(root, "blueprint.json"), blueprint);
 
+  let microStageInputs: Record<string, OrionMicroStageInput> = {};
+  let realSubject: { fullName: string; aliases: string[] } | null = null;
+  if (options.useRealCaseData !== false) {
+    try {
+      const realContext = await loadRealCaseContext(caseId, {
+        locale: options.locale ?? "ru",
+      });
+      realSubject = realContext.subject;
+      microStageInputs = mapCaseDataToMicroStageInputs(realContext, blueprint);
+      writeJson(join(root, "real-case-context-inspection.json"), {
+        caseId: realContext.caseId,
+        locale: realContext.locale,
+        subject: realContext.subject,
+        targetRegions: realContext.targetRegions,
+        searchResults: realContext.searchResults.length,
+        searchSurfaces: realContext.searchSurfaces.length,
+        databaseProfiles: realContext.databaseProfiles.length,
+        riskFindings: realContext.riskFindings.length,
+        wikiChecks: realContext.wikiChecks.length,
+        providerAvailability: realContext.providerAvailability,
+        lexis: realContext.lexis,
+      });
+      writeJson(join(root, "micro-stage-mapping-inspection.json"), {
+        stageCount: Object.keys(microStageInputs).length,
+        mappedStages: Object.values(microStageInputs).map((x) => ({
+          microStageKey: x.microStageKey,
+          macroSectionKey: x.macroSectionKey,
+          rawEvidenceCount: x.rawEvidence.length,
+          visualEvidenceCount: x.visualEvidence.length,
+          complianceEvidenceCount: x.complianceEvidence.length,
+          lexisEvidenceCount: x.lexisEvidence.length,
+          resultCounts: x.resultCounts,
+        })),
+      });
+    } catch (error) {
+      run.warnings.push(`real-case-adapter-unavailable:${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   const stageRuns: OrionMicroStageRun[] = [];
   const analyses: OrionGpt55SectionAnalysis[] = [];
   const slideManifests: OrionSlideManifest[] = [];
@@ -188,19 +233,36 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
 
     try {
       stageRun.status = "collecting";
-      const raw = syntheticEvidenceFromSeed(stage, options.reportJsonSeed);
+      const stageInput = microStageInputs[stage.microStageKey];
+      const raw = (stageInput?.rawEvidence?.length ?? 0) > 0
+        ? stageInput.rawEvidence
+        : syntheticEvidenceFromSeed(stage, options.reportJsonSeed);
       writeJson(join(stageDir, "raw-evidence.json"), raw);
 
       stageRun.status = "normalizing";
       const packed = buildMicroStageEvidencePack({
         microStage: stage,
         subject: {
-          fullName: String((options.reportJsonSeed?.subject as { fullName?: string } | undefined)?.fullName ?? "Unknown subject"),
-          aliases: [],
+          fullName: String(
+            (options.reportJsonSeed?.subject as { fullName?: string } | undefined)?.fullName ??
+              realSubject?.fullName ??
+              "Unknown subject"
+          ),
+          aliases: realSubject?.aliases ?? [],
         },
         locale: options.locale ?? "ru",
         region: stage.macroSectionKey.includes("uae") ? "UAE" : "RU",
         rawEvidence: raw,
+        sourceAvailability: stageInput?.providerAvailability,
+        sourceProvidersUsed: [
+          ...new Set(
+            raw
+              .map((x) => String(x.source ?? "").trim())
+              .filter(Boolean)
+          ),
+        ],
+        queryVariants: stageInput?.queryVariants,
+        resultCounts: stageInput?.resultCounts,
       });
       writeJson(join(stageDir, "normalized-evidence.json"), packed.normalized);
 
@@ -353,6 +415,42 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
         ? "PASS"
         : "BLOCKED",
     violations: consistencyInspection.violations.filter((x) => x.section === "client-policy"),
+  });
+
+  const legacyReportPath = join(process.cwd(), "storage", "digital-profile", "qa-r8-3-gpt55-analyst-narrative", "report-json-ru-internal.json");
+  let legacySummary: Record<string, unknown> = {};
+  try {
+    const legacy = JSON.parse(readFileSync(legacyReportPath, "utf-8")) as Record<string, unknown>;
+    legacySummary = {
+      pageCount: Number((legacy as { dynamicPages?: unknown[] }).dynamicPages?.length ?? 0),
+      hasCompliance: Boolean((legacy as Record<string, unknown>).complianceSummary),
+      hasLexis: Boolean((legacy as Record<string, unknown>).lexisNexisHybrid),
+    };
+  } catch {
+    legacySummary = { status: "legacy-report-json-unavailable" };
+  }
+  writeJson(join(composedDir, "r7-r9-comparison-inspection.json"), {
+    legacy: legacySummary,
+    r9: {
+      pageCountInternal: composed.compositionInspection.finalInternalPageCount,
+      pageCountClient: composed.compositionInspection.finalClientPageCount,
+      sections: composed.finalManifest.sections.map((s) => s.macroSectionKey),
+      lexisVisualPages: composed.compositionInspection.lexisNexisVisualPageCount,
+      missingMicroStages: composed.compositionInspection.missingMicroStages,
+      clientPolicyViolations: consistencyInspection.violations.filter((x) => x.section === "client-policy").length,
+      contradictions: consistencyInspection.violations.filter((x) => x.section === "consistency").length,
+    },
+    blockingReasons: [
+      ...(consistencyInspection.violations.filter((x) => x.section === "client-policy").length > 0 ? ["client-policy"] : []),
+      ...(composed.compositionInspection.missingMicroStages.length > 0 ? ["missing-orion-sections"] : []),
+      ...(consistencyInspection.violations.filter((x) => x.section === "consistency").length > 0 ? ["consistency-contradictions"] : []),
+    ],
+    status:
+      consistencyInspection.violations.filter((x) => x.section === "client-policy").length > 0 ||
+      composed.compositionInspection.missingMicroStages.length > 0 ||
+      consistencyInspection.violations.filter((x) => x.section === "consistency").length > 0
+        ? "BLOCKED"
+        : "PASS",
   });
 
   const internalPptx = join(composedDir, "final-report-v17-ru-internal-draft.pptx");

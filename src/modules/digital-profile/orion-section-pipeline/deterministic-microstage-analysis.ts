@@ -67,7 +67,7 @@ export function buildDeterministicMicrostageAnalysis(input: {
     },
     slideContent: {
       headline: microStage.titleRu,
-      subheadline: `Micro-stage ${microStage.microStageKey}`,
+      subheadline: "Этап анализа",
       metricCards: [
         { label: "Всего", value: counts.total },
         { label: "Подтверждено", value: counts.confirmed },
@@ -75,7 +75,7 @@ export function buildDeterministicMicrostageAnalysis(input: {
       ],
       tables: [],
       narrativeBlocks: [
-        { title: "Вывод", text: "Детерминированная аналитика используется как fallback при недоступности GPT-5.5." },
+        { title: "Вывод", text: "Детерминированная аналитика используется при недоступности основной модели." },
       ],
       screenshotRefs: evidencePack.topResults.map((x) => x.screenshotRef).filter((x): x is string => Boolean(x)),
       visualRefs: evidencePack.topResults.map((x) => x.visualRef).filter((x): x is string => Boolean(x)),

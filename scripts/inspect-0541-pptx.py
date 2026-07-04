@@ -2303,7 +2303,7 @@ def _r91_inspect(pptx_path: Path, report_json_path: Path) -> tuple[int, list[str
 
     client_like = "runid" not in report_str and "report-json-client" in str(report_json_path).lower()
     if client_like:
-        for t in ["mock", "fallback", "debug", "provider", "runtime"]:
+        for t in ["mock", "fallback", "debug", "provider", "runtime", "manifest", "micro-stage"]:
             if re.search(rf"\b{re.escape(t)}\b", flat_text):
                 violations.append(f"raw provider/debug label in client deck: {t}")
         if re.search(r"https?://", flat_text):
