@@ -13,6 +13,13 @@ function envBool(value: string | undefined, fallback = false): boolean {
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 }
 
+function envInt(value: string | undefined, fallback: number, min: number, max: number): number {
+  if (value == null || value.trim() === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(parsed)));
+}
+
 const KNOWN_DRIVERS: StorageDriver[] = ["local", "s3", "r2", "supabase"];
 function envDriver(value: string | undefined): StorageDriver {
   const v = (value ?? "").trim().toLowerCase();
@@ -43,6 +50,16 @@ export interface DigitalProfileConfig {
   reportTemplateVersion: string;
   /** Default Admin UI locale ("ru" | "en"); UI-only, falls back to "ru". */
   defaultLocale: "ru" | "en";
+  /** Stage R8.3 — AI analyst narrative provider config. */
+  aiAnalyst: {
+    enabled: boolean;
+    provider: "openai";
+    model: string;
+    timeoutMs: number;
+    maxInputItems: number;
+    maxOutputTokens: number;
+    openAiApiKey?: string;
+  };
 }
 
 function envLocale(value: string | undefined): "ru" | "en" {
@@ -92,6 +109,18 @@ export const digitalProfileConfig: DigitalProfileConfig = {
   reportTemplateVersion:
     process.env.DIGITAL_PROFILE_REPORT_TEMPLATE_VERSION ?? "report-template-v3",
   defaultLocale: envLocale(process.env.DIGITAL_PROFILE_DEFAULT_LOCALE),
+  aiAnalyst: {
+    enabled: envBool(process.env.DIGITAL_PROFILE_AI_ANALYST_ENABLED, false),
+    provider:
+      (process.env.DIGITAL_PROFILE_AI_ANALYST_PROVIDER ?? "openai").trim().toLowerCase() === "openai"
+        ? "openai"
+        : "openai",
+    model: process.env.DIGITAL_PROFILE_AI_ANALYST_MODEL?.trim() || "gpt-5.5",
+    timeoutMs: envInt(process.env.DIGITAL_PROFILE_AI_ANALYST_TIMEOUT_MS, 20000, 1000, 120000),
+    maxInputItems: envInt(process.env.DIGITAL_PROFILE_AI_ANALYST_MAX_INPUT_ITEMS, 120, 20, 500),
+    maxOutputTokens: envInt(process.env.DIGITAL_PROFILE_AI_ANALYST_MAX_OUTPUT_TOKENS, 1400, 200, 4000),
+    openAiApiKey: process.env.OPENAI_API_KEY?.trim() || undefined,
+  },
 };
 
 /** Master feature flag check. Use this everywhere before exposing the module. */

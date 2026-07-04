@@ -290,6 +290,14 @@ const CLIENT_FORBIDDEN_JSON_KEYS = new Set([
   "filePath",
   "storageKey",
   "localPath",
+  // R8.3 AI analyst internals.
+  "prompt",
+  "rawPrompt",
+  "rawModelResponse",
+  "openAiRequestId",
+  "openAiResponse",
+  "providerRequest",
+  "providerResponse",
 ]);
 
 export type ReportJsonAudience = "internal" | "client";
@@ -475,6 +483,14 @@ export const CLIENT_FORBIDDEN_TEXT_MARKERS: string[] = [
   "localhost",
   "127.0.0.1",
   "Traceback (most recent call last)",
+  "OPENAI_API_KEY",
+  "rawModelResponse",
+  "prompt",
+  "openAiRequestId",
+  "storageKey",
+  "C:\\",
+  "/mnt/",
+  "\"mock\"",
 ];
 
 /** Find client-report policy violations in a serialized report_json string. */
@@ -923,6 +939,56 @@ function sanitizeEntityFilteringForClient(
   };
 }
 
+function sanitizeAiAnalystNarrativeForClient(
+  block: Record<string, unknown> | undefined
+): Record<string, unknown> | undefined {
+  if (!block) return block;
+  const out = { ...block };
+  const meta = out.meta && typeof out.meta === "object"
+    ? { ...(out.meta as Record<string, unknown>) }
+    : undefined;
+  if (meta && Array.isArray(meta.warnings)) {
+    meta.warnings = meta.warnings
+      .map((w) => String(w))
+      .filter((w) => {
+        const low = w.toLowerCase();
+        return (
+          !low.includes("openai") &&
+          !low.includes("api key") &&
+          !low.includes("request id") &&
+          !low.includes("raw") &&
+          !low.includes("prompt") &&
+          !low.includes("provider")
+        );
+      })
+      .slice(0, 10);
+  }
+  out.meta = meta;
+  if (Array.isArray(out.clientSafeWarnings)) {
+    out.clientSafeWarnings = (out.clientSafeWarnings as unknown[])
+      .map((w) => String(w))
+      .filter((w) => {
+        const low = w.toLowerCase();
+        return (
+          !low.includes("openai") &&
+          !low.includes("api key") &&
+          !low.includes("request id") &&
+          !low.includes("provider") &&
+          !low.includes("mock")
+        );
+      })
+      .slice(0, 10);
+  }
+  delete out.prompt;
+  delete out.rawPrompt;
+  delete out.rawModelResponse;
+  delete out.openAiRequestId;
+  delete out.openAiResponse;
+  delete out.providerRequest;
+  delete out.providerResponse;
+  return out;
+}
+
 /**
  * O5.2 — remove internal/debug fields from client-facing report_json.
  * Internal audience receives the stored payload unchanged.
@@ -950,6 +1016,7 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
     complianceRiskIntel?: Record<string, unknown>;
     lexisNexisHybrid?: Record<string, unknown>;
     riskSummary?: Record<string, unknown>;
+    aiAnalystNarrative?: Record<string, unknown>;
   };
   const locale = resolveReportLocale(copy);
 
@@ -961,6 +1028,9 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
         "client"
       ),
     };
+    if ("aiAnalystStatus" in copy.meta) {
+      delete (copy.meta as Record<string, unknown>).aiAnalystStatus;
+    }
   }
 
   if (copy.auditSummary?.dataQualitySummary?.warnings) {
@@ -997,6 +1067,9 @@ export function sanitizeReportJsonForAudience<T extends Record<string, unknown>>
   copy.searchProvenance = sanitizeSearchProvenanceForClient(copy.searchProvenance);
   copy.providerReadinessSummary = sanitizeProviderReadinessSummaryForClient(
     copy.providerReadinessSummary
+  );
+  copy.aiAnalystNarrative = sanitizeAiAnalystNarrativeForClient(
+    copy.aiAnalystNarrative as Record<string, unknown> | undefined
   );
   // Stage R3.6 — provider/runtime diagnostics are internal-only; never in client JSON.
   stripInternalDiagnostics(copy);

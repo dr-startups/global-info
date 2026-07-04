@@ -158,6 +158,21 @@ export function validateDigitalProfileEnv(
     }
   }
 
+  // Stage R8.3 — AI analyst narrative config (OpenAI-only in this stage).
+  if (bool(env.DIGITAL_PROFILE_AI_ANALYST_ENABLED)) {
+    const provider = (env.DIGITAL_PROFILE_AI_ANALYST_PROVIDER ?? "openai").trim().toLowerCase();
+    if (provider !== "openai") {
+      warnings.push(
+        "DIGITAL_PROFILE_AI_ANALYST_PROVIDER is not 'openai'; deterministic fallback will be used."
+      );
+    }
+    if (!env.OPENAI_API_KEY || env.OPENAI_API_KEY.trim().length === 0) {
+      warnings.push(
+        "DIGITAL_PROFILE_AI_ANALYST_ENABLED=true but OPENAI_API_KEY is missing; deterministic fallback will be used."
+      );
+    }
+  }
+
   return { ok: errors.length === 0, errors, warnings };
 }
 

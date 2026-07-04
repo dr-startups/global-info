@@ -152,9 +152,61 @@ def _p_executive(prs, vm, ctx):
     # Drop the warning if it merely repeats the last bullet (no duplication).
     if warning and bullet_lines and _norm(warning) == _norm(bullet_lines[-1]):
         warning = None
-    # Stack sequentially by computed text height; bullets() returns the bottom Y
-    # (incl. a safe gap), so the warning always sits below the list.
-    top = T.bullets(slide, top, bullet_lines)
+    ai = vm.get("aiAnalyst") or {}
+    ai_exec = ai.get("executive") or {}
+    if ai.get("present") and ai_exec:
+        sec = ai.get("labels") or {}
+        top = T.card_auto(
+            slide,
+            T.MARGIN,
+            top,
+            T.CONTENT_W,
+            sec.get("simpleConclusion", "Итог простыми словами"),
+            [x for x in [ai_exec.get("plainConclusion"), ai_exec.get("riskExplanation")] if x],
+            min_h=560000,
+            tone=T.ACCENT,
+        )
+        top = T.card_auto(
+            slide,
+            T.MARGIN,
+            top,
+            T.CONTENT_W,
+            sec.get("whyMedium", "Почему риск MEDIUM"),
+            [x for x in [ai_exec.get("whyNotLow")] if x],
+            min_h=480000,
+        )
+        top = T.card_auto(
+            slide,
+            T.MARGIN,
+            top,
+            T.CONTENT_W,
+            sec.get("found", "Что подтверждено"),
+            list(ai_exec.get("whatWasFound") or [])[:3],
+            min_h=520000,
+        )
+        top = T.card_auto(
+            slide,
+            T.MARGIN,
+            top,
+            T.CONTENT_W,
+            sec.get("review", "Что требует проверки"),
+            list(ai_exec.get("manualReviewRequired") or [])[:3],
+            min_h=520000,
+            tone=T.WARNING,
+        )
+        top = T.card_auto(
+            slide,
+            T.MARGIN,
+            top,
+            T.CONTENT_W,
+            sec.get("next", "Что делать дальше"),
+            list(ai_exec.get("nextActions") or [])[:3],
+            min_h=520000,
+        )
+    else:
+        # Stack sequentially by computed text height; bullets() returns the bottom Y
+        # (incl. a safe gap), so the warning always sits below the list.
+        top = T.bullets(slide, top, bullet_lines)
     if warning:
         T.note(slide, top, warning, "warning")
 
@@ -191,6 +243,9 @@ def _p_overview(prs, vm, ctx):
         ],
         min_h=560000,
     )
+    ai_note = str((vm.get("overview") or {}).get("aiRiskExplanation") or "").strip()
+    if ai_note:
+        T.note(slide, Emu(int(top) + 620000), ai_note, "info")
 
 
 def _b_results_r2(slide, top, blk, vm, ctx):
@@ -333,6 +388,12 @@ def _b_summary(slide, top, blk, vm, ctx):
             top = T.bullets(slide, top, parts)
     if blk["conclusion"]:
         T.note(slide, top, blk["conclusion"], "info")
+    ai = vm.get("aiAnalyst") or {}
+    ai_region = ai.get("ru") if str(blk.get("code", "")).upper() == "RU" else ai.get("intl")
+    if ai_region:
+        rr = str(ai_region.get("reviewRequiredSummary") or "")
+        if rr:
+            T.note(slide, Emu(int(top) + 70000), rr, "disclaimer")
 
 
 def _b_summary_r24(slide, top, blk, vm, ctx):
@@ -379,6 +440,10 @@ def _b_summary_r24(slide, top, blk, vm, ctx):
         labels=L,
         kind="info",
     )
+    ai = vm.get("aiAnalyst") or {}
+    ai_region = ai.get("ru") if is_ru else ai.get("intl")
+    if ai_region and ai_region.get("reviewRequiredSummary"):
+        T.r2_region_note(slide, Emu(int(top) + 70000), str(ai_region.get("reviewRequiredSummary")), labels=L, kind="disclaimer")
 
 
 def _b_organic(slide, top, blk, vm, ctx):
@@ -465,7 +530,11 @@ def _b_results_r23(slide, top, blk, vm, ctx):
 def _b_themes(slide, top, blk, vm, ctx):
     L = vm["labels"]
     t = blk["themes"]
-    themes = [f"{x['theme']} ({x['count']})" for x in t["topThemes"]]
+    counts = {}
+    for row in t["topThemes"]:
+        key = str(row.get("theme") or "")
+        counts[key] = int(counts.get(key, 0)) + int(row.get("count") or 0)
+    themes = [f"{k} ({v})" for k, v in counts.items()]
     top = T.bullets(slide, top, [
         L["top_themes"] + " " + (", ".join(themes) or "—"),
         L["negative_domains"] + " " + (", ".join(t["negativeDomains"]) or "—"),
@@ -1306,6 +1375,10 @@ def _p_compliance_overview(prs, vm, ctx):
     else:
         top = T.no_data_card(slide, top, L["nd_no_compliance_hits"])
     T.warning_card(slide, top, L.get("comp_manual_review_note", "Часть материалов требует ручной проверки перед финальной интерпретацией."))
+    ai = vm.get("aiAnalyst") or {}
+    ai_warn = list(ai.get("warnings") or [])
+    if ai_warn:
+        T.note(slide, Emu(int(top) + 70000), str(ai_warn[0]), "disclaimer")
 
 
 def _p_compliance_risk_types(prs, vm, ctx):
@@ -1937,6 +2010,22 @@ def _p_r31_risk_reasoning_overview(prs, vm, ctx):
         limiting = [x for x in (rr.get("limitingFactors") or []) if x]
         if limiting:
             top = T.bullets(slide, top, limiting[:3], max_items=3, layout_warnings=ctx.layout_warnings)
+        ai = vm.get("aiAnalyst") or {}
+        ai_ev = ai.get("evidence") or {}
+        if ai_ev:
+            top = T.card_auto(
+                slide,
+                T.MARGIN,
+                Emu(int(top) + 90000),
+                T.CONTENT_W,
+                L.get("r35_reasoning_summary_title", "Обоснование"),
+                [
+                    str(ai_ev.get("confirmed") or ""),
+                    str(ai_ev.get("reviewRequired") or ""),
+                    str(ai_ev.get("excludedNoise") or ""),
+                ],
+                min_h=620000,
+            )
         T.note(
             slide,
             top,
@@ -2316,16 +2405,20 @@ def _p_r74_lexis_intro(prs, vm, ctx):
         ],
         per_row=4,
     )
+    ai_lexis = (vm.get("aiAnalyst") or {}).get("lexis") or {}
+    intro_lines = [
+        labels.get("introBody", L.get("r74_intro_body", "Импортированный отчёт LexisNexis добавлен как доказательный материал. Автоматический разбор выделил сигналы для проверки; выводы не являются юридическим заключением.")),
+        str(summary.get("executiveSummaryClient") or ""),
+    ]
+    if ai_lexis.get("screeningConclusion"):
+        intro_lines.append(str(ai_lexis.get("screeningConclusion")))
     top = T.card_auto(
         slide,
         T.MARGIN,
         top,
         T.CONTENT_W,
         labels.get("introTitle", L.get("r74_intro_title", "Импортированный отчёт LexisNexis")),
-        [
-            labels.get("introBody", L.get("r74_intro_body", "Импортированный отчёт LexisNexis добавлен как доказательный материал. Автоматический разбор выделил сигналы для проверки; выводы не являются юридическим заключением.")),
-            str(summary.get("executiveSummaryClient") or ""),
-        ],
+        intro_lines[:3],
         tone=T.ACCENT,
         min_h=620000,
     )
@@ -2380,8 +2473,10 @@ def _p_r74_lexis_analytics(prs, vm, ctx):
         )
     else:
         top = T.no_data_card(slide, top, "Сигналы не выделены.")
-    if pa.get("executiveSummaryClient"):
-        T.note(slide, top, str(pa.get("executiveSummaryClient")), "info")
+    ai_lexis = (vm.get("aiAnalyst") or {}).get("lexis") or {}
+    note_line = str(ai_lexis.get("reviewRequiredSummary") or pa.get("executiveSummaryClient") or "")
+    if note_line:
+        T.note(slide, top, note_line, "info")
 
 
 def _p_r74_lexis_visual_page(prs, vm, ctx, doc: dict, page: dict):

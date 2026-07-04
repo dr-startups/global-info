@@ -298,6 +298,13 @@ export interface ReportMeta {
   demo?: boolean;
   /** Non-fatal notes surfaced to renderer / QA (structured; legacy string[] supported). */
   reportWarnings?: ReportWarning[] | string[];
+  /** Stage R8.3 — internal AI analyst execution status (no secrets). */
+  aiAnalystStatus?: {
+    provider: "openai" | "none";
+    model: string;
+    status: "ready" | "fallback" | "unavailable";
+    reason?: string;
+  };
 }
 
 /**
@@ -356,6 +363,96 @@ export interface ReportOffer {
   disclaimers?: string[];
 }
 
+export type AiAnalystItemStatus =
+  | "confirmed"
+  | "requires_review"
+  | "excluded_noise"
+  | "not_confirmed";
+
+export interface AiAnalystThemeSummary {
+  label: string;
+  explanation: string;
+  evidenceCount: number;
+  status: AiAnalystItemStatus;
+}
+
+export interface AiAnalystDomainSummary {
+  domain: string;
+  label: string;
+  explanation: string;
+  evidenceCount: number;
+  status: AiAnalystItemStatus;
+}
+
+export interface AiAnalystRegionNarrative {
+  confirmedNegativeSummary: string;
+  potentialNegativeSummary: string;
+  reviewRequiredSummary: string;
+  topThemes: AiAnalystThemeSummary[];
+  keyDomains: AiAnalystDomainSummary[];
+  riskExplanation: string;
+  recommendedActions: string[];
+  sanctionsWatchlistContext?: string;
+}
+
+export interface AiAnalystExecutiveSummary {
+  plainConclusion: string;
+  riskExplanation: string;
+  whyNotLow: string;
+  whatWasFound: string[];
+  whatWasNotConfirmed: string[];
+  manualReviewRequired: string[];
+  nextActions: string[];
+}
+
+export interface AiAnalystLexisNexisNarrative {
+  importStatus: string;
+  screeningConclusion: string;
+  matchesSummary: string;
+  reviewRequiredSummary: string;
+  visualPagesSummary: string;
+}
+
+export interface AiAnalystEvidenceInterpretation {
+  confirmed: string;
+  reviewRequired: string;
+  excludedNoise: string;
+  confidence: string;
+}
+
+export interface AiAnalystRecommendedAction {
+  label: string;
+  rationale: string;
+}
+
+export interface AiAnalystSourceNote {
+  source: string;
+  note: string;
+}
+
+export interface AiAnalystGenerationMeta {
+  evidenceItemsUsed: number;
+  truncatedInput: boolean;
+  warnings: string[];
+}
+
+export interface AiAnalystNarrative {
+  status: "ready" | "fallback" | "unavailable";
+  generatedBy: "gpt-5.5" | "deterministic";
+  provider: "openai" | "none";
+  language: "ru" | "en";
+  generatedAt?: string;
+  meta: AiAnalystGenerationMeta;
+  executiveSummary: AiAnalystExecutiveSummary;
+  regionNarratives: {
+    ru?: AiAnalystRegionNarrative;
+    intl?: AiAnalystRegionNarrative;
+  };
+  lexisNexisNarrative?: AiAnalystLexisNexisNarrative;
+  evidenceInterpretation: AiAnalystEvidenceInterpretation;
+  clientSafeWarnings: string[];
+}
+
 export interface ReportJson {
   meta: ReportMeta;
   subject: SubjectProfile;
@@ -409,6 +506,8 @@ export interface ReportJson {
   complianceRiskIntel?: import("./report/compliance-risk-intel").ComplianceRiskIntel;
   /** Stage R7.4 — LexisNexis hybrid import (visual pages + parsed analytics). */
   lexisNexisHybrid?: LexisNexisHybridReportBlock;
+  /** Stage R8.3 — AI analyst narrative layer (client-readable structured summary). */
+  aiAnalystNarrative?: AiAnalystNarrative;
 }
 
 export type ImportedEvidenceDocumentStatus =

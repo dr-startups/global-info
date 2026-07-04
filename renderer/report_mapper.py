@@ -2185,6 +2185,45 @@ def _lexis_hybrid_vm(block: dict | None, L: dict, internal: bool) -> dict:
     }
 
 
+def _ai_analyst_vm(block: dict | None, L: dict, internal: bool) -> dict:
+    src = block or {}
+    status = str(src.get("status") or "unavailable")
+    generated_by = str(src.get("generatedBy") or "deterministic")
+    provider = str(src.get("provider") or "none")
+    executive = src.get("executiveSummary") or {}
+    regions = src.get("regionNarratives") or {}
+    warnings = list(src.get("clientSafeWarnings") or [])
+    if not internal:
+        warnings = [w for w in warnings if "provider" not in str(w).lower() and "api" not in str(w).lower()]
+    return {
+        "present": bool(src),
+        "status": status,
+        "generatedBy": generated_by,
+        "provider": provider,
+        "executive": {
+            "plainConclusion": str(executive.get("plainConclusion") or ""),
+            "riskExplanation": str(executive.get("riskExplanation") or ""),
+            "whyNotLow": str(executive.get("whyNotLow") or ""),
+            "whatWasFound": [str(x) for x in list(executive.get("whatWasFound") or []) if str(x).strip()],
+            "whatWasNotConfirmed": [str(x) for x in list(executive.get("whatWasNotConfirmed") or []) if str(x).strip()],
+            "manualReviewRequired": [str(x) for x in list(executive.get("manualReviewRequired") or []) if str(x).strip()],
+            "nextActions": [str(x) for x in list(executive.get("nextActions") or []) if str(x).strip()],
+        },
+        "ru": regions.get("ru") or {},
+        "intl": regions.get("intl") or {},
+        "lexis": src.get("lexisNexisNarrative") or {},
+        "evidence": src.get("evidenceInterpretation") or {},
+        "warnings": warnings,
+        "labels": {
+            "simpleConclusion": L.get("ai_simple_conclusion", "Итог простыми словами"),
+            "whyMedium": L.get("ai_why_medium", "Почему риск MEDIUM"),
+            "found": L.get("ai_what_found", "Что подтверждено"),
+            "review": L.get("ai_review_required", "Что требует проверки"),
+            "next": L.get("ai_next_actions", "Что делать дальше"),
+        },
+    }
+
+
 def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[dict, list[str]]:
     vm, warnings = build_view_model_v2(report_json)
     internal = str(audience).lower() != "client"
@@ -2262,6 +2301,31 @@ def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[
     )
     vm["entityFiltering"] = report_json.get("entityFiltering") or {}
     vm["lexisHybrid"] = _lexis_hybrid_vm(report_json.get("lexisNexisHybrid"), vm["labels"], internal)
+    vm["aiAnalyst"] = _ai_analyst_vm(report_json.get("aiAnalystNarrative"), vm["labels"], internal)
+    if vm["aiAnalyst"].get("present"):
+        ai_exec = vm["aiAnalyst"].get("executive") or {}
+        ex = vm.get("executiveSummary") or {}
+        merged = []
+        if ai_exec.get("plainConclusion"):
+            merged.append(str(ai_exec.get("plainConclusion")))
+        if ai_exec.get("riskExplanation"):
+            merged.append(str(ai_exec.get("riskExplanation")))
+        if ai_exec.get("whyNotLow"):
+            merged.append(str(ai_exec.get("whyNotLow")))
+        merged.extend(list(ai_exec.get("manualReviewRequired") or [])[:2])
+        if merged:
+            ex["bullets"] = merged[:6]
+            vm["executiveSummary"] = ex
+        overview = vm.get("overview") or {}
+        if ai_exec.get("riskExplanation"):
+            overview["aiRiskExplanation"] = str(ai_exec.get("riskExplanation"))
+        vm["overview"] = overview
+        if vm.get("ru") and vm["aiAnalyst"].get("ru"):
+            ru_ai = vm["aiAnalyst"]["ru"]
+            vm["ru"]["conclusion"] = str(ru_ai.get("riskExplanation") or vm["ru"].get("conclusion") or "")
+        if vm.get("intl") and vm["aiAnalyst"].get("intl"):
+            intl_ai = vm["aiAnalyst"]["intl"]
+            vm["intl"]["conclusion"] = str(intl_ai.get("riskExplanation") or vm["intl"].get("conclusion") or "")
     vm["appendixConclusion"] = {
         "title": vm["labels"].get("r31_appendix_conclusion_title", "Appendix conclusion"),
         "lines": [

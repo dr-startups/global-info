@@ -124,6 +124,15 @@ export function ReportPreviewPanel({
     }
   }
 
+  const aiStatus =
+    report &&
+    report.reportJson &&
+    typeof report.reportJson === "object" &&
+    (report.reportJson as { meta?: { aiAnalystStatus?: Record<string, unknown> } }).meta?.aiAnalystStatus
+      ? ((report.reportJson as { meta?: { aiAnalystStatus?: Record<string, unknown> } }).meta?.aiAnalystStatus ??
+        null)
+      : null;
+
   return (
     <div>
       <div className="dp-row" style={{ marginBottom: 16 }}>
@@ -267,6 +276,28 @@ export function ReportPreviewPanel({
             ) : null}
             <dt>{t("cases.created")}</dt>
             <dd>{fmtDate(report.createdAt)}</dd>
+            {aiStatus ? (
+              <>
+                <dt>AI-аналитика</dt>
+                <dd>{String(aiStatus.model ?? "GPT-5.5")}</dd>
+                <dt>Статус</dt>
+                <dd>
+                  {String(aiStatus.status ?? "fallback") === "ready"
+                    ? "готово"
+                    : String(aiStatus.status ?? "fallback") === "fallback"
+                      ? "резервная аналитика"
+                      : "недоступно"}
+                </dd>
+                {aiStatus.reason ? (
+                  <>
+                    <dt>Причина fallback</dt>
+                    <dd>{String(aiStatus.reason)}</dd>
+                  </>
+                ) : null}
+                <dt>Нарратив в отчёте</dt>
+                <dd>В отчёт добавлена клиентская аналитика простым языком</dd>
+              </>
+            ) : null}
           </dl>
 
           <div className="dp-inline" style={{ marginTop: 18 }}>

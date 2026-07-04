@@ -44,6 +44,7 @@ import {
 import { runLiveProviderSmoke } from "../providers/live-provider-smoke";
 import { buildEntityFilteringDiagnostics } from "../report/entity-filtering-diagnostics";
 import { buildComplianceRiskIntel } from "../report/compliance-risk-intel";
+import { generateAiAnalystNarrative } from "../ai-analyst/service";
 import {
   createInternalHygieneWarning,
   filterComplianceForReport,
@@ -964,7 +965,7 @@ export async function buildReportJson(
     lexisNexisHybrid,
   });
 
-  return {
+  const reportJson: ReportJson = {
     meta: {
       caseNumber: caseRow.caseNumber,
       title: caseRow.title,
@@ -1004,6 +1005,27 @@ export async function buildReportJson(
     complianceRiskIntel,
     lexisNexisHybrid,
   };
+
+  try {
+    const aiOutcome = await generateAiAnalystNarrative(reportJson);
+    reportJson.aiAnalystNarrative = aiOutcome.narrative;
+    reportJson.meta.aiAnalystStatus = {
+      provider: aiOutcome.diagnostics.provider,
+      model: aiOutcome.diagnostics.model,
+      status: aiOutcome.diagnostics.status,
+      reason: aiOutcome.diagnostics.reason,
+    };
+  } catch {
+    // Hard safety rule: report generation must not fail because of AI layer.
+    reportJson.meta.aiAnalystStatus = {
+      provider: "none",
+      model: digitalProfileConfig.aiAnalyst.model,
+      status: "unavailable",
+      reason: "ai-analyst-unavailable",
+    };
+  }
+
+  return reportJson;
 }
 
 const reportVersionSelect = {
