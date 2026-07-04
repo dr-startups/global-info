@@ -35,6 +35,42 @@ export class OrionPrismaPipelineStore implements OrionPipelineStore {
     this.fileStore = fileStore;
   }
 
+  private async ensureMicroStageId(input: OrionStoreWriteInput): Promise<string> {
+    const key = String(input.microStageKey ?? "");
+    const cached = this.microStageIds.get(key);
+    if (cached) return cached;
+    const existing = await db.orionReportMicroStage.findFirst({
+      where: {
+        caseId: input.caseId,
+        reportRunId: input.reportRunId,
+        microStageKey: key,
+      },
+      select: { id: true },
+    });
+    if (existing?.id) {
+      const id = String(existing.id);
+      this.microStageIds.set(key, id);
+      return id;
+    }
+    const macroSectionId = input.macroSectionKey ? this.macroSectionIds.get(input.macroSectionKey) : null;
+    const created = await this.create("orionReportMicroStage", {
+      caseId: input.caseId,
+      reportRunId: input.reportRunId,
+      macroSectionId: macroSectionId ?? null,
+      macroSectionKey: input.macroSectionKey ?? "unknown",
+      microStageKey: key || "unknown",
+      sectionNumber: input.metadataJson?.sectionNumber ?? null,
+      orderIndex: input.orderIndex ?? 0,
+      status: input.status ?? "planned",
+      internalOnly: true,
+      payloadJson: {},
+      metadataJson: {},
+    });
+    const id = String(created.id ?? "");
+    if (id) this.microStageIds.set(key, id);
+    return id;
+  }
+
   private async create(delegate: string, data: Record<string, unknown>): Promise<Record<string, unknown>> {
     return (await db[delegate].create({ data })) as Record<string, unknown>;
   }
@@ -54,16 +90,16 @@ export class OrionPrismaPipelineStore implements OrionPipelineStore {
     if (clientVisible && forbidden.length > 0) {
       throw new Error(`orion-db-client-payload-forbidden:${forbidden.join(",")}`);
     }
-    await this.create(delegate, {
+    const base: Record<string, unknown> = {
       caseId: input.caseId,
       reportRunId: input.reportRunId,
       status: input.status ?? "ready",
-      orderIndex: input.orderIndex ?? null,
       internalOnly: input.internalOnly ?? !clientVisible,
       payloadJson: sanitized,
       metadataJson: metadata,
       ...extra,
-    });
+    };
+    await this.create(delegate, base);
   }
 
   async createRun(input: {
@@ -91,11 +127,23 @@ export class OrionPrismaPipelineStore implements OrionPipelineStore {
 
   async saveBlueprint(input: OrionStoreWriteInput): Promise<void> {
     await this.fileStore.saveBlueprint(input);
-    await this.saveSectionDeckArtifact({
-      ...input,
-      metadataJson: { ...(input.metadataJson ?? {}), fileName: "blueprint.json", artifactType: "blueprint" },
-      payloadJson: input.payloadJson,
-    });
+    // Blueprint is run-level metadata and does not belong to a concrete macro section.
+    // Keep DB payload under final deck manifests metadata envelope to avoid FK issues.
+    await this.savePayload(
+      "orionFinalDeckManifest",
+      {
+        ...input,
+        status: input.status ?? "planned",
+        internalOnly: true,
+      },
+      {
+        metadataJson: {
+          ...(input.metadataJson ?? {}),
+          artifactType: "blueprint",
+        },
+      },
+      false
+    );
   }
 
   async saveMacroSection(input: OrionStoreWriteInput): Promise<void> {
@@ -142,11 +190,12 @@ export class OrionPrismaPipelineStore implements OrionPipelineStore {
 
   async saveAgentRun(input: OrionStoreWriteInput): Promise<void> {
     await this.fileStore.saveAgentRun(input);
+    const microStageId = await this.ensureMicroStageId(input);
     await this.savePayload(
       "orionSectionAgentRun",
       input,
       {
-        microStageId: this.microStageIds.get(String(input.microStageKey ?? "")) ?? "",
+        microStageId,
         providerId: String(input.metadataJson?.providerId ?? "unknown"),
         agentName: String(input.metadataJson?.agentName ?? "unknown"),
         reason: input.metadataJson?.reason ?? null,
@@ -157,42 +206,50 @@ export class OrionPrismaPipelineStore implements OrionPipelineStore {
 
   async saveRawEvidence(input: OrionStoreWriteInput): Promise<void> {
     await this.fileStore.saveRawEvidence(input);
-    await this.savePayload("orionRawEvidence", input, { microStageId: this.microStageIds.get(String(input.microStageKey ?? "")) ?? "" }, false);
+    const microStageId = await this.ensureMicroStageId(input);
+    await this.savePayload("orionRawEvidence", input, { microStageId }, false);
   }
 
   async saveNormalizedEvidence(input: OrionStoreWriteInput): Promise<void> {
     await this.fileStore.saveNormalizedEvidence(input);
-    await this.savePayload("orionNormalizedEvidence", input, { microStageId: this.microStageIds.get(String(input.microStageKey ?? "")) ?? "" }, false);
+    const microStageId = await this.ensureMicroStageId(input);
+    await this.savePayload("orionNormalizedEvidence", input, { microStageId }, false);
   }
 
   async saveSelectedEvidence(input: OrionStoreWriteInput): Promise<void> {
     await this.fileStore.saveSelectedEvidence(input);
-    await this.savePayload("orionSelectedEvidence", input, { microStageId: this.microStageIds.get(String(input.microStageKey ?? "")) ?? "" }, false);
+    const microStageId = await this.ensureMicroStageId(input);
+    await this.savePayload("orionSelectedEvidence", input, { microStageId }, false);
   }
 
   async saveExcludedEvidence(input: OrionStoreWriteInput): Promise<void> {
     await this.fileStore.saveExcludedEvidence(input);
-    await this.savePayload("orionExcludedEvidence", input, { microStageId: this.microStageIds.get(String(input.microStageKey ?? "")) ?? "" }, false);
+    const microStageId = await this.ensureMicroStageId(input);
+    await this.savePayload("orionExcludedEvidence", input, { microStageId }, false);
   }
 
   async saveEvidenceFile(input: OrionStoreWriteInput): Promise<void> {
     await this.fileStore.saveEvidenceFile(input);
-    await this.savePayload("orionEvidenceFile", input, { microStageId: this.microStageIds.get(String(input.microStageKey ?? "")) ?? "" }, false);
+    const microStageId = await this.ensureMicroStageId(input);
+    await this.savePayload("orionEvidenceFile", input, { microStageId }, false);
   }
 
   async saveEvidencePack(input: OrionStoreWriteInput): Promise<void> {
     await this.fileStore.saveEvidencePack(input);
-    await this.savePayload("orionSectionEvidencePack", input, { microStageId: this.microStageIds.get(String(input.microStageKey ?? "")) ?? "" }, false);
+    const microStageId = await this.ensureMicroStageId(input);
+    await this.savePayload("orionSectionEvidencePack", input, { microStageId }, false);
   }
 
   async saveSectionAnalysis(input: OrionStoreWriteInput): Promise<void> {
     await this.fileStore.saveSectionAnalysis(input);
-    await this.savePayload("orionSectionAnalysis", input, { microStageId: this.microStageIds.get(String(input.microStageKey ?? "")) ?? "" }, false);
+    const microStageId = await this.ensureMicroStageId(input);
+    await this.savePayload("orionSectionAnalysis", input, { microStageId }, false);
   }
 
   async saveSlideManifest(input: OrionStoreWriteInput): Promise<void> {
     await this.fileStore.saveSlideManifest(input);
-    await this.savePayload("orionSectionSlideManifest", input, { microStageId: this.microStageIds.get(String(input.microStageKey ?? "")) ?? "" }, false);
+    const microStageId = await this.ensureMicroStageId(input);
+    await this.savePayload("orionSectionSlideManifest", input, { microStageId }, false);
   }
 
   async saveSectionDeckArtifact(input: OrionStoreWriteInput): Promise<void> {
