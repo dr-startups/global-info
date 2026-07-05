@@ -81,6 +81,10 @@ function ensureDir(path: string): void {
   mkdirSync(path, { recursive: true });
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function safeArray(value: unknown): Array<Record<string, unknown>> {
   return Array.isArray(value) ? (value as Array<Record<string, unknown>>) : [];
 }
@@ -289,6 +293,11 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
         providerAvailability: realContext.providerAvailability,
         lexis: realContext.lexis,
       });
+      for (const provider of realContext.providerAvailability.unavailable) {
+        if (/serp|google|yandex/i.test(provider)) {
+          run.warnings.push(`search-provider-unavailable:${provider}`);
+        }
+      }
       await store.writeArtifact(join(root, "micro-stage-mapping-inspection.json"), {
         stageCount: Object.keys(microStageInputs).length,
         mappedStages: Object.values(microStageInputs).map((x) => ({
@@ -496,6 +505,9 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
           provider: diagnostics.provider,
           reason: diagnostics.reason,
         });
+        if (String(diagnostics.reason ?? "").includes("429")) {
+          await sleep(3000);
+        }
       }
       await store.writeArtifact(join(stageDir, "gpt55-analysis.json"), selectedForGpt55 ? finalAnalysis : deterministic);
       await store.saveSectionAnalysis({
@@ -612,7 +624,20 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
     aiEnforcementReason = `Deterministic fallback used for ${deterministicRequiredStages.length} required stage(s) (explicit dev/test mode).`;
   } else {
     aiEnforcementStatus = "BLOCKED";
-    aiEnforcementReason = `GPT-5.5 analysis missing for ${deterministicRequiredStages.length} required stage(s).`;
+    const failedRows = gptInspectionRows.filter(
+      (row) => row.selectedForGpt55 && row.generatedBy !== "gpt-5.5"
+    );
+    const failureReasons = Array.from(
+      new Set(failedRows.map((row) => row.reason).filter((reason): reason is string => Boolean(reason)))
+    ).slice(0, 3);
+    if (failureReasons.some((reason) => reason.includes("429"))) {
+      aiEnforcementReason =
+        "OpenAI rate limit (HTTP 429): required GPT-5.5 stages fell back to deterministic analysis. Wait a few minutes and retry.";
+    } else if (failureReasons.some((reason) => reason.includes("openai-http") || reason.includes("openai-call-failed"))) {
+      aiEnforcementReason = `OpenAI API error: ${failureReasons.join("; ")}`;
+    } else {
+      aiEnforcementReason = `GPT-5.5 analysis missing for ${deterministicRequiredStages.length} required stage(s).`;
+    }
   }
   const aiEnforcement: OrionAiEnforcementResult = {
     requireAiAnalysis,

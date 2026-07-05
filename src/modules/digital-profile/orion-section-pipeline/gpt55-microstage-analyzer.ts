@@ -21,7 +21,20 @@ function buildSystemPrompt(): string {
   ].join(" ");
 }
 
+function slimEvidencePackForGpt(pack: OrionEvidencePack): OrionEvidencePack {
+  const maxItems = digitalProfileConfig.aiAnalyst.maxInputItems;
+  return {
+    ...pack,
+    topResults: pack.topResults.slice(0, maxItems).map((item) => ({
+      ...item,
+      snippet: typeof item.snippet === "string" ? item.snippet.slice(0, 400) : item.snippet,
+      title: typeof item.title === "string" ? item.title.slice(0, 200) : item.title,
+    })),
+  };
+}
+
 function buildUserPrompt(input: { microStage: OrionMicroStage; evidencePack: OrionEvidencePack }): string {
+  const evidencePack = slimEvidencePackForGpt(input.evidencePack);
   return JSON.stringify(
     {
       task: "Analyze one ORION micro-stage evidence pack and return strict JSON.",
@@ -68,7 +81,7 @@ function buildUserPrompt(input: { microStage: OrionMicroStage; evidencePack: Ori
         sectionNumber: input.microStage.sectionNumber,
         titleRu: input.microStage.titleRu,
       },
-      evidencePack: input.evidencePack,
+      evidencePack,
     },
     null,
     2
@@ -112,6 +125,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function retryDelayMs(error: unknown, attempt: number): number {
+  const msg = error instanceof Error ? error.message : String(error);
+  if (msg.includes("429")) {
+    return 4000 * attempt + Math.floor(Math.random() * 1000);
+  }
+  return 500 * 2 ** (attempt - 1) + Math.floor(Math.random() * 250);
+}
+
 async function callOpenAiOnce(input: {
   apiKey: string;
   model: string;
@@ -145,9 +166,10 @@ async function callOpenAiOnce(input: {
       }),
     });
     if (!response.ok) {
-      // Distinguish transient (retryable) from permanent HTTP failures.
+      const body = await response.text().catch(() => "");
+      const detail = body.replace(/\s+/g, " ").trim().slice(0, 240);
       throw new Error(
-        `${TRANSIENT_HTTP_STATUSES.has(response.status) ? "openai-transient-http" : "openai-http"}-${response.status}`
+        `${TRANSIENT_HTTP_STATUSES.has(response.status) ? "openai-transient-http" : "openai-http"}-${response.status}${detail ? `:${detail}` : ""}`
       );
     }
     const json = (await response.json()) as OpenAiResponseShape;
@@ -166,7 +188,7 @@ async function callOpenAi(input: {
   microStage: OrionMicroStage;
   evidencePack: OrionEvidencePack;
 }): Promise<unknown> {
-  const maxAttempts = 3;
+  const maxAttempts = 5;
   let lastError: unknown;
   logOrionPipeline("gpt55", "openai-call-start", {
     microStageKey: input.microStage.microStageKey,
@@ -189,8 +211,7 @@ async function callOpenAi(input: {
         error: error instanceof Error ? error.message : String(error),
       });
       if (attempt < maxAttempts && isTransientError(error)) {
-        // Exponential backoff with jitter to ride out rate limits / hiccups.
-        await sleep(500 * 2 ** (attempt - 1) + Math.floor(Math.random() * 250));
+        await sleep(retryDelayMs(error, attempt));
         continue;
       }
       throw error;
@@ -273,7 +294,12 @@ export async function analyzeMicroStageWithGpt55(input: {
         evidencePack: input.evidencePack,
         reason: error instanceof Error ? error.message : "openai-call-failed",
       }),
-      diagnostics: { provider: "openai", model: cfg.model, status: "fallback", reason: "openai-call-failed" },
+      diagnostics: {
+        provider: "openai",
+        model: cfg.model,
+        status: "fallback",
+        reason: error instanceof Error ? error.message : "openai-call-failed",
+      },
     };
   }
 }

@@ -197,6 +197,7 @@ export interface Dictionary {
     orionV2Gpt55SkipNotice: string;
     orionV2ClientPolicy: string;
     orionV2AiRequiredMissing: string;
+    orionV2OpenAiApiError: string;
     orionV2AiStagesIncomplete: string;
     orionV2AiStagesIncompleteNotice: string;
     orionV2AiRequiredNotice: string;

@@ -132,7 +132,7 @@ export function OrionV2ReportPanel({ caseId }: { caseId: string }) {
     if (!status) return "—";
     if (status.gpt55Status === "used") return t("report.orionV2Gpt55Done");
     if (status.gpt55Status === "required_missing") {
-      return t("report.orionV2AiRequiredMissing");
+      return status.aiReady ? t("report.orionV2OpenAiApiError") : t("report.orionV2AiRequiredMissing");
     }
     if (status.gpt55Status === "deterministic_fallback" && status.aiEnforcementStatus === "BLOCKED") {
       return t("report.orionV2AiStagesIncomplete");

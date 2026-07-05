@@ -271,6 +271,10 @@ function normalizeWarnings(warnings: string[]): string[] {
     if (lower.includes("real-case-adapter-unavailable")) {
       return "Real case data bridge reported unavailable context.";
     }
+    if (lower.startsWith("search-provider-unavailable:")) {
+      const provider = warning.split(":").slice(1).join(":") || "provider";
+      return `Search provider unavailable (${provider}): using cached case data from DB. New Google/Serp searches require a topped-up API key.`;
+    }
     return "Pipeline completed with non-blocking warning.";
   });
 }
@@ -579,7 +583,7 @@ async function executeOrionV2Report(
   if (!readiness.ready) {
     gpt55Status = "required_missing";
   } else if (aiEnforcement.status === "BLOCKED") {
-    gpt55Status = gpt55Used > 0 ? "deterministic_fallback" : "required_missing";
+    gpt55Status = "deterministic_fallback";
   } else if (aiEnforcement.status === "PASS_WITH_DETERMINISTIC_FALLBACK") {
     gpt55Status = "deterministic_fallback";
   } else if (gpt55Used > 0) {
