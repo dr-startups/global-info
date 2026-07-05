@@ -396,9 +396,24 @@ export async function processLexisNexisDocx(
     if (parsedAnalytics.parserWarnings?.length) parserWarnings.push(...parsedAnalytics.parserWarnings);
 
     let status: ImportedEvidenceDocumentStatus = "ready";
-    if (conversionWarnings.length > 0 && parserWarnings.length > 0) status = "failed";
-    else if (conversionWarnings.length > 0) status = "conversion_warning";
-    else if (parserWarnings.length > 0 || parsedAnalytics.parserStatus !== "parsed") status = "parse_warning";
+    const hasPages = renderedPageFiles.length > 0;
+    const benignConversionWarnings = new Set([
+      "local_conversion_bypassed_via_renderer",
+    ]);
+    const significantConversionWarnings = conversionWarnings.filter(
+      (warning) => !benignConversionWarnings.has(warning)
+    );
+    if (!hasPages) {
+      if (conversionWarnings.length > 0 && parserWarnings.length > 0) status = "failed";
+      else if (conversionWarnings.length > 0) status = "conversion_warning";
+      else if (parserWarnings.length > 0 || parsedAnalytics.parserStatus !== "parsed") {
+        status = "parse_warning";
+      }
+    } else if (significantConversionWarnings.length > 0) {
+      status = "conversion_warning";
+    } else if (parserWarnings.length > 0 || parsedAnalytics.parserStatus !== "parsed") {
+      status = "parse_warning";
+    }
     return {
       status,
       renderedPageFiles,

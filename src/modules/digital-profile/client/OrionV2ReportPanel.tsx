@@ -124,12 +124,18 @@ export function OrionV2ReportPanel({ caseId }: { caseId: string }) {
   }
 
   const aiRequiredMissing = Boolean(status?.aiRequired && !status?.aiReady);
+  const aiStagesBlocked = Boolean(
+    status?.aiEnforcementStatus === "BLOCKED" && status?.aiReady
+  );
 
   const gptLabel = useMemo(() => {
     if (!status) return "—";
     if (status.gpt55Status === "used") return t("report.orionV2Gpt55Done");
     if (status.gpt55Status === "required_missing") {
       return t("report.orionV2AiRequiredMissing");
+    }
+    if (status.gpt55Status === "deterministic_fallback" && status.aiEnforcementStatus === "BLOCKED") {
+      return t("report.orionV2AiStagesIncomplete");
     }
     if (status.gpt55Status === "deterministic_fallback") {
       return t("report.orionV2DevDeterministicNotice");
@@ -189,10 +195,13 @@ export function OrionV2ReportPanel({ caseId }: { caseId: string }) {
       {isRunning ? (
         <Notice>{t("report.orionV2RunningNotice")}</Notice>
       ) : null}
-      {aiRequiredMissing || status?.gpt55Status === "required_missing" ? (
+      {aiRequiredMissing ? (
         <ErrorBox>{t("report.orionV2AiRequiredNotice")}</ErrorBox>
       ) : null}
-      {status?.gpt55Status === "deterministic_fallback" ? (
+      {aiStagesBlocked ? (
+        <ErrorBox>{t("report.orionV2AiStagesIncompleteNotice")}</ErrorBox>
+      ) : null}
+      {status?.gpt55Status === "deterministic_fallback" && !aiStagesBlocked ? (
         <Notice>{t("report.orionV2DevDeterministicNotice")}</Notice>
       ) : status?.gpt55Status === "skipped" ? (
         <Notice>{t("report.orionV2Gpt55SkipNotice")}</Notice>

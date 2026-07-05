@@ -259,7 +259,7 @@ export async function analyzeMicroStageWithGpt55(input: {
       };
     }
     return {
-      analysis: valid.value,
+      analysis: { ...valid.value, generatedBy: "gpt-5.5" },
       diagnostics: { provider: "openai", model: cfg.model, status: "ready" },
     };
   } catch (error) {

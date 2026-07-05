@@ -25,6 +25,7 @@ from pydantic import BaseModel
 
 from convert_pdf import convert_to_pdf
 from lexis_docx import process_lexis_docx_bytes
+from orion_manifest_render import render_orion_manifest
 from render_pptx import build_pptx
 from report_i18n import normalize_lang
 
@@ -88,6 +89,25 @@ class LexisDocxProcessResponse(BaseModel):
     conversionWarnings: list[str] = []
 
 
+class OrionManifestRenderRequest(BaseModel):
+    reportJson: dict
+    audience: str | None = "internal"
+
+
+class OrionManifestPage(BaseModel):
+    pageNumber: int
+    width: int
+    height: int
+    contentBase64: str
+
+
+class OrionManifestRenderResponse(BaseModel):
+    slideCount: int
+    pptxBase64: str
+    pdfBase64: str
+    pages: list[OrionManifestPage]
+
+
 def _file_info(key: str, path: str) -> FileInfo:
     with open(path, "rb") as fh:
         data = fh.read()
@@ -111,6 +131,24 @@ def health() -> dict:
 
 
 DEFAULT_TEMPLATE_VERSION = "report-template-v3"
+
+
+@app.post("/orion/render-manifest", response_model=OrionManifestRenderResponse)
+def orion_render_manifest(req: OrionManifestRenderRequest) -> OrionManifestRenderResponse:
+    """Render ORION v2 manifest JSON into PPTX/PDF/PNG pages."""
+    audience = (req.audience or "internal").strip().lower()
+    if audience not in {"internal", "client"}:
+        raise HTTPException(status_code=400, detail="audience must be internal or client")
+    try:
+        result = render_orion_manifest(req.reportJson, audience=audience)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"ORION manifest render failed: {exc}") from exc
+    return OrionManifestRenderResponse(
+        slideCount=int(result.get("slideCount") or 0),
+        pptxBase64=str(result.get("pptxBase64") or ""),
+        pdfBase64=str(result.get("pdfBase64") or ""),
+        pages=[OrionManifestPage(**page) for page in result.get("pages") or []],
+    )
 
 
 @app.post("/lexis/process-docx", response_model=LexisDocxProcessResponse)

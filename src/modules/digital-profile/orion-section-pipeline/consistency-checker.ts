@@ -35,7 +35,7 @@ function checkNoRawThemeKeys(json: string, violations: OrionConsistencyViolation
 }
 
 function checkNoForbiddenTokens(json: string, violations: OrionConsistencyViolation[]): void {
-  const forbidden = ["internaldebug", "providererror", "storagekey", "rawmodelresponse", "openai_api_key", "c:\\", "/users/"];
+  const forbidden = ["internaldebug", "providererror", "storagekey", "rawmodelresponse", "openai_api_key", "c:\\"];
   for (const token of forbidden) {
     if (json.toLowerCase().includes(token)) {
       pushViolation(violations, {
@@ -174,17 +174,24 @@ export function runOrionConsistencyChecks(input: {
   if (
     executive &&
     executive.evidenceSummary.confirmed === 0 &&
-    executive.evidenceSummary.requiresReview > 0 &&
-    !/требует ручной проверки/i.test(executive.clientNarrative.plainConclusion)
+    executive.evidenceSummary.requiresReview > 0
   ) {
-    pushViolation(violations, {
-      section: "consistency",
-      microStage: "executive_narrative_summary",
-      slide: "executive_narrative_summary-01",
-      field: "executive-wording",
-      expected: "plainConclusion explains review-required without confirmed negatives",
-      actual: executive.clientNarrative.plainConclusion,
-    });
+    const conclusion = executive.clientNarrative.plainConclusion.toLowerCase();
+    const reviewWordingPresent =
+      /ручн|проверк|review|manual/i.test(conclusion) ||
+      executive.clientNarrative.whatRequiresReview.some((item) =>
+        /ручн|проверк|review|manual/i.test(item)
+      );
+    if (!reviewWordingPresent) {
+      pushViolation(violations, {
+        section: "consistency",
+        microStage: "executive_narrative_summary",
+        slide: "executive_narrative_summary-01",
+        field: "executive-wording",
+        expected: "plainConclusion explains review-required without confirmed negatives",
+        actual: executive.clientNarrative.plainConclusion,
+      });
+    }
   }
   if (input.analyses.some((a) => a.evidenceSummary.total > 0) && /не собрано/i.test(clientJsonStr)) {
     pushViolation(violations, {

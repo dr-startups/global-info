@@ -196,6 +196,10 @@ export const ru: Dictionary = {
     orionV2ClientPolicy: "Client policy",
     orionV2AiRequiredMissing:
       "ORION v2 требует GPT-5.5 анализ. Ключ OpenAI не настроен.",
+    orionV2AiStagesIncomplete:
+      "GPT-5.5 выполнен частично: не все обязательные стадии прошли AI-анализ.",
+    orionV2AiStagesIncompleteNotice:
+      "Часть обязательных ORION-стадий не получила GPT-5.5 ответ. Смотрите предупреждения ниже и логи orion-v2.",
     orionV2AiRequiredNotice:
       "ORION v2 требует включённый GPT-5.5 анализ. Добавьте OPENAI_API_KEY и включите AI analyst.",
     orionV2Gpt55Done: "GPT-5.5 анализ выполнен.",

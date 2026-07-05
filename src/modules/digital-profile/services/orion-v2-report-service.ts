@@ -573,10 +573,13 @@ async function executeOrionV2Report(
     (row) => row.generatedBy !== "gpt-5.5"
   ).length;
   const deterministicFallbackUsed = deterministicCount > 0;
+  const readiness = describeOrionV2AiReadiness();
 
   let gpt55Status: Gpt55Status;
-  if (aiEnforcement.status === "BLOCKED") {
+  if (!readiness.ready) {
     gpt55Status = "required_missing";
+  } else if (aiEnforcement.status === "BLOCKED") {
+    gpt55Status = gpt55Used > 0 ? "deterministic_fallback" : "required_missing";
   } else if (aiEnforcement.status === "PASS_WITH_DETERMINISTIC_FALLBACK") {
     gpt55Status = "deterministic_fallback";
   } else if (gpt55Used > 0) {
@@ -587,7 +590,6 @@ async function executeOrionV2Report(
     gpt55Status = "skipped";
   }
 
-  const readiness = describeOrionV2AiReadiness();
   const consistencyPass = result.consistencyInspection.status === "PASS";
   const blocked = aiEnforcement.status === "BLOCKED";
   const runStatus: OrionV2RunRecord["status"] =

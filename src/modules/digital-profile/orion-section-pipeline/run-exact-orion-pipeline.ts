@@ -9,6 +9,7 @@ import { buildMicroStageSlideManifest } from "./slide-manifest-builder";
 import { composeFinalDeckManifest } from "./deck-composer";
 import { runOrionConsistencyChecks } from "./consistency-checker";
 import { createOrionPipelineStore, type OrionStoreMode } from "./persistence";
+import { renderOrionManifestViaRenderer } from "./orion-manifest-renderer-client";
 import { ORION_V2_GPT_REQUIRED_MICRO_STAGE_SET } from "./ai-required-stages";
 import {
   errorOrionPipeline,
@@ -186,7 +187,20 @@ function createStorageSkeleton(root: string, macroSectionKeys: string[], microSt
   }
 }
 
-function runR9Renderer(reportJsonPath: string, pptxOut: string, pdfOut: string, pagesOut: string): string | null {
+async function runR9Renderer(
+  reportJsonPath: string,
+  pptxOut: string,
+  pdfOut: string,
+  pagesOut: string
+): Promise<string | null> {
+  const remoteError = await renderOrionManifestViaRenderer({
+    reportJsonPath,
+    pptxOut,
+    pdfOut,
+    pagesOut,
+  });
+  if (!remoteError) return null;
+
   const result = spawnSync(
     "python",
     [
@@ -199,7 +213,7 @@ function runR9Renderer(reportJsonPath: string, pptxOut: string, pdfOut: string, 
     { cwd: process.cwd(), encoding: "utf-8" }
   );
   if (result.status !== 0) {
-    return `r9-render-failed: ${result.stderr || result.stdout || "unknown"}`;
+    return remoteError || `r9-render-failed: ${result.stderr || result.stdout || "unknown"}`;
   }
   return null;
 }
@@ -824,9 +838,9 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
   ensureDir(internalPages);
   ensureDir(clientPages);
 
-  const internalRenderError = runR9Renderer(internalJsonPath, internalPptx, internalPdf, internalPages);
+  const internalRenderError = await runR9Renderer(internalJsonPath, internalPptx, internalPdf, internalPages);
   if (internalRenderError) run.warnings.push(internalRenderError);
-  const clientRenderError = runR9Renderer(clientJsonPath, clientPptx, clientPdf, clientPages);
+  const clientRenderError = await runR9Renderer(clientJsonPath, clientPptx, clientPdf, clientPages);
   if (clientRenderError) run.warnings.push(clientRenderError);
 
   const overallBlocked =
