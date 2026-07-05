@@ -1,17 +1,20 @@
-const FORBIDDEN_TOKENS = [
-  "OPENAI_API_KEY",
-  "sk-",
-  "C:\\",
-  "/mnt/",
-  "storage/digital-profile",
-  "signedUrl",
-  "rawPrompt",
-  "rawModelResponse",
-  "debug",
-  "stackTrace",
-  "providerInternal",
-  "runtimeInternal",
-] as const;
+/** High-confidence secret/path markers only — avoid bare substrings like "debug" in URLs. */
+const FORBIDDEN_TOKEN_CHECKS: Array<{ id: string; test: (serialized: string, lower: string) => boolean }> = [
+  { id: "OPENAI_API_KEY", test: (_s, lower) => lower.includes("openai_api_key") },
+  { id: "sk-", test: (serialized) => /sk-[a-z0-9_-]{12,}/i.test(serialized) },
+  { id: "C:\\", test: (_s, lower) => /c:\\\\/.test(lower) },
+  { id: "/mnt/", test: (_s, lower) => lower.includes("/mnt/") },
+  {
+    id: "storage/digital-profile",
+    test: (_s, lower) => lower.includes("storage/digital-profile"),
+  },
+  { id: "signedUrl", test: (_s, lower) => lower.includes("signedurl") },
+  { id: "rawPrompt", test: (_s, lower) => lower.includes("rawprompt") },
+  { id: "rawModelResponse", test: (_s, lower) => lower.includes("rawmodelresponse") },
+  { id: "stackTrace", test: (_s, lower) => lower.includes("stacktrace") },
+  { id: "providerInternal", test: (_s, lower) => lower.includes("providerinternal") },
+  { id: "runtimeInternal", test: (_s, lower) => lower.includes("runtimeinternal") },
+];
 
 function stripSensitiveStrings(value: string): string {
   return value
@@ -61,7 +64,9 @@ export function sanitizeForStorage(payload: unknown, input: { clientVisible: boo
 export function scanForbiddenTokens(payload: unknown): string[] {
   const serialized = JSON.stringify(payload ?? {});
   const lower = serialized.toLowerCase();
-  return FORBIDDEN_TOKENS.filter((token) => lower.includes(token.toLowerCase()));
+  return FORBIDDEN_TOKEN_CHECKS.filter(({ test }) => test(serialized, lower)).map(
+    ({ id }) => id
+  );
 }
 
 export function assertClientVisibleStorageSafe(payload: unknown): void {

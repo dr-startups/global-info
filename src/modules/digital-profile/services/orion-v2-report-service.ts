@@ -513,24 +513,24 @@ export function enqueueOrionV2Report(options: RunOrionV2Options): OrionV2RunReco
       uiRunId,
       runOutputRoot,
     }).catch((error) => {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const readiness = describeOrionV2AiReadiness();
       const failed: OrionV2RunRecord = {
         ...placeholder,
         status: "failed",
         completedAt: new Date().toISOString(),
-        gpt55Status: "required_missing",
-        aiEnforcementStatus: "BLOCKED",
-        clientPolicyStatus: "BLOCKED",
-        warnings: [
-          error instanceof Error
-            ? "ORION v2 generation failed."
-            : "ORION v2 generation failed.",
-        ],
+        gpt55Status: readiness.ready ? "deterministic_fallback" : "required_missing",
+        aiReady: readiness.ready,
+        aiEnforcementStatus: "SKIPPED",
+        clientPolicyStatus: "UNKNOWN",
+        warnings: [`ORION v2 generation failed: ${errorMessage}`],
       };
       persistRunRecord(failed);
       errorOrionPipeline("service", "background-generation-failed", {
         caseId: options.caseId,
         runId: uiRunId,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage,
+        stack: error instanceof Error ? error.stack?.split("\n").slice(0, 4).join(" | ") : undefined,
       });
     });
   });

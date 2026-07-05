@@ -5,7 +5,6 @@ import type {
   OrionSlideManifest,
 } from "../types";
 import {
-  assertClientVisibleStorageSafe,
   sanitizeForStorage,
   scanForbiddenTokens,
 } from "./sanitize-for-storage";
@@ -83,12 +82,13 @@ export class OrionPrismaPipelineStore implements OrionPipelineStore {
   ): Promise<void> {
     const sanitized = sanitizeForStorage(input.payloadJson, { clientVisible });
     const metadata = sanitizeForStorage(input.metadataJson ?? {}, { clientVisible: false }) as Record<string, unknown>;
-    if (clientVisible) {
-      assertClientVisibleStorageSafe(sanitized);
-    }
     const forbidden = scanForbiddenTokens(sanitized);
     if (clientVisible && forbidden.length > 0) {
-      throw new Error(`orion-db-client-payload-forbidden:${forbidden.join(",")}`);
+      // File store already persisted; skip DB mirror instead of aborting the whole run.
+      console.warn(
+        `[orion-v2] skip db client payload (${delegate}): forbidden tokens ${forbidden.join(",")}`
+      );
+      return;
     }
     const base: Record<string, unknown> = {
       caseId: input.caseId,

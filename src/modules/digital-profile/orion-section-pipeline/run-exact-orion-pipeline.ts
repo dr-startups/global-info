@@ -643,6 +643,7 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
   await store.writeArtifact(join(root, "ai-enforcement-inspection.json"), aiEnforcement);
 
   run.status = "composed";
+  logOrionPipeline("pipeline", "compose-start", { caseId, runId: run.runId });
   const composed = composeFinalDeckManifest({
     runId: run.runId,
     blueprint,
@@ -729,6 +730,12 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
     clientReportJson: finalReportJsonClient,
     reportLanguage: options.locale ?? "ru",
   });
+  logOrionPipeline("pipeline", "consistency-done", {
+    caseId,
+    runId: run.runId,
+    status: consistencyInspection.status,
+    violations: consistencyInspection.violations.length,
+  });
   (finalReportJsonInternal.clientPolicy as Record<string, unknown>).status =
     consistencyInspection.violations.filter((x) => x.section === "client-policy").length === 0
       ? "PASS"
@@ -756,6 +763,7 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
     internalOnly: true,
     payloadJson: finalReportJsonInternal,
   });
+  logOrionPipeline("pipeline", "save-client-json-start", { caseId, runId: run.runId });
   await store.saveReportJsonVersion({
     caseId,
     reportRunId: run.runId,
@@ -765,6 +773,7 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
     internalOnly: false,
     payloadJson: finalReportJsonClient,
   });
+  logOrionPipeline("pipeline", "save-client-json-done", { caseId, runId: run.runId });
   await store.writeArtifact(join(composedDir, "composition-inspection.json"), composed.compositionInspection);
   await store.saveConsistencyCheck({
     caseId,
