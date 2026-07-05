@@ -73,7 +73,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!body) {
-    throw new DigitalProfileApiError("INTERNAL_ERROR", res.status, "Malformed server response");
+    const gatewayMsg =
+      res.status === 502 || res.status === 504
+        ? "Gateway timeout — generation may still be running. Refresh status in a minute."
+        : "Malformed server response";
+    throw new DigitalProfileApiError("INTERNAL_ERROR", res.status, gatewayMsg);
   }
   if (body.ok) return body.data;
 

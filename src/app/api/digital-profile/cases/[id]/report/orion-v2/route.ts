@@ -12,7 +12,7 @@ import {
   isOrionV2UiEnabled,
   resolveGpt55ValidationFlag,
   resolveOrionStoreMode,
-  runOrionV2Report,
+  enqueueOrionV2Report,
 } from "@/modules/digital-profile/services/orion-v2-report-service";
 import { digitalProfileConfig } from "@/modules/digital-profile/config";
 import { ForbiddenError } from "@/modules/digital-profile/http/errors";
@@ -59,7 +59,8 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
     );
   }
 
-  const record = await runOrionV2Report({
+  // Long GPT runs exceed Railway/proxy HTTP timeouts — enqueue and return immediately.
+  enqueueOrionV2Report({
     caseId: id,
     storeMode,
     gpt55Validate,
@@ -67,10 +68,7 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
     requireAiAnalysis,
     allowDeterministicFallback,
   });
-  return jsonOk(
-    getOrionV2Summary(record.caseId, user.role),
-    201
-  );
+  return jsonOk(getOrionV2Summary(id, user.role), 202);
 });
 
 export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {

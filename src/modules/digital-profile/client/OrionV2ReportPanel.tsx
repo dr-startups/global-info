@@ -59,9 +59,41 @@ export function OrionV2ReportPanel({ caseId }: { caseId: string }) {
   }, [refreshStatus]);
 
   const disabledByFlag = status?.uiEnabled === false;
+  const isRunning = status?.status === "running";
+
+  async function pollUntilSettled(): Promise<OrionV2ReportStatus | null> {
+    for (let i = 0; i < 150; i += 1) {
+      await new Promise((r) => setTimeout(r, 4000));
+      const next = await getOrionV2ReportStatus(caseId);
+      setStatus(next);
+      if (next.status === "completed" || next.status === "failed") {
+        return next;
+      }
+    }
+    setError(t("report.orionV2RunningNotice"));
+    return null;
+  }
+
+  useEffect(() => {
+    if (!isRunning) return;
+    let cancelled = false;
+    void (async () => {
+      const final = await pollUntilSettled();
+      if (cancelled || !final) return;
+      if (final.status === "completed" && final.gpt55Status !== "required_missing") {
+        setSuccess(t("report.orionV2Generated"));
+      } else if (final.gpt55Status === "required_missing") {
+        setError(t("report.orionV2AiRequiredMissing"));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- poll only while running
+  }, [isRunning, caseId]);
 
   async function runGenerate(gpt55Validate: boolean): Promise<void> {
-    if (!canUseOrion || disabledByFlag) return;
+    if (!canUseOrion || disabledByFlag || isRunning) return;
     setError(null);
     setSuccess(null);
     if (gpt55Validate) setBusyGpt55(true);
@@ -72,7 +104,10 @@ export function OrionV2ReportPanel({ caseId }: { caseId: string }) {
         gpt55Validate ? { gpt55Validate: true } : undefined
       );
       setStatus(next);
-      // Only report success for a genuinely completed, non-AI-blocked run.
+      if (next.status === "running") {
+        setSuccess(t("report.orionV2RunningNotice"));
+        return;
+      }
       if (next.status === "completed" && next.gpt55Status !== "required_missing") {
         setSuccess(t("report.orionV2Generated"));
       } else if (next.gpt55Status === "required_missing") {
@@ -119,7 +154,7 @@ export function OrionV2ReportPanel({ caseId }: { caseId: string }) {
         <div className="dp-inline">
           <button
             className="dp-btn dp-btn-primary"
-            disabled={!canUseOrion || disabledByFlag || busyGenerate || busyGpt55}
+            disabled={!canUseOrion || disabledByFlag || busyGenerate || busyGpt55 || isRunning}
             onClick={() => void runGenerate(false)}
           >
             {busyGenerate ? <span className="dp-spinner" /> : null}
@@ -136,7 +171,7 @@ export function OrionV2ReportPanel({ caseId }: { caseId: string }) {
           {isAdmin ? (
             <button
               className="dp-btn"
-              disabled={!status?.uiEnabled || busyGenerate || busyGpt55}
+              disabled={!status?.uiEnabled || busyGenerate || busyGpt55 || isRunning}
               onClick={() => void runGenerate(true)}
             >
               {busyGpt55 ? <span className="dp-spinner" /> : null}
@@ -149,6 +184,9 @@ export function OrionV2ReportPanel({ caseId }: { caseId: string }) {
       <Notice>{t("report.orionV2ExperimentalNotice")}</Notice>
       {disabledByFlag && isAdmin ? (
         <Notice>{t("report.orionV2FeatureDisabled")}</Notice>
+      ) : null}
+      {isRunning ? (
+        <Notice>{t("report.orionV2RunningNotice")}</Notice>
       ) : null}
       {aiRequiredMissing || status?.gpt55Status === "required_missing" ? (
         <ErrorBox>{t("report.orionV2AiRequiredNotice")}</ErrorBox>
@@ -173,6 +211,16 @@ export function OrionV2ReportPanel({ caseId }: { caseId: string }) {
           title={t("report.orionV2EmptyTitle")}
           hint={t("report.orionV2EmptyHint")}
         />
+      ) : status.status === "running" ? (
+        <div className="dp-card" style={{ padding: 16 }}>
+          <div className="dp-muted">{t("report.orionV2GenerationStatus")}</div>
+          <div style={{ marginTop: 8 }}>
+            <Badge tone="info">{t("report.orionV2Status_running")}</Badge>
+          </div>
+          <p className="dp-muted" style={{ marginTop: 12, marginBottom: 0 }}>
+            {t("report.orionV2RunningNotice")}
+          </p>
+        </div>
       ) : (
         <>
           <div className="dp-grid-cards">

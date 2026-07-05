@@ -107,6 +107,10 @@ interface RunOrionV2Options {
   requireAiAnalysis?: boolean;
   /** R9.5c — allow deterministic fallback only in explicit dev/test. */
   allowDeterministicFallback?: boolean;
+  /** Internal: stable UI run id when resuming an async job. */
+  uiRunId?: string;
+  /** Internal: output directory when resuming an async job. */
+  runOutputRoot?: string;
 }
 
 const ORION_V2_UI_ROOT = join(
@@ -364,17 +368,112 @@ export function getOrionV2AiReadiness(): OrionV2AiReadiness {
   return describeOrionV2AiReadiness();
 }
 
+function buildRunningPlaceholder(
+  options: RunOrionV2Options,
+  uiRunId: string,
+  runOutputRoot: string,
+  createdAt: string
+): OrionV2RunRecord {
+  const readiness = describeOrionV2AiReadiness();
+  return {
+    caseId: options.caseId,
+    runId: uiRunId,
+    reportMode: "orion_section_pipeline_v1",
+    status: "running",
+    storeMode: options.storeMode,
+    createdAt,
+    completedAt: null,
+    outputRoot: runOutputRoot,
+    pageCount: 0,
+    clientPageCount: 0,
+    lexisVisualPageCount: 0,
+    lexisStatus: "not_uploaded",
+    gpt55Status: "skipped",
+    deterministicFallbackUsed: false,
+    gpt55ValidationRequested: options.gpt55Validate,
+    aiRequired: options.requireAiAnalysis === true || readiness.requireAi,
+    aiReady: readiness.ready,
+    aiEnforcementStatus: "SKIPPED",
+    clientPolicyStatus: "PENDING",
+    warnings: [],
+    artifacts: {},
+  };
+}
+
+function persistRunRecord(record: OrionV2RunRecord): void {
+  writeJson(runRecordPath(record.caseId, record.runId), record);
+  writeJson(latestPointerPath(record.caseId), {
+    runId: record.runId,
+    updatedAt: record.completedAt ?? record.createdAt,
+  });
+}
+
+/** Runs the full ORION v2 pipeline synchronously (QA/scripts). */
 export async function runOrionV2Report(
   options: RunOrionV2Options
 ): Promise<OrionV2RunRecord> {
+  return executeOrionV2Report(options);
+}
+
+/**
+ * Starts ORION v2 generation in the background and returns immediately with
+ * status `running`. Avoids HTTP gateway timeouts on long GPT-heavy runs.
+ */
+export function enqueueOrionV2Report(options: RunOrionV2Options): OrionV2RunRecord {
+  const existing = getLatestOrionV2RunRecord(options.caseId);
+  if (existing?.status === "running") {
+    return existing;
+  }
+
   const now = new Date();
+  const ts = now.getTime();
+  const uiRunId = `orion-v2-ui-${ts}`;
   const runOutputRoot = join(
     ORION_V2_UI_ROOT,
     "cases",
     options.caseId,
     "runs",
-    `${now.getTime()}`
+    `${ts}`
   );
+  const createdAt = now.toISOString();
+  const placeholder = buildRunningPlaceholder(options, uiRunId, runOutputRoot, createdAt);
+  persistRunRecord(placeholder);
+
+  setImmediate(() => {
+    void executeOrionV2Report({
+      ...options,
+      uiRunId,
+      runOutputRoot,
+    }).catch((error) => {
+      const failed: OrionV2RunRecord = {
+        ...placeholder,
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        gpt55Status: "required_missing",
+        aiEnforcementStatus: "BLOCKED",
+        clientPolicyStatus: "BLOCKED",
+        warnings: [
+          error instanceof Error
+            ? "ORION v2 generation failed."
+            : "ORION v2 generation failed.",
+        ],
+      };
+      persistRunRecord(failed);
+      console.error("[orion-v2] background generation failed:", error);
+    });
+  });
+
+  return placeholder;
+}
+
+async function executeOrionV2Report(
+  options: RunOrionV2Options
+): Promise<OrionV2RunRecord> {
+  const now = new Date();
+  const uiRunId = options.uiRunId ?? `orion-v2-ui-${now.getTime()}`;
+  const runOutputRoot =
+    options.runOutputRoot ??
+    join(ORION_V2_UI_ROOT, "cases", options.caseId, "runs", `${now.getTime()}`);
   const requireAiAnalysis = options.requireAiAnalysis === true;
   const allowDeterministicFallback = options.allowDeterministicFallback === true;
   // Required stages must attempt GPT even if the admin GPT toggle is off.
@@ -425,11 +524,11 @@ export async function runOrionV2Report(
   // Never expose downloadable client artifacts for an AI-blocked (incomplete) run.
   const artifacts = blocked
     ? {}
-    : await persistArtifacts(options.caseId, result.run.runId, runOutputRoot);
+    : await persistArtifacts(options.caseId, uiRunId, runOutputRoot);
 
   const record: OrionV2RunRecord = {
     caseId: options.caseId,
-    runId: result.run.runId,
+    runId: uiRunId,
     reportMode: "orion_section_pipeline_v1",
     status: runStatus,
     storeMode: options.storeMode,
@@ -451,12 +550,7 @@ export async function runOrionV2Report(
     artifacts,
   };
 
-  const runPath = runRecordPath(options.caseId, record.runId);
-  writeJson(runPath, record);
-  writeJson(latestPointerPath(options.caseId), {
-    runId: record.runId,
-    updatedAt: completedAt,
-  });
+  persistRunRecord(record);
   return record;
 }
 

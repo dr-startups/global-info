@@ -196,6 +196,8 @@ export const en: Dictionary = {
     orionV2Gpt55Done: "GPT-5.5 analysis completed.",
     orionV2DevDeterministicNotice:
       "AI analysis was not run; test deterministic analytics were used.",
+    orionV2RunningNotice:
+      "ORION v2 is generating (GPT-5.5). This may take 5–10 minutes. Status refreshes automatically.",
   },
   risk: {
     title: "Risk findings",

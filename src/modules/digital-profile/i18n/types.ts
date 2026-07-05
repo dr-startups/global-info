@@ -197,6 +197,7 @@ export interface Dictionary {
     orionV2AiRequiredNotice: string;
     orionV2Gpt55Done: string;
     orionV2DevDeterministicNotice: string;
+    orionV2RunningNotice: string;
   };
   risk: {
     title: string;
