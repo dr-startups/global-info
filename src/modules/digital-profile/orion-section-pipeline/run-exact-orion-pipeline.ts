@@ -6,6 +6,7 @@ import { buildMicroStageEvidencePack } from "./evidence-pack-builder";
 import { analyzeMicroStageWithGpt55 } from "./gpt55-microstage-analyzer";
 import { buildDeterministicMicrostageAnalysis } from "./deterministic-microstage-analysis";
 import { buildMicroStageSlideManifest } from "./slide-manifest-builder";
+import { embedVisualAssetsForSlides } from "./embed-visual-assets";
 import { composeFinalDeckManifest } from "./deck-composer";
 import { runOrionConsistencyChecks } from "./consistency-checker";
 import { createOrionPipelineStore, type OrionStoreMode } from "./persistence";
@@ -535,7 +536,11 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
       });
 
       stageRun.status = "building_slide_manifest";
-      const manifest = buildMicroStageSlideManifest({ microStage: stage, analysis: finalAnalysis });
+      const manifestRaw = buildMicroStageSlideManifest({ microStage: stage, analysis: finalAnalysis });
+      const manifest = {
+        ...manifestRaw,
+        slides: await embedVisualAssetsForSlides(manifestRaw.slides),
+      };
       await store.saveSlideManifest({
         caseId,
         reportRunId: run.runId,

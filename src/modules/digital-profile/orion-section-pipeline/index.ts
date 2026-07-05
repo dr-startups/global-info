@@ -11,6 +11,8 @@ export * from "./supabase-schema-plan";
 export * from "./run-exact-orion-pipeline";
 export * from "./ai-required-stages";
 export * from "./slide-template-mapping";
+export * from "./client-slide-contract";
+export * from "./embed-visual-assets";
 export * from "./real-case-data-adapter";
 export * from "./persistence";
 

@@ -5,6 +5,7 @@ import type {
   OrionGpt55SectionAnalysis,
   OrionSlideManifest,
 } from "./types";
+import { scanClientReportText } from "./client-slide-contract";
 
 function pushViolation(
   list: OrionConsistencyViolation[],
@@ -254,6 +255,46 @@ export function runOrionConsistencyChecks(input: {
   checkNoRawThemeKeys(clientJsonStr, violations);
   checkNoForbiddenTokens(clientJsonStr, violations);
   checkGenericThemeRepetition(clientJsonStr, violations);
+
+  for (const issue of scanClientReportText(clientJsonStr)) {
+    pushViolation(violations, {
+      section: "client-policy",
+      microStage: "all",
+      slide: "all",
+      field: "report-quality-r96a",
+      expected: "client-safe ORION content",
+      actual: issue,
+    });
+  }
+
+  for (const manifest of input.slideManifests) {
+    for (const slide of manifest.slides) {
+      if ((slide.metrics ?? []).some((m) => !String(m.value ?? "").trim())) {
+        pushViolation(violations, {
+          section: "client-policy",
+          microStage: manifest.microStageKey,
+          slide: slide.slideId,
+          field: "empty-metric-value",
+          expected: "metric cards omitted when empty",
+          actual: "empty metric value",
+        });
+      }
+      const tableRows = slide.tables ?? [];
+      if (
+        tableRows.length > 0 &&
+        tableRows.every((row) => !String(row.value ?? row.text ?? "").trim())
+      ) {
+        pushViolation(violations, {
+          section: "client-policy",
+          microStage: manifest.microStageKey,
+          slide: slide.slideId,
+          field: "empty-table",
+          expected: "table omitted when no rows",
+          actual: "empty table rendered",
+        });
+      }
+    }
+  }
 
   if (input.reportLanguage === "ru" && /[A-Za-z]{6,}/.test(clientJsonStr)) {
     warnings.push("Potential English leakage detected in RU report payload.");

@@ -18,6 +18,7 @@ No LLM, no scraping, no live SERP screenshots — only lays out report_json data
 from __future__ import annotations
 
 import io
+import base64
 import re
 from typing import Any, Callable
 
@@ -2548,10 +2549,49 @@ def _orion_narrative_lines(narratives: list[Any]) -> list[str]:
     return lines
 
 
+def _p_orion_lexis_visual_slide(prs, ctx: Ctx, slide_payload: dict) -> None:
+    title = T.r2_truncate_lines(
+        str(slide_payload.get("title") or "LexisNexis visual page"),
+        max_lines=2,
+        line_len=72,
+    )
+    subtitle = T.r2_truncate_lines(
+        str(slide_payload.get("subtitle") or "Импортированная визуальная страница LexisNexis"),
+        max_lines=2,
+        line_len=88,
+    )
+    slide, top = _section(prs, ctx, title, subtitle)
+    assets = list(slide_payload.get("visualAssets") or [])
+    rendered = False
+    for asset in assets[:1]:
+        if not isinstance(asset, dict):
+            continue
+        raw = asset.get("contentBase64")
+        if not isinstance(raw, str) or not raw.strip():
+            continue
+        try:
+            box_h = Emu(int(T.CONTENT_SAFE_BOTTOM) - int(top) - 250000)
+            T._fit_picture_contain(slide, io.BytesIO(base64.b64decode(raw)), int(T.MARGIN), int(top), int(T.CONTENT_W), int(box_h))
+            rendered = True
+        except Exception:  # noqa: BLE001
+            continue
+    if not rendered:
+        T.no_data_card(slide, top, "Визуальные страницы LexisNexis не сформированы; текстовая аналитика сохранена.")
+    T.note(
+        slide,
+        Emu(int(T.CONTENT_SAFE_BOTTOM) - 220000),
+        "LexisNexis · imported visual page",
+        "disclaimer",
+    )
+
+
 def _p_orion_manifest_slide(prs, ctx: Ctx, slide_payload: dict) -> None:
     slide_type = str(slide_payload.get("slideType") or "")
     if slide_type == "cover_orion":
         _p_orion_cover(prs, ctx, slide_payload)
+        return
+    if slide_type == "lexisnexis_visual_page":
+        _p_orion_lexis_visual_slide(prs, ctx, slide_payload)
         return
     if slide_type == "lexisnexis_unavailable_fallback":
         slide, top = _section(
@@ -2560,7 +2600,7 @@ def _p_orion_manifest_slide(prs, ctx: Ctx, slide_payload: dict) -> None:
             str(slide_payload.get("title") or "LexisNexis"),
             "Визуальные страницы недоступны",
         )
-        T.no_data_card(slide, top, "Визуальные страницы LexisNexis недоступны.")
+        T.no_data_card(slide, top, "Визуальные страницы LexisNexis не сформированы; текстовая аналитика сохранена.")
         return
 
     title = T.r2_truncate_lines(
@@ -2578,17 +2618,23 @@ def _p_orion_manifest_slide(prs, ctx: Ctx, slide_payload: dict) -> None:
     table_rows: list[list[str]] = []
     for row in list(slide_payload.get("tables") or [])[:8]:
         if isinstance(row, dict):
-            key = T.r2_truncate_lines(str(row.get("label") or row.get("key") or "row"), max_lines=1, line_len=48)
+            key = T.r2_truncate_lines(str(row.get("label") or row.get("key") or ""), max_lines=1, line_len=48)
             val = T.r2_truncate_lines(str(row.get("value") or row.get("text") or ""), max_lines=2, line_len=72)
+            if not key.strip() or not val.strip() or key.strip().lower() == "row":
+                continue
             table_rows.append([key, val])
 
     if metric_cards:
         cards = []
         for m in metric_cards[:6]:
             if isinstance(m, dict):
+                label = str(m.get("label") or "").strip()
+                value = str(m.get("value") if m.get("value") is not None else "").strip()
+                if not label or not value:
+                    continue
                 cards.append({
-                    "label": str(m.get("label") or "Метрика"),
-                    "value": str(m.get("value") or ""),
+                    "label": label,
+                    "value": value,
                     "tone": T.ACCENT,
                 })
         if cards:

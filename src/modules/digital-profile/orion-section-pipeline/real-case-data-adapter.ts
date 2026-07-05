@@ -642,10 +642,20 @@ export function extractMicroStageLexisEvidence(
       evidenceId: mkEvidenceId(stageKey, `signal-${idx + 1}`),
       type: "lexis_signal",
       source: "LEXISNEXIS",
-      title: String(s.matchName ?? s.categoryLabelRu ?? "Lexis signal"),
+      title: String(s.matchName ?? s.categoryLabelRu ?? "Сигнал LexisNexis"),
       snippet: String(s.clientSafeReason ?? s.clientSafeFinding ?? ""),
-      classification: s.isConfirmed === true ? "confirmed" : "requires_review",
-      themeLabel: sanitizeTheme(s.categoryLabelRu ?? s.category ?? "Lexis signal"),
+      classification:
+        s.isConfirmed === true
+          ? "confirmed"
+          : String(s.category ?? "").includes("sanction") || String(s.category ?? "").includes("watchlist")
+            ? "requires_review"
+            : "requires_review",
+      themeLabel: sanitizeTheme(s.categoryLabelRu ?? s.category ?? "LexisNexis"),
+      metadata: {
+        reviewStatus:
+          s.isConfirmed === true ? "official_record_found" : "database_match_requires_review",
+        category: s.category,
+      },
     })),
   ];
 }
@@ -665,7 +675,7 @@ function buildOfferStaticEvidence(caseContext: OrionRealCaseContext, stage: Orio
     {
       evidenceId: mkEvidenceId(stage.microStageKey, "offer-static"),
       type: "offer_static",
-      source: "ORION_STATIC",
+      source: "COMMERCIAL_CONTEXT",
       title: stage.titleRu,
       snippet: `Адаптация предложения: ${emphasis}.`,
       classification: "potential",

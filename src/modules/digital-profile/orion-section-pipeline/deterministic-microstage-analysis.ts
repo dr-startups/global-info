@@ -1,4 +1,9 @@
 import type { OrionEvidencePack, OrionGpt55SectionAnalysis, OrionMicroStage } from "./types";
+import {
+  buildNarrativeBlocksFromAnalysis,
+  normalizeMetricCards,
+  normalizeSlideTableRows,
+} from "./client-slide-contract";
 
 function inferRiskLabel(counts: OrionEvidencePack["counts"]): "LOW" | "MEDIUM" | "HIGH" {
   if (counts.confirmed > 1 || counts.undesirable > 2) return "HIGH";
@@ -9,12 +14,40 @@ function inferRiskLabel(counts: OrionEvidencePack["counts"]): "LOW" | "MEDIUM" |
 function offerEmphasisLabel(emphasis: string): string {
   switch (emphasis) {
     case "compliance_db_correction":
-      return "Compliance DB correction — корректировка compliance-базы и проверка Lexis/compliance сигналов.";
+      return "Корректировка compliance-базы и проверка сигналов Lexis/compliance.";
     case "wikipedia":
-      return "Wikipedia — усиление публичного профиля и справочной видимости.";
+      return "Усиление публичного профиля и справочной видимости.";
     default:
-      return "Digital Profile — мониторинг поисковой выдачи и репутационных сигналов.";
+      return "Мониторинг поисковой выдачи и репутационных сигналов.";
   }
+}
+
+function lexisClientSummary(lexisSignals: OrionEvidencePack["lexisParsedSafeSignals"]): string {
+  if (!lexisSignals || lexisSignals.length === 0) {
+    return "Импорт LexisNexis для кейса не обнаружен или недоступен.";
+  }
+  return "В источниках комплаенс-скрининга обнаружены санкционные/watchlist записи и связанные adverse-media упоминания. Это не является юридическим заключением, но требует ручной проверки и EDD.";
+}
+
+function buildEvidenceTables(evidencePack: OrionEvidencePack): Array<Record<string, unknown>> {
+  const rows = evidencePack.topResults.slice(0, 6).map((item) => ({
+    label: String(item.title ?? item.themeLabel ?? item.domain ?? "Источник").slice(0, 80),
+    value: String(item.snippet ?? item.classification ?? "").slice(0, 180),
+    evidenceRef: item.safeEvidenceId,
+  }));
+  return normalizeSlideTableRows(rows);
+}
+
+function buildLexisSignalTables(
+  lexisSignals: NonNullable<OrionEvidencePack["lexisParsedSafeSignals"]>
+): Array<Record<string, unknown>> {
+  return normalizeSlideTableRows(
+    lexisSignals.slice(0, 6).map((signal) => ({
+      label: signal.title.slice(0, 80),
+      value: signal.reason.slice(0, 180),
+      note: signal.reviewRequired ? "Требует ручной проверки" : "Официальная запись / match",
+    }))
+  );
 }
 
 export function buildDeterministicMicrostageAnalysis(input: {
@@ -28,13 +61,17 @@ export function buildDeterministicMicrostageAnalysis(input: {
   const stageKey = microStage.microStageKey;
   const lexisVisualCount = evidencePack.lexisVisualPageRefs?.length ?? 0;
   const lexisSignals = evidencePack.lexisParsedSafeSignals ?? [];
+  const hasOfficialLexis = lexisSignals.some((s) => !s.reviewRequired);
 
   const whatWasFound: string[] = [];
   if (counts.confirmed > 0) whatWasFound.push(`Подтверждено сигналов: ${counts.confirmed}.`);
   if (counts.undesirable > 0) whatWasFound.push(`Нежелательных сигналов: ${counts.undesirable}.`);
   if (counts.potential > 0) whatWasFound.push(`Потенциальных сигналов: ${counts.potential}.`);
   if (lexisSignals.length > 0) {
-    whatWasFound.push("Загруженный отчёт LexisNexis обработан; разобранные сигналы включены в аналитику.");
+    whatWasFound.push("Загруженный отчёт LexisNexis обработан; структурированные сигналы включены в аналитику.");
+    if (hasOfficialLexis) {
+      whatWasFound.push("В материалах комплаенс-скрининга есть официальные записи / database matches.");
+    }
   }
   if (lexisVisualCount > 0) {
     whatWasFound.push(`Визуальные страницы LexisNexis готовы к включению в отчёт: ${lexisVisualCount}.`);
@@ -42,13 +79,20 @@ export function buildDeterministicMicrostageAnalysis(input: {
   if (evidencePack.keyDomains.length > 0) {
     whatWasFound.push(`Ключевые домены: ${evidencePack.keyDomains.slice(0, 5).join(", ")}.`);
   }
+  for (const item of evidencePack.topResults.slice(0, 3)) {
+    if (item.title && item.snippet) {
+      whatWasFound.push(`${item.title}: ${item.snippet.slice(0, 140)}`);
+    }
+  }
 
   const whatRequiresReview: string[] = [];
   if (counts.requiresReview > 0) {
-    whatRequiresReview.push(`Требует ручной проверки: ${counts.requiresReview}.`);
-  } else if (lexisSignals.some((s) => s.reviewRequired)) {
-    whatRequiresReview.push("Сигналы LexisNexis содержат материалы, требующие аналитической проверки.");
-  } else {
+    whatRequiresReview.push(`Материалов в очереди ручной проверки: ${counts.requiresReview}.`);
+  }
+  if (lexisSignals.some((s) => s.reviewRequired)) {
+    whatRequiresReview.push("Часть сигналов LexisNexis требует аналитической верификации.");
+  }
+  if (whatRequiresReview.length === 0) {
     whatRequiresReview.push("Явных элементов на ручную проверку в этом разделе не выделено.");
   }
 
@@ -73,18 +117,15 @@ export function buildDeterministicMicrostageAnalysis(input: {
     plainConclusion = `Итоговая оценка риска: ${riskLabel}. ${plainConclusion} Рекомендуется сверить материалы из очереди ручной проверки до финального клиентского вывода.`;
   }
   if (stageKey === "lexisnexis_profile_overview") {
-    plainConclusion =
-      lexisSignals.length > 0
-        ? "Загруженный отчёт LexisNexis обработан. Разобранные сигналы и аналитика представлены ниже; неоднозначные совпадения требуют ручной проверки."
-        : "Импорт LexisNexis для кейса не обнаружен или недоступен; раздел содержит только клиент-безопасный fallback.";
+    plainConclusion = lexisClientSummary(lexisSignals);
   }
   if (stageKey === "lexisnexis_visual_pages") {
     plainConclusion =
       lexisVisualCount > 0
         ? `Импортированный документ LexisNexis содержит ${lexisVisualCount} визуальных страниц; каждая страница включена как отдельный слайд.`
-        : "Визуальные страницы LexisNexis недоступны; показан клиент-безопасный fallback без заявления о наличии страниц.";
+        : "Визуальные страницы LexisNexis недоступны; текстовая аналитика сохранена.";
   }
-  if (stageKey.startsWith("uae_") || stageKey.startsWith("uae")) {
+  if (stageKey.startsWith("uae_")) {
     plainConclusion = `${plainConclusion} Упоминания sanctions/OFAC/EU/watchlist трактуются как чувствительный поисковый контекст до подтверждения аналитиком.`;
   }
   if (stageKey.startsWith("ru_")) {
@@ -100,7 +141,19 @@ export function buildDeterministicMicrostageAnalysis(input: {
     plainConclusion = `Коммерческая рекомендация адаптирована к выявленным сигналам: ${offerEmphasisLabel(picked)}`;
   }
 
-  return {
+  const tables =
+    stageKey.includes("lexisnexis") && lexisSignals.length > 0
+      ? buildLexisSignalTables(lexisSignals)
+      : buildEvidenceTables(evidencePack);
+
+  const metricCards = normalizeMetricCards([
+    ...(counts.total > 0 ? [{ label: "Всего сигналов", value: counts.total }] : []),
+    ...(counts.confirmed > 0 ? [{ label: "Подтверждено", value: counts.confirmed }] : []),
+    ...(counts.requiresReview > 0 ? [{ label: "На проверку", value: counts.requiresReview }] : []),
+    ...(lexisSignals.length > 0 ? [{ label: "Lexis сигналов", value: lexisSignals.length }] : []),
+  ]);
+
+  const analysis: OrionGpt55SectionAnalysis = {
     microStageKey: microStage.microStageKey,
     macroSectionKey: microStage.macroSectionKey,
     sectionNumber: microStage.sectionNumber,
@@ -113,10 +166,10 @@ export function buildDeterministicMicrostageAnalysis(input: {
       whatWasNotConfirmed,
       whatRequiresReview,
       whyItMatters:
-        "Этот micro-stage влияет на итоговую интерпретацию раздела и должен читаться совместно с соседними stage в том же macro section.",
+        "Этот раздел влияет на итоговую интерпретацию отчёта и должен читаться совместно с соседними разделами той же секции.",
       recommendedActions: [
         "Сверить ключевые источники и домены вручную.",
-        "Проверить материалы из review-очереди до финального клиентского вывода.",
+        "Проверить материалы из очереди review до финального клиентского вывода.",
       ],
     },
     evidenceSummary: {
@@ -131,21 +184,10 @@ export function buildDeterministicMicrostageAnalysis(input: {
     },
     slideContent: {
       headline: microStage.titleRu,
-      subheadline: "Этап анализа",
-      metricCards: [
-        { label: "Всего", value: counts.total },
-        { label: "Подтверждено", value: counts.confirmed },
-        { label: "Требует проверки", value: counts.requiresReview },
-      ],
-      tables: [],
-      narrativeBlocks: [
-        { title: "Вывод", text: plainConclusion },
-        ...(stageKey === "executive_narrative_summary"
-          ? [
-              { title: "Что делать дальше", text: "Сверить ключевые источники, закрыть review-очередь и подтвердить итоговый риск-профиль." },
-            ]
-          : []),
-      ],
+      subheadline: plainConclusion.slice(0, 140),
+      metricCards,
+      tables,
+      narrativeBlocks: [],
       screenshotRefs: evidencePack.topResults.map((x) => x.screenshotRef).filter((x): x is string => Boolean(x)),
       visualRefs:
         lexisVisualCount > 0 && stageKey === "lexisnexis_visual_pages"
@@ -155,5 +197,11 @@ export function buildDeterministicMicrostageAnalysis(input: {
     },
     warnings: [input.reason ?? "gpt-5.5-unavailable-fallback"],
   };
-}
 
+  analysis.slideContent.narrativeBlocks = buildNarrativeBlocksFromAnalysis(analysis).map((block) => ({
+    title: block.title,
+    text: block.text,
+  }));
+
+  return analysis;
+}

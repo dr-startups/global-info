@@ -220,6 +220,12 @@ export function buildMicroStageEvidencePack(input: BuildEvidencePackInput): {
     lexisParsedSafeSignals,
     lexisVisualPageRefs,
     exclusionSummary: excluded.reasons,
+    dataAvailability:
+      selected.items.length === 0
+        ? "missing"
+        : input.rawEvidence.length > selected.items.length
+          ? "partial"
+          : "available",
   };
 
   return { normalized, selected, excluded, evidencePack };

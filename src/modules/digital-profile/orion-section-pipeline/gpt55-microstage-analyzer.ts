@@ -3,6 +3,11 @@ import type { OrionEvidencePack, OrionGpt55SectionAnalysis, OrionMicroStage } fr
 import { buildDeterministicMicrostageAnalysis } from "./deterministic-microstage-analysis";
 import { validateOrionMicrostageAnalysis } from "./gpt55-schemas";
 import { logOrionPipeline, warnOrionPipeline } from "./orion-pipeline-logger";
+import {
+  buildNarrativeBlocksFromAnalysis,
+  normalizeMetricCards,
+  normalizeSlideTableRows,
+} from "./client-slide-contract";
 
 interface OpenAiResponseShape {
   output?: Array<{
@@ -12,11 +17,17 @@ interface OpenAiResponseShape {
 
 function buildSystemPrompt(): string {
   return [
-    "You are a compliance-safe analyst for Digital Profile reports.",
+    "You are a compliance-safe analyst for Digital Profile ORION reports.",
     "Analyze ONLY the provided evidence pack for one micro-stage.",
     "Do not browse, do not invent facts, do not use external knowledge.",
     "Do not make legal claims or legal conclusions.",
-    "Ambiguous findings must stay requires_review.",
+    "Distinguish official source records from legal conclusions.",
+    "If official sanctions/watchlist/database records exist, say so explicitly without claiming guilt.",
+    "Use Russian client-safe wording for RU reports.",
+    "Never output ORION_STATIC, raw enum keys, provider/runtime/debug tokens, or placeholder labels like 'row'.",
+    "Cite only evidenceRef IDs present in the evidence pack.",
+    "Tables must use objects {label,value,note?,evidenceRef?} with non-empty label and value.",
+    "Metric cards must be omitted when values are empty.",
     "Return strict JSON only, no markdown.",
   ].join(" ");
 }
@@ -64,14 +75,14 @@ function buildUserPrompt(input: { microStage: OrionMicroStage; evidencePack: Ori
           keyThemes: ["string"],
         },
         slideContent: {
-          headline: "string",
-          subheadline: "string",
-          metricCards: [],
-          tables: [],
-          narrativeBlocks: [],
-          screenshotRefs: ["string"],
-          visualRefs: ["string"],
-          evidenceRefs: ["string"],
+          headline: "string (RU section title)",
+          subheadline: "string (1-line client summary, not 'Этап анализа')",
+          metricCards: [{ label: "string", value: "string|number" }],
+          tables: [{ label: "string", value: "string", note: "string?", evidenceRef: "string?" }],
+          narrativeBlocks: [{ title: "string", text: "string" }],
+          screenshotRefs: ["evidenceRef from pack"],
+          visualRefs: ["visualRef from pack"],
+          evidenceRefs: ["evidenceRef from pack"],
         },
         warnings: ["string"],
       },
@@ -220,6 +231,29 @@ async function callOpenAi(input: {
   throw lastError;
 }
 
+function sanitizeGptAnalysis(analysis: import("./types").OrionGpt55SectionAnalysis) {
+  const tables = normalizeSlideTableRows(analysis.slideContent.tables);
+  const metricCards = normalizeMetricCards(analysis.slideContent.metricCards);
+  const narrativeBlocks = buildNarrativeBlocksFromAnalysis(analysis).map((block) => ({
+    title: block.title,
+    text: block.text,
+  }));
+  const subheadline =
+    analysis.slideContent.subheadline && analysis.slideContent.subheadline !== "Этап анализа"
+      ? analysis.slideContent.subheadline
+      : analysis.clientNarrative.plainConclusion.slice(0, 140);
+  return {
+    ...analysis,
+    slideContent: {
+      ...analysis.slideContent,
+      subheadline,
+      metricCards,
+      tables,
+      narrativeBlocks,
+    },
+  };
+}
+
 export async function analyzeMicroStageWithGpt55(input: {
   microStage: OrionMicroStage;
   evidencePack: OrionEvidencePack;
@@ -280,7 +314,7 @@ export async function analyzeMicroStageWithGpt55(input: {
       };
     }
     return {
-      analysis: { ...valid.value, generatedBy: "gpt-5.5" },
+      analysis: sanitizeGptAnalysis({ ...valid.value, generatedBy: "gpt-5.5" }),
       diagnostics: { provider: "openai", model: cfg.model, status: "ready" },
     };
   } catch (error) {

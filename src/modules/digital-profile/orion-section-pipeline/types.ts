@@ -202,6 +202,7 @@ export interface OrionEvidencePack {
   }>;
   lexisVisualPageRefs?: string[];
   exclusionSummary: OrionExcludedEvidence["reasons"];
+  dataAvailability?: "available" | "missing" | "partial";
 }
 
 export interface OrionGpt55SectionAnalysis {
@@ -253,6 +254,7 @@ export interface OrionManifestSlide {
   narrativeBlocks: Array<Record<string, unknown>>;
   screenshots: string[];
   visuals: string[];
+  visualAssets?: Array<{ storageKey: string; contentBase64: string }>;
   evidenceRefs: string[];
   clientSafe: boolean;
   internalOnly: boolean;
