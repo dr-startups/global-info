@@ -31,7 +31,9 @@ import {
 } from "./components";
 import { CaseHeader } from "./CaseHeader";
 import { CaseTabs } from "./CaseTabs";
+import { OrionV2ReportPanel } from "./OrionV2ReportPanel";
 import { useDigitalProfileI18n } from "./i18n-provider";
+import { useDpAuth } from "./auth-provider";
 
 type LoadState =
   | { kind: "loading" }
@@ -42,6 +44,8 @@ type LoadState =
 
 export function CaseDetailView({ caseId }: { caseId: string }) {
   const { t, tError } = useDigitalProfileI18n();
+  const { user } = useDpAuth();
+  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [report, setReport] = useState<ReportVersion | null>(null);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -257,6 +261,12 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
             <ErrorBox>{banner.text}</ErrorBox>
           )}
         </div>
+      ) : null}
+
+      {isAdmin ? (
+        <Card>
+          <OrionV2ReportPanel caseId={state.caseDetail.id} />
+        </Card>
       ) : null}
 
       <Card>

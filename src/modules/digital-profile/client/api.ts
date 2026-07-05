@@ -445,6 +445,51 @@ export interface ReportVersion {
   reportJson?: unknown;
 }
 
+export interface OrionV2ArtifactSummary {
+  available: boolean;
+  downloadUrl: string | null;
+}
+
+export interface OrionV2Artifacts {
+  clientPdf: OrionV2ArtifactSummary;
+  clientPptx: OrionV2ArtifactSummary;
+  internalDraftPdf?: OrionV2ArtifactSummary;
+  internalDraftPptx?: OrionV2ArtifactSummary;
+}
+
+export type OrionV2LexisStatus =
+  | "not_uploaded"
+  | "uploaded_parsed"
+  | "visual_pages_ready"
+  | "requires_manual_review"
+  | "unknown";
+
+export type OrionV2Gpt55Status =
+  | "used"
+  | "skipped"
+  | "deterministic_fallback"
+  | "unknown";
+
+export interface OrionV2ReportStatus {
+  ok: boolean;
+  uiEnabled: boolean;
+  reportMode: "orion_section_pipeline_v1";
+  status: "completed" | "failed" | "running" | "empty";
+  runId: string | null;
+  storeMode: "file" | "db" | null;
+  createdAt: string | null;
+  completedAt: string | null;
+  pageCount: number;
+  clientPageCount: number;
+  lexisVisualPageCount: number;
+  lexisStatus: OrionV2LexisStatus;
+  gpt55Status: OrionV2Gpt55Status;
+  deterministicFallbackUsed: boolean;
+  clientPolicyStatus: string | null;
+  artifacts: OrionV2Artifacts;
+  warnings: string[];
+}
+
 export interface RenderedReport {
   id: string;
   caseId: string;
@@ -835,6 +880,22 @@ export function generateReport(caseId: string): Promise<ReportVersion> {
   return request<ReportVersion>(`/cases/${caseId}/report/generate`, {
     method: "POST",
   });
+}
+
+export function generateOrionV2Report(
+  caseId: string,
+  options?: { store?: "file" | "db"; gpt55Validate?: boolean }
+): Promise<OrionV2ReportStatus> {
+  return request<OrionV2ReportStatus>(`/cases/${caseId}/report/orion-v2`, {
+    method: "POST",
+    body: options ? JSON.stringify(options) : undefined,
+  });
+}
+
+export function getOrionV2ReportStatus(
+  caseId: string
+): Promise<OrionV2ReportStatus> {
+  return request<OrionV2ReportStatus>(`/cases/${caseId}/report/orion-v2`);
 }
 
 export interface RenderReportOptions {

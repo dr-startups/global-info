@@ -61,6 +61,7 @@ export interface DigitalProfileConfig {
     openAiApiKey?: string;
   };
   orionPipelineStore: "file" | "db";
+  orionV2UiEnabled: boolean;
 }
 
 function envLocale(value: string | undefined): "ru" | "en" {
@@ -126,6 +127,10 @@ export const digitalProfileConfig: DigitalProfileConfig = {
     String(process.env.DIGITAL_PROFILE_ORION_PIPELINE_STORE ?? "").trim().toLowerCase() === "db"
       ? "db"
       : "file",
+  orionV2UiEnabled: envBool(
+    process.env.DIGITAL_PROFILE_ORION_V2_UI_ENABLED,
+    process.env.NODE_ENV !== "production"
+  ),
 };
 
 /** Master feature flag check. Use this everywhere before exposing the module. */
