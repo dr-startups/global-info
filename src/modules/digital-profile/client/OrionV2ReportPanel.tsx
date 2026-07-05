@@ -72,7 +72,12 @@ export function OrionV2ReportPanel({ caseId }: { caseId: string }) {
         gpt55Validate ? { gpt55Validate: true } : undefined
       );
       setStatus(next);
-      setSuccess(t("report.orionV2Generated"));
+      // Only report success for a genuinely completed, non-AI-blocked run.
+      if (next.status === "completed" && next.gpt55Status !== "required_missing") {
+        setSuccess(t("report.orionV2Generated"));
+      } else if (next.gpt55Status === "required_missing") {
+        setError(t("report.orionV2AiRequiredMissing"));
+      }
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
@@ -83,11 +88,16 @@ export function OrionV2ReportPanel({ caseId }: { caseId: string }) {
     }
   }
 
+  const aiRequiredMissing = Boolean(status?.aiRequired && !status?.aiReady);
+
   const gptLabel = useMemo(() => {
     if (!status) return "—";
-    if (status.gpt55Status === "used") return t("report.orionV2Gpt55Used");
+    if (status.gpt55Status === "used") return t("report.orionV2Gpt55Done");
+    if (status.gpt55Status === "required_missing") {
+      return t("report.orionV2AiRequiredMissing");
+    }
     if (status.gpt55Status === "deterministic_fallback") {
-      return t("report.orionV2DeterministicFallback");
+      return t("report.orionV2DevDeterministicNotice");
     }
     return t("report.orionV2Gpt55Skipped");
   }, [status, t]);
@@ -140,7 +150,12 @@ export function OrionV2ReportPanel({ caseId }: { caseId: string }) {
       {disabledByFlag && isAdmin ? (
         <Notice>{t("report.orionV2FeatureDisabled")}</Notice>
       ) : null}
-      {status?.gpt55Status === "skipped" ? (
+      {aiRequiredMissing || status?.gpt55Status === "required_missing" ? (
+        <ErrorBox>{t("report.orionV2AiRequiredNotice")}</ErrorBox>
+      ) : null}
+      {status?.gpt55Status === "deterministic_fallback" ? (
+        <Notice>{t("report.orionV2DevDeterministicNotice")}</Notice>
+      ) : status?.gpt55Status === "skipped" ? (
         <Notice>{t("report.orionV2Gpt55SkipNotice")}</Notice>
       ) : null}
       {status?.lexisStatus === "visual_pages_ready" ? (

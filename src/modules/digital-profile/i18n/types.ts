@@ -193,6 +193,10 @@ export interface Dictionary {
     orionV2DeterministicUsed: string;
     orionV2Gpt55SkipNotice: string;
     orionV2ClientPolicy: string;
+    orionV2AiRequiredMissing: string;
+    orionV2AiRequiredNotice: string;
+    orionV2Gpt55Done: string;
+    orionV2DevDeterministicNotice: string;
   };
   risk: {
     title: string;

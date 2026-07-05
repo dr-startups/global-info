@@ -9,6 +9,7 @@ export * from "./deck-composer";
 export * from "./consistency-checker";
 export * from "./supabase-schema-plan";
 export * from "./run-exact-orion-pipeline";
+export * from "./ai-required-stages";
 export * from "./slide-template-mapping";
 export * from "./real-case-data-adapter";
 export * from "./persistence";

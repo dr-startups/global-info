@@ -188,6 +188,13 @@ export const ru: Dictionary = {
     orionV2Gpt55SkipNotice:
       "AI-анализ не запускался, использована детерминированная аналитика.",
     orionV2ClientPolicy: "Client policy",
+    orionV2AiRequiredMissing:
+      "ORION v2 требует GPT-5.5 анализ. Ключ OpenAI не настроен.",
+    orionV2AiRequiredNotice:
+      "ORION v2 требует включённый GPT-5.5 анализ. Добавьте OPENAI_API_KEY и включите AI analyst.",
+    orionV2Gpt55Done: "GPT-5.5 анализ выполнен.",
+    orionV2DevDeterministicNotice:
+      "AI-анализ не запускался; использована тестовая детерминированная аналитика.",
   },
   risk: {
     title: "Риск-находки",

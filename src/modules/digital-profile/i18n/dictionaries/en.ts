@@ -189,6 +189,13 @@ export const en: Dictionary = {
     orionV2Gpt55SkipNotice:
       "AI analysis was not run; deterministic analysis was used.",
     orionV2ClientPolicy: "Client policy",
+    orionV2AiRequiredMissing:
+      "ORION v2 requires GPT-5.5 analysis. OpenAI key is not configured.",
+    orionV2AiRequiredNotice:
+      "ORION v2 requires GPT-5.5 analysis enabled. Add OPENAI_API_KEY and enable the AI analyst.",
+    orionV2Gpt55Done: "GPT-5.5 analysis completed.",
+    orionV2DevDeterministicNotice:
+      "AI analysis was not run; test deterministic analytics were used.",
   },
   risk: {
     title: "Risk findings",

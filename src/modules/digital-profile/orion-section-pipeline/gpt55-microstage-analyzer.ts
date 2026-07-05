@@ -74,6 +74,11 @@ function buildUserPrompt(input: { microStage: OrionMicroStage; evidencePack: Ori
   );
 }
 
+function isReasoningModel(model: string): boolean {
+  const m = model.trim().toLowerCase();
+  return m.startsWith("gpt-5") || m.startsWith("o1") || m.startsWith("o3") || m.startsWith("o4");
+}
+
 function extractText(res: OpenAiResponseShape): string | null {
   const blocks = Array.isArray(res.output) ? res.output : [];
   for (const block of blocks) {
@@ -87,7 +92,26 @@ function extractText(res: OpenAiResponseShape): string | null {
   return null;
 }
 
-async function callOpenAi(input: {
+const TRANSIENT_HTTP_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
+
+function isTransientError(error: unknown): boolean {
+  if (error instanceof Error) {
+    if (error.name === "AbortError") return true;
+    const msg = error.message.toLowerCase();
+    if (msg.includes("openai-transient-http")) return true;
+    // Node fetch network failures surface as generic TypeError.
+    if (error.name === "TypeError" || msg.includes("fetch failed") || msg.includes("network")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function callOpenAiOnce(input: {
   apiKey: string;
   model: string;
   timeoutMs: number;
@@ -113,11 +137,17 @@ async function callOpenAi(input: {
             content: [{ type: "input_text", text: buildUserPrompt({ microStage: input.microStage, evidencePack: input.evidencePack }) }],
           },
         ],
+        // GPT-5.x are reasoning models: reasoning tokens count against the output
+        // budget. Keep effort low for structured extraction so the JSON body fits.
+        ...(isReasoningModel(input.model) ? { reasoning: { effort: "low" } } : {}),
         max_output_tokens: digitalProfileConfig.aiAnalyst.maxOutputTokens,
       }),
     });
     if (!response.ok) {
-      throw new Error(`openai-http-${response.status}`);
+      // Distinguish transient (retryable) from permanent HTTP failures.
+      throw new Error(
+        `${TRANSIENT_HTTP_STATUSES.has(response.status) ? "openai-transient-http" : "openai-http"}-${response.status}`
+      );
     }
     const json = (await response.json()) as OpenAiResponseShape;
     const text = extractText(json);
@@ -126,6 +156,31 @@ async function callOpenAi(input: {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function callOpenAi(input: {
+  apiKey: string;
+  model: string;
+  timeoutMs: number;
+  microStage: OrionMicroStage;
+  evidencePack: OrionEvidencePack;
+}): Promise<unknown> {
+  const maxAttempts = 3;
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await callOpenAiOnce(input);
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxAttempts && isTransientError(error)) {
+        // Exponential backoff with jitter to ride out rate limits / hiccups.
+        await sleep(500 * 2 ** (attempt - 1) + Math.floor(Math.random() * 250));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
 }
 
 export async function analyzeMicroStageWithGpt55(input: {

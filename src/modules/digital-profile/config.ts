@@ -62,6 +62,29 @@ export interface DigitalProfileConfig {
   };
   orionPipelineStore: "file" | "db";
   orionV2UiEnabled: boolean;
+  /**
+   * R9.5c — user-facing ORION v2 reports must be GPT-5.5-backed.
+   * When true, generation is blocked unless the AI analyst is fully configured.
+   */
+  orionV2RequireAi: boolean;
+  /**
+   * R9.5c — deterministic fallback for ORION v2 is allowed ONLY for explicit
+   * dev/test/local QA. In production/preview it must stay false so a fallback
+   * never silently produces a user-facing client report.
+   */
+  orionV2AllowDeterministicFallback: boolean;
+}
+
+/** Client-safe booleans describing ORION v2 AI readiness. Never exposes secrets. */
+export interface OrionV2AiReadiness {
+  hasOpenAiKey: boolean;
+  aiEnabled: boolean;
+  requireAi: boolean;
+  fallbackAllowed: boolean;
+  provider: "openai";
+  model: string;
+  /** True only when AI is fully configured to run GPT-5.5 analysis. */
+  ready: boolean;
 }
 
 function envLocale(value: string | undefined): "ru" | "en" {
@@ -118,9 +141,11 @@ export const digitalProfileConfig: DigitalProfileConfig = {
         ? "openai"
         : "openai",
     model: process.env.DIGITAL_PROFILE_AI_ANALYST_MODEL?.trim() || "gpt-5.5",
-    timeoutMs: envInt(process.env.DIGITAL_PROFILE_AI_ANALYST_TIMEOUT_MS, 20000, 1000, 120000),
+    timeoutMs: envInt(process.env.DIGITAL_PROFILE_AI_ANALYST_TIMEOUT_MS, 60000, 1000, 180000),
     maxInputItems: envInt(process.env.DIGITAL_PROFILE_AI_ANALYST_MAX_INPUT_ITEMS, 120, 20, 500),
-    maxOutputTokens: envInt(process.env.DIGITAL_PROFILE_AI_ANALYST_MAX_OUTPUT_TOKENS, 1400, 200, 4000),
+    // Reasoning models spend part of this budget on reasoning tokens, so keep it
+    // generous — a truncated response yields invalid JSON and forces fallback.
+    maxOutputTokens: envInt(process.env.DIGITAL_PROFILE_AI_ANALYST_MAX_OUTPUT_TOKENS, 8000, 200, 32000),
     openAiApiKey: process.env.OPENAI_API_KEY?.trim() || undefined,
   },
   orionPipelineStore:
@@ -131,7 +156,37 @@ export const digitalProfileConfig: DigitalProfileConfig = {
     process.env.DIGITAL_PROFILE_ORION_V2_UI_ENABLED,
     process.env.NODE_ENV !== "production"
   ),
+  // Default: required in production/preview-like envs, relaxed only in local/test.
+  orionV2RequireAi: envBool(
+    process.env.DIGITAL_PROFILE_ORION_V2_REQUIRE_AI,
+    process.env.NODE_ENV === "production"
+  ),
+  // Default: allowed only outside production/preview (smoke/local QA).
+  orionV2AllowDeterministicFallback: envBool(
+    process.env.DIGITAL_PROFILE_ORION_V2_ALLOW_DETERMINISTIC_FALLBACK,
+    process.env.NODE_ENV !== "production"
+  ),
 };
+
+/**
+ * Returns client-safe ORION v2 AI readiness booleans. Never returns the API key
+ * value itself — only whether one is present and whether the analyst can run.
+ */
+export function describeOrionV2AiReadiness(): OrionV2AiReadiness {
+  const ai = digitalProfileConfig.aiAnalyst;
+  const hasOpenAiKey = Boolean(ai.openAiApiKey && ai.openAiApiKey.trim().length > 0);
+  const aiEnabled = ai.enabled;
+  const providerOk = ai.provider === "openai";
+  return {
+    hasOpenAiKey,
+    aiEnabled,
+    requireAi: digitalProfileConfig.orionV2RequireAi,
+    fallbackAllowed: digitalProfileConfig.orionV2AllowDeterministicFallback,
+    provider: "openai",
+    model: ai.model,
+    ready: hasOpenAiKey && aiEnabled && providerOk,
+  };
+}
 
 /** Master feature flag check. Use this everywhere before exposing the module. */
 export function isDigitalProfileEnabled(): boolean {

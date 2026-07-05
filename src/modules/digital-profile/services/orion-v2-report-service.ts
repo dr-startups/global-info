@@ -2,9 +2,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { DpRole } from "../auth/roles";
 import { can } from "../auth/roles";
-import { digitalProfileConfig } from "../config";
+import { describeOrionV2AiReadiness, digitalProfileConfig, type OrionV2AiReadiness } from "../config";
 import { ForbiddenError, NotFoundError, ValidationError } from "../http/errors";
-import { runExactOrionPipeline, type OrionStoreMode } from "../orion-section-pipeline";
+import {
+  runExactOrionPipeline,
+  type OrionAiEnforcementStatus,
+  type OrionStoreMode,
+} from "../orion-section-pipeline";
 import { saveFile } from "../storage/private-store";
 import { buildStorageKey } from "../storage/keys";
 import { createSignedToken, verifySignedToken } from "../storage/signed-url";
@@ -21,7 +25,11 @@ type LexisStatus =
   | "visual_pages_ready"
   | "requires_manual_review";
 
-type Gpt55Status = "used" | "skipped" | "deterministic_fallback";
+type Gpt55Status =
+  | "used"
+  | "skipped"
+  | "deterministic_fallback"
+  | "required_missing";
 
 interface OrionV2ArtifactRecord {
   storageKey: string;
@@ -47,6 +55,9 @@ interface OrionV2RunRecord {
   gpt55Status: Gpt55Status;
   deterministicFallbackUsed: boolean;
   gpt55ValidationRequested: boolean;
+  aiRequired: boolean;
+  aiReady: boolean;
+  aiEnforcementStatus: OrionAiEnforcementStatus;
   clientPolicyStatus: string;
   warnings: string[];
   artifacts: Partial<Record<OrionV2ArtifactKind, OrionV2ArtifactRecord>>;
@@ -79,6 +90,9 @@ export interface OrionV2ReportSummary {
   lexisStatus: LexisStatus | "unknown";
   gpt55Status: Gpt55Status | "unknown";
   deterministicFallbackUsed: boolean;
+  aiRequired: boolean;
+  aiReady: boolean;
+  aiEnforcementStatus: OrionAiEnforcementStatus | "unknown";
   clientPolicyStatus: string | null;
   artifacts: OrionV2ArtifactsResponse;
   warnings: string[];
@@ -89,6 +103,10 @@ interface RunOrionV2Options {
   storeMode: OrionStoreMode;
   gpt55Validate: boolean;
   includeInternalArtifacts: boolean;
+  /** R9.5c — user-facing runs require GPT-5.5; resolved by the caller. */
+  requireAiAnalysis?: boolean;
+  /** R9.5c — allow deterministic fallback only in explicit dev/test. */
+  allowDeterministicFallback?: boolean;
 }
 
 const ORION_V2_UI_ROOT = join(
@@ -210,6 +228,7 @@ function toPublicSummary(
   record: OrionV2RunRecord | null,
   includeInternalArtifacts: boolean
 ): OrionV2ReportSummary {
+  const readiness = describeOrionV2AiReadiness();
   if (!record) {
     return {
       ok: true,
@@ -226,6 +245,9 @@ function toPublicSummary(
       lexisStatus: "unknown",
       gpt55Status: "unknown",
       deterministicFallbackUsed: false,
+      aiRequired: readiness.requireAi,
+      aiReady: readiness.ready,
+      aiEnforcementStatus: "unknown",
       clientPolicyStatus: null,
       artifacts: {
         clientPdf: { available: false, downloadUrl: null },
@@ -268,6 +290,9 @@ function toPublicSummary(
     lexisStatus: record.lexisStatus,
     gpt55Status: record.gpt55Status,
     deterministicFallbackUsed: record.deterministicFallbackUsed,
+    aiRequired: record.aiRequired,
+    aiReady: record.aiReady,
+    aiEnforcementStatus: record.aiEnforcementStatus,
     clientPolicyStatus: record.clientPolicyStatus,
     artifacts,
     warnings: record.warnings,
@@ -334,6 +359,11 @@ export function resolveGpt55ValidationFlag(requested: unknown, role: DpRole): bo
   return requested === true;
 }
 
+/** Client-safe ORION v2 AI readiness (booleans only, no secrets). */
+export function getOrionV2AiReadiness(): OrionV2AiReadiness {
+  return describeOrionV2AiReadiness();
+}
+
 export async function runOrionV2Report(
   options: RunOrionV2Options
 ): Promise<OrionV2RunRecord> {
@@ -345,25 +375,46 @@ export async function runOrionV2Report(
     "runs",
     `${now.getTime()}`
   );
+  const requireAiAnalysis = options.requireAiAnalysis === true;
+  const allowDeterministicFallback = options.allowDeterministicFallback === true;
+  // Required stages must attempt GPT even if the admin GPT toggle is off.
   const result = await runExactOrionPipeline(options.caseId, {
     outputRoot: runOutputRoot,
     useRealCaseData: true,
-    r93Gpt55Validate: options.gpt55Validate,
+    r93Gpt55Validate: options.gpt55Validate || requireAiAnalysis,
+    requireAiAnalysis,
+    allowDeterministicFallback,
     storeMode: options.storeMode,
     locale: "ru",
   });
   const completedAt = new Date().toISOString();
+  const aiEnforcement = result.aiEnforcement;
   const gpt55Used = result.analyses.filter((row) => row.generatedBy === "gpt-5.5")
     .length;
   const deterministicCount = result.analyses.filter(
     (row) => row.generatedBy !== "gpt-5.5"
   ).length;
-  const gpt55Status: Gpt55Status = !options.gpt55Validate
-    ? "skipped"
-    : gpt55Used > 0
-      ? "used"
-      : "deterministic_fallback";
   const deterministicFallbackUsed = deterministicCount > 0;
+
+  let gpt55Status: Gpt55Status;
+  if (aiEnforcement.status === "BLOCKED") {
+    gpt55Status = "required_missing";
+  } else if (aiEnforcement.status === "PASS_WITH_DETERMINISTIC_FALLBACK") {
+    gpt55Status = "deterministic_fallback";
+  } else if (gpt55Used > 0) {
+    gpt55Status = "used";
+  } else if (options.gpt55Validate || requireAiAnalysis) {
+    gpt55Status = "deterministic_fallback";
+  } else {
+    gpt55Status = "skipped";
+  }
+
+  const readiness = describeOrionV2AiReadiness();
+  const consistencyPass = result.consistencyInspection.status === "PASS";
+  const blocked = aiEnforcement.status === "BLOCKED";
+  const runStatus: OrionV2RunRecord["status"] =
+    blocked || !consistencyPass ? "failed" : "completed";
+
   const pageCount = Number(result.compositionInspection.finalInternalPageCount ?? 0);
   const clientPageCount = Number(
     result.compositionInspection.finalClientPageCount ?? 0
@@ -371,17 +422,16 @@ export async function runOrionV2Report(
   const lexisVisualPageCount = Number(
     result.compositionInspection.lexisNexisVisualPageCount ?? 0
   );
-  const artifacts = await persistArtifacts(
-    options.caseId,
-    result.run.runId,
-    runOutputRoot
-  );
+  // Never expose downloadable client artifacts for an AI-blocked (incomplete) run.
+  const artifacts = blocked
+    ? {}
+    : await persistArtifacts(options.caseId, result.run.runId, runOutputRoot);
 
   const record: OrionV2RunRecord = {
     caseId: options.caseId,
     runId: result.run.runId,
     reportMode: "orion_section_pipeline_v1",
-    status: result.consistencyInspection.status === "PASS" ? "completed" : "failed",
+    status: runStatus,
     storeMode: options.storeMode,
     createdAt: result.run.startedAt,
     completedAt,
@@ -393,6 +443,9 @@ export async function runOrionV2Report(
     gpt55Status,
     deterministicFallbackUsed,
     gpt55ValidationRequested: options.gpt55Validate,
+    aiRequired: requireAiAnalysis || readiness.requireAi,
+    aiReady: readiness.ready,
+    aiEnforcementStatus: aiEnforcement.status,
     clientPolicyStatus: String(result.consistencyInspection.status ?? "UNKNOWN"),
     warnings: normalizeWarnings(result.run.warnings ?? []),
     artifacts,

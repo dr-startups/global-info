@@ -468,6 +468,14 @@ export type OrionV2Gpt55Status =
   | "used"
   | "skipped"
   | "deterministic_fallback"
+  | "required_missing"
+  | "unknown";
+
+export type OrionV2AiEnforcementStatus =
+  | "SKIPPED"
+  | "PASS"
+  | "PASS_WITH_DETERMINISTIC_FALLBACK"
+  | "BLOCKED"
   | "unknown";
 
 export interface OrionV2ReportStatus {
@@ -485,6 +493,9 @@ export interface OrionV2ReportStatus {
   lexisStatus: OrionV2LexisStatus;
   gpt55Status: OrionV2Gpt55Status;
   deterministicFallbackUsed: boolean;
+  aiRequired: boolean;
+  aiReady: boolean;
+  aiEnforcementStatus: OrionV2AiEnforcementStatus;
   clientPolicyStatus: string | null;
   artifacts: OrionV2Artifacts;
   warnings: string[];
