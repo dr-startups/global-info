@@ -155,7 +155,33 @@ def _write_pptx(report_json: dict[str, Any], pptx_path: Path, audience: str) -> 
     return _write_pptx_fallback(report_json, pptx_path)
 
 
+def _escape_html(value: str) -> str:
+    return (
+        value.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _slide_bullets(src: dict[str, Any], ru_mode: bool) -> list[str]:
+    bullets: list[str] = []
+    for item in src.get("narrativeBlocks") or []:
+        if isinstance(item, dict):
+            text = _safe_text(item.get("text") or item.get("title") or "")
+        else:
+            text = _safe_text(item)
+        if ru_mode:
+            text = _strip_english_leakage(text)
+        if text:
+            bullets.append(text)
+    if not bullets:
+        bullets = ["Раздел сформирован из структуры слайдов по этапам анализа."]
+    return bullets[:8]
+
+
 def _write_pdf(slide_count: int, report_json: dict[str, Any], pdf_path: Path) -> None:
+    """Fallback PDF when LibreOffice conversion is unavailable (Unicode-safe HTML layout)."""
     slides = _collect_slides(report_json)
     doc = fitz.open()
     total = max(1, slide_count)
@@ -164,14 +190,39 @@ def _write_pdf(slide_count: int, report_json: dict[str, Any], pdf_path: Path) ->
         page = doc.new_page(width=1280, height=720)
         src = slides[idx] if idx < len(slides) else {}
         title = _safe_text(src.get("title") or src.get("slideType") or f"Слайд {idx + 1}")
+        subtitle = _safe_text(src.get("subtitle") or "")
         if ru_mode:
             title = _strip_english_leakage(title)
-        page.insert_text((50, 60), title, fontsize=24)
-        page.insert_text((50, 110), "ORION Section Pipeline v1", fontsize=12)
-        page.insert_text((1160, 700), f"{idx + 1}/{total}", fontsize=10)
+            subtitle = _strip_english_leakage(subtitle)
+        bullets = _slide_bullets(src, ru_mode)
+        bullet_html = "".join(f"<li>{_escape_html(line)}</li>" for line in bullets)
+        subtitle_html = (
+            f"<p style='margin:8px 0 0;color:#555;font-size:13px;'>{_escape_html(subtitle)}</p>"
+            if subtitle
+            else ""
+        )
+        html = (
+            "<div style='font-family:sans-serif;color:#1f3a5f;'>"
+            f"<h1 style='font-size:24px;margin:0;'>{_escape_html(title or f'Слайд {idx + 1}')}</h1>"
+            f"{subtitle_html}"
+            f"<ul style='margin-top:18px;font-size:14px;color:#222;line-height:1.45;'>{bullet_html}</ul>"
+            f"<p style='position:absolute;bottom:12px;right:0;color:#777;font-size:10px;'>{idx + 1}/{total}</p>"
+            "</div>"
+        )
+        page.insert_htmlbox(fitz.Rect(50, 40, 1230, 680), html)
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(pdf_path))
     doc.close()
+
+
+def _write_pdf_from_pptx(pptx_path: Path, pdf_path: Path) -> bool:
+    try:
+        from convert_pdf import convert_to_pdf
+
+        convert_to_pdf(str(pptx_path), str(pdf_path))
+        return pdf_path.exists() and pdf_path.stat().st_size > 0
+    except Exception:
+        return False
 
 
 def _export_png_pages(pdf_path: Path) -> list[dict[str, Any]]:
@@ -201,7 +252,8 @@ def render_orion_manifest(report_json: dict[str, Any], audience: str = "internal
         pptx_path = work / "report.pptx"
         pdf_path = work / "report.pdf"
         slide_count = _write_pptx(report_json, pptx_path, audience)
-        _write_pdf(slide_count, report_json, pdf_path)
+        if not _write_pdf_from_pptx(pptx_path, pdf_path):
+            _write_pdf(slide_count, report_json, pdf_path)
         pages = _export_png_pages(pdf_path)
         pptx_bytes = pptx_path.read_bytes()
         pdf_bytes = pdf_path.read_bytes()

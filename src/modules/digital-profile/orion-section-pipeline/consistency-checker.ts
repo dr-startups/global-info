@@ -50,6 +50,11 @@ function checkNoForbiddenTokens(json: string, violations: OrionConsistencyViolat
   }
 }
 
+function hasManualReviewCue(...parts: Array<string | undefined>): boolean {
+  const joined = parts.filter(Boolean).join(" ");
+  return /ручн|проверк|review|manual|вериф|уточн|подтвержд/i.test(joined);
+}
+
 function checkGenericThemeRepetition(json: string, violations: OrionConsistencyViolation[]): void {
   const count = (json.match(/Тема требует классификации/g) ?? []).length;
   if (count > 1) {
@@ -119,7 +124,13 @@ export function runOrionConsistencyChecks(input: {
     if (
       analysis.evidenceSummary.confirmed === 0 &&
       analysis.evidenceSummary.requiresReview > 0 &&
-      !analysis.clientNarrative.whatRequiresReview.join(" ").toLowerCase().includes("провер")
+      !hasManualReviewCue(
+        analysis.clientNarrative.plainConclusion,
+        analysis.clientNarrative.whatRequiresReview.join(" "),
+        analysis.clientNarrative.whatWasFound.join(" "),
+        analysis.clientNarrative.whatWasNotConfirmed.join(" "),
+        analysis.clientNarrative.recommendedActions.join(" ")
+      )
     ) {
       pushViolation(violations, {
         section: stageManifest.macroSectionKey,
@@ -176,12 +187,12 @@ export function runOrionConsistencyChecks(input: {
     executive.evidenceSummary.confirmed === 0 &&
     executive.evidenceSummary.requiresReview > 0
   ) {
-    const conclusion = executive.clientNarrative.plainConclusion.toLowerCase();
-    const reviewWordingPresent =
-      /ручн|проверк|review|manual/i.test(conclusion) ||
-      executive.clientNarrative.whatRequiresReview.some((item) =>
-        /ручн|проверк|review|manual/i.test(item)
-      );
+    const reviewWordingPresent = hasManualReviewCue(
+      executive.clientNarrative.plainConclusion,
+      executive.clientNarrative.whatRequiresReview.join(" "),
+      executive.clientNarrative.whatWasFound.join(" "),
+      executive.clientNarrative.whyItMatters
+    );
     if (!reviewWordingPresent) {
       pushViolation(violations, {
         section: "consistency",
