@@ -2,6 +2,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
+import { processLexisDocxViaRenderer } from "./lexis-renderer-client";
 import type {
   ImportedEvidenceDocument,
   ImportedEvidenceDocumentStatus,
@@ -324,13 +325,13 @@ function renderPdfToPngPages(pdfPath: string, outDir: string): {
   }
 }
 
-export function processLexisNexisDocx(
+export async function processLexisNexisDocx(
   input: {
     documentId: string;
     fileBuffer: Buffer;
     originalFileName: string;
   }
-): LexisHybridProcessingResult {
+): Promise<LexisHybridProcessingResult> {
   const tempRoot = mkdtempSync(join(tmpdir(), "dp-lexis-"));
   const workDir = join(tempRoot, "work");
   mkdirSync(workDir, { recursive: true });
@@ -342,13 +343,13 @@ export function processLexisNexisDocx(
   try {
     const extracted = extractDocxText(docxPath);
     parserWarnings.push(...extracted.warnings);
-    const parsedAnalytics = parseSignals(input.documentId, extracted.text);
-    if (parsedAnalytics.parserWarnings?.length) parserWarnings.push(...parsedAnalytics.parserWarnings);
 
     const conversionDir = join(workDir, "rendered");
     mkdirSync(conversionDir, { recursive: true });
     const pdf = tryConvertDocxToPdf(docxPath, workDir);
     let renderedPageFiles: RenderedPageFile[] = [];
+    let extractedText = extracted.text;
+
     if (!pdf.ok || !pdf.pdfPath) {
       conversionWarnings.push(pdf.warning ?? "docx_to_pdf_failed");
     } else {
@@ -363,6 +364,37 @@ export function processLexisNexisDocx(
       if (renderedPageFiles.length === 0) conversionWarnings.push("no_rendered_pages");
     }
 
+    const needsRendererFallback =
+      renderedPageFiles.length === 0 ||
+      extractedText.trim().length < 50 ||
+      parserWarnings.includes("docx_extract_failed");
+
+    if (needsRendererFallback) {
+      const remote = await processLexisDocxViaRenderer(input.fileBuffer);
+      if (remote) {
+        if (remote.text.trim().length > extractedText.trim().length) {
+          extractedText = remote.text;
+        }
+        parserWarnings.push(...remote.parserWarnings);
+        if (remote.pages.length > 0) {
+          renderedPageFiles = remote.pages.map((page) => ({
+            pageNumber: page.pageNumber,
+            width: page.width,
+            height: page.height,
+            fileBytes: Buffer.from(page.contentBase64, "base64"),
+          }));
+          conversionWarnings.push("local_conversion_bypassed_via_renderer");
+        } else {
+          conversionWarnings.push(...remote.conversionWarnings);
+        }
+      } else if (renderedPageFiles.length === 0) {
+        conversionWarnings.push("renderer_unavailable_for_docx_conversion");
+      }
+    }
+
+    const parsedAnalytics = parseSignals(input.documentId, extractedText);
+    if (parsedAnalytics.parserWarnings?.length) parserWarnings.push(...parsedAnalytics.parserWarnings);
+
     let status: ImportedEvidenceDocumentStatus = "ready";
     if (conversionWarnings.length > 0 && parserWarnings.length > 0) status = "failed";
     else if (conversionWarnings.length > 0) status = "conversion_warning";
@@ -374,8 +406,8 @@ export function processLexisNexisDocx(
         ...parsedAnalytics,
         parserWarnings: parserWarnings.length ? Array.from(new Set(parserWarnings)) : undefined,
       },
-      parserWarnings,
-      conversionWarnings,
+      parserWarnings: Array.from(new Set(parserWarnings)),
+      conversionWarnings: Array.from(new Set(conversionWarnings)),
     };
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });

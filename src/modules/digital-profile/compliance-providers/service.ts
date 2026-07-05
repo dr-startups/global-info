@@ -406,7 +406,7 @@ export async function importLexisNexisHybridReport(
     "lexisnexis-original.docx"
   );
   await saveFile(originalStorageKey, input.buffer);
-  const processing = processLexisNexisDocx({
+  const processing = await processLexisNexisDocx({
     documentId: documentRow.id,
     fileBuffer: input.buffer,
     originalFileName: input.fileName,

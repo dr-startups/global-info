@@ -183,9 +183,12 @@ export interface Dictionary {
     orionV2LexisVisualReady: string;
     orionV2LexisUploadedParsed: string;
     orionV2LexisManualReview: string;
+    orionV2LexisConversionFailed: string;
     orionV2LexisNotUploaded: string;
     orionV2LexisVisualNote: string;
     orionV2LexisUnavailableNote: string;
+    orionV2LexisConversionFailedNote: string;
+    orionV2RunFailedNotice: string;
     orionV2Gpt55Status: string;
     orionV2Gpt55Used: string;
     orionV2Gpt55Skipped: string;

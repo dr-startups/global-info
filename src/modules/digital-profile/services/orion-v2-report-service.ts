@@ -9,6 +9,11 @@ import {
   type OrionAiEnforcementStatus,
   type OrionStoreMode,
 } from "../orion-section-pipeline";
+import {
+  errorOrionPipeline,
+  logOrionPipeline,
+  warnOrionPipeline,
+} from "../orion-section-pipeline/orion-pipeline-logger";
 import { saveFile } from "../storage/private-store";
 import { buildStorageKey } from "../storage/keys";
 import { createSignedToken, verifySignedToken } from "../storage/signed-url";
@@ -23,6 +28,7 @@ type LexisStatus =
   | "not_uploaded"
   | "uploaded_parsed"
   | "visual_pages_ready"
+  | "conversion_failed"
   | "requires_manual_review";
 
 type Gpt55Status =
@@ -179,6 +185,15 @@ function isWarningStatus(raw: unknown): boolean {
   return value.includes("warning") || value.includes("failed");
 }
 
+function hasConversionIssue(doc: Record<string, unknown>): boolean {
+  const status = String(doc.status ?? "").toLowerCase();
+  if (status.includes("conversion")) return true;
+  const notes = Array.isArray(doc.internalNotes) ? doc.internalNotes.map(String) : [];
+  return notes.some((note) =>
+    /docx|converter|pdf|renderer|soffice|libreoffice|fitz|png/i.test(note)
+  );
+}
+
 function detectLexisStatus(outputRoot: string, visualPages: number): LexisStatus {
   const context = readJson<{
     lexis?: {
@@ -196,10 +211,57 @@ function detectLexisStatus(outputRoot: string, visualPages: number): LexisStatus
   const parserStatus = ((latestAny.parsedAnalytics ?? {}) as Record<string, unknown>)
     .parserStatus;
   const docStatus = latestAny.status;
+  if (hasConversionIssue(latestAny)) return "conversion_failed";
   if (!isWarningStatus(parserStatus) && !isWarningStatus(docStatus)) {
     return "uploaded_parsed";
   }
   return "requires_manual_review";
+}
+
+function buildRunWarnings(input: {
+  pipelineWarnings: string[];
+  aiEnforcement: {
+    status: string;
+    reason: string | null;
+    deterministicRequiredStages: string[];
+  };
+  consistencyStatus: string;
+  consistencyViolations: Array<{
+    section?: string;
+    microStage?: string;
+    field?: string;
+    expected?: string;
+    actual?: string;
+  }>;
+}): string[] {
+  const out: string[] = [];
+  if (input.aiEnforcement.status === "BLOCKED") {
+    out.push(
+      input.aiEnforcement.reason ??
+        "GPT-5.5 analysis missing for one or more required ORION stages."
+    );
+    if (input.aiEnforcement.deterministicRequiredStages.length > 0) {
+      out.push(
+        `Stages without GPT-5.5: ${input.aiEnforcement.deterministicRequiredStages.slice(0, 6).join(", ")}`
+      );
+    }
+  }
+  if (input.consistencyStatus !== "PASS") {
+    out.push(`Consistency check: ${input.consistencyStatus}`);
+    for (const violation of input.consistencyViolations.slice(0, 4)) {
+      const label = [violation.section, violation.microStage, violation.field]
+        .filter(Boolean)
+        .join("/");
+      const detail = violation.expected
+        ? `expected ${violation.expected}, got ${violation.actual ?? "?"}`
+        : violation.actual ?? "violation";
+      out.push(label ? `${label}: ${detail}` : detail);
+    }
+  }
+  for (const warning of normalizeWarnings(input.pipelineWarnings)) {
+    if (!out.includes(warning)) out.push(warning);
+  }
+  return out.slice(0, 8);
 }
 
 function normalizeWarnings(warnings: string[]): string[] {
@@ -438,6 +500,12 @@ export function enqueueOrionV2Report(options: RunOrionV2Options): OrionV2RunReco
   const createdAt = now.toISOString();
   const placeholder = buildRunningPlaceholder(options, uiRunId, runOutputRoot, createdAt);
   persistRunRecord(placeholder);
+  logOrionPipeline("service", "enqueue", {
+    caseId: options.caseId,
+    runId: uiRunId,
+    requireAi: options.requireAiAnalysis === true,
+    gpt55Validate: options.gpt55Validate === true,
+  });
 
   setImmediate(() => {
     void executeOrionV2Report({
@@ -459,7 +527,11 @@ export function enqueueOrionV2Report(options: RunOrionV2Options): OrionV2RunReco
         ],
       };
       persistRunRecord(failed);
-      console.error("[orion-v2] background generation failed:", error);
+      errorOrionPipeline("service", "background-generation-failed", {
+        caseId: options.caseId,
+        runId: uiRunId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     });
   });
 
@@ -476,6 +548,13 @@ async function executeOrionV2Report(
     join(ORION_V2_UI_ROOT, "cases", options.caseId, "runs", `${now.getTime()}`);
   const requireAiAnalysis = options.requireAiAnalysis === true;
   const allowDeterministicFallback = options.allowDeterministicFallback === true;
+  logOrionPipeline("service", "execute-start", {
+    caseId: options.caseId,
+    runId: uiRunId,
+    requireAiAnalysis,
+    allowDeterministicFallback,
+    gpt55Validate: options.gpt55Validate === true,
+  });
   // Required stages must attempt GPT even if the admin GPT toggle is off.
   const result = await runExactOrionPipeline(options.caseId, {
     outputRoot: runOutputRoot,
@@ -546,9 +625,34 @@ async function executeOrionV2Report(
     aiReady: readiness.ready,
     aiEnforcementStatus: aiEnforcement.status,
     clientPolicyStatus: String(result.consistencyInspection.status ?? "UNKNOWN"),
-    warnings: normalizeWarnings(result.run.warnings ?? []),
+    warnings: buildRunWarnings({
+      pipelineWarnings: result.run.warnings ?? [],
+      aiEnforcement,
+      consistencyStatus: String(result.consistencyInspection.status ?? "UNKNOWN"),
+      consistencyViolations: result.consistencyInspection.violations ?? [],
+    }),
     artifacts,
   };
+
+  logOrionPipeline("service", "execute-finished", {
+    caseId: options.caseId,
+    runId: uiRunId,
+    status: runStatus,
+    aiEnforcementStatus: aiEnforcement.status,
+    consistencyStatus: result.consistencyInspection.status,
+    clientPageCount,
+    blocked,
+    artifactCount: Object.keys(artifacts).length,
+  });
+  if (runStatus === "failed") {
+    warnOrionPipeline("service", "run-marked-failed", {
+      caseId: options.caseId,
+      runId: uiRunId,
+      aiEnforcementStatus: aiEnforcement.status,
+      consistencyStatus: result.consistencyInspection.status,
+      warnings: record.warnings,
+    });
+  }
 
   persistRunRecord(record);
   return record;

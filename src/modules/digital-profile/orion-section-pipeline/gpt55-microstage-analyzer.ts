@@ -2,6 +2,7 @@ import { digitalProfileConfig } from "../config";
 import type { OrionEvidencePack, OrionGpt55SectionAnalysis, OrionMicroStage } from "./types";
 import { buildDeterministicMicrostageAnalysis } from "./deterministic-microstage-analysis";
 import { validateOrionMicrostageAnalysis } from "./gpt55-schemas";
+import { logOrionPipeline, warnOrionPipeline } from "./orion-pipeline-logger";
 
 interface OpenAiResponseShape {
   output?: Array<{
@@ -167,11 +168,26 @@ async function callOpenAi(input: {
 }): Promise<unknown> {
   const maxAttempts = 3;
   let lastError: unknown;
+  logOrionPipeline("gpt55", "openai-call-start", {
+    microStageKey: input.microStage.microStageKey,
+    model: input.model,
+    evidenceItems: input.evidencePack.topResults.length,
+  });
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
-      return await callOpenAiOnce(input);
+      const result = await callOpenAiOnce(input);
+      logOrionPipeline("gpt55", "openai-call-success", {
+        microStageKey: input.microStage.microStageKey,
+        attempt,
+      });
+      return result;
     } catch (error) {
       lastError = error;
+      warnOrionPipeline("gpt55", "openai-call-retry", {
+        microStageKey: input.microStage.microStageKey,
+        attempt,
+        error: error instanceof Error ? error.message : String(error),
+      });
       if (attempt < maxAttempts && isTransientError(error)) {
         // Exponential backoff with jitter to ride out rate limits / hiccups.
         await sleep(500 * 2 ** (attempt - 1) + Math.floor(Math.random() * 250));
@@ -192,6 +208,9 @@ export async function analyzeMicroStageWithGpt55(input: {
 }> {
   const cfg = digitalProfileConfig.aiAnalyst;
   if (!cfg.enabled) {
+    warnOrionPipeline("gpt55", "fallback-ai-disabled", {
+      microStageKey: input.microStage.microStageKey,
+    });
     return {
       analysis: buildDeterministicMicrostageAnalysis({
         microStage: input.microStage,
@@ -203,6 +222,9 @@ export async function analyzeMicroStageWithGpt55(input: {
   }
 
   if (!cfg.openAiApiKey) {
+    warnOrionPipeline("gpt55", "fallback-missing-api-key", {
+      microStageKey: input.microStage.microStageKey,
+    });
     return {
       analysis: buildDeterministicMicrostageAnalysis({
         microStage: input.microStage,
@@ -223,6 +245,10 @@ export async function analyzeMicroStageWithGpt55(input: {
     });
     const valid = validateOrionMicrostageAnalysis(raw);
     if (!valid.ok) {
+      warnOrionPipeline("gpt55", "fallback-schema-validation", {
+        microStageKey: input.microStage.microStageKey,
+        issues: valid.issues.slice(0, 3),
+      });
       return {
         analysis: buildDeterministicMicrostageAnalysis({
           microStage: input.microStage,
@@ -237,6 +263,10 @@ export async function analyzeMicroStageWithGpt55(input: {
       diagnostics: { provider: "openai", model: cfg.model, status: "ready" },
     };
   } catch (error) {
+    warnOrionPipeline("gpt55", "fallback-openai-error", {
+      microStageKey: input.microStage.microStageKey,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return {
       analysis: buildDeterministicMicrostageAnalysis({
         microStage: input.microStage,

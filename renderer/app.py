@@ -24,6 +24,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from convert_pdf import convert_to_pdf
+from lexis_docx import process_lexis_docx_bytes
 from render_pptx import build_pptx
 from report_i18n import normalize_lang
 
@@ -69,6 +70,24 @@ class RenderResponse(BaseModel):
     warnings: list[str] = []
 
 
+class LexisDocxPage(BaseModel):
+    pageNumber: int
+    width: int
+    height: int
+    contentBase64: str
+
+
+class LexisDocxProcessRequest(BaseModel):
+    docxBase64: str
+
+
+class LexisDocxProcessResponse(BaseModel):
+    text: str
+    pages: list[LexisDocxPage]
+    parserWarnings: list[str] = []
+    conversionWarnings: list[str] = []
+
+
 def _file_info(key: str, path: str) -> FileInfo:
     with open(path, "rb") as fh:
         data = fh.read()
@@ -92,6 +111,27 @@ def health() -> dict:
 
 
 DEFAULT_TEMPLATE_VERSION = "report-template-v3"
+
+
+@app.post("/lexis/process-docx", response_model=LexisDocxProcessResponse)
+def lexis_process_docx(req: LexisDocxProcessRequest) -> LexisDocxProcessResponse:
+    """Extract text and render visual PNG pages from a LexisNexis DOCX upload."""
+    try:
+        docx_bytes = base64.b64decode(req.docxBase64)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"Invalid docxBase64: {exc}") from exc
+    if not docx_bytes:
+        raise HTTPException(status_code=400, detail="Empty DOCX payload")
+    try:
+        result = process_lexis_docx_bytes(docx_bytes)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Lexis DOCX processing failed: {exc}") from exc
+    return LexisDocxProcessResponse(
+        text=str(result.get("text") or ""),
+        pages=[LexisDocxPage(**page) for page in result.get("pages") or []],
+        parserWarnings=list(result.get("parserWarnings") or []),
+        conversionWarnings=list(result.get("conversionWarnings") or []),
+    )
 
 
 @app.post("/render", response_model=RenderResponse)

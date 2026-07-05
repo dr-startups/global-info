@@ -11,6 +11,11 @@ import { runOrionConsistencyChecks } from "./consistency-checker";
 import { createOrionPipelineStore, type OrionStoreMode } from "./persistence";
 import { ORION_V2_GPT_REQUIRED_MICRO_STAGE_SET } from "./ai-required-stages";
 import {
+  errorOrionPipeline,
+  logOrionPipeline,
+  warnOrionPipeline,
+} from "./orion-pipeline-logger";
+import {
   loadRealCaseContext,
   mapCaseDataToMicroStageInputs,
   type OrionMicroStageInput,
@@ -205,6 +210,14 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
   const root =
     options.outputRoot ??
     join(process.cwd(), "storage", "digital-profile", "qa-r9-0-exact-orion-section-pipeline");
+  logOrionPipeline("pipeline", "run-start", {
+    caseId,
+    runId: run.runId,
+    outputRoot: root,
+    requireAiAnalysis: options.requireAiAnalysis === true,
+    allowDeterministicFallback: options.allowDeterministicFallback === true,
+    storeMode: options.storeMode ?? "file",
+  });
   const macroSectionKeys = blueprint.macroSections
     .filter((s) => s.macroSectionKey !== "cover" && s.macroSectionKey !== "toc_global")
     .map((s, idx) => `${String(idx + 1).padStart(2, "0")}-${s.macroSectionKey.replace(/_/g, "-")}`);
@@ -276,6 +289,10 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
       });
     } catch (error) {
       run.warnings.push(`real-case-adapter-unavailable:${error instanceof Error ? error.message : String(error)}`);
+      warnOrionPipeline("pipeline", "real-case-adapter-unavailable", {
+        caseId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -436,15 +453,35 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
         reason: selectedForGpt55 ? "gpt-runtime-skipped" : "stage-not-selected",
       };
       if (selectedForGpt55) {
+        logOrionPipeline("pipeline", "gpt-stage-start", {
+          caseId,
+          runId: run.runId,
+          microStageKey: stage.microStageKey,
+        });
         const first = await analyzeMicroStageWithGpt55({ microStage: stage, evidencePack: packed.evidencePack });
         finalAnalysis = first.analysis;
         diagnostics = first.diagnostics;
         if (first.diagnostics.status !== "ready") {
           retries = 1;
+          warnOrionPipeline("pipeline", "gpt-stage-retry", {
+            caseId,
+            runId: run.runId,
+            microStageKey: stage.microStageKey,
+            reason: first.diagnostics.reason,
+          });
           const second = await analyzeMicroStageWithGpt55({ microStage: stage, evidencePack: packed.evidencePack });
           finalAnalysis = second.analysis;
           diagnostics = second.diagnostics;
         }
+        logOrionPipeline("pipeline", "gpt-stage-done", {
+          caseId,
+          runId: run.runId,
+          microStageKey: stage.microStageKey,
+          generatedBy: finalAnalysis.generatedBy,
+          status: finalAnalysis.status,
+          provider: diagnostics.provider,
+          reason: diagnostics.reason,
+        });
       }
       await store.writeArtifact(join(stageDir, "gpt55-analysis.json"), selectedForGpt55 ? finalAnalysis : deterministic);
       await store.saveSectionAnalysis({
@@ -574,6 +611,20 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
   };
   if (aiEnforcementStatus === "BLOCKED") {
     run.errors.push("ai-required-gpt55-missing");
+    errorOrionPipeline("pipeline", "ai-enforcement-blocked", {
+      caseId,
+      runId: run.runId,
+      deterministicRequiredStages,
+      reason: aiEnforcementReason,
+    });
+  } else {
+    logOrionPipeline("pipeline", "ai-enforcement-pass", {
+      caseId,
+      runId: run.runId,
+      status: aiEnforcementStatus,
+      gptStages: gptStages.length,
+      deterministicRequiredStages: deterministicRequiredStages.length,
+    });
   }
   await store.writeArtifact(join(root, "ai-enforcement-inspection.json"), aiEnforcement);
 
@@ -780,6 +831,17 @@ export async function runExactOrionPipeline(caseId: string, options: RunExactOri
 
   const overallBlocked =
     consistencyInspection.status !== "PASS" || aiEnforcement.status === "BLOCKED";
+  logOrionPipeline("pipeline", "run-finished", {
+    caseId,
+    runId: run.runId,
+    overallBlocked,
+    aiEnforcementStatus: aiEnforcement.status,
+    consistencyStatus: consistencyInspection.status,
+    clientPageCount: composed.compositionInspection.finalClientPageCount,
+    lexisVisualPages: composed.compositionInspection.lexisNexisVisualPageCount,
+    warnings: run.warnings.length,
+    errors: run.errors.length,
+  });
   await store.writeArtifact(join(root, "run-manifest.json"), {
     ...run,
     status: overallBlocked ? "failed" : "composed",

@@ -465,6 +465,7 @@ export type OrionV2LexisStatus =
   | "not_uploaded"
   | "uploaded_parsed"
   | "visual_pages_ready"
+  | "conversion_failed"
   | "requires_manual_review"
   | "unknown";
 

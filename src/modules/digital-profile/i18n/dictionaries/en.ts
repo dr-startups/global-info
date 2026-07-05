@@ -177,10 +177,15 @@ export const en: Dictionary = {
     orionV2LexisVisualReady: "LexisNexis: visual pages included in section 4.",
     orionV2LexisUploadedParsed: "LexisNexis: document uploaded and parsed.",
     orionV2LexisManualReview: "LexisNexis: manual review required.",
+    orionV2LexisConversionFailed:
+      "LexisNexis: document uploaded, but visual page conversion failed.",
     orionV2LexisNotUploaded: "LexisNexis: document not uploaded.",
     orionV2LexisVisualNote: "LexisNexis: visual pages included in section 4.",
     orionV2LexisUnavailableNote:
-      "LexisNexis: document not uploaded or visual pages unavailable.",
+      "LexisNexis: document not uploaded or visual pages are unavailable.",
+    orionV2LexisConversionFailedNote:
+      "LexisNexis: the file is saved, but visual pages were not generated. Re-upload the DOCX after the renderer service is available.",
+    orionV2RunFailedNotice: "ORION v2 generation failed. See warnings below and Railway logs tagged orion-v2.",
     orionV2Gpt55Status: "GPT-5.5 / deterministic",
     orionV2Gpt55Used: "GPT-5.5 analysis used",
     orionV2Gpt55Skipped: "GPT-5.5 analysis skipped",

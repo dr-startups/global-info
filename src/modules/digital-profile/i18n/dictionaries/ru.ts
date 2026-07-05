@@ -176,10 +176,16 @@ export const ru: Dictionary = {
     orionV2LexisVisualReady: "LexisNexis: визуальные страницы включены в раздел 4.",
     orionV2LexisUploadedParsed: "LexisNexis: документ загружен и разобран.",
     orionV2LexisManualReview: "LexisNexis: требуется ручная проверка.",
+    orionV2LexisConversionFailed:
+      "LexisNexis: документ загружен, но визуальные страницы не сгенерированы.",
     orionV2LexisNotUploaded: "LexisNexis: документ не загружен.",
     orionV2LexisVisualNote: "LexisNexis: визуальные страницы включены в раздел 4.",
     orionV2LexisUnavailableNote:
       "LexisNexis: документ не загружен или визуальные страницы недоступны.",
+    orionV2LexisConversionFailedNote:
+      "LexisNexis: файл сохранён, но визуальные страницы не получены. Перезагрузите DOCX после деплоя renderer-сервиса.",
+    orionV2RunFailedNotice:
+      "Генерация ORION v2 завершилась с ошибкой. Смотрите предупреждения ниже и логи Railway с тегом orion-v2.",
     orionV2Gpt55Status: "GPT-5.5 / deterministic",
     orionV2Gpt55Used: "GPT-5.5 анализ использован",
     orionV2Gpt55Skipped: "GPT-5.5 анализ пропущен",

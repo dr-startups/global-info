@@ -141,6 +141,7 @@ export function OrionV2ReportPanel({ caseId }: { caseId: string }) {
     if (!status) return "—";
     if (status.lexisStatus === "visual_pages_ready") return t("report.orionV2LexisVisualReady");
     if (status.lexisStatus === "uploaded_parsed") return t("report.orionV2LexisUploadedParsed");
+    if (status.lexisStatus === "conversion_failed") return t("report.orionV2LexisConversionFailed");
     if (status.lexisStatus === "requires_manual_review") return t("report.orionV2LexisManualReview");
     return t("report.orionV2LexisNotUploaded");
   }, [status, t]);
@@ -199,8 +200,21 @@ export function OrionV2ReportPanel({ caseId }: { caseId: string }) {
       {status?.lexisStatus === "visual_pages_ready" ? (
         <Notice>{t("report.orionV2LexisVisualNote")}</Notice>
       ) : null}
+      {status?.lexisStatus === "conversion_failed" ? (
+        <Notice>{t("report.orionV2LexisConversionFailedNote")}</Notice>
+      ) : null}
       {status?.lexisStatus === "not_uploaded" || status?.lexisStatus === "requires_manual_review" ? (
         <Notice>{t("report.orionV2LexisUnavailableNote")}</Notice>
+      ) : null}
+      {status?.status === "failed" && (status.warnings?.length ?? 0) > 0 ? (
+        <ErrorBox>
+          <div>{t("report.orionV2RunFailedNotice")}</div>
+          <ul style={{ margin: "8px 0 0", paddingLeft: "18px" }}>
+            {status.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </ErrorBox>
       ) : null}
 
       {error ? <ErrorBox>{error}</ErrorBox> : null}
