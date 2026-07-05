@@ -90,6 +90,7 @@ def _write_pptx_fallback(report_json: dict[str, Any], pptx_path: Path) -> int:
 
         box = slide.shapes.add_textbox(Emu(500000), Emu(300000), Emu(8200000), Emu(900000))
         tf = box.text_frame
+        tf.word_wrap = True
         p = tf.paragraphs[0]
         r = p.add_run()
         r.text = title or f"Слайд {idx}"
@@ -106,6 +107,7 @@ def _write_pptx_fallback(report_json: dict[str, Any], pptx_path: Path) -> int:
 
         bullets_box = slide.shapes.add_textbox(Emu(500000), Emu(1400000), Emu(8200000), Emu(4300000))
         btf = bullets_box.text_frame
+        btf.word_wrap = True
         bullets: list[str] = []
         for item in src.get("narrativeBlocks") or []:
             if isinstance(item, dict):
@@ -115,10 +117,10 @@ def _write_pptx_fallback(report_json: dict[str, Any], pptx_path: Path) -> int:
             if ru_mode:
                 text = _strip_english_leakage(text)
             if text:
-                bullets.append(text)
+                bullets.append(text[:420])
         if not bullets:
             bullets = ["Раздел сформирован из структуры слайдов по этапам анализа."]
-        for b_i, line in enumerate(bullets[:8]):
+        for b_i, line in enumerate(bullets[:6]):
             pp = btf.paragraphs[0] if b_i == 0 else btf.add_paragraph()
             rr = pp.add_run()
             rr.text = f"• {line}"

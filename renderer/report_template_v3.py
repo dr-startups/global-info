@@ -2501,11 +2501,87 @@ def _p_r74_lexis_visual_page(prs, vm, ctx, doc: dict, page: dict):
     )
 
 
-def _p_orion_manifest_slide(prs, ctx, slide_payload: dict):
-    title = str(slide_payload.get("title") or slide_payload.get("slideType") or "ORION stage")
-    subtitle = str(slide_payload.get("subtitle") or "")
-    slide, top = _section(prs, ctx, title, subtitle or None)
+def _p_orion_cover(prs, ctx: Ctx, slide_payload: dict) -> None:
+    slide = T.blank_slide(prs)
+    T.set_bg(slide, T.BRAND_PRIMARY)
+    T.footer(slide, ctx.brand, ctx.page, ctx.total)
+    title = str(slide_payload.get("title") or "Цифровой профиль")
+    subtitle = str(slide_payload.get("subtitle") or "ORION")
+    box = T.textbox(slide, T.MARGIN, Emu(1900000), T.CONTENT_W, Emu(2900000))
+    tf = box.text_frame
+    tf.word_wrap = True
+    T._run(tf.paragraphs[0], title, T.FS_COVER_TITLE, T.WHITE, bold=True)
+    T._run(tf.add_paragraph(), subtitle, T.FS_SUBTITLE + 3, T.ACCENT_SOFT)
+    if ctx.watermark:
+        wm = T.textbox(slide, Emu(5200000), Emu(5100000), Emu(3400000), Emu(520000))
+        wp = wm.text_frame.paragraphs[0]
+        wp.alignment = 2
+        T._run(wp, str(ctx.watermark), 24, T.RGBColor(0x3A, 0x4F, 0x73), bold=True)
+
+
+def _p_orion_toc(prs, ctx: Ctx, slide_payload: dict, section_titles: list[str]) -> None:
+    slide, top = _section(
+        prs,
+        ctx,
+        str(slide_payload.get("title") or "Содержание"),
+        str(slide_payload.get("subtitle") or "ORION"),
+    )
+    lines = [T.r2_truncate_lines(str(x), max_lines=1, line_len=88) for x in section_titles if str(x).strip()]
+    if lines:
+        T.bullets(slide, top, lines, max_items=16, layout_warnings=ctx.layout_warnings)
+    else:
+        T.no_data_card(slide, top, "Структура отчёта сформирована по разделам pipeline.")
+
+
+def _orion_narrative_lines(narratives: list[Any]) -> list[str]:
+    lines: list[str] = []
+    for n in narratives[:6]:
+        if isinstance(n, dict):
+            title = str(n.get("title") or "").strip()
+            txt = str(n.get("text") or "").strip()
+            combined = f"{title}: {txt}" if title and txt else (txt or title)
+        else:
+            combined = str(n or "").strip()
+        combined = T.r2_truncate_lines(combined, max_lines=3, line_len=96)
+        if combined:
+            lines.append(combined)
+    return lines
+
+
+def _p_orion_manifest_slide(prs, ctx: Ctx, slide_payload: dict) -> None:
+    slide_type = str(slide_payload.get("slideType") or "")
+    if slide_type == "cover_orion":
+        _p_orion_cover(prs, ctx, slide_payload)
+        return
+    if slide_type == "lexisnexis_unavailable_fallback":
+        slide, top = _section(
+            prs,
+            ctx,
+            str(slide_payload.get("title") or "LexisNexis"),
+            "Визуальные страницы недоступны",
+        )
+        T.no_data_card(slide, top, "Визуальные страницы LexisNexis недоступны.")
+        return
+
+    title = T.r2_truncate_lines(
+        str(slide_payload.get("title") or slide_payload.get("slideType") or "ORION stage"),
+        max_lines=2,
+        line_len=72,
+    )
+    subtitle_raw = str(slide_payload.get("subtitle") or "").strip()
+    subtitle = T.r2_truncate_lines(subtitle_raw, max_lines=2, line_len=88) if subtitle_raw else None
+    slide, top = _section(prs, ctx, title, subtitle)
+
     metric_cards = list(slide_payload.get("metrics") or [])
+    narratives = list(slide_payload.get("narrativeBlocks") or [])
+    narrative_lines = _orion_narrative_lines(narratives)
+    table_rows: list[list[str]] = []
+    for row in list(slide_payload.get("tables") or [])[:8]:
+        if isinstance(row, dict):
+            key = T.r2_truncate_lines(str(row.get("label") or row.get("key") or "row"), max_lines=1, line_len=48)
+            val = T.r2_truncate_lines(str(row.get("value") or row.get("text") or ""), max_lines=2, line_len=72)
+            table_rows.append([key, val])
+
     if metric_cards:
         cards = []
         for m in metric_cards[:6]:
@@ -2517,38 +2593,44 @@ def _p_orion_manifest_slide(prs, ctx, slide_payload: dict):
                 })
         if cards:
             top = T.metric_cards(slide, top, cards, per_row=min(3, max(1, len(cards))))
-    narratives = list(slide_payload.get("narrativeBlocks") or [])
-    if narratives:
-        lines = []
-        for n in narratives[:8]:
-            if isinstance(n, dict):
-                txt = str(n.get("text") or n.get("title") or "")
-            else:
-                txt = str(n or "")
-            txt = txt.strip()
-            if txt:
-                lines.append(txt)
-        if lines:
-            top = T.bullets(slide, top, lines, title="Ключевые выводы", line_len=84, max_lines=8)
-    table_rows = []
-    for row in list(slide_payload.get("tables") or [])[:12]:
-        if isinstance(row, dict):
-            key = str(row.get("label") or row.get("key") or "row")
-            val = str(row.get("value") or row.get("text") or "")
-            table_rows.append([key, val])
-    if table_rows:
+
+    if narrative_lines:
+        top = T.bounded_bullet_sections(
+            slide,
+            top,
+            [{"title": "Ключевые выводы", "lines": narrative_lines}],
+            max_items_per_section=5,
+            layout_warnings=ctx.layout_warnings,
+        )
+
+    space_left = int(T.CONTENT_SAFE_BOTTOM) - int(top)
+    min_table_h = int(T.TABLE_ROW_H) * 3
+    if table_rows and space_left >= min_table_h:
         top = T.table(
             slide,
             top,
             ["Поле", "Значение"],
             table_rows,
-            max_rows=12,
+            max_rows=min(6, len(table_rows)),
             col_widths=[0.35, 0.65],
+            layout_warnings=ctx.layout_warnings,
         )
-    if not metric_cards and not narratives and not table_rows:
+    elif table_rows and not narrative_lines:
+        top = T.table(
+            slide,
+            top,
+            ["Поле", "Значение"],
+            table_rows,
+            max_rows=min(8, len(table_rows)),
+            col_widths=[0.35, 0.65],
+            layout_warnings=ctx.layout_warnings,
+        )
+
+    if not metric_cards and not narrative_lines and not table_rows:
         T.no_data_card(slide, top, "Слайд сформирован из структуры раздела.")
+
     refs = list(slide_payload.get("evidenceRefs") or [])
-    if refs:
+    if refs and ctx.internal:
         T.note(slide, Emu(int(T.CONTENT_SAFE_BOTTOM) - 320000), f"Evidence refs: {len(refs)}", "disclaimer")
 
 
@@ -2573,6 +2655,11 @@ def build_report_v3(
         ctx = Ctx(brand="ORION", watermark=effective_wm, internal=(str(audience).lower() != "client"))
         manifest = report_json.get("finalDeckManifest") or report_json.get("orionFinalDeckManifest") or {}
         sections = list(manifest.get("sections") or [])
+        section_titles = [
+            str(sec.get("titleRu") or sec.get("macroSectionKey") or "")
+            for sec in sections
+            if str(sec.get("titleRu") or sec.get("macroSectionKey") or "").strip()
+        ]
         cover = {"title": "Цифровой профиль", "subtitle": "ORION section pipeline", "slideType": "cover_orion"}
         toc = {"title": labels.get("contents", "Содержание"), "subtitle": "ORION", "slideType": "toc_orion"}
         flat_slides = [cover, toc]
@@ -2582,7 +2669,10 @@ def build_report_v3(
         ctx.total = len(flat_slides)
         for i, s in enumerate(flat_slides):
             ctx.page = i + 1
-            _p_orion_manifest_slide(prs, ctx, s)
+            if str(s.get("slideType") or "") == "toc_orion":
+                _p_orion_toc(prs, ctx, s, section_titles)
+            else:
+                _p_orion_manifest_slide(prs, ctx, s)
         return
 
     vm, vm_warnings = build_view_model_v3(report_json, audience)

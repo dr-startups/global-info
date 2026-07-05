@@ -1989,7 +1989,7 @@ def table(
             cell.text = "" if val is None else str(val)
             para = cell.text_frame.paragraphs[0]
             para.font.size = Pt(FS_TABLE_BODY)
-            para.word_wrap = False
+            para.word_wrap = True
             tone = _cell_color(str(val)) if semantic_colors else None
             if semantic_colors and tone:
                 para.font.color.rgb = tone
