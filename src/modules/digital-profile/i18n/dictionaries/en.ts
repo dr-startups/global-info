@@ -209,6 +209,35 @@ export const en: Dictionary = {
       "AI analysis was not run; test deterministic analytics were used.",
     orionV2RunningNotice:
       "ORION v2 is generating (GPT-5.5). This may take 5–10 minutes. Status refreshes automatically.",
+    orionClientStoryboardTitle: "ORION — client report (Storyboard R9.12)",
+    orionClientStoryboardGenerate: "Generate client storyboard",
+    orionClientStoryboardRefresh: "Refresh status",
+    orionClientStoryboardDownloadPdf: "Download PDF",
+    orionClientStoryboardDownloadPptx: "Download PPTX",
+    orionClientStoryboardNotice:
+      "New client report with relevance filtering, GPT-5.5 narrative, and visual storyboard. Does not replace ORION v2 or the main report.",
+    orionClientStoryboardFeatureDisabled:
+      "Client Storyboard UI is disabled by DIGITAL_PROFILE_ORION_CLIENT_STORYBOARD_UI_ENABLED.",
+    orionClientStoryboardGenerated: "Client storyboard generated successfully.",
+    orionClientStoryboardEmptyTitle: "No storyboard reports yet",
+    orionClientStoryboardEmptyHint:
+      "Run generation to produce client PDF/PPTX via the R9.12 pipeline.",
+    orionClientStoryboardGenerationStatus: "Generation status",
+    orionClientStoryboardStatus_completed: "Ready",
+    orionClientStoryboardStatus_failed: "Failed",
+    orionClientStoryboardStatus_running: "Running",
+    orionClientStoryboardStatus_empty: "Not started",
+    orionClientStoryboardSlideCount: "Slides",
+    orionClientStoryboardQuality: "Client-quality QA",
+    orionClientStoryboardClientPolicy: "Client policy",
+    orionClientStoryboardAiRequiredNotice:
+      "Storyboard requires GPT-5.5. Add OPENAI_API_KEY and enable the AI analyst.",
+    orionClientStoryboardRunningNotice:
+      "Storyboard is generating (GPT-5.5). Usually 3–8 minutes. Status refreshes automatically.",
+    orionClientStoryboardRunFailedNotice:
+      "Storyboard generation failed. See warnings below.",
+    orionClientStoryboardRateLimit:
+      "OpenAI rate limit — wait and try again later.",
   },
   risk: {
     title: "Risk findings",

@@ -914,6 +914,44 @@ export function getOrionV2ReportStatus(
   return request<OrionV2ReportStatus>(`/cases/${caseId}/report/orion-v2`);
 }
 
+export interface OrionClientStoryboardReportStatus {
+  ok: boolean;
+  uiEnabled: boolean;
+  reportMode: "orion_client_storyboard_r912";
+  status: "completed" | "failed" | "running" | "empty";
+  runId: string | null;
+  createdAt: string | null;
+  completedAt: string | null;
+  slideCount: number;
+  gpt55Status: "used" | "required_missing" | "deterministic_fallback" | "unknown";
+  clientQualityVerdict: string | null;
+  clientPolicyStatus: string | null;
+  aiRequired: boolean;
+  aiReady: boolean;
+  artifacts: {
+    clientPdf: { available: boolean; downloadUrl: string | null };
+    clientPptx: { available: boolean; downloadUrl: string | null };
+  };
+  warnings: string[];
+}
+
+export function generateOrionClientStoryboardReport(
+  caseId: string
+): Promise<OrionClientStoryboardReportStatus> {
+  return request<OrionClientStoryboardReportStatus>(
+    `/cases/${caseId}/report/orion-client-storyboard`,
+    { method: "POST" }
+  );
+}
+
+export function getOrionClientStoryboardReportStatus(
+  caseId: string
+): Promise<OrionClientStoryboardReportStatus> {
+  return request<OrionClientStoryboardReportStatus>(
+    `/cases/${caseId}/report/orion-client-storyboard`
+  );
+}
+
 export interface RenderReportOptions {
   templateVersion?: string;
   audience?: "internal" | "client";

@@ -32,6 +32,7 @@ import {
 import { CaseHeader } from "./CaseHeader";
 import { CaseTabs } from "./CaseTabs";
 import { OrionV2ReportPanel } from "./OrionV2ReportPanel";
+import { OrionClientStoryboardReportPanel } from "./OrionClientStoryboardReportPanel";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
 
@@ -266,6 +267,12 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
       {isAdmin ? (
         <Card>
           <OrionV2ReportPanel caseId={state.caseDetail.id} />
+        </Card>
+      ) : null}
+
+      {isAdmin ? (
+        <Card>
+          <OrionClientStoryboardReportPanel caseId={state.caseDetail.id} />
         </Card>
       ) : null}
 

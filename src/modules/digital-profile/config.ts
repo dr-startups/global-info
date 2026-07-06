@@ -73,6 +73,8 @@ export interface DigitalProfileConfig {
    * never silently produces a user-facing client report.
    */
   orionV2AllowDeterministicFallback: boolean;
+  /** R9.12 — experimental client storyboard report UI (GPT-5.5 + visual composer). */
+  orionClientStoryboardUiEnabled: boolean;
 }
 
 /** Client-safe booleans describing ORION v2 AI readiness. Never exposes secrets. */
@@ -164,6 +166,10 @@ export const digitalProfileConfig: DigitalProfileConfig = {
   // Default: allowed only outside production/preview (smoke/local QA).
   orionV2AllowDeterministicFallback: envBool(
     process.env.DIGITAL_PROFILE_ORION_V2_ALLOW_DETERMINISTIC_FALLBACK,
+    process.env.NODE_ENV !== "production"
+  ),
+  orionClientStoryboardUiEnabled: envBool(
+    process.env.DIGITAL_PROFILE_ORION_CLIENT_STORYBOARD_UI_ENABLED,
     process.env.NODE_ENV !== "production"
   ),
 };

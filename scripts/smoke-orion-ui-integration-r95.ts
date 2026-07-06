@@ -26,6 +26,19 @@ function main() {
   check("ORION v2 download route exists", existsSync(join(process.cwd(), downloadRoute)));
   check("ORION v2 panel exists", existsSync(join(process.cwd(), panel)));
 
+  const storyboardRoute =
+    "src/app/api/digital-profile/cases/[id]/report/orion-client-storyboard/route.ts";
+  const storyboardDownloadRoute =
+    "src/app/api/digital-profile/cases/[id]/report/orion-client-storyboard/download/route.ts";
+  const storyboardPanel =
+    "src/modules/digital-profile/client/OrionClientStoryboardReportPanel.tsx";
+  check("ORION client storyboard route exists", existsSync(join(process.cwd(), storyboardRoute)));
+  check(
+    "ORION client storyboard download route exists",
+    existsSync(join(process.cwd(), storyboardDownloadRoute))
+  );
+  check("ORION client storyboard panel exists", existsSync(join(process.cwd(), storyboardPanel)));
+
   const apiRouteText = file(apiRoute);
   check("ORION v2 route has POST", apiRouteText.includes("export const POST"));
   check("ORION v2 route has GET", apiRouteText.includes("export const GET"));
@@ -34,6 +47,10 @@ function main() {
   check(
     "feature flag wired",
     configText.includes("DIGITAL_PROFILE_ORION_V2_UI_ENABLED")
+  );
+  check(
+    "client storyboard feature flag wired",
+    configText.includes("DIGITAL_PROFILE_ORION_CLIENT_STORYBOARD_UI_ENABLED")
   );
   check(
     "feature flag default safe",
@@ -48,6 +65,14 @@ function main() {
   check(
     "client API has getOrionV2ReportStatus",
     clientApiText.includes("getOrionV2ReportStatus")
+  );
+  check(
+    "client API has generateOrionClientStoryboardReport",
+    clientApiText.includes("generateOrionClientStoryboardReport")
+  );
+  check(
+    "client API has getOrionClientStoryboardReportStatus",
+    clientApiText.includes("getOrionClientStoryboardReportStatus")
   );
 
   const ru = file(ruDict);

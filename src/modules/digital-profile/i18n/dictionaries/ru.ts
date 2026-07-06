@@ -209,6 +209,35 @@ export const ru: Dictionary = {
       "AI-анализ не запускался; использована тестовая детерминированная аналитика.",
     orionV2RunningNotice:
       "ORION v2 генерируется (GPT-5.5). Это может занять 5–10 минут. Статус обновляется автоматически.",
+    orionClientStoryboardTitle: "ORION — клиентский отчёт (Storyboard R9.12)",
+    orionClientStoryboardGenerate: "Сгенерировать клиентский storyboard",
+    orionClientStoryboardRefresh: "Обновить статус",
+    orionClientStoryboardDownloadPdf: "Скачать PDF",
+    orionClientStoryboardDownloadPptx: "Скачать PPTX",
+    orionClientStoryboardNotice:
+      "Новый клиентский отчёт с фильтрацией релевантности, GPT-5.5 narrative и визуальным storyboard. Не заменяет ORION v2 и основной отчёт.",
+    orionClientStoryboardFeatureDisabled:
+      "Client Storyboard UI отключён фичефлагом DIGITAL_PROFILE_ORION_CLIENT_STORYBOARD_UI_ENABLED.",
+    orionClientStoryboardGenerated: "Клиентский storyboard успешно собран.",
+    orionClientStoryboardEmptyTitle: "Storyboard-отчётов пока нет",
+    orionClientStoryboardEmptyHint:
+      "Запустите генерацию, чтобы получить клиентский PDF/PPTX по pipeline R9.12.",
+    orionClientStoryboardGenerationStatus: "Статус генерации",
+    orionClientStoryboardStatus_completed: "Готов",
+    orionClientStoryboardStatus_failed: "Ошибка",
+    orionClientStoryboardStatus_running: "В процессе",
+    orionClientStoryboardStatus_empty: "Не запускался",
+    orionClientStoryboardSlideCount: "Слайдов",
+    orionClientStoryboardQuality: "Client-quality QA",
+    orionClientStoryboardClientPolicy: "Client policy",
+    orionClientStoryboardAiRequiredNotice:
+      "Storyboard требует GPT-5.5. Добавьте OPENAI_API_KEY и включите AI analyst.",
+    orionClientStoryboardRunningNotice:
+      "Storyboard генерируется (GPT-5.5). Обычно 3–8 минут. Статус обновляется автоматически.",
+    orionClientStoryboardRunFailedNotice:
+      "Генерация storyboard завершилась с ошибкой. Смотрите предупреждения ниже.",
+    orionClientStoryboardRateLimit:
+      "OpenAI rate limit — подождите и повторите позже.",
   },
   risk: {
     title: "Риск-находки",

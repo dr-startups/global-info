@@ -204,6 +204,28 @@ export interface Dictionary {
     orionV2Gpt55Done: string;
     orionV2DevDeterministicNotice: string;
     orionV2RunningNotice: string;
+    orionClientStoryboardTitle: string;
+    orionClientStoryboardGenerate: string;
+    orionClientStoryboardRefresh: string;
+    orionClientStoryboardDownloadPdf: string;
+    orionClientStoryboardDownloadPptx: string;
+    orionClientStoryboardNotice: string;
+    orionClientStoryboardFeatureDisabled: string;
+    orionClientStoryboardGenerated: string;
+    orionClientStoryboardEmptyTitle: string;
+    orionClientStoryboardEmptyHint: string;
+    orionClientStoryboardGenerationStatus: string;
+    orionClientStoryboardStatus_completed: string;
+    orionClientStoryboardStatus_failed: string;
+    orionClientStoryboardStatus_running: string;
+    orionClientStoryboardStatus_empty: string;
+    orionClientStoryboardSlideCount: string;
+    orionClientStoryboardQuality: string;
+    orionClientStoryboardClientPolicy: string;
+    orionClientStoryboardAiRequiredNotice: string;
+    orionClientStoryboardRunningNotice: string;
+    orionClientStoryboardRunFailedNotice: string;
+    orionClientStoryboardRateLimit: string;
   };
   risk: {
     title: string;
