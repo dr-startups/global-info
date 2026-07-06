@@ -1,4 +1,11 @@
 import { lexisSummaryTakeaway } from "./lexis-asset-builder";
+import {
+  assertNoClientHostileTokens,
+  sanitizeClientNarrativeText,
+  sanitizeStringArray,
+} from "./client-text-contract";
+import type { EvidenceRelevanceReport } from "./evidence-relevance-classifier";
+import { classifyEvidenceRelevance, excludedEvidenceSummary, keyResultEvidence } from "./evidence-relevance-classifier";
 import type { ReportAssetV1 } from "../orion-report-spec/asset-builder";
 import type { NormalizedEvidenceV1 } from "../orion-report-spec/normalized-evidence";
 import { riskThemeLabel } from "../orion-report-spec/normalized-evidence";
@@ -19,23 +26,31 @@ import type {
 const FIXTURE_NAMES = ["иван петров", "ivan petrov"];
 const FIXTURE_DOMAINS = ["example.com", "example.ru"];
 
-function clientStatusLabel(ev: NormalizedEvidenceV1): string {
+const NO_STRONG_SOURCES =
+  "В открытых источниках не найдено достаточных подтверждённых материалов, однозначно относящихся к субъекту.";
+
+function clientStatusLabel(ev: NormalizedEvidenceV1, humanReason?: string): string {
+  if (humanReason) return humanReason.slice(0, 120);
   if (ev.riskTheme && ev.riskTheme !== "unknown" && ev.riskTheme !== "neutral_profile") {
     const label = riskThemeLabel(ev.riskTheme);
-    if (ev.riskTheme === "pep") return "Политически значимое лицо";
+    if (ev.riskTheme === "pep") return "Политически значимое лицо — требует верификации";
     return label.replace(/\bPEP\b/gi, "политически значимое лицо");
   }
-  if (ev.reviewStatus === "requires_review") return "Требует проверки";
+  if (ev.reviewStatus === "requires_review") return "Потенциальное совпадение — источник требует проверки";
   if (ev.reviewStatus === "official_record_found") return "Подтверждено в открытых источниках";
-  return "Нейтральный сигнал";
+  return "Релевантность не подтверждена";
 }
 
-function mapEvidence(evidence: NormalizedEvidenceV1[]): ClientEvidenceRef[] {
-  return evidence.slice(0, 12).map((e) => ({
-    evidenceRef: e.evidenceRef,
-    label: e.title ?? e.domain ?? "Источник",
-    summary: (e.clientSafeSummary ?? e.snippet ?? "").slice(0, 220),
-    statusLabel: clientStatusLabel(e),
+function mapEvidenceFromClassified(
+  items: ReturnType<typeof keyResultEvidence>
+): ClientEvidenceRef[] {
+  return items.slice(0, 5).map((c) => ({
+    evidenceRef: c.evidence.evidenceRef,
+    label: sanitizeClientNarrativeText(c.evidence.title ?? c.evidence.domain ?? "Результат поисковой выдачи"),
+    summary: sanitizeClientNarrativeText(
+      (c.evidence.clientSafeSummary ?? c.evidence.snippet ?? c.humanReason).slice(0, 220)
+    ),
+    statusLabel: clientStatusLabel(c.evidence, c.humanReason),
   }));
 }
 
@@ -54,26 +69,60 @@ function mapAssets(assets: ReportAssetV1[]): ClientAssetRef[] {
               : a.kind === "lexis_visual_page"
                 ? "lexis_page"
                 : "other",
-    title: a.title,
+    title: sanitizeClientNarrativeText(a.title),
     status: a.status === "ready" ? "ready" : "unavailable",
   }));
 }
 
-function slideBase(partial: Omit<ClientStoryboardSlide, "metrics" | "findings" | "evidenceRefs" | "assetRefs" | "recommendedActions"> & {
-  metrics?: ClientMetricCard[];
-  findings?: ClientFindingCard[];
-  evidenceRefs?: ClientEvidenceRef[];
-  assetRefs?: ClientAssetRef[];
-  recommendedActions?: ClientActionItem[];
-}): ClientStoryboardSlide {
+function humanFindings(items: string[], prefix: string): ClientFindingCard[] {
+  return sanitizeStringArray(items, 0)
+    .slice(0, 3)
+    .map((summary, i) => ({
+      headline: `${prefix} ${i + 1}`,
+      summary: summary.slice(0, 220),
+      evidenceRefs: [],
+    }));
+}
+
+function slideBase(
+  partial: Omit<
+    ClientStoryboardSlide,
+    "metrics" | "findings" | "evidenceRefs" | "assetRefs" | "recommendedActions"
+  > & {
+    metrics?: ClientMetricCard[];
+    findings?: ClientFindingCard[];
+    evidenceRefs?: ClientEvidenceRef[];
+    assetRefs?: ClientAssetRef[];
+    recommendedActions?: ClientActionItem[];
+  }
+): ClientStoryboardSlide {
+  const {
+    metrics = [],
+    findings = [],
+    evidenceRefs = [],
+    assetRefs = [],
+    recommendedActions = [],
+    ...rest
+  } = partial;
   return {
-    metrics: [],
-    findings: [],
-    evidenceRefs: [],
-    assetRefs: [],
-    recommendedActions: [],
+    metrics,
+    evidenceRefs,
+    assetRefs,
+    recommendedActions: recommendedActions.map((a) => ({
+      label: sanitizeClientNarrativeText(a.label),
+      rationale: sanitizeClientNarrativeText(a.rationale),
+      priority: a.priority,
+    })),
+    findings: findings.map((f) => ({
+      ...f,
+      headline: sanitizeClientNarrativeText(f.headline),
+      summary: sanitizeClientNarrativeText(f.summary),
+    })),
     maxBullets: 5,
-    ...partial,
+    ...rest,
+    title: sanitizeClientNarrativeText(rest.title),
+    subtitle: rest.subtitle ? sanitizeClientNarrativeText(rest.subtitle) : undefined,
+    clientTakeaway: sanitizeClientNarrativeText(rest.clientTakeaway),
   };
 }
 
@@ -101,15 +150,28 @@ export function evaluateRealCaseQualityEligible(input: {
   return true;
 }
 
+function deriveRiskLevel(exec?: GptStoryboardSectionAnalysis): "low" | "medium" | "high" | "unknown" {
+  const level = exec?.structuredRisk?.level;
+  if (level === "high") return "high";
+  if (level === "medium") return "medium";
+  if (level === "low") return "low";
+  if ((exec?.manualReviewQueue ?? []).length > 2) return "medium";
+  return "low";
+}
+
 export function composeClientStoryboard(input: {
   caseContext: OrionRealCaseContext;
   caseResolution: Awaited<ReturnType<typeof resolveR98aCaseId>>;
   evidence: NormalizedEvidenceV1[];
   assets: ReportAssetV1[];
   gptAnalyses: GptStoryboardSectionAnalysis[];
+  relevanceReport?: EvidenceRelevanceReport;
   requireAi: boolean;
 }): ClientStoryboard {
   const subjectName = input.caseContext.subject.fullName;
+  const relevanceReport =
+    input.relevanceReport ??
+    classifyEvidenceRelevance(input.evidence, subjectName);
   const generatedBy =
     input.gptAnalyses.every((a) => a.generatedBy === "gpt-5.5")
       ? "gpt-5.5"
@@ -127,14 +189,16 @@ export function composeClientStoryboard(input: {
   const exec = input.gptAnalyses.find((a) => a.sectionKey === "executive_summary");
   const ruAudit = input.gptAnalyses.find((a) => a.sectionKey === "ru_audit_summary");
   const ruSearch = input.gptAnalyses.find((a) => a.sectionKey === "ru_search_results");
+  const lexisGpt = input.gptAnalyses.find((a) => a.sectionKey === "lexis_summary");
+  const actionsGpt = input.gptAnalyses.find((a) => a.sectionKey === "recommended_actions");
 
+  const keyResults = keyResultEvidence(relevanceReport);
+  const excluded = excludedEvidenceSummary(relevanceReport);
   const searchRows = input.evidence.filter((e) => e.sourceKind === "search_result");
-  const imageAssets = input.assets.filter((a) => a.kind === "image_grid" && a.status === "ready");
-  const videoAssets = input.assets.filter((a) => a.kind === "video_cards" && a.status === "ready");
-  const knowledgeAssets = input.assets.filter((a) => a.kind === "knowledge_panel" && a.status === "ready");
   const yandexSerp = input.assets.find((a) => a.assetRef === "ru_yandex_serp_snapshot" && a.status === "ready");
   const googleSerp = input.assets.find((a) => a.assetRef === "ru_google_serp_snapshot" && a.status === "ready");
   const hasRuData = searchRows.length > 0 || input.caseContext.searchSurfaces.length > 0;
+  const riskLevel = deriveRiskLevel(exec);
 
   slides.push(
     slideBase({
@@ -174,27 +238,65 @@ export function composeClientStoryboard(input: {
       subtitle: subjectName,
       clientTakeaway: exec?.executiveTakeaway ?? exec?.clientExplanation ?? "",
       metrics: [
-        { label: "Источников проверено", value: input.evidence.length, tone: "neutral" },
-        { label: "Поисковых сигналов", value: searchRows.length, tone: "neutral" },
+        { label: "Релевантных источников", value: keyResults.length, tone: "neutral" },
+        { label: "Исключено как шум", value: excluded.length, tone: "neutral" },
         {
-          label: "На ручной проверке",
-          value: (exec?.manualReviewQueue ?? []).length,
+          label: "На верификации",
+          value: (exec?.whatRequiresManualReview ?? exec?.manualReviewQueue ?? []).length,
           tone: (exec?.manualReviewQueue ?? []).length > 0 ? "warning" : "low",
         },
       ],
-      findings: (exec?.confirmedFacts ?? []).slice(0, 3).map((f, i) => ({
-        headline: `Находка ${i + 1}`,
-        summary: f.slice(0, 220),
-        evidenceRefs: [],
-      })),
-      recommendedActions: (exec?.recommendedActions ?? []).slice(0, 2).map((a) => ({
-        label: a,
-        rationale: "",
-      })),
-      riskLevel: (exec?.manualReviewQueue ?? []).length > 2 ? "medium" : "low",
-      layoutIntent: "executive-cards",
+      recommendedActions: (exec?.recommendedActions ?? []).slice(0, 1).map((a) => ({ label: a, rationale: "" })),
+      riskLevel,
+      layoutIntent: "executive-safe-v2",
       omitIfNoData: false,
-      visualDensityTarget: "rich",
+      visualDensityTarget: "standard",
+    })
+  );
+
+  slides.push(
+    slideBase({
+      slideId: sid("scope"),
+      sectionKey: "executive_summary",
+      slideType: "scope_overview",
+      title: "Что проверялось",
+      clientTakeaway: exec?.clientExplanation ?? "Проверка открытых источников и compliance-материалов по субъекту",
+      findings: humanFindings(
+        exec?.whatWasChecked ?? [
+          "Поисковая выдача (Яндекс, Google)",
+          "Цифровой профиль и публикации",
+          "Импорт LexisNexis",
+        ],
+        "Область"
+      ),
+      riskLevel: "unknown",
+      layoutIntent: "scope-bullets",
+      omitIfNoData: false,
+      visualDensityTarget: "compact",
+    })
+  );
+
+  slides.push(
+    slideBase({
+      slideId: sid("risk"),
+      sectionKey: "risk_overview",
+      slideType: "risk_conclusion",
+      title: "Главные выводы и уровень риска",
+      clientTakeaway:
+        exec?.structuredRisk?.plainLanguageReason ??
+        exec?.riskInterpretation ??
+        "Автоматически подтверждённых критических выводов не сформировано",
+      findings: humanFindings(
+        exec?.whatItMeans ?? exec?.confirmedFacts ?? [],
+        "Вывод"
+      ),
+      recommendedActions: (exec?.whatRequiresManualReview ?? exec?.manualReviewQueue ?? [])
+        .slice(0, 2)
+        .map((l) => ({ label: l, rationale: "" })),
+      riskLevel,
+      layoutIntent: "risk-conclusion-safe",
+      omitIfNoData: false,
+      visualDensityTarget: "standard",
     })
   );
 
@@ -204,17 +306,15 @@ export function composeClientStoryboard(input: {
         slideId: sid("ru-summary"),
         sectionKey: "ru_audit",
         slideType: "region_summary",
-        title: "Россия — сводка аудита",
+        title: "Россия — сводка цифрового профиля",
         subtitle: "RU 2.1",
         clientTakeaway: ruAudit?.executiveTakeaway ?? ruAudit?.clientExplanation ?? "",
-        findings: (ruAudit?.confirmedFacts ?? []).slice(0, 3).map((f, i) => ({
-          headline: `Сигнал ${i + 1}`,
-          summary: f.slice(0, 220),
-          evidenceRefs: [],
-        })),
-        recommendedActions: (ruAudit?.recommendedActions ?? []).slice(0, 2).map((l) => ({ label: l, rationale: "" })),
+        findings: humanFindings(
+          ruAudit?.whatWasFound ?? ruAudit?.confirmedFacts ?? [],
+          "Сигнал"
+        ),
         riskLevel: "medium",
-        layoutIntent: "region-summary",
+        layoutIntent: "region-summary-safe",
         omitIfNoData: false,
         visualDensityTarget: "standard",
       })
@@ -222,25 +322,46 @@ export function composeClientStoryboard(input: {
 
     slides.push(
       slideBase({
-        slideId: sid("search-overview"),
+        slideId: sid("relevant"),
         sectionKey: "ru_search",
-        slideType: "search_overview",
-        title: "Поисковая выдача — обзор",
+        slideType: "relevant_sources",
+        title: "Россия — поисковые результаты: релевантные источники",
         subtitle: "RU 2.2",
-        clientTakeaway: ruSearch?.executiveTakeaway ?? ruSearch?.clientExplanation ?? "",
-        metrics: [
-          { label: "Результатов", value: searchRows.length, tone: "neutral" },
-          {
-            label: "Требуют проверки",
-            value: (ruSearch?.manualReviewQueue ?? []).length,
-            tone: "warning",
-          },
-        ],
-        evidenceRefs: mapEvidence(searchRows).slice(0, 5),
-        riskLevel: "medium",
-        layoutIntent: "search-overview",
+        clientTakeaway:
+          keyResults.length > 0
+            ? (ruSearch?.executiveTakeaway ?? "Ключевые источники с обоснованием релевантности")
+            : NO_STRONG_SOURCES,
+        evidenceRefs: mapEvidenceFromClassified(keyResults),
+        riskLevel: keyResults.length > 0 ? "medium" : "low",
+        layoutIntent: "relevant-sources",
         omitIfNoData: false,
         visualDensityTarget: "standard",
+      })
+    );
+
+    slides.push(
+      slideBase({
+        slideId: sid("excluded"),
+        sectionKey: "ru_search",
+        slideType: "excluded_matches",
+        title: "Россия — исключённые / слабые совпадения",
+        clientTakeaway:
+          sanitizeClientNarrativeText(
+            (ruSearch?.excludedNoiseSummary ?? []).join(" ") ||
+              "Нерелевантные товарные, маркетплейс и общие портальные результаты исключены из ключевых выводов"
+          ),
+        findings: excluded.slice(0, 5).map((c, i) => ({
+          headline: `Исключено ${i + 1}`,
+          summary: sanitizeClientNarrativeText(`${c.evidence.title ?? c.evidence.domain ?? "Источник"} — ${c.humanReason}`).slice(
+            0,
+            220
+          ),
+          evidenceRefs: [],
+        })),
+        riskLevel: "low",
+        layoutIntent: "excluded-list",
+        omitIfNoData: false,
+        visualDensityTarget: "compact",
       })
     );
 
@@ -251,10 +372,14 @@ export function composeClientStoryboard(input: {
           sectionKey: "ru_search",
           slideType: "serp_screenshot",
           title: "Яндекс — снимок выдачи",
-          clientTakeaway: ruSearch?.riskInterpretation ?? "Визуализация поисковой выдачи по ключевому запросу",
-          assetRefs: [{ assetRef: yandexSerp.assetRef, kind: "serp_snapshot", title: yandexSerp.title, status: "ready" }],
+          clientTakeaway:
+            ruSearch?.riskInterpretation ??
+            "На снимке отмечены результаты для ручной оценки релевантности; нерелевантные позиции исключены из ключевых выводов",
+          assetRefs: [
+            { assetRef: yandexSerp.assetRef, kind: "serp_snapshot", title: yandexSerp.title, status: "ready" },
+          ],
           riskLevel: "medium",
-          layoutIntent: "serp-full-bleed-image",
+          layoutIntent: "serp-full-width",
           omitIfNoData: true,
           visualDensityTarget: "rich",
         })
@@ -268,35 +393,23 @@ export function composeClientStoryboard(input: {
           sectionKey: "ru_search",
           slideType: "serp_screenshot",
           title: "Google — снимок выдачи",
-          clientTakeaway: "Международная поисковая выдача по субъекту",
-          assetRefs: [{ assetRef: googleSerp.assetRef, kind: "serp_snapshot", title: googleSerp.title, status: "ready" }],
+          clientTakeaway: "Международная поисковая выдача — релевантность каждого результата требует отдельной проверки",
+          assetRefs: [
+            { assetRef: googleSerp.assetRef, kind: "serp_snapshot", title: googleSerp.title, status: "ready" },
+          ],
           riskLevel: "medium",
-          layoutIntent: "serp-full-bleed-image",
+          layoutIntent: "serp-full-width",
           omitIfNoData: true,
           visualDensityTarget: "rich",
         })
       );
     }
 
-    if (searchRows.length > 0) {
-      slides.push(
-        slideBase({
-          slideId: sid("search-table"),
-          sectionKey: "ru_search",
-          slideType: "search_results_table",
-          title: "Ключевые результаты поиска",
-          clientTakeaway: "Структурированная таблица топ-результатов",
-          evidenceRefs: mapEvidence(searchRows).slice(0, 5),
-          riskLevel: "medium",
-          layoutIntent: "results-table",
-          omitIfNoData: true,
-          visualDensityTarget: "standard",
-        })
-      );
-    }
-
-    const adverse = searchRows.filter(
-      (e) => e.riskTheme === "adverse_media" || e.riskTheme === "sanctions_watchlist" || e.riskTheme === "pep"
+    const adverse = keyResults.filter(
+      (c) =>
+        c.evidence.riskTheme === "adverse_media" ||
+        c.evidence.riskTheme === "sanctions_watchlist" ||
+        c.evidence.riskTheme === "pep"
     );
     if (adverse.length > 0) {
       slides.push(
@@ -304,67 +417,19 @@ export function composeClientStoryboard(input: {
           slideId: sid("adverse"),
           sectionKey: "ru_search",
           slideType: "adverse_media_summary",
-          title: "Негативные и чувствительные публикации",
-          clientTakeaway: ruSearch?.riskInterpretation ?? "Сигналы, требующие аналитической верификации",
-          findings: adverse.slice(0, 4).map((e) => ({
-            headline: e.title ?? "Публикация",
-            summary: e.clientSafeSummary ?? e.snippet ?? "",
-            evidenceRefs: [e.evidenceRef],
-            severity: "medium",
+          title: "Негативные / чувствительные публикации",
+          clientTakeaway:
+            ruSearch?.structuredRisk?.plainLanguageReason ??
+            ruSearch?.riskInterpretation ??
+            "Сигналы потенциальной чувствительности — связь с субъектом не подтверждена автоматически",
+          findings: adverse.slice(0, 4).map((c) => ({
+            headline: sanitizeClientNarrativeText(c.evidence.title ?? "Публикация"),
+            summary: sanitizeClientNarrativeText(c.humanReason).slice(0, 220),
+            evidenceRefs: [],
+            severity: "medium" as const,
           })),
           riskLevel: "high",
-          layoutIntent: "adverse-cards",
-          omitIfNoData: true,
-          visualDensityTarget: "standard",
-        })
-      );
-    }
-
-    if (imageAssets.length > 0 && imageAssets[0]?.imageData) {
-      slides.push(
-        slideBase({
-          slideId: sid("images"),
-          sectionKey: "ru_search",
-          slideType: "image_grid",
-          title: "Изображения в поисковой выдаче",
-          clientTakeaway: "Визуальные результаты, связанные с субъектом",
-          assetRefs: mapAssets(imageAssets),
-          riskLevel: "low",
-          layoutIntent: "orion-image-grid",
-          omitIfNoData: true,
-          visualDensityTarget: "rich",
-        })
-      );
-    }
-
-    if (videoAssets.length > 0 && videoAssets[0]?.imageData) {
-      slides.push(
-        slideBase({
-          slideId: sid("videos"),
-          sectionKey: "ru_search",
-          slideType: "video_cards",
-          title: "Видеоматериалы",
-          clientTakeaway: "Видеорезультаты с упоминанием субъекта",
-          assetRefs: mapAssets(videoAssets),
-          riskLevel: "low",
-          layoutIntent: "video-cards",
-          omitIfNoData: true,
-          visualDensityTarget: "standard",
-        })
-      );
-    }
-
-    if (knowledgeAssets.length > 0 && knowledgeAssets[0]?.imageData) {
-      slides.push(
-        slideBase({
-          slideId: sid("knowledge"),
-          sectionKey: "ru_search",
-          slideType: "knowledge_panel",
-          title: "Справочная карточка",
-          clientTakeaway: "Блок знаний из поисковой выдачи",
-          assetRefs: mapAssets(knowledgeAssets),
-          riskLevel: "low",
-          layoutIntent: "knowledge-card",
+          layoutIntent: "adverse-cards-safe",
           omitIfNoData: true,
           visualDensityTarget: "standard",
         })
@@ -377,7 +442,7 @@ export function composeClientStoryboard(input: {
         sectionKey: "ru_audit",
         slideType: "no_data_compact",
         title: "Россия — недостаточно данных",
-        clientTakeaway: "По региону RU не собрано достаточно подтверждённых материалов для отдельных визуальных слайдов",
+        clientTakeaway: NO_STRONG_SOURCES,
         riskLevel: "unknown",
         layoutIntent: "compact-no-data",
         omitIfNoData: false,
@@ -394,39 +459,89 @@ export function composeClientStoryboard(input: {
         slideId: sid("lexis-summary"),
         sectionKey: "lexisnexis",
         slideType: "lexisnexis_summary",
-        title: "LexisNexis — сводка",
+        title: "LexisNexis — аналитическая сводка",
         subtitle: "Compliance",
-        clientTakeaway: lexisSummaryTakeaway(input.caseContext),
+        clientTakeaway:
+          lexisGpt?.executiveTakeaway ??
+          lexisGpt?.clientExplanation ??
+          lexisSummaryTakeaway(input.caseContext),
         metrics: [
+          {
+            label: "Статус импорта",
+            value: input.caseContext.lexis.uploadExists ? "Импортирован" : "Ожидает",
+            tone: "neutral",
+          },
           {
             label: "Сигналов",
             value: input.caseContext.lexis.parsedSignals,
             tone: input.caseContext.lexis.parsedSignals > 0 ? "warning" : "neutral",
           },
           {
-            label: "Визуальных страниц",
+            label: "Страниц",
             value: lexisAssets.length || input.caseContext.lexis.visualPageCount,
             tone: "neutral",
           },
-          { label: "Статус", value: "Готов к проверке", tone: "neutral" },
         ],
+        findings: humanFindings(
+          lexisGpt?.whatWasFound ?? lexisGpt?.confirmedFacts ?? [],
+          "Сигнал"
+        ),
         riskLevel: input.caseContext.lexis.parsedSignals > 0 ? "medium" : "low",
-        layoutIntent: "lexis-summary",
+        layoutIntent: "lexis-analytical-summary",
         omitIfNoData: false,
         visualDensityTarget: "standard",
       })
     );
+
+    const signalCards =
+      lexisGpt?.evidenceExamples ??
+      (input.caseContext.lexis.parsedSignals > 0
+        ? [
+            {
+              humanTitle: "Потенциальный compliance-сигнал",
+              source: "LexisNexis",
+              domain: "lexisnexis",
+              whyIncluded: "Импортированный отчёт содержит записи, требующие ручной верификации",
+              clientSafeStatus: "requires_review" as const,
+            },
+          ]
+        : []);
+
+    slides.push(
+      slideBase({
+        slideId: sid("lexis-signals"),
+        sectionKey: "lexisnexis",
+        slideType: "lexisnexis_signals",
+        title: "LexisNexis — ключевые сигналы",
+        clientTakeaway:
+          signalCards.length > 0
+            ? "Потенциальные совпадения требуют проверки идентификаторов субъекта"
+            : "Данные требуют ручной проверки — недостаточно структурированных сигналов для автоматического вывода",
+        findings: signalCards.slice(0, 5).map((s, i) => ({
+          headline: sanitizeClientNarrativeText(s.humanTitle || `Сигнал ${i + 1}`),
+          summary: sanitizeClientNarrativeText(`${s.whyIncluded}. Источник: ${s.source}`).slice(0, 220),
+          evidenceRefs: [],
+        })),
+        riskLevel: "medium",
+        layoutIntent: "lexis-signals-cards",
+        omitIfNoData: false,
+        visualDensityTarget: "standard",
+      })
+    );
+
     for (const asset of lexisAssets.slice(0, 8)) {
       slides.push(
         slideBase({
           slideId: sid(`lexis-page-${asset.assetRef}`),
           sectionKey: "lexisnexis",
           slideType: "lexisnexis_visual_page",
-          title: asset.title,
-          clientTakeaway: "Визуальная страница импортированного отчёта LexisNexis",
+          title: `Приложение: исходная страница LexisNexis`,
+          subtitle: sanitizeClientNarrativeText(asset.title),
+          clientTakeaway:
+            "Оригинальная страница включена как визуальное подтверждение импорта; детальная проверка выполняется по исходному DOCX/PDF",
           assetRefs: mapAssets([asset]),
           riskLevel: "medium",
-          layoutIntent: "lexis-visual-page",
+          layoutIntent: "lexis-appendix-large",
           omitIfNoData: true,
           visualDensityTarget: "rich",
         })
@@ -434,25 +549,24 @@ export function composeClientStoryboard(input: {
     }
   }
 
+  const actionLabels = [
+    ...(actionsGpt?.recommendedActions ?? []),
+    ...(exec?.recommendedActions ?? []),
+    ...(ruAudit?.recommendedActions ?? []),
+    ...(ruSearch?.recommendedActions ?? []),
+  ]
+    .filter((label, index, arr) => arr.indexOf(label) === index)
+    .slice(0, 5);
+
   slides.push(
     slideBase({
       slideId: sid("actions"),
       sectionKey: "appendix",
       slideType: "recommended_actions",
       title: "Рекомендуемые действия",
-      clientTakeaway: "Следующие шаги для клиента и команды проверки",
-      recommendedActions: [
-        "Проверить совпадения идентификационных данных субъекта",
-        "Просмотреть отмеченные источники и подтвердить связь",
-        "Подтвердить совпадения LexisNexis вручную",
-        "Подготовить клиентский вывод после аналитической проверки",
-        ...(exec?.recommendedActions ?? []),
-        ...(ruAudit?.recommendedActions ?? []),
-        ...(ruSearch?.recommendedActions ?? []),
-      ]
-        .filter((label, index, arr) => arr.indexOf(label) === index)
-        .slice(0, 5)
-        .map((label) => ({ label, rationale: "" })),
+      clientTakeaway:
+        actionsGpt?.executiveTakeaway ?? "Следующие шаги для клиента и команды проверки",
+      recommendedActions: actionLabels.map((label) => ({ label, rationale: "" })),
       riskLevel: "medium",
       layoutIntent: "action-list",
       omitIfNoData: false,
@@ -470,17 +584,7 @@ export function composeClientStoryboard(input: {
     });
   }
 
-  const realCaseQualityEligible = evaluateRealCaseQualityEligible({
-    caseId: input.caseResolution.caseId,
-    caseSource: input.caseResolution.source,
-    caseContext: input.caseContext,
-    generatedBy,
-    requireAi: input.requireAi,
-    assets: input.assets,
-    subjectName,
-  });
-
-  return {
+  const storyboard: ClientStoryboard = {
     version: "orion-client-storyboard-v1",
     subject: { displayName: subjectName, locale: "ru" },
     generatedAt: new Date().toISOString(),
@@ -489,10 +593,34 @@ export function composeClientStoryboard(input: {
     qa: {
       generatedBy,
       requireAi: input.requireAi,
-      realCaseQualityEligible,
+      realCaseQualityEligible: evaluateRealCaseQualityEligible({
+        caseId: input.caseResolution.caseId,
+        caseSource: input.caseResolution.source,
+        caseContext: input.caseContext,
+        generatedBy,
+        requireAi: input.requireAi,
+        assets: input.assets,
+        subjectName,
+      }),
       caseId: input.caseResolution.caseId,
       caseSource: input.caseResolution.source,
       warnings: input.gptAnalyses.flatMap((a) => a.warnings),
     },
   };
+
+  const clientText = slides
+    .flatMap((s) => [
+      s.title,
+      s.subtitle ?? "",
+      s.clientTakeaway,
+      ...s.findings.map((f) => f.summary),
+      ...s.evidenceRefs.map((e) => e.summary),
+    ])
+    .join("\n");
+  const hostile = assertNoClientHostileTokens(clientText, "storyboard");
+  if (hostile.length > 0) {
+    storyboard.qa.warnings.push(...hostile.slice(0, 8));
+  }
+
+  return storyboard;
 }

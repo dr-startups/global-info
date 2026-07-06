@@ -15,9 +15,13 @@ export type ClientSlideType =
   | "cover"
   | "global_toc"
   | "executive_summary"
+  | "scope_overview"
+  | "risk_conclusion"
   | "risk_matrix"
   | "region_summary"
   | "search_overview"
+  | "relevant_sources"
+  | "excluded_matches"
   | "serp_screenshot"
   | "search_results_table"
   | "adverse_media_summary"
@@ -27,6 +31,7 @@ export type ClientSlideType =
   | "wikipedia_summary"
   | "compliance_summary"
   | "lexisnexis_summary"
+  | "lexisnexis_signals"
   | "lexisnexis_visual_page"
   | "evidence_appendix"
   | "recommended_actions"
@@ -134,12 +139,43 @@ export interface GptStoryboardSectionPlan {
   assetRefs?: string[];
 }
 
+export type GptStoryboardSectionKey =
+  | "executive_summary"
+  | "ru_audit_summary"
+  | "ru_search_results"
+  | "lexis_summary"
+  | "recommended_actions";
+
+export interface GptEvidenceExample {
+  humanTitle: string;
+  source: string;
+  domain: string;
+  whyIncluded: string;
+  clientSafeStatus: "relevant" | "requires_review" | "excluded_from_risk";
+}
+
+export interface GptRiskInterpretation {
+  level: "low" | "medium" | "high" | "review_required";
+  plainLanguageReason: string;
+  notConfirmedDisclaimer: string;
+}
+
 export interface GptStoryboardSectionAnalysis {
-  sectionKey: "executive_summary" | "ru_audit_summary" | "ru_search_results";
+  sectionKey: GptStoryboardSectionKey;
   generatedBy: "gpt-5.5" | "deterministic";
+  clientTitle?: string;
   executiveTakeaway: string;
   clientExplanation: string;
   riskInterpretation: string;
+  whatWasChecked?: string[];
+  whatWasFound?: string[];
+  whatItMeans?: string[];
+  whatRequiresManualReview?: string[];
+  excludedNoiseSummary?: string[];
+  confidence?: "high" | "medium" | "low";
+  structuredRisk?: GptRiskInterpretation;
+  evidenceExamples?: GptEvidenceExample[];
+  clientWarnings?: string[];
   confirmedFacts: string[];
   unconfirmedSignals: string[];
   manualReviewQueue: string[];

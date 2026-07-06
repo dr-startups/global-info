@@ -5,9 +5,13 @@ const slideTypeSchema = z.enum([
   "cover",
   "global_toc",
   "executive_summary",
+  "scope_overview",
+  "risk_conclusion",
   "risk_matrix",
   "region_summary",
   "search_overview",
+  "relevant_sources",
+  "excluded_matches",
   "serp_screenshot",
   "search_results_table",
   "adverse_media_summary",
@@ -17,6 +21,7 @@ const slideTypeSchema = z.enum([
   "wikipedia_summary",
   "compliance_summary",
   "lexisnexis_summary",
+  "lexisnexis_signals",
   "lexisnexis_visual_page",
   "evidence_appendix",
   "recommended_actions",
@@ -26,12 +31,44 @@ const slideTypeSchema = z.enum([
 ]);
 
 export const gptStoryboardSectionAnalysisSchema = z.object({
-  sectionKey: z.enum(["executive_summary", "ru_audit_summary", "ru_search_results"]),
+  sectionKey: z.enum([
+    "executive_summary",
+    "ru_audit_summary",
+    "ru_search_results",
+    "lexis_summary",
+    "recommended_actions",
+  ]),
   /** Injected after GPT parse; not returned by the model. */
   generatedBy: z.enum(["gpt-5.5", "deterministic"]).optional(),
+  clientTitle: z.string().optional(),
   executiveTakeaway: z.string().min(1),
   clientExplanation: z.string().min(1),
-  riskInterpretation: z.string().min(1),
+  riskInterpretation: z.union([z.string().min(1), z.object({ level: z.string(), plainLanguageReason: z.string() })]),
+  whatWasChecked: z.array(z.string()).optional(),
+  whatWasFound: z.array(z.string()).optional(),
+  whatItMeans: z.array(z.string()).optional(),
+  whatRequiresManualReview: z.array(z.string()).optional(),
+  excludedNoiseSummary: z.array(z.string()).optional(),
+  confidence: z.enum(["high", "medium", "low"]).optional(),
+  riskInterpretationStructured: z
+    .object({
+      level: z.enum(["low", "medium", "high", "review_required"]),
+      plainLanguageReason: z.string(),
+      notConfirmedDisclaimer: z.string(),
+    })
+    .optional(),
+  evidenceExamples: z
+    .array(
+      z.object({
+        humanTitle: z.string(),
+        source: z.string(),
+        domain: z.string(),
+        whyIncluded: z.string(),
+        clientSafeStatus: z.enum(["relevant", "requires_review", "excluded_from_risk"]),
+      })
+    )
+    .optional(),
+  clientWarnings: z.array(z.string()).optional(),
   confirmedFacts: z.array(z.string()),
   unconfirmedSignals: z.array(z.string()),
   manualReviewQueue: z.array(z.string()),
@@ -125,5 +162,9 @@ export function scanStoryboardClientText(text: string): string[] {
     if (lower.includes(term.toLowerCase())) issues.push(`forbidden:${term}`);
   }
   if (/\+ \d+ more items/i.test(text)) issues.push("forbidden:+more-items");
+  if (/\bcmr[a-z0-9]{10,}\b/i.test(text)) issues.push("forbidden:cmr-id");
+  if (/executive_summary-rf-/i.test(text)) issues.push("forbidden:evidence-ref");
+  if (/ru_audit_summary-rf-/i.test(text)) issues.push("forbidden:evidence-ref");
+  if (/-sr-cmr[a-z0-9]+/i.test(text)) issues.push("forbidden:evidence-ref");
   return issues;
 }

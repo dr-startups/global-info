@@ -4,59 +4,95 @@ import { OpenAiRateLimitError, isOpenAiHttp429 } from "../orion-report-spec/open
 import type { NormalizedEvidenceV1 } from "../orion-report-spec/normalized-evidence";
 import type { OrionReportSectionKey, SectionAnalysisResult } from "../orion-report-spec/report-spec-schema";
 import { SECTION_TITLES } from "../orion-report-spec/report-spec-schema";
+import {
+  assertNoClientHostileTokens,
+  sanitizeClientNarrativeText,
+  sanitizeStringArray,
+} from "./client-text-contract";
 import { gptStoryboardSectionAnalysisSchema, validateGptStoryboardSectionAnalysis } from "./schema";
-import type { ClientSlideType, GptStoryboardSectionAnalysis } from "./types";
+import type { ClassifiedEvidence } from "./evidence-relevance-classifier";
+import type { ClientSlideType, GptStoryboardSectionAnalysis, GptStoryboardSectionKey } from "./types";
+
+const STORYBOARD_SECTION_TITLES: Record<GptStoryboardSectionKey, string> = {
+  executive_summary: SECTION_TITLES.executive_summary,
+  ru_audit_summary: SECTION_TITLES.ru_audit_summary,
+  ru_search_results: SECTION_TITLES.ru_search_results,
+  lexis_summary: "LexisNexis — аналитическая сводка",
+  recommended_actions: "Рекомендуемые действия",
+};
 
 function buildStoryboardSystemPrompt(): string {
   return [
     "You are a compliance-safe ORION client storyboard analyst.",
-    "Return strict JSON for ONE section with slidePlans for designed client slides.",
-    "Write in natural Russian for client-visible fields.",
-    "Never use raw enum keys (adverse_media, pep, PRESENT, UNKNOWN).",
+    "Return strict JSON for ONE section.",
+    "Write in natural Russian for all client-visible fields.",
+    "NEVER output raw evidenceRef, assetRef, cmr IDs, storage paths, enum keys, or internal refs.",
+    "Never use adverse_media, pep, PRESENT, UNKNOWN as raw labels.",
     "No legal conclusions. No mock/fallback/provider/runtime/debug wording.",
-    "Max 3 slidePlans per section. Max 5 bullets per slide.",
-    "Each sensitive claim must reference evidenceRef from input.",
-    "If evidence is weak, say 'требует ручной проверки'.",
-    "Do not repeat generic phrases.",
+    "Max 3 slidePlans. Max 5 bullets per slide.",
+    "Explain false positives and excluded noise when relevant.",
+    "Vary phrasing — do not repeat 'требует ручной проверки' in every bullet.",
+    "If data quality is weak, say so plainly.",
+    "Frame sanctions/watchlist as potential compliance match requiring verification.",
   ].join(" ");
 }
 
 function buildStoryboardUserPrompt(input: {
-  sectionKey: OrionReportSectionKey;
+  sectionKey: GptStoryboardSectionKey;
   subject: { displayName: string };
   evidence: NormalizedEvidenceV1[];
+  classifiedEvidence?: ClassifiedEvidence[];
   assets: ReportAssetV1[];
+  lexisMeta?: { parsedSignals: number; visualPages: number; uploadExists: boolean };
 }): string {
+  const classified = input.classifiedEvidence?.slice(0, 20) ?? [];
   return JSON.stringify({
     sectionKey: input.sectionKey,
-    sectionTitle: SECTION_TITLES[input.sectionKey],
+    sectionTitle: STORYBOARD_SECTION_TITLES[input.sectionKey],
     subject: input.subject,
-    evidence: input.evidence.slice(0, 24).map((e) => ({
-      evidenceRef: e.evidenceRef,
-      title: e.title,
-      snippet: e.snippet?.slice(0, 280),
-      riskTheme: e.riskTheme,
-      reviewStatus: e.reviewStatus,
+    evidenceForAnalysis: classified.map((c, i) => ({
+      index: i + 1,
+      title: c.evidence.title,
+      snippet: c.evidence.snippet?.slice(0, 280),
+      domain: c.evidence.domain,
+      relevance: c.type,
+      humanReason: c.humanReason,
     })),
-    assets: input.assets.map((a) => ({ assetRef: a.assetRef, kind: a.kind, status: a.status, title: a.title })),
+    assets: input.assets.map((a) => ({ kind: a.kind, status: a.status, title: a.title })),
+    lexisMeta: input.lexisMeta,
     requiredShape: {
       sectionKey: input.sectionKey,
+      clientTitle: "string",
       executiveTakeaway: "string",
       clientExplanation: "string",
-      riskInterpretation: "string",
-      confirmedFacts: ["string"],
+      riskInterpretation: "string OR { level, plainLanguageReason, notConfirmedDisclaimer }",
+      whatWasChecked: ["string"],
+      whatWasFound: ["string"],
+      whatItMeans: ["string"],
+      whatRequiresManualReview: ["string"],
+      excludedNoiseSummary: ["string"],
+      confidence: "high|medium|low",
+      confirmedFacts: ["string — human readable, no IDs"],
       unconfirmedSignals: ["string"],
       manualReviewQueue: ["string"],
       recommendedActions: ["string"],
+      evidenceExamples: [
+        {
+          humanTitle: "string",
+          source: "string",
+          domain: "string",
+          whyIncluded: "string",
+          clientSafeStatus: "relevant|requires_review|excluded_from_risk",
+        },
+      ],
+      clientWarnings: ["string"],
       slidePlans: [
         {
           slideKey: "string",
-          slideType: "executive_summary|region_summary|search_overview|serp_screenshot|...",
+          slideType: "executive_summary|scope_overview|risk_conclusion|region_summary|relevant_sources|excluded_matches|lexisnexis_summary|lexisnexis_signals|recommended_actions",
           title: "string",
           clientTakeaway: "string",
-          bullets: ["string"],
-          evidenceRefs: ["string"],
-          assetRefs: ["string"],
+          bullets: ["string — no IDs"],
         },
       ],
     },
@@ -77,6 +113,77 @@ function isReasoningModel(model: string): boolean {
   return /^(o\d|gpt-5)/i.test(model);
 }
 
+function normalizeRiskInterpretation(raw: unknown): { text: string; structured?: GptStoryboardSectionAnalysis["structuredRisk"] } {
+  if (typeof raw === "string") return { text: sanitizeClientNarrativeText(raw) };
+  if (raw && typeof raw === "object") {
+    const o = raw as Record<string, string>;
+    const structured = {
+      level: (o.level ?? "review_required") as "low" | "medium" | "high" | "review_required",
+      plainLanguageReason: sanitizeClientNarrativeText(o.plainLanguageReason ?? ""),
+      notConfirmedDisclaimer: sanitizeClientNarrativeText(o.notConfirmedDisclaimer ?? ""),
+    };
+    return {
+      text: [structured.plainLanguageReason, structured.notConfirmedDisclaimer].filter(Boolean).join(" "),
+      structured,
+    };
+  }
+  return { text: "" };
+}
+
+export function sanitizeGptStoryboardAnalysis(
+  raw: GptStoryboardSectionAnalysis,
+  seed = 0
+): GptStoryboardSectionAnalysis {
+  const risk = normalizeRiskInterpretation(raw.riskInterpretation);
+  const sanitized: GptStoryboardSectionAnalysis = {
+    ...raw,
+    clientTitle: raw.clientTitle ? sanitizeClientNarrativeText(raw.clientTitle) : undefined,
+    executiveTakeaway: sanitizeClientNarrativeText(raw.executiveTakeaway),
+    clientExplanation: sanitizeClientNarrativeText(raw.clientExplanation),
+    riskInterpretation: risk.text,
+    structuredRisk: raw.structuredRisk ?? risk.structured,
+    whatWasChecked: sanitizeStringArray(raw.whatWasChecked ?? [], seed),
+    whatWasFound: sanitizeStringArray(raw.whatWasFound ?? raw.confirmedFacts ?? [], seed + 1),
+    whatItMeans: sanitizeStringArray(raw.whatItMeans ?? [], seed + 2),
+    whatRequiresManualReview: sanitizeStringArray(
+      raw.whatRequiresManualReview ?? raw.manualReviewQueue ?? [],
+      seed + 3
+    ),
+    excludedNoiseSummary: sanitizeStringArray(raw.excludedNoiseSummary ?? [], seed + 4),
+    confirmedFacts: sanitizeStringArray(raw.confirmedFacts, seed + 5),
+    unconfirmedSignals: sanitizeStringArray(raw.unconfirmedSignals, seed + 6),
+    manualReviewQueue: sanitizeStringArray(raw.manualReviewQueue, seed + 7),
+    recommendedActions: sanitizeStringArray(raw.recommendedActions, seed + 8),
+    clientWarnings: sanitizeStringArray(raw.clientWarnings ?? [], seed + 9),
+    evidenceExamples: (raw.evidenceExamples ?? []).map((e) => ({
+      humanTitle: sanitizeClientNarrativeText(e.humanTitle),
+      source: sanitizeClientNarrativeText(e.source),
+      domain: sanitizeClientNarrativeText(e.domain),
+      whyIncluded: sanitizeClientNarrativeText(e.whyIncluded),
+      clientSafeStatus: e.clientSafeStatus,
+    })),
+    slidePlans: raw.slidePlans.map((p, i) => ({
+      ...p,
+      title: sanitizeClientNarrativeText(p.title),
+      subtitle: p.subtitle ? sanitizeClientNarrativeText(p.subtitle) : undefined,
+      clientTakeaway: sanitizeClientNarrativeText(p.clientTakeaway),
+      bullets: p.bullets ? sanitizeStringArray(p.bullets, seed + 10 + i) : undefined,
+    })),
+  };
+
+  const allText = [
+    sanitized.executiveTakeaway,
+    sanitized.clientExplanation,
+    ...sanitized.confirmedFacts,
+    ...sanitized.slidePlans.flatMap((p) => [p.clientTakeaway, ...(p.bullets ?? [])]),
+  ].join("\n");
+  const issues = assertNoClientHostileTokens(allText, raw.sectionKey);
+  if (issues.length > 0) {
+    sanitized.warnings = [...(sanitized.warnings ?? []), ...issues.slice(0, 5)];
+  }
+  return sanitized;
+}
+
 export function mapSectionAnalysisToStoryboard(
   analysis: SectionAnalysisResult,
   sectionKey: OrionReportSectionKey
@@ -88,7 +195,7 @@ export function mapSectionAnalysisToStoryboard(
       : sectionKey === "ru_audit_summary"
         ? "region_summary"
         : "search_overview";
-  return {
+  return sanitizeGptStoryboardAnalysis({
     sectionKey,
     generatedBy: analysis.generatedBy,
     executiveTakeaway: n.headline,
@@ -110,19 +217,19 @@ export function mapSectionAnalysisToStoryboard(
       },
     ],
     warnings: analysis.warnings,
-  };
+  });
 }
 
 export function buildDeterministicStoryboardAnalysis(input: {
-  sectionKey: OrionReportSectionKey;
+  sectionKey: GptStoryboardSectionKey;
   subjectName: string;
   evidence: NormalizedEvidenceV1[];
 }): GptStoryboardSectionAnalysis {
   const rows = input.evidence.slice(0, 6);
-  return {
+  return sanitizeGptStoryboardAnalysis({
     sectionKey: input.sectionKey,
     generatedBy: "deterministic",
-    executiveTakeaway: `Сводка по разделу ${SECTION_TITLES[input.sectionKey]} для ${input.subjectName}`,
+    executiveTakeaway: `Сводка по разделу ${STORYBOARD_SECTION_TITLES[input.sectionKey]} для ${input.subjectName}`,
     clientExplanation: "Анализ основан на нормализованных материалах из открытых источников.",
     riskInterpretation: "Существенных автоматически подтверждённых негативных выводов не сформировано.",
     confirmedFacts: rows.slice(0, 3).map((e) => e.clientSafeSummary ?? e.title ?? "Материал из открытых источников"),
@@ -140,22 +247,41 @@ export function buildDeterministicStoryboardAnalysis(input: {
             ? "executive_summary"
             : input.sectionKey === "ru_audit_summary"
               ? "region_summary"
-              : "search_overview",
-        title: SECTION_TITLES[input.sectionKey],
+              : input.sectionKey === "lexis_summary"
+                ? "lexisnexis_summary"
+                : input.sectionKey === "recommended_actions"
+                  ? "recommended_actions"
+                  : "search_overview",
+        title: STORYBOARD_SECTION_TITLES[input.sectionKey],
         clientTakeaway: "Краткая клиентская сводка по доступным данным.",
         bullets: rows.slice(0, 4).map((e) => e.clientSafeSummary ?? e.title ?? "Источник"),
         evidenceRefs: rows.map((e) => e.evidenceRef),
       },
     ],
     warnings: ["deterministic-storyboard"],
-  };
+  });
+}
+
+function parseGptResponse(cleaned: string): GptStoryboardSectionAnalysis {
+  const parsed = validateGptStoryboardSectionAnalysis(JSON.parse(cleaned));
+  const risk = normalizeRiskInterpretation(parsed.riskInterpretation as unknown);
+  const merged = {
+    ...parsed,
+    riskInterpretation: risk.text,
+    structuredRisk: parsed.riskInterpretationStructured ?? risk.structured,
+    whatWasFound: parsed.whatWasFound ?? parsed.confirmedFacts,
+    whatRequiresManualReview: parsed.whatRequiresManualReview ?? parsed.manualReviewQueue,
+  } as GptStoryboardSectionAnalysis;
+  return sanitizeGptStoryboardAnalysis({ ...merged, generatedBy: "gpt-5.5", warnings: [] });
 }
 
 export async function analyzeStoryboardSectionWithGpt55(input: {
-  sectionKey: OrionReportSectionKey;
+  sectionKey: GptStoryboardSectionKey;
   subject: { displayName: string; locale: "ru" | "en" };
   evidence: NormalizedEvidenceV1[];
+  classifiedEvidence?: ClassifiedEvidence[];
   assets: ReportAssetV1[];
+  lexisMeta?: { parsedSignals: number; visualPages: number; uploadExists: boolean };
   requireAi: boolean;
   allowDeterministicFallback?: boolean;
   maxOpenaiRetries?: number;
@@ -204,8 +330,7 @@ export async function analyzeStoryboardSectionWithGpt55(input: {
       const text = extractText(json);
       if (!text) throw new Error("openai-empty-response");
       const cleaned = text.replace(/^```json\s*/i, "").replace(/```\s*$/i, "").trim();
-      const parsed = validateGptStoryboardSectionAnalysis(JSON.parse(cleaned));
-      return { ...parsed, generatedBy: "gpt-5.5", warnings: [] };
+      return parseGptResponse(cleaned);
     } catch (error) {
       lastError = error;
       if (isOpenAiHttp429(error) && attempt >= maxRetries) throw new OpenAiRateLimitError();
@@ -222,4 +347,60 @@ export async function analyzeStoryboardSectionWithGpt55(input: {
     subjectName: input.subject.displayName,
     evidence: input.evidence,
   });
+}
+
+export async function runR912GptAnalyses(input: {
+  caseContext: import("../orion-section-pipeline/real-case-data-adapter").OrionRealCaseContext;
+  classifiedEvidence: ClassifiedEvidence[];
+  assets: ReportAssetV1[];
+  requireAi: boolean;
+  allowDeterministicFallback: boolean;
+}): Promise<GptStoryboardSectionAnalysis[]> {
+  const {
+    buildExecutiveEvidence,
+    buildRuAuditSummaryEvidence,
+    buildRuSearchEvidence,
+  } = await import("../orion-report-spec/section-evidence-adapter");
+  const subject = { displayName: input.caseContext.subject.fullName, locale: "ru" as const };
+  const lexisMeta = {
+    parsedSignals: input.caseContext.lexis.parsedSignals,
+    visualPages: input.caseContext.lexis.visualPageCount,
+    uploadExists: input.caseContext.lexis.uploadExists,
+  };
+  const keys: GptStoryboardSectionKey[] = [
+    "executive_summary",
+    "ru_audit_summary",
+    "ru_search_results",
+    "lexis_summary",
+    "recommended_actions",
+  ];
+  const evidenceByKey: Record<GptStoryboardSectionKey, NormalizedEvidenceV1[]> = {
+    executive_summary: buildExecutiveEvidence(input.caseContext),
+    ru_audit_summary: buildRuAuditSummaryEvidence(input.caseContext),
+    ru_search_results: buildRuSearchEvidence(input.caseContext),
+    lexis_summary: input.classifiedEvidence
+      .filter((c) => c.evidence.sourceKind === "lexisnexis" || c.evidence.sourceKind === "compliance")
+      .map((c) => c.evidence),
+    recommended_actions: buildExecutiveEvidence(input.caseContext),
+  };
+
+  const out: GptStoryboardSectionAnalysis[] = [];
+  for (const sectionKey of keys) {
+    const analysis = await analyzeStoryboardSectionWithGpt55({
+      sectionKey,
+      subject,
+      evidence: evidenceByKey[sectionKey],
+      classifiedEvidence: input.classifiedEvidence,
+      assets: input.assets,
+      lexisMeta: sectionKey === "lexis_summary" ? lexisMeta : undefined,
+      requireAi: input.requireAi,
+      allowDeterministicFallback: input.allowDeterministicFallback,
+      maxOpenaiRetries: 6,
+    });
+    if (input.requireAi && !input.allowDeterministicFallback && analysis.generatedBy !== "gpt-5.5") {
+      throw new Error(`live-signoff-non-gpt:${sectionKey}`);
+    }
+    out.push(analysis);
+  }
+  return out;
 }

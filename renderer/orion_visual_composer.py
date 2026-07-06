@@ -52,7 +52,7 @@ MED_BG = RGBColor(0xFF, 0xF7, 0xED)
 HIGH_BG = RGBColor(0xFE, 0xF2, 0xF2)
 
 FORBIDDEN = re.compile(
-    r"\b(PRESENT|UNKNOWN|adverse_media|pep|mock|fallback|provider|runtime|debug)\b",
+    r"\b(PRESENT|UNKNOWN|adverse_media|pep|mock|fallback|provider|runtime|debug|cmr[a-z0-9]{10,}|executive_summary-rf-|ru_audit_summary-rf-|-sr-cmr)\b",
     re.I,
 )
 
@@ -162,7 +162,10 @@ class _Ctx:
         r.font.color.rgb = fg
 
     def labeled_block(self, label: str, text: str, y: int, height: int = 620000) -> int:
-        shape = self.slide.shapes.add_shape(1, Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(height))
+        safe_text = _safe(text)[:280]
+        line_estimate = max(1, len(safe_text) // 55 + 1)
+        dynamic_h = min(max(height, 380000 + line_estimate * 90000), 900000)
+        shape = self.slide.shapes.add_shape(1, Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(dynamic_h))
         shape.fill.solid()
         shape.fill.fore_color.rgb = CARD_BG
         shape.line.color.rgb = ACCENT
@@ -179,11 +182,11 @@ class _Ctx:
         r.font.color.rgb = ACCENT
         p2 = tf.add_paragraph()
         r2 = p2.add_run()
-        r2.text = _safe(text)[:340]
+        r2.text = safe_text
         r2.font.name = FONT
         r2.font.size = Pt(FS_TAKEAWAY)
         r2.font.color.rgb = BODY_COLOR
-        return y + height + 80000
+        return y + dynamic_h + 100000
 
     def callout(self, title: str, text: str, y: int, tone: str = "info") -> int:
         bg = WARN_BG if tone == "warn" else CARD_BG
@@ -343,57 +346,39 @@ def render_executive_summary(ctx: _Ctx, slide: dict[str, Any]) -> None:
     ctx.brand_band()
     y = ctx.section_header(slide.get("title") or "Executive Summary", slide.get("subtitle") or "")
     ctx.badge("Уровень риска", str(slide.get("riskLevel") or "unknown"), MARGIN_X + CONTENT_W - 2200000, HEADER_H + 140000)
-    y = ctx.labeled_block("Главный вывод", slide.get("clientTakeaway") or "", y)
+    y = ctx.labeled_block("Главный вывод", slide.get("clientTakeaway") or "", y, height=480000)
     y = ctx.metrics(slide.get("metrics") or [], y)
-    findings = [_safe(f.get("summary")) for f in (slide.get("findings") or []) if isinstance(f, dict)][:3]
     actions = [_safe(a.get("label")) for a in (slide.get("recommendedActions") or []) if isinstance(a, dict)][:2]
-    col_w = (CONTENT_W - 240000) // 3
-    gap = 120000
-    ctx.card("Что найдено", findings[0] if findings else "Существенные сигналы требуют ручной проверки.", MARGIN_X, y, col_w, 1100000)
-    ctx.card(
-        "Почему это важно",
-        findings[1] if len(findings) > 1 else (slide.get("clientTakeaway") or "")[:220],
-        MARGIN_X + col_w + gap,
-        y,
-        col_w,
-        1100000,
-    )
-    ctx.card(
-        "Что проверить дальше",
-        actions[0] if actions else "Подтвердить связь каждого сигнала с субъектом.",
-        MARGIN_X + 2 * (col_w + gap),
-        y,
-        col_w,
-        1100000,
-    )
-    y += 1180000
     if actions:
-        ctx.callout("Следующие шаги", " • ".join(actions[:3]), y, tone="info")
+        ctx.callout("Следующий шаг", actions[0], y, tone="info")
 
 
 def render_region_summary(ctx: _Ctx, slide: dict[str, Any]) -> None:
     ctx.brand_band()
     y = ctx.section_header(slide.get("title") or "Сводка региона", slide.get("subtitle") or "")
-    y = ctx.labeled_block("Краткий вывод", slide.get("clientTakeaway") or "", y, height=560000)
+    y = ctx.labeled_block("Краткий вывод", slide.get("clientTakeaway") or "", y, height=480000)
     findings = [_safe(f.get("summary")) for f in (slide.get("findings") or []) if isinstance(f, dict)][:3]
     col_w = (CONTENT_W - 240000) // 3
     gap = 120000
-    ctx.card("Что найдено", findings[0] if findings else "Подтверждённые материалы ограничены.", MARGIN_X, y, col_w, 1050000)
+    card_y = y + 40000
+    if card_y + 1050000 > FOOTER_Y - 200000:
+        card_y = y
+    ctx.card("Что найдено", findings[0] if findings else "Подтверждённые материалы ограничены.", MARGIN_X, card_y, col_w, 980000)
     ctx.card(
         "Почему это важно",
         findings[1] if len(findings) > 1 else "Сигналы влияют на общую картину риска по региону.",
         MARGIN_X + col_w + gap,
-        y,
+        card_y,
         col_w,
-        1050000,
+        980000,
     )
     ctx.card(
         "Что требует проверки",
         findings[2] if len(findings) > 2 else "Ручная верификация спорных совпадений.",
         MARGIN_X + 2 * (col_w + gap),
-        y,
+        card_y,
         col_w,
-        1050000,
+        980000,
     )
 
 
@@ -456,11 +441,20 @@ def render_lexis_visual_page(
     page_total: int,
 ) -> None:
     ctx.brand_band()
-    subtitle = f"Страница {page_idx} из {page_total}"
+    subtitle = f"Приложение — страница {page_idx} из {page_total}"
     y = ctx.section_header(slide.get("title") or "LexisNexis", subtitle)
+    ctx.callout(
+        "Примечание",
+        _safe(
+            slide.get("clientTakeaway")
+            or "Оригинальная страница включена как визуальное подтверждение импорта; детальная проверка выполняется по исходному DOCX/PDF."
+        ),
+        y,
+        tone="info",
+    )
     asset = _first_asset(slide, assets)
-    img_y = y + 40000
-    box_h = 4600000
+    img_y = y + 620000
+    box_h = min(5200000, FOOTER_Y - img_y - 120000)
     if asset and asset.get("imageData"):
         ctx.image_contain(str(asset.get("imageData")), MARGIN_X, img_y, CONTENT_W, box_h, str(asset.get("assetRef")))
     else:
@@ -482,9 +476,66 @@ def render_search_results_table(ctx: _Ctx, slide: dict[str, Any]) -> None:
 def render_adverse_media_summary(ctx: _Ctx, slide: dict[str, Any]) -> None:
     ctx.brand_band()
     y = ctx.section_header(slide.get("title") or "Негативные публикации", "")
-    y = ctx.labeled_block("Интерпретация", slide.get("clientTakeaway") or "", y, height=560000)
+    y = ctx.labeled_block("Интерпретация", slide.get("clientTakeaway") or "", y, height=480000)
     findings = slide.get("findings") or []
-    ctx.bullets([_safe(f.get("summary")) for f in findings if isinstance(f, dict)], y + 80000, max_items=4)
+    ctx.bullets([_safe(f.get("summary"))[:200] for f in findings if isinstance(f, dict)], y + 60000, max_items=4)
+
+
+def render_scope_overview(ctx: _Ctx, slide: dict[str, Any]) -> None:
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Что проверялось", "")
+    y = ctx.labeled_block("Область проверки", slide.get("clientTakeaway") or "", y, height=440000)
+    findings = [_safe(f.get("summary")) for f in (slide.get("findings") or []) if isinstance(f, dict)]
+    ctx.bullets(findings, y, max_items=5)
+
+
+def render_risk_conclusion(ctx: _Ctx, slide: dict[str, Any]) -> None:
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Главные выводы", "")
+    ctx.badge("Уровень риска", str(slide.get("riskLevel") or "unknown"), MARGIN_X + CONTENT_W - 2200000, HEADER_H + 140000)
+    y = ctx.labeled_block("Интерпретация риска", slide.get("clientTakeaway") or "", y, height=480000)
+    findings = [_safe(f.get("summary")) for f in (slide.get("findings") or []) if isinstance(f, dict)][:3]
+    ctx.bullets(findings, y, max_items=3)
+    actions = [_safe(a.get("label")) for a in (slide.get("recommendedActions") or []) if isinstance(a, dict)][:2]
+    if actions:
+        ctx.callout("Что проверить дальше", actions[0], y + 1400000, tone="warn")
+
+
+def render_relevant_sources(ctx: _Ctx, slide: dict[str, Any]) -> None:
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Релевантные источники", slide.get("subtitle") or "")
+    y = ctx.labeled_block("Сводка", slide.get("clientTakeaway") or "", y, height=420000)
+    evidence = slide.get("evidenceRefs") or []
+    rows = []
+    for e in evidence[:5]:
+        if not isinstance(e, dict):
+            continue
+        rows.append(f"{_safe(e.get('label'))}: {_safe(e.get('summary'))[:120]}")
+    ctx.bullets(rows, y, max_items=5)
+
+
+def render_excluded_matches(ctx: _Ctx, slide: dict[str, Any]) -> None:
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Исключённые совпадения", "")
+    y = ctx.callout("Пояснение", _safe(slide.get("clientTakeaway") or ""), y, tone="info")
+    findings = [_safe(f.get("summary")) for f in (slide.get("findings") or []) if isinstance(f, dict)]
+    ctx.bullets(findings, y + 80000, max_items=5)
+
+
+def render_lexis_signals(ctx: _Ctx, slide: dict[str, Any]) -> None:
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "LexisNexis — сигналы", "")
+    y = ctx.labeled_block("Ключевые сигналы", slide.get("clientTakeaway") or "", y, height=420000)
+    findings = slide.get("findings") or []
+    col_w = (CONTENT_W - 120000) // 2
+    for idx, f in enumerate(findings[:4]):
+        if not isinstance(f, dict):
+            continue
+        col = idx % 2
+        row = idx // 2
+        cx = MARGIN_X + col * (col_w + 120000)
+        cy = y + row * 950000
+        ctx.card(_safe(f.get("headline")), _safe(f.get("summary"))[:180], cx, cy, col_w, 880000)
 
 
 def render_image_grid(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> None:
@@ -589,10 +640,18 @@ def render_client_storyboard(payload: dict[str, Any]) -> dict[str, Any]:
             render_global_toc(ctx, slide, slides)
         elif stype == "executive_summary":
             render_executive_summary(ctx, slide)
+        elif stype == "scope_overview":
+            render_scope_overview(ctx, slide)
+        elif stype == "risk_conclusion":
+            render_risk_conclusion(ctx, slide)
         elif stype == "region_summary":
             render_region_summary(ctx, slide)
         elif stype == "search_overview":
             render_search_overview(ctx, slide)
+        elif stype == "relevant_sources":
+            render_relevant_sources(ctx, slide)
+        elif stype == "excluded_matches":
+            render_excluded_matches(ctx, slide)
         elif stype == "serp_screenshot":
             render_serp_screenshot(ctx, slide, assets)
         elif stype == "search_results_table":
@@ -607,6 +666,8 @@ def render_client_storyboard(payload: dict[str, Any]) -> dict[str, Any]:
             render_knowledge_panel(ctx, slide, assets)
         elif stype == "lexisnexis_summary":
             render_lexis_summary(ctx, slide)
+        elif stype == "lexisnexis_signals":
+            render_lexis_signals(ctx, slide)
         elif stype == "lexisnexis_visual_page":
             lexis_idx += 1
             render_lexis_visual_page(ctx, slide, assets, lexis_idx, lexis_total)
