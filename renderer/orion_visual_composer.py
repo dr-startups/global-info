@@ -410,7 +410,14 @@ def render_client_storyboard(payload: dict[str, Any]) -> dict[str, Any]:
         doc = fitz.open(str(pdf_path))
         for i in range(len(doc)):
             pix = doc[i].get_pixmap(matrix=fitz.Matrix(2, 2))
-            pages.append({"pageNumber": i + 1, "contentBase64": base64.b64encode(pix.tobytes("png")).decode("ascii")})
+            pages.append(
+                {
+                    "pageNumber": i + 1,
+                    "contentBase64": base64.b64encode(pix.tobytes("png")).decode("ascii"),
+                    "width": pix.width,
+                    "height": pix.height,
+                }
+            )
         doc.close()
 
     return {

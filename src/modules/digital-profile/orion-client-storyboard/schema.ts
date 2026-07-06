@@ -27,7 +27,8 @@ const slideTypeSchema = z.enum([
 
 export const gptStoryboardSectionAnalysisSchema = z.object({
   sectionKey: z.enum(["executive_summary", "ru_audit_summary", "ru_search_results"]),
-  generatedBy: z.enum(["gpt-5.5", "deterministic"]),
+  /** Injected after GPT parse; not returned by the model. */
+  generatedBy: z.enum(["gpt-5.5", "deterministic"]).optional(),
   executiveTakeaway: z.string().min(1),
   clientExplanation: z.string().min(1),
   riskInterpretation: z.string().min(1),

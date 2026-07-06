@@ -182,12 +182,12 @@ export function composeClientStoryboard(input: {
           tone: (exec?.manualReviewQueue ?? []).length > 0 ? "warning" : "low",
         },
       ],
-      findings: (exec?.confirmedFacts ?? []).slice(0, 4).map((f, i) => ({
+      findings: (exec?.confirmedFacts ?? []).slice(0, 3).map((f, i) => ({
         headline: `Находка ${i + 1}`,
-        summary: f,
+        summary: f.slice(0, 220),
         evidenceRefs: [],
       })),
-      recommendedActions: (exec?.recommendedActions ?? []).slice(0, 4).map((a) => ({
+      recommendedActions: (exec?.recommendedActions ?? []).slice(0, 2).map((a) => ({
         label: a,
         rationale: "",
       })),
@@ -209,10 +209,10 @@ export function composeClientStoryboard(input: {
         clientTakeaway: ruAudit?.executiveTakeaway ?? ruAudit?.clientExplanation ?? "",
         findings: (ruAudit?.confirmedFacts ?? []).slice(0, 3).map((f, i) => ({
           headline: `Сигнал ${i + 1}`,
-          summary: f,
+          summary: f.slice(0, 220),
           evidenceRefs: [],
         })),
-        recommendedActions: (ruAudit?.recommendedActions ?? []).slice(0, 3).map((l) => ({ label: l, rationale: "" })),
+        recommendedActions: (ruAudit?.recommendedActions ?? []).slice(0, 2).map((l) => ({ label: l, rationale: "" })),
         riskLevel: "medium",
         layoutIntent: "region-summary",
         omitIfNoData: false,
@@ -286,7 +286,7 @@ export function composeClientStoryboard(input: {
           slideType: "search_results_table",
           title: "Ключевые результаты поиска",
           clientTakeaway: "Структурированная таблица топ-результатов",
-          evidenceRefs: mapEvidence(searchRows).slice(0, 8),
+          evidenceRefs: mapEvidence(searchRows).slice(0, 5),
           riskLevel: "medium",
           layoutIntent: "results-table",
           omitIfNoData: true,

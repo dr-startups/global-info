@@ -1,6 +1,29 @@
+import { digitalProfileConfig } from "../config";
 import { loadFile } from "../storage/private-store";
 import type { ReportAssetV1 } from "../orion-report-spec/asset-builder";
 import type { OrionRealCaseContext } from "../orion-section-pipeline/real-case-data-adapter";
+
+async function renderLexisPagesFromDocx(docxBase64: string): Promise<ReportAssetV1[]> {
+  const url = `${digitalProfileConfig.rendererUrl}/lexis/process-docx`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ docxBase64 }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) return [];
+  const json = (await res.json()) as {
+    pages?: Array<{ pageNumber: number; contentBase64: string }>;
+  };
+  return (json.pages ?? []).slice(0, 12).map((page) => ({
+    assetRef: `lexis_visual_page_${page.pageNumber}`,
+    kind: "lexis_visual_page" as const,
+    title: `LexisNexis — страница ${page.pageNumber}`,
+    imageData: page.contentBase64,
+    evidenceRefs: [],
+    status: "ready" as const,
+  }));
+}
 
 export async function buildLexisReportAssets(ctx: OrionRealCaseContext): Promise<ReportAssetV1[]> {
   const doc = (ctx.lexis.latestReady ?? ctx.lexis.latestAny) as Record<string, unknown> | null;
@@ -39,7 +62,16 @@ export async function buildLexisReportAssets(ctx: OrionRealCaseContext): Promise
     });
   }
 
-  return assets;
+  if (assets.length > 0) return assets;
+
+  const docxKey = String(doc.storageKey ?? "");
+  if (!docxKey) return [];
+  try {
+    const docxBytes = await loadFile(docxKey);
+    return renderLexisPagesFromDocx(docxBytes.toString("base64"));
+  } catch {
+    return [];
+  }
 }
 
 export function lexisSummaryTakeaway(ctx: OrionRealCaseContext): string {

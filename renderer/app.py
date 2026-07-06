@@ -108,6 +108,8 @@ class OrionManifestRenderResponse(BaseModel):
     pptxBase64: str
     pdfBase64: str
     pages: list[OrionManifestPage]
+    pdfExportMode: str | None = None
+    warnings: list[str] = []
 
 
 class OrionReportSpecRenderRequest(BaseModel):
@@ -160,6 +162,8 @@ def orion_render_manifest(req: OrionManifestRenderRequest) -> OrionManifestRende
         pptxBase64=str(result.get("pptxBase64") or ""),
         pdfBase64=str(result.get("pdfBase64") or ""),
         pages=[OrionManifestPage(**page) for page in result.get("pages") or []],
+        pdfExportMode=str(result.get("pdfExportMode") or "unknown"),
+        warnings=list(result.get("warnings") or []),
     )
 
 
@@ -176,6 +180,8 @@ def orion_render_client_storyboard(req: OrionClientStoryboardRenderRequest) -> O
         pptxBase64=str(result.get("pptxBase64") or ""),
         pdfBase64=str(result.get("pdfBase64") or ""),
         pages=[OrionManifestPage(**page) for page in result.get("pages") or []],
+        pdfExportMode=str(result.get("pdfExportMode") or "unknown"),
+        warnings=list(result.get("warnings") or []),
     )
 
 
@@ -194,6 +200,8 @@ def orion_render_report_spec(req: OrionReportSpecRenderRequest) -> OrionManifest
         pptxBase64=str(result.get("pptxBase64") or ""),
         pdfBase64=str(result.get("pdfBase64") or ""),
         pages=[OrionManifestPage(**page) for page in result.get("pages") or []],
+        pdfExportMode=str(result.get("pdfExportMode") or "unknown"),
+        warnings=list(result.get("warnings") or []),
     )
 
 

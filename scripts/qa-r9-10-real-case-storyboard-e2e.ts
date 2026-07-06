@@ -8,7 +8,8 @@ import { parse } from "dotenv";
 
 function bootstrapEnv(): void {
   if (process.env.R910_DOCKER_NETWORK === "1") {
-    process.env.RENDERER_URL = process.env.RENDERER_URL ?? "http://renderer:8080";
+    // Host .env.production often points at localhost; inside dp-app use compose service DNS.
+    process.env.RENDERER_URL = "http://renderer:8080";
   } else {
     process.env.DATABASE_URL =
       process.env.R910_DATABASE_URL ??
@@ -28,7 +29,7 @@ function bootstrapEnv(): void {
       "DIGITAL_PROFILE_AI_ANALYST_MODEL",
       "DIGITAL_PROFILE_AI_ANALYST_PROVIDER",
       "DIGITAL_PROFILE_ORION_V2_REQUIRE_AI",
-      "RENDERER_URL",
+      ...(process.env.R910_DOCKER_NETWORK === "1" ? ([] as const) : (["RENDERER_URL"] as const)),
     ] as const) {
       if (parsed[key] && !process.env[key]) {
         process.env[key] = parsed[key];
@@ -88,8 +89,9 @@ async function main() {
     `[INFO] AI readiness: hasOpenAiKey=${readiness.hasOpenAiKey} aiEnabled=${readiness.aiEnabled} model=${readiness.model}`
   );
 
+  const rendererBase = (process.env.RENDERER_URL ?? "http://localhost:8080").replace(/\/$/, "");
   try {
-    const rendererHealth = await fetch("http://localhost:8080/health");
+    const rendererHealth = await fetch(`${rendererBase}/health`);
     const rendererJson = (await rendererHealth.json()) as {
       ok?: boolean;
       libreOfficeAvailable?: boolean;
@@ -97,7 +99,7 @@ async function main() {
     check("Renderer health", rendererHealth.ok && rendererJson.ok === true);
     check("LibreOffice in renderer", rendererJson.libreOfficeAvailable === true);
   } catch {
-    check("Renderer health", false, "localhost:8080 unreachable");
+    check("Renderer health", false, `${rendererBase} unreachable`);
   }
 
   const caseId = await resolveCaseId();
