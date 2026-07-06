@@ -2,14 +2,59 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describeOrionV2AiReadiness } from "../src/modules/digital-profile/config";
 import {
+  runOrionReportSpecGptQa,
+  OpenAiRateLimitError,
+  TARGET_SECTIONS,
+  SECTION_ANALYSIS_FILES,
+  type ReportSpecGptQaOptions,
+} from "../src/modules/digital-profile/orion-report-spec/run-orion-reportspec-gpt-qa";
+import {
   runOrionReportSpecVisualFidelitySlice,
   R97B_OUTPUT_ROOT,
 } from "../src/modules/digital-profile/orion-report-spec/run-orion-reportspec-visual-fidelity";
 import { validateOrionReportSpecV1 } from "../src/modules/digital-profile/orion-report-spec/report-spec-schema";
+import type { OrionReportSectionKey } from "../src/modules/digital-profile/orion-report-spec/report-spec-schema";
 import {
   scanReportSpecObject,
   scanReportSpecForEnglishStatus,
 } from "../src/modules/digital-profile/orion-report-spec/client-policy-scan";
+
+const VALID_SECTIONS = new Set<string>(TARGET_SECTIONS);
+
+export interface QaCliOptions {
+  section?: OrionReportSectionKey;
+  resume: boolean;
+  delayMs: number;
+  maxOpenaiRetries: number;
+  incremental: boolean;
+}
+
+export function parseQaCliArgs(argv: string[] = process.argv): QaCliOptions {
+  let section: OrionReportSectionKey | undefined;
+  let resume = false;
+  let delayMs = 120_000;
+  let maxOpenaiRetries = 6;
+
+  for (let i = 2; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--section" && argv[i + 1]) {
+      const val = argv[++i]!;
+      if (!VALID_SECTIONS.has(val)) {
+        throw new Error(`invalid-section:${val}`);
+      }
+      section = val as OrionReportSectionKey;
+    } else if (arg === "--resume") {
+      resume = true;
+    } else if (arg === "--delay-ms" && argv[i + 1]) {
+      delayMs = Number(argv[++i]);
+    } else if (arg === "--max-openai-retries" && argv[i + 1]) {
+      maxOpenaiRetries = Number(argv[++i]);
+    }
+  }
+
+  const incremental = Boolean(section || resume);
+  return { section, resume, delayMs, maxOpenaiRetries, incremental };
+}
 
 let failures = 0;
 function check(name: string, ok: boolean, detail = "") {
@@ -17,7 +62,84 @@ function check(name: string, ok: boolean, detail = "") {
   console.log(`[${ok ? "PASS" : "FAIL"}] ${name}${detail ? ` — ${detail}` : ""}`);
 }
 
-async function main() {
+async function runIncrementalQa(cli: QaCliOptions) {
+  const readiness = describeOrionV2AiReadiness();
+  console.log(
+    `[INFO] AI readiness: hasOpenAiKey=${readiness.hasOpenAiKey} aiEnabled=${readiness.aiEnabled} model=${readiness.model} requireAi=${readiness.requireAi}`
+  );
+  console.log(
+    `[INFO] GPT QA mode: ${cli.section ? `section=${cli.section}` : cli.resume ? "resume" : "full"} delayMs=${cli.delayMs} maxRetries=${cli.maxOpenaiRetries}`
+  );
+
+  if (!readiness.ready) {
+    if (!readiness.hasOpenAiKey) {
+      console.log("\nVERDICT: BLOCKED_FOR_MISSING_OPENAI_KEY");
+      process.exit(1);
+    }
+    console.log("\nVERDICT: BLOCKED_FOR_AI_DISABLED");
+    process.exit(1);
+  }
+
+  const gptOptions: ReportSpecGptQaOptions = {
+    outputRoot: R97B_OUTPUT_ROOT,
+    section: cli.section,
+    resume: cli.resume,
+    delayMs: cli.delayMs,
+    maxOpenaiRetries: cli.maxOpenaiRetries,
+  };
+
+  const result = await runOrionReportSpecGptQa(gptOptions);
+  const out = result.outputRoot;
+
+  for (const key of TARGET_SECTIONS) {
+    check(
+      `section ${key} artifact`,
+      existsSync(join(out, SECTION_ANALYSIS_FILES[key])),
+      result.sectionStatus[key]
+    );
+    check(`section ${key} generatedBy=gpt-5.5`, result.sectionStatus[key] === "gpt-5.5", result.sectionStatus[key]);
+  }
+
+  if (cli.section) {
+    check("single-section mode completed", result.sectionsRun.includes(cli.section));
+    console.log(`[INFO] Sections run this invocation: ${result.sectionsRun.join(", ") || "none"}`);
+    if (!result.allSectionsGpt) {
+      console.log("[INFO] Compose/render deferred until all 3 sections are gpt-5.5 (use --resume).");
+    }
+  }
+
+  if (result.allSectionsGpt) {
+    check("all sections gpt-5.5", true);
+    check("ReportSpec composed", result.composed);
+    check("PDF/PPTX rendered", result.rendered);
+    if (result.reportSpec) {
+      validateOrionReportSpecV1(result.reportSpec);
+      check("ReportSpec schema valid", true);
+      check("Client policy clean", scanReportSpecObject(result.reportSpec).length === 0);
+      check("No English status labels", !scanReportSpecForEnglishStatus(result.reportSpec));
+    }
+    check(
+      "Visual quality inspection",
+      result.visualInspection?.passed === true,
+      `${result.visualInspection?.score ?? 0}/${result.visualInspection?.maxScore ?? 0}`
+    );
+  }
+
+  if (result.blockedForLiveGpt && !cli.section) {
+    console.log("\nVERDICT: BLOCKED_FOR_LIVE_GPT (incomplete GPT sections)");
+    process.exit(1);
+  }
+
+  if (result.allSectionsGpt) {
+    console.log("\nVERDICT: PASS");
+    process.exit(failures ? 1 : 0);
+  }
+
+  console.log(`\nPARTIAL: ${result.sectionsRun.length} section(s) completed this run. Re-run with --resume when ready.`);
+  process.exit(failures ? 1 : 0);
+}
+
+async function runLegacyFullQa() {
   const readiness = describeOrionV2AiReadiness();
   console.log(
     `[INFO] AI readiness: hasOpenAiKey=${readiness.hasOpenAiKey} aiEnabled=${readiness.aiEnabled} model=${readiness.model} requireAi=${readiness.requireAi}`
@@ -40,7 +162,7 @@ async function main() {
   check("4. RU 2.2 section", spec.sections.some((s) => s.sectionKey === "ru_search_results"));
 
   if (readiness.ready) {
-    check("5. Live GPT-5.5 used for all sections", result.liveGptUsed, result.liveGptUsed ? "gpt-5.5" : result.blockedForLiveGpt ? "BLOCKED" : "mixed");
+    check("5. Live GPT-5.5 used for all sections", result.liveGptUsed, result.liveGptUsed ? "gpt-5.5" : "BLOCKED");
   } else {
     check("5. Live GPT blocked (no key or AI disabled)", result.blockedForLiveGpt);
     failures += 1;
@@ -100,7 +222,23 @@ async function main() {
   process.exit(failures ? 1 : 0);
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
-});
+async function main() {
+  const cli = parseQaCliArgs();
+  try {
+    if (cli.incremental) {
+      await runIncrementalQa(cli);
+    } else {
+      await runLegacyFullQa();
+    }
+  } catch (error) {
+    if (error instanceof OpenAiRateLimitError) {
+      console.error("[FAIL] OpenAI rate limit (HTTP 429) — stop and retry later with --section or --resume");
+      console.log("\nVERDICT: BLOCKED_OPENAI_RATE_LIMIT");
+      process.exit(1);
+    }
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+}
+
+main();

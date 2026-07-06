@@ -720,3 +720,85 @@ export async function getReportFileForDownload(
     filename: `report-v${row.version}.${type}`,
   };
 }
+
+/** QA-only: wire-time enrichment for legacy /render without DB persistence. */
+export async function prepareLegacyClientRenderPayload(
+  caseId: string,
+  reportJson: ReportJson
+): Promise<{ json: ReportJson; warnings: string[] }> {
+  const { json: withLexisPages, warnings: lexisWarnings } = await attachLexisNexisPageImages(reportJson);
+  const audienceReportJson = sanitizeReportJsonForAudience(
+    withLexisPages as unknown as Record<string, unknown>,
+    "client"
+  ) as unknown as ReportJson;
+
+  if (audienceReportJson.searchSurfaces && audienceReportJson.auditSummary) {
+    const clientVm = buildSelectedEvidenceReportVm({
+      searchSurfaces: audienceReportJson.searchSurfaces,
+      reportAudience: "CLIENT",
+      riskSummary: audienceReportJson.riskSummary,
+      complianceSummary: audienceReportJson.complianceSummary,
+      evidenceQuality: audienceReportJson.evidenceQuality,
+    });
+    audienceReportJson.selectedEvidence = clientVm;
+    audienceReportJson.auditSummary = patchAuditSummaryWithSelectedEvidence(
+      audienceReportJson.auditSummary,
+      clientVm
+    );
+  }
+
+  const { json: withThumbnails, warnings: thumbnailWarnings } =
+    await attachSelectedImageThumbnailBytes(audienceReportJson, caseId);
+  const renderReportJson = await attachSerpSnapshotImage(withThumbnails);
+  return {
+    json: renderReportJson,
+    warnings: [...lexisWarnings, ...thumbnailWarnings],
+  };
+}
+
+export interface LegacyQaRenderResult {
+  pptxBase64: string;
+  pdfBase64: string;
+  slideCount: number;
+  warnings: string[];
+  pdfExportMode: "libreoffice" | "unknown";
+}
+
+/** QA-only: render legacy report_json through production /render (LibreOffice PDF). */
+export async function renderLegacyReportJsonForQa(input: {
+  caseId: string;
+  reportJson: ReportJson;
+}): Promise<LegacyQaRenderResult> {
+  const { json, warnings: prepWarnings } = await prepareLegacyClientRenderPayload(
+    input.caseId,
+    input.reportJson
+  );
+  const result = await callRenderer({
+    reportJson: json,
+    pptxKey: `qa/${input.caseId}/r98a-client.pptx`,
+    pdfKey: `qa/${input.caseId}/r98a-client.pdf`,
+    templateVersion: digitalProfileConfig.reportTemplateVersion,
+    audience: "client",
+    watermarkMode: "none",
+    reportLanguage: normalizeReportLanguage("ru", digitalProfileConfig.defaultLocale),
+  });
+  if (!result.pptx.contentBase64 || !result.pdf.contentBase64) {
+    throw new RendererUnavailableError(
+      "Renderer did not return file content",
+      "Expected base64 pptx/pdf bytes from the renderer"
+    );
+  }
+  const rendererWarnings = result.warnings ?? [];
+  const pdfExportMode = [...prepWarnings, ...rendererWarnings].some((w) =>
+    /fitz|text-only pdf|pdf fallback|_write_pdf_fallback/i.test(w)
+  )
+    ? "unknown"
+    : "libreoffice";
+  return {
+    pptxBase64: result.pptx.contentBase64,
+    pdfBase64: result.pdf.contentBase64,
+    slideCount: result.slideCount ?? 0,
+    warnings: [...prepWarnings, ...rendererWarnings],
+    pdfExportMode,
+  };
+}

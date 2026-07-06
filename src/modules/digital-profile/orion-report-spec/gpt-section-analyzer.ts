@@ -1,12 +1,13 @@
 import { z } from "zod";
 import { digitalProfileConfig } from "../config";
 import type { ReportAssetV1 } from "./asset-builder";
-import { composeTargetSectionSlides } from "./slide-composer";
 import { scanReportSpecClientText } from "./client-policy-scan";
+import { OpenAiRateLimitError, isOpenAiHttp429 } from "./openai-rate-limit";
 import { buildDeterministicSectionAnalysis } from "./deterministic-section-analyzer";
 import type { NormalizedEvidenceV1 } from "./normalized-evidence";
 import type { OrionReportSectionKey, SectionAnalysisResult } from "./report-spec-schema";
 import { SECTION_TITLES } from "./report-spec-schema";
+import { composeTargetSectionSlides } from "./slide-composer";
 
 interface OpenAiResponseShape {
   output?: Array<{
@@ -248,6 +249,17 @@ async function callOpenAiOnce(input: {
   }
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryDelayMs(error: unknown, attempt: number): number {
+  if (isOpenAiHttp429(error)) {
+    return 5000 * attempt + Math.floor(Math.random() * 1000);
+  }
+  return 500 * attempt + Math.floor(Math.random() * 250);
+}
+
 export async function analyzeOrionSectionWithGpt55(input: {
   sectionKey: OrionReportSectionKey;
   subject: { displayName: string; locale: "ru" | "en" };
@@ -256,6 +268,7 @@ export async function analyzeOrionSectionWithGpt55(input: {
   language: "ru";
   requireAi: boolean;
   allowDeterministicFallback?: boolean;
+  maxOpenaiRetries?: number;
 }): Promise<SectionAnalysisResult> {
   const evidenceRefs = new Set(input.evidence.map((e) => e.evidenceRef));
   const assetRefs = new Set(input.assets.map((a) => a.assetRef));
@@ -280,8 +293,9 @@ export async function analyzeOrionSectionWithGpt55(input: {
     return { ...fallback, warnings };
   }
 
+  const maxRetries = Math.max(1, input.maxOpenaiRetries ?? 3);
   let lastError: unknown;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
     try {
       const raw = await callOpenAiOnce(input);
       const parsed = sanitizeGptSection(sectionAnalysisSchema.parse(raw));
@@ -318,11 +332,23 @@ export async function analyzeOrionSectionWithGpt55(input: {
       };
     } catch (error) {
       lastError = error;
-      if (attempt < 3) await new Promise((r) => setTimeout(r, 500 * attempt));
+      if (isOpenAiHttp429(error)) {
+        if (attempt >= maxRetries) {
+          throw new OpenAiRateLimitError();
+        }
+        await sleep(retryDelayMs(error, attempt));
+        continue;
+      }
+      if (attempt < maxRetries) {
+        await sleep(retryDelayMs(error, attempt));
+      }
     }
   }
 
   if (input.requireAi && !input.allowDeterministicFallback) {
+    if (isOpenAiHttp429(lastError)) {
+      throw new OpenAiRateLimitError();
+    }
     throw lastError instanceof Error ? lastError : new Error("gpt55-failed");
   }
   const fallback = buildDeterministicSectionAnalysis({
