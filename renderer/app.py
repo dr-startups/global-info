@@ -27,6 +27,7 @@ from convert_pdf import convert_to_pdf
 from lexis_docx import process_lexis_docx_bytes
 from orion_manifest_render import render_orion_manifest
 from orion_report_spec_render import render_report_spec
+from orion_visual_composer import render_client_storyboard
 from render_pptx import build_pptx
 from report_i18n import normalize_lang
 
@@ -114,6 +115,11 @@ class OrionReportSpecRenderRequest(BaseModel):
     audience: str | None = "client"
 
 
+class OrionClientStoryboardRenderRequest(BaseModel):
+    storyboard: dict
+    assets: list[dict] = []
+
+
 def _file_info(key: str, path: str) -> FileInfo:
     with open(path, "rb") as fh:
         data = fh.read()
@@ -149,6 +155,22 @@ def orion_render_manifest(req: OrionManifestRenderRequest) -> OrionManifestRende
         result = render_orion_manifest(req.reportJson, audience=audience)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"ORION manifest render failed: {exc}") from exc
+    return OrionManifestRenderResponse(
+        slideCount=int(result.get("slideCount") or 0),
+        pptxBase64=str(result.get("pptxBase64") or ""),
+        pdfBase64=str(result.get("pdfBase64") or ""),
+        pages=[OrionManifestPage(**page) for page in result.get("pages") or []],
+    )
+
+
+@app.post("/orion/render-client-storyboard", response_model=OrionManifestRenderResponse)
+def orion_render_client_storyboard(req: OrionClientStoryboardRenderRequest) -> OrionManifestRenderResponse:
+    """Render ORION ClientStoryboard v1 into PPTX/PDF/PNG pages (R9.9)."""
+    try:
+        payload = {"storyboard": req.storyboard, "assets": req.assets}
+        result = render_client_storyboard(payload)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"ORION client storyboard render failed: {exc}") from exc
     return OrionManifestRenderResponse(
         slideCount=int(result.get("slideCount") or 0),
         pptxBase64=str(result.get("pptxBase64") or ""),
