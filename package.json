@@ -121,6 +121,8 @@
     "smoke:orion-client-storyboard-r99": "tsx scripts/smoke-orion-client-storyboard-r99.ts",
     "qa:r9-9-orion-client-storyboard": "tsx --env-file=.env scripts/qa-r9-9-orion-client-storyboard.ts",
     "qa:r9-10-real-case-storyboard-e2e": "tsx scripts/qa-r9-10-real-case-storyboard-e2e.ts",
+    "qa:r9-11-orion-visual-polish": "tsx scripts/qa-r9-11-orion-visual-polish.ts",
+    "audit:r910b-visual-r911": "tsx scripts/audit-r910b-visual-r911.ts",
     "smoke:report-media-layout-o542": "tsx scripts/smoke-report-media-layout-o542.ts",
     "smoke:report-visual-overflow-v16": "tsx scripts/smoke-report-visual-overflow-v16.ts",
     "smoke:report-i18n": "node scripts/smoke-report-i18n.mjs",

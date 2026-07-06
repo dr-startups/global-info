@@ -397,6 +397,19 @@ export function composeClientStoryboard(input: {
         title: "LexisNexis — сводка",
         subtitle: "Compliance",
         clientTakeaway: lexisSummaryTakeaway(input.caseContext),
+        metrics: [
+          {
+            label: "Сигналов",
+            value: input.caseContext.lexis.parsedSignals,
+            tone: input.caseContext.lexis.parsedSignals > 0 ? "warning" : "neutral",
+          },
+          {
+            label: "Визуальных страниц",
+            value: lexisAssets.length || input.caseContext.lexis.visualPageCount,
+            tone: "neutral",
+          },
+          { label: "Статус", value: "Готов к проверке", tone: "neutral" },
+        ],
         riskLevel: input.caseContext.lexis.parsedSignals > 0 ? "medium" : "low",
         layoutIntent: "lexis-summary",
         omitIfNoData: false,
@@ -429,12 +442,17 @@ export function composeClientStoryboard(input: {
       title: "Рекомендуемые действия",
       clientTakeaway: "Следующие шаги для клиента и команды проверки",
       recommendedActions: [
+        "Проверить совпадения идентификационных данных субъекта",
+        "Просмотреть отмеченные источники и подтвердить связь",
+        "Подтвердить совпадения LexisNexis вручную",
+        "Подготовить клиентский вывод после аналитической проверки",
         ...(exec?.recommendedActions ?? []),
         ...(ruAudit?.recommendedActions ?? []),
         ...(ruSearch?.recommendedActions ?? []),
       ]
+        .filter((label, index, arr) => arr.indexOf(label) === index)
         .slice(0, 5)
-        .map((l) => ({ label: l, rationale: "" })),
+        .map((label) => ({ label, rationale: "" })),
       riskLevel: "medium",
       layoutIntent: "action-list",
       omitIfNoData: false,

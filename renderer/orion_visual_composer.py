@@ -1,4 +1,4 @@
-"""ORION Client Storyboard Visual Composer — R9.9 deterministic slide renderer."""
+"""ORION Client Storyboard Visual Composer — R9.9/R9.11 deterministic slide renderer."""
 
 from __future__ import annotations
 
@@ -15,27 +15,41 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
 from pptx.util import Emu, Pt
 
+try:
+    from PIL import Image
+except ImportError:  # pragma: no cover
+    Image = None  # type: ignore
+
 FONT = "Arial"
-FS_TITLE = 26
-FS_SUBTITLE = 14
-FS_BODY = 12
-FS_CAPTION = 10
-FS_TAKEAWAY = 13
-FS_METRIC_VALUE = 20
-FS_METRIC_LABEL = 11
+FS_TITLE = 24
+FS_SECTION = 22
+FS_SUBTITLE = 13
+FS_BODY = 11
+FS_CAPTION = 9
+FS_TAKEAWAY = 12
+FS_LABEL = 10
+FS_METRIC_VALUE = 18
+FS_METRIC_LABEL = 10
+FS_BADGE = 10
 
-MARGIN_X = 450000
-CONTENT_W = 8200000
+MARGIN_X = 420000
+CONTENT_W = 8300000
 SLIDE_H = 6858000
-FOOTER_Y = 6400000
+FOOTER_Y = 6420000
+HEADER_H = 180000
+REPORT_TITLE = "ORION Digital Profile"
 
-TITLE_COLOR = RGBColor(0x1F, 0x3A, 0x5F)
+TITLE_COLOR = RGBColor(0x0F, 0x17, 0x2A)
 BODY_COLOR = RGBColor(0x33, 0x41, 0x55)
 MUTED_COLOR = RGBColor(0x64, 0x74, 0x8B)
 ACCENT = RGBColor(0x1D, 0x4E, 0xD8)
+NAVY = RGBColor(0x1E, 0x3A, 0x5F)
 CARD_BG = RGBColor(0xF8, 0xFA, 0xFC)
 CARD_BORDER = RGBColor(0xE2, 0xE8, 0xF0)
 WARN_BG = RGBColor(0xFF, 0xFB, 0xEB)
+LOW_BG = RGBColor(0xEC, 0xFD, 0xF5)
+MED_BG = RGBColor(0xFF, 0xF7, 0xED)
+HIGH_BG = RGBColor(0xFE, 0xF2, 0xF2)
 
 FORBIDDEN = re.compile(
     r"\b(PRESENT|UNKNOWN|adverse_media|pep|mock|fallback|provider|runtime|debug)\b",
@@ -51,6 +65,17 @@ def _safe(text: object) -> str:
     return val.strip()
 
 
+def _risk_palette(level: str) -> tuple[RGBColor, RGBColor, str]:
+    lvl = (level or "unknown").lower()
+    if lvl == "high":
+        return HIGH_BG, RGBColor(0xB9, 0x1C, 0x1C), "Повышенное внимание"
+    if lvl == "medium":
+        return MED_BG, RGBColor(0xC2, 0x41, 0x0C), "Умеренный риск"
+    if lvl == "low":
+        return LOW_BG, RGBColor(0x04, 0x78, 0x57), "Низкий риск"
+    return CARD_BG, MUTED_COLOR, "Требует проверки"
+
+
 class _Ctx:
     def __init__(self, prs: Presentation, page: int, total: int):
         self.prs = prs
@@ -59,19 +84,48 @@ class _Ctx:
         layout = prs.slide_layouts[6] if len(prs.slide_layouts) > 6 else prs.slide_layouts[0]
         self.slide = prs.slides.add_slide(layout)
 
-    def footer(self) -> None:
-        box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(FOOTER_Y), Emu(CONTENT_W), Emu(250000))
+    def brand_band(self) -> None:
+        band = self.slide.shapes.add_shape(1, Emu(0), Emu(0), Emu(9144000), Emu(HEADER_H))
+        band.fill.solid()
+        band.fill.fore_color.rgb = NAVY
+        band.line.fill.background()
+        box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(40000), Emu(CONTENT_W), Emu(120000))
         p = box.text_frame.paragraphs[0]
-        p.alignment = PP_ALIGN.RIGHT
         r = p.add_run()
-        r.text = f"{self.page} / {self.total}"
+        r.text = REPORT_TITLE
         r.font.name = FONT
+        r.font.bold = True
         r.font.size = Pt(FS_CAPTION)
-        r.font.color.rgb = MUTED_COLOR
+        r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
 
-    def title_block(self, title: str, subtitle: str = "") -> int:
-        y = 260000
-        box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(900000))
+    def footer(self) -> None:
+        line = self.slide.shapes.add_shape(1, Emu(MARGIN_X), Emu(FOOTER_Y - 60000), Emu(CONTENT_W), Emu(12000))
+        line.fill.solid()
+        line.fill.fore_color.rgb = CARD_BORDER
+        line.line.fill.background()
+        left = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(FOOTER_Y), Emu(4200000), Emu(220000))
+        lp = left.text_frame.paragraphs[0]
+        lr = lp.add_run()
+        lr.text = REPORT_TITLE
+        lr.font.name = FONT
+        lr.font.size = Pt(FS_CAPTION)
+        lr.font.color.rgb = MUTED_COLOR
+        right = self.slide.shapes.add_textbox(Emu(MARGIN_X + CONTENT_W - 900000), Emu(FOOTER_Y), Emu(900000), Emu(220000))
+        rp = right.text_frame.paragraphs[0]
+        rp.alignment = PP_ALIGN.RIGHT
+        rr = rp.add_run()
+        rr.text = f"{self.page} / {self.total}"
+        rr.font.name = FONT
+        rr.font.size = Pt(FS_CAPTION)
+        rr.font.color.rgb = MUTED_COLOR
+
+    def section_header(self, title: str, subtitle: str = "") -> int:
+        y = HEADER_H + 120000
+        accent = self.slide.shapes.add_shape(1, Emu(MARGIN_X), Emu(y), Emu(140000), Emu(520000))
+        accent.fill.solid()
+        accent.fill.fore_color.rgb = ACCENT
+        accent.line.fill.background()
+        box = self.slide.shapes.add_textbox(Emu(MARGIN_X + 180000), Emu(y), Emu(CONTENT_W - 180000), Emu(900000))
         tf = box.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
@@ -79,7 +133,7 @@ class _Ctx:
         r.text = _safe(title)
         r.font.name = FONT
         r.font.bold = True
-        r.font.size = Pt(FS_TITLE)
+        r.font.size = Pt(FS_SECTION)
         r.font.color.rgb = TITLE_COLOR
         if subtitle:
             p2 = tf.add_paragraph()
@@ -88,30 +142,119 @@ class _Ctx:
             r2.font.name = FONT
             r2.font.size = Pt(FS_SUBTITLE)
             r2.font.color.rgb = MUTED_COLOR
-        return y + 950000
+        return y + 980000
 
-    def takeaway(self, text: str, y: int) -> int:
-        shape = self.slide.shapes.add_shape(1, Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(650000))
+    def badge(self, text: str, risk_level: str, x: int, y: int) -> None:
+        bg, fg, label = _risk_palette(risk_level)
+        shape = self.slide.shapes.add_shape(1, Emu(x), Emu(y), Emu(2100000), Emu(340000))
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = bg
+        shape.line.color.rgb = fg
+        tf = shape.text_frame
+        tf.margin_left = Emu(80000)
+        tf.margin_top = Emu(50000)
+        p = tf.paragraphs[0]
+        r = p.add_run()
+        r.text = _safe(text or label)
+        r.font.name = FONT
+        r.font.bold = True
+        r.font.size = Pt(FS_BADGE)
+        r.font.color.rgb = fg
+
+    def labeled_block(self, label: str, text: str, y: int, height: int = 620000) -> int:
+        shape = self.slide.shapes.add_shape(1, Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(height))
         shape.fill.solid()
         shape.fill.fore_color.rgb = CARD_BG
         shape.line.color.rgb = ACCENT
         tf = shape.text_frame
         tf.margin_left = Emu(100000)
-        tf.margin_top = Emu(80000)
+        tf.margin_top = Emu(70000)
         tf.word_wrap = True
         p = tf.paragraphs[0]
         r = p.add_run()
-        r.text = _safe(text)[:320]
+        r.text = _safe(label)
         r.font.name = FONT
-        r.font.size = Pt(FS_TAKEAWAY)
-        r.font.color.rgb = BODY_COLOR
-        return y + 720000
+        r.font.bold = True
+        r.font.size = Pt(FS_LABEL)
+        r.font.color.rgb = ACCENT
+        p2 = tf.add_paragraph()
+        r2 = p2.add_run()
+        r2.text = _safe(text)[:340]
+        r2.font.name = FONT
+        r2.font.size = Pt(FS_TAKEAWAY)
+        r2.font.color.rgb = BODY_COLOR
+        return y + height + 80000
+
+    def callout(self, title: str, text: str, y: int, tone: str = "info") -> int:
+        bg = WARN_BG if tone == "warn" else CARD_BG
+        shape = self.slide.shapes.add_shape(1, Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(520000))
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = bg
+        shape.line.color.rgb = CARD_BORDER
+        tf = shape.text_frame
+        tf.margin_left = Emu(90000)
+        tf.margin_top = Emu(60000)
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        r = p.add_run()
+        r.text = _safe(title)
+        r.font.name = FONT
+        r.font.bold = True
+        r.font.size = Pt(FS_LABEL)
+        r.font.color.rgb = TITLE_COLOR
+        p2 = tf.add_paragraph()
+        r2 = p2.add_run()
+        r2.text = _safe(text)[:260]
+        r2.font.name = FONT
+        r2.font.size = Pt(FS_BODY)
+        r2.font.color.rgb = BODY_COLOR
+        return y + 560000
+
+    def card(self, title: str, body: str, x: int, y: int, w: int, h: int) -> None:
+        shape = self.slide.shapes.add_shape(1, Emu(x), Emu(y), Emu(w), Emu(h))
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = CARD_BG
+        shape.line.color.rgb = CARD_BORDER
+        tf = shape.text_frame
+        tf.margin_left = Emu(70000)
+        tf.margin_top = Emu(60000)
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        r = p.add_run()
+        r.text = _safe(title)
+        r.font.name = FONT
+        r.font.bold = True
+        r.font.size = Pt(FS_LABEL)
+        r.font.color.rgb = ACCENT
+        p2 = tf.add_paragraph()
+        r2 = p2.add_run()
+        r2.text = _safe(body)[:220]
+        r2.font.name = FONT
+        r2.font.size = Pt(FS_BODY)
+        r2.font.color.rgb = BODY_COLOR
+
+    def metrics(self, metrics: list[dict[str, Any]], y: int) -> int:
+        if not metrics:
+            return y
+        card_w = 1900000
+        gap = 160000
+        for idx, metric in enumerate(metrics[:4]):
+            cx = MARGIN_X + idx * (card_w + gap)
+            self.card(
+                _safe(metric.get("label")),
+                _safe(metric.get("value")),
+                cx,
+                y,
+                card_w,
+                720000,
+            )
+        return y + 820000
 
     def bullets(self, items: list[str], y: int, max_items: int = 5) -> int:
         cleaned = [_safe(x) for x in items if _safe(x)][:max_items]
         if not cleaned:
             return y
-        box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(2400000))
+        box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(2200000))
         tf = box.text_frame
         tf.word_wrap = True
         first = True
@@ -119,69 +262,75 @@ class _Ctx:
             p = tf.paragraphs[0] if first else tf.add_paragraph()
             first = False
             r = p.add_run()
-            r.text = f"• {bullet[:200]}"
+            r.text = f"• {bullet[:180]}"
             r.font.name = FONT
             r.font.size = Pt(FS_BODY)
             r.font.color.rgb = BODY_COLOR
-        return y + min(2400000, 450000 * len(cleaned) + 200000)
+        return y + min(2200000, 420000 * len(cleaned) + 180000)
 
-    def metrics(self, metrics: list[dict[str, Any]], y: int) -> int:
-        if not metrics:
-            return y
-        card_w = 1900000
-        gap = 180000
-        for idx, metric in enumerate(metrics[:4]):
-            cx = MARGIN_X + idx * (card_w + gap)
-            shape = self.slide.shapes.add_shape(1, Emu(cx), Emu(y), Emu(card_w), Emu(680000))
-            shape.fill.solid()
-            shape.fill.fore_color.rgb = CARD_BG
-            shape.line.color.rgb = CARD_BORDER
-            tf = shape.text_frame
-            tf.margin_left = Emu(80000)
-            tf.margin_top = Emu(60000)
-            p = tf.paragraphs[0]
-            r = p.add_run()
-            r.text = _safe(metric.get("label"))
-            r.font.name = FONT
-            r.font.size = Pt(FS_METRIC_LABEL)
-            r.font.color.rgb = MUTED_COLOR
-            p2 = tf.add_paragraph()
-            r2 = p2.add_run()
-            r2.text = _safe(metric.get("value"))
-            r2.font.name = FONT
-            r2.font.bold = True
-            r2.font.size = Pt(FS_METRIC_VALUE)
-            r2.font.color.rgb = TITLE_COLOR
-        return y + 780000
+    def image_contain(
+        self,
+        img_data: str,
+        x: int,
+        y: int,
+        box_w: int,
+        box_h: int,
+        asset_ref: str,
+    ) -> bool:
+        if not img_data:
+            return False
+        raw = base64.b64decode(str(img_data))
+        tmp = Path(tempfile.gettempdir()) / f"orion-img-{asset_ref}.png"
+        tmp.write_bytes(raw)
+        iw, ih = box_w, box_h
+        if Image is not None:
+            try:
+                with Image.open(io.BytesIO(raw)) as im:
+                    iw, ih = im.size
+            except Exception:  # noqa: BLE001
+                pass
+        scale = min(box_w / max(iw, 1), box_h / max(ih, 1))
+        draw_w = int(iw * scale)
+        draw_h = int(ih * scale)
+        left = x + (box_w - draw_w) // 2
+        top = y + (box_h - draw_h) // 2
+        frame = self.slide.shapes.add_shape(1, Emu(x), Emu(y), Emu(box_w), Emu(box_h))
+        frame.fill.solid()
+        frame.fill.fore_color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+        frame.line.color.rgb = CARD_BORDER
+        self.slide.shapes.add_picture(str(tmp), Emu(left), Emu(top), width=Emu(draw_w), height=Emu(draw_h))
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return True
 
     def unavailable_card(self, message: str, y: int) -> int:
-        shape = self.slide.shapes.add_shape(1, Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(900000))
-        shape.fill.solid()
-        shape.fill.fore_color.rgb = WARN_BG
-        shape.line.color.rgb = CARD_BORDER
-        tf = shape.text_frame
-        tf.margin_left = Emu(120000)
-        tf.margin_top = Emu(100000)
-        p = tf.paragraphs[0]
-        r = p.add_run()
-        r.text = _safe(message)
-        r.font.name = FONT
-        r.font.size = Pt(FS_BODY)
-        r.font.color.rgb = BODY_COLOR
-        return y + 950000
+        return self.callout("Материал недоступен", message, y, tone="warn")
 
 
 def _assets_map(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {str(a.get("assetRef")): a for a in payload.get("assets") or []}
 
 
+def _first_asset(slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    refs = slide.get("assetRefs") or []
+    asset_ref = refs[0].get("assetRef") if refs and isinstance(refs[0], dict) else None
+    if not asset_ref and refs:
+        asset_ref = str(refs[0])
+    return assets.get(str(asset_ref)) if asset_ref else None
+
+
 def render_cover(ctx: _Ctx, slide: dict[str, Any]) -> None:
-    y = ctx.title_block(slide.get("title") or "ORION Digital Profile", slide.get("subtitle") or "")
-    ctx.takeaway(slide.get("clientTakeaway") or "", y + 400000)
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "ORION Digital Profile", slide.get("subtitle") or "")
+    ctx.badge("Статус проверки", str(slide.get("riskLevel") or "unknown"), MARGIN_X + CONTENT_W - 2200000, HEADER_H + 140000)
+    ctx.labeled_block("Главный вывод", slide.get("clientTakeaway") or "", y + 20000, height=780000)
 
 
 def render_global_toc(ctx: _Ctx, slide: dict[str, Any], all_slides: list[dict[str, Any]]) -> None:
-    y = ctx.title_block(slide.get("title") or "Содержание", "")
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Содержание", "Структура отчёта")
     items = []
     for s in all_slides:
         t = _safe(s.get("title"))
@@ -191,80 +340,157 @@ def render_global_toc(ctx: _Ctx, slide: dict[str, Any], all_slides: list[dict[st
 
 
 def render_executive_summary(ctx: _Ctx, slide: dict[str, Any]) -> None:
-    y = ctx.title_block(slide.get("title") or "Executive Summary", slide.get("subtitle") or "")
-    y = ctx.takeaway(slide.get("clientTakeaway") or "", y)
-    y = ctx.metrics(slide.get("metrics") or [], y + 80000)
-    findings = slide.get("findings") or []
-    bullets = [_safe(f.get("summary")) for f in findings if isinstance(f, dict)]
-    actions = slide.get("recommendedActions") or []
-    bullets.extend([_safe(a.get("label")) for a in actions if isinstance(a, dict)])
-    ctx.bullets(bullets, y + 80000, max_items=5)
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Executive Summary", slide.get("subtitle") or "")
+    ctx.badge("Уровень риска", str(slide.get("riskLevel") or "unknown"), MARGIN_X + CONTENT_W - 2200000, HEADER_H + 140000)
+    y = ctx.labeled_block("Главный вывод", slide.get("clientTakeaway") or "", y)
+    y = ctx.metrics(slide.get("metrics") or [], y)
+    findings = [_safe(f.get("summary")) for f in (slide.get("findings") or []) if isinstance(f, dict)][:3]
+    actions = [_safe(a.get("label")) for a in (slide.get("recommendedActions") or []) if isinstance(a, dict)][:2]
+    col_w = (CONTENT_W - 240000) // 3
+    gap = 120000
+    ctx.card("Что найдено", findings[0] if findings else "Существенные сигналы требуют ручной проверки.", MARGIN_X, y, col_w, 1100000)
+    ctx.card(
+        "Почему это важно",
+        findings[1] if len(findings) > 1 else (slide.get("clientTakeaway") or "")[:220],
+        MARGIN_X + col_w + gap,
+        y,
+        col_w,
+        1100000,
+    )
+    ctx.card(
+        "Что проверить дальше",
+        actions[0] if actions else "Подтвердить связь каждого сигнала с субъектом.",
+        MARGIN_X + 2 * (col_w + gap),
+        y,
+        col_w,
+        1100000,
+    )
+    y += 1180000
+    if actions:
+        ctx.callout("Следующие шаги", " • ".join(actions[:3]), y, tone="info")
 
 
 def render_region_summary(ctx: _Ctx, slide: dict[str, Any]) -> None:
-    y = ctx.title_block(slide.get("title") or "Сводка региона", slide.get("subtitle") or "")
-    y = ctx.takeaway(slide.get("clientTakeaway") or "", y)
-    findings = slide.get("findings") or []
-    ctx.bullets([_safe(f.get("summary")) for f in findings if isinstance(f, dict)], y + 80000, max_items=5)
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Сводка региона", slide.get("subtitle") or "")
+    y = ctx.labeled_block("Краткий вывод", slide.get("clientTakeaway") or "", y, height=560000)
+    findings = [_safe(f.get("summary")) for f in (slide.get("findings") or []) if isinstance(f, dict)][:3]
+    col_w = (CONTENT_W - 240000) // 3
+    gap = 120000
+    ctx.card("Что найдено", findings[0] if findings else "Подтверждённые материалы ограничены.", MARGIN_X, y, col_w, 1050000)
+    ctx.card(
+        "Почему это важно",
+        findings[1] if len(findings) > 1 else "Сигналы влияют на общую картину риска по региону.",
+        MARGIN_X + col_w + gap,
+        y,
+        col_w,
+        1050000,
+    )
+    ctx.card(
+        "Что требует проверки",
+        findings[2] if len(findings) > 2 else "Ручная верификация спорных совпадений.",
+        MARGIN_X + 2 * (col_w + gap),
+        y,
+        col_w,
+        1050000,
+    )
 
 
 def render_search_overview(ctx: _Ctx, slide: dict[str, Any]) -> None:
-    y = ctx.title_block(slide.get("title") or "Поисковая выдача", slide.get("subtitle") or "")
-    y = ctx.takeaway(slide.get("clientTakeaway") or "", y)
-    y = ctx.metrics(slide.get("metrics") or [], y + 80000)
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Поисковая выдача", slide.get("subtitle") or "")
+    y = ctx.labeled_block("Обзор", slide.get("clientTakeaway") or "", y, height=520000)
+    y = ctx.metrics(slide.get("metrics") or [], y)
+    y = ctx.callout(
+        "Риск и релевантность",
+        "Отдельные результаты могут быть косвенными; каждый существенный сигнал требует ручной проверки связи с субъектом.",
+        y,
+        tone="warn",
+    )
     evidence = slide.get("evidenceRefs") or []
     ctx.bullets(
-        [_safe(f"{e.get('label')}: {e.get('summary')}") for e in evidence if isinstance(e, dict)],
+        [_safe(f"{e.get('label')}: {e.get('statusLabel')}") for e in evidence if isinstance(e, dict)],
         y + 80000,
         max_items=5,
     )
 
 
 def render_serp_screenshot(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> None:
-    y = ctx.title_block(slide.get("title") or "Снимок выдачи", slide.get("subtitle") or "")
-    if slide.get("clientTakeaway"):
-        y = ctx.takeaway(slide.get("clientTakeaway"), y)
-    refs = slide.get("assetRefs") or []
-    asset_ref = refs[0].get("assetRef") if refs and isinstance(refs[0], dict) else None
-    if not asset_ref and refs:
-        asset_ref = str(refs[0])
-    asset = assets.get(str(asset_ref)) if asset_ref else None
-    img_data = (asset or {}).get("imageData")
-    img_y = y + 60000
-    if img_data:
-        raw = base64.b64decode(str(img_data))
-        tmp = Path(tempfile.gettempdir()) / f"orion-storyboard-{asset_ref}.png"
-        tmp.write_bytes(raw)
-        ctx.slide.shapes.add_picture(str(tmp), Emu(MARGIN_X), Emu(img_y), width=Emu(CONTENT_W), height=Emu(4800000))
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Снимок выдачи", slide.get("subtitle") or "")
+    y = ctx.callout(
+        "Релевантность и риск",
+        _safe(slide.get("clientTakeaway") or "Визуализация поисковой выдачи для аналитической проверки."),
+        y,
+        tone="warn",
+    )
+    asset = _first_asset(slide, assets)
+    img_y = y + 70000
+    box_h = 4300000
+    if asset and asset.get("imageData"):
+        ctx.image_contain(str(asset.get("imageData")), MARGIN_X, img_y, CONTENT_W, box_h, str(asset.get("assetRef")))
     else:
         ctx.unavailable_card("Данные снимка поисковой выдачи не обнаружены.", img_y)
 
 
+def render_lexis_summary(ctx: _Ctx, slide: dict[str, Any]) -> None:
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "LexisNexis — сводка", slide.get("subtitle") or "Compliance")
+    ctx.badge("Статус импорта", str(slide.get("riskLevel") or "medium"), MARGIN_X + CONTENT_W - 2200000, HEADER_H + 140000)
+    y = ctx.metrics(slide.get("metrics") or [], y)
+    y = ctx.labeled_block("Аналитическая сводка", slide.get("clientTakeaway") or "", y)
+    ctx.callout(
+        "Ручная проверка",
+        "Материалы LexisNexis не являются юридическим заключением и требуют аналитического подтверждения перед использованием в решении.",
+        y + 80000,
+        tone="warn",
+    )
+
+
+def render_lexis_visual_page(
+    ctx: _Ctx,
+    slide: dict[str, Any],
+    assets: dict[str, dict[str, Any]],
+    page_idx: int,
+    page_total: int,
+) -> None:
+    ctx.brand_band()
+    subtitle = f"Страница {page_idx} из {page_total}"
+    y = ctx.section_header(slide.get("title") or "LexisNexis", subtitle)
+    asset = _first_asset(slide, assets)
+    img_y = y + 40000
+    box_h = 4600000
+    if asset and asset.get("imageData"):
+        ctx.image_contain(str(asset.get("imageData")), MARGIN_X, img_y, CONTENT_W, box_h, str(asset.get("assetRef")))
+    else:
+        ctx.unavailable_card("Визуальная страница недоступна.", img_y)
+
+
 def render_search_results_table(ctx: _Ctx, slide: dict[str, Any]) -> None:
-    y = ctx.title_block(slide.get("title") or "Результаты поиска", "")
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Результаты поиска", "Ключевые источники")
     evidence = slide.get("evidenceRefs") or []
     rows = []
-    for e in evidence[:6]:
+    for e in evidence[:5]:
         if not isinstance(e, dict):
             continue
         rows.append(f"{_safe(e.get('label'))} — {_safe(e.get('statusLabel'))}")
-    ctx.bullets(rows, y, max_items=6)
+    ctx.bullets(rows, y, max_items=5)
 
 
 def render_adverse_media_summary(ctx: _Ctx, slide: dict[str, Any]) -> None:
-    y = ctx.title_block(slide.get("title") or "Негативные публикации", "")
-    y = ctx.takeaway(slide.get("clientTakeaway") or "", y)
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Негативные публикации", "")
+    y = ctx.labeled_block("Интерпретация", slide.get("clientTakeaway") or "", y, height=560000)
     findings = slide.get("findings") or []
     ctx.bullets([_safe(f.get("summary")) for f in findings if isinstance(f, dict)], y + 80000, max_items=4)
 
 
 def render_image_grid(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> None:
-    y = ctx.title_block(slide.get("title") or "Изображения", "")
-    y = ctx.takeaway(slide.get("clientTakeaway") or "", y)
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Изображения", "")
+    y = ctx.labeled_block("Контекст", slide.get("clientTakeaway") or "", y, height=480000)
     refs = slide.get("assetRefs") or []
     placed = 0
     for idx, ref in enumerate(refs[:4]):
@@ -275,68 +501,70 @@ def render_image_grid(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[s
         col = idx % 2
         row = idx // 2
         cx = MARGIN_X + col * (CONTENT_W // 2 + 80000)
-        cy = y + row * 2400000
-        raw = base64.b64decode(str(asset.get("imageData")))
-        tmp = Path(tempfile.gettempdir()) / f"orion-grid-{asset_ref}.png"
-        tmp.write_bytes(raw)
-        ctx.slide.shapes.add_picture(str(tmp), Emu(cx), Emu(cy), width=Emu(CONTENT_W // 2 - 100000), height=Emu(2200000))
+        cy = y + row * 2300000
+        ctx.image_contain(str(asset.get("imageData")), cx, cy, CONTENT_W // 2 - 100000, 2100000, str(asset_ref))
         placed += 1
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
     if placed == 0:
         ctx.unavailable_card("Изображения по данному региону не обнаружены.", y + 80000)
 
 
 def render_video_cards(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> None:
-    y = ctx.title_block(slide.get("title") or "Видеоматериалы", "")
-    refs = slide.get("assetRefs") or []
-    asset_ref = None
-    if refs:
-        asset_ref = refs[0].get("assetRef") if isinstance(refs[0], dict) else str(refs[0])
-    asset = assets.get(str(asset_ref)) if asset_ref else None
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Видеоматериалы", "")
+    asset = _first_asset(slide, assets)
     if asset and asset.get("imageData"):
-        raw = base64.b64decode(str(asset.get("imageData")))
-        tmp = Path(tempfile.gettempdir()) / f"orion-video-{asset_ref}.png"
-        tmp.write_bytes(raw)
-        ctx.slide.shapes.add_picture(str(tmp), Emu(MARGIN_X), Emu(y + 80000), width=Emu(CONTENT_W), height=Emu(4200000))
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
+        ctx.image_contain(str(asset.get("imageData")), MARGIN_X, y + 80000, CONTENT_W, 4200000, str(asset.get("assetRef")))
     else:
         ctx.unavailable_card("Видеоматериалы не обнаружены или недоступны для предпросмотра.", y + 80000)
 
 
 def render_knowledge_panel(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> None:
-    y = ctx.title_block(slide.get("title") or "Справочная карточка", "")
-    refs = slide.get("assetRefs") or []
-    asset_ref = refs[0].get("assetRef") if refs and isinstance(refs[0], dict) else None
-    asset = assets.get(str(asset_ref)) if asset_ref else None
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Справочная карточка", "")
+    asset = _first_asset(slide, assets)
     if asset and asset.get("imageData"):
-        raw = base64.b64decode(str(asset.get("imageData")))
-        tmp = Path(tempfile.gettempdir()) / f"orion-kp-{asset_ref}.png"
-        tmp.write_bytes(raw)
-        ctx.slide.shapes.add_picture(str(tmp), Emu(MARGIN_X), Emu(y + 80000), width=Emu(CONTENT_W // 2), height=Emu(3800000))
+        ctx.image_contain(str(asset.get("imageData")), MARGIN_X, y + 80000, CONTENT_W // 2 + 2000000, 3800000, str(asset.get("assetRef")))
     else:
-        ctx.takeaway(slide.get("clientTakeaway") or "Справочные данные ограничены.", y)
+        ctx.labeled_block("Справочные данные", slide.get("clientTakeaway") or "Справочные данные ограничены.", y)
 
 
 def render_recommended_actions(ctx: _Ctx, slide: dict[str, Any]) -> None:
-    y = ctx.title_block(slide.get("title") or "Рекомендуемые действия", "")
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Рекомендуемые действия", "Практические шаги для клиента")
+    y = ctx.labeled_block("Контекст", slide.get("clientTakeaway") or "", y, height=480000)
     actions = slide.get("recommendedActions") or []
-    ctx.bullets([_safe(a.get("label")) for a in actions if isinstance(a, dict)], y, max_items=5)
+    labels = [_safe(a.get("label")) for a in actions if isinstance(a, dict) and _safe(a.get("label"))][:5]
+    defaults = [
+        "Проверить совпадения идентификационных данных субъекта",
+        "Просмотреть отмеченные источники и подтвердить связь",
+        "Подтвердить совпадения LexisNexis вручную",
+        "Зафиксировать клиентский вывод после проверки",
+    ]
+    merged: list[str] = []
+    for item in labels + defaults:
+        if item and item not in merged:
+            merged.append(item)
+        if len(merged) >= 5:
+            break
+    col_w = (CONTENT_W - 120000) // 2
+    for idx, label in enumerate(merged[:5]):
+        col = idx % 2
+        row = idx // 2
+        cx = MARGIN_X + col * (col_w + 120000)
+        cy = y + row * 900000
+        ctx.card(f"Шаг {idx + 1}", label, cx, cy, col_w, 820000)
 
 
 def render_no_data_compact(ctx: _Ctx, slide: dict[str, Any]) -> None:
-    y = ctx.title_block(slide.get("title") or "Недостаточно данных", "")
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Недостаточно данных", "")
     ctx.unavailable_card(slide.get("clientTakeaway") or "Данные не обнаружены / не применимо", y)
 
 
 def render_generic(ctx: _Ctx, slide: dict[str, Any]) -> None:
-    y = ctx.title_block(slide.get("title") or "Раздел", slide.get("subtitle") or "")
-    ctx.takeaway(slide.get("clientTakeaway") or "", y)
+    ctx.brand_band()
+    y = ctx.section_header(slide.get("title") or "Раздел", slide.get("subtitle") or "")
+    ctx.labeled_block("Сводка", slide.get("clientTakeaway") or "", y)
 
 
 def render_client_storyboard(payload: dict[str, Any]) -> dict[str, Any]:
@@ -347,6 +575,10 @@ def render_client_storyboard(payload: dict[str, Any]) -> dict[str, Any]:
     prs.slide_width = Emu(9144000)
     prs.slide_height = Emu(SLIDE_H)
     total = max(len(slides), 1)
+
+    lexis_visual_slides = [s for s in slides if str(s.get("slideType")) == "lexisnexis_visual_page"]
+    lexis_total = len(lexis_visual_slides)
+    lexis_idx = 0
 
     for idx, slide in enumerate(slides, start=1):
         stype = str(slide.get("slideType") or "region_summary")
@@ -374,9 +606,10 @@ def render_client_storyboard(payload: dict[str, Any]) -> dict[str, Any]:
         elif stype == "knowledge_panel":
             render_knowledge_panel(ctx, slide, assets)
         elif stype == "lexisnexis_summary":
-            render_generic(ctx, slide)
+            render_lexis_summary(ctx, slide)
         elif stype == "lexisnexis_visual_page":
-            render_serp_screenshot(ctx, slide, assets)
+            lexis_idx += 1
+            render_lexis_visual_page(ctx, slide, assets, lexis_idx, lexis_total)
         elif stype == "recommended_actions":
             render_recommended_actions(ctx, slide)
         elif stype == "no_data_compact":
