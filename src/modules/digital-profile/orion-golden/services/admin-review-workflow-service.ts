@@ -1,5 +1,6 @@
 /**
- * R10.5 — Manual review admin workflow service (artifact-backed).
+ * R10.5 / R10.8b — Manual review admin workflow service.
+ * Persistence via AdminReviewDecisionRepository (artifact default; DB deferred).
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -7,11 +8,13 @@ import { join } from "node:path";
 import {
   ORION_GOLDEN_QA_STORAGE_ROOT,
   adminReviewDecisionsPath,
-  applyAdminReviewDecision,
   ensureAdminReviewDecisions,
   loadAdminReviewDecisions,
 } from "../evidence/admin-review-decision-store";
 import type { AdminReviewDecision, AdminReviewDecisionSet } from "../evidence/admin-review-decision";
+import { recordToLegacyDecision } from "../evidence/admin-review-decision-record";
+import { getAdminReviewDecisionRepository } from "../evidence/admin-review-decision-repository-factory";
+import { resolveAdminReviewDecisionStoreMode } from "../evidence/admin-review-decision-store-config";
 import { buildGatedEvidenceBundles, type EvidenceBundlesArtifact } from "../evidence/evidence-client-gate";
 import type { EvidenceJudgment } from "../evidence/evidence-judgment";
 import type { ManualReviewQueue } from "../evidence/manual-review-queue";
@@ -160,15 +163,50 @@ export function getManualReviewItem(caseId: string, evidenceId: string) {
     ...item,
     ...judgmentExtras,
     adminDecision: adminDecision ?? { evidenceId, status: "PENDING" as const },
+    decisionStoreMode: resolveAdminReviewDecisionStoreMode(),
   };
 }
 
-export function submitAdminReviewDecision(
+/**
+ * Submit via repository abstraction (artifact default).
+ * Preserves history; does not silently overwrite prior versions.
+ */
+export async function submitAdminReviewDecision(
   caseId: string,
   evidenceId: string,
   decision: Omit<AdminReviewDecision, "evidenceId">
-): AdminReviewDecisionSet {
-  return applyAdminReviewDecision(caseId, evidenceId, decision);
+): Promise<AdminReviewDecisionSet> {
+  const repo = getAdminReviewDecisionRepository();
+  await repo.saveDecision(caseId, evidenceId, {
+    status: decision.status,
+    reviewerNote: decision.reviewerNote,
+    approvedClientSummary: decision.approvedClientSummary,
+    caveatText: decision.caveatText,
+    requestedSources: decision.requestedSources,
+    reviewedBy: decision.reviewedBy,
+    reviewedAt: decision.reviewedAt,
+    source: "admin_ui",
+  });
+  const active = await repo.listDecisions(caseId);
+  const existing = loadAdminReviewDecisions(caseId);
+  return {
+    version: "r10-5-admin-review-decisions-v1",
+    caseId,
+    generatedAt: existing?.generatedAt ?? new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    qaSampleOnly: false,
+    decisions: active.map(recordToLegacyDecision),
+  };
+}
+
+export async function listAdminReviewDecisionHistory(caseId: string, evidenceId: string) {
+  const repo = getAdminReviewDecisionRepository();
+  return repo.listDecisionHistory(caseId, evidenceId);
+}
+
+export async function getActiveAdminReviewDecision(caseId: string, evidenceId: string) {
+  const repo = getAdminReviewDecisionRepository();
+  return repo.getActiveDecision(caseId, evidenceId);
 }
 
 export function listAdminReviewDecisions(caseId: string): AdminReviewDecisionSet {
@@ -251,3 +289,8 @@ export function persistRegeneratedClientContent(caseId: string): {
 }
 
 export { adminReviewDecisionsPath, ORION_GOLDEN_QA_STORAGE_ROOT };
+export { resolveAdminReviewDecisionStoreMode } from "../evidence/admin-review-decision-store-config";
+export {
+  getAdminReviewDecisionRepository,
+  createAdminReviewDecisionRepository,
+} from "../evidence/admin-review-decision-repository-factory";

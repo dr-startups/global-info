@@ -87,7 +87,7 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
     });
   }
   const actor = actorOf(user);
-  const data = submitAdminReviewDecision(id, evidenceId, {
+  const data = await submitAdminReviewDecision(id, evidenceId, {
     status: input.status,
     reviewerNote: input.reviewerNote,
     approvedClientSummary: input.approvedClientSummary,
