@@ -12,6 +12,7 @@ import { ORION_GOLDEN_BLUEPRINT } from "./blueprint/orion-golden-blueprint";
 import { buildOrionGoldenAssets } from "./assets/orion-asset-builder";
 import { composeOrionGoldenDeck } from "./composer/orion-deck-composer";
 import {
+  assembleOrionClientContentFromSections,
   buildOrionClientContent,
   renderOrionClientContentMarkdown,
 } from "./content/orion-client-content-builder";
@@ -34,15 +35,81 @@ import { buildManualReviewQueue } from "./evidence/manual-review-queue";
 import { routeEvidenceToSections, validateRoutingAgainstBlueprint } from "./evidence/orion-section-router";
 import { classifyInventoryRelevance } from "./evidence/relevance-classifier";
 import { runOrionGoldenExecutiveSynthesis } from "./gpt/orion-executive-synthesizer";
+import {
+  buildExecutiveSynthesisFromSections,
+  buildExecutiveSynthesisInput,
+  buildDeterministicExecutiveFallback,
+} from "./gpt/orion-executive-synthesis-from-sections";
+import { analyzeOrionSections } from "./gpt/orion-section-analysis-orchestrator";
 import { runOrionGoldenSectionAnalyses } from "./gpt/orion-section-analyzer";
 import { inspectOrionGoldenClientPolicy } from "./qa/client-policy-inspection";
 import { inspectContentQualityReview } from "./qa/r10-4-content-quality-review";
 import { inspectEvidenceJudgmentQa } from "./qa/r10-4-evidence-judgment-qa";
 import { inspectAdminReviewWorkflowQa } from "./qa/r10-5-admin-review-workflow-qa";
+import { inspectSectionGptOrchestrationQa } from "./qa/r10-6-section-gpt-orchestration-qa";
+import { buildOrionSectionBundles, countInventoryRegions } from "./sections/orion-section-bundle-builder";
+import type { OrionSectionBundleIndex } from "./sections/orion-section-bundle";
+import type { OrionSectionAnalysisIndex } from "./sections/orion-section-analysis";
+import { buildRiskMatrixFromSections } from "./sections/orion-risk-matrix-from-sections";
+import { getClientAuditSections } from "./sections/orion-section-registry";
 import { inspectOrionGoldenVisualQuality } from "./qa/visual-qa-inspection";
 import { renderOrionGoldenArtifacts } from "./renderer/orion-golden-render-client";
 import { buildOrionGoldenReportSpec } from "./report-spec/orion-report-spec";
 import type { OrionGoldenQaVerdict } from "./types";
+
+function writeSectionBundleArtifacts(outputRoot: string, bundles: Awaited<ReturnType<typeof buildOrionSectionBundles>>, caseId: string, reportRunId: string): void {
+  const bundlesDir = join(outputRoot, "section-bundles");
+  mkdirSync(bundlesDir, { recursive: true });
+  const index: OrionSectionBundleIndex = {
+    version: "r10-6-section-bundles-index-v1",
+    caseId,
+    reportRunId,
+    generatedAt: new Date().toISOString(),
+    sectionCount: bundles.length,
+    sections: bundles.map((b) => ({
+      sectionId: b.sectionId,
+      order: b.order,
+      title: b.title,
+      analysisMode: b.analysisMode,
+      applicable: b.applicable,
+      allowedCount: b.allowedEvidence.length,
+      dataSufficiency: b.dataSufficiency,
+    })),
+  };
+  writeJson(join(bundlesDir, "index.json"), index);
+  for (const bundle of bundles) {
+    writeJson(join(bundlesDir, `${bundle.sectionId}.input.json`), bundle);
+  }
+}
+
+function writeSectionAnalysisArtifacts(
+  outputRoot: string,
+  analyses: Awaited<ReturnType<typeof analyzeOrionSections>>["analyses"],
+  meta: Awaited<ReturnType<typeof analyzeOrionSections>>["meta"],
+  caseId: string,
+  reportRunId: string
+): void {
+  const analysesDir = join(outputRoot, "section-analyses");
+  mkdirSync(analysesDir, { recursive: true });
+  const index: OrionSectionAnalysisIndex = {
+    version: "r10-6-section-analyses-index-v1",
+    caseId,
+    reportRunId,
+    generatedAt: new Date().toISOString(),
+    gptSectionCallCount: meta.gptSectionCallCount,
+    skippedSections: meta.skippedSections,
+    analyses: analyses.map((a) => ({
+      sectionId: a.sectionId,
+      order: a.order,
+      status: a.status,
+      gptCallMade: a.gptCallMade ?? false,
+    })),
+  };
+  writeJson(join(analysesDir, "index.json"), index);
+  for (const analysis of analyses) {
+    writeJson(join(analysesDir, `${analysis.sectionId}.analysis.json`), analysis);
+  }
+}
 
 export const R10_OUTPUT_ROOT = join(
   process.cwd(),
@@ -180,18 +247,6 @@ export async function runR10OrionGoldenE2e(options: {
     manualQueue,
     judgments,
   });
-  writeJson(join(outputRoot, "orion-client-content.pre-review.json"), clientContentPreReview);
-  writeFileSync(
-    join(outputRoot, "orion-client-content.pre-review.md"),
-    renderOrionClientContentMarkdown(clientContentPreReview),
-    "utf-8"
-  );
-  writeJson(join(outputRoot, "orion-client-content.json"), clientContentPreReview);
-  writeFileSync(
-    join(outputRoot, "orion-client-content.md"),
-    renderOrionClientContentMarkdown(clientContentPreReview),
-    "utf-8"
-  );
 
   const wrongSubjectJudgments = judgments.filter((j) => j.subjectBinding === "WRONG_SUBJECT");
   const productionAdminDecisions = ensureAdminReviewDecisions({
@@ -218,12 +273,6 @@ export async function runR10OrionGoldenE2e(options: {
     judgments,
     adminDecisions: sampleAdminDecisions.decisions,
   });
-  writeJson(join(outputRoot, "orion-client-content.post-review.json"), clientContentPostReview);
-  writeFileSync(
-    join(outputRoot, "orion-client-content.post-review.md"),
-    renderOrionClientContentMarkdown(clientContentPostReview),
-    "utf-8"
-  );
 
   const adminWorkflowQa = inspectAdminReviewWorkflowQa({
     preReviewContent: clientContentPreReview,
@@ -233,6 +282,23 @@ export async function runR10OrionGoldenE2e(options: {
     judgments,
   });
   writeJson(join(outputRoot, "r10-5-admin-review-workflow-qa.json"), adminWorkflowQa);
+
+  const regionCounts = countInventoryRegions(inventory);
+  const sectionBundlesPre = buildOrionSectionBundles({
+    caseInfo: { caseId, reportRunId, subjectName: inventory.subject.fullName, aliases: inventory.subject.aliases },
+    inventory,
+    judgments,
+    manualQueue,
+    adminDecisions: productionAdminDecisions.decisions,
+    regionSettings: { ruEnabled: regionCounts.ru > 0, uaeEnabled: regionCounts.uae > 0 },
+  });
+  writeSectionBundleArtifacts(outputRoot, sectionBundlesPre, caseId, reportRunId);
+  writeJson(join(outputRoot, "orion-section-registry.json"), {
+    version: "r10-6-orion-section-registry-v1",
+    mode: "client_audit",
+    sectionCount: getClientAuditSections().length,
+    sections: getClientAuditSections(),
+  });
 
   const judgmentQa = inspectEvidenceJudgmentQa({
     judgments,
@@ -254,6 +320,13 @@ export async function runR10OrionGoldenE2e(options: {
   let gptBlocked = false;
   let sectionAnalyses: Awaited<ReturnType<typeof runOrionGoldenSectionAnalyses>> = [];
   let executive: Awaited<ReturnType<typeof runOrionGoldenExecutiveSynthesis>> | null = null;
+  let r10SectionAnalyses: Awaited<ReturnType<typeof analyzeOrionSections>>["analyses"] = [];
+  let orchestrationMeta: Awaited<ReturnType<typeof analyzeOrionSections>>["meta"] | null = null;
+  let executiveSynthesisOutput: Awaited<ReturnType<typeof buildExecutiveSynthesisFromSections>> | null = null;
+  let executiveSynthesisInput: ReturnType<typeof buildExecutiveSynthesisInput> | null = null;
+  let sectionDerivedRiskMatrix: ReturnType<typeof buildRiskMatrixFromSections> | null = null;
+  let clientContentPreReviewFromSections: ReturnType<typeof assembleOrionClientContentFromSections> | null = null;
+  let clientContentPostReviewFromSections: ReturnType<typeof assembleOrionClientContentFromSections> | null = null;
 
   if (!readiness.ready && requireAi) {
     gptBlocked = true;
@@ -261,20 +334,119 @@ export async function runR10OrionGoldenE2e(options: {
     writeJson(join(outputRoot, "executive-synthesis.json"), { blocked: true });
   } else {
     try {
-      sectionAnalyses = await runOrionGoldenSectionAnalyses({
-        packs: gatedPacks,
-        subjectName: inventory.subject.fullName,
+      const sectionResult = await analyzeOrionSections({
+        sectionBundles: sectionBundlesPre,
+        caseInfo: { subjectName: inventory.subject.fullName, caseId },
         requireAi,
       });
-      writeJson(join(outputRoot, "gpt-section-analyses.json"), sectionAnalyses);
+      r10SectionAnalyses = sectionResult.analyses;
+      orchestrationMeta = sectionResult.meta;
+      orchestrationMeta.executiveSynthesisCallCount = 1;
+      orchestrationMeta.riskMatrixSynthesisCount = 1;
+      writeSectionAnalysisArtifacts(outputRoot, r10SectionAnalyses, orchestrationMeta, caseId, reportRunId);
+      writeJson(join(outputRoot, "r10-6-gpt-runtime-diagnostics.json"), sectionResult.runtimeDiagnostics);
 
-      executive = await runOrionGoldenExecutiveSynthesis({
-        sectionAnalyses,
-        inventory,
-        routing,
-        requireAi,
+      executiveSynthesisInput = buildExecutiveSynthesisInput(caseId, inventory.subject.fullName, r10SectionAnalyses);
+      writeJson(join(outputRoot, "executive-synthesis.input.json"), executiveSynthesisInput);
+
+      try {
+        executiveSynthesisOutput = await buildExecutiveSynthesisFromSections({
+          synthesisInput: executiveSynthesisInput,
+          requireAi,
+        });
+      } catch {
+        executiveSynthesisOutput = buildDeterministicExecutiveFallback(executiveSynthesisInput);
+      }
+      writeJson(join(outputRoot, "executive-synthesis.output.json"), executiveSynthesisOutput);
+
+      sectionDerivedRiskMatrix = buildRiskMatrixFromSections({
+        caseId,
+        sectionAnalyses: r10SectionAnalyses,
+        sectionBundles: sectionBundlesPre,
       });
-      writeJson(join(outputRoot, "executive-synthesis.json"), executive);
+      writeJson(join(outputRoot, "risk-matrix.section-derived.json"), sectionDerivedRiskMatrix);
+
+      clientContentPreReviewFromSections = assembleOrionClientContentFromSections({
+        mode: "pre_review",
+        caseId,
+        reportRunId,
+        subject: { fullName: inventory.subject.fullName, aliases: inventory.subject.aliases },
+        sectionAnalyses: r10SectionAnalyses,
+        executiveSynthesis: executiveSynthesisOutput,
+        riskMatrix: sectionDerivedRiskMatrix,
+        manualQueue,
+        adminDecisionSummary: countAdminDecisionsByStatus(productionAdminDecisions.decisions),
+      });
+      writeJson(join(outputRoot, "orion-client-content.pre-review.json"), clientContentPreReviewFromSections);
+      writeFileSync(
+        join(outputRoot, "orion-client-content.pre-review.md"),
+        renderOrionClientContentMarkdown(clientContentPreReviewFromSections),
+        "utf-8"
+      );
+
+      const sectionBundlesPost = buildOrionSectionBundles({
+        caseInfo: { caseId, reportRunId, subjectName: inventory.subject.fullName, aliases: inventory.subject.aliases },
+        inventory,
+        judgments,
+        manualQueue,
+        adminDecisions: sampleAdminDecisions.decisions,
+        regionSettings: { ruEnabled: regionCounts.ru > 0, uaeEnabled: regionCounts.uae > 0 },
+      });
+      clientContentPostReviewFromSections = assembleOrionClientContentFromSections({
+        mode: "post_review",
+        caseId,
+        reportRunId,
+        subject: { fullName: inventory.subject.fullName, aliases: inventory.subject.aliases },
+        sectionAnalyses: r10SectionAnalyses,
+        executiveSynthesis: executiveSynthesisOutput,
+        riskMatrix: buildRiskMatrixFromSections({ caseId, sectionAnalyses: r10SectionAnalyses, sectionBundles: sectionBundlesPost }),
+        manualQueue,
+        adminDecisionSummary: countAdminDecisionsByStatus(sampleAdminDecisions.decisions),
+      });
+      writeJson(join(outputRoot, "orion-client-content.post-review.json"), clientContentPostReviewFromSections);
+      writeFileSync(
+        join(outputRoot, "orion-client-content.post-review.md"),
+        renderOrionClientContentMarkdown(clientContentPostReviewFromSections),
+        "utf-8"
+      );
+      writeJson(join(outputRoot, "orion-client-content.json"), clientContentPreReviewFromSections);
+      writeFileSync(join(outputRoot, "orion-client-content.md"), renderOrionClientContentMarkdown(clientContentPreReviewFromSections), "utf-8");
+
+      if (orchestrationMeta && executiveSynthesisInput && sectionDerivedRiskMatrix && clientContentPreReviewFromSections) {
+        const sectionOrchestrationQa = inspectSectionGptOrchestrationQa({
+          sectionBundles: sectionBundlesPre,
+          sectionAnalyses: r10SectionAnalyses,
+          orchestrationMeta,
+          executiveInput: executiveSynthesisInput,
+          riskMatrix: sectionDerivedRiskMatrix,
+          clientContent: clientContentPreReviewFromSections,
+        });
+        writeJson(join(outputRoot, "r10-6-section-gpt-orchestration-qa.json"), sectionOrchestrationQa);
+      }
+
+      const contentBrainOnly = process.env.R10_CONTENT_BRAIN_ONLY === "1";
+      if (!contentBrainOnly) {
+        sectionAnalyses = await runOrionGoldenSectionAnalyses({
+          packs: gatedPacks,
+          subjectName: inventory.subject.fullName,
+          requireAi,
+        });
+        writeJson(join(outputRoot, "gpt-section-analyses.json"), sectionAnalyses);
+        executive = await runOrionGoldenExecutiveSynthesis({
+          sectionAnalyses,
+          inventory,
+          routing,
+          requireAi,
+        });
+        writeJson(join(outputRoot, "executive-synthesis.json"), executive);
+      } else {
+        writeJson(join(outputRoot, "gpt-section-analyses.json"), {
+          deprecated: true,
+          note: "Use section-analyses/ for R10.6",
+          r10SectionCount: r10SectionAnalyses.length,
+        });
+        writeJson(join(outputRoot, "executive-synthesis.json"), executiveSynthesisOutput);
+      }
     } catch (err) {
       gptBlocked = true;
       const reason = err instanceof OpenAiRateLimitError ? "openai-429" : err instanceof Error ? err.message : "gpt-failed";
@@ -303,14 +475,14 @@ export async function runR10OrionGoldenE2e(options: {
     return { outputRoot, caseId, reportRunId, pageCount: 0, slideCount: 0, verdict, pdfExportMode: "unknown" };
   }
 
-  if (!executive) throw new Error("executive-synthesis-missing");
+  if (!executive && process.env.R10_CONTENT_BRAIN_ONLY !== "1") throw new Error("executive-synthesis-missing");
 
   const contentBrainOnly = process.env.R10_CONTENT_BRAIN_ONLY === "1";
   const postGptJudgmentQa = inspectEvidenceJudgmentQa({
     judgments,
     bundles,
-    clientContent: clientContentPreReview,
-    sectionAnalyses,
+    clientContent: clientContentPreReviewFromSections ?? clientContentPreReview,
+    sectionAnalyses: sectionAnalyses.length ? sectionAnalyses : undefined,
   });
   writeJson(join(outputRoot, "r10-4-evidence-judgment-review.json"), postGptJudgmentQa);
 
@@ -332,6 +504,10 @@ export async function runR10OrionGoldenE2e(options: {
       evidenceJudgmentVerdict: postGptJudgmentQa.verdict,
       contentQualityVerdict: contentQuality.verdict,
       adminWorkflowVerdict: adminWorkflowQa.verdict,
+      sectionOrchestrationVerdict: orchestrationMeta ? "see-r10-6-section-gpt-orchestration-qa.json" : undefined,
+      gptSectionCallCount: orchestrationMeta?.gptSectionCallCount ?? 0,
+      canonicalSectionCount: getClientAuditSections().length,
+      sectionBundleCount: sectionBundlesPre.length,
       adminDecisionCounts: countAdminDecisionsByStatus(productionAdminDecisions.decisions),
       adminSampleDecisionCounts: countAdminDecisionsByStatus(sampleAdminDecisions.decisions),
       reviewDecisionCounts: countByReviewDecision(judgments),
@@ -353,6 +529,8 @@ export async function runR10OrionGoldenE2e(options: {
 
   const assets = await buildOrionGoldenAssets({ ctx });
   writeJson(join(outputRoot, "report-assets.json"), assets);
+
+  if (!executive) throw new Error("executive-synthesis-missing-for-render");
 
   const reportSpec = buildOrionGoldenReportSpec({
     inventory,

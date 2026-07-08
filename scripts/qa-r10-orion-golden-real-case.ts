@@ -85,6 +85,13 @@ async function main() {
         "orion-client-content.post-review.json",
         "orion-client-content.post-review.md",
         "r10-5-admin-review-workflow-qa.json",
+        "section-bundles/index.json",
+        "section-analyses/index.json",
+        "executive-synthesis.input.json",
+        "executive-synthesis.output.json",
+        "risk-matrix.section-derived.json",
+        "r10-6-section-gpt-orchestration-qa.json",
+        "r10-6-gpt-runtime-diagnostics.json",
         "orion-client-content.json",
         "orion-client-content.md",
         "r10-4-evidence-judgment-review.json",
@@ -148,6 +155,28 @@ async function main() {
   ) as { verdict: string };
   console.log(`[INFO] contentQuality=${contentQuality.verdict}`);
   console.log(`[INFO] adminWorkflow=${adminWorkflow.verdict}`);
+
+  if (existsSync(join(R10_OUTPUT_ROOT, "r10-6-section-gpt-orchestration-qa.json"))) {
+    const sectionOrchestration = JSON.parse(
+      readFileSync(join(R10_OUTPUT_ROOT, "r10-6-section-gpt-orchestration-qa.json"), "utf-8")
+    ) as { verdict: string; passed: boolean };
+    check("Section GPT orchestration QA", sectionOrchestration.passed, sectionOrchestration.verdict);
+    console.log(`[INFO] sectionOrchestration=${sectionOrchestration.verdict}`);
+  }
+
+  if (existsSync(join(R10_OUTPUT_ROOT, "r10-6-gpt-runtime-diagnostics.json"))) {
+    const gptRuntime = JSON.parse(
+      readFileSync(join(R10_OUTPUT_ROOT, "r10-6-gpt-runtime-diagnostics.json"), "utf-8")
+    ) as { successfulCalls: number; failedCalls: number; fallbackCount: number };
+    check(
+      "GPT runtime diagnostics",
+      gptRuntime.successfulCalls > 0 && gptRuntime.failedCalls === 0,
+      `successful=${gptRuntime.successfulCalls} failed=${gptRuntime.failedCalls} fallback=${gptRuntime.fallbackCount}`
+    );
+    console.log(
+      `[INFO] gptRuntime successful=${gptRuntime.successfulCalls} failed=${gptRuntime.failedCalls} fallback=${gptRuntime.fallbackCount}`
+    );
+  }
 
   const qa = JSON.parse(readFileSync(join(R10_OUTPUT_ROOT, "qa-summary.json"), "utf-8")) as {
     verdict: string;
