@@ -108,6 +108,8 @@ async function main() {
         "subject-identity-profile.json",
         "r10-7b-subject-binding-qa.json",
         "r10-7b-subject-binding-report.json",
+        "r10-7c-section-content-polish-qa.json",
+        "r10-7c-section-content-polish-report.json",
         "qa-summary.json",
       ]
     : [
@@ -194,6 +196,14 @@ async function main() {
     ) as { verdict: string; passed: boolean };
     check("Subject binding QA", bindingQa.passed, bindingQa.verdict);
     console.log(`[INFO] subjectBindingQa=${bindingQa.verdict}`);
+  }
+
+  if (existsSync(join(outputRoot, "r10-7c-section-content-polish-qa.json"))) {
+    const polishQa = JSON.parse(
+      readFileSync(join(outputRoot, "r10-7c-section-content-polish-qa.json"), "utf-8")
+    ) as { verdict: string; passed: boolean };
+    check("Section content polish QA", polishQa.passed, polishQa.verdict);
+    console.log(`[INFO] sectionContentPolishQa=${polishQa.verdict}`);
   }
 
   const qa = JSON.parse(readFileSync(join(outputRoot, "qa-summary.json"), "utf-8")) as {

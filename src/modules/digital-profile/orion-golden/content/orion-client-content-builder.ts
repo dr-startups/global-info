@@ -1,5 +1,5 @@
 /**
- * R10.4 / R10.5 — Client-facing content artifact (no renderer dependency).
+ * R10.4 / R10.5 / R10.7c — Client-facing content artifact (no renderer dependency).
  */
 
 import type { EvidenceJudgment } from "../evidence/evidence-judgment";
@@ -13,6 +13,20 @@ import type { ExecutiveSynthesisOutput } from "../gpt/orion-executive-synthesis-
 import type { OrionSectionAnalysis } from "../sections/orion-section-analysis";
 import type { SectionDerivedRiskMatrix } from "../sections/orion-risk-matrix-from-sections";
 import { getClientAuditSections } from "../sections/orion-section-registry";
+import {
+  clusterEvidenceJudgments,
+  countDuplicateFindingsRemoved,
+  registryClusters,
+  type EvidenceCluster,
+} from "./evidence-cluster";
+import {
+  buildManualReviewGroups,
+  flattenManualReviewGroupsForClient,
+  type ManualReviewGroup,
+} from "./manual-review-groups";
+import { compactRiskMatrixForClient } from "./risk-matrix-compaction";
+import { polishSectionAnalysesForClient } from "./ru-section-content-polish";
+import { buildPolishedRecommendations } from "./section-content-recommendations";
 
 export type ClientContentMode = "pre_review" | "post_review";
 
@@ -60,6 +74,24 @@ export type OrionClientContent = {
   }>;
   riskMatrixSummary?: SectionDerivedRiskMatrix;
   assemblySource: "section_analyses" | "evidence_bundles_legacy";
+  /** R10.7c — polished recommendations */
+  recommendations?: string[];
+  /** R10.7c — evidence clusters used for dedupe / registry summaries */
+  evidenceClusters?: EvidenceCluster[];
+  /** R10.7c — grouped manual review */
+  manualReviewGroups?: ManualReviewGroup[];
+  /** R10.7c — assembly polish stats */
+  contentPolish?: {
+    version: "r10-7c-content-polish-v1";
+    sectionsRendered: number;
+    sectionsCollapsedDataPoor: number;
+    registryClusters: number;
+    duplicateFindingsRemoved: number;
+    riskMatrixRowsBefore: number;
+    riskMatrixRowsAfter: number;
+    manualReviewGroups: number;
+    recommendationsCount: number;
+  };
 };
 
 export function buildOrionClientContent(input: {
@@ -213,12 +245,46 @@ function isGenericDataPoorNarrative(narrative: string): boolean {
 }
 
 function shouldCollapseDataPoorSection(analysis: OrionSectionAnalysis): boolean {
-  if (analysis.status !== "DATA_POOR") return false;
-  if (analysis.keyFindings.length > 0) return false;
   if (analysis.sectionId === "01_executive_summary" || analysis.sectionId === "02_compliance_risk_matrix") {
     return false;
   }
+  if (analysis.sectionId === "50_manual_review_required" || analysis.sectionId === "53_recommendations") {
+    return false;
+  }
+  // R10.7c — also collapse empty NOT_APPLICABLE / NO_FINDINGS with generic text
+  if (analysis.status === "NOT_APPLICABLE") {
+    return (
+      analysis.keyFindings.length === 0 &&
+      (isGenericDataPoorNarrative(analysis.clientNarrative) || analysis.clientNarrative.trim().length < 160)
+    );
+  }
+  if (analysis.status === "NO_FINDINGS" && analysis.keyFindings.length === 0) {
+    return isGenericDataPoorNarrative(analysis.clientNarrative) || analysis.clientNarrative.trim().length < 120;
+  }
+  if (analysis.status !== "DATA_POOR") return false;
+  if (analysis.keyFindings.length > 0) return false;
   return isGenericDataPoorNarrative(analysis.clientNarrative) || analysis.clientNarrative.trim().length < 140;
+}
+
+function dedupeApprovedFindings(
+  findings: Array<{ title: string; summary: string; evidenceRefs?: string[]; domain?: string; caveat?: string; evidenceId?: string }>
+): typeof findings {
+  const seen = new Set<string>();
+  const out: typeof findings = [];
+  for (const f of findings) {
+    const key = `${f.title.slice(0, 60).toLowerCase()}::${(f.summary ?? "").slice(0, 80).toLowerCase()}`;
+    if (seen.has(key)) continue;
+    // Collapse near-duplicate INN registry cards into first occurrence
+    const inn = (f.summary + f.title).match(/\b(\d{12})\b/);
+    if (inn) {
+      const innKey = `inn:${inn[1]}`;
+      if (seen.has(innKey)) continue;
+      seen.add(innKey);
+    }
+    seen.add(key);
+    out.push(f);
+  }
+  return out;
 }
 
 function buildExecutiveSectionFromSynthesis(
@@ -252,13 +318,14 @@ function buildRiskMatrixSectionFromDerived(
   analysis: OrionSectionAnalysis | undefined,
   riskMatrix: SectionDerivedRiskMatrix
 ): NonNullable<OrionClientContent["sections"]>[0] {
-  const topRows = riskMatrix.rows.slice(0, 12);
+  const topRows = riskMatrix.rows.slice(0, 14);
   const narrative = [
-    `Матрица compliance-рисков сформирована из секционных анализов (источник: ${riskMatrix.inputSource}).`,
+    `Матрица compliance-рисков сформирована из секционных анализов и сжата для читаемости (источник: ${riskMatrix.inputSource}).`,
     `Глобальный уровень: ${riskMatrix.globalRiskLevel}.`,
     riskMatrix.pendingManualReviewCount > 0
-      ? `Материалов, требующих ручной проверки: ${riskMatrix.pendingManualReviewCount}.`
+      ? `Материалов, требующих ручной проверки: ${riskMatrix.pendingManualReviewCount} (не подтверждённый риск).`
       : "Очередь ручной проверки по матрице пуста.",
+    `Отображено строк: ${topRows.length}.`,
   ].join(" ");
   return {
     sectionId: "02_compliance_risk_matrix",
@@ -276,6 +343,28 @@ function buildRiskMatrixSectionFromDerived(
   };
 }
 
+function buildRecommendationsSection(
+  analysis: OrionSectionAnalysis | undefined,
+  recommendations: string[]
+): NonNullable<OrionClientContent["sections"]>[0] {
+  return {
+    sectionId: "53_recommendations",
+    order: analysis?.order ?? 53,
+    title: analysis?.title ?? "Рекомендации",
+    status: recommendations.length > 0 ? "HAS_FINDINGS" : "NO_FINDINGS",
+    narrative:
+      recommendations.length > 0
+        ? "Рекомендации сформированы по фактическому состоянию секций, реестровых якорей и очереди ручной проверки."
+        : "Отдельные рекомендации не сформированы — недостаточно дифференцирующих сигналов.",
+    keyFindings: recommendations.map((r, i) => ({
+      title: `Рекомендация ${i + 1}`,
+      summary: r,
+      evidenceRefs: [] as string[],
+    })),
+    evidenceRefs: [],
+  };
+}
+
 export function assembleOrionClientContentFromSections(input: {
   mode: ClientContentMode;
   caseId: string;
@@ -286,12 +375,32 @@ export function assembleOrionClientContentFromSections(input: {
   riskMatrix: SectionDerivedRiskMatrix;
   manualQueue: ManualReviewQueue;
   adminDecisionSummary?: Record<string, number>;
-  /** R10.7b — optional judgments for consolidated identity limitations */
+  /** R10.7b/c — judgments for identity limitations, clustering, polish */
   judgments?: EvidenceJudgment[];
 }): OrionClientContent {
   seenNarrativeKeys.clear();
+  const judgments = input.judgments ?? [];
+  const clusters = clusterEvidenceJudgments(judgments);
+  const regClusters = registryClusters(clusters);
+  const duplicatesRemoved = countDuplicateFindingsRemoved(clusters);
+  const polishedAnalyses = polishSectionAnalysesForClient(input.sectionAnalyses, { judgments, clusters });
+  const compactMatrix = compactRiskMatrixForClient({
+    riskMatrix: input.riskMatrix,
+    judgments,
+    clusters,
+    maxRows: 14,
+  });
+  const manualGroups = buildManualReviewGroups({ judgments, manualQueue: input.manualQueue });
+  const recommendations = buildPolishedRecommendations({
+    judgments,
+    clusters,
+    manualGroups,
+    sectionAnalyses: polishedAnalyses,
+    executiveSynthesis: input.executiveSynthesis,
+  });
+
   const registryOrder = getClientAuditSections().map((s) => s.sectionId);
-  const analysisById = new Map(input.sectionAnalyses.map((a) => [a.sectionId, a]));
+  const analysisById = new Map(polishedAnalyses.map((a) => [a.sectionId, a]));
   const collapsedDataPoorTitles: string[] = [];
 
   const sections = registryOrder
@@ -299,12 +408,14 @@ export function assembleOrionClientContentFromSections(input: {
       const analysis = analysisById.get(sectionId);
       if (!analysis) return null;
 
-      // R10.7a — inject executive synthesis / risk matrix into canonical slots 01/02
       if (sectionId === "01_executive_summary" && input.executiveSynthesis.executiveSummary.trim()) {
         return buildExecutiveSectionFromSynthesis(analysis, input.executiveSynthesis);
       }
-      if (sectionId === "02_compliance_risk_matrix" && input.riskMatrix.rows.length > 0) {
-        return buildRiskMatrixSectionFromDerived(analysis, input.riskMatrix);
+      if (sectionId === "02_compliance_risk_matrix") {
+        return buildRiskMatrixSectionFromDerived(analysis, compactMatrix);
+      }
+      if (sectionId === "53_recommendations") {
+        return buildRecommendationsSection(analysis, recommendations);
       }
 
       if (shouldCollapseDataPoorSection(analysis)) {
@@ -325,7 +436,10 @@ export function assembleOrionClientContentFromSections(input: {
       }
 
       const narrative = dedupeNarrative(analysis.clientNarrative);
-      if (!narrative) return null;
+      if (!narrative) {
+        collapsedDataPoorTitles.push(analysis.title);
+        return null;
+      }
       const evidenceRefs = [
         ...new Set([
           ...analysis.keyFindings.flatMap((f) => f.evidenceRefs),
@@ -354,9 +468,12 @@ export function assembleOrionClientContentFromSections(input: {
     const collapseNote = {
       sectionId: "52_limitations_collapsed_note",
       order: 52.5,
-      title: "Секции с недостаточными данными",
+      title: "Недостаточно данных / не выявлено значимых материалов",
       status: "DATA_POOR",
-      narrative: `Недостаточно данных для содержательного вывода по секциям: ${collapsedDataPoorTitles.join(", ")}.`,
+      narrative:
+        `Недостаточно данных или не выявлено значимых материалов по секциям (${collapsedDataPoorTitles.length}): ` +
+        `${collapsedDataPoorTitles.join(", ")}. ` +
+        `Пустые блоки не развёрнуты в клиентском отчёте.`,
       keyFindings: [] as Array<{ title: string; summary: string; evidenceRefs: string[]; caveat?: string }>,
       evidenceRefs: [] as string[],
     };
@@ -364,7 +481,22 @@ export function assembleOrionClientContentFromSections(input: {
     else sections.push(collapseNote);
   }
 
-  const approvedFindings = sections
+  sections.sort((a, b) => a.order - b.order);
+
+  // Prefer clustered registry summaries in approved findings, then other section findings
+  const clusterFindings = regClusters
+    .filter((c) => c.clientUse === "AUTO_INCLUDE_CLIENT_REPORT")
+    .slice(0, 8)
+    .map((c) => ({
+      title: c.title,
+      summary: c.summary,
+      domain: c.sourceDomains[0],
+      evidenceRefs: c.evidenceIds.slice(0, 8),
+      evidenceId: c.evidenceIds[0],
+    }));
+
+  const sectionFindings = sections
+    .filter((s) => s.sectionId !== "02_compliance_risk_matrix" && s.sectionId !== "53_recommendations")
     .flatMap((s) =>
       s.keyFindings
         .filter((f) => !f.caveat && s.status !== "MANUAL_REVIEW_PENDING")
@@ -373,25 +505,21 @@ export function assembleOrionClientContentFromSections(input: {
           summary: f.summary,
           evidenceRefs: f.evidenceRefs,
         }))
-    )
-    .slice(0, 40);
+    );
 
-  const manualAnalysis = analysisById.get("50_manual_review_required");
+  const approvedFindings = dedupeApprovedFindings([...clusterFindings, ...sectionFindings]).slice(0, 25);
+
   const manualItems =
-    manualAnalysis?.keyFindings.map((f) => ({
-      title: f.title,
-      summary: f.summary,
-      whyFlagged: "Требуется решение аналитика.",
-      adminStatus: "PENDING",
-      evidenceRefs: f.evidenceRefs,
-    })) ??
-    input.manualQueue.items.slice(0, 50).map((item) => ({
-      title: item.title,
-      summary: item.snippet.slice(0, 200),
-      whyFlagged: item.whyAgentFlagged,
-      adminStatus: item.adminReviewStatus,
-      evidenceRefs: [item.evidenceId],
-    }));
+    judgments.length > 0
+      ? flattenManualReviewGroupsForClient(manualGroups).slice(0, 60)
+      : input.manualQueue.items.slice(0, 50).map((item) => ({
+          title: item.title,
+          summary: item.snippet.slice(0, 200),
+          whyFlagged: item.whyAgentFlagged,
+          adminStatus: item.adminReviewStatus,
+          evidenceRefs: [item.evidenceId],
+          evidenceId: item.evidenceId,
+        }));
 
   const appendixAnalysis = analysisById.get("54_evidence_appendix");
   const appendixFindings =
@@ -404,18 +532,20 @@ export function assembleOrionClientContentFromSections(input: {
 
   const limitationsAnalysis = analysisById.get("52_limitations");
   const identityLimitations: string[] = [];
-  if (input.judgments?.length) {
-    const wrong = input.judgments.filter((j) => j.subjectBinding === "WRONG_SUBJECT").length;
-    const weakUnknown = input.judgments.filter(
+  if (judgments.length) {
+    const wrong = judgments.filter((j) => j.subjectBinding === "WRONG_SUBJECT").length;
+    const weakUnknown = judgments.filter(
       (j) => j.subjectBinding === "WEAK" || j.subjectBinding === "UNKNOWN"
     ).length;
-    const patronymic = input.judgments.filter((j) => j.flags.includes("patronymic_mismatch")).length;
-    const innConfirmed = input.judgments.filter(
+    const patronymic = judgments.filter((j) => j.flags.includes("patronymic_mismatch")).length;
+    const innConfirmed = judgments.filter(
       (j) => j.flags.includes("exact_inn_match") && j.subjectBinding === "CONFIRMED"
     ).length;
-    if (innConfirmed > 0) {
+    if (innConfirmed > 0 || regClusters.length > 0) {
       identityLimitations.push(
-        `Нейтральные реестровые сведения с совпадением по ИНН (${innConfirmed}) использованы как подтверждённые факты идентификации.`
+        `Нейтральные реестровые сведения с совпадением по ИНН использованы как подтверждённые факты идентификации` +
+          (regClusters[0]?.identityAnchor?.inn ? ` (ИНН ${regClusters[0].identityAnchor.inn})` : "") +
+          `; дубликаты карточек объединены в ${regClusters.length} кластер(ов).`
       );
     }
     if (patronymic > 0) {
@@ -437,11 +567,13 @@ export function assembleOrionClientContentFromSections(input: {
 
   const limitations = [
     ...identityLimitations,
+    collapsedDataPoorTitles.length > 0
+      ? `Сжато пустых/DATA_POOR секций: ${collapsedDataPoorTitles.length}.`
+      : "",
     ...(limitationsAnalysis?.limitations ?? []),
     ...(limitationsAnalysis?.clientNarrative && !isGenericDataPoorNarrative(limitationsAnalysis.clientNarrative)
       ? [limitationsAnalysis.clientNarrative]
       : []),
-    ...input.riskMatrix.rows.filter((r) => r.requiresManualReview).map((r) => r.summary).slice(0, 8),
   ].filter(Boolean);
 
   return {
@@ -457,19 +589,34 @@ export function assembleOrionClientContentFromSections(input: {
     manualReviewSection: {
       title: "Материалы, требующие ручной проверки",
       intro:
-        "Материалы с потенциальной значимостью, не подтверждённые автоматически. Не трактуются как установленный негативный факт.",
+        "Материалы сгруппированы по причине проверки. Они не трактуются как установленный негативный факт до решения аналитика.",
       items: manualItems,
     },
     limitations,
     methodologyNotes: [
       "Клиентский контент собран из секционных GPT-анализов в каноническом порядке ORION.",
+      "R10.7c: реестровые дубликаты кластеризованы; пустые секции сжаты; матрица рисков уплотнена.",
       "GPT не является финальным арбитром негативных выводов.",
       "Матрица рисков построена из секционных анализов без сканирования сырого инвентаря.",
     ],
     adminDecisionSummary: input.adminDecisionSummary,
     sections,
-    riskMatrixSummary: input.riskMatrix,
+    riskMatrixSummary: compactMatrix,
     assemblySource: "section_analyses",
+    recommendations,
+    evidenceClusters: clusters.slice(0, 40),
+    manualReviewGroups: manualGroups,
+    contentPolish: {
+      version: "r10-7c-content-polish-v1",
+      sectionsRendered: sections.length,
+      sectionsCollapsedDataPoor: collapsedDataPoorTitles.length,
+      registryClusters: regClusters.length,
+      duplicateFindingsRemoved: duplicatesRemoved,
+      riskMatrixRowsBefore: compactMatrix.compaction?.before ?? input.riskMatrix.rows.length,
+      riskMatrixRowsAfter: compactMatrix.rows.length,
+      manualReviewGroups: manualGroups.length,
+      recommendationsCount: recommendations.length,
+    },
   };
 }
 
@@ -509,11 +656,16 @@ export function renderOrionClientContentMarkdown(content: OrionClientContent): s
   lines.push("");
   lines.push(`## ${content.manualReviewSection.title}`);
   lines.push(content.manualReviewSection.intro);
-  for (const item of content.manualReviewSection.items.slice(0, 15)) {
+  for (const item of content.manualReviewSection.items.slice(0, 20)) {
     lines.push(`- **${item.title}**${item.adminStatus ? ` [${item.adminStatus}]` : ""}: ${item.summary}`);
     lines.push(`  - *Почему на проверке:* ${item.whyFlagged}`);
   }
   lines.push("");
+  if (content.recommendations?.length) {
+    lines.push(`## Рекомендации`);
+    for (const r of content.recommendations) lines.push(`- ${r}`);
+    lines.push("");
+  }
   lines.push(`## Ограничения`);
   for (const l of content.limitations) lines.push(`- ${l}`);
   return lines.join("\n");

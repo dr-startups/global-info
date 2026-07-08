@@ -36,6 +36,7 @@ import { routeEvidenceToSections, validateRoutingAgainstBlueprint } from "./evid
 import { classifyInventoryRelevance } from "./evidence/relevance-classifier";
 import { buildSubjectIdentityProfile } from "./identity/subject-identity-profile-builder";
 import { inspectSubjectBindingQa } from "./qa/r10-7b-subject-binding-qa";
+import { inspectSectionContentPolishQa } from "./qa/r10-7c-section-content-polish-qa";
 import { runOrionGoldenExecutiveSynthesis } from "./gpt/orion-executive-synthesizer";
 import {
   buildExecutiveSynthesisFromSections,
@@ -578,6 +579,78 @@ export async function runR10OrionGoldenE2e(options: {
             approvedFindingsCount: clientContentPreReviewFromSections.approvedFindings.length,
             megaPromptUsed: orchestrationMeta.megaPromptUsed,
             fullInventoryPassedToGpt: false,
+          },
+        });
+
+        const contentPolishQa = inspectSectionContentPolishQa({
+          judgments,
+          clientContent: clientContentPreReviewFromSections,
+          sectionBundles: sectionBundlesPre,
+          orchestrationMeta,
+          baseline: {
+            sectionsRendered: 30,
+            riskMatrixRows: 40,
+            approvedFindings: 40,
+            clientContentChars: 0,
+          },
+        });
+        writeJson(join(outputRoot, "r10-7c-section-content-polish-qa.json"), contentPolishQa);
+        writeJson(join(outputRoot, "r10-7c-section-content-polish-report.json"), {
+          ...contentPolishQa,
+          generatedAt: new Date().toISOString(),
+          caseId,
+          subjectName: inventory.subject.fullName,
+          beforeAfter: {
+            sectionsRendered: {
+              baselineApprox: 30,
+              after: contentPolishQa.metrics.sectionsRendered,
+            },
+            dataPoorCollapsed: contentPolishQa.metrics.sectionsCollapsedDataPoor,
+            registryClusters: contentPolishQa.metrics.registryClusters,
+            duplicateFindingsRemoved: contentPolishQa.metrics.duplicateFindingsRemoved,
+            riskMatrixRows: {
+              before: contentPolishQa.metrics.riskMatrixRowsBefore,
+              after: contentPolishQa.metrics.riskMatrixRowsAfter,
+            },
+            approvedFindings: contentPolishQa.metrics.approvedFindings,
+            clientContentChars: contentPolishQa.metrics.clientContentChars,
+          },
+          contentPolish: clientContentPreReviewFromSections.contentPolish,
+          recommendations: clientContentPreReviewFromSections.recommendations ?? [],
+          manualReviewGroups: (clientContentPreReviewFromSections.manualReviewGroups ?? []).map((g) => ({
+            reason: g.reason,
+            title: g.title,
+            itemCount: g.items.length,
+          })),
+          registryClusterExamples: (clientContentPreReviewFromSections.evidenceClusters ?? [])
+            .filter((c) => c.identityAnchor?.inn)
+            .slice(0, 5)
+            .map((c) => ({
+              clusterId: c.clusterId,
+              title: c.title,
+              inn: c.identityAnchor?.inn,
+              evidenceCount: c.evidenceIds.length,
+              summary: c.summary.slice(0, 240),
+            })),
+          gptSectionCalls: {
+            successful: orchestrationMeta.gptSectionCallCount,
+            failed: orchestrationMeta.skippedSections.filter((s) => s.reason === "gpt_failed_fallback").length,
+            megaPromptUsed: orchestrationMeta.megaPromptUsed,
+            fullInventoryPassedToGpt: false,
+          },
+          safety: {
+            highImpactAutoInclude: judgments.filter(
+              (j) =>
+                j.reviewDecision === "AUTO_INCLUDE_CLIENT_REPORT" &&
+                ["CONTROVERSIAL_DUAL_USE", "POSSIBLE_ADVERSE", "COMPLIANCE_RELEVANT", "ADVERSE_CONFIRMED"].includes(
+                  j.riskSignal
+                )
+            ).length,
+            wrongSubjectInFindings: clientContentPreReviewFromSections.approvedFindings.filter((f) => {
+              const id = f.evidenceId ?? f.evidenceRefs?.[0];
+              if (!id) return false;
+              return judgments.find((x) => x.evidenceId === id)?.subjectBinding === "WRONG_SUBJECT";
+            }).length,
           },
         });
       }
