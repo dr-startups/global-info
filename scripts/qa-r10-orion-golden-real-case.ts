@@ -78,6 +78,13 @@ async function main() {
         "evidence-routing-inspection.json",
         "r10-4-evidence-bundles.json",
         "manual-review-queue.json",
+        "admin-review-decisions.json",
+        "admin-review-decisions.sample.json",
+        "orion-client-content.pre-review.json",
+        "orion-client-content.pre-review.md",
+        "orion-client-content.post-review.json",
+        "orion-client-content.post-review.md",
+        "r10-5-admin-review-workflow-qa.json",
         "orion-client-content.json",
         "orion-client-content.md",
         "r10-4-evidence-judgment-review.json",
@@ -96,6 +103,13 @@ async function main() {
         "evidence-judgment-inspection.json",
         "r10-4-evidence-bundles.json",
         "manual-review-queue.json",
+        "admin-review-decisions.json",
+        "admin-review-decisions.sample.json",
+        "orion-client-content.pre-review.json",
+        "orion-client-content.pre-review.md",
+        "orion-client-content.post-review.json",
+        "orion-client-content.post-review.md",
+        "r10-5-admin-review-workflow-qa.json",
         "orion-client-content.json",
         "orion-client-content.md",
         "r10-4-evidence-judgment-review.json",
@@ -124,10 +138,16 @@ async function main() {
   ) as { verdict: string; passed: boolean };
   check("Evidence judgment QA", judgmentReview.passed, judgmentReview.verdict);
 
+  const adminWorkflow = JSON.parse(
+    readFileSync(join(R10_OUTPUT_ROOT, "r10-5-admin-review-workflow-qa.json"), "utf-8")
+  ) as { verdict: string; passed: boolean };
+  check("Admin review workflow QA", adminWorkflow.passed, adminWorkflow.verdict);
+
   const contentQuality = JSON.parse(
     readFileSync(join(R10_OUTPUT_ROOT, "r10-4-content-quality-review.json"), "utf-8")
   ) as { verdict: string };
   console.log(`[INFO] contentQuality=${contentQuality.verdict}`);
+  console.log(`[INFO] adminWorkflow=${adminWorkflow.verdict}`);
 
   const qa = JSON.parse(readFileSync(join(R10_OUTPUT_ROOT, "qa-summary.json"), "utf-8")) as {
     verdict: string;

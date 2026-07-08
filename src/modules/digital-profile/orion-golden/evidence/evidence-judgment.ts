@@ -3,6 +3,10 @@
  * Independent from rendering; GPT proposes, policy decides.
  */
 
+import type { AdminReviewStatus } from "./admin-review-decision";
+
+export type { AdminReviewStatus };
+
 export type SubjectBinding = "CONFIRMED" | "LIKELY" | "WEAK" | "WRONG_SUBJECT" | "UNKNOWN";
 
 export type JudgmentRelevanceClass =
@@ -55,15 +59,6 @@ export type RecommendedAdminAction =
   | "EXCLUDE"
   | "REQUEST_MORE_SOURCES"
   | "MARK_WRONG_SUBJECT";
-
-export type AdminReviewStatus =
-  | "PENDING"
-  | "APPROVED"
-  | "APPROVED_WITH_CAVEAT"
-  | "APPENDIX_ONLY"
-  | "EXCLUDED"
-  | "NEEDS_MORE_SOURCES"
-  | "WRONG_SUBJECT";
 
 export type EvidenceJudgment = {
   evidenceId: string;

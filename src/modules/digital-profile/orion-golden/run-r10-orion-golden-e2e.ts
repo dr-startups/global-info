@@ -16,6 +16,12 @@ import {
   renderOrionClientContentMarkdown,
 } from "./content/orion-client-content-builder";
 import { buildOrionGoldenSupabaseSchemaPlan } from "./db/orion-supabase-schema-plan";
+import { buildAdminReviewSampleFixture } from "./evidence/admin-review-sample-fixture";
+import {
+  ensureAdminReviewDecisions,
+  saveAdminReviewSampleFixture,
+} from "./evidence/admin-review-decision-store";
+import { countAdminDecisionsByStatus } from "./evidence/admin-review-decision";
 import { buildFullEvidenceInventory } from "./evidence/full-evidence-inventory";
 import {
   applyJudgmentToDecisions,
@@ -32,6 +38,7 @@ import { runOrionGoldenSectionAnalyses } from "./gpt/orion-section-analyzer";
 import { inspectOrionGoldenClientPolicy } from "./qa/client-policy-inspection";
 import { inspectContentQualityReview } from "./qa/r10-4-content-quality-review";
 import { inspectEvidenceJudgmentQa } from "./qa/r10-4-evidence-judgment-qa";
+import { inspectAdminReviewWorkflowQa } from "./qa/r10-5-admin-review-workflow-qa";
 import { inspectOrionGoldenVisualQuality } from "./qa/visual-qa-inspection";
 import { renderOrionGoldenArtifacts } from "./renderer/orion-golden-render-client";
 import { buildOrionGoldenReportSpec } from "./report-spec/orion-report-spec";
@@ -164,7 +171,8 @@ export async function runR10OrionGoldenE2e(options: {
   const manualQueue = buildManualReviewQueue({ caseId, reportRunId, judgments, snippetById });
   writeJson(join(outputRoot, "manual-review-queue.json"), manualQueue);
 
-  const clientContent = buildOrionClientContent({
+  const clientContentPreReview = buildOrionClientContent({
+    mode: "pre_review",
     caseId,
     reportRunId,
     subject: { fullName: inventory.subject.fullName, aliases: inventory.subject.aliases },
@@ -172,14 +180,69 @@ export async function runR10OrionGoldenE2e(options: {
     manualQueue,
     judgments,
   });
-  writeJson(join(outputRoot, "orion-client-content.json"), clientContent);
-  writeFileSync(join(outputRoot, "orion-client-content.md"), renderOrionClientContentMarkdown(clientContent), "utf-8");
+  writeJson(join(outputRoot, "orion-client-content.pre-review.json"), clientContentPreReview);
+  writeFileSync(
+    join(outputRoot, "orion-client-content.pre-review.md"),
+    renderOrionClientContentMarkdown(clientContentPreReview),
+    "utf-8"
+  );
+  writeJson(join(outputRoot, "orion-client-content.json"), clientContentPreReview);
+  writeFileSync(
+    join(outputRoot, "orion-client-content.md"),
+    renderOrionClientContentMarkdown(clientContentPreReview),
+    "utf-8"
+  );
 
-  const judgmentQa = inspectEvidenceJudgmentQa({ judgments, bundles, clientContent });
+  const wrongSubjectJudgments = judgments.filter((j) => j.subjectBinding === "WRONG_SUBJECT");
+  const productionAdminDecisions = ensureAdminReviewDecisions({
+    caseId,
+    manualQueue,
+    wrongSubjectJudgments,
+  });
+  writeJson(join(outputRoot, "admin-review-decisions.json"), productionAdminDecisions);
+
+  const sampleAdminDecisions = buildAdminReviewSampleFixture({
+    caseId,
+    manualQueue,
+    judgments,
+  });
+  saveAdminReviewSampleFixture(sampleAdminDecisions);
+
+  const clientContentPostReview = buildOrionClientContent({
+    mode: "post_review",
+    caseId,
+    reportRunId,
+    subject: { fullName: inventory.subject.fullName, aliases: inventory.subject.aliases },
+    bundles,
+    manualQueue,
+    judgments,
+    adminDecisions: sampleAdminDecisions.decisions,
+  });
+  writeJson(join(outputRoot, "orion-client-content.post-review.json"), clientContentPostReview);
+  writeFileSync(
+    join(outputRoot, "orion-client-content.post-review.md"),
+    renderOrionClientContentMarkdown(clientContentPostReview),
+    "utf-8"
+  );
+
+  const adminWorkflowQa = inspectAdminReviewWorkflowQa({
+    preReviewContent: clientContentPreReview,
+    postReviewContent: clientContentPostReview,
+    productionDecisions: productionAdminDecisions,
+    sampleDecisions: sampleAdminDecisions,
+    judgments,
+  });
+  writeJson(join(outputRoot, "r10-5-admin-review-workflow-qa.json"), adminWorkflowQa);
+
+  const judgmentQa = inspectEvidenceJudgmentQa({
+    judgments,
+    bundles,
+    clientContent: clientContentPreReview,
+  });
   writeJson(join(outputRoot, "r10-4-evidence-judgment-review.json"), judgmentQa);
 
   const contentQuality = inspectContentQualityReview({
-    clientContent,
+    clientContent: clientContentPreReview,
     judgmentVerdict: judgmentQa.verdict,
     manualReviewPendingCount: manualQueue.pendingCount,
   });
@@ -246,7 +309,7 @@ export async function runR10OrionGoldenE2e(options: {
   const postGptJudgmentQa = inspectEvidenceJudgmentQa({
     judgments,
     bundles,
-    clientContent,
+    clientContent: clientContentPreReview,
     sectionAnalyses,
   });
   writeJson(join(outputRoot, "r10-4-evidence-judgment-review.json"), postGptJudgmentQa);
@@ -268,6 +331,9 @@ export async function runR10OrionGoldenE2e(options: {
       contentBrainOnly: true,
       evidenceJudgmentVerdict: postGptJudgmentQa.verdict,
       contentQualityVerdict: contentQuality.verdict,
+      adminWorkflowVerdict: adminWorkflowQa.verdict,
+      adminDecisionCounts: countAdminDecisionsByStatus(productionAdminDecisions.decisions),
+      adminSampleDecisionCounts: countAdminDecisionsByStatus(sampleAdminDecisions.decisions),
       reviewDecisionCounts: countByReviewDecision(judgments),
       riskSignalCounts: countByRiskSignal(judgments),
       manualReviewPending: manualQueue.pendingCount,
@@ -346,6 +412,9 @@ export async function runR10OrionGoldenE2e(options: {
     executiveAfterSections: true,
     evidenceJudgmentVerdict: postGptJudgmentQa.verdict,
     contentQualityVerdict: contentQuality.verdict,
+    adminWorkflowVerdict: adminWorkflowQa.verdict,
+    adminDecisionCounts: countAdminDecisionsByStatus(productionAdminDecisions.decisions),
+    adminSampleDecisionCounts: countAdminDecisionsByStatus(sampleAdminDecisions.decisions),
     reviewDecisionCounts: countByReviewDecision(judgments),
     riskSignalCounts: countByRiskSignal(judgments),
     manualReviewPending: manualQueue.pendingCount,
