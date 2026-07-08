@@ -47,6 +47,7 @@ export * from "./qa/r10-7a-threshold-tuning-qa";
 export * from "./qa/r10-7b-subject-binding-qa";
 export * from "./qa/r10-7c-section-content-polish-qa";
 export * from "./qa/r10-8-admin-ui-qa";
+export * from "./qa/r10-8a-admin-ui-polish-qa";
 export * from "./evidence/admin-review-decision-validation";
 export * from "./content/evidence-cluster";
 export * from "./content/manual-review-groups";
