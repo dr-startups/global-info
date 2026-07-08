@@ -5,7 +5,7 @@
 
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { jsonOk, withModule } from "@/modules/digital-profile/http/errors";
+import { jsonOk, withModule, ValidationError } from "@/modules/digital-profile/http/errors";
 import { readJsonBody } from "@/modules/digital-profile/http/request";
 import {
   actorOf,
@@ -17,6 +17,10 @@ import {
   getManualReviewItem,
   submitAdminReviewDecision,
 } from "@/modules/digital-profile/orion-golden/services/admin-review-workflow-service";
+import {
+  isHighImpactManualReviewItem,
+  validateAdminReviewDecisionInput,
+} from "@/modules/digital-profile/orion-golden/evidence/admin-review-decision-validation";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +40,8 @@ const SubmitDecisionSchema = z.object({
   approvedClientSummary: z.string().optional(),
   caveatText: z.string().optional(),
   requestedSources: z.array(z.string()).optional(),
+  highImpactAcknowledged: z.boolean().optional(),
+  overwriteConfirmed: z.boolean().optional(),
 });
 
 export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
@@ -53,9 +59,40 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   requireRole(user, "risk.review");
   await requireCaseAccess(user, id, "REVIEWER");
   const input = SubmitDecisionSchema.parse(await readJsonBody(req));
+  const current = getManualReviewItem(id, evidenceId);
+  const existingStatus =
+    current.adminDecision && "status" in current.adminDecision
+      ? current.adminDecision.status
+      : "PENDING";
+  const highImpact = isHighImpactManualReviewItem({
+    riskSignal: current.proposedClassification.riskSignal,
+    flags: current.flags,
+    title: current.title,
+    sourceDomain: current.sourceDomain,
+  });
+  const validation = validateAdminReviewDecisionInput({
+    status: input.status,
+    reviewerNote: input.reviewerNote,
+    caveatText: input.caveatText,
+    requestedSources: input.requestedSources,
+    highImpactAcknowledged: input.highImpactAcknowledged,
+    isHighImpact: highImpact,
+    existingStatus,
+    overwriteConfirmed: input.overwriteConfirmed,
+  });
+  if (!validation.ok) {
+    throw new ValidationError(validation.errors.join("; "), {
+      errors: validation.errors,
+      warnings: validation.warnings,
+    });
+  }
   const actor = actorOf(user);
   const data = submitAdminReviewDecision(id, evidenceId, {
-    ...input,
+    status: input.status,
+    reviewerNote: input.reviewerNote,
+    approvedClientSummary: input.approvedClientSummary,
+    caveatText: input.caveatText,
+    requestedSources: input.requestedSources,
     reviewedBy: actor.actorId ?? undefined,
     reviewedAt: new Date().toISOString(),
   });

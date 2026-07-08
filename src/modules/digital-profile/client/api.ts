@@ -1148,3 +1148,144 @@ export function generateSerpSnapshot(
 export function getSerpSnapshot(caseId: string): Promise<{ snapshot: SerpSnapshot | null }> {
   return request<{ snapshot: SerpSnapshot | null }>(`/cases/${caseId}/serp-snapshot`);
 }
+
+// ---------------------------------------------------------------------------
+// R10.8 — ORION Golden manual review admin workflow
+// ---------------------------------------------------------------------------
+
+export type AdminReviewStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "APPROVED_WITH_CAVEAT"
+  | "APPENDIX_ONLY"
+  | "EXCLUDED"
+  | "NEEDS_MORE_SOURCES"
+  | "WRONG_SUBJECT";
+
+export type ManualReviewQueueItemDto = {
+  evidenceId: string;
+  title: string;
+  url?: string;
+  sourceDomain?: string;
+  snippet: string;
+  proposedClassification: {
+    subjectBinding: string;
+    relevance: string;
+    riskSignal: string;
+    contentNature: string;
+    reviewDecision: string;
+  };
+  whyAgentFlagged: string;
+  riskInterpretation: string;
+  neutralInterpretation: string;
+  positiveInterpretation?: string;
+  missingContext: string[];
+  recommendedAdminAction: string;
+  adminReviewStatus: AdminReviewStatus | string;
+  flags: string[];
+  sourceReliability?: string;
+  subjectBindingScore?: number;
+};
+
+export type ManualReviewQueueDto = {
+  version: string;
+  generatedAt: string;
+  caseId: string;
+  reportRunId: string;
+  pendingCount: number;
+  items: ManualReviewQueueItemDto[];
+  statusCounts?: Record<string, number>;
+};
+
+export type ManualReviewItemDetailDto = ManualReviewQueueItemDto & {
+  adminDecision: {
+    evidenceId: string;
+    status: AdminReviewStatus | string;
+    reviewerNote?: string;
+    reviewedBy?: string;
+    reviewedAt?: string;
+    approvedClientSummary?: string;
+    caveatText?: string;
+    requestedSources?: string[];
+  };
+  subjectBindingExplanation?: string;
+  subjectBindingPositiveSignals?: string[];
+  subjectBindingNegativeSignals?: string[];
+  contentNature?: string;
+  clientSafeSummary?: string;
+};
+
+export type AdminReviewDecisionSetDto = {
+  version: string;
+  caseId: string;
+  generatedAt: string;
+  updatedAt?: string;
+  qaSampleOnly?: boolean;
+  decisions: Array<{
+    evidenceId: string;
+    status: AdminReviewStatus | string;
+    reviewerNote?: string;
+    reviewedBy?: string;
+    reviewedAt?: string;
+    approvedClientSummary?: string;
+    caveatText?: string;
+    requestedSources?: string[];
+  }>;
+};
+
+export type SubmitAdminReviewDecisionInput = {
+  status: AdminReviewStatus;
+  reviewerNote?: string;
+  approvedClientSummary?: string;
+  caveatText?: string;
+  requestedSources?: string[];
+  highImpactAcknowledged?: boolean;
+  overwriteConfirmed?: boolean;
+};
+
+export type RegenerateClientContentResult = {
+  preReviewApprovedCount: number;
+  postReviewApprovedCount: number;
+  mode: "post_review";
+  artifactRoot?: string;
+  generatedAt?: string;
+  rendererInvoked?: boolean;
+};
+
+export function getOrionManualReviewQueue(caseId: string): Promise<ManualReviewQueueDto> {
+  return request<ManualReviewQueueDto>(`/cases/${caseId}/orion-golden/manual-review`);
+}
+
+export function getOrionManualReviewItem(
+  caseId: string,
+  evidenceId: string
+): Promise<ManualReviewItemDetailDto> {
+  return request<ManualReviewItemDetailDto>(
+    `/cases/${caseId}/orion-golden/manual-review/${encodeURIComponent(evidenceId)}`
+  );
+}
+
+export function submitOrionAdminReviewDecision(
+  caseId: string,
+  evidenceId: string,
+  input: SubmitAdminReviewDecisionInput
+): Promise<AdminReviewDecisionSetDto> {
+  return request<AdminReviewDecisionSetDto>(
+    `/cases/${caseId}/orion-golden/manual-review/${encodeURIComponent(evidenceId)}`,
+    { method: "POST", body: JSON.stringify(input) }
+  );
+}
+
+export function listOrionAdminReviewDecisions(caseId: string): Promise<AdminReviewDecisionSetDto> {
+  return request<AdminReviewDecisionSetDto>(`/cases/${caseId}/orion-golden/admin-review-decisions`);
+}
+
+export function regenerateOrionClientContentAfterReview(
+  caseId: string
+): Promise<RegenerateClientContentResult> {
+  return request<RegenerateClientContentResult>(
+    `/cases/${caseId}/orion-golden/client-content/regenerate`,
+    { method: "POST", body: JSON.stringify({}) }
+  );
+}
+

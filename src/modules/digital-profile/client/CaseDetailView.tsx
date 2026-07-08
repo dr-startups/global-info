@@ -45,7 +45,7 @@ type LoadState =
 
 export function CaseDetailView({ caseId }: { caseId: string }) {
   const { t, tError } = useDigitalProfileI18n();
-  const { user } = useDpAuth();
+  const { user, can } = useDpAuth();
   const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [report, setReport] = useState<ReportVersion | null>(null);
@@ -273,6 +273,20 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
       {isAdmin ? (
         <Card>
           <OrionClientStoryboardReportPanel caseId={state.caseDetail.id} />
+        </Card>
+      ) : null}
+
+      {can("evidence.viewRaw") ? (
+        <Card>
+          <div className="dp-stack" style={{ gap: 8 }}>
+            <strong>ORION Golden — ручная проверка</strong>
+            <p className="dp-muted" style={{ margin: 0 }}>
+              Очередь материалов, требующих решения аналитика. PENDING не является подтверждённым риском.
+            </p>
+            <Link className="dp-btn" href={`/admin/digital-profile/${state.caseDetail.id}/orion-golden/manual-review`}>
+              Открыть manual review
+            </Link>
+          </div>
         </Card>
       ) : null}
 

@@ -12,7 +12,6 @@ import {
 } from "@/modules/digital-profile/auth/guard";
 import {
   persistRegeneratedClientContent,
-  regenerateClientContentAfterReview,
 } from "@/modules/digital-profile/orion-golden/services/admin-review-workflow-service";
 
 export const dynamic = "force-dynamic";
@@ -24,11 +23,13 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const user = await requireDigitalProfileUser(req);
   requireRole(user, "risk.review");
   await requireCaseAccess(user, id, "REVIEWER");
-  const result = regenerateClientContentAfterReview(id);
-  persistRegeneratedClientContent(id);
+  const result = persistRegeneratedClientContent(id);
   return jsonOk({
-    preReviewApprovedCount: result.preReview.approvedFindings.length,
-    postReviewApprovedCount: result.postReview.approvedFindings.length,
-    mode: "post_review",
+    preReviewApprovedCount: result.preReviewApprovedCount,
+    postReviewApprovedCount: result.postReviewApprovedCount,
+    mode: "post_review" as const,
+    artifactRoot: result.artifactRoot,
+    generatedAt: result.generatedAt,
+    rendererInvoked: false,
   });
 });
