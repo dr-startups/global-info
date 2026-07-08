@@ -1,5 +1,5 @@
 /**
- * R10.4 — Build EvidenceJudgment records from inventory items (deterministic heuristics).
+ * R10.4 / R10.7a — Build EvidenceJudgment records from inventory items (deterministic heuristics).
  */
 
 import type { RawInventoryItem } from "../types";
@@ -27,6 +27,42 @@ const MARKETPLACE = ["aliexpress", "ozon", "wildberries", "market.yandex", "ebay
 const PRODUCT = ["лампа", "led lamp", "lilygo", "esp32", "arduino", "купить", "цена", "модуль"];
 const LOGIN = ["gosuslugi", "госуслugi", "esia.gosuslugi", "login", "войти", "личный кабинет"];
 
+/** Official / government registry hosts. */
+const PUBLIC_REGISTRY_DOMAINS = [
+  "egrul.nalog.ru",
+  "nalog.ru",
+  "fedresurs.ru",
+  "kad.arbitr.ru",
+  "sudact.ru",
+  "gosuslugi.ru",
+  "minjust.ru",
+];
+
+/**
+ * RU business-registry aggregators — PUBLIC_REGISTRY / BUSINESS_REGISTRY_AGGREGATOR
+ * only when page looks like a registry/business profile (not opinion/adverse media).
+ */
+const BUSINESS_REGISTRY_AGGREGATOR_DOMAINS = [
+  "rusprofile.ru",
+  "list-org.com",
+  "checko.ru",
+  "zachestnyibiznes.ru",
+  "sbis.ru",
+  "kontur.ru",
+  "focus.kontur.ru",
+  "klerk.ru",
+  "audit-it.ru",
+  "spark-interfax.ru",
+  "sravni.ru",
+  "otc.ru",
+];
+
+const REGISTRY_PROFILE_HINTS =
+  /\b(инн|огрн|огрнип|егрюл|егрип|ип\b|ооо\b|ао\b|зао\b|реестр|контрагент|юрлиц|профиль|карточка|участник|учредител|директор|гендиректор)\b/i;
+
+const ADVERSE_DOMINANT =
+  /санкц|sanction|watchlist|арест|fraud|corrupt|компромат|скандал|приговор|обвинен|расследован|offshore|офшор|pep\b|adverse/i;
+
 function hay(item: RawInventoryItem): string {
   return [item.title, item.snippet, item.sourceUrl, item.provider, item.evidenceType]
     .filter(Boolean)
@@ -41,6 +77,14 @@ function domainOf(url?: string): string | undefined {
   } catch {
     return url.split("/")[0];
   }
+}
+
+function domainMatches(dom: string, hosts: string[]): boolean {
+  return hosts.some((h) => dom === h || dom.endsWith(`.${h}`));
+}
+
+function looksLikeRegistryOrBusinessProfile(text: string): boolean {
+  return REGISTRY_PROFILE_HINTS.test(text) || /инн\s*\d{10,12}/i.test(text);
 }
 
 function mapRelevance(relevanceClass: EvidenceDecisionRecord["relevanceClass"]): JudgmentRelevanceClass {
@@ -71,7 +115,6 @@ function assessSubjectBinding(
     if (text.includes(wrong)) {
       const subjectMatch = names.some((n) => text.includes(n));
       if (!subjectMatch) return "WRONG_SUBJECT";
-      // Subject string appears in E2E name but content is about Deripaska — wrong subject for compliance doc
       if (/e2e|lexis ui|r7\.5/i.test(subjectName) && text.includes(wrong)) {
         return "WRONG_SUBJECT";
       }
@@ -95,14 +138,32 @@ function assessSubjectBinding(
 
 function assessSourceReliability(item: RawInventoryItem, text: string): SourceReliability {
   const provider = item.provider.toUpperCase();
-  const dom = domainOf(item.sourceUrl) ?? "";
+  const dom = (domainOf(item.sourceUrl) ?? "").toLowerCase();
 
   if (MARKETPLACE.some((m) => text.includes(m) || dom.includes(m.replace(".", "")))) {
     return "MARKETPLACE";
   }
   if (/\.example|mock:|demo/i.test(text) || dom.endsWith(".example")) return "UNKNOWN";
   if (/LEXIS|DOW_JONES|WORLD_CHECK|WORLDCHECK/.test(provider)) return "AUTHORITATIVE";
-  if (/nalog\.|gosuslugi|egrul|fedresurs|minjust/.test(dom)) return "PUBLIC_REGISTRY";
+
+  if (
+    domainMatches(dom, PUBLIC_REGISTRY_DOMAINS) ||
+    /nalog\.|gosuslugi|egrul|fedresurs|minjust|kad\.arbitr|sudact/.test(dom)
+  ) {
+    return "PUBLIC_REGISTRY";
+  }
+
+  // R10.7a — trusted RU aggregators only when registry/business-profile-like and not adverse-dominated
+  if (domainMatches(dom, BUSINESS_REGISTRY_AGGREGATOR_DOMAINS)) {
+    if (ADVERSE_DOMINANT.test(text) && !looksLikeRegistryOrBusinessProfile(text)) {
+      return "UNKNOWN";
+    }
+    if (looksLikeRegistryOrBusinessProfile(text) || /профиль|справочник|контрагент|ип |ооо /i.test(text)) {
+      return "BUSINESS_REGISTRY_AGGREGATOR";
+    }
+    return "BUSINESS_REGISTRY_AGGREGATOR";
+  }
+
   if (/tass\.|interfax|kommersant|vedomosti|rbc\.|forbes|reuters|bbc|bloomberg/.test(dom)) {
     return "REPUTABLE_MEDIA";
   }
@@ -118,13 +179,44 @@ function assessContentNature(item: RawInventoryItem, text: string): ContentNatur
   if (/компромат|rumor|слух|anonymous/i.test(text)) return "RUMOR";
   if (/обвин|alleg|claim|утвержда|подозрева/i.test(text)) return "ALLEGATION";
   if (/мнен|opinion|editorial|column/i.test(text)) return "OPINION";
-  if (item.evidenceType === "wikipedia" || /profile|справочник|directory/i.test(text)) return "PROFILE_PAGE";
+  if (
+    item.evidenceType === "wikipedia" ||
+    /profile|справочник|directory|карточка|контрагент|егрюл|егрип/i.test(text)
+  ) {
+    return "PROFILE_PAGE";
+  }
   if (item.evidenceType === "compliance_hit" || item.evidenceType === "risk_finding") return "FACT";
   return "FACT";
 }
 
 function includesAny(text: string, terms: string[]): boolean {
   return terms.some((t) => text.includes(t));
+}
+
+function isRegistryLikeSource(sourceReliability: SourceReliability): boolean {
+  return sourceReliability === "PUBLIC_REGISTRY" || sourceReliability === "BUSINESS_REGISTRY_AGGREGATOR";
+}
+
+/**
+ * Filter controversial topics that are false positives on neutral registry/profile pages.
+ * e.g. "проверк" in registry card text, or procurement on IP cards.
+ */
+function filterControversialForNeutralRegistry(
+  topics: ReturnType<typeof detectControversialTopics>,
+  text: string,
+  sourceReliability: SourceReliability,
+  contentNature: ContentNature
+): ReturnType<typeof detectControversialTopics> {
+  if (!isRegistryLikeSource(sourceReliability)) return topics;
+  if (contentNature !== "FACT" && contentNature !== "PROFILE_PAGE") return topics;
+  if (ADVERSE_DOMINANT.test(text)) return topics;
+
+  const softTopicIds = new Set(["procurement", "investigation_mention", "donations"]);
+  return topics.filter((t) => {
+    if (!softTopicIds.has(t.topicId)) return true;
+    if (/санкц|sanction|арест|приговор|офшор|offshore|pep\b/i.test(text)) return true;
+    return false;
+  });
 }
 
 function assessRiskSignal(
@@ -137,6 +229,15 @@ function assessRiskSignal(
 ): RiskSignal {
   if (binding === "WRONG_SUBJECT") return "COMPLIANCE_RELEVANT";
   if (/\[demo\]|\.example|mock:/i.test(text)) return "INSUFFICIENT_CONTEXT";
+
+  // Compliance DB potential matches always stay compliance-relevant (never auto-include)
+  if (/LEXIS|DOW_JONES|WORLD_CHECK|WORLDCHECK/.test(item.provider.toUpperCase())) {
+    return "COMPLIANCE_RELEVANT";
+  }
+  if (item.evidenceType === "compliance_hit" || item.evidenceType === "risk_finding") {
+    return "COMPLIANCE_RELEVANT";
+  }
+
   if (controversial.length > 0) return controversial[0]!.defaultRiskSignal;
 
   if (/sanction|санкц|watchlist|pep|rca|adverse_media/i.test(text)) {
@@ -147,7 +248,7 @@ function assessRiskSignal(
     return "COMPLIANCE_RELEVANT";
   }
 
-  if (/негativ|adverse|скандал|арест|fraud|corrupt|компромат/i.test(text)) {
+  if (/негатив|adverse|скандал|арест|fraud|corrupt|компромат/i.test(text)) {
     if (contentNature === "ALLEGATION" || contentNature === "RUMOR" || sourceReliability === "BLOG_FORUM") {
       return "POSSIBLE_ADVERSE";
     }
@@ -156,7 +257,21 @@ function assessRiskSignal(
   }
 
   if (/award|награда|успех|рост|positive|благотвор/i.test(text)) return "POSITIVE_SIGNAL";
+
+  // R10.7a — confirmed/likely neutral registry/profile facts are NOT insufficient context.
+  // Distinction: insufficient context for *risk* vs sufficient context for *neutral factual use*.
+  if (
+    (binding === "CONFIRMED" || binding === "LIKELY") &&
+    isRegistryLikeSource(sourceReliability) &&
+    (contentNature === "FACT" || contentNature === "PROFILE_PAGE") &&
+    !ADVERSE_DOMINANT.test(text)
+  ) {
+    return contentNature === "PROFILE_PAGE" ? "NEUTRAL_CONTEXT" : "NO_RISK_SIGNAL";
+  }
+
   if (item.evidenceType === "wikipedia" || contentNature === "PROFILE_PAGE") return "NEUTRAL_CONTEXT";
+
+  // Insufficient context only when we lack enough to classify relevance/risk or subject binding
   if (binding === "UNKNOWN" || binding === "WEAK") return "INSUFFICIENT_CONTEXT";
   return "NO_RISK_SIGNAL";
 }
@@ -165,7 +280,8 @@ function buildClientSafeSummary(
   item: RawInventoryItem,
   riskSignal: RiskSignal,
   binding: SubjectBinding,
-  topics: ReturnType<typeof detectControversialTopics>
+  topics: ReturnType<typeof detectControversialTopics>,
+  sourceReliability: SourceReliability
 ): string {
   const title = item.title.slice(0, 120);
   if (binding === "WRONG_SUBJECT") {
@@ -176,6 +292,12 @@ function buildClientSafeSummary(
   }
   if (riskSignal === "POSSIBLE_ADVERSE" || riskSignal === "COMPLIANCE_RELEVANT") {
     return `Предварительный сигнал, требующий ручной проверки: «${title}». Подтверждённый негативный статус не установлен.`;
+  }
+  if (
+    (riskSignal === "NO_RISK_SIGNAL" || riskSignal === "NEUTRAL_CONTEXT" || riskSignal === "POSITIVE_SIGNAL") &&
+    isRegistryLikeSource(sourceReliability)
+  ) {
+    return `Обнаружено подтверждённое реестровое / профильное упоминание: «${title}».`;
   }
   if (riskSignal === "NO_RISK_SIGNAL" || riskSignal === "NEUTRAL_CONTEXT") {
     return `Нейтральный или справочный материал: «${title}».`;
@@ -191,18 +313,48 @@ export function buildEvidenceJudgmentFromItem(input: {
 }): EvidenceJudgment {
   const { item, decision, subjectName, aliases } = input;
   const text = hay(item);
-  const controversial = detectControversialTopics(text);
   const subjectBinding = assessSubjectBinding(text, subjectName, aliases);
-  const relevance = mapRelevance(decision.relevanceClass);
+  let relevance = mapRelevance(decision.relevanceClass);
   const sourceReliability = assessSourceReliability(item, text);
   const contentNature = assessContentNature(item, text);
+  const rawControversial = detectControversialTopics(text);
+  const controversial = filterControversialForNeutralRegistry(
+    rawControversial,
+    text,
+    sourceReliability,
+    contentNature
+  );
   const riskSignal = assessRiskSignal(item, text, subjectBinding, contentNature, sourceReliability, controversial);
+
+  // R10.7a — confirmed/likely registry/profile facts are at least RELEVANT for routing
+  if (
+    (subjectBinding === "CONFIRMED" || subjectBinding === "LIKELY") &&
+    isRegistryLikeSource(sourceReliability) &&
+    (contentNature === "FACT" || contentNature === "PROFILE_PAGE") &&
+    relevance !== "NOISE" &&
+    relevance !== "STRONG_RELEVANT"
+  ) {
+    relevance = "RELEVANT";
+  }
 
   const confidenceBase = decision.entityMatchScore ?? 0.5;
   let confidence = confidenceBase;
   if (subjectBinding === "WRONG_SUBJECT") confidence = Math.max(confidence, 0.85);
-  if (sourceReliability === "AUTHORITATIVE" && subjectBinding === "CONFIRMED") confidence = Math.min(0.95, confidence + 0.15);
-  if (sourceReliability === "UNKNOWN" || sourceReliability === "MARKETPLACE") confidence = Math.min(confidence, 0.55);
+  if (sourceReliability === "AUTHORITATIVE" && subjectBinding === "CONFIRMED") {
+    confidence = Math.min(0.95, confidence + 0.15);
+  }
+  // R10.7a — registry aggregators with confirmed binding get usable confidence for auto-include (>=0.55)
+  if (
+    isRegistryLikeSource(sourceReliability) &&
+    (subjectBinding === "CONFIRMED" || subjectBinding === "LIKELY") &&
+    (contentNature === "FACT" || contentNature === "PROFILE_PAGE")
+  ) {
+    confidence = Math.max(confidence, 0.58);
+    confidence = Math.min(0.9, confidence + 0.08);
+  }
+  if (sourceReliability === "UNKNOWN" || sourceReliability === "MARKETPLACE") {
+    confidence = Math.min(confidence, 0.55);
+  }
   if (riskSignal === "CONTROVERSIAL_DUAL_USE") confidence = Math.min(confidence, 0.65);
   if (/\[demo\]/i.test(text)) confidence = Math.min(confidence, 0.4);
 
@@ -220,17 +372,23 @@ export function buildEvidenceJudgmentFromItem(input: {
 
   if (riskSignal === "POSSIBLE_ADVERSE" || riskSignal === "COMPLIANCE_RELEVANT") {
     evidenceForRisk.push(decision.humanReason);
-    evidenceAgainstRisk.push("Источник или идентификация субъекта могут быть недостаточны для подтверждённого вывода.");
+    evidenceAgainstRisk.push(
+      "Источник или идентификация субъекта могут быть недостаточны для подтверждённого вывода."
+    );
   }
 
   if (subjectBinding === "WRONG_SUBJECT") {
-    manualReviewReason = "Вероятное совпадение с другим лицом / объектом — исключить из выводов до проверки идентификации.";
+    manualReviewReason =
+      "Вероятное совпадение с другим лицом / объектом — исключить из выводов до проверки идентификации.";
   } else if (riskSignal === "CONTROVERSIAL_DUAL_USE") {
     manualReviewReason = `Двусмысленный контекст (${controversial.map((c) => c.label).join(", ") || "высокий impact"}) — требуется ручная оценка.`;
   } else if (contentNature === "ALLEGATION" || contentNature === "RUMOR") {
-    manualReviewReason = "Алlegation/слух без авторитетного подтверждения — нельзя включать как подтверждённый факт.";
+    manualReviewReason =
+      "Алlegation/слух без авторитетного подтверждения — нельзя включать как подтверждённый факт.";
   } else if (riskSignal === "POSSIBLE_ADVERSE" && subjectBinding !== "CONFIRMED") {
     manualReviewReason = "Возможный негативный сигнал при неполной идентификации субъекта.";
+  } else if (riskSignal === "COMPLIANCE_RELEVANT") {
+    manualReviewReason = "Compliance / watchlist / database potential match — требуется ручная проверка.";
   }
 
   const flags: string[] = [];
@@ -239,6 +397,17 @@ export function buildEvidenceJudgmentFromItem(input: {
   if (controversial.length) flags.push(`controversial:${controversial.map((c) => c.topicId).join(",")}`);
   if (subjectBinding === "WRONG_SUBJECT") flags.push("wrong_subject");
   if (decision.relevanceClass === "excluded_noise") flags.push("relevance_noise");
+  if (/LEXIS|DOW_JONES|WORLD_CHECK|WORLDCHECK/.test(item.provider.toUpperCase())) {
+    flags.push("compliance_db_potential_match");
+  }
+  if (
+    riskSignal === "CONTROVERSIAL_DUAL_USE" ||
+    riskSignal === "POSSIBLE_ADVERSE" ||
+    riskSignal === "COMPLIANCE_RELEVANT" ||
+    riskSignal === "ADVERSE_CONFIRMED"
+  ) {
+    flags.push("high_impact_manual");
+  }
 
   const partial = {
     evidenceId: item.inventoryId,
@@ -251,7 +420,13 @@ export function buildEvidenceJudgmentFromItem(input: {
     contentNature,
     riskSignal,
     confidence,
-    clientSafeSummary: buildClientSafeSummary(item, riskSignal, subjectBinding, controversial),
+    clientSafeSummary: buildClientSafeSummary(
+      item,
+      riskSignal,
+      subjectBinding,
+      controversial,
+      sourceReliability
+    ),
     whyRelevant: decision.humanReason,
     whyRiskyOrNot:
       riskSignal === "NO_RISK_SIGNAL" || riskSignal === "NEUTRAL_CONTEXT" || riskSignal === "POSITIVE_SIGNAL"

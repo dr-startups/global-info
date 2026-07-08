@@ -47,6 +47,7 @@ import { inspectContentQualityReview } from "./qa/r10-4-content-quality-review";
 import { inspectEvidenceJudgmentQa } from "./qa/r10-4-evidence-judgment-qa";
 import { inspectAdminReviewWorkflowQa } from "./qa/r10-5-admin-review-workflow-qa";
 import { inspectSectionGptOrchestrationQa } from "./qa/r10-6-section-gpt-orchestration-qa";
+import { inspectThresholdTuningQa } from "./qa/r10-7a-threshold-tuning-qa";
 import { buildOrionSectionBundles, countInventoryRegions } from "./sections/orion-section-bundle-builder";
 import type { OrionSectionBundleIndex } from "./sections/orion-section-bundle";
 import type { OrionSectionAnalysisIndex } from "./sections/orion-section-analysis";
@@ -422,6 +423,13 @@ export async function runR10OrionGoldenE2e(options: {
           clientContent: clientContentPreReviewFromSections,
         });
         writeJson(join(outputRoot, "r10-6-section-gpt-orchestration-qa.json"), sectionOrchestrationQa);
+
+        const thresholdTuningQa = inspectThresholdTuningQa({
+          judgments,
+          clientContent: clientContentPreReviewFromSections,
+          orchestrationMeta,
+        });
+        writeJson(join(outputRoot, "r10-7a-threshold-tuning-qa.json"), thresholdTuningQa);
       }
 
       const contentBrainOnly = process.env.R10_CONTENT_BRAIN_ONLY === "1";

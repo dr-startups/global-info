@@ -24,12 +24,26 @@ export type OrionClientContent = {
   reportRunId: string;
   subject: { displayName: string; aliases: string[] };
   executiveSummaryDraft: string;
-  approvedFindings: Array<{ title: string; summary: string; domain?: string; caveat?: string; evidenceRefs?: string[] }>;
-  appendixFindings: Array<{ title: string; summary: string; caveat: string; evidenceRefs?: string[] }>;
+  approvedFindings: Array<{
+    title: string;
+    summary: string;
+    domain?: string;
+    caveat?: string;
+    evidenceRefs?: string[];
+    evidenceId?: string;
+  }>;
+  appendixFindings: Array<{ title: string; summary: string; caveat: string; evidenceRefs?: string[]; evidenceId?: string }>;
   manualReviewSection: {
     title: string;
     intro: string;
-    items: Array<{ title: string; summary: string; whyFlagged: string; adminStatus?: string; evidenceRefs?: string[] }>;
+    items: Array<{
+      title: string;
+      summary: string;
+      whyFlagged: string;
+      adminStatus?: string;
+      evidenceRefs?: string[];
+      evidenceId?: string;
+    }>;
   };
   limitations: string[];
   methodologyNotes: string[];
@@ -84,6 +98,8 @@ export function buildOrionClientContent(input: {
       summary: j?.clientSafeSummary ?? b.clientSafeSummary,
       domain: b.domain,
       caveat,
+      evidenceId: b.evidenceId,
+      evidenceRefs: [b.evidenceId],
     };
   });
 
@@ -91,6 +107,8 @@ export function buildOrionClientContent(input: {
     title: b.title,
     summary: b.clientSafeSummary,
     caveat: "Материал учтён в приложении; не используется как подтверждённый ключевой вывод.",
+    evidenceId: b.evidenceId,
+    evidenceRefs: [b.evidenceId],
   }));
 
   const manualItems = effectiveBundles.manualReview.slice(0, 50).map((b) => {
@@ -100,6 +118,8 @@ export function buildOrionClientContent(input: {
       summary: j?.clientSafeSummary ?? b.clientSafeSummary,
       whyFlagged: j?.manualReviewReason ?? "Требуется ручная проверка аналитиком.",
       adminStatus: j?.adminReviewStatus,
+      evidenceId: b.evidenceId,
+      evidenceRefs: [b.evidenceId],
     };
   });
 
@@ -111,6 +131,8 @@ export function buildOrionClientContent(input: {
       summary: j.clientSafeSummary,
       whyFlagged: "Требуются дополнительные источники.",
       adminStatus: "NEEDS_MORE_SOURCES",
+      evidenceId: j.evidenceId,
+      evidenceRefs: [j.evidenceId],
     });
   }
 
@@ -182,6 +204,78 @@ function dedupeNarrative(text: string): string {
   return text;
 }
 
+function isGenericDataPoorNarrative(narrative: string): boolean {
+  return (
+    /недостаточно подтверждённых материалов/i.test(narrative) ||
+    /детерминированно без GPT/i.test(narrative) ||
+    /недостаточно данных для аналитического вывода/i.test(narrative)
+  );
+}
+
+function shouldCollapseDataPoorSection(analysis: OrionSectionAnalysis): boolean {
+  if (analysis.status !== "DATA_POOR") return false;
+  if (analysis.keyFindings.length > 0) return false;
+  if (analysis.sectionId === "01_executive_summary" || analysis.sectionId === "02_compliance_risk_matrix") {
+    return false;
+  }
+  return isGenericDataPoorNarrative(analysis.clientNarrative) || analysis.clientNarrative.trim().length < 140;
+}
+
+function buildExecutiveSectionFromSynthesis(
+  analysis: OrionSectionAnalysis | undefined,
+  synthesis: ExecutiveSynthesisOutput
+): NonNullable<OrionClientContent["sections"]>[0] {
+  const findings = [
+    ...synthesis.mainRisks.slice(0, 5).map((r, i) => ({
+      title: `Ключевой риск ${i + 1}`,
+      summary: typeof r === "string" ? r : String(r),
+      evidenceRefs: [] as string[],
+    })),
+    ...synthesis.finalRecommendations.slice(0, 3).map((r, i) => ({
+      title: `Рекомендация ${i + 1}`,
+      summary: typeof r === "string" ? r : String(r),
+      evidenceRefs: [] as string[],
+    })),
+  ];
+  return {
+    sectionId: "01_executive_summary",
+    order: analysis?.order ?? 1,
+    title: analysis?.title ?? "Резюме для руководства",
+    status: "HAS_FINDINGS",
+    narrative: synthesis.executiveSummary,
+    keyFindings: findings,
+    evidenceRefs: [],
+  };
+}
+
+function buildRiskMatrixSectionFromDerived(
+  analysis: OrionSectionAnalysis | undefined,
+  riskMatrix: SectionDerivedRiskMatrix
+): NonNullable<OrionClientContent["sections"]>[0] {
+  const topRows = riskMatrix.rows.slice(0, 12);
+  const narrative = [
+    `Матрица compliance-рисков сформирована из секционных анализов (источник: ${riskMatrix.inputSource}).`,
+    `Глобальный уровень: ${riskMatrix.globalRiskLevel}.`,
+    riskMatrix.pendingManualReviewCount > 0
+      ? `Материалов, требующих ручной проверки: ${riskMatrix.pendingManualReviewCount}.`
+      : "Очередь ручной проверки по матрице пуста.",
+  ].join(" ");
+  return {
+    sectionId: "02_compliance_risk_matrix",
+    order: analysis?.order ?? 2,
+    title: analysis?.title ?? "Матрица compliance-рисков",
+    status: topRows.length > 0 ? "HAS_FINDINGS" : "NO_FINDINGS",
+    narrative,
+    keyFindings: topRows.map((r) => ({
+      title: r.theme,
+      summary: `${r.level}: ${r.summary}`,
+      evidenceRefs: r.evidenceRefs,
+      caveat: r.requiresManualReview ? r.caveat ?? "Требует ручной проверки" : r.caveat,
+    })),
+    evidenceRefs: [...new Set(topRows.flatMap((r) => r.evidenceRefs))],
+  };
+}
+
 export function assembleOrionClientContentFromSections(input: {
   mode: ClientContentMode;
   caseId: string;
@@ -196,13 +290,27 @@ export function assembleOrionClientContentFromSections(input: {
   seenNarrativeKeys.clear();
   const registryOrder = getClientAuditSections().map((s) => s.sectionId);
   const analysisById = new Map(input.sectionAnalyses.map((a) => [a.sectionId, a]));
+  const collapsedDataPoorTitles: string[] = [];
 
   const sections = registryOrder
     .map((sectionId) => {
       const analysis = analysisById.get(sectionId);
       if (!analysis) return null;
-      const narrative = dedupeNarrative(analysis.clientNarrative);
-      if (!narrative && analysis.status === "NOT_APPLICABLE") {
+
+      // R10.7a — inject executive synthesis / risk matrix into canonical slots 01/02
+      if (sectionId === "01_executive_summary" && input.executiveSynthesis.executiveSummary.trim()) {
+        return buildExecutiveSectionFromSynthesis(analysis, input.executiveSynthesis);
+      }
+      if (sectionId === "02_compliance_risk_matrix" && input.riskMatrix.rows.length > 0) {
+        return buildRiskMatrixSectionFromDerived(analysis, input.riskMatrix);
+      }
+
+      if (shouldCollapseDataPoorSection(analysis)) {
+        collapsedDataPoorTitles.push(analysis.title);
+        return null;
+      }
+
+      if (analysis.status === "NOT_APPLICABLE") {
         return {
           sectionId,
           order: analysis.order,
@@ -213,6 +321,8 @@ export function assembleOrionClientContentFromSections(input: {
           evidenceRefs: [] as string[],
         };
       }
+
+      const narrative = dedupeNarrative(analysis.clientNarrative);
       if (!narrative) return null;
       const evidenceRefs = [
         ...new Set([
@@ -236,6 +346,21 @@ export function assembleOrionClientContentFromSections(input: {
       };
     })
     .filter(Boolean) as NonNullable<OrionClientContent["sections"]>;
+
+  if (collapsedDataPoorTitles.length > 0) {
+    const limitationsIdx = sections.findIndex((s) => s.sectionId === "52_limitations");
+    const collapseNote = {
+      sectionId: "52_limitations_collapsed_note",
+      order: 52.5,
+      title: "Секции с недостаточными данными",
+      status: "DATA_POOR",
+      narrative: `Недостаточно данных для содержательного вывода по секциям: ${collapsedDataPoorTitles.join(", ")}.`,
+      keyFindings: [] as Array<{ title: string; summary: string; evidenceRefs: string[]; caveat?: string }>,
+      evidenceRefs: [] as string[],
+    };
+    if (limitationsIdx >= 0) sections.splice(limitationsIdx + 1, 0, collapseNote);
+    else sections.push(collapseNote);
+  }
 
   const approvedFindings = sections
     .flatMap((s) =>
@@ -330,7 +455,7 @@ export function renderOrionClientContentMarkdown(content: OrionClientContent): s
       lines.push(`### ${section.order}. ${section.title} (${section.sectionId})`);
       lines.push(`*Статус: ${section.status}*`);
       if (section.narrative) lines.push(section.narrative);
-      for (const f of section.keyFindings.slice(0, 5)) {
+      for (const f of section.keyFindings.slice(0, 8)) {
         lines.push(`- **${f.title}**: ${f.summary}`);
         if (f.evidenceRefs.length) lines.push(`  - refs: ${f.evidenceRefs.join(", ")}`);
         if (f.caveat) lines.push(`  - *Оговорка:* ${f.caveat}`);

@@ -19,6 +19,7 @@ export type JudgmentRelevanceClass =
 export type SourceReliability =
   | "AUTHORITATIVE"
   | "PUBLIC_REGISTRY"
+  | "BUSINESS_REGISTRY_AGGREGATOR"
   | "REPUTABLE_MEDIA"
   | "SOCIAL_MEDIA"
   | "BLOG_FORUM"
@@ -94,7 +95,19 @@ export type EvidenceJudgment = {
   adminReviewedBy?: string;
 };
 
-const AUTHORITATIVE_SOURCES: SourceReliability[] = ["AUTHORITATIVE", "PUBLIC_REGISTRY", "REPUTABLE_MEDIA"];
+/** Trusted sources eligible for safe neutral auto-include (not adverse authority). */
+const SAFE_AUTO_INCLUDE_SOURCES: SourceReliability[] = [
+  "AUTHORITATIVE",
+  "PUBLIC_REGISTRY",
+  "BUSINESS_REGISTRY_AGGREGATOR",
+  "REPUTABLE_MEDIA",
+];
+
+const AUTHORITATIVE_SOURCES: SourceReliability[] = SAFE_AUTO_INCLUDE_SOURCES;
+
+const SAFE_NEUTRAL_RISKS: RiskSignal[] = ["NO_RISK_SIGNAL", "NEUTRAL_CONTEXT", "POSITIVE_SIGNAL"];
+
+const SAFE_CONTENT_NATURES: ContentNature[] = ["FACT", "PROFILE_PAGE"];
 
 function isHighImpactRisk(signal: RiskSignal): boolean {
   return (
@@ -111,6 +124,35 @@ function isStrongBinding(binding: SubjectBinding): boolean {
 
 function isStrongRelevance(relevance: JudgmentRelevanceClass): boolean {
   return relevance === "STRONG_RELEVANT" || relevance === "RELEVANT";
+}
+
+function hasUnsafeAutoIncludeFlags(j: EvidenceJudgment): boolean {
+  return j.flags.some(
+    (f) =>
+      f.startsWith("controversial:") ||
+      f === "wrong_subject" ||
+      f === "demo_content" ||
+      f === "mock_domain" ||
+      f === "high_impact_manual" ||
+      f === "compliance_db_potential_match"
+  );
+}
+
+/**
+ * R10.7a — Safe neutral auto-include.
+ * Only confirmed/likely neutral registry/profile facts; never adverse/compliance/controversial.
+ */
+export function isSafeNeutralAutoIncludeCandidate(j: EvidenceJudgment): boolean {
+  if (!isStrongBinding(j.subjectBinding)) return false;
+  if (!isStrongRelevance(j.relevance)) return false;
+  if (!SAFE_AUTO_INCLUDE_SOURCES.includes(j.sourceReliability)) return false;
+  if (!SAFE_CONTENT_NATURES.includes(j.contentNature)) return false;
+  if (!SAFE_NEUTRAL_RISKS.includes(j.riskSignal)) return false;
+  if (j.confidence < 0.55) return false;
+  if (isHighImpactRisk(j.riskSignal)) return false;
+  if (j.contentNature === "ALLEGATION" || j.contentNature === "OPINION" || j.contentNature === "RUMOR") return false;
+  if (hasUnsafeAutoIncludeFlags(j)) return false;
+  return true;
 }
 
 /** Deterministic routing — final authority for client inclusion. */
@@ -130,79 +172,46 @@ export function decideEvidenceReview(j: EvidenceJudgment): ReviewDecision {
     return "EXCLUDE_NOISE";
   }
 
-  // Rule 4 — controversial dual-use
-  if (j.riskSignal === "CONTROVERSIAL_DUAL_USE") {
+  // Hard protect — never auto-include high-impact / allegation / rumor / opinion
+  if (isHighImpactRisk(j.riskSignal)) {
+    return "MANUAL_REVIEW_REQUIRED";
+  }
+  if (j.contentNature === "ALLEGATION" || j.contentNature === "OPINION" || j.contentNature === "RUMOR") {
     return "MANUAL_REVIEW_REQUIRED";
   }
 
-  // Rule 6 — allegations / opinions / rumors (unless authoritative fact)
-  if (
-    (j.contentNature === "ALLEGATION" || j.contentNature === "OPINION" || j.contentNature === "RUMOR") &&
-    !AUTHORITATIVE_SOURCES.includes(j.sourceReliability)
-  ) {
-    return "MANUAL_REVIEW_REQUIRED";
-  }
-
-  // Rule 5 — high-impact weak certainty
-  if (
-    isHighImpactRisk(j.riskSignal) &&
-    (!isStrongBinding(j.subjectBinding) || !AUTHORITATIVE_SOURCES.includes(j.sourceReliability))
-  ) {
-    return "MANUAL_REVIEW_REQUIRED";
-  }
-
-  // Rule 9 — low confidence on risk/compliance
-  if (j.confidence < 0.72) {
-    if (isHighImpactRisk(j.riskSignal)) return "MANUAL_REVIEW_REQUIRED";
-    if (j.riskSignal === "NEUTRAL_CONTEXT" || j.riskSignal === "NO_RISK_SIGNAL" || j.riskSignal === "POSITIVE_SIGNAL") {
-      return "APPENDIX_ONLY";
-    }
-  }
-
-  // Rule 7 — weak / unknown binding
+  // Weak / unknown binding:
+  // - high-impact → manual
+  // - insufficient context / neutral → appendix (not worth analyst queue)
   if (j.subjectBinding === "WEAK" || j.subjectBinding === "UNKNOWN") {
     if (isHighImpactRisk(j.riskSignal)) return "MANUAL_REVIEW_REQUIRED";
     return "APPENDIX_ONLY";
   }
 
-  // Rule 3 — confirmed strong evidence
-  if (
-    isStrongBinding(j.subjectBinding) &&
-    isStrongRelevance(j.relevance) &&
-    AUTHORITATIVE_SOURCES.includes(j.sourceReliability) &&
-    j.contentNature === "FACT" &&
-    j.riskSignal !== "INSUFFICIENT_CONTEXT" &&
-    j.confidence >= 0.72
-  ) {
+  // R10.7a — safe confirmed neutral registry/profile facts (confidence >= 0.55)
+  if (isSafeNeutralAutoIncludeCandidate(j)) {
     return "AUTO_INCLUDE_CLIENT_REPORT";
   }
 
-  // Rule 8 — positive / neutral
-  if (j.riskSignal === "POSITIVE_SIGNAL" || j.riskSignal === "NEUTRAL_CONTEXT" || j.riskSignal === "NO_RISK_SIGNAL") {
-    if (isStrongBinding(j.subjectBinding) && isStrongRelevance(j.relevance) && j.confidence >= 0.72) {
-      return "AUTO_INCLUDE_CLIENT_REPORT";
-    }
+  // Insufficient context for risk/relevance on strong binding — appendix unless high-impact (already gated)
+  if (j.riskSignal === "INSUFFICIENT_CONTEXT") {
     return "APPENDIX_ONLY";
   }
 
-  // Adverse confirmed only with strong binding + authoritative — else manual
-  if (j.riskSignal === "ADVERSE_CONFIRMED") {
-    if (isStrongBinding(j.subjectBinding) && AUTHORITATIVE_SOURCES.includes(j.sourceReliability) && j.confidence >= 0.72) {
-      return "AUTO_INCLUDE_CLIENT_REPORT";
-    }
+  // Low confidence on remaining safe signals → appendix, not main report
+  if (j.confidence < 0.55) {
+    if (SAFE_NEUTRAL_RISKS.includes(j.riskSignal)) return "APPENDIX_ONLY";
     return "MANUAL_REVIEW_REQUIRED";
-  }
-
-  if (j.riskSignal === "INSUFFICIENT_CONTEXT") {
-    return "MANUAL_REVIEW_REQUIRED";
-  }
-
-  if (isStrongRelevance(j.relevance) && isStrongBinding(j.subjectBinding)) {
-    return "AUTO_INCLUDE_CLIENT_REPORT";
   }
 
   if (j.relevance === "POTENTIALLY_RELEVANT") {
-    return "MANUAL_REVIEW_REQUIRED";
+    if (isHighImpactRisk(j.riskSignal)) return "MANUAL_REVIEW_REQUIRED";
+    // Ambiguous relevance but safe risk → appendix, not analyst queue
+    return "APPENDIX_ONLY";
+  }
+
+  if (SAFE_NEUTRAL_RISKS.includes(j.riskSignal) && isStrongBinding(j.subjectBinding)) {
+    return "APPENDIX_ONLY";
   }
 
   return "APPENDIX_ONLY";

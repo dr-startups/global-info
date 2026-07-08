@@ -63,7 +63,8 @@ const TOPIC_PATTERNS: Array<{
   {
     id: "investigation_mention",
     label: "Упоминание в расследовании без прямого обвинения",
-    terms: [/расследован/i, /investigation/i, /probe/i, /inquiry/i, /проверк/i],
+    // R10.7a: avoid bare "проверк" — matches too many neutral registry/admin phrases
+    terms: [/расследован/i, /investigation/i, /\bprobe\b/i, /\binquiry\b/i, /уголовн\w*\s+проверк/i, /служебн\w*\s+проверк/i],
     defaultRiskSignal: "CONTROVERSIAL_DUAL_USE",
     neutral: "Упоминание в материале о расследовании не означает участие или вину субъекта.",
     risk: "Может указывать на репутационный или compliance-контекст при подтверждении связи.",

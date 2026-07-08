@@ -43,5 +43,6 @@ export * from "./sections/orion-risk-matrix-from-sections";
 export * from "./gpt/orion-section-analysis-orchestrator";
 export * from "./gpt/orion-executive-synthesis-from-sections";
 export * from "./qa/r10-6-section-gpt-orchestration-qa";
+export * from "./qa/r10-7a-threshold-tuning-qa";
 export * from "./run-r10-orion-golden-e2e";
 export * from "./types";

@@ -68,8 +68,11 @@ export function inspectAdminReviewWorkflowQa(input: {
   const appendixSample = input.sampleDecisions.decisions.filter((d) => d.status === "APPENDIX_ONLY");
   const appendixInMain = postApproved.filter((f) =>
     appendixSample.some((d) => {
-      const j = input.judgments.find((x) => x.evidenceId === d.evidenceId);
-      return j && f.title === j.title;
+      // Prefer evidenceId / sole evidenceRefs — duplicate registry titles are common
+      if (f.evidenceId === d.evidenceId) return true;
+      const refs = f.evidenceRefs ?? [];
+      if (refs.length === 1 && refs[0] === d.evidenceId) return true;
+      return false;
     })
   );
   checks.push({
