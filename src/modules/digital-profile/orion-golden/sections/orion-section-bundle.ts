@@ -18,6 +18,9 @@ export type OrionSectionBundleEvidence = {
   url?: string;
   snippet?: string;
   subjectBinding: string;
+  /** R10.7b */
+  subjectBindingScore?: number;
+  subjectBindingExplanation?: string;
   relevance: string;
   sourceReliability?: string;
   contentNature?: string;

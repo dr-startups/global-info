@@ -68,6 +68,7 @@ function providerHint(text: string, provider: string): "yandex" | "google" | "ot
 
 function resolveClientUse(j: EvidenceJudgment, sectionId: string): OrionSectionClientUse | null {
   if (j.reviewDecision === "EXCLUDE_WRONG_SUBJECT" || j.reviewDecision === "EXCLUDE_NOISE") return null;
+  if (j.subjectBinding === "WRONG_SUBJECT") return null;
 
   if (sectionId === "50_manual_review_required") {
     if (j.reviewDecision === "MANUAL_REVIEW_REQUIRED" || j.adminReviewStatus === "NEEDS_MORE_SOURCES") {
@@ -81,12 +82,26 @@ function resolveClientUse(j: EvidenceJudgment, sectionId: string): OrionSectionC
     if (j.reviewDecision === "AUTO_INCLUDE_CLIENT_REPORT" && j.adminReviewStatus === "APPROVED_WITH_CAVEAT") {
       return "APPENDIX_ONLY";
     }
+    // R10.7b — WEAK/UNKNOWN may appear in appendix only
+    if (j.subjectBinding === "WEAK" || j.subjectBinding === "UNKNOWN") return "APPENDIX_ONLY";
     return null;
   }
 
   if (sectionId === "51_excluded_noise_summary") return null;
 
   if (j.adminReviewStatus === "EXCLUDED" || j.adminReviewStatus === "WRONG_SUBJECT") return null;
+
+  // R10.7b — WEAK/UNKNOWN never feed MAIN_ANALYSIS analytical sections
+  if (
+    (j.subjectBinding === "WEAK" || j.subjectBinding === "UNKNOWN") &&
+    sectionId !== "50_manual_review_required" &&
+    sectionId !== "52_limitations" &&
+    sectionId !== "54_evidence_appendix"
+  ) {
+    if (j.reviewDecision === "MANUAL_REVIEW_REQUIRED") return "CAVEATED_ANALYSIS";
+    return null;
+  }
+
   if (j.reviewDecision === "MANUAL_REVIEW_REQUIRED" && j.adminReviewStatus === "PENDING") {
     if (sectionId === "50_manual_review_required" || sectionId === "52_limitations") {
       return "MANUAL_REVIEW_ONLY";
@@ -302,6 +317,8 @@ export function buildOrionSectionBundles(input: OrionSectionBundleBuilderInput):
         url: j.url ?? item.sourceUrl,
         snippet: item.snippet?.slice(0, 300),
         subjectBinding: j.subjectBinding,
+        subjectBindingScore: j.subjectBindingScore,
+        subjectBindingExplanation: j.subjectBindingExplanation,
         relevance: j.relevance,
         sourceReliability: j.sourceReliability,
         contentNature: j.contentNature,

@@ -14,14 +14,9 @@ import {
   type SourceReliability,
   type SubjectBinding,
 } from "./evidence-judgment";
-
-const WRONG_SUBJECT_NAMES = [
-  "дерипаск",
-  "deripaska",
-  "oleg vladimirovich",
-  "олег владимирович",
-  "олег дерипаск",
-];
+import type { SubjectIdentityProfile } from "../identity/subject-identity-profile";
+import { buildSubjectIdentityProfile } from "../identity/subject-identity-profile-builder";
+import { scoreSubjectBinding } from "../identity/subject-binding-scorer";
 
 const MARKETPLACE = ["aliexpress", "ozon", "wildberries", "market.yandex", "ebay", "amazon."];
 const PRODUCT = ["лампа", "led lamp", "lilygo", "esp32", "arduino", "купить", "цена", "модуль"];
@@ -102,38 +97,6 @@ function mapRelevance(relevanceClass: EvidenceDecisionRecord["relevanceClass"]):
     default:
       return "POTENTIALLY_RELEVANT";
   }
-}
-
-function assessSubjectBinding(
-  text: string,
-  subjectName: string,
-  aliases: string[]
-): SubjectBinding {
-  const names = [subjectName, ...aliases].map((n) => n.toLowerCase()).filter((n) => n.length > 2);
-
-  for (const wrong of WRONG_SUBJECT_NAMES) {
-    if (text.includes(wrong)) {
-      const subjectMatch = names.some((n) => text.includes(n));
-      if (!subjectMatch) return "WRONG_SUBJECT";
-      if (/e2e|lexis ui|r7\.5/i.test(subjectName) && text.includes(wrong)) {
-        return "WRONG_SUBJECT";
-      }
-    }
-  }
-
-  if (names.some((n) => text.includes(n))) return "CONFIRMED";
-
-  if (names.some((n) => n.length > 6 && text.includes(n.slice(0, Math.min(n.length, 12))))) {
-    return "LIKELY";
-  }
-
-  if (/lexis|r7\.5|e2e|20260704/i.test(text) && /e2e|lexis|r7/i.test(subjectName.toLowerCase())) {
-    return "WEAK";
-  }
-
-  if (/\[demo\]|\.example|mock:/i.test(text)) return "WEAK";
-
-  return "UNKNOWN";
 }
 
 function assessSourceReliability(item: RawInventoryItem, text: string): SourceReliability {
@@ -310,10 +273,19 @@ export function buildEvidenceJudgmentFromItem(input: {
   decision: EvidenceDecisionRecord;
   subjectName: string;
   aliases: string[];
+  identityProfile?: SubjectIdentityProfile;
 }): EvidenceJudgment {
   const { item, decision, subjectName, aliases } = input;
   const text = hay(item);
-  const subjectBinding = assessSubjectBinding(text, subjectName, aliases);
+  const profile =
+    input.identityProfile ??
+    buildSubjectIdentityProfile({
+      caseId: "unknown",
+      subjectName,
+      aliases,
+    });
+  const bindingScore = scoreSubjectBinding(item, profile);
+  const subjectBinding: SubjectBinding = bindingScore.binding;
   let relevance = mapRelevance(decision.relevanceClass);
   const sourceReliability = assessSourceReliability(item, text);
   const contentNature = assessContentNature(item, text);
@@ -342,6 +314,12 @@ export function buildEvidenceJudgmentFromItem(input: {
   if (subjectBinding === "WRONG_SUBJECT") confidence = Math.max(confidence, 0.85);
   if (sourceReliability === "AUTHORITATIVE" && subjectBinding === "CONFIRMED") {
     confidence = Math.min(0.95, confidence + 0.15);
+  }
+  // R10.7b — boost confidence from binding score for confirmed/likely identity
+  if (subjectBinding === "CONFIRMED") {
+    confidence = Math.max(confidence, Math.min(0.92, 0.55 + bindingScore.score / 200));
+  } else if (subjectBinding === "LIKELY") {
+    confidence = Math.max(confidence, Math.min(0.8, 0.5 + bindingScore.score / 250));
   }
   // R10.7a — registry aggregators with confirmed binding get usable confidence for auto-include (>=0.55)
   if (
@@ -379,7 +357,9 @@ export function buildEvidenceJudgmentFromItem(input: {
 
   if (subjectBinding === "WRONG_SUBJECT") {
     manualReviewReason =
-      "Вероятное совпадение с другим лицом / объектом — исключить из выводов до проверки идентификации.";
+      bindingScore.negativeSignals.find((s) => s.startsWith("patronymic_mismatch"))
+        ? "Расхождение по отчеству / другому лицу — исключить из основных выводов."
+        : "Вероятное совпадение с другим лицом / объектом — исключить из выводов до проверки идентификации.";
   } else if (riskSignal === "CONTROVERSIAL_DUAL_USE") {
     manualReviewReason = `Двусмысленный контекст (${controversial.map((c) => c.label).join(", ") || "высокий impact"}) — требуется ручная оценка.`;
   } else if (contentNature === "ALLEGATION" || contentNature === "RUMOR") {
@@ -408,6 +388,12 @@ export function buildEvidenceJudgmentFromItem(input: {
   ) {
     flags.push("high_impact_manual");
   }
+  if (bindingScore.negativeSignals.some((s) => s.startsWith("patronymic_mismatch"))) {
+    flags.push("patronymic_mismatch");
+  }
+  if (bindingScore.positiveSignals.some((s) => s.startsWith("exact_inn"))) {
+    flags.push("exact_inn_match");
+  }
 
   const partial = {
     evidenceId: item.inventoryId,
@@ -415,6 +401,10 @@ export function buildEvidenceJudgmentFromItem(input: {
     url: item.sourceUrl,
     sourceDomain: domainOf(item.sourceUrl),
     subjectBinding,
+    subjectBindingScore: bindingScore.score,
+    subjectBindingExplanation: bindingScore.explanation,
+    subjectBindingPositiveSignals: bindingScore.positiveSignals,
+    subjectBindingNegativeSignals: bindingScore.negativeSignals,
     relevance,
     sourceReliability,
     contentNature,
@@ -449,8 +439,21 @@ export function buildAllEvidenceJudgments(input: {
   decisions: EvidenceDecisionRecord[];
   subjectName: string;
   aliases: string[];
+  caseId?: string;
+  regionHints?: string[];
+  identityProfile?: SubjectIdentityProfile;
 }): EvidenceJudgment[] {
   const byId = new Map(input.decisions.map((d) => [d.inventoryId, d]));
+  const identityProfile =
+    input.identityProfile ??
+    buildSubjectIdentityProfile({
+      caseId: input.caseId ?? "unknown",
+      subjectName: input.subjectName,
+      aliases: input.aliases,
+      regionHints: input.regionHints,
+      inventory: { items: input.items },
+    });
+
   return input.items.map((item) => {
     const decision = byId.get(item.inventoryId);
     if (!decision) throw new Error(`missing-decision:${item.inventoryId}`);
@@ -459,6 +462,7 @@ export function buildAllEvidenceJudgments(input: {
       decision,
       subjectName: input.subjectName,
       aliases: input.aliases,
+      identityProfile,
     });
   });
 }

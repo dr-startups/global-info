@@ -63,9 +63,16 @@ async function main() {
   }
 
   const caseId = process.env.CASE_ID?.trim() || "cmr5oqxo301bqvdag2yf0v6sj";
+  const calibrationCaseId = "cmqzz1vbr00d2vdrsrjsgie2g";
+  const outputRoot =
+    process.env.R10_OUTPUT_DIR?.trim() ||
+    (caseId === calibrationCaseId
+      ? join(process.cwd(), "storage", "digital-profile", "qa-r10-7-real-subject-calibration")
+      : R10_OUTPUT_ROOT);
   console.log(`[INFO] CASE_ID=${caseId}`);
+  console.log(`[INFO] OUTPUT_ROOT=${outputRoot}`);
 
-  const result = await runR10OrionGoldenE2e({ caseId, outputRoot: R10_OUTPUT_ROOT, requireAi: true });
+  const result = await runR10OrionGoldenE2e({ caseId, outputRoot, requireAi: true });
   console.log(`[INFO] verdict=${result.verdict} pages=${result.pageCount} slides=${result.slideCount}`);
 
   const contentBrainOnly = process.env.R10_CONTENT_BRAIN_ONLY === "1";
@@ -98,6 +105,9 @@ async function main() {
         "r10-4-content-quality-review.json",
         "gpt-section-analyses.json",
         "executive-synthesis.json",
+        "subject-identity-profile.json",
+        "r10-7b-subject-binding-qa.json",
+        "r10-7b-subject-binding-report.json",
         "qa-summary.json",
       ]
     : [
@@ -132,41 +142,41 @@ async function main() {
       ];
 
   for (const name of requiredArtifacts) {
-    check(`Artifact: ${name}`, existsSync(join(R10_OUTPUT_ROOT, name)));
+    check(`Artifact: ${name}`, existsSync(join(outputRoot, name)));
   }
 
   if (result.verdict !== "BLOCKED_GPT" && result.verdict !== "BLOCKED" && process.env.R10_CONTENT_BRAIN_ONLY !== "1") {
-    check("rendered-client.pdf", existsSync(join(R10_OUTPUT_ROOT, "rendered-client.pdf")));
-    check("rendered-client.pptx", existsSync(join(R10_OUTPUT_ROOT, "rendered-client.pptx")));
+    check("rendered-client.pdf", existsSync(join(outputRoot, "rendered-client.pdf")));
+    check("rendered-client.pptx", existsSync(join(outputRoot, "rendered-client.pptx")));
   }
 
   const judgmentReview = JSON.parse(
-    readFileSync(join(R10_OUTPUT_ROOT, "r10-4-evidence-judgment-review.json"), "utf-8")
+    readFileSync(join(outputRoot, "r10-4-evidence-judgment-review.json"), "utf-8")
   ) as { verdict: string; passed: boolean };
   check("Evidence judgment QA", judgmentReview.passed, judgmentReview.verdict);
 
   const adminWorkflow = JSON.parse(
-    readFileSync(join(R10_OUTPUT_ROOT, "r10-5-admin-review-workflow-qa.json"), "utf-8")
+    readFileSync(join(outputRoot, "r10-5-admin-review-workflow-qa.json"), "utf-8")
   ) as { verdict: string; passed: boolean };
   check("Admin review workflow QA", adminWorkflow.passed, adminWorkflow.verdict);
 
   const contentQuality = JSON.parse(
-    readFileSync(join(R10_OUTPUT_ROOT, "r10-4-content-quality-review.json"), "utf-8")
+    readFileSync(join(outputRoot, "r10-4-content-quality-review.json"), "utf-8")
   ) as { verdict: string };
   console.log(`[INFO] contentQuality=${contentQuality.verdict}`);
   console.log(`[INFO] adminWorkflow=${adminWorkflow.verdict}`);
 
-  if (existsSync(join(R10_OUTPUT_ROOT, "r10-6-section-gpt-orchestration-qa.json"))) {
+  if (existsSync(join(outputRoot, "r10-6-section-gpt-orchestration-qa.json"))) {
     const sectionOrchestration = JSON.parse(
-      readFileSync(join(R10_OUTPUT_ROOT, "r10-6-section-gpt-orchestration-qa.json"), "utf-8")
+      readFileSync(join(outputRoot, "r10-6-section-gpt-orchestration-qa.json"), "utf-8")
     ) as { verdict: string; passed: boolean };
     check("Section GPT orchestration QA", sectionOrchestration.passed, sectionOrchestration.verdict);
     console.log(`[INFO] sectionOrchestration=${sectionOrchestration.verdict}`);
   }
 
-  if (existsSync(join(R10_OUTPUT_ROOT, "r10-6-gpt-runtime-diagnostics.json"))) {
+  if (existsSync(join(outputRoot, "r10-6-gpt-runtime-diagnostics.json"))) {
     const gptRuntime = JSON.parse(
-      readFileSync(join(R10_OUTPUT_ROOT, "r10-6-gpt-runtime-diagnostics.json"), "utf-8")
+      readFileSync(join(outputRoot, "r10-6-gpt-runtime-diagnostics.json"), "utf-8")
     ) as { successfulCalls: number; failedCalls: number; fallbackCount: number };
     check(
       "GPT runtime diagnostics",
@@ -178,7 +188,15 @@ async function main() {
     );
   }
 
-  const qa = JSON.parse(readFileSync(join(R10_OUTPUT_ROOT, "qa-summary.json"), "utf-8")) as {
+  if (existsSync(join(outputRoot, "r10-7b-subject-binding-qa.json"))) {
+    const bindingQa = JSON.parse(
+      readFileSync(join(outputRoot, "r10-7b-subject-binding-qa.json"), "utf-8")
+    ) as { verdict: string; passed: boolean };
+    check("Subject binding QA", bindingQa.passed, bindingQa.verdict);
+    console.log(`[INFO] subjectBindingQa=${bindingQa.verdict}`);
+  }
+
+  const qa = JSON.parse(readFileSync(join(outputRoot, "qa-summary.json"), "utf-8")) as {
     verdict: string;
     executiveAfterSections?: boolean;
     blockedReason?: string;

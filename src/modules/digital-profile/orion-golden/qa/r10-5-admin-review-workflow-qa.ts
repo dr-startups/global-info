@@ -84,8 +84,11 @@ export function inspectAdminReviewWorkflowQa(input: {
 
   const excludedSample = input.sampleDecisions.decisions.filter((d) => d.status === "EXCLUDED");
   const excludedInPost = excludedSample.filter((d) => {
-    const j = input.judgments.find((x) => x.evidenceId === d.evidenceId);
-    return j && postApproved.some((f) => f.title === j.title);
+    return postApproved.some((f) => {
+      if (f.evidenceId === d.evidenceId) return true;
+      const refs = f.evidenceRefs ?? [];
+      return refs.length === 1 && refs[0] === d.evidenceId;
+    });
   });
   checks.push({
     id: "excluded-absent-from-client",

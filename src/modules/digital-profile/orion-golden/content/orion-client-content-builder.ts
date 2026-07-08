@@ -286,6 +286,8 @@ export function assembleOrionClientContentFromSections(input: {
   riskMatrix: SectionDerivedRiskMatrix;
   manualQueue: ManualReviewQueue;
   adminDecisionSummary?: Record<string, number>;
+  /** R10.7b — optional judgments for consolidated identity limitations */
+  judgments?: EvidenceJudgment[];
 }): OrionClientContent {
   seenNarrativeKeys.clear();
   const registryOrder = getClientAuditSections().map((s) => s.sectionId);
@@ -401,10 +403,45 @@ export function assembleOrionClientContentFromSections(input: {
     })) ?? [];
 
   const limitationsAnalysis = analysisById.get("52_limitations");
+  const identityLimitations: string[] = [];
+  if (input.judgments?.length) {
+    const wrong = input.judgments.filter((j) => j.subjectBinding === "WRONG_SUBJECT").length;
+    const weakUnknown = input.judgments.filter(
+      (j) => j.subjectBinding === "WEAK" || j.subjectBinding === "UNKNOWN"
+    ).length;
+    const patronymic = input.judgments.filter((j) => j.flags.includes("patronymic_mismatch")).length;
+    const innConfirmed = input.judgments.filter(
+      (j) => j.flags.includes("exact_inn_match") && j.subjectBinding === "CONFIRMED"
+    ).length;
+    if (innConfirmed > 0) {
+      identityLimitations.push(
+        `Нейтральные реестровые сведения с совпадением по ИНН (${innConfirmed}) использованы как подтверждённые факты идентификации.`
+      );
+    }
+    if (patronymic > 0) {
+      identityLimitations.push(
+        `Материалы с расхождением по отчеству (${patronymic}) не использовались в основных выводах как подтверждённая идентификация.`
+      );
+    }
+    if (wrong > 0) {
+      identityLimitations.push(
+        `${wrong} материал(ов) исключены как вероятное совпадение с другим лицом (WRONG_SUBJECT).`
+      );
+    }
+    if (weakUnknown > 0) {
+      identityLimitations.push(
+        `Часть найденных материалов (${weakUnknown}) содержит совпадение по ФИО или слабый контекст, однако не имеет дополнительных идентификаторов и не использована как сильный вывод.`
+      );
+    }
+  }
+
   const limitations = [
+    ...identityLimitations,
     ...(limitationsAnalysis?.limitations ?? []),
-    ...(limitationsAnalysis?.clientNarrative ? [limitationsAnalysis.clientNarrative] : []),
-    ...input.riskMatrix.rows.filter((r) => r.requiresManualReview).map((r) => r.summary),
+    ...(limitationsAnalysis?.clientNarrative && !isGenericDataPoorNarrative(limitationsAnalysis.clientNarrative)
+      ? [limitationsAnalysis.clientNarrative]
+      : []),
+    ...input.riskMatrix.rows.filter((r) => r.requiresManualReview).map((r) => r.summary).slice(0, 8),
   ].filter(Boolean);
 
   return {

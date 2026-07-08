@@ -34,6 +34,8 @@ import { countByReviewDecision, countByRiskSignal } from "./evidence/evidence-ju
 import { buildManualReviewQueue } from "./evidence/manual-review-queue";
 import { routeEvidenceToSections, validateRoutingAgainstBlueprint } from "./evidence/orion-section-router";
 import { classifyInventoryRelevance } from "./evidence/relevance-classifier";
+import { buildSubjectIdentityProfile } from "./identity/subject-identity-profile-builder";
+import { inspectSubjectBindingQa } from "./qa/r10-7b-subject-binding-qa";
 import { runOrionGoldenExecutiveSynthesis } from "./gpt/orion-executive-synthesizer";
 import {
   buildExecutiveSynthesisFromSections,
@@ -202,13 +204,29 @@ export async function runR10OrionGoldenE2e(options: {
   const relevance = classifyInventoryRelevance(inventory.items, inventory.subject.fullName, inventory.subject.aliases);
   writeJson(join(outputRoot, "relevance-filter-inspection.json"), relevance);
 
+  const identityProfile = buildSubjectIdentityProfile({
+    caseId,
+    subjectName: inventory.subject.fullName,
+    aliases: inventory.subject.aliases,
+    regionHints: ctx.targetRegions ?? [],
+    inventory,
+  });
+  writeJson(join(outputRoot, "subject-identity-profile.json"), identityProfile);
+
   const judgments = buildAllEvidenceJudgments({
     items: inventory.items,
     decisions: relevance.decisions,
     subjectName: inventory.subject.fullName,
     aliases: inventory.subject.aliases,
+    caseId,
+    regionHints: ctx.targetRegions ?? [],
+    identityProfile,
   });
   const judgmentById = new Map(judgments.map((j) => [j.evidenceId, j]));
+  const subjectBindingCounts = judgments.reduce<Record<string, number>>((acc, j) => {
+    acc[j.subjectBinding] = (acc[j.subjectBinding] ?? 0) + 1;
+    return acc;
+  }, {});
   writeJson(join(outputRoot, "evidence-judgment-inspection.json"), {
     version: "r10-4-evidence-judgment-inspection-v1",
     caseId,
@@ -216,6 +234,7 @@ export async function runR10OrionGoldenE2e(options: {
     totalJudgments: judgments.length,
     reviewDecisionCounts: countByReviewDecision(judgments),
     riskSignalCounts: countByRiskSignal(judgments),
+    subjectBindingCounts,
     judgments,
   });
 
@@ -263,6 +282,11 @@ export async function runR10OrionGoldenE2e(options: {
     judgments,
   });
   saveAdminReviewSampleFixture(sampleAdminDecisions);
+  writeJson(join(outputRoot, "admin-review-decisions.sample.json"), {
+    ...sampleAdminDecisions,
+    qaSampleOnly: true,
+    _notice: "QA sample fixture only — not real admin approval",
+  });
 
   const clientContentPostReview = buildOrionClientContent({
     mode: "post_review",
@@ -377,6 +401,7 @@ export async function runR10OrionGoldenE2e(options: {
         riskMatrix: sectionDerivedRiskMatrix,
         manualQueue,
         adminDecisionSummary: countAdminDecisionsByStatus(productionAdminDecisions.decisions),
+        judgments,
       });
       writeJson(join(outputRoot, "orion-client-content.pre-review.json"), clientContentPreReviewFromSections);
       writeFileSync(
@@ -403,6 +428,7 @@ export async function runR10OrionGoldenE2e(options: {
         riskMatrix: buildRiskMatrixFromSections({ caseId, sectionAnalyses: r10SectionAnalyses, sectionBundles: sectionBundlesPost }),
         manualQueue,
         adminDecisionSummary: countAdminDecisionsByStatus(sampleAdminDecisions.decisions),
+        judgments,
       });
       writeJson(join(outputRoot, "orion-client-content.post-review.json"), clientContentPostReviewFromSections);
       writeFileSync(
@@ -430,6 +456,130 @@ export async function runR10OrionGoldenE2e(options: {
           orchestrationMeta,
         });
         writeJson(join(outputRoot, "r10-7a-threshold-tuning-qa.json"), thresholdTuningQa);
+
+        const subjectBindingQa = inspectSubjectBindingQa({
+          judgments,
+          clientContent: clientContentPreReviewFromSections,
+          identityProfile,
+          sectionBundles: sectionBundlesPre,
+          orchestrationMeta,
+        });
+        writeJson(join(outputRoot, "r10-7b-subject-binding-qa.json"), subjectBindingQa);
+        writeJson(join(outputRoot, "r10-7b-subject-binding-report.json"), {
+          ...subjectBindingQa,
+          generatedAt: new Date().toISOString(),
+          caseId,
+          subjectName: inventory.subject.fullName,
+          identityProfileSummary: {
+            inns: identityProfile.knownIdentifiers.inn ?? [],
+            wrongPatronymics: identityProfile.negativeIdentitySignals.wrongPatronymics,
+            fullNameRu: identityProfile.fullNameRu,
+          },
+          reviewDecisionCounts: countByReviewDecision(judgments),
+          riskSignalCounts: countByRiskSignal(judgments),
+          gptSectionCalls: {
+            successful: orchestrationMeta.gptSectionCallCount,
+            failed: orchestrationMeta.skippedSections.filter((s) => s.reason === "gpt_failed_fallback").length,
+          },
+          beforeAfter: {
+            subjectBinding: {
+              baseline: subjectBindingQa.baseline,
+              after: subjectBindingQa.subjectBindingCounts,
+              deltas: subjectBindingQa.deltas,
+            },
+            evidenceDecisions: {
+              baselineR107a: {
+                AUTO_INCLUDE_CLIENT_REPORT: 66,
+                APPENDIX_ONLY: 592,
+                MANUAL_REVIEW_REQUIRED: 63,
+                EXCLUDE_NOISE: 7,
+                EXCLUDE_WRONG_SUBJECT: 0,
+              },
+              after: countByReviewDecision(judgments),
+            },
+            riskSignals: {
+              after: countByRiskSignal(judgments),
+            },
+          },
+          examples: {
+            upgradedToConfirmed: judgments
+              .filter((j) => j.subjectBinding === "CONFIRMED")
+              .slice(0, 10)
+              .map((j) => ({
+                evidenceId: j.evidenceId,
+                title: j.title.slice(0, 100),
+                domain: j.sourceDomain,
+                score: j.subjectBindingScore,
+                explanation: j.subjectBindingExplanation,
+                flags: j.flags.slice(0, 6),
+              })),
+            upgradedToLikely: judgments
+              .filter((j) => j.subjectBinding === "LIKELY")
+              .slice(0, 10)
+              .map((j) => ({
+                evidenceId: j.evidenceId,
+                title: j.title.slice(0, 100),
+                domain: j.sourceDomain,
+                score: j.subjectBindingScore,
+                explanation: j.subjectBindingExplanation,
+              })),
+            wrongSubject: judgments
+              .filter((j) => j.subjectBinding === "WRONG_SUBJECT")
+              .slice(0, 10)
+              .map((j) => ({
+                evidenceId: j.evidenceId,
+                title: j.title.slice(0, 100),
+                domain: j.sourceDomain,
+                negatives: j.subjectBindingNegativeSignals?.slice(0, 4),
+                explanation: j.subjectBindingExplanation,
+              })),
+            patronymicMismatch: judgments
+              .filter((j) => j.flags.includes("patronymic_mismatch"))
+              .slice(0, 10)
+              .map((j) => ({
+                evidenceId: j.evidenceId,
+                binding: j.subjectBinding,
+                title: j.title.slice(0, 100),
+                negatives: j.subjectBindingNegativeSignals?.slice(0, 4),
+              })),
+            exactInnMatch: judgments
+              .filter((j) => j.flags.includes("exact_inn_match"))
+              .slice(0, 10)
+              .map((j) => ({
+                evidenceId: j.evidenceId,
+                binding: j.subjectBinding,
+                title: j.title.slice(0, 100),
+                domain: j.sourceDomain,
+                reviewDecision: j.reviewDecision,
+                riskSignal: j.riskSignal,
+              })),
+            autoIncludeSafe: judgments
+              .filter((j) => j.reviewDecision === "AUTO_INCLUDE_CLIENT_REPORT")
+              .slice(0, 10)
+              .map((j) => ({
+                evidenceId: j.evidenceId,
+                binding: j.subjectBinding,
+                title: j.title.slice(0, 100),
+                riskSignal: j.riskSignal,
+                sourceReliability: j.sourceReliability,
+              })),
+            manualReviewPreserved: judgments
+              .filter((j) => j.reviewDecision === "MANUAL_REVIEW_REQUIRED")
+              .slice(0, 10)
+              .map((j) => ({
+                evidenceId: j.evidenceId,
+                binding: j.subjectBinding,
+                title: j.title.slice(0, 100),
+                riskSignal: j.riskSignal,
+              })),
+          },
+          contentQualityNotes: {
+            identityLimitations: clientContentPreReviewFromSections.limitations?.slice(0, 6) ?? [],
+            approvedFindingsCount: clientContentPreReviewFromSections.approvedFindings.length,
+            megaPromptUsed: orchestrationMeta.megaPromptUsed,
+            fullInventoryPassedToGpt: false,
+          },
+        });
       }
 
       const contentBrainOnly = process.env.R10_CONTENT_BRAIN_ONLY === "1";

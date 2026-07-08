@@ -68,6 +68,12 @@ export type EvidenceJudgment = {
   sourceDomain?: string;
 
   subjectBinding: SubjectBinding;
+  /** R10.7b — numeric binding score from identity scorer */
+  subjectBindingScore?: number;
+  subjectBindingExplanation?: string;
+  subjectBindingPositiveSignals?: string[];
+  subjectBindingNegativeSignals?: string[];
+
   relevance: JudgmentRelevanceClass;
   sourceReliability: SourceReliability;
   contentNature: ContentNature;
