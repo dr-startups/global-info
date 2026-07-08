@@ -11,13 +11,27 @@ import { ORION_GOLDEN_ARCHITECTURE } from "./architecture/orion-agent-architectu
 import { ORION_GOLDEN_BLUEPRINT } from "./blueprint/orion-golden-blueprint";
 import { buildOrionGoldenAssets } from "./assets/orion-asset-builder";
 import { composeOrionGoldenDeck } from "./composer/orion-deck-composer";
+import {
+  buildOrionClientContent,
+  renderOrionClientContentMarkdown,
+} from "./content/orion-client-content-builder";
 import { buildOrionGoldenSupabaseSchemaPlan } from "./db/orion-supabase-schema-plan";
 import { buildFullEvidenceInventory } from "./evidence/full-evidence-inventory";
+import {
+  applyJudgmentToDecisions,
+  buildGatedEvidenceBundles,
+  filterPacksForGpt,
+} from "./evidence/evidence-client-gate";
+import { buildAllEvidenceJudgments } from "./evidence/evidence-judgment-builder";
+import { countByReviewDecision, countByRiskSignal } from "./evidence/evidence-judgment";
+import { buildManualReviewQueue } from "./evidence/manual-review-queue";
 import { routeEvidenceToSections, validateRoutingAgainstBlueprint } from "./evidence/orion-section-router";
 import { classifyInventoryRelevance } from "./evidence/relevance-classifier";
 import { runOrionGoldenExecutiveSynthesis } from "./gpt/orion-executive-synthesizer";
 import { runOrionGoldenSectionAnalyses } from "./gpt/orion-section-analyzer";
 import { inspectOrionGoldenClientPolicy } from "./qa/client-policy-inspection";
+import { inspectContentQualityReview } from "./qa/r10-4-content-quality-review";
+import { inspectEvidenceJudgmentQa } from "./qa/r10-4-evidence-judgment-qa";
 import { inspectOrionGoldenVisualQuality } from "./qa/visual-qa-inspection";
 import { renderOrionGoldenArtifacts } from "./renderer/orion-golden-render-client";
 import { buildOrionGoldenReportSpec } from "./report-spec/orion-report-spec";
@@ -113,8 +127,63 @@ export async function runR10OrionGoldenE2e(options: {
   const relevance = classifyInventoryRelevance(inventory.items, inventory.subject.fullName, inventory.subject.aliases);
   writeJson(join(outputRoot, "relevance-filter-inspection.json"), relevance);
 
-  const routing = routeEvidenceToSections({ inventory, relevance });
-  writeJson(join(outputRoot, "evidence-routing-inspection.json"), routing);
+  const judgments = buildAllEvidenceJudgments({
+    items: inventory.items,
+    decisions: relevance.decisions,
+    subjectName: inventory.subject.fullName,
+    aliases: inventory.subject.aliases,
+  });
+  const judgmentById = new Map(judgments.map((j) => [j.evidenceId, j]));
+  writeJson(join(outputRoot, "evidence-judgment-inspection.json"), {
+    version: "r10-4-evidence-judgment-inspection-v1",
+    caseId,
+    reportRunId,
+    totalJudgments: judgments.length,
+    reviewDecisionCounts: countByReviewDecision(judgments),
+    riskSignalCounts: countByRiskSignal(judgments),
+    judgments,
+  });
+
+  const gatedDecisions = applyJudgmentToDecisions(relevance.decisions, judgmentById);
+  const gatedRelevance = { ...relevance, decisions: gatedDecisions };
+  writeJson(join(outputRoot, "evidence-judgment-gated-relevance.json"), {
+    version: "r10-4-gated-relevance-v1",
+    caseId,
+    reportRunId,
+    decisions: gatedDecisions,
+  });
+
+  const routing = routeEvidenceToSections({ inventory, relevance: gatedRelevance });
+  const gatedPacks = filterPacksForGpt(routing.packs, judgmentById);
+  writeJson(join(outputRoot, "evidence-routing-inspection.json"), { ...routing, packs: gatedPacks });
+
+  const bundles = buildGatedEvidenceBundles({ caseId, reportRunId, judgments });
+  writeJson(join(outputRoot, "r10-4-evidence-bundles.json"), bundles);
+
+  const snippetById = new Map(inventory.items.map((i) => [i.inventoryId, i.snippet ?? ""]));
+  const manualQueue = buildManualReviewQueue({ caseId, reportRunId, judgments, snippetById });
+  writeJson(join(outputRoot, "manual-review-queue.json"), manualQueue);
+
+  const clientContent = buildOrionClientContent({
+    caseId,
+    reportRunId,
+    subject: { fullName: inventory.subject.fullName, aliases: inventory.subject.aliases },
+    bundles,
+    manualQueue,
+    judgments,
+  });
+  writeJson(join(outputRoot, "orion-client-content.json"), clientContent);
+  writeFileSync(join(outputRoot, "orion-client-content.md"), renderOrionClientContentMarkdown(clientContent), "utf-8");
+
+  const judgmentQa = inspectEvidenceJudgmentQa({ judgments, bundles, clientContent });
+  writeJson(join(outputRoot, "r10-4-evidence-judgment-review.json"), judgmentQa);
+
+  const contentQuality = inspectContentQualityReview({
+    clientContent,
+    judgmentVerdict: judgmentQa.verdict,
+    manualReviewPendingCount: manualQueue.pendingCount,
+  });
+  writeJson(join(outputRoot, "r10-4-content-quality-review.json"), contentQuality);
 
   const routingIssues = validateRoutingAgainstBlueprint(routing);
   const relevanceOk = relevance.inputCount === inventory.items.length && relevance.excludedNoise >= 0;
@@ -130,7 +199,7 @@ export async function runR10OrionGoldenE2e(options: {
   } else {
     try {
       sectionAnalyses = await runOrionGoldenSectionAnalyses({
-        packs: routing.packs,
+        packs: gatedPacks,
         subjectName: inventory.subject.fullName,
         requireAi,
       });
@@ -172,6 +241,49 @@ export async function runR10OrionGoldenE2e(options: {
   }
 
   if (!executive) throw new Error("executive-synthesis-missing");
+
+  const contentBrainOnly = process.env.R10_CONTENT_BRAIN_ONLY === "1";
+  const postGptJudgmentQa = inspectEvidenceJudgmentQa({
+    judgments,
+    bundles,
+    clientContent,
+    sectionAnalyses,
+  });
+  writeJson(join(outputRoot, "r10-4-evidence-judgment-review.json"), postGptJudgmentQa);
+
+  if (contentBrainOnly) {
+    const verdict = deriveVerdict({
+      gptBlocked: false,
+      routingIssues,
+      relevanceOk,
+      visualOk: true,
+      clientPolicyOk: postGptJudgmentQa.passed,
+      structureOk: true,
+    });
+    writeJson(join(outputRoot, "qa-summary.json"), {
+      version: "r10-qa-summary-v1",
+      caseId,
+      reportRunId,
+      verdict,
+      contentBrainOnly: true,
+      evidenceJudgmentVerdict: postGptJudgmentQa.verdict,
+      contentQualityVerdict: contentQuality.verdict,
+      reviewDecisionCounts: countByReviewDecision(judgments),
+      riskSignalCounts: countByRiskSignal(judgments),
+      manualReviewPending: manualQueue.pendingCount,
+      architecture: ORION_GOLDEN_ARCHITECTURE.version,
+      featureFlag: digitalProfileConfig.orionGoldenEnabled,
+    });
+    return {
+      outputRoot,
+      caseId,
+      reportRunId,
+      pageCount: 0,
+      slideCount: 0,
+      verdict,
+      pdfExportMode: "skipped-content-brain-only",
+    };
+  }
 
   const assets = await buildOrionGoldenAssets({ ctx });
   writeJson(join(outputRoot, "report-assets.json"), assets);
@@ -232,6 +344,11 @@ export async function runR10OrionGoldenE2e(options: {
     searchResultsUnaccounted: routing.searchResultsUnaccounted,
     gptGeneratedBy: "gpt-5.5",
     executiveAfterSections: true,
+    evidenceJudgmentVerdict: postGptJudgmentQa.verdict,
+    contentQualityVerdict: contentQuality.verdict,
+    reviewDecisionCounts: countByReviewDecision(judgments),
+    riskSignalCounts: countByRiskSignal(judgments),
+    manualReviewPending: manualQueue.pendingCount,
     architecture: ORION_GOLDEN_ARCHITECTURE.version,
     featureFlag: digitalProfileConfig.orionGoldenEnabled,
     warnings: [...inventory.warnings, ...routing.warnings, ...renderResult.warnings],

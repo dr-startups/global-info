@@ -141,6 +141,11 @@ Write plain Russian. No raw IDs, storage paths, enum keys, or legal conclusions.
 
 Compliance/sanctions/PEP statements must be preliminary unless confirmed by source.
 
+Evidence marked [ТРЕБУЕТ РУЧНОЙ ПРОВЕРКИ — НЕ ПОДТВЕРЖДЕНО] must NEVER be presented as confirmed negative facts.
+Use manualReviewNeeded for such items. Do not elevate them to keyEvidence with verificationStatus "confirmed".
+
+Evidence marked [ПРИЛОЖЕНИЕ — ОГРАНИЧЕННЫЙ ВЫВОД] may appear only with caveats, not as strong findings.
+
 Return ONE JSON object with keys:
 
 sectionKey, clientTitle, mainConclusion, riskLevel, whatWasChecked, whatWasFound, whyItMatters,
