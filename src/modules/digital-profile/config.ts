@@ -75,6 +75,8 @@ export interface DigitalProfileConfig {
   orionV2AllowDeterministicFallback: boolean;
   /** R9.12 — experimental client storyboard report UI (GPT-5.5 + visual composer). */
   orionClientStoryboardUiEnabled: boolean;
+  /** R10 — ORION Golden 3-layer agent architecture (parallel to R9 storyboard). */
+  orionGoldenEnabled: boolean;
 }
 
 /** Client-safe booleans describing ORION v2 AI readiness. Never exposes secrets. */
@@ -170,6 +172,10 @@ export const digitalProfileConfig: DigitalProfileConfig = {
   ),
   orionClientStoryboardUiEnabled: envBool(
     process.env.DIGITAL_PROFILE_ORION_CLIENT_STORYBOARD_UI_ENABLED,
+    process.env.NODE_ENV !== "production"
+  ),
+  orionGoldenEnabled: envBool(
+    process.env.DIGITAL_PROFILE_ORION_GOLDEN_ENABLED,
     process.env.NODE_ENV !== "production"
   ),
 };
