@@ -449,20 +449,37 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
     setPrepareBusy(true);
     setBanner(null);
     try {
-      const result = await prepareOrionGoldenArtifacts(caseId);
+      let result = await prepareOrionGoldenArtifacts(caseId);
       setPrepareStatus(result);
+      setBanner({
+        kind: "ok",
+        text: "Подготовка запущена в фоне. Обычно 3–10 минут — не закрывайте вкладку.",
+      });
+
+      for (let i = 0; i < 90; i += 1) {
+        if (result.status === "completed" || result.status === "failed") break;
+        await new Promise((r) => setTimeout(r, 5000));
+        result = await getOrionGoldenPrepareStatus(caseId);
+        setPrepareStatus(result);
+      }
+
       if (result.ok && result.queueReady) {
         setBanner({
           kind: "ok",
           text: `Артефакты ORION Golden готовы. В очереди: ${result.pendingCount}. Обновляем страницу…`,
         });
         await loadQueue();
+      } else if (result.status === "running") {
+        setBanner({
+          kind: "error",
+          text: "Подготовка ещё идёт. Нажмите «Повторить» через минуту или обновите статус.",
+        });
       } else {
         setBanner({
           kind: "error",
           text:
             result.warnings[0] ||
-            `Подготовка не завершена (verdict=${result.verdict ?? "—"}). Проверьте AI/БД.`,
+            `Подготовка не завершена (verdict=${result.verdict ?? "—"}). Проверьте AI/БД и HTTP Logs.`,
         });
       }
     } catch (err) {

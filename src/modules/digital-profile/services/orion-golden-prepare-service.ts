@@ -1,5 +1,6 @@
 /**
  * Prepare ORION Golden content-brain artifacts for a case (manual-review queue, judgments, client content).
+ * Async job (like storyboard): POST returns immediately with status=running; poll GET until settled.
  * Does not render PDF/PPTX.
  */
 
@@ -68,11 +69,11 @@ function latestPointerPath(caseId: string): string {
   return join(caseDir(caseId), "latest.json");
 }
 
-function toSummary(record: PrepareRunRecord | null): OrionGoldenPrepareSummary {
+function toSummary(record: PrepareRunRecord | null, caseId?: string): OrionGoldenPrepareSummary {
   if (!record) {
     return {
       ok: true,
-      caseId: "",
+      caseId: caseId ?? "",
       status: "empty",
       runId: null,
       verdict: null,
@@ -99,31 +100,35 @@ function toSummary(record: PrepareRunRecord | null): OrionGoldenPrepareSummary {
   };
 }
 
-export function getOrionGoldenPrepareSummary(caseId: string): OrionGoldenPrepareSummary {
+function getLatestPrepareRun(caseId: string): PrepareRunRecord | null {
   const latest = readJson<{ runId?: string }>(latestPointerPath(caseId));
-  if (!latest?.runId) {
-    const caseRoot = caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId);
-    const queuePath = join(caseRoot, "manual-review-queue.json");
-    if (existsSync(queuePath)) {
-      const queue = readJson<{ pendingCount?: number }>(queuePath);
-      return {
-        ok: true,
-        caseId,
-        status: "completed",
-        runId: null,
-        verdict: "ARTIFACTS_PRESENT",
-        artifactRoot: caseRoot,
-        pendingCount: queue?.pendingCount ?? 0,
-        queueReady: true,
-        createdAt: null,
-        completedAt: null,
-        warnings: [],
-      };
-    }
-    return { ...toSummary(null), caseId };
+  if (!latest?.runId) return null;
+  return readJson<PrepareRunRecord>(runRecordPath(caseId, latest.runId));
+}
+
+export function getOrionGoldenPrepareSummary(caseId: string): OrionGoldenPrepareSummary {
+  const record = getLatestPrepareRun(caseId);
+  if (record) return toSummary(record, caseId);
+
+  const caseRoot = caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId);
+  const queuePath = join(caseRoot, "manual-review-queue.json");
+  if (existsSync(queuePath)) {
+    const queue = readJson<{ pendingCount?: number }>(queuePath);
+    return {
+      ok: true,
+      caseId,
+      status: "completed",
+      runId: null,
+      verdict: "ARTIFACTS_PRESENT",
+      artifactRoot: caseRoot,
+      pendingCount: queue?.pendingCount ?? 0,
+      queueReady: true,
+      createdAt: null,
+      completedAt: null,
+      warnings: [],
+    };
   }
-  const record = readJson<PrepareRunRecord>(runRecordPath(caseId, latest.runId));
-  return toSummary(record);
+  return toSummary(null, caseId);
 }
 
 function persistRun(record: PrepareRunRecord): void {
@@ -134,10 +139,76 @@ function persistRun(record: PrepareRunRecord): void {
   });
 }
 
+async function executePrepare(input: {
+  caseId: string;
+  uiRunId: string;
+  outputRoot: string;
+  createdAt: string;
+}): Promise<PrepareRunRecord> {
+  console.log(
+    `[orion-golden-prepare] start caseId=${input.caseId} runId=${input.uiRunId} root=${input.outputRoot}`
+  );
+
+  const prevContentBrain = process.env.R10_CONTENT_BRAIN_ONLY;
+  const prevClassic = process.env.ORION_CLASSIC_AUDIT_MODE;
+  const prevClientAudit = process.env.ORION_CLIENT_AUDIT_MODE;
+  const prevRenderFromContent = process.env.R10_RENDER_FROM_CLIENT_CONTENT;
+
+  try {
+    process.env.R10_CONTENT_BRAIN_ONLY = "1";
+    delete process.env.ORION_CLASSIC_AUDIT_MODE;
+    delete process.env.ORION_CLIENT_AUDIT_MODE;
+    delete process.env.R10_RENDER_FROM_CLIENT_CONTENT;
+
+    const result = await runR10OrionGoldenE2e({
+      caseId: input.caseId,
+      outputRoot: input.outputRoot,
+      requireAi: true,
+    });
+
+    const queuePath = join(input.outputRoot, "manual-review-queue.json");
+    const queueReady = existsSync(queuePath);
+    const queue = queueReady ? readJson<{ pendingCount?: number }>(queuePath) : null;
+    const blocked =
+      result.verdict === "BLOCKED" ||
+      result.verdict === "BLOCKED_GPT" ||
+      result.verdict === "BLOCKED_DATA_ROUTING";
+
+    const completed: PrepareRunRecord = {
+      caseId: input.caseId,
+      runId: input.uiRunId,
+      status: queueReady && !blocked ? "completed" : "failed",
+      createdAt: input.createdAt,
+      completedAt: new Date().toISOString(),
+      outputRoot: input.outputRoot,
+      verdict: result.verdict,
+      pendingCount: queue?.pendingCount ?? 0,
+      queueReady,
+      warnings: queueReady
+        ? []
+        : ["manual-review-queue.json was not written — check AI/DB readiness"],
+    };
+    persistRun(completed);
+    console.log(
+      `[orion-golden-prepare] done caseId=${input.caseId} verdict=${result.verdict} queueReady=${queueReady} pending=${completed.pendingCount}`
+    );
+    return completed;
+  } finally {
+    if (prevContentBrain === undefined) delete process.env.R10_CONTENT_BRAIN_ONLY;
+    else process.env.R10_CONTENT_BRAIN_ONLY = prevContentBrain;
+    if (prevClassic === undefined) delete process.env.ORION_CLASSIC_AUDIT_MODE;
+    else process.env.ORION_CLASSIC_AUDIT_MODE = prevClassic;
+    if (prevClientAudit === undefined) delete process.env.ORION_CLIENT_AUDIT_MODE;
+    else process.env.ORION_CLIENT_AUDIT_MODE = prevClientAudit;
+    if (prevRenderFromContent === undefined) delete process.env.R10_RENDER_FROM_CLIENT_CONTENT;
+    else process.env.R10_RENDER_FROM_CLIENT_CONTENT = prevRenderFromContent;
+  }
+}
+
 /**
- * Run Golden content-brain for a case and write artifacts where Manual Review can find them.
+ * Enqueue Golden content-brain for a case. Returns immediately with status=running.
  */
-export async function enqueueOrionGoldenPrepare(caseId: string): Promise<OrionGoldenPrepareSummary> {
+export function enqueueOrionGoldenPrepare(caseId: string): OrionGoldenPrepareSummary {
   if (!digitalProfileConfig.orionGoldenEnabled) {
     throw new ForbiddenError("ORION Golden is disabled.");
   }
@@ -147,6 +218,12 @@ export async function enqueueOrionGoldenPrepare(caseId: string): Promise<OrionGo
     throw new ValidationError(
       "Подготовка ORION Golden требует GPT-5.5. Добавьте OPENAI_API_KEY и включите AI analyst."
     );
+  }
+
+  const existing = getLatestPrepareRun(caseId);
+  if (existing?.status === "running") {
+    console.log(`[orion-golden-prepare] already running caseId=${caseId} runId=${existing.runId}`);
+    return toSummary(existing, caseId);
   }
 
   const uiRunId = `prepare-${Date.now()}`;
@@ -164,70 +241,25 @@ export async function enqueueOrionGoldenPrepare(caseId: string): Promise<OrionGo
     verdict: "PENDING",
     pendingCount: 0,
     queueReady: false,
-    warnings: [],
+    warnings: ["Job started — poll status; content-brain may take several minutes."],
   };
   persistRun(running);
+  console.log(`[orion-golden-prepare] enqueued caseId=${caseId} runId=${uiRunId}`);
 
-  const prevContentBrain = process.env.R10_CONTENT_BRAIN_ONLY;
-  const prevClassic = process.env.ORION_CLASSIC_AUDIT_MODE;
-  const prevClientAudit = process.env.ORION_CLIENT_AUDIT_MODE;
-  const prevRenderFromContent = process.env.R10_RENDER_FROM_CLIENT_CONTENT;
-
-  try {
-    process.env.R10_CONTENT_BRAIN_ONLY = "1";
-    // Prepare must not render PDF/PPTX
-    delete process.env.ORION_CLASSIC_AUDIT_MODE;
-    delete process.env.ORION_CLIENT_AUDIT_MODE;
-    delete process.env.R10_RENDER_FROM_CLIENT_CONTENT;
-
-    const result = await runR10OrionGoldenE2e({
-      caseId,
-      outputRoot,
-      requireAi: true,
+  setImmediate(() => {
+    void executePrepare({ caseId, uiRunId, outputRoot, createdAt }).catch((err) => {
+      const message = err instanceof Error ? err.message : "orion-golden-prepare-failed";
+      console.error(`[orion-golden-prepare] failed caseId=${caseId}: ${message}`);
+      const failed: PrepareRunRecord = {
+        ...running,
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        verdict: "FAIL",
+        warnings: [message],
+      };
+      persistRun(failed);
     });
+  });
 
-    const queuePath = join(outputRoot, "manual-review-queue.json");
-    const queueReady = existsSync(queuePath);
-    const queue = queueReady ? readJson<{ pendingCount?: number }>(queuePath) : null;
-    const blocked =
-      result.verdict === "BLOCKED" ||
-      result.verdict === "BLOCKED_GPT" ||
-      result.verdict === "BLOCKED_DATA_ROUTING";
-
-    const completed: PrepareRunRecord = {
-      caseId,
-      runId: uiRunId,
-      status: queueReady && !blocked ? "completed" : "failed",
-      createdAt,
-      completedAt: new Date().toISOString(),
-      outputRoot,
-      verdict: result.verdict,
-      pendingCount: queue?.pendingCount ?? 0,
-      queueReady,
-      warnings: queueReady
-        ? []
-        : ["manual-review-queue.json was not written — check AI/DB readiness"],
-    };
-    persistRun(completed);
-    return toSummary(completed);
-  } catch (err) {
-    const failed: PrepareRunRecord = {
-      ...running,
-      status: "failed",
-      completedAt: new Date().toISOString(),
-      verdict: "FAIL",
-      warnings: [err instanceof Error ? err.message : "orion-golden-prepare-failed"],
-    };
-    persistRun(failed);
-    throw err;
-  } finally {
-    if (prevContentBrain === undefined) delete process.env.R10_CONTENT_BRAIN_ONLY;
-    else process.env.R10_CONTENT_BRAIN_ONLY = prevContentBrain;
-    if (prevClassic === undefined) delete process.env.ORION_CLASSIC_AUDIT_MODE;
-    else process.env.ORION_CLASSIC_AUDIT_MODE = prevClassic;
-    if (prevClientAudit === undefined) delete process.env.ORION_CLIENT_AUDIT_MODE;
-    else process.env.ORION_CLIENT_AUDIT_MODE = prevClientAudit;
-    if (prevRenderFromContent === undefined) delete process.env.R10_RENDER_FROM_CLIENT_CONTENT;
-    else process.env.R10_RENDER_FROM_CLIENT_CONTENT = prevRenderFromContent;
-  }
+  return toSummary(running, caseId);
 }

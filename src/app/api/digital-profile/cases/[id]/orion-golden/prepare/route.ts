@@ -31,8 +31,8 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
     throw new ForbiddenError("ORION Golden is disabled.");
   }
 
-  const summary = await enqueueOrionGoldenPrepare(id);
-  return jsonOk(summary, summary.status === "running" ? 202 : 200);
+  const summary = enqueueOrionGoldenPrepare(id);
+  return jsonOk(summary, 202);
 });
 
 export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {

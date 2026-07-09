@@ -301,13 +301,24 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
                       setPrepareBusy(true);
                       setBanner(null);
                       try {
-                        const result = await prepareOrionGoldenArtifacts(caseId);
+                        let result = await prepareOrionGoldenArtifacts(caseId);
                         setPrepareStatus(result);
+                        setBanner({
+                          kind: "ok",
+                          text: "Подготовка запущена в фоне. Обычно 3–10 минут.",
+                        });
+                        for (let i = 0; i < 90; i += 1) {
+                          if (result.status === "completed" || result.status === "failed") break;
+                          await new Promise((r) => setTimeout(r, 5000));
+                          result = await getOrionGoldenPrepareStatus(caseId);
+                          setPrepareStatus(result);
+                        }
                         setBanner({
                           kind: result.ok ? "ok" : "error",
                           text: result.ok
                             ? `Артефакты готовы. В очереди: ${result.pendingCount}.`
-                            : result.warnings[0] || `Подготовка не завершена (${result.verdict ?? "—"})`,
+                            : result.warnings[0] ||
+                              `Подготовка не завершена (${result.verdict ?? result.status})`,
                         });
                       } catch (err) {
                         const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
