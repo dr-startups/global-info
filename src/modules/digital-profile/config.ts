@@ -77,6 +77,7 @@ export interface DigitalProfileConfig {
   orionClientStoryboardUiEnabled: boolean;
   /** R10 — ORION Golden 3-layer agent architecture (parallel to R9 storyboard). */
   orionGoldenEnabled: boolean;
+  orionGptAutoAnalyst: boolean;
 }
 
 /** Client-safe booleans describing ORION v2 AI readiness. Never exposes secrets. */
@@ -178,6 +179,8 @@ export const digitalProfileConfig: DigitalProfileConfig = {
     process.env.DIGITAL_PROFILE_ORION_GOLDEN_ENABLED,
     process.env.NODE_ENV !== "production"
   ),
+  /** When true, GPT auto-analyst resolves manual review queue (ORION_GPT_AUTO_ANALYST=1). */
+  orionGptAutoAnalyst: envBool(process.env.ORION_GPT_AUTO_ANALYST, false),
 };
 
 /**

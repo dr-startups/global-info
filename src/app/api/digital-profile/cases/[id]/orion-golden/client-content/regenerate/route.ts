@@ -10,7 +10,10 @@ import {
   assertCanRegenerateClientContent,
   requireOrionAdminApiAccess,
 } from "@/modules/digital-profile/orion-golden/auth/orion-admin-auth";
-import { persistRegeneratedClientContent } from "@/modules/digital-profile/orion-golden/services/admin-review-workflow-service";
+import {
+  isGptAutoAnalystModeEnabled,
+  persistRegeneratedClientContentAsync,
+} from "@/modules/digital-profile/orion-golden/services/admin-review-workflow-service";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +23,7 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
   const user = await requireOrionAdminApiAccess(req, id, "review");
   assertCanRegenerateClientContent(user);
-  const result = persistRegeneratedClientContent(id);
+  const result = await persistRegeneratedClientContentAsync(id);
   return jsonOk({
     preReviewApprovedCount: result.preReviewApprovedCount,
     postReviewApprovedCount: result.postReviewApprovedCount,

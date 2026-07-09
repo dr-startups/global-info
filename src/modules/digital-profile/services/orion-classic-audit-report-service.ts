@@ -7,7 +7,7 @@ import { ForbiddenError, NotFoundError, ValidationError } from "../http/errors";
 import { verifySignedToken } from "../storage/signed-url";
 import { runOrionClassicAuditRender } from "../orion-golden/classic/run-orion-classic-audit-render";
 import { loadPostReviewClientContent } from "../orion-golden/classic/run-orion-classic-audit-render";
-import { persistRegeneratedClientContent } from "../orion-golden/services/admin-review-workflow-service";
+import { persistRegeneratedClientContentAsync } from "../orion-golden/services/admin-review-workflow-service";
 import { saveFile } from "../storage/private-store";
 import { buildStorageKey } from "../storage/keys";
 import { createSignedToken } from "../storage/signed-url";
@@ -251,7 +251,7 @@ async function executeClassicAuditReport(input: {
   regenerateContent?: boolean;
 }): Promise<OrionClassicAuditRunRecord> {
   if (input.regenerateContent) {
-    persistRegeneratedClientContent(input.caseId);
+    await persistRegeneratedClientContentAsync(input.caseId);
   }
 
   let clientContent;

@@ -30,6 +30,7 @@ import {
   ensureAdminReviewDecisions,
   saveAdminReviewSampleFixture,
 } from "./evidence/admin-review-decision-store";
+import { runGptAutoAnalystDecisions, shouldUseGptAutoAnalyst } from "./evidence/gpt-auto-analyst";
 import { countAdminDecisionsByStatus } from "./evidence/admin-review-decision";
 import { buildFullEvidenceInventory } from "./evidence/full-evidence-inventory";
 import {
@@ -40,6 +41,7 @@ import {
 import { buildAllEvidenceJudgments } from "./evidence/evidence-judgment-builder";
 import { countByReviewDecision, countByRiskSignal } from "./evidence/evidence-judgment";
 import { buildManualReviewQueue } from "./evidence/manual-review-queue";
+import { applyAdminDecisionsToJudgments } from "./evidence/apply-admin-decisions-to-judgments";
 import { routeEvidenceToSections, validateRoutingAgainstBlueprint } from "./evidence/orion-section-router";
 import { classifyInventoryRelevance } from "./evidence/relevance-classifier";
 import { buildSubjectIdentityProfile } from "./identity/subject-identity-profile-builder";
@@ -291,7 +293,24 @@ export async function runR10OrionGoldenE2e(options: {
     manualQueue,
     wrongSubjectJudgments,
   });
-  writeJson(join(outputRoot, "admin-review-decisions.json"), productionAdminDecisions);
+
+  let autoAnalystReport: Awaited<ReturnType<typeof runGptAutoAnalystDecisions>>["report"] | null = null;
+  let resolvedAdminDecisions = productionAdminDecisions;
+  if (shouldUseGptAutoAnalyst()) {
+    const auto = await runGptAutoAnalystDecisions({
+      caseId,
+      judgments,
+      manualQueue,
+      subject: { fullName: inventory.subject.fullName, aliases: inventory.subject.aliases },
+      existingDecisionSet: productionAdminDecisions,
+    });
+    resolvedAdminDecisions = auto.decisionSet;
+    autoAnalystReport = auto.report;
+    writeJson(join(outputRoot, "gpt-auto-analyst-decisions.json"), autoAnalystReport);
+    writeJson(join(outputRoot, "admin-review-decisions.json"), resolvedAdminDecisions);
+  } else {
+    writeJson(join(outputRoot, "admin-review-decisions.json"), productionAdminDecisions);
+  }
 
   const sampleAdminDecisions = buildAdminReviewSampleFixture({
     caseId,
@@ -331,7 +350,7 @@ export async function runR10OrionGoldenE2e(options: {
     inventory,
     judgments,
     manualQueue,
-    adminDecisions: productionAdminDecisions.decisions,
+    adminDecisions: resolvedAdminDecisions.decisions,
     regionSettings: { ruEnabled: regionCounts.ru > 0, uaeEnabled: regionCounts.uae > 0 },
   });
   writeSectionBundleArtifacts(outputRoot, sectionBundlesPre, caseId, reportRunId);
@@ -417,7 +436,7 @@ export async function runR10OrionGoldenE2e(options: {
         executiveSynthesis: executiveSynthesisOutput,
         riskMatrix: sectionDerivedRiskMatrix,
         manualQueue,
-        adminDecisionSummary: countAdminDecisionsByStatus(productionAdminDecisions.decisions),
+        adminDecisionSummary: countAdminDecisionsByStatus(resolvedAdminDecisions.decisions),
         judgments,
       });
       writeJson(join(outputRoot, "orion-client-content.pre-review.json"), clientContentPreReviewFromSections);
@@ -427,12 +446,16 @@ export async function runR10OrionGoldenE2e(options: {
         "utf-8"
       );
 
+      const postReviewAdminDecisions = shouldUseGptAutoAnalyst()
+        ? resolvedAdminDecisions.decisions
+        : sampleAdminDecisions.decisions;
+
       const sectionBundlesPost = buildOrionSectionBundles({
         caseInfo: { caseId, reportRunId, subjectName: inventory.subject.fullName, aliases: inventory.subject.aliases },
         inventory,
         judgments,
         manualQueue,
-        adminDecisions: sampleAdminDecisions.decisions,
+        adminDecisions: postReviewAdminDecisions,
         regionSettings: { ruEnabled: regionCounts.ru > 0, uaeEnabled: regionCounts.uae > 0 },
       });
       clientContentPostReviewFromSections = assembleOrionClientContentFromSections({
@@ -444,8 +467,8 @@ export async function runR10OrionGoldenE2e(options: {
         executiveSynthesis: executiveSynthesisOutput,
         riskMatrix: buildRiskMatrixFromSections({ caseId, sectionAnalyses: r10SectionAnalyses, sectionBundles: sectionBundlesPost }),
         manualQueue,
-        adminDecisionSummary: countAdminDecisionsByStatus(sampleAdminDecisions.decisions),
-        judgments,
+        adminDecisionSummary: countAdminDecisionsByStatus(postReviewAdminDecisions),
+        judgments: applyAdminDecisionsToJudgments(judgments, postReviewAdminDecisions).judgments,
       });
       writeJson(join(outputRoot, "orion-client-content.post-review.json"), clientContentPostReviewFromSections);
       writeFileSync(

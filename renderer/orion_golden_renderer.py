@@ -295,6 +295,34 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         _embed_image(ctx, primary, y + 60000, h=5000000)
         return
 
+    if template == "orion_golden_search_table":
+        ctx.light_bg()
+        y = ctx.title(title, 280000, NAVY, FS_SECTION)
+        if narrative:
+            y = ctx.body(narrative[:320], y, max_h=520000, color=MUTED_COLOR)
+            y = y + 60000
+        # Dense SERP / suggestion rows — allow more items, slightly tighter clip
+        avail = max(400000, CONTENT_BOTTOM - y)
+        box = ctx.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(avail))
+        tf = box.text_frame
+        tf.word_wrap = True
+        first = True
+        for bullet in bullets[:12]:
+            p = tf.paragraphs[0] if first else tf.add_paragraph()
+            first = False
+            p.space_before = Pt(2)
+            p.space_after = Pt(6)
+            p.line_spacing = 1.08
+            r = p.add_run()
+            clipped = _safe(bullet)
+            if len(clipped) > 160:
+                clipped = clipped[:157] + "…"
+            r.text = f"• {clipped}"
+            r.font.name = FONT
+            r.font.size = Pt(11)
+            r.font.color.rgb = BODY_COLOR
+        return
+
     if template == "orion_golden_no_data_compact":
         ctx.light_bg()
         y = ctx.title(title, 320000, NAVY)

@@ -21,9 +21,23 @@ import type { EvidenceJudgment } from "../evidence/evidence-judgment";
 import type { ManualReviewQueue } from "../evidence/manual-review-queue";
 import {
   buildOrionClientContent,
+  assembleOrionClientContentFromSections,
   renderOrionClientContentMarkdown,
   type OrionClientContent,
 } from "../content/orion-client-content-builder";
+import { countAdminDecisionsByStatus } from "../evidence/admin-review-decision";
+import { applyAdminDecisionsToJudgments } from "../evidence/apply-admin-decisions-to-judgments";
+import { runGptAutoAnalystDecisions, shouldUseGptAutoAnalyst } from "../evidence/gpt-auto-analyst";
+import { buildOrionSectionBundles } from "../sections/orion-section-bundle-builder";
+import { buildRiskMatrixFromSections } from "../sections/orion-risk-matrix-from-sections";
+import {
+  hasSectionBasedClientArtifacts,
+  loadExecutiveSynthesisFromRoot,
+  loadOrionSectionAnalysesFromRoot,
+  loadSectionDerivedRiskMatrixFromRoot,
+} from "../sections/orion-section-analysis-loader";
+import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
+import { digitalProfileConfig } from "../../config";
 
 function artifactRootsForCase(caseId: string): string[] {
   // Prefer case-scoped artifacts (UI prepare / multi-case), then shared root, then calibration.
@@ -228,14 +242,30 @@ export function regenerateClientContentAfterReview(caseId: string): {
   artifactRoot: string;
   generatedAt: string;
 } {
+  const artifactRoot = resolveArtifactFile(caseId, "manual-review-queue.json");
+  const artifactRootDir = join(artifactRoot, "..");
   const queue = getManualReviewQueue(caseId);
   const judgments = loadJudgmentsFromArtifact(caseId);
-  const bundles = loadBundlesArtifact(caseId) as ReturnType<typeof buildGatedEvidenceBundles>;
-  const productionDecisions = listAdminReviewDecisions(caseId);
+  const generatedAt = new Date().toISOString();
 
   const subjectPath = resolveArtifactFile(caseId, "full-evidence-inventory.json");
   const inventory = readJson<{ subject: { fullName: string; aliases: string[] }; reportRunId: string }>(subjectPath);
-  const generatedAt = new Date().toISOString();
+  const reportRunId = inventory.reportRunId;
+
+  if (hasSectionBasedClientArtifacts(artifactRootDir)) {
+    return regenerateSectionBasedClientContent({
+      caseId,
+      artifactRootDir,
+      queue,
+      judgments,
+      inventory,
+      reportRunId,
+      generatedAt,
+    });
+  }
+
+  const bundles = loadBundlesArtifact(caseId) as ReturnType<typeof buildGatedEvidenceBundles>;
+  const productionDecisions = listAdminReviewDecisions(caseId);
 
   const preReview = buildOrionClientContent({
     mode: "pre_review",
@@ -247,7 +277,6 @@ export function regenerateClientContentAfterReview(caseId: string): {
     judgments,
   });
 
-  // R10.8 — use real production admin decisions (never QA sample fixture)
   const postReview = buildOrionClientContent({
     mode: "post_review",
     caseId,
@@ -264,10 +293,216 @@ export function regenerateClientContentAfterReview(caseId: string): {
     postReview,
     preReviewMarkdown: renderOrionClientContentMarkdown(preReview),
     postReviewMarkdown: renderOrionClientContentMarkdown(postReview),
-  // Decisions store is case-scoped under ORION_GOLDEN_QA_STORAGE_ROOT/cases/<caseId>
-  artifactRoot: caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId),
-  generatedAt,
-};
+    artifactRoot: caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId),
+    generatedAt,
+  };
+}
+
+async function regenerateSectionBasedClientContentAsync(input: {
+  caseId: string;
+  artifactRootDir: string;
+  queue: ReturnType<typeof getManualReviewQueue>;
+  judgments: EvidenceJudgment[];
+  inventory: { subject: { fullName: string; aliases: string[] }; reportRunId: string };
+  reportRunId: string;
+  generatedAt: string;
+}): Promise<{
+  preReview: OrionClientContent;
+  postReview: OrionClientContent;
+  preReviewMarkdown: string;
+  postReviewMarkdown: string;
+  artifactRoot: string;
+  generatedAt: string;
+}> {
+  let productionDecisions = listAdminReviewDecisions(input.caseId);
+  const pendingCount = productionDecisions.decisions.filter((d) => d.status === "PENDING").length;
+  if (shouldUseGptAutoAnalyst() && pendingCount > 0) {
+    const auto = await runGptAutoAnalystDecisions({
+      caseId: input.caseId,
+      judgments: input.judgments,
+      manualQueue: input.queue,
+      subject: { fullName: input.inventory.subject.fullName, aliases: input.inventory.subject.aliases },
+      existingDecisionSet: productionDecisions,
+    });
+    productionDecisions = auto.decisionSet;
+    writeFileSync(
+      join(input.artifactRootDir, "gpt-auto-analyst-decisions.json"),
+      `${JSON.stringify(auto.report, null, 2)}\n`,
+      "utf-8"
+    );
+  }
+
+  return buildSectionBasedClientContent({ ...input, productionDecisions });
+}
+
+function buildSectionBasedClientContent(input: {
+  caseId: string;
+  artifactRootDir: string;
+  queue: ReturnType<typeof getManualReviewQueue>;
+  judgments: EvidenceJudgment[];
+  inventory: { subject: { fullName: string; aliases: string[] }; reportRunId: string };
+  reportRunId: string;
+  generatedAt: string;
+  productionDecisions: AdminReviewDecisionSet;
+}): {
+  preReview: OrionClientContent;
+  postReview: OrionClientContent;
+  preReviewMarkdown: string;
+  postReviewMarkdown: string;
+  artifactRoot: string;
+  generatedAt: string;
+} {
+  const sectionAnalyses = loadOrionSectionAnalysesFromRoot(input.artifactRootDir);
+  const executiveSynthesis = loadExecutiveSynthesisFromRoot(input.artifactRootDir);
+  const riskMatrix =
+    loadSectionDerivedRiskMatrixFromRoot(input.artifactRootDir) ??
+    buildRiskMatrixFromSections({
+      caseId: input.caseId,
+      sectionAnalyses,
+      sectionBundles: [],
+    });
+
+  if (!executiveSynthesis || sectionAnalyses.length === 0) {
+    throw new Error("section-based-client-artifacts-incomplete");
+  }
+
+  const subject = {
+    fullName: input.inventory.subject.fullName,
+    aliases: input.inventory.subject.aliases,
+  };
+
+  const preReview = assembleOrionClientContentFromSections({
+    mode: "pre_review",
+    caseId: input.caseId,
+    reportRunId: input.reportRunId,
+    subject,
+    sectionAnalyses,
+    executiveSynthesis,
+    riskMatrix,
+    manualQueue: input.queue,
+    adminDecisionSummary: countAdminDecisionsByStatus(input.productionDecisions.decisions),
+    judgments: input.judgments,
+  });
+
+  const applied = applyAdminDecisionsToJudgments(
+    input.judgments,
+    input.productionDecisions.decisions
+  ).judgments;
+
+  const fullInventoryPath = join(input.artifactRootDir, "full-evidence-inventory.json");
+  const fullInventory = existsSync(fullInventoryPath)
+    ? readJson<FullEvidenceInventory>(fullInventoryPath)
+    : null;
+
+  const sectionBundlesPost = fullInventory
+    ? buildOrionSectionBundles({
+        caseInfo: {
+          caseId: input.caseId,
+          reportRunId: input.reportRunId,
+          subjectName: subject.fullName,
+          aliases: subject.aliases,
+        },
+        inventory: fullInventory,
+        judgments: applied,
+        manualQueue: input.queue,
+        adminDecisions: input.productionDecisions.decisions,
+        regionSettings: { ruEnabled: true, uaeEnabled: true },
+      })
+    : [];
+
+  const postReview = assembleOrionClientContentFromSections({
+    mode: "post_review",
+    caseId: input.caseId,
+    reportRunId: input.reportRunId,
+    subject,
+    sectionAnalyses,
+    executiveSynthesis,
+    riskMatrix: buildRiskMatrixFromSections({
+      caseId: input.caseId,
+      sectionAnalyses,
+      sectionBundles: sectionBundlesPost,
+    }),
+    manualQueue: input.queue,
+    adminDecisionSummary: countAdminDecisionsByStatus(input.productionDecisions.decisions),
+    judgments: applied,
+  });
+
+  return {
+    preReview,
+    postReview,
+    preReviewMarkdown: renderOrionClientContentMarkdown(preReview),
+    postReviewMarkdown: renderOrionClientContentMarkdown(postReview),
+    artifactRoot: input.artifactRootDir,
+    generatedAt: input.generatedAt,
+  };
+}
+
+function regenerateSectionBasedClientContent(input: {
+  caseId: string;
+  artifactRootDir: string;
+  queue: ReturnType<typeof getManualReviewQueue>;
+  judgments: EvidenceJudgment[];
+  inventory: { subject: { fullName: string; aliases: string[] }; reportRunId: string };
+  reportRunId: string;
+  generatedAt: string;
+}): {
+  preReview: OrionClientContent;
+  postReview: OrionClientContent;
+  preReviewMarkdown: string;
+  postReviewMarkdown: string;
+  artifactRoot: string;
+  generatedAt: string;
+} {
+  // Sync wrapper: auto-analyst requires async GPT — use deasync pattern via spawnSync alternative.
+  // For regenerate API we block on a minimal sync path when auto-analyst is off.
+  let productionDecisions = listAdminReviewDecisions(input.caseId);
+  const pendingCount = productionDecisions.decisions.filter((d) => d.status === "PENDING").length;
+
+  if (shouldUseGptAutoAnalyst() && pendingCount > 0) {
+    throw new Error(
+      "gpt-auto-analyst-regenerate-requires-async: re-run ORION Golden prepare with ORION_GPT_AUTO_ANALYST=1"
+    );
+  }
+
+  return buildSectionBasedClientContent({
+    ...input,
+    productionDecisions,
+  });
+}
+
+export async function regenerateClientContentAfterReviewAsync(caseId: string): Promise<{
+  preReview: OrionClientContent;
+  postReview: OrionClientContent;
+  preReviewMarkdown: string;
+  postReviewMarkdown: string;
+  artifactRoot: string;
+  generatedAt: string;
+}> {
+  const artifactRootDir = join(resolveArtifactFile(caseId, "manual-review-queue.json"), "..");
+  const queue = getManualReviewQueue(caseId);
+  const judgments = loadJudgmentsFromArtifact(caseId);
+  const generatedAt = new Date().toISOString();
+  const inventory = readJson<{ subject: { fullName: string; aliases: string[] }; reportRunId: string }>(
+    resolveArtifactFile(caseId, "full-evidence-inventory.json")
+  );
+
+  if (!hasSectionBasedClientArtifacts(artifactRootDir)) {
+    return regenerateClientContentAfterReview(caseId);
+  }
+
+  return regenerateSectionBasedClientContentAsync({
+    caseId,
+    artifactRootDir,
+    queue,
+    judgments,
+    inventory,
+    reportRunId: inventory.reportRunId,
+    generatedAt,
+  });
+}
+
+export function isGptAutoAnalystModeEnabled(): boolean {
+  return shouldUseGptAutoAnalyst() || digitalProfileConfig.orionGptAutoAnalyst;
 }
 
 export function persistRegeneratedClientContent(caseId: string): {
@@ -278,6 +513,28 @@ export function persistRegeneratedClientContent(caseId: string): {
 } {
   const { preReview, postReview, preReviewMarkdown, postReviewMarkdown, artifactRoot, generatedAt } =
     regenerateClientContentAfterReview(caseId);
+  const root = artifactRoot;
+  mkdirSync(root, { recursive: true });
+  writeFileSync(join(root, "orion-client-content.pre-review.json"), `${JSON.stringify(preReview, null, 2)}\n`, "utf-8");
+  writeFileSync(join(root, "orion-client-content.post-review.json"), `${JSON.stringify(postReview, null, 2)}\n`, "utf-8");
+  writeFileSync(join(root, "orion-client-content.pre-review.md"), preReviewMarkdown, "utf-8");
+  writeFileSync(join(root, "orion-client-content.post-review.md"), postReviewMarkdown, "utf-8");
+  return {
+    artifactRoot: root,
+    generatedAt,
+    preReviewApprovedCount: preReview.approvedFindings.length,
+    postReviewApprovedCount: postReview.approvedFindings.length,
+  };
+}
+
+export async function persistRegeneratedClientContentAsync(caseId: string): Promise<{
+  artifactRoot: string;
+  generatedAt: string;
+  preReviewApprovedCount: number;
+  postReviewApprovedCount: number;
+}> {
+  const { preReview, postReview, preReviewMarkdown, postReviewMarkdown, artifactRoot, generatedAt } =
+    await regenerateClientContentAfterReviewAsync(caseId);
   const root = artifactRoot;
   mkdirSync(root, { recursive: true });
   writeFileSync(join(root, "orion-client-content.pre-review.json"), `${JSON.stringify(preReview, null, 2)}\n`, "utf-8");

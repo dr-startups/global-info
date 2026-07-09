@@ -50,6 +50,39 @@ export function inspectClassicOrionAuditQuality(input: {
     detail: hasSuggestions ? "suggestion/related sections emitted" : "no suggestion sections (check evidence)",
   });
 
+  const hasSerpOrLinks = input.reportSpec.registrySections.some((s) =>
+    /serp_position|search_links/.test(s.sectionId)
+  );
+  const hasSearchEvidence = (input.inventory.counts.searchResults ?? 0) > 0;
+  checks.push({
+    id: "serp-or-search-links",
+    passed: !hasSearchEvidence || hasSerpOrLinks,
+    detail: hasSerpOrLinks ? "SERP/search-link sections present" : "missing SERP/search-link sections",
+  });
+
+  const commercialSlides = input.deckManifest.finalSlides.filter((s) =>
+    ["offer", "product_overview", "solution_digital_profile", "solution_compliance_databases", "solution_wikipedia", "about"].includes(
+      s.sectionKey
+    )
+  ).length;
+  const commercialRatio = slideCount > 0 ? commercialSlides / slideCount : 0;
+  checks.push({
+    id: "commercial-ratio",
+    passed: commercialRatio <= 0.35,
+    detail: `${commercialSlides}/${slideCount} commercial (${(commercialRatio * 100).toFixed(0)}%, max 35%)`,
+  });
+
+  const brokenCompliance = input.deckManifest.finalSlides
+    .flatMap((s) => [s.title, s.narrative ?? "", ...(s.bullets ?? [])])
+    .filter((t) => /Комплаенс-проверка-риск|Комплаенс-проверка-вывод/i.test(t));
+  checks.push({
+    id: "no-broken-compliance-hyphen",
+    passed: brokenCompliance.length === 0,
+    detail: brokenCompliance.length
+      ? `${brokenCompliance.length} broken compliance hyphen phrases`
+      : "sanitizer compounds clean",
+  });
+
   const objectObjectHits = input.deckManifest.finalSlides.flatMap((s) => s.bullets ?? []).filter((b) =>
     /\[object Object\]/i.test(b)
   );

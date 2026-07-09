@@ -1195,6 +1195,7 @@ export type ManualReviewQueueDto = {
   pendingCount: number;
   items: ManualReviewQueueItemDto[];
   statusCounts?: Record<string, number>;
+  gptAutoAnalystEnabled?: boolean;
 };
 
 export type ManualReviewItemDetailDto = ManualReviewQueueItemDto & {

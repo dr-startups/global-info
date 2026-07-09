@@ -656,6 +656,7 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
   }
 
   const subjectName = caseDetail?.subject?.fullName ?? caseDetail?.title ?? "—";
+  const gptAutoAnalyst = queue?.gptAutoAnalystEnabled === true;
   const highImpactSelected = detail ? isHighImpactItem(detail) : false;
   const existingStatus = (detail?.adminDecision?.status as AdminReviewStatus) || "PENDING";
   const riskOptions = [
@@ -724,8 +725,9 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
           Субъект: <strong>{subjectName}</strong> · CASE_ID: <code>{caseId}</code>
         </p>
         <WarningBox>
-          Материалы в очереди требуют ручной проверки и не являются подтверждёнными негативными выводами.
-          Статус «Требует проверки» не используется как подтверждённый риск.
+          {gptAutoAnalyst
+            ? "Режим GPT auto-analyst: решения по очереди принимает GPT (мусор отбрасывается автоматически). Ручной gate временно отключён."
+            : "Материалы в очереди требуют ручной проверки и не являются подтверждёнными негативными выводами. Статус «Требует проверки» не используется как подтверждённый риск."}
         </WarningBox>
       </div>
 
@@ -796,9 +798,9 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
             </button>
           </div>
           <Notice>
-            Пересборка обновляет pre/post-review JSON/MD по текущим решениям аналитика. PDF не создаёт —
-            для PDF нажмите «Сгенерировать ORION Audit» ниже. Пока все 160 пунктов PENDING, post-review почти
-            совпадает с pre-review (это нормально).
+            {gptAutoAnalyst
+              ? "GPT auto-analyst ON: post-review JSON собирается из section GPT + auto-решений при Prepare. PDF — «Сгенерировать ORION Audit» (ручные PENDING не блокируют)."
+              : "Пересборка обновляет pre/post-review JSON/MD по текущим решениям аналитика. PDF не создаёт — для PDF нажмите «Сгенерировать ORION Audit» ниже. Пока все пункты PENDING, post-review почти совпадает с pre-review."}
           </Notice>
           <div className="dp-kv">
             <div>
@@ -858,8 +860,9 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
             )}
           </div>
           <Notice>
-            Полный клиентский аудит по структуре ORION (~60+ стр.): резюме, RU/UAE, подсказки, compliance-базы и
-            коммерческое предложение. Требует post-review контент.
+            {gptAutoAnalyst
+              ? "Classic ORION audit: после Prepare с auto-analyst можно сразу генерировать PDF без ручного review."
+              : "Полный клиентский аудит по структуре ORION (~60+ стр.): резюме, RU/UAE, подсказки, compliance-базы и коммерческое предложение. Требует post-review контент."}
           </Notice>
           {classicAudit ? (
             <div className="dp-kv">
@@ -1259,7 +1262,7 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
                 </div>
               ) : null}
 
-              {canDecide ? (
+              {canDecide && !gptAutoAnalyst ? (
                 <div
                   className="dp-stack"
                   style={{ gap: 10, borderTop: "1px solid #ddd", paddingTop: 12 }}
@@ -1412,6 +1415,10 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
                     </button>
                   </div>
                 </div>
+              ) : gptAutoAnalyst && canDecide ? (
+                <Notice data-testid="decision-form-disabled">
+                  Ручные решения отключены (GPT auto-analyst). Очередь доступна только для просмотра.
+                </Notice>
               ) : (
                 <Notice>Просмотр без права risk.review — решения недоступны.</Notice>
               )}

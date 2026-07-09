@@ -153,12 +153,16 @@ async function executePrepare(input: {
   const prevClassic = process.env.ORION_CLASSIC_AUDIT_MODE;
   const prevClientAudit = process.env.ORION_CLIENT_AUDIT_MODE;
   const prevRenderFromContent = process.env.R10_RENDER_FROM_CLIENT_CONTENT;
+  const prevAutoAnalyst = process.env.ORION_GPT_AUTO_ANALYST;
 
   try {
     process.env.R10_CONTENT_BRAIN_ONLY = "1";
     delete process.env.ORION_CLASSIC_AUDIT_MODE;
     delete process.env.ORION_CLIENT_AUDIT_MODE;
     delete process.env.R10_RENDER_FROM_CLIENT_CONTENT;
+    if (digitalProfileConfig.orionGptAutoAnalyst) {
+      process.env.ORION_GPT_AUTO_ANALYST = "1";
+    }
 
     const result = await runR10OrionGoldenE2e({
       caseId: input.caseId,
@@ -202,6 +206,8 @@ async function executePrepare(input: {
     else process.env.ORION_CLIENT_AUDIT_MODE = prevClientAudit;
     if (prevRenderFromContent === undefined) delete process.env.R10_RENDER_FROM_CLIENT_CONTENT;
     else process.env.R10_RENDER_FROM_CLIENT_CONTENT = prevRenderFromContent;
+    if (prevAutoAnalyst === undefined) delete process.env.ORION_GPT_AUTO_ANALYST;
+    else process.env.ORION_GPT_AUTO_ANALYST = prevAutoAnalyst;
   }
 }
 

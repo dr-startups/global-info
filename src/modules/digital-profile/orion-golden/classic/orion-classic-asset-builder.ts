@@ -19,7 +19,48 @@ const RU_RISK_TERMS = [
   "коррупция",
 ];
 
-function uniqueQueries(evidence: NormalizedEvidenceV1[], subjectName: string, max = 5): string[] {
+const UAE_RISK_TERMS = ["sanctions", "court", "fraud", "corruption", "arrest", "offshore"];
+
+function asObj(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+function regionOfSearchResult(row: OrionRealCaseContext["searchResults"][number]): string {
+  const rm = asObj(row.rawMetadata);
+  return String(rm.orionRegion ?? rm.region ?? "RU")
+    .toUpperCase()
+    .replace(/^INTERNATIONAL$/, "INTL");
+}
+
+function buildUaeSearchEvidence(caseContext: OrionRealCaseContext): NormalizedEvidenceV1[] {
+  const sectionKey = "uae_search_results";
+  const uaeResults = caseContext.searchResults.filter((r) => {
+    const reg = regionOfSearchResult(r);
+    return reg === "UAE" || reg === "INTL" || reg === "AE";
+  });
+  return uaeResults.slice(0, 40).map((r, idx) => {
+    const rm = asObj(r.rawMetadata);
+    const providerRaw = String(r.source ?? r.engine ?? "google").toLowerCase();
+    const provider = providerRaw.includes("yandex") ? "yandex" : "google";
+    return {
+      evidenceRef: `uae-sr-${r.id || idx + 1}`,
+      sectionKey,
+      sourceKind: "search_result" as const,
+      provider: provider as "yandex" | "google",
+      title: String(r.title ?? ""),
+      snippet: String(r.snippet ?? ""),
+      url: r.url,
+      query: String(rm.query ?? rm.orionQuery ?? ""),
+      clientSafeSummary: String(r.snippet ?? r.title ?? ""),
+      sourceLabel: provider,
+      reviewStatus: "requires_review" as const,
+      riskTheme: "unknown" as const,
+    };
+  });
+}
+
+function uniqueQueries(evidence: NormalizedEvidenceV1[], subjectName: string, riskTerms: string[], max = 5): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   const push = (q: string) => {
@@ -35,7 +76,8 @@ function uniqueQueries(evidence: NormalizedEvidenceV1[], subjectName: string, ma
   }
 
   push(`${subjectName} биография`);
-  for (const term of RU_RISK_TERMS) {
+  push(`${subjectName} biography`);
+  for (const term of riskTerms) {
     if (out.length >= max + 2) break;
     push(`${subjectName} ${term}`);
   }
@@ -84,15 +126,26 @@ export async function buildOrionClassicAuditAssets(input: {
 }): Promise<ReportAssetV1[]> {
   const base = await buildOrionGoldenAssets(input);
   const ruSearchEvidence = buildRuSearchEvidence(input.ctx);
-  const queries = uniqueQueries(ruSearchEvidence, input.ctx.subject.fullName);
+  const uaeSearchEvidence = buildUaeSearchEvidence(input.ctx);
+  const ruQueries = uniqueQueries(ruSearchEvidence, input.ctx.subject.fullName, RU_RISK_TERMS);
+  const uaeQueries = uniqueQueries(uaeSearchEvidence, input.ctx.subject.fullName, UAE_RISK_TERMS, 4);
 
   const extraSerp: ReportAssetV1[] = [];
-  for (const query of queries) {
+  for (const query of ruQueries) {
     const batch = await buildQuerySerpAssets({
       subjectName: input.ctx.subject.fullName,
       evidence: ruSearchEvidence,
       query,
       assetRefPrefix: "ru_classic_serp",
+    });
+    extraSerp.push(...batch);
+  }
+  for (const query of uaeQueries) {
+    const batch = await buildQuerySerpAssets({
+      subjectName: input.ctx.subject.fullName,
+      evidence: uaeSearchEvidence,
+      query,
+      assetRefPrefix: "uae_classic_serp",
     });
     extraSerp.push(...batch);
   }

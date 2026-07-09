@@ -119,10 +119,22 @@ export function sanitizeOrionGoldenClientText(text: string): string {
   if (!text) return "";
 
   let out = text;
+  // Do not replace tokens that are part of a hyphen/slash compound
+  // (e.g. "compliance-рисков" must not become "Комплаенс-проверка-рисков").
   for (const [key, label] of Object.entries({ ...RISK_LEVEL_LABELS, ...THEME_LABELS, ...VERIFICATION_LABELS })) {
-    const pattern = new RegExp(`\\b${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi");
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = new RegExp(`\\b${escaped}\\b(?![-/])`, "gi");
     out = out.replace(pattern, label);
   }
+  // Prefer natural Russian compounds over broken enum leftovers.
+  out = out
+    .replace(/\bcompliance[-/]риск/gi, "комплаенс-риск")
+    .replace(/\bcompliance[-/]вывод/gi, "комплаенс-вывод")
+    .replace(/\bcompliance[-/]баз/gi, "комплаенс-баз")
+    .replace(/\bcompliance[-/]команд/gi, "комплаенс-команд")
+    .replace(/\bcompliance[-/]систем/gi, "комплаенс-систем")
+    .replace(/\bcompliance[-/]сигнал/gi, "комплаенс-сигнал")
+    .replace(/\badverse[-/]media\b/gi, THEME_LABELS.adverse_media);
 
   out = out.replace(ENUM_TOKEN_PATTERN, (hit) => {
     const lower = hit.toLowerCase();

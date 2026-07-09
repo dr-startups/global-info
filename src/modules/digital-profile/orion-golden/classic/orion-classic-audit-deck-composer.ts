@@ -26,24 +26,14 @@ function slidesFromBlock(sectionKey: string, block: OrionClassicAuditReportSpec[
   }));
 }
 
-function expandCommercial(sectionKey: string, block: OrionClassicAuditReportSpec["registrySections"][number]["block"]): OrionGoldenDeckSlide[] {
+function commercialSlides(
+  sectionKey: string,
+  block: OrionClassicAuditReportSpec["registrySections"][number]["block"]
+): OrionGoldenDeckSlide[] {
+  // Dense commercial pack already chunks bullets; do not pad to blueprint mins.
   const blueprint = ORION_GOLDEN_BLUEPRINT.sections.find((s) => s.sectionKey === sectionKey);
-  const minPages = blueprint?.expectedPageRange.min ?? 1;
-  const slides = slidesFromBlock(sectionKey, block);
-  if (slides.length >= minPages) return slides;
-  const out = [...slides];
-  for (let i = slides.length; i < minPages; i += 1) {
-    const card = block.evidenceCards[i - slides.length];
-    out.push({
-      slideKey: `${sectionKey}-fill-${i + 1}`,
-      sectionKey,
-      template: block.slideSpecs[0]?.template ?? "orion_golden_offer",
-      title: block.sectionTitle,
-      pageNumber: 0,
-      bullets: card ? [truncateAtWordBoundary(card.summary, 220)] : [truncateAtWordBoundary(block.narrative, 220)],
-    });
-  }
-  return out;
+  const maxPages = blueprint?.expectedPageRange.max ?? 4;
+  return slidesFromBlock(sectionKey, block).slice(0, Math.max(1, maxPages));
 }
 
 function assetSlides(
@@ -115,14 +105,14 @@ export function composeOrionClassicAuditDeck(
   const videoAssets = pickAssets(assets, "video_cards");
   const knowledgeAssets = pickAssets(assets, "knowledge_panel");
 
-  const ruSerp = serpAssets.filter((a) => a.assetRef.includes("ru_") || !a.assetRef.includes("uae"));
-  const uaeSerp = serpAssets.filter((a) => a.assetRef.includes("uae"));
-  const ruImages = imageAssets.filter((a) => a.assetRef.startsWith("ru_") || a.assetRef.startsWith("r10-img"));
-  const uaeImages = imageAssets.filter((a) => a.assetRef.includes("uae"));
-  const ruVideos = videoAssets.filter((a) => !a.assetRef.includes("uae"));
-  const uaeVideos = videoAssets.filter((a) => a.assetRef.includes("uae"));
-  const ruKnowledge = knowledgeAssets.filter((a) => !a.assetRef.includes("uae"));
-  const uaeKnowledge = knowledgeAssets.filter((a) => a.assetRef.includes("uae"));
+  const uaeSerp = serpAssets.filter((a) => /uae|intl|ae_/i.test(a.assetRef));
+  const ruSerp = serpAssets.filter((a) => !uaeSerp.includes(a));
+  const uaeImages = imageAssets.filter((a) => /uae|intl/i.test(a.assetRef));
+  const ruImages = imageAssets.filter((a) => !uaeImages.includes(a));
+  const uaeVideos = videoAssets.filter((a) => /uae|intl/i.test(a.assetRef));
+  const ruVideos = videoAssets.filter((a) => !uaeVideos.includes(a));
+  const uaeKnowledge = knowledgeAssets.filter((a) => /uae|intl/i.test(a.assetRef));
+  const ruKnowledge = knowledgeAssets.filter((a) => !uaeKnowledge.includes(a));
 
   const insertedAssetSections = new Set<string>();
   const sections: Array<{ sectionKey: string; slides: OrionGoldenDeckSlide[] }> = [
@@ -266,7 +256,7 @@ export function composeOrionClassicAuditDeck(
             : key;
     sections.push({
       sectionKey,
-      slides: expandCommercial(sectionKey, block),
+      slides: commercialSlides(sectionKey, block),
     });
   }
 
