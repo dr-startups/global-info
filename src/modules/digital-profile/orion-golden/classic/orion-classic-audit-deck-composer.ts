@@ -18,6 +18,8 @@ function slidesFromBlock(
   block: OrionClassicAuditReportSpec["registrySections"][number]["block"]
 ): OrionGoldenDeckSlide[] {
   const specs = block.slideSpecs ?? [];
+  const isExecutive = sectionKey === "01_executive_summary" || /executive/i.test(sectionKey);
+  const narrativeMax = isExecutive ? 1400 : 420;
   return specs.map((spec, idx) => ({
     slideKey: spec.slideKey,
     sectionKey,
@@ -26,8 +28,9 @@ function slidesFromBlock(
     pageNumber: 0,
     bullets: spec.bullets?.map((b) => truncateAtWordBoundary(b, 200)),
     // Narrative only on the first slide of a section — avoids repeating the same paragraph N times.
+    // Executive résumé keeps the full ORION-style synthesis (not a 420-char stub).
     narrative:
-      idx === 0 && block.narrative ? truncateAtWordBoundary(block.narrative, 420) : undefined,
+      idx === 0 && block.narrative ? truncateAtWordBoundary(block.narrative, narrativeMax) : undefined,
     assetRefs: idx === 0 ? block.visualAssets : undefined,
   }));
 }

@@ -1,5 +1,6 @@
 /**
- * R10.6 — Executive synthesis from section analyses only (no raw inventory).
+ * R10.6 / R10.11 — Executive synthesis from section analyses only (no raw inventory).
+ * Client genre: ORION-style analyst résumé (scope → themes → sources → DB hits → next step).
  */
 
 import { z } from "zod";
@@ -42,11 +43,29 @@ const execSchema = z.object({
   nextSteps: z.array(z.string()),
 });
 
-const EXEC_SYSTEM = `Synthesize ORION executive summary from SECTION ANALYSES ONLY.
+const EXEC_SYSTEM = `You write the CLIENT-FACING executive résumé for an ORION-style digital profile audit.
 
-Forbidden: raw inventory, raw search results, excluded noise, wrong-subject items, pending manual-review as confirmed risk.
-Write plain Russian. Preliminary compliance framing only.
-Return ONE JSON: executiveSummary, globalRiskLevel, mainRisks, possibleConsequences, finalRecommendations, nextSteps.`;
+Genre (match a human compliance analyst, NOT a system log):
+1) Scope — what was checked (open-web TOP results RU/UAE, Wikipedia, LexisNexis / Dow Jones / World-Check if present in sections).
+2) Search themes WITH named entities, companies, jurisdictions (sanctions/PEP, criminal/legal, business disputes, reputation, family/associates) — only if supported by section findings.
+3) Specific publications / outlets / registry hits when sections name them.
+4) Compliance DB signals (e.g. Dow Jones RCA, LexisNexis PEP) — preliminary only; never invent hits.
+5) One clear next step for the client.
+
+Hard rules:
+- Plain Russian. Complete sentences only. No mid-thought endings ("связано с…", "—…", "это может быть связано с:" without continuation).
+- FORBIDDEN in executiveSummary and bullets: material counts ("N материалов"), "на ручной проверке", "artifact-backed", "секций проанализировано", queue/gate/judgment process language, raw IDs, storage paths, enum keys.
+- Do NOT dump URL lists or evidence titles. Evidence informs the narrative; the résumé is synthesis.
+- Do NOT present MANUAL_REVIEW_PENDING / caveated items as confirmed facts.
+- Prefer concrete names and themes over generic "выявлены риски".
+- executiveSummary: 2–4 short paragraphs (use \\n\\n between paragraphs), ~900–1400 characters total, self-contained on one slide.
+- mainRisks: 4–7 thematic bullets (theme + who/what + why it matters), each one complete sentence ≤180 chars.
+- possibleConsequences: 0–3 concrete compliance/reputation consequences (or empty if unknown).
+- finalRecommendations / nextSteps: actionable, specific, no process meta.
+
+Return ONE JSON object:
+executiveSummary, globalRiskLevel, mainRisks, possibleConsequences, finalRecommendations, nextSteps.
+globalRiskLevel must be one of: Низкий, Средний, Высокий, Критический, Требует проверки.`;
 
 export function buildExecutiveSynthesisInput(
   caseId: string,
@@ -124,19 +143,64 @@ export async function buildExecutiveSynthesisFromSections(input: {
   };
 }
 
+function pickFindingLines(synthesisInput: ExecutiveSynthesisInput, limit: number): string[] {
+  const lines: string[] = [];
+  for (const section of synthesisInput.sectionSummaries) {
+    if (section.status !== "HAS_FINDINGS") continue;
+    for (const finding of section.keyFindings) {
+      const summary = String(finding.summary ?? "").trim();
+      const title = String(finding.title ?? "").trim();
+      if (!summary && !title) continue;
+      if (/ручной проверк|материал\(ов\)|artifact-backed/i.test(`${title} ${summary}`)) continue;
+      const line = summary.length >= title.length ? summary : `${title}: ${summary}`;
+      if (line.length < 24) continue;
+      lines.push(line);
+      if (lines.length >= limit) return lines;
+    }
+    for (const risk of section.risks) {
+      if (risk.requiresManualReview) continue;
+      const line = String(risk.summary ?? "").trim();
+      if (line.length < 24) continue;
+      lines.push(line);
+      if (lines.length >= limit) return lines;
+    }
+  }
+  return lines;
+}
+
 export function buildDeterministicExecutiveFallback(
   synthesisInput: ExecutiveSynthesisInput
 ): ExecutiveSynthesisOutput {
-  const withFindings = synthesisInput.sectionSummaries.filter((s) => s.status === "HAS_FINDINGS").length;
-  const pending = synthesisInput.sectionSummaries.filter((s) => s.status === "MANUAL_REVIEW_PENDING").length;
+  const themes = pickFindingLines(synthesisInput, 6);
+  const subject = synthesisInput.subjectName;
+  const paragraphs = [
+    `По субъекту «${subject}» выполнен предварительный аудит открытого цифрового профиля: поисковая выдача, связанные поверхности и доступные комплаенс-сводки по секциям.`,
+    themes.length > 0
+      ? `В материалах секций выделяются следующие линии риска и репутационного контекста:\n${themes
+          .slice(0, 4)
+          .map((t) => `— ${t}`)
+          .join("\n")}`
+      : `На текущем этапе подтверждённые дифференцирующие сигналы ограничены; выводы носят предварительный характер и требуют сверки с первоисточниками.`,
+    `Следующий шаг — точечная верификация ключевых публикаций и комплаенс-хитов перед финальным заключением.`,
+  ];
+
   return {
     version: "r10-6-executive-synthesis-output-v1",
-    executiveSummary: `Предварительная сводка по субъекту «${synthesisInput.subjectName}». Проанализировано ${synthesisInput.sectionSummaries.length} секций, из них с выводами: ${withFindings}. Материалы на ручной проверке: ${pending}.`,
-    globalRiskLevel: pending > 5 ? "Требует проверки" : "Средний",
-    mainRisks: synthesisInput.sectionSummaries.flatMap((s) => s.risks.map((r) => r.summary)).slice(0, 5),
-    possibleConsequences: ["Требуется верификация первоисточников перед окончательными compliance-выводами."],
-    finalRecommendations: synthesisInput.sectionSummaries.flatMap((s) => s.recommendations).slice(0, 5),
-    nextSteps: pending > 0 ? ["Завершить ручную проверку материалов из очереди."] : ["Подтвердить ключевые выводы по первоисточникам."],
+    executiveSummary: paragraphs.join("\n\n"),
+    globalRiskLevel: themes.length >= 4 ? "Высокий" : themes.length > 0 ? "Средний" : "Требует проверки",
+    mainRisks: themes.slice(0, 6),
+    possibleConsequences:
+      themes.length > 0
+        ? ["Повышенная нагрузка на KYC/AML и репутационную проверку контрагента до подтверждения первоисточников."]
+        : [],
+    finalRecommendations:
+      themes.length > 0
+        ? [
+            "Сверить названные публикации и реестровые якоря с первоисточниками.",
+            "Зафиксировать статус PEP/санкционных сигналов только после подтверждённого хита в комплаенс-базе.",
+          ]
+        : ["Дособрать подтверждённые источники по ключевым темам до финального резюме."],
+    nextSteps: ["Подготовить короткий бриф для клиента с 3–5 проверяемыми якорями и одним рекомендуемым действием."],
     generatedBy: "deterministic",
   };
 }

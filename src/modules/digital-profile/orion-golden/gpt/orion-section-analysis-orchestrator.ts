@@ -46,13 +46,15 @@ const sectionAnalysisSchema = z.object({
   recommendations: z.array(z.string()),
 });
 
-const SECTION_SYSTEM_PROMPT = `You are ORION section analyst. Analyze ONLY the single section provided.
+const SECTION_SYSTEM_PROMPT = `You are ORION section analyst writing CLIENT-FACING prose for one section only.
 
 Rules:
-- Write plain Russian.
+- Write plain Russian in complete sentences. Genre: short analyst note (1 short narrative + up to 3 findings), not an evidence dump.
 - Use ONLY allowedEvidence from this section — no external inventory.
 - Never present MANUAL_REVIEW_ONLY or CAVEATED items as confirmed negative facts.
 - Do not invent evidence. evidenceRefs must match provided evidenceId values only.
+- Name concrete entities, outlets, companies, jurisdictions when present in evidence titles/snippets.
+- FORBIDDEN in clientNarrative/findings: material counts, "на ручной проверке", process/gate language, incomplete caveats ending with "связано с…" / "—…".
 - If data is insufficient, set status DATA_POOR and write a short limitation — no filler.
 - Return ONE JSON object with keys: sectionId, status, clientNarrative, keyFindings, risks, limitations, recommendations.
 - status must be one of: HAS_FINDINGS, NO_FINDINGS, DATA_POOR, NOT_APPLICABLE, MANUAL_REVIEW_PENDING.

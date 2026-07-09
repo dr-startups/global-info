@@ -132,7 +132,7 @@ class _Ctx:
             first = False
             p.space_after = Pt(8)
             r = p.add_run()
-            clipped = _clip_words(chunk, 520)
+            clipped = _clip_words(chunk, 700)
             r.text = clipped
             used_chars += len(clipped)
             r.font.name = FONT
@@ -225,15 +225,18 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     if template == "orion_golden_executive_card":
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY, FS_SECTION)
-        # Narrative card then bullets below — avoid stacking into same region
-        narr = _clip_words(narrative, 420) if narrative else ""
+        # ORION-style résumé: keep full synthesis (not a 420-char stub).
+        narr = _clip_words(narrative, 1400) if narrative else ""
         if narr:
-            card_h = min(1800000, max(700000, len(narr) * 2200))
+            card_h = min(3200000, max(900000, len(narr) * 1800 + 200000))
+            # Leave room for bullets under the card
+            max_card = max(900000, CONTENT_BOTTOM - y - (900000 if bullets else 200000))
+            card_h = min(card_h, max_card)
             ctx.card(y, h=card_h)
             y = ctx.body(narr, y + 100000, max_h=card_h - 160000)
             y = y + 160000
         if bullets:
-            ctx.bullets(bullets, y, max_items=6)
+            ctx.bullets(bullets, y, max_items=8)
         return
 
     if template == "orion_golden_risk_matrix":

@@ -27,6 +27,7 @@ import {
   asClientBullet,
   chunkItems,
   sanitizeClassicBullets,
+  sanitizeExecutiveClientText,
   truncateAtWordBoundary,
 } from "./orion-classic-text-utils";
 
@@ -170,7 +171,7 @@ function buildExecutiveFromClient(
     client.approvedFindings.slice(0, 6).map((f) => asClientBullet(`${f.title}: ${f.summary}`));
 
   return {
-    executiveSummary: truncateAtWordBoundary(execText, 1200),
+    executiveSummary: sanitizeExecutiveClientText(execText, 1400),
     globalRiskLevel: mapGlobalRiskLevel(
       executive?.globalRiskLevel ?? matrixSource?.globalRiskLevel ?? "Требует проверки"
     ),
@@ -703,64 +704,39 @@ function emptyLegacy(sectionKey: string): SectionBlock {
   };
 }
 
+/**
+ * Only fill an empty risk matrix from inventory themes.
+ * Never rewrite executiveSummary with meta-counts / SERP tallies — that kills ORION résumé genre.
+ */
 function enrichExecutiveWithInventory(
   executive: OrionGoldenReportSpec["executiveSummary"],
-  client: OrionClientContent,
+  _client: OrionClientContent,
   inventory?: FullEvidenceInventory
 ): OrionGoldenReportSpec["executiveSummary"] {
-  const themes = adverseThemeRows(inventory);
-  const hasMetaOnly =
-    /материал\(ов\)|ручной проверке|artifact-backed/i.test(executive.executiveSummary) &&
-    executive.mainRisks.length === 0;
+  if (executive.riskMatrix.length > 0) {
+    return {
+      ...executive,
+      executiveSummary: sanitizeExecutiveClientText(executive.executiveSummary, 1400),
+      mainRisks: sanitizeClassicBullets(executive.mainRisks, 200).slice(0, 7),
+    };
+  }
 
-  if (!hasMetaOnly && executive.mainRisks.length > 0) return executive;
+  const matrix = riskMatrixFromInventory(inventory).map((r) => ({
+    theme: r.theme,
+    level: r.level,
+    summary: r.summary,
+  }));
 
-  const findingBullets = client.approvedFindings.slice(0, 5).map((f) =>
-    truncateAtWordBoundary(`${f.title}: ${f.summary}`, 180)
-  );
-  const themeBullets = themes.slice(0, 5).map((t) => `${t.theme} — ${t.count} материал(ов)`);
-  const mainRisks = sanitizeClassicBullets(
-    [...(executive.mainRisks ?? []), ...themeBullets, ...findingBullets].filter(Boolean),
-    200
-  ).slice(0, 8);
-
-  const serpRu =
-    inventory?.items.filter((i) => i.evidenceType === "search_result" && matchesRegion(i.region, "RU"))
-      .length ?? 0;
-  const serpUae =
-    inventory?.items.filter((i) => i.evidenceType === "search_result" && matchesRegion(i.region, "UAE"))
-      .length ?? 0;
-  const enrichedSummary = [
-    `По субъекту «${client.subject.displayName}» сформирован предварительный аудит цифрового профиля.`,
-    themes.length > 0
-      ? `Выявлены тематические кластеры риска: ${themes
-          .slice(0, 4)
-          .map((t) => `${t.theme} (${t.count})`)
-          .join(", ")}.`
-      : "Подтверждённые тематические кластеры риска на текущем этапе ограничены и требуют ручной верификации.",
-    `Сохранённая выдача: RU ${serpRu}, UAE/INTL ${serpUae}.`,
-    client.manualReviewSection.items.length > 0
-      ? `${client.manualReviewSection.items.length} материал(ов) остаются на ручной проверке и не трактуются как подтверждённый риск.`
-      : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const themeBullets =
+    executive.mainRisks.length > 0
+      ? executive.mainRisks
+      : matrix.slice(0, 6).map((r) => `${r.theme}: ${r.summary}`);
 
   return {
     ...executive,
-    executiveSummary: truncateAtWordBoundary(
-      hasMetaOnly ? enrichedSummary : executive.executiveSummary,
-      1200
-    ),
-    mainRisks: mainRisks.length > 0 ? mainRisks : executive.mainRisks,
-    riskMatrix:
-      executive.riskMatrix.length > 0
-        ? executive.riskMatrix
-        : riskMatrixFromInventory(inventory).map((r) => ({
-            theme: r.theme,
-            level: r.level,
-            summary: r.summary,
-          })),
+    executiveSummary: sanitizeExecutiveClientText(executive.executiveSummary, 1400),
+    mainRisks: sanitizeClassicBullets(themeBullets, 200).slice(0, 7),
+    riskMatrix: matrix,
   };
 }
 
@@ -786,6 +762,17 @@ export function buildOrionClassicReportSpecFromClientContent(
 
   for (const reg of getClientAuditSections()) {
     if (reg.sectionId === "01_executive_summary") {
+      // ORION résumé: synthesis narrative + thematic bullets only (no inventory/meta dump).
+      const resumeBullets = sanitizeClassicBullets(
+        [
+          ...executive.mainRisks.slice(0, 6),
+          ...executive.possibleConsequences.slice(0, 2),
+          ...(executive.nextSteps.slice(0, 1).map((s) => `Следующий шаг: ${s}`)),
+        ],
+        200
+      ).slice(0, 8);
+      const recBullets = sanitizeClassicBullets(executive.finalRecommendations, 200).slice(0, 6);
+
       registrySections.push({
         sectionId: reg.sectionId,
         order: reg.order,
@@ -801,18 +788,15 @@ export function buildOrionClassicReportSpecFromClientContent(
               slideKey: "executive-1",
               template: "orion_golden_executive_card",
               title: "Резюме",
-              bullets: [
-                ...executive.mainRisks.slice(0, 5),
-                ...executive.possibleConsequences.slice(0, 2),
-              ],
+              bullets: resumeBullets,
             },
-            ...(executive.finalRecommendations.length
+            ...(recBullets.length
               ? [
                   {
                     slideKey: "executive-recs",
                     template: "orion_golden_executive_card",
                     title: "Резюме — рекомендуемые действия",
-                    bullets: executive.finalRecommendations.slice(0, 6),
+                    bullets: recBullets,
                   },
                 ]
               : []),

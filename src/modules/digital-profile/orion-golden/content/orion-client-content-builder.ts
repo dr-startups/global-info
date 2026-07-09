@@ -170,24 +170,13 @@ export function buildOrionClientContent(input: {
 
   const wrongSubjectCount = effectiveJudgments.filter((j) => j.reviewDecision === "EXCLUDE_WRONG_SUBJECT").length;
   const excludedNoise = effectiveBundles.excluded.filter((e) => e.reviewDecision === "EXCLUDE_NOISE").length;
-  const pendingManual = manualItems.filter(
-    (m) => !m.adminStatus || m.adminStatus === "PENDING" || m.adminStatus === "NEEDS_MORE_SOURCES"
-  ).length;
-
-  const modeLabel =
-    input.mode === "pre_review"
-      ? "до ручной проверки аналитиком"
-      : "после применения решений аналитика (artifact-backed)";
 
   const executiveSummaryDraft = [
-    `Проверка ORION по субъекту «${input.subject.fullName}» (${modeLabel}).`,
-    `В ключевые выводы включено ${approvedFindings.length} материал(ов).`,
-    pendingManual > 0
-      ? `${pendingManual} материал(ов) остаются на ручной проверке или ожидают дополнительных источников.`
-      : input.mode === "post_review"
-        ? "Все материалы из очереди ручной проверки получили решение аналитика."
-        : "Материалы на ручной проверке не представлены как подтверждённые негативные факты.",
-    "Комплаенс-выводы возможны только после проверки первоисточников и идентификации субъекта.",
+    `По субъекту «${input.subject.fullName}» выполнен предварительный аудит открытого цифрового профиля.`,
+    approvedFindings.length > 0
+      ? `В ключевых выводах зафиксированы тематические сигналы по открытым источникам; комплаенс-интерпретация — предварительная.`
+      : `Подтверждённые дифференцирующие сигналы на текущем этапе ограничены.`,
+    "Окончательные комплаенс-выводы возможны только после сверки с первоисточниками и подтверждения идентификации субъекта.",
   ].join(" ");
 
   return {
