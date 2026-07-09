@@ -143,11 +143,20 @@ async function main() {
   const qa = inspectRendererIntegrationQa({ outputRoot, reportSpec, deckManifest });
   writeRendererIntegrationQaReport(outputRoot, qa);
 
+  const { writeVisualPolishQaArtifacts } = await import(
+    "../src/modules/digital-profile/orion-golden/qa/r10-9a-visual-polish-qa"
+  );
+  const polish = writeVisualPolishQaArtifacts(outputRoot);
+
   console.log(`[INFO] contentVerdict=${contentInspection.verdict}`);
   console.log(`[INFO] integrationVerdict=${qa.verdict} pages=${qa.pageCount} pngs=${qa.pngCount}`);
+  console.log(`[INFO] visualPolishVerdict=${polish.report.verdict}`);
+  console.log(
+    `[INFO] pageGrades PASS=${polish.report.pageReview.counts.PASS} MINOR=${polish.report.pageReview.counts.MINOR_ISSUE} MAJOR=${polish.report.pageReview.counts.MAJOR_ISSUE} BLOCKER=${polish.report.pageReview.counts.BLOCKER}`
+  );
   console.log(`[INFO] pdfBytes=${qa.pdfBytes} pptxBytes=${qa.pptxBytes}`);
 
-  if (!qa.passed) process.exit(1);
+  if (!qa.passed || !polish.report.passed) process.exit(1);
 }
 
 main().catch((err) => {

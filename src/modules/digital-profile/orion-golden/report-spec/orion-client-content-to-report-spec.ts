@@ -85,12 +85,6 @@ function sectionBlockFromClientSections(
     return emptyBlock(fallbackTitle, sectionKey);
   }
 
-  const narrative = usable
-    .map((s) => sanitizeOrionGoldenClientText(s.narrative || s.title))
-    .filter(Boolean)
-    .join("\n\n")
-    .slice(0, 4000);
-
   const evidenceCards = usable
     .flatMap((s) =>
       (s.keyFindings ?? []).map((f) => ({
@@ -108,15 +102,28 @@ function sectionBlockFromClientSections(
     ...new Set(usable.flatMap((s) => s.evidenceRefs ?? []).filter(Boolean)),
   ].slice(0, 40);
 
-  const slideSpecs = usable.slice(0, 4).map((s, idx) => ({
-    slideKey: `${sectionKey}-${idx + 1}`,
-    template: "orion_golden_audit_dashboard",
-    title: sanitizeOrionGoldenClientText(s.title || fallbackTitle),
-    bullets: (s.keyFindings ?? [])
+  // R10.9a — one slide per usable section with short narrative + finding bullets (no mega dump)
+  const slideSpecs = usable.slice(0, 6).map((s, idx) => {
+    const shortNarr = sanitizeOrionGoldenClientText(s.narrative || "").slice(0, 420);
+    const findingBullets = (s.keyFindings ?? [])
       .slice(0, 5)
-      .map((f) => sanitizeOrionGoldenClientText(f.title))
-      .filter(Boolean),
-  }));
+      .map((f) =>
+        sanitizeOrionGoldenClientText(
+          f.caveat ? `${f.title} — ${f.caveat}` : f.title
+        )
+      )
+      .filter(Boolean);
+    return {
+      slideKey: `${sectionKey}-${idx + 1}`,
+      template: "orion_golden_audit_dashboard",
+      title: sanitizeOrionGoldenClientText(s.title || fallbackTitle),
+      bullets: findingBullets.length
+        ? findingBullets
+        : shortNarr
+          ? [shortNarr]
+          : ["Подтверждённых ключевых выводов в разделе недостаточно."],
+    };
+  });
 
   return {
     sectionTitle: fallbackTitle,
@@ -125,21 +132,12 @@ function sectionBlockFromClientSections(
       findings: evidenceCards.length,
       collapsed: matched.length - usable.length,
     },
-    narrative,
+    // Keep block narrative short — deck uses per-slide bullets
+    narrative: sanitizeOrionGoldenClientText(usable[0]?.narrative || "").slice(0, 500),
     tables: [],
     evidenceCards,
     visualAssets: [],
-    slideSpecs:
-      slideSpecs.length > 0
-        ? slideSpecs
-        : [
-            {
-              slideKey: `${sectionKey}-summary`,
-              template: "orion_golden_audit_dashboard",
-              title: fallbackTitle,
-              bullets: evidenceCards.slice(0, 5).map((c) => c.title),
-            },
-          ],
+    slideSpecs,
     sourceRefs,
     qaMetadata: { sectionKey },
   };
@@ -174,14 +172,22 @@ function buildExecutiveFromClient(
       executive?.globalRiskLevel ?? matrixSource?.globalRiskLevel ?? "Требует проверки"
     ),
     riskMatrix: riskMatrixRows,
-    mainRisks: (executive?.mainRisks ?? []).map(sanitizeOrionGoldenClientText),
-    possibleConsequences: (executive?.possibleConsequences ?? []).map(sanitizeOrionGoldenClientText),
+    mainRisks: (executive?.mainRisks ?? [])
+      .map((v) => sanitizeOrionGoldenClientText(typeof v === "string" ? v : String((v as { title?: string })?.title ?? "")))
+      .filter((v) => Boolean(v) && !/\[object Object\]/i.test(v)),
+    possibleConsequences: (executive?.possibleConsequences ?? [])
+      .map((v) => sanitizeOrionGoldenClientText(typeof v === "string" ? v : ""))
+      .filter((v) => Boolean(v) && !/\[object Object\]/i.test(v)),
     finalRecommendations: (
       executive?.finalRecommendations ??
       client.recommendations ??
       []
-    ).map(sanitizeOrionGoldenClientText),
-    nextSteps: (executive?.nextSteps ?? []).map(sanitizeOrionGoldenClientText),
+    )
+      .map((v) => sanitizeOrionGoldenClientText(typeof v === "string" ? v : ""))
+      .filter((v) => Boolean(v) && !/\[object Object\]/i.test(v)),
+    nextSteps: (executive?.nextSteps ?? [])
+      .map((v) => sanitizeOrionGoldenClientText(typeof v === "string" ? v : ""))
+      .filter((v) => Boolean(v) && !/\[object Object\]/i.test(v)),
     generatedBy: executive?.generatedBy === "gpt-5.5" ? "gpt-5.5" : "gpt-5.5",
   };
 }
@@ -193,26 +199,54 @@ function buildManualReviewBlock(client: OrionClientContent): SectionBlock {
   const groups = client.manualReviewGroups ?? [];
   const items = client.manualReviewSection?.items ?? [];
 
-  const bullets: string[] = [
-    sanitizeOrionGoldenClientText(intro),
-    "Статус «Требует проверки» не используется как подтверждённый риск.",
+  const slideSpecs: SectionBlock["slideSpecs"] = [
+    {
+      slideKey: "manual-review-intro",
+      template: "orion_golden_audit_dashboard",
+      title: "Материалы на ручной проверке",
+      bullets: [
+        sanitizeOrionGoldenClientText(intro).slice(0, 220),
+        "Статус «Требует проверки» не используется как подтверждённый риск.",
+        `Всего материалов в очереди: ${items.length || groups.reduce((n, g) => n + (g.items?.length ?? 0), 0)}.`,
+        groups.length
+          ? `Групп по причине проверки: ${groups.length}.`
+          : "Группировка по причине будет уточнена аналитиком.",
+      ],
+    },
   ];
 
   if (groups.length > 0) {
-    for (const g of groups.slice(0, 8)) {
-      bullets.push(
-        sanitizeOrionGoldenClientText(
-          `${g.title ?? g.reason}: ${g.items?.length ?? 0} материал(ов)`
-        )
+    for (const [idx, g] of groups.slice(0, 6).entries()) {
+      const sample = (g.items ?? []).slice(0, 4).map((it) =>
+        sanitizeOrionGoldenClientText(`${it.title}`).slice(0, 120)
       );
+      slideSpecs.push({
+        slideKey: `manual-review-group-${idx + 1}`,
+        template: "orion_golden_audit_dashboard",
+        title: sanitizeOrionGoldenClientText(g.title || g.reason),
+        bullets: [
+          `Материалов в группе: ${g.items?.length ?? 0}`,
+          sanitizeOrionGoldenClientText(g.whyNeedsReview || "Требуется ручная проверка.").slice(0, 180),
+          sanitizeOrionGoldenClientText(
+            `Аналитику: ${g.analystShouldCheck || "сверить идентификаторы и контекст."}`
+          ).slice(0, 180),
+          ...sample,
+        ],
+      });
     }
   } else {
-    for (const item of items.slice(0, 10)) {
-      bullets.push(
-        sanitizeOrionGoldenClientText(
-          `${item.title}: ${item.whyFlagged || item.summary}`.slice(0, 200)
-        )
-      );
+    for (let i = 0; i < Math.min(items.length, 12); i += 4) {
+      const chunk = items.slice(i, i + 4);
+      slideSpecs.push({
+        slideKey: `manual-review-items-${Math.floor(i / 4) + 1}`,
+        template: "orion_golden_audit_dashboard",
+        title: "Очередь ручной проверки",
+        bullets: chunk.map((it) =>
+          sanitizeOrionGoldenClientText(
+            `${it.title}: ${it.whyFlagged || "требует проверки"}`
+          ).slice(0, 160)
+        ),
+      });
     }
   }
 
@@ -222,9 +256,7 @@ function buildManualReviewBlock(client: OrionClientContent): SectionBlock {
       pending: items.length,
       groups: groups.length,
     },
-    narrative: sanitizeOrionGoldenClientText(
-      [intro, ...items.slice(0, 15).map((i) => `${i.title} — ${i.summary}`)].join("\n")
-    ),
+    narrative: sanitizeOrionGoldenClientText(intro).slice(0, 400),
     tables: [],
     evidenceCards: items.slice(0, 12).map((i) => ({
       title: sanitizeOrionGoldenClientText(i.title),
@@ -233,14 +265,7 @@ function buildManualReviewBlock(client: OrionClientContent): SectionBlock {
       ),
     })),
     visualAssets: [],
-    slideSpecs: [
-      {
-        slideKey: "manual-review-1",
-        template: "orion_golden_audit_dashboard",
-        title: "Материалы на ручной проверке",
-        bullets: bullets.slice(0, 8),
-      },
-    ],
+    slideSpecs,
     sourceRefs: items.flatMap((i) => i.evidenceRefs ?? []).slice(0, 30),
     qaMetadata: { sectionKey: "manual_review_required", riskLevel: "review_required" },
   };
@@ -249,41 +274,77 @@ function buildManualReviewBlock(client: OrionClientContent): SectionBlock {
 function buildAppendixBlock(client: OrionClientContent): SectionBlock {
   const appendix = client.appendixFindings ?? [];
   const limitations = client.limitations ?? [];
-  const narrative = [
-    "Приложение: материалы, исключённые из ключевых выводов, и ограничения анализа.",
-    ...limitations.slice(0, 8).map((l) => sanitizeOrionGoldenClientText(l)),
-    ...appendix
-      .slice(0, 10)
-      .map((a) => sanitizeOrionGoldenClientText(`${a.title}: ${a.summary}`)),
-  ].join("\n");
+  const clusters = client.evidenceClusters ?? [];
+
+  const slideSpecs: SectionBlock["slideSpecs"] = [
+    {
+      slideKey: "appendix-limitations",
+      template: "orion_golden_appendix",
+      title: "Ограничения анализа",
+      bullets: (limitations.length
+        ? limitations
+        : [
+            "Анализ основан на открытых источниках и предварительных сигналах.",
+            "Материалы на ручной проверке не считаются подтверждённым риском.",
+          ]
+      )
+        .slice(0, 7)
+        .map((l) => sanitizeOrionGoldenClientText(l).slice(0, 180)),
+    },
+  ];
+
+  if (clusters.length > 0) {
+    const clientUseLabel: Record<string, string> = {
+      AUTO_INCLUDE_CLIENT_REPORT: "в анализе",
+      APPENDIX_ONLY: "только приложение",
+      MANUAL_REVIEW_REQUIRED: "ручная проверка",
+      EXCLUDE: "исключено",
+    };
+    slideSpecs.push({
+      slideKey: "appendix-clusters",
+      template: "orion_golden_appendix",
+      title: "Кластеры доказательств",
+      bullets: clusters.slice(0, 8).map((c) =>
+        sanitizeOrionGoldenClientText(
+          `${c.title}: ${c.evidenceIds.length} материал(ов), ${
+            clientUseLabel[c.clientUse] ?? c.clientUse
+          }${c.duplicateCount > 0 ? `, дублей: ${c.duplicateCount}` : ""}`
+        ).slice(0, 160)
+      ),
+    });
+  }
+
+  for (let i = 0; i < Math.min(appendix.length, 12); i += 5) {
+    const chunk = appendix.slice(i, i + 5);
+    slideSpecs.push({
+      slideKey: `appendix-evidence-${Math.floor(i / 5) + 1}`,
+      template: "orion_golden_appendix",
+      title: "Приложение — учтённые, но не ключевые материалы",
+      bullets: chunk.map((a) =>
+        sanitizeOrionGoldenClientText(
+          `${a.title}${a.caveat ? ` — ${a.caveat}` : " — только приложение"}`
+        ).slice(0, 160)
+      ),
+    });
+  }
 
   return {
     sectionTitle: "Приложение и ограничения",
     metrics: {
       appendixItems: appendix.length,
       limitations: limitations.length,
+      clusters: clusters.length,
     },
-    narrative,
+    narrative: sanitizeOrionGoldenClientText(
+      "Приложение: ограничения анализа и материалы, не используемые как ключевые выводы."
+    ),
     tables: [],
     evidenceCards: appendix.slice(0, 15).map((a) => ({
       title: sanitizeOrionGoldenClientText(a.title),
       summary: sanitizeOrionGoldenClientText(a.caveat || a.summary),
     })),
     visualAssets: [],
-    slideSpecs: [
-      {
-        slideKey: "appendix-limitations",
-        template: "orion_golden_appendix",
-        title: "Ограничения анализа",
-        bullets: limitations.slice(0, 6).map(sanitizeOrionGoldenClientText),
-      },
-      {
-        slideKey: "appendix-evidence",
-        template: "orion_golden_appendix",
-        title: "Приложение — учтённые, но не ключевые материалы",
-        bullets: appendix.slice(0, 6).map((a) => sanitizeOrionGoldenClientText(a.title)),
-      },
-    ],
+    slideSpecs,
     sourceRefs: appendix.flatMap((a) => a.evidenceRefs ?? []).slice(0, 40),
     qaMetadata: { sectionKey: "appendix" },
   };
@@ -292,21 +353,23 @@ function buildAppendixBlock(client: OrionClientContent): SectionBlock {
 function buildRecommendationsBlock(client: OrionClientContent): SectionBlock {
   const recs = client.recommendations ?? [];
   if (recs.length === 0) return emptyBlock("Рекомендации", "recommendations");
+  const slides: SectionBlock["slideSpecs"] = [];
+  for (let i = 0; i < Math.min(recs.length, 12); i += 6) {
+    slides.push({
+      slideKey: `recommendations-${Math.floor(i / 6) + 1}`,
+      template: "orion_golden_executive_card",
+      title: "Рекомендации",
+      bullets: recs.slice(i, i + 6).map((r) => sanitizeOrionGoldenClientText(r).slice(0, 180)),
+    });
+  }
   return {
     sectionTitle: "Рекомендации",
     metrics: { count: recs.length },
-    narrative: recs.map(sanitizeOrionGoldenClientText).join("\n"),
+    narrative: sanitizeOrionGoldenClientText(recs[0] ?? "").slice(0, 300),
     tables: [],
     evidenceCards: [],
     visualAssets: [],
-    slideSpecs: [
-      {
-        slideKey: "recommendations-1",
-        template: "orion_golden_executive_card",
-        title: "Рекомендации",
-        bullets: recs.slice(0, 8).map(sanitizeOrionGoldenClientText),
-      },
-    ],
+    slideSpecs: slides,
     sourceRefs: [],
     qaMetadata: { sectionKey: "recommendations" },
   };
@@ -468,12 +531,13 @@ export function buildOrionReportSpecFromClientContent(
         ...appendixBlock.slideSpecs,
       ],
       evidenceCards: [...manualBlock.evidenceCards, ...appendixBlock.evidenceCards].slice(0, 20),
-      narrative: `${manualBlock.narrative}\n\n${appendixBlock.narrative}`,
+      // Keep short — deck slides carry content; long narrative caused overlap
+      narrative: sanitizeOrionGoldenClientText(manualBlock.narrative).slice(0, 300),
     },
     assets: input.assets ?? [],
     qaMetadata: {
       generatedBy: "gpt-5.5",
-      architectureVersion: "r10-9-client-content-to-report-spec-v1",
+      architectureVersion: "r10-9a-client-content-to-report-spec-v1",
       inventoryCounts: input.inventoryCounts ?? {
         searchResults: 0,
         searchSurfaces: 0,
@@ -486,6 +550,7 @@ export function buildOrionReportSpecFromClientContent(
         ...(input.warnings ?? []),
         "client_audit_render_from_post_review_content",
         "commercial_sections_omitted",
+        "r10_9a_visual_polish",
         client.mode === "post_review"
           ? "source:orion-client-content.post-review"
           : "source:orion-client-content.pre-review",

@@ -77,7 +77,7 @@ export function inspectClientRenderContent(input: {
   checks.push(check("recommendations", hasRecs, `present=${hasRecs}`));
 
   const fromClient =
-    reportSpec.qaMetadata.architectureVersion.includes("r10-9-client-content") ||
+    reportSpec.qaMetadata.architectureVersion.includes("r10-9") ||
     reportSpec.qaMetadata.warnings.some((w) => w.includes("client_audit_render"));
   checks.push(check("render-from-client-content", fromClient, reportSpec.qaMetadata.architectureVersion));
   if (!fromClient) issues.push("old-content");

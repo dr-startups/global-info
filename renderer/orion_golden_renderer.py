@@ -25,13 +25,14 @@ FONT = "Arial"
 FS_TITLE = 26
 FS_SECTION = 22
 FS_SUBTITLE = 13
-FS_BODY = 11
+FS_BODY = 12
 FS_CAPTION = 9
 
 MARGIN_X = 420000
 CONTENT_W = 8300000
 SLIDE_H = 6858000
 FOOTER_Y = 6420000
+CONTENT_BOTTOM = 6200000
 
 NAVY = RGBColor(0x0B, 0x1A, 0x33)
 TITLE_COLOR = RGBColor(0xF8, 0xFA, 0xFC)
@@ -51,6 +52,10 @@ FORBIDDEN = re.compile(
 def _safe(text: object) -> str:
     val = re.sub(r"\s+", " ", str(text or "")).strip()
     val = FORBIDDEN.sub("", val)
+    # Humanize residual enum-like tokens that may appear in summaries
+    val = re.sub(r"\bWRONG[_\s-]?SUBJECT\b", "другой субъект", val, flags=re.I)
+    val = re.sub(r"\bPENDING\b", "требует проверки", val, flags=re.I)
+    val = re.sub(r"\bGPT\b", "модельный анализ", val)
     return val.strip()
 
 
@@ -97,34 +102,59 @@ class _Ctx:
         return y + 950000
 
     def body(self, text: str, y: int, max_h: int = 900000, color: RGBColor = BODY_COLOR) -> int:
-        box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(max_h))
+        # Cap height so body never collides with footer
+        avail = max(200000, min(max_h, CONTENT_BOTTOM - y))
+        box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(avail))
         tf = box.text_frame
         tf.word_wrap = True
-        p = tf.paragraphs[0]
-        r = p.add_run()
-        r.text = _safe(text)
-        r.font.name = FONT
-        r.font.size = Pt(FS_BODY)
-        r.font.color.rgb = color
-        return y + max_h
+        # Split long narrative into short paragraphs for readability
+        chunks = [c.strip() for c in re.split(r"\n+", _safe(text)) if c.strip()]
+        if not chunks:
+            chunks = [""]
+        first = True
+        used_chars = 0
+        for chunk in chunks[:6]:
+            p = tf.paragraphs[0] if first else tf.add_paragraph()
+            first = False
+            p.space_after = Pt(8)
+            r = p.add_run()
+            clipped = chunk[:700]
+            r.text = clipped
+            used_chars += len(clipped)
+            r.font.name = FONT
+            r.font.size = Pt(FS_BODY)
+            r.font.color.rgb = color
+        # Estimate consumed height (~18pt line) instead of returning full avail
+        est_lines = max(2, min(14, used_chars // 90 + len(chunks)))
+        used_h = min(avail, est_lines * 230000 + 120000)
+        return y + used_h
 
     def bullets(self, items: list[str], y: int, color: RGBColor = BODY_COLOR, max_items: int = 8) -> int:
-        box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(3200000))
+        avail = max(400000, CONTENT_BOTTOM - y)
+        box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(avail))
         tf = box.text_frame
         tf.word_wrap = True
         first = True
         for bullet in items[:max_items]:
             p = tf.paragraphs[0] if first else tf.add_paragraph()
             first = False
+            # R10.9a — explicit spacing prevents overlapping bullet lines
+            p.space_before = Pt(4)
+            p.space_after = Pt(10)
+            p.line_spacing = 1.15
             r = p.add_run()
-            r.text = f"• {_safe(bullet)}"
+            clipped = _safe(bullet)
+            if len(clipped) > 220:
+                clipped = clipped[:217] + "…"
+            r.text = f"• {clipped}"
             r.font.name = FONT
             r.font.size = Pt(FS_BODY)
             r.font.color.rgb = color
-        return y + 3200000
+        return y + avail
 
     def card(self, y: int, h: int = 4200000) -> None:
-        shape = self.slide.shapes.add_shape(1, Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(h))
+        avail = max(300000, min(h, CONTENT_BOTTOM - y))
+        shape = self.slide.shapes.add_shape(1, Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(avail))
         shape.fill.solid()
         shape.fill.fore_color.rgb = CARD_BG
         shape.line.color.rgb = CARD_BORDER
@@ -164,27 +194,48 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
 
     if template == "orion_golden_cover":
         ctx.dark_bg()
-        y = ctx.title("ORION Digital Profile", 2200000, WHITE, 32)
-        ctx.body(narrative or title, y, max_h=600000, color=RGBColor(0xBF, 0xDB, 0xFE))
+        y = ctx.title("ORION Digital Profile", 1800000, WHITE, 34)
+        ctx.body(narrative or title, y, max_h=700000, color=RGBColor(0xBF, 0xDB, 0xFE))
+        ctx.body("Клиентский аудит · предварительная оценка", y + 900000, max_h=400000, color=MUTED_COLOR)
         return
 
     if template == "orion_golden_toc":
         ctx.dark_bg()
         y = ctx.title("Содержание отчёта", 400000, WHITE, FS_SECTION)
-        ctx.bullets(bullets or ["Резюме", "Россия", "ОАЭ", "Compliance", "LexisNexis", "Рекомендации"], y, color=WHITE)
+        ctx.bullets(
+            bullets or ["Резюме", "Россия", "ОАЭ", "Compliance", "LexisNexis", "Рекомендации"],
+            y,
+            color=WHITE,
+            max_items=14,
+        )
         return
 
     if template == "orion_golden_executive_card":
         ctx.light_bg()
-        y = ctx.title(title, 320000, NAVY)
-        ctx.card(y)
-        ctx.body(narrative, y + 120000, max_h=3800000)
+        y = ctx.title(title, 280000, NAVY, FS_SECTION)
+        # Narrative card then bullets below — avoid stacking into same region
+        narr = narrative[:480] if narrative else ""
+        if narr:
+            card_h = min(1800000, max(700000, len(narr) * 2200))
+            ctx.card(y, h=card_h)
+            y = ctx.body(narr, y + 100000, max_h=card_h - 160000)
+            y = y + 160000
+        if bullets:
+            ctx.bullets(bullets, y, max_items=6)
         return
 
     if template == "orion_golden_risk_matrix":
         ctx.light_bg()
-        y = ctx.title(title, 320000, NAVY)
-        ctx.bullets(bullets or ["Цифровой след", "Compliance", "Медиа"], y)
+        y = ctx.title(title or "Матрица рисков", 280000, NAVY, FS_SECTION)
+        ctx.body(
+            "Уровни риска показаны в клиентских формулировках. Материалы «Требует проверки» не являются подтверждённым риском.",
+            y,
+            max_h=520000,
+            color=MUTED_COLOR,
+        )
+        y = y + 560000
+        ctx.card(y, h=CONTENT_BOTTOM - y - 80000)
+        ctx.bullets(bullets or ["Существенных подтверждённых тем риска не выявлено."], y + 100000, max_items=8)
         return
 
     if template == "orion_golden_region_divider":
@@ -250,13 +301,21 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         ctx.body(narrative or "Для данного раздела недостаточно подтверждённых данных.", y)
         return
 
-    # default section summary
+    # default section summary / audit dashboard / appendix
     ctx.light_bg()
-    y = ctx.title(title, 320000, NAVY)
-    if narrative:
-        y = ctx.body(narrative, y, max_h=700000)
+    y = ctx.title(title, 280000, NAVY, FS_SECTION)
+    # Prefer bullets for dense content; keep narrative short to avoid overlap
+    short_narrative = narrative
+    if len(short_narrative) > 700:
+        short_narrative = short_narrative[:697] + "…"
+    if short_narrative and not bullets:
+        ctx.body(short_narrative, y, max_h=CONTENT_BOTTOM - y - 100000)
+        return
+    if short_narrative:
+        y = ctx.body(short_narrative, y, max_h=900000)
+        y = y + 80000
     if bullets:
-        ctx.bullets(bullets, y + 80000)
+        ctx.bullets(bullets, y, max_items=8)
 
 
 def _write_pdf_fallback(slides: list[dict[str, Any]], pdf_path: Path, subject: str) -> None:

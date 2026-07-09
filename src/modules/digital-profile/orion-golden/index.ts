@@ -51,6 +51,7 @@ export * from "./qa/r10-8a-admin-ui-polish-qa";
 export * from "./qa/r10-8b-admin-decision-persistence-qa";
 export * from "./qa/r10-9-client-render-content-inspection";
 export * from "./qa/r10-9-renderer-integration-qa";
+export * from "./qa/r10-9a-visual-polish-qa";
 export * from "./report-spec/orion-client-content-to-report-spec";
 export * from "./composer/orion-client-audit-deck-composer";
 export * from "./evidence/admin-review-decision-validation";
