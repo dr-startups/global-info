@@ -32,7 +32,8 @@ const commercialSlideCount =
   commercial.solutionWikipedia.slideSpecs.length +
   commercial.about.slideSpecs.length;
 assert(commercialSlideCount <= 12, `commercial too fat: ${commercialSlideCount}`);
-assert(commercial.offer.slideSpecs[0].bullets.length >= 2, "offer should be dense");
+const offerFirst = commercial.offer.slideSpecs[0];
+assert((offerFirst?.bullets?.length ?? 0) >= 2, "offer should be dense");
 
 const inventory: FullEvidenceInventory = {
   version: "r10-full-evidence-inventory-v1",
@@ -208,6 +209,8 @@ const client: OrionClientContent = {
   },
   limitations: ["smoke"],
   recommendations: ["Проверить первоисточники по санкциям."],
+  methodologyNotes: ["smoke"],
+  assemblySource: "section_analyses",
 };
 
 const spec = buildOrionClassicReportSpecFromClientContent({
