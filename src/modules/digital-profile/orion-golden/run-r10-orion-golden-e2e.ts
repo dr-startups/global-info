@@ -11,6 +11,7 @@ import { ORION_GOLDEN_ARCHITECTURE } from "./architecture/orion-agent-architectu
 import { ORION_GOLDEN_BLUEPRINT } from "./blueprint/orion-golden-blueprint";
 import { buildOrionGoldenAssets } from "./assets/orion-asset-builder";
 import { composeOrionGoldenDeck } from "./composer/orion-deck-composer";
+import { composeOrionClientAuditDeck } from "./composer/orion-client-audit-deck-composer";
 import {
   assembleOrionClientContentFromSections,
   buildOrionClientContent,
@@ -59,7 +60,15 @@ import { getClientAuditSections } from "./sections/orion-section-registry";
 import { inspectOrionGoldenVisualQuality } from "./qa/visual-qa-inspection";
 import { renderOrionGoldenArtifacts } from "./renderer/orion-golden-render-client";
 import { buildOrionGoldenReportSpec } from "./report-spec/orion-report-spec";
+import { buildOrionReportSpecFromClientContent } from "./report-spec/orion-client-content-to-report-spec";
 import type { OrionGoldenQaVerdict } from "./types";
+
+function shouldRenderFromClientContent(): boolean {
+  return (
+    process.env.R10_RENDER_FROM_CLIENT_CONTENT === "1" ||
+    process.env.ORION_CLIENT_AUDIT_MODE === "1"
+  );
+}
 
 function writeSectionBundleArtifacts(outputRoot: string, bundles: Awaited<ReturnType<typeof buildOrionSectionBundles>>, caseId: string, reportRunId: string): void {
   const bundlesDir = join(outputRoot, "section-bundles");
@@ -656,7 +665,8 @@ export async function runR10OrionGoldenE2e(options: {
       }
 
       const contentBrainOnly = process.env.R10_CONTENT_BRAIN_ONLY === "1";
-      if (!contentBrainOnly) {
+      const renderFromClientContent = shouldRenderFromClientContent();
+      if (!contentBrainOnly && !renderFromClientContent) {
         sectionAnalyses = await runOrionGoldenSectionAnalyses({
           packs: gatedPacks,
           subjectName: inventory.subject.fullName,
@@ -673,8 +683,11 @@ export async function runR10OrionGoldenE2e(options: {
       } else {
         writeJson(join(outputRoot, "gpt-section-analyses.json"), {
           deprecated: true,
-          note: "Use section-analyses/ for R10.6",
+          note: renderFromClientContent
+            ? "R10.9 — render uses client-content adapter; legacy gpt-section-analyses skipped"
+            : "Use section-analyses/ for R10.6",
           r10SectionCount: r10SectionAnalyses.length,
+          renderFromClientContent,
         });
         writeJson(join(outputRoot, "executive-synthesis.json"), executiveSynthesisOutput);
       }
@@ -706,9 +719,12 @@ export async function runR10OrionGoldenE2e(options: {
     return { outputRoot, caseId, reportRunId, pageCount: 0, slideCount: 0, verdict, pdfExportMode: "unknown" };
   }
 
-  if (!executive && process.env.R10_CONTENT_BRAIN_ONLY !== "1") throw new Error("executive-synthesis-missing");
+  if (!executive && process.env.R10_CONTENT_BRAIN_ONLY !== "1" && !shouldRenderFromClientContent()) {
+    throw new Error("executive-synthesis-missing");
+  }
 
   const contentBrainOnly = process.env.R10_CONTENT_BRAIN_ONLY === "1";
+  const renderFromClientContent = shouldRenderFromClientContent();
   const postGptJudgmentQa = inspectEvidenceJudgmentQa({
     judgments,
     bundles,
@@ -761,17 +777,41 @@ export async function runR10OrionGoldenE2e(options: {
   const assets = await buildOrionGoldenAssets({ ctx });
   writeJson(join(outputRoot, "report-assets.json"), assets);
 
-  if (!executive) throw new Error("executive-synthesis-missing-for-render");
+  let reportSpec;
+  let deckManifest;
+  let renderSource: "client_content_adapter" | "legacy_report_spec" = "legacy_report_spec";
 
-  const reportSpec = buildOrionGoldenReportSpec({
-    inventory,
-    sectionAnalyses,
-    executive,
-    assets,
-  });
-  writeJson(join(outputRoot, "orion-report-spec.json"), reportSpec);
+  if (renderFromClientContent) {
+    const postReviewContent =
+      clientContentPostReviewFromSections ?? clientContentPreReviewFromSections;
+    if (!postReviewContent) {
+      throw new Error("client-content-missing-for-r10-9-render");
+    }
+    // Prefer post-review; if all PENDING, content still caveats manual-review items
+    reportSpec = buildOrionReportSpecFromClientContent({
+      clientContent: postReviewContent,
+      executiveSynthesis: executiveSynthesisOutput,
+      riskMatrix: sectionDerivedRiskMatrix ?? postReviewContent.riskMatrixSummary,
+      assets,
+      inventoryCounts: inventory.counts,
+      warnings: inventory.warnings,
+    });
+    writeJson(join(outputRoot, "orion-report-spec.from-client-content.json"), reportSpec);
+    writeJson(join(outputRoot, "orion-report-spec.json"), reportSpec);
+    deckManifest = composeOrionClientAuditDeck(reportSpec, assets);
+    renderSource = "client_content_adapter";
+  } else {
+    if (!executive) throw new Error("executive-synthesis-missing-for-render");
+    reportSpec = buildOrionGoldenReportSpec({
+      inventory,
+      sectionAnalyses,
+      executive,
+      assets,
+    });
+    writeJson(join(outputRoot, "orion-report-spec.json"), reportSpec);
+    deckManifest = composeOrionGoldenDeck(reportSpec, assets);
+  }
 
-  const deckManifest = composeOrionGoldenDeck(reportSpec, assets);
   writeJson(join(outputRoot, "final-deck-manifest.json"), deckManifest);
 
   const renderResult = await renderOrionGoldenArtifacts({
@@ -794,10 +834,18 @@ export async function runR10OrionGoldenE2e(options: {
   });
   writeJson(join(outputRoot, "visual-qa-inspection.json"), visual);
 
-  const structureOk =
-    deckManifest.finalSlides.some((s) => s.sectionKey === "executive_summary") &&
-    deckManifest.finalSlides.some((s) => s.sectionKey === "ru_search_results") &&
-    deckManifest.finalSlides.some((s) => s.sectionKey === "compliance_databases");
+  const structureOk = renderFromClientContent
+    ? deckManifest.finalSlides.some((s) => s.sectionKey === "executive_summary") &&
+      deckManifest.finalSlides.some((s) => s.sectionKey === "compliance_risk_matrix") &&
+      deckManifest.finalSlides.some(
+        (s) => s.sectionKey === "manual_review_required" || s.sectionKey === "appendix"
+      ) &&
+      !deckManifest.finalSlides.some((s) =>
+        ["product_overview", "about", "solution_digital_profile"].includes(s.sectionKey)
+      )
+    : deckManifest.finalSlides.some((s) => s.sectionKey === "executive_summary") &&
+      deckManifest.finalSlides.some((s) => s.sectionKey === "ru_search_results") &&
+      deckManifest.finalSlides.some((s) => s.sectionKey === "compliance_databases");
 
   const verdict = deriveVerdict({
     gptBlocked: false,
@@ -819,6 +867,8 @@ export async function runR10OrionGoldenE2e(options: {
     searchResultsUnaccounted: routing.searchResultsUnaccounted,
     gptGeneratedBy: "gpt-5.5",
     executiveAfterSections: true,
+    renderSource,
+    renderFromClientContent,
     evidenceJudgmentVerdict: postGptJudgmentQa.verdict,
     contentQualityVerdict: contentQuality.verdict,
     adminWorkflowVerdict: adminWorkflowQa.verdict,
