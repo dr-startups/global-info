@@ -8,13 +8,17 @@ import type { ResultView, SerpEngine, SerpSnapshotViewModel } from "../serp-snap
 import { riskThemeLabel, type EvidenceRiskTheme, type NormalizedEvidenceV1 } from "./normalized-evidence";
 
 function isHighlighted(ev: NormalizedEvidenceV1): boolean {
+  if (ev.riskTheme === "neutral_profile" || ev.reviewStatus === "excluded_noise") return false;
   return (
     ev.reviewStatus === "official_record_found" ||
-    ev.reviewStatus === "requires_review" ||
     ev.riskTheme === "adverse_media" ||
     ev.riskTheme === "sanctions_watchlist" ||
     ev.riskTheme === "pep" ||
-    ev.riskTheme === "legal_regulatory"
+    ev.riskTheme === "legal_regulatory" ||
+    // Keyword fallback when theme mapping missed nested classification
+    /санкц|sanction|арест|arrest|мошен|fraud|корруп|corrupt|уголов|criminal|компромат|offshore|офшор/i.test(
+      `${ev.title ?? ""} ${ev.snippet ?? ""} ${ev.clientSafeSummary ?? ""}`
+    )
   );
 }
 

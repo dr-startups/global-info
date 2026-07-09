@@ -10,7 +10,7 @@ import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory"
 import type { ExecutiveSynthesisOutput } from "../gpt/orion-executive-synthesis-from-sections";
 import type { SectionDerivedRiskMatrix } from "../sections/orion-risk-matrix-from-sections";
 import { getClientAuditSections } from "../sections/orion-section-registry";
-import { sanitizeOrionGoldenClientText } from "../client/client-text-sanitizer";
+import { sanitizeOrionGoldenClientText, humanizeRiskTheme } from "../client/client-text-sanitizer";
 import { humanizeClientRiskMatrixRow } from "../client/risk-matrix-normalizer";
 import type { OrionGoldenReportSpec, SectionBlock } from "../report-spec/orion-report-spec";
 import {
@@ -109,15 +109,25 @@ function riskClassificationBlob(item: FullEvidenceInventory["items"][number]): s
 function themeLabelOf(item: FullEvidenceInventory["items"][number]): string {
   const rm = item.rawMetadata ?? {};
   const nested = rm.riskClassification;
-  if (typeof rm.themeLabel === "string" && rm.themeLabel.trim()) return rm.themeLabel.trim();
-  if (typeof rm.riskTheme === "string" && rm.riskTheme.trim()) return rm.riskTheme.trim();
-  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+  let raw = "";
+  if (typeof rm.themeLabel === "string" && rm.themeLabel.trim()) raw = rm.themeLabel.trim();
+  else if (typeof rm.riskTheme === "string" && rm.riskTheme.trim()) raw = rm.riskTheme.trim();
+  else if (nested && typeof nested === "object" && !Array.isArray(nested)) {
     const n = nested as Record<string, unknown>;
     const auto = n.auto && typeof n.auto === "object" ? (n.auto as Record<string, unknown>) : null;
-    const fromAuto = String(auto?.theme ?? auto?.classification ?? "").trim();
-    if (fromAuto) return fromAuto;
+    raw = String(auto?.theme ?? auto?.classification ?? "").trim();
   }
-  return String(item.classification ?? "").trim() || "Нежелательная тема";
+  if (!raw) raw = String(item.classification ?? "").trim();
+  if (!raw) return "Нежелательная тема";
+  // Drop internal workflow / dismissed labels from client deck
+  if (
+    /^(dismissed|news|corporate[_\s]?registry|unclassified|biography|neutral|identity|caveated[_\s]?analysis|controversial[_\s]?dual[_\s]?use|appendix[_\s]?only)$/i.test(
+      raw.replace(/\s+/g, "_")
+    )
+  ) {
+    return "";
+  }
+  return humanizeRiskTheme(raw);
 }
 
 function isNoiseSuggestion(query: string): boolean {
@@ -199,9 +209,11 @@ function adverseThemeRows(
       );
     if (!adverseHint) continue;
 
-    const key = sanitizeOrionGoldenClientText(themeLabelOf(item)).replace(/_/g, " ").trim();
-    if (!key || /^(biography|unclassified|neutral|identity)$/i.test(key)) continue;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
+    const key = themeLabelOf(item);
+    if (!key) continue;
+    const clean = sanitizeOrionGoldenClientText(key).replace(/_/g, " ").trim();
+    if (!clean || /^(biography|unclassified|neutral|identity)$/i.test(clean)) continue;
+    counts.set(clean, (counts.get(clean) ?? 0) + 1);
   }
 
   return [...counts.entries()]
@@ -223,33 +235,29 @@ function serpPositionTable(
     if (!matchesRegion(item.region, region)) continue;
     const query = item.query?.trim() || "основной запрос";
     const list = byQuery.get(query) ?? [];
+    const url = String(item.sourceUrl ?? "").slice(0, 90);
+    if (url && list.some((r) => r.url === url)) continue;
     list.push({
       rank: positionOf(item) || list.length + 1,
       domain: domainOf(item.sourceUrl),
       title: truncateAtWordBoundary(item.title, 70),
-      url: String(item.sourceUrl ?? "").slice(0, 90),
+      url: url || "—",
     });
     byQuery.set(query, list);
   }
 
   const tables: Array<{ headers: string[]; rows: string[][] }> = [];
   const sortedQueries = [...byQuery.entries()].sort((a, b) => b[1].length - a[1].length);
-  for (const [query, rows] of sortedQueries.slice(0, 6)) {
+  // Cap to 2 query tables per region — avoid 6 identical narrative pages
+  for (const [, rows] of sortedQueries.slice(0, 2)) {
     const ordered = [...rows]
       .sort((a, b) => a.rank - b.rank)
-      .slice(0, 20)
+      .slice(0, 10)
       .map((r, idx) => ({ ...r, rank: r.rank || idx + 1 }));
     tables.push({
       headers: ["Поз.", "Домен", "Заголовок", "URL"],
-      rows: ordered.map((r) => [
-        String(r.rank),
-        r.domain || "—",
-        r.title,
-        r.url || "—",
-      ]),
+      rows: ordered.map((r) => [String(r.rank), r.domain || "—", r.title, r.url || "—"]),
     });
-    // Keep query visible in first row caption via empty trailing note on title of table consumer.
-    void query;
   }
   return tables;
 }
@@ -260,13 +268,17 @@ function serpTableBullets(
 ): string[] {
   const tables = serpPositionTable(inventory, region);
   const bullets: string[] = [];
+  const seen = new Set<string>();
   for (const table of tables) {
-    for (const row of table.rows.slice(0, 12)) {
+    for (const row of table.rows.slice(0, 10)) {
       const [pos, domain, title, url] = row;
+      const key = (url && url !== "—" ? url : `${domain}|${title}`).toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
       bullets.push(`#${pos} ${domain} — ${title}${url && url !== "—" ? ` (${url})` : ""}`);
     }
   }
-  return bullets.slice(0, 40);
+  return bullets.slice(0, 16);
 }
 
 function searchLinkBullets(
@@ -274,14 +286,20 @@ function searchLinkBullets(
   region: RegionBucket
 ): string[] {
   if (!inventory) return [];
-  return inventory.items
-    .filter((item) => item.evidenceType === "search_result" && matchesRegion(item.region, region))
-    .slice(0, 24)
-    .map((item) => {
-      const domain = domainOf(item.sourceUrl);
-      const url = item.sourceUrl ? ` — ${String(item.sourceUrl).slice(0, 80)}` : "";
-      return `${domain || "источник"}: ${truncateAtWordBoundary(item.title, 90)}${url}`;
-    });
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of inventory.items) {
+    if (item.evidenceType !== "search_result" || !matchesRegion(item.region, region)) continue;
+    const url = String(item.sourceUrl ?? "").toLowerCase();
+    const key = url || `${domainOf(item.sourceUrl)}|${item.title}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const domain = domainOf(item.sourceUrl);
+    const urlSuffix = item.sourceUrl ? ` — ${String(item.sourceUrl).slice(0, 70)}` : "";
+    out.push(`${domain || "источник"}: ${truncateAtWordBoundary(item.title, 90)}${urlSuffix}`);
+    if (out.length >= 12) break;
+  }
+  return out;
 }
 
 function suggestionBullets(
@@ -510,6 +528,15 @@ function blockFromClientSection(
   const region: RegionBucket = section.sectionId.startsWith("3") ? "UAE" : "RU";
 
   let bullets: string[] = [];
+  const gptFindings = section.keyFindings
+    .slice(0, 5)
+    .map((f) =>
+      truncateAtWordBoundary(
+        f.caveat ? `${f.title} — ${f.summary} (${f.caveat})` : `${f.title} — ${f.summary}`,
+        200
+      )
+    );
+
   if (section.sectionId.includes("suggestions") || section.sectionId.includes("related_queries")) {
     const provider = section.sectionId.includes("yandex")
       ? "yandex"
@@ -518,62 +545,52 @@ function blockFromClientSection(
         : undefined;
     const surfaceType = section.sectionId.includes("related") ? "related_query" : "suggestion";
     const fromInventory = suggestionBullets(inventory, subjectName, surfaceType, provider, region);
+    // Lead with GPT findings when present; inventory suggestions as supporting list (capped)
     bullets =
-      fromInventory.length > 0
-        ? fromInventory
-        : section.keyFindings.map((f) =>
-            truncateAtWordBoundary(`${f.title}: ${f.summary}`, 180)
-          );
+      gptFindings.length > 0
+        ? [...gptFindings, ...fromInventory.slice(0, 8)]
+        : fromInventory.length > 0
+          ? fromInventory
+          : [];
   } else if (section.sectionId.includes("undesirable_theme")) {
     const themes = adverseThemeRows(inventory, region);
-    bullets =
-      themes.length > 0
-        ? themes.map((t) => `${t.theme} — ${t.count} материал(ов)`)
-        : section.keyFindings.map((f) => truncateAtWordBoundary(`${f.title}: ${f.summary}`, 180));
+    const themeBullets = themes.map((t) => `${t.theme} — ${t.count} материал(ов)`);
+    bullets = gptFindings.length > 0 ? [...gptFindings, ...themeBullets.slice(0, 4)] : themeBullets;
   } else if (section.sectionId.includes("serp_position") || section.sectionId.includes("search_links")) {
     const fromInventory = section.sectionId.includes("serp_position")
       ? serpTableBullets(inventory, region)
       : searchLinkBullets(inventory, region);
+    // Prefer GPT interpretation; keep a short evidence sample, not a full dump
     bullets =
-      fromInventory.length > 0
-        ? fromInventory
-        : section.keyFindings.map((f) =>
-            truncateAtWordBoundary(
-              f.caveat ? `${f.title} — ${f.summary} (${f.caveat})` : `${f.title} — ${f.summary}`,
-              200
-            )
-          );
+      gptFindings.length > 0
+        ? [...gptFindings, ...fromInventory.slice(0, 6)]
+        : fromInventory.slice(0, 12);
   } else {
-    bullets = section.keyFindings.map((f) =>
-      truncateAtWordBoundary(
-        f.caveat ? `${f.title} — ${f.summary} (${f.caveat})` : `${f.title} — ${f.summary}`,
-        200
-      )
-    );
+    bullets = gptFindings;
     if (bullets.length === 0 && section.narrative) {
       bullets = [truncateAtWordBoundary(section.narrative, 400)];
     }
   }
 
-  bullets = sanitizeClassicBullets(bullets, 220);
+  bullets = sanitizeClassicBullets(bullets, 200);
   const tables = section.sectionId.includes("serp_position")
     ? serpPositionTable(inventory, region)
     : [];
 
   const slideSpecs: SectionBlock["slideSpecs"] = [];
-  if (tables.length > 0) {
-    for (const [tIdx, table] of tables.entries()) {
-      const rowBullets = table.rows.slice(0, perSlide).map((row) => {
-        const [pos, domain, titleText, url] = row;
-        return `#${pos} ${domain} — ${titleText}${url && url !== "—" ? ` · ${url}` : ""}`;
-      });
-      slideSpecs.push({
-        slideKey: `${section.sectionId}-table-${tIdx + 1}`,
-        template,
-        title: tables.length > 1 ? `${title} (${tIdx + 1}/${tables.length})` : title,
-        bullets: rowBullets,
-      });
-    }
+  // Prefer GPT-led bullets; only emit one compact SERP table slide when no GPT findings
+  if (tables.length > 0 && gptFindings.length === 0) {
+    const table = tables[0];
+    const rowBullets = table.rows.slice(0, perSlide).map((row) => {
+      const [pos, domain, titleText, url] = row;
+      return `#${pos} ${domain} — ${titleText}${url && url !== "—" ? ` · ${url}` : ""}`;
+    });
+    slideSpecs.push({
+      slideKey: `${section.sectionId}-table-1`,
+      template,
+      title,
+      bullets: rowBullets,
+    });
   } else {
     const chunks = chunkItems(bullets, perSlide);
     if (chunks.length === 0) {
@@ -584,11 +601,11 @@ function blockFromClientSection(
         bullets: [truncateAtWordBoundary(section.narrative, 400)],
       });
     } else {
-      for (const [idx, chunk] of chunks.entries()) {
+      for (const [idx, chunk] of chunks.slice(0, 3).entries()) {
         slideSpecs.push({
           slideKey: `${section.sectionId}-${idx + 1}`,
           template,
-          title: chunks.length > 1 ? `${title} (${idx + 1}/${chunks.length})` : title,
+          title: chunks.length > 1 ? `${title} (${idx + 1}/${Math.min(chunks.length, 3)})` : title,
           bullets: chunk,
         });
       }

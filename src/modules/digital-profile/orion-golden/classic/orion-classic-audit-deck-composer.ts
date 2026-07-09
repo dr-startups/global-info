@@ -13,17 +13,43 @@ import {
   regionDividerTitle,
 } from "./orion-classic-section-template-map";
 
-function slidesFromBlock(sectionKey: string, block: OrionClassicAuditReportSpec["registrySections"][number]["block"]): OrionGoldenDeckSlide[] {
-  return (block.slideSpecs ?? []).map((spec) => ({
+function slidesFromBlock(
+  sectionKey: string,
+  block: OrionClassicAuditReportSpec["registrySections"][number]["block"]
+): OrionGoldenDeckSlide[] {
+  const specs = block.slideSpecs ?? [];
+  return specs.map((spec, idx) => ({
     slideKey: spec.slideKey,
     sectionKey,
     template: spec.template,
     title: spec.title,
     pageNumber: 0,
-    bullets: spec.bullets?.map((b) => truncateAtWordBoundary(b, 220)),
-    narrative: block.narrative ? truncateAtWordBoundary(block.narrative, 520) : undefined,
-    assetRefs: block.visualAssets,
+    bullets: spec.bullets?.map((b) => truncateAtWordBoundary(b, 200)),
+    // Narrative only on the first slide of a section — avoids repeating the same paragraph N times.
+    narrative:
+      idx === 0 && block.narrative ? truncateAtWordBoundary(block.narrative, 420) : undefined,
+    assetRefs: idx === 0 ? block.visualAssets : undefined,
   }));
+}
+
+function dedupeSerpAssetList(assets: ReportAssetV1[], max: number): ReportAssetV1[] {
+  const seen = new Set<string>();
+  const out: ReportAssetV1[] = [];
+  for (const asset of assets) {
+    const provider = /yandex|яндекс/i.test(`${asset.assetRef} ${asset.title}`) ? "yandex" : "google";
+    const q = (asset.caption ?? asset.title)
+      .toLowerCase()
+      .replace(/^запрос:\s*/i, "")
+      .replace(/^(яндекс|google)\s*[—-]\s*/i, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    const key = `${provider}::${q || asset.assetRef}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(asset);
+    if (out.length >= max) break;
+  }
+  return out;
 }
 
 function commercialSlides(
@@ -105,8 +131,14 @@ export function composeOrionClassicAuditDeck(
   const videoAssets = pickAssets(assets, "video_cards");
   const knowledgeAssets = pickAssets(assets, "knowledge_panel");
 
-  const uaeSerp = serpAssets.filter((a) => /uae|intl|ae_/i.test(a.assetRef));
-  const ruSerp = serpAssets.filter((a) => !uaeSerp.includes(a));
+  const uaeSerp = dedupeSerpAssetList(
+    serpAssets.filter((a) => /uae|intl|ae_/i.test(a.assetRef)),
+    2
+  );
+  const ruSerp = dedupeSerpAssetList(
+    serpAssets.filter((a) => !/uae|intl|ae_/i.test(a.assetRef)),
+    4
+  );
   const uaeImages = imageAssets.filter((a) => /uae|intl/i.test(a.assetRef));
   const ruImages = imageAssets.filter((a) => !uaeImages.includes(a));
   const uaeVideos = videoAssets.filter((a) => /uae|intl/i.test(a.assetRef));

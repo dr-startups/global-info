@@ -134,7 +134,13 @@ export function sanitizeOrionGoldenClientText(text: string): string {
     .replace(/\bcompliance[-/]команд/gi, "комплаенс-команд")
     .replace(/\bcompliance[-/]систем/gi, "комплаенс-систем")
     .replace(/\bcompliance[-/]сигнал/gi, "комплаенс-сигнал")
-    .replace(/\badverse[-/]media\b/gi, THEME_LABELS.adverse_media);
+    .replace(/\badverse[-/]media\b/gi, THEME_LABELS.adverse_media)
+    .replace(/\bCAVEATED[_\s-]?ANALYSIS\b/gi, "анализ с оговоркой")
+    .replace(/\bCONTROVERSIAL[_\s-]?DUAL[_\s-]?USE\b/gi, "спорный / двойной контекст")
+    .replace(/\bAPPENDIX[_\s-]?ONLY\b/gi, "только в приложении")
+    .replace(/\bDISMISSED\b/gi, "снято с рассмотрения")
+    .replace(/\bCORPORATE[_\s-]?REGISTRY\b/gi, "корпоративный реестр")
+    .replace(/\bUNCLASSIFIED\b/gi, "без классификации");
 
   out = out.replace(ENUM_TOKEN_PATTERN, (hit) => {
     const lower = hit.toLowerCase();

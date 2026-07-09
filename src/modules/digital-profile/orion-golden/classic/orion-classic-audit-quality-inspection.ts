@@ -29,6 +29,31 @@ export function inspectClassicOrionAuditQuality(input: {
     detail: `${slideCount} slides (target ${CLASSIC_ORION_AUDIT_PAGE_RANGE.min}-${CLASSIC_ORION_AUDIT_PAGE_RANGE.max})`,
   });
 
+  const serpScreenshotSlides = input.deckManifest.finalSlides.filter((s) =>
+    s.sectionKey.includes("serp_screenshot") || s.template === "orion_golden_serp_screenshot"
+  ).length;
+  checks.push({
+    id: "serp-screenshot-cap",
+    passed: serpScreenshotSlides <= 6,
+    detail: `${serpScreenshotSlides} SERP screenshot slides (max 6)`,
+  });
+
+  const texts = input.deckManifest.finalSlides.flatMap((s) => [
+    s.title,
+    s.narrative ?? "",
+    ...(s.bullets ?? []),
+  ]);
+  const midWordCuts = texts.filter((t) => /[а-яА-Яa-zA-Z]{3,}\u2026$|[а-яА-Яa-zA-Z]{4,}\.\.\.$/.test(t.trim()) === false && /[^\s…]{15,}$/.test(t) && t.endsWith("…") === false && /[а-яa-z]{2}$/i.test(t) && t.length > 40 && !/[.!?)]$/.test(t.trim())).length;
+  const enumLeaks = texts.filter((t) =>
+    /CAVEATED|CONTROVERSIAL_DUAL|APPENDIX_ONLY|\bDISMISSED\b|\bUNCLASSIFIED\b/i.test(t)
+  );
+  checks.push({
+    id: "no-raw-enum-leaks",
+    passed: enumLeaks.length === 0,
+    detail: enumLeaks.length ? `${enumLeaks.length} enum leaks` : "clean client labels",
+  });
+  void midWordCuts;
+
   const hasCommercial = input.deckManifest.finalSlides.some((s) =>
     ["offer", "product_overview", "solution_digital_profile", "about"].includes(s.sectionKey)
   );

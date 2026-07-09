@@ -59,6 +59,20 @@ def _safe(text: object) -> str:
     return val.strip()
 
 
+def _clip_words(text: str, max_chars: int) -> str:
+    val = _safe(text)
+    if len(val) <= max_chars:
+        return val
+    slice_ = val[:max_chars]
+    sp = max(slice_.rfind(" "), slice_.rfind("\u00a0"))
+    if sp > max_chars * 0.45:
+        return slice_[:sp].rstrip() + "…"
+    soft = re.sub(r"[^\s]{1,12}$", "", slice_).rstrip()
+    if len(soft) > max_chars * 0.4:
+        return soft + "…"
+    return slice_.rstrip() + "…"
+
+
 class _Ctx:
     def __init__(self, prs: Presentation, page: int, total: int):
         self.prs = prs
@@ -118,7 +132,7 @@ class _Ctx:
             first = False
             p.space_after = Pt(8)
             r = p.add_run()
-            clipped = chunk[:700]
+            clipped = _clip_words(chunk, 520)
             r.text = clipped
             used_chars += len(clipped)
             r.font.name = FONT
@@ -143,9 +157,7 @@ class _Ctx:
             p.space_after = Pt(10)
             p.line_spacing = 1.15
             r = p.add_run()
-            clipped = _safe(bullet)
-            if len(clipped) > 220:
-                clipped = clipped[:217] + "…"
+            clipped = _clip_words(bullet, 200)
             r.text = f"• {clipped}"
             r.font.name = FONT
             r.font.size = Pt(FS_BODY)
@@ -214,7 +226,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY, FS_SECTION)
         # Narrative card then bullets below — avoid stacking into same region
-        narr = narrative[:480] if narrative else ""
+        narr = _clip_words(narrative, 420) if narrative else ""
         if narr:
             card_h = min(1800000, max(700000, len(narr) * 2200))
             ctx.card(y, h=card_h)
@@ -299,7 +311,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY, FS_SECTION)
         if narrative:
-            y = ctx.body(narrative[:320], y, max_h=520000, color=MUTED_COLOR)
+            y = ctx.body(_clip_words(narrative, 280), y, max_h=520000, color=MUTED_COLOR)
             y = y + 60000
         # Dense SERP / suggestion rows — allow more items, slightly tighter clip
         avail = max(400000, CONTENT_BOTTOM - y)
@@ -314,9 +326,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             p.space_after = Pt(6)
             p.line_spacing = 1.08
             r = p.add_run()
-            clipped = _safe(bullet)
-            if len(clipped) > 160:
-                clipped = clipped[:157] + "…"
+            clipped = _clip_words(bullet, 150)
             r.text = f"• {clipped}"
             r.font.name = FONT
             r.font.size = Pt(11)
@@ -333,9 +343,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     ctx.light_bg()
     y = ctx.title(title, 280000, NAVY, FS_SECTION)
     # Prefer bullets for dense content; keep narrative short to avoid overlap
-    short_narrative = narrative
-    if len(short_narrative) > 700:
-        short_narrative = short_narrative[:697] + "…"
+    short_narrative = _clip_words(narrative, 480) if narrative else ""
     if short_narrative and not bullets:
         ctx.body(short_narrative, y, max_h=CONTENT_BOTTOM - y - 100000)
         return

@@ -8,10 +8,13 @@ export function truncateAtWordBoundary(text: string, maxLen: number): string {
   const clean = sanitizeOrionGoldenClientText(text);
   if (clean.length <= maxLen) return clean;
   const slice = clean.slice(0, maxLen);
-  const lastSpace = slice.lastIndexOf(" ");
-  if (lastSpace > Math.floor(maxLen * 0.55)) {
+  const lastSpace = Math.max(slice.lastIndexOf(" "), slice.lastIndexOf("\u00a0"));
+  if (lastSpace > Math.floor(maxLen * 0.45)) {
     return `${slice.slice(0, lastSpace).trim()}…`;
   }
+  // Prefer cutting before a long trailing token rather than mid-word
+  const soft = slice.replace(/[^\s]{1,12}$/, "").trim();
+  if (soft.length > Math.floor(maxLen * 0.4)) return `${soft}…`;
   return `${slice.trim()}…`;
 }
 
