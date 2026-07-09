@@ -423,14 +423,44 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
     setClassicAuditBusy(true);
     setBanner(null);
     try {
-      const result = await generateOrionClassicAuditReport(caseId, { regenerateContent });
+      let result = await generateOrionClassicAuditReport(caseId, { regenerateContent });
       setClassicAudit(result);
       setBanner({
-        kind: result.ok ? "ok" : "error",
-        text: result.ok
-          ? `ORION Audit сгенерирован: ${result.pageCount} стр., вердикт ${result.verdict}.`
-          : `Генерация завершилась с предупреждениями: ${result.warnings.slice(0, 2).join("; ")}`,
+        kind: "ok",
+        text: "Генерация ORION Audit запущена в фоне. Обычно 3–10 минут — статус обновится ниже.",
       });
+
+      for (let i = 0; i < 120; i += 1) {
+        if (result.status === "completed" || result.status === "failed") break;
+        await new Promise((r) => setTimeout(r, 5000));
+        result = await getOrionClassicAuditReportStatus(caseId);
+        setClassicAudit(result);
+      }
+
+      if (result.status === "completed") {
+        const hasPdf = Boolean(result.artifacts.clientPdf.available);
+        setBanner({
+          kind: result.verdict === "PASS" || hasPdf ? "ok" : "error",
+          text:
+            result.verdict === "PASS"
+              ? `ORION Audit готов: ${result.pageCount} стр.`
+              : hasPdf
+                ? `Отчёт собран (${result.pageCount} стр.), QA: ${result.verdict}. PDF доступен для скачивания.`
+                : `Генерация завершилась: ${result.verdict}. ${result.warnings.slice(0, 2).join("; ")}`,
+        });
+      } else if (result.status === "running") {
+        setBanner({
+          kind: "error",
+          text: "Генерация ещё идёт. Обновите страницу через минуту.",
+        });
+      } else {
+        setBanner({
+          kind: "error",
+          text:
+            result.warnings[0] ||
+            `Генерация не удалась (${result.verdict ?? "FAIL"}). Проверьте HTTP Logs.`,
+        });
+      }
     } catch (err) {
       const msg =
         err instanceof DigitalProfileApiError
@@ -766,7 +796,9 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
             </button>
           </div>
           <Notice>
-            Пересборка обновляет pre/post-review JSON/MD. PDF/PPTX renderer не вызывается.
+            Пересборка обновляет pre/post-review JSON/MD по текущим решениям аналитика. PDF не создаёт —
+            для PDF нажмите «Сгенерировать ORION Audit» ниже. Пока все 160 пунктов PENDING, post-review почти
+            совпадает с pre-review (это нормально).
           </Notice>
           <div className="dp-kv">
             <div>

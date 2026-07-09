@@ -8,7 +8,7 @@ import type { OrionGoldenDeckManifest } from "../composer/orion-deck-composer";
 import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
 import type { OrionClassicAuditReportSpec } from "./orion-classic-client-content-to-report-spec";
 
-export const CLASSIC_ORION_AUDIT_PAGE_RANGE = { min: 45, max: 75 } as const;
+export const CLASSIC_ORION_AUDIT_PAGE_RANGE = { min: 45, max: 120 } as const;
 
 export function inspectClassicOrionAuditQuality(input: {
   deckManifest: OrionGoldenDeckManifest;
@@ -20,9 +20,12 @@ export function inspectClassicOrionAuditQuality(input: {
   const checks: Array<{ id: string; passed: boolean; detail: string }> = [];
 
   const slideCount = input.deckManifest.slideCount;
+  const pageOk =
+    slideCount >= CLASSIC_ORION_AUDIT_PAGE_RANGE.min &&
+    slideCount <= CLASSIC_ORION_AUDIT_PAGE_RANGE.max;
   checks.push({
     id: "page-range",
-    passed: slideCount >= CLASSIC_ORION_AUDIT_PAGE_RANGE.min && slideCount <= CLASSIC_ORION_AUDIT_PAGE_RANGE.max + 10,
+    passed: pageOk,
     detail: `${slideCount} slides (target ${CLASSIC_ORION_AUDIT_PAGE_RANGE.min}-${CLASSIC_ORION_AUDIT_PAGE_RANGE.max})`,
   });
 

@@ -18,6 +18,8 @@ import {
 } from "@/modules/digital-profile/services/orion-classic-audit-report-service";
 
 export const dynamic = "force-dynamic";
+/** Classic audit render can take several minutes. */
+export const maxDuration = 300;
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -31,11 +33,11 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   }
 
   const body = (await req.json().catch(() => ({}))) as { regenerateContent?: boolean };
-  const summary = await enqueueOrionClassicAuditReport({
+  const summary = enqueueOrionClassicAuditReport({
     caseId: id,
     regenerateContent: Boolean(body.regenerateContent),
   });
-  return jsonOk(summary, summary.status === "running" ? 202 : 200);
+  return jsonOk(summary, 202);
 });
 
 export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {

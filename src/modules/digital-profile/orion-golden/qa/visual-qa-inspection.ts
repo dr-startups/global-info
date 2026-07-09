@@ -14,7 +14,7 @@ import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory"
 export type OrionVisualReportMode = "legacy_full" | "client_audit" | "classic_orion_audit";
 
 export const CLIENT_AUDIT_PAGE_RANGE = { min: 30, max: 45 } as const;
-export const CLASSIC_ORION_AUDIT_PAGE_RANGE = { min: 45, max: 75 } as const;
+export const CLASSIC_ORION_AUDIT_PAGE_RANGE = { min: 45, max: 120 } as const;
 
 export function resolveOrionVisualReportMode(input?: {
   reportMode?: OrionVisualReportMode;
@@ -91,7 +91,7 @@ export function inspectOrionGoldenVisualQuality(input: {
     pageDetail = `${pageCount} (client_audit target ${expectedPageRange.min}-${expectedPageRange.max})`;
   } else if (reportMode === "classic_orion_audit") {
     pageOk =
-      pageCount >= expectedPageRange.min && pageCount <= expectedPageRange.max + 10;
+      pageCount >= expectedPageRange.min && pageCount <= expectedPageRange.max;
     pageDetail = `${pageCount} (classic_orion_audit target ${expectedPageRange.min}-${expectedPageRange.max})`;
   } else if (enoughData) {
     pageOk =

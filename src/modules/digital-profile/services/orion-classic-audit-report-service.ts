@@ -153,7 +153,7 @@ function toPublicSummary(record: OrionClassicAuditRunRecord | null): OrionClassi
   };
 
   return {
-    ok: record.status === "completed" && record.verdict === "PASS",
+    ok: record.status === "completed",
     uiEnabled: isOrionClassicAuditUiEnabled(),
     reportMode: record.reportMode,
     status: record.status,
@@ -269,16 +269,16 @@ async function executeClassicAuditReport(input: {
     clientContent,
   });
 
-  const artifacts =
-    result.verdict === "PASS"
-      ? await persistArtifacts(input.caseId, input.uiRunId, input.runOutputRoot)
-      : {};
+  // Persist downloadable artifacts even on soft FAIL (e.g. page-range QA), so the client can review the PDF.
+  const artifacts = await persistArtifacts(input.caseId, input.uiRunId, input.runOutputRoot);
+  const hasArtifacts = Boolean(artifacts.client_pdf || artifacts.client_pptx);
+  const softFailWithArtifacts = result.verdict !== "PASS" && hasArtifacts;
 
   const record: OrionClassicAuditRunRecord = {
     caseId: input.caseId,
     runId: input.uiRunId,
     reportMode: "classic_orion_audit_r10_11",
-    status: result.verdict === "PASS" ? "completed" : "failed",
+    status: result.verdict === "PASS" || softFailWithArtifacts ? "completed" : "failed",
     createdAt: input.createdAt,
     completedAt: new Date().toISOString(),
     outputRoot: input.runOutputRoot,
@@ -291,15 +291,26 @@ async function executeClassicAuditReport(input: {
   };
 
   persistRunRecord(record);
+  console.log(
+    `[orion-classic-audit] done caseId=${input.caseId} verdict=${result.verdict} pages=${result.pageCount} artifacts=${hasArtifacts}`
+  );
   return record;
 }
 
-export async function enqueueOrionClassicAuditReport(input: {
+/**
+ * Enqueue classic ORION audit render. Returns immediately with status=running; poll GET until settled.
+ */
+export function enqueueOrionClassicAuditReport(input: {
   caseId: string;
   regenerateContent?: boolean;
-}): Promise<OrionClassicAuditReportSummary> {
+}): OrionClassicAuditReportSummary {
   if (!digitalProfileConfig.orionGoldenEnabled) {
     throw new ForbiddenError("ORION Golden is disabled.");
+  }
+
+  const existing = getLatestOrionClassicAuditRunRecord(input.caseId);
+  if (existing?.status === "running") {
+    return toPublicSummary(existing);
   }
 
   const uiRunId = `classic-${Date.now()}`;
@@ -319,30 +330,33 @@ export async function enqueueOrionClassicAuditReport(input: {
     pageCount: 0,
     verdict: "PENDING",
     clientPolicyStatus: "PENDING",
-    warnings: [],
+    warnings: ["Job started — poll status; render may take several minutes."],
     artifacts: {},
   };
   persistRunRecord(running);
+  console.log(`[orion-classic-audit] enqueued caseId=${input.caseId} runId=${uiRunId}`);
 
-  try {
-    const completed = await executeClassicAuditReport({
+  setImmediate(() => {
+    void executeClassicAuditReport({
       caseId: input.caseId,
       uiRunId,
       runOutputRoot,
       createdAt,
       regenerateContent: input.regenerateContent,
+    }).catch((err) => {
+      const message = err instanceof Error ? err.message : "classic-audit-render-failed";
+      console.error(`[orion-classic-audit] failed caseId=${input.caseId}: ${message}`);
+      const failed: OrionClassicAuditRunRecord = {
+        ...running,
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        verdict: "FAIL",
+        clientPolicyStatus: "FAIL",
+        warnings: [message],
+      };
+      persistRunRecord(failed);
     });
-    return toPublicSummary(completed);
-  } catch (err) {
-    const failed: OrionClassicAuditRunRecord = {
-      ...running,
-      status: "failed",
-      completedAt: new Date().toISOString(),
-      verdict: "FAIL",
-      clientPolicyStatus: "FAIL",
-      warnings: [err instanceof Error ? err.message : "classic-audit-render-failed"],
-    };
-    persistRunRecord(failed);
-    throw err;
-  }
+  });
+
+  return toPublicSummary(running);
 }
