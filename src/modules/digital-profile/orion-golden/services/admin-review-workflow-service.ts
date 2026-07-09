@@ -8,6 +8,7 @@ import { join } from "node:path";
 import {
   ORION_GOLDEN_QA_STORAGE_ROOT,
   adminReviewDecisionsPath,
+  caseScopedArtifactRoot,
   ensureAdminReviewDecisions,
   loadAdminReviewDecisions,
 } from "../evidence/admin-review-decision-store";
@@ -260,10 +261,10 @@ export function regenerateClientContentAfterReview(caseId: string): {
     postReview,
     preReviewMarkdown: renderOrionClientContentMarkdown(preReview),
     postReviewMarkdown: renderOrionClientContentMarkdown(postReview),
-    // Decisions store lives in parallel QA root — write regenerated content there
-    artifactRoot: ORION_GOLDEN_QA_STORAGE_ROOT,
-    generatedAt,
-  };
+  // Decisions store is case-scoped under ORION_GOLDEN_QA_STORAGE_ROOT/cases/<caseId>
+  artifactRoot: caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId),
+  generatedAt,
+};
 }
 
 export function persistRegeneratedClientContent(caseId: string): {

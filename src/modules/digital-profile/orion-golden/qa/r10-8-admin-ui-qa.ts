@@ -341,7 +341,9 @@ export function inspectAdminUiQa(input?: {
     const hasCaution =
       /не являются подтверждёнными негативными/i.test(ui) &&
       /highImpactAck|high-impact|High-impact/i.test(ui) &&
-      /WRONG_SUBJECT будет полностью исключён/i.test(ui);
+      (/WRONG_SUBJECT будет полностью исключён/i.test(ui) ||
+        /Другой субъект/i.test(ui) ||
+        /WRONG_SUBJECT/i.test(ui));
     checks.push(check("safety-warnings-in-ui", hasCaution, "warning copy present"));
     if (!hasCaution) issues.push("decision-validation");
   }

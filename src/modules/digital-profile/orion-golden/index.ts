@@ -25,12 +25,16 @@ export * from "./evidence/admin-review-decision";
 export {
   ORION_GOLDEN_QA_STORAGE_ROOT,
   adminReviewDecisionsPath,
+  caseScopedArtifactRoot,
+  sanitizeCaseIdForPath,
   loadAdminReviewDecisions,
   saveAdminReviewDecisions,
   ensureAdminReviewDecisions,
   applyAdminReviewDecision,
   saveAdminReviewSampleFixture,
 } from "./evidence/admin-review-decision-store";
+export * from "./auth/orion-admin-auth";
+export * from "./qa/r10-10a-admin-auth-qa";
 export * from "./evidence/apply-admin-decisions-to-judgments";
 export * from "./evidence/admin-review-sample-fixture";
 export * from "./services/admin-review-workflow-service";

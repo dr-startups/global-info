@@ -3,11 +3,12 @@
  * Preserves decision history in a sidecar history file; active decisions remain in admin-review-decisions.json.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AdminReviewDecision, AdminReviewDecisionSet } from "./admin-review-decision";
 import {
   ORION_GOLDEN_QA_STORAGE_ROOT,
+  caseScopedArtifactRoot,
   loadAdminReviewDecisions,
   saveAdminReviewDecisions,
 } from "./admin-review-decision-store";
@@ -27,22 +28,33 @@ type HistoryFile = {
 export type ArtifactAdminReviewDecisionRepositoryOptions = {
   /** Override storage root (for isolated QA). Default: ORION_GOLDEN_QA_STORAGE_ROOT */
   artifactRoot?: string;
+  /**
+   * When true (default for production artifact mode), store under cases/<caseId>/.
+   * Set false only for isolated single-case QA roots that already are case-specific.
+   */
+  caseScoped?: boolean;
 };
 
 export class ArtifactAdminReviewDecisionRepository implements AdminReviewDecisionRepository {
   readonly mode = "artifact" as const;
   private readonly root: string;
+  private readonly caseScoped: boolean;
 
   constructor(options?: ArtifactAdminReviewDecisionRepositoryOptions) {
     this.root = options?.artifactRoot ?? ORION_GOLDEN_QA_STORAGE_ROOT;
+    this.caseScoped = options?.caseScoped ?? this.root === ORION_GOLDEN_QA_STORAGE_ROOT;
   }
 
-  private decisionsPath(): string {
-    return join(this.root, "admin-review-decisions.json");
+  private rootForCase(caseId: string): string {
+    return this.caseScoped ? caseScopedArtifactRoot(this.root, caseId) : this.root;
   }
 
-  private historyPath(): string {
-    return join(this.root, "admin-review-decision-history.json");
+  private decisionsPath(caseId: string): string {
+    return join(this.rootForCase(caseId), "admin-review-decisions.json");
+  }
+
+  private historyPath(caseId: string): string {
+    return join(this.rootForCase(caseId), "admin-review-decision-history.json");
   }
 
   private writeJsonAtomic(path: string, value: unknown): void {
@@ -54,7 +66,7 @@ export class ArtifactAdminReviewDecisionRepository implements AdminReviewDecisio
     if (this.root === ORION_GOLDEN_QA_STORAGE_ROOT) {
       return loadAdminReviewDecisions(caseId);
     }
-    const path = this.decisionsPath();
+    const path = this.decisionsPath(caseId);
     if (!existsSync(path)) return null;
     const raw = JSON.parse(readFileSync(path, "utf-8")) as AdminReviewDecisionSet;
     if (raw.caseId !== caseId) {
@@ -73,7 +85,7 @@ export class ArtifactAdminReviewDecisionRepository implements AdminReviewDecisio
       saveAdminReviewDecisions(caseId, decisionSet);
       return;
     }
-    this.writeJsonAtomic(this.decisionsPath(), {
+    this.writeJsonAtomic(this.decisionsPath(caseId), {
       ...decisionSet,
       version: "r10-5-admin-review-decisions-v1",
       caseId,
@@ -82,24 +94,25 @@ export class ArtifactAdminReviewDecisionRepository implements AdminReviewDecisio
     });
   }
 
-  private loadFullHistory(): HistoryFile {
-    const path = this.historyPath();
+  private loadFullHistory(caseId: string): HistoryFile {
+    const path = this.historyPath(caseId);
     if (!existsSync(path)) {
-      return { version: "r10-8b-admin-review-decision-history-v1", caseId: "", records: [] };
+      return { version: "r10-8b-admin-review-decision-history-v1", caseId, records: [] };
     }
     const raw = JSON.parse(readFileSync(path, "utf-8")) as HistoryFile;
     return {
       version: "r10-8b-admin-review-decision-history-v1",
-      caseId: raw.caseId ?? "",
-      records: raw.records ?? [],
+      caseId: raw.caseId || caseId,
+      records: (raw.records ?? []).filter((r) => r.caseId === caseId || !r.caseId),
     };
   }
 
-  private saveFullHistory(records: AdminReviewDecisionRecord[]): void {
-    this.writeJsonAtomic(this.historyPath(), {
+  private saveFullHistory(caseId: string, records: AdminReviewDecisionRecord[]): void {
+    this.writeJsonAtomic(this.historyPath(caseId), {
       version: "r10-8b-admin-review-decision-history-v1",
+      caseId,
       updatedAt: new Date().toISOString(),
-      records,
+      records: records.filter((r) => r.caseId === caseId),
     });
   }
 
@@ -153,7 +166,7 @@ export class ArtifactAdminReviewDecisionRepository implements AdminReviewDecisio
   }
 
   async listDecisions(caseId: string): Promise<AdminReviewDecisionRecord[]> {
-    const full = this.loadFullHistory();
+    const full = this.loadFullHistory(caseId);
     const activeFromHistory = full.records.filter((r) => r.caseId === caseId && r.isActive);
     const legacy = this.loadLegacySet(caseId);
     if (activeFromHistory.length === 0) {
@@ -173,7 +186,7 @@ export class ArtifactAdminReviewDecisionRepository implements AdminReviewDecisio
     caseId: string,
     evidenceId: string
   ): Promise<AdminReviewDecisionRecord | null> {
-    const full = this.loadFullHistory();
+    const full = this.loadFullHistory(caseId);
     const fromHistory = full.records
       .filter((r) => r.caseId === caseId && r.evidenceId === evidenceId && r.isActive)
       .sort((a, b) => b.decisionVersion - a.decisionVersion)[0];
@@ -192,7 +205,7 @@ export class ArtifactAdminReviewDecisionRepository implements AdminReviewDecisio
     caseId: string,
     evidenceId: string
   ): Promise<AdminReviewDecisionRecord[]> {
-    const full = this.loadFullHistory();
+    const full = this.loadFullHistory(caseId);
     const rows = full.records
       .filter((r) => r.caseId === caseId && r.evidenceId === evidenceId)
       .sort((a, b) => b.decisionVersion - a.decisionVersion);
@@ -208,9 +221,9 @@ export class ArtifactAdminReviewDecisionRepository implements AdminReviewDecisio
     decision: SaveAdminReviewDecisionInput
   ): Promise<AdminReviewDecisionRecord> {
     const now = new Date().toISOString();
-    const full = this.loadFullHistory();
+    const full = this.loadFullHistory(caseId);
     const caseRecords = full.records.filter((r) => r.caseId === caseId);
-    const otherRecords = full.records.filter((r) => r.caseId !== caseId);
+    const otherRecords: AdminReviewDecisionRecord[] = [];
 
     const previousActive = caseRecords
       .filter((r) => r.evidenceId === evidenceId && r.isActive)
@@ -265,7 +278,7 @@ export class ArtifactAdminReviewDecisionRepository implements AdminReviewDecisio
     };
 
     caseRecords.push(next);
-    this.saveFullHistory([...otherRecords, ...caseRecords]);
+    this.saveFullHistory(caseId, [...otherRecords, ...caseRecords]);
 
     const activeRecords = caseRecords.filter((r) => r.isActive);
     const legacy = this.loadLegacySet(caseId);
@@ -281,15 +294,42 @@ export class ArtifactAdminReviewDecisionRepository implements AdminReviewDecisio
   }
 
   async deactivateDecision(decisionId: string): Promise<AdminReviewDecisionRecord | null> {
-    const full = this.loadFullHistory();
-    const idx = full.records.findIndex((r) => r.id === decisionId);
-    if (idx < 0) return null;
-    const now = new Date().toISOString();
-    const target = full.records[idx];
-    full.records[idx] = { ...target, isActive: false, updatedAt: now };
-    this.saveFullHistory(full.records);
-    const activeForCase = full.records.filter((r) => r.caseId === target.caseId && r.isActive);
-    this.syncActiveSet(target.caseId, activeForCase);
-    return full.records[idx];
+    // Decision ids are unique; scan known case roots is not available — require caseId in id prefix
+    // Fallback: search under default root cases/ directories is expensive; keep history lookup by scanning
+    // the decision id's embedded case is not guaranteed. Use shared scan of case folders only when
+    // caseScoped; otherwise single history file.
+    if (!this.caseScoped) {
+      const path = join(this.root, "admin-review-decision-history.json");
+      if (!existsSync(path)) return null;
+      const full = JSON.parse(readFileSync(path, "utf-8")) as HistoryFile;
+      const idx = (full.records ?? []).findIndex((r) => r.id === decisionId);
+      if (idx < 0) return null;
+      const now = new Date().toISOString();
+      const target = full.records[idx];
+      full.records[idx] = { ...target, isActive: false, updatedAt: now };
+      this.saveFullHistory(target.caseId, full.records.filter((r) => r.caseId === target.caseId));
+      const activeForCase = full.records.filter((r) => r.caseId === target.caseId && r.isActive);
+      this.syncActiveSet(target.caseId, activeForCase);
+      return full.records[idx];
+    }
+
+    // Case-scoped: decision id alone is insufficient without caseId — return null if not found
+    // in a lightweight scan of cases/*/history (bounded).
+    const casesDir = join(this.root, "cases");
+    if (!existsSync(casesDir)) return null;
+    for (const entry of readdirSync(casesDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const full = this.loadFullHistory(entry.name);
+      const idx = full.records.findIndex((r) => r.id === decisionId);
+      if (idx < 0) continue;
+      const now = new Date().toISOString();
+      const target = full.records[idx];
+      full.records[idx] = { ...target, isActive: false, updatedAt: now };
+      this.saveFullHistory(target.caseId, full.records);
+      const activeForCase = full.records.filter((r) => r.isActive);
+      this.syncActiveSet(target.caseId, activeForCase);
+      return full.records[idx];
+    }
+    return null;
   }
 }

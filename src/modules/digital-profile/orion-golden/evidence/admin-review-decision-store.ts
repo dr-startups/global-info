@@ -1,9 +1,10 @@
 /**
- * R10.5 — Artifact-backed admin review decision store.
+ * R10.5 / R10.10a — Artifact-backed admin review decision store.
+ * Decisions are case-scoped under cases/<safeCaseId>/ to prevent cross-case bleed.
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import type { ManualReviewQueue } from "./manual-review-queue";
 import type { EvidenceJudgment } from "./evidence-judgment";
 import {
@@ -19,12 +20,44 @@ export const ORION_GOLDEN_QA_STORAGE_ROOT = join(
   "qa-r10-orion-golden-parallel"
 );
 
-export function adminReviewDecisionsPath(_caseId: string): string {
-  return join(ORION_GOLDEN_QA_STORAGE_ROOT, "admin-review-decisions.json");
+/** Sanitize caseId for filesystem use; reject path traversal. */
+export function sanitizeCaseIdForPath(caseId: string): string {
+  const trimmed = caseId.trim();
+  if (!trimmed) throw new Error("invalid-case-id");
+  if (trimmed.includes("..") || trimmed.includes("/") || trimmed.includes("\\") || trimmed.includes("\0")) {
+    throw new Error("invalid-case-id");
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(trimmed)) {
+    throw new Error("invalid-case-id");
+  }
+  return trimmed;
 }
 
-export function adminReviewDecisionsSamplePath(_caseId: string): string {
-  return join(ORION_GOLDEN_QA_STORAGE_ROOT, "admin-review-decisions.sample.json");
+/** Case-scoped artifact directory under the given root. */
+export function caseScopedArtifactRoot(root: string, caseId: string): string {
+  const safe = sanitizeCaseIdForPath(caseId);
+  const resolvedRoot = resolve(root);
+  const caseRoot = resolve(join(resolvedRoot, "cases", safe));
+  if (!caseRoot.startsWith(resolvedRoot + sep) && caseRoot !== resolvedRoot) {
+    throw new Error("invalid-case-id");
+  }
+  return caseRoot;
+}
+
+export function adminReviewDecisionsPath(caseId: string): string {
+  return join(caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId), "admin-review-decisions.json");
+}
+
+export function adminReviewDecisionsSamplePath(caseId: string): string {
+  return join(
+    caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId),
+    "admin-review-decisions.sample.json"
+  );
+}
+
+/** Legacy shared path (pre-R10.10a) — used only for one-time read migration. */
+function legacySharedDecisionsPath(): string {
+  return join(ORION_GOLDEN_QA_STORAGE_ROOT, "admin-review-decisions.json");
 }
 
 function writeJsonAtomic(path: string, value: unknown): void {
@@ -56,10 +89,8 @@ export function buildPendingDecisionSet(input: {
   };
 }
 
-export function loadAdminReviewDecisions(caseId: string): AdminReviewDecisionSet | null {
-  const path = adminReviewDecisionsPath(caseId);
+function readDecisionSetAt(path: string, caseId: string): AdminReviewDecisionSet | null {
   if (!existsSync(path)) return null;
-
   const raw = JSON.parse(readFileSync(path, "utf-8")) as AdminReviewDecisionSet;
   if (raw.caseId !== caseId) {
     return {
@@ -70,6 +101,19 @@ export function loadAdminReviewDecisions(caseId: string): AdminReviewDecisionSet
     };
   }
   return raw;
+}
+
+export function loadAdminReviewDecisions(caseId: string): AdminReviewDecisionSet | null {
+  const scoped = readDecisionSetAt(adminReviewDecisionsPath(caseId), caseId);
+  if (scoped) return scoped;
+
+  // One-time compatibility: if legacy shared file matches this caseId, use it
+  // (do not write until save — avoids cross-case bleed on read of other cases).
+  const legacy = readDecisionSetAt(legacySharedDecisionsPath(), caseId);
+  if (legacy && legacy.caseId === caseId && (legacy.decisions?.length ?? 0) > 0) {
+    return legacy;
+  }
+  return null;
 }
 
 export function saveAdminReviewDecisions(caseId: string, decisionSet: AdminReviewDecisionSet): void {
@@ -92,6 +136,10 @@ export function ensureAdminReviewDecisions(input: {
 }): AdminReviewDecisionSet {
   const existing = loadAdminReviewDecisions(input.caseId);
   if (existing && existing.decisions.length > 0 && !existing.qaSampleOnly) {
+    // Persist into case-scoped path if still only on legacy shared root
+    if (!existsSync(adminReviewDecisionsPath(input.caseId))) {
+      saveAdminReviewDecisions(input.caseId, existing);
+    }
     return existing;
   }
 

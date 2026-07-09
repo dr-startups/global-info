@@ -831,6 +831,7 @@ export async function runR10OrionGoldenE2e(options: {
     deckManifest,
     inventory,
     pdfExportMode: renderResult.pdfExportMode,
+    reportMode: renderFromClientContent ? "client_audit" : "legacy_full",
   });
   writeJson(join(outputRoot, "visual-qa-inspection.json"), visual);
 

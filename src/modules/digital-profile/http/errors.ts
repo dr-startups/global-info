@@ -122,6 +122,29 @@ export function normalizeError(err: unknown): AppError {
     if (code === "P2025") return new NotFoundError();
   }
 
+  // R10.10a — map known ORION admin workflow missing-resource errors to 404.
+  if (err instanceof Error) {
+    const msg = err.message;
+    if (
+      msg === "manual-review-queue-missing" ||
+      msg === "manual-review-queue-case-mismatch" ||
+      msg === "evidence-judgment-inspection-missing" ||
+      msg === "evidence-bundles-missing" ||
+      msg === "evidence-bundles-case-mismatch" ||
+      msg === "invalid-case-id" ||
+      msg.startsWith("manual-review-item-not-found:") ||
+      msg.startsWith("admin-review-decision-case-mismatch:")
+    ) {
+      return new NotFoundError(
+        msg.startsWith("manual-review-item-not-found:")
+          ? "Evidence not found"
+          : msg === "invalid-case-id"
+            ? "Invalid case id"
+            : "Case artifacts not found"
+      );
+    }
+  }
+
   // Unexpected: log server-side, return generic message.
   console.error("[digital-profile] Unhandled error:", err);
   return new AppError("INTERNAL_ERROR", 500, "Internal server error");
