@@ -15,6 +15,9 @@ import {
   getOrionManualReviewQueue,
   listOrionAdminReviewDecisions,
   regenerateOrionClientContentAfterReview,
+  generateOrionClassicAuditReport,
+  getOrionClassicAuditReportStatus,
+  type OrionClassicAuditReportSummary,
   submitOrionAdminReviewDecision,
   type AdminReviewStatus,
   type AdminReviewDecisionSetDto,
@@ -94,6 +97,8 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
   const [banner, setBanner] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [regenResult, setRegenResult] = useState<RegenerateClientContentResult | null>(null);
   const [regenBusy, setRegenBusy] = useState(false);
+  const [classicAudit, setClassicAudit] = useState<OrionClassicAuditReportSummary | null>(null);
+  const [classicAuditBusy, setClassicAuditBusy] = useState(false);
   const [lastRegenAt, setLastRegenAt] = useState<string | null>(null);
 
   // Filters
@@ -129,14 +134,16 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const [c, q, d] = await Promise.all([
+      const [c, q, d, classicStatus] = await Promise.all([
         getCase(caseId),
         getOrionManualReviewQueue(caseId),
         listOrionAdminReviewDecisions(caseId).catch(() => null),
+        getOrionClassicAuditReportStatus(caseId).catch(() => null),
       ]);
       setCaseDetail(c);
       setQueue(q);
       if (d) setDecisions(d);
+      if (classicStatus) setClassicAudit(classicStatus);
     } catch (err) {
       const msg =
         err instanceof DigitalProfileApiError
@@ -404,6 +411,32 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
     }
   };
 
+  const generateClassicAudit = async (regenerateContent: boolean) => {
+    if (!canDecide) return;
+    setClassicAuditBusy(true);
+    setBanner(null);
+    try {
+      const result = await generateOrionClassicAuditReport(caseId, { regenerateContent });
+      setClassicAudit(result);
+      setBanner({
+        kind: result.ok ? "ok" : "error",
+        text: result.ok
+          ? `ORION Audit сгенерирован: ${result.pageCount} стр., вердикт ${result.verdict}.`
+          : `Генерация завершилась с предупреждениями: ${result.warnings.slice(0, 2).join("; ")}`,
+      });
+    } catch (err) {
+      const msg =
+        err instanceof DigitalProfileApiError
+          ? `${err.code}: ${err.message}`
+          : err instanceof Error
+            ? err.message
+            : "Ошибка генерации ORION Audit";
+      setBanner({ kind: "error", text: msg });
+    } finally {
+      setClassicAuditBusy(false);
+    }
+  };
+
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -648,6 +681,64 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
               </>
             ) : null}
           </div>
+        </div>
+      </Card>
+
+      <Card data-testid="classic-audit-panel">
+        <div className="dp-stack" style={{ gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <strong>ORION Audit (полный отчёт)</strong>
+            {canDecide ? (
+              <>
+                <button
+                  type="button"
+                  className="dp-btn dp-btn-primary"
+                  disabled={classicAuditBusy}
+                  onClick={() => void generateClassicAudit(false)}
+                >
+                  {classicAuditBusy ? "Генерация…" : "Сгенерировать ORION Audit"}
+                </button>
+                <button
+                  type="button"
+                  className="dp-btn"
+                  disabled={classicAuditBusy}
+                  onClick={() => void generateClassicAudit(true)}
+                >
+                  Пересобрать контент + PDF
+                </button>
+              </>
+            ) : (
+              <span className="dp-muted">Нужен risk.review для генерации отчёта</span>
+            )}
+          </div>
+          <Notice>
+            Полный клиентский аудит по структуре ORION (~60+ стр.): резюме, RU/UAE, подсказки, compliance-базы и
+            коммерческое предложение. Требует post-review контент.
+          </Notice>
+          {classicAudit ? (
+            <div className="dp-kv">
+              <div>
+                <span className="dp-muted">Статус</span>
+                <div>
+                  {classicAudit.status} · {classicAudit.pageCount} стр. · {classicAudit.verdict ?? "—"}
+                </div>
+              </div>
+              {classicAudit.artifacts.clientPdf.available && classicAudit.artifacts.clientPdf.downloadUrl ? (
+                <div>
+                  <a className="dp-btn" href={classicAudit.artifacts.clientPdf.downloadUrl}>
+                    Скачать PDF
+                  </a>
+                </div>
+              ) : null}
+              {classicAudit.artifacts.clientPptx.available && classicAudit.artifacts.clientPptx.downloadUrl ? (
+                <div>
+                  <a className="dp-btn" href={classicAudit.artifacts.clientPptx.downloadUrl}>
+                    Скачать PPTX
+                  </a>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </Card>
 

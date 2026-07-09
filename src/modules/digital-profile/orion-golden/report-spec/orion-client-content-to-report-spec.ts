@@ -192,7 +192,7 @@ function buildExecutiveFromClient(
   };
 }
 
-function buildManualReviewBlock(client: OrionClientContent): SectionBlock {
+export function buildManualReviewBlock(client: OrionClientContent): SectionBlock {
   const intro =
     client.manualReviewSection?.intro ||
     "Следующие материалы требуют ручной проверки и не являются подтверждёнными негативными выводами.";
@@ -271,7 +271,7 @@ function buildManualReviewBlock(client: OrionClientContent): SectionBlock {
   };
 }
 
-function buildAppendixBlock(client: OrionClientContent): SectionBlock {
+export function buildAppendixBlock(client: OrionClientContent): SectionBlock {
   const appendix = client.appendixFindings ?? [];
   const limitations = client.limitations ?? [];
   const clusters = client.evidenceClusters ?? [];

@@ -65,6 +65,17 @@ def _safe(text: object) -> str:
     return val.strip()
 
 
+def _truncate_at_word(text: str, max_len: int) -> str:
+    safe = _safe(text)
+    if len(safe) <= max_len:
+        return safe
+    clipped = safe[:max_len]
+    last_space = clipped.rfind(" ")
+    if last_space > int(max_len * 0.55):
+        return clipped[:last_space].rstrip() + "…"
+    return clipped.rstrip() + "…"
+
+
 def _risk_palette(level: str) -> tuple[RGBColor, RGBColor, str]:
     lvl = (level or "unknown").lower()
     if lvl == "high":
@@ -162,7 +173,7 @@ class _Ctx:
         r.font.color.rgb = fg
 
     def labeled_block(self, label: str, text: str, y: int, height: int = 620000) -> int:
-        safe_text = _safe(text)[:280]
+        safe_text = _truncate_at_word(text, 280)
         line_estimate = max(1, len(safe_text) // 55 + 1)
         dynamic_h = min(max(height, 380000 + line_estimate * 90000), 900000)
         shape = self.slide.shapes.add_shape(1, Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(dynamic_h))
@@ -207,7 +218,7 @@ class _Ctx:
         r.font.color.rgb = TITLE_COLOR
         p2 = tf.add_paragraph()
         r2 = p2.add_run()
-        r2.text = _safe(text)[:260]
+        r2.text = _truncate_at_word(text, 260)
         r2.font.name = FONT
         r2.font.size = Pt(FS_BODY)
         r2.font.color.rgb = BODY_COLOR
@@ -231,7 +242,7 @@ class _Ctx:
         r.font.color.rgb = ACCENT
         p2 = tf.add_paragraph()
         r2 = p2.add_run()
-        r2.text = _safe(body)[:220]
+        r2.text = _truncate_at_word(body, 220)
         r2.font.name = FONT
         r2.font.size = Pt(FS_BODY)
         r2.font.color.rgb = BODY_COLOR
@@ -265,7 +276,7 @@ class _Ctx:
             p = tf.paragraphs[0] if first else tf.add_paragraph()
             first = False
             r = p.add_run()
-            r.text = f"• {bullet[:180]}"
+            r.text = f"• {_truncate_at_word(bullet, 180)}"
             r.font.name = FONT
             r.font.size = Pt(FS_BODY)
             r.font.color.rgb = BODY_COLOR
@@ -478,7 +489,7 @@ def render_adverse_media_summary(ctx: _Ctx, slide: dict[str, Any]) -> None:
     y = ctx.section_header(slide.get("title") or "Негативные публикации", "")
     y = ctx.labeled_block("Интерпретация", slide.get("clientTakeaway") or "", y, height=480000)
     findings = slide.get("findings") or []
-    ctx.bullets([_safe(f.get("summary"))[:200] for f in findings if isinstance(f, dict)], y + 60000, max_items=4)
+    ctx.bullets([_truncate_at_word(_safe(f.get("summary")), 200) for f in findings if isinstance(f, dict)], y + 60000, max_items=4)
 
 
 def render_scope_overview(ctx: _Ctx, slide: dict[str, Any]) -> None:
@@ -510,7 +521,7 @@ def render_relevant_sources(ctx: _Ctx, slide: dict[str, Any]) -> None:
     for e in evidence[:5]:
         if not isinstance(e, dict):
             continue
-        rows.append(f"{_safe(e.get('label'))}: {_safe(e.get('summary'))[:120]}")
+        rows.append(f"{_safe(e.get('label'))}: {_truncate_at_word(_safe(e.get('summary')), 120)}")
     ctx.bullets(rows, y, max_items=5)
 
 
@@ -535,7 +546,7 @@ def render_lexis_signals(ctx: _Ctx, slide: dict[str, Any]) -> None:
         row = idx // 2
         cx = MARGIN_X + col * (col_w + 120000)
         cy = y + row * 950000
-        ctx.card(_safe(f.get("headline")), _safe(f.get("summary"))[:180], cx, cy, col_w, 880000)
+        ctx.card(_safe(f.get("headline")), _truncate_at_word(_safe(f.get("summary")), 180), cx, cy, col_w, 880000)
 
 
 def render_image_grid(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> None:

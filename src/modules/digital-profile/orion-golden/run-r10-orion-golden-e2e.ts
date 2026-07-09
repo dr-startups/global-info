@@ -12,6 +12,13 @@ import { ORION_GOLDEN_BLUEPRINT } from "./blueprint/orion-golden-blueprint";
 import { buildOrionGoldenAssets } from "./assets/orion-asset-builder";
 import { composeOrionGoldenDeck } from "./composer/orion-deck-composer";
 import { composeOrionClientAuditDeck } from "./composer/orion-client-audit-deck-composer";
+import { composeOrionClassicAuditDeck } from "./classic/orion-classic-audit-deck-composer";
+import { buildOrionClassicAuditAssets } from "./classic/orion-classic-asset-builder";
+import {
+  buildOrionClassicReportSpecFromClientContent,
+  type OrionClassicAuditReportSpec,
+} from "./classic/orion-classic-client-content-to-report-spec";
+import { shouldUseClassicOrionAuditMode } from "./classic/run-orion-classic-audit-render";
 import {
   assembleOrionClientContentFromSections,
   buildOrionClientContent,
@@ -774,7 +781,9 @@ export async function runR10OrionGoldenE2e(options: {
     };
   }
 
-  const assets = await buildOrionGoldenAssets({ ctx });
+  const assets = shouldUseClassicOrionAuditMode()
+    ? await buildOrionClassicAuditAssets({ ctx })
+    : await buildOrionGoldenAssets({ ctx });
   writeJson(join(outputRoot, "report-assets.json"), assets);
 
   let reportSpec;
@@ -788,17 +797,29 @@ export async function runR10OrionGoldenE2e(options: {
       throw new Error("client-content-missing-for-r10-9-render");
     }
     // Prefer post-review; if all PENDING, content still caveats manual-review items
-    reportSpec = buildOrionReportSpecFromClientContent({
-      clientContent: postReviewContent,
-      executiveSynthesis: executiveSynthesisOutput,
-      riskMatrix: sectionDerivedRiskMatrix ?? postReviewContent.riskMatrixSummary,
-      assets,
-      inventoryCounts: inventory.counts,
-      warnings: inventory.warnings,
-    });
+    reportSpec = shouldUseClassicOrionAuditMode()
+      ? buildOrionClassicReportSpecFromClientContent({
+          clientContent: postReviewContent,
+          executiveSynthesis: executiveSynthesisOutput,
+          riskMatrix: sectionDerivedRiskMatrix ?? postReviewContent.riskMatrixSummary,
+          assets,
+          inventory,
+          inventoryCounts: inventory.counts,
+          warnings: inventory.warnings,
+        })
+      : buildOrionReportSpecFromClientContent({
+          clientContent: postReviewContent,
+          executiveSynthesis: executiveSynthesisOutput,
+          riskMatrix: sectionDerivedRiskMatrix ?? postReviewContent.riskMatrixSummary,
+          assets,
+          inventoryCounts: inventory.counts,
+          warnings: inventory.warnings,
+        });
     writeJson(join(outputRoot, "orion-report-spec.from-client-content.json"), reportSpec);
     writeJson(join(outputRoot, "orion-report-spec.json"), reportSpec);
-    deckManifest = composeOrionClientAuditDeck(reportSpec, assets);
+    deckManifest = shouldUseClassicOrionAuditMode()
+      ? composeOrionClassicAuditDeck(reportSpec as OrionClassicAuditReportSpec, assets)
+      : composeOrionClientAuditDeck(reportSpec, assets);
     renderSource = "client_content_adapter";
   } else {
     if (!executive) throw new Error("executive-synthesis-missing-for-render");
@@ -831,7 +852,11 @@ export async function runR10OrionGoldenE2e(options: {
     deckManifest,
     inventory,
     pdfExportMode: renderResult.pdfExportMode,
-    reportMode: renderFromClientContent ? "client_audit" : "legacy_full",
+    reportMode: shouldUseClassicOrionAuditMode()
+      ? "classic_orion_audit"
+      : renderFromClientContent
+        ? "client_audit"
+        : "legacy_full",
   });
   writeJson(join(outputRoot, "visual-qa-inspection.json"), visual);
 

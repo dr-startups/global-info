@@ -11,9 +11,10 @@ import { ORION_GOLDEN_BLUEPRINT } from "../blueprint/orion-golden-blueprint";
 import type { OrionGoldenDeckManifest } from "../composer/orion-deck-composer";
 import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
 
-export type OrionVisualReportMode = "legacy_full" | "client_audit";
+export type OrionVisualReportMode = "legacy_full" | "client_audit" | "classic_orion_audit";
 
 export const CLIENT_AUDIT_PAGE_RANGE = { min: 30, max: 45 } as const;
+export const CLASSIC_ORION_AUDIT_PAGE_RANGE = { min: 45, max: 75 } as const;
 
 export function resolveOrionVisualReportMode(input?: {
   reportMode?: OrionVisualReportMode;
@@ -21,6 +22,7 @@ export function resolveOrionVisualReportMode(input?: {
 }): OrionVisualReportMode {
   if (input?.reportMode) return input.reportMode;
   const env = input?.env ?? process.env;
+  if (env.ORION_CLASSIC_AUDIT_MODE === "1") return "classic_orion_audit";
   if (
     env.R10_RENDER_FROM_CLIENT_CONTENT === "1" ||
     env.ORION_CLIENT_AUDIT_MODE === "1"
@@ -31,6 +33,7 @@ export function resolveOrionVisualReportMode(input?: {
 }
 
 export function expectedPageRangeForMode(mode: OrionVisualReportMode): { min: number; max: number } {
+  if (mode === "classic_orion_audit") return { ...CLASSIC_ORION_AUDIT_PAGE_RANGE };
   if (mode === "client_audit") return { ...CLIENT_AUDIT_PAGE_RANGE };
   return {
     min: ORION_GOLDEN_BLUEPRINT.targetPageRange.min,
@@ -86,6 +89,10 @@ export function inspectOrionGoldenVisualQuality(input: {
     pageOk =
       pageCount >= expectedPageRange.min && pageCount <= expectedPageRange.max + 5;
     pageDetail = `${pageCount} (client_audit target ${expectedPageRange.min}-${expectedPageRange.max})`;
+  } else if (reportMode === "classic_orion_audit") {
+    pageOk =
+      pageCount >= expectedPageRange.min && pageCount <= expectedPageRange.max + 10;
+    pageDetail = `${pageCount} (classic_orion_audit target ${expectedPageRange.min}-${expectedPageRange.max})`;
   } else if (enoughData) {
     pageOk =
       pageCount >= expectedPageRange.min && pageCount <= expectedPageRange.max + 10;

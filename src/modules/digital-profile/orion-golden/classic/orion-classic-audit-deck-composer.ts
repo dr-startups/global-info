@@ -1,0 +1,304 @@
+/**
+ * R10.11 — Classic ORION audit deck composer (registry 1:1 + full commercial, no R10.9a caps).
+ */
+
+import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
+import { ORION_GOLDEN_BLUEPRINT } from "../blueprint/orion-golden-blueprint";
+import { sanitizeOrionGoldenClientText } from "../client/client-text-sanitizer";
+import type { OrionGoldenDeckManifest, OrionGoldenDeckSlide } from "../composer/orion-deck-composer";
+import { truncateAtWordBoundary } from "./orion-classic-text-utils";
+import type { OrionClassicAuditReportSpec } from "./orion-classic-client-content-to-report-spec";
+import {
+  assetSectionKeyForRegistry,
+  regionDividerTitle,
+} from "./orion-classic-section-template-map";
+
+function slidesFromBlock(sectionKey: string, block: OrionClassicAuditReportSpec["registrySections"][number]["block"]): OrionGoldenDeckSlide[] {
+  return (block.slideSpecs ?? []).map((spec) => ({
+    slideKey: spec.slideKey,
+    sectionKey,
+    template: spec.template,
+    title: spec.title,
+    pageNumber: 0,
+    bullets: spec.bullets?.map((b) => truncateAtWordBoundary(b, 220)),
+    narrative: block.narrative ? truncateAtWordBoundary(block.narrative, 520) : undefined,
+    assetRefs: block.visualAssets,
+  }));
+}
+
+function expandCommercial(sectionKey: string, block: OrionClassicAuditReportSpec["registrySections"][number]["block"]): OrionGoldenDeckSlide[] {
+  const blueprint = ORION_GOLDEN_BLUEPRINT.sections.find((s) => s.sectionKey === sectionKey);
+  const minPages = blueprint?.expectedPageRange.min ?? 1;
+  const slides = slidesFromBlock(sectionKey, block);
+  if (slides.length >= minPages) return slides;
+  const out = [...slides];
+  for (let i = slides.length; i < minPages; i += 1) {
+    const card = block.evidenceCards[i - slides.length];
+    out.push({
+      slideKey: `${sectionKey}-fill-${i + 1}`,
+      sectionKey,
+      template: block.slideSpecs[0]?.template ?? "orion_golden_offer",
+      title: block.sectionTitle,
+      pageNumber: 0,
+      bullets: card ? [truncateAtWordBoundary(card.summary, 220)] : [truncateAtWordBoundary(block.narrative, 220)],
+    });
+  }
+  return out;
+}
+
+function assetSlides(
+  sectionKey: string,
+  template: string,
+  titlePrefix: string,
+  assets: ReportAssetV1[]
+): OrionGoldenDeckSlide[] {
+  return assets.map((asset, idx) => ({
+    slideKey: `${sectionKey}-${asset.assetRef}`,
+    sectionKey,
+    template,
+    title: asset.title || `${titlePrefix} ${idx + 1}`,
+    pageNumber: 0,
+    bullets: asset.caption ? [truncateAtWordBoundary(asset.caption, 180)] : undefined,
+    assetRefs: [asset.assetRef],
+  }));
+}
+
+function chunkAssetSlides(
+  sectionKey: string,
+  template: string,
+  title: string,
+  assets: ReportAssetV1[],
+  perSlide: number
+): OrionGoldenDeckSlide[] {
+  const slides: OrionGoldenDeckSlide[] = [];
+  for (let i = 0; i < assets.length; i += perSlide) {
+    const chunk = assets.slice(i, i + perSlide);
+    slides.push({
+      slideKey: `${sectionKey}-grid-${Math.floor(i / perSlide) + 1}`,
+      sectionKey,
+      template,
+      title: `${title} (${Math.floor(i / perSlide) + 1})`,
+      pageNumber: 0,
+      assetRefs: chunk.map((a) => a.assetRef),
+    });
+  }
+  return slides;
+}
+
+function sanitizeSlide(slide: OrionGoldenDeckSlide): OrionGoldenDeckSlide {
+  return {
+    ...slide,
+    title: sanitizeOrionGoldenClientText(slide.title),
+    narrative: slide.narrative ? sanitizeOrionGoldenClientText(slide.narrative) : undefined,
+    bullets: slide.bullets
+      ?.map((b) => sanitizeOrionGoldenClientText(b))
+      .filter((b) => Boolean(b) && !/\[object Object\]/i.test(b)),
+  };
+}
+
+function pickAssets(assets: ReportAssetV1[], kind: ReportAssetV1["kind"], refPrefix?: string): ReportAssetV1[] {
+  return assets.filter(
+    (a) =>
+      a.kind === kind &&
+      a.status === "ready" &&
+      (!refPrefix || a.assetRef.startsWith(refPrefix))
+  );
+}
+
+export function composeOrionClassicAuditDeck(
+  reportSpec: OrionClassicAuditReportSpec,
+  assets: ReportAssetV1[] = []
+): OrionGoldenDeckManifest {
+  const serpAssets = pickAssets(assets, "synthetic_serp");
+  const lexisAssets = pickAssets(assets, "lexis_visual_page");
+  const imageAssets = pickAssets(assets, "image_grid");
+  const videoAssets = pickAssets(assets, "video_cards");
+  const knowledgeAssets = pickAssets(assets, "knowledge_panel");
+
+  const ruSerp = serpAssets.filter((a) => a.assetRef.includes("ru_") || !a.assetRef.includes("uae"));
+  const uaeSerp = serpAssets.filter((a) => a.assetRef.includes("uae"));
+  const ruImages = imageAssets.filter((a) => a.assetRef.startsWith("ru_") || a.assetRef.startsWith("r10-img"));
+  const uaeImages = imageAssets.filter((a) => a.assetRef.includes("uae"));
+  const ruVideos = videoAssets.filter((a) => !a.assetRef.includes("uae"));
+  const uaeVideos = videoAssets.filter((a) => a.assetRef.includes("uae"));
+  const ruKnowledge = knowledgeAssets.filter((a) => !a.assetRef.includes("uae"));
+  const uaeKnowledge = knowledgeAssets.filter((a) => a.assetRef.includes("uae"));
+
+  const insertedAssetSections = new Set<string>();
+  const sections: Array<{ sectionKey: string; slides: OrionGoldenDeckSlide[] }> = [
+    {
+      sectionKey: "cover",
+      slides: [
+        {
+          slideKey: "cover",
+          sectionKey: "cover",
+          template: "orion_golden_cover",
+          title: reportSpec.subject.reportTitle,
+          pageNumber: 0,
+          narrative: reportSpec.subject.displayName,
+        },
+      ],
+    },
+    {
+      sectionKey: "global_toc",
+      slides: [
+        {
+          slideKey: "toc-1",
+          sectionKey: "global_toc",
+          template: "orion_golden_toc",
+          title: "Содержание",
+          pageNumber: 0,
+          bullets: reportSpec.globalToc.map((t) => t.title).slice(0, 20),
+        },
+      ],
+    },
+  ];
+
+  for (const entry of reportSpec.registrySections.sort((a, b) => a.order - b.order)) {
+    const divider = regionDividerTitle(entry.sectionId);
+    if (divider) {
+      sections.push({
+        sectionKey: entry.sectionId === "10_ru_audit_summary" ? "ru_digital_profile" : "uae_digital_profile",
+        slides: [
+          {
+            slideKey: `divider-${entry.sectionId}`,
+            sectionKey: entry.sectionId === "10_ru_audit_summary" ? "ru_digital_profile" : "uae_digital_profile",
+            template: "orion_golden_region_divider",
+            title: divider,
+            pageNumber: 0,
+          },
+        ],
+      });
+    }
+
+    const blockSlides = slidesFromBlock(entry.sectionId, entry.block);
+    if (blockSlides.length > 0) {
+      sections.push({ sectionKey: entry.sectionId, slides: blockSlides });
+    }
+
+    const assetKey = assetSectionKeyForRegistry(entry.sectionId);
+    if (assetKey && !insertedAssetSections.has(assetKey)) {
+      insertedAssetSections.add(assetKey);
+      if (assetKey === "ru_serp_screenshots" && ruSerp.length > 0) {
+        sections.push({
+          sectionKey: "ru_serp_screenshots",
+          slides: assetSlides("ru_serp_screenshots", "orion_golden_serp_screenshot", "Снимок выдачи", ruSerp),
+        });
+      }
+      if (assetKey === "uae_serp_screenshots" && uaeSerp.length > 0) {
+        sections.push({
+          sectionKey: "uae_serp_screenshots",
+          slides: assetSlides("uae_serp_screenshots", "orion_golden_serp_screenshot", "Снимок выдачи", uaeSerp),
+        });
+      }
+      if (assetKey === "ru_images" && ruImages.length > 0) {
+        sections.push({
+          sectionKey: "ru_images",
+          slides: chunkAssetSlides("ru_images", "orion_golden_image_grid", "Изображения", ruImages, 6),
+        });
+      }
+      if (assetKey === "uae_images" && uaeImages.length > 0) {
+        sections.push({
+          sectionKey: "uae_images",
+          slides: chunkAssetSlides("uae_images", "orion_golden_image_grid", "Изображения", uaeImages, 6),
+        });
+      }
+      if (assetKey === "ru_videos" && ruVideos.length > 0) {
+        sections.push({
+          sectionKey: "ru_videos",
+          slides: chunkAssetSlides("ru_videos", "orion_golden_video_cards", "Видео", ruVideos, 4),
+        });
+      }
+      if (assetKey === "uae_videos" && uaeVideos.length > 0) {
+        sections.push({
+          sectionKey: "uae_videos",
+          slides: chunkAssetSlides("uae_videos", "orion_golden_video_cards", "Видео", uaeVideos, 4),
+        });
+      }
+      if (assetKey === "ru_knowledge" && ruKnowledge.length > 0) {
+        sections.push({
+          sectionKey: "ru_knowledge",
+          slides: assetSlides("ru_knowledge", "orion_golden_knowledge_panel", "Панель знаний", ruKnowledge),
+        });
+      }
+      if (assetKey === "uae_knowledge" && uaeKnowledge.length > 0) {
+        sections.push({
+          sectionKey: "uae_knowledge",
+          slides: assetSlides("uae_knowledge", "orion_golden_knowledge_panel", "Панель знаний", uaeKnowledge),
+        });
+      }
+      if (assetKey === "lexisnexis_visual" && lexisAssets.length > 0) {
+        sections.push({
+          sectionKey: "lexisnexis_visual",
+          slides: assetSlides("lexisnexis", "orion_golden_lexis_visual_page", "LexisNexis", lexisAssets),
+        });
+      }
+    }
+  }
+
+  const commercialKeys: Array<keyof Pick<
+    OrionClassicAuditReportSpec,
+    | "offer"
+    | "productOverview"
+    | "solutionDigitalProfile"
+    | "solutionComplianceDatabases"
+    | "solutionWikipedia"
+    | "about"
+  >> = [
+    "offer",
+    "productOverview",
+    "solutionDigitalProfile",
+    "solutionComplianceDatabases",
+    "solutionWikipedia",
+    "about",
+  ];
+
+  for (const key of commercialKeys) {
+    const block = reportSpec[key];
+    const sectionKey = key === "solutionDigitalProfile"
+      ? "solution_digital_profile"
+      : key === "solutionComplianceDatabases"
+        ? "solution_compliance_databases"
+        : key === "solutionWikipedia"
+          ? "solution_wikipedia"
+          : key === "productOverview"
+            ? "product_overview"
+            : key;
+    sections.push({
+      sectionKey,
+      slides: expandCommercial(sectionKey, block),
+    });
+  }
+
+  let page = 1;
+  const sectionManifests: OrionGoldenDeckManifest["sectionManifests"] = [];
+  const finalSlides: OrionGoldenDeckSlide[] = [];
+
+  for (const section of sections) {
+    const slides = section.slides.filter(
+      (s) => s.title || s.narrative || (s.bullets?.length ?? 0) > 0 || (s.assetRefs?.length ?? 0) > 0
+    );
+    if (slides.length === 0) continue;
+    for (const s of slides) s.pageNumber = page++;
+    sectionManifests.push({ sectionKey: section.sectionKey, slideCount: slides.length, slides });
+    finalSlides.push(...slides.map(sanitizeSlide));
+  }
+
+  const toc = finalSlides
+    .filter((s) => s.sectionKey !== "cover")
+    .filter((_, idx, arr) => idx === 0 || arr[idx - 1]?.sectionKey !== arr[idx].sectionKey)
+    .slice(0, 40)
+    .map((s) => ({ title: s.title, pageNumber: s.pageNumber }));
+
+  const pageNumberMap: Record<string, number> = {};
+  for (const s of finalSlides) pageNumberMap[s.slideKey] = s.pageNumber;
+
+  return {
+    version: "r10-orion-golden-deck-manifest-v1",
+    slideCount: finalSlides.length,
+    sectionManifests,
+    finalSlides,
+    toc,
+    pageNumberMap,
+  };
+}

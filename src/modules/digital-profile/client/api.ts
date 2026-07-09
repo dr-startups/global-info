@@ -1289,3 +1289,43 @@ export function regenerateOrionClientContentAfterReview(
   );
 }
 
+export type OrionClassicAuditReportSummary = {
+  ok: boolean;
+  uiEnabled: boolean;
+  reportMode: "classic_orion_audit_r10_11";
+  status: "completed" | "failed" | "running" | "empty";
+  runId: string | null;
+  createdAt: string | null;
+  completedAt: string | null;
+  slideCount: number;
+  pageCount: number;
+  verdict: string | null;
+  clientPolicyStatus: string | null;
+  artifacts: {
+    clientPdf: { available: boolean; downloadUrl: string | null };
+    clientPptx: { available: boolean; downloadUrl: string | null };
+  };
+  warnings: string[];
+};
+
+export function generateOrionClassicAuditReport(
+  caseId: string,
+  options?: { regenerateContent?: boolean }
+): Promise<OrionClassicAuditReportSummary> {
+  return request<OrionClassicAuditReportSummary>(
+    `/cases/${caseId}/orion-golden/report/generate`,
+    {
+      method: "POST",
+      body: JSON.stringify({ regenerateContent: Boolean(options?.regenerateContent) }),
+    }
+  );
+}
+
+export function getOrionClassicAuditReportStatus(
+  caseId: string
+): Promise<OrionClassicAuditReportSummary> {
+  return request<OrionClassicAuditReportSummary>(
+    `/cases/${caseId}/orion-golden/report/generate`
+  );
+}
+
