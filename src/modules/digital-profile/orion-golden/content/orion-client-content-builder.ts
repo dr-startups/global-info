@@ -281,13 +281,13 @@ function buildExecutiveSectionFromSynthesis(
   synthesis: ExecutiveSynthesisOutput
 ): NonNullable<OrionClientContent["sections"]>[0] {
   const findings = [
-    ...synthesis.mainRisks.slice(0, 5).map((r, i) => ({
-      title: `Ключевой риск ${i + 1}`,
+    ...synthesis.mainRisks.slice(0, 6).map((r) => ({
+      title: "Тема риска",
       summary: typeof r === "string" ? r : String(r),
       evidenceRefs: [] as string[],
     })),
-    ...synthesis.finalRecommendations.slice(0, 3).map((r, i) => ({
-      title: `Рекомендация ${i + 1}`,
+    ...synthesis.finalRecommendations.slice(0, 4).map((r) => ({
+      title: "Рекомендуемое действие",
       summary: typeof r === "string" ? r : String(r),
       evidenceRefs: [] as string[],
     })),
@@ -345,8 +345,8 @@ function buildRecommendationsSection(
       recommendations.length > 0
         ? "Рекомендации сформированы по фактическому состоянию секций, реестровых якорей и очереди ручной проверки."
         : "Отдельные рекомендации не сформированы — недостаточно дифференцирующих сигналов.",
-    keyFindings: recommendations.map((r, i) => ({
-      title: `Рекомендация ${i + 1}`,
+    keyFindings: recommendations.map((r) => ({
+      title: "Рекомендуемое действие",
       summary: r,
       evidenceRefs: [] as string[],
     })),

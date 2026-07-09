@@ -26,8 +26,11 @@ import {
 import {
   asClientBullet,
   chunkItems,
+  isClientActionRecommendation,
   sanitizeClassicBullets,
   sanitizeExecutiveClientText,
+  splitCompleteChunks,
+  stripNumberedClientPrefix,
   truncateAtWordBoundary,
 } from "./orion-classic-text-utils";
 
@@ -165,27 +168,36 @@ function buildExecutiveFromClient(
     client.executiveSummaryDraft ||
     "Резюме формируется на основе секционного анализа.";
 
-  const mainRisks =
-    executive?.mainRisks?.map(asClientBullet) ??
-    sectionExec?.keyFindings?.slice(0, 6).map((f) => asClientBullet(`${f.title}: ${f.summary}`)) ??
-    client.approvedFindings.slice(0, 6).map((f) => asClientBullet(`${f.title}: ${f.summary}`));
+  const fromSynthesis = executive?.mainRisks?.map((r) => stripNumberedClientPrefix(asClientBullet(r))) ?? [];
+  const fromSection =
+    sectionExec?.keyFindings
+      ?.filter((f) => !/^рекомендуемое действие$/i.test(f.title))
+      .map((f) => stripNumberedClientPrefix(asClientBullet(f.summary || f.title))) ?? [];
+  const fromFindings = client.approvedFindings
+    .slice(0, 6)
+    .map((f) => stripNumberedClientPrefix(asClientBullet(f.summary || f.title)));
+
+  const mainRisks = (fromSynthesis.length > 0 ? fromSynthesis : fromSection.length > 0 ? fromSection : fromFindings).slice(
+    0,
+    6
+  );
+
+  const rawRecs = (executive?.finalRecommendations ?? client.recommendations ?? []).map(asClientBullet);
+  const filteredRecs = rawRecs.filter(isClientActionRecommendation);
 
   return {
-    executiveSummary: sanitizeExecutiveClientText(execText, 1400),
+    executiveSummary: sanitizeExecutiveClientText(execText, 2200),
     globalRiskLevel: mapGlobalRiskLevel(
       executive?.globalRiskLevel ?? matrixSource?.globalRiskLevel ?? "Требует проверки"
     ),
     riskMatrix: riskMatrixRows,
-    mainRisks: sanitizeClassicBullets(mainRisks, 200),
+    mainRisks: sanitizeClassicBullets(mainRisks, 280),
     possibleConsequences: sanitizeClassicBullets(
       executive?.possibleConsequences?.map(asClientBullet) ?? [],
-      200
+      280
     ),
-    finalRecommendations: sanitizeClassicBullets(
-      (executive?.finalRecommendations ?? client.recommendations ?? []).map(asClientBullet),
-      200
-    ),
-    nextSteps: sanitizeClassicBullets(executive?.nextSteps?.map(asClientBullet) ?? [], 200),
+    finalRecommendations: sanitizeClassicBullets(filteredRecs, 280),
+    nextSteps: sanitizeClassicBullets(executive?.nextSteps?.map(asClientBullet) ?? [], 280),
     generatedBy: "gpt-5.5",
   };
 }
@@ -531,12 +543,22 @@ function blockFromClientSection(
   let bullets: string[] = [];
   const gptFindings = section.keyFindings
     .slice(0, 5)
-    .map((f) =>
-      truncateAtWordBoundary(
-        f.caveat ? `${f.title} — ${f.summary} (${f.caveat})` : `${f.title} — ${f.summary}`,
-        200
-      )
-    );
+    .map((f) => {
+      const title = stripNumberedClientPrefix(String(f.title ?? "").trim());
+      const summary = String(f.summary ?? "").trim();
+      // Prefer summary alone when title is generic / duplicates summary
+      const line =
+        !title ||
+        /^(тема риска|рекомендуемое действие|finding)$/i.test(title) ||
+        summary.startsWith(title)
+          ? summary || title
+          : summary
+            ? `${title} — ${summary}`
+            : title;
+      const withCaveat = f.caveat && !/ручной проверк/i.test(f.caveat) ? `${line} (${f.caveat})` : line;
+      return truncateAtWordBoundary(withCaveat, 280);
+    })
+    .filter(Boolean);
 
   if (section.sectionId.includes("suggestions") || section.sectionId.includes("related_queries")) {
     const provider = section.sectionId.includes("yandex")
@@ -555,7 +577,7 @@ function blockFromClientSection(
           : [];
   } else if (section.sectionId.includes("undesirable_theme")) {
     const themes = adverseThemeRows(inventory, region);
-    const themeBullets = themes.map((t) => `${t.theme} — ${t.count} материал(ов)`);
+    const themeBullets = themes.map((t) => t.theme);
     bullets = gptFindings.length > 0 ? [...gptFindings, ...themeBullets.slice(0, 4)] : themeBullets;
   } else if (section.sectionId.includes("serp_position") || section.sectionId.includes("search_links")) {
     const fromInventory = section.sectionId.includes("serp_position")
@@ -569,11 +591,11 @@ function blockFromClientSection(
   } else {
     bullets = gptFindings;
     if (bullets.length === 0 && section.narrative) {
-      bullets = [truncateAtWordBoundary(section.narrative, 400)];
+      bullets = [truncateAtWordBoundary(section.narrative, 520)];
     }
   }
 
-  bullets = sanitizeClassicBullets(bullets, 200);
+  bullets = sanitizeClassicBullets(bullets, 280);
   const tables = section.sectionId.includes("serp_position")
     ? serpPositionTable(inventory, region)
     : [];
@@ -599,7 +621,7 @@ function blockFromClientSection(
         slideKey: `${section.sectionId}-1`,
         template,
         title,
-        bullets: [truncateAtWordBoundary(section.narrative, 400)],
+        bullets: [truncateAtWordBoundary(section.narrative, 520)],
       });
     } else {
       for (const [idx, chunk] of chunks.slice(0, 3).entries()) {
@@ -620,11 +642,11 @@ function blockFromClientSection(
       status: section.status,
       tables: tables.length,
     },
-    narrative: truncateAtWordBoundary(section.narrative, 600),
+    narrative: truncateAtWordBoundary(section.narrative, 900),
     tables,
     evidenceCards: section.keyFindings.slice(0, 20).map((f) => ({
-      title: sanitizeOrionGoldenClientText(f.title),
-      summary: truncateAtWordBoundary(f.summary, 220),
+      title: sanitizeOrionGoldenClientText(stripNumberedClientPrefix(f.title)),
+      summary: truncateAtWordBoundary(f.summary, 280),
     })),
     visualAssets: [],
     slideSpecs,
@@ -653,11 +675,27 @@ function riskMatrixBlockFromExecutive(
   let matrix = (executive.riskMatrix ?? []).map((r) =>
     humanizeClientRiskMatrixRow({ theme: r.theme, level: r.level, summary: r.summary })
   );
+  // Drop gate/queue rows from client matrix — they are process meta, not risk themes.
+  matrix = matrix.filter(
+    (r) =>
+      !/очеред(ь|и)\s+ручн|недостаточно доказатель|исключённ|слабая идентификация|материал\(ов\)/i.test(
+        `${r.theme} ${r.summary}`
+      )
+  );
   if (matrix.length === 0) {
     matrix = riskMatrixFromInventory(inventory).map((r) =>
       humanizeClientRiskMatrixRow(r)
     );
   }
+  // Dedupe near-identical summaries (e.g. repeated TAdviser rows)
+  const seen = new Set<string>();
+  matrix = matrix.filter((r) => {
+    const key = `${r.theme}::${r.summary.slice(0, 80).toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, 10);
+
   const slideSpecs: SectionBlock["slideSpecs"] = [];
   for (const [idx, chunk] of chunkItems(matrix, 5).entries()) {
     slideSpecs.push({
@@ -665,7 +703,7 @@ function riskMatrixBlockFromExecutive(
       template: "orion_golden_risk_matrix",
       title: matrix.length > 5 ? `Матрица комплаенс-рисков (${idx + 1})` : "Матрица комплаенс-рисков",
       bullets: chunk.map((r) =>
-        truncateAtWordBoundary(`${r.theme} — ${r.level}: ${r.summary}`, 200)
+        truncateAtWordBoundary(`${r.theme} — ${r.level}: ${r.summary}`, 280)
       ),
     });
   }
@@ -716,8 +754,12 @@ function enrichExecutiveWithInventory(
   if (executive.riskMatrix.length > 0) {
     return {
       ...executive,
-      executiveSummary: sanitizeExecutiveClientText(executive.executiveSummary, 1400),
-      mainRisks: sanitizeClassicBullets(executive.mainRisks, 200).slice(0, 7),
+      executiveSummary: sanitizeExecutiveClientText(executive.executiveSummary, 2200),
+      mainRisks: sanitizeClassicBullets(executive.mainRisks, 280).slice(0, 6),
+      finalRecommendations: sanitizeClassicBullets(
+        executive.finalRecommendations.filter(isClientActionRecommendation),
+        280
+      ).slice(0, 6),
     };
   }
 
@@ -734,8 +776,12 @@ function enrichExecutiveWithInventory(
 
   return {
     ...executive,
-    executiveSummary: sanitizeExecutiveClientText(executive.executiveSummary, 1400),
-    mainRisks: sanitizeClassicBullets(themeBullets, 200).slice(0, 7),
+    executiveSummary: sanitizeExecutiveClientText(executive.executiveSummary, 2200),
+    mainRisks: sanitizeClassicBullets(themeBullets, 280).slice(0, 6),
+    finalRecommendations: sanitizeClassicBullets(
+      executive.finalRecommendations.filter(isClientActionRecommendation),
+      280
+    ).slice(0, 6),
     riskMatrix: matrix,
   };
 }
@@ -762,16 +808,53 @@ export function buildOrionClassicReportSpecFromClientContent(
 
   for (const reg of getClientAuditSections()) {
     if (reg.sectionId === "01_executive_summary") {
-      // ORION résumé: synthesis narrative + thematic bullets only (no inventory/meta dump).
-      const resumeBullets = sanitizeClassicBullets(
-        [
-          ...executive.mainRisks.slice(0, 6),
-          ...executive.possibleConsequences.slice(0, 2),
-          ...(executive.nextSteps.slice(0, 1).map((s) => `Следующий шаг: ${s}`)),
-        ],
-        200
-      ).slice(0, 8);
-      const recBullets = sanitizeClassicBullets(executive.finalRecommendations, 200).slice(0, 6);
+      // ORION analyst brief: split long synthesis across slides; themes without numbered prefixes.
+      const narrativeChunks = splitCompleteChunks(executive.executiveSummary, 1100);
+      const themeBullets = sanitizeClassicBullets(executive.mainRisks, 280).slice(0, 6);
+      const consequenceBullets = sanitizeClassicBullets(executive.possibleConsequences, 280).slice(0, 2);
+      const nextStepBullets = sanitizeClassicBullets(
+        executive.nextSteps.slice(0, 1).map((s) => (s.startsWith("Следующий") ? s : `Следующий шаг: ${s}`)),
+        280
+      );
+      const recBullets = sanitizeClassicBullets(
+        executive.finalRecommendations.filter(isClientActionRecommendation),
+        280
+      ).slice(0, 6);
+
+      const slideSpecs: NonNullable<SectionBlock["slideSpecs"]> = [];
+      if (narrativeChunks.length <= 1) {
+        slideSpecs.push({
+          slideKey: "executive-1",
+          template: "orion_golden_executive_card",
+          title: "Резюме",
+          narrative: narrativeChunks[0] ?? executive.executiveSummary,
+          bullets: [...themeBullets, ...consequenceBullets, ...nextStepBullets].slice(0, 7),
+        });
+      } else {
+        slideSpecs.push({
+          slideKey: "executive-1",
+          template: "orion_golden_executive_card",
+          title: "Резюме",
+          narrative: narrativeChunks[0],
+          bullets: [],
+        });
+        slideSpecs.push({
+          slideKey: "executive-2",
+          template: "orion_golden_executive_card",
+          title: "Резюме — ключевые темы",
+          narrative: narrativeChunks.slice(1).join("\n\n"),
+          bullets: [...themeBullets, ...consequenceBullets, ...nextStepBullets].slice(0, 7),
+        });
+      }
+      if (recBullets.length) {
+        slideSpecs.push({
+          slideKey: "executive-recs",
+          template: "orion_golden_executive_card",
+          title: "Резюме — рекомендуемые действия",
+          narrative: "",
+          bullets: recBullets,
+        });
+      }
 
       registrySections.push({
         sectionId: reg.sectionId,
@@ -783,24 +866,7 @@ export function buildOrionClassicReportSpecFromClientContent(
           tables: [],
           evidenceCards: [],
           visualAssets: [],
-          slideSpecs: [
-            {
-              slideKey: "executive-1",
-              template: "orion_golden_executive_card",
-              title: "Резюме",
-              bullets: resumeBullets,
-            },
-            ...(recBullets.length
-              ? [
-                  {
-                    slideKey: "executive-recs",
-                    template: "orion_golden_executive_card",
-                    title: "Резюме — рекомендуемые действия",
-                    bullets: recBullets,
-                  },
-                ]
-              : []),
-          ],
+          slideSpecs,
           sourceRefs: [],
           qaMetadata: { sectionKey: "01_executive_summary" },
         },

@@ -54,7 +54,14 @@ export type SectionBlock = {
   tables: Array<{ headers: string[]; rows: string[][] }>;
   evidenceCards: Array<{ title: string; domain?: string; summary: string }>;
   visualAssets: string[];
-  slideSpecs: Array<{ slideKey: string; template: string; title: string; bullets?: string[] }>;
+  slideSpecs: Array<{
+    slideKey: string;
+    template: string;
+    title: string;
+    bullets?: string[];
+    /** Optional per-slide narrative (overrides block.narrative when set). */
+    narrative?: string;
+  }>;
   sourceRefs: string[];
   qaMetadata: { sectionKey: string; riskLevel?: string };
 };

@@ -60,17 +60,21 @@ def _safe(text: object) -> str:
 
 
 def _clip_words(text: str, max_chars: int) -> str:
+    """Clip on sentence/word boundary without forcing an ellipsis mid-thought."""
     val = _safe(text)
     if len(val) <= max_chars:
         return val
     slice_ = val[:max_chars]
+    punct = max(slice_.rfind(". "), slice_.rfind("! "), slice_.rfind("? "))
+    if punct > max_chars * 0.55:
+        return slice_[: punct + 1].rstrip()
     sp = max(slice_.rfind(" "), slice_.rfind("\u00a0"))
     if sp > max_chars * 0.45:
-        return slice_[:sp].rstrip() + "…"
+        return slice_[:sp].rstrip()
     soft = re.sub(r"[^\s]{1,12}$", "", slice_).rstrip()
     if len(soft) > max_chars * 0.4:
-        return soft + "…"
-    return slice_.rstrip() + "…"
+        return soft
+    return slice_.rstrip()
 
 
 class _Ctx:
@@ -132,7 +136,7 @@ class _Ctx:
             first = False
             p.space_after = Pt(8)
             r = p.add_run()
-            clipped = _clip_words(chunk, 700)
+            clipped = _clip_words(chunk, 900)
             r.text = clipped
             used_chars += len(clipped)
             r.font.name = FONT
@@ -143,7 +147,7 @@ class _Ctx:
         used_h = min(avail, est_lines * 230000 + 120000)
         return y + used_h
 
-    def bullets(self, items: list[str], y: int, color: RGBColor = BODY_COLOR, max_items: int = 8) -> int:
+    def bullets(self, items: list[str], y: int, color: RGBColor = BODY_COLOR, max_items: int = 8, max_chars: int = 280) -> int:
         avail = max(400000, CONTENT_BOTTOM - y)
         box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(avail))
         tf = box.text_frame
@@ -157,7 +161,7 @@ class _Ctx:
             p.space_after = Pt(10)
             p.line_spacing = 1.15
             r = p.add_run()
-            clipped = _clip_words(bullet, 200)
+            clipped = _clip_words(bullet, max_chars)
             r.text = f"• {clipped}"
             r.font.name = FONT
             r.font.size = Pt(FS_BODY)
@@ -225,18 +229,24 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     if template == "orion_golden_executive_card":
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY, FS_SECTION)
-        # ORION-style résumé: keep full synthesis (not a 420-char stub).
-        narr = _clip_words(narrative, 1400) if narrative else ""
+        # Narrative-only slide (part 1) vs themes slide: give narrative more vertical room.
+        narr = narrative.strip()
+        if narr and not bullets:
+            card_h = min(5200000, max(1600000, CONTENT_BOTTOM - y - 200000))
+            ctx.card(y, h=card_h)
+            # Do not hard-clip the full résumé; body splits paragraphs itself.
+            ctx.body(narr, y + 100000, max_h=card_h - 160000)
+            return
         if narr:
-            card_h = min(3200000, max(900000, len(narr) * 1800 + 200000))
-            # Leave room for bullets under the card
-            max_card = max(900000, CONTENT_BOTTOM - y - (900000 if bullets else 200000))
+            narr_show = _clip_words(narr, 2200)
+            card_h = min(2800000, max(800000, len(narr_show) * 1600 + 200000))
+            max_card = max(800000, CONTENT_BOTTOM - y - (1100000 if bullets else 200000))
             card_h = min(card_h, max_card)
             ctx.card(y, h=card_h)
-            y = ctx.body(narr, y + 100000, max_h=card_h - 160000)
-            y = y + 160000
+            y = ctx.body(narr_show, y + 100000, max_h=card_h - 160000)
+            y = y + 140000
         if bullets:
-            ctx.bullets(bullets, y, max_items=8)
+            ctx.bullets(bullets, y, max_items=7, max_chars=280)
         return
 
     if template == "orion_golden_risk_matrix":

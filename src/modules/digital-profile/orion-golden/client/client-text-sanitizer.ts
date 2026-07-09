@@ -16,17 +16,18 @@ const RISK_LEVEL_LABELS: Record<string, string> = {
 
 const THEME_LABELS: Record<string, string> = {
   risk: "Риск требует оценки",
-  pep: "Политически значимое лицо",
-  adverse_media: "Негативные публикации",
-  compliance: "Комплаенс-проверка",
-  sanctions_watchlist: "Санкционные списки",
-  legal_regulatory: "Правовые и регуляторные риски",
-  corporate_ownership: "Корпоративная структура",
-  identity_profile: "Идентификационный профиль",
-  neutral_profile: "Нейтральный профиль",
-  excluded_from_risk: "Исключено из оценки риска",
-  confirmed: "Подтверждено",
-  likely: "Вероятное совпадение",
+  // Keep PEP as acronym in running text — long nominative phrase breaks Russian cases.
+  pep: "PEP",
+  adverse_media: "негативные публикации",
+  compliance: "комплаенс",
+  sanctions_watchlist: "санкционные списки",
+  legal_regulatory: "правовые и регуляторные риски",
+  corporate_ownership: "корпоративная структура",
+  identity_profile: "идентификационный профиль",
+  neutral_profile: "нейтральный профиль",
+  excluded_from_risk: "исключено из оценки риска",
+  confirmed: "подтверждено",
+  likely: "вероятное совпадение",
 };
 
 const VERIFICATION_LABELS: Record<string, string> = {

@@ -54,14 +54,15 @@ Genre (match a human compliance analyst, NOT a system log):
 
 Hard rules:
 - Plain Russian. Complete sentences only. No mid-thought endings ("связано с…", "—…", "это может быть связано с:" without continuation).
-- FORBIDDEN in executiveSummary and bullets: material counts ("N материалов"), "на ручной проверке", "artifact-backed", "секций проанализировано", queue/gate/judgment process language, raw IDs, storage paths, enum keys.
+- FORBIDDEN in executiveSummary and bullets: material counts ("N материалов"), "на ручной проверке", "artifact-backed", "секций проанализировано", queue/gate/judgment process language, raw IDs, storage paths, enum keys, "Ключевой риск N", "Рекомендация N".
+- FORBIDDEN: English jargon dumps (accused/indicted/arrest lists), "adverse media" as raw English, "encyclopedic eligibility".
 - Do NOT dump URL lists or evidence titles. Evidence informs the narrative; the résumé is synthesis.
 - Do NOT present MANUAL_REVIEW_PENDING / caveated items as confirmed facts.
-- Prefer concrete names and themes over generic "выявлены риски".
-- executiveSummary: 2–4 short paragraphs (use \\n\\n between paragraphs), ~900–1400 characters total, self-contained on one slide.
-- mainRisks: 4–7 thematic bullets (theme + who/what + why it matters), each one complete sentence ≤180 chars.
-- possibleConsequences: 0–3 concrete compliance/reputation consequences (or empty if unknown).
-- finalRecommendations / nextSteps: actionable, specific, no process meta.
+- Prefer concrete names and themes over generic "выявлены риски". Write fact → meaning, not "источники содержат".
+- executiveSummary: 2–4 short paragraphs (use \\n\\n between paragraphs), ~1200–2000 characters. Finish every sentence.
+- mainRisks: 4–6 thematic bullets WITHOUT numbering prefixes; each one complete sentence ≤240 chars.
+- possibleConsequences: 0–2 concrete compliance/reputation consequences (or empty if unknown).
+- finalRecommendations / nextSteps: ONLY client actions (verify lists, obtain extracts, confirm PEP/sanctions hit). Never process stats ("исключено N").
 
 Return ONE JSON object:
 executiveSummary, globalRiskLevel, mainRisks, possibleConsequences, finalRecommendations, nextSteps.
