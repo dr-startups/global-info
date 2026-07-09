@@ -26,8 +26,11 @@ import {
 } from "../content/orion-client-content-builder";
 
 function artifactRootsForCase(caseId: string): string[] {
-  const roots = [ORION_GOLDEN_QA_STORAGE_ROOT];
-  // R10.7/R10.8 calibration case artifacts
+  // Prefer case-scoped artifacts (UI prepare / multi-case), then shared root, then calibration.
+  const roots = [
+    caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId),
+    ORION_GOLDEN_QA_STORAGE_ROOT,
+  ];
   if (caseId === "cmqzz1vbr00d2vdrsrjsgie2g") {
     roots.unshift(
       join(process.cwd(), "storage", "digital-profile", "qa-r10-7-real-subject-calibration")

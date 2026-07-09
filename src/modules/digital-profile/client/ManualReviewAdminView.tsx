@@ -17,7 +17,10 @@ import {
   regenerateOrionClientContentAfterReview,
   generateOrionClassicAuditReport,
   getOrionClassicAuditReportStatus,
+  prepareOrionGoldenArtifacts,
+  getOrionGoldenPrepareStatus,
   type OrionClassicAuditReportSummary,
+  type OrionGoldenPrepareSummary,
   submitOrionAdminReviewDecision,
   type AdminReviewStatus,
   type AdminReviewDecisionSetDto,
@@ -99,6 +102,8 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
   const [regenBusy, setRegenBusy] = useState(false);
   const [classicAudit, setClassicAudit] = useState<OrionClassicAuditReportSummary | null>(null);
   const [classicAuditBusy, setClassicAuditBusy] = useState(false);
+  const [prepareStatus, setPrepareStatus] = useState<OrionGoldenPrepareSummary | null>(null);
+  const [prepareBusy, setPrepareBusy] = useState(false);
   const [lastRegenAt, setLastRegenAt] = useState<string | null>(null);
 
   // Filters
@@ -134,16 +139,18 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const [c, q, d, classicStatus] = await Promise.all([
+      const [c, q, d, classicStatus, prepStatus] = await Promise.all([
         getCase(caseId),
         getOrionManualReviewQueue(caseId),
         listOrionAdminReviewDecisions(caseId).catch(() => null),
         getOrionClassicAuditReportStatus(caseId).catch(() => null),
+        getOrionGoldenPrepareStatus(caseId).catch(() => null),
       ]);
       setCaseDetail(c);
       setQueue(q);
       if (d) setDecisions(d);
       if (classicStatus) setClassicAudit(classicStatus);
+      if (prepStatus) setPrepareStatus(prepStatus);
     } catch (err) {
       const msg =
         err instanceof DigitalProfileApiError
@@ -437,6 +444,40 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
     }
   };
 
+  const prepareGoldenArtifacts = async () => {
+    if (!canDecide) return;
+    setPrepareBusy(true);
+    setBanner(null);
+    try {
+      const result = await prepareOrionGoldenArtifacts(caseId);
+      setPrepareStatus(result);
+      if (result.ok && result.queueReady) {
+        setBanner({
+          kind: "ok",
+          text: `Артефакты ORION Golden готовы. В очереди: ${result.pendingCount}. Обновляем страницу…`,
+        });
+        await loadQueue();
+      } else {
+        setBanner({
+          kind: "error",
+          text:
+            result.warnings[0] ||
+            `Подготовка не завершена (verdict=${result.verdict ?? "—"}). Проверьте AI/БД.`,
+        });
+      }
+    } catch (err) {
+      const msg =
+        err instanceof DigitalProfileApiError
+          ? `${err.code}: ${err.message}`
+          : err instanceof Error
+            ? err.message
+            : "Ошибка подготовки артефактов";
+      setBanner({ kind: "error", text: msg });
+    } finally {
+      setPrepareBusy(false);
+    }
+  };
+
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -531,11 +572,38 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
       <Card>
         <ErrorBox>{error}</ErrorBox>
         <p className="dp-muted" style={{ marginTop: 8 }}>
-          Убедитесь, что для кейса сгенерированы ORION Golden артефакты (manual-review-queue.json).
+          Для этого кейса ещё нет артефактов ORION Golden (manual-review-queue.json). Нажмите кнопку ниже —
+          система соберёт evidence, judgments и очередь review (без PDF, может занять несколько минут).
         </p>
-        <button type="button" className="dp-btn" onClick={() => void loadQueue()}>
-          Повторить
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
+          {canDecide ? (
+            <button
+              type="button"
+              className="dp-btn dp-btn-primary"
+              disabled={prepareBusy}
+              onClick={() => void prepareGoldenArtifacts()}
+            >
+              {prepareBusy ? "Подготовка…" : "Подготовить ORION Golden / очередь review"}
+            </button>
+          ) : (
+            <span className="dp-muted">Нужен risk.review для подготовки артефактов</span>
+          )}
+          <button type="button" className="dp-btn" disabled={prepareBusy} onClick={() => void loadQueue()}>
+            Повторить
+          </button>
+        </div>
+        {prepareStatus ? (
+          <p className="dp-muted" style={{ marginTop: 8 }}>
+            Статус подготовки: {prepareStatus.status}
+            {prepareStatus.verdict ? ` · ${prepareStatus.verdict}` : ""}
+            {prepareStatus.queueReady ? ` · очередь готова (${prepareStatus.pendingCount})` : ""}
+          </p>
+        ) : null}
+        {banner ? (
+          <div style={{ marginTop: 8 }}>
+            {banner.kind === "ok" ? <SuccessBox>{banner.text}</SuccessBox> : <ErrorBox>{banner.text}</ErrorBox>}
+          </div>
+        ) : null}
       </Card>
     );
   }
@@ -630,6 +698,35 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
           </Card>
         ))}
       </div>
+
+      <Card data-testid="prepare-golden-panel">
+        <div className="dp-stack" style={{ gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <strong>Подготовка артефактов</strong>
+            {canDecide ? (
+              <button
+                type="button"
+                className="dp-btn"
+                disabled={prepareBusy}
+                onClick={() => void prepareGoldenArtifacts()}
+              >
+                {prepareBusy ? "Подготовка…" : "Пересобрать ORION Golden / очередь review"}
+              </button>
+            ) : null}
+          </div>
+          <Notice>
+            Собирает inventory, judgments и manual-review-queue для этого кейса (без PDF). Нужно один раз перед
+            первой проверкой или после обновления evidence.
+          </Notice>
+          {prepareStatus ? (
+            <div className="dp-muted">
+              Статус: {prepareStatus.status}
+              {prepareStatus.queueReady ? ` · очередь готова (${prepareStatus.pendingCount})` : ""}
+              {prepareStatus.verdict ? ` · ${prepareStatus.verdict}` : ""}
+            </div>
+          ) : null}
+        </div>
+      </Card>
 
       <Card data-testid="regenerate-panel">
         <div className="dp-stack" style={{ gap: 8 }}>

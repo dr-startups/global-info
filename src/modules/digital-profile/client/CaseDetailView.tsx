@@ -13,11 +13,14 @@ import {
   listSearchSurfaces,
   renderReport,
   runFullAudit,
+  prepareOrionGoldenArtifacts,
+  getOrionGoldenPrepareStatus,
   type AgentInfo,
   type AgentRun,
   type CaseDetail,
   type CaseEvidence,
   type FullAuditRunSummaryItem,
+  type OrionGoldenPrepareSummary,
   type ReportVersion,
   type SearchSurfaceItem,
 } from "./api";
@@ -55,6 +58,8 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
   const [generating, setGenerating] = useState(false);
   const [auditing, setAuditing] = useState(false);
   const [banner, setBanner] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
+  const [prepareBusy, setPrepareBusy] = useState(false);
+  const [prepareStatus, setPrepareStatus] = useState<OrionGoldenPrepareSummary | null>(null);
   const [lastFullAuditSummary, setLastFullAuditSummary] = useState<{
     mode: "legacy_mock_first" | "real_first_with_fallback" | "real_only" | "mock_only";
     items: FullAuditRunSummaryItem[];
@@ -63,18 +68,20 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
   const loadAll = useCallback(async () => {
     setState({ kind: "loading" });
     try {
-      const [caseDetail, evidence, latestReport, agentList, runs, surfaceList] = await Promise.all([
+      const [caseDetail, evidence, latestReport, agentList, runs, surfaceList, prep] = await Promise.all([
         getCase(caseId),
         getEvidence(caseId),
         getReport(caseId),
         listAgents(caseId),
         listAgentRuns(caseId),
         listSearchSurfaces(caseId),
+        getOrionGoldenPrepareStatus(caseId).catch(() => null),
       ]);
       setReport(latestReport);
       setAgents(agentList);
       setAgentRuns(runs);
       setSurfaces(surfaceList);
+      if (prep) setPrepareStatus(prep);
       setState({ kind: "ready", caseDetail, evidence });
     } catch (err) {
       if (err instanceof DigitalProfileApiError) {
@@ -281,11 +288,51 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
           <div className="dp-stack" style={{ gap: 8 }}>
             <strong>ORION Golden — ручная проверка</strong>
             <p className="dp-muted" style={{ margin: 0 }}>
-              Очередь материалов, требующих решения аналитика. PENDING не является подтверждённым риском.
+              Сначала подготовьте артефакты (очередь review), затем откройте manual review и сгенерируйте полный ORION Audit.
             </p>
-            <Link className="dp-btn" href={`/admin/digital-profile/${state.caseDetail.id}/orion-golden/manual-review`}>
-              Открыть manual review
-            </Link>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              {can("risk.review") ? (
+                <button
+                  type="button"
+                  className="dp-btn dp-btn-primary"
+                  disabled={prepareBusy}
+                  onClick={() => {
+                    void (async () => {
+                      setPrepareBusy(true);
+                      setBanner(null);
+                      try {
+                        const result = await prepareOrionGoldenArtifacts(caseId);
+                        setPrepareStatus(result);
+                        setBanner({
+                          kind: result.ok ? "ok" : "error",
+                          text: result.ok
+                            ? `Артефакты готовы. В очереди: ${result.pendingCount}.`
+                            : result.warnings[0] || `Подготовка не завершена (${result.verdict ?? "—"})`,
+                        });
+                      } catch (err) {
+                        const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+                        const msg = err instanceof Error ? err.message : undefined;
+                        setBanner({ kind: "error", text: tError(code, msg) });
+                      } finally {
+                        setPrepareBusy(false);
+                      }
+                    })();
+                  }}
+                >
+                  {prepareBusy ? "Подготовка…" : "Подготовить ORION Golden / очередь review"}
+                </button>
+              ) : null}
+              <Link className="dp-btn" href={`/admin/digital-profile/${state.caseDetail.id}/orion-golden/manual-review`}>
+                Открыть manual review
+              </Link>
+            </div>
+            {prepareStatus ? (
+              <p className="dp-muted" style={{ margin: 0 }}>
+                Статус: {prepareStatus.status}
+                {prepareStatus.queueReady ? ` · очередь готова (${prepareStatus.pendingCount})` : ""}
+                {prepareStatus.verdict ? ` · ${prepareStatus.verdict}` : ""}
+              </p>
+            ) : null}
           </div>
         </Card>
       ) : null}

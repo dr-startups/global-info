@@ -1329,3 +1329,32 @@ export function getOrionClassicAuditReportStatus(
   );
 }
 
+export type OrionGoldenPrepareSummary = {
+  ok: boolean;
+  caseId: string;
+  status: "completed" | "failed" | "running" | "empty";
+  runId: string | null;
+  verdict: string | null;
+  artifactRoot: string | null;
+  pendingCount: number;
+  queueReady: boolean;
+  createdAt: string | null;
+  completedAt: string | null;
+  warnings: string[];
+};
+
+export function prepareOrionGoldenArtifacts(
+  caseId: string
+): Promise<OrionGoldenPrepareSummary> {
+  return request<OrionGoldenPrepareSummary>(`/cases/${caseId}/orion-golden/prepare`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function getOrionGoldenPrepareStatus(
+  caseId: string
+): Promise<OrionGoldenPrepareSummary> {
+  return request<OrionGoldenPrepareSummary>(`/cases/${caseId}/orion-golden/prepare`);
+}
+
