@@ -194,7 +194,7 @@ function isNoiseSuggestion(query: string): boolean {
   const q = query.toLowerCase().trim();
   // Generic media / entertainment / autocomplete junk seen on Glinka packs
   if (
-    /\b(слушать|музык|войн[еа]|стих|онлайн|youtube|piano|violin|concerto|lyrics|gallery|images?\s+free|video\s+live|videos?\s+youtube|news\s+today|news\s+article|autocomplete\s+(?:lyrics|piano|pdf|analysis)|interview\s+questions|profile\s+picture|images?\s+for\s+sale|russian\s+translation)\b/i.test(
+    /\b(слушать|музык|войн[еа]|стих(?:ов|и|а)?|онлайн|youtube|ютуб|piano|violin|concerto|lyrics|gallery|dance|танц|photograph(?:er|y)?|фотограф|recording|quotes?|молодост|images?\s+(?:free|and\s+quotes)|video\s+(?:live|recording|смотреть)|videos?\s+youtube|news\s+today|news\s+article|autocomplete\s+(?:lyrics|piano|pdf|analysis)|interview\s+(?:questions|смотреть|видео|pdf|20\d{2})|интервью\s+(?:смотреть|видео)|видео\s+(?:смотреть|ютуб)|фото\s+(?:в\s+молодости|графии)|profile\s+(?:picture|nyc|pdf)|images?\s+for\s+sale|russian\s+(?:translation|dance)|university)\b/i.test(
       q
     )
   ) {
@@ -202,7 +202,16 @@ function isNoiseSuggestion(query: string): boolean {
   }
   if (
     /подсказки\s+(слушать|в\s+музыке|в\s+войне|слушать\s+онлайн)/i.test(q) ||
-    /related queries|image gallery|images free|profile (linkedin|facebook)|uaeraine|uaeu|russkov|russo\b/i.test(q)
+    /публикация\s+стих|related queries|image gallery|images free|uaeraine|uaeu|russkov|russo\b/i.test(q)
+  ) {
+    return true;
+  }
+  // Soft social/media filler without compliance signal
+  if (
+    /^(?:глинк\w*|glinka)\b.+\b(фото|видео|интервью|стих|ютуб|youtube|dance|photograph)/i.test(q) &&
+    !/\b(трансмаш|санкц|криминал|суд|арест|pep|rca|википед|wikipedia|биограф|инн|дата\s+рожден|linkedin|rupep|forbes|компромат)\b/i.test(
+      q
+    )
   ) {
     return true;
   }
@@ -213,6 +222,22 @@ function isNoiseSuggestion(query: string): boolean {
   return /^(deripaska|oleg)\s+(oleg\s+)?(vladimirovich\s+)?(related|image|video|news|profile|interview\s+\d{4})/i.test(
     q
   );
+}
+
+/** Prefer compliance-relevant autocomplete over soft biography filler. */
+function suggestionRelevanceBoost(query: string): number {
+  const q = query.toLowerCase();
+  let boost = 0;
+  if (/\b(трансмаш|махмудов|бокарев|ликсутов|санкц|криминал|суд|арест|pep|rca|компромат|rupep|rucriminal|forbes|офшор|лнр)\b/i.test(q)) {
+    boost += 80;
+  }
+  if (/\b(википед|wikipedia|биограф|инн|дата\s+рожден|linkedin|огрн)\b/i.test(q)) {
+    boost += 35;
+  }
+  if (/\b(фото|видео|интервью|стих|ютуб|youtube|dance|photograph|quotes)\b/i.test(q)) {
+    boost -= 30;
+  }
+  return boost;
 }
 
 function buildExecutiveFromClient(
@@ -535,10 +560,11 @@ function suggestionBullets(
         cls === "EXACT_SUBJECT_QUERY" || cls === "SUBJECT_BROAD_QUERY" ? 40 : 0;
       const adjacentPenalty =
         cls === "NAMESAKE_QUERY" || cls === "IRRELEVANT_QUERY" || cls === "GENERIC_QUERY" ? -40 : 0;
+      const relevance = suggestionRelevanceBoost(query);
       return {
         query,
         cls,
-        score: riskBoost + subjectBoost + adjacentPenalty + Math.min(query.length, 40),
+        score: riskBoost + subjectBoost + adjacentPenalty + relevance + Math.min(query.length, 40),
       };
     })
     .filter((row) => row.query.length >= 3)
