@@ -410,7 +410,7 @@ function buildOrionExecutiveSlides(
           ...decision.problems.slice(0, 4),
           ...decision.consequences.slice(0, 3),
         ];
-  const themeBullets = sanitizeClassicBullets(themeSet.executiveBullets, 360).slice(0, 7);
+  const themeBullets = sanitizeClassicBullets(themeSet.executiveBullets, 400).slice(0, 7);
   return [
     {
       slideKey: "executive-1",
@@ -875,7 +875,7 @@ function inventoryFallbackBlock(
       );
     }
     if (themeSet && sectionId === "03_digital_profile_overview") {
-      bullets = sanitizeClassicBullets(themeSet.executiveBullets, 320).slice(0, 6);
+      bullets = sanitizeClassicBullets(themeSet.executiveBullets, 400).slice(0, 6);
       narrative = truncateAtWordBoundary(
         [
           themeSet.executiveNarrative.split("\n\n")[0] ?? "",
@@ -1166,7 +1166,7 @@ function blockFromClientSection(
         .join(" "),
       900
     );
-    bullets = sanitizeClassicBullets(themeSet.executiveBullets, 320).slice(0, 6);
+    bullets = sanitizeClassicBullets(themeSet.executiveBullets, 400).slice(0, 6);
   }
 
   // Heat-grid bullets replace dense position tables when ThemeSet path is active
@@ -1279,19 +1279,19 @@ function riskMatrixBlockFromExecutive(
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
-  }).slice(0, 10);
+  }).slice(0, 6);
 
   const slideSpecs: SectionBlock["slideSpecs"] = [];
-  for (const [idx, chunk] of chunkItems(matrix, 5).entries()) {
+  for (const [idx, chunk] of chunkItems(matrix, 6).entries()) {
     slideSpecs.push({
       slideKey: `risk-matrix-${idx + 1}`,
       template: "orion_golden_risk_matrix",
-      title: matrix.length > 5 ? `Матрица комплаенс-рисков (${idx + 1})` : "Матрица комплаенс-рисков",
+      title: matrix.length > 6 ? `Матрица комплаенс-рисков (${idx + 1})` : "Матрица комплаенс-рисков",
       // Claim-first (ORION prose), then level — not «Тема — Уровень: …».
       bullets: chunk.map((r) =>
         truncateAtWordBoundary(
           r.summary.length > 40 ? `${r.summary} — ${r.level}` : `${r.theme} — ${r.level}: ${r.summary}`,
-          340
+          380
         )
       ),
     });

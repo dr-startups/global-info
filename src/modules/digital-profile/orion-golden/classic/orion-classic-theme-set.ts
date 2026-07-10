@@ -1781,12 +1781,21 @@ function complianceExecutiveRollup(
   }
   const namesBit =
     nom.length > 0
-      ? ` (с учётом смежного открытого контура: ${
+      ? `; смежный открытый контур: ${
           nom.length === 1 ? nom[0] : `${nom.slice(0, -1).join(", ")} и ${nom[nom.length - 1]}`
-        })`
+        }`
       : "";
   const sDat = shortSubjectDative(subjectName);
   return `В ${providers} — предварительные сигналы (${kindLabel}) по ${sDat}${namesBit}; требуется сверка полных профилей`;
+}
+
+function isGenericMultiProviderComplianceStub(text: string): boolean {
+  return (
+    /dow jones/i.test(text) &&
+    /lexisnexis/i.test(text) &&
+    /world-?check/i.test(text) &&
+    /потенциальн|совпаден|не раскрыт|полному имени|базовых карточек/i.test(text)
+  );
 }
 
 function shortSubjectLabel(subjectName: string): string {
@@ -2045,6 +2054,7 @@ function buildExecutiveNarrative(input: {
     )
     .filter((b) => b.length > 40)
     .filter((b) => !isWeakClaimText(b))
+    .filter((b) => !isGenericMultiProviderComplianceStub(b))
     .filter((b) => !primaryClaims.some((t) => t.slice(0, 48).toLowerCase() === b.slice(0, 48).toLowerCase()))
     .slice(0, 2);
 
@@ -2055,7 +2065,8 @@ function buildExecutiveNarrative(input: {
     if (/совместный бизнес.*ликсутов/i.test(c)) return "liksutov-business";
     if (/лнр/i.test(c)) return "lnr";
     if (/офшор|агрегаторе/i.test(c)) return "offshore-agg";
-    if (/dow jones|lexisnexis|world-check|world check/i.test(c) && /предварительн/i.test(c)) {
+    if (isGenericMultiProviderComplianceStub(c)) return "compliance-rollup";
+    if (/dow jones|lexisnexis|world-check|world check/i.test(c) && /предварительн|сигнал/i.test(c)) {
       return "compliance-rollup";
     }
     if (/forbes\.com|tass\.com/i.test(c) && /иные потенциально|криминальн/i.test(c)) return "weak-soft-press";
@@ -2065,11 +2076,16 @@ function buildExecutiveNarrative(input: {
   for (const c of [...primaryClaims, ...singleClaims, ...complianceClaims, ...gptExtras]) {
     if (bullets.length >= 7) break;
     if (isWeakClaimText(c)) continue;
+    if (isGenericMultiProviderComplianceStub(c) && complianceClaims.length > 0) continue;
     const key = claimKey(c);
     const existingIdx = bullets.findIndex((b) => claimKey(b) === key);
     if (existingIdx >= 0) {
-      // Keep the longer / more specific claim
-      if (c.length > bullets[existingIdx].length) bullets[existingIdx] = c;
+      // Prefer ThemeSet rollup over GPT generic multi-provider stub
+      if (isGenericMultiProviderComplianceStub(bullets[existingIdx]) && !isGenericMultiProviderComplianceStub(c)) {
+        bullets[existingIdx] = c;
+      } else if (c.length > bullets[existingIdx].length && !isGenericMultiProviderComplianceStub(c)) {
+        bullets[existingIdx] = c;
+      }
       continue;
     }
     bullets.push(c);
@@ -2251,21 +2267,23 @@ export function orionStyleRiskMatrixRows(themeSet: OrionThemeSet): Array<{
   };
   const rows = themeSet.themes
     .filter((t) => !isSoftPressNoiseTheme(t))
-    .slice(0, 6)
+    .slice(0, 5)
     .map((t) => ({
       theme: themeLabel(t),
       level: levelFor(t),
       summary: themeToClientClaim(t, themeSet.subjectName),
     }))
     .filter((r) => r.summary.length > 20 && !isWeakClaimText(r.summary));
-  for (const c of themeSet.complianceSignals) {
+  // One compliance rollup row — avoid a second matrix slide of near-identical DJ/WC/LN lines.
+  const complianceRollup = complianceExecutiveRollup(themeSet.complianceSignals, themeSet.subjectName);
+  if (complianceRollup) {
     rows.push({
-      theme: c.provider,
+      theme: "Международные базы",
       level: "Требует проверки",
-      summary: complianceToClientClaim(c, themeSet.subjectName),
+      summary: complianceRollup,
     });
   }
-  return rows.slice(0, 8);
+  return rows.slice(0, 6);
 }
 
 function positionOfItem(item: FullEvidenceInventory["items"][number]): number {
