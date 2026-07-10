@@ -10,7 +10,11 @@ import {
   themeForClass,
   type StoredRiskClassification,
 } from "../../risk-classifier/result-classifier";
-import { humanizeRiskTheme, sanitizeOrionGoldenClientText } from "../client/client-text-sanitizer";
+import {
+  humanizeRiskTheme,
+  sanitizeOrionGoldenClientText,
+  sanitizeOrionGoldenEvidenceSnippet,
+} from "../client/client-text-sanitizer";
 import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
 import type { OrionClientContent } from "../content/orion-client-content-builder";
 import type { ExecutiveSynthesisOutput } from "../gpt/orion-executive-synthesis-from-sections";
@@ -374,6 +378,73 @@ function isDemoOrNoiseItem(item: FullEvidenceInventory["items"][number]): boolea
 
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const CYR_TO_LAT: Record<string, string> = {
+  а: "a",
+  б: "b",
+  в: "v",
+  г: "g",
+  д: "d",
+  е: "e",
+  ё: "e",
+  ж: "zh",
+  з: "z",
+  и: "i",
+  й: "y",
+  к: "k",
+  л: "l",
+  м: "m",
+  н: "n",
+  о: "o",
+  п: "p",
+  р: "r",
+  с: "s",
+  т: "t",
+  у: "u",
+  ф: "f",
+  х: "kh",
+  ц: "ts",
+  ч: "ch",
+  ш: "sh",
+  щ: "shch",
+  ъ: "",
+  ы: "y",
+  ь: "",
+  э: "e",
+  ю: "yu",
+  я: "ya",
+};
+
+function toLatinRough(s: string): string {
+  return [...s.toLowerCase()].map((c) => CYR_TO_LAT[c] ?? c).join("");
+}
+
+/** True when blob mentions subject surname (Cyrillic or rough Latin) or core ORION plot. */
+function blobMentionsSubjectOrPlot(blob: string, subjectName: string): boolean {
+  if (ORION_CORE_PLOT_RE.test(blob) || ORION_NAMED_STORY_RE.test(blob)) return true;
+  const surname = subjectName.trim().split(/\s+/).filter(Boolean)[0];
+  if (!surname) return false;
+  if (new RegExp(escapeRe(surname), "i").test(blob)) return true;
+  const latin = toLatinRough(surname);
+  if (latin.length >= 4 && new RegExp(escapeRe(latin), "i").test(blob)) return true;
+  return false;
+}
+
+/**
+ * SERP rows about unrelated people/stories (Karelina donation, generic Insider wire)
+ * with no subject surname and no named ORION plot tokens.
+ */
+function isOffSubjectSerpHit(
+  title: string,
+  snippet: string | undefined,
+  url: string | undefined,
+  subjectName: string
+): boolean {
+  const blob = `${title} ${snippet ?? ""} ${url ?? ""}`;
+  if (blobMentionsSubjectOrPlot(blob, subjectName)) return false;
+  // No subject / plot signal → off-subject noise for heat grid & Tema cards.
+  return true;
 }
 
 /**
@@ -1046,6 +1117,9 @@ function buildThemes(
     if (isDemoOrNoiseItem(item)) continue;
     if (isFalsePersonHit(String(item.title ?? ""), item.sourceUrl, subjectName)) continue;
     const et = item.evidenceType.toLowerCase();
+    if (et === "search_result" && isOffSubjectSerpHit(String(item.title ?? ""), item.snippet, item.sourceUrl, subjectName)) {
+      continue;
+    }
     if (et !== "search_result" && et !== "risk_finding" && et !== "compliance_hit") continue;
     const adverse = isAdverseItem(item);
     if (!adverse && et === "search_result") {
@@ -1077,7 +1151,9 @@ function buildThemes(
       domain: domainOf(item.sourceUrl),
       url: item.sourceUrl,
       region: region === "GLOBAL" ? "RU" : region,
-      snippet: item.snippet ? sanitizeOrionGoldenClientText(item.snippet).slice(0, 180) : undefined,
+      snippet: item.snippet
+        ? sanitizeOrionGoldenEvidenceSnippet(item.snippet).slice(0, 180)
+        : undefined,
     };
     // Prefer UI-adverse / known adverse domains at the front of sampleHits
     const existingIdx = bucket.hits.findIndex((h) => h.url && hit.url && h.url === hit.url);
@@ -1759,7 +1835,9 @@ function enrichThemesFromCompliance(
             domain: domainOf(item.sourceUrl),
             url: item.sourceUrl,
             region: matchesRegion(item.region, "UAE") ? "UAE" : "RU",
-            snippet: item.snippet ? sanitizeOrionGoldenClientText(item.snippet).slice(0, 180) : undefined,
+            snippet: item.snippet
+        ? sanitizeOrionGoldenEvidenceSnippet(item.snippet).slice(0, 180)
+        : undefined,
           },
         ],
       });
@@ -1778,7 +1856,9 @@ function enrichThemesFromCompliance(
             domain: domainOf(item.sourceUrl),
             url: item.sourceUrl,
             region: "RU",
-            snippet: item.snippet ? sanitizeOrionGoldenClientText(item.snippet).slice(0, 180) : undefined,
+            snippet: item.snippet
+        ? sanitizeOrionGoldenEvidenceSnippet(item.snippet).slice(0, 180)
+        : undefined,
           },
         ],
       });
@@ -1801,7 +1881,9 @@ function enrichThemesFromCompliance(
             domain: domainOf(item.sourceUrl),
             url: item.sourceUrl,
             region: matchesRegion(item.region, "UAE") ? "UAE" : "RU",
-            snippet: item.snippet ? sanitizeOrionGoldenClientText(item.snippet).slice(0, 180) : undefined,
+            snippet: item.snippet
+        ? sanitizeOrionGoldenEvidenceSnippet(item.snippet).slice(0, 180)
+        : undefined,
           },
         ],
       });
@@ -2378,7 +2460,13 @@ export function buildSerpHeatGridBullets(
         i.evidenceType === "search_result" &&
         matchesRegion(i.region, region) &&
         !isDemoOrNoiseItem(i) &&
-        !isFalsePersonHit(String(i.title ?? ""), i.sourceUrl, inventory.subject.fullName)
+        !isFalsePersonHit(String(i.title ?? ""), i.sourceUrl, inventory.subject.fullName) &&
+        !isOffSubjectSerpHit(
+          String(i.title ?? ""),
+          i.snippet,
+          i.sourceUrl,
+          inventory.subject.fullName
+        )
     )
     .map((i) => ({
       pos: positionOfItem(i) || 999,
@@ -2416,7 +2504,8 @@ export function buildSerpHeatGridBullets(
     const counts = domainCounts.get(row.domain) ?? { adverse: 0, neutral: 0 };
     // Cap near-duplicate SERP clones per domain (highways.today / rupep / cybercriminal).
     if (row.adverse) {
-      if (counts.adverse >= 2) return;
+      const maxAdv = /(?:^|\.)(?:rupep\.|cybercriminal\.)/i.test(row.domain) ? 1 : 2;
+      if (counts.adverse >= maxAdv) return;
       counts.adverse += 1;
     } else {
       if (counts.neutral >= 1) return;
@@ -2473,6 +2562,7 @@ export function buildAnnotatedLinkCards(
       if (isWeakMediaDomain(hit.domain) || WEAK_ANCHOR_DOMAIN_RE.test(hit.domain)) continue;
       if (FALSE_STORY_ANCHOR_DOMAIN_RE.test(hit.domain) || isGovPortalDomain(hit.domain)) continue;
       if (isFalsePersonHit(hit.title, hit.url, themeSet.subjectName)) continue;
+      if (isOffSubjectSerpHit(hit.title, hit.snippet, hit.url, themeSet.subjectName)) continue;
       if (
         (theme.id === "pep_rca" || theme.id === "sanctions_associates") &&
         isGovPortalDomain(hit.domain)
@@ -2484,8 +2574,9 @@ export function buildAnnotatedLinkCards(
         .filter((e) => /трансмаш|махмудов|бокарев|ликсутов|молдав|лнр|оборон/i.test(e))
         .slice(0, 2)
         .join(", ");
-      const snip = hit.snippet
-        ? ` — ${hit.snippet.slice(0, 110)}`
+      const cleanSnippet = hit.snippet ? sanitizeOrionGoldenEvidenceSnippet(hit.snippet) : "";
+      const snip = cleanSnippet
+        ? ` — ${cleanSnippet.slice(0, 110)}`
         : storyHint
           ? ` — ${storyHint}`
           : "";

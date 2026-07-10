@@ -116,6 +116,61 @@ function stripTechnicalSnippets(text: string): string {
     .trim();
 }
 
+/**
+ * Strip obfuscated / impossible profile fields that leak into client cards
+ * (e.g. RuPEP «Категория: Aячцжмтщш», «Дата рождения: 11.55.1840»).
+ */
+export function sanitizeOrionGoldenEvidenceSnippet(text: string): string {
+  if (!text) return "";
+  let out = sanitizeOrionGoldenClientText(text);
+
+  // Category labels on aggregator cards are often cipher/OCR garbage — never show raw.
+  out = out.replace(/(?:Категория|Category|Сategory)\s*:\s*[^\n·•|;]{1,64}/gi, "");
+
+  let droppedInvalidDob = false;
+  out = out.replace(
+    /(?:Дата рождения|Date of birth|DOB)\s*:\s*[^\n·•|;]{1,64}/gi,
+    (m) => {
+      const dm = m.match(/(\d{1,2})[./](\d{1,2})[./](\d{4})/);
+      if (!dm) {
+        droppedInvalidDob = true;
+        return "";
+      }
+      const day = Number(dm[1]);
+      const month = Number(dm[2]);
+      const year = Number(dm[3]);
+      if (month < 1 || month > 12 || day < 1 || day > 31 || year < 1920 || year > 2015) {
+        droppedInvalidDob = true;
+        return "";
+      }
+      return m;
+    }
+  );
+
+  // If DOB was garbage, paired taxpayer fields on the same obfuscated card are untrusted.
+  if (droppedInvalidDob) {
+    out = out.replace(
+      /(?:ИНН|INN|Individual Taxpayer(?:\s+Number)?)\s*:?\s*[^\n·•|;]{0,40}/gi,
+      ""
+    );
+  } else {
+    out = out.replace(
+      /(?:ИНН|INN|Individual Taxpayer(?:\s+Number)?)\s*:\s*[^\n·•|;]{1,40}/gi,
+      (m) => {
+        const digits = (m.match(/\d{10,12}/) ?? [])[0];
+        if (!digits || !/^\d{10}$|^\d{12}$/.test(digits)) return "";
+        return m;
+      }
+    );
+  }
+
+  return out
+    .replace(/\s*[·•|;]\s*[·•|;]\s*/g, " · ")
+    .replace(/^[·•|;,\s]+|[·•|;,\s]+$/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export function sanitizeOrionGoldenClientText(text: string): string {
   if (!text) return "";
 
