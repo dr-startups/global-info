@@ -5,7 +5,7 @@
 import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
 import { sanitizeOrionGoldenClientText } from "../client/client-text-sanitizer";
 import type { OrionGoldenDeckManifest, OrionGoldenDeckSlide } from "../composer/orion-deck-composer";
-import { truncateAtWordBoundary } from "./orion-classic-text-utils";
+import { scrubClientFacingProse, truncateAtWordBoundary } from "./orion-classic-text-utils";
 import type { OrionClassicAuditReportSpec } from "./orion-classic-client-content-to-report-spec";
 import {
   assetSectionKeyForRegistry,
@@ -105,16 +105,17 @@ function chunkAssetSlides(
 }
 
 function sanitizeSlide(slide: OrionGoldenDeckSlide): OrionGoldenDeckSlide {
+  const scrub = (s: string) => scrubClientFacingProse(sanitizeOrionGoldenClientText(s));
   return {
     ...slide,
-    title: sanitizeOrionGoldenClientText(slide.title),
-    narrative: slide.narrative ? sanitizeOrionGoldenClientText(slide.narrative) : undefined,
+    title: scrub(slide.title),
+    narrative: slide.narrative ? scrub(slide.narrative) : undefined,
     bullets: slide.bullets
-      ?.map((b) => sanitizeOrionGoldenClientText(b))
+      ?.map((b) => scrub(b))
       .filter((b) => Boolean(b) && !/\[object Object\]/i.test(b))
       .filter(
         (b) =>
-          !/\.example(\/|$|\s)|example\.com|\[DEMO\]|Demo DOW JONES|Demo WORLD CHECK|potential match only|демо[- ]?скрининг|демонстрационн|DATA\s*POOR|match score|requires analyst review/i.test(
+          !/\.example(\/|$|\s)|example\.com|\[DEMO\]|Demo DOW JONES|Demo WORLD CHECK|Demo LEXIS|potential match only|демо[- ]?скрининг|демонстрационн|DATA\s*POOR|match score|requires analyst review|Sergey Mikhaylovich Kozlov|Козлов/i.test(
             b
           )
       ),

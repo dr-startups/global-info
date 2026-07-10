@@ -139,7 +139,9 @@ export function isDemoOrPlaceholderClientText(text: string): boolean {
   return (
     /\.example(\/|$|\s)/i.test(t) ||
     /example\.com|directory-ru\.example|news-ru\.example|ru-directory\.example/i.test(t) ||
-    /\[DEMO\]|Demo DOW JONES|Demo WORLD CHECK|Demo LEXIS|potential match only|demo screening/i.test(t) ||
+    /\[DEMO\]|Demo DOW JONES|Demo WORLD CHECK|Demo LEXIS(?:NEXIS)?|Demo LEXISNEXIS|potential match only|demo screening/i.test(
+      t
+    ) ||
     /демо[- ]?скрининг|демо[- ]?режим|demo[- ]?screen/i.test(t) ||
     /localhost|127\.0\.0\.1/i.test(t)
   );
@@ -160,6 +162,21 @@ export function isEnglishComplianceStub(text: string): boolean {
 /** Rewrite client-facing prose that still mentions demo screening / process meta. */
 export function scrubClientFacingProse(text: string): string {
   let t = String(text ?? "");
+  // Drop whole Demo DJ/LN/WC product names before other rewrites
+  t = t.replace(
+    /(?:Demo\s+)?(?:DOW\s*JONES|LEXISNEXIS|LEXIS\s*NEXIS|WORLD[\s-]*CHECK)(?:\s*[,и]\s*(?:Demo\s+)?(?:DOW\s*JONES|LEXISNEXIS|LEXIS\s*NEXIS|WORLD[\s-]*CHECK))+/gi,
+    (m) => (/Demo/i.test(m) ? "международных комплаенс-базах" : m)
+  );
+  t = t.replace(/\bDemo\s+(?:DOW\s*JONES|LEXISNEXIS|LEXIS\s*NEXIS|WORLD[\s-]*CHECK)\b/gi, "комплаенс-базе");
+  t = t.replace(
+    /потенциальн(?:ые|ых|ый)\s+совпадени[яе]\s+в\s+международных комплаенс-базах(?:\s+и\s+международных комплаенс-базах)+/gi,
+    "предварительные совпадения в международных комплаенс-базах"
+  );
+  t = t.replace(
+    /потенциальн(?:ые|ых|ый)\s+совпадени[яе]\s+в\s+(?:Demo\s+)?(?:DOW\s*JONES|LEXISNEXIS|WORLD[\s-]*CHECK)(?:\s*[,и]\s*(?:Demo\s+)?(?:DOW\s*JONES|LEXISNEXIS|WORLD[\s-]*CHECK))*/gi,
+    "предварительные совпадения в международных комплаенс-базах"
+  );
+  t = t.replace(/международных комплаенс-базах(?:\s+и\s+международных комплаенс-базах)+/gi, "международных комплаенс-базах");
   t = t.replace(/демо[- ]?скрининг(?:ах|а|и|ов|у|ом)?/gi, "предварительных проверках");
   t = t.replace(/demo[- ]?screening(?:s)?/gi, "preliminary screenings");
   t = t.replace(/в\s+демо[- ]?режиме/gi, "на предварительном этапе");

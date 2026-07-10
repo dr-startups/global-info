@@ -159,9 +159,23 @@ const CRIMINAL_AGGREGATOR_DOMAIN_RE =
 const WEAK_ANCHOR_DOMAIN_RE =
   /(?:^|\.)(?:yandex\.|ya\.ru|google\.|gstatic\.|images\.google|disclosure\.1prime|1prime\.ru|ria\.ru\/?$)/i;
 
+/**
+ * Domains that are adverse-capable but often wrong-person / tangential for Tema N anchors
+ * (Treasury lists, NGO PDFs, generic cybercriminal bios without named ORION plot).
+ */
+const FALSE_STORY_ANCHOR_DOMAIN_RE =
+  /(?:^|\.)(?:home\.treasury\.gov|treasury\.gov|nhc\.nl|ofac\.treasury)/i;
+
+/** Prefer real RU criminal aggregators over EN cybercriminal bio pages. */
+const PRIMARY_CRIMINAL_DOMAIN_RE = /rucriminal\./i;
+const SECONDARY_CRIMINAL_DOMAIN_RE = /cybercriminal\./i;
+
 /** ORION GSM-style named story tokens (Трансмаш / Махмудов / Ликсутов / Молдавия / ЛНР). */
 const ORION_NAMED_STORY_RE =
   /трансмашхолдинг|transmashholding|трансмаш|махмудов|makhmudov|бокарев|bokarev|ликсутов|liksutov|молдав(?:ия|ии|ской)?|moldova|лнр|лднр|defense\s+industry|оборонн(?:ой|ая|ый)?\s+промышлен|индустриальн/i;
+
+/** Core GSM criminal/sanctions plot names (not birthplace Moldova alone). */
+const ORION_CORE_PLOT_RE = /трансмаш|махмудов|makhmudov|бокарев|bokarev/i;
 
 const ADVERSE_RE =
   /adverse|negative|undesirable|нежелат|негатив|санкц|sanction|ofac|корруп|corrupt|мошен|fraud|арест|arrest|уголов|criminal|суд|lawsuit|pep|watchlist|rca|компромат|offshore|офшор|политич|молдав|лднр|лнр|индустриальн|бенефициар|associated|associate|defense industry|оборон/i;
@@ -320,9 +334,50 @@ function isDemoOrNoiseItem(item: FullEvidenceInventory["items"][number]): boolea
   return (
     /\.example(\/|$)/i.test(url) ||
     /directory-ru\.example|news-ru\.example|ru-directory\.example/i.test(blob) ||
-    /\[DEMO\]|Demo DOW JONES|Demo WORLD CHECK|potential match only|demo screening/i.test(blob) ||
+    /\[DEMO\]|Demo DOW JONES|Demo WORLD CHECK|Demo LEXIS(?:NEXIS)?|Demo LEXISNEXIS|potential match only|demo screening/i.test(
+      blob
+    ) ||
     /example\.com|localhost|127\.0\.0\.1/i.test(url)
   );
+}
+
+/**
+ * Homonym / wrong-person SERP rows (e.g. OpenSanctions «Sergey Mikhaylovich Kozlov»)
+ * must not become Tema N / executive anchors for the subject.
+ */
+function isFalsePersonHit(
+  title: string,
+  url: string | undefined,
+  subjectName: string
+): boolean {
+  const t = `${title} ${url ?? ""}`;
+  const subjectLower = subjectName.toLowerCase();
+  const surname = subjectName
+    .trim()
+    .split(/\s+/)
+    .find((x) => x.length > 2)
+    ?.toLowerCase();
+  if (!surname) return false;
+
+  // Explicit known false positives seen on Glinka packs
+  if (/kozlov|козлов/i.test(t) && !/kozlov|козлов/i.test(subjectLower)) return true;
+
+  // OpenSanctions / OFAC-style title with a different Latin FIO
+  if (/opensanctions|ofac|sanction/i.test(t)) {
+    const subjectInTitle =
+      new RegExp(surname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(title) ||
+      /glinka|глинк/i.test(title);
+    if (!subjectInTitle) {
+      // "Sergey Mikhaylovich Kozlov - OpenSanctions" / similar
+      if (
+        /(?:Sergey|Sergei|Serhii|Сергей)\s+[A-ZА-ЯЁ][a-zа-яё]+\s+[A-ZА-ЯЁ][a-zа-яё]+/i.test(title) ||
+        /[A-Z][a-z]+\s+[A-Z][a-z]+\s+[A-Z][a-z]+\s*[—\-–]\s*OpenSanctions/i.test(title)
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function isGarbageEntityToken(token: string): boolean {
@@ -368,14 +423,22 @@ function hitPriorityScore(hit: OrionThemeEvidenceHit, themeKey: ThemeBucketKey):
   const d = (hit.domain || "").toLowerCase();
   const blob = `${hit.title} ${hit.snippet ?? ""}`.toLowerCase();
   let score = 0;
-  if (CRIMINAL_AGGREGATOR_DOMAIN_RE.test(d)) score += 120;
-  if (ORION_NAMED_STORY_RE.test(blob)) score += 55;
-  if (/rupep|opensanctions|justice\.gov|ofac|tadviser|peps|dossier|kommersant|vedomosti|rbc\.|forbes/i.test(d)) {
+  // rucriminal (GSM) >> cybercriminal bio pages >> other aggregators
+  if (PRIMARY_CRIMINAL_DOMAIN_RE.test(d)) score += 200;
+  else if (SECONDARY_CRIMINAL_DOMAIN_RE.test(d)) score += 70;
+  else if (CRIMINAL_AGGREGATOR_DOMAIN_RE.test(d)) score += 110;
+  if (ORION_CORE_PLOT_RE.test(blob)) score += 80;
+  else if (ORION_NAMED_STORY_RE.test(blob)) score += 40;
+  if (/rupep|opensanctions|justice\.gov|ofac|tadviser|peps|dossier|kommersant|vedomosti|rbc\.|forbes|acompromat/i.test(d)) {
     score += 35;
   }
   if (themeKey === "criminal_legal" && /court|суд|justice/i.test(d)) score += 25;
+  // cybercriminal without core plot is a weak lead vs rucriminal dossiers
+  if (SECONDARY_CRIMINAL_DOMAIN_RE.test(d) && !ORION_CORE_PLOT_RE.test(blob)) score -= 40;
+  if (FALSE_STORY_ANCHOR_DOMAIN_RE.test(d)) score -= 150;
   if (WEAK_ANCHOR_DOMAIN_RE.test(d) || isWeakMediaDomain(d) || isGovPortalDomain(d)) score -= 100;
   if (/\.example|example\.com/i.test(d)) score -= 200;
+  if (/kozlov|козлов/i.test(blob)) score -= 250;
   return score;
 }
 
@@ -387,7 +450,11 @@ function sortHitsForTheme(
 }
 
 function isGovPortalDomain(domain: string): boolean {
-  return /kremlin\.ru|gov\.ru|president\.|whitehouse\.|gov\.uk/i.test(domain);
+  return (
+    /kremlin\.ru|gov\.ru|president\.|whitehouse\.|gov\.uk|home\.treasury\.gov|treasury\.gov/i.test(
+      domain
+    ) || FALSE_STORY_ANCHOR_DOMAIN_RE.test(domain)
+  );
 }
 
 function preferredThemeSample(
@@ -413,9 +480,15 @@ function preferredThemeSample(
       (h) => h.domain && !isWeakMediaDomain(h.domain) && !isGovPortalDomain(h.domain)
     );
   }
-  // Criminal/legal theme: prefer court/news over personal blogs.
+  // Criminal/legal theme: rucriminal first, then other aggregators / court.
   if (themeKey === "criminal_legal") {
     return (
+      sample.find((h) => PRIMARY_CRIMINAL_DOMAIN_RE.test(h.domain)) ??
+      sample.find(
+        (h) =>
+          CRIMINAL_AGGREGATOR_DOMAIN_RE.test(h.domain) &&
+          ORION_CORE_PLOT_RE.test(`${h.title} ${h.snippet ?? ""}`)
+      ) ??
       sample.find((h) => CRIMINAL_AGGREGATOR_DOMAIN_RE.test(h.domain)) ??
       sample.find((h) =>
         /court|суд|justice|reuters|bbc|rbc|forbes|kommersant|vedomosti|interfax/i.test(h.domain)
@@ -470,12 +543,40 @@ function isQualityEntity(entity: string, subjectName: string): boolean {
 }
 
 /** GSM-style theme titles when named story entities are present. */
-function themeDisplayTitle(defKey: ThemeBucketKey, fallbackTitle: string, named: string[]): string {
+function themeDisplayTitle(
+  defKey: ThemeBucketKey,
+  fallbackTitle: string,
+  named: string[],
+  sampleHits: OrionThemeEvidenceHit[] = []
+): string {
   const story = named.filter((e) =>
     /трансмаш|махмудов|бокарев|ликсутов|молдав|лнр|лднр|оборон/i.test(e)
   );
-  if (defKey === "criminal_legal" || defKey === "sanctions_associates") {
-    const core = story.filter((e) => /трансмаш|махмудов|бокарев/i.test(e));
+  const core = story.filter((e) => /трансмаш|махмудов|бокарев/i.test(e));
+  const hasRucrim = sampleHits.some((h) => PRIMARY_CRIMINAL_DOMAIN_RE.test(h.domain));
+  const hasCoreInHits = sampleHits.some((h) =>
+    ORION_CORE_PLOT_RE.test(`${h.title} ${h.snippet ?? ""}`)
+  );
+
+  // Keep explicit criminal bucket label; append GSM core plot when present.
+  if (defKey === "criminal_legal") {
+    if (core.length >= 2 || (core.length >= 1 && (hasRucrim || hasCoreInHits))) {
+      return `Криминальные материалы — ${core.slice(0, 3).join(" / ")}`;
+    }
+    if (hasRucrim || hasCoreInHits) {
+      const fromHits = extractNamedEntities(
+        sampleHits.map((h) => `${h.title} ${h.snippet ?? ""}`).join(" "),
+        ""
+      ).filter((e) => /трансмаш|махмудов|бокарев/i.test(e));
+      if (fromHits.length > 0) {
+        return `Криминальные материалы — ${fromHits.slice(0, 3).join(" / ")}`;
+      }
+      return "Криминальные материалы";
+    }
+    return "Криминальные материалы";
+  }
+
+  if (defKey === "sanctions_associates") {
     if (core.length >= 2) return core.slice(0, 3).join(" / ");
     if (core.length === 1 && story.length >= 2) return story.slice(0, 3).join(" / ");
   }
@@ -491,7 +592,9 @@ function themeDisplayTitle(defKey: ThemeBucketKey, fallbackTitle: string, named:
     const lnr = story.find((e) => /лнр|лднр/i.test(e));
     if (lnr) return lnr;
   }
-  if (story.length >= 2) return story.slice(0, 3).join(" / ");
+  if (story.length >= 2 && !story.every((e) => /молдав|оборон/i.test(e))) {
+    return story.slice(0, 3).join(" / ");
+  }
   return fallbackTitle;
 }
 
@@ -545,6 +648,11 @@ function themeAnchorEntities(
   for (const hit of rankedHits) {
     const d = (hit.domain || "").trim();
     if (!d || isWeakMediaDomain(d) || WEAK_ANCHOR_DOMAIN_RE.test(d) || /\.example$/i.test(d)) continue;
+    if (FALSE_STORY_ANCHOR_DOMAIN_RE.test(d) || isGovPortalDomain(d)) continue;
+    // Prefer rucriminal domain over cybercriminal in named entity list
+    if (SECONDARY_CRIMINAL_DOMAIN_RE.test(d) && rankedHits.some((h) => PRIMARY_CRIMINAL_DOMAIN_RE.test(h.domain))) {
+      continue;
+    }
     if (!out.some((x) => x.toLowerCase() === d.toLowerCase())) out.push(d);
     if (out.length >= 4) break;
   }
@@ -680,6 +788,7 @@ function buildThemes(
 
   for (const item of inventory.items) {
     if (isDemoOrNoiseItem(item)) continue;
+    if (isFalsePersonHit(String(item.title ?? ""), item.sourceUrl, subjectName)) continue;
     const et = item.evidenceType.toLowerCase();
     if (et !== "search_result" && et !== "risk_finding" && et !== "compliance_hit") continue;
     const adverse = isAdverseItem(item);
@@ -737,18 +846,36 @@ function buildThemes(
     if (!bucket || bucket.hits.length === 0) continue;
     if (def.key === "other_adverse" && bucket.hits.length < 3) continue;
     const rankedHits = sortHitsForTheme(
-      bucket.hits.filter((h) => h.domain && !/\.example$/i.test(h.domain)),
+      bucket.hits.filter(
+        (h) =>
+          h.domain &&
+          !/\.example$/i.test(h.domain) &&
+          !FALSE_STORY_ANCHOR_DOMAIN_RE.test(h.domain) &&
+          !isFalsePersonHit(h.title, h.url, subjectName)
+      ),
       def.key
     );
     const sample = rankedHits
       .filter((h) => {
         // Keep gov portals / weak media / soft SERP out of sampleHits (false "typical anchors").
         if (def.key === "pep_rca" || def.key === "sanctions_associates" || def.key === "criminal_legal") {
-          return !isGovPortalDomain(h.domain) && !isWeakMediaDomain(h.domain);
+          return (
+            !isGovPortalDomain(h.domain) &&
+            !isWeakMediaDomain(h.domain) &&
+            !FALSE_STORY_ANCHOR_DOMAIN_RE.test(h.domain)
+          );
         }
-        return !WEAK_ANCHOR_DOMAIN_RE.test(h.domain);
+        return !WEAK_ANCHOR_DOMAIN_RE.test(h.domain) && !FALSE_STORY_ANCHOR_DOMAIN_RE.test(h.domain);
       })
-      .slice(0, 3);
+      .slice(0, 4);
+    // Criminal: ensure at least one rucriminal hit in sample when present in bucket
+    if (def.key === "criminal_legal") {
+      const rucrim = rankedHits.find((h) => PRIMARY_CRIMINAL_DOMAIN_RE.test(h.domain));
+      if (rucrim && !sample.some((h) => PRIMARY_CRIMINAL_DOMAIN_RE.test(h.domain))) {
+        sample.unshift(rucrim);
+        if (sample.length > 4) sample.pop();
+      }
+    }
     if (sample.length === 0 && def.key !== "pep_rca" && def.key !== "sanctions_associates" && def.key !== "criminal_legal") {
       continue;
     }
@@ -768,7 +895,13 @@ function buildThemes(
         ? preferredThemeSample(usableSample, def.key)
         : def.key === "criminal_legal"
           ? preferredThemeSample(
-              rankedHits.filter((h) => CRIMINAL_AGGREGATOR_DOMAIN_RE.test(h.domain)).slice(0, 3),
+              rankedHits
+                .filter(
+                  (h) =>
+                    PRIMARY_CRIMINAL_DOMAIN_RE.test(h.domain) ||
+                    CRIMINAL_AGGREGATOR_DOMAIN_RE.test(h.domain)
+                )
+                .slice(0, 4),
               def.key
             )
           : sample.length > 0
@@ -782,6 +915,10 @@ function buildThemes(
       subjectName,
       def.key
     );
+    const finalSample =
+      usableSample.length > 0
+        ? sortHitsForTheme(usableSample, def.key)
+        : sortHitsForTheme(sample, def.key);
     const summaryParts = [
       named.length > 0
         ? `В сюжетной линии фигурируют: ${named.join(", ")}.`
@@ -796,15 +933,12 @@ function buildThemes(
     ].filter(Boolean);
     cards.push({
       id: def.key,
-      title: themeDisplayTitle(def.key, def.title, named),
+      title: themeDisplayTitle(def.key, def.title, named, finalSample),
       summary: summaryParts.join(" ") || def.title,
       count: bucket.hits.length,
       regions: [...bucket.regions],
       namedEntities: named.filter((e) => !isWeakBlogDomain(e) && !WEAK_ANCHOR_DOMAIN_RE.test(e)),
-      sampleHits:
-        usableSample.length > 0
-          ? sortHitsForTheme(usableSample, def.key)
-          : sortHitsForTheme(sample, def.key),
+      sampleHits: finalSample.slice(0, 3),
     });
   }
 
@@ -848,7 +982,12 @@ function complianceSignals(inventory: FullEvidenceInventory): OrionComplianceDbS
     );
     if (rows.length === 0) continue;
     const blob = rows.map((r) => `${r.title} ${r.snippet ?? ""}`).join(" ");
-    if (/demo|potential match only|\[demo\]/i.test(blob)) continue;
+    if (
+      /demo|potential match only|\[demo\]|demo dow|demo lexis|demo world/i.test(blob) ||
+      rows.every((r) => isDemoOrNoiseItem(r))
+    ) {
+      continue;
+    }
     const isRca = /\brca\b|close associate|родственник|близк/i.test(blob);
     const isPep = /\bpep\b|politically|политически значим/i.test(blob);
     const status = isRca
@@ -859,6 +998,7 @@ function complianceSignals(inventory: FullEvidenceInventory): OrionComplianceDbS
     const detail = sanitizeOrionGoldenClientText(
       rows[0].snippet || rows[0].title || "Требуется сверка полного профиля."
     ).slice(0, 220);
+    if (/demo|potential match only/i.test(detail)) continue;
     out.push({
       provider: p.label,
       statusLine: `${p.label}: ${status}`,
@@ -899,7 +1039,7 @@ function buildExecutiveNarrative(input: {
   const gptExtras = sanitizeList(input.synthesis?.mainRisks)
     .filter(
       (b) =>
-        !/citizen arrested|united state|geoff cutmore|demo|example\.com|facilitating illicit|real estate transactions|russian oligarch|disclosure\.1prime|yandex\.ru|potential match only|\[demo\]/i.test(
+        !/citizen arrested|united state|geoff cutmore|demo|example\.com|facilitating illicit|real estate transactions|russian oligarch|disclosure\.1prime|yandex\.ru|potential match only|\[demo\]|kozlov|козлов|home\.treasury|nhc\.nl/i.test(
           b
         )
     )
@@ -1034,6 +1174,7 @@ export function orionStyleRiskMatrixRows(themeSet: OrionThemeSet): Array<{
   summary: string;
 }> {
   const levelFor = (t: OrionThemeCard): string => {
+    if (t.id === "criminal_legal") return "Высокий уровень";
     if (t.id === "sanctions_associates" || t.id === "pep_rca") return "Высокий уровень";
     if (t.count >= 8) return "Высокий уровень";
     if (t.count >= 3) return "Средний уровень";
@@ -1074,7 +1215,8 @@ export function buildSerpHeatGridBullets(
       (i) =>
         i.evidenceType === "search_result" &&
         matchesRegion(i.region, region) &&
-        !isDemoOrNoiseItem(i)
+        !isDemoOrNoiseItem(i) &&
+        !isFalsePersonHit(String(i.title ?? ""), i.sourceUrl, inventory.subject.fullName)
     )
     .map((i) => ({
       pos: positionOfItem(i) || 999,
@@ -1089,8 +1231,17 @@ export function buildSerpHeatGridBullets(
   const mustInclude = rows.filter(
     (r) =>
       r.adverse &&
-      (CRIMINAL_AGGREGATOR_DOMAIN_RE.test(r.domain) || ORION_NAMED_STORY_RE.test(r.title))
+      (PRIMARY_CRIMINAL_DOMAIN_RE.test(r.domain) ||
+        CRIMINAL_AGGREGATOR_DOMAIN_RE.test(r.domain) ||
+        ORION_CORE_PLOT_RE.test(r.title) ||
+        ORION_NAMED_STORY_RE.test(r.title))
   );
+  // Prefer rucriminal must-includes first
+  mustInclude.sort((a, b) => {
+    const score = (r: (typeof rows)[number]) =>
+      PRIMARY_CRIMINAL_DOMAIN_RE.test(r.domain) ? 2 : CRIMINAL_AGGREGATOR_DOMAIN_RE.test(r.domain) ? 1 : 0;
+    return score(b) - score(a);
+  });
   const byPos = [...rows].sort((a, b) => a.pos - b.pos);
   const seen = new Set<string>();
   const picked: typeof rows = [];
@@ -1146,6 +1297,8 @@ export function buildAnnotatedLinkCards(
       if (region && hit.region !== region && hit.region !== "GLOBAL") continue;
       if (!hit.domain || /\.example$/i.test(hit.domain) || /example\.com/i.test(hit.url ?? "")) continue;
       if (isWeakMediaDomain(hit.domain) || WEAK_ANCHOR_DOMAIN_RE.test(hit.domain)) continue;
+      if (FALSE_STORY_ANCHOR_DOMAIN_RE.test(hit.domain) || isGovPortalDomain(hit.domain)) continue;
+      if (isFalsePersonHit(hit.title, hit.url, themeSet.subjectName)) continue;
       if (
         (theme.id === "pep_rca" || theme.id === "sanctions_associates") &&
         isGovPortalDomain(hit.domain)
