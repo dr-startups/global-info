@@ -34,6 +34,7 @@
     "smoke:serp-observation-serper-slice": "tsx scripts/smoke-serp-observation-serper-slice.ts",
     "smoke:serp-observation-themes-yandex": "tsx scripts/smoke-serp-observation-themes-yandex.ts",
     "smoke:classic-provider-serp-wiring": "tsx scripts/smoke-classic-provider-serp-wiring.ts",
+    "smoke:classic-theme-soft-bio": "tsx scripts/smoke-classic-theme-soft-bio.ts",
     "smoke:serp-snapshot-report": "node scripts/smoke-serp-snapshot-report.mjs",
     "smoke:serp-snapshot-real-source": "tsx scripts/smoke-serp-snapshot-real-source.ts",
     "smoke:real-result-classifier": "tsx scripts/smoke-real-result-classifier.ts",

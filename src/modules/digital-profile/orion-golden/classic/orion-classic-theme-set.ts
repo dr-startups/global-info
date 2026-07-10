@@ -196,7 +196,46 @@ const FALSE_STORY_ANCHOR_DOMAIN_RE =
 const PRIMARY_CRIMINAL_DOMAIN_RE = /rucriminal\./i;
 /** Soft press / wire that must not become standalone «Иные… forbes.com/tass.com» claims. */
 const SOFT_PRESS_NOISE_DOMAIN_RE = /^(?:www\.)?(?:forbes\.com|tass\.com)$/i;
+/** Soft biography / business-profile hosts (parity with SERP highlight soft-profile rule). */
+const SOFT_BIO_PROFILE_DOMAIN_RE =
+  /^(?:www\.)?(?:forbes\.(?:ru|com)|klerk\.ru|tadviser\.(?:ru|com)|techcult\.ru|osnmedia\.ru|tass\.com|piter\.tv|runews24\.ru)$/i;
+const MOLDOVA_POLITICS_RE =
+  /политич|president|лоббир|спонсир|парт(ии|ию|ия)|выбор|deput|minister|махмудов|makhmudov/i;
+const BIRTHPLACE_ONLY_RE = /место\s+рожден|born|date of birth|родил(?:ся|ась)?|birthplace/i;
 const SECONDARY_CRIMINAL_DOMAIN_RE = /cybercriminal\./i;
+
+function isSoftBioProfileDomain(domain: string): boolean {
+  return SOFT_BIO_PROFILE_DOMAIN_RE.test(domain);
+}
+
+function isSoftPressOrBioDomain(domain: string): boolean {
+  return SOFT_PRESS_NOISE_DOMAIN_RE.test(domain) || isSoftBioProfileDomain(domain);
+}
+
+function isBirthplaceOnlyContext(blob: string): boolean {
+  return BIRTHPLACE_ONLY_RE.test(blob) && !MOLDOVA_POLITICS_RE.test(blob);
+}
+
+function isWeakSoftBioEvidence(item: FullEvidenceInventory["items"][number]): boolean {
+  const domain = domainOf(String(item.sourceUrl ?? ""));
+  if (!isSoftBioProfileDomain(domain)) return false;
+  const blob = riskBlob(item);
+  if (isBirthplaceOnlyContext(blob)) return true;
+  if (/молдав|moldova/i.test(blob) && !MOLDOVA_POLITICS_RE.test(blob)) return true;
+  return false;
+}
+
+function isWeakSoftBioPoliticalTheme(theme: OrionThemeCard): boolean {
+  if (theme.id !== "political_exposure") return false;
+  const blob = theme.sampleHits.map((h) => `${h.title} ${h.snippet ?? ""}`).join(" ");
+  if (MOLDOVA_POLITICS_RE.test(blob)) return false;
+  const domains = theme.sampleHits.map((h) => h.domain).filter(Boolean);
+  if (domains.length === 0) return false;
+  return (
+    domains.every((d) => isSoftPressOrBioDomain(d)) &&
+    (/молдав|moldova/i.test(blob) || isBirthplaceOnlyContext(blob))
+  );
+}
 
 /** ORION GSM-style named story tokens (Трансмаш / Махмудов / Ликсутов / Молдавия / ЛНР). */
 const ORION_NAMED_STORY_RE =
@@ -230,6 +269,8 @@ function isAdverseItem(item: FullEvidenceInventory["items"][number]): boolean {
   // Legacy enum on search_result (ADVERSE_MEDIA / LEGAL / CRIMINAL / …)
   if (isRiskyResultClass(item.classification)) return true;
 
+  if (isWeakSoftBioEvidence(item)) return false;
+
   return ADVERSE_RE.test(riskBlob(item));
 }
 
@@ -258,7 +299,7 @@ const THEME_DEFS: Array<{
   {
     key: "political_exposure",
     title: "Политическая экспозиция / публичная деятельность",
-    match: /политич|president|молдав|moldova|lobb|спонсир|deput|minister|выбор/i,
+    match: /политич|president|lobb|спонсир|deput|minister|выбор/i,
   },
   {
     key: "business_associates",
@@ -331,7 +372,11 @@ function themeKeyOf(item: FullEvidenceInventory["items"][number]): ThemeBucketKe
   if (/бокарев|bokarev|махмудов|makhmudov|трансмаш|transmashholding/i.test(blob)) {
     return "sanctions_associates";
   }
-  if (/молдав|moldova/i.test(blob)) return "political_exposure";
+  if (/молдав|moldova/i.test(blob)) {
+    if (isBirthplaceOnlyContext(blob)) return "corporate";
+    if (isSoftBioProfileDomain(domain) && !MOLDOVA_POLITICS_RE.test(blob)) return "corporate";
+    return "political_exposure";
+  }
 
   // Prefer SERP UI effective theme so «Криминальные материалы» stays criminal_legal.
   const uiTheme = (effectiveUiRiskTheme(item) ?? "").toLowerCase();
@@ -1194,16 +1239,19 @@ function buildThemes(
           !/\.example$/i.test(h.domain) &&
           !FALSE_STORY_ANCHOR_DOMAIN_RE.test(h.domain) &&
           !isFalsePersonHit(h.title, h.url, subjectName) &&
-          // Soft press alone must not seed other_adverse / weak criminal cards.
-          !(def.key === "other_adverse" && SOFT_PRESS_NOISE_DOMAIN_RE.test(h.domain))
+          // Soft press / soft bio alone must not seed other_adverse / weak criminal cards.
+          !(def.key === "other_adverse" && isSoftPressOrBioDomain(h.domain))
       ),
       def.key
     );
     if (def.key === "other_adverse" && rankedHits.length === 0) continue;
+    if (def.key === "political_exposure" && isWeakSoftBioPoliticalTheme({ id: def.key, sampleHits: rankedHits } as OrionThemeCard)) {
+      continue;
+    }
     if (
       (def.key === "criminal_legal" || def.key === "sanctions_associates" || def.key === "other_adverse") &&
       rankedHits.length > 0 &&
-      rankedHits.every((h) => SOFT_PRESS_NOISE_DOMAIN_RE.test(h.domain))
+      rankedHits.every((h) => isSoftPressOrBioDomain(h.domain))
     ) {
       continue;
     }
@@ -2024,16 +2072,18 @@ function storyPeople(theme: OrionThemeCard): {
  * Grounded in ThemeSet entities/hits; hedges with «по открытым источникам» / «авторы утверждают».
  */
 function isSoftPressNoiseTheme(theme: OrionThemeCard): boolean {
-  if (theme.id === "political_exposure" || theme.id === "business_associates") return false;
-  if (/трансмаш|махмудов|бокарев|ликсутов|молдав|лнр|офшор|rucriminal|rucompromat/i.test(
-    `${theme.title} ${theme.namedEntities.join(" ")} ${theme.sampleHits.map((h) => `${h.domain} ${h.title}`).join(" ")}`
-  )) {
+  if (theme.id === "business_associates") return false;
+  const blob = `${theme.title} ${theme.namedEntities.join(" ")} ${theme.sampleHits.map((h) => `${h.domain} ${h.title} ${h.snippet ?? ""}`).join(" ")}`;
+  if (/трансмаш|махмудов|бокарев|ликсутов|лнр|офшор|rucriminal|rucompromat/i.test(blob)) {
     return false;
+  }
+  if (theme.id === "political_exposure") {
+    return isWeakSoftBioPoliticalTheme(theme);
   }
   const domains = theme.sampleHits.map((h) => h.domain).filter(Boolean);
   if (domains.length === 0) return false;
-  // Theme whose only anchors are soft press (forbes.com / tass.com) — drop from client bullets.
-  return domains.every((d) => SOFT_PRESS_NOISE_DOMAIN_RE.test(d));
+  // Theme whose only anchors are soft press / soft bio — drop from client bullets.
+  return domains.every((d) => isSoftPressOrBioDomain(d));
 }
 
 function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string {
@@ -2043,7 +2093,7 @@ function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string 
   const hitBlob = theme.sampleHits.map((h) => `${h.title} ${h.snippet ?? ""}`).join(" ");
   const domain = theme.sampleHits.find((h) => PRIMARY_CRIMINAL_DOMAIN_RE.test(h.domain))?.domain
     ?? theme.sampleHits.find((h) => CRIMINAL_AGGREGATOR_DOMAIN_RE.test(h.domain))?.domain
-    ?? theme.sampleHits.find((h) => !SOFT_PRESS_NOISE_DOMAIN_RE.test(h.domain))?.domain
+    ?? theme.sampleHits.find((h) => !isSoftPressOrBioDomain(h.domain))?.domain
     ?? theme.sampleHits[0]?.domain;
 
   switch (theme.id) {
@@ -2064,12 +2114,13 @@ function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string 
         return `Публикации о связях ${sGen} с оборонно-промышленным / транспортным контуром (в т.ч. ${domain || "rucriminal.info"}); требуется сверка первоисточников`;
       }
       // Soft-press-only criminal buckets should not surface as client claims.
-      if (domain && SOFT_PRESS_NOISE_DOMAIN_RE.test(domain) && !PRIMARY_CRIMINAL_DOMAIN_RE.test(domain)) {
+      if (domain && isSoftPressOrBioDomain(domain) && !PRIMARY_CRIMINAL_DOMAIN_RE.test(domain)) {
         return "";
       }
       return `Криминальные / судебные материалы в открытых источниках в отношении ${sGen}${domain ? ` (якорь: ${domain})` : ""}; требуется сверка первоисточников`;
     }
     case "political_exposure":
+      if (isWeakSoftBioPoliticalTheme(theme)) return "";
       if (p.moldova) {
         if (p.makhmudov || /лоббир|президент|president|спонсир|парт(ии|ию|ия)/i.test(hitBlob)) {
           return `Сведения о политической деятельности персоны в Молдавии (авторы утверждают, что ${s} спонсировал политическую активность, а также что И. Махмудов лоббировал выдвижение ${sGen} на пост Президента Молдовы)`;
@@ -2102,7 +2153,7 @@ function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string 
     case "pep_rca":
       return `Предварительные сигналы PEP / RCA в комплаенс-базах по ${shortSubjectDative(subjectName)}; требуется сверка полного профиля`;
     default:
-      if (domain && SOFT_PRESS_NOISE_DOMAIN_RE.test(domain)) return "";
+      if (domain && isSoftPressOrBioDomain(domain)) return "";
       if (domain) {
         return `Иные потенциально нежелательные упоминания в отношении ${sGen} (в т.ч. ${domain})`;
       }
@@ -2162,7 +2213,7 @@ export function complianceToClientClaim(c: OrionComplianceDbSignal, subjectName:
 
 function isWeakClaimText(c: string): boolean {
   if (/rucriminal|трансмаш|махмудов|бокарев|ликсутов|молдав|лнр|офшор/i.test(c)) return false;
-  return /(?:криминальн.*якорь:\s*(?:forbes\.com|tass\.com)|иные потенциально нежелательные.*(?:forbes\.com|tass\.com)|якорь:\s*(?:forbes\.com|tass\.com))/i.test(
+  return /(?:криминальн.*якорь:\s*(?:forbes\.(?:com|ru)|tass\.com)|иные потенциально нежелательные.*(?:forbes\.(?:com|ru)|tass\.com)|якорь:\s*(?:forbes\.(?:com|ru)|tass\.com))/i.test(
     c
   );
 }
@@ -2232,7 +2283,7 @@ function buildExecutiveNarrative(input: {
     if (/dow jones|lexisnexis|world-check|world check/i.test(c) && /предварительн|сигнал/i.test(c)) {
       return "compliance-rollup";
     }
-    if (/forbes\.com|tass\.com/i.test(c) && /иные потенциально|криминальн/i.test(c)) return "weak-soft-press";
+    if (/forbes\.(?:com|ru)|tass\.com/i.test(c) && /иные потенциально|криминальн/i.test(c)) return "weak-soft-press";
     return c.slice(0, 56).toLowerCase();
   };
 
@@ -2578,6 +2629,13 @@ export function buildAnnotatedLinkCards(
       if (FALSE_STORY_ANCHOR_DOMAIN_RE.test(hit.domain) || isGovPortalDomain(hit.domain)) continue;
       if (isFalsePersonHit(hit.title, hit.url, themeSet.subjectName)) continue;
       if (isOffSubjectSerpHit(hit.title, hit.snippet, hit.url, themeSet.subjectName)) continue;
+      if (
+        theme.id === "political_exposure" &&
+        isSoftBioProfileDomain(hit.domain) &&
+        !MOLDOVA_POLITICS_RE.test(`${hit.title} ${hit.snippet ?? ""}`)
+      ) {
+        continue;
+      }
       if (
         (theme.id === "pep_rca" || theme.id === "sanctions_associates") &&
         isGovPortalDomain(hit.domain)
