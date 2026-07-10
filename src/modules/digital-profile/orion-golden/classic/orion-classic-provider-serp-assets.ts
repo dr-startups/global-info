@@ -25,6 +25,12 @@ import {
 } from "../../serp-observation";
 import { prisma } from "@/server/prisma/client";
 
+/**
+ * Bump when highlight / noise / dual-compose policy for provider SERP PNGs changes.
+ * Included in queryId so READY_CACHED cannot freeze pre-fix snapshots across classic regens.
+ */
+export const PROVIDER_SERP_POLICY_VERSION = "v2-hl-noise";
+
 const CYRILLIC_RE = /[А-Яа-яЁё]/;
 
 export type ProviderSerpSlot = {
@@ -36,7 +42,7 @@ export type ProviderSerpSlot = {
 export type ProviderSerpSlotStatus = {
   query: string;
   region: "RU" | "UAE";
-  status: SerpProviderStatus | "READY_CACHED" | "READY_NEW";
+  status: SerpProviderStatus | "READY_CACHED" | "READY_NEW" | "READY_REBUILT";
   message?: string;
   assetRef?: string;
   googleStatus?: SerpProviderStatus | "SKIPPED";
@@ -96,8 +102,110 @@ function slotQueryId(input: {
     region: input.region,
     language: input.language,
     queryText: input.queryText,
-    surface: "organic",
+    // Policy version busts PNG cache when highlight/noise rules change.
+    surface: `organic:${PROVIDER_SERP_POLICY_VERSION}`,
   });
+}
+
+function toPersistedObservation(row: {
+  id: string;
+  caseId: string;
+  auditRunId: string;
+  queryId: string;
+  queryText: string;
+  provider: string;
+  engine: string;
+  surface: string;
+  region: string;
+  language: string;
+  rank: number;
+  url: string;
+  title: string | null;
+  snippet: string | null;
+  domain: string | null;
+  providerStatus: string;
+  rawPayloadJson: unknown;
+  capturedAt: Date;
+  searchDocumentId: string | null;
+}): PersistedSerpObservation {
+  return {
+    id: row.id,
+    caseId: row.caseId,
+    auditRunId: row.auditRunId,
+    queryId: row.queryId,
+    queryText: row.queryText,
+    provider: row.provider as PersistedSerpObservation["provider"],
+    engine: row.engine as PersistedSerpObservation["engine"],
+    surface: "organic",
+    region: row.region,
+    language: row.language,
+    rank: row.rank,
+    url: row.url,
+    title: row.title,
+    snippet: row.snippet,
+    domain: row.domain,
+    providerStatus: (row.providerStatus as SerpProviderStatus) || "OK",
+    rawPayloadJson:
+      row.rawPayloadJson && typeof row.rawPayloadJson === "object"
+        ? (row.rawPayloadJson as Record<string, unknown>)
+        : null,
+    capturedAt: row.capturedAt,
+    searchDocumentId: row.searchDocumentId,
+  };
+}
+
+/** Reuse prior organic observations for this run/query (no API) and re-render PNG. */
+async function rebuildSyntheticFromPersistedObservations(input: {
+  caseId: string;
+  auditRunId: string;
+  queryId: string;
+  queryText: string;
+  subjectName: string;
+  region: "RU" | "UAE";
+  language: string;
+}): Promise<ReportAssetV1 | null> {
+  const rows = await prisma.serpObservation.findMany({
+    where: {
+      auditRunId: input.auditRunId,
+      queryText: input.queryText,
+      region: input.region,
+      surface: "organic",
+      providerStatus: "OK",
+    },
+    orderBy: [{ engine: "asc" }, { rank: "asc" }],
+    take: 40,
+  });
+  if (rows.length === 0) return null;
+
+  const observations = rows.map(toPersistedObservation);
+  const synthetic = await createSyntheticSerpAssetFromObservations({
+    caseId: input.caseId,
+    auditRunId: input.auditRunId,
+    queryId: input.queryId,
+    queryText: input.queryText,
+    subjectName: input.subjectName,
+    region: input.region,
+    language: input.language,
+    observations,
+  });
+
+  const hasYandex = observations.some((o) => o.engine === "YANDEX");
+  const hasGoogle = observations.some((o) => o.engine === "GOOGLE");
+  const engines =
+    hasYandex && hasGoogle ? "DUAL" : hasYandex ? "YANDEX" : "GOOGLE";
+  const prefix = input.region === "UAE" ? "uae_provider_serp" : "ru_provider_serp";
+  return {
+    ...serpSyntheticAssetToReportAsset({
+      assetId: synthetic.assetId,
+      queryText: input.queryText,
+      pngBase64: synthetic.png.toString("base64"),
+      observationIds: synthetic.observationIds,
+      status: "ready",
+      storageKey: synthetic.storageKey,
+      engines,
+    }),
+    assetRef: `${prefix}_${synthetic.assetId}`,
+  };
 }
 
 async function loadCachedSyntheticAsset(input: {
@@ -148,20 +256,55 @@ async function buildOneProviderSlot(input: {
     queryText: input.slot.query,
   });
 
-  const cached = await loadCachedSyntheticAsset({
+  const forceRefresh = process.env.ORION_PROVIDER_SERP_FORCE_REFRESH === "1";
+  if (!forceRefresh) {
+    const cached = await loadCachedSyntheticAsset({
+      auditRunId: input.auditRunId,
+      queryId,
+      queryText: input.slot.query,
+      region: input.slot.region,
+    });
+    if (cached) {
+      return {
+        asset: cached,
+        status: {
+          query: input.slot.query,
+          region: input.slot.region,
+          status: "READY_CACHED",
+          assetRef: cached.assetRef,
+          googleStatus: "SKIPPED",
+          yandexStatus: "SKIPPED",
+        },
+      };
+    }
+  }
+
+  // Policy version miss: rebuild PNG from existing observations (no Serper/Yandex spend).
+  const rebuilt = await rebuildSyntheticFromPersistedObservations({
+    caseId: input.caseId,
     auditRunId: input.auditRunId,
     queryId,
     queryText: input.slot.query,
+    subjectName: input.subjectName,
     region: input.slot.region,
+    language: input.slot.language,
   });
-  if (cached) {
+  if (rebuilt) {
+    console.info("[provider-serp] rebuilt from observations", {
+      auditRunId: input.auditRunId,
+      query: input.slot.query,
+      region: input.slot.region,
+      policy: PROVIDER_SERP_POLICY_VERSION,
+      assetRef: rebuilt.assetRef,
+    });
     return {
-      asset: cached,
+      asset: rebuilt,
       status: {
         query: input.slot.query,
         region: input.slot.region,
-        status: "READY_CACHED",
-        assetRef: cached.assetRef,
+        status: "READY_REBUILT",
+        assetRef: rebuilt.assetRef,
+        message: `policy=${PROVIDER_SERP_POLICY_VERSION}`,
         googleStatus: "SKIPPED",
         yandexStatus: "SKIPPED",
       },

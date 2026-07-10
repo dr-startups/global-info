@@ -11,6 +11,7 @@ import {
   buildDefaultProviderSerpSlots,
   evaluateClassicProviderSerpGate,
   isProviderApiSerpAsset,
+  PROVIDER_SERP_POLICY_VERSION,
 } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-provider-serp-assets";
 import { evaluateClientSerpPolicy } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-live-serp-assets";
 import { composeOrionClassicAuditDeck } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-audit-deck-composer";
@@ -33,6 +34,11 @@ const FAKE_IMAGE_DATA = "A".repeat(900);
 
 function main() {
   console.log("Smoke: classic provider-SERP wiring\n");
+
+  check(
+    "provider SERP policy version set",
+    Boolean(PROVIDER_SERP_POLICY_VERSION) && PROVIDER_SERP_POLICY_VERSION.includes("v2")
+  );
 
   const subjectRu = "Глинка Сергей Михайлович";
   const subjectLatin = transliterateRuToEn(subjectRu);
