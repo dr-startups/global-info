@@ -890,13 +890,14 @@ function inventoryFallbackBlock(
     }
     if (themeSet && sectionId === "03_digital_profile_overview") {
       const matrixRows = orionStyleRiskMatrixRows(themeSet).slice(0, 5);
+      // Keep RU+UAE KPI on the same slide — never emit a lonely (2/2) leftover.
       bullets = sanitizeClassicBullets(
         [
           ...matrixRows.map((r) => `${r.theme} — ${r.level}`),
-          `Россия: ${themeSet.ru.linksAdversePct}% потенциально нежелательных · ${themeSet.ru.overallBadge}`,
-          `ОАЭ: ${themeSet.uae.linksAdversePct}% потенциально нежелательных · ${themeSet.uae.overallBadge}`,
+          `Россия: ${themeSet.ru.linksAdversePct}% · ${themeSet.ru.overallBadge}`,
+          `ОАЭ: ${themeSet.uae.linksAdversePct}% · ${themeSet.uae.overallBadge}`,
         ],
-        220
+        200
       ).slice(0, 7);
       narrative = truncateAtWordBoundary(
         [
@@ -1194,10 +1195,10 @@ function blockFromClientSection(
     bullets = sanitizeClassicBullets(
       [
         ...matrixRows.map((r) => `${r.theme} — ${r.level}`),
-        `Россия: ${themeSet.ru.linksAdversePct}% потенциально нежелательных · ${themeSet.ru.overallBadge}`,
-        `ОАЭ: ${themeSet.uae.linksAdversePct}% потенциально нежелательных · ${themeSet.uae.overallBadge}`,
+        `Россия: ${themeSet.ru.linksAdversePct}% · ${themeSet.ru.overallBadge}`,
+        `ОАЭ: ${themeSet.uae.linksAdversePct}% · ${themeSet.uae.overallBadge}`,
       ],
-      220
+      200
     ).slice(0, 7);
   }
 

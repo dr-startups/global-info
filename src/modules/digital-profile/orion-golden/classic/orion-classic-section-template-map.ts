@@ -48,6 +48,7 @@ export function bulletsPerSlideForSection(sectionId: string): number {
   if (sectionId.includes("search_links")) return 8;
   if (sectionId.includes("undesirable_theme")) return 5;
   if (sectionId.includes("serp_position")) return 18;
+  if (sectionId === "03_digital_profile_overview") return 8;
   if (
     sectionId.includes("compliance_database") ||
     sectionId.includes("sanctions") ||
@@ -66,6 +67,7 @@ export function maxSlidesForSection(sectionId: string): number {
   if (sectionId.includes("search_links")) return 2;
   if (sectionId.includes("serp_position")) return 1;
   if (sectionId.includes("undesirable_theme")) return 1;
+  if (sectionId === "03_digital_profile_overview") return 1;
   // Compliance overview sections: one slide each (avoid 1/2+2/2 duplicates of the same claims).
   if (
     sectionId.includes("compliance_database") ||
