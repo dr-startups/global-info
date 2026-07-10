@@ -109,6 +109,15 @@ runtime env validation (`src/modules/digital-profile/config/env-validation.ts`).
 - Never `migrate dev` and never reset the database in production.
 - Do **not** run the demo seed (`db:seed` / `db:seed:demo`) in production.
 
+## LIVE SERP capture (Stage S2)
+
+- Chromium is installed in the **app** Docker image via
+  `npx playwright install --with-deps chromium` (see root `Dockerfile`).
+- You do **not** run Playwright install manually on Railway after deploy.
+- Optional env: `SERP_CAPTURE_PROXY_RU`, `SERP_CAPTURE_PROXY_UAE`. Without them
+  captures still work as DIRECT + `geoStatus=UNVERIFIED` (staging/preview OK).
+- Capture is triggered only from Manual Review UI / API — never from PDF render.
+
 ## First admin user
 
 No demo users in production. After a successful deploy, open an app shell and

@@ -29,6 +29,8 @@ RUN npm run build
 FROM base AS runner
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# Stage S2 LIVE SERP — Playwright looks here for Chromium binaries.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # Built app + the bits needed to run, migrate and create an admin at runtime.
 COPY --from=build /app/node_modules ./node_modules
@@ -40,6 +42,11 @@ COPY --from=build /app/tsconfig.json ./tsconfig.json
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/src ./src
 COPY --from=build /app/scripts ./scripts
+
+# Chromium + OS libs for LIVE SERP capture (manual API only; not used by PDF render).
+# --with-deps installs apt packages required by headless Chrome on Debian slim.
+RUN npx playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 3000
 
