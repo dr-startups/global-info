@@ -1387,8 +1387,7 @@ function extractProviderFacts(
     }
   }
 
-  // Theme-assisted named links when DB text is thin
-  for (const n of themeContext.namedLinks) pushLink(n);
+  // Do NOT merge ThemeSet open-source names into DB namedLinks — that inflates «card says X».
 
   const statusKind: OrionComplianceStatusKind = isRca
     ? "rca"
@@ -1497,20 +1496,28 @@ function complianceSignals(
       continue;
     }
 
+    // Keep DB-derived names separate from ThemeSet open-source context (no false «card says X»).
+    const themeOnlyLinks = themeContext.namedLinks.slice(0, 4);
+    const namedLinksFromDb = facts.namedLinks.length > 0;
+    const namedLinks = namedLinksFromDb ? facts.namedLinks.slice(0, 5) : [];
+
     let statusKind = facts.hasDbHit
       ? facts.statusKind
       : preferredStatusForProvider(p.label, themeContext);
     // Provider-biased refinement when DB is thin but themes are rich
-    if (facts.statusKind === "name_match" && themeContext.namedLinks.length > 0) {
+    if (facts.statusKind === "name_match" && themeOnlyLinks.length > 0) {
       statusKind = preferredStatusForProvider(p.label, themeContext);
     }
 
-    const namedLinks =
-      facts.namedLinks.length > 0 ? facts.namedLinks : themeContext.namedLinks.slice(0, 4);
     const openSourceContext: string[] = [];
-    if (namedLinks.length > 0) {
+    const contextLinks = namedLinksFromDb ? [] : themeOnlyLinks;
+    if (contextLinks.length > 0) {
       openSourceContext.push(
-        `Смежный открытый контур для сверки с полной карточкой: ${namedLinks.slice(0, 4).join(", ")}.`
+        `Смежный открытый контур для сверки с полной карточкой: ${contextLinks.join(", ")}.`
+      );
+    } else if (namedLinks.length > 0) {
+      openSourceContext.push(
+        `Именованные связи в контуре сигнала: ${namedLinks.slice(0, 4).join(", ")}.`
       );
     }
     if (themeContext.hints.length > 0 && p.label === "World-Check") {
@@ -1527,19 +1534,19 @@ function complianceSignals(
       openSourceContext.push(`Категории в разборе LexisNexis: ${facts.categories.slice(0, 3).join(", ")}.`);
     }
 
-    const linkBit =
-      namedLinks.length > 0 ? ` Связи в контуре: ${namedLinks.slice(0, 4).join(", ")}.` : "";
-    const detail = sanitizeOrionGoldenClientText(
-      `${facts.detailParts[0] ?? "Требуется сверка полного профиля."}${linkBit}`
-    ).slice(0, 320);
-    if (/demo|potential match only/i.test(detail) && namedLinks.length === 0) continue;
+    const detailCore = facts.detailParts[0] ?? "Требуется сверка полного профиля.";
+    const detail = sanitizeOrionGoldenClientText(detailCore).slice(0, 320);
+    if (/demo|potential match only/i.test(detail) && namedLinks.length === 0 && contextLinks.length === 0) {
+      continue;
+    }
 
     out.push({
       provider: p.label,
       statusLine: statusLineFor(p.label, statusKind),
       detail,
       statusKind,
-      namedLinks,
+      // Prefer DB names; else keep open-source names for soft claim wording only.
+      namedLinks: namedLinks.length > 0 ? namedLinks : contextLinks,
       categories: facts.categories,
       openSourceContext: openSourceContext.filter(
         (b, i, arr) => arr.findIndex((x) => x.slice(0, 48) === b.slice(0, 48)) === i
@@ -1897,24 +1904,34 @@ export function complianceToClientClaim(c: OrionComplianceDbSignal, subjectName:
     else if (/махмудов/i.test(n)) instr.push("И. Махмудовым");
     else if (/трансмаш/i.test(n)) instr.push("АО «Трансмашхолдинг»");
   }
+  const namesJoined =
+    instr.length === 0
+      ? ""
+      : instr.length === 1
+        ? instr[0]
+        : `${instr.slice(0, -1).join(", ")} и ${instr[instr.length - 1]}`;
+  // Soft wording: open-source / ThemeSet names are for verification, not asserted DB card facts.
+  const fromOpenSource =
+    !c.hasDbHit ||
+    c.openSourceContext.some((l) => /смежный открытый контур/i.test(l));
   const linkBitRu =
-    instr.length > 0
-      ? ` из-за связи с ${
-          instr.length === 1 ? instr[0] : `${instr.slice(0, -1).join(", ")} и ${instr[instr.length - 1]}`
-        }`
-      : "";
+    namesJoined.length === 0
+      ? ""
+      : fromOpenSource
+        ? ` (с учётом смежного открытого контура: ${namesJoined})`
+        : ` с именованными связями: ${namesJoined}`;
 
   if (c.statusKind === "rca" || /rca/i.test(c.statusLine)) {
-    return `В ${c.provider} — предварительный / активный сигнал RCA по ${sDat}${linkBitRu || " (связь с близкими партнёрами)"}; требуется сверка полного профиля`;
+    return `В ${c.provider} — предварительный сигнал RCA по ${sDat}${linkBitRu || " (associate-контур)"}; требуется сверка полного профиля`;
   }
   if (c.statusKind === "pep" || /pep/i.test(c.statusLine)) {
-    return `В ${c.provider} — предварительный / активный сигнал PEP по ${sDat}${linkBitRu || " (в т.ч. через партнёрский контур)"}; требуется сверка полного профиля`;
+    return `В ${c.provider} — предварительный сигнал PEP по ${sDat}${linkBitRu || " (партнёрский / PEP-контур)"}; требуется сверка полного профиля`;
   }
   if (c.statusKind === "sanctions") {
     return `В ${c.provider} — предварительный sanctions / watchlist-сигнал по ${sDat}${linkBitRu}; требуется сверка полного профиля`;
   }
   if (instr.length > 0) {
-    return `В ${c.provider} обнаружено предварительное совпадение по ${sDat}${linkBitRu}; требуется сверка полного профиля`;
+    return `В ${c.provider} — предварительное совпадение по ${sDat}${linkBitRu}; требуется сверка полного профиля`;
   }
   if (!c.hasDbHit) {
     return `По ${c.provider} полная карточка в текущем контуре не раскрыта; требуется сверка профиля по ${sDat} с учётом смежного открытого контура`;
@@ -2368,7 +2385,9 @@ export function buildComplianceProviderBullets(
 
   if (c.statusKind === "rca") {
     bullets.push(
-      `Карточка указывает на RCA / associate-контур по ${sDat}; полный список связей и категория риска в клиентском отчёте не раскрыты.`
+      c.hasDbHit
+        ? `Карточка указывает на RCA / associate-контур по ${sDat}; полный список связей и категория риска в клиентском отчёте не раскрыты.`
+        : `Предварительный RCA / associate-контур по ${sDat} требует сверки с полной карточкой; категория риска не раскрыта.`
     );
   } else if (c.statusKind === "pep") {
     bullets.push(
@@ -2394,14 +2413,19 @@ export function buildComplianceProviderBullets(
     bullets.push(`По ${c.provider} доступен предварительный сигнал; требуется сверка полного профиля.`);
   }
 
-  if (c.namedLinks.length > 0) {
-    bullets.push(`В связанном контуре упоминаются: ${c.namedLinks.slice(0, 4).join(", ")}.`);
-  }
+  // One context line only — openSourceContext already carries named links when present.
   if (c.categories.length > 0 && c.provider === "LexisNexis") {
     bullets.push(`Категории сигнала: ${c.categories.slice(0, 3).join(", ")}.`);
   }
   for (const line of c.openSourceContext.slice(0, 2)) {
     bullets.push(line);
+  }
+  // Fallback named-links bullet only if openSourceContext did not already list them.
+  if (
+    c.namedLinks.length > 0 &&
+    !c.openSourceContext.some((l) => /контур|связ/i.test(l) && c.namedLinks.some((n) => l.includes(n.split(" ").pop() ?? n)))
+  ) {
+    bullets.push(`Смежный контур для сверки: ${c.namedLinks.slice(0, 4).join(", ")}.`);
   }
 
   bullets.push("Сигнал предварительный: без полной карточки не считается подтверждённым риском.");
