@@ -994,6 +994,11 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
                   className="dp-btn dp-btn-primary"
                   disabled={classicAuditBusy}
                   onClick={() => void generateClassicAudit(false)}
+                  title={
+                    classicAudit?.status === "running"
+                      ? "Если зависло на PENDING после деплоя — нажмите ещё раз после обновления сервиса"
+                      : undefined
+                  }
                 >
                   {classicAuditBusy ? "Генерация…" : "Сгенерировать ORION Audit"}
                 </button>

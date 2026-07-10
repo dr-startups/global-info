@@ -228,8 +228,30 @@ export function enqueueOrionGoldenPrepare(caseId: string): OrionGoldenPrepareSum
 
   const existing = getLatestPrepareRun(caseId);
   if (existing?.status === "running") {
-    console.log(`[orion-golden-prepare] already running caseId=${caseId} runId=${existing.runId}`);
-    return toSummary(existing, caseId);
+    const createdMs = new Date(existing.createdAt).getTime();
+    const ageMs = Date.now() - createdMs;
+    const processBootMs = Date.now() - process.uptime() * 1000;
+    const stale =
+      !Number.isFinite(createdMs) ||
+      ageMs > 15 * 60 * 1000 ||
+      createdMs < processBootMs - 3_000;
+    if (!stale) {
+      console.log(`[orion-golden-prepare] already running caseId=${caseId} runId=${existing.runId}`);
+      return toSummary(existing, caseId);
+    }
+    console.warn(
+      `[orion-golden-prepare] stale running job — restarting caseId=${caseId} runId=${existing.runId}`
+    );
+    persistRun({
+      ...existing,
+      status: "failed",
+      completedAt: new Date().toISOString(),
+      verdict: "FAIL",
+      warnings: [
+        "Предыдущая подготовка прервалась (рестарт контейнера или таймаут). Запущена новая.",
+        ...(existing.warnings ?? []),
+      ],
+    });
   }
 
   const uiRunId = `prepare-${Date.now()}`;

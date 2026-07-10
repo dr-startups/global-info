@@ -310,6 +310,21 @@ async function executeClassicAuditReport(input: {
   return record;
 }
 
+const STALE_RUNNING_MS = 15 * 60 * 1000;
+
+/** Running jobs that outlived this process (deploy/restart) or the soft timeout are dead. */
+function isStaleRunningJob(record: { status: string; createdAt: string }): boolean {
+  if (record.status !== "running") return false;
+  const createdMs = new Date(record.createdAt).getTime();
+  if (!Number.isFinite(createdMs)) return true;
+  const ageMs = Date.now() - createdMs;
+  if (ageMs > STALE_RUNNING_MS) return true;
+  const processBootMs = Date.now() - process.uptime() * 1000;
+  // Job JSON survived on the volume, but the setImmediate worker died with the old container.
+  if (createdMs < processBootMs - 3_000) return true;
+  return false;
+}
+
 /**
  * Enqueue classic ORION audit render. Returns immediately with status=running; poll GET until settled.
  */
@@ -323,7 +338,26 @@ export function enqueueOrionClassicAuditReport(input: {
 
   const existing = getLatestOrionClassicAuditRunRecord(input.caseId);
   if (existing?.status === "running") {
-    return toPublicSummary(existing);
+    if (!isStaleRunningJob(existing)) {
+      console.log(
+        `[orion-classic-audit] already running caseId=${input.caseId} runId=${existing.runId}`
+      );
+      return toPublicSummary(existing);
+    }
+    console.warn(
+      `[orion-classic-audit] stale running job — restarting caseId=${input.caseId} runId=${existing.runId} createdAt=${existing.createdAt}`
+    );
+    persistRunRecord({
+      ...existing,
+      status: "failed",
+      completedAt: new Date().toISOString(),
+      verdict: "FAIL",
+      clientPolicyStatus: "FAIL",
+      warnings: [
+        "Предыдущая генерация прервалась (рестарт контейнера или таймаут). Запущена новая.",
+        ...(existing.warnings ?? []),
+      ],
+    });
   }
 
   const uiRunId = `classic-${Date.now()}`;
@@ -349,7 +383,10 @@ export function enqueueOrionClassicAuditReport(input: {
   persistRunRecord(running);
   console.log(`[orion-classic-audit] enqueued caseId=${input.caseId} runId=${uiRunId}`);
 
+  // Keep work on the event loop of this long-lived Node process (Railway `next start`).
+  // Do not rely on the HTTP request staying open — but recover stale jobs after deploys.
   setImmediate(() => {
+    console.log(`[orion-classic-audit] execute start caseId=${input.caseId} runId=${uiRunId}`);
     void executeClassicAuditReport({
       caseId: input.caseId,
       uiRunId,
