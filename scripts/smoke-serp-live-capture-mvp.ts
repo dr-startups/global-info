@@ -57,9 +57,6 @@ function main() {
   check("query hash normalized", h1 === h2, h1.slice(0, 12));
 
   // subject FIO always in report slots
-  const { buildDefaultLiveSerpSlots } = await import(
-    "../src/modules/digital-profile/orion-golden/classic/orion-classic-live-serp-assets.ts"
-  );
   const slots = buildDefaultLiveSerpSlots({
     subjectName: "Глинка Сергей Михайлович",
     ruQueries: ["Глинка Сергей санкции"],
