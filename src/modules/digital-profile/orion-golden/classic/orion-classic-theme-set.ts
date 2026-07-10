@@ -372,9 +372,15 @@ function isDemoOrNoiseItem(item: FullEvidenceInventory["items"][number]): boolea
   );
 }
 
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
  * Homonym / wrong-person SERP rows (e.g. OpenSanctions «Sergey Mikhaylovich Kozlov»)
  * must not become Tema N / executive anchors for the subject.
+ *
+ * Note: JS `\b` is ASCII-only — never use it for Cyrillic tokens like «ИП».
  */
 function isFalsePersonHit(
   title: string,
@@ -388,38 +394,67 @@ function isFalsePersonHit(
   const given = parts[1]?.toLowerCase();
   const patronymic = parts[2]?.toLowerCase();
   if (!surname) return false;
+  const surRe = new RegExp(escapeRe(surname), "i");
+  const givenRe = given ? new RegExp(escapeRe(given), "i") : null;
+  const patRe = patronymic ? new RegExp(escapeRe(patronymic), "i") : null;
 
   // Explicit known false positives seen on Glinka packs
   if (/kozlov|козлов/i.test(t) && !/kozlov|козлов/i.test(subjectLower)) return true;
 
-  // Place-name collision: «деревня Глинка», «село Глинка» without subject FIO
+  // Composer / historical namesake (Mikhail Glinka) when subject is not Mikhail
   if (
-    /(?:деревн[яи]|сел[оа]|пос[её]лк|улиц[аы]|район)\s+[«"]?/i.test(title) &&
-    new RegExp(surname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(title)
+    /(?:mikhail|михаил)\s+glinka|glinka\s+(?:mikhail|михаил)|композитор\s+глинк/i.test(t) &&
+    given &&
+    !/михаил|mikhail/i.test(given)
   ) {
-    const hasFullFio =
-      Boolean(given && new RegExp(given.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(title)) &&
-      Boolean(
-        patronymic && new RegExp(patronymic.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(title)
-      );
-    if (!hasFullFio) return true;
+    return true;
+  }
+
+  // Same given+patronymic under a different leading surname
+  // «ИП Корнеев Сергей Михайлович», «Лавришин Сергей Михайлович – с. Глинка»
+  if (given && patronymic) {
+    const fioLead = title.match(
+      /(?:^|[^\p{L}])(?:ИП\s+)?([А-ЯЁA-Z][а-яёa-zA-Z-]+)\s+([А-ЯЁA-Zа-яёa-zA-Z-]+)\s+([А-ЯЁA-Zа-яёa-zA-Z-]+)/u
+    );
+    if (fioLead) {
+      const leadSur = fioLead[1].toLowerCase();
+      const leadGiven = fioLead[2].toLowerCase();
+      const leadPat = fioLead[3].toLowerCase();
+      if (leadSur !== surname && leadGiven === given && leadPat === patronymic) {
+        return true;
+      }
+    }
+  }
+
+  // Place-name collision: «деревня Глинка», «село Глинка», «с. Глинка»
+  if (
+    new RegExp(
+      `(?:деревн[яи]|сел[оа]|пос[её]лк|улиц[аы]|район|(?:^|[^\\p{L}])с\\.)\\s*[«"]?\\s*${escapeRe(surname)}`,
+      "iu"
+    ).test(title)
+  ) {
+    // Keep only if title clearly leads with subject FIO (Surname Given Patronymic)
+    const subjectLead = new RegExp(
+      `^\\s*${escapeRe(surname)}\\s+${escapeRe(given ?? "")}\\s+${escapeRe(patronymic ?? "")}`,
+      "i"
+    );
+    if (!subjectLead.test(title)) return true;
   }
 
   // Registry / ИП rows with same given+patronymic but a different surname
-  // e.g. «ИП Корнеев Сергей Михайлович», «ИП Попов Сергей Михайлович»
-  if (/\bИП\b|ОГРНИП|индивидуальн(?:ый|ого)\s+предпринимател/i.test(title) && given && patronymic) {
-    const givenRe = new RegExp(given.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    const patRe = new RegExp(patronymic.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    const surRe = new RegExp(surname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+  if (
+    /(?:^|[^\p{L}\p{N}])ИП(?:[^\p{L}\p{N}]|$)|ОГРНИП|индивидуальн(?:ый|ого)\s+предпринимател/iu.test(
+      title
+    ) &&
+    givenRe &&
+    patRe
+  ) {
     if (givenRe.test(title) && patRe.test(title) && !surRe.test(title)) return true;
   }
 
   // FIO with subject's surname+given but a different patronymic
   // e.g. «Глинка, Сергей Николаевич» vs subject «… Михайлович»
-  if (given && patronymic) {
-    const surRe = new RegExp(surname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    const givenRe = new RegExp(given.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-    const patRe = new RegExp(patronymic.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+  if (givenRe && patRe) {
     if (surRe.test(title) && givenRe.test(title) && !patRe.test(title)) {
       if (/[А-ЯЁA-Z][а-яёa-z]+(?:ович|евич|ич|овна|евна)/u.test(title)) return true;
     }
@@ -433,11 +468,8 @@ function isFalsePersonHit(
 
   // OpenSanctions / OFAC-style title with a different Latin FIO
   if (/opensanctions|ofac|sanction/i.test(t)) {
-    const subjectInTitle =
-      new RegExp(surname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(title) ||
-      /glinka|глинк/i.test(title);
+    const subjectInTitle = surRe.test(title) || /glinka|глинк/i.test(title);
     if (!subjectInTitle) {
-      // "Sergey Mikhaylovich Kozlov - OpenSanctions" / similar
       if (
         /(?:Sergey|Sergei|Serhii|Сергей)\s+[A-ZА-ЯЁ][a-zа-яё]+\s+[A-ZА-ЯЁ][a-zа-яё]+/i.test(title) ||
         /[A-Z][a-z]+\s+[A-Z][a-z]+\s+[A-Z][a-z]+\s*[—\-–]\s*OpenSanctions/i.test(title)
