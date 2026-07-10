@@ -81,11 +81,71 @@ export async function assertReportRunBelongsToCase(
   caseId: string,
   reportRunId: string
 ): Promise<void> {
-  const run = await prisma.orionReportRun.findFirst({
+  await ensureOrionReportRunForCapture(caseId, reportRunId);
+}
+
+/**
+ * Artifact reportRunIds (e.g. `orion-r10-…`) live in JSON files and are often
+ * absent from `dp_orion_report_runs`. LIVE capture needs a real FK row — create
+ * a lightweight run if missing.
+ */
+export async function ensureOrionReportRunForCapture(
+  caseId: string,
+  reportRunId: string
+): Promise<void> {
+  const existing = await prisma.orionReportRun.findFirst({
     where: { id: reportRunId, caseId },
     select: { id: true },
   });
-  if (!run) throw new SerpUrlBuilderError("report-run-not-found");
+  if (existing) return;
+
+  const caseRow = await prisma.case.findFirst({
+    where: { id: caseId, deletedAt: null },
+    select: { id: true },
+  });
+  if (!caseRow) throw new SerpUrlBuilderError("case-not-found");
+
+  // Another request may have created the same id concurrently.
+  const byId = await prisma.orionReportRun.findFirst({
+    where: { id: reportRunId },
+    select: { id: true, caseId: true },
+  });
+  if (byId) {
+    if (byId.caseId !== caseId) throw new SerpUrlBuilderError("report-run-case-mismatch");
+    return;
+  }
+
+  console.info("[serp-capture] ensuring OrionReportRun", { caseId, reportRunId });
+  try {
+    await prisma.orionReportRun.create({
+      data: {
+        id: reportRunId,
+        caseId,
+        mode: "classic_audit_live_serp",
+        storeMode: "file",
+        status: "active",
+        internalOnly: true,
+        metadataJson: {
+          createdFor: "serp-capture",
+          source: "ensure-on-capture",
+          createdAt: new Date().toISOString(),
+        },
+      },
+    });
+  } catch (err) {
+    // Unique race — re-check ownership
+    const again = await prisma.orionReportRun.findFirst({
+      where: { id: reportRunId },
+      select: { id: true, caseId: true },
+    });
+    if (again?.caseId === caseId) return;
+    console.error("[serp-capture] ensure OrionReportRun failed", {
+      caseId,
+      reportRunId,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
 }
 
 export interface CaptureLiveSerpOptions {
@@ -140,10 +200,27 @@ export async function captureLiveSerp(
 
   const captureFn = options.captureFn ?? captureSerpWithPlaywright;
 
+  console.info("[serp-capture] start", {
+    captureId: row.id,
+    caseId: request.caseId,
+    reportRunId: request.reportRunId,
+    engine: request.engine,
+    region: request.region,
+    query,
+    connectionMode,
+    hasProxy: Boolean(proxyServer),
+    url,
+  });
+
   try {
     const result = await captureFn({ url, proxyServer });
 
     if (result.captchaDetected) {
+      console.warn("[serp-capture] BLOCKED_CAPTCHA", {
+        captureId: row.id,
+        finalUrl: result.finalUrl,
+        diagnostics: result.diagnostics,
+      });
       const updated = await prisma.serpCapture.update({
         where: { id: row.id },
         data: {
@@ -154,10 +231,10 @@ export async function captureLiveSerp(
             pageTitle: result.pageTitle,
             diagnostics: result.diagnostics,
           }),
-          errorJson: {
+          errorJson: toInputJson({
             code: "BLOCKED_CAPTCHA",
             message: "CAPTCHA detected — capture not stored as READY evidence",
-          },
+          }),
         },
       });
       return mapRow(updated);
@@ -168,6 +245,14 @@ export async function captureLiveSerp(
     await saveFile(storageKey, result.png);
 
     const geoStatus: SerpGeoStatus = proxyServer ? "VERIFIED" : "UNVERIFIED";
+
+    console.info("[serp-capture] READY", {
+      captureId: row.id,
+      storageKey,
+      bytes: result.png.byteLength,
+      geoStatus,
+      connectionMode,
+    });
 
     const updated = await prisma.serpCapture.update({
       where: { id: row.id },
@@ -195,15 +280,21 @@ export async function captureLiveSerp(
     return mapRow(updated);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    console.error("[serp-capture] FAILED", {
+      captureId: row.id,
+      caseId: request.caseId,
+      reportRunId: request.reportRunId,
+      message,
+    });
     const updated = await prisma.serpCapture.update({
       where: { id: row.id },
       data: {
         captureStatus: "FAILED",
-        errorJson: { code: "CAPTURE_FAILED", message },
-        metadataJson: {
+        errorJson: toInputJson({ code: "CAPTURE_FAILED", message }),
+        metadataJson: toInputJson({
           mode: "LIVE",
           failedAt: new Date().toISOString(),
-        },
+        }),
       },
     });
     return mapRow(updated);

@@ -84,7 +84,17 @@ export async function selectLiveSerpCaptures(
       },
       orderBy: { capturedAt: "desc" },
     });
-    if (row) out.push(mapRow(row));
+    if (row) {
+      out.push(mapRow(row));
+    } else {
+      console.info("[serp-capture] no READY match for slot", {
+        reportRunId: input.reportRunId,
+        engine: slot.engine,
+        region: slot.region,
+        query: slot.query,
+        queryHash: queryHash.slice(0, 12),
+      });
+    }
   }
 
   return out;

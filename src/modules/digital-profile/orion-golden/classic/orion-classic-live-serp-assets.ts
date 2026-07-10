@@ -45,17 +45,40 @@ export async function buildLiveSerpAssets(input: {
   slots: LiveSerpSlot[];
   audience?: ClassicSerpAudience;
 }): Promise<ReportAssetV1[]> {
+  console.info("[serp-capture] select for report", {
+    reportRunId: input.reportRunId,
+    audience: input.audience ?? "client",
+    slotCount: input.slots.length,
+    slots: input.slots.map((s) => `${s.region}/${s.engine}:${s.query}`),
+  });
+
   const captures = await selectLiveSerpCaptures({
     reportRunId: input.reportRunId,
     slots: input.slots,
   });
 
+  console.info("[serp-capture] select result", {
+    reportRunId: input.reportRunId,
+    matched: captures.length,
+    ids: captures.map((c) => c.id),
+    statuses: captures.map((c) => `${c.engine}/${c.region}:${c.captureStatus}/${c.geoStatus}`),
+  });
+
   const out: ReportAssetV1[] = [];
   for (const capture of captures) {
-    if (!capture.storageKey) continue;
+    if (!capture.storageKey) {
+      console.warn("[serp-capture] READY row missing storageKey", { captureId: capture.id });
+      continue;
+    }
     try {
       const buf = await loadFile(capture.storageKey);
-      if (buf.length < 2000) continue;
+      if (buf.length < 2000) {
+        console.warn("[serp-capture] PNG too small, skip", {
+          captureId: capture.id,
+          bytes: buf.length,
+        });
+        continue;
+      }
       const provider = providerLabel(capture.engine);
       const prefix = capture.region === "UAE" ? "uae_live_serp" : "ru_live_serp";
       out.push({
@@ -69,13 +92,13 @@ export async function buildLiveSerpAssets(input: {
         geoStatus: capture.geoStatus,
         connectionMode: capture.connectionMode,
         captureId: capture.id,
-      } as ReportAssetV1 & {
-        geoStatus?: string;
-        connectionMode?: string;
-        captureId?: string;
       });
-    } catch {
-      // unreadable storage — skip
+    } catch (err) {
+      console.warn("[serp-capture] loadFile failed", {
+        captureId: capture.id,
+        storageKey: capture.storageKey,
+        err: err instanceof Error ? err.message : String(err),
+      });
     }
   }
   return out;
@@ -87,12 +110,29 @@ export function buildDefaultLiveSerpSlots(input: {
   uaeQueries: string[];
 }): LiveSerpSlot[] {
   const slots: LiveSerpSlot[] = [];
+  const seen = new Set<string>();
+  const push = (query: string, engine: SerpCaptureEngine, region: SerpCaptureRegion) => {
+    const q = query.trim();
+    if (!q) return;
+    const key = `${region}|${engine}|${q.toLowerCase()}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    slots.push({ query: q, engine, region });
+  };
+
+  // UI captures the subject FIO — always include it so READY rows match the report.
+  const subject = input.subjectName.trim();
+  if (subject) {
+    push(subject, "YANDEX", "RU");
+    push(subject, "GOOGLE", "RU");
+    push(subject, "GOOGLE", "UAE");
+  }
   for (const query of input.ruQueries) {
-    slots.push({ query, engine: "YANDEX", region: "RU" });
-    slots.push({ query, engine: "GOOGLE", region: "RU" });
+    push(query, "YANDEX", "RU");
+    push(query, "GOOGLE", "RU");
   }
   for (const query of input.uaeQueries) {
-    slots.push({ query, engine: "GOOGLE", region: "UAE" });
+    push(query, "GOOGLE", "UAE");
   }
   return slots;
 }

@@ -111,6 +111,7 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
   const [serpCaptures, setSerpCaptures] = useState<SerpCaptureDto[]>([]);
   const [serpCaptureBusy, setSerpCaptureBusy] = useState(false);
   const [activeLiveCapture, setActiveLiveCapture] = useState<string | null>(null);
+  const [serpListError, setSerpListError] = useState<string | null>(null);
 
   // Filters
   const [filterStatus, setFilterStatus] = useState<string>("");
@@ -180,13 +181,22 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
   const loadSerpCaptures = useCallback(async () => {
     if (!reportRunId) {
       setSerpCaptures([]);
+      setSerpListError(null);
       return;
     }
     try {
       const res = await listSerpCaptures(caseId, reportRunId);
       setSerpCaptures(res.captures);
-    } catch {
+      setSerpListError(null);
+    } catch (err) {
       setSerpCaptures([]);
+      const msg =
+        err instanceof DigitalProfileApiError
+          ? `${err.code}: ${err.message}`
+          : err instanceof Error
+            ? err.message
+            : "Не удалось загрузить LIVE captures";
+      setSerpListError(msg);
     }
   }, [caseId, reportRunId]);
 
@@ -948,7 +958,9 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
           ) : (
             <span className="dp-muted">Кнопки доступны после Prepare и при наличии ФИО субъекта.</span>
           )}
-          {serpCaptures.length > 0 ? (
+          {serpListError ? (
+            <ErrorBox>{serpListError}</ErrorBox>
+          ) : serpCaptures.length > 0 ? (
             <div className="dp-stack" style={{ gap: 6 }}>
               {serpCaptures.slice(0, 8).map((c) => (
                 <div key={c.id} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>

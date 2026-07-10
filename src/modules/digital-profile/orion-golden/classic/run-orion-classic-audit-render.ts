@@ -85,6 +85,13 @@ export async function runOrionClassicAuditRender(options: {
     audience: isClientProductionFinalize() ? "client" : "internal_preview",
     allowSyntheticSerp: !isClientProductionFinalize(),
   });
+  console.info("[serp-capture] classic audit assets", {
+    caseId,
+    reportRunId: clientContent.reportRunId,
+    liveCount: assets.filter((a) => a.kind === "live_serp").length,
+    syntheticCount: assets.filter((a) => a.kind === "synthetic_serp").length,
+    capturedCount: assets.filter((a) => a.kind === "captured_serp").length,
+  });
 
   const roots = [
     caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId),

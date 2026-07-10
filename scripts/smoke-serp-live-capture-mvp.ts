@@ -15,6 +15,7 @@ import { detectCaptchaSignals } from "../src/modules/digital-profile/serp-captur
 import {
   evaluateClientSerpPolicy,
   resolveLiveCaptureOutcome,
+  buildDefaultLiveSerpSlots,
 } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-live-serp-assets";
 import type { ReportAssetV1 } from "../src/modules/digital-profile/orion-report-spec/asset-builder";
 
@@ -54,6 +55,28 @@ function main() {
   const h1 = hashSerpQuery("  Глинка   Сергей  ");
   const h2 = hashSerpQuery("глинка сергей");
   check("query hash normalized", h1 === h2, h1.slice(0, 12));
+
+  // subject FIO always in report slots
+  const { buildDefaultLiveSerpSlots } = await import(
+    "../src/modules/digital-profile/orion-golden/classic/orion-classic-live-serp-assets.ts"
+  );
+  const slots = buildDefaultLiveSerpSlots({
+    subjectName: "Глинка Сергей Михайлович",
+    ruQueries: ["Глинка Сергей санкции"],
+    uaeQueries: ["Glinka sanctions"],
+  });
+  check(
+    "slots include subject FIO for RU Yandex",
+    slots.some(
+      (s) => s.query === "Глинка Сергей Михайлович" && s.engine === "YANDEX" && s.region === "RU"
+    )
+  );
+  check(
+    "slots include subject FIO for UAE Google",
+    slots.some(
+      (s) => s.query === "Глинка Сергей Михайлович" && s.engine === "GOOGLE" && s.region === "UAE"
+    )
+  );
 
   // CAPTCHA detect
   const cap = detectCaptchaSignals({
