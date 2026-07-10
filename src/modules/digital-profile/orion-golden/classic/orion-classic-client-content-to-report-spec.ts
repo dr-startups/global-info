@@ -684,6 +684,14 @@ function inventoryFallbackBlock(
     if (themeSet && themeSet.complianceSignals.length > 0) {
       bullets = themeSet.complianceSignals.flatMap((c) => [c.statusLine, c.detail]);
       narrative = "Сводка предварительных сигналов международных комплаенс-баз.";
+    } else if (themeSet) {
+      // Prefer ThemeSet / annotated cards over raw EN risk-classifier dump.
+      bullets = [
+        ...themeSetBullets(themeSet).slice(0, 4),
+        "Предварительные совпадения в международных комплаенс-базах требуют сверки полных профилей.",
+      ];
+      narrative =
+        "Сводка комплаенс-сигналов: сюжеты ThemeSet и предварительные совпадения в международных базах.";
     } else {
       bullets = complianceBullets(inventory);
       narrative = "Сводка комплаенс-сигналов и публичных баз.";

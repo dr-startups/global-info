@@ -5,7 +5,7 @@
 import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
 import { sanitizeOrionGoldenClientText } from "../client/client-text-sanitizer";
 import type { OrionGoldenDeckManifest, OrionGoldenDeckSlide } from "../composer/orion-deck-composer";
-import { scrubClientFacingProse, truncateAtWordBoundary } from "./orion-classic-text-utils";
+import { scrubClientFacingProse, truncateAtWordBoundary, isEnglishAnalystDump } from "./orion-classic-text-utils";
 import type { OrionClassicAuditReportSpec } from "./orion-classic-client-content-to-report-spec";
 import {
   assetSectionKeyForRegistry,
@@ -113,9 +113,10 @@ function sanitizeSlide(slide: OrionGoldenDeckSlide): OrionGoldenDeckSlide {
     bullets: slide.bullets
       ?.map((b) => scrub(b))
       .filter((b) => Boolean(b) && !/\[object Object\]/i.test(b))
+      .filter((b) => !isEnglishAnalystDump(b))
       .filter(
         (b) =>
-          !/\.example(\/|$|\s)|example\.com|\[DEMO\]|Demo DOW JONES|Demo WORLD CHECK|Demo LEXIS|potential match only|демо[- ]?скрининг|демонстрационн|DATA\s*POOR|match score|requires analyst review|Sergey Mikhaylovich Kozlov|Козлов/i.test(
+          !/\.example(\/|$|\s)|example\.com|\[DEMO\]|Demo DOW JONES|Demo WORLD CHECK|Demo LEXIS|potential match only|демо[- ]?скрининг|демонстрационн|DATA\s*POOR|match score|requires analyst review|Sergey Mikhaylovich Kozlov|Козлов|No authoritative Wikipedia|Possible criminal-allegation|Negative search suggestion/i.test(
             b
           )
       ),

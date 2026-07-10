@@ -159,15 +159,38 @@ export function isEnglishComplianceStub(text: string): boolean {
   );
 }
 
+/**
+ * Raw EN risk-classifier / media-check dump lines (ORION client deck is RU).
+ * Seen on Glinka classic: Wikipedia-absent stubs, "Possible criminal-allegation…".
+ */
+export function isEnglishAnalystDump(text: string): boolean {
+  const t = String(text ?? "").trim();
+  if (!t) return false;
+  // Mostly Latin + classifier phrasing → not client-facing RU prose
+  const cyr = (t.match(/[А-Яа-яЁё]/g) ?? []).length;
+  const lat = (t.match(/[A-Za-z]/g) ?? []).length;
+  if (
+    /No authoritative Wikipedia|Negative search suggestion|Possible criminal-allegation|Requires manual (?:verification|review)|not a (?:Подтверждено|confirmed) fact|Indicates public interest in adverse|Mentions found \(criminal\)|absence of a controlled authoritative profile/i.test(
+      t
+    )
+  ) {
+    return true;
+  }
+  if (lat >= 40 && cyr < 8 && /manual (?:review|verification)|open-source result|search suggestion|related query/i.test(t)) {
+    return true;
+  }
+  return false;
+}
+
 /** Rewrite client-facing prose that still mentions demo screening / process meta. */
 export function scrubClientFacingProse(text: string): string {
   let t = String(text ?? "");
-  // Drop whole Demo DJ/LN/WC product names before other rewrites
+  // Collapse Demo DJ/LN/WC lists (with commas / «и») into one phrase before per-token replace
   t = t.replace(
     /(?:Demo\s+)?(?:DOW\s*JONES|LEXISNEXIS|LEXIS\s*NEXIS|WORLD[\s-]*CHECK)(?:\s*[,и]\s*(?:Demo\s+)?(?:DOW\s*JONES|LEXISNEXIS|LEXIS\s*NEXIS|WORLD[\s-]*CHECK))+/gi,
     (m) => (/Demo/i.test(m) ? "международных комплаенс-базах" : m)
   );
-  t = t.replace(/\bDemo\s+(?:DOW\s*JONES|LEXISNEXIS|LEXIS\s*NEXIS|WORLD[\s-]*CHECK)\b/gi, "комплаенс-базе");
+  t = t.replace(/\bDemo\s+(?:DOW\s*JONES|LEXISNEXIS|LEXIS\s*NEXIS|WORLD[\s-]*CHECK)\b/gi, "международной комплаенс-базе");
   t = t.replace(
     /потенциальн(?:ые|ых|ый)\s+совпадени[яе]\s+в\s+международных комплаенс-базах(?:\s+и\s+международных комплаенс-базах)+/gi,
     "предварительные совпадения в международных комплаенс-базах"
@@ -177,6 +200,15 @@ export function scrubClientFacingProse(text: string): string {
     "предварительные совпадения в международных комплаенс-базах"
   );
   t = t.replace(/международных комплаенс-базах(?:\s+и\s+международных комплаенс-базах)+/gi, "международных комплаенс-базах");
+  // Broken scrub artifact: «комплаенс-базе, комплаенс-базе и комплаенс-базе»
+  t = t.replace(
+    /комплаенс-базе(?:\s*[,и]\s*комплаенс-базе)+/gi,
+    "международных комплаенс-базах"
+  );
+  t = t.replace(
+    /потенциальн(?:ые|ых|ый)\s+совпадени[яе]\s+в\s+комплаенс-базе(?:\s*[,и]\s*комплаенс-базе)*/gi,
+    "предварительные совпадения в международных комплаенс-базах"
+  );
   t = t.replace(/демо[- ]?скрининг(?:ах|а|и|ов|у|ом)?/gi, "предварительных проверках");
   t = t.replace(/demo[- ]?screening(?:s)?/gi, "preliminary screenings");
   t = t.replace(/в\s+демо[- ]?режиме/gi, "на предварительном этапе");
@@ -225,7 +257,8 @@ export function isMetaProcessBullet(text: string): boolean {
     /DATA\s*POOR|сжато\s+пустых|кластер\(ов\)|дедупликац|материал\(ов\).*дубл/i.test(t) ||
     /найденных\s+материал|\(\d+\)\s*не\s+использова|расхождени[ея]\s+по\s+отчеству/i.test(t) ||
     /очеред(ь|и)\s+ручн|недостаточно подтверждённ|не делать выводов о присутствии/i.test(t) ||
-    isEnglishComplianceStub(t)
+    isEnglishComplianceStub(t) ||
+    isEnglishAnalystDump(t)
   );
 }
 
@@ -269,7 +302,8 @@ export function sanitizeClassicBullets(bullets: string[], maxLen = 280): string[
     .filter((b) => Boolean(b) && !/\[object Object\]/i.test(b))
     .filter((b) => !isMetaProcessBullet(b))
     .filter((b) => !isDemoOrPlaceholderClientText(b))
-    .filter((b) => !isEnglishComplianceStub(b));
+    .filter((b) => !isEnglishComplianceStub(b))
+    .filter((b) => !isEnglishAnalystDump(b));
 }
 
 export function chunkItems<T>(items: T[], perChunk: number): T[][] {

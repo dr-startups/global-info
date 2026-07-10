@@ -560,18 +560,20 @@ function themeDisplayTitle(
 
   // Keep explicit criminal bucket label; append GSM core plot when present.
   if (defKey === "criminal_legal") {
-    if (core.length >= 2 || (core.length >= 1 && (hasRucrim || hasCoreInHits))) {
-      return `Криминальные материалы — ${core.slice(0, 3).join(" / ")}`;
-    }
-    if (hasRucrim || hasCoreInHits) {
+    // Prefer core plot names; never lead with Moldova/defense alone.
+    let coreNames = core.slice(0, 3);
+    if (coreNames.length < 2 && (hasRucrim || hasCoreInHits)) {
       const fromHits = extractNamedEntities(
         sampleHits.map((h) => `${h.title} ${h.snippet ?? ""}`).join(" "),
         ""
       ).filter((e) => /трансмаш|махмудов|бокарев/i.test(e));
-      if (fromHits.length > 0) {
-        return `Криминальные материалы — ${fromHits.slice(0, 3).join(" / ")}`;
+      for (const e of fromHits) {
+        if (!coreNames.some((c) => c.toLowerCase() === e.toLowerCase())) coreNames.push(e);
       }
-      return "Криминальные материалы";
+      coreNames = coreNames.slice(0, 3);
+    }
+    if (coreNames.length > 0) {
+      return `Криминальные материалы — ${coreNames.join(" / ")}`;
     }
     return "Криминальные материалы";
   }
@@ -600,27 +602,42 @@ function themeDisplayTitle(
 
 function extractNamedEntities(text: string, subjectName: string): string[] {
   const out: string[] = [];
+  // Phrase-level ORION story labels first (EN titles: Makhmudov and Bokarev / Railways / Transmash)
+  const storyLabels: Array<{ re: RegExp; label: string; priority: number }> = [
+    { re: /трансмашхолдинг|transmashholding/i, label: "Трансмашхолдинг", priority: 0 },
+    { re: /махмудов|makhmudov/i, label: "Махмудов", priority: 0 },
+    { re: /бокарев|bokarev/i, label: "Бокарев", priority: 0 },
+    { re: /ликсутов|liksutov/i, label: "Ликсутов", priority: 1 },
+    { re: /лнр|лднр/i, label: "ЛНР", priority: 1 },
+    { re: /молдав|moldova/i, label: "Молдавия", priority: 2 },
+    { re: /defense\s+industry|оборонн/i, label: "оборонная промышленность", priority: 2 },
+  ];
+  const found: Array<{ label: string; priority: number }> = [];
+  for (const s of storyLabels) {
+    if (!s.re.test(text)) continue;
+    if (found.some((x) => x.label.toLowerCase() === s.label.toLowerCase())) continue;
+    found.push({ label: s.label, priority: s.priority });
+  }
+  // ORION GSM: «…pump money Railways…» with Makhmudov/Bokarev ≈ Трансмашхолдинг plot
+  if (
+    /railways/i.test(text) &&
+    /makhmudov|махмудов|bokarev|бокарев/i.test(text) &&
+    !found.some((x) => /трансмаш/i.test(x.label))
+  ) {
+    found.push({ label: "Трансмашхолдинг", priority: 0 });
+  }
+  found.sort((a, b) => a.priority - b.priority);
+  for (const f of found) {
+    out.push(f.label);
+    if (out.length >= 8) return out;
+  }
+
   const re =
     /\b(?:АО\s+«[^»]+»|ПАО\s+«[^»]+»|ООО\s+«[^»]+»|Базовый элемент|En\+ Group|Rusal|РУСАЛ|rupep\.org|PEPS|TAdviser|Forbes|РБК|LexisNexis|Dow Jones|World-Check|OpenSanctions|justice\.gov|Transmashholding|Трансмашхолдинг|Трансмаш|Махмудов|Makhmudov|Бокарев|Bokarev|Ликсутов|Liksutov|Молдавия|Moldova|ЛНР|ЛДНР|Dossier Center)\b/gi;
   for (const m of text.match(re) ?? []) {
     const t = m.trim();
     if (!isQualityEntity(t, subjectName)) continue;
     if (!out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t);
-    if (out.length >= 8) break;
-  }
-  // Phrase-level ORION story labels when regex tokens miss transliteration variants
-  const storyLabels: Array<{ re: RegExp; label: string }> = [
-    { re: /трансмашхолдинг|transmashholding/i, label: "Трансмашхолдинг" },
-    { re: /махмудов|makhmudov/i, label: "Махмудов" },
-    { re: /бокарев|bokarev/i, label: "Бокарев" },
-    { re: /ликсутов|liksutov/i, label: "Ликсутов" },
-    { re: /молдав|moldova/i, label: "Молдавия" },
-    { re: /лнр|лднр/i, label: "ЛНР" },
-    { re: /defense\s+industry|оборонн/i, label: "оборонная промышленность" },
-  ];
-  for (const s of storyLabels) {
-    if (!s.re.test(text)) continue;
-    if (!out.some((x) => x.toLowerCase() === s.label.toLowerCase())) out.push(s.label);
     if (out.length >= 8) break;
   }
   return out;
@@ -635,15 +652,27 @@ function themeAnchorEntities(
 ): string[] {
   const out: string[] = [];
   const rankedHits = themeKey ? sortHitsForTheme(hits, themeKey) : hits;
-  // Named ORION story people/orgs first (GSM exec style), then strong domains.
-  const storyFirst = named.filter(
+
+  const coreFirst = named.filter(
+    (e) => isQualityEntity(e, subjectName) && /трансмаш|махмудов|бокарев/i.test(e)
+  );
+  const plotNext = named.filter(
     (e) =>
       isQualityEntity(e, subjectName) &&
-      /трансмаш|махмудов|бокарев|ликсутов|молдав|лнр|оборон|rusal|базов/i.test(e)
+      /ликсутов|лнр|лднр/i.test(e) &&
+      !coreFirst.some((c) => c.toLowerCase() === e.toLowerCase())
   );
-  for (const ent of storyFirst) {
+  const softStory = named.filter(
+    (e) =>
+      isQualityEntity(e, subjectName) &&
+      /молдав|оборон|rusal|базов/i.test(e) &&
+      !coreFirst.some((c) => c.toLowerCase() === e.toLowerCase()) &&
+      !plotNext.some((c) => c.toLowerCase() === e.toLowerCase())
+  );
+
+  for (const ent of [...coreFirst, ...plotNext, ...softStory]) {
     if (!out.some((x) => x.toLowerCase() === ent.toLowerCase())) out.push(ent);
-    if (out.length >= 3) break;
+    if (out.length >= 4) break;
   }
   for (const hit of rankedHits) {
     const d = (hit.domain || "").trim();
@@ -654,7 +683,7 @@ function themeAnchorEntities(
       continue;
     }
     if (!out.some((x) => x.toLowerCase() === d.toLowerCase())) out.push(d);
-    if (out.length >= 4) break;
+    if (out.length >= 5) break;
   }
   for (const ent of named) {
     if (!isQualityEntity(ent, subjectName)) continue;
@@ -1027,6 +1056,17 @@ function buildExecutiveNarrative(input: {
   const themeLines = input.themes.slice(0, 6).map((t) => {
     const ents = t.namedEntities
       .filter((e) => isQualityEntity(e, input.subjectName) && !WEAK_ANCHOR_DOMAIN_RE.test(e))
+      .sort((a, b) => {
+        const rank = (e: string) =>
+          /трансмаш|махмудов|бокарев/i.test(e)
+            ? 0
+            : /ликсутов|лнр/i.test(e)
+              ? 1
+              : /молдав|оборон/i.test(e)
+                ? 2
+                : 3;
+        return rank(a) - rank(b);
+      })
       .slice(0, 3);
     // Lead criminal theme with aggregator domain when named entities are thin
     if (ents.length === 0 && t.id === "criminal_legal") {
@@ -1122,6 +1162,17 @@ export function themeSetBullets(themeSet: OrionThemeSet, region?: OrionRegionBuc
   return themes.slice(0, 6).map((t) => {
     const ents = t.namedEntities
       .filter((e) => isQualityEntity(e, themeSet.subjectName) && !WEAK_ANCHOR_DOMAIN_RE.test(e))
+      .sort((a, b) => {
+        const rank = (e: string) =>
+          /трансмаш|махмудов|бокарев/i.test(e)
+            ? 0
+            : /ликсутов|лнр/i.test(e)
+              ? 1
+              : /молдав|оборон/i.test(e)
+                ? 2
+                : 3;
+        return rank(a) - rank(b);
+      })
       .slice(0, 3);
     if (ents.length === 0 && t.id === "criminal_legal") {
       const agg = t.sampleHits.find((h) => CRIMINAL_AGGREGATOR_DOMAIN_RE.test(h.domain));
