@@ -118,7 +118,7 @@ function stripTechnicalSnippets(text: string): string {
 
 /**
  * Strip obfuscated / impossible profile fields that leak into client cards
- * (e.g. RuPEP «Категория: Aячцжмтщш», «Дата рождения: 11.55.1840»).
+ * (e.g. RuPEP «Категория: Aячцжмтщш», «Гражданство: Еяцюмэл», «Дата рождения: 11.55.1840»).
  */
 export function sanitizeOrionGoldenEvidenceSnippet(text: string): string {
   if (!text) return "";
@@ -126,6 +126,19 @@ export function sanitizeOrionGoldenEvidenceSnippet(text: string): string {
 
   // Category labels on aggregator cards are often cipher/OCR garbage — never show raw.
   out = out.replace(/(?:Категория|Category|Сategory)\s*:\s*[^\n·•|;]{1,64}/gi, "");
+
+  // Citizenship / residence / birthplace: keep only recognizable geo labels.
+  const GEO_OK =
+    /росси|russia|рф\b|молдав|moldova|украин|ukraine|беларус|belarus|москв|moscow|санкт|петербург|cyprus|кипр|uae|оаэ|dubai|дубай|london|лондон|switzerland|швейцар|austria|австр|germany|герман|france|франц|israel|израил|china|кита|usa|сша|united\s+states|великобритан|britain|\buk\b|казах|kazakhstan|итал|italy|испан|spain|турц|turkey|грузи|georgia|армен|armenia|азербайдж|azerbaijan/i;
+  out = out.replace(
+    /(?:Гражданство|Citizen(?:ship)?|Прожива(?:ет|ние)|Resident(?:ce)?|Место рождения|Place of birth)\s*:\s*[^\n·•|;]{1,64}/gi,
+    (m) => {
+      const val = m.split(":").slice(1).join(":").trim();
+      return GEO_OK.test(val) ? m : "";
+    }
+  );
+  // Trailing «Имеет …» / «Has …» cipher tails on RuPEP cards
+  out = out.replace(/(?:Имеет|Has)\s+[^\n·•|;]{1,48}/gi, (m) => (GEO_OK.test(m) ? m : ""));
 
   let droppedInvalidDob = false;
   out = out.replace(
@@ -163,6 +176,23 @@ export function sanitizeOrionGoldenEvidenceSnippet(text: string): string {
       }
     );
   }
+
+  // Drop any remaining labeled field whose value looks like keyboard-cipher mash.
+  out = out.replace(
+    /([A-Za-zА-Яа-яЁё][^:\n·•|;]{0,24}:\s*)([^\n·•|;]{3,48})/g,
+    (full, label, val) => {
+      const letters = String(val).replace(/[^A-Za-zА-Яа-яЁё]/g, "");
+      if (letters.length < 5) return full;
+      if (GEO_OK.test(val) || /\d{4}/.test(val)) return full;
+      const vowels = (letters.match(/[аеиоуыэюяaeiouyё]/gi) ?? []).length;
+      const vowelRatio = vowels / letters.length;
+      const cyrCluster = /[бвгджзклмнпрстфхцчшщъь]{4,}/i.test(letters);
+      const latCluster = /[bcdfghjklmnpqrstvwxz]{5,}/i.test(letters);
+      const mixedScript = /[A-Za-z]{2,}/.test(letters) && /[А-Яа-яЁё]{2,}/.test(letters);
+      if (vowelRatio < 0.2 || cyrCluster || latCluster || mixedScript) return "";
+      return full;
+    }
+  );
 
   return out
     .replace(/\s*[·•|;]\s*[·•|;]\s*/g, " · ")

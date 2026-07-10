@@ -472,13 +472,23 @@ function isFalsePersonHit(
   // Explicit known false positives seen on Glinka packs
   if (/kozlov|козлов/i.test(t) && !/kozlov|козлов/i.test(subjectLower)) return true;
 
-  // Composer / historical namesake (Mikhail Glinka) when subject is not Mikhail
-  if (
-    /(?:mikhail|михаил)\s+glinka|glinka\s+(?:mikhail|михаил)|композитор\s+глинк/i.test(t) &&
-    given &&
-    !/михаил|mikhail/i.test(given)
-  ) {
-    return true;
+  // Composer / historical / literary namesakes when given name differs
+  // (Mikhail Glinka composer; Fedor Glinka letters on JSTOR)
+  if (given && !/михаил|mikhail/i.test(given)) {
+    if (
+      /(?:mikhail|михаил)\s+glinka|glinka\s+(?:mikhail|михаил)|композитор\s+глинк/i.test(t)
+    ) {
+      return true;
+    }
+  }
+  if (given && !/ф[её]дор|fedor|fyodor/i.test(given)) {
+    if (
+      /(?:fedor|fyodor|ф[её]дор)\s+glinka|glinka,?\s+(?:fedor|fyodor|ф[её]дор)|glinka'?s?\s+letters|authorship\s+.*glinka|fedor\s+glinka/i.test(
+        t
+      )
+    ) {
+      return true;
+    }
   }
 
   // Same given+patronymic under a different leading surname
@@ -2466,6 +2476,11 @@ export function buildSerpHeatGridBullets(
           i.snippet,
           i.sourceUrl,
           inventory.subject.fullName
+        ) &&
+        // NGO / Treasury false-story domains only if they carry the named ORION plot
+        !(
+          FALSE_STORY_ANCHOR_DOMAIN_RE.test(domainOf(i.sourceUrl) || i.sourceUrl || "") &&
+          !ORION_CORE_PLOT_RE.test(`${i.title ?? ""} ${i.snippet ?? ""}`)
         )
     )
     .map((i) => ({
