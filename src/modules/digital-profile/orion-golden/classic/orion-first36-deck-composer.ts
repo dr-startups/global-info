@@ -133,22 +133,102 @@ export function buildDeterministicVisualAnalysis(
     limitations = [
       "Сетка собрана из сохранённых результатов поиска изображений; превью зависят от доступности URL.",
     ];
+  } else if (slot.kind === "suggestions_visual") {
+    const savedOnly = /сохранено|не подтвержд/i.test(`${caption} ${title} ${provenanceLabel(asset)}`);
+    const engine =
+      /google/i.test(`${asset.assetRef} ${title}`)
+        ? "Google"
+        : /yandex|яндекс/i.test(`${asset.assetRef} ${title}`)
+          ? "Яндекс"
+          : "поиска";
+    headlineConclusion = scrub(
+      savedOnly
+        ? `Подсказки поиска (${regionLabel}): сохранённые строки без подтверждённого движка`
+        : `Подсказки ${engine} (${regionLabel}): ассоциации вокруг имени`
+    );
+    whatIsVisible = scrub(
+      [
+        `На слайде — панель сохранённых подсказок автодополнения по субъекту (${regionLabel}).`,
+        caption || `Источник панели: ${provenanceLabel(asset)}.`,
+        "Это не live-скриншот выпадающего списка в браузере, а визуализация сохранённых строк поверхности.",
+      ].join(" ")
+    );
+    whyItMatters = scrub(
+      "Подсказки показывают, какие темы поиск связывает с именем субъекта (биография, компании, скандалы, санкции и т.п.). Это ранний сигнал репутационного и комплаенс-контекста до разбора полной выдачи."
+    );
+    recommendedActions = [
+      "Отметить подсказки с негативным или санкционным оттенком",
+      "Сверить, относятся ли формулировки к субъекту аудита",
+    ];
+    limitations = savedOnly
+      ? ["Движок подсказок не подтверждён; строки взяты из сохранённой поверхности кейса."]
+      : ["Панель собрана из сохранённых SUGGESTION-строк, а не из live autocomplete."];
+  } else if (slot.kind === "related_visual") {
+    const isFallback = /дополнительн|fallback|подсказ/i.test(`${caption} ${title}`);
+    headlineConclusion = scrub(
+      isFallback
+        ? `Дополнительные поисковые ассоциации (${regionLabel})`
+        : `Связанные запросы (${regionLabel}): соседние темы в выдаче`
+    );
+    whatIsVisible = scrub(
+      [
+        isFallback
+          ? `Отдельные RELATED_QUERY для региона «${regionLabel}» не сохранены; показан второй набор подсказок как ближайший аналог «похожих запросов».`
+          : `На слайде — связанные / похожие запросы из поисковой поверхности (${regionLabel}).`,
+        caption ? `Контекст: ${caption}` : "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+    );
+    whyItMatters = scrub(
+      "Связанные запросы раскрывают, в каком тематическом окружении поиск удерживает субъекта: бизнес, семья, споры, санкции. Это помогает отделить релевантный контекст от шума и однофамильцев."
+    );
+    recommendedActions = [
+      "Выделить запросы с риск-тематикой для ручной проверки",
+      "Сопоставить связанные темы с выводами по SERP и медиа",
+    ];
+    limitations = isFallback
+      ? ["Это fallback из подсказок: отдельных related-строк в кейсе не было."]
+      : ["Строки взяты из сохранённой поверхности, без live-снимка блока «похожие запросы»."];
+  } else if (slot.kind === "knowledge_visual") {
+    const fromWiki = /wikipedia|википед/i.test(`${caption} ${title} ${provenanceLabel(asset)}`);
+    headlineConclusion = scrub(
+      fromWiki
+        ? `Справочная карточка Wikipedia (${regionLabel})`
+        : `Панель знаний в поиске (${regionLabel})`
+    );
+    whatIsVisible = scrub(
+      fromWiki
+        ? `На слайде — справочная карточка на основе проверки Wikipedia по субъекту (${regionLabel}). ${caption || "Показаны название страницы и краткий статус наличия публичной статьи."}`
+        : `На слайде — справочная панель/блок знаний из поисковой поверхности (${regionLabel}). ${caption || "Сводка фактов и заголовков, сохранённых по субъекту."}`
+    );
+    whyItMatters = scrub(
+      fromWiki
+        ? "Наличие или отсутствие Wikipedia-страницы влияет на «официальность» публичного профиля и на то, как третьи лица идентифицируют субъекта в открытых источниках."
+        : "Панель знаний концентрирует краткие факты, которые поиск показывает рядом с выдачей; ошибки или чужой профиль здесь особенно заметны клиенту."
+    );
+    recommendedActions = fromWiki
+      ? [
+          "Проверить URL и язык статьи",
+          "Убедиться, что страница относится к субъекту аудита, а не к однофамильцу",
+        ]
+      : [
+          "Сверить факты панели с первичными источниками",
+          "Отметить расхождения с резюме аудита",
+        ];
+    limitations = fromWiki
+      ? ["Это карточка по результату wiki-check, а не скриншот knowledge graph в браузере."]
+      : ["Панель собрана из сохранённых knowledge-строк поверхности."];
   } else {
     whatIsVisible =
       caption ||
-      (slot.kind === "suggestions_visual"
-        ? "На слайде — сохранённые подсказки поисковой строки по субъекту."
-        : slot.kind === "related_visual"
-          ? "На слайде — связанные / похожие запросы из поисковой выдачи."
-          : slot.kind === "knowledge_visual"
-            ? "На слайде — справочная карточка/панель знаний по субъекту."
-            : `На слайде — визуальный материал раздела «${slot.title}».`);
+      (slot.kind === "db_visual"
+        ? "На слайде — страница комплаенс-базы или статусный блок раздела."
+        : `На слайде — визуальный материал раздела «${slot.title}».`);
     whyItMatters =
-      slot.kind === "suggestions_visual" || slot.kind === "related_visual"
-        ? "Подсказки и связанные запросы показывают, какие ассоциации формирует поиск вокруг имени субъекта."
-        : slot.kind === "db_visual"
-          ? "Страница базы подтверждает или уточняет комплаенс-сигнал без опоры только на текстовый пересказ."
-          : "Визуальное доказательство снижает риск неверной интерпретации текстового резюме.";
+      slot.kind === "db_visual"
+        ? "Страница базы подтверждает или уточняет комплаенс-сигнал без опоры только на текстовый пересказ."
+        : "Визуальное доказательство снижает риск неверной интерпретации текстового резюме.";
     recommendedActions = [
       "Сверить совпадение субъекта с карточкой/доменом на слайде",
       "Зафиксировать вывод после ручной проверки источника",
@@ -174,6 +254,46 @@ export function buildDeterministicVisualAnalysis(
     limitations,
     provenanceLabel: provenanceLabel(asset),
   };
+}
+
+function enrichNonVisualSlotProse(slide: OrionGoldenDeckSlide, slot: First36SlotDef): OrionGoldenDeckSlide {
+  if (slot.kind === "search_table") {
+    const regionLabel = slot.region === "UAE" ? "ОАЭ" : slot.region === "RU" ? "Россия" : "Обзор";
+    const takeaway = scrub(
+      `Позиции в SERP (${regionLabel}): какие домены занимают верх выдачи по субъекту`
+    );
+    const narrative = scrub(
+      slide.narrative ||
+        `Таблица фиксирует сохранённые позиции поисковой выдачи для региона «${regionLabel}». Это основа для сверки с синтетическим снимком SERP на соседнем слайде.`
+    );
+    const bullets =
+      slide.bullets && slide.bullets.length > 0
+        ? slide.bullets
+        : [
+            scrub("Строки собраны из сохранённых результатов поиска, а не из live-браузера."),
+            scrub("Сверьте домены с визуальным снимком выдачи и риск-выводами резюме."),
+          ];
+    return {
+      ...slide,
+      clientTakeaway: slide.clientTakeaway || takeaway,
+      narrative,
+      bullets,
+    };
+  }
+  if (slot.kind === "summary" || slot.kind === "metrics") {
+    const regionLabel = slot.region === "UAE" ? "ОАЭ" : slot.region === "RU" ? "Россия" : "Обзор";
+    if (!slide.narrative && !(slide.bullets && slide.bullets.length)) {
+      return {
+        ...slide,
+        narrative: scrub(
+          slot.kind === "metrics"
+            ? `Краткие показатели поискового покрытия по региону «${regionLabel}» на основе сохранённых результатов кейса.`
+            : `Резюме аудита по региону «${regionLabel}»: ключевые наблюдения по открытым источникам без коммерческого блока.`
+        ),
+      };
+    }
+  }
+  return slide;
 }
 
 function blockedSlide(slot: First36SlotDef, reason: string): OrionGoldenDeckSlide {
@@ -451,6 +571,7 @@ export function composeOrionFirst36CeoDeck(
     }
 
     // Ensure page identity
+    slide = enrichNonVisualSlotProse(slide, slot);
     slide = {
       ...slide,
       slideKey: slot.slotId,

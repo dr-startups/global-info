@@ -269,6 +269,26 @@ function main() {
     imageSlide?.visualAnalysis?.whatIsVisible?.slice(0, 120)
   );
 
+  const suggestSlide = deck.finalSlides.find((s) => s.slideKey === "p12_ru_suggestions_google");
+  check(
+    "suggestions slide has ORION association prose",
+    Boolean(
+      suggestSlide?.visualAnalysis?.whyItMatters &&
+        /ассоциа|подсказ|тем/i.test(suggestSlide.visualAnalysis.whyItMatters)
+    ),
+    suggestSlide?.visualAnalysis?.whyItMatters?.slice(0, 100)
+  );
+
+  const knowledgeSlide = deck.finalSlides.find((s) => s.slideKey === "p19_ru_knowledge_2");
+  // p19 may be placeholder in minimal smoke without wiki asset — only assert when present
+  if (knowledgeSlide?.visualAnalysis?.whyItMatters) {
+    check(
+      "knowledge slide has ORION prose when visual present",
+      /Wikipedia|профиль|факт/i.test(knowledgeSlide.visualAnalysis.whyItMatters),
+      knowledgeSlide.visualAnalysis.whyItMatters.slice(0, 100)
+    );
+  }
+
   const inventoryPath = join(
     process.cwd(),
     "storage",
