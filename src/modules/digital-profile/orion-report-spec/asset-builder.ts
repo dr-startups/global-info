@@ -473,13 +473,13 @@ export async function buildRegionMediaComposites(input: {
       engineLabel: "Google",
       items: suggestFinal.slice(0, 10),
     });
-    const relatedIsFallback = relatedFinal.some((e) => /related-fallback/i.test(e.evidenceRef));
+    const relatedIsSecondary = relatedFinal.some((e) => /related-alt/i.test(e.evidenceRef));
     await pushSurfacePanel({
       assetRef: "uae_related",
-      title: relatedIsFallback
+      title: relatedIsSecondary
         ? `${label} — дополнительные подсказки поиска`
         : `${label} — связанные запросы`,
-      engineLabel: relatedIsFallback ? "Подсказки" : "Google",
+      engineLabel: relatedIsSecondary ? "Подсказки" : "Google",
       items: relatedFinal.slice(0, 10),
     });
   }

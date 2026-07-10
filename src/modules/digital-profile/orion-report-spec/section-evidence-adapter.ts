@@ -454,7 +454,7 @@ export function buildUaeSearchEvidence(caseContext: OrionRealCaseContext): Norma
       ? relatedRaw.map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface", "related"))
       : suggestions.slice(10).map((s, idx) => ({
           ...s,
-          evidenceRef: stableEvidenceRef(sectionKey, `sf-related-fallback-${idx + 1}`),
+          evidenceRef: stableEvidenceRef(sectionKey, `sf-related-alt-${idx + 1}`),
         }));
   const images = surfaces
     .filter((s) => s.type === "IMAGE_RESULT")

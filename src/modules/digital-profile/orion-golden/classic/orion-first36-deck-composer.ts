@@ -164,16 +164,16 @@ export function buildDeterministicVisualAnalysis(
       ? ["Движок подсказок не подтверждён; строки взяты из сохранённой поверхности кейса."]
       : ["Панель собрана из сохранённых SUGGESTION-строк, а не из live autocomplete."];
   } else if (slot.kind === "related_visual") {
-    const isFallback = /дополнительн|fallback|подсказ/i.test(`${caption} ${title}`);
+    const isSecondarySuggest = /дополнительн|подсказ/i.test(`${caption} ${title}`);
     headlineConclusion = scrub(
-      isFallback
+      isSecondarySuggest
         ? `Дополнительные поисковые ассоциации (${regionLabel})`
         : `Связанные запросы (${regionLabel}): соседние темы в выдаче`
     );
     whatIsVisible = scrub(
       [
-        isFallback
-          ? `Отдельные RELATED_QUERY для региона «${regionLabel}» не сохранены; показан второй набор подсказок как ближайший аналог «похожих запросов».`
+        isSecondarySuggest
+          ? `Отдельные связанные запросы для региона «${regionLabel}» не сохранены; показан второй набор подсказок как ближайший аналог «похожих запросов».`
           : `На слайде — связанные / похожие запросы из поисковой поверхности (${regionLabel}).`,
         caption ? `Контекст: ${caption}` : "",
       ]
@@ -187,8 +187,8 @@ export function buildDeterministicVisualAnalysis(
       "Выделить запросы с риск-тематикой для ручной проверки",
       "Сопоставить связанные темы с выводами по SERP и медиа",
     ];
-    limitations = isFallback
-      ? ["Это fallback из подсказок: отдельных related-строк в кейсе не было."]
+    limitations = isSecondarySuggest
+      ? ["Показан второй набор подсказок: отдельных related-строк в кейсе не было."]
       : ["Строки взяты из сохранённой поверхности, без live-снимка блока «похожие запросы»."];
   } else if (slot.kind === "knowledge_visual") {
     const fromWiki = /wikipedia|википед/i.test(`${caption} ${title} ${provenanceLabel(asset)}`);
