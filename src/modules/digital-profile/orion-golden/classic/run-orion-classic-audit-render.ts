@@ -16,6 +16,7 @@ import { inspectOrionGoldenVisualQuality } from "../qa/visual-qa-inspection";
 import { renderOrionGoldenArtifacts } from "../renderer/orion-golden-render-client";
 import { buildOrionClassicAuditAssets } from "./orion-classic-asset-builder";
 import { composeOrionClassicAuditDeck } from "./orion-classic-audit-deck-composer";
+import { composeOrionFirst36CeoDeck } from "./orion-first36-deck-composer";
 import { buildOrionClassicReportSpecFromClientContent } from "./orion-classic-client-content-to-report-spec";
 import { buildOrionThemeSet } from "./orion-classic-theme-set";
 import { inspectClassicOrionAuditQuality } from "./orion-classic-audit-quality-inspection";
@@ -162,7 +163,9 @@ export async function runOrionClassicAuditRender(options: {
     riskMatrix,
     includeCommercial,
   });
-  const deckManifest = composeOrionClassicAuditDeck(reportSpec, assets, { includeCommercial });
+  const deckManifest = first36CeoMode
+    ? composeOrionFirst36CeoDeck(reportSpec, assets)
+    : composeOrionClassicAuditDeck(reportSpec, assets, { includeCommercial });
 
   writeJson(join(outputRoot, "orion-classic-report-spec.json"), reportSpec);
   writeJson(join(outputRoot, "final-deck-manifest.json"), deckManifest);

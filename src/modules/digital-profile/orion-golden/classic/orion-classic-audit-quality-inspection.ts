@@ -61,7 +61,35 @@ export function inspectClassicOrionAuditQuality(input: {
       detail:
         slideCount === FIRST36_CEO_EXACT_PAGES
           ? "exact 36 pages"
-          : `${slideCount} slides (CEO_READY requires exact ${FIRST36_CEO_EXACT_PAGES})`,
+          : `${slideCount} slides (First36 requires exact ${FIRST36_CEO_EXACT_PAGES})`,
+    });
+
+    const visualSlides = input.deckManifest.finalSlides.filter((s) =>
+      [
+        "orion_golden_serp_screenshot",
+        "orion_golden_image_grid",
+        "orion_golden_video_cards",
+        "orion_golden_knowledge_panel",
+        "orion_golden_lexis_visual_page",
+      ].includes(s.template)
+    );
+    const withAnalysis = visualSlides.filter((s) => Boolean(s.visualAnalysis?.headlineConclusion));
+    checks.push({
+      id: "visual-analysis-sidebar",
+      passed: visualSlides.length === 0 || withAnalysis.length >= Math.min(1, visualSlides.length),
+      detail: `${withAnalysis.length}/${visualSlides.length} visual slides have analysis sidebar`,
+    });
+
+    const blankBlocked = input.deckManifest.finalSlides.filter((s) =>
+      Boolean(s.blockedReason?.startsWith("REQUIRED_VISUAL"))
+    );
+    checks.push({
+      id: "required-visual-slots",
+      passed: true, // informational for INTERNAL_PREVIEW; blocks CEO_READY below
+      detail:
+        blankBlocked.length === 0
+          ? "no blocked required-visual slots"
+          : `${blankBlocked.length} blocked required-visual slot(s)`,
     });
   }
 
@@ -360,19 +388,24 @@ export function inspectClassicOrionAuditQuality(input: {
   }
 
   for (const check of checks) {
-    // exact-36 is a CEO_READY gate — does not fail INTERNAL_PREVIEW passed.
-    if (!check.passed && check.id !== "exact-36-pages") {
+    // Informational / CEO-only gates do not fail INTERNAL_PREVIEW passed.
+    if (!check.passed && check.id !== "required-visual-slots") {
+      // exact-36 DOES fail first36 INTERNAL_PREVIEW once registry composer is on
       issues.push(`${check.id}: ${check.detail}`);
     }
   }
 
   const exact36 = !first36 || slideCount === FIRST36_CEO_EXACT_PAGES;
   const noCommercial = !hasCommercial;
+  const blockedRequired = input.deckManifest.finalSlides.some((s) =>
+    Boolean(s.blockedReason?.startsWith("REQUIRED_VISUAL"))
+  );
   const ceoReady =
     first36 &&
     Boolean(input.clientProductionFinalize) &&
     exact36 &&
     noCommercial &&
+    !blockedRequired &&
     issues.length === 0;
 
   checks.push({

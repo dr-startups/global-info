@@ -7,8 +7,9 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildOrionClassicReportSpecFromClientContent } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-client-content-to-report-spec";
 import { composeOrionClassicAuditDeck } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-audit-deck-composer";
+import { composeOrionFirst36CeoDeck } from "../src/modules/digital-profile/orion-golden/classic/orion-first36-deck-composer";
+import { buildOrionClassicReportSpecFromClientContent } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-client-content-to-report-spec";
 import { inspectClassicOrionAuditQuality } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-audit-quality-inspection";
 import type { OrionClientContent } from "../src/modules/digital-profile/orion-golden/content/orion-client-content-builder";
 import type { FullEvidenceInventory } from "../src/modules/digital-profile/orion-golden/evidence/full-evidence-inventory";
@@ -61,7 +62,10 @@ async function main() {
     riskMatrix: riskMatrix as never,
     includeCommercial: false,
   });
-  const deckManifest = composeOrionClassicAuditDeck(reportSpec, assets, { includeCommercial: false });
+  const useFirst36 = process.env.ORION_FIRST36_CEO_MODE !== "0";
+  const deckManifest = useFirst36
+    ? composeOrionFirst36CeoDeck(reportSpec, assets)
+    : composeOrionClassicAuditDeck(reportSpec, assets, { includeCommercial: false });
 
   writeFileSync(join(outRoot, "orion-classic-report-spec.json"), `${JSON.stringify(reportSpec, null, 2)}\n`);
   writeFileSync(join(outRoot, "final-deck-manifest.json"), `${JSON.stringify(deckManifest, null, 2)}\n`);

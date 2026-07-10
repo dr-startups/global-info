@@ -13,6 +13,7 @@ import { buildOrionGoldenAssets } from "./assets/orion-asset-builder";
 import { composeOrionGoldenDeck } from "./composer/orion-deck-composer";
 import { composeOrionClientAuditDeck } from "./composer/orion-client-audit-deck-composer";
 import { composeOrionClassicAuditDeck } from "./classic/orion-classic-audit-deck-composer";
+import { composeOrionFirst36CeoDeck } from "./classic/orion-first36-deck-composer";
 import { buildOrionClassicAuditAssets } from "./classic/orion-classic-asset-builder";
 import {
   buildOrionClassicReportSpecFromClientContent,
@@ -847,9 +848,11 @@ export async function runR10OrionGoldenE2e(options: {
     writeJson(join(outputRoot, "orion-report-spec.from-client-content.json"), reportSpec);
     writeJson(join(outputRoot, "orion-report-spec.json"), reportSpec);
     deckManifest = shouldUseClassicOrionAuditMode()
-      ? composeOrionClassicAuditDeck(reportSpec as OrionClassicAuditReportSpec, assets, {
-          includeCommercial: process.env.ORION_FIRST36_CEO_MODE !== "1",
-        })
+      ? process.env.ORION_FIRST36_CEO_MODE === "1"
+        ? composeOrionFirst36CeoDeck(reportSpec as OrionClassicAuditReportSpec, assets)
+        : composeOrionClassicAuditDeck(reportSpec as OrionClassicAuditReportSpec, assets, {
+            includeCommercial: process.env.ORION_FIRST36_CEO_MODE !== "1",
+          })
       : composeOrionClientAuditDeck(reportSpec, assets);
     renderSource = "client_content_adapter";
   } else {

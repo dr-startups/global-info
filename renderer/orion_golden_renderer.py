@@ -259,6 +259,122 @@ def _first_visual_asset(refs: list[Any], assets: dict[str, dict[str, Any]]) -> d
     return None
 
 
+def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, h: int) -> None:
+    """Render VisualSlideAnalysis in a right-hand column."""
+    analysis = slide.get("visualAnalysis") or {}
+    if not isinstance(analysis, dict) or not analysis:
+        takeaway = _safe(slide.get("clientTakeaway") or "")
+        bullets = [_safe(b) for b in slide.get("bullets") or [] if _safe(b)]
+        if not takeaway and not bullets:
+            return
+        shape = ctx.slide.shapes.add_shape(1, Emu(x), Emu(y), Emu(w), Emu(h))
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = CARD_BG
+        shape.line.color.rgb = CARD_BORDER
+        box = ctx.slide.shapes.add_textbox(Emu(x + 80000), Emu(y + 80000), Emu(w - 160000), Emu(h - 160000))
+        tf = box.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        r = p.add_run()
+        r.text = takeaway or (bullets[0] if bullets else "")
+        r.font.name = FONT
+        r.font.size = Pt(11)
+        r.font.bold = True
+        r.font.color.rgb = NAVY
+        for bullet in bullets[:4]:
+            bp = tf.add_paragraph()
+            bp.space_before = Pt(6)
+            br = bp.add_run()
+            br.text = f"• {_clip_words(bullet, 160)}"
+            br.font.name = FONT
+            br.font.size = Pt(10)
+            br.font.color.rgb = BODY_COLOR
+        return
+
+    shape = ctx.slide.shapes.add_shape(1, Emu(x), Emu(y), Emu(w), Emu(h))
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = CARD_BG
+    shape.line.color.rgb = CARD_BORDER
+    box = ctx.slide.shapes.add_textbox(Emu(x + 80000), Emu(y + 80000), Emu(w - 160000), Emu(h - 160000))
+    tf = box.text_frame
+    tf.word_wrap = True
+
+    def add_line(text: str, *, bold: bool = False, size: int = 10, color: RGBColor = BODY_COLOR, space: int = 4) -> None:
+        p = tf.add_paragraph()
+        p.space_before = Pt(space)
+        r = p.add_run()
+        r.text = _clip_words(text, 200)
+        r.font.name = FONT
+        r.font.size = Pt(size)
+        r.font.bold = bold
+        r.font.color.rgb = color
+
+    # First paragraph
+    p0 = tf.paragraphs[0]
+    r0 = p0.add_run()
+    r0.text = _clip_words(_safe(analysis.get("headlineConclusion") or "Вывод"), 140)
+    r0.font.name = FONT
+    r0.font.size = Pt(12)
+    r0.font.bold = True
+    r0.font.color.rgb = NAVY
+
+    what = _safe(analysis.get("whatIsVisible") or "")
+    if what:
+        add_line("Что видно", bold=True, size=10, color=MUTED_COLOR, space=10)
+        add_line(what, size=10, space=2)
+    why = _safe(analysis.get("whyItMatters") or "")
+    if why:
+        add_line("Почему важно", bold=True, size=10, color=MUTED_COLOR, space=10)
+        add_line(why, size=10, space=2)
+    prov = _safe(analysis.get("provenanceLabel") or "")
+    if prov:
+        add_line(prov, size=9, color=MUTED_COLOR, space=10)
+    actions = analysis.get("recommendedActions") or []
+    if isinstance(actions, list) and actions:
+        add_line("Действие", bold=True, size=10, color=MUTED_COLOR, space=10)
+        add_line(_safe(actions[0]), size=10, space=2)
+
+
+def _render_visual_with_sidebar(
+    ctx: _Ctx,
+    slide: dict[str, Any],
+    assets: dict[str, dict[str, Any]],
+    title: str,
+) -> None:
+    """Title + left visual (contain) + right analytical sidebar."""
+    ctx.light_bg()
+    y = ctx.title(title, 280000, NAVY)
+    refs = slide.get("assetRefs") or []
+    visual = _first_visual_asset(refs, assets)
+    has_sidebar = bool(slide.get("visualAnalysis") or slide.get("clientTakeaway") or slide.get("bullets"))
+    img_w = int(CONTENT_W * 0.62) if has_sidebar else CONTENT_W
+    side_w = CONTENT_W - img_w - 120000
+    img_h = CONTENT_BOTTOM - y - 80000
+    if visual:
+        # Temporarily embed into a narrower box by using contain math inline
+        raw = _resolve_image_bytes(visual)
+        if raw:
+            iw, ih = img_w, img_h
+            if Image is not None:
+                try:
+                    with Image.open(io.BytesIO(raw)) as im:
+                        iw, ih = im.size
+                except Exception:  # noqa: BLE001
+                    pass
+            scale = min(img_w / max(iw, 1), img_h / max(ih, 1))
+            dw, dh = int(iw * scale), int(ih * scale)
+            left = MARGIN_X + (img_w - dw) // 2
+            top = y + 60000 + (img_h - 60000 - dh) // 2
+            ctx.slide.shapes.add_picture(io.BytesIO(raw), Emu(left), Emu(top), width=Emu(dw), height=Emu(dh))
+        else:
+            ctx.body("Визуальный материал недоступен.", y + 80000, max_h=600000, color=MUTED_COLOR)
+    else:
+        reason = _safe(slide.get("blockedReason") or "Визуальный материал недоступен для данного раздела.")
+        ctx.body(reason, y + 80000, max_h=800000, color=MUTED_COLOR)
+    if has_sidebar and side_w > 400000:
+        _sidebar_analysis(ctx, slide, MARGIN_X + img_w + 120000, y + 60000, side_w, img_h - 60000)
+
+
 def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> None:
     template = str(slide.get("template") or "")
     title = _safe(slide.get("title") or "ORION")
@@ -327,31 +443,26 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         return
 
     if template == "orion_golden_serp_screenshot":
-        ctx.light_bg()
-        y = ctx.title(title, 280000, NAVY)
-        # Leave room for API caption under the visual.
-        img_h = 4600000 if bullets else 5000000
-        _embed_image(ctx, primary, y + 60000, h=img_h)
-        if bullets:
-            ctx.body(bullets[0], CONTENT_BOTTOM - 420000, max_h=380000, color=MUTED_COLOR)
+        _render_visual_with_sidebar(ctx, slide, assets, title)
         return
 
     if template == "orion_golden_image_grid":
+        if slide.get("visualAnalysis") or slide.get("clientTakeaway"):
+            _render_visual_with_sidebar(ctx, slide, assets, title)
+            return
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY)
-        # Composite PNG (ru_image_grid): one full-bleed visual with baked red frames.
         if len(refs) == 1:
             primary_grid = assets.get(str(refs[0])) if refs else None
-            if primary_grid and primary_grid.get("imageData"):
-                img_h = 5000000
-                _embed_image(ctx, primary_grid, y + 60000, h=img_h)
+            if primary_grid and _resolve_image_bytes(primary_grid):
+                _embed_image(ctx, primary_grid, y + 60000, h=5_200_000)
                 cap = _safe(primary_grid.get("caption") or "")
                 if cap:
                     ctx.body(cap, CONTENT_BOTTOM - 380000, max_h=320000, color=MUTED_COLOR)
                 return
         cols = 3
-        cell_w = 2600000
-        cell_h = 1500000
+        cell_w = CONTENT_W // 3 - 80_000
+        cell_h = 1_600_000
         gap = 120000
         for idx, ref in enumerate(refs[:6]):
             row = idx // cols
@@ -359,9 +470,21 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             cx = MARGIN_X + col * (cell_w + gap)
             cy = y + row * (cell_h + gap)
             asset = assets.get(str(ref))
-            if asset and asset.get("imageData"):
-                stream = io.BytesIO(base64.b64decode(str(asset.get("imageData"))))
-                ctx.slide.shapes.add_picture(stream, Emu(cx), Emu(cy), width=Emu(cell_w), height=Emu(cell_h))
+            raw = _resolve_image_bytes(asset) if asset else None
+            if raw:
+                stream = io.BytesIO(raw)
+                iw, ih = cell_w, cell_h
+                if Image is not None:
+                    try:
+                        with Image.open(io.BytesIO(raw)) as im:
+                            iw, ih = im.size
+                    except Exception:
+                        pass
+                scale = min(cell_w / max(iw, 1), cell_h / max(ih, 1))
+                dw, dh = int(iw * scale), int(ih * scale)
+                left = cx + (cell_w - dw) // 2
+                top = cy + (cell_h - dh) // 2
+                ctx.slide.shapes.add_picture(stream, Emu(left), Emu(top), width=Emu(dw), height=Emu(dh))
             else:
                 shape = ctx.slide.shapes.add_shape(1, Emu(cx), Emu(cy), Emu(cell_w), Emu(cell_h))
                 shape.fill.solid()
@@ -376,63 +499,20 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         return
 
     if template == "orion_golden_video_cards":
-        ctx.light_bg()
-        y = ctx.title(title, 280000, NAVY)
-        visual = _first_visual_asset(refs, assets) or primary
-        if visual and _resolve_image_bytes(visual):
-            _embed_image(ctx, visual, y + 60000, h=5_200_000)
-            cap = _safe(str(visual.get("caption") or (bullets[0] if bullets else "")))
-            if cap:
-                ctx.body(cap, CONTENT_BOTTOM - 380000, max_h=320000, color=MUTED_COLOR)
-        else:
-            ctx.body(
-                "Видеоматериалы не обнаружены или недоступны для предпросмотра.",
-                y + 80000,
-                max_h=800000,
-                color=MUTED_COLOR,
-            )
-            if bullets:
-                ctx.bullets(bullets, y + 900000, max_items=6, max_chars=220)
+        _render_visual_with_sidebar(ctx, slide, assets, title)
         return
 
     if template == "orion_golden_knowledge_panel":
-        ctx.light_bg()
-        y = ctx.title(title, 280000, NAVY)
-        visual = _first_visual_asset(refs, assets) or primary
-        if visual and _resolve_image_bytes(visual):
-            box_h = 5_200_000
-            raw = _resolve_image_bytes(visual)
-            assert raw is not None
-            iw, ih = CONTENT_W, box_h
-            if Image is not None:
-                try:
-                    with Image.open(io.BytesIO(raw)) as im:
-                        iw, ih = im.size
-                except Exception:  # noqa: BLE001
-                    pass
-            max_w = int(CONTENT_W * 0.72)
-            scale = min(max_w / max(iw, 1), box_h / max(ih, 1))
-            dw, dh = int(iw * scale), int(ih * scale)
-            stream = io.BytesIO(raw)
-            ctx.slide.shapes.add_picture(
-                stream, Emu(MARGIN_X), Emu(y + 60000), width=Emu(dw), height=Emu(dh)
-            )
-            cap = _safe(str(visual.get("caption") or (bullets[0] if bullets else "")))
-            if cap:
-                ctx.body(cap, CONTENT_BOTTOM - 380000, max_h=320000, color=MUTED_COLOR)
-        else:
-            ctx.body(
-                bullets[0] if bullets else "Справочные данные ограничены.",
-                y + 80000,
-                max_h=1_200_000,
-                color=MUTED_COLOR,
-            )
+        _render_visual_with_sidebar(ctx, slide, assets, title)
         return
 
     if template == "orion_golden_lexis_visual_page":
+        if slide.get("visualAnalysis") or slide.get("clientTakeaway"):
+            _render_visual_with_sidebar(ctx, slide, assets, title)
+            return
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY)
-        _embed_image(ctx, primary, y + 60000, h=5000000)
+        _embed_image(ctx, primary, y + 60000, h=5_200_000)
         return
 
     if template == "orion_golden_search_table":
@@ -549,17 +629,35 @@ def _write_pdf_fallback(
                 fontname="helv",
                 color=(0.04, 0.10, 0.20),
             )
+            analysis = slide.get("visualAnalysis") if isinstance(slide.get("visualAnalysis"), dict) else {}
+            has_side = bool(analysis) or bool(slide.get("clientTakeaway"))
+            img_right = int(page_w * 0.62) if has_side else (page_w - margin_x)
             try:
                 page.insert_image(
-                    fitz.Rect(margin_x, 80, page_w - margin_x, content_bottom),
+                    fitz.Rect(margin_x, 80, img_right, content_bottom),
                     stream=img_bytes,
                     keep_proportion=True,
                 )
             except Exception:  # noqa: BLE001
                 page.insert_textbox(
-                    fitz.Rect(margin_x, 100, page_w - margin_x, 200),
+                    fitz.Rect(margin_x, 100, img_right, 200),
                     "Визуальный материал недоступен для данного раздела.",
                     fontsize=12,
+                    fontname="helv",
+                    color=(0.2, 0.25, 0.33),
+                )
+            if has_side:
+                side_bits = [
+                    _safe(analysis.get("headlineConclusion") or slide.get("clientTakeaway") or ""),
+                    _safe(analysis.get("whatIsVisible") or ""),
+                    _safe(analysis.get("whyItMatters") or ""),
+                    _safe(analysis.get("provenanceLabel") or ""),
+                ]
+                side_text = "\n\n".join([b for b in side_bits if b])
+                page.insert_textbox(
+                    fitz.Rect(img_right + 16, 80, page_w - margin_x, content_bottom),
+                    side_text[:900],
+                    fontsize=10,
                     fontname="helv",
                     color=(0.2, 0.25, 0.33),
                 )

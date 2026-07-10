@@ -8,6 +8,18 @@ import { sanitizeOrionGoldenClientText } from "../client/client-text-sanitizer";
 import { humanizeClientRiskMatrixRow } from "../client/risk-matrix-normalizer";
 import type { OrionGoldenReportSpec, SectionBlock } from "../report-spec/orion-report-spec";
 
+export type VisualSlideAnalysis = {
+  assetRef: string;
+  headlineConclusion: string;
+  whatIsVisible: string;
+  metrics: Array<{ label: string; value: string }>;
+  whyItMatters: string;
+  recommendedActions: string[];
+  confidence: "high" | "medium" | "low";
+  limitations: string[];
+  provenanceLabel?: string;
+};
+
 export type OrionGoldenDeckSlide = {
   slideKey: string;
   sectionKey: string;
@@ -17,6 +29,12 @@ export type OrionGoldenDeckSlide = {
   bullets?: string[];
   narrative?: string;
   assetRefs?: string[];
+  /** Short client takeaway shown above/ beside visual. */
+  clientTakeaway?: string;
+  /** Analytical sidebar for screenshot / media pages. */
+  visualAnalysis?: VisualSlideAnalysis;
+  /** Honest blocked reason when required visual is missing. */
+  blockedReason?: string;
 };
 
 export type OrionGoldenDeckManifest = {
