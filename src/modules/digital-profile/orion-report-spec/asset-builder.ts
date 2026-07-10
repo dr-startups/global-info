@@ -322,26 +322,37 @@ export async function buildRegionMediaComposites(input: {
 
   const knowledge = input.evidence.filter((e) => e.sourceKind === "knowledge_panel");
   if (knowledge.length > 0) {
+    // Prefer engine knowledge blocks first; Wikipedia-derived panels fill remaining slots.
+    const engineKb = knowledge.filter((e) => e.provider !== "wikipedia");
+    const wikiKb = knowledge.filter((e) => e.provider === "wikipedia");
+    const ordered = [...engineKb, ...wikiKb];
     const maxKnowledge = prefix === "ru" ? 2 : 1;
-    for (let page = 0; page < Math.min(maxKnowledge, knowledge.length); page += 1) {
-      const slice = knowledge.slice(page, page + 2);
-      const k = slice[0]!;
+    for (let page = 0; page < Math.min(maxKnowledge, ordered.length); page += 1) {
+      const k = ordered[page]!;
+      const fromWiki = k.provider === "wikipedia";
       const assetRef = page === 0 ? `${prefix}_knowledge_panel` : `${prefix}_knowledge_panel_${page + 1}`;
       assets.push({
         assetRef,
         kind: "knowledge_panel",
         title:
           maxKnowledge > 1
-            ? `${label} — блок знаний (${page + 1})`
-            : `${label} — блок знаний`,
+            ? fromWiki
+              ? `${label} — Wikipedia (${page + 1})`
+              : `${label} — блок знаний (${page + 1})`
+            : fromWiki
+              ? `${label} — Wikipedia`
+              : `${label} — блок знаний`,
+        caption: fromWiki
+          ? "Справочная карточка на основе проверки Wikipedia"
+          : "Справочная панель из поисковой поверхности",
         imageData: await svgToPngBase64(
           buildKnowledgePanelSvg({
-            title: k.title ?? "Блок знаний",
+            title: k.title ?? (fromWiki ? "Wikipedia" : "Блок знаний"),
             summary: k.snippet ?? k.clientSafeSummary ?? "",
-            facts: slice.map((e) => e.title ?? e.snippet ?? "").filter(Boolean),
+            facts: [k.url, k.domain, k.clientSafeSummary].filter(Boolean).map(String).slice(0, 4),
           })
         ),
-        evidenceRefs: slice.map((e) => e.evidenceRef),
+        evidenceRefs: [k.evidenceRef],
         status: "ready",
       });
     }
@@ -361,7 +372,9 @@ export async function buildRegionMediaComposites(input: {
     const honestCaption =
       opts.engineLabel === "Сохранено"
         ? "Сохранённые строки подсказок; движок Яндекс не подтверждён"
-        : "Визуализация сохранённых строк поисковой поверхности";
+        : opts.engineLabel === "Подсказки"
+          ? "Отдельные связанные запросы не сохранены; показан второй набор подсказок"
+          : "Визуализация сохранённых строк поисковой поверхности";
     assets.push({
       assetRef: opts.assetRef,
       kind: "surface_panel",
@@ -426,9 +439,13 @@ export async function buildRegionMediaComposites(input: {
       engineLabel: "Google",
       items: suggestFinal.slice(0, 10),
     });
+    const relatedIsFallback = relatedFinal.some((e) => /related-fallback/i.test(e.evidenceRef));
     await pushSurfacePanel({
       assetRef: "uae_related",
-      title: `${label} — связанные запросы`,
+      title: relatedIsFallback
+        ? `${label} — дополнительные подсказки поиска`
+        : `${label} — связанные запросы`,
+      engineLabel: relatedIsFallback ? "Подсказки" : "Google",
       items: relatedFinal.slice(0, 10),
     });
   }

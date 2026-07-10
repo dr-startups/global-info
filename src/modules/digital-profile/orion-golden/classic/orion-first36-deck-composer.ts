@@ -48,7 +48,11 @@ function provenanceLabel(asset: ReportAssetV1): string {
   }
   if (asset.kind === "image_grid") return "Сводка изображений поиска";
   if (asset.kind === "video_cards") return "Сводка видеоматериалов";
-  if (asset.kind === "knowledge_panel") return "Справочная панель";
+  if (asset.kind === "knowledge_panel") {
+    return /wikipedia/i.test(asset.assetRef) || /Wikipedia/i.test(asset.caption ?? "")
+      ? "Справочная карточка Wikipedia"
+      : "Справочная панель";
+  }
   if (asset.kind === "surface_panel") return "Визуализация поисковой поверхности";
   return "Визуальный материал";
 }

@@ -508,7 +508,7 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     template: "orion_golden_lexis_visual_page",
     title: "LexisNexis — страница профиля",
     region: "COMPLIANCE",
-    requiredVisual: true,
+    requiredVisual: false,
     match: {
       sectionKeys: ["lexisnexis_visual", "lexisnexis", "44_lexisnexis_profile"],
       templates: ["orion_golden_lexis_visual_page"],
@@ -523,7 +523,7 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     template: "orion_golden_lexis_visual_page",
     title: "LexisNexis — страница профиля (2)",
     region: "COMPLIANCE",
-    requiredVisual: true,
+    requiredVisual: false,
     match: {
       sectionKeys: ["lexisnexis_visual", "lexisnexis"],
       templates: ["orion_golden_lexis_visual_page"],

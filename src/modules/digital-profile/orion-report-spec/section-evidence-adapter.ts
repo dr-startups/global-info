@@ -285,6 +285,33 @@ function wikiEvidence(sectionKey: string, ctx: OrionRealCaseContext): Normalized
   }));
 }
 
+/** Existing Wikipedia pages as knowledge-panel rows for visual composites (honest wiki provenance). */
+function wikiKnowledgePanels(
+  sectionKey: string,
+  ctx: OrionRealCaseContext,
+  languageRe: RegExp
+): NormalizedEvidenceV1[] {
+  return ctx.wikiChecks
+    .filter((w) => w.exists && languageRe.test(String(w.language ?? "ru")))
+    .slice(0, 2)
+    .map((w, idx) => ({
+      evidenceRef: stableEvidenceRef(sectionKey, `wiki-knowledge-${idx + 1}`),
+      sectionKey,
+      sourceKind: "knowledge_panel" as const,
+      provider: "wikipedia" as const,
+      title: w.pageTitle ?? "Wikipedia",
+      domain: w.url ? extractDomain(w.url) : "wikipedia.org",
+      url: w.url ?? undefined,
+      displayUrl: stripProtocol(w.url),
+      snippet: `Wikipedia (${w.language ?? "ru"}): публичная статья по субъекту.`,
+      locale: toLocale(w.language),
+      riskTheme: "identity_profile" as const,
+      reviewStatus: "requires_review" as const,
+      sourceLabel: "Wikipedia",
+      clientSafeSummary: `Wikipedia: ${String(w.pageTitle ?? "статья").slice(0, 100)}`,
+    }));
+}
+
 function auditSummaryFromReportJson(ctx: OrionRealCaseContext, sectionKey: string): NormalizedEvidenceV1[] {
   const audit = asObj((ctx.reportJson as unknown as Record<string, unknown>).auditSummary);
   const bullets = Array.isArray(audit.keyFindings)
@@ -382,8 +409,18 @@ export function buildRuSearchEvidence(caseContext: OrionRealCaseContext): Normal
     .filter((s) => s.type === "KNOWLEDGE_BLOCK")
     .slice(0, 4)
     .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "knowledge_panel"));
+  const wikiKnowledge = wikiKnowledgePanels(sectionKey, caseContext, /^(ru|uk)/i);
 
-  const out = [...yandex, ...google, ...suggestions, ...related, ...images, ...videos, ...knowledge];
+  const out = [
+    ...yandex,
+    ...google,
+    ...suggestions,
+    ...related,
+    ...images,
+    ...videos,
+    ...knowledge,
+    ...wikiKnowledge,
+  ];
   if (out.length === 0) {
     return [
       notAvailableItem(
@@ -405,14 +442,20 @@ export function buildUaeSearchEvidence(caseContext: OrionRealCaseContext): Norma
     .slice(0, 12)
     .map((r, idx) => searchResultToNormalized(sectionKey, r, idx));
   const surfaces = caseContext.searchSurfaces.filter((s) => isUaeSurface(s.region));
-  const suggestions = surfaces
-    .filter((s) => s.type === "SUGGESTION")
-    .slice(0, 16)
-    .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface", "suggest"));
-  const related = surfaces
-    .filter((s) => s.type === "RELATED_QUERY")
-    .slice(0, 24)
-    .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface", "related"));
+  const suggestions = takeSurfacesByProviderQuota(
+    surfaces.filter((s) => s.type === "SUGGESTION"),
+    { yandex: 0, google: 20, other: 8 }
+  ).map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface", "suggest"));
+  const relatedRaw = surfaces.filter((s) => s.type === "RELATED_QUERY").slice(0, 24);
+  // When RELATED_QUERY is empty, reserve a second suggestion slice as related-tagged rows
+  // (same pattern as UAE related section bundles: suggestion || related_query).
+  const related =
+    relatedRaw.length > 0
+      ? relatedRaw.map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface", "related"))
+      : suggestions.slice(10).map((s, idx) => ({
+          ...s,
+          evidenceRef: stableEvidenceRef(sectionKey, `sf-related-fallback-${idx + 1}`),
+        }));
   const images = surfaces
     .filter((s) => s.type === "IMAGE_RESULT")
     .slice(0, 24)
@@ -425,6 +468,19 @@ export function buildUaeSearchEvidence(caseContext: OrionRealCaseContext): Norma
     .filter((s) => s.type === "KNOWLEDGE_BLOCK")
     .slice(0, 4)
     .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "knowledge_panel"));
+  const wikiKnowledge = wikiKnowledgePanels(sectionKey, caseContext, /^(en|ar|intl)/i);
+  const wikiFallback =
+    wikiKnowledge.length > 0
+      ? wikiKnowledge
+      : wikiKnowledgePanels(sectionKey, caseContext, /.*/); // any existing wiki page if EN/AR missing
 
-  return [...google, ...suggestions, ...related, ...images, ...videos, ...knowledge];
+  return [
+    ...google,
+    ...suggestions.slice(0, 10),
+    ...related,
+    ...images,
+    ...videos,
+    ...knowledge,
+    ...wikiFallback,
+  ];
 }
