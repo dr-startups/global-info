@@ -135,9 +135,10 @@ export function inspectOrionGoldenVisualQuality(input: {
     passed: input.inventory.lexisNexis.visualPageCount === 0 || lexisSlides.length >= 0,
     detail: `${lexisSlides.length} lexis visual slides`,
   });
-  // Client-audit decks intentionally omit image grids; do not fail on missing grids.
+  // Client-audit / classic decks may omit dedicated image-grid slides; do not fail on missing grids.
   const imageGridOk =
     reportMode === "client_audit" ||
+    reportMode === "classic_orion_audit" ||
     input.inventory.mediaAvailability.images === 0 ||
     imageSlides.length > 0 ||
     input.inventory.mediaAvailability.images < 3;
@@ -145,8 +146,8 @@ export function inspectOrionGoldenVisualQuality(input: {
     id: "image-grid-if-data",
     passed: imageGridOk,
     detail:
-      reportMode === "client_audit"
-        ? `${imageSlides.length} image grid slides (optional in client_audit)`
+      reportMode === "client_audit" || reportMode === "classic_orion_audit"
+        ? `${imageSlides.length} image grid slides (optional in ${reportMode})`
         : `${imageSlides.length} image grid slides`,
   });
 

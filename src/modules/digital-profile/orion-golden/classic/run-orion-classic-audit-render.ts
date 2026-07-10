@@ -195,6 +195,18 @@ export async function runOrionClassicAuditRender(options: {
   const verdict =
     clientPolicy.passed && visual.passed && classicQa.passed ? "PASS" : "FAIL";
 
+  if (verdict === "FAIL") {
+    const failedVisual = visual.checks.filter((c) => !c.passed).map((c) => `${c.id}:${c.detail}`);
+    console.warn("[orion-classic-audit] QA FAIL detail", {
+      caseId,
+      clientPolicy: clientPolicy.passed ? "PASS" : clientPolicy.issues.slice(0, 8),
+      visualFailed: failedVisual.slice(0, 8),
+      classicQaFailed: classicQa.issues.slice(0, 8),
+      pageCount: visual.pageCount,
+      reportMode: visual.reportMode,
+    });
+  }
+
   // Metadata tags are not user-facing failures; surface real QA issues first.
   const metaNoise = new Set([
     "classic_orion_audit_mode",
