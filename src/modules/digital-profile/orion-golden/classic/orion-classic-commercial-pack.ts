@@ -7,8 +7,8 @@ import type { SectionBlock } from "../report-spec/orion-report-spec";
 import { chunkItems, truncateAtWordBoundary } from "./orion-classic-text-utils";
 
 const BULLETS_PER_COMMERCIAL_SLIDE = 4;
-/** Hard cap commercial pages so audit remains the majority of the deck. */
-const MAX_SLIDES_PER_BLOCK = 2;
+/** Hard cap commercial pages so audit remains the majority of the deck (~GSM first 36). */
+const MAX_SLIDES_PER_BLOCK = 1;
 
 function staticSlides(
   sectionKey: string,

@@ -61,8 +61,8 @@ function commercialSlides(
   sectionKey: string,
   block: OrionClassicAuditReportSpec["registrySections"][number]["block"]
 ): OrionGoldenDeckSlide[] {
-  // Dense commercial pack already chunks bullets; hard-cap pages after audit.
-  return slidesFromBlock(sectionKey, block).slice(0, 2);
+  // Keep commercial as a thin trailer after the static audit block (~GSM first 36).
+  return slidesFromBlock(sectionKey, block).slice(0, 1);
 }
 
 function assetSlides(
