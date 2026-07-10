@@ -3,6 +3,7 @@
  * Page-count targets differ by report mode:
  *   - legacy_full: blueprint 60–75 (commercial ORION deck)
  *   - client_audit: lean 30–45 (post-review client content adapter)
+ *   - classic_orion_audit: regional audit + commercial pack (~32–45 typical)
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
@@ -14,7 +15,7 @@ import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory"
 export type OrionVisualReportMode = "legacy_full" | "client_audit" | "classic_orion_audit";
 
 export const CLIENT_AUDIT_PAGE_RANGE = { min: 30, max: 45 } as const;
-export const CLASSIC_ORION_AUDIT_PAGE_RANGE = { min: 45, max: 120 } as const;
+export const CLASSIC_ORION_AUDIT_PAGE_RANGE = { min: 30, max: 55 } as const;
 
 export function resolveOrionVisualReportMode(input?: {
   reportMode?: OrionVisualReportMode;

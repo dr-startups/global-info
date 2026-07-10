@@ -13,6 +13,7 @@ import {
   isProviderApiSerpAsset,
   PROVIDER_SERP_POLICY_VERSION,
 } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-provider-serp-assets";
+import { CLASSIC_ORION_AUDIT_PAGE_RANGE } from "../src/modules/digital-profile/orion-golden/qa/visual-qa-inspection";
 import { evaluateClientSerpPolicy } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-live-serp-assets";
 import { composeOrionClassicAuditDeck } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-audit-deck-composer";
 import {
@@ -37,7 +38,12 @@ function main() {
 
   check(
     "provider SERP policy version set",
-    Boolean(PROVIDER_SERP_POLICY_VERSION) && PROVIDER_SERP_POLICY_VERSION.includes("v4")
+    Boolean(PROVIDER_SERP_POLICY_VERSION) && PROVIDER_SERP_POLICY_VERSION.includes("v5")
+  );
+  check(
+    "classic page-range accepts 36-page decks",
+    CLASSIC_ORION_AUDIT_PAGE_RANGE.min <= 36 && CLASSIC_ORION_AUDIT_PAGE_RANGE.max >= 36,
+    `${CLASSIC_ORION_AUDIT_PAGE_RANGE.min}-${CLASSIC_ORION_AUDIT_PAGE_RANGE.max}`
   );
 
   const subjectRu = "Глинка Сергей Михайлович";

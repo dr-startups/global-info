@@ -11,7 +11,9 @@ import type { OrionClassicAuditReportSpec } from "./orion-classic-client-content
 import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
 import { buildOrionThemeSet } from "./orion-classic-theme-set";
 
-export const CLASSIC_ORION_AUDIT_PAGE_RANGE = { min: 45, max: 120 } as const;
+import { CLASSIC_ORION_AUDIT_PAGE_RANGE } from "../qa/visual-qa-inspection";
+
+export { CLASSIC_ORION_AUDIT_PAGE_RANGE };
 
 const NO_ADVERSE_RE =
   /нежелательн(?:ые|ых)?\s+публикаци[яи]\s+не\s+обнаружен|adverse\s+(?:publications?\s+)?not\s+found|no\s+adverse\s+(?:results?|links?|publications?)|нежелательн(?:ые)?\s+ссылк[аи]\s+не\s+обнаружен/i;

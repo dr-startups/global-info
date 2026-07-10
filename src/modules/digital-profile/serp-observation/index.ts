@@ -31,6 +31,7 @@ export {
 export {
   classifyObservationHighlight,
   buildObservationThemeGrouping,
+  sanitizeSerpSnippet,
 } from "./resolve-observation-highlights";
 export {
   isSyntheticSerpNoiseHit,

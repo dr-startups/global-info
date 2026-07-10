@@ -9,6 +9,7 @@ import {
   buildSyntheticSerpViewModelFromObservations,
   classifyObservationHighlight,
   isSyntheticSerpNoiseHit,
+  sanitizeSerpSnippet,
   mapYandexOrganicToObservationDrafts,
   mapSerperOrganicToObservationDrafts,
   type PersistedSerpObservation,
@@ -150,6 +151,14 @@ function main() {
   check("klerk not highlighted", !klerk.isHighlighted);
   check("rucriminal highlighted", criminal.isHighlighted);
   check("forbes bio not highlighted", !forbes.isHighlighted);
+  check(
+    "garbled rupep snippet dropped",
+    sanitizeSerpSnippet("Категория: Аяццмтщшорёп ; Дата рождения: 11.55.1840") === ""
+  );
+  check(
+    "normal snippet kept",
+    sanitizeSerpSnippet("PEP профиль бизнесмена Сергея Глинки").includes("PEP")
+  );
 
   const subject = "Глинка Сергей Михайлович";
   check(

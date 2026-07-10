@@ -69,6 +69,24 @@ function themeForBlob(blob: string): { key: string; title: string } {
   return { key: "other", title: "Потенциально негативные публикации" };
 }
 
+/**
+ * Drop mojibake / keyboard-mash snippets (seen on some rupep Serper rows:
+ * «Аяццмтщшорёп», DOB 11.55.1840) so synthetic SERP stays client-readable.
+ */
+export function sanitizeSerpSnippet(snippet: string | null | undefined): string {
+  const t = String(snippet ?? "").trim();
+  if (!t) return "";
+  // Impossible calendar month/day (e.g. 11.55.1840, 49.4856)
+  if (/\b\d{1,2}\.(?:[3-9]\d|1[3-9]|2[5-9])\.\d{2,4}\b/.test(t)) return "";
+  if (/\b(?:Pdg|Ywffp)\b/i.test(t)) return "";
+  // Long consonant runs atypical for Russian/English prose
+  if (/[бвгджзйклмнпрстфхцчшщъь]{7,}/iu.test(t)) return "";
+  if (/[bcdfghjklmnpqrstvwxz]{8,}/i.test(t)) return "";
+  const letters = (t.match(/\p{L}/gu) ?? []).length;
+  if (t.length >= 18 && letters / t.length < 0.5) return "";
+  return t;
+}
+
 export function classifyObservationHighlight(obs: PersistedSerpObservation): {
   isHighlighted: boolean;
   riskTheme: string | null;
@@ -135,7 +153,7 @@ export function observationToResultView(
     title: obs.title ?? obs.domain ?? "Результат поиска",
     url: obs.url ?? "",
     domain: obs.domain ?? domainOf(obs.url),
-    snippet: obs.snippet ?? "",
+    snippet: sanitizeSerpSnippet(obs.snippet),
     classification: loaded.classification,
     isHighlighted: Boolean(mark) || loaded.isHighlighted,
     themeNumber: mark?.themeNumber,
