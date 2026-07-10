@@ -308,6 +308,16 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     if template == "orion_golden_image_grid":
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY)
+        # Composite PNG (ru_image_grid): one full-bleed visual with baked red frames.
+        if len(refs) == 1:
+            primary_grid = assets.get(str(refs[0])) if refs else None
+            if primary_grid and primary_grid.get("imageData"):
+                img_h = 5000000
+                _embed_image(ctx, primary_grid, y + 60000, h=img_h)
+                cap = _safe(primary_grid.get("caption") or "")
+                if cap:
+                    ctx.body(cap, CONTENT_BOTTOM - 380000, max_h=320000, color=MUTED_COLOR)
+                return
         cols = 3
         cell_w = 2600000
         cell_h = 1500000
@@ -419,7 +429,11 @@ def _write_pdf_fallback(
     asset_map = assets or {}
     all_slides = [{"title": "ORION Digital Profile", "body": subject}] + slides
     total = len(all_slides)
-    visual_templates = {"orion_golden_serp_screenshot", "orion_golden_lexis_visual_page"}
+    visual_templates = {
+        "orion_golden_serp_screenshot",
+        "orion_golden_lexis_visual_page",
+        "orion_golden_image_grid",
+    }
 
     def esc(t: str) -> str:
         return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

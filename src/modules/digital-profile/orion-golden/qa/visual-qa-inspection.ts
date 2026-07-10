@@ -135,20 +135,16 @@ export function inspectOrionGoldenVisualQuality(input: {
     passed: input.inventory.lexisNexis.visualPageCount === 0 || lexisSlides.length >= 0,
     detail: `${lexisSlides.length} lexis visual slides`,
   });
-  // Client-audit / classic decks may omit dedicated image-grid slides; do not fail on missing grids.
+  // Classic audit must show image-grid slides when inventory has enough IMAGE_RESULT rows.
   const imageGridOk =
     reportMode === "client_audit" ||
-    reportMode === "classic_orion_audit" ||
     input.inventory.mediaAvailability.images === 0 ||
     imageSlides.length > 0 ||
     input.inventory.mediaAvailability.images < 3;
   checks.push({
     id: "image-grid-if-data",
     passed: imageGridOk,
-    detail:
-      reportMode === "client_audit" || reportMode === "classic_orion_audit"
-        ? `${imageSlides.length} image grid slides (optional in ${reportMode})`
-        : `${imageSlides.length} image grid slides`,
+    detail: `${imageSlides.length} image grid slides (inventory images=${input.inventory.mediaAvailability.images})`,
   });
 
   if (existsSync(pdfPath) && serpSlides.length > 0) {

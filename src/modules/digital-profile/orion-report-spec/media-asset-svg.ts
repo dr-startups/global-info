@@ -14,6 +14,9 @@ export type ImageGridItem = {
   domain: string;
   previewBase64?: string;
   unavailableNote?: string;
+  /** Undesirable / risk — red cell border in the grid PNG. */
+  highlight?: boolean;
+  themeLabel?: string;
 };
 
 async function tryFetchImagePreview(url: string): Promise<string | undefined> {
@@ -33,7 +36,13 @@ async function tryFetchImagePreview(url: string): Promise<string | undefined> {
 }
 
 export async function buildImageGridItems(
-  items: Array<{ title: string; domain?: string; imageUrl?: string }>
+  items: Array<{
+    title: string;
+    domain?: string;
+    imageUrl?: string;
+    highlight?: boolean;
+    themeLabel?: string;
+  }>
 ): Promise<ImageGridItem[]> {
   const out: ImageGridItem[] = [];
   for (const item of items.slice(0, 6)) {
@@ -47,6 +56,8 @@ export async function buildImageGridItems(
       domain,
       previewBase64,
       unavailableNote: previewBase64 ? undefined : "Изображение недоступно для предпросмотра",
+      highlight: Boolean(item.highlight),
+      themeLabel: item.themeLabel,
     });
   }
   return out;
@@ -68,7 +79,12 @@ export function buildImageGridSvg(input: { title: string; items: ImageGridItem[]
     const row = Math.floor(idx / cols);
     const x = 40 + col * (cellW + 16);
     const y = 80 + row * (cellH + 16);
-    parts.push(`<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" rx="8" fill="${COLORS.panel}" stroke="${COLORS.panelBorder}"/>`);
+    const stroke = item.highlight ? COLORS.highlight : COLORS.panelBorder;
+    const strokeW = item.highlight ? 4 : 1;
+    const fill = item.highlight ? COLORS.highlightFill : COLORS.panel;
+    parts.push(
+      `<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" rx="8" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}"/>`
+    );
     if (item.previewBase64) {
       parts.push(
         `<image href="data:image/png;base64,${item.previewBase64}" x="${x + 8}" y="${y + 8}" width="${cellW - 16}" height="${cellH - 56}" preserveAspectRatio="xMidYMid meet"/>`
@@ -78,6 +94,13 @@ export function buildImageGridSvg(input: { title: string; items: ImageGridItem[]
       const note = truncateToWidth(item.unavailableNote ?? "", cellW - 24, 11);
       parts.push(
         `<text x="${x + 16}" y="${y + 48}" font-family="${FONT_STACK}" font-size="11" fill="${COLORS.muted}">${esc(note)}</text>`
+      );
+    }
+    if (item.highlight) {
+      const badge = truncateToWidth(item.themeLabel || "Нежелательное", 160, 10);
+      parts.push(
+        `<rect x="${x + 8}" y="${y + 8}" width="${Math.min(200, cellW - 16)}" height="22" rx="4" fill="${COLORS.highlight}"/>`,
+        `<text x="${x + 14}" y="${y + 23}" font-family="${FONT_STACK}" font-size="10" fill="#ffffff">${esc(badge)}</text>`
       );
     }
     parts.push(

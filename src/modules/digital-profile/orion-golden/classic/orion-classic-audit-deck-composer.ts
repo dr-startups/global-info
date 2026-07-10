@@ -84,6 +84,25 @@ function hasSerpImageContent(asset: ReportAssetV1): boolean {
   return Boolean(String(asset.imageUrl ?? "").trim());
 }
 
+/** Composite image-grid PNGs only — URL-only r10-img-* placeholders never render. */
+function preferCompositeImageGrids(assets: ReportAssetV1[], max = 2): ReportAssetV1[] {
+  const withData = assets.filter((a) => String(a.imageData ?? "").trim().length >= 800);
+  const named = withData.filter((a) => /^(?:ru|uae)_image_grid/i.test(a.assetRef) || /_image_grid$/i.test(a.assetRef));
+  const pool = named.length > 0 ? named : withData;
+  return pool.slice(0, max);
+}
+
+function injectMediaSection(
+  sections: Array<{ sectionKey: string; slides: OrionGoldenDeckSlide[] }>,
+  inserted: Set<string>,
+  sectionKey: string,
+  slides: OrionGoldenDeckSlide[]
+): void {
+  if (inserted.has(sectionKey) || slides.length === 0) return;
+  inserted.add(sectionKey);
+  sections.push({ sectionKey, slides });
+}
+
 function preferSerpAssets(
   assets: ReportAssetV1[],
   region: "ru" | "uae",
@@ -210,8 +229,14 @@ export function composeOrionClassicAuditDeck(
   // render pipeline must gate/block client reports separately).
   const ruSerp = preferSerpAssets(serpAssets, "ru", 3);
   const uaeSerp = preferSerpAssets(serpAssets, "uae", 2);
-  const uaeImages = imageAssets.filter((a) => /uae|intl/i.test(a.assetRef));
-  const ruImages = imageAssets.filter((a) => !uaeImages.includes(a));
+  const uaeImages = preferCompositeImageGrids(
+    imageAssets.filter((a) => /uae|intl/i.test(a.assetRef)),
+    2
+  );
+  const ruImages = preferCompositeImageGrids(
+    imageAssets.filter((a) => !/uae|intl/i.test(a.assetRef)),
+    2
+  );
   const uaeVideos = videoAssets.filter((a) => /uae|intl/i.test(a.assetRef));
   const ruVideos = videoAssets.filter((a) => !uaeVideos.includes(a));
   const uaeKnowledge = knowledgeAssets.filter((a) => /uae|intl/i.test(a.assetRef));
@@ -277,23 +302,35 @@ export function composeOrionClassicAuditDeck(
           sectionKey: "ru_serp_screenshots",
           slides: assetSlides("ru_serp_screenshots", "orion_golden_serp_screenshot", "Снимок выдачи", ruSerp),
         });
+        injectMediaSection(
+          sections,
+          insertedAssetSections,
+          "ru_images",
+          assetSlides("ru_images", "orion_golden_image_grid", "Изображения в поиске", ruImages)
+        );
       }
       if (assetKey === "uae_serp_screenshots" && uaeSerp.length > 0) {
         sections.push({
           sectionKey: "uae_serp_screenshots",
           slides: assetSlides("uae_serp_screenshots", "orion_golden_serp_screenshot", "Снимок выдачи", uaeSerp),
         });
+        injectMediaSection(
+          sections,
+          insertedAssetSections,
+          "uae_images",
+          assetSlides("uae_images", "orion_golden_image_grid", "Изображения в поиске", uaeImages)
+        );
       }
       if (assetKey === "ru_images" && ruImages.length > 0) {
         sections.push({
           sectionKey: "ru_images",
-          slides: chunkAssetSlides("ru_images", "orion_golden_image_grid", "Изображения", ruImages, 6),
+          slides: assetSlides("ru_images", "orion_golden_image_grid", "Изображения в поиске", ruImages),
         });
       }
       if (assetKey === "uae_images" && uaeImages.length > 0) {
         sections.push({
           sectionKey: "uae_images",
-          slides: chunkAssetSlides("uae_images", "orion_golden_image_grid", "Изображения", uaeImages, 6),
+          slides: assetSlides("uae_images", "orion_golden_image_grid", "Изображения в поиске", uaeImages),
         });
       }
       if (assetKey === "ru_videos" && ruVideos.length > 0) {
@@ -334,6 +371,45 @@ export function composeOrionClassicAuditDeck(
       }
     }
   }
+
+  // Image/video/knowledge registry sections are omitted from reportSpec (no GPT text pages).
+  // Inject visual slides from ready assets so classic audit still shows image SERP grids.
+  injectMediaSection(
+    sections,
+    insertedAssetSections,
+    "ru_images",
+    assetSlides("ru_images", "orion_golden_image_grid", "Изображения в поиске", ruImages)
+  );
+  injectMediaSection(
+    sections,
+    insertedAssetSections,
+    "uae_images",
+    assetSlides("uae_images", "orion_golden_image_grid", "Изображения в поиске", uaeImages)
+  );
+  injectMediaSection(
+    sections,
+    insertedAssetSections,
+    "ru_videos",
+    chunkAssetSlides("ru_videos", "orion_golden_video_cards", "Видео", ruVideos, 4)
+  );
+  injectMediaSection(
+    sections,
+    insertedAssetSections,
+    "uae_videos",
+    chunkAssetSlides("uae_videos", "orion_golden_video_cards", "Видео", uaeVideos, 4)
+  );
+  injectMediaSection(
+    sections,
+    insertedAssetSections,
+    "ru_knowledge",
+    assetSlides("ru_knowledge", "orion_golden_knowledge_panel", "Панель знаний", ruKnowledge)
+  );
+  injectMediaSection(
+    sections,
+    insertedAssetSections,
+    "uae_knowledge",
+    assetSlides("uae_knowledge", "orion_golden_knowledge_panel", "Панель знаний", uaeKnowledge)
+  );
 
   const commercialKeys: Array<keyof Pick<
     OrionClassicAuditReportSpec,

@@ -1,4 +1,5 @@
 import type { NormalizedEvidenceV1 } from "./normalized-evidence";
+import { riskThemeLabel } from "./normalized-evidence";
 import { buildOrionSingleEngineSerpPng } from "./orion-serp-snapshot-builder";
 import {
   buildImageGridItems,
@@ -7,6 +8,35 @@ import {
   buildVideoCardsSvg,
   svgToPngBase64,
 } from "./media-asset-svg";
+
+const IMAGE_ADVERSE_DOMAIN_RE =
+  /rucriminal\.|cybercriminal\.|acompromat\.|rucompromat\.|compromat\.|rupep\.|opensanctions\.|ofac\.|justice\.gov|home\.treasury\.gov/i;
+const IMAGE_SOFT_PROFILE_DOMAIN_RE =
+  /forbes\.|klerk\.|tadviser\.|wikipedia\.|linkedin\.|rusprofile\.|audit-it\.|zachestnyibiznes\.|labyrinth\.|instagram\.|facebook\.|x\.com|twitter\.|youtube\./i;
+const IMAGE_STRONG_ADVERSE_BLOB_RE =
+  /adverse|undesirable|нежелат|негативн|санкц|sanction|\bofac\b|корруп|corrupt|мошен|fraud|арест|arrest|уголов|\bcriminal\b|компромат|rucriminal|cybercriminal|acompromat|rupep|махмудов|makhmudov|бокарев|bokarev|defense\s+industry|оборонн/i;
+
+/** Risk gate for image-search cells — red frame when domain/blob/theme is adverse. */
+export function isImageEvidenceHighlighted(ev: NormalizedEvidenceV1): boolean {
+  if (ev.riskTheme === "neutral_profile" || ev.reviewStatus === "excluded_noise") return false;
+  const domain = String(ev.domain ?? ev.displayUrl ?? "");
+  const url = String(ev.displayUrl ?? ev.domain ?? "");
+  const blob = `${ev.title ?? ""} ${ev.snippet ?? ""} ${ev.clientSafeSummary ?? ""} ${url}`;
+  if (IMAGE_ADVERSE_DOMAIN_RE.test(domain) || IMAGE_ADVERSE_DOMAIN_RE.test(url)) return true;
+  if (
+    ev.reviewStatus === "official_record_found" ||
+    ev.riskTheme === "adverse_media" ||
+    ev.riskTheme === "sanctions_watchlist" ||
+    ev.riskTheme === "pep" ||
+    ev.riskTheme === "legal_regulatory"
+  ) {
+    return true;
+  }
+  if (IMAGE_SOFT_PROFILE_DOMAIN_RE.test(domain)) {
+    return IMAGE_STRONG_ADVERSE_BLOB_RE.test(blob);
+  }
+  return IMAGE_STRONG_ADVERSE_BLOB_RE.test(blob);
+}
 
 export type ReportAssetKind =
   | "synthetic_serp"
@@ -109,19 +139,46 @@ export async function buildRuSearchAssets(input: {
 
   const images = input.evidence.filter((e) => e.sourceKind === "image_result");
   if (images.length > 0) {
+    const ranked = [...images].sort((a, b) => {
+      const ha = isImageEvidenceHighlighted(a) ? 1 : 0;
+      const hb = isImageEvidenceHighlighted(b) ? 1 : 0;
+      return hb - ha;
+    });
     const gridItems = await buildImageGridItems(
-      images.slice(0, 6).map((e) => ({
-        title: e.title ?? e.domain ?? "Изображение",
-        domain: e.domain,
-        imageUrl: e.imageUrl,
-      }))
+      ranked.slice(0, 6).map((e) => {
+        const highlight = isImageEvidenceHighlighted(e);
+        return {
+          title: e.title ?? e.domain ?? "Изображение",
+          domain: e.domain,
+          imageUrl: e.imageUrl,
+          highlight,
+          themeLabel: highlight
+            ? e.riskTheme && e.riskTheme !== "unknown"
+              ? riskThemeLabel(e.riskTheme)
+              : "Нежелательное"
+            : undefined,
+        };
+      })
     );
+    const adverseCount = gridItems.filter((g) => g.highlight).length;
     assets.push({
       assetRef: "ru_image_grid",
       kind: "image_grid",
       title: "Изображения в поиске",
-      imageData: await svgToPngBase64(buildImageGridSvg({ title: "Изображения в поиске", items: gridItems })),
-      evidenceRefs: images.slice(0, 6).map((e) => e.evidenceRef),
+      caption:
+        adverseCount > 0
+          ? `Нежелательные изображения отмечены красной рамкой (${adverseCount})`
+          : "Поисковая выдача по изображениям",
+      imageData: await svgToPngBase64(
+        buildImageGridSvg({
+          title:
+            adverseCount > 0
+              ? `Изображения в поиске — нежелательные отмечены (${adverseCount})`
+              : "Изображения в поиске",
+          items: gridItems,
+        })
+      ),
+      evidenceRefs: ranked.slice(0, 6).map((e) => e.evidenceRef),
       status: "ready",
     });
   }
