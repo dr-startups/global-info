@@ -8,11 +8,19 @@ import { sanitizeOrionGoldenClientText } from "../client/client-text-sanitizer";
 import { humanizeClientRiskMatrixRow } from "../client/risk-matrix-normalizer";
 import type { OrionGoldenReportSpec, SectionBlock } from "../report-spec/orion-report-spec";
 
+export type MetricTone = "neutral" | "good" | "warn" | "risk";
+
+export type DeckMetric = {
+  label: string;
+  value: string;
+  tone: MetricTone;
+};
+
 export type VisualSlideAnalysis = {
   assetRef: string;
   headlineConclusion: string;
   whatIsVisible: string;
-  metrics: Array<{ label: string; value: string }>;
+  metrics: Array<{ label: string; value: string; tone?: MetricTone }>;
   whyItMatters: string;
   recommendedActions: string[];
   confidence: "high" | "medium" | "low";
@@ -37,6 +45,18 @@ export type OrionGoldenDeckSlide = {
   blockedReason?: string;
   /** Structured search/position table (orion_golden_search_table). */
   table?: { headers: string[]; rows: string[][] };
+  /** Structured KPI chips/cards from ThemeSet / metric registry. */
+  metrics?: DeckMetric[];
+  statusBadge?: { label: string; tone: MetricTone };
+  keyFindings?: Array<{
+    headline: string;
+    detail: string;
+    tone?: MetricTone;
+    severity?: string;
+    status?: string;
+    manualReview?: string;
+  }>;
+  actions?: Array<{ label: string; rationale?: string }>;
 };
 
 export type OrionGoldenDeckManifest = {

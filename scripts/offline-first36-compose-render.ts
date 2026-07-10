@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { composeOrionClassicAuditDeck } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-audit-deck-composer";
 import { composeOrionFirst36CeoDeck } from "../src/modules/digital-profile/orion-golden/classic/orion-first36-deck-composer";
 import { buildOrionClassicReportSpecFromClientContent } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-client-content-to-report-spec";
+import { buildOrionThemeSet } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-theme-set";
 import { inspectClassicOrionAuditQuality } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-audit-quality-inspection";
 import type { OrionClientContent } from "../src/modules/digital-profile/orion-golden/content/orion-client-content-builder";
 import type { FullEvidenceInventory } from "../src/modules/digital-profile/orion-golden/evidence/full-evidence-inventory";
@@ -62,9 +63,17 @@ async function main() {
     riskMatrix: riskMatrix as never,
     includeCommercial: false,
   });
+  const themeSet = buildOrionThemeSet({
+    inventory,
+    subjectName: clientContent.subject.displayName,
+    caseId: clientContent.subject.caseId || "offline-first36",
+    clientContent,
+    executiveSynthesis: executiveSynthesis as never,
+  });
+  writeFileSync(join(outRoot, "orion-theme-set.json"), `${JSON.stringify(themeSet, null, 2)}\n`);
   const useFirst36 = process.env.ORION_FIRST36_CEO_MODE !== "0";
   const deckManifest = useFirst36
-    ? composeOrionFirst36CeoDeck(reportSpec, assets)
+    ? composeOrionFirst36CeoDeck(reportSpec, assets, { themeSet })
     : composeOrionClassicAuditDeck(reportSpec, assets, { includeCommercial: false });
 
   writeFileSync(join(outRoot, "orion-classic-report-spec.json"), `${JSON.stringify(reportSpec, null, 2)}\n`);

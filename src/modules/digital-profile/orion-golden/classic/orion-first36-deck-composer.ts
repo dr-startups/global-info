@@ -4,6 +4,8 @@
 
 import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
 import type {
+  DeckMetric,
+  MetricTone,
   OrionGoldenDeckManifest,
   OrionGoldenDeckSlide,
   VisualSlideAnalysis,
@@ -18,9 +20,268 @@ import {
 } from "./orion-first36-registry.v1";
 import { scrubClientFacingProse, truncateAtWordBoundary } from "./orion-classic-text-utils";
 import { sanitizeOrionGoldenClientText } from "../client/client-text-sanitizer";
+import {
+  orionStyleRiskMatrixRows,
+  wikipediaStatusLine,
+  type OrionSurfaceKpis,
+  type OrionThemeSet,
+} from "./orion-classic-theme-set";
 
 function scrub(s: string): string {
   return scrubClientFacingProse(sanitizeOrionGoldenClientText(s));
+}
+
+function badgeTone(badge: OrionSurfaceKpis["overallBadge"]): MetricTone {
+  if (badge === "Крайне негативный" || badge === "Нежелательный") return "risk";
+  if (badge === "Смешанный") return "warn";
+  if (badge === "Нейтральный") return "good";
+  return "neutral";
+}
+
+function adverseTone(pct: number, adverse: number): MetricTone {
+  if (pct >= 20 || adverse >= 20) return "risk";
+  if (pct >= 8 || adverse >= 3) return "warn";
+  if (adverse === 0) return "good";
+  return "neutral";
+}
+
+function wikiTone(status: OrionSurfaceKpis["wikipediaStatus"]): MetricTone {
+  if (status === "WRONG_SUBJECT") return "risk";
+  if (status === "AMBIGUOUS") return "warn";
+  if (status === "EXACT_SUBJECT") return "good";
+  return "neutral";
+}
+
+function wikiLabel(status: OrionSurfaceKpis["wikipediaStatus"]): string {
+  switch (status) {
+    case "EXACT_SUBJECT":
+      return "Wikipedia: субъект";
+    case "WRONG_SUBJECT":
+      return "Wikipedia: другой субъект";
+    case "AMBIGUOUS":
+      return "Wikipedia: неоднозначно";
+    default:
+      return "Wikipedia: нет статьи";
+  }
+}
+
+function regionMetrics(kpis: OrionSurfaceKpis, prefix: string): DeckMetric[] {
+  return [
+    {
+      label: `${prefix}: доля нежел.`,
+      value: `${kpis.linksAdversePct}%`,
+      tone: adverseTone(kpis.linksAdversePct, kpis.linksAdverse),
+    },
+    {
+      label: `${prefix}: ссылки`,
+      value: `${kpis.linksAdverse} / ${kpis.linksTotal}`,
+      tone: adverseTone(kpis.linksAdversePct, kpis.linksAdverse),
+    },
+    {
+      label: `${prefix}: подсказки`,
+      value: `${kpis.suggestionsAdverse} / ${kpis.suggestionsTotal}`,
+      tone: adverseTone(
+        kpis.suggestionsTotal > 0
+          ? Math.round((kpis.suggestionsAdverse / Math.max(kpis.suggestionsTotal, 1)) * 100)
+          : 0,
+        kpis.suggestionsAdverse
+      ),
+    },
+    {
+      label: `${prefix}: изображения`,
+      value: `${kpis.imagesAdverse} / ${kpis.imagesTotal}`,
+      tone: adverseTone(
+        kpis.imagesTotal > 0 ? Math.round((kpis.imagesAdverse / Math.max(kpis.imagesTotal, 1)) * 100) : 0,
+        kpis.imagesAdverse
+      ),
+    },
+  ];
+}
+
+function executiveDashboardFromTheme(themeSet: OrionThemeSet, base: OrionGoldenDeckSlide): OrionGoldenDeckSlide {
+  const paras = scrub(themeSet.executiveNarrative || base.narrative || "")
+    .split(/(?<=[.!?])\s+/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 40)
+    .slice(0, 3);
+  const narrative =
+    paras.length > 0
+      ? paras.join("\n")
+      : scrub(base.narrative || themeSet.executiveNarrative || "").slice(0, 1200);
+  const metrics: DeckMetric[] = [
+    {
+      label: "Россия: доля",
+      value: `${themeSet.ru.linksAdversePct}%`,
+      tone: adverseTone(themeSet.ru.linksAdversePct, themeSet.ru.linksAdverse),
+    },
+    {
+      label: "Россия: ссылки",
+      value: `${themeSet.ru.linksAdverse} из ${themeSet.ru.linksTotal}`,
+      tone: adverseTone(themeSet.ru.linksAdversePct, themeSet.ru.linksAdverse),
+    },
+    {
+      label: "ОАЭ: доля",
+      value: `${themeSet.uae.linksAdversePct}%`,
+      tone: adverseTone(themeSet.uae.linksAdversePct, themeSet.uae.linksAdverse),
+    },
+    {
+      label: "ОАЭ: ссылки",
+      value: `${themeSet.uae.linksAdverse} из ${themeSet.uae.linksTotal}`,
+      tone: adverseTone(themeSet.uae.linksAdversePct, themeSet.uae.linksAdverse),
+    },
+  ];
+  const keyFindings = (themeSet.executiveBullets.length > 0 ? themeSet.executiveBullets : base.bullets ?? [])
+    .slice(0, 3)
+    .map((b) => ({
+      headline: scrub(b).split(/[—–.:]/)[0]?.slice(0, 48) || "Риск",
+      detail: scrub(b),
+      tone: "warn" as MetricTone,
+    }));
+  const complianceHint = themeSet.complianceSignals
+    .map((c) => `${c.provider}: ${c.statusLine.replace(new RegExp(`^${c.provider}:\\s*`, "i"), "")}`)
+    .slice(0, 1)
+    .join("; ");
+  return {
+    ...base,
+    template: "orion_golden_executive_dashboard",
+    narrative,
+    metrics,
+    keyFindings: keyFindings.slice(0, 2),
+    actions: [
+      {
+        label: scrub(themeSet.nextStep || "Провести ручную сверку ключевых источников"),
+        rationale: complianceHint || undefined,
+      },
+    ],
+    statusBadge: {
+      label: `Профиль: ${themeSet.ru.overallBadge} / ${themeSet.uae.overallBadge}`,
+      tone: badgeTone(
+        themeSet.ru.overallBadge === "Крайне негативный" || themeSet.uae.overallBadge === "Крайне негативный"
+          ? "Крайне негативный"
+          : themeSet.ru.overallBadge === "Нежелательный" || themeSet.uae.overallBadge === "Нежелательный"
+            ? "Нежелательный"
+            : themeSet.ru.overallBadge === "Смешанный" || themeSet.uae.overallBadge === "Смешанный"
+              ? "Смешанный"
+              : themeSet.ru.overallBadge
+      ),
+    },
+  };
+}
+
+function riskMatrixFromTheme(themeSet: OrionThemeSet, base: OrionGoldenDeckSlide): OrionGoldenDeckSlide {
+  const rows = orionStyleRiskMatrixRows(themeSet).slice(0, 6);
+  const toneFor = (level: string): MetricTone => {
+    if (/высок/i.test(level)) return "risk";
+    if (/средн/i.test(level)) return "warn";
+    return "neutral";
+  };
+  return {
+    ...base,
+    template: "orion_golden_risk_matrix_grid",
+    keyFindings: rows.map((r) => ({
+      headline: scrub(r.theme),
+      detail: scrub(r.summary),
+      tone: toneFor(r.level),
+      severity: r.level,
+      status: r.level,
+      manualReview: /требует/i.test(r.level) ? "Маркер: ручная проверка" : undefined,
+    })),
+    bullets: rows.map((r) => `${r.theme} — ${r.level}: ${r.summary}`),
+  };
+}
+
+function profileOverviewFromTheme(themeSet: OrionThemeSet, base: OrionGoldenDeckSlide): OrionGoldenDeckSlide {
+  const metrics: DeckMetric[] = [
+    ...regionMetrics(themeSet.ru, "RU").slice(0, 4),
+    ...regionMetrics(themeSet.uae, "ОАЭ").slice(0, 4),
+    {
+      label: "RU Wikipedia",
+      value: wikiLabel(themeSet.ru.wikipediaStatus),
+      tone: wikiTone(themeSet.ru.wikipediaStatus),
+    },
+    {
+      label: "ОАЭ related",
+      value: `${themeSet.uae.relatedAdverse} / ${themeSet.uae.relatedTotal}`,
+      tone: adverseTone(
+        themeSet.uae.relatedTotal > 0
+          ? Math.round((themeSet.uae.relatedAdverse / Math.max(themeSet.uae.relatedTotal, 1)) * 100)
+          : 0,
+        themeSet.uae.relatedAdverse
+      ),
+    },
+  ];
+  const complianceFindings = themeSet.complianceSignals.slice(0, 3).map((c) => ({
+    headline: c.provider,
+    detail: scrub(c.statusLine || c.detail),
+    tone: (c.hasDbHit ? "warn" : "neutral") as MetricTone,
+  }));
+  return {
+    ...base,
+    template: "orion_golden_profile_overview",
+    metrics,
+    statusBadge: {
+      label: `Итог: RU ${themeSet.ru.overallBadge} · ОАЭ ${themeSet.uae.overallBadge}`,
+      tone: badgeTone(themeSet.ru.overallBadge),
+    },
+    keyFindings:
+      complianceFindings.length > 0
+        ? complianceFindings
+        : [
+            {
+              headline: "Wikipedia RU",
+              detail: scrub(wikipediaStatusLine(themeSet.ru)),
+              tone: wikiTone(themeSet.ru.wikipediaStatus),
+            },
+          ],
+  };
+}
+
+function regionalMetricsSlide(
+  themeSet: OrionThemeSet,
+  region: "RU" | "UAE",
+  base: OrionGoldenDeckSlide
+): OrionGoldenDeckSlide {
+  const kpis = region === "RU" ? themeSet.ru : themeSet.uae;
+  const prefix = region === "RU" ? "Россия" : "ОАЭ";
+  return {
+    ...base,
+    template: "orion_golden_metrics_dashboard",
+    metrics: [
+      ...regionMetrics(kpis, prefix),
+      {
+        label: `${prefix}: related`,
+        value: `${kpis.relatedAdverse} / ${kpis.relatedTotal}`,
+        tone: adverseTone(
+          kpis.relatedTotal > 0 ? Math.round((kpis.relatedAdverse / Math.max(kpis.relatedTotal, 1)) * 100) : 0,
+          kpis.relatedAdverse
+        ),
+      },
+      {
+        label: `${prefix}: Wikipedia`,
+        value: wikiLabel(kpis.wikipediaStatus),
+        tone: wikiTone(kpis.wikipediaStatus),
+      },
+    ],
+    statusBadge: { label: kpis.overallBadge, tone: badgeTone(kpis.overallBadge) },
+    narrative: scrub(
+      base.narrative ||
+        `${prefix}: ${kpis.linksAdversePct}% потенциально нежелательных ссылок (${kpis.linksAdverse} из ${kpis.linksTotal}). Оценка профиля — ${kpis.overallBadge}.`
+    ),
+  };
+}
+
+function enrichSlideWithThemeSet(
+  slide: OrionGoldenDeckSlide,
+  slot: First36SlotDef,
+  themeSet: OrionThemeSet | null | undefined
+): OrionGoldenDeckSlide {
+  if (!themeSet) return slide;
+  if (slot.page === 3) return executiveDashboardFromTheme(themeSet, slide);
+  if (slot.page === 4) return riskMatrixFromTheme(themeSet, slide);
+  if (slot.page === 5) return profileOverviewFromTheme(themeSet, slide);
+  if (slot.page === 7 || slot.page === 8) return regionalMetricsSlide(themeSet, "RU", slide);
+  if (slot.page === 24 || slot.page === 25) return regionalMetricsSlide(themeSet, "UAE", slide);
+  return slide;
 }
 
 function hasImageBytes(asset: ReportAssetV1 | undefined): boolean {
@@ -240,15 +501,24 @@ export function buildDeterministicVisualAnalysis(
     ];
   }
 
+  const shortProv =
+    provenanceLabel(asset).includes("API")
+      ? "API"
+      : provenanceLabel(asset).includes("Wikipedia")
+        ? "Wikipedia"
+        : provenanceLabel(asset).includes("изображ")
+          ? "Images"
+          : provenanceLabel(asset).slice(0, 18);
+
   return {
     assetRef: asset.assetRef,
     headlineConclusion: truncateAtWordBoundary(scrub(headlineConclusion), 140),
     whatIsVisible: truncateAtWordBoundary(scrub(whatIsVisible), 420),
     metrics: [
-      { label: "Регион", value: regionLabel },
-      { label: "Источник", value: provenanceLabel(asset) },
+      { label: "Регион", value: regionLabel, tone: "neutral" as const },
+      { label: "Источник", value: shortProv, tone: "neutral" as const },
     ],
-    whyItMatters: truncateAtWordBoundary(scrub(whyItMatters), 360),
+    whyItMatters: truncateAtWordBoundary(scrub(whyItMatters), 220),
     recommendedActions,
     confidence: hasImageBytes(asset) ? "medium" : "low",
     limitations,
@@ -468,10 +738,12 @@ function attachVisual(
  */
 export function composeOrionFirst36CeoDeck(
   reportSpec: OrionClassicAuditReportSpec,
-  assets: ReportAssetV1[] = []
+  assets: ReportAssetV1[] = [],
+  options?: { themeSet?: OrionThemeSet | null }
 ): OrionGoldenDeckManifest {
   assertFirst36RegistryIntegrity();
 
+  const themeSet = options?.themeSet ?? null;
   const classic = composeOrionClassicAuditDeck(reportSpec, assets, { includeCommercial: false });
   const pool = [...classic.finalSlides];
   const used = new Set<string>();
@@ -572,14 +844,35 @@ export function composeOrionFirst36CeoDeck(
 
     // Ensure page identity
     slide = enrichNonVisualSlotProse(slide, slot);
+    slide = enrichSlideWithThemeSet(slide, slot, themeSet);
+    const preserveNarrativeBreaks = [3, 5, 7, 8, 24, 25].includes(slot.page);
     slide = {
       ...slide,
       slideKey: slot.slotId,
       pageNumber: slot.page,
       title: scrub(slide.title || slot.title),
-      narrative: slide.narrative ? scrub(slide.narrative) : undefined,
+      narrative: slide.narrative
+        ? preserveNarrativeBreaks
+          ? slide.narrative
+              .split("\n")
+              .map((line) => scrub(line))
+              .filter(Boolean)
+              .join("\n")
+          : scrub(slide.narrative)
+        : undefined,
       bullets: slide.bullets?.map((b) => scrub(b)).filter(Boolean),
       clientTakeaway: slide.clientTakeaway ? scrub(slide.clientTakeaway) : undefined,
+      metrics: slide.metrics,
+      statusBadge: slide.statusBadge,
+      keyFindings: slide.keyFindings?.map((f) => ({
+        ...f,
+        headline: scrub(f.headline),
+        detail: scrub(f.detail),
+      })),
+      actions: slide.actions?.map((a) => ({
+        label: scrub(a.label),
+        rationale: a.rationale ? scrub(a.rationale) : undefined,
+      })),
     };
     finalSlides.push(slide);
   }

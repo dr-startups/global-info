@@ -164,7 +164,7 @@ export async function runOrionClassicAuditRender(options: {
     includeCommercial,
   });
   const deckManifest = first36CeoMode
-    ? composeOrionFirst36CeoDeck(reportSpec, assets)
+    ? composeOrionFirst36CeoDeck(reportSpec, assets, { themeSet })
     : composeOrionClassicAuditDeck(reportSpec, assets, { includeCommercial });
 
   writeJson(join(outputRoot, "orion-classic-report-spec.json"), reportSpec);
