@@ -151,6 +151,16 @@ export function scrubClientFacingProse(text: string): string {
   t = t.replace(/демо[- ]?скрининг(?:ах|а|и|ов)?/gi, "предварительных проверках");
   t = t.replace(/demo[- ]?screening(?:s)?/gi, "preliminary screenings");
   t = t.replace(/в\s+демо[- ]?режиме/gi, "на предварительном этапе");
+  // GPT often says «демонстрационных screening-источниках / результатах»
+  t = t.replace(
+    /демонстрационн(?:ых|ые|ого|ый|ая|ыми)?\s+screening[- ]?(?:источник(?:ах|а|и|ов)?|результат(?:ах|а|ы|ов)?|проверк(?:ах|а|и)?|сигнал(?:ах|а|ы|ов)?)?/gi,
+    "предварительных проверках"
+  );
+  t = t.replace(/демонстрационн(?:ых|ые|ого|ый|ая)\s+/gi, "предварительных ");
+  t = t.replace(/screening[- ]?источник(?:ах|а|и|ов)?/gi, "предварительных источниках");
+  t = t.replace(/screening[- ]?результат(?:ах|а|ы|ов)?/gi, "предварительных результатах");
+  t = t.replace(/screening[- ]?сигнал(?:ах|а|ы|ов)?/gi, "предварительный сигнал");
+  t = t.replace(/\bscreening\b/gi, "предварительная проверка");
   t = t.replace(/\bDATA\s*POOR\b/gi, "секций с недостаточными данными");
   t = t.replace(/\bCOLLAPSED\b/gi, "свёрнутых");
   t = t.replace(/\bNOT_APPLICABLE\b/gi, "неприменимых");
@@ -163,7 +173,8 @@ export function isMetaProcessBullet(text: string): boolean {
     META_COUNT_LINE.test(t) ||
     INCOMPLETE_CAVEAT.test(t) ||
     KEYWORD_DUMP.test(t) ||
-    /DATA\s*POOR|сжато\s+пустых|кластер\(ов\)|дедупликац|материал\(ов\).*дубл/i.test(t)
+    /DATA\s*POOR|сжато\s+пустых|кластер\(ов\)|дедупликац|материал\(ов\).*дубл/i.test(t) ||
+    /найденных\s+материал|\(\d+\)\s*не\s+использова|расхождени[ея]\s+по\s+отчеству/i.test(t)
   );
 }
 

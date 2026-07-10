@@ -244,7 +244,9 @@ function isChargeOrSubjectLabel(entity: string, subjectName: string): boolean {
 }
 
 function isWeakMediaDomain(domain: string): boolean {
-  return /youtube\.|wixsite\.|instagram\.|facebook\.|tiktok\.|t\.me\b|vk\.com|ok\.ru/i.test(domain);
+  return /youtube\.|wixsite\.|instagram\.|facebook\.|tiktok\.|t\.me\b|vk\.com|ok\.ru|plehanovka/i.test(
+    domain
+  );
 }
 
 function isGovPortalDomain(domain: string): boolean {
@@ -258,10 +260,18 @@ function preferredThemeSample(
   const strong =
     themeKey === "sanctions_associates" || themeKey === "pep_rca" || themeKey === "aggregator_negative"
       ? sample.find((h) =>
-          /rupep|opensanctions|justice\.gov|peps|tadviser|dossier|ofac|sanction/i.test(h.domain)
+          /rupep|opensanctions|justice\.gov|peps|tadviser|dossier|ofac|sanction|lexis|dow|world-check/i.test(
+            h.domain
+          )
         )
       : undefined;
   if (strong) return strong;
+  // Never use kremlin/gov portals as PEP/RCA or sanctions "typical anchor".
+  if (themeKey === "pep_rca" || themeKey === "sanctions_associates") {
+    return sample.find(
+      (h) => h.domain && !isWeakMediaDomain(h.domain) && !isGovPortalDomain(h.domain)
+    );
+  }
   return (
     sample.find(
       (h) => h.domain && !isWeakMediaDomain(h.domain) && !isGovPortalDomain(h.domain)
@@ -502,16 +512,31 @@ function buildThemes(
     if (def.key === "other_adverse" && bucket.hits.length < 3) continue;
     const sample = bucket.hits
       .filter((h) => h.domain && !/\.example$/i.test(h.domain))
+      .filter((h) => {
+        // Keep gov portals / weak media out of PEP/sanctions sampleHits (false "typical anchors").
+        if (def.key === "pep_rca" || def.key === "sanctions_associates") {
+          return !isGovPortalDomain(h.domain) && !isWeakMediaDomain(h.domain);
+        }
+        return true;
+      })
       .slice(0, 3);
-    if (sample.length === 0) continue;
-    const preferredSample = preferredThemeSample(sample, def.key);
+    // Keep the theme even if only weak/gov hits exist — but without a false typical anchor.
+    if (sample.length === 0 && def.key !== "pep_rca" && def.key !== "sanctions_associates") continue;
+    if (sample.length === 0 && bucket.hits.length === 0) continue;
+    const preferredSample = sample.length > 0 ? preferredThemeSample(sample, def.key) : undefined;
     const named = themeAnchorEntities(
-      sample.filter((h) => !isGovPortalDomain(h.domain) || def.key === "political_exposure"),
+      sample.length > 0
+        ? sample.filter((h) => !isGovPortalDomain(h.domain) || def.key === "political_exposure")
+        : [],
       bucket.entities.filter((e) => isQualityEntity(e, subjectName)),
       subjectName
     );
     const summaryParts = [
-      named.length > 0 ? `В сюжетной линии фигурируют: ${named.join(", ")}.` : "",
+      named.length > 0
+        ? `В сюжетной линии фигурируют: ${named.join(", ")}.`
+        : def.key === "pep_rca"
+          ? "Предварительные сигналы PEP/RCA в комплаенс-контексте; требуется сверка полного профиля."
+          : "",
       preferredSample
         ? `Типичный якорь: ${preferredSample.domain || "источник"} — «${preferredSample.title}».`
         : "",
@@ -817,9 +842,26 @@ export function buildAnnotatedLinkCards(
   let themeIdx = 0;
   for (const theme of themes) {
     themeIdx += 1;
-    for (const hit of theme.sampleHits.slice(0, 2)) {
+    // Prefer stronger domains first within the theme
+    const hits = [...theme.sampleHits].sort((a, b) => {
+      const score = (d: string) =>
+        /rupep|opensanctions|justice\.gov|tadviser|peps|dossier|ofac/i.test(d)
+          ? 0
+          : isWeakMediaDomain(d) || isGovPortalDomain(d)
+            ? 2
+            : 1;
+      return score(a.domain) - score(b.domain);
+    });
+    for (const hit of hits.slice(0, 3)) {
       if (region && hit.region !== region && hit.region !== "GLOBAL") continue;
       if (!hit.domain || /\.example$/i.test(hit.domain) || /example\.com/i.test(hit.url ?? "")) continue;
+      if (isWeakMediaDomain(hit.domain)) continue;
+      if (
+        (theme.id === "pep_rca" || theme.id === "sanctions_associates") &&
+        isGovPortalDomain(hit.domain)
+      ) {
+        continue;
+      }
       if (/demo|potential match only/i.test(`${hit.title} ${hit.snippet ?? ""}`)) continue;
       const snip = hit.snippet ? ` — ${hit.snippet.slice(0, 110)}` : "";
       cards.push(

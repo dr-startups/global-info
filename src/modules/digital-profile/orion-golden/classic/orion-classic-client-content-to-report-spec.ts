@@ -995,24 +995,25 @@ function emptyLegacy(sectionKey: string): SectionBlock {
 
 /** Classic client appendix: one limitations slide — no DATA POOR / cluster counts / evidence dump. */
 function buildClassicClientAppendixBlock(client: OrionClientContent): SectionBlock {
+  const defaults = [
+    "Анализ основан на открытых источниках и предварительных сигналах комплаенс-баз.",
+    "Предварительные совпадения в базах данных требуют сверки полного профиля и не являются юридическим заключением.",
+    "Материалы с неоднозначной идентификацией не используются как ключевые выводы.",
+  ];
   const rawLimitations = (client.limitations ?? [])
     .map((l) => scrubClientFacingProse(sanitizeOrionGoldenClientText(l)))
     .filter((l) => l.length >= 20)
     .filter(
       (l) =>
-        !/DATA\s*POOR|сжато\s+пустых|материал\(ов\)|кластер\(ов\)|дедупликац|очеред(ь|и)\s+ручн|исключено\s+\d+/i.test(
+        !/DATA\s*POOR|сжато\s+пустых|материал\(ов\)|кластер\(ов\)|дедупликац|очеред(ь|и)\s+ручн|исключено\s+\d+|найденных\s+материал|расхождени[ея]\s+по\s+отчеству|\(\d+\)/i.test(
           l
         )
     );
-
-  const bullets =
-    rawLimitations.length > 0
-      ? rawLimitations.slice(0, 5)
-      : [
-          "Анализ основан на открытых источниках и предварительных сигналах комплаенс-баз.",
-          "Предварительные совпадения в базах данных требуют сверки полного профиля и не являются юридическим заключением.",
-          "Материалы с неоднозначной идентификацией не используются как ключевые выводы.",
-        ];
+  const safeBullets = sanitizeClassicBullets(
+    rawLimitations.length > 0 ? rawLimitations.slice(0, 3) : defaults,
+    220
+  ).slice(0, 5);
+  const bullets = safeBullets.length > 0 ? safeBullets : defaults;
 
   return {
     sectionTitle: "Ограничения анализа",
@@ -1027,7 +1028,7 @@ function buildClassicClientAppendixBlock(client: OrionClientContent): SectionBlo
         slideKey: "appendix-limitations",
         template: "orion_golden_appendix",
         title: "Ограничения анализа",
-        bullets: sanitizeClassicBullets(bullets, 220).slice(0, 6),
+        bullets,
       },
     ],
     sourceRefs: [],
