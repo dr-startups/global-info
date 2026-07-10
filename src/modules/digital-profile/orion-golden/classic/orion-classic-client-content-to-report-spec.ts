@@ -550,6 +550,38 @@ function serpTableBullets(
   return bullets.slice(0, 16);
 }
 
+/** Parse heat-grid / SERP bullets into a PPTX table payload. */
+export function tableFromSearchBullets(
+  bullets: string[],
+  maxRows = 10
+): { headers: string[]; rows: string[][] } | undefined {
+  const rows: string[][] = [];
+  for (const raw of bullets) {
+    const b = String(raw ?? "").trim();
+    if (!b) continue;
+    const m = b.match(
+      /^(?:\[([Н·N.])\]\s*)?#?\s*(\d+)\s+([^\s—\-]+)\s*[—\-–]\s*(.+?)(?:\s*(?:\(|·|•)\s*(https?:\S+|—+)\)?)?\s*$/u
+    );
+    if (m) {
+      const mark = m[1] === "Н" || m[1] === "N" ? "Н" : "·";
+      const titlePart = truncateAtWordBoundary(m[4].replace(/\s*\(https?:\S+\)\s*$/i, "").trim(), 70);
+      rows.push([m[2], m[3], titlePart, m[5] ?? "—", mark]);
+      if (rows.length >= maxRows) break;
+      continue;
+    }
+    const loose = b.match(/#?\s*(\d+)\s+(.+)/);
+    if (loose) {
+      rows.push([loose[1], "—", truncateAtWordBoundary(loose[2], 70), "—", "·"]);
+      if (rows.length >= maxRows) break;
+    }
+  }
+  if (rows.length === 0) return undefined;
+  return {
+    headers: ["Поз.", "Домен", "Заголовок", "URL", "Риск"],
+    rows,
+  };
+}
+
 function searchLinkBullets(
   inventory: FullEvidenceInventory | undefined,
   region: RegionBucket
@@ -932,17 +964,24 @@ function inventoryFallbackBlock(
         template,
         title: tables.length > 1 ? `${title} (${tIdx + 1}/${tables.length})` : title,
         bullets: rowBullets,
+        table: {
+          headers: table.headers,
+          rows: table.rows.slice(0, perSlide),
+        },
       });
     }
   } else {
     const maxSlides = maxSlidesForSection(sectionId);
     const chunks = chunkItems(bullets, perSlide).slice(0, maxSlides);
     for (const [idx, chunk] of chunks.entries()) {
+      const parsedTable =
+        template === "orion_golden_search_table" ? tableFromSearchBullets(chunk, perSlide) : undefined;
       slideSpecs.push({
         slideKey: `${sectionId}-${idx + 1}`,
         template,
         title: chunks.length > 1 ? `${title} (${idx + 1}/${chunks.length})` : title,
         bullets: chunk,
+        table: parsedTable,
       });
     }
   }
@@ -1221,6 +1260,10 @@ function blockFromClientSection(
       template,
       title,
       bullets: rowBullets,
+      table: {
+        headers: table.headers,
+        rows: table.rows.slice(0, perSlide),
+      },
     });
   } else {
     const maxSlides = maxSlidesForSection(section.sectionId);
@@ -1234,11 +1277,14 @@ function blockFromClientSection(
       });
     } else {
       for (const [idx, chunk] of chunks.entries()) {
+        const parsedTable =
+          template === "orion_golden_search_table" ? tableFromSearchBullets(chunk, perSlide) : undefined;
         slideSpecs.push({
           slideKey: `${section.sectionId}-${idx + 1}`,
           template,
           title: chunks.length > 1 ? `${title} (${idx + 1}/${chunks.length})` : title,
           bullets: chunk,
+          table: parsedTable,
         });
       }
     }

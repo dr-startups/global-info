@@ -375,6 +375,58 @@ def _render_visual_with_sidebar(
         _sidebar_analysis(ctx, slide, MARGIN_X + img_w + 120000, y + 60000, side_w, img_h - 60000)
 
 
+def _add_search_table(
+    ctx: _Ctx,
+    y: int,
+    headers: list[str],
+    rows: list[list[str]],
+) -> None:
+    """Real PPTX table for SERP / heat-grid slides (max 10 data rows)."""
+    cols = max(1, min(5, len(headers)))
+    data_rows = rows[:10]
+    table_rows = 1 + len(data_rows)
+    avail_h = max(800000, CONTENT_BOTTOM - y - 40000)
+    row_h = min(420000, max(280000, avail_h // max(table_rows, 1)))
+    table_h = row_h * table_rows
+    shape = ctx.slide.shapes.add_table(table_rows, cols, Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(table_h))
+    tbl = shape.table
+
+    # Column widths: prefer compact rank/risk columns
+    if cols >= 4:
+        widths = [900000, 1800000, CONTENT_W - 900000 - 1800000 - 2200000 - 700000, 2200000, 700000][:cols]
+        # Recalc if 4 cols without risk
+        if cols == 4:
+            widths = [900000, 2000000, CONTENT_W - 900000 - 2000000 - 2400000, 2400000]
+        leftover = CONTENT_W - sum(widths)
+        if leftover != 0 and widths:
+            widths[min(2, len(widths) - 1)] += leftover
+        for i, w in enumerate(widths):
+            tbl.columns[i].width = Emu(max(500000, w))
+
+    def paint_cell(cell: Any, text: str, *, header: bool = False, adverse: bool = False) -> None:
+        cell.text = _clip_words(text, 90 if header else 70)
+        for p in cell.text_frame.paragraphs:
+            p.font.name = FONT
+            p.font.size = Pt(10 if header else 9)
+            p.font.bold = header
+            p.font.color.rgb = WHITE if header else (RGBColor(0xB9, 0x1C, 0x1C) if adverse else BODY_COLOR)
+        fill = cell.fill
+        fill.solid()
+        fill.fore_color.rgb = NAVY if header else (RGBColor(0xFE, 0xF2, 0xF2) if adverse else WHITE)
+
+    for c, h in enumerate(headers[:cols]):
+        paint_cell(tbl.cell(0, c), str(h), header=True)
+    for r_idx, row in enumerate(data_rows, start=1):
+        adverse = any(str(cell).strip() in ("Н", "[Н]") for cell in row) or str(row[0] if row else "").startswith("[Н]")
+        if len(row) >= 5 and str(row[4]).strip() in ("Н", "N"):
+            adverse = True
+        for c in range(cols):
+            val = str(row[c]) if c < len(row) else ""
+            if c == cols - 1 and val in ("Н", "·", "N", "."):
+                val = "Нежел." if val in ("Н", "N") else "·"
+            paint_cell(tbl.cell(r_idx, c), val, adverse=adverse)
+
+
 def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> None:
     template = str(slide.get("template") or "")
     title = _safe(slide.get("title") or "ORION")
@@ -519,30 +571,48 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY, FS_SECTION)
         if narrative:
-            y = ctx.body(_clip_words(narrative, 320), y, max_h=520000, color=MUTED_COLOR)
-            y = y + 60000
-        # Dense SERP / suggestion / heat-grid rows
-        avail = max(400000, CONTENT_BOTTOM - y)
-        box = ctx.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(avail))
-        tf = box.text_frame
-        tf.word_wrap = True
-        first = True
-        for bullet in bullets[:18]:
-            p = tf.paragraphs[0] if first else tf.add_paragraph()
-            first = False
-            p.space_before = Pt(2)
-            p.space_after = Pt(5)
-            p.line_spacing = 1.05
-            r = p.add_run()
-            clipped = _clip_words(bullet, 160)
-            r.text = f"• {clipped}"
-            r.font.name = FONT
-            r.font.size = Pt(11)
-            # Highlight adverse heat-grid rows
-            if clipped.startswith("[Н]"):
-                r.font.color.rgb = RGBColor(0xB9, 0x1C, 0x1C)
-            else:
-                r.font.color.rgb = BODY_COLOR
+            y = ctx.body(_clip_words(narrative, 280), y, max_h=420000, color=MUTED_COLOR)
+            y = y + 40000
+        table = slide.get("table") if isinstance(slide.get("table"), dict) else None
+        headers = list((table or {}).get("headers") or [])
+        rows = list((table or {}).get("rows") or [])
+        if not rows and bullets:
+            # Fallback: parse bullet lines into a compact table
+            headers = ["Поз.", "Домен", "Заголовок", "Риск"]
+            parsed: list[list[str]] = []
+            for bullet in bullets[:10]:
+                raw = _safe(bullet)
+                m = re.match(
+                    r"^(?:\[([Н·N.])\]\s*)?#?\s*(\d+)\s+([^\s—\-]+)\s*[—\-–]\s*(.+)$",
+                    raw,
+                )
+                if m:
+                    mark = "Н" if m.group(1) in ("Н", "N") else "·"
+                    parsed.append([m.group(2), m.group(3), _clip_words(m.group(4), 70), mark])
+                else:
+                    parsed.append(["—", "—", _clip_words(raw, 80), "·"])
+            rows = parsed
+        if headers and rows:
+            _add_search_table(ctx, y, headers[:5], rows[:10])
+        elif bullets:
+            avail = max(400000, CONTENT_BOTTOM - y)
+            box = ctx.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(avail))
+            tf = box.text_frame
+            tf.word_wrap = True
+            first = True
+            for bullet in bullets[:18]:
+                p = tf.paragraphs[0] if first else tf.add_paragraph()
+                first = False
+                p.space_before = Pt(2)
+                p.space_after = Pt(5)
+                r = p.add_run()
+                clipped = _clip_words(bullet, 160)
+                r.text = f"• {clipped}"
+                r.font.name = FONT
+                r.font.size = Pt(11)
+                r.font.color.rgb = (
+                    RGBColor(0xB9, 0x1C, 0x1C) if clipped.startswith("[Н]") else BODY_COLOR
+                )
         return
 
     if template == "orion_golden_no_data_compact":

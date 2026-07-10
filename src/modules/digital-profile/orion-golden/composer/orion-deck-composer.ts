@@ -35,6 +35,8 @@ export type OrionGoldenDeckSlide = {
   visualAnalysis?: VisualSlideAnalysis;
   /** Honest blocked reason when required visual is missing. */
   blockedReason?: string;
+  /** Structured search/position table (orion_golden_search_table). */
+  table?: { headers: string[]; rows: string[][] };
 };
 
 export type OrionGoldenDeckManifest = {

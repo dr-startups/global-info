@@ -38,6 +38,14 @@ function slidesFromBlock(
       // Per-slide narrative when provided; else first-slide block narrative only.
       narrative: perSlideNarrative ? truncateAtWordBoundary(perSlideNarrative, narrativeMax) : undefined,
       assetRefs: idx === 0 ? block.visualAssets : undefined,
+      table: spec.table
+        ? {
+            headers: spec.table.headers,
+            rows: spec.table.rows.slice(0, 10).map((row) =>
+              row.map((cell) => truncateAtWordBoundary(String(cell ?? ""), 80))
+            ),
+          }
+        : undefined,
     };
   });
 }

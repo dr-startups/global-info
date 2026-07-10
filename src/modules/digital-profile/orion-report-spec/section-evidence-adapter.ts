@@ -24,6 +24,17 @@ function hasRuRegion(rawMetadata: unknown): boolean {
   return !region || region === "RU";
 }
 
+function hasUaeRegion(rawMetadata: unknown): boolean {
+  const rm = asObj(rawMetadata);
+  const region = String(rm.orionRegion ?? rm.region ?? "").toUpperCase();
+  return region === "UAE" || region === "AE" || region === "INTL";
+}
+
+function isUaeSurface(region: string | null | undefined): boolean {
+  const r = String(region ?? "").toUpperCase();
+  return r === "UAE" || r === "AE" || r === "INTL";
+}
+
 function engineProvider(engine: string, source: string | null): EvidenceProvider | undefined {
   const src = String(source ?? "").toLowerCase();
   if (src.includes("yandex") || engine.toUpperCase() === "YANDEX") return "yandex";
@@ -360,4 +371,37 @@ export function buildRuSearchEvidence(caseContext: OrionRealCaseContext): Normal
     ];
   }
   return out;
+}
+
+/** UAE media surfaces (images/videos/knowledge) for region-neutral composite assets. */
+export function buildUaeSearchEvidence(caseContext: OrionRealCaseContext): NormalizedEvidenceV1[] {
+  const sectionKey = "uae_search_results";
+  const uaeResults = caseContext.searchResults.filter((r) => hasUaeRegion(r.rawMetadata));
+  const google = uaeResults
+    .filter((r) => engineProvider(r.engine, r.source) === "google")
+    .slice(0, 12)
+    .map((r, idx) => searchResultToNormalized(sectionKey, r, idx));
+  const surfaces = caseContext.searchSurfaces.filter((s) => isUaeSurface(s.region));
+  const suggestions = surfaces
+    .filter((s) => s.type === "SUGGESTION")
+    .slice(0, 8)
+    .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface"));
+  const related = surfaces
+    .filter((s) => s.type === "RELATED_QUERY")
+    .slice(0, 8)
+    .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface"));
+  const images = surfaces
+    .filter((s) => s.type === "IMAGE_RESULT")
+    .slice(0, 12)
+    .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "image_result"));
+  const videos = surfaces
+    .filter((s) => s.type === "VIDEO_RESULT")
+    .slice(0, 8)
+    .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "video_result"));
+  const knowledge = surfaces
+    .filter((s) => s.type === "KNOWLEDGE_BLOCK")
+    .slice(0, 4)
+    .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "knowledge_panel"));
+
+  return [...google, ...suggestions, ...related, ...images, ...videos, ...knowledge];
 }

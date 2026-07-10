@@ -5,7 +5,7 @@
 import type { OrionRealCaseContext } from "../../orion-section-pipeline/real-case-data-adapter";
 import { buildReportAssets } from "../../orion-report-spec/asset-builder";
 import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
-import { buildRuSearchEvidence } from "../../orion-report-spec/section-evidence-adapter";
+import { buildRuSearchEvidence, buildUaeSearchEvidence } from "../../orion-report-spec/section-evidence-adapter";
 import { buildLexisReportAssets } from "../../orion-client-storyboard/lexis-asset-builder";
 import { loadFile } from "../../storage/private-store";
 import {
@@ -76,39 +76,50 @@ export async function buildOrionGoldenAssets(input: {
   ctx: OrionRealCaseContext;
 }): Promise<ReportAssetV1[]> {
   const ruSearchEvidence = buildRuSearchEvidence(input.ctx);
+  const uaeSearchEvidence = buildUaeSearchEvidence(input.ctx);
   const serpAssets = await buildReportAssets({
     subjectName: input.ctx.subject.fullName,
     ruSearchEvidence,
+    uaeSearchEvidence,
   });
   const lexisAssets = await buildOrionGoldenLexisAssets(input.ctx);
 
   // Per-cell URL-only image refs are not renderable (renderer needs imageData).
-  // Composite ru_image_grid from buildReportAssets already covers IMAGE_RESULT surfaces.
+  // Composite ru_image_grid / uae_image_grid from buildReportAssets cover IMAGE_RESULT surfaces.
   const imageAssets: ReportAssetV1[] = [];
 
-  const videoAssets: ReportAssetV1[] = input.ctx.searchSurfaces
-    .filter((s) => isVideoSurface(s))
-    .slice(0, 12)
-    .map((row, idx) => ({
-      assetRef: `r10-vid-${idx + 1}`,
-      kind: "video_cards" as const,
-      title: String(row.title ?? "Видео"),
-      caption: String(row.snippet ?? "").slice(0, 120),
-      status: row.videoUrl ? ("ready" as const) : ("missing" as const),
-      evidenceRefs: [],
-    }));
+  // Prefer composite video/knowledge PNGs; keep URL-only stubs only as last-resort metadata
+  // (classic deck filters them out via preferCompositeMedia).
+  const hasCompositeVideo = serpAssets.some((a) => a.kind === "video_cards" && a.imageData);
+  const hasCompositeKnowledge = serpAssets.some((a) => a.kind === "knowledge_panel" && a.imageData);
 
-  const knowledgeAssets: ReportAssetV1[] = input.ctx.searchSurfaces
-    .filter((s) => isKnowledgeSurface(s))
-    .slice(0, 8)
-    .map((row, idx) => ({
-      assetRef: `r10-knowledge-${idx + 1}`,
-      kind: "knowledge_panel" as const,
-      title: String(row.title ?? "Панель знаний"),
-      caption: String(row.snippet ?? "").slice(0, 160),
-      status: "ready" as const,
-      evidenceRefs: [],
-    }));
+  const videoAssets: ReportAssetV1[] = hasCompositeVideo
+    ? []
+    : input.ctx.searchSurfaces
+        .filter((s) => isVideoSurface(s))
+        .slice(0, 12)
+        .map((row, idx) => ({
+          assetRef: `r10-vid-${idx + 1}`,
+          kind: "video_cards" as const,
+          title: String(row.title ?? "Видео"),
+          caption: String(row.snippet ?? "").slice(0, 120),
+          status: row.videoUrl ? ("ready" as const) : ("missing" as const),
+          evidenceRefs: [],
+        }));
+
+  const knowledgeAssets: ReportAssetV1[] = hasCompositeKnowledge
+    ? []
+    : input.ctx.searchSurfaces
+        .filter((s) => isKnowledgeSurface(s))
+        .slice(0, 8)
+        .map((row, idx) => ({
+          assetRef: `r10-knowledge-${idx + 1}`,
+          kind: "knowledge_panel" as const,
+          title: String(row.title ?? "Панель знаний"),
+          caption: String(row.snippet ?? "").slice(0, 160),
+          status: "ready" as const,
+          evidenceRefs: [],
+        }));
 
   return [...serpAssets, ...lexisAssets, ...imageAssets, ...videoAssets, ...knowledgeAssets];
 }

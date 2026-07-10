@@ -206,6 +206,28 @@ export async function buildRuSearchAssets(input: {
     })
   );
 
+  const media = await buildRegionMediaComposites({
+    subjectName: input.subjectName,
+    evidence: input.evidence,
+    regionPrefix: "ru",
+    regionLabel: "Россия",
+  });
+  assets.push(...media);
+
+  return assets;
+}
+
+/** Region-neutral image/video/knowledge composite PNGs (`ru_*` / `uae_*`). */
+export async function buildRegionMediaComposites(input: {
+  subjectName: string;
+  evidence: NormalizedEvidenceV1[];
+  regionPrefix: "ru" | "uae";
+  regionLabel: string;
+}): Promise<ReportAssetV1[]> {
+  const assets: ReportAssetV1[] = [];
+  const prefix = input.regionPrefix;
+  const label = input.regionLabel;
+
   const images = input.evidence.filter((e) => e.sourceKind === "image_result");
   if (images.length > 0) {
     const filtered = images.filter((e) => !isImageNamesakeNoise(e, input.subjectName));
@@ -238,9 +260,9 @@ export async function buildRuSearchAssets(input: {
     );
     const adverseCount = gridItems.filter((g) => g.highlight).length;
     assets.push({
-      assetRef: "ru_image_grid",
+      assetRef: `${prefix}_image_grid`,
       kind: "image_grid",
-      title: "Изображения в поиске",
+      title: `${label} — изображения в поиске`,
       caption:
         adverseCount > 0
           ? `Нежелательные изображения отмечены красной рамкой (${adverseCount})`
@@ -249,8 +271,8 @@ export async function buildRuSearchAssets(input: {
         buildImageGridSvg({
           title:
             adverseCount > 0
-              ? `Изображения в поиске — нежелательные отмечены (${adverseCount})`
-              : "Изображения в поиске",
+              ? `${label}: изображения — нежелательные отмечены (${adverseCount})`
+              : `${label}: изображения в поиске`,
           items: gridItems,
         })
       ),
@@ -262,12 +284,12 @@ export async function buildRuSearchAssets(input: {
   const videos = input.evidence.filter((e) => e.sourceKind === "video_result");
   if (videos.length > 0) {
     assets.push({
-      assetRef: "ru_video_cards",
+      assetRef: `${prefix}_video_cards`,
       kind: "video_cards",
-      title: "Видео в поиске",
+      title: `${label} — видео в поиске`,
       imageData: await svgToPngBase64(
         buildVideoCardsSvg({
-          title: "Видео в поиске",
+          title: `${label}: видео в поиске`,
           items: videos.slice(0, 4).map((e) => ({
             label: e.title ?? "Видео",
             domain: e.domain,
@@ -284,9 +306,9 @@ export async function buildRuSearchAssets(input: {
   if (knowledge.length > 0) {
     const k = knowledge[0]!;
     assets.push({
-      assetRef: "ru_knowledge_panel",
+      assetRef: `${prefix}_knowledge_panel`,
       kind: "knowledge_panel",
-      title: "Блок знаний",
+      title: `${label} — блок знаний`,
       imageData: await svgToPngBase64(
         buildKnowledgePanelSvg({
           title: k.title ?? "Блок знаний",
@@ -305,6 +327,20 @@ export async function buildRuSearchAssets(input: {
 export async function buildReportAssets(input: {
   subjectName: string;
   ruSearchEvidence: NormalizedEvidenceV1[];
+  uaeSearchEvidence?: NormalizedEvidenceV1[];
 }): Promise<ReportAssetV1[]> {
-  return buildRuSearchAssets({ subjectName: input.subjectName, evidence: input.ruSearchEvidence });
+  const ru = await buildRuSearchAssets({
+    subjectName: input.subjectName,
+    evidence: input.ruSearchEvidence,
+  });
+  const uae =
+    input.uaeSearchEvidence && input.uaeSearchEvidence.length > 0
+      ? await buildRegionMediaComposites({
+          subjectName: input.subjectName,
+          evidence: input.uaeSearchEvidence,
+          regionPrefix: "uae",
+          regionLabel: "ОАЭ",
+        })
+      : [];
+  return [...ru, ...uae];
 }

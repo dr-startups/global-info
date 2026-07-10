@@ -61,6 +61,8 @@ export type SectionBlock = {
     bullets?: string[];
     /** Optional per-slide narrative (overrides block.narrative when set). */
     narrative?: string;
+    /** Structured table for orion_golden_search_table (preferred over bullets). */
+    table?: { headers: string[]; rows: string[][] };
   }>;
   sourceRefs: string[];
   qaMetadata: { sectionKey: string; riskLevel?: string };
