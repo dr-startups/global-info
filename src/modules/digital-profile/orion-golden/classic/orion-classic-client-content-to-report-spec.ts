@@ -38,6 +38,7 @@ import {
 import {
   buildAnnotatedLinkCards,
   buildComplianceDbSlides,
+  buildComplianceProviderBullets,
   buildDecisionConsequences,
   buildOrionThemeSet,
   buildSerpHeatGridBullets,
@@ -819,22 +820,33 @@ function inventoryFallbackBlock(
             : /lexis/i.test(c.provider)
       );
       const sDat = shortSubjectDative(themeSet.subjectName);
-      const claim = signal
-        ? complianceToClientClaim(signal, themeSet.subjectName)
-        : hint === "dow"
-          ? `В Dow Jones — предварительное совпадение по ${sDat}; требуется сверка полного профиля`
-          : hint === "world"
-            ? "По World-Check доступен предварительный сигнал совпадения по имени; требуется сверка полного профиля."
-            : "По LexisNexis доступен предварительный сигнал совпадения по имени; требуется сверка полного профиля.";
-      narrative = claim;
-      bullets = sanitizeClassicBullets(
-        [
-          claim,
-          ...themeSetBullets(themeSet).slice(0, 2),
-          "Сигнал предварительный: требуется сверка полного профиля и первоисточников.",
-        ],
-        320
-      );
+      if (signal) {
+        narrative = complianceToClientClaim(signal, themeSet.subjectName);
+        bullets = sanitizeClassicBullets(
+          buildComplianceProviderBullets(signal, themeSet.subjectName),
+          320
+        );
+      } else {
+        const claim =
+          hint === "dow"
+            ? `В Dow Jones — предварительное совпадение по ${sDat}; требуется сверка полного профиля`
+            : hint === "world"
+              ? "По World-Check доступен предварительный сигнал совпадения по имени; требуется сверка полного профиля."
+              : "По LexisNexis доступен предварительный сигнал совпадения по имени; требуется сверка полного профиля.";
+        narrative = claim;
+        bullets = sanitizeClassicBullets(
+          [
+            claim,
+            hint === "dow"
+              ? `В Dow Jones зафиксировано имя-совпадение по ${sDat}; полный профиль и категория риска требуют лицензионной выгрузки.`
+              : hint === "world"
+                ? "World-Check: совпадение по полному имени без раскрытой категории риска в текущем контуре отчёта."
+                : "LexisNexis: предварительный сигнал по имени; медиа- и профильную карточку нужно сверить с первоисточниками до риск-решения.",
+            "Сигнал предварительный: без полной карточки не считается подтверждённым риском.",
+          ],
+          320
+        );
+      }
     }
   } else if (isComplianceOverviewSection(sectionId)) {
     if (themeSet) {
@@ -1114,23 +1126,33 @@ function blockFromClientSection(
           : /lexis/i.test(c.provider)
     );
     const sDat = shortSubjectDative(themeSet.subjectName);
-    const claim = signal
-      ? complianceToClientClaim(signal, themeSet.subjectName)
-      : hint === "dow"
-        ? `В Dow Jones — предварительное совпадение по ${sDat}; требуется сверка полного профиля`
-        : hint === "world"
-          ? "По World-Check доступен предварительный сигнал совпадения по имени; требуется сверка полного профиля."
-          : "По LexisNexis доступен предварительный сигнал совпадения по имени; требуется сверка полного профиля.";
-    // Always prefer ThemeSet client claim over GPT «потенциальное совпадение по ФИО».
-    narrativeOut = claim;
-    bullets = sanitizeClassicBullets(
-      [
-        claim,
-        ...themeSetBullets(themeSet).slice(0, 2),
-        "Сигнал предварительный: требуется сверка полного профиля и первоисточников.",
-      ],
-      320
-    );
+    if (signal) {
+      narrativeOut = complianceToClientClaim(signal, themeSet.subjectName);
+      bullets = sanitizeClassicBullets(
+        buildComplianceProviderBullets(signal, themeSet.subjectName),
+        320
+      );
+    } else {
+      const claim =
+        hint === "dow"
+          ? `В Dow Jones — предварительное совпадение по ${sDat}; требуется сверка полного профиля`
+          : hint === "world"
+            ? "По World-Check доступен предварительный сигнал совпадения по имени; требуется сверка полного профиля."
+            : "По LexisNexis доступен предварительный сигнал совпадения по имени; требуется сверка полного профиля.";
+      narrativeOut = claim;
+      bullets = sanitizeClassicBullets(
+        [
+          claim,
+          hint === "dow"
+            ? `В Dow Jones зафиксировано имя-совпадение по ${sDat}; полный профиль и категория риска требуют лицензионной выгрузки.`
+            : hint === "world"
+              ? "World-Check: совпадение по полному имени без раскрытой категории риска в текущем контуре отчёта."
+              : "LexisNexis: предварительный сигнал по имени; медиа- и профильную карточку нужно сверить с первоисточниками до риск-решения.",
+          "Сигнал предварительный: без полной карточки не считается подтверждённым риском.",
+        ],
+        320
+      );
+    }
   }
   if (section.sectionId === "03_digital_profile_overview" && themeSet) {
     narrativeOut = truncateAtWordBoundary(
@@ -1581,13 +1603,23 @@ export function buildOrionClassicReportSpecFromClientContent(
     block: appendixBlock,
   });
 
-  const tocTitles = [
-    "Резюме",
-    "Матрица рисков",
-    ...registrySections.map((s) => s.block.sectionTitle).slice(0, 24),
-    "Наше предложение",
-    "О нас",
-  ];
+  // Dedupe: registry already starts with «Резюме» / risk matrix — don't prepend clones.
+  const tocTitles: string[] = [];
+  const tocSeen = new Set<string>();
+  const pushToc = (title: string) => {
+    const key = title.trim().toLowerCase();
+    if (!key || tocSeen.has(key)) return;
+    tocSeen.add(key);
+    tocTitles.push(title);
+  };
+  pushToc("Резюме");
+  pushToc("Матрица рисков");
+  for (const s of registrySections) {
+    pushToc(s.block.sectionTitle);
+    if (tocTitles.length >= 26) break;
+  }
+  pushToc("Наше предложение");
+  pushToc("О нас");
 
   const now = new Date().toISOString().slice(0, 10);
   const pick = (id: string) => registrySections.find((s) => s.sectionId === id)?.block;

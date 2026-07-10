@@ -1650,18 +1650,19 @@ function buildExecutiveNarrative(input: {
     bullets.push(c);
   }
 
-  // GSM-style résumé body: intro + «коротко по итогам» framing (claims live in bullets).
+  // GSM-style résumé body: intro points to bullets — never leave a dangling «темам:».
   const body: string[] = [
     scope,
-    `В результатах поиска в Яндексе и Google обнаружены ссылки, которые могут вызвать затруднения при прохождении compliance-процедур. По России (${formatPctLine(input.ru)}) и ОАЭ (${formatPctLine(input.uae)}) нежелательные ссылки ведут на публикации по следующим темам:`,
+    `В результатах поиска в Яндексе и Google обнаружены ссылки, которые могут вызвать затруднения при прохождении compliance-процедур. По России (${formatPctLine(input.ru)}) и ОАЭ (${formatPctLine(input.uae)}) нежелательные ссылки ведут на публикации по темам, указанным в пунктах ниже.`,
   ];
   if (singleClaims.length > 0) {
-    body.push("Также обнаружены единичные нежелательные публикации (см. пункты ниже).");
+    body.push("Отдельно зафиксированы единичные нежелательные публикации (см. пункты ниже).");
   }
   if (complianceClaims.length > 0) {
-    body.push("В международных базах данных также обнаружены профили / предварительные совпадения по субъекту (см. пункты ниже).");
+    body.push("В международных базах данных также зафиксированы предварительные совпадения по субъекту (см. пункты ниже).");
   }
-  body.push(nextStep);
+  const stepLine = /^следующ/i.test(nextStep.trim()) ? nextStep : `Следующий шаг: ${nextStep}`;
+  body.push(stepLine);
 
   return {
     scope,
@@ -1998,6 +1999,60 @@ export function buildDecisionConsequences(themeSet: OrionThemeSet): {
   };
 }
 
+/** Provider-specific bullets — avoid cloning the same SERP themes onto every DB card. */
+export function buildComplianceProviderBullets(
+  c: OrionComplianceDbSignal,
+  subjectName: string
+): string[] {
+  const claim = complianceToClientClaim(c, subjectName);
+  const sDat = shortSubjectDative(subjectName);
+  const blob = `${c.statusLine} ${c.detail}`;
+  const bullets: string[] = [claim];
+
+  if (c.provider === "Dow Jones") {
+    if (/rca|close associate|business associate|ex-wife|родственник|близк/i.test(blob)) {
+      bullets.push(
+        `Карточка Dow Jones указывает на RCA / associate-контур по ${sDat}; полный список связей и категория риска в клиентском отчёте не раскрыты.`
+      );
+    } else {
+      bullets.push(
+        `В Dow Jones зафиксировано имя-совпадение по ${sDat}; полный профиль и категория риска требуют лицензионной выгрузки.`
+      );
+    }
+    const named: string[] = [];
+    if (/ликсутов|liksutov/i.test(blob)) named.push("М. Ликсутов");
+    if (/лавров|lavrova/i.test(blob)) named.push("К. Лаврова-Глинка");
+    if (/бокарев|bokarev/i.test(blob)) named.push("А. Бокарев");
+    if (/махмудов|makhmudov/i.test(blob)) named.push("И. Махмудов");
+    if (/трансмаш|transmash/i.test(blob)) named.push("АО «Трансмашхолдинг»");
+    if (named.length > 0) {
+      bullets.push(`В связанном контуре карточки упоминаются: ${named.slice(0, 4).join(", ")}.`);
+    }
+  } else if (c.provider === "World-Check") {
+    if (/\bpep\b|politically|политически значим/i.test(blob)) {
+      bullets.push(
+        `World-Check даёт предварительный PEP-сигнал по ${sDat}; основание включения и идентификаторы требуют сверки с полной карточкой.`
+      );
+    } else {
+      bullets.push(
+        `World-Check: совпадение по полному имени без раскрытой категории риска в текущем контуре отчёта.`
+      );
+    }
+  } else if (c.provider === "LexisNexis") {
+    bullets.push(
+      `LexisNexis: предварительный сигнал по имени; медиа- и профильную карточку нужно сверить с первоисточниками до риск-решения.`
+    );
+    if (/media|news|публикац/i.test(blob)) {
+      bullets.push("В контуре LexisNexis могут присутствовать media-check сигналы — без полной выгрузки не интерпретируются как подтверждённый adverse.");
+    }
+  } else {
+    bullets.push(`По ${c.provider} доступен предварительный сигнал; требуется сверка полного профиля.`);
+  }
+
+  bullets.push("Сигнал предварительный: без полной карточки не считается подтверждённым риском.");
+  return bullets.filter((b, i, arr) => arr.findIndex((x) => x.slice(0, 56).toLowerCase() === b.slice(0, 56).toLowerCase()) === i);
+}
+
 export function buildComplianceDbSlides(themeSet: OrionThemeSet): Array<{
   title: string;
   narrative: string;
@@ -2005,20 +2060,10 @@ export function buildComplianceDbSlides(themeSet: OrionThemeSet): Array<{
 }> {
   return themeSet.complianceSignals.map((c) => {
     const claim = complianceToClientClaim(c, themeSet.subjectName);
-    const related = themeSet.themes
-      .filter((t) =>
-        /pep_rca|sanctions_associates|business_associates|criminal_legal|political_exposure/i.test(t.id)
-      )
-      .slice(0, 2)
-      .map((t) => themeToClientClaim(t, themeSet.subjectName));
     return {
       title: `${c.provider} — профиль`,
       narrative: claim,
-      bullets: [
-        claim,
-        ...related,
-        "Сигнал предварительный: требуется сверка полного профиля и первоисточников.",
-      ].filter((b, i, arr) => arr.findIndex((x) => x.slice(0, 48) === b.slice(0, 48)) === i),
+      bullets: buildComplianceProviderBullets(c, themeSet.subjectName),
     };
   });
 }
