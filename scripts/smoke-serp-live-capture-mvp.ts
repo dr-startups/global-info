@@ -104,12 +104,38 @@ function main() {
   const blocked = resolveLiveCaptureOutcome({ captchaDetected: true, proxyUsed: false, pngOk: false });
   check("CAPTCHA BLOCKED_CAPTCHA", blocked.captureStatus === "BLOCKED_CAPTCHA");
 
-  // client policy — no synthetic substitute
-  const clientAssets: ReportAssetV1[] = [
-    { assetRef: "syn", kind: "synthetic_serp", title: "syn", evidenceRefs: [], status: "ready" },
+  // client policy — provider API synthetic OK; legacy-only synthetic blocked
+  const legacyOnly: ReportAssetV1[] = [
+    { assetRef: "syn", kind: "synthetic_serp", title: "syn", evidenceRefs: [], status: "ready", imageData: "x" },
   ];
-  const clientPolicy = evaluateClientSerpPolicy(clientAssets, true);
-  check("client blocks synthetic", !clientPolicy.passed && clientPolicy.blockers.includes("live-serp-no-synthetic-substitute"));
+  const clientPolicy = evaluateClientSerpPolicy(legacyOnly, true);
+  check(
+    "client blocks legacy-only synthetic",
+    !clientPolicy.passed && clientPolicy.blockers.includes("legacy-synthetic-serp-not-allowed-for-client")
+  );
+
+  const providerAssets: ReportAssetV1[] = [
+    {
+      assetRef: "ru_provider_serp_google_1",
+      kind: "synthetic_serp",
+      title: "Google — test",
+      caption: "Синтетический снимок на основе сохранённых результатов API",
+      evidenceRefs: ["serp_observation:obs1"],
+      status: "ready",
+      imageData: "x",
+    },
+    {
+      assetRef: "uae_provider_serp_google_2",
+      kind: "synthetic_serp",
+      title: "Google — test uae",
+      caption: "Синтетический снимок на основе сохранённых результатов API",
+      evidenceRefs: ["serp_observation:obs2"],
+      status: "ready",
+      imageData: "x",
+    },
+  ];
+  const providerPolicy = evaluateClientSerpPolicy(providerAssets, true);
+  check("client allows provider API synthetic", providerPolicy.passed, providerPolicy.blockers.join(","));
 
   const liveUnverified: ReportAssetV1[] = [
     {
@@ -119,28 +145,39 @@ function main() {
       evidenceRefs: [],
       status: "ready",
       geoStatus: "UNVERIFIED",
+      imageData: "x",
     },
   ];
   const geoPolicy = evaluateClientSerpPolicy(liveUnverified, true);
   check(
-    "client blocks UNVERIFIED LIVE",
+    "client blocks UNVERIFIED LIVE without provider cover",
     !geoPolicy.passed && geoPolicy.blockers.includes("live-serp-geo-unverified")
   );
 
   const liveVerified: ReportAssetV1[] = [
     {
-      assetRef: "live",
+      assetRef: "ru_live_serp",
       kind: "live_serp",
-      title: "live",
+      title: "live ru",
       evidenceRefs: [],
       status: "ready",
       geoStatus: "VERIFIED",
+      imageData: "x",
+    },
+    {
+      assetRef: "uae_live_serp",
+      kind: "live_serp",
+      title: "live uae",
+      evidenceRefs: [],
+      status: "ready",
+      geoStatus: "VERIFIED",
+      imageData: "x",
     },
   ];
   const okPolicy = evaluateClientSerpPolicy(liveVerified, true);
-  check("client passes verified LIVE", okPolicy.passed, okPolicy.blockers.join(","));
+  check("client passes verified LIVE both regions", okPolicy.passed, okPolicy.blockers.join(","));
 
-  const internalPolicy = evaluateClientSerpPolicy(clientAssets, false);
+  const internalPolicy = evaluateClientSerpPolicy(legacyOnly, false);
   check("internal preview allows synthetic", internalPolicy.passed);
 
   console.log(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILED`}`);

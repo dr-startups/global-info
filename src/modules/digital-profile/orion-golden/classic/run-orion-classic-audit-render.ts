@@ -20,8 +20,20 @@ import { buildOrionClassicReportSpecFromClientContent } from "./orion-classic-cl
 import { buildOrionThemeSet } from "./orion-classic-theme-set";
 import { inspectClassicOrionAuditQuality } from "./orion-classic-audit-quality-inspection";
 import { isClientProductionFinalize } from "./orion-classic-live-serp-assets";
+import { evaluateClassicProviderSerpGate } from "./orion-classic-provider-serp-assets";
 import type { ExecutiveSynthesisOutput } from "../gpt/orion-executive-synthesis-from-sections";
 import type { SectionDerivedRiskMatrix } from "../sections/orion-risk-matrix-from-sections";
+
+export class OrionClassicVisualGateError extends Error {
+  readonly blockedSections: Array<{ sectionKey: string; reason: string }>;
+  constructor(blockedSections: Array<{ sectionKey: string; reason: string }>) {
+    super(
+      `REQUIRED_VISUAL_ASSET_MISSING: ${blockedSections.map((b) => b.sectionKey).join(", ")}`
+    );
+    this.name = "OrionClassicVisualGateError";
+    this.blockedSections = blockedSections;
+  }
+}
 
 function writeJson(path: string, payload: unknown): void {
   mkdirSync(join(path, ".."), { recursive: true });
@@ -79,11 +91,12 @@ export async function runOrionClassicAuditRender(options: {
     reportRunId: clientContent.reportRunId,
     ctx,
   });
+  const clientFinalize = isClientProductionFinalize();
   const assets = await buildOrionClassicAuditAssets({
     ctx,
     reportRunId: clientContent.reportRunId,
-    audience: isClientProductionFinalize() ? "client" : "internal_preview",
-    allowSyntheticSerp: !isClientProductionFinalize(),
+    audience: clientFinalize ? "client" : "internal_preview",
+    allowSyntheticSerp: !clientFinalize,
   });
   console.info("[serp-capture] classic audit assets", {
     caseId,
@@ -91,7 +104,25 @@ export async function runOrionClassicAuditRender(options: {
     liveCount: assets.filter((a) => a.kind === "live_serp").length,
     syntheticCount: assets.filter((a) => a.kind === "synthetic_serp").length,
     capturedCount: assets.filter((a) => a.kind === "captured_serp").length,
+    providerCount: assets.filter(
+      (a) =>
+        a.evidenceRefs.some((r) => r.startsWith("serp_observation:")) ||
+        /provider_serp|serper_organic/i.test(a.assetRef)
+    ).length,
   });
+
+  // Client reports must not omit required SERP visuals or replace them with text pages.
+  if (clientFinalize) {
+    const gate = evaluateClassicProviderSerpGate({
+      assets,
+      requireRu: true,
+      requireUae: true,
+    });
+    if (!gate.allowed) {
+      writeJson(join(outputRoot, "visual-asset-gate.json"), gate);
+      throw new OrionClassicVisualGateError(gate.blockedSections);
+    }
+  }
 
   const roots = [
     caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId),

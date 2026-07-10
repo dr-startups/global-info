@@ -141,19 +141,47 @@ export function isClientProductionFinalize(env: NodeJS.ProcessEnv = process.env)
   return env.ORION_CLASSIC_CLIENT_FINALIZE === "1";
 }
 
-/** Pure policy helper for QA/tests — client production must not use synthetic or unverified LIVE. */
+/** Pure policy helper for QA/tests — client production uses provider API SERP (or READY LIVE/captured). */
 export function evaluateClientSerpPolicy(
   assets: ReportAssetV1[],
   clientProductionFinalize: boolean
 ): { passed: boolean; blockers: string[] } {
   if (!clientProductionFinalize) return { passed: true, blockers: [] };
   const blockers: string[] = [];
-  const live = assets.filter((a) => a.kind === "live_serp" && a.status === "ready");
-  const synthetic = assets.filter((a) => a.kind === "synthetic_serp" && a.status === "ready");
+  const readyVisual = assets.filter(
+    (a) =>
+      a.status === "ready" &&
+      Boolean(a.imageData || a.imageUrl) &&
+      (a.kind === "live_serp" || a.kind === "captured_serp" || a.kind === "synthetic_serp")
+  );
+  const providerApi = readyVisual.filter(
+    (a) =>
+      a.evidenceRefs.some((r) => r.startsWith("serp_observation:")) ||
+      /provider_serp|serper_organic/i.test(a.assetRef)
+  );
+  const live = readyVisual.filter((a) => a.kind === "live_serp");
+  const captured = readyVisual.filter((a) => a.kind === "captured_serp");
+  const legacySynthetic = readyVisual.filter(
+    (a) =>
+      a.kind === "synthetic_serp" &&
+      !a.evidenceRefs.some((r) => r.startsWith("serp_observation:")) &&
+      !/provider_serp|serper_organic/i.test(a.assetRef)
+  );
   const unverified = live.filter((a) => a.geoStatus === "UNVERIFIED");
-  if (synthetic.length > 0) blockers.push("live-serp-no-synthetic-substitute");
-  if (unverified.length > 0) blockers.push("live-serp-geo-unverified");
-  if (live.length === 0) blockers.push("live-serp-missing");
+
+  // Legacy evidence-derived synthetic must not substitute required visuals in client finalize.
+  if (legacySynthetic.length > 0 && providerApi.length === 0 && live.length === 0 && captured.length === 0) {
+    blockers.push("legacy-synthetic-serp-not-allowed-for-client");
+  }
+  if (unverified.length > 0 && providerApi.length === 0 && captured.length === 0) {
+    blockers.push("live-serp-geo-unverified");
+  }
+
+  const ru = [...providerApi, ...live, ...captured].filter((a) => !/uae|intl|ae_/i.test(a.assetRef));
+  const uae = [...providerApi, ...live, ...captured].filter((a) => /uae|intl|ae_/i.test(a.assetRef));
+  if (ru.length === 0) blockers.push("ru-serp-visual-missing");
+  if (uae.length === 0) blockers.push("uae-serp-visual-missing");
+
   return { passed: blockers.length === 0, blockers };
 }
 

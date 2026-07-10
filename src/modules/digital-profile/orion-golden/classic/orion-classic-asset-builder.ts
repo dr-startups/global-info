@@ -21,6 +21,10 @@ import {
   buildLiveSerpAssets,
   type ClassicSerpAudience,
 } from "./orion-classic-live-serp-assets";
+import {
+  buildProviderSerpAssets,
+  isProviderApiSerpAsset,
+} from "./orion-classic-provider-serp-assets";
 
 const RU_RISK_TERMS = ["санкции", "суд"];
 const UAE_RISK_TERMS = ["sanctions", "court"];
@@ -197,8 +201,13 @@ async function buildQuerySerpAssets(input: {
 
 function dedupeSerpAssets(assets: ReportAssetV1[]): ReportAssetV1[] {
   const byKey = new Map<string, ReportAssetV1>();
-  const rank = (a: ReportAssetV1) =>
-    a.kind === "live_serp" ? 3 : a.kind === "captured_serp" ? 2 : a.kind === "synthetic_serp" ? 1 : 0;
+  const rank = (a: ReportAssetV1) => {
+    if (isProviderApiSerpAsset(a)) return 4;
+    if (a.kind === "live_serp") return 3;
+    if (a.kind === "captured_serp") return 2;
+    if (a.kind === "synthetic_serp") return 1;
+    return 0;
+  };
   for (const asset of assets) {
     if (asset.kind !== "live_serp" && asset.kind !== "synthetic_serp" && asset.kind !== "captured_serp") {
       byKey.set(asset.assetRef, asset);
@@ -319,7 +328,9 @@ export async function buildOrionClassicAuditAssets(input: {
   allowSyntheticSerp?: boolean;
 }): Promise<ReportAssetV1[]> {
   const audience = input.audience ?? "client";
-  const allowSynthetic = input.allowSyntheticSerp ?? audience === "internal_preview";
+  // Legacy Stage S1 / evidence-derived synthetic — internal preview only.
+  // Provider-first Serper synthetic is always attempted (client + preview).
+  const allowLegacySynthetic = input.allowSyntheticSerp ?? audience === "internal_preview";
   const base = await buildOrionGoldenAssets({ ctx: input.ctx });
 
   const ruSearchEvidence = buildRuSearchEvidence(input.ctx).map((e) => {
@@ -340,6 +351,16 @@ export async function buildOrionClassicAuditAssets(input: {
     MAX_UAE_QUERIES
   );
 
+  const { assets: providerSerp, slotStatuses } = await buildProviderSerpAssets({
+    caseId: input.ctx.caseId,
+    auditRunId: input.reportRunId,
+    subjectName: input.ctx.subject.fullName,
+    ruQueries,
+    uaeQueries,
+  });
+  const hasProviderRu = providerSerp.some((a) => !/uae_/i.test(a.assetRef));
+  const hasProviderUae = providerSerp.some((a) => /uae_/i.test(a.assetRef));
+
   const liveSlots = buildDefaultLiveSerpSlots({
     subjectName: input.ctx.subject.fullName,
     ruQueries,
@@ -354,11 +375,10 @@ export async function buildOrionClassicAuditAssets(input: {
   const hasLiveUae = liveSerp.some((a) => /uae_/i.test(a.assetRef));
 
   const extraSerp: ReportAssetV1[] = [];
-  // Stage S1 synthetic snapshots are internal-preview only — never client LIVE substitute.
-  const legacyCaptured = allowSynthetic ? await buildCapturedSerpAssets(input.ctx) : [];
+  const legacyCaptured = allowLegacySynthetic ? await buildCapturedSerpAssets(input.ctx) : [];
 
-  if (allowSynthetic) {
-    if (!hasLiveRu) {
+  if (allowLegacySynthetic) {
+    if (!hasProviderRu && !hasLiveRu) {
       for (const [idx, query] of ruQueries.entries()) {
         extraSerp.push(
           ...(await buildQuerySerpAssets({
@@ -371,7 +391,7 @@ export async function buildOrionClassicAuditAssets(input: {
         );
       }
     }
-    if (!hasLiveUae) {
+    if (!hasProviderUae && !hasLiveUae) {
       for (const [idx, query] of uaeQueries.entries()) {
         extraSerp.push(
           ...(await buildQuerySerpAssets({
@@ -386,7 +406,23 @@ export async function buildOrionClassicAuditAssets(input: {
     }
   }
 
-  const merged = dedupeSerpAssets([...base, ...liveSerp, ...legacyCaptured, ...extraSerp]);
+  console.info("[provider-serp] classic merge", {
+    reportRunId: input.reportRunId,
+    audience,
+    providerCount: providerSerp.length,
+    liveCount: liveSerp.length,
+    legacyCapturedCount: legacyCaptured.length,
+    legacySyntheticCount: extraSerp.length,
+    slotStatuses: slotStatuses.map((s) => `${s.region}:${s.status}`),
+  });
+
+  const merged = dedupeSerpAssets([
+    ...base,
+    ...providerSerp,
+    ...liveSerp,
+    ...legacyCaptured,
+    ...extraSerp,
+  ]);
   const ru = merged.filter(
     (a) =>
       (a.kind === "live_serp" || a.kind === "synthetic_serp" || a.kind === "captured_serp") &&
@@ -401,35 +437,24 @@ export async function buildOrionClassicAuditAssets(input: {
     (a) => a.kind !== "live_serp" && a.kind !== "synthetic_serp" && a.kind !== "captured_serp"
   );
 
-  const cappedRuLive = ru.filter((a) => a.kind === "live_serp").slice(0, MAX_CAPTURED_RU);
-  const cappedRuCaptured = ru.filter((a) => a.kind === "captured_serp").slice(0, MAX_CAPTURED_RU);
-  const cappedRuSynthetic = ru
-    .filter((a) => a.kind === "synthetic_serp" && a.assetRef.includes("classic_serp"))
-    .slice(0, 4);
-  const cappedRuFallback =
-    cappedRuLive.length > 0
-      ? cappedRuLive
-      : allowSynthetic
-        ? cappedRuCaptured.length > 0
-          ? cappedRuCaptured
-          : cappedRuSynthetic.length > 0
-            ? cappedRuSynthetic
-            : ru.filter((a) => /serp_snapshot|captured_serp/.test(a.assetRef)).slice(0, 2)
-        : [];
+  const pickRegion = (rows: ReportAssetV1[], max: number, allowLegacy: boolean): ReportAssetV1[] => {
+    const provider = rows.filter(isProviderApiSerpAsset).slice(0, max);
+    if (provider.length > 0) return provider;
+    const live = rows.filter((a) => a.kind === "live_serp").slice(0, max);
+    if (live.length > 0) return live;
+    if (!allowLegacy) return [];
+    const captured = rows.filter((a) => a.kind === "captured_serp").slice(0, max);
+    if (captured.length > 0) return captured;
+    const classic = rows
+      .filter((a) => a.kind === "synthetic_serp" && a.assetRef.includes("classic_serp"))
+      .slice(0, max);
+    if (classic.length > 0) return classic;
+    return rows.filter((a) => /serp_snapshot|captured_serp/.test(a.assetRef)).slice(0, max);
+  };
 
-  const cappedUaeLive = uae.filter((a) => a.kind === "live_serp").slice(0, MAX_CAPTURED_UAE);
-  const cappedUaeCaptured = uae.filter((a) => a.kind === "captured_serp").slice(0, MAX_CAPTURED_UAE);
-  const cappedUaeSynthetic = uae
-    .filter((a) => a.kind === "synthetic_serp" && a.assetRef.includes("classic_serp"))
-    .slice(0, 2);
-  const cappedUae =
-    cappedUaeLive.length > 0
-      ? cappedUaeLive
-      : allowSynthetic
-        ? cappedUaeCaptured.length > 0
-          ? cappedUaeCaptured
-          : cappedUaeSynthetic
-        : [];
-
-  return [...other, ...cappedRuFallback, ...cappedUae];
+  return [
+    ...other,
+    ...pickRegion(ru, MAX_CAPTURED_RU, allowLegacySynthetic),
+    ...pickRegion(uae, MAX_CAPTURED_UAE, allowLegacySynthetic),
+  ];
 }

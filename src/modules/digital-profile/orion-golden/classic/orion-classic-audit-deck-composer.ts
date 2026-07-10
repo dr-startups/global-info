@@ -62,6 +62,33 @@ function dedupeSerpAssetList(assets: ReportAssetV1[], max: number): ReportAssetV
   return out;
 }
 
+function isProviderApiAsset(asset: ReportAssetV1): boolean {
+  return (
+    asset.kind === "synthetic_serp" &&
+    (asset.evidenceRefs.some((r) => r.startsWith("serp_observation:")) ||
+      /provider_serp|serper_organic/i.test(asset.assetRef) ||
+      asset.caption === "Синтетический снимок на основе сохранённых результатов API")
+  );
+}
+
+function preferSerpAssets(
+  assets: ReportAssetV1[],
+  region: "ru" | "uae",
+  max: number
+): ReportAssetV1[] {
+  const inRegion = assets.filter((a) => {
+    const uae = /uae|intl|ae_/i.test(a.assetRef);
+    return region === "uae" ? uae : !uae;
+  });
+  const provider = inRegion.filter(isProviderApiAsset);
+  const live = inRegion.filter((a) => a.kind === "live_serp");
+  const captured = inRegion.filter((a) => a.kind === "captured_serp");
+  const legacySynthetic = inRegion.filter(
+    (a) => a.kind === "synthetic_serp" && !isProviderApiAsset(a)
+  );
+  return dedupeSerpAssetList([...provider, ...live, ...captured, ...legacySynthetic], max);
+}
+
 function commercialSlides(
   sectionKey: string,
   block: OrionClassicAuditReportSpec["registrySections"][number]["block"]
@@ -161,27 +188,11 @@ export function composeOrionClassicAuditDeck(
   const videoAssets = pickAssets(assets, "video_cards");
   const knowledgeAssets = pickAssets(assets, "knowledge_panel");
 
-  // Prefer captured screenshots; fill remaining slots with synthetic only if needed.
-  const ruCaptured = serpAssets.filter(
-    (a) => a.kind === "captured_serp" && !/uae|intl|ae_/i.test(a.assetRef)
-  );
-  const uaeCaptured = serpAssets.filter(
-    (a) => a.kind === "captured_serp" && /uae|intl|ae_/i.test(a.assetRef)
-  );
-  const ruSynthetic = serpAssets.filter(
-    (a) => a.kind === "synthetic_serp" && !/uae|intl|ae_/i.test(a.assetRef)
-  );
-  const uaeSynthetic = serpAssets.filter(
-    (a) => a.kind === "synthetic_serp" && /uae|intl|ae_/i.test(a.assetRef)
-  );
-  const ruSerp = dedupeSerpAssetList(
-    ruCaptured.length > 0 ? ruCaptured : ruSynthetic,
-    3
-  );
-  const uaeSerp = dedupeSerpAssetList(
-    uaeCaptured.length > 0 ? uaeCaptured : uaeSynthetic,
-    2
-  );
+  // Provider API synthetic first, then LIVE, captured, legacy synthetic.
+  // Never invent a text-only substitute when assets are empty (section omitted;
+  // render pipeline must gate/block client reports separately).
+  const ruSerp = preferSerpAssets(serpAssets, "ru", 3);
+  const uaeSerp = preferSerpAssets(serpAssets, "uae", 2);
   const uaeImages = imageAssets.filter((a) => /uae|intl/i.test(a.assetRef));
   const ruImages = imageAssets.filter((a) => !uaeImages.includes(a));
   const uaeVideos = videoAssets.filter((a) => /uae|intl/i.test(a.assetRef));

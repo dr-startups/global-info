@@ -7,6 +7,7 @@ import { ForbiddenError, NotFoundError, ValidationError } from "../http/errors";
 import { verifySignedToken } from "../storage/signed-url";
 import { runOrionClassicAuditRender } from "../orion-golden/classic/run-orion-classic-audit-render";
 import { loadPostReviewClientContent } from "../orion-golden/classic/run-orion-classic-audit-render";
+import { OrionClassicVisualGateError } from "../orion-golden/classic/run-orion-classic-audit-render";
 import { persistRegeneratedClientContentAsync } from "../orion-golden/services/admin-review-workflow-service";
 import { saveFile } from "../storage/private-store";
 import { buildStorageKey } from "../storage/keys";
@@ -263,11 +264,23 @@ async function executeClassicAuditReport(input: {
     );
   }
 
-  const result = await runOrionClassicAuditRender({
-    caseId: input.caseId,
-    outputRoot: input.runOutputRoot,
-    clientContent,
-  });
+  let result;
+  try {
+    result = await runOrionClassicAuditRender({
+      caseId: input.caseId,
+      outputRoot: input.runOutputRoot,
+      clientContent,
+    });
+  } catch (err) {
+    if (err instanceof OrionClassicVisualGateError) {
+      throw new ValidationError(
+        `Client report blocked: required SERP visual assets missing (${err.blockedSections
+          .map((b) => b.sectionKey)
+          .join(", ")}). Provider API synthetic or manual READY capture required — text substitute is not allowed.`
+      );
+    }
+    throw err;
+  }
 
   // Persist downloadable artifacts even on soft FAIL (e.g. page-range QA), so the client can review the PDF.
   const artifacts = await persistArtifacts(input.caseId, input.uiRunId, input.runOutputRoot);

@@ -237,46 +237,91 @@ export function inspectClassicOrionAuditQuality(input: {
 
   const assets = input.assets ?? [];
   const liveAssets = assets.filter((a) => a.kind === "live_serp" && a.status === "ready");
-  const syntheticInDeck = assets.some((a) => a.kind === "synthetic_serp" && a.status === "ready");
+  const providerApiAssets = assets.filter(
+    (a) =>
+      a.kind === "synthetic_serp" &&
+      a.status === "ready" &&
+      (a.evidenceRefs.some((r) => r.startsWith("serp_observation:")) ||
+        /provider_serp|serper_organic/i.test(a.assetRef))
+  );
+  const capturedAssets = assets.filter((a) => a.kind === "captured_serp" && a.status === "ready");
+  const legacySynthetic = assets.filter(
+    (a) =>
+      a.kind === "synthetic_serp" &&
+      a.status === "ready" &&
+      !a.evidenceRefs.some((r) => r.startsWith("serp_observation:")) &&
+      !/provider_serp|serper_organic/i.test(a.assetRef)
+  );
   const unverifiedLive = liveAssets.filter((a) => a.geoStatus === "UNVERIFIED");
   const serpSlides = input.deckManifest.finalSlides.filter(
     (s) => s.sectionKey.includes("serp_screenshot") || s.template === "orion_golden_serp_screenshot"
   );
 
   if (input.clientProductionFinalize) {
-    const geoOk = unverifiedLive.length === 0;
+    const hasProviderOrManual =
+      providerApiAssets.length > 0 || capturedAssets.length > 0 || liveAssets.length > 0;
+    checks.push({
+      id: "provider-serp-ready",
+      passed: hasProviderOrManual,
+      detail: hasProviderOrManual
+        ? `provider=${providerApiAssets.length}, captured=${capturedAssets.length}, live=${liveAssets.length}`
+        : "client production requires READY provider/manual/LIVE SERP visual",
+    });
+
+    const legacyOnly =
+      legacySynthetic.length > 0 &&
+      providerApiAssets.length === 0 &&
+      capturedAssets.length === 0 &&
+      liveAssets.length === 0;
+    checks.push({
+      id: "legacy-synthetic-not-client-substitute",
+      passed: !legacyOnly,
+      detail: legacyOnly
+        ? "legacy Stage S1 synthetic must not be the only client SERP visual"
+        : "provider/manual/LIVE present or no legacy-only substitute",
+    });
+
+    const geoOk = unverifiedLive.length === 0 || providerApiAssets.length > 0 || capturedAssets.length > 0;
     checks.push({
       id: "live-serp-geo-unverified",
       passed: geoOk,
       detail: geoOk
-        ? "all LIVE SERP assets GEO-verified or absent"
+        ? "GEO ok or covered by provider/captured assets"
         : `${unverifiedLive.length} LIVE SERP asset(s) with geoStatus=UNVERIFIED`,
     });
 
-    const noSynthetic = !syntheticInDeck;
+    const ruReady = [...providerApiAssets, ...capturedAssets, ...liveAssets].some(
+      (a) => !/uae|intl|ae_/i.test(a.assetRef)
+    );
+    const uaeReady = [...providerApiAssets, ...capturedAssets, ...liveAssets].some((a) =>
+      /uae|intl|ae_/i.test(a.assetRef)
+    );
     checks.push({
-      id: "live-serp-no-synthetic-substitute",
-      passed: noSynthetic,
-      detail: noSynthetic
-        ? "no synthetic SERP in client production assets"
-        : "synthetic SERP must not substitute LIVE in client production",
+      id: "ru-serp-visual-ready",
+      passed: ruReady,
+      detail: ruReady ? "RU SERP visual READY" : "REQUIRED_VISUAL_ASSET_MISSING:ru_serp_screenshots",
+    });
+    checks.push({
+      id: "uae-serp-visual-ready",
+      passed: uaeReady,
+      detail: uaeReady ? "UAE SERP visual READY" : "REQUIRED_VISUAL_ASSET_MISSING:uae_serp_screenshots",
     });
 
-    const expectsSerp = serpSlides.length > 0 || liveAssets.length > 0;
-    const hasLive = liveAssets.length > 0;
-    const missingOk = !expectsSerp || hasLive;
+    // SERP screenshot slides must carry image assets — never text-only stand-ins.
+    const serpSlidesWithoutAsset = serpSlides.filter((s) => !s.assetRefs?.length);
     checks.push({
-      id: "live-serp-missing",
-      passed: missingOk,
-      detail: missingOk
-        ? `live=${liveAssets.length}, serpSlides=${serpSlides.length}`
-        : "client production expects LIVE SERP but none are READY",
+      id: "serp-slides-have-assets",
+      passed: serpSlidesWithoutAsset.length === 0,
+      detail:
+        serpSlidesWithoutAsset.length === 0
+          ? `${serpSlides.length} SERP slides with assets`
+          : `${serpSlidesWithoutAsset.length} SERP slides missing assetRefs`,
     });
   } else {
     checks.push({
-      id: "live-serp-internal-preview",
+      id: "provider-serp-internal-preview",
       passed: true,
-      detail: `live=${liveAssets.length}, unverified=${unverifiedLive.length}, synthetic=${syntheticInDeck}`,
+      detail: `provider=${providerApiAssets.length}, live=${liveAssets.length}, unverified=${unverifiedLive.length}, legacySynthetic=${legacySynthetic.length}`,
     });
   }
 
