@@ -399,18 +399,29 @@ function buildOrionExecutiveSlides(
   themeSet: OrionThemeSet
 ): SectionBlock["slideSpecs"] {
   const decision = buildDecisionConsequences(themeSet);
-  // GSM-style decision: claim first, then level (not «Тема — Уровень: …»).
   const matrixRows = orionStyleRiskMatrixRows(themeSet).slice(0, 6);
-  const decisionBullets =
-    matrixRows.length > 0
-      ? matrixRows.map((r) =>
-          truncateAtWordBoundary(`${r.summary} — ${r.level}`, 340)
-        )
-      : [
-          ...decision.problems.slice(0, 4),
-          ...decision.consequences.slice(0, 3),
-        ];
+  // Decision slide: consequences + short theme labels — full claim matrix lives in section 02.
+  const decisionBullets = sanitizeClassicBullets(
+    [
+      ...decision.consequences.slice(0, 4),
+      ...matrixRows
+        .filter((r) => r.theme !== "Международные базы")
+        .slice(0, 4)
+        .map((r) => `${r.theme} — ${r.level}`),
+      decision.recommendation,
+    ],
+    280
+  ).slice(0, 8);
   const themeBullets = sanitizeClassicBullets(themeSet.executiveBullets, 400).slice(0, 7);
+  // Visual slide: KPI + short labels only (no third copy of full executive claims).
+  const visualBullets = sanitizeClassicBullets(
+    [
+      ...matrixRows.slice(0, 5).map((r) => `${r.theme} — ${r.level}`),
+      `Россия: ${themeSet.ru.linksAdversePct}% · ${themeSet.ru.overallBadge}`,
+      `ОАЭ: ${themeSet.uae.linksAdversePct}% · ${themeSet.uae.overallBadge}`,
+    ],
+    200
+  ).slice(0, 7);
   return [
     {
       slideKey: "executive-1",
@@ -424,21 +435,21 @@ function buildOrionExecutiveSlides(
       template: "orion_golden_risk_matrix",
       title: `${themeSet.subjectName} — ${decision.headline}`,
       narrative: truncateAtWordBoundary(
-        `${decision.headline}. Уровень риска: ${decision.riskLevel}. ${decision.recommendation}`,
+        `${decision.headline}. Уровень риска: ${decision.riskLevel}. Ниже — вероятные последствия и ключевые темы; детальная матрица — на следующем блоке.`,
         700
       ),
-      bullets: sanitizeClassicBullets(decisionBullets, 360).slice(0, 8),
+      bullets: decisionBullets,
     },
     {
       slideKey: "executive-visual",
       template: "orion_golden_executive_card",
       title: "Ключевые темы и базы данных",
       narrative: [
-        `В результатах поиска по России и ОАЭ нежелательные ссылки ведут на сюжеты ниже.`,
+        `Краткий указатель тем цифрового профиля (без повтора полного резюме).`,
         `Россия: ${themeSet.ru.linksAdversePct}% потенциально нежелательных · ${themeSet.ru.overallBadge}.`,
         `ОАЭ: ${themeSet.uae.linksAdversePct}% потенциально нежелательных · ${themeSet.uae.overallBadge}.`,
       ].join(" "),
-      bullets: themeBullets,
+      bullets: visualBullets,
     },
   ];
 }
@@ -755,15 +766,18 @@ function inventoryFallbackBlock(
     }
   } else if (sectionId.includes("undesirable_theme")) {
     if (themeSet) {
-      bullets = themeSetBullets(themeSet, region);
-      if (bullets.length === 0) bullets = themeSetBullets(themeSet);
+      bullets = sanitizeClassicBullets(
+        orionStyleRiskMatrixRows(themeSet)
+          .filter((r) => r.theme !== "Международные базы")
+          .map((r) => `${r.theme} — ${r.level}`),
+        180
+      ).slice(0, 6);
       narrative =
-        "Кластеры потенциально нежелательных тем в клиентских формулировках (повторяют сюжет резюме):";
+        "Краткий указатель тематических кластеров региона (полные формулировки — в резюме).";
     } else {
       const themes = adverseThemeRows(inventory, region, themeSet);
       bullets = themes.map((t) => t.theme);
-      narrative =
-        "Кластеры потенциально нежелательных тем (канонический ThemeSet). Повторяют сюжет резюме.";
+      narrative = "Кластеры потенциально нежелательных тем.";
     }
   } else if (sectionId.includes("suggestions") || sectionId.includes("related_queries")) {
     const provider = sectionId.includes("yandex")
@@ -875,15 +889,22 @@ function inventoryFallbackBlock(
       );
     }
     if (themeSet && sectionId === "03_digital_profile_overview") {
-      bullets = sanitizeClassicBullets(themeSet.executiveBullets, 400).slice(0, 6);
+      const matrixRows = orionStyleRiskMatrixRows(themeSet).slice(0, 5);
+      bullets = sanitizeClassicBullets(
+        [
+          ...matrixRows.map((r) => `${r.theme} — ${r.level}`),
+          `Россия: ${themeSet.ru.linksAdversePct}% потенциально нежелательных · ${themeSet.ru.overallBadge}`,
+          `ОАЭ: ${themeSet.uae.linksAdversePct}% потенциально нежелательных · ${themeSet.uae.overallBadge}`,
+        ],
+        220
+      ).slice(0, 7);
       narrative = truncateAtWordBoundary(
         [
-          themeSet.executiveNarrative.split("\n\n")[0] ?? "",
-          "Коротко по итогам аудита цифрового профиля:",
-        ]
-          .filter(Boolean)
-          .join(" "),
-        700
+          "Короткий указатель цифрового профиля по регионам и темам.",
+          `Россия — ${themeSet.ru.overallBadge}; ОАЭ — ${themeSet.uae.overallBadge}.`,
+          "Полные формулировки — в резюме и матрице комплаенс-рисков.",
+        ].join(" "),
+        500
       );
     } else {
       const themes = adverseThemeRows(inventory, region === "UAE" ? "UAE" : undefined, themeSet);
@@ -1106,9 +1127,13 @@ function blockFromClientSection(
   }
   if (section.sectionId.includes("undesirable_theme") && themeSet) {
     narrativeOut =
-      "Кластеры потенциально нежелательных тем в клиентских формулировках (повторяют сюжет резюме):";
-    bullets = themeSetBullets(themeSet, region);
-    if (bullets.length === 0) bullets = themeSetBullets(themeSet);
+      "Краткий указатель тематических кластеров региона (полные формулировки — в резюме).";
+    bullets = sanitizeClassicBullets(
+      orionStyleRiskMatrixRows(themeSet)
+        .filter((r) => r.theme !== "Международные базы")
+        .map((r) => `${r.theme} — ${r.level}`),
+      180
+    ).slice(0, 6);
   }
   if (
     (section.sectionId.includes("world_check") ||
@@ -1157,16 +1182,23 @@ function blockFromClientSection(
     }
   }
   if (section.sectionId === "03_digital_profile_overview" && themeSet) {
+    const matrixRows = orionStyleRiskMatrixRows(themeSet).slice(0, 5);
     narrativeOut = truncateAtWordBoundary(
       [
-        themeSet.executiveNarrative.split("\n\n")[0] ?? "",
-        "Коротко по итогам аудита цифрового профиля:",
-      ]
-        .filter(Boolean)
-        .join(" "),
-      900
+        "Короткий указатель цифрового профиля по регионам и темам.",
+        `Россия — ${themeSet.ru.overallBadge}; ОАЭ — ${themeSet.uae.overallBadge}.`,
+        "Полные формулировки — в резюме и матрице комплаенс-рисков.",
+      ].join(" "),
+      500
     );
-    bullets = sanitizeClassicBullets(themeSet.executiveBullets, 400).slice(0, 6);
+    bullets = sanitizeClassicBullets(
+      [
+        ...matrixRows.map((r) => `${r.theme} — ${r.level}`),
+        `Россия: ${themeSet.ru.linksAdversePct}% потенциально нежелательных · ${themeSet.ru.overallBadge}`,
+        `ОАЭ: ${themeSet.uae.linksAdversePct}% потенциально нежелательных · ${themeSet.uae.overallBadge}`,
+      ],
+      220
+    ).slice(0, 7);
   }
 
   // Heat-grid bullets replace dense position tables when ThemeSet path is active
