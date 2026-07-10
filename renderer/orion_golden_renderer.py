@@ -657,6 +657,23 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         ctx.bullets(bullets, y, max_items=8)
 
 
+def _pdf_cyrillic_fontfile() -> str | None:
+    """Prefer a system font that can render Russian in fitz insert_textbox."""
+    candidates = [
+        Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "arial.ttf",
+        Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / "arialuni.ttf",
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
+    ]
+    for p in candidates:
+        try:
+            if p.is_file():
+                return str(p)
+        except OSError:
+            continue
+    return None
+
+
 def _write_pdf_fallback(
     slides: list[dict[str, Any]],
     pdf_path: Path,
@@ -681,9 +698,21 @@ def _write_pdf_fallback(
         "orion_golden_lexis_visual_page",
         "orion_golden_compliance_visual_page",
     }
+    fontfile = _pdf_cyrillic_fontfile()
+    cyr_font = "ArialCyr"
 
     def esc(t: str) -> str:
         return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    def textbox(page: fitz.Page, rect: fitz.Rect, text: str, *, fontsize: float, color: tuple[float, float, float]) -> None:
+        if fontfile:
+            try:
+                page.insert_font(fontname=cyr_font, fontfile=fontfile)
+                page.insert_textbox(rect, text, fontsize=fontsize, fontname=cyr_font, color=color)
+                return
+            except Exception:  # noqa: BLE001
+                pass
+        page.insert_textbox(rect, text, fontsize=fontsize, fontname="helv", color=color)
 
     for idx, slide in enumerate(all_slides, start=1):
         page = doc.new_page(width=page_w, height=page_h)
@@ -704,11 +733,11 @@ def _write_pdf_fallback(
 
         if img_bytes and len(img_bytes) > 500:
             # Title strip + embedded visual (same data PPTX path uses).
-            page.insert_textbox(
+            textbox(
+                page,
                 fitz.Rect(margin_x, 28, page_w - margin_x, title_bottom),
                 title,
                 fontsize=18,
-                fontname="helv",
                 color=(0.04, 0.10, 0.20),
             )
             analysis = slide.get("visualAnalysis") if isinstance(slide.get("visualAnalysis"), dict) else {}
@@ -721,11 +750,11 @@ def _write_pdf_fallback(
                     keep_proportion=True,
                 )
             except Exception:  # noqa: BLE001
-                page.insert_textbox(
+                textbox(
+                    page,
                     fitz.Rect(margin_x, 100, img_right, 200),
                     "Визуальный материал недоступен для данного раздела.",
                     fontsize=12,
-                    fontname="helv",
                     color=(0.2, 0.25, 0.33),
                 )
             if has_side:
@@ -736,18 +765,18 @@ def _write_pdf_fallback(
                     _safe(analysis.get("provenanceLabel") or ""),
                 ]
                 side_text = "\n\n".join([b for b in side_bits if b])
-                page.insert_textbox(
+                textbox(
+                    page,
                     fitz.Rect(img_right + 16, 80, page_w - margin_x, content_bottom),
                     side_text[:900],
                     fontsize=10,
-                    fontname="helv",
                     color=(0.2, 0.25, 0.33),
                 )
-            page.insert_textbox(
+            textbox(
+                page,
                 fitz.Rect(page_w - 180, footer_y, page_w - margin_x, footer_y + 20),
                 f"{idx}/{total}",
                 fontsize=10,
-                fontname="helv",
                 color=(0.58, 0.64, 0.72),
             )
             continue

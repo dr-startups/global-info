@@ -105,19 +105,22 @@ export function buildDeterministicVisualAnalysis(
 }
 
 function blockedSlide(slot: First36SlotDef, reason: string): OrionGoldenDeckSlide {
+  const clientNarrative =
+    "Визуальный материал по этому разделу пока недоступен. Статус совпадения и выводы требуют ручной проверки источника.";
   return {
     slideKey: slot.slotId,
     sectionKey: slot.sectionKey,
     template: "orion_golden_no_data_compact",
     title: slot.title,
     pageNumber: slot.page,
-    narrative: reason,
+    narrative: clientNarrative,
     bullets: [
-      "Слот зарезервирован в First36 storyboard.",
-      "Для CEO_READY нужен approved visual asset с валидными байтами.",
+      "Слот зарезервирован в структуре аудита.",
+      "После загрузки утверждённого визуала раздел будет обновлён.",
     ],
+    // Internal gate code — must not be copied into client-facing narrative.
     blockedReason: reason,
-    clientTakeaway: reason,
+    clientTakeaway: clientNarrative,
   };
 }
 
