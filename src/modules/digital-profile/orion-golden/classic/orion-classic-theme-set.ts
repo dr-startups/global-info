@@ -218,49 +218,116 @@ function isDemoOrNoiseItem(item: FullEvidenceInventory["items"][number]): boolea
 }
 
 function isGarbageEntityToken(token: string): boolean {
-  return /^(citizen|arrested|united|state|her|role|oligarch|russian|potential|match|requires|analyst|review|before|any|conclusion|page|result|demo|source|компания|персон|субъект)$/i.test(
+  return /^(citizen|arrested|united|state|her|role|oligarch|russian|potential|match|requires|analyst|review|before|any|conclusion|page|result|demo|source|компания|персон|субъект|facilitating|illicit|travel|real|estate|transactions)$/i.test(
     token
   );
 }
 
-function isQualityEntity(entity: string, subjectName: string): boolean {
+/** Charge labels / subject self-names that look like entities but are not ORION-style anchors. */
+function isChargeOrSubjectLabel(entity: string, subjectName: string): boolean {
   const e = entity.trim();
-  if (e.length < 4 || e.length > 80) return false;
-  if (/^(Oleg|Дерипаска|Deripaska|Владимирович|Vladimirovich)\b/i.test(e) && e.split(/\s+/).length <= 2) {
-    return false;
+  if (
+    /facilitating illicit|real estate transactions|russian oligarch|citizen arrested|united state|geoff cutmore|money laundering|sanction list|consolidated sanctions/i.test(
+      e
+    )
+  ) {
+    return true;
   }
   const subjectBits = subjectName
     .toLowerCase()
     .split(/\s+/)
     .filter((x) => x.length > 2);
   const lower = e.toLowerCase();
-  if (subjectBits.filter((b) => lower.includes(b)).length >= 2) return false;
+  if (subjectBits.filter((b) => lower.includes(b)).length >= 2) return true;
+  if (/^(oleg|дерипаска|deripaska|владимирович|vladimirovich)\b/i.test(e)) return true;
+  return false;
+}
+
+function isWeakMediaDomain(domain: string): boolean {
+  return /youtube\.|wixsite\.|instagram\.|facebook\.|tiktok\.|t\.me\b|vk\.com|ok\.ru/i.test(domain);
+}
+
+function isGovPortalDomain(domain: string): boolean {
+  return /kremlin\.ru|gov\.ru|president\.|whitehouse\.|gov\.uk/i.test(domain);
+}
+
+function preferredThemeSample(
+  sample: OrionThemeEvidenceHit[],
+  themeKey: ThemeBucketKey
+): OrionThemeEvidenceHit | undefined {
+  const strong =
+    themeKey === "sanctions_associates" || themeKey === "pep_rca" || themeKey === "aggregator_negative"
+      ? sample.find((h) =>
+          /rupep|opensanctions|justice\.gov|peps|tadviser|dossier|ofac|sanction/i.test(h.domain)
+        )
+      : undefined;
+  if (strong) return strong;
+  return (
+    sample.find(
+      (h) => h.domain && !isWeakMediaDomain(h.domain) && !isGovPortalDomain(h.domain)
+    ) ??
+    sample.find((h) => h.domain && !isWeakMediaDomain(h.domain)) ??
+    sample[0]
+  );
+}
+
+function isQualityEntity(entity: string, subjectName: string): boolean {
+  const e = entity.trim();
+  if (e.length < 4 || e.length > 80) return false;
+  if (isChargeOrSubjectLabel(e, subjectName)) return false;
   const tokens = e.split(/\s+/);
   if (tokens.every(isGarbageEntityToken)) return false;
   if (tokens.length === 1 && isGarbageEntityToken(tokens[0])) return false;
   // Prefer multi-word brands / orgs / known sources
   if (
-    /rupep|peps|tadviser|forbes|рбк|rusal|en\+|базов|транс|маз|ликсутов|бокарев|махмудов|opensanctions|justice\.gov|lexisnexis|dow jones|world-check/i.test(
+    /rupep|peps|tadviser|forbes|рбк|rusal|en\+|базов|транс|маз|ликсутов|бокарев|махмудов|opensanctions|justice\.gov|lexisnexis|dow jones|world-check|dossier/i.test(
       e
     )
   ) {
     return true;
   }
-  if (tokens.length >= 2 && tokens.filter((t) => !isGarbageEntityToken(t)).length >= 2) return true;
-  // Allow single strong org-like tokens with capitals / quotes
-  if (/[«»"]|[A-Z]{2,}|\bАО\b|\bПАО\b|\bООО\b/i.test(e)) return true;
+  // Domain-like anchors
+  if (/\.(org|gov|com|ru|net)\b/i.test(e) && !isWeakMediaDomain(e)) return true;
+  // Strong org forms only — avoid Title Case charge phrases (3+ English words)
+  if (/[«»"]|\bАО\b|\bПАО\b|\bООО\b/i.test(e)) return true;
+  if (/^[A-Z]{2,}$/.test(e)) return true;
+  // Allow 2-token proper names that are not charge labels (e.g. "Open Sanctions" already caught)
+  if (tokens.length === 2 && tokens.every((t) => /^[A-ZА-ЯЁ]/.test(t)) && !tokens.some(isGarbageEntityToken)) {
+    return true;
+  }
   return false;
 }
 
 function extractNamedEntities(text: string, subjectName: string): string[] {
   const out: string[] = [];
   const re =
-    /\b(?:АО\s+«[^»]+»|ПАО\s+«[^»]+»|ООО\s+«[^»]+»|Базовый элемент|En\+ Group|Rusal|РУСАЛ|rupep\.org|PEPS|TAdviser|Forbes|РБК|LexisNexis|Dow Jones|World-Check|OpenSanctions|Transmashholding|Трансмашхолдинг|[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2}|[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b/g;
+    /\b(?:АО\s+«[^»]+»|ПАО\s+«[^»]+»|ООО\s+«[^»]+»|Базовый элемент|En\+ Group|Rusal|РУСАЛ|rupep\.org|PEPS|TAdviser|Forbes|РБК|LexisNexis|Dow Jones|World-Check|OpenSanctions|justice\.gov|Transmashholding|Трансмашхолдинг|Dossier Center)\b/gi;
   for (const m of text.match(re) ?? []) {
     const t = m.trim();
     if (!isQualityEntity(t, subjectName)) continue;
     if (!out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t);
     if (out.length >= 5) break;
+  }
+  return out;
+}
+
+/** Prefer real source domains as theme anchors (ORION style), not NER charge labels. */
+function themeAnchorEntities(
+  hits: OrionThemeEvidenceHit[],
+  named: string[],
+  subjectName: string
+): string[] {
+  const out: string[] = [];
+  for (const hit of hits) {
+    const d = (hit.domain || "").trim();
+    if (!d || isWeakMediaDomain(d) || /\.example$/i.test(d)) continue;
+    if (!out.some((x) => x.toLowerCase() === d.toLowerCase())) out.push(d);
+    if (out.length >= 3) break;
+  }
+  for (const ent of named) {
+    if (!isQualityEntity(ent, subjectName)) continue;
+    if (!out.some((x) => x.toLowerCase() === ent.toLowerCase())) out.push(ent);
+    if (out.length >= 4) break;
   }
   return out;
 }
@@ -328,14 +395,17 @@ function computeSurfaceKpis(
   });
   const wiki = items.filter((i) => i.evidenceType === "wikipedia");
   const wikiPresent = wiki.some((w) => {
-    const blob = `${w.title} ${w.snippet ?? ""} ${w.sourceUrl ?? ""}`.toLowerCase();
+    const url = String(w.sourceUrl ?? "");
+    const blob = `${w.title} ${w.snippet ?? ""} ${url}`.toLowerCase();
     if (/отсутств|not\s+found|no\s+article|не\s+найден|page not found|страница не найдена/i.test(blob)) {
       return false;
     }
-    return (
-      /wikipedia\.org|wiki\b|страница найдена|article found|exists|подтвержд/i.test(blob) ||
-      Boolean(w.sourceUrl && /wikipedia\.org/i.test(w.sourceUrl))
-    );
+    if (!url || !/wikipedia\.org/i.test(url)) {
+      return /страница найдена|article found|exists|подтвержд/i.test(blob);
+    }
+    // Regional wiki: RU counts ru.wikipedia; UAE counts en/ar (not RU fallback).
+    if (region === "RU") return /\/\/ru\.wikipedia\.org/i.test(url) || /wikipedia\.org/i.test(url);
+    return /\/\/(en|ar)\.wikipedia\.org/i.test(url);
   });
   // Prefer non-demo organic links for share metrics
   const linksClean = links;
@@ -434,11 +504,16 @@ function buildThemes(
       .filter((h) => h.domain && !/\.example$/i.test(h.domain))
       .slice(0, 3);
     if (sample.length === 0) continue;
-    const named = bucket.entities.filter((e) => isQualityEntity(e, subjectName)).slice(0, 4);
+    const preferredSample = preferredThemeSample(sample, def.key);
+    const named = themeAnchorEntities(
+      sample.filter((h) => !isGovPortalDomain(h.domain) || def.key === "political_exposure"),
+      bucket.entities.filter((e) => isQualityEntity(e, subjectName)),
+      subjectName
+    );
     const summaryParts = [
       named.length > 0 ? `В сюжетной линии фигурируют: ${named.join(", ")}.` : "",
-      sample[0]
-        ? `Типичный якорь: ${sample[0].domain || "источник"} — «${sample[0].title}».`
+      preferredSample
+        ? `Типичный якорь: ${preferredSample.domain || "источник"} — «${preferredSample.title}».`
         : "",
     ].filter(Boolean);
     cards.push({
@@ -517,9 +592,14 @@ function buildExecutiveNarrative(input: {
       const ents = t.namedEntities.filter((e) => isQualityEntity(e, input.subjectName)).slice(0, 3);
       return ents.length > 0 ? `${t.title} (${ents.join(", ")})` : t.title;
     });
-  // Optionally prepend strong GPT bullets that don't look like NER garbage
+  // Optionally append strong GPT bullets that don't look like NER garbage
   const gptExtras = sanitizeList(input.synthesis?.mainRisks)
-    .filter((b) => !/citizen arrested|united state|geoff cutmore|demo|example\.com/i.test(b))
+    .filter(
+      (b) =>
+        !/citizen arrested|united state|geoff cutmore|demo|example\.com|facilitating illicit|real estate transactions|russian oligarch/i.test(
+          b
+        )
+    )
     .filter((b) => !themeLines.some((t) => t.slice(0, 40).toLowerCase() === b.slice(0, 40).toLowerCase()))
     .slice(0, 2);
   const mergedThemes = [...themeLines];
@@ -527,30 +607,23 @@ function buildExecutiveNarrative(input: {
     if (mergedThemes.length >= 6) break;
     mergedThemes.push(g);
   }
-  const body: string[] = [
-    scope,
-    "",
-    "Коротко по итогам аудита:",
-    `• В результатах поиска по России (${formatPctLine(input.ru)}) и ОАЭ (${formatPctLine(input.uae)}) фиксируются сюжеты, которые могут осложнить compliance-процедуры.`,
-  ];
-  if (mergedThemes.length > 0) {
-    body.push("• Нежелательные / чувствительные темы:");
-    for (const line of mergedThemes) body.push(`  – ${line}`);
-  } else {
-    body.push("• Подтверждённые дифференцирующие adverse-темы на текущем этапе ограничены.");
-  }
-  if (input.compliance.length > 0) {
-    body.push("• В международных базах данных:");
-    for (const c of input.compliance) body.push(`  – ${c.statusLine}`);
-  }
   const nextStep =
     sanitizeList(input.synthesis?.nextSteps)[0] ||
     "Для разработки эффективной стратегии нам необходимо обсудить контекст задачи и сформулировать конкретные цели.";
-  body.push(`• ${nextStep}`);
+
+  // Keep narrative short enough for one executive card (themes live in bullets / slide 5).
+  const body: string[] = [
+    scope,
+    `В результатах поиска по России (${formatPctLine(input.ru)}) и ОАЭ (${formatPctLine(input.uae)}) фиксируются сюжеты, которые могут осложнить compliance-процедуры.`,
+  ];
+  if (input.compliance.length > 0) {
+    body.push(`В международных базах: ${input.compliance.map((c) => c.statusLine).join("; ")}.`);
+  }
+  body.push(nextStep);
 
   return {
     scope,
-    narrative: body.join("\n"),
+    narrative: body.join("\n\n"),
     bullets: mergedThemes,
     nextStep,
   };

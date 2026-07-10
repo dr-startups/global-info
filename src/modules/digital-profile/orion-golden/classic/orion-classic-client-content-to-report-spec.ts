@@ -14,7 +14,6 @@ import { sanitizeOrionGoldenClientText, humanizeRiskTheme } from "../client/clie
 import { humanizeClientRiskMatrixRow } from "../client/risk-matrix-normalizer";
 import type { OrionGoldenReportSpec, SectionBlock } from "../report-spec/orion-report-spec";
 import {
-  buildAppendixBlock,
   type ClientContentToReportSpecInput,
 } from "../report-spec/orion-client-content-to-report-spec";
 import { buildOrionClassicCommercialPack } from "./orion-classic-commercial-pack";
@@ -30,6 +29,7 @@ import {
   isDemoOrPlaceholderClientText,
   sanitizeClassicBullets,
   sanitizeExecutiveClientText,
+  scrubClientFacingProse,
   splitCompleteChunks,
   stripNumberedClientPrefix,
   truncateAtWordBoundary,
@@ -289,13 +289,21 @@ function buildOrionExecutiveSlides(
           ...decision.problems.slice(0, 4),
           ...decision.consequences.slice(0, 3),
         ];
+  const themeBullets = sanitizeClassicBullets(
+    [
+      ...themeSetBullets(themeSet).slice(0, 6),
+      ...themeSet.complianceSignals.map((c) => c.statusLine),
+    ],
+    280
+  ).slice(0, 8);
   return [
     {
       slideKey: "executive-1",
       template: "orion_golden_executive_card",
       title: "Резюме",
       narrative: executive.executiveSummary || themeSet.executiveNarrative,
-      bullets: [],
+      // Themes as bullets so the card narrative stays short and complete.
+      bullets: themeBullets.slice(0, 6),
     },
     {
       slideKey: "executive-decision",
@@ -312,13 +320,7 @@ function buildOrionExecutiveSlides(
         `Россия: ${themeSet.ru.linksAdversePct}% потенциально нежелательных ссылок · оценка: ${themeSet.ru.overallBadge}.`,
         `ОАЭ: ${themeSet.uae.linksAdversePct}% потенциально нежелательных ссылок · оценка: ${themeSet.uae.overallBadge}.`,
       ].join("\n"),
-      bullets: sanitizeClassicBullets(
-        [
-          ...themeSetBullets(themeSet).slice(0, 6),
-          ...themeSet.complianceSignals.map((c) => c.statusLine),
-        ],
-        280
-      ).slice(0, 8),
+      bullets: themeBullets,
     },
   ];
 }
@@ -494,7 +496,7 @@ function suggestionBullets(
 
 function wikipediaBullets(inventory: FullEvidenceInventory | undefined, region: RegionBucket): string[] {
   if (!inventory) return [];
-  const langPrefer = region === "RU" ? ["RU", "RUSSIAN"] : ["EN", "AE", "UAE", "AR"];
+  const langPrefer = region === "RU" ? ["RU", "RUSSIAN"] : ["EN", "AE", "UAE", "AR", "INTL", "ENGLISH"];
   const items = inventory.items.filter((i) => {
     if (i.evidenceType !== "wikipedia") return false;
     const blob = `${i.title} ${i.snippet ?? ""} ${i.sourceUrl ?? ""}`;
@@ -502,7 +504,19 @@ function wikipediaBullets(inventory: FullEvidenceInventory | undefined, region: 
     if (/отсутств|not\s+found|no\s+article|не\s+найден|page not found/i.test(blob)) return false;
     return Boolean(i.sourceUrl && /wikipedia\.org/i.test(i.sourceUrl)) || /статья найдена|article found/i.test(blob);
   });
+  // For UAE, do not fall back to RU wikipedia — that creates KPI/bullet mismatch.
   const preferred = items.filter((i) => langPrefer.includes(normalizeRegion(i.region)));
+  if (region === "UAE") {
+    const enOrIntl = preferred.filter((i) => {
+      const url = String(i.sourceUrl ?? "");
+      return /\/\/(en|ar)\.wikipedia\.org/i.test(url) || !/\/\/ru\.wikipedia\.org/i.test(url);
+    });
+    if (enOrIntl.length === 0) return [];
+    return enOrIntl.slice(0, 4).map((i) => {
+      const url = i.sourceUrl ? ` — ${i.sourceUrl}` : "";
+      return `${i.title}: ${i.snippet ?? "проверка страницы"}${url}`;
+    });
+  }
   const pool = preferred.length > 0 ? preferred : items;
   return pool.slice(0, 8).map((i) => {
     const url = i.sourceUrl ? ` — ${i.sourceUrl}` : "";
@@ -604,9 +618,13 @@ function inventoryFallbackBlock(
         ? themeSet.ru.wikipediaPresent
         : themeSet.uae.wikipediaPresent
       : bullets.length > 0;
-    narrative = present
-      ? "Проверка справочного профиля Wikipedia."
-      : "В Википедии устойчивая статья о персоне не подтверждена — энциклопедический якорь цифрового профиля не используется.";
+    if (!present) {
+      bullets = [];
+      narrative =
+        "В Википедии устойчивая статья о персоне не подтверждена — энциклопедический якорь цифрового профиля не используется.";
+    } else {
+      narrative = "Проверка справочного профиля Wikipedia.";
+    }
   } else if (sectionId.includes("dow_jones") || sectionId.includes("world_check") || sectionId.includes("lexisnexis")) {
     const hint = sectionId.includes("dow") ? "dow" : sectionId.includes("world") ? "world" : "lexis";
     const fromTheme = themeSet
@@ -732,13 +750,14 @@ function blockFromClientSection(
   const perSlide = bulletsPerSlideForSection(section.sectionId);
   const title = sanitizeOrionGoldenClientText(section.title);
   const region: RegionBucket = section.sectionId.startsWith("3") ? "UAE" : "RU";
+  const sectionNarrative = scrubClientFacingProse(section.narrative ?? "");
 
   let bullets: string[] = [];
   const gptFindings = section.keyFindings
     .slice(0, 5)
     .map((f) => {
       const title = stripNumberedClientPrefix(String(f.title ?? "").trim());
-      const summary = String(f.summary ?? "").trim();
+      const summary = scrubClientFacingProse(String(f.summary ?? "").trim());
       // Prefer summary alone when title is generic / duplicates summary
       const line =
         !title ||
@@ -782,6 +801,14 @@ function blockFromClientSection(
     } else {
       bullets = gptFindings;
     }
+  } else if (section.sectionId.includes("wikipedia")) {
+    const fromInventory = wikipediaBullets(inventory, region);
+    const present = themeSet
+      ? region === "RU"
+        ? themeSet.ru.wikipediaPresent
+        : themeSet.uae.wikipediaPresent
+      : fromInventory.length > 0;
+    bullets = present ? (fromInventory.length > 0 ? fromInventory : gptFindings) : [];
   } else if (section.sectionId.includes("search_links")) {
     const cards = themeSet ? buildAnnotatedLinkCards(themeSet, region, 10) : [];
     const fromInventory = searchLinkBullets(inventory, region);
@@ -793,8 +820,8 @@ function blockFromClientSection(
           : fromInventory.slice(0, 12);
   } else {
     bullets = gptFindings;
-    if (bullets.length === 0 && section.narrative) {
-      bullets = [truncateAtWordBoundary(section.narrative, 520)];
+    if (bullets.length === 0 && sectionNarrative) {
+      bullets = [truncateAtWordBoundary(sectionNarrative, 520)];
     }
   }
 
@@ -827,7 +854,7 @@ function blockFromClientSection(
         slideKey: `${section.sectionId}-1`,
         template,
         title,
-        bullets: [truncateAtWordBoundary(section.narrative, 520)],
+        bullets: sectionNarrative ? [truncateAtWordBoundary(sectionNarrative, 520)] : [],
       });
     } else {
       for (const [idx, chunk] of chunks.entries()) {
@@ -841,6 +868,18 @@ function blockFromClientSection(
     }
   }
 
+  let narrativeOut = truncateAtWordBoundary(sectionNarrative, 900);
+  if (section.sectionId.includes("wikipedia")) {
+    const present = themeSet
+      ? region === "RU"
+        ? themeSet.ru.wikipediaPresent
+        : themeSet.uae.wikipediaPresent
+      : bullets.length > 0;
+    narrativeOut = present
+      ? "Проверка справочного профиля Wikipedia."
+      : "В Википедии устойчивая статья о персоне не подтверждена — энциклопедический якорь цифрового профиля не используется.";
+  }
+
   return {
     sectionTitle: title,
     metrics: {
@@ -848,11 +887,11 @@ function blockFromClientSection(
       status: section.status,
       tables: tables.length,
     },
-    narrative: truncateAtWordBoundary(section.narrative, 900),
+    narrative: narrativeOut,
     tables,
     evidenceCards: section.keyFindings.slice(0, 20).map((f) => ({
       title: sanitizeOrionGoldenClientText(stripNumberedClientPrefix(f.title)),
-      summary: truncateAtWordBoundary(f.summary, 280),
+      summary: truncateAtWordBoundary(scrubClientFacingProse(f.summary), 280),
     })),
     visualAssets: [],
     slideSpecs,
@@ -954,6 +993,48 @@ function emptyLegacy(sectionKey: string): SectionBlock {
   };
 }
 
+/** Classic client appendix: one limitations slide — no DATA POOR / cluster counts / evidence dump. */
+function buildClassicClientAppendixBlock(client: OrionClientContent): SectionBlock {
+  const rawLimitations = (client.limitations ?? [])
+    .map((l) => scrubClientFacingProse(sanitizeOrionGoldenClientText(l)))
+    .filter((l) => l.length >= 20)
+    .filter(
+      (l) =>
+        !/DATA\s*POOR|сжато\s+пустых|материал\(ов\)|кластер\(ов\)|дедупликац|очеред(ь|и)\s+ручн|исключено\s+\d+/i.test(
+          l
+        )
+    );
+
+  const bullets =
+    rawLimitations.length > 0
+      ? rawLimitations.slice(0, 5)
+      : [
+          "Анализ основан на открытых источниках и предварительных сигналах комплаенс-баз.",
+          "Предварительные совпадения в базах данных требуют сверки полного профиля и не являются юридическим заключением.",
+          "Материалы с неоднозначной идентификацией не используются как ключевые выводы.",
+        ];
+
+  return {
+    sectionTitle: "Ограничения анализа",
+    metrics: { limitations: bullets.length },
+    narrative:
+      "Кратко о границах проверки: открытые источники и предварительные сигналы; без подтверждения первоисточников выводы не считаются установленным фактом.",
+    tables: [],
+    evidenceCards: [],
+    visualAssets: [],
+    slideSpecs: [
+      {
+        slideKey: "appendix-limitations",
+        template: "orion_golden_appendix",
+        title: "Ограничения анализа",
+        bullets: sanitizeClassicBullets(bullets, 220).slice(0, 6),
+      },
+    ],
+    sourceRefs: [],
+    qaMetadata: { sectionKey: "appendix" },
+  };
+}
+
 /**
  * Only fill an empty risk matrix from inventory themes.
  * Never rewrite executiveSummary with meta-counts / SERP tallies — that kills ORION résumé genre.
@@ -1037,6 +1118,7 @@ export function buildOrionClassicReportSpecFromClientContent(
     if (reg.sectionId === "00_case_identity") continue;
     if (reg.sectionId === "50_manual_review_required") continue;
     if (reg.sectionId === "51_excluded_noise_summary") continue;
+    if (reg.sectionId === "52_limitations") continue; // replaced by slim classic appendix below
     if (reg.sectionId === "54_evidence_appendix") continue;
 
     if (reg.sectionId === "01_executive_summary") {
@@ -1145,7 +1227,7 @@ export function buildOrionClassicReportSpecFromClientContent(
     }
   }
 
-  const appendixBlock = buildAppendixBlock(client);
+  const appendixBlock = buildClassicClientAppendixBlock(client);
   registrySections.push({
     sectionId: "52_limitations",
     order: 52,

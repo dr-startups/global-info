@@ -100,7 +100,7 @@ export function truncateAtWordBoundary(text: string, maxLen: number): string {
 
 /** Drop process/meta lines and incomplete caveat stubs from client executive text. */
 export function sanitizeExecutiveClientText(text: string, maxLen = 2200): string {
-  const cleaned = sanitizeOrionGoldenClientText(text)
+  const cleaned = scrubClientFacingProse(sanitizeOrionGoldenClientText(text))
     .replace(/\r\n/g, "\n")
     .split(/\n+/)
     .map((line) => line.trim())
@@ -133,9 +133,38 @@ export function stripNumberedClientPrefix(text: string): string {
   return text.replace(NUMBERED_PREFIX, "").trim();
 }
 
+/** Drop demo / placeholder evidence that must never reach client slides. */
+export function isDemoOrPlaceholderClientText(text: string): boolean {
+  const t = String(text ?? "");
+  return (
+    /\.example(\/|$|\s)/i.test(t) ||
+    /example\.com|directory-ru\.example|news-ru\.example|ru-directory\.example/i.test(t) ||
+    /\[DEMO\]|Demo DOW JONES|Demo WORLD CHECK|Demo LEXIS|potential match only|demo screening/i.test(t) ||
+    /демо[- ]?скрининг|демо[- ]?режим|demo[- ]?screen/i.test(t) ||
+    /localhost|127\.0\.0\.1/i.test(t)
+  );
+}
+
+/** Rewrite client-facing prose that still mentions demo screening / process meta. */
+export function scrubClientFacingProse(text: string): string {
+  let t = String(text ?? "");
+  t = t.replace(/демо[- ]?скрининг(?:ах|а|и|ов)?/gi, "предварительных проверках");
+  t = t.replace(/demo[- ]?screening(?:s)?/gi, "preliminary screenings");
+  t = t.replace(/в\s+демо[- ]?режиме/gi, "на предварительном этапе");
+  t = t.replace(/\bDATA\s*POOR\b/gi, "секций с недостаточными данными");
+  t = t.replace(/\bCOLLAPSED\b/gi, "свёрнутых");
+  t = t.replace(/\bNOT_APPLICABLE\b/gi, "неприменимых");
+  return t.replace(/\s{2,}/g, " ").trim();
+}
+
 export function isMetaProcessBullet(text: string): boolean {
   const t = text.trim();
-  return META_COUNT_LINE.test(t) || INCOMPLETE_CAVEAT.test(t) || KEYWORD_DUMP.test(t);
+  return (
+    META_COUNT_LINE.test(t) ||
+    INCOMPLETE_CAVEAT.test(t) ||
+    KEYWORD_DUMP.test(t) ||
+    /DATA\s*POOR|сжато\s+пустых|кластер\(ов\)|дедупликац|материал\(ов\).*дубл/i.test(t)
+  );
 }
 
 export function isClientActionRecommendation(text: string): boolean {
@@ -166,20 +195,10 @@ export function asClientBullet(value: unknown): string {
   return "";
 }
 
-/** Drop demo / placeholder evidence that must never reach client slides. */
-export function isDemoOrPlaceholderClientText(text: string): boolean {
-  const t = String(text ?? "");
-  return (
-    /\.example(\/|$|\s)/i.test(t) ||
-    /example\.com|directory-ru\.example|news-ru\.example|ru-directory\.example/i.test(t) ||
-    /\[DEMO\]|Demo DOW JONES|Demo WORLD CHECK|Demo LEXIS|potential match only|demo screening/i.test(t) ||
-    /localhost|127\.0\.0\.1/i.test(t)
-  );
-}
-
 export function sanitizeClassicBullets(bullets: string[], maxLen = 280): string[] {
   return bullets
     .map((b) => stripNumberedClientPrefix(asClientBullet(b)))
+    .map((b) => scrubClientFacingProse(b))
     .map((b) => truncateAtWordBoundary(b, maxLen))
     .filter((b) => Boolean(b) && !/\[object Object\]/i.test(b))
     .filter((b) => !isMetaProcessBullet(b))
