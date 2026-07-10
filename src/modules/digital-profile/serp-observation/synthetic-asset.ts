@@ -14,13 +14,15 @@ import {
   type PersistedSerpObservation,
 } from "./types";
 
-/** Max organic rows drawn per engine column in the synthetic PNG. */
-const VISIBLE_PER_ENGINE = 8;
+/** Max organic rows per engine — keep ≤ what the PNG card can paint with red frames. */
+const VISIBLE_PER_ENGINE = 5;
 
 /**
  * Pick rows that will actually appear in a column.
  * Prefer adverse-highlighted hits so left-column themes match red frames,
- * then fill remaining slots by original rank order.
+ * then fill remaining slots by original rank. Cap is intentionally tight:
+ * the SVG renderer stops drawing when the card bottom is reached, so packing
+ * 7–8 rows (esp. with frames) left orphan theme counts without visible tags.
  */
 export function selectVisibleObservationsForEngine(
   observations: PersistedSerpObservation[],
@@ -30,7 +32,6 @@ export function selectVisibleObservationsForEngine(
   const sorted = observations
     .filter((o) => o.engine === engine)
     .sort((a, b) => a.rank - b.rank);
-  if (sorted.length <= limit) return sorted;
 
   const highlighted: PersistedSerpObservation[] = [];
   const neutral: PersistedSerpObservation[] = [];
@@ -48,7 +49,14 @@ export function selectVisibleObservationsForEngine(
   };
   for (const o of highlighted) push(o);
   for (const o of neutral) push(o);
-  return picked.sort((a, b) => a.rank - b.rank);
+  // Paint highlights first so the SVG card never clips red frames at the bottom.
+  const hl = picked
+    .filter((o) => classifyObservationHighlight(o).isHighlighted)
+    .sort((a, b) => a.rank - b.rank);
+  const neu = picked
+    .filter((o) => !classifyObservationHighlight(o).isHighlighted)
+    .sort((a, b) => a.rank - b.rank);
+  return [...hl, ...neu];
 }
 
 export function buildSyntheticSerpViewModelFromObservations(input: {

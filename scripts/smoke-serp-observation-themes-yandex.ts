@@ -250,6 +250,16 @@ function main() {
     vmDeep.engines.google.results.some((r) => /cybercriminal/i.test(r.domain)),
     vmDeep.engines.google.results.map((r) => r.domain).join(",")
   );
+  check(
+    "deep adverse painted before neutrals (no clip)",
+    vmDeep.engines.google.results[0]?.domain?.includes("cybercriminal") === true,
+    vmDeep.engines.google.results.map((r) => r.domain).join(",")
+  );
+  check(
+    "visible google capped to fit card",
+    vmDeep.engines.google.results.length <= 5,
+    `count=${vmDeep.engines.google.results.length}`
+  );
   const deepThemeSum = vmDeep.themes.reduce((n, t) => n + t.count, 0);
   const deepVisibleHl = [
     ...vmDeep.engines.google.results,

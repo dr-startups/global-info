@@ -37,7 +37,7 @@ function main() {
 
   check(
     "provider SERP policy version set",
-    Boolean(PROVIDER_SERP_POLICY_VERSION) && PROVIDER_SERP_POLICY_VERSION.includes("v3")
+    Boolean(PROVIDER_SERP_POLICY_VERSION) && PROVIDER_SERP_POLICY_VERSION.includes("v4")
   );
 
   const subjectRu = "Глинка Сергей Михайлович";

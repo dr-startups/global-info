@@ -29,7 +29,7 @@ import { prisma } from "@/server/prisma/client";
  * Bump when highlight / noise / dual-compose policy for provider SERP PNGs changes.
  * Included in queryId so READY_CACHED cannot freeze pre-fix snapshots across classic regens.
  */
-export const PROVIDER_SERP_POLICY_VERSION = "v3-visible-themes";
+export const PROVIDER_SERP_POLICY_VERSION = "v4-fit-visible";
 
 const CYRILLIC_RE = /[А-Яа-яЁё]/;
 
