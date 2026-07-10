@@ -20,6 +20,8 @@ import { join } from "node:path";
 import { parse } from "dotenv";
 
 const SUBJECT_RU = "Глинка Сергей Михайлович";
+/** Railway production primary demo case (DPA-2026-0012). */
+const RAILWAY_GLINKA_CASE_ID = "cmreamy2t0002o30f29urzcog";
 const ALIASES = [
   "Сергей Глинка",
   "Глинка Сергей",
@@ -103,6 +105,7 @@ async function main() {
     process.env.CASE_ID?.trim() ||
     process.env.GLINKA_CASE_ID?.trim() ||
     readPointer() ||
+    RAILWAY_GLINKA_CASE_ID ||
     (await findExistingGlinkaCaseId());
 
   if (!caseId && skipCreate) {
