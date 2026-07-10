@@ -166,12 +166,24 @@ export function asClientBullet(value: unknown): string {
   return "";
 }
 
+/** Drop demo / placeholder evidence that must never reach client slides. */
+export function isDemoOrPlaceholderClientText(text: string): boolean {
+  const t = String(text ?? "");
+  return (
+    /\.example(\/|$|\s)/i.test(t) ||
+    /example\.com|directory-ru\.example|news-ru\.example|ru-directory\.example/i.test(t) ||
+    /\[DEMO\]|Demo DOW JONES|Demo WORLD CHECK|Demo LEXIS|potential match only|demo screening/i.test(t) ||
+    /localhost|127\.0\.0\.1/i.test(t)
+  );
+}
+
 export function sanitizeClassicBullets(bullets: string[], maxLen = 280): string[] {
   return bullets
     .map((b) => stripNumberedClientPrefix(asClientBullet(b)))
     .map((b) => truncateAtWordBoundary(b, maxLen))
     .filter((b) => Boolean(b) && !/\[object Object\]/i.test(b))
-    .filter((b) => !isMetaProcessBullet(b));
+    .filter((b) => !isMetaProcessBullet(b))
+    .filter((b) => !isDemoOrPlaceholderClientText(b));
 }
 
 export function chunkItems<T>(items: T[], perChunk: number): T[][] {

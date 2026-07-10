@@ -20,12 +20,14 @@ import {
 import { buildOrionClassicCommercialPack } from "./orion-classic-commercial-pack";
 import {
   bulletsPerSlideForSection,
+  maxSlidesForSection,
   templateForRegistrySection,
 } from "./orion-classic-section-template-map";
 import {
   asClientBullet,
   chunkItems,
   isClientActionRecommendation,
+  isDemoOrPlaceholderClientText,
   sanitizeClassicBullets,
   sanitizeExecutiveClientText,
   splitCompleteChunks,
@@ -276,6 +278,17 @@ function buildOrionExecutiveSlides(
   themeSet: OrionThemeSet
 ): SectionBlock["slideSpecs"] {
   const decision = buildDecisionConsequences(themeSet);
+  // GSM-style decision matrix: theme — level — consequence (not Проблема:/Последствие: checklist).
+  const matrixRows = orionStyleRiskMatrixRows(themeSet).slice(0, 6);
+  const decisionBullets =
+    matrixRows.length > 0
+      ? matrixRows.map((r) =>
+          truncateAtWordBoundary(`${r.theme} — ${r.level}: ${r.summary}`, 260)
+        )
+      : [
+          ...decision.problems.slice(0, 4),
+          ...decision.consequences.slice(0, 3),
+        ];
   return [
     {
       slideKey: "executive-1",
@@ -289,13 +302,7 @@ function buildOrionExecutiveSlides(
       template: "orion_golden_risk_matrix",
       title: `${themeSet.subjectName} — ${decision.headline}`,
       narrative: `Уровень риска: ${decision.riskLevel}. ${decision.recommendation}`,
-      bullets: sanitizeClassicBullets(
-        [
-          ...decision.problems.map((p) => `Проблема: ${p}`),
-          ...decision.consequences.slice(0, 4).map((c) => `Последствие: ${c}`),
-        ],
-        260
-      ).slice(0, 10),
+      bullets: sanitizeClassicBullets(decisionBullets, 260).slice(0, 8),
     },
     {
       slideKey: "executive-visual",
@@ -307,7 +314,7 @@ function buildOrionExecutiveSlides(
       ].join("\n"),
       bullets: sanitizeClassicBullets(
         [
-          ...themeSetBullets(themeSet).slice(0, 5),
+          ...themeSetBullets(themeSet).slice(0, 6),
           ...themeSet.complianceSignals.map((c) => c.statusLine),
         ],
         280
@@ -415,11 +422,13 @@ function searchLinkBullets(
   const out: string[] = [];
   for (const item of inventory.items) {
     if (item.evidenceType !== "search_result" || !matchesRegion(item.region, region)) continue;
-    const url = String(item.sourceUrl ?? "").toLowerCase();
-    const key = url || `${domainOf(item.sourceUrl)}|${item.title}`.toLowerCase();
+    const url = String(item.sourceUrl ?? "");
+    const domain = domainOf(item.sourceUrl);
+    const line = `${domain} ${item.title} ${url}`;
+    if (isDemoOrPlaceholderClientText(line)) continue;
+    const key = url.toLowerCase() || `${domain}|${item.title}`.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    const domain = domainOf(item.sourceUrl);
     const urlSuffix = item.sourceUrl ? ` — ${String(item.sourceUrl).slice(0, 70)}` : "";
     out.push(`${domain || "источник"}: ${truncateAtWordBoundary(item.title, 90)}${urlSuffix}`);
     if (out.length >= 12) break;
@@ -446,6 +455,8 @@ function suggestionBullets(
       if (!typeMatchers.some((t) => et.includes(t.replace("_", "")) || et === t)) return false;
       if (provider && !String(item.provider).toLowerCase().includes(provider)) return false;
       if (region && !matchesRegion(item.region, region)) return false;
+      const q = (item.query || item.title || "").trim();
+      if (isDemoOrPlaceholderClientText(q)) return false;
       return true;
     })
     .map((item) => {
@@ -461,25 +472,22 @@ function suggestionBullets(
 
   const seen = new Set<string>();
   const out: string[] = [];
+  // Prefer risk queries first (one slide budget ≈ 14 lines).
+  for (const row of scored) {
+    if (row.cls !== "RISK_QUERY") continue;
+    const key = row.query.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(`${row.query} ⚠ рискованный запрос`);
+    if (out.length >= 14) return out;
+  }
   for (const row of scored) {
     const key = row.query.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    if (row.noise && row.cls !== "RISK_QUERY") continue;
-    const riskTag = row.cls === "RISK_QUERY" ? " ⚠ рискованный запрос" : "";
-    out.push(`${row.query}${riskTag}`);
-    if (out.length >= 36) break;
-  }
-  // If filtering removed everything, fall back to non-noise top queries.
-  if (out.length === 0) {
-    for (const row of scored) {
-      const key = row.query.toLowerCase();
-      if (seen.has(`fb:${key}`)) continue;
-      seen.add(`fb:${key}`);
-      if (row.noise) continue;
-      out.push(row.query);
-      if (out.length >= 24) break;
-    }
+    if (row.noise) continue;
+    out.push(row.query);
+    if (out.length >= 14) break;
   }
   return out;
 }
@@ -487,7 +495,13 @@ function suggestionBullets(
 function wikipediaBullets(inventory: FullEvidenceInventory | undefined, region: RegionBucket): string[] {
   if (!inventory) return [];
   const langPrefer = region === "RU" ? ["RU", "RUSSIAN"] : ["EN", "AE", "UAE", "AR"];
-  const items = inventory.items.filter((i) => i.evidenceType === "wikipedia");
+  const items = inventory.items.filter((i) => {
+    if (i.evidenceType !== "wikipedia") return false;
+    const blob = `${i.title} ${i.snippet ?? ""} ${i.sourceUrl ?? ""}`;
+    if (isDemoOrPlaceholderClientText(blob)) return false;
+    if (/отсутств|not\s+found|no\s+article|не\s+найден|page not found/i.test(blob)) return false;
+    return Boolean(i.sourceUrl && /wikipedia\.org/i.test(i.sourceUrl)) || /статья найдена|article found/i.test(blob);
+  });
   const preferred = items.filter((i) => langPrefer.includes(normalizeRegion(i.region)));
   const pool = preferred.length > 0 ? preferred : items;
   return pool.slice(0, 8).map((i) => {
@@ -505,6 +519,8 @@ function complianceBullets(
     .filter((item) => {
       const et = item.evidenceType.toLowerCase();
       if (et !== "compliance_hit" && et !== "risk_finding") return false;
+      const blob = `${item.title} ${item.snippet ?? ""} ${item.provider ?? ""}`;
+      if (isDemoOrPlaceholderClientText(blob)) return false;
       if (!providerHint) return true;
       return String(item.provider).toLowerCase().includes(providerHint.toLowerCase())
         || String(item.title).toLowerCase().includes(providerHint.toLowerCase())
@@ -656,7 +672,8 @@ function inventoryFallbackBlock(
       });
     }
   } else {
-    const chunks = chunkItems(bullets, perSlide);
+    const maxSlides = maxSlidesForSection(sectionId);
+    const chunks = chunkItems(bullets, perSlide).slice(0, maxSlides);
     for (const [idx, chunk] of chunks.entries()) {
       slideSpecs.push({
         slideKey: `${sectionId}-${idx + 1}`,
@@ -746,13 +763,14 @@ function blockFromClientSection(
         : undefined;
     const surfaceType = section.sectionId.includes("related") ? "related_query" : "suggestion";
     const fromInventory = suggestionBullets(inventory, subjectName, surfaceType, provider, region);
-    // Lead with GPT findings when present; inventory suggestions as supporting list (capped)
-    bullets =
-      gptFindings.length > 0
-        ? [...gptFindings, ...fromInventory.slice(0, 8)]
-        : fromInventory.length > 0
-          ? fromInventory
-          : [];
+    // Risk-first inventory wins; GPT extras only fill remaining one-slide budget.
+    const gptClean = gptFindings.filter((b) => !isDemoOrPlaceholderClientText(b) && !isNoiseSuggestion(b));
+    bullets = [...fromInventory];
+    for (const g of gptClean) {
+      if (bullets.length >= 14) break;
+      if (bullets.some((b) => b.toLowerCase().includes(g.slice(0, 40).toLowerCase()))) continue;
+      bullets.push(g);
+    }
   } else if (section.sectionId.includes("undesirable_theme")) {
     const themes = adverseThemeRows(inventory, region, themeSet);
     const themeBullets = themes.map((t) => t.theme);
@@ -802,7 +820,8 @@ function blockFromClientSection(
       bullets: rowBullets,
     });
   } else {
-    const chunks = chunkItems(bullets, perSlide);
+    const maxSlides = maxSlidesForSection(section.sectionId);
+    const chunks = chunkItems(bullets, perSlide).slice(0, maxSlides);
     if (chunks.length === 0) {
       slideSpecs.push({
         slideKey: `${section.sectionId}-1`,
@@ -811,11 +830,11 @@ function blockFromClientSection(
         bullets: [truncateAtWordBoundary(section.narrative, 520)],
       });
     } else {
-      for (const [idx, chunk] of chunks.slice(0, 3).entries()) {
+      for (const [idx, chunk] of chunks.entries()) {
         slideSpecs.push({
           slideKey: `${section.sectionId}-${idx + 1}`,
           template,
-          title: chunks.length > 1 ? `${title} (${idx + 1}/${Math.min(chunks.length, 3)})` : title,
+          title: chunks.length > 1 ? `${title} (${idx + 1}/${chunks.length})` : title,
           bullets: chunk,
         });
       }

@@ -111,8 +111,23 @@ function sanitizeSlide(slide: OrionGoldenDeckSlide): OrionGoldenDeckSlide {
     narrative: slide.narrative ? sanitizeOrionGoldenClientText(slide.narrative) : undefined,
     bullets: slide.bullets
       ?.map((b) => sanitizeOrionGoldenClientText(b))
-      .filter((b) => Boolean(b) && !/\[object Object\]/i.test(b)),
+      .filter((b) => Boolean(b) && !/\[object Object\]/i.test(b))
+      .filter(
+        (b) =>
+          !/\.example(\/|$|\s)|example\.com|\[DEMO\]|Demo DOW JONES|Demo WORLD CHECK|potential match only/i.test(
+            b
+          )
+      ),
   };
+}
+
+function hasRealLexisPageContent(asset: ReportAssetV1): boolean {
+  const data = String(asset.imageData ?? "").trim();
+  // Tiny / placeholder payloads produce blank visual pages in the deck.
+  if (data.length < 800) return false;
+  const blob = `${asset.title} ${asset.caption ?? ""} ${asset.assetRef}`;
+  if (/demo|placeholder|empty|blank/i.test(blob)) return false;
+  return true;
 }
 
 function pickAssets(assets: ReportAssetV1[], kind: ReportAssetV1["kind"], refPrefix?: string): ReportAssetV1[] {
@@ -120,7 +135,8 @@ function pickAssets(assets: ReportAssetV1[], kind: ReportAssetV1["kind"], refPre
     (a) =>
       a.kind === kind &&
       a.status === "ready" &&
-      (!refPrefix || a.assetRef.startsWith(refPrefix))
+      (!refPrefix || a.assetRef.startsWith(refPrefix)) &&
+      (kind !== "lexis_visual_page" || hasRealLexisPageContent(a))
   );
 }
 
@@ -253,9 +269,15 @@ export function composeOrionClassicAuditDeck(
         });
       }
       if (assetKey === "lexisnexis_visual" && lexisAssets.length > 0) {
+        // Cap Lexis visuals — ORION shows a few real pages, not a blank gallery.
         sections.push({
           sectionKey: "lexisnexis_visual",
-          slides: assetSlides("lexisnexis", "orion_golden_lexis_visual_page", "LexisNexis", lexisAssets),
+          slides: assetSlides(
+            "lexisnexis",
+            "orion_golden_lexis_visual_page",
+            "LexisNexis",
+            lexisAssets.slice(0, 4)
+          ),
         });
       }
     }

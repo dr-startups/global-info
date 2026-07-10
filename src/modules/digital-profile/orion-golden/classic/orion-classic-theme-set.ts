@@ -203,23 +203,78 @@ function themeKeyOf(item: FullEvidenceInventory["items"][number]): ThemeBucketKe
   return "other_adverse";
 }
 
-function extractNamedEntities(text: string): string[] {
+function isDemoOrNoiseItem(item: FullEvidenceInventory["items"][number]): boolean {
+  const url = String(item.sourceUrl ?? "").toLowerCase();
+  const title = String(item.title ?? "");
+  const snippet = String(item.snippet ?? "");
+  const provider = String(item.provider ?? "");
+  const blob = `${url} ${title} ${snippet} ${provider}`;
+  return (
+    /\.example(\/|$)/i.test(url) ||
+    /directory-ru\.example|news-ru\.example|ru-directory\.example/i.test(blob) ||
+    /\[DEMO\]|Demo DOW JONES|Demo WORLD CHECK|potential match only|demo screening/i.test(blob) ||
+    /example\.com|localhost|127\.0\.0\.1/i.test(url)
+  );
+}
+
+function isGarbageEntityToken(token: string): boolean {
+  return /^(citizen|arrested|united|state|her|role|oligarch|russian|potential|match|requires|analyst|review|before|any|conclusion|page|result|demo|source|компания|персон|субъект)$/i.test(
+    token
+  );
+}
+
+function isQualityEntity(entity: string, subjectName: string): boolean {
+  const e = entity.trim();
+  if (e.length < 4 || e.length > 80) return false;
+  if (/^(Oleg|Дерипаска|Deripaska|Владимирович|Vladimirovich)\b/i.test(e) && e.split(/\s+/).length <= 2) {
+    return false;
+  }
+  const subjectBits = subjectName
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((x) => x.length > 2);
+  const lower = e.toLowerCase();
+  if (subjectBits.filter((b) => lower.includes(b)).length >= 2) return false;
+  const tokens = e.split(/\s+/);
+  if (tokens.every(isGarbageEntityToken)) return false;
+  if (tokens.length === 1 && isGarbageEntityToken(tokens[0])) return false;
+  // Prefer multi-word brands / orgs / known sources
+  if (
+    /rupep|peps|tadviser|forbes|рбк|rusal|en\+|базов|транс|маз|ликсутов|бокарев|махмудов|opensanctions|justice\.gov|lexisnexis|dow jones|world-check/i.test(
+      e
+    )
+  ) {
+    return true;
+  }
+  if (tokens.length >= 2 && tokens.filter((t) => !isGarbageEntityToken(t)).length >= 2) return true;
+  // Allow single strong org-like tokens with capitals / quotes
+  if (/[«»"]|[A-Z]{2,}|\bАО\b|\bПАО\b|\bООО\b/i.test(e)) return true;
+  return false;
+}
+
+function extractNamedEntities(text: string, subjectName: string): string[] {
   const out: string[] = [];
   const re =
-    /\b(?:АО\s+«[^»]+»|ПАО\s+«[^»]+»|[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ]\.?){1,2}|[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}|rupep\.org|PEPS|TAdviser|Forbes|РБК|LexisNexis|Dow Jones|World-Check)\b/g;
+    /\b(?:АО\s+«[^»]+»|ПАО\s+«[^»]+»|ООО\s+«[^»]+»|Базовый элемент|En\+ Group|Rusal|РУСАЛ|rupep\.org|PEPS|TAdviser|Forbes|РБК|LexisNexis|Dow Jones|World-Check|OpenSanctions|Transmashholding|Трансмашхолдинг|[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2}|[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3})\b/g;
   for (const m of text.match(re) ?? []) {
     const t = m.trim();
-    if (t.length < 3) continue;
+    if (!isQualityEntity(t, subjectName)) continue;
     if (!out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t);
-    if (out.length >= 6) break;
+    if (out.length >= 5) break;
   }
   return out;
 }
 
 function badgeFor(kpis: Omit<OrionSurfaceKpis, "overallBadge" | "region">): OrionSurfaceKpis["overallBadge"] {
   if (kpis.linksTotal < 5 && kpis.suggestionsTotal < 3) return "Данных мало";
-  if (kpis.linksAdversePct >= 25 || kpis.suggestionsAdverse >= 3) return "Крайне негативный";
-  if (kpis.linksAdversePct >= 8 || kpis.suggestionsAdverse >= 1 || kpis.imagesAdverse >= 2) {
+  // Require both volume and share for "крайне негативный" — % alone overfits thin UAE samples.
+  if (
+    (kpis.linksAdversePct >= 30 && kpis.linksAdverse >= 12) ||
+    kpis.suggestionsAdverse >= 5
+  ) {
+    return "Крайне негативный";
+  }
+  if (kpis.linksAdversePct >= 10 || kpis.suggestionsAdverse >= 1 || kpis.imagesAdverse >= 2) {
     return "Нежелательный";
   }
   if (kpis.linksAdverse > 0 || kpis.imagesAdverse > 0 || kpis.knowledgeAdverse > 0) return "Смешанный";
@@ -258,7 +313,7 @@ function computeSurfaceKpis(
   region: OrionRegionBucket,
   subjectName: string
 ): OrionSurfaceKpis {
-  const items = inventory.items.filter((i) => matchesRegion(i.region, region));
+  const items = inventory.items.filter((i) => matchesRegion(i.region, region) && !isDemoOrNoiseItem(i));
   const links = items.filter((i) => i.evidenceType === "search_result");
   const linksAdverse = links.filter(isAdverseItem);
   const suggestions = items.filter(isSuggestion);
@@ -273,20 +328,30 @@ function computeSurfaceKpis(
   });
   const wiki = items.filter((i) => i.evidenceType === "wikipedia");
   const wikiPresent = wiki.some((w) => {
-    const blob = `${w.title} ${w.snippet ?? ""}`.toLowerCase();
-    return !/отсутств|not\s+found|no\s+article|не\s+найден/i.test(blob);
+    const blob = `${w.title} ${w.snippet ?? ""} ${w.sourceUrl ?? ""}`.toLowerCase();
+    if (/отсутств|not\s+found|no\s+article|не\s+найден|page not found|страница не найдена/i.test(blob)) {
+      return false;
+    }
+    return (
+      /wikipedia\.org|wiki\b|страница найдена|article found|exists|подтвержд/i.test(blob) ||
+      Boolean(w.sourceUrl && /wikipedia\.org/i.test(w.sourceUrl))
+    );
   });
+  // Prefer non-demo organic links for share metrics
+  const linksClean = links;
+  const linksAdverseClean = linksAdverse;
   const images = items.filter(isImage);
   const imagesAdverse = images.filter(isAdverseItem);
   const videos = items.filter(isVideo);
   const knowledge = items.filter(isKnowledge);
   const knowledgeAdverse = knowledge.filter(isAdverseItem);
-  const linksTotal = links.length;
+  const linksTotal = linksClean.length > 0 ? linksClean.length : links.length;
+  const linksAdverseCount = linksClean.length > 0 ? linksAdverseClean.length : linksAdverse.length;
   const linksAdversePct =
-    linksTotal > 0 ? Math.round((linksAdverse.length / linksTotal) * 100) : 0;
+    linksTotal > 0 ? Math.round((linksAdverseCount / linksTotal) * 100) : 0;
   const base = {
     linksTotal,
-    linksAdverse: linksAdverse.length,
+    linksAdverse: linksAdverseCount,
     linksAdversePct,
     suggestionsTotal: suggestions.length,
     suggestionsAdverse: suggestionsAdverse.length,
@@ -320,6 +385,7 @@ function buildThemes(
   >();
 
   for (const item of inventory.items) {
+    if (isDemoOrNoiseItem(item)) continue;
     const et = item.evidenceType.toLowerCase();
     if (et !== "search_result" && et !== "risk_finding" && et !== "compliance_hit") continue;
     if (!isAdverseItem(item) && et === "search_result") {
@@ -330,6 +396,10 @@ function buildThemes(
     const key = themeKeyOf(item);
     // Skip pure corporate identity from becoming the only story unless explicitly adverse
     if (key === "corporate" && !isAdverseItem(item)) continue;
+    // Skip weak "other_adverse" anchored only on soft media unless classification is strong
+    if (key === "other_adverse" && et === "search_result" && !/sanction|pep|arrest|criminal|ofac|компромат/i.test(riskBlob(item))) {
+      continue;
+    }
     const region: OrionRegionBucket | "GLOBAL" = matchesRegion(item.region, "UAE")
       ? "UAE"
       : matchesRegion(item.region, "RU")
@@ -347,7 +417,7 @@ function buildThemes(
     if (!bucket.hits.some((h) => h.url && hit.url && h.url === hit.url)) {
       bucket.hits.push(hit);
     }
-    for (const ent of extractNamedEntities(`${item.title} ${item.snippet ?? ""} ${subjectName}`)) {
+    for (const ent of extractNamedEntities(`${item.title} ${item.snippet ?? ""}`, subjectName)) {
       if (!bucket.entities.some((e) => e.toLowerCase() === ent.toLowerCase())) {
         bucket.entities.push(ent);
       }
@@ -359,11 +429,14 @@ function buildThemes(
   for (const def of THEME_DEFS) {
     const bucket = buckets.get(def.key);
     if (!bucket || bucket.hits.length === 0) continue;
-    if (def.key === "other_adverse" && bucket.hits.length < 2) continue;
-    const sample = bucket.hits.slice(0, 3);
-    const named = bucket.entities.filter((e) => !new RegExp(subjectName.split(/\s+/)[0] ?? "___", "i").test(e)).slice(0, 5);
+    if (def.key === "other_adverse" && bucket.hits.length < 3) continue;
+    const sample = bucket.hits
+      .filter((h) => h.domain && !/\.example$/i.test(h.domain))
+      .slice(0, 3);
+    if (sample.length === 0) continue;
+    const named = bucket.entities.filter((e) => isQualityEntity(e, subjectName)).slice(0, 4);
     const summaryParts = [
-      named.length > 0 ? `В сюжетной линии фигурируют: ${named.slice(0, 4).join(", ")}.` : "",
+      named.length > 0 ? `В сюжетной линии фигурируют: ${named.join(", ")}.` : "",
       sample[0]
         ? `Типичный якорь: ${sample[0].domain || "источник"} — «${sample[0].title}».`
         : "",
@@ -384,16 +457,26 @@ function buildThemes(
 
 function complianceSignals(inventory: FullEvidenceInventory): OrionComplianceDbSignal[] {
   const out: OrionComplianceDbSignal[] = [];
-  const hits = inventory.items.filter((i) => i.evidenceType === "compliance_hit" || /dow|lexis|world/i.test(i.provider));
+  const hits = inventory.items.filter(
+    (i) =>
+      !isDemoOrNoiseItem(i) &&
+      (i.evidenceType === "compliance_hit" || /dow|lexis|world/i.test(i.provider))
+  );
   const byProvider = [
     { key: /dow/i, label: "Dow Jones" as const },
     { key: /lexis/i, label: "LexisNexis" as const },
     { key: /world/i, label: "World-Check" as const },
   ];
   for (const p of byProvider) {
-    const rows = hits.filter((h) => p.key.test(h.provider) || p.key.test(h.title) || p.key.test(riskBlob(h)));
+    const rows = hits.filter(
+      (h) =>
+        p.key.test(h.provider) ||
+        p.key.test(h.title) ||
+        p.key.test(riskBlob(h))
+    );
     if (rows.length === 0) continue;
     const blob = rows.map((r) => `${r.title} ${r.snippet ?? ""}`).join(" ");
+    if (/demo|potential match only|\[demo\]/i.test(blob)) continue;
     const isRca = /\brca\b|close associate|родственник|близк/i.test(blob);
     const isPep = /\bpep\b|politically|политически значим/i.test(blob);
     const status = isRca
@@ -429,25 +512,30 @@ function buildExecutiveNarrative(input: {
   const scope =
     "Мы провели аудит результатов поиска (ТОП сохранённой выдачи) в Яндексе и Google по России и ОАЭ, а также доступных сигналов международных баз Dow Jones, World-Check и LexisNexis.";
 
-  // Prefer ThemeSet structure (ORION slide-3 genre). GPT bullets enrich themes when useful.
-  const gptBullets = sanitizeList(input.synthesis?.mainRisks).slice(0, 5);
   const themeLines =
-    gptBullets.length >= 3
-      ? gptBullets
-      : input.themes.slice(0, 5).map((t) => {
-          const ents = t.namedEntities.slice(0, 3);
-          return ents.length > 0 ? `${t.title} (${ents.join(", ")})` : t.title;
-        });
-
+    input.themes.slice(0, 6).map((t) => {
+      const ents = t.namedEntities.filter((e) => isQualityEntity(e, input.subjectName)).slice(0, 3);
+      return ents.length > 0 ? `${t.title} (${ents.join(", ")})` : t.title;
+    });
+  // Optionally prepend strong GPT bullets that don't look like NER garbage
+  const gptExtras = sanitizeList(input.synthesis?.mainRisks)
+    .filter((b) => !/citizen arrested|united state|geoff cutmore|demo|example\.com/i.test(b))
+    .filter((b) => !themeLines.some((t) => t.slice(0, 40).toLowerCase() === b.slice(0, 40).toLowerCase()))
+    .slice(0, 2);
+  const mergedThemes = [...themeLines];
+  for (const g of gptExtras) {
+    if (mergedThemes.length >= 6) break;
+    mergedThemes.push(g);
+  }
   const body: string[] = [
     scope,
     "",
     "Коротко по итогам аудита:",
     `• В результатах поиска по России (${formatPctLine(input.ru)}) и ОАЭ (${formatPctLine(input.uae)}) фиксируются сюжеты, которые могут осложнить compliance-процедуры.`,
   ];
-  if (themeLines.length > 0) {
+  if (mergedThemes.length > 0) {
     body.push("• Нежелательные / чувствительные темы:");
-    for (const line of themeLines) body.push(`  – ${line}`);
+    for (const line of mergedThemes) body.push(`  – ${line}`);
   } else {
     body.push("• Подтверждённые дифференцирующие adverse-темы на текущем этапе ограничены.");
   }
@@ -463,7 +551,7 @@ function buildExecutiveNarrative(input: {
   return {
     scope,
     narrative: body.join("\n"),
-    bullets: themeLines,
+    bullets: mergedThemes,
     nextStep,
   };
 }
@@ -516,8 +604,8 @@ export function themeSetBullets(themeSet: OrionThemeSet, region?: OrionRegionBuc
       ? themeSet.themes
       : themeSet.themes.filter((t) => t.regions.includes(region) || t.regions.length === 0);
   return themes.slice(0, 6).map((t) => {
-    const ents = t.namedEntities.slice(0, 3);
-    return ents.length ? `${t.title}: ${ents.join(", ")}` : t.title;
+    const ents = t.namedEntities.filter((e) => isQualityEntity(e, themeSet.subjectName)).slice(0, 3);
+    return ents.length ? `${t.title} (${ents.join(", ")})` : t.title;
   });
 }
 
@@ -600,7 +688,12 @@ export function buildSerpHeatGridBullets(
   maxRows = 20
 ): { narrative: string; bullets: string[]; adverseCount: number; total: number } {
   const rows = inventory.items
-    .filter((i) => i.evidenceType === "search_result" && matchesRegion(i.region, region))
+    .filter(
+      (i) =>
+        i.evidenceType === "search_result" &&
+        matchesRegion(i.region, region) &&
+        !isDemoOrNoiseItem(i)
+    )
     .map((i) => ({
       pos: positionOfItem(i) || 999,
       domain: domainOf(i.sourceUrl) || "источник",
@@ -653,9 +746,11 @@ export function buildAnnotatedLinkCards(
     themeIdx += 1;
     for (const hit of theme.sampleHits.slice(0, 2)) {
       if (region && hit.region !== region && hit.region !== "GLOBAL") continue;
+      if (!hit.domain || /\.example$/i.test(hit.domain) || /example\.com/i.test(hit.url ?? "")) continue;
+      if (/demo|potential match only/i.test(`${hit.title} ${hit.snippet ?? ""}`)) continue;
       const snip = hit.snippet ? ` — ${hit.snippet.slice(0, 110)}` : "";
       cards.push(
-        `Тема ${themeIdx}. ${hit.domain || "источник"}: ${hit.title.slice(0, 90)}${snip}`
+        `Тема ${themeIdx}. ${hit.domain}: ${hit.title.slice(0, 90)}${snip}`
       );
       if (cards.length >= maxCards) return cards;
     }

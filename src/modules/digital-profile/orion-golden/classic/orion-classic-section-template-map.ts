@@ -43,12 +43,22 @@ export function templateForRegistrySection(sectionId: string): ClassicSectionTem
 }
 
 export function bulletsPerSlideForSection(sectionId: string): number {
-  if (sectionId.includes("suggestions") || sectionId.includes("related_queries")) return 12;
+  // One dense slide of risk-first suggestions/related (ORION packs ~1 page, not 3).
+  if (sectionId.includes("suggestions") || sectionId.includes("related_queries")) return 14;
   if (sectionId.includes("search_links")) return 8;
   if (sectionId.includes("undesirable_theme")) return 5;
   if (sectionId.includes("serp_position")) return 18;
   if (sectionId.startsWith("5")) return 6;
   return 6;
+}
+
+/** Hard cap on how many slides a registry section may emit. */
+export function maxSlidesForSection(sectionId: string): number {
+  if (sectionId.includes("suggestions") || sectionId.includes("related_queries")) return 1;
+  if (sectionId.includes("search_links")) return 2;
+  if (sectionId.includes("serp_position")) return 1;
+  if (sectionId.includes("undesirable_theme")) return 1;
+  return 3;
 }
 
 export function isRegionDividerSection(sectionId: string): boolean {
