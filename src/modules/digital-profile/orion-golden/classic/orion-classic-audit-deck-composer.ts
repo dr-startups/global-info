@@ -3,7 +3,6 @@
  */
 
 import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
-import { ORION_GOLDEN_BLUEPRINT } from "../blueprint/orion-golden-blueprint";
 import { sanitizeOrionGoldenClientText } from "../client/client-text-sanitizer";
 import type { OrionGoldenDeckManifest, OrionGoldenDeckSlide } from "../composer/orion-deck-composer";
 import { truncateAtWordBoundary } from "./orion-classic-text-utils";
@@ -62,10 +61,8 @@ function commercialSlides(
   sectionKey: string,
   block: OrionClassicAuditReportSpec["registrySections"][number]["block"]
 ): OrionGoldenDeckSlide[] {
-  // Dense commercial pack already chunks bullets; do not pad to blueprint mins.
-  const blueprint = ORION_GOLDEN_BLUEPRINT.sections.find((s) => s.sectionKey === sectionKey);
-  const maxPages = blueprint?.expectedPageRange.max ?? 4;
-  return slidesFromBlock(sectionKey, block).slice(0, Math.max(1, maxPages));
+  // Dense commercial pack already chunks bullets; hard-cap pages after audit.
+  return slidesFromBlock(sectionKey, block).slice(0, 2);
 }
 
 function assetSlides(
@@ -137,13 +134,13 @@ export function composeOrionClassicAuditDeck(
   const videoAssets = pickAssets(assets, "video_cards");
   const knowledgeAssets = pickAssets(assets, "knowledge_panel");
 
+  const ruSerp = dedupeSerpAssetList(
+    serpAssets.filter((a) => !/uae|intl|ae_/i.test(a.assetRef)),
+    3
+  );
   const uaeSerp = dedupeSerpAssetList(
     serpAssets.filter((a) => /uae|intl|ae_/i.test(a.assetRef)),
     2
-  );
-  const ruSerp = dedupeSerpAssetList(
-    serpAssets.filter((a) => !/uae|intl|ae_/i.test(a.assetRef)),
-    4
   );
   const uaeImages = imageAssets.filter((a) => /uae|intl/i.test(a.assetRef));
   const ruImages = imageAssets.filter((a) => !uaeImages.includes(a));

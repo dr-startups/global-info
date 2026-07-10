@@ -46,7 +46,7 @@ export function bulletsPerSlideForSection(sectionId: string): number {
   if (sectionId.includes("suggestions") || sectionId.includes("related_queries")) return 12;
   if (sectionId.includes("search_links")) return 8;
   if (sectionId.includes("undesirable_theme")) return 5;
-  if (sectionId.includes("serp_position")) return 10;
+  if (sectionId.includes("serp_position")) return 18;
   if (sectionId.startsWith("5")) return 6;
   return 6;
 }

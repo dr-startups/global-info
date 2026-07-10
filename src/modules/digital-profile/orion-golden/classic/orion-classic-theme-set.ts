@@ -1,0 +1,714 @@
+/**
+ * R10.12 — ORION-style ThemeSet + regional surface KPIs.
+ * Deterministic packaging of inventory into the story ORION puts on slides 3–7/23–24.
+ */
+
+import { classifyAutocompleteQuery } from "../../evidence-quality/autocomplete-class";
+import { humanizeRiskTheme, sanitizeOrionGoldenClientText } from "../client/client-text-sanitizer";
+import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
+import type { OrionClientContent } from "../content/orion-client-content-builder";
+import type { ExecutiveSynthesisOutput } from "../gpt/orion-executive-synthesis-from-sections";
+
+export type OrionRegionBucket = "RU" | "UAE";
+
+export type OrionThemeEvidenceHit = {
+  title: string;
+  domain: string;
+  url?: string;
+  region: OrionRegionBucket | "GLOBAL";
+  snippet?: string;
+};
+
+export type OrionThemeCard = {
+  id: string;
+  title: string;
+  summary: string;
+  count: number;
+  regions: OrionRegionBucket[];
+  namedEntities: string[];
+  sampleHits: OrionThemeEvidenceHit[];
+};
+
+export type OrionSurfaceKpis = {
+  region: OrionRegionBucket;
+  linksTotal: number;
+  linksAdverse: number;
+  linksAdversePct: number;
+  suggestionsTotal: number;
+  suggestionsAdverse: number;
+  relatedTotal: number;
+  relatedAdverse: number;
+  wikipediaPresent: boolean;
+  imagesTotal: number;
+  imagesAdverse: number;
+  videosTotal: number;
+  knowledgeTotal: number;
+  knowledgeAdverse: number;
+  overallBadge: "Крайне негативный" | "Нежелательный" | "Смешанный" | "Нейтральный" | "Данных мало";
+};
+
+export type OrionComplianceDbSignal = {
+  provider: "Dow Jones" | "LexisNexis" | "World-Check" | "Другое";
+  statusLine: string;
+  detail: string;
+};
+
+export type OrionThemeSet = {
+  version: "r10-12-orion-theme-set-v1";
+  caseId: string;
+  subjectName: string;
+  asOfDate: string;
+  themes: OrionThemeCard[];
+  ru: OrionSurfaceKpis;
+  uae: OrionSurfaceKpis;
+  complianceSignals: OrionComplianceDbSignal[];
+  scopeSentence: string;
+  executiveNarrative: string;
+  executiveBullets: string[];
+  nextStep: string;
+};
+
+function normalizeRegion(raw: string | undefined): string {
+  return String(raw ?? "")
+    .trim()
+    .toUpperCase()
+    .replace(/^INTERNATIONAL$/, "INTL");
+}
+
+function matchesRegion(itemRegion: string | undefined, bucket: OrionRegionBucket): boolean {
+  const r = normalizeRegion(itemRegion);
+  if (bucket === "RU") return r === "RU" || r === "GLOBAL" || r === "" || r === "RUSSIA";
+  return r === "UAE" || r === "INTL" || r === "AE" || r === "GLOBAL_INTL" || r === "EN";
+}
+
+function domainOf(url: string | undefined): string {
+  if (!url) return "";
+  return url
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .split("/")[0]
+    ?.slice(0, 48) ?? "";
+}
+
+function riskBlob(item: FullEvidenceInventory["items"][number]): string {
+  const rm = item.rawMetadata ?? {};
+  const nested = rm.riskClassification;
+  const parts: string[] = [
+    String(item.classification ?? ""),
+    String(rm.themeLabel ?? ""),
+    String(rm.riskTheme ?? ""),
+    String(rm.category ?? ""),
+    String(item.title ?? ""),
+    String(item.snippet ?? ""),
+  ];
+  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+    const n = nested as Record<string, unknown>;
+    const auto = n.auto && typeof n.auto === "object" ? (n.auto as Record<string, unknown>) : null;
+    parts.push(String(n.classification ?? ""), String(auto?.theme ?? ""), String(auto?.classification ?? ""));
+  }
+  return parts.join(" ").toLowerCase();
+}
+
+const ADVERSE_RE =
+  /adverse|negative|undesirable|нежелат|негатив|санкц|sanction|ofac|корруп|corrupt|мошен|fraud|арест|arrest|уголов|criminal|суд|lawsuit|pep|watchlist|rca|компромат|offshore|офшор|политич|молдав|лднр|лнр|индустриальн|бенефициар|associated|associate/i;
+
+function isAdverseItem(item: FullEvidenceInventory["items"][number]): boolean {
+  const et = item.evidenceType.toLowerCase();
+  if (et === "risk_finding" || et === "compliance_hit") return true;
+  return ADVERSE_RE.test(riskBlob(item));
+}
+
+type ThemeBucketKey =
+  | "sanctions_associates"
+  | "political_exposure"
+  | "business_associates"
+  | "conflict_jurisdiction"
+  | "aggregator_negative"
+  | "offshore"
+  | "criminal_legal"
+  | "pep_rca"
+  | "corporate"
+  | "other_adverse";
+
+const THEME_DEFS: Array<{
+  key: ThemeBucketKey;
+  title: string;
+  match: RegExp;
+}> = [
+  {
+    key: "sanctions_associates",
+    title: "Санкционный контур и связанные лица / компании",
+    match: /санкц|sanction|ofac|watchlist|бокарев|махмудов|трансмаш|rusal|базов(ый|ого)\s+элемент|basic\s+element/i,
+  },
+  {
+    key: "political_exposure",
+    title: "Политическая экспозиция / публичная деятельность",
+    match: /политич|president|молдав|moldova|lobb|спонсир|deput|minister|выбор/i,
+  },
+  {
+    key: "business_associates",
+    title: "Совместный бизнес и связанные партнёры",
+    match: /ликсутов|liksutov|партн[её]р|associate|joint|совместн|экс-супруг|жена|wife|lavrova/i,
+  },
+  {
+    key: "conflict_jurisdiction",
+    title: "Конфликтные юрисдикции / спорные юрисдикционные сюжеты",
+    match: /\bлнр\b|\bлднр\b|donetsk|lugansk|украин|ukraine|crimea|крым/i,
+  },
+  {
+    key: "aggregator_negative",
+    title: "Негативные публикации на ресурсах-агрегаторах",
+    match: /компромат|compromat|агрегатор|dossier|rupep|peps\b|tadviser/i,
+  },
+  {
+    key: "offshore",
+    title: "Связи с офшором / зарубежными структурами",
+    match: /offshore|офшор|icij|leaks|эстон|estonia|cyprus|кипр/i,
+  },
+  {
+    key: "criminal_legal",
+    title: "Уголовно-правовая / судебная лексика в открытых источниках",
+    match: /arrest|арест|уголов|criminal|indict|accused|приговор|мошен|fraud|court|суд/i,
+  },
+  {
+    key: "pep_rca",
+    title: "Сигналы PEP / RCA в комплаенс-базах",
+    match: /\bpep\b|\brca\b|politically\s+exposed|относительн|близк(ий|ого)\s+партн/i,
+  },
+  {
+    key: "corporate",
+    title: "Корпоративные роли и реестровые связи",
+    match: /учредител|руководител|кфх|огрнип|инн|егрюл|егрип|director|founder|board/i,
+  },
+  {
+    key: "other_adverse",
+    title: "Иные потенциально нежелательные упоминания",
+    match: /./,
+  },
+];
+
+function themeKeyOf(item: FullEvidenceInventory["items"][number]): ThemeBucketKey {
+  const blob = `${riskBlob(item)} ${item.sourceUrl ?? ""}`;
+  for (const def of THEME_DEFS) {
+    if (def.key === "other_adverse") continue;
+    if (def.match.test(blob)) return def.key;
+  }
+  const label = humanizeRiskTheme(
+    String((item.rawMetadata ?? {}).themeLabel ?? item.classification ?? "")
+  ).toLowerCase();
+  if (/санкц/.test(label)) return "sanctions_associates";
+  if (/политич|pep/.test(label)) return "political_exposure";
+  if (/негатив|adverse/.test(label)) return "aggregator_negative";
+  if (/корпорат|identity|neutral/.test(label)) return "corporate";
+  return "other_adverse";
+}
+
+function extractNamedEntities(text: string): string[] {
+  const out: string[] = [];
+  const re =
+    /\b(?:АО\s+«[^»]+»|ПАО\s+«[^»]+»|[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ]\.?){1,2}|[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}|rupep\.org|PEPS|TAdviser|Forbes|РБК|LexisNexis|Dow Jones|World-Check)\b/g;
+  for (const m of text.match(re) ?? []) {
+    const t = m.trim();
+    if (t.length < 3) continue;
+    if (!out.some((x) => x.toLowerCase() === t.toLowerCase())) out.push(t);
+    if (out.length >= 6) break;
+  }
+  return out;
+}
+
+function badgeFor(kpis: Omit<OrionSurfaceKpis, "overallBadge" | "region">): OrionSurfaceKpis["overallBadge"] {
+  if (kpis.linksTotal < 5 && kpis.suggestionsTotal < 3) return "Данных мало";
+  if (kpis.linksAdversePct >= 25 || kpis.suggestionsAdverse >= 3) return "Крайне негативный";
+  if (kpis.linksAdversePct >= 8 || kpis.suggestionsAdverse >= 1 || kpis.imagesAdverse >= 2) {
+    return "Нежелательный";
+  }
+  if (kpis.linksAdverse > 0 || kpis.imagesAdverse > 0 || kpis.knowledgeAdverse > 0) return "Смешанный";
+  return "Нейтральный";
+}
+
+function surfaceType(item: FullEvidenceInventory["items"][number]): string {
+  return item.evidenceType.toLowerCase().replace(/-/g, "_");
+}
+
+function isSuggestion(item: FullEvidenceInventory["items"][number]): boolean {
+  const et = surfaceType(item);
+  return et.includes("suggestion") || et.includes("autocomplete");
+}
+
+function isRelated(item: FullEvidenceInventory["items"][number]): boolean {
+  const et = surfaceType(item);
+  return et.includes("related");
+}
+
+function isImage(item: FullEvidenceInventory["items"][number]): boolean {
+  return surfaceType(item).includes("image");
+}
+
+function isVideo(item: FullEvidenceInventory["items"][number]): boolean {
+  return surfaceType(item).includes("video");
+}
+
+function isKnowledge(item: FullEvidenceInventory["items"][number]): boolean {
+  const et = surfaceType(item);
+  return et.includes("knowledge");
+}
+
+function computeSurfaceKpis(
+  inventory: FullEvidenceInventory,
+  region: OrionRegionBucket,
+  subjectName: string
+): OrionSurfaceKpis {
+  const items = inventory.items.filter((i) => matchesRegion(i.region, region));
+  const links = items.filter((i) => i.evidenceType === "search_result");
+  const linksAdverse = links.filter(isAdverseItem);
+  const suggestions = items.filter(isSuggestion);
+  const suggestionsAdverse = suggestions.filter((s) => {
+    const q = (s.query || s.title || "").trim();
+    return classifyAutocompleteQuery(q, subjectName) === "RISK_QUERY" || isAdverseItem(s);
+  });
+  const related = items.filter(isRelated);
+  const relatedAdverse = related.filter((s) => {
+    const q = (s.query || s.title || "").trim();
+    return classifyAutocompleteQuery(q, subjectName) === "RISK_QUERY" || isAdverseItem(s);
+  });
+  const wiki = items.filter((i) => i.evidenceType === "wikipedia");
+  const wikiPresent = wiki.some((w) => {
+    const blob = `${w.title} ${w.snippet ?? ""}`.toLowerCase();
+    return !/отсутств|not\s+found|no\s+article|не\s+найден/i.test(blob);
+  });
+  const images = items.filter(isImage);
+  const imagesAdverse = images.filter(isAdverseItem);
+  const videos = items.filter(isVideo);
+  const knowledge = items.filter(isKnowledge);
+  const knowledgeAdverse = knowledge.filter(isAdverseItem);
+  const linksTotal = links.length;
+  const linksAdversePct =
+    linksTotal > 0 ? Math.round((linksAdverse.length / linksTotal) * 100) : 0;
+  const base = {
+    linksTotal,
+    linksAdverse: linksAdverse.length,
+    linksAdversePct,
+    suggestionsTotal: suggestions.length,
+    suggestionsAdverse: suggestionsAdverse.length,
+    relatedTotal: related.length,
+    relatedAdverse: relatedAdverse.length,
+    wikipediaPresent: wikiPresent,
+    imagesTotal: images.length,
+    imagesAdverse: imagesAdverse.length,
+    videosTotal: videos.length,
+    knowledgeTotal: knowledge.length,
+    knowledgeAdverse: knowledgeAdverse.length,
+  };
+  return {
+    region,
+    ...base,
+    overallBadge: badgeFor(base),
+  };
+}
+
+function buildThemes(
+  inventory: FullEvidenceInventory,
+  subjectName: string
+): OrionThemeCard[] {
+  const buckets = new Map<
+    ThemeBucketKey,
+    {
+      hits: OrionThemeEvidenceHit[];
+      entities: string[];
+      regions: Set<OrionRegionBucket>;
+    }
+  >();
+
+  for (const item of inventory.items) {
+    const et = item.evidenceType.toLowerCase();
+    if (et !== "search_result" && et !== "risk_finding" && et !== "compliance_hit") continue;
+    if (!isAdverseItem(item) && et === "search_result") {
+      // Keep strong corporate registry identities only when classification already marked risk-ish
+      const cls = String(item.classification ?? "").toLowerCase();
+      if (!/adverse|sanction|pep|risk|negative|undesirable|compliance/i.test(cls)) continue;
+    }
+    const key = themeKeyOf(item);
+    // Skip pure corporate identity from becoming the only story unless explicitly adverse
+    if (key === "corporate" && !isAdverseItem(item)) continue;
+    const region: OrionRegionBucket | "GLOBAL" = matchesRegion(item.region, "UAE")
+      ? "UAE"
+      : matchesRegion(item.region, "RU")
+        ? "RU"
+        : "GLOBAL";
+    const bucket = buckets.get(key) ?? { hits: [], entities: [], regions: new Set() };
+    if (region === "RU" || region === "UAE") bucket.regions.add(region);
+    const hit: OrionThemeEvidenceHit = {
+      title: sanitizeOrionGoldenClientText(item.title).slice(0, 120),
+      domain: domainOf(item.sourceUrl),
+      url: item.sourceUrl,
+      region: region === "GLOBAL" ? "RU" : region,
+      snippet: item.snippet ? sanitizeOrionGoldenClientText(item.snippet).slice(0, 180) : undefined,
+    };
+    if (!bucket.hits.some((h) => h.url && hit.url && h.url === hit.url)) {
+      bucket.hits.push(hit);
+    }
+    for (const ent of extractNamedEntities(`${item.title} ${item.snippet ?? ""} ${subjectName}`)) {
+      if (!bucket.entities.some((e) => e.toLowerCase() === ent.toLowerCase())) {
+        bucket.entities.push(ent);
+      }
+    }
+    buckets.set(key, bucket);
+  }
+
+  const cards: OrionThemeCard[] = [];
+  for (const def of THEME_DEFS) {
+    const bucket = buckets.get(def.key);
+    if (!bucket || bucket.hits.length === 0) continue;
+    if (def.key === "other_adverse" && bucket.hits.length < 2) continue;
+    const sample = bucket.hits.slice(0, 3);
+    const named = bucket.entities.filter((e) => !new RegExp(subjectName.split(/\s+/)[0] ?? "___", "i").test(e)).slice(0, 5);
+    const summaryParts = [
+      named.length > 0 ? `В сюжетной линии фигурируют: ${named.slice(0, 4).join(", ")}.` : "",
+      sample[0]
+        ? `Типичный якорь: ${sample[0].domain || "источник"} — «${sample[0].title}».`
+        : "",
+    ].filter(Boolean);
+    cards.push({
+      id: def.key,
+      title: def.title,
+      summary: summaryParts.join(" ") || def.title,
+      count: bucket.hits.length,
+      regions: [...bucket.regions],
+      namedEntities: named,
+      sampleHits: sample,
+    });
+  }
+
+  return cards.sort((a, b) => b.count - a.count).slice(0, 6);
+}
+
+function complianceSignals(inventory: FullEvidenceInventory): OrionComplianceDbSignal[] {
+  const out: OrionComplianceDbSignal[] = [];
+  const hits = inventory.items.filter((i) => i.evidenceType === "compliance_hit" || /dow|lexis|world/i.test(i.provider));
+  const byProvider = [
+    { key: /dow/i, label: "Dow Jones" as const },
+    { key: /lexis/i, label: "LexisNexis" as const },
+    { key: /world/i, label: "World-Check" as const },
+  ];
+  for (const p of byProvider) {
+    const rows = hits.filter((h) => p.key.test(h.provider) || p.key.test(h.title) || p.key.test(riskBlob(h)));
+    if (rows.length === 0) continue;
+    const blob = rows.map((r) => `${r.title} ${r.snippet ?? ""}`).join(" ");
+    const isRca = /\brca\b|close associate|родственник|близк/i.test(blob);
+    const isPep = /\bpep\b|politically|политически значим/i.test(blob);
+    const status = isRca
+      ? "предварительный сигнал RCA"
+      : isPep
+        ? "предварительный сигнал PEP"
+        : "предварительное совпадение по имени";
+    const detail = sanitizeOrionGoldenClientText(
+      rows[0].snippet || rows[0].title || "Требуется сверка полного профиля."
+    ).slice(0, 220);
+    out.push({
+      provider: p.label,
+      statusLine: `${p.label}: ${status}`,
+      detail,
+    });
+  }
+  return out.slice(0, 3);
+}
+
+function formatPctLine(kpis: OrionSurfaceKpis): string {
+  if (kpis.linksTotal <= 0) return "по сохранённой выдаче недостаточно органических ссылок для доли";
+  return `${kpis.linksAdversePct}% ссылок в сохранённой выдаче выглядят потенциально нежелательными (${kpis.linksAdverse} из ${kpis.linksTotal})`;
+}
+
+function buildExecutiveNarrative(input: {
+  subjectName: string;
+  themes: OrionThemeCard[];
+  ru: OrionSurfaceKpis;
+  uae: OrionSurfaceKpis;
+  compliance: OrionComplianceDbSignal[];
+  synthesis?: ExecutiveSynthesisOutput | null;
+}): { scope: string; narrative: string; bullets: string[]; nextStep: string } {
+  const scope =
+    "Мы провели аудит результатов поиска (ТОП сохранённой выдачи) в Яндексе и Google по России и ОАЭ, а также доступных сигналов международных баз Dow Jones, World-Check и LexisNexis.";
+
+  // Prefer ThemeSet structure (ORION slide-3 genre). GPT bullets enrich themes when useful.
+  const gptBullets = sanitizeList(input.synthesis?.mainRisks).slice(0, 5);
+  const themeLines =
+    gptBullets.length >= 3
+      ? gptBullets
+      : input.themes.slice(0, 5).map((t) => {
+          const ents = t.namedEntities.slice(0, 3);
+          return ents.length > 0 ? `${t.title} (${ents.join(", ")})` : t.title;
+        });
+
+  const body: string[] = [
+    scope,
+    "",
+    "Коротко по итогам аудита:",
+    `• В результатах поиска по России (${formatPctLine(input.ru)}) и ОАЭ (${formatPctLine(input.uae)}) фиксируются сюжеты, которые могут осложнить compliance-процедуры.`,
+  ];
+  if (themeLines.length > 0) {
+    body.push("• Нежелательные / чувствительные темы:");
+    for (const line of themeLines) body.push(`  – ${line}`);
+  } else {
+    body.push("• Подтверждённые дифференцирующие adverse-темы на текущем этапе ограничены.");
+  }
+  if (input.compliance.length > 0) {
+    body.push("• В международных базах данных:");
+    for (const c of input.compliance) body.push(`  – ${c.statusLine}`);
+  }
+  const nextStep =
+    sanitizeList(input.synthesis?.nextSteps)[0] ||
+    "Для разработки эффективной стратегии нам необходимо обсудить контекст задачи и сформулировать конкретные цели.";
+  body.push(`• ${nextStep}`);
+
+  return {
+    scope,
+    narrative: body.join("\n"),
+    bullets: themeLines,
+    nextStep,
+  };
+}
+
+function sanitizeList(values: string[] | undefined): string[] {
+  return (values ?? []).map((v) => sanitizeOrionGoldenClientText(String(v))).filter((v) => v.length > 12);
+}
+
+export function buildOrionThemeSet(input: {
+  inventory: FullEvidenceInventory;
+  subjectName: string;
+  caseId?: string;
+  asOfDate?: string;
+  clientContent?: OrionClientContent | null;
+  executiveSynthesis?: ExecutiveSynthesisOutput | null;
+}): OrionThemeSet {
+  const subjectName = input.subjectName || input.inventory.subject.fullName;
+  const themes = buildThemes(input.inventory, subjectName);
+  const ru = computeSurfaceKpis(input.inventory, "RU", subjectName);
+  const uae = computeSurfaceKpis(input.inventory, "UAE", subjectName);
+  const compliance = complianceSignals(input.inventory);
+  const exec = buildExecutiveNarrative({
+    subjectName,
+    themes,
+    ru,
+    uae,
+    compliance,
+    synthesis: input.executiveSynthesis,
+  });
+
+  return {
+    version: "r10-12-orion-theme-set-v1",
+    caseId: input.caseId ?? input.inventory.caseId,
+    subjectName,
+    asOfDate: input.asOfDate ?? new Date().toISOString().slice(0, 10),
+    themes,
+    ru,
+    uae,
+    complianceSignals: compliance,
+    scopeSentence: exec.scope,
+    executiveNarrative: exec.narrative,
+    executiveBullets: exec.bullets,
+    nextStep: exec.nextStep,
+  };
+}
+
+export function themeSetBullets(themeSet: OrionThemeSet, region?: OrionRegionBucket): string[] {
+  const themes =
+    region == null
+      ? themeSet.themes
+      : themeSet.themes.filter((t) => t.regions.includes(region) || t.regions.length === 0);
+  return themes.slice(0, 6).map((t) => {
+    const ents = t.namedEntities.slice(0, 3);
+    return ents.length ? `${t.title}: ${ents.join(", ")}` : t.title;
+  });
+}
+
+export function regionalAuditDashboardBlock(input: {
+  themeSet: OrionThemeSet;
+  region: OrionRegionBucket;
+  title: string;
+}): {
+  narrative: string;
+  bullets: string[];
+  kpiLines: string[];
+  badge: string;
+} {
+  const kpis = input.region === "RU" ? input.themeSet.ru : input.themeSet.uae;
+  const themes = themeSetBullets(input.themeSet, input.region);
+  const narrative = [
+    `Резюме аудита цифрового профиля в Google и Яндексе (${input.region === "RU" ? "Россия" : "ОАЭ"}).`,
+    themes.length > 0
+      ? `В результатах поиска обнаружены нежелательные публикации по темам:`
+      : `Цифровой профиль по сохранённым данным региона выглядит слабо наполненным подтверждёнными adverse-сюжетами.`,
+  ].join(" ");
+
+  const kpiLines = [
+    `1. Ссылки — ${kpis.linksAdversePct}% потенциально нежелательных (${kpis.linksAdverse} из ${Math.max(kpis.linksTotal, 1)})`,
+    `2. Поисковые подсказки — ${kpis.suggestionsAdverse} из ${kpis.suggestionsTotal} указывают на нежелательные темы`,
+    `3. Википедия — статья ${kpis.wikipediaPresent ? "обнаружена" : "отсутствует"}`,
+    `4. Картинки — ${kpis.imagesAdverse} из ${kpis.imagesTotal} связаны с чувствительным контекстом`,
+    `5. Видео — ${kpis.videosTotal > 0 ? `${kpis.videosTotal} в сохранённых поверхностях` : "отсутствуют в сохранённых данных"}`,
+    `6. Блоки знаний — ${kpis.knowledgeAdverse} из ${kpis.knowledgeTotal} с чувствительным контекстом`,
+    `7. Похожие запросы — ${kpis.relatedAdverse} из ${kpis.relatedTotal} ведут на нежелательные темы`,
+  ];
+
+  return {
+    narrative,
+    bullets: themes.length > 0 ? themes : ["Подтверждённые adverse-темы по региону ограничены."],
+    kpiLines,
+    badge: kpis.overallBadge,
+  };
+}
+
+export function orionStyleRiskMatrixRows(themeSet: OrionThemeSet): Array<{
+  theme: string;
+  level: string;
+  summary: string;
+}> {
+  const levelFor = (t: OrionThemeCard): string => {
+    if (t.id === "sanctions_associates" || t.id === "pep_rca") return "Высокий уровень";
+    if (t.count >= 8) return "Высокий уровень";
+    if (t.count >= 3) return "Средний уровень";
+    return "Требует проверки";
+  };
+  const rows = themeSet.themes.slice(0, 6).map((t) => ({
+    theme: t.title,
+    level: levelFor(t),
+    summary: t.summary,
+  }));
+  for (const c of themeSet.complianceSignals) {
+    rows.push({
+      theme: c.provider,
+      level: "Требует проверки",
+      summary: `${c.statusLine}. ${c.detail}`,
+    });
+  }
+  return rows.slice(0, 8);
+}
+
+function positionOfItem(item: FullEvidenceInventory["items"][number]): number {
+  const rm = item.rawMetadata ?? {};
+  for (const c of [rm.position, rm.rank, rm.serpPosition, rm.resultPosition]) {
+    const n = Number(c);
+    if (Number.isFinite(n) && n > 0) return Math.floor(n);
+  }
+  return 0;
+}
+
+/** ORION-style SERP heat lines: marked adverse vs neutral by position. */
+export function buildSerpHeatGridBullets(
+  inventory: FullEvidenceInventory,
+  region: OrionRegionBucket,
+  maxRows = 20
+): { narrative: string; bullets: string[]; adverseCount: number; total: number } {
+  const rows = inventory.items
+    .filter((i) => i.evidenceType === "search_result" && matchesRegion(i.region, region))
+    .map((i) => ({
+      pos: positionOfItem(i) || 999,
+      domain: domainOf(i.sourceUrl) || "источник",
+      title: sanitizeOrionGoldenClientText(i.title).slice(0, 70),
+      adverse: isAdverseItem(i),
+      query: (i.query || "").trim(),
+    }))
+    .sort((a, b) => a.pos - b.pos);
+
+  // Prefer unique domains across top queries
+  const seen = new Set<string>();
+  const picked: typeof rows = [];
+  for (const row of rows) {
+    const key = `${row.domain}|${row.title}`.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    picked.push(row);
+    if (picked.length >= maxRows) break;
+  }
+
+  const adverseCount = picked.filter((r) => r.adverse).length;
+  const bullets = picked.map((r) => {
+    const mark = r.adverse ? "[Н]" : "[·]";
+    const pos = r.pos === 999 ? "—" : String(r.pos);
+    return `${mark} #${pos} ${r.domain} — ${r.title}`;
+  });
+
+  return {
+    narrative: `1–2 страницы выдачи (${region}): нежелательные отмечены. ${adverseCount} из ${picked.length} показанных результатов — потенциально нежелательные.`,
+    bullets,
+    adverseCount,
+    total: picked.length,
+  };
+}
+
+/** Annotated adverse link cards: Тема N + domain + snippet (ORION slide 9 style). */
+export function buildAnnotatedLinkCards(
+  themeSet: OrionThemeSet,
+  region?: OrionRegionBucket,
+  maxCards = 10
+): string[] {
+  const cards: string[] = [];
+  const themes =
+    region == null
+      ? themeSet.themes
+      : themeSet.themes.filter((t) => t.regions.includes(region) || t.regions.length === 0);
+
+  let themeIdx = 0;
+  for (const theme of themes) {
+    themeIdx += 1;
+    for (const hit of theme.sampleHits.slice(0, 2)) {
+      if (region && hit.region !== region && hit.region !== "GLOBAL") continue;
+      const snip = hit.snippet ? ` — ${hit.snippet.slice(0, 110)}` : "";
+      cards.push(
+        `Тема ${themeIdx}. ${hit.domain || "источник"}: ${hit.title.slice(0, 90)}${snip}`
+      );
+      if (cards.length >= maxCards) return cards;
+    }
+  }
+  return cards;
+}
+
+/** Decision / consequences matrix copy (ORION slide 4 right column). */
+export function buildDecisionConsequences(themeSet: OrionThemeSet): {
+  headline: string;
+  problems: string[];
+  consequences: string[];
+  recommendation: string;
+  riskLevel: string;
+} {
+  const problems = themeSetBullets(themeSet).slice(0, 5);
+  const high =
+    themeSet.ru.overallBadge === "Крайне негативный" ||
+    themeSet.uae.overallBadge === "Крайне негативный" ||
+    themeSet.themes.some((t) => t.id === "sanctions_associates" || t.id === "pep_rca");
+  return {
+    headline: high ? "Compliance риски: требуются действия" : "Compliance риски: требуется усиленная проверка",
+    problems: problems.length
+      ? problems
+      : ["Дифференцирующие adverse-темы на текущем этапе ограничены."],
+    consequences: [
+      "Углублённая проверка либо затруднения при KYC / резидентстве / открытии зарубежных счетов.",
+      "Отказы или расширенные запросы от банков и сервис-провайдеров.",
+      "Риск использования неактуальных или недостоверных источников комплаенс-базами.",
+      "Вероятные последствия санкционных/PEP-ассоциаций: ограничения на переводы, счета, сделки.",
+    ],
+    recommendation:
+      "Рекомендуются работы с международными базами данных, создание целевого цифрового профиля и вытеснение нежелательных ссылок из результатов поиска.",
+    riskLevel: high ? "Крайне высокий" : themeSet.ru.linksAdversePct >= 8 ? "Высокий" : "Средний",
+  };
+}
+
+export function buildComplianceDbSlides(themeSet: OrionThemeSet): Array<{
+  title: string;
+  narrative: string;
+  bullets: string[];
+}> {
+  return themeSet.complianceSignals.map((c) => ({
+    title: `Обзор профиля — ${c.provider}`,
+    narrative: c.statusLine,
+    bullets: [
+      c.detail,
+      ...themeSet.themes
+        .filter((t) => /pep|rca|sanction|associate|бизнес|политич/i.test(t.id + t.title))
+        .slice(0, 2)
+        .map((t) => t.title),
+      "Сигнал предварительный: требуется сверка полного профиля и первоисточников.",
+    ].filter(Boolean),
+  }));
+}
+

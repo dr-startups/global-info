@@ -17,7 +17,10 @@ import { renderOrionGoldenArtifacts } from "../renderer/orion-golden-render-clie
 import { buildOrionClassicAuditAssets } from "./orion-classic-asset-builder";
 import { composeOrionClassicAuditDeck } from "./orion-classic-audit-deck-composer";
 import { buildOrionClassicReportSpecFromClientContent } from "./orion-classic-client-content-to-report-spec";
+import { buildOrionThemeSet } from "./orion-classic-theme-set";
 import { inspectClassicOrionAuditQuality } from "./orion-classic-audit-quality-inspection";
+import type { ExecutiveSynthesisOutput } from "../gpt/orion-executive-synthesis-from-sections";
+import type { SectionDerivedRiskMatrix } from "../sections/orion-risk-matrix-from-sections";
 
 function writeJson(path: string, payload: unknown): void {
   mkdirSync(join(path, ".."), { recursive: true });
@@ -77,12 +80,36 @@ export async function runOrionClassicAuditRender(options: {
   });
   const assets = await buildOrionClassicAuditAssets({ ctx });
 
+  const roots = [
+    caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId),
+    join(process.cwd(), "storage", "digital-profile", "qa-r10-orion-golden-parallel"),
+  ];
+  let executiveSynthesis: ExecutiveSynthesisOutput | null = null;
+  let riskMatrix: SectionDerivedRiskMatrix | null = null;
+  for (const root of roots) {
+    executiveSynthesis =
+      executiveSynthesis ?? readJson<ExecutiveSynthesisOutput>(join(root, "executive-synthesis.output.json"));
+    riskMatrix =
+      riskMatrix ?? readJson<SectionDerivedRiskMatrix>(join(root, "risk-matrix.section-derived.json"));
+  }
+
+  const themeSet = buildOrionThemeSet({
+    inventory,
+    subjectName: clientContent.subject.displayName,
+    caseId,
+    clientContent,
+    executiveSynthesis,
+  });
+  writeJson(join(outputRoot, "orion-theme-set.json"), themeSet);
+
   const reportSpec = buildOrionClassicReportSpecFromClientContent({
     clientContent,
     inventory,
     assets,
     inventoryCounts: inventory.counts,
     warnings: inventory.warnings,
+    executiveSynthesis,
+    riskMatrix,
   });
   const deckManifest = composeOrionClassicAuditDeck(reportSpec, assets);
 

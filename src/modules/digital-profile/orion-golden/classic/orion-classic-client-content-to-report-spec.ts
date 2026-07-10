@@ -15,7 +15,6 @@ import { humanizeClientRiskMatrixRow } from "../client/risk-matrix-normalizer";
 import type { OrionGoldenReportSpec, SectionBlock } from "../report-spec/orion-report-spec";
 import {
   buildAppendixBlock,
-  buildManualReviewBlock,
   type ClientContentToReportSpecInput,
 } from "../report-spec/orion-client-content-to-report-spec";
 import { buildOrionClassicCommercialPack } from "./orion-classic-commercial-pack";
@@ -33,6 +32,17 @@ import {
   stripNumberedClientPrefix,
   truncateAtWordBoundary,
 } from "./orion-classic-text-utils";
+import {
+  buildAnnotatedLinkCards,
+  buildComplianceDbSlides,
+  buildDecisionConsequences,
+  buildOrionThemeSet,
+  buildSerpHeatGridBullets,
+  orionStyleRiskMatrixRows,
+  regionalAuditDashboardBlock,
+  themeSetBullets,
+  type OrionThemeSet,
+} from "./orion-classic-theme-set";
 
 export type OrionClassicAuditReportSpec = OrionGoldenReportSpec & {
   reportMode: "classic_orion_audit";
@@ -204,8 +214,16 @@ function buildExecutiveFromClient(
 
 function adverseThemeRows(
   inventory: FullEvidenceInventory | undefined,
-  region?: RegionBucket
+  region?: RegionBucket,
+  themeSet?: OrionThemeSet | null
 ): Array<{ theme: string; count: number }> {
+  if (themeSet) {
+    const themes =
+      region == null
+        ? themeSet.themes
+        : themeSet.themes.filter((t) => t.regions.includes(region) || t.regions.length === 0);
+    if (themes.length > 0) return themes.map((t) => ({ theme: t.title, count: t.count }));
+  }
   if (!inventory) return [];
   const counts = new Map<string, number>();
 
@@ -233,6 +251,100 @@ function adverseThemeRows(
     .sort((a, b) => b[1] - a[1])
     .slice(0, 12)
     .map(([theme, count]) => ({ theme, count }));
+}
+
+function applyThemeSetToExecutive(
+  executive: OrionGoldenReportSpec["executiveSummary"],
+  themeSet: OrionThemeSet
+): OrionGoldenReportSpec["executiveSummary"] {
+  const matrixRows = orionStyleRiskMatrixRows(themeSet).map((r) =>
+    humanizeClientRiskMatrixRow(r)
+  );
+  const decision = buildDecisionConsequences(themeSet);
+  return {
+    ...executive,
+    executiveSummary: sanitizeExecutiveClientText(themeSet.executiveNarrative, 2600),
+    mainRisks: sanitizeClassicBullets(themeSet.executiveBullets, 280).slice(0, 6),
+    possibleConsequences: sanitizeClassicBullets(decision.consequences, 280),
+    nextSteps: sanitizeClassicBullets([decision.recommendation, themeSet.nextStep], 280),
+    riskMatrix: matrixRows.length > 0 ? matrixRows : executive.riskMatrix,
+  };
+}
+
+function buildOrionExecutiveSlides(
+  executive: OrionGoldenReportSpec["executiveSummary"],
+  themeSet: OrionThemeSet
+): SectionBlock["slideSpecs"] {
+  const decision = buildDecisionConsequences(themeSet);
+  return [
+    {
+      slideKey: "executive-1",
+      template: "orion_golden_executive_card",
+      title: "Резюме",
+      narrative: executive.executiveSummary || themeSet.executiveNarrative,
+      bullets: [],
+    },
+    {
+      slideKey: "executive-decision",
+      template: "orion_golden_risk_matrix",
+      title: `${themeSet.subjectName} — ${decision.headline}`,
+      narrative: `Уровень риска: ${decision.riskLevel}. ${decision.recommendation}`,
+      bullets: sanitizeClassicBullets(
+        [
+          ...decision.problems.map((p) => `Проблема: ${p}`),
+          ...decision.consequences.slice(0, 4).map((c) => `Последствие: ${c}`),
+        ],
+        260
+      ).slice(0, 10),
+    },
+    {
+      slideKey: "executive-visual",
+      template: "orion_golden_executive_card",
+      title: "Ключевые темы и базы данных",
+      narrative: [
+        `Россия: ${themeSet.ru.linksAdversePct}% потенциально нежелательных ссылок · оценка: ${themeSet.ru.overallBadge}.`,
+        `ОАЭ: ${themeSet.uae.linksAdversePct}% потенциально нежелательных ссылок · оценка: ${themeSet.uae.overallBadge}.`,
+      ].join("\n"),
+      bullets: sanitizeClassicBullets(
+        [
+          ...themeSetBullets(themeSet).slice(0, 5),
+          ...themeSet.complianceSignals.map((c) => c.statusLine),
+        ],
+        280
+      ).slice(0, 8),
+    },
+  ];
+}
+
+function buildRegionalAuditSummaryBlock(
+  themeSet: OrionThemeSet,
+  region: RegionBucket,
+  title: string
+): SectionBlock {
+  const dash = regionalAuditDashboardBlock({ themeSet, region, title });
+  return {
+    sectionTitle: sanitizeOrionGoldenClientText(title),
+    metrics: {
+      mode: "regional_audit_dashboard",
+      adversePct: region === "RU" ? themeSet.ru.linksAdversePct : themeSet.uae.linksAdversePct,
+      badge: dash.badge,
+    },
+    narrative: truncateAtWordBoundary(`${dash.narrative} Оценка: ${dash.badge}.`, 700),
+    tables: [],
+    evidenceCards: dash.bullets.map((b) => ({ title: "Тема", summary: b })),
+    visualAssets: [],
+    slideSpecs: [
+      {
+        slideKey: `${region.toLowerCase()}-audit-dashboard`,
+        template: "orion_golden_audit_dashboard",
+        title,
+        narrative: truncateAtWordBoundary(`${dash.narrative} Оценка: ${dash.badge}.`, 500),
+        bullets: sanitizeClassicBullets([...dash.bullets, ...dash.kpiLines], 220).slice(0, 14),
+      },
+    ],
+    sourceRefs: [],
+    qaMetadata: { sectionKey: region === "RU" ? "10_ru_audit_summary" : "30_uae_audit_summary" },
+  };
 }
 
 function serpPositionTable(
@@ -411,7 +523,8 @@ function inventoryFallbackBlock(
   sectionId: string,
   title: string,
   subjectName: string,
-  inventory?: FullEvidenceInventory
+  inventory?: FullEvidenceInventory,
+  themeSet?: OrionThemeSet | null
 ): SectionBlock | null {
   const template = templateForRegistrySection(sectionId);
   const perSlide = bulletsPerSlideForSection(sectionId);
@@ -421,19 +534,36 @@ function inventoryFallbackBlock(
   let narrative = "";
 
   if (sectionId.includes("serp_position")) {
-    tables = serpPositionTable(inventory, region);
-    bullets = serpTableBullets(inventory, region);
-    narrative =
-      region === "RU"
-        ? "Таблица позиций в российской поисковой выдаче по сохранённым результатам."
-        : "Таблица позиций в международной / ОАЭ выдаче по сохранённым результатам.";
+    if (inventory && themeSet) {
+      const heat = buildSerpHeatGridBullets(inventory, region, 18);
+      bullets = heat.bullets;
+      narrative = heat.narrative;
+    } else {
+      tables = serpPositionTable(inventory, region);
+      bullets = serpTableBullets(inventory, region);
+      narrative =
+        region === "RU"
+          ? "Таблица позиций в российской поисковой выдаче по сохранённым результатам."
+          : "Таблица позиций в международной / ОАЭ выдаче по сохранённым результатам.";
+    }
   } else if (sectionId.includes("search_links")) {
-    bullets = searchLinkBullets(inventory, region);
-    narrative = "Ключевые ссылки поисковой выдачи (домен, заголовок, URL).";
+    if (themeSet) {
+      const cards = buildAnnotatedLinkCards(themeSet, region, 10);
+      const heat = inventory ? buildSerpHeatGridBullets(inventory, region, 8) : null;
+      bullets = cards.length > 0 ? cards : searchLinkBullets(inventory, region);
+      narrative =
+        cards.length > 0
+          ? `Ссылки в TOP выдачи ведут на нежелательные публикации (${region}). Карточки размечены темами резюме.`
+          : heat?.narrative ?? "Ключевые ссылки поисковой выдачи.";
+    } else {
+      bullets = searchLinkBullets(inventory, region);
+      narrative = "Ключевые ссылки поисковой выдачи (домен, заголовок, URL).";
+    }
   } else if (sectionId.includes("undesirable_theme")) {
-    const themes = adverseThemeRows(inventory, region);
-    bullets = themes.map((t) => `${t.theme} — ${t.count} материал(ов)`);
-    narrative = "Кластеры потенциально нежелательных или двусмысленных тем по сохранённым материалам.";
+    const themes = adverseThemeRows(inventory, region, themeSet);
+    bullets = themes.map((t) => t.theme);
+    narrative =
+      "Кластеры потенциально нежелательных тем (канонический ThemeSet). Повторяют сюжет резюме.";
   } else if (sectionId.includes("suggestions") || sectionId.includes("related_queries")) {
     const provider = sectionId.includes("yandex")
       ? "yandex"
@@ -442,36 +572,70 @@ function inventoryFallbackBlock(
         : undefined;
     const surfaceType = sectionId.includes("related") ? "related_query" : "suggestion";
     bullets = suggestionBullets(inventory, subjectName, surfaceType, provider, region);
+    const kpis = themeSet ? (region === "RU" ? themeSet.ru : themeSet.uae) : null;
     narrative =
       surfaceType === "related_query"
-        ? "Аудит похожих запросов по сохранённым данным региона."
-        : "Аудит поисковых подсказок по сохранённым данным региона.";
+        ? kpis
+          ? `Похожие запросы: ${kpis.relatedAdverse} из ${kpis.relatedTotal} с нежелательным контекстом.`
+          : "Аудит похожих запросов по сохранённым данным региона."
+        : kpis
+          ? `Поисковые подсказки: ${kpis.suggestionsAdverse} из ${kpis.suggestionsTotal} указывают на нежелательные темы. Подсказки появляются раньше результатов поиска.`
+          : "Аудит поисковых подсказок по сохранённым данным региона.";
   } else if (sectionId.includes("wikipedia")) {
     bullets = wikipediaBullets(inventory, region);
-    narrative = "Проверка справочного профиля Wikipedia.";
-  } else if (sectionId.includes("dow_jones")) {
-    bullets = complianceBullets(inventory, "dow");
-    narrative = "Материалы Dow Jones / RCA по субъекту.";
-  } else if (sectionId.includes("world_check")) {
-    bullets = complianceBullets(inventory, "world");
-    narrative = "Материалы World-Check по субъекту.";
-  } else if (sectionId.includes("lexisnexis")) {
-    bullets = complianceBullets(inventory, "lexis");
-    narrative = "Материалы LexisNexis по субъекту.";
+    const present = themeSet
+      ? region === "RU"
+        ? themeSet.ru.wikipediaPresent
+        : themeSet.uae.wikipediaPresent
+      : bullets.length > 0;
+    narrative = present
+      ? "Проверка справочного профиля Wikipedia."
+      : "В Википедии устойчивая статья о персоне не подтверждена — энциклопедический якорь цифрового профиля не используется.";
+  } else if (sectionId.includes("dow_jones") || sectionId.includes("world_check") || sectionId.includes("lexisnexis")) {
+    const hint = sectionId.includes("dow") ? "dow" : sectionId.includes("world") ? "world" : "lexis";
+    const fromTheme = themeSet
+      ? buildComplianceDbSlides(themeSet).filter((s) =>
+          hint === "dow"
+            ? /dow/i.test(s.title)
+            : hint === "world"
+              ? /world/i.test(s.title)
+              : /lexis/i.test(s.title)
+        )
+      : [];
+    if (fromTheme[0]) {
+      narrative = fromTheme[0].narrative;
+      bullets = sanitizeClassicBullets(fromTheme[0].bullets, 240);
+    } else {
+      bullets = complianceBullets(inventory, hint);
+      narrative =
+        hint === "dow"
+          ? "Материалы Dow Jones / RCA по субъекту."
+          : hint === "world"
+            ? "Материалы World-Check по субъекту."
+            : "Материалы LexisNexis по субъекту.";
+    }
   } else if (sectionId.includes("sanctions") || sectionId.includes("compliance_media") || sectionId.includes("compliance_database")) {
-    bullets = complianceBullets(inventory);
-    narrative = "Сводка комплаенс-сигналов и публичных баз.";
+    if (themeSet && themeSet.complianceSignals.length > 0) {
+      bullets = themeSet.complianceSignals.flatMap((c) => [c.statusLine, c.detail]);
+      narrative = "Сводка предварительных сигналов международных комплаенс-баз.";
+    } else {
+      bullets = complianceBullets(inventory);
+      narrative = "Сводка комплаенс-сигналов и публичных баз.";
+    }
   } else if (sectionId.includes("audit_summary") || sectionId === "03_digital_profile_overview") {
-    const themes = adverseThemeRows(inventory, region === "UAE" ? "UAE" : undefined);
-    const serpCount = inventory?.items.filter(
-      (i) => i.evidenceType === "search_result" && matchesRegion(i.region, region)
-    ).length ?? 0;
+    if (themeSet && sectionId.includes("audit_summary")) {
+      return buildRegionalAuditSummaryBlock(
+        themeSet,
+        region,
+        title
+      );
+    }
+    const themes = adverseThemeRows(inventory, region === "UAE" ? "UAE" : undefined, themeSet);
     bullets = [
-      `Сохранённых результатов поиска (${region}): ${serpCount}.`,
-      ...themes.slice(0, 5).map((t) => `${t.theme} — ${t.count} материал(ов)`),
+      ...themes.slice(0, 5).map((t) => t.theme),
       ...searchLinkBullets(inventory, region).slice(0, 4),
     ];
-    narrative = `Сводка цифрового следа (${region}) на основе inventory.`;
+    narrative = `Сводка цифрового следа (${region}) на основе ThemeSet / inventory.`;
   }
 
   bullets = sanitizeClassicBullets(bullets, 220);
@@ -526,13 +690,25 @@ function inventoryFallbackBlock(
 function blockFromClientSection(
   section: ClientSection,
   subjectName: string,
-  inventory?: FullEvidenceInventory
+  inventory?: FullEvidenceInventory,
+  themeSet?: OrionThemeSet | null
 ): SectionBlock | null {
   if (section.status === "NOT_APPLICABLE" || section.status === "DATA_POOR" || section.status === "COLLAPSED") {
     return null;
   }
   if (!section.narrative?.trim() && (section.keyFindings?.length ?? 0) === 0) {
     return null;
+  }
+
+  if (
+    themeSet &&
+    (section.sectionId === "10_ru_audit_summary" || section.sectionId === "30_uae_audit_summary")
+  ) {
+    return buildRegionalAuditSummaryBlock(
+      themeSet,
+      section.sectionId.startsWith("3") ? "UAE" : "RU",
+      section.title
+    );
   }
 
   const template = templateForRegistrySection(section.sectionId);
@@ -560,7 +736,9 @@ function blockFromClientSection(
     })
     .filter(Boolean);
 
-  if (section.sectionId.includes("suggestions") || section.sectionId.includes("related_queries")) {
+  if (section.sectionId.includes("undesirable_theme") && themeSet) {
+    bullets = themeSetBullets(themeSet, region);
+  } else if (section.sectionId.includes("suggestions") || section.sectionId.includes("related_queries")) {
     const provider = section.sectionId.includes("yandex")
       ? "yandex"
       : section.sectionId.includes("google")
@@ -576,18 +754,25 @@ function blockFromClientSection(
           ? fromInventory
           : [];
   } else if (section.sectionId.includes("undesirable_theme")) {
-    const themes = adverseThemeRows(inventory, region);
+    const themes = adverseThemeRows(inventory, region, themeSet);
     const themeBullets = themes.map((t) => t.theme);
     bullets = gptFindings.length > 0 ? [...gptFindings, ...themeBullets.slice(0, 4)] : themeBullets;
-  } else if (section.sectionId.includes("serp_position") || section.sectionId.includes("search_links")) {
-    const fromInventory = section.sectionId.includes("serp_position")
-      ? serpTableBullets(inventory, region)
-      : searchLinkBullets(inventory, region);
-    // Prefer GPT interpretation; keep a short evidence sample, not a full dump
+  } else if (section.sectionId.includes("serp_position")) {
+    if (inventory) {
+      const heat = buildSerpHeatGridBullets(inventory, region, 18);
+      bullets = heat.bullets.length > 0 ? heat.bullets : gptFindings;
+    } else {
+      bullets = gptFindings;
+    }
+  } else if (section.sectionId.includes("search_links")) {
+    const cards = themeSet ? buildAnnotatedLinkCards(themeSet, region, 10) : [];
+    const fromInventory = searchLinkBullets(inventory, region);
     bullets =
-      gptFindings.length > 0
-        ? [...gptFindings, ...fromInventory.slice(0, 6)]
-        : fromInventory.slice(0, 12);
+      cards.length > 0
+        ? cards
+        : gptFindings.length > 0
+          ? [...gptFindings, ...fromInventory.slice(0, 6)]
+          : fromInventory.slice(0, 12);
   } else {
     bullets = gptFindings;
     if (bullets.length === 0 && section.narrative) {
@@ -596,9 +781,11 @@ function blockFromClientSection(
   }
 
   bullets = sanitizeClassicBullets(bullets, 280);
-  const tables = section.sectionId.includes("serp_position")
-    ? serpPositionTable(inventory, region)
-    : [];
+  // Heat-grid bullets replace dense position tables when ThemeSet path is active
+  const tables =
+    section.sectionId.includes("serp_position") && !(inventory && bullets.some((b) => /\[Н\]|\[·\]/.test(b)))
+      ? serpPositionTable(inventory, region)
+      : [];
 
   const slideSpecs: SectionBlock["slideSpecs"] = [];
   // Prefer GPT-led bullets; only emit one compact SERP table slide when no GPT findings
@@ -670,11 +857,15 @@ function riskMatrixFromInventory(inventory?: FullEvidenceInventory): Array<{
 
 function riskMatrixBlockFromExecutive(
   executive: OrionGoldenReportSpec["executiveSummary"],
-  inventory?: FullEvidenceInventory
+  inventory?: FullEvidenceInventory,
+  themeSet?: OrionThemeSet | null
 ): SectionBlock {
   let matrix = (executive.riskMatrix ?? []).map((r) =>
     humanizeClientRiskMatrixRow({ theme: r.theme, level: r.level, summary: r.summary })
   );
+  if (themeSet && matrix.length === 0) {
+    matrix = orionStyleRiskMatrixRows(themeSet).map((r) => humanizeClientRiskMatrixRow(r));
+  }
   // Drop gate/queue rows from client matrix — they are process meta, not risk themes.
   matrix = matrix.filter(
     (r) =>
@@ -718,7 +909,9 @@ function riskMatrixBlockFromExecutive(
   return {
     sectionTitle: "Матрица комплаенс-рисков",
     metrics: { themes: matrix.length },
-    narrative: "",
+    narrative: themeSet
+      ? "Compliance-риски: требуются действия. Ниже — темы цифрового профиля и сигналы международных баз."
+      : "",
     tables: [],
     evidenceCards: matrix.map((r) => ({ title: r.theme, summary: r.summary })),
     visualAssets: [],
@@ -795,66 +988,76 @@ export function buildOrionClassicReportSpecFromClientContent(
 ): OrionClassicAuditReportSpec {
   const { clientContent: client } = input;
   const subjectName = client.subject.displayName;
+  const themeSet = input.inventory
+    ? buildOrionThemeSet({
+        inventory: input.inventory,
+        subjectName,
+        caseId: client.caseId,
+        clientContent: client,
+        executiveSynthesis: input.executiveSynthesis,
+      })
+    : null;
+
   let executive = buildExecutiveFromClient(
     client,
     input.executiveSynthesis,
     input.riskMatrix ?? client.riskMatrixSummary
   );
-  executive = enrichExecutiveWithInventory(executive, client, input.inventory);
+  if (themeSet) {
+    executive = applyThemeSetToExecutive(executive, themeSet);
+  } else {
+    executive = enrichExecutiveWithInventory(executive, client, input.inventory);
+  }
   const commercial = buildOrionClassicCommercialPack();
 
   const sectionById = new Map((client.sections ?? []).map((s) => [s.sectionId, s]));
   const registrySections: OrionClassicAuditReportSpec["registrySections"] = [];
 
   for (const reg of getClientAuditSections()) {
-    if (reg.sectionId === "01_executive_summary") {
-      // ORION analyst brief: split long synthesis across slides; themes without numbered prefixes.
-      const narrativeChunks = splitCompleteChunks(executive.executiveSummary, 1100);
-      const themeBullets = sanitizeClassicBullets(executive.mainRisks, 280).slice(0, 6);
-      const consequenceBullets = sanitizeClassicBullets(executive.possibleConsequences, 280).slice(0, 2);
-      const nextStepBullets = sanitizeClassicBullets(
-        executive.nextSteps.slice(0, 1).map((s) => (s.startsWith("Следующий") ? s : `Следующий шаг: ${s}`)),
-        280
-      );
-      const recBullets = sanitizeClassicBullets(
-        executive.finalRecommendations.filter(isClientActionRecommendation),
-        280
-      ).slice(0, 6);
+    // ORION audit keeps identity/manual-review out of the client storyboard (appendix-only noise).
+    if (reg.sectionId === "00_case_identity") continue;
+    if (reg.sectionId === "50_manual_review_required") continue;
+    if (reg.sectionId === "51_excluded_noise_summary") continue;
+    if (reg.sectionId === "54_evidence_appendix") continue;
 
-      const slideSpecs: NonNullable<SectionBlock["slideSpecs"]> = [];
-      if (narrativeChunks.length <= 1) {
-        slideSpecs.push({
-          slideKey: "executive-1",
-          template: "orion_golden_executive_card",
-          title: "Резюме",
-          narrative: narrativeChunks[0] ?? executive.executiveSummary,
-          bullets: [...themeBullets, ...consequenceBullets, ...nextStepBullets].slice(0, 7),
-        });
-      } else {
-        slideSpecs.push({
-          slideKey: "executive-1",
-          template: "orion_golden_executive_card",
-          title: "Резюме",
-          narrative: narrativeChunks[0],
-          bullets: [],
-        });
-        slideSpecs.push({
-          slideKey: "executive-2",
-          template: "orion_golden_executive_card",
-          title: "Резюме — ключевые темы",
-          narrative: narrativeChunks.slice(1).join("\n\n"),
-          bullets: [...themeBullets, ...consequenceBullets, ...nextStepBullets].slice(0, 7),
-        });
-      }
-      if (recBullets.length) {
-        slideSpecs.push({
-          slideKey: "executive-recs",
-          template: "orion_golden_executive_card",
-          title: "Резюме — рекомендуемые действия",
-          narrative: "",
-          bullets: recBullets,
-        });
-      }
+    if (reg.sectionId === "01_executive_summary") {
+      const slideSpecs = themeSet
+        ? buildOrionExecutiveSlides(executive, themeSet)
+        : (() => {
+            const narrativeChunks = splitCompleteChunks(executive.executiveSummary, 1100);
+            const themeBullets = sanitizeClassicBullets(executive.mainRisks, 280).slice(0, 6);
+            const consequenceBullets = sanitizeClassicBullets(executive.possibleConsequences, 280).slice(0, 2);
+            const nextStepBullets = sanitizeClassicBullets(
+              executive.nextSteps.slice(0, 1).map((s) => (s.startsWith("Следующий") ? s : `Следующий шаг: ${s}`)),
+              280
+            );
+            const specs: SectionBlock["slideSpecs"] = [];
+            if (narrativeChunks.length <= 1) {
+              specs.push({
+                slideKey: "executive-1",
+                template: "orion_golden_executive_card",
+                title: "Резюме",
+                narrative: narrativeChunks[0] ?? executive.executiveSummary,
+                bullets: [...themeBullets, ...consequenceBullets, ...nextStepBullets].slice(0, 7),
+              });
+            } else {
+              specs.push({
+                slideKey: "executive-1",
+                template: "orion_golden_executive_card",
+                title: "Резюме",
+                narrative: narrativeChunks[0],
+                bullets: [],
+              });
+              specs.push({
+                slideKey: "executive-2",
+                template: "orion_golden_executive_card",
+                title: "Резюме — ключевые темы",
+                narrative: narrativeChunks.slice(1).join("\n\n"),
+                bullets: [...themeBullets, ...consequenceBullets, ...nextStepBullets].slice(0, 7),
+              });
+            }
+            return specs;
+          })();
 
       registrySections.push({
         sectionId: reg.sectionId,
@@ -877,30 +1080,47 @@ export function buildOrionClassicReportSpecFromClientContent(
       registrySections.push({
         sectionId: reg.sectionId,
         order: reg.order,
-        block: riskMatrixBlockFromExecutive(executive, input.inventory),
+        block: riskMatrixBlockFromExecutive(executive, input.inventory, themeSet),
+      });
+      continue;
+    }
+    if (reg.sectionId === "10_ru_audit_summary" && themeSet) {
+      registrySections.push({
+        sectionId: reg.sectionId,
+        order: reg.order,
+        block: buildRegionalAuditSummaryBlock(themeSet, "RU", reg.titleRu),
+      });
+      continue;
+    }
+    if (reg.sectionId === "30_uae_audit_summary" && themeSet) {
+      registrySections.push({
+        sectionId: reg.sectionId,
+        order: reg.order,
+        block: buildRegionalAuditSummaryBlock(themeSet, "UAE", reg.titleRu),
       });
       continue;
     }
     if (reg.sectionId === "50_manual_review_required") {
-      registrySections.push({
-        sectionId: reg.sectionId,
-        order: reg.order,
-        block: buildManualReviewBlock(client),
-      });
       continue;
     }
     if (reg.sectionId === "54_evidence_appendix") continue;
 
     const sec = sectionById.get(reg.sectionId);
     if (sec) {
-      const block = blockFromClientSection(sec, subjectName, input.inventory);
+      const block = blockFromClientSection(sec, subjectName, input.inventory, themeSet);
       if (block) {
         registrySections.push({ sectionId: reg.sectionId, order: reg.order, block });
         continue;
       }
     }
 
-    const fallback = inventoryFallbackBlock(reg.sectionId, reg.titleRu, subjectName, input.inventory);
+    const fallback = inventoryFallbackBlock(
+      reg.sectionId,
+      reg.titleRu,
+      subjectName,
+      input.inventory,
+      themeSet
+    );
     if (fallback) {
       registrySections.push({ sectionId: reg.sectionId, order: reg.order, block: fallback });
     }
@@ -959,7 +1179,7 @@ export function buildOrionClassicReportSpecFromClientContent(
     assets: input.assets ?? [],
     qaMetadata: {
       generatedBy: "gpt-5.5",
-      architectureVersion: "r10-11-classic-orion-audit-v2",
+      architectureVersion: "r10-12-orion-theme-packaging-v1",
       inventoryCounts: input.inventoryCounts ?? input.inventory?.counts ?? {
         searchResults: 0,
         searchSurfaces: 0,
@@ -971,7 +1191,9 @@ export function buildOrionClassicReportSpecFromClientContent(
       warnings: [
         ...(input.warnings ?? []),
         "classic_orion_audit_mode",
+        "theme_set_driven_audit",
         "commercial_pack_included",
+        "commercial_pack_capped",
         client.mode === "post_review"
           ? "source:orion-client-content.post-review"
           : "source:orion-client-content.pre-review",

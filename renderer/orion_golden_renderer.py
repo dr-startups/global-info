@@ -324,26 +324,30 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY, FS_SECTION)
         if narrative:
-            y = ctx.body(_clip_words(narrative, 280), y, max_h=520000, color=MUTED_COLOR)
+            y = ctx.body(_clip_words(narrative, 320), y, max_h=520000, color=MUTED_COLOR)
             y = y + 60000
-        # Dense SERP / suggestion rows — allow more items, slightly tighter clip
+        # Dense SERP / suggestion / heat-grid rows
         avail = max(400000, CONTENT_BOTTOM - y)
         box = ctx.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(avail))
         tf = box.text_frame
         tf.word_wrap = True
         first = True
-        for bullet in bullets[:12]:
+        for bullet in bullets[:18]:
             p = tf.paragraphs[0] if first else tf.add_paragraph()
             first = False
             p.space_before = Pt(2)
-            p.space_after = Pt(6)
-            p.line_spacing = 1.08
+            p.space_after = Pt(5)
+            p.line_spacing = 1.05
             r = p.add_run()
-            clipped = _clip_words(bullet, 150)
+            clipped = _clip_words(bullet, 160)
             r.text = f"• {clipped}"
             r.font.name = FONT
             r.font.size = Pt(11)
-            r.font.color.rgb = BODY_COLOR
+            # Highlight adverse heat-grid rows
+            if clipped.startswith("[Н]"):
+                r.font.color.rgb = RGBColor(0xB9, 0x1C, 0x1C)
+            else:
+                r.font.color.rgb = BODY_COLOR
         return
 
     if template == "orion_golden_no_data_compact":
@@ -352,7 +356,18 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         ctx.body(narrative or "Для данного раздела недостаточно подтверждённых данных.", y)
         return
 
-    # default section summary / audit dashboard / appendix
+    if template == "orion_golden_audit_dashboard":
+        # ORION regional résumé: themes left-ish via bullets top, KPI counters below.
+        ctx.light_bg()
+        y = ctx.title(title, 280000, NAVY, FS_SECTION)
+        if narrative:
+            y = ctx.body(_clip_words(narrative, 520), y, max_h=1000000)
+            y = y + 80000
+        if bullets:
+            ctx.bullets(bullets, y, max_items=14, max_chars=220)
+        return
+
+    # default section summary / appendix
     ctx.light_bg()
     y = ctx.title(title, 280000, NAVY, FS_SECTION)
     # Prefer bullets for dense content; keep narrative short to avoid overlap

@@ -60,6 +60,7 @@ export * from "./report-spec/orion-client-content-to-report-spec";
 export * from "./composer/orion-client-audit-deck-composer";
 export * from "./classic/orion-classic-client-content-to-report-spec";
 export * from "./classic/orion-classic-audit-deck-composer";
+export * from "./classic/orion-classic-theme-set";
 export * from "./classic/run-orion-classic-audit-render";
 export * from "./evidence/admin-review-decision-validation";
 export * from "./evidence/admin-review-decision-record";
