@@ -218,6 +218,31 @@ function main() {
       evidenceRefs: [],
       status: "ready",
     },
+    {
+      assetRef: "ru_video_cards",
+      kind: "video_cards",
+      title: "Видео",
+      caption: "Сводка видео",
+      imageData: FAKE_IMAGE_DATA,
+      evidenceRefs: ["vid-1"],
+      status: "ready",
+    },
+    {
+      assetRef: "r10-vid-1",
+      kind: "video_cards",
+      title: "URL-only video",
+      imageUrl: "https://example.com/v.mp4",
+      evidenceRefs: [],
+      status: "ready",
+    },
+    {
+      assetRef: "ru_knowledge_panel",
+      kind: "knowledge_panel",
+      title: "Панель знаний",
+      imageData: FAKE_IMAGE_DATA,
+      evidenceRefs: ["kp-1"],
+      status: "ready",
+    },
   ];
 
   const deck = composeOrionClassicAuditDeck(minimalSpec(), assets);
@@ -231,6 +256,14 @@ function main() {
     "image slide does not use URL-only r10-img",
     !imageSlides.some((s) => (s.assetRefs ?? []).some((r) => r.startsWith("r10-img")))
   );
+  const videoSlides = deck.finalSlides.filter((s) => s.template === "orion_golden_video_cards");
+  check("deck includes video slide from composite", videoSlides.length === 1, `count=${videoSlides.length}`);
+  check(
+    "video slide does not use URL-only r10-vid",
+    !videoSlides.some((s) => (s.assetRefs ?? []).some((r) => r.startsWith("r10-vid")))
+  );
+  const kpSlides = deck.finalSlides.filter((s) => s.template === "orion_golden_knowledge_panel");
+  check("deck includes knowledge panel slide", kpSlides.length === 1, `count=${kpSlides.length}`);
   const serpIdx = deck.finalSlides.findIndex((s) => s.template === "orion_golden_serp_screenshot");
   const imgIdx = deck.finalSlides.findIndex((s) => s.template === "orion_golden_image_grid");
   check(
@@ -238,6 +271,12 @@ function main() {
     serpIdx >= 0 && imgIdx > serpIdx,
     `serp=${serpIdx} img=${imgIdx}`
   );
+
+  const first36Deck = composeOrionClassicAuditDeck(minimalSpec(), assets, { includeCommercial: false });
+  const hasCommercial = first36Deck.finalSlides.some((s) =>
+    ["offer", "product_overview", "solution_digital_profile", "about"].includes(s.sectionKey)
+  );
+  check("first36 omits commercial pack", !hasCommercial);
 
   console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) failed.`);
   if (failures > 0) process.exitCode = 1;

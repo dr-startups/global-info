@@ -16,6 +16,8 @@ export type OrionVisualReportMode = "legacy_full" | "client_audit" | "classic_or
 
 export const CLIENT_AUDIT_PAGE_RANGE = { min: 30, max: 45 } as const;
 export const CLASSIC_ORION_AUDIT_PAGE_RANGE = { min: 30, max: 55 } as const;
+/** First36 CEO MVP soft band (exact 36 is a separate CEO_READY gate). */
+export const FIRST36_CEO_PAGE_RANGE = { min: 30, max: 40 } as const;
 
 export function resolveOrionVisualReportMode(input?: {
   reportMode?: OrionVisualReportMode;
@@ -33,8 +35,15 @@ export function resolveOrionVisualReportMode(input?: {
   return "legacy_full";
 }
 
-export function expectedPageRangeForMode(mode: OrionVisualReportMode): { min: number; max: number } {
-  if (mode === "classic_orion_audit") return { ...CLASSIC_ORION_AUDIT_PAGE_RANGE };
+export function expectedPageRangeForMode(
+  mode: OrionVisualReportMode,
+  options?: { first36CeoMode?: boolean }
+): { min: number; max: number } {
+  if (mode === "classic_orion_audit") {
+    return options?.first36CeoMode
+      ? { ...FIRST36_CEO_PAGE_RANGE }
+      : { ...CLASSIC_ORION_AUDIT_PAGE_RANGE };
+  }
   if (mode === "client_audit") return { ...CLIENT_AUDIT_PAGE_RANGE };
   return {
     min: ORION_GOLDEN_BLUEPRINT.targetPageRange.min,
@@ -48,6 +57,7 @@ export function inspectOrionGoldenVisualQuality(input: {
   inventory: FullEvidenceInventory;
   pdfExportMode?: string;
   reportMode?: OrionVisualReportMode;
+  first36CeoMode?: boolean;
 }): {
   passed: boolean;
   pageCount: number;
@@ -78,7 +88,8 @@ export function inspectOrionGoldenVisualQuality(input: {
   checks.push({ id: "pages-png", passed: pageCount > 0, detail: `${pageCount} pages` });
 
   const reportMode = resolveOrionVisualReportMode({ reportMode: input.reportMode });
-  const expectedPageRange = expectedPageRangeForMode(reportMode);
+  const first36CeoMode = Boolean(input.first36CeoMode);
+  const expectedPageRange = expectedPageRangeForMode(reportMode, { first36CeoMode });
   const enoughData =
     input.inventory.counts.searchResults >= 50 &&
     (input.inventory.mediaAvailability.serpScreenshots > 0 ||
@@ -93,7 +104,7 @@ export function inspectOrionGoldenVisualQuality(input: {
   } else if (reportMode === "classic_orion_audit") {
     pageOk =
       pageCount >= expectedPageRange.min && pageCount <= expectedPageRange.max;
-    pageDetail = `${pageCount} (classic_orion_audit target ${expectedPageRange.min}-${expectedPageRange.max})`;
+    pageDetail = `${pageCount} (classic_orion_audit${first36CeoMode ? " first36" : ""} target ${expectedPageRange.min}-${expectedPageRange.max})`;
   } else if (enoughData) {
     pageOk =
       pageCount >= expectedPageRange.min && pageCount <= expectedPageRange.max + 10;

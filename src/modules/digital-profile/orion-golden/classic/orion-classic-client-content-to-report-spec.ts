@@ -1455,12 +1455,15 @@ function enrichExecutiveWithInventory(
 
 export type ClassicReportSpecInput = ClientContentToReportSpecInput & {
   inventory?: FullEvidenceInventory;
+  /** When false (First36 CEO mode), commercial pack blocks are empty stubs. */
+  includeCommercial?: boolean;
 };
 
 export function buildOrionClassicReportSpecFromClientContent(
   input: ClassicReportSpecInput
 ): OrionClassicAuditReportSpec {
   const { clientContent: client } = input;
+  const includeCommercial = input.includeCommercial !== false;
   const subjectName = client.subject.displayName;
   const themeSet = input.inventory
     ? buildOrionThemeSet({
@@ -1482,7 +1485,16 @@ export function buildOrionClassicReportSpecFromClientContent(
   } else {
     executive = enrichExecutiveWithInventory(executive, client, input.inventory);
   }
-  const commercial = buildOrionClassicCommercialPack();
+  const commercial = includeCommercial
+    ? buildOrionClassicCommercialPack()
+    : {
+        offer: emptyLegacy("offer"),
+        productOverview: emptyLegacy("product_overview"),
+        solutionDigitalProfile: emptyLegacy("solution_digital_profile"),
+        solutionComplianceDatabases: emptyLegacy("solution_compliance_databases"),
+        solutionWikipedia: emptyLegacy("solution_wikipedia"),
+        about: emptyLegacy("about"),
+      };
 
   const sectionById = new Map((client.sections ?? []).map((s) => [s.sectionId, s]));
   const registrySections: OrionClassicAuditReportSpec["registrySections"] = [];
@@ -1699,8 +1711,8 @@ export function buildOrionClassicReportSpecFromClientContent(
         ...(input.warnings ?? []),
         "classic_orion_audit_mode",
         "theme_set_driven_audit",
-        "commercial_pack_included",
-        "commercial_pack_capped",
+        includeCommercial ? "commercial_pack_included" : "commercial_sections_omitted",
+        includeCommercial ? "commercial_pack_capped" : "first36_ceo_mode",
         client.mode === "post_review"
           ? "source:orion-client-content.post-review"
           : "source:orion-client-content.pre-review",

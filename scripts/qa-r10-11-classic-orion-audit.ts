@@ -16,7 +16,8 @@ import { inspectClassicOrionAuditQuality } from "../src/modules/digital-profile/
 import { runOrionClassicAuditRender } from "../src/modules/digital-profile/orion-golden/classic/run-orion-classic-audit-render";
 
 const offline = process.argv.includes("--offline");
-const caseId = process.argv.find((a) => !a.startsWith("-")) ?? "cmqzz1vbr00d2vdrsrjsgie2g";
+const caseIdArg = process.argv.slice(2).find((a) => !a.startsWith("-") && !a.endsWith(".ts") && !a.endsWith(".js"));
+const caseId = caseIdArg ?? "cmqzz1vbr00d2vdrsrjsgie2g";
 const outputRoot = join(
   process.cwd(),
   "storage",

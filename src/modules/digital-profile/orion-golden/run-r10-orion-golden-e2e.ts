@@ -834,6 +834,7 @@ export async function runR10OrionGoldenE2e(options: {
           inventory,
           inventoryCounts: inventory.counts,
           warnings: inventory.warnings,
+          includeCommercial: process.env.ORION_FIRST36_CEO_MODE !== "1",
         })
       : buildOrionReportSpecFromClientContent({
           clientContent: postReviewContent,
@@ -846,7 +847,9 @@ export async function runR10OrionGoldenE2e(options: {
     writeJson(join(outputRoot, "orion-report-spec.from-client-content.json"), reportSpec);
     writeJson(join(outputRoot, "orion-report-spec.json"), reportSpec);
     deckManifest = shouldUseClassicOrionAuditMode()
-      ? composeOrionClassicAuditDeck(reportSpec as OrionClassicAuditReportSpec, assets)
+      ? composeOrionClassicAuditDeck(reportSpec as OrionClassicAuditReportSpec, assets, {
+          includeCommercial: process.env.ORION_FIRST36_CEO_MODE !== "1",
+        })
       : composeOrionClientAuditDeck(reportSpec, assets);
     renderSource = "client_content_adapter";
   } else {

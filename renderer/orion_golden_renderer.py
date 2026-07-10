@@ -26,14 +26,16 @@ FONT = "Arial"
 FS_TITLE = 26
 FS_SECTION = 22
 FS_SUBTITLE = 13
-FS_BODY = 12
+FS_BODY = 12  # min readable body ≥ 11pt
 FS_CAPTION = 9
 
-MARGIN_X = 420000
-CONTENT_W = 8300000
-SLIDE_H = 6858000
-FOOTER_Y = 6420000
-CONTENT_BOTTOM = 6200000
+# Master slide 16:10 (12.8" × 8.0") — matches ORION reference aspect.
+SLIDE_W = 11_704_320
+SLIDE_H = 7_315_200
+MARGIN_X = 480_000
+CONTENT_W = SLIDE_W - 2 * MARGIN_X
+FOOTER_Y = SLIDE_H - 440_000
+CONTENT_BOTTOM = SLIDE_H - 700_000
 
 NAVY = RGBColor(0x0B, 0x1A, 0x33)
 TITLE_COLOR = RGBColor(0xF8, 0xFA, 0xFC)
@@ -121,32 +123,32 @@ class _Ctx:
         return y + 950000
 
     def body(self, text: str, y: int, max_h: int = 900000, color: RGBColor = BODY_COLOR) -> int:
-        # Cap height so body never collides with footer
+        # Cap height so body never collides with footer. Consume the full budget so
+        # subsequent content never overlaps underestimated text height (p3/p11 fix).
         avail = max(200000, min(max_h, CONTENT_BOTTOM - y))
         box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(avail))
         tf = box.text_frame
         tf.word_wrap = True
-        # Split long narrative into short paragraphs for readability
         chunks = [c.strip() for c in re.split(r"\n+", _safe(text)) if c.strip()]
         if not chunks:
             chunks = [""]
         first = True
-        used_chars = 0
+        max_chars_total = max(200, int(avail / 230000) * 90)
+        used = 0
         for chunk in chunks[:6]:
+            if used >= max_chars_total:
+                break
             p = tf.paragraphs[0] if first else tf.add_paragraph()
             first = False
             p.space_after = Pt(8)
             r = p.add_run()
-            clipped = _clip_words(chunk, 900)
+            clipped = _clip_words(chunk, min(900, max_chars_total - used))
             r.text = clipped
-            used_chars += len(clipped)
+            used += len(clipped)
             r.font.name = FONT
             r.font.size = Pt(FS_BODY)
             r.font.color.rgb = color
-        # Estimate consumed height (~18pt line) instead of returning full avail
-        est_lines = max(2, min(14, used_chars // 90 + len(chunks)))
-        used_h = min(avail, est_lines * 230000 + 120000)
-        return y + used_h
+        return y + avail
 
     def bullets(self, items: list[str], y: int, color: RGBColor = BODY_COLOR, max_items: int = 8, max_chars: int = 280) -> int:
         avail = max(400000, CONTENT_BOTTOM - y)
@@ -211,20 +213,50 @@ def _resolve_image_bytes(asset: dict[str, Any] | None) -> bytes | None:
     return None
 
 
-def _embed_image(ctx: _Ctx, asset: dict[str, Any] | None, y: int, h: int = 4800000) -> None:
+def _embed_image_contain(ctx: _Ctx, asset: dict[str, Any] | None, y: int, h: int = 4800000) -> bool:
+    """Place image inside (MARGIN_X, y, CONTENT_W, h) preserving aspect ratio."""
     if not asset:
         ctx.body("Визуальный материал недоступен для данного раздела.", y)
-        return
+        return False
     raw = _resolve_image_bytes(asset)
-    if raw:
-        # BytesIO — do not rely on temp files that may be unlinked before PPTX save.
-        stream = io.BytesIO(raw)
-        ctx.slide.shapes.add_picture(stream, Emu(MARGIN_X), Emu(y), width=Emu(CONTENT_W), height=Emu(h))
-        return
-    title = _safe(asset.get("title") or "Источник")
-    domain = _safe(asset.get("caption") or asset.get("storageKey") or "")
-    ctx.card(y, h)
-    ctx.body(f"{title}\n{domain}\nИзображение недоступно — показаны источник и описание.", y + 120000, max_h=h - 200000)
+    if not raw:
+        title = _safe(asset.get("title") or "Источник")
+        domain = _safe(asset.get("caption") or asset.get("storageKey") or "")
+        ctx.card(y, h)
+        ctx.body(
+            f"{title}\n{domain}\nИзображение недоступно — показаны источник и описание.",
+            y + 120000,
+            max_h=h - 200000,
+        )
+        return False
+    box_w, box_h = CONTENT_W, h
+    iw, ih = box_w, box_h
+    if Image is not None:
+        try:
+            with Image.open(io.BytesIO(raw)) as im:
+                iw, ih = im.size
+        except Exception:  # noqa: BLE001
+            pass
+    scale = min(box_w / max(iw, 1), box_h / max(ih, 1))
+    draw_w = int(iw * scale)
+    draw_h = int(ih * scale)
+    left = MARGIN_X + (box_w - draw_w) // 2
+    top = y + (box_h - draw_h) // 2
+    stream = io.BytesIO(raw)
+    ctx.slide.shapes.add_picture(stream, Emu(left), Emu(top), width=Emu(draw_w), height=Emu(draw_h))
+    return True
+
+
+def _embed_image(ctx: _Ctx, asset: dict[str, Any] | None, y: int, h: int = 4800000) -> None:
+    _embed_image_contain(ctx, asset, y, h)
+
+
+def _first_visual_asset(refs: list[Any], assets: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    for ref in refs:
+        asset = assets.get(str(ref))
+        if asset and _resolve_image_bytes(asset):
+            return asset
+    return None
 
 
 def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> None:
@@ -256,22 +288,21 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     if template == "orion_golden_executive_card":
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY, FS_SECTION)
-        # Narrative-only slide (part 1) vs themes slide: give narrative more vertical room.
         narr = narrative.strip()
+        # Fixed template budgets — never size cards from character count (p3/p11 overlap).
         if narr and not bullets:
-            card_h = min(5200000, max(1600000, CONTENT_BOTTOM - y - 200000))
+            card_h = min(5_400_000, max(1_600_000, CONTENT_BOTTOM - y - 200000))
             ctx.card(y, h=card_h)
-            # Do not hard-clip the full résumé; body splits paragraphs itself.
             ctx.body(narr, y + 100000, max_h=card_h - 160000)
             return
         if narr:
-            narr_show = _clip_words(narr, 2200)
-            card_h = min(2800000, max(800000, len(narr_show) * 1600 + 200000))
-            max_card = max(800000, CONTENT_BOTTOM - y - (1100000 if bullets else 200000))
-            card_h = min(card_h, max_card)
+            narr_show = _clip_words(narr, 1800)
+            bullet_reserve = 1_800_000 if bullets else 200000
+            max_card = max(800000, CONTENT_BOTTOM - y - bullet_reserve)
+            card_h = min(3_200_000, max_card)
             ctx.card(y, h=card_h)
-            y = ctx.body(narr_show, y + 100000, max_h=card_h - 160000)
-            y = y + 140000
+            ctx.body(narr_show, y + 100000, max_h=card_h - 160000)
+            y = y + card_h + 120000
         if bullets:
             ctx.bullets(bullets, y, max_items=7, max_chars=280)
         return
@@ -347,7 +378,55 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     if template == "orion_golden_video_cards":
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY)
-        ctx.bullets(bullets or [_safe((primary or {}).get("title"))], y)
+        visual = _first_visual_asset(refs, assets) or primary
+        if visual and _resolve_image_bytes(visual):
+            _embed_image(ctx, visual, y + 60000, h=5_200_000)
+            cap = _safe(str(visual.get("caption") or (bullets[0] if bullets else "")))
+            if cap:
+                ctx.body(cap, CONTENT_BOTTOM - 380000, max_h=320000, color=MUTED_COLOR)
+        else:
+            ctx.body(
+                "Видеоматериалы не обнаружены или недоступны для предпросмотра.",
+                y + 80000,
+                max_h=800000,
+                color=MUTED_COLOR,
+            )
+            if bullets:
+                ctx.bullets(bullets, y + 900000, max_items=6, max_chars=220)
+        return
+
+    if template == "orion_golden_knowledge_panel":
+        ctx.light_bg()
+        y = ctx.title(title, 280000, NAVY)
+        visual = _first_visual_asset(refs, assets) or primary
+        if visual and _resolve_image_bytes(visual):
+            box_h = 5_200_000
+            raw = _resolve_image_bytes(visual)
+            assert raw is not None
+            iw, ih = CONTENT_W, box_h
+            if Image is not None:
+                try:
+                    with Image.open(io.BytesIO(raw)) as im:
+                        iw, ih = im.size
+                except Exception:  # noqa: BLE001
+                    pass
+            max_w = int(CONTENT_W * 0.72)
+            scale = min(max_w / max(iw, 1), box_h / max(ih, 1))
+            dw, dh = int(iw * scale), int(ih * scale)
+            stream = io.BytesIO(raw)
+            ctx.slide.shapes.add_picture(
+                stream, Emu(MARGIN_X), Emu(y + 60000), width=Emu(dw), height=Emu(dh)
+            )
+            cap = _safe(str(visual.get("caption") or (bullets[0] if bullets else "")))
+            if cap:
+                ctx.body(cap, CONTENT_BOTTOM - 380000, max_h=320000, color=MUTED_COLOR)
+        else:
+            ctx.body(
+                bullets[0] if bullets else "Справочные данные ограничены.",
+                y + 80000,
+                max_h=1_200_000,
+                color=MUTED_COLOR,
+            )
         return
 
     if template == "orion_golden_lexis_visual_page":
@@ -427,23 +506,36 @@ def _write_pdf_fallback(
     """Text+image PDF when LibreOffice is unavailable. Must embed SERP/Lexis imageData."""
     doc = fitz.open()
     asset_map = assets or {}
-    all_slides = [{"title": "ORION Digital Profile", "body": subject}] + slides
+    # Match PPTX master 16:10 (do not invent an extra cover page — slides already include cover).
+    all_slides = list(slides)
     total = len(all_slides)
+    # 16:10 page geometry (px @ 100dpi of 12.8"×8.0")
+    page_w, page_h = 1280, 800
+    margin_x, title_bottom, content_bottom, footer_y = 48, 72, 740, 770
     visual_templates = {
         "orion_golden_serp_screenshot",
         "orion_golden_lexis_visual_page",
         "orion_golden_image_grid",
+        "orion_golden_video_cards",
+        "orion_golden_knowledge_panel",
     }
 
     def esc(t: str) -> str:
         return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     for idx, slide in enumerate(all_slides, start=1):
-        page = doc.new_page(width=1280, height=720)
+        page = doc.new_page(width=page_w, height=page_h)
         title = _safe(slide.get("title") or "ORION")
         template = str(slide.get("template") or "")
         refs = slide.get("assetRefs") or []
-        primary = asset_map.get(str(refs[0])) if refs else None
+        primary = None
+        for ref in refs:
+            cand = asset_map.get(str(ref))
+            if cand and _resolve_image_bytes(cand):
+                primary = cand
+                break
+        if primary is None and refs:
+            primary = asset_map.get(str(refs[0]))
         img_bytes: bytes | None = None
         if template in visual_templates and primary:
             img_bytes = _resolve_image_bytes(primary)
@@ -451,24 +543,28 @@ def _write_pdf_fallback(
         if img_bytes and len(img_bytes) > 500:
             # Title strip + embedded visual (same data PPTX path uses).
             page.insert_textbox(
-                fitz.Rect(48, 28, 1232, 72),
+                fitz.Rect(margin_x, 28, page_w - margin_x, title_bottom),
                 title,
                 fontsize=18,
                 fontname="helv",
                 color=(0.04, 0.10, 0.20),
             )
             try:
-                page.insert_image(fitz.Rect(48, 80, 1232, 680), stream=img_bytes, keep_proportion=True)
+                page.insert_image(
+                    fitz.Rect(margin_x, 80, page_w - margin_x, content_bottom),
+                    stream=img_bytes,
+                    keep_proportion=True,
+                )
             except Exception:  # noqa: BLE001
                 page.insert_textbox(
-                    fitz.Rect(48, 100, 1232, 200),
+                    fitz.Rect(margin_x, 100, page_w - margin_x, 200),
                     "Визуальный материал недоступен для данного раздела.",
                     fontsize=12,
                     fontname="helv",
                     color=(0.2, 0.25, 0.33),
                 )
             page.insert_textbox(
-                fitz.Rect(1100, 690, 1260, 710),
+                fitz.Rect(page_w - 180, footer_y, page_w - margin_x, footer_y + 20),
                 f"{idx}/{total}",
                 fontsize=10,
                 fontname="helv",
@@ -487,7 +583,7 @@ def _write_pdf_fallback(
             f"<p style='position:absolute;bottom:16px;right:24px;color:#94a3b8;font-size:10px;'>{idx}/{total}</p>"
             "</div>"
         )
-        page.insert_htmlbox(fitz.Rect(48, 40, 1232, 680), html)
+        page.insert_htmlbox(fitz.Rect(margin_x, 40, page_w - margin_x, content_bottom), html)
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(pdf_path))
     doc.close()
@@ -551,7 +647,7 @@ def render_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:
     subject = (report_spec.get("subject") or {}).get("displayName") or "Цифровой профиль"
     total = len(slides)
     prs = Presentation()
-    prs.slide_width = Emu(9144000)
+    prs.slide_width = Emu(SLIDE_W)
     prs.slide_height = Emu(SLIDE_H)
 
     for idx, slide in enumerate(slides, start=1):

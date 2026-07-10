@@ -68,6 +68,8 @@ export async function renderOrionGoldenArtifacts(input: {
 
   const url = `${digitalProfileConfig.rendererUrl}/orion/render-golden`;
   let httpError: string | null = null;
+  const forceLocal = process.env.ORION_GOLDEN_FORCE_LOCAL_RENDER === "1";
+  if (!forceLocal) {
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -121,6 +123,10 @@ export async function renderOrionGoldenArtifacts(input: {
   } catch (err) {
     httpError = err instanceof Error ? err.message : String(err);
     console.warn("[orion-golden-render-client] http failed, trying local python", httpError);
+  }
+  } else {
+    httpError = "force-local-render";
+    console.info("[orion-golden-render-client] ORION_GOLDEN_FORCE_LOCAL_RENDER=1 — skipping HTTP");
   }
 
   const tmpPayload = join(dirname(input.pptxOut), "golden-render-payload.json");

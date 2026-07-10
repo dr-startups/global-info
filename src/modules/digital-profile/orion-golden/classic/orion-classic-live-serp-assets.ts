@@ -141,6 +141,11 @@ export function isClientProductionFinalize(env: NodeJS.ProcessEnv = process.env)
   return env.ORION_CLASSIC_CLIENT_FINALIZE === "1";
 }
 
+/** CEO First36 MVP: audit-only deck (no commercial trailer), exact-36 target. */
+export function isFirst36CeoMode(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.ORION_FIRST36_CEO_MODE === "1";
+}
+
 /** Pure policy helper for QA/tests — client production uses provider API SERP (or READY LIVE/captured). */
 export function evaluateClientSerpPolicy(
   assets: ReportAssetV1[],

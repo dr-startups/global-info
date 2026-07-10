@@ -86,8 +86,17 @@ function hasSerpImageContent(asset: ReportAssetV1): boolean {
 
 /** Composite image-grid PNGs only — URL-only r10-img-* placeholders never render. */
 function preferCompositeImageGrids(assets: ReportAssetV1[], max = 2): ReportAssetV1[] {
+  return preferCompositeMedia(assets, max, /^(?:ru|uae)_image_grid/i);
+}
+
+/** Composite video/knowledge PNGs only — URL-only r10-vid-* never create empty pages. */
+function preferCompositeMedia(
+  assets: ReportAssetV1[],
+  max: number,
+  nameRe: RegExp
+): ReportAssetV1[] {
   const withData = assets.filter((a) => String(a.imageData ?? "").trim().length >= 800);
-  const named = withData.filter((a) => /^(?:ru|uae)_image_grid/i.test(a.assetRef) || /_image_grid$/i.test(a.assetRef));
+  const named = withData.filter((a) => nameRe.test(a.assetRef) || /_(?:image_grid|video_cards|knowledge_panel)$/i.test(a.assetRef));
   const pool = named.length > 0 ? named : withData;
   return pool.slice(0, max);
 }
@@ -147,28 +156,6 @@ function assetSlides(
   }));
 }
 
-function chunkAssetSlides(
-  sectionKey: string,
-  template: string,
-  title: string,
-  assets: ReportAssetV1[],
-  perSlide: number
-): OrionGoldenDeckSlide[] {
-  const slides: OrionGoldenDeckSlide[] = [];
-  for (let i = 0; i < assets.length; i += perSlide) {
-    const chunk = assets.slice(i, i + perSlide);
-    slides.push({
-      slideKey: `${sectionKey}-grid-${Math.floor(i / perSlide) + 1}`,
-      sectionKey,
-      template,
-      title: `${title} (${Math.floor(i / perSlide) + 1})`,
-      pageNumber: 0,
-      assetRefs: chunk.map((a) => a.assetRef),
-    });
-  }
-  return slides;
-}
-
 function sanitizeSlide(slide: OrionGoldenDeckSlide): OrionGoldenDeckSlide {
   const scrub = (s: string) => scrubClientFacingProse(sanitizeOrionGoldenClientText(s));
   return {
@@ -212,8 +199,10 @@ function pickAssets(assets: ReportAssetV1[], kind: ReportAssetV1["kind"], refPre
 
 export function composeOrionClassicAuditDeck(
   reportSpec: OrionClassicAuditReportSpec,
-  assets: ReportAssetV1[] = []
+  assets: ReportAssetV1[] = [],
+  options: { includeCommercial?: boolean } = {}
 ): OrionGoldenDeckManifest {
+  const includeCommercial = options.includeCommercial !== false;
   const serpAssets = [
     ...pickAssets(assets, "live_serp"),
     ...pickAssets(assets, "captured_serp"),
@@ -237,10 +226,26 @@ export function composeOrionClassicAuditDeck(
     imageAssets.filter((a) => !/uae|intl/i.test(a.assetRef)),
     2
   );
-  const uaeVideos = videoAssets.filter((a) => /uae|intl/i.test(a.assetRef));
-  const ruVideos = videoAssets.filter((a) => !uaeVideos.includes(a));
-  const uaeKnowledge = knowledgeAssets.filter((a) => /uae|intl/i.test(a.assetRef));
-  const ruKnowledge = knowledgeAssets.filter((a) => !uaeKnowledge.includes(a));
+  const uaeVideos = preferCompositeMedia(
+    videoAssets.filter((a) => /uae|intl/i.test(a.assetRef)),
+    1,
+    /^(?:uae)_video_cards/i
+  );
+  const ruVideos = preferCompositeMedia(
+    videoAssets.filter((a) => !/uae|intl/i.test(a.assetRef)),
+    1,
+    /^(?:ru)_video_cards/i
+  );
+  const uaeKnowledge = preferCompositeMedia(
+    knowledgeAssets.filter((a) => /uae|intl/i.test(a.assetRef)),
+    1,
+    /^(?:uae)_knowledge_panel/i
+  );
+  const ruKnowledge = preferCompositeMedia(
+    knowledgeAssets.filter((a) => !/uae|intl/i.test(a.assetRef)),
+    1,
+    /^(?:ru)_knowledge_panel/i
+  );
 
   const insertedAssetSections = new Set<string>();
   const sections: Array<{ sectionKey: string; slides: OrionGoldenDeckSlide[] }> = [
@@ -336,13 +341,13 @@ export function composeOrionClassicAuditDeck(
       if (assetKey === "ru_videos" && ruVideos.length > 0) {
         sections.push({
           sectionKey: "ru_videos",
-          slides: chunkAssetSlides("ru_videos", "orion_golden_video_cards", "Видео", ruVideos, 4),
+          slides: assetSlides("ru_videos", "orion_golden_video_cards", "Видео", ruVideos),
         });
       }
       if (assetKey === "uae_videos" && uaeVideos.length > 0) {
         sections.push({
           sectionKey: "uae_videos",
-          slides: chunkAssetSlides("uae_videos", "orion_golden_video_cards", "Видео", uaeVideos, 4),
+          slides: assetSlides("uae_videos", "orion_golden_video_cards", "Видео", uaeVideos),
         });
       }
       if (assetKey === "ru_knowledge" && ruKnowledge.length > 0) {
@@ -390,13 +395,13 @@ export function composeOrionClassicAuditDeck(
     sections,
     insertedAssetSections,
     "ru_videos",
-    chunkAssetSlides("ru_videos", "orion_golden_video_cards", "Видео", ruVideos, 4)
+    assetSlides("ru_videos", "orion_golden_video_cards", "Видео", ruVideos)
   );
   injectMediaSection(
     sections,
     insertedAssetSections,
     "uae_videos",
-    chunkAssetSlides("uae_videos", "orion_golden_video_cards", "Видео", uaeVideos, 4)
+    assetSlides("uae_videos", "orion_golden_video_cards", "Видео", uaeVideos)
   );
   injectMediaSection(
     sections,
@@ -411,38 +416,41 @@ export function composeOrionClassicAuditDeck(
     assetSlides("uae_knowledge", "orion_golden_knowledge_panel", "Панель знаний", uaeKnowledge)
   );
 
-  const commercialKeys: Array<keyof Pick<
-    OrionClassicAuditReportSpec,
-    | "offer"
-    | "productOverview"
-    | "solutionDigitalProfile"
-    | "solutionComplianceDatabases"
-    | "solutionWikipedia"
-    | "about"
-  >> = [
-    "offer",
-    "productOverview",
-    "solutionDigitalProfile",
-    "solutionComplianceDatabases",
-    "solutionWikipedia",
-    "about",
-  ];
+  if (includeCommercial) {
+    const commercialKeys: Array<keyof Pick<
+      OrionClassicAuditReportSpec,
+      | "offer"
+      | "productOverview"
+      | "solutionDigitalProfile"
+      | "solutionComplianceDatabases"
+      | "solutionWikipedia"
+      | "about"
+    >> = [
+      "offer",
+      "productOverview",
+      "solutionDigitalProfile",
+      "solutionComplianceDatabases",
+      "solutionWikipedia",
+      "about",
+    ];
 
-  for (const key of commercialKeys) {
-    const block = reportSpec[key];
-    const sectionKey = key === "solutionDigitalProfile"
-      ? "solution_digital_profile"
-      : key === "solutionComplianceDatabases"
-        ? "solution_compliance_databases"
-        : key === "solutionWikipedia"
-          ? "solution_wikipedia"
-          : key === "productOverview"
-            ? "product_overview"
-            : key;
-    sections.push({
-      sectionKey,
-      slides: commercialSlides(sectionKey, block),
-    });
+    for (const key of commercialKeys) {
+      const block = reportSpec[key];
+      if (!block?.slideSpecs?.length) continue;
+      const sectionKey = key === "solutionDigitalProfile"
+        ? "solution_digital_profile"
+        : key === "solutionComplianceDatabases"
+          ? "solution_compliance_databases"
+          : key === "solutionWikipedia"
+            ? "solution_wikipedia"
+            : key === "productOverview"
+              ? "product_overview"
+              : key;
+      sections.push({
+        sectionKey,
+        slides: commercialSlides(sectionKey, block),
+      });
+    }
   }
 
   let page = 1;

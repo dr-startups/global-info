@@ -19,7 +19,7 @@ import { composeOrionClassicAuditDeck } from "./orion-classic-audit-deck-compose
 import { buildOrionClassicReportSpecFromClientContent } from "./orion-classic-client-content-to-report-spec";
 import { buildOrionThemeSet } from "./orion-classic-theme-set";
 import { inspectClassicOrionAuditQuality } from "./orion-classic-audit-quality-inspection";
-import { isClientProductionFinalize } from "./orion-classic-live-serp-assets";
+import { isClientProductionFinalize, isFirst36CeoMode } from "./orion-classic-live-serp-assets";
 import { evaluateClassicProviderSerpGate } from "./orion-classic-provider-serp-assets";
 import type { ExecutiveSynthesisOutput } from "../gpt/orion-executive-synthesis-from-sections";
 import type { SectionDerivedRiskMatrix } from "../sections/orion-risk-matrix-from-sections";
@@ -79,6 +79,8 @@ export async function runOrionClassicAuditRender(options: {
   clientPolicyStatus: string;
   visualPassed: boolean;
   classicQaPassed: boolean;
+  readiness: "INTERNAL_PREVIEW" | "CEO_READY";
+  ceoReady: boolean;
   warnings: string[];
 }> {
   const { caseId, outputRoot } = options;
@@ -92,6 +94,8 @@ export async function runOrionClassicAuditRender(options: {
     ctx,
   });
   const clientFinalize = isClientProductionFinalize();
+  const first36CeoMode = isFirst36CeoMode();
+  const includeCommercial = !first36CeoMode;
   const assets = await buildOrionClassicAuditAssets({
     ctx,
     reportRunId: clientContent.reportRunId,
@@ -101,6 +105,8 @@ export async function runOrionClassicAuditRender(options: {
   console.info("[serp-capture] classic audit assets", {
     caseId,
     reportRunId: clientContent.reportRunId,
+    first36CeoMode,
+    includeCommercial,
     liveCount: assets.filter((a) => a.kind === "live_serp").length,
     syntheticCount: assets.filter((a) => a.kind === "synthetic_serp").length,
     capturedCount: assets.filter((a) => a.kind === "captured_serp").length,
@@ -154,8 +160,9 @@ export async function runOrionClassicAuditRender(options: {
     warnings: inventory.warnings,
     executiveSynthesis,
     riskMatrix,
+    includeCommercial,
   });
-  const deckManifest = composeOrionClassicAuditDeck(reportSpec, assets);
+  const deckManifest = composeOrionClassicAuditDeck(reportSpec, assets, { includeCommercial });
 
   writeJson(join(outputRoot, "orion-classic-report-spec.json"), reportSpec);
   writeJson(join(outputRoot, "final-deck-manifest.json"), deckManifest);
@@ -179,6 +186,7 @@ export async function runOrionClassicAuditRender(options: {
     inventory,
     pdfExportMode: renderResult.pdfExportMode,
     reportMode: "classic_orion_audit",
+    first36CeoMode,
   });
   writeJson(join(outputRoot, "visual-qa-inspection.json"), visual);
 
@@ -188,12 +196,15 @@ export async function runOrionClassicAuditRender(options: {
     inventory,
     outputRoot,
     assets,
-    clientProductionFinalize: isClientProductionFinalize(),
+    clientProductionFinalize: clientFinalize,
+    first36CeoMode,
   });
   writeJson(join(outputRoot, "classic-audit-quality-inspection.json"), classicQa);
 
   const verdict =
     clientPolicy.passed && visual.passed && classicQa.passed ? "PASS" : "FAIL";
+  const ceoReady = Boolean(classicQa.ceoReady);
+  const readiness = ceoReady ? "CEO_READY" : "INTERNAL_PREVIEW";
 
   if (verdict === "FAIL") {
     const failedVisual = visual.checks.filter((c) => !c.passed).map((c) => `${c.id}:${c.detail}`);
@@ -204,6 +215,7 @@ export async function runOrionClassicAuditRender(options: {
       classicQaFailed: classicQa.issues.slice(0, 8),
       pageCount: visual.pageCount,
       reportMode: visual.reportMode,
+      readiness,
     });
   }
 
@@ -213,6 +225,7 @@ export async function runOrionClassicAuditRender(options: {
     "commercial_pack_included",
     "client_audit_render_from_post_review_content",
     "commercial_sections_omitted",
+    "first36_ceo_mode",
     "r10_9a_visual_polish",
     "source:orion-client-content.post-review",
     "source:orion-client-content.pre-review",
@@ -233,6 +246,8 @@ export async function runOrionClassicAuditRender(options: {
     clientPolicyStatus: clientPolicy.passed ? "PASS" : "FAIL",
     visualPassed: visual.passed,
     classicQaPassed: classicQa.passed,
+    readiness,
+    ceoReady,
     warnings,
   };
 }

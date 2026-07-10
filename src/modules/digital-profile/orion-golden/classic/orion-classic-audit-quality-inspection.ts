@@ -11,9 +11,12 @@ import type { OrionClassicAuditReportSpec } from "./orion-classic-client-content
 import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
 import { buildOrionThemeSet } from "./orion-classic-theme-set";
 
-import { CLASSIC_ORION_AUDIT_PAGE_RANGE } from "../qa/visual-qa-inspection";
+import { CLASSIC_ORION_AUDIT_PAGE_RANGE, FIRST36_CEO_PAGE_RANGE } from "../qa/visual-qa-inspection";
 
-export { CLASSIC_ORION_AUDIT_PAGE_RANGE };
+export { CLASSIC_ORION_AUDIT_PAGE_RANGE, FIRST36_CEO_PAGE_RANGE };
+
+/** First36 CEO MVP: exact page count required for CEO_READY (not INTERNAL_PREVIEW). */
+export const FIRST36_CEO_EXACT_PAGES = 36;
 
 const NO_ADVERSE_RE =
   /нежелательн(?:ые|ых)?\s+публикаци[яи]\s+не\s+обнаружен|adverse\s+(?:publications?\s+)?not\s+found|no\s+adverse\s+(?:results?|links?|publications?)|нежелательн(?:ые)?\s+ссылк[аи]\s+не\s+обнаружен/i;
@@ -31,19 +34,36 @@ export function inspectClassicOrionAuditQuality(input: {
   outputRoot: string;
   assets?: ReportAssetV1[];
   clientProductionFinalize?: boolean;
-}): { passed: boolean; issues: string[]; checks: Array<{ id: string; passed: boolean; detail: string }> } {
+  first36CeoMode?: boolean;
+}): {
+  passed: boolean;
+  issues: string[];
+  checks: Array<{ id: string; passed: boolean; detail: string }>;
+  readiness: "INTERNAL_PREVIEW" | "CEO_READY";
+  ceoReady: boolean;
+} {
   const issues: string[] = [];
   const checks: Array<{ id: string; passed: boolean; detail: string }> = [];
+  const first36 = Boolean(input.first36CeoMode);
 
   const slideCount = input.deckManifest.slideCount;
-  const pageOk =
-    slideCount >= CLASSIC_ORION_AUDIT_PAGE_RANGE.min &&
-    slideCount <= CLASSIC_ORION_AUDIT_PAGE_RANGE.max;
+  const pageRange = first36 ? FIRST36_CEO_PAGE_RANGE : CLASSIC_ORION_AUDIT_PAGE_RANGE;
+  const pageOk = slideCount >= pageRange.min && slideCount <= pageRange.max;
   checks.push({
     id: "page-range",
     passed: pageOk,
-    detail: `${slideCount} slides (target ${CLASSIC_ORION_AUDIT_PAGE_RANGE.min}-${CLASSIC_ORION_AUDIT_PAGE_RANGE.max})`,
+    detail: `${slideCount} slides (target ${pageRange.min}-${pageRange.max}${first36 ? ", first36" : ""})`,
   });
+  if (first36) {
+    checks.push({
+      id: "exact-36-pages",
+      passed: slideCount === FIRST36_CEO_EXACT_PAGES,
+      detail:
+        slideCount === FIRST36_CEO_EXACT_PAGES
+          ? "exact 36 pages"
+          : `${slideCount} slides (CEO_READY requires exact ${FIRST36_CEO_EXACT_PAGES})`,
+    });
+  }
 
   const serpScreenshotSlides = input.deckManifest.finalSlides.filter((s) =>
     s.sectionKey.includes("serp_screenshot") || s.template === "orion_golden_serp_screenshot"
@@ -73,11 +93,21 @@ export function inspectClassicOrionAuditQuality(input: {
   const hasCommercial = input.deckManifest.finalSlides.some((s) =>
     ["offer", "product_overview", "solution_digital_profile", "about"].includes(s.sectionKey)
   );
-  checks.push({
-    id: "commercial-present",
-    passed: hasCommercial,
-    detail: hasCommercial ? "commercial sections present" : "missing commercial pack",
-  });
+  if (first36) {
+    checks.push({
+      id: "commercial-absent",
+      passed: !hasCommercial,
+      detail: hasCommercial
+        ? "first36 mode must omit commercial pack"
+        : "commercial pack omitted (first36)",
+    });
+  } else {
+    checks.push({
+      id: "commercial-present",
+      passed: hasCommercial,
+      detail: hasCommercial ? "commercial sections present" : "missing commercial pack",
+    });
+  }
 
   const hasSuggestions = input.reportSpec.registrySections.some((s) =>
     /suggestions|related_queries/.test(s.sectionId)
@@ -107,11 +137,13 @@ export function inspectClassicOrionAuditQuality(input: {
     )
   ).length;
   const commercialRatio = slideCount > 0 ? commercialSlides / slideCount : 0;
-  checks.push({
-    id: "commercial-ratio",
-    passed: commercialRatio <= 0.35,
-    detail: `${commercialSlides}/${slideCount} commercial (${(commercialRatio * 100).toFixed(0)}%, max 35%)`,
-  });
+  if (!first36) {
+    checks.push({
+      id: "commercial-ratio",
+      passed: commercialRatio <= 0.35,
+      detail: `${commercialSlides}/${slideCount} commercial (${(commercialRatio * 100).toFixed(0)}%, max 35%)`,
+    });
+  }
 
   const brokenCompliance = input.deckManifest.finalSlides
     .flatMap((s) => [s.title, s.narrative ?? "", ...(s.bullets ?? [])])
@@ -328,8 +360,32 @@ export function inspectClassicOrionAuditQuality(input: {
   }
 
   for (const check of checks) {
-    if (!check.passed) issues.push(`${check.id}: ${check.detail}`);
+    // exact-36 is a CEO_READY gate — does not fail INTERNAL_PREVIEW passed.
+    if (!check.passed && check.id !== "exact-36-pages") {
+      issues.push(`${check.id}: ${check.detail}`);
+    }
   }
 
-  return { passed: issues.length === 0, issues, checks };
+  const exact36 = !first36 || slideCount === FIRST36_CEO_EXACT_PAGES;
+  const noCommercial = !hasCommercial;
+  const ceoReady =
+    first36 &&
+    Boolean(input.clientProductionFinalize) &&
+    exact36 &&
+    noCommercial &&
+    issues.length === 0;
+
+  checks.push({
+    id: "readiness-tier",
+    passed: true,
+    detail: ceoReady ? "CEO_READY" : "INTERNAL_PREVIEW",
+  });
+
+  return {
+    passed: issues.length === 0,
+    issues,
+    checks,
+    readiness: ceoReady ? "CEO_READY" : "INTERNAL_PREVIEW",
+    ceoReady,
+  };
 }
