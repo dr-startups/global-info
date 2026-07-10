@@ -108,6 +108,35 @@ export function isImageEvidenceHighlighted(ev: NormalizedEvidenceV1): boolean {
   return false;
 }
 
+/** Client-facing reason why an image cell is red-framed (ORION prose). */
+export function explainImageHighlightReason(ev: NormalizedEvidenceV1): string {
+  const domain = String(ev.domain ?? extractDomainFromEvidence(ev) ?? "источник").replace(/^www\./i, "");
+  const blob = imageEvidenceBlob(ev);
+  if (IMAGE_ADVERSE_DOMAIN_RE.test(domain) || IMAGE_ADVERSE_DOMAIN_RE.test(String(ev.url ?? ""))) {
+    return `${domain} — домен с компрометирующим, криминальным или санкционным контекстом`;
+  }
+  if (/санкц|sanction|\bofac\b|под\s+санкц/i.test(blob)) {
+    return `${domain} — в контексте кадра есть санкционный сигнал`;
+  }
+  if (/компромат|rucriminal|cybercriminal|acompromat|нежелат|adverse/i.test(blob)) {
+    return `${domain} — компрометирующий / нежелательный медиаконтекст`;
+  }
+  if (ev.riskTheme === "sanctions_watchlist") {
+    return `${domain} — ${riskThemeLabel(ev.riskTheme)}`;
+  }
+  if (ev.riskTheme === "adverse_media" || ev.riskTheme === "legal_regulatory" || ev.riskTheme === "pep") {
+    return `${domain} — ${riskThemeLabel(ev.riskTheme)}`;
+  }
+  if (ev.reviewStatus === "official_record_found") {
+    return `${domain} — официальный/подтверждённый риск-сигнал в выдаче изображений`;
+  }
+  return `${domain} — отмечен как нежелательный по риск-признакам поисковой выдачи`;
+}
+
+function extractDomainFromEvidence(ev: NormalizedEvidenceV1): string {
+  return String(ev.domain ?? ev.displayUrl ?? "").trim();
+}
+
 export type ReportAssetKind =
   | "synthetic_serp"
   | "captured_serp"
@@ -270,9 +299,17 @@ export async function buildRegionMediaComposites(input: {
           };
         })
       );
-      const adverseCount = gridItems.filter((g) => g.highlight).length;
+      const adverse = chunk.filter((e) => isImageEvidenceHighlighted(e));
+      const adverseCount = adverse.length;
+      const reasonLines = adverse.slice(0, 3).map((e) => explainImageHighlightReason(e));
       const pageNo = page + 1;
       const assetRef = page === 0 ? `${prefix}_image_grid` : `${prefix}_image_grid_${pageNo}`;
+      const caption =
+        adverseCount > 0
+          ? `Красной рамкой отмечены нежелательные изображения (${adverseCount}). ${reasonLines.join(". ")}${
+              adverseCount > reasonLines.length ? "." : "."
+            } Остальные кадры — нейтральная/профильная выдача; требуется сверка с субъектом.`
+          : `Подборка изображений из поиска по субъекту (${label}). Нежелательных кадров с красной рамкой на этой странице нет.`;
       assets.push({
         assetRef,
         kind: "image_grid",
@@ -280,10 +317,7 @@ export async function buildRegionMediaComposites(input: {
           maxPages > 1
             ? `${label} — изображения в поиске (${pageNo})`
             : `${label} — изображения в поиске`,
-        caption:
-          adverseCount > 0
-            ? `Нежелательные изображения отмечены красной рамкой (${adverseCount})`
-            : "Поисковая выдача по изображениям",
+        caption,
         imageData: await svgToPngBase64(
           buildImageGridSvg({
             title:

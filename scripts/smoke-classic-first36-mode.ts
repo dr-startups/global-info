@@ -135,7 +135,8 @@ function main() {
       assetRef: "ru_image_grid",
       kind: "image_grid",
       title: "Изображения",
-      caption: "Нежелательные отмечены (1)",
+      caption:
+        "Красной рамкой отмечены нежелательные изображения (1). rucriminal.info — домен с компрометирующим, криминальным или санкционным контекстом. Остальные кадры — нейтральная/профильная выдача; требуется сверка с субъектом.",
       imageData: FAKE,
       evidenceRefs: ["img-1"],
       status: "ready",
@@ -234,6 +235,39 @@ function main() {
 
   const visualWithAnalysis = deck.finalSlides.filter((s) => s.visualAnalysis?.headlineConclusion);
   check("visual slides carry analysis sidebar", visualWithAnalysis.length >= 1, `n=${visualWithAnalysis.length}`);
+
+  const serpSlide = deck.finalSlides.find((s) => s.slideKey === "p10_ru_serp_visual");
+  check(
+    "SERP slide has API-synthetic ORION prose",
+    Boolean(
+      serpSlide?.visualAnalysis?.whatIsVisible &&
+        /API|реконструкц|синтетич/i.test(serpSlide.visualAnalysis.whatIsVisible)
+    ),
+    serpSlide?.visualAnalysis?.whatIsVisible?.slice(0, 80)
+  );
+  check(
+    "SERP slide states live screenshot limitation",
+    Boolean(serpSlide?.visualAnalysis?.limitations?.some((l) => /live|скриншот|API/i.test(l))),
+    String(serpSlide?.visualAnalysis?.limitations?.[0])
+  );
+
+  const imageSlide = deck.finalSlides.find((s) => s.slideKey === "p14_ru_images_1");
+  check(
+    "image slide explains undesirable red frames",
+    Boolean(
+      imageSlide?.visualAnalysis?.whyItMatters &&
+        /красн|нежелательн|компромет|санкц/i.test(imageSlide.visualAnalysis.whyItMatters)
+    ),
+    imageSlide?.visualAnalysis?.whyItMatters?.slice(0, 100)
+  );
+  check(
+    "image slide whatIsVisible carries highlight reasons from caption",
+    Boolean(
+      imageSlide?.visualAnalysis?.whatIsVisible &&
+        /rucriminal|компромет|нежелательн|рамк/i.test(imageSlide.visualAnalysis.whatIsVisible)
+    ),
+    imageSlide?.visualAnalysis?.whatIsVisible?.slice(0, 120)
+  );
 
   const inventoryPath = join(
     process.cwd(),

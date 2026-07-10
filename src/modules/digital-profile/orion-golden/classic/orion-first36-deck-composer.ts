@@ -65,50 +65,113 @@ export function buildDeterministicVisualAnalysis(
   const caption = scrub(asset.caption || "");
   const regionLabel =
     slot.region === "RU" ? "Россия" : slot.region === "UAE" ? "ОАЭ" : slot.region === "COMPLIANCE" ? "Комплаенс" : "Обзор";
-  const whatIsVisible =
-    caption ||
-    (slot.kind === "serp_visual"
-      ? `На слайде показана поисковая выдача по субъекту (${regionLabel}).`
-      : slot.kind === "image_visual"
-        ? "На слайде — подборка изображений из поиска; нежелательные отмечены рамкой."
-        : slot.kind === "suggestions_visual"
-          ? "На слайде — сохранённые подсказки поисковой строки по субъекту."
-          : slot.kind === "related_visual"
-            ? "На слайде — связанные / похожие запросы из поисковой выдачи."
-            : slot.kind === "knowledge_visual"
-              ? "На слайде — справочная карточка/панель знаний по субъекту."
-              : `На слайде — визуальный материал раздела «${slot.title}».`);
+  const isApiSynthetic =
+    asset.kind === "synthetic_serp" ||
+    provenanceLabel(asset).includes("API") ||
+    /синтетич|реконструкц|визуализация сохранённой выдачи/i.test(caption);
 
-  const whyItMatters =
-    slot.kind === "serp_visual"
-      ? "Клиент видит, какие источники формируют первый экран выдачи и насколько они связаны с субъектом."
-      : slot.kind === "image_visual"
-        ? "Изображения влияют на узнаваемость субъекта; ошибочные/однофамильцы нужно отделять от подтверждённых."
-        : slot.kind === "suggestions_visual" || slot.kind === "related_visual"
-          ? "Подсказки и связанные запросы показывают, какие ассоциации формирует поиск вокруг имени субъекта."
-          : slot.kind === "db_visual"
-            ? "Страница базы подтверждает или уточняет комплаенс-сигнал без опоры только на текстовый пересказ."
-            : "Визуальное доказательство снижает риск неверной интерпретации текстового резюме.";
+  let headlineConclusion = title;
+  let whatIsVisible: string;
+  let whyItMatters: string;
+  let recommendedActions: string[];
+  let limitations: string[];
+
+  if (slot.kind === "serp_visual") {
+    headlineConclusion = isApiSynthetic
+      ? `Первый экран выдачи (${regionLabel}): синтетическая визуализация API`
+      : `Первый экран поисковой выдачи (${regionLabel})`;
+    whatIsVisible = isApiSynthetic
+      ? scrub(
+          [
+            `На слайде — реконструкция поисковой выдачи по сохранённым результатам API для региона «${regionLabel}» (не браузерный live-скриншот: прокси для захвата недоступен).`,
+            caption ? `Контекст: ${caption}` : "",
+            "Показаны заголовки, домены и сниппеты; при наличии риск-сигналы выделены в карточке выдачи.",
+          ]
+            .filter(Boolean)
+            .join(" ")
+        )
+      : scrub(
+          caption ||
+            `На слайде показана поисковая выдача по субъекту (${regionLabel}): заголовки, домены и сниппеты первого экрана.`
+        );
+    whyItMatters = scrub(
+      "Клиент видит, какие источники и формулировки формируют первое впечатление о субъекте в поиске, и может сверить совпадение персоны без опоры только на текстовое резюме."
+    );
+    recommendedActions = [
+      "Сверить домены и заголовки с ручной проверкой выдачи",
+      "Зафиксировать, какие результаты относятся к субъекту, а какие — к однофамильцам",
+    ];
+    limitations = isApiSynthetic
+      ? [
+          "Это реконструкция API-результатов, а не live-скриншот страницы браузера.",
+          "Порядок и оформление могут отличаться от актуальной выдачи в браузере.",
+        ]
+      : ["Визуал отражает доступный снимок на момент сбора."];
+  } else if (slot.kind === "image_visual") {
+    const hasAdverseFrame = /красн|нежелательн/i.test(caption);
+    headlineConclusion = hasAdverseFrame
+      ? `В выдаче изображений (${regionLabel}) есть нежелательные кадры`
+      : `Изображения в поиске (${regionLabel})`;
+    whatIsVisible = scrub(
+      caption ||
+        "На слайде — подборка изображений из поиска; нежелательные при наличии отмечены красной рамкой."
+    );
+    whyItMatters = scrub(
+      hasAdverseFrame
+        ? "Красная рамка означает, что кадр связан с компрометирующим, санкционным или иным нежелательным контекстом (домен, подпись или риск-тема). Такие изображения усиливают репутационный риск и требуют отделения от нейтральных/профильных кадров и однофамильцев."
+        : "Изображения влияют на узнаваемость субъекта; ошибочные совпадения и однофамильцев нужно отделять от подтверждённых кадров."
+    );
+    recommendedActions = hasAdverseFrame
+      ? [
+          "Проверить, относится ли обведённый кадр именно к субъекту аудита",
+          "Зафиксировать домен и причину нежелательности в выводе",
+        ]
+      : [
+          "Сверить совпадение лица/контекста с субъектом",
+          "При появлении нежелательных кадров — пересобрать страницу после ручной разметки",
+        ];
+    limitations = [
+      "Сетка собрана из сохранённых результатов поиска изображений; превью зависят от доступности URL.",
+    ];
+  } else {
+    whatIsVisible =
+      caption ||
+      (slot.kind === "suggestions_visual"
+        ? "На слайде — сохранённые подсказки поисковой строки по субъекту."
+        : slot.kind === "related_visual"
+          ? "На слайде — связанные / похожие запросы из поисковой выдачи."
+          : slot.kind === "knowledge_visual"
+            ? "На слайде — справочная карточка/панель знаний по субъекту."
+            : `На слайде — визуальный материал раздела «${slot.title}».`);
+    whyItMatters =
+      slot.kind === "suggestions_visual" || slot.kind === "related_visual"
+        ? "Подсказки и связанные запросы показывают, какие ассоциации формирует поиск вокруг имени субъекта."
+        : slot.kind === "db_visual"
+          ? "Страница базы подтверждает или уточняет комплаенс-сигнал без опоры только на текстовый пересказ."
+          : "Визуальное доказательство снижает риск неверной интерпретации текстового резюме.";
+    recommendedActions = [
+      "Сверить совпадение субъекта с карточкой/доменом на слайде",
+      "Зафиксировать вывод после ручной проверки источника",
+    ];
+    limitations = [
+      provenanceLabel(asset).includes("API")
+        ? "Это реконструкция API-результатов, а не браузерный скриншот страницы."
+        : "Визуал отражает доступный снимок/сводку на момент сбора.",
+    ];
+  }
 
   return {
     assetRef: asset.assetRef,
-    headlineConclusion: truncateAtWordBoundary(title, 120),
-    whatIsVisible: truncateAtWordBoundary(whatIsVisible, 220),
+    headlineConclusion: truncateAtWordBoundary(scrub(headlineConclusion), 140),
+    whatIsVisible: truncateAtWordBoundary(scrub(whatIsVisible), 420),
     metrics: [
       { label: "Регион", value: regionLabel },
       { label: "Источник", value: provenanceLabel(asset) },
     ],
-    whyItMatters: truncateAtWordBoundary(whyItMatters, 220),
-    recommendedActions: [
-      "Сверить совпадение субъекта с карточкой/доменом на слайде",
-      "Зафиксировать вывод после ручной проверки источника",
-    ],
+    whyItMatters: truncateAtWordBoundary(scrub(whyItMatters), 360),
+    recommendedActions,
     confidence: hasImageBytes(asset) ? "medium" : "low",
-    limitations: [
-      provenanceLabel(asset).includes("API")
-        ? "Это реконструкция API-результатов, а не браузерный скриншот страницы."
-        : "Визуал отражает доступный снимок/сводку на момент сбора.",
-    ],
+    limitations,
     provenanceLabel: provenanceLabel(asset),
   };
 }
@@ -274,6 +337,7 @@ function attachVisual(
     bullets: [
       analysis.whatIsVisible,
       analysis.whyItMatters,
+      ...(analysis.limitations?.slice(0, 1) ?? []),
       ...(analysis.provenanceLabel ? [analysis.provenanceLabel] : []),
     ].slice(0, 4),
   };
@@ -323,7 +387,12 @@ export function composeOrionFirst36CeoDeck(
           assetRefs: [asset.assetRef],
           clientTakeaway: analysis.headlineConclusion,
           visualAnalysis: analysis,
-          bullets: [analysis.whatIsVisible, analysis.whyItMatters, analysis.provenanceLabel ?? ""].filter(Boolean),
+          bullets: [
+            analysis.whatIsVisible,
+            analysis.whyItMatters,
+            ...(analysis.limitations?.slice(0, 1) ?? []),
+            analysis.provenanceLabel ?? "",
+          ].filter(Boolean),
         };
       } else {
         slide = blockedSlide(slot, `REQUIRED_VISUAL_ASSET_MISSING:${slot.sectionKey}`);
@@ -349,7 +418,12 @@ export function composeOrionFirst36CeoDeck(
           assetRefs: [asset.assetRef],
           clientTakeaway: analysis.headlineConclusion,
           visualAnalysis: analysis,
-          bullets: [analysis.whatIsVisible, analysis.whyItMatters, analysis.provenanceLabel ?? ""].filter(Boolean),
+          bullets: [
+            analysis.whatIsVisible,
+            analysis.whyItMatters,
+            ...(analysis.limitations?.slice(0, 1) ?? []),
+            analysis.provenanceLabel ?? "",
+          ].filter(Boolean),
         };
       } else {
         slide = placeholderSlide(slot);

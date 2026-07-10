@@ -299,11 +299,19 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
     tf = box.text_frame
     tf.word_wrap = True
 
-    def add_line(text: str, *, bold: bool = False, size: int = 10, color: RGBColor = BODY_COLOR, space: int = 4) -> None:
+    def add_line(
+        text: str,
+        *,
+        bold: bool = False,
+        size: int = 10,
+        color: RGBColor = BODY_COLOR,
+        space: int = 4,
+        max_chars: int = 200,
+    ) -> None:
         p = tf.add_paragraph()
         p.space_before = Pt(space)
         r = p.add_run()
-        r.text = _clip_words(text, 200)
+        r.text = _clip_words(text, max_chars)
         r.font.name = FONT
         r.font.size = Pt(size)
         r.font.bold = bold
@@ -320,19 +328,23 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
 
     what = _safe(analysis.get("whatIsVisible") or "")
     if what:
-        add_line("Что видно", bold=True, size=10, color=MUTED_COLOR, space=10)
-        add_line(what, size=10, space=2)
+        add_line("Что видно", bold=True, size=10, color=MUTED_COLOR, space=10, max_chars=40)
+        add_line(what, size=10, space=2, max_chars=360)
     why = _safe(analysis.get("whyItMatters") or "")
     if why:
-        add_line("Почему важно", bold=True, size=10, color=MUTED_COLOR, space=10)
-        add_line(why, size=10, space=2)
+        add_line("Почему важно", bold=True, size=10, color=MUTED_COLOR, space=10, max_chars=40)
+        add_line(why, size=10, space=2, max_chars=320)
+    lims = analysis.get("limitations") or []
+    if isinstance(lims, list) and lims:
+        add_line("Ограничение", bold=True, size=10, color=MUTED_COLOR, space=10, max_chars=40)
+        add_line(_safe(lims[0]), size=9, space=2, max_chars=220)
     prov = _safe(analysis.get("provenanceLabel") or "")
     if prov:
-        add_line(prov, size=9, color=MUTED_COLOR, space=10)
+        add_line(prov, size=9, color=MUTED_COLOR, space=10, max_chars=120)
     actions = analysis.get("recommendedActions") or []
     if isinstance(actions, list) and actions:
-        add_line("Действие", bold=True, size=10, color=MUTED_COLOR, space=10)
-        add_line(_safe(actions[0]), size=10, space=2)
+        add_line("Действие", bold=True, size=10, color=MUTED_COLOR, space=10, max_chars=40)
+        add_line(_safe(actions[0]), size=10, space=2, max_chars=180)
 
 
 def _render_visual_with_sidebar(
@@ -767,13 +779,14 @@ def _write_pdf_fallback(
                     _safe(analysis.get("headlineConclusion") or slide.get("clientTakeaway") or ""),
                     _safe(analysis.get("whatIsVisible") or ""),
                     _safe(analysis.get("whyItMatters") or ""),
+                    _safe((analysis.get("limitations") or [None])[0] or ""),
                     _safe(analysis.get("provenanceLabel") or ""),
                 ]
                 side_text = "\n\n".join([b for b in side_bits if b])
                 textbox(
                     page,
                     fitz.Rect(img_right + 16, 80, page_w - margin_x, content_bottom),
-                    side_text[:900],
+                    side_text[:1200],
                     fontsize=10,
                     color=(0.2, 0.25, 0.33),
                 )
