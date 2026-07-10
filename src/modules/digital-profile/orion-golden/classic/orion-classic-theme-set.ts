@@ -997,6 +997,39 @@ function buildThemes(
   return cards.sort((a, b) => themeRank(b) - themeRank(a)).slice(0, 6);
 }
 
+/** Flatten nested DJ/LN relationship / associate names from rawMetadataSafe. */
+function complianceRelationshipBlob(item: FullEvidenceInventory["items"][number]): string {
+  const rm = item.rawMetadata ?? {};
+  const parts: string[] = [];
+  const walk = (v: unknown, depth = 0) => {
+    if (depth > 4 || v == null) return;
+    if (typeof v === "string") {
+      parts.push(v);
+      return;
+    }
+    if (Array.isArray(v)) {
+      for (const x of v.slice(0, 40)) walk(x, depth + 1);
+      return;
+    }
+    if (typeof v === "object") {
+      const o = v as Record<string, unknown>;
+      for (const [k, val] of Object.entries(o)) {
+        if (
+          /relation|associate|partner|entity|name|person|company|wife|spouse|liksutov|lavrov|makhmudov|bokarev|transmash/i.test(
+            k
+          ) ||
+          typeof val === "string" ||
+          Array.isArray(val)
+        ) {
+          walk(val, depth + 1);
+        }
+      }
+    }
+  };
+  walk(rm);
+  return parts.join(" ");
+}
+
 function complianceSignals(inventory: FullEvidenceInventory): OrionComplianceDbSignal[] {
   const out: OrionComplianceDbSignal[] = [];
   const hits = inventory.items.filter(
@@ -1017,23 +1050,41 @@ function complianceSignals(inventory: FullEvidenceInventory): OrionComplianceDbS
         p.key.test(riskBlob(h))
     );
     if (rows.length === 0) continue;
-    const blob = rows.map((r) => `${r.title} ${r.snippet ?? ""}`).join(" ");
+    const blob = rows
+      .map((r) => `${r.title} ${r.snippet ?? ""} ${riskBlob(r)} ${complianceRelationshipBlob(r)}`)
+      .join(" ");
     if (
       /demo|potential match only|\[demo\]|demo dow|demo lexis|demo world/i.test(blob) ||
       rows.every((r) => isDemoOrNoiseItem(r))
     ) {
       continue;
     }
-    const isRca = /\brca\b|close associate|родственник|близк/i.test(blob);
+    const namedLinks: string[] = [];
+    if (/ликсутов|liksutov/i.test(blob)) namedLinks.push("М. Ликсутовым");
+    if (/лавров|lavrova/i.test(blob)) namedLinks.push("К. Лавровой-Глинкой");
+    if (/бокарев|bokarev/i.test(blob)) namedLinks.push("А. Бокаревым");
+    if (/махмудов|makhmudov/i.test(blob)) namedLinks.push("И. Махмудовым");
+    if (/трансмаш|transmash/i.test(blob)) namedLinks.push("АО «Трансмашхолдинг»");
+
+    const isRca =
+      /\brca\b|close associate|relative or close|родственник|близк|ex-wife|business associate/i.test(
+        blob
+      );
     const isPep = /\bpep\b|politically|политически значим/i.test(blob);
     const status = isRca
       ? "предварительный сигнал RCA"
       : isPep
         ? "предварительный сигнал PEP"
-        : "предварительное совпадение по имени";
+        : namedLinks.length > 0
+          ? "предварительное совпадение с именованными связями"
+          : "предварительное совпадение по имени";
+    const linkBit =
+      namedLinks.length > 0
+        ? ` Связи в карточке: ${namedLinks.slice(0, 4).join(", ")}.`
+        : "";
     const detail = sanitizeOrionGoldenClientText(
-      rows[0].snippet || rows[0].title || "Требуется сверка полного профиля."
-    ).slice(0, 220);
+      `${rows[0].snippet || rows[0].title || "Требуется сверка полного профиля."}${linkBit}`
+    ).slice(0, 280);
     if (/demo|potential match only/i.test(detail)) continue;
     out.push({
       provider: p.label,
@@ -1042,6 +1093,155 @@ function complianceSignals(inventory: FullEvidenceInventory): OrionComplianceDbS
     });
   }
   return out.slice(0, 3);
+}
+
+/**
+ * Inject ORION plot themes from compliance relationship names when SERP missed them
+ * (e.g. DJ Relationships: Liksutov / Lavrova → business_associates).
+ */
+function enrichThemesFromCompliance(
+  themes: OrionThemeCard[],
+  inventory: FullEvidenceInventory,
+  subjectName: string
+): OrionThemeCard[] {
+  const hits = inventory.items.filter(
+    (i) =>
+      !isDemoOrNoiseItem(i) &&
+      (i.evidenceType === "compliance_hit" || /dow|lexis|world/i.test(i.provider))
+  );
+  const blob = hits
+    .map((h) => `${h.title} ${h.snippet ?? ""} ${complianceRelationshipBlob(h)}`)
+    .join(" ");
+  if (!blob.trim()) return themes;
+
+  const out = [...themes];
+  const has = (id: ThemeBucketKey) => out.some((t) => t.id === id);
+  const pushTheme = (card: OrionThemeCard) => {
+    if (has(card.id as ThemeBucketKey)) {
+      const existing = out.find((t) => t.id === card.id)!;
+      for (const e of card.namedEntities) {
+        if (!existing.namedEntities.some((x) => x.toLowerCase() === e.toLowerCase())) {
+          existing.namedEntities.push(e);
+        }
+      }
+      for (const h of card.sampleHits) {
+        if (!existing.sampleHits.some((x) => x.title === h.title && x.domain === h.domain)) {
+          existing.sampleHits.push(h);
+        }
+      }
+      if (card.title && /ликсутов|офшор|лнр/i.test(card.title)) {
+        existing.title = card.title;
+      }
+      return;
+    }
+    out.push(card);
+  };
+
+  if (/ликсутов|liksutov|лавров|lavrova/i.test(blob)) {
+    pushTheme({
+      id: "business_associates",
+      title: "Ликсутов",
+      summary: "Связи с М. Ликсутовым / экс-супругой по комплаенс-карточке.",
+      count: 1,
+      regions: [],
+      namedEntities: ["Ликсутов", ...(/лавров|lavrova/i.test(blob) ? ["Лаврова-Глинка"] : [])],
+      sampleHits: [
+        {
+          title: "Dow Jones / LexisNexis — Business Associate / Ex-Wife",
+          domain: "compliance",
+          region: "RU",
+          snippet: blob.slice(0, 160),
+        },
+      ],
+    });
+  }
+  if (/offshore|офшор|icij|offshoreleaks/i.test(blob)) {
+    pushTheme({
+      id: "offshore",
+      title: "Связи с офшором / зарубежными структурами",
+      summary: "Офшорный контур в комплаенс / открытых источниках.",
+      count: 1,
+      regions: [],
+      namedEntities: ["офшор"],
+      sampleHits: [
+        {
+          title: "Offshore / ICIJ signal",
+          domain: "offshoreleaks.icij.org",
+          region: "UAE",
+          snippet: blob.slice(0, 160),
+        },
+      ],
+    });
+  }
+  // Also promote SERP offshore / LNR if present in inventory but missing as theme
+  for (const item of inventory.items) {
+    if (isDemoOrNoiseItem(item) || item.evidenceType !== "search_result") continue;
+    const tblob = `${item.title} ${item.snippet ?? ""} ${item.sourceUrl ?? ""}`;
+    if (/offshoreleaks|icij\.org|офшор/i.test(tblob)) {
+      pushTheme({
+        id: "offshore",
+        title: "Связи с офшором / зарубежными структурами",
+        summary: "ICIJ / офшорный сюжет в сохранённой выдаче.",
+        count: 1,
+        regions: matchesRegion(item.region, "UAE") ? ["UAE"] : ["RU"],
+        namedEntities: ["офшор"],
+        sampleHits: [
+          {
+            title: sanitizeOrionGoldenClientText(item.title).slice(0, 120),
+            domain: domainOf(item.sourceUrl),
+            url: item.sourceUrl,
+            region: matchesRegion(item.region, "UAE") ? "UAE" : "RU",
+            snippet: item.snippet ? sanitizeOrionGoldenClientText(item.snippet).slice(0, 180) : undefined,
+          },
+        ],
+      });
+    }
+    if (/лнр|лднр/i.test(tblob)) {
+      pushTheme({
+        id: "conflict_jurisdiction",
+        title: "ЛНР",
+        summary: "Сюжет ЛНР в открытых источниках.",
+        count: 1,
+        regions: ["RU"],
+        namedEntities: ["ЛНР", "Трансмашхолдинг"],
+        sampleHits: [
+          {
+            title: sanitizeOrionGoldenClientText(item.title).slice(0, 120),
+            domain: domainOf(item.sourceUrl),
+            url: item.sourceUrl,
+            region: "RU",
+            snippet: item.snippet ? sanitizeOrionGoldenClientText(item.snippet).slice(0, 180) : undefined,
+          },
+        ],
+      });
+    }
+    if (/rucompromat|агрегатор|аксененко|aksenenko|бенефициар.*офшор|офшор.*ликсутов/i.test(tblob)) {
+      pushTheme({
+        id: "aggregator_negative",
+        title: "Публикации на ресурсах-агрегаторах",
+        summary: "Агрегатор / бенефициар офшора / Аксененко.",
+        count: 1,
+        regions: matchesRegion(item.region, "UAE") ? ["UAE"] : ["RU"],
+        namedEntities: [
+          ...(/ликсутов|liksutov/i.test(tblob) ? ["Ликсутов"] : []),
+          ...(/аксененко|aksenenko/i.test(tblob) ? ["Аксененко"] : []),
+          ...(/офшор|offshore/i.test(tblob) ? ["офшор"] : []),
+        ],
+        sampleHits: [
+          {
+            title: sanitizeOrionGoldenClientText(item.title).slice(0, 120),
+            domain: domainOf(item.sourceUrl),
+            url: item.sourceUrl,
+            region: matchesRegion(item.region, "UAE") ? "UAE" : "RU",
+            snippet: item.snippet ? sanitizeOrionGoldenClientText(item.snippet).slice(0, 180) : undefined,
+          },
+        ],
+      });
+    }
+  }
+
+  void subjectName;
+  return out.slice(0, 8);
 }
 
 function formatPctLine(kpis: OrionSurfaceKpis): string {
@@ -1071,7 +1271,7 @@ function shortSubjectGenitive(subjectName: string): string {
 }
 
 /** Dative: Глинка → Глинке (по …). */
-function shortSubjectDative(subjectName: string): string {
+export function shortSubjectDative(subjectName: string): string {
   const label = shortSubjectLabel(subjectName);
   return label.replace(/([А-ЯЁA-Z][а-яёa-z]+)$/u, (m) => {
     if (/[ая]$/u.test(m)) return m.slice(0, -1) + "е";
@@ -1137,11 +1337,15 @@ function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string 
       if (p.defense || /defense|оборон/i.test(hitBlob)) {
         return `Публикации о связях ${sGen} с оборонно-промышленным / транспортным контуром (в т.ч. ${domain || "rucriminal.info"}); требуется сверка первоисточников`;
       }
-      return `Криминальные / судебные материалы в открытых источниках по ${sGen}${domain ? ` (якорь: ${domain})` : ""}; требуется сверка первоисточников`;
+      // Avoid weak soft-press anchors (forbes.com Dubai oligarchs) as "criminal" claim.
+      if (domain && /forbes\.com|tass\.com/i.test(domain) && !PRIMARY_CRIMINAL_DOMAIN_RE.test(domain)) {
+        return `Иные потенциально нежелательные упоминания в отношении ${sGen} (в т.ч. ${domain}); требуется сверка первоисточников`;
+      }
+      return `Криминальные / судебные материалы в открытых источниках в отношении ${sGen}${domain ? ` (якорь: ${domain})` : ""}; требуется сверка первоисточников`;
     }
     case "political_exposure":
       if (p.moldova) {
-        if (p.makhmudov || /лоббир|президент|president/i.test(hitBlob)) {
+        if (p.makhmudov || /лоббир|президент|president|спонсир|парт(ии|ию|ия)/i.test(hitBlob)) {
           return `Сведения о политической деятельности персоны в Молдавии (авторы утверждают, что ${s} спонсировал политическую активность, а также что И. Махмудов лоббировал выдвижение ${sGen} на пост Президента Молдовы)`;
         }
         return `Сведения о политической деятельности персоны в Молдавии (авторы утверждают спонсорство / участие в политическом контуре; источник: ${domain || "открытая пресса"})`;
@@ -1149,26 +1353,31 @@ function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string 
       return `Сведения о политической / публичной экспозиции ${sGen} в открытых источниках`;
     case "business_associates":
       if (p.liksutov) {
-        return `Совместный бизнес с М. Ликсутовым и связанными лицами (в открытых источниках также упоминается разделённая / элитная собственность)`;
+        const ex =
+          /лавров|lavrova|экс-супруг|ex-wife|wife/i.test(hitBlob) ||
+          theme.namedEntities.some((e) => /лавров/i.test(e));
+        return ex
+          ? `Совместный бизнес с М. Ликсутовым и его экс-супругой (также упоминается элитная собственность, которую ${s} и связанные лица поделили)`
+          : `Совместный бизнес с М. Ликсутовым и связанными лицами (в открытых источниках также упоминается разделённая / элитная собственность)`;
       }
       return `Упоминания совместного бизнеса и связанных партнёров ${sGen} в открытых источниках`;
     case "conflict_jurisdiction":
       if (p.lnr || p.transmash) {
         return `Публикация с указанием ${sGen} среди владельцев / бенефициаров «Трансмашхолдинга», который якобы инвестировал в предприятие на территории ЛНР (единичный сюжет; требует сверки)`;
       }
-      return `Сюжеты о конфликтных / спорных юрисдикциях в открытых источниках по ${sGen}`;
+      return `Сюжеты о конфликтных / спорных юрисдикциях в открытых источниках в отношении ${sGen}`;
     case "offshore":
       return `Связи с офшором / зарубежными структурами (по открытым источникам; требует сверки)`;
     case "aggregator_negative":
-      if (p.liksutov || p.offshore || /бенефициар|офшор|корруп|криминал/i.test(hitBlob)) {
+      if (p.liksutov || p.offshore || /бенефициар|офшор|корруп|криминал|аксененко/i.test(hitBlob)) {
         return `Публикация на ресурсе-агрегаторе: сведения о том, что ${s} является бенефициаром офшора, связанного с М. Ликсутовым, о возможных коррупционных и криминальных связях (характер источника требует осторожной интерпретации)`;
       }
-      return `Негативные публикации на ресурсах-агрегаторах по ${sGen}${domain ? ` (${domain})` : ""}`;
+      return `Негативные публикации на ресурсах-агрегаторах в отношении ${sGen}${domain ? ` (${domain})` : ""}`;
     case "pep_rca":
       return `Предварительные сигналы PEP / RCA в комплаенс-базах по ${shortSubjectDative(subjectName)}; требуется сверка полного профиля`;
     default:
       if (domain) {
-        return `Иные потенциально нежелательные упоминания по ${sGen} (в т.ч. ${domain})`;
+        return `Иные потенциально нежелательные упоминания в отношении ${sGen} (в т.ч. ${domain})`;
       }
       return theme.title;
   }
@@ -1177,11 +1386,23 @@ function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string 
 export function complianceToClientClaim(c: OrionComplianceDbSignal, subjectName: string): string {
   const sDat = shortSubjectDative(subjectName);
   const blob = `${c.statusLine} ${c.detail}`;
+  const links: string[] = [];
+  if (/ликсутов|liksutov/i.test(blob)) links.push("М. Ликсутовым");
+  if (/лавров|lavrova/i.test(blob)) links.push("К. Лавровой-Глинкой");
+  if (/бокарев|bokarev/i.test(blob)) links.push("А. Бокаревым");
+  if (/махмудов|makhmudov/i.test(blob)) links.push("И. Махмудовым");
+  const linkBit =
+    links.length > 0
+      ? ` из-за связи с ${links.length === 1 ? links[0] : `${links.slice(0, -1).join(", ")} и ${links[links.length - 1]}`}`
+      : "";
   if (/rca/i.test(blob)) {
-    return `В ${c.provider} — предварительный / активный сигнал RCA по ${sDat} (связь с близкими партнёрами; требуется сверка полного профиля)`;
+    return `В ${c.provider} — предварительный / активный сигнал RCA по ${sDat}${linkBit || " (связь с близкими партнёрами)"}; требуется сверка полного профиля`;
   }
   if (/pep/i.test(blob)) {
-    return `В ${c.provider} — предварительный / активный сигнал PEP по ${sDat} (в т.ч. через партнёрский контур; требуется сверка полного профиля)`;
+    return `В ${c.provider} — предварительный / активный сигнал PEP по ${sDat}${linkBit || " (в т.ч. через партнёрский контур)"}; требуется сверка полного профиля`;
+  }
+  if (links.length > 0) {
+    return `В ${c.provider} обнаружено предварительное совпадение по ${sDat}${linkBit}; требуется сверка полного профиля`;
   }
   return `В ${c.provider} обнаружено предварительное совпадение по имени ${shortSubjectGenitive(subjectName)}; требуется сверка полного профиля`;
 }
@@ -1241,10 +1462,17 @@ function buildExecutiveNarrative(input: {
     if (/dow jones/i.test(c)) return "dj";
     if (/lexisnexis/i.test(c)) return "ln";
     if (/world-check|world check/i.test(c)) return "wc";
+    if (/криминальн.*forbes\.com|якорь:\s*forbes\.com/i.test(c)) return "weak-forbes-criminal";
     return c.slice(0, 56).toLowerCase();
   };
+  const isWeakClaim = (c: string) =>
+    /криминальн.*якорь:\s*(forbes\.com|tass\.com)|иные потенциально нежелательные.*(?:forbes\.com|tass\.com)/i.test(
+      c
+    ) && !/rucriminal|трансмаш|махмудов|бокарев/i.test(c);
+
   for (const c of [...primaryClaims, ...singleClaims, ...complianceClaims, ...gptExtras]) {
     if (bullets.length >= 8) break;
+    if (isWeakClaim(c)) continue;
     const key = claimKey(c);
     const existingIdx = bullets.findIndex((b) => claimKey(b) === key);
     if (existingIdx >= 0) {
@@ -1289,7 +1517,11 @@ export function buildOrionThemeSet(input: {
   executiveSynthesis?: ExecutiveSynthesisOutput | null;
 }): OrionThemeSet {
   const subjectName = input.subjectName || input.inventory.subject.fullName;
-  const themes = buildThemes(input.inventory, subjectName);
+  const themes = enrichThemesFromCompliance(
+    buildThemes(input.inventory, subjectName),
+    input.inventory,
+    subjectName
+  );
   const ru = computeSurfaceKpis(input.inventory, "RU", subjectName);
   const uae = computeSurfaceKpis(input.inventory, "UAE", subjectName);
   const compliance = complianceSignals(input.inventory);

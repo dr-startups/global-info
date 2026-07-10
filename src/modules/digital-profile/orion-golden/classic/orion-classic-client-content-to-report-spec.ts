@@ -44,6 +44,7 @@ import {
   complianceToClientClaim,
   orionStyleRiskMatrixRows,
   regionalAuditDashboardBlock,
+  shortSubjectDative,
   themeSetBullets,
   type OrionThemeSet,
 } from "./orion-classic-theme-set";
@@ -601,10 +602,17 @@ function inventoryFallbackBlock(
       narrative = "Ключевые ссылки поисковой выдачи (домен, заголовок, URL).";
     }
   } else if (sectionId.includes("undesirable_theme")) {
-    const themes = adverseThemeRows(inventory, region, themeSet);
-    bullets = themes.map((t) => t.theme);
-    narrative =
-      "Кластеры потенциально нежелательных тем (канонический ThemeSet). Повторяют сюжет резюме.";
+    if (themeSet) {
+      bullets = themeSetBullets(themeSet, region);
+      if (bullets.length === 0) bullets = themeSetBullets(themeSet);
+      narrative =
+        "Кластеры потенциально нежелательных тем в клиентских формулировках (повторяют сюжет резюме):";
+    } else {
+      const themes = adverseThemeRows(inventory, region, themeSet);
+      bullets = themes.map((t) => t.theme);
+      narrative =
+        "Кластеры потенциально нежелательных тем (канонический ThemeSet). Повторяют сюжет резюме.";
+    }
   } else if (sectionId.includes("suggestions") || sectionId.includes("related_queries")) {
     const provider = sectionId.includes("yandex")
       ? "yandex"
@@ -659,7 +667,7 @@ function inventoryFallbackBlock(
             ? "Материалы World-Check по субъекту."
             : "Материалы LexisNexis по субъекту.";
     }
-    // Prefer ThemeSet client claim over inventory EN stubs / empty slides.
+    // Always prefer ThemeSet client claim over inventory EN stubs / GPT name-match.
     if (themeSet) {
       const signal = themeSet.complianceSignals.find((c) =>
         hint === "dow"
@@ -668,25 +676,23 @@ function inventoryFallbackBlock(
             ? /world/i.test(c.provider)
             : /lexis/i.test(c.provider)
       );
-      if (signal) {
-        const claim = complianceToClientClaim(signal, themeSet.subjectName);
-        narrative = claim;
-        bullets = sanitizeClassicBullets(
-          [
-            claim,
-            ...themeSetBullets(themeSet).slice(0, 2),
-            "Сигнал предварительный: требуется сверка полного профиля и первоисточников.",
-          ],
-          320
-        );
-      } else if (hint === "world" && bullets.length === 0) {
-        narrative =
-          "По World-Check на текущем этапе доступен только предварительный сигнал совпадения по имени; полный профиль требует сверки.";
-        bullets = [
-          "Предварительное совпадение по имени в World-Check — не является подтверждённым санкционным статусом.",
-          "Рекомендуется получить полный профиль и сверить с первоисточниками.",
-        ];
-      }
+      const sDat = shortSubjectDative(themeSet.subjectName);
+      const claim = signal
+        ? complianceToClientClaim(signal, themeSet.subjectName)
+        : hint === "dow"
+          ? `В Dow Jones — предварительное совпадение по ${sDat}; требуется сверка полного профиля`
+          : hint === "world"
+            ? "По World-Check доступен предварительный сигнал совпадения по имени; требуется сверка полного профиля."
+            : "По LexisNexis доступен предварительный сигнал совпадения по имени; требуется сверка полного профиля.";
+      narrative = claim;
+      bullets = sanitizeClassicBullets(
+        [
+          claim,
+          ...themeSetBullets(themeSet).slice(0, 2),
+          "Сигнал предварительный: требуется сверка полного профиля и первоисточников.",
+        ],
+        320
+      );
     }
   } else if (sectionId.includes("sanctions") || sectionId.includes("compliance_media") || sectionId.includes("compliance_database")) {
     if (themeSet) {
@@ -934,6 +940,12 @@ function blockFromClientSection(
       );
     }
   }
+  if (section.sectionId.includes("undesirable_theme") && themeSet) {
+    narrativeOut =
+      "Кластеры потенциально нежелательных тем в клиентских формулировках (повторяют сюжет резюме):";
+    bullets = themeSetBullets(themeSet, region);
+    if (bullets.length === 0) bullets = themeSetBullets(themeSet);
+  }
   if (
     (section.sectionId.includes("world_check") ||
       section.sectionId.includes("dow_jones") ||
@@ -952,66 +964,24 @@ function blockFromClientSection(
           ? /world/i.test(c.provider)
           : /lexis/i.test(c.provider)
     );
-    if (signal) {
-      const claim = complianceToClientClaim(signal, themeSet.subjectName);
-      narrativeOut = claim;
-      bullets = sanitizeClassicBullets(
-        [
-          claim,
-          ...themeSetBullets(themeSet).slice(0, 2),
-          "Сигнал предварительный: требуется сверка полного профиля и первоисточников.",
-        ],
-        320
-      );
-    }
-  }
-  if (
-    (section.sectionId.includes("world_check") ||
-      section.sectionId.includes("dow_jones") ||
-      section.sectionId.includes("lexisnexis")) &&
-    bullets.some((b) => isEnglishComplianceStub(b))
-  ) {
-    bullets = sanitizeClassicBullets(
-      bullets.filter((b) => !isEnglishComplianceStub(b)),
-      280
-    );
-  }
-  if (section.sectionId.includes("world_check") && bullets.length === 0) {
-    const signal = themeSet?.complianceSignals.find((c) => /world/i.test(c.provider));
-    narrativeOut =
-      signal
-        ? complianceToClientClaim(signal, themeSet!.subjectName)
-        : "По World-Check доступен предварительный сигнал совпадения по имени; требуется сверка полного профиля.";
+    const sDat = shortSubjectDative(themeSet.subjectName);
+    const claim = signal
+      ? complianceToClientClaim(signal, themeSet.subjectName)
+      : hint === "dow"
+        ? `В Dow Jones — предварительное совпадение по ${sDat}; требуется сверка полного профиля`
+        : hint === "world"
+          ? "По World-Check доступен предварительный сигнал совпадения по имени; требуется сверка полного профиля."
+          : "По LexisNexis доступен предварительный сигнал совпадения по имени; требуется сверка полного профиля.";
+    // Always prefer ThemeSet client claim over GPT «потенциальное совпадение по ФИО».
+    narrativeOut = claim;
     bullets = sanitizeClassicBullets(
       [
-        signal
-          ? complianceToClientClaim(signal, themeSet!.subjectName)
-          : "Предварительное совпадение по имени в World-Check — не является подтверждённым санкционным статусом.",
-        "Рекомендуется получить полный профиль и сверить с первоисточниками.",
+        claim,
+        ...themeSetBullets(themeSet).slice(0, 2),
+        "Сигнал предварительный: требуется сверка полного профиля и первоисточников.",
       ],
       320
     );
-  }
-  if (
-    (section.sectionId.includes("sanctions") ||
-      section.sectionId.includes("compliance_media") ||
-      section.sectionId.includes("compliance_database")) &&
-    themeSet
-  ) {
-    narrativeOut =
-      "В международных базах данных и открытых источниках зафиксированы следующие предварительные сигналы:";
-    bullets = sanitizeClassicBullets(
-      [
-        ...themeSet.complianceSignals.map((c) => complianceToClientClaim(c, themeSet.subjectName)),
-        ...themeSetBullets(themeSet).slice(0, 4),
-      ],
-      320
-    );
-  }
-  if (section.sectionId.includes("undesirable_theme") && themeSet) {
-    narrativeOut =
-      "Кластеры потенциально нежелательных тем в клиентских формулировках (повторяют сюжет резюме):";
-    bullets = themeSetBullets(themeSet, region);
   }
   if (section.sectionId === "03_digital_profile_overview" && themeSet) {
     narrativeOut = truncateAtWordBoundary(
