@@ -152,6 +152,7 @@ export function composeOrionClassicAuditDeck(
   assets: ReportAssetV1[] = []
 ): OrionGoldenDeckManifest {
   const serpAssets = [
+    ...pickAssets(assets, "live_serp"),
     ...pickAssets(assets, "captured_serp"),
     ...pickAssets(assets, "synthetic_serp"),
   ];

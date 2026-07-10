@@ -16,6 +16,11 @@ import {
 } from "../../orion-report-spec/normalized-evidence";
 import { buildOrionGoldenAssets } from "../assets/orion-asset-builder";
 import { loadFile } from "../../storage/private-store";
+import {
+  buildDefaultLiveSerpSlots,
+  buildLiveSerpAssets,
+  type ClassicSerpAudience,
+} from "./orion-classic-live-serp-assets";
 
 const RU_RISK_TERMS = ["санкции", "суд"];
 const UAE_RISK_TERMS = ["sanctions", "court"];
@@ -192,9 +197,10 @@ async function buildQuerySerpAssets(input: {
 
 function dedupeSerpAssets(assets: ReportAssetV1[]): ReportAssetV1[] {
   const byKey = new Map<string, ReportAssetV1>();
-  const rank = (a: ReportAssetV1) => (a.kind === "captured_serp" ? 2 : a.kind === "synthetic_serp" ? 1 : 0);
+  const rank = (a: ReportAssetV1) =>
+    a.kind === "live_serp" ? 3 : a.kind === "captured_serp" ? 2 : a.kind === "synthetic_serp" ? 1 : 0;
   for (const asset of assets) {
-    if (asset.kind !== "synthetic_serp" && asset.kind !== "captured_serp") {
+    if (asset.kind !== "live_serp" && asset.kind !== "synthetic_serp" && asset.kind !== "captured_serp") {
       byKey.set(asset.assetRef, asset);
       continue;
     }
@@ -308,14 +314,15 @@ async function buildCapturedSerpAssets(ctx: OrionRealCaseContext): Promise<Repor
 
 export async function buildOrionClassicAuditAssets(input: {
   ctx: OrionRealCaseContext;
+  reportRunId: string;
+  audience?: ClassicSerpAudience;
+  allowSyntheticSerp?: boolean;
 }): Promise<ReportAssetV1[]> {
-  const base = await buildOrionGoldenAssets(input);
-  const captured = await buildCapturedSerpAssets(input.ctx);
-  const hasCapturedRu = captured.some((a) => !/uae_/i.test(a.assetRef));
-  const hasCapturedUae = captured.some((a) => /uae_/i.test(a.assetRef));
+  const audience = input.audience ?? "client";
+  const allowSynthetic = input.allowSyntheticSerp ?? audience === "internal_preview";
+  const base = await buildOrionGoldenAssets({ ctx: input.ctx });
 
   const ruSearchEvidence = buildRuSearchEvidence(input.ctx).map((e) => {
-    // Enrich risk theme from nested metadata when adapter left unknown
     if (e.riskTheme && e.riskTheme !== "unknown") return e;
     return e;
   });
@@ -333,62 +340,96 @@ export async function buildOrionClassicAuditAssets(input: {
     MAX_UAE_QUERIES
   );
 
+  const liveSlots = buildDefaultLiveSerpSlots({
+    subjectName: input.ctx.subject.fullName,
+    ruQueries,
+    uaeQueries,
+  });
+  const liveSerp = await buildLiveSerpAssets({
+    reportRunId: input.reportRunId,
+    slots: liveSlots,
+    audience,
+  });
+  const hasLiveRu = liveSerp.some((a) => !/uae_/i.test(a.assetRef));
+  const hasLiveUae = liveSerp.some((a) => /uae_/i.test(a.assetRef));
+
   const extraSerp: ReportAssetV1[] = [];
-  // Synthetic only fills gaps when captured screenshots are missing for the region.
-  if (!hasCapturedRu) {
-    for (const [idx, query] of ruQueries.entries()) {
-      extraSerp.push(
-        ...(await buildQuerySerpAssets({
-          subjectName: input.ctx.subject.fullName,
-          evidence: ruSearchEvidence,
-          query,
-          isPrimary: idx === 0,
-          assetRefPrefix: "ru_classic_serp",
-        }))
-      );
+  // Stage S1 synthetic snapshots are internal-preview only — never client LIVE substitute.
+  const legacyCaptured = allowSynthetic ? await buildCapturedSerpAssets(input.ctx) : [];
+
+  if (allowSynthetic) {
+    if (!hasLiveRu) {
+      for (const [idx, query] of ruQueries.entries()) {
+        extraSerp.push(
+          ...(await buildQuerySerpAssets({
+            subjectName: input.ctx.subject.fullName,
+            evidence: ruSearchEvidence,
+            query,
+            isPrimary: idx === 0,
+            assetRefPrefix: "ru_classic_serp",
+          }))
+        );
+      }
     }
-  }
-  if (!hasCapturedUae) {
-    for (const [idx, query] of uaeQueries.entries()) {
-      extraSerp.push(
-        ...(await buildQuerySerpAssets({
-          subjectName: input.ctx.subject.fullName,
-          evidence: uaeSearchEvidence,
-          query,
-          isPrimary: idx === 0,
-          assetRefPrefix: "uae_classic_serp",
-        }))
-      );
+    if (!hasLiveUae) {
+      for (const [idx, query] of uaeQueries.entries()) {
+        extraSerp.push(
+          ...(await buildQuerySerpAssets({
+            subjectName: input.ctx.subject.fullName,
+            evidence: uaeSearchEvidence,
+            query,
+            isPrimary: idx === 0,
+            assetRefPrefix: "uae_classic_serp",
+          }))
+        );
+      }
     }
   }
 
-  const merged = dedupeSerpAssets([...base, ...captured, ...extraSerp]);
+  const merged = dedupeSerpAssets([...base, ...liveSerp, ...legacyCaptured, ...extraSerp]);
   const ru = merged.filter(
     (a) =>
-      (a.kind === "synthetic_serp" || a.kind === "captured_serp") && !/uae|intl/i.test(a.assetRef)
+      (a.kind === "live_serp" || a.kind === "synthetic_serp" || a.kind === "captured_serp") &&
+      !/uae|intl/i.test(a.assetRef)
   );
   const uae = merged.filter(
     (a) =>
-      (a.kind === "synthetic_serp" || a.kind === "captured_serp") && /uae|intl/i.test(a.assetRef)
+      (a.kind === "live_serp" || a.kind === "synthetic_serp" || a.kind === "captured_serp") &&
+      /uae|intl/i.test(a.assetRef)
   );
-  const other = merged.filter((a) => a.kind !== "synthetic_serp" && a.kind !== "captured_serp");
+  const other = merged.filter(
+    (a) => a.kind !== "live_serp" && a.kind !== "synthetic_serp" && a.kind !== "captured_serp"
+  );
 
+  const cappedRuLive = ru.filter((a) => a.kind === "live_serp").slice(0, MAX_CAPTURED_RU);
   const cappedRuCaptured = ru.filter((a) => a.kind === "captured_serp").slice(0, MAX_CAPTURED_RU);
   const cappedRuSynthetic = ru
     .filter((a) => a.kind === "synthetic_serp" && a.assetRef.includes("classic_serp"))
     .slice(0, 4);
   const cappedRuFallback =
-    cappedRuCaptured.length > 0
-      ? cappedRuCaptured
-      : cappedRuSynthetic.length > 0
-        ? cappedRuSynthetic
-        : ru.filter((a) => /serp_snapshot|captured_serp/.test(a.assetRef)).slice(0, 2);
+    cappedRuLive.length > 0
+      ? cappedRuLive
+      : allowSynthetic
+        ? cappedRuCaptured.length > 0
+          ? cappedRuCaptured
+          : cappedRuSynthetic.length > 0
+            ? cappedRuSynthetic
+            : ru.filter((a) => /serp_snapshot|captured_serp/.test(a.assetRef)).slice(0, 2)
+        : [];
 
+  const cappedUaeLive = uae.filter((a) => a.kind === "live_serp").slice(0, MAX_CAPTURED_UAE);
   const cappedUaeCaptured = uae.filter((a) => a.kind === "captured_serp").slice(0, MAX_CAPTURED_UAE);
   const cappedUaeSynthetic = uae
     .filter((a) => a.kind === "synthetic_serp" && a.assetRef.includes("classic_serp"))
     .slice(0, 2);
-  const cappedUae = cappedUaeCaptured.length > 0 ? cappedUaeCaptured : cappedUaeSynthetic;
+  const cappedUae =
+    cappedUaeLive.length > 0
+      ? cappedUaeLive
+      : allowSynthetic
+        ? cappedUaeCaptured.length > 0
+          ? cappedUaeCaptured
+          : cappedUaeSynthetic
+        : [];
 
   return [...other, ...cappedRuFallback, ...cappedUae];
 }

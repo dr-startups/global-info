@@ -19,6 +19,7 @@ import { composeOrionClassicAuditDeck } from "./orion-classic-audit-deck-compose
 import { buildOrionClassicReportSpecFromClientContent } from "./orion-classic-client-content-to-report-spec";
 import { buildOrionThemeSet } from "./orion-classic-theme-set";
 import { inspectClassicOrionAuditQuality } from "./orion-classic-audit-quality-inspection";
+import { isClientProductionFinalize } from "./orion-classic-live-serp-assets";
 import type { ExecutiveSynthesisOutput } from "../gpt/orion-executive-synthesis-from-sections";
 import type { SectionDerivedRiskMatrix } from "../sections/orion-risk-matrix-from-sections";
 
@@ -78,7 +79,12 @@ export async function runOrionClassicAuditRender(options: {
     reportRunId: clientContent.reportRunId,
     ctx,
   });
-  const assets = await buildOrionClassicAuditAssets({ ctx });
+  const assets = await buildOrionClassicAuditAssets({
+    ctx,
+    reportRunId: clientContent.reportRunId,
+    audience: isClientProductionFinalize() ? "client" : "internal_preview",
+    allowSyntheticSerp: !isClientProductionFinalize(),
+  });
 
   const roots = [
     caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId),
@@ -143,6 +149,8 @@ export async function runOrionClassicAuditRender(options: {
     reportSpec,
     inventory,
     outputRoot,
+    assets,
+    clientProductionFinalize: isClientProductionFinalize(),
   });
   writeJson(join(outputRoot, "classic-audit-quality-inspection.json"), classicQa);
 

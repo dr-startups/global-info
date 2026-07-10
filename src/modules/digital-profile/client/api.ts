@@ -1290,6 +1290,74 @@ export function regenerateOrionClientContentAfterReview(
   );
 }
 
+// ---------------------------------------------------------------------------
+// Stage S2 — LIVE SERP browser captures (manual API; not invoked by renderer)
+// ---------------------------------------------------------------------------
+
+export type SerpCaptureEngine = "GOOGLE" | "YANDEX";
+export type SerpCaptureRegion = "RU" | "UAE";
+export type SerpCaptureStatus =
+  | "PENDING"
+  | "RUNNING"
+  | "READY"
+  | "BLOCKED_CAPTCHA"
+  | "FAILED";
+
+export type SerpCaptureDto = {
+  id: string;
+  caseId: string;
+  reportRunId: string;
+  query: string;
+  queryHash: string;
+  engine: SerpCaptureEngine;
+  region: SerpCaptureRegion;
+  locale: string;
+  device: string;
+  captureStatus: SerpCaptureStatus;
+  geoStatus: "VERIFIED" | "UNVERIFIED" | "UNKNOWN";
+  connectionMode: "PROXY" | "DIRECT";
+  storageKey: string | null;
+  sha256: string | null;
+  sourceUrl: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  capturedAt: string | null;
+  capturedBy: string | null;
+  metadataJson: Record<string, unknown> | null;
+  errorJson: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export function listSerpCaptures(
+  caseId: string,
+  reportRunId: string
+): Promise<{ captures: SerpCaptureDto[] }> {
+  return request<{ captures: SerpCaptureDto[] }>(
+    `/cases/${caseId}/report-runs/${reportRunId}/serp-captures`
+  );
+}
+
+export function captureLiveSerp(
+  caseId: string,
+  reportRunId: string,
+  input: {
+    query: string;
+    engine: SerpCaptureEngine;
+    region: SerpCaptureRegion;
+    locale?: string;
+    device?: "DESKTOP";
+  }
+): Promise<{ capture: SerpCaptureDto }> {
+  return request<{ capture: SerpCaptureDto }>(
+    `/cases/${caseId}/report-runs/${reportRunId}/serp-captures/live`,
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    }
+  );
+}
+
 export type OrionClassicAuditReportSummary = {
   ok: boolean;
   uiEnabled: boolean;

@@ -221,6 +221,7 @@ model Case {
   auditLogs        AuditLog[]
   caseAccess         DpCaseAccess[]
   orionReportRuns    OrionReportRun[]
+  serpCaptures       SerpCapture[]
   orionMacroSections OrionReportMacroSection[]
   orionMicroStages   OrionReportMicroStage[]
   orionSectionAgentRuns OrionSectionAgentRun[]
@@ -631,12 +632,50 @@ model OrionReportRun {
   finalDeckManifests OrionFinalDeckManifest[]
   reportJsonVersions OrionReportJsonVersion[]
   consistencyChecks OrionReportConsistencyCheck[]
+  serpCaptures       SerpCapture[]
 
   @@index([caseId])
   @@index([reportVersionId])
   @@index([status])
   @@index([createdAt])
   @@map("dp_orion_report_runs")
+}
+
+// ----------------------------------------------------------------------------
+// 11c. LIVE SERP browser captures (Stage S2)
+// ----------------------------------------------------------------------------
+
+model SerpCapture {
+  id             String    @id @default(cuid())
+  caseId         String
+  reportRunId    String
+  query          String
+  queryHash      String
+  engine         String
+  region         String
+  locale         String
+  device         String    @default("DESKTOP")
+  captureStatus  String
+  geoStatus      String    @default("UNKNOWN")
+  connectionMode String    @default("DIRECT")
+  storageKey     String?
+  sha256         String?
+  sourceUrl      String?
+  mimeType       String?
+  sizeBytes      Int?
+  capturedAt     DateTime?
+  capturedBy     String?
+  metadataJson   Json?
+  errorJson      Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  case      Case           @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([reportRunId, queryHash, engine, region, device, captureStatus])
+  @@map("dp_serp_captures")
 }
 
 model OrionReportMacroSection {

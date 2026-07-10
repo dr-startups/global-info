@@ -17,10 +17,13 @@ import {
   regenerateOrionClientContentAfterReview,
   generateOrionClassicAuditReport,
   getOrionClassicAuditReportStatus,
+  captureLiveSerp,
+  listSerpCaptures,
   prepareOrionGoldenArtifacts,
   getOrionGoldenPrepareStatus,
   type OrionClassicAuditReportSummary,
   type OrionGoldenPrepareSummary,
+  type SerpCaptureDto,
   submitOrionAdminReviewDecision,
   type AdminReviewStatus,
   type AdminReviewDecisionSetDto,
@@ -105,6 +108,9 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
   const [prepareStatus, setPrepareStatus] = useState<OrionGoldenPrepareSummary | null>(null);
   const [prepareBusy, setPrepareBusy] = useState(false);
   const [lastRegenAt, setLastRegenAt] = useState<string | null>(null);
+  const [serpCaptures, setSerpCaptures] = useState<SerpCaptureDto[]>([]);
+  const [serpCaptureBusy, setSerpCaptureBusy] = useState(false);
+  const [activeLiveCapture, setActiveLiveCapture] = useState<string | null>(null);
 
   // Filters
   const [filterStatus, setFilterStatus] = useState<string>("");
@@ -167,6 +173,65 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
   useEffect(() => {
     if (canView) void loadQueue();
   }, [canView, loadQueue]);
+
+  const reportRunId = queue?.reportRunId ?? null;
+  const subjectQuery = caseDetail?.subject?.fullName?.trim() ?? "";
+
+  const loadSerpCaptures = useCallback(async () => {
+    if (!reportRunId) {
+      setSerpCaptures([]);
+      return;
+    }
+    try {
+      const res = await listSerpCaptures(caseId, reportRunId);
+      setSerpCaptures(res.captures);
+    } catch {
+      setSerpCaptures([]);
+    }
+  }, [caseId, reportRunId]);
+
+  useEffect(() => {
+    if (reportRunId) void loadSerpCaptures();
+  }, [reportRunId, loadSerpCaptures]);
+
+  const runLiveSerpCapture = async (input: {
+    engine: "GOOGLE" | "YANDEX";
+    region: "RU" | "UAE";
+    label: string;
+  }) => {
+    if (!canDecide || !reportRunId || !subjectQuery) return;
+    const key = `${input.region}:${input.engine}`;
+    setSerpCaptureBusy(true);
+    setActiveLiveCapture(key);
+    setBanner(null);
+    try {
+      const res = await captureLiveSerp(caseId, reportRunId, {
+        query: subjectQuery,
+        engine: input.engine,
+        region: input.region,
+      });
+      await loadSerpCaptures();
+      const c = res.capture;
+      setBanner({
+        kind: c.captureStatus === "READY" ? "ok" : "error",
+        text:
+          c.captureStatus === "READY"
+            ? `LIVE SERP (${input.label}): READY${c.geoStatus === "UNVERIFIED" ? " · GEO не подтверждено" : ""}`
+            : `LIVE SERP (${input.label}): ${c.captureStatus}${c.errorJson?.message ? ` — ${String(c.errorJson.message)}` : ""}`,
+      });
+    } catch (err) {
+      const msg =
+        err instanceof DigitalProfileApiError
+          ? `${err.code}: ${err.message}`
+          : err instanceof Error
+            ? err.message
+            : "Ошибка LIVE SERP capture";
+      setBanner({ kind: "error", text: msg });
+    } finally {
+      setSerpCaptureBusy(false);
+      setActiveLiveCapture(null);
+    }
+  };
 
   const openDetail = useCallback(
     async (evidenceId: string, opts?: { force?: boolean }) => {
@@ -829,6 +894,80 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
               </>
             ) : null}
           </div>
+        </div>
+      </Card>
+
+      <Card data-testid="live-serp-capture-panel">
+        <div className="dp-stack" style={{ gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <strong>LIVE SERP capture</strong>
+            {reportRunId ? (
+              <span className="dp-muted">
+                reportRunId: <code>{reportRunId}</code>
+              </span>
+            ) : (
+              <span className="dp-muted">Нужен Prepare / reportRunId</span>
+            )}
+          </div>
+          <Notice>
+            Ручной Playwright-захват поисковой выдачи. Не запускается при генерации PDF. Без прокси — DIRECT +
+            GEO не подтверждено (допустимо для staging preview).
+          </Notice>
+          {subjectQuery ? (
+            <div className="dp-muted">
+              Запрос: <code>{subjectQuery}</code>
+            </div>
+          ) : null}
+          {canDecide && reportRunId && subjectQuery ? (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="dp-btn"
+                disabled={serpCaptureBusy}
+                onClick={() => void runLiveSerpCapture({ engine: "YANDEX", region: "RU", label: "RU Yandex" })}
+              >
+                {activeLiveCapture === "RU:YANDEX" ? "Захват…" : "RU · Yandex"}
+              </button>
+              <button
+                type="button"
+                className="dp-btn"
+                disabled={serpCaptureBusy}
+                onClick={() => void runLiveSerpCapture({ engine: "GOOGLE", region: "RU", label: "RU Google" })}
+              >
+                {activeLiveCapture === "RU:GOOGLE" ? "Захват…" : "RU · Google"}
+              </button>
+              <button
+                type="button"
+                className="dp-btn"
+                disabled={serpCaptureBusy}
+                onClick={() => void runLiveSerpCapture({ engine: "GOOGLE", region: "UAE", label: "UAE Google" })}
+              >
+                {activeLiveCapture === "UAE:GOOGLE" ? "Захват…" : "UAE · Google"}
+              </button>
+            </div>
+          ) : (
+            <span className="dp-muted">Кнопки доступны после Prepare и при наличии ФИО субъекта.</span>
+          )}
+          {serpCaptures.length > 0 ? (
+            <div className="dp-stack" style={{ gap: 6 }}>
+              {serpCaptures.slice(0, 8).map((c) => (
+                <div key={c.id} style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <Badge tone={c.captureStatus === "READY" ? "ok" : c.captureStatus === "BLOCKED_CAPTCHA" ? "warn" : "neutral"}>
+                    {c.captureStatus}
+                  </Badge>
+                  <span>
+                    {c.region} · {c.engine} · {c.query.slice(0, 48)}
+                  </span>
+                  <span className="dp-muted">
+                    {c.geoStatus === "UNVERIFIED" ? "GEO не подтверждено" : c.geoStatus}
+                    {c.connectionMode ? ` · ${c.connectionMode}` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : reportRunId ? (
+            <span className="dp-muted">Захватов для этого report run пока нет.</span>
+          ) : null}
         </div>
       </Card>
 

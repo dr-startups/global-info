@@ -210,13 +210,15 @@ export async function runLiveProviderSmoke(
     }),
     baseRow({
       providerId: "screenshot_real",
-      providerLabel: "Browser Screenshot Capture",
+      providerLabel: "Browser SERP Capture (Playwright)",
       category: "screenshot",
       runtimeKind: "real",
-      configured: false,
-      credentialsPresent: false,
-      smokeStatus: "not_supported",
-      smokeSkippedReason: "no_real_browser_adapter",
+      configured: true,
+      credentialsPresent: Boolean(
+        process.env.SERP_CAPTURE_PROXY_RU || process.env.SERP_CAPTURE_PROXY_UAE
+      ),
+      smokeStatus: "skipped",
+      smokeSkippedReason: "live-capture-via-report-run-api",
     }),
     baseRow({
       providerId: "screenshot_synthetic",

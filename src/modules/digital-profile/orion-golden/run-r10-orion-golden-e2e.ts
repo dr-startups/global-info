@@ -805,7 +805,12 @@ export async function runR10OrionGoldenE2e(options: {
   }
 
   const assets = shouldUseClassicOrionAuditMode()
-    ? await buildOrionClassicAuditAssets({ ctx })
+    ? await buildOrionClassicAuditAssets({
+        ctx,
+        reportRunId,
+        audience: "internal_preview",
+        allowSyntheticSerp: true,
+      })
     : await buildOrionGoldenAssets({ ctx });
   writeJson(join(outputRoot, "report-assets.json"), assets);
 

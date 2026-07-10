@@ -11,6 +11,7 @@ import {
 export type ReportAssetKind =
   | "synthetic_serp"
   | "captured_serp"
+  | "live_serp"
   | "image_grid"
   | "video_cards"
   | "knowledge_panel"
@@ -25,6 +26,10 @@ export type ReportAssetV1 = {
   imageUrl?: string;
   evidenceRefs: string[];
   status: "ready" | "missing";
+  /** LIVE SERP capture metadata (optional). */
+  geoStatus?: "VERIFIED" | "UNVERIFIED" | "UNKNOWN";
+  connectionMode?: "PROXY" | "DIRECT";
+  captureId?: string;
 };
 
 async function buildProviderSerpAsset(input: {

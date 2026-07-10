@@ -8,6 +8,7 @@ import { join } from "node:path";
 import type { OrionGoldenDeckManifest } from "../composer/orion-deck-composer";
 import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
 import type { OrionClassicAuditReportSpec } from "./orion-classic-client-content-to-report-spec";
+import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
 import { buildOrionThemeSet } from "./orion-classic-theme-set";
 
 export const CLASSIC_ORION_AUDIT_PAGE_RANGE = { min: 45, max: 120 } as const;
@@ -26,6 +27,8 @@ export function inspectClassicOrionAuditQuality(input: {
   reportSpec: OrionClassicAuditReportSpec;
   inventory: FullEvidenceInventory;
   outputRoot: string;
+  assets?: ReportAssetV1[];
+  clientProductionFinalize?: boolean;
 }): { passed: boolean; issues: string[]; checks: Array<{ id: string; passed: boolean; detail: string }> } {
   const issues: string[] = [];
   const checks: Array<{ id: string; passed: boolean; detail: string }> = [];
@@ -230,6 +233,51 @@ export function inspectClassicOrionAuditQuality(input: {
     }
   } catch {
     checks.push({ id: "pdf-nonempty", passed: true, detail: "skipped" });
+  }
+
+  const assets = input.assets ?? [];
+  const liveAssets = assets.filter((a) => a.kind === "live_serp" && a.status === "ready");
+  const syntheticInDeck = assets.some((a) => a.kind === "synthetic_serp" && a.status === "ready");
+  const unverifiedLive = liveAssets.filter((a) => a.geoStatus === "UNVERIFIED");
+  const serpSlides = input.deckManifest.finalSlides.filter(
+    (s) => s.sectionKey.includes("serp_screenshot") || s.template === "orion_golden_serp_screenshot"
+  );
+
+  if (input.clientProductionFinalize) {
+    const geoOk = unverifiedLive.length === 0;
+    checks.push({
+      id: "live-serp-geo-unverified",
+      passed: geoOk,
+      detail: geoOk
+        ? "all LIVE SERP assets GEO-verified or absent"
+        : `${unverifiedLive.length} LIVE SERP asset(s) with geoStatus=UNVERIFIED`,
+    });
+
+    const noSynthetic = !syntheticInDeck;
+    checks.push({
+      id: "live-serp-no-synthetic-substitute",
+      passed: noSynthetic,
+      detail: noSynthetic
+        ? "no synthetic SERP in client production assets"
+        : "synthetic SERP must not substitute LIVE in client production",
+    });
+
+    const expectsSerp = serpSlides.length > 0 || liveAssets.length > 0;
+    const hasLive = liveAssets.length > 0;
+    const missingOk = !expectsSerp || hasLive;
+    checks.push({
+      id: "live-serp-missing",
+      passed: missingOk,
+      detail: missingOk
+        ? `live=${liveAssets.length}, serpSlides=${serpSlides.length}`
+        : "client production expects LIVE SERP but none are READY",
+    });
+  } else {
+    checks.push({
+      id: "live-serp-internal-preview",
+      passed: true,
+      detail: `live=${liveAssets.length}, unverified=${unverifiedLive.length}, synthetic=${syntheticInDeck}`,
+    });
   }
 
   for (const check of checks) {
