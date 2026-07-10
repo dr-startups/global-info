@@ -11,8 +11,22 @@ import type { PersistedSerpObservation } from "./types";
 const ADVERSE_DOMAIN_RE =
   /rucriminal\.|cybercriminal\.|acompromat\.|rucompromat\.|compromat\.|rupep\.|opensanctions\.|ofac\.|justice\.gov|home\.treasury\.gov/i;
 
-const ADVERSE_BLOB_RE =
-  /adverse|negative|undesirable|нежелат|негатив|санкц|sanction|ofac|корруп|corrupt|мошен|fraud|арест|arrest|уголов|criminal|суд|lawsuit|\bpep\b|watchlist|rca|компромат|offshore|офшор|политич|молдав|лнр|лднр|оборон|defense\s+industry|бенефициар|associated|associate/i;
+/**
+ * Soft bio / registry / encyclopedia domains — never red-frame on weak blob hits.
+ * Forbes/Klerk bios were false-positive «Тема N» in PDF (41).
+ */
+const SOFT_PROFILE_DOMAIN_RE =
+  /forbes\.|klerk\.|tadviser\.|wikipedia\.|linkedin\.|rusprofile\.|audit-it\.|zachestnyibiznes\.|labyrinth\.|instagram\.|facebook\.|x\.com|twitter\.|youtube\.|imslp\./i;
+
+/** Strong adverse signals — enough alone, including on soft profile domains. */
+const STRONG_ADVERSE_BLOB_RE =
+  /adverse|undesirable|нежелат|негативн|санкц|sanction|\bofac\b|корруп|corrupt|мошен|fraud|арест|arrest|уголов|\bcriminal\b|lawsuit|\bpep\b|watchlist|\brca\b|компромат|rucriminal|cybercriminal|acompromat|rupep|opensanctions|defense\s+industry|оборонн(?:ая|ой)\s+промыш|махмудов|makhmudov|бокарев|bokarev/i;
+
+/**
+ * Weaker signals — only for non-soft domains (avoid «associate» / «политич» on bios).
+ */
+const WEAK_ADVERSE_BLOB_RE =
+  /offshore|офшор|молдав|лнр|лднр|бенефициар|негатив|компромат/i;
 
 type ThemeRule = { key: string; title: string; match: RegExp };
 
@@ -20,22 +34,22 @@ const THEME_RULES: ThemeRule[] = [
   {
     key: "criminal",
     title: "Криминальные / судебные материалы",
-    match: /rucriminal|cybercriminal|acompromat|compromat|уголов|арест|criminal|суд|lawsuit/i,
+    match: /rucriminal|cybercriminal|acompromat|compromat|уголов|арест|\bcriminal\b|lawsuit/i,
   },
   {
     key: "sanctions",
     title: "Санкционный контур и связанные лица",
-    match: /санкц|sanction|ofac|махмудов|makhmudov|бокарев|bokarev|трансмаш|watchlist/i,
+    match: /санкц|sanction|\bofac\b|махмудов|makhmudov|бокарев|bokarev|трансмаш|watchlist|defense\s+industry|оборонн/i,
   },
   {
     key: "pep",
     title: "Сигналы PEP / RCA",
-    match: /rupep|\bpep\b|rca|политич|political/i,
+    match: /rupep|\bpep\b|\brca\b/i,
   },
   {
     key: "adverse_media",
     title: "Негативные публикации на агрегаторах",
-    match: /негатив|adverse|компромат|reputation/i,
+    match: /негатив|adverse|компромат|нежелат/i,
   },
 ];
 
@@ -64,8 +78,15 @@ export function classifyObservationHighlight(obs: PersistedSerpObservation): {
   const domain = obs.domain ?? domainOf(url);
   const blob = `${obs.title ?? ""} ${obs.snippet ?? ""} ${url} ${domain}`;
   const byDomain = ADVERSE_DOMAIN_RE.test(url) || ADVERSE_DOMAIN_RE.test(domain);
-  const byBlob = ADVERSE_BLOB_RE.test(blob);
-  if (!byDomain && !byBlob) {
+  const softProfile = SOFT_PROFILE_DOMAIN_RE.test(url) || SOFT_PROFILE_DOMAIN_RE.test(domain);
+  const strongBlob = STRONG_ADVERSE_BLOB_RE.test(blob);
+  const weakBlob = !softProfile && WEAK_ADVERSE_BLOB_RE.test(blob);
+
+  if (!byDomain && !strongBlob && !weakBlob) {
+    return { isHighlighted: false, riskTheme: null, themeTitle: null };
+  }
+  // Soft bios: only domain-list adverse or strong keywords (not weak blob).
+  if (softProfile && !byDomain && !strongBlob) {
     return { isHighlighted: false, riskTheme: null, themeTitle: null };
   }
   const theme = themeForBlob(blob);

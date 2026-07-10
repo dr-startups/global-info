@@ -31,6 +31,10 @@ export {
   classifyObservationHighlight,
   buildObservationThemeGrouping,
 } from "./resolve-observation-highlights";
+export {
+  isSyntheticSerpNoiseHit,
+  filterObservationsForSyntheticSerp,
+} from "./filter-synthetic-serp-noise";
 export { serpSyntheticAssetToReportAsset } from "./to-report-asset";
 export { evaluateClientVisualAssetGate } from "./client-report-gate";
 export { ingestSerperOrganicObservations } from "./ingest-serper-organic";

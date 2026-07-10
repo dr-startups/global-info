@@ -3,6 +3,7 @@ import type { SerpLanguage, SerpSnapshotViewModel } from "../serp-snapshot/types
 import { saveFile, sha256 } from "../storage/private-store";
 import { buildStorageKey } from "../storage/keys";
 import { prisma } from "@/server/prisma/client";
+import { filterObservationsForSyntheticSerp } from "./filter-synthetic-serp-noise";
 import {
   buildObservationThemeGrouping,
   observationToResultView,
@@ -20,13 +21,17 @@ export function buildSyntheticSerpViewModelFromObservations(input: {
 }): SerpSnapshotViewModel {
   const language: SerpLanguage = input.language === "en" ? "en" : "ru";
   const query = input.queryText;
-  const { grouping } = buildObservationThemeGrouping(input.observations, language);
+  const observations = filterObservationsForSyntheticSerp(
+    input.observations,
+    input.subjectName
+  );
+  const { grouping } = buildObservationThemeGrouping(observations, language);
 
-  const yandexObs = input.observations
+  const yandexObs = observations
     .filter((o) => o.engine === "YANDEX")
     .sort((a, b) => a.rank - b.rank)
     .slice(0, 8);
-  const googleObs = input.observations
+  const googleObs = observations
     .filter((o) => o.engine === "GOOGLE")
     .sort((a, b) => a.rank - b.rank)
     .slice(0, 8);
