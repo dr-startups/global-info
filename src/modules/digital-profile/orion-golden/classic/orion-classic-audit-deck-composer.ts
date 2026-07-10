@@ -104,7 +104,7 @@ function preferCompositeMedia(
   nameRe: RegExp
 ): ReportAssetV1[] {
   const withData = assets.filter((a) => String(a.imageData ?? "").trim().length >= 800);
-  const named = withData.filter((a) => nameRe.test(a.assetRef) || /_(?:image_grid|video_cards|knowledge_panel)$/i.test(a.assetRef));
+  const named = withData.filter((a) => nameRe.test(a.assetRef) || /_(?:image_grid|video_cards|knowledge_panel|suggestions|related)(?:_\d+)?$/i.test(a.assetRef));
   const pool = named.length > 0 ? named : withData;
   return pool.slice(0, max);
 }
@@ -117,6 +117,12 @@ function injectMediaSection(
 ): void {
   if (inserted.has(sectionKey) || slides.length === 0) return;
   inserted.add(sectionKey);
+  const existing = sections.find((s) => s.sectionKey === sectionKey);
+  if (existing) {
+    // Prefer visual surface/media slides ahead of prose for the same section.
+    existing.slides = [...slides, ...existing.slides];
+    return;
+  }
   sections.push({ sectionKey, slides });
 }
 
@@ -239,7 +245,7 @@ export function composeOrionClassicAuditDeck(
   );
   const ruImages = preferCompositeImageGrids(
     imageAssets.filter((a) => !/uae|intl/i.test(a.assetRef)),
-    2
+    4
   );
   const uaeVideos = preferCompositeMedia(
     videoAssets.filter((a) => /uae|intl/i.test(a.assetRef)),
@@ -258,8 +264,29 @@ export function composeOrionClassicAuditDeck(
   );
   const ruKnowledge = preferCompositeMedia(
     knowledgeAssets.filter((a) => !/uae|intl/i.test(a.assetRef)),
-    1,
+    2,
     /^(?:ru)_knowledge_panel/i
+  );
+  const surfaceAssets = pickAssets(assets, "surface_panel");
+  const ruSuggestions = preferCompositeMedia(
+    surfaceAssets.filter((a) => /ru_suggestions/i.test(a.assetRef)),
+    2,
+    /ru_suggestions/i
+  );
+  const ruRelated = preferCompositeMedia(
+    surfaceAssets.filter((a) => /ru_related_\d/i.test(a.assetRef)),
+    3,
+    /ru_related_\d/i
+  );
+  const uaeSuggestions = preferCompositeMedia(
+    surfaceAssets.filter((a) => /uae_suggestions/i.test(a.assetRef)),
+    1,
+    /uae_suggestions/i
+  );
+  const uaeRelated = preferCompositeMedia(
+    surfaceAssets.filter((a) => /uae_related/i.test(a.assetRef)),
+    1,
+    /uae_related/i
   );
 
   const insertedAssetSections = new Set<string>();
@@ -445,6 +472,30 @@ export function composeOrionClassicAuditDeck(
     insertedAssetSections,
     "ru_knowledge",
     assetSlides("ru_knowledge", "orion_golden_knowledge_panel", "Панель знаний", ruKnowledge)
+  );
+  injectMediaSection(
+    sections,
+    insertedAssetSections,
+    "14_ru_suggestions",
+    assetSlides("14_ru_suggestions", "orion_golden_surface_panel", "Подсказки поиска", ruSuggestions)
+  );
+  injectMediaSection(
+    sections,
+    insertedAssetSections,
+    "15_ru_related_queries",
+    assetSlides("15_ru_related_queries", "orion_golden_surface_panel", "Связанные запросы", ruRelated)
+  );
+  injectMediaSection(
+    sections,
+    insertedAssetSections,
+    "33_uae_suggestions",
+    assetSlides("33_uae_suggestions", "orion_golden_surface_panel", "Подсказки поиска", uaeSuggestions)
+  );
+  injectMediaSection(
+    sections,
+    insertedAssetSections,
+    "34_uae_related_queries",
+    assetSlides("34_uae_related_queries", "orion_golden_surface_panel", "Связанные запросы", uaeRelated)
   );
   injectMediaSection(
     sections,

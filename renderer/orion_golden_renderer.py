@@ -558,6 +558,10 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         _render_visual_with_sidebar(ctx, slide, assets, title)
         return
 
+    if template == "orion_golden_surface_panel":
+        _render_visual_with_sidebar(ctx, slide, assets, title)
+        return
+
     if template == "orion_golden_lexis_visual_page":
         if slide.get("visualAnalysis") or slide.get("clientTakeaway"):
             _render_visual_with_sidebar(ctx, slide, assets, title)
@@ -695,6 +699,7 @@ def _write_pdf_fallback(
         "orion_golden_image_grid",
         "orion_golden_video_cards",
         "orion_golden_knowledge_panel",
+        "orion_golden_surface_panel",
         "orion_golden_lexis_visual_page",
         "orion_golden_compliance_visual_page",
     }

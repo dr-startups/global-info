@@ -135,6 +135,7 @@ export const orionReportSpecV1Schema = z.object({
         "image_grid",
         "video_cards",
         "knowledge_panel",
+        "surface_panel",
         "lexis_visual_page",
         "compliance_visual_page",
       ]),

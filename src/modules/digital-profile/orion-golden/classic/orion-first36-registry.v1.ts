@@ -1,6 +1,6 @@
 /**
- * Fixed First36 CEO storyboard registry (ORION-like slots 1–36).
- * Composer fills each slot from classic reportSpec/assets or an honest blocked slide.
+ * Fixed First36 CEO storyboard — ORION reference slots 1–36 (audit only).
+ * Composer fills each slot from classic reportSpec/assets or an honest blocked/status slide.
  */
 
 export type First36Region = "GLOBAL" | "RU" | "UAE" | "COMPLIANCE";
@@ -20,7 +20,6 @@ export type First36SlotKind =
   | "image_visual"
   | "knowledge_visual"
   | "related_visual"
-  | "video_visual"
   | "compliance_toc"
   | "db_visual"
   | "db_status";
@@ -35,7 +34,6 @@ export type First36SlotDef = {
   region: First36Region;
   /** If true, missing visual bytes → blocked slide (still occupies the page). */
   requiredVisual: boolean;
-  /** Match hints against classic deck sectionKey / template / assetRef. */
   match: {
     sectionKeys?: string[];
     templates?: string[];
@@ -169,29 +167,33 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
   },
   {
     page: 11,
-    slotId: "p11_ru_serp_visual_2",
-    sectionKey: "ru_serp_screenshots",
-    kind: "serp_visual",
-    template: "orion_golden_serp_screenshot",
-    title: "Россия — снимок выдачи (2)",
+    slotId: "p11_ru_suggestions_yandex",
+    sectionKey: "14_ru_suggestions",
+    kind: "suggestions_visual",
+    template: "orion_golden_surface_panel",
+    title: "Россия — подсказки Яндекс",
     region: "RU",
-    requiredVisual: true,
+    requiredVisual: false,
     match: {
-      sectionKeys: ["ru_serp_screenshots"],
-      templates: ["orion_golden_serp_screenshot"],
-      assetRefRe: /^(?:ru_).*(?:serp|synserp)/i,
+      sectionKeys: ["14_ru_suggestions"],
+      templates: ["orion_golden_surface_panel", "orion_golden_prose"],
+      assetRefRe: /ru_.*suggest.*yandex|ru_suggestions_yandex/i,
     },
   },
   {
     page: 12,
-    slotId: "p12_ru_suggestions",
+    slotId: "p12_ru_suggestions_google",
     sectionKey: "14_ru_suggestions",
     kind: "suggestions_visual",
-    template: "orion_golden_prose",
-    title: "Россия — подсказки поиска",
+    template: "orion_golden_surface_panel",
+    title: "Россия — подсказки Google",
     region: "RU",
     requiredVisual: false,
-    match: { sectionKeys: ["14_ru_suggestions", "15_ru_related_queries"] },
+    match: {
+      sectionKeys: ["14_ru_suggestions"],
+      templates: ["orion_golden_surface_panel", "orion_golden_prose"],
+      assetRefRe: /ru_.*suggest.*google|ru_suggestions_google/i,
+    },
   },
   {
     page: 13,
@@ -206,17 +208,17 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
   },
   {
     page: 14,
-    slotId: "p14_ru_images",
+    slotId: "p14_ru_images_1",
     sectionKey: "ru_images",
     kind: "image_visual",
     template: "orion_golden_image_grid",
-    title: "Россия — изображения в поиске",
+    title: "Россия — изображения (1)",
     region: "RU",
     requiredVisual: true,
     match: {
       sectionKeys: ["ru_images"],
       templates: ["orion_golden_image_grid"],
-      assetRefRe: /^(?:ru)_image_grid/i,
+      assetRefRe: /^(?:ru)_image_grid(_1)?$/i,
     },
   },
   {
@@ -225,59 +227,123 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     sectionKey: "ru_images",
     kind: "image_visual",
     template: "orion_golden_image_grid",
-    title: "Россия — изображения (доп.)",
+    title: "Россия — изображения (2)",
     region: "RU",
     requiredVisual: false,
     match: {
       sectionKeys: ["ru_images"],
       templates: ["orion_golden_image_grid"],
-      assetRefRe: /image_grid/i,
+      assetRefRe: /^(?:ru)_image_grid_2$/i,
     },
   },
   {
     page: 16,
-    slotId: "p16_ru_video",
-    sectionKey: "ru_videos",
-    kind: "video_visual",
-    template: "orion_golden_video_cards",
-    title: "Россия — видеоматериалы",
+    slotId: "p16_ru_images_3",
+    sectionKey: "ru_images",
+    kind: "image_visual",
+    template: "orion_golden_image_grid",
+    title: "Россия — изображения (3)",
     region: "RU",
-    requiredVisual: true,
+    requiredVisual: false,
     match: {
-      sectionKeys: ["ru_videos"],
-      templates: ["orion_golden_video_cards"],
-      assetRefRe: /^(?:ru)_video_cards/i,
+      sectionKeys: ["ru_images"],
+      templates: ["orion_golden_image_grid"],
+      assetRefRe: /^(?:ru)_image_grid_3$/i,
     },
   },
   {
     page: 17,
-    slotId: "p17_ru_knowledge",
-    sectionKey: "ru_knowledge",
-    kind: "knowledge_visual",
-    template: "orion_golden_knowledge_panel",
-    title: "Россия — панель знаний",
+    slotId: "p17_ru_images_4",
+    sectionKey: "ru_images",
+    kind: "image_visual",
+    template: "orion_golden_image_grid",
+    title: "Россия — изображения (4)",
     region: "RU",
-    requiredVisual: true,
+    requiredVisual: false,
     match: {
-      sectionKeys: ["ru_knowledge"],
-      templates: ["orion_golden_knowledge_panel"],
-      assetRefRe: /^(?:ru)_knowledge_panel/i,
+      sectionKeys: ["ru_images"],
+      templates: ["orion_golden_image_grid"],
+      assetRefRe: /^(?:ru)_image_grid_4$/i,
     },
   },
   {
     page: 18,
-    slotId: "p18_ru_related",
-    sectionKey: "15_ru_related_queries",
-    kind: "related_visual",
-    template: "orion_golden_prose",
-    title: "Россия — связанные запросы",
+    slotId: "p18_ru_knowledge_1",
+    sectionKey: "ru_knowledge",
+    kind: "knowledge_visual",
+    template: "orion_golden_knowledge_panel",
+    title: "Россия — панель знаний (1)",
     region: "RU",
     requiredVisual: false,
-    match: { sectionKeys: ["15_ru_related_queries"] },
+    match: {
+      sectionKeys: ["ru_knowledge"],
+      templates: ["orion_golden_knowledge_panel"],
+      assetRefRe: /^(?:ru)_knowledge_panel(_1)?$/i,
+    },
   },
   {
     page: 19,
-    slotId: "p19_uae_toc",
+    slotId: "p19_ru_knowledge_2",
+    sectionKey: "ru_knowledge",
+    kind: "knowledge_visual",
+    template: "orion_golden_knowledge_panel",
+    title: "Россия — панель знаний (2)",
+    region: "RU",
+    requiredVisual: false,
+    match: {
+      sectionKeys: ["ru_knowledge"],
+      templates: ["orion_golden_knowledge_panel"],
+      assetRefRe: /^(?:ru)_knowledge_panel_2$/i,
+    },
+  },
+  {
+    page: 20,
+    slotId: "p20_ru_related_1",
+    sectionKey: "15_ru_related_queries",
+    kind: "related_visual",
+    template: "orion_golden_surface_panel",
+    title: "Россия — связанные запросы (1)",
+    region: "RU",
+    requiredVisual: false,
+    match: {
+      sectionKeys: ["15_ru_related_queries"],
+      templates: ["orion_golden_surface_panel", "orion_golden_prose"],
+      assetRefRe: /ru_related(_1|_yandex)?$/i,
+    },
+  },
+  {
+    page: 21,
+    slotId: "p21_ru_related_2",
+    sectionKey: "15_ru_related_queries",
+    kind: "related_visual",
+    template: "orion_golden_surface_panel",
+    title: "Россия — связанные запросы (2)",
+    region: "RU",
+    requiredVisual: false,
+    match: {
+      sectionKeys: ["15_ru_related_queries"],
+      templates: ["orion_golden_surface_panel", "orion_golden_prose"],
+      assetRefRe: /ru_related_2|ru_related_google/i,
+    },
+  },
+  {
+    page: 22,
+    slotId: "p22_ru_related_3",
+    sectionKey: "15_ru_related_queries",
+    kind: "related_visual",
+    template: "orion_golden_surface_panel",
+    title: "Россия — связанные запросы (3)",
+    region: "RU",
+    requiredVisual: false,
+    match: {
+      sectionKeys: ["15_ru_related_queries"],
+      templates: ["orion_golden_surface_panel", "orion_golden_prose"],
+      assetRefRe: /ru_related_3/i,
+    },
+  },
+  {
+    page: 23,
+    slotId: "p23_uae_toc",
     sectionKey: "uae_digital_profile",
     kind: "region_toc",
     template: "orion_golden_region_divider",
@@ -287,8 +353,8 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     match: { sectionKeys: ["uae_digital_profile"], templates: ["orion_golden_region_divider"] },
   },
   {
-    page: 20,
-    slotId: "p20_uae_summary",
+    page: 24,
+    slotId: "p24_uae_summary",
     sectionKey: "30_uae_audit_summary",
     kind: "summary",
     template: "orion_golden_prose",
@@ -298,8 +364,8 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     match: { sectionKeys: ["30_uae_audit_summary"] },
   },
   {
-    page: 21,
-    slotId: "p21_uae_metrics",
+    page: 25,
+    slotId: "p25_uae_metrics",
     sectionKey: "31_uae_google_search_links",
     kind: "metrics",
     template: "orion_golden_prose",
@@ -309,8 +375,8 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     match: { sectionKeys: ["31_uae_google_search_links", "uae_search_results"] },
   },
   {
-    page: 22,
-    slotId: "p22_uae_serp_table",
+    page: 26,
+    slotId: "p26_uae_serp_table",
     sectionKey: "32_uae_serp_position_table",
     kind: "search_table",
     template: "orion_golden_search_table",
@@ -323,8 +389,8 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     },
   },
   {
-    page: 23,
-    slotId: "p23_uae_serp_visual",
+    page: 27,
+    slotId: "p27_uae_serp_visual",
     sectionKey: "uae_serp_screenshots",
     kind: "serp_visual",
     template: "orion_golden_serp_screenshot",
@@ -338,19 +404,23 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     },
   },
   {
-    page: 24,
-    slotId: "p24_uae_suggestions",
+    page: 28,
+    slotId: "p28_uae_suggestions",
     sectionKey: "33_uae_suggestions",
     kind: "suggestions_visual",
-    template: "orion_golden_prose",
+    template: "orion_golden_surface_panel",
     title: "ОАЭ — подсказки поиска",
     region: "UAE",
     requiredVisual: false,
-    match: { sectionKeys: ["33_uae_suggestions", "34_uae_related_queries"] },
+    match: {
+      sectionKeys: ["33_uae_suggestions"],
+      templates: ["orion_golden_surface_panel", "orion_golden_prose"],
+      assetRefRe: /uae_suggestions/i,
+    },
   },
   {
-    page: 25,
-    slotId: "p25_uae_wikipedia",
+    page: 29,
+    slotId: "p29_uae_wikipedia",
     sectionKey: "35_uae_wikipedia",
     kind: "wikipedia",
     template: "orion_golden_prose",
@@ -360,14 +430,14 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     match: { sectionKeys: ["35_uae_wikipedia", "uae_wikipedia"] },
   },
   {
-    page: 26,
-    slotId: "p26_uae_images",
+    page: 30,
+    slotId: "p30_uae_images",
     sectionKey: "uae_images",
     kind: "image_visual",
     template: "orion_golden_image_grid",
     title: "ОАЭ — изображения в поиске",
     region: "UAE",
-    requiredVisual: true,
+    requiredVisual: false,
     match: {
       sectionKeys: ["uae_images"],
       templates: ["orion_golden_image_grid"],
@@ -375,23 +445,8 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     },
   },
   {
-    page: 27,
-    slotId: "p27_uae_video",
-    sectionKey: "uae_videos",
-    kind: "video_visual",
-    template: "orion_golden_video_cards",
-    title: "ОАЭ — видеоматериалы",
-    region: "UAE",
-    requiredVisual: false,
-    match: {
-      sectionKeys: ["uae_videos"],
-      templates: ["orion_golden_video_cards"],
-      assetRefRe: /uae.*video/i,
-    },
-  },
-  {
-    page: 28,
-    slotId: "p28_uae_knowledge",
+    page: 31,
+    slotId: "p31_uae_knowledge",
     sectionKey: "uae_knowledge",
     kind: "knowledge_visual",
     template: "orion_golden_knowledge_panel",
@@ -405,19 +460,23 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     },
   },
   {
-    page: 29,
-    slotId: "p29_uae_related",
+    page: 32,
+    slotId: "p32_uae_related",
     sectionKey: "34_uae_related_queries",
     kind: "related_visual",
-    template: "orion_golden_prose",
+    template: "orion_golden_surface_panel",
     title: "ОАЭ — связанные запросы",
     region: "UAE",
     requiredVisual: false,
-    match: { sectionKeys: ["34_uae_related_queries"] },
+    match: {
+      sectionKeys: ["34_uae_related_queries"],
+      templates: ["orion_golden_surface_panel", "orion_golden_prose"],
+      assetRefRe: /uae_related/i,
+    },
   },
   {
-    page: 30,
-    slotId: "p30_compliance_toc",
+    page: 33,
+    slotId: "p33_compliance_toc",
     sectionKey: "compliance_toc",
     kind: "compliance_toc",
     template: "orion_golden_region_divider",
@@ -427,57 +486,19 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     match: { sectionKeys: ["40_compliance_database_summary"] },
   },
   {
-    page: 31,
-    slotId: "p31_compliance_summary",
-    sectionKey: "40_compliance_database_summary",
-    kind: "summary",
-    template: "orion_golden_prose",
-    title: "Комплаенс — сводка",
-    region: "COMPLIANCE",
-    requiredVisual: false,
-    match: { sectionKeys: ["40_compliance_database_summary", "compliance_databases"] },
-  },
-  {
-    page: 32,
-    slotId: "p32_dow_jones",
+    page: 34,
+    slotId: "p34_dow_jones",
     sectionKey: "42_dow_jones_profile",
     kind: "db_visual",
     template: "orion_golden_compliance_visual_page",
-    title: "Dow Jones",
+    title: "Dow Jones — профиль",
     region: "COMPLIANCE",
-    /** Approved screenshot preferred; otherwise First36 keeps prose status slide. */
     requiredVisual: false,
     match: {
       sectionKeys: ["42_dow_jones_profile", "dow_jones", "dow_jones_visual"],
-      templates: ["orion_golden_compliance_visual_page", "orion_golden_prose", "orion_golden_compliance_summary"],
+      templates: ["orion_golden_compliance_visual_page", "orion_golden_prose"],
       assetRefRe: /dow_jones_visual/i,
     },
-  },
-  {
-    page: 33,
-    slotId: "p33_world_check",
-    sectionKey: "43_world_check_profile",
-    kind: "db_visual",
-    template: "orion_golden_compliance_visual_page",
-    title: "World-Check",
-    region: "COMPLIANCE",
-    requiredVisual: false,
-    match: {
-      sectionKeys: ["43_world_check_profile", "world_check", "world_check_visual"],
-      templates: ["orion_golden_compliance_visual_page", "orion_golden_prose", "orion_golden_compliance_summary"],
-      assetRefRe: /world_check_visual/i,
-    },
-  },
-  {
-    page: 34,
-    slotId: "p34_lexis_summary",
-    sectionKey: "44_lexisnexis_profile",
-    kind: "db_status",
-    template: "orion_golden_prose",
-    title: "LexisNexis — профиль",
-    region: "COMPLIANCE",
-    requiredVisual: false,
-    match: { sectionKeys: ["44_lexisnexis_profile", "lexisnexis"] },
   },
   {
     page: 35,
@@ -489,7 +510,7 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     region: "COMPLIANCE",
     requiredVisual: true,
     match: {
-      sectionKeys: ["lexisnexis_visual", "lexisnexis"],
+      sectionKeys: ["lexisnexis_visual", "lexisnexis", "44_lexisnexis_profile"],
       templates: ["orion_golden_lexis_visual_page"],
       assetRefRe: /lexis/i,
     },
@@ -518,8 +539,8 @@ export function assertFirst36RegistryIntegrity(): void {
     throw new Error(`first36-registry-length:${ORION_FIRST36_REGISTRY_V1.length}`);
   }
   for (let i = 0; i < ORION_FIRST36_REGISTRY_V1.length; i += 1) {
-    if (ORION_FIRST36_REGISTRY_V1[i].page !== i + 1) {
-      throw new Error(`first36-registry-page-gap:${ORION_FIRST36_REGISTRY_V1[i].slotId}`);
+    if (ORION_FIRST36_REGISTRY_V1[i]!.page !== i + 1) {
+      throw new Error(`first36-registry-page-order:${i + 1}`);
     }
   }
 }

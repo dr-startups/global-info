@@ -110,7 +110,8 @@ function surfaceToNormalized(
   sectionKey: string,
   row: OrionRealCaseContext["searchSurfaces"][number],
   idx: number,
-  sourceKind: NormalizedEvidenceV1["sourceKind"]
+  sourceKind: NormalizedEvidenceV1["sourceKind"],
+  surfaceTag?: "suggest" | "related"
 ): NormalizedEvidenceV1 {
   const rm = asObj(row.rawMetadata);
   const provider = surfaceProvider(row);
@@ -121,8 +122,9 @@ function surfaceToNormalized(
     sourceKind,
   });
   const domain = extractDomain(row.url, row.domain);
+  const tag = surfaceTag ? `sf-${surfaceTag}` : "sf";
   return {
-    evidenceRef: stableEvidenceRef(sectionKey, `sf-${row.id || idx + 1}`),
+    evidenceRef: stableEvidenceRef(sectionKey, `${tag}-${row.id || idx + 1}`),
     sectionKey,
     sourceKind,
     provider,
@@ -341,15 +343,15 @@ export function buildRuSearchEvidence(caseContext: OrionRealCaseContext): Normal
   const surfaces = caseContext.searchSurfaces.filter((s) => String(s.region ?? "").toUpperCase() !== "UAE");
   const suggestions = surfaces
     .filter((s) => s.type === "SUGGESTION")
-    .slice(0, 8)
-    .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface"));
+    .slice(0, 16)
+    .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface", "suggest"));
   const related = surfaces
     .filter((s) => s.type === "RELATED_QUERY")
-    .slice(0, 8)
-    .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface"));
+    .slice(0, 24)
+    .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface", "related"));
   const images = surfaces
     .filter((s) => s.type === "IMAGE_RESULT")
-    .slice(0, 12)
+    .slice(0, 24)
     .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "image_result"));
   const videos = surfaces
     .filter((s) => s.type === "VIDEO_RESULT")
@@ -384,15 +386,15 @@ export function buildUaeSearchEvidence(caseContext: OrionRealCaseContext): Norma
   const surfaces = caseContext.searchSurfaces.filter((s) => isUaeSurface(s.region));
   const suggestions = surfaces
     .filter((s) => s.type === "SUGGESTION")
-    .slice(0, 8)
-    .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface"));
+    .slice(0, 16)
+    .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface", "suggest"));
   const related = surfaces
     .filter((s) => s.type === "RELATED_QUERY")
-    .slice(0, 8)
-    .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface"));
+    .slice(0, 24)
+    .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface", "related"));
   const images = surfaces
     .filter((s) => s.type === "IMAGE_RESULT")
-    .slice(0, 12)
+    .slice(0, 24)
     .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "image_result"));
   const videos = surfaces
     .filter((s) => s.type === "VIDEO_RESULT")

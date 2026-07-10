@@ -172,6 +172,55 @@ export function buildKnowledgePanelSvg(input: {
   return parts.join("");
 }
 
+/** Screenshot-like panel for suggestions / related queries (ORION surface visuals). */
+export function buildSurfacePanelSvg(input: {
+  title: string;
+  subtitle?: string;
+  engineLabel?: string;
+  items: Array<{ label: string; meta?: string }>;
+}): string {
+  const width = 1200;
+  const height = 720;
+  const items = input.items.slice(0, 10);
+  const parts = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">`,
+    `<rect width="100%" height="100%" fill="${COLORS.pageBg}"/>`,
+    `<rect x="32" y="28" width="1136" height="664" rx="10" fill="${COLORS.panel}" stroke="${COLORS.panelBorder}"/>`,
+    `<text x="56" y="72" font-family="${FONT_STACK}" font-size="22" fill="${COLORS.text}">${esc(input.title)}</text>`,
+  ];
+  if (input.engineLabel) {
+    parts.push(
+      `<rect x="56" y="88" width="160" height="28" rx="6" fill="#E8EEF7"/>`,
+      `<text x="68" y="108" font-family="${FONT_STACK}" font-size="13" fill="${COLORS.muted}">${esc(input.engineLabel)}</text>`
+    );
+  }
+  if (input.subtitle) {
+    parts.push(
+      `<text x="56" y="140" font-family="${FONT_STACK}" font-size="13" fill="${COLORS.muted}">${esc(truncateToWidth(input.subtitle, 980, 13))}</text>`
+    );
+  }
+  const startY = input.subtitle || input.engineLabel ? 168 : 120;
+  items.forEach((item, idx) => {
+    const y = startY + idx * 48;
+    parts.push(
+      `<rect x="56" y="${y}" width="1088" height="40" rx="6" fill="#F7F9FC" stroke="${COLORS.panelBorder}"/>`,
+      `<text x="72" y="${y + 26}" font-family="${FONT_STACK}" font-size="15" fill="${COLORS.text}">${esc(truncateToWidth(item.label, 820, 15))}</text>`
+    );
+    if (item.meta) {
+      parts.push(
+        `<text x="980" y="${y + 26}" font-family="${FONT_STACK}" font-size="12" fill="${COLORS.muted}" text-anchor="end">${esc(truncateToWidth(item.meta, 160, 12))}</text>`
+      );
+    }
+  });
+  if (items.length === 0) {
+    parts.push(
+      `<text x="56" y="${startY + 24}" font-family="${FONT_STACK}" font-size="14" fill="${COLORS.muted}">Нет сохранённых строк поверхности для этого слота</text>`
+    );
+  }
+  parts.push("</svg>");
+  return parts.join("");
+}
+
 export async function svgToPngBase64(svg: string): Promise<string> {
   const png = await sharp(Buffer.from(svg)).png().toBuffer();
   return png.toString("base64");

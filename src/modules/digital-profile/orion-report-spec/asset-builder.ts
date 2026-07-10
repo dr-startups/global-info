@@ -5,6 +5,7 @@ import {
   buildImageGridItems,
   buildImageGridSvg,
   buildKnowledgePanelSvg,
+  buildSurfacePanelSvg,
   buildVideoCardsSvg,
   svgToPngBase64,
 } from "./media-asset-svg";
@@ -114,6 +115,7 @@ export type ReportAssetKind =
   | "image_grid"
   | "video_cards"
   | "knowledge_panel"
+  | "surface_panel"
   | "lexis_visual_page"
   | "compliance_visual_page";
 
@@ -218,7 +220,7 @@ export async function buildRuSearchAssets(input: {
   return assets;
 }
 
-/** Region-neutral image/video/knowledge composite PNGs (`ru_*` / `uae_*`). */
+/** Region-neutral image/video/knowledge/surface composite PNGs (`ru_*` / `uae_*`). */
 export async function buildRegionMediaComposites(input: {
   subjectName: string;
   evidence: NormalizedEvidenceV1[];
@@ -241,45 +243,56 @@ export async function buildRegionMediaComposites(input: {
       const hb = isImageEvidenceHighlighted(b) ? 1 : 0;
       return hb - ha;
     });
-    const gridItems = await buildImageGridItems(
-      ranked.slice(0, 6).map((e) => {
-        const highlight = isImageEvidenceHighlighted(e);
-        return {
-          title: e.title ?? e.domain ?? "Изображение",
-          domain: e.domain,
-          imageUrl: e.imageUrl,
-          highlight,
-          themeLabel: highlight
-            ? e.riskTheme && e.riskTheme !== "unknown" && e.riskTheme !== "neutral_profile"
-              ? riskThemeLabel(e.riskTheme)
-              : /санкц|sanction/i.test(imageEvidenceBlob(e))
-                ? "Санкции"
-                : "Нежелательное"
-            : undefined,
-        };
-      })
-    );
-    const adverseCount = gridItems.filter((g) => g.highlight).length;
-    assets.push({
-      assetRef: `${prefix}_image_grid`,
-      kind: "image_grid",
-      title: `${label} — изображения в поиске`,
-      caption:
-        adverseCount > 0
-          ? `Нежелательные изображения отмечены красной рамкой (${adverseCount})`
-          : "Поисковая выдача по изображениям",
-      imageData: await svgToPngBase64(
-        buildImageGridSvg({
-          title:
-            adverseCount > 0
-              ? `${label}: изображения — нежелательные отмечены (${adverseCount})`
-              : `${label}: изображения в поиске`,
-          items: gridItems,
+    const maxPages = prefix === "ru" ? 4 : 1;
+    const pageSize = 6;
+    for (let page = 0; page < maxPages; page += 1) {
+      const chunk = ranked.slice(page * pageSize, page * pageSize + pageSize);
+      if (chunk.length === 0) break;
+      const gridItems = await buildImageGridItems(
+        chunk.map((e) => {
+          const highlight = isImageEvidenceHighlighted(e);
+          return {
+            title: e.title ?? e.domain ?? "Изображение",
+            domain: e.domain,
+            imageUrl: e.imageUrl,
+            highlight,
+            themeLabel: highlight
+              ? e.riskTheme && e.riskTheme !== "unknown" && e.riskTheme !== "neutral_profile"
+                ? riskThemeLabel(e.riskTheme)
+                : /санкц|sanction/i.test(imageEvidenceBlob(e))
+                  ? "Санкции"
+                  : "Нежелательное"
+              : undefined,
+          };
         })
-      ),
-      evidenceRefs: ranked.slice(0, 6).map((e) => e.evidenceRef),
-      status: "ready",
-    });
+      );
+      const adverseCount = gridItems.filter((g) => g.highlight).length;
+      const pageNo = page + 1;
+      const assetRef = page === 0 ? `${prefix}_image_grid` : `${prefix}_image_grid_${pageNo}`;
+      assets.push({
+        assetRef,
+        kind: "image_grid",
+        title:
+          maxPages > 1
+            ? `${label} — изображения в поиске (${pageNo})`
+            : `${label} — изображения в поиске`,
+        caption:
+          adverseCount > 0
+            ? `Нежелательные изображения отмечены красной рамкой (${adverseCount})`
+            : "Поисковая выдача по изображениям",
+        imageData: await svgToPngBase64(
+          buildImageGridSvg({
+            title:
+              adverseCount > 0
+                ? `${label}: изображения — нежелательные отмечены (${adverseCount})`
+                : `${label}: изображения в поиске`,
+            items: gridItems,
+          })
+        ),
+        evidenceRefs: chunk.map((e) => e.evidenceRef),
+        status: "ready",
+      });
+    }
   }
 
   const videos = input.evidence.filter((e) => e.sourceKind === "video_result");
@@ -305,20 +318,108 @@ export async function buildRegionMediaComposites(input: {
 
   const knowledge = input.evidence.filter((e) => e.sourceKind === "knowledge_panel");
   if (knowledge.length > 0) {
-    const k = knowledge[0]!;
+    const maxKnowledge = prefix === "ru" ? 2 : 1;
+    for (let page = 0; page < Math.min(maxKnowledge, knowledge.length); page += 1) {
+      const slice = knowledge.slice(page, page + 2);
+      const k = slice[0]!;
+      const assetRef = page === 0 ? `${prefix}_knowledge_panel` : `${prefix}_knowledge_panel_${page + 1}`;
+      assets.push({
+        assetRef,
+        kind: "knowledge_panel",
+        title:
+          maxKnowledge > 1
+            ? `${label} — блок знаний (${page + 1})`
+            : `${label} — блок знаний`,
+        imageData: await svgToPngBase64(
+          buildKnowledgePanelSvg({
+            title: k.title ?? "Блок знаний",
+            summary: k.snippet ?? k.clientSafeSummary ?? "",
+            facts: slice.map((e) => e.title ?? e.snippet ?? "").filter(Boolean),
+          })
+        ),
+        evidenceRefs: slice.map((e) => e.evidenceRef),
+        status: "ready",
+      });
+    }
+  }
+
+  const allSurface = input.evidence.filter((e) => e.sourceKind === "search_surface");
+  const suggestFinal = allSurface.filter((e) => /sf-suggest/i.test(e.evidenceRef));
+  const relatedFinal = allSurface.filter((e) => /sf-related/i.test(e.evidenceRef));
+
+  async function pushSurfacePanel(opts: {
+    assetRef: string;
+    title: string;
+    engineLabel?: string;
+    items: NormalizedEvidenceV1[];
+  }): Promise<void> {
+    if (opts.items.length === 0) return;
     assets.push({
-      assetRef: `${prefix}_knowledge_panel`,
-      kind: "knowledge_panel",
-      title: `${label} — блок знаний`,
+      assetRef: opts.assetRef,
+      kind: "surface_panel",
+      title: opts.title,
+      caption: "Визуализация сохранённых строк поисковой поверхности",
       imageData: await svgToPngBase64(
-        buildKnowledgePanelSvg({
-          title: k.title ?? "Блок знаний",
-          summary: k.snippet ?? k.clientSafeSummary ?? "",
-          facts: knowledge.slice(0, 4).map((e) => e.title ?? e.snippet ?? "").filter(Boolean),
+        buildSurfacePanelSvg({
+          title: opts.title,
+          subtitle: `${opts.items.length} сохранённых строк`,
+          engineLabel: opts.engineLabel,
+          items: opts.items.slice(0, 10).map((e) => ({
+            label: e.title ?? e.snippet ?? e.clientSafeSummary ?? "—",
+            meta: e.provider === "yandex" ? "Яндекс" : e.provider === "google" ? "Google" : e.domain,
+          })),
         })
       ),
-      evidenceRefs: knowledge.slice(0, 4).map((e) => e.evidenceRef),
+      evidenceRefs: opts.items.slice(0, 10).map((e) => e.evidenceRef),
       status: "ready",
+    });
+  }
+
+  if (prefix === "ru") {
+    const yandexSuggest = suggestFinal.filter((e) => e.provider === "yandex");
+    const googleSuggest = suggestFinal.filter((e) => e.provider === "google");
+    const otherSuggest = suggestFinal.filter((e) => e.provider !== "yandex" && e.provider !== "google");
+    await pushSurfacePanel({
+      assetRef: "ru_suggestions_yandex",
+      title: `${label} — подсказки Яндекс`,
+      engineLabel: "Яндекс",
+      items: yandexSuggest.length > 0 ? yandexSuggest : otherSuggest.slice(0, 8),
+    });
+    await pushSurfacePanel({
+      assetRef: "ru_suggestions_google",
+      title: `${label} — подсказки Google`,
+      engineLabel: "Google",
+      items:
+        googleSuggest.length > 0
+          ? googleSuggest
+          : otherSuggest.length > 8
+            ? otherSuggest.slice(8, 16)
+            : suggestFinal.filter((e) => !(yandexSuggest.length > 0 ? yandexSuggest : otherSuggest.slice(0, 8)).includes(e)).slice(0, 8),
+    });
+    for (let i = 0; i < 3; i += 1) {
+      const chunk = relatedFinal.slice(i * 8, i * 8 + 8);
+      if (chunk.length === 0) continue;
+      await pushSurfacePanel({
+        assetRef: `ru_related_${i + 1}`,
+        title: `${label} — связанные запросы (${i + 1})`,
+        items: chunk,
+      });
+    }
+    const firstRelated = assets.find((a) => a.assetRef === "ru_related_1");
+    if (firstRelated) {
+      assets.push({ ...firstRelated, assetRef: "ru_related" });
+    }
+  } else {
+    await pushSurfacePanel({
+      assetRef: "uae_suggestions",
+      title: `${label} — подсказки поиска`,
+      engineLabel: "Google",
+      items: suggestFinal.slice(0, 10),
+    });
+    await pushSurfacePanel({
+      assetRef: "uae_related",
+      title: `${label} — связанные запросы`,
+      items: relatedFinal.slice(0, 10),
     });
   }
 

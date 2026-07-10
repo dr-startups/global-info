@@ -49,6 +49,7 @@ function provenanceLabel(asset: ReportAssetV1): string {
   if (asset.kind === "image_grid") return "Сводка изображений поиска";
   if (asset.kind === "video_cards") return "Сводка видеоматериалов";
   if (asset.kind === "knowledge_panel") return "Справочная панель";
+  if (asset.kind === "surface_panel") return "Визуализация поисковой поверхности";
   return "Визуальный материал";
 }
 
@@ -66,20 +67,24 @@ export function buildDeterministicVisualAnalysis(
       ? `На слайде показана поисковая выдача по субъекту (${regionLabel}).`
       : slot.kind === "image_visual"
         ? "На слайде — подборка изображений из поиска; нежелательные отмечены рамкой."
-        : slot.kind === "video_visual"
-          ? "На слайде — сводка видеорезультатов, связанных с субъектом."
-          : slot.kind === "knowledge_visual"
-            ? "На слайде — справочная карточка/панель знаний по субъекту."
-            : `На слайде — визуальный материал раздела «${slot.title}».`);
+        : slot.kind === "suggestions_visual"
+          ? "На слайде — сохранённые подсказки поисковой строки по субъекту."
+          : slot.kind === "related_visual"
+            ? "На слайде — связанные / похожие запросы из поисковой выдачи."
+            : slot.kind === "knowledge_visual"
+              ? "На слайде — справочная карточка/панель знаний по субъекту."
+              : `На слайде — визуальный материал раздела «${slot.title}».`);
 
   const whyItMatters =
     slot.kind === "serp_visual"
       ? "Клиент видит, какие источники формируют первый экран выдачи и насколько они связаны с субъектом."
       : slot.kind === "image_visual"
         ? "Изображения влияют на узнаваемость субъекта; ошибочные/однофамильцы нужно отделять от подтверждённых."
-        : slot.kind === "db_visual"
-          ? "Страница базы подтверждает или уточняет комплаенс-сигнал без опоры только на текстовый пересказ."
-          : "Визуальное доказательство снижает риск неверной интерпретации текстового резюме.";
+        : slot.kind === "suggestions_visual" || slot.kind === "related_visual"
+          ? "Подсказки и связанные запросы показывают, какие ассоциации формирует поиск вокруг имени субъекта."
+          : slot.kind === "db_visual"
+            ? "Страница базы подтверждает или уточняет комплаенс-сигнал без опоры только на текстовый пересказ."
+            : "Визуальное доказательство снижает риск неверной интерпретации текстового резюме.";
 
   return {
     assetRef: asset.assetRef,
@@ -145,16 +150,24 @@ function placeholderSlide(slot: First36SlotDef, narrative?: string): OrionGolden
 
 function slideMatchesSlot(slide: OrionGoldenDeckSlide, slot: First36SlotDef): boolean {
   const { match } = slot;
-  if (match.sectionKeys?.some((k) => slide.sectionKey === k || slide.sectionKey.includes(k))) {
-    return true;
-  }
+  const sectionHit = Boolean(
+    match.sectionKeys?.some((k) => slide.sectionKey === k || slide.sectionKey.includes(k))
+  );
+  if (sectionHit) return true;
+
+  // Template fallback only when the slot does not pin sectionKeys (avoid cross-slot surface_panel bleed).
+  if (match.sectionKeys?.length) return false;
+
   if (match.templates?.includes(slide.template)) {
-    if (!match.sectionKeys?.length) return true;
-    // template alone is weak — require region affinity when sectionKeys exist
     if (slot.region === "RU" && /uae|оаэ/i.test(`${slide.sectionKey} ${slide.title}`)) return false;
-    if (slot.region === "UAE" && /(?:^|_)ru_|росси/i.test(`${slide.sectionKey} ${slide.title}`) && !/uae/i.test(slide.sectionKey))
+    if (
+      slot.region === "UAE" &&
+      /(?:^|_)ru_|росси/i.test(`${slide.sectionKey} ${slide.title}`) &&
+      !/uae/i.test(slide.sectionKey)
+    ) {
       return false;
-    return match.templates.includes(slide.template);
+    }
+    return true;
   }
   return false;
 }
@@ -198,6 +211,7 @@ function attachVisual(
     "orion_golden_image_grid",
     "orion_golden_video_cards",
     "orion_golden_knowledge_panel",
+    "orion_golden_surface_panel",
     "orion_golden_lexis_visual_page",
     "orion_golden_compliance_visual_page",
   ]);
@@ -207,6 +221,11 @@ function attachVisual(
 
   let assetRef = slide.assetRefs?.[0];
   let asset = assetRef ? assets.find((a) => a.assetRef === assetRef) : undefined;
+  const re = slot.match.assetRefRe;
+  if (asset && re && !re.test(asset.assetRef)) {
+    asset = undefined;
+    assetRef = undefined;
+  }
   if (!hasImageBytes(asset)) {
     asset = pickAssetForSlot(assets, usedAssets, slot) ?? undefined;
     assetRef = asset?.assetRef;
@@ -216,14 +235,21 @@ function attachVisual(
       return blockedSlide(slot, `REQUIRED_VISUAL_ASSET_MISSING:${slot.sectionKey}`);
     }
     // Keep prose/status content when approved visual is not available.
+    // Drop mismatched assetRefs so the wrong panel is not rendered on this slot.
     return {
       ...slide,
       slideKey: slot.slotId,
       pageNumber: slot.page,
       title: slot.title,
+      assetRefs: undefined,
+      visualAnalysis: undefined,
       template:
         slide.template === "orion_golden_compliance_visual_page" ||
-        slide.template === "orion_golden_lexis_visual_page"
+        slide.template === "orion_golden_lexis_visual_page" ||
+        slide.template === "orion_golden_surface_panel" ||
+        slide.template === "orion_golden_image_grid" ||
+        slide.template === "orion_golden_knowledge_panel" ||
+        slide.template === "orion_golden_serp_screenshot"
           ? "orion_golden_prose"
           : slide.template || "orion_golden_prose",
     };
@@ -297,6 +323,32 @@ export function composeOrionFirst36CeoDeck(
         };
       } else {
         slide = blockedSlide(slot, `REQUIRED_VISUAL_ASSET_MISSING:${slot.sectionKey}`);
+      }
+    } else if (
+      slot.kind === "suggestions_visual" ||
+      slot.kind === "related_visual" ||
+      slot.kind === "image_visual" ||
+      slot.kind === "knowledge_visual" ||
+      slot.kind === "serp_visual" ||
+      slot.kind === "db_visual"
+    ) {
+      const asset = pickAssetForSlot(assets, usedAssets, slot);
+      if (asset) {
+        usedAssets.add(asset.assetRef);
+        const analysis = buildDeterministicVisualAnalysis(asset, slot);
+        slide = {
+          slideKey: slot.slotId,
+          sectionKey: slot.sectionKey,
+          template: slot.template,
+          title: slot.title,
+          pageNumber: slot.page,
+          assetRefs: [asset.assetRef],
+          clientTakeaway: analysis.headlineConclusion,
+          visualAnalysis: analysis,
+          bullets: [analysis.whatIsVisible, analysis.whyItMatters, analysis.provenanceLabel ?? ""].filter(Boolean),
+        };
+      } else {
+        slide = placeholderSlide(slot);
       }
     } else if (slot.kind === "cover") {
       slide = {

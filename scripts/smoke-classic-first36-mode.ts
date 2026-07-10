@@ -141,6 +141,38 @@ function main() {
       status: "ready",
     },
     {
+      assetRef: "ru_image_grid_2",
+      kind: "image_grid",
+      title: "Изображения 2",
+      imageData: FAKE,
+      evidenceRefs: ["img-2"],
+      status: "ready",
+    },
+    {
+      assetRef: "ru_suggestions_yandex",
+      kind: "surface_panel",
+      title: "Подсказки Яндекс",
+      imageData: FAKE,
+      evidenceRefs: ["sf-suggest-1"],
+      status: "ready",
+    },
+    {
+      assetRef: "ru_suggestions_google",
+      kind: "surface_panel",
+      title: "Подсказки Google",
+      imageData: FAKE,
+      evidenceRefs: ["sf-suggest-2"],
+      status: "ready",
+    },
+    {
+      assetRef: "ru_related_1",
+      kind: "surface_panel",
+      title: "Связанные 1",
+      imageData: FAKE,
+      evidenceRefs: ["sf-related-1"],
+      status: "ready",
+    },
+    {
       assetRef: "ru_video_cards",
       kind: "video_cards",
       title: "Видео",
@@ -178,6 +210,26 @@ function main() {
   check(
     "drops URL-only r10-vid",
     !deck.finalSlides.some((s) => (s.assetRefs ?? []).includes("r10-vid-9"))
+  );
+  check(
+    "ORION slot map: p11 suggestions yandex",
+    deck.finalSlides[10]?.slideKey === "p11_ru_suggestions_yandex",
+    deck.finalSlides[10]?.slideKey
+  );
+  check(
+    "ORION slot map: p34 dow jones",
+    deck.finalSlides[33]?.slideKey === "p34_dow_jones",
+    deck.finalSlides[33]?.slideKey
+  );
+  check(
+    "ORION slot map: p35-36 lexis",
+    deck.finalSlides[34]?.slideKey === "p35_lexis_visual" &&
+      deck.finalSlides[35]?.slideKey === "p36_lexis_visual_2"
+  );
+  check(
+    "suggestions visual attached when asset present",
+    (deck.finalSlides[10]?.assetRefs ?? []).includes("ru_suggestions_yandex"),
+    String(deck.finalSlides[10]?.assetRefs)
   );
 
   const visualWithAnalysis = deck.finalSlides.filter((s) => s.visualAnalysis?.headlineConclusion);
