@@ -26,6 +26,7 @@ export { persistSerpObservations, listSerpObservationsForAuditRun } from "./pers
 export {
   buildSyntheticSerpViewModelFromObservations,
   createSyntheticSerpAssetFromObservations,
+  selectVisibleObservationsForEngine,
 } from "./synthetic-asset";
 export {
   classifyObservationHighlight,

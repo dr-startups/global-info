@@ -6,12 +6,50 @@ import { prisma } from "@/server/prisma/client";
 import { filterObservationsForSyntheticSerp } from "./filter-synthetic-serp-noise";
 import {
   buildObservationThemeGrouping,
+  classifyObservationHighlight,
   observationToResultView,
 } from "./resolve-observation-highlights";
 import {
   SYNTHETIC_API_SERP_CAPTION,
   type PersistedSerpObservation,
 } from "./types";
+
+/** Max organic rows drawn per engine column in the synthetic PNG. */
+const VISIBLE_PER_ENGINE = 8;
+
+/**
+ * Pick rows that will actually appear in a column.
+ * Prefer adverse-highlighted hits so left-column themes match red frames,
+ * then fill remaining slots by original rank order.
+ */
+export function selectVisibleObservationsForEngine(
+  observations: PersistedSerpObservation[],
+  engine: "YANDEX" | "GOOGLE",
+  limit = VISIBLE_PER_ENGINE
+): PersistedSerpObservation[] {
+  const sorted = observations
+    .filter((o) => o.engine === engine)
+    .sort((a, b) => a.rank - b.rank);
+  if (sorted.length <= limit) return sorted;
+
+  const highlighted: PersistedSerpObservation[] = [];
+  const neutral: PersistedSerpObservation[] = [];
+  for (const o of sorted) {
+    if (classifyObservationHighlight(o).isHighlighted) highlighted.push(o);
+    else neutral.push(o);
+  }
+
+  const picked: PersistedSerpObservation[] = [];
+  const seen = new Set<string>();
+  const push = (o: PersistedSerpObservation) => {
+    if (picked.length >= limit || seen.has(o.id)) return;
+    seen.add(o.id);
+    picked.push(o);
+  };
+  for (const o of highlighted) push(o);
+  for (const o of neutral) push(o);
+  return picked.sort((a, b) => a.rank - b.rank);
+}
 
 export function buildSyntheticSerpViewModelFromObservations(input: {
   observations: PersistedSerpObservation[];
@@ -25,16 +63,13 @@ export function buildSyntheticSerpViewModelFromObservations(input: {
     input.observations,
     input.subjectName
   );
-  const { grouping } = buildObservationThemeGrouping(observations, language);
 
-  const yandexObs = observations
-    .filter((o) => o.engine === "YANDEX")
-    .sort((a, b) => a.rank - b.rank)
-    .slice(0, 8);
-  const googleObs = observations
-    .filter((o) => o.engine === "GOOGLE")
-    .sort((a, b) => a.rank - b.rank)
-    .slice(0, 8);
+  const yandexObs = selectVisibleObservationsForEngine(observations, "YANDEX");
+  const googleObs = selectVisibleObservationsForEngine(observations, "GOOGLE");
+  const visible = [...yandexObs, ...googleObs];
+
+  // Themes/legend only from rows that appear in the PNG columns.
+  const { grouping } = buildObservationThemeGrouping(visible, language);
 
   const yandexResults = yandexObs.map((o) => observationToResultView(o, grouping));
   const googleResults = googleObs.map((o) => observationToResultView(o, grouping));

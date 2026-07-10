@@ -203,6 +203,64 @@ function main() {
     vm.sourceLabel
   );
 
+  // Themes must only count cards that appear in the PNG columns.
+  const visibleHighlighted = [
+    ...vm.engines.google.results,
+    ...vm.engines.yandex.results,
+  ].filter((r) => r.isHighlighted).length;
+  const themeCountSum = vm.themes.reduce((n, t) => n + t.count, 0);
+  check(
+    "theme counts match visible red frames",
+    themeCountSum === visibleHighlighted,
+    `themes=${themeCountSum} visibleHl=${visibleHighlighted}`
+  );
+
+  // Deep ranks: adverse below the neutral top-N must still enter the visible window.
+  const deepAdverse = asPersisted(
+    {
+      ...googleDrafts[2]!,
+      rank: 20,
+      url: "https://cybercriminal.com/threats/sergei-glinka",
+      domain: "cybercriminal.com",
+      title: "Sergei Glinka",
+      snippet: "criminal profile",
+    },
+    "g-deep"
+  );
+  const filler = Array.from({ length: 8 }, (_, i) =>
+    asPersisted(
+      {
+        ...googleDrafts[1]!,
+        rank: i + 1,
+        url: `https://klerk.ru/boss/glinka-${i}`,
+        domain: "klerk.ru",
+        title: `Neutral bio ${i + 1}`,
+        snippet: "биография",
+      },
+      `g-fill-${i}`
+    )
+  );
+  const vmDeep = buildSyntheticSerpViewModelFromObservations({
+    observations: [...filler, deepAdverse, ...yandexDrafts.map((d, i) => asPersisted(d, `y2${i}`))],
+    subjectName: subject,
+    queryText: "Глинка Сергей Михайлович",
+  });
+  check(
+    "deep adverse preferred into visible google column",
+    vmDeep.engines.google.results.some((r) => /cybercriminal/i.test(r.domain)),
+    vmDeep.engines.google.results.map((r) => r.domain).join(",")
+  );
+  const deepThemeSum = vmDeep.themes.reduce((n, t) => n + t.count, 0);
+  const deepVisibleHl = [
+    ...vmDeep.engines.google.results,
+    ...vmDeep.engines.yandex.results,
+  ].filter((r) => r.isHighlighted).length;
+  check(
+    "deep themes match visible frames",
+    deepThemeSum === deepVisibleHl,
+    `themes=${deepThemeSum} visibleHl=${deepVisibleHl}`
+  );
+
   const outDir = join(
     process.cwd(),
     "storage",
