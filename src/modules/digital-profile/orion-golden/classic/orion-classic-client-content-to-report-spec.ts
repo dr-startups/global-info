@@ -280,12 +280,12 @@ function buildOrionExecutiveSlides(
   themeSet: OrionThemeSet
 ): SectionBlock["slideSpecs"] {
   const decision = buildDecisionConsequences(themeSet);
-  // GSM-style decision matrix: theme — level — consequence (not Проблема:/Последствие: checklist).
+  // GSM-style decision: claim first, then level (not «Тема — Уровень: …»).
   const matrixRows = orionStyleRiskMatrixRows(themeSet).slice(0, 6);
   const decisionBullets =
     matrixRows.length > 0
       ? matrixRows.map((r) =>
-          truncateAtWordBoundary(`${r.theme} — ${r.level}: ${r.summary}`, 260)
+          truncateAtWordBoundary(`${r.summary} — ${r.level}`, 340)
         )
       : [
           ...decision.problems.slice(0, 4),
@@ -298,7 +298,7 @@ function buildOrionExecutiveSlides(
         .map((c) => complianceToClientClaim(c, themeSet.subjectName))
         .filter((b) => !themeSet.executiveBullets.some((e) => e.slice(0, 40) === b.slice(0, 40))),
     ],
-    320
+    360
   ).slice(0, 8);
   return [
     {
@@ -306,24 +306,27 @@ function buildOrionExecutiveSlides(
       template: "orion_golden_executive_card",
       title: "Резюме",
       narrative: executive.executiveSummary || themeSet.executiveNarrative,
-      // Themes as bullets so the card narrative stays short and complete.
-      bullets: themeBullets.slice(0, 6),
+      bullets: themeBullets.slice(0, 7),
     },
     {
       slideKey: "executive-decision",
       template: "orion_golden_risk_matrix",
       title: `${themeSet.subjectName} — ${decision.headline}`,
-      narrative: `Уровень риска: ${decision.riskLevel}. ${decision.recommendation}`,
-      bullets: sanitizeClassicBullets(decisionBullets, 320).slice(0, 8),
+      narrative: truncateAtWordBoundary(
+        `${decision.headline}. Уровень риска: ${decision.riskLevel}. ${decision.recommendation}`,
+        700
+      ),
+      bullets: sanitizeClassicBullets(decisionBullets, 360).slice(0, 8),
     },
     {
       slideKey: "executive-visual",
       template: "orion_golden_executive_card",
       title: "Ключевые темы и базы данных",
       narrative: [
-        `Россия: ${themeSet.ru.linksAdversePct}% потенциально нежелательных ссылок · оценка: ${themeSet.ru.overallBadge}.`,
-        `ОАЭ: ${themeSet.uae.linksAdversePct}% потенциально нежелательных ссылок · оценка: ${themeSet.uae.overallBadge}.`,
-      ].join("\n"),
+        `В результатах поиска по России и ОАЭ нежелательные ссылки ведут на сюжеты ниже.`,
+        `Россия: ${themeSet.ru.linksAdversePct}% потенциально нежелательных · ${themeSet.ru.overallBadge}.`,
+        `ОАЭ: ${themeSet.uae.linksAdversePct}% потенциально нежелательных · ${themeSet.uae.overallBadge}.`,
+      ].join(" "),
       bullets: themeBullets,
     },
   ];
@@ -352,7 +355,7 @@ function buildRegionalAuditSummaryBlock(
         template: "orion_golden_audit_dashboard",
         title,
         narrative: truncateAtWordBoundary(`${dash.narrative} Оценка: ${dash.badge}.`, 500),
-        bullets: sanitizeClassicBullets([...dash.bullets, ...dash.kpiLines], 220).slice(0, 14),
+        bullets: sanitizeClassicBullets([...dash.bullets, ...dash.kpiLines], 320).slice(0, 12),
       },
     ],
     sourceRefs: [],
@@ -646,9 +649,9 @@ function inventoryFallbackBlock(
       : [];
     if (fromTheme[0]) {
       narrative = fromTheme[0].narrative;
-      bullets = sanitizeClassicBullets(fromTheme[0].bullets, 240);
+      bullets = sanitizeClassicBullets(fromTheme[0].bullets, 320);
     } else {
-      bullets = sanitizeClassicBullets(complianceBullets(inventory, hint), 240);
+      bullets = sanitizeClassicBullets(complianceBullets(inventory, hint), 280);
       narrative =
         hint === "dow"
           ? "Материалы Dow Jones / RCA по субъекту."
@@ -656,8 +659,8 @@ function inventoryFallbackBlock(
             ? "Материалы World-Check по субъекту."
             : "Материалы LexisNexis по субъекту.";
     }
-    // Inventory EN stubs often leave the slide empty — fall back to ThemeSet signal copy.
-    if (bullets.length === 0 && themeSet) {
+    // Prefer ThemeSet client claim over inventory EN stubs / empty slides.
+    if (themeSet) {
       const signal = themeSet.complianceSignals.find((c) =>
         hint === "dow"
           ? /dow/i.test(c.provider)
@@ -666,15 +669,17 @@ function inventoryFallbackBlock(
             : /lexis/i.test(c.provider)
       );
       if (signal) {
-        narrative = signal.statusLine;
+        const claim = complianceToClientClaim(signal, themeSet.subjectName);
+        narrative = claim;
         bullets = sanitizeClassicBullets(
           [
-            signal.detail,
+            claim,
+            ...themeSetBullets(themeSet).slice(0, 2),
             "Сигнал предварительный: требуется сверка полного профиля и первоисточников.",
           ],
-          240
+          320
         );
-      } else if (hint === "world") {
+      } else if (hint === "world" && bullets.length === 0) {
         narrative =
           "По World-Check на текущем этапе доступен только предварительный сигнал совпадения по имени; полный профиль требует сверки.";
         bullets = [
@@ -684,17 +689,16 @@ function inventoryFallbackBlock(
       }
     }
   } else if (sectionId.includes("sanctions") || sectionId.includes("compliance_media") || sectionId.includes("compliance_database")) {
-    if (themeSet && themeSet.complianceSignals.length > 0) {
-      bullets = themeSet.complianceSignals.flatMap((c) => [c.statusLine, c.detail]);
-      narrative = "Сводка предварительных сигналов международных комплаенс-баз.";
-    } else if (themeSet) {
-      // Prefer ThemeSet / annotated cards over raw EN risk-classifier dump.
-      bullets = [
+    if (themeSet) {
+      const claims = [
+        ...themeSet.complianceSignals.map((c) => complianceToClientClaim(c, themeSet.subjectName)),
         ...themeSetBullets(themeSet).slice(0, 4),
-        "Предварительные совпадения в международных комплаенс-базах требуют сверки полных профилей.",
       ];
+      bullets = claims.length > 0
+        ? claims
+        : ["Предварительные совпадения в международных комплаенс-базах требуют сверки полных профилей."];
       narrative =
-        "Сводка комплаенс-сигналов: сюжеты ThemeSet и предварительные совпадения в международных базах.";
+        "В международных базах данных и открытых источниках зафиксированы следующие предварительные сигналы:";
     } else {
       bullets = complianceBullets(inventory);
       narrative = "Сводка комплаенс-сигналов и публичных баз.";
@@ -707,12 +711,30 @@ function inventoryFallbackBlock(
         title
       );
     }
-    const themes = adverseThemeRows(inventory, region === "UAE" ? "UAE" : undefined, themeSet);
-    bullets = [
-      ...themes.slice(0, 5).map((t) => t.theme),
-      ...searchLinkBullets(inventory, region).slice(0, 4),
-    ];
-    narrative = `Сводка цифрового следа (${region}) на основе ThemeSet / inventory.`;
+    if (themeSet && sectionId === "03_digital_profile_overview") {
+      bullets = [
+        ...themeSet.executiveBullets.slice(0, 5),
+        ...themeSet.complianceSignals
+          .map((c) => complianceToClientClaim(c, themeSet.subjectName))
+          .slice(0, 2),
+      ];
+      narrative = truncateAtWordBoundary(
+        [
+          themeSet.executiveNarrative.split("\n\n")[0] ?? "",
+          "Коротко по итогам аудита цифрового профиля:",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        700
+      );
+    } else {
+      const themes = adverseThemeRows(inventory, region === "UAE" ? "UAE" : undefined, themeSet);
+      bullets = [
+        ...themes.slice(0, 5).map((t) => t.theme),
+        ...searchLinkBullets(inventory, region).slice(0, 4),
+      ];
+      narrative = `Сводка цифрового следа (${region}) на основе ThemeSet / inventory.`;
+    }
   }
 
   bullets = sanitizeClassicBullets(bullets, 220);
@@ -820,16 +842,17 @@ function blockFromClientSection(
   } else if (section.sectionId === "53_recommendations") {
     const actionBullets = sanitizeClassicBullets(
       [
-        ...gptFindings.filter(isClientActionRecommendation),
         ...(themeSet
           ? [
-              "Получить полные профили LexisNexis, Dow Jones и World-Check и сверить идентификацию с первоисточниками.",
-              "Провести верификацию санкционного и PEP/RCA-контекста перед комплаенс-решением.",
+              themeSet.nextStep,
+              "Получить полные профили LexisNexis, Dow Jones и World-Check и сверить идентификацию с первоисточниками (в т.ч. RCA/PEP-контур).",
+              "Провести верификацию санкционных ассоциаций (Трансмашхолдинг / Махмудов / Бокарев) и сюжетов Молдавия / Ликсутов / ЛНР перед комплаенс-решением.",
               "Сформировать целевой цифровой профиль и план вытеснения нежелательных ссылок из TOP выдачи.",
             ]
           : []),
+        ...gptFindings.filter(isClientActionRecommendation),
       ],
-      280
+      320
     ).slice(0, 5);
     bullets = actionBullets;
   } else if (section.sectionId.includes("suggestions") || section.sectionId.includes("related_queries")) {
@@ -898,15 +921,47 @@ function blockFromClientSection(
   }
   if (section.sectionId === "53_recommendations") {
     narrativeOut =
-      "Рекомендуемые следующие шаги по итогам аудита цифрового профиля и предварительных сигналов комплаенс-баз.";
+      "Для разработки эффективной стратегии необходимо обсудить контекст задачи и сформулировать конкретные цели. Рекомендуемые следующие шаги:";
     if (bullets.length === 0 && themeSet) {
       bullets = sanitizeClassicBullets(
         [
+          themeSet.nextStep,
           "Получить полные профили LexisNexis, Dow Jones и World-Check и сверить идентификацию с первоисточниками.",
           "Провести верификацию санкционного и PEP/RCA-контекста перед комплаенс-решением.",
           "Сформировать целевой цифровой профиль и план вытеснения нежелательных ссылок из TOP выдачи.",
         ],
-        280
+        320
+      );
+    }
+  }
+  if (
+    (section.sectionId.includes("world_check") ||
+      section.sectionId.includes("dow_jones") ||
+      section.sectionId.includes("lexisnexis")) &&
+    themeSet
+  ) {
+    const hint = section.sectionId.includes("dow")
+      ? "dow"
+      : section.sectionId.includes("world")
+        ? "world"
+        : "lexis";
+    const signal = themeSet.complianceSignals.find((c) =>
+      hint === "dow"
+        ? /dow/i.test(c.provider)
+        : hint === "world"
+          ? /world/i.test(c.provider)
+          : /lexis/i.test(c.provider)
+    );
+    if (signal) {
+      const claim = complianceToClientClaim(signal, themeSet.subjectName);
+      narrativeOut = claim;
+      bullets = sanitizeClassicBullets(
+        [
+          claim,
+          ...themeSetBullets(themeSet).slice(0, 2),
+          "Сигнал предварительный: требуется сверка полного профиля и первоисточников.",
+        ],
+        320
       );
     }
   }
@@ -918,21 +973,64 @@ function blockFromClientSection(
   ) {
     bullets = sanitizeClassicBullets(
       bullets.filter((b) => !isEnglishComplianceStub(b)),
-      240
+      280
     );
   }
   if (section.sectionId.includes("world_check") && bullets.length === 0) {
     const signal = themeSet?.complianceSignals.find((c) => /world/i.test(c.provider));
     narrativeOut =
-      signal?.statusLine ??
-      "По World-Check доступен предварительный сигнал совпадения по имени; требуется сверка полного профиля.";
+      signal
+        ? complianceToClientClaim(signal, themeSet!.subjectName)
+        : "По World-Check доступен предварительный сигнал совпадения по имени; требуется сверка полного профиля.";
     bullets = sanitizeClassicBullets(
       [
-        signal?.detail ??
-          "Предварительное совпадение по имени в World-Check — не является подтверждённым санкционным статусом.",
+        signal
+          ? complianceToClientClaim(signal, themeSet!.subjectName)
+          : "Предварительное совпадение по имени в World-Check — не является подтверждённым санкционным статусом.",
         "Рекомендуется получить полный профиль и сверить с первоисточниками.",
       ],
-      240
+      320
+    );
+  }
+  if (
+    (section.sectionId.includes("sanctions") ||
+      section.sectionId.includes("compliance_media") ||
+      section.sectionId.includes("compliance_database")) &&
+    themeSet
+  ) {
+    narrativeOut =
+      "В международных базах данных и открытых источниках зафиксированы следующие предварительные сигналы:";
+    bullets = sanitizeClassicBullets(
+      [
+        ...themeSet.complianceSignals.map((c) => complianceToClientClaim(c, themeSet.subjectName)),
+        ...themeSetBullets(themeSet).slice(0, 4),
+      ],
+      320
+    );
+  }
+  if (section.sectionId.includes("undesirable_theme") && themeSet) {
+    narrativeOut =
+      "Кластеры потенциально нежелательных тем в клиентских формулировках (повторяют сюжет резюме):";
+    bullets = themeSetBullets(themeSet, region);
+  }
+  if (section.sectionId === "03_digital_profile_overview" && themeSet) {
+    narrativeOut = truncateAtWordBoundary(
+      [
+        themeSet.executiveNarrative.split("\n\n")[0] ?? "",
+        "Коротко по итогам аудита цифрового профиля:",
+      ]
+        .filter(Boolean)
+        .join(" "),
+      900
+    );
+    bullets = sanitizeClassicBullets(
+      [
+        ...themeSet.executiveBullets.slice(0, 5),
+        ...themeSet.complianceSignals
+          .map((c) => complianceToClientClaim(c, themeSet.subjectName))
+          .slice(0, 2),
+      ],
+      320
     );
   }
 
@@ -1016,11 +1114,16 @@ function riskMatrixBlockFromExecutive(
   inventory?: FullEvidenceInventory,
   themeSet?: OrionThemeSet | null
 ): SectionBlock {
-  let matrix = (executive.riskMatrix ?? []).map((r) =>
-    humanizeClientRiskMatrixRow({ theme: r.theme, level: r.level, summary: r.summary })
-  );
-  if (themeSet && matrix.length === 0) {
-    matrix = orionStyleRiskMatrixRows(themeSet).map((r) => humanizeClientRiskMatrixRow(r));
+  // Prefer ThemeSet ORION prose rows when available (not GPT/label matrix).
+  let matrix = themeSet
+    ? orionStyleRiskMatrixRows(themeSet).map((r) => humanizeClientRiskMatrixRow(r))
+    : (executive.riskMatrix ?? []).map((r) =>
+        humanizeClientRiskMatrixRow({ theme: r.theme, level: r.level, summary: r.summary })
+      );
+  if (matrix.length === 0) {
+    matrix = (executive.riskMatrix ?? []).map((r) =>
+      humanizeClientRiskMatrixRow({ theme: r.theme, level: r.level, summary: r.summary })
+    );
   }
   // Drop gate/queue rows from client matrix — they are process meta, not risk themes.
   matrix = matrix.filter(
@@ -1049,8 +1152,12 @@ function riskMatrixBlockFromExecutive(
       slideKey: `risk-matrix-${idx + 1}`,
       template: "orion_golden_risk_matrix",
       title: matrix.length > 5 ? `Матрица комплаенс-рисков (${idx + 1})` : "Матрица комплаенс-рисков",
+      // Claim-first (ORION prose), then level — not «Тема — Уровень: …».
       bullets: chunk.map((r) =>
-        truncateAtWordBoundary(`${r.theme} — ${r.level}: ${r.summary}`, 280)
+        truncateAtWordBoundary(
+          r.summary.length > 40 ? `${r.summary} — ${r.level}` : `${r.theme} — ${r.level}: ${r.summary}`,
+          340
+        )
       ),
     });
   }

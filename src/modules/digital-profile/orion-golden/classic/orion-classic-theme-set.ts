@@ -1337,22 +1337,19 @@ export function regionalAuditDashboardBlock(input: {
   badge: string;
 } {
   const kpis = input.region === "RU" ? input.themeSet.ru : input.themeSet.uae;
+  const regionLabel = input.region === "RU" ? "России" : "ОАЭ";
   const themes = themeSetBullets(input.themeSet, input.region);
   const narrative = [
     `Резюме аудита цифрового профиля в Google и Яндексе (${input.region === "RU" ? "Россия" : "ОАЭ"}).`,
     themes.length > 0
-      ? `В результатах поиска обнаружены нежелательные публикации по темам:`
+      ? `В результатах поиска по ${regionLabel} обнаружены ссылки, которые могут вызвать затруднения при compliance-процедурах. Нежелательные публикации связаны со следующими сюжетами:`
       : `Цифровой профиль по сохранённым данным региона выглядит слабо наполненным подтверждёнными adverse-сюжетами.`,
   ].join(" ");
 
   const kpiLines = [
-    `1. Ссылки — ${kpis.linksAdversePct}% потенциально нежелательных (${kpis.linksAdverse} из ${Math.max(kpis.linksTotal, 1)})`,
-    `2. Поисковые подсказки — ${kpis.suggestionsAdverse} из ${kpis.suggestionsTotal} указывают на нежелательные темы`,
-    `3. Википедия — статья ${kpis.wikipediaPresent ? "обнаружена" : "отсутствует"}`,
-    `4. Картинки — ${kpis.imagesAdverse} из ${kpis.imagesTotal} связаны с чувствительным контекстом`,
-    `5. Видео — ${kpis.videosTotal > 0 ? `${kpis.videosTotal} в сохранённых поверхностях` : "отсутствуют в сохранённых данных"}`,
-    `6. Блоки знаний — ${kpis.knowledgeAdverse} из ${kpis.knowledgeTotal} с чувствительным контекстом`,
-    `7. Похожие запросы — ${kpis.relatedAdverse} из ${kpis.relatedTotal} ведут на нежелательные темы`,
+    `Доля потенциально нежелательных ссылок: ${kpis.linksAdversePct}% (${kpis.linksAdverse} из ${Math.max(kpis.linksTotal, 1)}) — оценка профиля: ${kpis.overallBadge}.`,
+    `Поисковые подсказки: ${kpis.suggestionsAdverse} из ${kpis.suggestionsTotal} указывают на нежелательные темы.`,
+    `Википедия: статья ${kpis.wikipediaPresent ? "обнаружена" : "отсутствует"}.`,
   ];
 
   return {
@@ -1375,8 +1372,27 @@ export function orionStyleRiskMatrixRows(themeSet: OrionThemeSet): Array<{
     if (t.count >= 3) return "Средний уровень";
     return "Требует проверки";
   };
+  /** Short client theme label for matrix left column (not raw bucket title). */
+  const themeLabel = (t: OrionThemeCard): string => {
+    const p = storyPeople(t);
+    if (t.id === "criminal_legal" || t.id === "sanctions_associates") {
+      const bits: string[] = [];
+      if (p.transmash) bits.push("Трансмашхолдинг");
+      if (p.makhmudov) bits.push("Махмудов");
+      if (p.bokarev) bits.push("Бокарев");
+      if (bits.length > 0) return `Связи: ${bits.join(" / ")}`;
+      return "Криминальные / санкционные материалы";
+    }
+    if (t.id === "political_exposure" && p.moldova) return "Политическая деятельность в Молдавии";
+    if (t.id === "business_associates" && p.liksutov) return "Совместный бизнес с Ликсутовым";
+    if (t.id === "conflict_jurisdiction" && p.lnr) return "Сюжет ЛНР / спорные юрисдикции";
+    if (t.id === "offshore") return "Связи с офшором";
+    if (t.id === "aggregator_negative") return "Публикации на агрегаторах";
+    if (t.id === "pep_rca") return "Сигналы PEP / RCA";
+    return t.title.replace(/^Криминальные материалы —\s*/i, "Связи: ");
+  };
   const rows = themeSet.themes.slice(0, 6).map((t) => ({
-    theme: t.title,
+    theme: themeLabel(t),
     level: levelFor(t),
     summary: themeToClientClaim(t, themeSet.subjectName),
   }));
@@ -1554,17 +1570,23 @@ export function buildComplianceDbSlides(themeSet: OrionThemeSet): Array<{
   narrative: string;
   bullets: string[];
 }> {
-  return themeSet.complianceSignals.map((c) => ({
-    title: `Обзор профиля — ${c.provider}`,
-    narrative: c.statusLine,
-    bullets: [
-      c.detail,
-      ...themeSet.themes
-        .filter((t) => /pep|rca|sanction|associate|бизнес|политич/i.test(t.id + t.title))
-        .slice(0, 2)
-        .map((t) => t.title),
-      "Сигнал предварительный: требуется сверка полного профиля и первоисточников.",
-    ].filter(Boolean),
-  }));
+  return themeSet.complianceSignals.map((c) => {
+    const claim = complianceToClientClaim(c, themeSet.subjectName);
+    const related = themeSet.themes
+      .filter((t) =>
+        /pep_rca|sanctions_associates|business_associates|criminal_legal|political_exposure/i.test(t.id)
+      )
+      .slice(0, 2)
+      .map((t) => themeToClientClaim(t, themeSet.subjectName));
+    return {
+      title: `${c.provider} — профиль`,
+      narrative: claim,
+      bullets: [
+        claim,
+        ...related,
+        "Сигнал предварительный: требуется сверка полного профиля и первоисточников.",
+      ].filter((b, i, arr) => arr.findIndex((x) => x.slice(0, 48) === b.slice(0, 48)) === i),
+    };
+  });
 }
 

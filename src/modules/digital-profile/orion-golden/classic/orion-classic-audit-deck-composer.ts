@@ -18,8 +18,13 @@ function slidesFromBlock(
 ): OrionGoldenDeckSlide[] {
   const specs = block.slideSpecs ?? [];
   const isExecutive = sectionKey === "01_executive_summary" || /executive/i.test(sectionKey);
-  const narrativeMax = isExecutive ? 2200 : 520;
-  const bulletMax = isExecutive ? 360 : 220;
+  const isProseHeavy =
+    isExecutive ||
+    /risk_matrix|audit_summary|compliance|dow_jones|world_check|lexis|undesirable_theme|digital_profile_overview|recommendations/i.test(
+      sectionKey
+    );
+  const narrativeMax = isExecutive ? 2200 : isProseHeavy ? 900 : 520;
+  const bulletMax = isExecutive || isProseHeavy ? 360 : 220;
   return specs.map((spec, idx) => {
     const perSlideNarrative =
       typeof spec.narrative === "string" ? spec.narrative : idx === 0 ? block.narrative : undefined;
