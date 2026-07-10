@@ -383,20 +383,52 @@ function isFalsePersonHit(
 ): boolean {
   const t = `${title} ${url ?? ""}`;
   const subjectLower = subjectName.toLowerCase();
-  const surname = subjectName
-    .trim()
-    .split(/\s+/)
-    .find((x) => x.length > 2)
-    ?.toLowerCase();
+  const parts = subjectName.trim().split(/\s+/).filter(Boolean);
+  const surname = parts[0]?.toLowerCase();
+  const given = parts[1]?.toLowerCase();
+  const patronymic = parts[2]?.toLowerCase();
   if (!surname) return false;
 
   // Explicit known false positives seen on Glinka packs
   if (/kozlov|козлов/i.test(t) && !/kozlov|козлов/i.test(subjectLower)) return true;
 
+  // Place-name collision: «деревня Глинка», «село Глинка» without subject FIO
+  if (
+    /(?:деревн[яи]|сел[оа]|пос[её]лк|улиц[аы]|район)\s+[«"]?/i.test(title) &&
+    new RegExp(surname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(title)
+  ) {
+    const hasFullFio =
+      Boolean(given && new RegExp(given.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(title)) &&
+      Boolean(
+        patronymic && new RegExp(patronymic.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(title)
+      );
+    if (!hasFullFio) return true;
+  }
+
+  // Registry / ИП rows with same given+patronymic but a different surname
+  // e.g. «ИП Корнеев Сергей Михайлович», «ИП Попов Сергей Михайлович»
+  if (/\bИП\b|ОГРНИП|индивидуальн(?:ый|ого)\s+предпринимател/i.test(title) && given && patronymic) {
+    const givenRe = new RegExp(given.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    const patRe = new RegExp(patronymic.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    const surRe = new RegExp(surname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    if (givenRe.test(title) && patRe.test(title) && !surRe.test(title)) return true;
+  }
+
+  // FIO with subject's surname+given but a different patronymic
+  // e.g. «Глинка, Сергей Николаевич» vs subject «… Михайлович»
+  if (given && patronymic) {
+    const surRe = new RegExp(surname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    const givenRe = new RegExp(given.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    const patRe = new RegExp(patronymic.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    if (surRe.test(title) && givenRe.test(title) && !patRe.test(title)) {
+      if (/[А-ЯЁA-Z][а-яёa-z]+(?:ович|евич|ич|овна|евна)/u.test(title)) return true;
+    }
+  }
+
   // Wikipedia family / disambiguation / namesake pages are not the subject profile
   if (/wikipedia\.org/i.test(url ?? "") || /wikipedia/i.test(title)) {
     const wiki = classifyWikipediaHit({ title, url, subjectName });
-    if (wiki.status === "WRONG_SUBJECT") return true;
+    if (wiki.status === "WRONG_SUBJECT" || wiki.status === "AMBIGUOUS") return true;
   }
 
   // OpenSanctions / OFAC-style title with a different Latin FIO
@@ -477,6 +509,13 @@ export function classifyWikipediaHit(input: {
   const hasPatronymic = Boolean(
     patronymicRe && (patronymicRe.test(title) || patronymicRe.test(snippet) || patronymicRe.test(url))
   );
+
+  // Same surname+given but a different patronymic in the title → wrong person
+  if (hasSurname && hasGiven && patronymicRe && !hasPatronymic) {
+    if (/[А-ЯЁA-Z][а-яёa-z]+(?:ович|евич|ич|овна|евна)/u.test(title)) {
+      return { status: "WRONG_SUBJECT", reason: "different-patronymic" };
+    }
+  }
 
   if (hasSurname && hasGiven && (hasPatronymic || /предпринимател|бизнесмен|бизнес|миллионер|oligarch|бизнесмен/i.test(blob))) {
     return { status: "EXACT_SUBJECT", reason: "fio-or-role-match" };
@@ -2335,11 +2374,23 @@ export function buildSerpHeatGridBullets(
   });
   const byPos = [...rows].sort((a, b) => a.pos - b.pos);
   const seen = new Set<string>();
+  const domainCounts = new Map<string, { adverse: number; neutral: number }>();
   const picked: typeof rows = [];
   const pushUnique = (row: (typeof rows)[number]) => {
-    const key = `${row.domain}|${row.title}`.toLowerCase();
+    const titleKey = row.title.toLowerCase().replace(/\s+/g, " ").slice(0, 48);
+    const key = `${row.domain}|${titleKey}`;
     if (seen.has(key)) return;
     if (WEAK_ANCHOR_DOMAIN_RE.test(row.domain) && !row.adverse) return;
+    const counts = domainCounts.get(row.domain) ?? { adverse: 0, neutral: 0 };
+    // Cap near-duplicate SERP clones per domain (highways.today / rupep / cybercriminal).
+    if (row.adverse) {
+      if (counts.adverse >= 2) return;
+      counts.adverse += 1;
+    } else {
+      if (counts.neutral >= 1) return;
+      counts.neutral += 1;
+    }
+    domainCounts.set(row.domain, counts);
     seen.add(key);
     picked.push(row);
   };
