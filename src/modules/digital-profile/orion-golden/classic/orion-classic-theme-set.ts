@@ -1520,12 +1520,16 @@ function complianceSignals(
         `Именованные связи в контуре сигнала: ${namedLinks.slice(0, 4).join(", ")}.`
       );
     }
-    if (themeContext.hints.length > 0 && p.label === "World-Check") {
+    if (themeContext.hints.length > 0 && p.label === "World-Check" && contextLinks.length === 0) {
       openSourceContext.push(
         `В открытых источниках есть сигналы по контуру ${themeContext.hints.slice(0, 2).join(", ")} — сверить отражение в World-Check.`
       );
     }
-    if (themeContext.hints.some((h) => /санкцион/i.test(h)) && p.label === "Dow Jones") {
+    if (
+      themeContext.hints.some((h) => /санкцион/i.test(h)) &&
+      p.label === "Dow Jones" &&
+      contextLinks.length === 0
+    ) {
       openSourceContext.push(
         "Сверить, отражены ли санкционные ассоциации и RCA/associate-связи в полной карточке Dow Jones."
       );
@@ -1738,8 +1742,51 @@ function enrichThemesFromCompliance(
 }
 
 function formatPctLine(kpis: OrionSurfaceKpis): string {
-  if (kpis.linksTotal <= 0) return "по сохранённой выдаче недостаточно органических ссылок для доли";
-  return `${kpis.linksAdversePct}% ссылок в сохранённой выдаче выглядят потенциально нежелательными (${kpis.linksAdverse} из ${kpis.linksTotal})`;
+  if (kpis.linksTotal <= 0) return "недостаточно органических ссылок для доли";
+  return `${kpis.linksAdversePct}% (${kpis.linksAdverse} из ${kpis.linksTotal})`;
+}
+
+/** One executive rollup instead of three near-identical DJ/WC/LN bullets. */
+function complianceExecutiveRollup(
+  signals: OrionComplianceDbSignal[],
+  subjectName: string
+): string | null {
+  if (signals.length === 0) return null;
+  if (signals.length === 1) return complianceToClientClaim(signals[0], subjectName);
+
+  const kinds = [...new Set(signals.map((s) => s.statusKind))];
+  const kindLabel = kinds
+    .map((k) =>
+      k === "rca"
+        ? "RCA"
+        : k === "pep"
+          ? "PEP"
+          : k === "sanctions"
+            ? "sanctions/watchlist"
+            : k === "named_links"
+              ? "именованные связи"
+              : "совпадение по имени"
+    )
+    .join(" / ");
+  const providers = signals.map((s) => s.provider).join(", ");
+  const names = [...new Set(signals.flatMap((s) => s.namedLinks))].slice(0, 4);
+  const nom: string[] = [];
+  for (const n of names) {
+    if (/ликсутов/i.test(n)) nom.push("М. Ликсутов");
+    else if (/лавров/i.test(n)) nom.push("К. Лаврова-Глинка");
+    else if (/бокарев/i.test(n)) nom.push("А. Бокарев");
+    else if (/махмудов/i.test(n)) nom.push("И. Махмудов");
+    else if (/трансмаш/i.test(n)) nom.push("АО «Трансмашхолдинг»");
+    else if (n.trim()) nom.push(n.trim());
+  }
+  const namesBit =
+    nom.length > 0
+      ? ` (с учётом смежного открытого контура: ${
+          nom.length === 1 ? nom[0] : `${nom.slice(0, -1).join(", ")} и ${nom[nom.length - 1]}`
+        })`
+      : "";
+  const sDat = shortSubjectDative(subjectName);
+  return `В ${providers} — предварительные сигналы (${kindLabel}) по ${sDat}${namesBit}; требуется сверка полных профилей`;
 }
 
 function shortSubjectLabel(subjectName: string): string {
@@ -1984,7 +2031,10 @@ function buildExecutiveNarrative(input: {
   const singleClaims = singleThemes
     .map((t) => themeToClientClaim(t, input.subjectName))
     .filter((c) => c.length > 20);
-  const complianceClaims = input.compliance.map((c) => complianceToClientClaim(c, input.subjectName));
+  const complianceClaims = (() => {
+    const rollup = complianceExecutiveRollup(input.compliance, input.subjectName);
+    return rollup ? [rollup] : [];
+  })();
 
   const gptExtras = sanitizeList(input.synthesis?.mainRisks)
     .filter(
@@ -2005,15 +2055,15 @@ function buildExecutiveNarrative(input: {
     if (/совместный бизнес.*ликсутов/i.test(c)) return "liksutov-business";
     if (/лнр/i.test(c)) return "lnr";
     if (/офшор|агрегаторе/i.test(c)) return "offshore-agg";
-    if (/dow jones/i.test(c)) return "dj";
-    if (/lexisnexis/i.test(c)) return "ln";
-    if (/world-check|world check/i.test(c)) return "wc";
+    if (/dow jones|lexisnexis|world-check|world check/i.test(c) && /предварительн/i.test(c)) {
+      return "compliance-rollup";
+    }
     if (/forbes\.com|tass\.com/i.test(c) && /иные потенциально|криминальн/i.test(c)) return "weak-soft-press";
     return c.slice(0, 56).toLowerCase();
   };
 
   for (const c of [...primaryClaims, ...singleClaims, ...complianceClaims, ...gptExtras]) {
-    if (bullets.length >= 8) break;
+    if (bullets.length >= 7) break;
     if (isWeakClaimText(c)) continue;
     const key = claimKey(c);
     const existingIdx = bullets.findIndex((b) => claimKey(b) === key);
@@ -2028,12 +2078,12 @@ function buildExecutiveNarrative(input: {
   // GSM-style résumé body: intro points to bullets — never leave a dangling «темам:».
   const body: string[] = [
     scope,
-    `В результатах поиска в Яндексе и Google обнаружены ссылки, которые могут вызвать затруднения при прохождении compliance-процедур. По России (${formatPctLine(input.ru)}) и ОАЭ (${formatPctLine(input.uae)}) нежелательные ссылки ведут на публикации по темам, указанным в пунктах ниже.`,
+    `В результатах поиска в Яндексе и Google обнаружены ссылки, которые могут вызвать затруднения при прохождении compliance-процедур. По России ${formatPctLine(input.ru)} и ОАЭ ${formatPctLine(input.uae)} ссылок в сохранённой выдаче выглядят потенциально нежелательными; нежелательные ссылки ведут на публикации по темам, указанным в пунктах ниже.`,
   ];
   if (singleClaims.length > 0) {
     body.push("Отдельно зафиксированы единичные нежелательные публикации (см. пункты ниже).");
   }
-  if (complianceClaims.length > 0) {
+  if (input.compliance.length > 0) {
     body.push("В международных базах данных также зафиксированы предварительные совпадения по субъекту (см. пункты ниже).");
   }
   const stepRaw = nextStep.trim();

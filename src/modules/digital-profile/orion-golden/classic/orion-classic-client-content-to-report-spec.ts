@@ -410,15 +410,7 @@ function buildOrionExecutiveSlides(
           ...decision.problems.slice(0, 4),
           ...decision.consequences.slice(0, 3),
         ];
-  const themeBullets = sanitizeClassicBullets(
-    [
-      ...themeSet.executiveBullets.slice(0, 8),
-      ...themeSet.complianceSignals
-        .map((c) => complianceToClientClaim(c, themeSet.subjectName))
-        .filter((b) => !themeSet.executiveBullets.some((e) => e.slice(0, 40) === b.slice(0, 40))),
-    ],
-    360
-  ).slice(0, 8);
+  const themeBullets = sanitizeClassicBullets(themeSet.executiveBullets, 360).slice(0, 7);
   return [
     {
       slideKey: "executive-1",
@@ -883,12 +875,7 @@ function inventoryFallbackBlock(
       );
     }
     if (themeSet && sectionId === "03_digital_profile_overview") {
-      bullets = [
-        ...themeSet.executiveBullets.slice(0, 5),
-        ...themeSet.complianceSignals
-          .map((c) => complianceToClientClaim(c, themeSet.subjectName))
-          .slice(0, 2),
-      ];
+      bullets = sanitizeClassicBullets(themeSet.executiveBullets, 320).slice(0, 6);
       narrative = truncateAtWordBoundary(
         [
           themeSet.executiveNarrative.split("\n\n")[0] ?? "",
@@ -1179,15 +1166,7 @@ function blockFromClientSection(
         .join(" "),
       900
     );
-    bullets = sanitizeClassicBullets(
-      [
-        ...themeSet.executiveBullets.slice(0, 5),
-        ...themeSet.complianceSignals
-          .map((c) => complianceToClientClaim(c, themeSet.subjectName))
-          .slice(0, 2),
-      ],
-      320
-    );
+    bullets = sanitizeClassicBullets(themeSet.executiveBullets, 320).slice(0, 6);
   }
 
   // Heat-grid bullets replace dense position tables when ThemeSet path is active
