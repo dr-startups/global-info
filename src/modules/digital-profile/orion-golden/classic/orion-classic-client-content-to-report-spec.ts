@@ -152,12 +152,66 @@ function themeLabelOf(item: FullEvidenceInventory["items"][number]): string {
   return humanizeRiskTheme(raw);
 }
 
-function isNoiseSuggestion(query: string): boolean {
-  const q = query.toLowerCase();
+function buildComplianceOverviewBullets(themeSet: OrionThemeSet): {
+  narrative: string;
+  bullets: string[];
+} {
+  const providerClaims = themeSet.complianceSignals.map((c) =>
+    complianceToClientClaim(c, themeSet.subjectName)
+  );
+  const sDat = shortSubjectDative(themeSet.subjectName);
+  const fallbackProviders =
+    providerClaims.length > 0
+      ? providerClaims
+      : [
+          `В Dow Jones — предварительное совпадение по ${sDat}; требуется сверка полного профиля`,
+          "По World-Check и LexisNexis доступны предварительные сигналы совпадения по имени; требуется сверка полных профилей.",
+        ];
+  return {
+    narrative:
+      "В международных базах данных и открытых источниках зафиксированы следующие предварительные сигналы:",
+    bullets: sanitizeClassicBullets(
+      [
+        ...fallbackProviders,
+        ...themeSetBullets(themeSet).slice(0, 3),
+        "Сигналы предварительные: требуется сверка полного профиля и первоисточников.",
+      ],
+      320
+    ).slice(0, 6),
+  };
+}
+
+function isComplianceOverviewSection(sectionId: string): boolean {
   return (
-    /related queries|autocomplete lyrics|image gallery|images free|profile (linkedin|facebook)|video live|videos youtube|news today|news article|uaeraine|uaeu|russkov|russo\b/.test(
+    sectionId.includes("compliance_database") ||
+    sectionId.includes("sanctions") ||
+    sectionId.includes("compliance_media") ||
+    sectionId.includes("other_public_databases")
+  );
+}
+
+function isNoiseSuggestion(query: string): boolean {
+  const q = query.toLowerCase().trim();
+  // Generic media / entertainment / autocomplete junk seen on Glinka packs
+  if (
+    /\b(слушать|музык|войн[еа]|стих|онлайн|youtube|piano|violin|concerto|lyrics|gallery|images?\s+free|video\s+live|videos?\s+youtube|news\s+today|news\s+article|autocomplete\s+(?:lyrics|piano|pdf|analysis)|interview\s+questions|profile\s+picture|images?\s+for\s+sale|russian\s+translation)\b/i.test(
       q
-    ) || /^(deripaska|oleg)\s+(oleg\s+)?(vladimirovich\s+)?(related|image|video|news|profile|interview\s+\d{4})/i.test(q)
+    )
+  ) {
+    return true;
+  }
+  if (
+    /подсказки\s+(слушать|в\s+музыке|в\s+войне|слушать\s+онлайн)/i.test(q) ||
+    /related queries|image gallery|images free|profile (linkedin|facebook)|uaeraine|uaeu|russkov|russo\b/i.test(q)
+  ) {
+    return true;
+  }
+  // Composer / musician namesake bleed (Михаил Глинка etc.)
+  if (/\b(михаил|mikhail|composer|композитор)\b/i.test(q) && /глинк|glinka/i.test(q)) {
+    return true;
+  }
+  return /^(deripaska|oleg)\s+(oleg\s+)?(vladimirovich\s+)?(related|image|video|news|profile|interview\s+\d{4})/i.test(
+    q
   );
 }
 
@@ -470,17 +524,31 @@ function suggestionBullets(
       if (region && !matchesRegion(item.region, region)) return false;
       const q = (item.query || item.title || "").trim();
       if (isDemoOrPlaceholderClientText(q)) return false;
+      if (isNoiseSuggestion(q)) return false;
       return true;
     })
     .map((item) => {
       const query = (item.query || item.title || "").trim();
       const cls = classifyAutocompleteQuery(query, subjectName);
-      const noise = isNoiseSuggestion(query);
       const riskBoost = cls === "RISK_QUERY" ? 100 : 0;
-      const noisePenalty = noise ? -50 : 0;
-      return { query, cls, noise, score: riskBoost + noisePenalty + query.length };
+      const subjectBoost =
+        cls === "EXACT_SUBJECT_QUERY" || cls === "SUBJECT_BROAD_QUERY" ? 40 : 0;
+      const adjacentPenalty =
+        cls === "NAMESAKE_QUERY" || cls === "IRRELEVANT_QUERY" || cls === "GENERIC_QUERY" ? -40 : 0;
+      return {
+        query,
+        cls,
+        score: riskBoost + subjectBoost + adjacentPenalty + Math.min(query.length, 40),
+      };
     })
     .filter((row) => row.query.length >= 3)
+    .filter(
+      (row) =>
+        row.cls === "RISK_QUERY" ||
+        row.cls === "EXACT_SUBJECT_QUERY" ||
+        row.cls === "SUBJECT_BROAD_QUERY" ||
+        row.cls === "TYPO_OR_SIMILAR_QUERY"
+    )
     .sort((a, b) => b.score - a.score);
 
   const seen = new Set<string>();
@@ -498,7 +566,6 @@ function suggestionBullets(
     const key = row.query.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
-    if (row.noise) continue;
     out.push(row.query);
     if (out.length >= 14) break;
   }
@@ -719,25 +786,12 @@ function inventoryFallbackBlock(
         320
       );
     }
-  } else if (sectionId.includes("sanctions") || sectionId.includes("compliance_media") || sectionId.includes("compliance_database") || sectionId.includes("other_public_databases")) {
+  } else if (isComplianceOverviewSection(sectionId)) {
     if (themeSet) {
-      const providerClaims = themeSet.complianceSignals.map((c) =>
-        complianceToClientClaim(c, themeSet.subjectName)
-      );
-      const sDat = shortSubjectDative(themeSet.subjectName);
-      const claims = [
-        ...(providerClaims.length > 0
-          ? providerClaims
-          : [
-              `В Dow Jones — предварительное совпадение по ${sDat}; требуется сверка полного профиля`,
-              "По World-Check и LexisNexis доступны предварительные сигналы совпадения по имени; требуется сверка полных профилей.",
-            ]),
-        ...themeSetBullets(themeSet).slice(0, 4),
-        "Сигналы предварительные: требуется сверка полного профиля и первоисточников.",
-      ];
-      bullets = claims;
-      narrative =
-        "В международных базах данных и открытых источниках зафиксированы следующие предварительные сигналы:";
+      // Only the primary summary section gets the full overview; siblings are skipped upstream.
+      const overview = buildComplianceOverviewBullets(themeSet);
+      bullets = overview.bullets;
+      narrative = overview.narrative;
     } else {
       bullets = complianceBullets(inventory);
       narrative = "Сводка комплаенс-сигналов и публичных баз.";
@@ -978,35 +1032,10 @@ function blockFromClientSection(
       );
     }
   }
-  if (
-    (section.sectionId.includes("sanctions") ||
-      section.sectionId.includes("compliance_media") ||
-      section.sectionId.includes("compliance_database") ||
-      section.sectionId.includes("other_public_databases")) &&
-    themeSet
-  ) {
-    const providerClaims = themeSet.complianceSignals.map((c) =>
-      complianceToClientClaim(c, themeSet.subjectName)
-    );
-    const sDat = shortSubjectDative(themeSet.subjectName);
-    const fallbackProviders =
-      providerClaims.length > 0
-        ? providerClaims
-        : [
-            `В Dow Jones — предварительное совпадение по ${sDat}; требуется сверка полного профиля`,
-            "По World-Check и LexisNexis доступны предварительные сигналы совпадения по имени; требуется сверка полных профилей.",
-          ];
-    // Always prefer ThemeSet claims over GPT «международной комплаенс-базе ×3».
-    narrativeOut =
-      "В международных базах данных и открытых источниках зафиксированы следующие предварительные сигналы:";
-    bullets = sanitizeClassicBullets(
-      [
-        ...fallbackProviders,
-        ...themeSetBullets(themeSet).slice(0, 4),
-        "Сигналы предварительные: требуется сверка полного профиля и первоисточников.",
-      ],
-      320
-    );
+  if (isComplianceOverviewSection(section.sectionId) && themeSet) {
+    const overview = buildComplianceOverviewBullets(themeSet);
+    narrativeOut = overview.narrative;
+    bullets = overview.bullets;
   }
   if (section.sectionId.includes("undesirable_theme") && themeSet) {
     narrativeOut =
@@ -1449,6 +1478,16 @@ export function buildOrionClassicReportSpecFromClientContent(
       continue;
     }
     if (reg.sectionId === "54_evidence_appendix") continue;
+
+    // Classic ORION: one compliance overview + per-provider slides (avoid identical sanctions/media clones).
+    if (
+      themeSet &&
+      (reg.sectionId === "41_sanctions_watchlists" ||
+        reg.sectionId === "45_compliance_media_check" ||
+        reg.sectionId === "46_other_public_databases")
+    ) {
+      continue;
+    }
 
     const sec = sectionById.get(reg.sectionId);
     if (sec) {
