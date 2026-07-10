@@ -1661,7 +1661,10 @@ function buildExecutiveNarrative(input: {
   if (complianceClaims.length > 0) {
     body.push("В международных базах данных также зафиксированы предварительные совпадения по субъекту (см. пункты ниже).");
   }
-  const stepLine = /^следующ/i.test(nextStep.trim()) ? nextStep : `Следующий шаг: ${nextStep}`;
+  const stepRaw = nextStep.trim();
+  const stepLine = /^следующ/i.test(stepRaw)
+    ? stepRaw
+    : `Следующий шаг: ${stepRaw.replace(/^\p{Lu}/u, (ch) => ch.toLocaleLowerCase("ru"))}`;
   body.push(stepLine);
 
   return {
@@ -1999,15 +2002,14 @@ export function buildDecisionConsequences(themeSet: OrionThemeSet): {
   };
 }
 
-/** Provider-specific bullets — avoid cloning the same SERP themes onto every DB card. */
+/** Supporting bullets only — claim stays in narrative to avoid duplicate first bullet. */
 export function buildComplianceProviderBullets(
   c: OrionComplianceDbSignal,
   subjectName: string
 ): string[] {
-  const claim = complianceToClientClaim(c, subjectName);
   const sDat = shortSubjectDative(subjectName);
   const blob = `${c.statusLine} ${c.detail}`;
-  const bullets: string[] = [claim];
+  const bullets: string[] = [];
 
   if (c.provider === "Dow Jones") {
     if (/rca|close associate|business associate|ex-wife|родственник|близк/i.test(blob)) {
@@ -2016,7 +2018,7 @@ export function buildComplianceProviderBullets(
       );
     } else {
       bullets.push(
-        `В Dow Jones зафиксировано имя-совпадение по ${sDat}; полный профиль и категория риска требуют лицензионной выгрузки.`
+        `Имя-совпадение зафиксировано; полный профиль и категория риска требуют лицензионной выгрузки.`
       );
     }
     const named: string[] = [];
@@ -2031,26 +2033,30 @@ export function buildComplianceProviderBullets(
   } else if (c.provider === "World-Check") {
     if (/\bpep\b|politically|политически значим/i.test(blob)) {
       bullets.push(
-        `World-Check даёт предварительный PEP-сигнал по ${sDat}; основание включения и идентификаторы требуют сверки с полной карточкой.`
+        `Предварительный PEP-сигнал; основание включения и идентификаторы требуют сверки с полной карточкой.`
       );
     } else {
       bullets.push(
-        `World-Check: совпадение по полному имени без раскрытой категории риска в текущем контуре отчёта.`
+        `Совпадение по полному имени без раскрытой категории риска в текущем контуре отчёта.`
       );
     }
   } else if (c.provider === "LexisNexis") {
     bullets.push(
-      `LexisNexis: предварительный сигнал по имени; медиа- и профильную карточку нужно сверить с первоисточниками до риск-решения.`
+      `Медиа- и профильную карточку нужно сверить с первоисточниками до риск-решения.`
     );
     if (/media|news|публикац/i.test(blob)) {
-      bullets.push("В контуре LexisNexis могут присутствовать media-check сигналы — без полной выгрузки не интерпретируются как подтверждённый adverse.");
+      bullets.push(
+        "В контуре могут присутствовать media-check сигналы — без полной выгрузки не интерпретируются как подтверждённый adverse."
+      );
     }
   } else {
     bullets.push(`По ${c.provider} доступен предварительный сигнал; требуется сверка полного профиля.`);
   }
 
   bullets.push("Сигнал предварительный: без полной карточки не считается подтверждённым риском.");
-  return bullets.filter((b, i, arr) => arr.findIndex((x) => x.slice(0, 56).toLowerCase() === b.slice(0, 56).toLowerCase()) === i);
+  return bullets.filter(
+    (b, i, arr) => arr.findIndex((x) => x.slice(0, 56).toLowerCase() === b.slice(0, 56).toLowerCase()) === i
+  );
 }
 
 export function buildComplianceDbSlides(themeSet: OrionThemeSet): Array<{
@@ -2058,13 +2064,10 @@ export function buildComplianceDbSlides(themeSet: OrionThemeSet): Array<{
   narrative: string;
   bullets: string[];
 }> {
-  return themeSet.complianceSignals.map((c) => {
-    const claim = complianceToClientClaim(c, themeSet.subjectName);
-    return {
-      title: `${c.provider} — профиль`,
-      narrative: claim,
-      bullets: buildComplianceProviderBullets(c, themeSet.subjectName),
-    };
-  });
+  return themeSet.complianceSignals.map((c) => ({
+    title: `${c.provider} — профиль`,
+    narrative: complianceToClientClaim(c, themeSet.subjectName),
+    bullets: buildComplianceProviderBullets(c, themeSet.subjectName),
+  }));
 }
 
