@@ -845,16 +845,17 @@ function themeAnchorEntities(
 function badgeFor(kpis: Omit<OrionSurfaceKpis, "overallBadge" | "region">): OrionSurfaceKpis["overallBadge"] {
   if (kpis.linksTotal < 5 && kpis.suggestionsTotal < 3) return "Данных мало";
   // Require both volume and share for "крайне негативный" — % alone overfits thin UAE samples.
+  // Do not let imagesAdverse alone drive badge when image pages are not shown in classic deck.
   if (
     (kpis.linksAdversePct >= 30 && kpis.linksAdverse >= 12) ||
     kpis.suggestionsAdverse >= 5
   ) {
     return "Крайне негативный";
   }
-  if (kpis.linksAdversePct >= 10 || kpis.suggestionsAdverse >= 1 || kpis.imagesAdverse >= 2) {
+  if (kpis.linksAdversePct >= 10 || kpis.suggestionsAdverse >= 1) {
     return "Нежелательный";
   }
-  if (kpis.linksAdverse > 0 || kpis.imagesAdverse > 0 || kpis.knowledgeAdverse > 0) return "Смешанный";
+  if (kpis.linksAdverse > 0 || kpis.knowledgeAdverse > 0) return "Смешанный";
   return "Нейтральный";
 }
 

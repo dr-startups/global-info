@@ -190,36 +190,39 @@ function isComplianceOverviewSection(sectionId: string): boolean {
   );
 }
 
+/** Word-ish boundary that works for Cyrillic (JS \\b is ASCII-only). */
+const WB = "(?:^|[^\\p{L}\\p{N}_])";
+const WE = "(?=$|[^\\p{L}\\p{N}_])";
+
 function isNoiseSuggestion(query: string): boolean {
   const q = query.toLowerCase().trim();
-  // Generic media / entertainment / autocomplete junk seen on Glinka packs
+  // Generic media / entertainment / autocomplete junk (Glinka packs)
+  const mediaJunk = new RegExp(
+    `${WB}(?:слушать|музык\\p{L}*|войн[еа]|стих(?:ов|и|а)?|онлайн|youtube|ютуб|piano|violin|concerto|lyrics|gallery|dance|танц\\p{L}*|photograph(?:er|y)?|фотограф\\p{L}*|recording|quotes?|молодост\\p{L}*|imagenes|newshour|newsletter|newspaper|rubinstein|images?(?:\\s+(?:free|and\\s+quotes))?|video(?:\\s+(?:live|recording|смотреть))?|videos?\\s+youtube|news(?:letter|paper|hour|\\s*(?:today|article|202\\d))?|autocomplete\\s+(?:lyrics|piano|pdf|analysis)|interview(?:s|\\s+(?:questions|смотреть|видео|pdf|20\\d{2}))?|интервью(?:\\s+(?:смотреть|видео))?|видео(?:\\s+(?:смотреть|ютуб))?|фото(?:\\s*(?:в\\s+молодости|графии))?|фотографии|profiles?|profile(?:\\s+(?:picture|nyc|pdf))?|images?\\s+for\\s+sale|russian\\s+(?:translation|dance)|university|uae\\s+email)${WE}`,
+    "iu"
+  );
+  if (mediaJunk.test(q)) return true;
+
   if (
-    /\b(слушать|музык|войн[еа]|стих(?:ов|и|а)?|онлайн|youtube|ютуб|piano|violin|concerto|lyrics|gallery|dance|танц|photograph(?:er|y)?|фотограф|recording|quotes?|молодост|images?\s+(?:free|and\s+quotes)|video\s+(?:live|recording|смотреть)|videos?\s+youtube|news\s+today|news\s+article|autocomplete\s+(?:lyrics|piano|pdf|analysis)|interview\s+(?:questions|смотреть|видео|pdf|20\d{2})|интервью\s+(?:смотреть|видео)|видео\s+(?:смотреть|ютуб)|фото\s+(?:в\s+молодости|графии)|profile\s+(?:picture|nyc|pdf)|images?\s+for\s+sale|russian\s+(?:translation|dance)|university)\b/i.test(
-      q
-    )
+    /подсказки\s+(слушать|в\s+музыке|в\s+войне|слушать\s+онлайн)/iu.test(q) ||
+    /публикация\s+стих|related queries|image gallery|images free|uaeraine|uaeu|russkov|russo(?:\s|$)/iu.test(q)
   ) {
     return true;
   }
-  if (
-    /подсказки\s+(слушать|в\s+музыке|в\s+войне|слушать\s+онлайн)/i.test(q) ||
-    /публикация\s+стих|related queries|image gallery|images free|uaeraine|uaeu|russkov|russo\b/i.test(q)
-  ) {
-    return true;
-  }
+
   // Soft social/media filler without compliance signal
-  if (
-    /^(?:глинк\w*|glinka)\b.+\b(фото|видео|интервью|стих|ютуб|youtube|dance|photograph)/i.test(q) &&
-    !/\b(трансмаш|санкц|криминал|суд|арест|pep|rca|википед|wikipedia|биограф|инн|дата\s+рожден|linkedin|rupep|forbes|компромат)\b/i.test(
-      q
-    )
-  ) {
+  const softMedia = /(?:фото|видео|интервью|стих|ютуб|youtube|dance|photograph|imagenes|newsletter|newshour|interviews?)/iu;
+  const complianceSignal =
+    /(?:трансмаш|санкц|криминал|суд|арест|pep|rca|википед|wikipedia|биограф|инн|дата\s+рожден|linkedin|rupep|forbes|компромат)/iu;
+  if (/^(?:глинк\p{L}*|glinka)/iu.test(q) && softMedia.test(q) && !complianceSignal.test(q)) {
     return true;
   }
-  // Composer / musician namesake bleed (Михаил Глинка etc.)
-  if (/\b(михаил|mikhail|composer|композитор)\b/i.test(q) && /глинк|glinka/i.test(q)) {
+
+  // Composer / musician namesake bleed
+  if (/(?:михаил|mikhail|composer|композитор)/iu.test(q) && /глинк|glinka/iu.test(q)) {
     return true;
   }
-  return /^(deripaska|oleg)\s+(oleg\s+)?(vladimirovich\s+)?(related|image|video|news|profile|interview\s+\d{4})/i.test(
+  return /^(?:deripaska|oleg)\s+(?:oleg\s+)?(?:vladimirovich\s+)?(?:related|image|video|news|profile|interview\s+\d{4})/iu.test(
     q
   );
 }
@@ -228,13 +231,13 @@ function isNoiseSuggestion(query: string): boolean {
 function suggestionRelevanceBoost(query: string): number {
   const q = query.toLowerCase();
   let boost = 0;
-  if (/\b(трансмаш|махмудов|бокарев|ликсутов|санкц|криминал|суд|арест|pep|rca|компромат|rupep|rucriminal|forbes|офшор|лнр)\b/i.test(q)) {
+  if (/(?:трансмаш|махмудов|бокарев|ликсутов|санкц|криминал|суд|арест|pep|rca|компромат|rupep|rucriminal|forbes|офшор|лнр)/iu.test(q)) {
     boost += 80;
   }
-  if (/\b(википед|wikipedia|биограф|инн|дата\s+рожден|linkedin|огрн)\b/i.test(q)) {
+  if (/(?:википед|wikipedia|биограф|инн|дата\s+рожден|linkedin|огрн)/iu.test(q)) {
     boost += 35;
   }
-  if (/\b(фото|видео|интервью|стих|ютуб|youtube|dance|photograph|quotes)\b/i.test(q)) {
+  if (/(?:фото|видео|интервью|стих|ютуб|youtube|dance|photograph|quotes|newsletter|imagenes)/iu.test(q)) {
     boost -= 30;
   }
   return boost;
@@ -1511,6 +1514,18 @@ export function buildOrionClassicReportSpecFromClientContent(
       (reg.sectionId === "41_sanctions_watchlists" ||
         reg.sectionId === "45_compliance_media_check" ||
         reg.sectionId === "46_other_public_databases")
+    ) {
+      continue;
+    }
+
+    // Images / videos / knowledge: never emit text-only GPT pages.
+    // Real visual slides are injected by the deck composer only when stored assets exist.
+    if (
+      /_images$|_videos$|knowledge_panel/.test(reg.sectionId) ||
+      reg.sectionId.includes("_yandex_images") ||
+      reg.sectionId.includes("_google_images") ||
+      reg.sectionId.includes("_videos") ||
+      reg.sectionId.includes("knowledge_panel")
     ) {
       continue;
     }
