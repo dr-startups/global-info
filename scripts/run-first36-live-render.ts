@@ -28,7 +28,20 @@ function bootstrapEnv(): void {
   }
 }
 
-const caseId = process.argv[2]?.trim() || process.env.CASE_ID?.trim() || "cmqzz1vbr00d2vdrsrjsgie2g";
+const caseId =
+  process.argv[2]?.trim() ||
+  process.env.CASE_ID?.trim() ||
+  process.env.GLINKA_CASE_ID?.trim() ||
+  (() => {
+    try {
+      const p = join(process.cwd(), "storage", "digital-profile", "glinka-case-id.txt");
+      if (existsSync(p)) return readFileSync(p, "utf-8").trim() || undefined;
+    } catch {
+      /* ignore */
+    }
+    return undefined;
+  })() ||
+  "cmqzz1vbr00d2vdrsrjsgie2g";
 
 async function main() {
   bootstrapEnv();
