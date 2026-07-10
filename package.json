@@ -36,6 +36,7 @@
     "smoke:classic-provider-serp-wiring": "tsx scripts/smoke-classic-provider-serp-wiring.ts",
     "smoke:classic-image-grid": "tsx scripts/smoke-classic-image-grid.ts",
     "smoke:classic-first36": "tsx scripts/smoke-classic-first36-mode.ts",
+    "render:first36-live": "tsx scripts/run-first36-live-render.ts",
     "smoke:classic-uae-media-table": "tsx scripts/smoke-classic-uae-media-table.ts",
     "smoke:classic-compliance-visuals": "tsx scripts/smoke-classic-compliance-visuals.ts",
     "smoke:classic-theme-soft-bio": "tsx scripts/smoke-classic-theme-soft-bio.ts",
