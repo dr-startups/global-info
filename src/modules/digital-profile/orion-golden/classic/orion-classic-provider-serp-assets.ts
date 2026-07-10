@@ -101,6 +101,7 @@ async function loadCachedSyntheticAsset(input: {
       pngBase64: buf.toString("base64"),
       observationIds: row.observations.map((o) => o.observationId),
       status: "ready",
+      storageKey: row.storageKey,
     });
     return {
       ...asset,
@@ -195,6 +196,7 @@ async function buildOneProviderSlot(input: {
       pngBase64: synthetic.png.toString("base64"),
       observationIds: synthetic.observationIds,
       status: "ready",
+      storageKey: synthetic.storageKey,
     }),
     assetRef: `${prefix}_google_${synthetic.assetId}`,
   };

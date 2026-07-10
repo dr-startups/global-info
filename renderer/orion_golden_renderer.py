@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import os
 import re
 import tempfile
 from pathlib import Path
@@ -180,22 +181,48 @@ def _asset_map(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {str(a.get("assetRef")): a for a in payload.get("assets") or []}
 
 
+def _resolve_image_bytes(asset: dict[str, Any] | None) -> bytes | None:
+    """Load PNG/JPEG bytes from inline imageData or DATA_ROOT storageKey."""
+    if not asset:
+        return None
+    img_data = asset.get("imageData")
+    if img_data:
+        try:
+            raw = base64.b64decode(str(img_data))
+            if len(raw) > 500:
+                return raw
+        except Exception:  # noqa: BLE001
+            pass
+    storage_key = str(asset.get("storageKey") or "").strip().lstrip("/")
+    if storage_key:
+        data_root = Path(os.environ.get("DATA_ROOT", "/data"))
+        # storage keys are relative to digital-profile root; DATA_ROOT usually mounts that root.
+        candidates = [
+            data_root / storage_key,
+            data_root / "digital-profile" / storage_key,
+            Path(storage_key),
+        ]
+        for path in candidates:
+            try:
+                if path.is_file() and path.stat().st_size > 500:
+                    return path.read_bytes()
+            except OSError:
+                continue
+    return None
+
+
 def _embed_image(ctx: _Ctx, asset: dict[str, Any] | None, y: int, h: int = 4800000) -> None:
     if not asset:
         ctx.body("Визуальный материал недоступен для данного раздела.", y)
         return
-    img_data = asset.get("imageData")
-    if img_data:
-        img_path = Path(tempfile.gettempdir()) / f"orion-golden-{asset.get('assetRef')}.png"
-        img_path.write_bytes(base64.b64decode(str(img_data)))
-        ctx.slide.shapes.add_picture(str(img_path), Emu(MARGIN_X), Emu(y), width=Emu(CONTENT_W), height=Emu(h))
-        try:
-            img_path.unlink(missing_ok=True)
-        except OSError:
-            pass
+    raw = _resolve_image_bytes(asset)
+    if raw:
+        # BytesIO — do not rely on temp files that may be unlinked before PPTX save.
+        stream = io.BytesIO(raw)
+        ctx.slide.shapes.add_picture(stream, Emu(MARGIN_X), Emu(y), width=Emu(CONTENT_W), height=Emu(h))
         return
     title = _safe(asset.get("title") or "Источник")
-    domain = _safe(asset.get("caption") or "")
+    domain = _safe(asset.get("caption") or asset.get("storageKey") or "")
     ctx.card(y, h)
     ctx.body(f"{title}\n{domain}\nИзображение недоступно — показаны источник и описание.", y + 120000, max_h=h - 200000)
 
@@ -271,7 +298,11 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     if template == "orion_golden_serp_screenshot":
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY)
-        _embed_image(ctx, primary, y + 60000, h=5000000)
+        # Leave room for API caption under the visual.
+        img_h = 4600000 if bullets else 5000000
+        _embed_image(ctx, primary, y + 60000, h=img_h)
+        if bullets:
+            ctx.body(bullets[0], CONTENT_BOTTOM - 420000, max_h=380000, color=MUTED_COLOR)
         return
 
     if template == "orion_golden_image_grid":
@@ -288,13 +319,8 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             cy = y + row * (cell_h + gap)
             asset = assets.get(str(ref))
             if asset and asset.get("imageData"):
-                img_path = Path(tempfile.gettempdir()) / f"orion-golden-grid-{ref}.png"
-                img_path.write_bytes(base64.b64decode(str(asset.get("imageData"))))
-                ctx.slide.shapes.add_picture(str(img_path), Emu(cx), Emu(cy), width=Emu(cell_w), height=Emu(cell_h))
-                try:
-                    img_path.unlink(missing_ok=True)
-                except OSError:
-                    pass
+                stream = io.BytesIO(base64.b64decode(str(asset.get("imageData"))))
+                ctx.slide.shapes.add_picture(stream, Emu(cx), Emu(cy), width=Emu(cell_w), height=Emu(cell_h))
             else:
                 shape = ctx.slide.shapes.add_shape(1, Emu(cx), Emu(cy), Emu(cell_w), Emu(cell_h))
                 shape.fill.solid()
@@ -405,11 +431,8 @@ def _write_pdf_fallback(
         refs = slide.get("assetRefs") or []
         primary = asset_map.get(str(refs[0])) if refs else None
         img_bytes: bytes | None = None
-        if template in visual_templates and primary and primary.get("imageData"):
-            try:
-                img_bytes = base64.b64decode(str(primary.get("imageData")))
-            except Exception:  # noqa: BLE001
-                img_bytes = None
+        if template in visual_templates and primary:
+            img_bytes = _resolve_image_bytes(primary)
 
         if img_bytes and len(img_bytes) > 500:
             # Title strip + embedded visual (same data PPTX path uses).
@@ -483,6 +506,34 @@ def render_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("deckManifest.finalSlides is empty")
 
     assets = _asset_map(payload)
+    # Diagnostics for blank SERP slides (lengths only — never log base64).
+    asset_diag = []
+    for ref, asset in list(assets.items())[:20]:
+        raw = _resolve_image_bytes(asset)
+        asset_diag.append(
+            {
+                "assetRef": ref,
+                "kind": asset.get("kind"),
+                "hasImageData": bool(asset.get("imageData")),
+                "imageDataChars": len(str(asset.get("imageData") or "")),
+                "hasStorageKey": bool(asset.get("storageKey")),
+                "resolvedBytes": len(raw) if raw else 0,
+            }
+        )
+    print(
+        "[orion-golden-render] assets",
+        json.dumps(
+            {
+                "assetCount": len(assets),
+                "serpSlides": sum(
+                    1 for s in slides if str(s.get("template") or "") == "orion_golden_serp_screenshot"
+                ),
+                "sample": asset_diag[:8],
+            },
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
     subject = (report_spec.get("subject") or {}).get("displayName") or "Цифровой профиль"
     total = len(slides)
     prs = Presentation()
@@ -516,6 +567,7 @@ def render_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:
             _write_pdf_fallback(slides, pdf_path, str(subject), assets)
             pdf_mode = "fitz-fallback"
 
+        print(f"[orion-golden-render] pdfExportMode={pdf_mode} warnings={warnings}", flush=True)
         pages = _export_png_pages(pdf_path)
         return {
             "slideCount": len(prs.slides),

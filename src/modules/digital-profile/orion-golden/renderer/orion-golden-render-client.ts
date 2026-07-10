@@ -19,6 +19,19 @@ interface GoldenRenderResult {
   warnings?: string[];
 }
 
+function assetDiag(assets: ReportAssetV1[]) {
+  return assets
+    .filter((a) => a.kind === "synthetic_serp" || a.kind === "live_serp" || a.kind === "captured_serp")
+    .slice(0, 12)
+    .map((a) => ({
+      assetRef: a.assetRef,
+      kind: a.kind,
+      status: a.status,
+      imageDataChars: String(a.imageData ?? "").length,
+      hasStorageKey: Boolean(a.storageKey),
+    }));
+}
+
 export async function renderOrionGoldenArtifacts(input: {
   reportSpec: OrionGoldenReportSpec;
   deckManifest: OrionGoldenDeckManifest;
@@ -31,7 +44,7 @@ export async function renderOrionGoldenArtifacts(input: {
     reportSpec: input.reportSpec,
     deckManifest: input.deckManifest,
     assets: input.assets
-      .filter((a) => a.status === "ready" || a.imageData || a.imageUrl)
+      .filter((a) => a.status === "ready" || a.imageData || a.imageUrl || a.storageKey)
       .map((a) => ({
         assetRef: a.assetRef,
         kind: a.kind,
@@ -40,10 +53,21 @@ export async function renderOrionGoldenArtifacts(input: {
         status: a.status,
         imageData: a.imageData,
         imageUrl: a.imageUrl,
+        storageKey: a.storageKey,
       })),
   };
 
+  const serpSlideCount = input.deckManifest.finalSlides.filter(
+    (s) => s.template === "orion_golden_serp_screenshot"
+  ).length;
+  console.info("[orion-golden-render-client] payload", {
+    assetCount: payload.assets.length,
+    serpSlideCount,
+    serpAssets: assetDiag(input.assets),
+  });
+
   const url = `${digitalProfileConfig.rendererUrl}/orion/render-golden`;
+  let httpError: string | null = null;
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -70,10 +94,33 @@ export async function renderOrionGoldenArtifacts(input: {
           : json.pdfExportMode === "fitz-fallback"
             ? "fitz-fallback"
             : "unknown";
+      console.info("[orion-golden-render-client] http ok", {
+        pdfExportMode: mode,
+        slideCount: json.slideCount,
+        warnings: json.warnings ?? [],
+      });
+      writeFileSync(
+        join(dirname(input.pptxOut), "golden-render-meta.json"),
+        JSON.stringify(
+          {
+            pdfExportMode: mode,
+            slideCount: json.slideCount,
+            warnings: json.warnings ?? [],
+            serpAssets: assetDiag(input.assets),
+            via: "http",
+          },
+          null,
+          2
+        ),
+        "utf-8"
+      );
       return { pdfExportMode: mode, warnings: json.warnings ?? [] };
     }
-  } catch {
-    // local fallback
+    httpError = `http-${res.status}:${(await res.text()).slice(0, 300)}`;
+    console.warn("[orion-golden-render-client] http not ok", httpError);
+  } catch (err) {
+    httpError = err instanceof Error ? err.message : String(err);
+    console.warn("[orion-golden-render-client] http failed, trying local python", httpError);
   }
 
   const tmpPayload = join(dirname(input.pptxOut), "golden-render-payload.json");
@@ -82,9 +129,17 @@ export async function renderOrionGoldenArtifacts(input: {
   const proc = spawnSync("python", [script, tmpPayload, input.pptxOut, input.pdfOut, input.pagesOut], {
     encoding: "utf-8",
     cwd: process.cwd(),
+    env: {
+      ...process.env,
+      PYTHONPATH: [join(process.cwd(), "renderer"), process.env.PYTHONPATH]
+        .filter(Boolean)
+        .join(process.platform === "win32" ? ";" : ":"),
+    },
   });
   if (proc.status !== 0) {
-    throw new Error(`golden-render-failed:${proc.stderr?.slice(0, 400) ?? proc.stdout?.slice(0, 400) ?? "unknown"}`);
+    throw new Error(
+      `golden-render-failed:${httpError ? `http=${httpError}; ` : ""}${proc.stderr?.slice(0, 400) ?? proc.stdout?.slice(0, 400) ?? "unknown"}`
+    );
   }
   let mode: "libreoffice" | "fitz-fallback" | "unknown" = "unknown";
   try {
@@ -96,5 +151,6 @@ export async function renderOrionGoldenArtifacts(input: {
   } catch {
     // optional
   }
-  return { pdfExportMode: mode, warnings: [] };
+  console.info("[orion-golden-render-client] local python ok", { pdfExportMode: mode, httpError });
+  return { pdfExportMode: mode, warnings: httpError ? [`http-fallback:${httpError}`] : [] };
 }

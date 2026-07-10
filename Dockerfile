@@ -42,6 +42,8 @@ COPY --from=build /app/tsconfig.json ./tsconfig.json
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/src ./src
 COPY --from=build /app/scripts ./scripts
+# Local golden-render fallback imports orion_golden_renderer from here.
+COPY --from=build /app/renderer ./renderer
 
 # Chromium + OS libs for LIVE SERP capture (manual API only; not used by PDF render).
 # --with-deps installs apt packages required by headless Chrome on Debian slim.

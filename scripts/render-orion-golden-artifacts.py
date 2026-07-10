@@ -6,6 +6,12 @@ import json
 import sys
 from pathlib import Path
 
+# Allow `python scripts/render-orion-golden-artifacts.py` from repo root / app image.
+_ROOT = Path(__file__).resolve().parents[1]
+_RENDERER = _ROOT / "renderer"
+if str(_RENDERER) not in sys.path:
+    sys.path.insert(0, str(_RENDERER))
+
 from orion_golden_renderer import render_orion_golden
 
 
@@ -28,7 +34,13 @@ def main() -> None:
         (pages_dir / f"page-{page['pageNumber']:02d}.png").write_bytes(
             base64.b64decode(page["contentBase64"])
         )
-    meta = {"slideCount": out["slideCount"], "pages": len(out.get("pages") or []), "pdfExportMode": out.get("pdfExportMode")}
+    meta = {
+        "slideCount": out["slideCount"],
+        "pages": len(out.get("pages") or []),
+        "pdfExportMode": out.get("pdfExportMode"),
+        "warnings": out.get("warnings") or [],
+        "via": "local-python",
+    }
     (pages_dir.parent / "golden-render-meta.json").write_text(json.dumps(meta), encoding="utf-8")
     print(json.dumps(meta))
 

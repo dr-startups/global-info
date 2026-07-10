@@ -24,6 +24,8 @@ export type ReportAssetV1 = {
   caption?: string;
   imageData?: string;
   imageUrl?: string;
+  /** Private-storage key for renderer DATA_ROOT reload when inline imageData is omitted. */
+  storageKey?: string;
   evidenceRefs: string[];
   status: "ready" | "missing";
   /** LIVE SERP capture metadata (optional). */

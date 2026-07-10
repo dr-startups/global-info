@@ -11,6 +11,7 @@ export function serpSyntheticAssetToReportAsset(input: {
   pngBase64: string;
   observationIds: string[];
   status?: "ready" | "missing";
+  storageKey?: string;
 }): ReportAssetV1 {
   const ready = input.status !== "missing" && Boolean(input.pngBase64);
   return {
@@ -19,6 +20,7 @@ export function serpSyntheticAssetToReportAsset(input: {
     title: `Google — ${input.queryText}`,
     caption: SYNTHETIC_API_SERP_CAPTION,
     imageData: ready ? input.pngBase64 : undefined,
+    storageKey: input.storageKey,
     evidenceRefs: input.observationIds.map((id) => `serp_observation:${id}`),
     status: ready ? "ready" : "missing",
   };
