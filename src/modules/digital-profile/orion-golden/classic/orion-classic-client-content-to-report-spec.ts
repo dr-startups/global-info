@@ -46,6 +46,9 @@ import {
   regionalAuditDashboardBlock,
   shortSubjectDative,
   themeSetBullets,
+  wikipediaClientNarrative,
+  wikipediaStatusLine,
+  classifyWikipediaHit,
   type OrionThemeSet,
 } from "./orion-classic-theme-set";
 
@@ -502,8 +505,13 @@ function suggestionBullets(
   return out;
 }
 
-function wikipediaBullets(inventory: FullEvidenceInventory | undefined, region: RegionBucket): string[] {
+function wikipediaBullets(
+  inventory: FullEvidenceInventory | undefined,
+  region: RegionBucket,
+  subjectName?: string
+): string[] {
   if (!inventory) return [];
+  const subject = subjectName || inventory.subject.fullName;
   const langPrefer = region === "RU" ? ["RU", "RUSSIAN"] : ["EN", "AE", "UAE", "AR", "INTL", "ENGLISH"];
   const items = inventory.items.filter((i) => {
     if (i.evidenceType !== "wikipedia") return false;
@@ -514,22 +522,39 @@ function wikipediaBullets(inventory: FullEvidenceInventory | undefined, region: 
   });
   // For UAE, do not fall back to RU wikipedia — that creates KPI/bullet mismatch.
   const preferred = items.filter((i) => langPrefer.includes(normalizeRegion(i.region)));
-  if (region === "UAE") {
-    const enOrIntl = preferred.filter((i) => {
-      const url = String(i.sourceUrl ?? "");
-      return /\/\/(en|ar)\.wikipedia\.org/i.test(url) || !/\/\/ru\.wikipedia\.org/i.test(url);
+  const pool =
+    region === "UAE"
+      ? preferred.filter((i) => {
+          const url = String(i.sourceUrl ?? "");
+          return /\/\/(en|ar)\.wikipedia\.org/i.test(url) || !/\/\/ru\.wikipedia\.org/i.test(url);
+        })
+      : preferred.length > 0
+        ? preferred
+        : items;
+
+  const exact: string[] = [];
+  const wrongOrAmbiguous: string[] = [];
+  for (const i of pool.slice(0, 8)) {
+    const classified = classifyWikipediaHit({
+      title: String(i.title ?? ""),
+      url: i.sourceUrl,
+      snippet: i.snippet,
+      subjectName: subject,
     });
-    if (enOrIntl.length === 0) return [];
-    return enOrIntl.slice(0, 4).map((i) => {
-      const url = i.sourceUrl ? ` — ${i.sourceUrl}` : "";
-      return `${i.title}: ${i.snippet ?? "проверка страницы"}${url}`;
-    });
-  }
-  const pool = preferred.length > 0 ? preferred : items;
-  return pool.slice(0, 8).map((i) => {
     const url = i.sourceUrl ? ` — ${i.sourceUrl}` : "";
-    return `${i.title}: ${i.snippet ?? "проверка страницы"}${url}`;
-  });
+    if (classified.status === "EXACT_SUBJECT") {
+      exact.push(`${i.title}: статья соответствует субъекту${url}`);
+    } else if (classified.status === "WRONG_SUBJECT") {
+      wrongOrAmbiguous.push(
+        `${i.title}: страница другого субъекта / рода — не засчитывается как профиль${url}`
+      );
+    } else if (classified.status === "AMBIGUOUS") {
+      wrongOrAmbiguous.push(`${i.title}: принадлежность субъекту не подтверждена${url}`);
+    }
+  }
+  // Client bullets: exact first; if none — explain wrong/absent (never «статья найдена» for family page).
+  if (exact.length > 0) return exact.slice(0, 4);
+  return wrongOrAmbiguous.slice(0, 4);
 }
 
 function complianceBullets(
@@ -631,18 +656,18 @@ function inventoryFallbackBlock(
           ? `Поисковые подсказки: ${kpis.suggestionsAdverse} из ${kpis.suggestionsTotal} указывают на нежелательные темы. Подсказки появляются раньше результатов поиска.`
           : "Аудит поисковых подсказок по сохранённым данным региона.";
   } else if (sectionId.includes("wikipedia")) {
-    bullets = wikipediaBullets(inventory, region);
-    const present = themeSet
-      ? region === "RU"
-        ? themeSet.ru.wikipediaPresent
-        : themeSet.uae.wikipediaPresent
-      : bullets.length > 0;
-    if (!present) {
-      bullets = [];
-      narrative =
-        "В Википедии устойчивая статья о персоне не подтверждена — энциклопедический якорь цифрового профиля не используется.";
+    const kpis = themeSet ? (region === "RU" ? themeSet.ru : themeSet.uae) : null;
+    bullets = wikipediaBullets(inventory, region, subjectName);
+    if (kpis) {
+      narrative = wikipediaClientNarrative(kpis);
+      if (bullets.length === 0) {
+        bullets = [wikipediaStatusLine(kpis)];
+      }
     } else {
-      narrative = "Проверка справочного профиля Wikipedia.";
+      const present = bullets.length > 0;
+      narrative = present
+        ? "Проверка справочного профиля Wikipedia."
+        : "В Википедии устойчивая статья о персоне не подтверждена — энциклопедический якорь цифрового профиля не используется.";
     }
   } else if (sectionId.includes("dow_jones") || sectionId.includes("world_check") || sectionId.includes("lexisnexis")) {
     const hint = sectionId.includes("dow") ? "dow" : sectionId.includes("world") ? "world" : "lexis";
@@ -897,13 +922,16 @@ function blockFromClientSection(
       bullets = gptFindings;
     }
   } else if (section.sectionId.includes("wikipedia")) {
-    const fromInventory = wikipediaBullets(inventory, region);
-    const present = themeSet
-      ? region === "RU"
-        ? themeSet.ru.wikipediaPresent
-        : themeSet.uae.wikipediaPresent
-      : fromInventory.length > 0;
-    bullets = present ? (fromInventory.length > 0 ? fromInventory : gptFindings) : [];
+    const kpis = themeSet ? (region === "RU" ? themeSet.ru : themeSet.uae) : null;
+    const fromInventory = wikipediaBullets(inventory, region, subjectName);
+    if (kpis) {
+      bullets =
+        fromInventory.length > 0
+          ? fromInventory
+          : [wikipediaStatusLine(kpis)];
+    } else {
+      bullets = fromInventory;
+    }
   } else if (section.sectionId.includes("search_links")) {
     const cards = themeSet ? buildAnnotatedLinkCards(themeSet, region, 10) : [];
     const fromInventory = searchLinkBullets(inventory, region);
@@ -924,14 +952,16 @@ function blockFromClientSection(
 
   let narrativeOut = truncateAtWordBoundary(sectionNarrative, 900);
   if (section.sectionId.includes("wikipedia")) {
-    const present = themeSet
-      ? region === "RU"
-        ? themeSet.ru.wikipediaPresent
-        : themeSet.uae.wikipediaPresent
-      : bullets.length > 0;
-    narrativeOut = present
-      ? "Проверка справочного профиля Wikipedia."
-      : "В Википедии устойчивая статья о персоне не подтверждена — энциклопедический якорь цифрового профиля не используется.";
+    const kpis = themeSet ? (region === "RU" ? themeSet.ru : themeSet.uae) : null;
+    if (kpis) {
+      narrativeOut = wikipediaClientNarrative(kpis);
+      if (bullets.length === 0) bullets = [wikipediaStatusLine(kpis)];
+    } else {
+      narrativeOut =
+        bullets.length > 0
+          ? "Проверка справочного профиля Wikipedia."
+          : "В Википедии устойчивая статья о персоне не подтверждена — энциклопедический якорь цифрового профиля не используется.";
+    }
   }
   if (section.sectionId === "53_recommendations") {
     narrativeOut =

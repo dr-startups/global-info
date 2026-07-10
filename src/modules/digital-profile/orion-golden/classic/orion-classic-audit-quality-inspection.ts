@@ -1,5 +1,6 @@
 /**
- * R10.11 — QA inspection for classic ORION audit decks (55–75 pages, no mid-word artifacts).
+ * R10.11 / new-brain — QA inspection for classic ORION audit decks.
+ * Includes semantic consistency gates from the ORION benchmark review.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -7,8 +8,18 @@ import { join } from "node:path";
 import type { OrionGoldenDeckManifest } from "../composer/orion-deck-composer";
 import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
 import type { OrionClassicAuditReportSpec } from "./orion-classic-client-content-to-report-spec";
+import { buildOrionThemeSet } from "./orion-classic-theme-set";
 
 export const CLASSIC_ORION_AUDIT_PAGE_RANGE = { min: 45, max: 120 } as const;
+
+const NO_ADVERSE_RE =
+  /нежелательн(?:ые|ых)?\s+публикаци[яи]\s+не\s+обнаружен|adverse\s+(?:publications?\s+)?not\s+found|no\s+adverse\s+(?:results?|links?|publications?)|нежелательн(?:ые)?\s+ссылк[аи]\s+не\s+обнаружен/i;
+
+const WIKI_FOUND_RE =
+  /википеди[яи].{0,40}(?:статья\s+)?(?:обнаружен|найден|присутств)|wikipedia.{0,40}(?:article\s+)?(?:found|present|exists)/i;
+
+const WIKI_WRONG_OR_ABSENT_RE =
+  /другого\s+субъект|дворянский\s+род|не\s+является\s+профилем|статья\s+о\s+персоне\s+(?:не\s+подтвержден|отсутств)|энциклопедический\s+якорь.{0,40}отсутств/i;
 
 export function inspectClassicOrionAuditQuality(input: {
   deckManifest: OrionGoldenDeckManifest;
@@ -115,6 +126,90 @@ export function inspectClassicOrionAuditQuality(input: {
     id: "no-object-object",
     passed: objectObjectHits.length === 0,
     detail: objectObjectHits.length ? `${objectObjectHits.length} [object Object] bullets` : "clean bullets",
+  });
+
+  // --- Semantic consistency (benchmark P0) ---
+  const themeSet = buildOrionThemeSet({
+    inventory: input.inventory,
+    subjectName: input.inventory.subject.fullName,
+    caseId: input.inventory.caseId,
+  });
+
+  const slideBlob = (s: (typeof input.deckManifest.finalSlides)[number]) =>
+    [s.title, s.narrative ?? "", ...(s.bullets ?? [])].join("\n");
+
+  // 1) Summary adverse count vs «не обнаружены» on SERP/region slides
+  for (const region of ["RU", "UAE"] as const) {
+    const kpis = region === "RU" ? themeSet.ru : themeSet.uae;
+    const regionSlides = input.deckManifest.finalSlides.filter((s) => {
+      const key = `${s.sectionKey} ${s.title}`;
+      if (region === "RU") return /(?:^|_)ru_|росси/i.test(key) && !/uae|оаэ/i.test(key);
+      return /uae|оаэ/i.test(key);
+    });
+    const claimsNoAdverse = regionSlides.filter((s) => NO_ADVERSE_RE.test(slideBlob(s)));
+    const contradiction =
+      kpis.linksAdverse > 0 && claimsNoAdverse.length > 0;
+    checks.push({
+      id: `consistency-adverse-${region.toLowerCase()}`,
+      passed: !contradiction,
+      detail: contradiction
+        ? `ThemeSet ${region} linksAdverse=${kpis.linksAdverse} but ${claimsNoAdverse.length} slide(s) say no adverse found`
+        : `${region}: adverse=${kpis.linksAdverse}, no false «не обнаружены»`,
+    });
+  }
+
+  // 2) Wikipedia: WRONG/ABSENT must not be framed as «статья обнаружена»
+  for (const region of ["RU", "UAE"] as const) {
+    const kpis = region === "RU" ? themeSet.ru : themeSet.uae;
+    const wikiSlides = input.deckManifest.finalSlides.filter((s) =>
+      /wikipedia|википед/i.test(`${s.sectionKey} ${s.title}`)
+    );
+    const regionWiki = wikiSlides.filter((s) => {
+      const key = `${s.sectionKey} ${s.title}`;
+      if (region === "RU") return !/uae|оаэ/i.test(key);
+      return /uae|оаэ/i.test(key);
+    });
+    const pool = regionWiki.length > 0 ? regionWiki : wikiSlides;
+    let wikiOk = true;
+    let detail = `${region} wikipediaStatus=${kpis.wikipediaStatus}`;
+    if (kpis.wikipediaStatus !== "EXACT_SUBJECT" && pool.length > 0) {
+      const falsePresent = pool.filter((s) => {
+        const blob = slideBlob(s);
+        return WIKI_FOUND_RE.test(blob) && !WIKI_WRONG_OR_ABSENT_RE.test(blob);
+      });
+      if (falsePresent.length > 0) {
+        wikiOk = false;
+        detail = `${region}: status=${kpis.wikipediaStatus} but ${falsePresent.length} slide(s) claim article found`;
+      }
+    }
+    if (kpis.wikipediaPresent && kpis.wikipediaStatus !== "EXACT_SUBJECT") {
+      wikiOk = false;
+      detail = `${region}: wikipediaPresent=true but status=${kpis.wikipediaStatus}`;
+    }
+    checks.push({
+      id: `consistency-wikipedia-${region.toLowerCase()}`,
+      passed: wikiOk,
+      detail,
+    });
+  }
+
+  // 3) Media KPI honesty: do not claim image/video counts when no media slides exist
+  const hasMediaSlides = input.deckManifest.finalSlides.some((s) =>
+    /image|video|media|картин|видео|knowledge/i.test(`${s.sectionKey} ${s.title}`)
+  );
+  const claimsMediaKpi = texts.some((t) =>
+    /\d+\s*(?:из\s*)?\d*\s*(?:картин|изображен|видео)|images?\s*adverse|videos?\s*total/i.test(t)
+  );
+  // Soft warning style: only block when KPI claims large media volume with zero media slides
+  const mediaVolumeClaimed =
+    themeSet.ru.imagesTotal + themeSet.ru.videosTotal + themeSet.uae.imagesTotal + themeSet.uae.videosTotal;
+  const mediaHonestyOk = !(mediaVolumeClaimed >= 10 && claimsMediaKpi && !hasMediaSlides);
+  checks.push({
+    id: "consistency-media-kpi-honesty",
+    passed: mediaHonestyOk,
+    detail: mediaHonestyOk
+      ? `media inventory=${mediaVolumeClaimed}, mediaSlides=${hasMediaSlides}`
+      : `inventory claims ${mediaVolumeClaimed} media items but deck has no media slides`,
   });
 
   try {

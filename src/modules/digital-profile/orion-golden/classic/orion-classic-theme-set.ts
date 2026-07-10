@@ -17,6 +17,9 @@ import type { ExecutiveSynthesisOutput } from "../gpt/orion-executive-synthesis-
 
 export type OrionRegionBucket = "RU" | "UAE";
 
+/** Wikipedia identity vs subject — never treat WRONG/AMBIGUOUS as «статья найдена». */
+export type WikipediaSubjectStatus = "EXACT_SUBJECT" | "WRONG_SUBJECT" | "AMBIGUOUS" | "ABSENT";
+
 export type OrionThemeEvidenceHit = {
   title: string;
   domain: string;
@@ -44,7 +47,11 @@ export type OrionSurfaceKpis = {
   suggestionsAdverse: number;
   relatedTotal: number;
   relatedAdverse: number;
+  /** True only for EXACT_SUBJECT (not any Wikipedia URL). */
   wikipediaPresent: boolean;
+  wikipediaStatus: WikipediaSubjectStatus;
+  wikipediaTitle?: string;
+  wikipediaUrl?: string;
   imagesTotal: number;
   imagesAdverse: number;
   videosTotal: number;
@@ -371,6 +378,12 @@ function isFalsePersonHit(
   // Explicit known false positives seen on Glinka packs
   if (/kozlov|козлов/i.test(t) && !/kozlov|козлов/i.test(subjectLower)) return true;
 
+  // Wikipedia family / disambiguation / namesake pages are not the subject profile
+  if (/wikipedia\.org/i.test(url ?? "") || /wikipedia/i.test(title)) {
+    const wiki = classifyWikipediaHit({ title, url, subjectName });
+    if (wiki.status === "WRONG_SUBJECT") return true;
+  }
+
   // OpenSanctions / OFAC-style title with a different Latin FIO
   if (/opensanctions|ofac|sanction/i.test(t)) {
     const subjectInTitle =
@@ -387,6 +400,133 @@ function isFalsePersonHit(
     }
   }
   return false;
+}
+
+/**
+ * Classify Wikipedia page vs subject identity.
+ * «Глинка (дворянский род)» → WRONG_SUBJECT; person article with FIO → EXACT_SUBJECT.
+ */
+export function classifyWikipediaHit(input: {
+  title: string;
+  url?: string;
+  snippet?: string;
+  subjectName: string;
+}): { status: WikipediaSubjectStatus; reason: string } {
+  const title = String(input.title ?? "").trim();
+  const url = String(input.url ?? "").trim();
+  const snippet = String(input.snippet ?? "").trim();
+  const blob = `${title} ${snippet} ${url}`;
+  if (!title && !url) return { status: "ABSENT", reason: "no-wikipedia-row" };
+  if (/отсутств|not\s+found|no\s+article|не\s+найден|page not found|страница не найдена/i.test(blob)) {
+    return { status: "ABSENT", reason: "explicit-absent" };
+  }
+  if (url && !/wikipedia\.org/i.test(url) && !/статья найдена|article found|exists/i.test(blob)) {
+    return { status: "ABSENT", reason: "non-wikipedia-url" };
+  }
+
+  const parts = input.subjectName.trim().split(/\s+/).filter(Boolean);
+  const surname = parts[0] ?? "";
+  const given = parts[1] ?? "";
+  const patronymic = parts[2] ?? "";
+  const surnameRe = surname
+    ? new RegExp(surname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+    : null;
+  const givenRe = given
+    ? new RegExp(given.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+    : null;
+  const patronymicRe = patronymic
+    ? new RegExp(patronymic.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i")
+    : null;
+
+  // Family / clan / disambiguation / list pages — never the subject profile
+  if (
+    /\((?:дворянский\s+род|род|семья|family|disambiguation|значения|фамилия)\)/i.test(title) ||
+    /дворянский\s+род|список\s+однофамильц|disambiguation|значения\)/i.test(blob) ||
+    /\/wiki\/[^/\s]*(?:_(?:family|clan|disambiguation)|_\(фамилия\)|_\(род\))/i.test(url)
+  ) {
+    return { status: "WRONG_SUBJECT", reason: "family-or-disambiguation-page" };
+  }
+
+  // Composer / other famous namesakes with same surname but different given name in title
+  if (surnameRe?.test(title) && givenRe && !givenRe.test(title) && !givenRe.test(snippet)) {
+    if (
+      /композитор|писатель|поэт|художник|генерал|княз|граф|musician|composer|painter|poet/i.test(blob) ||
+      /\([^)]{2,40}\)/.test(title)
+    ) {
+      return { status: "WRONG_SUBJECT", reason: "namesake-with-different-identity" };
+    }
+  }
+
+  const hasSurname = Boolean(surnameRe?.test(title) || surnameRe?.test(url));
+  const hasGiven = Boolean(givenRe?.test(title) || givenRe?.test(snippet) || givenRe?.test(url));
+  const hasPatronymic = Boolean(
+    patronymicRe && (patronymicRe.test(title) || patronymicRe.test(snippet) || patronymicRe.test(url))
+  );
+
+  if (hasSurname && hasGiven && (hasPatronymic || /предпринимател|бизнесмен|бизнес|миллионер|oligarch|бизнесмен/i.test(blob))) {
+    return { status: "EXACT_SUBJECT", reason: "fio-or-role-match" };
+  }
+  if (hasSurname && hasGiven) {
+    return { status: "EXACT_SUBJECT", reason: "surname-given-match" };
+  }
+  if (hasSurname && !hasGiven) {
+    return { status: "AMBIGUOUS", reason: "surname-only" };
+  }
+  if (url && /wikipedia\.org/i.test(url)) {
+    return { status: "AMBIGUOUS", reason: "wikipedia-url-weak-name-match" };
+  }
+  return { status: "ABSENT", reason: "unclassified" };
+}
+
+function resolveWikipediaStatus(
+  inventory: FullEvidenceInventory,
+  region: OrionRegionBucket,
+  subjectName: string
+): {
+  status: WikipediaSubjectStatus;
+  title?: string;
+  url?: string;
+} {
+  const wikiItems = inventory.items.filter((i) => i.evidenceType === "wikipedia" && !isDemoOrNoiseItem(i));
+  const regional = wikiItems.filter((w) => {
+    const url = String(w.sourceUrl ?? "");
+    if (region === "RU") {
+      return /\/\/ru\.wikipedia\.org/i.test(url) || matchesRegion(w.region, "RU") || /wikipedia\.org/i.test(url);
+    }
+    return /\/\/(en|ar)\.wikipedia\.org/i.test(url) || matchesRegion(w.region, "UAE");
+  });
+  const pool = region === "UAE"
+    ? regional.filter((w) => !/\/\/ru\.wikipedia\.org/i.test(String(w.sourceUrl ?? "")))
+    : regional.length > 0
+      ? regional
+      : wikiItems;
+
+  if (pool.length === 0) return { status: "ABSENT" };
+
+  let best: { status: WikipediaSubjectStatus; title?: string; url?: string; rank: number } | null = null;
+  const rankOf = (s: WikipediaSubjectStatus) =>
+    s === "EXACT_SUBJECT" ? 3 : s === "AMBIGUOUS" ? 2 : s === "WRONG_SUBJECT" ? 1 : 0;
+
+  for (const w of pool) {
+    const classified = classifyWikipediaHit({
+      title: String(w.title ?? ""),
+      url: w.sourceUrl,
+      snippet: w.snippet,
+      subjectName,
+    });
+    const rank = rankOf(classified.status);
+    if (!best || rank > best.rank) {
+      best = {
+        status: classified.status,
+        title: String(w.title ?? ""),
+        url: w.sourceUrl,
+        rank,
+      };
+    }
+  }
+  // Prefer EXACT; if only WRONG/AMBIGUOUS — report that (not «present»).
+  if (!best) return { status: "ABSENT" };
+  return { status: best.status, title: best.title, url: best.url };
 }
 
 function isGarbageEntityToken(token: string): boolean {
@@ -763,20 +903,8 @@ function computeSurfaceKpis(
     const q = (s.query || s.title || "").trim();
     return classifyAutocompleteQuery(q, subjectName) === "RISK_QUERY" || isAdverseItem(s);
   });
-  const wiki = items.filter((i) => i.evidenceType === "wikipedia");
-  const wikiPresent = wiki.some((w) => {
-    const url = String(w.sourceUrl ?? "");
-    const blob = `${w.title} ${w.snippet ?? ""} ${url}`.toLowerCase();
-    if (/отсутств|not\s+found|no\s+article|не\s+найден|page not found|страница не найдена/i.test(blob)) {
-      return false;
-    }
-    if (!url || !/wikipedia\.org/i.test(url)) {
-      return /страница найдена|article found|exists|подтвержд/i.test(blob);
-    }
-    // Regional wiki: RU counts ru.wikipedia; UAE counts en/ar (not RU fallback).
-    if (region === "RU") return /\/\/ru\.wikipedia\.org/i.test(url) || /wikipedia\.org/i.test(url);
-    return /\/\/(en|ar)\.wikipedia\.org/i.test(url);
-  });
+  const wiki = resolveWikipediaStatus(inventory, region, subjectName);
+  const wikiPresent = wiki.status === "EXACT_SUBJECT";
   // Prefer non-demo organic links for share metrics
   const linksClean = links;
   const linksAdverseClean = linksAdverse;
@@ -798,6 +926,9 @@ function computeSurfaceKpis(
     relatedTotal: related.length,
     relatedAdverse: relatedAdverse.length,
     wikipediaPresent: wikiPresent,
+    wikipediaStatus: wiki.status,
+    wikipediaTitle: wiki.title,
+    wikipediaUrl: wiki.url,
     imagesTotal: images.length,
     imagesAdverse: imagesAdverse.length,
     videosTotal: videos.length,
@@ -1597,6 +1728,32 @@ export function themeSetBullets(themeSet: OrionThemeSet, region?: OrionRegionBuc
     .filter((c) => c.length > 20 && !isWeakClaimText(c));
 }
 
+export function wikipediaStatusLine(kpis: OrionSurfaceKpis): string {
+  switch (kpis.wikipediaStatus) {
+    case "EXACT_SUBJECT":
+      return `Википедия: статья о субъекте обнаружена${kpis.wikipediaTitle ? ` («${kpis.wikipediaTitle}»)` : ""}.`;
+    case "WRONG_SUBJECT":
+      return `Википедия: найдена страница другого субъекта / рода${kpis.wikipediaTitle ? ` («${kpis.wikipediaTitle}»)` : ""} — не является профилем проверяемого лица.`;
+    case "AMBIGUOUS":
+      return `Википедия: страница неоднозначна${kpis.wikipediaTitle ? ` («${kpis.wikipediaTitle}»)` : ""} — требуется сверка identity.`;
+    default:
+      return "Википедия: устойчивая статья о персоне отсутствует.";
+  }
+}
+
+export function wikipediaClientNarrative(kpis: OrionSurfaceKpis): string {
+  switch (kpis.wikipediaStatus) {
+    case "EXACT_SUBJECT":
+      return "В Википедии обнаружена статья, соответствующая проверяемому лицу — энциклопедический якорь цифрового профиля присутствует.";
+    case "WRONG_SUBJECT":
+      return "В Википедии найдена страница с похожим названием, но она относится к другому субъекту / роду и не является профилем проверяемого лица. Энциклопедический якорь цифрового профиля отсутствует.";
+    case "AMBIGUOUS":
+      return "В Википедии есть страница с частичным совпадением имени; принадлежность субъекту не подтверждена. Энциклопедический якорь не засчитывается без сверки.";
+    default:
+      return "В Википедии устойчивая статья о персоне не подтверждена — энциклопедический якорь цифрового профиля не используется.";
+  }
+}
+
 export function regionalAuditDashboardBlock(input: {
   themeSet: OrionThemeSet;
   region: OrionRegionBucket;
@@ -1620,7 +1777,7 @@ export function regionalAuditDashboardBlock(input: {
   const kpiLines = [
     `Доля потенциально нежелательных ссылок: ${kpis.linksAdversePct}% (${kpis.linksAdverse} из ${Math.max(kpis.linksTotal, 1)}) — оценка профиля: ${kpis.overallBadge}.`,
     `Поисковые подсказки: ${kpis.suggestionsAdverse} из ${kpis.suggestionsTotal} указывают на нежелательные темы.`,
-    `Википедия: статья ${kpis.wikipediaPresent ? "обнаружена" : "отсутствует"}.`,
+    wikipediaStatusLine(kpis),
   ];
 
   return {
