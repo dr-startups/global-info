@@ -171,6 +171,12 @@ function buildComplianceOverviewBullets(themeSet: OrionThemeSet): {
   const contextBits = themeSet.complianceSignals
     .flatMap((c) => c.openSourceContext)
     .filter((b, i, arr) => arr.findIndex((x) => x.slice(0, 40) === b.slice(0, 40)) === i)
+    // Skip contour line if provider claims already embed the same open-source names.
+    .filter((b) => {
+      if (!/смежный открытый контур/i.test(b)) return true;
+      const claimsJoined = providerClaims.join(" ");
+      return !/махмудов|бокарев|трансмаш|ликсутов|лавров/i.test(claimsJoined);
+    })
     .slice(0, 2);
   // Provider-focused overview; optional shared open-source context once.
   return {
@@ -458,7 +464,10 @@ function buildRegionalAuditSummaryBlock(
       adversePct: region === "RU" ? themeSet.ru.linksAdversePct : themeSet.uae.linksAdversePct,
       badge: dash.badge,
     },
-    narrative: truncateAtWordBoundary(`${dash.narrative} Оценка: ${dash.badge}.`, 700),
+    narrative: truncateAtWordBoundary(
+      `${dash.narrative} Оценка профиля: ${dash.badge}.`,
+      700
+    ),
     tables: [],
     evidenceCards: dash.bullets.map((b) => ({ title: "Тема", summary: b })),
     visualAssets: [],
@@ -467,7 +476,10 @@ function buildRegionalAuditSummaryBlock(
         slideKey: `${region.toLowerCase()}-audit-dashboard`,
         template: "orion_golden_audit_dashboard",
         title,
-        narrative: truncateAtWordBoundary(`${dash.narrative} Оценка: ${dash.badge}.`, 500),
+        narrative: truncateAtWordBoundary(
+          `${dash.narrative} Оценка профиля: ${dash.badge}.`,
+          500
+        ),
         bullets: sanitizeClassicBullets([...dash.bullets, ...dash.kpiLines], 320).slice(0, 12),
       },
     ],

@@ -1896,20 +1896,22 @@ export function complianceToClientClaim(c: OrionComplianceDbSignal, subjectName:
   const links = c.namedLinks.length
     ? c.namedLinks
     : collectNamedLinksFromBlob(`${c.statusLine} ${c.detail}`);
-  const instr: string[] = [];
+  // Nominative after «контура:» / «связями:» — avoid «контура: Махмудовым».
+  const nom: string[] = [];
   for (const n of links) {
-    if (/ликсутов/i.test(n)) instr.push("М. Ликсутовым");
-    else if (/лавров/i.test(n)) instr.push("К. Лавровой-Глинкой");
-    else if (/бокарев/i.test(n)) instr.push("А. Бокаревым");
-    else if (/махмудов/i.test(n)) instr.push("И. Махмудовым");
-    else if (/трансмаш/i.test(n)) instr.push("АО «Трансмашхолдинг»");
+    if (/ликсутов/i.test(n)) nom.push("М. Ликсутов");
+    else if (/лавров/i.test(n)) nom.push("К. Лаврова-Глинка");
+    else if (/бокарев/i.test(n)) nom.push("А. Бокарев");
+    else if (/махмудов/i.test(n)) nom.push("И. Махмудов");
+    else if (/трансмаш/i.test(n)) nom.push("АО «Трансмашхолдинг»");
+    else if (n.trim()) nom.push(n.trim());
   }
   const namesJoined =
-    instr.length === 0
+    nom.length === 0
       ? ""
-      : instr.length === 1
-        ? instr[0]
-        : `${instr.slice(0, -1).join(", ")} и ${instr[instr.length - 1]}`;
+      : nom.length === 1
+        ? nom[0]
+        : `${nom.slice(0, -1).join(", ")} и ${nom[nom.length - 1]}`;
   // Soft wording: open-source / ThemeSet names are for verification, not asserted DB card facts.
   const fromOpenSource =
     !c.hasDbHit ||
@@ -1930,7 +1932,7 @@ export function complianceToClientClaim(c: OrionComplianceDbSignal, subjectName:
   if (c.statusKind === "sanctions") {
     return `В ${c.provider} — предварительный sanctions / watchlist-сигнал по ${sDat}${linkBitRu}; требуется сверка полного профиля`;
   }
-  if (instr.length > 0) {
+  if (nom.length > 0) {
     return `В ${c.provider} — предварительное совпадение по ${sDat}${linkBitRu}; требуется сверка полного профиля`;
   }
   if (!c.hasDbHit) {
@@ -2148,7 +2150,7 @@ export function regionalAuditDashboardBlock(input: {
   const narrative = [
     `Резюме аудита цифрового профиля в Google и Яндексе (${input.region === "RU" ? "Россия" : "ОАЭ"}).`,
     themes.length > 0
-      ? `В результатах поиска по ${regionLabel} обнаружены ссылки, которые могут вызвать затруднения при compliance-процедурах. Нежелательные публикации связаны со следующими сюжетами:`
+      ? `В результатах поиска по ${regionLabel} обнаружены ссылки, которые могут вызвать затруднения при compliance-процедурах. Нежелательные публикации связаны с сюжетами, указанными в пунктах ниже.`
       : `Цифровой профиль по сохранённым данным региона выглядит слабо наполненным подтверждёнными adverse-сюжетами.`,
   ].join(" ");
 
