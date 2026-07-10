@@ -49,6 +49,27 @@ function surfaceProvider(row: { provider: string | null; source: string }): Evid
   return engineProvider("", row.source);
 }
 
+function takeSurfacesByProviderQuota<T extends { provider: string | null; source: string }>(
+  rows: T[],
+  quotas: { yandex?: number; google?: number; other?: number }
+): T[] {
+  const yandex: T[] = [];
+  const google: T[] = [];
+  const other: T[] = [];
+  for (const row of rows) {
+    const p = surfaceProvider(row);
+    if (p === "yandex") yandex.push(row);
+    else if (p === "google") google.push(row);
+    else other.push(row);
+  }
+  return [
+    ...yandex.slice(0, quotas.yandex ?? 8),
+    ...google.slice(0, quotas.google ?? 8),
+    ...other.slice(0, quotas.other ?? 8),
+  ];
+}
+
+
 function toLocale(raw: unknown): EvidenceLocale | undefined {
   const val = String(raw ?? "").toLowerCase();
   if (val === "ru" || val.startsWith("ru")) return "ru";
@@ -341,17 +362,17 @@ export function buildRuSearchEvidence(caseContext: OrionRealCaseContext): Normal
     .slice(0, 12)
     .map((r, idx) => searchResultToNormalized(sectionKey, r, idx));
   const surfaces = caseContext.searchSurfaces.filter((s) => String(s.region ?? "").toUpperCase() !== "UAE");
-  const suggestions = surfaces
-    .filter((s) => s.type === "SUGGESTION")
-    .slice(0, 16)
-    .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface", "suggest"));
+  const suggestions = takeSurfacesByProviderQuota(
+    surfaces.filter((s) => s.type === "SUGGESTION"),
+    { yandex: 10, google: 10, other: 10 }
+  ).map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface", "suggest"));
   const related = surfaces
     .filter((s) => s.type === "RELATED_QUERY")
     .slice(0, 24)
     .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "search_surface", "related"));
   const images = surfaces
     .filter((s) => s.type === "IMAGE_RESULT")
-    .slice(0, 24)
+    .slice(0, 36)
     .map((s, idx) => surfaceToNormalized(sectionKey, s, idx, "image_result"));
   const videos = surfaces
     .filter((s) => s.type === "VIDEO_RESULT")

@@ -234,17 +234,21 @@ export async function buildRegionMediaComposites(input: {
   const images = input.evidence.filter((e) => e.sourceKind === "image_result");
   if (images.length > 0) {
     const filtered = images.filter((e) => !isImageNamesakeNoise(e, input.subjectName));
-    const pool = filtered.length > 0 ? filtered : images;
-    const ranked = [...pool].sort((a, b) => {
-      const sa = imageSubjectScore(a, input.subjectName);
-      const sb = imageSubjectScore(b, input.subjectName);
-      if (sb !== sa) return sb - sa;
-      const ha = isImageEvidenceHighlighted(a) ? 1 : 0;
-      const hb = isImageEvidenceHighlighted(b) ? 1 : 0;
-      return hb - ha;
-    });
+    const rank = (pool: NormalizedEvidenceV1[]) =>
+      [...pool].sort((a, b) => {
+        const sa = imageSubjectScore(a, input.subjectName);
+        const sb = imageSubjectScore(b, input.subjectName);
+        if (sb !== sa) return sb - sa;
+        const ha = isImageEvidenceHighlighted(a) ? 1 : 0;
+        const hb = isImageEvidenceHighlighted(b) ? 1 : 0;
+        return hb - ha;
+      });
+    const preferred = rank(filtered.length > 0 ? filtered : images);
+    const preferredRefs = new Set(preferred.map((e) => e.evidenceRef));
+    const backfill = rank(images.filter((e) => !preferredRefs.has(e.evidenceRef)));
     const maxPages = prefix === "ru" ? 4 : 1;
     const pageSize = 6;
+    const ranked = [...preferred, ...backfill].slice(0, maxPages * pageSize);
     for (let page = 0; page < maxPages; page += 1) {
       const chunk = ranked.slice(page * pageSize, page * pageSize + pageSize);
       if (chunk.length === 0) break;
@@ -354,18 +358,22 @@ export async function buildRegionMediaComposites(input: {
     items: NormalizedEvidenceV1[];
   }): Promise<void> {
     if (opts.items.length === 0) return;
+    const honestCaption =
+      opts.engineLabel === "Сохранено"
+        ? "Сохранённые строки подсказок; движок Яндекс не подтверждён"
+        : "Визуализация сохранённых строк поисковой поверхности";
     assets.push({
       assetRef: opts.assetRef,
       kind: "surface_panel",
       title: opts.title,
-      caption: "Визуализация сохранённых строк поисковой поверхности",
+      caption: honestCaption,
       imageData: await svgToPngBase64(
         buildSurfacePanelSvg({
           title: opts.title,
           subtitle: `${opts.items.length} сохранённых строк`,
           engineLabel: opts.engineLabel,
           items: opts.items.slice(0, 10).map((e) => ({
-            label: e.title ?? e.snippet ?? e.clientSafeSummary ?? "—",
+            label: e.title ?? e.snippet ?? e.query ?? e.clientSafeSummary ?? "—",
             meta: e.provider === "yandex" ? "Яндекс" : e.provider === "google" ? "Google" : e.domain,
           })),
         })
@@ -379,25 +387,27 @@ export async function buildRegionMediaComposites(input: {
     const yandexSuggest = suggestFinal.filter((e) => e.provider === "yandex");
     const googleSuggest = suggestFinal.filter((e) => e.provider === "google");
     const otherSuggest = suggestFinal.filter((e) => e.provider !== "yandex" && e.provider !== "google");
+    // Prefer real Yandex; otherwise use unlabeled/saved rows with an honest engine label.
+    const yandexOrSaved = yandexSuggest.length > 0 ? yandexSuggest : otherSuggest.slice(0, 10);
     await pushSurfacePanel({
       assetRef: "ru_suggestions_yandex",
-      title: `${label} — подсказки Яндекс`,
-      engineLabel: "Яндекс",
-      items: yandexSuggest.length > 0 ? yandexSuggest : otherSuggest.slice(0, 8),
+      title:
+        yandexSuggest.length > 0
+          ? `${label} — подсказки Яндекс`
+          : `${label} — сохранённые подсказки`,
+      engineLabel: yandexSuggest.length > 0 ? "Яндекс" : "Сохранено",
+      items: yandexOrSaved,
     });
     await pushSurfacePanel({
       assetRef: "ru_suggestions_google",
       title: `${label} — подсказки Google`,
       engineLabel: "Google",
-      items:
-        googleSuggest.length > 0
-          ? googleSuggest
-          : otherSuggest.length > 8
-            ? otherSuggest.slice(8, 16)
-            : suggestFinal.filter((e) => !(yandexSuggest.length > 0 ? yandexSuggest : otherSuggest.slice(0, 8)).includes(e)).slice(0, 8),
+      items: googleSuggest.slice(0, 10),
     });
+    const relatedCount = relatedFinal.length;
+    const relatedPageSize = relatedCount > 0 ? Math.max(1, Math.ceil(relatedCount / 3)) : 0;
     for (let i = 0; i < 3; i += 1) {
-      const chunk = relatedFinal.slice(i * 8, i * 8 + 8);
+      const chunk = relatedFinal.slice(i * relatedPageSize, i * relatedPageSize + relatedPageSize);
       if (chunk.length === 0) continue;
       await pushSurfacePanel({
         assetRef: `ru_related_${i + 1}`,

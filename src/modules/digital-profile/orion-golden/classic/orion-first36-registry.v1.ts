@@ -171,13 +171,13 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     sectionKey: "14_ru_suggestions",
     kind: "suggestions_visual",
     template: "orion_golden_surface_panel",
-    title: "Россия — подсказки Яндекс",
+    title: "Россия — подсказки поиска",
     region: "RU",
     requiredVisual: false,
     match: {
       sectionKeys: ["14_ru_suggestions"],
       templates: ["orion_golden_surface_panel", "orion_golden_prose"],
-      assetRefRe: /ru_.*suggest.*yandex|ru_suggestions_yandex/i,
+      assetRefRe: /ru_.*suggest.*yandex|ru_suggestions_yandex|ru_suggestions_saved/i,
     },
   },
   {
