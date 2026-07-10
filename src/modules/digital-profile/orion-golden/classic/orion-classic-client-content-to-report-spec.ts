@@ -198,7 +198,7 @@ function isNoiseSuggestion(query: string): boolean {
   const q = query.toLowerCase().trim();
   // Generic media / entertainment / autocomplete junk (Glinka packs)
   const mediaJunk = new RegExp(
-    `${WB}(?:слушать|музык\\p{L}*|войн[еа]|стих(?:ов|и|а)?|онлайн|youtube|ютуб|piano|violin|concerto|lyrics|gallery|dance|танц\\p{L}*|photograph(?:er|y)?|фотограф\\p{L}*|recording|quotes?|молодост\\p{L}*|imagenes|newshour|newsletter|newspaper|rubinstein|images?(?:\\s+(?:free|and\\s+quotes))?|video(?:\\s+(?:live|recording|смотреть))?|videos?\\s+youtube|news(?:letter|paper|hour|\\s*(?:today|article|202\\d))?|autocomplete\\s+(?:lyrics|piano|pdf|analysis)|interview(?:s|\\s+(?:questions|смотреть|видео|pdf|20\\d{2}))?|интервью(?:\\s+(?:смотреть|видео))?|видео(?:\\s+(?:смотреть|ютуб))?|фото(?:\\s*(?:в\\s+молодости|графии))?|фотографии|profiles?|profile(?:\\s+(?:picture|nyc|pdf))?|images?\\s+for\\s+sale|russian\\s+(?:translation|dance)|university|uae\\s+email)${WE}`,
+    `${WB}(?:слушать|музык\\p{L}*|войн[еа]|стих(?:ов|и|а)?|онлайн|youtube|ютуб|piano|violin|concerto|lyrics|gallery|dance|танц\\p{L}*|photograph(?:er|y)?|photos?|videos?|imagery|imagenes|фотограф\\p{L}*|recording|quotes?|молодост\\p{L}*|newshour|newsletter|newspaper|rubinstein|ruskin|images?(?:\\s+(?:free|and\\s+quotes))?|video(?:\\s+(?:live|recording|смотреть))?|videos?\\s+youtube|news(?:letter|paper|hour|\\s*(?:today|article|202\\d))?|autocomplete\\s+(?:lyrics|piano|pdf|analysis)|interview(?:s|\\s+(?:questions|смотреть|видео|pdf|20\\d{2}))?|интервью(?:\\s+(?:смотреть|видео))?|видео(?:\\s+(?:смотреть|ютуб))?|фото(?:\\s*(?:в\\s+молодости|графии))?|фотографии|profiles?|profile(?:\\s+(?:picture|nyc|pdf))?|images?\\s+for\\s+sale|russian\\s+(?:translation|dance)|university|uae\\s+email|\\.?pdf)${WE}`,
     "iu"
   );
   if (mediaJunk.test(q)) return true;
@@ -210,12 +210,33 @@ function isNoiseSuggestion(query: string): boolean {
     return true;
   }
 
+  // Soft family / gossip without compliance signal
+  if (/(?:^|[^\p{L}])(?:дети|жена|муж|семья|детишки)(?:$|[^\p{L}])/iu.test(q)) {
+    return true;
+  }
+
+  // Truncated / typo UAE autocomplete tails (uaec, uaev, uaem, glinka … russian alone)
+  if (/\buae[a-z]\b/i.test(q) || /\buae\s+202\d\b/i.test(q)) return true;
+  if (/\b(?:russian|russia|ruskin)\b/i.test(q) && !/(?:трансмаш|санкц|криминал|linkedin|биограф|wikipedia)/iu.test(q)) {
+    return true;
+  }
+
   // Soft social/media filler without compliance signal
-  const softMedia = /(?:фото|видео|интервью|стих|ютуб|youtube|dance|photograph|imagenes|newsletter|newshour|interviews?)/iu;
+  const softMedia =
+    /(?:фото|видео|интервью|стих|ютуб|youtube|dance|photograph|photos?|videos?|imagery|imagenes|newsletter|newshour|interviews?|\.pdf|\bpdf\b)/iu;
   const complianceSignal =
     /(?:трансмаш|санкц|криминал|суд|арест|pep|rca|википед|wikipedia|биограф|инн|дата\s+рожден|linkedin|rupep|forbes|компромат)/iu;
   if (/^(?:глинк\p{L}*|glinka)/iu.test(q) && softMedia.test(q) && !complianceSignal.test(q)) {
     return true;
+  }
+
+  // Bare FIO-only suggestion (no topical token) — low client value on a packed slide
+  const tokens = q.split(/\s+/).filter(Boolean);
+  if (tokens.length <= 3 && /^(?:глинк|glinka|сергей|sergey|михайлович|mikhaylovich)/iu.test(tokens[0] ?? "")) {
+    const topical = tokens.some((t) =>
+      /(?:трансмаш|биограф|википед|wikipedia|linkedin|инн|рожден|санкц|криминал|публикация|сми)/iu.test(t)
+    );
+    if (!topical) return true;
   }
 
   // Composer / musician namesake bleed
@@ -234,10 +255,10 @@ function suggestionRelevanceBoost(query: string): number {
   if (/(?:трансмаш|махмудов|бокарев|ликсутов|санкц|криминал|суд|арест|pep|rca|компромат|rupep|rucriminal|forbes|офшор|лнр)/iu.test(q)) {
     boost += 80;
   }
-  if (/(?:википед|wikipedia|биограф|инн|дата\s+рожден|linkedin|огрн)/iu.test(q)) {
+  if (/(?:википед|wikipedia|биограф|инн|дата\s+рожден|linkedin|огрн|публикац|сми)/iu.test(q)) {
     boost += 35;
   }
-  if (/(?:фото|видео|интервью|стих|ютуб|youtube|dance|photograph|quotes|newsletter|imagenes)/iu.test(q)) {
+  if (/(?:фото|видео|интервью|стих|ютуб|youtube|dance|photograph|photos?|videos?|imagery|quotes|newsletter|imagenes|дети|жена)/iu.test(q)) {
     boost -= 30;
   }
   return boost;
@@ -975,7 +996,9 @@ function blockFromClientSection(
         ...gptFindings.filter(isClientActionRecommendation),
       ],
       320
-    ).slice(0, 5);
+    )
+      .filter((b) => !/\d+\s*WEAK|\d+\s*Требует уточнения|слабую\/неизвестную привязку/i.test(b))
+      .slice(0, 5);
     bullets = actionBullets;
   } else if (section.sectionId.includes("suggestions") || section.sectionId.includes("related_queries")) {
     const provider = section.sectionId.includes("yandex")

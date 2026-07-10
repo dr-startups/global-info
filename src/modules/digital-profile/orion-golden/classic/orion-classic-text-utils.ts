@@ -266,18 +266,18 @@ export function isClientActionRecommendation(text: string): boolean {
   const t = scrubClientFacingProse(text.trim());
   if (!t || isMetaProcessBullet(t)) return false;
   if (
-    /исключено\s+\d+|материал\(ов\)|encyclopedic|artifact-backed|очеред(ь|и)\s+ручн|недостаточно подтверждённ|не делать выводов/i.test(
+    /исключено\s+\d+|материал\(ов\)|encyclopedic|artifact-backed|очеред(ь|и)\s+ручн|недостаточно подтверждённ|не делать выводов|\d+\s*WEAK|\d+\s*Требует уточнения|слабую\/неизвестную привязку|обогатить идентификаторы/i.test(
       t
     )
   ) {
     return false;
   }
   // Prefer actionable verbs / verification language
-  return /сверить|проверить|получить|сопоставить|зафиксировать|подтвердить|уточнить|запросить|использовать|исключить|сохранять|оценить|подготовить|провести|расширить/i.test(
+  return /сверить|проверить|получить|сопоставить|зафиксировать|подтвердить|уточнить|запросить|использовать|исключить|сохранять|оценить|подготовить|провести|расширить|сформировать/i.test(
     t
   )
     ? true
-    : t.length >= 40 && !/кластер\(ов\)|дедупликац|UAE-секц/i.test(t);
+    : t.length >= 40 && !/кластер\(ов\)|дедупликац|UAE-секц|WEAK|Требует уточнения/i.test(t);
 }
 
 export function asClientBullet(value: unknown): string {
