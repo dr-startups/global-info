@@ -133,6 +133,8 @@ export function buildFullEvidenceInventory(input: {
 
   for (const row of ctx.databaseProfiles) {
     const provider = String(row.provider ?? "COMPLIANCE").toUpperCase();
+    const safeMeta = asObj(row.rawMetadataSafe);
+    const riskTypes = Array.isArray(row.riskTypes) ? row.riskTypes.map((x) => String(x)) : [];
     items.push({
       inventoryId: `db-${row.id}`,
       caseId,
@@ -145,7 +147,17 @@ export function buildFullEvidenceInventory(input: {
       title: String(row.matchedName ?? row.summary ?? provider),
       snippet: String(row.summary ?? ""),
       classification: String(row.reviewStatus ?? ""),
-      rawMetadata: asObj(row.rawMetadataSafe),
+      // Preserve structured DB columns — classic ThemeSet needs them for RCA/PEP cards.
+      rawMetadata: {
+        ...safeMeta,
+        riskTypes,
+        matchType: row.matchType ?? undefined,
+        matchScore: row.matchScore ?? undefined,
+        reviewStatus: row.reviewStatus,
+        importMethod: row.importMethod,
+        hitSource: row.hitSource ?? undefined,
+        matchedName: row.matchedName ?? undefined,
+      },
     });
     bump(countsBySource, provider);
     bump(countsByEvidenceType, "compliance_hit");

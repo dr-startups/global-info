@@ -60,10 +60,25 @@ export type OrionSurfaceKpis = {
   overallBadge: "Крайне негативный" | "Нежелательный" | "Смешанный" | "Нейтральный" | "Данных мало";
 };
 
+export type OrionComplianceStatusKind =
+  | "rca"
+  | "pep"
+  | "sanctions"
+  | "named_links"
+  | "name_match";
+
 export type OrionComplianceDbSignal = {
   provider: "Dow Jones" | "LexisNexis" | "World-Check" | "Другое";
   statusLine: string;
   detail: string;
+  /** Structured classification for client claims / bullets. */
+  statusKind: OrionComplianceStatusKind;
+  namedLinks: string[];
+  categories: string[];
+  /** Open-source / ThemeSet context to verify against the full DB card (not claimed as card content). */
+  openSourceContext: string[];
+  /** True when signal is backed by a stored database_profile / Lexis row. */
+  hasDbHit: boolean;
 };
 
 export type OrionThemeSet = {
@@ -1174,66 +1189,362 @@ function complianceRelationshipBlob(item: FullEvidenceInventory["items"][number]
   return parts.join(" ");
 }
 
-function complianceSignals(inventory: FullEvidenceInventory): OrionComplianceDbSignal[] {
+function asStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((x) => String(x ?? "").trim()).filter(Boolean);
+}
+
+function lexisSignalsFromItem(item: FullEvidenceInventory["items"][number]): Array<Record<string, unknown>> {
+  const rm = item.rawMetadata ?? {};
+  const out: Array<Record<string, unknown>> = [];
+  const direct = rm.signal;
+  if (direct && typeof direct === "object" && !Array.isArray(direct)) {
+    out.push(direct as Record<string, unknown>);
+  }
+  const hybrid = rm.lexisNexisHybrid;
+  if (hybrid && typeof hybrid === "object" && !Array.isArray(hybrid)) {
+    const pa = (hybrid as Record<string, unknown>).parsedAnalytics;
+    if (pa && typeof pa === "object" && !Array.isArray(pa)) {
+      const signals = (pa as Record<string, unknown>).signals;
+      if (Array.isArray(signals)) {
+        for (const s of signals.slice(0, 20)) {
+          if (s && typeof s === "object" && !Array.isArray(s)) out.push(s as Record<string, unknown>);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+function isWrongSubjectLexisSignal(sig: Record<string, unknown>, subjectName: string): boolean {
+  const blob = `${sig.matchName ?? ""} ${sig.snippetShort ?? ""} ${sig.clientSafeFinding ?? ""} ${sig.normalizedName ?? ""}`;
+  if (/test person|synthetic report|deripaska|дерипаск/i.test(blob)) {
+    const surname = subjectName.trim().split(/\s+/).find((x) => x.length > 2) ?? "";
+    if (surname && !new RegExp(surname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(blob)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function collectNamedLinksFromBlob(blob: string): string[] {
+  const namedLinks: string[] = [];
+  if (/ликсутов|liksutov/i.test(blob)) namedLinks.push("М. Ликсутов");
+  if (/лавров|lavrova/i.test(blob)) namedLinks.push("К. Лаврова-Глинка");
+  if (/бокарев|bokarev/i.test(blob)) namedLinks.push("А. Бокарев");
+  if (/махмудов|makhmudov/i.test(blob)) namedLinks.push("И. Махмудов");
+  if (/трансмаш|transmash/i.test(blob)) namedLinks.push("АО «Трансмашхолдинг»");
+  return namedLinks;
+}
+
+function openSourceContextFromThemes(themes: OrionThemeCard[]): {
+  namedLinks: string[];
+  hints: string[];
+} {
+  const namedLinks: string[] = [];
+  const hints: string[] = [];
+  const pushLink = (name: string) => {
+    if (!namedLinks.some((x) => x.toLowerCase() === name.toLowerCase())) namedLinks.push(name);
+  };
+  for (const t of themes) {
+    if (isSoftPressNoiseTheme(t)) continue;
+    if (
+      !/sanctions_associates|business_associates|pep_rca|political_exposure|criminal_legal|aggregator_negative|offshore|conflict_jurisdiction/i.test(
+        t.id
+      )
+    ) {
+      continue;
+    }
+    for (const e of t.namedEntities.slice(0, 4)) {
+      const blob = e;
+      for (const n of collectNamedLinksFromBlob(blob)) pushLink(n);
+      if (/ликсутов/i.test(e)) pushLink("М. Ликсутов");
+      if (/лавров/i.test(e)) pushLink("К. Лаврова-Глинка");
+      if (/бокарев/i.test(e)) pushLink("А. Бокарев");
+      if (/махмудов/i.test(e)) pushLink("И. Махмудов");
+      if (/трансмаш/i.test(e)) pushLink("АО «Трансмашхолдинг»");
+    }
+    for (const n of collectNamedLinksFromBlob(`${t.title} ${t.summary}`)) pushLink(n);
+    if (t.id === "pep_rca") hints.push("PEP / RCA");
+    if (t.id === "sanctions_associates") hints.push("санкционные ассоциации");
+    if (t.id === "business_associates") hints.push("бизнес-ассоциаты");
+    if (t.id === "political_exposure") hints.push("политическая экспозиция");
+    if (t.id === "offshore") hints.push("офшорный контур");
+  }
+  return { namedLinks: namedLinks.slice(0, 5), hints: [...new Set(hints)].slice(0, 4) };
+}
+
+type ProviderFacts = {
+  statusKind: OrionComplianceStatusKind;
+  namedLinks: string[];
+  categories: string[];
+  detailParts: string[];
+  hasDbHit: boolean;
+  rowScore: number;
+};
+
+function scoreComplianceRow(item: FullEvidenceInventory["items"][number], subjectName: string): number {
+  let score = 0;
+  const rm = item.rawMetadata ?? {};
+  const review = String(rm.reviewStatus ?? item.classification ?? "");
+  if (/MATCH_CONFIRMED|confirmed/i.test(review)) score += 50;
+  else if (/NEEDS_REVIEW|review/i.test(review)) score += 20;
+  else if (/DISMISSED|FALSE_POSITIVE|excluded/i.test(review)) score -= 40;
+  const riskTypes = asStringList(rm.riskTypes).join(" ");
+  const matchType = String(rm.matchType ?? "");
+  if (/PEP|RCA|SANCTION|POLITICAL/i.test(`${riskTypes} ${matchType}`)) score += 30;
+  const matchScore = Number(rm.matchScore ?? 0);
+  if (Number.isFinite(matchScore) && matchScore > 0) score += Math.min(25, matchScore);
+  const blob = `${item.title} ${item.snippet ?? ""} ${complianceRelationshipBlob(item)}`;
+  score += collectNamedLinksFromBlob(blob).length * 8;
+  for (const sig of lexisSignalsFromItem(item)) {
+    if (isWrongSubjectLexisSignal(sig, subjectName)) {
+      score -= 60;
+      continue;
+    }
+    score += 15;
+    if (/pep|sanction|adverse|watchlist/i.test(String(sig.category ?? ""))) score += 20;
+  }
+  return score;
+}
+
+function extractProviderFacts(
+  rows: FullEvidenceInventory["items"],
+  subjectName: string,
+  themeContext: ReturnType<typeof openSourceContextFromThemes>
+): ProviderFacts {
+  const ranked = [...rows].sort(
+    (a, b) => scoreComplianceRow(b, subjectName) - scoreComplianceRow(a, subjectName)
+  );
+  const usable = ranked.filter((r) => scoreComplianceRow(r, subjectName) > -20);
+  const hasDbHit = usable.length > 0;
+  const namedLinks: string[] = [];
+  const categories: string[] = [];
+  const detailParts: string[] = [];
+  let isRca = false;
+  let isPep = false;
+  let isSanctions = false;
+
+  const pushLink = (n: string) => {
+    if (!namedLinks.some((x) => x.toLowerCase() === n.toLowerCase())) namedLinks.push(n);
+  };
+  const pushCat = (c: string) => {
+    const t = c.trim();
+    if (!t) return;
+    if (!categories.some((x) => x.toLowerCase() === t.toLowerCase())) categories.push(t);
+  };
+
+  for (const row of usable.slice(0, 8)) {
+    const rm = row.rawMetadata ?? {};
+    for (const rt of asStringList(rm.riskTypes)) {
+      pushCat(rt);
+      if (/PEP|POLITICAL_EXPOSURE/i.test(rt)) isPep = true;
+      if (/SANCTION/i.test(rt)) isSanctions = true;
+      if (/RCA|CLOSE_ASSOCIATE|ASSOCIATE/i.test(rt)) isRca = true;
+    }
+    const matchType = String(rm.matchType ?? "");
+    if (/RCA/i.test(matchType)) isRca = true;
+    if (/PEP/i.test(matchType)) isPep = true;
+    if (/SANCTION/i.test(matchType)) isSanctions = true;
+
+    const blob = `${row.title} ${row.snippet ?? ""} ${riskBlob(row)} ${complianceRelationshipBlob(row)}`;
+    for (const n of collectNamedLinksFromBlob(blob)) pushLink(n);
+    if (/\brca\b|close associate|relative or close|родственник|близк|ex-wife|business associate/i.test(blob)) {
+      isRca = true;
+    }
+    if (/\bpep\b|politically|политически значим/i.test(blob)) isPep = true;
+    if (/sanction|санкц|watchlist/i.test(blob)) isSanctions = true;
+
+    for (const sig of lexisSignalsFromItem(row)) {
+      if (isWrongSubjectLexisSignal(sig, subjectName)) continue;
+      const cat = String(sig.category ?? "");
+      const label = String(sig.categoryLabelRu ?? cat);
+      pushCat(label);
+      if (/pep|political/i.test(cat)) isPep = true;
+      if (/sanction|watchlist/i.test(cat)) isSanctions = true;
+      if (/adverse|media/i.test(cat)) pushCat("adverse media");
+      const finding = String(sig.clientSafeFinding ?? "").trim();
+      const snippet = String(sig.snippetShort ?? "").trim();
+      const reason = String(sig.clientSafeReason ?? "").trim();
+      if (finding && !/сигнал из импортированного/i.test(finding)) detailParts.push(finding);
+      else if (snippet && !/test person|deripaska|synthetic report/i.test(snippet)) {
+        detailParts.push(sanitizeOrionGoldenClientText(snippet).slice(0, 160));
+      } else if (reason && !/не является юридическим/i.test(reason)) {
+        detailParts.push(reason);
+      }
+      for (const n of collectNamedLinksFromBlob(`${sig.matchName ?? ""} ${snippet}`)) pushLink(n);
+    }
+
+    const snip = String(row.snippet ?? "").trim();
+    if (
+      snip &&
+      !/сигнал из импортированного|потенциальное совпадение; требует|импортированный отчёт lexisnexis добавлен/i.test(
+        snip
+      ) &&
+      !/test person|deripaska/i.test(snip)
+    ) {
+      detailParts.push(sanitizeOrionGoldenClientText(snip).slice(0, 160));
+    }
+  }
+
+  // Theme-assisted named links when DB text is thin
+  for (const n of themeContext.namedLinks) pushLink(n);
+
+  const statusKind: OrionComplianceStatusKind = isRca
+    ? "rca"
+    : isPep
+      ? "pep"
+      : isSanctions
+        ? "sanctions"
+        : namedLinks.length > 0
+          ? "named_links"
+          : "name_match";
+
+  if (detailParts.length === 0) {
+    if (namedLinks.length > 0) {
+      detailParts.push(`Связанный контур для сверки: ${namedLinks.slice(0, 4).join(", ")}.`);
+    } else if (categories.length > 0) {
+      detailParts.push(`Категории сигнала: ${categories.slice(0, 3).join(", ")}.`);
+    } else {
+      detailParts.push("Требуется сверка полного профиля.");
+    }
+  }
+
+  return {
+    statusKind,
+    namedLinks: namedLinks.slice(0, 5),
+    categories: categories.slice(0, 6),
+    detailParts: detailParts
+      .filter((b, i, arr) => arr.findIndex((x) => x.slice(0, 48).toLowerCase() === b.slice(0, 48).toLowerCase()) === i)
+      .slice(0, 4),
+    hasDbHit,
+    rowScore: usable[0] ? scoreComplianceRow(usable[0], subjectName) : 0,
+  };
+}
+
+function statusLineFor(
+  provider: OrionComplianceDbSignal["provider"],
+  kind: OrionComplianceStatusKind
+): string {
+  switch (kind) {
+    case "rca":
+      return `${provider}: предварительный сигнал RCA`;
+    case "pep":
+      return `${provider}: предварительный сигнал PEP`;
+    case "sanctions":
+      return `${provider}: предварительный sanctions / watchlist-сигнал`;
+    case "named_links":
+      return `${provider}: предварительное совпадение с именованными связями`;
+    default:
+      return `${provider}: предварительное совпадение по имени`;
+  }
+}
+
+function preferredStatusForProvider(
+  provider: OrionComplianceDbSignal["provider"],
+  themeContext: ReturnType<typeof openSourceContextFromThemes>
+): OrionComplianceStatusKind {
+  if (provider === "Dow Jones") {
+    if (themeContext.hints.some((h) => /RCA|бизнес-ассоциат|санкцион/i.test(h))) return "rca";
+    if (themeContext.namedLinks.length > 0) return "named_links";
+  }
+  if (provider === "World-Check") {
+    if (themeContext.hints.some((h) => /PEP/i.test(h))) return "pep";
+  }
+  if (provider === "LexisNexis") {
+    if (themeContext.hints.some((h) => /санкцион/i.test(h))) return "sanctions";
+  }
+  return themeContext.namedLinks.length > 0 ? "named_links" : "name_match";
+}
+
+function complianceSignals(
+  inventory: FullEvidenceInventory,
+  themes: OrionThemeCard[] = []
+): OrionComplianceDbSignal[] {
   const out: OrionComplianceDbSignal[] = [];
+  const subjectName = inventory.subject.fullName;
+  const themeContext = openSourceContextFromThemes(themes);
   const hits = inventory.items.filter(
     (i) =>
       !isDemoOrNoiseItem(i) &&
       (i.evidenceType === "compliance_hit" || /dow|lexis|world/i.test(i.provider))
   );
-  const byProvider = [
-    { key: /dow/i, label: "Dow Jones" as const },
-    { key: /lexis/i, label: "LexisNexis" as const },
-    { key: /world/i, label: "World-Check" as const },
+  const byProvider: Array<{ key: RegExp; label: OrionComplianceDbSignal["provider"] }> = [
+    { key: /dow/i, label: "Dow Jones" },
+    { key: /lexis/i, label: "LexisNexis" },
+    { key: /world/i, label: "World-Check" },
   ];
+
+  const warrantComplianceCards =
+    themeContext.namedLinks.length > 0 ||
+    themeContext.hints.length > 0 ||
+    hits.some((h) => scoreComplianceRow(h, subjectName) > 0);
+
   for (const p of byProvider) {
     const rows = hits.filter(
-      (h) =>
-        p.key.test(h.provider) ||
-        p.key.test(h.title) ||
-        p.key.test(riskBlob(h))
+      (h) => p.key.test(h.provider) || p.key.test(h.title) || p.key.test(riskBlob(h))
     );
-    if (rows.length === 0) continue;
-    const blob = rows
-      .map((r) => `${r.title} ${r.snippet ?? ""} ${riskBlob(r)} ${complianceRelationshipBlob(r)}`)
-      .join(" ");
+    const facts = extractProviderFacts(rows, subjectName, themeContext);
+    if (!facts.hasDbHit && !warrantComplianceCards) continue;
+
+    // Skip pure Lexis fixture noise with no usable subject signal and no theme context
     if (
-      /demo|potential match only|\[demo\]|demo dow|demo lexis|demo world/i.test(blob) ||
-      rows.every((r) => isDemoOrNoiseItem(r))
+      p.label === "LexisNexis" &&
+      facts.hasDbHit &&
+      facts.rowScore < 0 &&
+      themeContext.namedLinks.length === 0
     ) {
       continue;
     }
-    const namedLinks: string[] = [];
-    if (/ликсутов|liksutov/i.test(blob)) namedLinks.push("М. Ликсутовым");
-    if (/лавров|lavrova/i.test(blob)) namedLinks.push("К. Лавровой-Глинкой");
-    if (/бокарев|bokarev/i.test(blob)) namedLinks.push("А. Бокаревым");
-    if (/махмудов|makhmudov/i.test(blob)) namedLinks.push("И. Махмудовым");
-    if (/трансмаш|transmash/i.test(blob)) namedLinks.push("АО «Трансмашхолдинг»");
 
-    const isRca =
-      /\brca\b|close associate|relative or close|родственник|близк|ex-wife|business associate/i.test(
-        blob
+    let statusKind = facts.hasDbHit
+      ? facts.statusKind
+      : preferredStatusForProvider(p.label, themeContext);
+    // Provider-biased refinement when DB is thin but themes are rich
+    if (facts.statusKind === "name_match" && themeContext.namedLinks.length > 0) {
+      statusKind = preferredStatusForProvider(p.label, themeContext);
+    }
+
+    const namedLinks =
+      facts.namedLinks.length > 0 ? facts.namedLinks : themeContext.namedLinks.slice(0, 4);
+    const openSourceContext: string[] = [];
+    if (namedLinks.length > 0) {
+      openSourceContext.push(
+        `Смежный открытый контур для сверки с полной карточкой: ${namedLinks.slice(0, 4).join(", ")}.`
       );
-    const isPep = /\bpep\b|politically|политически значим/i.test(blob);
-    const status = isRca
-      ? "предварительный сигнал RCA"
-      : isPep
-        ? "предварительный сигнал PEP"
-        : namedLinks.length > 0
-          ? "предварительное совпадение с именованными связями"
-          : "предварительное совпадение по имени";
+    }
+    if (themeContext.hints.length > 0 && p.label === "World-Check") {
+      openSourceContext.push(
+        `В открытых источниках есть сигналы по контуру ${themeContext.hints.slice(0, 2).join(", ")} — сверить отражение в World-Check.`
+      );
+    }
+    if (themeContext.hints.some((h) => /санкцион/i.test(h)) && p.label === "Dow Jones") {
+      openSourceContext.push(
+        "Сверить, отражены ли санкционные ассоциации и RCA/associate-связи в полной карточке Dow Jones."
+      );
+    }
+    if (p.label === "LexisNexis" && facts.categories.length > 0) {
+      openSourceContext.push(`Категории в разборе LexisNexis: ${facts.categories.slice(0, 3).join(", ")}.`);
+    }
+
     const linkBit =
-      namedLinks.length > 0
-        ? ` Связи в карточке: ${namedLinks.slice(0, 4).join(", ")}.`
-        : "";
+      namedLinks.length > 0 ? ` Связи в контуре: ${namedLinks.slice(0, 4).join(", ")}.` : "";
     const detail = sanitizeOrionGoldenClientText(
-      `${rows[0].snippet || rows[0].title || "Требуется сверка полного профиля."}${linkBit}`
-    ).slice(0, 280);
-    if (/demo|potential match only/i.test(detail)) continue;
+      `${facts.detailParts[0] ?? "Требуется сверка полного профиля."}${linkBit}`
+    ).slice(0, 320);
+    if (/demo|potential match only/i.test(detail) && namedLinks.length === 0) continue;
+
     out.push({
       provider: p.label,
-      statusLine: `${p.label}: ${status}`,
+      statusLine: statusLineFor(p.label, statusKind),
       detail,
+      statusKind,
+      namedLinks,
+      categories: facts.categories,
+      openSourceContext: openSourceContext.filter(
+        (b, i, arr) => arr.findIndex((x) => x.slice(0, 48) === b.slice(0, 48)) === i
+      ),
+      hasDbHit: facts.hasDbHit,
     });
   }
   return out.slice(0, 3);
@@ -1295,6 +1606,37 @@ function enrichThemesFromCompliance(
           domain: "compliance",
           region: "RU",
           snippet: blob.slice(0, 160),
+        },
+      ],
+    });
+  }
+
+  // Structured PEP/RCA from riskTypes / matchType / Lexis categories
+  const structuredBlob = hits
+    .map((h) => {
+      const rm = h.rawMetadata ?? {};
+      const rts = Array.isArray(rm.riskTypes) ? rm.riskTypes.map(String).join(" ") : "";
+      const mt = String(rm.matchType ?? "");
+      const cats = lexisSignalsFromItem(h)
+        .map((s) => String(s.category ?? s.categoryLabelRu ?? ""))
+        .join(" ");
+      return `${rts} ${mt} ${cats}`;
+    })
+    .join(" ");
+  if (/PEP|RCA|pep_political|POLITICAL_EXPOSURE/i.test(structuredBlob) || /pep|rca/i.test(blob)) {
+    pushTheme({
+      id: "pep_rca",
+      title: "Сигналы PEP / RCA в комплаенс-базах",
+      summary: "Предварительные сигналы PEP/RCA в комплаенс-контексте; требуется сверка полного профиля.",
+      count: 1,
+      regions: [],
+      namedEntities: ["PEP", "RCA"],
+      sampleHits: [
+        {
+          title: "Compliance PEP / RCA signal",
+          domain: "compliance",
+          region: "RU",
+          snippet: structuredBlob.slice(0, 160) || blob.slice(0, 160),
         },
       ],
     });
@@ -1544,24 +1886,38 @@ function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string 
 
 export function complianceToClientClaim(c: OrionComplianceDbSignal, subjectName: string): string {
   const sDat = shortSubjectDative(subjectName);
-  const blob = `${c.statusLine} ${c.detail}`;
-  const links: string[] = [];
-  if (/ликсутов|liksutov/i.test(blob)) links.push("М. Ликсутовым");
-  if (/лавров|lavrova/i.test(blob)) links.push("К. Лавровой-Глинкой");
-  if (/бокарев|bokarev/i.test(blob)) links.push("А. Бокаревым");
-  if (/махмудов|makhmudov/i.test(blob)) links.push("И. Махмудовым");
-  const linkBit =
-    links.length > 0
-      ? ` из-за связи с ${links.length === 1 ? links[0] : `${links.slice(0, -1).join(", ")} и ${links[links.length - 1]}`}`
+  const links = c.namedLinks.length
+    ? c.namedLinks
+    : collectNamedLinksFromBlob(`${c.statusLine} ${c.detail}`);
+  const instr: string[] = [];
+  for (const n of links) {
+    if (/ликсутов/i.test(n)) instr.push("М. Ликсутовым");
+    else if (/лавров/i.test(n)) instr.push("К. Лавровой-Глинкой");
+    else if (/бокарев/i.test(n)) instr.push("А. Бокаревым");
+    else if (/махмудов/i.test(n)) instr.push("И. Махмудовым");
+    else if (/трансмаш/i.test(n)) instr.push("АО «Трансмашхолдинг»");
+  }
+  const linkBitRu =
+    instr.length > 0
+      ? ` из-за связи с ${
+          instr.length === 1 ? instr[0] : `${instr.slice(0, -1).join(", ")} и ${instr[instr.length - 1]}`
+        }`
       : "";
-  if (/rca/i.test(blob)) {
-    return `В ${c.provider} — предварительный / активный сигнал RCA по ${sDat}${linkBit || " (связь с близкими партнёрами)"}; требуется сверка полного профиля`;
+
+  if (c.statusKind === "rca" || /rca/i.test(c.statusLine)) {
+    return `В ${c.provider} — предварительный / активный сигнал RCA по ${sDat}${linkBitRu || " (связь с близкими партнёрами)"}; требуется сверка полного профиля`;
   }
-  if (/pep/i.test(blob)) {
-    return `В ${c.provider} — предварительный / активный сигнал PEP по ${sDat}${linkBit || " (в т.ч. через партнёрский контур)"}; требуется сверка полного профиля`;
+  if (c.statusKind === "pep" || /pep/i.test(c.statusLine)) {
+    return `В ${c.provider} — предварительный / активный сигнал PEP по ${sDat}${linkBitRu || " (в т.ч. через партнёрский контур)"}; требуется сверка полного профиля`;
   }
-  if (links.length > 0) {
-    return `В ${c.provider} обнаружено предварительное совпадение по ${sDat}${linkBit}; требуется сверка полного профиля`;
+  if (c.statusKind === "sanctions") {
+    return `В ${c.provider} — предварительный sanctions / watchlist-сигнал по ${sDat}${linkBitRu}; требуется сверка полного профиля`;
+  }
+  if (instr.length > 0) {
+    return `В ${c.provider} обнаружено предварительное совпадение по ${sDat}${linkBitRu}; требуется сверка полного профиля`;
+  }
+  if (!c.hasDbHit) {
+    return `По ${c.provider} полная карточка в текущем контуре не раскрыта; требуется сверка профиля по ${sDat} с учётом смежного открытого контура`;
   }
   return `В ${c.provider} обнаружено предварительное совпадение по имени ${shortSubjectGenitive(subjectName)}; требуется сверка полного профиля`;
 }
@@ -1695,7 +2051,7 @@ export function buildOrionThemeSet(input: {
   );
   const ru = computeSurfaceKpis(input.inventory, "RU", subjectName);
   const uae = computeSurfaceKpis(input.inventory, "UAE", subjectName);
-  const compliance = complianceSignals(input.inventory);
+  const compliance = complianceSignals(input.inventory, themes);
   const exec = buildExecutiveNarrative({
     subjectName,
     themes,
@@ -2008,49 +2364,44 @@ export function buildComplianceProviderBullets(
   subjectName: string
 ): string[] {
   const sDat = shortSubjectDative(subjectName);
-  const blob = `${c.statusLine} ${c.detail}`;
   const bullets: string[] = [];
 
-  if (c.provider === "Dow Jones") {
-    if (/rca|close associate|business associate|ex-wife|родственник|близк/i.test(blob)) {
-      bullets.push(
-        `Карточка Dow Jones указывает на RCA / associate-контур по ${sDat}; полный список связей и категория риска в клиентском отчёте не раскрыты.`
-      );
-    } else {
-      bullets.push(
-        `Имя-совпадение зафиксировано; полный профиль и категория риска требуют лицензионной выгрузки.`
-      );
-    }
-    const named: string[] = [];
-    if (/ликсутов|liksutov/i.test(blob)) named.push("М. Ликсутов");
-    if (/лавров|lavrova/i.test(blob)) named.push("К. Лаврова-Глинка");
-    if (/бокарев|bokarev/i.test(blob)) named.push("А. Бокарев");
-    if (/махмудов|makhmudov/i.test(blob)) named.push("И. Махмудов");
-    if (/трансмаш|transmash/i.test(blob)) named.push("АО «Трансмашхолдинг»");
-    if (named.length > 0) {
-      bullets.push(`В связанном контуре карточки упоминаются: ${named.slice(0, 4).join(", ")}.`);
-    }
+  if (c.statusKind === "rca") {
+    bullets.push(
+      `Карточка указывает на RCA / associate-контур по ${sDat}; полный список связей и категория риска в клиентском отчёте не раскрыты.`
+    );
+  } else if (c.statusKind === "pep") {
+    bullets.push(
+      `Предварительный PEP-сигнал по ${sDat}; основание включения и идентификаторы требуют сверки с полной карточкой.`
+    );
+  } else if (c.statusKind === "sanctions") {
+    bullets.push(
+      `Sanctions / watchlist-сигнал требует сверки идентификаторов и статуса записи в полной выгрузке.`
+    );
+  } else if (c.provider === "Dow Jones") {
+    bullets.push(
+      `Имя-совпадение зафиксировано; полный профиль и категория риска требуют лицензионной выгрузки.`
+    );
   } else if (c.provider === "World-Check") {
-    if (/\bpep\b|politically|политически значим/i.test(blob)) {
-      bullets.push(
-        `Предварительный PEP-сигнал; основание включения и идентификаторы требуют сверки с полной карточкой.`
-      );
-    } else {
-      bullets.push(
-        `Совпадение по полному имени без раскрытой категории риска в текущем контуре отчёта.`
-      );
-    }
+    bullets.push(
+      `Совпадение по полному имени без раскрытой категории риска в текущем контуре отчёта.`
+    );
   } else if (c.provider === "LexisNexis") {
     bullets.push(
       `Медиа- и профильную карточку нужно сверить с первоисточниками до риск-решения.`
     );
-    if (/media|news|публикац/i.test(blob)) {
-      bullets.push(
-        "В контуре могут присутствовать media-check сигналы — без полной выгрузки не интерпретируются как подтверждённый adverse."
-      );
-    }
   } else {
     bullets.push(`По ${c.provider} доступен предварительный сигнал; требуется сверка полного профиля.`);
+  }
+
+  if (c.namedLinks.length > 0) {
+    bullets.push(`В связанном контуре упоминаются: ${c.namedLinks.slice(0, 4).join(", ")}.`);
+  }
+  if (c.categories.length > 0 && c.provider === "LexisNexis") {
+    bullets.push(`Категории сигнала: ${c.categories.slice(0, 3).join(", ")}.`);
+  }
+  for (const line of c.openSourceContext.slice(0, 2)) {
+    bullets.push(line);
   }
 
   bullets.push("Сигнал предварительный: без полной карточки не считается подтверждённым риском.");

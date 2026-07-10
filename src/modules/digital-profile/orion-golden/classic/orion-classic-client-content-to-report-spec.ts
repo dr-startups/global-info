@@ -168,17 +168,22 @@ function buildComplianceOverviewBullets(themeSet: OrionThemeSet): {
           `В Dow Jones — предварительное совпадение по ${sDat}; требуется сверка полного профиля`,
           "По World-Check и LexisNexis доступны предварительные сигналы совпадения по имени; требуется сверка полных профилей.",
         ];
-  // Provider-only overview — SERP themes already live on executive / regional slides.
+  const contextBits = themeSet.complianceSignals
+    .flatMap((c) => c.openSourceContext)
+    .filter((b, i, arr) => arr.findIndex((x) => x.slice(0, 40) === b.slice(0, 40)) === i)
+    .slice(0, 2);
+  // Provider-focused overview; optional shared open-source context once.
   return {
     narrative:
       "В международных базах данных зафиксированы следующие предварительные сигналы:",
     bullets: sanitizeClassicBullets(
       [
         ...fallbackProviders,
+        ...contextBits,
         "Сигналы предварительные: требуется сверка полного профиля и первоисточников.",
       ],
       320
-    ).slice(0, 5),
+    ).slice(0, 6),
   };
 }
 
