@@ -37,6 +37,7 @@
     "smoke:classic-image-grid": "tsx scripts/smoke-classic-image-grid.ts",
     "smoke:classic-first36": "tsx scripts/smoke-classic-first36-mode.ts",
     "smoke:classic-uae-media-table": "tsx scripts/smoke-classic-uae-media-table.ts",
+    "smoke:classic-compliance-visuals": "tsx scripts/smoke-classic-compliance-visuals.ts",
     "smoke:classic-theme-soft-bio": "tsx scripts/smoke-classic-theme-soft-bio.ts",
     "smoke:serp-snapshot-report": "node scripts/smoke-serp-snapshot-report.mjs",
     "smoke:serp-snapshot-real-source": "tsx scripts/smoke-serp-snapshot-real-source.ts",

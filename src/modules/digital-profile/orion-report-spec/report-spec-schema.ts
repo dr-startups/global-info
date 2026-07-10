@@ -136,6 +136,7 @@ export const orionReportSpecV1Schema = z.object({
         "video_cards",
         "knowledge_panel",
         "lexis_visual_page",
+        "compliance_visual_page",
       ]),
       title: z.string(),
       caption: z.string().optional(),

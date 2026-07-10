@@ -71,6 +71,7 @@ export function inspectClassicOrionAuditQuality(input: {
         "orion_golden_video_cards",
         "orion_golden_knowledge_panel",
         "orion_golden_lexis_visual_page",
+        "orion_golden_compliance_visual_page",
       ].includes(s.template)
     );
     const withAnalysis = visualSlides.filter((s) => Boolean(s.visualAnalysis?.headlineConclusion));

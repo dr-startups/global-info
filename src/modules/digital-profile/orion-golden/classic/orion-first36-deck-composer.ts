@@ -41,6 +41,11 @@ function provenanceLabel(asset: ReportAssetV1): string {
   if (asset.kind === "lexis_visual_page") {
     return "Импортированная страница LexisNexis";
   }
+  if (asset.kind === "compliance_visual_page") {
+    if (/world_check/i.test(asset.assetRef)) return "Approved World-Check screenshot";
+    if (/dow_jones/i.test(asset.assetRef)) return "Approved Dow Jones screenshot";
+    return "Approved compliance screenshot";
+  }
   if (asset.kind === "image_grid") return "Сводка изображений поиска";
   if (asset.kind === "video_cards") return "Сводка видеоматериалов";
   if (asset.kind === "knowledge_panel") return "Справочная панель";
@@ -191,6 +196,7 @@ function attachVisual(
     "orion_golden_video_cards",
     "orion_golden_knowledge_panel",
     "orion_golden_lexis_visual_page",
+    "orion_golden_compliance_visual_page",
   ]);
   if (!visualTemplates.has(slide.template) && !visualTemplates.has(slot.template)) {
     return { ...slide, slideKey: slot.slotId, pageNumber: slot.page, title: slide.title || slot.title };
@@ -206,12 +212,17 @@ function attachVisual(
     if (slot.requiredVisual) {
       return blockedSlide(slot, `REQUIRED_VISUAL_ASSET_MISSING:${slot.sectionKey}`);
     }
+    // Keep prose/status content when approved visual is not available.
     return {
       ...slide,
       slideKey: slot.slotId,
       pageNumber: slot.page,
       title: slot.title,
-      template: slot.template,
+      template:
+        slide.template === "orion_golden_compliance_visual_page" ||
+        slide.template === "orion_golden_lexis_visual_page"
+          ? "orion_golden_prose"
+          : slide.template || "orion_golden_prose",
     };
   }
 

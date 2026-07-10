@@ -567,6 +567,16 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         _embed_image(ctx, primary, y + 60000, h=5_200_000)
         return
 
+    if template == "orion_golden_compliance_visual_page":
+        # Dow Jones / World-Check approved screenshots — same layout as Lexis visual.
+        if slide.get("visualAnalysis") or slide.get("clientTakeaway"):
+            _render_visual_with_sidebar(ctx, slide, assets, title)
+            return
+        ctx.light_bg()
+        y = ctx.title(title, 280000, NAVY)
+        _embed_image(ctx, primary, y + 60000, h=5_200_000)
+        return
+
     if template == "orion_golden_search_table":
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY, FS_SECTION)
@@ -668,6 +678,8 @@ def _write_pdf_fallback(
         "orion_golden_image_grid",
         "orion_golden_video_cards",
         "orion_golden_knowledge_panel",
+        "orion_golden_lexis_visual_page",
+        "orion_golden_compliance_visual_page",
     }
 
     def esc(t: str) -> str:

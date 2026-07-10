@@ -17,6 +17,7 @@ export type ClassicSectionTemplate =
   | "orion_golden_compliance_summary"
   | "orion_golden_lexis_summary"
   | "orion_golden_lexis_visual_page"
+  | "orion_golden_compliance_visual_page"
   | "orion_golden_appendix";
 
 export function templateForRegistrySection(sectionId: string): ClassicSectionTemplate {
@@ -105,5 +106,7 @@ export function assetSectionKeyForRegistry(sectionId: string): string | null {
   }
   if (sectionId === "38_uae_google_knowledge_panel") return "uae_knowledge";
   if (sectionId === "44_lexisnexis_profile") return "lexisnexis_visual";
+  if (sectionId === "42_dow_jones_profile") return "dow_jones_visual";
+  if (sectionId === "43_world_check_profile") return "world_check_visual";
   return null;
 }

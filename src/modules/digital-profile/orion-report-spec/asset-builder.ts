@@ -114,7 +114,8 @@ export type ReportAssetKind =
   | "image_grid"
   | "video_cards"
   | "knowledge_panel"
-  | "lexis_visual_page";
+  | "lexis_visual_page"
+  | "compliance_visual_page";
 
 export type ReportAssetV1 = {
   assetRef: string;

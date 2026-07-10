@@ -192,6 +192,10 @@ function hasRealLexisPageContent(asset: ReportAssetV1): boolean {
   return true;
 }
 
+function hasRealComplianceVisual(asset: ReportAssetV1): boolean {
+  return hasRealLexisPageContent(asset);
+}
+
 function pickAssets(assets: ReportAssetV1[], kind: ReportAssetV1["kind"], refPrefix?: string): ReportAssetV1[] {
   return assets.filter(
     (a) =>
@@ -199,6 +203,7 @@ function pickAssets(assets: ReportAssetV1[], kind: ReportAssetV1["kind"], refPre
       a.status === "ready" &&
       (!refPrefix || a.assetRef.startsWith(refPrefix)) &&
       (kind !== "lexis_visual_page" || hasRealLexisPageContent(a)) &&
+      (kind !== "compliance_visual_page" || hasRealComplianceVisual(a)) &&
       (kind !== "live_serp" && kind !== "captured_serp" && kind !== "synthetic_serp"
         ? true
         : hasSerpImageContent(a))
@@ -217,6 +222,8 @@ export function composeOrionClassicAuditDeck(
     ...pickAssets(assets, "synthetic_serp"),
   ];
   const lexisAssets = pickAssets(assets, "lexis_visual_page");
+  const dowJonesVisuals = pickAssets(assets, "compliance_visual_page", "dow_jones_visual");
+  const worldCheckVisuals = pickAssets(assets, "compliance_visual_page", "world_check_visual");
   const imageAssets = pickAssets(assets, "image_grid");
   const videoAssets = pickAssets(assets, "video_cards");
   const knowledgeAssets = pickAssets(assets, "knowledge_panel");
@@ -382,6 +389,28 @@ export function composeOrionClassicAuditDeck(
           ),
         });
       }
+      if (assetKey === "dow_jones_visual" && dowJonesVisuals.length > 0) {
+        sections.push({
+          sectionKey: "dow_jones_visual",
+          slides: assetSlides(
+            "dow_jones",
+            "orion_golden_compliance_visual_page",
+            "Dow Jones",
+            dowJonesVisuals.slice(0, 2)
+          ),
+        });
+      }
+      if (assetKey === "world_check_visual" && worldCheckVisuals.length > 0) {
+        sections.push({
+          sectionKey: "world_check_visual",
+          slides: assetSlides(
+            "world_check",
+            "orion_golden_compliance_visual_page",
+            "World-Check",
+            worldCheckVisuals.slice(0, 2)
+          ),
+        });
+      }
     }
   }
 
@@ -422,6 +451,23 @@ export function composeOrionClassicAuditDeck(
     insertedAssetSections,
     "uae_knowledge",
     assetSlides("uae_knowledge", "orion_golden_knowledge_panel", "Панель знаний", uaeKnowledge)
+  );
+  injectMediaSection(
+    sections,
+    insertedAssetSections,
+    "dow_jones_visual",
+    assetSlides("dow_jones", "orion_golden_compliance_visual_page", "Dow Jones", dowJonesVisuals.slice(0, 2))
+  );
+  injectMediaSection(
+    sections,
+    insertedAssetSections,
+    "world_check_visual",
+    assetSlides(
+      "world_check",
+      "orion_golden_compliance_visual_page",
+      "World-Check",
+      worldCheckVisuals.slice(0, 2)
+    )
   );
 
   if (includeCommercial) {

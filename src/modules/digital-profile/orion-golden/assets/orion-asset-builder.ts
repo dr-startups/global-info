@@ -7,6 +7,7 @@ import { buildReportAssets } from "../../orion-report-spec/asset-builder";
 import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
 import { buildRuSearchEvidence, buildUaeSearchEvidence } from "../../orion-report-spec/section-evidence-adapter";
 import { buildLexisReportAssets } from "../../orion-client-storyboard/lexis-asset-builder";
+import { buildComplianceVisualAssets } from "../classic/orion-compliance-visual-assets";
 import { loadFile } from "../../storage/private-store";
 import {
   isKnowledgeSurface,
@@ -83,6 +84,7 @@ export async function buildOrionGoldenAssets(input: {
     uaeSearchEvidence,
   });
   const lexisAssets = await buildOrionGoldenLexisAssets(input.ctx);
+  const complianceVisualAssets = await buildComplianceVisualAssets(input.ctx);
 
   // Per-cell URL-only image refs are not renderable (renderer needs imageData).
   // Composite ru_image_grid / uae_image_grid from buildReportAssets cover IMAGE_RESULT surfaces.
@@ -121,7 +123,14 @@ export async function buildOrionGoldenAssets(input: {
           evidenceRefs: [],
         }));
 
-  return [...serpAssets, ...lexisAssets, ...imageAssets, ...videoAssets, ...knowledgeAssets];
+  return [
+    ...serpAssets,
+    ...lexisAssets,
+    ...complianceVisualAssets,
+    ...imageAssets,
+    ...videoAssets,
+    ...knowledgeAssets,
+  ];
 }
 
 export function summarizeOrionGoldenAssetCounts(assets: ReportAssetV1[]): Record<string, number> {
