@@ -465,7 +465,7 @@ export async function importLexisNexisHybridReport(
               ? "MEDIUM"
               : "LOW",
         profileId: null,
-        profileUrl: null,
+        profileUrl: signal.sourceDomain ? `https://${signal.sourceDomain}` : null,
         summary: `${signal.clientSafeFinding} ${signal.clientSafeReason}`,
         reviewStatus: "NEEDS_REVIEW",
         rawMetadataSafe: toJson({
@@ -481,6 +481,15 @@ export async function importLexisNexisHybridReport(
             label: input.fileName,
             capturedAt: now.toISOString(),
           },
+          ...(signal.snippetShort && /https?:\/\//i.test(signal.snippetShort)
+            ? [
+                {
+                  type: "URL",
+                  url: signal.snippetShort.match(/https?:\/\/[^\s]+/i)?.[0],
+                  label: "LN Source Link",
+                },
+              ]
+            : []),
         ]),
         importedBy: ctx.actorId ?? null,
         importedAt: now,

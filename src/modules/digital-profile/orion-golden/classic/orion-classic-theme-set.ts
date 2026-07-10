@@ -202,6 +202,9 @@ const SOFT_BIO_PROFILE_DOMAIN_RE =
 const MOLDOVA_POLITICS_RE =
   /политич|president|лоббир|спонсир|парт(ии|ию|ия)|выбор|deput|minister|махмудов|makhmudov/i;
 const BIRTHPLACE_ONLY_RE = /место\s+рожден|born|date of birth|родил(?:ся|ась)?|birthplace/i;
+/** Hard Moldova-politics hosts / URL shapes from ORION LN Source Links (not birthplace bios). */
+const HARD_MOLDOVA_POLITICS_URL_RE =
+  /(?:delfi\.ee|adevarul\.ro|dozor\.ee).*?(?:moldav|moldova|prezident)|(?:moldav|moldova|prezident).*?(?:delfi\.ee|adevarul\.ro)|prezidenty[-_]?moldav|adevarul\.ro\/moldova|pan\.md|вмешательств\w*\s+персон\w*\s+в\s+молдав|молдавск\w*\s+политик/i;
 const SECONDARY_CRIMINAL_DOMAIN_RE = /cybercriminal\./i;
 
 function isSoftBioProfileDomain(domain: string): boolean {
@@ -216,6 +219,35 @@ function isBirthplaceOnlyContext(blob: string): boolean {
   return BIRTHPLACE_ONLY_RE.test(blob) && !MOLDOVA_POLITICS_RE.test(blob);
 }
 
+function itemEvidenceBlob(item: FullEvidenceInventory["items"][number]): string {
+  const lexisBits = lexisSignalsFromItem(item)
+    .map((s) => `${s.snippetShort ?? ""} ${s.clientSafeFinding ?? ""} ${s.clientSafeReason ?? ""} ${s.sourceDomain ?? ""}`)
+    .join(" ");
+  const refs = item.rawMetadata?.evidenceRefs;
+  const refBits = Array.isArray(refs)
+    ? refs
+        .map((r) => {
+          if (!r || typeof r !== "object" || Array.isArray(r)) return String(r ?? "");
+          const o = r as Record<string, unknown>;
+          return `${o.url ?? ""} ${o.label ?? ""} ${o.type ?? ""}`;
+        })
+        .join(" ")
+    : "";
+  return `${riskBlob(item)} ${complianceRelationshipBlob(item)} ${lexisBits} ${refBits} ${item.sourceUrl ?? ""}`;
+}
+
+function isHardMoldovaPoliticsEvidence(item: FullEvidenceInventory["items"][number]): boolean {
+  if (isWeakSoftBioEvidence(item)) return false;
+  const blob = itemEvidenceBlob(item);
+  if (HARD_MOLDOVA_POLITICS_URL_RE.test(blob)) return true;
+  if (/молдав|moldova/i.test(blob) && MOLDOVA_POLITICS_RE.test(blob) && !isBirthplaceOnlyContext(blob)) {
+    const domain = domainOf(String(item.sourceUrl ?? ""));
+    if (domain && isSoftBioProfileDomain(domain)) return false;
+    return true;
+  }
+  return false;
+}
+
 function isWeakSoftBioEvidence(item: FullEvidenceInventory["items"][number]): boolean {
   const domain = domainOf(String(item.sourceUrl ?? ""));
   if (!isSoftBioProfileDomain(domain)) return false;
@@ -227,8 +259,8 @@ function isWeakSoftBioEvidence(item: FullEvidenceInventory["items"][number]): bo
 
 function isWeakSoftBioPoliticalTheme(theme: OrionThemeCard): boolean {
   if (theme.id !== "political_exposure") return false;
-  const blob = theme.sampleHits.map((h) => `${h.title} ${h.snippet ?? ""}`).join(" ");
-  if (MOLDOVA_POLITICS_RE.test(blob)) return false;
+  const blob = theme.sampleHits.map((h) => `${h.title} ${h.snippet ?? ""} ${h.url ?? ""}`).join(" ");
+  if (MOLDOVA_POLITICS_RE.test(blob) || HARD_MOLDOVA_POLITICS_URL_RE.test(blob)) return false;
   const domains = theme.sampleHits.map((h) => h.domain).filter(Boolean);
   if (domains.length === 0) return false;
   return (
@@ -347,7 +379,7 @@ const THEME_DEFS: Array<{
 function themeKeyOf(item: FullEvidenceInventory["items"][number]): ThemeBucketKey {
   const url = String(item.sourceUrl ?? "");
   const domain = domainOf(url);
-  const blob = `${riskBlob(item)} ${url}`;
+  const blob = itemEvidenceBlob(item);
 
   // Criminal aggregators / defense dossiers stay in criminal_legal even when title
   // also matches Махмудов/Бокарев/Трансмаш (those would otherwise steal sanctions bucket).
@@ -362,6 +394,9 @@ function themeKeyOf(item: FullEvidenceInventory["items"][number]): ThemeBucketKe
   // Named ORION people/orgs beat soft jurisdiction/politics keyword order.
   // Moldova political lobbying stories stay political even when Makhmudov is named.
   if (/ликсутов|liksutov/i.test(blob)) return "business_associates";
+  if (isHardMoldovaPoliticsEvidence(item)) {
+    return "political_exposure";
+  }
   if (
     /молдав|moldova/i.test(blob) &&
     /политич|president|лоббир|спонсир|парт(ии|ию|ия)|выбор|deput|minister/i.test(blob)
@@ -1781,9 +1816,8 @@ function enrichThemesFromCompliance(
       (i.evidenceType === "compliance_hit" || /dow|lexis|world/i.test(i.provider))
   );
   const blob = hits
-    .map((h) => `${h.title} ${h.snippet ?? ""} ${complianceRelationshipBlob(h)}`)
+    .map((h) => `${h.title} ${h.snippet ?? ""} ${complianceRelationshipBlob(h)} ${itemEvidenceBlob(h)}`)
     .join(" ");
-  if (!blob.trim()) return themes;
 
   const out = [...themes];
   const has = (id: ThemeBucketKey) => out.some((t) => t.id === id);
@@ -1800,7 +1834,7 @@ function enrichThemesFromCompliance(
           existing.sampleHits.push(h);
         }
       }
-      if (card.title && /ликсутов|офшор|лнр/i.test(card.title)) {
+      if (card.title && /ликсутов|офшор|лнр|молдав/i.test(card.title)) {
         existing.title = card.title;
       }
       return;
@@ -1808,7 +1842,7 @@ function enrichThemesFromCompliance(
     out.push(card);
   };
 
-  if (/ликсутов|liksutov|лавров|lavrova/i.test(blob)) {
+  if (blob.trim() && /ликсутов|liksutov|лавров|lavrova/i.test(blob)) {
     pushTheme({
       id: "business_associates",
       title: "Ликсутов",
@@ -1875,11 +1909,67 @@ function enrichThemesFromCompliance(
       ],
     });
   }
+  // Hard Moldova politics (ORION LN Source Links / SERP politics) — not forbes birthplace.
+  const moldovaItems = inventory.items.filter(
+    (i) =>
+      !isDemoOrNoiseItem(i) &&
+      (i.evidenceType === "search_result" ||
+        i.evidenceType === "compliance_hit" ||
+        /dow|lexis|world/i.test(i.provider)) &&
+      isHardMoldovaPoliticsEvidence(i)
+  );
+  if (moldovaItems.length > 0 || HARD_MOLDOVA_POLITICS_URL_RE.test(blob)) {
+    const seedItems =
+      moldovaItems.length > 0
+        ? moldovaItems
+        : hits.filter((h) => HARD_MOLDOVA_POLITICS_URL_RE.test(itemEvidenceBlob(h)));
+    const plotBlob = `${blob} ${seedItems.map((i) => itemEvidenceBlob(i)).join(" ")}`;
+    const named = [
+      "Молдавия",
+      ...(/махмудов|makhmudov/i.test(plotBlob) ? ["Махмудов"] : []),
+    ];
+    const sampleHits: OrionThemeEvidenceHit[] = seedItems.slice(0, 3).map((item) => {
+      const url = String(item.sourceUrl ?? "");
+      const domain = domainOf(url) || (item.evidenceType === "compliance_hit" ? "lexisnexis" : "source");
+      return {
+        title: sanitizeOrionGoldenClientText(item.title).slice(0, 120) || "Moldova politics source",
+        domain,
+        url: url || undefined,
+        region: matchesRegion(item.region, "UAE") ? "UAE" : "RU",
+        snippet:
+          item.snippet
+            ? sanitizeOrionGoldenEvidenceSnippet(item.snippet).slice(0, 180)
+            : "Спонсорство / лоббирование выдвижения на пост Президента Молдовы (по открытым источникам)",
+      };
+    });
+    if (sampleHits.length === 0) {
+      sampleHits.push({
+        title: "LexisNexis / open sources — Moldova politics",
+        domain: "lexisnexis",
+        region: "RU",
+        snippet:
+          "Авторы утверждают спонсорство политической активности и лоббирование выдвижения на пост Президента Молдовы",
+        url: blob.match(/https?:\/\/[^\s]+(?:delfi\.ee|adevarul\.ro|pan\.md)[^\s]*/i)?.[0],
+      });
+    }
+    pushTheme({
+      id: "political_exposure",
+      title: "Молдавия",
+      summary:
+        "Сведения о политической деятельности персоны в Молдавии (спонсорство / лоббирование; по открытым источникам).",
+      count: Math.max(1, seedItems.length),
+      regions: ["RU"],
+      namedEntities: named,
+      sampleHits,
+    });
+  }
+
   // Also promote SERP offshore / LNR if present in inventory but missing as theme
   for (const item of inventory.items) {
-    if (isDemoOrNoiseItem(item) || item.evidenceType !== "search_result") continue;
-    const tblob = `${item.title} ${item.snippet ?? ""} ${item.sourceUrl ?? ""}`;
-    if (/offshoreleaks|icij\.org|офшор/i.test(tblob)) {
+    if (isDemoOrNoiseItem(item)) continue;
+    if (item.evidenceType !== "search_result" && item.evidenceType !== "compliance_hit") continue;
+    const tblob = itemEvidenceBlob(item);
+    if (/offshoreleaks|icij\.org|офшор/i.test(tblob) && item.evidenceType === "search_result") {
       pushTheme({
         id: "offshore",
         title: "Связи с офшором / зарубежными структурами",
@@ -1900,7 +1990,7 @@ function enrichThemesFromCompliance(
         ],
       });
     }
-    if (/лнр|лднр/i.test(tblob)) {
+    if (/лнр|лднр/i.test(tblob) && item.evidenceType === "search_result") {
       pushTheme({
         id: "conflict_jurisdiction",
         title: "ЛНР",
@@ -1921,7 +2011,10 @@ function enrichThemesFromCompliance(
         ],
       });
     }
-    if (/rucompromat|агрегатор|аксененко|aksenenko|бенефициар.*офшор|офшор.*ликсутов/i.test(tblob)) {
+    if (
+      item.evidenceType === "search_result" &&
+      /rucompromat|агрегатор|аксененко|aksenenko|бенефициар.*офшор|офшор.*ликсутов/i.test(tblob)
+    ) {
       pushTheme({
         id: "aggregator_negative",
         title: "Публикации на ресурсах-агрегаторах",

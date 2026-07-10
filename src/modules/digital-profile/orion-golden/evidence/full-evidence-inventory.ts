@@ -135,6 +135,14 @@ export function buildFullEvidenceInventory(input: {
     const provider = String(row.provider ?? "COMPLIANCE").toUpperCase();
     const safeMeta = asObj(row.rawMetadataSafe);
     const riskTypes = Array.isArray(row.riskTypes) ? row.riskTypes.map((x) => String(x)) : [];
+    const evidenceRefs = Array.isArray(row.evidenceRefs) ? row.evidenceRefs : [];
+    const profileUrl = String(row.profileUrl ?? "").trim();
+    const firstRefUrl = evidenceRefs
+      .map((r) => {
+        if (!r || typeof r !== "object" || Array.isArray(r)) return "";
+        return String((r as Record<string, unknown>).url ?? "").trim();
+      })
+      .find((u) => /^https?:\/\//i.test(u));
     items.push({
       inventoryId: `db-${row.id}`,
       caseId,
@@ -146,6 +154,7 @@ export function buildFullEvidenceInventory(input: {
       evidenceType: "compliance_hit",
       title: String(row.matchedName ?? row.summary ?? provider),
       snippet: String(row.summary ?? ""),
+      sourceUrl: profileUrl || firstRefUrl || undefined,
       classification: String(row.reviewStatus ?? ""),
       // Preserve structured DB columns — classic ThemeSet needs them for RCA/PEP cards.
       rawMetadata: {
@@ -157,6 +166,8 @@ export function buildFullEvidenceInventory(input: {
         importMethod: row.importMethod,
         hitSource: row.hitSource ?? undefined,
         matchedName: row.matchedName ?? undefined,
+        profileUrl: profileUrl || undefined,
+        evidenceRefs,
       },
     });
     bump(countsBySource, provider);

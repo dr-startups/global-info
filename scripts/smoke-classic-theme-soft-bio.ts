@@ -18,7 +18,9 @@ function check(name: string, ok: boolean, extra?: string) {
   console.log(`[${ok ? "PASS" : "FAIL"}] ${name}${extra ? ` — ${extra}` : ""}`);
 }
 
-function makeItem(partial: Partial<RawInventoryItem> & Pick<RawInventoryItem, "title" | "sourceUrl">): RawInventoryItem {
+function makeItem(
+  partial: Partial<RawInventoryItem> & Pick<RawInventoryItem, "title"> & { sourceUrl?: string }
+): RawInventoryItem {
   return {
     inventoryId: "inv-smoke",
     caseId: "case-smoke",
@@ -119,6 +121,67 @@ function main() {
   check(
     "hard source Moldova politics: matrix row present",
     hardMatrix.some((r) => /молдав/i.test(r.theme) || /политич/i.test(r.summary))
+  );
+  check(
+    "hard source Moldova politics: full ORION claim",
+    hardThemeSet.executiveBullets.some(
+      (b) => /политической деятельности.*молдав/i.test(b) && /махмудов/i.test(b) && /президент/i.test(b)
+    )
+  );
+
+  const delfiPolitics = makeInventory([
+    makeItem({
+      title: "Из эстонского олигарха в президенты Молдавии",
+      sourceUrl: "http://rus.delfi.ee/archive/iz-estonskogo-oligarha-v-prezidenty-moldavii?id=17782948",
+      snippet: "Публикация о предполагаемом вмешательстве персоны в молдавскую политику.",
+    }),
+  ]);
+  const delfiThemeSet = buildOrionThemeSet({ inventory: delfiPolitics, subjectName });
+  check(
+    "delfi.ee prezidenty-moldavii: political_exposure theme",
+    delfiThemeSet.themes.some((t) => t.id === "political_exposure")
+  );
+  check(
+    "delfi.ee: Moldova politics executive bullet",
+    delfiThemeSet.executiveBullets.some((b) => /политической деятельности.*молдав/i.test(b))
+  );
+
+  const lnSourceLinks = makeInventory([
+    makeItem({
+      inventoryId: "ln-1",
+      title: "Sergey Mikhaylovich Glinka",
+      evidenceType: "compliance_hit",
+      provider: "LEXISNEXIS",
+      source: "database_profile",
+      snippet: "PEP Associate — Transmashholding",
+      rawMetadata: {
+        evidenceRefs: [
+          {
+            type: "URL",
+            url: "http://rus.delfi.ee/archive/iz-estonskogo-oligarha-v-prezidenty-moldavii?id=17782948",
+            label: "LN Source Link",
+          },
+          {
+            type: "URL",
+            url: "http://adevarul.ro/moldova/economie/cine-enigmaticul-milionar-moldovean",
+            label: "LN Source Link",
+          },
+        ],
+        riskTypes: ["PEP"],
+        relationships: [{ name: "Makhmudov, Iskander", type: "Associate" }],
+      },
+    }),
+  ]);
+  const lnThemeSet = buildOrionThemeSet({ inventory: lnSourceLinks, subjectName });
+  check(
+    "LN Source Links delfi/adevarul: political_exposure theme",
+    lnThemeSet.themes.some((t) => t.id === "political_exposure")
+  );
+  check(
+    "LN Source Links: full Moldova+Makhmudov claim",
+    lnThemeSet.executiveBullets.some(
+      (b) => /политической деятельности.*молдав/i.test(b) && /махмудов/i.test(b)
+    )
   );
 
   console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) failed.`);

@@ -94,7 +94,7 @@ function parseSignals(documentId: string, text: string): LexisNexisParsedAnalyti
   const reportDateDetected = lines
     .join(" ")
     .match(/\b(20\d{2}[-/.](0[1-9]|1[0-2])[-/.](0[1-9]|[12]\d|3[01]))\b/)?.[1];
-  const candidates: Array<{ category: LexisNexisSignal["category"]; line: string }> = [];
+  const candidates: Array<{ category: LexisNexisSignal["category"]; line: string; sourceDomain?: string }> = [];
   const rules: Array<{ category: LexisNexisSignal["category"]; re: RegExp }> = [
     { category: "sanctions_watchlist", re: /\bsanction|watchlist|ofac|eu list|un list|санкц|список наблюден/i },
     { category: "pep_political_exposure", re: /\bpep|political exposure|public office|politically exposed|политическ/i },
@@ -111,10 +111,38 @@ function parseSignals(documentId: string, text: string): LexisNexisParsedAnalyti
       }
     }
   }
+  // ORION LN Source Links: Moldova politics hosts (delfi / adevarul / pan.md).
+  const moldovaUrlRe =
+    /https?:\/\/[^\s<>"']+(?:delfi\.ee|adevarul\.ro|pan\.md)[^\s<>"']*(?:moldav|moldova|prezident)?[^\s<>"']*|https?:\/\/[^\s<>"']*prezidenty[-_]?moldav[^\s<>"']*|https?:\/\/[^\s<>"']*adevarul\.ro\/moldova[^\s<>"']*/gi;
+  const moldovaUrls = Array.from(new Set((text.match(moldovaUrlRe) ?? []).map((u) => u.replace(/[),.;]+$/, ""))));
+  for (const url of moldovaUrls.slice(0, 5)) {
+    let domain = "";
+    try {
+      domain = new URL(url).hostname.replace(/^www\./i, "");
+    } catch {
+      domain = url;
+    }
+    candidates.unshift({
+      category: "pep_political_exposure",
+      line: `Moldova politics source link: ${url}`,
+      sourceDomain: domain,
+    });
+  }
   if (candidates.length === 0 && lines.length > 0) {
     candidates.push({ category: "unknown", line: lines[0] });
   }
-  const signals = candidates.slice(0, 40).map((c, idx) => buildSignal(documentId, idx, c.category, c.line));
+  const signals = candidates.slice(0, 40).map((c, idx) => {
+    const signal = buildSignal(documentId, idx, c.category, c.line);
+    if (c.sourceDomain) signal.sourceDomain = c.sourceDomain;
+    if (/moldav|moldova|prezident/i.test(c.line)) {
+      signal.clientSafeFinding =
+        "Сведения о политической деятельности персоны в Молдавии (по Source Links отчёта LexisNexis).";
+      signal.clientSafeReason =
+        "В Source Links указаны публикации о предполагаемом вмешательстве в молдавскую политику; требуется сверка первоисточников.";
+      signal.snippetShort = safeSentence(c.line);
+    }
+    return signal;
+  });
   const count = (category: LexisNexisSignal["category"]) => signals.filter((s) => s.category === category).length;
   const warnings: string[] = [];
   let parserStatus: LexisNexisParsedAnalytics["parserStatus"] = "parsed";

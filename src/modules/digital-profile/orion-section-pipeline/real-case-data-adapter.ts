@@ -51,6 +51,8 @@ type DbProfileRow = {
   riskTypes: Prisma.JsonValue;
   summary: string | null;
   rawMetadataSafe: Prisma.JsonValue | null;
+  profileUrl: string | null;
+  evidenceRefs: Prisma.JsonValue;
   importedAt: Date;
 };
 
@@ -377,6 +379,8 @@ export async function loadRealCaseContext(
           riskTypes: true,
           summary: true,
           rawMetadataSafe: true,
+          profileUrl: true,
+          evidenceRefs: true,
           importedAt: true,
         },
       }),
