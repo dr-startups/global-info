@@ -447,6 +447,13 @@ export interface Dictionary {
     lexisReadyMessage: string;
     lexisConversionWarningMessage: string;
     lexisResultLine: string;
+    uploadDowJonesVisual: string;
+    uploadWorldCheckVisual: string;
+    visualUploadHint: string;
+    visualUploadSuccess: string;
+    visualInvalidFileType: string;
+    visualLastImportTitle: string;
+    visualApprovedBadge: string;
   };
   evidenceQuality: {
     collected: string;

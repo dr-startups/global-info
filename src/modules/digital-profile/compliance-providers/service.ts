@@ -32,7 +32,12 @@ import {
   processLexisNexisDocx,
   toRenderedPageModel,
 } from "./lexisnexis-hybrid-import";
+import {
+  buildApprovedComplianceVisualMeta,
+  type ComplianceVisualProvider,
+} from "../orion-golden/classic/orion-compliance-visual-assets";
 import type { ImportedEvidenceDocument, LexisNexisSignal } from "../types";
+import { ValidationError } from "../http/errors";
 
 export const COMPLIANCE_FINDING_OWNER = "compliance-layer-v1";
 
@@ -352,6 +357,178 @@ function isLexisHybridMaster(row: {
   const safe = (row.rawMetadataSafe ?? {}) as Record<string, unknown>;
   const hybrid = (safe.lexisNexisHybrid ?? {}) as Record<string, unknown>;
   return String(hybrid.kind ?? "") === "lexisnexis_report";
+}
+
+function isComplianceVisualMaster(row: {
+  rawMetadataSafe: Prisma.JsonValue | null;
+}): boolean {
+  const safe = (row.rawMetadataSafe ?? {}) as Record<string, unknown>;
+  const visual = (safe.complianceVisual ?? {}) as Record<string, unknown>;
+  const kind = String(visual.kind ?? "");
+  return kind === "dow_jones_report" || kind === "world_check_report";
+}
+
+const COMPLIANCE_VISUAL_MAX_PAGES = 4;
+const COMPLIANCE_VISUAL_MAX_BYTES = 12 * 1024 * 1024;
+
+function detectComplianceVisualExt(fileName: string, mimeType: string): "png" | "jpg" | "webp" {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".png") || mimeType === "image/png") return "png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg") || mimeType === "image/jpeg") return "jpg";
+  if (lower.endsWith(".webp") || mimeType === "image/webp") return "webp";
+  throw new ValidationError("Only PNG, JPEG, or WebP screenshots are allowed");
+}
+
+export type ComplianceVisualImportResult = {
+  profileId: string;
+  provider: ComplianceVisualProvider;
+  pageCount: number;
+  approved: true;
+  storageKeys: string[];
+  kind: "dow_jones_report" | "world_check_report";
+};
+
+/**
+ * Upload approved Dow Jones / World-Check page screenshots for First36 visual slots.
+ * Stores PNGs in private evidence storage and writes complianceVisual metadata.
+ */
+export async function importApprovedComplianceVisuals(
+  caseId: string,
+  input: {
+    provider: ComplianceVisualProvider;
+    pages: Array<{ fileName: string; mimeType: string; buffer: Buffer }>;
+    matchedName?: string;
+  },
+  ctx: ActorContext = {}
+): Promise<ComplianceVisualImportResult> {
+  await loadCaseSubject(caseId);
+  if (input.provider !== "DOW_JONES" && input.provider !== "WORLD_CHECK") {
+    throw new ValidationError("provider must be DOW_JONES or WORLD_CHECK");
+  }
+  if (!input.pages.length) throw new ValidationError("At least one screenshot page is required");
+  if (input.pages.length > COMPLIANCE_VISUAL_MAX_PAGES) {
+    throw new ValidationError(`At most ${COMPLIANCE_VISUAL_MAX_PAGES} pages are allowed`);
+  }
+
+  const now = new Date();
+  const label = PROVIDER_LABELS[input.provider] ?? input.provider;
+  const matchType = `${input.provider}_VISUAL_REPORT`;
+  const slug = input.provider === "WORLD_CHECK" ? "world-check" : "dow-jones";
+
+  const existing = await prisma.databaseProfile.findFirst({
+    where: { caseId, provider: input.provider, matchType },
+    orderBy: { importedAt: "desc" },
+    select: { id: true },
+  });
+
+  const profileId =
+    existing?.id ??
+    (
+      await prisma.databaseProfile.create({
+        data: {
+          caseId,
+          provider: input.provider,
+          importMethod: "MANUAL_IMPORT",
+          matchType,
+          matchScore: null,
+          hitSource: "MANUAL",
+          subjectName: `${label} visual report`,
+          matchedName: input.matchedName?.trim() || `${label} approved screenshots`,
+          aliases: toJson([]),
+          categories: toJson(["IMPORTED_VISUAL_REPORT"]),
+          riskTypes: toJson([]),
+          countries: toJson([]),
+          datesOfBirth: toJson([]),
+          confidence: "MEDIUM",
+          profileId: null,
+          profileUrl: null,
+          summary: `Approved ${label} visual pages for report inclusion. Manual analyst upload.`,
+          reviewStatus: "MATCH_CONFIRMED",
+          rawMetadataSafe: toJson({}),
+          evidenceRefs: toJson([]),
+          importedBy: ctx.actorId ?? null,
+          importedAt: now,
+        },
+        select: { id: true },
+      })
+    ).id;
+
+  const renderedPages: Array<{
+    pageNumber: number;
+    storageKey: string;
+    caption: string;
+  }> = [];
+  const evidenceRefs: Array<Record<string, unknown>> = [];
+
+  for (let i = 0; i < input.pages.length; i += 1) {
+    const page = input.pages[i]!;
+    if (page.buffer.length < 500) throw new ValidationError(`Page ${i + 1} is too small`);
+    if (page.buffer.length > COMPLIANCE_VISUAL_MAX_BYTES) {
+      throw new ValidationError(`Page ${i + 1} exceeds 12 MB limit`);
+    }
+    const ext = detectComplianceVisualExt(page.fileName, page.mimeType);
+    const pageNumber = i + 1;
+    const storageKey = buildStorageKey.evidence(
+      caseId,
+      profileId,
+      `${slug}-visual-page-${String(pageNumber).padStart(3, "0")}.${ext}`
+    );
+    await saveFile(storageKey, page.buffer);
+    renderedPages.push({
+      pageNumber,
+      storageKey,
+      caption: `${label} — page ${pageNumber}`,
+    });
+    evidenceRefs.push({
+      type: "IMPORTED_FILE",
+      refId: `${profileId}:visual:${pageNumber}`,
+      storageKey,
+      label: page.fileName || `${label} page ${pageNumber}`,
+      capturedAt: now.toISOString(),
+    });
+  }
+
+  const complianceVisual = buildApprovedComplianceVisualMeta({
+    provider: input.provider,
+    pages: renderedPages,
+    approvedBy: ctx.actorId ?? undefined,
+    approvedAt: now.toISOString(),
+  });
+
+  await prisma.databaseProfile.update({
+    where: { id: profileId },
+    data: {
+      matchedName: input.matchedName?.trim() || `${label} approved screenshots`,
+      summary: `Approved ${label} visual pages (${renderedPages.length}) for report inclusion.`,
+      reviewStatus: "MATCH_CONFIRMED",
+      rawMetadataSafe: toJson({ complianceVisual }),
+      evidenceRefs: toJson(evidenceRefs),
+      importedBy: ctx.actorId ?? null,
+      importedAt: now,
+    },
+  });
+
+  await recordAudit({
+    caseId,
+    action: "COMPLIANCE_MANUAL_IMPORT",
+    actorId: ctx.actorId,
+    metadata: {
+      hitId: profileId,
+      provider: input.provider,
+      importType: "COMPLIANCE_VISUAL_PAGES",
+      pages: renderedPages.length,
+      approved: true,
+    },
+  });
+
+  return {
+    profileId,
+    provider: input.provider,
+    pageCount: renderedPages.length,
+    approved: true,
+    storageKeys: renderedPages.map((p) => p.storageKey),
+    kind: complianceVisual.kind,
+  };
 }
 
 export async function importLexisNexisHybridReport(
@@ -708,7 +885,7 @@ export async function buildComplianceSummaryBlock(
           !(h.importedBy ?? "").startsWith("mock:") &&
           !(h.rawMetadataSafe as { demo?: boolean } | null)?.demo
       );
-  const filteredHits = hits.filter((h) => !isLexisHybridMaster(h));
+  const filteredHits = hits.filter((h) => !isLexisHybridMaster(h) && !isComplianceVisualMaster(h));
 
   const reviewRequiredWarning =
     locale === "ru"

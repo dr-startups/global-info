@@ -24,12 +24,14 @@ export {
   runComplianceScreening,
   importManualComplianceHit,
   importLexisNexisHybridReport,
+  importApprovedComplianceVisuals,
   reviewComplianceHit,
   syncComplianceRiskFinding,
   buildComplianceSummaryBlock,
   mapHitSourceLabel,
   COMPLIANCE_FINDING_OWNER,
 } from "./service";
+export type { ComplianceVisualImportResult } from "./service";
 export { dowJonesProvider } from "./dow-jones-provider";
 export { lexisnexisProvider } from "./lexisnexis-provider";
 export { worldCheckProvider } from "./worldcheck-provider";

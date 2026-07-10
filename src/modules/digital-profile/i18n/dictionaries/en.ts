@@ -474,6 +474,13 @@ export const en: Dictionary = {
     lexisReadyMessage: "Document is ready for report inclusion.",
     lexisConversionWarningMessage: "Document uploaded, but visual pages are not generated yet.",
     lexisResultLine: "Source: {source}, file: {file}.",
+    uploadDowJonesVisual: "Upload Dow Jones screenshots",
+    uploadWorldCheckVisual: "Upload World-Check screenshots",
+    visualUploadHint: "PNG/JPEG/WebP page screenshots (max 4). Marked approved for First36 visual slots.",
+    visualUploadSuccess: "{provider}: {pages} approved visual page(s) saved.",
+    visualInvalidFileType: "Only PNG, JPEG, or WebP screenshots are supported.",
+    visualLastImportTitle: "Approved compliance visuals",
+    visualApprovedBadge: "Approved visual",
   },
   evidenceQuality: {
     collected: "Collected",

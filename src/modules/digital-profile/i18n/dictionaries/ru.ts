@@ -474,6 +474,14 @@ export const ru: Dictionary = {
     lexisReadyMessage: "Документ готов к включению в отчёт.",
     lexisConversionWarningMessage: "Документ загружен, но визуальные страницы пока не сформированы.",
     lexisResultLine: "Источник: {source}, файл: {file}.",
+    uploadDowJonesVisual: "Загрузить скриншоты Dow Jones",
+    uploadWorldCheckVisual: "Загрузить скриншоты World-Check",
+    visualUploadHint:
+      "Скриншоты страниц PNG/JPEG/WebP (макс. 4). Помечаются как approved для First36 visual-слотов.",
+    visualUploadSuccess: "{provider}: сохранено approved visual-страниц: {pages}.",
+    visualInvalidFileType: "Поддерживаются только PNG, JPEG или WebP.",
+    visualLastImportTitle: "Approved compliance visuals",
+    visualApprovedBadge: "Approved visual",
   },
   evidenceQuality: {
     collected: "Собрано",

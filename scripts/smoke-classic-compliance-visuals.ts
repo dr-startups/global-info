@@ -114,6 +114,21 @@ async function main() {
   check("approved meta has approved=true", meta.approved === true);
   check("parseComplianceVisualMeta roundtrip", parseComplianceVisualMeta({ complianceVisual: meta })?.approved === true);
 
+  const adminStyle = buildApprovedComplianceVisualMeta({
+    provider: "WORLD_CHECK",
+    pages: [{ pageNumber: 1, storageKey: "cases/demo/evidence/wc1/world-check-visual-page-001.png" }],
+    approvedBy: "admin",
+  });
+  check("admin upload meta uses storageKey", Boolean(adminStyle.renderedPages[0]?.storageKey));
+  check("admin upload meta omits inline base64", !adminStyle.renderedPages[0]?.imageBase64);
+  check("admin upload kind is world_check_report", adminStyle.kind === "world_check_report");
+  check(
+    "admin upload parse keeps storageKey",
+    parseComplianceVisualMeta({ complianceVisual: adminStyle })?.renderedPages[0]?.storageKey?.includes(
+      "world-check-visual-page"
+    ) === true
+  );
+
   const unapproved = parseComplianceVisualMeta({
     complianceVisual: { ...meta, approved: false },
   });

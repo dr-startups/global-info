@@ -1046,6 +1046,33 @@ export async function importLexisNexisDocx(
   });
 }
 
+export type ComplianceVisualImportResult = {
+  profileId: string;
+  provider: "DOW_JONES" | "WORLD_CHECK";
+  pageCount: number;
+  approved: true;
+  storageKeys: string[];
+  kind: "dow_jones_report" | "world_check_report";
+};
+
+export async function importComplianceVisualPages(
+  caseId: string,
+  input: {
+    provider: "DOW_JONES" | "WORLD_CHECK";
+    files: File[];
+    matchedName?: string;
+  }
+): Promise<ComplianceVisualImportResult> {
+  const body = new FormData();
+  body.append("provider", input.provider);
+  if (input.matchedName?.trim()) body.append("matchedName", input.matchedName.trim());
+  for (const file of input.files) body.append("files", file);
+  return request<ComplianceVisualImportResult>(`/cases/${caseId}/compliance/visual-import`, {
+    method: "POST",
+    body,
+  });
+}
+
 export function reviewComplianceHit(
   hitId: string,
   reviewStatus: ComplianceHitReviewStatus
