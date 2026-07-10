@@ -7,7 +7,10 @@
 import { ensureOrionReportRunForCapture } from "../../serp-capture";
 import { loadFile } from "../../storage/private-store";
 import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
-import type { OrionRegionCode } from "../../search-surfaces/orion-query-plan";
+import {
+  transliterateRuToEn,
+  type OrionRegionCode,
+} from "../../search-surfaces/orion-query-plan";
 import {
   SYNTHETIC_API_SERP_CAPTION,
   ingestSerperOrganicObservations,
@@ -19,6 +22,8 @@ import {
   type PersistedSerpObservation,
 } from "../../serp-observation";
 import { prisma } from "@/server/prisma/client";
+
+const CYRILLIC_RE = /[А-Яа-яЁё]/;
 
 export type ProviderSerpSlot = {
   query: string;
@@ -65,7 +70,9 @@ export function buildDefaultProviderSerpSlots(input: {
   const subject = input.subjectName.trim();
   if (subject) {
     push(subject, "RU", "ru");
-    push(subject, "UAE", "en");
+    // Serper UAE/EN returns poorly on Cyrillic FIO — prefer Latin transliteration.
+    const uaeSubject = CYRILLIC_RE.test(subject) ? transliterateRuToEn(subject) : subject;
+    push(uaeSubject, "UAE", "en");
   }
   for (const q of input.ruQueries.slice(0, 1)) push(q, "RU", "ru");
   for (const q of input.uaeQueries.slice(0, 1)) push(q, "UAE", "en");

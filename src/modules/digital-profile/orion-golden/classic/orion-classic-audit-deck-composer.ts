@@ -42,17 +42,24 @@ function slidesFromBlock(
   });
 }
 
+function serpDedupeQueryKey(asset: ReportAssetV1): string {
+  // Provider API assets share one caption — identity must come from title/query, not caption.
+  const useTitle = isProviderApiAsset(asset);
+  const raw = useTitle ? (asset.title ?? "") : (asset.caption ?? asset.title ?? "");
+  return raw
+    .toLowerCase()
+    .replace(/^запрос:\s*/i, "")
+    .replace(/^(яндекс|google)\s*[—-]\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function dedupeSerpAssetList(assets: ReportAssetV1[], max: number): ReportAssetV1[] {
   const seen = new Set<string>();
   const out: ReportAssetV1[] = [];
   for (const asset of assets) {
     const provider = /yandex|яндекс/i.test(`${asset.assetRef} ${asset.title}`) ? "yandex" : "google";
-    const q = (asset.caption ?? asset.title)
-      .toLowerCase()
-      .replace(/^запрос:\s*/i, "")
-      .replace(/^(яндекс|google)\s*[—-]\s*/i, "")
-      .replace(/\s+/g, " ")
-      .trim();
+    const q = serpDedupeQueryKey(asset);
     const key = `${provider}::${q || asset.assetRef}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -71,6 +78,12 @@ function isProviderApiAsset(asset: ReportAssetV1): boolean {
   );
 }
 
+function hasSerpImageContent(asset: ReportAssetV1): boolean {
+  const data = String(asset.imageData ?? "").trim();
+  if (data.length >= 800) return true;
+  return Boolean(String(asset.imageUrl ?? "").trim());
+}
+
 function preferSerpAssets(
   assets: ReportAssetV1[],
   region: "ru" | "uae",
@@ -80,10 +93,11 @@ function preferSerpAssets(
     const uae = /uae|intl|ae_/i.test(a.assetRef);
     return region === "uae" ? uae : !uae;
   });
-  const provider = inRegion.filter(isProviderApiAsset);
-  const live = inRegion.filter((a) => a.kind === "live_serp");
-  const captured = inRegion.filter((a) => a.kind === "captured_serp");
-  const legacySynthetic = inRegion.filter(
+  const withImage = inRegion.filter(hasSerpImageContent);
+  const provider = withImage.filter(isProviderApiAsset);
+  const live = withImage.filter((a) => a.kind === "live_serp");
+  const captured = withImage.filter((a) => a.kind === "captured_serp");
+  const legacySynthetic = withImage.filter(
     (a) => a.kind === "synthetic_serp" && !isProviderApiAsset(a)
   );
   return dedupeSerpAssetList([...provider, ...live, ...captured, ...legacySynthetic], max);
@@ -170,7 +184,10 @@ function pickAssets(assets: ReportAssetV1[], kind: ReportAssetV1["kind"], refPre
       a.kind === kind &&
       a.status === "ready" &&
       (!refPrefix || a.assetRef.startsWith(refPrefix)) &&
-      (kind !== "lexis_visual_page" || hasRealLexisPageContent(a))
+      (kind !== "lexis_visual_page" || hasRealLexisPageContent(a)) &&
+      (kind !== "live_serp" && kind !== "captured_serp" && kind !== "synthetic_serp"
+        ? true
+        : hasSerpImageContent(a))
   );
 }
 

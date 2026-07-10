@@ -382,22 +382,69 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         ctx.bullets(bullets, y, max_items=8)
 
 
-def _write_pdf_fallback(slides: list[dict[str, Any]], pdf_path: Path, subject: str) -> None:
+def _write_pdf_fallback(
+    slides: list[dict[str, Any]],
+    pdf_path: Path,
+    subject: str,
+    assets: dict[str, dict[str, Any]] | None = None,
+) -> None:
+    """Text+image PDF when LibreOffice is unavailable. Must embed SERP/Lexis imageData."""
     doc = fitz.open()
+    asset_map = assets or {}
     all_slides = [{"title": "ORION Digital Profile", "body": subject}] + slides
     total = len(all_slides)
+    visual_templates = {"orion_golden_serp_screenshot", "orion_golden_lexis_visual_page"}
 
     def esc(t: str) -> str:
         return t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
     for idx, slide in enumerate(all_slides, start=1):
         page = doc.new_page(width=1280, height=720)
+        title = _safe(slide.get("title") or "ORION")
+        template = str(slide.get("template") or "")
+        refs = slide.get("assetRefs") or []
+        primary = asset_map.get(str(refs[0])) if refs else None
+        img_bytes: bytes | None = None
+        if template in visual_templates and primary and primary.get("imageData"):
+            try:
+                img_bytes = base64.b64decode(str(primary.get("imageData")))
+            except Exception:  # noqa: BLE001
+                img_bytes = None
+
+        if img_bytes and len(img_bytes) > 500:
+            # Title strip + embedded visual (same data PPTX path uses).
+            page.insert_textbox(
+                fitz.Rect(48, 28, 1232, 72),
+                title,
+                fontsize=18,
+                fontname="helv",
+                color=(0.04, 0.10, 0.20),
+            )
+            try:
+                page.insert_image(fitz.Rect(48, 80, 1232, 680), stream=img_bytes, keep_proportion=True)
+            except Exception:  # noqa: BLE001
+                page.insert_textbox(
+                    fitz.Rect(48, 100, 1232, 200),
+                    "Визуальный материал недоступен для данного раздела.",
+                    fontsize=12,
+                    fontname="helv",
+                    color=(0.2, 0.25, 0.33),
+                )
+            page.insert_textbox(
+                fitz.Rect(1100, 690, 1260, 710),
+                f"{idx}/{total}",
+                fontsize=10,
+                fontname="helv",
+                color=(0.58, 0.64, 0.72),
+            )
+            continue
+
         body = esc(_safe(slide.get("body") or slide.get("narrative") or ""))
         bullets = slide.get("bullets") or []
         bullet_html = "".join(f"<li>{esc(_safe(b))}</li>" for b in bullets[:8])
         html = (
             "<div style='font-family:Arial,sans-serif;color:#0b1a33;padding:8px;'>"
-            f"<h1 style='font-size:22px;margin:0;'>{esc(_safe(slide.get('title')))}</h1>"
+            f"<h1 style='font-size:22px;margin:0;'>{esc(title)}</h1>"
             f"<p style='margin-top:12px;font-size:12px;color:#334155;'>{body}</p>"
             f"<ul style='margin-top:12px;font-size:11px;color:#334155;'>{bullet_html}</ul>"
             f"<p style='position:absolute;bottom:16px;right:24px;color:#94a3b8;font-size:10px;'>{idx}/{total}</p>"
@@ -466,7 +513,7 @@ def render_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:
             warnings.append(f"libreoffice-failed:{exc}")
 
         if not pdf_ok:
-            _write_pdf_fallback(slides, pdf_path, str(subject))
+            _write_pdf_fallback(slides, pdf_path, str(subject), assets)
             pdf_mode = "fitz-fallback"
 
         pages = _export_png_pages(pdf_path)

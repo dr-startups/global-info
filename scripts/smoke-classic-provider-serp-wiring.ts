@@ -1,5 +1,5 @@
 /**
- * Offline smoke: classic provider-SERP wiring (gate, slots, policy).
+ * Offline smoke: classic provider-SERP wiring (gate, slots, policy, deck embed).
  * No network / DB.
  *
  * Run: npm run smoke:classic-provider-serp-wiring
@@ -15,6 +15,7 @@ import {
 import { evaluateClientSerpPolicy } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-live-serp-assets";
 import { composeOrionClassicAuditDeck } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-audit-deck-composer";
 import { SYNTHETIC_API_SERP_CAPTION } from "../src/modules/digital-profile/serp-observation";
+import { transliterateRuToEn } from "../src/modules/digital-profile/search-surfaces/orion-query-plan";
 import type { ReportAssetV1 } from "../src/modules/digital-profile/orion-report-spec/asset-builder";
 import type { OrionClassicAuditReportSpec } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-client-content-to-report-spec";
 
@@ -24,21 +25,32 @@ function check(name: string, ok: boolean, extra?: string) {
   console.log(`[${ok ? "PASS" : "FAIL"}] ${name}${extra ? ` — ${extra}` : ""}`);
 }
 
+/** Non-trivial fake PNG payload so deck imageData gate (>=800) passes. */
+const FAKE_IMAGE_DATA = "A".repeat(900);
+
 function main() {
   console.log("Smoke: classic provider-SERP wiring\n");
 
+  const subjectRu = "Глинка Сергей Михайлович";
+  const subjectLatin = transliterateRuToEn(subjectRu);
   const slots = buildDefaultProviderSerpSlots({
-    subjectName: "Глинка Сергей Михайлович",
+    subjectName: subjectRu,
     ruQueries: ["Глинка Сергей санкции"],
     uaeQueries: ["Glinka sanctions"],
   });
   check(
     "slots include RU subject Google",
-    slots.some((s) => s.region === "RU" && s.query === "Глинка Сергей Михайлович")
+    slots.some((s) => s.region === "RU" && s.query === subjectRu)
   );
   check(
-    "slots include UAE subject Google",
-    slots.some((s) => s.region === "UAE" && s.query === "Глинка Сергей Михайлович")
+    "slots include UAE Latin subject (not Cyrillic)",
+    slots.some((s) => s.region === "UAE" && s.query === subjectLatin) &&
+      !slots.some((s) => s.region === "UAE" && s.query === subjectRu),
+    `latin=${subjectLatin}`
+  );
+  check(
+    "slots include UAE English risk query",
+    slots.some((s) => s.region === "UAE" && s.query === "Glinka sanctions")
   );
 
   const providerRu: ReportAssetV1 = {
@@ -46,17 +58,35 @@ function main() {
     kind: "synthetic_serp",
     title: "Google — Глинка Сергей Михайлович",
     caption: SYNTHETIC_API_SERP_CAPTION,
-    imageData: "abc",
+    imageData: FAKE_IMAGE_DATA,
     evidenceRefs: ["serp_observation:obs-ru"],
+    status: "ready",
+  };
+  const providerRuRisk: ReportAssetV1 = {
+    assetRef: "ru_provider_serp_google_a2",
+    kind: "synthetic_serp",
+    title: "Google — Глинка Сергей санкции",
+    caption: SYNTHETIC_API_SERP_CAPTION,
+    imageData: FAKE_IMAGE_DATA,
+    evidenceRefs: ["serp_observation:obs-ru-2"],
     status: "ready",
   };
   const providerUae: ReportAssetV1 = {
     assetRef: "uae_provider_serp_google_b",
     kind: "synthetic_serp",
-    title: "Google — Глинка Сергей Михайлович",
+    title: `Google — ${subjectLatin}`,
+    caption: SYNTHETIC_API_SERP_CAPTION,
+    imageData: FAKE_IMAGE_DATA,
+    evidenceRefs: ["serp_observation:obs-uae"],
+    status: "ready",
+  };
+  const tinyBroken: ReportAssetV1 = {
+    assetRef: "ru_provider_serp_google_tiny",
+    kind: "synthetic_serp",
+    title: "Google — broken",
     caption: SYNTHETIC_API_SERP_CAPTION,
     imageData: "abc",
-    evidenceRefs: ["serp_observation:obs-uae"],
+    evidenceRefs: ["serp_observation:obs-tiny"],
     status: "ready",
   };
 
@@ -115,6 +145,23 @@ function main() {
           ],
         },
       },
+      {
+        sectionId: "32_uae_serp_position_table",
+        order: 32,
+        block: {
+          sectionKey: "32_uae_serp_position_table",
+          title: "UAE SERP",
+          narrative: "n",
+          bullets: [],
+          slideSpecs: [
+            {
+              slideKey: "32-1",
+              template: "orion_golden_search_table",
+              title: "Позиции",
+            },
+          ],
+        },
+      },
     ],
     offer: emptyCommercial,
     productOverview: emptyCommercial,
@@ -125,14 +172,43 @@ function main() {
     qaMetadata: { warnings: [] },
   } as unknown as OrionClassicAuditReportSpec;
 
-  const deck = composeOrionClassicAuditDeck(minimalSpec, [providerRu, providerUae]);
+  const deck = composeOrionClassicAuditDeck(minimalSpec, [
+    providerRu,
+    providerRuRisk,
+    providerUae,
+    tinyBroken,
+  ]);
   const serpSlides = deck.finalSlides.filter(
     (s) => s.template === "orion_golden_serp_screenshot"
   );
-  check("deck inserts provider SERP slides", serpSlides.length >= 1);
+  const assetByRef = new Map(
+    [providerRu, providerRuRisk, providerUae, tinyBroken].map((a) => [a.assetRef, a])
+  );
+  check("deck inserts provider SERP slides", serpSlides.length >= 2, `count=${serpSlides.length}`);
   check(
     "SERP slides have assetRefs",
     serpSlides.every((s) => (s.assetRefs?.length ?? 0) > 0)
+  );
+  check(
+    "SERP assetRefs resolve to imageData",
+    serpSlides.every((s) => {
+      const ref = s.assetRefs?.[0];
+      const asset = ref ? assetByRef.get(ref) : undefined;
+      return Boolean(asset && String(asset.imageData ?? "").length >= 800);
+    })
+  );
+  check(
+    "dedupe keeps distinct provider queries (same caption)",
+    serpSlides.filter((s) => (s.assetRefs?.[0] ?? "").startsWith("ru_")).length >= 2,
+    `ruSlides=${serpSlides.filter((s) => (s.assetRefs?.[0] ?? "").startsWith("ru_")).length}`
+  );
+  check(
+    "UAE SERP screenshot slide present",
+    serpSlides.some((s) => (s.assetRefs?.[0] ?? "").startsWith("uae_"))
+  );
+  check(
+    "tiny imageData asset excluded from deck",
+    !serpSlides.some((s) => s.assetRefs?.[0] === "ru_provider_serp_google_tiny")
   );
   check(
     "SERP caption is API synthetic",
@@ -161,7 +237,13 @@ function main() {
       gateBlocksMissingRegion: !gateBlock.allowed,
       providerPolicyOk: policy.passed,
       noTextSubstitute: emptySerp.length === 0,
-      deckUsesProvider: serpSlides.length >= 1,
+      deckUsesProvider: serpSlides.length >= 2,
+      uaeLatinSlot: slots.some((s) => s.region === "UAE" && s.query === subjectLatin),
+      assetRefsResolveImageData: serpSlides.every((s) => {
+        const ref = s.assetRefs?.[0];
+        const asset = ref ? assetByRef.get(ref) : undefined;
+        return Boolean(asset && String(asset.imageData ?? "").length >= 800);
+      }),
     },
     generatedAt: new Date().toISOString(),
   };

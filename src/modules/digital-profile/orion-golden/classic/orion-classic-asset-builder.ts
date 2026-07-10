@@ -199,6 +199,20 @@ async function buildQuerySerpAssets(input: {
   return assets;
 }
 
+function serpDedupeQueryKey(asset: ReportAssetV1): string {
+  // Provider API assets share one caption — identity must come from title/query, not caption.
+  const useTitle =
+    isProviderApiSerpAsset(asset) ||
+    asset.caption === "Синтетический снимок на основе сохранённых результатов API";
+  const raw = useTitle ? (asset.title ?? "") : (asset.caption ?? asset.title ?? "");
+  return raw
+    .toLowerCase()
+    .replace(/^запрос:\s*/i, "")
+    .replace(/^(яндекс|google)\s*[—-]\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function dedupeSerpAssets(assets: ReportAssetV1[]): ReportAssetV1[] {
   const byKey = new Map<string, ReportAssetV1>();
   const rank = (a: ReportAssetV1) => {
@@ -220,12 +234,7 @@ function dedupeSerpAssets(assets: ReportAssetV1[]): ReportAssetV1[] {
     const provider = /yandex/i.test(asset.assetRef) || /яндекс/i.test(asset.title)
       ? "yandex"
       : "google";
-    const queryKey = (asset.caption ?? asset.title)
-      .toLowerCase()
-      .replace(/^запрос:\s*/i, "")
-      .replace(/^(яндекс|google)\s*[—-]\s*/i, "")
-      .replace(/\s+/g, " ")
-      .trim();
+    const queryKey = serpDedupeQueryKey(asset);
     const key = `${provider}::${queryKey || asset.assetRef}`;
     const existing = byKey.get(key);
     if (!existing || rank(asset) > rank(existing)) byKey.set(key, asset);
