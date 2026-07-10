@@ -168,6 +168,8 @@ const FALSE_STORY_ANCHOR_DOMAIN_RE =
 
 /** Prefer real RU criminal aggregators over EN cybercriminal bio pages. */
 const PRIMARY_CRIMINAL_DOMAIN_RE = /rucriminal\./i;
+/** Soft press / wire that must not become standalone «Иные… forbes.com/tass.com» claims. */
+const SOFT_PRESS_NOISE_DOMAIN_RE = /^(?:www\.)?(?:forbes\.com|tass\.com)$/i;
 const SECONDARY_CRIMINAL_DOMAIN_RE = /cybercriminal\./i;
 
 /** ORION GSM-style named story tokens (Трансмаш / Махмудов / Ликсутов / Молдавия / ЛНР). */
@@ -887,10 +889,20 @@ function buildThemes(
           h.domain &&
           !/\.example$/i.test(h.domain) &&
           !FALSE_STORY_ANCHOR_DOMAIN_RE.test(h.domain) &&
-          !isFalsePersonHit(h.title, h.url, subjectName)
+          !isFalsePersonHit(h.title, h.url, subjectName) &&
+          // Soft press alone must not seed other_adverse / weak criminal cards.
+          !(def.key === "other_adverse" && SOFT_PRESS_NOISE_DOMAIN_RE.test(h.domain))
       ),
       def.key
     );
+    if (def.key === "other_adverse" && rankedHits.length === 0) continue;
+    if (
+      (def.key === "criminal_legal" || def.key === "sanctions_associates" || def.key === "other_adverse") &&
+      rankedHits.length > 0 &&
+      rankedHits.every((h) => SOFT_PRESS_NOISE_DOMAIN_RE.test(h.domain))
+    ) {
+      continue;
+    }
     const sample = rankedHits
       .filter((h) => {
         // Keep gov portals / weak media / soft SERP out of sampleHits (false "typical anchors").
@@ -1311,6 +1323,19 @@ function storyPeople(theme: OrionThemeCard): {
  * ORION GSM client claim — human prose, not «Тема (entity, domain)».
  * Grounded in ThemeSet entities/hits; hedges with «по открытым источникам» / «авторы утверждают».
  */
+function isSoftPressNoiseTheme(theme: OrionThemeCard): boolean {
+  if (theme.id === "political_exposure" || theme.id === "business_associates") return false;
+  if (/трансмаш|махмудов|бокарев|ликсутов|молдав|лнр|офшор|rucriminal|rucompromat/i.test(
+    `${theme.title} ${theme.namedEntities.join(" ")} ${theme.sampleHits.map((h) => `${h.domain} ${h.title}`).join(" ")}`
+  )) {
+    return false;
+  }
+  const domains = theme.sampleHits.map((h) => h.domain).filter(Boolean);
+  if (domains.length === 0) return false;
+  // Theme whose only anchors are soft press (forbes.com / tass.com) — drop from client bullets.
+  return domains.every((d) => SOFT_PRESS_NOISE_DOMAIN_RE.test(d));
+}
+
 function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string {
   const s = shortSubjectLabel(subjectName);
   const sGen = shortSubjectGenitive(subjectName);
@@ -1318,6 +1343,7 @@ function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string 
   const hitBlob = theme.sampleHits.map((h) => `${h.title} ${h.snippet ?? ""}`).join(" ");
   const domain = theme.sampleHits.find((h) => PRIMARY_CRIMINAL_DOMAIN_RE.test(h.domain))?.domain
     ?? theme.sampleHits.find((h) => CRIMINAL_AGGREGATOR_DOMAIN_RE.test(h.domain))?.domain
+    ?? theme.sampleHits.find((h) => !SOFT_PRESS_NOISE_DOMAIN_RE.test(h.domain))?.domain
     ?? theme.sampleHits[0]?.domain;
 
   switch (theme.id) {
@@ -1337,9 +1363,9 @@ function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string 
       if (p.defense || /defense|оборон/i.test(hitBlob)) {
         return `Публикации о связях ${sGen} с оборонно-промышленным / транспортным контуром (в т.ч. ${domain || "rucriminal.info"}); требуется сверка первоисточников`;
       }
-      // Avoid weak soft-press anchors (forbes.com Dubai oligarchs) as "criminal" claim.
-      if (domain && /forbes\.com|tass\.com/i.test(domain) && !PRIMARY_CRIMINAL_DOMAIN_RE.test(domain)) {
-        return `Иные потенциально нежелательные упоминания в отношении ${sGen} (в т.ч. ${domain}); требуется сверка первоисточников`;
+      // Soft-press-only criminal buckets should not surface as client claims.
+      if (domain && SOFT_PRESS_NOISE_DOMAIN_RE.test(domain) && !PRIMARY_CRIMINAL_DOMAIN_RE.test(domain)) {
+        return "";
       }
       return `Криминальные / судебные материалы в открытых источниках в отношении ${sGen}${domain ? ` (якорь: ${domain})` : ""}; требуется сверка первоисточников`;
     }
@@ -1376,6 +1402,7 @@ function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string 
     case "pep_rca":
       return `Предварительные сигналы PEP / RCA в комплаенс-базах по ${shortSubjectDative(subjectName)}; требуется сверка полного профиля`;
     default:
+      if (domain && SOFT_PRESS_NOISE_DOMAIN_RE.test(domain)) return "";
       if (domain) {
         return `Иные потенциально нежелательные упоминания в отношении ${sGen} (в т.ч. ${domain})`;
       }
@@ -1407,6 +1434,13 @@ export function complianceToClientClaim(c: OrionComplianceDbSignal, subjectName:
   return `В ${c.provider} обнаружено предварительное совпадение по имени ${shortSubjectGenitive(subjectName)}; требуется сверка полного профиля`;
 }
 
+function isWeakClaimText(c: string): boolean {
+  if (/rucriminal|трансмаш|махмудов|бокарев|ликсутов|молдав|лнр|офшор/i.test(c)) return false;
+  return /(?:криминальн.*якорь:\s*(?:forbes\.com|tass\.com)|иные потенциально нежелательные.*(?:forbes\.com|tass\.com)|якорь:\s*(?:forbes\.com|tass\.com))/i.test(
+    c
+  );
+}
+
 function buildExecutiveNarrative(input: {
   subjectName: string;
   themes: OrionThemeCard[];
@@ -1430,15 +1464,19 @@ function buildExecutiveNarrative(input: {
     "business_associates",
     "offshore",
   ]);
-  const primaryThemes = input.themes.filter((t) => primaryIds.has(t.id));
+  const primaryThemes = input.themes.filter((t) => primaryIds.has(t.id) && !isSoftPressNoiseTheme(t));
   const singleThemes = input.themes.filter(
-    (t) => t.id === "conflict_jurisdiction" || t.id === "aggregator_negative" || t.id === "other_adverse"
+    (t) =>
+      (t.id === "conflict_jurisdiction" || t.id === "aggregator_negative" || t.id === "other_adverse") &&
+      !isSoftPressNoiseTheme(t)
   );
 
-  const primaryClaims = (primaryThemes.length > 0 ? primaryThemes : input.themes.slice(0, 4)).map((t) =>
-    themeToClientClaim(t, input.subjectName)
-  );
-  const singleClaims = singleThemes.map((t) => themeToClientClaim(t, input.subjectName));
+  const primaryClaims = (primaryThemes.length > 0 ? primaryThemes : input.themes.filter((t) => !isSoftPressNoiseTheme(t)).slice(0, 4))
+    .map((t) => themeToClientClaim(t, input.subjectName))
+    .filter((c) => c.length > 20);
+  const singleClaims = singleThemes
+    .map((t) => themeToClientClaim(t, input.subjectName))
+    .filter((c) => c.length > 20);
   const complianceClaims = input.compliance.map((c) => complianceToClientClaim(c, input.subjectName));
 
   const gptExtras = sanitizeList(input.synthesis?.mainRisks)
@@ -1449,6 +1487,7 @@ function buildExecutiveNarrative(input: {
         )
     )
     .filter((b) => b.length > 40)
+    .filter((b) => !isWeakClaimText(b))
     .filter((b) => !primaryClaims.some((t) => t.slice(0, 48).toLowerCase() === b.slice(0, 48).toLowerCase()))
     .slice(0, 2);
 
@@ -1462,17 +1501,13 @@ function buildExecutiveNarrative(input: {
     if (/dow jones/i.test(c)) return "dj";
     if (/lexisnexis/i.test(c)) return "ln";
     if (/world-check|world check/i.test(c)) return "wc";
-    if (/криминальн.*forbes\.com|якорь:\s*forbes\.com/i.test(c)) return "weak-forbes-criminal";
+    if (/forbes\.com|tass\.com/i.test(c) && /иные потенциально|криминальн/i.test(c)) return "weak-soft-press";
     return c.slice(0, 56).toLowerCase();
   };
-  const isWeakClaim = (c: string) =>
-    /криминальн.*якорь:\s*(forbes\.com|tass\.com)|иные потенциально нежелательные.*(?:forbes\.com|tass\.com)/i.test(
-      c
-    ) && !/rucriminal|трансмаш|махмудов|бокарев/i.test(c);
 
   for (const c of [...primaryClaims, ...singleClaims, ...complianceClaims, ...gptExtras]) {
     if (bullets.length >= 8) break;
-    if (isWeakClaim(c)) continue;
+    if (isWeakClaimText(c)) continue;
     const key = claimKey(c);
     const existingIdx = bullets.findIndex((b) => claimKey(b) === key);
     if (existingIdx >= 0) {
@@ -1555,7 +1590,11 @@ export function themeSetBullets(themeSet: OrionThemeSet, region?: OrionRegionBuc
     region == null
       ? themeSet.themes
       : themeSet.themes.filter((t) => t.regions.includes(region) || t.regions.length === 0);
-  return themes.slice(0, 6).map((t) => themeToClientClaim(t, themeSet.subjectName));
+  return themes
+    .filter((t) => !isSoftPressNoiseTheme(t))
+    .slice(0, 6)
+    .map((t) => themeToClientClaim(t, themeSet.subjectName))
+    .filter((c) => c.length > 20 && !isWeakClaimText(c));
 }
 
 export function regionalAuditDashboardBlock(input: {
@@ -1623,11 +1662,15 @@ export function orionStyleRiskMatrixRows(themeSet: OrionThemeSet): Array<{
     if (t.id === "pep_rca") return "Сигналы PEP / RCA";
     return t.title.replace(/^Криминальные материалы —\s*/i, "Связи: ");
   };
-  const rows = themeSet.themes.slice(0, 6).map((t) => ({
-    theme: themeLabel(t),
-    level: levelFor(t),
-    summary: themeToClientClaim(t, themeSet.subjectName),
-  }));
+  const rows = themeSet.themes
+    .filter((t) => !isSoftPressNoiseTheme(t))
+    .slice(0, 6)
+    .map((t) => ({
+      theme: themeLabel(t),
+      level: levelFor(t),
+      summary: themeToClientClaim(t, themeSet.subjectName),
+    }))
+    .filter((r) => r.summary.length > 20 && !isWeakClaimText(r.summary));
   for (const c of themeSet.complianceSignals) {
     rows.push({
       theme: c.provider,

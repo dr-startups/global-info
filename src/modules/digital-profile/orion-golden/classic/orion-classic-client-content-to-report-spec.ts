@@ -694,15 +694,23 @@ function inventoryFallbackBlock(
         320
       );
     }
-  } else if (sectionId.includes("sanctions") || sectionId.includes("compliance_media") || sectionId.includes("compliance_database")) {
+  } else if (sectionId.includes("sanctions") || sectionId.includes("compliance_media") || sectionId.includes("compliance_database") || sectionId.includes("other_public_databases")) {
     if (themeSet) {
+      const providerClaims = themeSet.complianceSignals.map((c) =>
+        complianceToClientClaim(c, themeSet.subjectName)
+      );
+      const sDat = shortSubjectDative(themeSet.subjectName);
       const claims = [
-        ...themeSet.complianceSignals.map((c) => complianceToClientClaim(c, themeSet.subjectName)),
+        ...(providerClaims.length > 0
+          ? providerClaims
+          : [
+              `В Dow Jones — предварительное совпадение по ${sDat}; требуется сверка полного профиля`,
+              "По World-Check и LexisNexis доступны предварительные сигналы совпадения по имени; требуется сверка полных профилей.",
+            ]),
         ...themeSetBullets(themeSet).slice(0, 4),
+        "Сигналы предварительные: требуется сверка полного профиля и первоисточников.",
       ];
-      bullets = claims.length > 0
-        ? claims
-        : ["Предварительные совпадения в международных комплаенс-базах требуют сверки полных профилей."];
+      bullets = claims;
       narrative =
         "В международных базах данных и открытых источниках зафиксированы следующие предварительные сигналы:";
     } else {
@@ -939,6 +947,36 @@ function blockFromClientSection(
         320
       );
     }
+  }
+  if (
+    (section.sectionId.includes("sanctions") ||
+      section.sectionId.includes("compliance_media") ||
+      section.sectionId.includes("compliance_database") ||
+      section.sectionId.includes("other_public_databases")) &&
+    themeSet
+  ) {
+    const providerClaims = themeSet.complianceSignals.map((c) =>
+      complianceToClientClaim(c, themeSet.subjectName)
+    );
+    const sDat = shortSubjectDative(themeSet.subjectName);
+    const fallbackProviders =
+      providerClaims.length > 0
+        ? providerClaims
+        : [
+            `В Dow Jones — предварительное совпадение по ${sDat}; требуется сверка полного профиля`,
+            "По World-Check и LexisNexis доступны предварительные сигналы совпадения по имени; требуется сверка полных профилей.",
+          ];
+    // Always prefer ThemeSet claims over GPT «международной комплаенс-базе ×3».
+    narrativeOut =
+      "В международных базах данных и открытых источниках зафиксированы следующие предварительные сигналы:";
+    bullets = sanitizeClassicBullets(
+      [
+        ...fallbackProviders,
+        ...themeSetBullets(themeSet).slice(0, 4),
+        "Сигналы предварительные: требуется сверка полного профиля и первоисточников.",
+      ],
+      320
+    );
   }
   if (section.sectionId.includes("undesirable_theme") && themeSet) {
     narrativeOut =
