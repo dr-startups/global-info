@@ -6,6 +6,7 @@
 
 import {
   isImageEvidenceHighlighted,
+  isImageNamesakeNoise,
   type ReportAssetV1,
 } from "../src/modules/digital-profile/orion-report-spec/asset-builder";
 import { buildImageGridSvg, type ImageGridItem } from "../src/modules/digital-profile/orion-report-spec/media-asset-svg";
@@ -20,6 +21,7 @@ function check(name: string, ok: boolean, extra?: string) {
 }
 
 const FAKE_IMAGE_DATA = "A".repeat(900);
+const SUBJECT = "Глинка Сергей Михайлович";
 
 function baseEv(partial: Partial<NormalizedEvidenceV1>): NormalizedEvidenceV1 {
   return {
@@ -36,7 +38,7 @@ function minimalSpec(): OrionClassicAuditReportSpec {
   return {
     version: "r10-classic-orion-audit-report-spec-v1",
     subject: {
-      displayName: "Глинка Сергей Михайлович",
+      displayName: SUBJECT,
       reportTitle: "Аудит",
       asOfDate: "2026-07-10",
     },
@@ -127,6 +129,57 @@ function main() {
         domain: "acompromat.net",
         displayUrl: "https://acompromat.net/persons/glinka",
       })
+    )
+  );
+  check(
+    "vlasti.io sanctioned caption: highlighted even if neutral_profile",
+    isImageEvidenceHighlighted(
+      baseEv({
+        title: "Sergey Glinka, a previous associate of sanctioned oligarchs",
+        domain: "vlasti.io",
+        displayUrl: "https://vlasti.io/glinka",
+        riskTheme: "neutral_profile",
+      })
+    )
+  );
+  check(
+    "vlasti.io domain alone: highlighted",
+    isImageEvidenceHighlighted(
+      baseEv({
+        title: "Sergey Glinka photo",
+        domain: "vlasti.io",
+        riskTheme: "neutral_profile",
+      })
+    )
+  );
+  check(
+    "Glinka choir youtube: namesake noise",
+    isImageNamesakeNoise(
+      baseEv({
+        title: "Glinka Choir of Leningrad ~ Russia Sings - 1991",
+        domain: "youtube.com",
+      }),
+      SUBJECT
+    )
+  );
+  check(
+    "Lyapunov piano amazon: namesake noise",
+    isImageNamesakeNoise(
+      baseEv({
+        title: "Piano Concertos Nos. 1 and 2 - Lyapunov",
+        domain: "amazon.de",
+      }),
+      SUBJECT
+    )
+  );
+  check(
+    "Sergei Glinka Nutriband: not namesake noise",
+    !isImageNamesakeNoise(
+      baseEv({
+        title: "Sergei Glinka | Nutriband",
+        domain: "nutriband.com",
+      }),
+      SUBJECT
     )
   );
 

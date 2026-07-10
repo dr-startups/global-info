@@ -8,21 +8,89 @@ import {
   buildVideoCardsSvg,
   svgToPngBase64,
 } from "./media-asset-svg";
+import { isSyntheticSerpNoiseHit } from "../serp-observation/filter-synthetic-serp-noise";
 
 const IMAGE_ADVERSE_DOMAIN_RE =
-  /rucriminal\.|cybercriminal\.|acompromat\.|rucompromat\.|compromat\.|rupep\.|opensanctions\.|ofac\.|justice\.gov|home\.treasury\.gov/i;
+  /rucriminal\.|cybercriminal\.|acompromat\.|rucompromat\.|compromat\.|rupep\.|opensanctions\.|ofac\.|justice\.gov|home\.treasury\.gov|vlasti\.|rumafia\.|dossier\.|kompromat\./i;
 const IMAGE_SOFT_PROFILE_DOMAIN_RE =
-  /forbes\.|klerk\.|tadviser\.|wikipedia\.|linkedin\.|rusprofile\.|audit-it\.|zachestnyibiznes\.|labyrinth\.|instagram\.|facebook\.|x\.com|twitter\.|youtube\./i;
+  /forbes\.|klerk\.|tadviser\.|wikipedia\.|linkedin\.|rusprofile\.|audit-it\.|zachestnyibiznes\.|labyrinth\.|instagram\.|facebook\.|x\.com|twitter\.|youtube\.|amazon\./i;
 const IMAGE_STRONG_ADVERSE_BLOB_RE =
-  /adverse|undesirable|нежелат|негативн|санкц|sanction|\bofac\b|корруп|corrupt|мошен|fraud|арест|arrest|уголов|\bcriminal\b|компромат|rucriminal|cybercriminal|acompromat|rupep|махмудов|makhmudov|бокарев|bokarev|defense\s+industry|оборонн/i;
+  /adverse|undesirable|нежелат|негативн|санкц|sanction(?:ed|s)?|\bofac\b|корруп|corrupt|мошен|fraud|арест|arrest|уголов|\bcriminal\b|компромат|rucriminal|cybercriminal|acompromat|rupep|махмудов|makhmudov|бокарев|bokarev|defense\s+industry|оборонн|oligarch|олигарх|associate of sanction|под\s+санкц|\$100|dollar bills|пачк[аи]\s+(?:долларов|денег)/i;
+/** Classical / composer / album noise for businessman subjects (Mikhail Glinka bleed). */
+const IMAGE_CLASSICAL_NAMESAKE_RE =
+  /choir|хор\b|chamber music|piano concerto|lyapunov|ляпунов|bolshoi|discogs|imslp|allmusic|russia sings|anthem of moscow|classicalarchives|симфон|оперн|композитор|sheet\s*music|leningrad\s+choir/i;
+
+function imageEvidenceBlob(ev: NormalizedEvidenceV1): string {
+  return `${ev.title ?? ""} ${ev.snippet ?? ""} ${ev.clientSafeSummary ?? ""} ${ev.domain ?? ""} ${ev.displayUrl ?? ""} ${ev.url ?? ""} ${ev.imageUrl ?? ""}`;
+}
+
+function subjectGivenName(subjectName: string): string {
+  return subjectName.trim().split(/\s+/).filter(Boolean)[1] ?? "";
+}
+
+function blobHasSubjectGiven(blob: string, subjectName: string): boolean {
+  const given = subjectGivenName(subjectName);
+  if (!given || given.length < 2) return true;
+  const latin = given
+    .replace(/ё/gi, "e")
+    .replace(/й/gi, "y")
+    .replace(/сергей/i, "sergey|sergei|sergej")
+    .replace(/михаил/i, "mikhail|michael");
+  // Cyrillic given OR common latin forms for Сергей
+  if (new RegExp(given.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(blob)) return true;
+  if (/сергей/i.test(given) && /sergey|sergei|sergej/i.test(blob)) return true;
+  if (/михаил/i.test(given) && /mikhail|michael/i.test(blob)) return true;
+  void latin;
+  return false;
+}
+
+/** Composer / classical / wrong-person image noise for the audit subject. */
+export function isImageNamesakeNoise(ev: NormalizedEvidenceV1, subjectName: string): boolean {
+  const blob = imageEvidenceBlob(ev);
+  if (
+    isSyntheticSerpNoiseHit(
+      {
+        title: ev.title ?? "",
+        url: String(ev.url ?? ev.displayUrl ?? ""),
+        snippet: ev.snippet ?? "",
+        domain: ev.domain ?? "",
+      },
+      subjectName
+    )
+  ) {
+    return true;
+  }
+  if (IMAGE_CLASSICAL_NAMESAKE_RE.test(blob) && !blobHasSubjectGiven(blob, subjectName)) {
+    return true;
+  }
+  // YouTube/Amazon classical albums mentioning only surname Glinka
+  const domain = String(ev.domain ?? "");
+  if (/youtube\.|amazon\./i.test(domain) && IMAGE_CLASSICAL_NAMESAKE_RE.test(blob)) {
+    return true;
+  }
+  return false;
+}
+
+function imageSubjectScore(ev: NormalizedEvidenceV1, subjectName: string): number {
+  const blob = imageEvidenceBlob(ev);
+  let score = 0;
+  if (blobHasSubjectGiven(blob, subjectName)) score += 4;
+  if (isImageEvidenceHighlighted(ev)) score += 5;
+  if (/nutriband|бизнес|businessman|предпринимат|инвестор|investor|биограф/i.test(blob)) score += 2;
+  if (/vlasti\.|rucriminal\.|acompromat\.|rupep\./i.test(blob)) score += 3;
+  if (isImageNamesakeNoise(ev, subjectName)) score -= 10;
+  if (ev.imageUrl) score += 1;
+  return score;
+}
 
 /** Risk gate for image-search cells — red frame when domain/blob/theme is adverse. */
 export function isImageEvidenceHighlighted(ev: NormalizedEvidenceV1): boolean {
-  if (ev.riskTheme === "neutral_profile" || ev.reviewStatus === "excluded_noise") return false;
+  if (ev.reviewStatus === "excluded_noise") return false;
   const domain = String(ev.domain ?? ev.displayUrl ?? "");
-  const url = String(ev.displayUrl ?? ev.domain ?? "");
-  const blob = `${ev.title ?? ""} ${ev.snippet ?? ""} ${ev.clientSafeSummary ?? ""} ${url}`;
+  const url = String(ev.url ?? ev.displayUrl ?? ev.domain ?? "");
+  const blob = imageEvidenceBlob(ev);
   if (IMAGE_ADVERSE_DOMAIN_RE.test(domain) || IMAGE_ADVERSE_DOMAIN_RE.test(url)) return true;
+  if (IMAGE_STRONG_ADVERSE_BLOB_RE.test(blob)) return true;
   if (
     ev.reviewStatus === "official_record_found" ||
     ev.riskTheme === "adverse_media" ||
@@ -30,12 +98,13 @@ export function isImageEvidenceHighlighted(ev: NormalizedEvidenceV1): boolean {
     ev.riskTheme === "pep" ||
     ev.riskTheme === "legal_regulatory"
   ) {
+    // Soft bio hosts still need a strong blob unless theme is already adverse.
+    if (IMAGE_SOFT_PROFILE_DOMAIN_RE.test(domain) && ev.riskTheme === "neutral_profile") {
+      return false;
+    }
     return true;
   }
-  if (IMAGE_SOFT_PROFILE_DOMAIN_RE.test(domain)) {
-    return IMAGE_STRONG_ADVERSE_BLOB_RE.test(blob);
-  }
-  return IMAGE_STRONG_ADVERSE_BLOB_RE.test(blob);
+  return false;
 }
 
 export type ReportAssetKind =
@@ -139,7 +208,12 @@ export async function buildRuSearchAssets(input: {
 
   const images = input.evidence.filter((e) => e.sourceKind === "image_result");
   if (images.length > 0) {
-    const ranked = [...images].sort((a, b) => {
+    const filtered = images.filter((e) => !isImageNamesakeNoise(e, input.subjectName));
+    const pool = filtered.length > 0 ? filtered : images;
+    const ranked = [...pool].sort((a, b) => {
+      const sa = imageSubjectScore(a, input.subjectName);
+      const sb = imageSubjectScore(b, input.subjectName);
+      if (sb !== sa) return sb - sa;
       const ha = isImageEvidenceHighlighted(a) ? 1 : 0;
       const hb = isImageEvidenceHighlighted(b) ? 1 : 0;
       return hb - ha;
@@ -153,9 +227,11 @@ export async function buildRuSearchAssets(input: {
           imageUrl: e.imageUrl,
           highlight,
           themeLabel: highlight
-            ? e.riskTheme && e.riskTheme !== "unknown"
+            ? e.riskTheme && e.riskTheme !== "unknown" && e.riskTheme !== "neutral_profile"
               ? riskThemeLabel(e.riskTheme)
-              : "Нежелательное"
+              : /санкц|sanction/i.test(imageEvidenceBlob(e))
+                ? "Санкции"
+                : "Нежелательное"
             : undefined,
         };
       })
