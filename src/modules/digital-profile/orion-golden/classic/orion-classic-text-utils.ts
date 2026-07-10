@@ -145,6 +145,18 @@ export function isDemoOrPlaceholderClientText(text: string): boolean {
   );
 }
 
+/** English inventory stubs that must not appear as client World-Check / DJ bullets. */
+export function isEnglishComplianceStub(text: string): boolean {
+  const t = String(text ?? "");
+  return (
+    /match score\s*\d+/i.test(t) ||
+    /requires analyst review before any conclusion/i.test(t) ||
+    /potential\s+(комплаенс\s+)?match/i.test(t) ||
+    /not verified/i.test(t) ||
+    /potential sanctions in world check/i.test(t)
+  );
+}
+
 /** Rewrite client-facing prose that still mentions demo screening / process meta. */
 export function scrubClientFacingProse(text: string): string {
   let t = String(text ?? "");
@@ -161,6 +173,9 @@ export function scrubClientFacingProse(text: string): string {
   t = t.replace(/screening[- ]?результат(?:ах|а|ы|ов)?/gi, "предварительных результатах");
   t = t.replace(/screening[- ]?сигнал(?:ах|а|ы|ов)?/gi, "предварительный сигнал");
   t = t.replace(/\bscreening\b/gi, "предварительная проверка");
+  // RU synonyms that survived earlier scrub
+  t = t.replace(/compliance[- ]?скрининг(?:ах|а|и|ов)?/gi, "предварительных проверках");
+  t = t.replace(/\bскрининг(?:ах|а|и|ов|ами)?\b/gi, "предварительных проверках");
   t = t.replace(/\bDATA\s*POOR\b/gi, "секций с недостаточными данными");
   t = t.replace(/\bCOLLAPSED\b/gi, "свёрнутых");
   t = t.replace(/\bNOT_APPLICABLE\b/gi, "неприменимых");
@@ -174,22 +189,28 @@ export function isMetaProcessBullet(text: string): boolean {
     INCOMPLETE_CAVEAT.test(t) ||
     KEYWORD_DUMP.test(t) ||
     /DATA\s*POOR|сжато\s+пустых|кластер\(ов\)|дедупликац|материал\(ов\).*дубл/i.test(t) ||
-    /найденных\s+материал|\(\d+\)\s*не\s+использова|расхождени[ея]\s+по\s+отчеству/i.test(t)
+    /найденных\s+материал|\(\d+\)\s*не\s+использова|расхождени[ея]\s+по\s+отчеству/i.test(t) ||
+    /очеред(ь|и)\s+ручн|недостаточно подтверждённ|не делать выводов о присутствии/i.test(t) ||
+    isEnglishComplianceStub(t)
   );
 }
 
 export function isClientActionRecommendation(text: string): boolean {
-  const t = text.trim();
+  const t = scrubClientFacingProse(text.trim());
   if (!t || isMetaProcessBullet(t)) return false;
-  if (/исключено\s+\d+|материал\(ов\)|encyclopedic|artifact-backed|очеред(ь|и)\s+ручн/i.test(t)) {
+  if (
+    /исключено\s+\d+|материал\(ов\)|encyclopedic|artifact-backed|очеред(ь|и)\s+ручн|недостаточно подтверждённ|не делать выводов/i.test(
+      t
+    )
+  ) {
     return false;
   }
   // Prefer actionable verbs / verification language
-  return /сверить|проверить|получить|сопоставить|зафиксировать|подтвердить|уточнить|запросить|использовать|исключить|сохранять|оценить|подготовить/i.test(
+  return /сверить|проверить|получить|сопоставить|зафиксировать|подтвердить|уточнить|запросить|использовать|исключить|сохранять|оценить|подготовить|провести|расширить/i.test(
     t
   )
     ? true
-    : t.length >= 40 && !/кластер\(ов\)|дедупликац/i.test(t);
+    : t.length >= 40 && !/кластер\(ов\)|дедупликац|UAE-секц/i.test(t);
 }
 
 export function asClientBullet(value: unknown): string {
@@ -213,7 +234,8 @@ export function sanitizeClassicBullets(bullets: string[], maxLen = 280): string[
     .map((b) => truncateAtWordBoundary(b, maxLen))
     .filter((b) => Boolean(b) && !/\[object Object\]/i.test(b))
     .filter((b) => !isMetaProcessBullet(b))
-    .filter((b) => !isDemoOrPlaceholderClientText(b));
+    .filter((b) => !isDemoOrPlaceholderClientText(b))
+    .filter((b) => !isEnglishComplianceStub(b));
 }
 
 export function chunkItems<T>(items: T[], perChunk: number): T[][] {

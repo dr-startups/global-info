@@ -114,7 +114,7 @@ function sanitizeSlide(slide: OrionGoldenDeckSlide): OrionGoldenDeckSlide {
       .filter((b) => Boolean(b) && !/\[object Object\]/i.test(b))
       .filter(
         (b) =>
-          !/\.example(\/|$|\s)|example\.com|\[DEMO\]|Demo DOW JONES|Demo WORLD CHECK|potential match only|демо[- ]?скрининг|демонстрационн|DATA\s*POOR/i.test(
+          !/\.example(\/|$|\s)|example\.com|\[DEMO\]|Demo DOW JONES|Demo WORLD CHECK|potential match only|демо[- ]?скрининг|демонстрационн|DATA\s*POOR|match score|requires analyst review/i.test(
             b
           )
       ),

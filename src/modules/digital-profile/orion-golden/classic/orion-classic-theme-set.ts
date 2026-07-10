@@ -243,9 +243,14 @@ function isChargeOrSubjectLabel(entity: string, subjectName: string): boolean {
   return false;
 }
 
+function isWeakBlogDomain(domain: string): boolean {
+  return /anisimov\.biz|livejournal\.|blogspot\.|medium\.com|wordpress\.|dzen\.ru/i.test(domain);
+}
+
 function isWeakMediaDomain(domain: string): boolean {
-  return /youtube\.|wixsite\.|instagram\.|facebook\.|tiktok\.|t\.me\b|vk\.com|ok\.ru|plehanovka/i.test(
-    domain
+  return (
+    /youtube\.|wixsite\.|instagram\.|facebook\.|tiktok\.|t\.me\b|vk\.com|ok\.ru|plehanovka/i.test(domain) ||
+    isWeakBlogDomain(domain)
   );
 }
 
@@ -270,6 +275,15 @@ function preferredThemeSample(
   if (themeKey === "pep_rca" || themeKey === "sanctions_associates") {
     return sample.find(
       (h) => h.domain && !isWeakMediaDomain(h.domain) && !isGovPortalDomain(h.domain)
+    );
+  }
+  // Criminal/legal theme: prefer court/news over personal blogs.
+  if (themeKey === "criminal_legal") {
+    return (
+      sample.find((h) =>
+        /court|суд|justice|reuters|bbc|rbc|forbes|kommersant|vedomosti|interfax/i.test(h.domain)
+      ) ??
+      sample.find((h) => h.domain && !isWeakMediaDomain(h.domain) && !isWeakBlogDomain(h.domain))
     );
   }
   return (
@@ -520,10 +534,23 @@ function buildThemes(
         return true;
       })
       .slice(0, 3);
-    // Keep the theme even if only weak/gov hits exist — but without a false typical anchor.
-    if (sample.length === 0 && def.key !== "pep_rca" && def.key !== "sanctions_associates") continue;
+    if (sample.length === 0 && def.key !== "pep_rca" && def.key !== "sanctions_associates" && def.key !== "criminal_legal") {
+      continue;
+    }
     if (sample.length === 0 && bucket.hits.length === 0) continue;
-    const preferredSample = sample.length > 0 ? preferredThemeSample(sample, def.key) : undefined;
+    // For criminal_legal keep theme without weak-blog typical anchor if nothing stronger.
+    const usableSample =
+      def.key === "criminal_legal"
+        ? sample.filter((h) => !isWeakBlogDomain(h.domain))
+        : sample;
+    const preferredSample =
+      usableSample.length > 0
+        ? preferredThemeSample(usableSample, def.key)
+        : def.key === "criminal_legal"
+          ? undefined
+          : sample.length > 0
+            ? preferredThemeSample(sample, def.key)
+            : undefined;
     const named = themeAnchorEntities(
       sample.length > 0
         ? sample.filter((h) => !isGovPortalDomain(h.domain) || def.key === "political_exposure")
@@ -536,7 +563,9 @@ function buildThemes(
         ? `В сюжетной линии фигурируют: ${named.join(", ")}.`
         : def.key === "pep_rca"
           ? "Предварительные сигналы PEP/RCA в комплаенс-контексте; требуется сверка полного профиля."
-          : "",
+          : def.key === "criminal_legal"
+            ? "В открытых источниках встречается уголовно-правовая / судебная лексика; требуется сверка первоисточников."
+            : "",
       preferredSample
         ? `Типичный якорь: ${preferredSample.domain || "источник"} — «${preferredSample.title}».`
         : "",
@@ -547,8 +576,8 @@ function buildThemes(
       summary: summaryParts.join(" ") || def.title,
       count: bucket.hits.length,
       regions: [...bucket.regions],
-      namedEntities: named,
-      sampleHits: sample,
+      namedEntities: named.filter((e) => !isWeakBlogDomain(e)),
+      sampleHits: usableSample.length > 0 ? usableSample : sample,
     });
   }
 

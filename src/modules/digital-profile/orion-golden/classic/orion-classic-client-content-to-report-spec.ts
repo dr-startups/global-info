@@ -27,6 +27,7 @@ import {
   chunkItems,
   isClientActionRecommendation,
   isDemoOrPlaceholderClientText,
+  isEnglishComplianceStub,
   sanitizeClassicBullets,
   sanitizeExecutiveClientText,
   scrubClientFacingProse,
@@ -529,24 +530,28 @@ function complianceBullets(
   providerHint?: string
 ): string[] {
   if (!inventory) return [];
-  return inventory.items
-    .filter((item) => {
-      const et = item.evidenceType.toLowerCase();
-      if (et !== "compliance_hit" && et !== "risk_finding") return false;
-      const blob = `${item.title} ${item.snippet ?? ""} ${item.provider ?? ""}`;
-      if (isDemoOrPlaceholderClientText(blob)) return false;
-      if (!providerHint) return true;
-      return String(item.provider).toLowerCase().includes(providerHint.toLowerCase())
-        || String(item.title).toLowerCase().includes(providerHint.toLowerCase())
-        || riskClassificationBlob(item).includes(providerHint.toLowerCase());
-    })
-    .slice(0, 16)
-    .map((item) =>
-      truncateAtWordBoundary(
-        `${item.title}${item.snippet ? ` — ${item.snippet}` : ""}`,
-        200
-      )
+  const out: string[] = [];
+  for (const item of inventory.items) {
+    const et = item.evidenceType.toLowerCase();
+    if (et !== "compliance_hit" && et !== "risk_finding") continue;
+    const blob = `${item.title} ${item.snippet ?? ""} ${item.provider ?? ""}`;
+    if (isDemoOrPlaceholderClientText(blob) || isEnglishComplianceStub(blob)) continue;
+    if (providerHint) {
+      const ok =
+        String(item.provider).toLowerCase().includes(providerHint.toLowerCase()) ||
+        String(item.title).toLowerCase().includes(providerHint.toLowerCase()) ||
+        riskClassificationBlob(item).includes(providerHint.toLowerCase());
+      if (!ok) continue;
+    }
+    const line = truncateAtWordBoundary(
+      `${item.title}${item.snippet ? ` — ${item.snippet}` : ""}`,
+      200
     );
+    if (!line || isEnglishComplianceStub(line)) continue;
+    out.push(line);
+    if (out.length >= 8) break;
+  }
+  return out;
 }
 
 function inventoryFallbackBlock(
@@ -640,13 +645,40 @@ function inventoryFallbackBlock(
       narrative = fromTheme[0].narrative;
       bullets = sanitizeClassicBullets(fromTheme[0].bullets, 240);
     } else {
-      bullets = complianceBullets(inventory, hint);
+      bullets = sanitizeClassicBullets(complianceBullets(inventory, hint), 240);
       narrative =
         hint === "dow"
           ? "Материалы Dow Jones / RCA по субъекту."
           : hint === "world"
             ? "Материалы World-Check по субъекту."
             : "Материалы LexisNexis по субъекту.";
+    }
+    // Inventory EN stubs often leave the slide empty — fall back to ThemeSet signal copy.
+    if (bullets.length === 0 && themeSet) {
+      const signal = themeSet.complianceSignals.find((c) =>
+        hint === "dow"
+          ? /dow/i.test(c.provider)
+          : hint === "world"
+            ? /world/i.test(c.provider)
+            : /lexis/i.test(c.provider)
+      );
+      if (signal) {
+        narrative = signal.statusLine;
+        bullets = sanitizeClassicBullets(
+          [
+            signal.detail,
+            "Сигнал предварительный: требуется сверка полного профиля и первоисточников.",
+          ],
+          240
+        );
+      } else if (hint === "world") {
+        narrative =
+          "По World-Check на текущем этапе доступен только предварительный сигнал совпадения по имени; полный профиль требует сверки.";
+        bullets = [
+          "Предварительное совпадение по имени в World-Check — не является подтверждённым санкционным статусом.",
+          "Рекомендуется получить полный профиль и сверить с первоисточниками.",
+        ];
+      }
     }
   } else if (sectionId.includes("sanctions") || sectionId.includes("compliance_media") || sectionId.includes("compliance_database")) {
     if (themeSet && themeSet.complianceSignals.length > 0) {
@@ -774,6 +806,21 @@ function blockFromClientSection(
 
   if (section.sectionId.includes("undesirable_theme") && themeSet) {
     bullets = themeSetBullets(themeSet, region);
+  } else if (section.sectionId === "53_recommendations") {
+    const actionBullets = sanitizeClassicBullets(
+      [
+        ...gptFindings.filter(isClientActionRecommendation),
+        ...(themeSet
+          ? [
+              "Получить полные профили LexisNexis, Dow Jones и World-Check и сверить идентификацию с первоисточниками.",
+              "Провести верификацию санкционного и PEP/RCA-контекста перед комплаенс-решением.",
+              "Сформировать целевой цифровой профиль и план вытеснения нежелательных ссылок из TOP выдачи.",
+            ]
+          : []),
+      ],
+      280
+    ).slice(0, 5);
+    bullets = actionBullets;
   } else if (section.sectionId.includes("suggestions") || section.sectionId.includes("related_queries")) {
     const provider = section.sectionId.includes("yandex")
       ? "yandex"
@@ -826,6 +873,58 @@ function blockFromClientSection(
   }
 
   bullets = sanitizeClassicBullets(bullets, 280);
+
+  let narrativeOut = truncateAtWordBoundary(sectionNarrative, 900);
+  if (section.sectionId.includes("wikipedia")) {
+    const present = themeSet
+      ? region === "RU"
+        ? themeSet.ru.wikipediaPresent
+        : themeSet.uae.wikipediaPresent
+      : bullets.length > 0;
+    narrativeOut = present
+      ? "Проверка справочного профиля Wikipedia."
+      : "В Википедии устойчивая статья о персоне не подтверждена — энциклопедический якорь цифрового профиля не используется.";
+  }
+  if (section.sectionId === "53_recommendations") {
+    narrativeOut =
+      "Рекомендуемые следующие шаги по итогам аудита цифрового профиля и предварительных сигналов комплаенс-баз.";
+    if (bullets.length === 0 && themeSet) {
+      bullets = sanitizeClassicBullets(
+        [
+          "Получить полные профили LexisNexis, Dow Jones и World-Check и сверить идентификацию с первоисточниками.",
+          "Провести верификацию санкционного и PEP/RCA-контекста перед комплаенс-решением.",
+          "Сформировать целевой цифровой профиль и план вытеснения нежелательных ссылок из TOP выдачи.",
+        ],
+        280
+      );
+    }
+  }
+  if (
+    (section.sectionId.includes("world_check") ||
+      section.sectionId.includes("dow_jones") ||
+      section.sectionId.includes("lexisnexis")) &&
+    bullets.some((b) => isEnglishComplianceStub(b))
+  ) {
+    bullets = sanitizeClassicBullets(
+      bullets.filter((b) => !isEnglishComplianceStub(b)),
+      240
+    );
+  }
+  if (section.sectionId.includes("world_check") && bullets.length === 0) {
+    const signal = themeSet?.complianceSignals.find((c) => /world/i.test(c.provider));
+    narrativeOut =
+      signal?.statusLine ??
+      "По World-Check доступен предварительный сигнал совпадения по имени; требуется сверка полного профиля.";
+    bullets = sanitizeClassicBullets(
+      [
+        signal?.detail ??
+          "Предварительное совпадение по имени в World-Check — не является подтверждённым санкционным статусом.",
+        "Рекомендуется получить полный профиль и сверить с первоисточниками.",
+      ],
+      240
+    );
+  }
+
   // Heat-grid bullets replace dense position tables when ThemeSet path is active
   const tables =
     section.sectionId.includes("serp_position") && !(inventory && bullets.some((b) => /\[Н\]|\[·\]/.test(b)))
@@ -866,18 +965,6 @@ function blockFromClientSection(
         });
       }
     }
-  }
-
-  let narrativeOut = truncateAtWordBoundary(sectionNarrative, 900);
-  if (section.sectionId.includes("wikipedia")) {
-    const present = themeSet
-      ? region === "RU"
-        ? themeSet.ru.wikipediaPresent
-        : themeSet.uae.wikipediaPresent
-      : bullets.length > 0;
-    narrativeOut = present
-      ? "Проверка справочного профиля Wikipedia."
-      : "В Википедии устойчивая статья о персоне не подтверждена — энциклопедический якорь цифрового профиля не используется.";
   }
 
   return {
