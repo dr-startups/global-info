@@ -222,6 +222,9 @@ model Case {
   caseAccess         DpCaseAccess[]
   orionReportRuns    OrionReportRun[]
   serpCaptures       SerpCapture[]
+  searchDocuments    SearchDocument[]
+  serpObservations   SerpObservation[]
+  serpSyntheticAssets SerpSyntheticAsset[]
   orionMacroSections OrionReportMacroSection[]
   orionMicroStages   OrionReportMicroStage[]
   orionSectionAgentRuns OrionSectionAgentRun[]
@@ -633,12 +636,117 @@ model OrionReportRun {
   reportJsonVersions OrionReportJsonVersion[]
   consistencyChecks OrionReportConsistencyCheck[]
   serpCaptures       SerpCapture[]
+  serpObservations   SerpObservation[]
+  serpSyntheticAssets SerpSyntheticAsset[]
 
   @@index([caseId])
   @@index([reportVersionId])
   @@index([status])
   @@index([createdAt])
   @@map("dp_orion_report_runs")
+}
+
+// ----------------------------------------------------------------------------
+// 11b. Run-scoped SERP observations (provider-first; no URL dedupe across queries)
+// ----------------------------------------------------------------------------
+
+model SearchDocument {
+  id          String   @id @default(cuid())
+  caseId      String
+  url         String
+  canonicalUrl String?
+  domain      String?
+  title       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case         Case              @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  observations SerpObservation[]
+
+  @@unique([caseId, url])
+  @@index([caseId])
+  @@index([domain])
+  @@map("dp_search_documents")
+}
+
+model SerpObservation {
+  id               String   @id @default(cuid())
+  caseId           String
+  auditRunId       String
+  queryId          String
+  queryText        String
+  provider         String
+  engine           String
+  surface          String   @default("organic")
+  region           String
+  language         String
+  rank             Int
+  url              String
+  title            String?
+  snippet          String?
+  domain           String?
+  searchDocumentId String?
+  providerStatus   String   @default("OK")
+  rawPayloadJson   Json?
+  capturedAt       DateTime
+  createdAt        DateTime @default(now())
+
+  case           Case                 @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  auditRun       OrionReportRun       @relation(fields: [auditRunId], references: [id], onDelete: Cascade)
+  searchDocument SearchDocument?      @relation(fields: [searchDocumentId], references: [id], onDelete: SetNull)
+  syntheticLinks SerpSyntheticAssetObservation[]
+
+  @@index([caseId])
+  @@index([auditRunId])
+  @@index([queryId])
+  @@index([provider, engine, surface])
+  @@index([url])
+  @@index([capturedAt])
+  @@map("dp_serp_observations")
+}
+
+model SerpSyntheticAsset {
+  id            String   @id @default(cuid())
+  caseId        String
+  auditRunId    String
+  queryId       String
+  provider      String
+  engine        String
+  surface       String   @default("organic")
+  region        String
+  language      String
+  storageKey    String
+  sha256        String
+  mimeType      String   @default("image/png")
+  width         Int?
+  height        Int?
+  caption       String
+  status        String   @default("READY")
+  createdAt     DateTime @default(now())
+
+  case         Case                              @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  auditRun     OrionReportRun                    @relation(fields: [auditRunId], references: [id], onDelete: Cascade)
+  observations SerpSyntheticAssetObservation[]
+
+  @@index([caseId])
+  @@index([auditRunId])
+  @@index([queryId])
+  @@index([sha256])
+  @@map("dp_serp_synthetic_assets")
+}
+
+model SerpSyntheticAssetObservation {
+  id                String @id @default(cuid())
+  syntheticAssetId  String
+  observationId     String
+  rank              Int
+
+  syntheticAsset SerpSyntheticAsset @relation(fields: [syntheticAssetId], references: [id], onDelete: Cascade)
+  observation    SerpObservation    @relation(fields: [observationId], references: [id], onDelete: Cascade)
+
+  @@unique([syntheticAssetId, observationId])
+  @@index([observationId])
+  @@map("dp_serp_synthetic_asset_observations")
 }
 
 // ----------------------------------------------------------------------------

@@ -31,6 +31,7 @@
     "smoke:audit-summary": "node scripts/smoke-audit-summary.mjs",
     "smoke:serp-snapshot": "node scripts/smoke-serp-snapshot.mjs",
     "smoke:serp-live-capture-mvp": "tsx scripts/smoke-serp-live-capture-mvp.ts",
+    "smoke:serp-observation-serper-slice": "tsx scripts/smoke-serp-observation-serper-slice.ts",
     "smoke:serp-snapshot-report": "node scripts/smoke-serp-snapshot-report.mjs",
     "smoke:serp-snapshot-real-source": "tsx scripts/smoke-serp-snapshot-real-source.ts",
     "smoke:real-result-classifier": "tsx scripts/smoke-real-result-classifier.ts",

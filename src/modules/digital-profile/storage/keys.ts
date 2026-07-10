@@ -113,6 +113,10 @@ export const buildStorageKey = {
   serpCapture(caseId: string, captureId: string, ext: string): string {
     return `cases/${seg(caseId, "caseId")}/serp-captures/${seg(captureId, "captureId")}.${seg(ext, "ext")}`;
   },
+  /** Provider-first synthetic SERP PNG (API observations → image). */
+  serpSyntheticAsset(caseId: string, assetId: string, ext: string): string {
+    return `cases/${seg(caseId, "caseId")}/serp-synthetic/${seg(assetId, "assetId")}.${seg(ext, "ext")}`;
+  },
   /** O5.3 — cached image thumbnail for report evidence grid. */
   imageThumbnail(caseId: string, hash: string, ext: string): string {
     return `cases/${seg(caseId, "caseId")}/image-thumbnails/${seg(hash, "hash")}.${seg(ext, "ext")}`;
