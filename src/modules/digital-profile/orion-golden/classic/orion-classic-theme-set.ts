@@ -291,11 +291,18 @@ function themeKeyOf(item: FullEvidenceInventory["items"][number]): ThemeBucketKe
   }
 
   // Named ORION people/orgs beat soft jurisdiction/politics keyword order.
+  // Moldova political lobbying stories stay political even when Makhmudov is named.
   if (/ликсутов|liksutov/i.test(blob)) return "business_associates";
+  if (
+    /молдав|moldova/i.test(blob) &&
+    /политич|president|лоббир|спонсир|парт(ии|ию|ия)|выбор|deput|minister/i.test(blob)
+  ) {
+    return "political_exposure";
+  }
+  if (/лнр|лднр/i.test(blob)) return "conflict_jurisdiction";
   if (/бокарев|bokarev|махмудов|makhmudov|трансмаш|transmashholding/i.test(blob)) {
     return "sanctions_associates";
   }
-  if (/лнр|лднр/i.test(blob)) return "conflict_jurisdiction";
   if (/молдав|moldova/i.test(blob)) return "political_exposure";
 
   // Prefer SERP UI effective theme so «Криминальные материалы» stays criminal_legal.
@@ -1042,6 +1049,143 @@ function formatPctLine(kpis: OrionSurfaceKpis): string {
   return `${kpis.linksAdversePct}% ссылок в сохранённой выдаче выглядят потенциально нежелательными (${kpis.linksAdverse} из ${kpis.linksTotal})`;
 }
 
+function shortSubjectLabel(subjectName: string): string {
+  const parts = subjectName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    const surname = parts[0];
+    const initial = parts[1]?.[0];
+    return initial ? `${initial}. ${surname}` : surname;
+  }
+  return subjectName.trim() || "персона";
+}
+
+/** Genitive for RU surnames like Глинка → Глинки (client prose). */
+function shortSubjectGenitive(subjectName: string): string {
+  const label = shortSubjectLabel(subjectName);
+  return label.replace(/([А-ЯЁA-Z][а-яёa-z]+)$/u, (m) => {
+    if (/а$/u.test(m)) return m.slice(0, -1) + "и";
+    if (/я$/u.test(m)) return m.slice(0, -1) + "и";
+    if (/й$/u.test(m)) return m.slice(0, -1) + "я";
+    return m + "а";
+  });
+}
+
+/** Dative: Глинка → Глинке (по …). */
+function shortSubjectDative(subjectName: string): string {
+  const label = shortSubjectLabel(subjectName);
+  return label.replace(/([А-ЯЁA-Z][а-яёa-z]+)$/u, (m) => {
+    if (/[ая]$/u.test(m)) return m.slice(0, -1) + "е";
+    if (/й$/u.test(m)) return m.slice(0, -1) + "ю";
+    return m + "у";
+  });
+}
+
+function storyPeople(theme: OrionThemeCard): {
+  transmash: boolean;
+  makhmudov: boolean;
+  bokarev: boolean;
+  liksutov: boolean;
+  moldova: boolean;
+  lnr: boolean;
+  offshore: boolean;
+  defense: boolean;
+} {
+  const blob = [
+    theme.title,
+    ...theme.namedEntities,
+    ...theme.sampleHits.map((h) => `${h.title} ${h.snippet ?? ""}`),
+  ].join(" ");
+  return {
+    transmash: /трансмаш|transmash|railways/i.test(blob),
+    makhmudov: /махмудов|makhmudov/i.test(blob),
+    bokarev: /бокарев|bokarev/i.test(blob),
+    liksutov: /ликсутов|liksutov|лавров/i.test(blob),
+    moldova: /молдав|moldova/i.test(blob),
+    lnr: /лнр|лднр/i.test(blob),
+    offshore: /offshore|офшор/i.test(blob),
+    defense: /defense|оборон/i.test(blob),
+  };
+}
+
+/**
+ * ORION GSM client claim — human prose, not «Тема (entity, domain)».
+ * Grounded in ThemeSet entities/hits; hedges with «по открытым источникам» / «авторы утверждают».
+ */
+function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string {
+  const s = shortSubjectLabel(subjectName);
+  const sGen = shortSubjectGenitive(subjectName);
+  const p = storyPeople(theme);
+  const hitBlob = theme.sampleHits.map((h) => `${h.title} ${h.snippet ?? ""}`).join(" ");
+  const domain = theme.sampleHits.find((h) => PRIMARY_CRIMINAL_DOMAIN_RE.test(h.domain))?.domain
+    ?? theme.sampleHits.find((h) => CRIMINAL_AGGREGATOR_DOMAIN_RE.test(h.domain))?.domain
+    ?? theme.sampleHits[0]?.domain;
+
+  switch (theme.id) {
+    case "criminal_legal":
+    case "sanctions_associates": {
+      const parts: string[] = [];
+      if (p.transmash) parts.push("АО «Трансмашхолдинг»");
+      if (p.makhmudov) parts.push("И. Махмудовым");
+      if (p.bokarev) parts.push("А. Бокаревым");
+      if (parts.length >= 2) {
+        const joined =
+          parts.length === 2
+            ? `${parts[0]} и ${parts[1]}`
+            : `${parts[0]}, ${parts[1]} и ${parts[2]}`;
+        return `Наличие актуальных связей с ${joined} (компания и персоны под санкциями; по открытым источникам, в т.ч. ${domain || "агрегаторам компромата"})`;
+      }
+      if (p.defense || /defense|оборон/i.test(hitBlob)) {
+        return `Публикации о связях ${sGen} с оборонно-промышленным / транспортным контуром (в т.ч. ${domain || "rucriminal.info"}); требуется сверка первоисточников`;
+      }
+      return `Криминальные / судебные материалы в открытых источниках по ${sGen}${domain ? ` (якорь: ${domain})` : ""}; требуется сверка первоисточников`;
+    }
+    case "political_exposure":
+      if (p.moldova) {
+        if (p.makhmudov || /лоббир|президент|president/i.test(hitBlob)) {
+          return `Сведения о политической деятельности персоны в Молдавии (авторы утверждают, что ${s} спонсировал политическую активность, а также что И. Махмудов лоббировал выдвижение ${sGen} на пост Президента Молдовы)`;
+        }
+        return `Сведения о политической деятельности персоны в Молдавии (авторы утверждают спонсорство / участие в политическом контуре; источник: ${domain || "открытая пресса"})`;
+      }
+      return `Сведения о политической / публичной экспозиции ${sGen} в открытых источниках`;
+    case "business_associates":
+      if (p.liksutov) {
+        return `Совместный бизнес с М. Ликсутовым и связанными лицами (в открытых источниках также упоминается разделённая / элитная собственность)`;
+      }
+      return `Упоминания совместного бизнеса и связанных партнёров ${sGen} в открытых источниках`;
+    case "conflict_jurisdiction":
+      if (p.lnr || p.transmash) {
+        return `Публикация с указанием ${sGen} среди владельцев / бенефициаров «Трансмашхолдинга», который якобы инвестировал в предприятие на территории ЛНР (единичный сюжет; требует сверки)`;
+      }
+      return `Сюжеты о конфликтных / спорных юрисдикциях в открытых источниках по ${sGen}`;
+    case "offshore":
+      return `Связи с офшором / зарубежными структурами (по открытым источникам; требует сверки)`;
+    case "aggregator_negative":
+      if (p.liksutov || p.offshore || /бенефициар|офшор|корруп|криминал/i.test(hitBlob)) {
+        return `Публикация на ресурсе-агрегаторе: сведения о том, что ${s} является бенефициаром офшора, связанного с М. Ликсутовым, о возможных коррупционных и криминальных связях (характер источника требует осторожной интерпретации)`;
+      }
+      return `Негативные публикации на ресурсах-агрегаторах по ${sGen}${domain ? ` (${domain})` : ""}`;
+    case "pep_rca":
+      return `Предварительные сигналы PEP / RCA в комплаенс-базах по ${shortSubjectDative(subjectName)}; требуется сверка полного профиля`;
+    default:
+      if (domain) {
+        return `Иные потенциально нежелательные упоминания по ${sGen} (в т.ч. ${domain})`;
+      }
+      return theme.title;
+  }
+}
+
+export function complianceToClientClaim(c: OrionComplianceDbSignal, subjectName: string): string {
+  const sDat = shortSubjectDative(subjectName);
+  const blob = `${c.statusLine} ${c.detail}`;
+  if (/rca/i.test(blob)) {
+    return `В ${c.provider} — предварительный / активный сигнал RCA по ${sDat} (связь с близкими партнёрами; требуется сверка полного профиля)`;
+  }
+  if (/pep/i.test(blob)) {
+    return `В ${c.provider} — предварительный / активный сигнал PEP по ${sDat} (в т.ч. через партнёрский контур; требуется сверка полного профиля)`;
+  }
+  return `В ${c.provider} обнаружено предварительное совпадение по имени ${shortSubjectGenitive(subjectName)}; требуется сверка полного профиля`;
+}
+
 function buildExecutiveNarrative(input: {
   subjectName: string;
   themes: OrionThemeCard[];
@@ -1053,29 +1197,29 @@ function buildExecutiveNarrative(input: {
   const scope =
     "Мы провели аудит результатов поиска (ТОП сохранённой выдачи) в Яндексе и Google по России и ОАЭ, а также доступных сигналов международных баз Dow Jones, World-Check и LexisNexis.";
 
-  const themeLines = input.themes.slice(0, 6).map((t) => {
-    const ents = t.namedEntities
-      .filter((e) => isQualityEntity(e, input.subjectName) && !WEAK_ANCHOR_DOMAIN_RE.test(e))
-      .sort((a, b) => {
-        const rank = (e: string) =>
-          /трансмаш|махмудов|бокарев/i.test(e)
-            ? 0
-            : /ликсутов|лнр/i.test(e)
-              ? 1
-              : /молдав|оборон/i.test(e)
-                ? 2
-                : 3;
-        return rank(a) - rank(b);
-      })
-      .slice(0, 3);
-    // Lead criminal theme with aggregator domain when named entities are thin
-    if (ents.length === 0 && t.id === "criminal_legal") {
-      const agg = t.sampleHits.find((h) => CRIMINAL_AGGREGATOR_DOMAIN_RE.test(h.domain));
-      if (agg) return `${t.title} (${agg.domain})`;
-    }
-    return ents.length > 0 ? `${t.title} (${ents.join(", ")})` : t.title;
-  });
-  // Optionally append strong GPT bullets that don't look like NER garbage / demo / soft anchors
+  const nextStep =
+    sanitizeList(input.synthesis?.nextSteps)[0] ||
+    "Для разработки эффективной стратегии нам необходимо обсудить контекст задачи и сформулировать конкретные цели, чтобы определить, чем мы могли бы помочь.";
+
+  // Primary ORION-style claims (human prose), not «Тема (entity, domain)».
+  const primaryIds = new Set([
+    "criminal_legal",
+    "sanctions_associates",
+    "political_exposure",
+    "business_associates",
+    "offshore",
+  ]);
+  const primaryThemes = input.themes.filter((t) => primaryIds.has(t.id));
+  const singleThemes = input.themes.filter(
+    (t) => t.id === "conflict_jurisdiction" || t.id === "aggregator_negative" || t.id === "other_adverse"
+  );
+
+  const primaryClaims = (primaryThemes.length > 0 ? primaryThemes : input.themes.slice(0, 4)).map((t) =>
+    themeToClientClaim(t, input.subjectName)
+  );
+  const singleClaims = singleThemes.map((t) => themeToClientClaim(t, input.subjectName));
+  const complianceClaims = input.compliance.map((c) => complianceToClientClaim(c, input.subjectName));
+
   const gptExtras = sanitizeList(input.synthesis?.mainRisks)
     .filter(
       (b) =>
@@ -1083,31 +1227,51 @@ function buildExecutiveNarrative(input: {
           b
         )
     )
-    .filter((b) => !themeLines.some((t) => t.slice(0, 40).toLowerCase() === b.slice(0, 40).toLowerCase()))
+    .filter((b) => b.length > 40)
+    .filter((b) => !primaryClaims.some((t) => t.slice(0, 48).toLowerCase() === b.slice(0, 48).toLowerCase()))
     .slice(0, 2);
-  const mergedThemes = [...themeLines];
-  for (const g of gptExtras) {
-    if (mergedThemes.length >= 6) break;
-    mergedThemes.push(g);
-  }
-  const nextStep =
-    sanitizeList(input.synthesis?.nextSteps)[0] ||
-    "Для разработки эффективной стратегии нам необходимо обсудить контекст задачи и сформулировать конкретные цели.";
 
-  // Keep narrative short enough for one executive card (themes live in bullets / slide 5).
+  const bullets: string[] = [];
+  const claimKey = (c: string) => {
+    if (/наличие актуальных связей/i.test(c)) return "links-sanctions";
+    if (/политической деятельности.*молдав/i.test(c)) return "moldova-politics";
+    if (/совместный бизнес.*ликсутов/i.test(c)) return "liksutov-business";
+    if (/лнр/i.test(c)) return "lnr";
+    if (/офшор|агрегаторе/i.test(c)) return "offshore-agg";
+    if (/dow jones/i.test(c)) return "dj";
+    if (/lexisnexis/i.test(c)) return "ln";
+    if (/world-check|world check/i.test(c)) return "wc";
+    return c.slice(0, 56).toLowerCase();
+  };
+  for (const c of [...primaryClaims, ...singleClaims, ...complianceClaims, ...gptExtras]) {
+    if (bullets.length >= 8) break;
+    const key = claimKey(c);
+    const existingIdx = bullets.findIndex((b) => claimKey(b) === key);
+    if (existingIdx >= 0) {
+      // Keep the longer / more specific claim
+      if (c.length > bullets[existingIdx].length) bullets[existingIdx] = c;
+      continue;
+    }
+    bullets.push(c);
+  }
+
+  // GSM-style résumé body: intro + «коротко по итогам» framing (claims live in bullets).
   const body: string[] = [
     scope,
-    `В результатах поиска по России (${formatPctLine(input.ru)}) и ОАЭ (${formatPctLine(input.uae)}) фиксируются сюжеты, которые могут осложнить compliance-процедуры.`,
+    `В результатах поиска в Яндексе и Google обнаружены ссылки, которые могут вызвать затруднения при прохождении compliance-процедур. По России (${formatPctLine(input.ru)}) и ОАЭ (${formatPctLine(input.uae)}) нежелательные ссылки ведут на публикации по следующим темам:`,
   ];
-  if (input.compliance.length > 0) {
-    body.push(`В международных базах: ${input.compliance.map((c) => c.statusLine).join("; ")}.`);
+  if (singleClaims.length > 0) {
+    body.push("Также обнаружены единичные нежелательные публикации (см. пункты ниже).");
+  }
+  if (complianceClaims.length > 0) {
+    body.push("В международных базах данных также обнаружены профили / предварительные совпадения по субъекту (см. пункты ниже).");
   }
   body.push(nextStep);
 
   return {
     scope,
     narrative: body.join("\n\n"),
-    bullets: mergedThemes,
+    bullets,
     nextStep,
   };
 }
@@ -1159,27 +1323,7 @@ export function themeSetBullets(themeSet: OrionThemeSet, region?: OrionRegionBuc
     region == null
       ? themeSet.themes
       : themeSet.themes.filter((t) => t.regions.includes(region) || t.regions.length === 0);
-  return themes.slice(0, 6).map((t) => {
-    const ents = t.namedEntities
-      .filter((e) => isQualityEntity(e, themeSet.subjectName) && !WEAK_ANCHOR_DOMAIN_RE.test(e))
-      .sort((a, b) => {
-        const rank = (e: string) =>
-          /трансмаш|махмудов|бокарев/i.test(e)
-            ? 0
-            : /ликсутов|лнр/i.test(e)
-              ? 1
-              : /молдав|оборон/i.test(e)
-                ? 2
-                : 3;
-        return rank(a) - rank(b);
-      })
-      .slice(0, 3);
-    if (ents.length === 0 && t.id === "criminal_legal") {
-      const agg = t.sampleHits.find((h) => CRIMINAL_AGGREGATOR_DOMAIN_RE.test(h.domain));
-      if (agg) return `${t.title} (${agg.domain})`;
-    }
-    return ents.length ? `${t.title} (${ents.join(", ")})` : t.title;
-  });
+  return themes.slice(0, 6).map((t) => themeToClientClaim(t, themeSet.subjectName));
 }
 
 export function regionalAuditDashboardBlock(input: {
@@ -1234,13 +1378,13 @@ export function orionStyleRiskMatrixRows(themeSet: OrionThemeSet): Array<{
   const rows = themeSet.themes.slice(0, 6).map((t) => ({
     theme: t.title,
     level: levelFor(t),
-    summary: t.summary,
+    summary: themeToClientClaim(t, themeSet.subjectName),
   }));
   for (const c of themeSet.complianceSignals) {
     rows.push({
       theme: c.provider,
       level: "Требует проверки",
-      summary: `${c.statusLine}. ${c.detail}`,
+      summary: complianceToClientClaim(c, themeSet.subjectName),
     });
   }
   return rows.slice(0, 8);

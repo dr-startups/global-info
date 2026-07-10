@@ -41,6 +41,7 @@ import {
   buildDecisionConsequences,
   buildOrionThemeSet,
   buildSerpHeatGridBullets,
+  complianceToClientClaim,
   orionStyleRiskMatrixRows,
   regionalAuditDashboardBlock,
   themeSetBullets,
@@ -267,9 +268,9 @@ function applyThemeSetToExecutive(
   return {
     ...executive,
     executiveSummary: sanitizeExecutiveClientText(themeSet.executiveNarrative, 2600),
-    mainRisks: sanitizeClassicBullets(themeSet.executiveBullets, 280).slice(0, 6),
+    mainRisks: sanitizeClassicBullets(themeSet.executiveBullets, 360).slice(0, 8),
     possibleConsequences: sanitizeClassicBullets(decision.consequences, 280),
-    nextSteps: sanitizeClassicBullets([decision.recommendation, themeSet.nextStep], 280),
+    nextSteps: sanitizeClassicBullets([decision.recommendation, themeSet.nextStep], 320),
     riskMatrix: matrixRows.length > 0 ? matrixRows : executive.riskMatrix,
   };
 }
@@ -292,10 +293,12 @@ function buildOrionExecutiveSlides(
         ];
   const themeBullets = sanitizeClassicBullets(
     [
-      ...themeSetBullets(themeSet).slice(0, 6),
-      ...themeSet.complianceSignals.map((c) => c.statusLine),
+      ...themeSet.executiveBullets.slice(0, 8),
+      ...themeSet.complianceSignals
+        .map((c) => complianceToClientClaim(c, themeSet.subjectName))
+        .filter((b) => !themeSet.executiveBullets.some((e) => e.slice(0, 40) === b.slice(0, 40))),
     ],
-    280
+    320
   ).slice(0, 8);
   return [
     {
@@ -311,7 +314,7 @@ function buildOrionExecutiveSlides(
       template: "orion_golden_risk_matrix",
       title: `${themeSet.subjectName} — ${decision.headline}`,
       narrative: `Уровень риска: ${decision.riskLevel}. ${decision.recommendation}`,
-      bullets: sanitizeClassicBullets(decisionBullets, 260).slice(0, 8),
+      bullets: sanitizeClassicBullets(decisionBullets, 320).slice(0, 8),
     },
     {
       slideKey: "executive-visual",

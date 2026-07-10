@@ -19,7 +19,7 @@ function slidesFromBlock(
   const specs = block.slideSpecs ?? [];
   const isExecutive = sectionKey === "01_executive_summary" || /executive/i.test(sectionKey);
   const narrativeMax = isExecutive ? 2200 : 520;
-  const bulletMax = isExecutive ? 280 : 220;
+  const bulletMax = isExecutive ? 360 : 220;
   return specs.map((spec, idx) => {
     const perSlideNarrative =
       typeof spec.narrative === "string" ? spec.narrative : idx === 0 ? block.narrative : undefined;
