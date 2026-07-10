@@ -160,7 +160,7 @@ export function isEnglishComplianceStub(text: string): boolean {
 /** Rewrite client-facing prose that still mentions demo screening / process meta. */
 export function scrubClientFacingProse(text: string): string {
   let t = String(text ?? "");
-  t = t.replace(/демо[- ]?скрининг(?:ах|а|и|ов)?/gi, "предварительных проверках");
+  t = t.replace(/демо[- ]?скрининг(?:ах|а|и|ов|у|ом)?/gi, "предварительных проверках");
   t = t.replace(/demo[- ]?screening(?:s)?/gi, "preliminary screenings");
   t = t.replace(/в\s+демо[- ]?режиме/gi, "на предварительном этапе");
   // GPT often says «демонстрационных screening-источниках / результатах»
@@ -169,13 +169,30 @@ export function scrubClientFacingProse(text: string): string {
     "предварительных проверках"
   );
   t = t.replace(/демонстрационн(?:ых|ые|ого|ый|ая)\s+/gi, "предварительных ");
+  // screening + match must become «совпадение» before bare screening → «проверка»
+  t = t.replace(
+    /(?:потенциальн(?:ый|ого|ая|ые)\s+)?(?:предварительн(?:ый|ая|ого|ые)\s+)?screening[- ]?match(?:es)?/gi,
+    "предварительное совпадение"
+  );
+  t = t.replace(
+    /(?:потенциальн(?:ый|ого|ая|ые)\s+)?screening[- ]?match(?:es)?/gi,
+    "предварительное совпадение"
+  );
   t = t.replace(/screening[- ]?источник(?:ах|а|и|ов)?/gi, "предварительных источниках");
   t = t.replace(/screening[- ]?результат(?:ах|а|ы|ов)?/gi, "предварительных результатах");
   t = t.replace(/screening[- ]?сигнал(?:ах|а|ы|ов)?/gi, "предварительный сигнал");
   t = t.replace(/\bscreening\b/gi, "предварительная проверка");
-  // RU synonyms that survived earlier scrub
-  t = t.replace(/compliance[- ]?скрининг(?:ах|а|и|ов)?/gi, "предварительных проверках");
-  t = t.replace(/\bскрининг(?:ах|а|и|ов|ами)?\b/gi, "предварительных проверках");
+  // Compound RU: комплаенс-скрининг(у/а/…)
+  t = t.replace(/комплаенс[- ]?скрининг(?:ах|а|и|ов|у|ом|е)?/gi, "предварительной проверке");
+  t = t.replace(/compliance[- ]?скрининг(?:ах|а|и|ов|у|ом|е)?/gi, "предварительной проверке");
+  t = t.replace(/\bскрининг(?:ах|а|и|ов|ами|у|ом|е)?\b/gi, "предварительной проверке");
+  // Repair artifacts if bare screening→проверка already ran on "screening match"
+  t = t.replace(
+    /предварительн(?:ая|ый|ого|ые)?\s+проверка[- ]?match(?:es)?/gi,
+    "предварительное совпадение"
+  );
+  t = t.replace(/предварительных проверках\s+matches?/gi, "предварительные совпадения");
+  t = t.replace(/потенциальн(?:ый|ого|ая)\s+предварительное совпадение/gi, "предварительное совпадение");
   t = t.replace(/\bDATA\s*POOR\b/gi, "секций с недостаточными данными");
   t = t.replace(/\bCOLLAPSED\b/gi, "свёрнутых");
   t = t.replace(/\bNOT_APPLICABLE\b/gi, "неприменимых");
