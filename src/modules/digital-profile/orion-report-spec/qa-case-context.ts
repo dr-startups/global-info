@@ -180,6 +180,8 @@ export function buildQaReportSpecCaseContext(): OrionRealCaseContext {
         riskTypes: ["PEP"],
         summary: "Возможное совпадение в базе World-Check требует верификации.",
         rawMetadataSafe: {},
+        profileUrl: null,
+        evidenceRefs: [],
         importedAt: now,
       },
     ],
