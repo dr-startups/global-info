@@ -157,7 +157,7 @@ export function evaluateClientSerpPolicy(
   const providerApi = readyVisual.filter(
     (a) =>
       a.evidenceRefs.some((r) => r.startsWith("serp_observation:")) ||
-      /provider_serp|serper_organic/i.test(a.assetRef)
+      /provider_serp|serper_organic|yandex_organic/i.test(a.assetRef)
   );
   const live = readyVisual.filter((a) => a.kind === "live_serp");
   const captured = readyVisual.filter((a) => a.kind === "captured_serp");
@@ -165,7 +165,7 @@ export function evaluateClientSerpPolicy(
     (a) =>
       a.kind === "synthetic_serp" &&
       !a.evidenceRefs.some((r) => r.startsWith("serp_observation:")) &&
-      !/provider_serp|serper_organic/i.test(a.assetRef)
+      !/provider_serp|serper_organic|yandex_organic/i.test(a.assetRef)
   );
   const unverified = live.filter((a) => a.geoStatus === "UNVERIFIED");
 

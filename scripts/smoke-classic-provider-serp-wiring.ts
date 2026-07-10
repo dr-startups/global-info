@@ -14,7 +14,10 @@ import {
 } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-provider-serp-assets";
 import { evaluateClientSerpPolicy } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-live-serp-assets";
 import { composeOrionClassicAuditDeck } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-audit-deck-composer";
-import { SYNTHETIC_API_SERP_CAPTION } from "../src/modules/digital-profile/serp-observation";
+import {
+  SYNTHETIC_API_SERP_CAPTION,
+  serpSyntheticAssetToReportAsset,
+} from "../src/modules/digital-profile/serp-observation";
 import { transliterateRuToEn } from "../src/modules/digital-profile/search-surfaces/orion-query-plan";
 import type { ReportAssetV1 } from "../src/modules/digital-profile/orion-report-spec/asset-builder";
 import type { OrionClassicAuditReportSpec } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-client-content-to-report-spec";
@@ -53,26 +56,34 @@ function main() {
     slots.some((s) => s.region === "UAE" && s.query === "Glinka sanctions")
   );
 
+  const dualTitle = serpSyntheticAssetToReportAsset({
+    assetId: "dual_a",
+    queryText: subjectRu,
+    pngBase64: FAKE_IMAGE_DATA,
+    observationIds: ["obs-ru"],
+    engines: "DUAL",
+  });
+  check(
+    "DUAL title prefix",
+    dualTitle.title.startsWith("Поисковая выдача —"),
+    dualTitle.title
+  );
+
   const providerRu: ReportAssetV1 = {
-    assetRef: "ru_provider_serp_google_a",
-    kind: "synthetic_serp",
-    title: "Google — Глинка Сергей Михайлович",
-    caption: SYNTHETIC_API_SERP_CAPTION,
-    imageData: FAKE_IMAGE_DATA,
-    evidenceRefs: ["serp_observation:obs-ru"],
-    status: "ready",
+    ...dualTitle,
+    assetRef: "ru_provider_serp_a",
   };
   const providerRuRisk: ReportAssetV1 = {
-    assetRef: "ru_provider_serp_google_a2",
+    assetRef: "ru_provider_serp_a2",
     kind: "synthetic_serp",
-    title: "Google — Глинка Сергей санкции",
+    title: "Поисковая выдача — Глинка Сергей санкции",
     caption: SYNTHETIC_API_SERP_CAPTION,
     imageData: FAKE_IMAGE_DATA,
     evidenceRefs: ["serp_observation:obs-ru-2"],
     status: "ready",
   };
   const providerUae: ReportAssetV1 = {
-    assetRef: "uae_provider_serp_google_b",
+    assetRef: "uae_provider_serp_b",
     kind: "synthetic_serp",
     title: `Google — ${subjectLatin}`,
     caption: SYNTHETIC_API_SERP_CAPTION,
@@ -81,7 +92,7 @@ function main() {
     status: "ready",
   };
   const tinyBroken: ReportAssetV1 = {
-    assetRef: "ru_provider_serp_google_tiny",
+    assetRef: "ru_provider_serp_tiny",
     kind: "synthetic_serp",
     title: "Google — broken",
     caption: SYNTHETIC_API_SERP_CAPTION,
@@ -208,7 +219,7 @@ function main() {
   );
   check(
     "tiny imageData asset excluded from deck",
-    !serpSlides.some((s) => s.assetRefs?.[0] === "ru_provider_serp_google_tiny")
+    !serpSlides.some((s) => s.assetRefs?.[0] === "ru_provider_serp_tiny")
   );
   check(
     "SERP caption is API synthetic",

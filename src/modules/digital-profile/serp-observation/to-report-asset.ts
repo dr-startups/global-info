@@ -12,12 +12,17 @@ export function serpSyntheticAssetToReportAsset(input: {
   observationIds: string[];
   status?: "ready" | "missing";
   storageKey?: string;
+  /** GOOGLE | YANDEX | DUAL — drives slide title prefix. */
+  engines?: string;
 }): ReportAssetV1 {
   const ready = input.status !== "missing" && Boolean(input.pngBase64);
+  const engines = (input.engines ?? "GOOGLE").toUpperCase();
+  const titlePrefix =
+    engines === "DUAL" ? "Поисковая выдача" : engines === "YANDEX" ? "Яндекс" : "Google";
   return {
-    assetRef: `serper_organic_serp_${input.assetId}`,
+    assetRef: `provider_serp_${input.assetId}`,
     kind: "synthetic_serp",
-    title: `Google — ${input.queryText}`,
+    title: `${titlePrefix} — ${input.queryText}`,
     caption: SYNTHETIC_API_SERP_CAPTION,
     imageData: ready ? input.pngBase64 : undefined,
     storageKey: input.storageKey,

@@ -1,62 +1,80 @@
 import { renderSerpSnapshotPng } from "../serp-snapshot/renderer";
-import type { ResultView, SerpSnapshotViewModel } from "../serp-snapshot/types";
+import type { SerpLanguage, SerpSnapshotViewModel } from "../serp-snapshot/types";
 import { saveFile, sha256 } from "../storage/private-store";
 import { buildStorageKey } from "../storage/keys";
 import { prisma } from "@/server/prisma/client";
+import {
+  buildObservationThemeGrouping,
+  observationToResultView,
+} from "./resolve-observation-highlights";
 import {
   SYNTHETIC_API_SERP_CAPTION,
   type PersistedSerpObservation,
 } from "./types";
 
-function toResultView(obs: PersistedSerpObservation): ResultView {
-  return {
-    rank: obs.rank,
-    title: obs.title ?? obs.domain ?? "Результат поиска",
-    url: obs.url,
-    domain: obs.domain ?? "",
-    snippet: obs.snippet ?? "",
-    classification: "",
-    isHighlighted: false,
-  };
-}
-
 export function buildSyntheticSerpViewModelFromObservations(input: {
   observations: PersistedSerpObservation[];
   subjectName: string;
   queryText: string;
+  language?: SerpLanguage;
 }): SerpSnapshotViewModel {
-  const resultViews = [...input.observations]
-    .sort((a, b) => a.rank - b.rank)
-    .slice(0, 8)
-    .map(toResultView);
+  const language: SerpLanguage = input.language === "en" ? "en" : "ru";
   const query = input.queryText;
-  const dateLabel = new Intl.DateTimeFormat("ru-RU", {
+  const { grouping } = buildObservationThemeGrouping(input.observations, language);
+
+  const yandexObs = input.observations
+    .filter((o) => o.engine === "YANDEX")
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, 8);
+  const googleObs = input.observations
+    .filter((o) => o.engine === "GOOGLE")
+    .sort((a, b) => a.rank - b.rank)
+    .slice(0, 8);
+
+  const yandexResults = yandexObs.map((o) => observationToResultView(o, grouping));
+  const googleResults = googleObs.map((o) => observationToResultView(o, grouping));
+
+  const dateLabel = new Intl.DateTimeFormat(language === "en" ? "en-GB" : "ru-RU", {
     day: "numeric",
     month: "long",
     year: "numeric",
   }).format(new Date());
+
+  const hasYandex = yandexResults.length > 0;
+  const hasGoogle = googleResults.length > 0;
+  const sourceLabel =
+    hasYandex && hasGoogle
+      ? "Yandex Search API / Google · Serper API"
+      : hasYandex
+        ? "Yandex Search API"
+        : "Google · Serper API";
 
   return {
     title: "Поисковая выдача",
     dateLabel,
     subjectName: input.subjectName,
     query,
-    language: "ru",
-    themes: [],
-    noNegatives: true,
+    language,
+    themes: grouping.themes,
+    noNegatives: grouping.themes.length === 0,
     engines: {
-      yandex: { engine: "YANDEX", query, results: [], empty: true },
+      yandex: {
+        engine: "YANDEX",
+        query,
+        results: yandexResults,
+        empty: !hasYandex,
+      },
       google: {
         engine: "GOOGLE",
         query,
-        results: resultViews,
-        empty: resultViews.length === 0,
+        results: googleResults,
+        empty: !hasGoogle,
       },
     },
     width: 1400,
     height: 900,
     footerNote: SYNTHETIC_API_SERP_CAPTION,
-    sourceLabel: "Google · Serper API",
+    sourceLabel,
   };
 }
 
@@ -89,10 +107,17 @@ export async function createSyntheticSerpAssetFromObservations(input: {
     throw new Error("createSyntheticSerpAssetFromObservations: auditRunId mismatch");
   }
 
+  const hasYandex = input.observations.some((o) => o.engine === "YANDEX");
+  const hasGoogle = input.observations.some((o) => o.engine === "GOOGLE");
+  const provider =
+    hasYandex && hasGoogle ? "provider_serp" : hasYandex ? "yandex" : "serper";
+  const engine = hasYandex && hasGoogle ? "DUAL" : hasYandex ? "YANDEX" : "GOOGLE";
+
   const vm = buildSyntheticSerpViewModelFromObservations({
     observations: input.observations,
     subjectName: input.subjectName,
     queryText: input.queryText,
+    language: input.language.startsWith("en") ? "en" : "ru",
   });
   const png = await renderSerpSnapshotPng(vm);
   const digest = sha256(png);
@@ -107,8 +132,8 @@ export async function createSyntheticSerpAssetFromObservations(input: {
       caseId: input.caseId,
       auditRunId: input.auditRunId,
       queryId: input.queryId,
-      provider: "serper",
-      engine: "GOOGLE",
+      provider,
+      engine,
       surface: "organic",
       region: input.region,
       language: input.language,

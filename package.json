@@ -32,6 +32,7 @@
     "smoke:serp-snapshot": "node scripts/smoke-serp-snapshot.mjs",
     "smoke:serp-live-capture-mvp": "tsx scripts/smoke-serp-live-capture-mvp.ts",
     "smoke:serp-observation-serper-slice": "tsx scripts/smoke-serp-observation-serper-slice.ts",
+    "smoke:serp-observation-themes-yandex": "tsx scripts/smoke-serp-observation-themes-yandex.ts",
     "smoke:classic-provider-serp-wiring": "tsx scripts/smoke-classic-provider-serp-wiring.ts",
     "smoke:serp-snapshot-report": "node scripts/smoke-serp-snapshot-report.mjs",
     "smoke:serp-snapshot-real-source": "tsx scripts/smoke-serp-snapshot-real-source.ts",

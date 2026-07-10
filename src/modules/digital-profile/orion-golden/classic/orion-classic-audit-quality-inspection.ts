@@ -242,7 +242,7 @@ export function inspectClassicOrionAuditQuality(input: {
       a.kind === "synthetic_serp" &&
       a.status === "ready" &&
       (a.evidenceRefs.some((r) => r.startsWith("serp_observation:")) ||
-        /provider_serp|serper_organic/i.test(a.assetRef))
+        /provider_serp|serper_organic|yandex_organic/i.test(a.assetRef))
   );
   const capturedAssets = assets.filter((a) => a.kind === "captured_serp" && a.status === "ready");
   const legacySynthetic = assets.filter(
@@ -250,7 +250,7 @@ export function inspectClassicOrionAuditQuality(input: {
       a.kind === "synthetic_serp" &&
       a.status === "ready" &&
       !a.evidenceRefs.some((r) => r.startsWith("serp_observation:")) &&
-      !/provider_serp|serper_organic/i.test(a.assetRef)
+      !/provider_serp|serper_organic|yandex_organic/i.test(a.assetRef)
   );
   const unverifiedLive = liveAssets.filter((a) => a.geoStatus === "UNVERIFIED");
   const serpSlides = input.deckManifest.finalSlides.filter(

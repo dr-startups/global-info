@@ -1,5 +1,5 @@
 /**
- * Classic ORION audit — provider-first Google/Serper SERP assets.
+ * Classic ORION audit — provider-first Google/Serper + Yandex SERP assets.
  * Persists SerpObservation rows under one auditRunId and builds synthetic PNGs.
  * No browser scraping, no residential proxy, no CAPTCHA bypass.
  */
@@ -14,12 +14,14 @@ import {
 import {
   SYNTHETIC_API_SERP_CAPTION,
   ingestSerperOrganicObservations,
+  ingestYandexOrganicObservations,
   persistSerpObservations,
   createSyntheticSerpAssetFromObservations,
   serpSyntheticAssetToReportAsset,
   buildSerpQueryId,
   type SerpProviderStatus,
   type PersistedSerpObservation,
+  type SerpObservationDraft,
 } from "../../serp-observation";
 import { prisma } from "@/server/prisma/client";
 
@@ -37,6 +39,8 @@ export type ProviderSerpSlotStatus = {
   status: SerpProviderStatus | "READY_CACHED" | "READY_NEW";
   message?: string;
   assetRef?: string;
+  googleStatus?: SerpProviderStatus | "SKIPPED";
+  yandexStatus?: SerpProviderStatus | "SKIPPED";
 };
 
 function isProviderApiSerpAsset(asset: ReportAssetV1): boolean {
@@ -45,7 +49,7 @@ function isProviderApiSerpAsset(asset: ReportAssetV1): boolean {
     asset.status === "ready" &&
     (asset.evidenceRefs.some((r) => r.startsWith("serp_observation:")) ||
       asset.caption === SYNTHETIC_API_SERP_CAPTION ||
-      /provider_serp|serper_organic/i.test(asset.assetRef))
+      /provider_serp|serper_organic|yandex_organic/i.test(asset.assetRef))
   );
 }
 
@@ -79,6 +83,23 @@ export function buildDefaultProviderSerpSlots(input: {
   return slots;
 }
 
+function slotQueryId(input: {
+  auditRunId: string;
+  region: string;
+  language: string;
+  queryText: string;
+}): string {
+  return buildSerpQueryId({
+    auditRunId: input.auditRunId,
+    provider: "provider_serp",
+    engine: "DUAL",
+    region: input.region,
+    language: input.language,
+    queryText: input.queryText,
+    surface: "organic",
+  });
+}
+
 async function loadCachedSyntheticAsset(input: {
   auditRunId: string;
   queryId: string;
@@ -102,10 +123,11 @@ async function loadCachedSyntheticAsset(input: {
       observationIds: row.observations.map((o) => o.observationId),
       status: "ready",
       storageKey: row.storageKey,
+      engines: row.engine,
     });
     return {
       ...asset,
-      assetRef: `${prefix}_google_${row.id}`,
+      assetRef: `${prefix}_${row.id}`,
     };
   } catch {
     return null;
@@ -119,14 +141,11 @@ async function buildOneProviderSlot(input: {
   slot: ProviderSerpSlot;
 }): Promise<{ asset: ReportAssetV1 | null; status: ProviderSerpSlotStatus }> {
   const regionCode = input.slot.region as OrionRegionCode;
-  const queryId = buildSerpQueryId({
+  const queryId = slotQueryId({
     auditRunId: input.auditRunId,
-    provider: "serper",
-    engine: "GOOGLE",
     region: input.slot.region,
     language: input.slot.language,
     queryText: input.slot.query,
-    surface: "organic",
   });
 
   const cached = await loadCachedSyntheticAsset({
@@ -143,44 +162,74 @@ async function buildOneProviderSlot(input: {
         region: input.slot.region,
         status: "READY_CACHED",
         assetRef: cached.assetRef,
+        googleStatus: "SKIPPED",
+        yandexStatus: "SKIPPED",
       },
     };
   }
 
-  const ingest = await ingestSerperOrganicObservations({
-    caseId: input.caseId,
-    auditRunId: input.auditRunId,
-    queryText: input.slot.query,
-    region: regionCode,
-    language: input.slot.language,
-    subjectFullName: input.subjectName,
-    limit: 10,
-  });
+  const [googleIngest, yandexIngest] = await Promise.all([
+    ingestSerperOrganicObservations({
+      caseId: input.caseId,
+      auditRunId: input.auditRunId,
+      queryText: input.slot.query,
+      region: regionCode,
+      language: input.slot.language,
+      subjectFullName: input.subjectName,
+      limit: 10,
+    }),
+    ingestYandexOrganicObservations({
+      caseId: input.caseId,
+      auditRunId: input.auditRunId,
+      queryText: input.slot.query,
+      region: regionCode,
+      language: input.slot.language,
+      subjectFullName: input.subjectName,
+      limit: 10,
+    }),
+  ]);
 
-  if (ingest.status !== "OK") {
+  const drafts: SerpObservationDraft[] = [
+    ...(googleIngest.status === "OK" ? googleIngest.observations : []),
+    ...(yandexIngest.status === "OK" ? yandexIngest.observations : []),
+  ];
+
+  if (drafts.length === 0) {
+    const status: SerpProviderStatus =
+      googleIngest.status === "PROVIDER_BLOCKED_CAPTCHA" ||
+      yandexIngest.status === "PROVIDER_BLOCKED_CAPTCHA"
+        ? "PROVIDER_BLOCKED_CAPTCHA"
+        : googleIngest.status === "PROVIDER_NOT_CONFIGURED" &&
+            yandexIngest.status === "PROVIDER_NOT_CONFIGURED"
+          ? "PROVIDER_NOT_CONFIGURED"
+          : googleIngest.status === "NO_RESULTS" && yandexIngest.status === "NO_RESULTS"
+            ? "NO_RESULTS"
+            : "PROVIDER_FAILED";
     console.warn("[provider-serp] slot not OK", {
       auditRunId: input.auditRunId,
       query: input.slot.query,
       region: input.slot.region,
-      status: ingest.status,
-      message: ingest.message,
+      google: googleIngest.status,
+      yandex: yandexIngest.status,
     });
     return {
       asset: null,
       status: {
         query: input.slot.query,
         region: input.slot.region,
-        status: ingest.status,
-        message: ingest.message,
+        status,
+        message: `google=${googleIngest.status}; yandex=${yandexIngest.status}`,
+        googleStatus: googleIngest.status,
+        yandexStatus: yandexIngest.status,
       },
     };
   }
 
-  const persisted = await persistSerpObservations(ingest.observations);
+  const persisted = await persistSerpObservations(drafts);
   const synthetic = await createSyntheticSerpAssetFromObservations({
     caseId: input.caseId,
     auditRunId: input.auditRunId,
-    queryId: ingest.queryId,
+    queryId,
     queryText: input.slot.query,
     subjectName: input.subjectName,
     region: input.slot.region,
@@ -189,6 +238,12 @@ async function buildOneProviderSlot(input: {
   });
 
   const prefix = input.slot.region === "UAE" ? "uae_provider_serp" : "ru_provider_serp";
+  const engines =
+    googleIngest.status === "OK" && yandexIngest.status === "OK"
+      ? "DUAL"
+      : yandexIngest.status === "OK"
+        ? "YANDEX"
+        : "GOOGLE";
   const asset = {
     ...serpSyntheticAssetToReportAsset({
       assetId: synthetic.assetId,
@@ -197,8 +252,9 @@ async function buildOneProviderSlot(input: {
       observationIds: synthetic.observationIds,
       status: "ready",
       storageKey: synthetic.storageKey,
+      engines,
     }),
-    assetRef: `${prefix}_google_${synthetic.assetId}`,
+    assetRef: `${prefix}_${synthetic.assetId}`,
   };
 
   return {
@@ -208,12 +264,14 @@ async function buildOneProviderSlot(input: {
       region: input.slot.region,
       status: "READY_NEW",
       assetRef: asset.assetRef,
+      googleStatus: googleIngest.status,
+      yandexStatus: yandexIngest.status,
     },
   };
 }
 
 /**
- * Build Google/Serper organic synthetic SERP assets for classic audit.
+ * Build Google/Serper + Yandex organic synthetic SERP assets for classic audit.
  * All observations share the same auditRunId (= reportRunId).
  */
 export async function buildProviderSerpAssets(input: {
@@ -269,7 +327,9 @@ export async function buildProviderSerpAssets(input: {
   console.info("[provider-serp] build done", {
     auditRunId: input.auditRunId,
     ready: assets.length,
-    statuses: slotStatuses.map((s) => `${s.region}:${s.status}`),
+    statuses: slotStatuses.map(
+      (s) => `${s.region}:${s.status}(g=${s.googleStatus ?? "-"},y=${s.yandexStatus ?? "-"})`
+    ),
   });
 
   return { assets, slotStatuses };

@@ -73,7 +73,7 @@ function isProviderApiAsset(asset: ReportAssetV1): boolean {
   return (
     asset.kind === "synthetic_serp" &&
     (asset.evidenceRefs.some((r) => r.startsWith("serp_observation:")) ||
-      /provider_serp|serper_organic/i.test(asset.assetRef) ||
+      /provider_serp|serper_organic|yandex_organic/i.test(asset.assetRef) ||
       asset.caption === "Синтетический снимок на основе сохранённых результатов API")
   );
 }

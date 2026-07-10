@@ -107,7 +107,7 @@ export async function runOrionClassicAuditRender(options: {
     providerCount: assets.filter(
       (a) =>
         a.evidenceRefs.some((r) => r.startsWith("serp_observation:")) ||
-        /provider_serp|serper_organic/i.test(a.assetRef)
+        /provider_serp|serper_organic|yandex_organic/i.test(a.assetRef)
     ).length,
   });
 
