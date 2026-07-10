@@ -151,18 +151,34 @@ export function composeOrionClassicAuditDeck(
   reportSpec: OrionClassicAuditReportSpec,
   assets: ReportAssetV1[] = []
 ): OrionGoldenDeckManifest {
-  const serpAssets = pickAssets(assets, "synthetic_serp");
+  const serpAssets = [
+    ...pickAssets(assets, "captured_serp"),
+    ...pickAssets(assets, "synthetic_serp"),
+  ];
   const lexisAssets = pickAssets(assets, "lexis_visual_page");
   const imageAssets = pickAssets(assets, "image_grid");
   const videoAssets = pickAssets(assets, "video_cards");
   const knowledgeAssets = pickAssets(assets, "knowledge_panel");
 
+  // Prefer captured screenshots; fill remaining slots with synthetic only if needed.
+  const ruCaptured = serpAssets.filter(
+    (a) => a.kind === "captured_serp" && !/uae|intl|ae_/i.test(a.assetRef)
+  );
+  const uaeCaptured = serpAssets.filter(
+    (a) => a.kind === "captured_serp" && /uae|intl|ae_/i.test(a.assetRef)
+  );
+  const ruSynthetic = serpAssets.filter(
+    (a) => a.kind === "synthetic_serp" && !/uae|intl|ae_/i.test(a.assetRef)
+  );
+  const uaeSynthetic = serpAssets.filter(
+    (a) => a.kind === "synthetic_serp" && /uae|intl|ae_/i.test(a.assetRef)
+  );
   const ruSerp = dedupeSerpAssetList(
-    serpAssets.filter((a) => !/uae|intl|ae_/i.test(a.assetRef)),
+    ruCaptured.length > 0 ? ruCaptured : ruSynthetic,
     3
   );
   const uaeSerp = dedupeSerpAssetList(
-    serpAssets.filter((a) => /uae|intl|ae_/i.test(a.assetRef)),
+    uaeCaptured.length > 0 ? uaeCaptured : uaeSynthetic,
     2
   );
   const uaeImages = imageAssets.filter((a) => /uae|intl/i.test(a.assetRef));

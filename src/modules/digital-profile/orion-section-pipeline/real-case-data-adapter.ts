@@ -71,6 +71,16 @@ type WikiRow = {
   pageTitle: string | null;
 };
 
+export type OrionCaseScreenshotRow = {
+  id: string;
+  storageKey: string;
+  mimeType: string;
+  sourceUrl: string | null;
+  resultId: string | null;
+  capturedAt: Date;
+  sizeBytes: number | null;
+};
+
 export interface OrionRealCaseContext {
   caseId: string;
   locale: "ru" | "en";
@@ -85,6 +95,8 @@ export interface OrionRealCaseContext {
   databaseProfiles: DbProfileRow[];
   riskFindings: RiskFindingRow[];
   wikiChecks: WikiRow[];
+  /** Captured / persisted SERP screenshots (private storage keys). */
+  screenshots: OrionCaseScreenshotRow[];
   providerAvailability: {
     used: string[];
     unavailable: string[];
@@ -295,7 +307,7 @@ export async function loadRealCaseContext(
   options: { locale?: "ru" | "en"; buildFreshReportJson?: boolean } = {}
 ): Promise<OrionRealCaseContext> {
   const locale = options.locale ?? "ru";
-  const [caseRow, searchResults, searchSurfaces, databaseProfiles, riskFindings, wikiChecks, latestReport] =
+  const [caseRow, searchResults, searchSurfaces, databaseProfiles, riskFindings, wikiChecks, latestReport, screenshots] =
     await Promise.all([
       prisma.case.findFirst({
         where: { id: caseId, deletedAt: null },
@@ -396,6 +408,24 @@ export async function loadRealCaseContext(
         orderBy: { version: "desc" },
         select: { version: true, reportJson: true },
       }),
+      // Stage S1 SERP snapshots only — raw page screenshots stay out of classic SERP assets.
+      prisma.screenshot.findMany({
+        where: {
+          caseId,
+          deletedAt: null,
+          storageKey: { contains: "/serp-snapshots/" },
+        },
+        orderBy: { capturedAt: "desc" },
+        select: {
+          id: true,
+          storageKey: true,
+          mimeType: true,
+          sourceUrl: true,
+          resultId: true,
+          capturedAt: true,
+          sizeBytes: true,
+        },
+      }),
     ]);
 
   if (!caseRow) {
@@ -433,6 +463,7 @@ export async function loadRealCaseContext(
     databaseProfiles,
     riskFindings,
     wikiChecks,
+    screenshots,
     providerAvailability: { used, unavailable },
     lexis: {
       latestReady: lexisPicked.latestReady,

@@ -129,7 +129,14 @@ export const orionReportSpecV1Schema = z.object({
   assets: z.array(
     z.object({
       assetRef: z.string(),
-      kind: z.enum(["synthetic_serp", "image_grid", "video_cards", "knowledge_panel", "lexis_visual_page"]),
+      kind: z.enum([
+        "synthetic_serp",
+        "captured_serp",
+        "image_grid",
+        "video_cards",
+        "knowledge_panel",
+        "lexis_visual_page",
+      ]),
       title: z.string(),
       caption: z.string().optional(),
       imageData: z.string().optional(),

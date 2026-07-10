@@ -202,6 +202,7 @@ export function buildQaReportSpecCaseContext(): OrionRealCaseContext {
         pageTitle: null,
       },
     ],
+    screenshots: [],
     providerAvailability: {
       used: ["yandex", "google"],
       unavailable: [],

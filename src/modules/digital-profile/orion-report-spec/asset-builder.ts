@@ -10,6 +10,7 @@ import {
 
 export type ReportAssetKind =
   | "synthetic_serp"
+  | "captured_serp"
   | "image_grid"
   | "video_cards"
   | "knowledge_panel"
