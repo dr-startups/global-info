@@ -4,6 +4,12 @@
  */
 
 import { classifyAutocompleteQuery } from "../../evidence-quality/autocomplete-class";
+import {
+  isRiskyResultClass,
+  isStrongAutoSnapshotRisk,
+  themeForClass,
+  type StoredRiskClassification,
+} from "../../risk-classifier/result-classifier";
 import { humanizeRiskTheme, sanitizeOrionGoldenClientText } from "../client/client-text-sanitizer";
 import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
 import type { OrionClientContent } from "../content/orion-client-content-builder";
@@ -100,21 +106,76 @@ function riskBlob(item: FullEvidenceInventory["items"][number]): string {
     String(rm.category ?? ""),
     String(item.title ?? ""),
     String(item.snippet ?? ""),
+    String(item.sourceUrl ?? ""),
   ];
   if (nested && typeof nested === "object" && !Array.isArray(nested)) {
     const n = nested as Record<string, unknown>;
     const auto = n.auto && typeof n.auto === "object" ? (n.auto as Record<string, unknown>) : null;
-    parts.push(String(n.classification ?? ""), String(auto?.theme ?? ""), String(auto?.classification ?? ""));
+    const manual = n.manual && typeof n.manual === "object" ? (n.manual as Record<string, unknown>) : null;
+    parts.push(
+      String(n.classification ?? ""),
+      String(auto?.theme ?? ""),
+      String(auto?.classification ?? ""),
+      String(auto?.riskTheme ?? ""),
+      String(manual?.classification ?? ""),
+      String(manual?.riskTheme ?? "")
+    );
   }
   return parts.join(" ").toLowerCase();
 }
 
-const ADVERSE_RE =
-  /adverse|negative|undesirable|нежелат|негатив|санкц|sanction|ofac|корруп|corrupt|мошен|fraud|арест|arrest|уголов|criminal|суд|lawsuit|pep|watchlist|rca|компромат|offshore|офшор|политич|молдав|лднр|лнр|индустриальн|бенефициар|associated|associate/i;
+function storedRiskClassification(
+  item: FullEvidenceInventory["items"][number]
+): StoredRiskClassification | null {
+  const raw = item.rawMetadata?.riskClassification;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  return raw as StoredRiskClassification;
+}
 
+/** Effective UI risk-theme key (mirrors SERP theme-grouper / highlight-resolver). */
+function effectiveUiRiskTheme(item: FullEvidenceInventory["items"][number]): string | null {
+  const stored = storedRiskClassification(item);
+  const manual = stored?.manual ?? null;
+  const auto = stored?.auto ?? null;
+  if (manual?.classification && isRiskyResultClass(manual.classification)) {
+    return String(manual.riskTheme ?? themeForClass(manual.classification) ?? "").trim() || null;
+  }
+  if (auto && isStrongAutoSnapshotRisk(auto)) {
+    return String(auto.riskTheme ?? themeForClass(auto.classification) ?? "").trim() || null;
+  }
+  const legacy = String((item.rawMetadata ?? {}).riskTheme ?? (item.rawMetadata ?? {}).themeLabel ?? "").trim();
+  return legacy || null;
+}
+
+/** Domains that SERP UI / analysts treat as adverse even when title is soft. */
+const ADVERSE_DOMAIN_RE =
+  /rucriminal\.|cybercriminal\.|acompromat\.|rucompromat\.|compromat\.|opensanctions\.|ofac\.|justice\.gov|home\.treasury\.gov/i;
+
+const ADVERSE_RE =
+  /adverse|negative|undesirable|нежелат|негатив|санкц|sanction|ofac|корруп|corrupt|мошен|fraud|арест|arrest|уголов|criminal|суд|lawsuit|pep|watchlist|rca|компромат|offshore|офшор|политич|молдав|лднр|лнр|индустриальн|бенефициар|associated|associate|defense industry|оборон/i;
+
+/**
+ * Align classic ThemeSet adverse gate with SERP UI red-frame logic:
+ * manual risky → strong auto → known adverse domains → keyword blob (incl. URL).
+ */
 function isAdverseItem(item: FullEvidenceInventory["items"][number]): boolean {
   const et = item.evidenceType.toLowerCase();
   if (et === "risk_finding" || et === "compliance_hit") return true;
+
+  const stored = storedRiskClassification(item);
+  const manual = stored?.manual ?? null;
+  const auto = stored?.auto ?? null;
+  if (manual?.classification) {
+    return isRiskyResultClass(manual.classification);
+  }
+  if (auto && isStrongAutoSnapshotRisk(auto)) return true;
+
+  const url = String(item.sourceUrl ?? "");
+  if (ADVERSE_DOMAIN_RE.test(url) || ADVERSE_DOMAIN_RE.test(domainOf(url))) return true;
+
+  // Legacy enum on search_result (ADVERSE_MEDIA / LEGAL / CRIMINAL / …)
+  if (isRiskyResultClass(item.classification)) return true;
+
   return ADVERSE_RE.test(riskBlob(item));
 }
 
@@ -167,8 +228,8 @@ const THEME_DEFS: Array<{
   },
   {
     key: "criminal_legal",
-    title: "Уголовно-правовая / судебная лексика в открытых источниках",
-    match: /arrest|арест|уголов|criminal|indict|accused|приговор|мошен|fraud|court|суд/i,
+    title: "Криминальные материалы",
+    match: /arrest|арест|уголов|criminal|indict|accused|приговор|мошен|fraud|court|суд|rucriminal|cybercriminal|defense industry/i,
   },
   {
     key: "pep_rca",
@@ -188,6 +249,18 @@ const THEME_DEFS: Array<{
 ];
 
 function themeKeyOf(item: FullEvidenceInventory["items"][number]): ThemeBucketKey {
+  // Prefer SERP UI effective theme so «Криминальные материалы» stays criminal_legal.
+  const uiTheme = (effectiveUiRiskTheme(item) ?? "").toLowerCase();
+  if (uiTheme) {
+    if (/sanction/.test(uiTheme)) return "sanctions_associates";
+    if (/pep|political/.test(uiTheme)) return "pep_rca";
+    if (/criminal/.test(uiTheme)) return "criminal_legal";
+    if (/legal/.test(uiTheme)) return "criminal_legal";
+    if (/adverse|reputation/.test(uiTheme)) return "aggregator_negative";
+    if (/business/.test(uiTheme)) return "business_associates";
+    if (/offshore/.test(uiTheme)) return "offshore";
+  }
+
   const blob = `${riskBlob(item)} ${item.sourceUrl ?? ""}`;
   for (const def of THEME_DEFS) {
     if (def.key === "other_adverse") continue;
@@ -198,6 +271,7 @@ function themeKeyOf(item: FullEvidenceInventory["items"][number]): ThemeBucketKe
   ).toLowerCase();
   if (/санкц/.test(label)) return "sanctions_associates";
   if (/политич|pep/.test(label)) return "political_exposure";
+  if (/криминал|уголов/.test(label)) return "criminal_legal";
   if (/негатив|adverse/.test(label)) return "aggregator_negative";
   if (/корпорат|identity|neutral/.test(label)) return "corporate";
   return "other_adverse";
@@ -280,6 +354,7 @@ function preferredThemeSample(
   // Criminal/legal theme: prefer court/news over personal blogs.
   if (themeKey === "criminal_legal") {
     return (
+      sample.find((h) => /rucriminal|cybercriminal|acompromat|compromat/i.test(h.domain)) ??
       sample.find((h) =>
         /court|суд|justice|reuters|bbc|rbc|forbes|kommersant|vedomosti|interfax/i.test(h.domain)
       ) ??
@@ -482,16 +557,22 @@ function buildThemes(
     if (isDemoOrNoiseItem(item)) continue;
     const et = item.evidenceType.toLowerCase();
     if (et !== "search_result" && et !== "risk_finding" && et !== "compliance_hit") continue;
-    if (!isAdverseItem(item) && et === "search_result") {
+    const adverse = isAdverseItem(item);
+    if (!adverse && et === "search_result") {
       // Keep strong corporate registry identities only when classification already marked risk-ish
       const cls = String(item.classification ?? "").toLowerCase();
-      if (!/adverse|sanction|pep|risk|negative|undesirable|compliance/i.test(cls)) continue;
+      if (!/adverse|sanction|pep|risk|negative|undesirable|compliance|criminal|legal/i.test(cls)) continue;
     }
     const key = themeKeyOf(item);
     // Skip pure corporate identity from becoming the only story unless explicitly adverse
-    if (key === "corporate" && !isAdverseItem(item)) continue;
-    // Skip weak "other_adverse" anchored only on soft media unless classification is strong
-    if (key === "other_adverse" && et === "search_result" && !/sanction|pep|arrest|criminal|ofac|компромат/i.test(riskBlob(item))) {
+    if (key === "corporate" && !adverse) continue;
+    // Skip weak "other_adverse" unless UI/classifier already marked adverse
+    if (
+      key === "other_adverse" &&
+      et === "search_result" &&
+      !adverse &&
+      !/sanction|pep|arrest|criminal|ofac|компромат/i.test(riskBlob(item))
+    ) {
       continue;
     }
     const region: OrionRegionBucket | "GLOBAL" = matchesRegion(item.region, "UAE")
@@ -508,8 +589,14 @@ function buildThemes(
       region: region === "GLOBAL" ? "RU" : region,
       snippet: item.snippet ? sanitizeOrionGoldenClientText(item.snippet).slice(0, 180) : undefined,
     };
-    if (!bucket.hits.some((h) => h.url && hit.url && h.url === hit.url)) {
-      bucket.hits.push(hit);
+    // Prefer UI-adverse / known adverse domains at the front of sampleHits
+    const existingIdx = bucket.hits.findIndex((h) => h.url && hit.url && h.url === hit.url);
+    if (existingIdx < 0) {
+      if (adverse || ADVERSE_DOMAIN_RE.test(hit.domain)) {
+        bucket.hits.unshift(hit);
+      } else {
+        bucket.hits.push(hit);
+      }
     }
     for (const ent of extractNamedEntities(`${item.title} ${item.snippet ?? ""}`, subjectName)) {
       if (!bucket.entities.some((e) => e.toLowerCase() === ent.toLowerCase())) {
@@ -538,10 +625,10 @@ function buildThemes(
       continue;
     }
     if (sample.length === 0 && bucket.hits.length === 0) continue;
-    // For criminal_legal keep theme without weak-blog typical anchor if nothing stronger.
+    // For criminal_legal prefer adverse aggregators; keep theme even without weak-blog anchors.
     const usableSample =
       def.key === "criminal_legal"
-        ? sample.filter((h) => !isWeakBlogDomain(h.domain))
+        ? sample.filter((h) => !isWeakBlogDomain(h.domain) || ADVERSE_DOMAIN_RE.test(h.domain))
         : sample;
     const preferredSample =
       usableSample.length > 0
@@ -564,7 +651,7 @@ function buildThemes(
         : def.key === "pep_rca"
           ? "Предварительные сигналы PEP/RCA в комплаенс-контексте; требуется сверка полного профиля."
           : def.key === "criminal_legal"
-            ? "В открытых источниках встречается уголовно-правовая / судебная лексика; требуется сверка первоисточников."
+            ? "В открытых источниках зафиксированы криминальные / судебные материалы; требуется сверка первоисточников."
             : "",
       preferredSample
         ? `Типичный якорь: ${preferredSample.domain || "источник"} — «${preferredSample.title}».`
@@ -871,10 +958,12 @@ export function buildAnnotatedLinkCards(
   let themeIdx = 0;
   for (const theme of themes) {
     themeIdx += 1;
-    // Prefer stronger domains first within the theme
+    // Prefer stronger / UI-adverse domains first within the theme
     const hits = [...theme.sampleHits].sort((a, b) => {
       const score = (d: string) =>
-        /rupep|opensanctions|justice\.gov|tadviser|peps|dossier|ofac/i.test(d)
+        /rucriminal|cybercriminal|rupep|opensanctions|justice\.gov|tadviser|peps|dossier|ofac|acompromat/i.test(
+          d
+        )
           ? 0
           : isWeakMediaDomain(d) || isGovPortalDomain(d)
             ? 2
