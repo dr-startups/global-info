@@ -16,6 +16,8 @@ export type ImageGridItem = {
   unavailableNote?: string;
   /** Undesirable / risk — red cell border in the grid PNG. */
   highlight?: boolean;
+  /** v57: red solid | amber dashed | none */
+  frameTone?: "red" | "amber" | "none";
   themeLabel?: string;
 };
 
@@ -41,6 +43,7 @@ export async function buildImageGridItems(
     domain?: string;
     imageUrl?: string;
     highlight?: boolean;
+    frameTone?: "red" | "amber" | "none";
     themeLabel?: string;
   }>
 ): Promise<ImageGridItem[]> {
@@ -51,12 +54,14 @@ export async function buildImageGridItems(
     if (item.imageUrl) {
       previewBase64 = await tryFetchImagePreview(item.imageUrl);
     }
+    const frameTone = item.frameTone ?? (item.highlight ? "red" : "none");
     out.push({
       title: item.title,
       domain,
       previewBase64,
       unavailableNote: previewBase64 ? undefined : "Изображение недоступно для предпросмотра",
-      highlight: Boolean(item.highlight),
+      highlight: frameTone === "red" || frameTone === "amber",
+      frameTone,
       themeLabel: item.themeLabel,
     });
   }
@@ -79,11 +84,15 @@ export function buildImageGridSvg(input: { title: string; items: ImageGridItem[]
     const row = Math.floor(idx / cols);
     const x = 40 + col * (cellW + 16);
     const y = 80 + row * (cellH + 16);
-    const stroke = item.highlight ? COLORS.highlight : COLORS.panelBorder;
-    const strokeW = item.highlight ? 4 : 1;
-    const fill = item.highlight ? COLORS.highlightFill : COLORS.panel;
+    const tone = item.frameTone ?? (item.highlight ? "red" : "none");
+    const stroke =
+      tone === "red" ? COLORS.highlight : tone === "amber" ? COLORS.amber : COLORS.panelBorder;
+    const strokeW = tone === "none" ? 1 : 4;
+    const fill =
+      tone === "red" ? COLORS.highlightFill : tone === "amber" ? COLORS.amberFill : COLORS.panel;
+    const dash = tone === "amber" ? ` stroke-dasharray="8 5"` : "";
     parts.push(
-      `<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" rx="8" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}"/>`
+      `<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" rx="8" fill="${fill}" stroke="${stroke}" stroke-width="${strokeW}"${dash}/>`
     );
     if (item.previewBase64) {
       parts.push(
@@ -96,10 +105,15 @@ export function buildImageGridSvg(input: { title: string; items: ImageGridItem[]
         `<text x="${x + 16}" y="${y + 48}" font-family="${FONT_STACK}" font-size="11" fill="${COLORS.muted}">${esc(note)}</text>`
       );
     }
-    if (item.highlight) {
-      const badge = truncateToWidth(item.themeLabel || "Нежелательное", 160, 10);
+    if (tone === "red" || tone === "amber") {
+      const badgeFill = tone === "red" ? COLORS.highlight : COLORS.amber;
+      const badge = truncateToWidth(
+        item.themeLabel || (tone === "amber" ? "Требует сверки" : "Нежелательное"),
+        160,
+        10
+      );
       parts.push(
-        `<rect x="${x + 8}" y="${y + 8}" width="${Math.min(200, cellW - 16)}" height="22" rx="4" fill="${COLORS.highlight}"/>`,
+        `<rect x="${x + 8}" y="${y + 8}" width="${Math.min(200, cellW - 16)}" height="22" rx="4" fill="${badgeFill}"/>`,
         `<text x="${x + 14}" y="${y + 23}" font-family="${FONT_STACK}" font-size="10" fill="#ffffff">${esc(badge)}</text>`
       );
     }

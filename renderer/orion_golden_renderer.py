@@ -22,12 +22,12 @@ try:
 except ImportError:  # pragma: no cover
     Image = None  # type: ignore
 
-FONT = "Arial"
+FONT = "DejaVu Sans"
 FS_TITLE = 26
 FS_SECTION = 22
 FS_SUBTITLE = 13
-FS_BODY = 12  # min readable body ≥ 11pt
-FS_CAPTION = 9
+FS_BODY = 11  # min readable body ≥ 10.5pt
+FS_CAPTION = 9  # footer/provenance 8.5–9pt
 
 # Master slide 16:10 (12.8" × 8.0") — matches ORION reference aspect.
 SLIDE_W = 11_704_320
@@ -64,17 +64,41 @@ EMU_PER_INCH = 914_400
 
 
 def _font_path() -> str | None:
+    """Return DejaVu Sans file used for both measurement and PPTX family."""
+    here = Path(__file__).resolve().parent
     candidates = [
         os.environ.get("ORION_RENDER_FONT"),
-        r"C:\Windows\Fonts\arial.ttf",
-        r"C:\Windows\Fonts\Arial.ttf",
+        str(here / "fonts" / "DejaVuSans.ttf"),
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        r"C:\Windows\Fonts\DejaVuSans.ttf",
     ]
     for path in candidates:
         if path and Path(path).is_file():
             return path
     return None
+
+
+def assert_render_font_family() -> str:
+    """Startup/QA: measurement font must be DejaVu Sans family."""
+    fp = _font_path()
+    if not fp:
+        raise RuntimeError("ORION render font missing: expected DejaVuSans.ttf under renderer/fonts")
+    name = Path(fp).name.lower()
+    if "dejavu" not in name:
+        raise RuntimeError(f"ORION render font mismatch: expected DejaVu Sans, got {fp}")
+    # Optional Linux check
+    try:
+        import subprocess
+
+        out = subprocess.check_output(["fc-match", "DejaVu Sans"], text=True, stderr=subprocess.DEVNULL)
+        if "DejaVu" not in out and "dejavu" not in out.lower():
+            raise RuntimeError(f"fc-match DejaVu Sans unexpected: {out.strip()}")
+    except FileNotFoundError:
+        pass
+    except subprocess.CalledProcessError:
+        pass
+    return fp
 
 
 def measure_text_height(
@@ -573,112 +597,137 @@ def _sidebar_word_budget(text: str, max_words: int = 70) -> str:
 
 
 def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, h: int) -> None:
-    """Compact content-sized stack: conclusion → reason → action → provenance."""
+    """Unified client sidebar panel (v57): one column, no stacked framed cards."""
     analysis = slide.get("visualAnalysis") or {}
-    cy = y
-    gap = 80_000
-    max_bottom = min(y + h, CONTENT_BOTTOM)
+    if not isinstance(analysis, dict):
+        analysis = {}
+    qa_failures: list[str] = []
 
-    def room() -> int:
-        return max(0, max_bottom - cy)
+    def fail(msg: str) -> None:
+        qa_failures.append(f"p{ctx.page}:{msg}")
 
-    if not isinstance(analysis, dict) or not analysis:
-        takeaway = _safe(slide.get("clientTakeaway") or "")
-        bullets = [_safe(b) for b in slide.get("bullets") or [] if _safe(b)]
-        if not takeaway and not bullets:
-            return
-        ctx.content_card(
-            title="Вывод",
-            text=_sidebar_word_budget(takeaway or bullets[0], 48),
-            x=x,
-            y=cy,
-            width=w,
-            min_h=260_000,
-            max_h=min(1_200_000, room()),
-            tone="accent",
-            title_size=11,
-            body_size=11,
-        )
-        return
-
-    reserve = 720_000  # headline + action + footer must stay complete
-    headline = _sidebar_word_budget(_safe(analysis.get("headlineConclusion") or "Вывод"), 28)
-    cy = ctx.content_card(
-        title=None,
-        text=headline,
-        x=x,
-        y=cy,
-        width=w,
-        min_h=240_000,
-        max_h=min(700_000, max(240_000, room() - reserve - 200_000)),
-        tone="accent",
-        body_size=12,
-    )
-    cy += gap
-
-    marked = _safe(analysis.get("whatIsVisible") or "")
-    why = _safe(analysis.get("whyItMatters") or "")
-    reason = marked if marked else why
-    if reason and room() > 400_000:
-        reason_title = (
-            "Почему отмечено"
-            if re.search(r"красн|нежелат|рамк|риск|санкц|PEP|RCA", reason, re.I)
-            and not re.search(r"рамок нет|кадров нет|на этой странице нет", reason, re.I)
-            else "Что видно"
-        )
-        cy = ctx.content_card(
-            title=reason_title,
-            text=_sidebar_word_budget(reason, 78),
-            x=x,
-            y=cy,
-            width=w,
-            min_h=320_000,
-            max_h=min(1_600_000, max(320_000, room() - 480_000)),
-            tone="warn" if reason_title == "Почему отмечено" else "neutral",
-            title_size=10,
-            body_size=11,
-        )
-        cy += gap
-
+    mode = str(analysis.get("sidebarMode") or "")
+    headline = _safe(analysis.get("headlineConclusion") or slide.get("clientTakeaway") or "Вывод")
+    meaning = _safe(analysis.get("clientMeaning") or analysis.get("whyItMatters") or "")
+    visible = _safe(analysis.get("whatIsVisible") or "")
+    explanations = analysis.get("highlightExplanations") or []
+    if not isinstance(explanations, list):
+        explanations = []
     actions = analysis.get("recommendedActions") or []
-    action_text = _sidebar_word_budget(_safe(actions[0]), 36) if isinstance(actions, list) and actions else ""
-    if action_text and room() > 240_000:
-        cy = ctx.content_card(
-            title="Действие",
-            text=action_text,
-            x=x,
-            y=cy,
-            width=w,
-            min_h=240_000,
-            max_h=min(900_000, max(360_000, room() - 100_000)),
-            tone="warn",
-            title_size=10,
-            body_size=11,
-        )
-        cy += gap
+    action = _safe(actions[0]) if isinstance(actions, list) and actions else ""
+    provenance = _safe(analysis.get("provenanceLabel") or "")
+    more_n = int(analysis.get("moreSignalsCount") or 0)
 
-    footer_bits: list[str] = []
-    lims = analysis.get("limitations") or []
-    if isinstance(lims, list) and lims:
-        footer_bits.append(_safe(lims[0]))
-    # Prefer a short provenance label; avoid stacking long source phrases that force mid-sentence cuts.
-    prov = _safe(analysis.get("provenanceLabel") or "")
-    if prov and len(prov) <= 28 and not footer_bits:
-        footer_bits.append(prov)
-    footer = _sidebar_word_budget(" · ".join(footer_bits), 24)
-    if footer and room() > 140_000:
-        ctx.content_card(
-            title=None,
-            text=footer,
-            x=x,
-            y=cy,
-            width=w,
-            min_h=140_000,
-            max_h=min(400_000, room()),
-            tone="neutral",
-            body_size=9,
-            padding=60_000,
-        )
+    has_frames = any(
+        isinstance(ex, dict) and str(ex.get("frameTone") or "") in {"red", "amber"} for ex in explanations
+    )
+    if mode == "adverse_explanation" or has_frames:
+        mid_title = "Почему выделено"
+        mid_bits = []
+        for ex in explanations[:2]:
+            if not isinstance(ex, dict):
+                continue
+            reason = _safe(ex.get("clientReason") or "")
+            if reason:
+                mid_bits.append(reason)
+        if more_n > 0:
+            mid_bits.append(f"Ещё {more_n} похожих сигналов.")
+        mid_body = " ".join(mid_bits) if mid_bits else visible
+    else:
+        mid_title = "Что показывает экран"
+        mid_body = visible or meaning
+
+    # Hard client-safe bans in sidebar
+    banned = re.compile(
+        r"(\[DEMO\]|\.example\b|\bAPI\b|\bSUGGESTION\b|knowledge-строк|не\s+live|\bprovider\b|\bmanifest\b|\bsynthetic\b|\breconstruction\b|\bдвижок\b)",
+        re.I,
+    )
+    for label, text in (("headline", headline), ("mid", mid_body), ("meaning", meaning), ("action", action)):
+        if "…" in text or "..." in text:
+            fail(f"sidebar ellipsis in {label}")
+        if banned.search(text):
+            fail(f"sidebar forbidden token in {label}")
+
+    # Draw one outer panel
+    pad = 70_000
+    gap = 55_000
+    cy = y + pad
+    max_bottom = min(y + h, CONTENT_BOTTOM) - pad
+    ctx.card(y, h=min(h, max_bottom - y + pad), x=x, w=w, fill=CARD_BG)
+
+    def write_block(title: str | None, body: str, *, size: float = 11, bold_title: bool = True) -> None:
+        nonlocal cy
+        if not body:
+            return
+        if title:
+            box = ctx.slide.shapes.add_textbox(Emu(x + pad), Emu(cy), Emu(w - 2 * pad), Emu(220_000))
+            tf = box.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            r = p.add_run()
+            r.text = title
+            r.font.name = FONT
+            r.font.bold = bold_title
+            r.font.size = Pt(10.5)
+            r.font.color.rgb = NAVY
+            cy += 200_000
+        # Prefer complete text; do not ellipsis-clip sidebar
+        fitted = body
+        needed = measure_text_height(fitted, w - 2 * pad, size, line_spacing=1.2)
+        avail = max_bottom - cy - 160_000
+        if needed > avail:
+            # Keep complete sentences only; if still too long — QA fail (no ellipsis).
+            sentences = re.split(r"(?<=[.!?…])\s+", fitted)
+            kept: list[str] = []
+            for sent in sentences:
+                trial = " ".join(kept + [sent]).strip()
+                if measure_text_height(trial, w - 2 * pad, size, line_spacing=1.2) <= avail:
+                    kept.append(sent)
+                else:
+                    break
+            if not kept:
+                fail("sidebar overflow without complete sentence")
+                fitted = ""
+            else:
+                fitted = " ".join(kept)
+                if fitted != body:
+                    # Truncated to sentences is OK; bare ellipsis is not.
+                    pass
+        if not fitted:
+            return
+        bh = measure_text_height(fitted, w - 2 * pad, size, line_spacing=1.2)
+        box = ctx.slide.shapes.add_textbox(Emu(x + pad), Emu(cy), Emu(w - 2 * pad), Emu(max(bh, 120_000)))
+        tf = box.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        r = p.add_run()
+        r.text = fitted
+        r.font.name = FONT
+        r.font.size = Pt(size)
+        r.font.color.rgb = BODY_COLOR
+        cy += bh + gap
+
+    write_block(None, headline, size=12)
+    write_block(mid_title, mid_body, size=11)
+    if meaning and meaning != mid_body and meaning != headline:
+        write_block("Что это значит", meaning, size=11)
+    if action:
+        write_block("Что сделать", action, size=11)
+    if provenance:
+        # Fine print, no frame
+        if cy < max_bottom - 80_000:
+            box = ctx.slide.shapes.add_textbox(Emu(x + pad), Emu(min(cy, max_bottom - 120_000)), Emu(w - 2 * pad), Emu(140_000))
+            tf = box.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            r = p.add_run()
+            r.text = provenance
+            r.font.name = FONT
+            r.font.size = Pt(8.5)
+            r.font.color.rgb = MUTED_COLOR
+
+    if qa_failures:
+        raise RuntimeError("ORION sidebar QA failed: " + "; ".join(qa_failures))
 
 
 
@@ -991,22 +1040,26 @@ def _add_search_table(
     headers: list[str],
     rows: list[list[str]],
 ) -> None:
-    """Real PPTX table for SERP / heat-grid slides (max 10 data rows)."""
+    """Real PPTX table for SERP / heat-grid slides (max 8 data rows)."""
     cols = max(1, min(5, len(headers)))
-    data_rows = rows[:10]
+    data_rows = rows[:8]
     table_rows = 1 + len(data_rows)
     avail_h = max(800000, CONTENT_BOTTOM - y - 40000)
-    row_h = min(420000, max(280000, avail_h // max(table_rows, 1)))
+    row_h = min(480000, max(320000, avail_h // max(table_rows, 1)))
     table_h = row_h * table_rows
     shape = ctx.slide.shapes.add_table(table_rows, cols, Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(table_h))
     tbl = shape.table
 
-    # Column widths: prefer compact rank/risk columns
-    if cols >= 4:
+    # Column widths: Position | Domain | Title | Status (no empty URL column)
+    if cols == 4:
+        widths = [1_000_000, 2_200_000, CONTENT_W - 1_000_000 - 2_200_000 - 2_000_000, 2_000_000]
+        leftover = CONTENT_W - sum(widths)
+        if leftover != 0:
+            widths[2] += leftover
+        for i, w in enumerate(widths):
+            tbl.columns[i].width = Emu(max(500000, w))
+    elif cols >= 4:
         widths = [900000, 1800000, CONTENT_W - 900000 - 1800000 - 2200000 - 700000, 2200000, 700000][:cols]
-        # Recalc if 4 cols without risk
-        if cols == 4:
-            widths = [900000, 2000000, CONTENT_W - 900000 - 2000000 - 2400000, 2400000]
         leftover = CONTENT_W - sum(widths)
         if leftover != 0 and widths:
             widths[min(2, len(widths) - 1)] += leftover
@@ -1014,10 +1067,10 @@ def _add_search_table(
             tbl.columns[i].width = Emu(max(500000, w))
 
     def paint_cell(cell: Any, text: str, *, header: bool = False, adverse: bool = False) -> None:
-        cell.text = _clip_words(text, 90 if header else 70)
+        cell.text = _clip_words(text, 120 if header else 110)
         for p in cell.text_frame.paragraphs:
             p.font.name = FONT
-            p.font.size = Pt(10 if header else 9)
+            p.font.size = Pt(10.5 if header else 10.5)
             p.font.bold = header
             p.font.color.rgb = WHITE if header else (RGBColor(0xB9, 0x1C, 0x1C) if adverse else BODY_COLOR)
         fill = cell.fill
@@ -1027,14 +1080,11 @@ def _add_search_table(
     for c, h in enumerate(headers[:cols]):
         paint_cell(tbl.cell(0, c), str(h), header=True)
     for r_idx, row in enumerate(data_rows, start=1):
-        adverse = any(str(cell).strip() in ("Н", "[Н]") for cell in row) or str(row[0] if row else "").startswith("[Н]")
-        if len(row) >= 5 and str(row[4]).strip() in ("Н", "N"):
-            adverse = True
+        status = str(row[-1] if row else "").strip()
+        adverse = status in ("Нежелательный", "Н", "[Н]", "N") or status.startswith("[Н]")
         for c in range(cols):
             val = str(row[c]) if c < len(row) else ""
-            if c == cols - 1 and val in ("Н", "·", "N", "."):
-                val = "Нежел." if val in ("Н", "N") else "·"
-            paint_cell(tbl.cell(r_idx, c), val, adverse=adverse)
+            paint_cell(tbl.cell(r_idx, c), val, adverse=adverse and c == cols - 1)
 
 
 def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> None:
@@ -1492,6 +1542,7 @@ def _export_png_pages(pdf_path: Path) -> list[dict[str, Any]]:
 
 
 def render_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:
+    assert_render_font_family()
     deck = payload.get("deckManifest") or {}
     report_spec = payload.get("reportSpec") or {}
     slides = list(deck.get("finalSlides") or [])

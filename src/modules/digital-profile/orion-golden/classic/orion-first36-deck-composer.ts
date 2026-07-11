@@ -8,6 +8,7 @@ import type {
   MetricTone,
   OrionGoldenDeckManifest,
   OrionGoldenDeckSlide,
+  VisualSidebarMode,
   VisualSlideAnalysis,
 } from "../composer/orion-deck-composer";
 import { composeOrionClassicAuditDeck } from "./orion-classic-audit-deck-composer";
@@ -19,6 +20,7 @@ import {
   type First36SlotDef,
 } from "./orion-first36-registry.v1";
 import { scrubClientFacingProse, truncateAtWordBoundary } from "./orion-classic-text-utils";
+import { clipWordsComplete } from "../../orion-report-spec/highlight-explanation";
 import { sanitizeOrionGoldenClientText } from "../client/client-text-sanitizer";
 import {
   orionStyleRiskMatrixRows,
@@ -68,7 +70,7 @@ function wikiLabel(status: OrionSurfaceKpis["wikipediaStatus"]): string {
 function regionMetrics(kpis: OrionSurfaceKpis, prefix: string): DeckMetric[] {
   return [
     {
-      label: `${prefix}: доля нежел.`,
+      label: `${prefix}: доля нежелательных`,
       value: `${kpis.linksAdversePct}%`,
       tone: adverseTone(kpis.linksAdversePct, kpis.linksAdverse),
     },
@@ -225,7 +227,7 @@ function profileOverviewFromTheme(themeSet: OrionThemeSet, base: OrionGoldenDeck
       complianceFindings.length > 0
         ? [
             {
-              headline: "Wikipedia RU",
+              headline: "Википедия (Россия)",
               detail: scrub(wikipediaStatusLine(themeSet.ru)).slice(0, 140),
               tone: wikiTone(themeSet.ru.wikipediaStatus),
             },
@@ -233,7 +235,7 @@ function profileOverviewFromTheme(themeSet: OrionThemeSet, base: OrionGoldenDeck
           ].slice(0, 3)
         : [
             {
-              headline: "Wikipedia RU",
+              headline: "Википедия (Россия)",
               detail: scrub(wikipediaStatusLine(themeSet.ru)).slice(0, 140),
               tone: wikiTone(themeSet.ru.wikipediaStatus),
             },
@@ -365,249 +367,151 @@ export function buildDeterministicVisualAnalysis(
   const caption = scrub(asset.caption || "");
   const regionLabel =
     slot.region === "RU" ? "Россия" : slot.region === "UAE" ? "ОАЭ" : slot.region === "COMPLIANCE" ? "Комплаенс" : "Обзор";
-  const isApiSynthetic =
-    asset.kind === "synthetic_serp" ||
-    provenanceLabel(asset).includes("API") ||
-    /синтетич|реконструкц|визуализация сохранённой выдачи/i.test(caption);
+
+  const framed = (asset.highlightExplanations ?? []).filter(
+    (x) => x.frameTone === "red" || x.frameTone === "amber"
+  );
+  const topExplanations = framed.slice(0, 2);
+  const moreSignalsCount = Math.max(0, framed.length - topExplanations.length);
 
   let headlineConclusion = title;
   let whatIsVisible: string;
   let whyItMatters: string;
   let recommendedActions: string[];
-  let limitations: string[];
+  let limitations: string[] = [];
+  let sidebarMode: VisualSidebarMode = "interpretation";
+  let clientMeaning: string;
+  let provenance =
+    slot.kind === "image_visual"
+      ? "Источник: сохранённые изображения, дата сбора в кейсе"
+      : slot.kind === "suggestions_visual" || slot.kind === "related_visual"
+        ? "Источник: сохранённые поисковые подсказки, дата сбора в кейсе"
+        : slot.kind === "serp_visual"
+          ? "Источник: сохранённая поисковая выдача, дата сбора в кейсе"
+          : "Источник: сохранённые материалы раздела, дата сбора в кейсе";
 
   if (slot.kind === "serp_visual") {
-    const themeMatch = caption.match(/тем[аы][:\s]+([^.;]+)/i);
-    const themeHint = themeMatch?.[1]?.trim();
-    const adverseHint = /нежелат|PEP|RCA|санкц/i.test(caption);
-    headlineConclusion = isApiSynthetic
-      ? `Первый экран выдачи (${regionLabel}): API-реконструкция`
+    const adverseHint = /нежелат|PEP|RCA|санкц|выделен/i.test(`${caption} ${title}`);
+    sidebarMode = adverseHint ? "adverse_explanation" : "interpretation";
+    headlineConclusion = adverseHint
+      ? `В первом экране выдачи (${regionLabel}) есть риск-сигналы`
       : `Первый экран поисковой выдачи (${regionLabel})`;
-    whatIsVisible = scrub(
-      adverseHint || themeHint
-        ? [
-            themeHint
-              ? `Красным выделены результаты по теме: ${themeHint}.`
-              : "Красным выделены результаты с риск-сигналами (PEP/RCA, санкции, нежелательные публикации).",
-            "Это не общий фон выдачи, а конкретные домены/заголовки первого экрана.",
-          ].join(" ")
-        : caption ||
-            `Показаны заголовки и домены первого экрана поиска (${regionLabel}).`
-    );
-    whyItMatters = scrub(
-      "Клиент сразу видит, какие источники формируют первое впечатление о субъекте."
-    );
-    recommendedActions = [
-      "Сверить выделенные домены вручную",
-      "Отделить однофамильцев от субъекта",
-    ];
-    limitations = isApiSynthetic
-      ? [
-          "Реконструкция на основе сохранённых результатов API; интерфейс браузера может отличаться.",
-        ]
-      : ["Визуал отражает доступный снимок на момент сбора."];
+    whatIsVisible = adverseHint
+      ? "На экране выделены домены и заголовки с риск-тематикой (PEP, санкции или нежелательные публикации)."
+      : "Показаны заголовки и домены первого экрана поиска по субъекту.";
+    clientMeaning =
+      "Клиент сразу видит, какие источники формируют первое впечатление о субъекте.";
+    whyItMatters = clientMeaning;
+    recommendedActions = adverseHint ? ["Сверить выделенные домены вручную"] : [];
   } else if (slot.kind === "image_visual") {
-    // Do NOT split on bare "." — that breaks domains like vlasti.io / kompromat1.online.
-    const afterCount = caption.replace(/^.*?отмечены[^.]*\.\s*/i, "").trim();
-    const reasonBits = afterCount
-      .split(/\.\s+|;\s+/)
-      .map((s) => s.trim().replace(/\.$/, ""))
-      .filter(
-        (s) =>
-          s.length > 12 &&
-          !/остальн|нейтральн|требуется сверк|подборка изображений|на этой странице нет/i.test(s) &&
-          (/—|санкц|нежелат|компромат|watchlist|PEP|RCA|домен|контекст/i.test(s) ||
-            /[a-z0-9-]+\.[a-z]{2,}/i.test(s))
-      )
-      .slice(0, 2)
-      .map((s) => {
-        const m = s.match(/^([a-z0-9.-]+\.[a-z]{2,})\s*[—–-]\s*(.+)$/i);
-        if (!m) {
-          if (/PEP|политич/i.test(s)) return truncateAtWordBoundary(s, 70);
-          return truncateAtWordBoundary(s, 70);
-        }
-        const domain = m[1];
-        const rawReason = m[2];
-        const reason = /компромет|криминал|санкц/i.test(rawReason)
-          ? "компрометирующий или санкционный домен"
-          : /PEP|политич/i.test(rawReason)
-            ? "PEP / политическая экспозиция"
-            : /нежелат|риск/i.test(rawReason)
-              ? "нежелательный по риск-признакам"
-              : truncateAtWordBoundary(rawReason, 48);
-        return `${domain} — ${reason}`;
-      });
-    const countMatch = caption.match(/\((\d+)\)/) || caption.match(/отмечены[^\d]*(\d+)/i);
-    const adverseCount = countMatch?.[1];
-    const adverseCountNum = Number(adverseCount);
-    // Captions like «Нежелательных кадров с красной рамкой … нет» still contain those words.
-    const noAdverseOnPage =
-      /на этой странице нет|красных рамок нет|нежелательных кадров[^.]*нет/i.test(caption) ||
-      adverseCountNum === 0;
-    const hasAdverseFrame =
-      !noAdverseOnPage &&
-      (reasonBits.length > 0 || (Number.isFinite(adverseCountNum) && adverseCountNum > 0));
-    headlineConclusion = hasAdverseFrame
-      ? scrub(
-          Number.isFinite(adverseCountNum) && adverseCountNum > 0
-            ? `${adverseCountNum} кадра отмечены красной рамкой (${regionLabel})`
-            : `В выдаче изображений (${regionLabel}) есть нежелательные кадры`
-        )
-      : `Изображения в поиске (${regionLabel}): без красных рамок`;
-    whatIsVisible = scrub(
-      reasonBits.length > 0
-        ? `Красная рамка означает нежелательный контекст: ${reasonBits.join("; ")}.`
-        : hasAdverseFrame
-          ? "Красная рамка — кадр из нежелательного или санкционного контекста (домен, подпись или риск-тема)."
-          : "На этой странице красных рамок нет; показана нейтральная подборка изображений."
-    );
-    whyItMatters = scrub(
-      hasAdverseFrame
-        ? "Нужно сверить: это субъект аудита или однофамилец либо чужой контекст."
-        : "Изображения влияют на узнаваемость; ошибочные совпадения отделяют от профиля."
-    );
-    recommendedActions = hasAdverseFrame
-      ? ["Проверить, относится ли кадр к субъекту"]
-      : ["Сверить лицо и контекст с субъектом"];
-    limitations = [
-      "Сетка собрана из сохранённых результатов поиска изображений.",
-    ];
+    if (topExplanations.length > 0) {
+      sidebarMode = "adverse_explanation";
+      const redN = framed.filter((x) => x.frameTone === "red").length;
+      const amberN = framed.filter((x) => x.frameTone === "amber").length;
+      headlineConclusion =
+        redN > 0 && amberN > 0
+          ? "В выдаче есть риск-кадры и неоднозначные совпадения"
+          : redN > 0
+            ? `${redN} кадра с нежелательным контекстом по субъекту`
+            : "Есть кадры, требующие сверки личности";
+      whatIsVisible = topExplanations.map((x) => x.clientReason).join(" ");
+      clientMeaning =
+        amberN > 0
+          ? "При беглом просмотре легко спутать субъект с однофамильцем или чужим контекстом."
+          : "Выделенные кадры усиливают негативное первое впечатление в поиске изображений.";
+      whyItMatters = clientMeaning;
+      recommendedActions = ["Подтвердить личность по двум независимым идентификаторам"];
+    } else {
+      sidebarMode = "status";
+      headlineConclusion = `Изображения в поиске (${regionLabel}) без выделенных кадров`;
+      whatIsVisible =
+        "На этой странице нет красных или янтарных рамок; показана нейтральная подборка.";
+      clientMeaning =
+        "Изображения влияют на узнаваемость; ошибочные совпадения отделяют от профиля.";
+      whyItMatters = clientMeaning;
+      recommendedActions = [];
+    }
   } else if (slot.kind === "suggestions_visual") {
-    const savedOnly = /сохранено|не подтвержд/i.test(`${caption} ${title} ${provenanceLabel(asset)}`);
-    const engine =
-      /google/i.test(`${asset.assetRef} ${title}`)
-        ? "Google"
-        : /yandex|яндекс/i.test(`${asset.assetRef} ${title}`)
-          ? "Яндекс"
-          : "поиска";
     const adverseSuggest = /скандал|санкц|арест|корруп|негатив|scandal|sanction/i.test(
       `${caption} ${title}`
     );
-    headlineConclusion = scrub(
-      adverseSuggest
-        ? `Подсказки ${engine} (${regionLabel}): есть риск-ассоциации`
-        : savedOnly
-          ? `Подсказки (${regionLabel}): сохранённые строки`
-          : `Подсказки ${engine} (${regionLabel})`
-    );
-    whatIsVisible = scrub(
-      adverseSuggest
-        ? "Среди сохранённых подсказок есть формулировки с негативным/санкционным оттенком рядом с именем."
-        : caption ||
-            `Панель сохранённых подсказок автодополнения (${regionLabel}); не live-список браузера.`
-    );
-    whyItMatters = scrub(
-      "Подсказки показывают, какие темы поиск связывает с именем до разбора полной выдачи."
-    );
-    recommendedActions = [
-      "Отметить негативные и санкционные подсказки",
-    ];
-    limitations = savedOnly
-      ? ["Движок не подтверждён; строки из сохранённой поверхности кейса."]
-      : ["Панель из сохранённых SUGGESTION-строк, не live autocomplete."];
+    sidebarMode = "interpretation";
+    headlineConclusion = adverseSuggest
+      ? "Подсказки связывают имя с риск-тематикой"
+      : "Подсказки не дают устойчивой негативной ассоциации";
+    whatIsVisible = adverseSuggest
+      ? "Среди подсказок есть формулировки с негативным или санкционным оттенком рядом с именем."
+      : "Основные ассоциации связаны с бизнесом и биографией; санкционные формулировки не доминируют.";
+    clientMeaning = adverseSuggest
+      ? "Уже на этапе ввода запроса формируется настороженное впечатление о субъекте."
+      : "На этапе ввода запроса репутационный риск выглядит ограниченным.";
+    whyItMatters = clientMeaning;
+    recommendedActions = adverseSuggest
+      ? ["Отметить негативные подсказки для ручной проверки"]
+      : [];
   } else if (slot.kind === "related_visual") {
-    const isSecondarySuggest = /дополнительн|подсказ/i.test(`${caption} ${title}`);
-    headlineConclusion = scrub(
-      isSecondarySuggest
-        ? `Дополнительные поисковые ассоциации (${regionLabel})`
-        : `Связанные запросы (${regionLabel}): соседние темы в выдаче`
-    );
-    whatIsVisible = scrub(
-      isSecondarySuggest
-        ? `Отдельных related-строк для «${regionLabel}» нет; показан второй набор подсказок как ближайший аналог.`
-        : `Связанные и похожие запросы из сохранённой поисковой поверхности (${regionLabel}).`
-    );
-    whyItMatters = scrub(
-      "Связанные запросы показывают тематическое окружение имени: бизнес, семья, споры, санкции."
-    );
-    recommendedActions = [
-      "Выделить риск-запросы для ручной проверки",
-      "Сопоставить темы с SERP и медиа",
-    ];
-    limitations = isSecondarySuggest
-      ? ["Второй набор подсказок: отдельных related-строк в кейсе не было."]
-      : ["Строки из сохранённой поверхности, без live-снимка."];
+    sidebarMode = "interpretation";
+    headlineConclusion = "Связанные запросы показывают тематическое окружение имени";
+    whatIsVisible =
+      "Соседние темы в выдаче помогают отделить бизнес-контекст от шума и однофамильцев.";
+    clientMeaning = "Тематическое окружение имени уточняет, где искать подтверждения и риски.";
+    whyItMatters = clientMeaning;
+    recommendedActions = ["Выделить риск-запросы для ручной проверки"];
   } else if (slot.kind === "knowledge_visual") {
     const fromWiki = /wikipedia|википед/i.test(`${caption} ${title} ${provenanceLabel(asset)}`);
-    headlineConclusion = scrub(
-      fromWiki
+    const wrongSubject = /другого субъекта|однофамил|не является профилем/i.test(
+      `${caption} ${title}`
+    );
+    sidebarMode = wrongSubject ? "status" : "interpretation";
+    headlineConclusion = wrongSubject
+      ? "Карточка Wikipedia не относится к субъекту аудита"
+      : fromWiki
         ? `Справочная карточка Wikipedia (${regionLabel})`
-        : `Панель знаний в поиске (${regionLabel})`
-    );
-    whatIsVisible = scrub(
-      fromWiki
-        ? truncateAtWordBoundary(
-            caption ||
-              `Карточка по проверке Wikipedia (${regionLabel}): название страницы и статус наличия статьи.`,
-            220
-          )
-        : truncateAtWordBoundary(
-            caption || `Справочная панель из поисковой поверхности (${regionLabel}).`,
-            220
-          )
-    );
-    whyItMatters = scrub(
-      fromWiki
-        ? "Wikipedia влияет на то, как третьи лица идентифицируют субъекта в открытых источниках."
-        : "Панель знаний концентрирует краткие факты рядом с выдачей; чужой профиль здесь особенно заметен."
-    );
-    recommendedActions = fromWiki
-      ? [
-          "Проверить URL и язык статьи",
-          "Убедиться, что страница про субъекта аудита",
-        ]
-      : [
-          "Сверить факты с первичными источниками",
-          "Отметить расхождения с резюме аудита",
-        ];
-    limitations = fromWiki
-      ? ["Карточка по wiki-check, а не скриншот knowledge graph в браузере."]
-      : ["Панель собрана из сохранённых knowledge-строк поверхности."];
+        : `Справочная панель в поиске (${regionLabel})`;
+    whatIsVisible = wrongSubject
+      ? "Найдена страница другого лица или рода; её нельзя засчитывать как профиль субъекта."
+      : fromWiki
+        ? "Показаны название страницы и статус наличия публичной статьи о персоне."
+        : "Краткие факты и заголовки из справочного блока рядом с выдачей.";
+    clientMeaning = wrongSubject
+      ? "Чужой профиль в выдаче создаёт риск смешения идентичностей."
+      : "Справочный блок влияет на то, как третьи лица идентифицируют субъекта.";
+    whyItMatters = clientMeaning;
+    recommendedActions = wrongSubject
+      ? ["Исключить из профиля или сверить identity"]
+      : ["Сверить факты с первичными источниками"];
+    provenance = fromWiki ? "Источник: проверка Wikipedia, дата сбора в кейсе" : provenance;
   } else {
+    sidebarMode = "status";
     whatIsVisible =
-      caption ||
-      (slot.kind === "db_visual"
-        ? "На слайде — страница комплаенс-базы или статусный блок раздела."
-        : `На слайде — визуальный материал раздела «${slot.title}».`);
-    whyItMatters =
       slot.kind === "db_visual"
-        ? "Страница базы подтверждает или уточняет комплаенс-сигнал без опоры только на текстовый пересказ."
-        : "Визуальное доказательство снижает риск неверной интерпретации текстового резюме.";
-    recommendedActions = [
-      "Сверить совпадение субъекта с карточкой/доменом на слайде",
-      "Зафиксировать вывод после ручной проверки источника",
-    ];
-    limitations = [
-      provenanceLabel(asset).includes("API")
-        ? "Это реконструкция API-результатов, а не браузерный скриншот страницы."
-        : "Визуал отражает доступный снимок/сводку на момент сбора.",
-    ];
+        ? "На слайде — страница комплаенс-базы или статусный блок раздела."
+        : `На слайде — визуальный материал раздела «${slot.title}».`;
+    clientMeaning =
+      slot.kind === "db_visual"
+        ? "Страница базы уточняет комплаенс-сигнал без опоры только на текстовый пересказ."
+        : "Визуальное доказательство снижает риск неверной интерпретации резюме.";
+    whyItMatters = clientMeaning;
+    recommendedActions = ["Сверить совпадение субъекта с карточкой на слайде"];
   }
-
-  const shortProv =
-    provenanceLabel(asset).includes("API")
-      ? "API"
-      : provenanceLabel(asset).includes("Wikipedia")
-        ? "Wikipedia"
-        : provenanceLabel(asset).includes("изображ")
-          ? "Images"
-          : provenanceLabel(asset).slice(0, 18);
 
   return {
     assetRef: asset.assetRef,
-    headlineConclusion: truncateAtWordBoundary(scrub(headlineConclusion), 140),
-    whatIsVisible: truncateAtWordBoundary(scrub(whatIsVisible), 420),
-    metrics: [
-      { label: "Регион", value: regionLabel, tone: "neutral" as const },
-      { label: "Источник", value: shortProv, tone: "neutral" as const },
-    ],
-    whyItMatters: truncateAtWordBoundary(scrub(whyItMatters), 220),
-    recommendedActions,
+    headlineConclusion: clipWordsComplete(scrub(headlineConclusion), 14),
+    whatIsVisible: scrub(whatIsVisible),
+    metrics: [],
+    whyItMatters: clipWordsComplete(scrub(whyItMatters), 28),
+    recommendedActions: recommendedActions.map((a) => clipWordsComplete(scrub(a), 18)),
     confidence: hasImageBytes(asset) ? "medium" : "low",
     limitations,
-    provenanceLabel: provenanceLabel(asset),
+    provenanceLabel: provenance,
+    sidebarMode,
+    highlightExplanations: topExplanations,
+    clientMeaning: clipWordsComplete(scrub(clientMeaning), 28),
+    moreSignalsCount: moreSignalsCount > 0 ? moreSignalsCount : undefined,
   };
 }
+
 
 function enrichNonVisualSlotProse(slide: OrionGoldenDeckSlide, slot: First36SlotDef): OrionGoldenDeckSlide {
   if (slot.kind === "search_table") {

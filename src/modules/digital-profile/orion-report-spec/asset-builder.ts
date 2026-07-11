@@ -10,6 +10,15 @@ import {
   svgToPngBase64,
 } from "./media-asset-svg";
 import { isSyntheticSerpNoiseHit } from "../serp-observation/filter-synthetic-serp-noise";
+import { isClientSafeEvidence } from "./client-safe-evidence";
+import {
+  assertValidHighlightExplanation,
+  isValidSourceDomain,
+  resolveFrameTone,
+  type HighlightExplanation,
+  type HighlightIdentityStatus,
+  type HighlightRiskCategory,
+} from "./highlight-explanation";
 
 const IMAGE_ADVERSE_DOMAIN_RE =
   /rucriminal\.|cybercriminal\.|acompromat\.|rucompromat\.|compromat\.|rupep\.|opensanctions\.|ofac\.|justice\.gov|home\.treasury\.gov|vlasti\.|rumafia\.|dossier\.|kompromat\./i;
@@ -133,6 +142,78 @@ export function explainImageHighlightReason(ev: NormalizedEvidenceV1): string {
   return `${domain} — отмечен как нежелательный по риск-признакам поисковой выдачи`;
 }
 
+function classifyImageIdentity(
+  ev: NormalizedEvidenceV1,
+  subjectName: string
+): HighlightIdentityStatus {
+  if (isImageNamesakeNoise(ev, subjectName)) return "namesake";
+  const blob = imageEvidenceBlob(ev);
+  const hasGiven = blobHasSubjectGiven(blob, subjectName);
+  if (hasGiven && /бизнес|businessman|предпринимат|инвестор|investor|nutriband|трансмаш/i.test(blob)) {
+    return "likely_subject";
+  }
+  if (hasGiven) return "likely_subject";
+  if (IMAGE_CLASSICAL_NAMESAKE_RE.test(blob)) return "namesake";
+  return "unverified";
+}
+
+function classifyImageRiskCategory(ev: NormalizedEvidenceV1): HighlightRiskCategory {
+  const blob = imageEvidenceBlob(ev);
+  if (ev.riskTheme === "pep" || /rupep|pep|политич/i.test(blob)) return "sanctions_pep";
+  if (ev.riskTheme === "sanctions_watchlist" || /санкц|sanction|ofac/i.test(blob)) return "sanctions_pep";
+  if (ev.riskTheme === "legal_regulatory" || /уголов|criminal|арест|суд/i.test(blob)) return "criminal_legal";
+  if (IMAGE_ADVERSE_DOMAIN_RE.test(String(ev.domain ?? ""))) return "adverse_source";
+  if (ev.riskTheme === "adverse_media") return "reputational";
+  return "unverified";
+}
+
+/** Structured highlight for one image cell — never derived from caption splitting. */
+export function buildImageHighlightExplanation(
+  ev: NormalizedEvidenceV1,
+  subjectName: string,
+  itemIndex: number
+): HighlightExplanation | null {
+  const identityStatus = classifyImageIdentity(ev, subjectName);
+  const adverseSignal = isImageEvidenceHighlighted(ev);
+  const namesake = identityStatus === "namesake";
+  if (!adverseSignal && !namesake) return null;
+
+  const domainRaw = String(ev.domain ?? extractDomainFromEvidence(ev) ?? "").replace(/^www\./i, "");
+  if (!isValidSourceDomain(domainRaw)) return null;
+
+  const riskCategory = namesake ? "namesake_confusion" : classifyImageRiskCategory(ev);
+  const frameTone = resolveFrameTone(identityStatus, adverseSignal || namesake);
+  if (frameTone === "none") return null;
+
+  let clientReason: string;
+  if (identityStatus === "namesake") {
+    clientReason = `${domainRaw} — исторический или однофамильный контекст; риск смешения профилей, не подтверждённый негатив субъекта.`;
+  } else if (identityStatus === "unverified") {
+    clientReason = `${domainRaw} — совпадение по ФИО; принадлежность субъекту не подтверждена.`;
+  } else if (riskCategory === "sanctions_pep") {
+    clientReason = `${domainRaw} — карточка или материал с PEP/санкционным контекстом; требуется сверка идентификаторов.`;
+  } else if (riskCategory === "criminal_legal") {
+    clientReason = `${domainRaw} — публикация с уголовным или судебным контекстом; нужна сверка первоисточника.`;
+  } else {
+    clientReason = `${domainRaw} — источник с нежелательным контекстом в выдаче изображений; сверить принадлежность субъекту.`;
+  }
+
+  const ex: HighlightExplanation = {
+    evidenceRef: ev.evidenceRef,
+    itemIndex,
+    displayLabel: String(ev.title ?? domainRaw).slice(0, 80),
+    sourceDomain: domainRaw,
+    riskCategory,
+    identityStatus,
+    clientReason,
+    confidence:
+      identityStatus === "likely_subject" || identityStatus === "confirmed_subject" ? "medium" : "low",
+    frameTone,
+  };
+  assertValidHighlightExplanation(ex);
+  return ex;
+}
+
 function extractDomainFromEvidence(ev: NormalizedEvidenceV1): string {
   return String(ev.domain ?? ev.displayUrl ?? "").trim();
 }
@@ -163,6 +244,8 @@ export type ReportAssetV1 = {
   geoStatus?: "VERIFIED" | "UNVERIFIED" | "UNKNOWN";
   connectionMode?: "PROXY" | "DIRECT";
   captureId?: string;
+  /** Structured red/amber frame reasons — never parse from caption. */
+  highlightExplanations?: import("./highlight-explanation").HighlightExplanation[];
 };
 
 async function buildProviderSerpAsset(input: {
@@ -281,35 +364,39 @@ export async function buildRegionMediaComposites(input: {
     for (let page = 0; page < maxPages; page += 1) {
       const chunk = ranked.slice(page * pageSize, page * pageSize + pageSize);
       if (chunk.length === 0) break;
+      const explanations: HighlightExplanation[] = [];
       const gridItems = await buildImageGridItems(
-        chunk.map((e) => {
-          const highlight = isImageEvidenceHighlighted(e);
+        chunk.map((e, idx) => {
+          const ex = buildImageHighlightExplanation(e, input.subjectName, idx);
+          if (ex) explanations.push(ex);
+          const frameTone = ex?.frameTone ?? "none";
           return {
             title: e.title ?? e.domain ?? "Изображение",
             domain: e.domain,
             imageUrl: e.imageUrl,
-            highlight,
-            themeLabel: highlight
-              ? e.riskTheme && e.riskTheme !== "unknown" && e.riskTheme !== "neutral_profile"
-                ? riskThemeLabel(e.riskTheme)
-                : /санкц|sanction/i.test(imageEvidenceBlob(e))
-                  ? "Санкции"
-                  : "Нежелательное"
-              : undefined,
+            highlight: frameTone === "red" || frameTone === "amber",
+            frameTone,
+            themeLabel:
+              frameTone === "amber"
+                ? "Требует сверки"
+                : frameTone === "red"
+                  ? e.riskTheme && e.riskTheme !== "unknown" && e.riskTheme !== "neutral_profile"
+                    ? riskThemeLabel(e.riskTheme)
+                    : "Нежелательное"
+                  : undefined,
           };
         })
       );
-      const adverse = chunk.filter((e) => isImageEvidenceHighlighted(e));
-      const adverseCount = adverse.length;
-      const reasonLines = adverse.slice(0, 3).map((e) => explainImageHighlightReason(e));
+      const framed = explanations.filter((x) => x.frameTone === "red" || x.frameTone === "amber");
+      const redCount = framed.filter((x) => x.frameTone === "red").length;
+      const amberCount = framed.filter((x) => x.frameTone === "amber").length;
       const pageNo = page + 1;
       const assetRef = page === 0 ? `${prefix}_image_grid` : `${prefix}_image_grid_${pageNo}`;
+      // Caption is provenance only — never the source of risk reasons.
       const caption =
-        adverseCount > 0
-          ? `Красной рамкой отмечены нежелательные изображения (${adverseCount}). ${reasonLines.join(". ")}${
-              adverseCount > reasonLines.length ? "." : "."
-            } Остальные кадры — нейтральная/профильная выдача; требуется сверка с субъектом.`
-          : `Подборка изображений из поиска по субъекту (${label}). Нежелательных кадров с красной рамкой на этой странице нет.`;
+        framed.length > 0
+          ? `Подборка изображений (${label}): выделено кадров ${framed.length} (красных ${redCount}, янтарных ${amberCount}).`
+          : `Подборка изображений из поиска по субъекту (${label}). Выделенных кадров на этой странице нет.`;
       assets.push({
         assetRef,
         kind: "image_grid",
@@ -321,14 +408,15 @@ export async function buildRegionMediaComposites(input: {
         imageData: await svgToPngBase64(
           buildImageGridSvg({
             title:
-              adverseCount > 0
-                ? `${label}: изображения — нежелательные отмечены (${adverseCount})`
+              framed.length > 0
+                ? `${label}: изображения — выделенные кадры (${framed.length})`
                 : `${label}: изображения в поиске`,
             items: gridItems,
           })
         ),
         evidenceRefs: chunk.map((e) => e.evidenceRef),
         status: "ready",
+        highlightExplanations: framed,
       });
     }
   }
@@ -354,7 +442,9 @@ export async function buildRegionMediaComposites(input: {
     });
   }
 
-  const knowledge = input.evidence.filter((e) => e.sourceKind === "knowledge_panel");
+  const knowledge = input.evidence.filter(
+    (e) => e.sourceKind === "knowledge_panel" && isClientSafeEvidence(e)
+  );
   if (knowledge.length > 0) {
     // Prefer engine knowledge blocks first; Wikipedia-derived panels fill remaining slots.
     const engineKb = knowledge.filter((e) => e.provider !== "wikipedia");

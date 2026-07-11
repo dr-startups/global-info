@@ -524,8 +524,15 @@ function serpPositionTable(
       .slice(0, 10)
       .map((r, idx) => ({ ...r, rank: r.rank || idx + 1 }));
     tables.push({
-      headers: ["Поз.", "Домен", "Заголовок", "URL"],
-      rows: ordered.map((r) => [String(r.rank), r.domain || "—", r.title, r.url || "—"]),
+      headers: ["Позиция", "Домен", "Заголовок", "Статус"],
+      rows: ordered.map((r) => {
+        const status = /нежелат|санкц|PEP|adverse|риск/i.test(`${r.title} ${r.domain}`)
+          ? "Нежелательный"
+          : /требует|проверк|смешан/i.test(`${r.title}`)
+            ? "Требует проверки"
+            : "Нейтральный";
+        return [String(r.rank), r.domain || "—", r.title, status];
+      }),
     });
   }
   return tables;
@@ -553,7 +560,7 @@ function serpTableBullets(
 /** Parse heat-grid / SERP bullets into a PPTX table payload. */
 export function tableFromSearchBullets(
   bullets: string[],
-  maxRows = 10
+  maxRows = 8
 ): { headers: string[]; rows: string[][] } | undefined {
   const rows: string[][] = [];
   for (const raw of bullets) {
@@ -563,21 +570,22 @@ export function tableFromSearchBullets(
       /^(?:\[([Н·N.])\]\s*)?#?\s*(\d+)\s+([^\s—\-]+)\s*[—\-–]\s*(.+?)(?:\s*(?:\(|·|•)\s*(https?:\S+|—+)\)?)?\s*$/u
     );
     if (m) {
-      const mark = m[1] === "Н" || m[1] === "N" ? "Н" : "·";
-      const titlePart = truncateAtWordBoundary(m[4].replace(/\s*\(https?:\S+\)\s*$/i, "").trim(), 70);
-      rows.push([m[2], m[3], titlePart, m[5] ?? "—", mark]);
+      const adverse = m[1] === "Н" || m[1] === "N";
+      const titlePart = truncateAtWordBoundary(m[4].replace(/\s*\(https?:\S+\)\s*$/i, "").trim(), 90);
+      const status = adverse ? "Нежелательный" : "Нейтральный";
+      rows.push([m[2], m[3], titlePart, status]);
       if (rows.length >= maxRows) break;
       continue;
     }
     const loose = b.match(/#?\s*(\d+)\s+(.+)/);
     if (loose) {
-      rows.push([loose[1], "—", truncateAtWordBoundary(loose[2], 70), "—", "·"]);
+      rows.push([loose[1], "—", truncateAtWordBoundary(loose[2], 90), "Требует проверки"]);
       if (rows.length >= maxRows) break;
     }
   }
   if (rows.length === 0) return undefined;
   return {
-    headers: ["Поз.", "Домен", "Заголовок", "URL", "Риск"],
+    headers: ["Позиция", "Домен", "Заголовок", "Статус"],
     rows,
   };
 }

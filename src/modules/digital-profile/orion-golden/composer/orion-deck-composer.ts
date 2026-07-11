@@ -8,6 +8,8 @@ import { sanitizeOrionGoldenClientText } from "../client/client-text-sanitizer";
 import { humanizeClientRiskMatrixRow } from "../client/risk-matrix-normalizer";
 import type { OrionGoldenReportSpec, SectionBlock } from "../report-spec/orion-report-spec";
 
+import type { HighlightExplanation } from "../../orion-report-spec/highlight-explanation";
+
 export type MetricTone = "neutral" | "good" | "warn" | "risk";
 
 export type DeckMetric = {
@@ -15,6 +17,8 @@ export type DeckMetric = {
   value: string;
   tone: MetricTone;
 };
+
+export type VisualSidebarMode = "adverse_explanation" | "interpretation" | "status";
 
 export type VisualSlideAnalysis = {
   assetRef: string;
@@ -26,6 +30,12 @@ export type VisualSlideAnalysis = {
   confidence: "high" | "medium" | "low";
   limitations: string[];
   provenanceLabel?: string;
+  /** v57 client sidebar contract */
+  sidebarMode?: VisualSidebarMode;
+  highlightExplanations?: HighlightExplanation[];
+  clientMeaning?: string;
+  /** Extra framed signals beyond the two shown in sidebar */
+  moreSignalsCount?: number;
 };
 
 export type OrionGoldenDeckSlide = {
