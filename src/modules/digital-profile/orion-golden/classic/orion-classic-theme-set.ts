@@ -2085,12 +2085,12 @@ function complianceExecutiveRollup(
   }
   const namesBit =
     nom.length > 0
-      ? `; смежный открытый контур: ${
+      ? `; открытый контур: ${
           nom.length === 1 ? nom[0] : `${nom.slice(0, -1).join(", ")} и ${nom[nom.length - 1]}`
         }`
       : "";
   const sDat = shortSubjectDative(subjectName);
-  return `В ${providers} — предварительные сигналы (${kindLabel}) по ${sDat}${namesBit}; требуется сверка полных профилей`;
+  return `В ${providers} — сигналы (${kindLabel}) по ${sDat}${namesBit}; нужна сверка профилей.`;
 }
 
 function isGenericMultiProviderComplianceStub(text: string): boolean {
@@ -2182,6 +2182,7 @@ function isSoftPressNoiseTheme(theme: OrionThemeCard): boolean {
 function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string {
   const s = shortSubjectLabel(subjectName);
   const sGen = shortSubjectGenitive(subjectName);
+  const sDat = shortSubjectDative(subjectName);
   const p = storyPeople(theme);
   const hitBlob = theme.sampleHits.map((h) => `${h.title} ${h.snippet ?? ""}`).join(" ");
   const domain = theme.sampleHits.find((h) => PRIMARY_CRIMINAL_DOMAIN_RE.test(h.domain))?.domain
@@ -2201,16 +2202,16 @@ function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string 
           parts.length === 2
             ? `${parts[0]} и ${parts[1]}`
             : `${parts[0]}, ${parts[1]} и ${parts[2]}`;
-        return `Наличие актуальных связей с ${joined} (компания и персоны под санкциями; по открытым источникам, в т.ч. ${domain || "агрегаторам компромата"})`;
+        return `Связи с ${joined} под санкциями; якорь: ${domain || "rucriminal.info"}.`;
       }
       if (p.defense || /defense|оборон/i.test(hitBlob)) {
-        return `Публикации о связях ${sGen} с оборонно-промышленным / транспортным контуром (в т.ч. ${domain || "rucriminal.info"}); требуется сверка первоисточников`;
+        return `Связи ${sGen} с оборонно-транспортным контуром (якорь: ${domain || "rucriminal.info"}); нужна сверка.`;
       }
       // Soft-press-only criminal buckets should not surface as client claims.
       if (domain && isSoftPressOrBioDomain(domain) && !PRIMARY_CRIMINAL_DOMAIN_RE.test(domain)) {
         return "";
       }
-      return `Криминальные / судебные материалы в открытых источниках в отношении ${sGen}${domain ? ` (якорь: ${domain})` : ""}; требуется сверка первоисточников`;
+      return `Криминальные или судебные материалы по ${sDat}${domain ? ` (якорь: ${domain})` : ""}; нужна сверка первоисточников.`;
     }
     case "political_exposure":
       if (isWeakSoftBioPoliticalTheme(theme)) return "";
@@ -2240,15 +2241,15 @@ function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string 
       return `Связи с офшором / зарубежными структурами (по открытым источникам; требует сверки)`;
     case "aggregator_negative":
       if (p.liksutov || p.offshore || /бенефициар|офшор|корруп|криминал|аксененко/i.test(hitBlob)) {
-        return `Публикация на ресурсе-агрегаторе: сведения о том, что ${s} является бенефициаром офшора, связанного с М. Ликсутовым, о возможных коррупционных и криминальных связях (характер источника требует осторожной интерпретации)`;
+        return `Агрегатор: ${s} указан как бенефициар офшора, связанного с М. Ликсутовым; источник требует осторожной интерпретации.`;
       }
-      return `Негативные публикации на ресурсах-агрегаторах в отношении ${sGen}${domain ? ` (${domain})` : ""}`;
+      return `Негативные публикации на агрегаторах по ${sGen}${domain ? ` (${domain})` : ""}.`;
     case "pep_rca":
-      return `Предварительные сигналы PEP / RCA в комплаенс-базах по ${shortSubjectDative(subjectName)}; требуется сверка полного профиля`;
+      return `Предварительные сигналы PEP / RCA в комплаенс-базах по ${shortSubjectDative(subjectName)}; нужна сверка профиля.`;
     default:
       if (domain && isSoftPressOrBioDomain(domain)) return "";
       if (domain) {
-        return `Иные потенциально нежелательные упоминания в отношении ${sGen} (в т.ч. ${domain})`;
+        return `Иные потенциально нежелательные упоминания в отношении ${sGen} (якорь: ${domain})`;
       }
       return theme.title;
   }
@@ -2486,7 +2487,7 @@ export function wikipediaStatusLine(kpis: OrionSurfaceKpis): string {
     case "EXACT_SUBJECT":
       return `Википедия: статья о субъекте обнаружена${kpis.wikipediaTitle ? ` («${kpis.wikipediaTitle}»)` : ""}.`;
     case "WRONG_SUBJECT":
-      return `Википедия: найдена страница другого субъекта / рода${kpis.wikipediaTitle ? ` («${kpis.wikipediaTitle}»)` : ""} — не является профилем проверяемого лица.`;
+      return `Википедия: страница другого субъекта / рода${kpis.wikipediaTitle ? ` («${kpis.wikipediaTitle}»)` : ""} — не профиль аудита.`;
     case "AMBIGUOUS":
       return `Википедия: страница неоднозначна${kpis.wikipediaTitle ? ` («${kpis.wikipediaTitle}»)` : ""} — требуется сверка identity.`;
     default:

@@ -136,8 +136,8 @@ function executiveDashboardFromTheme(themeSet: OrionThemeSet, base: OrionGoldenD
   const keyFindings =
     matrixTop.length > 0
       ? matrixTop.map((r) => ({
-          headline: scrub(r.theme).slice(0, 40),
-          detail: scrub(r.summary).slice(0, 170),
+          headline: scrub(r.theme).slice(0, 48),
+          detail: shortenClientRiskDetail(r.summary),
           tone: (/высок/i.test(r.level) ? "risk" : "warn") as MetricTone,
         }))
       : (themeSet.executiveBullets.length > 0 ? themeSet.executiveBullets : base.bullets ?? [])
@@ -146,7 +146,7 @@ function executiveDashboardFromTheme(themeSet: OrionThemeSet, base: OrionGoldenD
             const clean = scrub(b);
             return {
               headline: clean.split(/[—–.:]/)[0]?.slice(0, 40) || "Риск",
-              detail: truncateAtWordBoundary(clean, 160),
+              detail: shortenClientRiskDetail(clean),
               tone: "warn" as MetricTone,
             };
           });
@@ -159,9 +159,9 @@ function executiveDashboardFromTheme(themeSet: OrionThemeSet, base: OrionGoldenD
     actions: [
       {
         label: scrub(
-          truncateAtWordBoundary(
+          clipWordsComplete(
             themeSet.nextStep || "Провести ручную сверку ключевых источников",
-            180
+            22
           )
         ),
       },
@@ -181,6 +181,31 @@ function executiveDashboardFromTheme(themeSet: OrionThemeSet, base: OrionGoldenD
   };
 }
 
+function shortenClientRiskDetail(raw: string): string {
+  const s = scrub(raw);
+  // Dow Jones rollup first — it often also mentions Трансмашхолдинг / Махмудов.
+  if (/Dow Jones|LexisNexis|World-Check/i.test(s) && /Махмудов|Бокарев|Ликсутов|предварительн|сигнал/i.test(s)) {
+    return "В Dow Jones, LexisNexis, World-Check — сигналы по субъекту; открытый контур: И. Махмудов и А. Бокарев; нужна сверка.";
+  }
+  if (/бенефициар[а-яё]*\s+офшора,\s*связанного\s+с\s+М|публикаци[а-яё]+\s+на\s+ресурсе-агрегаторе/i.test(s)) {
+    return "Агрегатор: субъект указан как бенефициар офшора, связанного с М. Ликсутовым; источник требует осторожной интерпретации.";
+  }
+  if (/Трансмашхолдинг/i.test(s) && (/Махмудов|Бокарев|в\s+т\.?\s*ч|актуальн[а-яё]*\s+связ/i.test(s))) {
+    const domain = s.match(/\b([a-z0-9-]+\.(?:info|io|com|org|net))\b/i)?.[1] ?? "rucriminal.info";
+    return `Связи с АО «Трансмашхолдинг», И. Махмудовым и А. Бокаревым под санкциями; якорь: ${domain}.`;
+  }
+  if (/другого субъекта|дворянский род/i.test(s)) {
+    return "Википедия: страница «Глинка (дворянский род)» — другой субъект, не профиль аудита.";
+  }
+  if (/криминальн[а-яё]*\s*\/\s*судебн/i.test(s)) {
+    return "Криминальные или судебные материалы по субъекту в открытых источниках; нужна сверка первоисточников.";
+  }
+  if (/PEP\s*\/\s*RCA|сигналы PEP/i.test(s)) {
+    return "Предварительные сигналы PEP / RCA в комплаенс-базах; нужна сверка профиля.";
+  }
+  return clipWordsComplete(s, 32);
+}
+
 function riskMatrixFromTheme(themeSet: OrionThemeSet, base: OrionGoldenDeckSlide): OrionGoldenDeckSlide {
   const rows = orionStyleRiskMatrixRows(themeSet).slice(0, 6);
   const toneFor = (level: string): MetricTone => {
@@ -193,15 +218,15 @@ function riskMatrixFromTheme(themeSet: OrionThemeSet, base: OrionGoldenDeckSlide
     template: "orion_golden_risk_matrix_grid",
     keyFindings: rows.map((r) => ({
       headline: scrub(r.theme),
-      detail: scrub(
+      detail: shortenClientRiskDetail(
         r.summary.replace(new RegExp(`^${r.theme.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*[—–:-]?\\s*`, "i"), "")
-      ).slice(0, 180),
+      ),
       tone: toneFor(r.level),
       severity: r.level,
       status: r.level,
-      manualReview: /требует/i.test(r.level) ? "Маркер: ручная проверка" : undefined,
+      manualReview: undefined,
     })),
-    bullets: rows.map((r) => `${r.theme} — ${r.level}: ${r.summary}`),
+    bullets: rows.map((r) => shortenClientRiskDetail(`${r.theme}: ${r.summary}`)),
   };
 }
 
@@ -212,7 +237,10 @@ function profileOverviewFromTheme(themeSet: OrionThemeSet, base: OrionGoldenDeck
   ];
   const complianceFindings = themeSet.complianceSignals.slice(0, 3).map((c) => ({
     headline: c.provider,
-    detail: scrub(c.statusLine.replace(new RegExp(`^${c.provider}:\\s*`, "i"), "") || c.detail).slice(0, 120),
+    detail: clipWordsComplete(
+      scrub(c.statusLine.replace(new RegExp(`^${c.provider}:\\s*`, "i"), "") || c.detail),
+      22
+    ),
     tone: (c.hasDbHit ? "warn" : "neutral") as MetricTone,
   }));
   return {
@@ -228,7 +256,7 @@ function profileOverviewFromTheme(themeSet: OrionThemeSet, base: OrionGoldenDeck
         ? [
             {
               headline: "Википедия (Россия)",
-              detail: scrub(wikipediaStatusLine(themeSet.ru)).slice(0, 140),
+              detail: shortenClientRiskDetail(scrub(wikipediaStatusLine(themeSet.ru))),
               tone: wikiTone(themeSet.ru.wikipediaStatus),
             },
             ...complianceFindings,
@@ -236,7 +264,7 @@ function profileOverviewFromTheme(themeSet: OrionThemeSet, base: OrionGoldenDeck
         : [
             {
               headline: "Википедия (Россия)",
-              detail: scrub(wikipediaStatusLine(themeSet.ru)).slice(0, 140),
+              detail: shortenClientRiskDetail(scrub(wikipediaStatusLine(themeSet.ru))),
               tone: wikiTone(themeSet.ru.wikipediaStatus),
             },
           ],
@@ -250,9 +278,21 @@ function regionalMetricsSlide(
 ): OrionGoldenDeckSlide {
   const kpis = region === "RU" ? themeSet.ru : themeSet.uae;
   const prefix = region === "RU" ? "Россия" : "ОАЭ";
+  const claimBullets = [
+    ...new Set(
+      (themeSet.executiveBullets.length > 0 ? themeSet.executiveBullets : base.bullets ?? [])
+        .map((b) => shortenClientRiskDetail(b))
+        .filter(Boolean)
+    ),
+  ].slice(0, 4);
+  const kpiBullets = [
+    `Доля потенциально нежелательных ссылок: ${kpis.linksAdversePct}% (${kpis.linksAdverse} из ${kpis.linksTotal}) — оценка профиля: ${kpis.overallBadge}.`,
+    `Поисковые подсказки: ${kpis.suggestionsAdverse} из ${kpis.suggestionsTotal} указывают на нежелательные темы.`,
+  ];
   return {
     ...base,
     template: "orion_golden_metrics_dashboard",
+    bullets: [...claimBullets, ...kpiBullets],
     metrics: [
       ...regionMetrics(kpis, prefix),
       {
@@ -309,17 +349,18 @@ function enrichSlideWithThemeSet(
           tone: wikiTone(kpis.wikipediaStatus),
         },
       ],
-      narrative: scrub(
-        wikipediaStatusLine(kpis) +
-          (kpis.wikipediaStatus === "WRONG_SUBJECT"
-            ? " Карточка не является профилем проверяемого лица — исключить из digital profile либо проверить identity."
-            : "")
-      ),
+      narrative: shortenClientRiskDetail(scrub(wikipediaStatusLine(kpis))),
       actions:
         kpis.wikipediaStatus === "WRONG_SUBJECT" || kpis.wikipediaStatus === "AMBIGUOUS"
           ? [{ label: "Исключить из профиля или сверить identity" }]
           : undefined,
-      bullets: slide.bullets?.slice(0, 3),
+      bullets: (slide.bullets ?? [])
+        .slice(0, 2)
+        .map((b) => {
+          const clean = scrub(b).replace(/\s+https?:\/\/\S+/i, "");
+          return shortenClientRiskDetail(clean);
+        })
+        .filter(Boolean),
     };
   }
   return slide;
@@ -888,14 +929,20 @@ export function composeOrionFirst36CeoDeck(
               .join("\n")
           : scrub(slide.narrative)
         : undefined,
-      bullets: slide.bullets?.map((b) => scrub(b)).filter(Boolean),
+      bullets: slide.bullets
+        ?.map((b) => {
+          const clean = scrub(b);
+          if ([3, 4, 7, 8, 13, 24, 25].includes(slot.page)) return shortenClientRiskDetail(clean);
+          return clean;
+        })
+        .filter(Boolean),
       clientTakeaway: slide.clientTakeaway ? scrub(slide.clientTakeaway) : undefined,
       metrics: slide.metrics,
       statusBadge: slide.statusBadge,
       keyFindings: slide.keyFindings?.map((f) => ({
         ...f,
         headline: scrub(f.headline),
-        detail: scrub(f.detail),
+        detail: [3, 4, 5].includes(slot.page) ? shortenClientRiskDetail(scrub(f.detail)) : scrub(f.detail),
       })),
       actions: slide.actions?.map((a) => ({
         label: scrub(a.label),

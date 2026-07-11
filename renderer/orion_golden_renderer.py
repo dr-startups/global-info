@@ -198,7 +198,8 @@ def _fit_text_to_height(
 
 
 _DANGLING_TAIL = re.compile(
-    r"(\s+(?:и|а|или|по|на|в|с|из|для|о|об|к|ко|у|от|до|при|без|над|под|про|через|баз|записям|доменом?|контекстом?|криминальным|компрометирующим|санкционным|нежелательный|ручной|негативным))\s*$",
+    r"(\s+(?:и|а|или|по|на|в|с|из|для|о|об|к|ко|у|от|до|при|без|над|под|про|через|баз|записям|доменом?|контекстом?|криминальным|компрометирующим|санкционным|нежелательный|ручной|негативным|т\.?\s*ч\.?))\s*$|"
+    r"(\s+в\s+т\.?\s*ч\.?\s*$)|(\s+с\s+[А-ЯA-Z]\.?\s*$)|(\s+[А-ЯA-Z]\.?\s*$)",
     re.I,
 )
 
@@ -230,7 +231,7 @@ def _clip_words(text: str, max_chars: int) -> str:
     """Clip on sentence/word boundary; avoid mid-thought stubs and dangling prepositions."""
     val = _safe(text)
     if len(val) <= max_chars:
-        return val
+        return _trim_dangling_tail(val)
     slice_ = val[:max_chars]
     punct = max(slice_.rfind(". "), slice_.rfind("! "), slice_.rfind("? "), slice_.rfind("; "))
     if punct > max_chars * 0.45:
@@ -467,8 +468,27 @@ class _Ctx:
         rows = (len(items) + cols - 1) // cols
         return y + rows * chip_h + max(0, rows - 1) * gap
 
-    def bullets(self, items: list[str], y: int, color: RGBColor = BODY_COLOR, max_items: int = 8, max_chars: int = 280) -> int:
-        kept = [_clip_words(_safe(b), max_chars) for b in items[:max_items] if _safe(b)]
+    def bullets(self, items: list[str], y: int, color: RGBColor = BODY_COLOR, max_items: int = 8, max_chars: int = 320) -> int:
+        dangling = re.compile(
+            r"(?:\bв\s+т\.?\s*ч\.?|\bс\s+[А-ЯA-Z]\.?|\b[А-ЯA-Z]\.?|,|;|—|–|-)\s*$",
+            re.I,
+        )
+        kept: list[str] = []
+        for b in items[:max_items]:
+            raw = _safe(b)
+            if not raw:
+                continue
+            clipped = _clip_words(raw, max_chars)
+            if dangling.search(clipped):
+                # Prefer previous sentence boundary inside the clip window.
+                punct = max(clipped.rfind(". "), clipped.rfind("! "), clipped.rfind("? "))
+                if punct > 40:
+                    clipped = clipped[: punct + 1].strip()
+                else:
+                    clipped = _trim_dangling_tail(clipped)
+            if dangling.search(clipped) or clipped.endswith(("—", "–", "-")):
+                raise RuntimeError(f"ORION bullet dangling on p{self.page}: {clipped[-48:]}")
+            kept.append(clipped)
         if not kept:
             return y
         text = "\n".join(f"• {b}" for b in kept)
@@ -850,11 +870,13 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
         headline = _safe(finding.get("headline") or "")
         # Prefer detail; avoid duplicating headline when detail already starts with it.
         if detail and headline and detail.lower().startswith(headline.lower()[:24].lower()):
-            text = _clip_words(detail, 180)
+            text = detail
         elif detail:
-            text = _clip_words(detail, 180)
+            text = detail
         else:
-            text = _clip_words(headline, 180)
+            text = headline
+        # Guard dangling tails from upstream clips.
+        text = _trim_dangling_tail(_safe(text))
         cards.append(("Риск", text, tone))
     if actions:
         act = actions[0]
@@ -889,24 +911,53 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
     if not findings:
         bullets = [_safe(b) for b in slide.get("bullets") or [] if _safe(b)]
         findings = [{"headline": b.split("—")[0].strip()[:60], "detail": b, "tone": "warn"} for b in bullets[:6]]
-    badge_w = 1_700_000
+    badge_w = 1_900_000
+    dangling = re.compile(
+        r"(?:\bв\s+т\.?\s*ч\.?|\bс\s+[А-ЯA-Z]\.?|\b[А-ЯA-Z]\.?|,|;|—|–|-)\s*$",
+        re.I,
+    )
     for finding in findings[:6]:
         tone = str(finding.get("tone") or "warn")
-        pill = _clip_words(_safe(finding.get("status") or finding.get("severity") or ""), 22)
-        headline = _clip_words(_safe(finding.get("headline") or "Тема"), 64)
-        detail = _clip_words(_safe(finding.get("detail") or ""), 160)
+        pill = _safe(finding.get("status") or finding.get("severity") or "")
+        if len(pill) > 28:
+            pill = _clip_words(pill, 28)
+        headline = _safe(finding.get("headline") or "Тема")
+        if len(headline) > 72:
+            headline = _clip_words(headline, 72)
+        detail = _safe(finding.get("detail") or "")
+        # Prefer complete source text; only sentence-fit if height is tight.
         marker = _safe(finding.get("manualReview") or "")
-        text_w = CONTENT_W - badge_w - 280_000 if pill else int(CONTENT_W * 0.9)
+        # Embed "requires review" into status instead of a cramped footer.
+        if marker and re.search(r"требует", pill or "", re.I) is None and "проверк" in marker.lower():
+            if pill and "проверк" not in pill.lower():
+                pill = pill  # keep level; marker dropped from footer
+        text_w = CONTENT_W - badge_w - 220_000 if pill else int(CONTENT_W * 0.92)
         left = MARGIN_X + 100_000
-        h = 140_000
-        h += measure_text_height(headline, text_w, 13, line_spacing=1.15)
+        pad_y = 80_000
+        headline_h = measure_text_height(headline, text_w, 13, line_spacing=1.15)
+        detail_budget = 2_200_000
         if detail:
-            h += 30_000 + measure_text_height(detail, text_w, 11, line_spacing=1.2)
-        if marker:
-            h += 90_000
-        h = max(520_000, min(h + 120_000, CONTENT_BOTTOM - y - 40_000))
+            # Grow card to fit complete detail when possible.
+            detail_h = measure_text_height(detail, text_w, 11, line_spacing=1.2)
+            needed = pad_y + headline_h + 40_000 + detail_h + pad_y
+            max_h = max(480_000, CONTENT_BOTTOM - y - 40_000)
+            if needed > max_h:
+                fitted = _fit_text_to_height(detail, text_w, 11, max(180_000, max_h - pad_y - headline_h - pad_y - 40_000))
+                if dangling.search(fitted) or fitted != detail and not fitted.endswith((".", "!", "?")):
+                    # Fall back to first complete sentence only.
+                    sentences = re.split(r"(?<=[.!?])\s+", detail)
+                    fitted = sentences[0].rstrip(".,;: ") + ("." if sentences and not sentences[0].endswith((".", "!", "?")) else "")
+                    if dangling.search(fitted):
+                        raise RuntimeError(f"ORION risk-matrix dangling detail on p{ctx.page}: {fitted[-40:]}")
+                detail = fitted
+                detail_h = measure_text_height(detail, text_w, 11, line_spacing=1.2)
+            h = min(max_h, pad_y + headline_h + 40_000 + detail_h + pad_y)
+        else:
+            h = max(420_000, pad_y + headline_h + pad_y)
+        h = max(420_000, min(h, CONTENT_BOTTOM - y - 40_000))
         ctx.card(y, h=h, fill=_tone_fill(tone))
-        box = ctx.slide.shapes.add_textbox(Emu(left), Emu(y + 90_000), Emu(text_w), Emu(260_000))
+        # Headline
+        box = ctx.slide.shapes.add_textbox(Emu(left), Emu(y + pad_y), Emu(text_w), Emu(max(headline_h + 20_000, 160_000)))
         tf = box.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
@@ -916,25 +967,35 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         r.font.bold = True
         r.font.size = Pt(13)
         r.font.color.rgb = NAVY
-        text_y = y + 90_000 + measure_text_height(headline, text_w, 13, line_spacing=1.15) + 20_000
+        text_y = y + pad_y + headline_h + 30_000
         if detail:
-            fitted = _fit_text_to_height(detail, text_w, 11, max(160_000, h - (text_y - y) - 140_000))
-            ctx.body(fitted, text_y, max_h=max(160_000, h - (text_y - y) - 140_000), x=left, w=text_w, font_size=11)
+            rem = max(140_000, y + h - text_y - pad_y)
+            box = ctx.slide.shapes.add_textbox(Emu(left), Emu(text_y), Emu(text_w), Emu(rem))
+            tf = box.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            r = p.add_run()
+            r.text = detail
+            r.font.name = FONT
+            r.font.size = Pt(11)
+            r.font.color.rgb = BODY_COLOR
         if pill:
-            bx = MARGIN_X + CONTENT_W - badge_w - 100_000
-            by = y + 90_000
-            ctx.card(by, h=260_000, x=bx, w=badge_w, fill=_tone_fill(tone))
-            b = ctx.slide.shapes.add_textbox(Emu(bx + 50_000), Emu(by + 70_000), Emu(badge_w - 100_000), Emu(140_000))
-            bp = b.text_frame.paragraphs[0]
+            bx = MARGIN_X + CONTENT_W - badge_w - 80_000
+            by = y + pad_y
+            bh = 280_000
+            ctx.card(by, h=bh, x=bx, w=badge_w, fill=WHITE)
+            b = ctx.slide.shapes.add_textbox(Emu(bx + 50_000), Emu(by + 70_000), Emu(badge_w - 100_000), Emu(160_000))
+            btf = b.text_frame
+            btf.word_wrap = True
+            bp = btf.paragraphs[0]
+            bp.alignment = PP_ALIGN.CENTER
             br = bp.add_run()
             br.text = pill
             br.font.name = FONT
             br.font.bold = True
             br.font.size = Pt(11)
             br.font.color.rgb = _tone_value_color(tone)
-        if marker:
-            ctx.body(marker, y + h - 120_000, max_h=90_000, x=left, w=text_w, font_size=9, color=MUTED_COLOR)
-        y += h + 60_000
+        y += h + 50_000
         if y > CONTENT_BOTTOM - 360_000:
             break
 
@@ -978,8 +1039,8 @@ def _render_profile_overview(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         if y > CONTENT_BOTTOM - 360_000:
             break
         y = ctx.content_card(
-            title=_clip_words(_safe(finding.get("headline")), 40),
-            text=_clip_words(_safe(finding.get("detail")), 140),
+            title=_clip_words(_safe(finding.get("headline")), 48),
+            text=_safe(finding.get("detail") or ""),
             x=MARGIN_X,
             y=y,
             width=CONTENT_W,
@@ -1209,7 +1270,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             )
             y += 60_000
         if bullets:
-            ctx.bullets(bullets, y, max_items=5, max_chars=180)
+            ctx.bullets(bullets, y, max_items=5, max_chars=260)
         return
 
     if template == "orion_golden_serp_screenshot":

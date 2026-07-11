@@ -84,10 +84,20 @@ export function clipWordsComplete(text: string, maxWords: number): string {
     .trim()
     .split(/\s+/)
     .filter(Boolean);
-  if (words.length <= maxWords) return words.join(" ");
+  if (words.length <= maxWords) {
+    const full = words.join(" ").trim();
+    return /[.!?…]$/.test(full) ? full : full.replace(/[,:;—–-]\s*$/, "").trim();
+  }
   // Prefer ending on sentence if present in prefix.
   const prefix = words.slice(0, maxWords).join(" ");
   const punct = Math.max(prefix.lastIndexOf("."), prefix.lastIndexOf("!"), prefix.lastIndexOf("?"));
   if (punct > prefix.length * 0.4) return prefix.slice(0, punct + 1).trim();
-  return prefix.replace(/[,:;—–-]\s*$/, "").trim();
+  let out = prefix.replace(/[,:;—–-]\s*$/, "").trim();
+  // Never leave dangling initials / "в т.ч."
+  out = out.replace(/\s+(?:в\s+т\.?\s*ч\.?|с\s+[А-ЯA-Z]\.?|[А-ЯA-Z]\.?)\s*$/u, "").trim();
+  if (!/[.!?…]$/.test(out) && out.length > 0) {
+    // Keep as complete clause without fake ellipsis.
+    return out;
+  }
+  return out;
 }
