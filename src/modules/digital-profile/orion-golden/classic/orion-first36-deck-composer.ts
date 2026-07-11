@@ -513,6 +513,46 @@ export function buildDeterministicVisualAnalysis(
 }
 
 
+function normalizeClientSearchTable(
+  table: OrionGoldenDeckSlide["table"] | undefined
+): OrionGoldenDeckSlide["table"] | undefined {
+  if (!table?.headers?.length || !table.rows?.length) return table;
+  const headers = table.headers.map((h) => String(h));
+  const hasUrl = headers.some((h) => /^url$/i.test(h.trim()));
+  const hasRisk = headers.some((h) => /риск|статус/i.test(h.trim()));
+  const urlIdx = headers.findIndex((h) => /^url$/i.test(h.trim()));
+  const riskIdx = headers.findIndex((h) => /риск|статус/i.test(h.trim()));
+  const titleIdx = headers.findIndex((h) => /заголовок|title/i.test(h.trim()));
+  const domainIdx = headers.findIndex((h) => /домен|domain/i.test(h.trim()));
+  const posIdx = headers.findIndex((h) => /поз|позиц|rank|#/i.test(h.trim()));
+
+  const rows = table.rows.slice(0, 8).map((row) => {
+    const pos = posIdx >= 0 ? String(row[posIdx] ?? "") : String(row[0] ?? "");
+    const domain = domainIdx >= 0 ? String(row[domainIdx] ?? "—") : String(row[1] ?? "—");
+    const title = titleIdx >= 0 ? String(row[titleIdx] ?? "") : String(row[2] ?? "");
+    let status = "Нейтральный";
+    if (riskIdx >= 0) {
+      const raw = String(row[riskIdx] ?? "").trim();
+      if (raw === "Н" || raw === "N" || raw === "Нежел." || /нежелат/i.test(raw)) status = "Нежелательный";
+      else if (/проверк|требует/i.test(raw)) status = "Требует проверки";
+      else if (raw === "·" || raw === "." || !raw) status = "Нейтральный";
+      else if (/нейтрал/i.test(raw)) status = "Нейтральный";
+      else status = "Требует проверки";
+    } else if (/нежелат|санкц|PEP|adverse/i.test(`${title} ${domain}`)) {
+      status = "Нежелательный";
+    }
+    void hasUrl;
+    void hasRisk;
+    void urlIdx;
+    return [pos, domain || "—", truncateAtWordBoundary(title, 90), status];
+  });
+
+  return {
+    headers: ["Позиция", "Домен", "Заголовок", "Статус"],
+    rows,
+  };
+}
+
 function enrichNonVisualSlotProse(slide: OrionGoldenDeckSlide, slot: First36SlotDef): OrionGoldenDeckSlide {
   if (slot.kind === "search_table") {
     const regionLabel = slot.region === "UAE" ? "ОАЭ" : slot.region === "RU" ? "Россия" : "Обзор";
@@ -521,17 +561,18 @@ function enrichNonVisualSlotProse(slide: OrionGoldenDeckSlide, slot: First36Slot
     );
     const narrative = scrub(
       slide.narrative ||
-        `Таблица фиксирует сохранённые позиции поисковой выдачи для региона «${regionLabel}». Это основа для сверки с синтетическим снимком SERP на соседнем слайде.`
+        `Таблица фиксирует сохранённые позиции поисковой выдачи для региона «${regionLabel}».`
     );
     const bullets =
       slide.bullets && slide.bullets.length > 0
         ? slide.bullets
         : [
-            scrub("Строки собраны из сохранённых результатов поиска, а не из live-браузера."),
+            scrub("Строки собраны из сохранённых результатов поиска."),
             scrub("Сверьте домены с визуальным снимком выдачи и риск-выводами резюме."),
           ];
     return {
       ...slide,
+      table: normalizeClientSearchTable(slide.table),
       clientTakeaway: slide.clientTakeaway || takeaway,
       narrative,
       bullets,
