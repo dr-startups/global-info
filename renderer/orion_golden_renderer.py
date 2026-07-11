@@ -198,23 +198,26 @@ def _fit_text_to_height(
 
 
 _DANGLING_TAIL = re.compile(
-    r"(\s+(?:и|а|или|по|на|в|с|из|для|о|об|к|ко|у|от|до|при|без|над|под|про|через|баз|записям|доменом?|контекстом?|криминальным|компрометирующим|санкционным|нежелательный|ручной|негативным|т\.?\s*ч\.?))\s*$|"
+    r"(\s+(?:и|а|или|по|на|в|с|из|для|о|об|к|ко|у|от|до|при|без|над|под|про|через|как|что|чтобы|который|которая|которые|которых|баз|записям|доменом?|контекстом?|криминальным|компрометирующим|санкционным|нежелательный|ручной|негативным|т\.?\s*ч\.?))\s*$|"
     r"(\s+в\s+т\.?\s*ч\.?\s*$)|(\s+с\s+[А-ЯA-Z]\.?\s*$)|(\s+[А-ЯA-Z]\.?\s*$)",
     re.I,
 )
 
 
 def _trim_dangling_tail(text: str) -> str:
-    val = text.rstrip(".,;:… ")
+    val = text.strip()
+    end = ""
+    if val and val[-1] in ".!?…":
+        end = val[-1]
+        val = val[:-1].rstrip(".,;: ")
     for _ in range(4):
         nxt = _DANGLING_TAIL.sub("", val).rstrip(".,;: ")
         if nxt == val:
             break
         val = nxt
-    if val and val[-1] not in ".!?…":
-        # Keep as complete clause without fake ellipsis.
-        return val
-    return val
+    if not val:
+        return ""
+    return val + end
 
 
 def _safe(text: object) -> str:
@@ -322,17 +325,37 @@ class _Ctx:
         chunks = [c.strip() for c in re.split(r"\n+", _safe(text)) if c.strip()]
         if not chunks:
             return y
-        max_chars_total = max(200, int(avail / 230000) * 110)
-        used = 0
-        kept: list[str] = []
-        for chunk in chunks[:8]:
-            if used >= max_chars_total:
-                break
-            clipped = _clip_words(chunk, min(900, max_chars_total - used))
-            if not clipped:
-                continue
-            kept.append(clipped)
-            used += len(clipped)
+        # Prefer height-fit over crude char starvation (was ~200 chars at 420k emu).
+        joined_raw = "\n".join(chunks[:8])
+        fitted = _fit_text_to_height(joined_raw, width, font_size, avail, line_spacing=1.2)
+        fitted = _trim_dangling_tail(fitted)
+        dangling = re.compile(
+            r"(?:\bв\s+т\.?\s*ч\.?|\bс\s+[А-ЯA-Z]\.?|\b(?:как|что|чтобы|и|а|или|по|на|в|с)\b|,|;|—|–|-)\s*$",
+            re.I,
+        )
+        if dangling.search(fitted) or (fitted and fitted[-1] not in ".!?…»)"):
+            sentences = re.split(r"(?<=[.!?…])\s+", _safe(joined_raw))
+            kept_s: list[str] = []
+            for sent in sentences:
+                trial = " ".join(kept_s + [sent]).strip()
+                if measure_text_height(trial, width, font_size, line_spacing=1.2) <= avail:
+                    kept_s.append(sent)
+                else:
+                    break
+            # Drop a trailing incomplete clause (e.g. ends with «как»).
+            while kept_s and (
+                dangling.search(kept_s[-1]) or kept_s[-1][-1] not in ".!?…»)"
+            ):
+                kept_s.pop()
+            if kept_s:
+                fitted = " ".join(kept_s).strip()
+            else:
+                # Last resort: first sentence trimmed of dangling tail.
+                first = _trim_dangling_tail(sentences[0] if sentences else fitted)
+                fitted = first if first and not dangling.search(first) else _trim_dangling_tail(fitted)
+        kept = [c for c in fitted.split("\n") if c.strip()] or ([fitted] if fitted else [])
+        if not kept:
+            return y
         joined = "\n".join(kept)
         needed = measure_text_height(joined, width, font_size, line_spacing=1.2, paragraph_spacing_pt=8)
         box_h = min(avail, max(needed + 40_000, int(font_size * EMU_PER_PT)))
@@ -1364,7 +1387,21 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY, FS_SECTION)
         if narrative:
-            y = ctx.body(_clip_words(narrative, 280), y, max_h=420000, color=MUTED_COLOR)
+            # Keep 1–2 complete sentences above the table; never end on «как/и/с».
+            intro = _safe(narrative)
+            sentences = [s.strip() for s in re.split(r"(?<=[.!?…])\s+", intro) if s.strip()]
+            complete = [
+                s
+                for s in sentences
+                if s.endswith((".", "!", "?", "…"))
+                and not re.search(r"(?:\bкак|\bи|\bс|\bв|\bпо|,|;|—)\s*$", s, re.I)
+            ]
+            if complete:
+                intro = " ".join(complete[:2])
+            else:
+                intro = "Таблица фиксирует сохранённые позиции поисковой выдачи."
+            intro = _trim_dangling_tail(intro)
+            y = ctx.body(intro, y, max_h=900000, color=MUTED_COLOR)
             y = y + 40000
         table = slide.get("table") if isinstance(slide.get("table"), dict) else None
         headers = list((table or {}).get("headers") or [])

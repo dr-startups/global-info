@@ -600,10 +600,27 @@ function enrichNonVisualSlotProse(slide: OrionGoldenDeckSlide, slot: First36Slot
     const takeaway = scrub(
       `Позиции в SERP (${regionLabel}): какие домены занимают верх выдачи по субъекту`
     );
-    const narrative = scrub(
+    const rawNarrative = scrub(
       slide.narrative ||
         `Таблица фиксирует сохранённые позиции поисковой выдачи для региона «${regionLabel}».`
     );
+    const sentences = rawNarrative
+      .split(/(?<=[.!?…])\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 20);
+    let narrative =
+      sentences.length > 0
+        ? sentences.slice(0, 2).join(" ")
+        : rawNarrative;
+    // Drop incomplete trailing clause (e.g. ends with «как»).
+    if (/\b(как|что|чтобы|и|а|или|по|на|в|с)\s*$/i.test(narrative) || /[,;:—–-]\s*$/.test(narrative)) {
+      const complete = sentences.find(
+        (s) => /[.!?…]$/.test(s) && !/\b(как|что|чтобы|и|а|или|по|на|в|с)\s*$/i.test(s)
+      );
+      narrative =
+        complete ||
+        scrub(`Таблица фиксирует сохранённые позиции поисковой выдачи для региона «${regionLabel}».`);
+    }
     const bullets =
       slide.bullets && slide.bullets.length > 0
         ? slide.bullets
