@@ -87,8 +87,9 @@ def measure_text_height(
     """Measure wrapped text height in EMU using real font metrics when available."""
     raw = _safe(text)
     if not raw:
-        return int(font_size_pt * EMU_PER_PT)
-    width_px = max(40, int(width_emu / EMU_PER_INCH * 96))
+        return int(font_size_pt * EMU_PER_PT * line_spacing)
+    # Slightly narrower than box so PPTX wrap is not underestimated.
+    width_px = max(40, int(width_emu / EMU_PER_INCH * 96 * 0.90))
     paragraphs = [p.strip() for p in re.split(r"\n+", raw) if p.strip()] or [""]
     total_lines = 0
     font = None
@@ -116,9 +117,9 @@ def measure_text_height(
                     bbox = font.getbbox(trial)
                     tw = bbox[2] - bbox[0]
                 except Exception:  # noqa: BLE001
-                    tw = int(len(trial) * font_size_pt * 0.55 * 96 / 72)
+                    tw = int(len(trial) * font_size_pt * 0.58 * 96 / 72)
             else:
-                tw = int(len(trial) * font_size_pt * 0.55 * 96 / 72)
+                tw = int(len(trial) * font_size_pt * 0.58 * 96 / 72)
             if tw <= width_px or not line:
                 line = trial
             else:
@@ -128,7 +129,36 @@ def measure_text_height(
 
     line_h = font_size_pt * EMU_PER_PT * line_spacing
     para_extra = max(0, len(paragraphs) - 1) * paragraph_spacing_pt * EMU_PER_PT
-    return int(total_lines * line_h + para_extra)
+    # Safety margin: PPTX wraps more aggressively than PIL metrics.
+    return int((total_lines * line_h + para_extra) * 1.18)
+
+
+def _fit_text_to_height(
+    text: str,
+    width_emu: int,
+    font_size_pt: float,
+    max_h: int,
+    *,
+    line_spacing: float = 1.2,
+) -> str:
+    """Clip text so measured height fits max_h (word-safe)."""
+    raw = _safe(text)
+    if not raw:
+        return ""
+    if measure_text_height(raw, width_emu, font_size_pt, line_spacing=line_spacing) <= max_h:
+        return raw
+    words = raw.split()
+    lo, hi = 1, len(words)
+    best = words[0]
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        trial = " ".join(words[:mid])
+        if measure_text_height(trial, width_emu, font_size_pt, line_spacing=line_spacing) <= max_h:
+            best = trial
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return best.rstrip(".,;:") + ("…" if best != raw else "")
 
 
 def _safe(text: object) -> str:
@@ -275,12 +305,12 @@ class _Ctx:
         width: int,
         min_h: int = 320_000,
         max_h: int = 2_400_000,
-        padding: int = 90_000,
+        padding: int = 100_000,
         tone: str = "neutral",
         title_size: int = 10,
         body_size: int = 11,
     ) -> int:
-        """Draw a content-sized card; return actual bottom Y."""
+        """Draw a content-sized card; clip text to fit; return actual bottom Y."""
         fill = {
             "accent": ACCENT_SOFT,
             "warn": WARN_BG,
@@ -290,18 +320,19 @@ class _Ctx:
         title_s = _safe(title or "")
         body_s = _safe(text)
         inner_w = max(120_000, width - 2 * padding)
-        h = padding
+        budget = max(200_000, min(max_h, CONTENT_BOTTOM - y))
+        title_h = 0
         if title_s:
-            h += measure_text_height(title_s, inner_w, title_size, line_spacing=1.15, paragraph_spacing_pt=2)
-            h += 40_000
+            title_h = measure_text_height(title_s, inner_w, title_size, line_spacing=1.15) + 40_000
+        body_budget = max(80_000, budget - 2 * padding - title_h)
         if body_s:
-            h += measure_text_height(body_s, inner_w, body_size, line_spacing=1.2, paragraph_spacing_pt=4)
-        h += padding
-        h = max(min_h, min(max_h, h, max(200_000, CONTENT_BOTTOM - y)))
+            body_s = _fit_text_to_height(body_s, inner_w, body_size, body_budget)
+        body_h = measure_text_height(body_s, inner_w, body_size, line_spacing=1.2) if body_s else 0
+        h = max(min_h, min(budget, 2 * padding + title_h + body_h + 40_000))
         self.card(y, h=h, x=x, w=width, fill=fill)
-        cy = y + padding // 2 + 20_000
+        cy = y + padding
         if title_s:
-            box = self.slide.shapes.add_textbox(Emu(x + padding), Emu(cy), Emu(inner_w), Emu(400_000))
+            box = self.slide.shapes.add_textbox(Emu(x + padding), Emu(cy), Emu(inner_w), Emu(max(title_h, 200_000)))
             tf = box.text_frame
             tf.word_wrap = True
             p = tf.paragraphs[0]
@@ -311,9 +342,9 @@ class _Ctx:
             r.font.bold = True
             r.font.size = Pt(title_size)
             r.font.color.rgb = NAVY
-            cy += measure_text_height(title_s, inner_w, title_size, line_spacing=1.15) + 30_000
+            cy += title_h
         if body_s:
-            rem = max(200_000, h - (cy - y) - padding // 2)
+            rem = max(120_000, y + h - cy - padding)
             box = self.slide.shapes.add_textbox(Emu(x + padding), Emu(cy), Emu(inner_w), Emu(rem))
             tf = box.text_frame
             tf.word_wrap = True
@@ -331,9 +362,9 @@ class _Ctx:
         if not items:
             return y
         cols = 2
-        gap = 60_000
+        gap = 70_000
         chip_w = (width - gap) // cols
-        chip_h = 580_000
+        chip_h = 640_000
         row_y = y
         for idx, m in enumerate(items):
             col = idx % cols
@@ -343,23 +374,25 @@ class _Ctx:
             tone = str(m.get("tone") or "neutral")
             fill = {"risk": RISK_BG, "warn": WARN_BG, "good": GOOD_BG}.get(tone, CARD_BG)
             value_color = {"risk": TONE_RISK, "warn": TONE_WARN, "good": TONE_GOOD}.get(tone, NAVY)
+            value = _clip_words(_safe(m.get("value")), 18)
+            label = _clip_words(_safe(m.get("label")), 18)
             self.card(row_y, h=chip_h, x=cx, w=chip_w, fill=fill)
             box = self.slide.shapes.add_textbox(
-                Emu(cx + 60_000), Emu(row_y + 60_000), Emu(chip_w - 120_000), Emu(chip_h - 100_000)
+                Emu(cx + 50_000), Emu(row_y + 70_000), Emu(chip_w - 100_000), Emu(chip_h - 140_000)
             )
             tf = box.text_frame
             tf.word_wrap = True
             p0 = tf.paragraphs[0]
             r0 = p0.add_run()
-            r0.text = _clip_words(_safe(m.get("value")), 22)
+            r0.text = value
             r0.font.name = FONT
             r0.font.bold = True
-            r0.font.size = Pt(15)
+            r0.font.size = Pt(14 if len(value) > 12 else 16)
             r0.font.color.rgb = value_color
             p1 = tf.add_paragraph()
-            p1.space_before = Pt(2)
+            p1.space_before = Pt(4)
             r1 = p1.add_run()
-            r1.text = _clip_words(_safe(m.get("label")), 22)
+            r1.text = label
             r1.font.name = FONT
             r1.font.size = Pt(9)
             r1.font.color.rgb = MUTED_COLOR
@@ -479,10 +512,10 @@ def _sidebar_word_budget(text: str, max_words: int = 70) -> str:
 
 
 def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, h: int) -> None:
-    """Content-sized analytical stack (no full-height enclosing frame)."""
+    """Compact content-sized stack: conclusion → reason → action → provenance."""
     analysis = slide.get("visualAnalysis") or {}
     cy = y
-    gap = 70_000
+    gap = 80_000
     max_bottom = min(y + h, CONTENT_BOTTOM)
 
     def room() -> int:
@@ -493,67 +526,62 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         bullets = [_safe(b) for b in slide.get("bullets") or [] if _safe(b)]
         if not takeaway and not bullets:
             return
-        body = _sidebar_word_budget(takeaway or (bullets[0] if bullets else ""), 65)
-        cy = ctx.content_card(
+        ctx.content_card(
             title="Вывод",
-            text=body,
+            text=_sidebar_word_budget(takeaway or bullets[0], 36),
             x=x,
             y=cy,
             width=w,
-            min_h=280_000,
-            max_h=min(1_600_000, room()),
+            min_h=260_000,
+            max_h=min(1_000_000, room()),
             tone="accent",
             title_size=11,
             body_size=11,
         )
         return
 
-    headline = _sidebar_word_budget(_safe(analysis.get("headlineConclusion") or "Вывод"), 28)
+    # Reserve space for action + provenance so earlier cards do not starve them.
+    reserve = 720_000
+    headline = _sidebar_word_budget(_safe(analysis.get("headlineConclusion") or "Вывод"), 22)
     cy = ctx.content_card(
         title=None,
         text=headline,
         x=x,
         y=cy,
         width=w,
-        min_h=260_000,
-        max_h=min(900_000, room()),
+        min_h=240_000,
+        max_h=min(620_000, max(240_000, room() - reserve)),
         tone="accent",
         body_size=12,
     )
     cy += gap
 
-    metrics = analysis.get("metrics") or slide.get("metrics") or []
-    if isinstance(metrics, list) and metrics and room() > 400_000:
-        cy = ctx.metric_chips([m for m in metrics if isinstance(m, dict)], x, cy, w)
-        cy += gap
-
-    why = _sidebar_word_budget(_safe(analysis.get("whyItMatters") or ""), 22)
-    if why and room() > 280_000:
+    marked = _safe(analysis.get("whatIsVisible") or "")
+    why = _safe(analysis.get("whyItMatters") or "")
+    reason = marked if marked else why
+    if reason and room() > reserve:
         cy = ctx.content_card(
-            title="Почему важно",
-            text=why,
+            title="Почему отмечено",
+            text=_sidebar_word_budget(reason, 42),
             x=x,
             y=cy,
             width=w,
-            min_h=240_000,
-            max_h=min(700_000, room()),
-            tone="neutral",
+            min_h=280_000,
+            max_h=min(1_100_000, max(280_000, room() - 520_000)),
+            tone="warn",
             title_size=10,
             body_size=11,
         )
         cy += gap
 
+    metrics = analysis.get("metrics") or []
+    if isinstance(metrics, list) and metrics and room() > 900_000:
+        # One compact chip row only when space remains.
+        cy = ctx.metric_chips([m for m in metrics if isinstance(m, dict)][:2], x, cy, w)
+        cy += gap
+
     actions = analysis.get("recommendedActions") or []
-    action_text = ""
-    if isinstance(actions, list) and actions:
-        action_text = _sidebar_word_budget(_safe(actions[0]), 18)
-    slide_actions = slide.get("actions") or []
-    if not action_text and isinstance(slide_actions, list) and slide_actions:
-        first = slide_actions[0]
-        if isinstance(first, dict):
-            action_text = _sidebar_word_budget(_safe(first.get("label")), 18)
-        else:
-            action_text = _sidebar_word_budget(_safe(first), 18)
+    action_text = _sidebar_word_budget(_safe(actions[0]), 16) if isinstance(actions, list) and actions else ""
     if action_text and room() > 240_000:
         cy = ctx.content_card(
             title="Действие",
@@ -562,7 +590,7 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
             y=cy,
             width=w,
             min_h=220_000,
-            max_h=min(600_000, room()),
+            max_h=min(520_000, room() - 160_000),
             tone="warn",
             title_size=10,
             body_size=11,
@@ -576,20 +604,21 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
     prov = _safe(analysis.get("provenanceLabel") or "")
     if prov:
         footer_bits.append(prov)
-    footer = _clip_words(" · ".join(footer_bits), 160)
-    if footer and room() > 180_000:
+    footer = _clip_words(" · ".join(footer_bits), 110)
+    if footer and room() > 140_000:
         ctx.content_card(
             title=None,
             text=footer,
             x=x,
             y=cy,
             width=w,
-            min_h=160_000,
-            max_h=min(420_000, room()),
+            min_h=140_000,
+            max_h=min(340_000, room()),
             tone="neutral",
             body_size=9,
             padding=60_000,
         )
+
 
 
 def _tone_fill(tone: str) -> RGBColor:
@@ -606,7 +635,7 @@ def _render_kpi_cards(ctx: _Ctx, metrics: list[dict[str, Any]], x: int, y: int, 
         return y
     gap = 80_000
     card_w = (width - gap * (cols - 1)) // cols
-    card_h = 720_000
+    card_h = 780_000
     row_y = y
     for idx, m in enumerate(items):
         col = idx % cols
@@ -614,28 +643,31 @@ def _render_kpi_cards(ctx: _Ctx, metrics: list[dict[str, Any]], x: int, y: int, 
             row_y += card_h + gap
         cx = x + col * (card_w + gap)
         tone = str(m.get("tone") or "neutral")
+        value = _clip_words(_safe(m.get("value")), 16)
+        label = _clip_words(_safe(m.get("label")), 22)
         ctx.card(row_y, h=card_h, x=cx, w=card_w, fill=_tone_fill(tone))
         box = ctx.slide.shapes.add_textbox(
-            Emu(cx + 80_000), Emu(row_y + 90_000), Emu(card_w - 160_000), Emu(card_h - 160_000)
+            Emu(cx + 70_000), Emu(row_y + 100_000), Emu(card_w - 140_000), Emu(card_h - 180_000)
         )
         tf = box.text_frame
         tf.word_wrap = True
         p0 = tf.paragraphs[0]
         r0 = p0.add_run()
-        r0.text = _clip_words(_safe(m.get("value")), 28)
+        r0.text = value
         r0.font.name = FONT
         r0.font.bold = True
-        r0.font.size = Pt(20)
+        r0.font.size = Pt(18 if len(value) <= 10 else 13)
         r0.font.color.rgb = _tone_value_color(tone)
         p1 = tf.add_paragraph()
-        p1.space_before = Pt(4)
+        p1.space_before = Pt(6)
         r1 = p1.add_run()
-        r1.text = _clip_words(_safe(m.get("label")), 36)
+        r1.text = label
         r1.font.name = FONT
         r1.font.size = Pt(11)
         r1.font.color.rgb = MUTED_COLOR
     rows = (len(items) + cols - 1) // cols
     return y + rows * card_h + max(0, rows - 1) * gap
+
 
 
 def _render_status_badge(ctx: _Ctx, badge: dict[str, Any] | None, x: int, y: int, width: int) -> int:
@@ -704,24 +736,26 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
     cards: list[tuple[str, str, str]] = []
     for finding in findings:
         tone = str(finding.get("tone") or "warn")
-        text = _clip_words(
-            f"{_safe(finding.get('headline'))}. {_safe(finding.get('detail'))}".strip(". "),
-            140,
-        )
+        detail = _safe(finding.get("detail") or "")
+        headline = _safe(finding.get("headline") or "")
+        # Prefer detail; avoid duplicating headline when detail already starts with it.
+        if detail and headline and detail.lower().startswith(headline.lower()[:24].lower()):
+            text = _clip_words(detail, 180)
+        elif detail:
+            text = _clip_words(detail, 180)
+        else:
+            text = _clip_words(headline, 180)
         cards.append(("Риск", text, tone))
     if actions:
         act = actions[0]
         label = _safe(act.get("label"))
-        rationale = _safe(act.get("rationale") or "")
-        if rationale and rationale.lower() not in label.lower():
-            text = _clip_words(f"{label}. {rationale}".strip(". "), 160)
-        else:
-            text = _clip_words(label, 160)
+        text = _clip_words(label, 160)
         cards.append(("Следующий шаг", text, "accent"))
     if cards:
         gap = 80_000
         col_w = (CONTENT_W - gap * (len(cards) - 1)) // max(1, len(cards))
         fx = MARGIN_X
+        card_max = min(1_500_000, max(520_000, CONTENT_BOTTOM - bottom_y - 40_000))
         for card_title, text, tone in cards:
             ctx.content_card(
                 title=card_title,
@@ -730,9 +764,9 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
                 y=bottom_y,
                 width=col_w,
                 min_h=420_000,
-                max_h=980_000,
+                max_h=card_max,
                 tone=tone,
-                title_size=10,
+                title_size=11,
                 body_size=11,
             )
             fx += col_w + gap
@@ -745,61 +779,65 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
     if not findings:
         bullets = [_safe(b) for b in slide.get("bullets") or [] if _safe(b)]
         findings = [{"headline": b.split("—")[0].strip()[:60], "detail": b, "tone": "warn"} for b in bullets[:6]]
+    badge_w = 1_700_000
     for finding in findings[:6]:
         tone = str(finding.get("tone") or "warn")
-        pill = _safe(finding.get("status") or finding.get("severity") or "")
-        headline = _safe(finding.get("headline") or "Тема")
-        detail = _clip_words(_safe(finding.get("detail") or ""), 220)
+        pill = _clip_words(_safe(finding.get("status") or finding.get("severity") or ""), 22)
+        headline = _clip_words(_safe(finding.get("headline") or "Тема"), 64)
+        detail = _clip_words(_safe(finding.get("detail") or ""), 160)
         marker = _safe(finding.get("manualReview") or "")
-        inner_w = int(CONTENT_W * 0.62)
-        h = 120_000
-        h += measure_text_height(headline, inner_w, 13, line_spacing=1.15)
-        if detail:
-            h += 40_000 + measure_text_height(detail, inner_w, 11, line_spacing=1.2)
-        if marker:
-            h += 80_000
-        h = max(480_000, min(h + 140_000, CONTENT_BOTTOM - y - 40_000))
-        ctx.card(y, h=h, fill=_tone_fill(tone))
+        text_w = CONTENT_W - badge_w - 280_000 if pill else int(CONTENT_W * 0.9)
         left = MARGIN_X + 100_000
-        box = ctx.slide.shapes.add_textbox(Emu(left), Emu(y + 80_000), Emu(inner_w), Emu(220_000))
+        h = 140_000
+        h += measure_text_height(headline, text_w, 13, line_spacing=1.15)
+        if detail:
+            h += 30_000 + measure_text_height(detail, text_w, 11, line_spacing=1.2)
+        if marker:
+            h += 90_000
+        h = max(520_000, min(h + 120_000, CONTENT_BOTTOM - y - 40_000))
+        ctx.card(y, h=h, fill=_tone_fill(tone))
+        box = ctx.slide.shapes.add_textbox(Emu(left), Emu(y + 90_000), Emu(text_w), Emu(260_000))
         tf = box.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
         r = p.add_run()
-        r.text = _clip_words(headline, 70)
+        r.text = headline
         r.font.name = FONT
         r.font.bold = True
         r.font.size = Pt(13)
         r.font.color.rgb = NAVY
-        text_y = y + 80_000 + measure_text_height(headline, inner_w, 13, line_spacing=1.15) + 20_000
+        text_y = y + 90_000 + measure_text_height(headline, text_w, 13, line_spacing=1.15) + 20_000
         if detail:
-            ctx.body(detail, text_y, max_h=max(200_000, h - (text_y - y) - 120_000), x=left, w=inner_w, font_size=11)
+            fitted = _fit_text_to_height(detail, text_w, 11, max(160_000, h - (text_y - y) - 140_000))
+            ctx.body(fitted, text_y, max_h=max(160_000, h - (text_y - y) - 140_000), x=left, w=text_w, font_size=11)
         if pill:
-            badge_w = 1_800_000
-            bx = MARGIN_X + CONTENT_W - badge_w - 120_000
-            ctx.card(y + 100_000, h=280_000, x=bx, w=badge_w, fill=_tone_fill(tone))
-            b = ctx.slide.shapes.add_textbox(Emu(bx + 60_000), Emu(y + 150_000), Emu(badge_w - 120_000), Emu(180_000))
+            bx = MARGIN_X + CONTENT_W - badge_w - 100_000
+            by = y + 90_000
+            ctx.card(by, h=260_000, x=bx, w=badge_w, fill=_tone_fill(tone))
+            b = ctx.slide.shapes.add_textbox(Emu(bx + 50_000), Emu(by + 70_000), Emu(badge_w - 100_000), Emu(140_000))
             bp = b.text_frame.paragraphs[0]
             br = bp.add_run()
-            br.text = _clip_words(pill, 28)
+            br.text = pill
             br.font.name = FONT
             br.font.bold = True
             br.font.size = Pt(11)
             br.font.color.rgb = _tone_value_color(tone)
         if marker:
-            ctx.body(marker, y + h - 140_000, max_h=100_000, x=left, w=CONTENT_W - 200_000, font_size=9, color=MUTED_COLOR)
-        y += h + 70_000
-        if y > CONTENT_BOTTOM - 400_000:
+            ctx.body(marker, y + h - 120_000, max_h=90_000, x=left, w=text_w, font_size=9, color=MUTED_COLOR)
+        y += h + 60_000
+        if y > CONTENT_BOTTOM - 360_000:
             break
+
 
 
 def _render_profile_overview(ctx: _Ctx, slide: dict[str, Any], title: str) -> None:
     ctx.light_bg()
     y = ctx.title(title, 240000, NAVY, FS_SECTION)
-    y = _render_status_badge(ctx, slide.get("statusBadge") if isinstance(slide.get("statusBadge"), dict) else None, MARGIN_X, y, CONTENT_W)
+    y = _render_status_badge(
+        ctx, slide.get("statusBadge") if isinstance(slide.get("statusBadge"), dict) else None, MARGIN_X, y, CONTENT_W
+    )
     y += 80_000
     metrics = [m for m in (slide.get("metrics") or []) if isinstance(m, dict)]
-    # Split RU / UAE cards: first half left, second half right when labeled
     ru = [m for m in metrics if "RU" in _safe(m.get("label")).upper() or "Росс" in _safe(m.get("label"))]
     uae = [m for m in metrics if "UAE" in _safe(m.get("label")).upper() or "ОАЭ" in _safe(m.get("label"))]
     other = [m for m in metrics if m not in ru and m not in uae]
@@ -807,50 +845,41 @@ def _render_profile_overview(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
     if ru or uae:
         left_metrics = (ru or metrics[:4])[:4]
         right_metrics = (uae or metrics[4:8])[:4]
-        ctx.card(y, h=240_000, x=MARGIN_X, w=half, fill=ACCENT_SOFT)
-        box_l = ctx.slide.shapes.add_textbox(Emu(MARGIN_X + 80_000), Emu(y + 70_000), Emu(half - 160_000), Emu(140_000))
-        rl = box_l.text_frame.paragraphs[0].add_run()
-        rl.text = "Россия"
-        rl.font.name = FONT
-        rl.font.bold = True
-        rl.font.size = Pt(13)
-        rl.font.color.rgb = NAVY
-        ctx.card(y, h=240_000, x=MARGIN_X + half + 100_000, w=half, fill=ACCENT_SOFT)
-        box_r = ctx.slide.shapes.add_textbox(
-            Emu(MARGIN_X + half + 180_000), Emu(y + 70_000), Emu(half - 160_000), Emu(140_000)
-        )
-        rr = box_r.text_frame.paragraphs[0].add_run()
-        rr.text = "ОАЭ"
-        rr.font.name = FONT
-        rr.font.bold = True
-        rr.font.size = Pt(13)
-        rr.font.color.rgb = NAVY
-        y += 280_000
-        _render_kpi_cards(ctx, left_metrics, MARGIN_X, y, half, cols=2)
-        bottom = _render_kpi_cards(ctx, right_metrics, MARGIN_X + half + 100_000, y, half, cols=2)
-        y = bottom + 100_000
+        hdr_h = 320_000
+        for label, xx in (("Россия", MARGIN_X), ("ОАЭ", MARGIN_X + half + 100_000)):
+            ctx.card(y, h=hdr_h, x=xx, w=half, fill=ACCENT_SOFT)
+            box = ctx.slide.shapes.add_textbox(Emu(xx + 90_000), Emu(y + 90_000), Emu(half - 180_000), Emu(160_000))
+            rr = box.text_frame.paragraphs[0].add_run()
+            rr.text = label
+            rr.font.name = FONT
+            rr.font.bold = True
+            rr.font.size = Pt(14)
+            rr.font.color.rgb = NAVY
+        y += hdr_h + 80_000
+        left_bottom = _render_kpi_cards(ctx, left_metrics, MARGIN_X, y, half, cols=2)
+        right_bottom = _render_kpi_cards(ctx, right_metrics, MARGIN_X + half + 100_000, y, half, cols=2)
+        y = max(left_bottom, right_bottom) + 100_000
     else:
         y = _render_kpi_cards(ctx, metrics[:8], MARGIN_X, y, CONTENT_W, cols=4) + 100_000
     if other:
         y = _render_kpi_cards(ctx, other[:4], MARGIN_X, y, CONTENT_W, cols=4) + 80_000
-    findings = [f for f in (slide.get("keyFindings") or []) if isinstance(f, dict)][:4]
-    if findings:
-        chip_w = (CONTENT_W - 3 * 60_000) // 4
-        fx = MARGIN_X
-        for finding in findings:
-            ctx.content_card(
-                title=_clip_words(_safe(finding.get("headline")), 28),
-                text=_clip_words(_safe(finding.get("detail")), 90),
-                x=fx,
-                y=y,
-                width=chip_w,
-                min_h=360_000,
-                max_h=700_000,
-                tone=str(finding.get("tone") or "neutral"),
-                title_size=10,
-                body_size=11,
-            )
-            fx += chip_w + 60_000
+    findings = [f for f in (slide.get("keyFindings") or []) if isinstance(f, dict)][:3]
+    for finding in findings:
+        if y > CONTENT_BOTTOM - 360_000:
+            break
+        y = ctx.content_card(
+            title=_clip_words(_safe(finding.get("headline")), 40),
+            text=_clip_words(_safe(finding.get("detail")), 140),
+            x=MARGIN_X,
+            y=y,
+            width=CONTENT_W,
+            min_h=280_000,
+            max_h=700_000,
+            tone=str(finding.get("tone") or "neutral"),
+            title_size=11,
+            body_size=11,
+        )
+        y += 60_000
 
 
 
@@ -880,10 +909,11 @@ def _render_visual_with_sidebar(
                         iw, ih = im.size
                 except Exception:  # noqa: BLE001
                     pass
-            scale = min(img_w / max(iw, 1), img_h / max(ih, 1))
+            # Top-align visual with sidebar (do not vertically center in full column).
+            scale = min(img_w / max(iw, 1), (img_h - 60000) / max(ih, 1))
             dw, dh = int(iw * scale), int(ih * scale)
             left = MARGIN_X + (img_w - dw) // 2
-            top = y + 60000 + (img_h - 60000 - dh) // 2
+            top = y + 60000
             ctx.slide.shapes.add_picture(io.BytesIO(raw), Emu(left), Emu(top), width=Emu(dw), height=Emu(dh))
         else:
             ctx.body("Визуальный материал недоступен.", y + 80000, max_h=600000, color=MUTED_COLOR)
@@ -1033,15 +1063,18 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     if template == "orion_golden_metrics_dashboard":
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY, FS_SECTION)
+        badge = slide.get("statusBadge") if isinstance(slide.get("statusBadge"), dict) else None
+        if badge:
+            y = _render_status_badge(ctx, badge, MARGIN_X, y, CONTENT_W) + 80_000
         if narrative:
             y = ctx.content_card(
                 title=None,
-                text=_clip_words(narrative, 520),
+                text=_clip_words(narrative, 420),
                 x=MARGIN_X,
                 y=y,
                 width=CONTENT_W,
-                min_h=280_000,
-                max_h=900_000,
+                min_h=260_000,
+                max_h=800_000,
                 tone="neutral",
                 body_size=11,
             )
@@ -1049,8 +1082,23 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         metrics = [m for m in (slide.get("metrics") or []) if isinstance(m, dict)]
         if metrics:
             y = _render_kpi_cards(ctx, metrics[:6], MARGIN_X, y, CONTENT_W, cols=3) + 80_000
+        actions = [a for a in (slide.get("actions") or []) if isinstance(a, dict)]
+        if actions:
+            y = ctx.content_card(
+                title="Действие",
+                text=_clip_words(_safe(actions[0].get("label")), 160),
+                x=MARGIN_X,
+                y=y,
+                width=CONTENT_W,
+                min_h=260_000,
+                max_h=600_000,
+                tone="warn",
+                title_size=11,
+                body_size=11,
+            )
+            y += 60_000
         if bullets:
-            ctx.bullets(bullets, y, max_items=6, max_chars=220)
+            ctx.bullets(bullets, y, max_items=5, max_chars=180)
         return
 
     if template == "orion_golden_serp_screenshot":
