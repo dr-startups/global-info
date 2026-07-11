@@ -159,7 +159,7 @@ function executiveDashboardFromTheme(themeSet: OrionThemeSet, base: OrionGoldenD
         label: scrub(
           truncateAtWordBoundary(
             themeSet.nextStep || "Провести ручную сверку ключевых источников",
-            140
+            180
           )
         ),
       },
@@ -315,7 +315,7 @@ function enrichSlideWithThemeSet(
       ),
       actions:
         kpis.wikipediaStatus === "WRONG_SUBJECT" || kpis.wikipediaStatus === "AMBIGUOUS"
-          ? [{ label: "Исключить из digital profile либо сверить identity по URL" }]
+          ? [{ label: "Исключить из профиля или сверить identity" }]
           : undefined,
       bullets: slide.bullets?.slice(0, 3),
     };
@@ -398,8 +398,8 @@ export function buildDeterministicVisualAnalysis(
       "Клиент сразу видит, какие источники формируют первое впечатление о субъекте."
     );
     recommendedActions = [
-      "Сверить выделенные домены с ручной проверкой выдачи",
-      "Отделить результаты субъекта от однофамильцев",
+      "Сверить выделенные домены вручную",
+      "Отделить однофамильцев от субъекта",
     ];
     limitations = isApiSynthetic
       ? [
@@ -407,45 +407,70 @@ export function buildDeterministicVisualAnalysis(
         ]
       : ["Визуал отражает доступный снимок на момент сбора."];
   } else if (slot.kind === "image_visual") {
-    const hasAdverseFrame = /красн|нежелательн|санкц/i.test(caption);
-    // Prefer concrete domain/theme reasons from caption after the count sentence.
-    const afterCount = caption.replace(/^.*?отмечены[^.]*\.\s*/i, "");
+    // Do NOT split on bare "." — that breaks domains like vlasti.io / kompromat1.online.
+    const afterCount = caption.replace(/^.*?отмечены[^.]*\.\s*/i, "").trim();
     const reasonBits = afterCount
-      .split(/[.;]/)
-      .map((s) => s.trim())
+      .split(/\.\s+|;\s+/)
+      .map((s) => s.trim().replace(/\.$/, ""))
       .filter(
         (s) =>
-          s.length > 8 &&
-          !/остальн|нейтральн|требуется сверк|подборка/i.test(s) &&
-          (/—|:|санкц|нежелат|компромат|watchlist|PEP|RCA|домен/i.test(s) || /\.[a-z]{2,}/i.test(s))
+          s.length > 12 &&
+          !/остальн|нейтральн|требуется сверк|подборка изображений|на этой странице нет/i.test(s) &&
+          (/—|санкц|нежелат|компромат|watchlist|PEP|RCA|домен|контекст/i.test(s) ||
+            /[a-z0-9-]+\.[a-z]{2,}/i.test(s))
       )
-      .slice(0, 3);
+      .slice(0, 2)
+      .map((s) => {
+        const m = s.match(/^([a-z0-9.-]+\.[a-z]{2,})\s*[—–-]\s*(.+)$/i);
+        if (!m) {
+          if (/PEP|политич/i.test(s)) return truncateAtWordBoundary(s, 70);
+          return truncateAtWordBoundary(s, 70);
+        }
+        const domain = m[1];
+        const rawReason = m[2];
+        const reason = /компромет|криминал|санкц/i.test(rawReason)
+          ? "компрометирующий или санкционный домен"
+          : /PEP|политич/i.test(rawReason)
+            ? "PEP / политическая экспозиция"
+            : /нежелат|риск/i.test(rawReason)
+              ? "нежелательный по риск-признакам"
+              : truncateAtWordBoundary(rawReason, 48);
+        return `${domain} — ${reason}`;
+      });
     const countMatch = caption.match(/\((\d+)\)/) || caption.match(/отмечены[^\d]*(\d+)/i);
     const adverseCount = countMatch?.[1];
+    const adverseCountNum = Number(adverseCount);
+    // Captions like «Нежелательных кадров с красной рамкой … нет» still contain those words.
+    const noAdverseOnPage =
+      /на этой странице нет|красных рамок нет|нежелательных кадров[^.]*нет/i.test(caption) ||
+      adverseCountNum === 0;
+    const hasAdverseFrame =
+      !noAdverseOnPage &&
+      (reasonBits.length > 0 || (Number.isFinite(adverseCountNum) && adverseCountNum > 0));
     headlineConclusion = hasAdverseFrame
       ? scrub(
-          adverseCount
-            ? `${adverseCount} кадра отмечены как нежелательные (${regionLabel})`
+          Number.isFinite(adverseCountNum) && adverseCountNum > 0
+            ? `${adverseCountNum} кадра отмечены красной рамкой (${regionLabel})`
             : `В выдаче изображений (${regionLabel}) есть нежелательные кадры`
         )
-      : `Изображения в поиске (${regionLabel})`;
+      : `Изображения в поиске (${regionLabel}): без красных рамок`;
     whatIsVisible = scrub(
       reasonBits.length > 0
-        ? `Почему красная рамка: ${reasonBits.join("; ")}.`
+        ? `Красная рамка означает нежелательный контекст: ${reasonBits.join("; ")}.`
         : hasAdverseFrame
-          ? "Красная рамка — кадр из нежелательного/санкционного контекста (домен, подпись или риск-тема)."
-          : caption || "Подборка изображений из поиска; красных рамок на странице нет."
+          ? "Красная рамка — кадр из нежелательного или санкционного контекста (домен, подпись или риск-тема)."
+          : "На этой странице красных рамок нет; показана нейтральная подборка изображений."
     );
     whyItMatters = scrub(
       hasAdverseFrame
-        ? "Нужно сверить: это субъект аудита или однофамилец/чужой контекст."
+        ? "Нужно сверить: это субъект аудита или однофамилец либо чужой контекст."
         : "Изображения влияют на узнаваемость; ошибочные совпадения отделяют от профиля."
     );
     recommendedActions = hasAdverseFrame
-      ? ["Проверить, относится ли обведённый кадр к субъекту аудита"]
-      : ["Сверить совпадение лица/контекста с субъектом"];
+      ? ["Проверить, относится ли кадр к субъекту"]
+      : ["Сверить лицо и контекст с субъектом"];
     limitations = [
-      "Сетка из сохранённых результатов поиска изображений; превью зависят от URL.",
+      "Сетка собрана из сохранённых результатов поиска изображений.",
     ];
   } else if (slot.kind === "suggestions_visual") {
     const savedOnly = /сохранено|не подтвержд/i.test(`${caption} ${title} ${provenanceLabel(asset)}`);
@@ -475,7 +500,7 @@ export function buildDeterministicVisualAnalysis(
       "Подсказки показывают, какие темы поиск связывает с именем до разбора полной выдачи."
     );
     recommendedActions = [
-      "Отметить подсказки с негативным или санкционным оттенком",
+      "Отметить негативные и санкционные подсказки",
     ];
     limitations = savedOnly
       ? ["Движок не подтверждён; строки из сохранённой поверхности кейса."]
@@ -488,25 +513,20 @@ export function buildDeterministicVisualAnalysis(
         : `Связанные запросы (${regionLabel}): соседние темы в выдаче`
     );
     whatIsVisible = scrub(
-      [
-        isSecondarySuggest
-          ? `Отдельные связанные запросы для региона «${regionLabel}» не сохранены; показан второй набор подсказок как ближайший аналог «похожих запросов».`
-          : `На слайде — связанные / похожие запросы из поисковой поверхности (${regionLabel}).`,
-        caption ? `Контекст: ${caption}` : "",
-      ]
-        .filter(Boolean)
-        .join(" ")
+      isSecondarySuggest
+        ? `Отдельных related-строк для «${regionLabel}» нет; показан второй набор подсказок как ближайший аналог.`
+        : `Связанные и похожие запросы из сохранённой поисковой поверхности (${regionLabel}).`
     );
     whyItMatters = scrub(
-      "Связанные запросы раскрывают, в каком тематическом окружении поиск удерживает субъекта: бизнес, семья, споры, санкции. Это помогает отделить релевантный контекст от шума и однофамильцев."
+      "Связанные запросы показывают тематическое окружение имени: бизнес, семья, споры, санкции."
     );
     recommendedActions = [
-      "Выделить запросы с риск-тематикой для ручной проверки",
-      "Сопоставить связанные темы с выводами по SERP и медиа",
+      "Выделить риск-запросы для ручной проверки",
+      "Сопоставить темы с SERP и медиа",
     ];
     limitations = isSecondarySuggest
-      ? ["Показан второй набор подсказок: отдельных related-строк в кейсе не было."]
-      : ["Строки взяты из сохранённой поверхности, без live-снимка блока «похожие запросы»."];
+      ? ["Второй набор подсказок: отдельных related-строк в кейсе не было."]
+      : ["Строки из сохранённой поверхности, без live-снимка."];
   } else if (slot.kind === "knowledge_visual") {
     const fromWiki = /wikipedia|википед/i.test(`${caption} ${title} ${provenanceLabel(asset)}`);
     headlineConclusion = scrub(
@@ -516,25 +536,32 @@ export function buildDeterministicVisualAnalysis(
     );
     whatIsVisible = scrub(
       fromWiki
-        ? `На слайде — справочная карточка на основе проверки Wikipedia по субъекту (${regionLabel}). ${caption || "Показаны название страницы и краткий статус наличия публичной статьи."}`
-        : `На слайде — справочная панель/блок знаний из поисковой поверхности (${regionLabel}). ${caption || "Сводка фактов и заголовков, сохранённых по субъекту."}`
+        ? truncateAtWordBoundary(
+            caption ||
+              `Карточка по проверке Wikipedia (${regionLabel}): название страницы и статус наличия статьи.`,
+            220
+          )
+        : truncateAtWordBoundary(
+            caption || `Справочная панель из поисковой поверхности (${regionLabel}).`,
+            220
+          )
     );
     whyItMatters = scrub(
       fromWiki
-        ? "Наличие или отсутствие Wikipedia-страницы влияет на «официальность» публичного профиля и на то, как третьи лица идентифицируют субъекта в открытых источниках."
-        : "Панель знаний концентрирует краткие факты, которые поиск показывает рядом с выдачей; ошибки или чужой профиль здесь особенно заметны клиенту."
+        ? "Wikipedia влияет на то, как третьи лица идентифицируют субъекта в открытых источниках."
+        : "Панель знаний концентрирует краткие факты рядом с выдачей; чужой профиль здесь особенно заметен."
     );
     recommendedActions = fromWiki
       ? [
           "Проверить URL и язык статьи",
-          "Убедиться, что страница относится к субъекту аудита, а не к однофамильцу",
+          "Убедиться, что страница про субъекта аудита",
         ]
       : [
-          "Сверить факты панели с первичными источниками",
+          "Сверить факты с первичными источниками",
           "Отметить расхождения с резюме аудита",
         ];
     limitations = fromWiki
-      ? ["Это карточка по результату wiki-check, а не скриншот knowledge graph в браузере."]
+      ? ["Карточка по wiki-check, а не скриншот knowledge graph в браузере."]
       : ["Панель собрана из сохранённых knowledge-строк поверхности."];
   } else {
     whatIsVisible =

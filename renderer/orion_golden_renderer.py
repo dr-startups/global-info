@@ -141,12 +141,24 @@ def _fit_text_to_height(
     *,
     line_spacing: float = 1.2,
 ) -> str:
-    """Clip text so measured height fits max_h (word-safe)."""
+    """Clip text so measured height fits max_h. Prefer complete sentences; never bare ellipsis stubs."""
     raw = _safe(text)
     if not raw:
         return ""
     if measure_text_height(raw, width_emu, font_size_pt, line_spacing=line_spacing) <= max_h:
         return raw
+    # Prefer longest prefix that ends on a sentence boundary.
+    sentences = re.split(r"(?<=[.!?…])\s+", raw)
+    kept: list[str] = []
+    for sent in sentences:
+        trial = " ".join(kept + [sent]).strip()
+        if measure_text_height(trial, width_emu, font_size_pt, line_spacing=line_spacing) <= max_h:
+            kept.append(sent)
+        else:
+            break
+    if kept:
+        return " ".join(kept).strip()
+    # Fall back to word clip without ellipsis; stop before dangling prepositions.
     words = raw.split()
     lo, hi = 1, len(words)
     best = words[0]
@@ -158,7 +170,26 @@ def _fit_text_to_height(
             lo = mid + 1
         else:
             hi = mid - 1
-    return best.rstrip(".,;:") + ("…" if best != raw else "")
+    return _trim_dangling_tail(best)
+
+
+_DANGLING_TAIL = re.compile(
+    r"(\s+(?:и|а|или|по|на|в|с|из|для|о|об|к|ко|у|от|до|при|без|над|под|про|через|баз|записям|доменом?|контекстом?|криминальным|компрометирующим|санкционным|нежелательный|ручной|негативным))\s*$",
+    re.I,
+)
+
+
+def _trim_dangling_tail(text: str) -> str:
+    val = text.rstrip(".,;:… ")
+    for _ in range(4):
+        nxt = _DANGLING_TAIL.sub("", val).rstrip(".,;: ")
+        if nxt == val:
+            break
+        val = nxt
+    if val and val[-1] not in ".!?…":
+        # Keep as complete clause without fake ellipsis.
+        return val
+    return val
 
 
 def _safe(text: object) -> str:
@@ -172,21 +203,21 @@ def _safe(text: object) -> str:
 
 
 def _clip_words(text: str, max_chars: int) -> str:
-    """Clip on sentence/word boundary without forcing an ellipsis mid-thought."""
+    """Clip on sentence/word boundary; avoid mid-thought stubs and dangling prepositions."""
     val = _safe(text)
     if len(val) <= max_chars:
         return val
     slice_ = val[:max_chars]
-    punct = max(slice_.rfind(". "), slice_.rfind("! "), slice_.rfind("? "))
-    if punct > max_chars * 0.55:
+    punct = max(slice_.rfind(". "), slice_.rfind("! "), slice_.rfind("? "), slice_.rfind("; "))
+    if punct > max_chars * 0.45:
         return slice_[: punct + 1].rstrip()
     sp = max(slice_.rfind(" "), slice_.rfind("\u00a0"))
-    if sp > max_chars * 0.45:
-        return slice_[:sp].rstrip()
+    if sp > max_chars * 0.4:
+        return _trim_dangling_tail(slice_[:sp])
     soft = re.sub(r"[^\s]{1,12}$", "", slice_).rstrip()
-    if len(soft) > max_chars * 0.4:
-        return soft
-    return slice_.rstrip()
+    if len(soft) > max_chars * 0.35:
+        return _trim_dangling_tail(soft)
+    return _trim_dangling_tail(slice_)
 
 
 class _Ctx:
@@ -319,20 +350,33 @@ class _Ctx:
         }.get(tone, CARD_BG)
         title_s = _safe(title or "")
         body_s = _safe(text)
-        inner_w = max(120_000, width - 2 * padding)
         budget = max(200_000, min(max_h, CONTENT_BOTTOM - y))
+        # Shrink padding on short cards so body text is not starved to a stub line.
+        pad = padding
+        if budget < 420_000:
+            pad = min(padding, 60_000)
+        elif budget < 560_000:
+            pad = min(padding, 80_000)
+        inner_w = max(120_000, width - 2 * pad)
         title_h = 0
         if title_s:
-            title_h = measure_text_height(title_s, inner_w, title_size, line_spacing=1.15) + 40_000
-        body_budget = max(80_000, budget - 2 * padding - title_h)
-        if body_s:
+            title_h = measure_text_height(title_s, inner_w, title_size, line_spacing=1.15) + 30_000
+        full_body_h = measure_text_height(body_s, inner_w, body_size, line_spacing=1.2) if body_s else 0
+        needed = 2 * pad + title_h + full_body_h + 30_000
+        # Short client phrases must stay complete; height estimator is conservative and
+        # otherwise collapses actions like «Исключить из digital profile…» to one word.
+        short_phrase = bool(body_s) and len(body_s) <= 110 and len(body_s.split()) <= 16
+        if body_s and needed > budget and not short_phrase:
+            body_budget = max(100_000, budget - 2 * pad - title_h)
             body_s = _fit_text_to_height(body_s, inner_w, body_size, body_budget)
-        body_h = measure_text_height(body_s, inner_w, body_size, line_spacing=1.2) if body_s else 0
-        h = max(min_h, min(budget, 2 * padding + title_h + body_h + 40_000))
+            body_h = measure_text_height(body_s, inner_w, body_size, line_spacing=1.2) if body_s else 0
+        else:
+            body_h = full_body_h
+        h = max(min_h, min(budget, 2 * pad + title_h + body_h + 30_000))
         self.card(y, h=h, x=x, w=width, fill=fill)
-        cy = y + padding
+        cy = y + pad
         if title_s:
-            box = self.slide.shapes.add_textbox(Emu(x + padding), Emu(cy), Emu(inner_w), Emu(max(title_h, 200_000)))
+            box = self.slide.shapes.add_textbox(Emu(x + pad), Emu(cy), Emu(inner_w), Emu(max(title_h, 160_000)))
             tf = box.text_frame
             tf.word_wrap = True
             p = tf.paragraphs[0]
@@ -344,8 +388,8 @@ class _Ctx:
             r.font.color.rgb = NAVY
             cy += title_h
         if body_s:
-            rem = max(120_000, y + h - cy - padding)
-            box = self.slide.shapes.add_textbox(Emu(x + padding), Emu(cy), Emu(inner_w), Emu(rem))
+            rem = max(100_000, y + h - cy - pad)
+            box = self.slide.shapes.add_textbox(Emu(x + pad), Emu(cy), Emu(inner_w), Emu(rem))
             tf = box.text_frame
             tf.word_wrap = True
             p = tf.paragraphs[0]
@@ -505,10 +549,27 @@ def _first_visual_asset(refs: list[Any], assets: dict[str, dict[str, Any]]) -> d
 
 
 def _sidebar_word_budget(text: str, max_words: int = 70) -> str:
-    words = _safe(text).split()
+    """Keep complete sentences within a soft word budget; never emit one-word stubs."""
+    raw = _safe(text)
+    if not raw:
+        return ""
+    words = raw.split()
     if len(words) <= max_words:
-        return " ".join(words)
-    return " ".join(words[:max_words]).rstrip(".,;:") + "."
+        return raw
+    sentences = re.split(r"(?<=[.!?…])\s+", raw)
+    kept: list[str] = []
+    count = 0
+    for sent in sentences:
+        w = len(sent.split())
+        if kept and count + w > max_words:
+            break
+        if not kept and w > max_words:
+            return _clip_words(sent, max(80, max_words * 6))
+        kept.append(sent)
+        count += w
+        if count >= max_words:
+            break
+    return " ".join(kept).strip() or _clip_words(raw, max(80, max_words * 6))
 
 
 def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, h: int) -> None:
@@ -528,21 +589,20 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
             return
         ctx.content_card(
             title="Вывод",
-            text=_sidebar_word_budget(takeaway or bullets[0], 36),
+            text=_sidebar_word_budget(takeaway or bullets[0], 48),
             x=x,
             y=cy,
             width=w,
             min_h=260_000,
-            max_h=min(1_000_000, room()),
+            max_h=min(1_200_000, room()),
             tone="accent",
             title_size=11,
             body_size=11,
         )
         return
 
-    # Reserve space for action + provenance so earlier cards do not starve them.
-    reserve = 720_000
-    headline = _sidebar_word_budget(_safe(analysis.get("headlineConclusion") or "Вывод"), 22)
+    reserve = 720_000  # headline + action + footer must stay complete
+    headline = _sidebar_word_budget(_safe(analysis.get("headlineConclusion") or "Вывод"), 28)
     cy = ctx.content_card(
         title=None,
         text=headline,
@@ -550,7 +610,7 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         y=cy,
         width=w,
         min_h=240_000,
-        max_h=min(620_000, max(240_000, room() - reserve)),
+        max_h=min(700_000, max(240_000, room() - reserve - 200_000)),
         tone="accent",
         body_size=12,
     )
@@ -559,29 +619,29 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
     marked = _safe(analysis.get("whatIsVisible") or "")
     why = _safe(analysis.get("whyItMatters") or "")
     reason = marked if marked else why
-    if reason and room() > reserve:
+    if reason and room() > 400_000:
+        reason_title = (
+            "Почему отмечено"
+            if re.search(r"красн|нежелат|рамк|риск|санкц|PEP|RCA", reason, re.I)
+            and not re.search(r"рамок нет|кадров нет|на этой странице нет", reason, re.I)
+            else "Что видно"
+        )
         cy = ctx.content_card(
-            title="Почему отмечено",
-            text=_sidebar_word_budget(reason, 42),
+            title=reason_title,
+            text=_sidebar_word_budget(reason, 78),
             x=x,
             y=cy,
             width=w,
-            min_h=280_000,
-            max_h=min(1_100_000, max(280_000, room() - 520_000)),
-            tone="warn",
+            min_h=320_000,
+            max_h=min(1_600_000, max(320_000, room() - 480_000)),
+            tone="warn" if reason_title == "Почему отмечено" else "neutral",
             title_size=10,
             body_size=11,
         )
         cy += gap
 
-    metrics = analysis.get("metrics") or []
-    if isinstance(metrics, list) and metrics and room() > 900_000:
-        # One compact chip row only when space remains.
-        cy = ctx.metric_chips([m for m in metrics if isinstance(m, dict)][:2], x, cy, w)
-        cy += gap
-
     actions = analysis.get("recommendedActions") or []
-    action_text = _sidebar_word_budget(_safe(actions[0]), 16) if isinstance(actions, list) and actions else ""
+    action_text = _sidebar_word_budget(_safe(actions[0]), 36) if isinstance(actions, list) and actions else ""
     if action_text and room() > 240_000:
         cy = ctx.content_card(
             title="Действие",
@@ -589,8 +649,8 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
             x=x,
             y=cy,
             width=w,
-            min_h=220_000,
-            max_h=min(520_000, room() - 160_000),
+            min_h=240_000,
+            max_h=min(900_000, max(360_000, room() - 100_000)),
             tone="warn",
             title_size=10,
             body_size=11,
@@ -601,10 +661,11 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
     lims = analysis.get("limitations") or []
     if isinstance(lims, list) and lims:
         footer_bits.append(_safe(lims[0]))
+    # Prefer a short provenance label; avoid stacking long source phrases that force mid-sentence cuts.
     prov = _safe(analysis.get("provenanceLabel") or "")
-    if prov:
+    if prov and len(prov) <= 28 and not footer_bits:
         footer_bits.append(prov)
-    footer = _clip_words(" · ".join(footer_bits), 110)
+    footer = _sidebar_word_budget(" · ".join(footer_bits), 24)
     if footer and room() > 140_000:
         ctx.content_card(
             title=None,
@@ -613,7 +674,7 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
             y=cy,
             width=w,
             min_h=140_000,
-            max_h=min(340_000, room()),
+            max_h=min(400_000, room()),
             tone="neutral",
             body_size=9,
             padding=60_000,
@@ -749,7 +810,7 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
     if actions:
         act = actions[0]
         label = _safe(act.get("label"))
-        text = _clip_words(label, 160)
+        text = _clip_words(label, 220)
         cards.append(("Следующий шаг", text, "accent"))
     if cards:
         gap = 80_000
