@@ -225,6 +225,7 @@ model Case {
   searchDocuments    SearchDocument[]
   serpObservations   SerpObservation[]
   serpSyntheticAssets SerpSyntheticAsset[]
+  providerTasks      ProviderTask[]
   orionMacroSections OrionReportMacroSection[]
   orionMicroStages   OrionReportMicroStage[]
   orionSectionAgentRuns OrionSectionAgentRun[]
@@ -638,12 +639,43 @@ model OrionReportRun {
   serpCaptures       SerpCapture[]
   serpObservations   SerpObservation[]
   serpSyntheticAssets SerpSyntheticAsset[]
+  providerTasks      ProviderTask[]
 
   @@index([caseId])
   @@index([reportVersionId])
   @@index([status])
   @@index([createdAt])
   @@map("dp_orion_report_runs")
+}
+
+model ProviderTask {
+  id             String    @id @default(cuid())
+  caseId         String?
+  reportRunId    String?
+  provider       String
+  toolName       String
+  externalTaskId String?
+  requestHash    String
+  state          String
+  attempts       Int       @default(0)
+  nextPollAt     DateTime?
+  errorCode      String?
+  limitsSpent    Int?
+  requestJson    Json
+  responseJson   Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  completedAt    DateTime?
+
+  case      Case?           @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  reportRun OrionReportRun? @relation(fields: [reportRunId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, requestHash])
+  @@index([state, nextPollAt])
+  @@index([reportRunId])
+  @@index([caseId])
+  @@index([externalTaskId])
+  @@map("dp_provider_tasks")
 }
 
 // ----------------------------------------------------------------------------
