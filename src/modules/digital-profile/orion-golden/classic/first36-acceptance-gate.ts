@@ -63,7 +63,15 @@ export type First36AcceptanceInput = {
     }>;
   };
   expectedRunId?: string;
-  geometryReport?: { overlaps?: unknown[]; overflow?: unknown[]; blank?: unknown[] } | null;
+  geometryReport?: {
+    overlaps?: unknown[];
+    overflow?: unknown[];
+    blank?: unknown[];
+    missingAssets?: unknown[];
+    emptyContent?: unknown[];
+    summary?: { issueCount?: number; severity?: string; pageCount?: number };
+    inspectorError?: string | null;
+  } | null;
   /** When false/undefined in ARSENKIN_REQUIRED mode, geometry is treated as missing. */
   geometryReportPresent?: boolean;
   clientFinalize?: boolean;
@@ -305,15 +313,42 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
     if (!geometryPresent || !input.geometryReport) {
       issues.push({ code: "geometry-missing", detail: "geometry-report.json required" });
     } else {
-      for (const [name, values] of Object.entries(input.geometryReport)) {
-        if (Array.isArray(values) && values.length > 0) {
+      const geo = input.geometryReport;
+      if (geo.inspectorError) {
+        issues.push({ code: "geometry-inspector-error", detail: String(geo.inspectorError) });
+      }
+      const severity = String(geo.summary?.severity ?? "").toUpperCase();
+      if (severity === "BLOCKER" || severity === "CRITICAL") {
+        issues.push({
+          code: "geometry-severity",
+          detail: `${severity}: issueCount=${geo.summary?.issueCount ?? "?"}`,
+        });
+      }
+      for (const [name, values] of Object.entries(geo)) {
+        if (
+          ["overlaps", "overflow", "blank", "missingAssets", "emptyContent"].includes(name) &&
+          Array.isArray(values) &&
+          values.length > 0
+        ) {
           issues.push({ code: `geometry-${name}`, detail: `${values.length} geometry violations` });
         }
       }
     }
   } else if (input.geometryReport) {
-    for (const [name, values] of Object.entries(input.geometryReport)) {
-      if (Array.isArray(values) && values.length > 0) {
+    const geo = input.geometryReport;
+    const severity = String(geo.summary?.severity ?? "").toUpperCase();
+    if (severity === "BLOCKER" || severity === "CRITICAL") {
+      issues.push({
+        code: "geometry-severity",
+        detail: `${severity}: issueCount=${geo.summary?.issueCount ?? "?"}`,
+      });
+    }
+    for (const [name, values] of Object.entries(geo)) {
+      if (
+        ["overlaps", "overflow", "blank", "missingAssets", "emptyContent"].includes(name) &&
+        Array.isArray(values) &&
+        values.length > 0
+      ) {
         issues.push({ code: `geometry-${name}`, detail: `${values.length} geometry violations` });
       }
     }

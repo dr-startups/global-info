@@ -1,0 +1,30 @@
+{
+  "overlaps": [
+    {
+      "page": 14,
+      "code": "overlap",
+      "severity": "CRITICAL",
+      "detail": "overlapping shapes i=0 j=1"
+    }
+  ],
+  "overflow": [],
+  "blank": [],
+  "missingAssets": [],
+  "emptyContent": [],
+  "pages": [
+    {
+      "page": 14,
+      "issues": [
+        {
+          "page": 14,
+          "code": "overlap",
+          "severity": "CRITICAL",
+          "detail": "overlapping shapes i=0 j=1"
+        }
+      ]
+    }
+  ],
+  "summary": { "issueCount": 1, "severity": "CRITICAL", "pageCount": 36 },
+  "inspectorError": null,
+  "source": { "fixture": "overlap.json" }
+}

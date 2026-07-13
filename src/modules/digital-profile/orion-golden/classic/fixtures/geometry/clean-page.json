@@ -1,0 +1,11 @@
+{
+  "overlaps": [],
+  "overflow": [],
+  "blank": [],
+  "missingAssets": [],
+  "emptyContent": [],
+  "pages": [],
+  "summary": { "issueCount": 0, "severity": "PASS", "pageCount": 36 },
+  "inspectorError": null,
+  "source": { "fixture": "clean-page.json" }
+}

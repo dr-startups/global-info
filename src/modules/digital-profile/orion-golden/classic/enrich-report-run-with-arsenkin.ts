@@ -13,6 +13,7 @@ import {
   isArsenkinRequired,
 } from "../../providers/arsenkin";
 import { costStatusFromSpent } from "../../providers/arsenkin/cost";
+import { isArsenkinRerenderOnly } from "../../providers/arsenkin/network-guard";
 
 async function provenanceMetrics(auditRunId: string) {
   const [observations, coverage, tasks] = await Promise.all([
@@ -154,6 +155,30 @@ export async function enrichReportRunWithArsenkin(input: {
   if (!isArsenkinEnabled()) {
     if (required) throw new Error("ARSENKIN_REQUIRED but ARSENKIN_ENABLED is off");
     return { skipped: true, reason: "ARSENKIN_ENABLED off" };
+  }
+  if (isArsenkinRerenderOnly()) {
+    const existingRows = await prisma.serpObservation.findMany({
+      where: { auditRunId: input.auditRunId, provider: "arsenkin" },
+      select: { engine: true, surface: true, region: true },
+    });
+    const existingCoverage = await prisma.surfaceCollectionCoverage.findMany({
+      where: { reportRunId: input.auditRunId, provider: "arsenkin" },
+      select: { surface: true, engine: true, region: true, status: true },
+    });
+    const missing = missingMandatoryArsenkinCoverage(existingRows, enabledTools, existingCoverage);
+    if (required && missing.length > 0) {
+      throw new Error(`ARSENKIN_RERENDER_ONLY missing coverage (no network): ${missing.join(", ")}`);
+    }
+    if (existingRows.length === 0 && (existingCoverage.length === 0)) {
+      throw new Error("ARSENKIN_RERENDER_ONLY forbids enrich: no existing observations/coverage");
+    }
+    return {
+      skipped: true,
+      mode: "live",
+      persisted: 0,
+      reason: `already_enriched rerender-only organic=${existingRows.filter((r) => r.surface === "organic").length}`,
+      ...(await provenanceMetrics(input.auditRunId)),
+    };
   }
   if (process.env.ARSENKIN_ENRICH_ON_RENDER === "0") {
     if (required) throw new Error("ARSENKIN_REQUIRED but ARSENKIN_ENRICH_ON_RENDER=0");

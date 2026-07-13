@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import { createArsenkinRateLimiter, type RateLimiter } from "./rate-limit";
 import { redactSecrets } from "./redact";
+import { noteArsenkinNetworkCall } from "./network-guard";
 import type {
   ArsenkinCheckTaskResponse,
   ArsenkinClientOptions,
@@ -163,6 +164,7 @@ export class ArsenkinClient {
   ): Promise<Record<string, unknown>> {
     let lastErr: Error | null = null;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      noteArsenkinNetworkCall(url.includes("/set") ? "set" : url.includes("/check") ? "check" : url.includes("/get") ? "get" : "info");
       await this.limiter.acquire();
       try {
         const res = await this.fetchImpl(url, {

@@ -6,6 +6,22 @@ import { describe, it } from "node:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+  geometryReportIsClean,
+  inspectBlankPagePngs,
+  inspectSlideXmlGeometry,
+  loadGeometryFixture,
+} from "../src/modules/digital-profile/orion-golden/classic/generate-first36-geometry-artifacts";
+import {
+  buildPlannedTaskPreflight,
+  formatRerenderNetworkSummary,
+} from "../src/modules/digital-profile/orion-golden/classic/rerender-task-preflight";
+import {
+  getArsenkinNetworkCallCount,
+  isArsenkinRerenderOnly,
+  noteArsenkinNetworkCall,
+  resetArsenkinNetworkCallCount,
+} from "../src/modules/digital-profile/providers/arsenkin/network-guard";
 import { ArsenkinClient, ArsenkinRequestError } from "../src/modules/digital-profile/providers/arsenkin/client";
 import { createMemoryProviderTaskStore } from "../src/modules/digital-profile/providers/arsenkin/provider-task-store";
 import {
@@ -13,12 +29,6 @@ import {
   pollArsenkinTask,
   waitForArsenkinTaskCompletion,
 } from "../src/modules/digital-profile/providers/arsenkin/poll-worker";
-import { buildPlannedTaskPreflight } from "../src/modules/digital-profile/orion-golden/classic/rerender-task-preflight";
-import {
-  geometryReportIsClean,
-  inspectBlankPagePngs,
-  inspectSlideXmlGeometry,
-} from "../src/modules/digital-profile/orion-golden/classic/generate-first36-geometry-artifacts";
 import { classifyBackfillMatch } from "../src/modules/digital-profile/orion-golden/classic/arsenkin-provenance-backfill-match";
 import { inspectFirst36Acceptance } from "../src/modules/digital-profile/orion-golden/classic/first36-acceptance-gate";
 
@@ -159,7 +169,7 @@ describe("arsenkin p0.1 follow-up", () => {
       ],
       requestedTools: null,
       rerenderOnly: true,
-      allowNewTasks: false,
+      allowNewProviderTasks: false,
       liveConfirm: false,
     });
     assert.equal(pf.plannedNewTasks, 0);
@@ -173,20 +183,20 @@ describe("arsenkin p0.1 follow-up", () => {
       tasks: [{ toolName: "suggest", requestHash: "h1", state: "DONE" }],
       requestedTools: ["suggest", "ai-serp"],
       rerenderOnly: true,
-      allowNewTasks: false,
+      allowNewProviderTasks: false,
       liveConfirm: false,
     });
     assert.ok(pf.plannedNewTasks > 0);
     assert.equal(pf.blocked, true);
   });
 
-  it("allow-new-tasks without LIVE_CONFIRM still blocked", () => {
+  it("allow-new-provider-tasks without LIVE_CONFIRM still blocked", () => {
     const pf = buildPlannedTaskPreflight({
       reportRunId: "run",
       tasks: [{ toolName: "suggest", requestHash: "h1", state: "DONE" }],
       requestedTools: ["suggest", "ai-serp"],
       rerenderOnly: false,
-      allowNewTasks: true,
+      allowNewProviderTasks: true,
       liveConfirm: false,
     });
     assert.equal(pf.blocked, true);
@@ -203,15 +213,75 @@ describe("arsenkin p0.1 follow-up", () => {
     const overflow = inspectSlideXmlGeometry(badXml, 1);
     assert.ok(overflow.overflow.length > 0);
 
-    const clean = {
-      overlaps: [] as [],
-      overflow: [] as [],
-      blank: [] as [],
-      inspectorError: null,
-      source: {},
-    };
-    assert.equal(geometryReportIsClean(clean), true);
-    assert.equal(geometryReportIsClean({ ...clean, inspectorError: "boom" }), false);
+    assert.equal(geometryReportIsClean(loadGeometryFixture("clean-page.json")), true);
+    assert.equal(geometryReportIsClean(loadGeometryFixture("clipping-overflow.json")), false);
+    assert.equal(loadGeometryFixture("overlap.json").summary.severity, "CRITICAL");
+    assert.equal(loadGeometryFixture("missing-image.json").summary.severity, "BLOCKER");
+  });
+
+  it("RATE_LIMITED with externalTaskId remains pollable", async () => {
+    const store = createMemoryProviderTaskStore();
+    const row = await store.upsertPending({
+      reportRunId: "run-poll",
+      toolName: "suggest",
+      requestJson: { q: "poll" },
+    });
+    await store.updateState(row.id, {
+      state: "RATE_LIMITED",
+      externalTaskId: "ext-poll",
+      nextPollAt: new Date(0),
+    });
+    let checked = 0;
+    const client = mockClient({
+      checkTask: async (id) => {
+        checked += 1;
+        return { task_id: id, state: "DONE", statusPayload: {}, raw: { status: "done" } };
+      },
+    });
+    const polled = await pollArsenkinTask(client, store, (await store.findById(row.id))!);
+    assert.equal(checked, 1);
+    assert.equal(polled.state, "DONE");
+  });
+
+  it("transport uncertainty does not blind-retry /set", async () => {
+    const store = createMemoryProviderTaskStore();
+    let sets = 0;
+    const client = mockClient({
+      setTask: async () => {
+        sets += 1;
+        throw new ArsenkinRequestError("socket hang up", { uncertain: true });
+      },
+    });
+    const row = await ensureArsenkinTask(client, store, {
+      toolName: "suggest",
+      data: { q: "uncertain" },
+      reportRunId: "run-unc",
+    });
+    assert.equal(row.state, "SUBMIT_UNKNOWN");
+    assert.equal(sets, 1);
+    const again = await ensureArsenkinTask(client, store, {
+      toolName: "suggest",
+      data: { q: "uncertain" },
+      reportRunId: "run-unc",
+    });
+    assert.equal(again.state, "SUBMIT_UNKNOWN");
+    assert.equal(sets, 1);
+  });
+
+  it("rerender-only network guard: NETWORK_CALLS stays 0 and blocks HTTP", () => {
+    resetArsenkinNetworkCallCount();
+    process.env.ARSENKIN_RERENDER_ONLY = "1";
+    assert.equal(isArsenkinRerenderOnly(), true);
+    assert.throws(() => noteArsenkinNetworkCall("set"), /forbids network call/);
+    assert.equal(getArsenkinNetworkCallCount(), 0);
+    delete process.env.ARSENKIN_RERENDER_ONLY;
+    noteArsenkinNetworkCall("set");
+    assert.equal(getArsenkinNetworkCallCount(), 1);
+    assert.equal(
+      formatRerenderNetworkSummary({ reused: 3, wouldCreate: 0, created: 0, networkCalls: 0 }),
+      "REUSED 3, WOULD_CREATE 0, CREATED 0, NETWORK_CALLS 0"
+    );
+    resetArsenkinNetworkCallCount();
   });
 
   it("backfill unique/ambiguous/unmatched", () => {
@@ -299,7 +369,12 @@ describe("arsenkin p0.1 follow-up", () => {
           { tool: "paa", engine: "GOOGLE", region: "UAE", surface: "paa", status: "OK", providerTaskId: "t1" },
         ],
       },
-      geometryReport: { overlaps: [], overflow: [], blank: [] },
+      geometryReport: {
+        overlaps: [],
+        overflow: [],
+        blank: [],
+        summary: { issueCount: 0, severity: "PASS", pageCount: 36 },
+      },
       geometryReportPresent: true,
       paths: {
         pdf: join(dir, "rendered-client.pdf"),

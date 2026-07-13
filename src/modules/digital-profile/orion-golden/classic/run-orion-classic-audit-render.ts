@@ -311,16 +311,36 @@ export async function runOrionClassicAuditRender(options: {
 
   const renderQaReady = Boolean(classicQa.ceoReady && clientFinalize);
 
+  const assetList = assets.map((a) => ({
+    assetRef: a.assetRef,
+    status: String((a as { status?: string }).status ?? "ready"),
+    evidenceRefs: Array.isArray(a.evidenceRefs) ? a.evidenceRefs.map(String) : [],
+  }));
+
   let geometryOk = true;
   let geometryReport: {
     overlaps?: unknown[];
     overflow?: unknown[];
     blank?: unknown[];
+    missingAssets?: unknown[];
+    emptyContent?: unknown[];
+    summary?: { issueCount?: number; severity?: string; pageCount?: number };
     inspectorError?: string | null;
   } | null = null;
   let geometryPresent = false;
   if (first36CeoMode) {
-    const geometry = await generateFirst36GeometryArtifacts(outputRoot);
+    const geometry = await generateFirst36GeometryArtifacts(outputRoot, {
+      slides: (deckManifest.finalSlides ?? []).map((s) => ({
+        pageNumber: Number(s.pageNumber ?? 0),
+        title: s.title ? String(s.title) : undefined,
+        narrative: s.narrative ? String(s.narrative) : undefined,
+        bullets: Array.isArray(s.bullets) ? s.bullets.map(String) : undefined,
+        clientTakeaway: s.clientTakeaway ? String(s.clientTakeaway) : undefined,
+        assetRefs: Array.isArray(s.assetRefs) ? s.assetRefs.map(String) : undefined,
+        requiredVisual: Boolean((s as { requiredVisual?: boolean }).requiredVisual),
+      })),
+      assets: assetList,
+    });
     geometryReport = geometry.report;
     geometryPresent = true;
     geometryOk = geometry.ok;
@@ -329,12 +349,12 @@ export async function runOrionClassicAuditRender(options: {
       geometryPath: geometry.geometryPath,
       contactSheetPath: geometry.contactSheetPath,
       inspectorError: geometry.report.inspectorError ?? null,
+      summary: geometry.report.summary,
     });
     if (!geometryOk && clientFinalize) {
-      // Honest finalize: inspector failure / missing PNG blocks CEO path.
       writeJson(join(outputRoot, "geometry-finalize-block.json"), {
         blocked: true,
-        reason: geometry.report.inspectorError ?? "geometry_issues",
+        reason: geometry.report.inspectorError ?? geometry.report.summary.severity,
       });
     }
   }
@@ -362,11 +382,6 @@ export async function runOrionClassicAuditRender(options: {
   const clientBinding = readJson<{ sourceReportRunId?: string; effectiveReportRunId?: string }>(
     join(outputRoot, "client-content-binding.json")
   );
-  const assetList = assets.map((a) => ({
-    assetRef: a.assetRef,
-    status: String((a as { status?: string }).status ?? "ready"),
-    evidenceRefs: Array.isArray(a.evidenceRefs) ? a.evidenceRefs.map(String) : [],
-  }));
 
   const acceptance = inspectFirst36Acceptance({
     slideCount: deckManifest.slideCount,

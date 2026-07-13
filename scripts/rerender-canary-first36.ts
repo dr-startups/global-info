@@ -2,8 +2,8 @@
  * Re-render an existing canary reportRunId without accidental paid submits.
  *
  *   npx tsx scripts/rerender-canary-first36.ts <reportRunId> [caseId] --rerender-only
- *   npx tsx scripts/rerender-canary-first36.ts <reportRunId> [caseId] --tools=check-top,suggest,paa --rerender-only
- *   npx tsx scripts/rerender-canary-first36.ts <reportRunId> [caseId] --tools=... --allow-new-tasks  # requires ARSENKIN_LIVE_CONFIRM=1
+ *   npx tsx scripts/rerender-canary-first36.ts <reportRunId> [--tools=...] --allow-new-provider-tasks
+ *     # also requires ARSENKIN_LIVE_CONFIRM=1
  */
 
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
@@ -11,9 +11,16 @@ import { join } from "node:path";
 import { parse } from "dotenv";
 import { prisma } from "../src/server/prisma/client";
 import { runOrionClassicAuditRender } from "../src/modules/digital-profile/orion-golden/classic/run-orion-classic-audit-render";
-import { buildPlannedTaskPreflight } from "../src/modules/digital-profile/orion-golden/classic/rerender-task-preflight";
+import {
+  buildPlannedTaskPreflight,
+  formatRerenderNetworkSummary,
+} from "../src/modules/digital-profile/orion-golden/classic/rerender-task-preflight";
+import {
+  getArsenkinNetworkCallCount,
+  resetArsenkinNetworkCallCount,
+} from "../src/modules/digital-profile/providers/arsenkin/network-guard";
 
-function bootstrapEnv(tools: string): void {
+function bootstrapEnv(tools: string, rerenderOnly: boolean): void {
   const envPath = join(process.cwd(), ".env");
   if (existsSync(envPath)) {
     const parsed = parse(readFileSync(envPath));
@@ -30,8 +37,14 @@ function bootstrapEnv(tools: string): void {
   process.env.ARSENKIN_ENABLED = "1";
   process.env.ARSENKIN_PILOT_FIXTURES = "0";
   process.env.ARSENKIN_REQUIRED = "1";
-  process.env.ARSENKIN_ENRICH_ON_RENDER = "1";
   process.env.ARSENKIN_TOOLS = tools;
+  if (rerenderOnly) {
+    process.env.ARSENKIN_RERENDER_ONLY = "1";
+    process.env.ARSENKIN_ENRICH_ON_RENDER = "1"; // enrich path short-circuits without network
+  } else {
+    delete process.env.ARSENKIN_RERENDER_ONLY;
+    process.env.ARSENKIN_ENRICH_ON_RENDER = "1";
+  }
 }
 
 function writeJson(path: string, payload: unknown): void {
@@ -46,13 +59,16 @@ async function main() {
       ? caseIdArg
       : "cmreamy2t0002o30f29urzcog";
   const toolsFlag = process.argv.find((a) => a.startsWith("--tools="))?.slice("--tools=".length);
-  const rerenderOnly = process.argv.includes("--rerender-only") || !toolsFlag;
-  const allowNewTasks = process.argv.includes("--allow-new-tasks");
+  const rerenderOnly =
+    process.argv.includes("--rerender-only") ||
+    (!toolsFlag && !process.argv.includes("--allow-new-provider-tasks") && !process.argv.includes("--allow-new-tasks"));
+  const allowNewProviderTasks =
+    process.argv.includes("--allow-new-provider-tasks") || process.argv.includes("--allow-new-tasks");
   const liveConfirm = process.env.ARSENKIN_LIVE_CONFIRM === "1";
 
   if (!reportRunId) {
     throw new Error(
-      "usage: rerender-canary-first36.ts <reportRunId> [caseId] [--rerender-only] [--tools=...] [--allow-new-tasks]"
+      "usage: rerender-canary-first36.ts <reportRunId> [caseId] [--rerender-only] [--tools=...] [--allow-new-provider-tasks]"
     );
   }
 
@@ -65,10 +81,17 @@ async function main() {
     reportRunId
   );
   mkdirSync(outputRoot, { recursive: true });
+  resetArsenkinNetworkCallCount();
 
   const tasksBefore = await prisma.providerTask.findMany({
     where: { reportRunId, provider: "arsenkin" },
-    select: { toolName: true, requestHash: true, state: true },
+    select: {
+      toolName: true,
+      requestHash: true,
+      state: true,
+      requestJson: true,
+      limitsSpent: true,
+    },
     orderBy: { createdAt: "asc" },
   });
 
@@ -77,22 +100,30 @@ async function main() {
     tasks: tasksBefore,
     requestedTools: toolsFlag ? toolsFlag.split(",").map((t) => t.trim()).filter(Boolean) : null,
     rerenderOnly,
-    allowNewTasks,
+    allowNewProviderTasks,
     liveConfirm,
   });
   writeJson(join(outputRoot, "planned-task-preflight.json"), {
     ...preflight,
     taskCountBefore: tasksBefore.length,
+    networkCallsBefore: getArsenkinNetworkCallCount(),
   });
   console.log(JSON.stringify({ phase: "planned-task-preflight", ...preflight }, null, 2));
 
-  if (preflight.blocked || preflight.plannedNewTasks > 0 && rerenderOnly) {
+  if (preflight.blocked || (preflight.plannedNewTasks > 0 && rerenderOnly)) {
+    const summary = formatRerenderNetworkSummary({
+      reused: preflight.reusedTasks,
+      wouldCreate: preflight.wouldCreate,
+      created: 0,
+      networkCalls: getArsenkinNetworkCallCount(),
+    });
     console.error(
       JSON.stringify(
         {
           error: "rerender_blocked",
           reason: preflight.blockReason ?? "plannedNewTasks>0",
           plannedNewTasks: preflight.plannedNewTasks,
+          summary,
         },
         null,
         2
@@ -102,7 +133,7 @@ async function main() {
     return;
   }
 
-  bootstrapEnv(preflight.tools.join(","));
+  bootstrapEnv(preflight.tools.join(","), rerenderOnly);
 
   const before = {
     observations: await prisma.serpObservation.count({
@@ -120,14 +151,24 @@ async function main() {
   const tasksAfter = await prisma.providerTask.count({
     where: { reportRunId, provider: "arsenkin" },
   });
-  if (rerenderOnly && tasksAfter !== before.tasks) {
+  const created = Math.max(0, tasksAfter - before.tasks);
+  const networkCalls = getArsenkinNetworkCallCount();
+  const summary = formatRerenderNetworkSummary({
+    reused: preflight.reusedTasks,
+    wouldCreate: preflight.wouldCreate,
+    created,
+    networkCalls,
+  });
+
+  if (rerenderOnly && (created > 0 || networkCalls > 0 || tasksAfter !== before.tasks)) {
     writeJson(join(outputRoot, "rerender-only-violation.json"), {
       taskCountBefore: before.tasks,
       taskCountAfter: tasksAfter,
+      created,
+      networkCalls,
+      summary,
     });
-    throw new Error(
-      `rerender-only violated: task count ${before.tasks} -> ${tasksAfter}`
-    );
+    throw new Error(`rerender-only violated: ${summary}`);
   }
 
   writeJson(join(outputRoot, "rerender-summary.json"), {
@@ -142,31 +183,39 @@ async function main() {
       taskCount: tasksAfter,
     },
     plannedNewTasks: preflight.plannedNewTasks,
+    REUSED: preflight.reusedTasks,
+    WOULD_CREATE: preflight.wouldCreate,
+    CREATED: created,
+    NETWORK_CALLS: networkCalls,
+    summary,
     renderQaReady: result.renderQaReady,
     readiness: result.readiness,
     ceoReady: result.ceoReady,
     verdict: result.verdict,
     acceptance: result.acceptance,
-    warnings: result.warnings.slice(0, 20),
+    blockers: result.acceptance?.issues ?? result.warnings.slice(0, 20),
   });
 
+  console.log(summary);
   console.log(
     JSON.stringify(
       {
         ...result,
         tools: preflight.tools,
         plannedNewTasks: preflight.plannedNewTasks,
-        taskCountBefore: before.tasks,
-        taskCountAfter: tasksAfter,
+        REUSED: preflight.reusedTasks,
+        WOULD_CREATE: preflight.wouldCreate,
+        CREATED: created,
+        NETWORK_CALLS: networkCalls,
+        summary,
       },
       null,
       2
     )
   );
-  if (result.verdict !== "PASS" || result.readiness === "CEO_READY" && !result.ceoReady) {
-    process.exitCode = 1;
-  }
+  if (result.readiness === "CEO_READY" && !result.ceoReady) process.exitCode = 1;
   if (!result.acceptance?.passed) process.exitCode = 1;
+  if (result.verdict !== "PASS") process.exitCode = 1;
 }
 
 main().catch(async (e) => {

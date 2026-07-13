@@ -1,0 +1,30 @@
+{
+  "overlaps": [],
+  "overflow": [
+    {
+      "page": 10,
+      "code": "overflow",
+      "severity": "CRITICAL",
+      "detail": "shape bottom 7000000 exceeds footer safe 6315360"
+    }
+  ],
+  "blank": [],
+  "missingAssets": [],
+  "emptyContent": [],
+  "pages": [
+    {
+      "page": 10,
+      "issues": [
+        {
+          "page": 10,
+          "code": "overflow",
+          "severity": "CRITICAL",
+          "detail": "shape bottom 7000000 exceeds footer safe 6315360"
+        }
+      ]
+    }
+  ],
+  "summary": { "issueCount": 1, "severity": "CRITICAL", "pageCount": 36 },
+  "inspectorError": null,
+  "source": { "fixture": "clipping-overflow.json" }
+}
