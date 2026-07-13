@@ -4,6 +4,7 @@
 
 import { hasDanglingSentenceTail, sanitizeClientLanguage } from "./client-language";
 import { existsSync, readdirSync } from "node:fs";
+import { ORION_FIRST36_REGISTRY_V1 } from "./orion-first36-registry.v1";
 
 export type First36AcceptanceIssue = {
   code: string;
@@ -51,12 +52,35 @@ export type First36AcceptanceInput = {
   arsenkinEnrich?: { skipped?: boolean; mode?: string; blocked?: boolean; reason?: string };
   coverageSummary?: {
     reportRunId?: string;
-    rows?: Array<{ reportRunId?: string; tool?: string; engine?: string; region?: string; surface?: string; status?: string }>;
+    rows?: Array<{
+      reportRunId?: string;
+      tool?: string;
+      engine?: string;
+      region?: string;
+      surface?: string;
+      status?: string;
+      providerTaskId?: string | null;
+    }>;
   };
   expectedRunId?: string;
-  geometryReport?: { overlaps?: unknown[]; overflow?: unknown[]; blank?: unknown[] };
+  geometryReport?: { overlaps?: unknown[]; overflow?: unknown[]; blank?: unknown[] } | null;
+  /** When false/undefined in ARSENKIN_REQUIRED mode, geometry is treated as missing. */
+  geometryReportPresent?: boolean;
   clientFinalize?: boolean;
-  providerTasks?: Array<{ reportRunId?: string; state?: string }>;
+  providerTasks?: Array<{ reportRunId?: string; state?: string; id?: string }>;
+  observations?: Array<{
+    auditRunId?: string;
+    provider?: string;
+    providerTaskId?: string | null;
+  }>;
+  provenanceSummary?: {
+    linkedObservations?: number;
+    totalObservations?: number;
+    linkedCoverage?: number;
+    totalCoverage?: number;
+  };
+  /** Original client-content reportRunId before any override. */
+  clientContentSourceReportRunId?: string | null;
 };
 
 const FORBIDDEN =
@@ -65,12 +89,35 @@ const FORBIDDEN =
 const EMPTY_STUB =
   /раздел будет дополнен|данных для полного заполнения слота пока недостаточно|placeholder/i;
 
+const INCOMPLETE_TASK =
+  /^(QUEUED|RUNNING|RATE_LIMITED|SUBMITTING|FAILED|CANCELLED|SUBMIT_UNKNOWN)$/i;
+
+/** Resolve required visual asset refs from First36 registry against available assets. */
+export function requiredVisualAssetRefsFromRegistry(
+  assets: Array<{ assetRef: string }>
+): string[] {
+  const refs = assets.map((a) => a.assetRef);
+  const required: string[] = [];
+  for (const slot of ORION_FIRST36_REGISTRY_V1) {
+    if (!slot.requiredVisual || !slot.match.assetRefRe) continue;
+    const match = refs.find((ref) => slot.match.assetRefRe!.test(ref));
+    if (match) required.push(match);
+    else required.push(`missing:${slot.slotId}`);
+  }
+  return [...new Set(required)];
+}
+
 export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
   passed: boolean;
   issues: First36AcceptanceIssue[];
   ceoReady: boolean;
 } {
   const issues: First36AcceptanceIssue[] = [];
+  const requiredVisualRefs =
+    input.requiredVisualAssetRefs ??
+    (input.arsenkinRequired || input.clientFinalize
+      ? requiredVisualAssetRefsFromRegistry(input.assets ?? [])
+      : []);
 
   if (input.typecheckPassed === false) {
     issues.push({ code: "typecheck-failed", detail: "typecheckPassed=false" });
@@ -93,20 +140,42 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
   ) {
     issues.push({ code: "page-numbers", detail: "pageNumber must be unique and cover 1..36" });
   }
-  if (input.paths?.pptx && !existsSync(input.paths.pptx)) {
-    issues.push({ code: "pptx-missing", detail: input.paths.pptx });
-  }
-  if (input.paths?.pdf && !existsSync(input.paths.pdf)) {
-    issues.push({ code: "pdf-missing", detail: input.paths.pdf });
-  }
-  if (input.paths?.pagesPngDir) {
-    const pngs = existsSync(input.paths.pagesPngDir)
-      ? readdirSync(input.paths.pagesPngDir).filter((name) => /\.png$/i.test(name))
-      : [];
-    if (pngs.length !== 36) {
-      issues.push({ code: "png-count", detail: `expected 36 PNGs, got ${pngs.length}` });
+
+  const requireArtifacts = Boolean(input.arsenkinRequired || input.clientFinalize);
+  if (requireArtifacts) {
+    if (!input.paths?.pptx || !existsSync(input.paths.pptx)) {
+      issues.push({ code: "pptx-missing", detail: input.paths?.pptx ?? "pptx path unset" });
+    }
+    if (!input.paths?.pdf || !existsSync(input.paths.pdf)) {
+      issues.push({ code: "pdf-missing", detail: input.paths?.pdf ?? "pdf path unset" });
+    }
+    if (!input.paths?.pagesPngDir) {
+      issues.push({ code: "png-count", detail: "pagesPngDir unset" });
+    } else {
+      const pngs = existsSync(input.paths.pagesPngDir)
+        ? readdirSync(input.paths.pagesPngDir).filter((name) => /\.png$/i.test(name))
+        : [];
+      if (pngs.length !== 36) {
+        issues.push({ code: "png-count", detail: `expected 36 PNGs, got ${pngs.length}` });
+      }
+    }
+  } else {
+    if (input.paths?.pptx && !existsSync(input.paths.pptx)) {
+      issues.push({ code: "pptx-missing", detail: input.paths.pptx });
+    }
+    if (input.paths?.pdf && !existsSync(input.paths.pdf)) {
+      issues.push({ code: "pdf-missing", detail: input.paths.pdf });
+    }
+    if (input.paths?.pagesPngDir) {
+      const pngs = existsSync(input.paths.pagesPngDir)
+        ? readdirSync(input.paths.pagesPngDir).filter((name) => /\.png$/i.test(name))
+        : [];
+      if (pngs.length !== 36) {
+        issues.push({ code: "png-count", detail: `expected 36 PNGs, got ${pngs.length}` });
+      }
     }
   }
+
   if (input.runScopedMerge?.usedRunScoped !== true) {
     issues.push({ code: "run-scoped-required", detail: "usedRunScoped must be true" });
   }
@@ -129,21 +198,92 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
         break;
       }
     }
+    for (const obs of input.observations ?? []) {
+      if (obs.auditRunId && obs.auditRunId !== input.expectedRunId) {
+        issues.push({ code: "foreign-observation-run", detail: obs.auditRunId });
+        break;
+      }
+    }
+    if (
+      input.clientContentSourceReportRunId &&
+      input.clientContentSourceReportRunId !== input.expectedRunId
+    ) {
+      issues.push({
+        code: "foreign-client-content-run",
+        detail: input.clientContentSourceReportRunId,
+      });
+    }
   }
+
   if (input.arsenkinRequired) {
-    if (input.arsenkinEnrich?.mode !== "live" || input.arsenkinEnrich?.skipped || input.arsenkinEnrich?.blocked) {
+    if (input.arsenkinEnrich?.mode !== "live" || input.arsenkinEnrich?.blocked) {
+      issues.push({ code: "arsenkin-required-enrich", detail: input.arsenkinEnrich?.reason ?? "live enrichment required" });
+    } else if (
+      input.arsenkinEnrich?.skipped &&
+      !/already_enriched|surfaces_complete/i.test(String(input.arsenkinEnrich?.reason ?? ""))
+    ) {
       issues.push({ code: "arsenkin-required-enrich", detail: input.arsenkinEnrich?.reason ?? "live enrichment required" });
     }
-    if ((input.providerTasks ?? []).some((task) => /FAILED|CANCELLED|SUBMIT_UNKNOWN/i.test(String(task.state)))) {
-      issues.push({ code: "arsenkin-task-failed", detail: "provider task failed/cancelled/submit unknown" });
+    const tasks = input.providerTasks ?? [];
+    if (tasks.length === 0) {
+      issues.push({ code: "arsenkin-tasks-missing", detail: "provider tasks required" });
+    }
+    for (const task of tasks) {
+      if (!/^DONE$/i.test(String(task.state ?? ""))) {
+        issues.push({
+          code: INCOMPLETE_TASK.test(String(task.state ?? ""))
+            ? "arsenkin-task-incomplete"
+            : "arsenkin-task-failed",
+          detail: `${task.id ?? "task"}:${task.state ?? "missing"}`,
+        });
+        break;
+      }
     }
     const rows = input.coverageSummary?.rows ?? [];
+    for (const row of rows) {
+      if (!row.providerTaskId) {
+        issues.push({ code: "coverage-missing-provider-task", detail: `${row.tool}:${row.surface}` });
+        break;
+      }
+      if (!/^(OK|NO_RESULTS)$/i.test(String(row.status ?? ""))) {
+        issues.push({ code: "coverage-invalid-status", detail: `${row.tool}:${row.status}` });
+        break;
+      }
+    }
+    const arsenkinObs = (input.observations ?? []).filter((o) => /arsenkin/i.test(String(o.provider ?? "arsenkin")));
+    for (const obs of arsenkinObs) {
+      if (!obs.providerTaskId) {
+        issues.push({ code: "observation-missing-provider-task", detail: "null providerTaskId" });
+        break;
+      }
+    }
+    const linkedObs =
+      input.provenanceSummary?.linkedObservations ??
+      arsenkinObs.filter((o) => Boolean(o.providerTaskId)).length;
+    const totalObs = input.provenanceSummary?.totalObservations ?? arsenkinObs.length;
+    if (totalObs > 0 && linkedObs < totalObs) {
+      issues.push({
+        code: "observation-provenance-incomplete",
+        detail: `${linkedObs}/${totalObs}`,
+      });
+    }
+    const linkedCov =
+      input.provenanceSummary?.linkedCoverage ??
+      rows.filter((r) => Boolean(r.providerTaskId)).length;
+    const totalCov = input.provenanceSummary?.totalCoverage ?? rows.length;
+    if (totalCov > 0 && linkedCov < totalCov) {
+      issues.push({
+        code: "coverage-provenance-incomplete",
+        detail: `${linkedCov}/${totalCov}`,
+      });
+    }
     const has = (tool: string, engine: string, region: "RU" | "UAE", surface: string) =>
       rows.some(
         (r) =>
           r.tool === tool &&
           String(r.engine).toUpperCase() === engine &&
           r.surface === surface &&
+          /^(OK|NO_RESULTS)$/i.test(String(r.status ?? "")) &&
           (region === "UAE" ? /UAE|AE|INTL/i.test(String(r.region)) : !/UAE|AE|INTL/i.test(String(r.region)))
       );
     for (const [tool, engine, region, surface] of [
@@ -158,16 +298,29 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
         issues.push({ code: "arsenkin-coverage", detail: `${tool}:${engine}:${region}:${surface}` });
       }
     }
-  }
-  if (input.geometryReport) {
+
+    const geometryPresent =
+      input.geometryReportPresent === true ||
+      (input.geometryReportPresent !== false && input.geometryReport != null);
+    if (!geometryPresent || !input.geometryReport) {
+      issues.push({ code: "geometry-missing", detail: "geometry-report.json required" });
+    } else {
+      for (const [name, values] of Object.entries(input.geometryReport)) {
+        if (Array.isArray(values) && values.length > 0) {
+          issues.push({ code: `geometry-${name}`, detail: `${values.length} geometry violations` });
+        }
+      }
+    }
+  } else if (input.geometryReport) {
     for (const [name, values] of Object.entries(input.geometryReport)) {
       if (Array.isArray(values) && values.length > 0) {
         issues.push({ code: `geometry-${name}`, detail: `${values.length} geometry violations` });
       }
     }
   }
+
   const assetByRef = new Map((input.assets ?? []).map((asset) => [asset.assetRef, asset]));
-  for (const ref of input.requiredVisualAssetRefs ?? []) {
+  for (const ref of requiredVisualRefs) {
     const asset = assetByRef.get(ref);
     if (!asset || asset.status !== "ready" || (asset.evidenceRefs?.length ?? 0) === 0) {
       issues.push({ code: "required-visual-asset", detail: ref });
@@ -274,7 +427,6 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
           ""
       ).toUpperCase();
       const blob = texts.join(" ");
-      // Only fail WRONG_SUBJECT regions whose copy still claims a subject profile article.
       if (
         regionStatus === "WRONG_SUBJECT" &&
         /публичной статьи о (?:персоне|проверяемом)|статью о персоне|о проверяемом лице/i.test(blob) &&
@@ -298,7 +450,6 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
     if (!content) issues.push({ code: "empty-required-slide", page, detail: `page ${page} has no content` });
   }
 
-  // Related pages 20–22 must not share identical analysis blobs.
   const related = input.slides.filter((s) => s.pageNumber >= 20 && s.pageNumber <= 22);
   if (related.length >= 2) {
     const blobs = related.map(
@@ -314,5 +465,13 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
   }
 
   const passed = issues.length === 0;
-  return { passed, issues, ceoReady: passed && input.clientFinalize === true };
+  const foreignClient =
+    Boolean(input.expectedRunId) &&
+    Boolean(input.clientContentSourceReportRunId) &&
+    input.clientContentSourceReportRunId !== input.expectedRunId;
+  return {
+    passed,
+    issues,
+    ceoReady: passed && input.clientFinalize === true && !foreignClient,
+  };
 }

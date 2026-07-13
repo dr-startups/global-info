@@ -9,7 +9,10 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, copyFileSync } from "node:fs";
 import { join } from "node:path";
-import { inspectFirst36Acceptance } from "../src/modules/digital-profile/orion-golden/classic/first36-acceptance-gate";
+import {
+  inspectFirst36Acceptance,
+  requiredVisualAssetRefsFromRegistry,
+} from "../src/modules/digital-profile/orion-golden/classic/first36-acceptance-gate";
 
 type Args = {
   caseId?: string;
@@ -88,17 +91,41 @@ async function main(): Promise<void> {
     ? readJson<{ reportRunId?: string; rows?: Array<Record<string, unknown>> }>(join(fromDir, "surface-coverage.json"))
     : undefined;
   const enrich = existsSync(join(fromDir, "arsenkin-enrich.json"))
-    ? readJson<{ skipped?: boolean; mode?: string; blocked?: boolean; reason?: string }>(
-        join(fromDir, "arsenkin-enrich.json")
-      )
+    ? readJson<{
+        skipped?: boolean;
+        mode?: string;
+        blocked?: boolean;
+        reason?: string;
+        linkedObservations?: number;
+        totalObservations?: number;
+        linkedCoverage?: number;
+        totalCoverage?: number;
+      }>(join(fromDir, "arsenkin-enrich.json"))
     : undefined;
-  const geometryReport = existsSync(join(fromDir, "geometry-report.json"))
+  const geometryPresent = existsSync(join(fromDir, "geometry-report.json"));
+  const geometryReport = geometryPresent
     ? readJson<{ overlaps?: unknown[]; overflow?: unknown[]; blank?: unknown[] }>(join(fromDir, "geometry-report.json"))
     : undefined;
   const providerTasks = existsSync(join(fromDir, "provider-tasks.json"))
-    ? readJson<Array<{ reportRunId?: string; state?: string }>>(join(fromDir, "provider-tasks.json"))
+    ? readJson<Array<{ reportRunId?: string; state?: string; id?: string }>>(join(fromDir, "provider-tasks.json"))
     : undefined;
-  const expectedRunId = String((runScopedMerge as { auditRunId?: string } | undefined)?.auditRunId ?? "").trim() || undefined;
+  const observations = existsSync(join(fromDir, "serp-observations-provenance.json"))
+    ? readJson<Array<{ auditRunId?: string; provider?: string; providerTaskId?: string | null }>>(
+        join(fromDir, "serp-observations-provenance.json")
+      )
+    : undefined;
+  const clientBinding = existsSync(join(fromDir, "client-content-binding.json"))
+    ? readJson<{ sourceReportRunId?: string; effectiveReportRunId?: string }>(
+        join(fromDir, "client-content-binding.json")
+      )
+    : undefined;
+  const expectedRunId =
+    String((runScopedMerge as { auditRunId?: string } | undefined)?.auditRunId ?? "").trim() ||
+    String(clientBinding?.effectiveReportRunId ?? "").trim() ||
+    undefined;
+  const assetList = assets
+    .filter((a): a is { assetRef: string; status?: string; evidenceRefs?: string[] } => Boolean(a.assetRef))
+    .map((a) => ({ assetRef: a.assetRef, status: a.status, evidenceRefs: a.evidenceRefs }));
 
   const result = inspectFirst36Acceptance({
     slideCount: deck.slideCount,
@@ -133,9 +160,8 @@ async function main(): Promise<void> {
       observationCount?: number;
     },
     assetKinds: assets.map((a) => String(a.kind ?? "")),
-    assets: assets
-      .filter((a): a is { assetRef: string; status?: string; evidenceRefs?: string[] } => Boolean(a.assetRef))
-      .map((a) => ({ assetRef: a.assetRef, status: a.status, evidenceRefs: a.evidenceRefs })),
+    assets: assetList,
+    requiredVisualAssetRefs: requiredVisualAssetRefsFromRegistry(assetList),
     paths: {
       pptx: join(fromDir, "rendered-client.pptx"),
       pdf: join(fromDir, "rendered-client.pdf"),
@@ -145,11 +171,30 @@ async function main(): Promise<void> {
     arsenkinEnrich: enrich,
     coverageSummary: coverageSummary as {
       reportRunId?: string;
-      rows?: Array<{ reportRunId?: string; tool?: string; engine?: string; region?: string; surface?: string; status?: string }>;
+      rows?: Array<{
+        reportRunId?: string;
+        tool?: string;
+        engine?: string;
+        region?: string;
+        surface?: string;
+        status?: string;
+        providerTaskId?: string | null;
+      }>;
     },
     expectedRunId,
     geometryReport,
+    geometryReportPresent: geometryPresent,
     providerTasks,
+    observations,
+    provenanceSummary: enrich
+      ? {
+          linkedObservations: enrich.linkedObservations,
+          totalObservations: enrich.totalObservations,
+          linkedCoverage: enrich.linkedCoverage,
+          totalCoverage: enrich.totalCoverage,
+        }
+      : undefined,
+    clientContentSourceReportRunId: clientBinding?.sourceReportRunId ?? null,
     clientFinalize: process.env.ORION_CLASSIC_CLIENT_FINALIZE === "1",
   });
 
