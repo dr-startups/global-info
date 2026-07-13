@@ -7,3 +7,4 @@ export * from "./provider-task-store";
 export * from "./poll-worker";
 export * from "./regions";
 export * from "./adapters";
+export * from "./collect-pilot-surfaces";
