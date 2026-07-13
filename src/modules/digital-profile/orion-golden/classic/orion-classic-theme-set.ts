@@ -109,10 +109,10 @@ function normalizeRegion(raw: string | undefined): string {
 
 function matchesRegion(itemRegion: string | undefined, bucket: OrionRegionBucket): boolean {
   const r = normalizeRegion(itemRegion);
-  // Do not treat empty/GLOBAL as belonging to both RU and UAE — that shared the 171 denominator.
-  if (!r || r === "GLOBAL") return false;
+  // Do not treat empty/GLOBAL/INTL as belonging to both RU and UAE — that produced the shared 171 denominator.
+  if (!r || r === "GLOBAL" || r === "INTL" || r === "GLOBAL_INTL") return false;
   if (bucket === "RU") return r === "RU" || r === "RUSSIA" || r === "RF";
-  return r === "UAE" || r === "INTL" || r === "AE" || r === "GLOBAL_INTL" || r === "EN";
+  return r === "UAE" || r === "AE";
 }
 
 function domainOf(url: string | undefined): string {
@@ -2691,7 +2691,8 @@ export function buildSerpHeatGridBullets(
   const bullets = picked.map((r) => {
     const mark = r.adverse ? "[Н]" : "[·]";
     const pos = r.pos === 999 ? "—" : String(r.pos);
-    return `${mark} #${pos} ${r.domain} — ${r.title}`;
+    const q = (r.query || "основной запрос").replace(/\s+/g, " ").trim().slice(0, 42);
+    return `${mark} ${q} | #${pos} ${r.domain} — ${r.title}`;
   });
 
   return {

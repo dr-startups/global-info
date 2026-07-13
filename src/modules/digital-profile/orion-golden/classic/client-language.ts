@@ -41,7 +41,7 @@ export function hasDanglingSentenceTail(text: string): boolean {
   if (!t) return false;
   if (/[.!?…»)]\s*$/.test(t)) return false;
   if (DANGLING_TAIL.test(t)) return true;
-  if (/[,;:—–-]\s*$/.test(t)) return true;
+  if (/[,;:—–:-]\s*$/.test(t)) return true;
   if (/(?:\s|^)(?:с\s+)?[А-ЯA-Z]\.?\s*$/.test(t)) return true;
   return false;
 }

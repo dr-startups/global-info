@@ -406,7 +406,8 @@ function provenanceLabel(asset: ReportAssetV1): string {
 
 export function buildDeterministicVisualAnalysis(
   asset: ReportAssetV1,
-  slot: First36SlotDef
+  slot: First36SlotDef,
+  themeSet?: OrionThemeSet | null
 ): VisualSlideAnalysis {
   const title = scrub(asset.title || slot.title);
   const caption = scrub(asset.caption || "");
@@ -496,48 +497,59 @@ export function buildDeterministicVisualAnalysis(
       : [];
   } else if (slot.kind === "related_visual") {
     sidebarMode = "interpretation";
-    const surfaceHints = (asset.evidenceRefs ?? [])
-      .map((r) => String(r))
-      .filter(Boolean)
-      .slice(0, 3);
-    const labelBits = [title, caption, ...surfaceHints]
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .trim();
+    const slotTag = asset.assetRef || `related-${slot.page}`;
+    const captionBit = caption.replace(/\s+/g, " ").trim().slice(0, 60);
+    const titleBit = title.replace(/связанн\w+\s+запрос\w*/i, "").trim().slice(0, 60);
     const topic =
-      labelBits.match(/(?:связанн\w+|related|people also|похож\w+)[:\s—-]*(.+)$/i)?.[1]?.slice(0, 80) ||
-      title.replace(/связанн\w+\s+запрос\w*/i, "").trim().slice(0, 80) ||
-      `набор ${slot.page}`;
+      captionBit ||
+      titleBit ||
+      ( /_(\d+)$/.test(slotTag) ? `набор ${slotTag.match(/_(\d+)$/)?.[1]}` : `страница ${slot.page}`);
     headlineConclusion = `Связанные запросы (${regionLabel}): ${topic}`;
-    whatIsVisible = `На экране — отдельный набор связанных запросов «${topic}» для региона ${regionLabel}.`;
-    clientMeaning = `Этот набор уточняет тематическое окружение имени именно для запроса «${topic}», а не повторяет соседние слайды.`;
+    whatIsVisible = `На экране — набор связанных запросов «${topic}» (${slotTag}) для региона ${regionLabel}.`;
+    clientMeaning = `Анализ относится только к набору «${topic}» (${slotTag}), без копирования соседних слайдов.`;
     whyItMatters = clientMeaning;
-    recommendedActions = [`Сверить риск-формулировки в наборе «${topic.slice(0, 40)}»`];
-    provenance = `Источник: сохранённые связанные запросы (${topic.slice(0, 48)}), дата сбора в кейсе`;
+    recommendedActions = [`Сверить риск-формулировки в наборе «${String(topic).slice(0, 40)}»`];
+    provenance = `Источник: ${slotTag}, дата сбора в кейсе`;
   } else if (slot.kind === "knowledge_visual") {
     const fromWiki = /wikipedia|википед/i.test(`${caption} ${title} ${provenanceLabel(asset)}`);
+    const regionKpis =
+      slot.region === "UAE" ? themeSet?.uae : slot.region === "RU" ? themeSet?.ru : themeSet?.ru;
+    const wikiStatus = String(regionKpis?.wikipediaStatus ?? "").toUpperCase();
     const wrongSubject =
-      /другого субъекта|однофамил|не является профилем|дворянский род/i.test(`${caption} ${title}`) ||
+      wikiStatus === "WRONG_SUBJECT" ||
+      wikiStatus === "AMBIGUOUS" ||
+      /другого субъекта|однофамил|не является профилем|дворянский род|WRONG_SUBJECT/i.test(
+        `${caption} ${title}`
+      ) ||
       Boolean((asset as { subjectBinding?: string }).subjectBinding === "WRONG_SUBJECT");
-    sidebarMode = wrongSubject ? "status" : "interpretation";
-    headlineConclusion = wrongSubject
-      ? "Карточка Wikipedia не относится к проверяемому лицу"
-      : fromWiki
+    const absent = wikiStatus === "ABSENT" || (!wrongSubject && wikiStatus !== "EXACT_SUBJECT");
+    sidebarMode = wrongSubject || absent ? "status" : "interpretation";
+    if (wrongSubject) {
+      headlineConclusion = "Карточка Wikipedia не относится к проверяемому лицу";
+      whatIsVisible =
+        "Найдена страница другого лица или рода; её нельзя засчитывать как профиль проверяемого лица.";
+      clientMeaning = "Чужой профиль в выдаче создаёт риск смешения личностей.";
+      recommendedActions = ["Исключить из профиля или сверить личность"];
+    } else if (absent) {
+      headlineConclusion = `Публичная статья Wikipedia (${regionLabel}) не найдена`;
+      whatIsVisible =
+        `В выдаче ${regionLabel} нет устойчивой энциклопедической карточки проверяемого лица.`;
+      clientMeaning = "Энциклопедический якорь цифрового профиля в регионе отсутствует.";
+      recommendedActions = ["Зафиксировать отсутствие статьи как факт профиля"];
+    } else {
+      headlineConclusion = fromWiki
         ? `Справочная карточка Wikipedia (${regionLabel})`
         : `Справочная панель в поиске (${regionLabel})`;
-    whatIsVisible = wrongSubject
-      ? "Найдена страница другого лица или рода; её нельзя засчитывать как профиль проверяемого лица."
-      : fromWiki
+      whatIsVisible = fromWiki
         ? "Показаны название страницы и статус наличия публичной статьи о проверяемом лице."
         : "Краткие факты и заголовки из справочного блока рядом с выдачей.";
-    clientMeaning = wrongSubject
-      ? "Чужой профиль в выдаче создаёт риск смешения личностей."
-      : "Справочный блок влияет на то, как третьи лица идентифицируют проверяемое лицо.";
+      clientMeaning = "Справочный блок влияет на то, как третьи лица идентифицируют проверяемое лицо.";
+      recommendedActions = ["Сверить факты с первичными источниками"];
+    }
     whyItMatters = clientMeaning;
-    recommendedActions = wrongSubject
-      ? ["Исключить из профиля или сверить личность"]
-      : ["Сверить факты с первичными источниками"];
-    provenance = fromWiki ? "Источник: проверка Wikipedia, дата сбора в кейсе" : provenance;
+    provenance = fromWiki || wrongSubject || absent
+      ? "Источник: проверка Wikipedia, дата сбора в кейсе"
+      : provenance;
   } else {
     sidebarMode = "status";
     whatIsVisible =
@@ -783,7 +795,8 @@ function attachVisual(
   slide: OrionGoldenDeckSlide,
   slot: First36SlotDef,
   assets: ReportAssetV1[],
-  usedAssets: Set<string>
+  usedAssets: Set<string>,
+  themeSet?: OrionThemeSet | null
 ): OrionGoldenDeckSlide {
   const visualTemplates = new Set([
     "orion_golden_serp_screenshot",
@@ -835,7 +848,7 @@ function attachVisual(
   }
 
   usedAssets.add(assetRef);
-  const analysis = buildDeterministicVisualAnalysis(asset, slot);
+  const analysis = buildDeterministicVisualAnalysis(asset, slot, themeSet);
   return {
     ...slide,
     slideKey: slot.slotId,
@@ -885,13 +898,14 @@ export function composeOrionFirst36CeoDeck(
         },
         slot,
         assets,
-        usedAssets
+        usedAssets,
+        themeSet
       );
     } else if (slot.requiredVisual) {
       const asset = pickAssetForSlot(assets, usedAssets, slot);
       if (asset) {
         usedAssets.add(asset.assetRef);
-        const analysis = buildDeterministicVisualAnalysis(asset, slot);
+        const analysis = buildDeterministicVisualAnalysis(asset, slot, themeSet);
         slide = {
           slideKey: slot.slotId,
           sectionKey: slot.sectionKey,
@@ -922,7 +936,7 @@ export function composeOrionFirst36CeoDeck(
       const asset = pickAssetForSlot(assets, usedAssets, slot);
       if (asset) {
         usedAssets.add(asset.assetRef);
-        const analysis = buildDeterministicVisualAnalysis(asset, slot);
+        const analysis = buildDeterministicVisualAnalysis(asset, slot, themeSet);
         slide = {
           slideKey: slot.slotId,
           sectionKey: slot.sectionKey,

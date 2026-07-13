@@ -84,6 +84,24 @@ export async function mergeRunScopedSerpObservations(input: {
   if (rows.length === 0) {
     if (requireRunScoped) {
       warnings.push("run-scoped-observations-empty");
+      // Strip case-wide search_result rows — do not silently reuse old runs.
+      const stripped: FullEvidenceInventory = {
+        ...input.inventory,
+        warnings: [...warnings],
+        items: input.inventory.items.filter((i) => i.evidenceType !== "search_result"),
+        counts: { ...input.inventory.counts, searchResults: 0 },
+        countsByEvidenceType: {
+          ...input.inventory.countsByEvidenceType,
+          search_result: 0,
+        },
+      };
+      return {
+        inventory: stripped,
+        observationCount: 0,
+        duplicateKeys: [],
+        usedRunScoped: true,
+        warnings: stripped.warnings,
+      };
     }
     return {
       inventory: input.inventory,

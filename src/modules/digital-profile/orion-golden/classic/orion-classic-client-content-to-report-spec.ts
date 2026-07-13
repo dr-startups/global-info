@@ -89,8 +89,10 @@ function normalizeRegion(raw: string | undefined): string {
 
 function matchesRegion(itemRegion: string | undefined, bucket: RegionBucket): boolean {
   const r = normalizeRegion(itemRegion);
-  if (bucket === "RU") return r === "RU" || r === "GLOBAL" || r === "" || r === "RUSSIA";
-  return r === "UAE" || r === "INTL" || r === "AE" || r === "GLOBAL_INTL";
+  // Keep RU/UAE KPI and tables on explicit regional rows only (no shared INTL/empty pool).
+  if (!r || r === "GLOBAL" || r === "INTL" || r === "GLOBAL_INTL" || r === "EN") return false;
+  if (bucket === "RU") return r === "RU" || r === "RUSSIA" || r === "RF";
+  return r === "UAE" || r === "AE";
 }
 
 function domainOf(url: string | undefined): string {
@@ -182,7 +184,7 @@ function buildComplianceOverviewBullets(themeSet: OrionThemeSet): {
   // Provider-focused overview; optional shared open-source context once.
   return {
     narrative:
-      "В международных базах данных зафиксированы следующие предварительные сигналы:",
+      "В международных базах данных зафиксированы предварительные сигналы. Подробности — в пунктах ниже.",
     bullets: sanitizeClassicBullets(
       [
         ...fallbackProviders,
@@ -570,6 +572,23 @@ export function tableFromSearchBullets(
   for (const raw of bullets) {
     const b = String(raw ?? "").trim();
     if (!b) continue;
+    // New format: [Н] query | #1 domain — title
+    const withQuery = b.match(
+      /^(?:\[([Н·N.])\]\s*)?(.+?)\s*\|\s*#?\s*(\d+|—)\s+([^\s—\-]+)\s*[—\-–]\s*(.+)$/u
+    );
+    if (withQuery) {
+      const adverse = withQuery[1] === "Н" || withQuery[1] === "N";
+      const status = adverse ? "Нежелательный" : "Нейтральный";
+      rows.push([
+        truncateAtWordBoundary(withQuery[2].trim(), 42),
+        withQuery[3],
+        withQuery[4],
+        truncateAtWordBoundary(withQuery[5].replace(/\s*\(https?:\S+\)\s*$/i, "").trim(), 70),
+        status,
+      ]);
+      if (rows.length >= maxRows) break;
+      continue;
+    }
     const m = b.match(
       /^(?:\[([Н·N.])\]\s*)?#?\s*(\d+)\s+([^\s—\-]+)\s*[—\-–]\s*(.+?)(?:\s*(?:\(|·|•)\s*(https?:\S+|—+)\)?)?\s*$/u
     );
@@ -577,19 +596,19 @@ export function tableFromSearchBullets(
       const adverse = m[1] === "Н" || m[1] === "N";
       const titlePart = truncateAtWordBoundary(m[4].replace(/\s*\(https?:\S+\)\s*$/i, "").trim(), 90);
       const status = adverse ? "Нежелательный" : "Нейтральный";
-      rows.push([m[2], m[3], titlePart, status]);
+      rows.push(["основной запрос", m[2], m[3], titlePart, status]);
       if (rows.length >= maxRows) break;
       continue;
     }
     const loose = b.match(/#?\s*(\d+)\s+(.+)/);
     if (loose) {
-      rows.push([loose[1], "—", truncateAtWordBoundary(loose[2], 90), "Требует проверки"]);
+      rows.push(["основной запрос", loose[1], "—", truncateAtWordBoundary(loose[2], 90), "Требует проверки"]);
       if (rows.length >= maxRows) break;
     }
   }
   if (rows.length === 0) return undefined;
   return {
-    headers: ["Позиция", "Домен", "Заголовок", "Статус"],
+    headers: ["Запрос", "Позиция", "Домен", "Заголовок", "Статус"],
     rows,
   };
 }

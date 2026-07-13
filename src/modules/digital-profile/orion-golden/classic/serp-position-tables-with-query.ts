@@ -20,7 +20,7 @@ function domainOf(url: string | undefined): string {
 function matchesRegion(itemRegion: string | undefined, bucket: RegionBucket): boolean {
   const r = String(itemRegion ?? "").toUpperCase();
   if (bucket === "RU") return r === "RU" || r === "RUSSIA" || r === "RF";
-  return r === "UAE" || r === "AE" || r === "INTL" || r === "EN" || r === "GLOBAL_INTL";
+  return r === "UAE" || r === "AE";
 }
 
 function shortQuery(q: string): string {

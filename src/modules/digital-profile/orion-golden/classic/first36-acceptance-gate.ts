@@ -76,10 +76,6 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
     });
   }
 
-  const wikiWrong =
-    String(input.themeSet?.ru?.wikipediaStatus ?? "").toUpperCase() === "WRONG_SUBJECT" ||
-    String(input.themeSet?.uae?.wikipediaStatus ?? "").toUpperCase() === "WRONG_SUBJECT";
-
   for (const slide of input.slides) {
     const page = slide.pageNumber;
     const texts = [
@@ -136,11 +132,30 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
     }
 
     if (
-      wikiWrong &&
       /knowledge_panel|knowledge_visual/i.test(`${slide.template}`) &&
-      /панель знаний|справочн|wikipedia/i.test(`${slide.title}`)
+      /панель знаний|справочн|wikipedia/i.test(`${slide.title ?? ""}`)
     ) {
-      if (/статью о персоне|публичной статьи о персоне|о проверяем|о персоне/i.test(texts.join(" "))) {
+      const titleBlob = `${slide.title ?? ""}`;
+      const region: "RU" | "UAE" | null = /оаэ|uae/i.test(titleBlob)
+        ? "UAE"
+        : /россия|\bru\b/i.test(titleBlob)
+          ? "RU"
+          : page >= 23
+            ? "UAE"
+            : page >= 18 && page <= 19
+              ? "RU"
+              : null;
+      const regionStatus = String(
+        (region === "UAE" ? input.themeSet?.uae?.wikipediaStatus : input.themeSet?.ru?.wikipediaStatus) ??
+          ""
+      ).toUpperCase();
+      const blob = texts.join(" ");
+      // Only fail WRONG_SUBJECT regions whose copy still claims a subject profile article.
+      if (
+        regionStatus === "WRONG_SUBJECT" &&
+        /публичной статьи о (?:персоне|проверяемом)|статью о персоне|о проверяемом лице/i.test(blob) &&
+        !/не относится|другого (?:лица|субъекта)|нельзя засчитывать|не найдена|отсутствует/i.test(blob)
+      ) {
         issues.push({
           code: "wrong-subject-as-knowledge-panel",
           page,
