@@ -146,6 +146,32 @@ async function main() {
   assert.equal(aiAbsent[0]?.providerStatus, "NO_RESULTS");
   assert.equal(aiAbsent[0]?.rawPayloadJson?.notKnowledgePanel, true);
 
+  const aiGoogle = mapAiSerpToObservations({
+    caseId: "case-1",
+    auditRunId: "run-1",
+    regionLabel: "RU",
+    language: "ru",
+    queries: ["Глинка Сергей Михайлович"],
+    se: 2,
+    payload: load("get-ai-serp-google.json"),
+  });
+  assert.ok(aiGoogle.length >= 1);
+  assert.equal(aiGoogle[0]?.engine, "GOOGLE");
+  assert.match(String(aiGoogle[0]?.title), /AI Overview/);
+
+  const aiGoogleUae = mapAiSerpToObservations({
+    caseId: "case-1",
+    auditRunId: "run-1",
+    regionLabel: "UAE",
+    language: "en",
+    queries: ["Glinka Sergey Mikhaylovich"],
+    se: 2,
+    payload: load("get-ai-serp-google-uae.json"),
+  });
+  assert.equal(aiGoogleUae.length, 1);
+  assert.equal(aiGoogleUae[0]?.providerStatus, "NO_RESULTS");
+  assert.equal(aiGoogleUae[0]?.region, "UAE");
+
   console.log(
     JSON.stringify(
       {
@@ -155,6 +181,8 @@ async function main() {
         paa: paa.length,
         aiAnswer: ai.length,
         aiAbsent: aiAbsent.length,
+        aiGoogle: aiGoogle.length,
+        aiGoogleUae: aiGoogleUae.length,
         sampleOrganic: top.slice(0, 2).map((d) => ({ rank: d.rank, domain: d.domain, title: d.title })),
         sampleSuggest: suggests.map((d) => d.title),
         samplePaa: paa.map((d) => d.title),

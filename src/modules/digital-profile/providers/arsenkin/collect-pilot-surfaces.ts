@@ -35,6 +35,11 @@ export type ArsenkinPilotCollectInput = {
   fixturesOnly?: boolean;
   /** Limit which tools to run (default: all enabled). */
   tools?: ArsenkinToolName[];
+  /**
+   * Which ai-serp targets to fetch (default: all three).
+   * Use to avoid re-spending limits when some engines already enriched.
+   */
+  aiSerpTargets?: Array<"yandex_ru" | "google_ru" | "google_uae">;
   client?: ArsenkinClient | null;
   store?: ProviderTaskStore;
   waitTimeoutMs?: number;
@@ -208,31 +213,82 @@ export async function collectArsenkinPilotSurfaces(
     );
   }
 
-  // --- ai-serp RU (Yandex Alice) — separate from Knowledge Panel ---
+  // --- ai-serp: Yandex Alice (RU) + Google AI Overview (RU/UAE) — not Knowledge Panel ---
   if (want("ai-serp")) {
-    const req = buildAiSerpRequest({
-      queries: [ruQuery],
-      se: 1,
-      region: ARSENKIN_REGION.YANDEX_MOSCOW,
-    });
-    const payload =
-      live && client
-        ? await completeTask(client, store, "ai-serp", req.data, input, waitTimeoutMs)
-        : loadFix("get-ai-serp.json");
-    drafts.push(
-      ...mapAiSerpToObservations({
-        caseId: input.caseId,
-        auditRunId: input.auditRunId,
-        regionLabel: "RU",
-        language: "ru",
+    const targets = new Set(
+      input.aiSerpTargets ?? (["yandex_ru", "google_ru", "google_uae"] as const)
+    );
+
+    if (targets.has("yandex_ru")) {
+      const req = buildAiSerpRequest({
         queries: [ruQuery],
         se: 1,
-        payload,
-      })
-    );
+        region: ARSENKIN_REGION.YANDEX_MOSCOW,
+      });
+      const payload =
+        live && client
+          ? await completeTask(client, store, "ai-serp", req.data, input, waitTimeoutMs)
+          : loadFix("get-ai-serp.json");
+      drafts.push(
+        ...mapAiSerpToObservations({
+          caseId: input.caseId,
+          auditRunId: input.auditRunId,
+          regionLabel: "RU",
+          language: "ru",
+          queries: [ruQuery],
+          se: 1,
+          payload,
+        })
+      );
+    }
+
+    if (targets.has("google_ru")) {
+      const req = buildAiSerpRequest({
+        queries: [ruQuery],
+        se: 2,
+        region: ARSENKIN_REGION.GOOGLE_MOSCOW,
+      });
+      const payload =
+        live && client
+          ? await completeTask(client, store, "ai-serp", req.data, input, waitTimeoutMs)
+          : loadFix("get-ai-serp-google.json");
+      drafts.push(
+        ...mapAiSerpToObservations({
+          caseId: input.caseId,
+          auditRunId: input.auditRunId,
+          regionLabel: "RU",
+          language: "ru",
+          queries: [ruQuery],
+          se: 2,
+          payload,
+        })
+      );
+    }
+
+    if (targets.has("google_uae")) {
+      const req = buildAiSerpRequest({
+        queries: [uaeQuery],
+        se: 2,
+        region: ARSENKIN_REGION.GOOGLE_UAE,
+      });
+      const payload =
+        live && client
+          ? await completeTask(client, store, "ai-serp", req.data, input, waitTimeoutMs)
+          : loadFix("get-ai-serp-google-uae.json");
+      drafts.push(
+        ...mapAiSerpToObservations({
+          caseId: input.caseId,
+          auditRunId: input.auditRunId,
+          regionLabel: "UAE",
+          language: "en",
+          queries: [uaeQuery],
+          se: 2,
+          payload,
+        })
+      );
+    }
   }
 
-  void uaeQuery;
   const bySurface = {
     organic: drafts.filter((d) => d.surface === "organic").length,
     autocomplete: drafts.filter((d) => d.surface === "autocomplete").length,

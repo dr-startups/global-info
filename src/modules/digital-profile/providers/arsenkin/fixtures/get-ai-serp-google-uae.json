@@ -1,0 +1,14 @@
+{
+  "code": "TASK_RESULT",
+  "task_id": "6063",
+  "result": {
+    "result": { "position": 0, "found": 0, "brand": 0 },
+    "top": { "hosts": [], "urls": [] },
+    "queries": ["Glinka Sergey Mikhaylovich"],
+    "table": [{ "found": false, "position": false }],
+    "info": {
+      "se": "Google",
+      "region": { "text": "United Arab Emirates", "id": "1011981" }
+    }
+  }
+}

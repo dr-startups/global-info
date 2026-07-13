@@ -24,6 +24,10 @@ export type ArsenkinRenderEnrichResult = {
   };
 };
 
+function isAi(row: { surface: string; engine: string; region: string }): boolean {
+  return row.surface === "ai_answer";
+}
+
 export async function enrichReportRunWithArsenkin(input: {
   caseId: string;
   auditRunId: string;
@@ -58,11 +62,30 @@ export async function enrichReportRunWithArsenkin(input: {
   const organicCount = existingRows.filter((r) => r.surface === "organic").length;
   const paaCount = existingRows.filter((r) => r.surface === "paa").length;
   const suggestCount = existingRows.filter((r) => r.surface === "autocomplete").length;
-  const aiCount = existingRows.filter((r) => r.surface === "ai_answer").length;
-  if (organicCount >= skipIfAtLeast && paaCount > 0 && suggestCount >= 3 && aiCount > 0) {
+  const aiRows = existingRows.filter(isAi);
+  const hasYandexRuAi = aiRows.some(
+    (r) => String(r.engine).toUpperCase() === "YANDEX" && !/UAE|AE|INTL/i.test(r.region)
+  );
+  const hasGoogleRuAi = aiRows.some(
+    (r) => String(r.engine).toUpperCase() === "GOOGLE" && !/UAE|AE|INTL/i.test(r.region)
+  );
+  const hasGoogleUaeAi = aiRows.some(
+    (r) => String(r.engine).toUpperCase() === "GOOGLE" && /UAE|AE|INTL/i.test(r.region)
+  );
+  const aiSerpTargets: Array<"yandex_ru" | "google_ru" | "google_uae"> = [];
+  if (!hasYandexRuAi) aiSerpTargets.push("yandex_ru");
+  if (!hasGoogleRuAi) aiSerpTargets.push("google_ru");
+  if (!hasGoogleUaeAi) aiSerpTargets.push("google_uae");
+
+  if (
+    organicCount >= skipIfAtLeast &&
+    paaCount > 0 &&
+    suggestCount >= 3 &&
+    aiSerpTargets.length === 0
+  ) {
     return {
       skipped: true,
-      reason: `already_enriched organic=${organicCount} paa=${paaCount} suggest=${suggestCount} ai=${aiCount}`,
+      reason: `already_enriched organic=${organicCount} paa=${paaCount} suggest=${suggestCount} ai=${aiRows.length}`,
     };
   }
 
@@ -70,7 +93,7 @@ export async function enrichReportRunWithArsenkin(input: {
   if (organicCount < skipIfAtLeast) tools.push("check-top");
   if (suggestCount < 3) tools.push("suggest");
   if (paaCount < 1) tools.push("paa");
-  if (aiCount < 1) tools.push("ai-serp");
+  if (aiSerpTargets.length > 0) tools.push("ai-serp");
   if (tools.length === 0) {
     return { skipped: true, reason: "surfaces_complete" };
   }
@@ -82,6 +105,7 @@ export async function enrichReportRunWithArsenkin(input: {
     queriesUae: input.queriesUae,
     fixturesOnly: process.env.ARSENKIN_PILOT_FIXTURES === "1",
     tools,
+    aiSerpTargets: tools.includes("ai-serp") ? aiSerpTargets : undefined,
   });
 
   const existingKeys = new Set(

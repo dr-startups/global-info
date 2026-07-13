@@ -133,34 +133,78 @@ export async function buildArsenkinSurfacePanelAssets(input: {
     })),
   });
 
-  // AI overview → p19 knowledge_panel_2 only (never replaces Wikipedia panel_1).
+  // AI overview → p19 knowledge_panel_2 (RU Alice + Google AI), never Wikipedia panel_1.
   const ruAi = aiAnswer.filter((r) => mapRegion(r.region) === "RU");
-  const aiAnswerText = ruAi.find((r) => /ИИ-ответ/i.test(String(r.title ?? "")));
-  const aiSources = ruAi.filter((r) => r.domain !== "ai-serp");
-  const aiLines: Array<{ label: string; meta?: string; evidenceRef: string }> = [];
-  if (aiAnswerText?.snippet) {
-    aiLines.push({
-      label: String(aiAnswerText.snippet).slice(0, 180),
-      meta: aiAnswerText.providerStatus === "NO_RESULTS" ? "ИИ не найден" : "ИИ-текст",
-      evidenceRef: `serp_observation:${aiAnswerText.id}`,
+  const ruYandexAi = ruAi.filter((r) => String(r.engine).toUpperCase() === "YANDEX");
+  const ruGoogleAi = ruAi.filter((r) => String(r.engine).toUpperCase() === "GOOGLE");
+  const pickAnswer = (rows: typeof ruAi) =>
+    rows.find((r) => /ИИ-ответ|AI Overview/i.test(String(r.title ?? "")));
+  const yandexAnswer = pickAnswer(ruYandexAi);
+  const googleRuAnswer = pickAnswer(ruGoogleAi);
+  const ruAiLines: Array<{ label: string; meta?: string; evidenceRef: string }> = [];
+  if (yandexAnswer?.snippet) {
+    ruAiLines.push({
+      label: String(yandexAnswer.snippet).slice(0, 160),
+      meta: yandexAnswer.providerStatus === "NO_RESULTS" ? "Алиса · нет" : "Алиса",
+      evidenceRef: `serp_observation:${yandexAnswer.id}`,
     });
   }
-  for (const src of aiSources.slice(0, 8)) {
-    aiLines.push({
+  if (googleRuAnswer?.snippet) {
+    ruAiLines.push({
+      label: String(googleRuAnswer.snippet).slice(0, 160),
+      meta: googleRuAnswer.providerStatus === "NO_RESULTS" ? "Google AI · нет" : "Google AI",
+      evidenceRef: `serp_observation:${googleRuAnswer.id}`,
+    });
+  }
+  for (const src of [...ruYandexAi, ...ruGoogleAi]
+    .filter((r) => r.domain !== "ai-serp")
+    .slice(0, 6)) {
+    ruAiLines.push({
+      label: String(src.title ?? src.url).trim(),
+      meta: `${String(src.engine).toUpperCase() === "YANDEX" ? "Алиса" : "Google"} · ${src.domain ?? "source"}`,
+      evidenceRef: `serp_observation:${src.id}`,
+    });
+  }
+  const ruAiAbsent =
+    (yandexAnswer?.providerStatus === "NO_RESULTS" || !yandexAnswer) &&
+    (googleRuAnswer?.providerStatus === "NO_RESULTS" || !googleRuAnswer);
+  await pushPanel(assets, {
+    assetRef: "ru_knowledge_panel_2",
+    title: "Россия — ИИ-представление в поиске",
+    engineLabel: "Алиса / Google AI",
+    caption: ruAiAbsent
+      ? "ИИ-ответ поиска не найден (Arsenkin ai-serp). Не энциклопедическая карточка Wikipedia."
+      : "ИИ-ответ поиска (Arsenkin ai-serp: Алиса + Google AI Overview). Не энциклопедическая карточка Wikipedia.",
+    lines: ruAiLines,
+  });
+
+  // UAE Google AI Overview → uae_knowledge_panel (separate from Wikipedia when overlay allows).
+  const uaeAi = aiAnswer.filter((r) => mapRegion(r.region) === "UAE");
+  const uaeAnswer = pickAnswer(uaeAi);
+  const uaeLines: Array<{ label: string; meta?: string; evidenceRef: string }> = [];
+  if (uaeAnswer?.snippet) {
+    uaeLines.push({
+      label: String(uaeAnswer.snippet).slice(0, 180),
+      meta: uaeAnswer.providerStatus === "NO_RESULTS" ? "AI Overview · absent" : "AI Overview",
+      evidenceRef: `serp_observation:${uaeAnswer.id}`,
+    });
+  }
+  for (const src of uaeAi.filter((r) => r.domain !== "ai-serp").slice(0, 8)) {
+    uaeLines.push({
       label: String(src.title ?? src.url).trim(),
       meta: src.domain ?? "source",
       evidenceRef: `serp_observation:${src.id}`,
     });
   }
   await pushPanel(assets, {
-    assetRef: "ru_knowledge_panel_2",
-    title: "Россия — ИИ-представление в поиске",
-    engineLabel: "Яндекс Алиса",
+    assetRef: "uae_knowledge_panel",
+    title: "ОАЭ — Google AI Overview",
+    engineLabel: "Google AI Overview",
     caption:
-      aiAnswerText?.providerStatus === "NO_RESULTS"
-        ? "ИИ-ответ поиска не найден (Arsenkin ai-serp). Не энциклопедическая карточка Wikipedia."
-        : "ИИ-ответ поиска (Arsenkin ai-serp). Не энциклопедическая карточка Wikipedia.",
-    lines: aiLines,
+      uaeAnswer?.providerStatus === "NO_RESULTS"
+        ? "Google AI Overview не найден (Arsenkin ai-serp). Не энциклопедическая карточка Wikipedia."
+        : "Google AI Overview (Arsenkin ai-serp). Не энциклопедическая карточка Wikipedia.",
+    lines: uaeLines,
   });
 
   return {
@@ -177,9 +221,21 @@ export function overlaySurfacePanelAssets(
   overlay: ReportAssetV1[]
 ): ReportAssetV1[] {
   if (overlay.length === 0) return base;
-  const byRef = new Map(overlay.map((a) => [a.assetRef, a]));
+  const safeOverlay = overlay.filter((a) => {
+    if (a.assetRef !== "uae_knowledge_panel" && a.assetRef !== "ru_knowledge_panel") return true;
+    const existing = base.find((b) => b.assetRef === a.assetRef);
+    if (!existing) return true;
+    // Never replace a ready Wikipedia knowledge panel with AI surface panel.
+    const wikiReady =
+      existing.kind === "knowledge_panel" &&
+      existing.status === "ready" &&
+      /wikipedia|википед/i.test(`${existing.title ?? ""} ${existing.caption ?? ""}`);
+    return !wikiReady;
+  });
+  if (safeOverlay.length === 0) return base;
+  const byRef = new Map(safeOverlay.map((a) => [a.assetRef, a]));
   const out = base.map((a) => byRef.get(a.assetRef) ?? a);
-  for (const a of overlay) {
+  for (const a of safeOverlay) {
     if (!out.some((x) => x.assetRef === a.assetRef)) out.push(a);
   }
   return out;
