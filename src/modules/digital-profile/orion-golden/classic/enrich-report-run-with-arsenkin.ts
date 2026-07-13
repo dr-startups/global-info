@@ -12,6 +12,33 @@ import {
   isArsenkinEnabled,
   isArsenkinRequired,
 } from "../../providers/arsenkin";
+import { costStatusFromSpent } from "../../providers/arsenkin/cost";
+
+async function provenanceMetrics(auditRunId: string) {
+  const [observations, coverage, tasks] = await Promise.all([
+    prisma.serpObservation.findMany({
+      where: { auditRunId, provider: "arsenkin" },
+      select: { providerTaskId: true },
+    }),
+    prisma.surfaceCollectionCoverage.findMany({
+      where: { reportRunId: auditRunId, provider: "arsenkin" },
+      select: { providerTaskId: true },
+    }),
+    prisma.providerTask.findMany({
+      where: { reportRunId: auditRunId, provider: "arsenkin" },
+      select: { limitsSpent: true },
+    }),
+  ]);
+  const spentValues = tasks.map((t) => t.limitsSpent).filter((v): v is number => v != null);
+  return {
+    linkedObservations: observations.filter((o) => Boolean(o.providerTaskId)).length,
+    totalObservations: observations.length,
+    linkedCoverage: coverage.filter((c) => Boolean(c.providerTaskId)).length,
+    totalCoverage: coverage.length,
+    limitsSpentTotal: spentValues.length ? spentValues.reduce((a, b) => a + b, 0) : null,
+    costStatus: costStatusFromSpent(spentValues.length ? spentValues.reduce((a, b) => a + b, 0) : null),
+  };
+}
 
 export type ArsenkinRenderEnrichResult = {
   skipped: boolean;
@@ -26,6 +53,12 @@ export type ArsenkinRenderEnrichResult = {
     pageMeta?: number;
     indexation?: number;
   };
+  linkedObservations?: number;
+  totalObservations?: number;
+  linkedCoverage?: number;
+  totalCoverage?: number;
+  costStatus?: "KNOWN" | "UNKNOWN";
+  limitsSpentTotal?: number | null;
 };
 
 export type ArsenkinCoverageRow = { surface: string; engine: string; region: string };
@@ -197,6 +230,7 @@ export async function enrichReportRunWithArsenkin(input: {
       mode: "live",
       persisted: 0,
       reason: `already_enriched organic=${organicCount} paa=${paaCount} suggest=${suggestCount} ai=${aiRows.length} meta=${pageMetaCount} idx=${indexationCount}`,
+      ...(await provenanceMetrics(input.auditRunId)),
     };
   }
 
@@ -215,7 +249,12 @@ export async function enrichReportRunWithArsenkin(input: {
     if (required && missing.length > 0) {
       throw new Error(`ARSENKIN_REQUIRED coverage missing: ${missing.join(", ")}`);
     }
-    return { skipped: true, reason: "surfaces_complete" };
+    return {
+      skipped: true,
+      mode: "live",
+      reason: "surfaces_complete",
+      ...(await provenanceMetrics(input.auditRunId)),
+    };
   }
 
   const collected = await collectArsenkinPilotSurfaces({
@@ -263,5 +302,6 @@ export async function enrichReportRunWithArsenkin(input: {
     mode: collected.mode,
     persisted: persisted.length,
     bySurface: collected.bySurface,
+    ...(await provenanceMetrics(input.auditRunId)),
   };
 }

@@ -94,9 +94,15 @@ export async function runOrionClassicAuditRender(options: {
   mkdirSync(outputRoot, { recursive: true });
 
   const loaded = options.clientContent ?? loadPostReviewClientContent(caseId);
+  const clientContentSourceReportRunId = String(loaded.reportRunId ?? "").trim() || null;
   const clientContent: OrionClientContent = options.reportRunIdOverride
     ? { ...loaded, reportRunId: options.reportRunIdOverride }
     : loaded;
+  writeJson(join(outputRoot, "client-content-binding.json"), {
+    sourceReportRunId: clientContentSourceReportRunId,
+    effectiveReportRunId: clientContent.reportRunId,
+    overridden: Boolean(options.reportRunIdOverride),
+  });
   const ctx = await loadRealCaseContext(caseId, { locale: "ru", buildFreshReportJson: false });
   const first36CeoModeEarly = isFirst36CeoMode();
   if (first36CeoModeEarly) {
@@ -142,8 +148,29 @@ export async function runOrionClassicAuditRender(options: {
   });
   writeJson(
     join(outputRoot, "provider-tasks.json"),
-    await prisma.providerTask.findMany({
-      where: { reportRunId: clientContent.reportRunId, provider: "arsenkin" },
+    (
+      await prisma.providerTask.findMany({
+        where: { reportRunId: clientContent.reportRunId, provider: "arsenkin" },
+        orderBy: { createdAt: "asc" },
+      })
+    ).map((task) => ({
+      ...task,
+      costStatus: task.limitsSpent == null ? "UNKNOWN" : "KNOWN",
+    }))
+  );
+  writeJson(
+    join(outputRoot, "serp-observations-provenance.json"),
+    await prisma.serpObservation.findMany({
+      where: { auditRunId: clientContent.reportRunId, provider: "arsenkin" },
+      select: {
+        id: true,
+        auditRunId: true,
+        provider: true,
+        providerTaskId: true,
+        surface: true,
+        engine: true,
+        region: true,
+      },
       orderBy: { createdAt: "asc" },
     })
   );
