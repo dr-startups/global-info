@@ -5,3 +5,5 @@ export * from "./rate-limit";
 export * from "./redact";
 export * from "./provider-task-store";
 export * from "./poll-worker";
+export * from "./regions";
+export * from "./adapters";

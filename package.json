@@ -38,6 +38,7 @@
     "smoke:classic-first36": "tsx scripts/smoke-classic-first36-mode.ts",
     "smoke:first36-p0-acceptance": "tsx scripts/smoke-first36-p0-acceptance-defects.ts",
     "smoke:arsenkin-client": "tsx scripts/smoke-arsenkin-client.ts",
+    "smoke:arsenkin-adapters": "tsx scripts/smoke-arsenkin-adapters.ts",
     "accept:first36": "tsx scripts/accept-first36-report.ts",
     "render:first36-live": "tsx scripts/run-first36-live-render.ts",
     "import:glinka-case": "tsx --env-file=.env scripts/import-glinka-case.ts",

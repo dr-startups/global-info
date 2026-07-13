@@ -16,7 +16,7 @@ export type SerpProviderStatus =
   | "PROVIDER_FAILED"
   | "PROVIDER_RATE_LIMITED";
 
-export type SerpObservationProvider = "serper" | "yandex" | "dataforseo";
+export type SerpObservationProvider = "serper" | "yandex" | "dataforseo" | "arsenkin";
 export type SerpObservationEngine = "GOOGLE" | "YANDEX";
 export type SerpObservationSurface =
   | "organic"
@@ -24,13 +24,16 @@ export type SerpObservationSurface =
   | "videos"
   | "autocomplete"
   | "related"
-  | "knowledge_graph";
+  | "knowledge_graph"
+  | "paa";
 
 export type SerpObservationDraft = {
   caseId: string;
   auditRunId: string;
   queryId: string;
   queryText: string;
+  /** Optional parent query for nested PAA depth. */
+  parentQueryId?: string | null;
   provider: SerpObservationProvider;
   engine: SerpObservationEngine;
   surface: SerpObservationSurface;
