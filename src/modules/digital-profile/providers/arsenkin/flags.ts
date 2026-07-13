@@ -45,6 +45,11 @@ export function isArsenkinEnabled(env: NodeJS.ProcessEnv = process.env): boolean
   return env.ARSENKIN_ENABLED === "1" || env.ARSENKIN_ENABLED === "true";
 }
 
+/** Acceptance/CEO renders must fail rather than silently omit requested Arsenkin surfaces. */
+export function isArsenkinRequired(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.ARSENKIN_REQUIRED === "1" || env.ARSENKIN_REQUIRED === "true";
+}
+
 export function arsenkinTools(env: NodeJS.ProcessEnv = process.env): ArsenkinToolName[] {
   return parseTools(env.ARSENKIN_TOOLS);
 }

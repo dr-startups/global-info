@@ -17,7 +17,7 @@ export type SerpProviderStatus =
   | "PROVIDER_RATE_LIMITED";
 
 export type SerpObservationProvider = "serper" | "yandex" | "dataforseo" | "arsenkin";
-export type SerpObservationEngine = "GOOGLE" | "YANDEX";
+export type SerpObservationEngine = "GOOGLE" | "YANDEX" | "MULTI";
 export type SerpObservationSurface =
   | "organic"
   | "images"
@@ -37,11 +37,14 @@ export type SerpObservationDraft = {
   queryText: string;
   /** Optional parent query for nested PAA depth. */
   parentQueryId?: string | null;
+  /** Async provider task that produced this observation. */
+  providerTaskId?: string | null;
   provider: SerpObservationProvider;
   engine: SerpObservationEngine;
   surface: SerpObservationSurface;
   region: string;
   language: string;
+  device?: string;
   rank: number;
   url: string;
   title: string | null;

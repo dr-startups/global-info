@@ -47,6 +47,8 @@ export type OrionGoldenDeckSlide = {
   bullets?: string[];
   narrative?: string;
   assetRefs?: string[];
+  /** Provenance for factual/visual claims (serp_observation:..., provider_task:...). */
+  evidenceRefs?: string[];
   /** Short client takeaway shown above/ beside visual. */
   clientTakeaway?: string;
   /** Analytical sidebar for screenshot / media pages. */

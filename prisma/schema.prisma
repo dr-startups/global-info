@@ -640,6 +640,7 @@ model OrionReportRun {
   serpObservations   SerpObservation[]
   serpSyntheticAssets SerpSyntheticAsset[]
   providerTasks      ProviderTask[]
+  surfaceCollectionCoverage SurfaceCollectionCoverage[]
 
   @@index([caseId])
   @@index([reportVersionId])
@@ -661,6 +662,13 @@ model ProviderTask {
   nextPollAt     DateTime?
   errorCode      String?
   limitsSpent    Int?
+  lockedBy       String?
+  lockedAt       DateTime?
+  leaseUntil     DateTime?
+  submittedAt    DateTime?
+  latencyMs      Int?
+  limitsBefore   Int?
+  limitsAfter    Int?
   requestJson    Json
   responseJson   Json?
   createdAt      DateTime  @default(now())
@@ -670,7 +678,10 @@ model ProviderTask {
   case      Case?           @relation(fields: [caseId], references: [id], onDelete: SetNull)
   reportRun OrionReportRun? @relation(fields: [reportRunId], references: [id], onDelete: SetNull)
 
-  @@unique([provider, requestHash])
+  serpObservations SerpObservation[]
+  surfaceCollectionCoverage SurfaceCollectionCoverage[]
+
+  @@unique([reportRunId, provider, requestHash])
   @@index([state, nextPollAt])
   @@index([reportRunId])
   @@index([caseId])
@@ -707,8 +718,10 @@ model SerpObservation {
   auditRunId       String
   queryId          String
   queryText        String
+  parentQueryId    String?
   provider         String
   engine           String
+  device           String   @default("DESKTOP")
   surface          String   @default("organic")
   region           String
   language         String
@@ -718,6 +731,7 @@ model SerpObservation {
   snippet          String?
   domain           String?
   searchDocumentId String?
+  providerTaskId   String?
   providerStatus   String   @default("OK")
   rawPayloadJson   Json?
   capturedAt       DateTime
@@ -726,16 +740,58 @@ model SerpObservation {
   case           Case                 @relation(fields: [caseId], references: [id], onDelete: Cascade)
   auditRun       OrionReportRun       @relation(fields: [auditRunId], references: [id], onDelete: Cascade)
   searchDocument SearchDocument?      @relation(fields: [searchDocumentId], references: [id], onDelete: SetNull)
+  providerTask   ProviderTask?        @relation(fields: [providerTaskId], references: [id], onDelete: SetNull)
   syntheticLinks SerpSyntheticAssetObservation[]
 
   @@index([caseId])
   @@index([auditRunId])
   @@index([queryId])
+  @@index([providerTaskId])
   @@index([provider, engine, surface])
   @@index([url])
   @@index([capturedAt])
-  @@unique([auditRunId, provider, engine, region, language, surface, queryId, rank, url], map: "serp_obs_run_unique")
+  @@unique([auditRunId, provider, engine, region, language, device, surface, queryId, rank, url], map: "serp_obs_run_unique")
   @@map("dp_serp_observations")
+}
+
+model SurfaceCollectionCoverage {
+  id             String   @id @default(cuid())
+  reportRunId    String
+  provider       String
+  tool           String
+  providerTaskId String?
+  queryId        String
+  queryText      String
+  engine         String
+  region         String
+  language       String
+  device         String   @default("DESKTOP")
+  surface        String
+  status         String
+  resultCount    Int
+  errorCode      String?
+  capturedAt     DateTime
+  createdAt      DateTime @default(now())
+
+  reportRun     OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  providerTask  ProviderTask?  @relation(fields: [providerTaskId], references: [id], onDelete: SetNull)
+
+  @@index([reportRunId])
+  @@index([reportRunId, surface])
+  @@index([providerTaskId])
+  @@map("dp_surface_collection_coverage")
+}
+
+model ProviderAccountLimiter {
+  id              String   @id
+  windowStartedAt DateTime
+  requestCount    Int      @default(0)
+  inFlight        Int      @default(0)
+  maxConcurrent   Int
+  maxRpm          Int
+  updatedAt       DateTime @updatedAt
+
+  @@map("dp_provider_account_limiter")
 }
 
 model SerpSyntheticAsset {

@@ -23,9 +23,7 @@ function bootstrapEnv(): void {
   process.env.ORION_CLASSIC_AUDIT_MODE = "1";
   process.env.ORION_FIRST36_CEO_MODE = "1";
   process.env.ORION_GOLDEN_FORCE_LOCAL_RENDER = "1";
-  if (!process.env.ORION_CLIENT_PRODUCTION_FINALIZE) {
-    process.env.ORION_CLIENT_PRODUCTION_FINALIZE = "0";
-  }
+  process.env.ORION_CLASSIC_CLIENT_FINALIZE = "1";
 }
 
 const caseId =
@@ -62,6 +60,7 @@ async function main() {
         ORION_CLASSIC_AUDIT_MODE: process.env.ORION_CLASSIC_AUDIT_MODE,
         ORION_FIRST36_CEO_MODE: process.env.ORION_FIRST36_CEO_MODE,
         ORION_GOLDEN_FORCE_LOCAL_RENDER: process.env.ORION_GOLDEN_FORCE_LOCAL_RENDER,
+        ORION_CLASSIC_CLIENT_FINALIZE: process.env.ORION_CLASSIC_CLIENT_FINALIZE,
       },
       null,
       2

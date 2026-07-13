@@ -5,6 +5,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadRealCaseContext } from "../../orion-section-pipeline/real-case-data-adapter";
+import { prisma } from "@/server/prisma/client";
 import {
   ORION_GOLDEN_QA_STORAGE_ROOT,
   caseScopedArtifactRoot,
@@ -23,6 +24,7 @@ import { inspectClassicOrionAuditQuality } from "./orion-classic-audit-quality-i
 import { isClientProductionFinalize, isFirst36CeoMode } from "./orion-classic-live-serp-assets";
 import { evaluateClassicProviderSerpGate } from "./orion-classic-provider-serp-assets";
 import { mergeRunScopedSerpObservations } from "./merge-run-scoped-serp-observations";
+import { isArsenkinRequired } from "../../providers/arsenkin";
 import type { ExecutiveSynthesisOutput } from "../gpt/orion-executive-synthesis-from-sections";
 import type { SectionDerivedRiskMatrix } from "../sections/orion-risk-matrix-from-sections";
 
@@ -72,6 +74,8 @@ export async function runOrionClassicAuditRender(options: {
   caseId: string;
   outputRoot: string;
   clientContent?: OrionClientContent;
+  /** Override post-review reportRunId for clean canary runs. */
+  reportRunIdOverride?: string;
 }): Promise<{
   caseId: string;
   outputRoot: string;
@@ -84,11 +88,15 @@ export async function runOrionClassicAuditRender(options: {
   readiness: "INTERNAL_PREVIEW" | "CEO_READY";
   ceoReady: boolean;
   warnings: string[];
+  reportRunId?: string;
 }> {
   const { caseId, outputRoot } = options;
   mkdirSync(outputRoot, { recursive: true });
 
-  const clientContent = options.clientContent ?? loadPostReviewClientContent(caseId);
+  const loaded = options.clientContent ?? loadPostReviewClientContent(caseId);
+  const clientContent: OrionClientContent = options.reportRunIdOverride
+    ? { ...loaded, reportRunId: options.reportRunIdOverride }
+    : loaded;
   const ctx = await loadRealCaseContext(caseId, { locale: "ru", buildFreshReportJson: false });
   const first36CeoModeEarly = isFirst36CeoMode();
   if (first36CeoModeEarly) {
@@ -115,10 +123,30 @@ export async function runOrionClassicAuditRender(options: {
       console.info("[arsenkin] enrich", arsenkinEnrich);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      writeJson(join(outputRoot, "arsenkin-enrich.json"), { skipped: true, reason: message });
+      writeJson(join(outputRoot, "arsenkin-enrich.json"), {
+        skipped: true,
+        blocked: isArsenkinRequired(),
+        reason: message,
+      });
       console.warn("[arsenkin] enrich failed", message);
+      if (isArsenkinRequired()) throw err;
     }
   }
+  const surfaceCoverage = await prisma.surfaceCollectionCoverage.findMany({
+    where: { reportRunId: clientContent.reportRunId, provider: "arsenkin" },
+    orderBy: { capturedAt: "asc" },
+  });
+  writeJson(join(outputRoot, "surface-coverage.json"), {
+    reportRunId: clientContent.reportRunId,
+    rows: surfaceCoverage,
+  });
+  writeJson(
+    join(outputRoot, "provider-tasks.json"),
+    await prisma.providerTask.findMany({
+      where: { reportRunId: clientContent.reportRunId, provider: "arsenkin" },
+      orderBy: { createdAt: "asc" },
+    })
+  );
   const baseInventory = buildFullEvidenceInventory({
     caseId,
     reportRunId: clientContent.reportRunId,
@@ -248,7 +276,7 @@ export async function runOrionClassicAuditRender(options: {
 
   const verdict =
     clientPolicy.passed && visual.passed && classicQa.passed ? "PASS" : "FAIL";
-  const ceoReady = Boolean(classicQa.ceoReady);
+  const ceoReady = Boolean(classicQa.ceoReady && clientFinalize);
   const readiness = ceoReady ? "CEO_READY" : "INTERNAL_PREVIEW";
 
   if (verdict === "FAIL") {
@@ -294,5 +322,6 @@ export async function runOrionClassicAuditRender(options: {
     readiness,
     ceoReady,
     warnings,
+    reportRunId: clientContent.reportRunId,
   };
 }

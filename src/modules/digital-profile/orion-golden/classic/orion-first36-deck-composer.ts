@@ -530,7 +530,7 @@ export function buildDeterministicVisualAnalysis(
     const fromAiSerp =
       /ai-serp|ai_answer|ИИ-ответ|AI Overview|Алиса|не энциклопед/i.test(
         `${caption} ${title} ${provenanceLabel(asset)} ${asset.assetRef}`
-      ) || Boolean((asset.rawPayloadJson as { notKnowledgePanel?: boolean } | undefined)?.notKnowledgePanel);
+      ) || Boolean(asset.meta?.notKnowledgePanel);
     const regionKpis =
       slot.region === "UAE" ? themeSet?.uae : slot.region === "RU" ? themeSet?.ru : themeSet?.ru;
     const wikiStatus = String(regionKpis?.wikipediaStatus ?? "").toUpperCase();
@@ -540,7 +540,7 @@ export function buildDeterministicVisualAnalysis(
       /другого субъекта|однофамил|не является профилем|дворянский род|WRONG_SUBJECT/i.test(
         `${caption} ${title}`
       ) ||
-      Boolean((asset as { subjectBinding?: string }).subjectBinding === "WRONG_SUBJECT");
+      asset.meta?.subjectBinding === "WRONG_SUBJECT";
     const absent = wikiStatus === "ABSENT" || (!wrongSubject && wikiStatus !== "EXACT_SUBJECT");
     sidebarMode = wrongSubject || absent || fromAiSerp ? "status" : "interpretation";
     if (fromAiSerp) {
@@ -822,8 +822,7 @@ function pickAssetForSlot(
     (a) => a.status === "ready" && hasImageBytes(a) && !usedAssets.has(a.assetRef)
   );
   const matched = re ? ready.filter((a) => re.test(a.assetRef)) : ready;
-  const preferred = matched.find((a) => a.assetRef === "ru_url_audit");
-  return preferred ?? matched[0] ?? null;
+  return matched[0] ?? null;
 }
 
 function attachVisual(
@@ -892,6 +891,7 @@ function attachVisual(
     title: slot.title,
     pageNumber: slot.page,
     assetRefs: [assetRef],
+    evidenceRefs: asset.evidenceRefs?.length ? [...asset.evidenceRefs] : slide.evidenceRefs,
     clientTakeaway: analysis.headlineConclusion,
     visualAnalysis: analysis,
     bullets: [
@@ -948,6 +948,7 @@ export function composeOrionFirst36CeoDeck(
           title: slot.title,
           pageNumber: slot.page,
           assetRefs: [asset.assetRef],
+          evidenceRefs: asset.evidenceRefs?.length ? [...asset.evidenceRefs] : undefined,
           clientTakeaway: analysis.headlineConclusion,
           visualAnalysis: analysis,
           bullets: [
@@ -979,6 +980,7 @@ export function composeOrionFirst36CeoDeck(
           title: slot.title,
           pageNumber: slot.page,
           assetRefs: [asset.assetRef],
+          evidenceRefs: asset.evidenceRefs?.length ? [...asset.evidenceRefs] : undefined,
           clientTakeaway: analysis.headlineConclusion,
           visualAnalysis: analysis,
           bullets: [

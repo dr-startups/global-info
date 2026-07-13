@@ -202,9 +202,10 @@ async function main() {
     urls,
     payload: load("get-indexation.json"),
   });
-  assert.equal(idx.length, 2);
+  assert.equal(idx.length, 4);
   assert.equal(idx[0]?.surface, "indexation");
-  assert.equal(idx[0]?.rawPayloadJson?.yandex, true);
+  assert.equal(idx[0]?.rawPayloadJson?.engine, "YANDEX");
+  assert.deepEqual([...new Set(idx.map((row) => row.engine))].sort(), ["GOOGLE", "YANDEX"]);
 
   console.log(
     JSON.stringify(

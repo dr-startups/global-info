@@ -82,8 +82,23 @@ async function main(): Promise<void> {
     ? readJson<Record<string, unknown>>(join(fromDir, "run-scoped-serp-merge.json"))
     : undefined;
   const assets = existsSync(join(fromDir, "report-assets.json"))
-    ? readJson<Array<{ kind?: string }>>(join(fromDir, "report-assets.json"))
+    ? readJson<Array<{ kind?: string; assetRef?: string; status?: string; evidenceRefs?: string[] }>>(join(fromDir, "report-assets.json"))
     : [];
+  const coverageSummary = existsSync(join(fromDir, "surface-coverage.json"))
+    ? readJson<{ reportRunId?: string; rows?: Array<Record<string, unknown>> }>(join(fromDir, "surface-coverage.json"))
+    : undefined;
+  const enrich = existsSync(join(fromDir, "arsenkin-enrich.json"))
+    ? readJson<{ skipped?: boolean; mode?: string; blocked?: boolean; reason?: string }>(
+        join(fromDir, "arsenkin-enrich.json")
+      )
+    : undefined;
+  const geometryReport = existsSync(join(fromDir, "geometry-report.json"))
+    ? readJson<{ overlaps?: unknown[]; overflow?: unknown[]; blank?: unknown[] }>(join(fromDir, "geometry-report.json"))
+    : undefined;
+  const providerTasks = existsSync(join(fromDir, "provider-tasks.json"))
+    ? readJson<Array<{ reportRunId?: string; state?: string }>>(join(fromDir, "provider-tasks.json"))
+    : undefined;
+  const expectedRunId = String((runScopedMerge as { auditRunId?: string } | undefined)?.auditRunId ?? "").trim() || undefined;
 
   const result = inspectFirst36Acceptance({
     slideCount: deck.slideCount,
@@ -104,6 +119,9 @@ async function main(): Promise<void> {
           }
         | undefined,
       statusBadge: s.statusBadge as { label?: string } | undefined,
+      assetRefs: Array.isArray(s.assetRefs) ? s.assetRefs.map(String) : undefined,
+      evidenceRefs: Array.isArray(s.evidenceRefs) ? s.evidenceRefs.map(String) : undefined,
+      factualClaims: s.factualClaims as Array<{ text?: string; evidenceRefs?: string[] }> | undefined,
     })),
     themeSet: themeSet as {
       ru?: { linksTotal?: number; linksAdverse?: number; wikipediaStatus?: string };
@@ -115,6 +133,24 @@ async function main(): Promise<void> {
       observationCount?: number;
     },
     assetKinds: assets.map((a) => String(a.kind ?? "")),
+    assets: assets
+      .filter((a): a is { assetRef: string; status?: string; evidenceRefs?: string[] } => Boolean(a.assetRef))
+      .map((a) => ({ assetRef: a.assetRef, status: a.status, evidenceRefs: a.evidenceRefs })),
+    paths: {
+      pptx: join(fromDir, "rendered-client.pptx"),
+      pdf: join(fromDir, "rendered-client.pdf"),
+      pagesPngDir: join(fromDir, "pages-png"),
+    },
+    arsenkinRequired: process.env.ARSENKIN_REQUIRED === "1",
+    arsenkinEnrich: enrich,
+    coverageSummary: coverageSummary as {
+      reportRunId?: string;
+      rows?: Array<{ reportRunId?: string; tool?: string; engine?: string; region?: string; surface?: string; status?: string }>;
+    },
+    expectedRunId,
+    geometryReport,
+    providerTasks,
+    clientFinalize: process.env.ORION_CLASSIC_CLIENT_FINALIZE === "1",
   });
 
   const outRoot =
@@ -128,6 +164,7 @@ async function main(): Promise<void> {
       {
         fromDir,
         passed: result.passed,
+        ceoReady: result.ceoReady,
         issueCount: result.issues.length,
         issues: result.issues,
         pdf: existsSync(join(fromDir, "rendered-client.pdf"))
@@ -149,6 +186,7 @@ async function main(): Promise<void> {
     JSON.stringify(
       {
         passed: result.passed,
+        ceoReady: result.ceoReady,
         issueCount: result.issues.length,
         qaPath,
         issues: result.issues.slice(0, 30),

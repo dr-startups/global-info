@@ -39,14 +39,16 @@ export async function persistSerpObservations(
       select: { id: true },
     });
 
-    const row = await prisma.serpObservation.create({
-      data: {
+    const data = {
         caseId: draft.caseId,
         auditRunId: draft.auditRunId,
         queryId: draft.queryId,
         queryText: draft.queryText,
+        parentQueryId: draft.parentQueryId ?? null,
+        providerTaskId: draft.providerTaskId ?? null,
         provider: draft.provider,
         engine: draft.engine,
+        device: draft.device ?? "DESKTOP",
         surface: draft.surface,
         region: draft.region,
         language: draft.language,
@@ -59,7 +61,24 @@ export async function persistSerpObservations(
         providerStatus: draft.providerStatus,
         rawPayloadJson: draft.rawPayloadJson ? toJson(draft.rawPayloadJson) : undefined,
         capturedAt: draft.capturedAt,
+      };
+    const row = await prisma.serpObservation.upsert({
+      where: {
+        auditRunId_provider_engine_region_language_device_surface_queryId_rank_url: {
+          auditRunId: draft.auditRunId,
+          provider: draft.provider,
+          engine: draft.engine,
+          region: draft.region,
+          language: draft.language,
+          device: draft.device ?? "DESKTOP",
+          surface: draft.surface,
+          queryId: draft.queryId,
+          rank: draft.rank,
+          url: draft.url,
+        },
       },
+      create: data,
+      update: data,
     });
 
     out.push({

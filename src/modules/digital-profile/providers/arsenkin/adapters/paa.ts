@@ -147,6 +147,34 @@ export function mapPaaToObservations(input: {
       surface: "paa",
     });
     const items = extractPaaItems(input.payload, queryText);
+    if (items.length === 0) {
+      drafts.push({
+        caseId: input.caseId,
+        auditRunId: input.auditRunId,
+        queryId: paaQueryId,
+        parentQueryId,
+        queryText,
+        provider: "arsenkin",
+        engine: "GOOGLE",
+        surface: "paa",
+        region: input.regionLabel,
+        language: input.language,
+        rank: 1,
+        url: syntheticPaaUrl(queryText, "__absent__", 1),
+        title: `PAA: не найдено (${queryText})`,
+        snippet: "People Also Ask блок отсутствует или пуст для запроса.",
+        domain: "paa",
+        providerStatus: "NO_RESULTS",
+        rawPayloadJson: {
+          source: "arsenkin",
+          tool: "paa",
+          engineNote: "google-only",
+          kind: "absent",
+        },
+        capturedAt,
+      });
+      continue;
+    }
     items.forEach((item, idx) => {
       const rank = idx + 1;
       const url = item.link?.trim() || syntheticPaaUrl(queryText, item.question, rank);

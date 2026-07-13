@@ -246,6 +246,16 @@ export type ReportAssetV1 = {
   captureId?: string;
   /** Structured red/amber frame reasons — never parse from caption. */
   highlightExplanations?: import("./highlight-explanation").HighlightExplanation[];
+  /**
+   * Typed asset metadata for First36 analysis (not provider raw payloads).
+   * Prefer this over casting unknown fields onto ReportAssetV1.
+   */
+  meta?: {
+    notKnowledgePanel?: boolean;
+    subjectBinding?: "EXACT_SUBJECT" | "WRONG_SUBJECT" | "AMBIGUOUS" | "ABSENT" | string;
+    arsenkinTool?: string;
+    surface?: string;
+  };
 };
 
 async function buildProviderSerpAsset(input: {

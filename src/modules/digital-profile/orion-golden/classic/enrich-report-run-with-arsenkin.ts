@@ -7,8 +7,10 @@ import { prisma } from "@/server/prisma/client";
 import { persistSerpObservations } from "../../serp-observation/persist";
 import {
   collectArsenkinPilotSurfaces,
+  arsenkinTools,
   isArsenkinConfigured,
   isArsenkinEnabled,
+  isArsenkinRequired,
 } from "../../providers/arsenkin";
 
 export type ArsenkinRenderEnrichResult = {
@@ -25,6 +27,58 @@ export type ArsenkinRenderEnrichResult = {
     indexation?: number;
   };
 };
+
+export type ArsenkinCoverageRow = { surface: string; engine: string; region: string };
+
+/** Required mode only accepts the concrete First36 surfaces selected by ARSENKIN_TOOLS. */
+export function missingMandatoryArsenkinCoverage(
+  rows: ArsenkinCoverageRow[],
+  tools: readonly string[],
+  coverageRows?: Array<{ surface: string; engine: string; region: string; status?: string }>
+): string[] {
+  const covered = (surface: string, engine: string, region: "RU" | "UAE") => {
+    const matchRegion = (r: string) =>
+      region === "UAE" ? /UAE|AE|INTL/i.test(r) : !/UAE|AE|INTL/i.test(r);
+    if (
+      rows.some(
+        (row) =>
+          row.surface === surface &&
+          String(row.engine).toUpperCase() === engine &&
+          matchRegion(row.region)
+      )
+    ) {
+      return true;
+    }
+    // Successful empty API responses are recorded as coverage NO_RESULTS without observations.
+    return Boolean(
+      coverageRows?.some(
+        (row) =>
+          row.surface === surface &&
+          String(row.engine).toUpperCase() === engine &&
+          matchRegion(row.region) &&
+          /^(OK|NO_RESULTS)$/i.test(String(row.status ?? "OK"))
+      )
+    );
+  };
+  const missing: string[] = [];
+  if (
+    tools.includes("check-top") &&
+    !covered("organic", "GOOGLE", "RU") &&
+    !covered("organic", "YANDEX", "RU")
+  ) {
+    missing.push("check-top:organic:RU");
+  }
+  if (tools.includes("suggest")) {
+    if (!covered("autocomplete", "YANDEX", "RU")) missing.push("suggest:yandex:RU");
+    if (!covered("autocomplete", "GOOGLE", "RU")) missing.push("suggest:google:RU");
+    if (!covered("autocomplete", "GOOGLE", "UAE")) missing.push("suggest:google:UAE");
+  }
+  if (tools.includes("paa")) {
+    if (!covered("paa", "GOOGLE", "RU")) missing.push("paa:google:RU");
+    if (!covered("paa", "GOOGLE", "UAE")) missing.push("paa:google:UAE");
+  }
+  return missing;
+}
 
 function isAi(row: { surface: string; engine: string; region: string }): boolean {
   return row.surface === "ai_answer";
@@ -62,13 +116,21 @@ export async function enrichReportRunWithArsenkin(input: {
   /** Minimum existing arsenkin observations to treat as already enriched. */
   skipIfAtLeast?: number;
 }): Promise<ArsenkinRenderEnrichResult> {
+  const required = isArsenkinRequired();
+  const enabledTools = arsenkinTools();
   if (!isArsenkinEnabled()) {
+    if (required) throw new Error("ARSENKIN_REQUIRED but ARSENKIN_ENABLED is off");
     return { skipped: true, reason: "ARSENKIN_ENABLED off" };
   }
   if (process.env.ARSENKIN_ENRICH_ON_RENDER === "0") {
+    if (required) throw new Error("ARSENKIN_REQUIRED but ARSENKIN_ENRICH_ON_RENDER=0");
     return { skipped: true, reason: "ARSENKIN_ENRICH_ON_RENDER=0" };
   }
+  if (required && process.env.ARSENKIN_PILOT_FIXTURES === "1") {
+    throw new Error("ARSENKIN_REQUIRED forbids fixture enrichment");
+  }
   if (!isArsenkinConfigured() && process.env.ARSENKIN_PILOT_FIXTURES !== "1") {
+    if (required) throw new Error("ARSENKIN_REQUIRED but ARSENKIN_API_TOKEN missing");
     return { skipped: true, reason: "ARSENKIN_API_TOKEN missing" };
   }
 
@@ -118,8 +180,22 @@ export async function enrichReportRunWithArsenkin(input: {
     !needCheckH &&
     !needIndexation
   ) {
+    const existingCoverage = await prisma.surfaceCollectionCoverage.findMany({
+      where: { reportRunId: input.auditRunId, provider: "arsenkin" },
+      select: { surface: true, engine: true, region: true, status: true },
+    });
+    const missing = missingMandatoryArsenkinCoverage(
+      existingRows,
+      enabledTools,
+      existingCoverage
+    );
+    if (required && missing.length > 0) {
+      throw new Error(`ARSENKIN_REQUIRED coverage missing: ${missing.join(", ")}`);
+    }
     return {
       skipped: true,
+      mode: "live",
+      persisted: 0,
       reason: `already_enriched organic=${organicCount} paa=${paaCount} suggest=${suggestCount} ai=${aiRows.length} meta=${pageMetaCount} idx=${indexationCount}`,
     };
   }
@@ -133,7 +209,16 @@ export async function enrichReportRunWithArsenkin(input: {
   if (aiSerpTargets.length > 0) tools.push("ai-serp");
   if (needCheckH) tools.push("check-h");
   if (needIndexation) tools.push("indexation");
+  if (required) {
+    for (const tool of enabledTools) {
+      if (!tools.includes(tool)) tools.push(tool);
+    }
+  }
   if (tools.length === 0) {
+    const missing = missingMandatoryArsenkinCoverage(existingRows, enabledTools);
+    if (required && missing.length > 0) {
+      throw new Error(`ARSENKIN_REQUIRED coverage missing: ${missing.join(", ")}`);
+    }
     return { skipped: true, reason: "surfaces_complete" };
   }
 
@@ -162,6 +247,21 @@ export async function enrichReportRunWithArsenkin(input: {
       )
   );
   const persisted = await persistSerpObservations(fresh);
+  const coverageRows = await prisma.surfaceCollectionCoverage.findMany({
+    where: { reportRunId: input.auditRunId, provider: "arsenkin" },
+    select: { surface: true, engine: true, region: true, status: true },
+  });
+  const missing = missingMandatoryArsenkinCoverage(
+    [...existingRows, ...fresh],
+    enabledTools,
+    coverageRows
+  );
+  if (required) {
+    if (collected.mode !== "live") throw new Error("ARSENKIN_REQUIRED requires live enrichment");
+    if (missing.length > 0) {
+      throw new Error(`ARSENKIN_REQUIRED coverage missing: ${missing.join(", ")}`);
+    }
+  }
   return {
     skipped: false,
     mode: collected.mode,

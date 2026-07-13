@@ -3,6 +3,7 @@
  */
 
 import { hasDanglingSentenceTail, sanitizeClientLanguage } from "./client-language";
+import { existsSync, readdirSync } from "node:fs";
 
 export type First36AcceptanceIssue = {
   code: string;
@@ -28,6 +29,9 @@ export type First36AcceptanceInput = {
     };
     statusBadge?: { label?: string };
     blockedReason?: string;
+    assetRefs?: string[];
+    evidenceRefs?: string[];
+    factualClaims?: Array<{ text?: string; evidenceRefs?: string[] }>;
   }>;
   themeSet?: {
     ru?: { linksTotal?: number; linksAdverse?: number; wikipediaStatus?: string };
@@ -39,6 +43,20 @@ export type First36AcceptanceInput = {
     observationCount?: number;
   };
   assetKinds?: string[];
+  assets?: Array<{ assetRef: string; status?: string; evidenceRefs?: string[] }>;
+  requiredVisualAssetRefs?: string[];
+  typecheckPassed?: boolean;
+  paths?: { pptx?: string; pdf?: string; pagesPngDir?: string };
+  arsenkinRequired?: boolean;
+  arsenkinEnrich?: { skipped?: boolean; mode?: string; blocked?: boolean; reason?: string };
+  coverageSummary?: {
+    reportRunId?: string;
+    rows?: Array<{ reportRunId?: string; tool?: string; engine?: string; region?: string; surface?: string; status?: string }>;
+  };
+  expectedRunId?: string;
+  geometryReport?: { overlaps?: unknown[]; overflow?: unknown[]; blank?: unknown[] };
+  clientFinalize?: boolean;
+  providerTasks?: Array<{ reportRunId?: string; state?: string }>;
 };
 
 const FORBIDDEN =
@@ -50,14 +68,110 @@ const EMPTY_STUB =
 export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
   passed: boolean;
   issues: First36AcceptanceIssue[];
+  ceoReady: boolean;
 } {
   const issues: First36AcceptanceIssue[] = [];
 
+  if (input.typecheckPassed === false) {
+    issues.push({ code: "typecheck-failed", detail: "typecheckPassed=false" });
+  }
   if (input.slideCount !== 36) {
     issues.push({
       code: "page-count",
       detail: `expected 36 slides, got ${input.slideCount}`,
     });
+  }
+  if (input.slides.length !== 36) {
+    issues.push({ code: "slide-object-count", detail: `expected 36 slide objects, got ${input.slides.length}` });
+  }
+  const pageNumbers = input.slides.map((s) => s.pageNumber);
+  const expectedPages = Array.from({ length: 36 }, (_, i) => i + 1);
+  if (
+    pageNumbers.length !== 36 ||
+    new Set(pageNumbers).size !== 36 ||
+    expectedPages.some((page) => !pageNumbers.includes(page))
+  ) {
+    issues.push({ code: "page-numbers", detail: "pageNumber must be unique and cover 1..36" });
+  }
+  if (input.paths?.pptx && !existsSync(input.paths.pptx)) {
+    issues.push({ code: "pptx-missing", detail: input.paths.pptx });
+  }
+  if (input.paths?.pdf && !existsSync(input.paths.pdf)) {
+    issues.push({ code: "pdf-missing", detail: input.paths.pdf });
+  }
+  if (input.paths?.pagesPngDir) {
+    const pngs = existsSync(input.paths.pagesPngDir)
+      ? readdirSync(input.paths.pagesPngDir).filter((name) => /\.png$/i.test(name))
+      : [];
+    if (pngs.length !== 36) {
+      issues.push({ code: "png-count", detail: `expected 36 PNGs, got ${pngs.length}` });
+    }
+  }
+  if (input.runScopedMerge?.usedRunScoped !== true) {
+    issues.push({ code: "run-scoped-required", detail: "usedRunScoped must be true" });
+  }
+  if ((input.runScopedMerge?.observationCount ?? 0) <= 0) {
+    issues.push({ code: "observations-required", detail: "observationCount must be > 0" });
+  }
+  if (input.expectedRunId) {
+    if (input.coverageSummary?.reportRunId && input.coverageSummary.reportRunId !== input.expectedRunId) {
+      issues.push({ code: "foreign-coverage-run", detail: input.coverageSummary.reportRunId });
+    }
+    for (const row of input.coverageSummary?.rows ?? []) {
+      if (row.reportRunId && row.reportRunId !== input.expectedRunId) {
+        issues.push({ code: "foreign-coverage-run", detail: row.reportRunId });
+        break;
+      }
+    }
+    for (const task of input.providerTasks ?? []) {
+      if (task.reportRunId && task.reportRunId !== input.expectedRunId) {
+        issues.push({ code: "foreign-provider-task-run", detail: task.reportRunId });
+        break;
+      }
+    }
+  }
+  if (input.arsenkinRequired) {
+    if (input.arsenkinEnrich?.mode !== "live" || input.arsenkinEnrich?.skipped || input.arsenkinEnrich?.blocked) {
+      issues.push({ code: "arsenkin-required-enrich", detail: input.arsenkinEnrich?.reason ?? "live enrichment required" });
+    }
+    if ((input.providerTasks ?? []).some((task) => /FAILED|CANCELLED|SUBMIT_UNKNOWN/i.test(String(task.state)))) {
+      issues.push({ code: "arsenkin-task-failed", detail: "provider task failed/cancelled/submit unknown" });
+    }
+    const rows = input.coverageSummary?.rows ?? [];
+    const has = (tool: string, engine: string, region: "RU" | "UAE", surface: string) =>
+      rows.some(
+        (r) =>
+          r.tool === tool &&
+          String(r.engine).toUpperCase() === engine &&
+          r.surface === surface &&
+          (region === "UAE" ? /UAE|AE|INTL/i.test(String(r.region)) : !/UAE|AE|INTL/i.test(String(r.region)))
+      );
+    for (const [tool, engine, region, surface] of [
+      ["check-top", "GOOGLE", "RU", "organic"],
+      ["suggest", "YANDEX", "RU", "autocomplete"],
+      ["suggest", "GOOGLE", "RU", "autocomplete"],
+      ["suggest", "GOOGLE", "UAE", "autocomplete"],
+      ["paa", "GOOGLE", "RU", "paa"],
+      ["paa", "GOOGLE", "UAE", "paa"],
+    ] as const) {
+      if (!has(tool, engine, region, surface)) {
+        issues.push({ code: "arsenkin-coverage", detail: `${tool}:${engine}:${region}:${surface}` });
+      }
+    }
+  }
+  if (input.geometryReport) {
+    for (const [name, values] of Object.entries(input.geometryReport)) {
+      if (Array.isArray(values) && values.length > 0) {
+        issues.push({ code: `geometry-${name}`, detail: `${values.length} geometry violations` });
+      }
+    }
+  }
+  const assetByRef = new Map((input.assets ?? []).map((asset) => [asset.assetRef, asset]));
+  for (const ref of input.requiredVisualAssetRefs ?? []) {
+    const asset = assetByRef.get(ref);
+    if (!asset || asset.status !== "ready" || (asset.evidenceRefs?.length ?? 0) === 0) {
+      issues.push({ code: "required-visual-asset", detail: ref });
+    }
   }
 
   const ruTotal = Number(input.themeSet?.ru?.linksTotal ?? 0);
@@ -109,6 +223,16 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
           detail: t.slice(0, 120),
         });
       }
+    }
+    if ((slide.factualClaims?.length ?? 0) > 0) {
+      for (const claim of slide.factualClaims ?? []) {
+        if (claim.text?.trim() && (claim.evidenceRefs?.length ?? 0) === 0) {
+          issues.push({ code: "claim-without-evidence", page, detail: claim.text.slice(0, 120) });
+        }
+      }
+    }
+    if (slide.visualAnalysis && (slide.evidenceRefs?.length ?? 0) === 0) {
+      issues.push({ code: "visual-analysis-without-evidence", page, detail: "visualAnalysis requires evidenceRefs" });
     }
 
     const headers = (slide.table?.headers ?? []).map((h) => String(h).toLowerCase());
@@ -165,6 +289,15 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
     }
   }
 
+  for (const page of [19, 36]) {
+    const slide = input.slides.find((s) => s.pageNumber === page);
+    const content = [slide?.title, slide?.narrative, ...(slide?.bullets ?? []), slide?.clientTakeaway]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    if (!content) issues.push({ code: "empty-required-slide", page, detail: `page ${page} has no content` });
+  }
+
   // Related pages 20–22 must not share identical analysis blobs.
   const related = input.slides.filter((s) => s.pageNumber >= 20 && s.pageNumber <= 22);
   if (related.length >= 2) {
@@ -180,5 +313,6 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
     }
   }
 
-  return { passed: issues.length === 0, issues };
+  const passed = issues.length === 0;
+  return { passed, issues, ceoReady: passed && input.clientFinalize === true };
 }

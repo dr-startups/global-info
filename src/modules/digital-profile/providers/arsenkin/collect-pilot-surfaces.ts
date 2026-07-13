@@ -10,6 +10,9 @@ import { createArsenkinClientFromEnv } from "./client";
 import { isArsenkinConfigured, isArsenkinToolEnabled, type ArsenkinToolName } from "./flags";
 import { ensureArsenkinTask, pollArsenkinTask } from "./poll-worker";
 import { createMemoryProviderTaskStore, type ProviderTaskStore } from "./provider-task-store";
+import { createPrismaProviderTaskStore } from "./prisma-provider-task-store";
+import { recordSurfaceCoverageFromDrafts } from "./surface-coverage";
+import { upsertSurfaceCollectionCoverage } from "./surface-coverage";
 import { buildCheckTopRequest, mapCheckTopToObservations } from "./adapters/check-top";
 import { buildSuggestRequest, mapSuggestToObservations } from "./adapters/suggest";
 import { buildPaaRequest, mapPaaToObservations } from "./adapters/paa";
@@ -18,6 +21,7 @@ import { buildCheckHRequest, mapCheckHToObservations } from "./adapters/check-h"
 import { buildIndexationRequest, mapIndexationToObservations } from "./adapters/indexation";
 import { ARSENKIN_REGION, pilotSeForRegion } from "./regions";
 import type { SerpObservationDraft } from "../../serp-observation/types";
+import { buildSerpQueryId } from "../../serp-observation/query-id";
 
 const FIX = join(
   process.cwd(),
@@ -68,7 +72,7 @@ async function completeTask(
   store: ProviderTaskStore,
   toolName: string,
   data: Record<string, unknown>,
-  meta: { caseId: string; auditRunId: string },
+  meta: { caseId: string; auditRunId: string; taskIds?: string[] },
   waitTimeoutMs: number
 ): Promise<Record<string, unknown>> {
   let row = await ensureArsenkinTask(client, store, {
@@ -90,18 +94,23 @@ async function completeTask(
   if (row.state !== "DONE" || !row.responseJson) {
     throw new Error(`Arsenkin task ${row.state}: ${row.errorCode ?? toolName}`);
   }
+  meta.taskIds?.push(row.id);
   return row.responseJson;
 }
 
 export async function collectArsenkinPilotSurfaces(
   input: ArsenkinPilotCollectInput
 ): Promise<ArsenkinPilotCollectResult> {
-  const store = input.store ?? createMemoryProviderTaskStore();
   const live =
     !input.fixturesOnly &&
     isArsenkinConfigured() &&
     (input.client != null || createArsenkinClientFromEnv() != null);
+  if (!input.fixturesOnly && !live) {
+    throw new Error("Arsenkin live collection requires a configured client and API token");
+  }
   const client = input.client ?? (live ? createArsenkinClientFromEnv() : null);
+  // Persist real provider jobs across processes; fixture work stays isolated in memory.
+  const store = live ? createPrismaProviderTaskStore() : input.store ?? createMemoryProviderTaskStore();
   const drafts: SerpObservationDraft[] = [];
   const taskIds: string[] = [];
   const waitTimeoutMs = input.waitTimeoutMs ?? 10 * 60_000;
@@ -123,7 +132,7 @@ export async function collectArsenkinPilotSurfaces(
     });
     const payload =
       live && client
-        ? await completeTask(client, store, "check-top", req.data, input, waitTimeoutMs)
+        ? await completeTask(client, store, "check-top", req.data, { ...input, taskIds }, waitTimeoutMs)
         : loadFix("get-check-top.json");
     drafts.push(
       ...mapCheckTopToObservations({
@@ -149,7 +158,7 @@ export async function collectArsenkinPilotSurfaces(
     });
     const payload =
       live && client
-        ? await completeTask(client, store, "check-top", req.data, input, waitTimeoutMs)
+        ? await completeTask(client, store, "check-top", req.data, { ...input, taskIds }, waitTimeoutMs)
         : {
             result: {
               result: {
@@ -185,7 +194,7 @@ export async function collectArsenkinPilotSurfaces(
     });
     const payload =
       live && client
-        ? await completeTask(client, store, "suggest", req.data, input, waitTimeoutMs)
+        ? await completeTask(client, store, "suggest", req.data, { ...input, taskIds }, waitTimeoutMs)
         : loadFix("get-suggest.json");
     drafts.push(
       ...mapSuggestToObservations({
@@ -195,6 +204,62 @@ export async function collectArsenkinPilotSurfaces(
         language: "ru",
         queries: [ruQuery],
         se: 1,
+        payload,
+      })
+    );
+  }
+
+  // --- suggest RU (Google) ---
+  if (want("suggest")) {
+    const req = buildSuggestRequest({
+      queries: [ruQuery],
+      se: 2,
+      region: ARSENKIN_REGION.GOOGLE_MOSCOW,
+      google_domain: "www.google.ru",
+      google_from: "RU",
+      google_lang: "ru",
+      depth: 1,
+    });
+    const payload =
+      live && client
+        ? await completeTask(client, store, "suggest", req.data, { ...input, taskIds }, waitTimeoutMs)
+        : loadFix("get-suggest.json");
+    drafts.push(
+      ...mapSuggestToObservations({
+        caseId: input.caseId,
+        auditRunId: input.auditRunId,
+        regionLabel: "RU",
+        language: "ru",
+        queries: [ruQuery],
+        se: 2,
+        payload,
+      })
+    );
+  }
+
+  // --- suggest UAE (Google) ---
+  if (want("suggest") && input.queriesUae.length > 0) {
+    const req = buildSuggestRequest({
+      queries: [uaeQuery],
+      se: 2,
+      region: ARSENKIN_REGION.GOOGLE_UAE,
+      google_domain: "www.google.ae",
+      google_from: "AE",
+      google_lang: "en",
+      depth: 1,
+    });
+    const payload =
+      live && client
+        ? await completeTask(client, store, "suggest", req.data, { ...input, taskIds }, waitTimeoutMs)
+        : loadFix("get-suggest.json");
+    drafts.push(
+      ...mapSuggestToObservations({
+        caseId: input.caseId,
+        auditRunId: input.auditRunId,
+        regionLabel: "UAE",
+        language: "en",
+        queries: [uaeQuery],
+        se: 2,
         payload,
       })
     );
@@ -210,7 +275,7 @@ export async function collectArsenkinPilotSurfaces(
     });
     const payload =
       live && client
-        ? await completeTask(client, store, "paa", req.data, input, waitTimeoutMs)
+        ? await completeTask(client, store, "paa", req.data, { ...input, taskIds }, waitTimeoutMs)
         : loadFix("get-paa.json");
     drafts.push(
       ...mapPaaToObservations({
@@ -219,6 +284,33 @@ export async function collectArsenkinPilotSurfaces(
         regionLabel: "RU",
         language: "ru",
         queries: [ruQuery],
+        payload,
+      })
+    );
+  }
+
+  // --- paa UAE (Google-only) ---
+  if (want("paa") && input.queriesUae.length > 0) {
+    const req = buildPaaRequest({
+      queries: [uaeQuery],
+      region: ARSENKIN_REGION.GOOGLE_UAE,
+      google_domain: "www.google.ae",
+      google_from: "AE",
+      google_lang: "en",
+      depth: 1,
+      count: 10,
+    });
+    const payload =
+      live && client
+        ? await completeTask(client, store, "paa", req.data, { ...input, taskIds }, waitTimeoutMs)
+        : loadFix("get-paa.json");
+    drafts.push(
+      ...mapPaaToObservations({
+        caseId: input.caseId,
+        auditRunId: input.auditRunId,
+        regionLabel: "UAE",
+        language: "en",
+        queries: [uaeQuery],
         payload,
       })
     );
@@ -238,7 +330,7 @@ export async function collectArsenkinPilotSurfaces(
       });
       const payload =
         live && client
-          ? await completeTask(client, store, "ai-serp", req.data, input, waitTimeoutMs)
+        ? await completeTask(client, store, "ai-serp", req.data, { ...input, taskIds }, waitTimeoutMs)
           : loadFix("get-ai-serp.json");
       drafts.push(
         ...mapAiSerpToObservations({
@@ -261,7 +353,7 @@ export async function collectArsenkinPilotSurfaces(
       });
       const payload =
         live && client
-          ? await completeTask(client, store, "ai-serp", req.data, input, waitTimeoutMs)
+        ? await completeTask(client, store, "ai-serp", req.data, { ...input, taskIds }, waitTimeoutMs)
           : loadFix("get-ai-serp-google.json");
       drafts.push(
         ...mapAiSerpToObservations({
@@ -284,7 +376,7 @@ export async function collectArsenkinPilotSurfaces(
       });
       const payload =
         live && client
-          ? await completeTask(client, store, "ai-serp", req.data, input, waitTimeoutMs)
+        ? await completeTask(client, store, "ai-serp", req.data, { ...input, taskIds }, waitTimeoutMs)
           : loadFix("get-ai-serp-google-uae.json");
       drafts.push(
         ...mapAiSerpToObservations({
@@ -309,7 +401,7 @@ export async function collectArsenkinPilotSurfaces(
     const req = buildCheckHRequest({ urls: enrichUrls, mode: "url" });
     const payload =
       live && client
-        ? await completeTask(client, store, "check-h", req.data, input, waitTimeoutMs)
+        ? await completeTask(client, store, "check-h", req.data, { ...input, taskIds }, waitTimeoutMs)
         : loadFix("get-check-h.json");
     drafts.push(
       ...mapCheckHToObservations({
@@ -327,7 +419,7 @@ export async function collectArsenkinPilotSurfaces(
     const req = buildIndexationRequest({ urls: enrichUrls });
     const payload =
       live && client
-        ? await completeTask(client, store, "indexation", req.data, input, waitTimeoutMs)
+        ? await completeTask(client, store, "indexation", req.data, { ...input, taskIds }, waitTimeoutMs)
         : loadFix("get-indexation.json");
     drafts.push(
       ...mapIndexationToObservations({
@@ -349,6 +441,74 @@ export async function collectArsenkinPilotSurfaces(
     pageMeta: drafts.filter((d) => d.surface === "page_meta").length,
     indexation: drafts.filter((d) => d.surface === "indexation").length,
   };
+  if (live) {
+    const byTool = new Map<string, SerpObservationDraft[]>();
+    for (const draft of drafts) {
+      const tool = String(draft.rawPayloadJson?.tool ?? "").trim();
+      if (tool) byTool.set(tool, [...(byTool.get(tool) ?? []), draft]);
+    }
+    await Promise.all(
+      [...byTool.entries()].map(([tool, toolDrafts]) =>
+        recordSurfaceCoverageFromDrafts({ reportRunId: input.auditRunId, tool, drafts: toolDrafts })
+      )
+    );
+    // A successful empty response is still coverage. Draft-based recording above cannot
+    // represent it because there is intentionally no observation row to persist.
+    const coverageTargets: Array<{
+      tool: "suggest" | "paa";
+      query: string;
+      engine: "YANDEX" | "GOOGLE";
+      region: "RU" | "UAE";
+      language: "ru" | "en";
+      surface: "autocomplete" | "paa";
+    }> = [];
+    if (want("suggest")) {
+      coverageTargets.push(
+        { tool: "suggest", query: ruQuery, engine: "YANDEX", region: "RU", language: "ru", surface: "autocomplete" },
+        { tool: "suggest", query: ruQuery, engine: "GOOGLE", region: "RU", language: "ru", surface: "autocomplete" }
+      );
+      if (input.queriesUae.length > 0) {
+        coverageTargets.push({ tool: "suggest", query: uaeQuery, engine: "GOOGLE", region: "UAE", language: "en", surface: "autocomplete" });
+      }
+    }
+    if (want("paa")) {
+      coverageTargets.push({ tool: "paa", query: ruQuery, engine: "GOOGLE", region: "RU", language: "ru", surface: "paa" });
+      if (input.queriesUae.length > 0) {
+        coverageTargets.push({ tool: "paa", query: uaeQuery, engine: "GOOGLE", region: "UAE", language: "en", surface: "paa" });
+      }
+    }
+    await Promise.all(
+      coverageTargets.map((target) =>
+        upsertSurfaceCollectionCoverage({
+          reportRunId: input.auditRunId,
+          provider: "arsenkin",
+          tool: target.tool,
+          queryId: buildSerpQueryId({
+            auditRunId: input.auditRunId,
+            provider: "arsenkin",
+            engine: target.engine,
+            region: target.region,
+            language: target.language,
+            queryText: target.query,
+            surface: target.surface,
+          }),
+          queryText: target.query,
+          engine: target.engine,
+          region: target.region,
+          language: target.language,
+          surface: target.surface,
+          resultCount: drafts.filter(
+            (draft) =>
+              draft.surface === target.surface &&
+              draft.engine === target.engine &&
+              draft.region === target.region &&
+              draft.queryText === target.query &&
+              draft.providerStatus === "OK"
+          ).length,
+        })
+      )
+    );
+  }
   return {
     mode: live && client ? "live" : "fixtures",
     drafts,

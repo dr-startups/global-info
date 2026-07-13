@@ -114,42 +114,41 @@ export function mapIndexationToObservations(input: {
       byUrl.get(url) ??
       rows.find((r) => r.url.replace(/\/$/, "") === url.replace(/\/$/, "")) ??
       rows.find((r) => r.url.includes(url) || url.includes(r.url));
-    const queryId = buildSerpQueryId({
-      auditRunId: input.auditRunId,
-      provider: "arsenkin",
-      engine: "GOOGLE",
-      region: input.regionLabel,
-      language: input.language,
-      queryText: url,
-      surface: "indexation",
-    });
     const yandex = row?.yandex ?? null;
     const google = row?.google ?? null;
-    const known = yandex != null || google != null;
-    drafts.push({
-      caseId: input.caseId,
-      auditRunId: input.auditRunId,
-      queryId,
-      queryText: url,
-      provider: "arsenkin",
-      engine: "GOOGLE",
-      surface: "indexation",
-      region: input.regionLabel,
-      language: input.language,
-      rank: 1,
-      url: row?.url || url,
-      title: `${domainOf(url)} · Яндекс: ${labelIndex(yandex)} · Google: ${labelIndex(google)}`,
-      snippet: `Индексация URL: Yandex=${labelIndex(yandex)}; Google=${labelIndex(google)}`,
-      domain: domainOf(row?.url || url),
-      providerStatus: known ? "OK" : "NO_RESULTS",
-      rawPayloadJson: {
-        source: "arsenkin",
-        tool: "indexation",
-        yandex,
-        google,
-      },
-      capturedAt,
-    });
+    for (const [engine, indexed] of [
+      ["YANDEX", yandex],
+      ["GOOGLE", google],
+    ] as const) {
+      const queryId = buildSerpQueryId({
+        auditRunId: input.auditRunId,
+        provider: "arsenkin",
+        engine,
+        region: input.regionLabel,
+        language: input.language,
+        queryText: url,
+        surface: "indexation",
+      });
+      drafts.push({
+        caseId: input.caseId,
+        auditRunId: input.auditRunId,
+        queryId,
+        queryText: url,
+        provider: "arsenkin",
+        engine,
+        surface: "indexation",
+        region: input.regionLabel,
+        language: input.language,
+        rank: 1,
+        url: row?.url || url,
+        title: `${domainOf(url)} · ${engine}: ${labelIndex(indexed)}`,
+        snippet: `Индексация URL в ${engine}: ${labelIndex(indexed)}`,
+        domain: domainOf(row?.url || url),
+        providerStatus: indexed != null ? "OK" : "NO_RESULTS",
+        rawPayloadJson: { source: "arsenkin", tool: "indexation", engine, indexed },
+        capturedAt,
+      });
+    }
   }
   return drafts;
 }

@@ -18,6 +18,16 @@ import type {
 
 const DEFAULT_BASE = "https://arsenkin.ru/api/tools";
 
+export class ArsenkinRequestError extends Error {
+  constructor(
+    message: string,
+    readonly options: { status?: number; code?: string; uncertain?: boolean; raw?: unknown } = {}
+  ) {
+    super(message);
+    this.name = "ArsenkinRequestError";
+  }
+}
+
 function sleepDefault(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -84,7 +94,8 @@ export class ArsenkinClient {
   }
 
   async setTask(request: ArsenkinSetTaskRequest): Promise<ArsenkinSetTaskResponse> {
-    const raw = await this.postJson(`${this.baseUrl}/set`, request);
+    // A transport error after POST may still have created a task: never retry it.
+    const raw = await this.postJson(`${this.baseUrl}/set`, request, { retryAmbiguousNetwork: false });
     const task_id = taskIdOf(raw);
     if (!task_id) {
       throw new Error(`Arsenkin setTask: missing task_id (${redactSecrets(JSON.stringify(raw).slice(0, 200))})`);
@@ -93,7 +104,7 @@ export class ArsenkinClient {
   }
 
   async checkTask(taskId: string | number): Promise<ArsenkinCheckTaskResponse> {
-    const raw = await this.postJson(`${this.baseUrl}/check`, { task_id: taskId });
+    const raw = await this.postJson(`${this.baseUrl}/check`, { task_id: taskId }, { retryAmbiguousNetwork: true });
     const id = taskIdOf(raw) || String(taskId);
     return {
       task_id: id,
@@ -104,7 +115,7 @@ export class ArsenkinClient {
   }
 
   async getTask(taskId: string | number): Promise<ArsenkinGetTaskResponse> {
-    const raw = await this.postJson(`${this.baseUrl}/get`, { task_id: taskId });
+    const raw = await this.postJson(`${this.baseUrl}/get`, { task_id: taskId }, { retryAmbiguousNetwork: true });
     return {
       task_id: taskIdOf(raw) || String(taskId),
       code: raw.code != null ? String(raw.code) : undefined,
@@ -114,7 +125,7 @@ export class ArsenkinClient {
   }
 
   async getLimits(): Promise<ArsenkinLimitsResponse> {
-    const raw = await this.postJson(`${this.baseUrl}/info`, { query: "limits" });
+    const raw = await this.postJson(`${this.baseUrl}/info`, { query: "limits" }, { retryAmbiguousNetwork: true });
     const limitsTotal = num(raw.limits_total ?? raw.limitsTotal);
     const limitsSpent = num(raw.limits_spent ?? raw.limitsSpent);
     const limitsLeft =
@@ -145,7 +156,11 @@ export class ArsenkinClient {
     }
   }
 
-  private async postJson(url: string, body: unknown): Promise<Record<string, unknown>> {
+  private async postJson(
+    url: string,
+    body: unknown,
+    options: { retryAmbiguousNetwork: boolean }
+  ): Promise<Record<string, unknown>> {
     let lastErr: Error | null = null;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       await this.limiter.acquire();
@@ -173,13 +188,20 @@ export class ArsenkinClient {
           continue;
         }
         if (!res.ok) {
-          throw new Error(
-            `Arsenkin HTTP ${res.status}: ${redactSecrets(text).slice(0, 240)}`
+          throw new ArsenkinRequestError(
+            `Arsenkin HTTP ${res.status}: ${redactSecrets(text).slice(0, 240)}`,
+            { status: res.status, code: obj.code != null ? String(obj.code) : undefined, raw: obj }
           );
         }
         return obj;
       } catch (err) {
         lastErr = err instanceof Error ? err : new Error(String(err));
+        if (err instanceof ArsenkinRequestError && err.options.status && err.options.status !== 429) {
+          throw err;
+        }
+        if (!options.retryAmbiguousNetwork) {
+          throw new ArsenkinRequestError(lastErr.message, { uncertain: true });
+        }
         if (attempt >= this.maxRetries) break;
         await this.sleep(500 * (attempt + 1));
       }

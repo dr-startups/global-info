@@ -6,6 +6,8 @@ import type { ArsenkinToolName } from "./flags";
 
 export type ArsenkinTaskState =
   | "QUEUED"
+  | "SUBMITTING"
+  | "SUBMIT_UNKNOWN"
   | "RUNNING"
   | "DONE"
   | "FAILED"
@@ -50,6 +52,8 @@ export type ArsenkinHttpError = {
   message: string;
   retryAfterMs?: number;
   raw?: unknown;
+  /** The request may have reached the provider, so set must not be retried. */
+  uncertain?: boolean;
 };
 
 export type ArsenkinClientOptions = {
@@ -77,6 +81,13 @@ export type ProviderTaskRecord = {
   nextPollAt: Date | null;
   errorCode: string | null;
   limitsSpent: number | null;
+  lockedBy: string | null;
+  lockedAt: Date | null;
+  leaseUntil: Date | null;
+  submittedAt: Date | null;
+  latencyMs: number | null;
+  limitsBefore: number | null;
+  limitsAfter: number | null;
   requestJson: Record<string, unknown>;
   responseJson: Record<string, unknown> | null;
   createdAt: Date;

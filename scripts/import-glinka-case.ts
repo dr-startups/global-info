@@ -225,7 +225,7 @@ async function main() {
     process.env.ORION_CLASSIC_AUDIT_MODE = "1";
     process.env.ORION_FIRST36_CEO_MODE = "1";
     process.env.ORION_GOLDEN_FORCE_LOCAL_RENDER = "1";
-    process.env.ORION_CLIENT_PRODUCTION_FINALIZE = "0";
+    process.env.ORION_CLASSIC_CLIENT_FINALIZE = "0";
     const { runOrionClassicAuditRender } = await import(
       "../src/modules/digital-profile/orion-golden/classic/run-orion-classic-audit-render"
     );

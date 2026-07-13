@@ -87,12 +87,14 @@ async function main() {
   const again = await ensureArsenkinTask(client, store, {
     toolName: "check-top",
     data: { queries: ["Глинка Сергей Михайлович"], depth: 10, is_snippet: true },
+    reportRunId: "run-demo",
   });
   assert.equal(again.id, pending.id);
 
-  let row = pending;
+  let row = await store.updateState(pending.id, { state: "RUNNING", nextPollAt: new Date(0) });
   row = await pollArsenkinTask(client, store, row);
   assert.ok(row.state === "RUNNING" || row.state === "QUEUED");
+  row = await store.updateState(row.id, { state: row.state, nextPollAt: new Date(0) });
   row = await pollArsenkinTask(client, store, row);
   assert.equal(row.state, "DONE");
   assert.ok(row.responseJson);

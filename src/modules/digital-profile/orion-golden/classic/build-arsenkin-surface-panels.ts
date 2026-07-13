@@ -21,6 +21,7 @@ async function pushPanel(
     engineLabel: string;
     caption: string;
     lines: Array<{ label: string; meta?: string; evidenceRef: string }>;
+    meta?: ReportAssetV1["meta"];
   }
 ): Promise<void> {
   if (opts.lines.length === 0) return;
@@ -42,6 +43,7 @@ async function pushPanel(
     ),
     evidenceRefs: opts.lines.slice(0, 10).map((x) => x.evidenceRef),
     status: "ready",
+    meta: opts.meta,
   });
 }
 
@@ -176,6 +178,7 @@ export async function buildArsenkinSurfacePanelAssets(input: {
       ? "ИИ-ответ поиска не найден (Arsenkin ai-serp). Не энциклопедическая карточка Wikipedia."
       : "ИИ-ответ поиска (Arsenkin ai-serp: Алиса + Google AI Overview). Не энциклопедическая карточка Wikipedia.",
     lines: ruAiLines,
+    meta: { notKnowledgePanel: true, arsenkinTool: "ai-serp", surface: "ai_answer" },
   });
 
   // UAE Google AI Overview → uae_knowledge_panel (separate from Wikipedia when overlay allows).
@@ -205,6 +208,7 @@ export async function buildArsenkinSurfacePanelAssets(input: {
         ? "Google AI Overview не найден (Arsenkin ai-serp). Не энциклопедическая карточка Wikipedia."
         : "Google AI Overview (Arsenkin ai-serp). Не энциклопедическая карточка Wikipedia.",
     lines: uaeLines,
+    meta: { notKnowledgePanel: true, arsenkinTool: "ai-serp", surface: "ai_answer" },
   });
 
   // URL enrichment (check-h + indexation) → p12 when google-suggest slot is free / preferred.
