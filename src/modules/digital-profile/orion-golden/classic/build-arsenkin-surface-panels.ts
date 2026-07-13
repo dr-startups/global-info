@@ -207,6 +207,32 @@ export async function buildArsenkinSurfacePanelAssets(input: {
     lines: uaeLines,
   });
 
+  // URL enrichment (check-h + indexation) → p12 when google-suggest slot is free / preferred.
+  const pageMeta = rows.filter((r) => r.surface === "page_meta" && r.provider === "arsenkin");
+  const indexation = rows.filter((r) => r.surface === "indexation" && r.provider === "arsenkin");
+  const urlLines: Array<{ label: string; meta?: string; evidenceRef: string }> = [];
+  for (const m of pageMeta.slice(0, 5)) {
+    urlLines.push({
+      label: `${m.domain ?? m.url}: ${String(m.title ?? "").slice(0, 80)}`,
+      meta: m.snippet ? String(m.snippet).slice(0, 60) : "meta",
+      evidenceRef: `serp_observation:${m.id}`,
+    });
+  }
+  for (const ix of indexation.slice(0, 5)) {
+    urlLines.push({
+      label: String(ix.title ?? ix.url).slice(0, 120),
+      meta: "индекс",
+      evidenceRef: `serp_observation:${ix.id}`,
+    });
+  }
+  await pushPanel(assets, {
+    assetRef: "ru_url_audit",
+    title: "Россия — проверка URL (title / H1 / индекс)",
+    engineLabel: "check-h / indexation",
+    caption: "Обогащение URL из выдачи (Arsenkin check-h + indexation)",
+    lines: urlLines,
+  });
+
   return {
     assets,
     autocomplete: autocomplete.length,

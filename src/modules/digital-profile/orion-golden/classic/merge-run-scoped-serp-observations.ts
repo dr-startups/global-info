@@ -171,13 +171,17 @@ export async function mergeRunScopedSerpObservations(input: {
       continue;
     }
 
-    if (surface === "autocomplete" || surface === "paa" || surface === "related" || surface === "ai_answer") {
+    if (surface === "autocomplete" || surface === "paa" || surface === "related" || surface === "ai_answer" || surface === "page_meta" || surface === "indexation") {
       const evidenceType =
         surface === "autocomplete"
           ? "suggestion"
           : surface === "ai_answer"
             ? "ai_answer"
-            : "related_query";
+            : surface === "page_meta"
+              ? "page_meta"
+              : surface === "indexation"
+                ? "indexation"
+                : "related_query";
       const line = String(row.title ?? row.queryText ?? "").trim();
       if (!line) continue;
       surfaceItems.push({
@@ -214,7 +218,11 @@ export async function mergeRunScopedSerpObservations(input: {
                 ? "suggest"
                 : surface === "ai_answer"
                   ? "ai-serp"
-                  : "related",
+                  : surface === "page_meta"
+                    ? "check-h"
+                    : surface === "indexation"
+                      ? "indexation"
+                      : "related",
           notKnowledgePanel: surface === "ai_answer" ? true : undefined,
         },
       });

@@ -1,0 +1,23 @@
+{
+  "code": "TASK_RESULT",
+  "task_id": "7001",
+  "result": {
+    "table": [
+      {
+        "url": "https://forbes.ru/profile/example",
+        "title": "Сергей Глинка — профиль",
+        "description": "Краткая биографическая справка в открытых источниках.",
+        "headers": [
+          { "i": "1", "value": "Сергей Глинка" },
+          { "i": "2", "value": "Биография" }
+        ]
+      },
+      {
+        "url": "https://tadviser.ru/example",
+        "title": "Глинка С.М.",
+        "description": null,
+        "headers": [{ "i": "1", "value": "Упоминание в справочнике" }]
+      }
+    ]
+  }
+}

@@ -478,23 +478,38 @@ export function buildDeterministicVisualAnalysis(
       recommendedActions = [];
     }
   } else if (slot.kind === "suggestions_visual") {
-    const adverseSuggest = /скандал|санкц|арест|корруп|негатив|scandal|sanction/i.test(
-      `${caption} ${title}`
+    const fromUrlAudit = /check-h|indexation|проверк[аи] URL|title\s*\/\s*H1/i.test(
+      `${caption} ${title} ${asset.assetRef}`
     );
-    sidebarMode = "interpretation";
-    headlineConclusion = adverseSuggest
-      ? "Подсказки связывают имя с риск-тематикой"
-      : "Подсказки не дают устойчивой негативной ассоциации";
-    whatIsVisible = adverseSuggest
-      ? "Среди подсказок есть формулировки с негативным или санкционным оттенком рядом с именем."
-      : "Основные ассоциации связаны с бизнесом и биографией; санкционные формулировки не доминируют.";
-    clientMeaning = adverseSuggest
-      ? "Уже на этапе ввода запроса формируется настороженное впечатление о субъекте."
-      : "На этапе ввода запроса репутационный риск выглядит ограниченным.";
-    whyItMatters = clientMeaning;
-    recommendedActions = adverseSuggest
-      ? ["Отметить негативные подсказки для ручной проверки"]
-      : [];
+    if (fromUrlAudit) {
+      sidebarMode = "interpretation";
+      headlineConclusion = `Проверка URL из выдачи (${regionLabel})`;
+      whatIsVisible =
+        "Показаны title/H1 страниц и статус индексации в Яндексе и Google по URL из органики.";
+      clientMeaning =
+        "Мета-теги и индекс уточняют, как поисковик видит риск-URL, без опоры только на сниппет SERP.";
+      whyItMatters = clientMeaning;
+      recommendedActions = ["Сверить title/H1 с фактическим содержимым страницы"];
+      provenance = "Источник: Arsenkin check-h / indexation, дата сбора в кейсе";
+    } else {
+      const adverseSuggest = /скандал|санкц|арест|корруп|негатив|scandal|sanction/i.test(
+        `${caption} ${title}`
+      );
+      sidebarMode = "interpretation";
+      headlineConclusion = adverseSuggest
+        ? "Подсказки связывают имя с риск-тематикой"
+        : "Подсказки не дают устойчивой негативной ассоциации";
+      whatIsVisible = adverseSuggest
+        ? "Среди подсказок есть формулировки с негативным или санкционным оттенком рядом с именем."
+        : "Основные ассоциации связаны с бизнесом и биографией; санкционные формулировки не доминируют.";
+      clientMeaning = adverseSuggest
+        ? "Уже на этапе ввода запроса формируется настороженное впечатление о субъекте."
+        : "На этапе ввода запроса репутационный риск выглядит ограниченным.";
+      whyItMatters = clientMeaning;
+      recommendedActions = adverseSuggest
+        ? ["Отметить негативные подсказки для ручной проверки"]
+        : [];
+    }
   } else if (slot.kind === "related_visual") {
     sidebarMode = "interpretation";
     const slotTag = asset.assetRef || `related-${slot.page}`;
@@ -807,7 +822,8 @@ function pickAssetForSlot(
     (a) => a.status === "ready" && hasImageBytes(a) && !usedAssets.has(a.assetRef)
   );
   const matched = re ? ready.filter((a) => re.test(a.assetRef)) : ready;
-  return matched[0] ?? null;
+  const preferred = matched.find((a) => a.assetRef === "ru_url_audit");
+  return preferred ?? matched[0] ?? null;
 }
 
 function attachVisual(

@@ -1,6 +1,6 @@
 /**
  * Enrich a classic First36 report run with Arsenkin check-top / suggest / paa / ai-serp
- * observations (idempotent: skips when enough arsenkin rows already exist).
+ * / check-h / indexation observations (idempotent).
  */
 
 import { prisma } from "@/server/prisma/client";
@@ -21,11 +21,37 @@ export type ArsenkinRenderEnrichResult = {
     autocomplete: number;
     paa: number;
     aiAnswer?: number;
+    pageMeta?: number;
+    indexation?: number;
   };
 };
 
 function isAi(row: { surface: string; engine: string; region: string }): boolean {
   return row.surface === "ai_answer";
+}
+
+/** Prefer http(s) organic URLs, unique by domain, skip wiki/social noise. */
+export function pickEnrichmentUrls(
+  rows: Array<{ url: string; domain: string | null; rank: number; surface: string }>,
+  limit = 5
+): string[] {
+  const organic = rows
+    .filter((r) => r.surface === "organic" && /^https?:\/\//i.test(r.url))
+    .sort((a, b) => a.rank - b.rank);
+  const out: string[] = [];
+  const seenDomain = new Set<string>();
+  for (const r of organic) {
+    const domain = String(r.domain ?? "")
+      .toLowerCase()
+      .replace(/^www\./, "");
+    if (!domain) continue;
+    if (/wikipedia|wikidata|youtube|facebook|vk\.com|instagram|t\.me/i.test(domain)) continue;
+    if (seenDomain.has(domain)) continue;
+    seenDomain.add(domain);
+    out.push(r.url);
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 export async function enrichReportRunWithArsenkin(input: {
@@ -57,11 +83,14 @@ export async function enrichReportRunWithArsenkin(input: {
       queryId: true,
       rank: true,
       url: true,
+      domain: true,
     },
   });
   const organicCount = existingRows.filter((r) => r.surface === "organic").length;
   const paaCount = existingRows.filter((r) => r.surface === "paa").length;
   const suggestCount = existingRows.filter((r) => r.surface === "autocomplete").length;
+  const pageMetaCount = existingRows.filter((r) => r.surface === "page_meta").length;
+  const indexationCount = existingRows.filter((r) => r.surface === "indexation").length;
   const aiRows = existingRows.filter(isAi);
   const hasYandexRuAi = aiRows.some(
     (r) => String(r.engine).toUpperCase() === "YANDEX" && !/UAE|AE|INTL/i.test(r.region)
@@ -77,23 +106,33 @@ export async function enrichReportRunWithArsenkin(input: {
   if (!hasGoogleRuAi) aiSerpTargets.push("google_ru");
   if (!hasGoogleUaeAi) aiSerpTargets.push("google_uae");
 
+  const urlsEnrichment = pickEnrichmentUrls(existingRows);
+  const needCheckH = pageMetaCount < 1 && urlsEnrichment.length > 0;
+  const needIndexation = indexationCount < 1 && urlsEnrichment.length > 0;
+
   if (
     organicCount >= skipIfAtLeast &&
     paaCount > 0 &&
     suggestCount >= 3 &&
-    aiSerpTargets.length === 0
+    aiSerpTargets.length === 0 &&
+    !needCheckH &&
+    !needIndexation
   ) {
     return {
       skipped: true,
-      reason: `already_enriched organic=${organicCount} paa=${paaCount} suggest=${suggestCount} ai=${aiRows.length}`,
+      reason: `already_enriched organic=${organicCount} paa=${paaCount} suggest=${suggestCount} ai=${aiRows.length} meta=${pageMetaCount} idx=${indexationCount}`,
     };
   }
 
-  const tools: Array<"check-top" | "suggest" | "paa" | "ai-serp"> = [];
+  const tools: Array<
+    "check-top" | "suggest" | "paa" | "ai-serp" | "check-h" | "indexation"
+  > = [];
   if (organicCount < skipIfAtLeast) tools.push("check-top");
   if (suggestCount < 3) tools.push("suggest");
   if (paaCount < 1) tools.push("paa");
   if (aiSerpTargets.length > 0) tools.push("ai-serp");
+  if (needCheckH) tools.push("check-h");
+  if (needIndexation) tools.push("indexation");
   if (tools.length === 0) {
     return { skipped: true, reason: "surfaces_complete" };
   }
@@ -106,6 +145,8 @@ export async function enrichReportRunWithArsenkin(input: {
     fixturesOnly: process.env.ARSENKIN_PILOT_FIXTURES === "1",
     tools,
     aiSerpTargets: tools.includes("ai-serp") ? aiSerpTargets : undefined,
+    urlsEnrichment:
+      tools.includes("check-h") || tools.includes("indexation") ? urlsEnrichment : undefined,
   });
 
   const existingKeys = new Set(

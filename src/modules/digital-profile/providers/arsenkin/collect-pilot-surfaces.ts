@@ -14,6 +14,8 @@ import { buildCheckTopRequest, mapCheckTopToObservations } from "./adapters/chec
 import { buildSuggestRequest, mapSuggestToObservations } from "./adapters/suggest";
 import { buildPaaRequest, mapPaaToObservations } from "./adapters/paa";
 import { buildAiSerpRequest, mapAiSerpToObservations } from "./adapters/ai-serp";
+import { buildCheckHRequest, mapCheckHToObservations } from "./adapters/check-h";
+import { buildIndexationRequest, mapIndexationToObservations } from "./adapters/indexation";
 import { ARSENKIN_REGION, pilotSeForRegion } from "./regions";
 import type { SerpObservationDraft } from "../../serp-observation/types";
 
@@ -40,6 +42,8 @@ export type ArsenkinPilotCollectInput = {
    * Use to avoid re-spending limits when some engines already enriched.
    */
   aiSerpTargets?: Array<"yandex_ru" | "google_ru" | "google_uae">;
+  /** Organic/risk URLs for check-h + indexation enrichment (max ~5). */
+  urlsEnrichment?: string[];
   client?: ArsenkinClient | null;
   store?: ProviderTaskStore;
   waitTimeoutMs?: number;
@@ -48,7 +52,14 @@ export type ArsenkinPilotCollectInput = {
 export type ArsenkinPilotCollectResult = {
   mode: "live" | "fixtures";
   drafts: SerpObservationDraft[];
-  bySurface: { organic: number; autocomplete: number; paa: number; aiAnswer: number };
+  bySurface: {
+    organic: number;
+    autocomplete: number;
+    paa: number;
+    aiAnswer: number;
+    pageMeta: number;
+    indexation: number;
+  };
   taskIds: string[];
 };
 
@@ -289,11 +300,54 @@ export async function collectArsenkinPilotSurfaces(
     }
   }
 
+  const enrichUrls = (input.urlsEnrichment ?? [])
+    .map((u) => String(u).trim())
+    .filter((u) => /^https?:\/\//i.test(u))
+    .slice(0, 5);
+
+  if (want("check-h") && enrichUrls.length > 0) {
+    const req = buildCheckHRequest({ urls: enrichUrls, mode: "url" });
+    const payload =
+      live && client
+        ? await completeTask(client, store, "check-h", req.data, input, waitTimeoutMs)
+        : loadFix("get-check-h.json");
+    drafts.push(
+      ...mapCheckHToObservations({
+        caseId: input.caseId,
+        auditRunId: input.auditRunId,
+        regionLabel: "RU",
+        language: "ru",
+        urls: enrichUrls,
+        payload,
+      })
+    );
+  }
+
+  if (want("indexation") && enrichUrls.length > 0) {
+    const req = buildIndexationRequest({ urls: enrichUrls });
+    const payload =
+      live && client
+        ? await completeTask(client, store, "indexation", req.data, input, waitTimeoutMs)
+        : loadFix("get-indexation.json");
+    drafts.push(
+      ...mapIndexationToObservations({
+        caseId: input.caseId,
+        auditRunId: input.auditRunId,
+        regionLabel: "RU",
+        language: "ru",
+        urls: enrichUrls,
+        payload,
+      })
+    );
+  }
+
   const bySurface = {
     organic: drafts.filter((d) => d.surface === "organic").length,
     autocomplete: drafts.filter((d) => d.surface === "autocomplete").length,
     paa: drafts.filter((d) => d.surface === "paa").length,
     aiAnswer: drafts.filter((d) => d.surface === "ai_answer").length,
+    pageMeta: drafts.filter((d) => d.surface === "page_meta").length,
+    indexation: drafts.filter((d) => d.surface === "indexation").length,
   };
   return {
     mode: live && client ? "live" : "fixtures",

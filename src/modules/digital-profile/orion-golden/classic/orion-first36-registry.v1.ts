@@ -201,7 +201,7 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     match: {
       sectionKeys: ["14_ru_suggestions"],
       templates: ["orion_golden_surface_panel", "orion_golden_prose"],
-      assetRefRe: /ru_.*suggest.*google|ru_suggestions_google/i,
+      assetRefRe: /ru_url_audit|ru_.*suggest.*google|ru_suggestions_google/i,
     },
   },
   {

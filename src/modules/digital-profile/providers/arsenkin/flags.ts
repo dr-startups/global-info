@@ -3,9 +3,22 @@
  * Token must never appear in logs/report — only via env.
  */
 
-export type ArsenkinToolName = "check-top" | "suggest" | "paa" | "ai-serp";
+export type ArsenkinToolName =
+  | "check-top"
+  | "suggest"
+  | "paa"
+  | "ai-serp"
+  | "check-h"
+  | "indexation";
 
-const DEFAULT_TOOLS: ArsenkinToolName[] = ["check-top", "suggest", "paa", "ai-serp"];
+const DEFAULT_TOOLS: ArsenkinToolName[] = [
+  "check-top",
+  "suggest",
+  "paa",
+  "ai-serp",
+  "check-h",
+  "indexation",
+];
 
 function parseTools(raw: string | undefined): ArsenkinToolName[] {
   const parts = String(raw ?? "")
@@ -13,7 +26,14 @@ function parseTools(raw: string | undefined): ArsenkinToolName[] {
     .map((s) => s.trim().toLowerCase())
     .filter(Boolean);
   if (parts.length === 0) return [...DEFAULT_TOOLS];
-  const allowed = new Set<ArsenkinToolName>(["check-top", "suggest", "paa", "ai-serp"]);
+  const allowed = new Set<ArsenkinToolName>([
+    "check-top",
+    "suggest",
+    "paa",
+    "ai-serp",
+    "check-h",
+    "indexation",
+  ]);
   const out: ArsenkinToolName[] = [];
   for (const p of parts) {
     if (allowed.has(p as ArsenkinToolName)) out.push(p as ArsenkinToolName);

@@ -16,6 +16,10 @@ import {
   mapPaaToObservations,
   buildAiSerpRequest,
   mapAiSerpToObservations,
+  buildCheckHRequest,
+  mapCheckHToObservations,
+  buildIndexationRequest,
+  mapIndexationToObservations,
   ARSENKIN_REGION,
   pilotSeForRegion,
 } from "../src/modules/digital-profile/providers/arsenkin";
@@ -172,6 +176,36 @@ async function main() {
   assert.equal(aiGoogleUae[0]?.providerStatus, "NO_RESULTS");
   assert.equal(aiGoogleUae[0]?.region, "UAE");
 
+  const urls = ["https://forbes.ru/profile/example", "https://tadviser.ru/example"];
+  const checkHReq = buildCheckHRequest({ urls, mode: "url" });
+  assert.equal(checkHReq.tools_name, "check-h");
+  assert.equal(checkHReq.data.mode, "url");
+  const pageMeta = mapCheckHToObservations({
+    caseId: "case-1",
+    auditRunId: "run-1",
+    regionLabel: "RU",
+    language: "ru",
+    urls,
+    payload: load("get-check-h.json"),
+  });
+  assert.equal(pageMeta.length, 2);
+  assert.equal(pageMeta[0]?.surface, "page_meta");
+  assert.match(String(pageMeta[0]?.snippet), /H1/);
+
+  const idxReq = buildIndexationRequest({ urls });
+  assert.equal(idxReq.tools_name, "indexation");
+  const idx = mapIndexationToObservations({
+    caseId: "case-1",
+    auditRunId: "run-1",
+    regionLabel: "RU",
+    language: "ru",
+    urls,
+    payload: load("get-indexation.json"),
+  });
+  assert.equal(idx.length, 2);
+  assert.equal(idx[0]?.surface, "indexation");
+  assert.equal(idx[0]?.rawPayloadJson?.yandex, true);
+
   console.log(
     JSON.stringify(
       {
@@ -183,10 +217,14 @@ async function main() {
         aiAbsent: aiAbsent.length,
         aiGoogle: aiGoogle.length,
         aiGoogleUae: aiGoogleUae.length,
+        pageMeta: pageMeta.length,
+        indexation: idx.length,
         sampleOrganic: top.slice(0, 2).map((d) => ({ rank: d.rank, domain: d.domain, title: d.title })),
         sampleSuggest: suggests.map((d) => d.title),
         samplePaa: paa.map((d) => d.title),
         sampleAi: ai.slice(0, 3).map((d) => ({ title: d.title, domain: d.domain })),
+        sampleMeta: pageMeta.map((d) => ({ title: d.title, snippet: d.snippet })),
+        sampleIdx: idx.map((d) => d.title),
       },
       null,
       2

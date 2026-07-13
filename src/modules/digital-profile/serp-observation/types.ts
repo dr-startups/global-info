@@ -26,7 +26,9 @@ export type SerpObservationSurface =
   | "related"
   | "knowledge_graph"
   | "paa"
-  | "ai_answer";
+  | "ai_answer"
+  | "page_meta"
+  | "indexation";
 
 export type SerpObservationDraft = {
   caseId: string;
