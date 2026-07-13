@@ -103,24 +103,40 @@ async function main() {
   assert.ok(!redact.includes("super-secret-token"));
   assert.ok(hashProviderRequest({ a: 1 }).length === 64);
 
-  // 429 retry path
-  let hit429 = false;
+  // /set must not blind-retry POST on 429 — surface as ArsenkinRequestError.
+  let setPostCount = 0;
   const client429 = new ArsenkinClient({
     token: "tok",
     maxRetries: 2,
     sleep: async () => undefined,
-    fetchImpl: async () => {
-      if (!hit429) {
-        hit429 = true;
+    fetchImpl: async (input) => {
+      const url = String(input);
+      if (url.endsWith("/set")) {
+        setPostCount += 1;
         return new Response(JSON.stringify({ status: "Error", code: "429", error: "Too Many Requests" }), {
           status: 429,
         });
       }
-      return new Response(JSON.stringify(setOk), { status: 200 });
+      if (url.endsWith("/info")) {
+        return new Response(JSON.stringify(limits), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
     },
   });
-  const set = await client429.setTask({ tools_name: "suggest", data: { queries: ["x"] } });
-  assert.equal(String(set.task_id), "3944");
+  await assert.rejects(
+    () => client429.setTask({ tools_name: "suggest", data: { queries: ["x"] } }),
+    (err: unknown) => err instanceof Error && /429/.test(err.message)
+  );
+  assert.equal(setPostCount, 1);
+
+  const store429 = createMemoryProviderTaskStore();
+  const limited = await ensureArsenkinTask(client429, store429, {
+    toolName: "suggest",
+    data: { queries: ["x"] },
+    reportRunId: "run-429",
+  });
+  assert.equal(limited.state, "RATE_LIMITED");
+  assert.equal(setPostCount, 2);
 
   console.log(
     JSON.stringify(

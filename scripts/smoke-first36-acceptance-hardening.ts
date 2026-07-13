@@ -46,13 +46,29 @@ describe("first36 acceptance hardening", () => {
     assert.notEqual(a.id, b.id);
   });
 
-  it("does not double-lease a due provider task", async () => {
+  it("does not double-lease a due RUNNING provider task", async () => {
     const store = createMemoryProviderTaskStore();
-    await store.upsertPending({ reportRunId: "run-A", toolName: "suggest", requestJson: { q: "subject" } });
+    const row = await store.upsertPending({
+      reportRunId: "run-A",
+      toolName: "suggest",
+      requestJson: { q: "subject" },
+    });
+    await store.updateState(row.id, {
+      state: "RUNNING",
+      externalTaskId: "ext-1",
+      nextPollAt: new Date(0),
+    });
     const now = new Date();
     const first = await store.claimDue("worker-1", now, 1, 30_000);
     const second = await store.claimDue("worker-2", now, 1, 30_000);
     assert.equal(first.length, 1);
     assert.equal(second.length, 0);
+  });
+
+  it("claimDue ignores QUEUED without externalTaskId", async () => {
+    const store = createMemoryProviderTaskStore();
+    await store.upsertPending({ reportRunId: "run-A", toolName: "suggest", requestJson: { q: "queued" } });
+    const claimed = await store.claimDue("worker-1", new Date(), 5, 30_000);
+    assert.equal(claimed.length, 0);
   });
 });
