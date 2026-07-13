@@ -52,6 +52,13 @@ export type NormalizedEvidenceV1 = {
   sourceLabel: string;
   clientSafeSummary?: string;
   createdAt?: string;
+  /** Typed identity binding when known (Wikipedia / entity match). */
+  subjectBinding?:
+    | "CONFIRMED_SUBJECT"
+    | "PROBABLE_SUBJECT"
+    | "AMBIGUOUS"
+    | "WRONG_SUBJECT"
+    | "UNRESOLVED";
 };
 
 export const FORBIDDEN_CLIENT_TERMS = [

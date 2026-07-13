@@ -22,6 +22,7 @@ import {
   maxSlidesForSection,
   templateForRegistrySection,
 } from "./orion-classic-section-template-map";
+import { buildSerpPositionTablesWithQuery } from "./serp-position-tables-with-query";
 import {
   asClientBullet,
   chunkItems,
@@ -495,6 +496,9 @@ function serpPositionTable(
   inventory: FullEvidenceInventory | undefined,
   region: RegionBucket
 ): Array<{ headers: string[]; rows: string[][] }> {
+  // Prefer query-aware tables (rank is only meaningful within a query).
+  const withQuery = buildSerpPositionTablesWithQuery(inventory, region, 10);
+  if (withQuery.length > 0) return withQuery;
   if (!inventory) return [];
   type Row = { rank: number; domain: string; title: string; url: string };
   const byQuery = new Map<string, Row[]>();
@@ -505,7 +509,7 @@ function serpPositionTable(
     const query = item.query?.trim() || "основной запрос";
     const list = byQuery.get(query) ?? [];
     const url = String(item.sourceUrl ?? "").slice(0, 90);
-    if (url && list.some((r) => r.url === url)) continue;
+    // Keep same URL under different queries as separate rows.
     list.push({
       rank: positionOf(item) || list.length + 1,
       domain: domainOf(item.sourceUrl),
@@ -517,21 +521,21 @@ function serpPositionTable(
 
   const tables: Array<{ headers: string[]; rows: string[][] }> = [];
   const sortedQueries = [...byQuery.entries()].sort((a, b) => b[1].length - a[1].length);
-  // Cap to 2 query tables per region — avoid 6 identical narrative pages
-  for (const [, rows] of sortedQueries.slice(0, 2)) {
+  for (const [query, rows] of sortedQueries.slice(0, 2)) {
     const ordered = [...rows]
       .sort((a, b) => a.rank - b.rank)
       .slice(0, 10)
       .map((r, idx) => ({ ...r, rank: r.rank || idx + 1 }));
     tables.push({
-      headers: ["Позиция", "Домен", "Заголовок", "Статус"],
+      headers: ["Запрос", "Позиция", "Домен", "Заголовок", "Статус"],
       rows: ordered.map((r) => {
         const status = /нежелат|санкц|PEP|adverse|риск/i.test(`${r.title} ${r.domain}`)
           ? "Нежелательный"
           : /требует|проверк|смешан/i.test(`${r.title}`)
             ? "Требует проверки"
             : "Нейтральный";
-        return [String(r.rank), r.domain || "—", r.title, status];
+        const q = query.length > 42 ? `${query.slice(0, 39)}…` : query;
+        return [q, String(r.rank), r.domain || "—", r.title, status];
       }),
     });
   }

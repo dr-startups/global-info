@@ -23,6 +23,10 @@ import { scrubClientFacingProse, truncateAtWordBoundary } from "./orion-classic-
 import { clipWordsComplete } from "../../orion-report-spec/highlight-explanation";
 import { sanitizeOrionGoldenClientText } from "../client/client-text-sanitizer";
 import {
+  enforceCompleteSentences,
+  sanitizeClientLanguage,
+} from "./client-language";
+import {
   orionStyleRiskMatrixRows,
   wikipediaStatusLine,
   type OrionSurfaceKpis,
@@ -30,7 +34,7 @@ import {
 } from "./orion-classic-theme-set";
 
 function scrub(s: string): string {
-  return scrubClientFacingProse(sanitizeOrionGoldenClientText(s));
+  return sanitizeClientLanguage(scrubClientFacingProse(sanitizeOrionGoldenClientText(s)));
 }
 
 function badgeTone(badge: OrionSurfaceKpis["overallBadge"]): MetricTone {
@@ -492,34 +496,46 @@ export function buildDeterministicVisualAnalysis(
       : [];
   } else if (slot.kind === "related_visual") {
     sidebarMode = "interpretation";
-    headlineConclusion = "Связанные запросы показывают тематическое окружение имени";
-    whatIsVisible =
-      "Соседние темы в выдаче помогают отделить бизнес-контекст от шума и однофамильцев.";
-    clientMeaning = "Тематическое окружение имени уточняет, где искать подтверждения и риски.";
+    const surfaceHints = (asset.evidenceRefs ?? [])
+      .map((r) => String(r))
+      .filter(Boolean)
+      .slice(0, 3);
+    const labelBits = [title, caption, ...surfaceHints]
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const topic =
+      labelBits.match(/(?:связанн\w+|related|people also|похож\w+)[:\s—-]*(.+)$/i)?.[1]?.slice(0, 80) ||
+      title.replace(/связанн\w+\s+запрос\w*/i, "").trim().slice(0, 80) ||
+      `набор ${slot.page}`;
+    headlineConclusion = `Связанные запросы (${regionLabel}): ${topic}`;
+    whatIsVisible = `На экране — отдельный набор связанных запросов «${topic}» для региона ${regionLabel}.`;
+    clientMeaning = `Этот набор уточняет тематическое окружение имени именно для запроса «${topic}», а не повторяет соседние слайды.`;
     whyItMatters = clientMeaning;
-    recommendedActions = ["Выделить риск-запросы для ручной проверки"];
+    recommendedActions = [`Сверить риск-формулировки в наборе «${topic.slice(0, 40)}»`];
+    provenance = `Источник: сохранённые связанные запросы (${topic.slice(0, 48)}), дата сбора в кейсе`;
   } else if (slot.kind === "knowledge_visual") {
     const fromWiki = /wikipedia|википед/i.test(`${caption} ${title} ${provenanceLabel(asset)}`);
-    const wrongSubject = /другого субъекта|однофамил|не является профилем/i.test(
-      `${caption} ${title}`
-    );
+    const wrongSubject =
+      /другого субъекта|однофамил|не является профилем|дворянский род/i.test(`${caption} ${title}`) ||
+      Boolean((asset as { subjectBinding?: string }).subjectBinding === "WRONG_SUBJECT");
     sidebarMode = wrongSubject ? "status" : "interpretation";
     headlineConclusion = wrongSubject
-      ? "Карточка Wikipedia не относится к субъекту аудита"
+      ? "Карточка Wikipedia не относится к проверяемому лицу"
       : fromWiki
         ? `Справочная карточка Wikipedia (${regionLabel})`
         : `Справочная панель в поиске (${regionLabel})`;
     whatIsVisible = wrongSubject
-      ? "Найдена страница другого лица или рода; её нельзя засчитывать как профиль субъекта."
+      ? "Найдена страница другого лица или рода; её нельзя засчитывать как профиль проверяемого лица."
       : fromWiki
-        ? "Показаны название страницы и статус наличия публичной статьи о персоне."
+        ? "Показаны название страницы и статус наличия публичной статьи о проверяемом лице."
         : "Краткие факты и заголовки из справочного блока рядом с выдачей.";
     clientMeaning = wrongSubject
-      ? "Чужой профиль в выдаче создаёт риск смешения идентичностей."
-      : "Справочный блок влияет на то, как третьи лица идентифицируют субъекта.";
+      ? "Чужой профиль в выдаче создаёт риск смешения личностей."
+      : "Справочный блок влияет на то, как третьи лица идентифицируют проверяемое лицо.";
     whyItMatters = clientMeaning;
     recommendedActions = wrongSubject
-      ? ["Исключить из профиля или сверить identity"]
+      ? ["Исключить из профиля или сверить личность"]
       : ["Сверить факты с первичными источниками"];
     provenance = fromWiki ? "Источник: проверка Wikipedia, дата сбора в кейсе" : provenance;
   } else {
@@ -566,11 +582,22 @@ function normalizeClientSearchTable(
   const titleIdx = headers.findIndex((h) => /заголовок|title/i.test(h.trim()));
   const domainIdx = headers.findIndex((h) => /домен|domain/i.test(h.trim()));
   const posIdx = headers.findIndex((h) => /поз|позиц|rank|#/i.test(h.trim()));
+  const queryIdx = headers.findIndex((h) => /запрос|query/i.test(h.trim()));
 
-  const rows = table.rows.slice(0, 8).map((row) => {
-    const pos = posIdx >= 0 ? String(row[posIdx] ?? "") : String(row[0] ?? "");
-    const domain = domainIdx >= 0 ? String(row[domainIdx] ?? "—") : String(row[1] ?? "—");
-    const title = titleIdx >= 0 ? String(row[titleIdx] ?? "") : String(row[2] ?? "");
+  const rows = table.rows.slice(0, 10).map((row) => {
+    const pos = posIdx >= 0 ? String(row[posIdx] ?? "") : String(row[queryIdx >= 0 ? 1 : 0] ?? "");
+    const domain =
+      domainIdx >= 0
+        ? String(row[domainIdx] ?? "—")
+        : String(row[queryIdx >= 0 ? 2 : 1] ?? "—");
+    const title =
+      titleIdx >= 0
+        ? String(row[titleIdx] ?? "")
+        : String(row[queryIdx >= 0 ? 3 : 2] ?? "");
+    const query =
+      queryIdx >= 0
+        ? String(row[queryIdx] ?? "—")
+        : "";
     let status = "Нейтральный";
     if (riskIdx >= 0) {
       const raw = String(row[riskIdx] ?? "").trim();
@@ -585,11 +612,17 @@ function normalizeClientSearchTable(
     void hasUrl;
     void hasRisk;
     void urlIdx;
+    if (queryIdx >= 0 || query) {
+      return [query || "—", pos, domain || "—", truncateAtWordBoundary(title, 70), status];
+    }
     return [pos, domain || "—", truncateAtWordBoundary(title, 90), status];
   });
 
   return {
-    headers: ["Позиция", "Домен", "Заголовок", "Статус"],
+    headers:
+      queryIdx >= 0 || rows.some((r) => r.length === 5)
+        ? ["Запрос", "Позиция", "Домен", "Заголовок", "Статус"]
+        : ["Позиция", "Домен", "Заголовок", "Статус"],
     rows,
   };
 }
@@ -654,7 +687,7 @@ function enrichNonVisualSlotProse(slide: OrionGoldenDeckSlide, slot: First36Slot
 
 function blockedSlide(slot: First36SlotDef, reason: string): OrionGoldenDeckSlide {
   const clientNarrative =
-    "Визуальный материал по этому разделу пока недоступен. Статус совпадения и выводы требуют ручной проверки источника.";
+    "Данные источника не предоставлены. Для завершения проверки требуется загрузка утверждённого визуального материала по этому разделу.";
   return {
     slideKey: slot.slotId,
     sectionKey: slot.sectionKey,
@@ -664,7 +697,7 @@ function blockedSlide(slot: First36SlotDef, reason: string): OrionGoldenDeckSlid
     narrative: clientNarrative,
     bullets: [
       "Слот зарезервирован в структуре аудита.",
-      "После загрузки утверждённого визуала раздел будет обновлён.",
+      "После предоставления источника раздел будет обновлён без выдуманных данных.",
     ],
     // Internal gate code — must not be copied into client-facing narrative.
     blockedReason: reason,
@@ -673,6 +706,8 @@ function blockedSlide(slot: First36SlotDef, reason: string): OrionGoldenDeckSlid
 }
 
 function placeholderSlide(slot: First36SlotDef, narrative?: string): OrionGoldenDeckSlide {
+  const honest =
+    "Данные источника не предоставлены. Раздел сохранён в структуре аудита; проверка по этому блоку будет завершена после появления подтверждённых материалов.";
   return {
     slideKey: slot.slotId,
     sectionKey: slot.sectionKey,
@@ -681,13 +716,14 @@ function placeholderSlide(slot: First36SlotDef, narrative?: string): OrionGolden
     pageNumber: slot.page,
     narrative:
       narrative ||
-      (slot.kind === "region_toc" || slot.kind === "compliance_toc"
-        ? undefined
-        : "Раздел будет дополнен при наличии подтверждённых данных по субъекту."),
+      (slot.kind === "region_toc" || slot.kind === "compliance_toc" ? undefined : honest),
     bullets:
       slot.kind === "region_toc" || slot.kind === "compliance_toc"
         ? undefined
-        : ["Данных для полного заполнения слота пока недостаточно."],
+        : [
+            "Ничего не выдумано: при отсутствии источника показывается статус ожидания данных.",
+            "Для закрытия слота нужны подтверждённые материалы с датой сбора.",
+          ],
   };
 }
 

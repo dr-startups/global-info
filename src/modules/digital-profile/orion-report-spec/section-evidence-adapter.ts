@@ -1,4 +1,5 @@
 import type { OrionRealCaseContext } from "../orion-section-pipeline/real-case-data-adapter";
+import { classifyWikipediaHit } from "../orion-golden/classic/orion-classic-theme-set";
 import {
   clientSourceLabel,
   extractDomain,
@@ -291,8 +292,18 @@ function wikiKnowledgePanels(
   ctx: OrionRealCaseContext,
   languageRe: RegExp
 ): NormalizedEvidenceV1[] {
+  const subjectName = ctx.subject?.fullName ?? "";
   return ctx.wikiChecks
     .filter((w) => w.exists && languageRe.test(String(w.language ?? "ru")))
+    .filter((w) => {
+      const hit = classifyWikipediaHit({
+        title: String(w.pageTitle ?? ""),
+        url: w.url ?? undefined,
+        subjectName,
+      });
+      // WRONG_SUBJECT / AMBIGUOUS / ABSENT must never become a subject knowledge panel.
+      return hit.status === "EXACT_SUBJECT";
+    })
     .slice(0, 2)
     .map((w, idx) => ({
       evidenceRef: stableEvidenceRef(sectionKey, `wiki-knowledge-${idx + 1}`),
@@ -303,12 +314,13 @@ function wikiKnowledgePanels(
       domain: w.url ? extractDomain(w.url) : "wikipedia.org",
       url: w.url ?? undefined,
       displayUrl: stripProtocol(w.url),
-      snippet: `Wikipedia (${w.language ?? "ru"}): публичная статья по субъекту.`,
+      snippet: `Wikipedia (${w.language ?? "ru"}): публичная статья по проверяемому лицу.`,
       locale: toLocale(w.language),
       riskTheme: "identity_profile" as const,
       reviewStatus: "requires_review" as const,
       sourceLabel: "Wikipedia",
       clientSafeSummary: `Wikipedia: ${String(w.pageTitle ?? "статья").slice(0, 100)}`,
+      subjectBinding: "CONFIRMED_SUBJECT" as const,
     }));
 }
 

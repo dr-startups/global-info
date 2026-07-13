@@ -109,7 +109,9 @@ function normalizeRegion(raw: string | undefined): string {
 
 function matchesRegion(itemRegion: string | undefined, bucket: OrionRegionBucket): boolean {
   const r = normalizeRegion(itemRegion);
-  if (bucket === "RU") return r === "RU" || r === "GLOBAL" || r === "" || r === "RUSSIA";
+  // Do not treat empty/GLOBAL as belonging to both RU and UAE — that shared the 171 denominator.
+  if (!r || r === "GLOBAL") return false;
+  if (bucket === "RU") return r === "RU" || r === "RUSSIA" || r === "RF";
   return r === "UAE" || r === "INTL" || r === "AE" || r === "GLOBAL_INTL" || r === "EN";
 }
 

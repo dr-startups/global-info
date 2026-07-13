@@ -22,6 +22,7 @@ import { buildOrionThemeSet } from "./orion-classic-theme-set";
 import { inspectClassicOrionAuditQuality } from "./orion-classic-audit-quality-inspection";
 import { isClientProductionFinalize, isFirst36CeoMode } from "./orion-classic-live-serp-assets";
 import { evaluateClassicProviderSerpGate } from "./orion-classic-provider-serp-assets";
+import { mergeRunScopedSerpObservations } from "./merge-run-scoped-serp-observations";
 import type { ExecutiveSynthesisOutput } from "../gpt/orion-executive-synthesis-from-sections";
 import type { SectionDerivedRiskMatrix } from "../sections/orion-risk-matrix-from-sections";
 
@@ -89,10 +90,22 @@ export async function runOrionClassicAuditRender(options: {
 
   const clientContent = options.clientContent ?? loadPostReviewClientContent(caseId);
   const ctx = await loadRealCaseContext(caseId, { locale: "ru", buildFreshReportJson: false });
-  const inventory = buildFullEvidenceInventory({
+  const baseInventory = buildFullEvidenceInventory({
     caseId,
     reportRunId: clientContent.reportRunId,
     ctx,
+  });
+  const runScoped = await mergeRunScopedSerpObservations({
+    inventory: baseInventory,
+    auditRunId: clientContent.reportRunId,
+  });
+  const inventory = runScoped.inventory;
+  writeJson(join(outputRoot, "run-scoped-serp-merge.json"), {
+    auditRunId: clientContent.reportRunId,
+    usedRunScoped: runScoped.usedRunScoped,
+    observationCount: runScoped.observationCount,
+    duplicateKeys: runScoped.duplicateKeys.slice(0, 20),
+    warnings: runScoped.warnings,
   });
   const clientFinalize = isClientProductionFinalize();
   const first36CeoMode = isFirst36CeoMode();

@@ -702,6 +702,7 @@ model SerpObservation {
   @@index([provider, engine, surface])
   @@index([url])
   @@index([capturedAt])
+  @@unique([auditRunId, provider, engine, region, language, surface, queryId, rank, url], map: "serp_obs_run_unique")
   @@map("dp_serp_observations")
 }
 

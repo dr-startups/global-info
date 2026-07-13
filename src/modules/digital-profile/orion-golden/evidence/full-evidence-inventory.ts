@@ -53,7 +53,7 @@ function asObj(v: unknown): Record<string, unknown> {
   return v as Record<string, unknown>;
 }
 
-function regionOf(raw: Record<string, unknown>, fallback = "RU"): string {
+function regionOf(raw: Record<string, unknown>, fallback = ""): string {
   const r = String(raw.orionRegion ?? raw.region ?? fallback).toUpperCase();
   return r || fallback;
 }
