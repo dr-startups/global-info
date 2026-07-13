@@ -15,38 +15,74 @@ export type UpsertProviderTaskInput = {
   requestHash?: string;
 };
 
+export type ProviderTaskStatePatch = {
+  state: ArsenkinTaskState;
+  attempts?: number;
+  nextPollAt?: Date | null;
+  errorCode?: string | null;
+  limitsSpent?: number | null;
+  submittedAt?: Date | null;
+  latencyMs?: number | null;
+  limitsBefore?: number | null;
+  limitsAfter?: number | null;
+  lockedBy?: string | null;
+  lockedAt?: Date | null;
+  leaseUntil?: Date | null;
+  responseJson?: Record<string, unknown> | null;
+  completedAt?: Date | null;
+  externalTaskId?: string | null;
+};
+
+export type ProviderTaskUpdateOptions = {
+  /** When set, update only succeeds if lockedBy matches. */
+  ownerId?: string;
+  /** When set, update only succeeds if current state is one of these. */
+  expectStates?: ArsenkinTaskState[];
+};
+
 export type ProviderTaskStore = {
   /** True for the database store; fixture stores intentionally avoid account DB state. */
   isPersistent?: boolean;
   findByRequestHash: (reportRunId: string, requestHash: string) => Promise<ProviderTaskRecord | null>;
+  findById: (id: string) => Promise<ProviderTaskRecord | null>;
   upsertPending: (input: UpsertProviderTaskInput) => Promise<ProviderTaskRecord>;
-  markExternalId: (id: string, externalTaskId: string) => Promise<ProviderTaskRecord>;
+  /**
+   * Atomic QUEUED -> SUBMITTING claim. Only the winning owner may call /set.
+   * Returns null when another worker already owns the submit lease.
+   */
+  claimForSubmission: (
+    id: string,
+    workerId: string,
+    leaseMs: number,
+    now?: Date
+  ) => Promise<ProviderTaskRecord | null>;
+  markExternalId: (
+    id: string,
+    externalTaskId: string,
+    options?: { ownerId?: string }
+  ) => Promise<ProviderTaskRecord>;
   updateState: (
     id: string,
-    patch: {
-      state: ArsenkinTaskState;
-      attempts?: number;
-      nextPollAt?: Date | null;
-      errorCode?: string | null;
-      limitsSpent?: number | null;
-      submittedAt?: Date | null;
-      latencyMs?: number | null;
-      limitsBefore?: number | null;
-      limitsAfter?: number | null;
-      lockedBy?: string | null;
-      lockedAt?: Date | null;
-      leaseUntil?: Date | null;
-      responseJson?: Record<string, unknown> | null;
-      completedAt?: Date | null;
-    }
+    patch: ProviderTaskStatePatch,
+    options?: ProviderTaskUpdateOptions
   ) => Promise<ProviderTaskRecord>;
   listDue: (now?: Date, limit?: number) => Promise<ProviderTaskRecord[]>;
+  /** Poll claim: RUNNING/RATE_LIMITED with externalTaskId only. */
   claimDue: (workerId: string, now: Date, limit: number, leaseMs: number) => Promise<ProviderTaskRecord[]>;
   releaseLease: (id: string) => Promise<ProviderTaskRecord>;
 };
 
 export function hashProviderRequest(body: unknown): string {
   return createHash("sha256").update(JSON.stringify(body ?? {})).digest("hex");
+}
+
+function isPollable(r: ProviderTaskRecord, now: Date): boolean {
+  return (
+    (r.state === "RUNNING" || r.state === "RATE_LIMITED") &&
+    r.externalTaskId != null &&
+    String(r.externalTaskId).length > 0 &&
+    (!r.nextPollAt || r.nextPollAt.getTime() <= now.getTime())
+  );
 }
 
 export function createMemoryProviderTaskStore(): ProviderTaskStore {
@@ -66,6 +102,9 @@ export function createMemoryProviderTaskStore(): ProviderTaskStore {
     async findByRequestHash(reportRunId, requestHash) {
       const id = byHash.get(scope(reportRunId, requestHash));
       return id ? byId.get(id) ?? null : null;
+    },
+    async findById(id) {
+      return byId.get(id) ?? null;
     },
     async upsertPending(input) {
       const requestHash = input.requestHash ?? hashProviderRequest(input.requestJson);
@@ -104,13 +143,47 @@ export function createMemoryProviderTaskStore(): ProviderTaskStore {
       byHash.set(scope(input.reportRunId, requestHash), row.id);
       return row;
     },
-    async markExternalId(id, externalTaskId) {
-      const row = { ...get(id), externalTaskId, state: "RUNNING" as const, updatedAt: new Date() };
+    async claimForSubmission(id, workerId, leaseMs, now = new Date()) {
+      const prev = get(id);
+      const leaseExpired = !prev.leaseUntil || prev.leaseUntil.getTime() <= now.getTime();
+      if (prev.state !== "QUEUED" || !leaseExpired) return null;
+      const row: ProviderTaskRecord = {
+        ...prev,
+        state: "SUBMITTING",
+        lockedBy: workerId,
+        lockedAt: now,
+        leaseUntil: new Date(now.getTime() + leaseMs),
+        errorCode: null,
+        updatedAt: new Date(),
+      };
       byId.set(id, row);
       return row;
     },
-    async updateState(id, patch) {
+    async markExternalId(id, externalTaskId, options) {
       const prev = get(id);
+      if (options?.ownerId && prev.lockedBy !== options.ownerId) {
+        throw new Error(`ProviderTask markExternalId owner mismatch: ${id}`);
+      }
+      if (prev.state !== "SUBMITTING" && prev.state !== "RUNNING") {
+        throw new Error(`ProviderTask markExternalId invalid state ${prev.state}: ${id}`);
+      }
+      const row = {
+        ...prev,
+        externalTaskId,
+        state: "RUNNING" as const,
+        updatedAt: new Date(),
+      };
+      byId.set(id, row);
+      return row;
+    },
+    async updateState(id, patch, options) {
+      const prev = get(id);
+      if (options?.ownerId && prev.lockedBy !== options.ownerId) {
+        throw new Error(`ProviderTask updateState owner mismatch: ${id}`);
+      }
+      if (options?.expectStates && !options.expectStates.includes(prev.state)) {
+        throw new Error(`ProviderTask updateState unexpected state ${prev.state}: ${id}`);
+      }
       const row: ProviderTaskRecord = {
         ...prev,
         state: patch.state,
@@ -127,6 +200,8 @@ export function createMemoryProviderTaskStore(): ProviderTaskStore {
         leaseUntil: patch.leaseUntil === undefined ? prev.leaseUntil : patch.leaseUntil,
         responseJson: patch.responseJson === undefined ? prev.responseJson : patch.responseJson,
         completedAt: patch.completedAt === undefined ? prev.completedAt : patch.completedAt,
+        externalTaskId:
+          patch.externalTaskId === undefined ? prev.externalTaskId : patch.externalTaskId,
         updatedAt: new Date(),
       };
       byId.set(id, row);
@@ -134,11 +209,7 @@ export function createMemoryProviderTaskStore(): ProviderTaskStore {
     },
     async listDue(now = new Date(), limit = 20) {
       return [...byId.values()]
-        .filter(
-          (r) =>
-            (r.state === "QUEUED" || r.state === "RUNNING" || r.state === "RATE_LIMITED") &&
-            (!r.nextPollAt || r.nextPollAt.getTime() <= now.getTime())
-        )
+        .filter((r) => isPollable(r, now))
         .sort((a, b) => (a.nextPollAt?.getTime() ?? 0) - (b.nextPollAt?.getTime() ?? 0))
         .slice(0, limit);
     },
@@ -147,9 +218,7 @@ export function createMemoryProviderTaskStore(): ProviderTaskStore {
       const claimed = [...byId.values()]
         .filter(
           (r) =>
-            (r.state === "QUEUED" || r.state === "RUNNING" || r.state === "RATE_LIMITED") &&
-            (!r.nextPollAt || r.nextPollAt.getTime() <= now.getTime()) &&
-            (!r.leaseUntil || r.leaseUntil.getTime() <= now.getTime())
+            isPollable(r, now) && (!r.leaseUntil || r.leaseUntil.getTime() <= now.getTime())
         )
         .sort((a, b) => (a.nextPollAt?.getTime() ?? 0) - (b.nextPollAt?.getTime() ?? 0))
         .slice(0, limit)

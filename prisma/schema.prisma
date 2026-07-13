@@ -794,6 +794,20 @@ model ProviderAccountLimiter {
   @@map("dp_provider_account_limiter")
 }
 
+/// Per-request lease for Arsenkin account concurrency + sliding RPM budget.
+model ProviderAccountRequestLease {
+  id         String    @id @default(cuid())
+  limiterId  String
+  ownerId    String
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  releasedAt DateTime?
+
+  @@index([limiterId, createdAt])
+  @@index([limiterId, expiresAt])
+  @@map("dp_provider_account_request_leases")
+}
+
 model SerpSyntheticAsset {
   id            String   @id @default(cuid())
   caseId        String

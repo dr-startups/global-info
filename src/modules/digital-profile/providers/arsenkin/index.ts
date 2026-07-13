@@ -11,3 +11,4 @@ export * from "./surface-coverage";
 export * from "./regions";
 export * from "./adapters";
 export * from "./collect-pilot-surfaces";
+export * from "./cost";

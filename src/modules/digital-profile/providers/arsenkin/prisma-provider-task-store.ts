@@ -1,9 +1,11 @@
 import { prisma } from "@/server/prisma/client";
 import { Prisma, type ProviderTask } from "@prisma/client";
-import type { ProviderTaskRecord } from "./types";
+import type { ArsenkinTaskState, ProviderTaskRecord } from "./types";
 import {
   hashProviderRequest,
   type ProviderTaskStore,
+  type ProviderTaskStatePatch,
+  type ProviderTaskUpdateOptions,
   type UpsertProviderTaskInput,
 } from "./provider-task-store";
 
@@ -27,6 +29,31 @@ function map(row: ProviderTask): ProviderTaskRecord {
   };
 }
 
+function patchToData(patch: ProviderTaskStatePatch): Prisma.ProviderTaskUpdateInput {
+  return {
+    state: patch.state,
+    attempts: patch.attempts,
+    nextPollAt: patch.nextPollAt === undefined ? undefined : patch.nextPollAt,
+    errorCode: patch.errorCode === undefined ? undefined : patch.errorCode,
+    limitsSpent: patch.limitsSpent === undefined ? undefined : patch.limitsSpent,
+    submittedAt: patch.submittedAt === undefined ? undefined : patch.submittedAt,
+    latencyMs: patch.latencyMs === undefined ? undefined : patch.latencyMs,
+    limitsBefore: patch.limitsBefore === undefined ? undefined : patch.limitsBefore,
+    limitsAfter: patch.limitsAfter === undefined ? undefined : patch.limitsAfter,
+    lockedBy: patch.lockedBy === undefined ? undefined : patch.lockedBy,
+    lockedAt: patch.lockedAt === undefined ? undefined : patch.lockedAt,
+    leaseUntil: patch.leaseUntil === undefined ? undefined : patch.leaseUntil,
+    completedAt: patch.completedAt === undefined ? undefined : patch.completedAt,
+    externalTaskId: patch.externalTaskId === undefined ? undefined : patch.externalTaskId,
+    responseJson:
+      patch.responseJson === undefined
+        ? undefined
+        : patch.responseJson === null
+          ? Prisma.JsonNull
+          : toJson(patch.responseJson),
+  };
+}
+
 export function createPrismaProviderTaskStore(): ProviderTaskStore {
   return {
     isPersistent: true,
@@ -34,6 +61,10 @@ export function createPrismaProviderTaskStore(): ProviderTaskStore {
       const row = await prisma.providerTask.findUnique({
         where: { reportRunId_provider_requestHash: { reportRunId, provider: "arsenkin", requestHash } },
       });
+      return row ? map(row) : null;
+    },
+    async findById(id) {
+      const row = await prisma.providerTask.findUnique({ where: { id } });
       return row ? map(row) : null;
     },
     async upsertPending(input: UpsertProviderTaskInput) {
@@ -63,31 +94,59 @@ export function createPrismaProviderTaskStore(): ProviderTaskStore {
       });
       return map(row);
     },
-    async markExternalId(id, externalTaskId) {
-      return map(
-        await prisma.providerTask.update({
-          where: { id },
-          data: { externalTaskId, state: "RUNNING" },
-        })
-      );
+    async claimForSubmission(id, workerId, leaseMs, now = new Date()) {
+      const leaseUntil = new Date(now.getTime() + leaseMs);
+      const result = await prisma.providerTask.updateMany({
+        where: {
+          id,
+          state: "QUEUED",
+          OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }],
+        },
+        data: {
+          state: "SUBMITTING",
+          lockedBy: workerId,
+          lockedAt: now,
+          leaseUntil,
+          errorCode: null,
+        },
+      });
+      if (!result.count) return null;
+      return map(await prisma.providerTask.findUniqueOrThrow({ where: { id } }));
     },
-    async updateState(id, patch) {
-      const data: Prisma.ProviderTaskUpdateInput = {
-        ...patch,
-        responseJson:
-          patch.responseJson === undefined
-            ? undefined
-            : patch.responseJson === null
-              ? Prisma.JsonNull
-              : toJson(patch.responseJson),
+    async markExternalId(id, externalTaskId, options) {
+      const where: Prisma.ProviderTaskWhereInput = {
+        id,
+        state: { in: ["SUBMITTING", "RUNNING"] },
       };
-      return map(await prisma.providerTask.update({ where: { id }, data }));
+      if (options?.ownerId) where.lockedBy = options.ownerId;
+      const result = await prisma.providerTask.updateMany({
+        where,
+        data: { externalTaskId, state: "RUNNING" },
+      });
+      if (!result.count) {
+        throw new Error(`ProviderTask markExternalId rejected: ${id}`);
+      }
+      return map(await prisma.providerTask.findUniqueOrThrow({ where: { id } }));
+    },
+    async updateState(id, patch, options?: ProviderTaskUpdateOptions) {
+      const where: Prisma.ProviderTaskWhereInput = { id };
+      if (options?.ownerId) where.lockedBy = options.ownerId;
+      if (options?.expectStates?.length) where.state = { in: options.expectStates };
+      const result = await prisma.providerTask.updateMany({
+        where,
+        data: patchToData(patch) as Prisma.ProviderTaskUpdateManyMutationInput,
+      });
+      if (!result.count) {
+        throw new Error(`ProviderTask updateState rejected: ${id}`);
+      }
+      return map(await prisma.providerTask.findUniqueOrThrow({ where: { id } }));
     },
     async listDue(now = new Date(), limit = 20) {
       return (
         await prisma.providerTask.findMany({
           where: {
-            state: { in: ["QUEUED", "RUNNING", "RATE_LIMITED"] },
+            state: { in: ["RUNNING", "RATE_LIMITED"] },
+            externalTaskId: { not: null },
             OR: [{ nextPollAt: null }, { nextPollAt: { lte: now } }],
           },
           orderBy: { nextPollAt: "asc" },
@@ -100,7 +159,8 @@ export function createPrismaProviderTaskStore(): ProviderTaskStore {
       return prisma.$transaction(async (tx) => {
         const candidates = await tx.providerTask.findMany({
           where: {
-            state: { in: ["QUEUED", "RUNNING", "RATE_LIMITED"] },
+            state: { in: ["RUNNING", "RATE_LIMITED"] },
+            externalTaskId: { not: null },
             OR: [{ nextPollAt: null }, { nextPollAt: { lte: now } }],
             AND: [{ OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }] }],
           },
@@ -112,15 +172,15 @@ export function createPrismaProviderTaskStore(): ProviderTaskStore {
           const result = await tx.providerTask.updateMany({
             where: {
               id: candidate.id,
+              state: { in: ["RUNNING", "RATE_LIMITED"] },
+              externalTaskId: { not: null },
               OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }],
               AND: [{ OR: [{ nextPollAt: null }, { nextPollAt: { lte: now } }] }],
             },
             data: { lockedBy: workerId, lockedAt: now, leaseUntil },
           });
           if (result.count) {
-            claimed.push(
-              (await tx.providerTask.findUniqueOrThrow({ where: { id: candidate.id } }))
-            );
+            claimed.push(await tx.providerTask.findUniqueOrThrow({ where: { id: candidate.id } }));
           }
         }
         return claimed.map(map);
@@ -136,3 +196,6 @@ export function createPrismaProviderTaskStore(): ProviderTaskStore {
     },
   };
 }
+
+/** @internal for typed expectStates helpers */
+export type { ArsenkinTaskState };

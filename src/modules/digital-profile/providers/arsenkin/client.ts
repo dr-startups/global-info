@@ -182,6 +182,14 @@ export class ArsenkinClient {
         }
         const obj = asObj(parsed);
         if (res.status === 429 || obj.code === "429" || obj.code === 429) {
+          // /set must not blind-retry POST; check/get may wait and retry.
+          if (!options.retryAmbiguousNetwork) {
+            throw new ArsenkinRequestError("Arsenkin rate limited (429)", {
+              status: 429,
+              code: "429",
+              raw: obj,
+            });
+          }
           const retryAfterMs = 2000 * (attempt + 1) + Math.floor(Math.random() * 500);
           await this.sleep(retryAfterMs);
           lastErr = new Error("Arsenkin rate limited (429)");
@@ -190,13 +198,22 @@ export class ArsenkinClient {
         if (!res.ok) {
           throw new ArsenkinRequestError(
             `Arsenkin HTTP ${res.status}: ${redactSecrets(text).slice(0, 240)}`,
-            { status: res.status, code: obj.code != null ? String(obj.code) : undefined, raw: obj }
+            {
+              status: res.status,
+              code: obj.code != null ? String(obj.code) : undefined,
+              raw: obj,
+              // POST /set may have been accepted server-side despite a 5xx response.
+              uncertain: res.status >= 500,
+            }
           );
         }
         return obj;
       } catch (err) {
         lastErr = err instanceof Error ? err : new Error(String(err));
         if (err instanceof ArsenkinRequestError && err.options.status && err.options.status !== 429) {
+          throw err;
+        }
+        if (err instanceof ArsenkinRequestError && err.options.status === 429 && !options.retryAmbiguousNetwork) {
           throw err;
         }
         if (!options.retryAmbiguousNetwork) {
