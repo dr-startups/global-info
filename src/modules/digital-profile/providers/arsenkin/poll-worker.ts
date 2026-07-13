@@ -1,6 +1,7 @@
 /**
  * Poll worker: set → check → get for Arsenkin ProviderTasks.
- * Exactly-once best-effort submit via claimForSubmission; poll never touches QUEUED.
+ * Exactly-once best-effort submit via claimForSubmission; poll never touches QUEUED
+ * or RATE_LIMITED-without-externalTaskId (submit-retry state).
  */
 
 import { randomUUID } from "node:crypto";
@@ -18,7 +19,18 @@ export type EnsureArsenkinTaskInput = {
   /** Optional submit worker id for CAS ownership. */
   workerId?: string;
   submitLeaseMs?: number;
+  /** Max /set attempts for RATE_LIMITED-without-externalTaskId. Default 5. */
+  maxSubmitRetries?: number;
 };
+
+export function maxArsenkinSubmitRetries(env: NodeJS.ProcessEnv = process.env): number {
+  return Math.max(1, Number(env.ARSENKIN_MAX_SUBMIT_RETRIES ?? 5) || 5);
+}
+
+/** RATE_LIMITED without externalTaskId is a submit-retry state, never a poll state. */
+export function isSubmitRetryRateLimited(row: ProviderTaskRecord): boolean {
+  return row.state === "RATE_LIMITED" && !row.externalTaskId;
+}
 
 async function accountRequest<T>(store: ProviderTaskStore, fn: () => Promise<T>): Promise<T> {
   if (!store.isPersistent) return fn();
@@ -38,11 +50,15 @@ async function availableLimits(client: ArsenkinClient, store: ProviderTaskStore)
   }
 }
 
-function submitFailedState(error: unknown): {
+function submitFailedState(
+  error: unknown,
+  attempts: number
+): {
   state: ProviderTaskRecord["state"];
   errorCode: string;
   nextPollAt: Date | null;
   completedAt: Date | null;
+  attempts: number;
 } {
   const requestError = error instanceof ArsenkinRequestError ? error : null;
   const status = requestError?.options.status;
@@ -52,6 +68,7 @@ function submitFailedState(error: unknown): {
       errorCode: status ? `http_${status}` : "submit_unknown",
       nextPollAt: null,
       completedAt: null,
+      attempts,
     };
   }
   if (status === 429) {
@@ -60,6 +77,7 @@ function submitFailedState(error: unknown): {
       errorCode: "http_429",
       nextPollAt: new Date(Date.now() + 5_000),
       completedAt: null,
+      attempts: attempts + 1,
     };
   }
   if (status != null && status >= 400 && status < 500) {
@@ -68,6 +86,7 @@ function submitFailedState(error: unknown): {
       errorCode: `http_${status}`,
       nextPollAt: null,
       completedAt: new Date(),
+      attempts: attempts + 1,
     };
   }
   return {
@@ -75,13 +94,14 @@ function submitFailedState(error: unknown): {
     errorCode: "submit_unknown",
     nextPollAt: null,
     completedAt: null,
+    attempts,
   };
 }
 
 /**
- * Ensure a ProviderTask exists and has been submitted at most once.
+ * Ensure a ProviderTask exists and has been submitted at most once per claim.
  * Never calls /set for SUBMITTING or SUBMIT_UNKNOWN.
- * Expired SUBMITTING without externalTaskId becomes SUBMIT_UNKNOWN.
+ * RATE_LIMITED without externalTaskId waits until nextPollAt, then CAS re-submit.
  */
 export async function ensureArsenkinTask(
   client: ArsenkinClient,
@@ -93,6 +113,7 @@ export async function ensureArsenkinTask(
     data: input.data,
   };
   const requestHash = hashProviderRequest(requestJson);
+  const maxRetries = input.maxSubmitRetries ?? maxArsenkinSubmitRetries();
   let row = await store.findByRequestHash(input.reportRunId, requestHash);
   if (!row) {
     row = await store.upsertPending({
@@ -120,26 +141,34 @@ export async function ensureArsenkinTask(
         leaseUntil: null,
       });
     }
-    // Another worker owns an active submit lease — never re-POST /set.
     return row;
   }
 
-  if (row.state !== "QUEUED" && row.state !== "RATE_LIMITED") {
-    // FAILED/CANCELLED/etc. — do not submit again.
-    return row;
-  }
-
-  // RATE_LIMITED without externalTaskId means a prior /set was rejected with 429 before task id.
-  // Re-queue into QUEUED so claimForSubmission can run again (safe: no prior POST success).
-  if (row.state === "RATE_LIMITED") {
+  if (isSubmitRetryRateLimited(row)) {
+    if (row.attempts >= maxRetries) {
+      return store.updateState(row.id, {
+        state: "FAILED",
+        errorCode: "submit_retry_exhausted",
+        nextPollAt: null,
+        completedAt: new Date(),
+      });
+    }
+    if (row.nextPollAt && row.nextPollAt.getTime() > now.getTime()) {
+      // Honour backoff — never /set before nextPollAt.
+      return row;
+    }
+    // Safe re-queue for CAS submit (no prior externalTaskId).
     row = await store.updateState(row.id, {
       state: "QUEUED",
-      errorCode: null,
       nextPollAt: now,
       lockedBy: null,
       lockedAt: null,
       leaseUntil: null,
     });
+  }
+
+  if (row.state !== "QUEUED") {
+    return row;
   }
 
   const workerId = input.workerId ?? `arsenkin-submit-${process.pid}-${randomUUID().slice(0, 8)}`;
@@ -150,7 +179,6 @@ export async function ensureArsenkinTask(
     now
   );
   if (!claimed) {
-    // Lost the race — return current row without calling /set.
     return (await store.findById(row.id)) ?? row;
   }
 
@@ -175,7 +203,7 @@ export async function ensureArsenkinTask(
       { ownerId: workerId }
     );
   } catch (error) {
-    const failed = submitFailedState(error);
+    const failed = submitFailedState(error, claimed.attempts);
     return store.updateState(
       claimed.id,
       {
@@ -183,7 +211,11 @@ export async function ensureArsenkinTask(
         errorCode: failed.errorCode,
         nextPollAt: failed.nextPollAt,
         completedAt: failed.completedAt,
+        attempts: failed.attempts,
         limitsBefore,
+        lockedBy: null,
+        lockedAt: null,
+        leaseUntil: null,
       },
       { ownerId: workerId }
     );
@@ -196,7 +228,13 @@ export async function pollArsenkinTask(
   row: ProviderTaskRecord
 ): Promise<ProviderTaskRecord> {
   if (row.nextPollAt && row.nextPollAt.getTime() > Date.now()) return row;
-  if (row.state === "QUEUED" || row.state === "SUBMITTING" || row.state === "SUBMIT_UNKNOWN") {
+  if (
+    row.state === "QUEUED" ||
+    row.state === "SUBMITTING" ||
+    row.state === "SUBMIT_UNKNOWN" ||
+    isSubmitRetryRateLimited(row)
+  ) {
+    // Never mark submit-retry RATE_LIMITED as missing_external_task_id.
     return row;
   }
   if (!row.externalTaskId) {
@@ -247,6 +285,45 @@ export async function pollArsenkinTask(
     nextPollAt: null,
     errorCode: null,
   });
+}
+
+/**
+ * Wait until DONE/FAILED/CANCELLED/SUBMIT_UNKNOWN.
+ * RATE_LIMITED without externalTaskId waits for nextPollAt then re-enters ensure (never poll).
+ */
+export async function waitForArsenkinTaskCompletion(
+  client: ArsenkinClient,
+  store: ProviderTaskStore,
+  input: EnsureArsenkinTaskInput,
+  waitTimeoutMs: number
+): Promise<ProviderTaskRecord> {
+  let row = await ensureArsenkinTask(client, store, input);
+  const started = Date.now();
+  while (
+    row.state !== "DONE" &&
+    row.state !== "FAILED" &&
+    row.state !== "CANCELLED" &&
+    row.state !== "SUBMIT_UNKNOWN"
+  ) {
+    if (Date.now() - started > waitTimeoutMs) {
+      throw new Error(`Arsenkin task timeout tool=${input.toolName} id=${row.externalTaskId}`);
+    }
+    if (row.state === "SUBMITTING" || row.state === "QUEUED" || isSubmitRetryRateLimited(row)) {
+      if (isSubmitRetryRateLimited(row) && row.nextPollAt && row.nextPollAt.getTime() > Date.now()) {
+        const waitMs = Math.min(1_500, Math.max(50, row.nextPollAt.getTime() - Date.now()));
+        await new Promise((r) => setTimeout(r, waitMs));
+      } else {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      row = await ensureArsenkinTask(client, store, input);
+      continue;
+    }
+    row = await pollArsenkinTask(client, store, row);
+    if (row.state !== "DONE") {
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+  }
+  return row;
 }
 
 export async function runDueArsenkinPolls(

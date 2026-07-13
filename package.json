@@ -41,6 +41,7 @@
     "smoke:arsenkin-client": "tsx scripts/smoke-arsenkin-client.ts",
     "smoke:arsenkin-adapters": "tsx scripts/smoke-arsenkin-adapters.ts",
     "smoke:arsenkin-p0-hardening": "tsx scripts/smoke-arsenkin-p0-hardening.ts",
+    "smoke:arsenkin-p0-followup": "tsx scripts/smoke-arsenkin-p0-followup.ts",
     "pilot:arsenkin-first36": "tsx --env-file=.env scripts/arsenkin-first36-ab-pilot.ts",
     "accept:first36": "npm run typecheck && tsx scripts/accept-first36-report.ts",
     "render:first36-live": "tsx scripts/run-first36-live-render.ts",

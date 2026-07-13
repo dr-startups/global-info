@@ -8,7 +8,7 @@ import { join } from "node:path";
 import type { ArsenkinClient } from "./client";
 import { createArsenkinClientFromEnv } from "./client";
 import { isArsenkinConfigured, isArsenkinToolEnabled, type ArsenkinToolName } from "./flags";
-import { ensureArsenkinTask, pollArsenkinTask } from "./poll-worker";
+import { ensureArsenkinTask, pollArsenkinTask, waitForArsenkinTaskCompletion } from "./poll-worker";
 import { createMemoryProviderTaskStore, type ProviderTaskStore } from "./provider-task-store";
 import { createPrismaProviderTaskStore } from "./prisma-provider-task-store";
 import { recordSurfaceCoverageFromDrafts } from "./surface-coverage";
@@ -22,6 +22,7 @@ import { buildIndexationRequest, mapIndexationToObservations } from "./adapters/
 import { ARSENKIN_REGION, pilotSeForRegion } from "./regions";
 import type { SerpObservationDraft } from "../../serp-observation/types";
 import { buildSerpQueryId } from "../../serp-observation/query-id";
+import type { ProviderTaskRecord } from "./types";
 
 const FIX = join(
   process.cwd(),
@@ -31,6 +32,17 @@ const FIX = join(
 function loadFix(name: string): unknown {
   return JSON.parse(readFileSync(join(FIX, name), "utf-8"));
 }
+
+export type ArsenkinSurfaceRun = {
+  tool: string;
+  engine: string;
+  region: string;
+  language: string;
+  query: string;
+  surface: string;
+  providerTaskId: string | null;
+  resultCount: number;
+};
 
 export type ArsenkinPilotCollectInput = {
   caseId: string;
@@ -65,6 +77,8 @@ export type ArsenkinPilotCollectResult = {
     indexation: number;
   };
   taskIds: string[];
+  /** Per-surface provenance independent of observation drafts (supports NO_RESULTS). */
+  surfaceRuns: ArsenkinSurfaceRun[];
 };
 
 async function completeTask(
@@ -74,39 +88,18 @@ async function completeTask(
   data: Record<string, unknown>,
   meta: { caseId: string; auditRunId: string; taskIds?: string[] },
   waitTimeoutMs: number
-): Promise<{ payload: Record<string, unknown>; task: import("./types").ProviderTaskRecord }> {
-  let row = await ensureArsenkinTask(client, store, {
-    toolName,
-    data,
-    caseId: meta.caseId,
-    reportRunId: meta.auditRunId,
-  });
-  const started = Date.now();
-  while (
-    row.state !== "DONE" &&
-    row.state !== "FAILED" &&
-    row.state !== "CANCELLED" &&
-    row.state !== "SUBMIT_UNKNOWN"
-  ) {
-    if (Date.now() - started > waitTimeoutMs) {
-      throw new Error(`Arsenkin task timeout tool=${toolName} id=${row.externalTaskId}`);
-    }
-    if (row.state === "SUBMITTING" || row.state === "QUEUED") {
-      // Another worker owns submit — wait and re-enter ensure (never /set while SUBMITTING).
-      await new Promise((r) => setTimeout(r, 500));
-      row = await ensureArsenkinTask(client, store, {
-        toolName,
-        data,
-        caseId: meta.caseId,
-        reportRunId: meta.auditRunId,
-      });
-      continue;
-    }
-    row = await pollArsenkinTask(client, store, row);
-    if (row.state !== "DONE") {
-      await new Promise((r) => setTimeout(r, 1500));
-    }
-  }
+): Promise<{ payload: Record<string, unknown>; task: ProviderTaskRecord }> {
+  const row = await waitForArsenkinTaskCompletion(
+    client,
+    store,
+    {
+      toolName,
+      data,
+      caseId: meta.caseId,
+      reportRunId: meta.auditRunId,
+    },
+    waitTimeoutMs
+  );
   if (row.state !== "DONE" || !row.responseJson) {
     throw new Error(`Arsenkin task ${row.state}: ${row.errorCode ?? toolName}`);
   }
@@ -120,6 +113,13 @@ function withProviderTaskId<T extends SerpObservationDraft>(
 ): T[] {
   if (!providerTaskId) return drafts;
   return drafts.map((d) => ({ ...d, providerTaskId }));
+}
+
+function pushSurfaceRun(
+  surfaceRuns: ArsenkinSurfaceRun[],
+  run: ArsenkinSurfaceRun
+): void {
+  surfaceRuns.push(run);
 }
 
 export async function collectArsenkinPilotSurfaces(
@@ -137,6 +137,7 @@ export async function collectArsenkinPilotSurfaces(
   const store = live ? createPrismaProviderTaskStore() : input.store ?? createMemoryProviderTaskStore();
   const drafts: SerpObservationDraft[] = [];
   const taskIds: string[] = [];
+  const surfaceRuns: ArsenkinSurfaceRun[] = [];
   const waitTimeoutMs = input.waitTimeoutMs ?? 10 * 60_000;
 
   const ruQuery = input.queriesRu[0] ?? "subject";
@@ -174,6 +175,19 @@ export async function collectArsenkinPilotSurfaces(
         payload,
       }), providerTaskId)
     );
+    const ruOrganic = drafts.filter(
+      (d) => d.surface === "organic" && d.region === "RU" && d.providerTaskId === providerTaskId
+    );
+    pushSurfaceRun(surfaceRuns, {
+      tool: "check-top",
+      engine: ruOrganic[0]?.engine ?? "GOOGLE",
+      region: "RU",
+      language: "ru",
+      query: input.queriesRu[0] ?? ruQuery,
+      surface: "organic",
+      providerTaskId,
+      resultCount: ruOrganic.filter((d) => d.providerStatus === "OK").length,
+    });
   }
 
   // --- check-top UAE (Google only) ---
@@ -235,8 +249,7 @@ export async function collectArsenkinPilotSurfaces(
     } else {
       payload = loadFix("get-suggest.json");
     }
-    drafts.push(
-      ...withProviderTaskId(mapSuggestToObservations({
+    const mappedSuggestYandex = withProviderTaskId(mapSuggestToObservations({
         caseId: input.caseId,
         auditRunId: input.auditRunId,
         regionLabel: "RU",
@@ -244,8 +257,18 @@ export async function collectArsenkinPilotSurfaces(
         queries: [ruQuery],
         se: 1,
         payload,
-      }), providerTaskId)
-    );
+      }), providerTaskId);
+    drafts.push(...mappedSuggestYandex);
+    pushSurfaceRun(surfaceRuns, {
+      tool: "suggest",
+      engine: "YANDEX",
+      region: "RU",
+      language: "ru",
+      query: ruQuery,
+      surface: "autocomplete",
+      providerTaskId,
+      resultCount: mappedSuggestYandex.filter((d) => d.providerStatus === "OK").length,
+    });
   }
 
   // --- suggest RU (Google) ---
@@ -268,8 +291,7 @@ export async function collectArsenkinPilotSurfaces(
     } else {
       payload = loadFix("get-suggest.json");
     }
-    drafts.push(
-      ...withProviderTaskId(mapSuggestToObservations({
+    const mappedSuggestGoogleRu = withProviderTaskId(mapSuggestToObservations({
         caseId: input.caseId,
         auditRunId: input.auditRunId,
         regionLabel: "RU",
@@ -277,8 +299,18 @@ export async function collectArsenkinPilotSurfaces(
         queries: [ruQuery],
         se: 2,
         payload,
-      }), providerTaskId)
-    );
+      }), providerTaskId);
+    drafts.push(...mappedSuggestGoogleRu);
+    pushSurfaceRun(surfaceRuns, {
+      tool: "suggest",
+      engine: "GOOGLE",
+      region: "RU",
+      language: "ru",
+      query: ruQuery,
+      surface: "autocomplete",
+      providerTaskId,
+      resultCount: mappedSuggestGoogleRu.filter((d) => d.providerStatus === "OK").length,
+    });
   }
 
   // --- suggest UAE (Google) ---
@@ -301,8 +333,7 @@ export async function collectArsenkinPilotSurfaces(
     } else {
       payload = loadFix("get-suggest.json");
     }
-    drafts.push(
-      ...withProviderTaskId(mapSuggestToObservations({
+    const mappedSuggestUae = withProviderTaskId(mapSuggestToObservations({
         caseId: input.caseId,
         auditRunId: input.auditRunId,
         regionLabel: "UAE",
@@ -310,8 +341,18 @@ export async function collectArsenkinPilotSurfaces(
         queries: [uaeQuery],
         se: 2,
         payload,
-      }), providerTaskId)
-    );
+      }), providerTaskId);
+    drafts.push(...mappedSuggestUae);
+    pushSurfaceRun(surfaceRuns, {
+      tool: "suggest",
+      engine: "GOOGLE",
+      region: "UAE",
+      language: "en",
+      query: uaeQuery,
+      surface: "autocomplete",
+      providerTaskId,
+      resultCount: mappedSuggestUae.filter((d) => d.providerStatus === "OK").length,
+    });
   }
 
   // --- paa RU (Google-only) ---
@@ -331,16 +372,25 @@ export async function collectArsenkinPilotSurfaces(
     } else {
       payload = loadFix("get-paa.json");
     }
-    drafts.push(
-      ...withProviderTaskId(mapPaaToObservations({
+    const mappedPaaRu = withProviderTaskId(mapPaaToObservations({
         caseId: input.caseId,
         auditRunId: input.auditRunId,
         regionLabel: "RU",
         language: "ru",
         queries: [ruQuery],
         payload,
-      }), providerTaskId)
-    );
+      }), providerTaskId);
+    drafts.push(...mappedPaaRu);
+    pushSurfaceRun(surfaceRuns, {
+      tool: "paa",
+      engine: "GOOGLE",
+      region: "RU",
+      language: "ru",
+      query: ruQuery,
+      surface: "paa",
+      providerTaskId,
+      resultCount: mappedPaaRu.filter((d) => d.providerStatus === "OK").length,
+    });
   }
 
   // --- paa UAE (Google-only) ---
@@ -363,16 +413,25 @@ export async function collectArsenkinPilotSurfaces(
     } else {
       payload = loadFix("get-paa.json");
     }
-    drafts.push(
-      ...withProviderTaskId(mapPaaToObservations({
+    const mappedPaaUae = withProviderTaskId(mapPaaToObservations({
         caseId: input.caseId,
         auditRunId: input.auditRunId,
         regionLabel: "UAE",
         language: "en",
         queries: [uaeQuery],
         payload,
-      }), providerTaskId)
-    );
+      }), providerTaskId);
+    drafts.push(...mappedPaaUae);
+    pushSurfaceRun(surfaceRuns, {
+      tool: "paa",
+      engine: "GOOGLE",
+      region: "UAE",
+      language: "en",
+      query: uaeQuery,
+      surface: "paa",
+      providerTaskId,
+      resultCount: mappedPaaUae.filter((d) => d.providerStatus === "OK").length,
+    });
   }
 
   // --- ai-serp: Yandex Alice (RU) + Google AI Overview (RU/UAE) — not Knowledge Panel ---
@@ -562,11 +621,20 @@ export async function collectArsenkinPilotSurfaces(
       }
     }
     await Promise.all(
-      coverageTargets.map((target) =>
-        upsertSurfaceCollectionCoverage({
+      coverageTargets.map((target) => {
+        const run = surfaceRuns.find(
+          (r) =>
+            r.tool === target.tool &&
+            r.engine === target.engine &&
+            r.region === target.region &&
+            r.surface === target.surface &&
+            r.query === target.query
+        );
+        return upsertSurfaceCollectionCoverage({
           reportRunId: input.auditRunId,
           provider: "arsenkin",
           tool: target.tool,
+          providerTaskId: run?.providerTaskId ?? null,
           queryId: buildSerpQueryId({
             auditRunId: input.auditRunId,
             provider: "arsenkin",
@@ -581,24 +649,9 @@ export async function collectArsenkinPilotSurfaces(
           region: target.region,
           language: target.language,
           surface: target.surface,
-          resultCount: drafts.filter(
-            (draft) =>
-              draft.surface === target.surface &&
-              draft.engine === target.engine &&
-              draft.region === target.region &&
-              draft.queryText === target.query &&
-              draft.providerStatus === "OK"
-          ).length,
-          providerTaskId:
-            drafts.find(
-              (draft) =>
-                draft.surface === target.surface &&
-                draft.engine === target.engine &&
-                draft.region === target.region &&
-                draft.queryText === target.query
-            )?.providerTaskId ?? null,
-        })
-      )
+          resultCount: run?.resultCount ?? 0,
+        });
+      })
     );
   }
   return {
@@ -606,5 +659,6 @@ export async function collectArsenkinPilotSurfaces(
     drafts,
     bySurface,
     taskIds,
+    surfaceRuns,
   };
 }

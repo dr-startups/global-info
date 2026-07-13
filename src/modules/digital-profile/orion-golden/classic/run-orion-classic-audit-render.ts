@@ -27,6 +27,11 @@ import { mergeRunScopedSerpObservations } from "./merge-run-scoped-serp-observat
 import { isArsenkinRequired } from "../../providers/arsenkin";
 import type { ExecutiveSynthesisOutput } from "../gpt/orion-executive-synthesis-from-sections";
 import type { SectionDerivedRiskMatrix } from "../sections/orion-risk-matrix-from-sections";
+import { generateFirst36GeometryArtifacts } from "./generate-first36-geometry-artifacts";
+import {
+  inspectFirst36Acceptance,
+  requiredVisualAssetRefsFromRegistry,
+} from "./first36-acceptance-gate";
 
 export class OrionClassicVisualGateError extends Error {
   readonly blockedSections: Array<{ sectionKey: string; reason: string }>;
@@ -85,8 +90,11 @@ export async function runOrionClassicAuditRender(options: {
   clientPolicyStatus: string;
   visualPassed: boolean;
   classicQaPassed: boolean;
+  /** Intermediate classic QA readiness (not final CEO gate). */
+  renderQaReady: boolean;
   readiness: "INTERNAL_PREVIEW" | "CEO_READY";
   ceoReady: boolean;
+  acceptance?: { passed: boolean; ceoReady: boolean; issueCount: number; issues: Array<{ code: string; detail: string }> };
   warnings: string[];
   reportRunId?: string;
 }> {
@@ -301,10 +309,145 @@ export async function runOrionClassicAuditRender(options: {
   });
   writeJson(join(outputRoot, "classic-audit-quality-inspection.json"), classicQa);
 
-  const verdict =
-    clientPolicy.passed && visual.passed && classicQa.passed ? "PASS" : "FAIL";
-  const ceoReady = Boolean(classicQa.ceoReady && clientFinalize);
+  const renderQaReady = Boolean(classicQa.ceoReady && clientFinalize);
+
+  let geometryOk = true;
+  let geometryReport: {
+    overlaps?: unknown[];
+    overflow?: unknown[];
+    blank?: unknown[];
+    inspectorError?: string | null;
+  } | null = null;
+  let geometryPresent = false;
+  if (first36CeoMode) {
+    const geometry = await generateFirst36GeometryArtifacts(outputRoot);
+    geometryReport = geometry.report;
+    geometryPresent = true;
+    geometryOk = geometry.ok;
+    writeJson(join(outputRoot, "geometry-artifacts.json"), {
+      ok: geometry.ok,
+      geometryPath: geometry.geometryPath,
+      contactSheetPath: geometry.contactSheetPath,
+      inspectorError: geometry.report.inspectorError ?? null,
+    });
+    if (!geometryOk && clientFinalize) {
+      // Honest finalize: inspector failure / missing PNG blocks CEO path.
+      writeJson(join(outputRoot, "geometry-finalize-block.json"), {
+        blocked: true,
+        reason: geometry.report.inspectorError ?? "geometry_issues",
+      });
+    }
+  }
+
+  const providerTasks = readJson<Array<{ reportRunId?: string; state?: string; id?: string }>>(
+    join(outputRoot, "provider-tasks.json")
+  );
+  const observations = readJson<
+    Array<{ auditRunId?: string; provider?: string; providerTaskId?: string | null }>
+  >(join(outputRoot, "serp-observations-provenance.json"));
+  const coverageSummary = readJson<{
+    reportRunId?: string;
+    rows?: Array<Record<string, unknown>>;
+  }>(join(outputRoot, "surface-coverage.json"));
+  const enrich = readJson<{
+    skipped?: boolean;
+    mode?: string;
+    blocked?: boolean;
+    reason?: string;
+    linkedObservations?: number;
+    totalObservations?: number;
+    linkedCoverage?: number;
+    totalCoverage?: number;
+  }>(join(outputRoot, "arsenkin-enrich.json"));
+  const clientBinding = readJson<{ sourceReportRunId?: string; effectiveReportRunId?: string }>(
+    join(outputRoot, "client-content-binding.json")
+  );
+  const assetList = assets.map((a) => ({
+    assetRef: a.assetRef,
+    status: String((a as { status?: string }).status ?? "ready"),
+    evidenceRefs: Array.isArray(a.evidenceRefs) ? a.evidenceRefs.map(String) : [],
+  }));
+
+  const acceptance = inspectFirst36Acceptance({
+    slideCount: deckManifest.slideCount,
+    slides: (deckManifest.finalSlides ?? []).map((s) => ({
+      pageNumber: Number(s.pageNumber ?? 0),
+      title: String(s.title ?? ""),
+      narrative: s.narrative ? String(s.narrative) : undefined,
+      bullets: Array.isArray(s.bullets) ? s.bullets.map(String) : undefined,
+      template: s.template ? String(s.template) : undefined,
+      table: s.table as { headers?: string[]; rows?: string[][] } | undefined,
+      clientTakeaway: s.clientTakeaway ? String(s.clientTakeaway) : undefined,
+      visualAnalysis: s.visualAnalysis as
+        | {
+            whatIsVisible?: string;
+            whyItMatters?: string;
+            clientMeaning?: string;
+            headlineConclusion?: string;
+          }
+        | undefined,
+      statusBadge: s.statusBadge as { label?: string } | undefined,
+      assetRefs: Array.isArray(s.assetRefs) ? s.assetRefs.map(String) : undefined,
+      evidenceRefs: Array.isArray(s.evidenceRefs) ? s.evidenceRefs.map(String) : undefined,
+      factualClaims: (s as { factualClaims?: Array<{ text?: string; evidenceRefs?: string[] }> })
+        .factualClaims,
+    })),
+    themeSet: themeSet as {
+      ru?: { linksTotal?: number; linksAdverse?: number; wikipediaStatus?: string };
+      uae?: { linksTotal?: number; linksAdverse?: number; wikipediaStatus?: string };
+    },
+    runScopedMerge: {
+      usedRunScoped: runScoped.usedRunScoped,
+      duplicateKeys: runScoped.duplicateKeys,
+      observationCount: runScoped.observationCount,
+    },
+    assets: assetList,
+    requiredVisualAssetRefs: requiredVisualAssetRefsFromRegistry(assetList),
+    paths: {
+      pptx: join(outputRoot, "rendered-client.pptx"),
+      pdf: join(outputRoot, "rendered-client.pdf"),
+      pagesPngDir: join(outputRoot, "pages-png"),
+    },
+    arsenkinRequired: isArsenkinRequired(),
+    arsenkinEnrich: enrich ?? undefined,
+    coverageSummary: coverageSummary as {
+      reportRunId?: string;
+      rows?: Array<{
+        reportRunId?: string;
+        tool?: string;
+        engine?: string;
+        region?: string;
+        surface?: string;
+        status?: string;
+        providerTaskId?: string | null;
+      }>;
+    },
+    expectedRunId: clientContent.reportRunId,
+    geometryReport: geometryReport ?? undefined,
+    geometryReportPresent: geometryPresent,
+    providerTasks: providerTasks ?? undefined,
+    observations: observations ?? undefined,
+    provenanceSummary: enrich
+      ? {
+          linkedObservations: enrich.linkedObservations,
+          totalObservations: enrich.totalObservations,
+          linkedCoverage: enrich.linkedCoverage,
+          totalCoverage: enrich.totalCoverage,
+        }
+      : undefined,
+    clientContentSourceReportRunId: clientBinding?.sourceReportRunId ?? null,
+    clientFinalize: clientFinalize && geometryOk,
+  });
+  writeJson(join(outputRoot, "first36-acceptance.json"), acceptance);
+
+  // Final verdict/readiness/ceoReady come only from First36 acceptance.
+  const foreignClient =
+    Boolean(clientBinding?.sourceReportRunId) &&
+    clientBinding!.sourceReportRunId !== clientContent.reportRunId;
+  const ceoReady = Boolean(acceptance.ceoReady && !foreignClient);
   const readiness = ceoReady ? "CEO_READY" : "INTERNAL_PREVIEW";
+  const verdict =
+    acceptance.passed && clientPolicy.passed && visual.passed && classicQa.passed ? "PASS" : "FAIL";
 
   if (verdict === "FAIL") {
     const failedVisual = visual.checks.filter((c) => !c.passed).map((c) => `${c.id}:${c.detail}`);
@@ -313,8 +456,10 @@ export async function runOrionClassicAuditRender(options: {
       clientPolicy: clientPolicy.passed ? "PASS" : clientPolicy.issues.slice(0, 8),
       visualFailed: failedVisual.slice(0, 8),
       classicQaFailed: classicQa.issues.slice(0, 8),
+      acceptanceIssues: acceptance.issues.slice(0, 12),
       pageCount: visual.pageCount,
       reportMode: visual.reportMode,
+      renderQaReady,
       readiness,
     });
   }
@@ -334,6 +479,7 @@ export async function runOrionClassicAuditRender(options: {
     ...(clientPolicy.issues ?? []),
     ...classicQa.issues,
     ...visual.checks.filter((c) => !c.passed).map((c) => `${c.id}: ${c.detail}`),
+    ...acceptance.issues.map((i) => `${i.code}: ${i.detail}`),
     ...(reportSpec.qaMetadata.warnings ?? []).filter((w) => !metaNoise.has(w)),
   ];
 
@@ -346,8 +492,15 @@ export async function runOrionClassicAuditRender(options: {
     clientPolicyStatus: clientPolicy.passed ? "PASS" : "FAIL",
     visualPassed: visual.passed,
     classicQaPassed: classicQa.passed,
+    renderQaReady,
     readiness,
     ceoReady,
+    acceptance: {
+      passed: acceptance.passed,
+      ceoReady: acceptance.ceoReady,
+      issueCount: acceptance.issues.length,
+      issues: acceptance.issues.map((i) => ({ code: i.code, detail: i.detail })),
+    },
     warnings,
     reportRunId: clientContent.reportRunId,
   };

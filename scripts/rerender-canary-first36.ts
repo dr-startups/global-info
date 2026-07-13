@@ -1,7 +1,9 @@
 /**
- * Re-render an existing canary reportRunId; optionally expand ARSENKIN_TOOLS for stage-2 enrich.
+ * Re-render an existing canary reportRunId without accidental paid submits.
  *
- *   npx tsx scripts/rerender-canary-first36.ts <reportRunId> [caseId] [--tools=check-top,suggest,paa,ai-serp,check-h,indexation]
+ *   npx tsx scripts/rerender-canary-first36.ts <reportRunId> [caseId] --rerender-only
+ *   npx tsx scripts/rerender-canary-first36.ts <reportRunId> [caseId] --tools=check-top,suggest,paa --rerender-only
+ *   npx tsx scripts/rerender-canary-first36.ts <reportRunId> [caseId] --tools=... --allow-new-tasks  # requires ARSENKIN_LIVE_CONFIRM=1
  */
 
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
@@ -9,6 +11,7 @@ import { join } from "node:path";
 import { parse } from "dotenv";
 import { prisma } from "../src/server/prisma/client";
 import { runOrionClassicAuditRender } from "../src/modules/digital-profile/orion-golden/classic/run-orion-classic-audit-render";
+import { buildPlannedTaskPreflight } from "../src/modules/digital-profile/orion-golden/classic/rerender-task-preflight";
 
 function bootstrapEnv(tools: string): void {
   const envPath = join(process.cwd(), ".env");
@@ -42,15 +45,16 @@ async function main() {
     caseIdArg && !caseIdArg.startsWith("--")
       ? caseIdArg
       : "cmreamy2t0002o30f29urzcog";
-  const toolsArg =
-    process.argv.find((a) => a.startsWith("--tools="))?.slice("--tools=".length) ||
-    "check-top,suggest,paa,ai-serp,check-h,indexation";
+  const toolsFlag = process.argv.find((a) => a.startsWith("--tools="))?.slice("--tools=".length);
+  const rerenderOnly = process.argv.includes("--rerender-only") || !toolsFlag;
+  const allowNewTasks = process.argv.includes("--allow-new-tasks");
+  const liveConfirm = process.env.ARSENKIN_LIVE_CONFIRM === "1";
+
   if (!reportRunId) {
     throw new Error(
-      "usage: rerender-canary-first36.ts <reportRunId> [caseId] [--tools=...]"
+      "usage: rerender-canary-first36.ts <reportRunId> [caseId] [--rerender-only] [--tools=...] [--allow-new-tasks]"
     );
   }
-  bootstrapEnv(toolsArg);
 
   const outputRoot = join(
     process.cwd(),
@@ -62,27 +66,50 @@ async function main() {
   );
   mkdirSync(outputRoot, { recursive: true });
 
+  const tasksBefore = await prisma.providerTask.findMany({
+    where: { reportRunId, provider: "arsenkin" },
+    select: { toolName: true, requestHash: true, state: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const preflight = buildPlannedTaskPreflight({
+    reportRunId,
+    tasks: tasksBefore,
+    requestedTools: toolsFlag ? toolsFlag.split(",").map((t) => t.trim()).filter(Boolean) : null,
+    rerenderOnly,
+    allowNewTasks,
+    liveConfirm,
+  });
+  writeJson(join(outputRoot, "planned-task-preflight.json"), {
+    ...preflight,
+    taskCountBefore: tasksBefore.length,
+  });
+  console.log(JSON.stringify({ phase: "planned-task-preflight", ...preflight }, null, 2));
+
+  if (preflight.blocked || preflight.plannedNewTasks > 0 && rerenderOnly) {
+    console.error(
+      JSON.stringify(
+        {
+          error: "rerender_blocked",
+          reason: preflight.blockReason ?? "plannedNewTasks>0",
+          plannedNewTasks: preflight.plannedNewTasks,
+        },
+        null,
+        2
+      )
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  bootstrapEnv(preflight.tools.join(","));
+
   const before = {
     observations: await prisma.serpObservation.count({
       where: { auditRunId: reportRunId, provider: "arsenkin" },
     }),
-    tasks: await prisma.providerTask.count({
-      where: { reportRunId, provider: "arsenkin" },
-    }),
-    bySurface: await prisma.serpObservation.groupBy({
-      by: ["surface"],
-      where: { auditRunId: reportRunId, provider: "arsenkin" },
-      _count: true,
-    }),
+    tasks: tasksBefore.length,
   };
-  writeJson(join(outputRoot, "stage2-preflight.json"), {
-    reportRunId,
-    tools: toolsArg,
-    before,
-  });
-  console.log(
-    JSON.stringify({ phase: "stage2-preflight", reportRunId, tools: toolsArg, before }, null, 2)
-  );
 
   const result = await runOrionClassicAuditRender({
     caseId,
@@ -90,43 +117,56 @@ async function main() {
     reportRunIdOverride: reportRunId,
   });
 
-  const tasks = await prisma.providerTask.findMany({
+  const tasksAfter = await prisma.providerTask.count({
     where: { reportRunId, provider: "arsenkin" },
-    orderBy: { createdAt: "asc" },
   });
-  const observations = await prisma.serpObservation.groupBy({
-    by: ["region", "engine", "surface"],
-    where: { auditRunId: reportRunId, provider: "arsenkin" },
-    _count: true,
-  });
-  writeJson(join(outputRoot, "stage2-summary.json"), {
+  if (rerenderOnly && tasksAfter !== before.tasks) {
+    writeJson(join(outputRoot, "rerender-only-violation.json"), {
+      taskCountBefore: before.tasks,
+      taskCountAfter: tasksAfter,
+    });
+    throw new Error(
+      `rerender-only violated: task count ${before.tasks} -> ${tasksAfter}`
+    );
+  }
+
+  writeJson(join(outputRoot, "rerender-summary.json"), {
     reportRunId,
-    tools: toolsArg,
+    tools: preflight.tools,
+    rerenderOnly,
     before,
     after: {
       observationCount: await prisma.serpObservation.count({
         where: { auditRunId: reportRunId, provider: "arsenkin" },
       }),
-      taskCount: tasks.length,
-      bySurface: observations,
-      newTasks: tasks
-        .filter((t) => ["ai-serp", "check-h", "indexation"].includes(t.toolName))
-        .map((t) => ({
-          tool: t.toolName,
-          taskId: t.externalTaskId,
-          state: t.state,
-          latencyMs: t.latencyMs,
-          limitsSpent: t.limitsSpent,
-        })),
+      taskCount: tasksAfter,
     },
+    plannedNewTasks: preflight.plannedNewTasks,
+    renderQaReady: result.renderQaReady,
     readiness: result.readiness,
     ceoReady: result.ceoReady,
     verdict: result.verdict,
+    acceptance: result.acceptance,
     warnings: result.warnings.slice(0, 20),
   });
 
-  console.log(JSON.stringify({ ...result, stage2Tools: toolsArg }, null, 2));
-  if (result.verdict !== "PASS" || !result.ceoReady) process.exitCode = 1;
+  console.log(
+    JSON.stringify(
+      {
+        ...result,
+        tools: preflight.tools,
+        plannedNewTasks: preflight.plannedNewTasks,
+        taskCountBefore: before.tasks,
+        taskCountAfter: tasksAfter,
+      },
+      null,
+      2
+    )
+  );
+  if (result.verdict !== "PASS" || result.readiness === "CEO_READY" && !result.ceoReady) {
+    process.exitCode = 1;
+  }
+  if (!result.acceptance?.passed) process.exitCode = 1;
 }
 
 main().catch(async (e) => {
