@@ -67,6 +67,20 @@ function extractSuggestions(payload: unknown, seedQuery: string): string[] {
       }
     }
   }
+  const NOISE = new Set([
+    "nrm",
+    "spc",
+    "lat",
+    "cyr",
+    "dig",
+    "loc",
+    "sho",
+    "quo",
+    "otzyv",
+    "check",
+    "depth",
+    "stoplist",
+  ]);
   const out: string[] = [];
   const seen = new Set<string>();
   for (const c of candidates) {
@@ -77,7 +91,10 @@ function extractSuggestions(payload: unknown, seedQuery: string): string[] {
       text = String(o.phrase ?? o.word ?? o.query ?? o.text ?? o.suggest ?? "").trim();
     }
     text = text.trim();
-    if (!text || seen.has(text.toLowerCase())) continue;
+    if (!text || NOISE.has(text.toLowerCase())) continue;
+    if (seen.has(text.toLowerCase())) continue;
+    // Drop option-code pollution and trivial exact seed echoes only when alone later.
+    if (/^[a-z]{2,5}$/i.test(text) && text.length <= 5) continue;
     seen.add(text.toLowerCase());
     out.push(text);
   }
