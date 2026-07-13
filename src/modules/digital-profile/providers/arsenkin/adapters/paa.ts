@@ -4,6 +4,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { domainOf } from "../../types";
 import { buildSerpQueryId } from "../../../serp-observation/query-id";
 import type { SerpObservationDraft } from "../../../serp-observation/types";
 
@@ -16,6 +17,8 @@ export type PaaRequestInput = {
   google_from?: string;
   google_lang?: string;
 };
+
+type PaaItem = { question: string; answer?: string | null; depth?: number; link?: string | null };
 
 export function buildPaaRequest(input: PaaRequestInput): {
   tools_name: "paa";
@@ -40,30 +43,50 @@ function asObj(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
-type PaaItem = { question: string; answer?: string | null; depth?: number };
+function syntheticPaaUrl(parentQuery: string, question: string, rank: number): string {
+  const h = createHash("sha1").update(`${parentQuery}|${question}|${rank}`).digest("hex").slice(0, 12);
+  return `arsenkin://paa/${h}`;
+}
 
-function extractPaaItems(payload: unknown, seedQuery: string): PaaItem[] {
+/**
+ * Live Arsenkin shape:
+ *   result.result = [ [ { question, answer, link, level }, ... ] ]
+ * Legacy/fixture shapes: result[query] = [...] or flat question arrays.
+ */
+export function extractPaaItems(payload: unknown, seedQuery: string): PaaItem[] {
   const root = asObj(payload);
   const result = asObj(root.result);
-  const inner = asObj(result.result ?? result);
+  const inner = result.result ?? result;
   const bags: unknown[] = [];
-  for (const key of ["result", "paa", "questions", "items", "answers"]) {
-    const v = inner[key] ?? result[key];
-    if (Array.isArray(v)) bags.push(...v);
+
+  if (Array.isArray(inner)) {
+    for (const block of inner) {
+      if (Array.isArray(block)) bags.push(...block);
+      else bags.push(block);
+    }
   }
-  for (const mapCandidate of [inner, result, asObj(inner.result), asObj(result.result)]) {
-    if (!mapCandidate || Array.isArray(mapCandidate)) continue;
-    const hit = mapCandidate[seedQuery];
-    if (Array.isArray(hit)) bags.push(...hit);
-    else {
-      for (const v of Object.values(mapCandidate)) {
-        if (Array.isArray(v)) {
-          bags.push(...v);
-          break;
-        }
+
+  const innerObj = asObj(inner);
+  for (const key of ["result", "paa", "questions", "items", "answers"]) {
+    const v = innerObj[key] ?? result[key];
+    if (Array.isArray(v)) {
+      for (const block of v) {
+        if (Array.isArray(block)) bags.push(...block);
+        else bags.push(block);
       }
     }
   }
+  for (const mapCandidate of [innerObj, result]) {
+    if (!mapCandidate || Array.isArray(mapCandidate)) continue;
+    const hit = mapCandidate[seedQuery] ?? mapCandidate[seedQuery.toLowerCase()];
+    if (Array.isArray(hit)) {
+      for (const block of hit) {
+        if (Array.isArray(block)) bags.push(...block);
+        else bags.push(block);
+      }
+    }
+  }
+
   const out: PaaItem[] = [];
   const seen = new Set<string>();
   for (const raw of bags) {
@@ -78,18 +101,19 @@ function extractPaaItems(payload: unknown, seedQuery: string): PaaItem[] {
     const question = String(o.question ?? o.q ?? o.title ?? o.text ?? "").trim();
     if (!question || seen.has(question.toLowerCase())) continue;
     seen.add(question.toLowerCase());
+    const answerRaw = o.answer != null ? String(o.answer) : o.snippet != null ? String(o.snippet) : null;
+    const answer = answerRaw
+      ? answerRaw.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
+      : null;
+    const link = o.link != null ? String(o.link).trim() : null;
     out.push({
       question,
-      answer: o.answer != null ? String(o.answer) : o.snippet != null ? String(o.snippet) : null,
+      answer,
+      link: link || null,
       depth: Number(o.depth ?? o.level ?? 1) || 1,
     });
   }
   return out;
-}
-
-function syntheticPaaUrl(parentQuery: string, question: string, rank: number): string {
-  const h = createHash("sha1").update(`${parentQuery}|${question}|${rank}`).digest("hex").slice(0, 12);
-  return `arsenkin://paa/${h}`;
 }
 
 export function mapPaaToObservations(input: {
@@ -125,6 +149,7 @@ export function mapPaaToObservations(input: {
     const items = extractPaaItems(input.payload, queryText);
     items.forEach((item, idx) => {
       const rank = idx + 1;
+      const url = item.link?.trim() || syntheticPaaUrl(queryText, item.question, rank);
       drafts.push({
         caseId: input.caseId,
         auditRunId: input.auditRunId,
@@ -137,10 +162,10 @@ export function mapPaaToObservations(input: {
         region: input.regionLabel,
         language: input.language,
         rank,
-        url: syntheticPaaUrl(queryText, item.question, rank),
+        url,
         title: item.question,
         snippet: item.answer ?? null,
-        domain: "paa",
+        domain: item.link?.trim() ? domainOf(item.link) : "paa",
         providerStatus: "OK",
         rawPayloadJson: {
           source: "arsenkin",

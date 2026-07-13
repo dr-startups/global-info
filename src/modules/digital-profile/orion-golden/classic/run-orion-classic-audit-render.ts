@@ -90,6 +90,35 @@ export async function runOrionClassicAuditRender(options: {
 
   const clientContent = options.clientContent ?? loadPostReviewClientContent(caseId);
   const ctx = await loadRealCaseContext(caseId, { locale: "ru", buildFreshReportJson: false });
+  const first36CeoModeEarly = isFirst36CeoMode();
+  if (first36CeoModeEarly) {
+    try {
+      const { enrichReportRunWithArsenkin } = await import("./enrich-report-run-with-arsenkin");
+      const { transliterateRuToEn } = await import("../../search-surfaces/orion-query-plan");
+      const name = String(ctx.subject?.fullName ?? "").trim();
+      const aliases = (ctx.subject?.aliases ?? []).map((a) => String(a).trim()).filter(Boolean);
+      const ruQueries = name
+        ? [name, [...name.split(/\s+/)].reverse().join(" "), ...aliases.slice(0, 2)].filter(Boolean)
+        : aliases.slice(0, 3);
+      const latin =
+        name && /[А-Яа-яЁё]/.test(name) ? transliterateRuToEn(name) : name || aliases[0] || "";
+      const uaeQueries = latin
+        ? [latin, [...latin.split(/\s+/)].reverse().join(" ")].filter(Boolean)
+        : [];
+      const arsenkinEnrich = await enrichReportRunWithArsenkin({
+        caseId,
+        auditRunId: clientContent.reportRunId,
+        queriesRu: [...new Set(ruQueries)].slice(0, 3),
+        queriesUae: [...new Set(uaeQueries)].slice(0, 2),
+      });
+      writeJson(join(outputRoot, "arsenkin-enrich.json"), arsenkinEnrich);
+      console.info("[arsenkin] enrich", arsenkinEnrich);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      writeJson(join(outputRoot, "arsenkin-enrich.json"), { skipped: true, reason: message });
+      console.warn("[arsenkin] enrich failed", message);
+    }
+  }
   const baseInventory = buildFullEvidenceInventory({
     caseId,
     reportRunId: clientContent.reportRunId,
@@ -108,7 +137,7 @@ export async function runOrionClassicAuditRender(options: {
     warnings: runScoped.warnings,
   });
   const clientFinalize = isClientProductionFinalize();
-  const first36CeoMode = isFirst36CeoMode();
+  const first36CeoMode = first36CeoModeEarly;
   const includeCommercial = !first36CeoMode;
   const assets = await buildOrionClassicAuditAssets({
     ctx,

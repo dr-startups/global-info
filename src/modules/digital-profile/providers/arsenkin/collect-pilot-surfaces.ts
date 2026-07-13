@@ -5,24 +5,15 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  ArsenkinClient,
-  createArsenkinClientFromEnv,
-  createMemoryProviderTaskStore,
-  ensureArsenkinTask,
-  pollArsenkinTask,
-  isArsenkinConfigured,
-  isArsenkinToolEnabled,
-  buildCheckTopRequest,
-  mapCheckTopToObservations,
-  buildSuggestRequest,
-  mapSuggestToObservations,
-  buildPaaRequest,
-  mapPaaToObservations,
-  ARSENKIN_REGION,
-  pilotSeForRegion,
-  type ProviderTaskStore,
-} from "./index";
+import type { ArsenkinClient } from "./client";
+import { createArsenkinClientFromEnv } from "./client";
+import { isArsenkinConfigured, isArsenkinToolEnabled, type ArsenkinToolName } from "./flags";
+import { ensureArsenkinTask, pollArsenkinTask } from "./poll-worker";
+import { createMemoryProviderTaskStore, type ProviderTaskStore } from "./provider-task-store";
+import { buildCheckTopRequest, mapCheckTopToObservations } from "./adapters/check-top";
+import { buildSuggestRequest, mapSuggestToObservations } from "./adapters/suggest";
+import { buildPaaRequest, mapPaaToObservations } from "./adapters/paa";
+import { ARSENKIN_REGION, pilotSeForRegion } from "./regions";
 import type { SerpObservationDraft } from "../../serp-observation/types";
 
 const FIX = join(
@@ -41,6 +32,8 @@ export type ArsenkinPilotCollectInput = {
   queriesUae: string[];
   /** Force fixtures even if token present. */
   fixturesOnly?: boolean;
+  /** Limit which tools to run (default: all enabled). */
+  tools?: ArsenkinToolName[];
   client?: ArsenkinClient | null;
   store?: ProviderTaskStore;
   waitTimeoutMs?: number;
@@ -98,9 +91,12 @@ export async function collectArsenkinPilotSurfaces(
 
   const ruQuery = input.queriesRu[0] ?? "subject";
   const uaeQuery = input.queriesUae[0] ?? ruQuery;
+  const want = (tool: ArsenkinToolName) =>
+    (!input.tools || input.tools.includes(tool)) &&
+    (isArsenkinToolEnabled(tool) || input.fixturesOnly || !live);
 
   // --- check-top RU ---
-  if (isArsenkinToolEnabled("check-top") || input.fixturesOnly || !live) {
+  if (want("check-top")) {
     const se = pilotSeForRegion("RU");
     const req = buildCheckTopRequest({
       queries: input.queriesRu.slice(0, 3),
@@ -126,7 +122,7 @@ export async function collectArsenkinPilotSurfaces(
   }
 
   // --- check-top UAE (Google only) ---
-  if (isArsenkinToolEnabled("check-top") || input.fixturesOnly || !live) {
+  if (want("check-top") && input.queriesUae.length > 0) {
     const se = pilotSeForRegion("UAE");
     const req = buildCheckTopRequest({
       queries: input.queriesUae.slice(0, 2),
@@ -163,7 +159,7 @@ export async function collectArsenkinPilotSurfaces(
   }
 
   // --- suggest RU (Yandex) ---
-  if (isArsenkinToolEnabled("suggest") || input.fixturesOnly || !live) {
+  if (want("suggest")) {
     const req = buildSuggestRequest({
       queries: [ruQuery],
       se: 1,
@@ -188,7 +184,7 @@ export async function collectArsenkinPilotSurfaces(
   }
 
   // --- paa RU (Google-only) ---
-  if (isArsenkinToolEnabled("paa") || input.fixturesOnly || !live) {
+  if (want("paa")) {
     const req = buildPaaRequest({
       queries: [ruQuery],
       region: ARSENKIN_REGION.GOOGLE_MOSCOW,
