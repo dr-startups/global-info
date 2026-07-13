@@ -512,6 +512,10 @@ export function buildDeterministicVisualAnalysis(
     provenance = `Источник: ${slotTag}, дата сбора в кейсе`;
   } else if (slot.kind === "knowledge_visual") {
     const fromWiki = /wikipedia|википед/i.test(`${caption} ${title} ${provenanceLabel(asset)}`);
+    const fromAiSerp =
+      /ai-serp|ai_answer|ИИ-ответ|AI Overview|Алиса|не энциклопед/i.test(
+        `${caption} ${title} ${provenanceLabel(asset)} ${asset.assetRef}`
+      ) || Boolean((asset.rawPayloadJson as { notKnowledgePanel?: boolean } | undefined)?.notKnowledgePanel);
     const regionKpis =
       slot.region === "UAE" ? themeSet?.uae : slot.region === "RU" ? themeSet?.ru : themeSet?.ru;
     const wikiStatus = String(regionKpis?.wikipediaStatus ?? "").toUpperCase();
@@ -523,19 +527,36 @@ export function buildDeterministicVisualAnalysis(
       ) ||
       Boolean((asset as { subjectBinding?: string }).subjectBinding === "WRONG_SUBJECT");
     const absent = wikiStatus === "ABSENT" || (!wrongSubject && wikiStatus !== "EXACT_SUBJECT");
-    sidebarMode = wrongSubject || absent ? "status" : "interpretation";
-    if (wrongSubject) {
+    sidebarMode = wrongSubject || absent || fromAiSerp ? "status" : "interpretation";
+    if (fromAiSerp) {
+      const aiAbsent = /не найден|NO_RESULTS|absent/i.test(`${caption} ${title}`);
+      headlineConclusion = aiAbsent
+        ? `ИИ-блок в поиске (${regionLabel}) не найден`
+        : `ИИ-представление субъекта в поиске (${regionLabel})`;
+      whatIsVisible = aiAbsent
+        ? "По запросу нет ответа Алисы / AI Overview. Это отдельный сигнал от энциклопедической карточки Wikipedia."
+        : "Показан ответ поискового ИИ (Алиса / AI Overview) и источники, на которые он опирается. Это не карточка Wikipedia.";
+      clientMeaning = aiAbsent
+        ? "Отсутствие ИИ-блока снижает риск автогенерации образа субъекта, но не заменяет проверку органики и справочных панелей."
+        : "ИИ-блок формирует первое впечатление о субъекте у пользователей поиска и может смешивать однофамильцев.";
+      recommendedActions = aiAbsent
+        ? ["Зафиксировать отсутствие ИИ-блока как факт профиля"]
+        : ["Сверить ИИ-тезисы с первичными источниками"];
+      provenance = "Источник: Arsenkin ai-serp, дата сбора в кейсе";
+    } else if (wrongSubject) {
       headlineConclusion = "Карточка Wikipedia не относится к проверяемому лицу";
       whatIsVisible =
         "Найдена страница другого лица или рода; её нельзя засчитывать как профиль проверяемого лица.";
       clientMeaning = "Чужой профиль в выдаче создаёт риск смешения личностей.";
       recommendedActions = ["Исключить из профиля или сверить личность"];
+      provenance = "Источник: проверка Wikipedia, дата сбора в кейсе";
     } else if (absent) {
       headlineConclusion = `Публичная статья Wikipedia (${regionLabel}) не найдена`;
       whatIsVisible =
         `В выдаче ${regionLabel} нет устойчивой энциклопедической карточки проверяемого лица.`;
       clientMeaning = "Энциклопедический якорь цифрового профиля в регионе отсутствует.";
       recommendedActions = ["Зафиксировать отсутствие статьи как факт профиля"];
+      provenance = "Источник: проверка Wikipedia, дата сбора в кейсе";
     } else {
       headlineConclusion = fromWiki
         ? `Справочная карточка Wikipedia (${regionLabel})`
@@ -545,11 +566,9 @@ export function buildDeterministicVisualAnalysis(
         : "Краткие факты и заголовки из справочного блока рядом с выдачей.";
       clientMeaning = "Справочный блок влияет на то, как третьи лица идентифицируют проверяемое лицо.";
       recommendedActions = ["Сверить факты с первичными источниками"];
+      provenance = fromWiki ? "Источник: проверка Wikipedia, дата сбора в кейсе" : provenance;
     }
     whyItMatters = clientMeaning;
-    provenance = fromWiki || wrongSubject || absent
-      ? "Источник: проверка Wikipedia, дата сбора в кейсе"
-      : provenance;
   } else {
     sidebarMode = "status";
     whatIsVisible =

@@ -1,5 +1,5 @@
 /**
- * Enrich a classic First36 report run with Arsenkin check-top / suggest / paa
+ * Enrich a classic First36 report run with Arsenkin check-top / suggest / paa / ai-serp
  * observations (idempotent: skips when enough arsenkin rows already exist).
  */
 
@@ -16,7 +16,12 @@ export type ArsenkinRenderEnrichResult = {
   reason?: string;
   mode?: "live" | "fixtures";
   persisted?: number;
-  bySurface?: { organic: number; autocomplete: number; paa: number };
+  bySurface?: {
+    organic: number;
+    autocomplete: number;
+    paa: number;
+    aiAnswer?: number;
+  };
 };
 
 export async function enrichReportRunWithArsenkin(input: {
@@ -53,17 +58,19 @@ export async function enrichReportRunWithArsenkin(input: {
   const organicCount = existingRows.filter((r) => r.surface === "organic").length;
   const paaCount = existingRows.filter((r) => r.surface === "paa").length;
   const suggestCount = existingRows.filter((r) => r.surface === "autocomplete").length;
-  if (organicCount >= skipIfAtLeast && paaCount > 0 && suggestCount >= 3) {
+  const aiCount = existingRows.filter((r) => r.surface === "ai_answer").length;
+  if (organicCount >= skipIfAtLeast && paaCount > 0 && suggestCount >= 3 && aiCount > 0) {
     return {
       skipped: true,
-      reason: `already_enriched organic=${organicCount} paa=${paaCount} suggest=${suggestCount}`,
+      reason: `already_enriched organic=${organicCount} paa=${paaCount} suggest=${suggestCount} ai=${aiCount}`,
     };
   }
 
-  const tools: Array<"check-top" | "suggest" | "paa"> = [];
+  const tools: Array<"check-top" | "suggest" | "paa" | "ai-serp"> = [];
   if (organicCount < skipIfAtLeast) tools.push("check-top");
   if (suggestCount < 3) tools.push("suggest");
   if (paaCount < 1) tools.push("paa");
+  if (aiCount < 1) tools.push("ai-serp");
   if (tools.length === 0) {
     return { skipped: true, reason: "surfaces_complete" };
   }
@@ -77,7 +84,6 @@ export async function enrichReportRunWithArsenkin(input: {
     tools,
   });
 
-  // Avoid unique collisions with previously attached rows.
   const existingKeys = new Set(
     existingRows.map(
       (r) =>

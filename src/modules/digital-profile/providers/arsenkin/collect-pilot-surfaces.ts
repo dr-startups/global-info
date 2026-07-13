@@ -13,6 +13,7 @@ import { createMemoryProviderTaskStore, type ProviderTaskStore } from "./provide
 import { buildCheckTopRequest, mapCheckTopToObservations } from "./adapters/check-top";
 import { buildSuggestRequest, mapSuggestToObservations } from "./adapters/suggest";
 import { buildPaaRequest, mapPaaToObservations } from "./adapters/paa";
+import { buildAiSerpRequest, mapAiSerpToObservations } from "./adapters/ai-serp";
 import { ARSENKIN_REGION, pilotSeForRegion } from "./regions";
 import type { SerpObservationDraft } from "../../serp-observation/types";
 
@@ -42,7 +43,7 @@ export type ArsenkinPilotCollectInput = {
 export type ArsenkinPilotCollectResult = {
   mode: "live" | "fixtures";
   drafts: SerpObservationDraft[];
-  bySurface: { organic: number; autocomplete: number; paa: number };
+  bySurface: { organic: number; autocomplete: number; paa: number; aiAnswer: number };
   taskIds: string[];
 };
 
@@ -207,11 +208,36 @@ export async function collectArsenkinPilotSurfaces(
     );
   }
 
+  // --- ai-serp RU (Yandex Alice) — separate from Knowledge Panel ---
+  if (want("ai-serp")) {
+    const req = buildAiSerpRequest({
+      queries: [ruQuery],
+      se: 1,
+      region: ARSENKIN_REGION.YANDEX_MOSCOW,
+    });
+    const payload =
+      live && client
+        ? await completeTask(client, store, "ai-serp", req.data, input, waitTimeoutMs)
+        : loadFix("get-ai-serp.json");
+    drafts.push(
+      ...mapAiSerpToObservations({
+        caseId: input.caseId,
+        auditRunId: input.auditRunId,
+        regionLabel: "RU",
+        language: "ru",
+        queries: [ruQuery],
+        se: 1,
+        payload,
+      })
+    );
+  }
+
   void uaeQuery;
   const bySurface = {
     organic: drafts.filter((d) => d.surface === "organic").length,
     autocomplete: drafts.filter((d) => d.surface === "autocomplete").length,
     paa: drafts.filter((d) => d.surface === "paa").length,
+    aiAnswer: drafts.filter((d) => d.surface === "ai_answer").length,
   };
   return {
     mode: live && client ? "live" : "fixtures",

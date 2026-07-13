@@ -25,7 +25,8 @@ export type SerpObservationSurface =
   | "autocomplete"
   | "related"
   | "knowledge_graph"
-  | "paa";
+  | "paa"
+  | "ai_answer";
 
 export type SerpObservationDraft = {
   caseId: string;

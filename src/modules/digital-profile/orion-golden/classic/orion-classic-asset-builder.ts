@@ -444,6 +444,7 @@ export async function buildOrionClassicAuditAssets(input: {
     console.info("[arsenkin] surface panels", {
       autocomplete: built.autocomplete,
       paa: built.paa,
+      aiAnswer: built.aiAnswer,
       panelAssets: built.assets.map((a) => a.assetRef),
     });
     const overlaid = overlaySurfacePanelAssets(merged, arsenkinPanels);

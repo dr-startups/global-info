@@ -1,0 +1,31 @@
+{
+  "code": "TASK_RESULT",
+  "task_id": "6060",
+  "result": {
+    "queries": ["Глинка Сергей Михайлович"],
+    "table": [
+      {
+        "found": true,
+        "details": "<p><strong>Сергей Михайлович Глинка</strong> — предприниматель, упоминаемый в открытых источниках в связи с бизнесом и публичными материалами.</p>",
+        "sources": [
+          {
+            "id": 1,
+            "url": "https://forbes.ru/profile/example",
+            "title": "Профиль в открытых источниках",
+            "description": "Краткая биографическая справка"
+          },
+          {
+            "id": 2,
+            "url": "https://tadviser.ru/example",
+            "title": "Упоминание в отраслевом справочнике",
+            "description": null
+          }
+        ]
+      }
+    ],
+    "info": {
+      "se": "Яндекс",
+      "region": { "text": "Москва [213]", "id": "213" }
+    }
+  }
+}

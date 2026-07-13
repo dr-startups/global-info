@@ -51,10 +51,11 @@ async function pushPanel(
  */
 export async function buildArsenkinSurfacePanelAssets(input: {
   auditRunId: string;
-}): Promise<{ assets: ReportAssetV1[]; autocomplete: number; paa: number }> {
+}): Promise<{ assets: ReportAssetV1[]; autocomplete: number; paa: number; aiAnswer: number }> {
   const rows = await listSerpObservationsForAuditRun(input.auditRunId);
   const autocomplete = rows.filter((r) => r.surface === "autocomplete" && r.provider === "arsenkin");
   const paa = rows.filter((r) => r.surface === "paa" && r.provider === "arsenkin");
+  const aiAnswer = rows.filter((r) => r.surface === "ai_answer" && r.provider === "arsenkin");
   const assets: ReportAssetV1[] = [];
 
   const ruYandexSuggest = autocomplete.filter(
@@ -132,7 +133,42 @@ export async function buildArsenkinSurfacePanelAssets(input: {
     })),
   });
 
-  return { assets, autocomplete: autocomplete.length, paa: paa.length };
+  // AI overview → p19 knowledge_panel_2 only (never replaces Wikipedia panel_1).
+  const ruAi = aiAnswer.filter((r) => mapRegion(r.region) === "RU");
+  const aiAnswerText = ruAi.find((r) => /ИИ-ответ/i.test(String(r.title ?? "")));
+  const aiSources = ruAi.filter((r) => r.domain !== "ai-serp");
+  const aiLines: Array<{ label: string; meta?: string; evidenceRef: string }> = [];
+  if (aiAnswerText?.snippet) {
+    aiLines.push({
+      label: String(aiAnswerText.snippet).slice(0, 180),
+      meta: aiAnswerText.providerStatus === "NO_RESULTS" ? "ИИ не найден" : "ИИ-текст",
+      evidenceRef: `serp_observation:${aiAnswerText.id}`,
+    });
+  }
+  for (const src of aiSources.slice(0, 8)) {
+    aiLines.push({
+      label: String(src.title ?? src.url).trim(),
+      meta: src.domain ?? "source",
+      evidenceRef: `serp_observation:${src.id}`,
+    });
+  }
+  await pushPanel(assets, {
+    assetRef: "ru_knowledge_panel_2",
+    title: "Россия — ИИ-представление в поиске",
+    engineLabel: "Яндекс Алиса",
+    caption:
+      aiAnswerText?.providerStatus === "NO_RESULTS"
+        ? "ИИ-ответ поиска не найден (Arsenkin ai-serp). Не энциклопедическая карточка Wikipedia."
+        : "ИИ-ответ поиска (Arsenkin ai-serp). Не энциклопедическая карточка Wikipedia.",
+    lines: aiLines,
+  });
+
+  return {
+    assets,
+    autocomplete: autocomplete.length,
+    paa: paa.length,
+    aiAnswer: aiAnswer.length,
+  };
 }
 
 /** Overlay Arsenkin panels onto classic assets (replace same assetRef when Arsenkin has data). */

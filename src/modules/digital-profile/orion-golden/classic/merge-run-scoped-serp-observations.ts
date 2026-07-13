@@ -171,12 +171,12 @@ export async function mergeRunScopedSerpObservations(input: {
       continue;
     }
 
-    if (surface === "autocomplete" || surface === "paa" || surface === "related") {
+    if (surface === "autocomplete" || surface === "paa" || surface === "related" || surface === "ai_answer") {
       const evidenceType =
         surface === "autocomplete"
           ? "suggestion"
-          : surface === "paa"
-            ? "related_query"
+          : surface === "ai_answer"
+            ? "ai_answer"
             : "related_query";
       const line = String(row.title ?? row.queryText ?? "").trim();
       if (!line) continue;
@@ -207,7 +207,15 @@ export async function mergeRunScopedSerpObservations(input: {
           capturedAt: row.capturedAt.toISOString(),
           observationKey: key,
           evidenceRefs: [`serp_observation:${row.id}`],
-          arsenkinTool: surface === "paa" ? "paa" : surface === "autocomplete" ? "suggest" : "related",
+          arsenkinTool:
+            surface === "paa"
+              ? "paa"
+              : surface === "autocomplete"
+                ? "suggest"
+                : surface === "ai_answer"
+                  ? "ai-serp"
+                  : "related",
+          notKnowledgePanel: surface === "ai_answer" ? true : undefined,
         },
       });
     }
