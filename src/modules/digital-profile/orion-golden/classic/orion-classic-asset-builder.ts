@@ -432,6 +432,33 @@ export async function buildOrionClassicAuditAssets(input: {
     ...legacyCaptured,
     ...extraSerp,
   ]);
+
+  let arsenkinPanels: ReportAssetV1[] = [];
+  try {
+    const {
+      buildArsenkinSurfacePanelAssets,
+      overlaySurfacePanelAssets,
+    } = await import("./build-arsenkin-surface-panels");
+    const built = await buildArsenkinSurfacePanelAssets({ auditRunId: input.reportRunId });
+    arsenkinPanels = built.assets;
+    console.info("[arsenkin] surface panels", {
+      autocomplete: built.autocomplete,
+      paa: built.paa,
+      panelAssets: built.assets.map((a) => a.assetRef),
+    });
+    const overlaid = overlaySurfacePanelAssets(merged, arsenkinPanels);
+    return finalizeClassicSerpAssetPick(overlaid, allowLegacySynthetic);
+  } catch (err) {
+    console.warn("[arsenkin] surface panels failed", String((err as Error)?.message ?? err));
+  }
+
+  return finalizeClassicSerpAssetPick(merged, allowLegacySynthetic);
+}
+
+function finalizeClassicSerpAssetPick(
+  merged: ReportAssetV1[],
+  allowLegacySynthetic: boolean
+): ReportAssetV1[] {
   const ru = merged.filter(
     (a) =>
       (a.kind === "live_serp" || a.kind === "synthetic_serp" || a.kind === "captured_serp") &&

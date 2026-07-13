@@ -53,7 +53,7 @@ export async function enrichReportRunWithArsenkin(input: {
   const organicCount = existingRows.filter((r) => r.surface === "organic").length;
   const paaCount = existingRows.filter((r) => r.surface === "paa").length;
   const suggestCount = existingRows.filter((r) => r.surface === "autocomplete").length;
-  if (organicCount >= skipIfAtLeast && paaCount > 0 && suggestCount > 0) {
+  if (organicCount >= skipIfAtLeast && paaCount > 0 && suggestCount >= 3) {
     return {
       skipped: true,
       reason: `already_enriched organic=${organicCount} paa=${paaCount} suggest=${suggestCount}`,
@@ -62,7 +62,7 @@ export async function enrichReportRunWithArsenkin(input: {
 
   const tools: Array<"check-top" | "suggest" | "paa"> = [];
   if (organicCount < skipIfAtLeast) tools.push("check-top");
-  if (suggestCount < 1) tools.push("suggest");
+  if (suggestCount < 3) tools.push("suggest");
   if (paaCount < 1) tools.push("paa");
   if (tools.length === 0) {
     return { skipped: true, reason: "surfaces_complete" };

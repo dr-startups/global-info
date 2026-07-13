@@ -29,7 +29,7 @@ export function buildSuggestRequest(input: SuggestRequestInput): {
     se: input.se,
     region: input.region,
     depth: input.depth ?? 1,
-    check: input.check ?? ["nrm", "spc"],
+    check: input.check ?? ["nrm", "spc", "cyr"],
   };
   if (input.se === 2 || input.se === 3) {
     data.google_domain = input.google_domain ?? "www.google.ru";
@@ -49,25 +49,7 @@ function extractSuggestions(payload: unknown, seedQuery: string): string[] {
   const result = asObj(root.result);
   const inner = asObj(result.result ?? result);
   const candidates: unknown[] = [];
-  for (const key of ["result", "suggests", "suggestions", "words", "phrases", "items"]) {
-    const v = inner[key] ?? result[key] ?? root[key];
-    if (Array.isArray(v)) candidates.push(...v);
-  }
-  // Nested maps: result[query] = string[] (at inner or result level)
-  for (const mapCandidate of [inner, result, asObj(inner.result), asObj(result.result)]) {
-    if (!mapCandidate || Array.isArray(mapCandidate)) continue;
-    const hit = mapCandidate[seedQuery];
-    if (Array.isArray(hit)) candidates.push(...hit);
-    else {
-      for (const v of Object.values(mapCandidate)) {
-        if (Array.isArray(v) && v.every((x) => typeof x === "string" || (x && typeof x === "object"))) {
-          candidates.push(...v);
-          break;
-        }
-      }
-    }
-  }
-  const NOISE = new Set([
+  const OPTION_CODES = new Set([
     "nrm",
     "spc",
     "lat",
@@ -77,10 +59,36 @@ function extractSuggestions(payload: unknown, seedQuery: string): string[] {
     "sho",
     "quo",
     "otzyv",
-    "check",
-    "depth",
-    "stoplist",
   ]);
+
+  // Live Arsenkin: result.types = { phrase: typeCode }, result.result = { "0": [phrases], ... }
+  const types = asObj(result.types ?? inner.types);
+  for (const phrase of Object.keys(types)) {
+    if (phrase.trim()) candidates.push(phrase);
+  }
+  const byBucket = asObj(result.result ?? inner.result);
+  for (const v of Object.values(byBucket)) {
+    if (Array.isArray(v)) candidates.push(...v);
+  }
+  // Direct list under result.result when it's an array
+  if (Array.isArray(result.result)) candidates.push(...result.result);
+  if (Array.isArray(inner.result)) candidates.push(...(inner.result as unknown[]));
+
+  for (const key of ["suggests", "suggestions", "words", "phrases", "items"]) {
+    const v = inner[key] ?? result[key] ?? root[key];
+    if (Array.isArray(v)) {
+      // Skip Arsenkin check-option arrays
+      if (v.every((x) => typeof x === "string" && OPTION_CODES.has(String(x).toLowerCase()))) {
+        continue;
+      }
+      candidates.push(...v);
+    }
+  }
+
+  const hit = types[seedQuery] ? null : (byBucket[seedQuery] ?? result[seedQuery]);
+  if (Array.isArray(hit)) candidates.push(...hit);
+
+  const NOISE = new Set([...OPTION_CODES, "check", "depth", "stoplist", "b", "w", "gen", "t", "pb", "nav", "rich", "fast", "in"]);
   const out: string[] = [];
   const seen = new Set<string>();
   for (const c of candidates) {
@@ -93,8 +101,7 @@ function extractSuggestions(payload: unknown, seedQuery: string): string[] {
     text = text.trim();
     if (!text || NOISE.has(text.toLowerCase())) continue;
     if (seen.has(text.toLowerCase())) continue;
-    // Drop option-code pollution and trivial exact seed echoes only when alone later.
-    if (/^[a-z]{2,5}$/i.test(text) && text.length <= 5) continue;
+    if (/^[a-z]{1,5}$/i.test(text)) continue;
     seen.add(text.toLowerCase());
     out.push(text);
   }

@@ -1119,7 +1119,7 @@ function isSuggestion(item: FullEvidenceInventory["items"][number]): boolean {
 
 function isRelated(item: FullEvidenceInventory["items"][number]): boolean {
   const et = surfaceType(item);
-  return et.includes("related");
+  return et.includes("related") || et === "paa" || et.includes("paa");
 }
 
 function isImage(item: FullEvidenceInventory["items"][number]): boolean {

@@ -646,8 +646,8 @@ function suggestionBullets(
   if (!inventory) return [];
   const typeMatchers =
     surfaceType === "related_query"
-      ? ["related_query", "related query"]
-      : ["suggestion", "search_suggestion"];
+      ? ["related_query", "related query", "paa"]
+      : ["suggestion", "search_suggestion", "autocomplete"];
 
   const scored = inventory.items
     .filter((item) => {

@@ -115,9 +115,10 @@ export async function mergeRunScopedSerpObservations(input: {
   const seen = new Map<string, number>();
   const duplicateKeys: string[] = [];
   const obsItems: RawInventoryItem[] = [];
+  const surfaceItems: RawInventoryItem[] = [];
 
   for (const row of rows) {
-    if (String(row.surface ?? "organic") !== "organic") continue;
+    const surface = String(row.surface ?? "organic").toLowerCase();
     const key = observationKey({
       auditRunId: row.auditRunId,
       provider: row.provider,
@@ -137,35 +138,79 @@ export async function mergeRunScopedSerpObservations(input: {
     }
 
     const region = mapRegion(row.region);
-    obsItems.push({
-      inventoryId: `serp-obs-${row.id}`,
-      caseId: row.caseId,
-      reportRunId: row.auditRunId,
-      source: "serp_observation",
-      provider: String(row.provider ?? row.engine ?? "search").toUpperCase(),
-      region,
-      query: row.queryText,
-      collectedAt: row.capturedAt.toISOString(),
-      evidenceType: "search_result",
-      title: String(row.title ?? "").trim() || row.url,
-      snippet: row.snippet ?? "",
-      sourceUrl: row.url,
-      classification: undefined,
-      rawMetadata: {
-        serpObservationId: row.id,
-        queryId: row.queryId,
-        queryText: row.queryText,
-        provider: row.provider,
-        engine: row.engine,
-        surface: row.surface,
-        language: row.language,
-        rank: row.rank,
-        providerStatus: row.providerStatus,
-        capturedAt: row.capturedAt.toISOString(),
-        observationKey: key,
-        evidenceRefs: [`serp_observation:${row.id}`],
-      },
-    });
+    if (surface === "organic") {
+      obsItems.push({
+        inventoryId: `serp-obs-${row.id}`,
+        caseId: row.caseId,
+        reportRunId: row.auditRunId,
+        source: "serp_observation",
+        provider: String(row.provider ?? row.engine ?? "search").toUpperCase(),
+        region,
+        query: row.queryText,
+        collectedAt: row.capturedAt.toISOString(),
+        evidenceType: "search_result",
+        title: String(row.title ?? "").trim() || row.url,
+        snippet: row.snippet ?? "",
+        sourceUrl: row.url,
+        classification: undefined,
+        rawMetadata: {
+          serpObservationId: row.id,
+          queryId: row.queryId,
+          queryText: row.queryText,
+          provider: row.provider,
+          engine: row.engine,
+          surface: row.surface,
+          language: row.language,
+          rank: row.rank,
+          providerStatus: row.providerStatus,
+          capturedAt: row.capturedAt.toISOString(),
+          observationKey: key,
+          evidenceRefs: [`serp_observation:${row.id}`],
+        },
+      });
+      continue;
+    }
+
+    if (surface === "autocomplete" || surface === "paa" || surface === "related") {
+      const evidenceType =
+        surface === "autocomplete"
+          ? "suggestion"
+          : surface === "paa"
+            ? "related_query"
+            : "related_query";
+      const line = String(row.title ?? row.queryText ?? "").trim();
+      if (!line) continue;
+      surfaceItems.push({
+        inventoryId: `serp-obs-${row.id}`,
+        caseId: row.caseId,
+        reportRunId: row.auditRunId,
+        source: "serp_observation",
+        provider: String(row.engine ?? row.provider ?? "search").toLowerCase(),
+        region,
+        query: line,
+        collectedAt: row.capturedAt.toISOString(),
+        evidenceType,
+        title: line,
+        snippet: row.snippet ?? "",
+        sourceUrl: row.url,
+        classification: undefined,
+        rawMetadata: {
+          serpObservationId: row.id,
+          queryId: row.queryId,
+          queryText: row.queryText,
+          provider: row.provider,
+          engine: row.engine,
+          surface: row.surface,
+          language: row.language,
+          rank: row.rank,
+          providerStatus: row.providerStatus,
+          capturedAt: row.capturedAt.toISOString(),
+          observationKey: key,
+          evidenceRefs: [`serp_observation:${row.id}`],
+          arsenkinTool: surface === "paa" ? "paa" : surface === "autocomplete" ? "suggest" : "related",
+        },
+      });
+    }
   }
 
   const nonSearch = input.inventory.items.filter((i) => i.evidenceType !== "search_result");
@@ -173,14 +218,42 @@ export async function mergeRunScopedSerpObservations(input: {
   const keepLegacy = !requireRunScoped && obsItems.length === 0;
   const searchItems = keepLegacy ? legacySearch : obsItems;
 
+  // Prefer Arsenkin suggestion/PAA when present; keep other non-search inventory.
+  const hasArsenkinSuggest = surfaceItems.some((i) => i.evidenceType === "suggestion");
+  const hasArsenkinRelated = surfaceItems.some((i) => i.evidenceType === "related_query");
+  const keptNonSearch = nonSearch.filter((i) => {
+    const et = i.evidenceType.toLowerCase();
+    if (hasArsenkinSuggest && (et.includes("suggestion") || et.includes("autocomplete"))) {
+      return false;
+    }
+    if (
+      hasArsenkinRelated &&
+      (et.includes("related") || et === "paa") &&
+      !et.includes("search_result")
+    ) {
+      return false;
+    }
+    return true;
+  });
+
   if (requireRunScoped && obsItems.length === 0) {
     warnings.push("run-scoped-required-but-no-organic-observations");
   }
 
+  const mergedItems = [...searchItems, ...surfaceItems, ...keptNonSearch];
+  const suggestionCount = mergedItems.filter((i) =>
+    /suggestion|autocomplete/i.test(i.evidenceType)
+  ).length;
+  const relatedCount = mergedItems.filter((i) => /related|paa/i.test(i.evidenceType)).length;
+
   const merged: FullEvidenceInventory = {
     ...input.inventory,
-    warnings: [...warnings, ...(duplicateKeys.length ? [`duplicate-observation-keys:${duplicateKeys.length}`] : [])],
-    items: [...searchItems, ...nonSearch],
+    warnings: [
+      ...warnings,
+      ...(duplicateKeys.length ? [`duplicate-observation-keys:${duplicateKeys.length}`] : []),
+      ...(surfaceItems.length ? [`arsenkin-surfaces-merged:${surfaceItems.length}`] : []),
+    ],
+    items: mergedItems,
     counts: {
       ...input.inventory.counts,
       searchResults: searchItems.length,
@@ -188,14 +261,21 @@ export async function mergeRunScopedSerpObservations(input: {
     countsByEvidenceType: {
       ...input.inventory.countsByEvidenceType,
       search_result: searchItems.length,
+      suggestion: suggestionCount,
+      related_query: relatedCount,
+    },
+    mediaAvailability: {
+      ...input.inventory.mediaAvailability,
+      suggestions: suggestionCount,
+      relatedQueries: relatedCount,
     },
   };
 
   return {
     inventory: merged,
-    observationCount: obsItems.length,
+    observationCount: obsItems.length + surfaceItems.length,
     duplicateKeys,
-    usedRunScoped: !keepLegacy && obsItems.length > 0,
+    usedRunScoped: (!keepLegacy && obsItems.length > 0) || surfaceItems.length > 0,
     warnings: merged.warnings,
   };
 }

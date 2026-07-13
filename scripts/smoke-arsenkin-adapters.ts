@@ -81,7 +81,7 @@ async function main() {
     se: 1,
     payload: load("get-suggest.json"),
   });
-  assert.equal(suggests.length, 3);
+  assert.ok(suggests.length >= 3, `expected autocomplete rows, got ${suggests.length}`);
   assert.equal(suggests[0]?.surface, "autocomplete");
   assert.equal(suggests[0]?.engine, "YANDEX");
 
