@@ -206,14 +206,10 @@ export async function enrichReportRunWithArsenkin(input: {
   if (organicCount < skipIfAtLeast) tools.push("check-top");
   if (suggestCount < 3) tools.push("suggest");
   if (paaCount < 1) tools.push("paa");
-  if (aiSerpTargets.length > 0) tools.push("ai-serp");
-  if (needCheckH) tools.push("check-h");
-  if (needIndexation) tools.push("indexation");
-  if (required) {
-    for (const tool of enabledTools) {
-      if (!tools.includes(tool)) tools.push(tool);
-    }
-  }
+  if (aiSerpTargets.length > 0 && enabledTools.includes("ai-serp")) tools.push("ai-serp");
+  if (needCheckH && enabledTools.includes("check-h")) tools.push("check-h");
+  if (needIndexation && enabledTools.includes("indexation")) tools.push("indexation");
+  // Required mode must not re-submit already-complete tools; only fill gaps above.
   if (tools.length === 0) {
     const missing = missingMandatoryArsenkinCoverage(existingRows, enabledTools);
     if (required && missing.length > 0) {
