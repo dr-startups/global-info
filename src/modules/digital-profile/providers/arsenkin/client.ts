@@ -7,6 +7,11 @@ import { createHash } from "node:crypto";
 import { createArsenkinRateLimiter, type RateLimiter } from "./rate-limit";
 import { redactSecrets } from "./redact";
 import { noteArsenkinNetworkCall } from "./network-guard";
+import {
+  assertLiveNetworkAllowed,
+  assertLiveSetAllowed,
+  getActiveLiveAuthorization,
+} from "./live-execution-authorization";
 import type {
   ArsenkinCheckTaskResponse,
   ArsenkinClientOptions,
@@ -80,6 +85,7 @@ export class ArsenkinClient {
   private readonly limiter: RateLimiter;
   /** Per-request HTTP timeout; must stay below account lease TTL. */
   private readonly httpTimeoutMs: number;
+  private readonly skipLiveAuthorizationCheck: boolean;
 
   constructor(options: ArsenkinClientOptions) {
     if (!options.token?.trim()) {
@@ -98,9 +104,23 @@ export class ArsenkinClient {
       now: options.now,
       sleep: this.sleep,
     });
+    this.skipLiveAuthorizationCheck = Boolean(options.skipLiveAuthorizationCheck);
   }
 
   async setTask(request: ArsenkinSetTaskRequest): Promise<ArsenkinSetTaskResponse> {
+    if (!this.skipLiveAuthorizationCheck) {
+      const auth = getActiveLiveAuthorization();
+      if (!auth) {
+        throw new Error("arsenkin-live-set-blocked:no-live-authorization");
+      }
+      assertLiveSetAllowed({
+        reportRunId: auth.reportRunId,
+        requestJson: request,
+        countsAsNewTask: true,
+        estimatedLimits: 1,
+        allowUnknownCost: false,
+      });
+    }
     // A transport error after POST may still have created a task: never retry it.
     const raw = await this.postJson(`${this.baseUrl}/set`, request, { retryAmbiguousNetwork: false });
     const task_id = taskIdOf(raw);
@@ -168,9 +188,19 @@ export class ArsenkinClient {
     body: unknown,
     options: { retryAmbiguousNetwork: boolean }
   ): Promise<Record<string, unknown>> {
+    const kind = url.includes("/set")
+      ? "set"
+      : url.includes("/check")
+        ? "check"
+        : url.includes("/get")
+          ? "get"
+          : "info";
+    if (!this.skipLiveAuthorizationCheck) {
+      assertLiveNetworkAllowed(kind);
+    }
     let lastErr: Error | null = null;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
-      noteArsenkinNetworkCall(url.includes("/set") ? "set" : url.includes("/check") ? "check" : url.includes("/get") ? "get" : "info");
+      noteArsenkinNetworkCall(kind);
       await this.limiter.acquire();
       try {
         const res = await this.fetchImpl(url, {
@@ -269,6 +299,8 @@ export function createArsenkinClientFromEnv(
     token,
     baseUrl: env.ARSENKIN_API_BASE_URL?.trim() || undefined,
     requestsPerMinute: Number(env.ARSENKIN_REQUESTS_PER_MINUTE ?? 30) || 30,
+    // Env clients always enforce live authorization (caller may not override to skip).
     ...overrides,
+    skipLiveAuthorizationCheck: false,
   });
 }

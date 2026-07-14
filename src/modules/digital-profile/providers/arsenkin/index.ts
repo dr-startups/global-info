@@ -13,3 +13,10 @@ export * from "./adapters";
 export * from "./collect-pilot-surfaces";
 export * from "./cost";
 export * from "./network-guard";
+export * from "./live-execution-authorization";
+export {
+  executeArsenkinExecutionPlan,
+  assertLiveCollectAllowed,
+  authorizationFromPlan,
+} from "./execute-arsenkin-execution-plan";
+export * from "./surface-coverage-duplicate-audit";

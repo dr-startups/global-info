@@ -338,6 +338,7 @@ describe("arsenkin p0 hardening", () => {
       httpTimeoutMs: 30,
       maxRetries: 2,
       sleep: async () => undefined,
+      skipLiveAuthorizationCheck: true,
       fetchImpl: (async (_url: string, init?: RequestInit) => {
         setCalls += 1;
         return hangUntilAbort(init);
@@ -359,6 +360,7 @@ describe("arsenkin p0 hardening", () => {
       httpTimeoutMs: 20,
       maxRetries: 1,
       sleep: async () => undefined,
+      skipLiveAuthorizationCheck: true,
       fetchImpl: (async (_url: string, init?: RequestInit) => {
         checkCalls += 1;
         return hangUntilAbort(init);

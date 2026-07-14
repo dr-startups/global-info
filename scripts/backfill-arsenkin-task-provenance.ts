@@ -250,14 +250,15 @@ async function main() {
   let updatedObservations = 0;
   let updatedCoverage = 0;
   let after = before;
-  let verdict: "PASS" | "FAIL" = "PASS";
+  type BackfillVerdict = "READY_FOR_APPLY" | "BLOCKED" | "APPLIED" | "FAILED";
+  let verdict: BackfillVerdict = "READY_FOR_APPLY";
 
   if (args.apply && !gate.ok) {
-    verdict = "FAIL";
+    verdict = "FAILED";
     const auditFail = {
       reportRunId: args.reportRunId,
       mode: "apply" as const,
-      verdict: "FAIL" as const,
+      verdict: "FAILED" as const,
       allowUnmatched: args.allowUnmatched,
       planDigest,
       confirmPlanDigest: args.confirmPlanDigest,
@@ -295,7 +296,8 @@ async function main() {
   }
 
   if (args.apply) {
-    await prisma.$transaction(async (tx) => {
+    try {
+      await prisma.$transaction(async (tx) => {
       for (const p of proposedSorted) {
         const task = await tx.providerTask.findUnique({
           where: { id: p.providerTaskId },
@@ -365,7 +367,52 @@ async function main() {
           updatedCoverage += 1;
         }
       }
-    });
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      verdict = "FAILED";
+      updatedObservations = 0;
+      updatedCoverage = 0;
+      after = before;
+      const auditFail = {
+        reportRunId: args.reportRunId,
+        mode: "apply" as const,
+        verdict: "FAILED" as const,
+        allowUnmatched: args.allowUnmatched,
+        planDigest,
+        confirmPlanDigest: args.confirmPlanDigest,
+        expected: {
+          observations: args.expectObservations,
+          coverage: args.expectCoverage,
+        },
+        actual: {
+          observations: gate.proposedObservationCount,
+          coverage: gate.proposedCoverageCount,
+        },
+        before,
+        proposed: proposedSorted,
+        ambiguous,
+        unmatched,
+        blockers: [...gate.blockers, `transaction-error:${message}`],
+        updated: { observations: 0, coverage: 0 },
+        after: before,
+        note: "transaction rolled back; updated counts forced to 0",
+      };
+      const outDir = join(
+        process.cwd(),
+        "storage",
+        "digital-profile",
+        "qa-first36-canary",
+        "provenance-backfill",
+        args.reportRunId
+      );
+      mkdirSync(outDir, { recursive: true });
+      const outPath = join(outDir, "apply-audit.json");
+      writeFileSync(outPath, `${JSON.stringify(auditFail, null, 2)}\n`, "utf-8");
+      console.error(JSON.stringify({ ...auditFail, outPath }, null, 2));
+      process.exitCode = 1;
+      return;
+    }
 
     const obs2 = await prisma.serpObservation.findMany({
       where: { auditRunId: args.reportRunId, provider: "arsenkin" },
@@ -387,17 +434,20 @@ async function main() {
       updatedObservations !== gate.proposedObservationCount ||
       updatedCoverage !== gate.proposedCoverageCount
     ) {
-      verdict = "FAIL";
+      verdict = "FAILED";
       process.exitCode = 1;
     } else {
-      verdict = "PASS";
+      verdict = "APPLIED";
     }
+  } else {
+    verdict = gate.blockers.length === 0 ? "READY_FOR_APPLY" : "BLOCKED";
+    if (verdict === "BLOCKED") process.exitCode = 1;
   }
 
   const audit = {
     reportRunId: args.reportRunId,
     mode: args.apply ? "apply" : "dry-run",
-    verdict: args.apply ? verdict : ("PASS" as const),
+    verdict,
     allowUnmatched: args.allowUnmatched,
     planDigest,
     confirmPlanDigest: args.confirmPlanDigest,

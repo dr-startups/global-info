@@ -23,6 +23,15 @@ import { ARSENKIN_REGION, pilotSeForRegion } from "./regions";
 import type { SerpObservationDraft } from "../../serp-observation/types";
 import { buildSerpQueryId } from "../../serp-observation/query-id";
 import type { ProviderTaskRecord } from "./types";
+import type { ArsenkinExecutionPlan } from "../../orion-golden/classic/arsenkin-execution-plan";
+import { evaluateExecutionPlanBudget } from "../../orion-golden/classic/arsenkin-execution-plan";
+import type { LiveExecutionAuthorization } from "./live-execution-authorization";
+import {
+  assertLiveCollectAllowed,
+  executeArsenkinExecutionPlan,
+  type ArsenkinPilotCollectResult as PlanCollectResult,
+  type ArsenkinSurfaceRun as PlanSurfaceRun,
+} from "./execute-arsenkin-execution-plan";
 
 const FIX = join(
   process.cwd(),
@@ -33,16 +42,7 @@ function loadFix(name: string): unknown {
   return JSON.parse(readFileSync(join(FIX, name), "utf-8"));
 }
 
-export type ArsenkinSurfaceRun = {
-  tool: string;
-  engine: string;
-  region: string;
-  language: string;
-  query: string;
-  surface: string;
-  providerTaskId: string | null;
-  resultCount: number;
-};
+export type ArsenkinSurfaceRun = PlanSurfaceRun;
 
 export type ArsenkinPilotCollectInput = {
   caseId: string;
@@ -63,23 +63,13 @@ export type ArsenkinPilotCollectInput = {
   client?: ArsenkinClient | null;
   store?: ProviderTaskStore;
   waitTimeoutMs?: number;
+  /** Required for live: exact confirmed plan. */
+  executionPlan?: ArsenkinExecutionPlan;
+  /** Required for live: digest-bound authorization. */
+  liveAuthorization?: LiveExecutionAuthorization;
 };
 
-export type ArsenkinPilotCollectResult = {
-  mode: "live" | "fixtures";
-  drafts: SerpObservationDraft[];
-  bySurface: {
-    organic: number;
-    autocomplete: number;
-    paa: number;
-    aiAnswer: number;
-    pageMeta: number;
-    indexation: number;
-  };
-  taskIds: string[];
-  /** Per-surface provenance independent of observation drafts (supports NO_RESULTS). */
-  surfaceRuns: ArsenkinSurfaceRun[];
-};
+export type ArsenkinPilotCollectResult = PlanCollectResult;
 
 async function completeTask(
   client: ArsenkinClient,
@@ -125,20 +115,47 @@ function pushSurfaceRun(
 export async function collectArsenkinPilotSurfaces(
   input: ArsenkinPilotCollectInput
 ): Promise<ArsenkinPilotCollectResult> {
-  const live =
-    !input.fixturesOnly &&
-    isArsenkinConfigured() &&
-    (input.client != null || createArsenkinClientFromEnv() != null);
-  if (!input.fixturesOnly && !live) {
-    throw new Error("Arsenkin live collection requires a configured client and API token");
+  // Token + ARSENKIN_ENABLED is never enough for live — need plan + authorization.
+  if (!input.fixturesOnly) {
+    const auth = assertLiveCollectAllowed({
+      fixturesOnly: false,
+      executionPlan: input.executionPlan,
+      liveAuthorization: input.liveAuthorization,
+    });
+    const plan = input.executionPlan!;
+    const budget = evaluateExecutionPlanBudget(plan);
+    if (!budget.ok) {
+      throw new Error(`arsenkin-live-blocked:budget:${budget.blockers.join(",")}`);
+    }
+    if (plan.reportRunId !== input.auditRunId) {
+      throw new Error("arsenkin-live-blocked:auditRunId-vs-plan-reportRunId");
+    }
+    const client = input.client ?? createArsenkinClientFromEnv();
+    if (!client) {
+      throw new Error("Arsenkin live collection requires a configured client and API token");
+    }
+    const store = input.store ?? createPrismaProviderTaskStore();
+    return executeArsenkinExecutionPlan({
+      plan,
+      authorization: auth!,
+      client,
+      store,
+      waitTimeoutMs: input.waitTimeoutMs,
+    });
   }
-  const client = input.client ?? (live ? createArsenkinClientFromEnv() : null);
-  // Persist real provider jobs across processes; fixture work stays isolated in memory.
-  const store = live ? createPrismaProviderTaskStore() : input.store ?? createMemoryProviderTaskStore();
+
+  // Fixtures-only path (no network, no live authorization).
+  const live = false;
+  const client = null;
+  const store = input.store ?? createMemoryProviderTaskStore();
   const drafts: SerpObservationDraft[] = [];
   const taskIds: string[] = [];
   const surfaceRuns: ArsenkinSurfaceRun[] = [];
   const waitTimeoutMs = input.waitTimeoutMs ?? 10 * 60_000;
+  void live;
+  void client;
+  void waitTimeoutMs;
+  void isArsenkinConfigured;
 
   const ruQuery = input.queriesRu[0] ?? "subject";
   const uaeQuery = input.queriesUae[0] ?? ruQuery;

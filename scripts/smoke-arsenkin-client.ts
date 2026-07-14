@@ -67,6 +67,7 @@ async function main() {
     fetchImpl,
     requestsPerMinute: 30,
     sleep: async () => undefined,
+    skipLiveAuthorizationCheck: true,
   });
 
   const lim = await client.getLimits();
@@ -109,6 +110,7 @@ async function main() {
     token: "tok",
     maxRetries: 2,
     sleep: async () => undefined,
+    skipLiveAuthorizationCheck: true,
     fetchImpl: async (input) => {
       const url = String(input);
       if (url.endsWith("/set")) {

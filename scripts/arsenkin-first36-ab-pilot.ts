@@ -1,9 +1,8 @@
 /**
- * Arsenkin First36 A/B pilot for Glinka (fixtures by default; live if ARSENKIN_ENABLED+token).
+ * Arsenkin First36 A/B pilot — fixtures only.
+ * Live spend is hard-blocked; use arsenkin-canonical-live-runner.ts.
  *
- *   npm run pilot:arsenkin-first36
  *   npm run pilot:arsenkin-first36 -- --fixtures
- *   npm run pilot:arsenkin-first36 -- --persist   # write drafts into a new OrionReportRun
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -11,9 +10,18 @@ import { join } from "node:path";
 import { PrismaClient } from "@prisma/client";
 import { collectArsenkinPilotSurfaces } from "../src/modules/digital-profile/providers/arsenkin";
 import { persistSerpObservations } from "../src/modules/digital-profile/serp-observation/persist";
+import {
+  getArsenkinNetworkCallCount,
+  resetArsenkinNetworkCallCount,
+} from "../src/modules/digital-profile/providers/arsenkin/network-guard";
 
 const CASE_ID = process.argv.find((a) => a.startsWith("--case="))?.slice(7) || "cmreamy2t0002o30f29urzcog";
-const FIXTURES = process.argv.includes("--fixtures") || process.env.ARSENKIN_PILOT_FIXTURES === "1";
+const WANT_LIVE =
+  process.argv.includes("--live") ||
+  (process.env.ARSENKIN_ENABLED === "1" &&
+    Boolean(process.env.ARSENKIN_API_TOKEN?.trim()) &&
+    !process.argv.includes("--fixtures") &&
+    process.env.ARSENKIN_PILOT_FIXTURES !== "1");
 const PERSIST = process.argv.includes("--persist");
 
 function domainOf(url: string): string {
@@ -25,6 +33,24 @@ function domainOf(url: string): string {
 }
 
 async function main() {
+  resetArsenkinNetworkCallCount();
+
+  if (WANT_LIVE || process.argv.includes("--live")) {
+    const block = {
+      entrypoint: "scripts/arsenkin-first36-ab-pilot.ts",
+      status: "HARD_FAIL",
+      reason: "legacy-live-entrypoint-disabled",
+      redirect: "scripts/arsenkin-canonical-live-runner.ts",
+      networkCalls: 0,
+      tokenPresent: Boolean(String(process.env.ARSENKIN_API_TOKEN ?? "").trim()),
+    };
+    const dir = join(process.cwd(), "storage", "digital-profile", "qa-first36-canary", "_legacy-blocks");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "ab-pilot-live-block.json"), `${JSON.stringify(block, null, 2)}\n`);
+    console.error(JSON.stringify(block, null, 2));
+    process.exit(2);
+  }
+
   const prisma = new PrismaClient();
   const outRoot = join(
     process.cwd(),
@@ -56,9 +82,7 @@ async function main() {
     const byRun = new Map<string, number>();
     for (const b of baseline) byRun.set(b.auditRunId, (byRun.get(b.auditRunId) ?? 0) + 1);
     const topRun = [...byRun.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
-    const baselineRun = topRun
-      ? baseline.filter((b) => b.auditRunId === topRun)
-      : baseline;
+    const baselineRun = topRun ? baseline.filter((b) => b.auditRunId === topRun) : baseline;
 
     const subject = await prisma.subject.findFirst({
       where: { caseId: CASE_ID },
@@ -87,8 +111,12 @@ async function main() {
       auditRunId: PERSIST ? auditRunId : `dry-${auditRunId}`,
       queriesRu,
       queriesUae,
-      fixturesOnly: FIXTURES || !process.env.ARSENKIN_API_TOKEN?.trim(),
+      fixturesOnly: true,
     });
+
+    if (getArsenkinNetworkCallCount() !== 0) {
+      throw new Error("fixtures pilot leaked network calls");
+    }
 
     let persisted = 0;
     if (PERSIST) {
@@ -110,7 +138,8 @@ async function main() {
     const report = {
       caseId: CASE_ID,
       mode: collected.mode,
-      fixturesForced: FIXTURES,
+      fixturesForced: true,
+      networkCalls: getArsenkinNetworkCallCount(),
       baseline: {
         auditRunId: topRun,
         observationCount: baselineRun.length,
@@ -119,42 +148,23 @@ async function main() {
         providers: [...new Set(baselineRun.map((b) => b.provider))],
       },
       arsenkin: {
-        auditRunId: PERSIST ? auditRunId : null,
         drafts: collected.drafts.length,
         bySurface: collected.bySurface,
-        organicDomains: [...new Set(arsenkinOrganic.map((d) => d.domain ?? domainOf(d.url)))].slice(0, 20),
-        newOrganicUrls: newUrls.length,
-        overlapOrganicUrls: overlap.length,
-        sampleSuggest: collected.drafts
-          .filter((d) => d.surface === "autocomplete")
-          .map((d) => d.title)
-          .slice(0, 10),
-        samplePaa: collected.drafts
-          .filter((d) => d.surface === "paa")
-          .map((d) => d.title)
-          .slice(0, 10),
+        organicDomains: [...new Set(arsenkinOrganic.map((d) => domainOf(d.url)))].slice(0, 20),
+        newOrganicVsBaseline: newUrls.length,
+        overlapOrganic: overlap.length,
       },
-      persist: { enabled: PERSIST, persisted },
-      pagesImpactHint: ["8-10", "11-12", "20-22", "25-28", "32"],
-      nextStep:
-        collected.mode === "fixtures"
-          ? "Set ARSENKIN_ENABLED=1 and ARSENKIN_API_TOKEN in .env, re-run without --fixtures"
-          : "Re-run live First36 render with ORION_FIRST36_RUN_SCOPED=1 against the pilot auditRunId",
+      persisted,
+      next: "Use scripts/arsenkin-canonical-live-runner.ts for paid live",
     };
-
-    writeFileSync(join(outRoot, "ab-report.json"), JSON.stringify(report, null, 2), "utf-8");
-    writeFileSync(
-      join(outRoot, "arsenkin-drafts.json"),
-      JSON.stringify(collected.drafts, null, 2),
-      "utf-8"
-    );
-    console.log(JSON.stringify({ outRoot, ...report }, null, 2));
+    writeFileSync(join(outRoot, "pilot-report.json"), `${JSON.stringify(report, null, 2)}\n`);
+    console.log(JSON.stringify(report, null, 2));
   } finally {
     await prisma.$disconnect();
   }
 }
 
 main().catch((err) => {
-  console.error(err);
-  process.exitCode = 1;
+  console.error(err instanceof Error ? err.message : err);
+  process.exit(1);
 });

@@ -133,7 +133,7 @@ async function main() {
 
   if (!reportRunId) {
     throw new Error(
-      "usage: rerender-canary-first36.ts <reportRunId> [caseId] [--rerender-only] [--tools=...] [--allow-new-provider-tasks] [--confirm-plan-digest=...]"
+      "usage: rerender-canary-first36.ts <reportRunId> [caseId] [--rerender-only] [--rebuild-client-content]"
     );
   }
 
@@ -146,6 +146,20 @@ async function main() {
     reportRunId
   );
   mkdirSync(outputRoot, { recursive: true });
+
+  if (!rerenderOnly) {
+    const block = {
+      entrypoint: "scripts/rerender-canary-first36.ts",
+      status: "HARD_FAIL",
+      reason: "non-rerender-live-disabled-use-canonical-runner",
+      redirect: "scripts/arsenkin-canonical-live-runner.ts",
+      networkCalls: 0,
+    };
+    writeJson(join(outputRoot, "legacy-live-block.json"), block);
+    console.error(JSON.stringify(block, null, 2));
+    process.exit(2);
+  }
+
   resetArsenkinNetworkCallCount();
 
   const tasksBefore = await prisma.providerTask.findMany({

@@ -203,3 +203,21 @@ export function evaluateBackfillApplyGate(input: BackfillApplyGateInput): Backfi
     proposedCoverageCount,
   };
 }
+
+export type BackfillAuditVerdict = "READY_FOR_APPLY" | "BLOCKED" | "APPLIED" | "FAILED";
+
+/** Pure dry-run / apply audit verdict (never PASS when blockers present). */
+export function resolveBackfillAuditVerdict(input: {
+  mode: "dry-run" | "apply";
+  blockers: readonly string[];
+  applySucceeded?: boolean;
+  transactionError?: boolean;
+}): BackfillAuditVerdict {
+  if (input.mode === "dry-run") {
+    return input.blockers.length === 0 ? "READY_FOR_APPLY" : "BLOCKED";
+  }
+  if (input.transactionError || input.blockers.length > 0 || input.applySucceeded === false) {
+    return "FAILED";
+  }
+  return "APPLIED";
+}

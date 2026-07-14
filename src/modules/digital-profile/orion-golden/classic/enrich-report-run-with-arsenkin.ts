@@ -149,6 +149,8 @@ export async function enrichReportRunWithArsenkin(input: {
   queriesUae: string[];
   /** Minimum existing arsenkin observations to treat as already enriched. */
   skipIfAtLeast?: number;
+  liveAuthorization?: import("../../providers/arsenkin/live-execution-authorization").LiveExecutionAuthorization;
+  executionPlan?: import("./arsenkin-execution-plan").ArsenkinExecutionPlan;
 }): Promise<ArsenkinRenderEnrichResult> {
   const required = isArsenkinRequired();
   const enabledTools = arsenkinTools();
@@ -282,16 +284,34 @@ export async function enrichReportRunWithArsenkin(input: {
     };
   }
 
+  // Live enrich only with explicit plan + authorization (token alone is insufficient).
+  const liveAuth = input.liveAuthorization ?? null;
+  const executionPlan = input.executionPlan ?? null;
+  const fixturesOnly = process.env.ARSENKIN_PILOT_FIXTURES === "1";
+  if (!fixturesOnly && (!liveAuth || !executionPlan)) {
+    if (required) {
+      throw new Error(
+        "ARSENKIN_REQUIRED live enrich blocked: use scripts/arsenkin-canonical-live-runner.ts (plan + LiveExecutionAuthorization)"
+      );
+    }
+    return {
+      skipped: true,
+      reason: "live-authorization-absent-use-canonical-runner",
+    };
+  }
+
   const collected = await collectArsenkinPilotSurfaces({
     caseId: input.caseId,
     auditRunId: input.auditRunId,
     queriesRu: input.queriesRu,
     queriesUae: input.queriesUae,
-    fixturesOnly: process.env.ARSENKIN_PILOT_FIXTURES === "1",
+    fixturesOnly,
     tools,
     aiSerpTargets: tools.includes("ai-serp") ? aiSerpTargets : undefined,
     urlsEnrichment:
       tools.includes("check-h") || tools.includes("indexation") ? urlsEnrichment : undefined,
+    executionPlan: executionPlan ?? undefined,
+    liveAuthorization: liveAuth ?? undefined,
   });
 
   const existingKeys = new Set(
