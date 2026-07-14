@@ -138,8 +138,8 @@ export function buildPlannedTaskPreflight(input: {
     planDigest = computePlanDigest(plannedExactRequests);
     plannedHashes = plannedExactRequests.map((p) => p.requestHash);
     plannedLines = plannedExactRequests.map((p) => {
-      const existing = doneByHash.get(p.requestHash) ?? taskByHash.get(p.requestHash);
-      const reuse = Boolean(existing && /^DONE$/i.test(existing.state ?? "DONE"));
+      const existing = taskByHash.get(p.requestHash);
+      const reuse = Boolean(existing && /^DONE$/i.test(existing.state));
       return {
         tool: p.tool,
         region: p.region,
@@ -151,10 +151,8 @@ export function buildPlannedTaskPreflight(input: {
         reuse,
         action: reuse ? ("REUSE" as const) : ("CREATE" as const),
         existingTaskId: existing?.id ?? null,
-        existingState: existing?.state ?? (reuse ? "DONE" : null),
-        estimatedLimits: reuse
-          ? (existing as ExistingProviderTask | undefined)?.limitsSpent ?? p.estimatedLimits
-          : p.estimatedLimits,
+        existingState: existing?.state ?? null,
+        estimatedLimits: reuse ? existing?.limitsSpent ?? p.estimatedLimits : p.estimatedLimits,
       };
     });
     plannedNewTasks = plannedLines.filter((l) => l.action === "CREATE").length;
