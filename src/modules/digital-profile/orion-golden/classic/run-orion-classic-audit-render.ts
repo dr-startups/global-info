@@ -27,6 +27,7 @@ import { mergeRunScopedSerpObservations } from "./merge-run-scoped-serp-observat
 import { isArsenkinRequired } from "../../providers/arsenkin";
 import type { ExecutiveSynthesisOutput } from "../gpt/orion-executive-synthesis-from-sections";
 import type { SectionDerivedRiskMatrix } from "../sections/orion-risk-matrix-from-sections";
+import type { AdminReviewDecisionSet } from "../evidence/admin-review-decision";
 import { generateFirst36GeometryArtifacts } from "./generate-first36-geometry-artifacts";
 import {
   inspectFirst36Acceptance,
@@ -96,6 +97,28 @@ function resolveClientContentForRender(
 ): OrionClientContent {
   if (explicit) return explicit;
   return loadPostReviewClientContent(caseId, outputRoot);
+}
+
+function resolveAdminDecisionSet(
+  caseId: string,
+  outputRoot: string
+): AdminReviewDecisionSet | null {
+  const candidates = [
+    join(outputRoot, "admin-review-decisions.json"),
+    join(caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId), "admin-review-decisions.json"),
+    join(
+      process.cwd(),
+      "storage",
+      "digital-profile",
+      "qa-r10-orion-golden-parallel",
+      "admin-review-decisions.json"
+    ),
+  ];
+  for (const path of candidates) {
+    const data = readJson<AdminReviewDecisionSet>(path);
+    if (data?.caseId === caseId && Array.isArray(data.decisions)) return data;
+  }
+  return null;
 }
 
 export function shouldUseClassicOrionAuditMode(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -425,6 +448,7 @@ export async function runOrionClassicAuditRender(options: {
   const clientBinding = readJson<{ sourceReportRunId?: string; effectiveReportRunId?: string }>(
     join(outputRoot, "client-content-binding.json")
   );
+  const adminDecisionSet = resolveAdminDecisionSet(caseId, outputRoot);
 
   const acceptance = inspectFirst36Acceptance({
     slideCount: deckManifest.slideCount,
@@ -494,6 +518,15 @@ export async function runOrionClassicAuditRender(options: {
         }
       : undefined,
     clientContentSourceReportRunId: clientBinding?.sourceReportRunId ?? null,
+    adminDecisionSet: adminDecisionSet
+      ? {
+          qaSampleOnly: adminDecisionSet.qaSampleOnly,
+          decisions: adminDecisionSet.decisions.map((d) => ({
+            reviewedBy: d.reviewedBy,
+            reviewerNote: d.reviewerNote,
+          })),
+        }
+      : undefined,
     clientFinalize: clientFinalize && geometryOk,
   });
   writeJson(join(outputRoot, "first36-acceptance.json"), acceptance);

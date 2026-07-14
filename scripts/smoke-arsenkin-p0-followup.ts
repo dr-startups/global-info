@@ -31,6 +31,7 @@ import {
 } from "../src/modules/digital-profile/providers/arsenkin/poll-worker";
 import { classifyBackfillMatch } from "../src/modules/digital-profile/orion-golden/classic/arsenkin-provenance-backfill-match";
 import { inspectFirst36Acceptance } from "../src/modules/digital-profile/orion-golden/classic/first36-acceptance-gate";
+import { selectPostReviewAdminDecisions } from "../src/modules/digital-profile/orion-golden/evidence/admin-review-decision";
 
 function mockClient(handlers: {
   setTask?: () => Promise<{ task_id: string; raw: Record<string, unknown> }>;
@@ -451,5 +452,93 @@ describe("arsenkin p0.1 follow-up", () => {
     if (r.passed) {
       assert.equal(r.ceoReady, true);
     }
+  });
+
+  it("client-final forbids QA sample admin decisions", () => {
+    const base = {
+      slideCount: 36,
+      slides: Array.from({ length: 36 }, (_, i) => ({
+        pageNumber: i + 1,
+        title: i === 18 || i === 35 ? "slot" : `p${i + 1}`,
+        narrative: i === 18 || i === 35 ? "content" : undefined,
+      })),
+      runScopedMerge: { usedRunScoped: true, observationCount: 1 },
+      clientFinalize: true,
+      expectedRunId: "run",
+      clientContentSourceReportRunId: "run",
+    };
+    const sampleBlocked = inspectFirst36Acceptance({
+      ...base,
+      adminDecisionSet: {
+        qaSampleOnly: true,
+        decisions: [{ reviewedBy: "qa-fixture-analyst", reviewerNote: "QA sample fixture" }],
+      },
+    });
+    assert.ok(sampleBlocked.issues.some((i) => i.code === "qa-sample-decisions-forbidden"));
+
+    const fixtureReviewerBlocked = inspectFirst36Acceptance({
+      ...base,
+      adminDecisionSet: {
+        qaSampleOnly: false,
+        decisions: [{ reviewedBy: "qa-fixture-analyst", reviewerNote: "not real approval" }],
+      },
+    });
+    assert.ok(fixtureReviewerBlocked.issues.some((i) => i.code === "qa-fixture-reviewer-forbidden"));
+
+    const productionOk = inspectFirst36Acceptance({
+      ...base,
+      adminDecisionSet: {
+        qaSampleOnly: false,
+        decisions: [{ reviewedBy: "human-reviewer" }],
+      },
+    });
+    assert.ok(!productionOk.issues.some((i) => i.code === "qa-sample-decisions-forbidden"));
+    assert.ok(!productionOk.issues.some((i) => i.code === "qa-fixture-reviewer-forbidden"));
+  });
+
+  it("post-review admin decisions: GPT ON uses resolved, OFF uses production pending", () => {
+    const production = [
+      { evidenceId: "e1", status: "PENDING" as const },
+      { evidenceId: "e2", status: "PENDING" as const },
+    ];
+    const resolved = [
+      { evidenceId: "e1", status: "APPROVED" as const, reviewedBy: "gpt_auto_analyst" },
+      { evidenceId: "e2", status: "EXCLUDED" as const, reviewedBy: "gpt_auto_analyst" },
+    ];
+    const sample = [
+      { evidenceId: "e1", status: "APPROVED_WITH_CAVEAT" as const, reviewedBy: "qa-fixture-analyst" },
+    ];
+
+    const off = selectPostReviewAdminDecisions({
+      useGptAutoAnalyst: false,
+      productionDecisions: production,
+      resolvedAdminDecisions: resolved,
+    });
+    assert.deepEqual(off, production);
+    assert.ok(!off.some((d) => d.reviewedBy === "qa-fixture-analyst"));
+
+    const on = selectPostReviewAdminDecisions({
+      useGptAutoAnalyst: true,
+      productionDecisions: production,
+      resolvedAdminDecisions: resolved,
+    });
+    assert.deepEqual(on, resolved);
+    assert.notEqual(on, sample);
+  });
+
+  it("missing production admin decisions artifact does not trigger QA sample gates", () => {
+    const r = inspectFirst36Acceptance({
+      slideCount: 36,
+      slides: Array.from({ length: 36 }, (_, i) => ({
+        pageNumber: i + 1,
+        title: `p${i + 1}`,
+      })),
+      runScopedMerge: { usedRunScoped: true, observationCount: 1 },
+      clientFinalize: true,
+      expectedRunId: "run",
+      clientContentSourceReportRunId: "run",
+    });
+    assert.ok(!r.issues.some((i) => i.code === "qa-sample-decisions-forbidden"));
+    assert.ok(!r.issues.some((i) => i.code === "qa-fixture-reviewer-forbidden"));
   });
 });

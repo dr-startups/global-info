@@ -33,7 +33,7 @@ import {
   saveAdminReviewSampleFixture,
 } from "./evidence/admin-review-decision-store";
 import { runGptAutoAnalystDecisions, shouldUseGptAutoAnalyst } from "./evidence/gpt-auto-analyst";
-import { countAdminDecisionsByStatus } from "./evidence/admin-review-decision";
+import { countAdminDecisionsByStatus, selectPostReviewAdminDecisions } from "./evidence/admin-review-decision";
 import { buildFullEvidenceInventory } from "./evidence/full-evidence-inventory";
 import {
   applyJudgmentToDecisions,
@@ -347,6 +347,12 @@ export async function runR10OrionGoldenE2e(options: {
     _notice: "QA sample fixture only — not real admin approval",
   });
 
+  const postReviewAdminDecisions = selectPostReviewAdminDecisions({
+    useGptAutoAnalyst: shouldUseGptAutoAnalyst(),
+    productionDecisions: productionAdminDecisions.decisions,
+    resolvedAdminDecisions: resolvedAdminDecisions.decisions,
+  });
+
   const clientContentPostReview = buildOrionClientContent({
     mode: "post_review",
     caseId,
@@ -355,7 +361,7 @@ export async function runR10OrionGoldenE2e(options: {
     bundles,
     manualQueue,
     judgments,
-    adminDecisions: sampleAdminDecisions.decisions,
+    adminDecisions: postReviewAdminDecisions,
   });
 
   const adminWorkflowQa = inspectAdminReviewWorkflowQa({
@@ -469,9 +475,11 @@ export async function runR10OrionGoldenE2e(options: {
         "utf-8"
       );
 
-      const postReviewAdminDecisions = shouldUseGptAutoAnalyst()
-        ? resolvedAdminDecisions.decisions
-        : sampleAdminDecisions.decisions;
+      const postReviewAdminDecisions = selectPostReviewAdminDecisions({
+        useGptAutoAnalyst: shouldUseGptAutoAnalyst(),
+        productionDecisions: productionAdminDecisions.decisions,
+        resolvedAdminDecisions: resolvedAdminDecisions.decisions,
+      });
 
       const sectionBundlesPost = buildOrionSectionBundles({
         caseInfo: { caseId, reportRunId, subjectName: inventory.subject.fullName, aliases: inventory.subject.aliases },

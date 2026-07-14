@@ -92,6 +92,11 @@ export type First36AcceptanceInput = {
   };
   /** Original client-content reportRunId before any override. */
   clientContentSourceReportRunId?: string | null;
+  /** Admin review decisions used for client-final content (when present). */
+  adminDecisionSet?: {
+    qaSampleOnly?: boolean;
+    decisions?: Array<{ reviewedBy?: string; reviewerNote?: string }>;
+  };
 };
 
 const FORBIDDEN =
@@ -223,6 +228,29 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
         code: "foreign-client-content-run",
         detail: input.clientContentSourceReportRunId,
       });
+    }
+    if (input.clientFinalize && input.adminDecisionSet?.qaSampleOnly === true) {
+      issues.push({
+        code: "qa-sample-decisions-forbidden",
+        detail: "qaSampleOnly=true admin decisions cannot be used in client-final",
+      });
+    }
+    if (input.clientFinalize && input.adminDecisionSet?.decisions) {
+      for (const decision of input.adminDecisionSet.decisions) {
+        const reviewer = String(decision.reviewedBy ?? "");
+        const note = String(decision.reviewerNote ?? "");
+        if (
+          reviewer === "qa-fixture-analyst" ||
+          /qa[- ]?fixture/i.test(reviewer) ||
+          /qa[- ]?fixture/i.test(note)
+        ) {
+          issues.push({
+            code: "qa-fixture-reviewer-forbidden",
+            detail: reviewer || note.slice(0, 80) || "qa-fixture reviewer",
+          });
+          break;
+        }
+      }
     }
   }
 

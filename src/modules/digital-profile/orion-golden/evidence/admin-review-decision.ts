@@ -57,3 +57,12 @@ export function countAdminDecisionsByStatus(
 export function isNonPendingAdminDecision(decision: AdminReviewDecision): boolean {
   return decision.status !== "PENDING";
 }
+
+/** Client-final post-review must never use QA sample fixture decisions. */
+export function selectPostReviewAdminDecisions(input: {
+  useGptAutoAnalyst: boolean;
+  productionDecisions: AdminReviewDecision[];
+  resolvedAdminDecisions: AdminReviewDecision[];
+}): AdminReviewDecision[] {
+  return input.useGptAutoAnalyst ? input.resolvedAdminDecisions : input.productionDecisions;
+}
