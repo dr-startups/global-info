@@ -14,7 +14,9 @@ import {
 } from "../src/modules/digital-profile/orion-golden/classic/generate-first36-geometry-artifacts";
 import {
   buildPlannedTaskPreflight,
+  computePlanDigest,
   formatRerenderNetworkSummary,
+  planArsenkinExactTasks,
 } from "../src/modules/digital-profile/orion-golden/classic/rerender-task-preflight";
 import {
   getArsenkinNetworkCallCount,
@@ -540,5 +542,50 @@ describe("arsenkin p0.1 follow-up", () => {
     });
     assert.ok(!r.issues.some((i) => i.code === "qa-sample-decisions-forbidden"));
     assert.ok(!r.issues.some((i) => i.code === "qa-fixture-reviewer-forbidden"));
+  });
+
+  it("exact planner: same tool different hashes → WOULD_CREATE by hash", () => {
+    const planned = planArsenkinExactTasks({
+      queriesRu: ["Иван Иванов"],
+      queriesUae: ["Ivan Ivanov"],
+      tools: ["suggest"],
+    });
+    assert.ok(planned.length >= 3, `expected Yandex RU + Google RU + Google UAE, got ${planned.length}`);
+    const hashes = new Set(planned.map((p) => p.requestHash));
+    assert.equal(hashes.size, planned.length);
+
+    // Only Yandex RU suggest DONE — Google RU/UAE must CREATE
+    const yandex = planned.find((p) => p.engine === "YANDEX" && p.region === "RU")!;
+    const pf = buildPlannedTaskPreflight({
+      reportRunId: "run-exact",
+      tasks: [{ toolName: "suggest", requestHash: yandex.requestHash, state: "DONE", id: "t1" }],
+      requestedTools: ["suggest"],
+      rerenderOnly: false,
+      allowNewProviderTasks: false,
+      liveConfirm: false,
+      queriesRu: ["Иван Иванов"],
+      queriesUae: ["Ivan Ivanov"],
+    });
+    assert.ok(pf.plannedNewTasks >= 2, `expected CREATE for missing Google suggests, got ${pf.plannedNewTasks}`);
+    assert.equal(pf.blocked, true);
+    assert.ok(pf.planDigest);
+    assert.equal(pf.planDigest, computePlanDigest(planned));
+  });
+
+  it("exact planner: digest mismatch blocks after confirm", () => {
+    const pf = buildPlannedTaskPreflight({
+      reportRunId: "run-digest",
+      tasks: [],
+      requestedTools: ["suggest"],
+      rerenderOnly: false,
+      allowNewProviderTasks: true,
+      liveConfirm: true,
+      queriesRu: ["A"],
+      queriesUae: ["B"],
+      confirmPlanDigest: "wrong-digest",
+    });
+    assert.ok(pf.plannedNewTasks > 0);
+    assert.equal(pf.blocked, true);
+    assert.ok(String(pf.blockReason).includes("digest"));
   });
 });

@@ -126,11 +126,14 @@ async function main() {
     (!toolsFlag && !process.argv.includes("--allow-new-provider-tasks") && !process.argv.includes("--allow-new-tasks"));
   const allowNewProviderTasks =
     process.argv.includes("--allow-new-provider-tasks") || process.argv.includes("--allow-new-tasks");
+  const confirmPlanDigest =
+    process.argv.find((a) => a.startsWith("--confirm-plan-digest="))?.slice("--confirm-plan-digest=".length) ??
+    null;
   const liveConfirm = process.env.ARSENKIN_LIVE_CONFIRM === "1";
 
   if (!reportRunId) {
     throw new Error(
-      "usage: rerender-canary-first36.ts <reportRunId> [caseId] [--rerender-only] [--tools=...] [--allow-new-provider-tasks]"
+      "usage: rerender-canary-first36.ts <reportRunId> [caseId] [--rerender-only] [--tools=...] [--allow-new-provider-tasks] [--confirm-plan-digest=...]"
     );
   }
 
@@ -148,6 +151,7 @@ async function main() {
   const tasksBefore = await prisma.providerTask.findMany({
     where: { reportRunId, provider: "arsenkin" },
     select: {
+      id: true,
       toolName: true,
       requestHash: true,
       state: true,
@@ -164,6 +168,7 @@ async function main() {
     rerenderOnly,
     allowNewProviderTasks,
     liveConfirm,
+    confirmPlanDigest,
   });
   writeJson(join(outputRoot, "planned-task-preflight.json"), {
     ...preflight,
