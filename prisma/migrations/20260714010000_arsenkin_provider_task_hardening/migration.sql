@@ -17,6 +17,32 @@ ALTER TABLE "dp_serp_observations"
   ADD COLUMN IF NOT EXISTS "parentQueryId" TEXT,
   ADD COLUMN IF NOT EXISTS "device" TEXT NOT NULL DEFAULT 'DESKTOP';
 
+-- Dedupe again after device default (same business key + DESKTOP) before recreating unique index.
+DELETE FROM "dp_serp_observations" AS doomed
+WHERE doomed.id IN (
+  SELECT id
+  FROM (
+    SELECT
+      id,
+      ROW_NUMBER() OVER (
+        PARTITION BY
+          "auditRunId",
+          "provider",
+          "engine",
+          "region",
+          "language",
+          "device",
+          "surface",
+          "queryId",
+          "rank",
+          "url"
+        ORDER BY "capturedAt" DESC, id DESC
+      ) AS rn
+    FROM "dp_serp_observations"
+  ) ranked
+  WHERE ranked.rn > 1
+);
+
 DROP INDEX IF EXISTS "serp_obs_run_unique";
 CREATE UNIQUE INDEX IF NOT EXISTS "serp_obs_run_unique"
 ON "dp_serp_observations" ("auditRunId", "provider", "engine", "region", "language", "device", "surface", "queryId", "rank", "url");
