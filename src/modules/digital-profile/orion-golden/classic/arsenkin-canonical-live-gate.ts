@@ -21,6 +21,7 @@ import {
 } from "../../providers/arsenkin/arsenkin-db-readiness";
 import type { ArsenkinSubjectQueryPlan } from "./arsenkin-subject-query-plan";
 import {
+  assertStage2PrepareAllowed,
   assertStageAllowedOnRun,
   isIdempotentDoneReplay,
   type ArsenkinWorkflow,
@@ -69,7 +70,8 @@ export type EvaluateCanonicalLiveGateResult = {
     | "EXECUTE_BLOCKED"
     | "PREPARE_READY"
     | "PREPARE_BLOCKED"
-    | "IDEMPOTENT_DONE";
+    | "IDEMPOTENT_DONE"
+    | "IDEMPOTENT_REPLAY_DONE";
   blockers: string[];
 };
 
@@ -99,15 +101,30 @@ export function evaluateCanonicalLiveGate(
       input.stage === "SUGGEST_RU_CANARY" || input.stage === "FIRST36_STAGE1";
     if (isFirst) {
       if (input.run) blockers.push("prepare-requires-absent-run");
+      if (input.currentStageStatus) {
+        const st = String(input.currentStageStatus).toUpperCase();
+        if (st === "PREPARED") {
+          // idempotent prepare reuse handled by caller
+        } else if (st) {
+          blockers.push(`prepare-stage-conflict:${st}`);
+        }
+      }
     } else {
-      // Stage 2 prepare
-      if (!input.run) blockers.push("stage2-prepare-requires-existing-run");
-      const stageGate = assertStageAllowedOnRun({
+      const s2 = assertStage2PrepareAllowed({
+        caseId: input.caseId,
         workflow: input.workflow,
-        stage: input.stage,
+        run: input.run
+          ? {
+              id: input.run.id,
+              caseId: input.run.caseId,
+              status: input.run.status,
+              metadataJson: (input.run as { metadataJson?: unknown }).metadataJson,
+            }
+          : null,
         stages: input.stageRows,
+        existingStageStatus: input.currentStageStatus,
       });
-      if (!stageGate.ok) blockers.push(...stageGate.blockers);
+      if (!s2.ok) blockers.push(...s2.blockers);
     }
     const verdict = blockers.length === 0 ? "PREPARE_READY" : "PREPARE_BLOCKED";
     return { ok: blockers.length === 0, verdict, blockers };
@@ -141,8 +158,12 @@ export function evaluateCanonicalLiveGate(
   }
 
   if (input.currentStageStatus && isIdempotentDoneReplay(input.currentStageStatus)) {
-    if (input.mode === "execute-live") {
-      return { ok: true, verdict: "IDEMPOTENT_DONE", blockers: [] };
+    if (input.run && input.run.caseId !== input.caseId) {
+      blockers.push("run-caseId-mismatch");
+      return { ok: false, verdict: "EXECUTE_BLOCKED", blockers };
+    }
+    if (input.mode === "execute-live" || input.mode === "plan-only") {
+      return { ok: true, verdict: "IDEMPOTENT_REPLAY_DONE", blockers: [] };
     }
   }
 

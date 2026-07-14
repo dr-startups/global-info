@@ -4,8 +4,17 @@
  */
 
 import { createHash } from "node:crypto";
-import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import {
+  createReadStream,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, relative, sep } from "node:path";
 import { spawnSync } from "node:child_process";
 
 export type DbCheckResult = "PASS" | "FAIL";
@@ -32,6 +41,14 @@ export type ArsenkinDbReadinessArtifact = {
   environment: ArsenkinDbEnvironment | "unknown" | "production";
   generatedAt: string;
   expiresAt: string;
+  cleanupAttempted?: boolean;
+  cleanupOk?: boolean;
+  cleanupRemainingRows?: {
+    coverage: number;
+    providerTasks: number;
+    reportRuns: number;
+  };
+  cleanupError?: string | null;
 };
 
 export const ARSENKIN_DB_READINESS_VERSION = "arsenkin-db-readiness-v2";
@@ -47,6 +64,7 @@ export const CRITICAL_LIVE_SOURCE_GLOBS = [
   "src/modules/digital-profile/orion-golden/classic/arsenkin-client-binding-gate.ts",
   "src/modules/digital-profile/orion-golden/classic/arsenkin-subject-query-plan.ts",
   "src/modules/digital-profile/orion-golden/classic/arsenkin-stage-ledger.ts",
+  "src/modules/digital-profile/orion-golden/classic/execute-canonical-arsenkin-stage.ts",
   "src/modules/digital-profile/providers/arsenkin/arsenkin-db-readiness.ts",
   "src/modules/digital-profile/providers/arsenkin/planned-coverage-matrix.ts",
   "src/modules/digital-profile/providers/arsenkin/execute-arsenkin-execution-plan.ts",
@@ -102,24 +120,43 @@ function walkMigrationSqlFiles(migrationsRoot: string): string[] {
   return out;
 }
 
+/** Hash ordered (relPath, bytes) pairs — used by schema hash and mutation tests. */
+export function hashOrderedContentEntries(
+  entries: ReadonlyArray<{ relPath: string; bytes: Buffer }>
+): string {
+  const h = createHash("sha256");
+  for (const { relPath, bytes } of entries) {
+    h.update(relPath.split(sep).join("/"));
+    h.update("\0");
+    h.update(bytes);
+    h.update("\0");
+  }
+  return h.digest("hex");
+}
+
 /** Content hash of schema.prisma + all migration.sql (stable path order, utf-8 bytes). */
 export function computeSchemaContentHash(repoRoot: string = process.cwd()): string {
-  const h = createHash("sha256");
   const schemaPath = join(repoRoot, "prisma", "schema.prisma");
   const files = [
     schemaPath,
     ...walkMigrationSqlFiles(join(repoRoot, "prisma", "migrations")),
   ];
-  for (const abs of files) {
+  const entries = files.map((abs) => {
     const rel = relative(repoRoot, abs).split(sep).join("/");
-    h.update(rel);
-    h.update("\0");
-    if (existsSync(abs)) {
-      h.update(readFileSync(abs));
-    }
-    h.update("\0");
-  }
-  return h.digest("hex");
+    return {
+      relPath: rel,
+      bytes: existsSync(abs) ? readFileSync(abs) : Buffer.alloc(0),
+    };
+  });
+  return hashOrderedContentEntries(entries);
+}
+
+/** Atomic write: temp → fsync/close → rename. Never leaves a partial PASS artifact. */
+export function writeJsonAtomic(path: string, payload: unknown): void {
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
+  renameSync(tmp, path);
 }
 
 /** Deterministic hash of critical live source files. */
@@ -145,8 +182,20 @@ export type BuildIdentity = {
   source: "env" | "git" | "unknown";
 };
 
-/** Prefer CI env SHA; fallback to git. Both missing → unknown (blocks live). */
-export function resolveBuildIdentity(env: NodeJS.ProcessEnv = process.env): BuildIdentity {
+function gitDirPresent(cwd: string = process.cwd()): boolean {
+  return existsSync(join(cwd, ".git"));
+}
+
+/**
+ * Prefer documented CI/deploy SHA; fallback to git.
+ * - With .git: clean tree is always required (no dirty bypass).
+ * - Without .git: only immutable env SHA is accepted (dirtyTree=false).
+ * - Missing both → unknown (blocks live).
+ */
+export function resolveBuildIdentity(
+  env: NodeJS.ProcessEnv = process.env,
+  cwd: string = process.cwd()
+): BuildIdentity {
   const fromEnv = String(
     env.GITHUB_SHA ||
       env.VERCEL_GIT_COMMIT_SHA ||
@@ -156,31 +205,44 @@ export function resolveBuildIdentity(env: NodeJS.ProcessEnv = process.env): Buil
       ""
   ).trim();
   const buildId = String(env.ARSENKIN_BUILD_ID || env.GITHUB_RUN_ID || "").trim() || null;
+  const hasGit = gitDirPresent(cwd);
 
   if (fromEnv) {
+    if (hasGit) {
+      return {
+        buildCommit: fromEnv,
+        buildId,
+        dirtyTree: isGitDirty(cwd),
+        source: "env",
+      };
+    }
+    // Immutable CI/deployment image without .git — trust documented SHA only.
     return {
       buildCommit: fromEnv,
       buildId,
-      dirtyTree: env.ARSENKIN_ALLOW_DIRTY_TREE === "1" ? false : isGitDirty(),
+      dirtyTree: false,
       source: "env",
     };
   }
 
-  const git = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf-8" });
-  const commit = (git.stdout || "").trim();
-  if (commit && git.status === 0) {
-    return {
-      buildCommit: commit,
-      buildId,
-      dirtyTree: isGitDirty(),
-      source: "git",
-    };
+  if (hasGit) {
+    const git = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf-8", cwd });
+    const commit = (git.stdout || "").trim();
+    if (commit && git.status === 0) {
+      return {
+        buildCommit: commit,
+        buildId,
+        dirtyTree: isGitDirty(cwd),
+        source: "git",
+      };
+    }
   }
+
   return { buildCommit: "unknown", buildId, dirtyTree: true, source: "unknown" };
 }
 
-export function isGitDirty(): boolean {
-  const r = spawnSync("git", ["status", "--porcelain"], { encoding: "utf-8" });
+export function isGitDirty(cwd: string = process.cwd()): boolean {
+  const r = spawnSync("git", ["status", "--porcelain"], { encoding: "utf-8", cwd });
   if (r.status !== 0) return true;
   return Boolean((r.stdout || "").trim());
 }
@@ -262,6 +324,9 @@ export function validateDbReadinessArtifact(
   }
   if (art.concurrentUpsert !== "PASS") blockers.push("concurrent-upsert-not-PASS");
   if (art.backfillRace !== "PASS") blockers.push("backfill-race-not-PASS");
+  if (art.cleanupAttempted === true && art.cleanupOk === false) {
+    blockers.push("db-readiness-cleanup-failed");
+  }
 
   const exp = Date.parse(art.expiresAt);
   if (!Number.isFinite(exp) || !Number.isFinite(now) || now > exp) {
@@ -335,6 +400,10 @@ export function buildDbReadinessFailStub(input: {
     environment: input.environment,
     generatedAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + 3600_000).toISOString(),
+    cleanupAttempted: false,
+    cleanupOk: true,
+    cleanupRemainingRows: { coverage: 0, providerTasks: 0, reportRuns: 0 },
+    cleanupError: input.reason,
   };
 }
 

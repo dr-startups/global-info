@@ -7,10 +7,11 @@
  *   ARSENKIN_DB_MUTATION_CONFIRM=1
  *
  * Never PASS from env alone. Never logs full DSN or credentials.
+ * Positive artifact written atomically only after all checks + verified cleanup.
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   ARSENKIN_DB_READINESS_VERSION,
@@ -22,10 +23,10 @@ import {
   evaluateBackfillRaceOutcome,
   fingerprintDatabaseUrl,
   resolveBuildIdentity,
+  writeJsonAtomic,
   type ArsenkinDbReadinessArtifact,
   type DbCheckResult,
 } from "../src/modules/digital-profile/providers/arsenkin/arsenkin-db-readiness";
-import { findSurfaceCoverageDuplicateGroups } from "../src/modules/digital-profile/providers/arsenkin/surface-coverage-duplicate-audit";
 import {
   getArsenkinNetworkCallCount,
   resetArsenkinNetworkCallCount,
@@ -35,6 +36,7 @@ function isPlaceholderDb(url: string): boolean {
   if (!url.trim()) return true;
   if (/postgresql:\/\/u:p@127\.0\.0\.1:5432\/db/i.test(url)) return true;
   if (/postgresql:\/\/user:pass@localhost/i.test(url)) return true;
+  if (/postgresql:\/\/postgres:postgres@127\.0\.0\.1:5432\/postgres/i.test(url)) return true;
   return false;
 }
 
@@ -54,7 +56,7 @@ async function main() {
     ? mutation.environment
     : "unknown") as ArsenkinDbReadinessArtifact["environment"];
 
-  if (!mutation.ok) {
+  const writeFail = (reason: string, extra: Record<string, unknown> = {}) => {
     const stub = buildDbReadinessFailStub({
       fingerprint: fp,
       schemaContentHash,
@@ -62,40 +64,34 @@ async function main() {
       buildCommit: build.buildCommit,
       dirtyTree: build.dirtyTree,
       environment: environment === "unknown" ? "unknown" : environment,
-      reason: mutation.blockers.join(","),
+      reason,
     });
-    writeFileSync(outPath, `${JSON.stringify(stub, null, 2)}\n`);
+    writeJsonAtomic(outPath, stub);
     console.error(
       JSON.stringify(
         {
           outPath,
           verdict: "FAIL",
-          blockers: mutation.blockers,
+          blockers: [reason],
           fingerprint: fp,
           environment: mutation.environment,
           networkCalls: getArsenkinNetworkCallCount(),
+          ...extra,
         },
         null,
         2
       )
     );
     process.exitCode = 1;
+  };
+
+  if (!mutation.ok) {
+    writeFail(mutation.blockers.join(","), { blockers: mutation.blockers });
     return;
   }
 
   if (isPlaceholderDb(dbUrl)) {
-    const stub = buildDbReadinessFailStub({
-      fingerprint: fp,
-      schemaContentHash,
-      sourceTreeHash,
-      buildCommit: build.buildCommit,
-      dirtyTree: build.dirtyTree,
-      environment,
-      reason: "no-real-test-postgresql",
-    });
-    writeFileSync(outPath, `${JSON.stringify(stub, null, 2)}\n`);
-    console.log(JSON.stringify({ outPath, verdict: stub.verdict, reason: "no-real-test-postgresql", fingerprint: fp }, null, 2));
-    process.exitCode = 1;
+    writeFail("no-real-test-postgresql");
     return;
   }
 
@@ -105,8 +101,13 @@ async function main() {
   let duplicateGroupCount = -1;
   let concurrentUpsert: DbCheckResult = "FAIL";
   let backfillRace: DbCheckResult = "FAIL";
+  let cleanupAttempted = false;
   let cleanupOk = true;
+  let cleanupError: string | null = null;
+  let cleanupRemaining = { coverage: -1, providerTasks: -1, reportRuns: -1 };
+  let ephemeralCaseId: string | null = null;
   let reportRunId: string | null = null;
+  let fatalError: string | null = null;
 
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -122,26 +123,29 @@ async function main() {
     ).catch(() => []);
     uniqueIndexPresent = idx.length > 0;
 
-    const rows = await prisma.surfaceCollectionCoverage.findMany({
-      select: {
-        id: true,
-        reportRunId: true,
-        provider: true,
-        tool: true,
-        queryId: true,
-        surface: true,
-        engine: true,
-        region: true,
-        language: true,
-        device: true,
-      },
-      take: 50_000,
-    });
-    duplicateGroupCount = findSurfaceCoverageDuplicateGroups(rows).duplicateGroupCount;
+    // Full duplicate audit via SQL GROUP BY (not capped at 50k rows).
+    const dupRows = await prisma.$queryRawUnsafe<Array<{ cnt: bigint | number }>>(
+      `SELECT COUNT(*)::int AS cnt FROM (
+         SELECT 1
+         FROM "dp_surface_collection_coverage"
+         GROUP BY "reportRunId", provider, tool, "queryId", surface, engine, region, language, device
+         HAVING COUNT(*) > 1
+       ) d`
+    ).catch(() => [{ cnt: -1 }]);
+    duplicateGroupCount = Number(dupRows[0]?.cnt ?? -1);
 
-    const caseRow = await prisma.case.findFirst({ select: { id: true } });
+    let caseRow = await prisma.case.findFirst({ select: { id: true } });
     if (!caseRow) {
-      throw new Error("no-Case-row-for-db-readiness");
+      ephemeralCaseId = `p05-case-${randomUUID().slice(0, 8)}`;
+      await prisma.case.create({
+        data: {
+          id: ephemeralCaseId,
+          caseNumber: `P05-${Date.now()}`,
+          title: "Arsenkin DB readiness ephemeral",
+          createdBy: "arsenkin-db-readiness",
+        },
+      });
+      caseRow = { id: ephemeralCaseId };
     }
 
     reportRunId = `p05-cov-${Date.now()}`;
@@ -180,7 +184,6 @@ async function main() {
     });
     if (!cov) throw new Error("coverage-row-missing-after-upsert");
 
-    // Reset link for race
     await prisma.surfaceCollectionCoverage.update({
       where: { id: cov.id },
       data: { providerTaskId: null },
@@ -242,36 +245,67 @@ async function main() {
       finalProviderTaskId: final?.providerTaskId ?? null,
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
+    fatalError = e instanceof Error ? e.message : String(e);
     backfillRace = "FAIL";
     concurrentUpsert = concurrentUpsert === "PASS" ? concurrentUpsert : "FAIL";
-    console.error(JSON.stringify({ phase: "db-readiness-error", error: message, fingerprint: fp }, null, 2));
+    console.error(
+      JSON.stringify({ phase: "db-readiness-error", error: fatalError, fingerprint: fp }, null, 2)
+    );
   } finally {
+    cleanupAttempted = Boolean(reportRunId) || Boolean(ephemeralCaseId);
     if (reportRunId) {
       try {
         await prisma.surfaceCollectionCoverage.deleteMany({ where: { reportRunId } });
         await prisma.providerTask.deleteMany({ where: { reportRunId } });
-        await prisma.orionReportRun.delete({ where: { id: reportRunId } }).catch(() => undefined);
-      } catch {
+        await prisma.orionArsenkinStageRun.deleteMany({ where: { reportRunId } });
+        await prisma.orionReportRun.delete({ where: { id: reportRunId } });
+        const [c, t, r] = await Promise.all([
+          prisma.surfaceCollectionCoverage.count({ where: { reportRunId } }),
+          prisma.providerTask.count({ where: { reportRunId } }),
+          prisma.orionReportRun.count({ where: { id: reportRunId } }),
+        ]);
+        cleanupRemaining = { coverage: c, providerTasks: t, reportRuns: r };
+        if (c !== 0 || t !== 0 || r !== 0) {
+          cleanupOk = false;
+          cleanupError = `remaining-rows:coverage=${c}:tasks=${t}:runs=${r}`;
+        }
+      } catch (e) {
         cleanupOk = false;
+        cleanupError = e instanceof Error ? e.message : String(e);
       }
     }
-    await prisma.$disconnect().catch(() => undefined);
+    if (ephemeralCaseId) {
+      try {
+        await prisma.case.delete({ where: { id: ephemeralCaseId } });
+      } catch (e) {
+        cleanupOk = false;
+        cleanupError = [
+          cleanupError,
+          e instanceof Error ? e.message : String(e),
+        ]
+          .filter(Boolean)
+          .join(";");
+      }
+    }
+    await prisma.$disconnect();
   }
 
   const now = new Date();
   const verdict: "PASS" | "FAIL" =
+    !fatalError &&
     migrationApplied &&
     uniqueIndexPresent &&
     duplicateGroupCount === 0 &&
     concurrentUpsert === "PASS" &&
     backfillRace === "PASS" &&
+    cleanupAttempted &&
     cleanupOk &&
     !build.dirtyTree &&
     build.buildCommit !== "unknown"
       ? "PASS"
       : "FAIL";
 
+  // Never write PASS before all assertions — compute first, then atomic rename.
   const artifact: ArsenkinDbReadinessArtifact = {
     version: ARSENKIN_DB_READINESS_VERSION,
     verdict,
@@ -290,8 +324,12 @@ async function main() {
     environment,
     generatedAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + 6 * 3600_000).toISOString(),
+    cleanupAttempted,
+    cleanupOk,
+    cleanupRemainingRows: cleanupRemaining,
+    cleanupError,
   };
-  writeFileSync(outPath, `${JSON.stringify(artifact, null, 2)}\n`);
+  writeJsonAtomic(outPath, artifact);
   console.log(
     JSON.stringify(
       {
@@ -304,10 +342,13 @@ async function main() {
         duplicateGroupCount,
         concurrentUpsert,
         backfillRace,
+        cleanupAttempted,
         cleanupOk,
+        cleanupRemainingRows: cleanupRemaining,
         dirtyTree: build.dirtyTree,
         buildCommit: build.buildCommit === "unknown" ? "unknown" : build.buildCommit.slice(0, 12),
         networkCalls: getArsenkinNetworkCallCount(),
+        fatalError,
       },
       null,
       2

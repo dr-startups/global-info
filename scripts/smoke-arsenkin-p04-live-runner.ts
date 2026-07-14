@@ -457,10 +457,17 @@ describe("arsenkin P0.4 live runner closure", () => {
     const files = scanNetworkEntrypoints();
     assert.ok(files.some((f) => f.includes("client.ts")));
     assert.ok(files.some((f) => f.includes("collect-pilot-surfaces.ts")));
-    assert.ok(files.some((f) => f.includes("arsenkin-canonical-live-runner.ts")));
+    // Production path: injectable service (CLI is thin adapter).
+    const serviceSrc = readFileSync(
+      "src/modules/digital-profile/orion-golden/classic/execute-canonical-arsenkin-stage.ts",
+      "utf-8"
+    );
+    assert.match(serviceSrc, /collectArsenkinPilotSurfaces|deps\.collect/);
+    const cli = readFileSync("scripts/arsenkin-canonical-live-runner.ts", "utf-8");
+    assert.match(cli, /executeCanonicalArsenkinStage/);
     writeFileSync(
       join(ART, "network-entrypoint-inventory.json"),
-      `${JSON.stringify({ files, count: files.length }, null, 2)}\n`
+      `${JSON.stringify({ files, count: files.length, service: "execute-canonical-arsenkin-stage.ts" }, null, 2)}\n`
     );
   });
 

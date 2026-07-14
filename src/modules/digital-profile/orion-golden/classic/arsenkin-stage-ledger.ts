@@ -36,6 +36,13 @@ export function parseWorkflow(raw: string | null | undefined): ArsenkinWorkflow 
   throw new Error(`invalid-workflow:${s || "empty"}`);
 }
 
+export function workflowFromRunMetadata(metadataJson: unknown): ArsenkinWorkflow | null {
+  if (!metadataJson || typeof metadataJson !== "object" || Array.isArray(metadataJson)) return null;
+  const w = String((metadataJson as Record<string, unknown>).workflow ?? "").trim();
+  if (w === "suggest-canary" || w === "first36-full") return w;
+  return null;
+}
+
 export type StageTransitionInput = {
   from: ArsenkinStageStatus;
   to: ArsenkinStageStatus;
@@ -75,22 +82,29 @@ export function transitionStageStatus(input: StageTransitionInput): {
   return { ok: blockers.length === 0, blockers };
 }
 
+/**
+ * Aggregate run status from stage ledger.
+ * Missing future stages after progress must stay RUNNING (not regress to PREPARED).
+ * Example: Stage1 DONE + Stage2 row absent → RUNNING.
+ */
 export function aggregateRunStatus(input: {
   workflow: ArsenkinWorkflow;
   stages: Array<{ stage: ArsenkinLiveStage; status: string }>;
 }): "PREPARED" | "RUNNING" | "DONE" | "FAILED" {
   const required = requiredStagesForWorkflow(input.workflow);
   const byStage = new Map(input.stages.map((s) => [s.stage, String(s.status).toUpperCase()]));
-  for (const st of required) {
-    if (!byStage.has(st)) return "PREPARED";
-  }
+
   if ([...byStage.values()].some((s) => s === "FAILED")) return "FAILED";
-  if (required.every((st) => byStage.get(st) === "DONE")) return "DONE";
-  if ([...byStage.values()].some((s) => s === "RUNNING")) return "RUNNING";
-  if ([...byStage.values()].some((s) => s === "DONE" || s === "PREPARED")) {
-    // Partial progress: keep run RUNNING once work started, else PREPARED
-    if ([...byStage.values()].some((s) => s === "DONE" || s === "RUNNING")) return "RUNNING";
-  }
+
+  const allPresent = required.every((st) => byStage.has(st));
+  if (allPresent && required.every((st) => byStage.get(st) === "DONE")) return "DONE";
+
+  const anyProgress = required.some((st) => {
+    const s = byStage.get(st);
+    return s === "RUNNING" || s === "DONE";
+  });
+  if (anyProgress) return "RUNNING";
+
   return "PREPARED";
 }
 
@@ -115,6 +129,55 @@ export function assertStageAllowedOnRun(input: {
     blockers.push("stage-FAILED-requires-explicit-retry-contract");
   }
   return { ok: blockers.length === 0, blockers };
+}
+
+/** Stage2 prepare: run RUNNING, workflow first36-full, Stage1 DONE, case match. */
+export function assertStage2PrepareAllowed(input: {
+  caseId: string;
+  workflow: ArsenkinWorkflow;
+  run: {
+    id: string;
+    caseId: string;
+    status: string;
+    metadataJson?: unknown;
+  } | null;
+  stages: Array<{ stage: ArsenkinLiveStage; status: string }>;
+  existingStageStatus: string | null;
+}): { ok: boolean; blockers: string[]; idempotentReuse: boolean } {
+  const blockers: string[] = [];
+  if (input.workflow !== "first36-full") {
+    blockers.push("stage2-prepare-requires-workflow-first36-full");
+  }
+  if (!input.run) {
+    blockers.push("stage2-prepare-requires-existing-run");
+    return { ok: false, blockers, idempotentReuse: false };
+  }
+  if (input.run.caseId !== input.caseId) blockers.push("stage2-prepare-caseId-mismatch");
+  const runStatus = String(input.run.status).toUpperCase();
+  if (runStatus === "DONE" || runStatus === "FAILED") {
+    blockers.push(`stage2-prepare-run-terminal:${runStatus}`);
+  } else if (runStatus !== "RUNNING") {
+    blockers.push(`stage2-prepare-run-not-RUNNING:${runStatus || "null"}`);
+  }
+  const stored = workflowFromRunMetadata(input.run.metadataJson);
+  if (stored !== "first36-full") {
+    blockers.push(`stage2-prepare-workflow-mismatch:${stored ?? "missing"}`);
+  }
+  const stageGate = assertStageAllowedOnRun({
+    workflow: input.workflow,
+    stage: "FIRST36_STAGE2",
+    stages: input.stages,
+  });
+  if (!stageGate.ok) blockers.push(...stageGate.blockers);
+
+  const existing = String(input.existingStageStatus ?? "").toUpperCase();
+  if (existing === "PREPARED") {
+    return { ok: blockers.length === 0, blockers, idempotentReuse: true };
+  }
+  if (existing === "DONE" || existing === "RUNNING" || existing === "FAILED") {
+    blockers.push(`stage2-prepare-conflict:${existing || "unknown"}`);
+  }
+  return { ok: blockers.length === 0, blockers, idempotentReuse: false };
 }
 
 /** Idempotent DONE stage re-execute: allow with zero new network when already DONE. */

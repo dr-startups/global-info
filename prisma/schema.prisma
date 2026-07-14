@@ -221,6 +221,7 @@ model Case {
   auditLogs        AuditLog[]
   caseAccess         DpCaseAccess[]
   orionReportRuns    OrionReportRun[]
+  arsenkinStageRuns  OrionArsenkinStageRun[]
   serpCaptures       SerpCapture[]
   searchDocuments    SearchDocument[]
   serpObservations   SerpObservation[]
@@ -671,6 +672,7 @@ model OrionArsenkinStageRun {
   updatedAt            DateTime  @updatedAt
 
   reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  case      Case           @relation(fields: [caseId], references: [id], onDelete: Cascade)
 
   @@unique([reportRunId, stage], map: "dp_orion_arsenkin_stage_unique")
   @@index([reportRunId, status])

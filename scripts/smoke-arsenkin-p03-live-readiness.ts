@@ -348,9 +348,14 @@ describe("arsenkin P0.3 live readiness", () => {
   });
 
   it("25. FAILED status after run error is represented in runner finally", () => {
-    // Covered by canonical runner finally block; assert contract string exists in source.
-    const src = readFileSync("scripts/arsenkin-canonical-live-runner.ts", "utf-8");
+    // Covered by production service fail path (CLI is thin adapter).
+    const src = readFileSync(
+      "src/modules/digital-profile/orion-golden/classic/execute-canonical-arsenkin-stage.ts",
+      "utf-8"
+    );
     assert.match(src, /status: "FAILED"/);
+    const cli = readFileSync("scripts/arsenkin-canonical-live-runner.ts", "utf-8");
+    assert.match(cli, /executeCanonicalArsenkinStage/);
   });
 
   it("26-28. DB integration mandatory profile", { skip: true }, () => {
