@@ -42,11 +42,11 @@ describe("arsenkin DB integration", () => {
       );
 
       // Prefer an existing case id; create ephemeral report run.
-      const caseRow = await prisma.investigationCase.findFirst({ select: { id: true } });
+      const caseRow = await prisma.case.findFirst({ select: { id: true } });
       if (!caseRow) {
         await prisma.$disconnect().catch(() => undefined);
-        if (required) assert.fail("no InvestigationCase for DB integration");
-        console.log("SKIP: no InvestigationCase rows in test DB");
+        if (required) assert.fail("no Case for DB integration");
+        console.log("SKIP: no Case rows in test DB");
         return;
       }
 

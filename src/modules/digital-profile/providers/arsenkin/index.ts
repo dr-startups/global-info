@@ -20,3 +20,5 @@ export {
   authorizationFromPlan,
 } from "./execute-arsenkin-execution-plan";
 export * from "./surface-coverage-duplicate-audit";
+export * from "./arsenkin-db-readiness";
+export * from "./planned-coverage-matrix";

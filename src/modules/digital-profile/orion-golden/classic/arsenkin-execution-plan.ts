@@ -131,8 +131,9 @@ function toExecutionRequest(
   };
 }
 
-/** Stable digest: reportRunId + stage + sorted request hashes + budget caps (no timestamps). */
+/** Stable digest: caseId + reportRunId + stage + sorted request hashes + budget caps. */
 export function computeExecutionPlanDigest(input: {
+  caseId: string;
   reportRunId: string;
   stage: ArsenkinLiveStage;
   requestHashes: readonly string[];
@@ -145,6 +146,7 @@ export function computeExecutionPlanDigest(input: {
 }): string {
   const payload = {
     version: "arsenkin-execution-plan-v1",
+    caseId: input.caseId,
     reportRunId: input.reportRunId,
     stage: input.stage,
     queriesRu: [...input.queriesRu],
@@ -177,7 +179,7 @@ export function evaluateExecutionPlanBudget(plan: ArsenkinExecutionPlan): {
       `estimatedLimitsTotal=${plan.estimatedLimitsTotal}>maxEstimatedLimits=${plan.maxEstimatedLimits}`
     );
   }
-  if (plan.requests.some((r) => r.estimatedLimits == null) && !plan.allowUnknownCost) {
+  if (plan.requests.some((r) => r.action === "CREATE" && r.estimatedLimits == null) && !plan.allowUnknownCost) {
     blockers.push("unknown-request-cost");
   }
   return { ok: blockers.length === 0, blockers };
@@ -214,12 +216,16 @@ export function buildArsenkinExecutionPlan(
     .sort((a, b) => a.requestHash.localeCompare(b.requestHash));
 
   const plannedNewTasks = requests.filter((r) => r.action === "CREATE").length;
-  const limitValues = requests.map((r) => r.estimatedLimits);
-  const estimatedLimitsTotal = limitValues.every((v) => v != null)
-    ? limitValues.reduce((a, b) => a + (b as number), 0)
+  // Budget policy: only CREATE requests count toward estimated spend; REUSE is zero.
+  const createLimits = requests
+    .filter((r) => r.action === "CREATE")
+    .map((r) => r.estimatedLimits);
+  const estimatedLimitsTotal = createLimits.every((v) => v != null)
+    ? createLimits.reduce((a, b) => a + (b as number), 0)
     : null;
 
   const digest = computeExecutionPlanDigest({
+    caseId: input.caseId,
     reportRunId: input.reportRunId,
     stage: input.stage,
     requestHashes: requests.map((r) => r.requestHash),

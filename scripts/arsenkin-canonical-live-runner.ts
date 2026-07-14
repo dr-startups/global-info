@@ -1,27 +1,31 @@
 /**
  * Canonical Arsenkin live runner — the ONLY paid entrypoint.
  *
- * Plan-only (default, no network):
- *   npx tsx --env-file=.env scripts/arsenkin-canonical-live-runner.ts \
- *     --case-id=... --report-run-id=... --stage=SUGGEST_RU_CANARY \
- *     --max-new-tasks=2 --max-estimated-limits=2
- *
- * Execute-live (requires all gates; DO NOT run without explicit human approval):
- *   ARSENKIN_LIVE_CONFIRM=1 npx tsx --env-file=.env scripts/arsenkin-canonical-live-runner.ts \
- *     --execute-live --case-id=... --report-run-id=... --stage=SUGGEST_RU_CANARY \
- *     --confirm-plan-digest=<sha256> --max-new-tasks=2 --max-estimated-limits=2
+ * Modes:
+ *   --prepare              create PREPARED fresh run (no network)
+ *   (default) plan-only    recompute plan + gates; PLAN_READY|PLAN_BLOCKED (no network)
+ *   --execute-live         requires LIVE_CONFIRM + digest + DB readiness PASS artifact
  *
  * Never prints API token.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "dotenv";
+import { spawnSync } from "node:child_process";
 import {
   buildArsenkinExecutionPlan,
-  evaluateExecutionPlanBudget,
   type ArsenkinLiveStage,
 } from "../src/modules/digital-profile/orion-golden/classic/arsenkin-execution-plan";
+import { buildArsenkinSubjectQueryPlan } from "../src/modules/digital-profile/orion-golden/classic/arsenkin-subject-query-plan";
+import {
+  buildPrepareCanaryRunSpec,
+  transitionCanaryRun,
+  canaryLifecycleOf,
+  type CanaryRunRow,
+} from "../src/modules/digital-profile/orion-golden/classic/arsenkin-canary-run-lifecycle";
+import { evaluateCanonicalLiveGate } from "../src/modules/digital-profile/orion-golden/classic/arsenkin-canonical-live-gate";
 import { authorizationFromPlan } from "../src/modules/digital-profile/providers/arsenkin/execute-arsenkin-execution-plan";
 import { collectArsenkinPilotSurfaces } from "../src/modules/digital-profile/providers/arsenkin/collect-pilot-surfaces";
 import {
@@ -29,6 +33,13 @@ import {
   resetArsenkinNetworkCallCount,
 } from "../src/modules/digital-profile/providers/arsenkin/network-guard";
 import { persistSerpObservations } from "../src/modules/digital-profile/serp-observation/persist";
+import {
+  fingerprintDatabaseUrl,
+  schemaChecksumOf,
+  REQUIRED_COVERAGE_UNIQUE_MIGRATION,
+  type ArsenkinDbReadinessArtifact,
+} from "../src/modules/digital-profile/providers/arsenkin/arsenkin-db-readiness";
+import { buildPlannedCoverageMatrix } from "../src/modules/digital-profile/providers/arsenkin/planned-coverage-matrix";
 
 function bootstrapEnv(): void {
   const envPath = join(process.cwd(), ".env");
@@ -54,48 +65,61 @@ function writeJson(path: string, payload: unknown): void {
   writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
 }
 
+function readJson<T>(path: string): T | null {
+  if (!existsSync(path)) return null;
+  return JSON.parse(readFileSync(path, "utf-8")) as T;
+}
+
 function parseStage(raw: string | null): ArsenkinLiveStage {
   const s = (raw ?? "SUGGEST_RU_CANARY").trim();
   if (s === "SUGGEST_RU_CANARY" || s === "FIRST36_STAGE1" || s === "FIRST36_STAGE2") return s;
   throw new Error(`invalid-stage:${s}`);
 }
 
-async function loadQueries(caseId: string): Promise<{ queriesRu: string[]; queriesUae: string[] }> {
-  const { prisma } = await import("../src/server/prisma/client");
-  const subject = await prisma.subject.findFirst({
-    where: { caseId },
-    select: { fullName: true },
+function gitCommitShort(): string {
+  const r = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf-8" });
+  return (r.stdout || "").trim() || "unknown";
+}
+
+function currentSchemaChecksum(): string {
+  const migDir = join(process.cwd(), "prisma", "migrations");
+  const names = existsSync(migDir)
+    ? readdirSync(migDir).filter((n) => !n.startsWith("."))
+    : [];
+  return schemaChecksumOf({
+    migrationNames: names.sort(),
+    uniqueIndexName: "dp_surface_coverage_biz_unique",
   });
-  const name = subject?.fullName?.trim() || "Глинка Сергей Михайлович";
-  return {
-    queriesRu: [name, [...name.split(/\s+/)].reverse().join(" ")].filter(Boolean),
-    queriesUae: ["Glinka Sergey Mikhaylovich", "Sergey Glinka"],
-  };
 }
 
 async function main() {
   bootstrapEnv();
   resetArsenkinNetworkCallCount();
 
+  const prepare = flag("prepare");
   const executeLive = flag("execute-live");
-  const caseId = arg("case-id") || "cmreamy2t0002o30f29urzcog";
+  const resumeExisting = flag("resume-existing");
+  const caseId = arg("case-id");
   const reportRunId = arg("report-run-id");
   const stage = parseStage(arg("stage"));
   const maxNewTasks = Number(arg("max-new-tasks") ?? 0);
   const maxEstimatedLimits = Number(arg("max-estimated-limits") ?? 0);
   const confirmPlanDigest = arg("confirm-plan-digest");
   const liveConfirm = process.env.ARSENKIN_LIVE_CONFIRM === "1";
+  const dbReadinessPath =
+    arg("db-readiness") ||
+    join(process.cwd(), "storage", "digital-profile", "qa-arsenkin-p04", "arsenkin-db-readiness.json");
   const urlsEnrichment = (arg("urls-enrichment") ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
 
-  if (!reportRunId) {
-    throw new Error("usage: --report-run-id=<id> required");
-  }
+  if (!caseId) throw new Error("--case-id required");
+  if (!reportRunId) throw new Error("--report-run-id required");
   if (!(maxNewTasks > 0) || !(maxEstimatedLimits > 0)) {
     throw new Error("--max-new-tasks and --max-estimated-limits are required (>0)");
   }
+  if (prepare && executeLive) throw new Error("cannot combine --prepare and --execute-live");
 
   const outRoot = join(
     process.cwd(),
@@ -107,115 +131,211 @@ async function main() {
   );
   mkdirSync(outRoot, { recursive: true });
 
-  const { queriesRu, queriesUae } = await loadQueries(caseId);
   const { prisma } = await import("../src/server/prisma/client");
+  const subject = await prisma.subject.findFirst({
+    where: { caseId },
+    select: { fullName: true, aliases: true },
+  });
+  const queryPlan = buildArsenkinSubjectQueryPlan({
+    fullName: subject?.fullName,
+    aliases: subject?.aliases ?? [],
+  });
+
+  const dbUrl = String(process.env.DATABASE_URL ?? "");
+  const currentFingerprint = fingerprintDatabaseUrl(dbUrl);
+  const currentGitCommit = gitCommitShort();
+  const schemaChecksum = currentSchemaChecksum();
+  const dbReadiness = readJson<ArsenkinDbReadinessArtifact>(dbReadinessPath);
+
+  if (prepare) {
+    const existing = await prisma.orionReportRun.findUnique({ where: { id: reportRunId } });
+    const gate = evaluateCanonicalLiveGate({
+      mode: "prepare",
+      caseId,
+      reportRunId,
+      stage,
+      run: existing as CanaryRunRow | null,
+      counts: { providerTaskCount: 0, observationCount: 0, coverageCount: 0 },
+      queryPlan,
+      executionPlan: null,
+      content: null,
+      binding: null,
+      adminDecisions: null,
+      dbReadiness,
+      currentDbFingerprint: currentFingerprint,
+      currentGitCommit,
+      currentSchemaChecksum: schemaChecksum,
+      liveConfirm: false,
+      confirmPlanDigest: null,
+      tokenPresent: false,
+      networkCalls: getArsenkinNetworkCallCount(),
+    });
+    if (!gate.ok) {
+      writeJson(join(outRoot, "fresh-run-preflight.json"), { ...gate, networkCalls: 0 });
+      console.error(JSON.stringify({ error: "prepare-blocked", ...gate }, null, 2));
+      process.exitCode = 1;
+      return;
+    }
+    const spec = buildPrepareCanaryRunSpec({
+      reportRunId,
+      caseId,
+      stage,
+      preparedAtIso: new Date().toISOString(),
+    });
+    await prisma.orionReportRun.create({ data: spec });
+    writeJson(join(outRoot, "fresh-run-preflight.json"), {
+      verdict: "PREPARED",
+      reportRunId,
+      caseId,
+      networkCalls: getArsenkinNetworkCallCount(),
+    });
+    console.log(JSON.stringify({ phase: "prepare", status: "PREPARED", reportRunId }, null, 2));
+    return;
+  }
+
+  const run = (await prisma.orionReportRun.findUnique({
+    where: { id: reportRunId },
+  })) as CanaryRunRow | null;
+
+  const [providerTaskCount, observationCount, coverageCount] = await Promise.all([
+    prisma.providerTask.count({ where: { reportRunId, provider: "arsenkin" } }),
+    prisma.serpObservation.count({ where: { auditRunId: reportRunId, provider: "arsenkin" } }),
+    prisma.surfaceCollectionCoverage.count({
+      where: { reportRunId, provider: "arsenkin" },
+    }),
+  ]);
 
   const existingTasks = await prisma.providerTask.findMany({
     where: { reportRunId, provider: "arsenkin" },
     select: { id: true, requestHash: true, state: true },
   });
 
-  // Recompute plan immediately (never trust a user-supplied JSON digest alone).
   const plan = buildArsenkinExecutionPlan({
     caseId,
     reportRunId,
     stage,
-    queriesRu,
-    queriesUae,
+    queriesRu: queryPlan.queriesRu,
+    queriesUae: queryPlan.queriesUae,
     maxNewTasks,
     maxEstimatedLimits,
     existingTasks,
     urlsEnrichment: stage === "FIRST36_STAGE2" ? urlsEnrichment : [],
   });
-  const budget = evaluateExecutionPlanBudget(plan);
-  const planPath = join(outRoot, "arsenkin-live-plan.json");
-  writeJson(planPath, {
-    ...plan,
-    // Serialize Set-free plain object (requests already plain)
-    networkCallsAtPlan: getArsenkinNetworkCallCount(),
-    budget,
+
+  const content = readJson<{ caseId?: string; reportRunId?: string }>(
+    join(outRoot, "orion-client-content.post-review.json")
+  );
+  const binding = readJson<{
+    sourceReportRunId?: string;
+    effectiveReportRunId?: string;
+    overridden?: boolean;
+  }>(join(outRoot, "client-content-binding.json"));
+  const adminDecisions = readJson<{
+    caseId?: string;
+    qaSampleOnly?: boolean;
+  }>(join(outRoot, "admin-review-decisions.json"));
+
+  const coverageMatrix = buildPlannedCoverageMatrix(plan);
+  writeJson(join(outRoot, "arsenkin-live-plan.json"), plan);
+  writeJson(join(outRoot, "planned-coverage-matrix.json"), { targets: coverageMatrix });
+
+  const gate = evaluateCanonicalLiveGate({
+    mode: executeLive ? "execute-live" : "plan-only",
+    caseId,
+    reportRunId,
+    stage,
+    run,
+    counts: { providerTaskCount, observationCount, coverageCount },
+    resumeExisting,
+    queryPlan,
+    executionPlan: plan,
+    content,
+    binding,
+    adminDecisions,
+    dbReadiness,
+    currentDbFingerprint: currentFingerprint,
+    currentGitCommit,
+    currentSchemaChecksum: schemaChecksum,
+    liveConfirm,
+    confirmPlanDigest,
+    tokenPresent: Boolean(String(process.env.ARSENKIN_API_TOKEN ?? "").trim()),
+    networkCalls: getArsenkinNetworkCallCount(),
+  });
+
+  writeJson(join(outRoot, "fresh-run-preflight.json"), {
+    lifecycle: canaryLifecycleOf(run),
+    counts: { providerTaskCount, observationCount, coverageCount },
+    gate,
+    networkCalls: getArsenkinNetworkCallCount(),
+  });
+  writeJson(join(outRoot, "client-content-binding-validation.json"), {
+    contentPresent: Boolean(content),
+    bindingPresent: Boolean(binding),
+    adminPresent: Boolean(adminDecisions),
+    blockers: gate.blockers.filter((b) => /client|binding|admin|qa-sample/i.test(b)),
   });
 
   console.log(
     JSON.stringify(
       {
-        phase: "plan",
-        stage: plan.stage,
+        phase: executeLive ? "execute-preflight" : "plan",
+        verdict: gate.verdict,
         digest: plan.digest,
         plannedNewTasks: plan.plannedNewTasks,
-        reuse: plan.requests.filter((r) => r.action === "REUSE").length,
-        create: plan.requests.filter((r) => r.action === "CREATE").length,
         estimatedLimitsTotal: plan.estimatedLimitsTotal,
-        maxNewTasks: plan.maxNewTasks,
-        maxEstimatedLimits: plan.maxEstimatedLimits,
         requestCount: plan.requests.length,
-        budgetOk: budget.ok,
-        blockers: budget.blockers,
         networkCalls: getArsenkinNetworkCallCount(),
-        planPath,
+        blockers: gate.blockers,
       },
       null,
       2
     )
   );
 
-  if (!executeLive) {
-    if (getArsenkinNetworkCallCount() !== 0) {
-      throw new Error("plan-only leaked network calls");
-    }
-    writeJson(join(outRoot, "arsenkin-live-readiness-plan-only.json"), {
-      mode: "plan-only",
-      NETWORK_CALLS: 0,
-      digest: plan.digest,
-      verdict: budget.ok ? "PLAN_READY" : "PLAN_BLOCKED",
-      blockers: budget.blockers,
-    });
+  if (!gate.ok) {
+    process.exitCode = 1;
     return;
   }
 
-  // --- execute-live gates ---
-  const blockers: string[] = [];
-  if (!liveConfirm) blockers.push("ARSENKIN_LIVE_CONFIRM!=1");
-  if (!confirmPlanDigest) blockers.push("missing --confirm-plan-digest");
-  if (confirmPlanDigest && confirmPlanDigest !== plan.digest) {
-    blockers.push("confirm-plan-digest-mismatch");
-  }
-  if (!budget.ok) blockers.push(...budget.blockers);
-  if (!String(process.env.ARSENKIN_API_TOKEN ?? "").trim()) {
-    blockers.push("ARSENKIN_API_TOKEN missing");
+  if (!executeLive) {
+    if (getArsenkinNetworkCallCount() !== 0) throw new Error("plan-only leaked network");
+    return;
   }
 
-  // Client binding before spend
-  const clientContentPath = join(outRoot, "orion-client-content.post-review.json");
-  if (!existsSync(clientContentPath)) {
-    blockers.push("client-content-missing-before-spend");
-  } else {
-    const cc = JSON.parse(readFileSync(clientContentPath, "utf-8")) as {
-      reportRunId?: string;
-      caseId?: string;
-      binding?: { sourceReportRunId?: string; effectiveReportRunId?: string; overridden?: boolean };
-      adminDecisionSource?: string;
-    };
-    if (cc.reportRunId !== reportRunId) blockers.push("client-content-reportRunId-mismatch");
-    if (cc.caseId !== caseId) blockers.push("client-content-caseId-mismatch");
-    const src = cc.binding?.sourceReportRunId ?? cc.reportRunId;
-    const eff = cc.binding?.effectiveReportRunId ?? cc.reportRunId;
-    if (src !== reportRunId || eff !== reportRunId) blockers.push("foreign-client-content-run");
-    if (cc.binding?.overridden === true) blockers.push("client-content-overridden");
-    if (/qa.?sample|fixture/i.test(String(cc.adminDecisionSource ?? ""))) {
-      blockers.push("qa-sample-decisions-in-client-final");
-    }
+  // CAS PREPARED → RUNNING before network
+  const ownerId = `canary-${process.pid}-${createHash("sha256").update(reportRunId).digest("hex").slice(0, 8)}`;
+  const tr = transitionCanaryRun({
+    from: "PREPARED",
+    to: "RUNNING",
+    currentStatus: run?.status ?? null,
+    ownerId: null,
+    expectedOwnerId: ownerId,
+  });
+  if (!tr.ok) {
+    writeJson(join(outRoot, "execute-transition-blocked.json"), tr);
+    process.exitCode = 1;
+    return;
   }
-
-  if (blockers.length > 0) {
-    writeJson(join(outRoot, "arsenkin-live-execute-blocked.json"), { blockers, digest: plan.digest });
-    console.error(JSON.stringify({ error: "execute-live-blocked", blockers }, null, 2));
+  const claimed = await prisma.orionReportRun.updateMany({
+    where: { id: reportRunId, caseId, status: "PREPARED" },
+    data: {
+      status: "RUNNING",
+      startedAt: new Date(),
+      metadataJson: {
+        ...(typeof run?.metadataJson === "object" && run?.metadataJson
+          ? (run.metadataJson as object)
+          : {}),
+        leaseOwnerId: ownerId,
+      },
+    },
+  });
+  if (claimed.count !== 1) {
+    console.error(JSON.stringify({ error: "cas-claim-failed", reportRunId }, null, 2));
     process.exitCode = 1;
     return;
   }
 
   const auth = authorizationFromPlan(plan);
-  let markFailed = false;
   try {
     const collected = await collectArsenkinPilotSurfaces({
       caseId,
@@ -229,6 +349,10 @@ async function main() {
       urlsEnrichment: plan.urlsEnrichment,
     });
     const persisted = await persistSerpObservations(collected.drafts);
+    await prisma.orionReportRun.update({
+      where: { id: reportRunId },
+      data: { status: "DONE", finishedAt: new Date() },
+    });
     writeJson(join(outRoot, "arsenkin-live-execute-result.json"), {
       mode: collected.mode,
       persisted: persisted.length,
@@ -236,37 +360,23 @@ async function main() {
       taskIds: collected.taskIds,
       networkCalls: getArsenkinNetworkCallCount(),
       digest: plan.digest,
+      status: "DONE",
     });
-    console.log(
-      JSON.stringify(
-        {
-          phase: "execute-live-done",
-          persisted: persisted.length,
-          networkCalls: getArsenkinNetworkCallCount(),
-        },
-        null,
-        2
-      )
-    );
   } catch (err) {
-    markFailed = true;
     const message = err instanceof Error ? err.message : String(err);
-    writeJson(join(outRoot, "arsenkin-live-execute-error.json"), { message });
+    await prisma.orionReportRun
+      .update({
+        where: { id: reportRunId },
+        data: {
+          status: "FAILED",
+          finishedAt: new Date(),
+          errorsJson: { message },
+        },
+      })
+      .catch(() => undefined);
+    writeJson(join(outRoot, "arsenkin-live-execute-error.json"), { message, status: "FAILED" });
     console.error(JSON.stringify({ error: message }, null, 2));
     process.exitCode = 1;
-  } finally {
-    if (markFailed) {
-      await prisma.orionReportRun
-        .update({
-          where: { id: reportRunId },
-          data: {
-            status: "FAILED",
-            finishedAt: new Date(),
-            errorsJson: { reason: "arsenkin-canonical-live-failed" },
-          },
-        })
-        .catch(() => undefined);
-    }
   }
 }
 

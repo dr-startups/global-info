@@ -12,8 +12,10 @@ import { mapPaaToObservations } from "./adapters/paa";
 import { mapAiSerpToObservations } from "./adapters/ai-serp";
 import { mapCheckHToObservations } from "./adapters/check-h";
 import { mapIndexationToObservations } from "./adapters/indexation";
-import { recordSurfaceCoverageFromDrafts, upsertSurfaceCollectionCoverage } from "./surface-coverage";
-import { buildSerpQueryId } from "../../serp-observation/query-id";
+import {
+  buildPlannedCoverageMatrix,
+  persistPlannedCoverageForDoneRequest,
+} from "./planned-coverage-matrix";
 import type { SerpObservationDraft } from "../../serp-observation/types";
 import type { ArsenkinExecutionPlan, ArsenkinExecutionRequest } from "../../orion-golden/classic/arsenkin-execution-plan";
 import { assertPlanRequestHashesMatchBodies } from "../../orion-golden/classic/arsenkin-execution-plan";
@@ -204,6 +206,7 @@ export async function executeArsenkinExecutionPlan(input: {
     const taskIds: string[] = [];
     const surfaceRuns: ArsenkinSurfaceRun[] = [];
     const waitTimeoutMs = input.waitTimeoutMs ?? 10 * 60_000;
+    const coverageMatrix = buildPlannedCoverageMatrix(input.plan);
 
     for (const req of input.plan.requests) {
       const done = await completePlannedRequest(
@@ -225,6 +228,19 @@ export async function executeArsenkinExecutionPlan(input: {
       );
       drafts.push(...mapped);
 
+      const resultCountByQueryId = new Map<string, number>();
+      for (const d of mapped) {
+        if (d.providerStatus !== "OK") continue;
+        resultCountByQueryId.set(d.queryId, (resultCountByQueryId.get(d.queryId) ?? 0) + 1);
+      }
+      await persistPlannedCoverageForDoneRequest({
+        reportRunId: input.plan.reportRunId,
+        requestHash: req.requestHash,
+        providerTaskId: done.task.id,
+        targets: coverageMatrix,
+        resultCountByQueryId,
+      });
+
       if (req.tool === "suggest" || req.tool === "paa" || req.tool === "check-top") {
         const surface =
           req.tool === "suggest" ? "autocomplete" : req.tool === "paa" ? "paa" : "organic";
@@ -239,45 +255,6 @@ export async function executeArsenkinExecutionPlan(input: {
           resultCount: mapped.filter((d) => d.providerStatus === "OK").length,
         });
       }
-    }
-
-    const byTool = new Map<string, SerpObservationDraft[]>();
-    for (const draft of drafts) {
-      const tool = String(draft.rawPayloadJson?.tool ?? "").trim();
-      if (tool) byTool.set(tool, [...(byTool.get(tool) ?? []), draft]);
-    }
-    await Promise.all(
-      [...byTool.entries()].map(([tool, toolDrafts]) =>
-        recordSurfaceCoverageFromDrafts({
-          reportRunId: input.plan.reportRunId,
-          tool,
-          drafts: toolDrafts,
-        })
-      )
-    );
-
-    for (const runRow of surfaceRuns.filter((r) => r.tool === "suggest" || r.tool === "paa")) {
-      await upsertSurfaceCollectionCoverage({
-        reportRunId: input.plan.reportRunId,
-        provider: "arsenkin",
-        tool: runRow.tool,
-        providerTaskId: runRow.providerTaskId,
-        queryId: buildSerpQueryId({
-          auditRunId: input.plan.reportRunId,
-          provider: "arsenkin",
-          engine: runRow.engine as "GOOGLE" | "YANDEX",
-          region: runRow.region,
-          language: runRow.language,
-          queryText: runRow.query,
-          surface: runRow.surface as "autocomplete" | "paa",
-        }),
-        queryText: runRow.query,
-        engine: runRow.engine,
-        region: runRow.region,
-        language: runRow.language,
-        surface: runRow.surface,
-        resultCount: runRow.resultCount,
-      });
     }
 
     return {

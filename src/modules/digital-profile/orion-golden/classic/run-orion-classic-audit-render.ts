@@ -176,22 +176,18 @@ export async function runOrionClassicAuditRender(options: {
   if (first36CeoModeEarly) {
     try {
       const { enrichReportRunWithArsenkin } = await import("./enrich-report-run-with-arsenkin");
-      const { transliterateRuToEn } = await import("../../search-surfaces/orion-query-plan");
+      const { buildArsenkinSubjectQueryPlan } = await import("./arsenkin-subject-query-plan");
       const name = String(ctx.subject?.fullName ?? "").trim();
       const aliases = (ctx.subject?.aliases ?? []).map((a) => String(a).trim()).filter(Boolean);
-      const ruQueries = name
-        ? [name, [...name.split(/\s+/)].reverse().join(" "), ...aliases.slice(0, 2)].filter(Boolean)
-        : aliases.slice(0, 3);
-      const latin =
-        name && /[А-Яа-яЁё]/.test(name) ? transliterateRuToEn(name) : name || aliases[0] || "";
-      const uaeQueries = latin
-        ? [latin, [...latin.split(/\s+/)].reverse().join(" ")].filter(Boolean)
-        : [];
+      const queryPlan = buildArsenkinSubjectQueryPlan({ fullName: name, aliases });
+      if (queryPlan.blockers.length) {
+        throw new Error(`arsenkin-query-plan-blocked:${queryPlan.blockers.join(",")}`);
+      }
       const arsenkinEnrich = await enrichReportRunWithArsenkin({
         caseId,
         auditRunId: clientContent.reportRunId,
-        queriesRu: [...new Set(ruQueries)].slice(0, 3),
-        queriesUae: [...new Set(uaeQueries)].slice(0, 2),
+        queriesRu: queryPlan.queriesRu.slice(0, 3),
+        queriesUae: queryPlan.queriesUae.slice(0, 2),
       });
       writeJson(join(outputRoot, "arsenkin-enrich.json"), arsenkinEnrich);
       console.info("[arsenkin] enrich", arsenkinEnrich);
