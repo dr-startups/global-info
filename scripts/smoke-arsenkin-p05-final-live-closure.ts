@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { mkdirSync, writeFileSync, readFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, writeFileSync, readFileSync, existsSync, mkdtempSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -492,7 +492,7 @@ describe("arsenkin P0.5 acceptance repair closure", () => {
     assert.equal(getArsenkinNetworkCallCount(), 0);
   });
 
-  it("20. resume-existing hard-blocked; DONE → IDEMPOTENT_REPLAY_DONE", () => {
+  it("20. resume-existing hard-blocked; DONE replay identity gates", () => {
     const q = buildArsenkinSubjectQueryPlan({ fullName: "Резюме Резюме Резюме" });
     const plan = buildArsenkinExecutionPlan({
       caseId: "c",
@@ -503,43 +503,13 @@ describe("arsenkin P0.5 acceptance repair closure", () => {
       maxNewTasks: 2,
       maxEstimatedLimits: 2,
     });
-    const resume = evaluateCanonicalLiveGate({
-      mode: "execute-live",
+    const base = {
+      mode: "execute-live" as const,
       caseId: "c",
       reportRunId: "r",
-      stage: "SUGGEST_RU_CANARY",
-      workflow: "suggest-canary",
-      run: { id: "r", caseId: "c", status: "PREPARED" },
-      stageRows: [{ stage: "SUGGEST_RU_CANARY", status: "PREPARED" }],
-      currentStageStatus: "PREPARED",
-      counts: { providerTaskCount: 0, observationCount: 0, coverageCount: 0 },
-      resumeExisting: true,
-      queryPlan: q,
-      executionPlan: plan,
-      content: { caseId: "c", reportRunId: "r" },
-      binding: { sourceReportRunId: "r", effectiveReportRunId: "r", overridden: false },
-      adminDecisions: { caseId: "c", qaSampleOnly: false },
-      dbReadiness: v2Pass(),
-      currentDbFingerprint: "fp-test",
-      currentBuildCommit: "abc123",
-      currentSourceTreeHash: "src-hash",
-      currentSchemaContentHash: "schema-hash",
-      currentDirtyTree: false,
-      liveConfirm: true,
-      confirmPlanDigest: plan.digest,
-      tokenPresent: true,
-      networkCalls: 0,
-    });
-    assert.ok(resume.blockers.includes("resume-existing-not-supported"));
-
-    const replay = evaluateCanonicalLiveGate({
-      mode: "execute-live",
-      caseId: "c",
-      reportRunId: "r",
-      stage: "SUGGEST_RU_CANARY",
-      workflow: "suggest-canary",
-      run: { id: "r", caseId: "c", status: "DONE" },
-      stageRows: [{ stage: "SUGGEST_RU_CANARY", status: "DONE" }],
+      stage: "SUGGEST_RU_CANARY" as const,
+      workflow: "suggest-canary" as const,
+      stageRows: [{ stage: "SUGGEST_RU_CANARY" as const, status: "DONE" }],
       currentStageStatus: "DONE",
       counts: { providerTaskCount: 1, observationCount: 1, coverageCount: 1 },
       queryPlan: q,
@@ -557,35 +527,99 @@ describe("arsenkin P0.5 acceptance repair closure", () => {
       confirmPlanDigest: plan.digest,
       tokenPresent: true,
       networkCalls: 0,
+    };
+    const goodRun = {
+      id: "r",
+      caseId: "c",
+      status: "DONE",
+      metadataJson: { workflow: "suggest-canary" },
+    };
+
+    const resume = evaluateCanonicalLiveGate({
+      ...base,
+      run: { id: "r", caseId: "c", status: "PREPARED" },
+      stageRows: [{ stage: "SUGGEST_RU_CANARY", status: "PREPARED" }],
+      currentStageStatus: "PREPARED",
+      counts: { providerTaskCount: 0, observationCount: 0, coverageCount: 0 },
+      resumeExisting: true,
     });
-    assert.equal(replay.verdict, "IDEMPOTENT_REPLAY_DONE");
+    assert.ok(resume.blockers.includes("resume-existing-not-supported"));
+
+    assert.equal(
+      evaluateCanonicalLiveGate({ ...base, run: goodRun }).verdict,
+      "IDEMPOTENT_REPLAY_DONE"
+    );
+    assert.equal(
+      evaluateCanonicalLiveGate({
+        ...base,
+        run: { ...goodRun, caseId: "other" },
+      }).verdict,
+      "EXECUTE_BLOCKED"
+    );
+    assert.equal(
+      evaluateCanonicalLiveGate({
+        ...base,
+        workflow: "first36-full",
+        stage: "FIRST36_STAGE1",
+        stageRows: [{ stage: "FIRST36_STAGE1", status: "DONE" }],
+        run: { ...goodRun, metadataJson: { workflow: "suggest-canary" } },
+        executionPlan: { ...plan, stage: "FIRST36_STAGE1" },
+      }).verdict,
+      "EXECUTE_BLOCKED"
+    );
+    assert.ok(
+      evaluateCanonicalLiveGate({
+        ...base,
+        stage: "FIRST36_STAGE1",
+        stageRows: [{ stage: "FIRST36_STAGE1", status: "DONE" }],
+        currentStageStatus: "DONE",
+        run: goodRun,
+      }).blockers.includes("workflow-stage-mismatch")
+    );
+    assert.ok(
+      evaluateCanonicalLiveGate({ ...base, run: goodRun, resumeExisting: true }).blockers.includes(
+        "resume-existing-not-supported"
+      )
+    );
+    assert.ok(
+      evaluateCanonicalLiveGate({ ...base, run: goodRun, networkCalls: 2 }).blockers.some((b) =>
+        /network-calls-nonzero/.test(b)
+      )
+    );
   });
 
-  it("21. provenance: dirty bypass removed; immutable CI; unknown no-git", () => {
+  it("21. provenance: Railway SHA, dirty bypass removed, unknown no-git", () => {
     const dir = mkdtempSync(join(tmpdir(), "p05-nongit-"));
     try {
+      const railway = resolveBuildIdentity(
+        {
+          RAILWAY_GIT_COMMIT_SHA: "railcommit0123456789abcdef0123456789ab",
+          RAILWAY_DEPLOYMENT_ID: "deploy-xyz",
+        } as NodeJS.ProcessEnv,
+        dir
+      );
+      assert.equal(railway.source, "env");
+      assert.equal(railway.dirtyTree, false);
+      assert.equal(railway.buildCommit, "railcommit0123456789abcdef0123456789ab");
+      assert.equal(railway.buildId, "deploy-xyz");
+
       const immutable = resolveBuildIdentity(
         { GITHUB_SHA: "deadbeefcafebabe0123456789abcdef01234567" } as NodeJS.ProcessEnv,
         dir
       );
       assert.equal(immutable.source, "env");
       assert.equal(immutable.dirtyTree, false);
-      assert.equal(immutable.buildCommit.startsWith("deadbeef"), true);
 
       const unknown = resolveBuildIdentity({} as NodeJS.ProcessEnv, dir);
       assert.equal(unknown.buildCommit, "unknown");
       assert.equal(unknown.dirtyTree, true);
 
-      // With .git present, ARSENKIN_ALLOW_DIRTY_TREE must NOT clear dirty
       const local = resolveBuildIdentity({
         ARSENKIN_ALLOW_DIRTY_TREE: "1",
-        GITHUB_SHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        RAILWAY_GIT_COMMIT_SHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       } as NodeJS.ProcessEnv);
-      // Working tree during repair is dirty → still dirty despite bypass flag
-      if (local.source === "env") {
-        // dirtyTree reflects real git status, not the removed bypass
-        assert.equal(typeof local.dirtyTree, "boolean");
-      }
+      assert.equal(local.source, "env");
+      assert.equal(local.dirtyTree, true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -604,9 +638,29 @@ describe("arsenkin P0.5 acceptance repair closure", () => {
     assert.ok(r.blockers.includes("db-readiness-cleanup-failed"));
   });
 
+  it("23. writeJsonAtomic fsync path leaves full JSON and no temp", () => {
+    const dir = mkdtempSync(join(tmpdir(), "p05-atomic-"));
+    try {
+      const dest = join(dir, "arsenkin-db-readiness.json");
+      writeJsonAtomic(dest, { version: "arsenkin-db-readiness-v2", verdict: "PASS" });
+      assert.equal(JSON.parse(readFileSync(dest, "utf-8")).verdict, "PASS");
+      assert.equal(readdirSync(dir).filter((n) => n.endsWith(".tmp")).length, 0);
+
+      writeJsonAtomic(dest, { version: "arsenkin-db-readiness-v2", verdict: "FAIL" });
+      assert.equal(JSON.parse(readFileSync(dest, "utf-8")).verdict, "FAIL");
+
+      const blocker = join(dir, "not-a-dir");
+      writeFileSync(blocker, "x");
+      assert.throws(() => writeJsonAtomic(join(blocker, "child.json"), { verdict: "PASS" }));
+      assert.equal(JSON.parse(readFileSync(dest, "utf-8")).verdict, "FAIL");
+      assert.ok(!existsSync(join(blocker, "child.json")));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("write p05 readiness verdict artifact from validated readiness only", () => {
     const validated = loadValidatedReadinessVerdict();
-    // Never emit LIVE_READY from this suite; max is CANARY_PLAN_READY after DB PASS
     assert.ok(
       validated.verdict === "CANARY_PLAN_READY" || validated.verdict === "CODE_READY_DB_BLOCKED"
     );

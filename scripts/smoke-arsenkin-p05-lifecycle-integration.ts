@@ -482,10 +482,21 @@ async function main() {
     assert.equal(collectorCalls, 0);
     assert.ok(badDigest.blockers?.some((b) => /digest/i.test(b)));
 
-    // Forced finalize CAS failure → no success readiness
+    // Real finalize CAS conflict: collector poisons ReportRun so run CAS count=0 → transaction rollback
     collectorCalls = 0;
+    const conflictCollect: CanonicalStageDeps["collect"] = async (input) => {
+      const collected = await fakeCollect(input);
+      await prisma.orionReportRun.update({
+        where: { id: input.reportRunId },
+        data: {
+          status: "FAILED",
+          errorsJson: { injected: "finalize-run-cas-conflict" },
+        },
+      });
+      return collected;
+    };
     const forced = await executeCanonicalArsenkinStage(
-      makeDeps({ forceFinalizeCasFailure: true }),
+      makeDeps({ collect: conflictCollect }),
       {
         caseId: caseB,
         reportRunId: runB,
@@ -504,8 +515,39 @@ async function main() {
     assert.equal(forced.verdict, "MANUAL_INTERVENTION_REQUIRED");
     assert.equal(forced.ok, false);
     assert.equal(collectorCalls, 1);
+    assert.equal(getArsenkinNetworkCallCount(), 0);
     assert.ok(existsSync(join(outB, "manual-intervention-required.json")));
     assert.ok(!existsSync(join(outB, "arsenkin-live-execute-result.json")));
+
+    const stageAfterConflict = await prisma.orionArsenkinStageRun.findFirst({
+      where: { reportRunId: runB, stage: "FIRST36_STAGE1" },
+    });
+    const runAfterConflict = await prisma.orionReportRun.findUnique({ where: { id: runB } });
+    assert.equal(
+      stageAfterConflict?.status,
+      "RUNNING",
+      "stage DONE must roll back when run CAS loses"
+    );
+    assert.notEqual(runAfterConflict?.status, "DONE");
+
+    // Retry without recovery contract must not call collector again
+    collectorCalls = 0;
+    const retry = await executeCanonicalArsenkinStage(makeDeps(), {
+      caseId: caseB,
+      reportRunId: runB,
+      dbReadinessPath: join(outB, "arsenkin-db-readiness.json"),
+      outRoot: outB,
+      tokenPresent: true,
+      liveConfirm: true,
+      mode: "execute-live",
+      stage: "FIRST36_STAGE1",
+      workflow: "first36-full",
+      maxNewTasks: 20,
+      maxEstimatedLimits: 20,
+      confirmPlanDigest: planB.digest!,
+    });
+    assert.equal(retry.ok, false);
+    assert.equal(collectorCalls, 0);
 
     // Cleanup primary + secondary
     for (const id of [reportRunId, runB]) {

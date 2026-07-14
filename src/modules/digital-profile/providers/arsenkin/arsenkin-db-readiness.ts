@@ -5,14 +5,18 @@
 
 import { createHash } from "node:crypto";
 import {
+  closeSync,
   createReadStream,
   existsSync,
+  fsyncSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
   statSync,
-  writeFileSync,
+  unlinkSync,
+  writeSync,
 } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -151,12 +155,50 @@ export function computeSchemaContentHash(repoRoot: string = process.cwd()): stri
   return hashOrderedContentEntries(entries);
 }
 
-/** Atomic write: temp → fsync/close → rename. Never leaves a partial PASS artifact. */
+/**
+ * Atomic write: temp file → write → fsync → close → rename.
+ * Never leaves a partial destination artifact; cleans up temp on failure.
+ */
 export function writeJsonAtomic(path: string, payload: unknown): void {
   mkdirSync(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
-  renameSync(tmp, path);
+  let fd: number | null = null;
+  try {
+    const data = Buffer.from(`${JSON.stringify(payload, null, 2)}\n`, "utf-8");
+    fd = openSync(tmp, "w");
+    writeSync(fd, data);
+    fsyncSync(fd);
+    closeSync(fd);
+    fd = null;
+    renameSync(tmp, path);
+    // Best-effort directory fsync on POSIX so rename is durable.
+    if (process.platform !== "win32") {
+      try {
+        const dirFd = openSync(dirname(path), "r");
+        try {
+          fsyncSync(dirFd);
+        } finally {
+          closeSync(dirFd);
+        }
+      } catch {
+        // Directory fsync is best-effort; file fsync already completed.
+      }
+    }
+  } catch (err) {
+    if (fd != null) {
+      try {
+        closeSync(fd);
+      } catch {
+        // ignore close after write failure
+      }
+    }
+    try {
+      if (existsSync(tmp)) unlinkSync(tmp);
+    } catch {
+      // ignore temp cleanup failure
+    }
+    throw err;
+  }
 }
 
 /** Deterministic hash of critical live source files. */
@@ -198,13 +240,16 @@ export function resolveBuildIdentity(
 ): BuildIdentity {
   const fromEnv = String(
     env.GITHUB_SHA ||
+      env.RAILWAY_GIT_COMMIT_SHA ||
       env.VERCEL_GIT_COMMIT_SHA ||
       env.COMMIT_SHA ||
       env.SOURCE_VERSION ||
       env.ARSENKIN_BUILD_COMMIT ||
       ""
   ).trim();
-  const buildId = String(env.ARSENKIN_BUILD_ID || env.GITHUB_RUN_ID || "").trim() || null;
+  const buildId =
+    String(env.ARSENKIN_BUILD_ID || env.RAILWAY_DEPLOYMENT_ID || env.GITHUB_RUN_ID || "").trim() ||
+    null;
   const hasGit = gitDirPresent(cwd);
 
   if (fromEnv) {

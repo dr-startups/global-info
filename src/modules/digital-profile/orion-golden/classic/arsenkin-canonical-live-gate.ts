@@ -24,6 +24,8 @@ import {
   assertStage2PrepareAllowed,
   assertStageAllowedOnRun,
   isIdempotentDoneReplay,
+  requiredStagesForWorkflow,
+  workflowFromRunMetadata,
   type ArsenkinWorkflow,
 } from "./arsenkin-stage-ledger";
 
@@ -130,9 +132,43 @@ export function evaluateCanonicalLiveGate(
     return { ok: blockers.length === 0, verdict, blockers };
   }
 
-  // Fresh empty counts required for first stage only
+  // Fresh empty counts required for first stage only — skipped for DONE replay (no-op).
+  const isReplayDone =
+    Boolean(input.currentStageStatus) && isIdempotentDoneReplay(input.currentStageStatus!);
   const isFirstStage =
     input.stage === "SUGGEST_RU_CANARY" || input.stage === "FIRST36_STAGE1";
+
+  if (isReplayDone && (input.mode === "execute-live" || input.mode === "plan-only")) {
+    // Identity/integrity only — may not clear network/resume/query/workflow blockers above.
+    if (!input.run) {
+      blockers.push("run-absent");
+    } else {
+      if (input.run.caseId !== input.caseId) blockers.push("run-caseId-mismatch");
+      if (input.run.id !== input.reportRunId) blockers.push("run-id-mismatch");
+      const stored = workflowFromRunMetadata(input.run.metadataJson);
+      if (!stored) {
+        blockers.push("run-workflow-missing");
+      } else if (stored !== input.workflow) {
+        blockers.push(`workflow-mismatch:${stored}`);
+      }
+    }
+    const required = requiredStagesForWorkflow(input.workflow);
+    if (!required.includes(input.stage)) {
+      blockers.push(`stage-not-in-workflow:${input.stage}`);
+    }
+    const self = input.stageRows.find((s) => s.stage === input.stage);
+    if (!self) {
+      blockers.push("idempotent-replay-stage-row-absent");
+    } else if (String(self.status).toUpperCase() !== "DONE") {
+      blockers.push(`idempotent-replay-stage-not-DONE:${self.status}`);
+    }
+    if (blockers.length > 0) {
+      const verdict = input.mode === "plan-only" ? "PLAN_BLOCKED" : "EXECUTE_BLOCKED";
+      return { ok: false, verdict, blockers };
+    }
+    return { ok: true, verdict: "IDEMPOTENT_REPLAY_DONE", blockers: [] };
+  }
+
   if (isFirstStage) {
     const fresh = validateFreshCanaryRun({
       caseId: input.caseId,
@@ -141,9 +177,7 @@ export function evaluateCanonicalLiveGate(
       counts: input.counts,
       resumeExisting: false,
     });
-    // Allow run status RUNNING if stage ledger is mid-workflow — but first stage shouldn't
     if (!fresh.ok) {
-      // If run is RUNNING because we incorrectly validated — for first stage still require PREPARED
       blockers.push(...fresh.blockers);
     }
   } else {
@@ -155,16 +189,6 @@ export function evaluateCanonicalLiveGate(
       stages: input.stageRows,
     });
     if (!stageGate.ok) blockers.push(...stageGate.blockers);
-  }
-
-  if (input.currentStageStatus && isIdempotentDoneReplay(input.currentStageStatus)) {
-    if (input.run && input.run.caseId !== input.caseId) {
-      blockers.push("run-caseId-mismatch");
-      return { ok: false, verdict: "EXECUTE_BLOCKED", blockers };
-    }
-    if (input.mode === "execute-live" || input.mode === "plan-only") {
-      return { ok: true, verdict: "IDEMPOTENT_REPLAY_DONE", blockers: [] };
-    }
   }
 
   const binding = validateClientBindingArtifacts({

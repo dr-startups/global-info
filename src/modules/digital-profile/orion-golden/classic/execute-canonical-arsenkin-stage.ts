@@ -88,8 +88,6 @@ export type CanonicalStageDeps = {
   computeSourceHash: () => string;
   getNetworkCalls: () => number;
   databaseUrl: string;
-  /** Force finalize CAS failure after successful collect (tests only). */
-  forceFinalizeCasFailure?: boolean;
 };
 
 export type CanonicalStageResult = {
@@ -236,6 +234,22 @@ export async function claimCanonicalStageAndRun(
   }
 }
 
+export class CasFinalizeError extends Error {
+  readonly manualIntervention = true as const;
+  constructor(
+    message: string,
+    readonly stageCount: number,
+    readonly runCount: number
+  ) {
+    super(message);
+    this.name = "CasFinalizeError";
+  }
+}
+
+/**
+ * Finalize stage RUNNING→DONE and run aggregate in one transaction.
+ * If run CAS loses, stage DONE is rolled back — no partial DONE/RUNNING split.
+ */
 export async function finalizeCanonicalStageDone(
   prisma: PrismaClient,
   input: {
@@ -246,87 +260,140 @@ export async function finalizeCanonicalStageDone(
     planDigest: string;
     workflow: ArsenkinWorkflow;
     now: Date;
-    forceCasFailure?: boolean;
   }
 ): Promise<
   | { ok: true; runAggregate: string; runFinalized: boolean }
   | { ok: false; reason: string; manualIntervention: true; stageCount: number; runCount: number }
 > {
-  if (input.forceCasFailure) {
-    return {
-      ok: false,
-      reason: "forced-finalize-cas-failure",
-      manualIntervention: true,
-      stageCount: 0,
-      runCount: 0,
-    };
-  }
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const stageDone = await tx.orionArsenkinStageRun.updateMany({
+        where: {
+          reportRunId: input.reportRunId,
+          caseId: input.caseId,
+          stage: input.stage,
+          status: "RUNNING",
+          leaseOwnerId: input.ownerId,
+          planDigest: input.planDigest,
+        },
+        data: { status: "DONE", finishedAt: input.now },
+      });
+      if (stageDone.count !== 1) {
+        throw new CasFinalizeError("cas-stage-done-failed", stageDone.count, 0);
+      }
 
-  const stageDone = await prisma.orionArsenkinStageRun.updateMany({
-    where: {
-      reportRunId: input.reportRunId,
-      caseId: input.caseId,
-      stage: input.stage,
-      status: "RUNNING",
-      leaseOwnerId: input.ownerId,
-      planDigest: input.planDigest,
-    },
-    data: { status: "DONE", finishedAt: input.now },
-  });
-  if (stageDone.count !== 1) {
-    return {
-      ok: false,
-      reason: "cas-stage-done-failed",
-      manualIntervention: true,
-      stageCount: stageDone.count,
-      runCount: 0,
-    };
-  }
+      const allStages = await tx.orionArsenkinStageRun.findMany({
+        where: { reportRunId: input.reportRunId },
+        select: { stage: true, status: true },
+      });
+      const agg = aggregateRunStatus({
+        workflow: input.workflow,
+        stages: allStages.map((s) => ({
+          stage: s.stage as ArsenkinLiveStage,
+          status: s.status,
+        })),
+      });
 
-  const allStages = await prisma.orionArsenkinStageRun.findMany({
-    where: { reportRunId: input.reportRunId },
-    select: { stage: true, status: true },
-  });
-  const agg = aggregateRunStatus({
-    workflow: input.workflow,
-    stages: allStages.map((s) => ({
-      stage: s.stage as ArsenkinLiveStage,
-      status: s.status,
-    })),
-  });
+      if (agg === "DONE") {
+        const runDone = await tx.orionReportRun.updateMany({
+          where: { id: input.reportRunId, caseId: input.caseId, status: "RUNNING" },
+          data: { status: "DONE", finishedAt: input.now },
+        });
+        if (runDone.count !== 1) {
+          throw new CasFinalizeError("cas-run-done-failed", stageDone.count, runDone.count);
+        }
+        return { ok: true as const, runAggregate: agg, runFinalized: true };
+      }
 
-  if (agg === "DONE") {
-    const runDone = await prisma.orionReportRun.updateMany({
-      where: { id: input.reportRunId, caseId: input.caseId, status: "RUNNING" },
-      data: { status: "DONE", finishedAt: input.now },
+      // Stage progress without full workflow DONE: keep run RUNNING via exact CAS.
+      const runKeep = await tx.orionReportRun.updateMany({
+        where: { id: input.reportRunId, caseId: input.caseId, status: "RUNNING" },
+        data: { status: "RUNNING" },
+      });
+      if (runKeep.count !== 1) {
+        throw new CasFinalizeError(
+          "cas-run-keep-RUNNING-failed",
+          stageDone.count,
+          runKeep.count
+        );
+      }
+      return { ok: true as const, runAggregate: agg, runFinalized: false };
     });
-    if (runDone.count !== 1) {
+  } catch (e) {
+    if (e instanceof CasFinalizeError) {
       return {
         ok: false,
-        reason: "cas-run-done-failed",
+        reason: e.message,
         manualIntervention: true,
-        stageCount: stageDone.count,
-        runCount: runDone.count,
+        stageCount: e.stageCount,
+        runCount: e.runCount,
       };
     }
-    return { ok: true, runAggregate: agg, runFinalized: true };
-  }
-
-  // Stage1 DONE keeps run RUNNING — exact CAS that status remains RUNNING.
-  const runKeep = await prisma.orionReportRun.updateMany({
-    where: { id: input.reportRunId, caseId: input.caseId, status: "RUNNING" },
-    data: { status: "RUNNING" },
-  });
-  if (runKeep.count !== 1) {
+    const message = e instanceof Error ? e.message : String(e);
     return {
       ok: false,
-      reason: "cas-run-keep-RUNNING-failed",
+      reason: message,
       manualIntervention: true,
-      stageCount: stageDone.count,
-      runCount: runKeep.count,
+      stageCount: -1,
+      runCount: -1,
     };
   }
-  return { ok: true, runAggregate: agg, runFinalized: false };
+}
+
+/** Fail stage+run in one transaction (fail-closed; count mismatches → manual intervention). */
+export async function failCanonicalStageAndRun(
+  prisma: PrismaClient,
+  input: {
+    reportRunId: string;
+    caseId: string;
+    stage: ArsenkinLiveStage;
+    ownerId: string;
+    message: string;
+    now: Date;
+  }
+): Promise<{ stageCount: number; runCount: number; ok: boolean }> {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const stageFail = await tx.orionArsenkinStageRun.updateMany({
+        where: {
+          reportRunId: input.reportRunId,
+          caseId: input.caseId,
+          stage: input.stage,
+          status: "RUNNING",
+          leaseOwnerId: input.ownerId,
+        },
+        data: {
+          status: "FAILED",
+          finishedAt: input.now,
+          errorJson: { message: input.message },
+        },
+      });
+      if (stageFail.count !== 1) {
+        throw new CasFinalizeError("cas-stage-fail-count-mismatch", stageFail.count, 0);
+      }
+      const runFail = await tx.orionReportRun.updateMany({
+        where: { id: input.reportRunId, caseId: input.caseId, status: "RUNNING" },
+        data: {
+          status: "FAILED",
+          finishedAt: input.now,
+          errorsJson: { message: input.message, stage: input.stage },
+        },
+      });
+      if (runFail.count !== 1) {
+        throw new CasFinalizeError(
+          "cas-run-fail-count-mismatch",
+          stageFail.count,
+          runFail.count
+        );
+      }
+      return { stageCount: stageFail.count, runCount: runFail.count, ok: true };
+    });
+  } catch (e) {
+    if (e instanceof CasFinalizeError) {
+      return { stageCount: e.stageCount, runCount: e.runCount, ok: false };
+    }
+    return { stageCount: -1, runCount: -1, ok: false };
+  }
 }
 
 export async function executeCanonicalArsenkinStage(
@@ -731,7 +798,6 @@ export async function executeCanonicalArsenkinStage(
       planDigest: plan.digest,
       workflow,
       now: deps.now(),
-      forceCasFailure: deps.forceFinalizeCasFailure,
     });
 
     if (!fin.ok) {
@@ -802,56 +868,35 @@ export async function executeCanonicalArsenkinStage(
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    const stageFail = await prisma.orionArsenkinStageRun.updateMany({
-      where: {
-        reportRunId,
-        caseId,
-        stage,
-        status: "RUNNING",
-        leaseOwnerId: ownerId,
-      },
-      data: {
-        status: "FAILED",
-        finishedAt: deps.now(),
-        errorJson: { message },
-      },
+    const fail = await failCanonicalStageAndRun(prisma, {
+      reportRunId,
+      caseId,
+      stage,
+      ownerId,
+      message,
+      now: deps.now(),
     });
-    const runFail = await prisma.orionReportRun.updateMany({
-      where: { id: reportRunId, caseId, status: "RUNNING" },
-      data: {
-        status: "FAILED",
-        finishedAt: deps.now(),
-        errorsJson: { message, stage },
-      },
-    });
-    if (stageFail.count !== 1) {
+    if (!fail.ok) {
       writeArt("manual-intervention-required.json", {
         verdict: "MANUAL_INTERVENTION_REQUIRED",
-        reason: "cas-stage-fail-count-mismatch",
-        stageCas: stageFail.count,
-        runCas: runFail.count,
-        message,
-      });
-    } else if (runFail.count !== 1) {
-      writeArt("manual-intervention-required.json", {
-        verdict: "MANUAL_INTERVENTION_REQUIRED",
-        reason: "cas-run-fail-count-mismatch",
-        stageCas: stageFail.count,
-        runCas: runFail.count,
+        reason: "cas-fail-transition-count-mismatch",
+        stageCas: fail.stageCount,
+        runCas: fail.runCount,
         message,
       });
     }
     writeArt("arsenkin-live-execute-error.json", {
       message,
       status: "FAILED",
-      stageCas: stageFail.count,
-      runCas: runFail.count,
+      stageCas: fail.stageCount,
+      runCas: fail.runCount,
       collectorCalls,
+      failTransitionOk: fail.ok,
     });
     return {
       ok: false,
       phase: "execute-error",
-      verdict: "STAGE_FAILED",
+      verdict: fail.ok ? "STAGE_FAILED" : "MANUAL_INTERVENTION_REQUIRED",
       reportRunId,
       stage,
       workflow,
