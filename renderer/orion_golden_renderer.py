@@ -470,8 +470,8 @@ class _Ctx:
         needed = measure_text_height(joined, width, font_size, line_spacing=1.2, paragraph_spacing_pt=8)
         box_h = min(avail, max(needed + 40_000, int(font_size * EMU_PER_PT)))
         measured_lines, uncertain = _count_measured_lines(joined, width, font_size)
-        source_needed = measure_text_height(joined_raw, width, font_size, line_spacing=1.2, paragraph_spacing_pt=8)
-        clipped = source_needed > avail or len(joined) < len(joined_raw) * 0.92
+        # Clipping = placed text does not fit the box. Fitting/truncating source is not layout overflow.
+        clipped = needed > avail
         record_text_layout(
             page=self.page,
             name=f"orion_text_body_p{self.page}",
@@ -481,7 +481,7 @@ class _Ctx:
             box_width=width,
             box_height=box_h,
             available_height=avail,
-            required_height=max(needed, source_needed),
+            required_height=needed,
             measured_lines=measured_lines,
             text_length=len(joined),
             clipped=clipped,
