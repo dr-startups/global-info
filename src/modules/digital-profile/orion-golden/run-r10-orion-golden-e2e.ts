@@ -363,6 +363,18 @@ export async function runR10OrionGoldenE2e(options: {
     judgments,
     adminDecisions: postReviewAdminDecisions,
   });
+  writeJson(join(outputRoot, "orion-client-content.post-review.json"), clientContentPostReview);
+  writeFileSync(
+    join(outputRoot, "orion-client-content.post-review.md"),
+    renderOrionClientContentMarkdown(clientContentPostReview),
+    "utf-8"
+  );
+  writeJson(join(outputRoot, "orion-client-content.pre-review.json"), clientContentPreReview);
+  writeFileSync(
+    join(outputRoot, "orion-client-content.pre-review.md"),
+    renderOrionClientContentMarkdown(clientContentPreReview),
+    "utf-8"
+  );
 
   const adminWorkflowQa = inspectAdminReviewWorkflowQa({
     preReviewContent: clientContentPreReview,
