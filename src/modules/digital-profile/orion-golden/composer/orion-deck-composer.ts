@@ -44,6 +44,10 @@ export type OrionGoldenDeckSlide = {
   template: string;
   title: string;
   pageNumber: number;
+  /** First36 registry slot id when composed from ORION_FIRST36_REGISTRY_V1. */
+  slotId?: string;
+  /** Registry-driven required visual flag (also resolvable via registry page/slot). */
+  requiredVisual?: boolean;
   bullets?: string[];
   narrative?: string;
   assetRefs?: string[];

@@ -332,12 +332,18 @@ export async function runOrionClassicAuditRender(options: {
     const geometry = await generateFirst36GeometryArtifacts(outputRoot, {
       slides: (deckManifest.finalSlides ?? []).map((s) => ({
         pageNumber: Number(s.pageNumber ?? 0),
+        slideKey: s.slideKey ? String(s.slideKey) : undefined,
+        slotId: (s as { slotId?: string }).slotId
+          ? String((s as { slotId?: string }).slotId)
+          : s.slideKey
+            ? String(s.slideKey)
+            : undefined,
         title: s.title ? String(s.title) : undefined,
         narrative: s.narrative ? String(s.narrative) : undefined,
         bullets: Array.isArray(s.bullets) ? s.bullets.map(String) : undefined,
         clientTakeaway: s.clientTakeaway ? String(s.clientTakeaway) : undefined,
         assetRefs: Array.isArray(s.assetRefs) ? s.assetRefs.map(String) : undefined,
-        requiredVisual: Boolean((s as { requiredVisual?: boolean }).requiredVisual),
+        requiredVisual: (s as { requiredVisual?: boolean }).requiredVisual,
       })),
       assets: assetList,
     });

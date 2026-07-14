@@ -1,30 +1,52 @@
 {
+  "inspectorVersion": "first36-geometry-v2",
   "overlaps": [],
   "overflow": [
     {
       "page": 10,
-      "code": "overflow",
+      "code": "out-of-bounds",
       "severity": "CRITICAL",
-      "detail": "shape bottom 7000000 exceeds footer safe 6315360"
+      "detail": "content shape 'text1' role=text exceeds slide bounds"
+    }
+  ],
+  "clipping": [
+    {
+      "page": 10,
+      "code": "text-clipping",
+      "severity": "CRITICAL",
+      "detail": "text clipping requiredHeight=900000 availableHeight=200000 name=body"
     }
   ],
   "blank": [],
   "missingAssets": [],
   "emptyContent": [],
+  "emptyPages": [],
+  "shapes": [],
   "pages": [
     {
       "page": 10,
       "issues": [
         {
           "page": 10,
-          "code": "overflow",
+          "code": "out-of-bounds",
           "severity": "CRITICAL",
-          "detail": "shape bottom 7000000 exceeds footer safe 6315360"
+          "detail": "content shape 'text1' role=text exceeds slide bounds"
+        },
+        {
+          "page": 10,
+          "code": "text-clipping",
+          "severity": "CRITICAL",
+          "detail": "text clipping requiredHeight=900000 availableHeight=200000 name=body"
         }
       ]
     }
   ],
-  "summary": { "issueCount": 1, "severity": "CRITICAL", "pageCount": 36 },
+  "summary": {
+    "issueCount": 2,
+    "severity": "CRITICAL",
+    "pageCount": 36,
+    "bySeverity": { "PASS": 0, "WARNING": 0, "CRITICAL": 2, "BLOCKER": 0 }
+  },
   "inspectorError": null,
   "source": { "fixture": "clipping-overflow.json" }
 }

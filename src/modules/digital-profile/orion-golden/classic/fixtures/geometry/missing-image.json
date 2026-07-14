@@ -1,6 +1,8 @@
 {
+  "inspectorVersion": "first36-geometry-v2",
   "overlaps": [],
   "overflow": [],
+  "clipping": [],
   "blank": [],
   "missingAssets": [
     {
@@ -11,6 +13,8 @@
     }
   ],
   "emptyContent": [],
+  "emptyPages": [],
+  "shapes": [],
   "pages": [
     {
       "page": 10,
@@ -24,7 +28,12 @@
       ]
     }
   ],
-  "summary": { "issueCount": 1, "severity": "BLOCKER", "pageCount": 36 },
+  "summary": {
+    "issueCount": 1,
+    "severity": "BLOCKER",
+    "pageCount": 36,
+    "bySeverity": { "PASS": 0, "WARNING": 0, "CRITICAL": 0, "BLOCKER": 1 }
+  },
   "inspectorError": null,
   "source": { "fixture": "missing-image.json" }
 }

@@ -209,7 +209,7 @@ describe("arsenkin p0.1 follow-up", () => {
     const blank = inspectBlankPagePngs(join(dir, "pages-png"));
     assert.ok(blank.some((b) => b.page === 0 || b.detail.includes("tiny") || b.detail.includes("expected 36")));
 
-    const badXml = `<a:off x="0" y="0"/><a:ext cx="100" cy="${7_000_000}"/>`;
+    const badXml = `<a:off x="500000" y="6800000"/><a:ext cx="4000000" cy="1200000"/>`;
     const overflow = inspectSlideXmlGeometry(badXml, 1);
     assert.ok(overflow.overflow.length > 0);
 

@@ -42,6 +42,12 @@ def main() -> None:
         "via": "local-python",
     }
     (pages_dir.parent / "golden-render-meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    telemetry = out.get("layoutTelemetry")
+    if telemetry:
+        (pages_dir.parent / "layout-telemetry.json").write_text(
+            json.dumps(telemetry, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
     print(json.dumps(meta))
 
 

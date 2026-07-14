@@ -17,6 +17,7 @@ interface GoldenRenderResult {
   pages: Array<{ pageNumber: number; contentBase64: string }>;
   pdfExportMode?: string;
   warnings?: string[];
+  layoutTelemetry?: { version?: string; entries?: unknown[] };
 }
 
 function assetDiag(assets: ReportAssetV1[]) {
@@ -116,6 +117,13 @@ export async function renderOrionGoldenArtifacts(input: {
         ),
         "utf-8"
       );
+      if (json.layoutTelemetry) {
+        writeFileSync(
+          join(dirname(input.pptxOut), "layout-telemetry.json"),
+          JSON.stringify(json.layoutTelemetry, null, 2),
+          "utf-8"
+        );
+      }
       return { pdfExportMode: mode, warnings: json.warnings ?? [] };
     }
     httpError = `http-${res.status}:${(await res.text()).slice(0, 300)}`;

@@ -736,6 +736,8 @@ function blockedSlide(slot: First36SlotDef, reason: string): OrionGoldenDeckSlid
     "Данные источника не предоставлены. Для завершения проверки требуется загрузка утверждённого визуального материала по этому разделу.";
   return {
     slideKey: slot.slotId,
+    slotId: slot.slotId,
+    requiredVisual: slot.requiredVisual,
     sectionKey: slot.sectionKey,
     template: "orion_golden_no_data_compact",
     title: slot.title,
@@ -756,6 +758,8 @@ function placeholderSlide(slot: First36SlotDef, narrative?: string): OrionGolden
     "Данные источника не предоставлены. Раздел сохранён в структуре аудита; проверка по этому блоку будет завершена после появления подтверждённых материалов.";
   return {
     slideKey: slot.slotId,
+    slotId: slot.slotId,
+    requiredVisual: slot.requiredVisual,
     sectionKey: slot.sectionKey,
     template: slot.template === "orion_golden_region_divider" ? slot.template : "orion_golden_prose",
     title: slot.title,
@@ -1022,6 +1026,8 @@ export function composeOrionFirst36CeoDeck(
     slide = {
       ...slide,
       slideKey: slot.slotId,
+      slotId: slot.slotId,
+      requiredVisual: slot.requiredVisual,
       pageNumber: slot.page,
       title: scrub(slide.title || slot.title),
       narrative: slide.narrative

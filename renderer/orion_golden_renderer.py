@@ -62,6 +62,108 @@ FORBIDDEN = re.compile(
 EMU_PER_PT = 12_700
 EMU_PER_INCH = 914_400
 
+# Renderer-side text layout telemetry (page, font, box, measured vs available).
+_LAYOUT_TELEMETRY: list[dict[str, Any]] = []
+
+
+def reset_layout_telemetry() -> None:
+    _LAYOUT_TELEMETRY.clear()
+
+
+def get_layout_telemetry() -> list[dict[str, Any]]:
+    return list(_LAYOUT_TELEMETRY)
+
+
+def record_text_layout(
+    *,
+    page: int,
+    name: str,
+    role: str,
+    font_family: str,
+    font_size_pt: float,
+    box_width: int,
+    box_height: int,
+    available_height: int,
+    required_height: int,
+    measured_lines: int,
+    text_length: int,
+    clipped: bool,
+    measurement_uncertain: bool = False,
+) -> None:
+    _LAYOUT_TELEMETRY.append(
+        {
+            "page": page,
+            "name": name,
+            "role": role,
+            "fontFamily": font_family,
+            "fontSizePt": font_size_pt,
+            "boxWidth": box_width,
+            "boxHeight": box_height,
+            "availableHeight": available_height,
+            "requiredHeight": required_height,
+            "measuredLines": measured_lines,
+            "textLength": text_length,
+            "clipped": clipped,
+            "measurementUncertain": measurement_uncertain,
+        }
+    )
+
+
+def _count_measured_lines(
+    text: str,
+    width_emu: int,
+    font_size_pt: float,
+) -> tuple[int, bool]:
+    """Return (line_count, measurement_uncertain)."""
+    raw = _safe(text)
+    if not raw:
+        return 1, False
+    width_px = max(40, int(width_emu / EMU_PER_INCH * 96 * 0.90))
+    paragraphs = [p.strip() for p in re.split(r"\n+", raw) if p.strip()] or [""]
+    total_lines = 0
+    uncertain = False
+    font = None
+    if Image is not None:
+        try:
+            from PIL import ImageFont  # type: ignore
+
+            fp = _font_path()
+            if fp:
+                font = ImageFont.truetype(fp, size=max(8, int(round(font_size_pt * 96 / 72))))
+            else:
+                uncertain = True
+        except Exception:  # noqa: BLE001
+            uncertain = True
+            font = None
+    else:
+        uncertain = True
+
+    for para in paragraphs:
+        words = para.split(" ")
+        if not words:
+            total_lines += 1
+            continue
+        line = ""
+        lines = 1
+        for word in words:
+            trial = word if not line else f"{line} {word}"
+            if font is not None:
+                try:
+                    bbox = font.getbbox(trial)
+                    tw = bbox[2] - bbox[0]
+                except Exception:  # noqa: BLE001
+                    tw = int(len(trial) * font_size_pt * 0.58 * 96 / 72)
+                    uncertain = True
+            else:
+                tw = int(len(trial) * font_size_pt * 0.58 * 96 / 72)
+            if tw <= width_px or not line:
+                line = trial
+            else:
+                lines += 1
+                line = word
+        total_lines += max(1, lines)
+    return max(1, total_lines), uncertain
+
 
 def _font_path() -> str | None:
     """Return DejaVu Sans file used for both measurement and PPTX family."""
@@ -258,6 +360,10 @@ class _Ctx:
 
     def footer(self) -> None:
         box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(FOOTER_Y), Emu(CONTENT_W), Emu(250000))
+        try:
+            box.name = f"orion_footer_p{self.page}"
+        except Exception:  # noqa: BLE001
+            pass
         tf = box.text_frame
         p = tf.paragraphs[0]
         p.alignment = PP_ALIGN.RIGHT
@@ -303,6 +409,10 @@ class _Ctx:
         width = CONTENT_W if w is None else w
         avail = max(200_000, min(h, CONTENT_BOTTOM - y))
         shape = self.slide.shapes.add_shape(1, Emu(left), Emu(y), Emu(width), Emu(avail))
+        try:
+            shape.name = f"orion_card_p{self.page}"
+        except Exception:  # noqa: BLE001
+            pass
         shape.fill.solid()
         shape.fill.fore_color.rgb = fill
         shape.line.color.rgb = CARD_BORDER
@@ -359,7 +469,29 @@ class _Ctx:
         joined = "\n".join(kept)
         needed = measure_text_height(joined, width, font_size, line_spacing=1.2, paragraph_spacing_pt=8)
         box_h = min(avail, max(needed + 40_000, int(font_size * EMU_PER_PT)))
+        measured_lines, uncertain = _count_measured_lines(joined, width, font_size)
+        source_needed = measure_text_height(joined_raw, width, font_size, line_spacing=1.2, paragraph_spacing_pt=8)
+        clipped = source_needed > avail or len(joined) < len(joined_raw) * 0.92
+        record_text_layout(
+            page=self.page,
+            name=f"orion_text_body_p{self.page}",
+            role="text",
+            font_family=FONT,
+            font_size_pt=font_size,
+            box_width=width,
+            box_height=box_h,
+            available_height=avail,
+            required_height=max(needed, source_needed),
+            measured_lines=measured_lines,
+            text_length=len(joined),
+            clipped=clipped,
+            measurement_uncertain=uncertain,
+        )
         box = self.slide.shapes.add_textbox(Emu(left), Emu(y), Emu(width), Emu(box_h))
+        try:
+            box.name = f"orion_text_body_p{self.page}"
+        except Exception:  # noqa: BLE001
+            pass
         tf = box.text_frame
         tf.word_wrap = True
         first = True
@@ -1641,6 +1773,7 @@ def _export_png_pages(pdf_path: Path) -> list[dict[str, Any]]:
 
 def render_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:
     assert_render_font_family()
+    reset_layout_telemetry()
     deck = payload.get("deckManifest") or {}
     report_spec = payload.get("reportSpec") or {}
     slides = list(deck.get("finalSlides") or [])
@@ -1711,6 +1844,7 @@ def render_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:
 
         print(f"[orion-golden-render] pdfExportMode={pdf_mode} warnings={warnings}", flush=True)
         pages = _export_png_pages(pdf_path)
+        telemetry = get_layout_telemetry()
         return {
             "slideCount": len(prs.slides),
             "pptxBase64": base64.b64encode(pptx_path.read_bytes()).decode("ascii"),
@@ -1718,6 +1852,10 @@ def render_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:
             "pages": pages,
             "pdfExportMode": pdf_mode,
             "warnings": warnings,
+            "layoutTelemetry": {
+                "version": "orion-layout-telemetry-v1",
+                "entries": telemetry,
+            },
         }
 
 
@@ -1735,6 +1873,16 @@ if __name__ == "__main__":
         Path(pages_dir / f"page-{page['pageNumber']:02d}.png").write_bytes(
             base64.b64decode(page["contentBase64"])
         )
-    meta = {"slideCount": out["slideCount"], "pages": len(out.get("pages") or []), "pdfExportMode": out.get("pdfExportMode")}
+    meta = {
+        "slideCount": out["slideCount"],
+        "pages": len(out.get("pages") or []),
+        "pdfExportMode": out.get("pdfExportMode"),
+    }
     Path(pages_dir.parent / "golden-render-meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    telemetry = out.get("layoutTelemetry")
+    if telemetry:
+        Path(pages_dir.parent / "layout-telemetry.json").write_text(
+            json.dumps(telemetry, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
     print(json.dumps(meta))

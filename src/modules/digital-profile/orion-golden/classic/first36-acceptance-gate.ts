@@ -66,11 +66,14 @@ export type First36AcceptanceInput = {
   geometryReport?: {
     overlaps?: unknown[];
     overflow?: unknown[];
+    clipping?: unknown[];
     blank?: unknown[];
     missingAssets?: unknown[];
     emptyContent?: unknown[];
+    emptyPages?: unknown[];
     summary?: { issueCount?: number; severity?: string; pageCount?: number };
     inspectorError?: string | null;
+    inspectorVersion?: string;
   } | null;
   /** When false/undefined in ARSENKIN_REQUIRED mode, geometry is treated as missing. */
   geometryReportPresent?: boolean;
@@ -326,7 +329,9 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
       }
       for (const [name, values] of Object.entries(geo)) {
         if (
-          ["overlaps", "overflow", "blank", "missingAssets", "emptyContent"].includes(name) &&
+          ["overlaps", "overflow", "clipping", "blank", "missingAssets", "emptyContent", "emptyPages"].includes(
+            name
+          ) &&
           Array.isArray(values) &&
           values.length > 0
         ) {
@@ -345,7 +350,9 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
     }
     for (const [name, values] of Object.entries(geo)) {
       if (
-        ["overlaps", "overflow", "blank", "missingAssets", "emptyContent"].includes(name) &&
+        ["overlaps", "overflow", "clipping", "blank", "missingAssets", "emptyContent", "emptyPages"].includes(
+          name
+        ) &&
         Array.isArray(values) &&
         values.length > 0
       ) {
