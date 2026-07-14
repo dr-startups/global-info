@@ -46,6 +46,7 @@
     "smoke:arsenkin-db-integration": "tsx scripts/smoke-arsenkin-db-integration.ts",
     "smoke:arsenkin-p03-live-readiness": "tsx scripts/smoke-arsenkin-p03-live-readiness.ts",
     "smoke:arsenkin-p04-live-runner": "tsx scripts/smoke-arsenkin-p04-live-runner.ts",
+    "smoke:arsenkin-p05-final-live-closure": "tsx scripts/smoke-arsenkin-p05-final-live-closure.ts",
     "arsenkin:db-readiness": "tsx scripts/generate-arsenkin-db-readiness.ts",
     "smoke:first36-geometry-v2": "tsx scripts/smoke-first36-geometry-v2.ts",
     "arsenkin:canonical-plan": "tsx --env-file=.env scripts/arsenkin-canonical-live-runner.ts",

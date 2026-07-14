@@ -1,19 +1,19 @@
 /**
- * Canonical Arsenkin live runner — the ONLY paid entrypoint.
+ * Canonical Arsenkin live runner — the ONLY paid entrypoint (P0.5).
  *
- * Modes:
- *   --prepare              create PREPARED fresh run (no network)
- *   (default) plan-only    recompute plan + gates; PLAN_READY|PLAN_BLOCKED (no network)
- *   --execute-live         requires LIVE_CONFIRM + digest + DB readiness PASS artifact
+ *   --prepare [--workflow=suggest-canary|first36-full] --stage=...
+ *   plan-only (default)
+ *   --execute-live  (requires LIVE_CONFIRM + digest + DB readiness v2 PASS)
  *
- * Never prints API token.
+ * Multi-stage First36 uses one reportRunId + OrionArsenkinStageRun ledger.
+ * --resume-existing is hard-failed (not supported).
+ * Never prints API token or full DATABASE_URL.
  */
 
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parse } from "dotenv";
-import { spawnSync } from "node:child_process";
 import {
   buildArsenkinExecutionPlan,
   type ArsenkinLiveStage,
@@ -21,11 +21,17 @@ import {
 import { buildArsenkinSubjectQueryPlan } from "../src/modules/digital-profile/orion-golden/classic/arsenkin-subject-query-plan";
 import {
   buildPrepareCanaryRunSpec,
-  transitionCanaryRun,
   canaryLifecycleOf,
   type CanaryRunRow,
 } from "../src/modules/digital-profile/orion-golden/classic/arsenkin-canary-run-lifecycle";
 import { evaluateCanonicalLiveGate } from "../src/modules/digital-profile/orion-golden/classic/arsenkin-canonical-live-gate";
+import {
+  aggregateRunStatus,
+  parseWorkflow,
+  requiredStagesForWorkflow,
+  workflowForStage,
+  type ArsenkinWorkflow,
+} from "../src/modules/digital-profile/orion-golden/classic/arsenkin-stage-ledger";
 import { authorizationFromPlan } from "../src/modules/digital-profile/providers/arsenkin/execute-arsenkin-execution-plan";
 import { collectArsenkinPilotSurfaces } from "../src/modules/digital-profile/providers/arsenkin/collect-pilot-surfaces";
 import {
@@ -34,12 +40,14 @@ import {
 } from "../src/modules/digital-profile/providers/arsenkin/network-guard";
 import { persistSerpObservations } from "../src/modules/digital-profile/serp-observation/persist";
 import {
+  computeSchemaContentHash,
+  computeSourceTreeHash,
   fingerprintDatabaseUrl,
-  schemaChecksumOf,
-  REQUIRED_COVERAGE_UNIQUE_MIGRATION,
+  resolveBuildIdentity,
   type ArsenkinDbReadinessArtifact,
 } from "../src/modules/digital-profile/providers/arsenkin/arsenkin-db-readiness";
 import { buildPlannedCoverageMatrix } from "../src/modules/digital-profile/providers/arsenkin/planned-coverage-matrix";
+import { pickEnrichmentUrls } from "../src/modules/digital-profile/orion-golden/classic/enrich-report-run-with-arsenkin";
 
 function bootstrapEnv(): void {
   const envPath = join(process.cwd(), ".env");
@@ -76,43 +84,36 @@ function parseStage(raw: string | null): ArsenkinLiveStage {
   throw new Error(`invalid-stage:${s}`);
 }
 
-function gitCommitShort(): string {
-  const r = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf-8" });
-  return (r.stdout || "").trim() || "unknown";
-}
-
-function currentSchemaChecksum(): string {
-  const migDir = join(process.cwd(), "prisma", "migrations");
-  const names = existsSync(migDir)
-    ? readdirSync(migDir).filter((n) => !n.startsWith("."))
-    : [];
-  return schemaChecksumOf({
-    migrationNames: names.sort(),
-    uniqueIndexName: "dp_surface_coverage_biz_unique",
-  });
-}
-
 async function main() {
   bootstrapEnv();
   resetArsenkinNetworkCallCount();
 
   const prepare = flag("prepare");
   const executeLive = flag("execute-live");
-  const resumeExisting = flag("resume-existing");
+  if (flag("resume-existing")) {
+    console.error(
+      JSON.stringify({
+        error: "resume-existing-not-supported",
+        hint: "Use stage ledger prepare/execute; FAILED stages need explicit retry contract (not implemented as silent resume).",
+        networkCalls: 0,
+      })
+    );
+    process.exit(2);
+  }
+
   const caseId = arg("case-id");
   const reportRunId = arg("report-run-id");
   const stage = parseStage(arg("stage"));
+  const workflow: ArsenkinWorkflow = arg("workflow")
+    ? parseWorkflow(arg("workflow"))
+    : workflowForStage(stage);
   const maxNewTasks = Number(arg("max-new-tasks") ?? 0);
   const maxEstimatedLimits = Number(arg("max-estimated-limits") ?? 0);
   const confirmPlanDigest = arg("confirm-plan-digest");
   const liveConfirm = process.env.ARSENKIN_LIVE_CONFIRM === "1";
   const dbReadinessPath =
     arg("db-readiness") ||
-    join(process.cwd(), "storage", "digital-profile", "qa-arsenkin-p04", "arsenkin-db-readiness.json");
-  const urlsEnrichment = (arg("urls-enrichment") ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+    join(process.cwd(), "storage", "digital-profile", "qa-arsenkin-p05", "arsenkin-db-readiness.json");
 
   if (!caseId) throw new Error("--case-id required");
   if (!reportRunId) throw new Error("--report-run-id required");
@@ -141,20 +142,37 @@ async function main() {
     aliases: subject?.aliases ?? [],
   });
 
+  const build = resolveBuildIdentity();
   const dbUrl = String(process.env.DATABASE_URL ?? "");
   const currentFingerprint = fingerprintDatabaseUrl(dbUrl);
-  const currentGitCommit = gitCommitShort();
-  const schemaChecksum = currentSchemaChecksum();
+  const schemaContentHash = computeSchemaContentHash();
+  const sourceTreeHash = computeSourceTreeHash();
   const dbReadiness = readJson<ArsenkinDbReadinessArtifact>(dbReadinessPath);
 
+  const run = (await prisma.orionReportRun.findUnique({
+    where: { id: reportRunId },
+  })) as CanaryRunRow | null;
+
+  const stageRowsRaw = await prisma.orionArsenkinStageRun.findMany({
+    where: { reportRunId },
+    select: { stage: true, status: true, planDigest: true, leaseOwnerId: true, id: true },
+  });
+  const stageRows = stageRowsRaw.map((s) => ({
+    stage: s.stage as ArsenkinLiveStage,
+    status: s.status,
+  }));
+  const currentStage = stageRowsRaw.find((s) => s.stage === stage) ?? null;
+
   if (prepare) {
-    const existing = await prisma.orionReportRun.findUnique({ where: { id: reportRunId } });
     const gate = evaluateCanonicalLiveGate({
       mode: "prepare",
       caseId,
       reportRunId,
       stage,
-      run: existing as CanaryRunRow | null,
+      workflow,
+      run,
+      stageRows,
+      currentStageStatus: currentStage?.status ?? null,
       counts: { providerTaskCount: 0, observationCount: 0, coverageCount: 0 },
       queryPlan,
       executionPlan: null,
@@ -163,8 +181,10 @@ async function main() {
       adminDecisions: null,
       dbReadiness,
       currentDbFingerprint: currentFingerprint,
-      currentGitCommit,
-      currentSchemaChecksum: schemaChecksum,
+      currentBuildCommit: build.buildCommit,
+      currentSourceTreeHash: sourceTreeHash,
+      currentSchemaContentHash: schemaContentHash,
+      currentDirtyTree: build.dirtyTree,
       liveConfirm: false,
       confirmPlanDigest: null,
       tokenPresent: false,
@@ -176,39 +196,63 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    const spec = buildPrepareCanaryRunSpec({
-      reportRunId,
-      caseId,
-      stage,
-      preparedAtIso: new Date().toISOString(),
+
+    const isFirst = stage === "SUGGEST_RU_CANARY" || stage === "FIRST36_STAGE1";
+    if (isFirst) {
+      const spec = buildPrepareCanaryRunSpec({
+        reportRunId,
+        caseId,
+        stage,
+        preparedAtIso: new Date().toISOString(),
+      });
+      await prisma.orionReportRun.create({
+        data: {
+          ...spec,
+          metadataJson: { ...spec.metadataJson, workflow },
+        },
+      });
+    }
+    await prisma.orionArsenkinStageRun.create({
+      data: {
+        reportRunId,
+        caseId,
+        stage,
+        status: "PREPARED",
+        metadataJson: { workflow, preparedAt: new Date().toISOString() },
+      },
     });
-    await prisma.orionReportRun.create({ data: spec });
     writeJson(join(outRoot, "fresh-run-preflight.json"), {
       verdict: "PREPARED",
       reportRunId,
-      caseId,
+      stage,
+      workflow,
       networkCalls: getArsenkinNetworkCallCount(),
     });
-    console.log(JSON.stringify({ phase: "prepare", status: "PREPARED", reportRunId }, null, 2));
+    console.log(JSON.stringify({ phase: "prepare", status: "PREPARED", reportRunId, stage, workflow }, null, 2));
     return;
   }
-
-  const run = (await prisma.orionReportRun.findUnique({
-    where: { id: reportRunId },
-  })) as CanaryRunRow | null;
 
   const [providerTaskCount, observationCount, coverageCount] = await Promise.all([
     prisma.providerTask.count({ where: { reportRunId, provider: "arsenkin" } }),
     prisma.serpObservation.count({ where: { auditRunId: reportRunId, provider: "arsenkin" } }),
-    prisma.surfaceCollectionCoverage.count({
-      where: { reportRunId, provider: "arsenkin" },
-    }),
+    prisma.surfaceCollectionCoverage.count({ where: { reportRunId, provider: "arsenkin" } }),
   ]);
 
   const existingTasks = await prisma.providerTask.findMany({
     where: { reportRunId, provider: "arsenkin" },
     select: { id: true, requestHash: true, state: true },
   });
+
+  let urlsEnrichment: string[] = [];
+  if (stage === "FIRST36_STAGE2") {
+    const organic = await prisma.serpObservation.findMany({
+      where: { auditRunId: reportRunId, provider: "arsenkin", surface: "organic" },
+      select: { url: true, domain: true, rank: true, surface: true },
+      orderBy: { rank: "asc" },
+      take: 100,
+    });
+    urlsEnrichment = pickEnrichmentUrls(organic, 5);
+  }
 
   const plan = buildArsenkinExecutionPlan({
     caseId,
@@ -219,7 +263,7 @@ async function main() {
     maxNewTasks,
     maxEstimatedLimits,
     existingTasks,
-    urlsEnrichment: stage === "FIRST36_STAGE2" ? urlsEnrichment : [],
+    urlsEnrichment,
   });
 
   const content = readJson<{ caseId?: string; reportRunId?: string }>(
@@ -230,23 +274,27 @@ async function main() {
     effectiveReportRunId?: string;
     overridden?: boolean;
   }>(join(outRoot, "client-content-binding.json"));
-  const adminDecisions = readJson<{
-    caseId?: string;
-    qaSampleOnly?: boolean;
-  }>(join(outRoot, "admin-review-decisions.json"));
+  const adminDecisions = readJson<{ caseId?: string; qaSampleOnly?: boolean }>(
+    join(outRoot, "admin-review-decisions.json")
+  );
 
   const coverageMatrix = buildPlannedCoverageMatrix(plan);
   writeJson(join(outRoot, "arsenkin-live-plan.json"), plan);
-  writeJson(join(outRoot, "planned-coverage-matrix.json"), { targets: coverageMatrix });
+  writeJson(join(outRoot, "planned-coverage-matrix.json"), {
+    targets: coverageMatrix,
+    urlsEnrichment,
+  });
 
   const gate = evaluateCanonicalLiveGate({
     mode: executeLive ? "execute-live" : "plan-only",
     caseId,
     reportRunId,
     stage,
+    workflow,
     run,
+    stageRows,
+    currentStageStatus: currentStage?.status ?? null,
     counts: { providerTaskCount, observationCount, coverageCount },
-    resumeExisting,
     queryPlan,
     executionPlan: plan,
     content,
@@ -254,8 +302,10 @@ async function main() {
     adminDecisions,
     dbReadiness,
     currentDbFingerprint: currentFingerprint,
-    currentGitCommit,
-    currentSchemaChecksum: schemaChecksum,
+    currentBuildCommit: build.buildCommit,
+    currentSourceTreeHash: sourceTreeHash,
+    currentSchemaContentHash: schemaContentHash,
+    currentDirtyTree: build.dirtyTree,
     liveConfirm,
     confirmPlanDigest,
     tokenPresent: Boolean(String(process.env.ARSENKIN_API_TOKEN ?? "").trim()),
@@ -264,15 +314,12 @@ async function main() {
 
   writeJson(join(outRoot, "fresh-run-preflight.json"), {
     lifecycle: canaryLifecycleOf(run),
+    stage,
+    workflow,
+    stageRows,
     counts: { providerTaskCount, observationCount, coverageCount },
     gate,
     networkCalls: getArsenkinNetworkCallCount(),
-  });
-  writeJson(join(outRoot, "client-content-binding-validation.json"), {
-    contentPresent: Boolean(content),
-    bindingPresent: Boolean(binding),
-    adminPresent: Boolean(adminDecisions),
-    blockers: gate.blockers.filter((b) => /client|binding|admin|qa-sample/i.test(b)),
   });
 
   console.log(
@@ -281,6 +328,8 @@ async function main() {
         phase: executeLive ? "execute-preflight" : "plan",
         verdict: gate.verdict,
         digest: plan.digest,
+        stage,
+        workflow,
         plannedNewTasks: plan.plannedNewTasks,
         estimatedLimitsTotal: plan.estimatedLimitsTotal,
         requestCount: plan.requests.length,
@@ -292,6 +341,11 @@ async function main() {
     )
   );
 
+  if (gate.verdict === "IDEMPOTENT_DONE") {
+    console.log(JSON.stringify({ phase: "idempotent-done", stage, networkCalls: 0 }, null, 2));
+    return;
+  }
+
   if (!gate.ok) {
     process.exitCode = 1;
     return;
@@ -302,38 +356,38 @@ async function main() {
     return;
   }
 
-  // CAS PREPARED → RUNNING before network
-  const ownerId = `canary-${process.pid}-${createHash("sha256").update(reportRunId).digest("hex").slice(0, 8)}`;
-  const tr = transitionCanaryRun({
-    from: "PREPARED",
-    to: "RUNNING",
-    currentStatus: run?.status ?? null,
-    ownerId: null,
-    expectedOwnerId: ownerId,
-  });
-  if (!tr.ok) {
-    writeJson(join(outRoot, "execute-transition-blocked.json"), tr);
-    process.exitCode = 1;
-    return;
-  }
-  const claimed = await prisma.orionReportRun.updateMany({
-    where: { id: reportRunId, caseId, status: "PREPARED" },
+  const ownerId = `canary-${process.pid}-${createHash("sha256").update(`${reportRunId}:${stage}`).digest("hex").slice(0, 8)}`;
+
+  // CAS stage PREPARED → RUNNING
+  const stageClaim = await prisma.orionArsenkinStageRun.updateMany({
+    where: { reportRunId, caseId, stage, status: "PREPARED" },
     data: {
       status: "RUNNING",
+      leaseOwnerId: ownerId,
+      planDigest: plan.digest,
+      maxNewTasks: plan.maxNewTasks,
+      maxEstimatedLimits: plan.maxEstimatedLimits,
+      estimatedLimitsTotal: plan.estimatedLimitsTotal,
+      plannedNewTasks: plan.plannedNewTasks,
       startedAt: new Date(),
-      metadataJson: {
-        ...(typeof run?.metadataJson === "object" && run?.metadataJson
-          ? (run.metadataJson as object)
-          : {}),
-        leaseOwnerId: ownerId,
-      },
     },
   });
-  if (claimed.count !== 1) {
-    console.error(JSON.stringify({ error: "cas-claim-failed", reportRunId }, null, 2));
+  if (stageClaim.count !== 1) {
+    writeJson(join(outRoot, "cas-stage-claim-failed.json"), { stage, reportRunId, count: stageClaim.count });
+    console.error(JSON.stringify({ error: "cas-stage-claim-failed", stage }, null, 2));
     process.exitCode = 1;
     return;
   }
+
+  // Ensure run is RUNNING (not DONE)
+  await prisma.orionReportRun.updateMany({
+    where: {
+      id: reportRunId,
+      caseId,
+      status: { in: ["PREPARED", "RUNNING"] },
+    },
+    data: { status: "RUNNING", startedAt: new Date() },
+  });
 
   const auth = authorizationFromPlan(plan);
   try {
@@ -349,10 +403,45 @@ async function main() {
       urlsEnrichment: plan.urlsEnrichment,
     });
     const persisted = await persistSerpObservations(collected.drafts);
-    await prisma.orionReportRun.update({
-      where: { id: reportRunId },
+
+    const stageDone = await prisma.orionArsenkinStageRun.updateMany({
+      where: {
+        reportRunId,
+        caseId,
+        stage,
+        status: "RUNNING",
+        leaseOwnerId: ownerId,
+        planDigest: plan.digest,
+      },
       data: { status: "DONE", finishedAt: new Date() },
     });
+    if (stageDone.count !== 1) {
+      writeJson(join(outRoot, "cas-stage-done-failed.json"), { stage, count: stageDone.count, ownerId });
+      process.exitCode = 1;
+      return;
+    }
+
+    const allStages = await prisma.orionArsenkinStageRun.findMany({
+      where: { reportRunId },
+      select: { stage: true, status: true },
+    });
+    const agg = aggregateRunStatus({
+      workflow,
+      stages: allStages.map((s) => ({ stage: s.stage as ArsenkinLiveStage, status: s.status })),
+    });
+
+    if (agg === "DONE") {
+      const runDone = await prisma.orionReportRun.updateMany({
+        where: { id: reportRunId, caseId, status: "RUNNING" },
+        data: { status: "DONE", finishedAt: new Date() },
+      });
+      if (runDone.count !== 1) {
+        writeJson(join(outRoot, "cas-run-done-failed.json"), { count: runDone.count });
+        process.exitCode = 1;
+        return;
+      }
+    }
+
     writeJson(join(outRoot, "arsenkin-live-execute-result.json"), {
       mode: collected.mode,
       persisted: persisted.length,
@@ -360,21 +449,41 @@ async function main() {
       taskIds: collected.taskIds,
       networkCalls: getArsenkinNetworkCallCount(),
       digest: plan.digest,
-      status: "DONE",
+      stage,
+      stageStatus: "DONE",
+      runAggregate: agg,
+      requiredStages: requiredStagesForWorkflow(workflow),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await prisma.orionReportRun
-      .update({
-        where: { id: reportRunId },
-        data: {
-          status: "FAILED",
-          finishedAt: new Date(),
-          errorsJson: { message },
-        },
-      })
-      .catch(() => undefined);
-    writeJson(join(outRoot, "arsenkin-live-execute-error.json"), { message, status: "FAILED" });
+    const stageFail = await prisma.orionArsenkinStageRun.updateMany({
+      where: {
+        reportRunId,
+        caseId,
+        stage,
+        status: "RUNNING",
+        leaseOwnerId: ownerId,
+      },
+      data: {
+        status: "FAILED",
+        finishedAt: new Date(),
+        errorJson: { message },
+      },
+    });
+    const runFail = await prisma.orionReportRun.updateMany({
+      where: { id: reportRunId, caseId, status: "RUNNING" },
+      data: {
+        status: "FAILED",
+        finishedAt: new Date(),
+        errorsJson: { message, stage },
+      },
+    });
+    writeJson(join(outRoot, "arsenkin-live-execute-error.json"), {
+      message,
+      status: "FAILED",
+      stageCas: stageFail.count,
+      runCas: runFail.count,
+    });
     console.error(JSON.stringify({ error: message }, null, 2));
     process.exitCode = 1;
   }

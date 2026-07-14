@@ -1,41 +1,35 @@
 /**
- * Generate arsenkin-db-readiness.json from real test/staging checks.
+ * Generate arsenkin-db-readiness-v2.json from real test/staging checks.
  *
- * Without a real DATABASE_URL → writes FAIL stub (never PASS from env alone).
+ * Requires simultaneously:
+ *   ARSENKIN_DB_INTEGRATION_REQUIRED=1
+ *   ARSENKIN_DB_ENV=test|staging
+ *   ARSENKIN_DB_MUTATION_CONFIRM=1
  *
- *   npx tsx scripts/generate-arsenkin-db-readiness.ts
- *   ARSENKIN_DB_INTEGRATION_REQUIRED=1 DATABASE_URL=... npx tsx scripts/generate-arsenkin-db-readiness.ts
+ * Never PASS from env alone. Never logs full DSN or credentials.
  */
 
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 import {
   ARSENKIN_DB_READINESS_VERSION,
   REQUIRED_COVERAGE_UNIQUE_MIGRATION,
+  assertDbMutationAllowed,
   buildDbReadinessFailStub,
+  computeSchemaContentHash,
+  computeSourceTreeHash,
+  evaluateBackfillRaceOutcome,
   fingerprintDatabaseUrl,
-  schemaChecksumOf,
+  resolveBuildIdentity,
   type ArsenkinDbReadinessArtifact,
+  type DbCheckResult,
 } from "../src/modules/digital-profile/providers/arsenkin/arsenkin-db-readiness";
 import { findSurfaceCoverageDuplicateGroups } from "../src/modules/digital-profile/providers/arsenkin/surface-coverage-duplicate-audit";
-
-function gitCommit(): string {
-  const r = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf-8" });
-  return (r.stdout || "").trim() || "unknown";
-}
-
-function schemaChecksum(): string {
-  const migDir = join(process.cwd(), "prisma", "migrations");
-  const names = existsSync(migDir)
-    ? readdirSync(migDir).filter((n) => !n.startsWith("."))
-    : [];
-  return schemaChecksumOf({
-    migrationNames: names.sort(),
-    uniqueIndexName: "dp_surface_coverage_biz_unique",
-  });
-}
+import {
+  getArsenkinNetworkCallCount,
+  resetArsenkinNetworkCallCount,
+} from "../src/modules/digital-profile/providers/arsenkin/network-guard";
 
 function isPlaceholderDb(url: string): boolean {
   if (!url.trim()) return true;
@@ -45,23 +39,62 @@ function isPlaceholderDb(url: string): boolean {
 }
 
 async function main() {
-  const outDir = join(process.cwd(), "storage", "digital-profile", "qa-arsenkin-p04");
+  resetArsenkinNetworkCallCount();
+  const outDir = join(process.cwd(), "storage", "digital-profile", "qa-arsenkin-p05");
   mkdirSync(outDir, { recursive: true });
   const outPath = join(outDir, "arsenkin-db-readiness.json");
+
+  const mutation = assertDbMutationAllowed(process.env);
+  const build = resolveBuildIdentity(process.env);
+  const schemaContentHash = computeSchemaContentHash();
+  const sourceTreeHash = computeSourceTreeHash();
   const dbUrl = String(process.env.DATABASE_URL ?? "");
   const fp = fingerprintDatabaseUrl(dbUrl || "postgresql://unknown/unknown");
-  const checksum = schemaChecksum();
-  const commit = gitCommit();
+  const environment = (mutation.environment === "test" || mutation.environment === "staging"
+    ? mutation.environment
+    : "unknown") as ArsenkinDbReadinessArtifact["environment"];
+
+  if (!mutation.ok) {
+    const stub = buildDbReadinessFailStub({
+      fingerprint: fp,
+      schemaContentHash,
+      sourceTreeHash,
+      buildCommit: build.buildCommit,
+      dirtyTree: build.dirtyTree,
+      environment: environment === "unknown" ? "unknown" : environment,
+      reason: mutation.blockers.join(","),
+    });
+    writeFileSync(outPath, `${JSON.stringify(stub, null, 2)}\n`);
+    console.error(
+      JSON.stringify(
+        {
+          outPath,
+          verdict: "FAIL",
+          blockers: mutation.blockers,
+          fingerprint: fp,
+          environment: mutation.environment,
+          networkCalls: getArsenkinNetworkCallCount(),
+        },
+        null,
+        2
+      )
+    );
+    process.exitCode = 1;
+    return;
+  }
 
   if (isPlaceholderDb(dbUrl)) {
     const stub = buildDbReadinessFailStub({
       fingerprint: fp,
-      schemaChecksum: checksum,
-      gitCommit: commit,
+      schemaContentHash,
+      sourceTreeHash,
+      buildCommit: build.buildCommit,
+      dirtyTree: build.dirtyTree,
+      environment,
       reason: "no-real-test-postgresql",
     });
     writeFileSync(outPath, `${JSON.stringify(stub, null, 2)}\n`);
-    console.log(JSON.stringify({ outPath, verdict: stub.verdict, reason: "no-real-test-postgresql" }, null, 2));
+    console.log(JSON.stringify({ outPath, verdict: stub.verdict, reason: "no-real-test-postgresql", fingerprint: fp }, null, 2));
     process.exitCode = 1;
     return;
   }
@@ -70,8 +103,10 @@ async function main() {
   let migrationApplied = false;
   let uniqueIndexPresent = false;
   let duplicateGroupCount = -1;
-  let concurrentUpsert: "PASS" | "FAIL" = "FAIL";
-  let backfillRace: "PASS" | "FAIL" = "FAIL";
+  let concurrentUpsert: DbCheckResult = "FAIL";
+  let backfillRace: DbCheckResult = "FAIL";
+  let cleanupOk = true;
+  let reportRunId: string | null = null;
 
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -104,104 +139,123 @@ async function main() {
     });
     duplicateGroupCount = findSurfaceCoverageDuplicateGroups(rows).duplicateGroupCount;
 
-    // Concurrent upsert race
     const caseRow = await prisma.case.findFirst({ select: { id: true } });
-    if (caseRow) {
-      const reportRunId = `p04-cov-${Date.now()}`;
-      await prisma.orionReportRun.create({
-        data: { id: reportRunId, caseId: caseRow.id, status: "RUNNING", mode: "db-readiness" },
-      });
-      const { upsertSurfaceCollectionCoverage } = await import(
-        "../src/modules/digital-profile/providers/arsenkin/surface-coverage"
-      );
-      const payload = {
-        reportRunId,
-        provider: "arsenkin",
-        tool: "suggest",
-        queryId: "p04-q",
-        queryText: "test",
-        engine: "GOOGLE",
-        region: "RU",
-        language: "ru",
-        device: "DESKTOP",
-        surface: "autocomplete",
-        resultCount: 0,
-      };
-      await Promise.all([
-        upsertSurfaceCollectionCoverage(payload),
-        upsertSurfaceCollectionCoverage({ ...payload, resultCount: 1 }),
-        upsertSurfaceCollectionCoverage({ ...payload, resultCount: 2 }),
-      ]);
-      const n = await prisma.surfaceCollectionCoverage.count({
-        where: { reportRunId, queryId: "p04-q" },
-      });
-      concurrentUpsert = n === 1 ? "PASS" : "FAIL";
+    if (!caseRow) {
+      throw new Error("no-Case-row-for-db-readiness");
+    }
 
-      // Backfill conflicting-link race (conditional updateMany)
-      const task = await prisma.providerTask.create({
-        data: {
-          id: `p04-task-${Date.now()}`,
+    reportRunId = `p05-cov-${Date.now()}`;
+    await prisma.orionReportRun.create({
+      data: { id: reportRunId, caseId: caseRow.id, status: "RUNNING", mode: "db-readiness-v2" },
+    });
+
+    const { upsertSurfaceCollectionCoverage } = await import(
+      "../src/modules/digital-profile/providers/arsenkin/surface-coverage"
+    );
+    const payload = {
+      reportRunId,
+      provider: "arsenkin",
+      tool: "suggest",
+      queryId: "p05-q",
+      queryText: "test",
+      engine: "GOOGLE",
+      region: "RU",
+      language: "ru",
+      device: "DESKTOP",
+      surface: "autocomplete",
+      resultCount: 0,
+    };
+    await Promise.all([
+      upsertSurfaceCollectionCoverage(payload),
+      upsertSurfaceCollectionCoverage({ ...payload, resultCount: 1 }),
+      upsertSurfaceCollectionCoverage({ ...payload, resultCount: 2 }),
+    ]);
+    const n = await prisma.surfaceCollectionCoverage.count({
+      where: { reportRunId, queryId: "p05-q" },
+    });
+    concurrentUpsert = n === 1 ? "PASS" : "FAIL";
+
+    const cov = await prisma.surfaceCollectionCoverage.findFirst({
+      where: { reportRunId, queryId: "p05-q" },
+    });
+    if (!cov) throw new Error("coverage-row-missing-after-upsert");
+
+    // Reset link for race
+    await prisma.surfaceCollectionCoverage.update({
+      where: { id: cov.id },
+      data: { providerTaskId: null },
+    });
+
+    const taskA = `p05-task-a-${randomUUID().slice(0, 8)}`;
+    const taskB = `p05-task-b-${randomUUID().slice(0, 8)}`;
+    const hashBase = createHash("sha256").update(reportRunId).digest("hex");
+    await prisma.providerTask.createMany({
+      data: [
+        {
+          id: taskA,
           caseId: caseRow.id,
           reportRunId,
           provider: "arsenkin",
           toolName: "suggest",
-          requestHash: createHash("sha256").update(reportRunId).digest("hex"),
-          requestJson: { tools_name: "suggest", data: {} },
+          requestHash: `${hashBase}a`,
+          requestJson: { tools_name: "suggest", data: { q: "a" } },
           state: "DONE",
-          externalTaskId: "ext-1",
+          externalTaskId: "ext-a",
           responseJson: { ok: true },
         },
-      });
-      const cov = await prisma.surfaceCollectionCoverage.findFirst({
-        where: { reportRunId, queryId: "p04-q" },
-      });
-      if (cov) {
-        try {
-          await prisma.$transaction(async (tx) => {
-            await tx.surfaceCollectionCoverage.updateMany({
-              where: { id: cov.id, providerTaskId: null },
-              data: { providerTaskId: task.id },
-            });
-            // Simulate conflict: second update expecting null should fail count
-            const second = await tx.surfaceCollectionCoverage.updateMany({
-              where: { id: cov.id, providerTaskId: null },
-              data: { providerTaskId: "other-task" },
-            });
-            if (second.count !== 0) {
-              throw new Error("unexpected-second-update");
-            }
-            // Force rollback path for conflicting already-linked
-            const row = await tx.surfaceCollectionCoverage.findUnique({ where: { id: cov.id } });
-            if (row?.providerTaskId && row.providerTaskId !== "conflict-other") {
-              const conflict = await tx.surfaceCollectionCoverage.updateMany({
-                where: {
-                  id: cov.id,
-                  OR: [{ providerTaskId: null }, { providerTaskId: "conflict-other" }],
-                },
-                data: { providerTaskId: "conflict-other" },
-              });
-              if (conflict.count !== 1) {
-                throw new Error(`coverage-conditional-update-failed:${cov.id}`);
-              }
-            }
-          });
-          backfillRace = "FAIL"; // should have thrown
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          backfillRace = /conditional-update-failed|already-linked/i.test(msg) || msg.length > 0
-            ? "PASS"
-            : "FAIL";
-          // The intentional throw on conflict.count !== 1 is the PASS path
-          if (/coverage-conditional-update-failed/.test(msg)) backfillRace = "PASS";
-        }
-      }
+        {
+          id: taskB,
+          caseId: caseRow.id,
+          reportRunId,
+          provider: "arsenkin",
+          toolName: "suggest",
+          requestHash: `${hashBase}b`,
+          requestJson: { tools_name: "suggest", data: { q: "b" } },
+          state: "DONE",
+          externalTaskId: "ext-b",
+          responseJson: { ok: true },
+        },
+      ],
+    });
 
-      // cleanup
-      await prisma.surfaceCollectionCoverage.deleteMany({ where: { reportRunId } });
-      await prisma.providerTask.deleteMany({ where: { reportRunId } });
-      await prisma.orionReportRun.delete({ where: { id: reportRunId } }).catch(() => undefined);
-    }
+    const raceOne = async (taskId: string) => {
+      try {
+        const updated = await prisma.surfaceCollectionCoverage.updateMany({
+          where: { id: cov.id, providerTaskId: null },
+          data: { providerTaskId: taskId },
+        });
+        return { count: updated.count, taskId, error: null as string | null };
+      } catch (e) {
+        return {
+          count: -1,
+          taskId,
+          error: e instanceof Error ? e.message : String(e),
+        };
+      }
+    };
+
+    const [r1, r2] = await Promise.all([raceOne(taskA), raceOne(taskB)]);
+    const final = await prisma.surfaceCollectionCoverage.findUnique({ where: { id: cov.id } });
+    backfillRace = evaluateBackfillRaceOutcome({
+      results: [r1, r2],
+      expectedTaskIds: [taskA, taskB],
+      finalProviderTaskId: final?.providerTaskId ?? null,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    backfillRace = "FAIL";
+    concurrentUpsert = concurrentUpsert === "PASS" ? concurrentUpsert : "FAIL";
+    console.error(JSON.stringify({ phase: "db-readiness-error", error: message, fingerprint: fp }, null, 2));
   } finally {
+    if (reportRunId) {
+      try {
+        await prisma.surfaceCollectionCoverage.deleteMany({ where: { reportRunId } });
+        await prisma.providerTask.deleteMany({ where: { reportRunId } });
+        await prisma.orionReportRun.delete({ where: { id: reportRunId } }).catch(() => undefined);
+      } catch {
+        cleanupOk = false;
+      }
+    }
     await prisma.$disconnect().catch(() => undefined);
   }
 
@@ -211,7 +265,10 @@ async function main() {
     uniqueIndexPresent &&
     duplicateGroupCount === 0 &&
     concurrentUpsert === "PASS" &&
-    backfillRace === "PASS"
+    backfillRace === "PASS" &&
+    cleanupOk &&
+    !build.dirtyTree &&
+    build.buildCommit !== "unknown"
       ? "PASS"
       : "FAIL";
 
@@ -219,19 +276,43 @@ async function main() {
     version: ARSENKIN_DB_READINESS_VERSION,
     verdict,
     databaseFingerprint: fp,
-    schemaChecksum: checksum,
-    gitCommit: commit,
+    buildCommit: build.buildCommit,
+    buildId: build.buildId,
+    dirtyTree: build.dirtyTree,
+    sourceTreeHash,
+    schemaContentHash,
     requiredMigration: REQUIRED_COVERAGE_UNIQUE_MIGRATION,
     migrationApplied,
     uniqueIndexPresent,
     duplicateGroupCount,
     concurrentUpsert,
     backfillRace,
+    environment,
     generatedAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + 6 * 3600_000).toISOString(),
   };
   writeFileSync(outPath, `${JSON.stringify(artifact, null, 2)}\n`);
-  console.log(JSON.stringify({ outPath, verdict, migrationApplied, uniqueIndexPresent, duplicateGroupCount, concurrentUpsert, backfillRace }, null, 2));
+  console.log(
+    JSON.stringify(
+      {
+        outPath,
+        verdict,
+        fingerprint: fp,
+        environment,
+        migrationApplied,
+        uniqueIndexPresent,
+        duplicateGroupCount,
+        concurrentUpsert,
+        backfillRace,
+        cleanupOk,
+        dirtyTree: build.dirtyTree,
+        buildCommit: build.buildCommit === "unknown" ? "unknown" : build.buildCommit.slice(0, 12),
+        networkCalls: getArsenkinNetworkCallCount(),
+      },
+      null,
+      2
+    )
+  );
   if (verdict !== "PASS") process.exitCode = 1;
 }
 

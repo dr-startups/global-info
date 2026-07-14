@@ -21,7 +21,6 @@ import { evaluateCanonicalLiveGate } from "../src/modules/digital-profile/orion-
 import {
   validateDbReadinessArtifact,
   fingerprintDatabaseUrl,
-  schemaChecksumOf,
   ARSENKIN_DB_READINESS_VERSION,
   REQUIRED_COVERAGE_UNIQUE_MIGRATION,
   type ArsenkinDbReadinessArtifact,
@@ -43,17 +42,51 @@ function passArtifact(overrides: Partial<ArsenkinDbReadinessArtifact> = {}): Ars
     version: ARSENKIN_DB_READINESS_VERSION,
     verdict: "PASS",
     databaseFingerprint: "fp-test",
-    schemaChecksum: "schema-test",
-    gitCommit: "abc",
+    buildCommit: "abc",
+    buildId: null,
+    dirtyTree: false,
+    sourceTreeHash: "src-test",
+    schemaContentHash: "schema-test",
     requiredMigration: REQUIRED_COVERAGE_UNIQUE_MIGRATION,
     migrationApplied: true,
     uniqueIndexPresent: true,
     duplicateGroupCount: 0,
     concurrentUpsert: "PASS",
     backfillRace: "PASS",
+    environment: "staging",
     generatedAt: new Date(now).toISOString(),
     expiresAt: new Date(now + 3600_000).toISOString(),
     ...overrides,
+  };
+}
+
+const dbCurrent = {
+  currentDbFingerprint: "fp-test",
+  currentBuildCommit: "abc",
+  currentSourceTreeHash: "src-test",
+  currentSchemaContentHash: "schema-test",
+  currentDirtyTree: false,
+};
+
+function suggestGateBase(plan: ReturnType<typeof buildArsenkinExecutionPlan>, q: ReturnType<typeof buildArsenkinSubjectQueryPlan>) {
+  return {
+    caseId: "c",
+    reportRunId: "r",
+    stage: "SUGGEST_RU_CANARY" as const,
+    workflow: "suggest-canary" as const,
+    run: { id: "r", caseId: "c", status: "PREPARED" },
+    stageRows: [{ stage: "SUGGEST_RU_CANARY" as const, status: "PREPARED" }],
+    currentStageStatus: "PREPARED",
+    counts: { providerTaskCount: 0, observationCount: 0, coverageCount: 0 },
+    queryPlan: q,
+    executionPlan: plan,
+    content: { caseId: "c", reportRunId: "r" },
+    binding: { sourceReportRunId: "r", effectiveReportRunId: "r", overridden: false },
+    adminDecisions: { caseId: "c", qaSampleOnly: false },
+    dbReadiness: passArtifact(),
+    ...dbCurrent,
+    tokenPresent: true,
+    networkCalls: 0 as number,
   };
 }
 
@@ -229,17 +262,23 @@ describe("arsenkin P0.4 live runner closure", () => {
       validateDbReadinessArtifact({
         artifact: null,
         currentFingerprint: "fp",
-        currentGitCommit: "c",
-        currentSchemaChecksum: "s",
+        currentBuildCommit: "c",
+        currentSourceTreeHash: "s",
+        currentSchemaContentHash: "h",
+        currentDirtyTree: false,
       }).ok,
       false
     );
     assert.equal(
       validateDbReadinessArtifact({
         artifact: passArtifact({ databaseFingerprint: "other" }),
-        currentFingerprint: "fp-test",
-        currentGitCommit: "abc",
-        currentSchemaChecksum: "schema-test",
+        ...{
+          currentFingerprint: "fp-test",
+          currentBuildCommit: "abc",
+          currentSourceTreeHash: "src-test",
+          currentSchemaContentHash: "schema-test",
+          currentDirtyTree: false,
+        },
       }).ok,
       false
     );
@@ -247,8 +286,10 @@ describe("arsenkin P0.4 live runner closure", () => {
       validateDbReadinessArtifact({
         artifact: passArtifact({ expiresAt: new Date(Date.now() - 1000).toISOString() }),
         currentFingerprint: "fp-test",
-        currentGitCommit: "abc",
-        currentSchemaChecksum: "schema-test",
+        currentBuildCommit: "abc",
+        currentSourceTreeHash: "src-test",
+        currentSchemaContentHash: "schema-test",
+        currentDirtyTree: false,
       }).ok,
       false
     );
@@ -256,12 +297,13 @@ describe("arsenkin P0.4 live runner closure", () => {
       validateDbReadinessArtifact({
         artifact: passArtifact(),
         currentFingerprint: "fp-test",
-        currentGitCommit: "abc",
-        currentSchemaChecksum: "schema-test",
+        currentBuildCommit: "abc",
+        currentSourceTreeHash: "src-test",
+        currentSchemaContentHash: "schema-test",
+        currentDirtyTree: false,
       }).ok,
       true
     );
-    // fingerprint never leaks credentials
     const fp = fingerprintDatabaseUrl("postgresql://secret:pass@db.example:5432/gi?schema=public");
     assert.ok(!fp.includes("secret"));
     assert.ok(!fp.includes("pass"));
@@ -281,24 +323,12 @@ describe("arsenkin P0.4 live runner closure", () => {
     });
     const gate = evaluateCanonicalLiveGate({
       mode: "plan-only",
-      caseId: "c",
-      reportRunId: "r",
-      stage: "SUGGEST_RU_CANARY",
+      ...suggestGateBase(plan, q),
       run: null,
-      counts: { providerTaskCount: 0, observationCount: 0, coverageCount: 0 },
-      queryPlan: q,
-      executionPlan: plan,
-      content: { caseId: "c", reportRunId: "r" },
-      binding: { sourceReportRunId: "r", effectiveReportRunId: "r", overridden: false },
-      adminDecisions: { caseId: "c", qaSampleOnly: false },
-      dbReadiness: passArtifact(),
-      currentDbFingerprint: "fp-test",
-      currentGitCommit: "abc",
-      currentSchemaChecksum: "schema-test",
+      stageRows: [],
+      currentStageStatus: null,
       liveConfirm: false,
       confirmPlanDigest: null,
-      tokenPresent: true,
-      networkCalls: 0,
     });
     assert.equal(gate.verdict, "PLAN_BLOCKED");
     assert.ok(gate.blockers.includes("run-absent"));
@@ -317,43 +347,17 @@ describe("arsenkin P0.4 live runner closure", () => {
       maxNewTasks: 2,
       maxEstimatedLimits: 2,
     });
-    const base = {
-      mode: "execute-live" as const,
-      caseId: "c",
-      reportRunId: "r",
-      stage: "SUGGEST_RU_CANARY",
-      run: { id: "r", caseId: "c", status: "PREPARED" },
-      counts: { providerTaskCount: 0, observationCount: 0, coverageCount: 0 },
-      queryPlan: q,
-      executionPlan: plan,
-      content: { caseId: "c", reportRunId: "r" },
-      binding: { sourceReportRunId: "r", effectiveReportRunId: "r", overridden: false },
-      adminDecisions: { caseId: "c", qaSampleOnly: false },
-      dbReadiness: passArtifact(),
-      currentDbFingerprint: "fp-test",
-      currentGitCommit: "abc",
-      currentSchemaChecksum: "schema-test",
-      tokenPresent: true,
-      networkCalls: 0,
-    };
+    const base = { mode: "execute-live" as const, ...suggestGateBase(plan, q) };
     assert.equal(
       evaluateCanonicalLiveGate({ ...base, liveConfirm: false, confirmPlanDigest: plan.digest }).verdict,
       "EXECUTE_BLOCKED"
     );
     assert.equal(
-      evaluateCanonicalLiveGate({
-        ...base,
-        liveConfirm: true,
-        confirmPlanDigest: null,
-      }).verdict,
+      evaluateCanonicalLiveGate({ ...base, liveConfirm: true, confirmPlanDigest: null }).verdict,
       "EXECUTE_BLOCKED"
     );
     assert.equal(
-      evaluateCanonicalLiveGate({
-        ...base,
-        liveConfirm: true,
-        confirmPlanDigest: "deadbeef",
-      }).verdict,
+      evaluateCanonicalLiveGate({ ...base, liveConfirm: true, confirmPlanDigest: "deadbeef" }).verdict,
       "EXECUTE_BLOCKED"
     );
     assert.equal(
@@ -492,28 +496,7 @@ describe("arsenkin P0.4 live runner closure", () => {
     if (!existsSync(join(ART, "arsenkin-db-readiness.json"))) {
       writeFileSync(
         join(ART, "arsenkin-db-readiness.json"),
-        `${JSON.stringify(
-          {
-            version: ARSENKIN_DB_READINESS_VERSION,
-            verdict: "FAIL",
-            databaseFingerprint: fingerprintDatabaseUrl(dbUrl || "postgresql://none/none"),
-            schemaChecksum: schemaChecksumOf({
-              migrationNames: [],
-              uniqueIndexName: "dp_surface_coverage_biz_unique",
-            }),
-            gitCommit: "unknown",
-            requiredMigration: REQUIRED_COVERAGE_UNIQUE_MIGRATION,
-            migrationApplied: false,
-            uniqueIndexPresent: false,
-            duplicateGroupCount: -1,
-            concurrentUpsert: "FAIL",
-            backfillRace: "FAIL",
-            generatedAt: new Date().toISOString(),
-            expiresAt: new Date(Date.now() + 3600_000).toISOString(),
-          },
-          null,
-          2
-        )}\n`
+        `${JSON.stringify(passArtifact({ verdict: "FAIL", environment: "unknown", buildCommit: "unknown", dirtyTree: true }), null, 2)}\n`
       );
     }
     assert.equal(readiness.verdict, "BLOCKED");
@@ -532,24 +515,9 @@ describe("arsenkin P0.4 live runner closure", () => {
     });
     const gate = evaluateCanonicalLiveGate({
       mode: "execute-live",
-      caseId: "c",
-      reportRunId: "r",
-      stage: "SUGGEST_RU_CANARY",
-      run: { id: "r", caseId: "c", status: "PREPARED" },
-      counts: { providerTaskCount: 0, observationCount: 0, coverageCount: 0 },
-      queryPlan: q,
-      executionPlan: plan,
-      content: { caseId: "c", reportRunId: "r" },
-      binding: { sourceReportRunId: "r", effectiveReportRunId: "r", overridden: false },
-      adminDecisions: { caseId: "c", qaSampleOnly: false },
-      dbReadiness: passArtifact(),
-      currentDbFingerprint: "fp-test",
-      currentGitCommit: "abc",
-      currentSchemaChecksum: "schema-test",
+      ...suggestGateBase(plan, q),
       liveConfirm: true,
       confirmPlanDigest: plan.digest,
-      tokenPresent: true,
-      networkCalls: 0,
     });
     assert.equal(gate.verdict, "EXECUTE_READY");
     assert.equal(gate.ok, true);

@@ -641,12 +641,41 @@ model OrionReportRun {
   serpSyntheticAssets SerpSyntheticAsset[]
   providerTasks      ProviderTask[]
   surfaceCollectionCoverage SurfaceCollectionCoverage[]
+  arsenkinStageRuns OrionArsenkinStageRun[]
 
   @@index([caseId])
   @@index([reportVersionId])
   @@index([status])
   @@index([createdAt])
   @@map("dp_orion_report_runs")
+}
+
+/// Run-scoped Arsenkin live stage ledger (P0.5). One row per (reportRunId, stage).
+model OrionArsenkinStageRun {
+  id                   String    @id @default(cuid())
+  reportRunId          String
+  caseId               String
+  stage                String
+  status               String
+  planDigest           String?
+  leaseOwnerId         String?
+  maxNewTasks          Int?
+  maxEstimatedLimits   Int?
+  estimatedLimitsTotal Int?
+  plannedNewTasks      Int?
+  errorJson            Json?
+  metadataJson         Json?
+  startedAt            DateTime?
+  finishedAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+
+  @@unique([reportRunId, stage], map: "dp_orion_arsenkin_stage_unique")
+  @@index([reportRunId, status])
+  @@index([caseId])
+  @@map("dp_orion_arsenkin_stage_runs")
 }
 
 model ProviderTask {

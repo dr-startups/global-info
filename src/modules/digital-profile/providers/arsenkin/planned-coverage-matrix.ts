@@ -5,6 +5,7 @@
 import type { ArsenkinExecutionPlan, ArsenkinExecutionRequest } from "../../orion-golden/classic/arsenkin-execution-plan";
 import { buildSerpQueryId } from "../../serp-observation/query-id";
 import { upsertSurfaceCollectionCoverage } from "./surface-coverage";
+import { seTypeToEngine } from "./regions";
 
 export type PlannedCoverageTarget = {
   tool: string;
@@ -41,11 +42,7 @@ function targetsForRequest(
     const seList = Array.isArray(data.se) ? (data.se as Array<{ type?: number }>) : [];
     const engines =
       seList.length > 0
-        ? [
-            ...new Set(
-              seList.map((s) => (Number(s.type) === 1 ? "YANDEX" : "GOOGLE"))
-            ),
-          ]
+        ? [...new Set(seList.map((s) => seTypeToEngine(Number(s.type ?? 0))))]
         : [req.engine ?? "GOOGLE"];
     const targets: PlannedCoverageTarget[] = [];
     for (const queryText of queries.filter(Boolean)) {
