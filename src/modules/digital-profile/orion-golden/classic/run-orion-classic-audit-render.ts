@@ -44,6 +44,19 @@ export class OrionClassicVisualGateError extends Error {
   }
 }
 
+export class OrionClassicForeignClientContentError extends Error {
+  readonly loadedReportRunId: string;
+  readonly expectedReportRunId: string;
+  constructor(loadedReportRunId: string, expectedReportRunId: string) {
+    super(
+      `foreign-client-content: loaded reportRunId=${loadedReportRunId} != expected=${expectedReportRunId}; rebuild with rebuildClientContentForReportRun`
+    );
+    this.name = "OrionClassicForeignClientContentError";
+    this.loadedReportRunId = loadedReportRunId;
+    this.expectedReportRunId = expectedReportRunId;
+  }
+}
+
 function writeJson(path: string, payload: unknown): void {
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
@@ -63,12 +76,26 @@ function resolveClientContentPaths(caseId: string): string[] {
   return roots.map((root) => join(root, "orion-client-content.post-review.json"));
 }
 
-export function loadPostReviewClientContent(caseId: string): OrionClientContent {
-  for (const path of resolveClientContentPaths(caseId)) {
+export function loadPostReviewClientContent(caseId: string, outputRoot?: string): OrionClientContent {
+  const paths: string[] = [];
+  if (outputRoot) {
+    paths.push(join(outputRoot, "orion-client-content.post-review.json"));
+  }
+  paths.push(...resolveClientContentPaths(caseId));
+  for (const path of paths) {
     const data = readJson<OrionClientContent>(path);
     if (data?.caseId === caseId) return data;
   }
   throw new Error("post-review-client-content-missing");
+}
+
+function resolveClientContentForRender(
+  caseId: string,
+  outputRoot: string,
+  explicit?: OrionClientContent
+): OrionClientContent {
+  if (explicit) return explicit;
+  return loadPostReviewClientContent(caseId, outputRoot);
 }
 
 export function shouldUseClassicOrionAuditMode(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -101,15 +128,25 @@ export async function runOrionClassicAuditRender(options: {
   const { caseId, outputRoot } = options;
   mkdirSync(outputRoot, { recursive: true });
 
-  const loaded = options.clientContent ?? loadPostReviewClientContent(caseId);
+  const loaded = resolveClientContentForRender(caseId, outputRoot, options.clientContent);
   const clientContentSourceReportRunId = String(loaded.reportRunId ?? "").trim() || null;
-  const clientContent: OrionClientContent = options.reportRunIdOverride
-    ? { ...loaded, reportRunId: options.reportRunIdOverride }
-    : loaded;
+
+  if (options.reportRunIdOverride) {
+    const expectedRunId = options.reportRunIdOverride.trim();
+    if (!expectedRunId) throw new Error("reportRunIdOverride-empty");
+    if (loaded.reportRunId !== expectedRunId) {
+      if (isClientProductionFinalize()) {
+        throw new OrionClassicForeignClientContentError(String(loaded.reportRunId ?? ""), expectedRunId);
+      }
+      throw new OrionClassicForeignClientContentError(String(loaded.reportRunId ?? ""), expectedRunId);
+    }
+  }
+
+  const clientContent: OrionClientContent = loaded;
   writeJson(join(outputRoot, "client-content-binding.json"), {
     sourceReportRunId: clientContentSourceReportRunId,
     effectiveReportRunId: clientContent.reportRunId,
-    overridden: Boolean(options.reportRunIdOverride),
+    overridden: false,
   });
   const ctx = await loadRealCaseContext(caseId, { locale: "ru", buildFreshReportJson: false });
   const first36CeoModeEarly = isFirst36CeoMode();

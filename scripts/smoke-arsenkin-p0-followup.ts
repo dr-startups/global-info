@@ -388,4 +388,68 @@ describe("arsenkin p0.1 follow-up", () => {
     assert.ok(r.issues.some((i) => i.code === "foreign-client-content-run"));
     // Even if renderQaReady were true, acceptance blocks CEO_READY.
   });
+
+  it("rebuilt client content binding passes when source matches expected run", () => {
+    const slides = Array.from({ length: 36 }, (_, i) => ({
+      pageNumber: i + 1,
+      title: i === 18 || i === 35 ? "slot" : `p${i + 1}`,
+      narrative: i === 18 || i === 35 ? "content" : undefined,
+    }));
+    const dir = mkdtempSync(join(tmpdir(), "acc-bound-"));
+    mkdirSync(join(dir, "pages-png"));
+    for (let i = 1; i <= 36; i += 1) {
+      writeFileSync(join(dir, "pages-png", `${String(i).padStart(2, "0")}.png`), Buffer.alloc(4000));
+    }
+    writeFileSync(join(dir, "rendered-client.pdf"), "x");
+    writeFileSync(join(dir, "rendered-client.pptx"), "x");
+
+    const runId = "orion-r10-rebuilt-123";
+    const r = inspectFirst36Acceptance({
+      slideCount: 36,
+      slides,
+      runScopedMerge: { usedRunScoped: true, observationCount: 5 },
+      arsenkinRequired: true,
+      clientFinalize: true,
+      expectedRunId: runId,
+      clientContentSourceReportRunId: runId,
+      arsenkinEnrich: { mode: "live", skipped: true, reason: "already_enriched organic=20" },
+      providerTasks: [{ id: "t1", reportRunId: runId, state: "DONE" }],
+      observations: [{ auditRunId: runId, provider: "arsenkin", providerTaskId: "t1" }],
+      provenanceSummary: {
+        linkedObservations: 1,
+        totalObservations: 1,
+        linkedCoverage: 6,
+        totalCoverage: 6,
+      },
+      coverageSummary: {
+        reportRunId: runId,
+        rows: [
+          { tool: "check-top", engine: "GOOGLE", region: "RU", surface: "organic", status: "OK", providerTaskId: "t1" },
+          { tool: "suggest", engine: "YANDEX", region: "RU", surface: "autocomplete", status: "NO_RESULTS", providerTaskId: "t1" },
+          { tool: "suggest", engine: "GOOGLE", region: "RU", surface: "autocomplete", status: "OK", providerTaskId: "t1" },
+          { tool: "suggest", engine: "GOOGLE", region: "UAE", surface: "autocomplete", status: "OK", providerTaskId: "t1" },
+          { tool: "paa", engine: "GOOGLE", region: "RU", surface: "paa", status: "OK", providerTaskId: "t1" },
+          { tool: "paa", engine: "GOOGLE", region: "UAE", surface: "paa", status: "OK", providerTaskId: "t1" },
+        ],
+      },
+      geometryReport: {
+        overlaps: [],
+        overflow: [],
+        blank: [],
+        summary: { issueCount: 0, severity: "PASS", pageCount: 36 },
+      },
+      geometryReportPresent: true,
+      paths: {
+        pdf: join(dir, "rendered-client.pdf"),
+        pptx: join(dir, "rendered-client.pptx"),
+        pagesPngDir: join(dir, "pages-png"),
+      },
+      assets: [],
+      requiredVisualAssetRefs: [],
+    });
+    assert.ok(!r.issues.some((i) => i.code === "foreign-client-content-run"));
+    if (r.passed) {
+      assert.equal(r.ceoReady, true);
+    }
+  });
 });

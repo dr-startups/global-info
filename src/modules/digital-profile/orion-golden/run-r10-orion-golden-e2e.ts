@@ -19,6 +19,7 @@ import {
   buildOrionClassicReportSpecFromClientContent,
   type OrionClassicAuditReportSpec,
 } from "./classic/orion-classic-client-content-to-report-spec";
+import { mergeRunScopedSerpObservations } from "./classic/merge-run-scoped-serp-observations";
 import { shouldUseClassicOrionAuditMode } from "./classic/run-orion-classic-audit-render";
 import {
   assembleOrionClientContentFromSections,
@@ -177,6 +178,12 @@ export async function runR10OrionGoldenE2e(options: {
   caseId: string;
   outputRoot?: string;
   requireAi?: boolean;
+  /** Use an existing reportRunId instead of minting a new one. */
+  reportRunId?: string;
+  /** Skip render/deck; write content-brain artifacts only. */
+  contentBrainOnly?: boolean;
+  /** Merge run-scoped SerpObservation rows into inventory (First36 rebuild path). */
+  mergeRunScopedObservations?: boolean;
 }): Promise<RunR10OrionGoldenResult> {
   const outputRoot = options.outputRoot ?? R10_OUTPUT_ROOT;
   mkdirSync(outputRoot, { recursive: true });
@@ -184,8 +191,9 @@ export async function runR10OrionGoldenE2e(options: {
   const caseId = options.caseId.trim();
   if (!caseId) throw new Error("CASE_ID required");
 
-  const reportRunId = `orion-r10-${Date.now()}`;
+  const reportRunId = options.reportRunId?.trim() || `orion-r10-${Date.now()}`;
   const requireAi = options.requireAi ?? true;
+  const contentBrainOnlyOption = options.contentBrainOnly ?? false;
   const readiness = describeOrionV2AiReadiness();
 
   writeJson(join(outputRoot, "architecture-inspection.json"), ORION_GOLDEN_ARCHITECTURE);
@@ -218,7 +226,21 @@ export async function runR10OrionGoldenE2e(options: {
     };
   }
 
-  const inventory = buildFullEvidenceInventory({ caseId, reportRunId, ctx });
+  let inventory = buildFullEvidenceInventory({ caseId, reportRunId, ctx });
+  if (options.mergeRunScopedObservations) {
+    const merged = await mergeRunScopedSerpObservations({
+      inventory,
+      auditRunId: reportRunId,
+    });
+    inventory = merged.inventory;
+    writeJson(join(outputRoot, "run-scoped-serp-merge.json"), {
+      auditRunId: reportRunId,
+      usedRunScoped: merged.usedRunScoped,
+      observationCount: merged.observationCount,
+      duplicateKeys: merged.duplicateKeys.slice(0, 20),
+      warnings: merged.warnings,
+    });
+  }
   writeJson(join(outputRoot, "full-evidence-inventory.json"), inventory);
 
   const relevance = classifyInventoryRelevance(inventory.items, inventory.subject.fullName, inventory.subject.aliases);
@@ -695,7 +717,8 @@ export async function runR10OrionGoldenE2e(options: {
         });
       }
 
-      const contentBrainOnly = process.env.R10_CONTENT_BRAIN_ONLY === "1";
+      const contentBrainOnly =
+        contentBrainOnlyOption || process.env.R10_CONTENT_BRAIN_ONLY === "1";
       const renderFromClientContent = shouldRenderFromClientContent();
       if (!contentBrainOnly && !renderFromClientContent) {
         sectionAnalyses = await runOrionGoldenSectionAnalyses({
@@ -754,7 +777,8 @@ export async function runR10OrionGoldenE2e(options: {
     throw new Error("executive-synthesis-missing");
   }
 
-  const contentBrainOnly = process.env.R10_CONTENT_BRAIN_ONLY === "1";
+  const contentBrainOnly =
+    contentBrainOnlyOption || process.env.R10_CONTENT_BRAIN_ONLY === "1";
   const renderFromClientContent = shouldRenderFromClientContent();
   const postGptJudgmentQa = inspectEvidenceJudgmentQa({
     judgments,

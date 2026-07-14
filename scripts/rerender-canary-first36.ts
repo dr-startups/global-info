@@ -1,6 +1,7 @@
 /**
  * Re-render an existing canary reportRunId without accidental paid submits.
  *
+ *   npx tsx scripts/rerender-canary-first36.ts <reportRunId> [caseId] --rebuild-client-content
  *   npx tsx scripts/rerender-canary-first36.ts <reportRunId> [caseId] --rerender-only
  *   npx tsx scripts/rerender-canary-first36.ts <reportRunId> [--tools=...] --allow-new-provider-tasks
  *     # also requires ARSENKIN_LIVE_CONFIRM=1
@@ -11,6 +12,8 @@ import { join } from "node:path";
 import { parse } from "dotenv";
 import { prisma } from "../src/server/prisma/client";
 import { runOrionClassicAuditRender } from "../src/modules/digital-profile/orion-golden/classic/run-orion-classic-audit-render";
+import { rebuildClientContentForReportRun } from "../src/modules/digital-profile/orion-golden/rebuild-client-content-for-report-run";
+import type { OrionClientContent } from "../src/modules/digital-profile/orion-golden/content/orion-client-content-builder";
 import {
   buildPlannedTaskPreflight,
   formatRerenderNetworkSummary,
@@ -51,6 +54,64 @@ function writeJson(path: string, payload: unknown): void {
   writeFileSync(path, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
 }
 
+function readJson<T>(path: string): T | null {
+  if (!existsSync(path)) return null;
+  return JSON.parse(readFileSync(path, "utf-8")) as T;
+}
+
+function loadExistingClientContent(
+  caseId: string,
+  outputRoot: string
+): OrionClientContent | null {
+  const local = readJson<OrionClientContent>(
+    join(outputRoot, "orion-client-content.post-review.json")
+  );
+  if (local?.caseId === caseId) return local;
+  const roots = [
+    join(process.cwd(), "storage", "digital-profile", "qa-r10-orion-golden-parallel", "cases", caseId),
+    join(process.cwd(), "storage", "digital-profile", "qa-r10-orion-golden-parallel"),
+    join(process.cwd(), "storage", "digital-profile", "qa-r10-7-real-subject-calibration"),
+  ];
+  for (const root of roots) {
+    const data = readJson<OrionClientContent>(join(root, "orion-client-content.post-review.json"));
+    if (data?.caseId === caseId) return data;
+  }
+  return null;
+}
+
+async function ensureClientContentBoundToRun(input: {
+  caseId: string;
+  reportRunId: string;
+  outputRoot: string;
+  rebuildRequested: boolean;
+}): Promise<OrionClientContent | undefined> {
+  const existing = loadExistingClientContent(input.caseId, input.outputRoot);
+  const isForeign = Boolean(existing && existing.reportRunId !== input.reportRunId);
+  if (!input.rebuildRequested && !isForeign) {
+    return existing?.reportRunId === input.reportRunId ? existing : undefined;
+  }
+
+  console.info(
+    JSON.stringify({
+      phase: "rebuild-client-content",
+      caseId: input.caseId,
+      reportRunId: input.reportRunId,
+      reason: input.rebuildRequested ? "flag" : "foreign-run",
+      loadedReportRunId: existing?.reportRunId ?? null,
+    })
+  );
+  await rebuildClientContentForReportRun(input.caseId, input.reportRunId, input.outputRoot, {
+    requireAi: false,
+  });
+  const rebuilt = readJson<OrionClientContent>(
+    join(input.outputRoot, "orion-client-content.post-review.json")
+  );
+  if (!rebuilt || rebuilt.caseId !== input.caseId || rebuilt.reportRunId !== input.reportRunId) {
+    throw new Error("rebuild-client-content-failed");
+  }
+  return rebuilt;
+}
+
 async function main() {
   const reportRunId = process.argv[2]?.trim();
   const caseIdArg = process.argv[3]?.trim();
@@ -58,6 +119,7 @@ async function main() {
     caseIdArg && !caseIdArg.startsWith("--")
       ? caseIdArg
       : "cmreamy2t0002o30f29urzcog";
+  const rebuildClientContent = process.argv.includes("--rebuild-client-content");
   const toolsFlag = process.argv.find((a) => a.startsWith("--tools="))?.slice("--tools=".length);
   const rerenderOnly =
     process.argv.includes("--rerender-only") ||
@@ -135,6 +197,13 @@ async function main() {
 
   bootstrapEnv(preflight.tools.join(","), rerenderOnly);
 
+  const clientContent = await ensureClientContentBoundToRun({
+    caseId,
+    reportRunId,
+    outputRoot,
+    rebuildRequested: rebuildClientContent,
+  });
+
   const before = {
     observations: await prisma.serpObservation.count({
       where: { auditRunId: reportRunId, provider: "arsenkin" },
@@ -146,6 +215,7 @@ async function main() {
     caseId,
     outputRoot,
     reportRunIdOverride: reportRunId,
+    clientContent,
   });
 
   const tasksAfter = await prisma.providerTask.count({
