@@ -1480,6 +1480,8 @@ export type ArsenkinUiStatusDto = {
   workflow: "suggest-canary" | "first36-full" | null;
   stage: ArsenkinUiStage | null;
   reportRunId: string | null;
+  sourceReportRunId: string | null;
+  arsenkinReportRunId: string | null;
   status: ArsenkinUiStatusCode;
   verdict: string | null;
   tools: string[];

@@ -23,8 +23,12 @@ import {
   arsenkinBudgetForStage,
   buildArsenkinUiPlan,
   executeArsenkinUiPlan,
+  generateArsenkinReportRunId,
   getArsenkinUiStatus,
+  loadArsenkinUiRunMapping,
   prepareArsenkinUiRun,
+  resolveMappedArsenkinReportRunId,
+  saveArsenkinUiRunMapping,
   syncArsenkinResultsToOrion,
   toPublicArsenkinUiDto,
   type ArsenkinUiOrchestrationDeps,
@@ -149,6 +153,8 @@ function baseStatus(partial: Partial<ArsenkinUiStatusDto> = {}): ArsenkinUiStatu
     workflow: "suggest-canary",
     stage: "SUGGEST_RU_CANARY",
     reportRunId: "run-1",
+    sourceReportRunId: "run-1",
+    arsenkinReportRunId: "run-1",
     status: "PLAN_READY",
     verdict: "PREPARED",
     tools: ["suggest"],
@@ -215,6 +221,10 @@ describe("arsenkin UI orchestration", () => {
     resetArsenkinNetworkCallCount();
     writePassReadiness(readinessPath, dbUrl);
     process.env.DATABASE_URL = dbUrl;
+    rmSync(
+      join(caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId), "arsenkin-ui-run-mapping-suggest-canary.json"),
+      { force: true }
+    );
     const state: FakeState = {
       run: null,
       stages: [],
@@ -304,6 +314,15 @@ describe("arsenkin UI orchestration", () => {
   it("3 plan does not call network", async () => {
     resetArsenkinNetworkCallCount();
     writePassReadiness(readinessPath, dbUrl);
+    saveArsenkinUiRunMapping({
+      caseId,
+      sourceReportRunId: reportRunId,
+      arsenkinReportRunId: reportRunId,
+      workflow: "suggest-canary",
+      stage: "SUGGEST_RU_CANARY",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
     const canaryOut = join(
       process.cwd(),
       "storage",
@@ -344,6 +363,7 @@ describe("arsenkin UI orchestration", () => {
       isEnabled: () => true,
       executeStage: async (_d, cmd) => {
         assert.equal(cmd.mode, "plan-only");
+        assert.equal(cmd.reportRunId, reportRunId);
         assert.equal(getArsenkinNetworkCallCount(), 0);
         writeJsonAtomic(join(canaryOut, "arsenkin-live-plan.json"), {
           digest: "plan-digest-canary-2",
@@ -442,6 +462,15 @@ describe("arsenkin UI orchestration", () => {
     resetArsenkinNetworkCallCount();
     writePassReadiness(readinessPath, dbUrl);
     process.env.DATABASE_URL = dbUrl;
+    saveArsenkinUiRunMapping({
+      caseId,
+      sourceReportRunId: reportRunId,
+      arsenkinReportRunId: reportRunId,
+      workflow: "suggest-canary",
+      stage: "SUGGEST_RU_CANARY",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
     const state: FakeState = {
       run: {
         id: reportRunId,
@@ -535,6 +564,15 @@ describe("arsenkin UI orchestration", () => {
     resetArsenkinNetworkCallCount();
     writePassReadiness(readinessPath, dbUrl);
     process.env.DATABASE_URL = dbUrl;
+    saveArsenkinUiRunMapping({
+      caseId,
+      sourceReportRunId: reportRunId,
+      arsenkinReportRunId: reportRunId,
+      workflow: "suggest-canary",
+      stage: "SUGGEST_RU_CANARY",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
     let collectorCalls = 0;
     const state: FakeState = {
       run: {
@@ -619,6 +657,15 @@ describe("arsenkin UI orchestration", () => {
   it("11 DONE replay does not call network", async () => {
     resetArsenkinNetworkCallCount();
     writePassReadiness(readinessPath, dbUrl);
+    saveArsenkinUiRunMapping({
+      caseId,
+      sourceReportRunId: reportRunId,
+      arsenkinReportRunId: reportRunId,
+      workflow: "suggest-canary",
+      stage: "SUGGEST_RU_CANARY",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
     const state: FakeState = {
       run: {
         id: reportRunId,
@@ -696,46 +743,44 @@ describe("arsenkin UI orchestration", () => {
             rebuild: async (c, r, out) => ({ caseId: c, reportRunId: r, outputRoot: out }),
           },
         }),
-      (e: unknown) => e instanceof ConflictError && /Stage 1|STAGE1/i.test(String(e.message))
+      (e: unknown) =>
+        e instanceof ConflictError && /Stage 1|mapping|STAGE1/i.test(String(e.message))
     );
   });
 
-  it("13 workflow mismatch is blocked", async () => {
+  it("13 canary mapping cannot be used as first36-full run", async () => {
     writePassReadiness(readinessPath, dbUrl);
     process.env.DATABASE_URL = dbUrl;
-    const state: FakeState = {
-      run: {
-        id: reportRunId,
-        caseId,
-        status: "RUNNING",
-        metadataJson: { workflow: "suggest-canary" },
-      },
-      stages: [],
-      observations: [],
-      providerTaskCount: 0,
-      coverageCount: 0,
-    };
-    await assert.rejects(
+    const source = `src-${reportRunId}`;
+    const canaryId = `canary-${reportRunId}`;
+    saveArsenkinUiRunMapping({
+      caseId,
+      sourceReportRunId: source,
+      arsenkinReportRunId: canaryId,
+      workflow: "suggest-canary",
+      stage: "SUGGEST_RU_CANARY",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    assert.throws(
       () =>
-        prepareArsenkinUiRun({
+        resolveMappedArsenkinReportRunId({
           caseId,
-          reportRunId,
-          stage: "FIRST36_STAGE1",
-          deps: {
-            prisma: makeFakePrisma(state),
-            dbReadinessPath: readinessPath,
-            readinessBlockers: passReady,
-            isConfigured: () => true,
-            rebuild: async (c, r, out) => ({ caseId: c, reportRunId: r, outputRoot: out }),
-          },
+          workflow: "first36-full",
+          clientReportRunId: canaryId,
+          requireMapping: true,
         }),
-      (e: unknown) => e instanceof ConflictError && /workflow/i.test(String(e.message))
+      (e: unknown) => e instanceof ConflictError
     );
   });
 
   it("14 foreign reportRunId is blocked", async () => {
     writePassReadiness(readinessPath, dbUrl);
     process.env.DATABASE_URL = dbUrl;
+    rmSync(
+      join(caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId), "arsenkin-ui-run-mapping-suggest-canary.json"),
+      { force: true }
+    );
     const state: FakeState = {
       run: {
         id: reportRunId,
@@ -770,6 +815,10 @@ describe("arsenkin UI orchestration", () => {
   it("15 qaSampleOnly is blocked", async () => {
     writePassReadiness(readinessPath, dbUrl);
     process.env.DATABASE_URL = dbUrl;
+    rmSync(
+      join(caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId), "arsenkin-ui-run-mapping-suggest-canary.json"),
+      { force: true }
+    );
     const caseRoot = caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId);
     mkdirSync(caseRoot, { recursive: true });
     writeJsonAtomic(join(caseRoot, "admin-review-decisions.json"), {
@@ -815,6 +864,15 @@ describe("arsenkin UI orchestration", () => {
 
   it("16 sync does not call network", async () => {
     resetArsenkinNetworkCallCount();
+    saveArsenkinUiRunMapping({
+      caseId,
+      sourceReportRunId: reportRunId,
+      arsenkinReportRunId: reportRunId,
+      workflow: "suggest-canary",
+      stage: "SUGGEST_RU_CANARY",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
     const state: FakeState = {
       run: {
         id: reportRunId,
@@ -1000,6 +1058,15 @@ describe("arsenkin UI orchestration", () => {
   it("25 FAILED / MANUAL_INTERVENTION_REQUIRED do not auto-retry", async () => {
     writePassReadiness(readinessPath, dbUrl);
     process.env.DATABASE_URL = dbUrl;
+    saveArsenkinUiRunMapping({
+      caseId,
+      sourceReportRunId: reportRunId,
+      arsenkinReportRunId: reportRunId,
+      workflow: "suggest-canary",
+      stage: "SUGGEST_RU_CANARY",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
     const failedState: FakeState = {
       run: {
         id: reportRunId,
@@ -1138,6 +1205,364 @@ describe("arsenkin UI orchestration", () => {
     );
     assert.ok(routeSrc.includes("executeArsenkinUiRun"));
     assert.ok(routeSrc.includes("maxDuration = 300"));
+  });
+
+  it("R1 source reportRun absent → prepare uses source ID", async () => {
+    resetArsenkinNetworkCallCount();
+    writePassReadiness(readinessPath, dbUrl);
+    const source = `absent-src-${Date.now()}`;
+    // Clear prior mapping for this case/workflow if any from earlier tests on same caseId
+    const mapPath = join(
+      caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId),
+      "arsenkin-ui-run-mapping-suggest-canary.json"
+    );
+    rmSync(mapPath, { force: true });
+    const state: FakeState = {
+      run: null,
+      stages: [],
+      observations: [],
+      providerTaskCount: 0,
+      coverageCount: 0,
+    };
+    let preparedId: string | null = null;
+    await prepareArsenkinUiRun({
+      caseId,
+      reportRunId: source,
+      stage: "SUGGEST_RU_CANARY",
+      deps: {
+        prisma: makeFakePrisma(state),
+        dbReadinessPath: readinessPath,
+        readinessBlockers: passReady,
+        isConfigured: () => true,
+        rebuild: async (c, r, out) => {
+          mkdirSync(out, { recursive: true });
+          return { caseId: c, reportRunId: r, outputRoot: out };
+        },
+        executeStage: async (_d, cmd) => {
+          preparedId = cmd.reportRunId;
+          assert.equal(cmd.reportRunId, source);
+          state.run = {
+            id: source,
+            caseId,
+            status: "RUNNING",
+            metadataJson: { workflow: "suggest-canary" },
+          };
+          state.stages = [
+            {
+              reportRunId: source,
+              stage: "SUGGEST_RU_CANARY",
+              status: "PREPARED",
+              planDigest: null,
+              errorJson: null,
+              updatedAt: new Date(),
+            },
+          ];
+          return {
+            ok: true,
+            phase: "prepare",
+            verdict: "PREPARED",
+            reportRunId: source,
+            stage: "SUGGEST_RU_CANARY",
+            workflow: "suggest-canary",
+            networkCalls: 0,
+            exitCode: 0,
+          };
+        },
+      },
+    });
+    assert.equal(preparedId, source);
+    const mapping = loadArsenkinUiRunMapping(caseId, "suggest-canary");
+    assert.ok(mapping);
+    assert.equal(mapping!.sourceReportRunId, source);
+    assert.equal(mapping!.arsenkinReportRunId, source);
+    assert.equal(getArsenkinNetworkCallCount(), 0);
+  });
+
+  it("R2-R4 source exists → new Arsenkin ID; source untouched; repeated prepare reuses", async () => {
+    resetArsenkinNetworkCallCount();
+    writePassReadiness(readinessPath, dbUrl);
+    const source = `exists-src-${Date.now()}`;
+    const allocated = `orion-arsenkin-suggest-canary-test-${Date.now()}`;
+    const mapPath = join(
+      caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId),
+      "arsenkin-ui-run-mapping-suggest-canary.json"
+    );
+    rmSync(mapPath, { force: true });
+    const sourceSnapshot = {
+      id: source,
+      caseId,
+      status: "DONE",
+      metadataJson: { orion: true },
+    };
+    const state: FakeState = {
+      run: { ...sourceSnapshot },
+      stages: [],
+      observations: [],
+      providerTaskCount: 0,
+      coverageCount: 0,
+    };
+    const originalFind = makeFakePrisma(state);
+    // findUnique returns source when id=source, arsenkin when id=allocated
+    const prisma = {
+      ...originalFind,
+      orionReportRun: {
+        findUnique: async ({ where }: { where: { id: string } }) => {
+          if (where.id === source) return { ...sourceSnapshot };
+          if (where.id === allocated) {
+            return {
+              id: allocated,
+              caseId,
+              status: "RUNNING",
+              metadataJson: { workflow: "suggest-canary" },
+            };
+          }
+          return null;
+        },
+        findFirst: originalFind!.orionReportRun.findFirst,
+      },
+    } as unknown as ArsenkinUiOrchestrationDeps["prisma"];
+
+    let prepareCalls = 0;
+    const deps: ArsenkinUiOrchestrationDeps = {
+      prisma,
+      dbReadinessPath: readinessPath,
+      readinessBlockers: passReady,
+      isConfigured: () => true,
+      createReportRunId: () => allocated,
+      rebuild: async (c, r, out) => {
+        mkdirSync(out, { recursive: true });
+        assert.equal(r, allocated);
+        return { caseId: c, reportRunId: r, outputRoot: out };
+      },
+      executeStage: async (_d, cmd) => {
+        prepareCalls += 1;
+        assert.equal(cmd.reportRunId, allocated);
+        assert.notEqual(cmd.reportRunId, source);
+        state.stages = [
+          {
+            reportRunId: allocated,
+            stage: "SUGGEST_RU_CANARY",
+            status: "PREPARED",
+            planDigest: null,
+            errorJson: null,
+            updatedAt: new Date(),
+          },
+        ];
+        return {
+          ok: true,
+          phase: "prepare",
+          verdict: "PREPARED",
+          reportRunId: allocated,
+          stage: "SUGGEST_RU_CANARY",
+          workflow: "suggest-canary",
+          networkCalls: 0,
+          exitCode: 0,
+        };
+      },
+    };
+
+    const first = await prepareArsenkinUiRun({
+      caseId,
+      reportRunId: source,
+      stage: "SUGGEST_RU_CANARY",
+      deps,
+    });
+    assert.equal(first.arsenkinReportRunId, allocated);
+    assert.equal(first.sourceReportRunId, source);
+    assert.notEqual(first.arsenkinReportRunId, source);
+    // Source snapshot unchanged
+    const still = await prisma!.orionReportRun.findUnique({ where: { id: source } });
+    assert.equal(still!.status, "DONE");
+    assert.deepEqual(still!.metadataJson, { orion: true });
+
+    const second = await prepareArsenkinUiRun({
+      caseId,
+      reportRunId: source,
+      stage: "SUGGEST_RU_CANARY",
+      deps,
+    });
+    assert.equal(second.arsenkinReportRunId, allocated);
+    assert.equal(prepareCalls, 2); // idempotent prepare on same mapped id
+    assert.equal(loadArsenkinUiRunMapping(caseId, "suggest-canary")!.arsenkinReportRunId, allocated);
+    assert.equal(getArsenkinNetworkCallCount(), 0);
+  });
+
+  it("R5 foreign Arsenkin ID blocked; R6-R8 plan/execute/sync use mapped id", async () => {
+    resetArsenkinNetworkCallCount();
+    writePassReadiness(readinessPath, dbUrl);
+    const source = `map-src-${Date.now()}`;
+    const arsenkinId = `map-ark-${Date.now()}`;
+    saveArsenkinUiRunMapping({
+      caseId,
+      sourceReportRunId: source,
+      arsenkinReportRunId: arsenkinId,
+      workflow: "suggest-canary",
+      stage: "SUGGEST_RU_CANARY",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    assert.throws(
+      () =>
+        resolveMappedArsenkinReportRunId({
+          caseId,
+          workflow: "suggest-canary",
+          clientReportRunId: "foreign-id-xyz",
+          requireMapping: true,
+        }),
+      (e: unknown) => e instanceof ConflictError && /foreign/i.test(String(e.message))
+    );
+
+    const canaryOut = join(
+      process.cwd(),
+      "storage",
+      "digital-profile",
+      "qa-first36-canary",
+      caseId,
+      arsenkinId
+    );
+    mkdirSync(canaryOut, { recursive: true });
+    const state: FakeState = {
+      run: {
+        id: arsenkinId,
+        caseId,
+        status: "RUNNING",
+        metadataJson: { workflow: "suggest-canary" },
+      },
+      stages: [
+        {
+          reportRunId: arsenkinId,
+          stage: "SUGGEST_RU_CANARY",
+          status: "PREPARED",
+          planDigest: null,
+          errorJson: null,
+          updatedAt: new Date(),
+        },
+      ],
+      observations: [
+        {
+          id: "o1",
+          auditRunId: arsenkinId,
+          provider: "arsenkin",
+          providerTaskId: "t1",
+          surface: "autocomplete",
+          engine: "YANDEX",
+          region: "RU",
+        },
+      ],
+      providerTaskCount: 1,
+      coverageCount: 1,
+    };
+
+    await buildArsenkinUiPlan({
+      caseId,
+      reportRunId: source,
+      stage: "SUGGEST_RU_CANARY",
+      deps: {
+        prisma: makeFakePrisma(state),
+        readinessBlockers: passReady,
+        isConfigured: () => true,
+        executeStage: async (_d, cmd) => {
+          assert.equal(cmd.reportRunId, arsenkinId);
+          writeJsonAtomic(join(canaryOut, "arsenkin-live-plan.json"), {
+            digest: "d-map",
+            plannedNewTasks: 2,
+            estimatedLimitsTotal: 2,
+            requests: [
+              {
+                tool: "suggest",
+                engine: "YANDEX",
+                region: "RU",
+                query: "q",
+                action: "CREATE",
+                requestHash: "h",
+              },
+            ],
+          });
+          return {
+            ok: true,
+            phase: "plan",
+            verdict: "PLAN_READY",
+            reportRunId: arsenkinId,
+            stage: "SUGGEST_RU_CANARY",
+            workflow: "suggest-canary",
+            networkCalls: 0,
+            exitCode: 0,
+          };
+        },
+      },
+    });
+
+    state.stages[0]!.status = "PREPARED";
+    await executeArsenkinUiPlan({
+      caseId,
+      reportRunId: source,
+      stage: "SUGGEST_RU_CANARY",
+      confirmPlanDigest: "d-map",
+      confirmed: true,
+      deps: {
+        prisma: makeFakePrisma(state),
+        readinessBlockers: passReady,
+        isConfigured: () => true,
+        executeStage: async (_d, cmd) => {
+          assert.equal(cmd.reportRunId, arsenkinId);
+          state.stages[0]!.status = "DONE";
+          return {
+            ok: true,
+            phase: "execute",
+            verdict: "DONE",
+            reportRunId: arsenkinId,
+            stage: "SUGGEST_RU_CANARY",
+            workflow: "suggest-canary",
+            networkCalls: 0,
+            collectorCalls: 1,
+            exitCode: 0,
+          };
+        },
+      },
+    });
+
+    state.stages[0]!.status = "DONE";
+    await syncArsenkinResultsToOrion({
+      caseId,
+      reportRunId: source,
+      stage: "SUGGEST_RU_CANARY",
+      deps: {
+        prisma: makeFakePrisma(state),
+        isConfigured: () => true,
+        rebuild: async (c, r, out) => {
+          assert.equal(r, arsenkinId);
+          mkdirSync(out, { recursive: true });
+          writeJsonAtomic(join(out, "orion-client-content.post-review.json"), {
+            caseId: c,
+            reportRunId: r,
+          });
+          writeJsonAtomic(join(out, "client-content-binding.json"), {
+            sourceReportRunId: r,
+            effectiveReportRunId: r,
+            overridden: false,
+          });
+          writeJsonAtomic(join(out, "manual-review-queue.json"), { reportRunId: r, items: [] });
+          writeJsonAtomic(join(out, "run-scoped-serp-merge.json"), {
+            usedRunScoped: true,
+            observationCount: 1,
+          });
+          return { caseId: c, reportRunId: r, outputRoot: out };
+        },
+      },
+    });
+    assert.equal(getArsenkinNetworkCallCount(), 0);
+  });
+
+  it("R9 canary and full workflow get different Arsenkin IDs", () => {
+    const a = generateArsenkinReportRunId("suggest-canary", 1, "aaaa");
+    const b = generateArsenkinReportRunId("first36-full", 1, "bbbb");
+    assert.ok(a.includes("suggest-canary"));
+    assert.ok(b.includes("first36-full"));
+    assert.notEqual(a, b);
+  });
+
+  it("R10 prepare/plan/mapping NETWORK_CALLS=0", () => {
+    assert.equal(getArsenkinNetworkCallCount(), 0);
   });
 });
 

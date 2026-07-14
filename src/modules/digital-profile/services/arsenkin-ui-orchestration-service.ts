@@ -5,6 +5,7 @@
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { randomBytes } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import { prisma as defaultPrisma } from "@/server/prisma/client";
 import {
@@ -64,7 +65,12 @@ export type ArsenkinUiStatusDto = {
   caseId: string;
   workflow: ArsenkinWorkflow | null;
   stage: ArsenkinUiStage | null;
+  /** Active Arsenkin OrionReportRun id (mapped). */
   reportRunId: string | null;
+  /** Manual-review / ORION source run (may differ from Arsenkin run). */
+  sourceReportRunId: string | null;
+  /** Explicit Arsenkin run id when mapping exists. */
+  arsenkinReportRunId: string | null;
   status: ArsenkinUiStatusCode;
   verdict: string | null;
   tools: string[];
@@ -149,6 +155,40 @@ export function arsenkinOrionCaseRoot(caseId: string): string {
   return caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId);
 }
 
+export type ArsenkinUiRunMapping = {
+  caseId: string;
+  sourceReportRunId: string;
+  arsenkinReportRunId: string;
+  workflow: ArsenkinWorkflow;
+  stage: ArsenkinUiStage;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export function arsenkinUiRunMappingPath(caseId: string, workflow: ArsenkinWorkflow): string {
+  return join(arsenkinOrionCaseRoot(caseId), `arsenkin-ui-run-mapping-${workflow}.json`);
+}
+
+export function loadArsenkinUiRunMapping(
+  caseId: string,
+  workflow: ArsenkinWorkflow
+): ArsenkinUiRunMapping | null {
+  return readJson<ArsenkinUiRunMapping>(arsenkinUiRunMappingPath(caseId, workflow));
+}
+
+export function saveArsenkinUiRunMapping(mapping: ArsenkinUiRunMapping): void {
+  writeJsonAtomic(arsenkinUiRunMappingPath(mapping.caseId, mapping.workflow), mapping);
+}
+
+export function generateArsenkinReportRunId(
+  workflow: ArsenkinWorkflow,
+  nowMs = Date.now(),
+  rand = randomBytes(4).toString("hex")
+): string {
+  const slug = workflow === "suggest-canary" ? "suggest-canary" : "first36-full";
+  return `orion-arsenkin-${slug}-${nowMs}-${rand}`;
+}
+
 function readJson<T>(path: string): T | null {
   if (!existsSync(path)) return null;
   try {
@@ -189,6 +229,8 @@ export type ArsenkinUiOrchestrationDeps = {
   /** Test/prod override for configured flag (token stays server-side). */
   isConfigured?: () => boolean;
   isEnabled?: () => boolean;
+  /** Override Arsenkin reportRunId allocation (tests). */
+  createReportRunId?: (workflow: ArsenkinWorkflow) => string;
 };
 
 function productionDeps(prisma: PrismaClient): CanonicalStageDeps {
@@ -197,7 +239,7 @@ function productionDeps(prisma: PrismaClient): CanonicalStageDeps {
   });
 }
 
-async function resolveReportRunId(
+async function resolveSourceReportRunId(
   prisma: PrismaClient,
   caseId: string,
   reportRunId?: string | null
@@ -212,6 +254,36 @@ async function resolveReportRunId(
     select: { id: true },
   });
   return run?.id ?? null;
+}
+
+/**
+ * Plan/execute/sync must use server mapping. Client may pass source OR arsenkin id;
+ * foreign ids are rejected.
+ */
+export function resolveMappedArsenkinReportRunId(input: {
+  caseId: string;
+  workflow: ArsenkinWorkflow;
+  clientReportRunId?: string | null;
+  requireMapping: boolean;
+}): { mapping: ArsenkinUiRunMapping | null; arsenkinReportRunId: string | null } {
+  const mapping = loadArsenkinUiRunMapping(input.caseId, input.workflow);
+  const client = input.clientReportRunId?.trim() || null;
+  if (!mapping) {
+    if (input.requireMapping) {
+      throw new ConflictError("Сначала выполните prepare Arsenkin для этого workflow");
+    }
+    return { mapping: null, arsenkinReportRunId: null };
+  }
+  if (
+    client &&
+    client !== mapping.sourceReportRunId &&
+    client !== mapping.arsenkinReportRunId
+  ) {
+    throw new ConflictError(
+      "Передан foreign reportRunId — используйте mapped Arsenkin run или исходный ORION run"
+    );
+  }
+  return { mapping, arsenkinReportRunId: mapping.arsenkinReportRunId };
 }
 
 function loadDbReadiness(path: string): ArsenkinDbReadinessArtifact | null {
@@ -243,7 +315,12 @@ export async function getArsenkinUiStatus(
   const dbReadinessPath = deps.dbReadinessPath ?? DEFAULT_DB_READINESS;
   const enabled = (deps.isEnabled ?? isArsenkinEnabled)();
   const configured = (deps.isConfigured ?? isArsenkinConfigured)();
-  const runId = await resolveReportRunId(prisma, caseId, reportRunId);
+  const sourceFromClientOrQueue = await resolveSourceReportRunId(prisma, caseId, reportRunId);
+  const workflowHint = stageHint ? workflowForStage(stageHint) : null;
+  const mapping = workflowHint ? loadArsenkinUiRunMapping(caseId, workflowHint) : null;
+  const sourceReportRunId = mapping?.sourceReportRunId ?? sourceFromClientOrQueue;
+  const arsenkinReportRunId = mapping?.arsenkinReportRunId ?? null;
+  const runId = arsenkinReportRunId ?? sourceReportRunId;
   const blockers: string[] = [];
   const nowIso = (deps.now ?? (() => new Date()))().toISOString();
 
@@ -252,9 +329,11 @@ export async function getArsenkinUiStatus(
       enabled,
       configured,
       caseId,
-      workflow: null,
+      workflow: workflowHint,
       stage: stageHint ?? null,
       reportRunId: runId,
+      sourceReportRunId,
+      arsenkinReportRunId,
       status: "NOT_CONFIGURED",
       verdict: null,
       tools: stageHint ? arsenkinBudgetForStage(stageHint).tools : [],
@@ -285,8 +364,8 @@ export async function getArsenkinUiStatus(
     ...((deps.readinessBlockers ?? (() => readinessBlockers(dbReadinessPath)))())
   );
 
-  let stage: ArsenkinUiStage | null = stageHint ?? null;
-  let workflow: ArsenkinWorkflow | null = stage ? workflowForStage(stage) : null;
+  let stage: ArsenkinUiStage | null = stageHint ?? mapping?.stage ?? null;
+  let workflow: ArsenkinWorkflow | null = workflowHint ?? mapping?.workflow ?? null;
   let stageStatus: string | null = null;
   let planDigest: string | null = null;
   let lastError: string | null = null;
@@ -295,20 +374,21 @@ export async function getArsenkinUiStatus(
   let estimatedLimitsFromArt: number | null = null;
   let uiStatus: ArsenkinUiStatusCode = blockers.length ? "BLOCKED" : "READY_TO_PREPARE";
 
-  const [providerTaskCount, observationCount, coverageCount] = runId
+  const ledgerRunId = arsenkinReportRunId;
+  const [providerTaskCount, observationCount, coverageCount] = ledgerRunId
     ? await Promise.all([
-        prisma.providerTask.count({ where: { reportRunId: runId, provider: "arsenkin" } }),
+        prisma.providerTask.count({ where: { reportRunId: ledgerRunId, provider: "arsenkin" } }),
         prisma.serpObservation.count({
-          where: { auditRunId: runId, provider: "arsenkin" },
+          where: { auditRunId: ledgerRunId, provider: "arsenkin" },
         }),
         prisma.surfaceCollectionCoverage.count({
-          where: { reportRunId: runId, provider: "arsenkin" },
+          where: { reportRunId: ledgerRunId, provider: "arsenkin" },
         }),
       ])
     : [0, 0, 0];
 
-  if (runId) {
-    const run = await prisma.orionReportRun.findUnique({ where: { id: runId } });
+  if (ledgerRunId) {
+    const run = await prisma.orionReportRun.findUnique({ where: { id: ledgerRunId } });
     if (run && run.caseId !== caseId) {
       blockers.push("foreign-reportRunId");
       uiStatus = "BLOCKED";
@@ -318,7 +398,7 @@ export async function getArsenkinUiStatus(
       if (stored) workflow = stored;
     }
     const stages = await prisma.orionArsenkinStageRun.findMany({
-      where: { reportRunId: runId },
+      where: { reportRunId: ledgerRunId },
       orderBy: { updatedAt: "desc" },
     });
     const current =
@@ -337,24 +417,22 @@ export async function getArsenkinUiStatus(
     const syncMarker = readJson<{ synced?: boolean; reportRunId?: string }>(
       join(arsenkinOrionCaseRoot(caseId), "arsenkin-ui-sync.json")
     );
-    if (syncMarker?.synced && syncMarker.reportRunId === runId && uiStatus === "STAGE_DONE") {
+    if (syncMarker?.synced && syncMarker.reportRunId === ledgerRunId && uiStatus === "STAGE_DONE") {
       uiStatus = "SYNCED";
     } else if (uiStatus === "STAGE_DONE") {
       uiStatus = "SYNC_READY";
     }
-    const intervention = runId
-      ? existsSync(join(arsenkinCanaryOutRoot(caseId, runId), "manual-intervention-required.json"))
-      : false;
+    const intervention = existsSync(
+      join(arsenkinCanaryOutRoot(caseId, ledgerRunId), "manual-intervention-required.json")
+    );
     if (intervention) uiStatus = "MANUAL_INTERVENTION_REQUIRED";
 
-    const planArt = runId
-      ? readJson<{
-          digest?: string;
-          plannedNewTasks?: number;
-          estimatedLimitsTotal?: number;
-          requests?: ArsenkinUiPlanRequestDto[];
-        }>(join(arsenkinCanaryOutRoot(caseId, runId), "arsenkin-live-plan.json"))
-      : null;
+    const planArt = readJson<{
+      digest?: string;
+      plannedNewTasks?: number;
+      estimatedLimitsTotal?: number;
+      requests?: ArsenkinUiPlanRequestDto[];
+    }>(join(arsenkinCanaryOutRoot(caseId, ledgerRunId), "arsenkin-live-plan.json"));
     if (planArt?.digest && stageStatus === "PREPARED") {
       uiStatus = "PLAN_READY";
       planDigest = planArt.digest;
@@ -386,13 +464,14 @@ export async function getArsenkinUiStatus(
   const canPrepare =
     configured &&
     blockers.length === 0 &&
-    Boolean(runId) &&
+    Boolean(sourceReportRunId) &&
     uiStatus !== "EXECUTING" &&
-    uiStatus !== "MANUAL_INTERVENTION_REQUIRED";
+    uiStatus !== "MANUAL_INTERVENTION_REQUIRED" &&
+    uiStatus !== "FAILED";
   const canPlan =
     configured &&
     blockers.length === 0 &&
-    Boolean(runId) &&
+    Boolean(arsenkinReportRunId) &&
     (uiStatus === "PREPARED" ||
       uiStatus === "PLAN_READY" ||
       uiStatus === "SYNC_READY" ||
@@ -400,11 +479,11 @@ export async function getArsenkinUiStatus(
   const canExecute =
     configured &&
     blockers.length === 0 &&
-    Boolean(runId) &&
+    Boolean(arsenkinReportRunId) &&
     (uiStatus === "PLAN_READY" || uiStatus === "PREPARED");
   const canSync =
     configured &&
-    Boolean(runId) &&
+    Boolean(arsenkinReportRunId) &&
     (uiStatus === "SYNC_READY" || uiStatus === "SYNCED");
 
   return {
@@ -413,7 +492,9 @@ export async function getArsenkinUiStatus(
     caseId,
     workflow,
     stage,
-    reportRunId: runId,
+    reportRunId: arsenkinReportRunId ?? sourceReportRunId,
+    sourceReportRunId,
+    arsenkinReportRunId,
     status: uiStatus,
     verdict: stageStatus,
     tools: budget.tools,
@@ -477,6 +558,7 @@ export async function prepareArsenkinUiRun(input: {
   const rebuild = input.deps?.rebuild ?? rebuildClientContentForReportRun;
   const executeStage = input.deps?.executeStage ?? executeCanonicalArsenkinStage;
   const configured = (input.deps?.isConfigured ?? isArsenkinConfigured)();
+  const now = input.deps?.now ?? (() => new Date());
   resetArsenkinNetworkCallCount();
 
   if (!configured) {
@@ -485,39 +567,114 @@ export async function prepareArsenkinUiRun(input: {
   const rb = (input.deps?.readinessBlockers ?? (() => readinessBlockers(dbReadinessPath)))();
   if (rb.length) throw new ConflictError(`DB readiness: ${rb[0]}`);
 
-  const run = await prisma.orionReportRun.findUnique({ where: { id: input.reportRunId } });
+  const sourceReportRunId = String(input.reportRunId ?? "").trim();
+  if (!sourceReportRunId) throw new ValidationError("reportRunId required");
+
   const workflow = workflowForStage(input.stage);
-  if (run) {
-    if (run.caseId !== input.caseId) {
-      throw new ConflictError("reportRunId принадлежит другому кейсу");
-    }
-    const stored = workflowFromRunMetadata(run.metadataJson);
-    if (stored && stored !== workflow) {
+  const existingMapping = loadArsenkinUiRunMapping(input.caseId, workflow);
+
+  // Idempotent reuse of mapping — never auto-create a second Arsenkin run.
+  if (existingMapping) {
+    if (existingMapping.sourceReportRunId !== sourceReportRunId) {
       throw new ConflictError(
-        `Run уже использует workflow ${stored}; нельзя смешивать с ${workflow}`
+        `Workflow ${workflow} уже привязан к source ${existingMapping.sourceReportRunId}`
       );
     }
+    const arsenkinId = existingMapping.arsenkinReportRunId;
+    if (input.stage === "FIRST36_STAGE2") {
+      const s1 = await prisma.orionArsenkinStageRun.findFirst({
+        where: { reportRunId: arsenkinId, stage: "FIRST36_STAGE1" },
+      });
+      if (!s1 || s1.status !== "DONE") {
+        throw new ConflictError("Stage 2 доступен только после FIRST36_STAGE1=DONE");
+      }
+    }
+    const stageRow = await prisma.orionArsenkinStageRun.findFirst({
+      where: { reportRunId: arsenkinId, stage: input.stage },
+    });
+    if (stageRow?.status === "FAILED") {
+      throw new ConflictError("Стадия FAILED — автоматический повтор prepare запрещён");
+    }
+    const intervention = existsSync(
+      join(arsenkinCanaryOutRoot(input.caseId, arsenkinId), "manual-intervention-required.json")
+    );
+    if (intervention || stageRow?.status === "MANUAL_INTERVENTION_REQUIRED") {
+      throw new ConflictError("MANUAL_INTERVENTION_REQUIRED — автоматический повтор запрещён");
+    }
+    if (stageRow?.status === "DONE") {
+      return getArsenkinUiStatus(input.caseId, sourceReportRunId, input.stage, input.deps);
+    }
+    // PREPARED / RUNNING / absent stage row → continue prepare on mapped id (idempotent).
+    const budget = arsenkinBudgetForStage(input.stage);
+    const outRoot = arsenkinCanaryOutRoot(input.caseId, arsenkinId);
+    await ensureBindingArtifacts(input.caseId, arsenkinId, outRoot, rebuild);
+    const stageDeps = (input.deps?.createDeps ?? productionDeps)(prisma);
+    const result = await executeStage(stageDeps, {
+      mode: "prepare",
+      caseId: input.caseId,
+      reportRunId: arsenkinId,
+      stage: input.stage,
+      workflow,
+      maxNewTasks: budget.maxNewTasks,
+      maxEstimatedLimits: budget.maxEstimatedLimits,
+      dbReadinessPath,
+      outRoot,
+      tokenPresent: configured,
+    });
+    if (!result.ok) {
+      throw new ConflictError(result.blockers?.[0] ?? result.verdict);
+    }
+    if (getArsenkinNetworkCallCount() !== 0) {
+      throw new ConflictError("prepare leaked network calls");
+    }
+    saveArsenkinUiRunMapping({
+      ...existingMapping,
+      stage: input.stage,
+      updatedAt: now().toISOString(),
+    });
+    return getArsenkinUiStatus(input.caseId, sourceReportRunId, input.stage, input.deps);
   }
 
+  // Stage2 never allocates a new run — requires first36-full mapping from Stage1.
   if (input.stage === "FIRST36_STAGE2") {
-    if (!run) throw new ConflictError("Stage 2 требует существующий run");
-    const s1 = await prisma.orionArsenkinStageRun.findFirst({
-      where: { reportRunId: input.reportRunId, stage: "FIRST36_STAGE1" },
-    });
-    if (!s1 || s1.status !== "DONE") {
-      throw new ConflictError("Stage 2 доступен только после FIRST36_STAGE1=DONE");
-    }
+    throw new ConflictError(
+      "Stage 2 требует mapping first36-full после FIRST36_STAGE1 — сначала prepare Stage1"
+    );
   }
+
+  const sourceRun = await prisma.orionReportRun.findUnique({ where: { id: sourceReportRunId } });
+  if (sourceRun && sourceRun.caseId !== input.caseId) {
+    throw new ConflictError("reportRunId принадлежит другому кейсу");
+  }
+
+  // Fresh-run invariant: if source OrionReportRun already exists, allocate a NEW Arsenkin id.
+  // Never delete or mutate the existing production run.
+  let arsenkinReportRunId = sourceReportRunId;
+  if (sourceRun) {
+    arsenkinReportRunId =
+      input.deps?.createReportRunId?.(workflow) ?? generateArsenkinReportRunId(workflow);
+  }
+
+  const mapping: ArsenkinUiRunMapping = {
+    caseId: input.caseId,
+    sourceReportRunId,
+    arsenkinReportRunId,
+    workflow,
+    stage: input.stage,
+    createdAt: now().toISOString(),
+    updatedAt: now().toISOString(),
+  };
+  saveArsenkinUiRunMapping(mapping);
 
   const budget = arsenkinBudgetForStage(input.stage);
-  const outRoot = arsenkinCanaryOutRoot(input.caseId, input.reportRunId);
-  await ensureBindingArtifacts(input.caseId, input.reportRunId, outRoot, rebuild);
+  const outRoot = arsenkinCanaryOutRoot(input.caseId, arsenkinReportRunId);
+  await ensureBindingArtifacts(input.caseId, arsenkinReportRunId, outRoot, rebuild);
 
   const stageDeps = (input.deps?.createDeps ?? productionDeps)(prisma);
   const result = await executeStage(stageDeps, {
     mode: "prepare",
     caseId: input.caseId,
-    reportRunId: input.reportRunId,
+    reportRunId: arsenkinReportRunId,
     stage: input.stage,
     workflow,
     maxNewTasks: budget.maxNewTasks,
@@ -534,7 +691,7 @@ export async function prepareArsenkinUiRun(input: {
     throw new ConflictError("prepare leaked network calls");
   }
 
-  return getArsenkinUiStatus(input.caseId, input.reportRunId, input.stage, input.deps);
+  return getArsenkinUiStatus(input.caseId, sourceReportRunId, input.stage, input.deps);
 }
 
 export async function buildArsenkinUiPlan(input: {
@@ -553,15 +710,23 @@ export async function buildArsenkinUiPlan(input: {
   const rb = (input.deps?.readinessBlockers ?? (() => readinessBlockers(dbReadinessPath)))();
   if (rb.length) throw new ConflictError(`DB readiness: ${rb[0]}`);
 
-  const budget = arsenkinBudgetForStage(input.stage);
-  const outRoot = arsenkinCanaryOutRoot(input.caseId, input.reportRunId);
   const workflow = workflowForStage(input.stage);
+  const { arsenkinReportRunId } = resolveMappedArsenkinReportRunId({
+    caseId: input.caseId,
+    workflow,
+    clientReportRunId: input.reportRunId,
+    requireMapping: true,
+  });
+  if (!arsenkinReportRunId) throw new ConflictError("Arsenkin reportRunId mapping отсутствует");
+
+  const budget = arsenkinBudgetForStage(input.stage);
+  const outRoot = arsenkinCanaryOutRoot(input.caseId, arsenkinReportRunId);
   const stageDeps = (input.deps?.createDeps ?? productionDeps)(prisma);
 
   const result = await executeStage(stageDeps, {
     mode: "plan-only",
     caseId: input.caseId,
-    reportRunId: input.reportRunId,
+    reportRunId: arsenkinReportRunId,
     stage: input.stage,
     workflow,
     maxNewTasks: budget.maxNewTasks,
@@ -600,31 +765,28 @@ export async function buildArsenkinUiPlan(input: {
     input.deps
   );
 
+  const requests = plan.requests.map((r) => ({
+    tool: r.tool,
+    engine: r.engine,
+    region: r.region,
+    query: r.query ?? null,
+    action: r.action,
+    requestHash: r.requestHash,
+  }));
+
   return {
     ...status,
     status: "PLAN_READY",
+    reportRunId: arsenkinReportRunId,
+    arsenkinReportRunId,
     planDigest: plan.digest,
     digest: plan.digest,
     plannedNewTasks: plan.plannedNewTasks,
     estimatedLimitsTotal: plan.estimatedLimitsTotal,
     maxNewTasks: budget.maxNewTasks,
     maxEstimatedLimits: budget.maxEstimatedLimits,
-    requests: plan.requests.map((r) => ({
-      tool: r.tool,
-      engine: r.engine,
-      region: r.region,
-      query: r.query ?? null,
-      action: r.action,
-      requestHash: r.requestHash,
-    })),
-    plannedRequests: plan.requests.map((r) => ({
-      tool: r.tool,
-      engine: r.engine,
-      region: r.region,
-      query: r.query ?? null,
-      action: r.action,
-      requestHash: r.requestHash,
-    })),
+    requests,
+    plannedRequests: requests,
     canExecute: true,
     networkCalls: 0,
     humanMessages: [],
@@ -659,15 +821,24 @@ export async function executeArsenkinUiPlan(input: {
   const rb = (input.deps?.readinessBlockers ?? (() => readinessBlockers(dbReadinessPath)))();
   if (rb.length) throw new ConflictError(`DB readiness: ${rb[0]}`);
 
+  const workflow = workflowForStage(input.stage);
+  const { arsenkinReportRunId } = resolveMappedArsenkinReportRunId({
+    caseId: input.caseId,
+    workflow,
+    clientReportRunId: input.reportRunId,
+    requireMapping: true,
+  });
+  if (!arsenkinReportRunId) throw new ConflictError("Arsenkin reportRunId mapping отсутствует");
+
   const intervention = existsSync(
-    join(arsenkinCanaryOutRoot(input.caseId, input.reportRunId), "manual-intervention-required.json")
+    join(arsenkinCanaryOutRoot(input.caseId, arsenkinReportRunId), "manual-intervention-required.json")
   );
   if (intervention) {
     throw new ConflictError("MANUAL_INTERVENTION_REQUIRED — автоматический повтор запрещён");
   }
 
   const stageRow = await prisma.orionArsenkinStageRun.findFirst({
-    where: { reportRunId: input.reportRunId, stage: input.stage },
+    where: { reportRunId: arsenkinReportRunId, stage: input.stage },
   });
   if (stageRow?.status === "FAILED") {
     throw new ConflictError("Стадия FAILED — автоматический повтор запрещён");
@@ -677,15 +848,14 @@ export async function executeArsenkinUiPlan(input: {
   }
 
   const budget = arsenkinBudgetForStage(input.stage);
-  const outRoot = arsenkinCanaryOutRoot(input.caseId, input.reportRunId);
-  const workflow = workflowForStage(input.stage);
+  const outRoot = arsenkinCanaryOutRoot(input.caseId, arsenkinReportRunId);
   const stageDeps = (input.deps?.createDeps ?? productionDeps)(prisma);
 
   // liveConfirm only on this command — never set process.env.ARSENKIN_LIVE_CONFIRM
   const result = await executeStage(stageDeps, {
     mode: "execute-live",
     caseId: input.caseId,
-    reportRunId: input.reportRunId,
+    reportRunId: arsenkinReportRunId,
     stage: input.stage,
     workflow,
     maxNewTasks: budget.maxNewTasks,
@@ -719,6 +889,8 @@ export async function executeArsenkinUiPlan(input: {
   );
   return {
     ...status,
+    reportRunId: arsenkinReportRunId,
+    arsenkinReportRunId,
     collectorCalls: result.collectorCalls ?? null,
     networkCalls: result.networkCalls,
     result,
@@ -742,28 +914,37 @@ export async function syncArsenkinResultsToOrion(input: {
   const rebuild = input.deps?.rebuild ?? rebuildClientContentForReportRun;
   resetArsenkinNetworkCallCount();
 
-  const run = await prisma.orionReportRun.findUnique({ where: { id: input.reportRunId } });
+  const workflow = workflowForStage(input.stage);
+  const { mapping, arsenkinReportRunId } = resolveMappedArsenkinReportRunId({
+    caseId: input.caseId,
+    workflow,
+    clientReportRunId: input.reportRunId,
+    requireMapping: true,
+  });
+  if (!arsenkinReportRunId || !mapping) {
+    throw new ConflictError("Arsenkin reportRunId mapping отсутствует");
+  }
+
+  const run = await prisma.orionReportRun.findUnique({ where: { id: arsenkinReportRunId } });
   if (!run || run.caseId !== input.caseId) {
-    throw new ConflictError("reportRunId не принадлежит кейсу");
+    throw new ConflictError("Arsenkin reportRunId не принадлежит кейсу");
   }
 
   const stageRow = await prisma.orionArsenkinStageRun.findFirst({
-    where: { reportRunId: input.reportRunId, stage: input.stage },
+    where: { reportRunId: arsenkinReportRunId, stage: input.stage },
   });
   if (!stageRow || stageRow.status !== "DONE") {
     throw new ConflictError("Sync доступен только после STAGE_DONE");
   }
 
-  const workflow = workflowForStage(input.stage);
   if (workflow === "first36-full") {
     const stages = await prisma.orionArsenkinStageRun.findMany({
-      where: { reportRunId: input.reportRunId },
+      where: { reportRunId: arsenkinReportRunId },
     });
     const s1 = stages.find((s) => s.stage === "FIRST36_STAGE1");
     const s2 = stages.find((s) => s.stage === "FIRST36_STAGE2");
     if (input.stage === "FIRST36_STAGE2" || (s1?.status === "DONE" && s2?.status === "DONE")) {
       if (s1?.status !== "DONE" || s2?.status !== "DONE") {
-        // canary-like preview sync for stage1 alone is allowed as preview for stage1 DONE
         if (input.stage === "FIRST36_STAGE2" && s2?.status !== "DONE") {
           throw new ConflictError("Полный First36 sync требует обе стадии DONE");
         }
@@ -772,7 +953,7 @@ export async function syncArsenkinResultsToOrion(input: {
   }
 
   const obs = await prisma.serpObservation.findMany({
-    where: { auditRunId: input.reportRunId, provider: "arsenkin" },
+    where: { auditRunId: arsenkinReportRunId, provider: "arsenkin" },
     select: { id: true, providerTaskId: true, surface: true, engine: true, region: true },
   });
   if (obs.length === 0) throw new ConflictError("Нет Arsenkin observations для sync");
@@ -803,7 +984,7 @@ export async function syncArsenkinResultsToOrion(input: {
 
   let orphanedEvidenceIds: string[] = [];
   try {
-    await rebuild(input.caseId, input.reportRunId, tempRoot, { requireAi: false });
+    await rebuild(input.caseId, arsenkinReportRunId, tempRoot, { requireAi: false });
 
     const queue = readJson<{ items?: Array<{ evidenceId?: string; id?: string }> }>(
       join(tempRoot, "manual-review-queue.json")
@@ -835,7 +1016,8 @@ export async function syncArsenkinResultsToOrion(input: {
     writeJsonAtomic(join(tempRoot, "arsenkin-ui-sync-diagnostics.json"), {
       orphanedEvidenceIds,
       preservedCount: reapplied.length,
-      reportRunId: input.reportRunId,
+      reportRunId: arsenkinReportRunId,
+      sourceReportRunId: mapping.sourceReportRunId,
     });
 
     // Atomic promote: move key artifacts into case root
@@ -855,7 +1037,8 @@ export async function syncArsenkinResultsToOrion(input: {
 
     writeJsonAtomic(join(caseRoot, "arsenkin-ui-sync.json"), {
       synced: true,
-      reportRunId: input.reportRunId,
+      reportRunId: arsenkinReportRunId,
+      sourceReportRunId: mapping.sourceReportRunId,
       stage: input.stage,
       at: new Date().toISOString(),
       observationCount: obs.length,
@@ -905,6 +1088,8 @@ export function toPublicArsenkinUiDto(
     workflow: dto.workflow,
     stage: dto.stage,
     reportRunId: dto.reportRunId,
+    sourceReportRunId: dto.sourceReportRunId,
+    arsenkinReportRunId: dto.arsenkinReportRunId,
     status: dto.status,
     verdict: dto.verdict,
     tools: dto.tools,

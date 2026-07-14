@@ -162,14 +162,23 @@ export function ArsenkinToolsPanel(props: {
     void runAction(async () => {
       const s = await prepareArsenkinRun(caseId, { reportRunId, stage });
       setStatus(s);
-      setBanner("Arsenkin подготовлен (без сетевых вызовов).");
+      setBanner(
+        s.arsenkinReportRunId && s.sourceReportRunId && s.arsenkinReportRunId !== s.sourceReportRunId
+          ? `Arsenkin подготовлен. Новый Arsenkin reportRunId: ${s.arsenkinReportRunId}`
+          : "Arsenkin подготовлен (без сетевых вызовов)."
+      );
     });
   };
+
+  const activeReportRunId = status?.arsenkinReportRunId ?? status?.reportRunId ?? reportRunId;
 
   const onPlan = () => {
     if (!reportRunId) return;
     void runAction(async () => {
-      const p = await planArsenkinRun(caseId, { reportRunId, stage });
+      const p = await planArsenkinRun(caseId, {
+        reportRunId: activeReportRunId ?? reportRunId,
+        stage,
+      });
       setPlan(p);
       setStatus(p);
       setConfirmedPaid(false);
@@ -178,7 +187,8 @@ export function ArsenkinToolsPanel(props: {
   };
 
   const onExecuteConfirmed = () => {
-    if (!reportRunId || !plan?.digest || !confirmedPaid) return;
+    const runId = activeReportRunId ?? reportRunId;
+    if (!runId || !plan?.digest || !confirmedPaid) return;
     if (executeInFlight.current || executeLocked) return;
     executeInFlight.current = true;
     setExecuteLocked(true);
@@ -186,7 +196,7 @@ export function ArsenkinToolsPanel(props: {
     void runAction(async () => {
       startPolling();
       const s = await executeArsenkinRun(caseId, {
-        reportRunId,
+        reportRunId: runId,
         stage,
         confirmPlanDigest: plan.digest,
         confirmed: true,
@@ -207,9 +217,10 @@ export function ArsenkinToolsPanel(props: {
   };
 
   const onSync = () => {
-    if (!reportRunId) return;
+    const runId = activeReportRunId ?? reportRunId;
+    if (!runId) return;
     void runAction(async () => {
-      const s = await syncArsenkinRun(caseId, { reportRunId, stage });
+      const s = await syncArsenkinRun(caseId, { reportRunId: runId, stage });
       setStatus(s);
       setBanner("Результаты переданы в отчёт.");
     });
@@ -289,9 +300,15 @@ export function ArsenkinToolsPanel(props: {
 
         <div className="dp-kv">
           <div>
-            <span className="dp-muted">reportRunId</span>
+            <span className="dp-muted">исходный ORION reportRunId</span>
             <div>
-              <code>{reportRunId ?? status?.reportRunId ?? "—"}</code>
+              <code>{status?.sourceReportRunId ?? reportRunId ?? "—"}</code>
+            </div>
+          </div>
+          <div>
+            <span className="dp-muted">Arsenkin reportRunId</span>
+            <div>
+              <code>{status?.arsenkinReportRunId ?? status?.reportRunId ?? "—"}</code>
             </div>
           </div>
           <div>
