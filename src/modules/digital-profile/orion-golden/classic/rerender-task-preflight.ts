@@ -232,17 +232,27 @@ export function buildPlannedTaskPreflight(input: {
     blocked = true;
     blockReason = `incomplete provider tasks: ${existingIncomplete.map((t) => `${t.toolName}:${t.state}`).join(",")}`;
   }
+
+  // Any non-rerender mode requires live confirmation — including reuse-only plans.
+  if (!input.rerenderOnly && !input.liveConfirm) {
+    blocked = true;
+    blockReason = "non-rerender requires ARSENKIN_LIVE_CONFIRM=1 (even for REUSE-only plans)";
+  }
+
   if (plannedNewTasks > 0) {
     if (input.rerenderOnly) {
       blocked = true;
       blockReason = `plannedNewTasks=${plannedNewTasks} (by requestHash); rerender-only forbids CREATE`;
-    } else if (!(input.allowNewProviderTasks && input.liveConfirm)) {
+    } else if (!input.allowNewProviderTasks) {
       blocked = true;
-      blockReason = `plannedNewTasks=${plannedNewTasks} (by requestHash); need --allow-new-provider-tasks and ARSENKIN_LIVE_CONFIRM=1`;
+      blockReason = `plannedNewTasks=${plannedNewTasks} (by requestHash); need --allow-new-provider-tasks`;
+    } else if (!input.liveConfirm) {
+      blocked = true;
+      blockReason = `plannedNewTasks=${plannedNewTasks}; need ARSENKIN_LIVE_CONFIRM=1`;
     } else if (!input.confirmPlanDigest) {
       blocked = true;
       blockReason =
-        "non-rerender CREATE requires --confirm-plan-digest=<digest> matching canonical planned requests";
+        "CREATE requires --confirm-plan-digest=<digest> matching canonical planned requests";
     } else if (planDigest && input.confirmPlanDigest !== planDigest) {
       blocked = true;
       blockReason = `plan digest mismatch: confirmed=${input.confirmPlanDigest} current=${planDigest}`;

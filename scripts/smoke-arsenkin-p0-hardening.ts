@@ -15,6 +15,7 @@ import { ensureArsenkinTask, pollArsenkinTask, runDueArsenkinPolls } from "../sr
 import { createMemoryArsenkinAccountLimiter, arsenkinAccountLimiterConfig } from "../src/modules/digital-profile/providers/arsenkin/account-rate-limit";
 import { computeLimitsSpent, costStatusFromSpent } from "../src/modules/digital-profile/providers/arsenkin/cost";
 import { inspectFirst36Acceptance } from "../src/modules/digital-profile/orion-golden/classic/first36-acceptance-gate";
+import { findSurfaceCoverageDuplicateGroups } from "../src/modules/digital-profile/providers/arsenkin/surface-coverage-duplicate-audit";
 
 function mockClient(handlers: {
   setTask?: (body: unknown) => Promise<{ task_id: string; raw: Record<string, unknown> }>;
@@ -375,54 +376,25 @@ describe("arsenkin p0 hardening", () => {
     assert.ok(cfg.leaseMs > 25_000);
   });
 
-  it("surface coverage concurrent upsert does not duplicate business key", async () => {
-    const { prisma } = await import("../src/server/prisma/client");
-    const { upsertSurfaceCollectionCoverage } = await import(
-      "../src/modules/digital-profile/providers/arsenkin/surface-coverage"
-    );
-    const reportRunId = `cov-race-${Date.now()}`;
-    // Ensure OrionReportRun exists for FK — skip if DB unavailable
-    try {
-      await prisma.orionReportRun.create({
-        data: {
-          id: reportRunId,
-          caseId: "cmreamy2t0002o30f29urzcog",
-          status: "RUNNING",
-        },
-      });
-    } catch (err) {
-      // case may be missing — skip race test offline
-      console.log("skip coverage race: cannot create report run", String(err).slice(0, 120));
-      await prisma.$disconnect().catch(() => undefined);
-      return;
-    }
-    const payload = {
-      reportRunId,
+  it("coverage duplicate audit finds business-key groups (pure)", () => {
+    const base = {
+      reportRunId: "run",
       provider: "arsenkin",
       tool: "suggest",
       queryId: "q1",
-      queryText: "test",
+      surface: "autocomplete",
       engine: "GOOGLE",
       region: "RU",
       language: "ru",
       device: "DESKTOP",
-      surface: "autocomplete",
-      resultCount: 0,
     };
-    try {
-      await Promise.all([
-        upsertSurfaceCollectionCoverage(payload),
-        upsertSurfaceCollectionCoverage({ ...payload, resultCount: 1 }),
-        upsertSurfaceCollectionCoverage({ ...payload, resultCount: 2 }),
-      ]);
-      const rows = await prisma.surfaceCollectionCoverage.findMany({
-        where: { reportRunId, tool: "suggest", queryId: "q1" },
-      });
-      assert.equal(rows.length, 1);
-    } finally {
-      await prisma.surfaceCollectionCoverage.deleteMany({ where: { reportRunId } }).catch(() => undefined);
-      await prisma.orionReportRun.delete({ where: { id: reportRunId } }).catch(() => undefined);
-      await prisma.$disconnect().catch(() => undefined);
-    }
+    const audit = findSurfaceCoverageDuplicateGroups([
+      { id: "a", ...base },
+      { id: "b", ...base },
+      { id: "c", ...base, queryId: "q2" },
+    ]);
+    assert.equal(audit.duplicateGroupCount, 1);
+    assert.equal(audit.duplicateRowCount, 2);
+    assert.deepEqual(audit.groups[0]!.ids, ["a", "b"]);
   });
 });
