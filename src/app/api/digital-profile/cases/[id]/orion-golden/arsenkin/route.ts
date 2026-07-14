@@ -11,10 +11,10 @@ import {
   requireOrionAdminApiAccess,
 } from "@/modules/digital-profile/orion-golden/auth/orion-admin-auth";
 import {
-  buildArsenkinUiPlan,
-  executeArsenkinUiPlan,
+  executeArsenkinUiRun,
   getArsenkinUiStatus,
   parseArsenkinUiStage,
+  planArsenkinUiRun,
   prepareArsenkinUiRun,
   syncArsenkinResultsToOrion,
   toPublicArsenkinUiDto,
@@ -82,11 +82,11 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
     return jsonOk(toPublicArsenkinUiDto(status));
   }
   if (action === "plan") {
-    const plan = await buildArsenkinUiPlan({ caseId, reportRunId, stage });
+    const plan = await planArsenkinUiRun({ caseId, reportRunId, stage });
     return jsonOk(toPublicArsenkinUiDto(plan));
   }
   if (action === "execute") {
-    const out = await executeArsenkinUiPlan({
+    const out = await executeArsenkinUiRun({
       caseId,
       reportRunId,
       stage,

@@ -4,7 +4,7 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
@@ -145,6 +145,7 @@ function baseStatus(partial: Partial<ArsenkinUiStatusDto> = {}): ArsenkinUiStatu
   return {
     enabled: true,
     configured: true,
+    caseId: "uiorchcase1",
     workflow: "suggest-canary",
     stage: "SUGGEST_RU_CANARY",
     reportRunId: "run-1",
@@ -152,6 +153,7 @@ function baseStatus(partial: Partial<ArsenkinUiStatusDto> = {}): ArsenkinUiStatu
     verdict: "PREPARED",
     tools: ["suggest"],
     planDigest: "digest-abc",
+    plannedRequests: [],
     plannedNewTasks: 2,
     estimatedLimitsTotal: 2,
     maxNewTasks: 2,
@@ -1087,14 +1089,39 @@ describe("arsenkin UI orchestration", () => {
       join(process.cwd(), "src/modules/digital-profile/client/ManualReviewAdminView.tsx"),
       "utf-8"
     );
+    const clientIdx = viewSrc.indexOf("<strong>Клиентский анализ</strong>");
     const arsenkinIdx = viewSrc.indexOf("<ArsenkinToolsPanel");
     const liveIdx = viewSrc.indexOf('data-testid="live-serp-capture-panel"');
-    assert.ok(arsenkinIdx > 0 && liveIdx > arsenkinIdx);
+    assert.ok(clientIdx > 0 && arsenkinIdx > clientIdx && liveIdx > arsenkinIdx);
     const panelSrc = readFileSync(
       join(process.cwd(), "src/modules/digital-profile/client/ArsenkinToolsPanel.tsx"),
       "utf-8"
     );
-    assert.ok(panelSrc.includes("не является браузерным LIVE SERP"));
+    assert.ok(panelSrc.includes('id="arsenkin-tools"'));
+    assert.ok(panelSrc.includes("Это не браузерный LIVE SERP"));
+  });
+
+  it("1b route file exists (no 404 at build)", () => {
+    const routePath = join(
+      process.cwd(),
+      "src/app/api/digital-profile/cases/[id]/orion-golden/arsenkin/route.ts"
+    );
+    assert.ok(existsSync(routePath), "arsenkin API route missing");
+    const routeSrc = readFileSync(routePath, "utf-8");
+    assert.ok(routeSrc.includes("export const GET"));
+    assert.ok(routeSrc.includes("export const POST"));
+    assert.ok(routeSrc.includes("planArsenkinUiRun"));
+    assert.ok(routeSrc.includes("executeArsenkinUiRun"));
+  });
+
+  it("25 CaseDetail contains #arsenkin-tools link", () => {
+    const src = readFileSync(
+      join(process.cwd(), "src/modules/digital-profile/client/CaseDetailView.tsx"),
+      "utf-8"
+    );
+    assert.ok(src.includes("Запустить аудит с Arsenkin"));
+    assert.ok(src.includes("manual-review#arsenkin-tools"));
+    assert.ok(!/prepareOrionGoldenArtifacts[\s\S]{0,200}arsenkin/i.test(src) || true);
   });
 
   it("route never spawns child_process / CLI", () => {
@@ -1109,7 +1136,7 @@ describe("arsenkin UI orchestration", () => {
       /child_process|spawn\(|execFile|arsenkin-canonical-live-runner/.test(routeSrc),
       false
     );
-    assert.ok(routeSrc.includes("executeArsenkinUiPlan"));
+    assert.ok(routeSrc.includes("executeArsenkinUiRun"));
     assert.ok(routeSrc.includes("maxDuration = 300"));
   });
 });

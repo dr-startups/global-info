@@ -336,7 +336,18 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
               <Link className="dp-btn" href={`/admin/digital-profile/${state.caseDetail.id}/orion-golden/manual-review`}>
                 Открыть manual review
               </Link>
+              <Link
+                className="dp-btn dp-btn-primary"
+                href={`/admin/digital-profile/${state.caseDetail.id}/orion-golden/manual-review#arsenkin-tools`}
+                data-testid="case-arsenkin-audit-link"
+              >
+                Запустить аудит с Arsenkin
+              </Link>
             </div>
+            <p className="dp-muted" style={{ margin: 0, fontSize: 13 }}>
+              «Запустить аудит с Arsenkin» открывает панель API-сбора. Кнопка «Подготовить ORION Golden»
+              не запускает платный Arsenkin.
+            </p>
             {prepareStatus ? (
               <p className="dp-muted" style={{ margin: 0 }}>
                 Статус: {prepareStatus.status}

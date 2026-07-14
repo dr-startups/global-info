@@ -176,6 +176,15 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
     if (canView) void loadQueue();
   }, [canView, loadQueue]);
 
+  useEffect(() => {
+    if (loading) return;
+    if (typeof window === "undefined") return;
+    if (window.location.hash !== "#arsenkin-tools") return;
+    const el = document.getElementById("arsenkin-tools");
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [loading]);
+
   const reportRunId = queue?.reportRunId ?? null;
   const subjectQuery = caseDetail?.subject?.fullName?.trim() ?? "";
 

@@ -227,7 +227,8 @@ export function ArsenkinToolsPanel(props: {
     (status?.canExecute || status?.status === "PLAN_READY" || status?.status === "PREPARED");
 
   return (
-    <Card data-testid="arsenkin-tools-panel">
+    <div id="arsenkin-tools" data-testid="arsenkin-tools-panel">
+    <Card>
       <div className="dp-stack" style={{ gap: 10 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           <strong>Arsenkin Tools — поисковые API</strong>
@@ -242,9 +243,8 @@ export function ArsenkinToolsPanel(props: {
         </div>
 
         <Notice>
-          Arsenkin использует API и не является браузерным LIVE SERP capture. Arsenkin создаёт
-          структурированные результаты и синтетические панели; реальные браузерные скриншоты
-          остаются отдельным механизмом (блок LIVE SERP ниже).
+          Arsenkin получает структурированные результаты через API. Это не браузерный LIVE SERP
+          capture.
         </Notice>
 
         <div className="dp-stack" style={{ gap: 6 }}>
@@ -502,5 +502,6 @@ export function ArsenkinToolsPanel(props: {
         </div>
       ) : null}
     </Card>
+    </div>
   );
 }

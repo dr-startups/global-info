@@ -1476,6 +1476,7 @@ export type ArsenkinUiStatusCode =
 export type ArsenkinUiStatusDto = {
   enabled: boolean;
   configured: boolean;
+  caseId: string;
   workflow: "suggest-canary" | "first36-full" | null;
   stage: ArsenkinUiStage | null;
   reportRunId: string | null;
@@ -1483,6 +1484,7 @@ export type ArsenkinUiStatusDto = {
   verdict: string | null;
   tools: string[];
   planDigest: string | null;
+  plannedRequests: ArsenkinUiPlanRequestDto[];
   plannedNewTasks: number | null;
   estimatedLimitsTotal: number | null;
   maxNewTasks: number;

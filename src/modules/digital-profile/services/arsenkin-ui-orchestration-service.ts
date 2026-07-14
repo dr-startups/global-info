@@ -61,6 +61,7 @@ export type ArsenkinUiStage = ArsenkinLiveStage;
 export type ArsenkinUiStatusDto = {
   enabled: boolean;
   configured: boolean;
+  caseId: string;
   workflow: ArsenkinWorkflow | null;
   stage: ArsenkinUiStage | null;
   reportRunId: string | null;
@@ -68,6 +69,7 @@ export type ArsenkinUiStatusDto = {
   verdict: string | null;
   tools: string[];
   planDigest: string | null;
+  plannedRequests: ArsenkinUiPlanRequestDto[];
   plannedNewTasks: number | null;
   estimatedLimitsTotal: number | null;
   maxNewTasks: number;
@@ -249,6 +251,7 @@ export async function getArsenkinUiStatus(
     return {
       enabled,
       configured,
+      caseId,
       workflow: null,
       stage: stageHint ?? null,
       reportRunId: runId,
@@ -256,6 +259,7 @@ export async function getArsenkinUiStatus(
       verdict: null,
       tools: stageHint ? arsenkinBudgetForStage(stageHint).tools : [],
       planDigest: null,
+      plannedRequests: [],
       plannedNewTasks: null,
       estimatedLimitsTotal: null,
       maxNewTasks: stageHint ? arsenkinBudgetForStage(stageHint).maxNewTasks : 2,
@@ -286,6 +290,9 @@ export async function getArsenkinUiStatus(
   let stageStatus: string | null = null;
   let planDigest: string | null = null;
   let lastError: string | null = null;
+  let plannedRequests: ArsenkinUiPlanRequestDto[] = [];
+  let plannedNewTasksFromArt: number | null = null;
+  let estimatedLimitsFromArt: number | null = null;
   let uiStatus: ArsenkinUiStatusCode = blockers.length ? "BLOCKED" : "READY_TO_PREPARE";
 
   const [providerTaskCount, observationCount, coverageCount] = runId
@@ -341,11 +348,30 @@ export async function getArsenkinUiStatus(
     if (intervention) uiStatus = "MANUAL_INTERVENTION_REQUIRED";
 
     const planArt = runId
-      ? readJson<{ digest?: string }>(join(arsenkinCanaryOutRoot(caseId, runId), "arsenkin-live-plan.json"))
+      ? readJson<{
+          digest?: string;
+          plannedNewTasks?: number;
+          estimatedLimitsTotal?: number;
+          requests?: ArsenkinUiPlanRequestDto[];
+        }>(join(arsenkinCanaryOutRoot(caseId, runId), "arsenkin-live-plan.json"))
       : null;
     if (planArt?.digest && stageStatus === "PREPARED") {
       uiStatus = "PLAN_READY";
       planDigest = planArt.digest;
+    }
+    if (planArt?.requests?.length) {
+      plannedRequests = planArt.requests.map((r) => ({
+        tool: r.tool,
+        engine: r.engine,
+        region: r.region,
+        query: r.query ?? null,
+        action: r.action,
+        requestHash: r.requestHash,
+      }));
+    }
+    if (typeof planArt?.plannedNewTasks === "number") plannedNewTasksFromArt = planArt.plannedNewTasks;
+    if (typeof planArt?.estimatedLimitsTotal === "number") {
+      estimatedLimitsFromArt = planArt.estimatedLimitsTotal;
     }
   }
 
@@ -384,6 +410,7 @@ export async function getArsenkinUiStatus(
   return {
     enabled,
     configured,
+    caseId,
     workflow,
     stage,
     reportRunId: runId,
@@ -391,8 +418,9 @@ export async function getArsenkinUiStatus(
     verdict: stageStatus,
     tools: budget.tools,
     planDigest,
-    plannedNewTasks: null,
-    estimatedLimitsTotal: null,
+    plannedRequests,
+    plannedNewTasks: plannedNewTasksFromArt,
+    estimatedLimitsTotal: estimatedLimitsFromArt,
     maxNewTasks: budget.maxNewTasks,
     maxEstimatedLimits: budget.maxEstimatedLimits,
     networkCalls: getArsenkinNetworkCallCount(),
@@ -589,11 +617,22 @@ export async function buildArsenkinUiPlan(input: {
       action: r.action,
       requestHash: r.requestHash,
     })),
+    plannedRequests: plan.requests.map((r) => ({
+      tool: r.tool,
+      engine: r.engine,
+      region: r.region,
+      query: r.query ?? null,
+      action: r.action,
+      requestHash: r.requestHash,
+    })),
     canExecute: true,
     networkCalls: 0,
     humanMessages: [],
   };
 }
+
+/** Spec alias — same as buildArsenkinUiPlan. */
+export const planArsenkinUiRun = buildArsenkinUiPlan;
 
 export async function executeArsenkinUiPlan(input: {
   caseId: string;
@@ -685,6 +724,9 @@ export async function executeArsenkinUiPlan(input: {
     result,
   };
 }
+
+/** Spec alias — same as executeArsenkinUiPlan. */
+export const executeArsenkinUiRun = executeArsenkinUiPlan;
 
 /**
  * Sync Arsenkin observations into ORION Golden case root without Arsenkin network.
@@ -859,6 +901,7 @@ export function toPublicArsenkinUiDto(
   const base: Record<string, unknown> = {
     enabled: dto.enabled,
     configured: dto.configured,
+    caseId: dto.caseId,
     workflow: dto.workflow,
     stage: dto.stage,
     reportRunId: dto.reportRunId,
@@ -866,6 +909,7 @@ export function toPublicArsenkinUiDto(
     verdict: dto.verdict,
     tools: dto.tools,
     planDigest: dto.planDigest,
+    plannedRequests: dto.plannedRequests ?? [],
     plannedNewTasks: dto.plannedNewTasks,
     estimatedLimitsTotal: dto.estimatedLimitsTotal,
     maxNewTasks: dto.maxNewTasks,
@@ -888,6 +932,7 @@ export function toPublicArsenkinUiDto(
   if ("requests" in dto && Array.isArray((dto as ArsenkinUiPlanDto).requests)) {
     const plan = dto as ArsenkinUiPlanDto;
     base.requests = plan.requests;
+    base.plannedRequests = plan.plannedRequests?.length ? plan.plannedRequests : plan.requests;
     base.digest = plan.digest ?? plan.planDigest;
   }
   return base;
