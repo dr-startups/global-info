@@ -5,6 +5,8 @@
  *   npx tsx scripts/backfill-arsenkin-task-provenance.ts --reportRunId=... --apply
  *
  * Never calls Arsenkin API. Ambiguous/unmatched rows are left untouched.
+ * Candidates: DONE tasks with responseJson + externalTaskId only.
+ * Default remains dry-run.
  */
 
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -16,6 +18,11 @@ type TaskRow = {
   toolName: string;
   requestJson: unknown;
   reportRunId: string | null;
+  state: string;
+  responseJson: unknown;
+  externalTaskId: string | null;
+  completedAt: Date | null;
+  createdAt: Date;
 };
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -70,17 +77,20 @@ function parseArgs(argv: string[]) {
   return { reportRunId, apply, dryRun: apply ? false : dryRun };
 }
 
+const WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7 days around task completion/creation
+
 function matchCandidates(
   tasks: TaskRow[],
-  tip: { tool: string; engine: string; region: string; queryText?: string }
+  tip: { tool: string; engine: string; region: string; queryText?: string; capturedAt?: Date | null }
 ): TaskRow[] {
   return tasks.filter((task) => {
     if (task.toolName !== tip.tool) return false;
+    if (!/^DONE$/i.test(task.state)) return false;
+    if (!task.responseJson || !task.externalTaskId) return false;
     const engine = engineFromRequest(task.toolName, task.requestJson);
     const region = regionFromRequest(task.toolName, task.requestJson);
     if (engine && engine !== tip.engine.toUpperCase()) return false;
     if (region && region !== tip.region.toUpperCase() && !(tip.region === "UAE" && region === "UAE")) {
-      // allow loose RU default
       if (!(tip.region.toUpperCase() === "RU" && region === "RU")) return false;
     }
     if (tip.queryText) {
@@ -88,6 +98,11 @@ function matchCandidates(
       if (queries.length && !queries.some((q) => q === tip.queryText || q.includes(tip.queryText!))) {
         return false;
       }
+    }
+    if (tip.capturedAt) {
+      const anchor = (task.completedAt ?? task.createdAt).getTime();
+      const delta = Math.abs(tip.capturedAt.getTime() - anchor);
+      if (delta > WINDOW_MS) return false;
     }
     return true;
   });
@@ -99,9 +114,12 @@ async function main() {
     throw new Error("required: --reportRunId=... (default --dry-run; use --apply to write)");
   }
 
-  const tasks = await prisma.providerTask.findMany({
+  const allTasks = await prisma.providerTask.findMany({
     where: { reportRunId: args.reportRunId, provider: "arsenkin" },
   });
+  const tasks = allTasks.filter(
+    (t) => /^DONE$/i.test(t.state) && t.responseJson != null && Boolean(t.externalTaskId)
+  ) as TaskRow[];
   const observations = await prisma.serpObservation.findMany({
     where: { auditRunId: args.reportRunId, provider: "arsenkin" },
   });
@@ -114,6 +132,8 @@ async function main() {
     observationsTotal: observations.length,
     coverageLinked: coverage.filter((c) => c.providerTaskId).length,
     coverageTotal: coverage.length,
+    eligibleDoneTasks: tasks.length,
+    totalTasks: allTasks.length,
   };
 
   const proposed: Array<{ kind: "observation" | "coverage"; id: string; providerTaskId: string }> = [];
@@ -140,6 +160,7 @@ async function main() {
       engine: obs.engine,
       region: /UAE|AE|INTL/i.test(obs.region) ? "UAE" : "RU",
       queryText: obs.queryText,
+      capturedAt: obs.capturedAt,
     };
     if (!tip.tool) {
       unmatched.push({ kind: "observation", id: obs.id, tip });
@@ -162,6 +183,7 @@ async function main() {
       engine: row.engine,
       region: /UAE|AE|INTL/i.test(row.region) ? "UAE" : "RU",
       queryText: row.queryText,
+      capturedAt: row.capturedAt,
     };
     const cands = matchCandidates(tasks, tip);
     if (cands.length === 1) {
@@ -173,21 +195,24 @@ async function main() {
     }
   }
 
+  // Never mutate ambiguous/unmatched
   let after = before;
   if (args.apply) {
-    for (const p of proposed) {
-      if (p.kind === "observation") {
-        await prisma.serpObservation.update({
-          where: { id: p.id },
-          data: { providerTaskId: p.providerTaskId },
-        });
-      } else {
-        await prisma.surfaceCollectionCoverage.update({
-          where: { id: p.id },
-          data: { providerTaskId: p.providerTaskId },
-        });
+    await prisma.$transaction(async (tx) => {
+      for (const p of proposed) {
+        if (p.kind === "observation") {
+          await tx.serpObservation.update({
+            where: { id: p.id },
+            data: { providerTaskId: p.providerTaskId },
+          });
+        } else {
+          await tx.surfaceCollectionCoverage.update({
+            where: { id: p.id },
+            data: { providerTaskId: p.providerTaskId },
+          });
+        }
       }
-    }
+    });
     const obs2 = await prisma.serpObservation.findMany({
       where: { auditRunId: args.reportRunId, provider: "arsenkin" },
       select: { providerTaskId: true },
@@ -197,6 +222,7 @@ async function main() {
       select: { providerTaskId: true },
     });
     after = {
+      ...before,
       observationsLinked: obs2.filter((o) => o.providerTaskId).length,
       observationsTotal: obs2.length,
       coverageLinked: cov2.filter((c) => c.providerTaskId).length,
@@ -212,6 +238,7 @@ async function main() {
     ambiguous,
     unmatched,
     after,
+    note: "ambiguous/unmatched never modified; apply is transactional; default dry-run",
   };
   const outDir = join(
     process.cwd(),

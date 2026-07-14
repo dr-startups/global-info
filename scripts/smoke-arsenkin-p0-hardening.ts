@@ -12,7 +12,7 @@ import {
   hashProviderRequest,
 } from "../src/modules/digital-profile/providers/arsenkin/provider-task-store";
 import { ensureArsenkinTask, pollArsenkinTask, runDueArsenkinPolls } from "../src/modules/digital-profile/providers/arsenkin/poll-worker";
-import { createMemoryArsenkinAccountLimiter } from "../src/modules/digital-profile/providers/arsenkin/account-rate-limit";
+import { createMemoryArsenkinAccountLimiter, arsenkinAccountLimiterConfig } from "../src/modules/digital-profile/providers/arsenkin/account-rate-limit";
 import { computeLimitsSpent, costStatusFromSpent } from "../src/modules/digital-profile/providers/arsenkin/cost";
 import { inspectFirst36Acceptance } from "../src/modules/digital-profile/orion-golden/classic/first36-acceptance-gate";
 
@@ -316,5 +316,113 @@ describe("arsenkin p0 hardening", () => {
     });
     assert.equal(r.passed, false);
     assert.ok(r.issues.some((i) => /provenance|provider-task/i.test(i.code)));
+  });
+
+  it("HTTP /set timeout is uncertain (SUBMIT_UNKNOWN path); check may retry", async () => {
+    let setCalls = 0;
+    let checkCalls = 0;
+    const hangUntilAbort = (init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const onAbort = () => {
+          const err = new Error("The operation was aborted");
+          err.name = "AbortError";
+          reject(err);
+        };
+        if (init?.signal?.aborted) onAbort();
+        else init?.signal?.addEventListener("abort", onAbort, { once: true });
+      });
+
+    const client = new ArsenkinClient({
+      token: "test",
+      httpTimeoutMs: 30,
+      maxRetries: 2,
+      sleep: async () => undefined,
+      fetchImpl: (async (_url: string, init?: RequestInit) => {
+        setCalls += 1;
+        return hangUntilAbort(init);
+      }) as typeof fetch,
+    });
+    await assert.rejects(
+      () => client.setTask({ tools_name: "suggest", data: { queries: ["x"] } }),
+      (err: unknown) => {
+        assert.ok(err instanceof ArsenkinRequestError);
+        assert.equal(err.options.uncertain, true);
+        assert.equal(err.options.code, "http_timeout");
+        return true;
+      }
+    );
+    assert.equal(setCalls, 1);
+
+    const checkClient = new ArsenkinClient({
+      token: "test",
+      httpTimeoutMs: 20,
+      maxRetries: 1,
+      sleep: async () => undefined,
+      fetchImpl: (async (_url: string, init?: RequestInit) => {
+        checkCalls += 1;
+        return hangUntilAbort(init);
+      }) as typeof fetch,
+    });
+    await assert.rejects(() => checkClient.checkTask("tid"));
+    assert.ok(checkCalls >= 2);
+  });
+
+  it("account lease TTL is strictly greater than HTTP timeout", () => {
+    const cfg = arsenkinAccountLimiterConfig({
+      ARSENKIN_HTTP_TIMEOUT_MS: "25000",
+      ARSENKIN_ACCOUNT_LEASE_MS: "30000",
+    });
+    assert.ok(cfg.leaseMs > 25_000);
+  });
+
+  it("surface coverage concurrent upsert does not duplicate business key", async () => {
+    const { prisma } = await import("../src/server/prisma/client");
+    const { upsertSurfaceCollectionCoverage } = await import(
+      "../src/modules/digital-profile/providers/arsenkin/surface-coverage"
+    );
+    const reportRunId = `cov-race-${Date.now()}`;
+    // Ensure OrionReportRun exists for FK — skip if DB unavailable
+    try {
+      await prisma.orionReportRun.create({
+        data: {
+          id: reportRunId,
+          caseId: "cmreamy2t0002o30f29urzcog",
+          status: "RUNNING",
+        },
+      });
+    } catch (err) {
+      // case may be missing — skip race test offline
+      console.log("skip coverage race: cannot create report run", String(err).slice(0, 120));
+      await prisma.$disconnect().catch(() => undefined);
+      return;
+    }
+    const payload = {
+      reportRunId,
+      provider: "arsenkin",
+      tool: "suggest",
+      queryId: "q1",
+      queryText: "test",
+      engine: "GOOGLE",
+      region: "RU",
+      language: "ru",
+      device: "DESKTOP",
+      surface: "autocomplete",
+      resultCount: 0,
+    };
+    try {
+      await Promise.all([
+        upsertSurfaceCollectionCoverage(payload),
+        upsertSurfaceCollectionCoverage({ ...payload, resultCount: 1 }),
+        upsertSurfaceCollectionCoverage({ ...payload, resultCount: 2 }),
+      ]);
+      const rows = await prisma.surfaceCollectionCoverage.findMany({
+        where: { reportRunId, tool: "suggest", queryId: "q1" },
+      });
+      assert.equal(rows.length, 1);
+    } finally {
+      await prisma.surfaceCollectionCoverage.deleteMany({ where: { reportRunId } }).catch(() => undefined);
+      await prisma.orionReportRun.delete({ where: { id: reportRunId } }).catch(() => undefined);
+      await prisma.$disconnect().catch(() => undefined);
+    }
   });
 });

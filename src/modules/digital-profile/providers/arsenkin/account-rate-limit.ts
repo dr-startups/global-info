@@ -15,12 +15,15 @@ export type ArsenkinAccountLimiterConfig = {
 };
 
 export function arsenkinAccountLimiterConfig(env: NodeJS.ProcessEnv = process.env): ArsenkinAccountLimiterConfig {
+  const httpTimeoutMs = Math.max(1_000, Number(env.ARSENKIN_HTTP_TIMEOUT_MS ?? 25_000) || 25_000);
+  const configuredLease = Math.max(5_000, Number(env.ARSENKIN_ACCOUNT_LEASE_MS ?? DEFAULT_LEASE_MS) || DEFAULT_LEASE_MS);
   return {
     id: "arsenkin",
     maxConcurrent: Math.max(1, Number(env.ARSENKIN_MAX_CONCURRENT ?? 2) || 2),
     // Conservative default below provider soft-cap to avoid minute-boundary bursts.
     maxRpm: Math.max(1, Math.min(30, Number(env.ARSENKIN_REQUESTS_PER_MINUTE ?? 24) || 24)),
-    leaseMs: Math.max(5_000, Number(env.ARSENKIN_ACCOUNT_LEASE_MS ?? DEFAULT_LEASE_MS) || DEFAULT_LEASE_MS),
+    // Lease must outlive per-request HTTP timeout (AbortSignal).
+    leaseMs: Math.max(configuredLease, httpTimeoutMs + 5_000),
     windowMs: WINDOW_MS,
   };
 }

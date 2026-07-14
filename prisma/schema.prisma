@@ -776,6 +776,7 @@ model SurfaceCollectionCoverage {
   reportRun     OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
   providerTask  ProviderTask?  @relation(fields: [providerTaskId], references: [id], onDelete: SetNull)
 
+  @@unique([reportRunId, provider, tool, queryId, surface, engine, region, language, device], map: "dp_surface_coverage_biz_unique")
   @@index([reportRunId])
   @@index([reportRunId, surface])
   @@index([providerTaskId])

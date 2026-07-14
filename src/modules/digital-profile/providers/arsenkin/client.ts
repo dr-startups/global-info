@@ -78,6 +78,8 @@ export class ArsenkinClient {
   private readonly maxRetries: number;
   private readonly sleep: (ms: number) => Promise<void>;
   private readonly limiter: RateLimiter;
+  /** Per-request HTTP timeout; must stay below account lease TTL. */
+  private readonly httpTimeoutMs: number;
 
   constructor(options: ArsenkinClientOptions) {
     if (!options.token?.trim()) {
@@ -88,6 +90,10 @@ export class ArsenkinClient {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.maxRetries = options.maxRetries ?? 4;
     this.sleep = options.sleep ?? sleepDefault;
+    this.httpTimeoutMs = Math.max(
+      1_000,
+      Number(options.httpTimeoutMs ?? process.env.ARSENKIN_HTTP_TIMEOUT_MS ?? 25_000) || 25_000
+    );
     this.limiter = createArsenkinRateLimiter(options.requestsPerMinute ?? 30, {
       now: options.now,
       sleep: this.sleep,
@@ -174,6 +180,7 @@ export class ArsenkinClient {
             Authorization: `Bearer ${this.token}`,
           },
           body: JSON.stringify(body),
+          signal: AbortSignal.timeout(this.httpTimeoutMs),
         });
         const text = await res.text();
         let parsed: unknown = {};
@@ -212,6 +219,24 @@ export class ArsenkinClient {
         return obj;
       } catch (err) {
         lastErr = err instanceof Error ? err : new Error(String(err));
+        const isAbort =
+          (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) ||
+          /aborted|timeout/i.test(String((err as Error)?.message ?? err));
+        if (isAbort) {
+          // /set timeout → SUBMIT_UNKNOWN (no blind retry). check/get may retry.
+          if (!options.retryAmbiguousNetwork) {
+            throw new ArsenkinRequestError(`Arsenkin HTTP timeout after ${this.httpTimeoutMs}ms`, {
+              code: "http_timeout",
+              uncertain: true,
+            });
+          }
+          lastErr = new ArsenkinRequestError(`Arsenkin HTTP timeout after ${this.httpTimeoutMs}ms`, {
+            code: "http_timeout",
+          });
+          if (attempt >= this.maxRetries) break;
+          await this.sleep(500 * (attempt + 1));
+          continue;
+        }
         if (err instanceof ArsenkinRequestError && err.options.status && err.options.status !== 429) {
           throw err;
         }

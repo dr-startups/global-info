@@ -18,32 +18,44 @@ export type SurfaceCoverageInput = {
   capturedAt?: Date;
 };
 
-/** Records completed surface collection, including successful zero-result queries. */
+const bizKey = (input: SurfaceCoverageInput) => ({
+  reportRunId: input.reportRunId,
+  provider: input.provider,
+  tool: input.tool,
+  queryId: input.queryId,
+  surface: input.surface,
+  engine: input.engine,
+  region: input.region,
+  language: input.language,
+  device: input.device ?? "DESKTOP",
+});
+
+/** Atomic upsert on composite business key (no findFirst → create race). */
 export async function upsertSurfaceCollectionCoverage(input: SurfaceCoverageInput) {
-  const where = {
-    reportRunId: input.reportRunId,
-    provider: input.provider,
-    tool: input.tool,
-    providerTaskId: input.providerTaskId ?? null,
-    queryId: input.queryId,
-    surface: input.surface,
-  };
+  const where = bizKey(input);
   const data = {
     ...where,
+    providerTaskId: input.providerTaskId ?? null,
     queryText: input.queryText,
-    engine: input.engine,
-    region: input.region,
-    language: input.language,
-    device: input.device ?? "DESKTOP",
     status: input.resultCount > 0 ? "OK" : "NO_RESULTS",
     resultCount: input.resultCount,
     errorCode: input.errorCode ?? null,
     capturedAt: input.capturedAt ?? new Date(),
   };
-  const existing = await prisma.surfaceCollectionCoverage.findFirst({ where, select: { id: true } });
-  return existing
-    ? prisma.surfaceCollectionCoverage.update({ where: { id: existing.id }, data })
-    : prisma.surfaceCollectionCoverage.create({ data });
+  return prisma.surfaceCollectionCoverage.upsert({
+    where: {
+      reportRunId_provider_tool_queryId_surface_engine_region_language_device: where,
+    },
+    create: data,
+    update: {
+      providerTaskId: data.providerTaskId,
+      queryText: data.queryText,
+      status: data.status,
+      resultCount: data.resultCount,
+      errorCode: data.errorCode,
+      capturedAt: data.capturedAt,
+    },
+  });
 }
 
 export async function recordSurfaceCoverageFromDrafts(input: {
@@ -54,12 +66,19 @@ export async function recordSurfaceCoverageFromDrafts(input: {
 }) {
   const groups = new Map<string, SerpObservationDraft[]>();
   for (const draft of input.drafts) {
-    const key = [draft.queryId, draft.engine, draft.region, draft.language, draft.device ?? "DESKTOP", draft.surface].join("|");
+    const key = [
+      draft.queryId,
+      draft.engine,
+      draft.region,
+      draft.language,
+      draft.device ?? "DESKTOP",
+      draft.surface,
+    ].join("|");
     groups.set(key, [...(groups.get(key) ?? []), draft]);
   }
   return Promise.all(
     [...groups.values()].map((rows) => {
-      const first = rows[0];
+      const first = rows[0]!;
       return upsertSurfaceCollectionCoverage({
         reportRunId: input.reportRunId,
         provider: first.provider,

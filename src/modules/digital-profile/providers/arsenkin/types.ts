@@ -64,6 +64,8 @@ export type ArsenkinClientOptions = {
   requestsPerMinute?: number;
   /** Max retries on 429 / transient network. Default 4. */
   maxRetries?: number;
+  /** Per-request AbortSignal timeout (ms). Default 25000 (< account lease). */
+  httpTimeoutMs?: number;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
 };
