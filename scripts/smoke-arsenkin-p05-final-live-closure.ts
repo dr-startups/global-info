@@ -6,6 +6,7 @@
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync, readFileSync, existsSync, mkdtempSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -588,15 +589,19 @@ describe("arsenkin P0.5 acceptance repair closure", () => {
     );
   });
 
-  it("21. provenance: Railway SHA, dirty bypass removed, unknown no-git", () => {
-    const dir = mkdtempSync(join(tmpdir(), "p05-nongit-"));
+  it("21. provenance: Railway SHA; clean/dirty trees; ALLOW_DIRTY does not bypass", () => {
+    const noGitDir = mkdtempSync(join(tmpdir(), "p05-nongit-"));
+    const cleanGitDir = mkdtempSync(join(tmpdir(), "p05-clean-git-"));
+    const dirtyGitDir = mkdtempSync(join(tmpdir(), "p05-dirty-git-"));
+    const gitIn = (cwd: string, args: string[]) =>
+      spawnSync("git", args, { cwd, encoding: "utf-8" });
     try {
       const railway = resolveBuildIdentity(
         {
           RAILWAY_GIT_COMMIT_SHA: "railcommit0123456789abcdef0123456789ab",
           RAILWAY_DEPLOYMENT_ID: "deploy-xyz",
         } as NodeJS.ProcessEnv,
-        dir
+        noGitDir
       );
       assert.equal(railway.source, "env");
       assert.equal(railway.dirtyTree, false);
@@ -605,23 +610,55 @@ describe("arsenkin P0.5 acceptance repair closure", () => {
 
       const immutable = resolveBuildIdentity(
         { GITHUB_SHA: "deadbeefcafebabe0123456789abcdef01234567" } as NodeJS.ProcessEnv,
-        dir
+        noGitDir
       );
       assert.equal(immutable.source, "env");
       assert.equal(immutable.dirtyTree, false);
 
-      const unknown = resolveBuildIdentity({} as NodeJS.ProcessEnv, dir);
+      const unknown = resolveBuildIdentity({} as NodeJS.ProcessEnv, noGitDir);
       assert.equal(unknown.buildCommit, "unknown");
       assert.equal(unknown.dirtyTree, true);
 
-      const local = resolveBuildIdentity({
-        ARSENKIN_ALLOW_DIRTY_TREE: "1",
-        RAILWAY_GIT_COMMIT_SHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      } as NodeJS.ProcessEnv);
-      assert.equal(local.source, "env");
-      assert.equal(local.dirtyTree, true);
+      // Isolated clean git fixture: ALLOW_DIRTY must NOT invent dirtyTree.
+      assert.equal(gitIn(cleanGitDir, ["init"]).status, 0);
+      assert.equal(gitIn(cleanGitDir, ["config", "user.email", "p05-test@example.com"]).status, 0);
+      assert.equal(gitIn(cleanGitDir, ["config", "user.name", "p05-test"]).status, 0);
+      writeFileSync(join(cleanGitDir, "baseline.txt"), "committed\n");
+      assert.equal(gitIn(cleanGitDir, ["add", "baseline.txt"]).status, 0);
+      assert.equal(gitIn(cleanGitDir, ["commit", "-m", "baseline"]).status, 0);
+      const cleanLocal = resolveBuildIdentity(
+        {
+          ARSENKIN_ALLOW_DIRTY_TREE: "1",
+          RAILWAY_GIT_COMMIT_SHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        } as NodeJS.ProcessEnv,
+        cleanGitDir
+      );
+      assert.equal(cleanLocal.source, "env");
+      assert.equal(cleanLocal.dirtyTree, false);
+
+      // Isolated dirty git fixture: committed baseline + untracked file.
+      assert.equal(gitIn(dirtyGitDir, ["init"]).status, 0);
+      assert.equal(gitIn(dirtyGitDir, ["config", "user.email", "p05-test@example.com"]).status, 0);
+      assert.equal(gitIn(dirtyGitDir, ["config", "user.name", "p05-test"]).status, 0);
+      writeFileSync(join(dirtyGitDir, "baseline.txt"), "committed\n");
+      assert.equal(gitIn(dirtyGitDir, ["add", "baseline.txt"]).status, 0);
+      assert.equal(gitIn(dirtyGitDir, ["commit", "-m", "baseline"]).status, 0);
+      writeFileSync(join(dirtyGitDir, "untracked-dirty.txt"), "dirty\n");
+
+      const dirtyLocal = resolveBuildIdentity(
+        {
+          ARSENKIN_ALLOW_DIRTY_TREE: "1",
+          RAILWAY_GIT_COMMIT_SHA: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        } as NodeJS.ProcessEnv,
+        dirtyGitDir
+      );
+      assert.equal(dirtyLocal.source, "env");
+      assert.equal(dirtyLocal.dirtyTree, true);
+      assert.equal(dirtyLocal.buildCommit, "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      rmSync(noGitDir, { recursive: true, force: true });
+      rmSync(cleanGitDir, { recursive: true, force: true });
+      rmSync(dirtyGitDir, { recursive: true, force: true });
     }
   });
 

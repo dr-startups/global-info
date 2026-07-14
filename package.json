@@ -49,6 +49,7 @@
     "smoke:arsenkin-p05-final-live-closure": "tsx scripts/smoke-arsenkin-p05-final-live-closure.ts",
     "smoke:arsenkin-p05-lifecycle-integration": "tsx scripts/smoke-arsenkin-p05-lifecycle-integration.ts",
     "smoke:arsenkin-p05-suggest-plan-only": "tsx scripts/smoke-arsenkin-p05-suggest-plan-only.ts",
+    "smoke:arsenkin-ui-orchestration": "tsx --test scripts/smoke-arsenkin-ui-orchestration.ts",
     "arsenkin:db-readiness": "tsx scripts/generate-arsenkin-db-readiness.ts",
     "arsenkin:test-db:up": "docker compose -f docker-compose.arsenkin-test.yml up -d",
     "arsenkin:test-db:down": "docker compose -f docker-compose.arsenkin-test.yml down -v",

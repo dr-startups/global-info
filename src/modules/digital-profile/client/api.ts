@@ -1454,3 +1454,132 @@ export function getOrionGoldenPrepareStatus(
   return request<OrionGoldenPrepareSummary>(`/cases/${caseId}/orion-golden/prepare`);
 }
 
+// ---------------------------------------------------------------------------
+// Arsenkin Tools UI (API collector — not Playwright LIVE SERP)
+// ---------------------------------------------------------------------------
+
+export type ArsenkinUiStage = "SUGGEST_RU_CANARY" | "FIRST36_STAGE1" | "FIRST36_STAGE2";
+
+export type ArsenkinUiStatusCode =
+  | "NOT_CONFIGURED"
+  | "READY_TO_PREPARE"
+  | "PREPARED"
+  | "PLAN_READY"
+  | "EXECUTING"
+  | "STAGE_DONE"
+  | "SYNC_READY"
+  | "SYNCED"
+  | "BLOCKED"
+  | "FAILED"
+  | "MANUAL_INTERVENTION_REQUIRED";
+
+export type ArsenkinUiStatusDto = {
+  enabled: boolean;
+  configured: boolean;
+  workflow: "suggest-canary" | "first36-full" | null;
+  stage: ArsenkinUiStage | null;
+  reportRunId: string | null;
+  status: ArsenkinUiStatusCode;
+  verdict: string | null;
+  tools: string[];
+  planDigest: string | null;
+  plannedNewTasks: number | null;
+  estimatedLimitsTotal: number | null;
+  maxNewTasks: number;
+  maxEstimatedLimits: number;
+  networkCalls: number;
+  collectorCalls: number | null;
+  providerTaskCount: number;
+  observationCount: number;
+  coverageCount: number;
+  blockers: string[];
+  lastError: string | null;
+  canPrepare: boolean;
+  canPlan: boolean;
+  canExecute: boolean;
+  canSync: boolean;
+  synced: boolean;
+  updatedAt: string;
+  humanMessages: string[];
+};
+
+export type ArsenkinUiPlanRequestDto = {
+  tool: string;
+  engine: string;
+  region: string;
+  query: string | null;
+  action: string;
+  requestHash: string;
+};
+
+export type ArsenkinUiPlanDto = ArsenkinUiStatusDto & {
+  requests: ArsenkinUiPlanRequestDto[];
+  digest: string;
+};
+
+export type ArsenkinUiActionPayload = {
+  reportRunId: string;
+  stage: ArsenkinUiStage;
+};
+
+export type ArsenkinUiExecutePayload = ArsenkinUiActionPayload & {
+  confirmPlanDigest: string;
+  confirmed: true;
+};
+
+export function getArsenkinStatus(
+  caseId: string,
+  params?: { reportRunId?: string; stage?: ArsenkinUiStage }
+): Promise<ArsenkinUiStatusDto> {
+  const q = new URLSearchParams();
+  if (params?.reportRunId) q.set("reportRunId", params.reportRunId);
+  if (params?.stage) q.set("stage", params.stage);
+  const qs = q.toString();
+  return request<ArsenkinUiStatusDto>(
+    `/cases/${caseId}/orion-golden/arsenkin${qs ? `?${qs}` : ""}`
+  );
+}
+
+export function prepareArsenkinRun(
+  caseId: string,
+  payload: ArsenkinUiActionPayload
+): Promise<ArsenkinUiStatusDto> {
+  return request<ArsenkinUiStatusDto>(`/cases/${caseId}/orion-golden/arsenkin`, {
+    method: "POST",
+    body: JSON.stringify({ action: "prepare", ...payload }),
+  });
+}
+
+export function planArsenkinRun(
+  caseId: string,
+  payload: ArsenkinUiActionPayload
+): Promise<ArsenkinUiPlanDto> {
+  return request<ArsenkinUiPlanDto>(`/cases/${caseId}/orion-golden/arsenkin`, {
+    method: "POST",
+    body: JSON.stringify({ action: "plan", ...payload }),
+  });
+}
+
+export function executeArsenkinRun(
+  caseId: string,
+  payload: ArsenkinUiExecutePayload
+): Promise<ArsenkinUiStatusDto> {
+  return request<ArsenkinUiStatusDto>(`/cases/${caseId}/orion-golden/arsenkin`, {
+    method: "POST",
+    body: JSON.stringify({ action: "execute", ...payload }),
+  });
+}
+
+export function syncArsenkinRun(
+  caseId: string,
+  payload: ArsenkinUiActionPayload
+): Promise<ArsenkinUiStatusDto & { orphanedEvidenceIds?: string[] }> {
+  return request<ArsenkinUiStatusDto & { orphanedEvidenceIds?: string[] }>(
+    `/cases/${caseId}/orion-golden/arsenkin`,
+    {
+      method: "POST",
+      body: JSON.stringify({ action: "sync", ...payload }),
+    }
+  );
+}
+

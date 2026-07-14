@@ -35,6 +35,7 @@ import {
   type SubmitAdminReviewDecisionInput,
 } from "./api";
 import { Badge, Card, EmptyState, ErrorBox, Loading, Notice, SuccessBox, WarningBox } from "./components";
+import { ArsenkinToolsPanel } from "./ArsenkinToolsPanel";
 import {
   classifyQueueItemGroup,
   decisionWarningRu,
@@ -907,6 +908,8 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
         </div>
       </Card>
 
+      <ArsenkinToolsPanel caseId={caseId} reportRunId={reportRunId} canDecide={canDecide} />
+
       <Card data-testid="live-serp-capture-panel">
         <div className="dp-stack" style={{ gap: 8 }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -921,7 +924,8 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
           </div>
           <Notice>
             Ручной Playwright-захват поисковой выдачи. Не запускается при генерации PDF. Без прокси — DIRECT +
-            GEO не подтверждено (допустимо для staging preview).
+            GEO не подтверждено (допустимо для staging preview). Arsenkin Tools (выше) — API-данные; этот блок —
+            браузерные снимки.
           </Notice>
           {subjectQuery ? (
             <div className="dp-muted">

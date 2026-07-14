@@ -1,0 +1,506 @@
+"use client";
+
+/**
+ * Arsenkin Tools UI panel — API collector, not Playwright LIVE SERP.
+ */
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  DigitalProfileApiError,
+  executeArsenkinRun,
+  getArsenkinStatus,
+  planArsenkinRun,
+  prepareArsenkinRun,
+  syncArsenkinRun,
+  type ArsenkinUiPlanDto,
+  type ArsenkinUiStage,
+  type ArsenkinUiStatusDto,
+} from "./api";
+import { Badge, Card, ErrorBox, Notice, SuccessBox, WarningBox } from "./components";
+
+type WorkflowMode = "canary" | "first36";
+
+function stageForMode(mode: WorkflowMode, status: ArsenkinUiStatusDto | null): ArsenkinUiStage {
+  if (mode === "canary") return "SUGGEST_RU_CANARY";
+  if (status?.stage === "FIRST36_STAGE1" && status.status === "SYNC_READY") {
+    return "FIRST36_STAGE1";
+  }
+  if (
+    status?.stage === "FIRST36_STAGE1" &&
+    (status.status === "STAGE_DONE" || status.status === "SYNCED" || status.verdict === "DONE")
+  ) {
+    return "FIRST36_STAGE2";
+  }
+  if (status?.stage === "FIRST36_STAGE2") return "FIRST36_STAGE2";
+  return "FIRST36_STAGE1";
+}
+
+function shortDigest(d: string | null | undefined): string {
+  if (!d) return "—";
+  return d.length <= 16 ? d : `${d.slice(0, 8)}…${d.slice(-6)}`;
+}
+
+function statusTone(
+  s: ArsenkinUiStatusDto["status"]
+): "ok" | "warn" | "neutral" | "danger" {
+  if (s === "SYNCED" || s === "STAGE_DONE" || s === "SYNC_READY") return "ok";
+  if (s === "EXECUTING" || s === "PLAN_READY" || s === "PREPARED") return "warn";
+  if (s === "FAILED" || s === "MANUAL_INTERVENTION_REQUIRED" || s === "BLOCKED") return "danger";
+  return "neutral";
+}
+
+function statusLabelRu(s: ArsenkinUiStatusDto["status"]): string {
+  const map: Record<ArsenkinUiStatusDto["status"], string> = {
+    NOT_CONFIGURED: "Не подключён",
+    READY_TO_PREPARE: "Готов к подготовке",
+    PREPARED: "Подготовлен",
+    PLAN_READY: "План готов",
+    EXECUTING: "Выполняется",
+    STAGE_DONE: "Стадия завершена",
+    SYNC_READY: "Готов к передаче в ORION",
+    SYNCED: "Результаты переданы",
+    BLOCKED: "Заблокирован",
+    FAILED: "Ошибка",
+    MANUAL_INTERVENTION_REQUIRED: "Требуется ручное вмешательство",
+  };
+  return map[s] ?? s;
+}
+
+export function ArsenkinToolsPanel(props: {
+  caseId: string;
+  reportRunId: string | null;
+  canDecide: boolean;
+}) {
+  const { caseId, reportRunId, canDecide } = props;
+  const [mode, setMode] = useState<WorkflowMode>("canary");
+  const [status, setStatus] = useState<ArsenkinUiStatusDto | null>(null);
+  const [plan, setPlan] = useState<ArsenkinUiPlanDto | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmedPaid, setConfirmedPaid] = useState(false);
+  const [executeLocked, setExecuteLocked] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const executeInFlight = useRef(false);
+
+  const stage = stageForMode(mode, status);
+
+  const stopPolling = useCallback(() => {
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  const refresh = useCallback(async () => {
+    try {
+      const s = await getArsenkinStatus(caseId, {
+        reportRunId: reportRunId ?? undefined,
+        stage,
+      });
+      setStatus(s);
+      setError(null);
+      if (
+        s.status === "STAGE_DONE" ||
+        s.status === "SYNC_READY" ||
+        s.status === "SYNCED" ||
+        s.status === "FAILED" ||
+        s.status === "MANUAL_INTERVENTION_REQUIRED" ||
+        s.status === "BLOCKED"
+      ) {
+        stopPolling();
+        setExecuteLocked(false);
+      }
+      return s;
+    } catch (e) {
+      const msg =
+        e instanceof DigitalProfileApiError ? e.message : "Не удалось получить статус Arsenkin";
+      setError(msg);
+      stopPolling();
+      return null;
+    }
+  }, [caseId, reportRunId, stage, stopPolling]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
+    return () => stopPolling();
+  }, [stopPolling]);
+
+  const startPolling = useCallback(() => {
+    stopPolling();
+    pollRef.current = setInterval(() => {
+      void refresh();
+    }, 3000);
+  }, [refresh, stopPolling]);
+
+  const runAction = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    setError(null);
+    setBanner(null);
+    try {
+      await fn();
+    } catch (e) {
+      const msg = e instanceof DigitalProfileApiError ? e.message : "Ошибка Arsenkin";
+      setError(msg);
+      if (/digest|устарел|stale/i.test(msg)) {
+        setConfirmedPaid(false);
+        setConfirmOpen(false);
+        setPlan(null);
+        setBanner("План изменился. Сформируйте план заново.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onPrepare = () => {
+    if (!reportRunId) return;
+    void runAction(async () => {
+      const s = await prepareArsenkinRun(caseId, { reportRunId, stage });
+      setStatus(s);
+      setBanner("Arsenkin подготовлен (без сетевых вызовов).");
+    });
+  };
+
+  const onPlan = () => {
+    if (!reportRunId) return;
+    void runAction(async () => {
+      const p = await planArsenkinRun(caseId, { reportRunId, stage });
+      setPlan(p);
+      setStatus(p);
+      setConfirmedPaid(false);
+      setBanner("План сформирован — списания нет.");
+    });
+  };
+
+  const onExecuteConfirmed = () => {
+    if (!reportRunId || !plan?.digest || !confirmedPaid) return;
+    if (executeInFlight.current || executeLocked) return;
+    executeInFlight.current = true;
+    setExecuteLocked(true);
+    setConfirmOpen(false);
+    void runAction(async () => {
+      startPolling();
+      const s = await executeArsenkinRun(caseId, {
+        reportRunId,
+        stage,
+        confirmPlanDigest: plan.digest,
+        confirmed: true,
+      });
+      setStatus(s);
+      if (s.status === "EXECUTING" || s.status === "PREPARED") {
+        startPolling();
+      } else {
+        stopPolling();
+        setExecuteLocked(false);
+      }
+      if (s.status === "STAGE_DONE" || s.status === "SYNC_READY") {
+        setBanner("Стадия Arsenkin завершена.");
+      }
+    }).finally(() => {
+      executeInFlight.current = false;
+    });
+  };
+
+  const onSync = () => {
+    if (!reportRunId) return;
+    void runAction(async () => {
+      const s = await syncArsenkinRun(caseId, { reportRunId, stage });
+      setStatus(s);
+      setBanner("Результаты переданы в отчёт.");
+    });
+  };
+
+  const terminalBad =
+    status?.status === "FAILED" || status?.status === "MANUAL_INTERVENTION_REQUIRED";
+  const canExecuteUi =
+    canDecide &&
+    Boolean(plan?.digest) &&
+    confirmedPaid &&
+    !busy &&
+    !executeLocked &&
+    !terminalBad &&
+    (status?.canExecute || status?.status === "PLAN_READY" || status?.status === "PREPARED");
+
+  return (
+    <Card data-testid="arsenkin-tools-panel">
+      <div className="dp-stack" style={{ gap: 10 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <strong>Arsenkin Tools — поисковые API</strong>
+          {status ? (
+            <Badge tone={statusTone(status.status)}>{statusLabelRu(status.status)}</Badge>
+          ) : null}
+          {status?.configured ? (
+            <Badge tone="ok">подключён</Badge>
+          ) : (
+            <Badge tone="warn">не подключён</Badge>
+          )}
+        </div>
+
+        <Notice>
+          Arsenkin использует API и не является браузерным LIVE SERP capture. Arsenkin создаёт
+          структурированные результаты и синтетические панели; реальные браузерные скриншоты
+          остаются отдельным механизмом (блок LIVE SERP ниже).
+        </Notice>
+
+        <div className="dp-stack" style={{ gap: 6 }}>
+          <span className="dp-muted">Режим</span>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className={`dp-btn ${mode === "canary" ? "dp-btn-primary" : ""}`}
+              disabled={busy || executeLocked}
+              onClick={() => {
+                setMode("canary");
+                setPlan(null);
+                setConfirmedPaid(false);
+              }}
+            >
+              Проверочный запуск — 2 запроса
+            </button>
+            <button
+              type="button"
+              className={`dp-btn ${mode === "first36" ? "dp-btn-primary" : ""}`}
+              disabled={busy || executeLocked}
+              onClick={() => {
+                setMode("first36");
+                setPlan(null);
+                setConfirmedPaid(false);
+              }}
+            >
+              Полный сбор First36
+            </button>
+          </div>
+          {mode === "canary" ? (
+            <span className="dp-muted">
+              SUGGEST_RU_CANARY · Yandex RU + Google RU · preview, не полный First36
+            </span>
+          ) : (
+            <span className="dp-muted">
+              Сначала FIRST36_STAGE1, после DONE — FIRST36_STAGE2. Две стадии одним кликом не
+              запускаются.
+            </span>
+          )}
+        </div>
+
+        <div className="dp-kv">
+          <div>
+            <span className="dp-muted">reportRunId</span>
+            <div>
+              <code>{reportRunId ?? status?.reportRunId ?? "—"}</code>
+            </div>
+          </div>
+          <div>
+            <span className="dp-muted">workflow / stage</span>
+            <div>
+              {status?.workflow ?? "—"} / {stage}
+            </div>
+          </div>
+          <div>
+            <span className="dp-muted">инструменты</span>
+            <div>{(status?.tools ?? []).join(", ") || "—"}</div>
+          </div>
+          <div>
+            <span className="dp-muted">задачи / лимиты</span>
+            <div>
+              {status?.plannedNewTasks ?? plan?.plannedNewTasks ?? "—"} / max{" "}
+              {status?.maxNewTasks ?? "—"} · limits{" "}
+              {status?.estimatedLimitsTotal ?? plan?.estimatedLimitsTotal ?? "—"} / max{" "}
+              {status?.maxEstimatedLimits ?? "—"}
+            </div>
+          </div>
+          <div>
+            <span className="dp-muted">ProviderTask / observations / coverage</span>
+            <div>
+              {status?.providerTaskCount ?? 0} / {status?.observationCount ?? 0} /{" "}
+              {status?.coverageCount ?? 0}
+            </div>
+          </div>
+          <div>
+            <span className="dp-muted">network calls</span>
+            <div>{status?.networkCalls ?? 0}</div>
+          </div>
+        </div>
+
+        {(status?.humanMessages?.length || status?.blockers?.length) ? (
+          <WarningBox>
+            {(status.humanMessages?.length ? status.humanMessages : status.blockers).join(" ")}
+          </WarningBox>
+        ) : null}
+
+        {error ? <ErrorBox>{error}</ErrorBox> : null}
+        {banner ? <SuccessBox>{banner}</SuccessBox> : null}
+        {terminalBad ? (
+          <ErrorBox>
+            Автоповтор запрещён. Статус: {statusLabelRu(status!.status)}
+            {status?.lastError ? ` — ${status.lastError}` : ""}
+          </ErrorBox>
+        ) : null}
+
+        {plan?.requests?.length ? (
+          <div className="dp-stack" style={{ gap: 4 }}>
+            <span className="dp-muted">План (digest {shortDigest(plan.digest)})</span>
+            {plan.requests.map((r) => (
+              <div key={r.requestHash} className="dp-muted" style={{ fontSize: 13 }}>
+                {r.action} · {r.tool} · {r.engine} {r.region}
+                {r.query ? ` · ${r.query.slice(0, 60)}` : ""}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        {canDecide ? (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="dp-btn"
+              disabled={busy || !reportRunId || executeLocked || terminalBad}
+              onClick={onPrepare}
+            >
+              Подготовить Arsenkin
+            </button>
+            <button
+              type="button"
+              className="dp-btn"
+              disabled={busy || !reportRunId || executeLocked || terminalBad}
+              onClick={onPlan}
+            >
+              Сформировать план — без списания
+            </button>
+            <button
+              type="button"
+              className="dp-btn dp-btn-primary"
+              disabled={!plan?.digest || busy || executeLocked || terminalBad}
+              onClick={() => {
+                setConfirmedPaid(false);
+                setConfirmOpen(true);
+              }}
+              data-testid="arsenkin-execute-open"
+            >
+              Запустить Arsenkin
+            </button>
+            <button type="button" className="dp-btn" disabled={busy} onClick={() => void refresh()}>
+              Обновить статус
+            </button>
+            {status?.synced || status?.status === "SYNCED" ? (
+              <button type="button" className="dp-btn" disabled>
+                Результаты переданы в отчёт
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="dp-btn"
+                disabled={
+                  busy ||
+                  !reportRunId ||
+                  !(status?.canSync || status?.status === "SYNC_READY" || status?.status === "STAGE_DONE")
+                }
+                onClick={onSync}
+              >
+                Передать результаты в ORION
+              </button>
+            )}
+          </div>
+        ) : (
+          <span className="dp-muted">Нужен risk.review для запуска Arsenkin</span>
+        )}
+
+        {!reportRunId ? (
+          <span className="dp-muted">Нужен Prepare / reportRunId из очереди ручной проверки.</span>
+        ) : null}
+      </div>
+
+      {confirmOpen && plan ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          data-testid="arsenkin-execute-confirm-modal"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 80,
+            padding: 16,
+          }}
+        >
+          <div className="dp-card" style={{ maxWidth: 520, width: "100%" }}>
+            <div className="dp-stack" style={{ gap: 10 }}>
+              <strong>Подтверждение платного запуска Arsenkin</strong>
+              <div className="dp-kv">
+                <div>
+                  <span className="dp-muted">stage</span>
+                  <div>{stage}</div>
+                </div>
+                <div>
+                  <span className="dp-muted">tools</span>
+                  <div>{(status?.tools ?? []).join(", ")}</div>
+                </div>
+                <div>
+                  <span className="dp-muted">CREATE / REUSE</span>
+                  <div>
+                    {(plan.requests ?? []).map((r) => r.action).join(", ") || "—"}
+                  </div>
+                </div>
+                <div>
+                  <span className="dp-muted">plannedNewTasks / estimatedLimits</span>
+                  <div>
+                    {plan.plannedNewTasks} / {plan.estimatedLimitsTotal}
+                  </div>
+                </div>
+                <div>
+                  <span className="dp-muted">максимальный budget</span>
+                  <div>
+                    {plan.maxNewTasks} / {plan.maxEstimatedLimits}
+                  </div>
+                </div>
+                <div>
+                  <span className="dp-muted">digest</span>
+                  <div>
+                    <code>{shortDigest(plan.digest)}</code>
+                  </div>
+                </div>
+              </div>
+              <label style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <input
+                  type="checkbox"
+                  checked={confirmedPaid}
+                  onChange={(e) => setConfirmedPaid(e.target.checked)}
+                  data-testid="arsenkin-confirm-checkbox"
+                />
+                <span>Подтверждаю запуск платных API Arsenkin в указанном лимите</span>
+              </label>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  className="dp-btn dp-btn-primary"
+                  disabled={!canExecuteUi}
+                  data-testid="arsenkin-execute-confirm"
+                  onClick={onExecuteConfirmed}
+                >
+                  Запустить
+                </button>
+                <button
+                  type="button"
+                  className="dp-btn"
+                  onClick={() => {
+                    setConfirmOpen(false);
+                    setConfirmedPaid(false);
+                  }}
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </Card>
+  );
+}
