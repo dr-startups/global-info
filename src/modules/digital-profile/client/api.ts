@@ -1616,6 +1616,10 @@ export type ArsenkinUiStatusDto = {
   sourceOrionReportRunId?: string | null;
   previousBindingReportRunId?: string | null;
   currentlyBoundReportRunId?: string | null;
+  baseOrionReportRunId?: string | null;
+  enrichmentReportRunId?: string | null;
+  previousEnrichmentReportRunId?: string | null;
+  sourceBindingAutoRepairable?: boolean;
   requestedWorkflowType?: "SUGGEST_RU_CANARY" | "FIRST36_FULL" | null;
   jobWorkflowType?: "SUGGEST_RU_CANARY" | "FIRST36_FULL" | null;
   expectedSurfaceCount?: number | null;

@@ -62,13 +62,20 @@ import {
   resetArsenkinNetworkCallCount,
 } from "../providers/arsenkin/network-guard";
 import { toSubmitUnknownCandidate } from "../providers/arsenkin/submit-unknown-recovery";
-import { getArsenkinFullAuditStatus } from "../providers/arsenkin/full-audit-orchestrator";
+import { getArsenkinFullAuditStatus, scheduleOrchestrationTick } from "../providers/arsenkin/full-audit-orchestrator";
 import { isActiveOrchestrationState } from "../providers/arsenkin/full-audit-job-store";
 import {
   FIRST36_FULL_EXPECTED_SURFACES,
   isTerminalSurfaceStatus,
   SUGGEST_CANARY_EXPECTED_SURFACES,
 } from "../providers/arsenkin/workflow-contract";
+import {
+  isArsenkinProviderRunId,
+  isValidBaseOrionReportRunId,
+  resolveCanonicalBaseOrionReportRunId,
+  repairFirst36FullSourceBinding,
+  needsSourceBindingRepair,
+} from "../providers/arsenkin/source-binding-repair";
 import { ConflictError, ValidationError } from "../http/errors";
 
 export type ArsenkinUiStatusCode =
@@ -163,11 +170,19 @@ export type ArsenkinUiStatusDto = {
   sourceOrionReportRunId?: string | null;
   previousBindingReportRunId?: string | null;
   currentlyBoundReportRunId?: string | null;
+  /** Canonical pre-Arsenkin ORION base (never orion-arsenkin-*). */
+  baseOrionReportRunId?: string | null;
+  /** Current Arsenkin Full enrichment run. */
+  enrichmentReportRunId?: string | null;
+  /** Prior enrichment (e.g. suggest-canary), informational only. */
+  previousEnrichmentReportRunId?: string | null;
   requestedWorkflowType?: "SUGGEST_RU_CANARY" | "FIRST36_FULL" | null;
   jobWorkflowType?: "SUGGEST_RU_CANARY" | "FIRST36_FULL" | null;
   expectedSurfaceCount?: number | null;
   terminalSurfaceCount?: number | null;
   runScopedDataMismatch?: string | null;
+  /** True when source mismatch is auto-repairable — UI must not ask user to continue. */
+  sourceBindingAutoRepairable?: boolean;
 };
 
 export type ArsenkinUiPlanRequestDto = {
@@ -384,6 +399,8 @@ export function arsenkinOrionCaseRoot(caseId: string): string {
 export type ArsenkinUiRunMapping = {
   caseId: string;
   sourceReportRunId: string;
+  /** Canonical pre-Arsenkin ORION base — never an orion-arsenkin-* id. */
+  baseOrionReportRunId?: string;
   arsenkinReportRunId: string;
   workflow: ArsenkinWorkflow;
   stage: ArsenkinUiStage;
@@ -1258,9 +1275,34 @@ export async function getArsenkinUiStatus(
     surfaceMatrix,
     recovery,
     jobReportRunId: jobReportRunId ?? null,
-    sourceOrionReportRunId: sourceReportRunId,
+    sourceOrionReportRunId: (() => {
+      const raw = sourceReportRunId;
+      if (raw && isValidBaseOrionReportRunId(raw)) return raw;
+      const mappedBase = mapping?.baseOrionReportRunId ?? mapping?.sourceReportRunId ?? null;
+      return mappedBase && isValidBaseOrionReportRunId(mappedBase) ? mappedBase : raw;
+    })(),
+    baseOrionReportRunId: (() => {
+      const fromMapping = mapping?.baseOrionReportRunId ?? null;
+      if (fromMapping && isValidBaseOrionReportRunId(fromMapping)) return fromMapping;
+      const fromBinding = reportBinding?.sourceReportRunId ?? null;
+      if (fromBinding && isValidBaseOrionReportRunId(fromBinding)) return fromBinding;
+      if (sourceReportRunId && isValidBaseOrionReportRunId(sourceReportRunId)) return sourceReportRunId;
+      return null;
+    })(),
+    enrichmentReportRunId: preferFullJob
+      ? jobReportRunId ?? arsenkinReportRunId
+      : workflow === "first36-full"
+        ? arsenkinReportRunId
+        : null,
+    previousEnrichmentReportRunId: previousBindingReportRunId,
     previousBindingReportRunId,
     currentlyBoundReportRunId: reportBinding?.effectiveReportRunId ?? previousBindingReportRunId,
+    sourceBindingAutoRepairable: Boolean(
+      fullJob &&
+        (fullJob.lastErrorCode === "SOURCE_BINDING_REPAIRABLE" ||
+          needsSourceBindingRepair(fullJob.sourceReportRunId) ||
+          needsSourceBindingRepair(mapping?.sourceReportRunId))
+    ),
     requestedWorkflowType: preferFullJob
       ? "FIRST36_FULL"
       : workflow === "suggest-canary"
@@ -1298,6 +1340,15 @@ export async function getArsenkinUiStatus(
               (workflow ?? workflowHint ?? "first36-full") as "suggest-canary" | "first36-full"
             );
       if (!job) return null;
+      // Auto-resume repairable FAILED_RETRYABLE without user click.
+      if (
+        job.state === "FAILED_RETRYABLE" &&
+        (job.lastErrorCode === "SOURCE_BINDING_REPAIRABLE" ||
+          needsSourceBindingRepair(job.sourceReportRunId) ||
+          /SOURCE_BINDING_REPAIRABLE|уже привязан к source/i.test(String(job.lastError ?? "")))
+      ) {
+        scheduleOrchestrationTick(caseId, "first36-full");
+      }
       const expected =
         job.expectedSurfaceCount ||
         (job.workflow === "first36-full" ? FIRST36_FULL_EXPECTED_SURFACES : SUGGEST_CANARY_EXPECTED_SURFACES);
@@ -1386,14 +1437,66 @@ export async function prepareArsenkinUiRun(input: {
   if (!sourceReportRunId) throw new ValidationError("reportRunId required");
 
   const workflow = workflowForStage(input.stage);
-  const existingMapping = loadArsenkinUiRunMapping(input.caseId, workflow);
+  let existingMapping = loadArsenkinUiRunMapping(input.caseId, workflow);
+
+  // FIRST36_FULL: never keep an Arsenkin enrichment id as mapping.source — auto-repair.
+  if (workflow === "first36-full" && existingMapping) {
+    const enrichmentId = existingMapping.arsenkinReportRunId;
+    if (
+      needsSourceBindingRepair(existingMapping.sourceReportRunId) ||
+      (isValidBaseOrionReportRunId(sourceReportRunId) &&
+        existingMapping.sourceReportRunId !== sourceReportRunId &&
+        isArsenkinProviderRunId(existingMapping.sourceReportRunId))
+    ) {
+      const repair = await repairFirst36FullSourceBinding({
+        caseId: input.caseId,
+        enrichmentReportRunId: enrichmentId,
+        prisma,
+      });
+      if (!repair.ok) {
+        throw new ConflictError(
+          repair.code === "NEEDS_ADMIN"
+            ? `NEEDS_ADMIN: ${repair.detail}`
+            : `SOURCE_BINDING_REPAIRABLE: ${repair.detail}`
+        );
+      }
+      existingMapping = loadArsenkinUiRunMapping(input.caseId, workflow);
+    }
+  }
 
   // Idempotent reuse of mapping — never auto-create a second Arsenkin run.
   if (existingMapping) {
-    if (existingMapping.sourceReportRunId !== sourceReportRunId) {
-      throw new ConflictError(
-        `Workflow ${workflow} уже привязан к source ${existingMapping.sourceReportRunId}`
-      );
+    const mappingSource = existingMapping.sourceReportRunId;
+    if (mappingSource !== sourceReportRunId) {
+      // Caller may pass enrichment/canary/UI run — never use those as the mapping source check fail.
+      const inputIsEnrichmentOrProvider = isArsenkinProviderRunId(sourceReportRunId);
+      const allowed =
+        inputIsEnrichmentOrProvider ||
+        sourceReportRunId === existingMapping.arsenkinReportRunId ||
+        sourceReportRunId === mappingSource ||
+        sourceReportRunId === existingMapping.baseOrionReportRunId ||
+        (workflow === "first36-full" &&
+          isValidBaseOrionReportRunId(sourceReportRunId) &&
+          isValidBaseOrionReportRunId(mappingSource));
+      if (!allowed) {
+        throw new ConflictError(
+          `Workflow ${workflow} уже привязан к source ${mappingSource}`
+        );
+      }
+      // Align mapping to canonical base when caller provided a valid base.
+      if (
+        workflow === "first36-full" &&
+        isValidBaseOrionReportRunId(sourceReportRunId) &&
+        mappingSource !== sourceReportRunId
+      ) {
+        saveArsenkinUiRunMapping({
+          ...existingMapping,
+          sourceReportRunId,
+          baseOrionReportRunId: sourceReportRunId,
+          updatedAt: now().toISOString(),
+        });
+        existingMapping = loadArsenkinUiRunMapping(input.caseId, workflow)!;
+      }
     }
     const arsenkinId = existingMapping.arsenkinReportRunId;
     if (input.stage === "FIRST36_STAGE2") {
@@ -2063,6 +2166,10 @@ export function toPublicArsenkinUiDto(
     sourceOrionReportRunId: dto.sourceOrionReportRunId ?? null,
     previousBindingReportRunId: dto.previousBindingReportRunId ?? null,
     currentlyBoundReportRunId: dto.currentlyBoundReportRunId ?? null,
+    baseOrionReportRunId: dto.baseOrionReportRunId ?? null,
+    enrichmentReportRunId: dto.enrichmentReportRunId ?? null,
+    previousEnrichmentReportRunId: dto.previousEnrichmentReportRunId ?? null,
+    sourceBindingAutoRepairable: dto.sourceBindingAutoRepairable ?? false,
     requestedWorkflowType: dto.requestedWorkflowType ?? null,
     jobWorkflowType: dto.jobWorkflowType ?? null,
     expectedSurfaceCount: dto.expectedSurfaceCount ?? null,

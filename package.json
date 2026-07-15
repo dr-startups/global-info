@@ -54,6 +54,7 @@
     "smoke:arsenkin-recovery": "tsx --test scripts/smoke-arsenkin-recovery.ts",
     "smoke:arsenkin-full-audit-orchestration": "tsx --test scripts/smoke-arsenkin-full-audit-orchestration.ts",
     "smoke:arsenkin-workflow-isolation": "tsx --test scripts/smoke-arsenkin-workflow-isolation.ts",
+    "smoke:arsenkin-source-binding-repair": "tsx --test scripts/smoke-arsenkin-source-binding-repair.ts",
     "smoke:arsenkin-startup-readiness": "tsx --test scripts/smoke-arsenkin-startup-readiness.ts",
     "smoke:arsenkin-transfer-binding": "tsx --test scripts/smoke-arsenkin-transfer-binding.ts",
     "smoke:arsenkin-report-generate-route-e2e": "tsx --test scripts/smoke-arsenkin-report-generate-route-e2e.ts",

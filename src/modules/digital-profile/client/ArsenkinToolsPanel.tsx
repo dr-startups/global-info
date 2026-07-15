@@ -164,12 +164,12 @@ export function ArsenkinToolsPanel(props: {
       const orchTerminal = ["COMPLETED", "COMPLETED_PARTIAL", "FAILED_TERMINAL", "CANCELLED"].includes(
         orchState
       );
-      if (
-        orchState &&
-        !orchTerminal &&
-        orchState !== "FAILED_RETRYABLE"
-      ) {
-        // Keep polling while durable full-audit job is active.
+      const autoRepairable =
+        Boolean(s.sourceBindingAutoRepairable) ||
+        s.orchestration?.nextStep === "auto-repair-source" ||
+        s.orchestration?.nextStep === "bounded-resume";
+      if (orchState && (!orchTerminal || autoRepairable) && (orchState !== "FAILED_RETRYABLE" || autoRepairable)) {
+        // Keep polling while durable full-audit job is active or auto-repairing.
         return s;
       }
       if (
@@ -468,6 +468,14 @@ export function ArsenkinToolsPanel(props: {
       String(orch?.state ?? "")
     );
   const orchRetryable = orch?.state === "FAILED_RETRYABLE";
+  const orchAutoRepairable =
+    Boolean(status?.sourceBindingAutoRepairable) ||
+    orch?.nextStep === "auto-repair-source" ||
+    orch?.nextStep === "bounded-resume" ||
+    String(orch?.lastError ?? "").includes("SOURCE_BINDING_REPAIRABLE") ||
+    /уже привязан к source/i.test(String(orch?.lastError ?? ""));
+  // Repairable FAILED_RETRYABLE must not show "Продолжить сбор".
+  const showContinueButton = orchRetryable && !orchAutoRepairable;
 
   const onStartFullAudit = () => {
     const runId = activeReportRunId ?? reportRunId;
@@ -596,14 +604,34 @@ export function ArsenkinToolsPanel(props: {
             <div className="dp-stack" style={{ gap: 4 }}>
               <strong>Режим: Полный сбор First36</strong>
               <div>
-                Run:{" "}
+                Текущий Full Arsenkin run:{" "}
                 <code>
-                  {status?.orchestration?.jobReportRunId ??
+                  {status?.enrichmentReportRunId ??
+                    status?.orchestration?.jobReportRunId ??
                     status?.jobReportRunId ??
                     status?.arsenkinReportRunId ??
                     "—"}
                 </code>
               </div>
+              <div>
+                Базовый отчёт ORION:{" "}
+                <code>
+                  {status?.baseOrionReportRunId ??
+                    (status?.sourceOrionReportRunId &&
+                    !String(status.sourceOrionReportRunId).startsWith("orion-arsenkin-")
+                      ? status.sourceOrionReportRunId
+                      : null) ??
+                    "—"}
+                </code>
+              </div>
+              {status?.previousEnrichmentReportRunId || status?.previousBindingReportRunId ? (
+                <div>
+                  Предыдущее обогащение:{" "}
+                  <code>
+                    {status?.previousEnrichmentReportRunId ?? status?.previousBindingReportRunId}
+                  </code>
+                </div>
+              ) : null}
               <div>Этап: {status?.orchestration?.humanPhase ?? status?.stage ?? "—"}</div>
               <div>
                 Поверхности:{" "}
@@ -635,15 +663,37 @@ export function ArsenkinToolsPanel(props: {
 
         <div className="dp-kv">
           <div>
-            <span className="dp-muted">исходный ORION reportRunId</span>
+            <span className="dp-muted">Базовый отчёт ORION</span>
             <div>
-              <code>{status?.sourceReportRunId ?? reportRunId ?? "—"}</code>
+              <code>
+                {status?.baseOrionReportRunId ??
+                  (status?.sourceReportRunId &&
+                  !String(status.sourceReportRunId).startsWith("orion-arsenkin-")
+                    ? status.sourceReportRunId
+                    : null) ??
+                  "—"}
+              </code>
             </div>
           </div>
           <div>
-            <span className="dp-muted">Arsenkin reportRunId</span>
+            <span className="dp-muted">Текущий Full Arsenkin run</span>
             <div>
-              <code>{status?.arsenkinReportRunId ?? status?.reportRunId ?? "—"}</code>
+              <code>
+                {status?.enrichmentReportRunId ??
+                  status?.arsenkinReportRunId ??
+                  status?.reportRunId ??
+                  "—"}
+              </code>
+            </div>
+          </div>
+          <div>
+            <span className="dp-muted">Предыдущее обогащение</span>
+            <div>
+              <code>
+                {status?.previousEnrichmentReportRunId ??
+                  status?.previousBindingReportRunId ??
+                  "—"}
+              </code>
             </div>
           </div>
           <div>
@@ -875,7 +925,7 @@ export function ArsenkinToolsPanel(props: {
                 <div className="dp-muted" style={{ fontSize: 12 }}>
                   Следующий шаг: {orch.nextStep}
                 </div>
-                {orch.lastError ? <ErrorBox>{orch.lastError}</ErrorBox> : null}
+                {orch.lastError && !orchAutoRepairable ? <ErrorBox>{orch.lastError}</ErrorBox> : null}
               </div>
             ) : null}
 
@@ -883,13 +933,13 @@ export function ArsenkinToolsPanel(props: {
               <button
                 type="button"
                 className="dp-btn dp-btn-primary"
-                disabled={busy || !reportRunId || (orchActive && !orchRetryable)}
+                disabled={busy || !reportRunId || (orchActive && !showContinueButton)}
                 onClick={onStartFullAudit}
                 data-testid="arsenkin-start-full-audit"
               >
-                {orchActive && !orchRetryable
+                {orchActive && !showContinueButton
                   ? "Сбор выполняется"
-                  : orchRetryable
+                  : showContinueButton
                     ? "Продолжить сбор"
                     : "Запустить полный сбор Arsenkin"}
               </button>

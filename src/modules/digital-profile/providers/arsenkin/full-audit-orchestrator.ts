@@ -13,6 +13,14 @@ import {
   isSuggestCanaryReportRunId,
   type ArsenkinWorkflowType,
 } from "./workflow-contract";
+import {
+  ensureFirst36FullCanonicalSource,
+  isArsenkinProviderRunId,
+  isSourceBindingRepairableError,
+  isValidBaseOrionReportRunId,
+  needsSourceBindingRepair,
+  resolveCanonicalBaseOrionReportRunId,
+} from "./source-binding-repair";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -229,19 +237,37 @@ export async function startArsenkinFullAudit(
   // Intentionally ignore input.workflow === "suggest-canary" — one-click is always Full.
   const workflow = "first36-full" as const;
 
-  // Source ORION id may be canary, binding, or classic — informational only, never job run.
-  const sourceOrionReportRunId = input.reportRunId;
+  // Resolve canonical base ORION — never use canary / effective / UI enrichment id as base.
   const previousBinding =
     loadArsenkinUiRunMapping(input.caseId, "suggest-canary")?.arsenkinReportRunId ?? null;
-  const currentlyBoundReportRunId = isSuggestCanaryReportRunId(sourceOrionReportRunId)
-    ? sourceOrionReportRunId
-    : previousBinding;
+  let sourceOrionReportRunId = input.reportRunId;
+  if (!isValidBaseOrionReportRunId(sourceOrionReportRunId)) {
+    const resolved = await resolveCanonicalBaseOrionReportRunId(input.caseId, {
+      prisma: deps.prisma,
+    });
+    if (resolved.ok) {
+      sourceOrionReportRunId = resolved.baseOrionReportRunId;
+    }
+  }
+  const currentlyBoundReportRunId = previousBinding;
 
   const { reportRunId } = resolveFirst36FullReportRunId({
     caseId: input.caseId,
     sourceOrionReportRunId,
     forceNewRun: Boolean(input.forceNewRun),
   });
+
+  // Preflight repair: corrupted Full mapping with Arsenkin source → fix before job create/resume.
+  const preRepair = await ensureFirst36FullCanonicalSource({
+    caseId: input.caseId,
+    enrichmentReportRunId: reportRunId,
+    prisma: deps.prisma,
+  });
+  if (preRepair.ok) {
+    sourceOrionReportRunId = preRepair.baseOrionReportRunId;
+  } else if (preRepair.code === "NEEDS_ADMIN") {
+    throw new Error(`NEEDS_ADMIN: ${preRepair.detail}`);
+  }
 
   const match = assertWorkflowRunMatch({
     requestedWorkflowType,
@@ -269,18 +295,25 @@ export async function startArsenkinFullAudit(
     jobReportRunId: job.reportRunId,
     expectedSurfaceCount: FIRST36_FULL_EXPECTED_SURFACES,
     surfacesTotal: FIRST36_FULL_EXPECTED_SURFACES,
+    sourceReportRunId: sourceOrionReportRunId,
     sourceOrionReportRunId,
     currentlyBoundReportRunId,
     previousBindingReportRunId: previousBinding,
   });
 
-  if (job.state === "FAILED_RETRYABLE") {
+  if (
+    job.state === "FAILED_RETRYABLE" ||
+    needsSourceBindingRepair(job.sourceReportRunId) ||
+    isSourceBindingRepairableError(job.lastError)
+  ) {
     setState(job, "PREFLIGHT", {
       attempt: job.attempt + 1,
       lastError: null,
       lastErrorCode: null,
       nextStep: "preflight",
       completedAt: null,
+      sourceReportRunId: sourceOrionReportRunId,
+      sourceOrionReportRunId,
     });
   }
 
@@ -422,9 +455,55 @@ export async function runOrchestrationTick(
       case "RENDERING":
         job = await stepRendering(job, deps);
         break;
-      case "FAILED_RETRYABLE":
-        // Wait for user "Продолжить" which moves back to PREFLIGHT via start.
+      case "FAILED_RETRYABLE": {
+        // Auto-resume repairable source binding / bounded retries — no user-continue.
+        const repairable =
+          job.lastErrorCode === "SOURCE_BINDING_REPAIRABLE" ||
+          needsSourceBindingRepair(job.sourceReportRunId) ||
+          isSourceBindingRepairableError(job.lastError);
+        if (repairable && job.workflow === "first36-full") {
+          const repair = await ensureFirst36FullCanonicalSource({
+            caseId: job.caseId,
+            enrichmentReportRunId: job.jobReportRunId || job.reportRunId,
+            prisma: deps.prisma,
+          });
+          if (repair.ok) {
+            job = setState(job, "PREFLIGHT", {
+              attempt: job.attempt + 1,
+              lastError: null,
+              lastErrorCode: null,
+              nextStep: "preflight",
+              completedAt: null,
+              sourceReportRunId: repair.baseOrionReportRunId,
+              sourceOrionReportRunId: repair.baseOrionReportRunId,
+              currentlyBoundReportRunId: repair.previousEnrichmentReportRunId,
+              previousBindingReportRunId: repair.previousEnrichmentReportRunId,
+              recoveryNotes: [
+                ...job.recoveryNotes,
+                repair.repaired
+                  ? `source-binding-repaired:${repair.artifact.reason}`
+                  : "source-binding-already-canonical",
+              ],
+            });
+            job = await stepPreflight(job, deps);
+          } else if (repair.code === "NEEDS_ADMIN") {
+            job = setState(job, "FAILED_TERMINAL", {
+              lastError: repair.detail,
+              lastErrorCode: "NEEDS_ADMIN",
+              nextStep: "needs-admin",
+            });
+          }
+        } else if (job.attempt < job.maxAttempts) {
+          job = setState(job, "PREFLIGHT", {
+            attempt: job.attempt + 1,
+            lastError: null,
+            lastErrorCode: null,
+            nextStep: "bounded-resume",
+            completedAt: null,
+          });
+        }
         break;
+      }
       default:
         break;
     }
@@ -438,6 +517,49 @@ async function stepPreflight(
   job: ArsenkinOrchestrationJob,
   deps: FullAuditOrchestratorDeps
 ): Promise<ArsenkinOrchestrationJob> {
+  // Repair Arsenkin-prefixed base source before readiness / planning.
+  if (job.workflow === "first36-full") {
+    const enrichmentId = job.jobReportRunId || job.reportRunId;
+    if (
+      needsSourceBindingRepair(job.sourceReportRunId) ||
+      needsSourceBindingRepair(job.sourceOrionReportRunId) ||
+      isSourceBindingRepairableError(job.lastError)
+    ) {
+      const repair = await ensureFirst36FullCanonicalSource({
+        caseId: job.caseId,
+        enrichmentReportRunId: enrichmentId,
+        prisma: deps.prisma,
+      });
+      if (!repair.ok) {
+        if (repair.code === "NEEDS_ADMIN") {
+          return setState(job, "FAILED_TERMINAL", {
+            lastError: repair.detail,
+            lastErrorCode: "NEEDS_ADMIN",
+            nextStep: "needs-admin",
+          });
+        }
+        return setState(job, "FAILED_RETRYABLE", {
+          lastError: repair.detail,
+          lastErrorCode: "SOURCE_BINDING_REPAIRABLE",
+          nextStep: "auto-repair-source",
+        });
+      }
+      job =
+        patchOrchestrationJob(job.caseId, job.workflow, {
+          sourceReportRunId: repair.baseOrionReportRunId,
+          sourceOrionReportRunId: repair.baseOrionReportRunId,
+          currentlyBoundReportRunId: repair.previousEnrichmentReportRunId,
+          previousBindingReportRunId: repair.previousEnrichmentReportRunId,
+          recoveryNotes: [
+            ...job.recoveryNotes,
+            repair.repaired
+              ? `source-binding-repaired:${repair.artifact.reason}`
+              : "source-binding-already-canonical",
+          ],
+        }) ?? job;
+    }
+  }
+
   const readiness = await (deps.readiness ?? probeArsenkinLightweightReadiness)({});
   if (!readiness.ok) {
     return setState(job, "WAITING_INFRASTRUCTURE", {
@@ -463,10 +585,35 @@ async function stepPlanning(
     job.workflow === "suggest-canary" ? "SUGGEST_RU_CANARY" : "FIRST36_STAGE1";
   const prepare = deps.prepare ?? prepareArsenkinUiRun;
   const plan = deps.plan ?? planArsenkinUiRun;
+
+  // Always prepare against canonical base, never against canary/effective.
+  let baseSource = job.sourceOrionReportRunId || job.sourceReportRunId;
+  if (job.workflow === "first36-full" && !isValidBaseOrionReportRunId(baseSource)) {
+    const repair = await ensureFirst36FullCanonicalSource({
+      caseId: job.caseId,
+      enrichmentReportRunId: job.jobReportRunId || job.reportRunId,
+      prisma: deps.prisma,
+    });
+    if (!repair.ok) {
+      return setState(job, "FAILED_RETRYABLE", {
+        lastError: repair.detail,
+        lastErrorCode:
+          repair.code === "NEEDS_ADMIN" ? "NEEDS_ADMIN" : "SOURCE_BINDING_REPAIRABLE",
+        nextStep: repair.code === "NEEDS_ADMIN" ? "needs-admin" : "auto-repair-source",
+      });
+    }
+    baseSource = repair.baseOrionReportRunId;
+    job =
+      patchOrchestrationJob(job.caseId, job.workflow, {
+        sourceReportRunId: baseSource,
+        sourceOrionReportRunId: baseSource,
+      }) ?? job;
+  }
+
   try {
     await prepare({
       caseId: job.caseId,
-      reportRunId: job.sourceReportRunId || job.reportRunId,
+      reportRunId: baseSource,
       stage,
       deps: { prisma: deps.prisma },
     });
@@ -485,6 +632,7 @@ async function stepPlanning(
         ...job.recoveryNotes,
         "plan-ready",
         `transport=${ArsenkinClientClass.TRANSPORT.method} check/get body={task_id}`,
+        `baseOrionReportRunId=${baseSource}`,
       ],
     });
   } catch (err) {
@@ -495,10 +643,17 @@ async function stepPlanning(
         nextStep: "retry-preflight",
       });
     }
+    if (isSourceBindingRepairableError(message) || /NEEDS_ADMIN/i.test(message)) {
+      return setState(job, /NEEDS_ADMIN/i.test(message) ? "FAILED_TERMINAL" : "FAILED_RETRYABLE", {
+        lastError: message,
+        lastErrorCode: /NEEDS_ADMIN/i.test(message) ? "NEEDS_ADMIN" : "SOURCE_BINDING_REPAIRABLE",
+        nextStep: /NEEDS_ADMIN/i.test(message) ? "needs-admin" : "auto-repair-source",
+      });
+    }
     return setState(job, "FAILED_RETRYABLE", {
       lastError: message,
       lastErrorCode: "planning_failed",
-      nextStep: "user-continue",
+      nextStep: job.attempt < job.maxAttempts ? "bounded-resume" : "user-continue",
     });
   }
 }
@@ -906,6 +1061,15 @@ async function stepRendering(
 ): Promise<ArsenkinOrchestrationJob> {
   const render = deps.render ?? enqueueOrionClassicAuditReport;
   const jobReportRunId = job.jobReportRunId || job.reportRunId;
+
+  if (isArsenkinProviderRunId(job.sourceReportRunId) || isArsenkinProviderRunId(job.sourceOrionReportRunId)) {
+    return setState(job, "FAILED_RETRYABLE", {
+      lastError: "FIRST36_FULL.baseOrionReportRunId must not start with orion-arsenkin-",
+      lastErrorCode: "SOURCE_BINDING_REPAIRABLE",
+      nextStep: "auto-repair-source",
+      percent: Math.min(99, job.percent),
+    });
+  }
 
   const identity = assertWorkflowRunMatch({
     requestedWorkflowType: job.requestedWorkflowType ?? "FIRST36_FULL",
