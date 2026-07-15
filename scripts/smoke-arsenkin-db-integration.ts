@@ -8,6 +8,7 @@
  */
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { describe, it } from "node:test";
 
 function dbUrlPresent(): boolean {
@@ -41,7 +42,7 @@ describe("arsenkin DB integration", () => {
         "../src/modules/digital-profile/providers/arsenkin/surface-coverage"
       );
 
-      // Prefer an existing case id; create ephemeral report run.
+      // Prefer an existing case id; this smoke only creates/deletes isolated run-scoped rows.
       const caseRow = await prisma.case.findFirst({ select: { id: true } });
       if (!caseRow) {
         await prisma.$disconnect().catch(() => undefined);
@@ -50,12 +51,28 @@ describe("arsenkin DB integration", () => {
         return;
       }
 
-      const reportRunId = `cov-race-${Date.now()}`;
-      await prisma.orionReportRun.create({
+      const reportRunId = `cov-race-${Date.now()}-${randomUUID().slice(0, 8)}`;
+      const providerTaskId = `cov-task-${Date.now()}-${randomUUID().slice(0, 8)}`;
+
+      const createIntegrationRun = (input: { reportRunId: string; caseId: string }) =>
+        prisma.orionReportRun.create({
+          data: {
+            id: input.reportRunId,
+            caseId: input.caseId,
+            mode: "ARSENKIN_DB_INTEGRATION_TEST",
+            status: "RUNNING",
+          },
+        });
+      await createIntegrationRun({ reportRunId, caseId: caseRow.id });
+      await prisma.providerTask.create({
         data: {
-          id: reportRunId,
-          caseId: caseRow.id,
-          status: "RUNNING",
+          id: providerTaskId,
+          reportRunId,
+          provider: "arsenkin",
+          tool: "suggest",
+          requestHash: `cov-race-${reportRunId}`,
+          requestJson: { tools_name: "suggest", data: { queries: ["test"] } },
+          state: "DONE",
         },
       });
 
@@ -63,6 +80,7 @@ describe("arsenkin DB integration", () => {
         reportRunId,
         provider: "arsenkin",
         tool: "suggest",
+        providerTaskId,
         queryId: "q1",
         queryText: "test",
         engine: "GOOGLE",
@@ -74,18 +92,41 @@ describe("arsenkin DB integration", () => {
       };
 
       try {
-        await Promise.all([
+        const concurrent = await Promise.all([
           upsertSurfaceCollectionCoverage(payload),
           upsertSurfaceCollectionCoverage({ ...payload, resultCount: 1 }),
           upsertSurfaceCollectionCoverage({ ...payload, resultCount: 2 }),
           upsertSurfaceCollectionCoverage({ ...payload, resultCount: 3 }),
         ]);
+        const returnedIds = new Set(concurrent.map((r) => r.id));
+        assert.equal(returnedIds.size, 1, "all concurrent upserts must resolve to the same row id");
+
         const rows = await prisma.surfaceCollectionCoverage.findMany({
           where: { reportRunId, tool: "suggest", queryId: "q1" },
         });
         assert.equal(rows.length, 1);
+        const [row] = rows;
+        assert.ok(row);
+        assert.equal(row.providerTaskId, providerTaskId);
+        assert.equal(row.reportRunId, reportRunId);
+
+        const duplicateGroups = await prisma.$queryRawUnsafe<Array<{ cnt: bigint | number }>>(
+          `select count(*) as cnt from (
+             select report_run_id, provider, tool, query_id, surface, engine, region, language, device, count(*) c
+             from dp_surface_collection_coverage
+             where report_run_id = $1
+             group by report_run_id, provider, tool, query_id, surface, engine, region, language, device
+             having count(*) > 1
+           ) t`,
+          reportRunId
+        );
+        const duplicateGroupCount = Number(duplicateGroups[0]?.cnt ?? 0);
+        assert.equal(duplicateGroupCount, 0);
       } finally {
+        // Cleanup order: children -> parent rows.
         await prisma.surfaceCollectionCoverage.deleteMany({ where: { reportRunId } }).catch(() => undefined);
+        await prisma.orionArsenkinStageRun.deleteMany({ where: { reportRunId } }).catch(() => undefined);
+        await prisma.providerTask.deleteMany({ where: { reportRunId } }).catch(() => undefined);
         await prisma.orionReportRun.delete({ where: { id: reportRunId } }).catch(() => undefined);
         await prisma.$disconnect().catch(() => undefined);
       }
