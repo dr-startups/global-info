@@ -62,6 +62,7 @@ import {
   resetArsenkinNetworkCallCount,
 } from "../providers/arsenkin/network-guard";
 import { toSubmitUnknownCandidate } from "../providers/arsenkin/submit-unknown-recovery";
+import { getArsenkinFullAuditStatus } from "../providers/arsenkin/full-audit-orchestrator";
 import { ConflictError, ValidationError } from "../http/errors";
 
 export type ArsenkinUiStatusCode =
@@ -128,6 +129,19 @@ export type ArsenkinUiStatusDto = {
   canRefreshReadiness: boolean;
   surfaceMatrix?: ArsenkinSurfaceMatrixRow[];
   recovery?: ArsenkinRecoveryUiState | null;
+  orchestration?: {
+    jobId: string;
+    state: string;
+    humanPhase: string;
+    percent: number;
+    surfacesDone: number;
+    surfacesTotal: number;
+    observationCount: number;
+    nextStep: string;
+    lastError: string | null;
+    attempt: number;
+    cancelRequested: boolean;
+  } | null;
 };
 
 export type ArsenkinUiPlanRequestDto = {
@@ -1193,6 +1207,24 @@ export async function getArsenkinUiStatus(
       readinessCode !== "READINESS_NOT_REQUIRED",
     surfaceMatrix,
     recovery,
+    orchestration: (() => {
+      const wf = (workflow ?? workflowHint ?? "first36-full") as "suggest-canary" | "first36-full";
+      const job = getArsenkinFullAuditStatus(caseId, wf);
+      if (!job) return null;
+      return {
+        jobId: job.jobId,
+        state: job.state,
+        humanPhase: job.humanPhase,
+        percent: job.percent,
+        surfacesDone: job.surfacesDone,
+        surfacesTotal: job.surfacesTotal,
+        observationCount: job.observationCount,
+        nextStep: job.nextStep,
+        lastError: job.lastError,
+        attempt: job.attempt,
+        cancelRequested: job.cancelRequested,
+      };
+    })(),
   };
 }
 
@@ -1922,6 +1954,7 @@ export function toPublicArsenkinUiDto(
     canRefreshReadiness: dto.canRefreshReadiness,
     surfaceMatrix: dto.surfaceMatrix ?? [],
     recovery: dto.recovery ?? null,
+    orchestration: dto.orchestration ?? null,
   };
   if ("requests" in dto && Array.isArray((dto as ArsenkinUiPlanDto).requests)) {
     const plan = dto as ArsenkinUiPlanDto;

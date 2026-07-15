@@ -19,6 +19,8 @@ import {
   recoverArsenkinReconcileDone,
   recoverArsenkinRetryUnconfirmed,
   refreshArsenkinDbReadiness,
+  startArsenkinFullAudit,
+  cancelArsenkinFullAudit,
   syncArsenkinRun,
   type ArsenkinUiPlanDto,
   type ArsenkinSurfaceMatrixRow,
@@ -418,6 +420,44 @@ export function ArsenkinToolsPanel(props: {
     });
   };
 
+  const orch = status?.orchestration;
+  const orchActive =
+    Boolean(orch) &&
+    !["COMPLETED", "COMPLETED_PARTIAL", "FAILED_TERMINAL", "CANCELLED"].includes(
+      String(orch?.state ?? "")
+    );
+  const orchRetryable = orch?.state === "FAILED_RETRYABLE";
+
+  const onStartFullAudit = () => {
+    const runId = activeReportRunId ?? reportRunId;
+    if (!runId) return;
+    void runAction(async () => {
+      startPolling();
+      const s = await startArsenkinFullAudit(caseId, {
+        reportRunId: runId,
+        stage,
+        confirmed: true,
+      });
+      setStatus(s);
+      setBanner(
+        orchRetryable || s.orchestration?.state === "FAILED_RETRYABLE"
+          ? "Сбор продолжен."
+          : "Полный сбор Arsenkin запущен. Дальше сервер ведёт процесс сам."
+      );
+    });
+  };
+
+  const onCancelFullAudit = () => {
+    const runId = activeReportRunId ?? reportRunId;
+    if (!runId) return;
+    void runAction(async () => {
+      const s = await cancelArsenkinFullAudit(caseId, { reportRunId: runId, stage });
+      setStatus(s);
+      stopPolling();
+      setBanner("Сбор отменён.");
+    });
+  };
+
   const terminalBad =
     status?.status === "FAILED" ||
     status?.status === "MANUAL_INTERVENTION_REQUIRED" ||
@@ -596,10 +636,13 @@ export function ArsenkinToolsPanel(props: {
           (status.recovery.submitUnknown.length > 0 ||
             status.recovery.doneZeroObservations.length > 0 ||
             status.recovery.canContinueStage1) ? (
+          <details data-testid="arsenkin-recovery-panel">
+            <summary className="dp-muted" style={{ cursor: "pointer" }}>
+              Техническая диагностика — recovery
+            </summary>
           <div
             className="dp-stack"
-            style={{ gap: 8, border: "1px solid #f59e0b", borderRadius: 8, padding: 10 }}
-            data-testid="arsenkin-recovery-panel"
+            style={{ gap: 8, border: "1px solid #f59e0b", borderRadius: 8, padding: 10, marginTop: 8 }}
           >
             <strong>Recovery / reconciliation</strong>
             <span className="dp-muted" style={{ fontSize: 13 }}>
@@ -711,6 +754,7 @@ export function ArsenkinToolsPanel(props: {
               </button>
             ) : null}
           </div>
+          </details>
         ) : null)}
 
         {plan?.requests?.length ? (
@@ -726,7 +770,60 @@ export function ArsenkinToolsPanel(props: {
         ) : null}
 
         {canDecide ? (
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="dp-stack" style={{ gap: 10 }}>
+            {orch ? (
+              <div
+                className="dp-stack"
+                style={{ gap: 4, border: "1px solid #e5e7eb", borderRadius: 8, padding: 10 }}
+                data-testid="arsenkin-orchestration-progress"
+              >
+                <strong>{orch.humanPhase}</strong>
+                <div className="dp-muted" style={{ fontSize: 13 }}>
+                  {orch.percent}% · поверхности {orch.surfacesDone}/{orch.surfacesTotal} ·
+                  observations {orch.observationCount} · попытка {orch.attempt}
+                </div>
+                <div className="dp-muted" style={{ fontSize: 12 }}>
+                  Следующий шаг: {orch.nextStep}
+                </div>
+                {orch.lastError ? <ErrorBox>{orch.lastError}</ErrorBox> : null}
+              </div>
+            ) : null}
+
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                className="dp-btn dp-btn-primary"
+                disabled={busy || !reportRunId || (orchActive && !orchRetryable)}
+                onClick={onStartFullAudit}
+                data-testid="arsenkin-start-full-audit"
+              >
+                {orchActive && !orchRetryable
+                  ? "Сбор выполняется"
+                  : orchRetryable
+                    ? "Продолжить сбор"
+                    : "Запустить полный сбор Arsenkin"}
+              </button>
+              {orchActive ? (
+                <button
+                  type="button"
+                  className="dp-btn"
+                  disabled={busy}
+                  onClick={onCancelFullAudit}
+                  data-testid="arsenkin-cancel-full-audit"
+                >
+                  Отменить сбор
+                </button>
+              ) : null}
+              <button type="button" className="dp-btn" disabled={busy} onClick={() => void refresh()}>
+                Обновить статус
+              </button>
+            </div>
+
+            <details data-testid="arsenkin-tech-diagnostics">
+              <summary className="dp-muted" style={{ cursor: "pointer" }}>
+                Техническая диагностика
+              </summary>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
             <button
               type="button"
               className="dp-btn"
@@ -745,7 +842,7 @@ export function ArsenkinToolsPanel(props: {
             </button>
             <button
               type="button"
-              className="dp-btn dp-btn-primary"
+              className="dp-btn"
               disabled={!plan?.digest || busy || executeLocked || terminalBad}
               onClick={() => {
                 setConfirmedPaid(false);
@@ -753,10 +850,7 @@ export function ArsenkinToolsPanel(props: {
               }}
               data-testid="arsenkin-execute-open"
             >
-              Запустить полный сбор Arsenkin
-            </button>
-            <button type="button" className="dp-btn" disabled={busy} onClick={() => void refresh()}>
-              Обновить статус
+              Запустить полный сбор Arsenkin (legacy)
             </button>
             {status?.canRefreshReadiness ? (
               <button
@@ -799,6 +893,8 @@ export function ArsenkinToolsPanel(props: {
             >
               Скачать диагностический пакет
             </button>
+              </div>
+            </details>
           </div>
         ) : (
           <span className="dp-muted">Нужен risk.review для запуска Arsenkin</span>

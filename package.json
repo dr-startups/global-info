@@ -52,6 +52,7 @@
     "smoke:arsenkin-p05-suggest-plan-only": "tsx scripts/smoke-arsenkin-p05-suggest-plan-only.ts",
     "smoke:arsenkin-ui-orchestration": "tsx --test scripts/smoke-arsenkin-ui-orchestration.ts",
     "smoke:arsenkin-recovery": "tsx --test scripts/smoke-arsenkin-recovery.ts",
+    "smoke:arsenkin-full-audit-orchestration": "tsx --test scripts/smoke-arsenkin-full-audit-orchestration.ts",
     "smoke:arsenkin-startup-readiness": "tsx --test scripts/smoke-arsenkin-startup-readiness.ts",
     "smoke:arsenkin-transfer-binding": "tsx --test scripts/smoke-arsenkin-transfer-binding.ts",
     "smoke:arsenkin-report-generate-route-e2e": "tsx --test scripts/smoke-arsenkin-report-generate-route-e2e.ts",

@@ -1589,6 +1589,19 @@ export type ArsenkinUiStatusDto = {
   canRefreshReadiness?: boolean;
   surfaceMatrix?: ArsenkinSurfaceMatrixRow[];
   recovery?: ArsenkinRecoveryUiState | null;
+  orchestration?: {
+    jobId: string;
+    state: string;
+    humanPhase: string;
+    percent: number;
+    surfacesDone: number;
+    surfacesTotal: number;
+    observationCount: number;
+    nextStep: string;
+    lastError: string | null;
+    attempt: number;
+    cancelRequested: boolean;
+  } | null;
 };
 
 export type ArsenkinUiPlanRequestDto = {
@@ -1735,6 +1748,33 @@ export function recoverArsenkinContinueStage1(
   return request<ArsenkinUiStatusDto>(`/cases/${caseId}/orion-golden/arsenkin`, {
     method: "POST",
     body: JSON.stringify({ action: "recover-continue-stage1", ...payload }),
+  });
+}
+
+export function startArsenkinFullAudit(
+  caseId: string,
+  payload: ArsenkinUiActionPayload & { confirmed: true; forceNewRun?: boolean }
+): Promise<
+  ArsenkinUiStatusDto & {
+    accepted?: boolean;
+    jobId?: string;
+    created?: boolean;
+    orchestration?: ArsenkinUiStatusDto["orchestration"];
+  }
+> {
+  return request(`/cases/${caseId}/orion-golden/arsenkin`, {
+    method: "POST",
+    body: JSON.stringify({ action: "start-full-audit", ...payload }),
+  });
+}
+
+export function cancelArsenkinFullAudit(
+  caseId: string,
+  payload: ArsenkinUiActionPayload
+): Promise<ArsenkinUiStatusDto & { cancelled?: boolean }> {
+  return request(`/cases/${caseId}/orion-golden/arsenkin`, {
+    method: "POST",
+    body: JSON.stringify({ action: "cancel-full-audit", ...payload }),
   });
 }
 

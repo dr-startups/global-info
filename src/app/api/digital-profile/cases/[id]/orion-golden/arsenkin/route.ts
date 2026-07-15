@@ -28,6 +28,12 @@ import {
   recoverReconcileDoneZeroObs,
   recoverRetryUnconfirmedSubmit,
 } from "@/modules/digital-profile/services/arsenkin-recovery-orchestration";
+import {
+  cancelArsenkinFullAudit,
+  getArsenkinFullAuditStatus,
+  startArsenkinFullAudit,
+} from "@/modules/digital-profile/providers/arsenkin/full-audit-orchestrator";
+import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 /** Execute may wait for Arsenkin completion; no fire-and-forget jobs. */
@@ -41,6 +47,7 @@ type Body = {
   stage?: string;
   confirmPlanDigest?: string;
   confirmed?: boolean;
+  forceNewRun?: boolean;
   /** Rejected — budget is server-side only. */
   maxNewTasks?: unknown;
   maxEstimatedLimits?: unknown;
@@ -132,6 +139,46 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
       ...toPublicArsenkinUiDto(publicStatus),
       orphanedEvidenceIds,
     });
+  }
+
+  if (action === "start-full-audit" || action === "full-audit") {
+    if (body.confirmed !== true) {
+      throw new ValidationError("confirmed=true required");
+    }
+    const workflow =
+      stage === "SUGGEST_RU_CANARY" ? "suggest-canary" : "first36-full";
+    const started = await startArsenkinFullAudit({
+      caseId,
+      reportRunId,
+      workflow,
+      actorId: user.id,
+      confirmed: true,
+      forceNewRun: body.forceNewRun === true,
+    });
+    return new NextResponse(
+      JSON.stringify({
+        ok: true,
+        data: {
+          ...started,
+          orchestration: getArsenkinFullAuditStatus(caseId, workflow),
+        },
+      }),
+      {
+        status: 202,
+        headers: { "Content-Type": "application/json" },
+      }
+    );
+  }
+
+  if (action === "cancel-full-audit") {
+    const workflow =
+      stage === "SUGGEST_RU_CANARY" ? "suggest-canary" : "first36-full";
+    const job = await cancelArsenkinFullAudit({
+      caseId,
+      workflow,
+      actorId: user.id,
+    });
+    return jsonOk({ cancelled: true, orchestration: job });
   }
 
   if (action === "recover-link-existing") {

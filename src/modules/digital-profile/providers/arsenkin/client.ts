@@ -161,6 +161,34 @@ export class ArsenkinClient {
     return { limitsTotal, limitsSpent, limitsLeft, raw };
   }
 
+  /**
+   * Provider queue/status probe. Official contract: POST /api/tools/info { query: "status" }.
+   * Never deletes foreign tasks. Used only to wait when account queue is saturated.
+   */
+  async getQueueStatus(): Promise<{
+    activeTasks: number | null;
+    queueSize: number | null;
+    raw: Record<string, unknown>;
+  }> {
+    const raw = await this.postJson(`${this.baseUrl}/info`, { query: "status" }, { retryAmbiguousNetwork: true });
+    const active =
+      num(raw.active_tasks ?? raw.activeTasks ?? raw.running ?? raw.in_progress) ?? null;
+    const queue =
+      num(raw.queue_size ?? raw.queueSize ?? raw.queued ?? raw.in_queue) ?? null;
+    return { activeTasks: active, queueSize: queue, raw };
+  }
+
+  /** Transport contract constants for tests / diagnostics. */
+  static readonly TRANSPORT = {
+    method: "POST" as const,
+    setPath: "/set",
+    checkPath: "/check",
+    getPath: "/get",
+    infoPath: "/info",
+    checkBody: (taskId: string | number) => ({ task_id: taskId }),
+    getBody: (taskId: string | number) => ({ task_id: taskId }),
+  };
+
   /** Poll until DONE/FAILED or timeout. Uses exponential backoff + jitter. */
   async waitUntilDone(
     taskId: string | number,
