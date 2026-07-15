@@ -22,12 +22,16 @@ type WorkflowMode = "canary" | "first36";
 
 function stageForMode(mode: WorkflowMode, status: ArsenkinUiStatusDto | null): ArsenkinUiStage {
   if (mode === "canary") return "SUGGEST_RU_CANARY";
-  if (status?.stage === "FIRST36_STAGE1" && status.status === "SYNC_READY") {
+  if (status?.stage === "FIRST36_STAGE1" && (status.status === "SYNC_READY" || status.status === "READY_TO_TRANSFER")) {
     return "FIRST36_STAGE1";
   }
   if (
     status?.stage === "FIRST36_STAGE1" &&
-    (status.status === "STAGE_DONE" || status.status === "SYNCED" || status.verdict === "DONE")
+    (status.status === "STAGE_DONE" ||
+      status.status === "SYNCED" ||
+      status.status === "TRANSFERRED" ||
+      status.status === "REPORT_BOUND" ||
+      status.verdict === "DONE")
   ) {
     return "FIRST36_STAGE2";
   }
@@ -43,9 +47,25 @@ function shortDigest(d: string | null | undefined): string {
 function statusTone(
   s: ArsenkinUiStatusDto["status"]
 ): "ok" | "warn" | "neutral" | "danger" {
-  if (s === "SYNCED" || s === "STAGE_DONE" || s === "SYNC_READY") return "ok";
-  if (s === "EXECUTING" || s === "PLAN_READY" || s === "PREPARED") return "warn";
-  if (s === "FAILED" || s === "MANUAL_INTERVENTION_REQUIRED" || s === "BLOCKED") return "danger";
+  if (
+    s === "SYNCED" ||
+    s === "TRANSFERRED" ||
+    s === "REPORT_BOUND" ||
+    s === "STAGE_DONE" ||
+    s === "SYNC_READY" ||
+    s === "READY_TO_TRANSFER"
+  ) {
+    return "ok";
+  }
+  if (s === "EXECUTING" || s === "PLAN_READY" || s === "PREPARED" || s === "TRANSFERRING") return "warn";
+  if (
+    s === "FAILED" ||
+    s === "TRANSFER_FAILED" ||
+    s === "MANUAL_INTERVENTION_REQUIRED" ||
+    s === "BLOCKED"
+  ) {
+    return "danger";
+  }
   return "neutral";
 }
 
@@ -58,7 +78,12 @@ function statusLabelRu(s: ArsenkinUiStatusDto["status"]): string {
     EXECUTING: "Выполняется",
     STAGE_DONE: "Стадия завершена",
     SYNC_READY: "Готов к передаче в ORION",
+    READY_TO_TRANSFER: "Готов к передаче в ORION",
+    TRANSFERRING: "Передача в ORION…",
     SYNCED: "Результаты переданы",
+    TRANSFERRED: "Результаты переданы",
+    TRANSFER_FAILED: "Передача не удалась",
+    REPORT_BOUND: "Отчёт привязан к Arsenkin",
     BLOCKED: "Заблокирован",
     FAILED: "Ошибка",
     MANUAL_INTERVENTION_REQUIRED: "Требуется ручное вмешательство",
@@ -104,7 +129,11 @@ export function ArsenkinToolsPanel(props: {
       if (
         s.status === "STAGE_DONE" ||
         s.status === "SYNC_READY" ||
+        s.status === "READY_TO_TRANSFER" ||
         s.status === "SYNCED" ||
+        s.status === "TRANSFERRED" ||
+        s.status === "REPORT_BOUND" ||
+        s.status === "TRANSFER_FAILED" ||
         s.status === "FAILED" ||
         s.status === "MANUAL_INTERVENTION_REQUIRED" ||
         s.status === "BLOCKED"
@@ -222,12 +251,49 @@ export function ArsenkinToolsPanel(props: {
     void runAction(async () => {
       const s = await syncArsenkinRun(caseId, { reportRunId: runId, stage });
       setStatus(s);
-      setBanner("Результаты переданы в отчёт.");
+      const transferred =
+        s.status === "TRANSFERRED" ||
+        s.status === "REPORT_BOUND" ||
+        s.status === "SYNCED" ||
+        (s.synced &&
+          (s.transferStatus === "TRANSFERRED" || s.transferStatus === "REPORT_BOUND"));
+      if (transferred) {
+        setBanner(
+          [
+            "Результаты переданы в отчёт.",
+            s.effectiveReportRunId
+              ? `Effective reportRunId: ${s.effectiveReportRunId}`
+              : null,
+            `ProviderTasks=${s.providerTaskCount}, observations=${s.observationCount}, coverage=${s.coverageCount}.`,
+            s.transferredAt ? `Передано: ${s.transferredAt}` : null,
+            "Отчёт будет собран из данных Arsenkin.",
+          ]
+            .filter(Boolean)
+            .join(" ")
+        );
+      } else if (s.status === "TRANSFER_FAILED") {
+        setBanner(s.lastError ?? "Передача в ORION не удалась.");
+      } else {
+        setBanner("Передача в ORION не завершена — binding/client content не сохранены.");
+      }
     });
   };
 
   const terminalBad =
-    status?.status === "FAILED" || status?.status === "MANUAL_INTERVENTION_REQUIRED";
+    status?.status === "FAILED" ||
+    status?.status === "MANUAL_INTERVENTION_REQUIRED" ||
+    status?.status === "TRANSFER_FAILED";
+  const transferComplete =
+    status?.synced ||
+    status?.status === "SYNCED" ||
+    status?.status === "TRANSFERRED" ||
+    status?.status === "REPORT_BOUND";
+  const canTransferUi =
+    status?.canSync ||
+    status?.status === "SYNC_READY" ||
+    status?.status === "READY_TO_TRANSFER" ||
+    status?.status === "STAGE_DONE" ||
+    status?.status === "TRANSFER_FAILED";
   const canExecuteUi =
     canDecide &&
     Boolean(plan?.digest) &&
@@ -403,7 +469,7 @@ export function ArsenkinToolsPanel(props: {
             <button type="button" className="dp-btn" disabled={busy} onClick={() => void refresh()}>
               Обновить статус
             </button>
-            {status?.synced || status?.status === "SYNCED" ? (
+            {transferComplete ? (
               <button type="button" className="dp-btn" disabled>
                 Результаты переданы в отчёт
               </button>
@@ -411,11 +477,7 @@ export function ArsenkinToolsPanel(props: {
               <button
                 type="button"
                 className="dp-btn"
-                disabled={
-                  busy ||
-                  !reportRunId ||
-                  !(status?.canSync || status?.status === "SYNC_READY" || status?.status === "STAGE_DONE")
-                }
+                disabled={busy || !reportRunId || !canTransferUi}
                 onClick={onSync}
               >
                 Передать результаты в ORION
@@ -425,6 +487,14 @@ export function ArsenkinToolsPanel(props: {
         ) : (
           <span className="dp-muted">Нужен risk.review для запуска Arsenkin</span>
         )}
+
+        {transferComplete && status?.effectiveReportRunId ? (
+          <Notice>
+            Effective reportRunId: <code>{status.effectiveReportRunId}</code>
+            {status.transferredAt ? ` · ${status.transferredAt}` : ""}. Отчёт будет собран из данных
+            Arsenkin.
+          </Notice>
+        ) : null}
 
         {!reportRunId ? (
           <span className="dp-muted">Нужен Prepare / reportRunId из очереди ручной проверки.</span>

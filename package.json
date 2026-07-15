@@ -50,6 +50,7 @@
     "smoke:arsenkin-p05-lifecycle-integration": "tsx scripts/smoke-arsenkin-p05-lifecycle-integration.ts",
     "smoke:arsenkin-p05-suggest-plan-only": "tsx scripts/smoke-arsenkin-p05-suggest-plan-only.ts",
     "smoke:arsenkin-ui-orchestration": "tsx --test scripts/smoke-arsenkin-ui-orchestration.ts",
+    "smoke:arsenkin-transfer-binding": "tsx --test scripts/smoke-arsenkin-transfer-binding.ts",
     "arsenkin:db-readiness": "tsx scripts/generate-arsenkin-db-readiness.ts",
     "arsenkin:test-db:up": "docker compose -f docker-compose.arsenkin-test.yml up -d",
     "arsenkin:test-db:down": "docker compose -f docker-compose.arsenkin-test.yml down -v",

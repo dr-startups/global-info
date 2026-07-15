@@ -29,6 +29,12 @@ import {
 import type { AdminReviewDecisionSet } from "../orion-golden/evidence/admin-review-decision";
 import { rebuildClientContentForReportRun } from "../orion-golden/rebuild-client-content-for-report-run";
 import {
+  loadArsenkinReportBinding,
+  saveArsenkinReportBinding,
+  type ArsenkinReportBinding,
+  type ArsenkinTransferStatus,
+} from "../orion-golden/classic/arsenkin-report-binding";
+import {
   computeSchemaContentHash,
   computeSourceTreeHash,
   fingerprintDatabaseUrl,
@@ -52,7 +58,12 @@ export type ArsenkinUiStatusCode =
   | "EXECUTING"
   | "STAGE_DONE"
   | "SYNC_READY"
+  | "READY_TO_TRANSFER"
+  | "TRANSFERRING"
   | "SYNCED"
+  | "TRANSFERRED"
+  | "TRANSFER_FAILED"
+  | "REPORT_BOUND"
   | "BLOCKED"
   | "FAILED"
   | "MANUAL_INTERVENTION_REQUIRED";
@@ -92,6 +103,10 @@ export type ArsenkinUiStatusDto = {
   canExecute: boolean;
   canSync: boolean;
   synced: boolean;
+  /** Case-scoped transfer binding status when present. */
+  transferStatus: ArsenkinTransferStatus | null;
+  effectiveReportRunId: string | null;
+  transferredAt: string | null;
   updatedAt: string;
   humanMessages: string[];
 };
@@ -355,6 +370,9 @@ export async function getArsenkinUiStatus(
       canExecute: false,
       canSync: false,
       synced: false,
+      transferStatus: null,
+      effectiveReportRunId: null,
+      transferredAt: null,
       updatedAt: nowIso,
       humanMessages: ["Arsenkin API не подключён на сервере."],
     };
@@ -414,13 +432,26 @@ export async function getArsenkinUiStatus(
       if (current.status === "DONE") uiStatus = "STAGE_DONE";
       if (current.status === "FAILED") uiStatus = "FAILED";
     }
+    const reportBinding = loadArsenkinReportBinding(caseId);
     const syncMarker = readJson<{ synced?: boolean; reportRunId?: string }>(
       join(arsenkinOrionCaseRoot(caseId), "arsenkin-ui-sync.json")
     );
-    if (syncMarker?.synced && syncMarker.reportRunId === ledgerRunId && uiStatus === "STAGE_DONE") {
+    const transferOk =
+      reportBinding &&
+      reportBinding.effectiveReportRunId === ledgerRunId &&
+      (reportBinding.status === "TRANSFERRED" || reportBinding.status === "REPORT_BOUND");
+    const legacySyncOk =
+      syncMarker?.synced && syncMarker.reportRunId === ledgerRunId && !reportBinding;
+    if (transferOk && reportBinding.status === "REPORT_BOUND") {
+      uiStatus = "REPORT_BOUND";
+    } else if (transferOk) {
+      uiStatus = "TRANSFERRED";
+    } else if (legacySyncOk && uiStatus === "STAGE_DONE") {
       uiStatus = "SYNCED";
+    } else if (reportBinding?.status === "TRANSFER_FAILED" && uiStatus === "STAGE_DONE") {
+      uiStatus = "TRANSFER_FAILED";
     } else if (uiStatus === "STAGE_DONE") {
-      uiStatus = "SYNC_READY";
+      uiStatus = "READY_TO_TRANSFER";
     }
     const intervention = existsSync(
       join(arsenkinCanaryOutRoot(caseId, ledgerRunId), "manual-intervention-required.json")
@@ -474,8 +505,10 @@ export async function getArsenkinUiStatus(
     Boolean(arsenkinReportRunId) &&
     (uiStatus === "PREPARED" ||
       uiStatus === "PLAN_READY" ||
-      uiStatus === "SYNC_READY" ||
-      uiStatus === "SYNCED");
+      uiStatus === "READY_TO_TRANSFER" ||
+      uiStatus === "SYNCED" ||
+      uiStatus === "TRANSFERRED" ||
+      uiStatus === "REPORT_BOUND");
   const canExecute =
     configured &&
     blockers.length === 0 &&
@@ -484,7 +517,26 @@ export async function getArsenkinUiStatus(
   const canSync =
     configured &&
     Boolean(arsenkinReportRunId) &&
-    (uiStatus === "SYNC_READY" || uiStatus === "SYNCED");
+    (uiStatus === "READY_TO_TRANSFER" ||
+      uiStatus === "SYNCED" ||
+      uiStatus === "TRANSFERRED" ||
+      uiStatus === "REPORT_BOUND" ||
+      uiStatus === "TRANSFER_FAILED");
+
+  const reportBinding = loadArsenkinReportBinding(caseId);
+  const transferComplete =
+    uiStatus === "TRANSFERRED" ||
+    uiStatus === "REPORT_BOUND" ||
+    uiStatus === "SYNCED";
+  const humanMessages = [
+    ...humanizeBlockers(blockers),
+    ...(transferComplete && reportBinding
+      ? [
+          `Отчёт будет собран из данных Arsenkin (${reportBinding.effectiveReportRunId}).`,
+          `ProviderTasks=${reportBinding.providerTaskCount}, observations=${reportBinding.observationCount}, coverage=${reportBinding.coverageCount}.`,
+        ]
+      : []),
+  ];
 
   return {
     enabled,
@@ -510,14 +562,17 @@ export async function getArsenkinUiStatus(
     observationCount,
     coverageCount,
     blockers,
-    lastError,
+    lastError: reportBinding?.status === "TRANSFER_FAILED" ? reportBinding.lastError ?? lastError : lastError,
     canPrepare,
     canPlan,
     canExecute: canExecute && Boolean(planDigest),
     canSync,
-    synced: uiStatus === "SYNCED",
+    synced: transferComplete,
+    transferStatus: reportBinding?.status ?? null,
+    effectiveReportRunId: reportBinding?.effectiveReportRunId ?? arsenkinReportRunId,
+    transferredAt: reportBinding?.transferredAt ?? null,
     updatedAt: nowIso,
-    humanMessages: humanizeBlockers(blockers),
+    humanMessages,
   };
 }
 
@@ -903,6 +958,7 @@ export const executeArsenkinUiRun = executeArsenkinUiPlan;
 /**
  * Sync Arsenkin observations into ORION Golden case root without Arsenkin network.
  * Preserves existing non-pending admin decisions by evidenceId.
+ * Atomically writes case-scoped arsenkin-report-binding.json (canonical effectiveReportRunId).
  */
 export async function syncArsenkinResultsToOrion(input: {
   caseId: string;
@@ -966,9 +1022,41 @@ export async function syncArsenkinResultsToOrion(input: {
       (o) => o.surface === "autocomplete" && o.region === "RU" && (o.engine === "YANDEX" || o.engine === "GOOGLE")
     );
     if (!ok) {
-      // Soft: still allow if suggest mapped differently; require at least RU autocomplete
       const has = obs.some((o) => o.region === "RU" && (o.surface === "autocomplete" || o.surface === "organic"));
       if (!has) throw new ConflictError("Canary sync ожидает RU suggest observations");
+    }
+  }
+
+  const [providerTaskCount, coverageCount] = await Promise.all([
+    prisma.providerTask.count({ where: { reportRunId: arsenkinReportRunId, provider: "arsenkin" } }),
+    prisma.surfaceCollectionCoverage.count({
+      where: { reportRunId: arsenkinReportRunId, provider: "arsenkin" },
+    }),
+  ]);
+
+  const existingBinding = loadArsenkinReportBinding(input.caseId);
+  const caseRoot = arsenkinOrionCaseRoot(input.caseId);
+  const postReviewPath = join(caseRoot, "orion-client-content.post-review.json");
+
+  // Idempotent replay: same effective run already transferred with matching client content.
+  if (
+    existingBinding &&
+    (existingBinding.status === "TRANSFERRED" || existingBinding.status === "REPORT_BOUND") &&
+    existingBinding.effectiveReportRunId === arsenkinReportRunId &&
+    existsSync(postReviewPath)
+  ) {
+    const post = readJson<{ reportRunId?: string; caseId?: string }>(postReviewPath);
+    if (post?.reportRunId === arsenkinReportRunId && post?.caseId === input.caseId) {
+      if (getArsenkinNetworkCallCount() !== 0) {
+        throw new ConflictError("sync leaked network calls");
+      }
+      const status = await getArsenkinUiStatus(
+        input.caseId,
+        input.reportRunId,
+        input.stage,
+        input.deps
+      );
+      return { ...status, status: "TRANSFERRED", synced: true, orphanedEvidenceIds: [] };
     }
   }
 
@@ -978,13 +1066,39 @@ export async function syncArsenkinResultsToOrion(input: {
   }
   const preserved = (existing?.decisions ?? []).filter((d) => d.status !== "PENDING");
 
-  const caseRoot = arsenkinOrionCaseRoot(input.caseId);
+  saveArsenkinReportBinding({
+    caseId: input.caseId,
+    sourceReportRunId: mapping.sourceReportRunId,
+    effectiveReportRunId: arsenkinReportRunId,
+    provider: "arsenkin",
+    workflow,
+    stage: input.stage,
+    status: "TRANSFERRING",
+    transferredAt: new Date().toISOString(),
+    providerTaskCount,
+    observationCount: obs.length,
+    coverageCount,
+    lastError: null,
+  });
+
   const tempRoot = join(caseRoot, `.arsenkin-sync-tmp-${process.pid}-${Date.now()}`);
   mkdirSync(tempRoot, { recursive: true });
 
   let orphanedEvidenceIds: string[] = [];
   try {
-    await rebuild(input.caseId, arsenkinReportRunId, tempRoot, { requireAi: false });
+    await rebuild(input.caseId, arsenkinReportRunId, tempRoot, {
+      requireAi: false,
+      sourceReportRunId: mapping.sourceReportRunId,
+    });
+
+    const rebuiltPost = readJson<{ reportRunId?: string; caseId?: string }>(
+      join(tempRoot, "orion-client-content.post-review.json")
+    );
+    if (!rebuiltPost || rebuiltPost.reportRunId !== arsenkinReportRunId) {
+      throw new ConflictError(
+        `ARSENKIN_CLIENT_CONTENT_RUN_MISMATCH: rebuilt reportRunId=${rebuiltPost?.reportRunId ?? "missing"} expected=${arsenkinReportRunId}`
+      );
+    }
 
     const queue = readJson<{ items?: Array<{ evidenceId?: string; id?: string }> }>(
       join(tempRoot, "manual-review-queue.json")
@@ -1013,6 +1127,12 @@ export async function syncArsenkinResultsToOrion(input: {
       decisions: reapplied,
     };
     writeJsonAtomic(join(tempRoot, "admin-review-decisions.json"), merged);
+    writeJsonAtomic(join(tempRoot, "client-content-binding.json"), {
+      sourceReportRunId: mapping.sourceReportRunId,
+      effectiveReportRunId: arsenkinReportRunId,
+      overridden: false,
+      rebuilt: true,
+    });
     writeJsonAtomic(join(tempRoot, "arsenkin-ui-sync-diagnostics.json"), {
       orphanedEvidenceIds,
       preservedCount: reapplied.length,
@@ -1020,14 +1140,21 @@ export async function syncArsenkinResultsToOrion(input: {
       sourceReportRunId: mapping.sourceReportRunId,
     });
 
-    // Atomic promote: move key artifacts into case root
+    // Atomic promote: case-root artifacts including inventory (prevents regenerate fallback).
     for (const name of [
       "orion-client-content.post-review.json",
       "orion-client-content.pre-review.json",
+      "orion-client-content.post-review.md",
+      "orion-client-content.pre-review.md",
       "client-content-binding.json",
       "admin-review-decisions.json",
       "run-scoped-serp-merge.json",
       "manual-review-queue.json",
+      "full-evidence-inventory.json",
+      "evidence-judgment-inspection.json",
+      "r10-4-evidence-bundles.json",
+      "report-assets.json",
+      "final-deck-manifest.json",
     ]) {
       const src = join(tempRoot, name);
       if (!existsSync(src)) continue;
@@ -1035,21 +1162,64 @@ export async function syncArsenkinResultsToOrion(input: {
       writeFileSync(dest, readFileSync(src));
     }
 
-    writeJsonAtomic(join(caseRoot, "arsenkin-ui-sync.json"), {
-      synced: true,
-      reportRunId: arsenkinReportRunId,
-      sourceReportRunId: mapping.sourceReportRunId,
-      stage: input.stage,
-      at: new Date().toISOString(),
-      observationCount: obs.length,
-    });
-
-    const merge = readJson<{ usedRunScoped?: boolean; observationCount?: number }>(
+    const merge = readJson<{ usedRunScoped?: boolean; observationCount?: number; auditRunId?: string }>(
       join(caseRoot, "run-scoped-serp-merge.json")
     );
     if (merge && merge.usedRunScoped === false) {
       throw new ConflictError("run-scoped merge не использован");
     }
+    if (merge?.auditRunId && merge.auditRunId !== arsenkinReportRunId) {
+      throw new ConflictError(
+        `ARSENKIN_REPORT_BINDING_MISMATCH: merge.auditRunId=${merge.auditRunId} expected=${arsenkinReportRunId}`
+      );
+    }
+
+    const transferredAt = new Date().toISOString();
+    const bindingPayload: ArsenkinReportBinding = {
+      caseId: input.caseId,
+      sourceReportRunId: mapping.sourceReportRunId,
+      effectiveReportRunId: arsenkinReportRunId,
+      provider: "arsenkin",
+      workflow,
+      stage: input.stage,
+      status: "TRANSFERRED",
+      transferredAt,
+      providerTaskCount,
+      observationCount: obs.length,
+      coverageCount,
+      lastError: null,
+    };
+    saveArsenkinReportBinding(bindingPayload);
+    writeJsonAtomic(join(caseRoot, "arsenkin-ui-sync.json"), {
+      synced: true,
+      reportRunId: arsenkinReportRunId,
+      sourceReportRunId: mapping.sourceReportRunId,
+      effectiveReportRunId: arsenkinReportRunId,
+      stage: input.stage,
+      workflow,
+      status: "TRANSFERRED",
+      at: transferredAt,
+      observationCount: obs.length,
+      providerTaskCount,
+      coverageCount,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    saveArsenkinReportBinding({
+      caseId: input.caseId,
+      sourceReportRunId: mapping.sourceReportRunId,
+      effectiveReportRunId: arsenkinReportRunId,
+      provider: "arsenkin",
+      workflow,
+      stage: input.stage,
+      status: "TRANSFER_FAILED",
+      transferredAt: new Date().toISOString(),
+      providerTaskCount,
+      observationCount: obs.length,
+      coverageCount,
+      lastError: message,
+    });
+    throw err;
   } finally {
     try {
       rmSync(tempRoot, { recursive: true, force: true });
@@ -1068,7 +1238,7 @@ export async function syncArsenkinResultsToOrion(input: {
     input.stage,
     input.deps
   );
-  return { ...status, status: "SYNCED", synced: true, orphanedEvidenceIds };
+  return { ...status, status: "TRANSFERRED", synced: true, orphanedEvidenceIds };
 }
 
 export function parseArsenkinUiStage(raw: unknown): ArsenkinUiStage {
@@ -1111,6 +1281,9 @@ export function toPublicArsenkinUiDto(
     canExecute: dto.canExecute,
     canSync: dto.canSync,
     synced: dto.synced,
+    transferStatus: dto.transferStatus,
+    effectiveReportRunId: dto.effectiveReportRunId,
+    transferredAt: dto.transferredAt,
     updatedAt: dto.updatedAt,
     humanMessages: dto.humanMessages,
   };

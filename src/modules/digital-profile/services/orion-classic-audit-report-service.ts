@@ -9,6 +9,7 @@ import { runOrionClassicAuditRender } from "../orion-golden/classic/run-orion-cl
 import { loadPostReviewClientContent } from "../orion-golden/classic/run-orion-classic-audit-render";
 import { OrionClassicVisualGateError } from "../orion-golden/classic/run-orion-classic-audit-render";
 import { persistRegeneratedClientContentAsync } from "../orion-golden/services/admin-review-workflow-service";
+import { ArsenkinReportBindingError } from "../orion-golden/classic/arsenkin-report-binding";
 import { saveFile } from "../storage/private-store";
 import { buildStorageKey } from "../storage/keys";
 import { createSignedToken } from "../storage/signed-url";
@@ -272,6 +273,11 @@ async function executeClassicAuditReport(input: {
       clientContent,
     });
   } catch (err) {
+    if (err instanceof ArsenkinReportBindingError) {
+      throw new ValidationError(
+        `Client report blocked: ${err.code} (${err.issues.map((i) => i.detail).join("; ")})`
+      );
+    }
     if (err instanceof OrionClassicVisualGateError) {
       throw new ValidationError(
         `Client report blocked: required SERP visual assets missing (${err.blockedSections

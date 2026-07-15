@@ -176,6 +176,9 @@ function baseStatus(partial: Partial<ArsenkinUiStatusDto> = {}): ArsenkinUiStatu
     canExecute: true,
     canSync: false,
     synced: false,
+    transferStatus: null,
+    effectiveReportRunId: null,
+    transferredAt: null,
     updatedAt: new Date().toISOString(),
     humanMessages: [],
     ...partial,
@@ -981,7 +984,7 @@ describe("arsenkin UI orchestration", () => {
     assert.ok(!decisions.decisions.some((d) => d.evidenceId === "ev-new-arsenkin"));
   });
 
-  it("19 sync keeps same reportRunId", () => {
+  it("19 sync keeps Arsenkin effective run and records canonical binding", () => {
     const caseRoot = caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId);
     const binding = JSON.parse(
       readFileSync(join(caseRoot, "client-content-binding.json"), "utf-8")
@@ -990,13 +993,24 @@ describe("arsenkin UI orchestration", () => {
       effectiveReportRunId: string;
       overridden: boolean;
     };
-    assert.equal(binding.sourceReportRunId, reportRunId);
     assert.equal(binding.effectiveReportRunId, reportRunId);
     assert.equal(binding.overridden, false);
     const sync = JSON.parse(readFileSync(join(caseRoot, "arsenkin-ui-sync.json"), "utf-8")) as {
       reportRunId: string;
+      status?: string;
     };
     assert.equal(sync.reportRunId, reportRunId);
+    assert.equal(sync.status, "TRANSFERRED");
+    const reportBinding = JSON.parse(
+      readFileSync(join(caseRoot, "arsenkin-report-binding.json"), "utf-8")
+    ) as {
+      effectiveReportRunId: string;
+      status: string;
+      provider: string;
+    };
+    assert.equal(reportBinding.effectiveReportRunId, reportRunId);
+    assert.equal(reportBinding.status, "TRANSFERRED");
+    assert.equal(reportBinding.provider, "arsenkin");
   });
 
   it("20 run-scoped merge receives Arsenkin observations", () => {

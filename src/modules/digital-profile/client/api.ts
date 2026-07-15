@@ -1468,7 +1468,12 @@ export type ArsenkinUiStatusCode =
   | "EXECUTING"
   | "STAGE_DONE"
   | "SYNC_READY"
+  | "READY_TO_TRANSFER"
+  | "TRANSFERRING"
   | "SYNCED"
+  | "TRANSFERRED"
+  | "TRANSFER_FAILED"
+  | "REPORT_BOUND"
   | "BLOCKED"
   | "FAILED"
   | "MANUAL_INTERVENTION_REQUIRED";
@@ -1503,6 +1508,9 @@ export type ArsenkinUiStatusDto = {
   canExecute: boolean;
   canSync: boolean;
   synced: boolean;
+  transferStatus?: "READY_TO_TRANSFER" | "TRANSFERRING" | "TRANSFERRED" | "TRANSFER_FAILED" | "REPORT_BOUND" | null;
+  effectiveReportRunId?: string | null;
+  transferredAt?: string | null;
   updatedAt: string;
   humanMessages: string[];
 };

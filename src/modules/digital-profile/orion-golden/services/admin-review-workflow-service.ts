@@ -38,6 +38,11 @@ import {
 } from "../sections/orion-section-analysis-loader";
 import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
 import { digitalProfileConfig } from "../../config";
+import {
+  loadArsenkinReportBinding,
+  resolveEffectiveReportRunIdForCase,
+} from "../classic/arsenkin-report-binding";
+import { rebuildClientContentForReportRun } from "../rebuild-client-content-for-report-run";
 
 function artifactRootsForCase(caseId: string): string[] {
   // Prefer case-scoped artifacts (UI prepare / multi-case), then shared root, then calibration.
@@ -250,7 +255,7 @@ export function regenerateClientContentAfterReview(caseId: string): {
 
   const subjectPath = resolveArtifactFile(caseId, "full-evidence-inventory.json");
   const inventory = readJson<{ subject: { fullName: string; aliases: string[] }; reportRunId: string }>(subjectPath);
-  const reportRunId = inventory.reportRunId;
+  const { reportRunId } = resolveEffectiveReportRunIdForCase(caseId, inventory.reportRunId);
 
   if (hasSectionBasedClientArtifacts(artifactRootDir)) {
     return regenerateSectionBasedClientContent({
@@ -485,6 +490,7 @@ export async function regenerateClientContentAfterReviewAsync(caseId: string): P
   const inventory = readJson<{ subject: { fullName: string; aliases: string[] }; reportRunId: string }>(
     resolveArtifactFile(caseId, "full-evidence-inventory.json")
   );
+  const { reportRunId } = resolveEffectiveReportRunIdForCase(caseId, inventory.reportRunId);
 
   if (!hasSectionBasedClientArtifacts(artifactRootDir)) {
     return regenerateClientContentAfterReview(caseId);
@@ -496,7 +502,7 @@ export async function regenerateClientContentAfterReviewAsync(caseId: string): P
     queue,
     judgments,
     inventory,
-    reportRunId: inventory.reportRunId,
+    reportRunId,
     generatedAt,
   });
 }
@@ -533,16 +539,98 @@ export async function persistRegeneratedClientContentAsync(caseId: string): Prom
   preReviewApprovedCount: number;
   postReviewApprovedCount: number;
 }> {
+  const binding = loadArsenkinReportBinding(caseId);
+  const root = caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId);
+
+  // After Arsenkin transfer: honest rebuild for effective Arsenkin run (never fall back to source).
+  if (
+    binding &&
+    (binding.status === "TRANSFERRED" || binding.status === "REPORT_BOUND") &&
+    binding.effectiveReportRunId
+  ) {
+    mkdirSync(root, { recursive: true });
+    await rebuildClientContentForReportRun(caseId, binding.effectiveReportRunId, root, {
+      requireAi: false,
+      sourceReportRunId: binding.sourceReportRunId,
+    });
+
+    const existing = loadAdminReviewDecisions(caseId);
+    if (existing && !existing.qaSampleOnly) {
+      const preserved = existing.decisions.filter((d) => d.status !== "PENDING");
+      const queuePath = join(root, "manual-review-queue.json");
+      const queue = existsSync(queuePath)
+        ? (JSON.parse(readFileSync(queuePath, "utf-8")) as {
+            items?: Array<{ evidenceId?: string; id?: string }>;
+          })
+        : null;
+      const evidenceIds = new Set(
+        (queue?.items ?? [])
+          .map((i) => i.evidenceId ?? i.id)
+          .filter((x): x is string => Boolean(x))
+      );
+      const reapplied = preserved.filter(
+        (d) => evidenceIds.size === 0 || evidenceIds.has(d.evidenceId)
+      );
+      writeFileSync(
+        join(root, "admin-review-decisions.json"),
+        `${JSON.stringify(
+          {
+            ...existing,
+            updatedAt: new Date().toISOString(),
+            decisions: reapplied,
+          },
+          null,
+          2
+        )}\n`,
+        "utf-8"
+      );
+    }
+
+    writeFileSync(
+      join(root, "client-content-binding.json"),
+      `${JSON.stringify(
+        {
+          sourceReportRunId: binding.sourceReportRunId,
+          effectiveReportRunId: binding.effectiveReportRunId,
+          overridden: false,
+          rebuilt: true,
+        },
+        null,
+        2
+      )}\n`,
+      "utf-8"
+    );
+
+    const post = JSON.parse(
+      readFileSync(join(root, "orion-client-content.post-review.json"), "utf-8")
+    ) as OrionClientContent;
+    const pre = existsSync(join(root, "orion-client-content.pre-review.json"))
+      ? (JSON.parse(
+          readFileSync(join(root, "orion-client-content.pre-review.json"), "utf-8")
+        ) as OrionClientContent)
+      : post;
+    if (post.reportRunId !== binding.effectiveReportRunId) {
+      throw new Error(
+        `ARSENKIN_CLIENT_CONTENT_RUN_MISMATCH: post.reportRunId=${post.reportRunId} expected=${binding.effectiveReportRunId}`
+      );
+    }
+    return {
+      artifactRoot: root,
+      generatedAt: new Date().toISOString(),
+      preReviewApprovedCount: pre.approvedFindings?.length ?? 0,
+      postReviewApprovedCount: post.approvedFindings?.length ?? 0,
+    };
+  }
+
   const { preReview, postReview, preReviewMarkdown, postReviewMarkdown, artifactRoot, generatedAt } =
     await regenerateClientContentAfterReviewAsync(caseId);
-  const root = artifactRoot;
-  mkdirSync(root, { recursive: true });
-  writeFileSync(join(root, "orion-client-content.pre-review.json"), `${JSON.stringify(preReview, null, 2)}\n`, "utf-8");
-  writeFileSync(join(root, "orion-client-content.post-review.json"), `${JSON.stringify(postReview, null, 2)}\n`, "utf-8");
-  writeFileSync(join(root, "orion-client-content.pre-review.md"), preReviewMarkdown, "utf-8");
-  writeFileSync(join(root, "orion-client-content.post-review.md"), postReviewMarkdown, "utf-8");
+  mkdirSync(artifactRoot, { recursive: true });
+  writeFileSync(join(artifactRoot, "orion-client-content.pre-review.json"), `${JSON.stringify(preReview, null, 2)}\n`, "utf-8");
+  writeFileSync(join(artifactRoot, "orion-client-content.post-review.json"), `${JSON.stringify(postReview, null, 2)}\n`, "utf-8");
+  writeFileSync(join(artifactRoot, "orion-client-content.pre-review.md"), preReviewMarkdown, "utf-8");
+  writeFileSync(join(artifactRoot, "orion-client-content.post-review.md"), postReviewMarkdown, "utf-8");
   return {
-    artifactRoot: root,
+    artifactRoot,
     generatedAt,
     preReviewApprovedCount: preReview.approvedFindings.length,
     postReviewApprovedCount: postReview.approvedFindings.length,

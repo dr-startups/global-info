@@ -25,6 +25,12 @@ import { isClientProductionFinalize, isFirst36CeoMode } from "./orion-classic-li
 import { evaluateClassicProviderSerpGate } from "./orion-classic-provider-serp-assets";
 import { mergeRunScopedSerpObservations } from "./merge-run-scoped-serp-observations";
 import { isArsenkinRequired } from "../../providers/arsenkin";
+import {
+  ArsenkinReportBindingError,
+  assertArsenkinTransferredClientContent,
+  loadArsenkinReportBinding,
+  saveArsenkinReportBinding,
+} from "./arsenkin-report-binding";
 import type { ExecutiveSynthesisOutput } from "../gpt/orion-executive-synthesis-from-sections";
 import type { SectionDerivedRiskMatrix } from "../sections/orion-risk-matrix-from-sections";
 import type { AdminReviewDecisionSet } from "../evidence/admin-review-decision";
@@ -152,7 +158,12 @@ export async function runOrionClassicAuditRender(options: {
   mkdirSync(outputRoot, { recursive: true });
 
   const loaded = resolveClientContentForRender(caseId, outputRoot, options.clientContent);
-  const clientContentSourceReportRunId = String(loaded.reportRunId ?? "").trim() || null;
+  const arsenkinBinding = loadArsenkinReportBinding(caseId);
+  const clientContentSourceReportRunId =
+    arsenkinBinding &&
+    (arsenkinBinding.status === "TRANSFERRED" || arsenkinBinding.status === "REPORT_BOUND")
+      ? arsenkinBinding.sourceReportRunId
+      : String(loaded.reportRunId ?? "").trim() || null;
 
   if (options.reportRunIdOverride) {
     const expectedRunId = options.reportRunIdOverride.trim();
@@ -165,9 +176,64 @@ export async function runOrionClassicAuditRender(options: {
     }
   }
 
+  // Fail-closed: transferred Arsenkin cases must not render against the old ORION run.
+  if (
+    arsenkinBinding &&
+    (arsenkinBinding.status === "TRANSFERRED" || arsenkinBinding.status === "REPORT_BOUND")
+  ) {
+    const [observationCount, providerTaskCount, coverageCount, suggestObs] = await Promise.all([
+      prisma.serpObservation.count({
+        where: { auditRunId: arsenkinBinding.effectiveReportRunId, provider: "arsenkin" },
+      }),
+      prisma.providerTask.count({
+        where: { reportRunId: arsenkinBinding.effectiveReportRunId, provider: "arsenkin" },
+      }),
+      prisma.surfaceCollectionCoverage.count({
+        where: { reportRunId: arsenkinBinding.effectiveReportRunId, provider: "arsenkin" },
+      }),
+      prisma.serpObservation.findMany({
+        where: {
+          auditRunId: arsenkinBinding.effectiveReportRunId,
+          provider: "arsenkin",
+          surface: "autocomplete",
+          region: "RU",
+        },
+        select: { engine: true, providerTaskId: true },
+        take: 50,
+      }),
+    ]);
+    const gate = assertArsenkinTransferredClientContent({
+      caseId,
+      clientContentReportRunId: String(loaded.reportRunId ?? ""),
+      binding: arsenkinBinding,
+      observationCount,
+      providerTaskCount,
+      coverageCount,
+      requireCanarySuggestions: arsenkinBinding.workflow === "suggest-canary",
+      hasYandexRuAutocomplete: suggestObs.some(
+        (o) => o.engine === "YANDEX" && Boolean(o.providerTaskId)
+      ),
+      hasGoogleRuAutocomplete: suggestObs.some(
+        (o) => o.engine === "GOOGLE" && Boolean(o.providerTaskId)
+      ),
+    });
+    if (!gate.ok) {
+      writeJson(join(outputRoot, "arsenkin-render-binding-gate.json"), {
+        blocked: true,
+        issues: gate.issues,
+        binding: arsenkinBinding,
+      });
+      throw new ArsenkinReportBindingError(gate.issues);
+    }
+  }
+
   const clientContent: OrionClientContent = loaded;
   writeJson(join(outputRoot, "client-content-binding.json"), {
-    sourceReportRunId: clientContentSourceReportRunId,
+    sourceReportRunId:
+      arsenkinBinding &&
+      (arsenkinBinding.status === "TRANSFERRED" || arsenkinBinding.status === "REPORT_BOUND")
+        ? arsenkinBinding.sourceReportRunId
+        : clientContentSourceReportRunId,
     effectiveReportRunId: clientContent.reportRunId,
     overridden: false,
   });
@@ -569,6 +635,17 @@ export async function runOrionClassicAuditRender(options: {
     ...acceptance.issues.map((i) => `${i.code}: ${i.detail}`),
     ...(reportSpec.qaMetadata.warnings ?? []).filter((w) => !metaNoise.has(w)),
   ];
+
+  if (
+    arsenkinBinding &&
+    (arsenkinBinding.status === "TRANSFERRED" || arsenkinBinding.status === "REPORT_BOUND") &&
+    clientContent.reportRunId === arsenkinBinding.effectiveReportRunId
+  ) {
+    saveArsenkinReportBinding({
+      ...arsenkinBinding,
+      status: "REPORT_BOUND",
+    });
+  }
 
   return {
     caseId,

@@ -25,12 +25,13 @@ export async function rebuildClientContentForReportRun(
   caseId: string,
   reportRunId: string,
   outputRoot: string,
-  options?: { requireAi?: boolean }
+  options?: { requireAi?: boolean; sourceReportRunId?: string }
 ): Promise<RebuildClientContentResult> {
   const trimmedCaseId = caseId.trim();
   const trimmedRunId = reportRunId.trim();
   if (!trimmedCaseId) throw new Error("CASE_ID required");
   if (!trimmedRunId) throw new Error("reportRunId required");
+  const sourceReportRunId = String(options?.sourceReportRunId ?? trimmedRunId).trim() || trimmedRunId;
 
   mkdirSync(outputRoot, { recursive: true });
 
@@ -44,7 +45,7 @@ export async function rebuildClientContentForReportRun(
   });
 
   writeJson(join(outputRoot, "client-content-binding.json"), {
-    sourceReportRunId: trimmedRunId,
+    sourceReportRunId,
     effectiveReportRunId: trimmedRunId,
     overridden: false,
     rebuilt: true,
