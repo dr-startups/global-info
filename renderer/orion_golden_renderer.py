@@ -1268,57 +1268,136 @@ def _render_visual_with_sidebar(
         _sidebar_analysis(ctx, slide, MARGIN_X + img_w + 120000, y + 60000, side_w, img_h - 60000)
 
 
+def _title_line_estimate(text: str, col_width_emu: int, font_pt: float, max_lines: int = 2) -> int:
+    """Word-aware line estimate mirroring TS search-results-pagination.ts."""
+    text = (text or "").strip()
+    if not text:
+        return 1
+    char_w = font_pt * EMU_PER_PT * 0.52
+    max_chars = max(1, int(col_width_emu / char_w))
+    words = text.split()
+    lines = 1
+    cur = 0
+    for w in words:
+        add = len(w) if cur == 0 else cur + 1 + len(w)
+        if add <= max_chars:
+            cur = add
+        else:
+            lines += 1
+            cur = min(len(w), max_chars)
+            if lines >= max_lines:
+                return max_lines
+    return min(lines, max_lines)
+
+
+def _status_tone(status: str) -> tuple[str, "RGBColor"]:
+    s = (status or "").strip().lower()
+    if "нежелат" in s:
+        return "●", RGBColor(0xB9, 0x1C, 0x1C)
+    if "проверк" in s or "требует" in s:
+        return "●", RGBColor(0xC2, 0x41, 0x0C)
+    return "●", RGBColor(0x04, 0x78, 0x57)
+
+
 def _add_search_table(
     ctx: _Ctx,
     y: int,
     headers: list[str],
     rows: list[list[str]],
+    groups: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Real PPTX table for SERP / heat-grid slides (max 8 data rows)."""
-    cols = max(1, min(5, len(headers)))
-    data_rows = rows[:8]
-    table_rows = 1 + len(data_rows)
-    avail_h = max(800000, CONTENT_BOTTOM - y - 40000)
-    row_h = min(480000, max(320000, avail_h // max(table_rows, 1)))
-    table_h = row_h * table_rows
+    """
+    Grouped SERP position table. Renders EVERY row the slide carries (no cap) —
+    TS pagination already guaranteed geometric fit. Query is shown as a compact
+    group-header band (spec §4), status as a colored badge (spec §5).
+    """
+    cols = max(1, min(4, len(headers)))
+    data_rows = rows  # no hidden cap: caller already paginated to fit
+    groups = groups or []
+
+    # Row plan: header + interleaved group bands + data rows.
+    plan: list[tuple[str, Any]] = [("header", headers)]
+    if groups:
+        for g in groups:
+            start = int(g.get("rowStart", 0))
+            count = int(g.get("rowCount", 0))
+            label = str(g.get("queryDisplay") or "")
+            qtag = g.get("qTag")
+            band = f"Запрос: {label}" if not qtag else f"{qtag} — {label}"
+            plan.append(("group", band))
+            for r in data_rows[start : start + count]:
+                plan.append(("data", r))
+    else:
+        for r in data_rows:
+            plan.append(("data", r))
+
+    # Column widths (Позиция | Домен | Заголовок | Статус) — spec §4 proportions.
+    prop = [0.07, 0.22, 0.53, 0.18][:cols]
+    widths = [max(500_000, int(CONTENT_W * p)) for p in prop]
+    leftover = CONTENT_W - sum(widths)
+    if leftover != 0 and widths:
+        widths[2 if cols > 2 else len(widths) - 1] += leftover
+    title_col_w = widths[2] if cols > 2 else widths[-1]
+
+    # Per-row heights.
+    body_pt = 10.0
+    line_h = int(body_pt * EMU_PER_PT * 1.2)
+    pad = int(6 * EMU_PER_PT)
+    header_h = int(26 * EMU_PER_PT)
+    group_h = int(18 * EMU_PER_PT)
+    heights: list[int] = []
+    for kind, payload in plan:
+        if kind == "header":
+            heights.append(header_h)
+        elif kind == "group":
+            heights.append(group_h)
+        else:
+            lines = _title_line_estimate(str(payload[2]) if len(payload) > 2 else "", title_col_w, body_pt)
+            heights.append(lines * line_h + pad)
+
+    table_rows = len(plan)
+    table_h = sum(heights)
     shape = ctx.slide.shapes.add_table(table_rows, cols, Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(table_h))
     tbl = shape.table
+    for i, w in enumerate(widths):
+        tbl.columns[i].width = Emu(w)
+    for i, h in enumerate(heights):
+        tbl.rows[i].height = Emu(h)
 
-    # Column widths: Position | Domain | Title | Status (no empty URL column)
-    if cols == 4:
-        widths = [1_000_000, 2_200_000, CONTENT_W - 1_000_000 - 2_200_000 - 2_000_000, 2_000_000]
-        leftover = CONTENT_W - sum(widths)
-        if leftover != 0:
-            widths[2] += leftover
-        for i, w in enumerate(widths):
-            tbl.columns[i].width = Emu(max(500000, w))
-    elif cols >= 4:
-        widths = [900000, 1800000, CONTENT_W - 900000 - 1800000 - 2200000 - 700000, 2200000, 700000][:cols]
-        leftover = CONTENT_W - sum(widths)
-        if leftover != 0 and widths:
-            widths[min(2, len(widths) - 1)] += leftover
-        for i, w in enumerate(widths):
-            tbl.columns[i].width = Emu(max(500000, w))
-
-    def paint_cell(cell: Any, text: str, *, header: bool = False, adverse: bool = False) -> None:
-        cell.text = _clip_words(text, 120 if header else 110)
+    def paint(cell: Any, text: str, *, bold: bool = False, color: Any = BODY_COLOR, bg: Any = WHITE, size: float = 10.0) -> None:
+        cell.text = _clip_words(text, 200)
+        cell.vertical_anchor = MSO_ANCHOR.MIDDLE
         for p in cell.text_frame.paragraphs:
             p.font.name = FONT
-            p.font.size = Pt(10.5 if header else 10.5)
-            p.font.bold = header
-            p.font.color.rgb = WHITE if header else (RGBColor(0xB9, 0x1C, 0x1C) if adverse else BODY_COLOR)
+            p.font.size = Pt(size)
+            p.font.bold = bold
+            p.font.color.rgb = color
+        cell.text_frame.word_wrap = True
         fill = cell.fill
         fill.solid()
-        fill.fore_color.rgb = NAVY if header else (RGBColor(0xFE, 0xF2, 0xF2) if adverse else WHITE)
+        fill.fore_color.rgb = bg
 
-    for c, h in enumerate(headers[:cols]):
-        paint_cell(tbl.cell(0, c), str(h), header=True)
-    for r_idx, row in enumerate(data_rows, start=1):
-        status = str(row[-1] if row else "").strip()
-        adverse = status in ("Нежелательный", "Н", "[Н]", "N") or status.startswith("[Н]")
-        for c in range(cols):
-            val = str(row[c]) if c < len(row) else ""
-            paint_cell(tbl.cell(r_idx, c), val, adverse=adverse and c == cols - 1)
+    for r_idx, (kind, payload) in enumerate(plan):
+        if kind == "header":
+            for c in range(cols):
+                label = str(payload[c]) if c < len(payload) else ""
+                paint(tbl.cell(r_idx, c), label, bold=True, color=WHITE, bg=NAVY, size=10.0)
+        elif kind == "group":
+            merged = tbl.cell(r_idx, 0)
+            merged.merge(tbl.cell(r_idx, cols - 1))
+            paint(merged, str(payload), bold=True, color=NAVY, bg=ACCENT_SOFT, size=10.0)
+        else:
+            row = payload
+            status = str(row[cols - 1] if len(row) >= cols else "").strip()
+            adverse = "нежелат" in status.lower()
+            row_bg = RGBColor(0xFE, 0xF2, 0xF2) if adverse else WHITE
+            for c in range(cols):
+                val = str(row[c]) if c < len(row) else ""
+                if c == cols - 1:
+                    dot, tone = _status_tone(val)
+                    paint(tbl.cell(r_idx, c), f"{dot} {val}", color=tone, bg=row_bg, size=9.5)
+                else:
+                    paint(tbl.cell(r_idx, c), val, bg=row_bg, size=10.0)
 
 
 def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> None:
@@ -1468,7 +1547,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         cell_w = CONTENT_W // 3 - 80_000
         cell_h = 1_600_000
         gap = 120000
-        for idx, ref in enumerate(refs[:6]):
+        for idx, ref in enumerate(refs[:9]):
             row = idx // cols
             col = idx % cols
             cx = MARGIN_X + col * (cell_w + gap)
@@ -1556,6 +1635,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         table = slide.get("table") if isinstance(slide.get("table"), dict) else None
         headers = list((table or {}).get("headers") or [])
         rows = list((table or {}).get("rows") or [])
+        groups = list((table or {}).get("groups") or [])
         if not rows and bullets:
             # Fallback: parse bullet lines into a compact table
             headers = ["Поз.", "Домен", "Заголовок", "Риск"]
@@ -1573,7 +1653,8 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                     parsed.append(["—", "—", _clip_words(raw, 80), "·"])
             rows = parsed
         if headers and rows:
-            _add_search_table(ctx, y, headers[:5], rows[:10])
+            # Render every row the (paginated) slide carries — no hidden cap.
+            _add_search_table(ctx, y, headers[:4], rows, groups)
         elif bullets:
             avail = max(400000, CONTENT_BOTTOM - y)
             box = ctx.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(avail))

@@ -8,9 +8,15 @@ import type {
   MetricTone,
   OrionGoldenDeckManifest,
   OrionGoldenDeckSlide,
+  SlideSearchCounters,
   VisualSidebarMode,
   VisualSlideAnalysis,
 } from "../composer/orion-deck-composer";
+import {
+  buildSearchCounterCopy,
+  paginateSearchResults,
+  type SearchResultRow,
+} from "./search-results-pagination";
 import { composeOrionClassicAuditDeck } from "./orion-classic-audit-deck-composer";
 import type { OrionClassicAuditReportSpec } from "./orion-classic-client-content-to-report-spec";
 import {
@@ -92,7 +98,10 @@ function regionMetrics(kpis: OrionSurfaceKpis, prefix: string): DeckMetric[] {
     },
     {
       label: `${prefix}: подсказки`,
-      value: `${kpis.suggestionsExplicitAdverse ?? kpis.suggestionsAdverse} / ${kpis.suggestionsTotal}`,
+      value:
+        kpis.suggestionsTotal > 0
+          ? `${kpis.suggestionsExplicitAdverse ?? kpis.suggestionsAdverse} негативных из ${kpis.suggestionsTotal}`
+          : "Данные не собраны",
       tone: adverseTone(
         kpis.suggestionsTotal > 0
           ? Math.round(((kpis.suggestionsExplicitAdverse ?? kpis.suggestionsAdverse) / kpis.suggestionsTotal) * 100)
@@ -102,8 +111,23 @@ function regionMetrics(kpis: OrionSurfaceKpis, prefix: string): DeckMetric[] {
       ),
     },
     {
+      label: `${prefix}: связанные`,
+      value:
+        kpis.relatedTotal > 0
+          ? `${kpis.relatedAdverse} негативных из ${kpis.relatedTotal}`
+          : "Данные не собраны",
+      tone: adverseTone(
+        kpis.relatedTotal > 0 ? Math.round((kpis.relatedAdverse / kpis.relatedTotal) * 100) : null,
+        kpis.relatedAdverse,
+        kpis.relatedTotal
+      ),
+    },
+    {
       label: `${prefix}: изображения`,
-      value: `${kpis.imagesAdverse} / ${kpis.imagesTotal}`,
+      value:
+        kpis.imagesTotal > 0
+          ? `${kpis.imagesAdverse} негативных из ${kpis.imagesTotal}`
+          : "Данные не собраны",
       tone: adverseTone(
         kpis.imagesTotal > 0 ? Math.round((kpis.imagesAdverse / kpis.imagesTotal) * 100) : null,
         kpis.imagesAdverse,
@@ -180,7 +204,7 @@ function executiveDashboardFromTheme(themeSet: OrionThemeSet, base: OrionGoldenD
       },
     ],
     statusBadge: {
-      label: `Профиль: ${themeSet.ru.overallBadge} / ${themeSet.uae.overallBadge}`,
+      label: `Итог: RU ${themeSet.ru.overallRiskBadge} · ОАЭ ${themeSet.uae.overallRiskBadge}`,
       tone: badgeTone(
         themeSet.ru.overallBadge === "Крайне негативный" || themeSet.uae.overallBadge === "Крайне негативный"
           ? "Крайне негативный"
@@ -426,6 +450,25 @@ function isArsenkinAsset(asset: ReportAssetV1): boolean {
   return /arsenkin|suggest-canary|provider_task:arsenkin/i.test(blob);
 }
 
+function collectRelatedTexts(
+  asset: ReportAssetV1,
+  slide?: OrionGoldenDeckSlide | null
+): string[] {
+  const fromMeta = ((asset.meta as { relatedRows?: string[] } | undefined)?.relatedRows ?? [])
+    .map((r: string) => String(r).trim())
+    .filter(Boolean);
+  if (fromMeta.length > 0) return fromMeta;
+  const fromTable = (slide?.table?.rows ?? [])
+    .map((row) => row.map((c) => String(c ?? "").trim()).filter(Boolean).join(" — "))
+    .filter(Boolean);
+  if (fromTable.length > 0) return fromTable;
+  const fromBullets = (slide?.bullets ?? []).map((b) => String(b).trim()).filter(Boolean);
+  if (fromBullets.length > 0) return fromBullets;
+  const cap = String(asset.caption ?? "").trim();
+  if (cap && !/ru_related|uae_related|визуализация сохранённых/i.test(cap)) return [cap];
+  return [];
+}
+
 function collectSuggestionTexts(
   asset: ReportAssetV1,
   slide?: OrionGoldenDeckSlide | null
@@ -468,7 +511,7 @@ export function buildDeterministicVisualAnalysis(
   const framed = (asset.highlightExplanations ?? []).filter(
     (x) => x.frameTone === "red" || x.frameTone === "amber"
   );
-  const topExplanations = framed.slice(0, 2);
+  const topExplanations = framed;
   const moreSignalsCount = Math.max(0, framed.length - topExplanations.length);
 
   let headlineConclusion = title;
@@ -638,19 +681,49 @@ export function buildDeterministicVisualAnalysis(
     }
   } else if (slot.kind === "related_visual") {
     sidebarMode = "interpretation";
-    const slotTag = asset.assetRef || `related-${slot.page}`;
-    const captionBit = caption.replace(/\s+/g, " ").trim().slice(0, 60);
-    const titleBit = title.replace(/связанн\w+\s+запрос\w*/i, "").trim().slice(0, 60);
+    const rowTexts = collectRelatedTexts(asset, slide);
+    const regionKpis =
+      slot.region === "UAE" ? themeSet?.uae : slot.region === "RU" ? themeSet?.ru : themeSet?.ru;
+    const riskThemes = (themeSet?.themes ?? [])
+      .map((t) => String(t.title ?? ""))
+      .filter((t) => t.length >= 4);
+    const subjectName = String(themeSet?.subjectName ?? "").trim();
+    let explicit = 0;
+    let contextual = 0;
+    let identity = 0;
+    for (const q of rowTexts) {
+      const kind = classifySuggestionIntent(q, subjectName, riskThemes);
+      if (kind === "explicitAdverse") explicit += 1;
+      else if (kind === "contextualRisk") contextual += 1;
+      else if (kind === "identityOrNamesakeRisk") identity += 1;
+    }
+    const totalRelated = rowTexts.length > 0 ? rowTexts.length : regionKpis?.relatedTotal ?? 0;
     const topic =
-      captionBit ||
-      titleBit ||
-      ( /_(\d+)$/.test(slotTag) ? `набор ${slotTag.match(/_(\d+)$/)?.[1]}` : `страница ${slot.page}`);
-    headlineConclusion = `Связанные запросы (${regionLabel}): ${topic}`;
-    whatIsVisible = `На экране — набор связанных запросов «${topic}» (${slotTag}) для региона ${regionLabel}.`;
-    clientMeaning = `Анализ относится только к набору «${topic}» (${slotTag}), без копирования соседних слайдов.`;
+      rowTexts[0]?.slice(0, 48) ||
+      (explicit > 0 ? "негативные формулировки" : "нейтральные ассоциации");
+    headlineConclusion =
+      explicit > 0
+        ? `Связанные запросы (${regionLabel}): ${explicit} негативных из ${totalRelated}`
+        : `Связанные запросы (${regionLabel}): ${totalRelated} запросов`;
+    whatIsVisible =
+      rowTexts.length > 0
+        ? rowTexts
+            .slice(0, 6)
+            .map((q, i) => `${i + 1}. ${q.slice(0, 72)}`)
+            .join(" ")
+        : `Связанные запросы по субъекту в регионе ${regionLabel}.`;
+    clientMeaning =
+      explicit > 0
+        ? "Связанные запросы усиливают негативные ассоциации при поиске по субъекту."
+        : contextual > 0 || identity > 0
+          ? "Часть связанных запросов требует сверки субъекта или контекста."
+          : "Связанные запросы выглядят нейтральными относительно субъекта.";
     whyItMatters = clientMeaning;
-    recommendedActions = [`Сверить риск-формулировки в наборе «${String(topic).slice(0, 40)}»`];
-    provenance = `Источник: ${slotTag}, дата сбора в кейсе`;
+    recommendedActions =
+      explicit > 0 ? ["Проверить негативные связанные запросы вручную"] : [];
+    provenance = isArsenkinAsset(asset)
+      ? arsenkinSuggestProvenance(asset, slot)
+      : `Источник: связанные запросы ${regionLabel}, дата сбора в кейсе`;
   } else if (slot.kind === "knowledge_visual") {
     const fromWiki = /wikipedia|википед/i.test(`${caption} ${title} ${provenanceLabel(asset)}`);
     const fromAiSerp =
@@ -757,7 +830,7 @@ function normalizeClientSearchTable(
   const posIdx = headers.findIndex((h) => /поз|позиц|rank|#/i.test(h.trim()));
   const queryIdx = headers.findIndex((h) => /запрос|query/i.test(h.trim()));
 
-  const rows = table.rows.slice(0, 10).map((row) => {
+  const rows = table.rows.map((row) => {
     const pos = posIdx >= 0 ? String(row[posIdx] ?? "") : String(row[queryIdx >= 0 ? 1 : 0] ?? "");
     const domain =
       domainIdx >= 0
@@ -785,10 +858,12 @@ function normalizeClientSearchTable(
     void hasUrl;
     void hasRisk;
     void urlIdx;
+    // Two-line title budget (spec §5): keep enough text for measured wrapping,
+    // pagination decides continuation. Word-boundary only — never split chars.
     if (queryIdx >= 0 || query) {
-      return [query || "—", pos, domain || "—", truncateAtWordBoundary(title, 70), status];
+      return [query || "—", pos, domain || "—", truncateAtWordBoundary(title, 160), status];
     }
-    return [pos, domain || "—", truncateAtWordBoundary(title, 90), status];
+    return [pos, domain || "—", truncateAtWordBoundary(title, 160), status];
   });
 
   return {
@@ -1034,8 +1109,141 @@ function attachVisual(
   };
 }
 
+/** Column index resolution for the normalized 5- or 4-column search table. */
+function searchRowsFromTable(
+  table: NonNullable<OrionGoldenDeckSlide["table"]>,
+  regionLabel: string
+): SearchResultRow[] {
+  const headers = table.headers.map((h) => String(h).trim().toLowerCase());
+  const qi = headers.findIndex((h) => /запрос|query/.test(h));
+  const has5 = table.rows.some((r) => r.length >= 5) || qi >= 0;
+  return table.rows.map((row) => {
+    const cells = row.map((c) => String(c ?? ""));
+    let query: string;
+    let pos: string;
+    let domain: string;
+    let title: string;
+    let status: string;
+    if (has5) {
+      query = cells[qi >= 0 ? qi : 0] || regionLabel;
+      pos = cells[qi >= 0 ? 1 : 1] ?? "";
+      domain = cells[2] ?? "";
+      title = cells[3] ?? "";
+      status = cells[4] ?? "";
+    } else {
+      query = regionLabel;
+      pos = cells[0] ?? "";
+      domain = cells[1] ?? "";
+      title = cells[2] ?? "";
+      status = cells[3] ?? "";
+    }
+    const adverse = /нежелат/i.test(status);
+    return {
+      queryNormalized: query,
+      queryDisplay: query,
+      position: pos,
+      domain,
+      title,
+      status: status || "Нейтральный",
+      adverse,
+      tieBreaker: `${pos}|${domain}|${title}`,
+    } satisfies SearchResultRow;
+  });
+}
+
 /**
- * Compose exactly 36 CEO audit slides from classic rich content + assets.
+ * Expand a single base search_table slide into base + adjacent continuation
+ * slides using measured pagination. Every dataset row is displayed; counters
+ * and continuation identity are attached to each produced slide.
+ */
+function expandSearchTableSlot(base: OrionGoldenDeckSlide): OrionGoldenDeckSlide[] {
+  if (base.template !== "orion_golden_search_table" || !base.table?.rows?.length) {
+    return [base];
+  }
+  const regionLabel = /оаэ|uae/i.test(base.title) ? "ОАЭ" : "Россия";
+  const items = searchRowsFromTable(base.table, regionLabel);
+  const distinctQueries = new Set(items.map((i) => i.queryDisplay.trim().toLowerCase())).size;
+  const useQTag = distinctQueries >= 4;
+  const result = paginateSearchResults({ items, useQTag });
+
+  const qTagFor = (() => {
+    if (!useQTag) return () => undefined as string | undefined;
+    const map = new Map<string, string>();
+    let n = 0;
+    return (q: string): string => {
+      const key = q.trim().toLowerCase();
+      if (!map.has(key)) map.set(key, `Q${++n}`);
+      return map.get(key)!;
+    };
+  })();
+
+  const slides: OrionGoldenDeckSlide[] = result.pages.map((page, pageIndex) => {
+    const headers = ["Позиция", "Домен", "Заголовок", "Статус"];
+    const rows: string[][] = page.rows.map((r) => [r.position, r.domain, r.title, r.status]);
+    const groups: NonNullable<OrionGoldenDeckSlide["table"]>["groups"] = [];
+    let cursor = 0;
+    for (const r of page.rows) {
+      if (r.startsGroup) {
+        groups.push({
+          queryDisplay: r.queryDisplay,
+          qTag: qTagFor(r.queryDisplay),
+          rowStart: cursor,
+          rowCount: 0,
+        });
+      }
+      const g = groups[groups.length - 1];
+      if (g) g.rowCount += 1;
+      cursor += 1;
+    }
+    const counters: SlideSearchCounters = {
+      datasetCount: result.datasetCount,
+      datasetAdverseCount: result.datasetAdverseCount,
+      deckDisplayedCount: result.deckDisplayedCount,
+      deckDisplayedAdverseCount: result.deckDisplayedAdverseCount,
+      pageDisplayedCount: page.pageDisplayedCount,
+      pageDisplayedAdverseCount: page.pageDisplayedAdverseCount,
+      pageIndex: page.pageIndex,
+      pageCount: page.pageCount,
+      excludedCount: result.excludedCount,
+      excludedReasons: result.excludedReasons as Record<string, number>,
+    };
+    const counterCopy = buildSearchCounterCopy({ result, page });
+    const titleSuffix = page.pageCount > 1 ? ` (${pageIndex + 1}/${page.pageCount})` : "";
+    const isCont = pageIndex > 0;
+    return {
+      ...base,
+      slideKey: isCont ? `${base.slideKey}__cont${pageIndex}` : base.slideKey,
+      title: `${base.title}${titleSuffix}`,
+      table: { headers, rows, groups },
+      searchCounters: counters,
+      narrative: counterCopy,
+      isContinuation: isCont,
+      continuationOf: isCont ? base.slideKey : null,
+      continuationIndex: pageIndex,
+      continuationCount: result.pages.length - 1,
+    } satisfies OrionGoldenDeckSlide;
+  });
+  return slides;
+}
+
+/** Expand all base slots into the final deck with adjacent continuation slides. */
+function expandBaseSlotsToDeck(baseSlides: OrionGoldenDeckSlide[]): OrionGoldenDeckSlide[] {
+  const out: OrionGoldenDeckSlide[] = [];
+  for (const base of baseSlides) {
+    const expanded = expandSearchTableSlot(base);
+    out.push(...expanded);
+  }
+  // Sequential page numbering + totalPageCount stamping (spec §2).
+  const total = out.length;
+  for (let i = 0; i < out.length; i += 1) {
+    out[i] = { ...out[i]!, pageNumber: i + 1, totalPageCount: total };
+  }
+  return out;
+}
+
+/**
+ * Compose the CEO audit deck from classic rich content + assets.
+ * 36 mandatory base slots; continuation slides may push totalSlideCount past 36.
  */
 export function composeOrionFirst36CeoDeck(
   reportSpec: OrionClassicAuditReportSpec,
@@ -1154,6 +1362,12 @@ export function composeOrionFirst36CeoDeck(
       ...slide,
       slideKey: slot.slotId,
       slotId: slot.slotId,
+      baseSlotId: slot.slotId,
+      baseSlotIndex: slot.page - 1,
+      sectionId: slot.sectionKey,
+      isContinuation: false,
+      continuationOf: null,
+      continuationIndex: 0,
       requiredVisual: slot.requiredVisual,
       pageNumber: slot.page,
       title: scrub(slide.title || slot.title),
@@ -1189,12 +1403,50 @@ export function composeOrionFirst36CeoDeck(
     finalSlides.push(slide);
   }
 
-  if (finalSlides.length !== FIRST36_EXACT_PAGE_COUNT) {
-    throw new Error(`first36-slide-count:${finalSlides.length}`);
+  // Base slot coverage: exactly 36 mandatory slots must each have one primary
+  // slide. 36 is the base-slot count, NOT a hard page cap.
+  const baseSlotIds = finalSlides
+    .filter((s) => s.isContinuation !== true)
+    .map((s) => s.baseSlotId ?? s.slideKey);
+  const distinctBaseSlots = new Set(baseSlotIds);
+  const missingBaseSlots = ORION_FIRST36_REGISTRY_V1.map((slot) => slot.slotId).filter(
+    (id) => !distinctBaseSlots.has(id)
+  );
+  if (distinctBaseSlots.size !== FIRST36_EXACT_PAGE_COUNT || missingBaseSlots.length > 0) {
+    throw new Error(
+      `first36-base-slot-coverage:${distinctBaseSlots.size}:missing=${missingBaseSlots.join(",")}`
+    );
   }
 
+  // Expand base slots into base + adjacent continuation slides (spec §2/§3).
+  let deckSlides = expandBaseSlotsToDeck(finalSlides);
+
+  const totalPages = deckSlides.length;
+  const tocEntries = deckSlides
+    .filter((s) => s.sectionKey !== "cover")
+    .filter((s) => s.isContinuation !== true)
+    .filter((_, idx, arr) => idx === 0 || arr[idx - 1]?.sectionKey !== arr[idx].sectionKey)
+    .slice(0, 36);
+
+  const tocBullets = tocEntries.map((entry) => {
+    const sectionSlides = deckSlides.filter((s) => {
+      const anchor = deckSlides.find((x) => x.pageNumber === entry.pageNumber);
+      return anchor && s.sectionKey === anchor.sectionKey;
+    });
+    const endPage = sectionSlides[sectionSlides.length - 1]?.pageNumber ?? entry.pageNumber;
+    const range =
+      endPage > entry.pageNumber ? `${entry.pageNumber}–${endPage}` : `${entry.pageNumber}`;
+    return `${entry.title} — стр. ${range} (${totalPages} стр.)`;
+  });
+
+  deckSlides = deckSlides.map((s) =>
+    s.slotId === "p02_toc" || s.slideKey === "p02_toc"
+      ? { ...s, bullets: tocBullets.slice(0, 14) }
+      : s
+  );
+
   const sectionManifests: OrionGoldenDeckManifest["sectionManifests"] = [];
-  for (const s of finalSlides) {
+  for (const s of deckSlides) {
     const last = sectionManifests[sectionManifests.length - 1];
     if (last && last.sectionKey === s.sectionKey) {
       last.slides.push(s);
@@ -1204,20 +1456,19 @@ export function composeOrionFirst36CeoDeck(
     }
   }
 
-  const toc = finalSlides
-    .filter((s) => s.sectionKey !== "cover")
-    .filter((_, idx, arr) => idx === 0 || arr[idx - 1]?.sectionKey !== arr[idx].sectionKey)
-    .slice(0, 36)
-    .map((s) => ({ title: s.title, pageNumber: s.pageNumber }));
+  const toc = tocEntries.map((s) => ({ title: s.title, pageNumber: s.pageNumber }));
 
   const pageNumberMap: Record<string, number> = {};
-  for (const s of finalSlides) pageNumberMap[s.slideKey] = s.pageNumber;
+  for (const s of deckSlides) pageNumberMap[s.slideKey] = s.pageNumber;
 
   return {
     version: "r10-orion-golden-deck-manifest-v1",
-    slideCount: finalSlides.length,
+    slideCount: deckSlides.length,
+    totalSlideCount: deckSlides.length,
+    baseSlotCoverage: distinctBaseSlots.size,
+    missingBaseSlots,
     sectionManifests,
-    finalSlides,
+    finalSlides: deckSlides,
     toc,
     pageNumberMap,
   };

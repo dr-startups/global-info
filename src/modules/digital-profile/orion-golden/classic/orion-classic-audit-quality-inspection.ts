@@ -55,13 +55,21 @@ export function inspectClassicOrionAuditQuality(input: {
     detail: `${slideCount} slides (target ${pageRange.min}-${pageRange.max}${first36 ? ", first36" : ""})`,
   });
   if (first36) {
+    // 36 is the mandatory base-slot count, not a page cap (spec §2).
+    const baseSlotCoverage =
+      input.deckManifest.baseSlotCoverage ??
+      new Set(
+        input.deckManifest.finalSlides
+          .filter((s) => s.isContinuation !== true)
+          .map((s) => s.baseSlotId ?? s.pageNumber)
+      ).size;
     checks.push({
-      id: "exact-36-pages",
-      passed: slideCount === FIRST36_CEO_EXACT_PAGES,
+      id: "base-slot-coverage-36",
+      passed: baseSlotCoverage === FIRST36_CEO_EXACT_PAGES && slideCount >= FIRST36_CEO_EXACT_PAGES,
       detail:
-        slideCount === FIRST36_CEO_EXACT_PAGES
-          ? "exact 36 pages"
-          : `${slideCount} slides (First36 requires exact ${FIRST36_CEO_EXACT_PAGES})`,
+        baseSlotCoverage === FIRST36_CEO_EXACT_PAGES
+          ? `baseSlotCoverage=36, total ${slideCount} pages`
+          : `baseSlotCoverage=${baseSlotCoverage} (First36 requires 36 base slots)`,
     });
 
     const visualSlides = input.deckManifest.finalSlides.filter((s) =>
@@ -396,7 +404,15 @@ export function inspectClassicOrionAuditQuality(input: {
     }
   }
 
-  const exact36 = !first36 || slideCount === FIRST36_CEO_EXACT_PAGES;
+  const baseSlotsOk =
+    !first36 ||
+    ((input.deckManifest.baseSlotCoverage ??
+      new Set(
+        input.deckManifest.finalSlides
+          .filter((s) => s.isContinuation !== true)
+          .map((s) => s.baseSlotId ?? s.pageNumber)
+      ).size) === FIRST36_CEO_EXACT_PAGES &&
+      slideCount >= FIRST36_CEO_EXACT_PAGES);
   const noCommercial = !hasCommercial;
   const blockedRequired = input.deckManifest.finalSlides.some((s) =>
     Boolean(s.blockedReason?.startsWith("REQUIRED_VISUAL"))
@@ -404,7 +420,7 @@ export function inspectClassicOrionAuditQuality(input: {
   const ceoReady =
     first36 &&
     Boolean(input.clientProductionFinalize) &&
-    exact36 &&
+    baseSlotsOk &&
     noCommercial &&
     !blockedRequired &&
     issues.length === 0;

@@ -147,9 +147,9 @@ describe("first36-p0-acceptance-defects", () => {
     const r = inspectFirst36Acceptance({
       slideCount: 36,
       slides: [
-        { pageNumber: 20, ...blob },
-        { pageNumber: 21, ...blob },
-        { pageNumber: 22, ...blob },
+        { pageNumber: 20, slotId: "p20_ru_related_1", ...blob },
+        { pageNumber: 21, slotId: "p21_ru_related_2", ...blob },
+        { pageNumber: 22, slotId: "p22_ru_related_3", ...blob },
         ...Array.from({ length: 33 }, (_, i) => ({ pageNumber: i < 19 ? i + 1 : i + 4 })),
       ],
     });

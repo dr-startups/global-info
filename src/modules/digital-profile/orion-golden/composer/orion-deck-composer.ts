@@ -49,6 +49,23 @@ export type VisualSlideAnalysis = {
   };
 };
 
+/**
+ * Per-slide search-position counters (spec §6/§7). Present on search_table slides
+ * and their continuations so acceptance can assert deck == dataset totals.
+ */
+export type SlideSearchCounters = {
+  datasetCount: number;
+  datasetAdverseCount: number;
+  deckDisplayedCount: number;
+  deckDisplayedAdverseCount: number;
+  pageDisplayedCount: number;
+  pageDisplayedAdverseCount: number;
+  pageIndex: number;
+  pageCount: number;
+  excludedCount: number;
+  excludedReasons: Record<string, number>;
+};
+
 export type OrionGoldenDeckSlide = {
   slideKey: string;
   sectionKey: string;
@@ -57,6 +74,22 @@ export type OrionGoldenDeckSlide = {
   pageNumber: number;
   /** First36 registry slot id when composed from ORION_FIRST36_REGISTRY_V1. */
   slotId?: string;
+  /**
+   * Base-slot identity (spec §2). Every one of the 36 mandatory base slots has
+   * exactly one primary slide (isContinuation=false). Continuation slides reuse
+   * the same baseSlotId/baseSlotIndex/sectionId and set isContinuation=true.
+   */
+  baseSlotId?: string;
+  baseSlotIndex?: number;
+  isContinuation?: boolean;
+  continuationOf?: string | null;
+  continuationIndex?: number;
+  continuationCount?: number;
+  sectionId?: string;
+  /** Total rendered pages in the final deck (>= 36). */
+  totalPageCount?: number;
+  /** Structured search-position counters for search_table slides + continuations. */
+  searchCounters?: SlideSearchCounters;
   /** Registry-driven required visual flag (also resolvable via registry page/slot). */
   requiredVisual?: boolean;
   bullets?: string[];
@@ -70,8 +103,22 @@ export type OrionGoldenDeckSlide = {
   visualAnalysis?: VisualSlideAnalysis;
   /** Honest blocked reason when required visual is missing. */
   blockedReason?: string;
-  /** Structured search/position table (orion_golden_search_table). */
-  table?: { headers: string[]; rows: string[][] };
+  /**
+   * Structured search/position table (orion_golden_search_table).
+   * `groups` drives grouped layout: a compact per-query header band (spec §4)
+   * instead of repeating the full query in every row. `rows` are body-only
+   * cells (Позиция | Домен | Заголовок | Статус) when `groups` is present.
+   */
+  table?: {
+    headers: string[];
+    rows: string[][];
+    groups?: Array<{
+      queryDisplay: string;
+      qTag?: string;
+      rowStart: number;
+      rowCount: number;
+    }>;
+  };
   /** Structured KPI chips/cards from ThemeSet / metric registry. */
   metrics?: DeckMetric[];
   statusBadge?: { label: string; tone: MetricTone };
@@ -88,7 +135,14 @@ export type OrionGoldenDeckSlide = {
 
 export type OrionGoldenDeckManifest = {
   version: "r10-orion-golden-deck-manifest-v1";
+  /** @deprecated back-compat alias of totalSlideCount. 36 is NOT a hard max. */
   slideCount: number;
+  /** Actual rendered page count (>= 36 when continuations exist). */
+  totalSlideCount?: number;
+  /** Count of distinct mandatory base slots covered (must be 36 for First36). */
+  baseSlotCoverage?: number;
+  /** Base slot ids that have no primary slide (must be empty for First36). */
+  missingBaseSlots?: string[];
   sectionManifests: Array<{ sectionKey: string; slideCount: number; slides: OrionGoldenDeckSlide[] }>;
   finalSlides: OrionGoldenDeckSlide[];
   toc: Array<{ title: string; pageNumber: number }>;

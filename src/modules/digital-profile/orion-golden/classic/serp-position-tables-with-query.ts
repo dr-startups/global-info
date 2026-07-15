@@ -36,10 +36,11 @@ function statusOf(title: string, domain: string, classification?: string): strin
   return "Нейтральный";
 }
 
+/** No artificial row cap — pagination in deck composer handles layout. */
 export function buildSerpPositionTablesWithQuery(
   inventory: FullEvidenceInventory | undefined,
   region: RegionBucket,
-  maxRows = 10
+  maxRows = 10_000
 ): Array<{ headers: string[]; rows: string[][] }> {
   if (!inventory) return [];
 
@@ -76,10 +77,10 @@ export function buildSerpPositionTablesWithQuery(
 
   const tables: Array<{ headers: string[]; rows: string[][] }> = [];
   const sorted = [...byQuery.entries()].sort((a, b) => b[1].length - a[1].length);
-  // Prefer one combined table with query column (clearer than silent rank repeats).
+  // One combined table — all query groups, all rows (composer paginates).
   const combined: Row[] = [];
-  for (const [, rows] of sorted.slice(0, 4)) {
-    combined.push(...rows.sort((a, b) => a.rank - b.rank).slice(0, 6));
+  for (const [, rows] of sorted) {
+    combined.push(...rows.sort((a, b) => a.rank - b.rank));
   }
   const ordered = combined.slice(0, maxRows);
   if (ordered.length === 0) return [];

@@ -309,15 +309,16 @@ export function listFirst36PagePngs(pagesPngDir: string): string[] {
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 }
 
-export function inspectBlankPagePngs(pagesPngDir: string): GeometryIssue[] {
+export function inspectBlankPagePngs(pagesPngDir: string, expectedCount?: number): GeometryIssue[] {
   const files = listFirst36PagePngs(pagesPngDir);
   const issues: GeometryIssue[] = [];
-  if (files.length !== 36) {
+  const expected = expectedCount ?? files.length;
+  if (expected > 0 && files.length !== expected) {
     issues.push({
       page: 0,
       code: "png-count",
       severity: "BLOCKER",
-      detail: `expected 36 PNGs, found ${files.length}`,
+      detail: `expected ${expected} PNGs, found ${files.length}`,
     });
   }
   files.forEach((name, idx) => {
@@ -540,7 +541,7 @@ export function buildGeometryReportFromParts(input: {
   };
 }
 
-function runPythonPptxInspector(pptxPath: string): {
+function runPythonPptxInspector(pptxPath: string, expectedPages?: number): {
   overlaps: GeometryIssue[];
   overflow: GeometryIssue[];
   clipping: GeometryIssue[];
@@ -562,7 +563,9 @@ function runPythonPptxInspector(pptxPath: string): {
       error: `missing inspector script: ${script}`,
     };
   }
-  const py = spawnSync("python", [script, pptxPath, "--expect-pages=36"], {
+  const expectArg =
+    expectedPages && expectedPages > 0 ? `--expect-pages=${expectedPages}` : "--expect-pages=0";
+  const py = spawnSync("python", [script, pptxPath, expectArg], {
     encoding: "utf-8",
     maxBuffer: 8 * 1024 * 1024,
   });
@@ -638,8 +641,8 @@ export async function generateContactSheetPng(input: {
   const cols = input.cols ?? 6;
   const tileWidth = input.tileWidth ?? 320;
   const files = listFirst36PagePngs(input.pagesPngDir);
-  if (files.length !== 36) {
-    return { ok: false, detail: `need 36 pngs for contact sheet, got ${files.length}` };
+  if (files.length < 36) {
+    return { ok: false, detail: `need >=36 pngs for contact sheet, got ${files.length}` };
   }
   const rows = Math.ceil(files.length / cols);
   const tileHeight = Math.round((tileWidth * 10) / 16);
@@ -698,7 +701,11 @@ export async function generateFirst36GeometryArtifacts(
   const contactSheetPath = join(outputRoot, "contact-sheet.png");
   const layoutTelemetry = join(outputRoot, "layout-telemetry.json");
 
-  const blank = inspectBlankPagePngs(pagesPngDir);
+  const expectedPageCount =
+    options?.slides?.length ??
+    (existsSync(pagesPngDir) ? listFirst36PagePngs(pagesPngDir).length : 36);
+
+  const blank = inspectBlankPagePngs(pagesPngDir, expectedPageCount);
   let overlaps: GeometryIssue[] = [];
   let overflow: GeometryIssue[] = [];
   let clipping: GeometryIssue[] = [];
@@ -711,7 +718,7 @@ export async function generateFirst36GeometryArtifacts(
   if (!existsSync(pptx)) {
     inspectorError = `missing pptx: ${pptx}`;
   } else {
-    const inspected = runPythonPptxInspector(pptx);
+    const inspected = runPythonPptxInspector(pptx, expectedPageCount);
     overlaps = inspected.overlaps;
     overflow = inspected.overflow;
     clipping = [...inspected.clipping, ...inspectLayoutTelemetry(layoutTelemetry)];
@@ -764,7 +771,7 @@ export async function generateFirst36GeometryArtifacts(
       pythonInspector: "scripts/inspect-first36-pptx-geometry.py",
       layoutTelemetry: existsSync(layoutTelemetry) ? layoutTelemetry : undefined,
     },
-    pageCount: 36,
+    pageCount: expectedPageCount,
   });
   writeFileSync(geometryPath, `${JSON.stringify(report, null, 2)}\n`, "utf-8");
 

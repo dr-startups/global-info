@@ -502,7 +502,7 @@ function serpPositionTable(
   region: RegionBucket
 ): Array<{ headers: string[]; rows: string[][] }> {
   // Prefer query-aware tables (rank is only meaningful within a query).
-  const withQuery = buildSerpPositionTablesWithQuery(inventory, region, 10);
+  const withQuery = buildSerpPositionTablesWithQuery(inventory, region);
   if (withQuery.length > 0) return withQuery;
   if (!inventory) return [];
   type Row = { rank: number; domain: string; title: string; url: string };
@@ -526,11 +526,8 @@ function serpPositionTable(
 
   const tables: Array<{ headers: string[]; rows: string[][] }> = [];
   const sortedQueries = [...byQuery.entries()].sort((a, b) => b[1].length - a[1].length);
-  for (const [query, rows] of sortedQueries.slice(0, 2)) {
-    const ordered = [...rows]
-      .sort((a, b) => a.rank - b.rank)
-      .slice(0, 10)
-      .map((r, idx) => ({ ...r, rank: r.rank || idx + 1 }));
+  for (const [query, rows] of sortedQueries) {
+    const ordered = [...rows].sort((a, b) => a.rank - b.rank);
     tables.push({
       headers: ["Запрос", "Позиция", "Домен", "Заголовок", "Статус"],
       rows: ordered.map((r) => {
@@ -569,7 +566,7 @@ function serpTableBullets(
 /** Parse heat-grid / SERP bullets into a PPTX table payload. */
 export function tableFromSearchBullets(
   bullets: string[],
-  maxRows = 8
+  maxRows = 10_000
 ): { headers: string[]; rows: string[][] } | undefined {
   const rows: string[][] = [];
   for (const raw of bullets) {
@@ -989,7 +986,8 @@ function inventoryFallbackBlock(
   const slideSpecs: SectionBlock["slideSpecs"] = [];
   if (tables.length > 0) {
     for (const [tIdx, table] of tables.entries()) {
-      const rowBullets = table.rows.slice(0, perSlide).map((row) => {
+      const allRows = template === "orion_golden_search_table" ? table.rows : table.rows.slice(0, perSlide);
+      const rowBullets = allRows.map((row) => {
         const [pos, domain, titleText, url] = row;
         return `#${pos} ${domain} — ${titleText}${url && url !== "—" ? ` · ${url}` : ""}`;
       });
@@ -1000,7 +998,7 @@ function inventoryFallbackBlock(
         bullets: rowBullets,
         table: {
           headers: table.headers,
-          rows: table.rows.slice(0, perSlide),
+          rows: template === "orion_golden_search_table" ? table.rows : table.rows.slice(0, perSlide),
         },
       });
     }
@@ -1285,7 +1283,8 @@ function blockFromClientSection(
   // Prefer GPT-led bullets; only emit one compact SERP table slide when no GPT findings
   if (tables.length > 0 && gptFindings.length === 0) {
     const table = tables[0];
-    const rowBullets = table.rows.slice(0, perSlide).map((row) => {
+    const allRows = template === "orion_golden_search_table" ? table.rows : table.rows.slice(0, perSlide);
+    const rowBullets = allRows.map((row) => {
       const [pos, domain, titleText, url] = row;
       return `#${pos} ${domain} — ${titleText}${url && url !== "—" ? ` · ${url}` : ""}`;
     });
@@ -1296,7 +1295,7 @@ function blockFromClientSection(
       bullets: rowBullets,
       table: {
         headers: table.headers,
-        rows: table.rows.slice(0, perSlide),
+        rows: template === "orion_golden_search_table" ? table.rows : table.rows.slice(0, perSlide),
       },
     });
   } else {

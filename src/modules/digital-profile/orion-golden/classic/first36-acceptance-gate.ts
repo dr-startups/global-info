@@ -3,9 +3,19 @@
  */
 
 import { hasDanglingSentenceTail, sanitizeClientLanguage } from "./client-language";
+import { inspectClientCopySlides } from "./client-copy-completeness";
+import { inspectCrossSlideMetricConsistency } from "./cross-slide-metric-consistency";
 import { existsSync, readdirSync } from "node:fs";
 import { ORION_FIRST36_REGISTRY_V1 } from "./orion-first36-registry.v1";
 import { inspectSidebarClientPolicy } from "./sidebar-client-policy";
+import type { OrionGoldenDeckSlide } from "../composer/orion-deck-composer";
+
+function slideBySlot(
+  slides: First36AcceptanceInput["slides"],
+  slotId: string
+): (typeof slides)[number] | undefined {
+  return slides.find((s) => s.baseSlotId === slotId || s.slotId === slotId || s.slideKey === slotId);
+}
 
 export type First36AcceptanceIssue = {
   code: string;
@@ -15,13 +25,36 @@ export type First36AcceptanceIssue = {
 
 export type First36AcceptanceInput = {
   slideCount: number;
+  /** Distinct mandatory base slots covered (must be 36). Falls back to slideCount when unset (legacy). */
+  baseSlotCoverage?: number;
+  /** Base slots with no primary slide (must be empty). */
+  missingBaseSlots?: string[];
   slides: Array<{
     pageNumber: number;
+    slideKey?: string;
+    slotId?: string;
     title?: string;
     narrative?: string;
     bullets?: string[];
     template?: string;
-    table?: { headers?: string[]; rows?: string[][] };
+    table?: {
+      headers?: string[];
+      rows?: string[][];
+      groups?: Array<{ queryDisplay?: string; rowStart?: number; rowCount?: number }>;
+    };
+    baseSlotId?: string;
+    baseSlotIndex?: number;
+    isContinuation?: boolean;
+    continuationOf?: string | null;
+    sectionId?: string;
+    searchCounters?: {
+      datasetCount?: number;
+      datasetAdverseCount?: number;
+      deckDisplayedCount?: number;
+      deckDisplayedAdverseCount?: number;
+      pageDisplayedCount?: number;
+      pageDisplayedAdverseCount?: number;
+    };
     clientTakeaway?: string;
     visualAnalysis?: {
       whatIsVisible?: string;
@@ -37,8 +70,26 @@ export type First36AcceptanceInput = {
     factualClaims?: Array<{ text?: string; evidenceRefs?: string[] }>;
   }>;
   themeSet?: {
-    ru?: { linksTotal?: number; linksAdverse?: number; wikipediaStatus?: string };
-    uae?: { linksTotal?: number; linksAdverse?: number; wikipediaStatus?: string };
+    ru?: {
+      linksTotal?: number;
+      linksAdverse?: number;
+      wikipediaStatus?: string;
+      suggestionsTotal?: number;
+      relatedTotal?: number;
+      relatedAdverse?: number;
+      imagesAdverse?: number;
+      imagesTotal?: number;
+    };
+    uae?: {
+      linksTotal?: number;
+      linksAdverse?: number;
+      wikipediaStatus?: string;
+      suggestionsTotal?: number;
+      relatedTotal?: number;
+      relatedAdverse?: number;
+      imagesAdverse?: number;
+      imagesTotal?: number;
+    };
   };
   runScopedMerge?: {
     usedRunScoped?: boolean;
@@ -164,23 +215,95 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
   if (input.typecheckPassed === false) {
     issues.push({ code: "typecheck-failed", detail: "typecheckPassed=false" });
   }
-  if (input.slideCount !== 36) {
+  // 36 is the mandatory base-slot count, not a hard page cap. Continuation
+  // slides may push the rendered total past 36 (spec §2).
+  const baseSlotCoverage =
+    input.baseSlotCoverage ??
+    new Set(
+      input.slides.filter((s) => s.isContinuation !== true).map((s) => s.baseSlotId ?? s.pageNumber)
+    ).size;
+  if (baseSlotCoverage !== 36) {
     issues.push({
-      code: "page-count",
-      detail: `expected 36 slides, got ${input.slideCount}`,
+      code: "base-slot-coverage",
+      detail: `expected baseSlotCoverage=36, got ${baseSlotCoverage}`,
     });
   }
-  if (input.slides.length !== 36) {
-    issues.push({ code: "slide-object-count", detail: `expected 36 slide objects, got ${input.slides.length}` });
+  if ((input.missingBaseSlots?.length ?? 0) > 0) {
+    issues.push({
+      code: "base-slot-missing",
+      detail: `missing base slots: ${(input.missingBaseSlots ?? []).join(",")}`,
+    });
+  }
+  if (input.slideCount < 36) {
+    issues.push({
+      code: "page-count",
+      detail: `expected >= 36 slides, got ${input.slideCount}`,
+    });
+  }
+  if (input.slides.length < 36) {
+    issues.push({ code: "slide-object-count", detail: `expected >= 36 slide objects, got ${input.slides.length}` });
+  }
+  if (input.slides.length !== input.slideCount) {
+    issues.push({
+      code: "slide-object-count",
+      detail: `slide objects ${input.slides.length} != slideCount ${input.slideCount}`,
+    });
   }
   const pageNumbers = input.slides.map((s) => s.pageNumber);
-  const expectedPages = Array.from({ length: 36 }, (_, i) => i + 1);
+  const n = pageNumbers.length;
+  const expectedPages = Array.from({ length: n }, (_, i) => i + 1);
   if (
-    pageNumbers.length !== 36 ||
-    new Set(pageNumbers).size !== 36 ||
+    new Set(pageNumbers).size !== n ||
     expectedPages.some((page) => !pageNumbers.includes(page))
   ) {
-    issues.push({ code: "page-numbers", detail: "pageNumber must be unique and cover 1..36" });
+    issues.push({ code: "page-numbers", detail: `pageNumber must be unique and cover 1..${n}` });
+  }
+  // Continuation slides must be adjacent to their base slot (spec §2/§13).
+  const orderedSlides = [...input.slides].sort((a, b) => a.pageNumber - b.pageNumber);
+  for (let i = 0; i < orderedSlides.length; i += 1) {
+    const s = orderedSlides[i]!;
+    if (s.isContinuation && s.continuationOf) {
+      const prev = orderedSlides[i - 1];
+      const prevKey = prev?.baseSlotId ?? prev?.continuationOf ?? null;
+      const baseKey = s.continuationOf;
+      if (prevKey !== baseKey && prev?.continuationOf !== baseKey) {
+        issues.push({
+          code: "continuation-not-adjacent",
+          page: s.pageNumber,
+          detail: `continuation of ${baseKey} not adjacent to its base slot`,
+        });
+      }
+    }
+  }
+  // Dataset vs displayed reconciliation for search tables (spec §6).
+  const bySection = new Map<string, typeof input.slides>();
+  for (const s of input.slides) {
+    if (!s.searchCounters) continue;
+    const key = s.continuationOf ?? s.baseSlotId ?? String(s.pageNumber);
+    const arr = bySection.get(key) ?? [];
+    arr.push(s);
+    bySection.set(key, arr);
+  }
+  for (const [key, group] of bySection) {
+    const dataset = group[0]?.searchCounters?.datasetCount ?? 0;
+    const datasetAdverse = group[0]?.searchCounters?.datasetAdverseCount ?? 0;
+    const displayed = group.reduce((a, s) => a + (s.searchCounters?.pageDisplayedCount ?? 0), 0);
+    const displayedAdverse = group.reduce(
+      (a, s) => a + (s.searchCounters?.pageDisplayedAdverseCount ?? 0),
+      0
+    );
+    if (displayed !== dataset) {
+      issues.push({
+        code: "table-dataset-count-mismatch",
+        detail: `section ${key}: displayed ${displayed} != dataset ${dataset}`,
+      });
+    }
+    if (displayedAdverse !== datasetAdverse) {
+      issues.push({
+        code: "table-adverse-count-mismatch",
+        detail: `section ${key}: displayed adverse ${displayedAdverse} != dataset ${datasetAdverse}`,
+      });
+    }
   }
 
   const requireArtifacts = Boolean(input.arsenkinRequired || input.clientFinalize);
@@ -197,8 +320,8 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
       const pngs = existsSync(input.paths.pagesPngDir)
         ? readdirSync(input.paths.pagesPngDir).filter((name) => /\.png$/i.test(name))
         : [];
-      if (pngs.length !== 36) {
-        issues.push({ code: "png-count", detail: `expected 36 PNGs, got ${pngs.length}` });
+      if (pngs.length !== input.slideCount) {
+        issues.push({ code: "png-count", detail: `expected ${input.slideCount} PNGs, got ${pngs.length}` });
       }
     }
   } else {
@@ -212,8 +335,8 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
       const pngs = existsSync(input.paths.pagesPngDir)
         ? readdirSync(input.paths.pagesPngDir).filter((name) => /\.png$/i.test(name))
         : [];
-      if (pngs.length !== 36) {
-        issues.push({ code: "png-count", detail: `expected 36 PNGs, got ${pngs.length}` });
+      if (pngs.length !== input.slideCount) {
+        issues.push({ code: "png-count", detail: `expected ${input.slideCount} PNGs, got ${pngs.length}` });
       }
     }
   }
@@ -537,6 +660,7 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
 
   for (const slide of input.slides) {
     const page = slide.pageNumber;
+    const slotId = slide.baseSlotId ?? slide.slotId ?? slide.slideKey ?? "";
     const texts = [
       slide.narrative,
       slide.clientTakeaway,
@@ -561,7 +685,7 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
           detail: `forbidden token in: ${sanitizeClientLanguage(t).slice(0, 120)}`,
         });
       }
-      if (EMPTY_STUB.test(t) && (page === 19 || page === 36 || /no_data|placeholder/i.test(slide.template ?? ""))) {
+      if (EMPTY_STUB.test(t) && (slotId === "p19_ru_wikipedia" || slotId === "p36_lexis_visual_2" || /no_data|placeholder/i.test(slide.template ?? ""))) {
         issues.push({
           code: "empty-required-slot",
           page,
@@ -609,10 +733,10 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
         ? "UAE"
         : /россия|\bru\b/i.test(titleBlob)
           ? "RU"
-          : page >= 23
-            ? "UAE"
-            : page >= 18 && page <= 19
-              ? "RU"
+          : slotId.startsWith("p18") || slotId.startsWith("p19")
+            ? "RU"
+            : slotId.startsWith("p31") || slotId.startsWith("p32")
+              ? "UAE"
               : null;
       const regionStatus = String(
         (region === "UAE" ? input.themeSet?.uae?.wikipediaStatus : input.themeSet?.ru?.wikipediaStatus) ??
@@ -633,16 +757,20 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
     }
   }
 
-  for (const page of [19, 36]) {
-    const slide = input.slides.find((s) => s.pageNumber === page);
+  for (const slotId of ["p19_ru_wikipedia", "p36_lexis_visual_2"] as const) {
+    const slide = slideBySlot(input.slides, slotId);
+    const page = slide?.pageNumber;
     const content = [slide?.title, slide?.narrative, ...(slide?.bullets ?? []), slide?.clientTakeaway]
       .filter(Boolean)
       .join(" ")
       .trim();
-    if (!content) issues.push({ code: "empty-required-slide", page, detail: `page ${page} has no content` });
+    if (!content) issues.push({ code: "empty-required-slide", page, detail: `${slotId} has no content` });
   }
 
-  const related = input.slides.filter((s) => s.pageNumber >= 20 && s.pageNumber <= 22);
+  const relatedSlots = ["p20_ru_related_1", "p21_ru_related_2", "p22_ru_related_3"];
+  const related = relatedSlots
+    .map((id) => slideBySlot(input.slides, id))
+    .filter((s): s is NonNullable<typeof s> => Boolean(s));
   if (related.length >= 2) {
     const blobs = related.map(
       (s) =>
@@ -651,9 +779,20 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
     if (blobs[0] && blobs.every((b) => b === blobs[0])) {
       issues.push({
         code: "identical-related-sidebars",
-        detail: "pages 20–22 share identical sidebar analysis",
+        detail: "RU related slots share identical sidebar analysis",
       });
     }
+  }
+
+  for (const cc of inspectClientCopySlides(input.slides)) {
+    issues.push({ code: cc.code, page: cc.page, detail: cc.detail });
+  }
+
+  for (const mc of inspectCrossSlideMetricConsistency({
+    themeSet: input.themeSet as import("./orion-classic-theme-set").OrionThemeSet | null,
+    slides: input.slides as OrionGoldenDeckSlide[],
+  })) {
+    issues.push({ code: mc.code, page: mc.page, detail: mc.detail });
   }
 
   const passed = issues.length === 0;

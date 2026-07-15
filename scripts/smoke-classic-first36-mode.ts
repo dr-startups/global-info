@@ -224,14 +224,23 @@ function main() {
   ];
 
   const deck = composeOrionFirst36CeoDeck(minimalSpec(), assets);
-  check("first36 deck is exact 36", deck.slideCount === 36, `count=${deck.slideCount}`);
+  check(
+    "first36 base slot coverage is 36 (>=36 total pages)",
+    deck.baseSlotCoverage === 36 && deck.slideCount >= 36,
+    `coverage=${deck.baseSlotCoverage} total=${deck.slideCount}`
+  );
+  check(
+    "first36 missingBaseSlots empty",
+    (deck.missingBaseSlots?.length ?? 0) === 0,
+    (deck.missingBaseSlots ?? []).join(",")
+  );
   check(
     "first36 has no commercial",
     !deck.finalSlides.some((s) =>
       ["offer", "product_overview", "about"].includes(s.sectionKey)
     )
   );
-  check("page numbers are 1..36", deck.finalSlides.every((s, i) => s.pageNumber === i + 1));
+  check("page numbers are sequential 1..N", deck.finalSlides.every((s, i) => s.pageNumber === i + 1));
   check(
     "drops URL-only r10-vid",
     !deck.finalSlides.some((s) => (s.assetRefs ?? []).includes("r10-vid-9"))
@@ -370,7 +379,7 @@ function main() {
     });
     check("first36 INTERNAL_PREVIEW when not finalize", qa.readiness === "INTERNAL_PREVIEW");
     check("first36 ceoReady false without finalize", qa.ceoReady === false);
-    check("exact-36 check passed", qa.checks.some((c) => c.id === "exact-36-pages" && c.passed));
+    check("base-slot-coverage-36 check passed", qa.checks.some((c) => c.id === "base-slot-coverage-36" && c.passed));
     check("commercial-absent check present", qa.checks.some((c) => c.id === "commercial-absent" && c.passed));
     check("QA passed for first36 deck", qa.passed, qa.issues.slice(0, 4).join("; "));
   } else {

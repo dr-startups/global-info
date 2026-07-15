@@ -16,8 +16,8 @@ export type OrionVisualReportMode = "legacy_full" | "client_audit" | "classic_or
 
 export const CLIENT_AUDIT_PAGE_RANGE = { min: 30, max: 45 } as const;
 export const CLASSIC_ORION_AUDIT_PAGE_RANGE = { min: 30, max: 55 } as const;
-/** First36 CEO MVP soft band (exact 36 is a separate CEO_READY gate). */
-export const FIRST36_CEO_PAGE_RANGE = { min: 30, max: 40 } as const;
+/** First36 CEO soft band. 36 base slots are mandatory; continuations may extend the total. */
+export const FIRST36_CEO_PAGE_RANGE = { min: 36, max: 72 } as const;
 
 export function resolveOrionVisualReportMode(input?: {
   reportMode?: OrionVisualReportMode;

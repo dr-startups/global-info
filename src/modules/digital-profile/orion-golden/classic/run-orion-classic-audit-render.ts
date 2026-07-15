@@ -549,14 +549,28 @@ export async function runOrionClassicAuditRender(options: {
   const adminDecisionSet = resolveAdminDecisionSet(caseId, outputRoot);
 
   const acceptance = inspectFirst36Acceptance({
-    slideCount: deckManifest.slideCount,
+    slideCount: deckManifest.totalSlideCount ?? deckManifest.slideCount,
+    baseSlotCoverage: deckManifest.baseSlotCoverage,
+    missingBaseSlots: deckManifest.missingBaseSlots,
     slides: (deckManifest.finalSlides ?? []).map((s) => ({
       pageNumber: Number(s.pageNumber ?? 0),
       title: String(s.title ?? ""),
       narrative: s.narrative ? String(s.narrative) : undefined,
       bullets: Array.isArray(s.bullets) ? s.bullets.map(String) : undefined,
       template: s.template ? String(s.template) : undefined,
-      table: s.table as { headers?: string[]; rows?: string[][] } | undefined,
+      table: s.table as
+        | {
+            headers?: string[];
+            rows?: string[][];
+            groups?: Array<{ queryDisplay?: string; rowStart?: number; rowCount?: number }>;
+          }
+        | undefined,
+      baseSlotId: (s as { baseSlotId?: string }).baseSlotId,
+      baseSlotIndex: (s as { baseSlotIndex?: number }).baseSlotIndex,
+      isContinuation: (s as { isContinuation?: boolean }).isContinuation,
+      continuationOf: (s as { continuationOf?: string | null }).continuationOf,
+      sectionId: (s as { sectionId?: string }).sectionId,
+      searchCounters: (s as { searchCounters?: Record<string, number> }).searchCounters,
       clientTakeaway: s.clientTakeaway ? String(s.clientTakeaway) : undefined,
       visualAnalysis: s.visualAnalysis as
         | {

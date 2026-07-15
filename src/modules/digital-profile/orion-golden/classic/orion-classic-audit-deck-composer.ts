@@ -40,9 +40,11 @@ function slidesFromBlock(
       assetRefs: idx === 0 ? block.visualAssets : undefined,
       table: spec.table
         ? {
+            // Keep the full relevant row set (First36 re-paginates); title budget
+            // allows two wrapped lines without character-level breaks.
             headers: spec.table.headers,
-            rows: spec.table.rows.slice(0, 10).map((row) =>
-              row.map((cell) => truncateAtWordBoundary(String(cell ?? ""), 80))
+            rows: spec.table.rows.slice(0, 60).map((row) =>
+              row.map((cell) => truncateAtWordBoundary(String(cell ?? ""), 160))
             ),
           }
         : undefined,
