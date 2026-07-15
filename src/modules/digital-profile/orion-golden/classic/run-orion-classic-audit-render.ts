@@ -24,6 +24,10 @@ import { inspectClassicOrionAuditQuality } from "./orion-classic-audit-quality-i
 import { isClientProductionFinalize, isFirst36CeoMode } from "./orion-classic-live-serp-assets";
 import { evaluateClassicProviderSerpGate } from "./orion-classic-provider-serp-assets";
 import { mergeRunScopedSerpObservations } from "./merge-run-scoped-serp-observations";
+import {
+  assertSidebarClientPolicy,
+  inspectSidebarClientPolicy,
+} from "./sidebar-client-policy";
 import { isArsenkinRequired } from "../../providers/arsenkin";
 import {
   ArsenkinReportBindingError,
@@ -419,6 +423,16 @@ export async function runOrionClassicAuditRender(options: {
   writeJson(join(outputRoot, "orion-classic-report-spec.json"), reportSpec);
   writeJson(join(outputRoot, "final-deck-manifest.json"), deckManifest);
   writeJson(join(outputRoot, "report-assets.json"), assets);
+
+  // Fail-closed BEFORE the HTTP renderer call: mirror the Python sidebar QA so
+  // a client-policy violation surfaces here (with page/field/token) instead of
+  // as an opaque "sidebar forbidden token" render failure with 0 pages.
+  const sidebarViolations = inspectSidebarClientPolicy(deckManifest.finalSlides ?? []);
+  writeJson(join(outputRoot, "sidebar-client-policy.json"), {
+    passed: sidebarViolations.length === 0,
+    violations: sidebarViolations,
+  });
+  assertSidebarClientPolicy(deckManifest.finalSlides ?? []);
 
   const renderResult = await renderOrionGoldenArtifacts({
     reportSpec,

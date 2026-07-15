@@ -15,6 +15,10 @@ import {
 import type { OrionClassicAuditReportSpec } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-client-content-to-report-spec";
 import { inspectClassicOrionAuditQuality } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-audit-quality-inspection";
 import { isFirst36CeoMode } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-live-serp-assets";
+import {
+  inspectSidebarClientPolicy,
+  scanSidebarText,
+} from "../src/modules/digital-profile/orion-golden/classic/sidebar-client-policy";
 import type { FullEvidenceInventory } from "../src/modules/digital-profile/orion-golden/evidence/full-evidence-inventory";
 import type { ReportAssetV1 } from "../src/modules/digital-profile/orion-report-spec/asset-builder";
 
@@ -258,16 +262,21 @@ function main() {
 
   const serpSlide = deck.finalSlides.find((s) => s.slideKey === "p10_ru_serp_visual");
   check(
-    "SERP slide has API-synthetic ORION prose",
+    "SERP slide has client-safe ORION prose (no banned token)",
     Boolean(
       serpSlide?.visualAnalysis?.whatIsVisible &&
-        /API|реконструкц|синтетич/i.test(serpSlide.visualAnalysis.whatIsVisible)
+        /первого экрана|поисковой выдачи|домены/i.test(serpSlide.visualAnalysis.whatIsVisible) &&
+        !scanSidebarText(serpSlide.visualAnalysis.whatIsVisible)
     ),
     serpSlide?.visualAnalysis?.whatIsVisible?.slice(0, 80)
   );
   check(
-    "SERP slide states live screenshot limitation",
-    Boolean(serpSlide?.visualAnalysis?.limitations?.some((l) => /live|скриншот|API/i.test(l))),
+    "SERP slide states saved-snapshot limitation without banned token",
+    Boolean(
+      serpSlide?.visualAnalysis?.limitations?.some(
+        (l) => /сохранённые результаты|на дату сбора/i.test(l)
+      )
+    ),
     String(serpSlide?.visualAnalysis?.limitations?.[0])
   );
 
@@ -299,16 +308,23 @@ function main() {
     suggestSlide?.visualAnalysis?.whyItMatters?.slice(0, 100)
   );
   check(
-    "p11-12 Arsenkin provenance labels",
+    "p11-12 Arsenkin provenance labels (client-safe, no API token)",
     Boolean(
-      /Arsenkin Tools API.*Yandex Suggest/i.test(
+      /Arsenkin Tools,\s*подсказки Яндекса/i.test(
         String(deck.finalSlides[10]?.visualAnalysis?.provenanceLabel ?? "")
       ) &&
-        /Arsenkin Tools API.*Google Suggest/i.test(
+        /Arsenkin Tools,\s*подсказки Google/i.test(
           String(suggestSlide?.visualAnalysis?.provenanceLabel ?? "")
-        )
+        ) &&
+        !/\bAPI\b/.test(String(deck.finalSlides[10]?.visualAnalysis?.provenanceLabel ?? "")) &&
+        !/\bAPI\b/.test(String(suggestSlide?.visualAnalysis?.provenanceLabel ?? ""))
     ),
     `${deck.finalSlides[10]?.visualAnalysis?.provenanceLabel} | ${suggestSlide?.visualAnalysis?.provenanceLabel}`
+  );
+  check(
+    "all visual sidebars pass client policy (renderer parity)",
+    inspectSidebarClientPolicy(deck.finalSlides).length === 0,
+    JSON.stringify(inspectSidebarClientPolicy(deck.finalSlides).slice(0, 3))
   );
 
   const knowledgeSlide = deck.finalSlides.find((s) => s.slideKey === "p19_ru_knowledge_2");

@@ -445,11 +445,13 @@ function arsenkinSuggestProvenance(asset: ReportAssetV1, slot: First36SlotDef): 
   const engine =
     String(asset.meta?.engine ?? "").toUpperCase() ||
     (/google/i.test(asset.assetRef) || /google/i.test(slot.slotId) ? "GOOGLE" : "YANDEX");
-  const engineLabel = engine === "GOOGLE" ? "Google Suggest" : "Yandex Suggest";
+  // Client-safe engine label — renderer bans the token "API" in the sidebar,
+  // and structural provider/tool/runId stay in asset.meta / evidenceRefs.
+  const engineLabel = engine === "GOOGLE" ? "подсказки Google" : "подсказки Яндекса";
   const captured = asset.meta?.capturedAt
     ? `дата сбора ${String(asset.meta.capturedAt).slice(0, 10)}`
     : "дата сбора в кейсе";
-  return `Источник: Arsenkin Tools API, ${engineLabel}, ${captured}`;
+  return `Источник: Arsenkin Tools, ${engineLabel}, ${captured}`;
 }
 
 export function buildDeterministicVisualAnalysis(
@@ -488,26 +490,26 @@ export function buildDeterministicVisualAnalysis(
 
   if (slot.kind === "serp_visual") {
     const adverseHint = /нежелат|PEP|RCA|санкц|выделен/i.test(`${caption} ${title}`);
-    const synthetic =
+    // "synthetic" here is an internal flag only — its wording must never leak
+    // into client-facing sidebar copy (renderer bans API/synthetic/reconstruction).
+    const savedSnapshot =
       /API|синтетич|реконструкц/i.test(`${caption} ${title} ${asset.kind}`) ||
       asset.kind === "synthetic_serp";
     sidebarMode = adverseHint ? "adverse_explanation" : "interpretation";
     headlineConclusion = adverseHint
       ? `В первом экране выдачи (${regionLabel}) есть риск-сигналы`
       : `Первый экран поисковой выдачи (${regionLabel})`;
-    whatIsVisible = synthetic
-      ? adverseHint
-        ? "Синтетическая реконструкция API: на экране выделены домены и заголовки с риск-тематикой."
-        : "Показаны заголовки и домены первого экрана поиска по субъекту (синтетическая реконструкция API)."
-      : adverseHint
-        ? "На экране выделены домены и заголовки с риск-тематикой (PEP, санкции или нежелательные публикации)."
-        : "Показаны заголовки и домены первого экрана поиска по субъекту.";
+    whatIsVisible = adverseHint
+      ? "На экране выделены домены и заголовки с риск-тематикой (PEP, санкции или нежелательные публикации)."
+      : "Показаны заголовки и домены первого экрана поисковой выдачи по субъекту.";
     clientMeaning =
       "Клиент сразу видит, какие источники формируют первое впечатление о субъекте.";
     whyItMatters = clientMeaning;
     recommendedActions = adverseHint ? ["Сверить выделенные домены вручную"] : [];
-    if (synthetic) {
-      limitations = ["Это не live-скриншот браузера; визуал собран из сохранённых результатов API."];
+    if (savedSnapshot) {
+      limitations = [
+        "Показаны сохранённые результаты на дату сбора, а не текущий экран поисковой выдачи.",
+      ];
     }
   } else if (slot.kind === "image_visual") {
     const captionAdverse =

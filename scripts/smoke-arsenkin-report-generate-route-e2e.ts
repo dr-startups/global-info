@@ -28,6 +28,7 @@ import {
   resetArsenkinNetworkCallCount,
 } from "../src/modules/digital-profile/providers/arsenkin/network-guard";
 import { writeJsonAtomic } from "../src/modules/digital-profile/providers/arsenkin/arsenkin-db-readiness";
+import { inspectSidebarClientPolicy } from "../src/modules/digital-profile/orion-golden/classic/sidebar-client-policy";
 import type { OrionClientContent } from "../src/modules/digital-profile/orion-golden/content/orion-client-content-builder";
 
 const CASE_ID = "routee2e-arsenkin-cmreamy2t";
@@ -208,14 +209,46 @@ async function fakeRender(options: {
     slideCount: 36,
     finalSlides: [
       {
+        pageNumber: 10,
+        slideKey: "p10_ru_serp_visual",
+        assetRefs: ["ru_provider_serp_synserp"],
+        evidenceRefs: ["serp_observation:ru-serp-0"],
+        visualAnalysis: {
+          headlineConclusion: "Первый экран поисковой выдачи (Россия)",
+          whatIsVisible: "Показаны заголовки и домены первого экрана поисковой выдачи по субъекту.",
+          whyItMatters: "Клиент сразу видит, какие источники формируют первое впечатление.",
+          clientMeaning: "Клиент сразу видит, какие источники формируют первое впечатление.",
+          recommendedActions: [],
+          provenanceLabel: "Источник: сохранённая поисковая выдача, дата сбора в кейсе",
+        },
+      },
+      {
         pageNumber: 11,
+        slideKey: "p11_ru_suggestions_yandex",
         assetRefs: ["ru_suggestions_yandex"],
         evidenceRefs: ["serp_observation:yandex-obs-0"],
+        visualAnalysis: {
+          headlineConclusion: "Прямых негативных формулировок в подсказках не найдено",
+          whatIsVisible: "Прямых негативных формулировок не найдено.",
+          whyItMatters: "На этапе ввода запроса ассоциации выглядят нейтральными.",
+          clientMeaning: "На этапе ввода запроса ассоциации выглядят нейтральными.",
+          recommendedActions: [],
+          provenanceLabel: "Источник: Arsenkin Tools, подсказки Яндекса, дата сбора в кейсе",
+        },
       },
       {
         pageNumber: 12,
+        slideKey: "p12_ru_suggestions_google",
         assetRefs: ["ru_suggestions_google"],
         evidenceRefs: ["serp_observation:google-obs-0"],
+        visualAnalysis: {
+          headlineConclusion: "Прямых негативных формулировок в подсказках не найдено",
+          whatIsVisible: "Прямых негативных формулировок не найдено.",
+          whyItMatters: "На этапе ввода запроса ассоциации выглядят нейтральными.",
+          clientMeaning: "На этапе ввода запроса ассоциации выглядят нейтральными.",
+          recommendedActions: [],
+          provenanceLabel: "Источник: Arsenkin Tools, подсказки Google, дата сбора в кейсе",
+        },
       },
     ],
   });
@@ -431,9 +464,25 @@ describe("route-level report/generate Arsenkin binding E2E", () => {
 
     const deck = JSON.parse(
       readFileSync(join(runOutputRoot, "final-deck-manifest.json"), "utf-8")
-    ) as { finalSlides: Array<{ pageNumber: number; assetRefs: string[] }> };
+    ) as {
+      finalSlides: Array<{
+        pageNumber: number;
+        assetRefs: string[];
+        visualAnalysis?: { provenanceLabel?: string };
+      }>;
+    };
     assert.ok(deck.finalSlides.find((s) => s.pageNumber === 11)?.assetRefs.includes("ru_suggestions_yandex"));
     assert.ok(deck.finalSlides.find((s) => s.pageNumber === 12)?.assetRefs.includes("ru_suggestions_google"));
+
+    // Sidebar client policy parity: no rendered sidebar field may carry a
+    // renderer-banned token, and p11-12 must keep Arsenkin provenance sans "API".
+    const violations = inspectSidebarClientPolicy(deck.finalSlides);
+    assert.deepEqual(violations, [], JSON.stringify(violations));
+    const p11 = deck.finalSlides.find((s) => s.pageNumber === 11)?.visualAnalysis?.provenanceLabel ?? "";
+    const p12 = deck.finalSlides.find((s) => s.pageNumber === 12)?.visualAnalysis?.provenanceLabel ?? "";
+    assert.match(p11, /Arsenkin Tools/i);
+    assert.match(p12, /Arsenkin Tools/i);
+    assert.ok(!/\bAPI\b/.test(p11) && !/\bAPI\b/.test(p12));
   });
 
   it("2 regression: TRANSFERRED binding + stale source post-review never renders old run", async () => {

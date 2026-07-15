@@ -771,6 +771,15 @@ def _sidebar_word_budget(text: str, max_words: int = 70) -> str:
     return " ".join(kept).strip() or _clip_words(raw, max(80, max_words * 6))
 
 
+def _qa_preview(text: str, match_index: int = 0) -> str:
+    """Short, safe preview around a matched token for QA diagnostics."""
+    raw = _safe(text)
+    start = max(0, match_index - 20)
+    snippet = raw[start:match_index + 40].strip()
+    snippet = re.sub(r"\s+", " ", snippet)
+    return (snippet[:60] + "…") if len(snippet) > 60 else snippet
+
+
 def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, h: int) -> None:
     """Unified client sidebar panel (v57): one column, no stacked framed cards."""
     analysis = slide.get("visualAnalysis") or {}
@@ -817,11 +826,20 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         r"(\[DEMO\]|\.example\b|\bAPI\b|\bSUGGESTION\b|knowledge-строк|не\s+live|\bprovider\b|\bmanifest\b|\bsynthetic\b|\breconstruction\b|\bдвижок\b)",
         re.I,
     )
+    field_names = {
+        "headline": "headlineConclusion",
+        "mid": "whatIsVisible",
+        "meaning": "clientMeaning",
+        "action": "recommendedActions",
+    }
     for label, text in (("headline", headline), ("mid", mid_body), ("meaning", meaning), ("action", action)):
+        field = field_names.get(label, label)
         if "…" in text or "..." in text:
-            fail(f"sidebar ellipsis in {label}")
-        if banned.search(text):
-            fail(f"sidebar forbidden token in {label}")
+            fail(f'sidebar ellipsis in {field}: "{_qa_preview(text)}"')
+        m = banned.search(text)
+        if m:
+            # Diagnostic (not a bypass): surface field, matched token and a safe preview.
+            fail(f'sidebar forbidden token "{m.group(0)}" in {field}: "{_qa_preview(text, m.start())}"')
 
     # Draw one outer panel
     pad = 70_000

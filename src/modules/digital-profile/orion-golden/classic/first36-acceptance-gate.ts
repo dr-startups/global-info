@@ -5,6 +5,7 @@
 import { hasDanglingSentenceTail, sanitizeClientLanguage } from "./client-language";
 import { existsSync, readdirSync } from "node:fs";
 import { ORION_FIRST36_REGISTRY_V1 } from "./orion-first36-registry.v1";
+import { inspectSidebarClientPolicy } from "./sidebar-client-policy";
 
 export type First36AcceptanceIssue = {
   code: string;
@@ -340,6 +341,15 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
           detail: `page ${page}: generic suggest provenance for Arsenkin asset`,
         });
       }
+    }
+    // Parity with Python renderer sidebar QA — catch banned client-facing tokens
+    // (API/provider/synthetic/reconstruction/не live/…) before HTTP render.
+    for (const v of inspectSidebarClientPolicy(input.slides)) {
+      issues.push({
+        code: "sidebar-client-policy",
+        page: v.page,
+        detail: `field=${v.field} token=${v.token} preview="${v.preview}"`,
+      });
     }
     if (input.clientFinalize && input.adminDecisionSet?.qaSampleOnly === true) {
       issues.push({

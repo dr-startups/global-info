@@ -15,6 +15,10 @@ import {
   type OrionSurfaceKpis,
 } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-theme-set";
 import { inspectFirst36Acceptance } from "../src/modules/digital-profile/orion-golden/classic/first36-acceptance-gate";
+import {
+  inspectSidebarClientPolicy,
+  scanSidebarText,
+} from "../src/modules/digital-profile/orion-golden/classic/sidebar-client-policy";
 import type { FullEvidenceInventory } from "../src/modules/digital-profile/orion-golden/evidence/full-evidence-inventory";
 import type { RawInventoryItem } from "../src/modules/digital-profile/orion-golden/types";
 import {
@@ -408,6 +412,29 @@ describe("composite serp overlay merge", () => {
     ).length;
     assert.ok(ru > 0 && uae > 0);
     assert.notEqual(ru, uae, "RU and UAE organic denominators must differ in fixture");
+  });
+
+  it("sidebar client policy rejects the historical p10 API leak, accepts client-safe copy", () => {
+    const leaked = "Показаны заголовки и домены первого экрана поиска по субъекту (синтетическая реконструкция API).";
+    const safe = "Показаны заголовки и домены первого экрана поисковой выдачи по субъекту.";
+    assert.notEqual(scanSidebarText(leaked), null, "must flag historical API leak");
+    assert.equal(scanSidebarText(safe), null, "client-safe copy must pass");
+
+    const violations = inspectSidebarClientPolicy([
+      {
+        pageNumber: 10,
+        visualAnalysis: {
+          headlineConclusion: "Первый экран поисковой выдачи (Россия)",
+          whatIsVisible: leaked,
+          whyItMatters: "",
+          clientMeaning: "",
+          recommendedActions: [],
+        },
+      },
+    ]);
+    assert.equal(violations.length, 1);
+    assert.equal(violations[0].field, "whatIsVisible");
+    assert.equal(violations[0].token, "API");
   });
 
   it("NETWORK_CALLS=0", () => {
