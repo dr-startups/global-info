@@ -61,8 +61,12 @@ describe("arsenkin DB integration", () => {
     async () => {
       const { prisma } = await import("../src/server/prisma/client");
       const source = readFileSync(new URL(import.meta.url), "utf8");
-      assert.equal(source.includes(".$queryRawUnsafe("), false, "regression: do not use $queryRawUnsafe in DB smoke");
-      assert.equal(source.includes(".$queryRawUnsafe<"), false, "regression: do not use $queryRawUnsafe in DB smoke");
+      const forbiddenUnsafeRawApi = ["$", "query", "Raw", "Unsafe"].join("");
+      assert.equal(
+        source.includes(forbiddenUnsafeRawApi),
+        false,
+        "regression: unsafe raw-query API is forbidden in DB smoke"
+      );
       assert.deepEqual(surfaceCoverageBusinessKeyFields, [
         "reportRunId",
         "provider",
