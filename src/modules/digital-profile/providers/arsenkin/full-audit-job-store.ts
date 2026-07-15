@@ -10,6 +10,8 @@ import { randomUUID } from "node:crypto";
 export type ArsenkinOrchestrationState =
   | "PREFLIGHT"
   | "PLANNING"
+  | "RECOVERING"
+  | "RUNNING"
   | "STAGE1_SUBMITTING"
   | "STAGE1_POLLING"
   | "STAGE1_FETCHING"
@@ -57,9 +59,18 @@ export type ArsenkinOrchestrationJob = {
   spentLimits: number | null;
   attempt: number;
   maxAttempts: number;
+  /** User/worker resume count — does NOT spend provider retry budget. */
+  orchestrationResumeCount: number;
+  providerSubmitAttempt: number;
+  providerCheckAttempt: number;
+  providerFetchAttempt: number;
+  parseAttempt: number;
+  stageRecoveryGeneration: number;
   nextStep: string;
   lastError: string | null;
   lastErrorCode: string | null;
+  humanMessage: string | null;
+  nextRetryAt: string | null;
   leaseOwnerId: string | null;
   leaseUntil: string | null;
   cancelRequested: boolean;
@@ -78,6 +89,8 @@ export type ArsenkinOrchestrationJob = {
 const ACTIVE: ArsenkinOrchestrationState[] = [
   "PREFLIGHT",
   "PLANNING",
+  "RECOVERING",
+  "RUNNING",
   "STAGE1_SUBMITTING",
   "STAGE1_POLLING",
   "STAGE1_FETCHING",
@@ -171,9 +184,17 @@ export function loadOrchestrationJob(
       spentLimits: raw.spentLimits ?? null,
       attempt: raw.attempt ?? 1,
       maxAttempts: raw.maxAttempts ?? 3,
+      orchestrationResumeCount: raw.orchestrationResumeCount ?? 0,
+      providerSubmitAttempt: raw.providerSubmitAttempt ?? raw.setCalls ?? 0,
+      providerCheckAttempt: raw.providerCheckAttempt ?? raw.checkCalls ?? 0,
+      providerFetchAttempt: raw.providerFetchAttempt ?? raw.getCalls ?? 0,
+      parseAttempt: raw.parseAttempt ?? 0,
+      stageRecoveryGeneration: raw.stageRecoveryGeneration ?? 0,
       nextStep: raw.nextStep ?? "preflight",
       lastError: raw.lastError ?? null,
       lastErrorCode: raw.lastErrorCode ?? null,
+      humanMessage: raw.humanMessage ?? null,
+      nextRetryAt: raw.nextRetryAt ?? null,
       leaseOwnerId: raw.leaseOwnerId ?? null,
       leaseUntil: raw.leaseUntil ?? null,
       cancelRequested: Boolean(raw.cancelRequested),
@@ -238,9 +259,17 @@ export function createOrchestrationJob(input: {
     spentLimits: null,
     attempt: 1,
     maxAttempts: input.maxAttempts ?? 3,
+    orchestrationResumeCount: 0,
+    providerSubmitAttempt: 0,
+    providerCheckAttempt: 0,
+    providerFetchAttempt: 0,
+    parseAttempt: 0,
+    stageRecoveryGeneration: 0,
     nextStep: "preflight",
     lastError: null,
     lastErrorCode: null,
+    humanMessage: null,
+    nextRetryAt: null,
     leaseOwnerId: null,
     leaseUntil: null,
     cancelRequested: false,
@@ -353,6 +382,10 @@ export function humanPhaseForState(state: ArsenkinOrchestrationState): string {
       return "Проверка готовности";
     case "PLANNING":
       return "Формирование плана";
+    case "RECOVERING":
+      return "Восстановление существующего сбора";
+    case "RUNNING":
+      return "Сбор выполняется";
     case "STAGE1_SUBMITTING":
       return "Отправка задач Stage 1";
     case "STAGE1_POLLING":
@@ -382,7 +415,7 @@ export function humanPhaseForState(state: ArsenkinOrchestrationState): string {
     case "WAITING_INFRASTRUCTURE":
       return "Ожидание инфраструктуры";
     case "FAILED_RETRYABLE":
-      return "Временная ошибка — можно продолжить";
+      return "Временная ошибка — автоматическое восстановление";
     case "FAILED_TERMINAL":
       return "Сбор остановлен";
     case "CANCELLED":

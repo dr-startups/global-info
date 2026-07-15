@@ -472,10 +472,15 @@ export function ArsenkinToolsPanel(props: {
     Boolean(status?.sourceBindingAutoRepairable) ||
     orch?.nextStep === "auto-repair-source" ||
     orch?.nextStep === "bounded-resume" ||
+    orch?.nextStep === "recover-existing-run" ||
+    orch?.state === "RECOVERING" ||
+    orch?.state === "RUNNING" ||
     String(orch?.lastError ?? "").includes("SOURCE_BINDING_REPAIRABLE") ||
-    /уже привязан к source/i.test(String(orch?.lastError ?? ""));
-  // Repairable FAILED_RETRYABLE must not show "Продолжить сбор".
-  const showContinueButton = orchRetryable && !orchAutoRepairable;
+    /уже привязан к source|Стадия FAILED|RESULT_FETCH|SUBMIT_UNKNOWN/i.test(
+      String(orch?.lastError ?? "")
+    );
+  // Staff continue is never required for retryable recovery — hide from primary CTA.
+  const showContinueButton = false;
 
   const onStartFullAudit = () => {
     const runId = activeReportRunId ?? reportRunId;
@@ -919,13 +924,30 @@ export function ArsenkinToolsPanel(props: {
               >
                 <strong>{orch.humanPhase}</strong>
                 <div className="dp-muted" style={{ fontSize: 13 }}>
-                  {orch.percent}% · поверхности {orch.surfacesDone}/{orch.surfacesTotal} ·
-                  observations {orch.observationCount} · попытка {orch.attempt}
+                  {orch.percent}% · Stage 1: {orch.stage1TerminalCount ?? 0}/8 · Stage 2:{" "}
+                  {orch.stage2TerminalCount ?? 0}/4 · всего {orch.surfacesDone}/{orch.surfacesTotal} ·
+                  observations {orch.observationCount}
                 </div>
                 <div className="dp-muted" style={{ fontSize: 12 }}>
-                  Следующий шаг: {orch.nextStep}
+                  Resume: {orch.orchestrationResumeCount ?? orch.attempt ?? 0} · /set{" "}
+                  {orch.providerSubmitAttempt ?? 0} · /check {orch.providerCheckAttempt ?? 0} · /get{" "}
+                  {orch.providerFetchAttempt ?? 0}
                 </div>
-                {orch.lastError && !orchAutoRepairable ? <ErrorBox>{orch.lastError}</ErrorBox> : null}
+                {orch.humanMessage ? (
+                  <div style={{ fontSize: 13 }}>{orch.humanMessage}</div>
+                ) : null}
+                {orch.nextRetryAt ? (
+                  <div className="dp-muted" style={{ fontSize: 12 }}>
+                    Следующая попытка: {orch.nextRetryAt}
+                  </div>
+                ) : null}
+                {orch.lastError && !orchAutoRepairable ? (
+                  <ErrorBox>
+                    {/Стадия FAILED|prepare запрещён/i.test(orch.lastError)
+                      ? "Arsenkin временно не принял одну задачу. Повтор через несколько секунд. Остальные проверки продолжаются."
+                      : orch.lastError}
+                  </ErrorBox>
+                ) : null}
               </div>
             ) : null}
 
@@ -933,15 +955,11 @@ export function ArsenkinToolsPanel(props: {
               <button
                 type="button"
                 className="dp-btn dp-btn-primary"
-                disabled={busy || !reportRunId || (orchActive && !showContinueButton)}
+                disabled={busy || !reportRunId || orchActive}
                 onClick={onStartFullAudit}
                 data-testid="arsenkin-start-full-audit"
               >
-                {orchActive && !showContinueButton
-                  ? "Сбор выполняется"
-                  : showContinueButton
-                    ? "Продолжить сбор"
-                    : "Запустить полный сбор Arsenkin"}
+                {orchActive ? "Сбор выполняется" : "Запустить полный сбор Arsenkin"}
               </button>
               {orchActive ? (
                 <button
@@ -954,9 +972,6 @@ export function ArsenkinToolsPanel(props: {
                   Отменить сбор
                 </button>
               ) : null}
-              <button type="button" className="dp-btn" disabled={busy} onClick={() => void refresh()}>
-                Обновить статус
-              </button>
             </div>
 
             <details data-testid="arsenkin-tech-diagnostics">
@@ -964,6 +979,20 @@ export function ArsenkinToolsPanel(props: {
                 Техническая диагностика
               </summary>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+            <button type="button" className="dp-btn" disabled={busy} onClick={() => void refresh()}>
+              Обновить статус (диагностика)
+            </button>
+            {orchRetryable ? (
+              <button
+                type="button"
+                className="dp-btn"
+                disabled={busy || !reportRunId}
+                onClick={onStartFullAudit}
+                data-testid="arsenkin-admin-force-resume"
+              >
+                Принудительный resume (админ)
+              </button>
+            ) : null}
             <button
               type="button"
               className="dp-btn"

@@ -1601,6 +1601,12 @@ export type ArsenkinUiStatusDto = {
     lastError: string | null;
     attempt: number;
     cancelRequested: boolean;
+    orchestrationResumeCount?: number;
+    providerSubmitAttempt?: number;
+    providerCheckAttempt?: number;
+    providerFetchAttempt?: number;
+    humanMessage?: string | null;
+    nextRetryAt?: string | null;
     requestedWorkflowType?: "SUGGEST_RU_CANARY" | "FIRST36_FULL";
     jobWorkflowType?: "SUGGEST_RU_CANARY" | "FIRST36_FULL";
     jobReportRunId?: string;

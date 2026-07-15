@@ -154,6 +154,12 @@ export type ArsenkinUiStatusDto = {
     lastError: string | null;
     attempt: number;
     cancelRequested: boolean;
+    orchestrationResumeCount?: number;
+    providerSubmitAttempt?: number;
+    providerCheckAttempt?: number;
+    providerFetchAttempt?: number;
+    humanMessage?: string | null;
+    nextRetryAt?: string | null;
     requestedWorkflowType?: "SUGGEST_RU_CANARY" | "FIRST36_FULL";
     jobWorkflowType?: "SUGGEST_RU_CANARY" | "FIRST36_FULL";
     jobReportRunId?: string;
@@ -1340,12 +1346,12 @@ export async function getArsenkinUiStatus(
               (workflow ?? workflowHint ?? "first36-full") as "suggest-canary" | "first36-full"
             );
       if (!job) return null;
-      // Auto-resume repairable FAILED_RETRYABLE without user click.
+      // Auto-resume FAILED_RETRYABLE / RECOVERING without user click.
       if (
-        job.state === "FAILED_RETRYABLE" &&
-        (job.lastErrorCode === "SOURCE_BINDING_REPAIRABLE" ||
-          needsSourceBindingRepair(job.sourceReportRunId) ||
-          /SOURCE_BINDING_REPAIRABLE|уже привязан к source/i.test(String(job.lastError ?? "")))
+        job.state === "FAILED_RETRYABLE" ||
+        job.state === "RECOVERING" ||
+        job.state === "WAITING_PROVIDER" ||
+        job.state === "RUNNING"
       ) {
         scheduleOrchestrationTick(caseId, "first36-full");
       }
@@ -1366,7 +1372,13 @@ export async function getArsenkinUiStatus(
         observationCount: job.observationCount,
         nextStep: job.nextStep,
         lastError: job.lastError,
-        attempt: job.attempt,
+        attempt: job.orchestrationResumeCount ?? job.attempt,
+        orchestrationResumeCount: job.orchestrationResumeCount ?? 0,
+        providerSubmitAttempt: job.providerSubmitAttempt ?? 0,
+        providerCheckAttempt: job.providerCheckAttempt ?? 0,
+        providerFetchAttempt: job.providerFetchAttempt ?? 0,
+        humanMessage: job.humanMessage,
+        nextRetryAt: job.nextRetryAt,
         cancelRequested: job.cancelRequested,
         requestedWorkflowType: job.requestedWorkflowType ?? "FIRST36_FULL",
         jobWorkflowType: job.jobWorkflowType ?? "FIRST36_FULL",

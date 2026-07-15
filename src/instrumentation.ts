@@ -12,4 +12,12 @@ export async function register(): Promise<void> {
     "./modules/digital-profile/config/env-validation"
   );
   runEnvValidation();
+  try {
+    const { resumeActiveArsenkinOrchestrations } = await import(
+      "./modules/digital-profile/providers/arsenkin/full-audit-orchestrator"
+    );
+    resumeActiveArsenkinOrchestrations();
+  } catch {
+    /* orchestrator resume is best-effort */
+  }
 }

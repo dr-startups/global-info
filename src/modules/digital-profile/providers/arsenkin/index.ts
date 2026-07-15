@@ -33,3 +33,4 @@ export * from "./full-audit-job-store";
 export * from "./full-audit-orchestrator";
 export * from "./workflow-contract";
 export * from "./source-binding-repair";
+export * from "./recover-existing-run";

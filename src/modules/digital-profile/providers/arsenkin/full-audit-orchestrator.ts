@@ -21,7 +21,11 @@ import {
   needsSourceBindingRepair,
   resolveCanonicalBaseOrionReportRunId,
 } from "./source-binding-repair";
-import { existsSync, readFileSync } from "node:fs";
+import {
+  existingRunHasRecoverableWork,
+  recoverExistingRun,
+} from "./recover-existing-run";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
@@ -303,18 +307,36 @@ export async function startArsenkinFullAudit(
 
   if (
     job.state === "FAILED_RETRYABLE" ||
+    job.state === "WAITING_PROVIDER" ||
     needsSourceBindingRepair(job.sourceReportRunId) ||
     isSourceBindingRepairableError(job.lastError)
   ) {
-    setState(job, "PREFLIGHT", {
-      attempt: job.attempt + 1,
-      lastError: null,
-      lastErrorCode: null,
-      nextStep: "preflight",
-      completedAt: null,
-      sourceReportRunId: sourceOrionReportRunId,
-      sourceOrionReportRunId,
-    });
+    const resumeExisting = existingRunHasRecoverableWork(job);
+    if (resumeExisting) {
+      // NEVER go PREFLIGHT→prepare for an existing Full run.
+      setState(job, "RECOVERING", {
+        orchestrationResumeCount: (job.orchestrationResumeCount ?? 0) + 1,
+        stageRecoveryGeneration: (job.stageRecoveryGeneration ?? 0) + 1,
+        lastError: null,
+        lastErrorCode: null,
+        nextStep: "recover-existing-run",
+        completedAt: null,
+        humanMessage: "Получаем готовый результат Arsenkin, новая задача не создаётся.",
+        sourceReportRunId: sourceOrionReportRunId,
+        sourceOrionReportRunId,
+        // Do NOT increment provider attempt counters on resume without /set|/check|/get.
+      });
+    } else {
+      setState(job, "PREFLIGHT", {
+        orchestrationResumeCount: (job.orchestrationResumeCount ?? 0) + 1,
+        lastError: null,
+        lastErrorCode: null,
+        nextStep: "preflight",
+        completedAt: null,
+        sourceReportRunId: sourceOrionReportRunId,
+        sourceOrionReportRunId,
+      });
+    }
   }
 
   await recordAudit({
@@ -399,10 +421,43 @@ export function scheduleOrchestrationTick(
   setImmediate(() => void run());
 }
 
-/** Resume any active jobs after process start. */
+/** Resume any active/retryable jobs after process start (no user click). */
 export function resumeActiveArsenkinOrchestrations(deps: FullAuditOrchestratorDeps = {}): void {
-  // Best-effort: scan known mapping dirs is expensive; callers pass caseIds or we rely on start.
-  void deps;
+  try {
+    const root = join(process.cwd(), "storage", "digital-profile", "arsenkin-orchestration");
+    if (!existsSync(root)) return;
+    for (const caseId of readdirSync(root)) {
+      const wfRoot = join(root, caseId, "first36-full");
+      const jobPath = join(wfRoot, "job.json");
+      if (!existsSync(jobPath)) continue;
+      const job = loadOrchestrationJob(caseId, "first36-full");
+      if (!job) continue;
+      if (
+        job.state === "FAILED_RETRYABLE" ||
+        job.state === "RECOVERING" ||
+        job.state === "WAITING_PROVIDER" ||
+        job.state === "RUNNING" ||
+        isActiveOrchestrationState(job.state)
+      ) {
+        if (job.state === "FAILED_RETRYABLE" && existingRunHasRecoverableWork(job)) {
+          patchOrchestrationJob(caseId, "first36-full", {
+            state: "RECOVERING",
+            humanPhase: humanPhaseForState("RECOVERING"),
+            nextStep: "recover-existing-run",
+            orchestrationResumeCount: (job.orchestrationResumeCount ?? 0) + 1,
+            stageRecoveryGeneration: (job.stageRecoveryGeneration ?? 0) + 1,
+            lastError: null,
+            lastErrorCode: null,
+            completedAt: null,
+            humanMessage: "Автовосстановление после перезапуска сервера.",
+          });
+        }
+        scheduleOrchestrationTick(caseId, "first36-full", deps);
+      }
+    }
+  } catch {
+    /* best-effort startup resume */
+  }
 }
 
 export async function runOrchestrationTick(
@@ -434,6 +489,12 @@ export async function runOrchestrationTick(
       case "PLANNING":
         job = await stepPlanning(job, deps);
         break;
+      case "RECOVERING":
+        job = await stepRecovering(job, deps);
+        break;
+      case "RUNNING":
+        job = await stepStage(job, "FIRST36_STAGE1", deps);
+        break;
       case "STAGE1_SUBMITTING":
       case "STAGE1_POLLING":
       case "STAGE1_FETCHING":
@@ -456,46 +517,46 @@ export async function runOrchestrationTick(
         job = await stepRendering(job, deps);
         break;
       case "FAILED_RETRYABLE": {
-        // Auto-resume repairable source binding / bounded retries — no user-continue.
-        const repairable =
-          job.lastErrorCode === "SOURCE_BINDING_REPAIRABLE" ||
-          needsSourceBindingRepair(job.sourceReportRunId) ||
-          isSourceBindingRepairableError(job.lastError);
-        if (repairable && job.workflow === "first36-full") {
-          const repair = await ensureFirst36FullCanonicalSource({
-            caseId: job.caseId,
-            enrichmentReportRunId: job.jobReportRunId || job.reportRunId,
-            prisma: deps.prisma,
-          });
-          if (repair.ok) {
-            job = setState(job, "PREFLIGHT", {
-              attempt: job.attempt + 1,
-              lastError: null,
-              lastErrorCode: null,
-              nextStep: "preflight",
-              completedAt: null,
-              sourceReportRunId: repair.baseOrionReportRunId,
-              sourceOrionReportRunId: repair.baseOrionReportRunId,
-              currentlyBoundReportRunId: repair.previousEnrichmentReportRunId,
-              previousBindingReportRunId: repair.previousEnrichmentReportRunId,
-              recoveryNotes: [
-                ...job.recoveryNotes,
-                repair.repaired
-                  ? `source-binding-repaired:${repair.artifact.reason}`
-                  : "source-binding-already-canonical",
-              ],
+        // Prefer recoverExistingRun over PREFLIGHT/prepare.
+        if (existingRunHasRecoverableWork(job) || job.workflow === "first36-full") {
+          const repairableSource =
+            job.lastErrorCode === "SOURCE_BINDING_REPAIRABLE" ||
+            needsSourceBindingRepair(job.sourceReportRunId) ||
+            isSourceBindingRepairableError(job.lastError);
+          if (repairableSource) {
+            const repair = await ensureFirst36FullCanonicalSource({
+              caseId: job.caseId,
+              enrichmentReportRunId: job.jobReportRunId || job.reportRunId,
+              prisma: deps.prisma,
             });
-            job = await stepPreflight(job, deps);
-          } else if (repair.code === "NEEDS_ADMIN") {
-            job = setState(job, "FAILED_TERMINAL", {
-              lastError: repair.detail,
-              lastErrorCode: "NEEDS_ADMIN",
-              nextStep: "needs-admin",
-            });
+            if (repair.ok) {
+              job =
+                patchOrchestrationJob(job.caseId, job.workflow, {
+                  sourceReportRunId: repair.baseOrionReportRunId,
+                  sourceOrionReportRunId: repair.baseOrionReportRunId,
+                }) ?? job;
+            } else if (repair.code === "NEEDS_ADMIN") {
+              job = setState(job, "FAILED_TERMINAL", {
+                lastError: repair.detail,
+                lastErrorCode: "NEEDS_ADMIN",
+                nextStep: "needs-admin",
+              });
+              break;
+            }
           }
-        } else if (job.attempt < job.maxAttempts) {
+          job = setState(job, "RECOVERING", {
+            orchestrationResumeCount: (job.orchestrationResumeCount ?? 0) + 1,
+            stageRecoveryGeneration: (job.stageRecoveryGeneration ?? 0) + 1,
+            lastError: null,
+            lastErrorCode: null,
+            nextStep: "recover-existing-run",
+            completedAt: null,
+            humanMessage: "Получаем готовый результат Arsenkin, новая задача не создаётся.",
+          });
+          job = await stepRecovering(job, deps);
+        } else if ((job.orchestrationResumeCount ?? 0) < (job.maxAttempts ?? 3)) {
           job = setState(job, "PREFLIGHT", {
-            attempt: job.attempt + 1,
+            orchestrationResumeCount: (job.orchestrationResumeCount ?? 0) + 1,
             lastError: null,
             lastErrorCode: null,
             nextStep: "bounded-resume",
@@ -511,6 +572,58 @@ export async function runOrchestrationTick(
   } finally {
     releaseOrchestrationJobLease({ caseId, workflow, ownerId });
   }
+}
+
+async function stepRecovering(
+  job: ArsenkinOrchestrationJob,
+  deps: FullAuditOrchestratorDeps
+): Promise<ArsenkinOrchestrationJob> {
+  const result = await recoverExistingRun(job, {
+    prisma: deps.prisma,
+    client: deps.client === undefined ? undefined : deps.client,
+    store: deps.store,
+    persistObservations: deps.persistObservations,
+    refetchResults: deps.refetchResults,
+    sleep: deps.sleep,
+    now: deps.now,
+  });
+
+  job =
+    patchOrchestrationJob(job.caseId, job.workflow, {
+      setCalls: (job.setCalls ?? 0) + result.setCalls,
+      checkCalls: (job.checkCalls ?? 0) + result.checkCalls,
+      getCalls: (job.getCalls ?? 0) + result.getCalls,
+      providerSubmitAttempt: (job.providerSubmitAttempt ?? 0) + result.setCalls,
+      providerCheckAttempt: (job.providerCheckAttempt ?? 0) + result.checkCalls,
+      providerFetchAttempt: (job.providerFetchAttempt ?? 0) + result.getCalls,
+      recoveryNotes: [
+        ...job.recoveryNotes,
+        `recover-existing:${result.nextState}`,
+        `prepareCalled=false`,
+        `reconciled=${result.reconciled.length}`,
+      ],
+      humanMessage: result.humanMessage,
+      observationCount: Math.max(job.observationCount, result.reconciled.filter((r) => r.outcome === "MEASURED" || r.outcome === "NO_RESULTS").length),
+    }) ?? job;
+
+  if (!result.ok) {
+    return setState(job, "FAILED_RETRYABLE", {
+      lastError: "recover-existing-run-failed",
+      lastErrorCode: "RECOVER_FAILED",
+      nextStep: "recover-existing-run",
+      humanMessage:
+        "Arsenkin временно не принял одну задачу. Повтор через несколько секунд. Остальные проверки продолжаются.",
+    });
+  }
+
+  // Continue remaining Stage 1 work without prepare.
+  return setState(job, "STAGE1_SUBMITTING", {
+    percent: 20,
+    nextStep: "stage1-execute",
+    lastError: null,
+    lastErrorCode: null,
+    humanMessage: result.humanMessage,
+  });
 }
 
 async function stepPreflight(
@@ -581,6 +694,15 @@ async function stepPlanning(
   job: ArsenkinOrchestrationJob,
   deps: FullAuditOrchestratorDeps
 ): Promise<ArsenkinOrchestrationJob> {
+  // Existing Full run with plan → recover, never prepare.
+  if (job.workflow === "first36-full" && existingRunHasRecoverableWork(job)) {
+    return setState(job, "RECOVERING", {
+      nextStep: "recover-existing-run",
+      humanMessage: "Получаем готовый результат Arsenkin, новая задача не создаётся.",
+      orchestrationResumeCount: (job.orchestrationResumeCount ?? 0) + 1,
+    });
+  }
+
   const stage: ArsenkinUiStage =
     job.workflow === "suggest-canary" ? "SUGGEST_RU_CANARY" : "FIRST36_STAGE1";
   const prepare = deps.prepare ?? prepareArsenkinUiRun;
@@ -663,8 +785,12 @@ async function autoRecoverBeforeStage(
   deps: FullAuditOrchestratorDeps
 ): Promise<{ notes: string[]; blocked: boolean; blockReason?: string }> {
   const notes: string[] = [];
+  const allowLiveRecover =
+    deps.refetchResults !== false &&
+    deps.client !== null &&
+    String(process.env.NETWORK_CALLS ?? "") !== "0";
   // Offline / injected pipeline: skip DB recovery when explicitly disabled.
-  if (deps.refetchResults === false && deps.client === null) {
+  if (!allowLiveRecover) {
     return { notes: ["offline-skip-auto-recover"], blocked: false };
   }
   let prisma: PrismaClient;
@@ -717,7 +843,7 @@ async function autoRecoverBeforeStage(
       tasks: mappedTasks,
       observationCountByTaskId,
       persistObservations: deps.persistObservations ?? persistSerpObservations,
-      refetch: deps.refetchResults !== false,
+      refetch: allowLiveRecover,
     });
     for (const r of results) {
       notes.push(`reconcile:${r.externalTaskId}:${r.outcome}`);
@@ -956,12 +1082,14 @@ async function stepStage(
     });
 
     if (result.status === "FAILED" || result.status === "MANUAL_INTERVENTION_REQUIRED") {
-      // Auto-recovery path already attempted; if still blocked mark retryable once.
+      // Partial surface failures are retryable — do not require user-continue / prepare.
       return setState(job, "FAILED_RETRYABLE", {
         lastError: result.lastError ?? result.status,
         lastErrorCode: result.status,
-        nextStep: "user-continue",
-        recoveryNotes: [...job.recoveryNotes, "stage-failed-after-auto-recovery"],
+        nextStep: "recover-existing-run",
+        humanMessage:
+          "Arsenkin временно не принял одну задачу. Повтор через несколько секунд. Остальные проверки продолжаются.",
+        recoveryNotes: [...job.recoveryNotes, "stage-partial-failure-auto-recover"],
       });
     }
 
@@ -1000,12 +1128,13 @@ async function stepStage(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (/SUBMIT_UNKNOWN|FAILED —|MANUAL_INTERVENTION/i.test(message)) {
-      // Try one more auto-recover cycle then retryable.
       await autoRecoverBeforeStage(job, deps);
       return setState(job, "FAILED_RETRYABLE", {
         lastError: message,
         lastErrorCode: "stage_execute_failed",
-        nextStep: "user-continue",
+        nextStep: "recover-existing-run",
+        humanMessage:
+          "Arsenkin временно не принял одну задачу. Повтор через несколько секунд. Остальные проверки продолжаются.",
       });
     }
     if (/429|rate|queue/i.test(message)) {
