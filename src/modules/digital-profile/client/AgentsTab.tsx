@@ -76,16 +76,17 @@ export function AgentsTab({
     <div>
       <div className="dp-row" style={{ alignItems: "center" }}>
         <h2 className="dp-h2" style={{ margin: 0 }}>
-          {t("agents.title")} <span className="dp-muted">{t("agents.fullAuditScopeHint")}</span>
+          {t("agents.title")} <span className="dp-muted">{t("agents.unifiedCollectionHint")}</span>
         </h2>
         {canRun ? (
           <button
             className="dp-btn dp-btn-primary"
             onClick={onRunFullAudit}
             disabled={auditing || busyAgent !== null}
+            data-testid="agents-tab-unified-cta"
           >
             {auditing ? <span className="dp-spinner" /> : null}
-            {auditing ? t("agents.runningAudit") : t("agents.runFullAudit")}
+            {auditing ? t("agents.runningUnifiedCollection") : t("agents.runUnifiedCollection")}
           </button>
         ) : null}
       </div>

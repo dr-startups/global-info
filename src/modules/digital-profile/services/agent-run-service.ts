@@ -451,11 +451,17 @@ export async function listAgents(caseId: string): Promise<AgentInfoDTO[]> {
     orderBy: { createdAt: "desc" },
     select: { agentName: true, input: true, status: true, startedAt: true, finishedAt: true },
   });
-  // Key by the agent slug (input.agentId) so mock + real Wikipedia stay distinct.
+  // Key strictly by input.agentId so agents sharing Prisma AgentName (SEARCH_SURFACES)
+  // never collide. Legacy rows without agentId only map when enum is unique.
   const latest = new Map<string, (typeof runs)[number]>();
   for (const r of runs) {
-    const key = runInput(r).agentId ?? r.agentName;
-    if (!latest.has(key)) latest.set(key, r);
+    const agentId = runInput(r).agentId;
+    if (typeof agentId === "string" && agentId.trim()) {
+      if (!latest.has(agentId)) latest.set(agentId, r);
+      continue;
+    }
+    if (r.agentName === "SEARCH_SURFACES") continue;
+    if (!latest.has(r.agentName)) latest.set(r.agentName, r);
   }
 
   return defs.map((d) => {

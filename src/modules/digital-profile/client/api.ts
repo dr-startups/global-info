@@ -1457,6 +1457,58 @@ export function prepareOrionGoldenArtifacts(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Unified ORION collection (base + Arsenkin + composite + Golden)
+// ---------------------------------------------------------------------------
+
+export type UnifiedCollectionJobStatus = {
+  jobId: string;
+  unifiedJobId: string;
+  stage: string;
+  status: string;
+  progress: number;
+  actualProviders: Array<{
+    providerId: string;
+    agentName?: string;
+    runtime: string;
+    status: string;
+    reason?: string;
+  }>;
+  coverage: {
+    plannedSupportedSurfaces: number;
+    measured: number;
+    noResults: number;
+    notSupported: number;
+    failedFinal: number;
+    failedRetryable: number;
+    inFlight: number;
+    progressRatio: number;
+  } | null;
+  warnings: string[];
+  lastError: string | null;
+  lastErrorCode: string | null;
+  baseReportRunId: string | null;
+  arsenkinReportRunId: string | null;
+  compositeDatasetId: string | null;
+  reportLinks: { pdf?: string; pptx?: string };
+  artifactPaths: Record<string, string>;
+};
+
+export function startUnifiedOrionCollection(
+  caseId: string
+): Promise<{ accepted: boolean; jobId: string; unifiedJobId: string; created: boolean; stage: string }> {
+  return request(`/cases/${caseId}/unified-collection`, {
+    method: "POST",
+    body: JSON.stringify({ arsenkinMode: "full-first36" }),
+  });
+}
+
+export function getUnifiedOrionCollectionStatus(
+  caseId: string
+): Promise<{ job: UnifiedCollectionJobStatus | null }> {
+  return request(`/cases/${caseId}/unified-collection`, { cache: "no-store" });
+}
+
 export function getOrionGoldenPrepareStatus(
   caseId: string
 ): Promise<OrionGoldenPrepareSummary> {

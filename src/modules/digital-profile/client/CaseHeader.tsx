@@ -10,16 +10,18 @@ export function CaseHeader({
   caseDetail,
   onGenerate,
   generating,
-  onRunAudit,
+  onRunUnifiedCollection,
   auditing,
   lastRunStatus,
+  unifiedStage,
 }: {
   caseDetail: CaseDetail;
   onGenerate: () => void;
   generating: boolean;
-  onRunAudit: () => void;
+  onRunUnifiedCollection: () => void;
   auditing: boolean;
   lastRunStatus: string | null;
+  unifiedStage?: string | null;
 }) {
   const { t, fmtDate } = useDigitalProfileI18n();
   const { can } = useDpAuth();
@@ -47,23 +49,27 @@ export function CaseHeader({
                 <StatusBadge status={lastRunStatus} />
               </span>
             ) : null}
+            {unifiedStage ? (
+              <span className="dp-muted">· {t("agents.unifiedStage")}: {unifiedStage}</span>
+            ) : null}
           </div>
         </div>
         <div className="dp-inline">
           {can("agents.run") ? (
             <button
-              className="dp-btn"
-              onClick={onRunAudit}
+              className="dp-btn dp-btn-primary"
+              onClick={onRunUnifiedCollection}
               disabled={auditing || generating}
-              title={t("agents.fullAuditScopeHint")}
+              title={t("agents.unifiedCollectionHint")}
+              data-testid="unified-orion-collection-cta"
             >
               {auditing ? <span className="dp-spinner" /> : null}
-              {auditing ? t("agents.runningAudit") : t("agents.runFullAudit")}
+              {auditing ? t("agents.runningUnifiedCollection") : t("agents.runUnifiedCollection")}
             </button>
           ) : null}
           {can("report.generateInternal") ? (
             <button
-              className="dp-btn dp-btn-primary"
+              className="dp-btn"
               onClick={onGenerate}
               disabled={generating || auditing}
             >

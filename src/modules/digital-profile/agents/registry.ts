@@ -23,6 +23,13 @@ import {
 } from "./real/real-orion-search-profile-agent";
 import { RiskClassifierV1Agent } from "./real/risk-classifier-agent";
 import { AuditSummaryBuilderAgent } from "./real/audit-summary-agent";
+import {
+  ArsenkinAiSearchRealAgent,
+  ArsenkinPaaRealAgent,
+  ArsenkinSearchTopRealAgent,
+  ArsenkinSuggestionsRealAgent,
+  ArsenkinUrlAuditRealAgent,
+} from "./real/real-arsenkin-agents";
 
 const AGENT_LIST: CaseAgent[] = [
   new MockYandexSearchAgent(),
@@ -39,6 +46,11 @@ const AGENT_LIST: CaseAgent[] = [
   new RealOrionSearchProfileAgent(),
   new RealOrionGoogleSurfacesAgent(),
   new RealOrionUaeInternationalAgent(),
+  new ArsenkinSearchTopRealAgent(),
+  new ArsenkinSuggestionsRealAgent(),
+  new ArsenkinPaaRealAgent(),
+  new ArsenkinAiSearchRealAgent(),
+  new ArsenkinUrlAuditRealAgent(),
   new RiskClassifierV1Agent(),
   new AuditSummaryBuilderAgent(),
 ];

@@ -15,6 +15,8 @@ import {
   runFullAudit,
   prepareOrionGoldenArtifacts,
   getOrionGoldenPrepareStatus,
+  startUnifiedOrionCollection,
+  getUnifiedOrionCollectionStatus,
   type AgentInfo,
   type AgentRun,
   type CaseDetail,
@@ -23,6 +25,7 @@ import {
   type OrionGoldenPrepareSummary,
   type ReportVersion,
   type SearchSurfaceItem,
+  type UnifiedCollectionJobStatus,
 } from "./api";
 import {
   Card,
@@ -57,6 +60,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
   const [surfaces, setSurfaces] = useState<SearchSurfaceItem[]>([]);
   const [generating, setGenerating] = useState(false);
   const [auditing, setAuditing] = useState(false);
+  const [unifiedStage, setUnifiedStage] = useState<string | null>(null);
   const [banner, setBanner] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
   const [prepareBusy, setPrepareBusy] = useState(false);
   const [prepareStatus, setPrepareStatus] = useState<OrionGoldenPrepareSummary | null>(null);
@@ -131,7 +135,52 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
     }
   }, [caseId]);
 
+  const handleRunUnifiedCollection = useCallback(async () => {
+    if (auditing || generating) return;
+    setAuditing(true);
+    setBanner(null);
+    setUnifiedStage("BASE_COLLECTION");
+    try {
+      const started = await startUnifiedOrionCollection(caseId);
+      setUnifiedStage(started.stage);
+      // Poll until terminal
+      for (let i = 0; i < 120; i++) {
+        await new Promise((r) => setTimeout(r, 500));
+        const { job } = await getUnifiedOrionCollectionStatus(caseId);
+        if (!job) continue;
+        setUnifiedStage(job.stage);
+        const terminal =
+          job.stage === "REPORT_READY" ||
+          job.stage === "COMPLETED_PARTIAL" ||
+          job.stage === "FAILED_TERMINAL" ||
+          job.stage === "CANCELLED" ||
+          job.status === "COMPLETED" ||
+          job.status === "FAILED";
+        if (!terminal) continue;
+        await refreshAgents();
+        if (job.stage === "REPORT_READY") {
+          setBanner({ kind: "ok", text: t("agents.unifiedDone") });
+        } else if (job.stage === "COMPLETED_PARTIAL") {
+          setBanner({ kind: "ok", text: t("agents.unifiedPartial") });
+        } else {
+          setBanner({
+            kind: "error",
+            text: `${t("agents.unifiedFailed")}${job.lastError ? `: ${job.lastError}` : ""}`,
+          });
+        }
+        break;
+      }
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setBanner({ kind: "error", text: tError(code, msg) });
+    } finally {
+      setAuditing(false);
+    }
+  }, [auditing, generating, caseId, refreshAgents, t, tError]);
+
   const handleRunAudit = useCallback(async () => {
+    // Admin/diagnostic path only — primary CTA is unified collection.
     if (auditing || generating) return;
     setAuditing(true);
     setBanner(null);
@@ -255,9 +304,10 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
           caseDetail={state.caseDetail}
           onGenerate={handleHeaderGenerate}
           generating={generating}
-          onRunAudit={handleRunAudit}
+          onRunUnifiedCollection={handleRunUnifiedCollection}
           auditing={auditing}
           lastRunStatus={agentRuns[0]?.status ?? null}
+          unifiedStage={unifiedStage}
         />
       </Card>
 
@@ -369,7 +419,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
           agentRuns={agentRuns}
           auditing={auditing}
           lastFullAuditSummary={lastFullAuditSummary}
-          onRunFullAudit={handleRunAudit}
+          onRunFullAudit={handleRunUnifiedCollection}
           onAgentsChanged={() => void refreshAgents()}
           onEvidenceChanged={() => void refreshEvidence()}
           onSurfacesChanged={() => void refreshSurfaces()}

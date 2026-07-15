@@ -60,6 +60,12 @@ async function main() {
           err instanceof Error ? err.message : err
         );
       });
+    void import("../src/modules/digital-profile/services/unified-orion-collection-orchestrator")
+      .then(({ resumeUnifiedCollectionsOnStartup }) => {
+        console.error("[unified-startup] Bounded resume of unified collection jobs…");
+        resumeUnifiedCollectionsOnStartup();
+      })
+      .catch(() => undefined);
   }, 1500);
 
   child.on("error", (err) => {

@@ -560,6 +560,12 @@ export function ArsenkinToolsPanel(props: {
         </div>
 
         <Notice>
+          Основной путь: кнопка «Запустить полный аудит и собрать ORION Golden» в шапке кейса
+          (Yandex/Serper → Arsenkin → composite → отчёт). Ниже — статус и admin-only диагностика
+          Arsenkin; многоступенчатые prepare/plan/execute не требуются в штатном потоке.
+        </Notice>
+
+        <Notice>
           Arsenkin получает структурированные результаты через API. Это не браузерный LIVE SERP
           capture.
         </Notice>

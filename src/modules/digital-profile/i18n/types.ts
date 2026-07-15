@@ -93,6 +93,13 @@ export interface Dictionary {
     runAudit: string;
     runningAudit: string;
     runFullAudit: string;
+    runUnifiedCollection: string;
+    runningUnifiedCollection: string;
+    unifiedCollectionHint: string;
+    unifiedStage: string;
+    unifiedDone: string;
+    unifiedPartial: string;
+    unifiedFailed: string;
     auditDone: string;
     auditPartial: string;
     auditFailed: string;
