@@ -10,6 +10,10 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { describe, it } from "node:test";
+import {
+  buildDbIntegrationOrionReportRun,
+  buildDbIntegrationProviderTask,
+} from "../src/modules/digital-profile/providers/arsenkin/db-integration-fixtures";
 
 function dbUrlPresent(): boolean {
   const url = String(process.env.DATABASE_URL ?? "").trim();
@@ -38,6 +42,23 @@ describe("arsenkin DB integration", () => {
     { skip: !hasDb },
     async () => {
       const { prisma } = await import("../src/server/prisma/client");
+      const leakedBefore = await prisma.$queryRawUnsafe<
+        Array<{ report_runs: bigint | number; provider_tasks: bigint | number; coverage_rows: bigint | number }>
+      >(
+        `select
+           (select count(*) from dp_orion_report_runs where id like 'cov-race-%') as report_runs,
+           (select count(*) from dp_provider_tasks where id like 'cov-task-%') as provider_tasks,
+           (select count(*) from dp_surface_collection_coverage where report_run_id like 'cov-race-%') as coverage_rows`
+      );
+      const leakedBeforeRuns = Number(leakedBefore[0]?.report_runs ?? 0);
+      const leakedBeforeTasks = Number(leakedBefore[0]?.provider_tasks ?? 0);
+      const leakedBeforeCoverage = Number(leakedBefore[0]?.coverage_rows ?? 0);
+      assert.equal(
+        leakedBeforeRuns + leakedBeforeTasks + leakedBeforeCoverage,
+        0,
+        `stale test rows detected before run: runs=${leakedBeforeRuns}, tasks=${leakedBeforeTasks}, coverage=${leakedBeforeCoverage}`
+      );
+
       const { upsertSurfaceCollectionCoverage } = await import(
         "../src/modules/digital-profile/providers/arsenkin/surface-coverage"
       );
@@ -53,27 +74,17 @@ describe("arsenkin DB integration", () => {
 
       const reportRunId = `cov-race-${Date.now()}-${randomUUID().slice(0, 8)}`;
       const providerTaskId = `cov-task-${Date.now()}-${randomUUID().slice(0, 8)}`;
+      const requestHash = `cov-race-${reportRunId}`;
 
-      const createIntegrationRun = (input: { reportRunId: string; caseId: string }) =>
-        prisma.orionReportRun.create({
-          data: {
-            id: input.reportRunId,
-            caseId: input.caseId,
-            mode: "ARSENKIN_DB_INTEGRATION_TEST",
-            status: "RUNNING",
-          },
-        });
-      await createIntegrationRun({ reportRunId, caseId: caseRow.id });
+      await prisma.orionReportRun.create({
+        data: buildDbIntegrationOrionReportRun({ reportRunId, caseId: caseRow.id }),
+      });
       await prisma.providerTask.create({
-        data: {
-          id: providerTaskId,
+        data: buildDbIntegrationProviderTask({
+          providerTaskId,
           reportRunId,
-          provider: "arsenkin",
-          tool: "suggest",
-          requestHash: `cov-race-${reportRunId}`,
-          requestJson: { tools_name: "suggest", data: { queries: ["test"] } },
-          state: "DONE",
-        },
+          requestHash,
+        }),
       });
 
       const payload = {
@@ -128,6 +139,22 @@ describe("arsenkin DB integration", () => {
         await prisma.orionArsenkinStageRun.deleteMany({ where: { reportRunId } }).catch(() => undefined);
         await prisma.providerTask.deleteMany({ where: { reportRunId } }).catch(() => undefined);
         await prisma.orionReportRun.delete({ where: { id: reportRunId } }).catch(() => undefined);
+        const leakedAfter = await prisma.$queryRawUnsafe<
+          Array<{ report_runs: bigint | number; provider_tasks: bigint | number; coverage_rows: bigint | number }>
+        >(
+          `select
+             (select count(*) from dp_orion_report_runs where id like 'cov-race-%') as report_runs,
+             (select count(*) from dp_provider_tasks where id like 'cov-task-%') as provider_tasks,
+             (select count(*) from dp_surface_collection_coverage where report_run_id like 'cov-race-%') as coverage_rows`
+        );
+        const leakedAfterRuns = Number(leakedAfter[0]?.report_runs ?? 0);
+        const leakedAfterTasks = Number(leakedAfter[0]?.provider_tasks ?? 0);
+        const leakedAfterCoverage = Number(leakedAfter[0]?.coverage_rows ?? 0);
+        assert.equal(
+          leakedAfterRuns + leakedAfterTasks + leakedAfterCoverage,
+          0,
+          `cleanupOk=false; stale rows remain: runs=${leakedAfterRuns}, tasks=${leakedAfterTasks}, coverage=${leakedAfterCoverage}`
+        );
         await prisma.$disconnect().catch(() => undefined);
       }
     }
