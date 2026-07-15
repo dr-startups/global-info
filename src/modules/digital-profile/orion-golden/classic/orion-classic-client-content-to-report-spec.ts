@@ -854,10 +854,14 @@ function inventoryFallbackBlock(
     narrative =
       surfaceType === "related_query"
         ? kpis
-          ? `Похожие запросы: ${kpis.relatedAdverse} из ${kpis.relatedTotal} с нежелательным контекстом.`
+          ? kpis.relatedMetric?.status === "NOT_COLLECTED"
+            ? "Похожие запросы: данные не собраны."
+            : `Похожие запросы: ${kpis.relatedAdverse} из ${kpis.relatedTotal} с нежелательным контекстом.`
           : "Аудит похожих запросов по сохранённым данным региона."
         : kpis
-          ? `Поисковые подсказки: ${kpis.suggestionsAdverse} из ${kpis.suggestionsTotal} указывают на нежелательные темы. Подсказки появляются раньше результатов поиска.`
+          ? kpis.suggestionsMetric?.status === "NOT_COLLECTED"
+            ? "Поисковые подсказки: данные не собраны."
+            : `Поисковые подсказки: ${kpis.suggestionsAdverse} из ${kpis.suggestionsTotal} указывают на нежелательные темы. Подсказки появляются раньше результатов поиска.`
           : "Аудит поисковых подсказок по сохранённым данным региона.";
   } else if (sectionId.includes("wikipedia")) {
     const kpis = themeSet ? (region === "RU" ? themeSet.ru : themeSet.uae) : null;

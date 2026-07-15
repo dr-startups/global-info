@@ -24,6 +24,18 @@ export type OrionRegionBucket = "RU" | "UAE";
 /** Wikipedia identity vs subject — never treat WRONG/AMBIGUOUS as «статья найдена». */
 export type WikipediaSubjectStatus = "EXACT_SUBJECT" | "WRONG_SUBJECT" | "AMBIGUOUS" | "ABSENT";
 
+export type OrionSurfaceMetricStatus = "MEASURED" | "NOT_COLLECTED" | "NOT_APPLICABLE";
+
+export type OrionSurfaceMetric = {
+  status: OrionSurfaceMetricStatus;
+  observedCount: number;
+  adverseCount: number;
+  neutralCount: number;
+  wrongSubjectCount: number;
+  evidenceRefs: string[];
+  sourceReportRunIds: string[];
+};
+
 export type OrionThemeEvidenceHit = {
   title: string;
   domain: string;
@@ -48,7 +60,7 @@ export type OrionSurfaceKpis = {
   linksAdverse: number;
   /** null when sample was not collected / zero denominator. */
   linksAdversePct: number | null;
-  sampleStatus: "COLLECTED" | "COLLECTED_NO_RESULTS" | "NOT_COLLECTED" | "INHERITED_BASE";
+  sampleStatus: OrionSurfaceMetricStatus;
   suggestionsTotal: number;
   suggestionsAdverse: number;
   suggestionsExplicitAdverse: number;
@@ -73,6 +85,10 @@ export type OrionSurfaceKpis = {
   dataQualityBadge: "COLLECTED" | "PARTIAL" | "INSUFFICIENT";
   /** @deprecated use searchVisibilityBadge / overallRiskBadge */
   overallBadge: "Крайне негативный" | "Нежелательный" | "Смешанный" | "Нейтральный" | "Данных мало" | "Данных недостаточно";
+  organicMetric: OrionSurfaceMetric;
+  suggestionsMetric: OrionSurfaceMetric;
+  relatedMetric: OrionSurfaceMetric;
+  imagesMetric: OrionSurfaceMetric;
 };
 
 export type OrionComplianceStatusKind =
@@ -1129,6 +1145,54 @@ function badgeFor(kpis: {
   return "Нейтральный";
 }
 
+function metricStatusForCount(count: number): OrionSurfaceMetricStatus {
+  return count > 0 ? "MEASURED" : "NOT_COLLECTED";
+}
+
+function evidenceRefsOf(items: FullEvidenceInventory["items"], max = 32): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const refs = ((item.rawMetadata ?? {}) as { evidenceRefs?: string[] }).evidenceRefs ?? [];
+    for (const ref of refs) {
+      const norm = String(ref ?? "").trim();
+      if (!norm || seen.has(norm)) continue;
+      seen.add(norm);
+      out.push(norm);
+      if (out.length >= max) return out;
+    }
+  }
+  return out;
+}
+
+function sourceRunIdsOf(items: FullEvidenceInventory["items"]): string[] {
+  const out = new Set<string>();
+  for (const item of items) {
+    const id = String(item.reportRunId ?? "").trim();
+    if (id) out.add(id);
+  }
+  return [...out];
+}
+
+function buildSurfaceMetric(
+  items: FullEvidenceInventory["items"],
+  adverse: FullEvidenceInventory["items"],
+  wrongSubjectCount: number
+): OrionSurfaceMetric {
+  const observedCount = items.length;
+  const adverseCount = adverse.length;
+  const neutralCount = Math.max(0, observedCount - adverseCount - Math.max(0, wrongSubjectCount));
+  return {
+    status: metricStatusForCount(observedCount),
+    observedCount,
+    adverseCount,
+    neutralCount,
+    wrongSubjectCount: Math.max(0, wrongSubjectCount),
+    evidenceRefs: evidenceRefsOf(items),
+    sourceReportRunIds: sourceRunIdsOf(items),
+  };
+}
+
 /** Classify autocomplete suggestion relative to subject and known risk themes. */
 export function classifySuggestionIntent(
   query: string,
@@ -1206,10 +1270,23 @@ function computeSurfaceKpis(
   const linksAdverseCount = linksAdverseClean.length;
   const linksAdversePct =
     linksTotal > 0 ? Math.round((linksAdverseCount / linksTotal) * 100) : null;
-  // Organic KPI sampleStatus is about organic links, not autocomplete presence.
-  // Suggestions-only enrichment must not mark organic as COLLECTED_NO_RESULTS.
-  const sampleStatus: OrionSurfaceKpis["sampleStatus"] =
-    linksTotal > 0 ? "COLLECTED" : "NOT_COLLECTED";
+  // Organic KPI status is about organic links, not autocomplete presence.
+  const sampleStatus: OrionSurfaceKpis["sampleStatus"] = metricStatusForCount(linksTotal);
+  const suggestionsWrongSubject = suggestions.filter((s) =>
+    /wrong_subject|другого субъекта|однофамил/i.test(
+      `${s.classification ?? ""} ${s.title ?? ""} ${s.snippet ?? ""}`
+    )
+  ).length;
+  const relatedWrongSubject = related.filter((s) =>
+    /wrong_subject|другого субъекта|однофамил/i.test(
+      `${s.classification ?? ""} ${s.title ?? ""} ${s.snippet ?? ""}`
+    )
+  ).length;
+  const imagesWrongSubject = images.filter((s) =>
+    /wrong_subject|другого субъекта|однофамил/i.test(
+      `${s.classification ?? ""} ${s.title ?? ""} ${s.snippet ?? ""}`
+    )
+  ).length;
 
   const base = {
     region,
@@ -1262,6 +1339,10 @@ function computeSurfaceKpis(
     overallRiskBadge,
     dataQualityBadge,
     overallBadge: overallRiskBadge,
+    organicMetric: buildSurfaceMetric(linksClean, linksAdverseClean, 0),
+    suggestionsMetric: buildSurfaceMetric(suggestions, suggestions.filter(isAdverseItem), suggestionsWrongSubject),
+    relatedMetric: buildSurfaceMetric(related, relatedAdverse, relatedWrongSubject),
+    imagesMetric: buildSurfaceMetric(images, imagesAdverse, imagesWrongSubject),
   };
 }
 
@@ -2149,7 +2230,8 @@ function enrichThemesFromCompliance(
 
 function formatPctLine(kpis: OrionSurfaceKpis): string {
   if (kpis.linksTotal <= 0 || kpis.linksAdversePct == null) {
-    if (kpis.sampleStatus === "COLLECTED_NO_RESULTS") return "Результатов не найдено";
+    if (kpis.sampleStatus === "MEASURED") return "Результатов не найдено";
+    if (kpis.sampleStatus === "NOT_APPLICABLE") return "Не применимо";
     return "— (данные не собраны)";
   }
   return `${kpis.linksAdversePct}% (${kpis.linksAdverse} из ${kpis.linksTotal})`;

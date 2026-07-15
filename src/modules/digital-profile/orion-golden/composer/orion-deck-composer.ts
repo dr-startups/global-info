@@ -16,6 +16,7 @@ export type DeckMetric = {
   label: string;
   value: string;
   tone: MetricTone;
+  status?: "MEASURED" | "NOT_COLLECTED" | "NOT_APPLICABLE";
 };
 
 export type VisualSidebarMode = "adverse_explanation" | "interpretation" | "status";
@@ -90,6 +91,17 @@ export type OrionGoldenDeckSlide = {
   totalPageCount?: number;
   /** Structured search-position counters for search_table slides + continuations. */
   searchCounters?: SlideSearchCounters;
+  /** Structured counters for image-grid continuation pages. */
+  imageCounters?: {
+    datasetCount: number;
+    datasetAdverseCount: number;
+    deckDisplayedCount: number;
+    deckDisplayedAdverseCount: number;
+    pageDisplayedCount: number;
+    pageDisplayedAdverseCount: number;
+    pageIndex: number;
+    pageCount: number;
+  };
   /** Registry-driven required visual flag (also resolvable via registry page/slot). */
   requiredVisual?: boolean;
   bullets?: string[];

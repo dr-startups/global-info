@@ -8,12 +8,21 @@ import type { OrionThemeSet } from "../src/modules/digital-profile/orion-golden/
 import type { OrionGoldenDeckSlide } from "../src/modules/digital-profile/orion-golden/composer/orion-deck-composer";
 
 function baseKpis(): OrionThemeSet["ru"] {
+  const metric = (status: "MEASURED" | "NOT_COLLECTED" | "NOT_APPLICABLE", observed: number, adverse = 0) => ({
+    status,
+    observedCount: observed,
+    adverseCount: adverse,
+    neutralCount: Math.max(0, observed - adverse),
+    wrongSubjectCount: 0,
+    evidenceRefs: [],
+    sourceReportRunIds: [],
+  });
   return {
     region: "RU",
     linksTotal: 12,
     linksAdverse: 3,
     linksAdversePct: 25,
-    sampleStatus: "COLLECTED",
+    sampleStatus: "MEASURED",
     suggestionsTotal: 0,
     suggestionsAdverse: 0,
     suggestionsExplicitAdverse: 0,
@@ -32,11 +41,15 @@ function baseKpis(): OrionThemeSet["ru"] {
     overallRiskBadge: "Смешанный",
     dataQualityBadge: "COLLECTED",
     overallBadge: "Смешанный",
+    organicMetric: metric("MEASURED", 12, 3),
+    suggestionsMetric: metric("NOT_COLLECTED", 0, 0),
+    relatedMetric: metric("NOT_COLLECTED", 0, 0),
+    imagesMetric: metric("MEASURED", 30, 7),
   };
 }
 
 function theme(overrides: Partial<OrionThemeSet["ru"]> = {}): OrionThemeSet {
-  const ru = { ...baseKpis(), ...overrides };
+  const ru = { ...baseKpis(), ...overrides } as OrionThemeSet["ru"];
   return {
     version: "r10-12-orion-theme-set-v1",
     caseId: "c1",
@@ -121,7 +134,19 @@ function main() {
 
   run("clean when KPI matches content", () => {
     const issues = inspectCrossSlideMetricConsistency({
-      themeSet: theme({ suggestionsTotal: 3, suggestionsAdverse: 1 }),
+      themeSet: theme({
+        suggestionsTotal: 3,
+        suggestionsAdverse: 1,
+        suggestionsMetric: {
+          status: "MEASURED",
+          observedCount: 3,
+          adverseCount: 1,
+          neutralCount: 2,
+          wrongSubjectCount: 0,
+          evidenceRefs: [],
+          sourceReportRunIds: [],
+        },
+      }),
       slides: [
         {
           pageNumber: 11,

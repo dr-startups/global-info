@@ -36,7 +36,9 @@ import {
   classifySuggestionIntent,
   orionStyleRiskMatrixRows,
   wikipediaStatusLine,
+  type OrionSurfaceMetric,
   type OrionSurfaceKpis,
+  type OrionSurfaceMetricStatus,
   type OrionThemeSet,
 } from "./orion-classic-theme-set";
 
@@ -84,6 +86,31 @@ function wikiLabel(status: OrionSurfaceKpis["wikipediaStatus"]): string {
   }
 }
 
+function statusValue(
+  metric: OrionSurfaceMetric | undefined,
+  adverseFallback: number,
+  observedFallback: number,
+  notCollectedLabel = "Данные не собраны"
+): string {
+  const status: OrionSurfaceMetricStatus | undefined = metric?.status;
+  const observed = metric?.observedCount ?? observedFallback;
+  const adverse = metric?.adverseCount ?? adverseFallback;
+  if (status === "NOT_APPLICABLE") return "Не применимо";
+  if (status === "NOT_COLLECTED") return notCollectedLabel;
+  if (status === "MEASURED") return `${adverse} негативных из ${observed}`;
+  if (observed > 0) return `${adverse} негативных из ${observed}`;
+  return notCollectedLabel;
+}
+
+function statusTone(metric: OrionSurfaceMetric | undefined, adverseFallback: number, observedFallback: number): MetricTone {
+  const status = metric?.status;
+  if (status === "NOT_COLLECTED" || status === "NOT_APPLICABLE") return "neutral";
+  const observed = metric?.observedCount ?? observedFallback;
+  const adverse = metric?.adverseCount ?? adverseFallback;
+  const pct = observed > 0 ? Math.round((adverse / observed) * 100) : null;
+  return adverseTone(pct, adverse, observed);
+}
+
 function regionMetrics(kpis: OrionSurfaceKpis, prefix: string): DeckMetric[] {
   return [
     {
@@ -98,41 +125,29 @@ function regionMetrics(kpis: OrionSurfaceKpis, prefix: string): DeckMetric[] {
     },
     {
       label: `${prefix}: подсказки`,
-      value:
-        kpis.suggestionsTotal > 0
-          ? `${kpis.suggestionsExplicitAdverse ?? kpis.suggestionsAdverse} негативных из ${kpis.suggestionsTotal}`
-          : "Данные не собраны",
-      tone: adverseTone(
-        kpis.suggestionsTotal > 0
-          ? Math.round(((kpis.suggestionsExplicitAdverse ?? kpis.suggestionsAdverse) / kpis.suggestionsTotal) * 100)
-          : null,
+      value: statusValue(
+        kpis.suggestionsMetric,
         kpis.suggestionsExplicitAdverse ?? kpis.suggestionsAdverse,
         kpis.suggestionsTotal
       ),
+      tone: statusTone(
+        kpis.suggestionsMetric,
+        kpis.suggestionsExplicitAdverse ?? kpis.suggestionsAdverse,
+        kpis.suggestionsTotal
+      ),
+      status: kpis.suggestionsMetric?.status,
     },
     {
       label: `${prefix}: связанные`,
-      value:
-        kpis.relatedTotal > 0
-          ? `${kpis.relatedAdverse} негативных из ${kpis.relatedTotal}`
-          : "Данные не собраны",
-      tone: adverseTone(
-        kpis.relatedTotal > 0 ? Math.round((kpis.relatedAdverse / kpis.relatedTotal) * 100) : null,
-        kpis.relatedAdverse,
-        kpis.relatedTotal
-      ),
+      value: statusValue(kpis.relatedMetric, kpis.relatedAdverse, kpis.relatedTotal),
+      tone: statusTone(kpis.relatedMetric, kpis.relatedAdverse, kpis.relatedTotal),
+      status: kpis.relatedMetric?.status,
     },
     {
       label: `${prefix}: изображения`,
-      value:
-        kpis.imagesTotal > 0
-          ? `${kpis.imagesAdverse} негативных из ${kpis.imagesTotal}`
-          : "Данные не собраны",
-      tone: adverseTone(
-        kpis.imagesTotal > 0 ? Math.round((kpis.imagesAdverse / kpis.imagesTotal) * 100) : null,
-        kpis.imagesAdverse,
-        kpis.imagesTotal
-      ),
+      value: statusValue(kpis.imagesMetric, kpis.imagesAdverse, kpis.imagesTotal),
+      tone: statusTone(kpis.imagesMetric, kpis.imagesAdverse, kpis.imagesTotal),
+      status: kpis.imagesMetric?.status,
     },
   ];
 }
@@ -222,7 +237,7 @@ function shortenClientRiskDetail(raw: string): string {
   const s = scrub(raw);
   // Dow Jones rollup first — it often also mentions Трансмашхолдинг / Махмудов.
   if (/Dow Jones|LexisNexis|World-Check/i.test(s) && /Махмудов|Бокарев|Ликсутов|предварительн|сигнал/i.test(s)) {
-    return "В Dow Jones, LexisNexis, World-Check — сигналы по субъекту; открытый контур: И. Махмудов и А. Бокарев; нужна сверка.";
+    return "В международных базах есть предварительные совпадения по субъекту; требуется подтверждение карточки и сверка профиля.";
   }
   if (/бенефициар[а-яё]*\s+офшора,\s*связанного\s+с\s+М|публикаци[а-яё]+\s+на\s+ресурсе-агрегаторе/i.test(s)) {
     return "Агрегатор: субъект указан как бенефициар офшора, связанного с М. Ликсутовым; источник требует осторожной интерпретации.";
@@ -244,9 +259,11 @@ function shortenClientRiskDetail(raw: string): string {
 }
 
 function riskMatrixFromTheme(themeSet: OrionThemeSet, base: OrionGoldenDeckSlide): OrionGoldenDeckSlide {
-  const rows = orionStyleRiskMatrixRows(themeSet).slice(0, 6);
+  const rows = orionStyleRiskMatrixRows(themeSet)
+    .filter((row, idx, arr) => arr.findIndex((r) => r.theme === row.theme) === idx)
+    .slice(0, 6);
   const toneFor = (level: string): MetricTone => {
-    if (/высок/i.test(level)) return "risk";
+    if (/высок/i.test(level) && !/предваритель|не подтвержд|требует проверк/i.test(level)) return "risk";
     if (/средн/i.test(level)) return "warn";
     return "neutral";
   };
@@ -260,8 +277,13 @@ function riskMatrixFromTheme(themeSet: OrionThemeSet, base: OrionGoldenDeckSlide
       ),
       tone: toneFor(r.level),
       severity: r.level,
-      status: r.level,
-      manualReview: undefined,
+      status:
+        /предваритель|не подтвержд|требует проверк/i.test(r.summary)
+          ? "Требует проверки (предварительный сигнал)"
+          : r.level,
+      manualReview: /предваритель|не подтвержд|требует проверк/i.test(r.summary)
+        ? "Требуется подтверждение evidence"
+        : "Подтверждено evidence",
     })),
     bullets: rows.map((r) => shortenClientRiskDetail(`${r.theme}: ${r.summary}`)),
   };
@@ -272,14 +294,17 @@ function profileOverviewFromTheme(themeSet: OrionThemeSet, base: OrionGoldenDeck
     ...regionMetrics(themeSet.ru, "RU").slice(0, 4),
     ...regionMetrics(themeSet.uae, "ОАЭ").slice(0, 4),
   ];
-  const complianceFindings = themeSet.complianceSignals.slice(0, 3).map((c) => ({
+  const complianceFindings = themeSet.complianceSignals
+    .filter((c) => (c.provider === "World-Check" ? c.hasDbHit : true))
+    .slice(0, 3)
+    .map((c) => ({
     headline: c.provider,
     detail: clipWordsComplete(
       scrub(c.statusLine.replace(new RegExp(`^${c.provider}:\\s*`, "i"), "") || c.detail),
       22
     ),
     tone: (c.hasDbHit ? "warn" : "neutral") as MetricTone,
-  }));
+    }));
   return {
     ...base,
     template: "orion_golden_profile_overview",
@@ -324,7 +349,7 @@ function regionalMetricsSlide(
   ].slice(0, 4);
   const kpiBullets = [
     `Доля потенциально нежелательных ссылок: ${kpis.linksTotal > 0 && kpis.linksAdversePct != null ? `${kpis.linksAdversePct}% (${kpis.linksAdverse} из ${kpis.linksTotal})` : "— (данные не собраны)"} — оценка профиля: ${kpis.overallRiskBadge ?? kpis.overallBadge}.`,
-    `Поисковые подсказки: ${kpis.suggestionsAdverse} из ${kpis.suggestionsTotal} указывают на нежелательные темы.`,
+    `Поисковые подсказки: ${statusValue(kpis.suggestionsMetric, kpis.suggestionsAdverse, kpis.suggestionsTotal)}.`,
   ];
   return {
     ...base,
@@ -354,6 +379,37 @@ function regionalMetricsSlide(
   };
 }
 
+function regionalEvidenceCardsSlide(
+  themeSet: OrionThemeSet,
+  region: "RU" | "UAE",
+  base: OrionGoldenDeckSlide
+): OrionGoldenDeckSlide {
+  const cards = themeSet.themes
+    .flatMap((t) =>
+      (t.sampleHits ?? [])
+        .filter((h) => h.region === region)
+        .map((h) => ({
+          headline: scrub(h.domain || h.title || "Источник"),
+          detail: shortenClientRiskDetail(
+            scrub(`${h.title}${h.url ? ` — ${h.url}` : ""}${h.snippet ? `; ${h.snippet}` : ""}`)
+          ),
+          tone: "warn" as MetricTone,
+        }))
+    )
+    .slice(0, 6);
+  const regionLabel = region === "RU" ? "Россия" : "ОАЭ";
+  return {
+    ...base,
+    template: "orion_golden_executive_card",
+    title: `${regionLabel} — карточки выдачи`,
+    narrative: scrub(
+      `Показаны реальные карточки и ссылки из сохранённой выдачи региона ${regionLabel}; это не повтор summary-слайда.`
+    ),
+    keyFindings: cards,
+    bullets: cards.map((c) => `${c.headline}: ${c.detail}`).slice(0, 6),
+  };
+}
+
 function enrichSlideWithThemeSet(
   slide: OrionGoldenDeckSlide,
   slot: First36SlotDef,
@@ -363,7 +419,8 @@ function enrichSlideWithThemeSet(
   if (slot.page === 3) return executiveDashboardFromTheme(themeSet, slide);
   if (slot.page === 4) return riskMatrixFromTheme(themeSet, slide);
   if (slot.page === 5) return profileOverviewFromTheme(themeSet, slide);
-  if (slot.page === 7 || slot.page === 8) return regionalMetricsSlide(themeSet, "RU", slide);
+  if (slot.page === 7) return regionalMetricsSlide(themeSet, "RU", slide);
+  if (slot.page === 8) return regionalEvidenceCardsSlide(themeSet, "RU", slide);
   if (slot.page === 24 || slot.page === 25) return regionalMetricsSlide(themeSet, "UAE", slide);
   if (slot.page === 13 || slot.kind === "wikipedia") {
     const kpis = themeSet.ru;
@@ -452,20 +509,36 @@ function isArsenkinAsset(asset: ReportAssetV1): boolean {
 
 function collectRelatedTexts(
   asset: ReportAssetV1,
-  slide?: OrionGoldenDeckSlide | null
+  slide?: OrionGoldenDeckSlide | null,
+  slot?: First36SlotDef,
+  themeSet?: OrionThemeSet | null
 ): string[] {
   const fromMeta = ((asset.meta as { relatedRows?: string[] } | undefined)?.relatedRows ?? [])
     .map((r: string) => String(r).trim())
     .filter(Boolean);
-  if (fromMeta.length > 0) return fromMeta;
+  const technicalNoiseRe =
+    /\bru_related_\d|\buae_related\b|без копирования соседних слайдов|второй\s+наб|rich\s+imagery/i;
+  const aliases = String(themeSet?.subjectName ?? "")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 3);
+  const relevanceGate = (text: string): boolean => {
+    if (technicalNoiseRe.test(text)) return false;
+    if (slot?.slotId !== "p32_uae_related") return true;
+    const t = text.toLowerCase();
+    if (aliases.length === 0) return true;
+    return aliases.some((a) => t.includes(a));
+  };
+  if (fromMeta.length > 0) return fromMeta.filter(relevanceGate);
   const fromTable = (slide?.table?.rows ?? [])
     .map((row) => row.map((c) => String(c ?? "").trim()).filter(Boolean).join(" — "))
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter(relevanceGate);
   if (fromTable.length > 0) return fromTable;
   const fromBullets = (slide?.bullets ?? []).map((b) => String(b).trim()).filter(Boolean);
-  if (fromBullets.length > 0) return fromBullets;
+  if (fromBullets.length > 0) return fromBullets.filter(relevanceGate);
   const cap = String(asset.caption ?? "").trim();
-  if (cap && !/ru_related|uae_related|визуализация сохранённых/i.test(cap)) return [cap];
+  if (cap && !/ru_related|uae_related|визуализация сохранённых/i.test(cap) && relevanceGate(cap)) return [cap];
   return [];
 }
 
@@ -681,7 +754,7 @@ export function buildDeterministicVisualAnalysis(
     }
   } else if (slot.kind === "related_visual") {
     sidebarMode = "interpretation";
-    const rowTexts = collectRelatedTexts(asset, slide);
+    const rowTexts = collectRelatedTexts(asset, slide, slot, themeSet ?? null);
     const regionKpis =
       slot.region === "UAE" ? themeSet?.uae : slot.region === "RU" ? themeSet?.ru : themeSet?.ru;
     const riskThemes = (themeSet?.themes ?? [])
@@ -701,30 +774,57 @@ export function buildDeterministicVisualAnalysis(
     const topic =
       rowTexts[0]?.slice(0, 48) ||
       (explicit > 0 ? "негативные формулировки" : "нейтральные ассоциации");
-    headlineConclusion =
-      explicit > 0
-        ? `Связанные запросы (${regionLabel}): ${explicit} негативных из ${totalRelated}`
-        : `Связанные запросы (${regionLabel}): ${totalRelated} запросов`;
-    whatIsVisible =
-      rowTexts.length > 0
-        ? rowTexts
-            .slice(0, 6)
-            .map((q, i) => `${i + 1}. ${q.slice(0, 72)}`)
-            .join(" ")
-        : `Связанные запросы по субъекту в регионе ${regionLabel}.`;
-    clientMeaning =
-      explicit > 0
-        ? "Связанные запросы усиливают негативные ассоциации при поиске по субъекту."
-        : contextual > 0 || identity > 0
-          ? "Часть связанных запросов требует сверки субъекта или контекста."
-          : "Связанные запросы выглядят нейтральными относительно субъекта.";
-    whyItMatters = clientMeaning;
-    recommendedActions =
-      explicit > 0 ? ["Проверить негативные связанные запросы вручную"] : [];
-    provenance = isArsenkinAsset(asset)
-      ? arsenkinSuggestProvenance(asset, slot)
-      : `Источник: связанные запросы ${regionLabel}, дата сбора в кейсе`;
+    if (rowTexts.length === 0 && slot.slotId === "p32_uae_related") {
+      sidebarMode = "status";
+      headlineConclusion = "ОАЭ — связанные запросы: данные не собраны";
+      whatIsVisible =
+        "Валидные связанные запросы по алиасам субъекта не собраны; fallback из другого набора отключён.";
+      clientMeaning = "Без валидных строк раздел помечен как NOT_COLLECTED.";
+      whyItMatters = clientMeaning;
+      recommendedActions = ["Повторно собрать UAE related по алиасам субъекта"];
+      provenance = "Источник: UAE related, статус NOT_COLLECTED";
+    } else {
+      const relatedSourceLabel =
+        slot.slotId === "p20_ru_related_1"
+          ? "Google People Also Ask"
+          : slot.slotId === "p21_ru_related_2"
+            ? "Google Related Searches"
+            : slot.slotId === "p22_ru_related_3"
+              ? "Yandex Related Searches"
+              : null;
+      headlineConclusion =
+        explicit > 0
+          ? `Связанные запросы (${regionLabel}): ${explicit} негативных из ${totalRelated}`
+          : `Связанные запросы (${regionLabel}): ${totalRelated} запросов`;
+      whatIsVisible =
+        rowTexts.length > 0
+          ? `${relatedSourceLabel ? `${relatedSourceLabel}: ` : ""}${rowTexts
+              .slice(0, 6)
+              .map((q, i) => `${i + 1}. ${q.slice(0, 72)}`)
+              .join(" ")}`
+          : `Связанные запросы по субъекту в регионе ${regionLabel}.`;
+      clientMeaning =
+        explicit > 0
+          ? "Связанные запросы усиливают негативные ассоциации при поиске по субъекту."
+          : contextual > 0 || identity > 0
+            ? "Часть связанных запросов требует сверки субъекта или контекста."
+            : "Связанные запросы выглядят нейтральными относительно субъекта.";
+      whyItMatters = clientMeaning;
+      recommendedActions =
+        explicit > 0 ? ["Проверить негативные связанные запросы вручную"] : [];
+      provenance = isArsenkinAsset(asset)
+        ? arsenkinSuggestProvenance(asset, slot)
+        : `Источник: связанные запросы ${regionLabel}, дата сбора в кейсе`;
+    }
   } else if (slot.kind === "knowledge_visual") {
+    const engineLabel =
+      slot.slotId === "p18_ru_knowledge_1"
+        ? "Yandex"
+        : slot.slotId === "p19_ru_knowledge_2"
+          ? "Google"
+          : slot.slotId === "p31_uae_knowledge"
+            ? "Google"
+            : "поиск";
     const fromWiki = /wikipedia|википед/i.test(`${caption} ${title} ${provenanceLabel(asset)}`);
     const fromAiSerp =
       /ai-serp|ai_answer|ИИ-ответ|AI Overview|Алиса|не энциклопед/i.test(
@@ -765,16 +865,16 @@ export function buildDeterministicVisualAnalysis(
       recommendedActions = ["Исключить из профиля или сверить личность"];
       provenance = "Источник: проверка Wikipedia, дата сбора в кейсе";
     } else if (absent) {
-      headlineConclusion = `Публичная статья Wikipedia (${regionLabel}) не найдена`;
+      headlineConclusion = `${engineLabel}: публичная статья Wikipedia (${regionLabel}) не найдена`;
       whatIsVisible =
-        `В выдаче ${regionLabel} нет устойчивой энциклопедической карточки проверяемого лица.`;
+        `В выдаче ${engineLabel} (${regionLabel}) нет устойчивой энциклопедической карточки проверяемого лица.`;
       clientMeaning = "Энциклопедический якорь цифрового профиля в регионе отсутствует.";
       recommendedActions = ["Зафиксировать отсутствие статьи как факт профиля"];
-      provenance = "Источник: проверка Wikipedia, дата сбора в кейсе";
+      provenance = `Источник: проверка Wikipedia (${engineLabel}), дата сбора в кейсе`;
     } else {
       headlineConclusion = fromWiki
-        ? `Справочная карточка Wikipedia (${regionLabel})`
-        : `Справочная панель в поиске (${regionLabel})`;
+        ? `${engineLabel}: справочная карточка Wikipedia (${regionLabel})`
+        : `${engineLabel}: справочная панель в поиске (${regionLabel})`;
       whatIsVisible = fromWiki
         ? "Показаны название страницы и статус наличия публичной статьи о проверяемом лице."
         : "Краткие факты и заголовки из справочного блока рядом с выдачей.";
@@ -956,8 +1056,27 @@ function blockedSlide(slot: First36SlotDef, reason: string): OrionGoldenDeckSlid
 }
 
 function placeholderSlide(slot: First36SlotDef, narrative?: string): OrionGoldenDeckSlide {
-  const honest =
-    "Данные источника не предоставлены. Раздел сохранён в структуре аудита; проверка по этому блоку будет завершена после появления подтверждённых материалов.";
+  const slotScopedNarrative = (() => {
+    if (slot.slotId === "p18_ru_knowledge_1") {
+      return "Yandex Knowledge Panel: данные не собраны. Раздел сохранён как отдельный статусный блок без дублирования Google.";
+    }
+    if (slot.slotId === "p19_ru_knowledge_2") {
+      return "Google Knowledge Panel: данные не собраны. Раздел отображается отдельно от Yandex и не дублирует соседний empty-state.";
+    }
+    if (slot.slotId === "p32_uae_related") {
+      return "UAE related: валидные данные по алиасам субъекта не собраны (NOT_COLLECTED); fallback из другого набора отключён.";
+    }
+    if (slot.slotId === "p34_dow_jones") {
+      return "Dow Jones: данные не собраны. Для клиентской карточки требуется подтверждённый visual evidence.";
+    }
+    if (slot.slotId === "p35_lexis_visual") {
+      return "LexisNexis: данные не собраны. Страница зарезервирована для подтверждённой карточки evidence.";
+    }
+    if (slot.slotId === "p36_lexis_visual_2") {
+      return "LexisNexis (продолжение): данные не собраны. Дополнительная страница будет заполнена только при наличии evidence.";
+    }
+    return "Данные источника не предоставлены. Раздел сохранён в структуре аудита; проверка по этому блоку будет завершена после появления подтверждённых материалов.";
+  })();
   return {
     slideKey: slot.slotId,
     slotId: slot.slotId,
@@ -968,7 +1087,7 @@ function placeholderSlide(slot: First36SlotDef, narrative?: string): OrionGolden
     pageNumber: slot.page,
     narrative:
       narrative ||
-      (slot.kind === "region_toc" || slot.kind === "compliance_toc" ? undefined : honest),
+      (slot.kind === "region_toc" || slot.kind === "compliance_toc" ? undefined : slotScopedNarrative),
     bullets:
       slot.kind === "region_toc" || slot.kind === "compliance_toc"
         ? undefined
@@ -1226,12 +1345,81 @@ function expandSearchTableSlot(base: OrionGoldenDeckSlide): OrionGoldenDeckSlide
   return slides;
 }
 
+function measuredImageGridCapacity(): number {
+  // Mirrors renderer image-grid geometry (3 cols + fixed card height/gap), but
+  // computed from available drawing bounds so no magic "9-only" cap.
+  const slideH = 7_315_200;
+  const footerBottom = slideH - 700_000;
+  const titleBlock = 1_200_000;
+  const y = 280_000 + titleBlock;
+  const available = Math.max(1_000_000, footerBottom - y);
+  const cellH = 1_600_000;
+  const gap = 120_000;
+  const rows = Math.max(1, Math.floor((available + gap) / (cellH + gap)));
+  return rows * 3;
+}
+
+function expandImageGridSlot(base: OrionGoldenDeckSlide): OrionGoldenDeckSlide[] {
+  if (base.template !== "orion_golden_image_grid") return [base];
+
+  const refs = [...(base.assetRefs ?? [])];
+  const highlights = [...(base.visualAnalysis?.highlightExplanations ?? [])];
+  const adverseHighlights = highlights.filter((h) => h.frameTone === "red" || h.frameTone === "amber");
+  const useHighlightPaging = adverseHighlights.length > 0;
+
+  const capacity = useHighlightPaging ? 6 : measuredImageGridCapacity();
+  const datasetCount = useHighlightPaging ? adverseHighlights.length : refs.length;
+  if (datasetCount <= capacity || capacity <= 0) return [base];
+
+  const pageCount = Math.max(1, Math.ceil(datasetCount / capacity));
+  const slides: OrionGoldenDeckSlide[] = [];
+  for (let i = 0; i < pageCount; i += 1) {
+    const from = i * capacity;
+    const to = Math.min(datasetCount, from + capacity);
+    const isCont = i > 0;
+    const title = `${base.title} (${i + 1}/${pageCount})`;
+    const pageHighlights = useHighlightPaging ? adverseHighlights.slice(from, to) : [];
+    const pageRefs = useHighlightPaging ? refs : refs.slice(from, to);
+    slides.push({
+      ...base,
+      slideKey: isCont ? `${base.slideKey}__cont${i}` : base.slideKey,
+      title,
+      isContinuation: isCont,
+      continuationOf: isCont ? base.slideKey : null,
+      continuationIndex: i,
+      continuationCount: pageCount - 1,
+      assetRefs: pageRefs,
+      visualAnalysis: base.visualAnalysis
+        ? {
+            ...base.visualAnalysis,
+            highlightExplanations: useHighlightPaging ? pageHighlights : base.visualAnalysis.highlightExplanations,
+            moreSignalsCount: useHighlightPaging ? Math.max(0, datasetCount - to) : base.visualAnalysis.moreSignalsCount,
+          }
+        : base.visualAnalysis,
+      imageCounters: {
+        datasetCount,
+        datasetAdverseCount: adverseHighlights.length,
+        deckDisplayedCount: datasetCount,
+        deckDisplayedAdverseCount: adverseHighlights.length,
+        pageDisplayedCount: to - from,
+        pageDisplayedAdverseCount: useHighlightPaging ? pageHighlights.length : 0,
+        pageIndex: i,
+        pageCount,
+      },
+    });
+  }
+  return slides;
+}
+
 /** Expand all base slots into the final deck with adjacent continuation slides. */
 function expandBaseSlotsToDeck(baseSlides: OrionGoldenDeckSlide[]): OrionGoldenDeckSlide[] {
   const out: OrionGoldenDeckSlide[] = [];
   for (const base of baseSlides) {
-    const expanded = expandSearchTableSlot(base);
-    out.push(...expanded);
+    const searchExpanded = expandSearchTableSlot(base);
+    for (const slide of searchExpanded) {
+      const imageExpanded = expandImageGridSlot(slide);
+      out.push(...imageExpanded);
+    }
   }
   // Sequential page numbering + totalPageCount stamping (spec §2).
   const total = out.length;

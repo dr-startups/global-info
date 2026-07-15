@@ -24,6 +24,18 @@ export type GeometryIssue = {
   shapeIds?: number[];
 };
 
+function normalizeGeometryCode(code: string | undefined): string | undefined {
+  if (!code) return code;
+  const map: Record<string, string> = {
+    "text-clipping": "TABLE_ROW_PARTIALLY_VISIBLE",
+    "text-overflow-footer": "TABLE_OVER_FOOTER",
+    "text-word-break": "TABLE_WORD_BREAK",
+    "table-status-clipped": "TABLE_STATUS_CLIPPED",
+    "out-of-bounds": "TABLE_OVER_FOOTER",
+  };
+  return map[code] ?? code;
+}
+
 export type GeometryShapeMeta = {
   page: number;
   id: number;
@@ -421,16 +433,22 @@ export function inspectLayoutTelemetry(telemetryPath: string | null | undefined)
     const issues: GeometryIssue[] = [];
     for (const row of rows) {
       if (row.clipped === true) {
+        const name = String(row.name ?? row.role ?? "").toLowerCase();
+        const code = name.includes("status")
+          ? "TABLE_STATUS_CLIPPED"
+          : name.includes("table")
+            ? "TABLE_ROW_PARTIALLY_VISIBLE"
+            : "text-clipping";
         issues.push({
           page: Number(row.page ?? 0),
-          code: "text-clipping",
+          code,
           severity: "CRITICAL",
           detail: `text clipping requiredHeight=${row.requiredHeight} availableHeight=${row.availableHeight} name=${row.name ?? row.role ?? ""}`,
         });
       } else if (row.measurementUncertain === true) {
         issues.push({
           page: Number(row.page ?? 0),
-          code: "text-measurement-uncertain",
+          code: "TABLE_WORD_BREAK",
           severity: "WARNING",
           detail: "font measurement unavailable; clipping not proven",
         });
@@ -480,14 +498,19 @@ export function buildGeometryReportFromParts(input: {
   pageCount?: number;
   inspectorVersion?: string;
 }): First36GeometryReport {
-  const missingAssets = input.missingAssets ?? [];
-  const emptyContent = input.emptyContent ?? [];
-  const emptyPages = input.emptyPages ?? [];
-  const clipping = input.clipping ?? [];
+  const normalizeIssues = (list: GeometryIssue[] | undefined): GeometryIssue[] =>
+    (list ?? []).map((issue) => ({ ...issue, code: normalizeGeometryCode(issue.code) }));
+  const overlaps = normalizeIssues(input.overlaps);
+  const overflow = normalizeIssues(input.overflow);
+  const blank = normalizeIssues(input.blank);
+  const missingAssets = normalizeIssues(input.missingAssets);
+  const emptyContent = normalizeIssues(input.emptyContent);
+  const emptyPages = normalizeIssues(input.emptyPages);
+  const clipping = normalizeIssues(input.clipping);
   const all = [
-    ...input.overlaps,
-    ...input.overflow,
-    ...input.blank,
+    ...overlaps,
+    ...overflow,
+    ...blank,
     ...clipping,
     ...missingAssets,
     ...emptyContent,
@@ -521,10 +544,10 @@ export function buildGeometryReportFromParts(input: {
     }));
   return {
     inspectorVersion: input.inspectorVersion ?? GEOMETRY_INSPECTOR_VERSION,
-    overlaps: input.overlaps,
-    overflow: input.overflow,
+    overlaps,
+    overflow,
     clipping,
-    blank: input.blank,
+    blank,
     missingAssets,
     emptyContent,
     emptyPages,

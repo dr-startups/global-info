@@ -49,6 +49,12 @@ export function inspectCrossSlideMetricConsistency(input: {
   const issues: MetricConsistencyIssue[] = [];
   const theme = input.themeSet;
   if (!theme) return issues;
+  const statusOr = (
+    metric: { status?: "MEASURED" | "NOT_COLLECTED" | "NOT_APPLICABLE" } | undefined,
+    total: number
+  ) => metric?.status ?? (total > 0 ? "MEASURED" : "NOT_COLLECTED");
+  const observedOr = (metric: { observedCount?: number } | undefined, total: number) =>
+    metric?.observedCount ?? total;
 
   const ruSuggestSlides = input.slides.filter(
     (s) => /suggest/i.test(s.slotId ?? s.slideKey ?? "") && /ru|россия/i.test(`${s.title} ${s.sectionKey}`)
@@ -62,42 +68,79 @@ export function inspectCrossSlideMetricConsistency(input: {
   const uaeImageSlides = input.slides.filter((s) => /p29|image/i.test(s.slotId ?? "") && /оаэ|uae/i.test(s.title));
 
   const ruSuggestShown = ruSuggestSlides.reduce((a, s) => a + countSuggestionRows(s), 0);
-  if (ruSuggestShown > 0 && theme.ru.suggestionsTotal === 0) {
+  if (ruSuggestShown > 0 && statusOr(theme.ru.suggestionsMetric, theme.ru.suggestionsTotal) === "NOT_COLLECTED") {
     issues.push({
       code: "SUGGEST_DATA_WITH_ZERO_KPI",
-      detail: `RU suggestions shown=${ruSuggestShown} but KPI suggestionsTotal=0`,
+      detail: `RU suggestions shown=${ruSuggestShown} but KPI status=NOT_COLLECTED`,
       page: ruSuggestSlides[0]?.pageNumber,
     });
   }
+  if (
+    statusOr(theme.ru.suggestionsMetric, theme.ru.suggestionsTotal) === "MEASURED" &&
+    observedOr(theme.ru.suggestionsMetric, theme.ru.suggestionsTotal) <= 0
+  ) {
+    issues.push({ code: "ASSET_METRIC_MISMATCH", detail: "RU suggestions MEASURED without denominator" });
+  }
 
   const uaeSuggestShown = uaeSuggestSlides.reduce((a, s) => a + countSuggestionRows(s), 0);
-  if (uaeSuggestShown > 0 && theme.uae.suggestionsTotal === 0) {
+  if (uaeSuggestShown > 0 && statusOr(theme.uae.suggestionsMetric, theme.uae.suggestionsTotal) === "NOT_COLLECTED") {
     issues.push({
       code: "SUGGEST_DATA_WITH_ZERO_KPI",
-      detail: `UAE suggestions shown=${uaeSuggestShown} but KPI suggestionsTotal=0`,
+      detail: `UAE suggestions shown=${uaeSuggestShown} but KPI status=NOT_COLLECTED`,
       page: uaeSuggestSlides[0]?.pageNumber,
     });
   }
+  if (
+    statusOr(theme.uae.suggestionsMetric, theme.uae.suggestionsTotal) === "MEASURED" &&
+    observedOr(theme.uae.suggestionsMetric, theme.uae.suggestionsTotal) <= 0
+  ) {
+    issues.push({ code: "ASSET_METRIC_MISMATCH", detail: "UAE suggestions MEASURED without denominator" });
+  }
 
   const ruRelatedShown = ruRelatedSlides.reduce((a, s) => a + countRelatedRows(s), 0);
-  if (ruRelatedShown > 0 && theme.ru.relatedTotal === 0) {
+  if (ruRelatedShown > 0 && statusOr(theme.ru.relatedMetric, theme.ru.relatedTotal) === "NOT_COLLECTED") {
     issues.push({
       code: "RELATED_DATA_WITH_ZERO_KPI",
-      detail: `RU related shown=${ruRelatedShown} but KPI relatedTotal=0`,
+      detail: `RU related shown=${ruRelatedShown} but KPI status=NOT_COLLECTED`,
       page: ruRelatedSlides[0]?.pageNumber,
     });
   }
+  if (
+    statusOr(theme.ru.relatedMetric, theme.ru.relatedTotal) === "MEASURED" &&
+    observedOr(theme.ru.relatedMetric, theme.ru.relatedTotal) <= 0
+  ) {
+    issues.push({ code: "ASSET_METRIC_MISMATCH", detail: "RU related MEASURED without denominator" });
+  }
 
   const uaeRelatedShown = uaeRelatedSlides.reduce((a, s) => a + countRelatedRows(s), 0);
-  if (uaeRelatedShown > 0 && theme.uae.relatedTotal === 0) {
+  if (uaeRelatedShown > 0 && statusOr(theme.uae.relatedMetric, theme.uae.relatedTotal) === "NOT_COLLECTED") {
     issues.push({
       code: "RELATED_DATA_WITH_ZERO_KPI",
-      detail: `UAE related shown=${uaeRelatedShown} but KPI relatedTotal=0`,
+      detail: `UAE related shown=${uaeRelatedShown} but KPI status=NOT_COLLECTED`,
       page: uaeRelatedSlides[0]?.pageNumber,
     });
   }
+  if (
+    statusOr(theme.uae.relatedMetric, theme.uae.relatedTotal) === "MEASURED" &&
+    observedOr(theme.uae.relatedMetric, theme.uae.relatedTotal) <= 0
+  ) {
+    issues.push({ code: "ASSET_METRIC_MISMATCH", detail: "UAE related MEASURED without denominator" });
+  }
 
   const ruImagesShown = ruImageSlides.reduce((a, s) => a + countImageHighlights(s), 0);
+  if (statusOr(theme.ru.imagesMetric, theme.ru.imagesTotal) === "NOT_COLLECTED" && ruImagesShown > 0) {
+    issues.push({
+      code: "ASSET_METRIC_MISMATCH",
+      detail: `RU images shown=${ruImagesShown} but KPI status=NOT_COLLECTED`,
+      page: ruImageSlides[0]?.pageNumber,
+    });
+  }
+  if (
+    statusOr(theme.ru.imagesMetric, theme.ru.imagesTotal) === "MEASURED" &&
+    observedOr(theme.ru.imagesMetric, theme.ru.imagesTotal) <= 0
+  ) {
+    issues.push({ code: "ASSET_METRIC_MISMATCH", detail: "RU images MEASURED without denominator" });
+  }
   if (theme.ru.imagesAdverse > 0 && ruImagesShown < theme.ru.imagesAdverse) {
     issues.push({
       code: "IMAGE_EVIDENCE_COUNT_MISMATCH",
@@ -107,6 +150,19 @@ export function inspectCrossSlideMetricConsistency(input: {
   }
 
   const uaeImagesShown = uaeImageSlides.reduce((a, s) => a + countImageHighlights(s), 0);
+  if (statusOr(theme.uae.imagesMetric, theme.uae.imagesTotal) === "NOT_COLLECTED" && uaeImagesShown > 0) {
+    issues.push({
+      code: "ASSET_METRIC_MISMATCH",
+      detail: `UAE images shown=${uaeImagesShown} but KPI status=NOT_COLLECTED`,
+      page: uaeImageSlides[0]?.pageNumber,
+    });
+  }
+  if (
+    statusOr(theme.uae.imagesMetric, theme.uae.imagesTotal) === "MEASURED" &&
+    observedOr(theme.uae.imagesMetric, theme.uae.imagesTotal) <= 0
+  ) {
+    issues.push({ code: "ASSET_METRIC_MISMATCH", detail: "UAE images MEASURED without denominator" });
+  }
   if (theme.uae.imagesAdverse > 0 && uaeImagesShown < theme.uae.imagesAdverse) {
     issues.push({
       code: "IMAGE_EVIDENCE_COUNT_MISMATCH",

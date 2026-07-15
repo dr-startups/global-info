@@ -213,18 +213,17 @@ async function main() {
   );
 
   const first36 = composeOrionFirst36CeoDeck(minimalSpec(), assets);
-  const p32 = first36.finalSlides.find((s) => s.slideKey === "p32_dow_jones");
-  const p33 = first36.finalSlides.find((s) => s.slideKey === "p33_world_check");
-  check("first36 p32 has DJ visual analysis", Boolean(p32?.visualAnalysis && p32.assetRefs?.length));
-  check("first36 p33 has WC visual analysis", Boolean(p33?.visualAnalysis && p33.assetRefs?.length));
-  check("first36 still exact 36", first36.slideCount === 36);
+  const p34 = first36.finalSlides.find((s) => s.slideKey === "p34_dow_jones");
+  check("first36 p34 has compliance visual analysis", Boolean(p34?.visualAnalysis && p34.assetRefs?.length));
+  check("first36 base-slot coverage remains 36", first36.baseSlotCoverage === 36);
+  check("first36 total pages >= 36", first36.slideCount >= 36, `=${first36.slideCount}`);
 
   const first36NoAssets = composeOrionFirst36CeoDeck(minimalSpec(), []);
-  const p32Prose = first36NoAssets.finalSlides.find((s) => s.slideKey === "p32_dow_jones");
+  const p34Prose = first36NoAssets.finalSlides.find((s) => s.slideKey === "p34_dow_jones");
   check(
-    "first36 p32 falls back to prose without approved visual",
-    p32Prose?.template !== "orion_golden_compliance_visual_page" || !p32Prose.assetRefs?.length,
-    `tpl=${p32Prose?.template}`
+    "first36 p34 falls back to prose without approved visual",
+    p34Prose?.template !== "orion_golden_compliance_visual_page" || !p34Prose.assetRefs?.length,
+    `tpl=${p34Prose?.template}`
   );
 
   console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) failed.`);

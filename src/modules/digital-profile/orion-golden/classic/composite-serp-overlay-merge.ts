@@ -13,11 +13,7 @@ import { observationKey } from "./client-language";
 import type { ArsenkinReportBindingV2, CoveredSurfaceCell } from "./arsenkin-report-binding";
 import { toCompositeBindingModel } from "./arsenkin-report-binding";
 
-export type SampleStatus =
-  | "COLLECTED"
-  | "COLLECTED_NO_RESULTS"
-  | "NOT_COLLECTED"
-  | "INHERITED_BASE";
+export type SampleStatus = "MEASURED" | "NOT_COLLECTED" | "NOT_APPLICABLE";
 
 export type SurfaceCellKey = {
   region: string;
@@ -306,7 +302,7 @@ export function overlayInventoryByCoverageCells(input: {
       reportRunId: input.enrichmentRunIds[0] ?? "enrichment",
       provider: "arsenkin",
       observationCount: cell.count,
-      sampleStatus: cell.count > 0 ? "COLLECTED" : "COLLECTED_NO_RESULTS",
+      sampleStatus: cell.count > 0 ? "MEASURED" : "NOT_COLLECTED",
     });
   }
 
@@ -338,7 +334,10 @@ export function overlayInventoryByCoverageCells(input: {
       owner: "base",
       reportRunId: input.baseReportRunId ?? "base",
       observationCount: input.baseInventory.items.filter((i) => cellKey(itemCell(i)) === k).length,
-      sampleStatus: "INHERITED_BASE",
+      sampleStatus:
+        input.baseInventory.items.filter((i) => cellKey(itemCell(i)) === k).length > 0
+          ? "MEASURED"
+          : "NOT_COLLECTED",
     });
   }
 

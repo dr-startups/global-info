@@ -1547,7 +1547,11 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         cell_w = CONTENT_W // 3 - 80_000
         cell_h = 1_600_000
         gap = 120000
-        for idx, ref in enumerate(refs[:9]):
+        max_rows = max(1, int((CONTENT_BOTTOM - y + gap) // (cell_h + gap)))
+        max_cells = max_rows * cols
+        for idx, ref in enumerate(refs):
+            if idx >= max_cells:
+                break
             row = idx // cols
             col = idx % cols
             cx = MARGIN_X + col * (cell_w + gap)

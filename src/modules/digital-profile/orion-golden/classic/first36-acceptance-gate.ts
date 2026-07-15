@@ -17,6 +17,20 @@ function slideBySlot(
   return slides.find((s) => s.baseSlotId === slotId || s.slotId === slotId || s.slideKey === slotId);
 }
 
+function normalizeIssueCode(code: string): string {
+  const map: Record<string, string> = {
+    "table-dataset-count-mismatch": "TABLE_DATASET_COUNT_MISMATCH",
+    "table-adverse-count-mismatch": "TABLE_ADVERSE_COUNT_MISMATCH",
+    "continuation-not-adjacent": "CONTINUATION_NOT_ADJACENT",
+    "base-slot-missing": "BASE_SLOT_MISSING",
+    "base-slot-coverage": "BASE_SLOT_MISSING",
+    "empty-required-slide": "CLIENT_COPY_INCOMPLETE",
+    "dangling-sentence": "CLIENT_COPY_INCOMPLETE",
+    "internal-label": "CLIENT_COPY_INCOMPLETE",
+  };
+  return map[code] ?? code;
+}
+
 export type First36AcceptanceIssue = {
   code: string;
   page?: number;
@@ -55,6 +69,17 @@ export type First36AcceptanceInput = {
       pageDisplayedCount?: number;
       pageDisplayedAdverseCount?: number;
     };
+    imageCounters?: {
+      datasetCount?: number;
+      datasetAdverseCount?: number;
+      deckDisplayedCount?: number;
+      deckDisplayedAdverseCount?: number;
+      pageDisplayedCount?: number;
+      pageDisplayedAdverseCount?: number;
+      pageIndex?: number;
+      pageCount?: number;
+    };
+    totalPageCount?: number;
     clientTakeaway?: string;
     visualAnalysis?: {
       whatIsVisible?: string;
@@ -258,6 +283,31 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
   ) {
     issues.push({ code: "page-numbers", detail: `pageNumber must be unique and cover 1..${n}` });
   }
+  const footerMismatch = input.slides.find(
+    (s) => typeof s.totalPageCount === "number" && s.totalPageCount !== input.slideCount
+  );
+  if (footerMismatch) {
+    issues.push({
+      code: "FOOTER_TOTAL_MISMATCH",
+      page: footerMismatch.pageNumber,
+      detail: `slide total=${footerMismatch.totalPageCount} expected=${input.slideCount}`,
+    });
+  }
+  const toc = slideBySlot(input.slides, "p02_toc");
+  for (const bullet of toc?.bullets ?? []) {
+    const m = String(bullet).match(/стр\.\s*(\d+)(?:[–-](\d+))?/i);
+    if (!m) continue;
+    const from = Number(m[1]);
+    const to = Number(m[2] ?? m[1]);
+    if (from < 1 || to > input.slideCount || from > to) {
+      issues.push({
+        code: "TOC_PAGE_RANGE_MISMATCH",
+        page: toc?.pageNumber,
+        detail: `invalid toc range: ${bullet}`,
+      });
+      break;
+    }
+  }
   // Continuation slides must be adjacent to their base slot (spec §2/§13).
   const orderedSlides = [...input.slides].sort((a, b) => a.pageNumber - b.pageNumber);
   for (let i = 0; i < orderedSlides.length; i += 1) {
@@ -302,6 +352,35 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
       issues.push({
         code: "table-adverse-count-mismatch",
         detail: `section ${key}: displayed adverse ${displayedAdverse} != dataset ${datasetAdverse}`,
+      });
+    }
+  }
+  const imageBySection = new Map<string, typeof input.slides>();
+  for (const s of input.slides) {
+    if (!s.imageCounters) continue;
+    const key = s.continuationOf ?? s.baseSlotId ?? String(s.pageNumber);
+    const arr = imageBySection.get(key) ?? [];
+    arr.push(s);
+    imageBySection.set(key, arr);
+  }
+  for (const [key, group] of imageBySection) {
+    const dataset = group[0]?.imageCounters?.datasetCount ?? 0;
+    const datasetAdverse = group[0]?.imageCounters?.datasetAdverseCount ?? 0;
+    const displayed = group.reduce((a, s) => a + (s.imageCounters?.pageDisplayedCount ?? 0), 0);
+    const displayedAdverse = group.reduce(
+      (a, s) => a + (s.imageCounters?.pageDisplayedAdverseCount ?? 0),
+      0
+    );
+    if (displayed !== dataset) {
+      issues.push({
+        code: "TABLE_DATASET_COUNT_MISMATCH",
+        detail: `image section ${key}: displayed ${displayed} != dataset ${dataset}`,
+      });
+    }
+    if (displayedAdverse !== datasetAdverse) {
+      issues.push({
+        code: "IMAGE_EVIDENCE_COUNT_MISMATCH",
+        detail: `image section ${key}: displayed adverse ${displayedAdverse} != dataset ${datasetAdverse}`,
       });
     }
   }
@@ -710,7 +789,8 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
       /search_table/i.test(slide.template ?? "") &&
       rows.length > 0 &&
       headers.some((h) => /позиц|поз/.test(h)) &&
-      !headers.some((h) => /запрос|query/.test(h))
+      !headers.some((h) => /запрос|query/.test(h)) &&
+      (slide.table?.groups?.length ?? 0) === 0
     ) {
       const rankIdx = headers.findIndex((h) => /позиц|поз|rank/.test(h));
       const ranks = rows.map((r) => String(r[Math.max(0, rankIdx)] ?? ""));
@@ -757,7 +837,7 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
     }
   }
 
-  for (const slotId of ["p19_ru_wikipedia", "p36_lexis_visual_2"] as const) {
+  for (const slotId of ["p19_ru_knowledge_2", "p36_lexis_visual_2"] as const) {
     const slide = slideBySlot(input.slides, slotId);
     const page = slide?.pageNumber;
     const content = [slide?.title, slide?.narrative, ...(slide?.bullets ?? []), slide?.clientTakeaway]
@@ -776,7 +856,8 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
       (s) =>
         `${s.visualAnalysis?.whatIsVisible ?? ""}|${s.visualAnalysis?.whyItMatters ?? ""}|${s.clientTakeaway ?? ""}`
     );
-    if (blobs[0] && blobs.every((b) => b === blobs[0])) {
+    const nonEmpty = blobs.filter((b) => b.replace(/[|]/g, "").trim().length > 0);
+    if (nonEmpty.length >= 2 && nonEmpty.every((b) => b === nonEmpty[0])) {
       issues.push({
         code: "identical-related-sidebars",
         detail: "RU related slots share identical sidebar analysis",
@@ -795,7 +876,8 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
     issues.push({ code: mc.code, page: mc.page, detail: mc.detail });
   }
 
-  const passed = issues.length === 0;
+  const normalizedIssues = issues.map((issue) => ({ ...issue, code: normalizeIssueCode(issue.code) }));
+  const passed = normalizedIssues.length === 0;
   const compositeOk =
     input.compositeBinding &&
     input.compositeBinding.sourceReportRunId &&
@@ -810,7 +892,7 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
     !compositeOk;
   return {
     passed,
-    issues,
+    issues: normalizedIssues,
     ceoReady: passed && input.clientFinalize === true && !foreignClient,
   };
 }

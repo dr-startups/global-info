@@ -45,6 +45,8 @@ import {
   inspectFirst36Acceptance,
   requiredVisualAssetRefsFromRegistry,
 } from "./first36-acceptance-gate";
+import { inspectCrossSlideMetricConsistency } from "./cross-slide-metric-consistency";
+import { inspectClientCopySlides } from "./client-copy-completeness";
 
 export class OrionClassicVisualGateError extends Error {
   readonly blockedSections: Array<{ sectionKey: string; reason: string }>;
@@ -571,6 +573,8 @@ export async function runOrionClassicAuditRender(options: {
       continuationOf: (s as { continuationOf?: string | null }).continuationOf,
       sectionId: (s as { sectionId?: string }).sectionId,
       searchCounters: (s as { searchCounters?: Record<string, number> }).searchCounters,
+      imageCounters: (s as { imageCounters?: Record<string, number> }).imageCounters,
+      totalPageCount: (s as { totalPageCount?: number }).totalPageCount,
       clientTakeaway: s.clientTakeaway ? String(s.clientTakeaway) : undefined,
       visualAnalysis: s.visualAnalysis as
         | {
@@ -586,10 +590,7 @@ export async function runOrionClassicAuditRender(options: {
       factualClaims: (s as { factualClaims?: Array<{ text?: string; evidenceRefs?: string[] }> })
         .factualClaims,
     })),
-    themeSet: themeSet as {
-      ru?: { linksTotal?: number; linksAdverse?: number; wikipediaStatus?: string };
-      uae?: { linksTotal?: number; linksAdverse?: number; wikipediaStatus?: string };
-    },
+    themeSet: themeSet as import("./orion-classic-theme-set").OrionThemeSet,
     runScopedMerge: {
       usedRunScoped: runScoped.usedRunScoped,
       duplicateKeys: runScoped.duplicateKeys,
@@ -665,6 +666,19 @@ export async function runOrionClassicAuditRender(options: {
     clientFinalize: clientFinalize && geometryOk,
   });
   writeJson(join(outputRoot, "first36-acceptance.json"), acceptance);
+  const metricConsistency = inspectCrossSlideMetricConsistency({
+    themeSet,
+    slides: deckManifest.finalSlides ?? [],
+  });
+  writeJson(join(outputRoot, "metric-consistency-report.json"), {
+    passed: metricConsistency.length === 0,
+    issues: metricConsistency,
+  });
+  const clientCopyIssues = inspectClientCopySlides(deckManifest.finalSlides ?? []);
+  writeJson(join(outputRoot, "client-copy-report.json"), {
+    passed: clientCopyIssues.length === 0,
+    issues: clientCopyIssues,
+  });
 
   // Final verdict/readiness/ceoReady come only from First36 acceptance.
   // source != effective is valid for composite Arsenkin binding.
