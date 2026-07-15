@@ -57,4 +57,4 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD curl -fsS "http://localhost:${PORT:-3000}/api/digital-profile/health" || exit 1
 
-CMD ["npm", "run", "start"]
+CMD ["npm", "run", "start:railway"]

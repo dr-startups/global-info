@@ -11,6 +11,7 @@ import {
   getArsenkinStatus,
   planArsenkinRun,
   prepareArsenkinRun,
+  refreshArsenkinDbReadiness,
   syncArsenkinRun,
   type ArsenkinUiPlanDto,
   type ArsenkinUiStage,
@@ -57,7 +58,9 @@ function statusTone(
   ) {
     return "ok";
   }
-  if (s === "EXECUTING" || s === "PLAN_READY" || s === "PREPARED" || s === "TRANSFERRING") return "warn";
+  if (s === "EXECUTING" || s === "PLAN_READY" || s === "PREPARED" || s === "TRANSFERRING" || s === "READINESS_RUNNING") {
+    return "warn";
+  }
   if (
     s === "FAILED" ||
     s === "TRANSFER_FAILED" ||
@@ -72,6 +75,7 @@ function statusTone(
 function statusLabelRu(s: ArsenkinUiStatusDto["status"]): string {
   const map: Record<ArsenkinUiStatusDto["status"], string> = {
     NOT_CONFIGURED: "Не подключён",
+    READINESS_RUNNING: "Проверка БД…",
     READY_TO_PREPARE: "Готов к подготовке",
     PREPARED: "Подготовлен",
     PLAN_READY: "План готов",
@@ -136,7 +140,7 @@ export function ArsenkinToolsPanel(props: {
         s.status === "TRANSFER_FAILED" ||
         s.status === "FAILED" ||
         s.status === "MANUAL_INTERVENTION_REQUIRED" ||
-        s.status === "BLOCKED"
+        (s.status === "BLOCKED" && s.readinessCode !== "READINESS_RUNNING")
       ) {
         stopPolling();
         setExecuteLocked(false);
@@ -165,6 +169,25 @@ export function ArsenkinToolsPanel(props: {
       void refresh();
     }, 3000);
   }, [refresh, stopPolling]);
+
+  useEffect(() => {
+    if (status?.status === "READINESS_RUNNING") {
+      startPolling();
+      return () => stopPolling();
+    }
+    return undefined;
+  }, [status?.status, startPolling, stopPolling]);
+
+  const onRefreshReadiness = () => {
+    void runAction(async () => {
+      const s = await refreshArsenkinDbReadiness(caseId, {
+        reportRunId: reportRunId ?? undefined,
+        stage,
+      });
+      setStatus(s);
+      setBanner("Проверка готовности БД запущена.");
+    });
+  };
 
   const runAction = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -469,6 +492,17 @@ export function ArsenkinToolsPanel(props: {
             <button type="button" className="dp-btn" disabled={busy} onClick={() => void refresh()}>
               Обновить статус
             </button>
+            {status?.canRefreshReadiness ? (
+              <button
+                type="button"
+                className="dp-btn"
+                disabled={busy || status?.status === "READINESS_RUNNING"}
+                onClick={onRefreshReadiness}
+                data-testid="arsenkin-refresh-db-readiness"
+              >
+                Повторить проверку БД
+              </button>
+            ) : null}
             {transferComplete ? (
               <button type="button" className="dp-btn" disabled>
                 Результаты переданы в отчёт

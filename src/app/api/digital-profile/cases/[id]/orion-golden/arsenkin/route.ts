@@ -16,6 +16,7 @@ import {
   parseArsenkinUiStage,
   planArsenkinUiRun,
   prepareArsenkinUiRun,
+  refreshArsenkinDbReadinessForUi,
   syncArsenkinResultsToOrion,
   toPublicArsenkinUiDto,
   type ArsenkinUiStage,
@@ -73,8 +74,25 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
 
   const stage: ArsenkinUiStage = parseArsenkinUiStage(body.stage);
   const reportRunId = String(body.reportRunId ?? "").trim();
-  if (!reportRunId && action !== "status") {
+  if (!reportRunId && action !== "status" && action !== "refresh-readiness") {
     throw new ValidationError("reportRunId required");
+  }
+
+  if (action === "refresh-readiness") {
+    const readiness = await refreshArsenkinDbReadinessForUi();
+    const stage: ArsenkinUiStage | null = body.stage
+      ? parseArsenkinUiStage(body.stage)
+      : null;
+    const status = await getArsenkinUiStatus(caseId, reportRunId || null, stage);
+    return jsonOk({
+      ...toPublicArsenkinUiDto(status),
+      readinessRefresh: {
+        readinessCode: readiness.readinessCode,
+        verdict: readiness.verdict,
+        blockers: readiness.blockers,
+        networkCalls: readiness.networkCalls,
+      },
+    });
   }
 
   if (action === "prepare") {

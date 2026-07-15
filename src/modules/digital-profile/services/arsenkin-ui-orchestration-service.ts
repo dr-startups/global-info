@@ -36,6 +36,7 @@ import {
   type ArsenkinTransferStatus,
 } from "../orion-golden/classic/arsenkin-report-binding";
 import {
+  assertDbMutationAllowed,
   computeSchemaContentHash,
   computeSourceTreeHash,
   fingerprintDatabaseUrl,
@@ -44,6 +45,17 @@ import {
   writeJsonAtomic,
   type ArsenkinDbReadinessArtifact,
 } from "../providers/arsenkin/arsenkin-db-readiness";
+import {
+  ensureArsenkinDbReadiness,
+  refreshArsenkinDbReadiness,
+  type EnsureArsenkinDbReadinessResult,
+} from "../providers/arsenkin/arsenkin-db-readiness-runner";
+import {
+  getDefaultReadinessArtifactPath,
+  humanizeReadinessCode,
+  mapReadinessBlockersToCode,
+  type ArsenkinReadinessCode,
+} from "../providers/arsenkin/arsenkin-db-readiness-service";
 import { isArsenkinConfigured, isArsenkinEnabled } from "../providers/arsenkin/flags";
 import {
   getArsenkinNetworkCallCount,
@@ -53,6 +65,7 @@ import { ConflictError, ValidationError } from "../http/errors";
 
 export type ArsenkinUiStatusCode =
   | "NOT_CONFIGURED"
+  | "READINESS_RUNNING"
   | "READY_TO_PREPARE"
   | "PREPARED"
   | "PLAN_READY"
@@ -110,6 +123,8 @@ export type ArsenkinUiStatusDto = {
   transferredAt: string | null;
   updatedAt: string;
   humanMessages: string[];
+  readinessCode: ArsenkinReadinessCode | null;
+  canRefreshReadiness: boolean;
 };
 
 export type ArsenkinUiPlanRequestDto = {
@@ -126,13 +141,7 @@ export type ArsenkinUiPlanDto = ArsenkinUiStatusDto & {
   digest: string;
 };
 
-const DEFAULT_DB_READINESS = join(
-  process.cwd(),
-  "storage",
-  "digital-profile",
-  "qa-arsenkin-p05",
-  "arsenkin-db-readiness.json"
-);
+const DEFAULT_DB_READINESS = getDefaultReadinessArtifactPath();
 
 export function arsenkinBudgetForStage(stage: ArsenkinUiStage): {
   maxNewTasks: number;
@@ -214,9 +223,20 @@ function readJson<T>(path: string): T | null {
   }
 }
 
-function humanizeBlockers(blockers: string[]): string[] {
+function humanizeBlockers(blockers: string[], readinessCode?: ArsenkinReadinessCode | null): string[] {
+  if (
+    readinessCode &&
+    readinessCode !== "READINESS_NOT_REQUIRED" &&
+    readinessCode !== "READINESS_SKIPPED"
+  ) {
+    const dbRelated = blockers.some((b) => /db-readiness|readiness-/i.test(b));
+    if (dbRelated || readinessCode.startsWith("READINESS_")) {
+      return [humanizeReadinessCode(readinessCode, blockers)];
+    }
+  }
   return blockers.map((b) => {
-    if (/db-readiness/i.test(b)) return "Проверка готовности БД не пройдена.";
+    if (/readiness-running/i.test(b)) return humanizeReadinessCode("READINESS_RUNNING");
+    if (/db-readiness/i.test(b)) return humanizeReadinessCode(mapReadinessBlockersToCode([b]), [b]);
     if (/dirty-source-tree/i.test(b)) return "Исходный код изменён (dirty tree) — live заблокирован.";
     if (/digest/i.test(b)) return "План устарел. Сформируйте план заново.";
     if (/token|ARSENKIN_API_TOKEN/i.test(b)) return "Arsenkin API не настроен на сервере.";
@@ -238,8 +258,9 @@ export type ArsenkinUiOrchestrationDeps = {
     command: CanonicalStageCommand
   ) => Promise<CanonicalStageResult>;
   dbReadinessPath?: string;
-  /** Override readiness checks (tests). Production uses validateDbReadinessArtifact. */
+  /** Override readiness checks (tests). Production uses ensureArsenkinDbReadiness. */
   readinessBlockers?: () => string[];
+  ensureDbReadiness?: (input?: { force?: boolean; wait?: boolean }) => Promise<EnsureArsenkinDbReadinessResult>;
   now?: () => Date;
   rebuild?: typeof rebuildClientContentForReportRun;
   /** Test/prod override for configured flag (token stays server-side). */
@@ -310,6 +331,7 @@ function readinessBlockers(path: string): string[] {
   const art = loadDbReadiness(path);
   const build = resolveBuildIdentity();
   const dbUrl = String(process.env.DATABASE_URL ?? "");
+  const mutation = assertDbMutationAllowed();
   const r = validateDbReadinessArtifact({
     artifact: art,
     currentFingerprint: fingerprintDatabaseUrl(dbUrl || "postgresql://unknown/unknown"),
@@ -317,8 +339,56 @@ function readinessBlockers(path: string): string[] {
     currentSourceTreeHash: computeSourceTreeHash(),
     currentSchemaContentHash: computeSchemaContentHash(),
     currentDirtyTree: build.dirtyTree,
+    currentEnvironment: mutation.environment,
   });
   return r.ok ? [] : r.blockers;
+}
+
+async function resolveDbReadinessGate(
+  deps: ArsenkinUiOrchestrationDeps,
+  input?: { force?: boolean; wait?: boolean }
+): Promise<{
+  blockers: string[];
+  readinessCode: ArsenkinReadinessCode;
+  running: boolean;
+}> {
+  const dbReadinessPath = deps.dbReadinessPath ?? DEFAULT_DB_READINESS;
+  if (deps.readinessBlockers) {
+    const blockers = deps.readinessBlockers();
+    return {
+      blockers,
+      readinessCode: mapReadinessBlockersToCode(blockers),
+      running: false,
+    };
+  }
+  const ensure =
+    deps.ensureDbReadiness ??
+    ((opts) =>
+      ensureArsenkinDbReadiness({
+        outPath: dbReadinessPath,
+        prisma: deps.prisma,
+        force: opts?.force,
+        wait: opts?.wait,
+      }));
+  const outcome = await ensure({ force: input?.force, wait: input?.wait });
+  return {
+    blockers: outcome.blockers,
+    readinessCode: outcome.readinessCode,
+    running: outcome.running,
+  };
+}
+
+export async function refreshArsenkinDbReadinessForUi(
+  deps: ArsenkinUiOrchestrationDeps = {}
+): Promise<EnsureArsenkinDbReadinessResult> {
+  const dbReadinessPath = deps.dbReadinessPath ?? DEFAULT_DB_READINESS;
+  if (deps.ensureDbReadiness) {
+    return deps.ensureDbReadiness({ force: true, wait: true });
+  }
+  return refreshArsenkinDbReadiness({
+    outPath: dbReadinessPath,
+    prisma: deps.prisma,
+  });
 }
 
 export async function getArsenkinUiStatus(
@@ -376,12 +446,18 @@ export async function getArsenkinUiStatus(
       transferredAt: null,
       updatedAt: nowIso,
       humanMessages: ["Arsenkin API не подключён на сервере."],
+      readinessCode: "READINESS_NOT_REQUIRED",
+      canRefreshReadiness: false,
     };
   }
 
-  blockers.push(
-    ...((deps.readinessBlockers ?? (() => readinessBlockers(dbReadinessPath)))())
-  );
+  const readiness = await resolveDbReadinessGate(deps, { wait: false });
+  if (readiness.running || readiness.readinessCode === "READINESS_RUNNING") {
+    blockers.push(...readiness.blockers);
+  } else if (readiness.blockers.length) {
+    blockers.push(...readiness.blockers);
+  }
+  const readinessCode = readiness.readinessCode;
 
   let stage: ArsenkinUiStage | null = stageHint ?? mapping?.stage ?? null;
   let workflow: ArsenkinWorkflow | null = workflowHint ?? mapping?.workflow ?? null;
@@ -391,7 +467,12 @@ export async function getArsenkinUiStatus(
   let plannedRequests: ArsenkinUiPlanRequestDto[] = [];
   let plannedNewTasksFromArt: number | null = null;
   let estimatedLimitsFromArt: number | null = null;
-  let uiStatus: ArsenkinUiStatusCode = blockers.length ? "BLOCKED" : "READY_TO_PREPARE";
+  let uiStatus: ArsenkinUiStatusCode =
+    readiness.running || readiness.readinessCode === "READINESS_RUNNING"
+      ? "READINESS_RUNNING"
+      : blockers.length
+        ? "BLOCKED"
+        : "READY_TO_PREPARE";
 
   const ledgerRunId = arsenkinReportRunId;
   const [providerTaskCount, observationCount, coverageCount] = ledgerRunId
@@ -499,7 +580,12 @@ export async function getArsenkinUiStatus(
     }
   }
 
-  if (blockers.length && uiStatus !== "FAILED" && uiStatus !== "MANUAL_INTERVENTION_REQUIRED") {
+  if (
+    blockers.length &&
+    uiStatus !== "FAILED" &&
+    uiStatus !== "MANUAL_INTERVENTION_REQUIRED" &&
+    uiStatus !== "READINESS_RUNNING"
+  ) {
     uiStatus = "BLOCKED";
   }
 
@@ -541,7 +627,7 @@ export async function getArsenkinUiStatus(
     uiStatus === "TRANSFERRED" ||
     uiStatus === "REPORT_BOUND";
   const humanMessages = [
-    ...humanizeBlockers(blockers),
+    ...humanizeBlockers(blockers, readinessCode),
     ...(uiStatus === "TRANSFER_FAILED"
       ? [
           `Передача неполная: ${lastError ?? "CLIENT_CONTENT_NOT_PROMOTED"}. PDF заблокирован до пересборки client content.`,
@@ -590,6 +676,12 @@ export async function getArsenkinUiStatus(
     transferredAt: reportBinding?.transferredAt ?? null,
     updatedAt: nowIso,
     humanMessages,
+    readinessCode,
+    canRefreshReadiness:
+      configured &&
+      enabled &&
+      readinessCode !== "READINESS_RUNNING" &&
+      readinessCode !== "READINESS_NOT_REQUIRED",
   };
 }
 
@@ -636,8 +728,12 @@ export async function prepareArsenkinUiRun(input: {
   if (!configured) {
     throw new ConflictError("Arsenkin API не настроен на сервере");
   }
-  const rb = (input.deps?.readinessBlockers ?? (() => readinessBlockers(dbReadinessPath)))();
-  if (rb.length) throw new ConflictError(`DB readiness: ${rb[0]}`);
+  const readiness = await resolveDbReadinessGate(input.deps ?? {}, { wait: true });
+  if (readiness.running || readiness.blockers.length) {
+    throw new ConflictError(
+      humanizeReadinessCode(readiness.readinessCode, readiness.blockers)
+    );
+  }
 
   const sourceReportRunId = String(input.reportRunId ?? "").trim();
   if (!sourceReportRunId) throw new ValidationError("reportRunId required");
@@ -779,8 +875,12 @@ export async function buildArsenkinUiPlan(input: {
   resetArsenkinNetworkCallCount();
 
   if (!configured) throw new ConflictError("Arsenkin API не настроен");
-  const rb = (input.deps?.readinessBlockers ?? (() => readinessBlockers(dbReadinessPath)))();
-  if (rb.length) throw new ConflictError(`DB readiness: ${rb[0]}`);
+  const readiness = await resolveDbReadinessGate(input.deps ?? {}, { wait: true });
+  if (readiness.running || readiness.blockers.length) {
+    throw new ConflictError(
+      humanizeReadinessCode(readiness.readinessCode, readiness.blockers)
+    );
+  }
 
   const workflow = workflowForStage(input.stage);
   const { arsenkinReportRunId } = resolveMappedArsenkinReportRunId({
@@ -890,8 +990,12 @@ export async function executeArsenkinUiPlan(input: {
   resetArsenkinNetworkCallCount();
 
   if (!configured) throw new ConflictError("Arsenkin API не настроен");
-  const rb = (input.deps?.readinessBlockers ?? (() => readinessBlockers(dbReadinessPath)))();
-  if (rb.length) throw new ConflictError(`DB readiness: ${rb[0]}`);
+  const readiness = await resolveDbReadinessGate(input.deps ?? {}, { wait: true });
+  if (readiness.running || readiness.blockers.length) {
+    throw new ConflictError(
+      humanizeReadinessCode(readiness.readinessCode, readiness.blockers)
+    );
+  }
 
   const workflow = workflowForStage(input.stage);
   const { arsenkinReportRunId } = resolveMappedArsenkinReportRunId({
@@ -1303,6 +1407,8 @@ export function toPublicArsenkinUiDto(
     transferredAt: dto.transferredAt,
     updatedAt: dto.updatedAt,
     humanMessages: dto.humanMessages,
+    readinessCode: dto.readinessCode,
+    canRefreshReadiness: dto.canRefreshReadiness,
   };
   if ("requests" in dto && Array.isArray((dto as ArsenkinUiPlanDto).requests)) {
     const plan = dto as ArsenkinUiPlanDto;

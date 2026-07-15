@@ -1462,6 +1462,7 @@ export type ArsenkinUiStage = "SUGGEST_RU_CANARY" | "FIRST36_STAGE1" | "FIRST36_
 
 export type ArsenkinUiStatusCode =
   | "NOT_CONFIGURED"
+  | "READINESS_RUNNING"
   | "READY_TO_PREPARE"
   | "PREPARED"
   | "PLAN_READY"
@@ -1513,6 +1514,17 @@ export type ArsenkinUiStatusDto = {
   transferredAt?: string | null;
   updatedAt: string;
   humanMessages: string[];
+  readinessCode?:
+    | "READINESS_PASS"
+    | "READINESS_RUNNING"
+    | "READINESS_ARTIFACT_MISSING"
+    | "READINESS_STALE_BUILD"
+    | "READINESS_ENV_MISMATCH"
+    | "READINESS_FAILED"
+    | "READINESS_SKIPPED"
+    | "READINESS_NOT_REQUIRED"
+    | null;
+  canRefreshReadiness?: boolean;
 };
 
 export type ArsenkinUiPlanRequestDto = {
@@ -1593,5 +1605,19 @@ export function syncArsenkinRun(
       body: JSON.stringify({ action: "sync", ...payload }),
     }
   );
+}
+
+export function refreshArsenkinDbReadiness(
+  caseId: string,
+  params?: { reportRunId?: string; stage?: ArsenkinUiStage }
+): Promise<ArsenkinUiStatusDto> {
+  return request<ArsenkinUiStatusDto>(`/cases/${caseId}/orion-golden/arsenkin`, {
+    method: "POST",
+    body: JSON.stringify({
+      action: "refresh-readiness",
+      reportRunId: params?.reportRunId,
+      stage: params?.stage,
+    }),
+  });
 }
 

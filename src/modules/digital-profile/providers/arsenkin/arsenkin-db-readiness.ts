@@ -307,6 +307,8 @@ export type ValidateDbReadinessInput = {
   currentSourceTreeHash: string;
   currentSchemaContentHash: string;
   currentDirtyTree: boolean;
+  /** Current ARSENKIN_DB_ENV (test|staging) — artifact must match when set. */
+  currentEnvironment?: string;
   nowIso?: string;
   requiredMigration?: string;
 };
@@ -358,6 +360,13 @@ export function validateDbReadinessArtifact(
   }
   if (art.environment !== "test" && art.environment !== "staging") {
     blockers.push(`db-environment-not-allowed:${art.environment}`);
+  }
+  const curEnv = String(input.currentEnvironment ?? "").trim().toLowerCase();
+  if (
+    (curEnv === "test" || curEnv === "staging") &&
+    art.environment !== curEnv
+  ) {
+    blockers.push(`db-readiness-environment-mismatch:${art.environment}:${curEnv}`);
   }
   if (art.requiredMigration !== required) {
     blockers.push("required-migration-mismatch");
