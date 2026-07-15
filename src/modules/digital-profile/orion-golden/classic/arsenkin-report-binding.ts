@@ -38,7 +38,110 @@ export type ArsenkinReportBinding = {
   lastError?: string | null;
   /** Set when post-review content still points at source after transfer. */
   contentPromotionError?: string | null;
+  /** Optional v2 fields — may be absent on legacy bindings. */
+  version?: "arsenkin-report-binding-v1" | "arsenkin-report-binding-v2";
+  enrichmentRuns?: ArsenkinEnrichmentRun[];
+  compositeDigest?: string;
 };
+
+export type CoveredSurfaceCell = {
+  region: string;
+  engine: string;
+  surface: string;
+  status?: "COLLECTED" | "COLLECTED_NO_RESULTS" | "NOT_COLLECTED";
+};
+
+export type ArsenkinEnrichmentRun = {
+  reportRunId: string;
+  provider: "arsenkin";
+  workflow: string;
+  stage: string;
+  coveredSurfaces: CoveredSurfaceCell[];
+};
+
+/** Runtime composite model — always produced from v1 or v2 binding. */
+export type ArsenkinReportBindingV2 = ArsenkinReportBinding & {
+  version: "arsenkin-report-binding-v2";
+  enrichmentRuns: ArsenkinEnrichmentRun[];
+  compositeDigest: string;
+};
+
+export function defaultCoveredSurfacesForStage(stage: string): CoveredSurfaceCell[] {
+  if (stage === "SUGGEST_RU_CANARY") {
+    return [
+      { region: "RU", engine: "YANDEX", surface: "autocomplete", status: "COLLECTED" },
+      { region: "RU", engine: "GOOGLE", surface: "autocomplete", status: "COLLECTED" },
+    ];
+  }
+  return [];
+}
+
+export function computeCompositeDigest(input: {
+  sourceReportRunId: string;
+  enrichmentRunIds: string[];
+  coveredSurfaces: CoveredSurfaceCell[];
+}): string {
+  const payload = JSON.stringify({
+    source: input.sourceReportRunId,
+    enrichment: [...input.enrichmentRunIds].sort(),
+    surfaces: input.coveredSurfaces
+      .map((c) => `${c.region}|${c.engine}|${c.surface}`)
+      .sort(),
+  });
+  let h = 0;
+  for (let i = 0; i < payload.length; i++) h = (h * 31 + payload.charCodeAt(i)) >>> 0;
+  return `cmp-${h.toString(16)}`;
+}
+
+/** Normalize v1/v2 binding into composite runtime model. */
+export function toCompositeBindingModel(
+  binding: ArsenkinReportBinding | ArsenkinReportBindingV2
+): ArsenkinReportBindingV2 {
+  if (binding.version === "arsenkin-report-binding-v2" && binding.enrichmentRuns?.length) {
+    return {
+      ...binding,
+      version: "arsenkin-report-binding-v2",
+      enrichmentRuns: binding.enrichmentRuns,
+      compositeDigest:
+        binding.compositeDigest ??
+        computeCompositeDigest({
+          sourceReportRunId: binding.sourceReportRunId,
+          enrichmentRunIds: binding.enrichmentRuns.map((r) => r.reportRunId),
+          coveredSurfaces: binding.enrichmentRuns.flatMap((r) => r.coveredSurfaces),
+        }),
+    };
+  }
+  const covered = defaultCoveredSurfacesForStage(binding.stage);
+  const enrichmentRuns: ArsenkinEnrichmentRun[] = [
+    {
+      reportRunId: binding.effectiveReportRunId,
+      provider: "arsenkin",
+      workflow: binding.workflow,
+      stage: binding.stage,
+      coveredSurfaces: covered,
+    },
+  ];
+  return {
+    ...binding,
+    version: "arsenkin-report-binding-v2",
+    enrichmentRuns,
+    compositeDigest: computeCompositeDigest({
+      sourceReportRunId: binding.sourceReportRunId,
+      enrichmentRunIds: [binding.effectiveReportRunId],
+      coveredSurfaces: covered,
+    }),
+  };
+}
+
+export function isKnownCompositeRunId(
+  binding: ArsenkinReportBinding | null,
+  runId: string
+): boolean {
+  if (!binding || !runId) return false;
+  if (runId === binding.sourceReportRunId || runId === binding.effectiveReportRunId) return true;
+  const composite = toCompositeBindingModel(binding);
+  return composite.enrichmentRuns.some((r) => r.reportRunId === runId);
+}
 
 export const ARSENKIN_REPORT_BINDING_FILENAME = "arsenkin-report-binding.json";
 export const ARSENKIN_UI_SYNC_FILENAME = "arsenkin-ui-sync.json";
@@ -162,7 +265,8 @@ export function loadArsenkinReportBinding(caseId: string): ArsenkinReportBinding
 }
 
 export function saveArsenkinReportBinding(binding: ArsenkinReportBinding): void {
-  writeJsonAtomic(arsenkinReportBindingPath(binding.caseId), binding);
+  const composite = toCompositeBindingModel(binding);
+  writeJsonAtomic(arsenkinReportBindingPath(binding.caseId), composite);
 }
 
 export function isArsenkinTransferActive(

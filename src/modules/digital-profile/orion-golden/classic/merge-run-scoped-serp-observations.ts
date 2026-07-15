@@ -1,6 +1,9 @@
 /**
  * Merge run-scoped SerpObservation rows into FullEvidenceInventory for First36 KPI/tables.
- * Replaces case-wide search_result rows when observations are available.
+ *
+ * When an Arsenkin composite binding is present, uses surface-aware overlay merge so
+ * SUGGEST_RU_CANARY enrichment replaces only covered autocomplete cells and preserves
+ * base organic / UAE / other surfaces.
  */
 
 import { createHash } from "node:crypto";
@@ -9,6 +12,14 @@ import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory"
 import type { RawInventoryItem } from "../types";
 import { observationKey } from "./client-language";
 import { mustUseRunScopedSerpObservations } from "./first36-run-scoped-flags";
+import {
+  loadArsenkinReportBinding,
+  toCompositeBindingModel,
+} from "./arsenkin-report-binding";
+import {
+  mergeCompositeSerpObservations,
+  type CompositeMergeProvenance,
+} from "./composite-serp-overlay-merge";
 
 function normalizeUrl(url: string): string {
   return url
@@ -39,17 +50,50 @@ export type RunScopedMergeResult = {
   duplicateKeys: string[];
   usedRunScoped: boolean;
   warnings: string[];
+  compositeProvenance?: CompositeMergeProvenance;
 };
 
 export async function mergeRunScopedSerpObservations(input: {
   inventory: FullEvidenceInventory;
   auditRunId: string | undefined;
   env?: NodeJS.ProcessEnv;
+  /** Optional caseId for composite binding lookup. */
+  caseId?: string;
 }): Promise<RunScopedMergeResult> {
   const env = input.env ?? process.env;
   const warnings: string[] = [...(input.inventory.warnings ?? [])];
   const requireRunScoped = mustUseRunScopedSerpObservations(env);
   const auditRunId = String(input.auditRunId ?? "").trim();
+  const caseId = String(input.caseId ?? input.inventory.caseId ?? "").trim();
+
+  // Composite path: Arsenkin transfer binding present → surface-aware overlay.
+  const binding = caseId ? loadArsenkinReportBinding(caseId) : null;
+  if (
+    binding &&
+    (binding.status === "TRANSFERRED" ||
+      binding.status === "REPORT_BOUND" ||
+      (binding.status === "TRANSFER_FAILED" &&
+        binding.contentPromotionError === "CLIENT_CONTENT_NOT_PROMOTED"))
+  ) {
+    const composite = toCompositeBindingModel(binding);
+    const result = await mergeCompositeSerpObservations({
+      inventory: input.inventory,
+      auditRunId: auditRunId || binding.effectiveReportRunId,
+      binding: composite,
+      env,
+    });
+    if (result.warnings.some((w) => w.startsWith("uncovered-surface-data-loss"))) {
+      // Keep as warning artifact; acceptance gate may promote to blocker.
+    }
+    return {
+      inventory: result.inventory,
+      observationCount: result.observationCount,
+      duplicateKeys: result.duplicateKeys,
+      usedRunScoped: result.usedRunScoped,
+      warnings: result.warnings,
+      compositeProvenance: result.provenance,
+    };
+  }
 
   if (!auditRunId) {
     if (requireRunScoped) {
@@ -84,23 +128,35 @@ export async function mergeRunScopedSerpObservations(input: {
   if (rows.length === 0) {
     if (requireRunScoped) {
       warnings.push("run-scoped-observations-empty");
-      // Strip case-wide search_result rows — do not silently reuse old runs.
-      const stripped: FullEvidenceInventory = {
-        ...input.inventory,
-        warnings: [...warnings],
-        items: input.inventory.items.filter((i) => i.evidenceType !== "search_result"),
-        counts: { ...input.inventory.counts, searchResults: 0 },
-        countsByEvidenceType: {
-          ...input.inventory.countsByEvidenceType,
-          search_result: 0,
-        },
-      };
+      // Without composite binding, do NOT strip legacy organic solely because
+      // the audit run has no observations — that was the canary data-loss bug.
+      // Only strip when explicitly forced via env.
+      if (env.ORION_FIRST36_STRIP_EMPTY_RUN === "1") {
+        const stripped: FullEvidenceInventory = {
+          ...input.inventory,
+          warnings: [...warnings],
+          items: input.inventory.items.filter((i) => i.evidenceType !== "search_result"),
+          counts: { ...input.inventory.counts, searchResults: 0 },
+          countsByEvidenceType: {
+            ...input.inventory.countsByEvidenceType,
+            search_result: 0,
+          },
+        };
+        return {
+          inventory: stripped,
+          observationCount: 0,
+          duplicateKeys: [],
+          usedRunScoped: true,
+          warnings: stripped.warnings,
+        };
+      }
+      warnings.push("run-scoped-empty-preserving-base-inventory");
       return {
-        inventory: stripped,
+        inventory: { ...input.inventory, warnings },
         observationCount: 0,
         duplicateKeys: [],
-        usedRunScoped: true,
-        warnings: stripped.warnings,
+        usedRunScoped: false,
+        warnings,
       };
     }
     return {
@@ -171,7 +227,14 @@ export async function mergeRunScopedSerpObservations(input: {
       continue;
     }
 
-    if (surface === "autocomplete" || surface === "paa" || surface === "related" || surface === "ai_answer" || surface === "page_meta" || surface === "indexation") {
+    if (
+      surface === "autocomplete" ||
+      surface === "paa" ||
+      surface === "related" ||
+      surface === "ai_answer" ||
+      surface === "page_meta" ||
+      surface === "indexation"
+    ) {
       const evidenceType =
         surface === "autocomplete"
           ? "suggestion"
@@ -231,16 +294,20 @@ export async function mergeRunScopedSerpObservations(input: {
 
   const nonSearch = input.inventory.items.filter((i) => i.evidenceType !== "search_result");
   const legacySearch = input.inventory.items.filter((i) => i.evidenceType === "search_result");
-  const keepLegacy = !requireRunScoped && obsItems.length === 0;
-  const searchItems = keepLegacy ? legacySearch : obsItems;
+  // Preserve base organic when this run only collected non-organic surfaces.
+  const keepLegacyOrganic = obsItems.length === 0;
+  const searchItems = keepLegacyOrganic ? legacySearch : obsItems;
 
-  // Prefer Arsenkin suggestion/PAA when present; keep other non-search inventory.
   const hasArsenkinSuggest = surfaceItems.some((i) => i.evidenceType === "suggestion");
   const hasArsenkinRelated = surfaceItems.some((i) => i.evidenceType === "related_query");
+  // Only replace suggestions in the same region as enrichment surfaces.
+  const enrichmentSuggestRegions = new Set(
+    surfaceItems.filter((i) => i.evidenceType === "suggestion").map((i) => mapRegion(i.region))
+  );
   const keptNonSearch = nonSearch.filter((i) => {
     const et = i.evidenceType.toLowerCase();
     if (hasArsenkinSuggest && (et.includes("suggestion") || et.includes("autocomplete"))) {
-      return false;
+      return !enrichmentSuggestRegions.has(mapRegion(i.region));
     }
     if (
       hasArsenkinRelated &&
@@ -252,8 +319,8 @@ export async function mergeRunScopedSerpObservations(input: {
     return true;
   });
 
-  if (requireRunScoped && obsItems.length === 0) {
-    warnings.push("run-scoped-required-but-no-organic-observations");
+  if (requireRunScoped && obsItems.length === 0 && surfaceItems.length > 0) {
+    warnings.push("run-scoped-surfaces-only-preserving-base-organic");
   }
 
   const mergedItems = [...searchItems, ...surfaceItems, ...keptNonSearch];
@@ -291,7 +358,7 @@ export async function mergeRunScopedSerpObservations(input: {
     inventory: merged,
     observationCount: obsItems.length + surfaceItems.length,
     duplicateKeys,
-    usedRunScoped: (!keepLegacy && obsItems.length > 0) || surfaceItems.length > 0,
+    usedRunScoped: obsItems.length > 0 || surfaceItems.length > 0,
     warnings: merged.warnings,
   };
 }

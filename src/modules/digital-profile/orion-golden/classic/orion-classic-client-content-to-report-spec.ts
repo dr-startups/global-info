@@ -420,8 +420,8 @@ function buildOrionExecutiveSlides(
   const visualBullets = sanitizeClassicBullets(
     [
       ...matrixRows.slice(0, 5).map((r) => `${r.theme} — ${r.level}`),
-      `Россия: ${themeSet.ru.linksAdversePct}% · ${themeSet.ru.overallBadge}`,
-      `ОАЭ: ${themeSet.uae.linksAdversePct}% · ${themeSet.uae.overallBadge}`,
+      `Россия: ${(themeSet.ru.linksAdversePct == null || themeSet.ru.linksTotal <= 0) ? "—" : `${themeSet.ru.linksAdversePct}%`} · ${themeSet.ru.overallRiskBadge ?? themeSet.ru.overallBadge}`,
+      `ОАЭ: ${(themeSet.uae.linksAdversePct == null || themeSet.uae.linksTotal <= 0) ? "—" : `${themeSet.uae.linksAdversePct}%`} · ${themeSet.uae.overallRiskBadge ?? themeSet.uae.overallBadge}`,
     ],
     200
   ).slice(0, 7);
@@ -449,8 +449,8 @@ function buildOrionExecutiveSlides(
       title: "Ключевые темы и базы данных",
       narrative: [
         `Краткий указатель тем цифрового профиля (без повтора полного резюме).`,
-        `Россия: ${themeSet.ru.linksAdversePct}% потенциально нежелательных · ${themeSet.ru.overallBadge}.`,
-        `ОАЭ: ${themeSet.uae.linksAdversePct}% потенциально нежелательных · ${themeSet.uae.overallBadge}.`,
+        `Россия: ${(themeSet.ru.linksAdversePct == null || themeSet.ru.linksTotal <= 0) ? "—" : `${themeSet.ru.linksAdversePct}%`} потенциально нежелательных · ${themeSet.ru.overallRiskBadge ?? themeSet.ru.overallBadge}.`,
+        `ОАЭ: ${(themeSet.uae.linksAdversePct == null || themeSet.uae.linksTotal <= 0) ? "—" : `${themeSet.uae.linksAdversePct}%`} потенциально нежелательных · ${themeSet.uae.overallRiskBadge ?? themeSet.uae.overallBadge}.`,
       ].join(" "),
       bullets: visualBullets,
     },
@@ -467,7 +467,10 @@ function buildRegionalAuditSummaryBlock(
     sectionTitle: sanitizeOrionGoldenClientText(title),
     metrics: {
       mode: "regional_audit_dashboard",
-      adversePct: region === "RU" ? themeSet.ru.linksAdversePct : themeSet.uae.linksAdversePct,
+      adversePct:
+        region === "RU"
+          ? themeSet.ru.linksAdversePct ?? "—"
+          : themeSet.uae.linksAdversePct ?? "—",
       badge: dash.badge,
     },
     narrative: truncateAtWordBoundary(
@@ -957,8 +960,8 @@ function inventoryFallbackBlock(
       bullets = sanitizeClassicBullets(
         [
           ...matrixRows.map((r) => `${r.theme} — ${r.level}`),
-          `Россия: ${themeSet.ru.linksAdversePct}% · ${themeSet.ru.overallBadge}`,
-          `ОАЭ: ${themeSet.uae.linksAdversePct}% · ${themeSet.uae.overallBadge}`,
+          `Россия: ${(themeSet.ru.linksAdversePct == null || themeSet.ru.linksTotal <= 0) ? "—" : `${themeSet.ru.linksAdversePct}%`} · ${themeSet.ru.overallRiskBadge ?? themeSet.ru.overallBadge}`,
+          `ОАЭ: ${(themeSet.uae.linksAdversePct == null || themeSet.uae.linksTotal <= 0) ? "—" : `${themeSet.uae.linksAdversePct}%`} · ${themeSet.uae.overallRiskBadge ?? themeSet.uae.overallBadge}`,
         ],
         200
       ).slice(0, 7);
@@ -1265,8 +1268,8 @@ function blockFromClientSection(
     bullets = sanitizeClassicBullets(
       [
         ...matrixRows.map((r) => `${r.theme} — ${r.level}`),
-        `Россия: ${themeSet.ru.linksAdversePct}% · ${themeSet.ru.overallBadge}`,
-        `ОАЭ: ${themeSet.uae.linksAdversePct}% · ${themeSet.uae.overallBadge}`,
+        `Россия: ${(themeSet.ru.linksAdversePct == null || themeSet.ru.linksTotal <= 0) ? "—" : `${themeSet.ru.linksAdversePct}%`} · ${themeSet.ru.overallRiskBadge ?? themeSet.ru.overallBadge}`,
+        `ОАЭ: ${(themeSet.uae.linksAdversePct == null || themeSet.uae.linksTotal <= 0) ? "—" : `${themeSet.uae.linksAdversePct}%`} · ${themeSet.uae.overallRiskBadge ?? themeSet.uae.overallBadge}`,
       ],
       200
     ).slice(0, 7);
@@ -1429,9 +1432,30 @@ function riskMatrixBlockFromExecutive(
   };
 }
 
+const LEGACY_SECTION_TITLES: Record<string, string> = {
+  ru_search_results: "Россия — результаты поиска",
+  uae_search_results: "ОАЭ — результаты поиска",
+  ru_digital_profile: "Россия — цифровой профиль",
+  uae_digital_profile: "ОАЭ — цифровой профиль",
+  ru_audit_summary: "Россия — итог аудита",
+  uae_audit_summary: "ОАЭ — итог аудита",
+  ru_wikipedia: "Россия — Wikipedia",
+  uae_wikipedia: "ОАЭ — Wikipedia",
+  compliance_databases: "Комплаенс-базы",
+  lexisnexis: "LexisNexis",
+  dow_jones: "Dow Jones",
+  world_check: "World-Check",
+  offer: "Коммерческое предложение",
+  product_overview: "Обзор продукта",
+  solution_digital_profile: "Решение: цифровой профиль",
+  solution_compliance_databases: "Решение: комплаенс-базы",
+  solution_wikipedia: "Решение: Wikipedia",
+  about: "О компании",
+};
+
 function emptyLegacy(sectionKey: string): SectionBlock {
   return {
-    sectionTitle: sectionKey,
+    sectionTitle: LEGACY_SECTION_TITLES[sectionKey] ?? sectionKey.replace(/_/g, " "),
     metrics: { status: "empty" },
     narrative: "",
     tables: [],

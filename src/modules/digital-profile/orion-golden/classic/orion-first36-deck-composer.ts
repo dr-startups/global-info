@@ -27,6 +27,7 @@ import {
   sanitizeClientLanguage,
 } from "./client-language";
 import {
+  classifySuggestionIntent,
   orionStyleRiskMatrixRows,
   wikipediaStatusLine,
   type OrionSurfaceKpis,
@@ -44,11 +45,17 @@ function badgeTone(badge: OrionSurfaceKpis["overallBadge"]): MetricTone {
   return "neutral";
 }
 
-function adverseTone(pct: number, adverse: number): MetricTone {
+function adverseTone(pct: number | null, adverse: number, total = 1): MetricTone {
+  if (total <= 0 || pct == null) return "neutral";
   if (pct >= 20 || adverse >= 20) return "risk";
   if (pct >= 8 || adverse >= 3) return "warn";
   if (adverse === 0) return "good";
   return "neutral";
+}
+
+function pctDisplay(pct: number | null, total: number): string {
+  if (total <= 0 || pct == null) return "—";
+  return `${pct}%`;
 }
 
 function wikiTone(status: OrionSurfaceKpis["wikipediaStatus"]): MetricTone {
@@ -75,30 +82,32 @@ function regionMetrics(kpis: OrionSurfaceKpis, prefix: string): DeckMetric[] {
   return [
     {
       label: `${prefix}: доля нежелательных`,
-      value: `${kpis.linksAdversePct}%`,
-      tone: adverseTone(kpis.linksAdversePct, kpis.linksAdverse),
+      value: pctDisplay(kpis.linksAdversePct, kpis.linksTotal),
+      tone: adverseTone(kpis.linksAdversePct, kpis.linksAdverse, kpis.linksTotal),
     },
     {
       label: `${prefix}: ссылки`,
-      value: `${kpis.linksAdverse} / ${kpis.linksTotal}`,
-      tone: adverseTone(kpis.linksAdversePct, kpis.linksAdverse),
+      value: kpis.linksTotal > 0 ? `${kpis.linksAdverse} / ${kpis.linksTotal}` : "данные не собраны",
+      tone: adverseTone(kpis.linksAdversePct, kpis.linksAdverse, kpis.linksTotal),
     },
     {
       label: `${prefix}: подсказки`,
-      value: `${kpis.suggestionsAdverse} / ${kpis.suggestionsTotal}`,
+      value: `${kpis.suggestionsExplicitAdverse ?? kpis.suggestionsAdverse} / ${kpis.suggestionsTotal}`,
       tone: adverseTone(
         kpis.suggestionsTotal > 0
-          ? Math.round((kpis.suggestionsAdverse / Math.max(kpis.suggestionsTotal, 1)) * 100)
-          : 0,
-        kpis.suggestionsAdverse
+          ? Math.round(((kpis.suggestionsExplicitAdverse ?? kpis.suggestionsAdverse) / kpis.suggestionsTotal) * 100)
+          : null,
+        kpis.suggestionsExplicitAdverse ?? kpis.suggestionsAdverse,
+        kpis.suggestionsTotal
       ),
     },
     {
       label: `${prefix}: изображения`,
       value: `${kpis.imagesAdverse} / ${kpis.imagesTotal}`,
       tone: adverseTone(
-        kpis.imagesTotal > 0 ? Math.round((kpis.imagesAdverse / Math.max(kpis.imagesTotal, 1)) * 100) : 0,
-        kpis.imagesAdverse
+        kpis.imagesTotal > 0 ? Math.round((kpis.imagesAdverse / kpis.imagesTotal) * 100) : null,
+        kpis.imagesAdverse,
+        kpis.imagesTotal
       ),
     },
   ];
@@ -117,23 +126,23 @@ function executiveDashboardFromTheme(themeSet: OrionThemeSet, base: OrionGoldenD
   const metrics: DeckMetric[] = [
     {
       label: "Россия: доля",
-      value: `${themeSet.ru.linksAdversePct}%`,
-      tone: adverseTone(themeSet.ru.linksAdversePct, themeSet.ru.linksAdverse),
+      value: pctDisplay(themeSet.ru.linksAdversePct, themeSet.ru.linksTotal),
+      tone: adverseTone(themeSet.ru.linksAdversePct, themeSet.ru.linksAdverse, themeSet.ru.linksTotal),
     },
     {
       label: "Россия: ссылки",
       value: `${themeSet.ru.linksAdverse} из ${themeSet.ru.linksTotal}`,
-      tone: adverseTone(themeSet.ru.linksAdversePct, themeSet.ru.linksAdverse),
+      tone: adverseTone(themeSet.ru.linksAdversePct, themeSet.ru.linksAdverse, themeSet.ru.linksTotal),
     },
     {
       label: "ОАЭ: доля",
-      value: `${themeSet.uae.linksAdversePct}%`,
-      tone: adverseTone(themeSet.uae.linksAdversePct, themeSet.uae.linksAdverse),
+      value: pctDisplay(themeSet.uae.linksAdversePct, themeSet.uae.linksTotal),
+      tone: adverseTone(themeSet.uae.linksAdversePct, themeSet.uae.linksAdverse, themeSet.uae.linksTotal),
     },
     {
       label: "ОАЭ: ссылки",
       value: `${themeSet.uae.linksAdverse} из ${themeSet.uae.linksTotal}`,
-      tone: adverseTone(themeSet.uae.linksAdversePct, themeSet.uae.linksAdverse),
+      tone: adverseTone(themeSet.uae.linksAdversePct, themeSet.uae.linksAdverse, themeSet.uae.linksTotal),
     },
   ];
   const matrixTop = orionStyleRiskMatrixRows(themeSet).slice(0, 2);
@@ -290,7 +299,7 @@ function regionalMetricsSlide(
     ),
   ].slice(0, 4);
   const kpiBullets = [
-    `Доля потенциально нежелательных ссылок: ${kpis.linksAdversePct}% (${kpis.linksAdverse} из ${kpis.linksTotal}) — оценка профиля: ${kpis.overallBadge}.`,
+    `Доля потенциально нежелательных ссылок: ${kpis.linksTotal > 0 && kpis.linksAdversePct != null ? `${kpis.linksAdversePct}% (${kpis.linksAdverse} из ${kpis.linksTotal})` : "— (данные не собраны)"} — оценка профиля: ${kpis.overallRiskBadge ?? kpis.overallBadge}.`,
     `Поисковые подсказки: ${kpis.suggestionsAdverse} из ${kpis.suggestionsTotal} указывают на нежелательные темы.`,
   ];
   return {
@@ -303,7 +312,7 @@ function regionalMetricsSlide(
         label: `${prefix}: related`,
         value: `${kpis.relatedAdverse} / ${kpis.relatedTotal}`,
         tone: adverseTone(
-          kpis.relatedTotal > 0 ? Math.round((kpis.relatedAdverse / Math.max(kpis.relatedTotal, 1)) * 100) : 0,
+          kpis.relatedTotal > 0 ? Math.round((kpis.relatedAdverse / (kpis.relatedTotal || 1)) * 100) : 0,
           kpis.relatedAdverse
         ),
       },
@@ -316,7 +325,7 @@ function regionalMetricsSlide(
     statusBadge: { label: kpis.overallBadge, tone: badgeTone(kpis.overallBadge) },
     narrative: scrub(
       base.narrative ||
-        `${prefix}: ${kpis.linksAdversePct}% потенциально нежелательных ссылок (${kpis.linksAdverse} из ${kpis.linksTotal}). Оценка профиля — ${kpis.overallBadge}.`
+        `${prefix}: ${kpis.linksTotal > 0 && kpis.linksAdversePct != null ? `${kpis.linksAdversePct}% потенциально нежелательных ссылок (${kpis.linksAdverse} из ${kpis.linksTotal})` : "данные по органике не собраны"}. Оценка профиля — ${kpis.overallRiskBadge ?? kpis.overallBadge}.`
     ),
   };
 }
@@ -404,10 +413,50 @@ function provenanceLabel(asset: ReportAssetV1): string {
   return "Визуальный материал";
 }
 
+function isArsenkinAsset(asset: ReportAssetV1): boolean {
+  const blob = [
+    asset.assetRef,
+    asset.caption ?? "",
+    asset.title ?? "",
+    ...(asset.evidenceRefs ?? []),
+    String(asset.meta?.provider ?? ""),
+    String(asset.meta?.tool ?? ""),
+    String(asset.meta?.arsenkinTool ?? ""),
+  ].join(" ");
+  return /arsenkin|suggest-canary|provider_task:arsenkin/i.test(blob);
+}
+
+function collectSuggestionTexts(
+  asset: ReportAssetV1,
+  slide?: OrionGoldenDeckSlide | null
+): string[] {
+  const fromMeta = (asset.meta?.suggestionRows ?? []).map((r) => String(r).trim()).filter(Boolean);
+  if (fromMeta.length > 0) return fromMeta;
+  const fromTable = (slide?.table?.rows ?? [])
+    .map((row) => row.map((c) => String(c ?? "").trim()).filter(Boolean).join(" "))
+    .filter(Boolean);
+  if (fromTable.length > 0) return fromTable;
+  const bullets = (slide?.bullets ?? []).map((b) => String(b).trim()).filter(Boolean);
+  if (bullets.length > 0) return bullets;
+  return [];
+}
+
+function arsenkinSuggestProvenance(asset: ReportAssetV1, slot: First36SlotDef): string {
+  const engine =
+    String(asset.meta?.engine ?? "").toUpperCase() ||
+    (/google/i.test(asset.assetRef) || /google/i.test(slot.slotId) ? "GOOGLE" : "YANDEX");
+  const engineLabel = engine === "GOOGLE" ? "Google Suggest" : "Yandex Suggest";
+  const captured = asset.meta?.capturedAt
+    ? `дата сбора ${String(asset.meta.capturedAt).slice(0, 10)}`
+    : "дата сбора в кейсе";
+  return `Источник: Arsenkin Tools API, ${engineLabel}, ${captured}`;
+}
+
 export function buildDeterministicVisualAnalysis(
   asset: ReportAssetV1,
   slot: First36SlotDef,
-  themeSet?: OrionThemeSet | null
+  themeSet?: OrionThemeSet | null,
+  slide?: OrionGoldenDeckSlide | null
 ): VisualSlideAnalysis {
   const title = scrub(asset.title || slot.title);
   const caption = scrub(asset.caption || "");
@@ -427,6 +476,7 @@ export function buildDeterministicVisualAnalysis(
   let limitations: string[] = [];
   let sidebarMode: VisualSidebarMode = "interpretation";
   let clientMeaning: string;
+  let panelMeta: VisualSlideAnalysis["panelMeta"];
   let provenance =
     slot.kind === "image_visual"
       ? "Источник: сохранённые изображения, дата сбора в кейсе"
@@ -438,18 +488,30 @@ export function buildDeterministicVisualAnalysis(
 
   if (slot.kind === "serp_visual") {
     const adverseHint = /нежелат|PEP|RCA|санкц|выделен/i.test(`${caption} ${title}`);
+    const synthetic =
+      /API|синтетич|реконструкц/i.test(`${caption} ${title} ${asset.kind}`) ||
+      asset.kind === "synthetic_serp";
     sidebarMode = adverseHint ? "adverse_explanation" : "interpretation";
     headlineConclusion = adverseHint
       ? `В первом экране выдачи (${regionLabel}) есть риск-сигналы`
       : `Первый экран поисковой выдачи (${regionLabel})`;
-    whatIsVisible = adverseHint
-      ? "На экране выделены домены и заголовки с риск-тематикой (PEP, санкции или нежелательные публикации)."
-      : "Показаны заголовки и домены первого экрана поиска по субъекту.";
+    whatIsVisible = synthetic
+      ? adverseHint
+        ? "Синтетическая реконструкция API: на экране выделены домены и заголовки с риск-тематикой."
+        : "Показаны заголовки и домены первого экрана поиска по субъекту (синтетическая реконструкция API)."
+      : adverseHint
+        ? "На экране выделены домены и заголовки с риск-тематикой (PEP, санкции или нежелательные публикации)."
+        : "Показаны заголовки и домены первого экрана поиска по субъекту.";
     clientMeaning =
       "Клиент сразу видит, какие источники формируют первое впечатление о субъекте.";
     whyItMatters = clientMeaning;
     recommendedActions = adverseHint ? ["Сверить выделенные домены вручную"] : [];
+    if (synthetic) {
+      limitations = ["Это не live-скриншот браузера; визуал собран из сохранённых результатов API."];
+    }
   } else if (slot.kind === "image_visual") {
+    const captionAdverse =
+      /красн|нежелательн|компромет|санкц|rucriminal|криминал/i.test(`${caption} ${title}`);
     if (topExplanations.length > 0) {
       sidebarMode = "adverse_explanation";
       const redN = framed.filter((x) => x.frameTone === "red").length;
@@ -465,6 +527,16 @@ export function buildDeterministicVisualAnalysis(
         amberN > 0
           ? "При беглом просмотре легко спутать субъект с однофамильцем или чужим контекстом."
           : "Выделенные кадры усиливают негативное первое впечатление в поиске изображений.";
+      whyItMatters = clientMeaning;
+      recommendedActions = ["Подтвердить личность по двум независимым идентификаторам"];
+    } else if (captionAdverse) {
+      sidebarMode = "adverse_explanation";
+      headlineConclusion = `В изображениях (${regionLabel}) есть нежелательный контекст`;
+      whatIsVisible =
+        caption.slice(0, 280) ||
+        "Красной рамкой отмечены нежелательные изображения; требуется сверка с субъектом.";
+      clientMeaning =
+        "Нежелательные и компрометирующие кадры усиливают негативное первое впечатление.";
       whyItMatters = clientMeaning;
       recommendedActions = ["Подтвердить личность по двум независимым идентификаторам"];
     } else {
@@ -492,23 +564,75 @@ export function buildDeterministicVisualAnalysis(
       recommendedActions = ["Сверить title/H1 с фактическим содержимым страницы"];
       provenance = "Источник: Arsenkin check-h / indexation, дата сбора в кейсе";
     } else {
-      const adverseSuggest = /скандал|санкц|арест|корруп|негатив|scandal|sanction/i.test(
-        `${caption} ${title}`
-      );
-      sidebarMode = "interpretation";
-      headlineConclusion = adverseSuggest
-        ? "Подсказки связывают имя с риск-тематикой"
-        : "Подсказки не дают устойчивой негативной ассоциации";
-      whatIsVisible = adverseSuggest
-        ? "Среди подсказок есть формулировки с негативным или санкционным оттенком рядом с именем."
-        : "Основные ассоциации связаны с бизнесом и биографией; санкционные формулировки не доминируют.";
-      clientMeaning = adverseSuggest
-        ? "Уже на этапе ввода запроса формируется настороженное впечатление о субъекте."
-        : "На этапе ввода запроса репутационный риск выглядит ограниченным.";
+      const rowTexts = collectSuggestionTexts(asset, slide);
+      const regionKpis =
+        slot.region === "UAE" ? themeSet?.uae : slot.region === "RU" ? themeSet?.ru : themeSet?.ru;
+      const riskThemes = (themeSet?.themes ?? [])
+        .map((t) => String(t.title ?? ""))
+        .filter((t) => t.length >= 4);
+      const subjectName = String(themeSet?.subjectName ?? "").trim();
+      let explicit = 0;
+      let contextual = 0;
+      let identity = 0;
+      const haystack = [...rowTexts, caption, title].join("\n");
+      if (rowTexts.length > 0 && subjectName) {
+        for (const q of rowTexts) {
+          const kind = classifySuggestionIntent(q, subjectName, riskThemes);
+          if (kind === "explicitAdverse") explicit += 1;
+          else if (kind === "contextualRisk") contextual += 1;
+          else if (kind === "identityOrNamesakeRisk") identity += 1;
+        }
+      } else {
+        explicit = /скандал|санкц|арест|корруп|мошен|негатив|scandal|sanction/i.test(haystack)
+          ? 1
+          : regionKpis?.suggestionsExplicitAdverse ?? 0;
+        contextual = regionKpis?.suggestionsContextualRisk ?? 0;
+        identity = regionKpis?.suggestionsIdentityRisk ?? 0;
+      }
+      const totalSuggest =
+        rowTexts.length > 0
+          ? rowTexts.length
+          : regionKpis?.suggestionsTotal ?? Math.max(explicit + contextual + identity, 1);
+
+      sidebarMode = explicit > 0 ? "adverse_explanation" : "interpretation";
+      headlineConclusion =
+        explicit > 0
+          ? "Подсказки связывают имя с риск-тематикой"
+          : "Прямых негативных формулировок в подсказках не найдено";
+      whatIsVisible =
+        explicit > 0
+          ? `Среди подсказок есть прямые негативные формулировки (${explicit} из ${totalSuggest}).`
+          : `Прямых негативных формулировок не найдено. ${contextual} подсказок связаны с ранее выявленными риск-темами. ${identity} подсказок относятся к другим людям или неоднозначной идентификации.`;
+      clientMeaning =
+        explicit > 0
+          ? "Уже на этапе ввода запроса формируется настороженное впечатление о субъекте."
+          : contextual > 0 || identity > 0
+            ? "Ассоциации в подсказках частично связаны с риск-темами или неоднозначной идентификацией, без прямого негатива."
+            : "На этапе ввода запроса ассоциации в подсказках выглядят нейтральными.";
       whyItMatters = clientMeaning;
-      recommendedActions = adverseSuggest
-        ? ["Отметить негативные подсказки для ручной проверки"]
-        : [];
+      recommendedActions =
+        explicit > 0
+          ? ["Отметить негативные подсказки для ручной проверки"]
+          : contextual > 0
+            ? ["Сверить контекстные ассоциации с подтверждёнными риск-темами"]
+            : [];
+
+      if (isArsenkinAsset(asset) || /arsenkin/i.test(String(asset.meta?.provider ?? ""))) {
+        provenance = arsenkinSuggestProvenance(asset, slot);
+        panelMeta = {
+          provider: String(asset.meta?.provider ?? "arsenkin"),
+          tool: String(asset.meta?.tool ?? asset.meta?.arsenkinTool ?? "suggest"),
+          engine:
+            String(asset.meta?.engine ?? "").toUpperCase() ||
+            (/google/i.test(asset.assetRef) || /google/i.test(slot.slotId) ? "GOOGLE" : "YANDEX"),
+          region: String(asset.meta?.region ?? slot.region ?? "RU"),
+          observationCount:
+            asset.meta?.observationCount ?? (rowTexts.length > 0 ? rowTexts.length : undefined),
+          capturedAt: asset.meta?.capturedAt,
+          reportRunId: asset.meta?.reportRunId,
+          evidenceRefs: [...(asset.evidenceRefs ?? [])],
+        };
+      }
     }
   } else if (slot.kind === "related_visual") {
     sidebarMode = "interpretation";
@@ -612,6 +736,7 @@ export function buildDeterministicVisualAnalysis(
     highlightExplanations: topExplanations,
     clientMeaning: clipWordsComplete(scrub(clientMeaning), 28),
     moreSignalsCount: moreSignalsCount > 0 ? moreSignalsCount : undefined,
+    panelMeta,
   };
 }
 
@@ -886,7 +1011,7 @@ function attachVisual(
   }
 
   usedAssets.add(assetRef);
-  const analysis = buildDeterministicVisualAnalysis(asset, slot, themeSet);
+  const analysis = buildDeterministicVisualAnalysis(asset, slot, themeSet, slide);
   return {
     ...slide,
     slideKey: slot.slotId,
@@ -944,7 +1069,7 @@ export function composeOrionFirst36CeoDeck(
       const asset = pickAssetForSlot(assets, usedAssets, slot);
       if (asset) {
         usedAssets.add(asset.assetRef);
-        const analysis = buildDeterministicVisualAnalysis(asset, slot, themeSet);
+        const analysis = buildDeterministicVisualAnalysis(asset, slot, themeSet, null);
         slide = {
           slideKey: slot.slotId,
           sectionKey: slot.sectionKey,
@@ -976,7 +1101,7 @@ export function composeOrionFirst36CeoDeck(
       const asset = pickAssetForSlot(assets, usedAssets, slot);
       if (asset) {
         usedAssets.add(asset.assetRef);
-        const analysis = buildDeterministicVisualAnalysis(asset, slot, themeSet);
+        const analysis = buildDeterministicVisualAnalysis(asset, slot, themeSet, null);
         slide = {
           slideKey: slot.slotId,
           sectionKey: slot.sectionKey,

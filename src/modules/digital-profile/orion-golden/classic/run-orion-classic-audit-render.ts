@@ -330,6 +330,7 @@ export async function runOrionClassicAuditRender(options: {
   const runScoped = await mergeRunScopedSerpObservations({
     inventory: baseInventory,
     auditRunId: clientContent.reportRunId,
+    caseId,
   });
   const inventory = runScoped.inventory;
   writeJson(join(outputRoot, "run-scoped-serp-merge.json"), {
@@ -339,6 +340,9 @@ export async function runOrionClassicAuditRender(options: {
     duplicateKeys: runScoped.duplicateKeys.slice(0, 20),
     warnings: runScoped.warnings,
   });
+  if (runScoped.compositeProvenance) {
+    writeJson(join(outputRoot, "composite-serp-merge-provenance.json"), runScoped.compositeProvenance);
+  }
   const clientFinalize = isClientProductionFinalize();
   const first36CeoMode = first36CeoModeEarly;
   const includeCommercial = !first36CeoMode;
@@ -585,6 +589,29 @@ export async function runOrionClassicAuditRender(options: {
       }>;
     },
     expectedRunId: clientContent.reportRunId,
+    compositeBinding: arsenkinBinding
+      ? {
+          sourceReportRunId: arsenkinBinding.sourceReportRunId,
+          effectiveReportRunId: arsenkinBinding.effectiveReportRunId,
+          enrichmentRunIds: [arsenkinBinding.effectiveReportRunId],
+          compositeDigest: arsenkinBinding.compositeDigest,
+        }
+      : null,
+    compositeMergeWarnings: runScoped.warnings,
+    themeKpis: {
+      ru: {
+        linksTotal: themeSet.ru.linksTotal,
+        linksAdversePct: themeSet.ru.linksAdversePct,
+        overallBadge: themeSet.ru.overallBadge,
+        overallRiskBadge: themeSet.ru.overallRiskBadge,
+      },
+      uae: {
+        linksTotal: themeSet.uae.linksTotal,
+        linksAdversePct: themeSet.uae.linksAdversePct,
+        overallBadge: themeSet.uae.overallBadge,
+        overallRiskBadge: themeSet.uae.overallRiskBadge,
+      },
+    },
     geometryReport: geometryReport ?? undefined,
     geometryReportPresent: geometryPresent,
     providerTasks: providerTasks ?? undefined,
@@ -612,9 +639,15 @@ export async function runOrionClassicAuditRender(options: {
   writeJson(join(outputRoot, "first36-acceptance.json"), acceptance);
 
   // Final verdict/readiness/ceoReady come only from First36 acceptance.
+  // source != effective is valid for composite Arsenkin binding.
   const foreignClient =
     Boolean(clientBinding?.sourceReportRunId) &&
-    clientBinding!.sourceReportRunId !== clientContent.reportRunId;
+    clientBinding!.sourceReportRunId !== clientContent.reportRunId &&
+    !(
+      arsenkinBinding &&
+      arsenkinBinding.sourceReportRunId === clientBinding?.sourceReportRunId &&
+      arsenkinBinding.effectiveReportRunId === clientContent.reportRunId
+    );
   const ceoReady = Boolean(acceptance.ceoReady && !foreignClient);
   const readiness = ceoReady ? "CEO_READY" : "INTERNAL_PREVIEW";
   const verdict =

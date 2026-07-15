@@ -6,7 +6,9 @@
 const INTERNAL_TOKEN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bidentity\b/gi, "сверка личности"],
   [/\brelated\b/gi, "связанные запросы"],
-  [/\bcompliance\b/gi, "комплаенс-проверка"],
+  // Keep short nominative forms — long phrases break Russian case endings
+  // (e.g. "комплаенс-проверка-процедурах", "публичное должностное лицо-статуса").
+  [/\bcompliance\b/gi, "комплаенс"],
   [/\bsanctions\s*\/\s*watchlist\b/gi, "санкционный / наблюдательный список"],
   [/\bwatchlist\b/gi, "наблюдательный список"],
   [/\bsanctions\b/gi, "санкции"],
@@ -15,8 +17,8 @@ const INTERNAL_TOKEN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bCONFIRMED[_\s-]?SUBJECT\b/gi, "подтверждённый субъект"],
   [/\bPROBABLE[_\s-]?SUBJECT\b/gi, "вероятный субъект"],
   [/\bUNRESOLVED\b/gi, "не определено"],
-  [/\bPEP\b/g, "публичное должностное лицо"],
-  [/\bRCA\b/g, "связь с публичным лицом"],
+  [/\bPEP\b/g, "PEP"],
+  [/\bRCA\b/g, "RCA"],
   [/\bevidenceRefs?\b/gi, "источники"],
   [/\bauditRunId\b/gi, "идентификатор запуска"],
   [/\breportRunId\b/gi, "идентификатор отчёта"],
@@ -24,6 +26,17 @@ const INTERNAL_TOKEN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bPAA\b/g, "похожие вопросы"],
   [/\bDEMO\b/g, ""],
 ];
+
+/** Repair leftover mechanical enum/phrase breakage in client prose. */
+export function repairBrokenClientPhrases(text: string): string {
+  return String(text ?? "")
+    .replace(/комплаенс-проверка-(?=процедур|статус|сигнал|баз)/gi, "комплаенс-")
+    .replace(/публичное должностное лицо-(?=статус|сигнал|проверк)/gi, "PEP-")
+    .replace(/сигналы публичное должностное лицо/gi, "сигналы PEP")
+    .replace(/статус публичное должностное лицо/gi, "статус PEP")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
 
 const DANGLING_TAIL =
   /(?:^|[\s,;:.—–-])(как|что|чтобы|и|а|или|по|на|в|с|из|для|о|об|к|ко|у|от|до|при|без|над|под|про|через|в\s+т\.?\s*ч\.?)\s*$/i;
@@ -33,7 +46,7 @@ export function sanitizeClientLanguage(text: string): string {
   for (const [re, repl] of INTERNAL_TOKEN_REPLACEMENTS) {
     out = out.replace(re, repl);
   }
-  return out.replace(/\s{2,}/g, " ").trim();
+  return repairBrokenClientPhrases(out.replace(/\s{2,}/g, " ").trim());
 }
 
 export function hasDanglingSentenceTail(text: string): boolean {

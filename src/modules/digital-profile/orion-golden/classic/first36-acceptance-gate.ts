@@ -27,6 +27,7 @@ export type First36AcceptanceInput = {
       whyItMatters?: string;
       clientMeaning?: string;
       headlineConclusion?: string;
+      provenanceLabel?: string;
     };
     statusBadge?: { label?: string };
     blockedReason?: string;
@@ -63,6 +64,30 @@ export type First36AcceptanceInput = {
     }>;
   };
   expectedRunId?: string;
+  /** Composite Arsenkin binding — source != effective is valid when present. */
+  compositeBinding?: {
+    sourceReportRunId?: string;
+    effectiveReportRunId?: string;
+    enrichmentRunIds?: string[];
+    compositeDigest?: string;
+  } | null;
+  compositeMergeWarnings?: string[];
+  themeKpis?: {
+    ru?: {
+      linksTotal?: number;
+      linksAdversePct?: number | null;
+      overallBadge?: string;
+      overallRiskBadge?: string;
+      hasHighRiskEvidence?: boolean;
+    };
+    uae?: {
+      linksTotal?: number;
+      linksAdversePct?: number | null;
+      overallBadge?: string;
+      overallRiskBadge?: string;
+      hasHighRiskEvidence?: boolean;
+    };
+  };
   geometryReport?: {
     overlaps?: unknown[];
     overflow?: unknown[];
@@ -199,23 +224,34 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
     issues.push({ code: "observations-required", detail: "observationCount must be > 0" });
   }
   if (input.expectedRunId) {
-    if (input.coverageSummary?.reportRunId && input.coverageSummary.reportRunId !== input.expectedRunId) {
+    const knownRuns = new Set<string>([
+      input.expectedRunId,
+      ...(input.compositeBinding?.enrichmentRunIds ?? []),
+      ...(input.compositeBinding?.sourceReportRunId
+        ? [input.compositeBinding.sourceReportRunId]
+        : []),
+      ...(input.compositeBinding?.effectiveReportRunId
+        ? [input.compositeBinding.effectiveReportRunId]
+        : []),
+    ]);
+    const isKnown = (id: string) => knownRuns.has(id);
+    if (input.coverageSummary?.reportRunId && !isKnown(input.coverageSummary.reportRunId)) {
       issues.push({ code: "foreign-coverage-run", detail: input.coverageSummary.reportRunId });
     }
     for (const row of input.coverageSummary?.rows ?? []) {
-      if (row.reportRunId && row.reportRunId !== input.expectedRunId) {
+      if (row.reportRunId && !isKnown(row.reportRunId)) {
         issues.push({ code: "foreign-coverage-run", detail: row.reportRunId });
         break;
       }
     }
     for (const task of input.providerTasks ?? []) {
-      if (task.reportRunId && task.reportRunId !== input.expectedRunId) {
+      if (task.reportRunId && !isKnown(task.reportRunId)) {
         issues.push({ code: "foreign-provider-task-run", detail: task.reportRunId });
         break;
       }
     }
     for (const obs of input.observations ?? []) {
-      if (obs.auditRunId && obs.auditRunId !== input.expectedRunId) {
+      if (obs.auditRunId && !isKnown(obs.auditRunId)) {
         issues.push({ code: "foreign-observation-run", detail: obs.auditRunId });
         break;
       }
@@ -224,10 +260,86 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
       input.clientContentSourceReportRunId &&
       input.clientContentSourceReportRunId !== input.expectedRunId
     ) {
+      const compositeOk =
+        input.compositeBinding &&
+        input.compositeBinding.sourceReportRunId === input.clientContentSourceReportRunId &&
+        (input.compositeBinding.effectiveReportRunId === input.expectedRunId ||
+          (input.compositeBinding.enrichmentRunIds ?? []).includes(String(input.expectedRunId)));
+      if (!compositeOk) {
+        issues.push({
+          code: "foreign-client-content-run",
+          detail: input.clientContentSourceReportRunId,
+        });
+      }
+    }
+    for (const w of input.compositeMergeWarnings ?? []) {
+      if (w.startsWith("uncovered-surface-data-loss")) {
+        issues.push({ code: "uncovered-surface-data-loss", detail: w });
+      }
+      if (w.startsWith("unexpected-region-data-loss")) {
+        issues.push({ code: "unexpected-region-data-loss", detail: w });
+      }
+      if (w.startsWith("missing-base-provenance")) {
+        issues.push({ code: "missing-base-provenance", detail: w });
+      }
+    }
+    if (
+      input.compositeBinding &&
+      input.expectedRunId &&
+      input.compositeBinding.effectiveReportRunId &&
+      input.compositeBinding.effectiveReportRunId !== input.expectedRunId &&
+      !(input.compositeBinding.enrichmentRunIds ?? []).includes(String(input.expectedRunId))
+    ) {
       issues.push({
-        code: "foreign-client-content-run",
-        detail: input.clientContentSourceReportRunId,
+        code: "composite-binding-mismatch",
+        detail: `expected=${input.expectedRunId} effective=${input.compositeBinding.effectiveReportRunId}`,
       });
+    }
+    if (
+      input.compositeBinding &&
+      !input.compositeBinding.sourceReportRunId
+    ) {
+      issues.push({
+        code: "missing-base-provenance",
+        detail: "composite binding missing sourceReportRunId",
+      });
+    }
+    for (const side of [input.themeKpis?.ru, input.themeKpis?.uae]) {
+      if (!side) continue;
+      if (side.linksTotal === 0 && side.linksAdversePct === 0) {
+        issues.push({
+          code: "zero-denominator-percentage",
+          detail: "linksAdversePct must be null when linksTotal=0",
+        });
+      }
+      const badge = side.overallRiskBadge ?? side.overallBadge;
+      if (
+        (side.hasHighRiskEvidence || side.linksTotal === 0) &&
+        badge === "Нейтральный"
+      ) {
+        issues.push({
+          code: "neutral-badge-with-high-risk-evidence",
+          detail: "overall Neutral contradicts high-risk / empty-organic evidence state",
+        });
+      }
+    }
+    for (const slide of input.slides) {
+      const page = slide.pageNumber;
+      const prov = String(slide.visualAnalysis?.provenanceLabel ?? "");
+      const isSuggestPage = page === 11 || page === 12;
+      const refs = [...(slide.evidenceRefs ?? []), ...(slide.assetRefs ?? [])].join(" ");
+      if (isSuggestPage && /arsenkin/i.test(refs) && prov && !/Arsenkin/i.test(prov)) {
+        issues.push({
+          code: "provenance-label-mismatch",
+          detail: `page ${page}: Arsenkin evidence with non-Arsenkin provenance`,
+        });
+      }
+      if (isSuggestPage && /сохранённые поисковые подсказки/i.test(prov) && /arsenkin/i.test(refs)) {
+        issues.push({
+          code: "provenance-label-mismatch",
+          detail: `page ${page}: generic suggest provenance for Arsenkin asset`,
+        });
+      }
     }
     if (input.clientFinalize && input.adminDecisionSet?.qaSampleOnly === true) {
       issues.push({
@@ -535,10 +647,18 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
   }
 
   const passed = issues.length === 0;
+  const compositeOk =
+    input.compositeBinding &&
+    input.compositeBinding.sourceReportRunId &&
+    input.compositeBinding.effectiveReportRunId &&
+    input.clientContentSourceReportRunId === input.compositeBinding.sourceReportRunId &&
+    (input.expectedRunId === input.compositeBinding.effectiveReportRunId ||
+      (input.compositeBinding.enrichmentRunIds ?? []).includes(String(input.expectedRunId)));
   const foreignClient =
     Boolean(input.expectedRunId) &&
     Boolean(input.clientContentSourceReportRunId) &&
-    input.clientContentSourceReportRunId !== input.expectedRunId;
+    input.clientContentSourceReportRunId !== input.expectedRunId &&
+    !compositeOk;
   return {
     passed,
     issues,

@@ -255,6 +255,14 @@ export type ReportAssetV1 = {
     subjectBinding?: "EXACT_SUBJECT" | "WRONG_SUBJECT" | "AMBIGUOUS" | "ABSENT" | string;
     arsenkinTool?: string;
     surface?: string;
+    provider?: string;
+    tool?: string;
+    engine?: string;
+    region?: string;
+    observationCount?: number;
+    capturedAt?: string;
+    reportRunId?: string;
+    suggestionRows?: string[];
   };
 };
 

@@ -154,16 +154,36 @@ function main() {
       kind: "surface_panel",
       title: "Подсказки Яндекс",
       imageData: FAKE,
-      evidenceRefs: ["sf-suggest-1"],
+      evidenceRefs: ["serp_observation:arsenkin-yandex-1"],
       status: "ready",
+      meta: {
+        provider: "arsenkin",
+        tool: "suggest",
+        engine: "YANDEX",
+        region: "RU",
+        observationCount: 3,
+        suggestionRows: [
+          "Тест Субъект биография",
+          "Тест Субъект компания",
+          "Тест Субъект новости",
+        ],
+      },
     },
     {
       assetRef: "ru_suggestions_google",
       kind: "surface_panel",
       title: "Подсказки Google",
       imageData: FAKE,
-      evidenceRefs: ["sf-suggest-2"],
+      evidenceRefs: ["serp_observation:arsenkin-google-1"],
       status: "ready",
+      meta: {
+        provider: "arsenkin",
+        tool: "suggest",
+        engine: "GOOGLE",
+        region: "RU",
+        observationCount: 2,
+        suggestionRows: ["Тест Субъект LinkedIn", "Тест Субъект Wikipedia"],
+      },
     },
     {
       assetRef: "ru_related_1",
@@ -277,6 +297,18 @@ function main() {
         /ассоциа|подсказ|тем/i.test(suggestSlide.visualAnalysis.whyItMatters)
     ),
     suggestSlide?.visualAnalysis?.whyItMatters?.slice(0, 100)
+  );
+  check(
+    "p11-12 Arsenkin provenance labels",
+    Boolean(
+      /Arsenkin Tools API.*Yandex Suggest/i.test(
+        String(deck.finalSlides[10]?.visualAnalysis?.provenanceLabel ?? "")
+      ) &&
+        /Arsenkin Tools API.*Google Suggest/i.test(
+          String(suggestSlide?.visualAnalysis?.provenanceLabel ?? "")
+        )
+    ),
+    `${deck.finalSlides[10]?.visualAnalysis?.provenanceLabel} | ${suggestSlide?.visualAnalysis?.provenanceLabel}`
   );
 
   const knowledgeSlide = deck.finalSlides.find((s) => s.slideKey === "p19_ru_knowledge_2");

@@ -36,6 +36,17 @@ export type VisualSlideAnalysis = {
   clientMeaning?: string;
   /** Extra framed signals beyond the two shown in sidebar */
   moreSignalsCount?: number;
+  /** Structured provenance for Arsenkin / SERP panels */
+  panelMeta?: {
+    provider?: string;
+    tool?: string;
+    engine?: string;
+    region?: string;
+    observationCount?: number;
+    capturedAt?: string;
+    reportRunId?: string;
+    evidenceRefs?: string[];
+  };
 };
 
 export type OrionGoldenDeckSlide = {

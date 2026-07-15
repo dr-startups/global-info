@@ -46,9 +46,14 @@ export type OrionSurfaceKpis = {
   region: OrionRegionBucket;
   linksTotal: number;
   linksAdverse: number;
-  linksAdversePct: number;
+  /** null when sample was not collected / zero denominator. */
+  linksAdversePct: number | null;
+  sampleStatus: "COLLECTED" | "COLLECTED_NO_RESULTS" | "NOT_COLLECTED" | "INHERITED_BASE";
   suggestionsTotal: number;
   suggestionsAdverse: number;
+  suggestionsExplicitAdverse: number;
+  suggestionsContextualRisk: number;
+  suggestionsIdentityRisk: number;
   relatedTotal: number;
   relatedAdverse: number;
   /** True only for EXACT_SUBJECT (not any Wikipedia URL). */
@@ -61,7 +66,13 @@ export type OrionSurfaceKpis = {
   videosTotal: number;
   knowledgeTotal: number;
   knowledgeAdverse: number;
-  overallBadge: "Крайне негативный" | "Нежелательный" | "Смешанный" | "Нейтральный" | "Данных мало";
+  /** Search-surface visibility only. */
+  searchVisibilityBadge: "Крайне негативный" | "Нежелательный" | "Смешанный" | "Нейтральный" | "Данных мало" | "Данных недостаточно";
+  /** Overall digital-profile risk including compliance/risk findings. */
+  overallRiskBadge: "Крайне негативный" | "Нежелательный" | "Смешанный" | "Нейтральный" | "Данных мало" | "Данных недостаточно";
+  dataQualityBadge: "COLLECTED" | "PARTIAL" | "INSUFFICIENT";
+  /** @deprecated use searchVisibilityBadge / overallRiskBadge */
+  overallBadge: "Крайне негативный" | "Нежелательный" | "Смешанный" | "Нейтральный" | "Данных мало" | "Данных недостаточно";
 };
 
 export type OrionComplianceStatusKind =
@@ -1091,21 +1102,167 @@ function themeAnchorEntities(
   return out;
 }
 
-function badgeFor(kpis: Omit<OrionSurfaceKpis, "overallBadge" | "region">): OrionSurfaceKpis["overallBadge"] {
+function badgeFor(kpis: {
+  linksTotal: number;
+  linksAdverse: number;
+  linksAdversePct: number | null;
+  suggestionsTotal: number;
+  suggestionsAdverse: number;
+  suggestionsExplicitAdverse?: number;
+  knowledgeAdverse: number;
+}): OrionSurfaceKpis["searchVisibilityBadge"] {
+  if (kpis.linksTotal === 0 && kpis.suggestionsTotal === 0) return "Данных недостаточно";
   if (kpis.linksTotal < 5 && kpis.suggestionsTotal < 3) return "Данных мало";
-  // Require both volume and share for "крайне негативный" — % alone overfits thin UAE samples.
-  // Do not let imagesAdverse alone drive badge when image pages are not shown in classic deck.
+  const explicit = kpis.suggestionsExplicitAdverse ?? kpis.suggestionsAdverse;
+  const pct = kpis.linksAdversePct;
   if (
-    (kpis.linksAdversePct >= 30 && kpis.linksAdverse >= 12) ||
-    kpis.suggestionsAdverse >= 5
+    (pct != null && pct >= 30 && kpis.linksAdverse >= 12) ||
+    explicit >= 5
   ) {
     return "Крайне негативный";
   }
-  if (kpis.linksAdversePct >= 10 || kpis.suggestionsAdverse >= 1) {
+  if ((pct != null && pct >= 10) || explicit >= 1) {
     return "Нежелательный";
   }
   if (kpis.linksAdverse > 0 || kpis.knowledgeAdverse > 0) return "Смешанный";
+  if (kpis.linksTotal === 0) return "Данных недостаточно";
   return "Нейтральный";
+}
+
+/** Classify autocomplete suggestion relative to subject and known risk themes. */
+export function classifySuggestionIntent(
+  query: string,
+  subjectName: string,
+  riskThemes: string[] = []
+): "explicitAdverse" | "contextualRisk" | "identityOrNamesakeRisk" | "neutral" | "irrelevant" {
+  const q = query.trim().toLowerCase();
+  if (!q) return "irrelevant";
+  const subject = subjectName.trim().toLowerCase();
+  const tokens = subject.split(/\s+/).filter((t) => t.length >= 3);
+  const mentionsSubject = tokens.length === 0 || tokens.some((t) => q.includes(t));
+  if (!mentionsSubject) return "irrelevant";
+
+  if (
+    classifyAutocompleteQuery(query, subjectName) === "RISK_QUERY" ||
+    /мошен|афер|уголов|арест|суд|скандал|коррупц|взятк|криминал|убийство|вор\b/i.test(q)
+  ) {
+    return "explicitAdverse";
+  }
+  for (const theme of riskThemes) {
+    const t = theme.trim().toLowerCase();
+    if (t.length >= 4 && q.includes(t) && !subject.includes(t)) {
+      return "contextualRisk";
+    }
+  }
+  if (/однофамил|другой|не тот|одноимен/i.test(q)) return "identityOrNamesakeRisk";
+  return "neutral";
+}
+
+function computeSurfaceKpis(
+  inventory: FullEvidenceInventory,
+  region: OrionRegionBucket,
+  subjectName: string,
+  options?: { riskThemes?: string[]; hasHighRiskEvidence?: boolean }
+): OrionSurfaceKpis {
+  const items = inventory.items.filter((i) => matchesRegion(i.region, region) && !isDemoOrNoiseItem(i));
+  const links = items.filter((i) => i.evidenceType === "search_result");
+  const linksAdverse = links.filter(isAdverseItem);
+  const suggestions = items.filter(isSuggestion);
+  const riskThemes = options?.riskThemes ?? [];
+  let suggestionsExplicitAdverse = 0;
+  let suggestionsContextualRisk = 0;
+  let suggestionsIdentityRisk = 0;
+  let suggestionsAdverse = 0;
+  for (const s of suggestions) {
+    const q = (s.query || s.title || "").trim();
+    const kind = classifySuggestionIntent(q, subjectName, riskThemes);
+    if (kind === "explicitAdverse") {
+      suggestionsExplicitAdverse += 1;
+      suggestionsAdverse += 1;
+    } else if (kind === "contextualRisk") {
+      suggestionsContextualRisk += 1;
+    } else if (kind === "identityOrNamesakeRisk") {
+      suggestionsIdentityRisk += 1;
+    } else if (isAdverseItem(s)) {
+      suggestionsAdverse += 1;
+      suggestionsExplicitAdverse += 1;
+    }
+  }
+  const related = items.filter(isRelated);
+  const relatedAdverse = related.filter((s) => {
+    const q = (s.query || s.title || "").trim();
+    return classifySuggestionIntent(q, subjectName, riskThemes) === "explicitAdverse" || isAdverseItem(s);
+  });
+  const wiki = resolveWikipediaStatus(inventory, region, subjectName);
+  const wikiPresent = wiki.status === "EXACT_SUBJECT";
+  const linksClean = links;
+  const linksAdverseClean = linksAdverse;
+  const images = items.filter(isImage);
+  const imagesAdverse = images.filter(isAdverseItem);
+  const videos = items.filter(isVideo);
+  const knowledge = items.filter(isKnowledge);
+  const knowledgeAdverse = knowledge.filter(isAdverseItem);
+  const linksTotal = linksClean.length;
+  const linksAdverseCount = linksAdverseClean.length;
+  const linksAdversePct =
+    linksTotal > 0 ? Math.round((linksAdverseCount / linksTotal) * 100) : null;
+  // Organic KPI sampleStatus is about organic links, not autocomplete presence.
+  // Suggestions-only enrichment must not mark organic as COLLECTED_NO_RESULTS.
+  const sampleStatus: OrionSurfaceKpis["sampleStatus"] =
+    linksTotal > 0 ? "COLLECTED" : "NOT_COLLECTED";
+
+  const base = {
+    region,
+    linksTotal,
+    linksAdverse: linksAdverseCount,
+    linksAdversePct,
+    sampleStatus,
+    suggestionsTotal: suggestions.length,
+    suggestionsAdverse,
+    suggestionsExplicitAdverse,
+    suggestionsContextualRisk,
+    suggestionsIdentityRisk,
+    relatedTotal: related.length,
+    relatedAdverse: relatedAdverse.length,
+    wikipediaPresent: wikiPresent,
+    wikipediaStatus: wiki.status,
+    wikipediaTitle: wiki.title,
+    wikipediaUrl: wiki.url,
+    imagesTotal: images.length,
+    imagesAdverse: imagesAdverse.length,
+    videosTotal: videos.length,
+    knowledgeTotal: knowledge.length,
+    knowledgeAdverse: knowledgeAdverse.length,
+  };
+
+  let searchVisibilityBadge = badgeFor(base);
+  let overallRiskBadge = searchVisibilityBadge;
+  if (options?.hasHighRiskEvidence) {
+    if (overallRiskBadge === "Нейтральный" || overallRiskBadge === "Данных мало") {
+      overallRiskBadge = "Нежелательный";
+    }
+    if (linksTotal === 0 && searchVisibilityBadge === "Нейтральный") {
+      searchVisibilityBadge = "Данных недостаточно";
+    }
+  }
+  if (linksTotal === 0 && searchVisibilityBadge === "Нейтральный") {
+    searchVisibilityBadge = "Данных недостаточно";
+  }
+
+  const dataQualityBadge: OrionSurfaceKpis["dataQualityBadge"] =
+    linksTotal === 0 && suggestions.length === 0
+      ? "INSUFFICIENT"
+      : linksTotal === 0 || suggestions.length === 0
+        ? "PARTIAL"
+        : "COLLECTED";
+
+  return {
+    ...base,
+    searchVisibilityBadge,
+    overallRiskBadge,
+    dataQualityBadge,
+    overallBadge: overallRiskBadge,
+  };
 }
 
 function surfaceType(item: FullEvidenceInventory["items"][number]): string {
@@ -1133,63 +1290,6 @@ function isVideo(item: FullEvidenceInventory["items"][number]): boolean {
 function isKnowledge(item: FullEvidenceInventory["items"][number]): boolean {
   const et = surfaceType(item);
   return et.includes("knowledge");
-}
-
-function computeSurfaceKpis(
-  inventory: FullEvidenceInventory,
-  region: OrionRegionBucket,
-  subjectName: string
-): OrionSurfaceKpis {
-  const items = inventory.items.filter((i) => matchesRegion(i.region, region) && !isDemoOrNoiseItem(i));
-  const links = items.filter((i) => i.evidenceType === "search_result");
-  const linksAdverse = links.filter(isAdverseItem);
-  const suggestions = items.filter(isSuggestion);
-  const suggestionsAdverse = suggestions.filter((s) => {
-    const q = (s.query || s.title || "").trim();
-    return classifyAutocompleteQuery(q, subjectName) === "RISK_QUERY" || isAdverseItem(s);
-  });
-  const related = items.filter(isRelated);
-  const relatedAdverse = related.filter((s) => {
-    const q = (s.query || s.title || "").trim();
-    return classifyAutocompleteQuery(q, subjectName) === "RISK_QUERY" || isAdverseItem(s);
-  });
-  const wiki = resolveWikipediaStatus(inventory, region, subjectName);
-  const wikiPresent = wiki.status === "EXACT_SUBJECT";
-  // Prefer non-demo organic links for share metrics
-  const linksClean = links;
-  const linksAdverseClean = linksAdverse;
-  const images = items.filter(isImage);
-  const imagesAdverse = images.filter(isAdverseItem);
-  const videos = items.filter(isVideo);
-  const knowledge = items.filter(isKnowledge);
-  const knowledgeAdverse = knowledge.filter(isAdverseItem);
-  const linksTotal = linksClean.length > 0 ? linksClean.length : links.length;
-  const linksAdverseCount = linksClean.length > 0 ? linksAdverseClean.length : linksAdverse.length;
-  const linksAdversePct =
-    linksTotal > 0 ? Math.round((linksAdverseCount / linksTotal) * 100) : 0;
-  const base = {
-    linksTotal,
-    linksAdverse: linksAdverseCount,
-    linksAdversePct,
-    suggestionsTotal: suggestions.length,
-    suggestionsAdverse: suggestionsAdverse.length,
-    relatedTotal: related.length,
-    relatedAdverse: relatedAdverse.length,
-    wikipediaPresent: wikiPresent,
-    wikipediaStatus: wiki.status,
-    wikipediaTitle: wiki.title,
-    wikipediaUrl: wiki.url,
-    imagesTotal: images.length,
-    imagesAdverse: imagesAdverse.length,
-    videosTotal: videos.length,
-    knowledgeTotal: knowledge.length,
-    knowledgeAdverse: knowledgeAdverse.length,
-  };
-  return {
-    region,
-    ...base,
-    overallBadge: badgeFor(base),
-  };
 }
 
 function buildThemes(
@@ -2048,7 +2148,10 @@ function enrichThemesFromCompliance(
 }
 
 function formatPctLine(kpis: OrionSurfaceKpis): string {
-  if (kpis.linksTotal <= 0) return "недостаточно органических ссылок для доли";
+  if (kpis.linksTotal <= 0 || kpis.linksAdversePct == null) {
+    if (kpis.sampleStatus === "COLLECTED_NO_RESULTS") return "Результатов не найдено";
+    return "— (данные не собраны)";
+  }
   return `${kpis.linksAdversePct}% (${kpis.linksAdverse} из ${kpis.linksTotal})`;
 }
 
@@ -2404,7 +2507,7 @@ function buildExecutiveNarrative(input: {
   // GSM-style résumé body: intro points to bullets — never leave a dangling «темам:».
   const body: string[] = [
     scope,
-    `В результатах поиска в Яндексе и Google обнаружены ссылки, которые могут вызвать затруднения при прохождении compliance-процедур. По России ${formatPctLine(input.ru)} и ОАЭ ${formatPctLine(input.uae)} ссылок в сохранённой выдаче выглядят потенциально нежелательными; нежелательные ссылки ведут на публикации по темам, указанным в пунктах ниже.`,
+    `В результатах поиска в Яндексе и Google обнаружены ссылки, которые могут вызвать затруднения при прохождении комплаенс-процедур. По России ${formatPctLine(input.ru)} и ОАЭ ${formatPctLine(input.uae)} ссылок в сохранённой выдаче выглядят потенциально нежелательными; нежелательные ссылки ведут на публикации по темам, указанным в пунктах ниже.`,
   ];
   if (singleClaims.length > 0) {
     body.push("Отдельно зафиксированы единичные нежелательные публикации (см. пункты ниже).");
@@ -2444,9 +2547,25 @@ export function buildOrionThemeSet(input: {
     input.inventory,
     subjectName
   );
-  const ru = computeSurfaceKpis(input.inventory, "RU", subjectName);
-  const uae = computeSurfaceKpis(input.inventory, "UAE", subjectName);
   const compliance = complianceSignals(input.inventory, themes);
+  const riskThemes = themes.map((t) => t.title).filter(Boolean);
+  const highRisk =
+    compliance.some(
+      (c) =>
+        c.hasDbHit &&
+        (c.statusKind === "pep" || c.statusKind === "sanctions" || c.statusKind === "rca")
+    ) ||
+    themes.some((t) =>
+      /criminal|legal|sanction|pep|compliance|risk|негатив/i.test(String(t.title ?? ""))
+    );
+  const ru = computeSurfaceKpis(input.inventory, "RU", subjectName, {
+    riskThemes,
+    hasHighRiskEvidence: highRisk,
+  });
+  const uae = computeSurfaceKpis(input.inventory, "UAE", subjectName, {
+    riskThemes,
+    hasHighRiskEvidence: highRisk,
+  });
   const exec = buildExecutiveNarrative({
     subjectName,
     themes,
@@ -2531,7 +2650,7 @@ export function regionalAuditDashboardBlock(input: {
   ].join(" ");
 
   const kpiLines = [
-    `Доля потенциально нежелательных ссылок: ${kpis.linksAdversePct}% (${kpis.linksAdverse} из ${Math.max(kpis.linksTotal, 1)}) — оценка профиля: ${kpis.overallBadge}.`,
+    `Доля потенциально нежелательных ссылок: ${formatPctLine(kpis)} — оценка видимости: ${kpis.searchVisibilityBadge}; общий итог: ${kpis.overallRiskBadge}.`,
     `Поисковые подсказки: ${kpis.suggestionsAdverse} из ${kpis.suggestionsTotal} указывают на нежелательные темы.`,
     wikipediaStatusLine(kpis),
   ];
@@ -2785,7 +2904,7 @@ export function buildDecisionConsequences(themeSet: OrionThemeSet): {
     ],
     recommendation:
       "Рекомендуются работы с международными базами данных, создание целевого цифрового профиля и вытеснение нежелательных ссылок из результатов поиска.",
-    riskLevel: high ? "Крайне высокий" : themeSet.ru.linksAdversePct >= 8 ? "Высокий" : "Средний",
+    riskLevel: high ? "Крайне высокий" : (themeSet.ru.linksAdversePct ?? -1) >= 8 ? "Высокий" : "Средний",
   };
 }
 

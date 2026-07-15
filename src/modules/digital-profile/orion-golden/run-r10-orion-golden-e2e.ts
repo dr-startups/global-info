@@ -231,6 +231,7 @@ export async function runR10OrionGoldenE2e(options: {
     const merged = await mergeRunScopedSerpObservations({
       inventory,
       auditRunId: reportRunId,
+      caseId,
     });
     inventory = merged.inventory;
     writeJson(join(outputRoot, "run-scoped-serp-merge.json"), {
@@ -240,6 +241,9 @@ export async function runR10OrionGoldenE2e(options: {
       duplicateKeys: merged.duplicateKeys.slice(0, 20),
       warnings: merged.warnings,
     });
+    if (merged.compositeProvenance) {
+      writeJson(join(outputRoot, "composite-serp-merge-provenance.json"), merged.compositeProvenance);
+    }
   }
   writeJson(join(outputRoot, "full-evidence-inventory.json"), inventory);
 
