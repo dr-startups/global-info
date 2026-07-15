@@ -1492,8 +1492,12 @@ export type ArsenkinSurfaceMatrixStatus =
   | "NOT STARTED"
   | "PLANNED"
   | "RUNNING"
-  | "DONE"
+  | "MEASURED"
   | "NO RESULTS"
+  | "FAILED PARSE"
+  | "SUBMIT UNKNOWN"
+  | "RESULT FETCH FAILED"
+  | "DONE"
   | "FAILED";
 
 export type ArsenkinSurfaceMatrixRow = {
@@ -1506,6 +1510,35 @@ export type ArsenkinSurfaceMatrixRow = {
   status: ArsenkinSurfaceMatrixStatus;
   observationsCount: number;
   tasksCount: number;
+};
+
+export type ArsenkinRecoveryUiState = {
+  submitUnknown: Array<{
+    providerTaskId: string;
+    toolName: string;
+    requestHash: string;
+    errorCode: string | null;
+    externalTaskId: string | null;
+    engine: string | null;
+    region: string | null;
+    query: string | null;
+    createdAt: string;
+    httpStatus: number | null;
+    sanitizedRequest: Record<string, unknown>;
+    sanitizedResponse: Record<string, unknown> | null;
+    canLinkExisting: boolean;
+    canConfirmNotCreated: boolean;
+    canRetryAfterConfirm: boolean;
+  }>;
+  doneZeroObservations: Array<{
+    providerTaskId: string;
+    toolName: string;
+    externalTaskId: string;
+    requestHash: string;
+  }>;
+  canReconcileDoneZeroObs: boolean;
+  canContinueStage1: boolean;
+  canRetryUnconfirmed: boolean;
 };
 
 export type ArsenkinUiStatusDto = {
@@ -1555,6 +1588,7 @@ export type ArsenkinUiStatusDto = {
     | null;
   canRefreshReadiness?: boolean;
   surfaceMatrix?: ArsenkinSurfaceMatrixRow[];
+  recovery?: ArsenkinRecoveryUiState | null;
 };
 
 export type ArsenkinUiPlanRequestDto = {
@@ -1648,6 +1682,59 @@ export function refreshArsenkinDbReadiness(
       reportRunId: params?.reportRunId,
       stage: params?.stage,
     }),
+  });
+}
+
+export function recoverArsenkinLinkExisting(
+  caseId: string,
+  payload: ArsenkinUiActionPayload & { providerTaskId: string; externalTaskId: string; evidenceNote?: string }
+): Promise<ArsenkinUiStatusDto> {
+  return request<ArsenkinUiStatusDto>(`/cases/${caseId}/orion-golden/arsenkin`, {
+    method: "POST",
+    body: JSON.stringify({ action: "recover-link-existing", ...payload }),
+  });
+}
+
+export function recoverArsenkinConfirmNotCreated(
+  caseId: string,
+  payload: ArsenkinUiActionPayload & { providerTaskId: string; reason: string; evidenceNote?: string }
+): Promise<ArsenkinUiStatusDto> {
+  return request<ArsenkinUiStatusDto>(`/cases/${caseId}/orion-golden/arsenkin`, {
+    method: "POST",
+    body: JSON.stringify({ action: "recover-confirm-not-created", ...payload }),
+  });
+}
+
+export function recoverArsenkinRetryUnconfirmed(
+  caseId: string,
+  payload: ArsenkinUiActionPayload & { providerTaskId: string }
+): Promise<ArsenkinUiStatusDto> {
+  return request<ArsenkinUiStatusDto>(`/cases/${caseId}/orion-golden/arsenkin`, {
+    method: "POST",
+    body: JSON.stringify({ action: "recover-retry-unconfirmed", ...payload }),
+  });
+}
+
+export function recoverArsenkinReconcileDone(
+  caseId: string,
+  payload: ArsenkinUiActionPayload
+): Promise<ArsenkinUiStatusDto & { reconcileResults?: unknown }> {
+  return request<ArsenkinUiStatusDto & { reconcileResults?: unknown }>(
+    `/cases/${caseId}/orion-golden/arsenkin`,
+    {
+      method: "POST",
+      body: JSON.stringify({ action: "recover-reconcile-done", ...payload }),
+    }
+  );
+}
+
+export function recoverArsenkinContinueStage1(
+  caseId: string,
+  payload: ArsenkinUiActionPayload & { confirmPlanDigest: string; confirmed: true }
+): Promise<ArsenkinUiStatusDto> {
+  return request<ArsenkinUiStatusDto>(`/cases/${caseId}/orion-golden/arsenkin`, {
+    method: "POST",
+    body: JSON.stringify({ action: "recover-continue-stage1", ...payload }),
   });
 }
 

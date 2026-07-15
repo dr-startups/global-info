@@ -9,6 +9,7 @@ import { ArsenkinRequestError, type ArsenkinClient } from "./client";
 import { acquireArsenkinAccountSlot } from "./account-rate-limit";
 import { computeLimitsSpent } from "./cost";
 import { hashProviderRequest, type ProviderTaskStore } from "./provider-task-store";
+import { buildSubmitFailureDiagnostics } from "./submit-failure-diagnostics";
 import type { ArsenkinSetTaskRequest, ProviderTaskRecord } from "./types";
 
 export type EnsureArsenkinTaskInput = {
@@ -189,7 +190,34 @@ export async function ensureArsenkinTask(
       { state: "SUBMITTING", limitsBefore, errorCode: null },
       { ownerId: workerId, expectStates: ["SUBMITTING"] }
     );
+    const data = requestJson.data ?? {};
+    const queries = Array.isArray(data.queries) ? data.queries : [];
+    const setStarted = Date.now();
+    console.info(
+      JSON.stringify({
+        event: "arsenkin_set_attempt",
+        reportRunId: input.reportRunId,
+        providerTaskId: claimed.id,
+        requestHash,
+        toolName: input.toolName,
+        engine: data.se ?? null,
+        region: data.region ?? null,
+        queryCount: queries.length,
+        attempt: claimed.attempts + 1,
+      })
+    );
     const set = await accountRequest(store, () => client.setTask(requestJson));
+    console.info(
+      JSON.stringify({
+        event: "arsenkin_set_ok",
+        reportRunId: input.reportRunId,
+        providerTaskId: claimed.id,
+        requestHash,
+        toolName: input.toolName,
+        externalTaskId: String(set.task_id),
+        elapsedMs: Date.now() - setStarted,
+      })
+    );
     row = await store.markExternalId(claimed.id, String(set.task_id), { ownerId: workerId });
     return store.updateState(
       claimed.id,
@@ -204,6 +232,23 @@ export async function ensureArsenkinTask(
     );
   } catch (error) {
     const failed = submitFailedState(error, claimed.attempts);
+    const diagnostics = buildSubmitFailureDiagnostics(error);
+    console.info(
+      JSON.stringify({
+        event: "arsenkin_set_failed",
+        reportRunId: input.reportRunId,
+        providerTaskId: claimed.id,
+        requestHash,
+        toolName: input.toolName,
+        attempt: claimed.attempts + 1,
+        state: failed.state,
+        errorCode: failed.errorCode,
+        httpStatus: (diagnostics._submitDiagnostics as { httpStatus?: number | null } | undefined)
+          ?.httpStatus,
+        responseBody: (diagnostics._submitDiagnostics as { responseBody?: unknown } | undefined)
+          ?.responseBody,
+      })
+    );
     return store.updateState(
       claimed.id,
       {
@@ -216,6 +261,7 @@ export async function ensureArsenkinTask(
         lockedBy: null,
         lockedAt: null,
         leaseUntil: null,
+        responseJson: diagnostics,
       },
       { ownerId: workerId }
     );

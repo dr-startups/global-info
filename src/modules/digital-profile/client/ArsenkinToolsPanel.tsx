@@ -13,6 +13,11 @@ import {
   getArsenkinStatus,
   planArsenkinRun,
   prepareArsenkinRun,
+  recoverArsenkinConfirmNotCreated,
+  recoverArsenkinContinueStage1,
+  recoverArsenkinLinkExisting,
+  recoverArsenkinReconcileDone,
+  recoverArsenkinRetryUnconfirmed,
   refreshArsenkinDbReadiness,
   syncArsenkinRun,
   type ArsenkinUiPlanDto,
@@ -99,9 +104,16 @@ function statusLabelRu(s: ArsenkinUiStatusDto["status"]): string {
 }
 
 function matrixTone(status: ArsenkinSurfaceMatrixRow["status"]): "ok" | "warn" | "neutral" | "danger" {
-  if (status === "DONE" || status === "NO RESULTS") return "ok";
+  if (status === "MEASURED" || status === "DONE" || status === "NO RESULTS") return "ok";
   if (status === "PLANNED" || status === "RUNNING") return "warn";
-  if (status === "FAILED") return "danger";
+  if (
+    status === "FAILED" ||
+    status === "FAILED PARSE" ||
+    status === "SUBMIT UNKNOWN" ||
+    status === "RESULT FETCH FAILED"
+  ) {
+    return "danger";
+  }
   return "neutral";
 }
 
@@ -120,6 +132,12 @@ export function ArsenkinToolsPanel(props: {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmedPaid, setConfirmedPaid] = useState(false);
   const [executeLocked, setExecuteLocked] = useState(false);
+  const [linkTaskId, setLinkTaskId] = useState("");
+  const [linkExternalId, setLinkExternalId] = useState("");
+  const [confirmReason, setConfirmReason] = useState(
+    "provider_queue_and_results_checked_no_task_found"
+  );
+  const [confirmTaskId, setConfirmTaskId] = useState("");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const executeInFlight = useRef(false);
 
@@ -324,6 +342,82 @@ export function ArsenkinToolsPanel(props: {
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
+  const onReconcileDone = () => {
+    const runId = activeReportRunId ?? reportRunId;
+    if (!runId) return;
+    void runAction(async () => {
+      const s = await recoverArsenkinReconcileDone(caseId, { reportRunId: runId, stage });
+      setStatus(s);
+      setBanner("Повторное получение результатов DONE-задач завершено.");
+    });
+  };
+
+  const onConfirmNotCreated = () => {
+    const runId = activeReportRunId ?? reportRunId;
+    const providerTaskId = confirmTaskId || status?.recovery?.submitUnknown[0]?.providerTaskId;
+    if (!runId || !providerTaskId || !confirmReason.trim()) return;
+    void runAction(async () => {
+      const s = await recoverArsenkinConfirmNotCreated(caseId, {
+        reportRunId: runId,
+        stage,
+        providerTaskId,
+        reason: confirmReason.trim(),
+      });
+      setStatus(s);
+      setBanner("SUBMIT_UNKNOWN: подтверждено отсутствие задачи у провайдера.");
+    });
+  };
+
+  const onLinkExisting = () => {
+    const runId = activeReportRunId ?? reportRunId;
+    const providerTaskId = linkTaskId || status?.recovery?.submitUnknown[0]?.providerTaskId;
+    if (!runId || !providerTaskId || !linkExternalId.trim()) return;
+    void runAction(async () => {
+      const s = await recoverArsenkinLinkExisting(caseId, {
+        reportRunId: runId,
+        stage,
+        providerTaskId,
+        externalTaskId: linkExternalId.trim(),
+      });
+      setStatus(s);
+      setBanner(`Привязан существующий Arsenkin task ${linkExternalId.trim()}.`);
+      setLinkExternalId("");
+    });
+  };
+
+  const onRetryUnconfirmed = () => {
+    const runId = activeReportRunId ?? reportRunId;
+    const providerTaskId =
+      status?.recovery?.submitUnknown.find((t) => t.canRetryAfterConfirm)?.providerTaskId ??
+      status?.recovery?.submitUnknown[0]?.providerTaskId;
+    if (!runId || !providerTaskId) return;
+    void runAction(async () => {
+      const s = await recoverArsenkinRetryUnconfirmed(caseId, {
+        reportRunId: runId,
+        stage,
+        providerTaskId,
+      });
+      setStatus(s);
+      setBanner("Повторён только неподтверждённый /set (один раз).");
+    });
+  };
+
+  const onContinueStage1 = () => {
+    const runId = activeReportRunId ?? reportRunId;
+    const digest = status?.planDigest ?? plan?.digest;
+    if (!runId || !digest) return;
+    void runAction(async () => {
+      const s = await recoverArsenkinContinueStage1(caseId, {
+        reportRunId: runId,
+        stage,
+        confirmPlanDigest: digest,
+        confirmed: true,
+      });
+      setStatus(s);
+      setBanner("Stage 1 продолжен после recovery (DONE tasks не дублируются).");
+    });
+  };
+
   const terminalBad =
     status?.status === "FAILED" ||
     status?.status === "MANUAL_INTERVENTION_REQUIRED" ||
@@ -497,6 +591,127 @@ export function ArsenkinToolsPanel(props: {
             {status?.lastError ? ` — ${status.lastError}` : ""}
           </ErrorBox>
         ) : null}
+
+        {canDecide && status?.recovery && (
+          (status.recovery.submitUnknown.length > 0 ||
+            status.recovery.doneZeroObservations.length > 0 ||
+            status.recovery.canContinueStage1) ? (
+          <div
+            className="dp-stack"
+            style={{ gap: 8, border: "1px solid #f59e0b", borderRadius: 8, padding: 10 }}
+            data-testid="arsenkin-recovery-panel"
+          >
+            <strong>Recovery / reconciliation</strong>
+            <span className="dp-muted" style={{ fontSize: 13 }}>
+              Не полный перезапуск. Действия безопасны и не создают дубликаты DONE-задач.
+            </span>
+
+            {status.recovery.doneZeroObservations.length > 0 ? (
+              <div className="dp-stack" style={{ gap: 6 }}>
+                <span>
+                  DONE без observations:{" "}
+                  {status.recovery.doneZeroObservations
+                    .map((t) => `${t.toolName}#${t.externalTaskId}`)
+                    .join(", ")}
+                </span>
+                <button
+                  type="button"
+                  className="dp-btn dp-btn-primary"
+                  disabled={busy}
+                  onClick={onReconcileDone}
+                  data-testid="arsenkin-recover-reconcile-done"
+                >
+                  Повторно получить результаты DONE-задач
+                </button>
+              </div>
+            ) : null}
+
+            {status.recovery.submitUnknown.map((t) => (
+              <div key={t.providerTaskId} className="dp-stack" style={{ gap: 6 }}>
+                <strong>SUBMIT_UNKNOWN · {t.toolName}</strong>
+                <div className="dp-muted" style={{ fontSize: 12 }}>
+                  engine={t.engine ?? "—"} · region={t.region ?? "—"} · query={t.query ?? "—"}
+                  <br />
+                  requestHash={t.requestHash.slice(0, 16)}… · error={t.errorCode ?? "—"} · http=
+                  {t.httpStatus ?? "—"}
+                  <br />
+                  createdAt={t.createdAt}
+                </div>
+                {t.canLinkExisting ? (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <input
+                      className="dp-input"
+                      placeholder="Arsenkin task ID"
+                      value={linkExternalId}
+                      onFocus={() => setLinkTaskId(t.providerTaskId)}
+                      onChange={(e) => {
+                        setLinkTaskId(t.providerTaskId);
+                        setLinkExternalId(e.target.value);
+                      }}
+                      data-testid="arsenkin-recover-link-external-id"
+                    />
+                    <button
+                      type="button"
+                      className="dp-btn"
+                      disabled={busy || !linkExternalId.trim()}
+                      onClick={onLinkExisting}
+                      data-testid="arsenkin-recover-link-existing"
+                    >
+                      Привязать существующий task ID
+                    </button>
+                  </div>
+                ) : null}
+                {t.canConfirmNotCreated ? (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <input
+                      className="dp-input"
+                      style={{ minWidth: 280 }}
+                      value={confirmReason}
+                      onFocus={() => setConfirmTaskId(t.providerTaskId)}
+                      onChange={(e) => {
+                        setConfirmTaskId(t.providerTaskId);
+                        setConfirmReason(e.target.value);
+                      }}
+                      data-testid="arsenkin-recover-confirm-reason"
+                    />
+                    <button
+                      type="button"
+                      className="dp-btn"
+                      disabled={busy || !confirmReason.trim()}
+                      onClick={onConfirmNotCreated}
+                      data-testid="arsenkin-recover-confirm-not-created"
+                    >
+                      Подтвердить: задача не создана
+                    </button>
+                  </div>
+                ) : null}
+                {t.canRetryAfterConfirm ? (
+                  <button
+                    type="button"
+                    className="dp-btn dp-btn-primary"
+                    disabled={busy}
+                    onClick={onRetryUnconfirmed}
+                    data-testid="arsenkin-recover-retry-unconfirmed"
+                  >
+                    Повторить только неподтверждённую задачу
+                  </button>
+                ) : null}
+              </div>
+            ))}
+
+            {status.recovery.canContinueStage1 ? (
+              <button
+                type="button"
+                className="dp-btn dp-btn-primary"
+                disabled={busy || !(status.planDigest || plan?.digest)}
+                onClick={onContinueStage1}
+                data-testid="arsenkin-recover-continue-stage1"
+              >
+                Продолжить Stage 1
+              </button>
+            ) : null}
+          </div>
+        ) : null)}
 
         {plan?.requests?.length ? (
           <div className="dp-stack" style={{ gap: 4 }}>

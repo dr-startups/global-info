@@ -16,6 +16,8 @@ export type SurfaceCoverageInput = {
   resultCount: number;
   errorCode?: string | null;
   capturedAt?: Date;
+  /** Override auto OK/NO_RESULTS (e.g. FAILED_PARSE, RESULT_FETCH_FAILED). */
+  status?: string;
 };
 
 const bizKey = (input: SurfaceCoverageInput) => ({
@@ -37,7 +39,9 @@ export async function upsertSurfaceCollectionCoverage(input: SurfaceCoverageInpu
     ...where,
     providerTaskId: input.providerTaskId ?? null,
     queryText: input.queryText,
-    status: input.resultCount > 0 ? "OK" : "NO_RESULTS",
+    status:
+      input.status ??
+      (input.resultCount > 0 ? "OK" : "NO_RESULTS"),
     resultCount: input.resultCount,
     errorCode: input.errorCode ?? null,
     capturedAt: input.capturedAt ?? new Date(),

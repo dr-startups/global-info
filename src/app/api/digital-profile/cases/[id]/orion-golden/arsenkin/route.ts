@@ -21,6 +21,13 @@ import {
   toPublicArsenkinUiDto,
   type ArsenkinUiStage,
 } from "@/modules/digital-profile/services/arsenkin-ui-orchestration-service";
+import {
+  recoverConfirmNotCreated,
+  recoverContinueStage1,
+  recoverLinkExistingTask,
+  recoverReconcileDoneZeroObs,
+  recoverRetryUnconfirmedSubmit,
+} from "@/modules/digital-profile/services/arsenkin-recovery-orchestration";
 
 export const dynamic = "force-dynamic";
 /** Execute may wait for Arsenkin completion; no fire-and-forget jobs. */
@@ -37,6 +44,10 @@ type Body = {
   /** Rejected — budget is server-side only. */
   maxNewTasks?: unknown;
   maxEstimatedLimits?: unknown;
+  providerTaskId?: string;
+  externalTaskId?: string;
+  reason?: string;
+  evidenceNote?: string;
 };
 
 function assertNoClientBudget(body: Body): void {
@@ -121,6 +132,79 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
       ...toPublicArsenkinUiDto(publicStatus),
       orphanedEvidenceIds,
     });
+  }
+
+  if (action === "recover-link-existing") {
+    const providerTaskId = String(body.providerTaskId ?? "").trim();
+    const externalTaskId = String(body.externalTaskId ?? "").trim();
+    if (!providerTaskId || !externalTaskId) {
+      throw new ValidationError("providerTaskId and externalTaskId required");
+    }
+    const out = await recoverLinkExistingTask({
+      caseId,
+      reportRunId,
+      stage,
+      providerTaskId,
+      externalTaskId,
+      actorId: user.id,
+      evidenceNote: body.evidenceNote ? String(body.evidenceNote) : undefined,
+    });
+    return jsonOk(out);
+  }
+
+  if (action === "recover-confirm-not-created") {
+    const providerTaskId = String(body.providerTaskId ?? "").trim();
+    const reason = String(body.reason ?? "").trim();
+    if (!providerTaskId || !reason) {
+      throw new ValidationError("providerTaskId and reason required");
+    }
+    const out = await recoverConfirmNotCreated({
+      caseId,
+      reportRunId,
+      stage,
+      providerTaskId,
+      actorId: user.id,
+      reason,
+      evidenceNote: body.evidenceNote ? String(body.evidenceNote) : undefined,
+    });
+    return jsonOk(out);
+  }
+
+  if (action === "recover-retry-unconfirmed") {
+    const providerTaskId = String(body.providerTaskId ?? "").trim();
+    if (!providerTaskId) throw new ValidationError("providerTaskId required");
+    const out = await recoverRetryUnconfirmedSubmit({
+      caseId,
+      reportRunId,
+      stage,
+      providerTaskId,
+      actorId: user.id,
+    });
+    return jsonOk(out);
+  }
+
+  if (action === "recover-reconcile-done") {
+    const out = await recoverReconcileDoneZeroObs({
+      caseId,
+      reportRunId,
+      stage,
+      actorId: user.id,
+    });
+    return jsonOk(out);
+  }
+
+  if (action === "recover-continue-stage1") {
+    const confirmPlanDigest = String(body.confirmPlanDigest ?? "").trim();
+    if (!confirmPlanDigest) throw new ValidationError("confirmPlanDigest required");
+    if (body.confirmed !== true) throw new ValidationError("confirmed=true required");
+    const out = await recoverContinueStage1({
+      caseId,
+      reportRunId,
+      stage,
+      actorId: user.id,
+      confirmPlanDigest,
+    });
+    return jsonOk(out);
   }
 
   throw new ValidationError(`Unknown action: ${action}`);

@@ -89,7 +89,7 @@ async function completePlannedRequest(
   return { payload: row.responseJson, task: row };
 }
 
-function mapPlannedPayload(input: {
+export function mapPlannedPayload(input: {
   req: ArsenkinExecutionRequest;
   caseId: string;
   auditRunId: string;

@@ -112,6 +112,36 @@ async function main() {
   assert.ok(paa[0]?.parentQueryId);
   assert.ok(String(paa[0]?.rawPayloadJson?.engineNote).includes("google-only"));
 
+  const mixed = mapCheckTopToObservations({
+    caseId: "case-1",
+    auditRunId: "run-1",
+    regionLabel: "RU",
+    language: "ru",
+    queries: ["Глинка Сергей Михайлович"],
+    se: [
+      { type: 2, region: ARSENKIN_REGION.YANDEX_MOSCOW },
+      { type: 11, region: ARSENKIN_REGION.GOOGLE_MOSCOW },
+    ],
+    payload: load("get-check-top-mixed-ru.json"),
+  });
+  assert.equal(mixed.filter((d) => d.engine === "YANDEX").length, 2);
+  assert.equal(mixed.filter((d) => d.engine === "GOOGLE").length, 3);
+
+  const paaEmpty = mapPaaToObservations({
+    caseId: "case-1",
+    auditRunId: "run-1",
+    regionLabel: "RU",
+    language: "ru",
+    queries: ["Глинка Сергей Михайлович"],
+    payload: load("get-paa-empty.json"),
+  });
+  assert.ok(paaEmpty.every((d) => d.providerStatus === "NO_RESULTS" || d.providerStatus === "OK"));
+  assert.equal(
+    paaEmpty.filter((d) => d.providerStatus === "OK").length,
+    0,
+    "empty PAA must not invent OK observations"
+  );
+
   const aiReq = buildAiSerpRequest({
     queries: ["Глинка Сергей Михайлович"],
     se: 1,

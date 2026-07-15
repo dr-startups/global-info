@@ -61,6 +61,7 @@ import {
   getArsenkinNetworkCallCount,
   resetArsenkinNetworkCallCount,
 } from "../providers/arsenkin/network-guard";
+import { toSubmitUnknownCandidate } from "../providers/arsenkin/submit-unknown-recovery";
 import { ConflictError, ValidationError } from "../http/errors";
 
 export type ArsenkinUiStatusCode =
@@ -126,6 +127,7 @@ export type ArsenkinUiStatusDto = {
   readinessCode: ArsenkinReadinessCode | null;
   canRefreshReadiness: boolean;
   surfaceMatrix?: ArsenkinSurfaceMatrixRow[];
+  recovery?: ArsenkinRecoveryUiState | null;
 };
 
 export type ArsenkinUiPlanRequestDto = {
@@ -146,8 +148,12 @@ export type ArsenkinSurfaceMatrixStatus =
   | "NOT STARTED"
   | "PLANNED"
   | "RUNNING"
-  | "DONE"
+  | "MEASURED"
   | "NO RESULTS"
+  | "FAILED PARSE"
+  | "SUBMIT UNKNOWN"
+  | "RESULT FETCH FAILED"
+  | "DONE"
   | "FAILED";
 
 export type ArsenkinSurfaceMatrixRow = {
@@ -160,6 +166,35 @@ export type ArsenkinSurfaceMatrixRow = {
   status: ArsenkinSurfaceMatrixStatus;
   observationsCount: number;
   tasksCount: number;
+};
+
+export type ArsenkinRecoveryUiState = {
+  submitUnknown: Array<{
+    providerTaskId: string;
+    toolName: string;
+    requestHash: string;
+    errorCode: string | null;
+    externalTaskId: string | null;
+    engine: string | null;
+    region: string | null;
+    query: string | null;
+    createdAt: string;
+    httpStatus: number | null;
+    sanitizedRequest: Record<string, unknown>;
+    sanitizedResponse: Record<string, unknown> | null;
+    canLinkExisting: boolean;
+    canConfirmNotCreated: boolean;
+    canRetryAfterConfirm: boolean;
+  }>;
+  doneZeroObservations: Array<{
+    providerTaskId: string;
+    toolName: string;
+    externalTaskId: string;
+    requestHash: string;
+  }>;
+  canReconcileDoneZeroObs: boolean;
+  canContinueStage1: boolean;
+  canRetryUnconfirmed: boolean;
 };
 
 const DEFAULT_DB_READINESS = getDefaultReadinessArtifactPath();
@@ -376,54 +411,107 @@ function humanizeBlockers(blockers: string[], readinessCode?: ArsenkinReadinessC
   });
 }
 
+function engineMatchesCell(planOrRowEngine: string, cellEngine: string): boolean {
+  const eng = String(planOrRowEngine ?? "").toUpperCase();
+  const cell = String(cellEngine ?? "").toUpperCase();
+  if (cell === "MULTI") return true;
+  if (eng === cell) return true;
+  // MIXED RU check-top covers both YANDEX and GOOGLE organic cells.
+  if (eng === "MIXED" && (cell === "YANDEX" || cell === "GOOGLE")) return true;
+  return false;
+}
+
 function buildSurfaceMatrix(input: {
   hasRun: boolean;
   uiStatus: ArsenkinUiStatusCode;
   plannedRequests: ArsenkinUiPlanRequestDto[];
-  coverageRows: Array<{ tool: string; engine: string; region: string; surface: string; status: string }>;
+  coverageRows: Array<{
+    tool: string;
+    engine: string;
+    region: string;
+    surface: string;
+    status: string;
+    providerTaskId?: string | null;
+  }>;
   observations: Array<{ engine: string; region: string; surface: string }>;
-  taskStates: string[];
+  providerTasks: Array<{
+    id: string;
+    toolName: string;
+    state: string;
+    engine: string | null;
+    region: string | null;
+  }>;
 }): ArsenkinSurfaceMatrixRow[] {
-  const anyFailedTask = input.taskStates.some((s) => /FAILED|CANCELLED|SUBMIT_UNKNOWN/i.test(s));
   return FULL_FIRST36_SURFACE_MATRIX.map((cell) => {
     const planned = input.plannedRequests.some(
       (r) =>
         r.tool === cell.tool &&
         (cell.region === "MIXED" || toRegionBucket(r.region) === cell.region) &&
-        (cell.engine === "MULTI" || String(r.engine).toUpperCase() === cell.engine)
+        engineMatchesCell(String(r.engine ?? ""), cell.engine)
     );
     const matchingCoverage = input.coverageRows.filter(
       (r) =>
         r.tool === cell.tool &&
         (cell.region === "MIXED" || toRegionBucket(r.region) === cell.region) &&
-        (cell.engine === "MULTI" || String(r.engine).toUpperCase() === cell.engine) &&
-        (cell.surface === r.surface || (cell.id === "url-audit" && (r.surface === "page_meta" || r.surface === "indexation")))
+        engineMatchesCell(String(r.engine ?? ""), cell.engine) &&
+        (cell.surface === r.surface ||
+          (cell.id === "url-audit" && (r.surface === "page_meta" || r.surface === "indexation")))
     );
     const matchingObs = input.observations.filter(
       (o) =>
         (cell.region === "MIXED" || toRegionBucket(o.region) === cell.region) &&
-        (cell.engine === "MULTI" || String(o.engine).toUpperCase() === cell.engine) &&
-        (cell.surface === o.surface || (cell.id === "url-audit" && (o.surface === "page_meta" || o.surface === "indexation")))
+        engineMatchesCell(String(o.engine ?? ""), cell.engine) &&
+        (cell.surface === o.surface ||
+          (cell.id === "url-audit" && (o.surface === "page_meta" || o.surface === "indexation")))
     );
+    const matchingTasks = input.providerTasks.filter((t) => {
+      if (t.toolName !== cell.tool) return false;
+      if (cell.region !== "MIXED" && t.region && toRegionBucket(t.region) !== cell.region) {
+        // region may be arsenkin numeric; allow when engine/tool match and planned
+        if (!planned && matchingCoverage.length === 0) return false;
+      }
+      if (t.engine && !engineMatchesCell(t.engine, cell.engine) && cell.engine !== "MULTI") {
+        return false;
+      }
+      // Include task when planned for this cell or coverage already exists for this cell.
+      return planned || matchingCoverage.some((c) => c.providerTaskId === t.id) || matchingCoverage.length > 0;
+    });
+    // Distinct ProviderTask count scoped to this surface (MIXED may count 1 on each engine cell).
+    const taskIds = new Set<string>();
+    for (const t of matchingTasks) taskIds.add(t.id);
+    for (const c of matchingCoverage) {
+      if (c.providerTaskId) taskIds.add(c.providerTaskId);
+    }
+
     let status: ArsenkinSurfaceMatrixStatus = "NOT STARTED";
     if (!input.hasRun) {
       status = "NOT STARTED";
+    } else if (matchingCoverage.some((r) => /^FAILED_PARSE$/i.test(r.status))) {
+      status = "FAILED PARSE";
+    } else if (matchingCoverage.some((r) => /^RESULT_FETCH_FAILED$/i.test(r.status))) {
+      status = "RESULT FETCH FAILED";
     } else if (matchingCoverage.some((r) => /^NO_RESULTS$/i.test(r.status))) {
       status = "NO RESULTS";
-    } else if (matchingCoverage.some((r) => /^OK$/i.test(r.status))) {
-      status = "DONE";
-    } else if (input.uiStatus === "EXECUTING") {
-      status = planned || matchingCoverage.length > 0 ? "RUNNING" : "NOT STARTED";
-    } else if (anyFailedTask && (planned || matchingCoverage.length > 0)) {
+    } else if (matchingCoverage.some((r) => /^(OK|MEASURED)$/i.test(r.status))) {
+      status = "MEASURED";
+    } else if (matchingTasks.some((t) => t.state === "SUBMIT_UNKNOWN")) {
+      status = "SUBMIT UNKNOWN";
+    } else if (
+      matchingTasks.some((t) => /^(RUNNING|SUBMITTING|QUEUED|RATE_LIMITED)$/i.test(t.state)) ||
+      input.uiStatus === "EXECUTING"
+    ) {
+      status = planned || matchingCoverage.length > 0 || matchingTasks.length > 0 ? "RUNNING" : "NOT STARTED";
+    } else if (matchingTasks.some((t) => /^(FAILED|CANCELLED)$/i.test(t.state))) {
       status = "FAILED";
     } else if (planned) {
       status = "PLANNED";
     }
+
     return {
       ...cell,
       status,
       observationsCount: matchingObs.length,
-      tasksCount: matchingCoverage.length,
+      tasksCount: taskIds.size,
     };
   });
 }
@@ -520,6 +608,130 @@ function readinessBlockers(path: string): string[] {
     currentEnvironment: mutation.environment,
   });
   return r.ok ? [] : r.blockers;
+}
+
+export function hasBlockingRecovery(recovery: ArsenkinRecoveryUiState | null | undefined): boolean {
+  if (!recovery) return false;
+  return recovery.submitUnknown.length > 0 || recovery.doneZeroObservations.length > 0;
+}
+
+export function buildRecoveryUiState(input: {
+  caseId: string;
+  reportRunId: string | null;
+  providerTasks: Array<{
+    id: string;
+    toolName: string;
+    state: string;
+    requestHash: string;
+    errorCode: string | null;
+    externalTaskId: string | null;
+    createdAt: Date;
+    requestJson: unknown;
+    responseJson: unknown;
+  }>;
+  observationRows: Array<{ providerTaskId?: string | null }>;
+  stageStatus: string | null;
+  uiStatus: string;
+  coverageRows: Array<{ status: string }>;
+}): ArsenkinRecoveryUiState | null {
+  if (!input.reportRunId) return null;
+  const outRoot = arsenkinCanaryOutRoot(input.caseId, input.reportRunId);
+  const obsByTask = new Map<string, number>();
+  for (const o of input.observationRows) {
+    if (!o.providerTaskId) continue;
+    obsByTask.set(o.providerTaskId, (obsByTask.get(o.providerTaskId) ?? 0) + 1);
+  }
+
+  const submitUnknown: ArsenkinRecoveryUiState["submitUnknown"] = [];
+  const doneZeroObservations: ArsenkinRecoveryUiState["doneZeroObservations"] = [];
+  for (const t of input.providerTasks) {
+    if (t.state === "SUBMIT_UNKNOWN") {
+      const cand = toSubmitUnknownCandidate(
+        {
+          id: t.id,
+          caseId: input.caseId,
+          reportRunId: input.reportRunId,
+          provider: "arsenkin",
+          toolName: t.toolName,
+          externalTaskId: t.externalTaskId,
+          requestHash: t.requestHash,
+          state: "SUBMIT_UNKNOWN",
+          attempts: 0,
+          nextPollAt: null,
+          errorCode: t.errorCode,
+          limitsSpent: null,
+          lockedBy: null,
+          lockedAt: null,
+          leaseUntil: null,
+          submittedAt: null,
+          latencyMs: null,
+          limitsBefore: null,
+          limitsAfter: null,
+          requestJson:
+            t.requestJson && typeof t.requestJson === "object"
+              ? (t.requestJson as Record<string, unknown>)
+              : {},
+          responseJson:
+            t.responseJson && typeof t.responseJson === "object"
+              ? (t.responseJson as Record<string, unknown>)
+              : null,
+          createdAt: t.createdAt,
+          completedAt: null,
+          updatedAt: t.createdAt,
+        },
+        outRoot
+      );
+      if (cand) {
+        submitUnknown.push({
+          providerTaskId: cand.providerTaskId,
+          toolName: cand.toolName,
+          requestHash: cand.requestHash,
+          errorCode: cand.errorCode,
+          externalTaskId: cand.externalTaskId,
+          engine: cand.engine,
+          region: cand.region,
+          query: cand.query,
+          createdAt: cand.createdAt,
+          httpStatus: cand.httpStatus,
+          sanitizedRequest: cand.sanitizedRequest,
+          sanitizedResponse: cand.sanitizedResponse,
+          canLinkExisting: cand.canLinkExisting,
+          canConfirmNotCreated: cand.canConfirmNotCreated,
+          canRetryAfterConfirm: cand.canRetryAfterConfirm,
+        });
+      }
+    }
+    if (t.state === "DONE" && t.externalTaskId && (obsByTask.get(t.id) ?? 0) === 0) {
+      doneZeroObservations.push({
+        providerTaskId: t.id,
+        toolName: t.toolName,
+        externalTaskId: t.externalTaskId,
+        requestHash: t.requestHash,
+      });
+    }
+  }
+
+  const hasFailedParse = input.coverageRows.some((c) => /^FAILED_PARSE$/i.test(c.status));
+  const hasFetchFailed = input.coverageRows.some((c) => /^RESULT_FETCH_FAILED$/i.test(c.status));
+  const canRetryUnconfirmed = submitUnknown.some((s) => s.canRetryAfterConfirm);
+  const canContinueStage1 =
+    submitUnknown.length === 0 &&
+    doneZeroObservations.length === 0 &&
+    !hasFailedParse &&
+    !hasFetchFailed &&
+    (input.stageStatus === "FAILED" ||
+      input.uiStatus === "FAILED" ||
+      input.uiStatus === "MANUAL_INTERVENTION_REQUIRED" ||
+      input.uiStatus === "PREPARED" ||
+      input.uiStatus === "PLAN_READY");
+
+  return {
+    submitUnknown,
+    doneZeroObservations,
+    canReconcileDoneZeroObs: doneZeroObservations.length > 0,
+    canContinueStage1,
+    canRetryUnconfirmed,
+  };
 }
 
 async function resolveDbReadinessGate(
@@ -654,7 +866,7 @@ export async function getArsenkinUiStatus(
         : "READY_TO_PREPARE";
 
   const ledgerRunId = arsenkinReportRunId;
-  const [providerTaskCount, observationCount, coverageCount, coverageRowsRaw, observationRowsRaw, taskStatesRaw] =
+  const [providerTaskCount, observationCount, coverageCount, coverageRowsRaw, observationRowsRaw, providerTasksRaw] =
     ledgerRunId
       ? await (async () => {
           const anyPrisma = prisma as unknown as {
@@ -666,21 +878,38 @@ export async function getArsenkinUiStatus(
             typeof anyPrisma.surfaceCollectionCoverage?.findMany === "function"
               ? prisma.surfaceCollectionCoverage.findMany({
                   where: { reportRunId: ledgerRunId, provider: "arsenkin" },
-                  select: { tool: true, engine: true, region: true, surface: true, status: true },
+                  select: {
+                    tool: true,
+                    engine: true,
+                    region: true,
+                    surface: true,
+                    status: true,
+                    providerTaskId: true,
+                  },
                 })
               : Promise.resolve([]);
           const observationRowsPromise =
             typeof anyPrisma.serpObservation?.findMany === "function"
               ? prisma.serpObservation.findMany({
                   where: { auditRunId: ledgerRunId, provider: "arsenkin" },
-                  select: { engine: true, region: true, surface: true },
+                  select: { engine: true, region: true, surface: true, providerTaskId: true },
                 })
               : Promise.resolve([]);
-          const taskStatesPromise =
+          const providerTasksPromise =
             typeof anyPrisma.providerTask?.findMany === "function"
               ? prisma.providerTask.findMany({
                   where: { reportRunId: ledgerRunId, provider: "arsenkin" },
-                  select: { state: true },
+                  select: {
+                    id: true,
+                    toolName: true,
+                    state: true,
+                    requestHash: true,
+                    errorCode: true,
+                    externalTaskId: true,
+                    createdAt: true,
+                    requestJson: true,
+                    responseJson: true,
+                  },
                 })
               : Promise.resolve([]);
           return Promise.all([
@@ -693,7 +922,7 @@ export async function getArsenkinUiStatus(
             }),
             coverageRowsPromise,
             observationRowsPromise,
-            taskStatesPromise,
+            providerTasksPromise,
           ]);
         })()
       : [0, 0, 0, [], [], []];
@@ -856,18 +1085,69 @@ export async function getArsenkinUiStatus(
     uiStatus,
     plannedRequests,
     coverageRows: coverageRowsRaw.map((r) => ({
-      tool: String(r.tool ?? ""),
-      engine: String(r.engine ?? ""),
-      region: String(r.region ?? ""),
-      surface: String(r.surface ?? ""),
-      status: String(r.status ?? ""),
+      tool: String((r as { tool?: string }).tool ?? ""),
+      engine: String((r as { engine?: string }).engine ?? ""),
+      region: String((r as { region?: string }).region ?? ""),
+      surface: String((r as { surface?: string }).surface ?? ""),
+      status: String((r as { status?: string }).status ?? ""),
+      providerTaskId: (r as { providerTaskId?: string | null }).providerTaskId ?? null,
     })),
     observations: observationRowsRaw.map((r) => ({
-      engine: String(r.engine ?? ""),
-      region: String(r.region ?? ""),
-      surface: String(r.surface ?? ""),
+      engine: String((r as { engine?: string }).engine ?? ""),
+      region: String((r as { region?: string }).region ?? ""),
+      surface: String((r as { surface?: string }).surface ?? ""),
     })),
-    taskStates: taskStatesRaw.map((t) => t.state),
+    providerTasks: providerTasksRaw.map((t) => {
+      const row = t as {
+        id: string;
+        toolName: string;
+        state: string;
+        requestJson?: unknown;
+      };
+      const data =
+        row.requestJson && typeof row.requestJson === "object" && !Array.isArray(row.requestJson)
+          ? (row.requestJson as { data?: Record<string, unknown> }).data ?? {}
+          : {};
+      const se = data.se;
+      let engine: string | null = null;
+      let region: string | null = data.region != null ? String(data.region) : null;
+      if (typeof se === "number") engine = se === 1 ? "YANDEX" : "GOOGLE";
+      else if (Array.isArray(se) && se.length > 1) engine = "MIXED";
+      else if (Array.isArray(se) && se[0] && typeof se[0] === "object") {
+        const type = Number((se[0] as { type?: number }).type ?? 0);
+        engine = type === 1 ? "YANDEX" : "GOOGLE";
+        if ((se[0] as { region?: number }).region != null) {
+          region = String((se[0] as { region?: number }).region);
+        }
+      }
+      return {
+        id: row.id,
+        toolName: row.toolName,
+        state: row.state,
+        engine,
+        region,
+      };
+    }),
+  });
+
+  const recovery = buildRecoveryUiState({
+    caseId,
+    reportRunId: ledgerRunId,
+    providerTasks: providerTasksRaw as Array<{
+      id: string;
+      toolName: string;
+      state: string;
+      requestHash: string;
+      errorCode: string | null;
+      externalTaskId: string | null;
+      createdAt: Date;
+      requestJson: unknown;
+      responseJson: unknown;
+    }>,
+    observationRows: observationRowsRaw as Array<{ providerTaskId?: string | null }>,
+    stageStatus,
+    uiStatus,
+    coverageRows: coverageRowsRaw as Array<{ status: string }>,
   });
 
   return {
@@ -898,7 +1178,7 @@ export async function getArsenkinUiStatus(
     canPrepare,
     canPlan,
     canExecute: canExecute && Boolean(planDigest),
-    canSync,
+    canSync: canSync && !hasBlockingRecovery(recovery),
     synced: transferComplete,
     transferStatus: reportBinding?.status ?? null,
     effectiveReportRunId: reportBinding?.effectiveReportRunId ?? arsenkinReportRunId,
@@ -912,6 +1192,7 @@ export async function getArsenkinUiStatus(
       readinessCode !== "READINESS_RUNNING" &&
       readinessCode !== "READINESS_NOT_REQUIRED",
     surfaceMatrix,
+    recovery,
   };
 }
 
@@ -1640,6 +1921,7 @@ export function toPublicArsenkinUiDto(
     readinessCode: dto.readinessCode,
     canRefreshReadiness: dto.canRefreshReadiness,
     surfaceMatrix: dto.surfaceMatrix ?? [],
+    recovery: dto.recovery ?? null,
   };
   if ("requests" in dto && Array.isArray((dto as ArsenkinUiPlanDto).requests)) {
     const plan = dto as ArsenkinUiPlanDto;

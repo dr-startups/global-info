@@ -1,0 +1,10 @@
+{
+  "code": "TASK_RESULT",
+  "task_id": "9999",
+  "result": {
+    "unexpected_shape": {
+      "foo": "bar",
+      "items": [{ "not_a_question": true, "payload": "xxxxxxxxxxxxxxxxxxxx" }]
+    }
+  }
+}

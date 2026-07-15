@@ -16,9 +16,14 @@ export * from "./network-guard";
 export * from "./live-execution-authorization";
 export {
   executeArsenkinExecutionPlan,
+  mapPlannedPayload,
   assertLiveCollectAllowed,
   authorizationFromPlan,
 } from "./execute-arsenkin-execution-plan";
 export * from "./surface-coverage-duplicate-audit";
 export * from "./arsenkin-db-readiness";
 export * from "./planned-coverage-matrix";
+export * from "./recovery-decisions";
+export * from "./submit-unknown-recovery";
+export * from "./reconcile-done-zero-observations";
+export * from "./parse-result-semantics";
