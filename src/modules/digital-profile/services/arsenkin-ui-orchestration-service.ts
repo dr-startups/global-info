@@ -31,6 +31,7 @@ import { rebuildClientContentForReportRun } from "../orion-golden/rebuild-client
 import {
   loadArsenkinReportBinding,
   saveArsenkinReportBinding,
+  inspectArsenkinTransferContentGate,
   type ArsenkinReportBinding,
   type ArsenkinTransferStatus,
 } from "../orion-golden/classic/arsenkin-report-binding";
@@ -436,18 +437,32 @@ export async function getArsenkinUiStatus(
     const syncMarker = readJson<{ synced?: boolean; reportRunId?: string }>(
       join(arsenkinOrionCaseRoot(caseId), "arsenkin-ui-sync.json")
     );
+    const contentGate = inspectArsenkinTransferContentGate(caseId);
     const transferOk =
       reportBinding &&
       reportBinding.effectiveReportRunId === ledgerRunId &&
-      (reportBinding.status === "TRANSFERRED" || reportBinding.status === "REPORT_BOUND");
+      (reportBinding.status === "TRANSFERRED" || reportBinding.status === "REPORT_BOUND") &&
+      contentGate.ok &&
+      observationCount > 0 &&
+      providerTaskCount > 0 &&
+      coverageCount > 0;
     const legacySyncOk =
       syncMarker?.synced && syncMarker.reportRunId === ledgerRunId && !reportBinding;
-    if (transferOk && reportBinding.status === "REPORT_BOUND") {
+    if (contentGate.reason === "CLIENT_CONTENT_NOT_PROMOTED" && uiStatus === "STAGE_DONE") {
+      uiStatus = "TRANSFER_FAILED";
+      lastError = "CLIENT_CONTENT_NOT_PROMOTED";
+    } else if (transferOk && reportBinding.status === "REPORT_BOUND") {
       uiStatus = "REPORT_BOUND";
     } else if (transferOk) {
       uiStatus = "TRANSFERRED";
     } else if (legacySyncOk && uiStatus === "STAGE_DONE") {
-      uiStatus = "SYNCED";
+      // Legacy sync without binding file — hydrate already attempted; still require content match.
+      if (contentGate.ok && observationCount > 0) {
+        uiStatus = "TRANSFERRED";
+      } else {
+        uiStatus = "TRANSFER_FAILED";
+        lastError = contentGate.reason ?? "CLIENT_CONTENT_NOT_PROMOTED";
+      }
     } else if (reportBinding?.status === "TRANSFER_FAILED" && uiStatus === "STAGE_DONE") {
       uiStatus = "TRANSFER_FAILED";
     } else if (uiStatus === "STAGE_DONE") {
@@ -506,7 +521,6 @@ export async function getArsenkinUiStatus(
     (uiStatus === "PREPARED" ||
       uiStatus === "PLAN_READY" ||
       uiStatus === "READY_TO_TRANSFER" ||
-      uiStatus === "SYNCED" ||
       uiStatus === "TRANSFERRED" ||
       uiStatus === "REPORT_BOUND");
   const canExecute =
@@ -518,7 +532,6 @@ export async function getArsenkinUiStatus(
     configured &&
     Boolean(arsenkinReportRunId) &&
     (uiStatus === "READY_TO_TRANSFER" ||
-      uiStatus === "SYNCED" ||
       uiStatus === "TRANSFERRED" ||
       uiStatus === "REPORT_BOUND" ||
       uiStatus === "TRANSFER_FAILED");
@@ -526,10 +539,14 @@ export async function getArsenkinUiStatus(
   const reportBinding = loadArsenkinReportBinding(caseId);
   const transferComplete =
     uiStatus === "TRANSFERRED" ||
-    uiStatus === "REPORT_BOUND" ||
-    uiStatus === "SYNCED";
+    uiStatus === "REPORT_BOUND";
   const humanMessages = [
     ...humanizeBlockers(blockers),
+    ...(uiStatus === "TRANSFER_FAILED"
+      ? [
+          `Передача неполная: ${lastError ?? "CLIENT_CONTENT_NOT_PROMOTED"}. PDF заблокирован до пересборки client content.`,
+        ]
+      : []),
     ...(transferComplete && reportBinding
       ? [
           `Отчёт будет собран из данных Arsenkin (${reportBinding.effectiveReportRunId}).`,

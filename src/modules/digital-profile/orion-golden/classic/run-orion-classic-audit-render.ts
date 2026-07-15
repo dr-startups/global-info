@@ -27,8 +27,10 @@ import { mergeRunScopedSerpObservations } from "./merge-run-scoped-serp-observat
 import { isArsenkinRequired } from "../../providers/arsenkin";
 import {
   ArsenkinReportBindingError,
+  arsenkinPostReviewContentPath,
   assertArsenkinTransferredClientContent,
   loadArsenkinReportBinding,
+  resolveEffectiveReportRunIdForCase,
   saveArsenkinReportBinding,
 } from "./arsenkin-report-binding";
 import type { ExecutiveSynthesisOutput } from "../gpt/orion-executive-synthesis-from-sections";
@@ -85,15 +87,31 @@ function resolveClientContentPaths(caseId: string): string[] {
 
 export function loadPostReviewClientContent(caseId: string, outputRoot?: string): OrionClientContent {
   const paths: string[] = [];
+  // Canonical case-scoped content always first.
+  paths.push(arsenkinPostReviewContentPath(caseId));
   if (outputRoot) {
     paths.push(join(outputRoot, "orion-client-content.post-review.json"));
   }
   paths.push(...resolveClientContentPaths(caseId));
+
+  const resolved = resolveEffectiveReportRunIdForCase(caseId, "");
+  const seen = new Set<string>();
   for (const path of paths) {
+    if (seen.has(path)) continue;
+    seen.add(path);
     const data = readJson<OrionClientContent>(path);
-    if (data?.caseId === caseId) return data;
+    if (!data || data.caseId !== caseId) continue;
+    if (resolved.fromArsenkinBinding && data.reportRunId !== resolved.reportRunId) {
+      // Skip stale source-run content when Arsenkin binding is active.
+      continue;
+    }
+    return data;
   }
-  throw new Error("post-review-client-content-missing");
+  throw new Error(
+    resolved.fromArsenkinBinding
+      ? `post-review-client-content-missing-or-stale:expected=${resolved.reportRunId}`
+      : "post-review-client-content-missing"
+  );
 }
 
 function resolveClientContentForRender(

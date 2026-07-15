@@ -9,7 +9,12 @@ import { runOrionClassicAuditRender } from "../orion-golden/classic/run-orion-cl
 import { loadPostReviewClientContent } from "../orion-golden/classic/run-orion-classic-audit-render";
 import { OrionClassicVisualGateError } from "../orion-golden/classic/run-orion-classic-audit-render";
 import { persistRegeneratedClientContentAsync } from "../orion-golden/services/admin-review-workflow-service";
-import { ArsenkinReportBindingError } from "../orion-golden/classic/arsenkin-report-binding";
+import {
+  ArsenkinReportBindingError,
+  assertArsenkinRenderOutputArtifacts,
+  loadCanonicalPostReviewClientContent,
+  resolveEffectiveReportRunIdForCase,
+} from "../orion-golden/classic/arsenkin-report-binding";
 import { saveFile } from "../storage/private-store";
 import { buildStorageKey } from "../storage/keys";
 import { createSignedToken } from "../storage/signed-url";
@@ -245,15 +250,34 @@ export function resolveOrionClassicAuditArtifactForDownload(input: {
   return meta;
 }
 
-async function executeClassicAuditReport(input: {
-  caseId: string;
-  uiRunId: string;
-  runOutputRoot: string;
-  createdAt: string;
-  regenerateContent?: boolean;
-}): Promise<OrionClassicAuditRunRecord> {
-  if (input.regenerateContent) {
-    await persistRegeneratedClientContentAsync(input.caseId);
+async function executeClassicAuditReport(
+  input: {
+    caseId: string;
+    uiRunId: string;
+    runOutputRoot: string;
+    createdAt: string;
+    regenerateContent?: boolean;
+  },
+  deps?: {
+    render?: typeof runOrionClassicAuditRender;
+    persist?: typeof persistRegeneratedClientContentAsync;
+  }
+): Promise<OrionClassicAuditRunRecord> {
+  const persist = deps?.persist ?? persistRegeneratedClientContentAsync;
+  const render = deps?.render ?? runOrionClassicAuditRender;
+  const resolved = resolveEffectiveReportRunIdForCase(input.caseId, "");
+  const arsenkinBound = resolved.fromArsenkinBinding;
+  const effectiveRunId = arsenkinBound ? resolved.reportRunId : null;
+
+  // Always rebuild when Arsenkin-bound OR caller asked to regenerate.
+  // Arsenkin path must never render stale source-run content.
+  const mustRebuild =
+    Boolean(input.regenerateContent) ||
+    (arsenkinBound &&
+      loadCanonicalPostReviewClientContent(input.caseId)?.reportRunId !== effectiveRunId);
+
+  if (mustRebuild) {
+    await persist(input.caseId);
   }
 
   let clientContent;
@@ -265,12 +289,28 @@ async function executeClassicAuditReport(input: {
     );
   }
 
+  if (arsenkinBound && effectiveRunId) {
+    if (clientContent.reportRunId !== effectiveRunId) {
+      await persist(input.caseId);
+      clientContent = loadPostReviewClientContent(input.caseId);
+    }
+    if (clientContent.reportRunId !== effectiveRunId) {
+      throw new ArsenkinReportBindingError([
+        {
+          code: "ARSENKIN_CLIENT_CONTENT_RUN_MISMATCH",
+          detail: `clientContent.reportRunId=${clientContent.reportRunId} expected=${effectiveRunId}`,
+        },
+      ]);
+    }
+  }
+
   let result;
   try {
-    result = await runOrionClassicAuditRender({
+    result = await render({
       caseId: input.caseId,
       outputRoot: input.runOutputRoot,
       clientContent,
+      reportRunIdOverride: effectiveRunId ?? undefined,
     });
   } catch (err) {
     if (err instanceof ArsenkinReportBindingError) {
@@ -288,7 +328,33 @@ async function executeClassicAuditReport(input: {
     throw err;
   }
 
-  // Persist downloadable artifacts even on soft FAIL (e.g. page-range QA), so the client can review the PDF.
+  // Post-render fail-closed for Arsenkin-bound cases.
+  if (arsenkinBound && resolved.binding) {
+    const outBinding = readJson<{
+      effectiveReportRunId?: string;
+      sourceReportRunId?: string;
+    }>(join(input.runOutputRoot, "client-content-binding.json"));
+    const outMerge = readJson<{ auditRunId?: string; observationCount?: number }>(
+      join(input.runOutputRoot, "run-scoped-serp-merge.json")
+    );
+    const provenance = readJson<unknown[]>(
+      join(input.runOutputRoot, "serp-observations-provenance.json")
+    );
+    const outGate = assertArsenkinRenderOutputArtifacts({
+      binding: resolved.binding,
+      clientContentBinding: outBinding,
+      runScopedMerge: outMerge,
+      provenanceLength: Array.isArray(provenance) ? provenance.length : 0,
+    });
+    if (!outGate.ok) {
+      writeJson(join(input.runOutputRoot, "arsenkin-output-binding-gate.json"), {
+        blocked: true,
+        issues: outGate.issues,
+      });
+      throw new ArsenkinReportBindingError(outGate.issues);
+    }
+  }
+
   const artifacts = await persistArtifacts(input.caseId, input.uiRunId, input.runOutputRoot);
   const hasArtifacts = Boolean(artifacts.client_pdf || artifacts.client_pptx);
   const softFailWithArtifacts = result.verdict !== "PASS" && hasArtifacts;
@@ -311,9 +377,26 @@ async function executeClassicAuditReport(input: {
 
   persistRunRecord(record);
   console.log(
-    `[orion-classic-audit] done caseId=${input.caseId} verdict=${result.verdict} pages=${result.pageCount} artifacts=${hasArtifacts}`
+    `[orion-classic-audit] done caseId=${input.caseId} verdict=${result.verdict} pages=${result.pageCount} artifacts=${hasArtifacts} effectiveRun=${clientContent.reportRunId}`
   );
   return record;
+}
+
+/** Test/route-level entry — same body as the background job from POST report/generate. */
+export async function executeOrionClassicAuditReportJob(
+  input: {
+    caseId: string;
+    uiRunId: string;
+    runOutputRoot: string;
+    createdAt: string;
+    regenerateContent?: boolean;
+  },
+  deps?: {
+    render?: typeof runOrionClassicAuditRender;
+    persist?: typeof persistRegeneratedClientContentAsync;
+  }
+): Promise<OrionClassicAuditRunRecord> {
+  return executeClassicAuditReport(input, deps);
 }
 
 const STALE_RUNNING_MS = 15 * 60 * 1000;

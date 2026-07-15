@@ -41,6 +41,8 @@ import { digitalProfileConfig } from "../../config";
 import {
   loadArsenkinReportBinding,
   resolveEffectiveReportRunIdForCase,
+  saveArsenkinReportBinding,
+  arsenkinCaseArtifactRoot,
 } from "../classic/arsenkin-report-binding";
 import { rebuildClientContentForReportRun } from "../rebuild-client-content-for-report-run";
 
@@ -511,25 +513,110 @@ export function isGptAutoAnalystModeEnabled(): boolean {
   return shouldUseGptAutoAnalyst() || digitalProfileConfig.orionGptAutoAnalyst;
 }
 
-export function persistRegeneratedClientContent(caseId: string): {
+export async function persistRegeneratedClientContent(caseId: string): Promise<{
   artifactRoot: string;
   generatedAt: string;
   preReviewApprovedCount: number;
   postReviewApprovedCount: number;
-} {
-  const { preReview, postReview, preReviewMarkdown, postReviewMarkdown, artifactRoot, generatedAt } =
-    regenerateClientContentAfterReview(caseId);
-  const root = artifactRoot;
+}> {
+  return persistRegeneratedClientContentAsync(caseId);
+}
+
+async function rebuildAndPersistForArsenkinEffectiveRun(input: {
+  caseId: string;
+  effectiveReportRunId: string;
+  sourceReportRunId: string;
+}): Promise<{
+  artifactRoot: string;
+  generatedAt: string;
+  preReviewApprovedCount: number;
+  postReviewApprovedCount: number;
+}> {
+  const root = arsenkinCaseArtifactRoot(input.caseId);
   mkdirSync(root, { recursive: true });
-  writeFileSync(join(root, "orion-client-content.pre-review.json"), `${JSON.stringify(preReview, null, 2)}\n`, "utf-8");
-  writeFileSync(join(root, "orion-client-content.post-review.json"), `${JSON.stringify(postReview, null, 2)}\n`, "utf-8");
-  writeFileSync(join(root, "orion-client-content.pre-review.md"), preReviewMarkdown, "utf-8");
-  writeFileSync(join(root, "orion-client-content.post-review.md"), postReviewMarkdown, "utf-8");
+  await rebuildClientContentForReportRun(input.caseId, input.effectiveReportRunId, root, {
+    requireAi: false,
+    sourceReportRunId: input.sourceReportRunId,
+  });
+
+  const existing = loadAdminReviewDecisions(input.caseId);
+  if (existing && !existing.qaSampleOnly) {
+    const preserved = existing.decisions.filter((d) => d.status !== "PENDING");
+    const queuePath = join(root, "manual-review-queue.json");
+    const queue = existsSync(queuePath)
+      ? (JSON.parse(readFileSync(queuePath, "utf-8")) as {
+          items?: Array<{ evidenceId?: string; id?: string }>;
+        })
+      : null;
+    const evidenceIds = new Set(
+      (queue?.items ?? [])
+        .map((i) => i.evidenceId ?? i.id)
+        .filter((x): x is string => Boolean(x))
+    );
+    const reapplied = preserved.filter(
+      (d) => evidenceIds.size === 0 || evidenceIds.has(d.evidenceId)
+    );
+    writeFileSync(
+      join(root, "admin-review-decisions.json"),
+      `${JSON.stringify(
+        {
+          ...existing,
+          updatedAt: new Date().toISOString(),
+          decisions: reapplied,
+        },
+        null,
+        2
+      )}\n`,
+      "utf-8"
+    );
+  }
+
+  writeFileSync(
+    join(root, "client-content-binding.json"),
+    `${JSON.stringify(
+      {
+        sourceReportRunId: input.sourceReportRunId,
+        effectiveReportRunId: input.effectiveReportRunId,
+        overridden: false,
+        rebuilt: true,
+      },
+      null,
+      2
+    )}\n`,
+    "utf-8"
+  );
+
+  const post = JSON.parse(
+    readFileSync(join(root, "orion-client-content.post-review.json"), "utf-8")
+  ) as OrionClientContent;
+  const pre = existsSync(join(root, "orion-client-content.pre-review.json"))
+    ? (JSON.parse(
+        readFileSync(join(root, "orion-client-content.pre-review.json"), "utf-8")
+      ) as OrionClientContent)
+    : post;
+  if (post.reportRunId !== input.effectiveReportRunId) {
+    throw new Error(
+      `ARSENKIN_CLIENT_CONTENT_RUN_MISMATCH: post.reportRunId=${post.reportRunId} expected=${input.effectiveReportRunId}`
+    );
+  }
+
+  const binding = loadArsenkinReportBinding(input.caseId);
+  if (binding) {
+    saveArsenkinReportBinding({
+      ...binding,
+      status: "TRANSFERRED",
+      lastError: null,
+      contentPromotionError: null,
+      effectiveReportRunId: input.effectiveReportRunId,
+      sourceReportRunId: input.sourceReportRunId,
+    });
+  }
+
   return {
     artifactRoot: root,
-    generatedAt,
-    preReviewApprovedCount: preReview.approvedFindings.length,
-    postReviewApprovedCount: postReview.approvedFindings.length,
+    generatedAt: new Date().toISOString(),
+    preReviewApprovedCount: pre.approvedFindings?.length ?? 0,
+    postReviewApprovedCount: post.approvedFindings?.length ?? 0,
   };
 }
 
@@ -539,96 +626,48 @@ export async function persistRegeneratedClientContentAsync(caseId: string): Prom
   preReviewApprovedCount: number;
   postReviewApprovedCount: number;
 }> {
-  const binding = loadArsenkinReportBinding(caseId);
-  const root = caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId);
-
-  // After Arsenkin transfer: honest rebuild for effective Arsenkin run (never fall back to source).
-  if (
-    binding &&
-    (binding.status === "TRANSFERRED" || binding.status === "REPORT_BOUND") &&
-    binding.effectiveReportRunId
-  ) {
-    mkdirSync(root, { recursive: true });
-    await rebuildClientContentForReportRun(caseId, binding.effectiveReportRunId, root, {
-      requireAi: false,
-      sourceReportRunId: binding.sourceReportRunId,
-    });
-
-    const existing = loadAdminReviewDecisions(caseId);
-    if (existing && !existing.qaSampleOnly) {
-      const preserved = existing.decisions.filter((d) => d.status !== "PENDING");
-      const queuePath = join(root, "manual-review-queue.json");
-      const queue = existsSync(queuePath)
-        ? (JSON.parse(readFileSync(queuePath, "utf-8")) as {
-            items?: Array<{ evidenceId?: string; id?: string }>;
-          })
-        : null;
-      const evidenceIds = new Set(
-        (queue?.items ?? [])
-          .map((i) => i.evidenceId ?? i.id)
-          .filter((x): x is string => Boolean(x))
-      );
-      const reapplied = preserved.filter(
-        (d) => evidenceIds.size === 0 || evidenceIds.has(d.evidenceId)
-      );
-      writeFileSync(
-        join(root, "admin-review-decisions.json"),
-        `${JSON.stringify(
-          {
-            ...existing,
-            updatedAt: new Date().toISOString(),
-            decisions: reapplied,
-          },
-          null,
-          2
-        )}\n`,
-        "utf-8"
-      );
-    }
-
-    writeFileSync(
-      join(root, "client-content-binding.json"),
-      `${JSON.stringify(
-        {
-          sourceReportRunId: binding.sourceReportRunId,
-          effectiveReportRunId: binding.effectiveReportRunId,
-          overridden: false,
-          rebuilt: true,
-        },
-        null,
-        2
-      )}\n`,
-      "utf-8"
+  let inventoryReportRunId = "";
+  try {
+    const inventory = readJson<{ reportRunId: string }>(
+      resolveArtifactFile(caseId, "full-evidence-inventory.json")
     );
+    inventoryReportRunId = inventory.reportRunId;
+  } catch {
+    inventoryReportRunId = "";
+  }
+  const resolved = resolveEffectiveReportRunIdForCase(caseId, inventoryReportRunId);
 
-    const post = JSON.parse(
-      readFileSync(join(root, "orion-client-content.post-review.json"), "utf-8")
-    ) as OrionClientContent;
-    const pre = existsSync(join(root, "orion-client-content.pre-review.json"))
-      ? (JSON.parse(
-          readFileSync(join(root, "orion-client-content.pre-review.json"), "utf-8")
-        ) as OrionClientContent)
-      : post;
-    if (post.reportRunId !== binding.effectiveReportRunId) {
-      throw new Error(
-        `ARSENKIN_CLIENT_CONTENT_RUN_MISMATCH: post.reportRunId=${post.reportRunId} expected=${binding.effectiveReportRunId}`
-      );
-    }
-    return {
-      artifactRoot: root,
-      generatedAt: new Date().toISOString(),
-      preReviewApprovedCount: pre.approvedFindings?.length ?? 0,
-      postReviewApprovedCount: post.approvedFindings?.length ?? 0,
-    };
+  if (resolved.fromArsenkinBinding && resolved.binding) {
+    return rebuildAndPersistForArsenkinEffectiveRun({
+      caseId,
+      effectiveReportRunId: resolved.reportRunId,
+      sourceReportRunId: resolved.binding.sourceReportRunId,
+    });
   }
 
   const { preReview, postReview, preReviewMarkdown, postReviewMarkdown, artifactRoot, generatedAt } =
     await regenerateClientContentAfterReviewAsync(caseId);
   mkdirSync(artifactRoot, { recursive: true });
-  writeFileSync(join(artifactRoot, "orion-client-content.pre-review.json"), `${JSON.stringify(preReview, null, 2)}\n`, "utf-8");
-  writeFileSync(join(artifactRoot, "orion-client-content.post-review.json"), `${JSON.stringify(postReview, null, 2)}\n`, "utf-8");
+  writeFileSync(
+    join(artifactRoot, "orion-client-content.pre-review.json"),
+    `${JSON.stringify(preReview, null, 2)}\n`,
+    "utf-8"
+  );
+  writeFileSync(
+    join(artifactRoot, "orion-client-content.post-review.json"),
+    `${JSON.stringify(postReview, null, 2)}\n`,
+    "utf-8"
+  );
   writeFileSync(join(artifactRoot, "orion-client-content.pre-review.md"), preReviewMarkdown, "utf-8");
   writeFileSync(join(artifactRoot, "orion-client-content.post-review.md"), postReviewMarkdown, "utf-8");
+
+  const after = resolveEffectiveReportRunIdForCase(caseId, postReview.reportRunId);
+  if (after.fromArsenkinBinding && postReview.reportRunId !== after.reportRunId) {
+    throw new Error(
+      `ARSENKIN_CLIENT_CONTENT_RUN_MISMATCH: stamped reportRunId=${postReview.reportRunId} expected=${after.reportRunId}`
+    );
+  }
+
   return {
     artifactRoot,
     generatedAt,
@@ -636,6 +675,7 @@ export async function persistRegeneratedClientContentAsync(caseId: string): Prom
     postReviewApprovedCount: postReview.approvedFindings.length,
   };
 }
+
 
 export { adminReviewDecisionsPath, ORION_GOLDEN_QA_STORAGE_ROOT };
 export { resolveAdminReviewDecisionStoreMode } from "../evidence/admin-review-decision-store-config";
