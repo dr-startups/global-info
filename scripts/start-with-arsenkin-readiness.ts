@@ -45,6 +45,23 @@ async function main() {
     env: process.env,
     shell: process.platform === "win32",
   });
+
+  // Auto-resume FAILED_RETRYABLE / WAITING_PROVIDER Full jobs after deploy.
+  // Runs in this Node process (outside Next instrumentation webpack graph).
+  setTimeout(() => {
+    void import("../src/modules/digital-profile/providers/arsenkin/full-audit-orchestrator")
+      .then(({ resumeActiveArsenkinOrchestrations }) => {
+        console.error("[arsenkin-startup] Resuming active/retryable Full orchestrations…");
+        resumeActiveArsenkinOrchestrations();
+      })
+      .catch((err) => {
+        console.error(
+          "[arsenkin-startup] Orchestration resume skipped:",
+          err instanceof Error ? err.message : err
+        );
+      });
+  }, 1500);
+
   child.on("error", (err) => {
     console.error("[arsenkin-startup] Failed to spawn next start:", err);
     process.exit(1);
