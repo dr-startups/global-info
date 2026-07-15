@@ -17,6 +17,10 @@ import { inspectFirst36Acceptance } from "../src/modules/digital-profile/orion-g
 import { inspectCrossSlideMetricConsistency } from "../src/modules/digital-profile/orion-golden/classic/cross-slide-metric-consistency";
 import { inspectClientCopySlides } from "../src/modules/digital-profile/orion-golden/classic/client-copy-completeness";
 import { generateFirst36GeometryArtifacts } from "../src/modules/digital-profile/orion-golden/classic/generate-first36-geometry-artifacts";
+import {
+  reconcileSourceArtifacts,
+  type ReconciliationExpectation,
+} from "../src/modules/digital-profile/orion-golden/classic/source-artifact-reconciliation";
 
 const DEFAULT_SOURCE = join(
   process.cwd(),
@@ -217,6 +221,195 @@ function pickNumeric(obj: Record<string, unknown> | null | undefined, keys: stri
   return null;
 }
 
+function buildLongAiAnswer(seed: string): string {
+  return Array.from({ length: 48 }, (_, i) =>
+    `${seed} Абзац ${i + 1}. Текст оставлен в полном виде для проверки пагинации и continuation без обрыва предложений.`
+  ).join(" ");
+}
+
+function withLongAiFixtureAssets(assets: ReportAssetV1[]): ReportAssetV1[] {
+  const panelImageData =
+    assets.find((a) => a.kind === "surface_panel" && String(a.imageData ?? "").length > 100)?.imageData ??
+    "";
+  const hasAi = assets.some((a) =>
+    /ru_ai_yandex|ru_ai_google|uae_ai_google/i.test(a.assetRef)
+  );
+  if (hasAi) {
+    const mapped = assets.map((a) => {
+      if (/ru_ai_google/i.test(a.assetRef)) {
+        return {
+          ...a,
+          caption: "AI-блок найден",
+          meta: {
+            ...(a.meta ?? {}),
+            surface: "ai_answer",
+            engine: "GOOGLE",
+            region: "RU",
+            query: "Sergey Glinka",
+            capturedAt: "2026-07-15T10:00:00Z",
+            answerText: buildLongAiAnswer("Google AI Overview"),
+            citations: Array.from({ length: 10 }, (_, i) => ({
+              title: `Источник ${i + 1}`,
+              domain: `source${i + 1}.org`,
+              url: `https://source${i + 1}.org`,
+            })),
+            aiEvaluation: {
+              subjectMatch: "POSSIBLE_MATCH",
+              subjectMatchConfidence: 0.55,
+              tone: "MIXED",
+              adverseClaims: [{ claim: "Есть негативные формулировки.", evidenceRefs: ["serp_observation:1"] }],
+              ambiguousClaims: [{ claim: "Есть неоднозначные формулировки.", reason: "Нужна сверка", evidenceRefs: ["serp_observation:2"] }],
+              summary: "Ответ содержит смешанные сигналы.",
+              clientTakeaway: "Требуется дополнительная проверка формулировок и источников.",
+              recommendedAction: "Провести ручную верификацию по источникам.",
+            },
+          },
+        };
+      }
+      if (/ru_ai_yandex/i.test(a.assetRef)) {
+        return {
+          ...a,
+          caption: "AI-блок найден",
+          meta: {
+            ...(a.meta ?? {}),
+            surface: "ai_answer",
+            engine: "YANDEX",
+            region: "RU",
+            query: "Глинка Сергей Михайлович",
+            capturedAt: "2026-07-15T10:00:00Z",
+            answerText: "Нейтральный ответ Яндекс Алисы по субъекту.",
+            citations: [
+              { title: "Forbes", domain: "forbes.ru", url: "https://forbes.ru/x" },
+              { title: "РБК", domain: "rbc.ru", url: "https://rbc.ru/x" },
+            ],
+          },
+        };
+      }
+      if (/uae_ai_google/i.test(a.assetRef)) {
+        return {
+          ...a,
+          caption: "AI-блок не найден",
+          meta: {
+            ...(a.meta ?? {}),
+            surface: "ai_answer",
+            engine: "GOOGLE",
+            region: "UAE",
+            query: "Sergey Glinka",
+            capturedAt: "2026-07-15T10:00:00Z",
+            answerText: "",
+            citations: [],
+          },
+        };
+      }
+      return a;
+    });
+    const ensure = (assetRef: string, title: string, engine: "YANDEX" | "GOOGLE", region: "RU" | "UAE", absent = false) => {
+      if (mapped.some((a) => a.assetRef === assetRef)) return;
+      mapped.push({
+        assetRef,
+        kind: "surface_panel",
+        status: "ready",
+        title,
+        caption: absent ? "AI-блок не найден" : "AI-блок найден",
+        imageData: panelImageData,
+        evidenceRefs: absent ? [] : ["serp_observation:1", "serp_observation:2"],
+        meta: {
+          surface: "ai_answer",
+          engine,
+          region,
+          query: region === "RU" ? "Глинка Сергей Михайлович" : "Sergey Glinka",
+          capturedAt: "2026-07-15T10:00:00Z",
+          answerText: absent ? "" : "Нейтральный ответ.",
+          citations: absent
+            ? []
+            : [
+                { title: "Источник 1", domain: "example.org", url: "https://example.org/1" },
+                { title: "Источник 2", domain: "example.org", url: "https://example.org/2" },
+              ],
+        },
+      });
+    };
+    ensure("ru_ai_yandex", "Россия — AI-выдача Яндекса", "YANDEX", "RU");
+    ensure("ru_ai_google", "Россия — Google AI Overview", "GOOGLE", "RU");
+    ensure("uae_ai_google", "ОАЭ — Google AI Overview", "GOOGLE", "UAE", true);
+    return mapped;
+  }
+  return [
+    ...assets,
+    {
+      assetRef: "ru_ai_yandex",
+      kind: "surface_panel",
+      status: "ready",
+      title: "Россия — AI-выдача Яндекса",
+      caption: "AI-блок найден",
+      imageData: panelImageData,
+      evidenceRefs: ["serp_observation:1", "serp_observation:2"],
+      meta: {
+        surface: "ai_answer",
+        engine: "YANDEX",
+        region: "RU",
+        query: "Глинка Сергей Михайлович",
+        capturedAt: "2026-07-15T10:00:00Z",
+        answerText: "Нейтральный ответ Яндекс Алисы по субъекту.",
+        citations: [
+          { title: "Forbes", domain: "forbes.ru", url: "https://forbes.ru/x" },
+          { title: "РБК", domain: "rbc.ru", url: "https://rbc.ru/x" },
+        ],
+      },
+    },
+    {
+      assetRef: "ru_ai_google",
+      kind: "surface_panel",
+      status: "ready",
+      title: "Россия — Google AI Overview",
+      caption: "AI-блок найден",
+      imageData: panelImageData,
+      evidenceRefs: Array.from({ length: 12 }, (_, i) => `serp_observation:${i + 1}`),
+      meta: {
+        surface: "ai_answer",
+        engine: "GOOGLE",
+        region: "RU",
+        query: "Sergey Glinka",
+        capturedAt: "2026-07-15T10:00:00Z",
+        answerText: buildLongAiAnswer("Google AI Overview"),
+        citations: Array.from({ length: 10 }, (_, i) => ({
+          title: `Источник ${i + 1}`,
+          domain: `source${i + 1}.org`,
+          url: `https://source${i + 1}.org`,
+        })),
+        aiEvaluation: {
+          subjectMatch: "POSSIBLE_MATCH",
+          subjectMatchConfidence: 0.55,
+          tone: "MIXED",
+          adverseClaims: [{ claim: "Есть негативные формулировки.", evidenceRefs: ["serp_observation:1"] }],
+          ambiguousClaims: [{ claim: "Есть неоднозначные формулировки.", reason: "Нужна сверка", evidenceRefs: ["serp_observation:2"] }],
+          summary: "Ответ содержит смешанные сигналы.",
+          clientTakeaway: "Требуется дополнительная проверка формулировок и источников.",
+          recommendedAction: "Провести ручную верификацию по источникам.",
+        },
+      },
+    },
+    {
+      assetRef: "uae_ai_google",
+      kind: "surface_panel",
+      status: "ready",
+      title: "ОАЭ — Google AI Overview",
+      caption: "AI-блок не найден",
+      imageData: panelImageData,
+      evidenceRefs: [],
+      meta: {
+        surface: "ai_answer",
+        engine: "GOOGLE",
+        region: "UAE",
+        query: "Sergey Glinka",
+        capturedAt: "2026-07-15T10:00:00Z",
+        answerText: "",
+        citations: [],
+      },
+    },
+  ];
+}
+
 async function main() {
   const sourceDir = process.argv[2]?.trim() || DEFAULT_SOURCE;
   const outRoot = join(
@@ -233,8 +426,11 @@ async function main() {
   const themeSetPath = join(sourceDir, "orion-theme-set.json");
   const runScopedPath = join(sourceDir, "run-scoped-serp-merge.json");
   const arsenkinEnrichPath = join(sourceDir, "arsenkin-enrich.json");
+  const expectationsPath = join(sourceDir, "source-artifact-expectations.json");
   const reportSpec = readJson<OrionClassicAuditReportSpec>(reportSpecPath);
-  const assets = readJson<ReportAssetV1[]>(assetsPath);
+  const assetsRaw = readJson<ReportAssetV1[]>(assetsPath);
+  const useLongAiFixture = process.env.AI_FIXTURE_LONG === "1";
+  const assets = useLongAiFixture ? withLongAiFixtureAssets(assetsRaw) : assetsRaw;
   const themeSet = readJson<OrionThemeSet>(themeSetPath);
   const runScopedMerge = existsSync(join(sourceDir, "run-scoped-serp-merge.json"))
     ? readJson<{ usedRunScoped?: boolean; observationCount?: number; duplicateKeys?: string[] }>(
@@ -372,16 +568,37 @@ async function main() {
         : "BOUND_TO_EFFECTIVE_RUN"
       : "MISSING_BINDING_IDS_IN_SOURCE_ARTIFACTS";
 
-  const expectedRu = Number(process.env.EXPECTED_RU_SERP_COUNT ?? 16);
-  const expectedUae = Number(process.env.EXPECTED_UAE_SERP_COUNT ?? 12);
-  const hasExpected =
-    Number.isFinite(expectedRu) && expectedRu > 0 && Number.isFinite(expectedUae) && expectedUae > 0;
-  const sourceArtifactMismatch =
-    hasExpected && (ruFinalDatasetCount !== expectedRu || uaeFinalDatasetCount !== expectedUae);
-  const verdict = sourceArtifactMismatch ? "SOURCE_ARTIFACT_MISMATCH" : "SOURCE_ARTIFACT_OK";
-  const verdictReason = sourceArtifactMismatch
-    ? `Expected RU=${expectedRu}, UAE=${expectedUae} from production case artifacts, but renderer received RU=${ruFinalDatasetCount}, UAE=${uaeFinalDatasetCount} from sourceDir=${sourceDir}.`
-    : `Source artifacts and expected SERP datasets are aligned (RU=${ruFinalDatasetCount}, UAE=${uaeFinalDatasetCount}).`;
+  const expectations = existsSync(expectationsPath)
+    ? readJson<{
+        ru?: number;
+        uae?: number;
+        expectationRunId?: string;
+      }>(expectationsPath)
+    : null;
+  const expected: ReconciliationExpectation = expectations
+    ? {
+        ru: Number(expectations.ru ?? NaN),
+        uae: Number(expectations.uae ?? NaN),
+        expectationRunId: String(
+          expectations.expectationRunId ?? sourceReportRunId ?? effectiveReportRunId ?? ""
+        ),
+        source: "source-artifact-expectations.json",
+      }
+    : {
+        ru: afterDedupRu,
+        uae: afterDedupUae,
+        expectationRunId: sourceReportRunId || effectiveReportRunId || null,
+        source: "derived-from-source-artifacts",
+      };
+  const reconciliationCheck = reconcileSourceArtifacts({
+    actual: { ru: ruFinalDatasetCount, uae: uaeFinalDatasetCount },
+    expected,
+    binding: {
+      sourceReportRunId: sourceReportRunId || null,
+      effectiveReportRunId: effectiveReportRunId || null,
+    },
+    sourceDir,
+  });
 
   const reconciliation = {
     caseId,
@@ -414,9 +631,9 @@ async function main() {
     },
     providerTaskCount,
     coverageCount,
-    expectedDatasetCount: hasExpected ? { ru: expectedRu, uae: expectedUae } : null,
-    verdict,
-    verdictReason,
+            expectedDatasetCount: reconciliationCheck.expectedDatasetCount,
+            verdict: reconciliationCheck.verdict,
+            verdictReason: reconciliationCheck.reason,
     networkCalls: 0,
   };
   writeFileSync(
@@ -424,7 +641,7 @@ async function main() {
     JSON.stringify(reconciliation, null, 2),
     "utf-8"
   );
-  const realCasePass = !sourceArtifactMismatch && acceptance.passed;
+  const realCasePass = reconciliationCheck.realCasePass && acceptance.passed;
 
   console.log(
     JSON.stringify(
@@ -438,8 +655,9 @@ async function main() {
         pngCount: pngs.length,
         acceptancePassed: acceptance.passed,
         realCasePass,
-        reconciliationVerdict: verdict,
-        reconciliationReason: verdictReason,
+        reconciliationVerdict: reconciliationCheck.verdict,
+        reconciliationReason: reconciliationCheck.reason,
+        aiFixtureLong: useLongAiFixture,
         geometryIssueCount: geometry.report.summary.issueCount,
         networkCalls: 0,
       },

@@ -12,6 +12,10 @@ export type ClientCopyIssue = {
 /** Patterns that must never appear in client copy (spec §12). */
 export const CLIENT_COPY_FORBIDDEN: Array<{ code: string; pattern: RegExp }> = [
   { code: "CLIENT_COPY_INCOMPLETE", pattern: /\bпо\s+С\.\s*$/i },
+  { code: "CLIENT_COPY_INCOMPLETE", pattern: /\bДанные\s+не(?!\s+собраны)\b/i },
+  { code: "CLIENT_COPY_INCOMPLETE", pattern: /\bNOT_COLLECTED\b/i },
+  { code: "CLIENT_COPY_INCOMPLETE", pattern: /\bNO_RESULTS\b/i },
+  { code: "CLIENT_COPY_INCOMPLETE", pattern: /\breportRunId\b/i },
   { code: "CLIENT_COPY_INCOMPLETE", pattern: /\bвторой\s+наб/i },
   { code: "CLIENT_COPY_INCOMPLETE", pattern: /\bru_related_\d/i },
   { code: "CLIENT_COPY_INCOMPLETE", pattern: /\buae_related\b/i },

@@ -785,6 +785,20 @@ export function inspectFirst36Acceptance(input: First36AcceptanceInput): {
 
     const headers = (slide.table?.headers ?? []).map((h) => String(h).toLowerCase());
     const rows = slide.table?.rows ?? [];
+    const statusIdx = headers.findIndex((h) => /статус|risk|classification/.test(h));
+    if (/search_table/i.test(slide.template ?? "") && statusIdx >= 0) {
+      const hasEmptyStatus = rows.some((r) => {
+        const v = String(r[statusIdx] ?? "").trim();
+        return v === "" || v === "." || v === "·";
+      });
+      if (hasEmptyStatus) {
+        issues.push({
+          code: "EMPTY_STATUS_CELL",
+          page,
+          detail: "search table contains empty status cell",
+        });
+      }
+    }
     if (
       /search_table/i.test(slide.template ?? "") &&
       rows.length > 0 &&

@@ -1429,6 +1429,224 @@ function expandBaseSlotsToDeck(baseSlides: OrionGoldenDeckSlide[]): OrionGoldenD
   return out;
 }
 
+function appendAiAnswerExtensions(
+  deckSlides: OrionGoldenDeckSlide[],
+  assets: ReportAssetV1[]
+): OrionGoldenDeckSlide[] {
+  const toMeta = (asset: ReportAssetV1): Record<string, unknown> =>
+    ((asset.meta as Record<string, unknown> | undefined) ?? {}) as Record<string, unknown>;
+  const sentenceChunks = (text: string, maxChars: number): string[] => {
+    const sentences = text
+      .split(/(?<=[.!?])\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (sentences.length === 0) return text.trim() ? [text.trim()] : [];
+    const out: string[] = [];
+    let cur = "";
+    for (const s of sentences) {
+      const next = cur ? `${cur} ${s}` : s;
+      if (next.length <= maxChars || !cur) {
+        cur = next;
+      } else {
+        out.push(cur);
+        cur = s;
+      }
+    }
+    if (cur) out.push(cur);
+    return out;
+  };
+  const citationsFrom = (asset: ReportAssetV1): string[] => {
+    const meta = toMeta(asset);
+    const raw = (meta["citations"] as Array<{ title?: string; domain?: string; url?: string }> | undefined) ?? [];
+    const parsed = raw
+      .map((c) => {
+        const domain = String(c.domain ?? "").trim();
+        const title = String(c.title ?? "").trim();
+        const url = String(c.url ?? "").trim();
+        if (!domain && !title && !url) return "";
+        return `${domain || "source"} — ${title || url || "без названия"}`;
+      })
+      .filter(Boolean);
+    if (parsed.length > 0) return parsed;
+    return (asset.evidenceRefs ?? []).slice(0, 12).map((r) => `Источник: ${r}`);
+  };
+  const statusLabelFor = (asset: ReportAssetV1): string => {
+    const blob = `${asset.caption ?? ""} ${asset.title ?? ""}`;
+    return /не найден|absent|no result|NO_RESULTS/i.test(blob)
+      ? "Результат: AI-блок не найден"
+      : "Результат: AI-блок найден";
+  };
+  const safePct = (n: number | null): string =>
+    typeof n === "number" && Number.isFinite(n) ? `${Math.round(n * 100)}%` : "—";
+
+  const aiAssets = assets.filter(
+    (a) =>
+      String(a.meta?.surface ?? "").toLowerCase() === "ai_answer" ||
+      /ai-serp|ai[_-]?answer|google[_-]?ai|yandex[_-]?ai|ии|ai overview/i.test(
+        `${a.assetRef} ${a.title ?? ""}`
+      )
+  );
+  if (aiAssets.length === 0) return deckSlides;
+
+  const insertionRules: Array<{
+    id: string;
+    afterBase: string;
+    title: string;
+    region: string;
+    engine: string;
+    match: RegExp;
+    preferredAssetRefs: string[];
+  }> = [
+    {
+      id: "ext_ru_yandex_ai",
+      afterBase: "p19_ru_knowledge_2",
+      title: "Россия — AI-выдача Яндекса",
+      region: "RU",
+      engine: "YANDEX",
+      match: /yandex|alice|яндекс/i,
+      preferredAssetRefs: ["ru_ai_yandex", "ru_knowledge_panel_2"],
+    },
+    {
+      id: "ext_ru_google_ai",
+      afterBase: "p19_ru_knowledge_2",
+      title: "Россия — Google AI Overview",
+      region: "RU",
+      engine: "GOOGLE",
+      match: /google.*ai|ai.*google/i,
+      preferredAssetRefs: ["ru_ai_google"],
+    },
+    {
+      id: "ext_uae_google_ai",
+      afterBase: "p31_uae_knowledge",
+      title: "ОАЭ — Google AI Overview",
+      region: "UAE",
+      engine: "GOOGLE",
+      match: /google.*ai|ai.*google|uae/i,
+      preferredAssetRefs: ["uae_ai_google", "uae_knowledge_panel"],
+    },
+  ];
+
+  let result = [...deckSlides];
+  for (const rule of insertionRules) {
+    const asset =
+      rule.preferredAssetRefs
+        .map((ref) => aiAssets.find((a) => a.assetRef === ref))
+        .find(Boolean) ??
+      aiAssets.find((a) => rule.match.test(`${a.assetRef} ${a.title ?? ""}`));
+    if (!asset) continue;
+    const afterIdx = result.findIndex((s) => s.baseSlotId === rule.afterBase && !s.isContinuation);
+    if (afterIdx < 0) continue;
+    let insertAt = afterIdx + 1;
+    while (insertAt < result.length && result[insertAt]?.extensionOf === rule.afterBase) insertAt += 1;
+    const evidenceRefs = [...(asset.evidenceRefs ?? [])];
+    const meta = toMeta(asset);
+    const statusLabel = statusLabelFor(asset);
+    const queryText =
+      String(
+        (asset.meta as Record<string, unknown> | undefined)?.["query"] ??
+          (asset.meta as Record<string, unknown> | undefined)?.["queryText"] ??
+          "—"
+      ) || "—";
+    const safeQueryText = queryText === "—" ? "не указан" : queryText;
+    const capturedAt = String(meta["capturedAt"] ?? "дата не указана").slice(0, 19);
+    const answerText = String(meta["answerText"] ?? asset.caption ?? "").trim();
+    const textPages = answerText ? sentenceChunks(answerText, 1200) : [];
+    const citations = citationsFrom(asset);
+    const citationPages: string[][] = [];
+    for (let i = 0; i < citations.length; i += 4) citationPages.push(citations.slice(i, i + 4));
+    const evaluation = (meta["aiEvaluation"] as Record<string, unknown> | undefined) ?? {};
+    const adverseN = Array.isArray(evaluation["adverseClaims"]) ? evaluation["adverseClaims"].length : 0;
+    const ambiguousN = Array.isArray(evaluation["ambiguousClaims"]) ? evaluation["ambiguousClaims"].length : 0;
+    const confidence =
+      typeof evaluation["subjectMatchConfidence"] === "number"
+        ? safePct(Number(evaluation["subjectMatchConfidence"]))
+        : "—";
+    const rawTone = String(evaluation["tone"] ?? "").trim().toUpperCase();
+    const tone =
+      rawTone === "ADVERSE"
+        ? "негативная"
+        : rawTone === "MIXED"
+          ? "смешанная"
+          : rawTone === "POSITIVE"
+            ? "позитивная"
+            : rawTone === "NEUTRAL"
+              ? "нейтральная"
+              : "не определена";
+    const summary = String(evaluation["summary"] ?? "").trim();
+    const takeaway = String(evaluation["clientTakeaway"] ?? "").trim();
+    const action = String(evaluation["recommendedAction"] ?? "").trim();
+    const rawSubjectMatch = String(evaluation["subjectMatch"] ?? "").trim().toUpperCase();
+    const subjectMatch =
+      rawSubjectMatch === "MATCH"
+        ? "совпадение подтверждено"
+        : rawSubjectMatch === "POSSIBLE_MATCH"
+          ? "возможное совпадение"
+          : rawSubjectMatch === "WRONG_SUBJECT"
+            ? "другой субъект"
+            : "недостаточно данных";
+    const pageCount = Math.max(1, textPages.length, citationPages.length || 1);
+    const datasetCount = Math.max(textPages.length, 1) + citations.length;
+    let displayedCount = 0;
+    for (let pageIdx = 0; pageIdx < pageCount; pageIdx += 1) {
+      const textBlock = textPages[pageIdx] ?? (pageIdx === 0 ? answerText : "");
+      const cites = citationPages[pageIdx] ?? [];
+      displayedCount += (textBlock ? 1 : 0) + cites.length;
+      const isCont = pageIdx > 0;
+      const extSlide: OrionGoldenDeckSlide = {
+        slideKey:
+          pageIdx === 0 ? `${rule.id}_${asset.assetRef}` : `${rule.id}_${asset.assetRef}__cont${pageIdx}`,
+        baseSlotId: `${rule.id}_${asset.assetRef}`,
+        baseSlotIndex: -1,
+        sectionKey: "ai_answer_extension",
+        template: "orion_golden_surface_panel",
+        title: pageCount > 1 ? `${rule.title} (${pageIdx + 1}/${pageCount})` : rule.title,
+        pageNumber: 0,
+        extensionId: rule.id,
+        extensionOf: rule.afterBase,
+        extensionSurface: "ai_answer",
+        extensionEngine: rule.engine,
+        extensionRegion: rule.region,
+        datasetCount,
+        displayedCount: (textBlock ? 1 : 0) + cites.length,
+        assetRefs: [asset.assetRef],
+        evidenceRefs,
+        isContinuation: isCont,
+        continuationOf: isCont ? `${rule.id}_${asset.assetRef}` : null,
+        continuationIndex: pageIdx,
+        continuationCount: Math.max(0, pageCount - 1),
+        narrative: textBlock
+          ? `${textBlock}\n\nСтруктурированная реконструкция по данным API Arsenkin Tools; не браузерный снимок.`
+          : "AI-ответ отсутствует. Показан структурированный empty-state по данным сбора.",
+        bullets: [
+          `Поисковик: ${rule.engine === "YANDEX" ? "Яндекс" : "Google"} · регион: ${rule.region}`,
+          `Точный запрос: ${safeQueryText}`,
+          `Дата сбора: ${capturedAt}`,
+          statusLabel,
+          `AI-блок найден: ${/не найден/i.test(statusLabel) ? "нет" : "да"}`,
+          `Количество источников: ${citations.length}`,
+          `Негативные утверждения: ${adverseN}`,
+          `Неоднозначные утверждения: ${ambiguousN}`,
+          `Идентификация субъекта: ${subjectMatch} · доверие: ${confidence === "—" ? "не вычислено" : confidence}`,
+          `Тональность: ${tone}`,
+          ...(summary ? [`Вывод: ${summary}`] : []),
+          ...(takeaway ? [`Что это значит для клиента: ${takeaway}`] : []),
+          ...(action ? [`Рекомендуемое действие: ${action}`] : []),
+          ...cites.map((c) => `Источник: ${c}`),
+        ].filter(Boolean),
+        statusBadge: { label: statusLabel, tone: /не найден/i.test(statusLabel) ? "neutral" : "warn" },
+        totalPageCount: 0,
+      };
+      result.splice(insertAt + pageIdx, 0, extSlide);
+    }
+  }
+  result = result.map((s, idx, arr) => ({
+    ...s,
+    pageNumber: idx + 1,
+    totalPageCount: arr.length,
+  }));
+  return result;
+}
+
 /**
  * Compose the CEO audit deck from classic rich content + assets.
  * 36 mandatory base slots; continuation slides may push totalSlideCount past 36.
@@ -1608,6 +1826,7 @@ export function composeOrionFirst36CeoDeck(
 
   // Expand base slots into base + adjacent continuation slides (spec §2/§3).
   let deckSlides = expandBaseSlotsToDeck(finalSlides);
+  deckSlides = appendAiAnswerExtensions(deckSlides, assets);
 
   const totalPages = deckSlides.length;
   const tocEntries = deckSlides

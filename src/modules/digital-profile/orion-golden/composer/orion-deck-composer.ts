@@ -87,6 +87,14 @@ export type OrionGoldenDeckSlide = {
   continuationIndex?: number;
   continuationCount?: number;
   sectionId?: string;
+  /** Dynamic extension slide id (non-base, may exceed 36 pages). */
+  extensionId?: string;
+  extensionOf?: string;
+  extensionSurface?: "ai_answer" | string;
+  extensionEngine?: string;
+  extensionRegion?: string;
+  datasetCount?: number;
+  displayedCount?: number;
   /** Total rendered pages in the final deck (>= 36). */
   totalPageCount?: number;
   /** Structured search-position counters for search_table slides + continuations. */

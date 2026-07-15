@@ -47,6 +47,10 @@ import {
 } from "./first36-acceptance-gate";
 import { inspectCrossSlideMetricConsistency } from "./cross-slide-metric-consistency";
 import { inspectClientCopySlides } from "./client-copy-completeness";
+import {
+  buildAiAnswerObservations,
+  evaluateAiAnswerObservation,
+} from "./ai-answer-evaluation";
 
 export class OrionClassicVisualGateError extends Error {
   readonly blockedSections: Array<{ sectionKey: string; reason: string }>;
@@ -300,6 +304,20 @@ export async function runOrionClassicAuditRender(options: {
     reportRunId: clientContent.reportRunId,
     rows: surfaceCoverage,
   });
+  writeJson(join(outputRoot, "arsenkin-surface-coverage.json"), {
+    reportRunId: clientContent.reportRunId,
+    rows: surfaceCoverage,
+  });
+  const fullPlan =
+    readJson<Record<string, unknown>>(join(outputRoot, "arsenkin-live-plan.json")) ??
+    readJson<Record<string, unknown>>(
+      join(caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId), "arsenkin-live-plan.json")
+    ) ??
+    {
+      reportRunId: clientContent.reportRunId,
+      warning: "arsenkin-live-plan.json missing in render artifacts",
+    };
+  writeJson(join(outputRoot, "arsenkin-full-first36-plan.json"), fullPlan);
   writeJson(
     join(outputRoot, "provider-tasks.json"),
     (
@@ -312,22 +330,66 @@ export async function runOrionClassicAuditRender(options: {
       costStatus: task.limitsSpent == null ? "UNKNOWN" : "KNOWN",
     }))
   );
+  const arsenkinObservations = await prisma.serpObservation.findMany({
+    where: { auditRunId: clientContent.reportRunId, provider: "arsenkin" },
+    select: {
+      id: true,
+      auditRunId: true,
+      provider: true,
+      providerTaskId: true,
+      surface: true,
+      engine: true,
+      region: true,
+      queryText: true,
+      providerStatus: true,
+      title: true,
+      snippet: true,
+      url: true,
+      domain: true,
+      capturedAt: true,
+    },
+    orderBy: { createdAt: "asc" },
+  });
   writeJson(
     join(outputRoot, "serp-observations-provenance.json"),
-    await prisma.serpObservation.findMany({
-      where: { auditRunId: clientContent.reportRunId, provider: "arsenkin" },
-      select: {
-        id: true,
-        auditRunId: true,
-        provider: true,
-        providerTaskId: true,
-        surface: true,
-        engine: true,
-        region: true,
-      },
-      orderBy: { createdAt: "asc" },
-    })
+    arsenkinObservations.map((o) => ({
+      id: o.id,
+      auditRunId: o.auditRunId,
+      provider: o.provider,
+      providerTaskId: o.providerTaskId,
+      surface: o.surface,
+      engine: o.engine,
+      region: o.region,
+    }))
   );
+  const aiObservationRows = arsenkinObservations
+    .filter((o) => o.surface === "ai_answer")
+    .map((o) => ({
+      id: o.id,
+      auditRunId: o.auditRunId,
+      providerTaskId: o.providerTaskId,
+      queryText: o.queryText,
+      engine: o.engine,
+      region: o.region,
+      providerStatus: o.providerStatus,
+      title: o.title,
+      snippet: o.snippet,
+      url: o.url,
+      domain: o.domain,
+      capturedAt: o.capturedAt.toISOString(),
+    }));
+  const aiAnswerObservations = buildAiAnswerObservations(aiObservationRows);
+  writeJson(join(outputRoot, "ai-answer-observations.json"), aiAnswerObservations);
+  const aiAnswerEvaluations = aiAnswerObservations
+    .map((obs) =>
+      evaluateAiAnswerObservation({
+        subjectFullName: String(ctx.subject?.fullName ?? clientContent.subject.displayName ?? ""),
+        aliases: (ctx.subject?.aliases ?? []).map((a) => String(a ?? "").trim()).filter(Boolean),
+        observation: obs,
+      })
+    )
+    .filter((x): x is NonNullable<typeof x> => Boolean(x));
+  writeJson(join(outputRoot, "ai-answer-evaluations.json"), aiAnswerEvaluations);
   const baseInventory = buildFullEvidenceInventory({
     caseId,
     reportRunId: clientContent.reportRunId,
@@ -671,6 +733,10 @@ export async function runOrionClassicAuditRender(options: {
     slides: deckManifest.finalSlides ?? [],
   });
   writeJson(join(outputRoot, "metric-consistency-report.json"), {
+    passed: metricConsistency.length === 0,
+    issues: metricConsistency,
+  });
+  writeJson(join(outputRoot, "cross-slide-metric-report.json"), {
     passed: metricConsistency.length === 0,
     issues: metricConsistency,
   });

@@ -1425,6 +1425,15 @@ export function getOrionClassicAuditReportStatus(
   );
 }
 
+export function getOrionClassicDiagnosticsBundleUrl(
+  caseId: string,
+  runId?: string | null
+): string {
+  const q = new URLSearchParams();
+  if (runId?.trim()) q.set("runId", runId.trim());
+  return `${BASE}/cases/${caseId}/orion-golden/report/diagnostics-bundle${q.toString() ? `?${q}` : ""}`;
+}
+
 export type OrionGoldenPrepareSummary = {
   ok: boolean;
   caseId: string;
@@ -1479,6 +1488,26 @@ export type ArsenkinUiStatusCode =
   | "FAILED"
   | "MANUAL_INTERVENTION_REQUIRED";
 
+export type ArsenkinSurfaceMatrixStatus =
+  | "NOT STARTED"
+  | "PLANNED"
+  | "RUNNING"
+  | "DONE"
+  | "NO RESULTS"
+  | "FAILED";
+
+export type ArsenkinSurfaceMatrixRow = {
+  id: string;
+  label: string;
+  tool: "check-top" | "suggest" | "paa" | "ai-serp" | "check-h" | "indexation";
+  engine: string;
+  region: string;
+  surface: string;
+  status: ArsenkinSurfaceMatrixStatus;
+  observationsCount: number;
+  tasksCount: number;
+};
+
 export type ArsenkinUiStatusDto = {
   enabled: boolean;
   configured: boolean;
@@ -1525,6 +1554,7 @@ export type ArsenkinUiStatusDto = {
     | "READINESS_NOT_REQUIRED"
     | null;
   canRefreshReadiness?: boolean;
+  surfaceMatrix?: ArsenkinSurfaceMatrixRow[];
 };
 
 export type ArsenkinUiPlanRequestDto = {

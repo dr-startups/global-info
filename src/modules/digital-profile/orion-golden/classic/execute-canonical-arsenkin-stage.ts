@@ -608,7 +608,7 @@ export async function executeCanonicalArsenkinStage(
       orderBy: { rank: "asc" },
       take: 100,
     });
-    urlsEnrichment = pickEnrichmentUrls(organic, 5);
+    urlsEnrichment = pickEnrichmentUrls(organic, 10);
   }
 
   const plan = buildArsenkinExecutionPlan({

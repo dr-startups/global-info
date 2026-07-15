@@ -159,6 +159,8 @@ export async function collectArsenkinPilotSurfaces(
 
   const ruQuery = input.queriesRu[0] ?? "subject";
   const uaeQuery = input.queriesUae[0] ?? ruQuery;
+  const ruQueries = input.queriesRu.map((q) => String(q ?? "").trim()).filter(Boolean).slice(0, 5);
+  const uaeQueries = input.queriesUae.map((q) => String(q ?? "").trim()).filter(Boolean).slice(0, 4);
   const want = (tool: ArsenkinToolName) =>
     (!input.tools || input.tools.includes(tool)) &&
     (isArsenkinToolEnabled(tool) || input.fixturesOnly || !live);
@@ -167,10 +169,11 @@ export async function collectArsenkinPilotSurfaces(
   if (want("check-top")) {
     const se = pilotSeForRegion("RU");
     const req = buildCheckTopRequest({
-      queries: input.queriesRu.slice(0, 3),
+      queries: ruQueries.length > 0 ? ruQueries : [ruQuery],
       se,
-      depth: 10,
+      depth: 20,
       is_snippet: true,
+      noreask: true,
     });
     let providerTaskId: string | null = null;
     let payload: unknown;
@@ -187,7 +190,7 @@ export async function collectArsenkinPilotSurfaces(
         auditRunId: input.auditRunId,
         regionLabel: "RU",
         language: "ru",
-        queries: input.queriesRu.slice(0, 3),
+        queries: ruQueries.length > 0 ? ruQueries : [ruQuery],
         se,
         payload,
       }), providerTaskId)
@@ -211,10 +214,11 @@ export async function collectArsenkinPilotSurfaces(
   if (want("check-top") && input.queriesUae.length > 0) {
     const se = pilotSeForRegion("UAE");
     const req = buildCheckTopRequest({
-      queries: input.queriesUae.slice(0, 2),
+      queries: uaeQueries.length > 0 ? uaeQueries : [uaeQuery],
       se,
-      depth: 10,
+      depth: 20,
       is_snippet: true,
+      noreask: true,
     });
     let providerTaskId: string | null = null;
     let payload: unknown;
@@ -242,7 +246,7 @@ export async function collectArsenkinPilotSurfaces(
         auditRunId: input.auditRunId,
         regionLabel: "UAE",
         language: "en",
-        queries: input.queriesUae.slice(0, 2),
+        queries: uaeQueries.length > 0 ? uaeQueries : [uaeQuery],
         se,
         payload,
       }), providerTaskId)
@@ -252,7 +256,7 @@ export async function collectArsenkinPilotSurfaces(
   // --- suggest RU (Yandex) ---
   if (want("suggest")) {
     const req = buildSuggestRequest({
-      queries: [ruQuery],
+      queries: ruQueries.length > 0 ? ruQueries : [ruQuery],
       se: 1,
       region: ARSENKIN_REGION.YANDEX_MOSCOW,
       depth: 1,
@@ -271,7 +275,7 @@ export async function collectArsenkinPilotSurfaces(
         auditRunId: input.auditRunId,
         regionLabel: "RU",
         language: "ru",
-        queries: [ruQuery],
+        queries: ruQueries.length > 0 ? ruQueries : [ruQuery],
         se: 1,
         payload,
       }), providerTaskId);
@@ -291,7 +295,7 @@ export async function collectArsenkinPilotSurfaces(
   // --- suggest RU (Google) ---
   if (want("suggest")) {
     const req = buildSuggestRequest({
-      queries: [ruQuery],
+      queries: ruQueries.length > 0 ? ruQueries : [ruQuery],
       se: 2,
       region: ARSENKIN_REGION.GOOGLE_MOSCOW,
       google_domain: "www.google.ru",
@@ -313,7 +317,7 @@ export async function collectArsenkinPilotSurfaces(
         auditRunId: input.auditRunId,
         regionLabel: "RU",
         language: "ru",
-        queries: [ruQuery],
+        queries: ruQueries.length > 0 ? ruQueries : [ruQuery],
         se: 2,
         payload,
       }), providerTaskId);
@@ -333,7 +337,7 @@ export async function collectArsenkinPilotSurfaces(
   // --- suggest UAE (Google) ---
   if (want("suggest") && input.queriesUae.length > 0) {
     const req = buildSuggestRequest({
-      queries: [uaeQuery],
+      queries: uaeQueries.length > 0 ? uaeQueries : [uaeQuery],
       se: 2,
       region: ARSENKIN_REGION.GOOGLE_UAE,
       google_domain: "www.google.ae",
@@ -355,7 +359,7 @@ export async function collectArsenkinPilotSurfaces(
         auditRunId: input.auditRunId,
         regionLabel: "UAE",
         language: "en",
-        queries: [uaeQuery],
+        queries: uaeQueries.length > 0 ? uaeQueries : [uaeQuery],
         se: 2,
         payload,
       }), providerTaskId);
@@ -545,7 +549,7 @@ export async function collectArsenkinPilotSurfaces(
   const enrichUrls = (input.urlsEnrichment ?? [])
     .map((u) => String(u).trim())
     .filter((u) => /^https?:\/\//i.test(u))
-    .slice(0, 5);
+    .slice(0, 10);
 
   if (want("check-h") && enrichUrls.length > 0) {
     const req = buildCheckHRequest({ urls: enrichUrls, mode: "url" });
@@ -623,12 +627,23 @@ export async function collectArsenkinPilotSurfaces(
       surface: "autocomplete" | "paa";
     }> = [];
     if (want("suggest")) {
-      coverageTargets.push(
-        { tool: "suggest", query: ruQuery, engine: "YANDEX", region: "RU", language: "ru", surface: "autocomplete" },
-        { tool: "suggest", query: ruQuery, engine: "GOOGLE", region: "RU", language: "ru", surface: "autocomplete" }
-      );
-      if (input.queriesUae.length > 0) {
-        coverageTargets.push({ tool: "suggest", query: uaeQuery, engine: "GOOGLE", region: "UAE", language: "en", surface: "autocomplete" });
+      for (const q of ruQueries.length > 0 ? ruQueries : [ruQuery]) {
+        coverageTargets.push(
+          { tool: "suggest", query: q, engine: "YANDEX", region: "RU", language: "ru", surface: "autocomplete" },
+          { tool: "suggest", query: q, engine: "GOOGLE", region: "RU", language: "ru", surface: "autocomplete" }
+        );
+      }
+      if (uaeQueries.length > 0) {
+        for (const q of uaeQueries) {
+          coverageTargets.push({
+            tool: "suggest",
+            query: q,
+            engine: "GOOGLE",
+            region: "UAE",
+            language: "en",
+            surface: "autocomplete",
+          });
+        }
       }
     }
     if (want("paa")) {

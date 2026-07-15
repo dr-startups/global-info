@@ -180,6 +180,59 @@ export async function buildArsenkinSurfacePanelAssets(input: {
     lines: ruAiLines,
     meta: { notKnowledgePanel: true, arsenkinTool: "ai-serp", surface: "ai_answer" },
   });
+  await pushPanel(assets, {
+    assetRef: "ru_ai_yandex",
+    title: "Россия — AI-выдача Яндекса",
+    engineLabel: "Яндекс Алиса",
+    caption: yandexAnswer?.providerStatus === "NO_RESULTS" ? "AI-блок не найден" : "AI-блок Яндекса",
+    lines: (yandexAnswer ? [yandexAnswer] : [])
+      .concat(ruYandexAi.filter((r) => r.domain !== "ai-serp"))
+      .slice(0, 8)
+      .map((r) => ({
+        label: String(r.snippet ?? r.title ?? r.url).slice(0, 180),
+        meta: String(r.domain ?? "source"),
+        evidenceRef: `serp_observation:${r.id}`,
+      })),
+    meta: ({
+      notKnowledgePanel: true,
+      arsenkinTool: "ai-serp",
+      surface: "ai_answer",
+      engine: "YANDEX",
+      capturedAt: yandexAnswer?.capturedAt?.toISOString(),
+      answerText: yandexAnswer?.snippet ?? "",
+      citations: ruYandexAi
+        .filter((r) => r.domain !== "ai-serp")
+        .slice(0, 8)
+        .map((r) => ({ title: r.title ?? undefined, url: r.url, domain: r.domain ?? "" })),
+    } as ReportAssetV1["meta"]),
+  });
+  await pushPanel(assets, {
+    assetRef: "ru_ai_google",
+    title: "Россия — Google AI Overview",
+    engineLabel: "Google AI Overview",
+    caption:
+      googleRuAnswer?.providerStatus === "NO_RESULTS" ? "Google AI Overview не найден" : "Google AI Overview",
+    lines: (googleRuAnswer ? [googleRuAnswer] : [])
+      .concat(ruGoogleAi.filter((r) => r.domain !== "ai-serp"))
+      .slice(0, 8)
+      .map((r) => ({
+        label: String(r.snippet ?? r.title ?? r.url).slice(0, 180),
+        meta: String(r.domain ?? "source"),
+        evidenceRef: `serp_observation:${r.id}`,
+      })),
+    meta: ({
+      notKnowledgePanel: true,
+      arsenkinTool: "ai-serp",
+      surface: "ai_answer",
+      engine: "GOOGLE",
+      capturedAt: googleRuAnswer?.capturedAt?.toISOString(),
+      answerText: googleRuAnswer?.snippet ?? "",
+      citations: ruGoogleAi
+        .filter((r) => r.domain !== "ai-serp")
+        .slice(0, 8)
+        .map((r) => ({ title: r.title ?? undefined, url: r.url, domain: r.domain ?? "" })),
+    } as ReportAssetV1["meta"]),
+  });
 
   // UAE Google AI Overview → uae_knowledge_panel (separate from Wikipedia when overlay allows).
   const uaeAi = aiAnswer.filter((r) => mapRegion(r.region) === "UAE");
@@ -209,6 +262,29 @@ export async function buildArsenkinSurfacePanelAssets(input: {
         : "Google AI Overview (Arsenkin ai-serp). Не энциклопедическая карточка Wikipedia.",
     lines: uaeLines,
     meta: { notKnowledgePanel: true, arsenkinTool: "ai-serp", surface: "ai_answer" },
+  });
+  await pushPanel(assets, {
+    assetRef: "uae_ai_google",
+    title: "ОАЭ — Google AI Overview",
+    engineLabel: "Google AI Overview",
+    caption:
+      uaeAnswer?.providerStatus === "NO_RESULTS"
+        ? "Google AI Overview не найден"
+        : "Google AI Overview по основному identity query",
+    lines: uaeLines,
+    meta: ({
+      notKnowledgePanel: true,
+      arsenkinTool: "ai-serp",
+      surface: "ai_answer",
+      engine: "GOOGLE",
+      region: "UAE",
+      capturedAt: uaeAnswer?.capturedAt?.toISOString(),
+      answerText: uaeAnswer?.snippet ?? "",
+      citations: uaeAi
+        .filter((r) => r.domain !== "ai-serp")
+        .slice(0, 8)
+        .map((r) => ({ title: r.title ?? undefined, url: r.url, domain: r.domain ?? "" })),
+    } as ReportAssetV1["meta"]),
   });
 
   // URL enrichment (check-h + indexation) → p12 when google-suggest slot is free / preferred.

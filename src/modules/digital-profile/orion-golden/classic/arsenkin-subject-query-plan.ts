@@ -14,6 +14,8 @@ export type ArsenkinSubjectQueryPlan = {
   fullName: string;
   queriesRu: string[];
   queriesUae: string[];
+  primaryIdentityRu: string | null;
+  primaryIdentityUae: string | null;
   blockers: string[];
 };
 
@@ -45,6 +47,17 @@ function permutationsOfName(fullName: string): string[] {
   return [fullName, reversed, firstLast];
 }
 
+function latinNameVariants(input: string): string[] {
+  const parts = input.split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return [input];
+  const first = parts[0] ?? "";
+  const second = parts[1] ?? "";
+  const reversed = [...parts].reverse().join(" ");
+  const firstLast = `${first} ${second}`.trim();
+  const lastFirst = `${second} ${first}`.trim();
+  return [input, firstLast, lastFirst, reversed];
+}
+
 /** Build deterministic Arsenkin RU/UAE query lists from subject identity. */
 export function buildArsenkinSubjectQueryPlan(
   input: ArsenkinSubjectQueryInput
@@ -59,6 +72,8 @@ export function buildArsenkinSubjectQueryPlan(
       fullName: "",
       queriesRu: [],
       queriesUae: [],
+      primaryIdentityRu: null,
+      primaryIdentityUae: null,
       blockers: ["empty-subject-name"],
     };
   }
@@ -67,21 +82,26 @@ export function buildArsenkinSubjectQueryPlan(
   const cyrAliases = aliases.filter((a) => hasCyrillic(a));
   const latinAliases = aliases.filter((a) => !hasCyrillic(a));
 
-  const ruBase = hasCyrillic(name)
-    ? [name, ...permutationsOfName(name), ...cyrAliases]
-    : [...cyrAliases, name];
+  const ruBase = hasCyrillic(name) ? [name, ...permutationsOfName(name), ...cyrAliases] : [...cyrAliases];
   const queriesRu = dedupePreserve(ruBase).slice(0, 5);
 
-  const latinFull = hasCyrillic(name) ? transliterateRuToEn(name) : name;
-  const uaeBase = [
-    latinFull,
-    ...permutationsOfName(latinFull),
-    ...latinAliases,
-  ];
+  // UAE plan: primary confirmed Latin alias first; otherwise transliteration
+  // from canonical fullName. No synthetic aliases beyond deterministic order
+  // variants of an existing identity string.
+  const latinPrimary = latinAliases[0]?.trim() || (hasCyrillic(name) ? transliterateRuToEn(name) : name);
+  const uaeBase = [latinPrimary, ...latinNameVariants(latinPrimary), ...latinAliases];
   const queriesUae = dedupePreserve(uaeBase).slice(0, 4);
 
   const blockers: string[] = [];
   if (queriesRu.length === 0) blockers.push("empty-queries-ru");
+  if (queriesUae.length === 0) blockers.push("empty-queries-uae");
 
-  return { fullName: name, queriesRu, queriesUae, blockers };
+  return {
+    fullName: name,
+    queriesRu,
+    queriesUae,
+    primaryIdentityRu: queriesRu[0] ?? null,
+    primaryIdentityUae: queriesUae[0] ?? null,
+    blockers,
+  };
 }

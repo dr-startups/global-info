@@ -121,7 +121,7 @@ function isAi(row: { surface: string; engine: string; region: string }): boolean
 /** Prefer http(s) organic URLs, unique by domain, skip wiki/social noise. */
 export function pickEnrichmentUrls(
   rows: Array<{ url: string; domain: string | null; rank: number; surface: string }>,
-  limit = 5
+  limit = 10
 ): string[] {
   const organic = rows
     .filter((r) => r.surface === "organic" && /^https?:\/\//i.test(r.url))

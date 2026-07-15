@@ -125,6 +125,7 @@ export type ArsenkinUiStatusDto = {
   humanMessages: string[];
   readinessCode: ArsenkinReadinessCode | null;
   canRefreshReadiness: boolean;
+  surfaceMatrix?: ArsenkinSurfaceMatrixRow[];
 };
 
 export type ArsenkinUiPlanRequestDto = {
@@ -141,7 +142,132 @@ export type ArsenkinUiPlanDto = ArsenkinUiStatusDto & {
   digest: string;
 };
 
+export type ArsenkinSurfaceMatrixStatus =
+  | "NOT STARTED"
+  | "PLANNED"
+  | "RUNNING"
+  | "DONE"
+  | "NO RESULTS"
+  | "FAILED";
+
+export type ArsenkinSurfaceMatrixRow = {
+  id: string;
+  label: string;
+  tool: "check-top" | "suggest" | "paa" | "ai-serp" | "check-h" | "indexation";
+  engine: string;
+  region: string;
+  surface: string;
+  status: ArsenkinSurfaceMatrixStatus;
+  observationsCount: number;
+  tasksCount: number;
+};
+
 const DEFAULT_DB_READINESS = getDefaultReadinessArtifactPath();
+
+const FULL_FIRST36_SURFACE_MATRIX: Array<
+  Omit<ArsenkinSurfaceMatrixRow, "status" | "observationsCount" | "tasksCount">
+> = [
+  {
+    id: "ru-yandex-organic",
+    label: "RU Yandex organic",
+    tool: "check-top",
+    engine: "YANDEX",
+    region: "RU",
+    surface: "organic",
+  },
+  {
+    id: "ru-google-organic",
+    label: "RU Google organic",
+    tool: "check-top",
+    engine: "GOOGLE",
+    region: "RU",
+    surface: "organic",
+  },
+  {
+    id: "uae-google-organic",
+    label: "UAE Google organic",
+    tool: "check-top",
+    engine: "GOOGLE",
+    region: "UAE",
+    surface: "organic",
+  },
+  {
+    id: "ru-yandex-suggest",
+    label: "RU Yandex suggestions",
+    tool: "suggest",
+    engine: "YANDEX",
+    region: "RU",
+    surface: "autocomplete",
+  },
+  {
+    id: "ru-google-suggest",
+    label: "RU Google suggestions",
+    tool: "suggest",
+    engine: "GOOGLE",
+    region: "RU",
+    surface: "autocomplete",
+  },
+  {
+    id: "uae-google-suggest",
+    label: "UAE Google suggestions",
+    tool: "suggest",
+    engine: "GOOGLE",
+    region: "UAE",
+    surface: "autocomplete",
+  },
+  {
+    id: "ru-google-paa",
+    label: "RU Google PAA",
+    tool: "paa",
+    engine: "GOOGLE",
+    region: "RU",
+    surface: "paa",
+  },
+  {
+    id: "uae-google-paa",
+    label: "UAE Google PAA",
+    tool: "paa",
+    engine: "GOOGLE",
+    region: "UAE",
+    surface: "paa",
+  },
+  {
+    id: "ru-yandex-ai",
+    label: "RU Yandex AI",
+    tool: "ai-serp",
+    engine: "YANDEX",
+    region: "RU",
+    surface: "ai_answer",
+  },
+  {
+    id: "ru-google-ai",
+    label: "RU Google AI",
+    tool: "ai-serp",
+    engine: "GOOGLE",
+    region: "RU",
+    surface: "ai_answer",
+  },
+  {
+    id: "uae-google-ai",
+    label: "UAE Google AI",
+    tool: "ai-serp",
+    engine: "GOOGLE",
+    region: "UAE",
+    surface: "ai_answer",
+  },
+  {
+    id: "url-audit",
+    label: "URL audit",
+    tool: "check-h",
+    engine: "MULTI",
+    region: "MIXED",
+    surface: "page_meta",
+  },
+];
+
+function toRegionBucket(value: string): "RU" | "UAE" {
+  return /UAE|AE|INTL/i.test(String(value ?? "")) ? "UAE" : "RU";
+}
 
 export function arsenkinBudgetForStage(stage: ArsenkinUiStage): {
   maxNewTasks: number;
@@ -247,6 +373,58 @@ function humanizeBlockers(blockers: string[], readinessCode?: ArsenkinReadinessC
     if (/LIVE_CONFIRM|confirmed/i.test(b)) return "Требуется явное подтверждение платного запуска.";
     if (/MANUAL_INTERVENTION/i.test(b)) return "Требуется ручное вмешательство — автоповтор запрещён.";
     return "Операция заблокирована проверками безопасности.";
+  });
+}
+
+function buildSurfaceMatrix(input: {
+  hasRun: boolean;
+  uiStatus: ArsenkinUiStatusCode;
+  plannedRequests: ArsenkinUiPlanRequestDto[];
+  coverageRows: Array<{ tool: string; engine: string; region: string; surface: string; status: string }>;
+  observations: Array<{ engine: string; region: string; surface: string }>;
+  taskStates: string[];
+}): ArsenkinSurfaceMatrixRow[] {
+  const anyFailedTask = input.taskStates.some((s) => /FAILED|CANCELLED|SUBMIT_UNKNOWN/i.test(s));
+  return FULL_FIRST36_SURFACE_MATRIX.map((cell) => {
+    const planned = input.plannedRequests.some(
+      (r) =>
+        r.tool === cell.tool &&
+        (cell.region === "MIXED" || toRegionBucket(r.region) === cell.region) &&
+        (cell.engine === "MULTI" || String(r.engine).toUpperCase() === cell.engine)
+    );
+    const matchingCoverage = input.coverageRows.filter(
+      (r) =>
+        r.tool === cell.tool &&
+        (cell.region === "MIXED" || toRegionBucket(r.region) === cell.region) &&
+        (cell.engine === "MULTI" || String(r.engine).toUpperCase() === cell.engine) &&
+        (cell.surface === r.surface || (cell.id === "url-audit" && (r.surface === "page_meta" || r.surface === "indexation")))
+    );
+    const matchingObs = input.observations.filter(
+      (o) =>
+        (cell.region === "MIXED" || toRegionBucket(o.region) === cell.region) &&
+        (cell.engine === "MULTI" || String(o.engine).toUpperCase() === cell.engine) &&
+        (cell.surface === o.surface || (cell.id === "url-audit" && (o.surface === "page_meta" || o.surface === "indexation")))
+    );
+    let status: ArsenkinSurfaceMatrixStatus = "NOT STARTED";
+    if (!input.hasRun) {
+      status = "NOT STARTED";
+    } else if (matchingCoverage.some((r) => /^NO_RESULTS$/i.test(r.status))) {
+      status = "NO RESULTS";
+    } else if (matchingCoverage.some((r) => /^OK$/i.test(r.status))) {
+      status = "DONE";
+    } else if (input.uiStatus === "EXECUTING") {
+      status = planned || matchingCoverage.length > 0 ? "RUNNING" : "NOT STARTED";
+    } else if (anyFailedTask && (planned || matchingCoverage.length > 0)) {
+      status = "FAILED";
+    } else if (planned) {
+      status = "PLANNED";
+    }
+    return {
+      ...cell,
+      status,
+      observationsCount: matchingObs.length,
+      tasksCount: matchingCoverage.length,
+    };
   });
 }
 
@@ -448,6 +626,7 @@ export async function getArsenkinUiStatus(
       humanMessages: ["Arsenkin API не подключён на сервере."],
       readinessCode: "READINESS_NOT_REQUIRED",
       canRefreshReadiness: false,
+      surfaceMatrix: [],
     };
   }
 
@@ -475,17 +654,49 @@ export async function getArsenkinUiStatus(
         : "READY_TO_PREPARE";
 
   const ledgerRunId = arsenkinReportRunId;
-  const [providerTaskCount, observationCount, coverageCount] = ledgerRunId
-    ? await Promise.all([
-        prisma.providerTask.count({ where: { reportRunId: ledgerRunId, provider: "arsenkin" } }),
-        prisma.serpObservation.count({
-          where: { auditRunId: ledgerRunId, provider: "arsenkin" },
-        }),
-        prisma.surfaceCollectionCoverage.count({
-          where: { reportRunId: ledgerRunId, provider: "arsenkin" },
-        }),
-      ])
-    : [0, 0, 0];
+  const [providerTaskCount, observationCount, coverageCount, coverageRowsRaw, observationRowsRaw, taskStatesRaw] =
+    ledgerRunId
+      ? await (async () => {
+          const anyPrisma = prisma as unknown as {
+            surfaceCollectionCoverage?: { findMany?: (...args: unknown[]) => Promise<unknown[]> };
+            serpObservation?: { findMany?: (...args: unknown[]) => Promise<unknown[]> };
+            providerTask?: { findMany?: (...args: unknown[]) => Promise<unknown[]> };
+          };
+          const coverageRowsPromise =
+            typeof anyPrisma.surfaceCollectionCoverage?.findMany === "function"
+              ? prisma.surfaceCollectionCoverage.findMany({
+                  where: { reportRunId: ledgerRunId, provider: "arsenkin" },
+                  select: { tool: true, engine: true, region: true, surface: true, status: true },
+                })
+              : Promise.resolve([]);
+          const observationRowsPromise =
+            typeof anyPrisma.serpObservation?.findMany === "function"
+              ? prisma.serpObservation.findMany({
+                  where: { auditRunId: ledgerRunId, provider: "arsenkin" },
+                  select: { engine: true, region: true, surface: true },
+                })
+              : Promise.resolve([]);
+          const taskStatesPromise =
+            typeof anyPrisma.providerTask?.findMany === "function"
+              ? prisma.providerTask.findMany({
+                  where: { reportRunId: ledgerRunId, provider: "arsenkin" },
+                  select: { state: true },
+                })
+              : Promise.resolve([]);
+          return Promise.all([
+            prisma.providerTask.count({ where: { reportRunId: ledgerRunId, provider: "arsenkin" } }),
+            prisma.serpObservation.count({
+              where: { auditRunId: ledgerRunId, provider: "arsenkin" },
+            }),
+            prisma.surfaceCollectionCoverage.count({
+              where: { reportRunId: ledgerRunId, provider: "arsenkin" },
+            }),
+            coverageRowsPromise,
+            observationRowsPromise,
+            taskStatesPromise,
+          ]);
+        })()
+      : [0, 0, 0, [], [], []];
 
   if (ledgerRunId) {
     const run = await prisma.orionReportRun.findUnique({ where: { id: ledgerRunId } });
@@ -640,6 +851,24 @@ export async function getArsenkinUiStatus(
         ]
       : []),
   ];
+  const surfaceMatrix = buildSurfaceMatrix({
+    hasRun: Boolean(ledgerRunId),
+    uiStatus,
+    plannedRequests,
+    coverageRows: coverageRowsRaw.map((r) => ({
+      tool: String(r.tool ?? ""),
+      engine: String(r.engine ?? ""),
+      region: String(r.region ?? ""),
+      surface: String(r.surface ?? ""),
+      status: String(r.status ?? ""),
+    })),
+    observations: observationRowsRaw.map((r) => ({
+      engine: String(r.engine ?? ""),
+      region: String(r.region ?? ""),
+      surface: String(r.surface ?? ""),
+    })),
+    taskStates: taskStatesRaw.map((t) => t.state),
+  });
 
   return {
     enabled,
@@ -682,6 +911,7 @@ export async function getArsenkinUiStatus(
       enabled &&
       readinessCode !== "READINESS_RUNNING" &&
       readinessCode !== "READINESS_NOT_REQUIRED",
+    surfaceMatrix,
   };
 }
 
@@ -1409,6 +1639,7 @@ export function toPublicArsenkinUiDto(
     humanMessages: dto.humanMessages,
     readinessCode: dto.readinessCode,
     canRefreshReadiness: dto.canRefreshReadiness,
+    surfaceMatrix: dto.surfaceMatrix ?? [],
   };
   if ("requests" in dto && Array.isArray((dto as ArsenkinUiPlanDto).requests)) {
     const plan = dto as ArsenkinUiPlanDto;

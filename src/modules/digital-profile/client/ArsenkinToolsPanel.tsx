@@ -8,12 +8,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DigitalProfileApiError,
   executeArsenkinRun,
+  generateOrionClassicAuditReport,
+  getOrionClassicDiagnosticsBundleUrl,
   getArsenkinStatus,
   planArsenkinRun,
   prepareArsenkinRun,
   refreshArsenkinDbReadiness,
   syncArsenkinRun,
   type ArsenkinUiPlanDto,
+  type ArsenkinSurfaceMatrixRow,
   type ArsenkinUiStage,
   type ArsenkinUiStatusDto,
 } from "./api";
@@ -93,6 +96,13 @@ function statusLabelRu(s: ArsenkinUiStatusDto["status"]): string {
     MANUAL_INTERVENTION_REQUIRED: "Требуется ручное вмешательство",
   };
   return map[s] ?? s;
+}
+
+function matrixTone(status: ArsenkinSurfaceMatrixRow["status"]): "ok" | "warn" | "neutral" | "danger" {
+  if (status === "DONE" || status === "NO RESULTS") return "ok";
+  if (status === "PLANNED" || status === "RUNNING") return "warn";
+  if (status === "FAILED") return "danger";
+  return "neutral";
 }
 
 export function ArsenkinToolsPanel(props: {
@@ -302,6 +312,18 @@ export function ArsenkinToolsPanel(props: {
     });
   };
 
+  const onRebuildReport = () => {
+    void runAction(async () => {
+      await generateOrionClassicAuditReport(caseId, { regenerateContent: false });
+      setBanner("Пересборка отчёта запущена.");
+    });
+  };
+
+  const onDownloadDiagnostics = () => {
+    const url = getOrionClassicDiagnosticsBundleUrl(caseId);
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   const terminalBad =
     status?.status === "FAILED" ||
     status?.status === "MANUAL_INTERVENTION_REQUIRED" ||
@@ -432,6 +454,35 @@ export function ArsenkinToolsPanel(props: {
           </div>
         </div>
 
+        {mode === "first36" && (status?.surfaceMatrix?.length ?? 0) > 0 ? (
+          <div className="dp-stack" style={{ gap: 6 }}>
+            <span className="dp-muted">Surface matrix</span>
+            <div style={{ display: "grid", gap: 6 }}>
+              {(status?.surfaceMatrix ?? []).map((cell) => (
+                <div
+                  key={cell.id}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 8,
+                    padding: "6px 8px",
+                  }}
+                >
+                  <span>{cell.label}</span>
+                  <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <Badge tone={matrixTone(cell.status)}>{cell.status}</Badge>
+                    <span className="dp-muted" style={{ fontSize: 12 }}>
+                      obs {cell.observationsCount} · tasks {cell.tasksCount}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {(status?.humanMessages?.length || status?.blockers?.length) ? (
           <WarningBox>
             {(status.humanMessages?.length ? status.humanMessages : status.blockers).join(" ")}
@@ -467,7 +518,7 @@ export function ArsenkinToolsPanel(props: {
               disabled={busy || !reportRunId || executeLocked || terminalBad}
               onClick={onPrepare}
             >
-              Подготовить Arsenkin
+              Подготовить полный сбор
             </button>
             <button
               type="button"
@@ -487,7 +538,7 @@ export function ArsenkinToolsPanel(props: {
               }}
               data-testid="arsenkin-execute-open"
             >
-              Запустить Arsenkin
+              Запустить полный сбор Arsenkin
             </button>
             <button type="button" className="dp-btn" disabled={busy} onClick={() => void refresh()}>
               Обновить статус
@@ -517,6 +568,22 @@ export function ArsenkinToolsPanel(props: {
                 Передать результаты в ORION
               </button>
             )}
+            <button
+              type="button"
+              className="dp-btn"
+              disabled={busy || !transferComplete}
+              onClick={onRebuildReport}
+            >
+              Пересобрать контент + PDF
+            </button>
+            <button
+              type="button"
+              className="dp-btn"
+              disabled={busy || !transferComplete}
+              onClick={onDownloadDiagnostics}
+            >
+              Скачать диагностический пакет
+            </button>
           </div>
         ) : (
           <span className="dp-muted">Нужен risk.review для запуска Arsenkin</span>

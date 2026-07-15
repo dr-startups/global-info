@@ -60,40 +60,44 @@ function push(
 export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): PlannedExactRequest[] {
   const tools = new Set(input.tools.map((t) => t.trim()).filter(Boolean));
   const want = (t: string) => tools.has(t);
-  const ruQuery = input.queriesRu[0] ?? "subject";
-  const uaeQuery = input.queriesUae[0] ?? ruQuery;
+  const ruQueries = input.queriesRu.map((q) => String(q ?? "").trim()).filter(Boolean).slice(0, 5);
+  const uaeQueries = input.queriesUae.map((q) => String(q ?? "").trim()).filter(Boolean).slice(0, 4);
+  const ruPrimary = ruQueries[0] ?? "subject";
+  const uaePrimary = uaeQueries[0] ?? ruPrimary;
   const out: PlannedExactRequest[] = [];
 
   if (want("check-top")) {
     const se = pilotSeForRegion("RU");
     const req = buildCheckTopRequest({
-      queries: input.queriesRu.slice(0, 3),
+      queries: ruQueries.length > 0 ? ruQueries : [ruPrimary],
       se,
-      depth: 10,
+      depth: 20,
       is_snippet: true,
+      noreask: true,
     });
     push(out, "check-top", req, {
-      engine: "GOOGLE",
+      engine: "MIXED",
       region: "RU",
-      query: input.queriesRu[0] ?? ruQuery,
-      queryCount: Math.min(3, input.queriesRu.length || 1),
+      query: ruPrimary,
+      queryCount: req.data.queries instanceof Array ? req.data.queries.length : 1,
       estimatedLimits: 1,
     });
   }
 
-  if (want("check-top") && input.queriesUae.length > 0) {
+  if (want("check-top") && uaeQueries.length > 0) {
     const se = pilotSeForRegion("UAE");
     const req = buildCheckTopRequest({
-      queries: input.queriesUae.slice(0, 2),
+      queries: uaeQueries,
       se,
-      depth: 10,
+      depth: 20,
       is_snippet: true,
+      noreask: true,
     });
     push(out, "check-top", req, {
       engine: "GOOGLE",
       region: "UAE",
-      query: input.queriesUae[0] ?? uaeQuery,
-      queryCount: Math.min(2, input.queriesUae.length),
+      query: uaePrimary,
+      queryCount: req.data.queries instanceof Array ? req.data.queries.length : 1,
       estimatedLimits: 1,
     });
   }
@@ -103,18 +107,24 @@ export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): Plan
       out,
       "suggest",
       buildSuggestRequest({
-        queries: [ruQuery],
+        queries: ruQueries.length > 0 ? ruQueries : [ruPrimary],
         se: 1,
         region: ARSENKIN_REGION.YANDEX_MOSCOW,
         depth: 1,
       }),
-      { engine: "YANDEX", region: "RU", query: ruQuery, queryCount: 1, estimatedLimits: 1 }
+      {
+        engine: "YANDEX",
+        region: "RU",
+        query: ruPrimary,
+        queryCount: ruQueries.length > 0 ? ruQueries.length : 1,
+        estimatedLimits: 1,
+      }
     );
     push(
       out,
       "suggest",
       buildSuggestRequest({
-        queries: [ruQuery],
+        queries: ruQueries.length > 0 ? ruQueries : [ruPrimary],
         se: 2,
         region: ARSENKIN_REGION.GOOGLE_MOSCOW,
         google_domain: "www.google.ru",
@@ -122,16 +132,22 @@ export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): Plan
         google_lang: "ru",
         depth: 1,
       }),
-      { engine: "GOOGLE", region: "RU", query: ruQuery, queryCount: 1, estimatedLimits: 1 }
+      {
+        engine: "GOOGLE",
+        region: "RU",
+        query: ruPrimary,
+        queryCount: ruQueries.length > 0 ? ruQueries.length : 1,
+        estimatedLimits: 1,
+      }
     );
   }
 
-  if (want("suggest") && input.queriesUae.length > 0) {
+  if (want("suggest") && uaeQueries.length > 0) {
     push(
       out,
       "suggest",
       buildSuggestRequest({
-        queries: [uaeQuery],
+        queries: uaeQueries,
         se: 2,
         region: ARSENKIN_REGION.GOOGLE_UAE,
         google_domain: "www.google.ae",
@@ -139,7 +155,13 @@ export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): Plan
         google_lang: "en",
         depth: 1,
       }),
-      { engine: "GOOGLE", region: "UAE", query: uaeQuery, queryCount: 1, estimatedLimits: 1 }
+      {
+        engine: "GOOGLE",
+        region: "UAE",
+        query: uaePrimary,
+        queryCount: uaeQueries.length,
+        estimatedLimits: 1,
+      }
     );
   }
 
@@ -148,21 +170,21 @@ export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): Plan
       out,
       "paa",
       buildPaaRequest({
-        queries: [ruQuery],
+        queries: [ruPrimary],
         region: ARSENKIN_REGION.GOOGLE_MOSCOW,
         depth: 1,
         count: 10,
       }),
-      { engine: "GOOGLE", region: "RU", query: ruQuery, queryCount: 1, estimatedLimits: 1 }
+      { engine: "GOOGLE", region: "RU", query: ruPrimary, queryCount: 1, estimatedLimits: 1 }
     );
   }
 
-  if (want("paa") && input.queriesUae.length > 0) {
+  if (want("paa") && uaeQueries.length > 0) {
     push(
       out,
       "paa",
       buildPaaRequest({
-        queries: [uaeQuery],
+        queries: [uaePrimary],
         region: ARSENKIN_REGION.GOOGLE_UAE,
         google_domain: "www.google.ae",
         google_from: "AE",
@@ -170,7 +192,7 @@ export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): Plan
         depth: 1,
         count: 10,
       }),
-      { engine: "GOOGLE", region: "UAE", query: uaeQuery, queryCount: 1, estimatedLimits: 1 }
+      { engine: "GOOGLE", region: "UAE", query: uaePrimary, queryCount: 1, estimatedLimits: 1 }
     );
   }
 
@@ -181,11 +203,11 @@ export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): Plan
         out,
         "ai-serp",
         buildAiSerpRequest({
-          queries: [ruQuery],
+          queries: [ruPrimary],
           se: 1,
           region: ARSENKIN_REGION.YANDEX_MOSCOW,
         }),
-        { engine: "YANDEX", region: "RU", query: ruQuery, queryCount: 1, estimatedLimits: 1 }
+        { engine: "YANDEX", region: "RU", query: ruPrimary, queryCount: 1, estimatedLimits: 1 }
       );
     }
     if (targets.has("google_ru")) {
@@ -193,11 +215,11 @@ export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): Plan
         out,
         "ai-serp",
         buildAiSerpRequest({
-          queries: [ruQuery],
+          queries: [ruPrimary],
           se: 2,
           region: ARSENKIN_REGION.GOOGLE_MOSCOW,
         }),
-        { engine: "GOOGLE", region: "RU", query: ruQuery, queryCount: 1, estimatedLimits: 1 }
+        { engine: "GOOGLE", region: "RU", query: ruPrimary, queryCount: 1, estimatedLimits: 1 }
       );
     }
     if (targets.has("google_uae")) {
@@ -205,11 +227,11 @@ export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): Plan
         out,
         "ai-serp",
         buildAiSerpRequest({
-          queries: [uaeQuery],
+          queries: [uaePrimary],
           se: 2,
           region: ARSENKIN_REGION.GOOGLE_UAE,
         }),
-        { engine: "GOOGLE", region: "UAE", query: uaeQuery, queryCount: 1, estimatedLimits: 1 }
+        { engine: "GOOGLE", region: "UAE", query: uaePrimary, queryCount: 1, estimatedLimits: 1 }
       );
     }
   }
@@ -217,7 +239,7 @@ export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): Plan
   const enrichUrls = (input.urlsEnrichment ?? [])
     .map((u) => String(u).trim())
     .filter((u) => /^https?:\/\//i.test(u))
-    .slice(0, 5);
+    .slice(0, 10);
 
   if (want("check-h") && enrichUrls.length > 0) {
     push(out, "check-h", buildCheckHRequest({ urls: enrichUrls, mode: "url" }), {

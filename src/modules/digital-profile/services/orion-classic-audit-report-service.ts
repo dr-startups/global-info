@@ -222,6 +222,14 @@ export function getLatestOrionClassicAuditRunRecord(
   return readJson<OrionClassicAuditRunRecord>(runRecordPath(caseId, latest.runId));
 }
 
+export function getOrionClassicAuditRunRecord(
+  caseId: string,
+  runId: string
+): OrionClassicAuditRunRecord | null {
+  if (!runId.trim()) return null;
+  return readJson<OrionClassicAuditRunRecord>(runRecordPath(caseId, runId.trim()));
+}
+
 export function getOrionClassicAuditSummary(caseId: string): OrionClassicAuditReportSummary {
   return toPublicSummary(getLatestOrionClassicAuditRunRecord(caseId));
 }
