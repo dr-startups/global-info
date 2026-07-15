@@ -31,3 +31,4 @@ export * from "./result-fetch-categories";
 export * from "./lightweight-readiness";
 export * from "./full-audit-job-store";
 export * from "./full-audit-orchestrator";
+export * from "./workflow-contract";

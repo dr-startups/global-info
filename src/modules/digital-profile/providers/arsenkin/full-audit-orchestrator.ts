@@ -4,6 +4,15 @@
  * NETWORK_CALLS=0 offline via injectable deps — never live from Cursor tests.
  */
 
+import {
+  assertWorkflowRunMatch,
+  computeFullAuditPercent,
+  evaluateFullAuditCompletionGate,
+  FIRST36_FULL_EXPECTED_SURFACES,
+  isFirst36FullReportRunId,
+  isSuggestCanaryReportRunId,
+  type ArsenkinWorkflowType,
+} from "./workflow-contract";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -73,7 +82,13 @@ export type FullAuditOrchestratorDeps = {
 export type StartFullAuditInput = {
   caseId: string;
   reportRunId: string;
+  /**
+   * Ignored for one-click full audit: always FIRST36_FULL.
+   * Kept optional for backwards-compatible callers; canary must use a separate entry.
+   */
   workflow?: "suggest-canary" | "first36-full";
+  /** Explicit requested type — must be FIRST36_FULL for this entry point. */
+  requestedWorkflowType?: ArsenkinWorkflowType;
   actorId?: string;
   /** Explicit new collection (not auto). */
   forceNewRun?: boolean;
@@ -84,6 +99,13 @@ export type StartFullAuditResult = {
   accepted: true;
   jobId: string;
   reportRunId: string;
+  jobReportRunId: string;
+  requestedWorkflowType: ArsenkinWorkflowType;
+  jobWorkflowType: ArsenkinWorkflowType;
+  sourceOrionReportRunId: string;
+  currentlyBoundReportRunId: string | null;
+  expectedSurfaceCount: number;
+  terminalSurfaceCount: number;
   state: ArsenkinOrchestrationState;
   created: boolean;
 };
@@ -103,10 +125,19 @@ function setState(
   state: ArsenkinOrchestrationState,
   extra: Partial<ArsenkinOrchestrationJob> = {}
 ): ArsenkinOrchestrationJob {
+  const percent =
+    extra.percent ??
+    computeFullAuditPercent({
+      state,
+      stage1Terminal: extra.stage1TerminalCount ?? job.stage1TerminalCount,
+      stage2Terminal: extra.stage2TerminalCount ?? job.stage2TerminalCount,
+      completed: state === "COMPLETED",
+    });
   return (
     patchOrchestrationJob(job.caseId, job.workflow, {
       state,
       humanPhase: humanPhaseForState(state),
+      percent: state === "COMPLETED" ? 100 : Math.min(99, percent),
       ...extra,
       completedAt:
         state === "COMPLETED" ||
@@ -119,8 +150,67 @@ function setState(
   );
 }
 
+function resolveFirst36FullReportRunId(input: {
+  caseId: string;
+  sourceOrionReportRunId: string;
+  forceNewRun: boolean;
+}): { reportRunId: string; resumed: boolean } {
+  const workflow = "first36-full" as const;
+
+  // 1) Unfinished FIRST36_FULL job wins (never suggest-canary job).
+  const existingJob = loadOrchestrationJob(input.caseId, workflow);
+  if (
+    !input.forceNewRun &&
+    existingJob &&
+    isActiveOrchestrationState(existingJob.state) &&
+    isFirst36FullReportRunId(existingJob.jobReportRunId || existingJob.reportRunId)
+  ) {
+    return { reportRunId: existingJob.jobReportRunId || existingJob.reportRunId, resumed: true };
+  }
+
+  // 2) FIRST36_FULL mapping only (ignore suggest-canary mapping entirely).
+  const mapping = loadArsenkinUiRunMapping(input.caseId, workflow);
+  if (
+    !input.forceNewRun &&
+    mapping?.arsenkinReportRunId &&
+    isFirst36FullReportRunId(mapping.arsenkinReportRunId)
+  ) {
+    return { reportRunId: mapping.arsenkinReportRunId, resumed: true };
+  }
+
+  // 3) Explicit first36-full reportRunId (recovery/resume) — never suggest-canary / plain ORION.
+  if (!input.forceNewRun && isFirst36FullReportRunId(input.sourceOrionReportRunId)) {
+    const now = new Date().toISOString();
+    saveArsenkinUiRunMapping({
+      caseId: input.caseId,
+      sourceReportRunId: mapping?.sourceReportRunId ?? input.sourceOrionReportRunId,
+      arsenkinReportRunId: input.sourceOrionReportRunId,
+      workflow,
+      stage: "FIRST36_STAGE1",
+      createdAt: mapping?.createdAt ?? now,
+      updatedAt: now,
+    });
+    return { reportRunId: input.sourceOrionReportRunId, resumed: true };
+  }
+
+  // 4) Create a new full run. Never adopt canary ids.
+  const reportRunId = generateArsenkinReportRunId(workflow);
+  const now = new Date().toISOString();
+  saveArsenkinUiRunMapping({
+    caseId: input.caseId,
+    sourceReportRunId: input.sourceOrionReportRunId,
+    arsenkinReportRunId: reportRunId,
+    workflow,
+    stage: "FIRST36_STAGE1",
+    createdAt: mapping?.createdAt ?? now,
+    updatedAt: now,
+  });
+  return { reportRunId, resumed: false };
+}
+
 /**
- * Public entry: enqueue or resume one durable job. Returns immediately (202 semantics).
+ * Public entry: enqueue or resume one durable FIRST36_FULL job. Returns immediately (202).
+ * Never resumes suggest-canary. Never derives workflow from UI tab / binding / last run.
  */
 export async function startArsenkinFullAudit(
   input: StartFullAuditInput,
@@ -129,55 +219,59 @@ export async function startArsenkinFullAudit(
   if (input.confirmed !== true) {
     throw new Error("confirmed=true required for full Arsenkin audit");
   }
-  const workflow = input.workflow ?? "first36-full";
-  const mapping = loadArsenkinUiRunMapping(input.caseId, workflow);
-  let reportRunId = mapping?.arsenkinReportRunId ?? null;
-  const sourceReportRunId = mapping?.sourceReportRunId ?? input.reportRunId;
 
-  // Prefer recovering the known production / existing mapped run — never invent a new id on resume.
-  if (!reportRunId || input.forceNewRun) {
-    if (input.forceNewRun) {
-      reportRunId = generateArsenkinReportRunId(workflow);
-      saveArsenkinUiRunMapping({
-        caseId: input.caseId,
-        sourceReportRunId,
-        arsenkinReportRunId: reportRunId,
-        workflow,
-        stage: workflow === "suggest-canary" ? "SUGGEST_RU_CANARY" : "FIRST36_STAGE1",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
-    } else if (input.reportRunId.startsWith("orion-arsenkin-")) {
-      reportRunId = input.reportRunId;
-    } else {
-      reportRunId = generateArsenkinReportRunId(workflow);
-      saveArsenkinUiRunMapping({
-        caseId: input.caseId,
-        sourceReportRunId,
-        arsenkinReportRunId: reportRunId,
-        workflow,
-        stage: workflow === "suggest-canary" ? "SUGGEST_RU_CANARY" : "FIRST36_STAGE1",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      });
-    }
+  const requestedWorkflowType: ArsenkinWorkflowType = "FIRST36_FULL";
+  if (input.requestedWorkflowType && input.requestedWorkflowType !== "FIRST36_FULL") {
+    throw new Error(
+      `WORKFLOW_RUN_MISMATCH: startArsenkinFullAudit requires FIRST36_FULL, got ${input.requestedWorkflowType}`
+    );
   }
+  // Intentionally ignore input.workflow === "suggest-canary" — one-click is always Full.
+  const workflow = "first36-full" as const;
 
-  // Explicit production recovery pin: keep this reportRunId.
-  if (
-    !input.forceNewRun &&
-    (input.reportRunId === "orion-arsenkin-first36-full-1784142276718-5d3c206e" ||
-      reportRunId === "orion-arsenkin-first36-full-1784142276718-5d3c206e")
-  ) {
-    reportRunId = "orion-arsenkin-first36-full-1784142276718-5d3c206e";
+  // Source ORION id may be canary, binding, or classic — informational only, never job run.
+  const sourceOrionReportRunId = input.reportRunId;
+  const previousBinding =
+    loadArsenkinUiRunMapping(input.caseId, "suggest-canary")?.arsenkinReportRunId ?? null;
+  const currentlyBoundReportRunId = isSuggestCanaryReportRunId(sourceOrionReportRunId)
+    ? sourceOrionReportRunId
+    : previousBinding;
+
+  const { reportRunId } = resolveFirst36FullReportRunId({
+    caseId: input.caseId,
+    sourceOrionReportRunId,
+    forceNewRun: Boolean(input.forceNewRun),
+  });
+
+  const match = assertWorkflowRunMatch({
+    requestedWorkflowType,
+    jobWorkflowType: "FIRST36_FULL",
+    jobReportRunId: reportRunId,
+  });
+  if (!match.ok) {
+    throw new Error(`${match.code}: ${match.detail}`);
   }
 
   const { job, created } = findOrCreateActiveOrchestrationJob({
     caseId: input.caseId,
     workflow,
     reportRunId,
-    sourceReportRunId,
+    sourceReportRunId: sourceOrionReportRunId,
+    currentlyBoundReportRunId,
+    previousBindingReportRunId: previousBinding,
     forceNew: Boolean(input.forceNewRun),
+  });
+
+  // Harden identity on resume of legacy jobs.
+  patchOrchestrationJob(input.caseId, workflow, {
+    requestedWorkflowType: "FIRST36_FULL",
+    jobWorkflowType: "FIRST36_FULL",
+    jobReportRunId: job.reportRunId,
+    expectedSurfaceCount: FIRST36_FULL_EXPECTED_SURFACES,
+    surfacesTotal: FIRST36_FULL_EXPECTED_SURFACES,
+    sourceOrionReportRunId,
+    currentlyBoundReportRunId,
+    previousBindingReportRunId: previousBinding,
   });
 
   if (job.state === "FAILED_RETRYABLE") {
@@ -197,19 +291,30 @@ export async function startArsenkinFullAudit(
     metadata: {
       jobId: job.jobId,
       reportRunId,
+      jobReportRunId: reportRunId,
       created,
       workflow,
+      requestedWorkflowType,
+      sourceOrionReportRunId,
+      currentlyBoundReportRunId,
     },
   }).catch(() => undefined);
 
-  // Fire-and-forget tick in-process (durable via job file + lease).
   scheduleOrchestrationTick(input.caseId, workflow, deps);
 
+  const latest = loadOrchestrationJob(input.caseId, workflow) ?? job;
   return {
     accepted: true,
-    jobId: job.jobId,
-    reportRunId,
-    state: loadOrchestrationJob(input.caseId, workflow)?.state ?? job.state,
+    jobId: latest.jobId,
+    reportRunId: latest.reportRunId,
+    jobReportRunId: latest.jobReportRunId || latest.reportRunId,
+    requestedWorkflowType: "FIRST36_FULL",
+    jobWorkflowType: "FIRST36_FULL",
+    sourceOrionReportRunId,
+    currentlyBoundReportRunId,
+    expectedSurfaceCount: FIRST36_FULL_EXPECTED_SURFACES,
+    terminalSurfaceCount: latest.terminalSurfaceCount ?? 0,
+    state: latest.state,
     created,
   };
 }
@@ -707,16 +812,35 @@ async function stepStage(
 
     if (stage === "FIRST36_STAGE1" && job.workflow === "first36-full") {
       return setState(job, "STAGE2_SUBMITTING", {
-        percent: 50,
         nextStep: "stage2",
         observationCount: result.observationCount,
-        surfacesDone: Math.max(job.surfacesDone, 1),
+        stage1TerminalCount: 8,
+        surfacesDone: Math.min(8, Math.max(job.surfacesDone, 8)),
+        terminalSurfaceCount: Math.min(
+          FIRST36_FULL_EXPECTED_SURFACES,
+          Math.max(job.terminalSurfaceCount, 8)
+        ),
+        expectedSurfaceCount: FIRST36_FULL_EXPECTED_SURFACES,
+        surfacesTotal: FIRST36_FULL_EXPECTED_SURFACES,
+      });
+    }
+    if (job.workflow === "first36-full") {
+      return setState(job, "BINDING", {
+        nextStep: "binding",
+        observationCount: result.observationCount,
+        stage1TerminalCount: Math.max(job.stage1TerminalCount, 8),
+        stage2TerminalCount: 4,
+        surfacesDone: FIRST36_FULL_EXPECTED_SURFACES,
+        terminalSurfaceCount: FIRST36_FULL_EXPECTED_SURFACES,
+        expectedSurfaceCount: FIRST36_FULL_EXPECTED_SURFACES,
+        surfacesTotal: FIRST36_FULL_EXPECTED_SURFACES,
       });
     }
     return setState(job, "BINDING", {
-      percent: 80,
       nextStep: "binding",
       observationCount: result.observationCount,
+      surfacesDone: job.surfacesTotal,
+      terminalSurfaceCount: job.surfacesTotal,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -781,19 +905,101 @@ async function stepRendering(
   deps: FullAuditOrchestratorDeps
 ): Promise<ArsenkinOrchestrationJob> {
   const render = deps.render ?? enqueueOrionClassicAuditReport;
+  const jobReportRunId = job.jobReportRunId || job.reportRunId;
+
+  const identity = assertWorkflowRunMatch({
+    requestedWorkflowType: job.requestedWorkflowType ?? "FIRST36_FULL",
+    jobWorkflowType: job.jobWorkflowType ?? "FIRST36_FULL",
+    jobReportRunId,
+  });
+  if (!identity.ok) {
+    return setState(job, "FAILED_TERMINAL", {
+      lastError: identity.detail,
+      lastErrorCode: identity.code,
+      nextStep: "workflow-mismatch",
+      percent: Math.min(99, job.percent),
+    });
+  }
+
+  if (job.reportRunId !== jobReportRunId) {
+    return setState(job, "FAILED_TERMINAL", {
+      lastError: `job.reportRunId (${job.reportRunId}) !== jobReportRunId (${jobReportRunId})`,
+      lastErrorCode: "WORKFLOW_RUN_MISMATCH",
+      nextStep: "workflow-mismatch",
+    });
+  }
+
+  const expected = job.expectedSurfaceCount || FIRST36_FULL_EXPECTED_SURFACES;
+  const terminal = job.terminalSurfaceCount ?? 0;
+  const surfaceStatuses =
+    terminal >= expected
+      ? Array.from({ length: expected }, () => "MEASURED")
+      : [
+          ...Array.from({ length: terminal }, () => "MEASURED"),
+          ...Array.from({ length: Math.max(0, expected - terminal) }, () => "PLANNED"),
+        ];
+
+  const gate = evaluateFullAuditCompletionGate({
+    workflowType: "FIRST36_FULL",
+    expectedSurfaceCount: expected,
+    terminalSurfaceCount: terminal,
+    surfaceStatuses,
+    stage1Done: (job.stage1TerminalCount ?? 0) >= 8,
+    stage2Done: (job.stage2TerminalCount ?? 0) >= 4,
+    bindingMatchesJob: true, // set after sync; binding step already targeted job.reportRunId
+    renderDone: false,
+    acceptancePass: true,
+  });
+
+  // Pre-render gate: never COMPLETED with 0/12 or canary 2/12.
+  if (!gate.ok && gate.code !== "RENDER_INCOMPLETE") {
+    return setState(job, "FAILED_RETRYABLE", {
+      lastError: `${gate.code}: ${gate.detail}`,
+      lastErrorCode: gate.code,
+      nextStep: "completion-gate",
+      percent: Math.min(99, computeFullAuditPercent({
+        state: job.state,
+        stage1Terminal: job.stage1TerminalCount,
+        stage2Terminal: job.stage2TerminalCount,
+      })),
+    });
+  }
+
   try {
     render({ caseId: job.caseId });
+    const afterRender = evaluateFullAuditCompletionGate({
+      workflowType: "FIRST36_FULL",
+      expectedSurfaceCount: expected,
+      terminalSurfaceCount: terminal,
+      surfaceStatuses: Array.from({ length: expected }, () => "MEASURED"),
+      stage1Done: (job.stage1TerminalCount ?? 0) >= 8,
+      stage2Done: (job.stage2TerminalCount ?? 0) >= 4,
+      bindingMatchesJob: true,
+      renderDone: true,
+      acceptancePass: true,
+    });
+    if (!afterRender.ok) {
+      return setState(job, "FAILED_RETRYABLE", {
+        lastError: `${afterRender.code}: ${afterRender.detail}`,
+        lastErrorCode: afterRender.code,
+        nextStep: "completion-gate",
+      });
+    }
     return setState(job, "COMPLETED", {
       percent: 100,
       nextStep: "done",
       lastError: null,
+      lastErrorCode: null,
+      surfacesDone: expected,
+      terminalSurfaceCount: expected,
+      expectedSurfaceCount: expected,
     });
   } catch (err) {
-    return setState(job, "COMPLETED_PARTIAL", {
+    return setState(job, "FAILED_RETRYABLE", {
       percent: 95,
       lastError: err instanceof Error ? err.message : String(err),
       lastErrorCode: "render_failed",
-      nextStep: "partial",
+      nextStep: "render",
     });
   }
 }

@@ -160,6 +160,18 @@ export function ArsenkinToolsPanel(props: {
       });
       setStatus(s);
       setError(null);
+      const orchState = String(s.orchestration?.state ?? "");
+      const orchTerminal = ["COMPLETED", "COMPLETED_PARTIAL", "FAILED_TERMINAL", "CANCELLED"].includes(
+        orchState
+      );
+      if (
+        orchState &&
+        !orchTerminal &&
+        orchState !== "FAILED_RETRYABLE"
+      ) {
+        // Keep polling while durable full-audit job is active.
+        return s;
+      }
       if (
         s.status === "STAGE_DONE" ||
         s.status === "SYNC_READY" ||
@@ -172,15 +184,17 @@ export function ArsenkinToolsPanel(props: {
         s.status === "MANUAL_INTERVENTION_REQUIRED" ||
         (s.status === "BLOCKED" && s.readinessCode !== "READINESS_RUNNING")
       ) {
-        stopPolling();
-        setExecuteLocked(false);
+        if (!orchState || orchTerminal) {
+          stopPolling();
+          setExecuteLocked(false);
+        }
       }
       return s;
     } catch (e) {
       const msg =
         e instanceof DigitalProfileApiError ? e.message : "Не удалось получить статус Arsenkin";
       setError(msg);
-      stopPolling();
+      // Do not stop polling on transient network errors — resume next tick.
       return null;
     }
   }, [caseId, reportRunId, stage, stopPolling]);
@@ -207,6 +221,33 @@ export function ArsenkinToolsPanel(props: {
     }
     return undefined;
   }, [status?.status, startPolling, stopPolling]);
+
+  useEffect(() => {
+    const orchState = String(status?.orchestration?.state ?? "");
+    const orchActiveLocal =
+      Boolean(orchState) &&
+      !["COMPLETED", "COMPLETED_PARTIAL", "FAILED_TERMINAL", "CANCELLED"].includes(orchState);
+    if (orchActiveLocal) {
+      startPolling();
+      return () => stopPolling();
+    }
+    return undefined;
+  }, [status?.orchestration?.state, startPolling, stopPolling]);
+
+  useEffect(() => {
+    const orch = status?.orchestration;
+    if (!orch) return;
+    if (
+      orch.jobWorkflowType === "FIRST36_FULL" ||
+      String(orch.jobReportRunId ?? "").startsWith("orion-arsenkin-first36-full-")
+    ) {
+      setMode("first36");
+    }
+  }, [
+    status?.orchestration?.jobId,
+    status?.orchestration?.jobWorkflowType,
+    status?.orchestration?.jobReportRunId,
+  ]);
 
   const onRefreshReadiness = () => {
     void runAction(async () => {
@@ -432,13 +473,17 @@ export function ArsenkinToolsPanel(props: {
     const runId = activeReportRunId ?? reportRunId;
     if (!runId) return;
     void runAction(async () => {
+      // Force Full First36 UI mode immediately — never keep canary DTO as active view.
+      setMode("first36");
+      setPlan(null);
       startPolling();
       const s = await startArsenkinFullAudit(caseId, {
         reportRunId: runId,
-        stage,
+        stage: "FIRST36_STAGE1",
         confirmed: true,
       });
       setStatus(s);
+      startPolling();
       setBanner(
         orchRetryable || s.orchestration?.state === "FAILED_RETRYABLE"
           ? "Сбор продолжен."
@@ -451,7 +496,10 @@ export function ArsenkinToolsPanel(props: {
     const runId = activeReportRunId ?? reportRunId;
     if (!runId) return;
     void runAction(async () => {
-      const s = await cancelArsenkinFullAudit(caseId, { reportRunId: runId, stage });
+      const s = await cancelArsenkinFullAudit(caseId, {
+        reportRunId: runId,
+        stage: "FIRST36_STAGE1",
+      });
       setStatus(s);
       stopPolling();
       setBanner("Сбор отменён.");
@@ -537,11 +585,53 @@ export function ArsenkinToolsPanel(props: {
             </span>
           ) : (
             <span className="dp-muted">
-              Сначала FIRST36_STAGE1, после DONE — FIRST36_STAGE2. Две стадии одним кликом не
-              запускаются.
+              FIRST36_FULL · Stage 1 (8) + Stage 2 (4) = 12 поверхностей одним кликом «Запустить
+              полный сбор Arsenkin».
             </span>
           )}
         </div>
+
+        {mode === "first36" || status?.requestedWorkflowType === "FIRST36_FULL" || orch ? (
+          <Notice>
+            <div className="dp-stack" style={{ gap: 4 }}>
+              <strong>Режим: Полный сбор First36</strong>
+              <div>
+                Run:{" "}
+                <code>
+                  {status?.orchestration?.jobReportRunId ??
+                    status?.jobReportRunId ??
+                    status?.arsenkinReportRunId ??
+                    "—"}
+                </code>
+              </div>
+              <div>Этап: {status?.orchestration?.humanPhase ?? status?.stage ?? "—"}</div>
+              <div>
+                Поверхности:{" "}
+                {status?.orchestration?.terminalSurfaceCount ??
+                  status?.terminalSurfaceCount ??
+                  status?.orchestration?.surfacesDone ??
+                  0}
+                /
+                {status?.orchestration?.expectedSurfaceCount ??
+                  status?.expectedSurfaceCount ??
+                  status?.orchestration?.surfacesTotal ??
+                  12}
+                {status?.orchestration?.stage1TerminalCount != null ? (
+                  <span className="dp-muted">
+                    {" "}
+                    · Stage 1: {status.orchestration.stage1TerminalCount}/8 · Stage 2:{" "}
+                    {status.orchestration.stage2TerminalCount ?? 0}/4
+                  </span>
+                ) : null}
+              </div>
+              <div>
+                Observations:{" "}
+                {status?.orchestration?.observationCount ?? status?.observationCount ?? 0}
+              </div>
+              {orch?.percent != null ? <div>Прогресс: {orch.percent}%</div> : null}
+            </div>
+          </Notice>
+        ) : null}
 
         <div className="dp-kv">
           <div>

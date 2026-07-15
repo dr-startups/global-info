@@ -63,6 +63,12 @@ import {
 } from "../providers/arsenkin/network-guard";
 import { toSubmitUnknownCandidate } from "../providers/arsenkin/submit-unknown-recovery";
 import { getArsenkinFullAuditStatus } from "../providers/arsenkin/full-audit-orchestrator";
+import { isActiveOrchestrationState } from "../providers/arsenkin/full-audit-job-store";
+import {
+  FIRST36_FULL_EXPECTED_SURFACES,
+  isTerminalSurfaceStatus,
+  SUGGEST_CANARY_EXPECTED_SURFACES,
+} from "../providers/arsenkin/workflow-contract";
 import { ConflictError, ValidationError } from "../http/errors";
 
 export type ArsenkinUiStatusCode =
@@ -141,7 +147,27 @@ export type ArsenkinUiStatusDto = {
     lastError: string | null;
     attempt: number;
     cancelRequested: boolean;
+    requestedWorkflowType?: "SUGGEST_RU_CANARY" | "FIRST36_FULL";
+    jobWorkflowType?: "SUGGEST_RU_CANARY" | "FIRST36_FULL";
+    jobReportRunId?: string;
+    sourceOrionReportRunId?: string | null;
+    currentlyBoundReportRunId?: string | null;
+    previousBindingReportRunId?: string | null;
+    expectedSurfaceCount?: number;
+    terminalSurfaceCount?: number;
+    stage1TerminalCount?: number;
+    stage2TerminalCount?: number;
   } | null;
+  /** Informational — never mixed into aggregates. */
+  jobReportRunId?: string | null;
+  sourceOrionReportRunId?: string | null;
+  previousBindingReportRunId?: string | null;
+  currentlyBoundReportRunId?: string | null;
+  requestedWorkflowType?: "SUGGEST_RU_CANARY" | "FIRST36_FULL" | null;
+  jobWorkflowType?: "SUGGEST_RU_CANARY" | "FIRST36_FULL" | null;
+  expectedSurfaceCount?: number | null;
+  terminalSurfaceCount?: number | null;
+  runScopedDataMismatch?: string | null;
 };
 
 export type ArsenkinUiPlanRequestDto = {
@@ -807,10 +833,28 @@ export async function getArsenkinUiStatus(
   const configured = (deps.isConfigured ?? isArsenkinConfigured)();
   const sourceFromClientOrQueue = await resolveSourceReportRunId(prisma, caseId, reportRunId);
   const workflowHint = stageHint ? workflowForStage(stageHint) : null;
-  const mapping = workflowHint ? loadArsenkinUiRunMapping(caseId, workflowHint) : null;
+
+  // Prefer active FIRST36_FULL job as canonical status scope (never mix canary ledger).
+  const fullJob = getArsenkinFullAuditStatus(caseId, "first36-full");
+  // Prefer FIRST36_FULL mapping/ledger when UI asks for Full (or no stage + active full job).
+  // Never use canary ledger for Full status aggregates.
+  const preferFullJob =
+    workflowHint === "first36-full" ||
+    stageHint === "FIRST36_STAGE1" ||
+    stageHint === "FIRST36_STAGE2" ||
+    (!stageHint && Boolean(fullJob) && isActiveOrchestrationState(fullJob!.state));
+
+  const mappingWorkflow = (preferFullJob ? "first36-full" : workflowHint) as ArsenkinWorkflow | null;
+  const mapping = mappingWorkflow ? loadArsenkinUiRunMapping(caseId, mappingWorkflow) : null;
   const sourceReportRunId = mapping?.sourceReportRunId ?? sourceFromClientOrQueue;
-  const arsenkinReportRunId = mapping?.arsenkinReportRunId ?? null;
+  const arsenkinReportRunId =
+    preferFullJob && fullJob
+      ? fullJob.jobReportRunId || fullJob.reportRunId
+      : (mapping?.arsenkinReportRunId ?? null);
   const runId = arsenkinReportRunId ?? sourceReportRunId;
+  const jobReportRunId = preferFullJob && fullJob ? fullJob.jobReportRunId || fullJob.reportRunId : arsenkinReportRunId;
+  const previousBindingReportRunId =
+    loadArsenkinUiRunMapping(caseId, "suggest-canary")?.arsenkinReportRunId ?? null;
   const blockers: string[] = [];
   const nowIso = (deps.now ?? (() => new Date()))().toISOString();
 
@@ -866,6 +910,12 @@ export async function getArsenkinUiStatus(
 
   let stage: ArsenkinUiStage | null = stageHint ?? mapping?.stage ?? null;
   let workflow: ArsenkinWorkflow | null = workflowHint ?? mapping?.workflow ?? null;
+  if (preferFullJob) {
+    workflow = "first36-full";
+    if (!stage || stage === "SUGGEST_RU_CANARY") {
+      stage = stageHint === "FIRST36_STAGE2" ? "FIRST36_STAGE2" : "FIRST36_STAGE1";
+    }
+  }
   let stageStatus: string | null = null;
   let planDigest: string | null = null;
   let lastError: string | null = null;
@@ -879,7 +929,7 @@ export async function getArsenkinUiStatus(
         ? "BLOCKED"
         : "READY_TO_PREPARE";
 
-  const ledgerRunId = arsenkinReportRunId;
+  const ledgerRunId = jobReportRunId ?? arsenkinReportRunId;
   const [providerTaskCount, observationCount, coverageCount, coverageRowsRaw, observationRowsRaw, providerTasksRaw] =
     ledgerRunId
       ? await (async () => {
@@ -1207,22 +1257,76 @@ export async function getArsenkinUiStatus(
       readinessCode !== "READINESS_NOT_REQUIRED",
     surfaceMatrix,
     recovery,
+    jobReportRunId: jobReportRunId ?? null,
+    sourceOrionReportRunId: sourceReportRunId,
+    previousBindingReportRunId,
+    currentlyBoundReportRunId: reportBinding?.effectiveReportRunId ?? previousBindingReportRunId,
+    requestedWorkflowType: preferFullJob
+      ? "FIRST36_FULL"
+      : workflow === "suggest-canary"
+        ? "SUGGEST_RU_CANARY"
+        : workflow === "first36-full"
+          ? "FIRST36_FULL"
+          : null,
+    jobWorkflowType: preferFullJob
+      ? "FIRST36_FULL"
+      : workflow === "suggest-canary"
+        ? "SUGGEST_RU_CANARY"
+        : workflow === "first36-full"
+          ? "FIRST36_FULL"
+          : null,
+    expectedSurfaceCount: preferFullJob
+      ? FIRST36_FULL_EXPECTED_SURFACES
+      : workflow === "suggest-canary"
+        ? SUGGEST_CANARY_EXPECTED_SURFACES
+        : workflow === "first36-full"
+          ? FIRST36_FULL_EXPECTED_SURFACES
+          : null,
+    terminalSurfaceCount: (() => {
+      const rows = surfaceMatrix ?? [];
+      if (!rows.length) return preferFullJob ? (fullJob?.terminalSurfaceCount ?? 0) : 0;
+      return rows.filter((r) => isTerminalSurfaceStatus(String(r.status ?? ""))).length;
+    })(),
+    runScopedDataMismatch: null,
     orchestration: (() => {
-      const wf = (workflow ?? workflowHint ?? "first36-full") as "suggest-canary" | "first36-full";
-      const job = getArsenkinFullAuditStatus(caseId, wf);
+      // Always surface FIRST36_FULL job when present for Full mode; never attach canary job to Full.
+      const job =
+        preferFullJob || workflow === "first36-full"
+          ? getArsenkinFullAuditStatus(caseId, "first36-full")
+          : getArsenkinFullAuditStatus(
+              caseId,
+              (workflow ?? workflowHint ?? "first36-full") as "suggest-canary" | "first36-full"
+            );
       if (!job) return null;
+      const expected =
+        job.expectedSurfaceCount ||
+        (job.workflow === "first36-full" ? FIRST36_FULL_EXPECTED_SURFACES : SUGGEST_CANARY_EXPECTED_SURFACES);
+      const terminalFromMatrix = (surfaceMatrix ?? []).filter((r) =>
+        isTerminalSurfaceStatus(String(r.status ?? ""))
+      ).length;
+      const terminal = Math.max(job.terminalSurfaceCount ?? 0, terminalFromMatrix);
       return {
         jobId: job.jobId,
         state: job.state,
         humanPhase: job.humanPhase,
-        percent: job.percent,
-        surfacesDone: job.surfacesDone,
-        surfacesTotal: job.surfacesTotal,
+        percent: job.state === "COMPLETED" ? 100 : Math.min(99, job.percent),
+        surfacesDone: terminal,
+        surfacesTotal: expected,
         observationCount: job.observationCount,
         nextStep: job.nextStep,
         lastError: job.lastError,
         attempt: job.attempt,
         cancelRequested: job.cancelRequested,
+        requestedWorkflowType: job.requestedWorkflowType ?? "FIRST36_FULL",
+        jobWorkflowType: job.jobWorkflowType ?? "FIRST36_FULL",
+        jobReportRunId: job.jobReportRunId || job.reportRunId,
+        sourceOrionReportRunId: job.sourceOrionReportRunId ?? job.sourceReportRunId,
+        currentlyBoundReportRunId: job.currentlyBoundReportRunId,
+        previousBindingReportRunId: job.previousBindingReportRunId,
+        expectedSurfaceCount: expected,
+        terminalSurfaceCount: terminal,
+        stage1TerminalCount: job.stage1TerminalCount ?? 0,
+        stage2TerminalCount: job.stage2TerminalCount ?? 0,
       };
     })(),
   };
@@ -1955,6 +2059,15 @@ export function toPublicArsenkinUiDto(
     surfaceMatrix: dto.surfaceMatrix ?? [],
     recovery: dto.recovery ?? null,
     orchestration: dto.orchestration ?? null,
+    jobReportRunId: dto.jobReportRunId ?? null,
+    sourceOrionReportRunId: dto.sourceOrionReportRunId ?? null,
+    previousBindingReportRunId: dto.previousBindingReportRunId ?? null,
+    currentlyBoundReportRunId: dto.currentlyBoundReportRunId ?? null,
+    requestedWorkflowType: dto.requestedWorkflowType ?? null,
+    jobWorkflowType: dto.jobWorkflowType ?? null,
+    expectedSurfaceCount: dto.expectedSurfaceCount ?? null,
+    terminalSurfaceCount: dto.terminalSurfaceCount ?? null,
+    runScopedDataMismatch: dto.runScopedDataMismatch ?? null,
   };
   if ("requests" in dto && Array.isArray((dto as ArsenkinUiPlanDto).requests)) {
     const plan = dto as ArsenkinUiPlanDto;

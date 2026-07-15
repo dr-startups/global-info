@@ -71,7 +71,14 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const stageRaw = url.searchParams.get("stage");
   const stage = stageRaw ? parseArsenkinUiStage(stageRaw) : null;
   const status = await getArsenkinUiStatus(caseId, reportRunId, stage);
-  return jsonOk(toPublicArsenkinUiDto(status));
+  return new NextResponse(JSON.stringify({ ok: true, data: toPublicArsenkinUiDto(status) }), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store, no-cache, must-revalidate",
+      Pragma: "no-cache",
+    },
+  });
 });
 
 export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
@@ -145,40 +152,52 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
     if (body.confirmed !== true) {
       throw new ValidationError("confirmed=true required");
     }
-    const workflow =
-      stage === "SUGGEST_RU_CANARY" ? "suggest-canary" : "first36-full";
+    // One-click Full is ALWAYS FIRST36_FULL — never derive from UI stage/canary tab/binding.
+    const workflow = "first36-full" as const;
     const started = await startArsenkinFullAudit({
       caseId,
       reportRunId,
       workflow,
+      requestedWorkflowType: "FIRST36_FULL",
       actorId: user.id,
       confirmed: true,
       forceNewRun: body.forceNewRun === true,
     });
+    const status = await getArsenkinUiStatus(caseId, started.jobReportRunId, "FIRST36_STAGE1");
     return new NextResponse(
       JSON.stringify({
         ok: true,
         data: {
+          ...toPublicArsenkinUiDto(status),
           ...started,
           orchestration: getArsenkinFullAuditStatus(caseId, workflow),
         },
       }),
       {
         status: 202,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          Pragma: "no-cache",
+        },
       }
     );
   }
 
   if (action === "cancel-full-audit") {
-    const workflow =
-      stage === "SUGGEST_RU_CANARY" ? "suggest-canary" : "first36-full";
+    // Cancel the Full First36 job (not canary).
+    const workflow = "first36-full" as const;
     const job = await cancelArsenkinFullAudit({
       caseId,
       workflow,
       actorId: user.id,
     });
-    return jsonOk({ cancelled: true, orchestration: job });
+    const status = await getArsenkinUiStatus(caseId, reportRunId || null, "FIRST36_STAGE1");
+    return jsonOk({
+      ...toPublicArsenkinUiDto(status),
+      cancelled: true,
+      orchestration: job,
+    });
   }
 
   if (action === "recover-link-existing") {

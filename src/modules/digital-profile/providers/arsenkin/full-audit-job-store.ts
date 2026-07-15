@@ -33,13 +33,25 @@ export type ArsenkinOrchestrationJob = {
   jobId: string;
   caseId: string;
   workflow: "suggest-canary" | "first36-full";
+  /** Strict identity: SUGGEST_RU_CANARY | FIRST36_FULL */
+  requestedWorkflowType: "SUGGEST_RU_CANARY" | "FIRST36_FULL";
+  jobWorkflowType: "SUGGEST_RU_CANARY" | "FIRST36_FULL";
+  /** Canonical job run — never a foreign canary/ORION binding. */
   reportRunId: string;
+  jobReportRunId: string;
   sourceReportRunId: string;
+  sourceOrionReportRunId: string;
+  currentlyBoundReportRunId: string | null;
+  previousBindingReportRunId: string | null;
   state: ArsenkinOrchestrationState;
   humanPhase: string;
   percent: number;
   surfacesDone: number;
   surfacesTotal: number;
+  expectedSurfaceCount: number;
+  terminalSurfaceCount: number;
+  stage1TerminalCount: number;
+  stage2TerminalCount: number;
   observationCount: number;
   estimatedLimits: number | null;
   spentLimits: number | null;
@@ -123,7 +135,59 @@ export function loadOrchestrationJob(
   const path = orchestrationJobPath(caseId, workflow);
   if (!existsSync(path)) return null;
   try {
-    return JSON.parse(readFileSync(path, "utf-8")) as ArsenkinOrchestrationJob;
+    const raw = JSON.parse(readFileSync(path, "utf-8")) as Partial<ArsenkinOrchestrationJob> & {
+      reportRunId: string;
+      caseId: string;
+      workflow: "suggest-canary" | "first36-full";
+      state: ArsenkinOrchestrationState;
+    };
+    const isFull = raw.workflow === "first36-full";
+    const workflowType = isFull ? "FIRST36_FULL" : "SUGGEST_RU_CANARY";
+    const expected = isFull ? 12 : 2;
+    const job: ArsenkinOrchestrationJob = {
+      version: "arsenkin-full-audit-job-v1",
+      jobId: raw.jobId ?? `job-legacy-${Date.now()}`,
+      caseId: raw.caseId,
+      workflow: raw.workflow,
+      requestedWorkflowType: raw.requestedWorkflowType ?? workflowType,
+      jobWorkflowType: raw.jobWorkflowType ?? workflowType,
+      reportRunId: raw.reportRunId,
+      jobReportRunId: raw.jobReportRunId ?? raw.reportRunId,
+      sourceReportRunId: raw.sourceReportRunId ?? raw.reportRunId,
+      sourceOrionReportRunId: raw.sourceOrionReportRunId ?? raw.sourceReportRunId ?? raw.reportRunId,
+      currentlyBoundReportRunId: raw.currentlyBoundReportRunId ?? null,
+      previousBindingReportRunId: raw.previousBindingReportRunId ?? null,
+      state: raw.state,
+      humanPhase: raw.humanPhase ?? humanPhaseForState(raw.state),
+      percent: raw.percent ?? 0,
+      surfacesDone: raw.surfacesDone ?? 0,
+      surfacesTotal: raw.surfacesTotal ?? expected,
+      expectedSurfaceCount: raw.expectedSurfaceCount ?? expected,
+      terminalSurfaceCount: raw.terminalSurfaceCount ?? raw.surfacesDone ?? 0,
+      stage1TerminalCount: raw.stage1TerminalCount ?? 0,
+      stage2TerminalCount: raw.stage2TerminalCount ?? 0,
+      observationCount: raw.observationCount ?? 0,
+      estimatedLimits: raw.estimatedLimits ?? null,
+      spentLimits: raw.spentLimits ?? null,
+      attempt: raw.attempt ?? 1,
+      maxAttempts: raw.maxAttempts ?? 3,
+      nextStep: raw.nextStep ?? "preflight",
+      lastError: raw.lastError ?? null,
+      lastErrorCode: raw.lastErrorCode ?? null,
+      leaseOwnerId: raw.leaseOwnerId ?? null,
+      leaseUntil: raw.leaseUntil ?? null,
+      cancelRequested: Boolean(raw.cancelRequested),
+      planDigest: raw.planDigest ?? null,
+      setCalls: raw.setCalls ?? 0,
+      checkCalls: raw.checkCalls ?? 0,
+      getCalls: raw.getCalls ?? 0,
+      submitAttemptsByHash: raw.submitAttemptsByHash ?? {},
+      recoveryNotes: raw.recoveryNotes ?? [],
+      createdAt: raw.createdAt ?? new Date().toISOString(),
+      updatedAt: raw.updatedAt ?? new Date().toISOString(),
+      completedAt: raw.completedAt ?? null,
+    };
+    return job;
   } catch {
     return null;
   }
@@ -139,21 +203,36 @@ export function createOrchestrationJob(input: {
   workflow: "suggest-canary" | "first36-full";
   reportRunId: string;
   sourceReportRunId: string;
+  currentlyBoundReportRunId?: string | null;
+  previousBindingReportRunId?: string | null;
   maxAttempts?: number;
 }): ArsenkinOrchestrationJob {
   const now = new Date().toISOString();
+  const isFull = input.workflow === "first36-full";
+  const workflowType = isFull ? "FIRST36_FULL" : "SUGGEST_RU_CANARY";
+  const expected = isFull ? 12 : 2;
   const job: ArsenkinOrchestrationJob = {
     version: "arsenkin-full-audit-job-v1",
     jobId: `job-${Date.now()}-${randomUUID().slice(0, 8)}`,
     caseId: input.caseId,
     workflow: input.workflow,
+    requestedWorkflowType: workflowType,
+    jobWorkflowType: workflowType,
     reportRunId: input.reportRunId,
+    jobReportRunId: input.reportRunId,
     sourceReportRunId: input.sourceReportRunId,
+    sourceOrionReportRunId: input.sourceReportRunId,
+    currentlyBoundReportRunId: input.currentlyBoundReportRunId ?? null,
+    previousBindingReportRunId: input.previousBindingReportRunId ?? null,
     state: "PREFLIGHT",
     humanPhase: "Проверка готовности",
     percent: 2,
     surfacesDone: 0,
-    surfacesTotal: input.workflow === "first36-full" ? 12 : 2,
+    surfacesTotal: expected,
+    expectedSurfaceCount: expected,
+    terminalSurfaceCount: 0,
+    stage1TerminalCount: 0,
+    stage2TerminalCount: 0,
     observationCount: 0,
     estimatedLimits: null,
     spentLimits: null,
@@ -179,28 +258,42 @@ export function createOrchestrationJob(input: {
   return job;
 }
 
+function jobRunMatchesWorkflow(
+  workflow: "suggest-canary" | "first36-full",
+  reportRunId: string
+): boolean {
+  if (workflow === "first36-full") {
+    return String(reportRunId).startsWith("orion-arsenkin-first36-full-");
+  }
+  return String(reportRunId).startsWith("orion-arsenkin-suggest-canary-");
+}
+
 /**
- * Find-or-create active job for case+workflow. Concurrent creates: second call
- * reloads and returns the existing active job (idempotent one-click).
+ * Find-or-create active job for case+workflow (canonical key: caseId+provider+workflowType).
+ * Never resumes a foreign workflow run (e.g. suggest-canary under first36-full).
  */
 export function findOrCreateActiveOrchestrationJob(input: {
   caseId: string;
   workflow: "suggest-canary" | "first36-full";
   reportRunId: string;
   sourceReportRunId: string;
+  currentlyBoundReportRunId?: string | null;
+  previousBindingReportRunId?: string | null;
   forceNew?: boolean;
 }): { job: ArsenkinOrchestrationJob; created: boolean } {
+  if (!jobRunMatchesWorkflow(input.workflow, input.reportRunId)) {
+    throw new Error(
+      `WORKFLOW_RUN_MISMATCH: workflow=${input.workflow} reportRunId=${input.reportRunId}`
+    );
+  }
   const existing = loadOrchestrationJob(input.caseId, input.workflow);
   if (
     !input.forceNew &&
     existing &&
     isActiveOrchestrationState(existing.state) &&
-    existing.reportRunId === input.reportRunId
+    jobRunMatchesWorkflow(input.workflow, existing.reportRunId)
   ) {
-    return { job: existing, created: false };
-  }
-  if (!input.forceNew && existing && isActiveOrchestrationState(existing.state)) {
-    // Same case/workflow already running (possibly same or mapped run).
+    // Resume the unfinished workflow job; ignore foreign/canary ids.
     return { job: existing, created: false };
   }
   const job = createOrchestrationJob(input);

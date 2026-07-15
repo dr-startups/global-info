@@ -1601,7 +1601,26 @@ export type ArsenkinUiStatusDto = {
     lastError: string | null;
     attempt: number;
     cancelRequested: boolean;
+    requestedWorkflowType?: "SUGGEST_RU_CANARY" | "FIRST36_FULL";
+    jobWorkflowType?: "SUGGEST_RU_CANARY" | "FIRST36_FULL";
+    jobReportRunId?: string;
+    sourceOrionReportRunId?: string | null;
+    currentlyBoundReportRunId?: string | null;
+    previousBindingReportRunId?: string | null;
+    expectedSurfaceCount?: number;
+    terminalSurfaceCount?: number;
+    stage1TerminalCount?: number;
+    stage2TerminalCount?: number;
   } | null;
+  jobReportRunId?: string | null;
+  sourceOrionReportRunId?: string | null;
+  previousBindingReportRunId?: string | null;
+  currentlyBoundReportRunId?: string | null;
+  requestedWorkflowType?: "SUGGEST_RU_CANARY" | "FIRST36_FULL" | null;
+  jobWorkflowType?: "SUGGEST_RU_CANARY" | "FIRST36_FULL" | null;
+  expectedSurfaceCount?: number | null;
+  terminalSurfaceCount?: number | null;
+  runScopedDataMismatch?: string | null;
 };
 
 export type ArsenkinUiPlanRequestDto = {

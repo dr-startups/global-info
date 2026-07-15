@@ -195,10 +195,11 @@ describe("arsenkin full-audit orchestration", () => {
 
   it("tick with injected deps walks to COMPLETED without live network", async () => {
     const caseId = `${CASE_ID}-pipeline`;
+    const runId = `orion-arsenkin-first36-full-${Date.now()}-pipeline01`;
     createOrchestrationJob({
       caseId,
       workflow: WORKFLOW,
-      reportRunId: "run-pipeline-1",
+      reportRunId: runId,
       sourceReportRunId: "src-1",
     });
     let phase = 0;
@@ -255,6 +256,8 @@ describe("arsenkin full-audit orchestration", () => {
     assert.ok(finalJob);
     assert.equal(finalJob!.state, "COMPLETED");
     assert.equal(finalJob!.percent, 100);
+    assert.equal(finalJob!.expectedSurfaceCount, 12);
+    assert.equal(finalJob!.terminalSurfaceCount, 12);
     assert.ok(phase >= 4, `expected pipeline steps, got ${phase}`);
     assert.equal(getArsenkinNetworkCallCount(), 0);
   });
@@ -275,7 +278,7 @@ describe("arsenkin full-audit orchestration", () => {
     createOrchestrationJob({
       caseId,
       workflow: WORKFLOW,
-      reportRunId: "run-cancel",
+      reportRunId: `orion-arsenkin-first36-full-${Date.now()}-cancel01`,
       sourceReportRunId: "src",
     });
     const cancelled = await cancelArsenkinFullAudit({ caseId, workflow: WORKFLOW });
