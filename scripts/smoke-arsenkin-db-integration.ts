@@ -9,6 +9,7 @@
 
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
   buildDbIntegrationOrionReportRun,
@@ -26,6 +27,23 @@ function dbUrlPresent(): boolean {
 
 const required = process.env.ARSENKIN_DB_INTEGRATION_REQUIRED === "1";
 const hasDb = dbUrlPresent();
+const surfaceCoverageBusinessKeyFields = [
+  "reportRunId",
+  "provider",
+  "tool",
+  "queryId",
+  "surface",
+  "engine",
+  "region",
+  "language",
+  "device",
+] as const;
+
+type CoverageKeyRow = Record<(typeof surfaceCoverageBusinessKeyFields)[number], string>;
+
+function toCoverageBusinessKey(row: CoverageKeyRow): string {
+  return surfaceCoverageBusinessKeyFields.map((field) => `${field}=${row[field]}`).join("|");
+}
 
 describe("arsenkin DB integration", () => {
   it("reports honest SKIP when DATABASE_URL unavailable (local profile)", { skip: hasDb || required }, () => {
@@ -42,17 +60,30 @@ describe("arsenkin DB integration", () => {
     { skip: !hasDb },
     async () => {
       const { prisma } = await import("../src/server/prisma/client");
-      const leakedBefore = await prisma.$queryRawUnsafe<
-        Array<{ report_runs: bigint | number; provider_tasks: bigint | number; coverage_rows: bigint | number }>
-      >(
-        `select
-           (select count(*) from dp_orion_report_runs where id like 'cov-race-%') as report_runs,
-           (select count(*) from dp_provider_tasks where id like 'cov-task-%') as provider_tasks,
-           (select count(*) from dp_surface_collection_coverage where report_run_id like 'cov-race-%') as coverage_rows`
-      );
-      const leakedBeforeRuns = Number(leakedBefore[0]?.report_runs ?? 0);
-      const leakedBeforeTasks = Number(leakedBefore[0]?.provider_tasks ?? 0);
-      const leakedBeforeCoverage = Number(leakedBefore[0]?.coverage_rows ?? 0);
+      const source = readFileSync(new URL(import.meta.url), "utf8");
+      assert.equal(source.includes(".$queryRawUnsafe("), false, "regression: do not use $queryRawUnsafe in DB smoke");
+      assert.equal(source.includes(".$queryRawUnsafe<"), false, "regression: do not use $queryRawUnsafe in DB smoke");
+      assert.deepEqual(surfaceCoverageBusinessKeyFields, [
+        "reportRunId",
+        "provider",
+        "tool",
+        "queryId",
+        "surface",
+        "engine",
+        "region",
+        "language",
+        "device",
+      ]);
+      assert.equal(String(process.env.NETWORK_CALLS ?? "0"), "0", "NETWORK_CALLS must be 0 for DB smoke");
+      const leakedBeforeRuns = await prisma.orionReportRun.count({
+        where: { id: { startsWith: "cov-race-" } },
+      });
+      const leakedBeforeTasks = await prisma.providerTask.count({
+        where: { id: { startsWith: "cov-task-" } },
+      });
+      const leakedBeforeCoverage = await prisma.surfaceCollectionCoverage.count({
+        where: { reportRunId: { startsWith: "cov-race-" } },
+      });
       assert.equal(
         leakedBeforeRuns + leakedBeforeTasks + leakedBeforeCoverage,
         0,
@@ -113,25 +144,63 @@ describe("arsenkin DB integration", () => {
         assert.equal(returnedIds.size, 1, "all concurrent upserts must resolve to the same row id");
 
         const rows = await prisma.surfaceCollectionCoverage.findMany({
-          where: { reportRunId, tool: "suggest", queryId: "q1" },
+          where: {
+            reportRunId,
+            provider: payload.provider,
+            tool: payload.tool,
+            queryId: payload.queryId,
+            surface: payload.surface,
+            engine: payload.engine,
+            region: payload.region,
+            language: payload.language,
+            device: payload.device,
+          },
+          select: {
+            id: true,
+            reportRunId: true,
+            providerTaskId: true,
+            provider: true,
+            tool: true,
+            queryId: true,
+            surface: true,
+            engine: true,
+            region: true,
+            language: true,
+            device: true,
+          },
         });
-        assert.equal(rows.length, 1);
+        assert.equal(rows.length, 1, "exact @@unique business key must yield exactly one row");
+        assert.equal(
+          new Set(concurrent.map((r) => r.id)).size,
+          1,
+          "all concurrent results must reference one persisted row id"
+        );
         const [row] = rows;
         assert.ok(row);
         assert.equal(row.providerTaskId, providerTaskId);
         assert.equal(row.reportRunId, reportRunId);
+        assert.equal(row.id, concurrent[0]?.id, "db row id must match concurrent upsert result id");
 
-        const duplicateGroups = await prisma.$queryRawUnsafe<Array<{ cnt: bigint | number }>>(
-          `select count(*) as cnt from (
-             select report_run_id, provider, tool, query_id, surface, engine, region, language, device, count(*) c
-             from dp_surface_collection_coverage
-             where report_run_id = $1
-             group by report_run_id, provider, tool, query_id, surface, engine, region, language, device
-             having count(*) > 1
-           ) t`,
-          reportRunId
-        );
-        const duplicateGroupCount = Number(duplicateGroups[0]?.cnt ?? 0);
+        const coverageRows = await prisma.surfaceCollectionCoverage.findMany({
+          where: { reportRunId: { startsWith: "cov-race-" } },
+          select: {
+            reportRunId: true,
+            provider: true,
+            tool: true,
+            queryId: true,
+            surface: true,
+            engine: true,
+            region: true,
+            language: true,
+            device: true,
+          },
+        });
+        const grouped = new Map<string, number>();
+        for (const coverageRow of coverageRows) {
+          const key = toCoverageBusinessKey(coverageRow);
+          grouped.set(key, (grouped.get(key) ?? 0) + 1);
+        }
+        const duplicateGroupCount = [...grouped.values()].filter((count) => count > 1).length;
         assert.equal(duplicateGroupCount, 0);
       } finally {
         // Cleanup order: children -> parent rows.
@@ -139,17 +208,15 @@ describe("arsenkin DB integration", () => {
         await prisma.orionArsenkinStageRun.deleteMany({ where: { reportRunId } }).catch(() => undefined);
         await prisma.providerTask.deleteMany({ where: { reportRunId } }).catch(() => undefined);
         await prisma.orionReportRun.delete({ where: { id: reportRunId } }).catch(() => undefined);
-        const leakedAfter = await prisma.$queryRawUnsafe<
-          Array<{ report_runs: bigint | number; provider_tasks: bigint | number; coverage_rows: bigint | number }>
-        >(
-          `select
-             (select count(*) from dp_orion_report_runs where id like 'cov-race-%') as report_runs,
-             (select count(*) from dp_provider_tasks where id like 'cov-task-%') as provider_tasks,
-             (select count(*) from dp_surface_collection_coverage where report_run_id like 'cov-race-%') as coverage_rows`
-        );
-        const leakedAfterRuns = Number(leakedAfter[0]?.report_runs ?? 0);
-        const leakedAfterTasks = Number(leakedAfter[0]?.provider_tasks ?? 0);
-        const leakedAfterCoverage = Number(leakedAfter[0]?.coverage_rows ?? 0);
+        const leakedAfterRuns = await prisma.orionReportRun.count({
+          where: { id: { startsWith: "cov-race-" } },
+        });
+        const leakedAfterTasks = await prisma.providerTask.count({
+          where: { id: { startsWith: "cov-task-" } },
+        });
+        const leakedAfterCoverage = await prisma.surfaceCollectionCoverage.count({
+          where: { reportRunId: { startsWith: "cov-race-" } },
+        });
         assert.equal(
           leakedAfterRuns + leakedAfterTasks + leakedAfterCoverage,
           0,
