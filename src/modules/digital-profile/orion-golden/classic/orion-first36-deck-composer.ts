@@ -1674,6 +1674,7 @@ function appendAiAnswerExtensions(
         // Renderer sidebar reads visualAnalysis / clientTakeaway — not narrative/bullets alone.
         clientTakeaway: headline,
         visualAnalysis: {
+          assetRef: asset.assetRef,
           sidebarMode: absent ? "status" : "interpretation",
           headlineConclusion: headline,
           whatIsVisible:
@@ -1682,6 +1683,22 @@ function appendAiAnswerExtensions(
               : whatIsVisible,
           whyItMatters: clientMeaning,
           clientMeaning,
+          metrics: [
+            {
+              label: "AI-блок",
+              value: absent ? "не найден" : "найден",
+              tone: absent ? "neutral" : "warn",
+            },
+            {
+              label: "Источники",
+              value: String(citations.length),
+              tone: "neutral",
+            },
+          ],
+          confidence: absent ? "low" : "medium",
+          limitations: absent
+            ? ["ИИ-блок в выдаче не найден на дату сбора."]
+            : ["Текст ИИ — снимок ответа на дату сбора, а не текущий экран поиска."],
           recommendedActions: action
             ? [action]
             : absent
