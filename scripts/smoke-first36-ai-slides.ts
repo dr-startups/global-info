@@ -83,6 +83,15 @@ check(
   "TOC does not claim AI spans into UAE pages",
   !(toc?.bullets ?? []).some((b) => /AI-выдача Яндекса — стр\.\s*20–3[0-9]/i.test(b))
 );
+check(
+  "AI sidebar never leaks serp_observation evidence refs",
+  aiSlides.every(
+    (s) =>
+      !/serp_observation:/i.test(
+        `${s.visualAnalysis?.whatIsVisible ?? ""} ${(s.bullets ?? []).join(" ")} ${s.clientTakeaway ?? ""}`
+      )
+  )
+);
 
 if (failures > 0) process.exitCode = 1;
 console.log(failures ? `FAILED ${failures}` : "ALL PASS");

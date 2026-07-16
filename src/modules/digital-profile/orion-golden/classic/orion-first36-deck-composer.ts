@@ -1515,17 +1515,26 @@ function appendAiAnswerExtensions(
   const citationsFrom = (asset: ReportAssetV1): string[] => {
     const meta = toMeta(asset);
     const raw = (meta["citations"] as Array<{ title?: string; domain?: string; url?: string }> | undefined) ?? [];
-    const parsed = raw
+    // Client sidebar must never surface evidenceRef tokens (serp_observation:…).
+    return raw
       .map((c) => {
         const domain = String(c.domain ?? "").trim();
         const title = String(c.title ?? "").trim();
         const url = String(c.url ?? "").trim();
+        if (/serp_observation:|provider_task:|auditRunId/i.test(`${domain} ${title} ${url}`)) {
+          return "";
+        }
         if (!domain && !title && !url) return "";
-        return `${domain || "source"} — ${title || url || "без названия"}`;
+        if (domain) return title ? `${domain} — ${title}` : domain;
+        if (title) return title;
+        try {
+          return new URL(url).hostname.replace(/^www\./, "") || "";
+        } catch {
+          return "";
+        }
       })
-      .filter(Boolean);
-    if (parsed.length > 0) return parsed;
-    return (asset.evidenceRefs ?? []).slice(0, 12).map((r) => `Источник: ${r}`);
+      .filter(Boolean)
+      .slice(0, 8);
   };
   const statusLabelFor = (asset: ReportAssetV1): string => {
     const blob = `${asset.caption ?? ""} ${asset.title ?? ""}`;
