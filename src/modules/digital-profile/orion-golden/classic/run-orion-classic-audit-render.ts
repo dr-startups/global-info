@@ -35,6 +35,7 @@ import {
   assertArsenkinTransferredClientContent,
   listArsenkinObservationAuditRunIds,
   loadArsenkinReportBinding,
+  observationsFromSerpProvenanceFile,
   resolveEffectiveReportRunIdForCase,
   saveArsenkinReportBinding,
 } from "./arsenkin-report-binding";
@@ -335,29 +336,32 @@ export async function runOrionClassicAuditRender(options: {
     caseId,
     primaryAuditRunId: clientContent.reportRunId,
   });
-  const arsenkinObservations = await prisma.serpObservation.findMany({
-    where: {
-      auditRunId: { in: arsenkinObservationRunIds },
-      provider: "arsenkin",
-    },
-    select: {
-      id: true,
-      auditRunId: true,
-      provider: true,
-      providerTaskId: true,
-      surface: true,
-      engine: true,
-      region: true,
-      queryText: true,
-      providerStatus: true,
-      title: true,
-      snippet: true,
-      url: true,
-      domain: true,
-      capturedAt: true,
-    },
-    orderBy: { createdAt: "asc" },
-  });
+  const arsenkinObservations =
+    arsenkinObservationRunIds.length === 0
+      ? []
+      : await prisma.serpObservation.findMany({
+          where: {
+            auditRunId: { in: arsenkinObservationRunIds },
+            provider: "arsenkin",
+          },
+          select: {
+            id: true,
+            auditRunId: true,
+            provider: true,
+            providerTaskId: true,
+            surface: true,
+            engine: true,
+            region: true,
+            queryText: true,
+            providerStatus: true,
+            title: true,
+            snippet: true,
+            url: true,
+            domain: true,
+            capturedAt: true,
+          },
+          orderBy: { createdAt: "asc" },
+        });
   writeJson(
     join(outputRoot, "serp-observations-provenance.json"),
     {
@@ -602,9 +606,9 @@ export async function runOrionClassicAuditRender(options: {
   const providerTasks = readJson<Array<{ reportRunId?: string; state?: string; id?: string }>>(
     join(outputRoot, "provider-tasks.json")
   );
-  const observations = readJson<
-    Array<{ auditRunId?: string; provider?: string; providerTaskId?: string | null }>
-  >(join(outputRoot, "serp-observations-provenance.json"));
+  const observations = observationsFromSerpProvenanceFile(
+    readJson<unknown>(join(outputRoot, "serp-observations-provenance.json"))
+  );
   const coverageSummary = readJson<{
     reportRunId?: string;
     rows?: Array<Record<string, unknown>>;

@@ -13,6 +13,7 @@ import {
   inspectFirst36Acceptance,
   requiredVisualAssetRefsFromRegistry,
 } from "../src/modules/digital-profile/orion-golden/classic/first36-acceptance-gate";
+import { observationsFromSerpProvenanceFile } from "../src/modules/digital-profile/orion-golden/classic/arsenkin-report-binding";
 
 type Args = {
   caseId?: string;
@@ -110,8 +111,8 @@ async function main(): Promise<void> {
     ? readJson<Array<{ reportRunId?: string; state?: string; id?: string }>>(join(fromDir, "provider-tasks.json"))
     : undefined;
   const observations = existsSync(join(fromDir, "serp-observations-provenance.json"))
-    ? readJson<Array<{ auditRunId?: string; provider?: string; providerTaskId?: string | null }>>(
-        join(fromDir, "serp-observations-provenance.json")
+    ? observationsFromSerpProvenanceFile(
+        readJson<unknown>(join(fromDir, "serp-observations-provenance.json"))
       )
     : undefined;
   const clientBinding = existsSync(join(fromDir, "client-content-binding.json"))

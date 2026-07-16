@@ -120,6 +120,37 @@ export function listArsenkinObservationAuditRunIds(input: {
   return ids;
 }
 
+export type SerpObservationProvenanceRow = {
+  id?: string;
+  auditRunId?: string;
+  provider?: string;
+  providerTaskId?: string | null;
+  surface?: string;
+  engine?: string;
+  region?: string;
+};
+
+/**
+ * Normalize serp-observations-provenance.json: historically a bare array, now an
+ * object with `{ observations, observationAuditRunIds, primaryAuditRunId }`.
+ * Callers that treat the file as an array must use this helper — otherwise
+ * `for…of` / `.filter` throws and classic audit fails with 0 pages.
+ */
+export function observationsFromSerpProvenanceFile(
+  raw: unknown
+): SerpObservationProvenanceRow[] {
+  if (Array.isArray(raw)) {
+    return raw as SerpObservationProvenanceRow[];
+  }
+  if (raw && typeof raw === "object") {
+    const observations = (raw as { observations?: unknown }).observations;
+    if (Array.isArray(observations)) {
+      return observations as SerpObservationProvenanceRow[];
+    }
+  }
+  return [];
+}
+
 /** Normalize v1/v2 binding into composite runtime model. */
 export function toCompositeBindingModel(
   binding: ArsenkinReportBinding | ArsenkinReportBindingV2

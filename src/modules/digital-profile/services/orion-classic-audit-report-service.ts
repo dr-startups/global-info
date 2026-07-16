@@ -13,6 +13,7 @@ import {
   ArsenkinReportBindingError,
   assertArsenkinRenderOutputArtifacts,
   loadCanonicalPostReviewClientContent,
+  observationsFromSerpProvenanceFile,
   resolveEffectiveReportRunIdForCase,
 } from "../orion-golden/classic/arsenkin-report-binding";
 import { saveFile } from "../storage/private-store";
@@ -358,14 +359,14 @@ async function executeClassicAuditReport(
     const outMerge = readJson<{ auditRunId?: string; observationCount?: number }>(
       join(input.runOutputRoot, "run-scoped-serp-merge.json")
     );
-    const provenance = readJson<unknown[]>(
+    const provenance = readJson<unknown>(
       join(input.runOutputRoot, "serp-observations-provenance.json")
     );
     const outGate = assertArsenkinRenderOutputArtifacts({
       binding: resolved.binding,
       clientContentBinding: outBinding,
       runScopedMerge: outMerge,
-      provenanceLength: Array.isArray(provenance) ? provenance.length : 0,
+      provenanceLength: observationsFromSerpProvenanceFile(provenance).length,
     });
     if (!outGate.ok) {
       writeJson(join(input.runOutputRoot, "arsenkin-output-binding-gate.json"), {

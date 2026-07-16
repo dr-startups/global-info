@@ -449,9 +449,15 @@ describe("route-level report/generate Arsenkin binding E2E", () => {
     assert.equal(merge.auditRunId, ARSENKIN_RUN);
     assert.equal(merge.observationCount, 18);
 
-    const provenance = JSON.parse(
+    const provenanceRaw = JSON.parse(
       readFileSync(join(runOutputRoot, "serp-observations-provenance.json"), "utf-8")
-    ) as unknown[];
+    ) as unknown;
+    const {
+      observationsFromSerpProvenanceFile,
+    } = await import(
+      "../src/modules/digital-profile/orion-golden/classic/arsenkin-report-binding"
+    );
+    const provenance = observationsFromSerpProvenanceFile(provenanceRaw);
     assert.equal(provenance.length, 18);
 
     const assets = JSON.parse(readFileSync(join(runOutputRoot, "report-assets.json"), "utf-8")) as {
