@@ -26,6 +26,9 @@ async function pushPanel(
   }
 ): Promise<void> {
   if (opts.lines.length === 0) return;
+  const rowLabels = opts.lines.map((x) => x.label).filter(Boolean);
+  const isSuggest = /suggest/i.test(opts.assetRef);
+  const isRelated = /related/i.test(opts.assetRef);
   assets.push({
     assetRef: opts.assetRef,
     kind: "surface_panel",
@@ -44,7 +47,13 @@ async function pushPanel(
     ),
     evidenceRefs: opts.lines.slice(0, 10).map((x) => x.evidenceRef),
     status: "ready",
-    meta: opts.meta,
+    meta: {
+      provider: "arsenkin",
+      observationCount: opts.lines.length,
+      ...(isSuggest ? { suggestionRows: rowLabels, tool: "suggest", arsenkinTool: "suggest" } : {}),
+      ...(isRelated ? { relatedRows: rowLabels, tool: "paa", arsenkinTool: "paa" } : {}),
+      ...(opts.meta ?? {}),
+    },
   });
 }
 
@@ -167,8 +176,14 @@ export async function buildArsenkinSurfacePanelAssets(input: {
   const ruAi = aiAnswer.filter((r) => mapRegion(r.region) === "RU");
   const ruYandexAi = ruAi.filter((r) => String(r.engine).toUpperCase() === "YANDEX");
   const ruGoogleAi = ruAi.filter((r) => String(r.engine).toUpperCase() === "GOOGLE");
-  const pickAnswer = (rows: typeof ruAi) =>
-    rows.find((r) => /ИИ-ответ|AI Overview/i.test(String(r.title ?? "")));
+  const pickAnswer = (rows: typeof ruAi) => {
+    const answerRows = rows.filter((r) => r.domain === "ai-serp" || /ИИ-ответ|AI Overview/i.test(String(r.title ?? "")));
+    return (
+      answerRows.find((r) => r.providerStatus === "OK" && String(r.snippet ?? "").trim()) ??
+      answerRows.find((r) => String(r.snippet ?? "").trim()) ??
+      answerRows[0]
+    );
+  };
   const yandexAnswer = pickAnswer(ruYandexAi);
   const googleRuAnswer = pickAnswer(ruGoogleAi);
   const ruAiLines: Array<{ label: string; meta?: string; evidenceRef: string }> = [];
@@ -226,8 +241,11 @@ export async function buildArsenkinSurfacePanelAssets(input: {
       arsenkinTool: "ai-serp",
       surface: "ai_answer",
       engine: "YANDEX",
+      region: "RU",
+      query: yandexAnswer?.queryText,
+      queryText: yandexAnswer?.queryText,
       capturedAt: yandexAnswer?.capturedAt?.toISOString(),
-      answerText: yandexAnswer?.snippet ?? "",
+      answerText: yandexAnswer?.providerStatus === "NO_RESULTS" ? "" : yandexAnswer?.snippet ?? "",
       citations: ruYandexAi
         .filter((r) => r.domain !== "ai-serp")
         .slice(0, 8)
@@ -253,8 +271,12 @@ export async function buildArsenkinSurfacePanelAssets(input: {
       arsenkinTool: "ai-serp",
       surface: "ai_answer",
       engine: "GOOGLE",
+      region: "RU",
+      query: googleRuAnswer?.queryText,
+      queryText: googleRuAnswer?.queryText,
       capturedAt: googleRuAnswer?.capturedAt?.toISOString(),
-      answerText: googleRuAnswer?.snippet ?? "",
+      answerText:
+        googleRuAnswer?.providerStatus === "NO_RESULTS" ? "" : googleRuAnswer?.snippet ?? "",
       citations: ruGoogleAi
         .filter((r) => r.domain !== "ai-serp")
         .slice(0, 8)
@@ -306,8 +328,10 @@ export async function buildArsenkinSurfacePanelAssets(input: {
       surface: "ai_answer",
       engine: "GOOGLE",
       region: "UAE",
+      query: uaeAnswer?.queryText,
+      queryText: uaeAnswer?.queryText,
       capturedAt: uaeAnswer?.capturedAt?.toISOString(),
-      answerText: uaeAnswer?.snippet ?? "",
+      answerText: uaeAnswer?.providerStatus === "NO_RESULTS" ? "" : uaeAnswer?.snippet ?? "",
       citations: uaeAi
         .filter((r) => r.domain !== "ai-serp")
         .slice(0, 8)

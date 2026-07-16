@@ -2430,7 +2430,7 @@ function themeToClientClaim(theme: OrionThemeCard, subjectName: string): string 
       if (p.liksutov || p.offshore || /бенефициар|офшор|корруп|криминал|аксененко/i.test(hitBlob)) {
         return `Агрегатор: ${s} указан как бенефициар офшора, связанного с М. Ликсутовым; источник требует осторожной интерпретации.`;
       }
-      return `Негативные публикации на агрегаторах по ${sGen}${domain ? ` (${domain})` : ""}.`;
+      return `Негативные публикации на агрегаторах по ${sDat}${domain ? ` (${domain})` : ""}.`;
     case "pep_rca":
       return `Предварительные сигналы PEP / RCA в комплаенс-базах по ${shortSubjectDative(subjectName)}; нужна сверка профиля.`;
     default:

@@ -52,7 +52,73 @@ import { inspectClientCopySlides } from "./client-copy-completeness";
 import {
   buildAiAnswerObservations,
   evaluateAiAnswerObservation,
+  type AiAnswerEvaluation,
+  type AiAnswerObservation,
 } from "./ai-answer-evaluation";
+import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
+
+/** Attach measured Alice / Google AI answer text + evaluation onto AI panel assets. */
+function attachAiAnswerMetaToAssets(
+  assets: ReportAssetV1[],
+  observations: AiAnswerObservation[],
+  evaluations: AiAnswerEvaluation[]
+): ReportAssetV1[] {
+  const evalByObs = new Map(evaluations.map((e) => [e.observationId, e]));
+  const pickObs = (engine: "YANDEX" | "GOOGLE", region: "RU" | "UAE") => {
+    const wantEngine = engine === "YANDEX" ? "yandex_alice" : "google_ai_overview";
+    return (
+      observations.find(
+        (o) =>
+          o.engine === wantEngine &&
+          mapAiRegion(o.region) === region &&
+          o.status === "MEASURED" &&
+          Boolean(o.answerText?.trim())
+      ) ??
+      observations.find((o) => o.engine === wantEngine && mapAiRegion(o.region) === region)
+    );
+  };
+  return assets.map((asset) => {
+    const ref = asset.assetRef;
+    const target =
+      ref === "ru_ai_yandex" || (ref === "ru_knowledge_panel_2" && /Алиса|YANDEX/i.test(asset.title ?? ""))
+        ? pickObs("YANDEX", "RU")
+        : ref === "ru_ai_google"
+          ? pickObs("GOOGLE", "RU")
+          : ref === "uae_ai_google" || ref === "uae_knowledge_panel"
+            ? pickObs("GOOGLE", "UAE")
+            : null;
+    if (!target) return asset;
+    const evaluation = evalByObs.get(target.id);
+    const prevMeta = (asset.meta ?? {}) as Record<string, unknown>;
+    const answerText =
+      String(prevMeta.answerText ?? "").trim() || String(target.answerText ?? "").trim();
+    return {
+      ...asset,
+      caption:
+        answerText && !/не найден|absent/i.test(asset.caption ?? "")
+          ? asset.caption
+          : answerText
+            ? "AI-блок найден"
+            : asset.caption,
+      meta: {
+        ...prevMeta,
+        surface: "ai_answer",
+        engine: target.engine === "yandex_alice" ? "YANDEX" : "GOOGLE",
+        region: mapAiRegion(target.region),
+        query: target.query,
+        queryText: target.query,
+        capturedAt: target.capturedAt,
+        answerText,
+        citations: target.citations,
+        ...(evaluation ? { aiEvaluation: evaluation } : {}),
+      },
+    };
+  });
+}
+
+function mapAiRegion(raw: string): "RU" | "UAE" {
+  return /UAE|AE|INTL/i.test(String(raw ?? "")) ? "UAE" : "RU";
+}
 
 export class OrionClassicVisualGateError extends Error {
   readonly blockedSections: Array<{ sectionKey: string; reason: string }>;
@@ -430,12 +496,13 @@ export async function runOrionClassicAuditRender(options: {
   const clientFinalize = isClientProductionFinalize();
   const first36CeoMode = first36CeoModeEarly;
   const includeCommercial = !first36CeoMode;
-  const assets = await buildOrionClassicAuditAssets({
+  let assets = await buildOrionClassicAuditAssets({
     ctx,
     reportRunId: clientContent.reportRunId,
     audience: clientFinalize ? "client" : "internal_preview",
     allowSyntheticSerp: !clientFinalize,
   });
+  assets = attachAiAnswerMetaToAssets(assets, aiAnswerObservations, aiAnswerEvaluations);
   console.info("[serp-capture] classic audit assets", {
     caseId,
     reportRunId: clientContent.reportRunId,

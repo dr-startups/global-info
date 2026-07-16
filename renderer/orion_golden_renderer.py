@@ -598,8 +598,8 @@ class _Ctx:
             tone = str(m.get("tone") or "neutral")
             fill = {"risk": RISK_BG, "warn": WARN_BG, "good": GOOD_BG}.get(tone, CARD_BG)
             value_color = {"risk": TONE_RISK, "warn": TONE_WARN, "good": TONE_GOOD}.get(tone, NAVY)
-            value = _clip_words(_safe(m.get("value")), 18)
-            label = _clip_words(_safe(m.get("label")), 18)
+            value = _clip_words(_safe(m.get("value")), 36)
+            label = _clip_words(_safe(m.get("label")), 28)
             self.card(row_y, h=chip_h, x=cx, w=chip_w, fill=fill)
             box = self.slide.shapes.add_textbox(
                 Emu(cx + 50_000), Emu(row_y + 70_000), Emu(chip_w - 100_000), Emu(chip_h - 140_000)
@@ -946,8 +946,9 @@ def _render_kpi_cards(ctx: _Ctx, metrics: list[dict[str, Any]], x: int, y: int, 
             row_y += card_h + gap
         cx = x + col * (card_w + gap)
         tone = str(m.get("tone") or "neutral")
-        value = _clip_words(_safe(m.get("value")), 16)
-        label = _clip_words(_safe(m.get("label")), 22)
+        # Keep room for Russian status phrases like «Данные не собраны» / «0 / 10».
+        value = _clip_words(_safe(m.get("value")), 36)
+        label = _clip_words(_safe(m.get("label")), 28)
         ctx.card(row_y, h=card_h, x=cx, w=card_w, fill=_tone_fill(tone))
         box = ctx.slide.shapes.add_textbox(
             Emu(cx + 70_000), Emu(row_y + 100_000), Emu(card_w - 140_000), Emu(card_h - 180_000)
@@ -959,7 +960,7 @@ def _render_kpi_cards(ctx: _Ctx, metrics: list[dict[str, Any]], x: int, y: int, 
         r0.text = value
         r0.font.name = FONT
         r0.font.bold = True
-        r0.font.size = Pt(18 if len(value) <= 10 else 13)
+        r0.font.size = Pt(18 if len(value) <= 10 else 12 if len(value) <= 22 else 10)
         r0.font.color.rgb = _tone_value_color(tone)
         p1 = tf.add_paragraph()
         p1.space_before = Pt(6)
@@ -1311,8 +1312,15 @@ def _add_search_table(
     TS pagination already guaranteed geometric fit. Query is shown as a compact
     group-header band (spec §4), status as a colored badge (spec §5).
     """
-    cols = max(1, min(4, len(headers)))
-    data_rows = rows  # no hidden cap: caller already paginated to fit
+    # Body layout is 4 cols: Позиция | Домен | Заголовок | Статус.
+    # If TS sends a leading «Запрос» column, drop it — query lives in group bands.
+    hdr = [str(h) for h in headers]
+    data_rows = [list(r) for r in rows]
+    if len(hdr) >= 5 and re.search(r"запрос|query", hdr[0], re.I):
+        hdr = hdr[1:]
+        data_rows = [r[1:] if len(r) > 1 else r for r in data_rows]
+    cols = max(1, min(4, len(hdr)))
+    headers = hdr
     groups = groups or []
 
     # Row plan: header + interleaved group bands + data rows.
@@ -1422,7 +1430,8 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             bullets or ["Резюме", "Россия", "ОАЭ", "Compliance", "LexisNexis", "Рекомендации"],
             y,
             color=WHITE,
-            max_items=14,
+            max_items=22,
+            max_chars=120,
         )
         return
 
@@ -1658,7 +1667,9 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             rows = parsed
         if headers and rows:
             # Render every row the (paginated) slide carries — no hidden cap.
-            _add_search_table(ctx, y, headers[:4], rows, groups)
+            # Keep up to 5 headers so Запрос can be stripped inside the helper
+            # without also dropping Статус.
+            _add_search_table(ctx, y, headers[:5], rows, groups)
         elif bullets:
             avail = max(400000, CONTENT_BOTTOM - y)
             box = ctx.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(avail))

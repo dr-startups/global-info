@@ -4,6 +4,7 @@
  */
 
 const INTERNAL_TOKEN_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/\bсверить\s+identity\b/gi, "сверить личность"],
   [/\bidentity\b/gi, "сверка личности"],
   [/\brelated\b/gi, "связанные запросы"],
   // Keep short nominative forms — long phrases break Russian case endings
@@ -22,6 +23,8 @@ const INTERNAL_TOKEN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bevidenceRefs?\b/gi, "источники"],
   [/\bauditRunId\b/gi, "идентификатор запуска"],
   [/\breportRunId\b/gi, "идентификатор отчёта"],
+  // Prefer prepositional case after «в/во».
+  [/\bв\s+SERP\b/g, "в поисковой выдаче"],
   [/\bSERP\b/g, "поисковая выдача"],
   [/\bPAA\b/g, "похожие вопросы"],
   [/\bDEMO\b/g, ""],
@@ -34,6 +37,9 @@ export function repairBrokenClientPhrases(text: string): string {
     .replace(/публичное должностное лицо-(?=статус|сигнал|проверк)/gi, "PEP-")
     .replace(/сигналы публичное должностное лицо/gi, "сигналы PEP")
     .replace(/статус публичное должностное лицо/gi, "статус PEP")
+    .replace(/\bв\s+поисковая\s+выдача\b/gi, "в поисковой выдаче")
+    .replace(/\bпозиции\s+в\s+поисковая\s+выдача\b/gi, "позиции в поисковой выдаче")
+    .replace(/\bсверить\s+сверка\s+личности\b/gi, "сверить личность")
     .replace(/\s{2,}/g, " ")
     .trim();
 }

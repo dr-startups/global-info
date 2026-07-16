@@ -86,6 +86,15 @@ function wikiLabel(status: OrionSurfaceKpis["wikipediaStatus"]): string {
   }
 }
 
+function ruNegCount(n: number): string {
+  const abs = Math.abs(n);
+  const mod10 = abs % 10;
+  const mod100 = abs % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${n} негативный`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${n} негативных`;
+  return `${n} негативных`;
+}
+
 function statusValue(
   metric: OrionSurfaceMetric | undefined,
   adverseFallback: number,
@@ -97,9 +106,28 @@ function statusValue(
   const adverse = metric?.adverseCount ?? adverseFallback;
   if (status === "NOT_APPLICABLE") return "Не применимо";
   if (status === "NOT_COLLECTED") return notCollectedLabel;
-  if (status === "MEASURED") return `${adverse} негативных из ${observed}`;
-  if (observed > 0) return `${adverse} негативных из ${observed}`;
+  if (status === "MEASURED" || observed > 0) {
+    // Compact form fits KPI cards; narrative bullets can still use longer phrasing.
+    return `${adverse} / ${observed}`;
+  }
   return notCollectedLabel;
+}
+
+/** Longer status line for prose bullets (not KPI chips). */
+function statusValueProse(
+  metric: OrionSurfaceMetric | undefined,
+  adverseFallback: number,
+  observedFallback: number
+): string {
+  const status: OrionSurfaceMetricStatus | undefined = metric?.status;
+  const observed = metric?.observedCount ?? observedFallback;
+  const adverse = metric?.adverseCount ?? adverseFallback;
+  if (status === "NOT_APPLICABLE") return "не применимо";
+  if (status === "NOT_COLLECTED") return "данные не собраны";
+  if (status === "MEASURED" || observed > 0) {
+    return `${ruNegCount(adverse)} из ${observed}`;
+  }
+  return "данные не собраны";
 }
 
 function statusTone(metric: OrionSurfaceMetric | undefined, adverseFallback: number, observedFallback: number): MetricTone {
@@ -128,7 +156,8 @@ function regionMetrics(kpis: OrionSurfaceKpis, prefix: string): DeckMetric[] {
       value: statusValue(
         kpis.suggestionsMetric,
         kpis.suggestionsExplicitAdverse ?? kpis.suggestionsAdverse,
-        kpis.suggestionsTotal
+        kpis.suggestionsTotal,
+        "Нет данных"
       ),
       tone: statusTone(
         kpis.suggestionsMetric,
@@ -139,13 +168,13 @@ function regionMetrics(kpis: OrionSurfaceKpis, prefix: string): DeckMetric[] {
     },
     {
       label: `${prefix}: связанные`,
-      value: statusValue(kpis.relatedMetric, kpis.relatedAdverse, kpis.relatedTotal),
+      value: statusValue(kpis.relatedMetric, kpis.relatedAdverse, kpis.relatedTotal, "Нет данных"),
       tone: statusTone(kpis.relatedMetric, kpis.relatedAdverse, kpis.relatedTotal),
       status: kpis.relatedMetric?.status,
     },
     {
       label: `${prefix}: изображения`,
-      value: statusValue(kpis.imagesMetric, kpis.imagesAdverse, kpis.imagesTotal),
+      value: statusValue(kpis.imagesMetric, kpis.imagesAdverse, kpis.imagesTotal, "Нет данных"),
       tone: statusTone(kpis.imagesMetric, kpis.imagesAdverse, kpis.imagesTotal),
       status: kpis.imagesMetric?.status,
     },
@@ -349,24 +378,25 @@ function regionalMetricsSlide(
   ].slice(0, 4);
   const kpiBullets = [
     `Доля потенциально нежелательных ссылок: ${kpis.linksTotal > 0 && kpis.linksAdversePct != null ? `${kpis.linksAdversePct}% (${kpis.linksAdverse} из ${kpis.linksTotal})` : "— (данные не собраны)"} — оценка профиля: ${kpis.overallRiskBadge ?? kpis.overallBadge}.`,
-    `Поисковые подсказки: ${statusValue(kpis.suggestionsMetric, kpis.suggestionsAdverse, kpis.suggestionsTotal)}.`,
+    `Поисковые подсказки: ${statusValueProse(kpis.suggestionsMetric, kpis.suggestionsAdverse, kpis.suggestionsTotal)}.`,
   ];
   return {
     ...base,
     template: "orion_golden_metrics_dashboard",
     bullets: [...claimBullets, ...kpiBullets],
     metrics: [
-      ...regionMetrics(kpis, prefix),
+      ...regionMetrics(kpis, prefix).filter((m) => !/: связанные$/.test(m.label)),
       {
-        label: `${prefix}: related`,
-        value: `${kpis.relatedAdverse} / ${kpis.relatedTotal}`,
-        tone: adverseTone(
-          kpis.relatedTotal > 0 ? Math.round((kpis.relatedAdverse / (kpis.relatedTotal || 1)) * 100) : 0,
-          kpis.relatedAdverse
-        ),
+        label: `${prefix}: связанные`,
+        value:
+          kpis.relatedMetric?.status === "NOT_COLLECTED"
+            ? "Нет данных"
+            : `${kpis.relatedAdverse} / ${kpis.relatedTotal}`,
+        tone: statusTone(kpis.relatedMetric, kpis.relatedAdverse, kpis.relatedTotal),
+        status: kpis.relatedMetric?.status,
       },
       {
-        label: "Wikipedia",
+        label: "Википедия",
         value: wikiLabel(kpis.wikipediaStatus),
         tone: wikiTone(kpis.wikipediaStatus),
       },
@@ -685,71 +715,87 @@ export function buildDeterministicVisualAnalysis(
       const rowTexts = collectSuggestionTexts(asset, slide);
       const regionKpis =
         slot.region === "UAE" ? themeSet?.uae : slot.region === "RU" ? themeSet?.ru : themeSet?.ru;
-      const riskThemes = (themeSet?.themes ?? [])
-        .map((t) => String(t.title ?? ""))
-        .filter((t) => t.length >= 4);
-      const subjectName = String(themeSet?.subjectName ?? "").trim();
-      let explicit = 0;
-      let contextual = 0;
-      let identity = 0;
-      const haystack = [...rowTexts, caption, title].join("\n");
-      if (rowTexts.length > 0 && subjectName) {
-        for (const q of rowTexts) {
-          const kind = classifySuggestionIntent(q, subjectName, riskThemes);
-          if (kind === "explicitAdverse") explicit += 1;
-          else if (kind === "contextualRisk") contextual += 1;
-          else if (kind === "identityOrNamesakeRisk") identity += 1;
-        }
+      const suggestNotCollected =
+        rowTexts.length === 0 &&
+        (regionKpis?.suggestionsMetric?.status === "NOT_COLLECTED" ||
+          (regionKpis?.suggestionsTotal ?? 0) <= 0);
+      if (suggestNotCollected) {
+        sidebarMode = "status";
+        headlineConclusion = `${regionLabel} — подсказки: данные не собраны`;
+        whatIsVisible =
+          "Валидные поисковые подсказки по алиасам субъекта в этом регионе не собраны.";
+        clientMeaning =
+          "Без собранных подсказок нельзя оценить, формирует ли автодополнение риск-ассоциации.";
+        whyItMatters = clientMeaning;
+        recommendedActions = [`Повторно собрать подсказки (${regionLabel}) по алиасам субъекта`];
+        provenance = `Источник: подсказки ${regionLabel}, статус NOT_COLLECTED`;
       } else {
-        explicit = /скандал|санкц|арест|корруп|мошен|негатив|scandal|sanction/i.test(haystack)
-          ? 1
-          : regionKpis?.suggestionsExplicitAdverse ?? 0;
-        contextual = regionKpis?.suggestionsContextualRisk ?? 0;
-        identity = regionKpis?.suggestionsIdentityRisk ?? 0;
-      }
-      const totalSuggest =
-        rowTexts.length > 0
-          ? rowTexts.length
-          : regionKpis?.suggestionsTotal ?? Math.max(explicit + contextual + identity, 1);
+        const riskThemes = (themeSet?.themes ?? [])
+          .map((t) => String(t.title ?? ""))
+          .filter((t) => t.length >= 4);
+        const subjectName = String(themeSet?.subjectName ?? "").trim();
+        let explicit = 0;
+        let contextual = 0;
+        let identity = 0;
+        const haystack = [...rowTexts, caption, title].join("\n");
+        if (rowTexts.length > 0 && subjectName) {
+          for (const q of rowTexts) {
+            const kind = classifySuggestionIntent(q, subjectName, riskThemes);
+            if (kind === "explicitAdverse") explicit += 1;
+            else if (kind === "contextualRisk") contextual += 1;
+            else if (kind === "identityOrNamesakeRisk") identity += 1;
+          }
+        } else {
+          explicit = /скандал|санкц|арест|корруп|мошен|негатив|scandal|sanction/i.test(haystack)
+            ? 1
+            : regionKpis?.suggestionsExplicitAdverse ?? 0;
+          contextual = regionKpis?.suggestionsContextualRisk ?? 0;
+          identity = regionKpis?.suggestionsIdentityRisk ?? 0;
+        }
+        const totalSuggest =
+          rowTexts.length > 0
+            ? rowTexts.length
+            : regionKpis?.suggestionsTotal ?? Math.max(explicit + contextual + identity, 1);
 
-      sidebarMode = explicit > 0 ? "adverse_explanation" : "interpretation";
-      headlineConclusion =
-        explicit > 0
-          ? "Подсказки связывают имя с риск-тематикой"
-          : "Прямых негативных формулировок в подсказках не найдено";
-      whatIsVisible =
-        explicit > 0
-          ? `Среди подсказок есть прямые негативные формулировки (${explicit} из ${totalSuggest}).`
-          : `Прямых негативных формулировок не найдено. ${contextual} подсказок связаны с ранее выявленными риск-темами. ${identity} подсказок относятся к другим людям или неоднозначной идентификации.`;
-      clientMeaning =
-        explicit > 0
-          ? "Уже на этапе ввода запроса формируется настороженное впечатление о субъекте."
-          : contextual > 0 || identity > 0
-            ? "Ассоциации в подсказках частично связаны с риск-темами или неоднозначной идентификацией, без прямого негатива."
-            : "На этапе ввода запроса ассоциации в подсказках выглядят нейтральными.";
-      whyItMatters = clientMeaning;
-      recommendedActions =
-        explicit > 0
-          ? ["Отметить негативные подсказки для ручной проверки"]
-          : contextual > 0
-            ? ["Сверить контекстные ассоциации с подтверждёнными риск-темами"]
-            : [];
+        sidebarMode = explicit > 0 ? "adverse_explanation" : "interpretation";
+        headlineConclusion =
+          explicit > 0
+            ? "Подсказки связывают имя с риск-тематикой"
+            : "Прямых негативных формулировок в подсказках не найдено";
+        whatIsVisible =
+          explicit > 0
+            ? `Среди подсказок есть прямые негативные формулировки (${explicit} из ${totalSuggest}).`
+            : `Прямых негативных формулировок не найдено. ${contextual} подсказок связаны с ранее выявленными риск-темами. ${identity} подсказок относятся к другим людям или неоднозначной идентификации.`;
+        clientMeaning =
+          explicit > 0
+            ? "Уже на этапе ввода запроса формируется настороженное впечатление о субъекте."
+            : contextual > 0 || identity > 0
+              ? "Ассоциации в подсказках частично связаны с риск-темами или неоднозначной идентификацией, без прямого негатива."
+              : "На этапе ввода запроса ассоциации в подсказках выглядят нейтральными.";
+        whyItMatters = clientMeaning;
+        recommendedActions =
+          explicit > 0
+            ? ["Отметить негативные подсказки для ручной проверки"]
+            : contextual > 0
+              ? ["Сверить контекстные ассоциации с подтверждёнными риск-темами"]
+              : [];
 
-      if (isArsenkinAsset(asset) || /arsenkin/i.test(String(asset.meta?.provider ?? ""))) {
-        provenance = arsenkinSuggestProvenance(asset, slot);
-        panelMeta = {
-          provider: String(asset.meta?.provider ?? "arsenkin"),
-          tool: String(asset.meta?.tool ?? asset.meta?.arsenkinTool ?? "suggest"),
-          engine:
-            String(asset.meta?.engine ?? "").toUpperCase() ||
-            (/google/i.test(asset.assetRef) || /google/i.test(slot.slotId) ? "GOOGLE" : "YANDEX"),
-          region: String(asset.meta?.region ?? slot.region ?? "RU"),
-          observationCount:
-            asset.meta?.observationCount ?? (rowTexts.length > 0 ? rowTexts.length : undefined),
-          capturedAt: asset.meta?.capturedAt,
-          reportRunId: asset.meta?.reportRunId,
-          evidenceRefs: [...(asset.evidenceRefs ?? [])],
-        };
+        if (isArsenkinAsset(asset) || /arsenkin/i.test(String(asset.meta?.provider ?? ""))) {
+          provenance = arsenkinSuggestProvenance(asset, slot);
+          panelMeta = {
+            provider: String(asset.meta?.provider ?? "arsenkin"),
+            tool: String(asset.meta?.tool ?? asset.meta?.arsenkinTool ?? "suggest"),
+            engine:
+              String(asset.meta?.engine ?? "").toUpperCase() ||
+              (/google/i.test(asset.assetRef) || /google/i.test(slot.slotId) ? "GOOGLE" : "YANDEX"),
+            region: String(asset.meta?.region ?? slot.region ?? "RU"),
+            observationCount:
+              asset.meta?.observationCount ?? (rowTexts.length > 0 ? rowTexts.length : undefined),
+            capturedAt: asset.meta?.capturedAt,
+            reportRunId: asset.meta?.reportRunId,
+            evidenceRefs: [...(asset.evidenceRefs ?? [])],
+          };
+        }
       }
     }
   } else if (slot.kind === "related_visual") {
@@ -792,10 +838,12 @@ export function buildDeterministicVisualAnalysis(
             : slot.slotId === "p22_ru_related_3"
               ? "Yandex Related Searches"
               : null;
+      const queryWord =
+        totalRelated === 1 ? "запрос" : totalRelated >= 2 && totalRelated <= 4 ? "запроса" : "запросов";
       headlineConclusion =
         explicit > 0
-          ? `Связанные запросы (${regionLabel}): ${explicit} негативных из ${totalRelated}`
-          : `Связанные запросы (${regionLabel}): ${totalRelated} запросов`;
+          ? `Связанные запросы (${regionLabel}): ${ruNegCount(explicit)} из ${totalRelated}`
+          : `Связанные запросы (${regionLabel}): ${totalRelated} ${queryWord}`;
       whatIsVisible =
         rowTexts.length > 0
           ? `${relatedSourceLabel ? `${relatedSourceLabel}: ` : ""}${rowTexts
@@ -812,8 +860,17 @@ export function buildDeterministicVisualAnalysis(
       whyItMatters = clientMeaning;
       recommendedActions =
         explicit > 0 ? ["Проверить негативные связанные запросы вручную"] : [];
+      const relatedEngineLabel =
+        slot.slotId === "p20_ru_related_1" || slot.slotId === "p21_ru_related_2"
+          ? "похожие вопросы Google"
+          : slot.slotId === "p22_ru_related_3"
+            ? "похожие запросы Яндекса"
+            : "похожие запросы";
+      const captured = asset.meta?.capturedAt
+        ? `дата сбора ${String(asset.meta.capturedAt).slice(0, 10)}`
+        : "дата сбора в кейсе";
       provenance = isArsenkinAsset(asset)
-        ? arsenkinSuggestProvenance(asset, slot)
+        ? `Источник: Arsenkin Tools, ${relatedEngineLabel}, ${captured}`
         : `Источник: связанные запросы ${regionLabel}, дата сбора в кейсе`;
     }
   } else if (slot.kind === "knowledge_visual") {
@@ -1494,6 +1551,7 @@ function appendAiAnswerExtensions(
     title: string;
     region: string;
     engine: string;
+    sectionKey: string;
     match: RegExp;
     preferredAssetRefs: string[];
   }> = [
@@ -1503,6 +1561,7 @@ function appendAiAnswerExtensions(
       title: "Россия — AI-выдача Яндекса",
       region: "RU",
       engine: "YANDEX",
+      sectionKey: "ai_answer_ru_yandex",
       match: /yandex|alice|яндекс/i,
       preferredAssetRefs: ["ru_ai_yandex", "ru_knowledge_panel_2"],
     },
@@ -1512,6 +1571,7 @@ function appendAiAnswerExtensions(
       title: "Россия — Google AI Overview",
       region: "RU",
       engine: "GOOGLE",
+      sectionKey: "ai_answer_ru_google",
       match: /google.*ai|ai.*google/i,
       preferredAssetRefs: ["ru_ai_google"],
     },
@@ -1521,6 +1581,7 @@ function appendAiAnswerExtensions(
       title: "ОАЭ — Google AI Overview",
       region: "UAE",
       engine: "GOOGLE",
+      sectionKey: "ai_answer_uae_google",
       match: /google.*ai|ai.*google|uae/i,
       preferredAssetRefs: ["uae_ai_google", "uae_knowledge_panel"],
     },
@@ -1549,55 +1610,51 @@ function appendAiAnswerExtensions(
       ) || "—";
     const safeQueryText = queryText === "—" ? "не указан" : queryText;
     const capturedAt = String(meta["capturedAt"] ?? "дата не указана").slice(0, 19);
-    const answerText = String(meta["answerText"] ?? asset.caption ?? "").trim();
-    const textPages = answerText ? sentenceChunks(answerText, 1200) : [];
+    const answerFromMeta = String(meta["answerText"] ?? "").trim();
+    const answerFromCaption =
+      !/не найден|absent|NO_RESULTS/i.test(String(asset.caption ?? "")) &&
+      String(asset.caption ?? "").trim().length > 40
+        ? String(asset.caption ?? "").trim()
+        : "";
+    const answerText = answerFromMeta || answerFromCaption;
+    const absent = !answerText || /не найден/i.test(statusLabel);
+    const textPages = answerText && !absent ? sentenceChunks(answerText, 900) : [];
     const citations = citationsFrom(asset);
     const citationPages: string[][] = [];
     for (let i = 0; i < citations.length; i += 4) citationPages.push(citations.slice(i, i + 4));
     const evaluation = (meta["aiEvaluation"] as Record<string, unknown> | undefined) ?? {};
-    const adverseN = Array.isArray(evaluation["adverseClaims"]) ? evaluation["adverseClaims"].length : 0;
-    const ambiguousN = Array.isArray(evaluation["ambiguousClaims"]) ? evaluation["ambiguousClaims"].length : 0;
-    const confidence =
-      typeof evaluation["subjectMatchConfidence"] === "number"
-        ? safePct(Number(evaluation["subjectMatchConfidence"]))
-        : "—";
-    const rawTone = String(evaluation["tone"] ?? "").trim().toUpperCase();
-    const tone =
-      rawTone === "ADVERSE"
-        ? "негативная"
-        : rawTone === "MIXED"
-          ? "смешанная"
-          : rawTone === "POSITIVE"
-            ? "позитивная"
-            : rawTone === "NEUTRAL"
-              ? "нейтральная"
-              : "не определена";
     const summary = String(evaluation["summary"] ?? "").trim();
     const takeaway = String(evaluation["clientTakeaway"] ?? "").trim();
     const action = String(evaluation["recommendedAction"] ?? "").trim();
-    const rawSubjectMatch = String(evaluation["subjectMatch"] ?? "").trim().toUpperCase();
-    const subjectMatch =
-      rawSubjectMatch === "MATCH"
-        ? "совпадение подтверждено"
-        : rawSubjectMatch === "POSSIBLE_MATCH"
-          ? "возможное совпадение"
-          : rawSubjectMatch === "WRONG_SUBJECT"
-            ? "другой субъект"
-            : "недостаточно данных";
-    const pageCount = Math.max(1, textPages.length, citationPages.length || 1);
+    const pageCount = Math.max(1, textPages.length || (absent ? 1 : 0), citationPages.length || 1);
     const datasetCount = Math.max(textPages.length, 1) + citations.length;
-    let displayedCount = 0;
+    const engineLabel = rule.engine === "YANDEX" ? "Яндекс Алиса" : "Google AI Overview";
     for (let pageIdx = 0; pageIdx < pageCount; pageIdx += 1) {
-      const textBlock = textPages[pageIdx] ?? (pageIdx === 0 ? answerText : "");
+      const textBlock = textPages[pageIdx] ?? (pageIdx === 0 && !absent ? answerText : "");
       const cites = citationPages[pageIdx] ?? [];
-      displayedCount += (textBlock ? 1 : 0) + cites.length;
       const isCont = pageIdx > 0;
+      const headline = absent
+        ? `${engineLabel}: блок не найден`
+        : summary ||
+          (rule.engine === "YANDEX"
+            ? "AI-выдача Яндекса по субъекту"
+            : "Google AI Overview по субъекту");
+      const whatIsVisible = absent
+        ? `По запросу «${safeQueryText}» блок ${engineLabel} в выдаче не найден. Это отдельный сигнал от энциклопедической карточки Wikipedia.`
+        : textBlock || answerText;
+      const clientMeaning = absent
+        ? "Отсутствие ИИ-блока снижает риск автогенерации образа субъекта, но не заменяет проверку органики."
+        : takeaway ||
+          "ИИ-блок формирует первое впечатление о субъекте и может смешивать однофамильцев.";
+      const provenance = `Источник: Arsenkin Tools, ${engineLabel}, ${
+        capturedAt === "дата не указана" ? "дата сбора в кейсе" : `дата сбора ${capturedAt.slice(0, 10)}`
+      }`;
       const extSlide: OrionGoldenDeckSlide = {
         slideKey:
           pageIdx === 0 ? `${rule.id}_${asset.assetRef}` : `${rule.id}_${asset.assetRef}__cont${pageIdx}`,
         baseSlotId: `${rule.id}_${asset.assetRef}`,
         baseSlotIndex: -1,
-        sectionKey: "ai_answer_extension",
+        sectionKey: rule.sectionKey,
         template: "orion_golden_surface_panel",
         title: pageCount > 1 ? `${rule.title} (${pageIdx + 1}/${pageCount})` : rule.title,
         pageNumber: 0,
@@ -1614,26 +1671,32 @@ function appendAiAnswerExtensions(
         continuationOf: isCont ? `${rule.id}_${asset.assetRef}` : null,
         continuationIndex: pageIdx,
         continuationCount: Math.max(0, pageCount - 1),
-        narrative: textBlock
-          ? `${textBlock}\n\nСтруктурированная реконструкция по данным API Arsenkin Tools; не браузерный снимок.`
-          : "AI-ответ отсутствует. Показан структурированный empty-state по данным сбора.",
+        // Renderer sidebar reads visualAnalysis / clientTakeaway — not narrative/bullets alone.
+        clientTakeaway: headline,
+        visualAnalysis: {
+          sidebarMode: absent ? "status" : "interpretation",
+          headlineConclusion: headline,
+          whatIsVisible:
+            cites.length > 0 && textBlock
+              ? `${textBlock}\n\nИсточники: ${cites.slice(0, 4).join("; ")}`
+              : whatIsVisible,
+          whyItMatters: clientMeaning,
+          clientMeaning,
+          recommendedActions: action
+            ? [action]
+            : absent
+              ? ["Зафиксировать отсутствие ИИ-блока как факт профиля"]
+              : ["Сверить тезисы ИИ с первичными источниками"],
+          provenanceLabel: provenance,
+        },
+        narrative: whatIsVisible,
         bullets: [
-          `Поисковик: ${rule.engine === "YANDEX" ? "Яндекс" : "Google"} · регион: ${rule.region}`,
+          `Поисковик: ${engineLabel} · регион: ${rule.region}`,
           `Точный запрос: ${safeQueryText}`,
-          `Дата сбора: ${capturedAt}`,
           statusLabel,
-          `AI-блок найден: ${/не найден/i.test(statusLabel) ? "нет" : "да"}`,
-          `Количество источников: ${citations.length}`,
-          `Негативные утверждения: ${adverseN}`,
-          `Неоднозначные утверждения: ${ambiguousN}`,
-          `Идентификация субъекта: ${subjectMatch} · доверие: ${confidence === "—" ? "не вычислено" : confidence}`,
-          `Тональность: ${tone}`,
-          ...(summary ? [`Вывод: ${summary}`] : []),
-          ...(takeaway ? [`Что это значит для клиента: ${takeaway}`] : []),
-          ...(action ? [`Рекомендуемое действие: ${action}`] : []),
-          ...cites.map((c) => `Источник: ${c}`),
+          ...(cites.length ? cites.map((c) => `Источник: ${c}`) : []),
         ].filter(Boolean),
-        statusBadge: { label: statusLabel, tone: /не найден/i.test(statusLabel) ? "neutral" : "warn" },
+        statusBadge: { label: statusLabel, tone: absent ? "neutral" : "warn" },
         totalPageCount: 0,
       };
       result.splice(insertAt + pageIdx, 0, extSlide);
@@ -1832,23 +1895,19 @@ export function composeOrionFirst36CeoDeck(
   const tocEntries = deckSlides
     .filter((s) => s.sectionKey !== "cover")
     .filter((s) => s.isContinuation !== true)
-    .filter((_, idx, arr) => idx === 0 || arr[idx - 1]?.sectionKey !== arr[idx].sectionKey)
-    .slice(0, 36);
+    .filter((_, idx, arr) => idx === 0 || arr[idx - 1]?.sectionKey !== arr[idx].sectionKey);
 
   const tocBullets = tocEntries.map((entry) => {
-    const sectionSlides = deckSlides.filter((s) => {
-      const anchor = deckSlides.find((x) => x.pageNumber === entry.pageNumber);
-      return anchor && s.sectionKey === anchor.sectionKey;
-    });
+    const sectionSlides = deckSlides.filter((s) => s.sectionKey === entry.sectionKey);
+    const startPage = sectionSlides[0]?.pageNumber ?? entry.pageNumber;
     const endPage = sectionSlides[sectionSlides.length - 1]?.pageNumber ?? entry.pageNumber;
-    const range =
-      endPage > entry.pageNumber ? `${entry.pageNumber}–${endPage}` : `${entry.pageNumber}`;
+    const range = endPage > startPage ? `${startPage}–${endPage}` : `${startPage}`;
     return `${entry.title} — стр. ${range} (${totalPages} стр.)`;
   });
 
   deckSlides = deckSlides.map((s) =>
     s.slotId === "p02_toc" || s.slideKey === "p02_toc"
-      ? { ...s, bullets: tocBullets.slice(0, 14) }
+      ? { ...s, bullets: tocBullets.slice(0, 22) }
       : s
   );
 

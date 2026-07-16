@@ -151,7 +151,7 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     sectionKey: "12_ru_serp_position_table",
     kind: "search_table",
     template: "orion_golden_search_table",
-    title: "Россия — позиции в SERP",
+    title: "Россия — позиции в поисковой выдаче",
     region: "RU",
     requiredVisual: false,
     match: {
@@ -395,7 +395,7 @@ export const ORION_FIRST36_REGISTRY_V1: First36SlotDef[] = [
     sectionKey: "32_uae_serp_position_table",
     kind: "search_table",
     template: "orion_golden_search_table",
-    title: "ОАЭ — позиции в SERP",
+    title: "ОАЭ — позиции в поисковой выдаче",
     region: "UAE",
     requiredVisual: false,
     match: {

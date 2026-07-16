@@ -65,6 +65,24 @@ check(
   aiSlides.some((s) => s.extensionOf === "p19_ru_knowledge_2") &&
     aiSlides.some((s) => s.extensionOf === "p31_uae_knowledge")
 );
+const ruAi = aiSlides.find((s) => s.extensionId === "ext_ru_yandex_ai" && !s.isContinuation);
+check(
+  "RU Yandex AI slide has visualAnalysis answer text",
+  Boolean(ruAi?.visualAnalysis?.whatIsVisible?.includes("Нейтральный ответ"))
+);
+check(
+  "RU Yandex AI slide clientTakeaway is not bare Вывод",
+  Boolean(ruAi?.clientTakeaway && ruAi.clientTakeaway !== "Вывод")
+);
+check(
+  "AI sectionKeys are distinct per engine",
+  new Set(aiSlides.map((s) => s.sectionKey)).size >= 3
+);
+const toc = deck.finalSlides.find((s) => s.slideKey === "p02_toc");
+check(
+  "TOC does not claim AI spans into UAE pages",
+  !(toc?.bullets ?? []).some((b) => /AI-выдача Яндекса — стр\.\s*20–3[0-9]/i.test(b))
+);
 
 if (failures > 0) process.exitCode = 1;
 console.log(failures ? `FAILED ${failures}` : "ALL PASS");
