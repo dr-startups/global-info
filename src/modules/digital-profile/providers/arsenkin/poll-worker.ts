@@ -368,7 +368,19 @@ export async function waitForArsenkinTaskCompletion(
   const started = Date.now();
   while (row.state !== "DONE" && row.state !== "FAILED" && row.state !== "CANCELLED") {
     if (Date.now() - started > waitTimeoutMs) {
-      throw new Error(`Arsenkin task timeout tool=${input.toolName} id=${row.externalTaskId}`);
+      // Last-chance /check→/get: Arsenkin often finishes just after our poll window
+      // (check-top can take 3–6 min). Avoid false timeout when task is already DONE.
+      if (row.externalTaskId) {
+        try {
+          row = await pollArsenkinTask(client, store, row);
+          if (row.state === "DONE") break;
+        } catch {
+          /* fall through to timeout */
+        }
+      }
+      throw new Error(
+        `Arsenkin task timeout tool=${input.toolName} id=${row.externalTaskId} waitedMs=${Date.now() - started}`
+      );
     }
     if (row.state === "SUBMIT_UNKNOWN") {
       const err = String(row.errorCode ?? "");

@@ -133,6 +133,21 @@ export function stageForCaseAgentTools(tools: ArsenkinToolName[]): ArsenkinLiveS
   return "FIRST36_STAGE1";
 }
 
+/**
+ * Per-task wait for CaseAgent live polls.
+ * Production evidence: Arsenkin check-top often needs 3–6 minutes; 90s caused false timeouts
+ * while Arsenkin UI already showed the task DONE.
+ */
+export function caseAgentWaitTimeoutMs(tools: readonly string[]): number {
+  const fromEnv = Number(process.env.ARSENKIN_CASE_AGENT_WAIT_MS ?? "");
+  if (Number.isFinite(fromEnv) && fromEnv >= 60_000) return fromEnv;
+  const set = new Set(tools.map(String));
+  if (set.has("check-top")) return 10 * 60_000;
+  if (set.has("paa") || set.has("check-h") || set.has("indexation")) return 6 * 60_000;
+  if (set.has("suggest") || set.has("ai-serp")) return 4 * 60_000;
+  return 8 * 60_000;
+}
+
 export function isFinalizationAllowed(phase: ArsenkinCaseAgentPhase): boolean {
   return phase === "FINALIZING" || phase === "FAILED";
 }
@@ -652,6 +667,9 @@ async function loadUrlsFromSearchResults(
 function classifyWorkerError(err: unknown): { errorCode: string; errorMessage: string } {
   const message = err instanceof Error ? err.message : String(err);
   const lower = message.toLowerCase();
+  if (/timeout|waitedMs/i.test(message)) {
+    return { errorCode: "ARSENKIN_TASK_TIMEOUT", errorMessage: message };
+  }
   if (/foreign key|fk_|orionreportrun|violates foreign key/i.test(message)) {
     return { errorCode: "ARSENKIN_FK_DB_ERROR", errorMessage: message };
   }
@@ -904,13 +922,13 @@ export async function runArsenkinCaseAgentWorker(input: {
       const { persistSerpObservations } = await import("../serp-observation/persist");
 
       const auth = authorizationFromPlan(built.plan);
-      // Cap per-task wait so a hung Arsenkin /check cannot block the HTTP request forever.
+      const waitTimeoutMs = caseAgentWaitTimeoutMs(job.tools);
       const collected = await executeArsenkinExecutionPlan({
         plan: built.plan,
         authorization: auth,
         client,
         store: createPrismaProviderTaskStore(),
-        waitTimeoutMs: 90_000,
+        waitTimeoutMs,
         onProgress: async (info) => {
           const label = `${info.tool}${info.engine ? `/${info.engine}` : ""}${
             info.region ? `:${info.region}` : ""

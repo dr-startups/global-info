@@ -17,6 +17,7 @@ import {
   previewCaseAgentPlannedRequests,
   stageForCaseAgentTools,
   findActiveArsenkinCaseAgentExecution,
+  caseAgentWaitTimeoutMs,
   type FinalizeEvidence,
 } from "../src/modules/digital-profile/services/arsenkin-case-agent-execution";
 import { getAgent } from "../src/modules/digital-profile/agents/registry";
@@ -399,5 +400,12 @@ describe("arsenkin case-agent durable outcomes", () => {
     });
     assert.equal(r.outcome, "FAILED");
     assert.equal(r.errorCode, "ARSENKIN_NO_EXECUTION_EVIDENCE");
+  });
+
+  it("caseAgentWaitTimeoutMs gives check-top enough time (not 90s)", () => {
+    assert.ok(caseAgentWaitTimeoutMs(["check-top"]) >= 10 * 60_000);
+    assert.ok(caseAgentWaitTimeoutMs(["paa"]) >= 6 * 60_000);
+    assert.ok(caseAgentWaitTimeoutMs(["ai-serp"]) >= 4 * 60_000);
+    assert.ok(caseAgentWaitTimeoutMs(["check-top"]) > 90_000);
   });
 });
