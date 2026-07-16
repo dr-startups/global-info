@@ -863,6 +863,37 @@ export async function runArsenkinCaseAgentWorker(input: {
       job = { ...job, phase: "COLLECTING", status: "RUNNING", networkCallsAttempted: true };
       saveArsenkinCaseAgentExecution(job);
 
+      try {
+        await prisma.agentRun.update({
+          where: { id: job.agentRunId },
+          data: {
+            status: "RUNNING",
+            output: {
+              summary: `Arsenkin API: /set→/check→/get (${built.plan.requests.length} задач)…`,
+              outcome: "RUNNING",
+              arsenkinExecution: {
+                agentId: job.agentId,
+                executionId: job.executionId,
+                agentRunId: job.agentRunId,
+                enrichmentReportRunId: job.enrichmentReportRunId,
+                baseReportRunId: job.baseReportRunId,
+                plannedSurfaceCount: job.plannedSurfaces.length,
+                outcome: "RUNNING",
+                phase: "COLLECTING",
+                planDigest: built.plan.digest,
+                requestCount: built.plan.requests.length,
+              },
+              demo: false,
+            } as unknown as Prisma.InputJsonValue,
+          },
+        });
+      } catch (err) {
+        console.error(
+          "[arsenkin-case-agent] COLLECTING status update failed:",
+          err instanceof Error ? err.message : err
+        );
+      }
+
       const { createPrismaProviderTaskStore } = await import(
         "../providers/arsenkin/prisma-provider-task-store"
       );
@@ -873,11 +904,13 @@ export async function runArsenkinCaseAgentWorker(input: {
       const { persistSerpObservations } = await import("../serp-observation/persist");
 
       const auth = authorizationFromPlan(built.plan);
+      // Cap per-task wait so a hung Arsenkin /check cannot block the HTTP request forever.
       const collected = await executeArsenkinExecutionPlan({
         plan: built.plan,
         authorization: auth,
         client,
         store: createPrismaProviderTaskStore(),
+        waitTimeoutMs: 90_000,
       });
       await persistSerpObservations(collected.drafts);
 
@@ -957,6 +990,45 @@ export async function startArsenkinCaseAgentDurable(input: {
 }> {
   const existing = findActiveArsenkinCaseAgentExecution(input.caseId, input.agentId);
   if (existing) {
+    // Rebind to the AgentRun the UI is watching (double-click / retry while stuck).
+    if (existing.agentRunId !== input.agentRunId) {
+      try {
+        const prisma = input.prisma ?? (await import("@/server/prisma/client")).prisma;
+        await prisma.agentRun.update({
+          where: { id: existing.agentRunId },
+          data: {
+            status: "FAILED",
+            finishedAt: new Date(),
+            error: "ARSENKIN_SUPERSEDED: заменён новым запуском того же агента",
+            output: {
+              summary: "Запуск замещён повторным нажатием",
+              outcome: "FAILED",
+              errorCode: "ARSENKIN_SUPERSEDED",
+              demo: false,
+            } as unknown as Prisma.InputJsonValue,
+          },
+        });
+      } catch (err) {
+        console.error(
+          "[arsenkin-case-agent] supersede old AgentRun failed:",
+          err instanceof Error ? err.message : err
+        );
+      }
+      saveArsenkinCaseAgentExecution({
+        ...existing,
+        agentRunId: input.agentRunId,
+        // Allow worker to re-enter PREPARING→COLLECTING if previous background path died.
+        phase:
+          existing.phase === "FINALIZED" || existing.phase === "FAILED"
+            ? "PREPARING"
+            : existing.phase === "FINALIZING"
+              ? "FINALIZING"
+              : "PREPARING",
+        status: "RUNNING",
+        errorCode: null,
+        errorMessage: null,
+      });
+    }
     return {
       executionId: existing.executionId,
       enrichmentReportRunId: existing.enrichmentReportRunId,
@@ -1189,14 +1261,22 @@ export async function tickArsenkinCaseAgentFinalizations(deps?: {
   return n;
 }
 
-/** Resume unfinished CaseAgent jobs after Railway restart. */
+/** Resume unfinished CaseAgent jobs after Railway restart / interrupted HTTP. */
 export async function resumeArsenkinCaseAgentExecutions(deps?: {
   prisma?: PrismaClient;
+  /** Skip jobs updated more recently than this (ms). Avoids stealing in-flight HTTP workers. */
+  minAgeMs?: number;
 }): Promise<number> {
+  const minAgeMs = deps?.minAgeMs ?? 90_000;
   const running = listRunningArsenkinCaseAgentExecutions();
   let n = 0;
+  const now = Date.now();
   for (const job of running) {
     if (job.phase === "FINALIZED" || job.phase === "FAILED") continue;
+    const updatedMs = Date.parse(job.updatedAt || job.createdAt);
+    if (Number.isFinite(updatedMs) && now - updatedMs < minAgeMs) {
+      continue;
+    }
     n += 1;
     void runArsenkinCaseAgentWorker({
       caseId: job.caseId,

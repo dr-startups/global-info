@@ -93,7 +93,7 @@ export function AgentsTab({
     setInfo(null);
     try {
       const result = await runAgentApi(caseId, name);
-      if (result.status === "RUNNING" || agent?.executionMode === "DURABLE_ASYNC") {
+      if (result.status === "RUNNING") {
         setInfo("Arsenkin-агент выполняется. Статус обновится автоматически…");
       } else if (name === "REAL_YANDEX_SEARCH") setInfo(t("agents.realYandexHint"));
       else if (name === "REAL_GOOGLE_SEARCH") setInfo(t("agents.realGoogleHint"));

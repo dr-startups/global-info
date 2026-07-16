@@ -15,6 +15,8 @@ import { digitalProfileConfig } from "@/modules/digital-profile/config";
 import { runAgent } from "@/modules/digital-profile/services/agent-run-service";
 
 export const dynamic = "force-dynamic";
+/** Arsenkin CaseAgents await /set→/check→/get in-request (multi-task polls). */
+export const maxDuration = 600;
 
 type RouteContext = { params: Promise<{ id: string; agentName: string }> };
 

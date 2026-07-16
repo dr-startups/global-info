@@ -306,7 +306,7 @@ describe("arsenkin case-agent durable outcomes", () => {
     assert.equal(still.status, "RUNNING");
   });
 
-  it("13: repeat start does not create duplicate active execution", async () => {
+  it("13: repeat start rebinds active execution (same executionId)", async () => {
     const caseId = "ace-smoke-dedupe";
     const agentId = "ARSENKIN_SEARCH_TOP_REAL";
     const first = await startArsenkinCaseAgentDurable({
@@ -331,6 +331,8 @@ describe("arsenkin case-agent durable outcomes", () => {
     const active = findActiveArsenkinCaseAgentExecution(caseId, agentId);
     assert.ok(active);
     assert.equal(active!.executionId, first.executionId);
+    // Rebound to the newest AgentRun so UI finalize targets the watched row.
+    assert.equal(active!.agentRunId, "run-dedupe-2");
   });
 
   it("14: durable start leaves PREPARING on disk (no SUCCESS); agent.run returns RUNNING", async () => {

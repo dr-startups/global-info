@@ -86,12 +86,16 @@ async function main() {
           );
         });
         setInterval(() => {
-          void tickArsenkinCaseAgentFinalizations().catch((err) => {
-            console.error(
-              "[arsenkin-agent] finalize tick failed:",
-              err instanceof Error ? err.message : err
-            );
-          });
+          // Pump PREPARING/COLLECTING jobs left after crash / interrupted HTTP,
+          // then finalize any FINALIZING rows.
+          void resumeArsenkinCaseAgentExecutions()
+            .then(() => tickArsenkinCaseAgentFinalizations())
+            .catch((err) => {
+              console.error(
+                "[arsenkin-agent] resume/finalize tick failed:",
+                err instanceof Error ? err.message : err
+              );
+            });
         }, 5000);
       })
       .catch((err) => {

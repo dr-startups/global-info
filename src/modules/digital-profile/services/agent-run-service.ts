@@ -202,16 +202,21 @@ export async function runAgent(
         ? ((agent as { tools: import("../providers/arsenkin/flags").ArsenkinToolName[] }).tools)
         : [];
     try {
-      const { startArsenkinCaseAgentDurable } = await import("./arsenkin-case-agent-execution");
+      const {
+        startArsenkinCaseAgentDurable,
+        runArsenkinCaseAgentWorker,
+      } = await import("./arsenkin-case-agent-execution");
+      // Same model as Yandex/Serper: run collection inside this HTTP request.
+      // Do NOT rely on setImmediate across Railway parent/child processes.
       const started = await startArsenkinCaseAgentDurable({
         caseId,
         agentRunId: run.id,
         agentId: agent.name,
         tools,
         actorId: ctx.actorId ?? undefined,
-        // Worker scheduled inside start (PREPARING→COLLECTING→FINALIZING). Never finalize early.
+        scheduleWorker: false,
       });
-      const updated = await prisma.agentRun.update({
+      await prisma.agentRun.update({
         where: { id: run.id },
         data: {
           status: "RUNNING",
@@ -234,6 +239,13 @@ export async function runAgent(
             demo: false,
           } as unknown as Prisma.InputJsonValue,
         },
+      });
+      await runArsenkinCaseAgentWorker({
+        caseId,
+        executionId: started.executionId,
+      });
+      const updated = await prisma.agentRun.findUniqueOrThrow({
+        where: { id: run.id },
         select: agentRunSelect,
       });
       return toRunDTO(updated);
