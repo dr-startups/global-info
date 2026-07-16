@@ -560,9 +560,10 @@ export function ArsenkinToolsPanel(props: {
         </div>
 
         <Notice>
-          Основной путь: кнопка «Запустить полный аудит и собрать ORION Golden» в шапке кейса
-          (Yandex/Serper → Arsenkin → composite → отчёт). Ниже — статус и admin-only диагностика
-          Arsenkin; многоступенчатые prepare/plan/execute не требуются в штатном потоке.
+          Основной путь Arsenkin: агенты в таблице Agents (Search TOP / PAA / AI Search /
+          Suggestions / URL Audit). Их runs попадают в binding как enrichmentRuns и должны
+          входить в PDF при «Пересобрать контент + PDF». Блок ниже — диагностика / legacy
+          canary; штатный сбор suggest/AI больше не через кнопки canary.
         </Notice>
 
         <Notice>

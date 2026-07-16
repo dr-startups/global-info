@@ -33,6 +33,7 @@ import {
   ArsenkinReportBindingError,
   arsenkinPostReviewContentPath,
   assertArsenkinTransferredClientContent,
+  listArsenkinObservationAuditRunIds,
   loadArsenkinReportBinding,
   resolveEffectiveReportRunIdForCase,
   saveArsenkinReportBinding,
@@ -330,8 +331,15 @@ export async function runOrionClassicAuditRender(options: {
       costStatus: task.limitsSpent == null ? "UNKNOWN" : "KNOWN",
     }))
   );
+  const arsenkinObservationRunIds = listArsenkinObservationAuditRunIds({
+    caseId,
+    primaryAuditRunId: clientContent.reportRunId,
+  });
   const arsenkinObservations = await prisma.serpObservation.findMany({
-    where: { auditRunId: clientContent.reportRunId, provider: "arsenkin" },
+    where: {
+      auditRunId: { in: arsenkinObservationRunIds },
+      provider: "arsenkin",
+    },
     select: {
       id: true,
       auditRunId: true,
@@ -352,15 +360,19 @@ export async function runOrionClassicAuditRender(options: {
   });
   writeJson(
     join(outputRoot, "serp-observations-provenance.json"),
-    arsenkinObservations.map((o) => ({
-      id: o.id,
-      auditRunId: o.auditRunId,
-      provider: o.provider,
-      providerTaskId: o.providerTaskId,
-      surface: o.surface,
-      engine: o.engine,
-      region: o.region,
-    }))
+    {
+      primaryAuditRunId: clientContent.reportRunId,
+      observationAuditRunIds: arsenkinObservationRunIds,
+      observations: arsenkinObservations.map((o) => ({
+        id: o.id,
+        auditRunId: o.auditRunId,
+        provider: o.provider,
+        providerTaskId: o.providerTaskId,
+        surface: o.surface,
+        engine: o.engine,
+        region: o.region,
+      })),
+    }
   );
   const aiObservationRows = arsenkinObservations
     .filter((o) => o.surface === "ai_answer")

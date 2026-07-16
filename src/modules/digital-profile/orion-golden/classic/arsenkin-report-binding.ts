@@ -93,6 +93,33 @@ export function computeCompositeDigest(input: {
   return `cmp-${h.toString(16)}`;
 }
 
+/**
+ * Audit run IDs whose SerpObservations must feed classic PDF panels / AI slides.
+ * Always includes primary (clientContent.reportRunId / effective), plus every
+ * enrichmentRuns entry (CaseAgent `orion-arsenkin-agent-*`, canary, STAGE2, …).
+ */
+export function listArsenkinObservationAuditRunIds(input: {
+  caseId?: string | null;
+  primaryAuditRunId?: string | null;
+}): string[] {
+  const ids: string[] = [];
+  const push = (raw: string | null | undefined) => {
+    const id = String(raw ?? "").trim();
+    if (id && !ids.includes(id)) ids.push(id);
+  };
+  push(input.primaryAuditRunId);
+  const caseId = String(input.caseId ?? "").trim();
+  if (!caseId) return ids;
+  const binding = loadArsenkinReportBinding(caseId);
+  if (!binding) return ids;
+  push(binding.effectiveReportRunId);
+  const composite = toCompositeBindingModel(binding);
+  for (const run of composite.enrichmentRuns) {
+    push(run.reportRunId);
+  }
+  return ids;
+}
+
 /** Normalize v1/v2 binding into composite runtime model. */
 export function toCompositeBindingModel(
   binding: ArsenkinReportBinding | ArsenkinReportBindingV2

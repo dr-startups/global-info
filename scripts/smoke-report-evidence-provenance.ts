@@ -12,6 +12,7 @@ import {
 import {
   appendCaseAgentEnrichmentToReportBinding,
   coveredSurfacesForCaseAgentTools,
+  listArsenkinObservationAuditRunIds,
   loadArsenkinReportBinding,
   saveArsenkinReportBinding,
 } from "../src/modules/digital-profile/orion-golden/classic/arsenkin-report-binding";
@@ -79,6 +80,14 @@ describe("report evidence provenance", () => {
         (r) => r.reportRunId === "orion-arsenkin-agent-search-top-smoke"
       )
     );
+
+    const obsRuns = listArsenkinObservationAuditRunIds({
+      caseId,
+      primaryAuditRunId: binding.effectiveReportRunId,
+    });
+    assert.ok(obsRuns.includes("orion-arsenkin-suggest-canary-smoke"));
+    assert.ok(obsRuns.includes("orion-arsenkin-agent-search-top-smoke"));
+    assert.equal(obsRuns[0], "orion-arsenkin-suggest-canary-smoke");
   });
 
   it("buildReportEvidenceProvenance returns v1 snapshot even without DB", async () => {

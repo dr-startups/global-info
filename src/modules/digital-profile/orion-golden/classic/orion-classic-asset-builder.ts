@@ -439,12 +439,16 @@ export async function buildOrionClassicAuditAssets(input: {
       buildArsenkinSurfacePanelAssets,
       overlaySurfacePanelAssets,
     } = await import("./build-arsenkin-surface-panels");
-    const built = await buildArsenkinSurfacePanelAssets({ auditRunId: input.reportRunId });
+    const built = await buildArsenkinSurfacePanelAssets({
+      auditRunId: input.reportRunId,
+      caseId: input.ctx.caseId,
+    });
     arsenkinPanels = built.assets;
     console.info("[arsenkin] surface panels", {
       autocomplete: built.autocomplete,
       paa: built.paa,
       aiAnswer: built.aiAnswer,
+      observationAuditRunIds: built.observationAuditRunIds,
       panelAssets: built.assets.map((a) => a.assetRef),
     });
     const overlaid = overlaySurfacePanelAssets(merged, arsenkinPanels);

@@ -6,6 +6,7 @@
 import { listSerpObservationsForAuditRun } from "../../serp-observation";
 import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
 import { buildSurfacePanelSvg, svgToPngBase64 } from "../../orion-report-spec/media-asset-svg";
+import { listArsenkinObservationAuditRunIds } from "./arsenkin-report-binding";
 
 function mapRegion(raw: string): "RU" | "UAE" {
   const r = String(raw ?? "").toUpperCase();
@@ -50,11 +51,38 @@ async function pushPanel(
 /**
  * Prefer Arsenkin panels when present: returns assets that should overlay
  * (same assetRefs as classic surface panels).
+ *
+ * Loads observations from the primary auditRunId and, when caseId is set, from
+ * every enrichmentRuns entry in arsenkin-report-binding (CaseAgent runs included).
+ * Without that merge, canary-bound PDFs omit AI/suggest collected by CaseAgents.
  */
 export async function buildArsenkinSurfacePanelAssets(input: {
   auditRunId: string;
-}): Promise<{ assets: ReportAssetV1[]; autocomplete: number; paa: number; aiAnswer: number }> {
-  const rows = await listSerpObservationsForAuditRun(input.auditRunId);
+  caseId?: string;
+  additionalAuditRunIds?: string[];
+}): Promise<{
+  assets: ReportAssetV1[];
+  autocomplete: number;
+  paa: number;
+  aiAnswer: number;
+  observationAuditRunIds: string[];
+}> {
+  const runIds = listArsenkinObservationAuditRunIds({
+    caseId: input.caseId,
+    primaryAuditRunId: input.auditRunId,
+  });
+  for (const extra of input.additionalAuditRunIds ?? []) {
+    const id = String(extra ?? "").trim();
+    if (id && !runIds.includes(id)) runIds.push(id);
+  }
+  const byId = new Map<string, Awaited<ReturnType<typeof listSerpObservationsForAuditRun>>[number]>();
+  for (const runId of runIds) {
+    const batch = await listSerpObservationsForAuditRun(runId);
+    for (const row of batch) {
+      if (!byId.has(row.id)) byId.set(row.id, row);
+    }
+  }
+  const rows = [...byId.values()];
   const autocomplete = rows.filter((r) => r.surface === "autocomplete" && r.provider === "arsenkin");
   const paa = rows.filter((r) => r.surface === "paa" && r.provider === "arsenkin");
   const aiAnswer = rows.filter((r) => r.surface === "ai_answer" && r.provider === "arsenkin");
@@ -318,6 +346,7 @@ export async function buildArsenkinSurfacePanelAssets(input: {
     autocomplete: autocomplete.length,
     paa: paa.length,
     aiAnswer: aiAnswer.length,
+    observationAuditRunIds: runIds,
   };
 }
 
