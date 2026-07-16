@@ -1492,15 +1492,53 @@ function appendAiAnswerExtensions(
 ): OrionGoldenDeckSlide[] {
   const toMeta = (asset: ReportAssetV1): Record<string, unknown> =>
     ((asset.meta as Record<string, unknown> | undefined) ?? {}) as Record<string, unknown>;
-  const sentenceChunks = (text: string, maxChars: number): string[] => {
-    const sentences = text
+
+  /** Renderer sidebar QA forbids ellipsis and requires complete sentences that fit. */
+  const sanitizeAiAnswerText = (raw: string): string => {
+    let t = String(raw ?? "")
+      .replace(/\u2026/g, ". ")
+      .replace(/\.{3,}/g, ". ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!t) return "";
+    if (!/[.!?]$/.test(t)) t = `${t}.`;
+    return t;
+  };
+
+  const splitSentences = (text: string): string[] =>
+    text
       .split(/(?<=[.!?])\s+/)
       .map((s) => s.trim())
-      .filter(Boolean);
-    if (sentences.length === 0) return text.trim() ? [text.trim()] : [];
+      .filter(Boolean)
+      .map((s) => (/[.!?]$/.test(s) ? s : `${s}.`));
+
+  /** Word-pack a long sentence without ellipsis (sidebar-safe). */
+  const packWords = (sentence: string, maxChars: number): string[] => {
+    const words = sentence.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+    if (words.length === 0) return [];
     const out: string[] = [];
     let cur = "";
-    for (const s of sentences) {
+    for (const w of words) {
+      const next = cur ? `${cur} ${w}` : w;
+      if (next.length <= maxChars || !cur) {
+        cur = next;
+      } else {
+        out.push(/[.!?]$/.test(cur) ? cur : `${cur}.`);
+        cur = w;
+      }
+    }
+    if (cur) out.push(/[.!?]$/.test(cur) ? cur : `${cur}.`);
+    return out;
+  };
+
+  const sentenceChunks = (text: string, maxChars: number): string[] => {
+    const clean = sanitizeAiAnswerText(text);
+    const sentences = splitSentences(clean);
+    if (sentences.length === 0) return [];
+    const atomic = sentences.flatMap((s) => (s.length > maxChars ? packWords(s, maxChars) : [s]));
+    const out: string[] = [];
+    let cur = "";
+    for (const s of atomic) {
       const next = cur ? `${cur} ${s}` : s;
       if (next.length <= maxChars || !cur) {
         cur = next;
@@ -1625,21 +1663,25 @@ function appendAiAnswerExtensions(
       String(asset.caption ?? "").trim().length > 40
         ? String(asset.caption ?? "").trim()
         : "";
-    const answerText = answerFromMeta || answerFromCaption;
+    const answerText = sanitizeAiAnswerText(answerFromMeta || answerFromCaption);
     const absent = !answerText || /не найден/i.test(statusLabel);
-    const textPages = answerText && !absent ? sentenceChunks(answerText, 900) : [];
+    // Sidebar column is narrow — keep chunks short so Python QA can fit complete sentences.
+    const textPages = answerText && !absent ? sentenceChunks(answerText, 360) : [];
     const citations = citationsFrom(asset);
     const citationPages: string[][] = [];
-    for (let i = 0; i < citations.length; i += 4) citationPages.push(citations.slice(i, i + 4));
+    for (let i = 0; i < citations.length; i += 3) citationPages.push(citations.slice(i, i + 3));
     const evaluation = (meta["aiEvaluation"] as Record<string, unknown> | undefined) ?? {};
-    const summary = String(evaluation["summary"] ?? "").trim();
-    const takeaway = String(evaluation["clientTakeaway"] ?? "").trim();
-    const action = String(evaluation["recommendedAction"] ?? "").trim();
+    const summary = sanitizeAiAnswerText(String(evaluation["summary"] ?? "").trim()).replace(/\.$/, "");
+    const takeaway = sanitizeAiAnswerText(String(evaluation["clientTakeaway"] ?? "").trim());
+    const action = sanitizeAiAnswerText(String(evaluation["recommendedAction"] ?? "").trim()).replace(
+      /\.$/,
+      ""
+    );
     const pageCount = Math.max(1, textPages.length || (absent ? 1 : 0), citationPages.length || 1);
     const datasetCount = Math.max(textPages.length, 1) + citations.length;
     const engineLabel = rule.engine === "YANDEX" ? "Яндекс Алиса" : "Google AI Overview";
     for (let pageIdx = 0; pageIdx < pageCount; pageIdx += 1) {
-      const textBlock = textPages[pageIdx] ?? (pageIdx === 0 && !absent ? answerText : "");
+      const textBlock = textPages[pageIdx] ?? "";
       const cites = citationPages[pageIdx] ?? [];
       const isCont = pageIdx > 0;
       const headline = absent
@@ -1648,9 +1690,17 @@ function appendAiAnswerExtensions(
           (rule.engine === "YANDEX"
             ? "AI-выдача Яндекса по субъекту"
             : "Google AI Overview по субъекту");
+      const citeSentence =
+        cites.length > 0
+          ? `Источники: ${cites
+              .map((c) => c.split(" — ")[0] ?? c)
+              .filter(Boolean)
+              .slice(0, 3)
+              .join(", ")}.`
+          : "";
       const whatIsVisible = absent
         ? `По запросу «${safeQueryText}» блок ${engineLabel} в выдаче не найден. Это отдельный сигнал от энциклопедической карточки Wikipedia.`
-        : textBlock || answerText;
+        : [textBlock, citeSentence].filter(Boolean).join(" ");
       const clientMeaning = absent
         ? "Отсутствие ИИ-блока снижает риск автогенерации образа субъекта, но не заменяет проверку органики."
         : takeaway ||
@@ -1686,10 +1736,7 @@ function appendAiAnswerExtensions(
           assetRef: asset.assetRef,
           sidebarMode: absent ? "status" : "interpretation",
           headlineConclusion: headline,
-          whatIsVisible:
-            cites.length > 0 && textBlock
-              ? `${textBlock}\n\nИсточники: ${cites.slice(0, 4).join("; ")}`
-              : whatIsVisible,
+          whatIsVisible,
           whyItMatters: clientMeaning,
           clientMeaning,
           metrics: [

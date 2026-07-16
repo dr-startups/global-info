@@ -47,12 +47,19 @@ function aiAsset(assetRef: string, title: string, engine: "YANDEX" | "GOOGLE", r
   };
 }
 
+const longEn =
+  "Sergey Mikhaylovich Glinka is an international businessman and investor with interests in transport logistics manufacturing and capital markets across several jurisdictions without clear sentence breaks in the raw provider payload";
+
 const deck = composeOrionFirst36CeoDeck(minimalSpec(), [
   aiAsset("ru_ai_yandex", "Россия — AI-выдача Яндекса", "YANDEX", "RU"),
   aiAsset("ru_ai_google", "Россия — Google AI Overview", "GOOGLE", "RU"),
   {
     ...aiAsset("uae_ai_google", "ОАЭ — Google AI Overview", "GOOGLE", "UAE"),
-    caption: "AI-блок не найден",
+    caption: "AI-блок найден",
+    meta: {
+      ...aiAsset("uae_ai_google", "ОАЭ — Google AI Overview", "GOOGLE", "UAE").meta,
+      answerText: `${longEn}...`,
+    },
   },
 ]);
 
@@ -92,6 +99,11 @@ check(
       )
   )
 );
+const uaeAi = aiSlides.find((s) => s.extensionId === "ext_uae_google_ai" && !s.isContinuation);
+const uaeVisible = String(uaeAi?.visualAnalysis?.whatIsVisible ?? "");
+check("UAE AI whatIsVisible has no ellipsis", !/\.\.\.|…/.test(uaeVisible));
+check("UAE AI whatIsVisible ends with sentence punctuation", /[.!?]$/.test(uaeVisible.trim()));
+check("UAE AI whatIsVisible fits sidebar budget", uaeVisible.length <= 420, `len=${uaeVisible.length}`);
 
 if (failures > 0) process.exitCode = 1;
 console.log(failures ? `FAILED ${failures}` : "ALL PASS");
