@@ -286,6 +286,19 @@ async function executeClassicAuditReport(
 
   if (mustRebuild) {
     await persist(input.caseId);
+    try {
+      const { writeReportEvidenceProvenance } = await import("./report-evidence-provenance");
+      await writeReportEvidenceProvenance({
+        caseId: input.caseId,
+        phase: "ORION_REBUILD_CONTENT",
+        trigger: `rebuild:effective=${effectiveRunId ?? "none"}:bound=${arsenkinBound}`,
+      });
+    } catch (err) {
+      console.error(
+        "[orion-classic-audit] rebuild provenance failed:",
+        err instanceof Error ? err.message : err
+      );
+    }
   }
 
   let clientContent;
@@ -387,6 +400,19 @@ async function executeClassicAuditReport(
   console.log(
     `[orion-classic-audit] done caseId=${input.caseId} verdict=${result.verdict} pages=${result.pageCount} artifacts=${hasArtifacts} effectiveRun=${clientContent.reportRunId}`
   );
+  try {
+    const { writeReportEvidenceProvenance } = await import("./report-evidence-provenance");
+    await writeReportEvidenceProvenance({
+      caseId: input.caseId,
+      phase: "ORION_PDF_RENDER",
+      trigger: `pdf:verdict=${result.verdict}:pages=${result.pageCount}:effective=${clientContent.reportRunId}`,
+    });
+  } catch (err) {
+    console.error(
+      "[orion-classic-audit] pdf provenance failed:",
+      err instanceof Error ? err.message : err
+    );
+  }
   return record;
 }
 

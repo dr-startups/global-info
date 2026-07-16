@@ -196,6 +196,19 @@ async function executePrepare(input: {
     console.log(
       `[orion-golden-prepare] done caseId=${input.caseId} verdict=${result.verdict} queueReady=${queueReady} pending=${completed.pendingCount}`
     );
+    try {
+      const { writeReportEvidenceProvenance } = await import("./report-evidence-provenance");
+      await writeReportEvidenceProvenance({
+        caseId: input.caseId,
+        phase: "ORION_PREPARE",
+        trigger: `prepare:${result.verdict}:pending=${completed.pendingCount}`,
+      });
+    } catch (err) {
+      console.error(
+        "[orion-golden-prepare] provenance failed:",
+        err instanceof Error ? err.message : err
+      );
+    }
     return completed;
   } finally {
     if (prevContentBrain === undefined) delete process.env.R10_CONTENT_BRAIN_ONLY;

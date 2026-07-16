@@ -269,6 +269,135 @@ export function saveArsenkinReportBinding(binding: ArsenkinReportBinding): void 
   writeJsonAtomic(arsenkinReportBindingPath(binding.caseId), composite);
 }
 
+/** Covered surface cells implied by CaseAgent tool set. */
+export function coveredSurfacesForCaseAgentTools(tools: readonly string[]): CoveredSurfaceCell[] {
+  const set = new Set(tools.map(String));
+  const out: CoveredSurfaceCell[] = [];
+  if (set.has("check-top")) {
+    out.push(
+      { region: "RU", engine: "YANDEX", surface: "organic", status: "COLLECTED" },
+      { region: "RU", engine: "GOOGLE", surface: "organic", status: "COLLECTED" },
+      { region: "UAE", engine: "GOOGLE", surface: "organic", status: "COLLECTED" }
+    );
+  }
+  if (set.has("suggest")) {
+    out.push(
+      { region: "RU", engine: "YANDEX", surface: "autocomplete", status: "COLLECTED" },
+      { region: "RU", engine: "GOOGLE", surface: "autocomplete", status: "COLLECTED" },
+      { region: "UAE", engine: "GOOGLE", surface: "autocomplete", status: "COLLECTED" }
+    );
+  }
+  if (set.has("paa")) {
+    out.push(
+      { region: "RU", engine: "GOOGLE", surface: "paa", status: "COLLECTED" },
+      { region: "UAE", engine: "GOOGLE", surface: "paa", status: "COLLECTED" }
+    );
+  }
+  if (set.has("ai-serp")) {
+    out.push(
+      { region: "RU", engine: "YANDEX", surface: "ai_answer", status: "COLLECTED" },
+      { region: "RU", engine: "GOOGLE", surface: "ai_answer", status: "COLLECTED" },
+      { region: "UAE", engine: "GOOGLE", surface: "ai_answer", status: "COLLECTED" }
+    );
+  }
+  if (set.has("check-h")) {
+    out.push({ region: "RU", engine: "GOOGLE", surface: "page_meta", status: "COLLECTED" });
+  }
+  if (set.has("indexation")) {
+    out.push({ region: "RU", engine: "GOOGLE", surface: "indexation", status: "COLLECTED" });
+  }
+  return out;
+}
+
+/**
+ * Register a successful CaseAgent enrichment run into report binding so
+ * composite merge / PDF can load its SerpObservations (multi enrichmentRuns).
+ * Does not replace an existing effectiveReportRunId (keeps canary/first36 stamp).
+ */
+export function appendCaseAgentEnrichmentToReportBinding(input: {
+  caseId: string;
+  enrichmentReportRunId: string;
+  baseReportRunId: string | null;
+  agentId: string;
+  tools: readonly string[];
+  observationCount: number;
+  coverageCount?: number;
+}): { ok: boolean; reason: string; binding: ArsenkinReportBinding | null } {
+  const covered = coveredSurfacesForCaseAgentTools(input.tools);
+  const agentRun: ArsenkinEnrichmentRun = {
+    reportRunId: input.enrichmentReportRunId,
+    provider: "arsenkin",
+    workflow: "case-agent",
+    stage: input.agentId,
+    coveredSurfaces: covered,
+  };
+
+  let binding = loadArsenkinReportBinding(input.caseId);
+  if (!binding) {
+    const source =
+      input.baseReportRunId && isValidBaseLike(input.baseReportRunId)
+        ? input.baseReportRunId
+        : null;
+    if (!source) {
+      return {
+        ok: false,
+        reason: "no-binding-and-no-base-report-run",
+        binding: null,
+      };
+    }
+    binding = {
+      caseId: input.caseId,
+      sourceReportRunId: source,
+      effectiveReportRunId: input.enrichmentReportRunId,
+      provider: "arsenkin",
+      workflow: "first36-full",
+      stage: "CASE_AGENT",
+      status: "REPORT_BOUND",
+      transferredAt: new Date().toISOString(),
+      providerTaskCount: 0,
+      observationCount: input.observationCount,
+      coverageCount: input.coverageCount ?? 0,
+      version: "arsenkin-report-binding-v2",
+      enrichmentRuns: [agentRun],
+      compositeDigest: computeCompositeDigest({
+        sourceReportRunId: source,
+        enrichmentRunIds: [input.enrichmentReportRunId],
+        coveredSurfaces: covered,
+      }),
+    };
+    saveArsenkinReportBinding(binding);
+    return { ok: true, reason: "created-binding-from-case-agent", binding };
+  }
+
+  const composite = toCompositeBindingModel(binding);
+  if (composite.enrichmentRuns.some((r) => r.reportRunId === input.enrichmentReportRunId)) {
+    return { ok: true, reason: "already-registered", binding: composite };
+  }
+  const enrichmentRuns = [...composite.enrichmentRuns, agentRun];
+  const next: ArsenkinReportBinding = {
+    ...composite,
+    version: "arsenkin-report-binding-v2",
+    enrichmentRuns,
+    observationCount: (composite.observationCount ?? 0) + input.observationCount,
+    coverageCount: (composite.coverageCount ?? 0) + (input.coverageCount ?? 0),
+    compositeDigest: computeCompositeDigest({
+      sourceReportRunId: composite.sourceReportRunId,
+      enrichmentRunIds: enrichmentRuns.map((r) => r.reportRunId),
+      coveredSurfaces: enrichmentRuns.flatMap((r) => r.coveredSurfaces),
+    }),
+    status:
+      composite.status === "READY_TO_TRANSFER" || composite.status === "TRANSFER_FAILED"
+        ? "REPORT_BOUND"
+        : composite.status,
+  };
+  saveArsenkinReportBinding(next);
+  return { ok: true, reason: "appended-enrichment-run", binding: next };
+}
+
+function isValidBaseLike(id: string): boolean {
+  return Boolean(id) && !id.startsWith("orion-arsenkin-");
+}
+
 export function isArsenkinTransferActive(
   binding: ArsenkinReportBinding | null
 ): binding is ArsenkinReportBinding {

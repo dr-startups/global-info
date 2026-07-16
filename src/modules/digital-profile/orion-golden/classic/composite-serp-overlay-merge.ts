@@ -443,11 +443,19 @@ export async function mergeCompositeSerpObservations(input: {
   env?: NodeJS.ProcessEnv;
 }): Promise<CompositeMergeResult> {
   const composite = input.binding ? toCompositeBindingModel(input.binding) : null;
-  const enrichmentRunId =
-    composite?.enrichmentRuns[0]?.reportRunId ??
+  const enrichmentRunIds: string[] =
+    composite?.enrichmentRuns?.map((r) => r.reportRunId).filter(Boolean) ??
     (String(input.auditRunId ?? "").startsWith("orion-arsenkin-")
-      ? String(input.auditRunId)
-      : null);
+      ? [String(input.auditRunId)]
+      : []);
+  // Dedupe while preserving order
+  const seenIds = new Set<string>();
+  const uniqueEnrichmentRunIds = enrichmentRunIds.filter((id) => {
+    if (seenIds.has(id)) return false;
+    seenIds.add(id);
+    return true;
+  });
+  const enrichmentRunId = uniqueEnrichmentRunIds[0] ?? null;
   const baseReportRunId =
     composite?.sourceReportRunId ??
     (enrichmentRunId && enrichmentRunId !== input.auditRunId
@@ -459,9 +467,14 @@ export async function mergeCompositeSerpObservations(input: {
   let enrichmentRows: ObsRow[] = input.enrichmentRows ?? [];
   let baseRows: ObsRow[] = input.baseRows ?? [];
 
-  if (!input.enrichmentRows && enrichmentRunId) {
+  if (!input.enrichmentRows && uniqueEnrichmentRunIds.length > 0) {
     try {
-      enrichmentRows = await listSerpObservationsForAuditRun(enrichmentRunId);
+      const loaded: ObsRow[] = [];
+      for (const id of uniqueEnrichmentRunIds) {
+        const rows = await listSerpObservationsForAuditRun(id);
+        loaded.push(...rows);
+      }
+      enrichmentRows = loaded;
     } catch (err) {
       return {
         inventory: input.inventory,
@@ -472,7 +485,7 @@ export async function mergeCompositeSerpObservations(input: {
         provenance: {
           version: "composite-serp-merge-v1",
           baseReportRunId,
-          enrichmentRunIds: enrichmentRunId ? [enrichmentRunId] : [],
+          enrichmentRunIds: uniqueEnrichmentRunIds,
           ownership: [],
           countsBefore: countKinds(input.inventory.items),
           countsAfter: countKinds(input.inventory.items),
@@ -488,8 +501,8 @@ export async function mergeCompositeSerpObservations(input: {
   if (
     !input.baseRows &&
     baseReportRunId &&
-    enrichmentRunId &&
-    baseReportRunId !== enrichmentRunId
+    uniqueEnrichmentRunIds.length > 0 &&
+    !uniqueEnrichmentRunIds.includes(baseReportRunId)
   ) {
     try {
       baseRows = await listSerpObservationsForAuditRun(baseReportRunId);
@@ -500,7 +513,7 @@ export async function mergeCompositeSerpObservations(input: {
   }
 
   // If no enrichment at all, fall back to treating auditRunId as a normal run-scoped merge source.
-  if (!enrichmentRunId || enrichmentRows.length === 0) {
+  if (uniqueEnrichmentRunIds.length === 0 || enrichmentRows.length === 0) {
     const onlyRun = String(input.auditRunId ?? "").trim();
     if (!onlyRun) {
       return {
@@ -528,7 +541,16 @@ export async function mergeCompositeSerpObservations(input: {
   const enrichmentItems = enrichmentRows
     .map(rowToItem)
     .filter((x): x is RawInventoryItem => Boolean(x));
-  const covered = coveredCellsFromRows(enrichmentRows);
+  const coveredCells = coveredCellsFromRows(enrichmentRows);
+  // Expand coverage from binding metadata (CaseAgent tools) even if some rows lack engine tags.
+  const coveredFromBinding =
+    composite?.enrichmentRuns.flatMap((r) => r.coveredSurfaces ?? []) ?? [];
+  for (const c of coveredFromBinding) {
+    const k = cellKey({ region: c.region, engine: c.engine, surface: c.surface });
+    if (!coveredCells.has(k)) {
+      coveredCells.set(k, { ...c, count: 0, status: c.status ?? "COLLECTED" });
+    }
+  }
 
   // Prefer base run-scoped organic items when available; else keep inventory SERP as base.
   let baseInventory = input.inventory;
@@ -557,8 +579,11 @@ export async function mergeCompositeSerpObservations(input: {
   return overlayInventoryByCoverageCells({
     baseInventory,
     enrichmentItems,
-    coveredCells: covered,
-    baseReportRunId: baseReportRunId && baseReportRunId !== enrichmentRunId ? baseReportRunId : null,
-    enrichmentRunIds: enrichmentRunId ? [enrichmentRunId] : [],
+    coveredCells,
+    baseReportRunId:
+      baseReportRunId && !uniqueEnrichmentRunIds.includes(baseReportRunId)
+        ? baseReportRunId
+        : null,
+    enrichmentRunIds: uniqueEnrichmentRunIds,
   });
 }

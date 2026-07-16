@@ -1235,6 +1235,53 @@ export async function finalizeArsenkinCaseAgentRun(input: {
     },
   });
 
+  if (computed.agentDbStatus === "SUCCEEDED") {
+    try {
+      const { appendCaseAgentEnrichmentToReportBinding } = await import(
+        "../orion-golden/classic/arsenkin-report-binding"
+      );
+      const reg = appendCaseAgentEnrichmentToReportBinding({
+        caseId: input.caseId,
+        enrichmentReportRunId: input.enrichmentReportRunId,
+        baseReportRunId: input.baseReportRunId ?? null,
+        agentId: input.agentId,
+        tools: input.tools,
+        observationCount: summary.observationCount,
+        coverageCount: summary.coverageCount,
+      });
+      console.info(
+        JSON.stringify({
+          event: "arsenkin_case_agent_report_binding",
+          caseId: input.caseId,
+          agentId: input.agentId,
+          enrichmentReportRunId: input.enrichmentReportRunId,
+          ok: reg.ok,
+          reason: reg.reason,
+        })
+      );
+    } catch (err) {
+      console.error(
+        "[arsenkin-case-agent] appendCaseAgentEnrichmentToReportBinding failed:",
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
+  try {
+    const { writeReportEvidenceProvenance } = await import("./report-evidence-provenance");
+    await writeReportEvidenceProvenance({
+      caseId: input.caseId,
+      phase: "ARSENKIN_CASE_AGENT",
+      trigger: `${input.agentId}:${summary.outcome}`,
+      prisma,
+    });
+  } catch (err) {
+    console.error(
+      "[arsenkin-case-agent] provenance write failed:",
+      err instanceof Error ? err.message : err
+    );
+  }
+
   if (job) {
     saveArsenkinCaseAgentExecution({
       ...job,

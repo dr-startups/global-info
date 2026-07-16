@@ -58,6 +58,7 @@
     "smoke:arsenkin-failed-stage-resume": "tsx --test scripts/smoke-arsenkin-failed-stage-resume.ts",
     "smoke:unified-orion-collection": "tsx --test scripts/smoke-unified-orion-collection.ts",
     "smoke:arsenkin-case-agent-outcomes": "tsx --test scripts/smoke-arsenkin-case-agent-outcomes.ts",
+    "smoke:report-evidence-provenance": "tsx --test scripts/smoke-report-evidence-provenance.ts",
     "smoke:arsenkin-startup-readiness": "tsx --test scripts/smoke-arsenkin-startup-readiness.ts",
     "smoke:arsenkin-transfer-binding": "tsx --test scripts/smoke-arsenkin-transfer-binding.ts",
     "smoke:arsenkin-report-generate-route-e2e": "tsx --test scripts/smoke-arsenkin-report-generate-route-e2e.ts",

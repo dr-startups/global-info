@@ -248,6 +248,16 @@ export async function runAgent(
         where: { id: run.id },
         select: agentRunSelect,
       });
+      // Provenance already written inside CaseAgent finalize; mirror AGENT_COLLECT for parity.
+      void import("./report-evidence-provenance")
+        .then(({ writeReportEvidenceProvenance }) =>
+          writeReportEvidenceProvenance({
+            caseId,
+            phase: "AGENT_COLLECT",
+            trigger: `${agent.name}:${updated.status}`,
+          })
+        )
+        .catch(() => undefined);
       return toRunDTO(updated);
     } catch (err) {
       const updated = await prisma.agentRun.update({
@@ -288,6 +298,15 @@ export async function runAgent(
       actorId: ctx.actorId,
       metadata: { runId: run.id, agentName: agent.name, summary },
     });
+    void import("./report-evidence-provenance")
+      .then(({ writeReportEvidenceProvenance }) =>
+        writeReportEvidenceProvenance({
+          caseId,
+          phase: "AGENT_COLLECT",
+          trigger: `${agent.name}:SUCCEEDED`,
+        })
+      )
+      .catch(() => undefined);
     return toRunDTO(updated);
   }
 
@@ -324,6 +343,15 @@ export async function runAgent(
     actorId: ctx.actorId,
     metadata: { runId: run.id, agentName: agent.name },
   });
+  void import("./report-evidence-provenance")
+    .then(({ writeReportEvidenceProvenance }) =>
+      writeReportEvidenceProvenance({
+        caseId,
+        phase: "AGENT_COLLECT",
+        trigger: `${agent.name}:FAILED`,
+      })
+    )
+    .catch(() => undefined);
   return toRunDTO(updated);
 }
 
