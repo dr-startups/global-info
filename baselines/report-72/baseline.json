@@ -1,0 +1,989 @@
+{
+  "schemaVersion": "orion-report-72-baseline-v1",
+  "reportLabel": "№72",
+  "caseId": {
+    "status": "MEASURED",
+    "value": "Глинка Сергей Михайлович",
+    "note": "Subject line on PDF cover; DB caseId unavailable"
+  },
+  "datasetId": {
+    "status": "DERIVED",
+    "value": "report-72-pdf-v1"
+  },
+  "resolvedAt": {
+    "status": "MEASURED",
+    "value": "2026-07-16T16:38:53.375Z"
+  },
+  "overallStatus": {
+    "status": "DERIVED",
+    "value": "PARTIAL_BASELINE",
+    "note": "PDF characterized; run-level JSON/PPTX artifacts still missing"
+  },
+  "pdf": {
+    "path": {
+      "status": "MEASURED",
+      "value": "baselines/report-72/artifacts/orion-classic-audit-v72.pdf"
+    },
+    "bytes": {
+      "status": "MEASURED",
+      "value": 2045174
+    },
+    "sha256": {
+      "status": "MEASURED",
+      "value": "78adc2e3708feb551521b2ac6b75958947d46e241f6f5162a7e6c65e343d7091"
+    },
+    "pageCount": {
+      "status": "MEASURED",
+      "value": 43
+    },
+    "pageSizePt": {
+      "status": "MEASURED",
+      "value": {
+        "width": 921.5999755859375,
+        "height": 576
+      }
+    }
+  },
+  "pageCount": {
+    "status": "MEASURED",
+    "value": 43
+  },
+  "pageSizePt": {
+    "status": "MEASURED",
+    "value": {
+      "width": 921.6,
+      "height": 576
+    },
+    "note": "Rounded from PDF media box 921.5999…×576"
+  },
+  "first36Registry": {
+    "exactBaseSlotCount": {
+      "status": "MEASURED",
+      "value": 36
+    },
+    "registrySlotIds": {
+      "status": "MEASURED",
+      "value": [
+        "p01_cover",
+        "p02_toc",
+        "p03_executive",
+        "p04_risk_dashboard",
+        "p05_profile_dashboard",
+        "p06_ru_toc",
+        "p07_ru_summary",
+        "p08_ru_metrics",
+        "p09_ru_serp_table",
+        "p10_ru_serp_visual",
+        "p11_ru_suggestions_yandex",
+        "p12_ru_suggestions_google",
+        "p13_ru_wikipedia",
+        "p14_ru_images_1",
+        "p15_ru_images_2",
+        "p16_ru_images_3",
+        "p17_ru_images_4",
+        "p18_ru_knowledge_1",
+        "p19_ru_knowledge_2",
+        "p20_ru_related_1",
+        "p21_ru_related_2",
+        "p22_ru_related_3",
+        "p23_uae_toc",
+        "p24_uae_summary",
+        "p25_uae_metrics",
+        "p26_uae_serp_table",
+        "p27_uae_serp_visual",
+        "p28_uae_suggestions",
+        "p29_uae_wikipedia",
+        "p30_uae_images",
+        "p31_uae_knowledge",
+        "p32_uae_related",
+        "p33_compliance_toc",
+        "p34_dow_jones",
+        "p35_lexis_visual",
+        "p36_lexis_visual_2"
+      ]
+    },
+    "mappedRegistrySlotsInPdf": {
+      "status": "DERIVED",
+      "value": 36
+    },
+    "missingRegistrySlotIdsInMapping": {
+      "status": "DERIVED",
+      "value": []
+    }
+  },
+  "baseSlots": {
+    "status": "DERIVED",
+    "value": {
+      "count": 36,
+      "pages": [
+        {
+          "page": 1,
+          "slideId": "p01_cover",
+          "title": "ORION Digital Profile"
+        },
+        {
+          "page": 2,
+          "slideId": "p02_toc",
+          "title": "Содержание отчёта"
+        },
+        {
+          "page": 3,
+          "slideId": "p03_executive",
+          "title": "Резюме"
+        },
+        {
+          "page": 4,
+          "slideId": "p04_risk_dashboard",
+          "title": "Матрица комплаенс-рисков"
+        },
+        {
+          "page": 5,
+          "slideId": "p05_profile_dashboard",
+          "title": "Обзор цифрового профиля"
+        },
+        {
+          "page": 6,
+          "slideId": "p06_ru_toc",
+          "title": "Россия: Цифровой профиль"
+        },
+        {
+          "page": 7,
+          "slideId": "p07_ru_summary",
+          "title": "Россия — резюме аудита"
+        },
+        {
+          "page": 8,
+          "slideId": "p08_ru_metrics",
+          "title": "Россия — карточки выдачи"
+        },
+        {
+          "page": 9,
+          "slideId": "p09_ru_serp_table",
+          "title": "Россия — позиции в поисковая выдача"
+        },
+        {
+          "page": 10,
+          "slideId": "p10_ru_serp_visual",
+          "title": "Россия — снимок выдачи"
+        },
+        {
+          "page": 11,
+          "slideId": "p11_ru_suggestions_yandex",
+          "title": "Россия — подсказки поиска"
+        },
+        {
+          "page": 12,
+          "slideId": "p12_ru_suggestions_google",
+          "title": "Россия — подсказки Google"
+        },
+        {
+          "page": 13,
+          "slideId": "p13_ru_wikipedia",
+          "title": "Россия — Википедия"
+        },
+        {
+          "page": 14,
+          "slideId": "p14_ru_images_1",
+          "title": "Россия — изображения (1)"
+        },
+        {
+          "page": 15,
+          "slideId": "p15_ru_images_2",
+          "title": "Россия — изображения (2)"
+        },
+        {
+          "page": 16,
+          "slideId": "p16_ru_images_3",
+          "title": "Россия — изображения (3)"
+        },
+        {
+          "page": 17,
+          "slideId": "p17_ru_images_4",
+          "title": "Россия — изображения (4)"
+        },
+        {
+          "page": 18,
+          "slideId": "p18_ru_knowledge_1",
+          "title": "Россия — панель знаний (1)"
+        },
+        {
+          "page": 19,
+          "slideId": "p19_ru_knowledge_2",
+          "title": "Россия — панель знаний (2)"
+        },
+        {
+          "page": 22,
+          "slideId": "p20_ru_related_1",
+          "title": "Россия — связанные запросы (1)"
+        },
+        {
+          "page": 23,
+          "slideId": "p21_ru_related_2",
+          "title": "Россия — связанные запросы (2)"
+        },
+        {
+          "page": 24,
+          "slideId": "p22_ru_related_3",
+          "title": "Россия — связанные запросы (3)"
+        },
+        {
+          "page": 25,
+          "slideId": "p23_uae_toc",
+          "title": "ОАЭ: Цифровой профиль"
+        },
+        {
+          "page": 26,
+          "slideId": "p24_uae_summary",
+          "title": "ОАЭ — резюме аудита"
+        },
+        {
+          "page": 27,
+          "slideId": "p25_uae_metrics",
+          "title": "ОАЭ — ссылки Google"
+        },
+        {
+          "page": 28,
+          "slideId": "p26_uae_serp_table",
+          "title": "ОАЭ — позиции поисковая выдача"
+        },
+        {
+          "page": 29,
+          "slideId": "p27_uae_serp_visual",
+          "title": "ОАЭ — снимок выдачи"
+        },
+        {
+          "page": 30,
+          "slideId": "p28_uae_suggestions",
+          "title": "ОАЭ — подсказки поиска"
+        },
+        {
+          "page": 31,
+          "slideId": "p29_uae_wikipedia",
+          "title": "ОАЭ — Википедия"
+        },
+        {
+          "page": 32,
+          "slideId": "p30_uae_images",
+          "title": "ОАЭ — изображения в поиске"
+        },
+        {
+          "page": 33,
+          "slideId": "p31_uae_knowledge",
+          "title": "ОАЭ — панель знаний"
+        },
+        {
+          "page": 39,
+          "slideId": "p32_uae_related",
+          "title": "ОАЭ — связанные запросы"
+        },
+        {
+          "page": 40,
+          "slideId": "p33_compliance_toc",
+          "title": "комплаенс — сводка баз данных"
+        },
+        {
+          "page": 41,
+          "slideId": "p34_dow_jones",
+          "title": "Dow Jones — профиль"
+        },
+        {
+          "page": 42,
+          "slideId": "p35_lexis_visual",
+          "title": "LexisNexis — страница профиля"
+        },
+        {
+          "page": 43,
+          "slideId": "p36_lexis_visual_2",
+          "title": "LexisNexis — страница профиля (2)"
+        }
+      ],
+      "note": "Title-matched to ORION_FIRST36_REGISTRY_V1; PDF page index ≠ registry page after AI inserts"
+    }
+  },
+  "continuations": {
+    "status": "DERIVED",
+    "value": {
+      "countBeyondRegistry": 7,
+      "explicitContinuationPages": [
+        35,
+        36,
+        37,
+        38
+      ],
+      "dynamicInsertPages": [
+        20,
+        21,
+        34
+      ],
+      "series": [
+        {
+          "id": "uae_google_ai_overview",
+          "pages": [
+            34,
+            35,
+            36,
+            37,
+            38
+          ],
+          "markers": "1/5..5/5",
+          "basePage": 34,
+          "continuationPages": [
+            35,
+            36,
+            37,
+            38
+          ]
+        }
+      ],
+      "note": "7 pages beyond First36 registry: RU AI×2 + UAE AI Overview×5 (of which 4 are explicit continuations)"
+    }
+  },
+  "pageInventory": {
+    "status": "DERIVED",
+    "value": [
+      {
+        "page": 1,
+        "title": "ORION Digital Profile",
+        "role": "base",
+        "registrySlotId": "p01_cover",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 2,
+        "title": "Содержание отчёта",
+        "role": "base",
+        "registrySlotId": "p02_toc",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 3,
+        "title": "Резюме",
+        "role": "base",
+        "registrySlotId": "p03_executive",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 4,
+        "title": "Матрица комплаенс-рисков",
+        "role": "base",
+        "registrySlotId": "p04_risk_dashboard",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 5,
+        "title": "Обзор цифрового профиля",
+        "role": "base",
+        "registrySlotId": "p05_profile_dashboard",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 6,
+        "title": "Россия: Цифровой профиль",
+        "role": "base",
+        "registrySlotId": "p06_ru_toc",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 7,
+        "title": "Россия — резюме аудита",
+        "role": "base",
+        "registrySlotId": "p07_ru_summary",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 8,
+        "title": "Россия — карточки выдачи",
+        "role": "base",
+        "registrySlotId": "p08_ru_metrics",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 9,
+        "title": "Россия — позиции в поисковая выдача",
+        "role": "base",
+        "registrySlotId": "p09_ru_serp_table",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 10,
+        "title": "Россия — снимок выдачи",
+        "role": "base",
+        "registrySlotId": "p10_ru_serp_visual",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 11,
+        "title": "Россия — подсказки поиска",
+        "role": "base",
+        "registrySlotId": "p11_ru_suggestions_yandex",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 12,
+        "title": "Россия — подсказки Google",
+        "role": "base",
+        "registrySlotId": "p12_ru_suggestions_google",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 13,
+        "title": "Россия — Википедия",
+        "role": "base",
+        "registrySlotId": "p13_ru_wikipedia",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 14,
+        "title": "Россия — изображения (1)",
+        "role": "base",
+        "registrySlotId": "p14_ru_images_1",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 15,
+        "title": "Россия — изображения (2)",
+        "role": "base",
+        "registrySlotId": "p15_ru_images_2",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 16,
+        "title": "Россия — изображения (3)",
+        "role": "base",
+        "registrySlotId": "p16_ru_images_3",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 17,
+        "title": "Россия — изображения (4)",
+        "role": "base",
+        "registrySlotId": "p17_ru_images_4",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 18,
+        "title": "Россия — панель знаний (1)",
+        "role": "base",
+        "registrySlotId": "p18_ru_knowledge_1",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 19,
+        "title": "Россия — панель знаний (2)",
+        "role": "base",
+        "registrySlotId": "p19_ru_knowledge_2",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 20,
+        "title": "Россия — AI-выдача Яндекса",
+        "role": "dynamic_insert",
+        "registrySlotId": null,
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 21,
+        "title": "Россия — Google AI Overview",
+        "role": "dynamic_insert",
+        "registrySlotId": null,
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 22,
+        "title": "Россия — связанные запросы (1)",
+        "role": "base",
+        "registrySlotId": "p20_ru_related_1",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 23,
+        "title": "Россия — связанные запросы (2)",
+        "role": "base",
+        "registrySlotId": "p21_ru_related_2",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 24,
+        "title": "Россия — связанные запросы (3)",
+        "role": "base",
+        "registrySlotId": "p22_ru_related_3",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 25,
+        "title": "ОАЭ: Цифровой профиль",
+        "role": "base",
+        "registrySlotId": "p23_uae_toc",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 26,
+        "title": "ОАЭ — резюме аудита",
+        "role": "base",
+        "registrySlotId": "p24_uae_summary",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 27,
+        "title": "ОАЭ — ссылки Google",
+        "role": "base",
+        "registrySlotId": "p25_uae_metrics",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 28,
+        "title": "ОАЭ — позиции поисковая выдача",
+        "role": "base",
+        "registrySlotId": "p26_uae_serp_table",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 29,
+        "title": "ОАЭ — снимок выдачи",
+        "role": "base",
+        "registrySlotId": "p27_uae_serp_visual",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 30,
+        "title": "ОАЭ — подсказки поиска",
+        "role": "base",
+        "registrySlotId": "p28_uae_suggestions",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 31,
+        "title": "ОАЭ — Википедия",
+        "role": "base",
+        "registrySlotId": "p29_uae_wikipedia",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 32,
+        "title": "ОАЭ — изображения в поиске",
+        "role": "base",
+        "registrySlotId": "p30_uae_images",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 33,
+        "title": "ОАЭ — панель знаний",
+        "role": "base",
+        "registrySlotId": "p31_uae_knowledge",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 34,
+        "title": "ОАЭ — Google AI Overview (1/5)",
+        "role": "dynamic_insert",
+        "registrySlotId": null,
+        "continuationOf": null,
+        "continuationIndex": 1,
+        "continuationCount": 5
+      },
+      {
+        "page": 35,
+        "title": "ОАЭ — Google AI Overview (2/5)",
+        "role": "continuation",
+        "registrySlotId": null,
+        "continuationOf": "uae_google_ai_overview",
+        "continuationIndex": 2,
+        "continuationCount": 5
+      },
+      {
+        "page": 36,
+        "title": "ОАЭ — Google AI Overview (3/5)",
+        "role": "continuation",
+        "registrySlotId": null,
+        "continuationOf": "uae_google_ai_overview",
+        "continuationIndex": 3,
+        "continuationCount": 5
+      },
+      {
+        "page": 37,
+        "title": "ОАЭ — Google AI Overview (4/5)",
+        "role": "continuation",
+        "registrySlotId": null,
+        "continuationOf": "uae_google_ai_overview",
+        "continuationIndex": 4,
+        "continuationCount": 5
+      },
+      {
+        "page": 38,
+        "title": "ОАЭ — Google AI Overview (5/5)",
+        "role": "continuation",
+        "registrySlotId": null,
+        "continuationOf": "uae_google_ai_overview",
+        "continuationIndex": 5,
+        "continuationCount": 5
+      },
+      {
+        "page": 39,
+        "title": "ОАЭ — связанные запросы",
+        "role": "base",
+        "registrySlotId": "p32_uae_related",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 40,
+        "title": "комплаенс — сводка баз данных",
+        "role": "base",
+        "registrySlotId": "p33_compliance_toc",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 41,
+        "title": "Dow Jones — профиль",
+        "role": "base",
+        "registrySlotId": "p34_dow_jones",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 42,
+        "title": "LexisNexis — страница профиля",
+        "role": "base",
+        "registrySlotId": "p35_lexis_visual",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      },
+      {
+        "page": 43,
+        "title": "LexisNexis — страница профиля (2)",
+        "role": "base",
+        "registrySlotId": "p36_lexis_visual_2",
+        "continuationOf": null,
+        "continuationIndex": null,
+        "continuationCount": null
+      }
+    ]
+  },
+  "slideIds": {
+    "status": "DERIVED",
+    "value": [
+      "p01_cover",
+      "p02_toc",
+      "p03_executive",
+      "p04_risk_dashboard",
+      "p05_profile_dashboard",
+      "p06_ru_toc",
+      "p07_ru_summary",
+      "p08_ru_metrics",
+      "p09_ru_serp_table",
+      "p10_ru_serp_visual",
+      "p11_ru_suggestions_yandex",
+      "p12_ru_suggestions_google",
+      "p13_ru_wikipedia",
+      "p14_ru_images_1",
+      "p15_ru_images_2",
+      "p16_ru_images_3",
+      "p17_ru_images_4",
+      "p18_ru_knowledge_1",
+      "p19_ru_knowledge_2",
+      "dynamic:p20",
+      "dynamic:p21",
+      "p20_ru_related_1",
+      "p21_ru_related_2",
+      "p22_ru_related_3",
+      "p23_uae_toc",
+      "p24_uae_summary",
+      "p25_uae_metrics",
+      "p26_uae_serp_table",
+      "p27_uae_serp_visual",
+      "p28_uae_suggestions",
+      "p29_uae_wikipedia",
+      "p30_uae_images",
+      "p31_uae_knowledge",
+      "dynamic:p34",
+      "dynamic:p35",
+      "dynamic:p36",
+      "dynamic:p37",
+      "dynamic:p38",
+      "p32_uae_related",
+      "p33_compliance_toc",
+      "p34_dow_jones",
+      "p35_lexis_visual",
+      "p36_lexis_visual_2"
+    ]
+  },
+  "providerCounts": {
+    "status": "MEASURED",
+    "value": {
+      "mentionCountsInPdfText": {
+        "Yandex": 2,
+        "Яндекс": 9,
+        "Google": 25,
+        "Serper": 0,
+        "Arsenkin": 14,
+        "Wikipedia": 7,
+        "Википедия": 12,
+        "LexisNexis": 7,
+        "Lexis": 7,
+        "Dow Jones": 5,
+        "World-Check": 2,
+        "World Check": 0
+      },
+      "serperMentions": 0,
+      "note": "Visible provider name mentions in PDF text — not raw observation row counts"
+    }
+  },
+  "datasetCounts": {
+    "status": "MEASURED",
+    "value": {
+      "ruOrganicLinks": {
+        "adverse": 14,
+        "total": 158,
+        "source": "executive/profile slides"
+      },
+      "uaeOrganicLinks": {
+        "adverse": 11,
+        "total": 97,
+        "source": "executive/UAE summary"
+      },
+      "ruSerpTable": {
+        "adverse": 3,
+        "total": 18,
+        "source": "page 9"
+      },
+      "uaeSerpTable": {
+        "adverse": 4,
+        "total": 18,
+        "source": "page 28"
+      },
+      "observationRowCountsFromDb": null,
+      "note": "DB/composite observation counts UNAVAILABLE without run artifacts"
+    }
+  },
+  "kpiDenominators": {
+    "status": "MEASURED",
+    "value": {
+      "ru": {
+        "adverseSharePercent": 9,
+        "links": "14 / 158",
+        "suggestions": "0 / 18",
+        "related": "1 / 10",
+        "images": "8 / 38",
+        "wikipediaStatus": "другой субъект"
+      },
+      "uae": {
+        "adverseSharePercent": 11,
+        "links": "11 / 97",
+        "suggestions": "Нет данных",
+        "related": "0 / 1",
+        "images": "4 / 45",
+        "wikipediaStatus": "нет статьи / другой субъект"
+      },
+      "profileOverviewPage5": {
+        "ruSuggestions": "0 / 18",
+        "ruRelated": "1 / 10",
+        "uaeSuggestions": "Нет данных",
+        "uaeRelated": "0 / 1"
+      },
+      "relatedQueryCardCounts": {
+        "ruPage22": 4,
+        "ruPage23": 4,
+        "ruPage24": 2
+      },
+      "notCollectedSurfacesVisible": [
+        {
+          "page": 18,
+          "surface": "RU Yandex Knowledge Panel",
+          "text": "данные не собраны"
+        },
+        {
+          "page": 39,
+          "surface": "UAE related",
+          "text": "NOT_COLLECTED"
+        },
+        {
+          "page": 43,
+          "surface": "LexisNexis page 2",
+          "text": "данные не собраны"
+        }
+      ]
+    }
+  },
+  "geometryGate": {
+    "status": "UNAVAILABLE",
+    "value": null,
+    "note": "Requires rendered-client.pptx + geometry-artifacts.json / Python PPTX inspector"
+  },
+  "clientCopyGate": {
+    "status": "MEASURED",
+    "value": {
+      "method": "inspectClientCopyText over pdf page text extracts",
+      "issueCount": 3,
+      "issues": [
+        {
+          "code": "CLIENT_COPY_INCOMPLETE",
+          "detail": "Россия — Википедия\nWikipedia: другой субъект\nВикипедия: страница «Глинка (дворянский род)» — другой субъект, не профиль ",
+          "page": 13
+        },
+        {
+          "code": "CLIENT_COPY_INCOMPLETE",
+          "detail": "ОАЭ — Википедия\nWikipedia: другой субъект\nВикипедия: страница «Глинка (дворянский род)» — другой субъект, не профиль ауд",
+          "page": 31
+        },
+        {
+          "code": "CLIENT_COPY_INCOMPLETE",
+          "detail": "ОАЭ — связанные запросы\nОАЭ — связанные запросы: данные не \nсобраны\nЧто показывает экран\nВалидные связанные запросы по а",
+          "page": 39
+        }
+      ],
+      "note": "Partial offline substitute for client-copy-report.json (no slide structured fields)"
+    }
+  },
+  "acceptanceGate": {
+    "status": "UNAVAILABLE",
+    "value": null,
+    "note": "Requires first36-acceptance.json from runOrionClassicAuditRender"
+  },
+  "metricConsistencyGate": {
+    "status": "DERIVED",
+    "value": {
+      "checks": [
+        {
+          "id": "ru-adverse-share-9pct",
+          "ok": true,
+          "detail": "14/158 ≈ 8.86% displayed as 9% on pages 3/5/7"
+        },
+        {
+          "id": "uae-adverse-share-11pct",
+          "ok": true,
+          "detail": "11/97 ≈ 11.34% displayed as 11% on pages 3/5/26/27"
+        },
+        {
+          "id": "page-footer-43",
+          "ok": true,
+          "detail": "All extracted pages use N / 43 footer"
+        },
+        {
+          "id": "toc-repeated-total-suffix",
+          "ok": false,
+          "detail": "TOC lines use '(43 стр.)' on every entry (fixture REPEATED_TOC_PAGE_SUFFIX)"
+        }
+      ],
+      "note": "Full cross-slide-metric-consistency.ts needs deck manifest — unavailable"
+    }
+  },
+  "artifactFingerprints": {
+    "status": "MEASURED",
+    "value": [
+      {
+        "path": "baselines/report-72/artifacts/orion-classic-audit-v72.pdf",
+        "sha256": "78adc2e3708feb551521b2ac6b75958947d46e241f6f5162a7e6c65e343d7091",
+        "present": true,
+        "bytes": 2045174
+      },
+      {
+        "path": "baselines/report-72/artifacts/pdf-text-extract.json",
+        "sha256": "0cb936ec11e130a6d7944f699e7007854909327a396a9fccf51319c92538a15c",
+        "present": true,
+        "bytes": 39935
+      }
+    ]
+  },
+  "missingRunArtifacts": {
+    "status": "UNAVAILABLE",
+    "value": [
+      "final-deck-manifest.json",
+      "orion-theme-set.json",
+      "orion-classic-report-spec.json",
+      "report-assets.json",
+      "first36-acceptance.json",
+      "geometry-artifacts.json",
+      "geometry-report.json",
+      "client-copy-report.json",
+      "metric-consistency-report.json",
+      "cross-slide-metric-report.json",
+      "arsenkin-report-binding.json",
+      "client-content-binding.json",
+      "run-scoped-serp-merge.json",
+      "composite-serp-merge-provenance.json",
+      "serp-observations-provenance.json",
+      "rendered-client.pptx",
+      "pages-png/",
+      "contact-sheet.png"
+    ],
+    "note": "Blockers for full gate/run reconstruction"
+  },
+  "characterizationNotes": [
+    "Source PDF copied from Downloads/orion-classic-audit (72).pdf",
+    "Immutable facts verified: pageCount=43, size≈921.6×576, sha256 matches operator value",
+    "Serper never named in PDF text; Yandex/Google/Arsenkin/Wikipedia/Lexis/Dow Jones/World-Check visible",
+    "OTHER_SUBJECT leakage symptom visible: RU related queries about composer/opera/music treated as neutral",
+    "UAE suggestions shown as 'Нет данных' on KPI tiles while slide 30 claims no negative suggestions"
+  ]
+}

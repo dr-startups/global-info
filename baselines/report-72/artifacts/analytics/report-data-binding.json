@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "report-data-binding-v1",
+  "caseId": "cmreamy2t0002o30f29urzcog",
+  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "baseReportRunId": "orion-canary-1783980828528",
+  "enrichmentRunIds": [
+    "orion-canary-1783980828528"
+  ],
+  "sourceBindingDigest": null,
+  "artifacts": [
+    {
+      "name": "enrichment-run-reconciliation.json",
+      "sha256": "6f2b0259bb31679a1b004f06f3c858a8f994ea2aa60c3b7b2347eb82ae0badff"
+    },
+    {
+      "name": "composite-serp-observations.json",
+      "sha256": "48fc265832cb2ee40f9339130a57f4b27beef57c07ad4ff1448b9132eb187e14"
+    },
+    {
+      "name": "composite-serp-provenance.json",
+      "sha256": "62d0e34c59539e35a88dd4390ad19a9d03bf3705d1f2c32ab96581c8b26333bc"
+    },
+    {
+      "name": "provider-delta.json",
+      "sha256": "1b2a7e6d91921416731aa516679d423692e4cf2da7dd1fce0f8d99d3d07db9ca"
+    },
+    {
+      "name": "subject-resolution.json",
+      "sha256": "8b2f6229914ca02be16f61cf5450c9b7bee10a95dd88e7686bf33d7462b9c6a1"
+    },
+    {
+      "name": "surface-analysis.json",
+      "sha256": "0c85bbf3a74b3d5eb0e6af60ead6e90a479c12c6fc184e2ba63889ec9b041cc6"
+    },
+    {
+      "name": "verified-finding-bundle.json",
+      "sha256": "162018994f4050f4ee1db765690f1466237e481377a0bdc0820faf1e5ad9247d"
+    },
+    {
+      "name": "ambiguous-findings.json",
+      "sha256": "f090ddf0c2fb6a1e006954becbc1347510895d63965028e88f1f266a71e81935"
+    },
+    {
+      "name": "executive-summary-input.json",
+      "sha256": "4c9fda8e477582aad8ec60d0439544166d066877a4d9ea01158572ee159a4386"
+    },
+    {
+      "name": "benchmark-trace.json",
+      "sha256": "3b5ae62268251e406f818edf3d47bcc536d8c3c1e74d8f39775a8f1d84a935a9"
+    }
+  ],
+  "generatedAt": "2026-07-16T18:21:22.080Z"
+}

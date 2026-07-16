@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "enrichment-run-reconciliation-v1",
+  "caseId": "cmreamy2t0002o30f29urzcog",
+  "baseReportRunId": "orion-canary-1783980828528",
+  "enrichmentRunIds": [
+    "orion-canary-1783980828528"
+  ],
+  "includedRuns": [
+    {
+      "reportRunId": "orion-canary-1783980828528",
+      "source": "observations",
+      "workflow": null,
+      "stage": null,
+      "proof": [
+        "observations_in_run_inventory",
+        "provider_tasks_in_run",
+        "coverage_rows_in_run"
+      ],
+      "inRunEnrichment": true
+    }
+  ],
+  "rejectedRuns": [
+    {
+      "reportRunId": "orion-arsenkin-suggest-canary-1784052644782-08903825",
+      "source": "binding",
+      "reason": "FOREIGN_BINDING_CASE_MISMATCH",
+      "detail": "binding caseId=cmreamy2t0002o30f29urzcog-xfer-test"
+    }
+  ],
+  "gaps": [
+    {
+      "kind": "FOREIGN_BINDING",
+      "detail": "binding caseId=cmreamy2t0002o30f29urzcog-xfer-test does not match case cmreamy2t0002o30f29urzcog; binding ignored"
+    }
+  ],
+  "diagnostics": {
+    "providerTaskRunCoverage": {
+      "orion-canary-1783980828528": true
+    },
+    "coverageRunCoverage": {
+      "orion-canary-1783980828528": true
+    }
+  },
+  "acceptanceBindingCheck": {
+    "ok": true,
+    "missingFromAcceptance": []
+  }
+}

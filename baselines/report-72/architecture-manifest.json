@@ -1,0 +1,151 @@
+{
+  "schemaVersion": "orion-architecture-manifest-v1",
+  "caseId": "glinka-sergey-mikhaylovich-report-72",
+  "datasetId": "report-72-pdf-v1",
+  "generatedAt": "2026-07-16T16:38:53.376Z",
+  "canonicalBaseReportRunId": null,
+  "enrichmentRunIds": [],
+  "effectiveCompositeDatasetId": null,
+  "currentArtifacts": [
+    {
+      "path": "baselines/report-72/artifacts/orion-classic-audit-v72.pdf",
+      "sha256": "78adc2e3708feb551521b2ac6b75958947d46e241f6f5162a7e6c65e343d7091",
+      "present": true,
+      "bytes": 2045174
+    }
+  ],
+  "bindings": {
+    "arsenkinReportBindingPath": null,
+    "clientContentBindingPath": null,
+    "reportDataBindingPath": null,
+    "sourceHashes": [
+      "78adc2e3708feb551521b2ac6b75958947d46e241f6f5162a7e6c65e343d7091"
+    ],
+    "evidenceRefs": [
+      "pdf:orion-classic-audit-v72"
+    ]
+  },
+  "llmUsagePoints": [
+    {
+      "id": "openai-json-client",
+      "file": "orion-golden/gpt/openai-json-client.ts",
+      "symbol": "callOpenAiStrictJson",
+      "whenCalled": "Golden prepare / section+executive GPT",
+      "liveNetwork": true
+    },
+    {
+      "id": "section-analysis-orchestrator",
+      "file": "orion-golden/gpt/orion-section-analysis-orchestrator.ts",
+      "symbol": "analyzeOrionSections",
+      "whenCalled": "runR10OrionGoldenE2e / prepare",
+      "liveNetwork": true
+    },
+    {
+      "id": "section-analyzer",
+      "file": "orion-golden/gpt/orion-section-analyzer.ts",
+      "symbol": "runOrionGoldenSectionAnalyses",
+      "whenCalled": "section GPT batch",
+      "liveNetwork": true
+    },
+    {
+      "id": "executive-synthesis-from-sections",
+      "file": "orion-golden/gpt/orion-executive-synthesis-from-sections.ts",
+      "symbol": "buildExecutiveSynthesisFromSections",
+      "whenCalled": "prepare / e2e",
+      "liveNetwork": true
+    },
+    {
+      "id": "executive-synthesizer",
+      "file": "orion-golden/gpt/orion-executive-synthesizer.ts",
+      "symbol": "runOrionGoldenExecutiveSynthesis",
+      "whenCalled": "prepare / e2e",
+      "liveNetwork": true
+    },
+    {
+      "id": "gpt-auto-analyst",
+      "file": "orion-golden/evidence/gpt-auto-analyst.ts",
+      "symbol": "runGptAutoAnalystDecisions",
+      "whenCalled": "ORION_GPT_AUTO_ANALYST=1",
+      "liveNetwork": true
+    },
+    {
+      "id": "gpt55-microstage",
+      "file": "orion-section-pipeline/gpt55-microstage-analyzer.ts",
+      "symbol": "analyzeSectionWithGpt55",
+      "whenCalled": "section pipeline (legacy/vertical)",
+      "liveNetwork": true
+    },
+    {
+      "id": "classic-render-reads-synthesis",
+      "file": "orion-golden/classic/run-orion-classic-audit-render.ts",
+      "symbol": "runOrionClassicAuditRender",
+      "whenCalled": "reads executive-synthesis.output.json only — no OpenAI call",
+      "liveNetwork": false
+    }
+  ],
+  "destructiveReplacementPoints": [
+    {
+      "id": "coverage-cell-overlay",
+      "file": "orion-golden/classic/composite-serp-overlay-merge.ts",
+      "symbol": "overlayInventoryByCoverageCells",
+      "risk": "Base SERP rows in covered cells replaced by enrichment"
+    },
+    {
+      "id": "surface-panel-overlay",
+      "file": "orion-golden/classic/build-arsenkin-surface-panels.ts",
+      "symbol": "overlaySurfacePanelAssets",
+      "risk": "Same assetRef replaced by Arsenkin panel (wiki knowledge protected)"
+    },
+    {
+      "id": "gpt-findings-suppress-serp-tables",
+      "file": "orion-golden/classic/orion-classic-client-content-to-report-spec.ts",
+      "symbol": "buildOrionClassicReportSpecFromClientContent",
+      "risk": "SERP position tables omitted when gptFindings present"
+    },
+    {
+      "id": "acceptance-enrichment-underlist",
+      "file": "orion-golden/classic/run-orion-classic-audit-render.ts",
+      "symbol": "inspectFirst36Acceptance input enrichmentRunIds",
+      "risk": "Acceptance may under-list enrichment runs vs merge"
+    },
+    {
+      "id": "empty-run-strip-env",
+      "file": "orion-golden/classic/merge-run-scoped-serp-observations.ts",
+      "symbol": "ORION_FIRST36_STRIP_EMPTY_RUN",
+      "risk": "Env-forced strip of base organic on empty Arsenkin run"
+    }
+  ],
+  "staleForeignArtifactRisks": [
+    {
+      "id": "stale-post-review-content",
+      "description": "Post-review client content older than fresh Arsenkin observations",
+      "detectionHint": "Compare client-content-binding timestamps vs observation capturedAt"
+    },
+    {
+      "id": "orphan-case-agent-obs",
+      "description": "CaseAgent auditRunId not listed in enrichmentRuns",
+      "detectionHint": "report-evidence-provenance ORPHAN_CASE_AGENT_OBS"
+    },
+    {
+      "id": "missing-binding-base-only",
+      "description": "No arsenkin-report-binding → render uses base without overlay",
+      "detectionHint": "Missing arsenkin-report-binding.json under case root"
+    },
+    {
+      "id": "foreign-effective-report-run",
+      "description": "effectiveReportRunId points at foreign/stale run",
+      "detectionHint": "Binding effectiveReportRunId not in case runs"
+    },
+    {
+      "id": "dual-merge-divergence",
+      "description": "Unified composite merge not feeding Classic inventory merge",
+      "detectionHint": "Presence of unified report-data-binding without classic merge provenance"
+    }
+  ],
+  "notes": [
+    "Report №72 characterized from PDF only.",
+    "canonicalBaseReportRunId / enrichmentRunIds unavailable without arsenkin-report-binding.json",
+    "Client-copy offline issues: 3",
+    "Beyond-registry pages: 7"
+  ]
+}
