@@ -64,6 +64,11 @@ export type BuildArsenkinExecutionPlanInput = {
   urlsEnrichment?: string[];
   aiSerpTargets?: Array<"yandex_ru" | "google_ru" | "google_uae">;
   allowUnknownCost?: boolean;
+  /**
+   * Optional tool subset override (CaseAgent / scoped runs).
+   * When set, STAGE_TOOLS[stage] is ignored; stage still drives query/url scoping + digest.
+   */
+  toolsOverride?: ArsenkinToolName[];
 };
 
 const STAGE_TOOLS: Record<ArsenkinLiveStage, ArsenkinToolName[]> = {
@@ -188,7 +193,10 @@ export function evaluateExecutionPlanBudget(plan: ArsenkinExecutionPlan): {
 export function buildArsenkinExecutionPlan(
   input: BuildArsenkinExecutionPlanInput
 ): ArsenkinExecutionPlan {
-  const tools = STAGE_TOOLS[input.stage];
+  const tools =
+    input.toolsOverride && input.toolsOverride.length > 0
+      ? [...input.toolsOverride]
+      : STAGE_TOOLS[input.stage];
   const scoped = stageQueries(input);
   const defaults = STAGE_DEFAULT_MAX[input.stage];
   const maxNewTasks = input.maxNewTasks > 0 ? input.maxNewTasks : defaults.maxNewTasks;

@@ -67,14 +67,39 @@ async function main() {
       })
       .catch(() => undefined);
     void import("../src/modules/digital-profile/services/arsenkin-case-agent-execution")
-      .then(({ tickArsenkinCaseAgentFinalizations }) => {
-        console.error("[arsenkin-agent] Finalizing durable CaseAgent runs…");
-        void tickArsenkinCaseAgentFinalizations();
+      .then(({ resumeArsenkinCaseAgentExecutions, tickArsenkinCaseAgentFinalizations }) => {
+        console.error("[arsenkin-agent] Resuming unfinished CaseAgent executions…");
+        void resumeArsenkinCaseAgentExecutions()
+          .then((n) => {
+            console.error(`[arsenkin-agent] resume scheduled ${n} job(s)`);
+          })
+          .catch((err) => {
+            console.error(
+              "[arsenkin-agent] resume failed:",
+              err instanceof Error ? err.message : err
+            );
+          });
+        void tickArsenkinCaseAgentFinalizations().catch((err) => {
+          console.error(
+            "[arsenkin-agent] finalize tick failed:",
+            err instanceof Error ? err.message : err
+          );
+        });
         setInterval(() => {
-          void tickArsenkinCaseAgentFinalizations().catch(() => undefined);
+          void tickArsenkinCaseAgentFinalizations().catch((err) => {
+            console.error(
+              "[arsenkin-agent] finalize tick failed:",
+              err instanceof Error ? err.message : err
+            );
+          });
         }, 5000);
       })
-      .catch(() => undefined);
+      .catch((err) => {
+        console.error(
+          "[arsenkin-agent] import failed:",
+          err instanceof Error ? err.message : err
+        );
+      });
   }, 1500);
 
   child.on("error", (err) => {

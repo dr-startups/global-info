@@ -1,6 +1,7 @@
 /**
  * Durable Arsenkin CaseAgent execution: start ≠ SUCCESS.
- * Finalization requires ProviderTask + coverage evidence (or explicit NO_RESULTS).
+ * Full cycle: OrionReportRun → plan → executeArsenkinExecutionPlan (/set→/check→/get)
+ * → observations + coverage → finalize AgentRun.
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync } from "node:fs";
@@ -15,6 +16,14 @@ import {
 } from "../providers/arsenkin/workflow-contract";
 import { writeJsonAtomic } from "../providers/arsenkin/arsenkin-db-readiness";
 import { isValidBaseOrionReportRunId } from "../providers/arsenkin/source-binding-repair";
+import { buildArsenkinSubjectQueryPlan } from "../orion-golden/classic/arsenkin-subject-query-plan";
+import {
+  buildArsenkinExecutionPlan,
+  type ArsenkinExecutionPlan,
+  type ArsenkinLiveStage,
+} from "../orion-golden/classic/arsenkin-execution-plan";
+import { pickEnrichmentUrls } from "../orion-golden/classic/enrich-report-run-with-arsenkin";
+import { planArsenkinExactTasks } from "../orion-golden/classic/plan-arsenkin-exact-tasks";
 
 export type ArsenkinAgentOutcome =
   | "SUCCESS"
@@ -23,6 +32,13 @@ export type ArsenkinAgentOutcome =
   | "REUSED"
   | "FAILED"
   | "RUNNING";
+
+export type ArsenkinCaseAgentPhase =
+  | "PREPARING"
+  | "COLLECTING"
+  | "FINALIZING"
+  | "FAILED"
+  | "FINALIZED";
 
 export type ArsenkinCaseAgentExecutionSummary = {
   agentId: string;
@@ -47,7 +63,7 @@ export type ArsenkinCaseAgentExecutionSummary = {
 };
 
 export type ArsenkinCaseAgentExecutionJob = {
-  version: "arsenkin-case-agent-execution-v1";
+  version: "arsenkin-case-agent-execution-v2";
   executionId: string;
   agentRunId: string;
   caseId: string;
@@ -58,8 +74,17 @@ export type ArsenkinCaseAgentExecutionJob = {
   baseReportRunId: string | null;
   createdAt: string;
   updatedAt: string;
-  status: "RUNNING" | "FINALIZED";
+  /** Legacy listRunning filter; true while phase is PREPARING|COLLECTING|FINALIZING. */
+  status: "RUNNING" | "FINALIZED" | "FAILED";
+  phase: ArsenkinCaseAgentPhase;
   networkCallsAttempted: boolean;
+  planDigest?: string | null;
+  queriesRu?: string[];
+  queriesUae?: string[];
+  urlsEnrichment?: string[];
+  reusedTaskCount?: number;
+  errorCode?: string | null;
+  errorMessage?: string | null;
 };
 
 const NON_TERMINAL_TASK = new Set([
@@ -71,6 +96,18 @@ const NON_TERMINAL_TASK = new Set([
   "SUBMIT_UNKNOWN",
 ]);
 
+/** Process-scoped serial queue: LiveExecutionAuthorization is process-scoped. */
+let caseAgentQueue: Promise<void> = Promise.resolve();
+
+function enqueueCaseAgentWork<T>(fn: () => Promise<T>): Promise<T> {
+  const run = caseAgentQueue.then(fn, fn);
+  caseAgentQueue = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
 function executionRoot(caseId: string): string {
   return join(process.cwd(), "storage", "digital-profile", "arsenkin-case-agent-runs", caseId);
 }
@@ -81,12 +118,23 @@ export function arsenkinCaseAgentExecutionPath(caseId: string, executionId: stri
 
 export function plannedSurfacesForTools(tools: ArsenkinToolName[]): FullFirst36SurfaceSlot[] {
   const set = new Set(tools);
-  // URL audit agent includes indexation with check-h
   return FIRST36_FULL_SURFACE_SLOTS.filter((s) => {
     if (set.has(s.tool as ArsenkinToolName)) return true;
     if (s.tool === "check-h" && set.has("indexation")) return true;
     return false;
   });
+}
+
+export function stageForCaseAgentTools(tools: ArsenkinToolName[]): ArsenkinLiveStage {
+  const set = new Set(tools);
+  if (set.has("ai-serp") || set.has("check-h") || set.has("indexation")) {
+    return "FIRST36_STAGE2";
+  }
+  return "FIRST36_STAGE1";
+}
+
+export function isFinalizationAllowed(phase: ArsenkinCaseAgentPhase): boolean {
+  return phase === "FINALIZING" || phase === "FAILED";
 }
 
 export function saveArsenkinCaseAgentExecution(job: ArsenkinCaseAgentExecutionJob): void {
@@ -102,7 +150,23 @@ export function loadArsenkinCaseAgentExecution(
   const path = arsenkinCaseAgentExecutionPath(caseId, executionId);
   if (!existsSync(path)) return null;
   try {
-    return JSON.parse(readFileSync(path, "utf-8")) as ArsenkinCaseAgentExecutionJob;
+    const raw = JSON.parse(readFileSync(path, "utf-8")) as ArsenkinCaseAgentExecutionJob & {
+      version?: string;
+      phase?: ArsenkinCaseAgentPhase;
+      status?: string;
+    };
+    // Migrate v1 jobs (status-only) into phase model.
+    if (!raw.phase) {
+      const phase: ArsenkinCaseAgentPhase =
+        raw.status === "FINALIZED" ? "FINALIZED" : "PREPARING";
+      return {
+        ...raw,
+        version: "arsenkin-case-agent-execution-v2",
+        phase,
+        status: raw.status === "FINALIZED" ? "FINALIZED" : "RUNNING",
+      } as ArsenkinCaseAgentExecutionJob;
+    }
+    return raw as ArsenkinCaseAgentExecutionJob;
   } catch {
     return null;
   }
@@ -119,14 +183,27 @@ export function listRunningArsenkinCaseAgentExecutions(caseId?: string): Arsenki
     for (const f of readdirSync(dir)) {
       if (!f.endsWith(".json")) continue;
       try {
-        const job = JSON.parse(readFileSync(join(dir, f), "utf-8")) as ArsenkinCaseAgentExecutionJob;
-        if (job.status === "RUNNING") out.push(job);
+        const job = loadArsenkinCaseAgentExecution(c, f.replace(/\.json$/, ""));
+        if (!job) continue;
+        if (job.status === "RUNNING" && job.phase !== "FINALIZED" && job.phase !== "FAILED") {
+          out.push(job);
+        }
       } catch {
-        /* ignore */
+        /* ignore corrupt */
       }
     }
   }
   return out;
+}
+
+/** Find in-flight job for same case+agent (dedupe concurrent clicks). */
+export function findActiveArsenkinCaseAgentExecution(
+  caseId: string,
+  agentId: string
+): ArsenkinCaseAgentExecutionJob | null {
+  return (
+    listRunningArsenkinCaseAgentExecutions(caseId).find((j) => j.agentId === agentId) ?? null
+  );
 }
 
 export type FinalizeEvidence = {
@@ -140,7 +217,30 @@ export function computeArsenkinCaseAgentOutcome(input: {
   evidence: FinalizeEvidence;
   reused?: boolean;
   networkCallCount?: number;
+  explicitErrorCode?: string | null;
+  explicitErrorMessage?: string | null;
 }): ArsenkinCaseAgentExecutionSummary & { agentDbStatus: "RUNNING" | "SUCCEEDED" | "FAILED" } {
+  if (input.explicitErrorCode) {
+    return {
+      ...emptyIds(),
+      plannedSurfaceCount: input.plannedSurfaceCount,
+      terminalSurfaceCount: 0,
+      measuredSurfaceCount: 0,
+      noResultsSurfaceCount: 0,
+      notSupportedSurfaceCount: 0,
+      failedSurfaceCount: 0,
+      providerTaskCount: input.evidence.providerTasks.length,
+      observationCount: input.evidence.observationCount,
+      coverageCount: input.evidence.coverageRows.length,
+      reusedTaskCount: 0,
+      networkCallCount: input.networkCallCount ?? 0,
+      outcome: "FAILED",
+      summary: input.explicitErrorMessage ?? input.explicitErrorCode,
+      agentDbStatus: "FAILED",
+      errorCode: input.explicitErrorCode,
+    };
+  }
+
   const tasks = input.evidence.providerTasks;
   const providerTaskCount = tasks.length;
   const coverageCount = input.evidence.coverageRows.length;
@@ -180,7 +280,6 @@ export function computeArsenkinCaseAgentOutcome(input: {
     networkCallCount: input.networkCallCount ?? 0,
   };
 
-  // Still in flight
   if (hasNonTerminal || (providerTaskCount > 0 && !allTasksTerminal)) {
     return {
       ...emptyIds(),
@@ -192,7 +291,6 @@ export function computeArsenkinCaseAgentOutcome(input: {
     };
   }
 
-  // No execution evidence
   if (providerTaskCount === 0 && coverageCount === 0) {
     return {
       ...emptyIds(),
@@ -204,7 +302,11 @@ export function computeArsenkinCaseAgentOutcome(input: {
     };
   }
 
-  if (input.reused && allTasksTerminal && (observationCount > 0 || noResultsSurfaceCount > 0 || measuredSurfaceCount > 0)) {
+  if (
+    input.reused &&
+    allTasksTerminal &&
+    (observationCount > 0 || noResultsSurfaceCount > 0 || measuredSurfaceCount > 0)
+  ) {
     return {
       ...emptyIds(),
       ...base,
@@ -215,7 +317,6 @@ export function computeArsenkinCaseAgentOutcome(input: {
     };
   }
 
-  // Proven NO_RESULTS
   if (
     allTasksTerminal &&
     observationCount === 0 &&
@@ -251,7 +352,6 @@ export function computeArsenkinCaseAgentOutcome(input: {
     failedSurfaceCount === 0 &&
     (measuredSurfaceCount > 0 || noResultsSurfaceCount > 0 || notSupportedSurfaceCount === input.plannedSurfaceCount)
   ) {
-    // All NOT_SUPPORTED is odd but terminal; treat as SUCCESS only if planned covered
     if (measuredSurfaceCount > 0 || noResultsSurfaceCount > 0) {
       return {
         ...emptyIds(),
@@ -357,6 +457,486 @@ export async function loadFinalizeEvidence(input: {
   };
 }
 
+export async function ensureCaseAgentOrionReportRun(input: {
+  prisma: PrismaClient;
+  enrichmentReportRunId: string;
+  caseId: string;
+  agentId: string;
+  agentRunId: string;
+  executionId: string;
+  tools: ArsenkinToolName[];
+  baseReportRunId: string | null;
+}): Promise<void> {
+  const metadataJson = {
+    agentId: input.agentId,
+    agentRunId: input.agentRunId,
+    executionId: input.executionId,
+    tools: input.tools,
+    baseReportRunId: input.baseReportRunId,
+  };
+  await input.prisma.orionReportRun.upsert({
+    where: { id: input.enrichmentReportRunId },
+    create: {
+      id: input.enrichmentReportRunId,
+      caseId: input.caseId,
+      mode: "ARSENKIN_CASE_AGENT",
+      storeMode: "db",
+      status: "RUNNING",
+      internalOnly: true,
+      startedAt: new Date(),
+      metadataJson: metadataJson as Prisma.InputJsonValue,
+    },
+    update: {
+      status: "RUNNING",
+      storeMode: "db",
+      internalOnly: true,
+      metadataJson: metadataJson as Prisma.InputJsonValue,
+      finishedAt: null,
+    },
+  });
+}
+
+export type CaseAgentPlanBuildResult =
+  | { ok: true; plan: ArsenkinExecutionPlan; queriesRu: string[]; queriesUae: string[]; urlsEnrichment: string[] }
+  | { ok: false; errorCode: string; errorMessage: string };
+
+/** Pure-ish plan builder for CaseAgent tool scopes (uses planArsenkinExactTasks via buildArsenkinExecutionPlan). */
+export function buildArsenkinCaseAgentExecutionPlan(input: {
+  caseId: string;
+  enrichmentReportRunId: string;
+  tools: ArsenkinToolName[];
+  fullName: string | null | undefined;
+  aliases?: readonly string[] | null;
+  urlsEnrichment?: string[];
+  existingTasks?: Array<{ id: string; requestHash: string; state: string }>;
+}): CaseAgentPlanBuildResult {
+  const queryPlan = buildArsenkinSubjectQueryPlan({
+    fullName: input.fullName,
+    aliases: input.aliases ?? [],
+  });
+  if (queryPlan.blockers.includes("empty-subject-name")) {
+    return {
+      ok: false,
+      errorCode: "ARSENKIN_EMPTY_SUBJECT",
+      errorMessage: "Subject fullName/aliases пусты — нельзя построить Arsenkin-запросы.",
+    };
+  }
+  if (queryPlan.queriesRu.length === 0 && queryPlan.queriesUae.length === 0) {
+    return {
+      ok: false,
+      errorCode: "ARSENKIN_EMPTY_QUERY_PLAN",
+      errorMessage: "Пустой query plan (queriesRu/queriesUae).",
+    };
+  }
+
+  const needsUrls = input.tools.includes("check-h") || input.tools.includes("indexation");
+  const urls = input.urlsEnrichment ?? [];
+  if (needsUrls && urls.length === 0) {
+    return {
+      ok: false,
+      errorCode: "ARSENKIN_URL_AUDIT_NO_SOURCE_URLS",
+      errorMessage:
+        "URL Audit: нет HTTP/HTTPS URL из SearchResult для check-h/indexation (ARSENKIN_URL_AUDIT_NO_SOURCE_URLS).",
+    };
+  }
+
+  // Guard: never plan with stub "subject"
+  const hasStub =
+    queryPlan.queriesRu.some((q) => q.trim().toLowerCase() === "subject") ||
+    queryPlan.queriesUae.some((q) => q.trim().toLowerCase() === "subject");
+  if (hasStub) {
+    return {
+      ok: false,
+      errorCode: "ARSENKIN_STUB_QUERY",
+      errorMessage: "Query plan содержит заглушку 'subject'.",
+    };
+  }
+
+  const stage = stageForCaseAgentTools(input.tools);
+  const plan = buildArsenkinExecutionPlan({
+    caseId: input.caseId,
+    reportRunId: input.enrichmentReportRunId,
+    stage,
+    queriesRu: queryPlan.queriesRu,
+    queriesUae: queryPlan.queriesUae,
+    maxNewTasks: 20,
+    maxEstimatedLimits: 20,
+    existingTasks: input.existingTasks,
+    urlsEnrichment: urls,
+    aiSerpTargets: ["yandex_ru", "google_ru", "google_uae"],
+    toolsOverride: input.tools,
+    allowUnknownCost: true,
+  });
+
+  if (plan.requests.length === 0) {
+    return {
+      ok: false,
+      errorCode: "ARSENKIN_EMPTY_PLAN",
+      errorMessage: `Пустой execution plan для tools=[${input.tools.join(",")}]`,
+    };
+  }
+
+  return {
+    ok: true,
+    plan,
+    queriesRu: plan.queriesRu,
+    queriesUae: plan.queriesUae,
+    urlsEnrichment: plan.urlsEnrichment,
+  };
+}
+
+/** Offline/test helper: tool-scoped planned requests without DB. */
+export function previewCaseAgentPlannedRequests(input: {
+  tools: ArsenkinToolName[];
+  fullName: string;
+  aliases?: string[];
+  urlsEnrichment?: string[];
+}) {
+  const qp = buildArsenkinSubjectQueryPlan({
+    fullName: input.fullName,
+    aliases: input.aliases ?? [],
+  });
+  return planArsenkinExactTasks({
+    queriesRu: qp.queriesRu,
+    queriesUae: qp.queriesUae,
+    tools: input.tools,
+    urlsEnrichment: input.urlsEnrichment ?? [],
+    aiSerpTargets: ["yandex_ru", "google_ru", "google_uae"],
+  });
+}
+
+async function loadSubjectForCase(
+  prisma: PrismaClient,
+  caseId: string
+): Promise<{ fullName: string | null; aliases: string[] }> {
+  const subject = await prisma.subject.findFirst({
+    where: { caseId },
+    select: { fullName: true, aliases: true },
+  });
+  return {
+    fullName: subject?.fullName ?? null,
+    aliases: Array.isArray(subject?.aliases)
+      ? (subject!.aliases as string[]).map(String)
+      : [],
+  };
+}
+
+async function loadUrlsFromSearchResults(
+  prisma: PrismaClient,
+  caseId: string
+): Promise<string[]> {
+  const results = await prisma.searchResult.findMany({
+    where: { caseId },
+    select: { url: true, normalizedUrl: true, rank: true },
+    orderBy: { rank: "asc" },
+    take: 200,
+  });
+  const rows = results.map((r, i) => {
+    const url = String(r.url ?? "").trim();
+    let domain: string | null = null;
+    try {
+      domain = url ? new URL(url).hostname : null;
+    } catch {
+      domain = null;
+    }
+    return {
+      url,
+      domain,
+      rank: r.rank ?? i + 1,
+      surface: "organic",
+    };
+  });
+  return pickEnrichmentUrls(rows, 10);
+}
+
+function classifyWorkerError(err: unknown): { errorCode: string; errorMessage: string } {
+  const message = err instanceof Error ? err.message : String(err);
+  const lower = message.toLowerCase();
+  if (/foreign key|fk_|orionreportrun|violates foreign key/i.test(message)) {
+    return { errorCode: "ARSENKIN_FK_DB_ERROR", errorMessage: message };
+  }
+  if (/token|not configured|api_token|missing/i.test(lower) && /arsenkin|token/i.test(lower)) {
+    return { errorCode: "ARSENKIN_TOKEN_MISSING", errorMessage: message };
+  }
+  if (/submit_unknown/i.test(message)) {
+    return { errorCode: "SUBMIT_UNKNOWN", errorMessage: message };
+  }
+  if (/result_fetch_failed|result-fetch|fetch failed/i.test(lower)) {
+    return { errorCode: "RESULT_FETCH_FAILED", errorMessage: message };
+  }
+  if (/http\s*500|status.?500|500\b/i.test(message)) {
+    return { errorCode: "ARSENKIN_HTTP_500", errorMessage: message };
+  }
+  if (/parser|map.*observation|unsupported-plan-tool/i.test(lower)) {
+    return { errorCode: "ARSENKIN_PARSER_ERROR", errorMessage: message };
+  }
+  if (/live-blocked|authorization|digest/i.test(lower)) {
+    return { errorCode: "ARSENKIN_AUTH_ERROR", errorMessage: message };
+  }
+  return { errorCode: "ARSENKIN_WORKER_ERROR", errorMessage: message };
+}
+
+async function failJobAndAgentRun(input: {
+  job: ArsenkinCaseAgentExecutionJob;
+  errorCode: string;
+  errorMessage: string;
+  prisma?: PrismaClient;
+}): Promise<void> {
+  const job: ArsenkinCaseAgentExecutionJob = {
+    ...input.job,
+    phase: "FAILED",
+    status: "FAILED",
+    errorCode: input.errorCode,
+    errorMessage: input.errorMessage,
+  };
+  saveArsenkinCaseAgentExecution(job);
+
+  try {
+    const prisma = input.prisma ?? (await import("@/server/prisma/client")).prisma;
+    await prisma.orionReportRun
+      .update({
+        where: { id: job.enrichmentReportRunId },
+        data: {
+          status: "FAILED",
+          finishedAt: new Date(),
+          errorsJson: { errorCode: input.errorCode, message: input.errorMessage } as Prisma.InputJsonValue,
+        },
+      })
+      .catch(() => undefined);
+
+    await prisma.agentRun.update({
+      where: { id: job.agentRunId },
+      data: {
+        status: "FAILED",
+        finishedAt: new Date(),
+        error: `${input.errorCode}: ${input.errorMessage}`,
+        output: {
+          summary: input.errorMessage,
+          outcome: "FAILED",
+          errorCode: input.errorCode,
+          arsenkinExecution: {
+            agentId: job.agentId,
+            executionId: job.executionId,
+            agentRunId: job.agentRunId,
+            enrichmentReportRunId: job.enrichmentReportRunId,
+            baseReportRunId: job.baseReportRunId,
+            outcome: "FAILED",
+            errorCode: input.errorCode,
+            phase: "FAILED",
+          },
+          demo: false,
+        } as unknown as Prisma.InputJsonValue,
+      },
+    });
+  } catch (err) {
+    console.error(
+      "[arsenkin-case-agent] failJobAndAgentRun DB update failed:",
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
+/**
+ * Full durable worker: PREPARING → COLLECTING → FINALIZING → FINALIZED|FAILED.
+ * Serialized via process-level queue.
+ */
+export async function runArsenkinCaseAgentWorker(input: {
+  caseId: string;
+  executionId: string;
+  prisma?: PrismaClient;
+}): Promise<void> {
+  return enqueueCaseAgentWork(async () => {
+    const job0 = loadArsenkinCaseAgentExecution(input.caseId, input.executionId);
+    if (!job0) {
+      console.error(`[arsenkin-case-agent] job not found ${input.caseId}/${input.executionId}`);
+      return;
+    }
+    if (job0.phase === "FINALIZED" || job0.phase === "FAILED") return;
+    if (job0.phase === "FINALIZING") {
+      await finalizeArsenkinCaseAgentRun({
+        agentRunId: job0.agentRunId,
+        caseId: job0.caseId,
+        executionId: job0.executionId,
+        enrichmentReportRunId: job0.enrichmentReportRunId,
+        agentId: job0.agentId,
+        tools: job0.tools,
+        plannedSurfaceCount: job0.plannedSurfaces.length,
+        baseReportRunId: job0.baseReportRunId,
+        prisma: input.prisma,
+        reused: (job0.reusedTaskCount ?? 0) > 0 && (job0.reusedTaskCount ?? 0) === job0.plannedSurfaces.length,
+        networkCallCount: job0.networkCallsAttempted ? 1 : 0,
+        explicitErrorCode: job0.errorCode,
+        explicitErrorMessage: job0.errorMessage,
+      });
+      return;
+    }
+
+    let job = job0;
+    const prisma = input.prisma ?? (await import("@/server/prisma/client")).prisma;
+
+    try {
+      job = {
+        ...job,
+        phase: "PREPARING",
+        status: "RUNNING",
+        errorCode: null,
+        errorMessage: null,
+      };
+      saveArsenkinCaseAgentExecution(job);
+
+      await ensureCaseAgentOrionReportRun({
+        prisma,
+        enrichmentReportRunId: job.enrichmentReportRunId,
+        caseId: job.caseId,
+        agentId: job.agentId,
+        agentRunId: job.agentRunId,
+        executionId: job.executionId,
+        tools: job.tools,
+        baseReportRunId: job.baseReportRunId,
+      });
+
+      const subject = await loadSubjectForCase(prisma, job.caseId);
+      let urlsEnrichment: string[] = [];
+      if (job.tools.includes("check-h") || job.tools.includes("indexation")) {
+        urlsEnrichment = await loadUrlsFromSearchResults(prisma, job.caseId);
+      }
+
+      const existingTasks = await prisma.providerTask.findMany({
+        where: { reportRunId: job.enrichmentReportRunId, provider: "arsenkin" },
+        select: { id: true, requestHash: true, state: true },
+      });
+
+      const built = buildArsenkinCaseAgentExecutionPlan({
+        caseId: job.caseId,
+        enrichmentReportRunId: job.enrichmentReportRunId,
+        tools: job.tools,
+        fullName: subject.fullName,
+        aliases: subject.aliases,
+        urlsEnrichment,
+        existingTasks,
+      });
+
+      if (!built.ok) {
+        await failJobAndAgentRun({
+          job,
+          errorCode: built.errorCode,
+          errorMessage: built.errorMessage,
+          prisma,
+        });
+        return;
+      }
+
+      const reusedTaskCount = built.plan.requests.filter((r) => r.action === "REUSE").length;
+      job = {
+        ...job,
+        planDigest: built.plan.digest,
+        queriesRu: built.queriesRu,
+        queriesUae: built.queriesUae,
+        urlsEnrichment: built.urlsEnrichment,
+        reusedTaskCount,
+      };
+      saveArsenkinCaseAgentExecution(job);
+
+      if (String(process.env.NETWORK_CALLS ?? "") === "0") {
+        await failJobAndAgentRun({
+          job,
+          errorCode: "ARSENKIN_NETWORK_CALLS_DISABLED",
+          errorMessage:
+            "NETWORK_CALLS=0 — live Arsenkin /set→/check→/get отключён (offline). OrionReportRun и plan созданы.",
+          prisma,
+        });
+        return;
+      }
+
+      const { createArsenkinClientFromEnv } = await import("../providers/arsenkin/client");
+      const client = createArsenkinClientFromEnv();
+      if (!client) {
+        await failJobAndAgentRun({
+          job,
+          errorCode: "ARSENKIN_TOKEN_MISSING",
+          errorMessage: "Arsenkin client недоступен (token missing / ARSENKIN_ENABLED).",
+          prisma,
+        });
+        return;
+      }
+
+      job = { ...job, phase: "COLLECTING", status: "RUNNING", networkCallsAttempted: true };
+      saveArsenkinCaseAgentExecution(job);
+
+      const { createPrismaProviderTaskStore } = await import(
+        "../providers/arsenkin/prisma-provider-task-store"
+      );
+      const {
+        executeArsenkinExecutionPlan,
+        authorizationFromPlan,
+      } = await import("../providers/arsenkin/execute-arsenkin-execution-plan");
+      const { persistSerpObservations } = await import("../serp-observation/persist");
+
+      const auth = authorizationFromPlan(built.plan);
+      const collected = await executeArsenkinExecutionPlan({
+        plan: built.plan,
+        authorization: auth,
+        client,
+        store: createPrismaProviderTaskStore(),
+      });
+      await persistSerpObservations(collected.drafts);
+
+      await prisma.orionReportRun.update({
+        where: { id: job.enrichmentReportRunId },
+        data: {
+          status: "SUCCEEDED",
+          finishedAt: new Date(),
+          metadataJson: {
+            agentId: job.agentId,
+            agentRunId: job.agentRunId,
+            executionId: job.executionId,
+            tools: job.tools,
+            baseReportRunId: job.baseReportRunId,
+            planDigest: built.plan.digest,
+            taskIds: collected.taskIds,
+            bySurface: collected.bySurface,
+          } as Prisma.InputJsonValue,
+        },
+      });
+
+      job = {
+        ...job,
+        phase: "FINALIZING",
+        status: "RUNNING",
+        reusedTaskCount,
+      };
+      saveArsenkinCaseAgentExecution(job);
+
+      await finalizeArsenkinCaseAgentRun({
+        agentRunId: job.agentRunId,
+        caseId: job.caseId,
+        executionId: job.executionId,
+        enrichmentReportRunId: job.enrichmentReportRunId,
+        agentId: job.agentId,
+        tools: job.tools,
+        plannedSurfaceCount: job.plannedSurfaces.length,
+        baseReportRunId: job.baseReportRunId,
+        prisma,
+        reused: reusedTaskCount > 0 && reusedTaskCount === built.plan.requests.length,
+        networkCallCount: 1,
+      });
+    } catch (err) {
+      const classified = classifyWorkerError(err);
+      console.error(
+        `[arsenkin-case-agent] worker failed ${job.executionId}:`,
+        classified.errorCode,
+        classified.errorMessage
+      );
+      await failJobAndAgentRun({
+        job,
+        errorCode: classified.errorCode,
+        errorMessage: classified.errorMessage,
+        prisma,
+      });
+    }
+  });
+}
+
 export async function startArsenkinCaseAgentDurable(input: {
   caseId: string;
   agentRunId: string;
@@ -364,21 +944,29 @@ export async function startArsenkinCaseAgentDurable(input: {
   tools: ArsenkinToolName[];
   actorId?: string;
   prisma?: PrismaClient;
-  /** Injected for tests / offline. */
   resolveBaseReportRunId?: () => Promise<string | null>;
-  /** When NETWORK_CALLS=0 or no client — do not pretend SUCCESS. */
-  attemptLiveEnqueue?: (ctx: {
-    enrichmentReportRunId: string;
-    baseReportRunId: string | null;
-    plannedSurfaces: FullFirst36SurfaceSlot[];
-  }) => Promise<{ networkCallCount: number; reusedTaskCount: number }>;
+  /** When false, caller schedules worker (default true). */
+  scheduleWorker?: boolean;
 }): Promise<{
   executionId: string;
   enrichmentReportRunId: string;
   baseReportRunId: string | null;
   plannedSurfaces: FullFirst36SurfaceSlot[];
   status: "RUNNING";
+  reusedExisting?: boolean;
 }> {
+  const existing = findActiveArsenkinCaseAgentExecution(input.caseId, input.agentId);
+  if (existing) {
+    return {
+      executionId: existing.executionId,
+      enrichmentReportRunId: existing.enrichmentReportRunId,
+      baseReportRunId: existing.baseReportRunId,
+      plannedSurfaces: plannedSurfacesForTools(existing.tools),
+      status: "RUNNING",
+      reusedExisting: true,
+    };
+  }
+
   const planned = plannedSurfacesForTools(input.tools);
   const executionId = `ace-${Date.now()}-${randomUUID().slice(0, 8)}`;
   const enrichmentReportRunId = `orion-arsenkin-agent-${input.agentId
@@ -399,13 +987,17 @@ export async function startArsenkinCaseAgentDurable(input: {
       if (resolved.ok && isValidBaseOrionReportRunId(resolved.baseOrionReportRunId)) {
         baseReportRunId = resolved.baseOrionReportRunId;
       }
-    } catch {
+    } catch (err) {
+      console.error(
+        "[arsenkin-case-agent] resolveBaseReportRunId failed:",
+        err instanceof Error ? err.message : err
+      );
       baseReportRunId = null;
     }
   }
 
   const job: ArsenkinCaseAgentExecutionJob = {
-    version: "arsenkin-case-agent-execution-v1",
+    version: "arsenkin-case-agent-execution-v2",
     executionId,
     agentRunId: input.agentRunId,
     caseId: input.caseId,
@@ -417,23 +1009,24 @@ export async function startArsenkinCaseAgentDurable(input: {
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     status: "RUNNING",
+    phase: "PREPARING",
     networkCallsAttempted: false,
   };
   saveArsenkinCaseAgentExecution(job);
 
-  // Live enqueue is best-effort and must not block HTTP; never mark SUCCESS here.
-  const networkOff = String(process.env.NETWORK_CALLS ?? "") === "0";
-  if (!networkOff && input.attemptLiveEnqueue) {
-    try {
-      await input.attemptLiveEnqueue({
-        enrichmentReportRunId,
-        baseReportRunId,
-        plannedSurfaces: planned,
+  if (input.scheduleWorker !== false) {
+    setImmediate(() => {
+      void runArsenkinCaseAgentWorker({
+        caseId: input.caseId,
+        executionId,
+        prisma: input.prisma,
+      }).catch((err) => {
+        console.error(
+          "[arsenkin-case-agent] scheduleWorker error:",
+          err instanceof Error ? err.message : err
+        );
       });
-      saveArsenkinCaseAgentExecution({ ...job, networkCallsAttempted: true });
-    } catch {
-      /* leave RUNNING — finalize will FAIL if no evidence */
-    }
+    });
   }
 
   return {
@@ -458,7 +1051,36 @@ export async function finalizeArsenkinCaseAgentRun(input: {
   evidence?: FinalizeEvidence;
   reused?: boolean;
   networkCallCount?: number;
+  explicitErrorCode?: string | null;
+  explicitErrorMessage?: string | null;
 }): Promise<ArsenkinCaseAgentExecutionSummary & { agentDbStatus: "RUNNING" | "SUCCEEDED" | "FAILED" }> {
+  const job = loadArsenkinCaseAgentExecution(input.caseId, input.executionId);
+  if (job && !isFinalizationAllowed(job.phase) && !input.explicitErrorCode) {
+    return {
+      ...emptyIds(),
+      agentId: input.agentId,
+      executionId: input.executionId,
+      agentRunId: input.agentRunId,
+      baseReportRunId: input.baseReportRunId ?? null,
+      enrichmentReportRunId: input.enrichmentReportRunId,
+      plannedSurfaceCount: input.plannedSurfaceCount,
+      terminalSurfaceCount: 0,
+      measuredSurfaceCount: 0,
+      noResultsSurfaceCount: 0,
+      notSupportedSurfaceCount: 0,
+      failedSurfaceCount: 0,
+      providerTaskCount: 0,
+      observationCount: 0,
+      coverageCount: 0,
+      reusedTaskCount: 0,
+      networkCallCount: input.networkCallCount ?? 0,
+      outcome: "RUNNING",
+      summary: `Фаза ${job.phase}: finalization запрещена до завершения сбора.`,
+      agentDbStatus: "RUNNING",
+      errorCode: null,
+    };
+  }
+
   let evidence = input.evidence;
   if (!evidence) {
     const prisma = input.prisma ?? (await import("@/server/prisma/client")).prisma;
@@ -474,6 +1096,8 @@ export async function finalizeArsenkinCaseAgentRun(input: {
     evidence,
     reused: input.reused,
     networkCallCount: input.networkCallCount,
+    explicitErrorCode: input.explicitErrorCode ?? job?.errorCode,
+    explicitErrorMessage: input.explicitErrorMessage ?? job?.errorMessage,
   });
 
   const summary: ArsenkinCaseAgentExecutionSummary = {
@@ -511,15 +1135,23 @@ export async function finalizeArsenkinCaseAgentRun(input: {
     },
   });
 
-  const job = loadArsenkinCaseAgentExecution(input.caseId, input.executionId);
   if (job) {
-    saveArsenkinCaseAgentExecution({ ...job, status: "FINALIZED" });
+    saveArsenkinCaseAgentExecution({
+      ...job,
+      status: computed.agentDbStatus === "FAILED" ? "FAILED" : "FINALIZED",
+      phase: computed.agentDbStatus === "FAILED" ? "FAILED" : "FINALIZED",
+      errorCode: summary.errorCode ?? null,
+      errorMessage: computed.agentDbStatus === "FAILED" ? summary.summary : null,
+    });
   }
 
   return { ...summary, agentDbStatus: computed.agentDbStatus };
 }
 
-/** Tick RUNNING executions: attempt finalize (idempotent). */
+/**
+ * Tick: only finalize jobs already in FINALIZING (never during PREPARING/COLLECTING).
+ * Also re-schedules stuck PREPARING/COLLECTING via resume worker.
+ */
 export async function tickArsenkinCaseAgentFinalizations(deps?: {
   prisma?: PrismaClient;
   evidenceByExecutionId?: Record<string, FinalizeEvidence>;
@@ -527,6 +1159,9 @@ export async function tickArsenkinCaseAgentFinalizations(deps?: {
   const running = listRunningArsenkinCaseAgentExecutions();
   let n = 0;
   for (const job of running) {
+    if (!isFinalizationAllowed(job.phase)) {
+      continue;
+    }
     try {
       const result = await finalizeArsenkinCaseAgentRun({
         agentRunId: job.agentRunId,
@@ -540,82 +1175,56 @@ export async function tickArsenkinCaseAgentFinalizations(deps?: {
         prisma: deps?.prisma,
         evidence: deps?.evidenceByExecutionId?.[job.executionId],
         networkCallCount: job.networkCallsAttempted ? 1 : 0,
+        explicitErrorCode: job.errorCode,
+        explicitErrorMessage: job.errorMessage,
       });
       if (result.agentDbStatus !== "RUNNING") n += 1;
-    } catch {
-      /* keep RUNNING */
+    } catch (err) {
+      console.error(
+        `[arsenkin-case-agent] finalize tick failed ${job.executionId}:`,
+        err instanceof Error ? err.message : err
+      );
     }
   }
   return n;
 }
 
+/** Resume unfinished CaseAgent jobs after Railway restart. */
+export async function resumeArsenkinCaseAgentExecutions(deps?: {
+  prisma?: PrismaClient;
+}): Promise<number> {
+  const running = listRunningArsenkinCaseAgentExecutions();
+  let n = 0;
+  for (const job of running) {
+    if (job.phase === "FINALIZED" || job.phase === "FAILED") continue;
+    n += 1;
+    void runArsenkinCaseAgentWorker({
+      caseId: job.caseId,
+      executionId: job.executionId,
+      prisma: deps?.prisma,
+    }).catch((err) => {
+      console.error(
+        `[arsenkin-case-agent] resume failed ${job.executionId}:`,
+        err instanceof Error ? err.message : err
+      );
+    });
+  }
+  return n;
+}
+
 /**
- * Enqueue ProviderTasks for this agent tool subset via ensureArsenkinTask (/set).
- * Does NOT wait for DONE — poll/finalize owns completion. Skips when NETWORK_CALLS=0.
+ * @deprecated Removed enqueue-only /set path. Kept as no-op for any stale imports.
+ * Use runArsenkinCaseAgentWorker instead.
  */
-export async function enqueueArsenkinCaseAgentProviderTasks(input: {
+export async function enqueueArsenkinCaseAgentProviderTasks(_input: {
   caseId: string;
   agentId: string;
   executionId: string;
   enrichmentReportRunId: string;
   tools: ArsenkinToolName[];
 }): Promise<{ setCalls: number }> {
-  if (String(process.env.NETWORK_CALLS ?? "") === "0") {
-    return { setCalls: 0 };
-  }
-  const job = loadArsenkinCaseAgentExecution(input.caseId, input.executionId);
-  const { createArsenkinClientFromEnv } = await import("../providers/arsenkin/client");
-  const client = createArsenkinClientFromEnv();
-  if (!client) return { setCalls: 0 };
-
-  const { createPrismaProviderTaskStore } = await import("../providers/arsenkin/prisma-provider-task-store");
-  const { ensureArsenkinTask } = await import("../providers/arsenkin/poll-worker");
-  const { planArsenkinExactTasks } = await import(
-    "../orion-golden/classic/plan-arsenkin-exact-tasks"
+  console.error(
+    "[arsenkin-case-agent] enqueueArsenkinCaseAgentProviderTasks is deprecated; use runArsenkinCaseAgentWorker"
   );
-
-  // Minimal subject query placeholders — production should load case subject queries.
-  let queriesRu = ["subject"];
-  let queriesUae = ["subject"];
-  try {
-    const prisma = (await import("@/server/prisma/client")).prisma;
-    const subjects = await prisma.subject.findMany({
-      where: { caseId: input.caseId },
-      take: 1,
-      select: { fullName: true },
-    });
-    const name = subjects[0]?.fullName?.trim();
-    if (name) {
-      queriesRu = [name];
-      queriesUae = [name];
-    }
-  } catch {
-    /* keep placeholder */
-  }
-
-  const planned = planArsenkinExactTasks({
-    queriesRu,
-    queriesUae,
-    tools: input.tools,
-  });
-  const store = createPrismaProviderTaskStore();
-  let setCalls = 0;
-  for (const req of planned) {
-    try {
-      await ensureArsenkinTask(client, store, {
-        toolName: req.tools_name,
-        data: req.data,
-        caseId: input.caseId,
-        reportRunId: input.enrichmentReportRunId,
-        workerId: "arsenkin-case-agent",
-      });
-      setCalls += 1;
-    } catch {
-      /* continue other tasks */
-    }
-  }
-  if (job) {
-    saveArsenkinCaseAgentExecution({ ...job, networkCallsAttempted: setCalls > 0 });
-  }
-  return { setCalls };
+  return { setCalls: 0 };
 }

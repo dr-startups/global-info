@@ -202,15 +202,14 @@ export async function runAgent(
         ? ((agent as { tools: import("../providers/arsenkin/flags").ArsenkinToolName[] }).tools)
         : [];
     try {
-      const { startArsenkinCaseAgentDurable, tickArsenkinCaseAgentFinalizations } = await import(
-        "./arsenkin-case-agent-execution"
-      );
+      const { startArsenkinCaseAgentDurable } = await import("./arsenkin-case-agent-execution");
       const started = await startArsenkinCaseAgentDurable({
         caseId,
         agentRunId: run.id,
         agentId: agent.name,
         tools,
         actorId: ctx.actorId ?? undefined,
+        // Worker scheduled inside start (PREPARING→COLLECTING→FINALIZING). Never finalize early.
       });
       const updated = await prisma.agentRun.update({
         where: { id: run.id },
@@ -229,32 +228,13 @@ export async function runAgent(
               enrichmentReportRunId: started.enrichmentReportRunId,
               plannedSurfaceCount: started.plannedSurfaces.length,
               outcome: "RUNNING",
+              phase: "PREPARING",
+              reusedExisting: Boolean(started.reusedExisting),
             },
             demo: false,
           } as unknown as Prisma.InputJsonValue,
         },
         select: agentRunSelect,
-      });
-  // Best-effort early finalize (e.g. NETWORK_CALLS=0 → NO_EXECUTION_EVIDENCE after enqueue).
-      // Do not treat enqueue as SUCCESS.
-      setImmediate(() => {
-        void (async () => {
-          try {
-            const { enqueueArsenkinCaseAgentProviderTasks } = await import(
-              "./arsenkin-case-agent-execution"
-            );
-            await enqueueArsenkinCaseAgentProviderTasks({
-              caseId,
-              agentId: agent.name,
-              executionId: started.executionId,
-              enrichmentReportRunId: started.enrichmentReportRunId,
-              tools,
-            });
-          } catch {
-            /* enqueue failures leave RUNNING until finalize */
-          }
-          await tickArsenkinCaseAgentFinalizations().catch(() => undefined);
-        })();
       });
       return toRunDTO(updated);
     } catch (err) {
