@@ -126,10 +126,29 @@ export async function ensureArsenkinTask(
     });
   }
   if (row.state === "DONE" && row.responseJson) return row;
-  if (row.state === "SUBMIT_UNKNOWN") return row;
+  const now = new Date();
+  // Soft-retry Arsenkin /set HTTP 5xx when no externalTaskId yet (uncertain submit).
+  // Avoids terminal SUBMIT_UNKNOWN on transient API 500 (e.g. suggest).
+  if (row.state === "SUBMIT_UNKNOWN") {
+    const err = String(row.errorCode ?? "");
+    const canSoftRetry =
+      !row.externalTaskId &&
+      /^http_5\d\d$/i.test(err) &&
+      row.attempts < maxRetries;
+    if (!canSoftRetry) return row;
+    row = await store.updateState(row.id, {
+      state: "QUEUED",
+      errorCode: null,
+      nextPollAt: now,
+      completedAt: null,
+      lockedBy: null,
+      lockedAt: null,
+      leaseUntil: null,
+      attempts: row.attempts + 1,
+    });
+  }
   if (row.externalTaskId) return row;
 
-  const now = new Date();
   if (row.state === "SUBMITTING") {
     const leaseExpired = !row.leaseUntil || row.leaseUntil.getTime() <= now.getTime();
     if (leaseExpired) {
@@ -334,8 +353,9 @@ export async function pollArsenkinTask(
 }
 
 /**
- * Wait until DONE/FAILED/CANCELLED/SUBMIT_UNKNOWN.
+ * Wait until DONE/FAILED/CANCELLED, or terminal SUBMIT_UNKNOWN after soft-retries exhausted.
  * RATE_LIMITED without externalTaskId waits for nextPollAt then re-enters ensure (never poll).
+ * Transient /set HTTP 5xx (SUBMIT_UNKNOWN http_5xx, no externalTaskId) is soft-retried via ensure.
  */
 export async function waitForArsenkinTaskCompletion(
   client: ArsenkinClient,
@@ -343,16 +363,23 @@ export async function waitForArsenkinTaskCompletion(
   input: EnsureArsenkinTaskInput,
   waitTimeoutMs: number
 ): Promise<ProviderTaskRecord> {
+  const maxRetries = input.maxSubmitRetries ?? maxArsenkinSubmitRetries();
   let row = await ensureArsenkinTask(client, store, input);
   const started = Date.now();
-  while (
-    row.state !== "DONE" &&
-    row.state !== "FAILED" &&
-    row.state !== "CANCELLED" &&
-    row.state !== "SUBMIT_UNKNOWN"
-  ) {
+  while (row.state !== "DONE" && row.state !== "FAILED" && row.state !== "CANCELLED") {
     if (Date.now() - started > waitTimeoutMs) {
       throw new Error(`Arsenkin task timeout tool=${input.toolName} id=${row.externalTaskId}`);
+    }
+    if (row.state === "SUBMIT_UNKNOWN") {
+      const err = String(row.errorCode ?? "");
+      const canSoftRetry =
+        !row.externalTaskId &&
+        /^http_5\d\d$/i.test(err) &&
+        row.attempts < maxRetries;
+      if (!canSoftRetry) break;
+      await new Promise((r) => setTimeout(r, 1_500));
+      row = await ensureArsenkinTask(client, store, input);
+      continue;
     }
     if (row.state === "SUBMITTING" || row.state === "QUEUED" || isSubmitRetryRateLimited(row)) {
       if (isSubmitRetryRateLimited(row) && row.nextPollAt && row.nextPollAt.getTime() > Date.now()) {

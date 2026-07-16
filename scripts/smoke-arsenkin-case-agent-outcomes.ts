@@ -306,7 +306,7 @@ describe("arsenkin case-agent durable outcomes", () => {
     assert.equal(still.status, "RUNNING");
   });
 
-  it("13: repeat start rebinds active execution (same executionId)", async () => {
+  it("13: repeat start abandons stuck job and creates a new executionId", async () => {
     const caseId = "ace-smoke-dedupe";
     const agentId = "ARSENKIN_SEARCH_TOP_REAL";
     const first = await startArsenkinCaseAgentDurable({
@@ -325,13 +325,15 @@ describe("arsenkin case-agent durable outcomes", () => {
       resolveBaseReportRunId: async () => null,
       scheduleWorker: false,
     });
-    assert.equal(second.executionId, first.executionId);
-    assert.equal(second.enrichmentReportRunId, first.enrichmentReportRunId);
-    assert.equal(second.reusedExisting, true);
+    assert.notEqual(second.executionId, first.executionId);
+    assert.notEqual(second.enrichmentReportRunId, first.enrichmentReportRunId);
+    const firstJob = loadArsenkinCaseAgentExecution(caseId, first.executionId);
+    assert.ok(firstJob);
+    assert.equal(firstJob!.phase, "FAILED");
+    assert.equal(firstJob!.errorCode, "ARSENKIN_SUPERSEDED");
     const active = findActiveArsenkinCaseAgentExecution(caseId, agentId);
     assert.ok(active);
-    assert.equal(active!.executionId, first.executionId);
-    // Rebound to the newest AgentRun so UI finalize targets the watched row.
+    assert.equal(active!.executionId, second.executionId);
     assert.equal(active!.agentRunId, "run-dedupe-2");
   });
 

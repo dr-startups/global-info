@@ -185,6 +185,15 @@ export async function executeArsenkinExecutionPlan(input: {
   client: ArsenkinClient;
   store: ProviderTaskStore;
   waitTimeoutMs?: number;
+  /** Optional progress hook (CaseAgent UI heartbeat). */
+  onProgress?: (info: {
+    index: number;
+    total: number;
+    tool: string;
+    engine: string | null;
+    region: string | null;
+    phase: "start" | "done";
+  }) => void | Promise<void>;
 }): Promise<ArsenkinPilotCollectResult> {
   assertPlanRequestHashesMatchBodies(input.plan);
   if (input.plan.digest !== input.authorization.confirmedPlanDigest) {
@@ -207,8 +216,18 @@ export async function executeArsenkinExecutionPlan(input: {
     const surfaceRuns: ArsenkinSurfaceRun[] = [];
     const waitTimeoutMs = input.waitTimeoutMs ?? 10 * 60_000;
     const coverageMatrix = buildPlannedCoverageMatrix(input.plan);
+    const total = input.plan.requests.length;
 
-    for (const req of input.plan.requests) {
+    for (let index = 0; index < input.plan.requests.length; index += 1) {
+      const req = input.plan.requests[index]!;
+      await input.onProgress?.({
+        index: index + 1,
+        total,
+        tool: req.tool,
+        engine: req.engine,
+        region: req.region,
+        phase: "start",
+      });
       const done = await completePlannedRequest(
         input.client,
         input.store,
@@ -255,6 +274,14 @@ export async function executeArsenkinExecutionPlan(input: {
           resultCount: mapped.filter((d) => d.providerStatus === "OK").length,
         });
       }
+      await input.onProgress?.({
+        index: index + 1,
+        total,
+        tool: req.tool,
+        engine: req.engine,
+        region: req.region,
+        phase: "done",
+      });
     }
 
     return {

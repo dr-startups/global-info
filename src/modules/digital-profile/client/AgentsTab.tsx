@@ -83,7 +83,8 @@ export function AgentsTab({
   }, [anyArsenkinRunning, onChanged]);
 
   async function run(name: string) {
-    if (busyAgent || auditing) return;
+    // Block only this agent (and unified audit), not the whole table.
+    if (busyAgent === name || auditing) return;
     const agent = agents.find((a) => a.name === name);
     if (agent?.kind === "REAL" && typeof window !== "undefined") {
       if (!window.confirm(t("agents.realRunConfirm"))) return;
@@ -217,6 +218,7 @@ export function AgentsTab({
               : null;
             const running =
               a.lastRun?.status === "RUNNING" || a.lastRun?.outcome === "RUNNING";
+            const thisBusy = busyAgent === a.name;
             return (
               <tr key={a.name} data-testid={`agent-row-${a.name}`}>
                 <td>
@@ -261,14 +263,21 @@ export function AgentsTab({
                   {canRun ? (
                     <button
                       className="dp-btn dp-btn-sm"
-                      disabled={busyAgent !== null || auditing || running}
+                      disabled={thisBusy || auditing}
                       onClick={() => void run(a.name)}
                       data-testid={`agent-run-${a.name}`}
+                      title={
+                        running && isDurable
+                          ? "Принудительно перезапустить (прервать зависший RUNNING)"
+                          : undefined
+                      }
                     >
-                      {busyAgent === a.name || running ? (
-                        <span className="dp-spinner" />
-                      ) : null}
-                      {running ? t("agents.running") : t("agents.runAudit")}
+                      {thisBusy ? <span className="dp-spinner" /> : null}
+                      {thisBusy
+                        ? t("agents.running")
+                        : running && isDurable
+                          ? "Перезапустить"
+                          : t("agents.runAudit")}
                     </button>
                   ) : null}
                 </td>

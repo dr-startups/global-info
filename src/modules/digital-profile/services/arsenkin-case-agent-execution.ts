@@ -911,6 +911,51 @@ export async function runArsenkinCaseAgentWorker(input: {
         client,
         store: createPrismaProviderTaskStore(),
         waitTimeoutMs: 90_000,
+        onProgress: async (info) => {
+          const label = `${info.tool}${info.engine ? `/${info.engine}` : ""}${
+            info.region ? `:${info.region}` : ""
+          }`;
+          const summary =
+            info.phase === "start"
+              ? `Arsenkin API: задача ${info.index}/${info.total} (${label}) — /set→/check→/get…`
+              : `Arsenkin API: задача ${info.index}/${info.total} (${label}) готова`;
+          try {
+            await prisma.agentRun.update({
+              where: { id: job.agentRunId },
+              data: {
+                status: "RUNNING",
+                output: {
+                  summary,
+                  outcome: "RUNNING",
+                  arsenkinExecution: {
+                    agentId: job.agentId,
+                    executionId: job.executionId,
+                    agentRunId: job.agentRunId,
+                    enrichmentReportRunId: job.enrichmentReportRunId,
+                    baseReportRunId: job.baseReportRunId,
+                    plannedSurfaceCount: job.plannedSurfaces.length,
+                    outcome: "RUNNING",
+                    phase: "COLLECTING",
+                    planDigest: built.plan.digest,
+                    progress: info,
+                  },
+                  demo: false,
+                } as unknown as Prisma.InputJsonValue,
+              },
+            });
+            saveArsenkinCaseAgentExecution({
+              ...job,
+              phase: "COLLECTING",
+              status: "RUNNING",
+              updatedAt: new Date().toISOString(),
+            });
+          } catch (err) {
+            console.error(
+              "[arsenkin-case-agent] progress update failed:",
+              err instanceof Error ? err.message : err
+            );
+          }
+        },
       });
       await persistSerpObservations(collected.drafts);
 
@@ -990,53 +1035,36 @@ export async function startArsenkinCaseAgentDurable(input: {
 }> {
   const existing = findActiveArsenkinCaseAgentExecution(input.caseId, input.agentId);
   if (existing) {
-    // Rebind to the AgentRun the UI is watching (double-click / retry while stuck).
-    if (existing.agentRunId !== input.agentRunId) {
-      try {
-        const prisma = input.prisma ?? (await import("@/server/prisma/client")).prisma;
-        await prisma.agentRun.update({
-          where: { id: existing.agentRunId },
-          data: {
-            status: "FAILED",
-            finishedAt: new Date(),
-            error: "ARSENKIN_SUPERSEDED: заменён новым запуском того же агента",
-            output: {
-              summary: "Запуск замещён повторным нажатием",
-              outcome: "FAILED",
-              errorCode: "ARSENKIN_SUPERSEDED",
-              demo: false,
-            } as unknown as Prisma.InputJsonValue,
-          },
-        });
-      } catch (err) {
-        console.error(
-          "[arsenkin-case-agent] supersede old AgentRun failed:",
-          err instanceof Error ? err.message : err
-        );
-      }
-      saveArsenkinCaseAgentExecution({
-        ...existing,
-        agentRunId: input.agentRunId,
-        // Allow worker to re-enter PREPARING→COLLECTING if previous background path died.
-        phase:
-          existing.phase === "FINALIZED" || existing.phase === "FAILED"
-            ? "PREPARING"
-            : existing.phase === "FINALIZING"
-              ? "FINALIZING"
-              : "PREPARING",
-        status: "RUNNING",
-        errorCode: null,
-        errorMessage: null,
+    // Always start a fresh execution on retry — do not reuse a stuck COLLECTING job.
+    saveArsenkinCaseAgentExecution({
+      ...existing,
+      status: "FAILED",
+      phase: "FAILED",
+      errorCode: "ARSENKIN_SUPERSEDED",
+      errorMessage: "Заменён новым запуском того же агента",
+    });
+    try {
+      const prisma = input.prisma ?? (await import("@/server/prisma/client")).prisma;
+      await prisma.agentRun.update({
+        where: { id: existing.agentRunId },
+        data: {
+          status: "FAILED",
+          finishedAt: new Date(),
+          error: "ARSENKIN_SUPERSEDED: заменён новым запуском того же агента",
+          output: {
+            summary: "Запуск замещён повторным нажатием",
+            outcome: "FAILED",
+            errorCode: "ARSENKIN_SUPERSEDED",
+            demo: false,
+          } as unknown as Prisma.InputJsonValue,
+        },
       });
+    } catch (err) {
+      console.error(
+        "[arsenkin-case-agent] supersede old AgentRun failed:",
+        err instanceof Error ? err.message : err
+      );
     }
-    return {
-      executionId: existing.executionId,
-      enrichmentReportRunId: existing.enrichmentReportRunId,
-      baseReportRunId: existing.baseReportRunId,
-      plannedSurfaces: plannedSurfacesForTools(existing.tools),
-      status: "RUNNING",
-      reusedExisting: true,
-    };
   }
 
   const planned = plannedSurfacesForTools(input.tools);
