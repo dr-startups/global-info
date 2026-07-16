@@ -24,6 +24,9 @@ export type { AgentContext, AgentRunResult, SavedEvidenceSummary };
 
 export type AgentKind = "MOCK" | "REAL";
 
+/** SYNC = finalize in HTTP request; DURABLE_ASYNC = leave RUNNING until worker/finalize. */
+export type AgentExecutionMode = "SYNC" | "DURABLE_ASYNC";
+
 export type AvailabilityStatus = "ENABLED" | "DISABLED" | "NOT_CONFIGURED";
 
 export interface AgentAvailability {
@@ -39,6 +42,8 @@ export interface AgentMetadata {
   readonly kind: AgentKind;
   /** DB enum stored on agent_runs.agentName. */
   readonly agentName: AgentNameValue;
+  /** Default SYNC for backwards compatibility. */
+  readonly executionMode?: AgentExecutionMode;
 }
 
 /**

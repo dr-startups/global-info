@@ -66,6 +66,15 @@ async function main() {
         resumeUnifiedCollectionsOnStartup();
       })
       .catch(() => undefined);
+    void import("../src/modules/digital-profile/services/arsenkin-case-agent-execution")
+      .then(({ tickArsenkinCaseAgentFinalizations }) => {
+        console.error("[arsenkin-agent] Finalizing durable CaseAgent runs…");
+        void tickArsenkinCaseAgentFinalizations();
+        setInterval(() => {
+          void tickArsenkinCaseAgentFinalizations().catch(() => undefined);
+        }, 5000);
+      })
+      .catch(() => undefined);
   }, 1500);
 
   child.on("error", (err) => {

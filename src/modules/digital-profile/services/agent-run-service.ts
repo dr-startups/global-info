@@ -27,6 +27,9 @@ export interface AgentRunDTO {
   kind: AgentKind;
   status: string;
   summary: string | null;
+  /** Arsenkin durable outcome from output.outcome when present. */
+  outcome?: string | null;
+  executionId?: string | null;
   itemsSaved: number;
   error: string | null;
   startedAt: Date | null;
@@ -41,8 +44,11 @@ export interface AgentInfoDTO {
   kind: AgentKind;
   enabled: boolean;
   availability: AgentAvailability;
+  executionMode?: "SYNC" | "DURABLE_ASYNC";
   lastRun: {
     status: string;
+    outcome?: string | null;
+    summary?: string | null;
     startedAt: Date | null;
     finishedAt: Date | null;
   } | null;
@@ -119,7 +125,11 @@ function runInput(row: { input: Prisma.JsonValue }): { agentId?: string; kind?: 
 function toRunDTO(
   row: Prisma.AgentRunGetPayload<{ select: typeof agentRunSelect }>
 ): AgentRunDTO {
-  const output = (row.output ?? null) as { summary?: string } | null;
+  const output = (row.output ?? null) as {
+    summary?: string;
+    outcome?: string;
+    arsenkinExecution?: { executionId?: string };
+  } | null;
   const input = runInput(row);
   return {
     id: row.id,
@@ -127,6 +137,8 @@ function toRunDTO(
     kind: input.kind ?? "MOCK",
     status: row.status,
     summary: output?.summary ?? null,
+    outcome: output?.outcome ?? null,
+    executionId: output?.arsenkinExecution?.executionId ?? null,
     itemsSaved: row.itemsSaved,
     error: row.error,
     startedAt: row.startedAt,
@@ -165,7 +177,11 @@ export async function runAgent(
     data: {
       caseId,
       agentName: agent.agentName,
-      input: { agentId: agent.name, kind: agent.kind },
+      input: {
+        agentId: agent.name,
+        kind: agent.kind,
+        executionMode: agent.executionMode ?? "SYNC",
+      },
       status: "RUNNING",
       startedAt: new Date(),
       triggeredBy: ctx.actorId ?? null,
@@ -178,6 +194,87 @@ export async function runAgent(
     actorId: ctx.actorId,
     metadata: { runId: run.id, agentName: agent.name },
   });
+
+  // ---- Durable async Arsenkin (and future) agents ----
+  if ((agent.executionMode ?? "SYNC") === "DURABLE_ASYNC") {
+    const tools =
+      "tools" in agent && Array.isArray((agent as { tools?: string[] }).tools)
+        ? ((agent as { tools: import("../providers/arsenkin/flags").ArsenkinToolName[] }).tools)
+        : [];
+    try {
+      const { startArsenkinCaseAgentDurable, tickArsenkinCaseAgentFinalizations } = await import(
+        "./arsenkin-case-agent-execution"
+      );
+      const started = await startArsenkinCaseAgentDurable({
+        caseId,
+        agentRunId: run.id,
+        agentId: agent.name,
+        tools,
+        actorId: ctx.actorId ?? undefined,
+      });
+      const updated = await prisma.agentRun.update({
+        where: { id: run.id },
+        data: {
+          status: "RUNNING",
+          finishedAt: null,
+          itemsSaved: 0,
+          output: {
+            summary: `Выполняется Arsenkin (${started.plannedSurfaces.length} поверхностей)…`,
+            outcome: "RUNNING",
+            arsenkinExecution: {
+              agentId: agent.name,
+              executionId: started.executionId,
+              agentRunId: run.id,
+              baseReportRunId: started.baseReportRunId,
+              enrichmentReportRunId: started.enrichmentReportRunId,
+              plannedSurfaceCount: started.plannedSurfaces.length,
+              outcome: "RUNNING",
+            },
+            demo: false,
+          } as unknown as Prisma.InputJsonValue,
+        },
+        select: agentRunSelect,
+      });
+  // Best-effort early finalize (e.g. NETWORK_CALLS=0 → NO_EXECUTION_EVIDENCE after enqueue).
+      // Do not treat enqueue as SUCCESS.
+      setImmediate(() => {
+        void (async () => {
+          try {
+            const { enqueueArsenkinCaseAgentProviderTasks } = await import(
+              "./arsenkin-case-agent-execution"
+            );
+            await enqueueArsenkinCaseAgentProviderTasks({
+              caseId,
+              agentId: agent.name,
+              executionId: started.executionId,
+              enrichmentReportRunId: started.enrichmentReportRunId,
+              tools,
+            });
+          } catch {
+            /* enqueue failures leave RUNNING until finalize */
+          }
+          await tickArsenkinCaseAgentFinalizations().catch(() => undefined);
+        })();
+      });
+      return toRunDTO(updated);
+    } catch (err) {
+      const updated = await prisma.agentRun.update({
+        where: { id: run.id },
+        data: {
+          status: "FAILED",
+          finishedAt: new Date(),
+          error: err instanceof Error ? err.message : "Durable Arsenkin start failed",
+          output: {
+            summary: "Не удалось запустить durable Arsenkin execution",
+            outcome: "FAILED",
+            demo: false,
+          } as unknown as Prisma.InputJsonValue,
+        },
+        select: agentRunSelect,
+      });
+      return toRunDTO(updated);
+    }
+  }
 
   const result = await agent.run(agentCtx);
 
@@ -198,6 +295,24 @@ export async function runAgent(
       action: "AGENT_RUN_SUCCEEDED",
       actorId: ctx.actorId,
       metadata: { runId: run.id, agentName: agent.name, summary },
+    });
+    return toRunDTO(updated);
+  }
+
+  if (result.status === "RUNNING") {
+    // SYNC agents should not return RUNNING; keep RUNNING without fake SUCCESS.
+    const updated = await prisma.agentRun.update({
+      where: { id: run.id },
+      data: {
+        status: "RUNNING",
+        finishedAt: null,
+        output: {
+          summary: "Выполняется…",
+          outcome: "RUNNING",
+          ...(typeof result.output === "object" && result.output ? result.output : {}),
+        } as unknown as Prisma.InputJsonValue,
+      },
+      select: agentRunSelect,
     });
     return toRunDTO(updated);
   }
@@ -449,7 +564,14 @@ export async function listAgents(caseId: string): Promise<AgentInfoDTO[]> {
   const runs = await prisma.agentRun.findMany({
     where: { caseId },
     orderBy: { createdAt: "desc" },
-    select: { agentName: true, input: true, status: true, startedAt: true, finishedAt: true },
+    select: {
+      agentName: true,
+      input: true,
+      status: true,
+      output: true,
+      startedAt: true,
+      finishedAt: true,
+    },
   });
   // Key strictly by input.agentId so agents sharing Prisma AgentName (SEARCH_SURFACES)
   // never collide. Legacy rows without agentId only map when enum is unique.
@@ -466,6 +588,8 @@ export async function listAgents(caseId: string): Promise<AgentInfoDTO[]> {
 
   return defs.map((d) => {
     const last = latest.get(d.name);
+    const agent = getAgent(d.name);
+    const out = (last?.output ?? null) as { summary?: string; outcome?: string } | null;
     return {
       name: d.name,
       displayName: d.displayName,
@@ -473,8 +597,15 @@ export async function listAgents(caseId: string): Promise<AgentInfoDTO[]> {
       kind: d.kind,
       enabled: d.enabled,
       availability: d.availability,
+      executionMode: agent?.executionMode ?? "SYNC",
       lastRun: last
-        ? { status: last.status, startedAt: last.startedAt, finishedAt: last.finishedAt }
+        ? {
+            status: last.status,
+            outcome: out?.outcome ?? null,
+            summary: out?.summary ?? null,
+            startedAt: last.startedAt,
+            finishedAt: last.finishedAt,
+          }
         : null,
     };
   });

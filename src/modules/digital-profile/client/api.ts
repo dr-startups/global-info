@@ -547,9 +547,12 @@ export interface AgentInfo {
   availability: AgentAvailability;
   lastRun: {
     status: string;
+    outcome?: string | null;
+    summary?: string | null;
     startedAt: string | null;
     finishedAt: string | null;
   } | null;
+  executionMode?: "SYNC" | "DURABLE_ASYNC";
 }
 
 export interface AgentRun {
@@ -558,6 +561,8 @@ export interface AgentRun {
   kind: AgentKind;
   status: string;
   summary: string | null;
+  outcome?: string | null;
+  executionId?: string | null;
   itemsSaved: number;
   error: string | null;
   startedAt: string | null;

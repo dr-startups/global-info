@@ -1,6 +1,6 @@
 /**
- * Five Arsenkin functional CaseAgents (registry slugs). Share Prisma agentName SEARCH_SURFACES;
- * isolation via input.agentId === registry name.
+ * Five Arsenkin functional CaseAgents (registry slugs).
+ * executionMode=DURABLE_ASYNC — run() only starts durable execution; never SUCCEEDED on enqueue.
  */
 
 import type { AgentNameValue } from "../../types";
@@ -21,7 +21,6 @@ function arsenkinAvailability(): AgentAvailability {
   if (!arsenkinApiToken()) {
     return { status: "NOT_CONFIGURED", message: "ARSENKIN_API_TOKEN is not set." };
   }
-  // Startup readiness artifact (no console npm run required at click time).
   try {
     const { existsSync, readFileSync } = require("node:fs") as typeof import("node:fs");
     const { join } = require("node:path") as typeof import("node:path");
@@ -42,7 +41,7 @@ function arsenkinAvailability(): AgentAvailability {
       }
     }
   } catch {
-    /* missing artifact → allow ENABLED when token present; fail-closed at execute */
+    /* missing artifact → allow ENABLED when token present */
   }
   return { status: "ENABLED", message: "Arsenkin ready." };
 }
@@ -53,6 +52,7 @@ abstract class ArsenkinCaseAgentBase implements CaseAgent {
   abstract readonly description: string;
   abstract readonly tools: ArsenkinToolName[];
   readonly kind = "REAL" as const;
+  readonly executionMode = "DURABLE_ASYNC" as const;
   readonly agentName: AgentNameValue = "SEARCH_SURFACES";
 
   availability(): AgentAvailability {
@@ -71,6 +71,10 @@ abstract class ArsenkinCaseAgentBase implements CaseAgent {
     return {};
   }
 
+  /**
+   * Durable start only. Must return RUNNING — never SUCCEEDED.
+   * Actual enqueue/finalize is owned by agent-run-service + arsenkin-case-agent-execution.
+   */
   async run(ctx: AgentContext): Promise<AgentRunResult> {
     const startedAt = new Date().toISOString();
     const avail = this.availability();
@@ -84,26 +88,18 @@ abstract class ArsenkinCaseAgentBase implements CaseAgent {
         finishedAt: new Date().toISOString(),
       };
     }
-
-    // Surface-scoped enrichment: record intent; full execute goes through unified/canonical path.
-    // Offline NETWORK_CALLS=0: succeed with zero network.
-    const networkOff = String(process.env.NETWORK_CALLS ?? "") === "0";
     return {
       agentName: this.agentName,
-      status: "SUCCEEDED",
+      status: "RUNNING",
       output: {
-        demo: networkOff,
         agentId: this.name,
         tools: this.tools,
-        surfaces: this.tools,
-        networkCalls: networkOff ? 0 : undefined,
-        note: networkOff
-          ? "Offline stub — live surfaces execute via unified collection / Arsenkin executor."
-          : "Arsenkin agent accepted; executor scheduled for tool subset.",
+        executionMode: "DURABLE_ASYNC",
+        note: "Durable Arsenkin execution started — awaiting ProviderTask/coverage finalize.",
       },
       saved: {},
       startedAt,
-      finishedAt: new Date().toISOString(),
+      finishedAt: startedAt,
     };
   }
 }
@@ -152,3 +148,7 @@ export const ARSENKIN_REAL_AGENT_NAMES = [
   "ARSENKIN_AI_SEARCH_REAL",
   "ARSENKIN_URL_AUDIT_REAL",
 ] as const;
+
+export function isArsenkinRealAgentName(name: string): boolean {
+  return (ARSENKIN_REAL_AGENT_NAMES as readonly string[]).includes(name);
+}
