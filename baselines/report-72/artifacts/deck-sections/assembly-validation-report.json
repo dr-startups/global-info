@@ -1,0 +1,28 @@
+{
+  "passed": true,
+  "issues": [],
+  "checks": {
+    "requiredSectionsPresent": true,
+    "sectionOrderCorrect": true,
+    "baseSlotIdsUnique": true,
+    "continuationAdjacency": true,
+    "pageNumberingConsistent": true,
+    "tocMatchesDeck": true,
+    "adverseInExecutiveSummary": true,
+    "contradictionsPreserved": true,
+    "baseDatasetPreserved": true,
+    "noEmptyStatusLabels": true,
+    "canonicalBaseSlotCoverage": true,
+    "noPlaceholderWithAvailableAsset": true,
+    "emptySidebarCountZero": true,
+    "unexplainedAdverseMarkerCountZero": true,
+    "visualCardsResolvedOrLabeled": true,
+    "noMateriallyEmptyPages": true,
+    "pageAccountingComplete": true,
+    "sidebarScopeSubsets": true,
+    "regionScopeIsolation": true,
+    "sourceFooterFromSidebarEvidence": true,
+    "noStalePacks": true,
+    "sectionQaAllPassed": true
+  }
+}

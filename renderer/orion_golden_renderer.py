@@ -1340,7 +1340,15 @@ def _add_search_table(
             plan.append(("data", r))
 
     # Column widths (Позиция | Домен | Заголовок | Статус) — spec §4 proportions.
-    prop = [0.07, 0.22, 0.53, 0.18][:cols]
+    # Two-column tables (Параметр | Значение) need a readable label column, and
+    # a textual first column (e.g. «База данных») needs more than the numeric
+    # position width.
+    if cols == 2:
+        prop = [0.24, 0.76]
+    elif headers and len(str(headers[0]).strip()) > 3:
+        prop = [0.14, 0.26, 0.42, 0.18][:cols]
+    else:
+        prop = [0.07, 0.22, 0.53, 0.18][:cols]
     widths = [max(500_000, int(CONTENT_W * p)) for p in prop]
     leftover = CONTENT_W - sum(widths)
     if leftover != 0 and widths:

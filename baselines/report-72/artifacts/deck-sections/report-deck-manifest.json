@@ -1,0 +1,616 @@
+{
+  "schemaVersion": "report-deck-manifest-v2",
+  "caseId": "cmreamy2t0002o30f29urzcog",
+  "reportRunId": "orion-canary-1783980828528",
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "generatedAt": "2026-07-16T22:22:54.676Z",
+  "pageCount": 41,
+  "baseSlotCount": 36,
+  "baseSlotCoverage": 36,
+  "continuationCount": 5,
+  "sectionPageRanges": [
+    {
+      "sectionType": "FRONT_MATTER",
+      "title": "Титульный раздел",
+      "firstPage": 1,
+      "lastPage": 2
+    },
+    {
+      "sectionType": "EXECUTIVE",
+      "title": "Резюме для руководства",
+      "firstPage": 3,
+      "lastPage": 6
+    },
+    {
+      "sectionType": "RU_PROFILE",
+      "title": "Цифровой профиль — Россия",
+      "firstPage": 7,
+      "lastPage": 25
+    },
+    {
+      "sectionType": "UAE_PROFILE",
+      "title": "Цифровой профиль — ОАЭ и международный контур",
+      "firstPage": 26,
+      "lastPage": 36
+    },
+    {
+      "sectionType": "COMPLIANCE",
+      "title": "Комплаенс-проверка",
+      "firstPage": 37,
+      "lastPage": 39
+    },
+    {
+      "sectionType": "APPENDIX",
+      "title": "Приложение",
+      "firstPage": 40,
+      "lastPage": 41
+    }
+  ],
+  "toc": [
+    {
+      "title": "Резюме для руководства — стр. 3–6",
+      "pageNumber": 3
+    },
+    {
+      "title": "Цифровой профиль — Россия — стр. 7–25",
+      "pageNumber": 7
+    },
+    {
+      "title": "Цифровой профиль — ОАЭ и международный контур — стр. 26–36",
+      "pageNumber": 26
+    },
+    {
+      "title": "Комплаенс-проверка — стр. 37–39",
+      "pageNumber": 37
+    },
+    {
+      "title": "Приложение — стр. 40–41",
+      "pageNumber": 40
+    }
+  ],
+  "slides": [
+    {
+      "slideId": "p01_cover",
+      "baseSlotId": "p01_cover",
+      "sectionId": "FRONT_MATTER",
+      "sectionType": "FRONT_MATTER",
+      "templateId": "cover",
+      "title": "Отчёт о цифровом профиле — Сергей Глинка",
+      "pageNumber": 1,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p02_toc",
+      "baseSlotId": "p02_toc",
+      "sectionId": "FRONT_MATTER",
+      "sectionType": "FRONT_MATTER",
+      "templateId": "toc",
+      "title": "Содержание отчёта",
+      "pageNumber": 2,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p03_executive",
+      "baseSlotId": "p03_executive",
+      "sectionId": "EXECUTIVE",
+      "sectionType": "EXECUTIVE",
+      "templateId": "executive-summary",
+      "title": "Резюме",
+      "pageNumber": 3,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p03_executive__cont1",
+      "baseSlotId": "p03_executive",
+      "sectionId": "EXECUTIVE",
+      "sectionType": "EXECUTIVE",
+      "templateId": "continuation",
+      "title": "Резюме — ключевые факты (продолжение)",
+      "pageNumber": 4,
+      "isContinuation": true,
+      "continuationOf": "p03_executive",
+      "pageKind": "continuation"
+    },
+    {
+      "slideId": "p04_risk_dashboard",
+      "baseSlotId": "p04_risk_dashboard",
+      "sectionId": "EXECUTIVE",
+      "sectionType": "EXECUTIVE",
+      "templateId": "risk-matrix",
+      "title": "Матрица комплаенс-рисков",
+      "pageNumber": 5,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p05_profile_dashboard",
+      "baseSlotId": "p05_profile_dashboard",
+      "sectionId": "EXECUTIVE",
+      "sectionType": "EXECUTIVE",
+      "templateId": "regional-summary",
+      "title": "Обзор цифрового профиля",
+      "pageNumber": 6,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p06_ru_toc",
+      "baseSlotId": "p06_ru_toc",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "section-divider",
+      "title": "Россия: Цифровой профиль",
+      "pageNumber": 7,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p07_ru_summary",
+      "baseSlotId": "p07_ru_summary",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "regional-summary",
+      "title": "Россия — резюме аудита",
+      "pageNumber": 8,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p08_ru_metrics",
+      "baseSlotId": "p08_ru_metrics",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "serp-table",
+      "title": "Россия — метрики и проверка URL",
+      "pageNumber": 9,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p09_ru_serp_table",
+      "baseSlotId": "p09_ru_serp_table",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "serp-table",
+      "title": "Россия — позиции в поисковой выдаче",
+      "pageNumber": 10,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p09_ru_serp_table__cont1",
+      "baseSlotId": "p09_ru_serp_table",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "serp-table",
+      "title": "Россия — позиции в поисковой выдаче (продолжение 2/3)",
+      "pageNumber": 11,
+      "isContinuation": true,
+      "continuationOf": "p09_ru_serp_table",
+      "pageKind": "continuation"
+    },
+    {
+      "slideId": "p09_ru_serp_table__cont2",
+      "baseSlotId": "p09_ru_serp_table",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "serp-table",
+      "title": "Россия — позиции в поисковой выдаче (продолжение 3/3)",
+      "pageNumber": 12,
+      "isContinuation": true,
+      "continuationOf": "p09_ru_serp_table",
+      "pageKind": "continuation"
+    },
+    {
+      "slideId": "p10_ru_serp_visual",
+      "baseSlotId": "p10_ru_serp_visual",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "serp-screenshot-analysis",
+      "title": "Россия — снимок выдачи",
+      "pageNumber": 13,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p11_ru_suggestions_yandex",
+      "baseSlotId": "p11_ru_suggestions_yandex",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "suggestions",
+      "title": "Россия — подсказки Яндекса",
+      "pageNumber": 14,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p12_ru_suggestions_google",
+      "baseSlotId": "p12_ru_suggestions_google",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "suggestions",
+      "title": "Россия — подсказки Google",
+      "pageNumber": 15,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p14_ru_images_1",
+      "baseSlotId": "p14_ru_images_1",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "image-grid",
+      "title": "Россия — изображения (1)",
+      "pageNumber": 16,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p15_ru_images_2",
+      "baseSlotId": "p15_ru_images_2",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "image-grid",
+      "title": "Россия — изображения (2)",
+      "pageNumber": 17,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p16_ru_images_3",
+      "baseSlotId": "p16_ru_images_3",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "image-grid",
+      "title": "Россия — изображения (3)",
+      "pageNumber": 18,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p17_ru_images_4",
+      "baseSlotId": "p17_ru_images_4",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "image-grid",
+      "title": "Россия — изображения (4)",
+      "pageNumber": 19,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p13_ru_wikipedia",
+      "baseSlotId": "p13_ru_wikipedia",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "wikipedia-knowledge",
+      "title": "Россия — Википедия",
+      "pageNumber": 20,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p18_ru_knowledge_1",
+      "baseSlotId": "p18_ru_knowledge_1",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "wikipedia-knowledge",
+      "title": "Россия — панель знаний",
+      "pageNumber": 21,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p19_ru_knowledge_2",
+      "baseSlotId": "p19_ru_knowledge_2",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "ai-overview",
+      "title": "Россия — AI-ответы поисковых систем",
+      "pageNumber": 22,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p20_ru_related_1",
+      "baseSlotId": "p20_ru_related_1",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "related-queries",
+      "title": "Россия — связанные запросы (1)",
+      "pageNumber": 23,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p21_ru_related_2",
+      "baseSlotId": "p21_ru_related_2",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "related-queries",
+      "title": "Россия — связанные запросы (2)",
+      "pageNumber": 24,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p22_ru_related_3",
+      "baseSlotId": "p22_ru_related_3",
+      "sectionId": "RU_PROFILE",
+      "sectionType": "RU_PROFILE",
+      "templateId": "related-queries",
+      "title": "Россия — связанные запросы (3)",
+      "pageNumber": 25,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p23_uae_toc",
+      "baseSlotId": "p23_uae_toc",
+      "sectionId": "UAE_PROFILE",
+      "sectionType": "UAE_PROFILE",
+      "templateId": "section-divider",
+      "title": "ОАЭ: Цифровой профиль",
+      "pageNumber": 26,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p24_uae_summary",
+      "baseSlotId": "p24_uae_summary",
+      "sectionId": "UAE_PROFILE",
+      "sectionType": "UAE_PROFILE",
+      "templateId": "regional-summary",
+      "title": "ОАЭ — резюме аудита",
+      "pageNumber": 27,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p25_uae_metrics",
+      "baseSlotId": "p25_uae_metrics",
+      "sectionId": "UAE_PROFILE",
+      "sectionType": "UAE_PROFILE",
+      "templateId": "serp-table",
+      "title": "ОАЭ — метрики покрытия",
+      "pageNumber": 28,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p26_uae_serp_table",
+      "baseSlotId": "p26_uae_serp_table",
+      "sectionId": "UAE_PROFILE",
+      "sectionType": "UAE_PROFILE",
+      "templateId": "serp-table",
+      "title": "ОАЭ — позиции в поисковой выдаче",
+      "pageNumber": 29,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p26_uae_serp_table__cont1",
+      "baseSlotId": "p26_uae_serp_table",
+      "sectionId": "UAE_PROFILE",
+      "sectionType": "UAE_PROFILE",
+      "templateId": "serp-table",
+      "title": "ОАЭ — позиции в поисковой выдаче (продолжение 2/2)",
+      "pageNumber": 30,
+      "isContinuation": true,
+      "continuationOf": "p26_uae_serp_table",
+      "pageKind": "continuation"
+    },
+    {
+      "slideId": "p27_uae_serp_visual",
+      "baseSlotId": "p27_uae_serp_visual",
+      "sectionId": "UAE_PROFILE",
+      "sectionType": "UAE_PROFILE",
+      "templateId": "serp-screenshot-analysis",
+      "title": "ОАЭ — снимок выдачи",
+      "pageNumber": 31,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p28_uae_suggestions",
+      "baseSlotId": "p28_uae_suggestions",
+      "sectionId": "UAE_PROFILE",
+      "sectionType": "UAE_PROFILE",
+      "templateId": "suggestions",
+      "title": "ОАЭ — подсказки поиска",
+      "pageNumber": 32,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p30_uae_images",
+      "baseSlotId": "p30_uae_images",
+      "sectionId": "UAE_PROFILE",
+      "sectionType": "UAE_PROFILE",
+      "templateId": "image-grid",
+      "title": "ОАЭ — изображения в поиске",
+      "pageNumber": 33,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p29_uae_wikipedia",
+      "baseSlotId": "p29_uae_wikipedia",
+      "sectionId": "UAE_PROFILE",
+      "sectionType": "UAE_PROFILE",
+      "templateId": "wikipedia-knowledge",
+      "title": "ОАЭ — Википедия",
+      "pageNumber": 34,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p31_uae_knowledge",
+      "baseSlotId": "p31_uae_knowledge",
+      "sectionId": "UAE_PROFILE",
+      "sectionType": "UAE_PROFILE",
+      "templateId": "ai-overview",
+      "title": "ОАЭ — панель знаний и AI Overview",
+      "pageNumber": 35,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p32_uae_related",
+      "baseSlotId": "p32_uae_related",
+      "sectionId": "UAE_PROFILE",
+      "sectionType": "UAE_PROFILE",
+      "templateId": "related-queries",
+      "title": "ОАЭ — связанные запросы",
+      "pageNumber": 36,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p33_compliance_toc",
+      "baseSlotId": "p33_compliance_toc",
+      "sectionId": "COMPLIANCE",
+      "sectionType": "COMPLIANCE",
+      "templateId": "serp-table",
+      "title": "Комплаенс — сводка баз данных",
+      "pageNumber": 37,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p34_dow_jones",
+      "baseSlotId": "p34_dow_jones",
+      "sectionId": "COMPLIANCE",
+      "sectionType": "COMPLIANCE",
+      "templateId": "serp-table",
+      "title": "Dow Jones — профиль",
+      "pageNumber": 38,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "p35_lexis_visual",
+      "baseSlotId": "p35_lexis_visual",
+      "sectionId": "COMPLIANCE",
+      "sectionType": "COMPLIANCE",
+      "templateId": "serp-table",
+      "title": "LexisNexis — страница профиля",
+      "pageNumber": 39,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "canonical_base"
+    },
+    {
+      "slideId": "appendix_main_base",
+      "baseSlotId": "slot_appendix_main",
+      "sectionId": "APPENDIX",
+      "sectionType": "APPENDIX",
+      "templateId": "finding-cards",
+      "title": "Приложение: материалы, требующие идентификации",
+      "pageNumber": 40,
+      "isContinuation": false,
+      "continuationOf": null,
+      "pageKind": "optional_extra",
+      "pageKindReason": "optional section APPENDIX (fragment APPENDIX_MAIN) admitted by the section manifest"
+    },
+    {
+      "slideId": "appendix_main_base__cont1",
+      "baseSlotId": "slot_appendix_main",
+      "sectionId": "APPENDIX",
+      "sectionType": "APPENDIX",
+      "templateId": "finding-cards",
+      "title": "Приложение: материалы, требующие идентификации (продолжение 2/2)",
+      "pageNumber": 41,
+      "isContinuation": true,
+      "continuationOf": "appendix_main_base",
+      "pageKind": "continuation"
+    }
+  ],
+  "nonCanonicalPages": [
+    {
+      "slideId": "appendix_main_base",
+      "pageNumber": 40,
+      "pageKind": "optional_extra",
+      "ownerFragment": "APPENDIX_MAIN",
+      "ownerSection": "APPENDIX",
+      "reason": "optional APPENDIX section: ambiguous/foreign-subject materials kept for review; admitted by the section manifest, not a canonical First36 slot"
+    },
+    {
+      "slideId": "appendix_main_base__cont1",
+      "pageNumber": 41,
+      "pageKind": "continuation",
+      "ownerFragment": "APPENDIX_MAIN",
+      "ownerSection": "APPENDIX",
+      "reason": "continuation of the optional appendix base slide (adjacency preserved)"
+    }
+  ],
+  "mergedSlots": [
+    {
+      "baseSlotId": "p36_lexis_visual_2",
+      "mergedInto": "p35_lexis_visual",
+      "reason": "Обе страницы LexisNexis в v72 показывали один экспорт профиля; в текущем офлайн-наборе визуальный экспорт недоступен, а всё содержимое (совпадение ADVERSE_MEDIA и его статус) полностью помещается на одной странице. Вторая страница была бы пустым дублирующим placeholder-ом."
+    }
+  ],
+  "sectionContentHashes": {
+    "FRONT_MATTER_MAIN": "sha256:72d6a53023319939042f7416d6e55dfc550d0af801268edc9002b9984f09417a",
+    "EXECUTIVE_SUMMARY": "sha256:3fd5460c6dccdf0926fcf8b20506dd21beebc58b2c1d92fb8d4feaaffe3dcb35",
+    "RISK_MATRIX": "sha256:f8a9e8bc3566dc1cb76bb8e1e79b995db2f96080944c08c2eea5ebd1b96a5415",
+    "DIGITAL_PROFILE_OVERVIEW": "sha256:285251f011ecbe93a9c9c2dacf4caec43d2f29f6b0918fbab278a87efaf404d0",
+    "RU_SUMMARY": "sha256:6bcf9b669f726c6227e4de43804292d2cde125a25981a5b72a10a0ebbe1738f3",
+    "RU_SERP": "sha256:90b97cb9984f68cd7771ea863dee28190b52a90a06983f5a01c440010e09306f",
+    "RU_SERP_SCREENSHOT": "sha256:fde4a4499fbe8df3bb306adfd8eb519c143e82dde38b1bd42a88e2fb080f95c9",
+    "RU_SUGGESTIONS": "sha256:83ce8462482ec5370b153a31b0ed07aec1568a35b0b93b24e7e682fc23f71a68",
+    "RU_IMAGES": "sha256:4767e405141ecee370b8d617c86f00152ece97e6ffdf47d7ff456fcbf8154381",
+    "RU_IDENTITY_WIKIPEDIA": "sha256:3c1fd2f2adfdf8335167e2fb4524256f0a9620e63206393bba605994e86bbc2d",
+    "RU_KNOWLEDGE_AI": "sha256:634f7bd4d445aa14122b6c1cef57742d3c0323600c9b51d7d6bad3b67bdb0057",
+    "RU_RELATED": "sha256:4a2e5633661f6490b47946bf7bcec418249aedfbecae92efd598aae7b1fcdf3b",
+    "UAE_SUMMARY": "sha256:b619cfd92eeb5108158494bbfffb9670007621b5429fab2ef7e8f151663c7402",
+    "UAE_SERP": "sha256:fa7270e1648054cfa719afd45548cd79fa75103740a78d01f373fc84e9fcaee1",
+    "UAE_SERP_SCREENSHOT": "sha256:083be1341281522c783c4721f2c3b33b31dd5b496a6c74cb5ba582a324636d12",
+    "UAE_SUGGESTIONS": "sha256:b4a5b2c998e8e4fa14d87a467b72feadd0d1fe46dce822f173fa2c5cd00fac0e",
+    "UAE_IMAGES": "sha256:811bb0a5ac0608741f68fc9e3bfd167506d04518b8046b8dd8cd692d95848c21",
+    "UAE_IDENTITY_WIKIPEDIA": "sha256:6dba838162af128e72df4000133bf25e9638f2e03e6b9017e4a8f96f7fe417d5",
+    "UAE_KNOWLEDGE_AI": "sha256:e7a94e9f3195234d5f26abca51b0a3b49719696f88bffd1cce6b5b3e4a61b552",
+    "UAE_RELATED": "sha256:0f1242cbaef86825b34d01122c0b5ae0c04ef410e93ee12455446fa8eceffae8",
+    "COMPLIANCE_MAIN": "sha256:582a4c70a3fd392bba5918dbd54674afc92d48e09628d00299bbbd9292eb652c",
+    "APPENDIX_MAIN": "sha256:d6a7897d3bb611e2dc5aa225f7bb749926c7452a5db48a50f2f88b4a38a34604"
+  },
+  "assembledDeckHash": "sha256:68559e9371dbeba311c317850cc597bb13b9e121cc485ab03dc1e248893694a9"
+}

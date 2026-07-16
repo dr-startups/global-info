@@ -1,0 +1,127 @@
+{
+  "version": "deck-regeneration-demos-v1",
+  "reportRunId": "orion-canary-1783980828528",
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "generatedAt": "2026-07-16T20:58:43.264Z",
+  "scenarios": [
+    {
+      "name": "A: change only RU suggestions",
+      "expected": "only RU_SUGGESTIONS regenerated; RU SectionPack + assembly updated",
+      "regenerated": [
+        "RU_SUGGESTIONS"
+      ],
+      "reused": [
+        "FRONT_MATTER_MAIN",
+        "EXECUTIVE_SUMMARY",
+        "RISK_MATRIX",
+        "DIGITAL_PROFILE_OVERVIEW",
+        "RU_SUMMARY",
+        "RU_SERP",
+        "RU_SERP_SCREENSHOT",
+        "RU_IMAGES",
+        "RU_IDENTITY_WIKIPEDIA",
+        "RU_KNOWLEDGE_AI",
+        "RU_RELATED",
+        "UAE_SUMMARY",
+        "UAE_SERP",
+        "UAE_SERP_SCREENSHOT",
+        "UAE_SUGGESTIONS",
+        "UAE_IMAGES",
+        "UAE_IDENTITY_WIKIPEDIA",
+        "UAE_KNOWLEDGE_AI",
+        "UAE_RELATED",
+        "COMPLIANCE_MAIN",
+        "APPENDIX_MAIN"
+      ],
+      "hashChanges": {
+        "RU_SUGGESTIONS": {
+          "before": "sha256:d1e72d9f37d07119",
+          "after": "sha256:03398aa59a65c618"
+        }
+      },
+      "assemblyReassembled": true,
+      "pageCountBefore": 41,
+      "pageCountAfter": 41
+    },
+    {
+      "name": "B: change one promoted executive finding",
+      "changedFindingId": "finding-criminal_legal-subject_match-16447175",
+      "findingSurfaces": [
+        "organic",
+        "images",
+        "video"
+      ],
+      "findingRegions": [
+        "RU",
+        "UAE",
+        "INTERNATIONAL"
+      ],
+      "expected": "EXECUTIVE_SUMMARY plus only SectionPacks whose scoped input contains the finding; assembly updated",
+      "regenerated": [
+        "EXECUTIVE_SUMMARY",
+        "RISK_MATRIX",
+        "DIGITAL_PROFILE_OVERVIEW",
+        "RU_SUMMARY",
+        "RU_SERP",
+        "RU_SERP_SCREENSHOT",
+        "RU_IMAGES",
+        "UAE_SUMMARY",
+        "UAE_SERP",
+        "UAE_SERP_SCREENSHOT",
+        "UAE_IMAGES"
+      ],
+      "reused": [
+        "FRONT_MATTER_MAIN",
+        "RU_SUGGESTIONS",
+        "RU_IDENTITY_WIKIPEDIA",
+        "RU_KNOWLEDGE_AI",
+        "RU_RELATED",
+        "UAE_SUGGESTIONS",
+        "UAE_IDENTITY_WIKIPEDIA",
+        "UAE_KNOWLEDGE_AI",
+        "UAE_RELATED",
+        "COMPLIANCE_MAIN",
+        "APPENDIX_MAIN"
+      ],
+      "hashChanges": {
+        "EXECUTIVE_SUMMARY": {
+          "before": "sha256:3fd5460c6dccdf09",
+          "after": "sha256:02d231178cbda006"
+        }
+      },
+      "executiveRegenerated": true
+    },
+    {
+      "name": "C: change only a layout template",
+      "expected": "zero pack regeneration (all REUSED_CACHE); assembly/render re-run picks up layout",
+      "regenerated": [],
+      "reused": [
+        "FRONT_MATTER_MAIN",
+        "EXECUTIVE_SUMMARY",
+        "RISK_MATRIX",
+        "DIGITAL_PROFILE_OVERVIEW",
+        "RU_SUMMARY",
+        "RU_SERP",
+        "RU_SERP_SCREENSHOT",
+        "RU_SUGGESTIONS",
+        "RU_IMAGES",
+        "RU_IDENTITY_WIKIPEDIA",
+        "RU_KNOWLEDGE_AI",
+        "RU_RELATED",
+        "UAE_SUMMARY",
+        "UAE_SERP",
+        "UAE_SERP_SCREENSHOT",
+        "UAE_SUGGESTIONS",
+        "UAE_IMAGES",
+        "UAE_IDENTITY_WIKIPEDIA",
+        "UAE_KNOWLEDGE_AI",
+        "UAE_RELATED",
+        "COMPLIANCE_MAIN",
+        "APPENDIX_MAIN"
+      ],
+      "hashChanges": {},
+      "allReused": true,
+      "assemblyRerun": true
+    }
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "schemaVersion": "section-pack-v2",
+  "sectionId": "RU_PROFILE",
+  "sectionType": "RU_PROFILE",
+  "fragmentKey": "RU_KNOWLEDGE_AI",
+  "reportRunId": "orion-canary-1783980828528",
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "contentVersion": "deck-sections-v13",
+  "promptVersion": "ru-ai-analysis-v1",
+  "contentHash": "sha256:634f7bd4d445aa14122b6c1cef57742d3c0323600c9b51d7d6bad3b67bdb0057",
+  "inputHash": "sha256:e43229e42665f67e2fd63d5fad16b1cc78c4aa17f81a3324f9f40e3300a0ff40:8a096548fd4bf100",
+  "generatedAt": "2026-07-16T22:22:54.649Z",
+  "required": true,
+  "status": "READY",
+  "inputs": {
+    "findingIds": [],
+    "evidenceRefs": [
+      "inventory:serp-obs-cmrjsolpo001fvd3wowuwmj0m",
+      "inventory:serp-obs-cmrjsolpz001jvd3wgr11p5p1",
+      "inventory:ss-cmreatcmu00dno30fff55vwao"
+    ],
+    "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
+  },
+  "slides": [
+    {
+      "schemaVersion": "slide-content-v1",
+      "slideId": "p18_ru_knowledge_1",
+      "baseSlotId": "p18_ru_knowledge_1",
+      "sectionId": "RU_PROFILE",
+      "isContinuation": false,
+      "continuationOf": null,
+      "continuationIndex": null,
+      "templateId": "wikipedia-knowledge",
+      "title": "Россия — панель знаний",
+      "content": {
+        "narrative": "Панель знаний и структурированные блоки поисковых систем по проверяемому субъекту.",
+        "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
+        "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+        "whatToCheck": "Мониторить изменения выдачи.",
+        "statusNote": "Статус: по данной поверхности выводов о рисках нет.",
+        "sourceNote": "Источники: knowledge.example"
+      },
+      "evidenceRefs": [
+        "inventory:ss-cmreatcmu00dno30fff55vwao"
+      ],
+      "findingIds": [],
+      "metrics": {
+        "knowledgeBlocks": 1
+      },
+      "visualAssetRefs": [
+        "ru_knowledge_panel_2"
+      ]
+    },
+    {
+      "schemaVersion": "slide-content-v1",
+      "slideId": "p19_ru_knowledge_2",
+      "baseSlotId": "p19_ru_knowledge_2",
+      "sectionId": "RU_PROFILE",
+      "isContinuation": false,
+      "continuationOf": null,
+      "continuationIndex": null,
+      "templateId": "ai-overview",
+      "title": "Россия — AI-ответы поисковых систем",
+      "content": {
+        "bullets": [
+          "[DEMO] Глинка Сергей Михайлович"
+        ],
+        "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
+        "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+        "whatToCheck": "Мониторить изменения выдачи.",
+        "statusNote": "Статус: по данной поверхности выводов о рисках нет.",
+        "sourceNote": "Источники: knowledge.example"
+      },
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsolpo001fvd3wowuwmj0m",
+        "inventory:serp-obs-cmrjsolpz001jvd3wgr11p5p1",
+        "inventory:ss-cmreatcmu00dno30fff55vwao"
+      ],
+      "findingIds": [],
+      "metrics": {
+        "answers": 1
+      },
+      "visualAssetRefs": [],
+      "emptyStateReason": "VISUAL_ASSET_UNAVAILABLE"
+    }
+  ],
+  "metrics": {
+    "datasetCount": 3,
+    "displayedCount": 3,
+    "adverseDatasetCount": 0,
+    "adverseDisplayedCount": 0
+  },
+  "provenance": {
+    "providers": [],
+    "reportRunIds": [
+      "orion-canary-1783980828528"
+    ],
+    "evidenceRefs": [
+      "inventory:ss-cmreatcmu00dno30fff55vwao",
+      "inventory:serp-obs-cmrjsolpo001fvd3wowuwmj0m",
+      "inventory:serp-obs-cmrjsolpz001jvd3wgr11p5p1"
+    ]
+  },
+  "validation": {
+    "passed": true,
+    "issues": []
+  }
+}

@@ -1,0 +1,441 @@
+{
+  "version": "deck-template-registry-report-v1",
+  "layoutVersion": "deck-templates-layout-v1",
+  "templates": [
+    {
+      "templateId": "cover",
+      "rendererTemplate": "orion_golden_cover",
+      "grid": "full-bleed",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 34
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 300,
+        "itemChars": 400,
+        "maxBulletsPerSlide": 6,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "none",
+      "staticBlocks": [
+        "Конфиденциально",
+        "Отчёт о цифровом профиле"
+      ],
+      "methodologyNote": null,
+      "legend": null
+    },
+    {
+      "templateId": "toc",
+      "rendererTemplate": "orion_golden_toc",
+      "grid": "single-column",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 600,
+        "itemChars": 120,
+        "maxBulletsPerSlide": 14,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "clamp",
+      "staticBlocks": [
+        "Содержание"
+      ],
+      "methodologyNote": null,
+      "legend": null
+    },
+    {
+      "templateId": "executive-summary",
+      "rendererTemplate": "orion_golden_executive_dashboard",
+      "grid": "two-column",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 620,
+        "itemChars": 360,
+        "maxBulletsPerSlide": 8,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "continuation",
+      "staticBlocks": [
+        "Общий вывод",
+        "Ключевые факты",
+        "Приоритетные действия"
+      ],
+      "methodologyNote": "Выводы опираются только на проверенные факты с указанием источника; предварительные сигналы отмечены отдельно.",
+      "legend": null
+    },
+    {
+      "templateId": "risk-matrix",
+      "rendererTemplate": "orion_golden_risk_matrix_grid",
+      "grid": "table",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 600,
+        "itemChars": 80,
+        "maxBulletsPerSlide": 0,
+        "maxTableRowsPerSlide": 10
+      },
+      "pagination": "continuation",
+      "staticBlocks": [
+        "Матрица рисков",
+        "Уровень",
+        "Тема",
+        "Статус"
+      ],
+      "methodologyNote": null,
+      "legend": [
+        "Критический",
+        "Высокий",
+        "Средний",
+        "Низкий"
+      ]
+    },
+    {
+      "templateId": "regional-summary",
+      "rendererTemplate": "orion_golden_metrics_dashboard",
+      "grid": "two-column",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 500,
+        "itemChars": 360,
+        "maxBulletsPerSlide": 8,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "continuation",
+      "staticBlocks": [
+        "Обзор региона",
+        "Что обнаружено",
+        "Почему важно",
+        "Что проверить",
+        "Источник"
+      ],
+      "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI.",
+      "legend": null
+    },
+    {
+      "templateId": "finding-cards",
+      "rendererTemplate": "orion_golden_executive_card",
+      "grid": "two-column",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 600,
+        "itemChars": 360,
+        "maxBulletsPerSlide": 6,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "continuation",
+      "staticBlocks": [
+        "Что обнаружено",
+        "Почему важно",
+        "Что проверить",
+        "Источник"
+      ],
+      "methodologyNote": null,
+      "legend": null
+    },
+    {
+      "templateId": "serp-table",
+      "rendererTemplate": "orion_golden_search_table",
+      "grid": "table",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 600,
+        "itemChars": 110,
+        "maxBulletsPerSlide": 0,
+        "maxTableRowsPerSlide": 12
+      },
+      "pagination": "continuation",
+      "staticBlocks": [
+        "Результаты поиска",
+        "Позиция",
+        "Домен",
+        "Заголовок",
+        "Оценка"
+      ],
+      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала.",
+      "legend": [
+        "Потенциально нежелательный",
+        "Нейтральный",
+        "Позитивный"
+      ]
+    },
+    {
+      "templateId": "serp-screenshot-analysis",
+      "rendererTemplate": "orion_golden_serp_screenshot",
+      "grid": "sidebar-right",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 420,
+        "itemChars": 400,
+        "maxBulletsPerSlide": 6,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "continuation",
+      "staticBlocks": [
+        "Скриншот выдачи",
+        "Что обнаружено",
+        "Почему важно",
+        "Что проверить",
+        "Источник"
+      ],
+      "methodologyNote": null,
+      "legend": null
+    },
+    {
+      "templateId": "suggestions",
+      "rendererTemplate": "orion_golden_surface_panel",
+      "grid": "sidebar-right",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 600,
+        "itemChars": 220,
+        "maxBulletsPerSlide": 10,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "continuation",
+      "staticBlocks": [
+        "Поисковые подсказки",
+        "Что обнаружено",
+        "Почему важно",
+        "Что проверить",
+        "Источник"
+      ],
+      "methodologyNote": "Подсказки отражают частотные запросы пользователей и формируют первое впечатление о субъекте.",
+      "legend": null
+    },
+    {
+      "templateId": "image-grid",
+      "rendererTemplate": "orion_golden_image_grid",
+      "grid": "sidebar-right",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 600,
+        "itemChars": 320,
+        "maxBulletsPerSlide": 6,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "continuation",
+      "staticBlocks": [
+        "Изображения в выдаче",
+        "Что обнаружено",
+        "Почему важно",
+        "Что проверить",
+        "Источник"
+      ],
+      "methodologyNote": null,
+      "legend": null
+    },
+    {
+      "templateId": "wikipedia-knowledge",
+      "rendererTemplate": "orion_golden_knowledge_panel",
+      "grid": "sidebar-right",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 480,
+        "itemChars": 400,
+        "maxBulletsPerSlide": 8,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "continuation",
+      "staticBlocks": [
+        "Википедия и панель знаний",
+        "Что обнаружено",
+        "Почему важно",
+        "Что проверить",
+        "Источник"
+      ],
+      "methodologyNote": "Раздел фиксирует, как справочные ресурсы идентифицируют субъекта и с кем его могут путать поисковые системы.",
+      "legend": null
+    },
+    {
+      "templateId": "ai-overview",
+      "rendererTemplate": "orion_golden_surface_panel",
+      "grid": "single-column",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 600,
+        "itemChars": 1200,
+        "maxBulletsPerSlide": 6,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "continuation",
+      "staticBlocks": [
+        "AI-ответы поисковых систем",
+        "Что обнаружено",
+        "Почему важно",
+        "Что проверить",
+        "Источник"
+      ],
+      "methodologyNote": "Ответы AI-сервисов приводятся полностью, без сокращений; интерпретация даётся отдельным блоком.",
+      "legend": null
+    },
+    {
+      "templateId": "related-queries",
+      "rendererTemplate": "orion_golden_surface_panel",
+      "grid": "sidebar-right",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 600,
+        "itemChars": 220,
+        "maxBulletsPerSlide": 10,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "continuation",
+      "staticBlocks": [
+        "Связанные запросы",
+        "Что обнаружено",
+        "Почему важно",
+        "Что проверить",
+        "Источник"
+      ],
+      "methodologyNote": null,
+      "legend": null
+    },
+    {
+      "templateId": "coverage-empty-state",
+      "rendererTemplate": "orion_golden_no_data_compact",
+      "grid": "single-column",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 360,
+        "itemChars": 400,
+        "maxBulletsPerSlide": 4,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "none",
+      "staticBlocks": [
+        "Покрытие данных",
+        "Статус сбора",
+        "Что это означает"
+      ],
+      "methodologyNote": "Отсутствие материалов по поверхности не тождественно отсутствию рисков; указан фактический статус сбора.",
+      "legend": null
+    },
+    {
+      "templateId": "section-divider",
+      "rendererTemplate": "orion_golden_region_divider",
+      "grid": "divider",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 30
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 600,
+        "itemChars": 400,
+        "maxBulletsPerSlide": 4,
+        "maxTableRowsPerSlide": 0
+      },
+      "pagination": "none",
+      "staticBlocks": [],
+      "methodologyNote": null,
+      "legend": null
+    },
+    {
+      "templateId": "continuation",
+      "rendererTemplate": "orion_golden_surface_panel",
+      "grid": "single-column",
+      "typography": {
+        "bodyFontPt": 12,
+        "titleFontPt": 22
+      },
+      "spacing": {
+        "blockGapPt": 10
+      },
+      "budgets": {
+        "narrativeChars": 600,
+        "itemChars": 400,
+        "maxBulletsPerSlide": 10,
+        "maxTableRowsPerSlide": 12
+      },
+      "pagination": "continuation",
+      "staticBlocks": [
+        "Продолжение"
+      ],
+      "methodologyNote": null,
+      "legend": null
+    }
+  ],
+  "note": "Static framework copy (labels/methodology/legend) lives in templates; dynamic content is finding, reason, confidence, evidence and action from SectionPacks."
+}

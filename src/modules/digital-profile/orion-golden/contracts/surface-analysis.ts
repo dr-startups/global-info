@@ -39,3 +39,4 @@ export const SurfaceAnalysisSchema = ContractEnvelopeSchema.extend({
 
 export type SurfaceAnalysis = z.infer<typeof SurfaceAnalysisSchema>;
 export type SurfaceAnalysisUnit = z.infer<typeof SurfaceAnalysisUnitSchema>;
+export type SurfaceClaim = z.infer<typeof SurfaceClaimSchema>;
