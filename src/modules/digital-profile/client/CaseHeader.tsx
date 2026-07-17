@@ -70,6 +70,7 @@ export function CaseHeader({
   generating,
   onRunUnifiedCollection,
   onRecoverUnifiedCollection,
+  onRetrySuggestions,
   onPaidRecollection,
   auditing,
   recovering,
@@ -80,6 +81,7 @@ export function CaseHeader({
   generating: boolean;
   onRunUnifiedCollection: () => void;
   onRecoverUnifiedCollection: () => void;
+  onRetrySuggestions?: () => void;
   onPaidRecollection?: () => void;
   auditing: boolean;
   recovering: boolean;
@@ -91,6 +93,8 @@ export function CaseHeader({
   const subjectName = caseDetail.subject?.fullName ?? caseDetail.title;
   const unifiedLabel = unifiedStatusLabel(unifiedJob);
   const serverRecoveryAllowed = Boolean(unifiedJob?.recoveryAllowed);
+  const suggestionsRetry =
+    Boolean(unifiedJob?.suggestionsRetryAllowed) && Boolean(unifiedJob?.suggestionsMissingResult);
   const renderRecovery = isRenderRecovery(unifiedJob);
   const ingestRecovery =
     unifiedJob?.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" ||
@@ -105,10 +109,13 @@ export function CaseHeader({
     unifiedJob?.stage === "COMPOSITE_MERGE" ||
     unifiedJob?.stage === "ORION_PREPARE" ||
     unifiedJob?.stage === "CLIENT_CONTENT";
-  const fullAuditBlocked = Boolean(unifiedJob?.fullAuditBlocked) || serverRecoveryAllowed || runningUnified;
+  const fullAuditBlocked =
+    Boolean(unifiedJob?.fullAuditBlocked) ||
+    serverRecoveryAllowed ||
+    suggestionsRetry ||
+    runningUnified;
   const paidRecollectionRequired = Boolean(unifiedJob?.paidRecollectionRequired);
   const blockNewRun = fullAuditBlocked || generating;
-
   return (
     <div>
       <Link className="dp-back" href="/admin/digital-profile">
@@ -169,11 +176,31 @@ export function CaseHeader({
               {unifiedJob.lastError ? (
                 <div style={{ color: "#b42318" }}>{unifiedJob.lastError}</div>
               ) : null}
+              {unifiedJob.suggestionsMissingResult ? (
+                <div style={{ color: "#b42318" }} data-testid="unified-suggestions-gap">
+                  Suggestions: результат не получен
+                  {unifiedJob.suggestionsFailureReason
+                    ? ` — ${unifiedJob.suggestionsFailureReason}`
+                    : ""}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>
         <div className="dp-inline">
-          {can("agents.run") && serverRecoveryAllowed ? (
+          {can("agents.run") && suggestionsRetry && onRetrySuggestions ? (
+            <button
+              className="dp-btn dp-btn-primary"
+              onClick={onRetrySuggestions}
+              disabled={recovering || generating}
+              title="Будет отправлена одна платная задача Arsenkin. Базовый поиск и остальные агенты повторно не запускаются"
+              data-testid="unified-suggestions-retry-cta"
+            >
+              {recovering ? <span className="dp-spinner" /> : null}
+              Повторить только задачу Suggestions
+            </button>
+          ) : null}
+          {can("agents.run") && serverRecoveryAllowed && !suggestionsRetry ? (
             <button
               className="dp-btn dp-btn-primary"
               onClick={onRecoverUnifiedCollection}

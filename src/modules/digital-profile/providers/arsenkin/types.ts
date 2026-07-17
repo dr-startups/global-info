@@ -7,7 +7,10 @@ import type { ArsenkinToolName } from "./flags";
 export type ArsenkinTaskState =
   | "QUEUED"
   | "SUBMITTING"
+  | "SUBMITTED"
   | "SUBMIT_UNKNOWN"
+  /** Deterministic schema/contract rejection; no externalTaskId created. */
+  | "SUBMIT_REJECTED_RETRYABLE"
   | "RUNNING"
   | "DONE"
   | "FAILED"

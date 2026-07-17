@@ -26,9 +26,14 @@ const NON_TERMINAL_TASK = new Set([
   "RUNNING",
   "RATE_LIMITED",
   "WAITING",
-  "SUBMIT_UNKNOWN",
   "POLLING",
   "SUBMITTED",
+]);
+
+/** Terminal submit failures that must never unlock composite/render. */
+const TERMINAL_SUBMIT_FAILURE = new Set([
+  "SUBMIT_UNKNOWN",
+  "SUBMIT_REJECTED_RETRYABLE",
 ]);
 
 type ProviderTaskSnap = {
@@ -109,7 +114,9 @@ function progressFromTasks(input: {
   const tasks = input.tasks;
   const pending = tasks.filter((t) => NON_TERMINAL_TASK.has(String(t.state).toUpperCase()));
   const done = tasks.filter((t) => String(t.state).toUpperCase() === "DONE");
-  const submitUnknown = tasks.filter((t) => String(t.state).toUpperCase() === "SUBMIT_UNKNOWN");
+  const submitRejected = tasks.filter((t) =>
+    TERMINAL_SUBMIT_FAILURE.has(String(t.state).toUpperCase())
+  );
   const failed = tasks.filter((t) =>
     /FAIL|ERROR|TIMEOUT|CANCEL/i.test(String(t.state))
   );
@@ -126,9 +133,13 @@ function progressFromTasks(input: {
   const execFinalized =
     input.executionStatus === "FINALIZED" || input.executionPhase === "FINALIZED";
 
-  if (submitUnknown.length > 0 && done.length === 0 && !input.allowEmptyValid) {
+  if (submitRejected.length > 0 && done.length === 0 && !input.allowEmptyValid) {
     terminal = true;
     terminalKind = "SUBMIT_UNKNOWN_UNRECONCILED";
+    const rejected = submitRejected[0]!;
+    if (String(rejected.state).toUpperCase() === "SUBMIT_REJECTED_RETRYABLE") {
+      warnings.push("SUBMIT_REJECTED_RETRYABLE:no-externalTaskId");
+    }
   } else if (failed.length > 0 && done.length === 0) {
     terminal = true;
     terminalKind = "FAILED";
@@ -176,7 +187,7 @@ function progressFromTasks(input: {
       ingested,
       pendingTaskCount: pending.length,
       doneTaskCount: done.length,
-      submitUnknownCount: submitUnknown.length,
+      submitUnknownCount: submitRejected.length,
       observationCount: observations.length,
       errorCode:
         schemaError

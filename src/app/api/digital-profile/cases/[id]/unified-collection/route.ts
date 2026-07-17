@@ -19,6 +19,7 @@ import {
   unifiedJobHasPreservedStages,
 } from "@/modules/digital-profile/services/unified-orion-collection-orchestrator";
 import { withUnifiedRecoveryStatusFields } from "@/modules/digital-profile/services/unified-collection-recovery";
+import { withSuggestionsGapStatus } from "@/modules/digital-profile/services/unified-suggestions-gap";
 
 export const dynamic = "force-dynamic";
 
@@ -41,16 +42,55 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   return jsonOk(data, 202);
 });
 
+async function loadSuggestTasksForGap(
+  enrichmentRunId: string | null
+): Promise<
+  Array<{
+    state: string;
+    toolName: string | null;
+    externalTaskId: string | null;
+    errorCode: string | null;
+  }> | undefined
+> {
+  if (!enrichmentRunId) return undefined;
+  try {
+    const { prisma } = await import("@/server/prisma/client");
+    const rows = await prisma.providerTask.findMany({
+      where: { reportRunId: enrichmentRunId },
+      select: {
+        state: true,
+        toolName: true,
+        externalTaskId: true,
+        errorCode: true,
+      },
+      take: 50,
+    });
+    return rows.map((r) => ({
+      state: String(r.state),
+      toolName: r.toolName,
+      externalTaskId: r.externalTaskId,
+      errorCode: r.errorCode,
+    }));
+  } catch {
+    return undefined;
+  }
+}
+
 export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
   const user = await requireDigitalProfileUser(req);
   await requireCaseAccess(user, id, "VIEWER");
   const job = getUnifiedCollectionStatus(id);
   const recovery = withUnifiedRecoveryStatusFields(job);
+  const suggestionsRunId =
+    (job?.enrichmentRunIds ?? []).find((rid) => /suggestions/i.test(rid)) ?? null;
+  const suggestTasks = await loadSuggestTasksForGap(suggestionsRunId);
+  const suggestionsGap = withSuggestionsGapStatus(job, suggestTasks);
   const preserved = unifiedJobHasPreservedStages(job);
   const fullAuditBlocked =
     Boolean(job) &&
     (Boolean(recovery.recoveryAllowed) ||
+      suggestionsGap.suggestionsMissingResult ||
       preserved ||
       job?.status === "RUNNING" ||
       job?.status === "WAITING");
@@ -93,13 +133,16 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
           recoveryReason: recovery.recoveryReason,
           recoveryAudit: job.recoveryAudit ?? null,
           resumeCheckpoint: job.resumeCheckpoint ?? null,
+          ...suggestionsGap,
           fullAuditBlocked,
           fullAuditBlockReason: fullAuditBlocked
-            ? recovery.recoveryAllowed
-              ? "USE_RECOVERY"
-              : preserved
-                ? "PRESERVED_STAGES_REQUIRE_PAID_RECOLLECTION"
-                : "JOB_ACTIVE"
+            ? suggestionsGap.suggestionsMissingResult
+              ? "USE_SUGGESTIONS_TARGETED_RETRY"
+              : recovery.recoveryAllowed
+                ? "USE_RECOVERY"
+                : preserved
+                  ? "PRESERVED_STAGES_REQUIRE_PAID_RECOLLECTION"
+                  : "JOB_ACTIVE"
             : null,
           paidRecollectionRequired: preserved && !recovery.recoveryAllowed,
         }

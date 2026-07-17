@@ -17,6 +17,7 @@ import {
   getOrionGoldenPrepareStatus,
   startUnifiedOrionCollection,
   recoverUnifiedOrionCollection,
+  retryUnifiedEnrichmentSuggestionsTask,
   getUnifiedOrionCollectionStatus,
   type AgentInfo,
   type AgentRun,
@@ -298,6 +299,67 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
     tError,
   ]);
 
+  const handleRetrySuggestions = useCallback(async () => {
+    if (auditing || generating || recovering) return;
+    const jobId = unifiedJob?.jobId;
+    const enrichmentRunId = unifiedJob?.suggestionsEnrichmentRunId;
+    if (!jobId || !enrichmentRunId || !unifiedJob?.suggestionsRetryAllowed) {
+      setBanner({
+        kind: "error",
+        text: "Повтор Suggestions недоступен для текущего job.",
+      });
+      return;
+    }
+    const ok = window.confirm(
+      "Будет отправлена одна платная задача Arsenkin. Базовый поиск и остальные агенты повторно не запускаются."
+    );
+    if (!ok) return;
+    setRecovering(true);
+    setBanner(null);
+    try {
+      const result = await retryUnifiedEnrichmentSuggestionsTask(caseId, {
+        jobId,
+        enrichmentRunId,
+        agentName: unifiedJob.suggestionsAgentName ?? "SUGGESTIONS",
+        confirmPaidEnrichmentRetry: true,
+      });
+      setUnifiedJob((prev) =>
+        prev
+          ? {
+              ...prev,
+              jobId: result.jobId,
+              unifiedJobId: result.unifiedJobId,
+              stage: result.stage,
+              status: result.status,
+            }
+          : prev
+      );
+      setBanner({
+        kind: "ok",
+        text: result.reusedExisting
+          ? `Suggestions: переиспользована существующая задача (${result.externalTaskId}).`
+          : `Suggestions: отправлена 1 задача (${result.externalTaskId}).`,
+      });
+      await pollUnifiedUntilTerminal();
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setBanner({ kind: "error", text: tError(code, msg) });
+    } finally {
+      setRecovering(false);
+      const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
+      if (job) setUnifiedJob(job);
+    }
+  }, [
+    auditing,
+    generating,
+    recovering,
+    caseId,
+    unifiedJob,
+    pollUnifiedUntilTerminal,
+    tError,
+  ]);
+
   const handleRunAudit = useCallback(async () => {
     // Admin/diagnostic path only — primary CTA is unified collection.
     if (auditing || generating) return;
@@ -425,6 +487,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
           generating={generating}
           onRunUnifiedCollection={handleRunUnifiedCollection}
           onRecoverUnifiedCollection={handleRecoverUnifiedCollection}
+          onRetrySuggestions={handleRetrySuggestions}
           onPaidRecollection={handlePaidRecollection}
           auditing={auditing}
           recovering={recovering}

@@ -27,10 +27,25 @@ function observationIdFor(obs: ArsenkinIngestedObservation, index: number): stri
   return `obs:${obs.resultHash ?? hashArsenkinResultPayload(obs)}:${index}`;
 }
 
+/** Stable identity for a row inside a multi-item Arsenkin result. */
+function observationContentKey(obs: ArsenkinIngestedObservation): string {
+  return [
+    String(obs.externalTaskId ?? ""),
+    String(obs.kind ?? ""),
+    String(obs.url ?? ""),
+    String(obs.suggestion ?? ""),
+    String(obs.question ?? ""),
+    String(obs.title ?? ""),
+    String(obs.query ?? ""),
+    String(obs.sourceUrlOrQuery ?? ""),
+  ].join("|");
+}
+
 /**
  * Merge candidate observations into persisted dedupe state.
- * - Same resultHash → skip (idempotent)
- * - Same externalTaskId with different resultHash → conflict (fail closed, no silent dupe)
+ * - Same task-level resultHash + same content → skip (idempotent)
+ * - Same resultHash, new content rows (multi-item suggest/top) → keep
+ * - Same externalTaskId with different resultHash → conflict (fail closed)
  */
 export function applyExactlyOnceIngest(input: {
   caseId: string;
@@ -55,6 +70,7 @@ export function applyExactlyOnceIngest(input: {
   const hashToIds = { ...base.resultHashToObservationIds };
   const externalTaskHash = { ...base.externalTaskIdToResultHash };
   const kept: ArsenkinIngestedObservation[] = [...(input.previousObservations ?? [])];
+  const keptKeys = new Set(kept.map(observationContentKey));
   let newlyIngestedCount = 0;
   let skippedDuplicateCount = 0;
   const warnings: string[] = [];
@@ -63,6 +79,7 @@ export function applyExactlyOnceIngest(input: {
     const resultHash = String(raw.resultHash ?? "").trim() || hashArsenkinResultPayload(raw);
     const obs: ArsenkinIngestedObservation = { ...raw, resultHash };
     const ext = String(obs.externalTaskId ?? "").trim();
+    const contentKey = observationContentKey(obs);
 
     if (ext && externalTaskHash[ext] && externalTaskHash[ext] !== resultHash) {
       return {
@@ -84,21 +101,19 @@ export function applyExactlyOnceIngest(input: {
       };
     }
 
-    if (ingested.has(resultHash)) {
+    if (keptKeys.has(contentKey)) {
       skippedDuplicateCount += 1;
-      // Re-emit already-persisted hash when previousObservations omitted (idempotent tick).
-      if (!kept.some((k) => k.resultHash === resultHash)) {
-        kept.push(obs);
-      }
       continue;
     }
 
     const id = observationIdFor(obs, kept.length);
+    const firstForHash = !ingested.has(resultHash);
     ingested.add(resultHash);
     hashToIds[resultHash] = [...(hashToIds[resultHash] ?? []), id];
     if (ext) externalTaskHash[ext] = resultHash;
     kept.push(obs);
-    newlyIngestedCount += 1;
+    keptKeys.add(contentKey);
+    if (firstForHash) newlyIngestedCount += 1;
   }
 
   const agents = input.agents ?? base.agents;

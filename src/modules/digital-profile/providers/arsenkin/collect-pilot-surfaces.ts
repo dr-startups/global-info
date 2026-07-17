@@ -293,10 +293,10 @@ export async function collectArsenkinPilotSurfaces(
     });
   }
 
-  // --- suggest RU (Google) ---
-  if (want("suggest")) {
+  // --- suggest RU (Google) — Latin queries only (Cyrillic rejected by Arsenkin) ---
+  if (want("suggest") && uaeQueries.length > 0) {
     const req = buildSuggestRequest({
-      queries: ruQueries.length > 0 ? ruQueries : [ruQuery],
+      queries: uaeQueries,
       se: 2,
       region: ARSENKIN_REGION.GOOGLE_MOSCOW,
       google_domain: "www.google.ru",
@@ -318,7 +318,7 @@ export async function collectArsenkinPilotSurfaces(
         auditRunId: input.auditRunId,
         regionLabel: "RU",
         language: "ru",
-        queries: ruQueries.length > 0 ? ruQueries : [ruQuery],
+        queries: uaeQueries,
         se: 2,
         payload,
       }), providerTaskId);
@@ -328,7 +328,7 @@ export async function collectArsenkinPilotSurfaces(
       engine: "GOOGLE",
       region: "RU",
       language: "ru",
-      query: ruQuery,
+      query: uaeQuery,
       surface: "autocomplete",
       providerTaskId,
       resultCount: mappedSuggestGoogleRu.filter((d) => d.providerStatus === "OK").length,

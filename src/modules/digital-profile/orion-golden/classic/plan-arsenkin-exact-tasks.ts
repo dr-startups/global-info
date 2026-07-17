@@ -103,6 +103,7 @@ export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): Plan
   }
 
   if (want("suggest")) {
+    // Yandex suggest: Cyrillic identity queries.
     push(
       out,
       "suggest",
@@ -120,26 +121,31 @@ export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): Plan
         estimatedLimits: 1,
       }
     );
-    push(
-      out,
-      "suggest",
-      buildSuggestRequest({
-        queries: ruQueries.length > 0 ? ruQueries : [ruPrimary],
-        se: 2,
-        region: ARSENKIN_REGION.GOOGLE_MOSCOW,
-        google_domain: "www.google.ru",
-        google_from: "RU",
-        google_lang: "ru",
-        depth: 1,
-      }),
-      {
-        engine: "GOOGLE",
-        region: "RU",
-        query: ruPrimary,
-        queryCount: ruQueries.length > 0 ? ruQueries.length : 1,
-        estimatedLimits: 1,
-      }
-    );
+    // Google suggest requires Latin queries — Cyrillic-only arrays are rejected
+    // by Arsenkin as JSON_VALIDATION_ERROR on field `queries` (often as HTTP 500).
+    const googleRuQueries = uaeQueries.length > 0 ? uaeQueries : [];
+    if (googleRuQueries.length > 0) {
+      push(
+        out,
+        "suggest",
+        buildSuggestRequest({
+          queries: googleRuQueries,
+          se: 2,
+          region: ARSENKIN_REGION.GOOGLE_MOSCOW,
+          google_domain: "www.google.ru",
+          google_from: "RU",
+          google_lang: "ru",
+          depth: 1,
+        }),
+        {
+          engine: "GOOGLE",
+          region: "RU",
+          query: googleRuQueries[0] ?? uaePrimary,
+          queryCount: googleRuQueries.length,
+          estimatedLimits: 1,
+        }
+      );
+    }
   }
 
   if (want("suggest") && uaeQueries.length > 0) {

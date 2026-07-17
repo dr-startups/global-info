@@ -67,10 +67,15 @@ export function resolveToolAdapterName(toolName: string | null | undefined): Ars
   return null;
 }
 
+/**
+ * Task-level resultHash (full response) — shared by all rows from one externalTaskId.
+ * Exactly-once conflict detection keys on this hash, not per-item content.
+ */
 function withProvenance(
   base: Omit<ArsenkinIngestedObservation, "resultHash" | "caseAgent" | "tool" | "enrichmentRunId" | "unifiedJobId" | "externalTaskId" | "providerTaskId">,
   ctx: ArsenkinAdapterContext,
-  hashPayload: unknown
+  tool: ArsenkinToolAdapterName,
+  response: Record<string, unknown>
 ): ArsenkinIngestedObservation {
   return {
     ...base,
@@ -80,7 +85,11 @@ function withProvenance(
     tool: ctx.toolName,
     enrichmentRunId: ctx.enrichmentRunId,
     unifiedJobId: ctx.unifiedJobId,
-    resultHash: fullArsenkinResultHash(hashPayload),
+    resultHash: fullArsenkinResultHash({
+      tool,
+      externalTaskId: ctx.externalTaskId,
+      response,
+    }),
   };
 }
 
@@ -120,7 +129,8 @@ function adaptSearchTop(response: Record<string, unknown>, ctx: ArsenkinAdapterC
           sourceUrlOrQuery: url || query || null,
         },
         ctx,
-        { tool: "SEARCH_TOP", item: raw, externalTaskId: ctx.externalTaskId }
+        "SEARCH_TOP",
+        response
       )
     );
   }
@@ -143,7 +153,6 @@ function adaptSuggestions(response: Record<string, unknown>, ctx: ArsenkinAdapte
     if (!suggestion) {
       return { ok: false, code: "ARSENKIN_SCHEMA_INVALID", message: "SUGGESTIONS item requires suggestion text" };
     }
-    const itemObj = typeof raw === "string" ? { suggestion: raw } : raw;
     observations.push(
       withProvenance(
         {
@@ -156,7 +165,8 @@ function adaptSuggestions(response: Record<string, unknown>, ctx: ArsenkinAdapte
           sourceUrlOrQuery: query || suggestion,
         },
         ctx,
-        { tool: "SUGGESTIONS", item: itemObj, externalTaskId: ctx.externalTaskId }
+        "SUGGESTIONS",
+        response
       )
     );
   }
@@ -182,7 +192,6 @@ function adaptPaa(response: Record<string, unknown>, ctx: ArsenkinAdapterContext
     if (!question) {
       return { ok: false, code: "ARSENKIN_SCHEMA_INVALID", message: "PAA item requires question" };
     }
-    const itemObj = typeof raw === "string" ? { question: raw } : raw;
     observations.push(
       withProvenance(
         {
@@ -195,7 +204,8 @@ function adaptPaa(response: Record<string, unknown>, ctx: ArsenkinAdapterContext
           sourceUrlOrQuery: query || question,
         },
         ctx,
-        { tool: "PAA", item: itemObj, externalTaskId: ctx.externalTaskId }
+        "PAA",
+        response
       )
     );
   }
@@ -224,7 +234,8 @@ function adaptAiSearch(response: Record<string, unknown>, ctx: ArsenkinAdapterCo
               sourceUrlOrQuery: query || answer.slice(0, 120),
             },
             ctx,
-            { tool: "AI_SEARCH", item: response, externalTaskId: ctx.externalTaskId }
+            "AI_SEARCH",
+            response
           ),
         ],
         warnings: [],
@@ -258,7 +269,8 @@ function adaptAiSearch(response: Record<string, unknown>, ctx: ArsenkinAdapterCo
           sourceUrlOrQuery: asString(raw.url ?? raw.citation ?? raw.query ?? response.query) || null,
         },
         ctx,
-        { tool: "AI_SEARCH", item: raw, externalTaskId: ctx.externalTaskId }
+        "AI_SEARCH",
+        response
       )
     );
   }
@@ -286,7 +298,8 @@ function adaptUrlAudit(response: Record<string, unknown>, ctx: ArsenkinAdapterCo
               sourceUrlOrQuery: url,
             },
             ctx,
-            { tool: "URL_AUDIT", item: response, externalTaskId: ctx.externalTaskId }
+            "URL_AUDIT",
+            response
           ),
         ],
         warnings: [],
@@ -319,7 +332,8 @@ function adaptUrlAudit(response: Record<string, unknown>, ctx: ArsenkinAdapterCo
           sourceUrlOrQuery: url,
         },
         ctx,
-        { tool: "URL_AUDIT", item: raw, externalTaskId: ctx.externalTaskId }
+        "URL_AUDIT",
+        response
       )
     );
   }

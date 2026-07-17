@@ -1496,6 +1496,12 @@ export type UnifiedCollectionJobStatus = {
     previousLastErrorCode: string | null;
   } | null;
   resumeCheckpoint?: string | null;
+  /** Suggestions enrichment gap — targeted paid retry. */
+  suggestionsMissingResult?: boolean;
+  suggestionsFailureReason?: string | null;
+  suggestionsRetryAllowed?: boolean;
+  suggestionsEnrichmentRunId?: string | null;
+  suggestionsAgentName?: "ARSENKIN_SUGGESTIONS_REAL";
 };
 
 export function startUnifiedOrionCollection(
@@ -1528,6 +1534,38 @@ export function recoverUnifiedOrionCollection(
   return request(`/cases/${caseId}/unified-collection/recover`, {
     method: "POST",
     body: JSON.stringify({ jobId }),
+  });
+}
+
+export function retryUnifiedEnrichmentSuggestionsTask(
+  caseId: string,
+  input: {
+    jobId: string;
+    enrichmentRunId: string;
+    agentName?: string;
+    expectedTaskFingerprint?: string;
+    confirmPaidEnrichmentRetry: boolean;
+  }
+): Promise<{
+  accepted: boolean;
+  jobId: string;
+  unifiedJobId: string;
+  enrichmentRunId: string;
+  externalTaskId: string;
+  submissions: number;
+  reusedExisting: boolean;
+  stage: string;
+  status: string;
+}> {
+  return request(`/cases/${caseId}/unified-collection/retry-enrichment-task`, {
+    method: "POST",
+    body: JSON.stringify({
+      jobId: input.jobId,
+      enrichmentRunId: input.enrichmentRunId,
+      agentName: input.agentName ?? "SUGGESTIONS",
+      expectedTaskFingerprint: input.expectedTaskFingerprint,
+      confirmPaidEnrichmentRetry: input.confirmPaidEnrichmentRetry,
+    }),
   });
 }
 

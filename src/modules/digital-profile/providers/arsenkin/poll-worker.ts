@@ -10,6 +10,7 @@ import { acquireArsenkinAccountSlot } from "./account-rate-limit";
 import { computeLimitsSpent } from "./cost";
 import { hashProviderRequest, type ProviderTaskStore } from "./provider-task-store";
 import { buildSubmitFailureDiagnostics } from "./submit-failure-diagnostics";
+import { classifyArsenkinSubmitFailure } from "./submit-outcome-classification";
 import type { ArsenkinSetTaskRequest, ProviderTaskRecord } from "./types";
 
 export type EnsureArsenkinTaskInput = {
@@ -61,38 +62,38 @@ function submitFailedState(
   completedAt: Date | null;
   attempts: number;
 } {
-  const requestError = error instanceof ArsenkinRequestError ? error : null;
-  const status = requestError?.options.status;
-  if (requestError?.options.uncertain || (status != null && status >= 500)) {
-    return {
-      state: "SUBMIT_UNKNOWN",
-      errorCode: status ? `http_${status}` : "submit_unknown",
-      nextPollAt: null,
-      completedAt: null,
-      attempts,
-    };
-  }
-  if (status === 429) {
+  const classified = classifyArsenkinSubmitFailure(error);
+  if (classified.kind === "RATE_LIMITED") {
     return {
       state: "RATE_LIMITED",
-      errorCode: "http_429",
+      errorCode: classified.errorCode,
       nextPollAt: new Date(Date.now() + 5_000),
       completedAt: null,
       attempts: attempts + 1,
     };
   }
-  if (status != null && status >= 400 && status < 500) {
+  if (classified.kind === "SUBMIT_REJECTED_RETRYABLE") {
     return {
-      state: "FAILED",
-      errorCode: `http_${status}`,
+      state: "SUBMIT_REJECTED_RETRYABLE",
+      errorCode: classified.errorCode,
       nextPollAt: null,
       completedAt: new Date(),
       attempts: attempts + 1,
     };
   }
+  if (classified.kind === "FAILED") {
+    return {
+      state: "FAILED",
+      errorCode: classified.errorCode,
+      nextPollAt: null,
+      completedAt: new Date(),
+      attempts: attempts + 1,
+    };
+  }
+  // SUBMIT_UNKNOWN_UNRECONCILED — no soft-retry of validation-shaped 5xx.
   return {
     state: "SUBMIT_UNKNOWN",
-    errorCode: "submit_unknown",
+    errorCode: classified.errorCode,
     nextPollAt: null,
     completedAt: null,
     attempts,
@@ -127,25 +128,15 @@ export async function ensureArsenkinTask(
   }
   if (row.state === "DONE" && row.responseJson) return row;
   const now = new Date();
-  // Soft-retry Arsenkin /set HTTP 5xx when no externalTaskId yet (uncertain submit).
-  // Avoids terminal SUBMIT_UNKNOWN on transient API 500 (e.g. suggest).
+  // Soft-retry only true transient RATE_LIMITED / ambiguous network — never
+  // re-POST a deterministic JSON_VALIDATION_ERROR (SUBMIT_REJECTED_RETRYABLE).
+  if (row.state === "SUBMIT_REJECTED_RETRYABLE") {
+    return row;
+  }
   if (row.state === "SUBMIT_UNKNOWN") {
-    const err = String(row.errorCode ?? "");
-    const canSoftRetry =
-      !row.externalTaskId &&
-      /^http_5\d\d$/i.test(err) &&
-      row.attempts < maxRetries;
-    if (!canSoftRetry) return row;
-    row = await store.updateState(row.id, {
-      state: "QUEUED",
-      errorCode: null,
-      nextPollAt: now,
-      completedAt: null,
-      lockedBy: null,
-      lockedAt: null,
-      leaseUntil: null,
-      attempts: row.attempts + 1,
-    });
+    // Soft-retry disabled for SUBMIT_UNKNOWN: uncertain outcomes must be
+    // reconciled manually / via targeted paid retry, not blind /set loops.
+    return row;
   }
   if (row.externalTaskId) return row;
 
@@ -238,6 +229,18 @@ export async function ensureArsenkinTask(
       })
     );
     row = await store.markExternalId(claimed.id, String(set.task_id), { ownerId: workerId });
+    // Confirmed externalTaskId → SUBMITTED, then RUNNING for poll.
+    await store.updateState(
+      claimed.id,
+      {
+        state: "SUBMITTED",
+        submittedAt: new Date(),
+        limitsBefore,
+        nextPollAt: new Date(),
+        errorCode: null,
+      },
+      { ownerId: workerId }
+    );
     return store.updateState(
       claimed.id,
       {
@@ -382,16 +385,8 @@ export async function waitForArsenkinTaskCompletion(
         `Arsenkin task timeout tool=${input.toolName} id=${row.externalTaskId} waitedMs=${Date.now() - started}`
       );
     }
-    if (row.state === "SUBMIT_UNKNOWN") {
-      const err = String(row.errorCode ?? "");
-      const canSoftRetry =
-        !row.externalTaskId &&
-        /^http_5\d\d$/i.test(err) &&
-        row.attempts < maxRetries;
-      if (!canSoftRetry) break;
-      await new Promise((r) => setTimeout(r, 1_500));
-      row = await ensureArsenkinTask(client, store, input);
-      continue;
+    if (row.state === "SUBMIT_UNKNOWN" || row.state === "SUBMIT_REJECTED_RETRYABLE") {
+      break;
     }
     if (row.state === "SUBMITTING" || row.state === "QUEUED" || isSubmitRetryRateLimited(row)) {
       if (isSubmitRetryRateLimited(row) && row.nextPollAt && row.nextPollAt.getTime() > Date.now()) {
