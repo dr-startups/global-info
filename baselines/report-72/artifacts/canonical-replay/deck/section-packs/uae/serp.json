@@ -9,16 +9,15 @@
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "contentVersion": "deck-sections-v14",
   "promptVersion": "uae-serp-analysis-v1",
-  "contentHash": "sha256:fa7270e1648054cfa719afd45548cd79fa75103740a78d01f373fc84e9fcaee1",
-  "inputHash": "sha256:dbd7dd9b0672740bc51fdf39fa7ac300ccc10c41abf15f0e70bd983d8aeee1b1:e16837effc069f19",
-  "generatedAt": "2026-07-17T00:37:40.389Z",
+  "contentHash": "sha256:11b28dd6c40dfd695aa468ed8d80662d08bb1349d8824390fdea3f765ac6ff87",
+  "inputHash": "sha256:3c8a16d6cf6c68fc509dd266cc1e1a7d34b72774c23faaddcff03bc136cf5538:e16837effc069f19",
+  "generatedAt": "2026-07-17T09:50:13.037Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
     "finding-criminal_legal-subject_match-16447175",
     "finding-security_scrutiny-subject_match-0ae970c7",
     "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-political_exposure-subject_match-774a7b39",
     "finding-business_profile-subject_match-a59d6fee",
     "finding-family_associates-subject_match-a4427a53",
     "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -115,7 +114,6 @@
       "finding-criminal_legal-subject_match-16447175",
       "finding-security_scrutiny-subject_match-0ae970c7",
       "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-political_exposure-subject_match-774a7b39",
       "finding-business_profile-subject_match-a59d6fee",
       "finding-family_associates-subject_match-a4427a53",
       "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -304,7 +302,7 @@
           ]
         },
         "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический.",
-        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 4. Они видны при первичной проверке субъекта.",
+        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 3. Они видны при первичной проверке субъекта.",
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
         "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%.",
         "sourceNote": "Источники: поисковая выдача (см. приложение).",
@@ -336,7 +334,6 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -448,7 +445,6 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -464,8 +460,8 @@
   "metrics": {
     "datasetCount": 85,
     "displayedCount": 20,
-    "adverseDatasetCount": 4,
-    "adverseDisplayedCount": 4
+    "adverseDatasetCount": 3,
+    "adverseDisplayedCount": 3
   },
   "provenance": {
     "providers": [

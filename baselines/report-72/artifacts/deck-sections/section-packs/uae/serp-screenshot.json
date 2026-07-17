@@ -10,15 +10,14 @@
   "contentVersion": "deck-sections-v14",
   "promptVersion": "uae-serp-screenshot-analysis-v1",
   "contentHash": "sha256:083be1341281522c783c4721f2c3b33b31dd5b496a6c74cb5ba582a324636d12",
-  "inputHash": "sha256:2cd6711c66638887fce8d87c5cc7665b63ca44d221d1608125fbc552fe5cebe2:dc7ccd121ca0dee1",
-  "generatedAt": "2026-07-16T23:16:28.018Z",
+  "inputHash": "sha256:f2a911466d9a6953604a113f4f1a83607a5c9fbe353bf1dd7da868ceb92995e1:dc7ccd121ca0dee1",
+  "generatedAt": "2026-07-17T09:49:29.040Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
     "finding-criminal_legal-subject_match-16447175",
     "finding-security_scrutiny-subject_match-0ae970c7",
     "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-political_exposure-subject_match-774a7b39",
     "finding-business_profile-subject_match-a59d6fee",
     "finding-family_associates-subject_match-a4427a53",
     "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -115,7 +114,6 @@
       "finding-criminal_legal-subject_match-16447175",
       "finding-security_scrutiny-subject_match-0ae970c7",
       "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-political_exposure-subject_match-774a7b39",
       "finding-business_profile-subject_match-a59d6fee",
       "finding-family_associates-subject_match-a4427a53",
       "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -225,8 +223,8 @@
         "whatWasFound": "На снимке выделено результатов повышенного внимания: 1 (rupep.org); остальные результаты — нейтральные или деловые.",
         "whyItMatters": "Выделенные материалы (1) видны при первичной проверке субъекта в этом регионе. Выделенные результаты — в выдаче Google; по Яндексу сохранённых результатов в наборе нет.",
         "whatToCheck": "Запросить первичные карточки баз и подтвердить принадлежность совпадений.",
-        "sourceNote": "Источники: rupep.org (результаты на снимке).",
         "statusNote": "Статус: подтверждённая тема; уровень: средний; уверенность 90%.",
+        "sourceNote": "Источники: rupep.org (результаты на снимке).",
         "highlightExplanations": [
           {
             "clientReason": "«PEP / RCA / watchlist-сигналы» — выделенный результат rupep.org; уровень: средний.",
@@ -261,7 +259,7 @@
   "metrics": {
     "datasetCount": 85,
     "displayedCount": 10,
-    "adverseDatasetCount": 4,
+    "adverseDatasetCount": 3,
     "adverseDisplayedCount": 1
   },
   "provenance": {

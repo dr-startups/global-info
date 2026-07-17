@@ -9,16 +9,15 @@
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "contentVersion": "deck-sections-v14",
   "promptVersion": "uae-images-analysis-v1",
-  "contentHash": "sha256:811bb0a5ac0608741f68fc9e3bfd167506d04518b8046b8dd8cd692d95848c21",
-  "inputHash": "sha256:e9406542faab08af51be8232b38b2cbd7abe393639720fc045647bc24edddcb7:363a0451c9dd30a4",
-  "generatedAt": "2026-07-17T00:37:40.390Z",
+  "contentHash": "sha256:10813c648fae2a2abec77fd77a1c676b1b6a01a39594f9f21974d5366549af98",
+  "inputHash": "sha256:6ae46d1f3823769756619b02bbbd5a67b35f11578650e20890988703c8799fc7:363a0451c9dd30a4",
+  "generatedAt": "2026-07-17T09:50:13.039Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
     "finding-criminal_legal-subject_match-16447175",
     "finding-security_scrutiny-subject_match-0ae970c7",
     "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-political_exposure-subject_match-774a7b39",
     "finding-business_profile-subject_match-a59d6fee",
     "finding-family_associates-subject_match-a4427a53"
   ],
@@ -123,7 +122,6 @@
       "finding-criminal_legal-subject_match-16447175",
       "finding-security_scrutiny-subject_match-0ae970c7",
       "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-political_exposure-subject_match-774a7b39",
       "finding-business_profile-subject_match-a59d6fee",
       "finding-family_associates-subject_match-a4427a53"
     ],
@@ -247,7 +245,7 @@
           "Относится к другому лицу: Glinka - Fragments from the opera \"Ruslan and Ludmila\""
         ],
         "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: cybercriminal.com, sledst.org, m.sledst.org.",
-        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 4. Они видны при первичной проверке субъекта.",
+        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 3. Они видны при первичной проверке субъекта.",
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
         "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%.",
         "sourceNote": "Источники: wikiart.org, instagram.com, facebook.com, youtube.com, pianista-superb.fandom.com"
@@ -307,7 +305,6 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53"
       ],
@@ -322,8 +319,8 @@
   "metrics": {
     "datasetCount": 94,
     "displayedCount": 49,
-    "adverseDatasetCount": 4,
-    "adverseDisplayedCount": 4
+    "adverseDatasetCount": 3,
+    "adverseDisplayedCount": 3
   },
   "provenance": {
     "providers": [

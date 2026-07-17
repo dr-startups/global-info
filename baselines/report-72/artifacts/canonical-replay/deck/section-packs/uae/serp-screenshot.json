@@ -10,15 +10,14 @@
   "contentVersion": "deck-sections-v14",
   "promptVersion": "uae-serp-screenshot-analysis-v1",
   "contentHash": "sha256:083be1341281522c783c4721f2c3b33b31dd5b496a6c74cb5ba582a324636d12",
-  "inputHash": "sha256:dbd7dd9b0672740bc51fdf39fa7ac300ccc10c41abf15f0e70bd983d8aeee1b1:dc7ccd121ca0dee1",
-  "generatedAt": "2026-07-17T00:37:40.389Z",
+  "inputHash": "sha256:3c8a16d6cf6c68fc509dd266cc1e1a7d34b72774c23faaddcff03bc136cf5538:dc7ccd121ca0dee1",
+  "generatedAt": "2026-07-17T09:50:13.038Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
     "finding-criminal_legal-subject_match-16447175",
     "finding-security_scrutiny-subject_match-0ae970c7",
     "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-political_exposure-subject_match-774a7b39",
     "finding-business_profile-subject_match-a59d6fee",
     "finding-family_associates-subject_match-a4427a53",
     "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -115,7 +114,6 @@
       "finding-criminal_legal-subject_match-16447175",
       "finding-security_scrutiny-subject_match-0ae970c7",
       "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-political_exposure-subject_match-774a7b39",
       "finding-business_profile-subject_match-a59d6fee",
       "finding-family_associates-subject_match-a4427a53",
       "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -261,7 +259,7 @@
   "metrics": {
     "datasetCount": 85,
     "displayedCount": 10,
-    "adverseDatasetCount": 4,
+    "adverseDatasetCount": 3,
     "adverseDisplayedCount": 1
   },
   "provenance": {

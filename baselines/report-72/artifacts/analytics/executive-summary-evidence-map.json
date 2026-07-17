@@ -75,30 +75,6 @@
     {
       "basisKind": "CONFIRMED_FACT",
       "evidenceRefs": [
-        "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
-        "inventory:ss-cmreb9zhz00ddmm0feohikekq",
-        "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
-        "inventory:ss-cmrebadww00k9mm0fmejxlqce",
-        "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
-        "inventory:ss-cmrebbrxu011nmm0fsupgr6gu"
-      ],
-      "findingId": "finding-political_exposure-subject_match-774a7b39",
-      "providers": [
-        "arsenkin",
-        "google"
-      ],
-      "sourceDomains": [
-        "x.com",
-        "vlasti.io",
-        "m.sledst.org",
-        "sledst.org",
-        "repost.news",
-        "rumafia.io"
-      ]
-    },
-    {
-      "basisKind": "CONFIRMED_FACT",
-      "evidenceRefs": [
         "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
         "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
         "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
@@ -227,6 +203,6 @@
     "finding-business_profile-other_subject-b434e301",
     "finding-political_exposure-other_subject-038d7d26"
   ],
-  "inputHash": "6c8acfd02b4ddb456b6b7d07bf27336c8ff6cdcb70ea49f6bf478157d147f192",
+  "inputHash": "ccaf428517e8486d11f0cbf2e62c733bda8725a8c92c5fcbb069c4c453f2b905",
   "schemaVersion": "executive-summary-evidence-map-v1"
 }

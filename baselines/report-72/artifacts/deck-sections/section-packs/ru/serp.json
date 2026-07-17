@@ -10,15 +10,14 @@
   "contentVersion": "deck-sections-v14",
   "promptVersion": "ru-serp-analysis-v1",
   "contentHash": "sha256:90b97cb9984f68cd7771ea863dee28190b52a90a06983f5a01c440010e09306f",
-  "inputHash": "sha256:f5f6f0d16343876660abdd036309fb42b4e69551c7fa6b633bd4834114d2afce:5281b67d58e9810b",
-  "generatedAt": "2026-07-16T23:16:28.013Z",
+  "inputHash": "sha256:fc21fc68dede4d7872ceb62203b516d96f77b0b084be781cfeadc2e51cce0aeb:5281b67d58e9810b",
+  "generatedAt": "2026-07-17T09:49:29.035Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
     "finding-criminal_legal-subject_match-16447175",
     "finding-security_scrutiny-subject_match-0ae970c7",
     "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-political_exposure-subject_match-774a7b39",
     "finding-business_profile-subject_match-a59d6fee",
     "finding-family_associates-subject_match-a4427a53"
   ],
@@ -172,7 +171,6 @@
       "finding-criminal_legal-subject_match-16447175",
       "finding-security_scrutiny-subject_match-0ae970c7",
       "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-political_exposure-subject_match-774a7b39",
       "finding-business_profile-subject_match-a59d6fee",
       "finding-family_associates-subject_match-a4427a53"
     ],
@@ -335,7 +333,6 @@
       "templateId": "serp-table",
       "title": "Россия — позиции в поисковой выдаче",
       "content": {
-        "bullets": [],
         "table": {
           "headers": [
             "№",
@@ -421,8 +418,9 @@
         "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический.",
         "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 1. Они видны при первичной проверке субъекта.",
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
+        "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%.",
         "sourceNote": "Источники: поисковая выдача (см. приложение).",
-        "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
+        "bullets": []
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
@@ -498,7 +496,6 @@
       "templateId": "serp-table",
       "title": "Россия — позиции в поисковой выдаче (продолжение 2/3)",
       "content": {
-        "bullets": [],
         "table": {
           "headers": [
             "№",
@@ -582,8 +579,9 @@
           ]
         },
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
+        "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%.",
         "sourceNote": "Источники: поисковая выдача (см. приложение).",
-        "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
+        "bullets": []
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
@@ -659,7 +657,6 @@
       "templateId": "serp-table",
       "title": "Россия — позиции в поисковой выдаче (продолжение 3/3)",
       "content": {
-        "bullets": [],
         "table": {
           "headers": [
             "№",
@@ -743,8 +740,9 @@
           ]
         },
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
+        "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%.",
         "sourceNote": "Источники: поисковая выдача (см. приложение).",
-        "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
+        "bullets": []
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
@@ -813,7 +811,7 @@
   "metrics": {
     "datasetCount": 143,
     "displayedCount": 50,
-    "adverseDatasetCount": 4,
+    "adverseDatasetCount": 3,
     "adverseDisplayedCount": 1
   },
   "provenance": {

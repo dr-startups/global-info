@@ -58,7 +58,7 @@
       "totalPageCount": 41,
       "baseSlotId": "p03_executive",
       "isContinuation": false,
-      "narrative": "По итогам проверки открытых источников в отношении Глинка Сергей Михайлович выявлены значимые репутационные риски, требующие внимания. В сводку включены 7 ключевых наблюдений: подтверждённых фактов — 4, предварительных сигналов — 3, гипотез — 0. Оценка охватывает регионы: UAE, RU. Часть материалов в выдаче относится к другому лицу (Михаил Глинка (композитор)) и исключена из выводов о проверяемом субъекте. По отдельным направлениям данные собраны не полностью; ограничения перечислены ниже.",
+      "narrative": "По итогам проверки открытых источников в отношении Глинка Сергей Михайлович выявлены значимые репутационные риски, требующие внимания. В сводку включены 6 ключевых наблюдений: подтверждённых фактов — 3, предварительных сигналов — 3, гипотез — 0. Оценка охватывает регионы: UAE, RU. Часть материалов в выдаче относится к другому лицу (Михаил Глинка (композитор)) и исключена из выводов о проверяемом субъекте. По отдельным направлениям данные собраны не полностью; ограничения перечислены ниже.",
       "bullets": [
         "Криминальные / судебные материалы: Предварительный сигнал: Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка ... [finding-criminal_legal-subject_match-16447175]",
         "Внимание по линии безопасности / оборонный контур: Подтверждённый факт: Внимание по линии безопасности / оборонный контур: 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка ... [finding-security_scrutiny-subject_match-0ae970c7]"
@@ -124,13 +124,12 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
-        "keyFindings": 7
+        "keyFindings": 6
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -155,7 +154,6 @@
       "continuationIndex": 1,
       "bullets": [
         "PEP / RCA / watchlist-сигналы: Предварительный сигнал: PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
-        "Политические связи (вкл. Молдову): Подтверждённый факт: Политические связи (вкл. Молдову): 6 свидетельств (2 негативных) в источниках x.com, vlasti.io, m.sledst.org, sledst.org. Примеры: Связанный с Россией бизнесмен Сергей Глинка ... [finding-political_exposure-subject_match-774a7b39]",
         "Деловой профиль: Подтверждённый факт: Деловой профиль: 43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru. Примеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... [finding-business_profile-subject_match-a59d6fee]",
         "Семья и деловые связи: Предварительный сигнал: Семья и деловые связи: 6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online. Примеры: Сергей Глинка · глинка сергей михайлович жена · глинка сергей михайлович дети Регионы: UAE, RU, INTERNATIONAL. Источники: forbes.ru, vlasti.io, kompromat1.online. [finding-family_associates-subject_match-a4427a53]",
         "Офшоры / корпоративное владение: Подтверждённый факт: Офшоры / корпоративное владение: 1 свидетельств (0 негативных) в источниках tadviser.ru. Примеры: Глинка Сергей Михайлович Регионы: UAE. Источники: tadviser.ru. [finding-offshore_corporate-subject_match-1b4c64c7]"
@@ -221,13 +219,12 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
-        "keyFindings": 7
+        "keyFindings": 6
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -270,12 +267,6 @@
             "Средний",
             "P2",
             "finding-pep_rca_watchlist-subject_match-dfa7da39"
-          ],
-          [
-            "Политические связи (вкл. Молдову)",
-            "Средний",
-            "P2",
-            "finding-political_exposure-subject_match-774a7b39"
           ],
           [
             "Деловой профиль",
@@ -358,14 +349,13 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
-        "themes": 7,
-        "adverse": 4
+        "themes": 6,
+        "adverse": 3
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -394,15 +384,13 @@
       "bullets": [
         "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка. [finding-criminal_legal-subject_match-16447175]",
         "Внимание по линии безопасности / оборонный контур: 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-security_scrutiny-subject_match-0ae970c7]",
-        "PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
-        "Политические связи (вкл. Молдову): 6 свидетельств (2 негативных) в источниках x.com, vlasti.io, m.sledst.org, sledst.org. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-political_exposure-subject_match-774a7b39]"
+        "PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]"
       ],
       "evidenceRefs": [],
       "findingIds": [
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -410,7 +398,7 @@
       "metrics": {
         "compositeCount": 343,
         "subjectMatchCount": 153,
-        "adverseFindingCount": 4
+        "adverseFindingCount": 3
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -446,7 +434,7 @@
         },
         {
           "label": "Тем повышенного внимания",
-          "value": "4",
+          "value": "3",
           "tone": "risk"
         },
         {
@@ -481,12 +469,11 @@
       "totalPageCount": 41,
       "baseSlotId": "p07_ru_summary",
       "isContinuation": false,
-      "narrative": "По региону Россия собрано материалов: 214; подтверждённых тем: 6.",
+      "narrative": "По региону Россия собрано материалов: 214; подтверждённых тем: 5.",
       "bullets": [
         "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка. [finding-criminal_legal-subject_match-16447175]",
         "Внимание по линии безопасности / оборонный контур: 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-security_scrutiny-subject_match-0ae970c7]",
         "PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
-        "Политические связи (вкл. Молдову): 6 свидетельств (2 негативных) в источниках x.com, vlasti.io, m.sledst.org, sledst.org. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-political_exposure-subject_match-774a7b39]",
         "Деловой профиль: 43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru. Примеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... · Glinka Sergei Mikhailovich - TAdviser [finding-business_profile-subject_match-a59d6fee]",
         "Семья и деловые связи: 6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online. Примеры: Сергей Глинка · глинка сергей михайлович жена · глинка сергей михайлович дети [finding-family_associates-subject_match-a4427a53]"
       ],
@@ -545,14 +532,13 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53"
       ],
       "metrics": {
         "materials": 214,
-        "findings": 6,
-        "adverse": 4
+        "findings": 5,
+        "adverse": 3
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -564,7 +550,7 @@
       ],
       "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI.",
       "whatWasFound": "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка.",
-      "whyItMatters": "Обнаружено сигналов повышенного внимания: 4. Они влияют на восприятие субъекта при первичной проверке.",
+      "whyItMatters": "Обнаружено сигналов повышенного внимания: 3. Они влияют на восприятие субъекта при первичной проверке.",
       "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
       "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk",
       "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
@@ -613,7 +599,7 @@
           [
             "—",
             "Темы повышенного внимания",
-            "4",
+            "3",
             "см. матрицу рисков"
           ]
         ]
@@ -1408,7 +1394,6 @@
       ],
       "findingIds": [
         "finding-security_scrutiny-subject_match-0ae970c7",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee"
       ],
       "metrics": {
@@ -1425,7 +1410,7 @@
         "Источник"
       ],
       "whatWasFound": "«Внимание по линии безопасности / оборонный контур»: уровень внимания — высокий — материалы на этой странице: repost.news, rumafia.io.",
-      "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 2. Они видны при первичной проверке субъекта.",
+      "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 1. Они видны при первичной проверке субъекта.",
       "whatToCheck": "Сверить первоисточники и подготовить документированную позицию.",
       "sourceNote": "Источники: eg.ru, argumentiru.com, kiosk-31.ru, noi.md, kulturologia.ru",
       "statusNote": "Статус: подтверждённая тема; уровень: высокий; уверенность 90%."
@@ -1763,12 +1748,11 @@
       "totalPageCount": 41,
       "baseSlotId": "p24_uae_summary",
       "isContinuation": false,
-      "narrative": "По региону ОАЭ / международный собрано материалов: 129; подтверждённых тем: 7.",
+      "narrative": "По региону ОАЭ / международный собрано материалов: 129; подтверждённых тем: 6.",
       "bullets": [
         "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка. [finding-criminal_legal-subject_match-16447175]",
         "Внимание по линии безопасности / оборонный контур: 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-security_scrutiny-subject_match-0ae970c7]",
         "PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
-        "Политические связи (вкл. Молдову): 6 свидетельств (2 негативных) в источниках x.com, vlasti.io, m.sledst.org, sledst.org. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-political_exposure-subject_match-774a7b39]",
         "Деловой профиль: 43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru. Примеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... · Glinka Sergei Mikhailovich - TAdviser [finding-business_profile-subject_match-a59d6fee]",
         "Семья и деловые связи: 6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online. Примеры: Сергей Глинка · глинка сергей михайлович жена · глинка сергей михайлович дети [finding-family_associates-subject_match-a4427a53]",
         "Офшоры / корпоративное владение: 1 свидетельств (0 негативных) в источниках tadviser.ru. Примеры: Глинка Сергей Михайлович [finding-offshore_corporate-subject_match-1b4c64c7]"
@@ -1826,15 +1810,14 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
         "materials": 129,
-        "findings": 7,
-        "adverse": 4
+        "findings": 6,
+        "adverse": 3
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -1846,7 +1829,7 @@
       ],
       "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI.",
       "whatWasFound": "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка.",
-      "whyItMatters": "Обнаружено сигналов повышенного внимания: 4. Они влияют на восприятие субъекта при первичной проверке.",
+      "whyItMatters": "Обнаружено сигналов повышенного внимания: 3. Они влияют на восприятие субъекта при первичной проверке.",
       "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
       "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk",
       "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
@@ -1877,7 +1860,7 @@
           [
             "—",
             "Темы повышенного внимания",
-            "4",
+            "3",
             "см. матрицу рисков"
           ]
         ]
@@ -2022,7 +2005,6 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -2047,7 +2029,7 @@
         "Позитивный"
       ],
       "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический.",
-      "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 4. Они видны при первичной проверке субъекта.",
+      "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 3. Они видны при первичной проверке субъекта.",
       "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
       "sourceNote": "Источники: поисковая выдача (см. приложение).",
       "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
@@ -2148,7 +2130,6 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -2334,7 +2315,6 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53"
       ],
@@ -2352,7 +2332,7 @@
         "Источник"
       ],
       "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: cybercriminal.com, sledst.org, m.sledst.org.",
-      "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 4. Они видны при первичной проверке субъекта.",
+      "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 3. Они видны при первичной проверке субъекта.",
       "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
       "sourceNote": "Источники: wikiart.org, instagram.com, facebook.com, youtube.com, pianista-superb.fandom.com",
       "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
@@ -2767,7 +2747,7 @@
       "bullets": [
         "Семья и деловые связи: 1 свидетельств (0 негативных) в источниках ru.wikipedia.org. Примеры: В кого был влюблен Глинка? [finding-family_associates-other_subject-276ddd65]",
         "Деловой профиль: 3 свидетельств (0 негативных) в источниках instagram.com, youtube.com, vkvideo.ru. Примеры: КНИГИ on Instagram: \"Прекрасная биография. Лаконичная ... · Михаил Глинка.Биография · Композитор Глинка (биографический, реж. Григорий ... [finding-business_profile-other_subject-b434e301]",
-        "Политические связи (вкл. Молдову): 1 свидетельств (0 негативных) в источниках youtube.com. Примеры: М. Глинка - Хор «Славься» из оперы «Жизнь за царя» [finding-political_exposure-other_subject-038d7d26]",
+        "Политические связи / публичная экспозиция: 1 свидетельств (0 негативных) в источниках youtube.com. Примеры: М. Глинка - Хор «Славься» из оперы «Жизнь за царя» [finding-political_exposure-other_subject-038d7d26]",
         "Деловой профиль: 2 свидетельств (0 негативных) в источниках kulturologia.ru, eg.ru. Примеры: Сергей Глинка: транспорт, биотехнологии и инвестиции в Nutriband · Биография и личная жизнь: Ксения Лаврова-Глинка - Экспресс газета [finding-business_profile-ambiguous-7a2d3181]",
         "Криминальные / судебные материалы: 1 свидетельств (1 негативных) в источниках rucriminal.info. Примеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-criminal_legal-ambiguous-3d33fe91]",
         "PEP / RCA / watchlist-сигналы: 1 свидетельств (0 негативных) в источниках kulturologia.ru. Примеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром  культуры: О чем жалеет Ксения Лаврова-Глинки [finding-pep_rca_watchlist-ambiguous-976aa8fa]"
@@ -2818,7 +2798,7 @@
       "continuationOf": "appendix_main_base",
       "continuationIndex": 1,
       "bullets": [
-        "Политические связи (вкл. Молдову): 2 свидетельств (0 негативных) в источниках kulturologia.ru, youtube.com. Примеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром  культуры: О чем жалеет Ксения Лаврова-Глинки · Михаил Глинка \"Скажи,зачем явилась ты\"/Юрий Гуляев [finding-political_exposure-ambiguous-054edc90]",
+        "Политические связи / публичная экспозиция: 2 свидетельств (0 негативных) в источниках kulturologia.ru, youtube.com. Примеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром  культуры: О чем жалеет Ксения Лаврова-Глинки · Михаил Глинка \"Скажи,зачем явилась ты\"/Юрий Гуляев [finding-political_exposure-ambiguous-054edc90]",
         "Внимание по линии безопасности / оборонный контур: 1 свидетельств (1 негативных) в источниках rucriminal.info. Примеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-security_scrutiny-ambiguous-3d33fe91]"
       ],
       "evidenceRefs": [

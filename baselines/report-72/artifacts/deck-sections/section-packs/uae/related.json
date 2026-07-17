@@ -10,8 +10,8 @@
   "contentVersion": "deck-sections-v14",
   "promptVersion": "uae-related-analysis-v1",
   "contentHash": "sha256:0f1242cbaef86825b34d01122c0b5ae0c04ef410e93ee12455446fa8eceffae8",
-  "inputHash": "sha256:ac8c231e121848ca7e8d325d09957247983d44422fab18eb714f0db230d81a45:6ab6e235d5c18ade",
-  "generatedAt": "2026-07-16T23:16:28.019Z",
+  "inputHash": "sha256:cbb451f4ec114bf745cb4bdb15e16a2fee8eaf1ccf702c91c75583f95fa64dd4:6ab6e235d5c18ade",
+  "generatedAt": "2026-07-17T09:49:29.042Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [],
@@ -41,8 +41,8 @@
         "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
         "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
         "whatToCheck": "Мониторить изменения выдачи.",
-        "sourceNote": "Источники: поисковая выдача (см. приложение).",
-        "statusNote": "Статус: по данной поверхности выводов о рисках нет."
+        "statusNote": "Статус: по данной поверхности выводов о рисках нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczpl00b1vd9g27ool8o4"

@@ -9,16 +9,15 @@
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "contentVersion": "deck-sections-v14",
   "promptVersion": "risk-matrix-deterministic-v1",
-  "contentHash": "sha256:f8a9e8bc3566dc1cb76bb8e1e79b995db2f96080944c08c2eea5ebd1b96a5415",
-  "inputHash": "sha256:0475e8adb50737df6b2ac8f87e1b5aae5ae3225e2adabd1f718c5714b8fc77c5:d28b955a70aaeb68",
-  "generatedAt": "2026-07-16T23:16:28.011Z",
+  "contentHash": "sha256:2acb9e556d4159ae5ca33f179e0285a2c74f140f6080fb0bb5ef12d2c80cf911",
+  "inputHash": "sha256:733472b29c75028779591cb16e5d80077a12918d3ba70c4193fe4edfc0f63642:d28b955a70aaeb68",
+  "generatedAt": "2026-07-17T09:49:29.033Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
     "finding-criminal_legal-subject_match-16447175",
     "finding-security_scrutiny-subject_match-0ae970c7",
     "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-political_exposure-subject_match-774a7b39",
     "finding-business_profile-subject_match-a59d6fee",
     "finding-family_associates-subject_match-a4427a53",
     "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -85,7 +84,6 @@
       "finding-criminal_legal-subject_match-16447175",
       "finding-security_scrutiny-subject_match-0ae970c7",
       "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-political_exposure-subject_match-774a7b39",
       "finding-business_profile-subject_match-a59d6fee",
       "finding-family_associates-subject_match-a4427a53",
       "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -161,7 +159,6 @@
       "templateId": "risk-matrix",
       "title": "Матрица комплаенс-рисков",
       "content": {
-        "bullets": [],
         "table": {
           "headers": [
             "Тема",
@@ -189,12 +186,6 @@
               "finding-pep_rca_watchlist-subject_match-dfa7da39"
             ],
             [
-              "Политические связи (вкл. Молдову)",
-              "Средний",
-              "P2",
-              "finding-political_exposure-subject_match-774a7b39"
-            ],
-            [
               "Деловой профиль",
               "Низкий",
               "P3",
@@ -213,7 +204,8 @@
               "finding-offshore_corporate-subject_match-1b4c64c7"
             ]
           ]
-        }
+        },
+        "bullets": []
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -276,14 +268,13 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
-        "themes": 7,
-        "adverse": 4
+        "themes": 6,
+        "adverse": 3
       },
       "visualAssetRefs": []
     }
@@ -291,8 +282,8 @@
   "metrics": {
     "datasetCount": 55,
     "displayedCount": 55,
-    "adverseDatasetCount": 4,
-    "adverseDisplayedCount": 4
+    "adverseDatasetCount": 3,
+    "adverseDisplayedCount": 3
   },
   "provenance": {
     "providers": [

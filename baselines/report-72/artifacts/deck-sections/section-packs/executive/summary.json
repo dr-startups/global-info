@@ -9,16 +9,15 @@
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "contentVersion": "deck-sections-v14",
   "promptVersion": "executive-summary-v1",
-  "contentHash": "sha256:3fd5460c6dccdf0926fcf8b20506dd21beebc58b2c1d92fb8d4feaaffe3dcb35",
-  "inputHash": "sha256:0475e8adb50737df6b2ac8f87e1b5aae5ae3225e2adabd1f718c5714b8fc77c5:9eedf2f6e0dce62f",
-  "generatedAt": "2026-07-16T23:16:28.010Z",
+  "contentHash": "sha256:332b5ea08e7739966f6d50a0468cd2f5a2ef79aeb24855d6181f9665bde6f864",
+  "inputHash": "sha256:733472b29c75028779591cb16e5d80077a12918d3ba70c4193fe4edfc0f63642:53accb10a50d4b60",
+  "generatedAt": "2026-07-17T09:49:29.032Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
     "finding-criminal_legal-subject_match-16447175",
     "finding-security_scrutiny-subject_match-0ae970c7",
     "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-political_exposure-subject_match-774a7b39",
     "finding-business_profile-subject_match-a59d6fee",
     "finding-family_associates-subject_match-a4427a53",
     "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -85,7 +84,6 @@
       "finding-criminal_legal-subject_match-16447175",
       "finding-security_scrutiny-subject_match-0ae970c7",
       "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-political_exposure-subject_match-774a7b39",
       "finding-business_profile-subject_match-a59d6fee",
       "finding-family_associates-subject_match-a4427a53",
       "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -162,7 +160,7 @@
       "title": "Резюме",
       "subtitle": "Итоговая оценка: ELEVATED",
       "content": {
-        "narrative": "По итогам проверки открытых источников в отношении Глинка Сергей Михайлович выявлены значимые репутационные риски, требующие внимания. В сводку включены 7 ключевых наблюдений: подтверждённых фактов — 4, предварительных сигналов — 3, гипотез — 0. Оценка охватывает регионы: UAE, RU. Часть материалов в выдаче относится к другому лицу (Михаил Глинка (композитор)) и исключена из выводов о проверяемом субъекте. По отдельным направлениям данные собраны не полностью; ограничения перечислены ниже.",
+        "narrative": "По итогам проверки открытых источников в отношении Глинка Сергей Михайлович выявлены значимые репутационные риски, требующие внимания. В сводку включены 6 ключевых наблюдений: подтверждённых фактов — 3, предварительных сигналов — 3, гипотез — 0. Оценка охватывает регионы: UAE, RU. Часть материалов в выдаче относится к другому лицу (Михаил Глинка (композитор)) и исключена из выводов о проверяемом субъекте. По отдельным направлениям данные собраны не полностью; ограничения перечислены ниже.",
         "bullets": [
           "Криминальные / судебные материалы: Предварительный сигнал: Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка ... [finding-criminal_legal-subject_match-16447175]",
           "Внимание по линии безопасности / оборонный контур: Подтверждённый факт: Внимание по линии безопасности / оборонный контур: 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка ... [finding-security_scrutiny-subject_match-0ae970c7]"
@@ -231,13 +229,12 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
-        "keyFindings": 7
+        "keyFindings": 6
       },
       "visualAssetRefs": []
     },
@@ -254,7 +251,6 @@
       "content": {
         "bullets": [
           "PEP / RCA / watchlist-сигналы: Предварительный сигнал: PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
-          "Политические связи (вкл. Молдову): Подтверждённый факт: Политические связи (вкл. Молдову): 6 свидетельств (2 негативных) в источниках x.com, vlasti.io, m.sledst.org, sledst.org. Примеры: Связанный с Россией бизнесмен Сергей Глинка ... [finding-political_exposure-subject_match-774a7b39]",
           "Деловой профиль: Подтверждённый факт: Деловой профиль: 43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru. Примеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... [finding-business_profile-subject_match-a59d6fee]",
           "Семья и деловые связи: Предварительный сигнал: Семья и деловые связи: 6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online. Примеры: Сергей Глинка · глинка сергей михайлович жена · глинка сергей михайлович дети Регионы: UAE, RU, INTERNATIONAL. Источники: forbes.ru, vlasti.io, kompromat1.online. [finding-family_associates-subject_match-a4427a53]",
           "Офшоры / корпоративное владение: Подтверждённый факт: Офшоры / корпоративное владение: 1 свидетельств (0 негативных) в источниках tadviser.ru. Примеры: Глинка Сергей Михайлович Регионы: UAE. Источники: tadviser.ru. [finding-offshore_corporate-subject_match-1b4c64c7]"
@@ -322,13 +318,12 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
-        "keyFindings": 7
+        "keyFindings": 6
       },
       "visualAssetRefs": []
     }
@@ -336,8 +331,8 @@
   "metrics": {
     "datasetCount": 55,
     "displayedCount": 55,
-    "adverseDatasetCount": 4,
-    "adverseDisplayedCount": 4
+    "adverseDatasetCount": 3,
+    "adverseDisplayedCount": 3
   },
   "provenance": {
     "providers": [

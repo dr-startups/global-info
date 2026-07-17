@@ -9,16 +9,15 @@
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "contentVersion": "deck-sections-v14",
   "promptVersion": "ru-images-analysis-v1",
-  "contentHash": "sha256:4767e405141ecee370b8d617c86f00152ece97e6ffdf47d7ff456fcbf8154381",
-  "inputHash": "sha256:715fdc1d8993de7d88d3f3f1c47f823a1bfcdf8b1f9f86d6dc68fcccb222489b:7039e4c61a30431e",
-  "generatedAt": "2026-07-17T00:37:40.387Z",
+  "contentHash": "sha256:0aebdfb212e31fba9347674d2be552a1109ee0a360d04e74c8e7b1e57000cd55",
+  "inputHash": "sha256:ba307ef53b324bb9500eac112d70c535fee799108e1e9f0fdbc34664b76fb966:7039e4c61a30431e",
+  "generatedAt": "2026-07-17T09:50:13.035Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
     "finding-criminal_legal-subject_match-16447175",
     "finding-security_scrutiny-subject_match-0ae970c7",
     "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-political_exposure-subject_match-774a7b39",
     "finding-business_profile-subject_match-a59d6fee",
     "finding-family_associates-subject_match-a4427a53"
   ],
@@ -111,7 +110,6 @@
       "finding-criminal_legal-subject_match-16447175",
       "finding-security_scrutiny-subject_match-0ae970c7",
       "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-political_exposure-subject_match-774a7b39",
       "finding-business_profile-subject_match-a59d6fee",
       "finding-family_associates-subject_match-a4427a53"
     ],
@@ -258,7 +256,7 @@
           "Относится к другому лицу: Михаил Глинка"
         ],
         "whatWasFound": "«Внимание по линии безопасности / оборонный контур»: уровень внимания — высокий — материалы на этой странице: repost.news, rumafia.io.",
-        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 2. Они видны при первичной проверке субъекта.",
+        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 1. Они видны при первичной проверке субъекта.",
         "whatToCheck": "Сверить первоисточники и подготовить документированную позицию.",
         "statusNote": "Статус: подтверждённая тема; уровень: высокий; уверенность 90%.",
         "sourceNote": "Источники: eg.ru, argumentiru.com, kiosk-31.ru, noi.md, kulturologia.ru"
@@ -276,7 +274,6 @@
       ],
       "findingIds": [
         "finding-security_scrutiny-subject_match-0ae970c7",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee"
       ],
       "metrics": {
@@ -373,8 +370,8 @@
   "metrics": {
     "datasetCount": 82,
     "displayedCount": 36,
-    "adverseDatasetCount": 4,
-    "adverseDisplayedCount": 4
+    "adverseDatasetCount": 3,
+    "adverseDisplayedCount": 3
   },
   "provenance": {
     "providers": [

@@ -9,16 +9,15 @@
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "contentVersion": "deck-sections-v14",
   "promptVersion": "digital-profile-overview-deterministic-v1",
-  "contentHash": "sha256:285251f011ecbe93a9c9c2dacf4caec43d2f29f6b0918fbab278a87efaf404d0",
-  "inputHash": "sha256:3ca5bb7ca8274e3786585624dfa2d791e00dfe99f6574fb4166abf68ec237d10:095c68b0eecae74b",
-  "generatedAt": "2026-07-17T00:37:40.383Z",
+  "contentHash": "sha256:48d4198776da797248e567127726ce7dcdcf6eaafa9344035ae0ac6d4ef5e07c",
+  "inputHash": "sha256:ea8b54fce51a73b888d3774716d4b78859220c6925487b2b048eb18ef44f2ec0:095c68b0eecae74b",
+  "generatedAt": "2026-07-17T09:50:13.030Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
     "finding-criminal_legal-subject_match-16447175",
     "finding-security_scrutiny-subject_match-0ae970c7",
     "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-political_exposure-subject_match-774a7b39",
     "finding-business_profile-subject_match-a59d6fee",
     "finding-family_associates-subject_match-a4427a53",
     "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -85,7 +84,6 @@
       "finding-criminal_legal-subject_match-16447175",
       "finding-security_scrutiny-subject_match-0ae970c7",
       "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-political_exposure-subject_match-774a7b39",
       "finding-business_profile-subject_match-a59d6fee",
       "finding-family_associates-subject_match-a4427a53",
       "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -185,7 +183,7 @@
           },
           {
             "label": "Тем повышенного внимания",
-            "value": "4",
+            "value": "3",
             "tone": "risk"
           },
           {
@@ -197,8 +195,7 @@
         "bullets": [
           "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка. [finding-criminal_legal-subject_match-16447175]",
           "Внимание по линии безопасности / оборонный контур: 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-security_scrutiny-subject_match-0ae970c7]",
-          "PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
-          "Политические связи (вкл. Молдову): 6 свидетельств (2 негативных) в источниках x.com, vlasti.io, m.sledst.org, sledst.org. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-political_exposure-subject_match-774a7b39]"
+          "PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]"
         ],
         "whatToCheck": "Детализация каждой темы повышенного внимания приведена в матрице рисков и региональных разделах.",
         "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk"
@@ -208,7 +205,6 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -216,7 +212,7 @@
       "metrics": {
         "compositeCount": 343,
         "subjectMatchCount": 153,
-        "adverseFindingCount": 4
+        "adverseFindingCount": 3
       },
       "visualAssetRefs": []
     }
@@ -224,8 +220,8 @@
   "metrics": {
     "datasetCount": 55,
     "displayedCount": 0,
-    "adverseDatasetCount": 4,
-    "adverseDisplayedCount": 4
+    "adverseDatasetCount": 3,
+    "adverseDisplayedCount": 3
   },
   "provenance": {
     "providers": [

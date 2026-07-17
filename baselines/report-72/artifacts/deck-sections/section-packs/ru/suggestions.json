@@ -10,8 +10,8 @@
   "contentVersion": "deck-sections-v14",
   "promptVersion": "ru-suggestions-analysis-v1",
   "contentHash": "sha256:83ce8462482ec5370b153a31b0ed07aec1568a35b0b93b24e7e682fc23f71a68",
-  "inputHash": "sha256:8316bb95b6a14adc9f5bba897091fd2bf6f54fe039ed562515692b224ad2a8d2:67ef49a214eab6e7",
-  "generatedAt": "2026-07-16T23:16:28.014Z",
+  "inputHash": "sha256:2d79ea88484e60a88698a3c89beba90074be534aad08db544c88b869baa926de:67ef49a214eab6e7",
+  "generatedAt": "2026-07-17T09:49:29.037Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [],
@@ -75,8 +75,8 @@
         "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
         "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
         "whatToCheck": "Мониторить изменения выдачи.",
-        "sourceNote": "Источники: поисковая выдача (см. приложение).",
-        "statusNote": "Статус: по данной поверхности выводов о рисках нет."
+        "statusNote": "Статус: по данной поверхности выводов о рисках нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczke007tvd9gxodqlyme",
@@ -113,8 +113,8 @@
         "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
         "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
         "whatToCheck": "Мониторить изменения выдачи.",
-        "sourceNote": "Источники: поисковая выдача (см. приложение).",
-        "statusNote": "Статус: по данной поверхности выводов о рисках нет."
+        "statusNote": "Статус: по данной поверхности выводов о рисках нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",

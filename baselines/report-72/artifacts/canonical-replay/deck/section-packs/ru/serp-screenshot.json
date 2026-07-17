@@ -10,15 +10,14 @@
   "contentVersion": "deck-sections-v14",
   "promptVersion": "ru-serp-screenshot-analysis-v1",
   "contentHash": "sha256:fde4a4499fbe8df3bb306adfd8eb519c143e82dde38b1bd42a88e2fb080f95c9",
-  "inputHash": "sha256:0b3ab0265736e1afb729a4ec031de609c504d63761fa5edf03b20e5ad600aaea:86c47e46109a1703",
-  "generatedAt": "2026-07-17T00:37:40.386Z",
+  "inputHash": "sha256:f930519f55624a6eb1d97661302da7569ff3ccc37d1402e09a05e5337229505a:86c47e46109a1703",
+  "generatedAt": "2026-07-17T09:50:13.033Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
     "finding-criminal_legal-subject_match-16447175",
     "finding-security_scrutiny-subject_match-0ae970c7",
     "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-political_exposure-subject_match-774a7b39",
     "finding-business_profile-subject_match-a59d6fee",
     "finding-family_associates-subject_match-a4427a53"
   ],
@@ -172,7 +171,6 @@
       "finding-criminal_legal-subject_match-16447175",
       "finding-security_scrutiny-subject_match-0ae970c7",
       "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-political_exposure-subject_match-774a7b39",
       "finding-business_profile-subject_match-a59d6fee",
       "finding-family_associates-subject_match-a4427a53"
     ],
@@ -403,7 +401,7 @@
   "metrics": {
     "datasetCount": 143,
     "displayedCount": 32,
-    "adverseDatasetCount": 4,
+    "adverseDatasetCount": 3,
     "adverseDisplayedCount": 2
   },
   "provenance": {

@@ -9,16 +9,15 @@
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "contentVersion": "deck-sections-v14",
   "promptVersion": "ru-regional-summary-v1",
-  "contentHash": "sha256:6bcf9b669f726c6227e4de43804292d2cde125a25981a5b72a10a0ebbe1738f3",
-  "inputHash": "sha256:73141fc9b92ff5ba1424dea2b8a4e9060f90fb502a4badc734f90bc40ae5f18e:a27d6524606192ae",
-  "generatedAt": "2026-07-16T23:16:28.012Z",
+  "contentHash": "sha256:a52bb424f825d09a43940f5e1b05607bf423d65ba0cce93b10dac6411f273f9f",
+  "inputHash": "sha256:1e00dfa1f1f5ab28e1e4021e11f706686ac7b67359fb0b711a82f46183108c7f:a27d6524606192ae",
+  "generatedAt": "2026-07-17T09:49:29.034Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
     "finding-criminal_legal-subject_match-16447175",
     "finding-security_scrutiny-subject_match-0ae970c7",
     "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-political_exposure-subject_match-774a7b39",
     "finding-business_profile-subject_match-a59d6fee",
     "finding-family_associates-subject_match-a4427a53"
   ],
@@ -89,7 +88,6 @@
       "finding-criminal_legal-subject_match-16447175",
       "finding-security_scrutiny-subject_match-0ae970c7",
       "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-political_exposure-subject_match-774a7b39",
       "finding-business_profile-subject_match-a59d6fee",
       "finding-family_associates-subject_match-a4427a53"
     ],
@@ -187,20 +185,19 @@
       "templateId": "regional-summary",
       "title": "Россия — резюме аудита",
       "content": {
-        "narrative": "По региону Россия собрано материалов: 214; подтверждённых тем: 6.",
+        "narrative": "По региону Россия собрано материалов: 214; подтверждённых тем: 5.",
         "bullets": [
           "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка. [finding-criminal_legal-subject_match-16447175]",
           "Внимание по линии безопасности / оборонный контур: 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-security_scrutiny-subject_match-0ae970c7]",
           "PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
-          "Политические связи (вкл. Молдову): 6 свидетельств (2 негативных) в источниках x.com, vlasti.io, m.sledst.org, sledst.org. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-political_exposure-subject_match-774a7b39]",
           "Деловой профиль: 43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru. Примеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... · Glinka Sergei Mikhailovich - TAdviser [finding-business_profile-subject_match-a59d6fee]",
           "Семья и деловые связи: 6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online. Примеры: Сергей Глинка · глинка сергей михайлович жена · глинка сергей михайлович дети [finding-family_associates-subject_match-a4427a53]"
         ],
         "whatWasFound": "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка.",
-        "whyItMatters": "Обнаружено сигналов повышенного внимания: 4. Они влияют на восприятие субъекта при первичной проверке.",
+        "whyItMatters": "Обнаружено сигналов повышенного внимания: 3. Они влияют на восприятие субъекта при первичной проверке.",
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk",
-        "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
+        "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%.",
+        "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk"
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -257,14 +254,13 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53"
       ],
       "metrics": {
         "materials": 214,
-        "findings": 6,
-        "adverse": 4
+        "findings": 5,
+        "adverse": 3
       },
       "visualAssetRefs": []
     },
@@ -314,7 +310,7 @@
             [
               "—",
               "Темы повышенного внимания",
-              "4",
+              "3",
               "см. матрицу рисков"
             ]
           ]
@@ -349,8 +345,8 @@
   "metrics": {
     "datasetCount": 60,
     "displayedCount": 49,
-    "adverseDatasetCount": 4,
-    "adverseDisplayedCount": 4
+    "adverseDatasetCount": 3,
+    "adverseDisplayedCount": 3
   },
   "provenance": {
     "providers": [

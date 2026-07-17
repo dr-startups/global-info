@@ -9,16 +9,15 @@
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "contentVersion": "deck-sections-v14",
   "promptVersion": "uae-regional-summary-v1",
-  "contentHash": "sha256:b619cfd92eeb5108158494bbfffb9670007621b5429fab2ef7e8f151663c7402",
-  "inputHash": "sha256:34ef730531353991ed73ed1ad3bca44312c21fc3d95cd05622e887f96bcb7ccc:21111fd0b8329117",
-  "generatedAt": "2026-07-17T00:37:40.389Z",
+  "contentHash": "sha256:e7a7311507612eb2b501ba544f8f86ca5e41022c85a5bc8984c13803b6803865",
+  "inputHash": "sha256:2f2e9e41532cda414f1d8c27cab71923776fced2abaad55479602e0e22ae69dd:21111fd0b8329117",
+  "generatedAt": "2026-07-17T09:50:13.037Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
     "finding-criminal_legal-subject_match-16447175",
     "finding-security_scrutiny-subject_match-0ae970c7",
     "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-political_exposure-subject_match-774a7b39",
     "finding-business_profile-subject_match-a59d6fee",
     "finding-family_associates-subject_match-a4427a53",
     "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -85,7 +84,6 @@
       "finding-criminal_legal-subject_match-16447175",
       "finding-security_scrutiny-subject_match-0ae970c7",
       "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-political_exposure-subject_match-774a7b39",
       "finding-business_profile-subject_match-a59d6fee",
       "finding-family_associates-subject_match-a4427a53",
       "finding-offshore_corporate-subject_match-1b4c64c7"
@@ -179,18 +177,17 @@
       "templateId": "regional-summary",
       "title": "ОАЭ — резюме аудита",
       "content": {
-        "narrative": "По региону ОАЭ / международный собрано материалов: 129; подтверждённых тем: 7.",
+        "narrative": "По региону ОАЭ / международный собрано материалов: 129; подтверждённых тем: 6.",
         "bullets": [
           "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка. [finding-criminal_legal-subject_match-16447175]",
           "Внимание по линии безопасности / оборонный контур: 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-security_scrutiny-subject_match-0ae970c7]",
           "PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
-          "Политические связи (вкл. Молдову): 6 свидетельств (2 негативных) в источниках x.com, vlasti.io, m.sledst.org, sledst.org. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-political_exposure-subject_match-774a7b39]",
           "Деловой профиль: 43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru. Примеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... · Glinka Sergei Mikhailovich - TAdviser [finding-business_profile-subject_match-a59d6fee]",
           "Семья и деловые связи: 6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online. Примеры: Сергей Глинка · глинка сергей михайлович жена · глинка сергей михайлович дети [finding-family_associates-subject_match-a4427a53]",
           "Офшоры / корпоративное владение: 1 свидетельств (0 негативных) в источниках tadviser.ru. Примеры: Глинка Сергей Михайлович [finding-offshore_corporate-subject_match-1b4c64c7]"
         ],
         "whatWasFound": "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка.",
-        "whyItMatters": "Обнаружено сигналов повышенного внимания: 4. Они влияют на восприятие субъекта при первичной проверке.",
+        "whyItMatters": "Обнаружено сигналов повышенного внимания: 3. Они влияют на восприятие субъекта при первичной проверке.",
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
         "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%.",
         "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk"
@@ -248,15 +245,14 @@
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
         "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
         "materials": 129,
-        "findings": 7,
-        "adverse": 4
+        "findings": 6,
+        "adverse": 3
       },
       "visualAssetRefs": []
     },
@@ -288,7 +284,7 @@
             [
               "—",
               "Темы повышенного внимания",
-              "4",
+              "3",
               "см. матрицу рисков"
             ]
           ]
@@ -307,8 +303,8 @@
   "metrics": {
     "datasetCount": 55,
     "displayedCount": 47,
-    "adverseDatasetCount": 4,
-    "adverseDisplayedCount": 4
+    "adverseDatasetCount": 3,
+    "adverseDisplayedCount": 3
   },
   "provenance": {
     "providers": [

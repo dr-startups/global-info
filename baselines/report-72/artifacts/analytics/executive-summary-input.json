@@ -23,12 +23,6 @@
     "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
     "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
     "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
-    "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
-    "inventory:ss-cmreb9zhz00ddmm0feohikekq",
-    "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
-    "inventory:ss-cmrebadww00k9mm0fmejxlqce",
-    "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
-    "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
     "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
     "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
     "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
@@ -285,12 +279,6 @@
       "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
       "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
       "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
-      "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
-      "inventory:ss-cmreb9zhz00ddmm0feohikekq",
-      "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
-      "inventory:ss-cmrebadww00k9mm0fmejxlqce",
-      "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
-      "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
       "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
       "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
       "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
@@ -497,53 +485,6 @@
           "organic",
           "images",
           "compliance_hit"
-        ]
-      },
-      {
-        "schemaVersion": "finding-v1",
-        "caseId": "cmreamy2t0002o30f29urzcog",
-        "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-        "sourceHashes": [
-          "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
-        ],
-        "evidenceRefs": [
-          "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
-          "inventory:ss-cmreb9zhz00ddmm0feohikekq",
-          "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
-          "inventory:ss-cmrebadww00k9mm0fmejxlqce",
-          "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
-          "inventory:ss-cmrebbrxu011nmm0fsupgr6gu"
-        ],
-        "findingId": "finding-political_exposure-subject_match-774a7b39",
-        "theme": "Политические связи (вкл. Молдову)",
-        "claim": "Политические связи (вкл. Молдову): 6 свидетельств (2 негативных) в источниках x.com, vlasti.io, m.sledst.org, sledst.org. Примеры: Связанный с Россией бизнесмен Сергей Глинка ... · Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16  million to acquire a Moldovan facility with military potential, purportedly  under the EU's auspices • Интернет-издание Власть · Russian businessman Sergei Glinka is attempting to gain control of the  Popeci defense plant in Moldova through the Romanian company Automecanica",
-        "subjectMatch": "SUBJECT_MATCH",
-        "riskLevel": "medium",
-        "confidence": 0.9000000000000001,
-        "regions": [
-          "UAE",
-          "INTERNATIONAL",
-          "RU"
-        ],
-        "sourceDomains": [
-          "x.com",
-          "vlasti.io",
-          "m.sledst.org",
-          "sledst.org",
-          "repost.news",
-          "rumafia.io"
-        ],
-        "providers": [
-          "arsenkin",
-          "google"
-        ],
-        "recommendedAction": "Подготовить позицию по политическим публикациям.",
-        "contradictions": [],
-        "limitations": [],
-        "promotionPriority": "P2",
-        "surfaceKinds": [
-          "organic",
-          "images"
         ]
       },
       {
@@ -834,8 +775,8 @@
           "inventory:ss-cmreb9zi100ffmm0f8xerotcf"
         ],
         "findingId": "finding-political_exposure-other_subject-038d7d26",
-        "theme": "Политические связи (вкл. Молдову)",
-        "claim": "Политические связи (вкл. Молдову): 1 свидетельств (0 негативных) в источниках youtube.com. Примеры: М. Глинка - Хор «Славься» из оперы «Жизнь за царя»",
+        "theme": "Политические связи / публичная экспозиция",
+        "claim": "Политические связи / публичная экспозиция: 1 свидетельств (0 негативных) в источниках youtube.com. Примеры: М. Глинка - Хор «Славься» из оперы «Жизнь за царя»",
         "subjectMatch": "OTHER_SUBJECT",
         "riskLevel": "low",
         "confidence": 0.35,
@@ -990,8 +931,8 @@
         "inventory:ss-cmreb9zi100ezmm0fsu4gfbqx"
       ],
       "findingId": "finding-political_exposure-ambiguous-054edc90",
-      "theme": "Политические связи (вкл. Молдову)",
-      "claim": "Политические связи (вкл. Молдову): 2 свидетельств (0 негативных) в источниках kulturologia.ru, youtube.com. Примеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром  культуры: О чем жалеет Ксения Лаврова-Глинки · Михаил Глинка \"Скажи,зачем явилась ты\"/Юрий Гуляев",
+      "theme": "Политические связи / публичная экспозиция",
+      "claim": "Политические связи / публичная экспозиция: 2 свидетельств (0 негативных) в источниках kulturologia.ru, youtube.com. Примеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром  культуры: О чем жалеет Ксения Лаврова-Глинки · Михаил Глинка \"Скажи,зачем явилась ты\"/Юрий Гуляев",
       "subjectMatch": "AMBIGUOUS",
       "riskLevel": "low",
       "confidence": 0.35,
@@ -1220,7 +1161,7 @@
     "Проверить статусы дел и первоисточники до принятия решений.",
     "Сверить первоисточники и подготовить документированную позицию.",
     "Запросить первичные карточки баз и подтвердить принадлежность совпадений.",
-    "Подготовить позицию по политическим публикациям.",
-    "Поддерживать актуальный позитивный деловой контент."
+    "Поддерживать актуальный позитивный деловой контент.",
+    "Собрать документальные подтверждения по активам и связям."
   ]
 }

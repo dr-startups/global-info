@@ -9,16 +9,15 @@
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "contentVersion": "deck-sections-v14",
   "promptVersion": "ru-images-analysis-v1",
-  "contentHash": "sha256:4767e405141ecee370b8d617c86f00152ece97e6ffdf47d7ff456fcbf8154381",
-  "inputHash": "sha256:7443a27a4f140d9bf6c41aebba65828b0f0e115b2c955fb3e8ee89b2345280f0:7039e4c61a30431e",
-  "generatedAt": "2026-07-16T23:16:28.016Z",
+  "contentHash": "sha256:0aebdfb212e31fba9347674d2be552a1109ee0a360d04e74c8e7b1e57000cd55",
+  "inputHash": "sha256:d6f892a51c697e035ecc4282446020d97f6a51bf996e6bf20140b97978ffe5f3:7039e4c61a30431e",
+  "generatedAt": "2026-07-17T09:49:29.038Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
     "finding-criminal_legal-subject_match-16447175",
     "finding-security_scrutiny-subject_match-0ae970c7",
     "finding-pep_rca_watchlist-subject_match-dfa7da39",
-    "finding-political_exposure-subject_match-774a7b39",
     "finding-business_profile-subject_match-a59d6fee",
     "finding-family_associates-subject_match-a4427a53"
   ],
@@ -111,7 +110,6 @@
       "finding-criminal_legal-subject_match-16447175",
       "finding-security_scrutiny-subject_match-0ae970c7",
       "finding-pep_rca_watchlist-subject_match-dfa7da39",
-      "finding-political_exposure-subject_match-774a7b39",
       "finding-business_profile-subject_match-a59d6fee",
       "finding-family_associates-subject_match-a4427a53"
     ],
@@ -219,8 +217,8 @@
         "whatWasFound": "«Деловой профиль»: уровень внимания — низкий — материалы на этой странице: bitva.wiki, peoples.ru, osnmedia.ru.",
         "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
         "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
-        "sourceNote": "Источники: directmedia.ru, labirint.ru, klerk.ru, instagram.com, osnmedia.ru",
-        "statusNote": "Статус: подтверждённая тема; уровень: низкий; уверенность 90%."
+        "statusNote": "Статус: подтверждённая тема; уровень: низкий; уверенность 90%.",
+        "sourceNote": "Источники: directmedia.ru, labirint.ru, klerk.ru, instagram.com, osnmedia.ru"
       },
       "evidenceRefs": [
         "inventory:ss-cmrebao1g00o1mm0fqthrmtng",
@@ -258,10 +256,10 @@
           "Относится к другому лицу: Михаил Глинка"
         ],
         "whatWasFound": "«Внимание по линии безопасности / оборонный контур»: уровень внимания — высокий — материалы на этой странице: repost.news, rumafia.io.",
-        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 2. Они видны при первичной проверке субъекта.",
+        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 1. Они видны при первичной проверке субъекта.",
         "whatToCheck": "Сверить первоисточники и подготовить документированную позицию.",
-        "sourceNote": "Источники: eg.ru, argumentiru.com, kiosk-31.ru, noi.md, kulturologia.ru",
-        "statusNote": "Статус: подтверждённая тема; уровень: высокий; уверенность 90%."
+        "statusNote": "Статус: подтверждённая тема; уровень: высокий; уверенность 90%.",
+        "sourceNote": "Источники: eg.ru, argumentiru.com, kiosk-31.ru, noi.md, kulturologia.ru"
       },
       "evidenceRefs": [
         "inventory:ss-cmreb9zhz00ckmm0f342muxiw",
@@ -276,7 +274,6 @@
       ],
       "findingIds": [
         "finding-security_scrutiny-subject_match-0ae970c7",
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-business_profile-subject_match-a59d6fee"
       ],
       "metrics": {
@@ -303,8 +300,8 @@
         "whatWasFound": "«Внимание по линии безопасности / оборонный контур»: уровень внимания — высокий — материалы на этой странице: kartoteka.news.",
         "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 1. Они видны при первичной проверке субъекта.",
         "whatToCheck": "Сверить первоисточники и подготовить документированную позицию.",
-        "sourceNote": "Источники: youtube.com, kulturologia.ru, kartoteka.news, dnesnews.ru, cadethistory.ru",
-        "statusNote": "Статус: подтверждённая тема; уровень: высокий; уверенность 90%."
+        "statusNote": "Статус: подтверждённая тема; уровень: высокий; уверенность 90%.",
+        "sourceNote": "Источники: youtube.com, kulturologia.ru, kartoteka.news, dnesnews.ru, cadethistory.ru"
       },
       "evidenceRefs": [
         "inventory:ss-cmreb9zi000dumm0fji3fuqlz",
@@ -342,8 +339,8 @@
         "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: kompromat1.online.",
         "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 2. Они видны при первичной проверке субъекта.",
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "sourceNote": "Источники: fb.ru, piter.tv, kompromat1.online, images.example",
-        "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
+        "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%.",
+        "sourceNote": "Источники: fb.ru, piter.tv, kompromat1.online, images.example"
       },
       "evidenceRefs": [
         "inventory:ss-cmreb9zhz00chmm0fbxdmtjn0",
@@ -373,8 +370,8 @@
   "metrics": {
     "datasetCount": 82,
     "displayedCount": 36,
-    "adverseDatasetCount": 4,
-    "adverseDisplayedCount": 4
+    "adverseDatasetCount": 3,
+    "adverseDisplayedCount": 3
   },
   "provenance": {
     "providers": [

@@ -5,21 +5,18 @@
   "disclaimer": "Benchmark items are coverage checklist themes. Their claims are not report facts; only pipeline statuses are recorded.",
   "rows": [
     {
-      "benchmarkId": "bm-politics-moldova",
-      "label": "Политика / Молдова",
-      "status": "PROMOTED",
-      "rawMatchCount": 10,
-      "subjectMatchCount": 6,
-      "ambiguousCount": 1,
+      "benchmarkId": "bm-political-exposure",
+      "label": "Политическая / публичная экспозиция",
+      "status": "SUBJECT_AMBIGUOUS",
+      "rawMatchCount": 6,
+      "subjectMatchCount": 0,
+      "ambiguousCount": 2,
       "otherSubjectCount": 1,
       "noiseCount": 0,
       "findingIds": [
-        "finding-political_exposure-subject_match-774a7b39",
         "finding-political_exposure-ambiguous-054edc90"
       ],
-      "promotedFindingIds": [
-        "finding-political_exposure-subject_match-774a7b39"
-      ],
+      "promotedFindingIds": [],
       "notes": []
     },
     {
