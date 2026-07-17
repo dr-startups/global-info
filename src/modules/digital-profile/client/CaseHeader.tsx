@@ -7,14 +7,22 @@ import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
 
 function arsenkinProgress(job: UnifiedCollectionJobStatus | null): string {
-  if (!job) return "0/5";
+  if (!job) return "scheduled 0/5 · completed 0/5 · ingested 0/5";
+  const st = job.arsenkinEnrichmentState;
+  if (st) {
+    const s = st.scheduledAgents?.length ?? 0;
+    const c = st.completedAgents?.length ?? 0;
+    const i = st.ingestedAgents?.length ?? 0;
+    const suffix = st.enrichmentComplete
+      ? "complete"
+      : st.pendingAgents?.length
+        ? "pending"
+        : "incomplete";
+    return `scheduled ${Math.min(5, s)}/5 · completed ${Math.min(5, c)}/5 · ingested ${Math.min(5, i)}/5 (${suffix})`;
+  }
   const n = job.enrichmentRunIds?.length ?? 0;
-  if (n > 0) return `${Math.min(5, n)}/5`;
-  const scheduled = (job.warnings ?? []).filter((w) =>
-    /arsenkin-scheduled:|arsenkin-five-agents/i.test(w)
-  ).length;
-  if (scheduled > 0) return `${Math.min(5, scheduled)}/5`;
-  return "0/5";
+  if (n > 0) return `scheduled ${Math.min(5, n)}/5 · completed 0/5 · ingested 0/5 (incomplete)`;
+  return "scheduled 0/5 · completed 0/5 · ingested 0/5";
 }
 
 function isRenderRecovery(job: UnifiedCollectionJobStatus | null): boolean {
@@ -43,7 +51,16 @@ function prepareRenderLabel(job: UnifiedCollectionJobStatus): string {
     return job.stage === "FAILED_RETRYABLE" ? "failed" : "…";
   }
   if (job.stage === "ORION_PREPARE" || job.stage === "CLIENT_CONTENT") return "…";
-  if (job.compositeDatasetId && (job.enrichmentRunIds?.length ?? 0) >= 5) return "ok";
+  if (
+    job.compositeDatasetId &&
+    Boolean(job.arsenkinEnrichmentState?.enrichmentComplete) &&
+    (job.enrichmentRunIds?.length ?? 0) >= 5
+  ) {
+    return "ok";
+  }
+  if ((job.enrichmentRunIds?.length ?? 0) >= 5 && !job.arsenkinEnrichmentState?.enrichmentComplete) {
+    return "awaiting Arsenkin ingest";
+  }
   return "—";
 }
 
@@ -53,6 +70,7 @@ export function CaseHeader({
   generating,
   onRunUnifiedCollection,
   onRecoverUnifiedCollection,
+  onPaidRecollection,
   auditing,
   recovering,
   unifiedJob,
@@ -62,6 +80,7 @@ export function CaseHeader({
   generating: boolean;
   onRunUnifiedCollection: () => void;
   onRecoverUnifiedCollection: () => void;
+  onPaidRecollection?: () => void;
   auditing: boolean;
   recovering: boolean;
   /** Current unified job (not legacy AgentRun). */
@@ -73,16 +92,22 @@ export function CaseHeader({
   const unifiedLabel = unifiedStatusLabel(unifiedJob);
   const serverRecoveryAllowed = Boolean(unifiedJob?.recoveryAllowed);
   const renderRecovery = isRenderRecovery(unifiedJob);
+  const ingestRecovery =
+    unifiedJob?.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" ||
+    unifiedJob?.recoveryReason === "ARSENKIN_INGEST_RESUME";
   const runningUnified =
     auditing ||
     recovering ||
     unifiedJob?.status === "RUNNING" ||
+    unifiedJob?.status === "WAITING" ||
     unifiedJob?.stage === "BASE_COLLECTION" ||
     unifiedJob?.stage === "ARSENKIN_ENRICHMENT" ||
     unifiedJob?.stage === "COMPOSITE_MERGE" ||
     unifiedJob?.stage === "ORION_PREPARE" ||
     unifiedJob?.stage === "CLIENT_CONTENT";
-  const blockNewRun = runningUnified || generating || serverRecoveryAllowed;
+  const fullAuditBlocked = Boolean(unifiedJob?.fullAuditBlocked) || serverRecoveryAllowed || runningUnified;
+  const paidRecollectionRequired = Boolean(unifiedJob?.paidRecollectionRequired);
+  const blockNewRun = fullAuditBlocked || generating;
 
   return (
     <div>
@@ -156,14 +181,29 @@ export function CaseHeader({
               title={
                 renderRecovery
                   ? "Продолжить с этапа рендера без повторного сбора"
-                  : "Продолжить с этапа Arsenkin без повторного базового поиска"
+                  : ingestRecovery
+                    ? "Импортировать уже выполненные Arsenkin задачи без новых submit"
+                    : "Продолжить с этапа Arsenkin без повторного базового поиска"
               }
               data-testid="unified-orion-recovery-cta"
             >
               {recovering ? <span className="dp-spinner" /> : null}
               {renderRecovery
                 ? "Продолжить с этапа рендера"
-                : "Продолжить аудит с этапа Arsenkin"}
+                : ingestRecovery
+                  ? "Продолжить импорт Arsenkin"
+                  : "Продолжить аудит с этапа Arsenkin"}
+            </button>
+          ) : null}
+          {can("agents.run") && paidRecollectionRequired && !serverRecoveryAllowed ? (
+            <button
+              className="dp-btn"
+              onClick={onPaidRecollection}
+              disabled={generating || recovering || !onPaidRecollection}
+              title="Явно подтверждает повторные платные вызовы провайдеров"
+              data-testid="unified-orion-paid-recollection-cta"
+            >
+              Начать новый аудит с повторным сбором данных
             </button>
           ) : null}
           {can("agents.run") ? (
@@ -171,7 +211,11 @@ export function CaseHeader({
               className="dp-btn dp-btn-primary"
               onClick={onRunUnifiedCollection}
               disabled={blockNewRun}
-              title={t("agents.unifiedCollectionHint")}
+              title={
+                fullAuditBlocked
+                  ? unifiedJob?.fullAuditBlockReason ?? "Full Audit недоступен для текущего job"
+                  : t("agents.unifiedCollectionHint")
+              }
               data-testid="unified-orion-collection-cta"
             >
               {runningUnified && !serverRecoveryAllowed ? <span className="dp-spinner" /> : null}

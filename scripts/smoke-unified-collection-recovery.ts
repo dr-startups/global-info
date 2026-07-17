@@ -78,11 +78,25 @@ function obs(p: Partial<CompositeObservation> & Pick<CompositeObservation, "kind
 }
 
 function fixtureBaseRows(): CompositeObservation[] {
+  // Stable IDs — do not use the global obs() counter (shared across tests).
+  const mk = (
+    id: string,
+    p: Partial<CompositeObservation> & Pick<CompositeObservation, "kind" | "engine" | "url" | "title">
+  ): CompositeObservation => ({
+    key: `rk-${id}`,
+    region: "RU",
+    query: "Дерипаска",
+    providers: p.engine === "GOOGLE" ? ["serper"] : ["yandex"],
+    primaryProvider: p.engine === "GOOGLE" ? "serper" : "yandex",
+    evidenceRefs: [`searchResult:${id}`],
+    baseSearchResultId: id,
+    ...p,
+  });
   return [
-    obs({ kind: "organic", engine: "YANDEX", url: "https://example.com/a", title: "Yandex A" }),
-    obs({ kind: "organic", engine: "YANDEX", url: "https://example.com/b", title: "Yandex B" }),
-    obs({ kind: "organic", engine: "YANDEX", url: "https://example.com/c", title: "Yandex C" }),
-    obs({
+    mk("rsr-1", { kind: "organic", engine: "YANDEX", url: "https://example.com/a", title: "Yandex A" }),
+    mk("rsr-2", { kind: "organic", engine: "YANDEX", url: "https://example.com/b", title: "Yandex B" }),
+    mk("rsr-3", { kind: "organic", engine: "YANDEX", url: "https://example.com/c", title: "Yandex C" }),
+    mk("rsr-4", {
       kind: "organic",
       engine: "GOOGLE",
       providers: ["serper"],
@@ -350,6 +364,7 @@ describe("unified collection staff recovery", () => {
           observations: [],
           warnings: ["arsenkin-five-agents-scheduled"],
           partial: false,
+          enrichmentComplete: true,
         };
       },
       runPrepare: async () => {

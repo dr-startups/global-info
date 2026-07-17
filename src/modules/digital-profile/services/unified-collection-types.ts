@@ -115,11 +115,21 @@ export type UnifiedCollectionJob = {
     previousLastError: string | null;
     previousLastErrorCode: string | null;
   };
-  /**
-   * Precise resume target after FAILED_RETRYABLE.
+/**
+   * Precise resume target after FAILED_RETRYABLE / WAITING.
+   * ARSENKIN_RESULT_INGEST = poll/reconcile/ingest existing CaseAgent tasks (no new submits).
    * RENDER = skip base/Arsenkin/composite/analytics/assembly when payload valid.
    */
-  resumeCheckpoint?: "BASE_COLLECTION" | "ARSENKIN_ENRICHMENT" | "ORION_PREPARE" | "RENDER" | null;
+  resumeCheckpoint?:
+    | "BASE_COLLECTION"
+    | "ARSENKIN_ENRICHMENT"
+    | "ARSENKIN_RESULT_INGEST"
+    | "PRE_RENDER_DATA_GATE"
+    | "ORION_PREPARE"
+    | "RENDER"
+    | null;
+  /** Persisted Arsenkin enrichment state contract (not schedule-only). */
+  arsenkinEnrichmentState?: import("./arsenkin-enrichment-state").ArsenkinEnrichmentState | null;
 };
 
 export const FIRST36_PLANNED_SUPPORTED_SURFACES = [

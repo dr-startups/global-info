@@ -1,9 +1,14 @@
 /**
- * Fail-closed REPORT_READY gates for unified collection.
+ * POST_RENDER / REPORT_READY gates for unified collection.
+ * Base coverage is enforced by PRE_RENDER_DATA_GATE — not compositeCount >= baseCount.
  */
 
 import type { BaseCollectionManifest, ReportDataBinding, SurfaceCoverageBreakdown } from "./unified-collection-types";
 import type { CompositeMergeResult } from "./composite-serp-merge";
+import {
+  assertBaseObservationCoverage,
+  buildBaseObservationCoverage,
+} from "./base-observation-coverage";
 
 export type ReportReadyGateResult = {
   ok: boolean;
@@ -11,6 +16,10 @@ export type ReportReadyGateResult = {
   errors: string[];
 };
 
+/**
+ * Post-prepare dataset/lineage checks. Does NOT re-run expensive geometry;
+ * PRE_RENDER already validated coverage + enrichment.
+ */
 export function assertReportReadyGates(input: {
   binding: ReportDataBinding | null;
   manifest: BaseCollectionManifest | null;
@@ -21,6 +30,8 @@ export function assertReportReadyGates(input: {
   realCollectionSufficient: boolean;
   allowMockReport?: boolean;
   coverage?: SurfaceCoverageBreakdown | null;
+  /** RENDER-only resume: dataset lineage only (coverage already enforced pre-render). */
+  skipBaseCoverage?: boolean;
 }): ReportReadyGateResult {
   const errors: string[] = [];
 
@@ -51,11 +62,17 @@ export function assertReportReadyGates(input: {
   ) {
     errors.push("client content dataset id mismatch");
   }
-  if (input.manifest && input.merge && input.merge.compositeCount < input.manifest.baseCount) {
-    errors.push(
-      `compositeCount ${input.merge.compositeCount} < baseCount ${input.manifest.baseCount}`
-    );
+
+  // Coverage invariant (replaces compositeCount >= baseCount).
+  if (!input.skipBaseCoverage && input.manifest && input.merge) {
+    const coverage = buildBaseObservationCoverage({
+      manifest: input.manifest,
+      merge: input.merge,
+    });
+    const cov = assertBaseObservationCoverage(coverage);
+    if (!cov.ok) errors.push(...cov.errors);
   }
+
   if (input.merge) {
     const hasBase =
       input.merge.provenance.baseProviders.length > 0 ||

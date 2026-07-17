@@ -260,6 +260,7 @@ describe("unified orion arsenkin collection", () => {
       runFullAudit: async () => mockFullAuditReal(),
       runArsenkinEnrichment: async () => ({
         arsenkinReportRunId: "arsenkin-enrich-1",
+        enrichmentRunIds: ARSENKIN_REAL_AGENT_NAMES.map((n, i) => `arsenkin-enrich-${i + 1}`),
         coverage: {
           ...emptyCoverage(FIRST36_PLANNED_SUPPORTED_SURFACES.length),
           measured: 2,
@@ -280,6 +281,7 @@ describe("unified orion arsenkin collection", () => {
         ],
         warnings: [],
         partial: false,
+        enrichmentComplete: true,
       }),
       runPrepare: async ({ binding }: { binding: { compositeDatasetId: string } }) => ({
         prepareDatasetId: binding.compositeDatasetId,
@@ -343,6 +345,7 @@ describe("unified orion arsenkin collection", () => {
         observations: [],
         warnings: ["skipped"],
         partial: true,
+        enrichmentComplete: true,
       }),
       runPrepare: async ({ binding }: { binding: { compositeDatasetId: string } }) => ({
         prepareDatasetId: binding.compositeDatasetId,
@@ -363,8 +366,10 @@ describe("unified orion arsenkin collection", () => {
       runFullAudit: async () => mockFullAuditReal(),
       runArsenkinEnrichment: async () => ({
         arsenkinReportRunId: "a1",
+        enrichmentRunIds: ARSENKIN_REAL_AGENT_NAMES.map((n, i) => `a${i + 1}`),
         coverage: { ...emptyCoverage(12), measured: 12, progressRatio: 1 },
         observations: [],
+        enrichmentComplete: true,
       }),
       runPrepare: async () => ({
         prepareDatasetId: "old-base-dataset-not-composite",
@@ -379,30 +384,27 @@ describe("unified orion arsenkin collection", () => {
   it("idempotent start does not create second active job", async () => {
     const caseId = "unified-smoke-idempotent";
     deleteUnifiedCollectionJobForTests(caseId);
-    const deps = {
+    const holdDeps = {
       autoSchedule: false as const,
       fixtureBaseRows,
       runFullAudit: async () => mockFullAuditReal(),
-      runArsenkinEnrichment: async () =>
-        new Promise<never>(() => {
-          /* hang enrichment so job stays active */
-        }),
-    };
-    const a = await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps });
-    // Move past BASE with a finite enrichment that leaves job before REPORT_READY
-    await runUnifiedCollectionTick(caseId, {
-      autoSchedule: false,
-      fixtureBaseRows,
-      runFullAudit: async () => mockFullAuditReal(),
       runArsenkinEnrichment: async () => ({
-        arsenkinReportRunId: null,
+        arsenkinReportRunId: "hold-run",
+        enrichmentRunIds: ARSENKIN_REAL_AGENT_NAMES.map((n, i) => `hold-${i + 1}`),
         coverage: emptyCoverage(12),
         observations: [],
         warnings: ["hold"],
         partial: true,
+        enrichmentComplete: false,
       }),
-    });
-    const b = await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps });
+    };
+    const a = await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps: holdDeps });
+    // Drain until WAITING arsenkin ingest — not terminal REPORT_READY
+    for (let i = 0; i < 6; i++) {
+      const j = await runUnifiedCollectionTick(caseId, holdDeps);
+      if (j?.stage === "ARSENKIN_ENRICHMENT" && j.status === "WAITING") break;
+    }
+    const b = await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps: holdDeps });
     assert.equal(b.created, false);
     assert.equal(a.unifiedJobId, b.unifiedJobId);
   });

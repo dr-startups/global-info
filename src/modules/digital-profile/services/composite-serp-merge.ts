@@ -5,7 +5,10 @@
 
 import type { PrismaClient } from "@prisma/client";
 import type { BaseCollectionManifest, ReportDataBinding } from "./unified-collection-types";
-import { normalizeSerpProviderBucket } from "./unified-base-report-run";
+import {
+  normalizeSerpProviderBucket,
+  resolveSerpProviderAttribution,
+} from "./unified-base-report-run";
 
 export type CompositeObservation = {
   key: string;
@@ -126,8 +129,26 @@ export async function mergeCompositeSerp(input: {
       include: { query: true },
     });
     for (const r of results) {
-      const engine = String(r.query?.engine ?? "UNKNOWN");
-      const provider = normalizeSerpProviderBucket(engine);
+      // Prefer SearchResult.engine / source — query.engine alone caused yandex=0 live.
+      const meta = (r as { metadataJson?: Record<string, unknown> | null }).metadataJson ?? null;
+      const attr = resolveSerpProviderAttribution({
+        observationProvider:
+          meta && typeof meta.provider === "string" ? meta.provider : null,
+        manifestProviderHint:
+          input.manifest.actualProviders?.find((p) => /yandex|serper|google/i.test(p.providerId ?? ""))
+            ?.providerId ?? null,
+        agentRunProvider:
+          meta && typeof meta.agentRunProvider === "string" ? meta.agentRunProvider : null,
+        providerTaskLineage:
+          meta && typeof meta.providerTaskLineage === "string"
+            ? meta.providerTaskLineage
+            : r.engine ?? r.source,
+        engine: r.engine,
+        source: r.source,
+        queryEngine: r.query?.engine ?? null,
+      });
+      const engine = attr.engineLabel;
+      const provider = attr.provider;
       if (provider === "yandex") yandex += 1;
       if (provider === "serper") serper += 1;
       const key = organicKey(
@@ -161,8 +182,12 @@ export async function mergeCompositeSerp(input: {
     });
     for (const s of surfaces) {
       const st = String(s.type ?? "");
-      const engine = String(s.provider ?? "UNKNOWN");
-      const provider = normalizeSerpProviderBucket(engine);
+      const attr = resolveSerpProviderAttribution({
+        surfaceProvider: s.provider,
+        source: s.source != null ? String(s.source) : null,
+      });
+      const engine = attr.engineLabel === "UNKNOWN" ? String(s.provider ?? "UNKNOWN") : attr.engineLabel;
+      const provider = attr.provider;
       if (provider === "yandex") yandex += 1;
       else if (provider === "serper") serper += 1;
       let key: string;

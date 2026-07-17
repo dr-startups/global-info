@@ -1469,10 +1469,23 @@ export type UnifiedCollectionJobStatus = {
   createdAt?: string;
   updatedAt?: string;
   completedAt?: string | null;
+  /** Arsenkin contract — schedule ≠ complete. */
+  arsenkinEnrichmentState?: {
+    scheduledAgents: string[];
+    completedAgents: string[];
+    failedAgents: string[];
+    pendingAgents: string[];
+    ingestedAgents: string[];
+    enrichmentObservationCount: number;
+    enrichmentComplete: boolean;
+  } | null;
   /** Server-calculated — never trust a client-only flag. */
   recoveryAllowed?: boolean;
   recoveryBlockerReason?: string | null;
   recoveryReason?: string | null;
+  fullAuditBlocked?: boolean;
+  fullAuditBlockReason?: string | null;
+  paidRecollectionRequired?: boolean;
   recoveryAudit?: {
     recoveredFromStatus: string;
     recoveredFromStage: string;
@@ -1486,11 +1499,15 @@ export type UnifiedCollectionJobStatus = {
 };
 
 export function startUnifiedOrionCollection(
-  caseId: string
+  caseId: string,
+  opts?: { confirmPaidRecollection?: boolean }
 ): Promise<{ accepted: boolean; jobId: string; unifiedJobId: string; created: boolean; stage: string }> {
   return request(`/cases/${caseId}/unified-collection`, {
     method: "POST",
-    body: JSON.stringify({ arsenkinMode: "full-first36" }),
+    body: JSON.stringify({
+      arsenkinMode: "full-first36",
+      confirmPaidRecollection: Boolean(opts?.confirmPaidRecollection),
+    }),
   });
 }
 

@@ -16,6 +16,7 @@ import { digitalProfileConfig } from "@/modules/digital-profile/config";
 import {
   getUnifiedCollectionStatus,
   startUnifiedOrionCollection,
+  unifiedJobHasPreservedStages,
 } from "@/modules/digital-profile/services/unified-orion-collection-orchestrator";
 import { withUnifiedRecoveryStatusFields } from "@/modules/digital-profile/services/unified-collection-recovery";
 
@@ -35,8 +36,8 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
     caseId: id,
     requestedBy: actor.actorId ?? user.id,
     arsenkinMode: "full-first36",
+    confirmPaidRecollection: body?.confirmPaidRecollection === true,
   });
-  void body;
   return jsonOk(data, 202);
 });
 
@@ -46,6 +47,13 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
   await requireCaseAccess(user, id, "VIEWER");
   const job = getUnifiedCollectionStatus(id);
   const recovery = withUnifiedRecoveryStatusFields(job);
+  const preserved = unifiedJobHasPreservedStages(job);
+  const fullAuditBlocked =
+    Boolean(job) &&
+    (Boolean(recovery.recoveryAllowed) ||
+      preserved ||
+      job?.status === "RUNNING" ||
+      job?.status === "WAITING");
   return jsonOk({
     job: job
       ? {
@@ -68,11 +76,32 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
           createdAt: job.createdAt,
           updatedAt: job.updatedAt,
           completedAt: job.completedAt,
+          arsenkinEnrichmentState: job.arsenkinEnrichmentState
+            ? {
+                scheduledAgents: job.arsenkinEnrichmentState.scheduledAgents,
+                completedAgents: job.arsenkinEnrichmentState.completedAgents,
+                failedAgents: job.arsenkinEnrichmentState.failedAgents,
+                pendingAgents: job.arsenkinEnrichmentState.pendingAgents,
+                ingestedAgents: job.arsenkinEnrichmentState.ingestedAgents,
+                enrichmentObservationCount:
+                  job.arsenkinEnrichmentState.enrichmentObservationCount,
+                enrichmentComplete: job.arsenkinEnrichmentState.enrichmentComplete,
+              }
+            : null,
           recoveryAllowed: recovery.recoveryAllowed,
           recoveryBlockerReason: recovery.recoveryBlockerReason,
           recoveryReason: recovery.recoveryReason,
           recoveryAudit: job.recoveryAudit ?? null,
           resumeCheckpoint: job.resumeCheckpoint ?? null,
+          fullAuditBlocked,
+          fullAuditBlockReason: fullAuditBlocked
+            ? recovery.recoveryAllowed
+              ? "USE_RECOVERY"
+              : preserved
+                ? "PRESERVED_STAGES_REQUIRE_PAID_RECOLLECTION"
+                : "JOB_ACTIVE"
+            : null,
+          paidRecollectionRequired: preserved && !recovery.recoveryAllowed,
         }
       : null,
   });

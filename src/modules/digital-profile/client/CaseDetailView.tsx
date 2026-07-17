@@ -176,7 +176,15 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
     if (unifiedJob?.recoveryAllowed) {
       setBanner({
         kind: "error",
-        text: `Восстанавливаемый job ${unifiedJob.jobId}. Используйте «Продолжить аудит с этапа Arsenkin».`,
+        text: `Восстанавливаемый job ${unifiedJob.jobId}. Используйте recovery, а не Full Audit.`,
+      });
+      return;
+    }
+    if (unifiedJob?.fullAuditBlocked || unifiedJob?.paidRecollectionRequired) {
+      setBanner({
+        kind: "error",
+        text:
+          "Full Audit недоступен: есть job с сохранёнными стадиями. Используйте recovery или «Начать новый аудит с повторным сбором данных».",
       });
       return;
     }
@@ -204,6 +212,29 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
     unifiedJob,
   ]);
 
+  const handlePaidRecollection = useCallback(async () => {
+    if (auditing || generating || recovering) return;
+    const ok = window.confirm(
+      "Будут повторно вызваны платные провайдеры (Yandex/Google/Serper/Wikipedia и Arsenkin). " +
+        "Текущий job не будет продолжен — создастся новый сбор. Продолжить?"
+    );
+    if (!ok) return;
+    setAuditing(true);
+    setBanner(null);
+    try {
+      await startUnifiedOrionCollection(caseId, { confirmPaidRecollection: true });
+      await pollUnifiedUntilTerminal();
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setBanner({ kind: "error", text: tError(code, msg) });
+    } finally {
+      setAuditing(false);
+      const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
+      if (job) setUnifiedJob(job);
+    }
+  }, [auditing, generating, recovering, caseId, pollUnifiedUntilTerminal, tError]);
+
   const handleRecoverUnifiedCollection = useCallback(async () => {
     if (auditing || generating || recovering) return;
     const jobId = unifiedJob?.jobId;
@@ -220,10 +251,15 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
       unifiedJob.resumeCheckpoint === "RENDER" ||
       unifiedJob.recoveryReason === "RENDER_RESUME" ||
       unifiedJob.lastErrorCode === "RENDER_FAILED";
+    const ingestResume =
+      unifiedJob.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" ||
+      unifiedJob.recoveryReason === "ARSENKIN_INGEST_RESUME";
     const ok = window.confirm(
       renderResume
         ? "Рендер будет выполнен через renderer service. Базовый поиск и Arsenkin повторно не запускаются. Продолжить с этапа рендера?"
-        : "Базовый поиск повторно выполняться не будет. Продолжить аудит с этапа Arsenkin?"
+        : ingestResume
+          ? "Будут импортированы уже выполненные Arsenkin задачи без новых submit и без повторного base-сбора. Продолжить импорт?"
+          : "Базовый поиск повторно выполняться не будет. Продолжить аудит с этапа Arsenkin?"
     );
     if (!ok) return;
     setRecovering(true);
@@ -389,6 +425,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
           generating={generating}
           onRunUnifiedCollection={handleRunUnifiedCollection}
           onRecoverUnifiedCollection={handleRecoverUnifiedCollection}
+          onPaidRecollection={handlePaidRecollection}
           auditing={auditing}
           recovering={recovering}
           unifiedJob={unifiedJob}

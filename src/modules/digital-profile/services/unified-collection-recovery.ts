@@ -198,10 +198,31 @@ export function evaluateUnifiedCollectionRecoveryEligibility(input: {
   }
 
   const enrichmentCount = job.enrichmentRunIds?.length ?? 0;
+  const enrichmentComplete = Boolean(job.arsenkinEnrichmentState?.enrichmentComplete);
   const isRenderFailure =
     job.resumeCheckpoint === "RENDER" ||
     job.lastErrorCode === "RENDER_FAILED" ||
     /render failed/i.test(job.lastError ?? "");
+  // Ingest resume must not steal RENDER_FAILED jobs (isRenderFailure).
+  // Job B pattern: FAILED_TERMINAL + composite present + enrichment never ingested.
+  const needsArsenkinIngest =
+    !isRenderFailure &&
+    (job.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" ||
+      (enrichmentCount >= 5 && !enrichmentComplete && Boolean(job.baseReportRunId)));
+
+  // Waiting for Arsenkin ingest (durable poll) — recoverable / idempotent.
+  if (
+    job.stage === "ARSENKIN_ENRICHMENT" &&
+    (job.status === "WAITING" || job.status === "RUNNING") &&
+    (job.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" ||
+      (enrichmentCount >= 5 && !enrichmentComplete))
+  ) {
+    return {
+      recoveryAllowed: true,
+      recoveryBlockerReason: null,
+      recoveryReason: "ARSENKIN_INGEST_RESUME",
+    };
+  }
 
   if (job.stage === "FAILED_RETRYABLE" && isRenderFailure) {
     if (!job.baseReportRunId || enrichmentCount < 5 || !job.compositeDatasetId) {
@@ -215,6 +236,14 @@ export function evaluateUnifiedCollectionRecoveryEligibility(input: {
       recoveryAllowed: true,
       recoveryBlockerReason: null,
       recoveryReason: "RENDER_RESUME",
+    };
+  }
+
+  if (job.stage === "FAILED_RETRYABLE" && needsArsenkinIngest) {
+    return {
+      recoveryAllowed: true,
+      recoveryBlockerReason: null,
+      recoveryReason: "ARSENKIN_INGEST_RESUME",
     };
   }
 
@@ -234,6 +263,14 @@ export function evaluateUnifiedCollectionRecoveryEligibility(input: {
         recoveryAllowed: true,
         recoveryBlockerReason: null,
         recoveryReason: "HISTORICAL_NO_BASE_REPORT_RUN",
+      };
+    }
+    // Job B pattern: terminal after gate/render but Arsenkin never ingested.
+    if (needsArsenkinIngest && manifestHasBaseObservations(manifest)) {
+      return {
+        recoveryAllowed: true,
+        recoveryBlockerReason: null,
+        recoveryReason: "ARSENKIN_INGEST_RESUME",
       };
     }
     return {
@@ -392,6 +429,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
     }
 
     const renderResume = elig2.recoveryReason === "RENDER_RESUME";
+    const ingestResume = elig2.recoveryReason === "ARSENKIN_INGEST_RESUME";
     const ensure = input.deps?.ensureBaseReportRun ?? ensurePersistedUnifiedBaseReportRun;
     let baseReportRunId: string;
     let createdBaseReportRun = false;
@@ -458,8 +496,25 @@ export async function recoverUnifiedOrionCollectionJob(input: {
     };
 
     const nextStage = renderResume ? "ORION_PREPARE" : "ARSENKIN_ENRICHMENT";
-    const resumeCheckpoint = renderResume ? "RENDER" : "ARSENKIN_ENRICHMENT";
+    const resumeCheckpoint = renderResume
+      ? "RENDER"
+      : ingestResume
+        ? "ARSENKIN_RESULT_INGEST"
+        : "ARSENKIN_ENRICHMENT";
     const artifactsDir = unifiedArtifactsDir(job.caseId, job.unifiedJobId);
+
+    // Ingest recovery: mark stale composite/analytics/section/render lineage before new observations land.
+    if (ingestResume) {
+      const { invalidateDownstreamAfterEnrichmentIngest } = await import(
+        "./unified-downstream-invalidation"
+      );
+      invalidateDownstreamAfterEnrichmentIngest({
+        job,
+        reason: "arsenkin-ingest-recovery",
+        previousCompositeDatasetId: job.compositeDatasetId,
+      });
+    }
+
     if (renderResume) {
       const binding = readUnifiedArtifact<ReportDataBinding>(
         job.caseId,
@@ -490,6 +545,9 @@ export async function recoverUnifiedOrionCollectionJob(input: {
         status: "WAITING",
         baseReportRunId,
         resumeCheckpoint,
+        // Ingest recovery must rebuild composite/analytics/render after observations land.
+        compositeDatasetId: ingestResume ? null : job.compositeDatasetId,
+        reportLinks: ingestResume ? {} : job.reportLinks,
         lastError: null,
         lastErrorCode: null,
         completedAt: null,
@@ -497,7 +555,11 @@ export async function recoverUnifiedOrionCollectionJob(input: {
         warnings: [
           ...job.warnings.filter((w) => !/recovery-accepted/i.test(w)),
           `recovery-accepted:${elig2.recoveryReason}`,
-          renderResume ? "bounded-resume:from-render" : "bounded-resume:from-arsenkin",
+          renderResume
+            ? "bounded-resume:from-render"
+            : ingestResume
+              ? "bounded-resume:from-arsenkin-ingest"
+              : "bounded-resume:from-arsenkin",
         ],
       }) ?? job;
 

@@ -82,3 +82,104 @@ export function normalizeSerpProviderBucket(
   if (e.includes("GOOGLE") || e.includes("SERPER")) return "serper";
   return "base";
 }
+
+export type SerpProviderAttributionSource =
+  | "persisted_observation_provider"
+  | "base_manifest_provider"
+  | "agent_run_provider"
+  | "provider_task_lineage"
+  | "surface_provider"
+  | "query_engine"
+  | "UNKNOWN";
+
+export type SerpProviderAttributionResult = {
+  provider: "yandex" | "serper" | "base";
+  engineLabel: string;
+  source: SerpProviderAttributionSource;
+  /** When lower-precedence sources disagree with the winner. */
+  conflictDiagnostic: string | null;
+};
+
+/**
+ * Exact fallback contract (deterministic precedence):
+ * 1. persisted normalized observation provider
+ * 2. base manifest provider
+ * 3. AgentRun provider/type
+ * 4. ProviderTask lineage
+ * 5. surfaceProvider
+ * 6. query.engine
+ * 7. UNKNOWN
+ *
+ * SearchResult path must accept ProviderTask/AgentRun/manifest context — not query alone.
+ */
+export function resolveSerpProviderAttribution(input: {
+  /** 1 — persisted normalized observation provider */
+  observationProvider?: string | null;
+  /** 2 — base manifest / actualProviders hint */
+  manifestProviderHint?: string | null;
+  /** 3 — AgentRun provider/type */
+  agentRunProvider?: string | null;
+  /** 4 — ProviderTask lineage (provider/engine on task) */
+  providerTaskLineage?: string | null;
+  /** Legacy aliases still accepted via lineage/engine/source */
+  engine?: string | null;
+  source?: string | null;
+  /** 5 — surface item provider */
+  surfaceProvider?: string | null;
+  /** 6 — query.engine (lowest non-UNKNOWN) */
+  queryEngine?: string | null;
+}): SerpProviderAttributionResult {
+  const ordered: Array<{ value: string | null | undefined; source: SerpProviderAttributionSource }> = [
+    { value: input.observationProvider, source: "persisted_observation_provider" },
+    { value: input.manifestProviderHint, source: "base_manifest_provider" },
+    { value: input.agentRunProvider, source: "agent_run_provider" },
+    {
+      value: input.providerTaskLineage ?? input.engine ?? input.source,
+      source: "provider_task_lineage",
+    },
+    { value: input.surfaceProvider, source: "surface_provider" },
+    { value: input.queryEngine, source: "query_engine" },
+  ];
+
+  let winner: SerpProviderAttributionResult | null = null;
+  const seenBuckets: Array<{ source: SerpProviderAttributionSource; provider: string }> = [];
+
+  for (const { value, source } of ordered) {
+    const bucket = normalizeSerpProviderBucket(value);
+    if (bucket === "base") continue;
+    const label = String(value ?? "")
+      .trim()
+      .toUpperCase();
+    const engineLabel = label.includes("YANDEX")
+      ? "YANDEX"
+      : label.includes("GOOGLE") || label.includes("SERPER")
+        ? "GOOGLE"
+        : label || bucket.toUpperCase();
+    seenBuckets.push({ source, provider: bucket });
+    if (!winner) {
+      winner = {
+        provider: bucket,
+        engineLabel,
+        source,
+        conflictDiagnostic: null,
+      };
+    }
+  }
+
+  if (!winner) {
+    return {
+      provider: "base",
+      engineLabel: "UNKNOWN",
+      source: "UNKNOWN",
+      conflictDiagnostic: null,
+    };
+  }
+
+  const disagree = seenBuckets.filter((s) => s.provider !== winner!.provider);
+  if (disagree.length > 0) {
+    winner.conflictDiagnostic = `provider_conflict:winner=${winner.source}:${winner.provider};losers=${disagree
+      .map((d) => `${d.source}:${d.provider}`)
+      .join(",")}`;
+  }
+  return winner;
+}

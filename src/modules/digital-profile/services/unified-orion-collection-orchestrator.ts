@@ -40,6 +40,7 @@ import {
   type CompositeObservation,
 } from "./composite-serp-merge";
 import { assertReportReadyGates } from "./report-ready-gates";
+import { assertPreRenderDataGates } from "./pre-render-data-gates";
 import {
   runCanonicalReportPrepare,
   CanonicalPrepareBlockedError,
@@ -47,21 +48,32 @@ import {
 import type { DeckRenderAdapter } from "./render-deck-artifacts";
 import { resolveJobSubjectProfile } from "./job-subject-profile";
 import type { ClassifierSubjectProfile } from "../orion-golden/analytics/subject-resolution-classifier";
+import { invalidateDownstreamAfterEnrichmentIngest } from "./unified-downstream-invalidation";
+import { normalizeArsenkinEnrichmentState } from "./arsenkin-enrichment-state";
 import type { FullAuditResultDTO } from "./agent-run-service";
 import { ensurePersistedUnifiedBaseReportRun } from "./unified-base-report-run";
 import { ARSENKIN_REAL_AGENT_NAMES } from "../agents/real/real-arsenkin-agents";
 import { evaluateUnifiedCollectionRecoveryEligibility } from "./unified-collection-recovery";
 import { ConflictError } from "../http/errors";
+import type { ArsenkinEnrichmentState, ArsenkinAgentProgress } from "./arsenkin-enrichment-state";
+import {
+  legacyEnrichmentResultToTick,
+  offlineSyntheticCompleteTick,
+  runDurableArsenkinEnrichmentTick,
+} from "./arsenkin-enrichment-tick";
+import { buildBaseObservationCoverage } from "./base-observation-coverage";
 
 export type UnifiedOrchestratorDeps = {
   prisma?: PrismaClient | null;
   runFullAudit?: (caseId: string, actorId: string) => Promise<FullAuditResultDTO>;
-  /** Offline Arsenkin enrichment: returns coverage + optional observations. */
+  /**
+   * Arsenkin enrichment tick (may be incomplete). Prefer enrichmentComplete flag.
+   * Schedule-only (enrichmentRunIds length 5) is NOT completion.
+   */
   runArsenkinEnrichment?: (job: UnifiedCollectionJob) => Promise<{
     arsenkinReportRunId: string | null;
-    /** Per-CaseAgent enrichment run ids (exactly five when fully scheduled). */
     enrichmentRunIds?: string[];
-    coverage: SurfaceCoverageBreakdown;
+    coverage?: SurfaceCoverageBreakdown;
     observations: Array<{
       region?: string;
       engine?: string;
@@ -74,10 +86,18 @@ export type UnifiedOrchestratorDeps = {
       kind?: "organic" | "suggestion" | "paa" | "other";
       providerTaskId?: string | null;
       riskLabel?: string | null;
+      externalTaskId?: string | null;
+      caseAgent?: string;
+      tool?: string | null;
+      enrichmentRunId?: string;
+      unifiedJobId?: string;
+      sourceUrlOrQuery?: string | null;
+      resultHash?: string | null;
     }>;
     warnings?: string[];
     partial?: boolean;
-    /** When true, orchestrator must not advance past enrichment (fail-closed). */
+    enrichmentComplete?: boolean;
+    agents?: ArsenkinAgentProgress[];
     blockPipeline?: boolean;
     blockCode?: string;
     blockMessage?: string;
@@ -135,13 +155,35 @@ function stageProgress(stage: UnifiedCollectionJob["stage"]): number {
  * baseReportRunId already exist. RENDER checkpoint resumes at ORION_PREPARE
  * (render-only) — never Arsenkin/base.
  */
+/** True when a job retains stages/artifacts that must not be silently recollected. */
+export function unifiedJobHasPreservedStages(job: UnifiedCollectionJob | null | undefined): boolean {
+  if (!job) return false;
+  if (job.stage === "REPORT_READY" || job.stage === "COMPLETED_PARTIAL") return true;
+  if (job.baseReportRunId || (job.enrichmentRunIds?.length ?? 0) > 0 || job.compositeDatasetId) {
+    return true;
+  }
+  return Object.keys(job.artifactPaths ?? {}).length > 0;
+}
+
 function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): UnifiedCollectionJob {
   const renderResume =
     job.resumeCheckpoint === "RENDER" ||
     job.lastErrorCode === "RENDER_FAILED" ||
     /render failed/i.test(job.lastError ?? "");
 
-  if (renderResume && job.baseReportRunId && (job.enrichmentRunIds?.length ?? 0) >= 5) {
+  const enrichmentComplete = Boolean(job.arsenkinEnrichmentState?.enrichmentComplete);
+  const ingestResume =
+    job.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" ||
+    ((job.enrichmentRunIds?.length ?? 0) >= ARSENKIN_REAL_AGENT_NAMES.length &&
+      !enrichmentComplete &&
+      Boolean(job.baseReportRunId));
+
+  if (
+    renderResume &&
+    job.baseReportRunId &&
+    (job.enrichmentRunIds?.length ?? 0) >= 5 &&
+    enrichmentComplete
+  ) {
     return (
       patchUnifiedCollectionJob(job.caseId, {
         stage: "ORION_PREPARE",
@@ -165,6 +207,21 @@ function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): UnifiedCollec
     Boolean(manifest) &&
     (manifest!.baseCount > 0 ||
       manifest!.searchResultIds.length + manifest!.searchSurfaceItemIds.length > 0);
+
+  if (hasBase && ingestResume) {
+    return (
+      patchUnifiedCollectionJob(job.caseId, {
+        stage: "ARSENKIN_ENRICHMENT",
+        status: "RUNNING",
+        resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
+        baseReportRunId: job.baseReportRunId ?? manifest!.baseReportRunId,
+        lastError: null,
+        lastErrorCode: null,
+        completedAt: null,
+        warnings: [...job.warnings, "bounded-resume:from-arsenkin-ingest"],
+      }) ?? job
+    );
+  }
 
   if (hasBase) {
     return (
@@ -203,7 +260,17 @@ function failRetryable(
   const resumeCheckpoint =
     code === "RENDER_FAILED" || extraWarnings.some((w) => /render-checkpoint:RENDER/i.test(w))
       ? ("RENDER" as const)
-      : job.resumeCheckpoint ?? null;
+      : code === "PRE_RENDER_DATA_GATE_FAILED" ||
+          extraWarnings.some((w) => /PRE_RENDER_DATA_GATE/i.test(w))
+        ? ("PRE_RENDER_DATA_GATE" as const)
+        : code === "ARSENKIN_ENRICHMENT_INCOMPLETE" ||
+            code === "ARSENKIN_ENRICHMENT_FAILED" ||
+            code === "ARSENKIN_SUBMIT_UNKNOWN" ||
+            code === "ARSENKIN_SCHEMA_INVALID" ||
+            code === "EXTERNAL_TASK_HASH_CONFLICT" ||
+            extraWarnings.some((w) => /arsenkin-ingest|ARSENKIN_RESULT_INGEST/i.test(w))
+          ? ("ARSENKIN_RESULT_INGEST" as const)
+          : job.resumeCheckpoint ?? null;
   return (
     patchUnifiedCollectionJob(job.caseId, {
       stage: "FAILED_RETRYABLE",
@@ -221,6 +288,8 @@ export async function startUnifiedOrionCollection(input: {
   caseId: string;
   requestedBy?: string;
   arsenkinMode?: "full-first36";
+  /** Explicit paid recollection — required to supersede a job with preserved stages. */
+  confirmPaidRecollection?: boolean;
   deps?: UnifiedOrchestratorDeps;
 }): Promise<{ accepted: true; jobId: string; unifiedJobId: string; created: boolean; stage: string }> {
   const existing = loadUnifiedCollectionJob(input.caseId);
@@ -229,9 +298,34 @@ export async function startUnifiedOrionCollection(input: {
       caseId: input.caseId,
       job: existing,
     });
+    // In-flight WAITING/RUNNING ingest or idempotent resume → reuse, do not 409.
+    if (
+      elig.recoveryAllowed &&
+      (existing.status === "WAITING" || existing.status === "RUNNING") &&
+      (elig.recoveryReason === "ARSENKIN_INGEST_RESUME" ||
+        elig.recoveryReason === "IDEMPOTENT_RESUME" ||
+        elig.recoveryReason === "IDEMPOTENT_RENDER_RESUME")
+    ) {
+      if (input.deps?.autoSchedule !== false) {
+        scheduleUnifiedTick(input.caseId, input.deps);
+      }
+      return {
+        accepted: true,
+        jobId: existing.jobId,
+        unifiedJobId: existing.unifiedJobId,
+        created: false,
+        stage: existing.stage,
+      };
+    }
     if (elig.recoveryAllowed) {
       throw new ConflictError(
         `recoverable unified job ${existing.jobId}; use POST /unified-collection/recover (${elig.recoveryReason})`
+      );
+    }
+    if (unifiedJobHasPreservedStages(existing) && !input.confirmPaidRecollection) {
+      throw new ConflictError(
+        `unified job ${existing.jobId} has preserved stages/artifacts (${existing.stage}); ` +
+          `use recovery or confirmPaidRecollection for a new paid collection`
       );
     }
   }
@@ -240,6 +334,7 @@ export async function startUnifiedOrionCollection(input: {
     caseId: input.caseId,
     requestedBy: input.requestedBy ?? "system",
     arsenkinMode: input.arsenkinMode ?? "full-first36",
+    forceNew: Boolean(input.confirmPaidRecollection && existing && unifiedJobHasPreservedStages(existing)),
   });
   if (input.deps?.autoSchedule !== false) {
     scheduleUnifiedTick(input.caseId, input.deps);
@@ -264,15 +359,18 @@ export function scheduleUnifiedTick(caseId: string, deps: UnifiedOrchestratorDep
       .finally(() => {
         ticking.delete(caseId);
         const job = loadUnifiedCollectionJob(caseId);
-        if (
+        const keepPolling =
           job &&
-          job.status === "RUNNING" &&
           job.stage !== "REPORT_READY" &&
           job.stage !== "COMPLETED_PARTIAL" &&
           job.stage !== "FAILED_TERMINAL" &&
           job.stage !== "FAILED_RETRYABLE" &&
-          job.stage !== "CANCELLED"
-        ) {
+          job.stage !== "CANCELLED" &&
+          (job.status === "RUNNING" ||
+            (job.status === "WAITING" &&
+              job.stage === "ARSENKIN_ENRICHMENT" &&
+              job.resumeCheckpoint === "ARSENKIN_RESULT_INGEST"));
+        if (keepPolling) {
           setTimeout(() => scheduleUnifiedTick(caseId, deps), 50);
         }
       });
@@ -467,142 +565,170 @@ async function stepArsenkin(
     );
   }
 
-  // Idempotent resume: five enrichment runs already scheduled — do not duplicate.
-  const priorIds = job.enrichmentRunIds ?? [];
-  if (priorIds.length >= ARSENKIN_REAL_AGENT_NAMES.length) {
-    const coverage = {
-      ...(job.coverage ?? emptyCoverage()),
-      progressRatio: computeCoverageProgress(job.coverage ?? emptyCoverage()),
-    };
+  const networkOff = String(process.env.NETWORK_CALLS ?? "") === "0";
+  let tick;
+
+  if (deps.runArsenkinEnrichment) {
+    const raw = await deps.runArsenkinEnrichment(job);
+    tick = legacyEnrichmentResultToTick(job, raw);
+  } else if (networkOff) {
+    // Offline: honest EMPTY_VALID for all five — no live submits.
+    tick = offlineSyntheticCompleteTick(job);
+  } else {
+    tick = await runDurableArsenkinEnrichmentTick({
+      job,
+      prisma: deps.prisma,
+      offlineEmptyValid: false,
+      scheduleIfMissing:
+        (job.enrichmentRunIds?.length ?? 0) >= ARSENKIN_REAL_AGENT_NAMES.length
+          ? undefined
+          : async () => {
+              const { startArsenkinCaseAgentDurable } = await import("./arsenkin-case-agent-execution");
+              const { getAgent } = await import("../agents/registry");
+              const enrichmentRunIds: string[] = [];
+              const warnings: string[] = [];
+              for (const agentName of ARSENKIN_REAL_AGENT_NAMES) {
+                const agent = getAgent(agentName);
+                const tools =
+                  agent && "tools" in agent && Array.isArray((agent as { tools?: string[] }).tools)
+                    ? ((agent as { tools: import("../providers/arsenkin/flags").ArsenkinToolName[] })
+                        .tools)
+                    : [];
+                const agentRunId = `unified-${job.unifiedJobId}-${agentName}`;
+                const started = await startArsenkinCaseAgentDurable({
+                  caseId: job.caseId,
+                  agentRunId,
+                  agentId: agentName,
+                  tools,
+                  actorId: job.requestedBy,
+                  scheduleWorker: true,
+                  resolveBaseReportRunId: async () => baseId,
+                });
+                enrichmentRunIds.push(started.enrichmentReportRunId);
+                warnings.push(`arsenkin-scheduled:${agentName}`);
+              }
+              return {
+                enrichmentRunIds,
+                arsenkinReportRunId: enrichmentRunIds[0] ?? null,
+                warnings,
+              };
+            },
+    });
+  }
+
+  const state: ArsenkinEnrichmentState = normalizeArsenkinEnrichmentState(tick.state, {
+    caseId: job.caseId,
+    unifiedJobId: job.unifiedJobId,
+  });
+  const enrichmentRunIds = tick.enrichmentRunIds;
+  const planned = FIRST36_PLANNED_SUPPORTED_SURFACES.length;
+  const coverage: SurfaceCoverageBreakdown = {
+    ...emptyCoverage(planned),
+    inFlight: state.pendingAgents.length,
+    measured: state.enrichmentObservationCount > 0 ? Math.min(planned, state.completedAgents.length) : 0,
+    noResults: state.agents.filter((a) => a.terminalKind === "EMPTY_VALID" || a.terminalKind === "NO_RESULTS")
+      .length,
+    failedRetryable: state.failedAgents.length,
+    progressRatio: state.completedAgents.length / ARSENKIN_REAL_AGENT_NAMES.length,
+  };
+
+  writeUnifiedArtifact(job.caseId, job.unifiedJobId, "arsenkin-enrichment-state.json", state);
+
+  if (tick.blockPipeline) {
+    return failRetryable(
+      job,
+      tick.blockCode ?? "ARSENKIN_ENRICHMENT_FAILED",
+      tick.blockMessage ?? "Arsenkin enrichment failed",
+      [...tick.warnings, "ARSENKIN_RESULT_INGEST"]
+    );
+  }
+
+  if (tick.waiting || !state.enrichmentComplete) {
+    // Persist schedule ids; do NOT write empty observations as "complete".
+    const obsPath = writeUnifiedArtifact(
+      job.caseId,
+      job.unifiedJobId,
+      "arsenkin-enrichment-observations.json",
+      {
+        observations: [],
+        arsenkinReportRunId: tick.arsenkinReportRunId,
+        enrichmentRunIds,
+        enrichmentComplete: false,
+        state,
+      }
+    );
     return (
       patchUnifiedCollectionJob(job.caseId, {
-        stage: "COMPOSITE_MERGE",
-        status: "RUNNING",
-        progress: stageProgress("COMPOSITE_MERGE"),
-        coverage,
-        warnings: [...job.warnings, "arsenkin-resume:reuse-five-enrichment-runs"],
+        stage: "ARSENKIN_ENRICHMENT",
+        status: "WAITING",
+        progress: stageProgress("ARSENKIN_ENRICHMENT"),
+        arsenkinReportRunId: tick.arsenkinReportRunId,
+        enrichmentRunIds,
+        arsenkinEnrichmentState: state,
+        resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
+        coverage: { ...coverage, progressRatio: computeCoverageProgress(coverage) },
+        warnings: [...job.warnings, ...tick.warnings, "arsenkin-awaiting-ingest"],
+        artifactPaths: { ...job.artifactPaths, arsenkinObservations: obsPath },
+        lastError: null,
+        lastErrorCode: null,
+        completedAt: null,
       }) ?? job
     );
   }
 
-  const runEnrichment =
-    deps.runArsenkinEnrichment ??
-    (async () => {
-      const planned = FIRST36_PLANNED_SUPPORTED_SURFACES.length;
-      const networkOff = String(process.env.NETWORK_CALLS ?? "") === "0";
-      if (networkOff) {
-        // Offline default: schedule five logical enrichment run ids without live calls.
-        const enrichmentRunIds = ARSENKIN_REAL_AGENT_NAMES.map(
-          (name, i) => `offline-arsenkin-${name.toLowerCase()}-${i + 1}`
-        );
-        return {
-          arsenkinReportRunId: enrichmentRunIds[0] ?? null,
-          enrichmentRunIds,
-          coverage: {
-            ...emptyCoverage(planned),
-            notSupported: planned,
-            progressRatio: 1,
-          },
-          observations: [],
-          warnings: ["arsenkin-offline:NETWORK_CALLS=0", "arsenkin-five-agents-planned"],
-          partial: true,
-        };
-      }
-      try {
-        const { startArsenkinCaseAgentDurable } = await import("./arsenkin-case-agent-execution");
-        const { getAgent } = await import("../agents/registry");
-        const enrichmentRunIds: string[] = [];
-        const warnings: string[] = [];
-        for (const agentName of ARSENKIN_REAL_AGENT_NAMES) {
-          const agent = getAgent(agentName);
-          const tools =
-            agent && "tools" in agent && Array.isArray((agent as { tools?: string[] }).tools)
-              ? ((agent as { tools: import("../providers/arsenkin/flags").ArsenkinToolName[] }).tools)
-              : [];
-          // Stable agentRunId placeholder — durable start creates its own execution id.
-          const agentRunId = `unified-${job.unifiedJobId}-${agentName}`;
-          const started = await startArsenkinCaseAgentDurable({
-            caseId: job.caseId,
-            agentRunId,
-            agentId: agentName,
-            tools,
-            actorId: job.requestedBy,
-            scheduleWorker: true,
-            resolveBaseReportRunId: async () => baseId,
-          });
-          enrichmentRunIds.push(started.enrichmentReportRunId);
-          warnings.push(`arsenkin-scheduled:${agentName}`);
-        }
-        return {
-          arsenkinReportRunId: enrichmentRunIds[0] ?? null,
-          enrichmentRunIds,
-          coverage: { ...emptyCoverage(planned), inFlight: planned, progressRatio: 0 },
-          observations: [],
-          warnings: [...warnings, "arsenkin-five-agents-scheduled"],
-          partial: true,
-        };
-      } catch (err) {
-        return {
-          arsenkinReportRunId: null,
-          enrichmentRunIds: [],
-          coverage: {
-            ...emptyCoverage(planned),
-            failedRetryable: planned,
-            progressRatio: 0,
-          },
-          observations: [],
-          warnings: [`arsenkin-failed:${err instanceof Error ? err.message : String(err)}`],
-          partial: true,
-          blockPipeline: true,
-          blockCode: "ARSENKIN_STAGE_NOT_STARTED",
-          blockMessage: err instanceof Error ? err.message : String(err),
-        };
-      }
-    });
-
-  const result = await runEnrichment(job);
-  if (result.blockPipeline) {
-    return failRetryable(
+  // Complete — invalidate stale downstream if prior composite/render existed, then advance.
+  const priorComposite = job.compositeDatasetId;
+  const priorLinks = job.reportLinks;
+  const staleCompositeOnDisk = Boolean(
+    readUnifiedArtifact(job.caseId, job.unifiedJobId, "composite-serp-observations.json") ||
+      readUnifiedArtifact(job.caseId, job.unifiedJobId, "assembled-deck.json") ||
+      readUnifiedArtifact(job.caseId, job.unifiedJobId, "downstream-invalidation.json")
+  );
+  let invalidationWarnings: string[] = [];
+  if (priorComposite || priorLinks?.pdf || priorLinks?.pptx || staleCompositeOnDisk) {
+    const inv = invalidateDownstreamAfterEnrichmentIngest({
       job,
-      result.blockCode ?? "ARSENKIN_STAGE_NOT_STARTED",
-      result.blockMessage ?? "Arsenkin enrichment did not start",
-      result.warnings ?? []
-    );
+      reason: "arsenkin-observations-ingested",
+      previousCompositeDatasetId: priorComposite,
+    });
+    invalidationWarnings = inv.jobPatch.warnings ?? [];
   }
 
-  const enrichmentRunIds = result.enrichmentRunIds ?? [];
-  if (enrichmentRunIds.length === 0 && !result.warnings?.some((w) => /NETWORK_CALLS=0/i.test(w))) {
-    // Live path must schedule all five — never continue with an empty enrichment set.
-    if (String(process.env.NETWORK_CALLS ?? "") !== "0") {
-      return failRetryable(
-        job,
-        "ARSENKIN_STAGE_NOT_STARTED",
-        "expected five Arsenkin CaseAgent enrichment runs; none were scheduled",
-        result.warnings ?? []
-      );
+  const obsPath = writeUnifiedArtifact(
+    job.caseId,
+    job.unifiedJobId,
+    "arsenkin-enrichment-observations.json",
+    {
+      observations: tick.observations,
+      arsenkinReportRunId: tick.arsenkinReportRunId,
+      enrichmentRunIds,
+      enrichmentComplete: true,
+      state,
+      ingestedResultHashes: state.ingestedResultHashes,
     }
-  }
-
-  const coverage = {
-    ...result.coverage,
-    progressRatio: computeCoverageProgress(result.coverage),
-  };
-  const obsPath = writeUnifiedArtifact(job.caseId, job.unifiedJobId, "arsenkin-enrichment-observations.json", {
-    observations: result.observations,
-    arsenkinReportRunId: result.arsenkinReportRunId,
-    enrichmentRunIds,
-  });
+  );
 
   return (
     patchUnifiedCollectionJob(job.caseId, {
       stage: "COMPOSITE_MERGE",
       status: "RUNNING",
       progress: stageProgress("COMPOSITE_MERGE"),
-      arsenkinReportRunId: result.arsenkinReportRunId,
+      arsenkinReportRunId: tick.arsenkinReportRunId,
       enrichmentRunIds,
-      coverage,
-      warnings: [...job.warnings, ...(result.warnings ?? [])],
+      arsenkinEnrichmentState: state,
+      resumeCheckpoint: null,
+      coverage: { ...coverage, progressRatio: computeCoverageProgress(coverage) },
+      warnings: [
+        ...(invalidationWarnings.length > 0 ? invalidationWarnings : job.warnings),
+        ...tick.warnings,
+      ],
       artifactPaths: { ...job.artifactPaths, arsenkinObservations: obsPath },
+      ...(priorComposite || priorLinks?.pdf || priorLinks?.pptx
+        ? {
+            compositeDatasetId: null as string | null,
+            reportLinks: {} as { pdf?: string; pptx?: string },
+          }
+        : {}),
     }) ?? job
   );
 }
@@ -653,12 +779,26 @@ async function stepComposite(
     }
   }
 
+  const enrichmentComplete =
+    Boolean(job.arsenkinEnrichmentState?.enrichmentComplete) ||
+    Boolean((enrichment as { enrichmentComplete?: boolean } | null)?.enrichmentComplete);
+  if (!enrichmentComplete) {
+    return failRetryable(
+      job,
+      "ARSENKIN_ENRICHMENT_INCOMPLETE",
+      "composite refused: Arsenkin enrichmentComplete=false (schedule≠complete)",
+      ["ARSENKIN_RESULT_INGEST", "composite-blocked:enrichment-incomplete"]
+    );
+  }
+
   const enrichmentRunIds =
     enrichment?.enrichmentRunIds && enrichment.enrichmentRunIds.length > 0
       ? enrichment.enrichmentRunIds
-      : job.arsenkinReportRunId
-        ? [job.arsenkinReportRunId]
-        : [];
+      : job.enrichmentRunIds && job.enrichmentRunIds.length > 0
+        ? job.enrichmentRunIds
+        : job.arsenkinReportRunId
+          ? [job.arsenkinReportRunId]
+          : [];
 
   const merge = await mergeCompositeSerp({
     prisma,
@@ -668,29 +808,24 @@ async function stepComposite(
     fixtureBaseRows: deps.fixtureBaseRows,
   });
 
-  // Fail-closed: composite must never shrink the captured base dataset.
-  if (merge.observations.length < manifest.baseCount && deps.fixtureBaseRows == null) {
-    // When only fixture rows drive the merge, baseCount equals fixture length
-    // and observation count matches. Live path compares captured IDs.
+  if (merge.providerCounts.composite === 0 && manifest.baseCount > 0) {
+    return failRetryable(
+      job,
+      "COMPOSITE_BASE_EMPTY",
+      "composite merge produced zero observations from a non-empty base manifest",
+      ["composite-shrunk-base"]
+    );
   }
-  if (
-    manifest.searchResultIds.length + manifest.searchSurfaceItemIds.length > 0 &&
-    merge.providerCounts.composite <
-      Math.min(
-        manifest.baseCount,
-        manifest.searchResultIds.length + manifest.searchSurfaceItemIds.length
-      )
-  ) {
-    // Soft warning only — organic dedupe can reduce keys below raw ID counts.
-    // Hard fail when composite is zero despite a non-empty base manifest.
-    if (merge.providerCounts.composite === 0 && manifest.baseCount > 0) {
-      return failRetryable(
-        job,
-        "COMPOSITE_BASE_EMPTY",
-        "composite merge produced zero observations from a non-empty base manifest",
-        ["composite-shrunk-base"]
-      );
-    }
+
+  const coverageProbe = buildBaseObservationCoverage({ manifest, merge });
+  writeUnifiedArtifact(job.caseId, job.unifiedJobId, "base-observation-coverage.json", coverageProbe);
+  if (!coverageProbe.allBaseObservationsTraceable) {
+    return failRetryable(
+      job,
+      "BASE_OBSERVATION_COVERAGE_FAILED",
+      `missing base ids: ${coverageProbe.missingBaseObservationIds.join(",")}`,
+      ["composite-coverage-incomplete"]
+    );
   }
 
   const binding = buildReportDataBinding({
@@ -798,6 +933,58 @@ async function stepPrepare(
   const resumeFromRender =
     job.resumeCheckpoint === "RENDER" || job.lastErrorCode === "RENDER_FAILED";
 
+  const enrichmentState =
+    job.arsenkinEnrichmentState ??
+    readUnifiedArtifact<ArsenkinEnrichmentState>(
+      job.caseId,
+      job.unifiedJobId,
+      "arsenkin-enrichment-state.json"
+    );
+
+  // PRE_RENDER_DATA_GATE — never call expensive HTTP render without data readiness.
+  // RENDER-only resume already passed data gates; skip re-checking enrichment ingest.
+  if (!resumeFromRender) {
+    const preGate = assertPreRenderDataGates({
+      binding,
+      manifest,
+      merge,
+      enrichmentState,
+      realCollectionSufficient: manifest.realCollectionSufficient,
+      allowMockReport: deps.allowMockReport,
+    });
+    if (preGate.coverage) {
+      writeUnifiedArtifact(
+        job.caseId,
+        job.unifiedJobId,
+        "base-observation-coverage.json",
+        preGate.coverage
+      );
+    }
+    if (!preGate.ok) {
+      const errText = preGate.errors.join("; ");
+      const ingestIncomplete = /enrichment/i.test(errText);
+      const mockInsufficient = /real collection insufficient/i.test(errText);
+      // Mock/fallback base is terminal (cannot unlock REPORT_READY by retry alone).
+      if (mockInsufficient) {
+        return (
+          patchUnifiedCollectionJob(job.caseId, {
+            stage: "FAILED_TERMINAL",
+            status: "FAILED",
+            lastError: errText,
+            lastErrorCode: preGate.code,
+            completedAt: new Date().toISOString(),
+            warnings: [...job.warnings, "PRE_RENDER_DATA_GATE_FAILED", "NO_RENDER_BEFORE_DATA_GATE"],
+          }) ?? job
+        );
+      }
+      return failRetryable(job, "PRE_RENDER_DATA_GATE_FAILED", errText, [
+        ingestIncomplete ? "ARSENKIN_RESULT_INGEST" : "PRE_RENDER_DATA_GATE",
+        "NO_RENDER_BEFORE_DATA_GATE",
+        "HTTP_RENDER_CALLS_ON_FAILED_GATE_ZERO",
+      ]);
+    }
+  }
+
   // Default = canonical job-scoped pipeline. There is NO legacy composer path:
   // a disabled/blocked canonical prepare fails closed and never falls back.
   const runPrepare =
@@ -900,6 +1087,7 @@ async function stepPrepare(
     realCollectionSufficient: manifest.realCollectionSufficient,
     allowMockReport: deps.allowMockReport,
     coverage: job.coverage,
+    skipBaseCoverage: resumeFromRender,
   });
 
   if (!gate.ok) {

@@ -66,9 +66,12 @@ export function findOrCreateUnifiedCollectionJob(input: {
   caseId: string;
   requestedBy: string;
   arsenkinMode?: "full-first36";
+  /** When true, always create a new job (paid recollection confirmation path). */
+  forceNew?: boolean;
 }): { job: UnifiedCollectionJob; created: boolean } {
   const existing = loadUnifiedCollectionJob(input.caseId);
   if (
+    !input.forceNew &&
     existing &&
     !existing.cancelRequested &&
     (ACTIVE_STAGES.has(existing.stage) ||
