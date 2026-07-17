@@ -14,6 +14,7 @@ import {
   patchUnifiedCollectionJob,
   readUnifiedArtifact,
   releaseUnifiedJobLease,
+  unifiedArtifactsDir,
   writeUnifiedArtifact,
 } from "./unified-collection-job-store";
 import type {
@@ -22,6 +23,7 @@ import type {
   UnifiedCollectionJob,
   UnifiedCollectionStage,
 } from "./unified-collection-types";
+import { loadReusableAssembledDeck } from "./canonical-report-prepare";
 
 export type UnifiedRecoveryAudit = {
   recoveredFromStatus: string;
@@ -180,7 +182,7 @@ export function evaluateUnifiedCollectionRecoveryEligibility(input: {
 
   // Idempotent in-flight recovery checkpoint (same job, already rebound).
   if (
-    job.stage === "ARSENKIN_ENRICHMENT" &&
+    (job.stage === "ARSENKIN_ENRICHMENT" || job.stage === "ORION_PREPARE") &&
     (job.status === "WAITING" || job.status === "RUNNING") &&
     Boolean(job.baseReportRunId) &&
     Boolean(job.recoveryAudit)
@@ -188,7 +190,31 @@ export function evaluateUnifiedCollectionRecoveryEligibility(input: {
     return {
       recoveryAllowed: true,
       recoveryBlockerReason: null,
-      recoveryReason: "IDEMPOTENT_RESUME",
+      recoveryReason:
+        job.resumeCheckpoint === "RENDER" || job.stage === "ORION_PREPARE"
+          ? "IDEMPOTENT_RENDER_RESUME"
+          : "IDEMPOTENT_RESUME",
+    };
+  }
+
+  const enrichmentCount = job.enrichmentRunIds?.length ?? 0;
+  const isRenderFailure =
+    job.resumeCheckpoint === "RENDER" ||
+    job.lastErrorCode === "RENDER_FAILED" ||
+    /render failed/i.test(job.lastError ?? "");
+
+  if (job.stage === "FAILED_RETRYABLE" && isRenderFailure) {
+    if (!job.baseReportRunId || enrichmentCount < 5 || !job.compositeDatasetId) {
+      return {
+        recoveryAllowed: false,
+        recoveryBlockerReason: "RENDER_RESUME_PRECONDITIONS_MISSING",
+        recoveryReason: null,
+      };
+    }
+    return {
+      recoveryAllowed: true,
+      recoveryBlockerReason: null,
+      recoveryReason: "RENDER_RESUME",
     };
   }
 
@@ -299,9 +325,10 @@ export async function recoverUnifiedOrionCollectionJob(input: {
     throw new ConflictError(elig.recoveryBlockerReason ?? "recovery not allowed");
   }
 
-  // Idempotent: already rebound and at/after arsenkin with enrichment scheduled.
+  // Idempotent: already rebound / already at render or arsenkin checkpoint.
   if (
     elig.recoveryReason === "IDEMPOTENT_RESUME" ||
+    elig.recoveryReason === "IDEMPOTENT_RENDER_RESUME" ||
     (job0.baseReportRunId &&
       (job0.enrichmentRunIds?.length ?? 0) >= 5 &&
       ACTIVE_STAGES.has(job0.stage))
@@ -364,11 +391,16 @@ export async function recoverUnifiedOrionCollectionJob(input: {
       }
     }
 
+    const renderResume = elig2.recoveryReason === "RENDER_RESUME";
     const ensure = input.deps?.ensureBaseReportRun ?? ensurePersistedUnifiedBaseReportRun;
     let baseReportRunId: string;
     let createdBaseReportRun = false;
 
-    if (input.deps?.ensureBaseReportRun || prisma) {
+    if (renderResume && job.baseReportRunId) {
+      // Render checkpoint: reuse existing persisted base run — never recollect.
+      baseReportRunId = job.baseReportRunId;
+      createdBaseReportRun = false;
+    } else if (input.deps?.ensureBaseReportRun || prisma) {
       if (!prisma && !input.deps?.ensureBaseReportRun) {
         throw new ConflictError("BASE_REPORT_RUN_PERSIST_UNAVAILABLE");
       }
@@ -381,34 +413,38 @@ export async function recoverUnifiedOrionCollectionJob(input: {
       baseReportRunId = ensured.baseReportRunId;
       createdBaseReportRun = ensured.created;
     } else if (input.deps?.fixtureBaseRows) {
-      // Offline fixture path only — stable job-scoped id, no provider calls.
       baseReportRunId =
         job.baseReportRunId ??
         manifest.baseReportRunId ??
         `fixture-base-${job.unifiedJobId}`;
       createdBaseReportRun = !job.baseReportRunId && !manifest.baseReportRunId;
+    } else if (job.baseReportRunId) {
+      baseReportRunId = job.baseReportRunId;
+      createdBaseReportRun = false;
     } else {
       throw new ConflictError("BASE_REPORT_RUN_PERSIST_UNAVAILABLE");
     }
 
-    const nextManifest: BaseCollectionManifest = { ...manifest, baseReportRunId };
-    writeUnifiedArtifact(
-      job.caseId,
-      job.unifiedJobId,
-      "base-collection-manifest.json",
-      nextManifest
-    );
+    if (!renderResume) {
+      const nextManifest: BaseCollectionManifest = { ...manifest, baseReportRunId };
+      writeUnifiedArtifact(
+        job.caseId,
+        job.unifiedJobId,
+        "base-collection-manifest.json",
+        nextManifest
+      );
 
-    const existingBinding = readUnifiedArtifact<ReportDataBinding>(
-      job.caseId,
-      job.unifiedJobId,
-      "report-data-binding.json"
-    );
-    if (existingBinding) {
-      writeUnifiedArtifact(job.caseId, job.unifiedJobId, "report-data-binding.json", {
-        ...existingBinding,
-        baseReportRunId,
-      });
+      const existingBinding = readUnifiedArtifact<ReportDataBinding>(
+        job.caseId,
+        job.unifiedJobId,
+        "report-data-binding.json"
+      );
+      if (existingBinding) {
+        writeUnifiedArtifact(job.caseId, job.unifiedJobId, "report-data-binding.json", {
+          ...existingBinding,
+          baseReportRunId,
+        });
+      }
     }
 
     const recoveryAudit: UnifiedRecoveryAudit = {
@@ -421,11 +457,39 @@ export async function recoverUnifiedOrionCollectionJob(input: {
       previousLastErrorCode: job.lastErrorCode,
     };
 
+    const nextStage = renderResume ? "ORION_PREPARE" : "ARSENKIN_ENRICHMENT";
+    const resumeCheckpoint = renderResume ? "RENDER" : "ARSENKIN_ENRICHMENT";
+    const artifactsDir = unifiedArtifactsDir(job.caseId, job.unifiedJobId);
+    if (renderResume) {
+      const binding = readUnifiedArtifact<ReportDataBinding>(
+        job.caseId,
+        job.unifiedJobId,
+        "report-data-binding.json"
+      );
+      const reusable = binding
+        ? loadReusableAssembledDeck({
+            artifactsDir,
+            caseId: job.caseId,
+            expectedDatasetId: binding.compositeDatasetId,
+          })
+        : null;
+      writeUnifiedArtifact(job.caseId, job.unifiedJobId, "render-checkpoint.json", {
+        version: "render-checkpoint-v1",
+        stage: "RENDER",
+        status: reusable ? "READY" : "NEEDS_ASSEMBLY",
+        assemblyHash: reusable?.assemblyHash ?? null,
+        caseId: job.caseId,
+        unifiedJobId: job.unifiedJobId,
+        updatedAt: nowFn().toISOString(),
+      });
+    }
+
     const patched =
       patchUnifiedCollectionJob(job.caseId, {
-        stage: "ARSENKIN_ENRICHMENT",
+        stage: nextStage,
         status: "WAITING",
         baseReportRunId,
+        resumeCheckpoint,
         lastError: null,
         lastErrorCode: null,
         completedAt: null,
@@ -433,7 +497,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
         warnings: [
           ...job.warnings.filter((w) => !/recovery-accepted/i.test(w)),
           `recovery-accepted:${elig2.recoveryReason}`,
-          "bounded-resume:from-arsenkin",
+          renderResume ? "bounded-resume:from-render" : "bounded-resume:from-arsenkin",
         ],
       }) ?? job;
 
@@ -443,7 +507,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
       accepted: true,
       jobId: patched.jobId,
       unifiedJobId: patched.unifiedJobId,
-      stage: "ARSENKIN_ENRICHMENT",
+      stage: nextStage,
       status: "WAITING",
       baseReportRunId,
       recoveryReason: elig2.recoveryReason ?? "RECOVERY",

@@ -1482,6 +1482,7 @@ export type UnifiedCollectionJobStatus = {
     previousLastError: string | null;
     previousLastErrorCode: string | null;
   } | null;
+  resumeCheckpoint?: string | null;
 };
 
 export function startUnifiedOrionCollection(

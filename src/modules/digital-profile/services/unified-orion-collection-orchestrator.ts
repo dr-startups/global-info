@@ -132,9 +132,29 @@ function stageProgress(stage: UnifiedCollectionJob["stage"]): number {
 
 /**
  * Resume without re-collecting base providers when the base manifest +
- * baseReportRunId already exist. Otherwise restart at BASE_COLLECTION.
+ * baseReportRunId already exist. RENDER checkpoint resumes at ORION_PREPARE
+ * (render-only) — never Arsenkin/base.
  */
 function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): UnifiedCollectionJob {
+  const renderResume =
+    job.resumeCheckpoint === "RENDER" ||
+    job.lastErrorCode === "RENDER_FAILED" ||
+    /render failed/i.test(job.lastError ?? "");
+
+  if (renderResume && job.baseReportRunId && (job.enrichmentRunIds?.length ?? 0) >= 5) {
+    return (
+      patchUnifiedCollectionJob(job.caseId, {
+        stage: "ORION_PREPARE",
+        status: "RUNNING",
+        resumeCheckpoint: "RENDER",
+        lastError: null,
+        lastErrorCode: null,
+        completedAt: null,
+        warnings: [...job.warnings, "bounded-resume:from-render"],
+      }) ?? job
+    );
+  }
+
   const manifest = readUnifiedArtifact<BaseCollectionManifest>(
     job.caseId,
     job.unifiedJobId,
@@ -151,6 +171,7 @@ function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): UnifiedCollec
       patchUnifiedCollectionJob(job.caseId, {
         stage: "ARSENKIN_ENRICHMENT",
         status: "RUNNING",
+        resumeCheckpoint: "ARSENKIN_ENRICHMENT",
         baseReportRunId: job.baseReportRunId ?? manifest!.baseReportRunId,
         lastError: null,
         lastErrorCode: null,
@@ -164,6 +185,7 @@ function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): UnifiedCollec
     patchUnifiedCollectionJob(job.caseId, {
       stage: "BASE_COLLECTION",
       status: "RUNNING",
+      resumeCheckpoint: "BASE_COLLECTION",
       lastError: null,
       lastErrorCode: null,
       completedAt: null,
@@ -178,12 +200,17 @@ function failRetryable(
   message: string,
   extraWarnings: string[] = []
 ): UnifiedCollectionJob {
+  const resumeCheckpoint =
+    code === "RENDER_FAILED" || extraWarnings.some((w) => /render-checkpoint:RENDER/i.test(w))
+      ? ("RENDER" as const)
+      : job.resumeCheckpoint ?? null;
   return (
     patchUnifiedCollectionJob(job.caseId, {
       stage: "FAILED_RETRYABLE",
       status: "WAITING",
       lastError: message,
       lastErrorCode: code,
+      resumeCheckpoint,
       warnings: [...job.warnings, ...extraWarnings, code],
       completedAt: new Date().toISOString(),
     }) ?? job
@@ -768,6 +795,9 @@ async function stepPrepare(
     );
   }
 
+  const resumeFromRender =
+    job.resumeCheckpoint === "RENDER" || job.lastErrorCode === "RENDER_FAILED";
+
   // Default = canonical job-scoped pipeline. There is NO legacy composer path:
   // a disabled/blocked canonical prepare fails closed and never falls back.
   const runPrepare =
@@ -781,6 +811,7 @@ async function stepPrepare(
         merge: m,
         subjectProfile: deps.subjectProfile ?? null,
         render: deps.renderDeck,
+        resumeFrom: resumeFromRender ? "render" : "full",
       });
       return {
         prepareDatasetId: res.prepareDatasetId,
@@ -803,7 +834,9 @@ async function stepPrepare(
         job.caseId,
         job.unifiedJobId,
         "arsenkin-enrichment-observations.json"
-      )?.enrichmentRunIds ?? [];
+      )?.enrichmentRunIds ??
+      job.enrichmentRunIds ??
+      [];
     const linkageIncomplete =
       job.warnings.some((w) =>
         /arsenkin-blocked|arsenkin-skipped:no-base|ARSENKIN_STAGE_NOT_STARTED|BASE_REPORT_RUN/i.test(w)
@@ -811,6 +844,13 @@ async function stepPrepare(
       (enrichmentIds.length === 0 && String(process.env.NETWORK_CALLS ?? "") !== "0");
     const assemblySparse =
       (code === "ASSEMBLY_FAILED" || /required sections failed/i.test(message)) && linkageIncomplete;
+
+    if (code === "RENDER_FAILED") {
+      return failRetryable(job, "RENDER_FAILED", message, [
+        "render-checkpoint:RENDER",
+        "CANONICAL_PREPARE_BLOCKED",
+      ]);
+    }
 
     if (linkageIncomplete || assemblySparse) {
       return failRetryable(
@@ -833,16 +873,18 @@ async function stepPrepare(
     );
   }
 
-  // Assert exactly one assembly and one render per completed job (fail-closed).
-  if (
-    (prepared.assemblyCount != null && prepared.assemblyCount !== 1) ||
-    (prepared.renderCount != null && prepared.renderCount !== 1)
-  ) {
+  // Full prepare: exactly one assembly. Render-resume: assembly may be 0 (reused).
+  // Always exactly one render per successful prepare.
+  const assemblyOk =
+    prepared.assemblyCount == null ||
+    prepared.assemblyCount === 1 ||
+    (resumeFromRender && prepared.assemblyCount === 0);
+  if (!assemblyOk || (prepared.renderCount != null && prepared.renderCount !== 1)) {
     return (
       patchUnifiedCollectionJob(job.caseId, {
         stage: "FAILED_TERMINAL",
         status: "FAILED",
-        lastError: `expected exactly one assembly and one render, got assembly=${prepared.assemblyCount} render=${prepared.renderCount}`,
+        lastError: `expected valid assembly/render counts, got assembly=${prepared.assemblyCount} render=${prepared.renderCount}`,
         lastErrorCode: "ASSEMBLY_RENDER_COUNT_INVALID",
         completedAt: new Date().toISOString(),
       }) ?? job

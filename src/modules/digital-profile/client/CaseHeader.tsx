@@ -17,6 +17,16 @@ function arsenkinProgress(job: UnifiedCollectionJobStatus | null): string {
   return "0/5";
 }
 
+function isRenderRecovery(job: UnifiedCollectionJobStatus | null): boolean {
+  if (!job) return false;
+  return (
+    job.resumeCheckpoint === "RENDER" ||
+    job.recoveryReason === "RENDER_RESUME" ||
+    job.recoveryReason === "IDEMPOTENT_RENDER_RESUME" ||
+    job.lastErrorCode === "RENDER_FAILED"
+  );
+}
+
 function unifiedStatusLabel(job: UnifiedCollectionJobStatus | null): string | null {
   if (!job) return null;
   if (job.stage === "FAILED_TERMINAL" || job.status === "FAILED") return "FAILED";
@@ -25,6 +35,16 @@ function unifiedStatusLabel(job: UnifiedCollectionJobStatus | null): string | nu
   if (job.stage === "COMPLETED_PARTIAL") return "COMPLETED_PARTIAL";
   if (job.status === "RUNNING" || job.status === "WAITING") return job.status;
   return job.stage;
+}
+
+function prepareRenderLabel(job: UnifiedCollectionJobStatus): string {
+  if (job.stage === "REPORT_READY" || job.stage === "COMPLETED_PARTIAL") return "ok";
+  if (job.lastErrorCode === "RENDER_FAILED" || job.resumeCheckpoint === "RENDER") {
+    return job.stage === "FAILED_RETRYABLE" ? "failed" : "…";
+  }
+  if (job.stage === "ORION_PREPARE" || job.stage === "CLIENT_CONTENT") return "…";
+  if (job.compositeDatasetId && (job.enrichmentRunIds?.length ?? 0) >= 5) return "ok";
+  return "—";
 }
 
 export function CaseHeader({
@@ -52,6 +72,7 @@ export function CaseHeader({
   const subjectName = caseDetail.subject?.fullName ?? caseDetail.title;
   const unifiedLabel = unifiedStatusLabel(unifiedJob);
   const serverRecoveryAllowed = Boolean(unifiedJob?.recoveryAllowed);
+  const renderRecovery = isRenderRecovery(unifiedJob);
   const runningUnified =
     auditing ||
     recovering ||
@@ -105,13 +126,9 @@ export function CaseHeader({
               </div>
               <div>
                 base: {unifiedJob.baseReportRunId ? "ok" : "—"} · Arsenkin{" "}
-                {arsenkinProgress(unifiedJob)} · composite:{" "}
-                {unifiedJob.compositeDatasetId ? "ok" : "—"} · prepare/render:{" "}
-                {unifiedJob.stage === "REPORT_READY" || unifiedJob.stage === "COMPLETED_PARTIAL"
-                  ? "ok"
-                  : unifiedJob.stage === "ORION_PREPARE" || unifiedJob.stage === "CLIENT_CONTENT"
-                    ? "…"
-                    : "—"}
+                {arsenkinProgress(unifiedJob)} · composite/analytics/assembly:{" "}
+                {unifiedJob.compositeDatasetId ? "ok" : "—"} · render:{" "}
+                {prepareRenderLabel(unifiedJob)}
               </div>
               <div>
                 recovery:{" "}
@@ -120,6 +137,9 @@ export function CaseHeader({
                   : unifiedJob.recoveryBlockerReason
                     ? `blocked (${unifiedJob.recoveryBlockerReason})`
                     : "—"}
+                {unifiedJob.resumeCheckpoint
+                  ? ` · checkpoint: ${unifiedJob.resumeCheckpoint}`
+                  : ""}
               </div>
               {unifiedJob.lastError ? (
                 <div style={{ color: "#b42318" }}>{unifiedJob.lastError}</div>
@@ -133,11 +153,17 @@ export function CaseHeader({
               className="dp-btn dp-btn-primary"
               onClick={onRecoverUnifiedCollection}
               disabled={recovering || generating}
-              title="Продолжить с этапа Arsenkin без повторного базового поиска"
+              title={
+                renderRecovery
+                  ? "Продолжить с этапа рендера без повторного сбора"
+                  : "Продолжить с этапа Arsenkin без повторного базового поиска"
+              }
               data-testid="unified-orion-recovery-cta"
             >
               {recovering ? <span className="dp-spinner" /> : null}
-              Продолжить аудит с этапа Arsenkin
+              {renderRecovery
+                ? "Продолжить с этапа рендера"
+                : "Продолжить аудит с этапа Arsenkin"}
             </button>
           ) : null}
           {can("agents.run") ? (

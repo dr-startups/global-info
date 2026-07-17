@@ -115,6 +115,11 @@ export type UnifiedCollectionJob = {
     previousLastError: string | null;
     previousLastErrorCode: string | null;
   };
+  /**
+   * Precise resume target after FAILED_RETRYABLE.
+   * RENDER = skip base/Arsenkin/composite/analytics/assembly when payload valid.
+   */
+  resumeCheckpoint?: "BASE_COLLECTION" | "ARSENKIN_ENRICHMENT" | "ORION_PREPARE" | "RENDER" | null;
 };
 
 export const FIRST36_PLANNED_SUPPORTED_SURFACES = [

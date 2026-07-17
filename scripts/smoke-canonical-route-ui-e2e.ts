@@ -64,5 +64,6 @@ describe("B-1 — client CTA wiring", () => {
     assert.match(header, /unified-orion-recovery-cta/);
     assert.match(view, /Базовый поиск повторно выполняться не будет/);
     assert.match(view, /recoverUnifiedOrionCollection\(caseId/);
+    assert.match(header, /Продолжить с этапа рендера/);
   });
 });

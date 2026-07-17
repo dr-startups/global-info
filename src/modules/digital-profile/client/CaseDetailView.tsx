@@ -216,8 +216,14 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
       });
       return;
     }
+    const renderResume =
+      unifiedJob.resumeCheckpoint === "RENDER" ||
+      unifiedJob.recoveryReason === "RENDER_RESUME" ||
+      unifiedJob.lastErrorCode === "RENDER_FAILED";
     const ok = window.confirm(
-      "Базовый поиск повторно выполняться не будет. Продолжить аудит с этапа Arsenkin?"
+      renderResume
+        ? "Рендер будет выполнен через renderer service. Базовый поиск и Arsenkin повторно не запускаются. Продолжить с этапа рендера?"
+        : "Базовый поиск повторно выполняться не будет. Продолжить аудит с этапа Arsenkin?"
     );
     if (!ok) return;
     setRecovering(true);

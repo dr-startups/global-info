@@ -72,6 +72,7 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
           recoveryBlockerReason: recovery.recoveryBlockerReason,
           recoveryReason: recovery.recoveryReason,
           recoveryAudit: job.recoveryAudit ?? null,
+          resumeCheckpoint: job.resumeCheckpoint ?? null,
         }
       : null,
   });
