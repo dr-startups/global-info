@@ -66,4 +66,12 @@ describe("B-1 — client CTA wiring", () => {
     assert.match(view, /recoverUnifiedOrionCollection\(caseId/);
     assert.match(header, /Продолжить с этапа рендера/);
   });
+
+  it("Suggestions targeted retry CTA does not share Full Audit / recover routes", () => {
+    assert.match(api, /retryUnifiedEnrichmentSuggestionsTask/);
+    assert.match(api, /unified-collection\/retry-enrichment-task/);
+    assert.match(header, /unified-suggestions-retry-cta/);
+    assert.match(view, /retryUnifiedEnrichmentSuggestionsTask\(caseId/);
+    assert.match(header, /shouldShowGeneralRecoveryCta/);
+  });
 });

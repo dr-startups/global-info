@@ -1542,6 +1542,7 @@ export function retryUnifiedEnrichmentSuggestionsTask(
   input: {
     jobId: string;
     enrichmentRunId: string;
+    /** Server accepts "SUGGESTIONS" or "ARSENKIN_SUGGESTIONS_REAL"; UI always sends SUGGESTIONS. */
     agentName?: string;
     expectedTaskFingerprint?: string;
     confirmPaidEnrichmentRetry: boolean;
@@ -1557,14 +1558,17 @@ export function retryUnifiedEnrichmentSuggestionsTask(
   stage: string;
   status: string;
 }> {
+  // Targeted retry only — never POST /unified-collection or /recover.
   return request(`/cases/${caseId}/unified-collection/retry-enrichment-task`, {
     method: "POST",
     body: JSON.stringify({
       jobId: input.jobId,
       enrichmentRunId: input.enrichmentRunId,
       agentName: input.agentName ?? "SUGGESTIONS",
-      expectedTaskFingerprint: input.expectedTaskFingerprint,
-      confirmPaidEnrichmentRetry: input.confirmPaidEnrichmentRetry,
+      ...(input.expectedTaskFingerprint
+        ? { expectedTaskFingerprint: input.expectedTaskFingerprint }
+        : {}),
+      confirmPaidEnrichmentRetry: input.confirmPaidEnrichmentRetry === true,
     }),
   });
 }

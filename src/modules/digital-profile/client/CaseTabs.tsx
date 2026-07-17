@@ -68,6 +68,7 @@ export function CaseTabs({
   agents,
   agentRuns,
   auditing,
+  fullAuditBlocked = false,
   lastFullAuditSummary,
   onRunFullAudit,
   onAgentsChanged,
@@ -82,6 +83,7 @@ export function CaseTabs({
   agents: AgentInfo[];
   agentRuns: AgentRun[];
   auditing: boolean;
+  fullAuditBlocked?: boolean;
   lastFullAuditSummary: {
     mode: "legacy_mock_first" | "real_first_with_fallback" | "real_only" | "mock_only";
     items: FullAuditRunSummaryItem[];
@@ -151,6 +153,7 @@ export function CaseTabs({
           agents={agents}
           agentRuns={agentRuns}
           auditing={auditing}
+          fullAuditBlocked={fullAuditBlocked}
           lastFullAuditSummary={lastFullAuditSummary}
           onRunFullAudit={onRunFullAudit}
           onChanged={onAgentsChanged}

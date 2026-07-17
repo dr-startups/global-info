@@ -95,7 +95,20 @@ export function formatCount(value: number, locale: Locale): string {
   }
 }
 
-/** Localized message for an API error code (never leaks stack traces). */
+function sanitizeApiErrorFallback(raw: string): string {
+  return raw
+    .replace(/Bearer\s+\S+/gi, "[redacted]")
+    .replace(/token[=:]\s*\S+/gi, "[redacted]")
+    .replace(/\r?\n[\s\S]*$/, "")
+    .slice(0, 280)
+    .trim();
+}
+
+/**
+ * Localized message for an API error code (never leaks stack traces).
+ * For CONFLICT / VALIDATION_ERROR prefer a specific server message over the
+ * generic dictionary mask ("Такой ресурс уже существует").
+ */
 export function getLocalizedApiError(
   errorCode: string | null | undefined,
   locale: Locale,
@@ -104,8 +117,16 @@ export function getLocalizedApiError(
   const dict = getDictionary(locale);
   const code = (errorCode ?? "UNKNOWN") as keyof Dictionary["errors"];
   const message = dict.errors[code];
+  const fb = typeof fallback === "string" ? sanitizeApiErrorFallback(fallback) : "";
+  if (
+    fb &&
+    (code === "CONFLICT" || code === "VALIDATION_ERROR") &&
+    fb !== message
+  ) {
+    return fb;
+  }
   if (message) return message;
-  return fallback ?? dict.errors.UNKNOWN;
+  return fb || dict.errors.UNKNOWN;
 }
 
 type EnumGroup = keyof Dictionary["enums"];

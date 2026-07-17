@@ -5,6 +5,11 @@ import type { CaseDetail, UnifiedCollectionJobStatus } from "./api";
 import { StatusBadge } from "./components";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
+import {
+  SUGGESTIONS_TARGETED_RETRY_CONFIRM,
+  isSuggestionsTargetedRetryState,
+  shouldShowGeneralRecoveryCta,
+} from "./unified-suggestions-retry-ui";
 
 function arsenkinProgress(job: UnifiedCollectionJobStatus | null): string {
   if (!job) return "scheduled 0/5 · completed 0/5 · ingested 0/5";
@@ -93,8 +98,8 @@ export function CaseHeader({
   const subjectName = caseDetail.subject?.fullName ?? caseDetail.title;
   const unifiedLabel = unifiedStatusLabel(unifiedJob);
   const serverRecoveryAllowed = Boolean(unifiedJob?.recoveryAllowed);
-  const suggestionsRetry =
-    Boolean(unifiedJob?.suggestionsRetryAllowed) && Boolean(unifiedJob?.suggestionsMissingResult);
+  const suggestionsRetry = isSuggestionsTargetedRetryState(unifiedJob);
+  const showGeneralRecovery = shouldShowGeneralRecoveryCta(unifiedJob);
   const renderRecovery = isRenderRecovery(unifiedJob);
   const ingestRecovery =
     unifiedJob?.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" ||
@@ -192,19 +197,19 @@ export function CaseHeader({
             <button
               className="dp-btn dp-btn-primary"
               onClick={onRetrySuggestions}
-              disabled={recovering || generating}
-              title="Будет отправлена одна платная задача Arsenkin. Базовый поиск и остальные агенты повторно не запускаются"
+              disabled={recovering || generating || auditing}
+              title={SUGGESTIONS_TARGETED_RETRY_CONFIRM}
               data-testid="unified-suggestions-retry-cta"
             >
               {recovering ? <span className="dp-spinner" /> : null}
               Повторить только задачу Suggestions
             </button>
           ) : null}
-          {can("agents.run") && serverRecoveryAllowed && !suggestionsRetry ? (
+          {can("agents.run") && showGeneralRecovery ? (
             <button
               className="dp-btn dp-btn-primary"
               onClick={onRecoverUnifiedCollection}
-              disabled={recovering || generating}
+              disabled={recovering || generating || suggestionsRetry}
               title={
                 renderRecovery
                   ? "Продолжить с этапа рендера без повторного сбора"
@@ -222,7 +227,10 @@ export function CaseHeader({
                   : "Продолжить аудит с этапа Arsenkin"}
             </button>
           ) : null}
-          {can("agents.run") && paidRecollectionRequired && !serverRecoveryAllowed ? (
+          {can("agents.run") &&
+          paidRecollectionRequired &&
+          !serverRecoveryAllowed &&
+          !suggestionsRetry ? (
             <button
               className="dp-btn"
               onClick={onPaidRecollection}
@@ -233,7 +241,7 @@ export function CaseHeader({
               Начать новый аудит с повторным сбором данных
             </button>
           ) : null}
-          {can("agents.run") ? (
+          {can("agents.run") && !suggestionsRetry ? (
             <button
               className="dp-btn dp-btn-primary"
               onClick={onRunUnifiedCollection}

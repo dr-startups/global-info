@@ -763,6 +763,13 @@ describe("4. ingest + downstream after 5/5; failed suggestions blocks composite"
     assert.ok(!/Bearer|token=/i.test(gap.suggestionsFailureReason!));
     assert.match(gap.suggestionsFailureReason!, /queries|не получен|Suggestions/i);
   });
+
+  it("empty suggest tasks for suggestions enrichment run still marks gap", () => {
+    seedJobB();
+    const gap = withSuggestionsGapStatus(loadUnifiedCollectionJob(CASE), []);
+    assert.equal(gap.suggestionsMissingResult, true);
+    assert.equal(gap.suggestionsRetryAllowed, true);
+  });
 });
 
 describe("5. flag rollup", () => {

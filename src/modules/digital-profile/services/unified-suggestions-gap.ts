@@ -77,10 +77,14 @@ export function withSuggestionsGapStatus(
   );
   const stateFailed = suggestionsAgentFailed(job);
   const warningHit = (job.warnings ?? []).some((w) =>
-    /SUBMIT_REJECTED|SUBMIT_UNKNOWN|targeted-retry:|suggestions.*missing|SUGGESTIONS_RESULT/i.test(
+    /SUBMIT_REJECTED|SUBMIT_UNKNOWN|JSON_VALIDATION_ERROR|targeted-retry:|suggestions.*missing|SUGGESTIONS_RESULT/i.test(
       w
     )
   );
+  const scheduledSuggest =
+    (job.warnings ?? []).some((w) => /arsenkin-scheduled:.*SUGGESTIONS/i.test(w)) ||
+    Boolean(job.arsenkinEnrichmentState?.scheduledAgents?.some((a) => /SUGGESTIONS/i.test(a)));
+  const enrichmentIncomplete = job.arsenkinEnrichmentState?.enrichmentComplete !== true;
 
   if (hasDoneWithExt || (hasIngestibleExt && job.arsenkinEnrichmentState?.enrichmentComplete)) {
     return {
@@ -89,14 +93,22 @@ export function withSuggestionsGapStatus(
     };
   }
 
+  // Empty ProviderTask rows for a suggestions enrichment run still mean a gap
+  // (failed load path returns undefined, not []).
   const missingFromTasks =
     tasksProvided &&
     !hasDoneWithExt &&
     (Boolean(rejected) ||
-      (suggestTasks.length > 0 &&
-        suggestTasks.every((t) => !String(t.externalTaskId ?? "").trim())));
+      suggestTasks.length === 0 ||
+      suggestTasks.every((t) => !String(t.externalTaskId ?? "").trim()));
 
-  const missingFromJob = !tasksProvided && (stateFailed || warningHit);
+  // When tasks could not be loaded, infer gap from job signals — including a
+  // scheduled Suggestions agent that never completed (Job B incident pattern).
+  const missingFromJob =
+    !tasksProvided &&
+    (stateFailed ||
+      warningHit ||
+      (scheduledSuggest && enrichmentIncomplete && Boolean(enrichmentRunId)));
 
   const suggestionsMissingResult = Boolean(missingFromTasks || missingFromJob);
   if (!suggestionsMissingResult) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   DigitalProfileApiError,
@@ -43,6 +43,14 @@ import { OrionV2ReportPanel } from "./OrionV2ReportPanel";
 import { OrionClientStoryboardReportPanel } from "./OrionClientStoryboardReportPanel";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
+import {
+  SUGGESTIONS_TARGETED_RETRY_CONFIRM,
+  buildSuggestionsTargetedRetryBody,
+  createSingleFlightGuard,
+  isAcceptedSuggestionsRetryResult,
+  isSuggestionsTargetedRetryState,
+  shouldBlockFullAuditCta,
+} from "./unified-suggestions-retry-ui";
 
 type LoadState =
   | { kind: "loading" }
@@ -71,6 +79,11 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
     mode: "legacy_mock_first" | "real_first_with_fallback" | "real_only" | "mock_only";
     items: FullAuditRunSummaryItem[];
   } | null>(null);
+  const suggestionsRetryFlightRef = useRef(createSingleFlightGuard());
+  const fullAuditBlockedForTabs = useMemo(
+    () => shouldBlockFullAuditCta(unifiedJob) || auditing || recovering,
+    [unifiedJob, auditing, recovering]
+  );
 
   const loadAll = useCallback(async () => {
     setState({ kind: "loading" });
@@ -174,6 +187,14 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
 
   const handleRunUnifiedCollection = useCallback(async () => {
     if (auditing || generating || recovering) return;
+    if (isSuggestionsTargetedRetryState(unifiedJob)) {
+      setBanner({
+        kind: "error",
+        text:
+          "Full Audit недоступен: отсутствует результат Suggestions. Используйте «Повторить только задачу Suggestions».",
+      });
+      return;
+    }
     if (unifiedJob?.recoveryAllowed) {
       setBanner({
         kind: "error",
@@ -238,6 +259,14 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
 
   const handleRecoverUnifiedCollection = useCallback(async () => {
     if (auditing || generating || recovering) return;
+    if (isSuggestionsTargetedRetryState(unifiedJob)) {
+      setBanner({
+        kind: "error",
+        text:
+          "General recovery скрыт при gap Suggestions. Используйте «Повторить только задачу Suggestions».",
+      });
+      return;
+    }
     const jobId = unifiedJob?.jobId;
     if (!jobId || !unifiedJob?.recoveryAllowed) {
       setBanner({
@@ -301,28 +330,38 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
 
   const handleRetrySuggestions = useCallback(async () => {
     if (auditing || generating || recovering) return;
+    if (!suggestionsRetryFlightRef.current.tryEnter()) return;
     const jobId = unifiedJob?.jobId;
     const enrichmentRunId = unifiedJob?.suggestionsEnrichmentRunId;
-    if (!jobId || !enrichmentRunId || !unifiedJob?.suggestionsRetryAllowed) {
+    if (!jobId || !enrichmentRunId || !isSuggestionsTargetedRetryState(unifiedJob)) {
+      suggestionsRetryFlightRef.current.leave();
       setBanner({
         kind: "error",
         text: "Повтор Suggestions недоступен для текущего job.",
       });
       return;
     }
-    const ok = window.confirm(
-      "Будет отправлена одна платная задача Arsenkin. Базовый поиск и остальные агенты повторно не запускаются."
-    );
-    if (!ok) return;
+    const ok = window.confirm(SUGGESTIONS_TARGETED_RETRY_CONFIRM);
+    if (!ok) {
+      suggestionsRetryFlightRef.current.leave();
+      return;
+    }
     setRecovering(true);
     setBanner(null);
     try {
-      const result = await retryUnifiedEnrichmentSuggestionsTask(caseId, {
+      const body = buildSuggestionsTargetedRetryBody({
         jobId,
         enrichmentRunId,
-        agentName: unifiedJob.suggestionsAgentName ?? "SUGGESTIONS",
         confirmPaidEnrichmentRetry: true,
       });
+      const result = await retryUnifiedEnrichmentSuggestionsTask(caseId, body);
+      if (!isAcceptedSuggestionsRetryResult(result)) {
+        setBanner({
+          kind: "error",
+          text: "Повтор Suggestions не принят: нет externalTaskId в ответе сервера.",
+        });
+        return;
+      }
       setUnifiedJob((prev) =>
         prev
           ? {
@@ -344,8 +383,10 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
+      // CONFLICT must surface the server code/message (not the generic i18n mask).
       setBanner({ kind: "error", text: tError(code, msg) });
     } finally {
+      suggestionsRetryFlightRef.current.leave();
       setRecovering(false);
       const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
       if (job) setUnifiedJob(job);
@@ -611,6 +652,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
           agents={agents}
           agentRuns={agentRuns}
           auditing={auditing}
+          fullAuditBlocked={fullAuditBlockedForTabs}
           lastFullAuditSummary={lastFullAuditSummary}
           onRunFullAudit={handleRunUnifiedCollection}
           onAgentsChanged={() => void refreshAgents()}

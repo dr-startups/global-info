@@ -36,6 +36,7 @@ export function AgentsTab({
   agents,
   agentRuns,
   auditing,
+  fullAuditBlocked = false,
   lastFullAuditSummary,
   onRunFullAudit,
   onChanged,
@@ -44,6 +45,8 @@ export function AgentsTab({
   agents: AgentInfo[];
   agentRuns: AgentRun[];
   auditing: boolean;
+  /** When true (Suggestions gap / recovery / running), hide Full Audit CTA. */
+  fullAuditBlocked?: boolean;
   lastFullAuditSummary: {
     mode: "legacy_mock_first" | "real_first_with_fallback" | "real_only" | "mock_only";
     items: FullAuditRunSummaryItem[];
@@ -117,11 +120,11 @@ export function AgentsTab({
         <h2 className="dp-h2" style={{ margin: 0 }}>
           {t("agents.title")} <span className="dp-muted">{t("agents.unifiedCollectionHint")}</span>
         </h2>
-        {canRun ? (
+        {canRun && !fullAuditBlocked ? (
           <button
             className="dp-btn dp-btn-primary"
             onClick={onRunFullAudit}
-            disabled={auditing || busyAgent !== null}
+            disabled={auditing || busyAgent !== null || fullAuditBlocked}
             data-testid="agents-tab-unified-cta"
           >
             {auditing ? <span className="dp-spinner" /> : null}
