@@ -497,12 +497,26 @@ export function buildExecutiveSummaryFragment(
 ): FragmentBuildOutput {
   const es = extras.executiveSummary;
   if (!es) {
+    // Missing artifact is a technical defect — not an honest sparse-data page.
     return { slides: [], status: "INSUFFICIENT_DATA", emptyStateReason: "executive-summary-artifact-missing" };
   }
   const [slot] = slotsForFragment("EXECUTIVE_SUMMARY");
   const bullets = es.keyFindings.map(
     (k) => clampClientText(`${k.title}: ${k.factualBasis}`, 340) + ` [${k.findingId}]`
   );
+  // Sparse but complete collection: keep a client-safe page that states
+  // there are no confirmed findings — never invent risks.
+  const sparse =
+    es.keyFindings.length === 0 ||
+    /INSUFFICIENT|недостат/i.test(es.verdict) ||
+    /недостат|insufficient|no confirmed/i.test(es.executiveConclusion);
+  const narrative = sparse
+    ? clampClientText(
+        es.executiveConclusion ||
+          "Подтверждённых adverse-находок по собранным источникам недостаточно для риск-выводов. Выводы не выдуманы.",
+        600
+      )
+    : es.executiveConclusion;
   // Base slide feeds the executive dashboard layout (conclusion + top risk
   // cards); the remaining key findings continue on an adjacent slide so no
   // finding is lost visually.
@@ -512,14 +526,22 @@ export function buildExecutiveSummaryFragment(
     sectionId,
     subtitle: `Итоговая оценка: ${es.verdict}`,
     content: {
-      narrative: es.executiveConclusion,
-      bullets: bullets.slice(0, TOP_CARDS),
-      whatToCheck: clampClientText(es.priorityActions.slice(0, 3).join(" "), 220),
+      narrative,
+      bullets:
+        bullets.length > 0
+          ? bullets.slice(0, TOP_CARDS)
+          : [
+              "Подтверждённых findings с evidenceRefs нет — матрица рисков и KPI не заполняются вымышленными данными.",
+            ],
+      whatToCheck:
+        es.priorityActions.length > 0
+          ? clampClientText(es.priorityActions.slice(0, 3).join(" "), 220)
+          : "Повторите сбор после расширения источников; не интерпретируйте отсутствие данных как отсутствие риска.",
       sourceNote: sourceLine(scoped),
     },
     evidenceRefs: uniqueRefs(scoped),
     findingIds: es.keyFindings.map((k) => k.findingId),
-    metrics: { keyFindings: es.keyFindings.length },
+    metrics: { keyFindings: es.keyFindings.length, sparse: sparse ? 1 : 0 },
   });
   const slides: SlideContentContract[] = [base];
   if (bullets.length > TOP_CARDS) {
@@ -546,10 +568,28 @@ export function buildRiskMatrixFragment(
   sectionId: SectionType,
   scoped: ScopedFragmentInput
 ): FragmentBuildOutput {
-  if (scoped.findings.length === 0) {
-    return { slides: [], status: "INSUFFICIENT_DATA", emptyStateReason: "no-verified-findings" };
-  }
   const [slot] = slotsForFragment("RISK_MATRIX");
+  if (scoped.findings.length === 0) {
+    // Honest empty-valid page after completed collection — not a lost required section.
+    const base = makeSlotSlide({
+      slot,
+      sectionId,
+      subtitle: "Недостаточно подтверждённых данных",
+      content: {
+        narrative:
+          "Подтверждённых adverse findings с evidenceRefs нет. Матрица рисков не заполняется предположениями или OTHER_SUBJECT сигналами.",
+        table: {
+          headers: ["Тема", "Уровень", "Приоритет", "Идентификатор"],
+          rows: [["Нет подтверждённых тем", "Нет данных", "—", "—"]],
+        },
+        sourceNote: sourceLine(scoped),
+      },
+      evidenceRefs: uniqueRefs(scoped),
+      findingIds: [],
+      metrics: { themes: 0, adverse: 0, sparse: 1 },
+    });
+    return { slides: [base], status: "READY", emptyStateReason: "no-verified-findings" };
+  }
   const rows = [...scoped.findings]
     .sort((a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0))
     .map((f) => [f.theme, riskLabel(f.riskLevel), f.promotionPriority, f.findingId]);

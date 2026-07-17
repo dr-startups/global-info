@@ -94,6 +94,8 @@ export type UnifiedCollectionJob = {
   arsenkinMode: "full-first36";
   baseReportRunId: string | null;
   arsenkinReportRunId: string | null;
+  /** Five Arsenkin CaseAgent enrichment run ids when scheduled. */
+  enrichmentRunIds?: string[];
   compositeDatasetId: string | null;
   actualProviders: ActualProviderRecord[];
   coverage: SurfaceCoverageBreakdown | null;
@@ -103,6 +105,16 @@ export type UnifiedCollectionJob = {
   artifactPaths: Record<string, string>;
   reportLinks: { pdf?: string; pptx?: string };
   cancelRequested: boolean;
+  /** Set by staff recover endpoint — never written by client. */
+  recoveryAudit?: {
+    recoveredFromStatus: string;
+    recoveredFromStage: string;
+    recoveryRequestedAt: string;
+    recoveryRequestedBy: string;
+    recoveryReason: string;
+    previousLastError: string | null;
+    previousLastErrorCode: string | null;
+  };
 };
 
 export const FIRST36_PLANNED_SUPPORTED_SURFACES = [

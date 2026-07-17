@@ -40,15 +40,29 @@ describe("B-1 — single CTA route wiring", () => {
 describe("B-1 — client CTA wiring", () => {
   const api = read("modules/digital-profile/client/api.ts");
   const view = read("modules/digital-profile/client/CaseDetailView.tsx");
+  const header = read("modules/digital-profile/client/CaseHeader.tsx");
+  const recoverRoute = read(
+    "app/api/digital-profile/cases/[id]/unified-collection/recover/route.ts"
+  );
 
   it("client api targets the unified-collection endpoint", () => {
     assert.match(api, /cases\/\$\{caseId\}\/unified-collection/);
     assert.match(api, /export function startUnifiedOrionCollection/);
+    assert.match(api, /export function recoverUnifiedOrionCollection/);
+    assert.match(api, /unified-collection\/recover/);
   });
 
   it("primary CTA handler starts the unified collection and polls to a terminal stage", () => {
     assert.match(view, /startUnifiedOrionCollection\(caseId\)/);
     assert.match(view, /REPORT_READY/);
     assert.match(view, /COMPLETED_PARTIAL/);
+  });
+
+  it("staff recovery CTA uses recover endpoint (no base recollect)", () => {
+    assert.match(recoverRoute, /recoverUnifiedOrionCollectionJob/);
+    assert.match(recoverRoute, /requireDigitalProfileUser/);
+    assert.match(header, /unified-orion-recovery-cta/);
+    assert.match(view, /Базовый поиск повторно выполняться не будет/);
+    assert.match(view, /recoverUnifiedOrionCollection\(caseId/);
   });
 });

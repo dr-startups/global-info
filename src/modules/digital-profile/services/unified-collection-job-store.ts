@@ -70,9 +70,13 @@ export function findOrCreateUnifiedCollectionJob(input: {
   const existing = loadUnifiedCollectionJob(input.caseId);
   if (
     existing &&
-    (ACTIVE_STAGES.has(existing.stage) || existing.status === "RUNNING" || existing.status === "WAITING") &&
-    !existing.cancelRequested
+    !existing.cancelRequested &&
+    (ACTIVE_STAGES.has(existing.stage) ||
+      existing.stage === "FAILED_RETRYABLE" ||
+      existing.status === "RUNNING" ||
+      existing.status === "WAITING")
   ) {
+    // Reuse in-flight / retryable jobs — never spawn a second base collection.
     return { job: existing, created: false };
   }
 
@@ -159,9 +163,17 @@ export function listResumableUnifiedJobs(): Array<{ caseId: string; stage: Unifi
   for (const caseId of readdirSync(root)) {
     const job = loadUnifiedCollectionJob(caseId);
     if (!job) continue;
-    if (job.status === "COMPLETED" || job.status === "FAILED" || job.status === "CANCELLED") continue;
-    if (job.stage === "REPORT_READY" || job.stage === "COMPLETED_PARTIAL") continue;
-    if (ACTIVE_STAGES.has(job.stage) || job.stage === "FAILED_RETRYABLE") {
+    if (job.status === "COMPLETED" || job.status === "CANCELLED") continue;
+    if (job.stage === "REPORT_READY" || job.stage === "COMPLETED_PARTIAL" || job.stage === "FAILED_TERMINAL") {
+      continue;
+    }
+    // WAITING + FAILED_RETRYABLE are resume checkpoints (do not re-collect base).
+    if (
+      ACTIVE_STAGES.has(job.stage) ||
+      job.stage === "FAILED_RETRYABLE" ||
+      job.status === "WAITING" ||
+      job.status === "RUNNING"
+    ) {
       out.push({ caseId, stage: job.stage });
     }
   }

@@ -5,6 +5,7 @@
 
 import type { PrismaClient } from "@prisma/client";
 import type { BaseCollectionManifest, ReportDataBinding } from "./unified-collection-types";
+import { normalizeSerpProviderBucket } from "./unified-base-report-run";
 
 export type CompositeObservation = {
   key: string;
@@ -126,8 +127,7 @@ export async function mergeCompositeSerp(input: {
     });
     for (const r of results) {
       const engine = String(r.query?.engine ?? "UNKNOWN");
-      const provider =
-        engine === "YANDEX" ? "yandex" : engine === "GOOGLE" ? "serper" : "base";
+      const provider = normalizeSerpProviderBucket(engine);
       if (provider === "yandex") yandex += 1;
       if (provider === "serper") serper += 1;
       const key = organicKey(
@@ -162,10 +162,9 @@ export async function mergeCompositeSerp(input: {
     for (const s of surfaces) {
       const st = String(s.type ?? "");
       const engine = String(s.provider ?? "UNKNOWN");
-      const provider =
-        engine.includes("YANDEX") || engine === "YANDEX" ? "yandex" : "serper";
+      const provider = normalizeSerpProviderBucket(engine);
       if (provider === "yandex") yandex += 1;
-      else serper += 1;
+      else if (provider === "serper") serper += 1;
       let key: string;
       let kind: CompositeObservation["kind"] = "other";
       if (st.includes("SUGGEST")) {

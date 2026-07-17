@@ -17,6 +17,7 @@ import {
   getUnifiedCollectionStatus,
   startUnifiedOrionCollection,
 } from "@/modules/digital-profile/services/unified-orion-collection-orchestrator";
+import { withUnifiedRecoveryStatusFields } from "@/modules/digital-profile/services/unified-collection-recovery";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,7 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const user = await requireDigitalProfileUser(req);
   await requireCaseAccess(user, id, "VIEWER");
   const job = getUnifiedCollectionStatus(id);
+  const recovery = withUnifiedRecoveryStatusFields(job);
   return jsonOk({
     job: job
       ? {
@@ -59,9 +61,17 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
           lastErrorCode: job.lastErrorCode,
           baseReportRunId: job.baseReportRunId,
           arsenkinReportRunId: job.arsenkinReportRunId,
+          enrichmentRunIds: job.enrichmentRunIds ?? [],
           compositeDatasetId: job.compositeDatasetId,
           reportLinks: job.reportLinks,
           artifactPaths: job.artifactPaths,
+          createdAt: job.createdAt,
+          updatedAt: job.updatedAt,
+          completedAt: job.completedAt,
+          recoveryAllowed: recovery.recoveryAllowed,
+          recoveryBlockerReason: recovery.recoveryBlockerReason,
+          recoveryReason: recovery.recoveryReason,
+          recoveryAudit: job.recoveryAudit ?? null,
         }
       : null,
   });

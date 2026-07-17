@@ -16,6 +16,7 @@ import {
   prepareOrionGoldenArtifacts,
   getOrionGoldenPrepareStatus,
   startUnifiedOrionCollection,
+  recoverUnifiedOrionCollection,
   getUnifiedOrionCollectionStatus,
   type AgentInfo,
   type AgentRun,
@@ -60,7 +61,8 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
   const [surfaces, setSurfaces] = useState<SearchSurfaceItem[]>([]);
   const [generating, setGenerating] = useState(false);
   const [auditing, setAuditing] = useState(false);
-  const [unifiedStage, setUnifiedStage] = useState<string | null>(null);
+  const [recovering, setRecovering] = useState(false);
+  const [unifiedJob, setUnifiedJob] = useState<UnifiedCollectionJobStatus | null>(null);
   const [banner, setBanner] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
   const [prepareBusy, setPrepareBusy] = useState(false);
   const [prepareStatus, setPrepareStatus] = useState<OrionGoldenPrepareSummary | null>(null);
@@ -72,20 +74,23 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
   const loadAll = useCallback(async () => {
     setState({ kind: "loading" });
     try {
-      const [caseDetail, evidence, latestReport, agentList, runs, surfaceList, prep] = await Promise.all([
-        getCase(caseId),
-        getEvidence(caseId),
-        getReport(caseId),
-        listAgents(caseId),
-        listAgentRuns(caseId),
-        listSearchSurfaces(caseId),
-        getOrionGoldenPrepareStatus(caseId).catch(() => null),
-      ]);
+      const [caseDetail, evidence, latestReport, agentList, runs, surfaceList, prep, unified] =
+        await Promise.all([
+          getCase(caseId),
+          getEvidence(caseId),
+          getReport(caseId),
+          listAgents(caseId),
+          listAgentRuns(caseId),
+          listSearchSurfaces(caseId),
+          getOrionGoldenPrepareStatus(caseId).catch(() => null),
+          getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null })),
+        ]);
       setReport(latestReport);
       setAgents(agentList);
       setAgentRuns(runs);
       setSurfaces(surfaceList);
       if (prep) setPrepareStatus(prep);
+      setUnifiedJob(unified.job);
       setState({ kind: "ready", caseDetail, evidence });
     } catch (err) {
       if (err instanceof DigitalProfileApiError) {
@@ -135,49 +140,121 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
     }
   }, [caseId]);
 
+  const pollUnifiedUntilTerminal = useCallback(async () => {
+    for (let i = 0; i < 120; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const { job } = await getUnifiedOrionCollectionStatus(caseId);
+      if (!job) continue;
+      setUnifiedJob(job);
+      const terminal =
+        job.stage === "REPORT_READY" ||
+        job.stage === "COMPLETED_PARTIAL" ||
+        job.stage === "FAILED_TERMINAL" ||
+        job.stage === "FAILED_RETRYABLE" ||
+        job.stage === "CANCELLED" ||
+        job.status === "COMPLETED";
+      if (!terminal) continue;
+      await refreshAgents();
+      if (job.stage === "REPORT_READY") {
+        setBanner({ kind: "ok", text: t("agents.unifiedDone") });
+      } else if (job.stage === "COMPLETED_PARTIAL") {
+        setBanner({ kind: "ok", text: t("agents.unifiedPartial") });
+      } else {
+        setBanner({
+          kind: "error",
+          text: `${t("agents.unifiedFailed")} [${job.lastErrorCode ?? job.stage}] jobId=${job.jobId}${
+            job.lastError ? `: ${job.lastError}` : ""
+          }`,
+        });
+      }
+      return;
+    }
+  }, [caseId, refreshAgents, t]);
+
   const handleRunUnifiedCollection = useCallback(async () => {
-    if (auditing || generating) return;
+    if (auditing || generating || recovering) return;
+    if (unifiedJob?.recoveryAllowed) {
+      setBanner({
+        kind: "error",
+        text: `Восстанавливаемый job ${unifiedJob.jobId}. Используйте «Продолжить аудит с этапа Arsenkin».`,
+      });
+      return;
+    }
     setAuditing(true);
     setBanner(null);
-    setUnifiedStage("BASE_COLLECTION");
     try {
-      const started = await startUnifiedOrionCollection(caseId);
-      setUnifiedStage(started.stage);
-      // Poll until terminal
-      for (let i = 0; i < 120; i++) {
-        await new Promise((r) => setTimeout(r, 500));
-        const { job } = await getUnifiedOrionCollectionStatus(caseId);
-        if (!job) continue;
-        setUnifiedStage(job.stage);
-        const terminal =
-          job.stage === "REPORT_READY" ||
-          job.stage === "COMPLETED_PARTIAL" ||
-          job.stage === "FAILED_TERMINAL" ||
-          job.stage === "CANCELLED" ||
-          job.status === "COMPLETED" ||
-          job.status === "FAILED";
-        if (!terminal) continue;
-        await refreshAgents();
-        if (job.stage === "REPORT_READY") {
-          setBanner({ kind: "ok", text: t("agents.unifiedDone") });
-        } else if (job.stage === "COMPLETED_PARTIAL") {
-          setBanner({ kind: "ok", text: t("agents.unifiedPartial") });
-        } else {
-          setBanner({
-            kind: "error",
-            text: `${t("agents.unifiedFailed")}${job.lastError ? `: ${job.lastError}` : ""}`,
-          });
-        }
-        break;
-      }
+      await startUnifiedOrionCollection(caseId);
+      await pollUnifiedUntilTerminal();
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
       setBanner({ kind: "error", text: tError(code, msg) });
     } finally {
       setAuditing(false);
+      const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
+      if (job) setUnifiedJob(job);
     }
-  }, [auditing, generating, caseId, refreshAgents, t, tError]);
+  }, [
+    auditing,
+    generating,
+    recovering,
+    caseId,
+    pollUnifiedUntilTerminal,
+    tError,
+    unifiedJob,
+  ]);
+
+  const handleRecoverUnifiedCollection = useCallback(async () => {
+    if (auditing || generating || recovering) return;
+    const jobId = unifiedJob?.jobId;
+    if (!jobId || !unifiedJob?.recoveryAllowed) {
+      setBanner({
+        kind: "error",
+        text: `Recovery недоступен${
+          unifiedJob?.recoveryBlockerReason ? ` (${unifiedJob.recoveryBlockerReason})` : ""
+        }.`,
+      });
+      return;
+    }
+    const ok = window.confirm(
+      "Базовый поиск повторно выполняться не будет. Продолжить аудит с этапа Arsenkin?"
+    );
+    if (!ok) return;
+    setRecovering(true);
+    setBanner(null);
+    try {
+      const recovered = await recoverUnifiedOrionCollection(caseId, jobId);
+      setUnifiedJob((prev) =>
+        prev
+          ? {
+              ...prev,
+              jobId: recovered.jobId,
+              unifiedJobId: recovered.unifiedJobId,
+              stage: recovered.stage,
+              status: recovered.status,
+              baseReportRunId: recovered.baseReportRunId,
+            }
+          : prev
+      );
+      await pollUnifiedUntilTerminal();
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setBanner({ kind: "error", text: tError(code, msg) });
+    } finally {
+      setRecovering(false);
+      const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
+      if (job) setUnifiedJob(job);
+    }
+  }, [
+    auditing,
+    generating,
+    recovering,
+    caseId,
+    unifiedJob,
+    pollUnifiedUntilTerminal,
+    tError,
+  ]);
 
   const handleRunAudit = useCallback(async () => {
     // Admin/diagnostic path only — primary CTA is unified collection.
@@ -305,9 +382,10 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
           onGenerate={handleHeaderGenerate}
           generating={generating}
           onRunUnifiedCollection={handleRunUnifiedCollection}
+          onRecoverUnifiedCollection={handleRecoverUnifiedCollection}
           auditing={auditing}
-          lastRunStatus={agentRuns[0]?.status ?? null}
-          unifiedStage={unifiedStage}
+          recovering={recovering}
+          unifiedJob={unifiedJob}
         />
       </Card>
 

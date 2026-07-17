@@ -1462,9 +1462,26 @@ export type UnifiedCollectionJobStatus = {
   lastErrorCode: string | null;
   baseReportRunId: string | null;
   arsenkinReportRunId: string | null;
+  enrichmentRunIds?: string[];
   compositeDatasetId: string | null;
   reportLinks: { pdf?: string; pptx?: string };
   artifactPaths: Record<string, string>;
+  createdAt?: string;
+  updatedAt?: string;
+  completedAt?: string | null;
+  /** Server-calculated — never trust a client-only flag. */
+  recoveryAllowed?: boolean;
+  recoveryBlockerReason?: string | null;
+  recoveryReason?: string | null;
+  recoveryAudit?: {
+    recoveredFromStatus: string;
+    recoveredFromStage: string;
+    recoveryRequestedAt: string;
+    recoveryRequestedBy: string;
+    recoveryReason: string;
+    previousLastError: string | null;
+    previousLastErrorCode: string | null;
+  } | null;
 };
 
 export function startUnifiedOrionCollection(
@@ -1473,6 +1490,26 @@ export function startUnifiedOrionCollection(
   return request(`/cases/${caseId}/unified-collection`, {
     method: "POST",
     body: JSON.stringify({ arsenkinMode: "full-first36" }),
+  });
+}
+
+export function recoverUnifiedOrionCollection(
+  caseId: string,
+  jobId: string
+): Promise<{
+  accepted: boolean;
+  jobId: string;
+  unifiedJobId: string;
+  stage: string;
+  status: string;
+  baseReportRunId: string;
+  recoveryReason: string;
+  createdBaseReportRun: boolean;
+  idempotent: boolean;
+}> {
+  return request(`/cases/${caseId}/unified-collection/recover`, {
+    method: "POST",
+    body: JSON.stringify({ jobId }),
   });
 }
 
