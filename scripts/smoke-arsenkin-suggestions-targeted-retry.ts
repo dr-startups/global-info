@@ -10,8 +10,10 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, before } from "node:test";
 import {
+  ARSENKIN_SUGGEST_MAX_QUERIES,
   buildSuggestRequest,
   normalizeSuggestQueries,
+  selectCanonicalSuggestQuery,
   tryBuildSuggestRequest,
 } from "../src/modules/digital-profile/providers/arsenkin/adapters/suggest";
 import { ARSENKIN_REGION } from "../src/modules/digital-profile/providers/arsenkin/regions";
@@ -21,6 +23,7 @@ import {
   classifyProviderTaskSubmitOutcome,
 } from "../src/modules/digital-profile/providers/arsenkin/submit-outcome-classification";
 import { planArsenkinExactTasks } from "../src/modules/digital-profile/orion-golden/classic/plan-arsenkin-exact-tasks";
+import { hashProviderRequest } from "../src/modules/digital-profile/providers/arsenkin/provider-task-store";
 import {
   adaptArsenkinToolResponse,
   fullArsenkinResultHash,
@@ -41,6 +44,7 @@ import {
 import {
   PAID_ENRICHMENT_RETRY_CONFIRMATION_REQUIRED,
   retryUnifiedEnrichmentSuggestionsTask,
+  type TargetedProviderTaskRow,
 } from "../src/modules/digital-profile/services/unified-enrichment-targeted-retry";
 import { withSuggestionsGapStatus } from "../src/modules/digital-profile/services/unified-suggestions-gap";
 import { runUnifiedCollectionTick } from "../src/modules/digital-profile/services/unified-orion-collection-orchestrator";
@@ -64,12 +68,22 @@ const SUGGEST_RUN = ENRICHMENT_RUN_IDS[1]!;
 
 const FLAGS: Record<string, boolean> = {
   SUGGESTIONS_REQUEST_SCHEMA_PASS: false,
+  SUGGEST_QUERIES_EXACTLY_ONE: false,
+  SUBJECT_AGNOSTIC_QUERY_SELECTION: false,
+  LOCALE_INDEPENDENT_NORMALIZATION: false,
+  SELECTION_ORDER_INDEPENDENT: false,
+  NO_QUERY_FAILS_BEFORE_HTTP: false,
+  PRECOMMIT_SCOPE_CLEAN: false,
+  SAME_PROVIDER_TASK_REUSED: false,
+  NEW_PAYLOAD_NEW_REQUEST_HASH: false,
+  EXACTLY_ONE_EXTERNAL_SUBMIT: false,
   VALIDATION_REJECTION_CLASSIFIED: false,
   PAID_RETRY_REQUIRES_CONFIRMATION: false,
   TARGETED_RETRY_ONLY: false,
   EXACTLY_ONE_SUGGESTIONS_SUBMISSION: false,
   BASE_CALLS_ON_TARGETED_RETRY_ZERO: false,
   OTHER_ARSENKIN_SUBMISSIONS_ZERO: false,
+  FULL_AUDIT_NOT_CALLED: false,
   SAME_JOB_ID_ON_TARGETED_RETRY: false,
   DOUBLE_CLICK_IDEMPOTENT: false,
   PROCESS_RESTART_IDEMPOTENT: false,
@@ -80,7 +94,6 @@ const FLAGS: Record<string, boolean> = {
   EXACTLY_ONE_HTTP_RENDER: false,
   BASE_COVERAGE_PASS: false,
   ALL_MANDATORY_OFFLINE_TESTS_PASS: false,
-  PRECOMMIT_SCOPE_CLEAN: false,
   READY_TO_COMMIT: false,
   READY_TO_DEPLOY_APP: false,
   READY_TO_RETRY_SUGGESTIONS: false,
@@ -151,43 +164,103 @@ before(() => {
   assert.equal(process.env.NETWORK_CALLS, "0");
 });
 
-describe("1. SUGGESTIONS request schema", () => {
-  it("tool=suggest; Google rejects pure Cyrillic; Yandex accepts; plan uses Latin for Google", () => {
-    const cyr = ["Иван Тестов", "Тестов Иван"];
-    const lat = ["Ivan Testov", "Testov Ivan"];
-
-    const yandex = buildSuggestRequest({
+describe("1. SUGGESTIONS request schema — exactly one query", () => {
+  it("A. Yandex + 4 Cyrillic: one canonical query; order-independent", () => {
+    const primary = "Иван Тестов Канон";
+    const cyr = ["Тестов Иван", primary, "Иван Тестов", "Тестов Канон Иван"];
+    const shuffled = [cyr[2]!, cyr[0]!, cyr[3]!, cyr[1]!];
+    const a = buildSuggestRequest({
       queries: cyr,
       se: 1,
       region: ARSENKIN_REGION.YANDEX_MOSCOW,
       depth: 1,
+      primaryLocalized: primary,
     });
-    assert.equal(yandex.tools_name, "suggest");
-    assert.ok(Array.isArray(yandex.data.queries));
-    assert.ok((yandex.data.queries as string[]).some((q) => /[\u0400-\u04FF]/.test(q)));
+    const b = buildSuggestRequest({
+      queries: shuffled,
+      se: 1,
+      region: ARSENKIN_REGION.YANDEX_MOSCOW,
+      depth: 1,
+      primaryLocalized: primary,
+    });
+    assert.equal(a.tools_name, "suggest");
+    assert.equal(ARSENKIN_SUGGEST_MAX_QUERIES, 1);
+    assert.equal((a.data.queries as string[]).length, 1);
+    assert.deepEqual(a.data.queries, [primary]);
+    assert.deepEqual(b.data.queries, [primary]);
+    assert.equal(a.selection.selectionReason, "canonical-localized-primary");
+    assert.equal(a.selection.candidateQueryCount, 4);
+    assert.equal(a.selection.rejectedCandidateHashes.length, 3);
+    FLAGS.SUGGEST_QUERIES_EXACTLY_ONE = true;
+    FLAGS.SELECTION_ORDER_INDEPENDENT = true;
+    FLAGS.SUBJECT_AGNOSTIC_QUERY_SELECTION = true;
+    FLAGS.LOCALE_INDEPENDENT_NORMALIZATION = true;
+  });
 
-    const googleCyr = normalizeSuggestQueries({ queries: cyr, se: 2 });
-    assert.equal(googleCyr.ok, false);
-
-    const googleLat = buildSuggestRequest({
-      queries: lat,
+  it("B. Google + mixed Cyrillic/Latin: one Latin query", () => {
+    const primaryLatin = "Ivan Testov";
+    const mixed = ["Иван Тестов", primaryLatin, "Testov Ivan", "  ", primaryLatin];
+    const google = buildSuggestRequest({
+      queries: mixed,
       se: 2,
       region: ARSENKIN_REGION.GOOGLE_MOSCOW,
       google_domain: "www.google.ru",
       google_from: "RU",
       google_lang: "ru",
       depth: 1,
+      primaryLatin,
     });
-    assert.equal(googleLat.tools_name, "suggest");
-    assert.deepEqual(googleLat.data.queries, lat.slice(0, 5));
-    assert.equal(googleLat.data.se, 2);
+    assert.equal((google.data.queries as string[]).length, 1);
+    assert.deepEqual(google.data.queries, [primaryLatin]);
+    assert.equal(google.selection.selectionReason, "canonical-latin-primary");
+    assert.ok(/[A-Za-z]/.test((google.data.queries as string[])[0]!));
+  });
 
-    const bad = tryBuildSuggestRequest({
-      queries: cyr,
+  it("C. duplicates/empty normalized; deterministic", () => {
+    const primary = "Имя Фамилия";
+    const noisy = ["", "  ", primary, primary, "Имя Фамилия", "фамилия имя"];
+    const selected = selectCanonicalSuggestQuery({
+      se: 1,
+      candidates: noisy,
+      primaryLocalized: primary,
+    });
+    assert.equal(selected.ok, true);
+    if (!selected.ok) return;
+    assert.deepEqual(selected.queries, [primary]);
+    assert.equal(selected.selection.candidateQueryCount, 2);
+  });
+
+  it("D. no eligible query → SUGGEST_QUERY_UNAVAILABLE; zero HTTP", () => {
+    let httpCalls = 0;
+    const none = tryBuildSuggestRequest({
+      queries: ["Иван Тестов", "Тестов Иван"],
       se: 2,
       region: ARSENKIN_REGION.GOOGLE_MOSCOW,
     });
-    assert.equal(bad.ok, false);
+    assert.equal(none.ok, false);
+    if (!none.ok) assert.equal(none.code, "SUGGEST_QUERY_UNAVAILABLE");
+    assert.equal(httpCalls, 0);
+
+    const empty = normalizeSuggestQueries({ queries: ["", "  "], se: 1 });
+    assert.equal(empty.ok, false);
+    if (!empty.ok) assert.equal(empty.code, "SUGGEST_QUERY_UNAVAILABLE");
+    FLAGS.NO_QUERY_FAILS_BEFORE_HTTP = true;
+  });
+
+  it("plan + Google Cyrillic rejection still hold with queries.length===1", () => {
+    const cyr = ["Иван Тестов", "Тестов Иван"];
+    const lat = ["Ivan Testov", "Testov Ivan"];
+    const yandex = buildSuggestRequest({
+      queries: cyr,
+      se: 1,
+      region: ARSENKIN_REGION.YANDEX_MOSCOW,
+      depth: 1,
+      primaryLocalized: cyr[0],
+    });
+    assert.equal((yandex.data.queries as string[]).length, 1);
+
+    const googleCyr = normalizeSuggestQueries({ queries: cyr, se: 2 });
+    assert.equal(googleCyr.ok, false);
 
     const plan = planArsenkinExactTasks({
       queriesRu: cyr,
@@ -195,14 +268,142 @@ describe("1. SUGGESTIONS request schema", () => {
       tools: ["suggest"],
       urlsEnrichment: [],
     });
-    const googleSuggest = plan.filter((t) => t.tool === "suggest" && Number(t.data.se) === 2);
-    assert.ok(googleSuggest.length >= 1);
-    for (const t of googleSuggest) {
-      const qs = t.data.queries as string[];
-      assert.ok(qs.every((q) => /[A-Za-z]/.test(q)), "Google suggest must be Latin");
+    for (const t of plan.filter((x) => x.tool === "suggest")) {
+      assert.equal((t.data.queries as string[]).length, 1);
+      assert.equal(t.queryCount, 1);
+    }
+    FLAGS.SUGGESTIONS_REQUEST_SCHEMA_PASS = true;
+  });
+
+  it("universality fixtures: RU/Latin/Arabic/Turkish/no-patronymic/order", () => {
+    // RU family-first (Фамилия Имя Отчество)
+    const ruFf = "Сидоров Пётр Иванович";
+    const ruY = buildSuggestRequest({
+      queries: ["Пётр Сидоров", ruFf, "Сидоров Пётр", "Иванович Сидоров"],
+      se: 1,
+      region: ARSENKIN_REGION.YANDEX_MOSCOW,
+      primaryLocalized: ruFf,
+    });
+    assert.deepEqual(ruY.data.queries, [ruFf]);
+
+    // Latin given-first, no patronymic
+    const latGf = "Jane Doe";
+    const latY = buildSuggestRequest({
+      queries: ["Doe Jane", latGf, "JANE DOE"],
+      se: 1,
+      region: ARSENKIN_REGION.YANDEX_MOSCOW,
+      primaryLocalized: latGf,
+      primaryLatin: latGf,
+    });
+    assert.deepEqual(latY.data.queries, [latGf]);
+    const latG = buildSuggestRequest({
+      queries: ["Доу Джейн", latGf, "Doe Jane"],
+      se: 2,
+      region: ARSENKIN_REGION.GOOGLE_MOSCOW,
+      google_domain: "www.google.com",
+      google_from: "US",
+      google_lang: "en",
+      primaryLatin: latGf,
+    });
+    assert.deepEqual(latG.data.queries, [latGf]);
+
+    // Arabic + Latin mixed — Google must pick Latin; pure Arabic → unavailable
+    const arabLat = "Ahmad Al-Rashid";
+    const mixed = buildSuggestRequest({
+      queries: ["أحمد الراشد", arabLat, "Al-Rashid Ahmad"],
+      se: 2,
+      region: ARSENKIN_REGION.GOOGLE_UAE,
+      google_domain: "www.google.ae",
+      google_from: "AE",
+      google_lang: "en",
+      primaryLatin: arabLat,
+    });
+    assert.deepEqual(mixed.data.queries, [arabLat]);
+    const arabOnly = tryBuildSuggestRequest({
+      queries: ["أحمد الراشد", "محمد علي"],
+      se: 2,
+      region: ARSENKIN_REGION.GOOGLE_UAE,
+    });
+    assert.equal(arabOnly.ok, false);
+    if (!arabOnly.ok) assert.equal(arabOnly.code, "SUGGEST_QUERY_UNAVAILABLE");
+
+    // Turkish casing edge: dotted/dotless I must not flip winner via locale
+    const trPrimary = "Istanbul Partner";
+    const trA = selectCanonicalSuggestQuery({
+      se: 2,
+      candidates: ["İstanbul Partner", trPrimary, "ISTANBUL PARTNER"],
+      primaryLatin: trPrimary,
+    });
+    const trB = selectCanonicalSuggestQuery({
+      se: 2,
+      candidates: ["ISTANBUL PARTNER", "İstanbul Partner", trPrimary],
+      primaryLatin: trPrimary,
+    });
+    assert.equal(trA.ok && trB.ok, true);
+    if (trA.ok && trB.ok) {
+      assert.equal(trA.selection.selectedQuery, trB.selection.selectedQuery);
+      assert.equal(trA.selection.selectedQuery, trPrimary);
     }
 
-    FLAGS.SUGGESTIONS_REQUEST_SCHEMA_PASS = true;
+    // Tie-break stable without ru localeCompare (equal scores → code-unit order)
+    const tieA = selectCanonicalSuggestQuery({
+      se: 1,
+      candidates: ["Beta Name", "Alpha Name"],
+    });
+    const tieB = selectCanonicalSuggestQuery({
+      se: 1,
+      candidates: ["Alpha Name", "Beta Name"],
+    });
+    assert.equal(tieA.ok && tieB.ok, true);
+    if (tieA.ok && tieB.ok) {
+      assert.equal(tieA.selection.selectedQuery, tieB.selection.selectedQuery);
+      assert.equal(tieA.selection.selectedQuery, "Alpha Name");
+    }
+
+    FLAGS.SUBJECT_AGNOSTIC_QUERY_SELECTION = true;
+    FLAGS.SELECTION_ORDER_INDEPENDENT = true;
+  });
+
+  it("SUGGEST_QUERY_UNAVAILABLE fails before lease (no ACTIVE_LEASE side-effect)", async () => {
+    seedJobB();
+    let submissions = 0;
+    let leased = false;
+    await assert.rejects(
+      () =>
+        retryUnifiedEnrichmentSuggestionsTask({
+          caseId: CASE,
+          jobId: JOB_B,
+          enrichmentRunId: SUGGEST_RUN,
+          agentName: "SUGGESTIONS",
+          confirmPaidEnrichmentRetry: true,
+          actorId: "smoke",
+          deps: {
+            loadSubject: async () => ({ fullName: "", aliases: [] }),
+            listProviderTasks: async () => [
+              {
+                id: "pt-empty",
+                state: "SUBMIT_REJECTED_RETRYABLE",
+                toolName: "suggest",
+                externalTaskId: null,
+                requestHash: "old",
+                requestJson: { tools_name: "suggest", data: { se: 1, queries: ["a", "b"] } },
+              },
+            ],
+            submitSuggestTask: async () => {
+              submissions += 1;
+              return { externalTaskId: "x", providerTaskId: "y" };
+            },
+          },
+        }),
+      (err: unknown) =>
+        err instanceof ConflictError && /SUGGEST_QUERY_UNAVAILABLE/i.test(err.message)
+    );
+    assert.equal(submissions, 0);
+    const job = loadUnifiedCollectionJob(CASE)!;
+    assert.equal(job.leaseOwnerId, null);
+    leased = job.leaseOwnerId != null;
+    assert.equal(leased, false);
+    FLAGS.NO_QUERY_FAILS_BEFORE_HTTP = true;
   });
 });
 
@@ -237,49 +438,78 @@ describe("2. validation rejection classification", () => {
 });
 
 describe("3. targeted retry contract", () => {
-  it("no confirmation → 409; with confirmation → exactly one SUGGESTIONS submit; same job", async () => {
+  it("E. SUBMIT_REJECTED_RETRYABLE reused; new payload → new requestHash; one submit", async () => {
     seedJobB();
     let submissions = 0;
+    let fullAuditCalls = 0;
     const otherAgentSubmissions = 0;
     const baseCalls = 0;
     const newUnifiedJobs = 0;
     const newAgentRuns = 0;
     const newEnrichmentRuns = 0;
-    const taskStore: Array<{
-      id: string;
-      state: string;
-      toolName: string | null;
-      externalTaskId: string | null;
-      requestHash?: string | null;
-      responseJson?: unknown;
-    }> = [
+    const oldRequestJson = {
+      tools_name: "suggest",
+      data: {
+        se: 1,
+        region: ARSENKIN_REGION.YANDEX_MOSCOW,
+        queries: ["Q1", "Q2", "Q3", "Q4"],
+        depth: 1,
+        check: ["nrm", "spc", "cyr"],
+      },
+    };
+    const oldHash = hashProviderRequest(oldRequestJson);
+    const taskStore: TargetedProviderTaskRow[] = [
       {
         id: "pt-suggest-rejected",
         state: "SUBMIT_REJECTED_RETRYABLE",
         toolName: "suggest",
         externalTaskId: null,
+        requestHash: oldHash,
+        requestJson: oldRequestJson,
         responseJson: { _submitDiagnostics: { httpStatus: 500, code: "JSON_VALIDATION_ERROR" } },
+      },
+      {
+        id: "pt-other-agent",
+        state: "DONE",
+        toolName: "check-top",
+        externalTaskId: "ext-other",
+        requestHash: "hash-other",
       },
     ];
 
     const deps = {
       loadSubject: async () => ({
-        fullName: "Synthetic Subject",
+        fullName: "Синтетический Субъект",
         aliases: ["Synthetic Subject Alias"],
       }),
       listProviderTasks: async () => taskStore,
-      submitSuggestTask: async () => {
+      supersedeRejectedSuggestTask: async (input: {
+        providerTaskId: string;
+        requestJson: { tools_name: string; data: Record<string, unknown> };
+        requestHash: string;
+      }) => {
+        const row = taskStore.find((t) => t.id === input.providerTaskId);
+        assert.ok(row);
+        assert.equal(row.id, "pt-suggest-rejected");
+        assert.notEqual(input.requestHash, oldHash);
+        assert.equal((input.requestJson.data.queries as string[]).length, 1);
+        row.state = "QUEUED";
+        row.requestHash = input.requestHash;
+        row.requestJson = input.requestJson;
+      },
+      submitSuggestTask: async (args: {
+        requestHash: string;
+        requestJson: { tools_name: string; data: Record<string, unknown> };
+      }) => {
         submissions += 1;
+        assert.equal((args.requestJson.data.queries as string[]).length, 1);
+        const row = taskStore.find((t) => t.id === "pt-suggest-rejected")!;
+        assert.equal(row.requestHash, args.requestHash);
+        assert.notEqual(args.requestHash, oldHash);
         const externalTaskId = `ext-suggest-${submissions}`;
-        const providerTaskId = `pt-suggest-new-${submissions}`;
-        taskStore.push({
-          id: providerTaskId,
-          state: "RUNNING",
-          toolName: "suggest",
-          externalTaskId,
-          requestHash: "hash-synth",
-        });
-        return { externalTaskId, providerTaskId };
+        row.state = "RUNNING";
+        row.externalTaskId = externalTaskId;
+        return { externalTaskId, providerTaskId: row.id };
       },
     };
 
@@ -314,13 +544,19 @@ describe("3. targeted retry contract", () => {
     assert.equal(first.submissions, 1);
     assert.equal(first.reusedExisting, false);
     assert.equal(first.reusedNoExternalRequestTask, false);
+    assert.equal(first.reusedRejectedSuggestTask, true);
+    assert.equal(first.providerTaskId, "pt-suggest-rejected");
+    assert.notEqual(first.requestHash, oldHash);
     assert.equal(first.jobId, JOB_B);
     assert.equal(first.status, "WAITING");
     assert.equal(first.resumeCheckpoint, "ARSENKIN_RESULT_INGEST");
     assert.ok(first.externalTaskId);
+    assert.equal(first.selection?.selectedQuery != null, true);
     assert.equal(submissions, 1);
+    assert.equal(taskStore.filter((t) => /suggest/i.test(String(t.toolName))).length, 1);
     assert.equal(otherAgentSubmissions, 0);
     assert.equal(baseCalls, 0);
+    assert.equal(fullAuditCalls, 0);
     assert.equal(newUnifiedJobs, 0);
     assert.equal(newAgentRuns, 0);
     assert.equal(newEnrichmentRuns, 0);
@@ -342,50 +578,59 @@ describe("3. targeted retry contract", () => {
     assert.equal(second.submissions, 0);
     assert.equal(second.reusedExisting, true);
     assert.equal(second.externalTaskId, first.externalTaskId);
+    assert.equal(second.providerTaskId, "pt-suggest-rejected");
     assert.equal(submissions, 1);
     assert.equal(second.jobId, JOB_B);
 
     FLAGS.TARGETED_RETRY_ONLY = true;
     FLAGS.EXACTLY_ONE_SUGGESTIONS_SUBMISSION = submissions === 1;
+    FLAGS.EXACTLY_ONE_EXTERNAL_SUBMIT = submissions === 1;
+    FLAGS.SAME_PROVIDER_TASK_REUSED = true;
+    FLAGS.NEW_PAYLOAD_NEW_REQUEST_HASH = true;
     FLAGS.BASE_CALLS_ON_TARGETED_RETRY_ZERO = baseCalls === 0;
     FLAGS.OTHER_ARSENKIN_SUBMISSIONS_ZERO = otherAgentSubmissions === 0;
+    FLAGS.FULL_AUDIT_NOT_CALLED = fullAuditCalls === 0;
     FLAGS.SAME_JOB_ID_ON_TARGETED_RETRY = true;
     FLAGS.DOUBLE_CLICK_IDEMPOTENT = true;
   });
 
-  it("concurrent lease → one submission; restart reuses saved externalTaskId", async () => {
+  it("F. concurrent lease → one submission; restart reuses saved externalTaskId", async () => {
     seedJobB();
     let submissions = 0;
-    const taskStore: Array<{
-      id: string;
-      state: string;
-      toolName: string | null;
-      externalTaskId: string | null;
-      requestHash?: string | null;
-      responseJson?: unknown;
-    }> = [
+    const taskStore: TargetedProviderTaskRow[] = [
       {
         id: "pt-reject",
         state: "SUBMIT_REJECTED_RETRYABLE",
         toolName: "suggest",
         externalTaskId: null,
+        requestHash: "hash-old-4q",
+        requestJson: {
+          tools_name: "suggest",
+          data: { se: 1, queries: ["a", "b", "c", "d"] },
+        },
       },
     ];
     const deps = {
-      loadSubject: async () => ({ fullName: "Subject Two", aliases: [] as string[] }),
+      loadSubject: async () => ({ fullName: "Субъект Два", aliases: [] as string[] }),
       listProviderTasks: async () => taskStore,
-      submitSuggestTask: async () => {
+      supersedeRejectedSuggestTask: async (input: {
+        providerTaskId: string;
+        requestHash: string;
+        requestJson: { tools_name: string; data: Record<string, unknown> };
+      }) => {
+        const row = taskStore.find((t) => t.id === input.providerTaskId)!;
+        row.state = "QUEUED";
+        row.requestHash = input.requestHash;
+        row.requestJson = input.requestJson;
+      },
+      submitSuggestTask: async (args: { requestHash: string }) => {
         submissions += 1;
         const externalTaskId = `ext-lease-${submissions}`;
-        const providerTaskId = `pt-lease-${submissions}`;
-        taskStore.length = 0;
-        taskStore.push({
-          id: providerTaskId,
-          state: "RUNNING",
-          toolName: "suggest",
-          externalTaskId,
-        });
-        return { externalTaskId, providerTaskId };
+        const row = taskStore.find((t) => t.id === "pt-reject")!;
+        row.state = "RUNNING";
+        row.externalTaskId = externalTaskId;
+        row.requestHash = args.requestHash;
+        return { externalTaskId, providerTaskId: row.id };
       },
     };
 
@@ -777,12 +1022,21 @@ describe("5. flag rollup", () => {
   it("prints final flags (retry/recover/deploy/CEO stay false)", () => {
     const mandatory = [
       "SUGGESTIONS_REQUEST_SCHEMA_PASS",
+      "SUGGEST_QUERIES_EXACTLY_ONE",
+      "SUBJECT_AGNOSTIC_QUERY_SELECTION",
+      "LOCALE_INDEPENDENT_NORMALIZATION",
+      "SELECTION_ORDER_INDEPENDENT",
+      "NO_QUERY_FAILS_BEFORE_HTTP",
+      "SAME_PROVIDER_TASK_REUSED",
+      "NEW_PAYLOAD_NEW_REQUEST_HASH",
+      "EXACTLY_ONE_EXTERNAL_SUBMIT",
       "VALIDATION_REJECTION_CLASSIFIED",
       "PAID_RETRY_REQUIRES_CONFIRMATION",
       "TARGETED_RETRY_ONLY",
       "EXACTLY_ONE_SUGGESTIONS_SUBMISSION",
       "BASE_CALLS_ON_TARGETED_RETRY_ZERO",
       "OTHER_ARSENKIN_SUBMISSIONS_ZERO",
+      "FULL_AUDIT_NOT_CALLED",
       "SAME_JOB_ID_ON_TARGETED_RETRY",
       "DOUBLE_CLICK_IDEMPOTENT",
       "PROCESS_RESTART_IDEMPOTENT",

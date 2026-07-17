@@ -103,72 +103,68 @@ export function planArsenkinExactTasks(input: PlanArsenkinExactTasksInput): Plan
   }
 
   if (want("suggest")) {
-    // Yandex suggest: Cyrillic identity queries.
-    push(
-      out,
-      "suggest",
-      buildSuggestRequest({
-        queries: ruQueries.length > 0 ? ruQueries : [ruPrimary],
-        se: 1,
-        region: ARSENKIN_REGION.YANDEX_MOSCOW,
-        depth: 1,
-      }),
-      {
-        engine: "YANDEX",
-        region: "RU",
-        query: ruPrimary,
-        queryCount: ruQueries.length > 0 ? ruQueries.length : 1,
-        estimatedLimits: 1,
-      }
-    );
-    // Google suggest requires Latin queries — Cyrillic-only arrays are rejected
-    // by Arsenkin as JSON_VALIDATION_ERROR on field `queries` (often as HTTP 500).
+    // Yandex suggest: exactly one canonical localized query per ProviderTask.
+    const yandexSuggest = buildSuggestRequest({
+      queries: ruQueries.length > 0 ? ruQueries : [ruPrimary],
+      se: 1,
+      region: ARSENKIN_REGION.YANDEX_MOSCOW,
+      depth: 1,
+      primaryLocalized: ruPrimary,
+      primaryLatin: uaePrimary,
+    });
+    const yandexQuery = String((yandexSuggest.data.queries as string[])[0] ?? ruPrimary);
+    push(out, "suggest", yandexSuggest, {
+      engine: "YANDEX",
+      region: "RU",
+      query: yandexQuery,
+      queryCount: 1,
+      estimatedLimits: 1,
+    });
+    // Google suggest: exactly one Latin query (Cyrillic-only rejected by Arsenkin).
     const googleRuQueries = uaeQueries.length > 0 ? uaeQueries : [];
     if (googleRuQueries.length > 0) {
-      push(
-        out,
-        "suggest",
-        buildSuggestRequest({
-          queries: googleRuQueries,
-          se: 2,
-          region: ARSENKIN_REGION.GOOGLE_MOSCOW,
-          google_domain: "www.google.ru",
-          google_from: "RU",
-          google_lang: "ru",
-          depth: 1,
-        }),
-        {
-          engine: "GOOGLE",
-          region: "RU",
-          query: googleRuQueries[0] ?? uaePrimary,
-          queryCount: googleRuQueries.length,
-          estimatedLimits: 1,
-        }
-      );
+      const googleRuSuggest = buildSuggestRequest({
+        queries: googleRuQueries,
+        se: 2,
+        region: ARSENKIN_REGION.GOOGLE_MOSCOW,
+        google_domain: "www.google.ru",
+        google_from: "RU",
+        google_lang: "ru",
+        depth: 1,
+        primaryLocalized: ruPrimary,
+        primaryLatin: uaePrimary,
+      });
+      const googleRuQuery = String((googleRuSuggest.data.queries as string[])[0] ?? uaePrimary);
+      push(out, "suggest", googleRuSuggest, {
+        engine: "GOOGLE",
+        region: "RU",
+        query: googleRuQuery,
+        queryCount: 1,
+        estimatedLimits: 1,
+      });
     }
   }
 
   if (want("suggest") && uaeQueries.length > 0) {
-    push(
-      out,
-      "suggest",
-      buildSuggestRequest({
-        queries: uaeQueries,
-        se: 2,
-        region: ARSENKIN_REGION.GOOGLE_UAE,
-        google_domain: "www.google.ae",
-        google_from: "AE",
-        google_lang: "en",
-        depth: 1,
-      }),
-      {
-        engine: "GOOGLE",
-        region: "UAE",
-        query: uaePrimary,
-        queryCount: uaeQueries.length,
-        estimatedLimits: 1,
-      }
-    );
+    const googleUaeSuggest = buildSuggestRequest({
+      queries: uaeQueries,
+      se: 2,
+      region: ARSENKIN_REGION.GOOGLE_UAE,
+      google_domain: "www.google.ae",
+      google_from: "AE",
+      google_lang: "en",
+      depth: 1,
+      primaryLocalized: ruPrimary,
+      primaryLatin: uaePrimary,
+    });
+    const googleUaeQuery = String((googleUaeSuggest.data.queries as string[])[0] ?? uaePrimary);
+    push(out, "suggest", googleUaeSuggest, {
+      engine: "GOOGLE",
+      region: "UAE",
+      query: googleUaeQuery,
+      queryCount: 1,
+      estimatedLimits: 1,
+    });
   }
 
   if (want("paa")) {

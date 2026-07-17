@@ -35,6 +35,7 @@ import {
   type TargetedProviderTaskRow,
 } from "../src/modules/digital-profile/services/unified-enrichment-targeted-retry";
 import { buildArsenkinSubjectQueryPlan } from "../src/modules/digital-profile/orion-golden/classic/arsenkin-subject-query-plan";
+import { buildSubjectIdentityProfile } from "../src/modules/digital-profile/orion-golden/identity/subject-identity-profile-builder";
 import { withSuggestionsGapStatus } from "../src/modules/digital-profile/services/unified-suggestions-gap";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -120,10 +121,18 @@ function seedJobB() {
 
 function fingerprintForSubject(fullName: string) {
   const qp = buildArsenkinSubjectQueryPlan({ fullName, aliases: [] });
+  const identity = buildSubjectIdentityProfile({
+    caseId: CASE,
+    subjectName: fullName,
+    aliases: [],
+  });
   return computeSuggestionsRetryFingerprint({
     enrichmentRunId: SUGGEST_RUN,
     queriesRu: qp.queriesRu,
     queriesUae: qp.queriesUae,
+    candidates: identity.queryVariants,
+    primaryLocalized: qp.primaryIdentityRu,
+    primaryLatin: qp.primaryIdentityUae,
   });
 }
 
@@ -239,6 +248,10 @@ describe("A–L targeted live-auth + reuse", () => {
         toolName: "suggest",
         externalTaskId: null,
         requestHash: "hash-old-google",
+        requestJson: {
+          tools_name: "suggest",
+          data: { se: 2, queries: ["legacy"] },
+        },
         responseJson: {
           _submitDiagnostics: { httpStatus: 500, code: "JSON_VALIDATION_ERROR" },
         },

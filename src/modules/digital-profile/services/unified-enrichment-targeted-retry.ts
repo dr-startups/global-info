@@ -10,7 +10,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { ConflictError, NotFoundError, ValidationError } from "../http/errors";
 import { ARSENKIN_REGION } from "../providers/arsenkin/regions";
-import { tryBuildSuggestRequest } from "../providers/arsenkin/adapters/suggest";
+import {
+  tryBuildSuggestRequest,
+  type SuggestQuerySelection,
+} from "../providers/arsenkin/adapters/suggest";
 import { hashProviderRequest } from "../providers/arsenkin/provider-task-store";
 import {
   buildLiveAuthorizationFromPlan,
@@ -18,6 +21,7 @@ import {
   withLiveAuthorization,
 } from "../providers/arsenkin/live-execution-authorization";
 import { buildArsenkinSubjectQueryPlan } from "../orion-golden/classic/arsenkin-subject-query-plan";
+import { buildSubjectIdentityProfile } from "../orion-golden/identity/subject-identity-profile-builder";
 import {
   claimUnifiedJobLease,
   loadUnifiedCollectionJob,
@@ -63,6 +67,17 @@ export type TargetedEnrichmentRetryDeps = {
    * ensureArsenkinTask may submit once without creating a duplicate row.
    */
   requeueNoExternalRequestTask?: (providerTaskId: string) => Promise<void>;
+  /**
+   * Reuse a SUBMIT_REJECTED_RETRYABLE suggest row with a corrected payload
+   * (new requestHash). Never creates a second ProviderTask for the same retry.
+   */
+  supersedeRejectedSuggestTask?: (input: {
+    providerTaskId: string;
+    requestJson: { tools_name: string; data: Record<string, unknown> };
+    requestHash: string;
+    selection: SuggestQuerySelection;
+    priorRequestHash: string | null;
+  }) => Promise<void>;
   now?: () => Date;
   autoSchedule?: boolean;
 };
@@ -79,10 +94,41 @@ export type TargetedEnrichmentRetryResult = {
   submissions: number;
   reusedExisting: boolean;
   reusedNoExternalRequestTask: boolean;
+  reusedRejectedSuggestTask: boolean;
+  selection?: SuggestQuerySelection;
   stage: string;
   status: "WAITING";
   resumeCheckpoint: "ARSENKIN_RESULT_INGEST";
 };
+
+function suggestRequestSe(task: TargetedProviderTaskRow): number | null {
+  const rj = task.requestJson;
+  if (rj == null || typeof rj !== "object" || Array.isArray(rj)) return null;
+  const data = (rj as { data?: unknown }).data;
+  if (data == null || typeof data !== "object" || Array.isArray(data)) return null;
+  const se = Number((data as { se?: unknown }).se);
+  return Number.isFinite(se) ? se : null;
+}
+
+function findSupersedableRejectedSuggest(
+  tasks: TargetedProviderTaskRow[],
+  targetSe: number
+): TargetedProviderTaskRow | null {
+  const rejected = tasks.filter(
+    (t) =>
+      /suggest/i.test(String(t.toolName ?? "")) &&
+      String(t.state).toUpperCase() === "SUBMIT_REJECTED_RETRYABLE" &&
+      !String(t.externalTaskId ?? "").trim()
+  );
+  if (rejected.length === 0) return null;
+  const seMatch = rejected.find((t) => suggestRequestSe(t) === targetSe);
+  if (seMatch) return seMatch;
+  // Legacy fixture without se: only when it is the sole rejected suggest row.
+  if (rejected.length === 1 && suggestRequestSe(rejected[0]!) == null) {
+    return rejected[0]!;
+  }
+  return null;
+}
 
 function normalizeAgentName(raw: string): "ARSENKIN_SUGGESTIONS_REAL" {
   const t = String(raw ?? "")
@@ -218,6 +264,63 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
     throw new ConflictError(PAID_ENRICHMENT_RETRY_CONFIRMATION_REQUIRED);
   }
 
+  // Pre-lease: fail-closed query selection before lease / live-auth / HTTP.
+  // When an accepted externalTaskId already exists we skip rebuild (reuse path).
+  let prepared:
+    | {
+        requestJson: { tools_name: string; data: Record<string, unknown> };
+        selection: SuggestQuerySelection;
+        requestHash: string;
+      }
+    | null = null;
+  if (!reusablePreview?.externalTaskId) {
+    const subject =
+      (await input.deps?.loadSubject?.(input.caseId)) ??
+      (await defaultLoadSubject(input.caseId));
+    const qp = buildArsenkinSubjectQueryPlan({
+      fullName: subject.fullName,
+      aliases: subject.aliases,
+    });
+    const identity = buildSubjectIdentityProfile({
+      caseId: input.caseId,
+      subjectName: subject.fullName || qp.fullName || subject.aliases[0] || "",
+      aliases: subject.aliases,
+    });
+    const candidates =
+      identity.queryVariants.length > 0
+        ? identity.queryVariants
+        : qp.queriesRu.length > 0
+          ? qp.queriesRu
+          : qp.queriesUae;
+    const primaryLocalized =
+      qp.primaryIdentityRu ??
+      (identity.displayName && /[\u0400-\u04FF]/.test(identity.displayName)
+        ? identity.displayName
+        : null);
+    const primaryLatin = qp.primaryIdentityUae ?? identity.transliterations[0] ?? null;
+
+    const built = tryBuildSuggestRequest({
+      queries: candidates,
+      se: 1,
+      region: ARSENKIN_REGION.YANDEX_MOSCOW,
+      depth: 1,
+      primaryLocalized,
+      primaryLatin,
+    });
+    if (!built.ok) {
+      const code =
+        built.code === "SUGGEST_QUERY_UNAVAILABLE"
+          ? "SUGGEST_QUERY_UNAVAILABLE"
+          : "SUGGEST_REQUEST_INVALID";
+      throw new ConflictError(`${code}:${built.message}`);
+    }
+    prepared = {
+      requestJson: built.request,
+      selection: built.selection,
+      requestHash: hashProviderRequest(built.request),
+    };
+  }
+
   const ownerId = `enrichment-retry-${process.pid}-${randomUUID().slice(0, 6)}`;
   const claimed = claimUnifiedJobLease({
     caseId: input.caseId,
@@ -276,6 +379,7 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
         submissions: 0,
         reusedExisting: true,
         reusedNoExternalRequestTask: false,
+        reusedRejectedSuggestTask: false,
         stage: "ARSENKIN_ENRICHMENT",
         status: "WAITING",
         resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
@@ -286,26 +390,13 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
     if (!input.confirmPaidEnrichmentRetry) {
       throw new ConflictError(PAID_ENRICHMENT_RETRY_CONFIRMATION_REQUIRED);
     }
-
-    const subject =
-      (await input.deps?.loadSubject?.(input.caseId)) ??
-      (await defaultLoadSubject(input.caseId));
-    const qp = buildArsenkinSubjectQueryPlan({
-      fullName: subject.fullName,
-      aliases: subject.aliases,
-    });
-    // Primary targeted retry: Yandex RU suggest (Cyrillic) — one submission.
-    const built = tryBuildSuggestRequest({
-      queries: qp.queriesRu.length > 0 ? qp.queriesRu : qp.queriesUae,
-      se: 1,
-      region: ARSENKIN_REGION.YANDEX_MOSCOW,
-      depth: 1,
-    });
-    if (!built.ok) {
-      throw new ConflictError(`SUGGEST_REQUEST_INVALID:${built.message}`);
+    if (!prepared) {
+      throw new ConflictError("SUGGEST_REQUEST_INVALID:prepared payload missing");
     }
-    const requestJson = built.request;
-    const requestHash = hashProviderRequest(requestJson);
+    const requestJson = prepared.requestJson;
+    const selection = prepared.selection;
+    const requestHash = prepared.requestHash;
+    const targetSe = Number(requestJson.data.se) === 1 ? 1 : Number(requestJson.data.se);
     const fingerprint = taskFingerprint({ enrichmentRunId, agentName, requestHash });
     if (
       input.expectedTaskFingerprint &&
@@ -319,10 +410,8 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       (t) => String(t.requestHash ?? "") === requestHash && !String(t.externalTaskId ?? "").trim()
     );
     let reusedNoExternalRequestTask = false;
+    let reusedRejectedSuggestTask = false;
     if (sameHash) {
-      if (String(sameHash.state).toUpperCase() === "SUBMIT_REJECTED_RETRYABLE") {
-        throw new ConflictError("SUBMIT_REJECTED_RETRYABLE");
-      }
       if (isAmbiguousSubmitUnknown(sameHash)) {
         throw new ConflictError(SUBMIT_UNKNOWN_REQUIRES_RECONCILIATION);
       }
@@ -331,6 +420,38 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
           input.deps?.requeueNoExternalRequestTask ?? defaultRequeueNoExternalRequestTask;
         await requeue(sameHash.id);
         reusedNoExternalRequestTask = true;
+      } else if (String(sameHash.state).toUpperCase() === "SUBMIT_REJECTED_RETRYABLE") {
+        const supersede =
+          input.deps?.supersedeRejectedSuggestTask ?? defaultSupersedeRejectedSuggestTask;
+        await supersede({
+          providerTaskId: sameHash.id,
+          requestJson,
+          requestHash,
+          selection,
+          priorRequestHash: String(sameHash.requestHash ?? "") || null,
+        });
+        sameHash.state = "QUEUED";
+        sameHash.requestHash = requestHash;
+        sameHash.requestJson = requestJson;
+        reusedRejectedSuggestTask = true;
+      }
+    } else {
+      // Payload changed (e.g. 4 queries → 1): reuse the rejected row with new hash.
+      const rejected = findSupersedableRejectedSuggest(suggestTasks, targetSe);
+      if (rejected) {
+        const supersede =
+          input.deps?.supersedeRejectedSuggestTask ?? defaultSupersedeRejectedSuggestTask;
+        await supersede({
+          providerTaskId: rejected.id,
+          requestJson,
+          requestHash,
+          selection,
+          priorRequestHash: String(rejected.requestHash ?? "") || null,
+        });
+        rejected.state = "QUEUED";
+        rejected.requestHash = requestHash;
+        rejected.requestJson = requestJson;
+        reusedRejectedSuggestTask = true;
       }
     }
 
@@ -380,6 +501,7 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       agentName,
       reusedExisting: false,
       reusedNoExternalRequestTask,
+      reusedRejectedSuggestTask,
       externalTaskId,
       providerTaskId: submitted.providerTaskId,
       requestHash,
@@ -387,6 +509,14 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       submissions: 1,
       confirmPaidEnrichmentRetry: true,
       oneShotLiveAuth: true,
+      selection: {
+        selectedQuery: selection.selectedQuery,
+        selectedQueryHash: selection.selectedQueryHash,
+        selectionReason: selection.selectionReason,
+        candidateQueryCount: selection.candidateQueryCount,
+        rejectedCandidateHashes: selection.rejectedCandidateHashes,
+      },
+      queryCount: Array.isArray(requestJson.data.queries) ? requestJson.data.queries.length : 0,
     });
 
     patchUnifiedCollectionJob(input.caseId, {
@@ -403,9 +533,12 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
         ...job.warnings.filter((w) => !/^targeted-retry:/i.test(w)),
         "targeted-retry:suggestions-submitted:1",
         `targeted-retry:externalTaskId:${externalTaskId}`,
+        `targeted-retry:queries:1`,
         reusedNoExternalRequestTask
           ? "targeted-retry:reused-no-external-request-task"
-          : "targeted-retry:new-or-fresh-queued-task",
+          : reusedRejectedSuggestTask
+            ? "targeted-retry:reused-rejected-suggest-task"
+            : "targeted-retry:new-or-fresh-queued-task",
       ],
     });
 
@@ -421,6 +554,8 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       submissions: 1,
       reusedExisting: false,
       reusedNoExternalRequestTask,
+      reusedRejectedSuggestTask,
+      selection,
       stage: "ARSENKIN_ENRICHMENT",
       status: "WAITING",
       resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
@@ -496,6 +631,78 @@ async function defaultRequeueNoExternalRequestTask(providerTaskId: string): Prom
   );
 }
 
+async function defaultSupersedeRejectedSuggestTask(input: {
+  providerTaskId: string;
+  requestJson: { tools_name: string; data: Record<string, unknown> };
+  requestHash: string;
+  selection: SuggestQuerySelection;
+  priorRequestHash: string | null;
+}): Promise<void> {
+  const { prisma } = await import("@/server/prisma/client");
+  const current = await prisma.providerTask.findUnique({
+    where: { id: input.providerTaskId },
+    select: { reportRunId: true, requestHash: true, state: true, externalTaskId: true },
+  });
+  if (
+    !current ||
+    !current.reportRunId ||
+    String(current.state) !== "SUBMIT_REJECTED_RETRYABLE" ||
+    current.externalTaskId
+  ) {
+    throw new ConflictError("SUPERSEDE_REJECTED_SUGGEST_FAILED");
+  }
+  if (current.requestHash !== input.requestHash) {
+    const collision = await prisma.providerTask.findUnique({
+      where: {
+        reportRunId_provider_requestHash: {
+          reportRunId: current.reportRunId,
+          provider: "arsenkin",
+          requestHash: input.requestHash,
+        },
+      },
+      select: { id: true },
+    });
+    if (collision && collision.id !== input.providerTaskId) {
+      throw new ConflictError("REQUEST_HASH_COLLISION");
+    }
+  }
+  const result = await prisma.providerTask.updateMany({
+    where: {
+      id: input.providerTaskId,
+      state: "SUBMIT_REJECTED_RETRYABLE",
+      externalTaskId: null,
+    },
+    data: {
+      requestHash: input.requestHash,
+      requestJson: input.requestJson as object,
+      state: "QUEUED",
+      errorCode: null,
+      attempts: 0,
+      responseJson: {
+        _targetedRetrySupersede: {
+          reason: "PAYLOAD_FIXED_EXACTLY_ONE_QUERY",
+          priorRequestHash: input.priorRequestHash,
+          selectedQuery: input.selection.selectedQuery,
+          selectedQueryHash: input.selection.selectedQueryHash,
+          selectionReason: input.selection.selectionReason,
+          candidateQueryCount: input.selection.candidateQueryCount,
+          rejectedCandidateHashes: input.selection.rejectedCandidateHashes,
+          at: new Date().toISOString(),
+        },
+      },
+      nextPollAt: new Date(),
+      lockedBy: null,
+      lockedAt: null,
+      leaseUntil: null,
+      completedAt: null,
+      submittedAt: null,
+    },
+  });
+  if (!result.count) {
+    throw new ConflictError("SUPERSEDE_REJECTED_SUGGEST_FAILED");
+  }
+}
+
 async function defaultListProviderTasks(enrichmentRunId: string): Promise<TargetedProviderTaskRow[]> {
   try {
     const { prisma } = await import("@/server/prisma/client");
@@ -550,24 +757,38 @@ export function computeSuggestionsRetryFingerprint(input: {
   enrichmentRunId: string;
   queriesRu: string[];
   queriesUae: string[];
+  primaryLocalized?: string | null;
+  primaryLatin?: string | null;
+  /** Optional full candidate set (e.g. SubjectIdentityProfile.queryVariants). */
+  candidates?: string[];
 }): {
   requestHash: string;
   taskFingerprint: string;
   requestJson: { tools_name: string; data: Record<string, unknown> };
+  selection: SuggestQuerySelection;
 } {
+  const candidates =
+    input.candidates && input.candidates.length > 0
+      ? input.candidates
+      : input.queriesRu.length > 0
+        ? input.queriesRu
+        : input.queriesUae;
   const built = tryBuildSuggestRequest({
-    queries: input.queriesRu.length > 0 ? input.queriesRu : input.queriesUae,
+    queries: candidates,
     se: 1,
     region: ARSENKIN_REGION.YANDEX_MOSCOW,
     depth: 1,
+    primaryLocalized: input.primaryLocalized ?? input.queriesRu[0] ?? null,
+    primaryLatin: input.primaryLatin ?? input.queriesUae[0] ?? null,
   });
   if (!built.ok) {
-    throw new Error(built.message);
+    throw new Error(`${built.code}:${built.message}`);
   }
   const requestHash = hashProviderRequest(built.request);
   return {
     requestHash,
     requestJson: built.request,
+    selection: built.selection,
     taskFingerprint: taskFingerprint({
       enrichmentRunId: input.enrichmentRunId,
       agentName: "ARSENKIN_SUGGESTIONS_REAL",
