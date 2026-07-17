@@ -46,6 +46,10 @@ type ProviderTaskSnap = {
   requestJson?: unknown;
 };
 
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return Boolean(v) && typeof v === "object" && !Array.isArray(v);
+}
+
 function agentNameFromEnrichmentRunId(runId: string): string | null {
   const lower = runId.toLowerCase();
   for (const name of ARSENKIN_REAL_AGENT_NAMES) {
@@ -157,24 +161,30 @@ function progressFromTasks(input: {
   } else if (pending.length === 0 && (done.length > 0 || execFinalized || input.allowEmptyValid)) {
     terminal = true;
     let anyEmptyValid = false;
+    let anyAdaptedOk = false;
+    const schemaErrors: string[] = [];
     for (const t of done) {
       const adapted = observationsFromTask(t, input.agentName, input.unifiedJobId);
       if (!adapted.ok) {
-        schemaError = adapted.message;
-        terminalKind = "FAILED";
-        ingested = false;
-        observations = [];
-        break;
+        schemaErrors.push(adapted.message);
+        warnings.push(`adapt-failed:${t.id}:${adapted.code}`);
+        continue;
       }
+      anyAdaptedOk = true;
       warnings.push(...adapted.warnings);
       if (adapted.emptyValid) anyEmptyValid = true;
       observations.push(
         ...adapted.observations.map((o) => ({ ...o, enrichmentRunId: input.enrichmentRunId }))
       );
     }
-    if (!schemaError) {
+    if (done.length > 0 && !anyAdaptedOk && !input.allowEmptyValid) {
+      schemaError = schemaErrors[0] ?? "ARSENKIN_SCHEMA_INVALID";
+      terminalKind = "FAILED";
+      ingested = false;
+      observations = [];
+    } else if (!schemaError) {
       if (observations.length === 0) {
-        terminalKind = anyEmptyValid || done.length === 0 || input.allowEmptyValid ? "EMPTY_VALID" : "EMPTY_VALID";
+        terminalKind = "EMPTY_VALID";
       } else {
         terminalKind = "SUCCESS";
       }
@@ -395,10 +405,13 @@ export async function pollDueEnrichmentProviderTasks(input: {
   tasks: EnrichmentPollTaskSnap[];
   polledExternalTaskIds: string[];
   earliestNextPollAt: Date | null;
+  pollErrors: Array<{ providerTaskId: string; externalTaskId: string; message: string }>;
 }> {
   const now = input.now ?? new Date();
   const byId = new Map(input.tasks.map((t) => [t.id, { ...t }]));
   const polledExternalTaskIds: string[] = [];
+  const pollErrors: Array<{ providerTaskId: string; externalTaskId: string; message: string }> =
+    [];
   let earliestNextPollAt: Date | null = null;
 
   for (const task of input.tasks) {
@@ -413,7 +426,54 @@ export async function pollDueEnrichmentProviderTasks(input: {
       }
       continue;
     }
-    const updated = await input.pollTask(task);
+    let updated: EnrichmentPollTaskSnap;
+    try {
+      // Persist attempt progress on the in-memory snap before HTTP (job lease held by caller).
+      const preFlight: EnrichmentPollTaskSnap = {
+        ...task,
+        attempts: Math.max(0, Number(task.attempts ?? 0)) + 1,
+        nextPollAt: task.nextPollAt ?? new Date(now.getTime() + 2_000),
+      };
+      byId.set(task.id, preFlight);
+      updated = await input.pollTask(preFlight);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      pollErrors.push({ providerTaskId: task.id, externalTaskId: ext, message: message.slice(0, 500) });
+      console.error(
+        JSON.stringify({
+          event: "arsenkin_enrichment_poll_error",
+          providerTaskId: task.id,
+          externalTaskId: ext,
+          agentName: null,
+          errorCode: "ARSENKIN_POLL_FAILED",
+          message: message.slice(0, 500),
+        })
+      );
+      updated = {
+        ...task,
+        attempts: Math.max(0, Number(task.attempts ?? 0)) + 1,
+        nextPollAt: new Date(
+          now.getTime() + Math.min(30_000, 2_000 * 2 ** Math.min(Number(task.attempts ?? 0), 4))
+        ),
+        responseJson: {
+          ...(isPlainObject(task.responseJson) ? task.responseJson : {}),
+          _pollDiagnostics: {
+            errorCode: "ARSENKIN_POLL_FAILED",
+            message: message.slice(0, 500),
+            at: now.toISOString(),
+          },
+        },
+      };
+      byId.set(task.id, updated);
+      polledExternalTaskIds.push(ext);
+      const errNext = updated.nextPollAt ? new Date(updated.nextPollAt) : null;
+      if (errNext && !Number.isNaN(errNext.getTime())) {
+        if (!earliestNextPollAt || errNext.getTime() < earliestNextPollAt.getTime()) {
+          earliestNextPollAt = errNext;
+        }
+      }
+      continue;
+    }
     byId.set(task.id, { ...updated });
     polledExternalTaskIds.push(ext);
     const next = updated.nextPollAt ? new Date(updated.nextPollAt) : null;
@@ -428,6 +488,7 @@ export async function pollDueEnrichmentProviderTasks(input: {
     tasks: [...byId.values()],
     polledExternalTaskIds,
     earliestNextPollAt,
+    pollErrors,
   };
 }
 
@@ -594,6 +655,13 @@ export async function runDurableArsenkinEnrichmentTick(input: {
     warnings.push(
       `arsenkin-polled:${polled.polledExternalTaskIds.length}`,
       ...polled.polledExternalTaskIds.map((id) => `arsenkin-poll-externalTaskId:${id}`)
+    );
+  }
+  for (const pe of polled.pollErrors) {
+    warnings.push(
+      `arsenkin-poll-error:${pe.externalTaskId}`,
+      `providerTaskId:${pe.providerTaskId}`,
+      `ARSENKIN_POLL_FAILED:${pe.message.slice(0, 120)}`
     );
   }
 

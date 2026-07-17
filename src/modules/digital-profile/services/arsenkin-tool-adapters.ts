@@ -1,17 +1,18 @@
 /**
  * Tool-specific Arsenkin result adapters — fail closed on unknown/corrupt schema.
  * No generic "everything → organic" fallback.
+ * All responses pass through unwrapArsenkinTaskEnvelope first.
  */
 
 import { createHash } from "node:crypto";
 import type { ArsenkinIngestedObservation } from "./arsenkin-enrichment-state";
+import {
+  normalizeArsenkinToolPayload,
+  unwrapArsenkinTaskEnvelope,
+  type ArsenkinToolAdapterName,
+} from "./arsenkin-response-envelope";
 
-export type ArsenkinToolAdapterName =
-  | "SEARCH_TOP"
-  | "SUGGESTIONS"
-  | "PAA"
-  | "AI_SEARCH"
-  | "URL_AUDIT";
+export type { ArsenkinToolAdapterName };
 
 export type ArsenkinAdapterContext = {
   caseAgent: string;
@@ -75,7 +76,8 @@ function withProvenance(
   base: Omit<ArsenkinIngestedObservation, "resultHash" | "caseAgent" | "tool" | "enrichmentRunId" | "unifiedJobId" | "externalTaskId" | "providerTaskId">,
   ctx: ArsenkinAdapterContext,
   tool: ArsenkinToolAdapterName,
-  response: Record<string, unknown>
+  /** Prefer raw ProviderTask.responseJson for stable exactly-once hashes. */
+  hashSource: unknown
 ): ArsenkinIngestedObservation {
   return {
     ...base,
@@ -88,12 +90,16 @@ function withProvenance(
     resultHash: fullArsenkinResultHash({
       tool,
       externalTaskId: ctx.externalTaskId,
-      response,
+      response: hashSource,
     }),
   };
 }
 
-function adaptSearchTop(response: Record<string, unknown>, ctx: ArsenkinAdapterContext): ArsenkinAdapterResult {
+function adaptSearchTop(
+  response: Record<string, unknown>,
+  ctx: ArsenkinAdapterContext,
+  hashSource: unknown
+): ArsenkinAdapterResult {
   const items = itemsArray(response, ["items", "results", "tops"]);
   if (items === null) {
     return { ok: false, code: "ARSENKIN_SCHEMA_INVALID", message: "SEARCH_TOP requires items|results|tops array" };
@@ -130,14 +136,18 @@ function adaptSearchTop(response: Record<string, unknown>, ctx: ArsenkinAdapterC
         },
         ctx,
         "SEARCH_TOP",
-        response
+        hashSource
       )
     );
   }
   return { ok: true, emptyValid: false, observations, warnings: [] };
 }
 
-function adaptSuggestions(response: Record<string, unknown>, ctx: ArsenkinAdapterContext): ArsenkinAdapterResult {
+function adaptSuggestions(
+  response: Record<string, unknown>,
+  ctx: ArsenkinAdapterContext,
+  hashSource: unknown
+): ArsenkinAdapterResult {
   const items = itemsArray(response, ["items", "suggestions", "results"]);
   if (items === null) {
     return { ok: false, code: "ARSENKIN_SCHEMA_INVALID", message: "SUGGESTIONS requires items|suggestions|results array" };
@@ -166,14 +176,18 @@ function adaptSuggestions(response: Record<string, unknown>, ctx: ArsenkinAdapte
         },
         ctx,
         "SUGGESTIONS",
-        response
+        hashSource
       )
     );
   }
   return { ok: true, emptyValid: false, observations, warnings: [] };
 }
 
-function adaptPaa(response: Record<string, unknown>, ctx: ArsenkinAdapterContext): ArsenkinAdapterResult {
+function adaptPaa(
+  response: Record<string, unknown>,
+  ctx: ArsenkinAdapterContext,
+  hashSource: unknown
+): ArsenkinAdapterResult {
   const items = itemsArray(response, ["items", "questions", "results", "paa"]);
   if (items === null) {
     return { ok: false, code: "ARSENKIN_SCHEMA_INVALID", message: "PAA requires items|questions|results|paa array" };
@@ -205,14 +219,18 @@ function adaptPaa(response: Record<string, unknown>, ctx: ArsenkinAdapterContext
         },
         ctx,
         "PAA",
-        response
+        hashSource
       )
     );
   }
   return { ok: true, emptyValid: false, observations, warnings: [] };
 }
 
-function adaptAiSearch(response: Record<string, unknown>, ctx: ArsenkinAdapterContext): ArsenkinAdapterResult {
+function adaptAiSearch(
+  response: Record<string, unknown>,
+  ctx: ArsenkinAdapterContext,
+  hashSource: unknown
+): ArsenkinAdapterResult {
   const items = itemsArray(response, ["items", "answers", "results"]);
   if (items === null) {
     // Single answer object
@@ -235,7 +253,7 @@ function adaptAiSearch(response: Record<string, unknown>, ctx: ArsenkinAdapterCo
             },
             ctx,
             "AI_SEARCH",
-            response
+            hashSource
           ),
         ],
         warnings: [],
@@ -246,8 +264,16 @@ function adaptAiSearch(response: Record<string, unknown>, ctx: ArsenkinAdapterCo
   if (items.length === 0) {
     return { ok: true, emptyValid: true, observations: [], warnings: ["AI_SEARCH:EMPTY_VALID"] };
   }
+  // Honest empty rows from Arsenkin table (found=false, no details) → EMPTY_VALID when all empty.
+  const nonEmpty = items.filter((raw) => {
+    if (!isPlainObject(raw)) return true;
+    return Boolean(asString(raw.answer ?? raw.text ?? raw.content ?? raw.snippet ?? raw.url));
+  });
+  if (nonEmpty.length === 0) {
+    return { ok: true, emptyValid: true, observations: [], warnings: ["AI_SEARCH:EMPTY_VALID"] };
+  }
   const observations: ArsenkinIngestedObservation[] = [];
-  for (const raw of items.slice(0, 50)) {
+  for (const raw of nonEmpty.slice(0, 50)) {
     if (!isPlainObject(raw)) {
       return { ok: false, code: "ARSENKIN_SCHEMA_INVALID", message: "AI_SEARCH item must be object" };
     }
@@ -270,14 +296,18 @@ function adaptAiSearch(response: Record<string, unknown>, ctx: ArsenkinAdapterCo
         },
         ctx,
         "AI_SEARCH",
-        response
+        hashSource
       )
     );
   }
   return { ok: true, emptyValid: false, observations, warnings: [] };
 }
 
-function adaptUrlAudit(response: Record<string, unknown>, ctx: ArsenkinAdapterContext): ArsenkinAdapterResult {
+function adaptUrlAudit(
+  response: Record<string, unknown>,
+  ctx: ArsenkinAdapterContext,
+  hashSource: unknown
+): ArsenkinAdapterResult {
   const items = itemsArray(response, ["items", "urls", "results", "pages"]);
   if (items === null) {
     const url = asString(response.url ?? response.link);
@@ -299,7 +329,7 @@ function adaptUrlAudit(response: Record<string, unknown>, ctx: ArsenkinAdapterCo
             },
             ctx,
             "URL_AUDIT",
-            response
+            hashSource
           ),
         ],
         warnings: [],
@@ -333,7 +363,7 @@ function adaptUrlAudit(response: Record<string, unknown>, ctx: ArsenkinAdapterCo
         },
         ctx,
         "URL_AUDIT",
-        response
+        hashSource
       )
     );
   }
@@ -342,6 +372,7 @@ function adaptUrlAudit(response: Record<string, unknown>, ctx: ArsenkinAdapterCo
 
 /**
  * Fail-closed adapter dispatch. Unknown tool / corrupt JSON → error (never silent empty).
+ * Always unwraps Arsenkin `{code,result,task_id}` envelopes before tool-specific parse.
  */
 export function adaptArsenkinToolResponse(input: {
   toolName: string | null | undefined;
@@ -357,33 +388,50 @@ export function adaptArsenkinToolResponse(input: {
     };
   }
   if (input.responseJson == null) {
-    // Explicit null/undefined after DONE is EMPTY_VALID only when schema allows empty container —
-    // without a container we fail closed (cannot prove EMPTY_VALID).
     return {
       ok: false,
       code: "ARSENKIN_SCHEMA_INVALID",
       message: `${adapter}: missing responseJson (parse error ≠ empty)`,
     };
   }
-  if (!isPlainObject(input.responseJson)) {
-    return {
-      ok: false,
-      code: "ARSENKIN_PARSE_ERROR",
-      message: `${adapter}: responseJson must be object`,
-    };
+
+  const unwrapped = unwrapArsenkinTaskEnvelope(input.responseJson);
+  if (!unwrapped.ok) {
+    return { ok: false, code: unwrapped.code, message: `${adapter}: ${unwrapped.message}` };
   }
+
+  const payload = normalizeArsenkinToolPayload(adapter, unwrapped.payload);
+  const warnings: string[] = [];
+  if (unwrapped.unwrappedEnvelope) {
+    warnings.push("arsenkin-envelope-unwrapped");
+  }
+  const hashSource = input.responseJson;
+
+  let adapted: ArsenkinAdapterResult;
   switch (adapter) {
     case "SEARCH_TOP":
-      return adaptSearchTop(input.responseJson, input.ctx);
+      adapted = adaptSearchTop(payload, input.ctx, hashSource);
+      break;
     case "SUGGESTIONS":
-      return adaptSuggestions(input.responseJson, input.ctx);
+      adapted = adaptSuggestions(payload, input.ctx, hashSource);
+      break;
     case "PAA":
-      return adaptPaa(input.responseJson, input.ctx);
+      adapted = adaptPaa(payload, input.ctx, hashSource);
+      break;
     case "AI_SEARCH":
-      return adaptAiSearch(input.responseJson, input.ctx);
+      adapted = adaptAiSearch(payload, input.ctx, hashSource);
+      break;
     case "URL_AUDIT":
-      return adaptUrlAudit(input.responseJson, input.ctx);
+      adapted = adaptUrlAudit(payload, input.ctx, hashSource);
+      break;
     default:
       return { ok: false, code: "ARSENKIN_UNKNOWN_TOOL", message: `unhandled adapter ${adapter}` };
   }
+  if (!adapted.ok) return adapted;
+  return {
+    ok: true,
+    emptyValid: adapted.emptyValid,
+    observations: adapted.observations,
+    warnings: [...warnings, ...adapted.warnings],
+  };
 }

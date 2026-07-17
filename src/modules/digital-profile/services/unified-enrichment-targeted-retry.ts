@@ -98,7 +98,16 @@ function schedulePostSubmitUnifiedTick(
     .then(({ scheduleUnifiedTick }) => {
       scheduleUnifiedTick(caseId);
     })
-    .catch(() => undefined);
+    .catch((err) => {
+      console.error(
+        JSON.stringify({
+          event: "schedule_unified_tick_import_failed",
+          caseId,
+          errorCode: "SCHEDULE_TICK_IMPORT_FAILED",
+          message: err instanceof Error ? err.message : String(err),
+        })
+      );
+    });
 }
 
 export type TargetedEnrichmentRetryResult = {
@@ -281,6 +290,25 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
 
   if (!reusablePreview?.externalTaskId && !input.confirmPaidEnrichmentRetry) {
     throw new ConflictError(PAID_ENRICHMENT_RETRY_CONFIRMATION_REQUIRED);
+  }
+
+  // Fail-closed: block a *new* paid Suggestions /set while durable poll/ingest is
+  // already running without a reusable externalTaskId. Idempotent reuse of an
+  // accepted externalTaskId remains allowed (double-click / restart).
+  const durableIngestActive =
+    job.stage === "ARSENKIN_ENRICHMENT" &&
+    job.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" &&
+    (job.status === "WAITING" || job.status === "RUNNING") &&
+    job.arsenkinEnrichmentState?.enrichmentComplete !== true;
+  const pollableIngestTask = suggestPreview.find((t) => {
+    const st = String(t.state).toUpperCase();
+    return (
+      Boolean(String(t.externalTaskId ?? "").trim()) &&
+      /^(RUNNING|SUBMITTED|RATE_LIMITED|WAITING|POLLING)$/.test(st)
+    );
+  });
+  if (durableIngestActive && pollableIngestTask && !reusablePreview?.externalTaskId) {
+    throw new ConflictError("ARSENKIN_INGEST_IN_PROGRESS");
   }
 
   // Pre-lease: fail-closed query selection before lease / live-auth / HTTP.

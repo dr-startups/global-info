@@ -74,6 +74,109 @@ export function computeUnifiedPollDelayMs(job: UnifiedCollectionJob, now = Date.
   return Math.min(30_000, Math.max(50, 2_000 * 2 ** Math.min(attempt, 4)));
 }
 
+/** Fail-closed ceiling for durable Arsenkin poll/ingest ticks (stops lease churn). */
+export const MAX_ARSENKIN_INGEST_POLL_ATTEMPTS = 40;
+
+function logUnifiedTickError(input: {
+  caseId: string;
+  jobId?: string | null;
+  providerTaskId?: string | null;
+  externalTaskId?: string | null;
+  agentName?: string | null;
+  errorCode: string;
+  error: unknown;
+}): void {
+  const message = input.error instanceof Error ? input.error.message : String(input.error);
+  console.error(
+    JSON.stringify({
+      event: "unified_tick_error",
+      caseId: input.caseId,
+      jobId: input.jobId ?? null,
+      providerTaskId: input.providerTaskId ?? null,
+      externalTaskId: input.externalTaskId ?? null,
+      agentName: input.agentName ?? null,
+      errorCode: input.errorCode,
+      message: message.slice(0, 500),
+    })
+  );
+}
+
+function extractTickErrorCode(err: unknown): string {
+  if (err && typeof err === "object" && "code" in err && typeof (err as { code: unknown }).code === "string") {
+    return String((err as { code: string }).code);
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/ARSENKIN_SCHEMA_INVALID/i.test(msg)) return "ARSENKIN_SCHEMA_INVALID";
+  if (/ARSENKIN_POLL/i.test(msg)) return "ARSENKIN_POLL_FAILED";
+  return "UNIFIED_TICK_FAILED";
+}
+
+/**
+ * Persist tick/poll failures so lease churn cannot continue without pollAttempt/nextPollAt.
+ * Never swallows — caller logs via logUnifiedTickError first.
+ */
+export function persistUnifiedTickFailure(
+  caseId: string,
+  err: unknown,
+  extras?: {
+    providerTaskId?: string | null;
+    externalTaskId?: string | null;
+    agentName?: string | null;
+    now?: Date;
+  }
+): UnifiedCollectionJob | null {
+  const job = loadUnifiedCollectionJob(caseId);
+  if (!job) return null;
+  const errorCode = extractTickErrorCode(err);
+  const message = err instanceof Error ? err.message : String(err);
+  logUnifiedTickError({
+    caseId,
+    jobId: job.jobId,
+    providerTaskId: extras?.providerTaskId,
+    externalTaskId: extras?.externalTaskId,
+    agentName: extras?.agentName,
+    errorCode,
+    error: err,
+  });
+  const attempt = Math.max(0, Number(job.pollAttempt ?? 0)) + 1;
+  const nowMs = (extras?.now ?? new Date()).getTime();
+  const backoffMs = Math.min(30_000, Math.max(2_000, 2_000 * 2 ** Math.min(attempt, 4)));
+  const nextPollAt = new Date(nowMs + backoffMs).toISOString();
+  if (attempt >= MAX_ARSENKIN_INGEST_POLL_ATTEMPTS) {
+    return failRetryable(
+      job,
+      "ARSENKIN_POLL_ATTEMPTS_EXCEEDED",
+      message.slice(0, 500),
+      [
+        "ARSENKIN_RESULT_INGEST",
+        `pollAttempt:${attempt}`,
+        errorCode,
+        extras?.externalTaskId ? `externalTaskId:${extras.externalTaskId}` : "",
+        extras?.providerTaskId ? `providerTaskId:${extras.providerTaskId}` : "",
+        extras?.agentName ? `agentName:${extras.agentName}` : "",
+      ].filter(Boolean)
+    );
+  }
+  return (
+    patchUnifiedCollectionJob(caseId, {
+      stage: "ARSENKIN_ENRICHMENT",
+      status: "WAITING",
+      resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
+      pollAttempt: attempt,
+      nextPollAt,
+      lastError: message.slice(0, 500),
+      lastErrorCode: errorCode,
+      warnings: [
+        ...job.warnings,
+        `unified-tick-error:${errorCode}`,
+        extras?.externalTaskId ? `externalTaskId:${extras.externalTaskId}` : "",
+        extras?.agentName ? `agentName:${extras.agentName}` : "",
+      ].filter(Boolean),
+      completedAt: null,
+    }) ?? job
+  );
+}
+
 export type UnifiedOrchestratorDeps = {
   prisma?: PrismaClient | null;
   runFullAudit?: (caseId: string, actorId: string) => Promise<FullAuditResultDTO>;
@@ -282,6 +385,8 @@ function failRetryable(
             code === "ARSENKIN_ENRICHMENT_FAILED" ||
             code === "ARSENKIN_SUBMIT_UNKNOWN" ||
             code === "ARSENKIN_SCHEMA_INVALID" ||
+            code === "ARSENKIN_POLL_ATTEMPTS_EXCEEDED" ||
+            code === "UNIFIED_TICK_FAILED" ||
             code === "EXTERNAL_TASK_HASH_CONFLICT" ||
             extraWarnings.some((w) => /arsenkin-ingest|ARSENKIN_RESULT_INGEST/i.test(w))
           ? ("ARSENKIN_RESULT_INGEST" as const)
@@ -377,7 +482,10 @@ export function scheduleUnifiedTick(caseId: string, deps: UnifiedOrchestratorDep
   ticking.add(caseId);
   setImmediate(() => {
     void runUnifiedCollectionTick(caseId, deps)
-      .catch(() => undefined)
+      .catch((err) => {
+        // Never silent — persist pollAttempt/nextPollAt/error so lease churn stops.
+        persistUnifiedTickFailure(caseId, err, { now: deps.now?.() });
+      })
       .finally(() => {
         ticking.delete(caseId);
         const job = loadUnifiedCollectionJob(caseId);
@@ -437,25 +545,30 @@ export async function runUnifiedCollectionTick(
       });
     }
 
-    switch (job.stage) {
-      case "BASE_COLLECTION":
-        job = await stepBaseCollection(job, deps);
-        break;
-      case "ARSENKIN_ENRICHMENT":
-        job = await stepArsenkin(job, deps);
-        break;
-      case "COMPOSITE_MERGE":
-        job = await stepComposite(job, deps);
-        break;
-      case "ORION_PREPARE":
-      case "CLIENT_CONTENT":
-        job = await stepPrepare(job, deps);
-        break;
-      case "FAILED_RETRYABLE":
-        job = resumeFromRetryableCheckpoint(job);
-        break;
-      default:
-        break;
+    try {
+      switch (job.stage) {
+        case "BASE_COLLECTION":
+          job = await stepBaseCollection(job, deps);
+          break;
+        case "ARSENKIN_ENRICHMENT":
+          job = await stepArsenkin(job, deps);
+          break;
+        case "COMPOSITE_MERGE":
+          job = await stepComposite(job, deps);
+          break;
+        case "ORION_PREPARE":
+        case "CLIENT_CONTENT":
+          job = await stepPrepare(job, deps);
+          break;
+        case "FAILED_RETRYABLE":
+          job = resumeFromRetryableCheckpoint(job);
+          break;
+        default:
+          break;
+      }
+    } catch (err) {
+      // Persist + stop silent lease churn; do not rethrow (scheduler catch is backup).
+      persistUnifiedTickFailure(caseId, err, { now: deps.now?.() });
     }
     return loadUnifiedCollectionJob(caseId);
   } finally {
@@ -607,6 +720,33 @@ async function stepArsenkin(
   const resumeIngest =
     job.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" &&
     (job.enrichmentRunIds?.length ?? 0) >= ARSENKIN_REAL_AGENT_NAMES.length;
+
+  // Atomically persist pollAttempt + nextPollAt BEFORE HTTP poll (lease already held).
+  // Prevents lease churn with missing poll progress when the tick throws mid-flight.
+  if (resumeIngest) {
+    const attempt = Math.max(0, Number(job.pollAttempt ?? 0)) + 1;
+    if (attempt > MAX_ARSENKIN_INGEST_POLL_ATTEMPTS) {
+      return failRetryable(
+        job,
+        "ARSENKIN_POLL_ATTEMPTS_EXCEEDED",
+        `Arsenkin durable poll exceeded ${MAX_ARSENKIN_INGEST_POLL_ATTEMPTS} attempts`,
+        ["ARSENKIN_RESULT_INGEST", `pollAttempt:${attempt}`]
+      );
+    }
+    const nowMs = (deps.now?.() ?? new Date()).getTime();
+    const backoffMs = Math.min(30_000, Math.max(2_000, 2_000 * 2 ** Math.min(attempt - 1, 4)));
+    job =
+      patchUnifiedCollectionJob(job.caseId, {
+        stage: "ARSENKIN_ENRICHMENT",
+        status: "WAITING",
+        resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
+        pollAttempt: attempt,
+        nextPollAt: new Date(nowMs + backoffMs).toISOString(),
+        lastError: null,
+        lastErrorCode: null,
+      }) ?? job;
+  }
+
   let tick;
 
   if (deps.runArsenkinEnrichment) {
@@ -705,6 +845,7 @@ async function stepArsenkin(
     );
     const nextPollAt =
       tick.nextPollAt ??
+      job.nextPollAt ??
       new Date(
         (deps.now?.() ?? new Date()).getTime() +
           Math.min(30_000, Math.max(2_000, 2_000 * 2 ** Math.min(Number(job.pollAttempt ?? 0), 4)))
@@ -719,7 +860,8 @@ async function stepArsenkin(
         arsenkinEnrichmentState: state,
         resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
         nextPollAt,
-        pollAttempt: Math.max(0, Number(job.pollAttempt ?? 0)) + 1,
+        // pollAttempt already bumped pre-poll when resumeIngest; keep monotonic progress.
+        pollAttempt: Math.max(0, Number(job.pollAttempt ?? 0)),
         coverage: { ...coverage, progressRatio: computeCoverageProgress(coverage) },
         warnings: [...job.warnings, ...tick.warnings, "arsenkin-awaiting-ingest"],
         artifactPaths: { ...job.artifactPaths, arsenkinObservations: obsPath },
