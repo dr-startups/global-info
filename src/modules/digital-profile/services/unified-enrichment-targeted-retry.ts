@@ -2,6 +2,9 @@
  * Targeted paid retry for a single missing Arsenkin enrichment CaseAgent task
  * (typically SUGGESTIONS after SUBMIT_REJECTED_RETRYABLE / SUBMIT_UNKNOWN).
  * Never creates a new unified job / AgentRun / enrichmentRun / base collection.
+ *
+ * Live /set is gated by a one-shot LiveExecutionAuthorization installed only for
+ * the confirmed SUGGESTIONS submit (same mechanism as full live audit).
  */
 
 import { createHash, randomUUID } from "node:crypto";
@@ -9,6 +12,11 @@ import { ConflictError, NotFoundError, ValidationError } from "../http/errors";
 import { ARSENKIN_REGION } from "../providers/arsenkin/regions";
 import { tryBuildSuggestRequest } from "../providers/arsenkin/adapters/suggest";
 import { hashProviderRequest } from "../providers/arsenkin/provider-task-store";
+import {
+  buildLiveAuthorizationFromPlan,
+  getActiveLiveAuthorization,
+  withLiveAuthorization,
+} from "../providers/arsenkin/live-execution-authorization";
 import { buildArsenkinSubjectQueryPlan } from "../orion-golden/classic/arsenkin-subject-query-plan";
 import {
   claimUnifiedJobLease,
@@ -22,10 +30,24 @@ import type { UnifiedCollectionJob } from "./unified-collection-types";
 export const PAID_ENRICHMENT_RETRY_CONFIRMATION_REQUIRED =
   "PAID_ENRICHMENT_RETRY_CONFIRMATION_REQUIRED" as const;
 
+export const SUBMIT_UNKNOWN_REQUIRES_RECONCILIATION =
+  "SUBMIT_UNKNOWN_REQUIRES_RECONCILIATION" as const;
+
 export type TargetedEnrichmentRetryAgent = "SUGGESTIONS" | "ARSENKIN_SUGGESTIONS_REAL";
 
+export type TargetedProviderTaskRow = {
+  id: string;
+  state: string;
+  toolName: string | null;
+  externalTaskId: string | null;
+  requestHash?: string | null;
+  responseJson?: unknown;
+  requestJson?: unknown;
+  errorCode?: string | null;
+};
+
 export type TargetedEnrichmentRetryDeps = {
-  /** Injected submit — tests fake; live wraps ensureArsenkinTask. */
+  /** Injected submit — tests fake; live wraps ensureArsenkinTask under one-shot auth. */
   submitSuggestTask?: (input: {
     caseId: string;
     enrichmentRunId: string;
@@ -35,17 +57,12 @@ export type TargetedEnrichmentRetryDeps = {
   /** Load subject identity for query plan (offline fixture). */
   loadSubject?: (caseId: string) => Promise<{ fullName: string | null; aliases: string[] }>;
   /** Existing ProviderTasks for the enrichment run (offline fixture). */
-  listProviderTasks?: (enrichmentRunId: string) => Promise<
-    Array<{
-      id: string;
-      state: string;
-      toolName: string | null;
-      externalTaskId: string | null;
-      requestHash?: string | null;
-      responseJson?: unknown;
-      requestJson?: unknown;
-    }>
-  >;
+  listProviderTasks?: (enrichmentRunId: string) => Promise<TargetedProviderTaskRow[]>;
+  /**
+   * Re-queue a proven NO_EXTERNAL_REQUEST SUBMIT_UNKNOWN row to QUEUED so
+   * ensureArsenkinTask may submit once without creating a duplicate row.
+   */
+  requeueNoExternalRequestTask?: (providerTaskId: string) => Promise<void>;
   now?: () => Date;
   autoSchedule?: boolean;
 };
@@ -61,6 +78,7 @@ export type TargetedEnrichmentRetryResult = {
   requestHash: string;
   submissions: number;
   reusedExisting: boolean;
+  reusedNoExternalRequestTask: boolean;
   stage: string;
   status: "WAITING";
   resumeCheckpoint: "ARSENKIN_RESULT_INGEST";
@@ -97,10 +115,59 @@ function isIngestibleResponse(responseJson: unknown): boolean {
   return false;
 }
 
+function submitDiagnosticsOf(responseJson: unknown): Record<string, unknown> | null {
+  if (responseJson == null || typeof responseJson !== "object") return null;
+  const d = (responseJson as { _submitDiagnostics?: unknown })._submitDiagnostics;
+  if (d == null || typeof d !== "object" || Array.isArray(d)) return null;
+  return d as Record<string, unknown>;
+}
+
+/**
+ * Proven pre-network failure: SUBMIT_UNKNOWN caused by live-auth gate with no
+ * Arsenkin HTTP (httpStatus=null). Safe to re-queue for one targeted submit.
+ */
+export function isProvenNoExternalRequestSubmitUnknown(
+  task: Pick<TargetedProviderTaskRow, "state" | "externalTaskId" | "responseJson" | "errorCode">
+): boolean {
+  if (Boolean(String(task.externalTaskId ?? "").trim())) return false;
+  if (String(task.state).toUpperCase() !== "SUBMIT_UNKNOWN") return false;
+  const diag = submitDiagnosticsOf(task.responseJson);
+  if (!diag) {
+    // Fall back to errorCode + message patterns when diagnostics were not persisted.
+    return /no-live-authorization/i.test(String(task.errorCode ?? ""));
+  }
+  if (diag.httpStatus != null) return false;
+  const message = String(diag.message ?? "");
+  return /arsenkin-live-set-blocked:no-live-authorization/i.test(message);
+}
+
+/** Ambiguous SUBMIT_UNKNOWN after a real/uncertain network outcome — no auto re-submit. */
+export function isAmbiguousSubmitUnknown(
+  task: Pick<TargetedProviderTaskRow, "state" | "externalTaskId" | "responseJson" | "errorCode">
+): boolean {
+  if (Boolean(String(task.externalTaskId ?? "").trim())) return false;
+  if (String(task.state).toUpperCase() !== "SUBMIT_UNKNOWN") return false;
+  return !isProvenNoExternalRequestSubmitUnknown(task);
+}
+
 function findSuggestionsEnrichmentRunId(job: UnifiedCollectionJob): string | null {
   const ids = job.enrichmentRunIds ?? [];
   const hit = ids.find((id) => /suggestions/i.test(id));
   return hit ?? null;
+}
+
+export function buildTargetedSuggestionsLiveAuthorization(input: {
+  enrichmentRunId: string;
+  requestHash: string;
+}): ReturnType<typeof buildLiveAuthorizationFromPlan> {
+  return buildLiveAuthorizationFromPlan({
+    reportRunId: input.enrichmentRunId,
+    planDigest: `targeted-suggestions-retry:${input.requestHash}`,
+    requestHashes: [input.requestHash],
+    maxNewTasks: 1,
+    maxEstimatedLimits: 1,
+    stage: "TARGETED_SUGGESTIONS_RETRY",
+  });
 }
 
 /**
@@ -133,6 +200,22 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
   const expectedSuggestionsRun = findSuggestionsEnrichmentRunId(job);
   if (expectedSuggestionsRun && expectedSuggestionsRun !== enrichmentRunId) {
     throw new ConflictError("ENRICHMENT_RUN_NOT_SUGGESTIONS");
+  }
+
+  // Pre-lease: detect reusable accepted task / require confirmation for paid submit.
+  const tasksPreview =
+    (await input.deps?.listProviderTasks?.(enrichmentRunId)) ??
+    (await defaultListProviderTasks(enrichmentRunId));
+  const suggestPreview = tasksPreview.filter((t) => /suggest/i.test(String(t.toolName ?? "")));
+  const reusablePreview = suggestPreview.find(
+    (t) =>
+      Boolean(t.externalTaskId) ||
+      String(t.state).toUpperCase() === "DONE" ||
+      isIngestibleResponse(t.responseJson)
+  );
+
+  if (!reusablePreview?.externalTaskId && !input.confirmPaidEnrichmentRetry) {
+    throw new ConflictError(PAID_ENRICHMENT_RETRY_CONFIRMATION_REQUIRED);
   }
 
   const ownerId = `enrichment-retry-${process.pid}-${randomUUID().slice(0, 6)}`;
@@ -192,12 +275,14 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
         requestHash: String(reusable.requestHash ?? ""),
         submissions: 0,
         reusedExisting: true,
+        reusedNoExternalRequestTask: false,
         stage: "ARSENKIN_ENRICHMENT",
         status: "WAITING",
         resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
       };
     }
 
+    // Defense-in-depth (also checked pre-lease).
     if (!input.confirmPaidEnrichmentRetry) {
       throw new ConflictError(PAID_ENRICHMENT_RETRY_CONFIRMATION_REQUIRED);
     }
@@ -230,7 +315,26 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       throw new ConflictError("TASK_FINGERPRINT_MISMATCH");
     }
 
-    const submit =
+    const sameHash = suggestTasks.find(
+      (t) => String(t.requestHash ?? "") === requestHash && !String(t.externalTaskId ?? "").trim()
+    );
+    let reusedNoExternalRequestTask = false;
+    if (sameHash) {
+      if (String(sameHash.state).toUpperCase() === "SUBMIT_REJECTED_RETRYABLE") {
+        throw new ConflictError("SUBMIT_REJECTED_RETRYABLE");
+      }
+      if (isAmbiguousSubmitUnknown(sameHash)) {
+        throw new ConflictError(SUBMIT_UNKNOWN_REQUIRES_RECONCILIATION);
+      }
+      if (isProvenNoExternalRequestSubmitUnknown(sameHash)) {
+        const requeue =
+          input.deps?.requeueNoExternalRequestTask ?? defaultRequeueNoExternalRequestTask;
+        await requeue(sameHash.id);
+        reusedNoExternalRequestTask = true;
+      }
+    }
+
+    const submitInner =
       input.deps?.submitSuggestTask ??
       (async (args) => {
         // Offline / NETWORK_CALLS=0 must never open Arsenkin transport.
@@ -240,12 +344,32 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
         return defaultSubmitSuggestTask(args);
       });
 
-    const submitted = await submit({
-      caseId: input.caseId,
+    const authorization = buildTargetedSuggestionsLiveAuthorization({
       enrichmentRunId,
-      requestJson,
       requestHash,
     });
+
+    const submitted = await withLiveAuthorization(authorization, async () => {
+      if (!getActiveLiveAuthorization()) {
+        throw new ConflictError("LIVE_AUTHORIZATION_NOT_INSTALLED");
+      }
+      return submitInner({
+        caseId: input.caseId,
+        enrichmentRunId,
+        requestJson,
+        requestHash,
+      });
+    });
+
+    // One-shot auth must not leak past the submit.
+    if (getActiveLiveAuthorization()) {
+      throw new ConflictError("LIVE_AUTHORIZATION_LEAK");
+    }
+
+    const externalTaskId = String(submitted.externalTaskId ?? "").trim();
+    if (!externalTaskId) {
+      throw new ConflictError("SUBMIT_DID_NOT_YIELD_EXTERNAL_TASK_ID");
+    }
 
     writeUnifiedArtifact(input.caseId, job.unifiedJobId, "enrichment-targeted-retry-audit.json", {
       version: "enrichment-targeted-retry-audit-v1",
@@ -255,12 +379,14 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       enrichmentRunId,
       agentName,
       reusedExisting: false,
-      externalTaskId: submitted.externalTaskId,
+      reusedNoExternalRequestTask,
+      externalTaskId,
       providerTaskId: submitted.providerTaskId,
       requestHash,
       taskFingerprint: fingerprint,
       submissions: 1,
       confirmPaidEnrichmentRetry: true,
+      oneShotLiveAuth: true,
     });
 
     patchUnifiedCollectionJob(input.caseId, {
@@ -276,7 +402,10 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       warnings: [
         ...job.warnings.filter((w) => !/^targeted-retry:/i.test(w)),
         "targeted-retry:suggestions-submitted:1",
-        `targeted-retry:externalTaskId:${submitted.externalTaskId}`,
+        `targeted-retry:externalTaskId:${externalTaskId}`,
+        reusedNoExternalRequestTask
+          ? "targeted-retry:reused-no-external-request-task"
+          : "targeted-retry:new-or-fresh-queued-task",
       ],
     });
 
@@ -286,11 +415,12 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       unifiedJobId: job.unifiedJobId,
       enrichmentRunId,
       agentName,
-      externalTaskId: submitted.externalTaskId,
+      externalTaskId,
       providerTaskId: submitted.providerTaskId,
       requestHash,
       submissions: 1,
       reusedExisting: false,
+      reusedNoExternalRequestTask,
       stage: "ARSENKIN_ENRICHMENT",
       status: "WAITING",
       resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
@@ -306,6 +436,10 @@ async function defaultSubmitSuggestTask(input: {
   requestJson: { tools_name: string; data: Record<string, unknown> };
   requestHash: string;
 }): Promise<{ externalTaskId: string; providerTaskId: string }> {
+  // Caller must install one-shot LiveExecutionAuthorization.
+  if (!getActiveLiveAuthorization()) {
+    throw new ConflictError("LIVE_AUTHORIZATION_NOT_INSTALLED");
+  }
   const { createArsenkinClientFromEnv } = await import("../providers/arsenkin/client");
   const { createPrismaProviderTaskStore } = await import(
     "../providers/arsenkin/prisma-provider-task-store"
@@ -322,16 +456,47 @@ async function defaultSubmitSuggestTask(input: {
   });
   const externalTaskId = String(row.externalTaskId ?? "").trim();
   if (!externalTaskId) {
-    throw new ConflictError(
-      row.state === "SUBMIT_REJECTED_RETRYABLE"
-        ? "SUBMIT_REJECTED_RETRYABLE"
-        : "SUBMIT_DID_NOT_YIELD_EXTERNAL_TASK_ID"
-    );
+    if (row.state === "SUBMIT_REJECTED_RETRYABLE") {
+      throw new ConflictError("SUBMIT_REJECTED_RETRYABLE");
+    }
+    if (row.state === "SUBMIT_UNKNOWN") {
+      // Real/uncertain network outcome — never auto-loop.
+      throw new ConflictError(SUBMIT_UNKNOWN_REQUIRES_RECONCILIATION);
+    }
+    throw new ConflictError("SUBMIT_DID_NOT_YIELD_EXTERNAL_TASK_ID");
   }
   return { externalTaskId, providerTaskId: row.id };
 }
 
-async function defaultListProviderTasks(enrichmentRunId: string) {
+async function defaultRequeueNoExternalRequestTask(providerTaskId: string): Promise<void> {
+  const { createPrismaProviderTaskStore } = await import(
+    "../providers/arsenkin/prisma-provider-task-store"
+  );
+  const store = createPrismaProviderTaskStore();
+  await store.updateState(
+    providerTaskId,
+    {
+      state: "QUEUED",
+      errorCode: null,
+      responseJson: {
+        _targetedRetryRequeue: {
+          reason: "NO_EXTERNAL_REQUEST",
+          prior: "arsenkin-live-set-blocked:no-live-authorization",
+          at: new Date().toISOString(),
+        },
+      },
+      nextPollAt: new Date(),
+      lockedBy: null,
+      lockedAt: null,
+      leaseUntil: null,
+      completedAt: null,
+      submittedAt: null,
+    },
+    { expectStates: ["SUBMIT_UNKNOWN"] }
+  );
+}
+
+async function defaultListProviderTasks(enrichmentRunId: string): Promise<TargetedProviderTaskRow[]> {
   try {
     const { prisma } = await import("@/server/prisma/client");
     const rows = await prisma.providerTask.findMany({
@@ -344,6 +509,7 @@ async function defaultListProviderTasks(enrichmentRunId: string) {
         requestHash: true,
         responseJson: true,
         requestJson: true,
+        errorCode: true,
       },
     });
     return rows.map((r) => ({
@@ -354,6 +520,7 @@ async function defaultListProviderTasks(enrichmentRunId: string) {
       requestHash: r.requestHash,
       responseJson: r.responseJson,
       requestJson: r.requestJson,
+      errorCode: r.errorCode,
     }));
   } catch {
     return [];
@@ -383,7 +550,11 @@ export function computeSuggestionsRetryFingerprint(input: {
   enrichmentRunId: string;
   queriesRu: string[];
   queriesUae: string[];
-}): { requestHash: string; taskFingerprint: string; requestJson: { tools_name: string; data: Record<string, unknown> } } {
+}): {
+  requestHash: string;
+  taskFingerprint: string;
+  requestJson: { tools_name: string; data: Record<string, unknown> };
+} {
   const built = tryBuildSuggestRequest({
     queries: input.queriesRu.length > 0 ? input.queriesRu : input.queriesUae,
     se: 1,

@@ -57,6 +57,7 @@
     "smoke:arsenkin-enrichment-ingest": "tsx --test scripts/smoke-arsenkin-enrichment-ingest.ts",
     "smoke:arsenkin-suggestions-targeted-retry": "tsx --test scripts/smoke-arsenkin-suggestions-targeted-retry.ts",
     "smoke:arsenkin-suggestions-targeted-retry-ui": "tsx --test scripts/smoke-arsenkin-suggestions-targeted-retry-ui.ts",
+    "smoke:arsenkin-suggestions-targeted-retry-live-auth": "tsx --test scripts/smoke-arsenkin-suggestions-targeted-retry-live-auth.ts",
     "smoke:base-observation-coverage": "tsx --test scripts/smoke-base-observation-coverage.ts",
     "smoke:arsenkin-precommit-gaps": "tsx --test scripts/smoke-arsenkin-precommit-gaps.ts",
     "smoke:arsenkin-case-agent-outcomes": "tsx --test scripts/smoke-arsenkin-case-agent-outcomes.ts",

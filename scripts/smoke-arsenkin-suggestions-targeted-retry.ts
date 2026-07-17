@@ -313,6 +313,7 @@ describe("3. targeted retry contract", () => {
     });
     assert.equal(first.submissions, 1);
     assert.equal(first.reusedExisting, false);
+    assert.equal(first.reusedNoExternalRequestTask, false);
     assert.equal(first.jobId, JOB_B);
     assert.equal(first.status, "WAITING");
     assert.equal(first.resumeCheckpoint, "ARSENKIN_RESULT_INGEST");
