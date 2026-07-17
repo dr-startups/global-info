@@ -1,0 +1,1226 @@
+{
+  "schemaVersion": "executive-summary-stage-input-v1",
+  "caseId": "cmreamy2t0002o30f29urzcog",
+  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "sourceHashes": [
+    "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+  ],
+  "evidenceRefs": [
+    "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
+    "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+    "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+    "inventory:ss-cmrebadwt00hkmm0fnkag0v9w",
+    "inventory:ss-cmrebadwu00idmm0fnx76yk6p",
+    "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+    "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+    "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+    "inventory:ss-cmreb9zhz00ddmm0feohikekq",
+    "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
+    "inventory:ss-cmreb9zi000elmm0fyqi9iclm",
+    "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+    "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+    "inventory:db-cmreb8ztt001zmm0fluvc61al",
+    "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
+    "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+    "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+    "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+    "inventory:ss-cmreb9zhz00ddmm0feohikekq",
+    "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
+    "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+    "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+    "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+    "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
+    "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
+    "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
+    "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
+    "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
+    "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
+    "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
+    "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
+    "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
+    "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
+    "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+    "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+    "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr",
+    "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+    "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
+    "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
+    "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
+    "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
+    "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
+    "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
+    "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
+    "inventory:serp-obs-cmrjsolqp001zvd3w5zpjp2om",
+    "inventory:serp-obs-cmrjsolqw0023vd3w2eoqixj7",
+    "inventory:serp-obs-cmrjsolr20027vd3wxzfboo2x",
+    "inventory:serp-obs-cmrjsolrk002jvd3wopqyvu5g",
+    "inventory:serp-obs-cmrjsolrr002nvd3w3psml6tj",
+    "inventory:serp-obs-cmrjsolrx002rvd3w7k3h8bv0",
+    "inventory:serp-obs-cmrjsols3002vvd3wfs38b7sp",
+    "inventory:serp-obs-cmrjsolsl0037vd3wp23d4o2n",
+    "inventory:serp-obs-cmrjsolsr003bvd3wj9cf1gw7",
+    "inventory:ss-cmreb9zhz00cfmm0fdhgfiqvh",
+    "inventory:ss-cmreb9zhz00cjmm0f03cgzeo5",
+    "inventory:ss-cmreb9zhz00ddmm0feohikekq",
+    "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
+    "inventory:ss-cmreb9zi000dvmm0fhbtw7vrt",
+    "inventory:ss-cmreb9zi100f7mm0f5gkolgg2",
+    "inventory:ss-cmrebadwu00hlmm0fexst4rg8",
+    "inventory:ss-cmrebadwu00hnmm0f9hi612mw",
+    "inventory:ss-cmrebadwv00itmm0fe89nzyp4",
+    "inventory:ss-cmrebadwv00iumm0fje1armmu",
+    "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+    "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+    "inventory:ss-cmrebbrxv012nmm0f1n653sah",
+    "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+    "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+    "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+    "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+    "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+    "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+    "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
+  ],
+  "subject": {
+    "displayName": "Глинка Сергей Михайлович",
+    "aliases": [
+      "Глинка Сергей Михайлович",
+      "glinka sergey mikhaylovich",
+      "glinka sergey",
+      "sergey glinka",
+      "sergey mikhaylovich glinka",
+      "glinka s. m.",
+      "glinka s."
+    ],
+    "identifiers": [
+      "773800015809",
+      "бизнесмен",
+      "businessman",
+      "предприниматель",
+      "инвестор"
+    ]
+  },
+  "coverage": [
+    {
+      "region": "RU",
+      "surface": "organic",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "organic",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "organic",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "organic",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "UAE",
+      "surface": "organic",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "UAE",
+      "surface": "organic",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "autocomplete",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "UAE",
+      "surface": "autocomplete",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "paa",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "autocomplete",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "UAE",
+      "surface": "paa",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "ai_answer",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "ai_answer",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "UAE",
+      "surface": "ai_answer",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "page_meta",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "page_meta",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "page_meta",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "page_meta",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "page_meta",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "indexation",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "indexation",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "indexation",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "indexation",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "indexation",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "indexation",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "indexation",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "indexation",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "indexation",
+      "sampleStatus": "MEASURED"
+    },
+    {
+      "region": "RU",
+      "surface": "indexation",
+      "sampleStatus": "MEASURED"
+    }
+  ],
+  "regionalMetrics": [
+    {
+      "region": "UAE",
+      "adverseCount": 0,
+      "totalCount": 18,
+      "adverseSharePercent": 0
+    },
+    {
+      "region": "RU",
+      "adverseCount": 3,
+      "totalCount": 42,
+      "adverseSharePercent": 7
+    }
+  ],
+  "verifiedFindings": {
+    "schemaVersion": "verified-finding-bundle-v1",
+    "caseId": "cmreamy2t0002o30f29urzcog",
+    "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+    "sourceHashes": [
+      "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+    ],
+    "evidenceRefs": [
+      "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
+      "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+      "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+      "inventory:ss-cmrebadwt00hkmm0fnkag0v9w",
+      "inventory:ss-cmrebadwu00idmm0fnx76yk6p",
+      "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+      "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+      "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+      "inventory:ss-cmreb9zhz00ddmm0feohikekq",
+      "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
+      "inventory:ss-cmreb9zi000elmm0fyqi9iclm",
+      "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+      "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+      "inventory:db-cmreb8ztt001zmm0fluvc61al",
+      "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
+      "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+      "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+      "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+      "inventory:ss-cmreb9zhz00ddmm0feohikekq",
+      "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
+      "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+      "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+      "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+      "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
+      "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
+      "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
+      "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
+      "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
+      "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
+      "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
+      "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
+      "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
+      "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
+      "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+      "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+      "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr",
+      "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+      "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
+      "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
+      "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
+      "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
+      "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
+      "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
+      "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
+      "inventory:serp-obs-cmrjsolqp001zvd3w5zpjp2om",
+      "inventory:serp-obs-cmrjsolqw0023vd3w2eoqixj7",
+      "inventory:serp-obs-cmrjsolr20027vd3wxzfboo2x",
+      "inventory:serp-obs-cmrjsolrk002jvd3wopqyvu5g",
+      "inventory:serp-obs-cmrjsolrr002nvd3w3psml6tj",
+      "inventory:serp-obs-cmrjsolrx002rvd3w7k3h8bv0",
+      "inventory:serp-obs-cmrjsols3002vvd3wfs38b7sp",
+      "inventory:serp-obs-cmrjsolsl0037vd3wp23d4o2n",
+      "inventory:serp-obs-cmrjsolsr003bvd3wj9cf1gw7",
+      "inventory:ss-cmreb9zhz00cfmm0fdhgfiqvh",
+      "inventory:ss-cmreb9zhz00cjmm0f03cgzeo5",
+      "inventory:ss-cmreb9zhz00ddmm0feohikekq",
+      "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
+      "inventory:ss-cmreb9zi000dvmm0fhbtw7vrt",
+      "inventory:ss-cmreb9zi100f7mm0f5gkolgg2",
+      "inventory:ss-cmrebadwu00hlmm0fexst4rg8",
+      "inventory:ss-cmrebadwu00hnmm0f9hi612mw",
+      "inventory:ss-cmrebadwv00itmm0fe89nzyp4",
+      "inventory:ss-cmrebadwv00iumm0fje1armmu",
+      "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+      "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+      "inventory:ss-cmrebbrxv012nmm0f1n653sah",
+      "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+      "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+      "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+      "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+      "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+      "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+      "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
+    ],
+    "kpiEligibleSubjectMatches": [
+      "SUBJECT_MATCH"
+    ],
+    "findings": [
+      {
+        "schemaVersion": "finding-v1",
+        "caseId": "cmreamy2t0002o30f29urzcog",
+        "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+        "sourceHashes": [
+          "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+        ],
+        "evidenceRefs": [
+          "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
+          "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+          "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+          "inventory:ss-cmrebadwt00hkmm0fnkag0v9w",
+          "inventory:ss-cmrebadwu00idmm0fnx76yk6p",
+          "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+          "inventory:ss-cmrebbrxu011nmm0fsupgr6gu"
+        ],
+        "findingId": "finding-criminal_legal-subject_match-16447175",
+        "theme": "Криминальные / судебные материалы",
+        "claim": "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the  Popeci defense plant in Moldova through the Romanian company Automecanica  SA • Следствие • Версия для печати • Следствие",
+        "subjectMatch": "SUBJECT_MATCH",
+        "riskLevel": "critical",
+        "confidence": 0.9000000000000001,
+        "regions": [
+          "RU",
+          "UAE",
+          "INTERNATIONAL"
+        ],
+        "sourceDomains": [
+          "audit-it.ru",
+          "x.com",
+          "m.sledst.org",
+          "sledst.org",
+          "cybercriminal.com",
+          "instagram.com",
+          "kompromat1.online"
+        ],
+        "providers": [
+          "arsenkin",
+          "google"
+        ],
+        "recommendedAction": "Проверить статусы дел и первоисточники до принятия решений.",
+        "contradictions": [],
+        "limitations": [],
+        "promotionPriority": "P1",
+        "surfaceKinds": [
+          "organic",
+          "images",
+          "video"
+        ]
+      },
+      {
+        "schemaVersion": "finding-v1",
+        "caseId": "cmreamy2t0002o30f29urzcog",
+        "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+        "sourceHashes": [
+          "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+        ],
+        "evidenceRefs": [
+          "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+          "inventory:ss-cmreb9zhz00ddmm0feohikekq",
+          "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
+          "inventory:ss-cmreb9zi000elmm0fyqi9iclm",
+          "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+          "inventory:ss-cmrebbrxu011nmm0fsupgr6gu"
+        ],
+        "findingId": "finding-security_scrutiny-subject_match-0ae970c7",
+        "theme": "Внимание по линии безопасности / оборонный контур",
+        "claim": "Внимание по линии безопасности / оборонный контур: 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the  Popeci defense plant in Moldova through the Romanian company Automecanica  SA • Следствие • Версия для печати • Следствие · Russian businessman Sergei Glinka is attempting to gain control of the  Popeci defense plant in Moldova through the Romanian company Automecanica  SA • Сл",
+        "subjectMatch": "SUBJECT_MATCH",
+        "riskLevel": "high",
+        "confidence": 0.9000000000000001,
+        "regions": [
+          "UAE",
+          "INTERNATIONAL",
+          "RU"
+        ],
+        "sourceDomains": [
+          "x.com",
+          "m.sledst.org",
+          "sledst.org",
+          "repost.news",
+          "rumafia.io",
+          "kartoteka.news"
+        ],
+        "providers": [
+          "arsenkin",
+          "google"
+        ],
+        "recommendedAction": "Сверить первоисточники и подготовить документированную позицию.",
+        "contradictions": [],
+        "limitations": [],
+        "promotionPriority": "P1",
+        "surfaceKinds": [
+          "organic",
+          "images"
+        ]
+      },
+      {
+        "schemaVersion": "finding-v1",
+        "caseId": "cmreamy2t0002o30f29urzcog",
+        "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+        "sourceHashes": [
+          "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+        ],
+        "evidenceRefs": [
+          "inventory:db-cmreb8ztt001zmm0fluvc61al",
+          "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
+          "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+          "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp"
+        ],
+        "findingId": "finding-pep_rca_watchlist-subject_match-dfa7da39",
+        "theme": "PEP / RCA / watchlist-сигналы",
+        "claim": "PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich · Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16  million to acquire a Moldovan facility with military potential, purportedly  under the EU's auspices • Интернет-издание Власть · Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16  миллионов евро на захват молдавского завода с военными возможностями под  покровительство",
+        "subjectMatch": "SUBJECT_MATCH",
+        "riskLevel": "medium",
+        "confidence": 0.9000000000000001,
+        "regions": [
+          "UAE",
+          "INTERNATIONAL",
+          "RU",
+          "GLOBAL"
+        ],
+        "sourceDomains": [
+          "rupep.org",
+          "vlasti.io",
+          "kompromat1.online"
+        ],
+        "providers": [
+          "arsenkin",
+          "google",
+          "dow_jones"
+        ],
+        "recommendedAction": "Запросить первичные карточки баз и подтвердить принадлежность совпадений.",
+        "contradictions": [
+          {
+            "description": "Часть источников подаёт тему как установленную, при этом compliance-сигналы по той же теме явно не верифицированы.",
+            "evidenceRefs": [
+              "inventory:db-cmreb8ztt001zmm0fluvc61al",
+              "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+              "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl"
+            ]
+          }
+        ],
+        "limitations": [
+          "1 из 4 сигналов помечены как неподтверждённые (potential match / requires review)."
+        ],
+        "promotionPriority": "P2",
+        "surfaceKinds": [
+          "organic",
+          "images",
+          "compliance_hit"
+        ]
+      },
+      {
+        "schemaVersion": "finding-v1",
+        "caseId": "cmreamy2t0002o30f29urzcog",
+        "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+        "sourceHashes": [
+          "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+        ],
+        "evidenceRefs": [
+          "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+          "inventory:ss-cmreb9zhz00ddmm0feohikekq",
+          "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
+          "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+          "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+          "inventory:ss-cmrebbrxu011nmm0fsupgr6gu"
+        ],
+        "findingId": "finding-political_exposure-subject_match-774a7b39",
+        "theme": "Политические связи (вкл. Молдову)",
+        "claim": "Политические связи (вкл. Молдову): 6 свидетельств (2 негативных) в источниках x.com, vlasti.io, m.sledst.org, sledst.org. Примеры: Связанный с Россией бизнесмен Сергей Глинка ... · Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16  million to acquire a Moldovan facility with military potential, purportedly  under the EU's auspices • Интернет-издание Власть · Russian businessman Sergei Glinka is attempting to gain control of the  Popeci defense plant in Moldova through the Romanian company Automecanica",
+        "subjectMatch": "SUBJECT_MATCH",
+        "riskLevel": "medium",
+        "confidence": 0.9000000000000001,
+        "regions": [
+          "UAE",
+          "INTERNATIONAL",
+          "RU"
+        ],
+        "sourceDomains": [
+          "x.com",
+          "vlasti.io",
+          "m.sledst.org",
+          "sledst.org",
+          "repost.news",
+          "rumafia.io"
+        ],
+        "providers": [
+          "arsenkin",
+          "google"
+        ],
+        "recommendedAction": "Подготовить позицию по политическим публикациям.",
+        "contradictions": [],
+        "limitations": [],
+        "promotionPriority": "P2",
+        "surfaceKinds": [
+          "organic",
+          "images"
+        ]
+      },
+      {
+        "schemaVersion": "finding-v1",
+        "caseId": "cmreamy2t0002o30f29urzcog",
+        "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+        "sourceHashes": [
+          "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+        ],
+        "evidenceRefs": [
+          "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
+          "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
+          "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
+          "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
+          "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
+          "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
+          "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
+          "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
+          "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
+          "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
+          "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+          "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+          "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr",
+          "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+          "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
+          "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
+          "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
+          "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
+          "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
+          "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
+          "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
+          "inventory:serp-obs-cmrjsolqp001zvd3w5zpjp2om",
+          "inventory:serp-obs-cmrjsolqw0023vd3w2eoqixj7",
+          "inventory:serp-obs-cmrjsolr20027vd3wxzfboo2x",
+          "inventory:serp-obs-cmrjsolrk002jvd3wopqyvu5g",
+          "inventory:serp-obs-cmrjsolrr002nvd3w3psml6tj",
+          "inventory:serp-obs-cmrjsolrx002rvd3w7k3h8bv0",
+          "inventory:serp-obs-cmrjsols3002vvd3wfs38b7sp",
+          "inventory:serp-obs-cmrjsolsl0037vd3wp23d4o2n",
+          "inventory:serp-obs-cmrjsolsr003bvd3wj9cf1gw7",
+          "inventory:ss-cmreb9zhz00cfmm0fdhgfiqvh",
+          "inventory:ss-cmreb9zhz00cjmm0f03cgzeo5",
+          "inventory:ss-cmreb9zhz00ddmm0feohikekq",
+          "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
+          "inventory:ss-cmreb9zi000dvmm0fhbtw7vrt",
+          "inventory:ss-cmreb9zi100f7mm0f5gkolgg2",
+          "inventory:ss-cmrebadwu00hlmm0fexst4rg8",
+          "inventory:ss-cmrebadwu00hnmm0f9hi612mw",
+          "inventory:ss-cmrebadwv00itmm0fe89nzyp4",
+          "inventory:ss-cmrebadwv00iumm0fje1armmu",
+          "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+          "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+          "inventory:ss-cmrebbrxv012nmm0f1n653sah"
+        ],
+        "findingId": "finding-business_profile-subject_match-a59d6fee",
+        "theme": "Деловой профиль",
+        "claim": "Деловой профиль: 43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru. Примеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... · Glinka Sergei Mikhailovich - TAdviser",
+        "subjectMatch": "SUBJECT_MATCH",
+        "riskLevel": "low",
+        "confidence": 0.9000000000000001,
+        "regions": [
+          "UAE",
+          "RU",
+          "INTERNATIONAL"
+        ],
+        "sourceDomains": [
+          "highways.today",
+          "klerk.ru",
+          "tadviser.com",
+          "techcult.ru",
+          "runews24.ru",
+          "forbes.ru",
+          "osnmedia.ru",
+          "piter.tv",
+          "argumenti.ru",
+          "nakanune.ru",
+          "tadviser.ru",
+          "x.com",
+          "labyrinth.ru",
+          "kulturologia.ru",
+          "shkolazhizni.ru",
+          "m.sledst.org",
+          "en.wikipedia.org",
+          "sledst.org",
+          "bmmagazine.co.uk",
+          "businessfirstonline.co.uk",
+          "financial-news.co.uk",
+          "aboutmanchester.co.uk",
+          "bitva.wiki",
+          "peoples.ru",
+          "repost.news",
+          "rumafia.io"
+        ],
+        "providers": [
+          "arsenkin",
+          "yandex",
+          "multi",
+          "google"
+        ],
+        "recommendedAction": "Поддерживать актуальный позитивный деловой контент.",
+        "contradictions": [
+          {
+            "description": "Тональность источников противоречива: одновременно присутствуют негативные материалы и позитивно-биографические публикации.",
+            "evidenceRefs": [
+              "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+              "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
+              "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu"
+            ]
+          }
+        ],
+        "limitations": [],
+        "promotionPriority": "P3",
+        "surfaceKinds": [
+          "organic",
+          "autocomplete",
+          "page_meta",
+          "indexation",
+          "images"
+        ]
+      },
+      {
+        "schemaVersion": "finding-v1",
+        "caseId": "cmreamy2t0002o30f29urzcog",
+        "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+        "sourceHashes": [
+          "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+        ],
+        "evidenceRefs": [
+          "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+          "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+          "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+          "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+          "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+          "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp"
+        ],
+        "findingId": "finding-family_associates-subject_match-a4427a53",
+        "theme": "Семья и деловые связи",
+        "claim": "Семья и деловые связи: 6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online. Примеры: Сергей Глинка · глинка сергей михайлович жена · глинка сергей михайлович дети",
+        "subjectMatch": "SUBJECT_MATCH",
+        "riskLevel": "low",
+        "confidence": 0.9000000000000001,
+        "regions": [
+          "UAE",
+          "RU",
+          "INTERNATIONAL"
+        ],
+        "sourceDomains": [
+          "forbes.ru",
+          "vlasti.io",
+          "kompromat1.online"
+        ],
+        "providers": [
+          "arsenkin",
+          "google",
+          "yandex"
+        ],
+        "recommendedAction": "Собрать документальные подтверждения по активам и связям.",
+        "contradictions": [
+          {
+            "description": "Тональность источников противоречива: одновременно присутствуют негативные материалы и позитивно-биографические публикации.",
+            "evidenceRefs": [
+              "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+              "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+              "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v"
+            ]
+          }
+        ],
+        "limitations": [],
+        "promotionPriority": "P3",
+        "surfaceKinds": [
+          "organic",
+          "autocomplete",
+          "images"
+        ]
+      },
+      {
+        "schemaVersion": "finding-v1",
+        "caseId": "cmreamy2t0002o30f29urzcog",
+        "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+        "sourceHashes": [
+          "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+        ],
+        "evidenceRefs": [
+          "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
+        ],
+        "findingId": "finding-offshore_corporate-subject_match-1b4c64c7",
+        "theme": "Офшоры / корпоративное владение",
+        "claim": "Офшоры / корпоративное владение: 1 свидетельств (0 негативных) в источниках tadviser.ru. Примеры: Глинка Сергей Михайлович",
+        "subjectMatch": "SUBJECT_MATCH",
+        "riskLevel": "low",
+        "confidence": 0.75,
+        "regions": [
+          "UAE"
+        ],
+        "sourceDomains": [
+          "tadviser.ru"
+        ],
+        "providers": [
+          "arsenkin"
+        ],
+        "recommendedAction": "Заказать корпоративную проверку структуры владения.",
+        "contradictions": [],
+        "limitations": [],
+        "promotionPriority": "P3",
+        "surfaceKinds": [
+          "organic"
+        ]
+      },
+      {
+        "schemaVersion": "finding-v1",
+        "caseId": "cmreamy2t0002o30f29urzcog",
+        "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+        "sourceHashes": [
+          "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+        ],
+        "evidenceRefs": [
+          "inventory:serp-obs-cmrjsczp800atvd9g74u2yw40"
+        ],
+        "findingId": "finding-family_associates-other_subject-276ddd65",
+        "theme": "Семья и деловые связи",
+        "claim": "Семья и деловые связи: 1 свидетельств (0 негативных) в источниках ru.wikipedia.org. Примеры: В кого был влюблен Глинка?",
+        "subjectMatch": "OTHER_SUBJECT",
+        "riskLevel": "low",
+        "confidence": 0.35,
+        "regions": [
+          "RU"
+        ],
+        "sourceDomains": [
+          "ru.wikipedia.org"
+        ],
+        "providers": [
+          "google"
+        ],
+        "recommendedAction": "Собрать документальные подтверждения по активам и связям.",
+        "contradictions": [],
+        "limitations": [],
+        "promotionPriority": "APPENDIX",
+        "surfaceKinds": [
+          "paa"
+        ]
+      },
+      {
+        "schemaVersion": "finding-v1",
+        "caseId": "cmreamy2t0002o30f29urzcog",
+        "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+        "sourceHashes": [
+          "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+        ],
+        "evidenceRefs": [
+          "inventory:ss-cmreb9zi000dumm0fji3fuqlz",
+          "inventory:ss-cmreb9zi100femm0foml58myw",
+          "inventory:ss-cmrebao1h00o6mm0fsel206zi"
+        ],
+        "findingId": "finding-business_profile-other_subject-b434e301",
+        "theme": "Деловой профиль",
+        "claim": "Деловой профиль: 3 свидетельств (0 негативных) в источниках instagram.com, youtube.com, vkvideo.ru. Примеры: КНИГИ on Instagram: \"Прекрасная биография. Лаконичная ... · Михаил Глинка.Биография · Композитор Глинка (биографический, реж. Григорий ...",
+        "subjectMatch": "OTHER_SUBJECT",
+        "riskLevel": "none",
+        "confidence": 0.35,
+        "regions": [
+          "RU"
+        ],
+        "sourceDomains": [
+          "instagram.com",
+          "youtube.com",
+          "vkvideo.ru"
+        ],
+        "providers": [
+          "google"
+        ],
+        "recommendedAction": "Поддерживать актуальный позитивный деловой контент.",
+        "contradictions": [],
+        "limitations": [],
+        "promotionPriority": "APPENDIX",
+        "surfaceKinds": [
+          "video",
+          "images"
+        ]
+      },
+      {
+        "schemaVersion": "finding-v1",
+        "caseId": "cmreamy2t0002o30f29urzcog",
+        "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+        "sourceHashes": [
+          "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+        ],
+        "evidenceRefs": [
+          "inventory:ss-cmreb9zi100ffmm0f8xerotcf"
+        ],
+        "findingId": "finding-political_exposure-other_subject-038d7d26",
+        "theme": "Политические связи (вкл. Молдову)",
+        "claim": "Политические связи (вкл. Молдову): 1 свидетельств (0 негативных) в источниках youtube.com. Примеры: М. Глинка - Хор «Славься» из оперы «Жизнь за царя»",
+        "subjectMatch": "OTHER_SUBJECT",
+        "riskLevel": "low",
+        "confidence": 0.35,
+        "regions": [
+          "RU"
+        ],
+        "sourceDomains": [
+          "youtube.com"
+        ],
+        "providers": [
+          "google"
+        ],
+        "recommendedAction": "Подготовить позицию по политическим публикациям.",
+        "contradictions": [],
+        "limitations": [],
+        "promotionPriority": "APPENDIX",
+        "surfaceKinds": [
+          "video"
+        ]
+      }
+    ],
+    "excludedFindingIds": [
+      "finding-family_associates-other_subject-276ddd65",
+      "finding-business_profile-other_subject-b434e301",
+      "finding-political_exposure-other_subject-038d7d26"
+    ],
+    "exclusionReasons": {
+      "finding-family_associates-other_subject-276ddd65": "OTHER_SUBJECT: свидетельства относятся к другому лицу",
+      "finding-business_profile-other_subject-b434e301": "OTHER_SUBJECT: свидетельства относятся к другому лицу",
+      "finding-political_exposure-other_subject-038d7d26": "OTHER_SUBJECT: свидетельства относятся к другому лицу"
+    }
+  },
+  "ambiguousFindings": [
+    {
+      "schemaVersion": "finding-v1",
+      "caseId": "cmreamy2t0002o30f29urzcog",
+      "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+      "sourceHashes": [
+        "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+      ],
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsdc7300cxvd9gxanvg8jn",
+        "inventory:ss-cmreb9zhz00ckmm0f342muxiw"
+      ],
+      "findingId": "finding-business_profile-ambiguous-7a2d3181",
+      "theme": "Деловой профиль",
+      "claim": "Деловой профиль: 2 свидетельств (0 негативных) в источниках kulturologia.ru, eg.ru. Примеры: Сергей Глинка: транспорт, биотехнологии и инвестиции в Nutriband · Биография и личная жизнь: Ксения Лаврова-Глинка - Экспресс газета",
+      "subjectMatch": "AMBIGUOUS",
+      "riskLevel": "none",
+      "confidence": 0.35,
+      "regions": [
+        "RU"
+      ],
+      "sourceDomains": [
+        "kulturologia.ru",
+        "eg.ru"
+      ],
+      "providers": [
+        "yandex",
+        "google"
+      ],
+      "recommendedAction": "Поддерживать актуальный позитивный деловой контент.",
+      "contradictions": [],
+      "limitations": [
+        "Принадлежность части свидетельств проверяемому лицу не установлена однозначно."
+      ],
+      "promotionPriority": "APPENDIX",
+      "surfaceKinds": [
+        "organic",
+        "images"
+      ]
+    },
+    {
+      "schemaVersion": "finding-v1",
+      "caseId": "cmreamy2t0002o30f29urzcog",
+      "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+      "sourceHashes": [
+        "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+      ],
+      "evidenceRefs": [
+        "inventory:ss-cmrebavrk00rnmm0fs3ur2xfz"
+      ],
+      "findingId": "finding-criminal_legal-ambiguous-3d33fe91",
+      "theme": "Криминальные / судебные материалы",
+      "claim": "Криминальные / судебные материалы: 1 свидетельств (1 негативных) в источниках rucriminal.info. Примеры: European defense industry to the tune of Glinka's March - Russian Criminal",
+      "subjectMatch": "AMBIGUOUS",
+      "riskLevel": "critical",
+      "confidence": 0.35,
+      "regions": [
+        "UAE"
+      ],
+      "sourceDomains": [
+        "rucriminal.info"
+      ],
+      "providers": [
+        "google"
+      ],
+      "recommendedAction": "Проверить статусы дел и первоисточники до принятия решений.",
+      "contradictions": [],
+      "limitations": [
+        "Принадлежность части свидетельств проверяемому лицу не установлена однозначно."
+      ],
+      "promotionPriority": "APPENDIX",
+      "surfaceKinds": [
+        "images"
+      ]
+    },
+    {
+      "schemaVersion": "finding-v1",
+      "caseId": "cmreamy2t0002o30f29urzcog",
+      "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+      "sourceHashes": [
+        "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+      ],
+      "evidenceRefs": [
+        "inventory:ss-cmreb9zi000e9mm0fizup46pp"
+      ],
+      "findingId": "finding-pep_rca_watchlist-ambiguous-976aa8fa",
+      "theme": "PEP / RCA / watchlist-сигналы",
+      "claim": "PEP / RCA / watchlist-сигналы: 1 свидетельств (0 негативных) в источниках kulturologia.ru. Примеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром  культуры: О чем жалеет Ксения Лаврова-Глинки",
+      "subjectMatch": "AMBIGUOUS",
+      "riskLevel": "low",
+      "confidence": 0.35,
+      "regions": [
+        "RU"
+      ],
+      "sourceDomains": [
+        "kulturologia.ru"
+      ],
+      "providers": [
+        "google"
+      ],
+      "recommendedAction": "Запросить первичные карточки баз и подтвердить принадлежность совпадений.",
+      "contradictions": [],
+      "limitations": [
+        "Принадлежность части свидетельств проверяемому лицу не установлена однозначно."
+      ],
+      "promotionPriority": "APPENDIX",
+      "surfaceKinds": [
+        "images"
+      ]
+    },
+    {
+      "schemaVersion": "finding-v1",
+      "caseId": "cmreamy2t0002o30f29urzcog",
+      "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+      "sourceHashes": [
+        "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+      ],
+      "evidenceRefs": [
+        "inventory:ss-cmreb9zi000e9mm0fizup46pp",
+        "inventory:ss-cmreb9zi100ezmm0fsu4gfbqx"
+      ],
+      "findingId": "finding-political_exposure-ambiguous-054edc90",
+      "theme": "Политические связи (вкл. Молдову)",
+      "claim": "Политические связи (вкл. Молдову): 2 свидетельств (0 негативных) в источниках kulturologia.ru, youtube.com. Примеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром  культуры: О чем жалеет Ксения Лаврова-Глинки · Михаил Глинка \"Скажи,зачем явилась ты\"/Юрий Гуляев",
+      "subjectMatch": "AMBIGUOUS",
+      "riskLevel": "low",
+      "confidence": 0.35,
+      "regions": [
+        "RU"
+      ],
+      "sourceDomains": [
+        "kulturologia.ru",
+        "youtube.com"
+      ],
+      "providers": [
+        "google"
+      ],
+      "recommendedAction": "Подготовить позицию по политическим публикациям.",
+      "contradictions": [],
+      "limitations": [
+        "Принадлежность части свидетельств проверяемому лицу не установлена однозначно."
+      ],
+      "promotionPriority": "APPENDIX",
+      "surfaceKinds": [
+        "images",
+        "video"
+      ]
+    },
+    {
+      "schemaVersion": "finding-v1",
+      "caseId": "cmreamy2t0002o30f29urzcog",
+      "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+      "sourceHashes": [
+        "sha256:6a6843ee4dbeefdbd69ea1b3038bcb4c0a14e8eb9deb6474bfaf7796a59bba15"
+      ],
+      "evidenceRefs": [
+        "inventory:ss-cmrebavrk00rnmm0fs3ur2xfz"
+      ],
+      "findingId": "finding-security_scrutiny-ambiguous-3d33fe91",
+      "theme": "Внимание по линии безопасности / оборонный контур",
+      "claim": "Внимание по линии безопасности / оборонный контур: 1 свидетельств (1 негативных) в источниках rucriminal.info. Примеры: European defense industry to the tune of Glinka's March - Russian Criminal",
+      "subjectMatch": "AMBIGUOUS",
+      "riskLevel": "critical",
+      "confidence": 0.35,
+      "regions": [
+        "UAE"
+      ],
+      "sourceDomains": [
+        "rucriminal.info"
+      ],
+      "providers": [
+        "google"
+      ],
+      "recommendedAction": "Сверить первоисточники и подготовить документированную позицию.",
+      "contradictions": [],
+      "limitations": [
+        "Принадлежность части свидетельств проверяемому лицу не установлена однозначно."
+      ],
+      "promotionPriority": "APPENDIX",
+      "surfaceKinds": [
+        "images"
+      ]
+    }
+  ],
+  "identityPollution": {
+    "otherSubjectCount": 41,
+    "ambiguousCount": 80,
+    "dominantOtherSubject": "Михаил Глинка (композитор)",
+    "notes": [
+      "Материалы другого лица зафиксированы в 41 наблюдениях и исключены из KPI."
+    ]
+  },
+  "dataGaps": [
+    {
+      "area": "lexis_upload",
+      "detail": "источник отсутствует в инвентаре прогона"
+    },
+    {
+      "area": "PEP / RCA / watchlist-сигналы",
+      "detail": "часть сигналов не верифицирована первоисточниками"
+    }
+  ],
+  "sourceQuality": [
+    {
+      "domain": "audit-it.ru",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "x.com",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "m.sledst.org",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "sledst.org",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "cybercriminal.com",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "instagram.com",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "kompromat1.online",
+      "reliability": "UNVERIFIED"
+    },
+    {
+      "domain": "repost.news",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "rumafia.io",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "kartoteka.news",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "rupep.org",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "vlasti.io",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "highways.today",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "klerk.ru",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "tadviser.com",
+      "reliability": "REPUTABLE"
+    },
+    {
+      "domain": "techcult.ru",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "runews24.ru",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "forbes.ru",
+      "reliability": "REPUTABLE"
+    },
+    {
+      "domain": "osnmedia.ru",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "piter.tv",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "argumenti.ru",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "nakanune.ru",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "tadviser.ru",
+      "reliability": "REPUTABLE"
+    },
+    {
+      "domain": "labyrinth.ru",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "kulturologia.ru",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "shkolazhizni.ru",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "en.wikipedia.org",
+      "reliability": "AUTHORITATIVE"
+    },
+    {
+      "domain": "bmmagazine.co.uk",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "businessfirstonline.co.uk",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "financial-news.co.uk",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "aboutmanchester.co.uk",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "bitva.wiki",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "peoples.ru",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "ru.wikipedia.org",
+      "reliability": "AUTHORITATIVE"
+    },
+    {
+      "domain": "youtube.com",
+      "reliability": "AGGREGATOR"
+    },
+    {
+      "domain": "vkvideo.ru",
+      "reliability": "AGGREGATOR"
+    }
+  ],
+  "recommendedActions": [
+    "Проверить статусы дел и первоисточники до принятия решений.",
+    "Сверить первоисточники и подготовить документированную позицию.",
+    "Запросить первичные карточки баз и подтвердить принадлежность совпадений.",
+    "Подготовить позицию по политическим публикациям.",
+    "Поддерживать актуальный позитивный деловой контент."
+  ]
+}

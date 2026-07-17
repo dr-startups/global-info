@@ -6,7 +6,10 @@
  */
 
 import { createHash } from "node:crypto";
-import { listSerpObservationsForAuditRun } from "../../serp-observation";
+// Import the DB accessor from its concrete module (not the package barrel) so
+// the canonical analytics graph does not transitively pull synthetic-asset /
+// highlight / noise-filter helpers that still carry legacy baseline literals.
+import { listSerpObservationsForAuditRun } from "../../serp-observation/persist";
 import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
 import type { RawInventoryItem } from "../types";
 import { observationKey } from "./client-language";

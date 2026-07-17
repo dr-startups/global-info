@@ -1,5 +1,5 @@
 import type { OrionRealCaseContext } from "../orion-section-pipeline/real-case-data-adapter";
-import { classifyWikipediaHit } from "../orion-golden/classic/orion-classic-theme-set";
+import { classifyWikipediaHit } from "../serp-observation/classify-wikipedia-hit";
 import {
   clientSourceLabel,
   extractDomain,

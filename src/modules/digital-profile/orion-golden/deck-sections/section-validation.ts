@@ -48,6 +48,7 @@ const TEXT_BUDGETS = {
 
 export function validateSectionPack(input: {
   pack: SectionPackV2;
+  expectedCaseId: string;
   expectedReportRunId: string;
   expectedDatasetId: string;
   bundle: VerifiedFindingBundle;
@@ -58,15 +59,25 @@ export function validateSectionPack(input: {
   const issues: string[] = [];
   const { pack } = input;
 
-  // 1. Schema valid.
+  // 1. Schema valid (v3 self-contained: caseId/datasetId/sourceFindingIds/
+  // evidenceRefs required; superRefine enforces datasetId==sourceDatasetId and
+  // sourceFindingIds/evidenceRefs == inputs.*).
   const parsed = SectionPackV2Schema.safeParse(pack);
   if (!parsed.success) {
     issues.push(`schema: ${parsed.error.issues[0]?.message ?? "invalid"}`);
   }
 
-  // 2/3. Lineage matches.
+  // 2/3. Lineage matches — explicit self-contained fields, never inferred.
+  if (!pack.caseId) {
+    issues.push("missing caseId");
+  } else if (pack.caseId !== input.expectedCaseId) {
+    issues.push(`foreign caseId: ${pack.caseId}`);
+  }
   if (pack.reportRunId !== input.expectedReportRunId) {
     issues.push(`foreign reportRunId: ${pack.reportRunId}`);
+  }
+  if (pack.datasetId !== input.expectedDatasetId) {
+    issues.push(`stale datasetId: ${pack.datasetId}`);
   }
   if (pack.sourceDatasetId !== input.expectedDatasetId) {
     issues.push(`stale sourceDatasetId: ${pack.sourceDatasetId}`);

@@ -58,10 +58,9 @@ export * from "./qa/r10-9-renderer-integration-qa";
 export * from "./qa/r10-9a-visual-polish-qa";
 export * from "./report-spec/orion-client-content-to-report-spec";
 export * from "./composer/orion-client-audit-deck-composer";
-export * from "./classic/orion-classic-client-content-to-report-spec";
-export * from "./classic/orion-classic-audit-deck-composer";
-export * from "./classic/orion-classic-theme-set";
-export * from "./classic/run-orion-classic-audit-render";
+// Retired ORION Classic monolithic composer cluster (see docs/legacy-orion-retirement.md):
+// orion-classic-client-content-to-report-spec, orion-classic-audit-deck-composer,
+// orion-classic-theme-set, run-orion-classic-audit-render — deleted, no longer re-exported.
 export * from "./evidence/admin-review-decision-validation";
 export * from "./evidence/admin-review-decision-record";
 export * from "./evidence/admin-review-decision-repository";
@@ -79,5 +78,5 @@ export * from "./identity/subject-identity-profile";
 export * from "./identity/subject-identity-profile-builder";
 export * from "./identity/subject-binding-scorer";
 export * from "./identity/homonym-disambiguation-policy";
-export * from "./run-r10-orion-golden-e2e";
+// Retired: run-r10-orion-golden-e2e (legacy R10 content-brain E2E) — deleted.
 export * from "./types";

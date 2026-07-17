@@ -1390,63 +1390,30 @@ export function captureLiveSerp(
   );
 }
 
-export type OrionClassicAuditReportSummary = {
-  ok: boolean;
-  uiEnabled: boolean;
-  reportMode: "classic_orion_audit_r10_11";
-  status: "completed" | "failed" | "running" | "empty";
-  runId: string | null;
-  createdAt: string | null;
-  completedAt: string | null;
-  slideCount: number;
-  pageCount: number;
-  verdict: string | null;
-  clientPolicyStatus: string | null;
-  artifacts: {
-    clientPdf: { available: boolean; downloadUrl: string | null };
-    clientPptx: { available: boolean; downloadUrl: string | null };
-  };
-  warnings: string[];
-};
-
-export function generateOrionClassicAuditReport(
+/**
+ * Canonical, lineage-safe download URL for an accepted unified-job artifact.
+ * Only valid once the job is REPORT_READY; the server re-validates lineage.
+ */
+export function getCanonicalArtifactDownloadUrl(
   caseId: string,
-  options?: { regenerateContent?: boolean }
-): Promise<OrionClassicAuditReportSummary> {
-  return request<OrionClassicAuditReportSummary>(
-    `/cases/${caseId}/orion-golden/report/generate`,
-    {
-      method: "POST",
-      body: JSON.stringify({ regenerateContent: Boolean(options?.regenerateContent) }),
-    }
-  );
-}
-
-export function getOrionClassicAuditReportStatus(
-  caseId: string
-): Promise<OrionClassicAuditReportSummary> {
-  return request<OrionClassicAuditReportSummary>(
-    `/cases/${caseId}/orion-golden/report/generate`
-  );
-}
-
-export function getOrionClassicDiagnosticsBundleUrl(
-  caseId: string,
-  runId?: string | null
+  jobId: string,
+  artifact: "pdf" | "pptx"
 ): string {
-  const q = new URLSearchParams();
-  if (runId?.trim()) q.set("runId", runId.trim());
-  return `${BASE}/cases/${caseId}/orion-golden/report/diagnostics-bundle${q.toString() ? `?${q}` : ""}`;
+  const q = new URLSearchParams({ jobId, artifact });
+  return `${BASE}/cases/${caseId}/unified-collection/download?${q.toString()}`;
 }
 
 export type OrionGoldenPrepareSummary = {
   ok: boolean;
   caseId: string;
+  jobId: string | null;
   status: "completed" | "failed" | "running" | "empty";
   runId: string | null;
   verdict: string | null;
   artifactRoot: string | null;
-  pendingCount: number;
+  pdf: string | null;
+  pptx: string | null;
+  pageCount: number;
   queueReady: boolean;
   createdAt: string | null;
   completedAt: string | null;
@@ -1454,11 +1421,12 @@ export type OrionGoldenPrepareSummary = {
 };
 
 export function prepareOrionGoldenArtifacts(
-  caseId: string
+  caseId: string,
+  jobId: string
 ): Promise<OrionGoldenPrepareSummary> {
   return request<OrionGoldenPrepareSummary>(`/cases/${caseId}/orion-golden/prepare`, {
     method: "POST",
-    body: JSON.stringify({}),
+    body: JSON.stringify({ jobId }),
   });
 }
 

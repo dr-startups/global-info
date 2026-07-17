@@ -16,10 +16,18 @@ import {
 } from "../contracts/subject-resolution";
 import type { SubjectRelevanceDecision } from "../contracts/common";
 
+/** A specific homonym/namesake of the subject and its disambiguating noise. */
+export type NamesakeProfile = {
+  /** Client-facing label for the OTHER person, e.g. "Иван Петров (актёр)". */
+  label: string;
+  /** Lowercased tokens whose presence indicates this OTHER subject. */
+  noiseTerms: string[];
+};
+
 export type SubjectIdentity = {
   displayName: string;
   lastName: string;
-  /** Surname variants incl. transliterations (e.g. "глинка", "glinka"). */
+  /** Surname variants incl. transliterations (subject-supplied, not hardcoded). */
   lastNameVariants: string[];
   firstNames: string[]; // ru + translit
   patronymics: string[];
@@ -29,24 +37,11 @@ export type SubjectIdentity = {
   wrongFirstNames: string[];
   wrongPatronymics: string[];
   unrelatedKnownPersons: string[];
+  /** Namesake noise (per homonym) — entirely subject-supplied, never hardcoded. */
+  namesakeProfiles: NamesakeProfile[];
+  /** Flattened noise terms across all namesakes (convenience for matching). */
+  namesakeNoise: string[];
 };
-
-/** Known namesake noise for the composer namesake class (extends profile signals). */
-const COMPOSER_NOISE = [
-  "михаил глинка",
-  "михаила глинки",
-  "mikhail glinka",
-  "композитор",
-  "composer",
-  "опера",
-  "opera",
-  "жизнь за царя",
-  "руслан и людмила",
-  "imslp",
-  "симфони",
-  "романс",
-  "партитур",
-];
 
 function norm(text: string): string {
   return text.toLowerCase().replace(/ё/gu, "е").replace(/\s+/gu, " ").trim();
@@ -63,7 +58,8 @@ function itemText(item: RawInventoryItem): string {
 /**
  * Morphology-tolerant token match: Russian case endings inflect the last
  * letter(s), so for tokens >=5 chars also try the stem without the final
- * letter ("сергей" → "серге" matches "Сергея"/"Сергею"; "глинка" → "глинк").
+ * letter (e.g. a given name "иван" → matches "Ивана"/"Ивану"; a surname
+ * "петров" → "петро" matches inflected forms).
  */
 function matchesToken(text: string, name: string): boolean {
   const n = norm(name);
@@ -113,8 +109,8 @@ export function classifySubjectRelevance(
   for (const w of subject.wrongPatronymics) {
     if (norm(w).length > 3 && matchesToken(text, w)) conflictingIdentifiers.push(w);
   }
-  for (const n of COMPOSER_NOISE) {
-    if (text.includes(n)) conflictingIdentifiers.push(n);
+  for (const n of subject.namesakeNoise) {
+    if (n.length > 2 && text.includes(norm(n))) conflictingIdentifiers.push(n);
   }
 
   let decision: SubjectRelevanceDecision;
@@ -193,44 +189,109 @@ export function buildSubjectResolution(input: {
   });
 }
 
-/** Adapter from the production subject-identity-profile.json shape. */
-export function subjectIdentityFromProfile(profile: {
+/** Profile shape consumed by the classifier (subset of SubjectIdentityProfile). */
+export type ClassifierSubjectProfile = {
   displayName: string;
+  /**
+   * Positional Russian name. LOWER-CONFIDENCE backward-compat fallback ONLY:
+   * used when the structured fields below are absent. It must not be assumed to
+   * exist and does not imply a patronymic or Russian name order.
+   */
   fullNameRu?: { lastName?: string; firstName?: string; patronymic?: string };
+  /** Structured dynamic identity (preferred; subject-supplied). */
+  givenNames?: string[];
+  familyNames?: string[];
+  patronymics?: string[];
   aliases?: string[];
   transliterations?: string[];
+  contextIdentifiers?: string[];
+  namesakeProfiles?: NamesakeProfile[];
   knownIdentifiers?: { inn?: string[] };
   negativeIdentitySignals?: {
     wrongPatronymics?: string[];
     wrongNames?: string[];
     unrelatedKnownPersons?: string[];
   };
-}): SubjectIdentity {
-  const first = profile.fullNameRu?.firstName ?? "";
-  // Surname transliteration: the token shared by every transliteration variant.
+};
+
+/**
+ * Adapter from a subject profile to the matcher's SubjectIdentity.
+ *
+ * Every subject-specific value comes from the profile — there are NO hardcoded
+ * names, patronymics, business terms or namesake noise here. Structured fields
+ * (givenNames/familyNames/patronymics/…) are preferred; positional `fullNameRu`
+ * is only a lower-confidence fallback and never assumes Russian ordering or the
+ * existence of a patronymic.
+ */
+export function subjectIdentityFromProfile(profile: ClassifierSubjectProfile): SubjectIdentity {
+  const structuredFamily = (profile.familyNames ?? []).filter(Boolean);
+  const structuredGiven = (profile.givenNames ?? []).filter(Boolean);
+  const structuredPatr = (profile.patronymics ?? []).filter(Boolean);
+
+  // Surname transliteration token. Prefer the token that corresponds to a known
+  // family name (structured or positional); only fall back to the "shared by all
+  // variants" heuristic when family names are unknown. This avoids mislabelling
+  // the given-name token as the surname for non-Russian, given-first names.
+  const familyTokenSet = new Set(
+    [...structuredFamily, profile.fullNameRu?.lastName ?? ""]
+      .flatMap((f) => f.toLowerCase().replace(/ё/gu, "е").split(/\s+/))
+      .filter((w) => w.length > 2)
+  );
   const translits = (profile.transliterations ?? []).map((t) => t.toLowerCase());
   const tokenSets = translits.map((t) => new Set(t.split(/\s+/).filter((w) => w.length > 2)));
-  const surnameTranslit =
+  const sharedTokens =
     tokenSets.length > 0
-      ? [...tokenSets[0]].find((tok) => tokenSets.every((s) => s.has(tok))) ?? ""
-      : "";
-  const translitFirsts = translits
-    .map((t) => t.split(/\s+/).find((w) => w.length > 2 && w !== surnameTranslit) ?? "")
-    .filter(Boolean);
+      ? [...tokenSets[0]].filter((tok) => tokenSets.every((s) => s.has(tok)))
+      : [];
+  const matchesFamily = (tok: string): boolean =>
+    familyTokenSet.has(tok) ||
+    [...familyTokenSet].some(
+      (ft) => (ft.length >= 4 && tok.startsWith(ft.slice(0, 4))) || (tok.length >= 4 && ft.startsWith(tok.slice(0, 4)))
+    );
+  const surnameTranslit = sharedTokens.find(matchesFamily) ?? sharedTokens[0] ?? "";
+  // Non-surname translit tokens become first-name candidates — but never tokens
+  // that transliterate a known family name (guards the surname leaking in as a
+  // first name for given-first Latin names).
+  const translitFirsts = translits.flatMap((t) =>
+    t.split(/\s+/).filter((w) => w.length > 2 && w !== surnameTranslit && !matchesFamily(w))
+  );
+
+  // Backward-compat positional fallback (lower confidence): only used to seed
+  // fields the structured profile did not provide.
+  const positionalLast = profile.fullNameRu?.lastName ?? "";
+  const positionalFirst = profile.fullNameRu?.firstName ?? "";
+  const positionalPatr = profile.fullNameRu?.patronymic ?? "";
+
+  const lastName =
+    structuredFamily[0] ?? positionalLast ?? profile.displayName.split(/\s+/)[0] ?? "";
+  const lastNameVariants = [
+    ...new Set([...structuredFamily.slice(1), surnameTranslit].filter(Boolean)),
+  ];
+  const firstNames = [
+    ...new Set([...structuredGiven, positionalFirst, ...translitFirsts].filter(Boolean)),
+  ];
+  const patronymics = [...new Set([...structuredPatr, positionalPatr].filter(Boolean))];
+
+  const namesakeProfiles = (profile.namesakeProfiles ?? []).map((n) => ({
+    label: n.label,
+    noiseTerms: n.noiseTerms.map((t) => t.toLowerCase()),
+  }));
+  const namesakeNoise = [...new Set(namesakeProfiles.flatMap((n) => n.noiseTerms))];
+
   return {
     displayName: profile.displayName,
-    lastName: profile.fullNameRu?.lastName ?? profile.displayName.split(/\s+/)[0] ?? "",
-    lastNameVariants: surnameTranslit ? [surnameTranslit] : [],
-    firstNames: [...new Set([first, "sergey", "sergei", ...translitFirsts].filter(Boolean))],
-    patronymics: [profile.fullNameRu?.patronymic ?? "", "mikhaylovich", "mikhailovich"].filter(
-      Boolean
-    ),
+    lastName,
+    lastNameVariants,
+    firstNames,
+    patronymics,
     aliases: [...new Set([...(profile.aliases ?? []), ...(profile.transliterations ?? [])])],
     strongIdentifiers: profile.knownIdentifiers?.inn ?? [],
-    contextIdentifiers: ["бизнесмен", "businessman", "предприниматель", "инвестор", "транспорт", "логистик"],
+    contextIdentifiers: [...new Set(profile.contextIdentifiers ?? [])],
     wrongFirstNames: profile.negativeIdentitySignals?.wrongNames ?? [],
     wrongPatronymics: profile.negativeIdentitySignals?.wrongPatronymics ?? [],
     unrelatedKnownPersons: profile.negativeIdentitySignals?.unrelatedKnownPersons ?? [],
+    namesakeProfiles,
+    namesakeNoise,
   };
 }
 

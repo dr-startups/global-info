@@ -74,13 +74,8 @@ export function shouldUseGptAutoAnalyst(env: NodeJS.ProcessEnv = process.env): b
 
 function isSuggestionNoise(text: string): boolean {
   const q = text.toLowerCase();
-  return (
-    /autocomplete lyrics|image gallery|images free|profile linkedin|profile facebook|video live|videos youtube|news today|news article|related queries pdf|uaeraine|uaeu\b|russkov|russo\b/.test(
-      q
-    ) ||
-    /^(deripaska|oleg)\s+(oleg\s+)?(vladimirovich\s+)?(related|image|video|news|profile|interview\s+\d{4})/i.test(
-      text
-    )
+  return /autocomplete lyrics|image gallery|images free|profile linkedin|profile facebook|video live|videos youtube|news today|news article|related queries pdf|uaeraine|uaeu\b|russkov|russo\b/.test(
+    q
   );
 }
 

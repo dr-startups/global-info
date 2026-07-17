@@ -8,8 +8,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DigitalProfileApiError,
   executeArsenkinRun,
-  generateOrionClassicAuditReport,
-  getOrionClassicDiagnosticsBundleUrl,
   getArsenkinStatus,
   planArsenkinRun,
   prepareArsenkinRun,
@@ -371,18 +369,6 @@ export function ArsenkinToolsPanel(props: {
         setBanner("Передача в ORION не завершена — binding/client content не сохранены.");
       }
     });
-  };
-
-  const onRebuildReport = () => {
-    void runAction(async () => {
-      await generateOrionClassicAuditReport(caseId, { regenerateContent: false });
-      setBanner("Пересборка отчёта запущена.");
-    });
-  };
-
-  const onDownloadDiagnostics = () => {
-    const url = getOrionClassicDiagnosticsBundleUrl(caseId);
-    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   const onReconcileDone = () => {
@@ -1053,22 +1039,10 @@ export function ArsenkinToolsPanel(props: {
                 Передать результаты в ORION
               </button>
             )}
-            <button
-              type="button"
-              className="dp-btn"
-              disabled={busy || !transferComplete}
-              onClick={onRebuildReport}
-            >
-              Пересобрать контент + PDF
-            </button>
-            <button
-              type="button"
-              className="dp-btn"
-              disabled={busy || !transferComplete}
-              onClick={onDownloadDiagnostics}
-            >
-              Скачать диагностический пакет
-            </button>
+            <span className="dp-muted" style={{ alignSelf: "center" }}>
+              Отчёт собирается только единым аудитом ORION (канонический job). Диагностический
+              прогон Arsenkin обновляет binding/provenance и помечает отчёт как устаревший.
+            </span>
               </div>
             </details>
           </div>

@@ -10,11 +10,11 @@ import {
   cellKey,
   mapRegionBucket,
 } from "../src/modules/digital-profile/orion-golden/classic/composite-serp-overlay-merge";
-import {
-  classifySuggestionIntent,
-  type OrionSurfaceKpis,
-} from "../src/modules/digital-profile/orion-golden/classic/orion-classic-theme-set";
-import { inspectFirst36Acceptance } from "../src/modules/digital-profile/orion-golden/classic/first36-acceptance-gate";
+// NOTE: suggestion-intent/KPI classification (orion-classic-theme-set) and the legacy
+// First36 acceptance-gate were retired with the monolithic composer. Canonical surface
+// analysis + acceptance (zero-denominator, provenance, base-preservation) are covered by
+// smoke:orion-analytics-pipeline / smoke:canonical-orchestration-e2e. This script retains
+// the subject-agnostic composite-overlay-merge and sidebar-client-policy assertions.
 import {
   inspectSidebarClientPolicy,
   scanSidebarText,
@@ -267,123 +267,6 @@ describe("composite serp overlay merge", () => {
     assert.equal(result.provenance.replacedCells, 2);
     assert.ok(result.provenance.preservedCells >= 2);
     assert.equal(getArsenkinNetworkCallCount(), 0);
-  });
-
-  it("KPI null pct when linksTotal=0; classification separates contextual", () => {
-    assert.equal(
-      classifySuggestionIntent("Иванов мошенничество", "Иванов", []),
-      "explicitAdverse"
-    );
-    assert.equal(
-      classifySuggestionIntent("Иванов Трансмашхолдинг", "Иванов", ["Трансмашхолдинг"]),
-      "contextualRisk"
-    );
-
-    const emptyOrganic: OrionSurfaceKpis = {
-      region: "RU",
-      linksTotal: 0,
-      linksAdverse: 0,
-      linksAdversePct: null,
-      sampleStatus: "NOT_COLLECTED",
-      suggestionsTotal: 5,
-      suggestionsAdverse: 0,
-      suggestionsExplicitAdverse: 0,
-      suggestionsContextualRisk: 2,
-      suggestionsIdentityRisk: 0,
-      relatedTotal: 0,
-      relatedAdverse: 0,
-      wikipediaPresent: false,
-      wikipediaStatus: "ABSENT",
-      imagesTotal: 0,
-      imagesAdverse: 0,
-      videosTotal: 0,
-      knowledgeTotal: 0,
-      knowledgeAdverse: 0,
-      searchVisibilityBadge: "Данных недостаточно",
-      overallRiskBadge: "Нежелательный",
-      dataQualityBadge: "PARTIAL",
-      overallBadge: "Нежелательный",
-    };
-    assert.equal(emptyOrganic.linksAdversePct, null);
-    assert.notEqual(emptyOrganic.searchVisibilityBadge, "Нейтральный");
-  });
-
-  it("acceptance allows composite source!=effective; blocks zero-denominator 0%", () => {
-    const ok = inspectFirst36Acceptance({
-      slideCount: 36,
-      slides: Array.from({ length: 36 }, (_, i) => ({
-        pageNumber: i + 1,
-        title: `Page ${i + 1}`,
-        narrative: "Клиентский текст с достаточной длиной предложения для проверки.",
-        bullets: ["Первый пункт клиентского текста."],
-      })),
-      runScopedMerge: { usedRunScoped: true, observationCount: 10, duplicateKeys: [] },
-      expectedRunId: "orion-arsenkin-enrich",
-      clientContentSourceReportRunId: "orion-r10-base",
-      compositeBinding: {
-        sourceReportRunId: "orion-r10-base",
-        effectiveReportRunId: "orion-arsenkin-enrich",
-        enrichmentRunIds: ["orion-arsenkin-enrich"],
-      },
-      themeKpis: {
-        ru: { linksTotal: 2, linksAdversePct: 0, overallBadge: "Нейтральный", overallRiskBadge: "Нейтральный" },
-        uae: { linksTotal: 3, linksAdversePct: 0, overallBadge: "Нейтральный", overallRiskBadge: "Нейтральный" },
-      },
-      typecheckPassed: true,
-    });
-    assert.ok(
-      !ok.issues.some((i) => i.code === "foreign-client-content-run"),
-      "composite source!=effective must not be foreign"
-    );
-
-    const bad = inspectFirst36Acceptance({
-      slideCount: 36,
-      slides: Array.from({ length: 36 }, (_, i) => ({ pageNumber: i + 1, title: `p${i + 1}` })),
-      runScopedMerge: { usedRunScoped: true, observationCount: 1, duplicateKeys: [] },
-      expectedRunId: "orion-arsenkin-enrich",
-      themeKpis: {
-        ru: { linksTotal: 0, linksAdversePct: 0, overallBadge: "Нейтральный", overallRiskBadge: "Нейтральный" },
-      },
-      typecheckPassed: true,
-    });
-    assert.ok(bad.issues.some((i) => i.code === "zero-denominator-percentage"));
-    assert.ok(bad.issues.some((i) => i.code === "neutral-badge-with-high-risk-evidence"));
-
-    const lost = inspectFirst36Acceptance({
-      slideCount: 36,
-      slides: Array.from({ length: 36 }, (_, i) => ({ pageNumber: i + 1, title: `p${i + 1}` })),
-      runScopedMerge: { usedRunScoped: true, observationCount: 18, duplicateKeys: [] },
-      expectedRunId: "orion-arsenkin-enrich",
-      clientContentSourceReportRunId: "orion-r10-base",
-      compositeBinding: {
-        sourceReportRunId: "orion-r10-base",
-        effectiveReportRunId: "orion-arsenkin-enrich",
-        enrichmentRunIds: ["orion-arsenkin-enrich"],
-      },
-      compositeMergeWarnings: ["uncovered-surface-data-loss:organic"],
-      themeKpis: {
-        ru: { linksTotal: 5, linksAdversePct: 0, overallBadge: "Нейтральный", overallRiskBadge: "Нейтральный" },
-      },
-      typecheckPassed: true,
-    });
-    assert.ok(lost.issues.some((i) => i.code === "uncovered-surface-data-loss"));
-
-    const mismatch = inspectFirst36Acceptance({
-      slideCount: 36,
-      slides: Array.from({ length: 36 }, (_, i) => ({
-        pageNumber: i + 1,
-        title: `p${i + 1}`,
-        evidenceRefs: i === 10 ? ["serp_observation:arsenkin-1"] : [],
-        visualAnalysis:
-          i === 10
-            ? { provenanceLabel: "Источник: сохранённые поисковые подсказки" }
-            : undefined,
-      })),
-      runScopedMerge: { usedRunScoped: true, observationCount: 1, duplicateKeys: [] },
-      expectedRunId: "orion-arsenkin-enrich",
-      typecheckPassed: true,
-    });
-    assert.ok(mismatch.issues.some((i) => i.code === "provenance-label-mismatch"));
   });
 
   it("RU/UAE denominators stay distinct after overlay", () => {

@@ -370,6 +370,23 @@ export function validateAssembly(input: {
   }
   checks.noStalePacks = staleOk;
 
+  // Self-contained lineage: every pack carries an explicit caseId/datasetId
+  // that matches the assembled deck lineage (no caseId=undefined packs).
+  let packLineageOk = true;
+  for (const pack of input.packs) {
+    if (!pack.caseId || pack.caseId !== deckManifest.caseId) {
+      packLineageOk = false;
+      issues.push(`pack ${pack.fragmentKey} caseId ${String(pack.caseId)} != deck ${deckManifest.caseId}`);
+    }
+    if (pack.datasetId !== deckManifest.sourceDatasetId) {
+      packLineageOk = false;
+      issues.push(
+        `pack ${pack.fragmentKey} datasetId ${pack.datasetId} != deck ${deckManifest.sourceDatasetId}`
+      );
+    }
+  }
+  checks.packSelfContainedLineage = packLineageOk;
+
   // Geometry-level clipping/overlap is validated by the existing PPTX geometry
   // gate after render; at the model level we assert budgets were enforced by
   // section QA (validationPassed for all entries).

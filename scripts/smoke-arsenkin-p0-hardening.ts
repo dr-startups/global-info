@@ -3,9 +3,6 @@
  */
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { ArsenkinClient, ArsenkinRequestError } from "../src/modules/digital-profile/providers/arsenkin/client";
 import {
   createMemoryProviderTaskStore,
@@ -14,7 +11,9 @@ import {
 import { ensureArsenkinTask, pollArsenkinTask, runDueArsenkinPolls } from "../src/modules/digital-profile/providers/arsenkin/poll-worker";
 import { createMemoryArsenkinAccountLimiter, arsenkinAccountLimiterConfig } from "../src/modules/digital-profile/providers/arsenkin/account-rate-limit";
 import { computeLimitsSpent, costStatusFromSpent } from "../src/modules/digital-profile/providers/arsenkin/cost";
-import { inspectFirst36Acceptance } from "../src/modules/digital-profile/orion-golden/classic/first36-acceptance-gate";
+// NOTE: legacy First36 acceptance-gate assertions were retired with the monolithic
+// composer. Canonical acceptance (foreign/stale rejection + provider-task provenance)
+// is covered by smoke:canonical-orchestration-e2e and smoke:canonical-report-prepare.
 import { findSurfaceCoverageDuplicateGroups } from "../src/modules/digital-profile/providers/arsenkin/surface-coverage-duplicate-audit";
 
 function mockClient(handlers: {
@@ -225,98 +224,6 @@ describe("arsenkin p0 hardening", () => {
     assert.equal(computeLimitsSpent(null, 5), null);
     assert.equal(costStatusFromSpent(null), "UNKNOWN");
     assert.equal(computeLimitsSpent(10, 7), 3);
-  });
-
-  it("acceptance fails on incomplete task, missing geometry, missing PNG, foreign runId, null providerTaskId", () => {
-    const dir = mkdtempSync(join(tmpdir(), "f36-accept-"));
-    mkdirSync(join(dir, "pages-png"));
-    writeFileSync(join(dir, "rendered-client.pdf"), "x");
-    writeFileSync(join(dir, "rendered-client.pptx"), "x");
-    // only 1 png
-    writeFileSync(join(dir, "pages-png", "01.png"), "x");
-
-    const baseSlides = Array.from({ length: 36 }, (_, i) => ({
-      pageNumber: i + 1,
-      title: i === 18 || i === 35 ? "slot" : `p${i + 1}`,
-      narrative: i === 18 || i === 35 ? "content" : undefined,
-    }));
-
-    const r = inspectFirst36Acceptance({
-      slideCount: 36,
-      slides: baseSlides,
-      runScopedMerge: { usedRunScoped: true, observationCount: 10 },
-      arsenkinRequired: true,
-      clientFinalize: true,
-      expectedRunId: "run-new",
-      clientContentSourceReportRunId: "run-old",
-      arsenkinEnrich: { mode: "live", skipped: false },
-      providerTasks: [{ reportRunId: "run-new", state: "RUNNING", id: "t1" }],
-      observations: [{ auditRunId: "run-new", provider: "arsenkin", providerTaskId: null }],
-      coverageSummary: {
-        reportRunId: "run-new",
-        rows: [
-          {
-            reportRunId: "run-new",
-            tool: "check-top",
-            engine: "GOOGLE",
-            region: "RU",
-            surface: "organic",
-            status: "OK",
-            providerTaskId: null,
-          },
-        ],
-      },
-      geometryReportPresent: false,
-      paths: {
-        pdf: join(dir, "rendered-client.pdf"),
-        pptx: join(dir, "rendered-client.pptx"),
-        pagesPngDir: join(dir, "pages-png"),
-      },
-    });
-    assert.equal(r.passed, false);
-    const codes = new Set(r.issues.map((i) => i.code));
-    assert.ok(codes.has("arsenkin-task-incomplete"));
-    assert.ok(codes.has("geometry-missing"));
-    assert.ok(codes.has("png-count"));
-    assert.ok(codes.has("foreign-client-content-run"));
-    assert.ok(codes.has("observation-missing-provider-task") || codes.has("coverage-missing-provider-task"));
-  });
-
-  it("100% observation/coverage provenance is required in ARSENKIN_REQUIRED", () => {
-    const r = inspectFirst36Acceptance({
-      slideCount: 36,
-      slides: Array.from({ length: 36 }, (_, i) => ({
-        pageNumber: i + 1,
-        title: i === 18 || i === 35 ? "slot" : `p${i + 1}`,
-        narrative: i === 18 || i === 35 ? "content" : undefined,
-      })),
-      runScopedMerge: { usedRunScoped: true, observationCount: 2 },
-      arsenkinRequired: true,
-      arsenkinEnrich: { mode: "live", skipped: true, reason: "already_enriched organic=20" },
-      providerTasks: [{ reportRunId: "run", state: "DONE", id: "t1" }],
-      observations: [
-        { auditRunId: "run", provider: "arsenkin", providerTaskId: "t1" },
-        { auditRunId: "run", provider: "arsenkin", providerTaskId: null },
-      ],
-      provenanceSummary: { linkedObservations: 1, totalObservations: 2, linkedCoverage: 1, totalCoverage: 1 },
-      coverageSummary: {
-        reportRunId: "run",
-        rows: [
-          { tool: "check-top", engine: "GOOGLE", region: "RU", surface: "organic", status: "OK", providerTaskId: "t1" },
-          { tool: "suggest", engine: "YANDEX", region: "RU", surface: "autocomplete", status: "OK", providerTaskId: "t1" },
-          { tool: "suggest", engine: "GOOGLE", region: "RU", surface: "autocomplete", status: "NO_RESULTS", providerTaskId: "t1" },
-          { tool: "suggest", engine: "GOOGLE", region: "UAE", surface: "autocomplete", status: "OK", providerTaskId: "t1" },
-          { tool: "paa", engine: "GOOGLE", region: "RU", surface: "paa", status: "OK", providerTaskId: "t1" },
-          { tool: "paa", engine: "GOOGLE", region: "UAE", surface: "paa", status: "OK", providerTaskId: "t1" },
-        ],
-      },
-      expectedRunId: "run",
-      geometryReport: { overlaps: [], overflow: [], blank: [] },
-      geometryReportPresent: true,
-      clientFinalize: false,
-    });
-    assert.equal(r.passed, false);
-    assert.ok(r.issues.some((i) => /provenance|provider-task/i.test(i.code)));
   });
 
   it("HTTP /set timeout is uncertain (SUBMIT_UNKNOWN path); check may retry", async () => {

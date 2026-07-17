@@ -64,6 +64,7 @@ export function runDeckBuild(input: {
   for (const pack of packs) {
     const report = validateSectionPack({
       pack,
+      expectedCaseId: ctx.caseId,
       expectedReportRunId: ctx.reportRunId,
       expectedDatasetId: ctx.sourceDatasetId,
       bundle: input.bundleForValidation,
@@ -106,6 +107,7 @@ export function runDeckBuild(input: {
   const assembly = assembleDeck({
     manifest,
     packs,
+    expectedCaseId: ctx.caseId,
     expectedReportRunId: ctx.reportRunId,
     expectedDatasetId: ctx.sourceDatasetId,
   });
@@ -118,7 +120,9 @@ export function runDeckBuild(input: {
     JSON.stringify(
       {
         version: "deck-sections-assembled-v1",
+        caseId: ctx.caseId,
         reportRunId: ctx.reportRunId,
+        datasetId: ctx.sourceDatasetId,
         sourceDatasetId: ctx.sourceDatasetId,
         slides: assembly.rendererSlides,
         rejections: assembly.rejections,

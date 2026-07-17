@@ -1,0 +1,176 @@
+{
+  "schemaVersion": "section-pack-v3",
+  "sectionId": "RU_PROFILE",
+  "sectionType": "RU_PROFILE",
+  "fragmentKey": "RU_RELATED",
+  "caseId": "cmreamy2t0002o30f29urzcog",
+  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "reportRunId": "orion-canary-1783980828528",
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "contentVersion": "deck-sections-v14",
+  "promptVersion": "ru-related-analysis-v1",
+  "contentHash": "sha256:4a2e5633661f6490b47946bf7bcec418249aedfbecae92efd598aae7b1fcdf3b",
+  "inputHash": "sha256:4c9fdb7a77ebb68ace0fa07ef514914fc26ecc038ed316fb34a3feb1a37254f8:ab0820f13116a301",
+  "generatedAt": "2026-07-17T00:37:40.388Z",
+  "required": true,
+  "status": "READY",
+  "sourceFindingIds": [],
+  "evidenceRefs": [
+    "inventory:serp-obs-cmrjscznt009xvd9gfqk5wgev",
+    "inventory:serp-obs-cmrjsczo000a1vd9g6pdnmpg3",
+    "inventory:serp-obs-cmrjsczo700a5vd9gk74pns6u",
+    "inventory:serp-obs-cmrjsczod00a9vd9gug29pvtu",
+    "inventory:serp-obs-cmrjsczoj00advd9ggxsqizy6",
+    "inventory:serp-obs-cmrjsczoq00ahvd9gmukoogyv",
+    "inventory:serp-obs-cmrjsczow00alvd9g9gx3egjo",
+    "inventory:serp-obs-cmrjsczp200apvd9gqtofac16",
+    "inventory:serp-obs-cmrjsczp800atvd9g74u2yw40",
+    "inventory:serp-obs-cmrjsczpe00axvd9g40tyau1t"
+  ],
+  "inputs": {
+    "findingIds": [],
+    "evidenceRefs": [
+      "inventory:serp-obs-cmrjscznt009xvd9gfqk5wgev",
+      "inventory:serp-obs-cmrjsczo000a1vd9g6pdnmpg3",
+      "inventory:serp-obs-cmrjsczo700a5vd9gk74pns6u",
+      "inventory:serp-obs-cmrjsczod00a9vd9gug29pvtu",
+      "inventory:serp-obs-cmrjsczoj00advd9ggxsqizy6",
+      "inventory:serp-obs-cmrjsczoq00ahvd9gmukoogyv",
+      "inventory:serp-obs-cmrjsczow00alvd9g9gx3egjo",
+      "inventory:serp-obs-cmrjsczp200apvd9gqtofac16",
+      "inventory:serp-obs-cmrjsczp800atvd9g74u2yw40",
+      "inventory:serp-obs-cmrjsczpe00axvd9g40tyau1t"
+    ],
+    "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
+  },
+  "slides": [
+    {
+      "schemaVersion": "slide-content-v1",
+      "slideId": "p20_ru_related_1",
+      "baseSlotId": "p20_ru_related_1",
+      "sectionId": "RU_PROFILE",
+      "isContinuation": false,
+      "continuationOf": null,
+      "continuationIndex": null,
+      "templateId": "related-queries",
+      "title": "Россия — связанные запросы (1)",
+      "content": {
+        "bullets": [
+          "Относится к другому лицу: Каков вклад Глинки в музыку?"
+        ],
+        "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
+        "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+        "whatToCheck": "Мониторить изменения выдачи.",
+        "statusNote": "Статус: по данной поверхности выводов о рисках нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+      },
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjscznt009xvd9gfqk5wgev",
+        "inventory:serp-obs-cmrjsczo000a1vd9g6pdnmpg3",
+        "inventory:serp-obs-cmrjsczo700a5vd9gk74pns6u",
+        "inventory:serp-obs-cmrjsczod00a9vd9gug29pvtu"
+      ],
+      "findingIds": [],
+      "metrics": {
+        "items": 4
+      },
+      "visualAssetRefs": [
+        "ru_related_1"
+      ]
+    },
+    {
+      "schemaVersion": "slide-content-v1",
+      "slideId": "p21_ru_related_2",
+      "baseSlotId": "p21_ru_related_2",
+      "sectionId": "RU_PROFILE",
+      "isContinuation": false,
+      "continuationOf": null,
+      "continuationIndex": null,
+      "templateId": "related-queries",
+      "title": "Россия — связанные запросы (2)",
+      "content": {
+        "bullets": [
+          "Относится к другому лицу: От чего умер композитор Глинка?"
+        ],
+        "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
+        "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+        "whatToCheck": "Мониторить изменения выдачи.",
+        "statusNote": "Статус: по данной поверхности выводов о рисках нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+      },
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczoj00advd9ggxsqizy6",
+        "inventory:serp-obs-cmrjsczoq00ahvd9gmukoogyv",
+        "inventory:serp-obs-cmrjsczow00alvd9g9gx3egjo"
+      ],
+      "findingIds": [],
+      "metrics": {
+        "items": 3
+      },
+      "visualAssetRefs": [
+        "ru_related_2"
+      ]
+    },
+    {
+      "schemaVersion": "slide-content-v1",
+      "slideId": "p22_ru_related_3",
+      "baseSlotId": "p22_ru_related_3",
+      "sectionId": "RU_PROFILE",
+      "isContinuation": false,
+      "continuationOf": null,
+      "continuationIndex": null,
+      "templateId": "related-queries",
+      "title": "Россия — связанные запросы (3)",
+      "content": {
+        "bullets": [
+          "Относится к другому лицу: В кого был влюблен Глинка?"
+        ],
+        "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
+        "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+        "whatToCheck": "Мониторить изменения выдачи.",
+        "statusNote": "Статус: по данной поверхности выводов о рисках нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+      },
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczp200apvd9gqtofac16",
+        "inventory:serp-obs-cmrjsczp800atvd9g74u2yw40",
+        "inventory:serp-obs-cmrjsczpe00axvd9g40tyau1t"
+      ],
+      "findingIds": [],
+      "metrics": {
+        "items": 3
+      },
+      "visualAssetRefs": [
+        "ru_related_3"
+      ]
+    }
+  ],
+  "metrics": {
+    "datasetCount": 10,
+    "displayedCount": 10,
+    "adverseDatasetCount": 0,
+    "adverseDisplayedCount": 0
+  },
+  "provenance": {
+    "providers": [],
+    "reportRunIds": [
+      "orion-canary-1783980828528"
+    ],
+    "evidenceRefs": [
+      "inventory:serp-obs-cmrjscznt009xvd9gfqk5wgev",
+      "inventory:serp-obs-cmrjsczo000a1vd9g6pdnmpg3",
+      "inventory:serp-obs-cmrjsczo700a5vd9gk74pns6u",
+      "inventory:serp-obs-cmrjsczod00a9vd9gug29pvtu",
+      "inventory:serp-obs-cmrjsczoj00advd9ggxsqizy6",
+      "inventory:serp-obs-cmrjsczoq00ahvd9gmukoogyv",
+      "inventory:serp-obs-cmrjsczow00alvd9g9gx3egjo",
+      "inventory:serp-obs-cmrjsczp200apvd9gqtofac16",
+      "inventory:serp-obs-cmrjsczp800atvd9g74u2yw40",
+      "inventory:serp-obs-cmrjsczpe00axvd9g40tyau1t"
+    ]
+  },
+  "validation": {
+    "passed": true,
+    "issues": []
+  }
+}

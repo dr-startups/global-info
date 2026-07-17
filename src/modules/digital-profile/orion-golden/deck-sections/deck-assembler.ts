@@ -24,7 +24,12 @@ import { CANONICAL_SLOT_IDS, EXPLICIT_SLOT_MERGES } from "./canonical-slots";
 
 export type AssemblyRejection = {
   fragmentKey: string;
-  reason: "FOREIGN_REPORT_RUN" | "STALE_DATASET" | "SECTION_QA_FAILED" | "EMPTY_VALID_OMITTED";
+  reason:
+    | "FOREIGN_CASE"
+    | "FOREIGN_REPORT_RUN"
+    | "STALE_DATASET"
+    | "SECTION_QA_FAILED"
+    | "EMPTY_VALID_OMITTED";
   detail: string;
 };
 
@@ -71,6 +76,7 @@ export type DeckAssemblyResult = {
 export function assembleDeck(input: {
   manifest: ReportSectionManifest;
   packs: SectionPackV2[];
+  expectedCaseId: string;
   expectedReportRunId: string;
   expectedDatasetId: string;
 }): DeckAssemblyResult {
@@ -94,6 +100,18 @@ export function assembleDeck(input: {
       if (entry.required) errors.push(`missing pack for required fragment ${entry.fragmentKey}`);
       continue;
     }
+    // Self-contained lineage: caseId is read from the pack itself and must
+    // match the current job — never inferred from the dataset string or the
+    // owning manifest. A caseId=undefined pack fails closed here.
+    if (!pack.caseId || pack.caseId !== input.expectedCaseId) {
+      rejections.push({
+        fragmentKey: pack.fragmentKey,
+        reason: "FOREIGN_CASE",
+        detail: String(pack.caseId),
+      });
+      if (entry.required) errors.push(`required fragment ${entry.fragmentKey} has foreign/missing caseId`);
+      continue;
+    }
     if (pack.reportRunId !== input.expectedReportRunId) {
       rejections.push({
         fragmentKey: pack.fragmentKey,
@@ -103,7 +121,7 @@ export function assembleDeck(input: {
       if (entry.required) errors.push(`required fragment ${entry.fragmentKey} has foreign reportRunId`);
       continue;
     }
-    if (pack.sourceDatasetId !== input.expectedDatasetId) {
+    if (pack.datasetId !== input.expectedDatasetId || pack.sourceDatasetId !== input.expectedDatasetId) {
       rejections.push({
         fragmentKey: pack.fragmentKey,
         reason: "STALE_DATASET",

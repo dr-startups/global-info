@@ -27,13 +27,17 @@ import {
   runDeckBuild,
   validateAssembly,
   validateSectionPack,
+  SECTION_PACK_SCHEMA_VERSION,
+  SECTION_PACK_V2_SCHEMA_VERSION,
   type FragmentKey,
+  type LegacySectionPackV2,
   type SectionBuildContext,
   type SectionPackV2,
   type V72PageInventoryItem,
 } from "../src/modules/digital-profile/orion-golden/deck-sections";
 import { loadReport72DeckInputs, loadReportAssets } from "./run-orion-deck-sections-report72";
 import type { SectionValidationReport } from "../src/modules/digital-profile/orion-golden/deck-sections";
+import { migratePack } from "./migrate-section-packs-v2-to-v3";
 
 const inputs = loadReport72DeckInputs();
 const { visualAssets } = loadReportAssets(inputs.evidenceIndex);
@@ -43,7 +47,7 @@ function makeCtx(): Omit<SectionBuildContext, "previousPacks" | "buildLog"> {
     caseId: inputs.caseId,
     reportRunId: inputs.reportRunId,
     sourceDatasetId: inputs.sourceDatasetId,
-    contentVersion: "deck-sections-v13",
+    contentVersion: "deck-sections-v14",
     subject: { displayName: "Сергей Глинка", aliases: ["Sergey Glinka"] },
     bundle: inputs.mergedBundle,
     surfaceUnits: structuredClone(inputs.surfaceUnits),
@@ -71,6 +75,7 @@ function validateAll(packs: SectionPackV2[]): Map<FragmentKey, SectionValidation
       pack.fragmentKey,
       validateSectionPack({
         pack,
+        expectedCaseId: inputs.caseId,
         expectedReportRunId: inputs.reportRunId,
         expectedDatasetId: inputs.sourceDatasetId,
         bundle: inputs.mergedBundle,
@@ -244,6 +249,7 @@ describe("deck assembler", () => {
     const result = assembleDeck({
       manifest: build.manifest,
       packs,
+      expectedCaseId: inputs.caseId,
       expectedReportRunId: inputs.reportRunId,
       expectedDatasetId: inputs.sourceDatasetId,
     });
@@ -260,6 +266,7 @@ describe("deck assembler", () => {
     const result = assembleDeck({
       manifest: build.manifest,
       packs,
+      expectedCaseId: inputs.caseId,
       expectedReportRunId: inputs.reportRunId,
       expectedDatasetId: inputs.sourceDatasetId,
     });
@@ -286,6 +293,7 @@ describe("deck assembler", () => {
     const result = assembleDeck({
       manifest,
       packs,
+      expectedCaseId: inputs.caseId,
       expectedReportRunId: inputs.reportRunId,
       expectedDatasetId: inputs.sourceDatasetId,
     });
@@ -707,6 +715,7 @@ describe("sidebar evidence scope (fail closed)", () => {
     tampered.slides[0].findingIds = [...tampered.slides[0].findingIds, criminal.findingId];
     const report = validateSectionPack({
       pack: tampered,
+      expectedCaseId: inputs.caseId,
       expectedReportRunId: inputs.reportRunId,
       expectedDatasetId: inputs.sourceDatasetId,
       bundle: inputs.mergedBundle,
@@ -746,5 +755,106 @@ describe("section pack contract invariants", () => {
         }
       }
     }
+  });
+});
+
+describe("B-0 self-contained SectionPack lineage (PHASE A check 24)", () => {
+  const build = buildOnce(mkdtempSync(join(tmpdir(), "orion-deck-b0-")));
+
+  it("every pack carries explicit caseId/datasetId/reportRunId/hash/scope (v3)", () => {
+    const packs = buildRuProfileSection({ ...makeCtx(), buildLog: [] });
+    for (const p of packs) {
+      assert.equal(p.schemaVersion, SECTION_PACK_SCHEMA_VERSION);
+      assert.equal(p.caseId, inputs.caseId);
+      assert.ok(p.caseId.length > 0, "caseId must never be undefined/empty");
+      assert.equal(p.datasetId, inputs.sourceDatasetId);
+      assert.equal(p.datasetId, p.sourceDatasetId);
+      assert.equal(p.reportRunId, inputs.reportRunId);
+      assert.ok(p.contentHash.startsWith("sha256:"));
+      assert.deepEqual(p.sourceFindingIds, p.inputs.findingIds);
+      assert.deepEqual(p.evidenceRefs, p.inputs.evidenceRefs);
+    }
+  });
+
+  it("assembler rejects a foreign-case pack fail-closed", () => {
+    const packs = build.packs.map((p) =>
+      p.fragmentKey === "RU_SERP" ? { ...p, caseId: "case-foreign-000" } : p
+    );
+    const result = assembleDeck({
+      manifest: build.manifest,
+      packs,
+      expectedCaseId: inputs.caseId,
+      expectedReportRunId: inputs.reportRunId,
+      expectedDatasetId: inputs.sourceDatasetId,
+    });
+    const rej = result.rejections.find((r) => r.fragmentKey === "RU_SERP");
+    assert.equal(rej?.reason, "FOREIGN_CASE");
+    assert.ok(result.errors.length > 0, "required foreign-case pack must stop the build");
+    assert.equal(result.deckManifest.pageCount, 0);
+  });
+
+  it("section QA rejects a caseId=undefined pack", () => {
+    const good = buildSectionPackForFragment("RU_SERP", { ...makeCtx(), buildLog: [] });
+    const undef = { ...good, caseId: undefined } as unknown as SectionPackV2;
+    const report = validateSectionPack({
+      pack: undef,
+      expectedCaseId: inputs.caseId,
+      expectedReportRunId: inputs.reportRunId,
+      expectedDatasetId: inputs.sourceDatasetId,
+      bundle: inputs.mergedBundle,
+      knownEvidenceRefs: inputs.knownEvidenceRefs,
+    });
+    assert.equal(report.passed, false);
+    assert.ok(report.issues.some((i) => /caseId/u.test(i)));
+  });
+});
+
+describe("B-0 offline v2->v3 migration (lineage-safe)", () => {
+  const build = buildOnce(mkdtempSync(join(tmpdir(), "orion-deck-b0mig-")));
+  function legacyFrom(pack: SectionPackV2): LegacySectionPackV2 {
+    const clone = structuredClone(pack) as Record<string, unknown>;
+    delete clone.caseId;
+    delete clone.datasetId;
+    delete clone.sourceFindingIds;
+    delete clone.evidenceRefs;
+    clone.schemaVersion = SECTION_PACK_V2_SCHEMA_VERSION;
+    return clone as unknown as LegacySectionPackV2;
+  }
+  const manifest = {
+    caseId: inputs.caseId,
+    reportRunId: inputs.reportRunId,
+    sourceDatasetId: inputs.sourceDatasetId,
+    entries: build.manifest.entries.map((e) => ({
+      fragmentKey: e.fragmentKey,
+      contentHash: e.contentHash,
+    })),
+  };
+
+  it("backfills caseId/datasetId/scope and produces a valid v3 pack", () => {
+    const legacy = legacyFrom(build.packs.find((p) => p.fragmentKey === "RU_SERP")!);
+    const { pack, reject } = migratePack({ legacy, manifest });
+    assert.equal(reject, undefined);
+    assert.ok(pack);
+    assert.equal(pack!.schemaVersion, SECTION_PACK_SCHEMA_VERSION);
+    assert.equal(pack!.caseId, inputs.caseId);
+    assert.equal(pack!.datasetId, inputs.sourceDatasetId);
+    assert.deepEqual(pack!.sourceFindingIds, pack!.inputs.findingIds);
+    assert.deepEqual(pack!.evidenceRefs, pack!.inputs.evidenceRefs);
+  });
+
+  it("rejects a legacy pack with a foreign reportRunId", () => {
+    const legacy = legacyFrom(build.packs.find((p) => p.fragmentKey === "RU_SERP")!);
+    legacy.reportRunId = "orion-foreign-run";
+    const { pack, reject } = migratePack({ legacy, manifest });
+    assert.equal(pack, undefined);
+    assert.ok(reject && /reportRunId/u.test(reject));
+  });
+
+  it("rejects a legacy pack whose content hash was tampered", () => {
+    const legacy = legacyFrom(build.packs.find((p) => p.fragmentKey === "RU_SERP")!);
+    legacy.slides[0].title = `${legacy.slides[0].title} (tampered)`;
+    const { pack, reject } = migratePack({ legacy, manifest });
+    assert.equal(pack, undefined);
+    assert.ok(reject && /hash/u.test(reject));
   });
 });

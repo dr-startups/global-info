@@ -61,8 +61,8 @@ export const FINDING_THEMES: ThemeDef[] = [
   },
   {
     themeId: "political_exposure",
-    label: "Политические связи (вкл. Молдову)",
-    keywords: /полит|politic|молдов|moldova|депутат|парти|выбор|electoral|минист/iu,
+    label: "Политические связи / публичная экспозиция",
+    keywords: /полит|politic|депутат|парти|выбор|electoral|минист|правительств|govern|парламент|parliament/iu,
     baseRisk: "medium",
     recommendedAction: "Подготовить позицию по политическим публикациям.",
   },

@@ -27,11 +27,27 @@ import {
   ORION_GOLDEN_QA_STORAGE_ROOT,
 } from "../orion-golden/evidence/admin-review-decision-store";
 import type { AdminReviewDecisionSet } from "../orion-golden/evidence/admin-review-decision";
-import { rebuildClientContentForReportRun } from "../orion-golden/rebuild-client-content-for-report-run";
+import { markUnifiedReportArtifactsStale } from "./unified-report-staleness";
+
+/**
+ * Client-content rebuild seam. In production this is intentionally absent: a
+ * standalone diagnostic Arsenkin run persists tasks/observations/coverage/
+ * provenance, appends the enrichment run to the binding, updates the provider
+ * delta and marks any accepted canonical report STALE — it never rebuilds the
+ * client report (that is the unified CTA's job) and never calls a legacy
+ * composer. Tests may inject a rebuild to exercise legacy promote behavior.
+ */
+type RebuildClientContentFn = (
+  caseId: string,
+  reportRunId: string,
+  outputRoot: string,
+  options?: { requireAi?: boolean; sourceReportRunId?: string }
+) => Promise<unknown>;
 import {
   loadArsenkinReportBinding,
   saveArsenkinReportBinding,
   inspectArsenkinTransferContentGate,
+  toCompositeBindingModel,
   type ArsenkinReportBinding,
   type ArsenkinTransferStatus,
 } from "../orion-golden/classic/arsenkin-report-binding";
@@ -591,7 +607,8 @@ export type ArsenkinUiOrchestrationDeps = {
   readinessBlockers?: () => string[];
   ensureDbReadiness?: (input?: { force?: boolean; wait?: boolean }) => Promise<EnsureArsenkinDbReadinessResult>;
   now?: () => Date;
-  rebuild?: typeof rebuildClientContentForReportRun;
+  /** Test-only legacy rebuild seam; absent in production (diagnostic-only run). */
+  rebuild?: RebuildClientContentFn;
   /** Test/prod override for configured flag (token stays server-side). */
   isConfigured?: () => boolean;
   isEnabled?: () => boolean;
@@ -1399,10 +1416,14 @@ async function ensureBindingArtifacts(
   caseId: string,
   reportRunId: string,
   outRoot: string,
-  rebuild: typeof rebuildClientContentForReportRun
+  rebuild: RebuildClientContentFn | null
 ): Promise<void> {
   mkdirSync(outRoot, { recursive: true });
-  await rebuild(caseId, reportRunId, outRoot, { requireAi: false });
+  // Diagnostic-only default: no legacy client-content rebuild. A test-injected
+  // rebuild still exercises the legacy promote path.
+  if (rebuild) {
+    await rebuild(caseId, reportRunId, outRoot, { requireAi: false });
+  }
   // Non-QA admin decisions stub for gate (production decisions from ORION root if present)
   const prod = loadAdminReviewDecisions(caseId);
   if (prod?.qaSampleOnly) {
@@ -1429,7 +1450,7 @@ export async function prepareArsenkinUiRun(input: {
 }): Promise<ArsenkinUiStatusDto> {
   const prisma = input.deps?.prisma ?? defaultPrisma;
   const dbReadinessPath = input.deps?.dbReadinessPath ?? DEFAULT_DB_READINESS;
-  const rebuild = input.deps?.rebuild ?? rebuildClientContentForReportRun;
+  const rebuild = input.deps?.rebuild ?? null;
   const executeStage = input.deps?.executeStage ?? executeCanonicalArsenkinStage;
   const configured = (input.deps?.isConfigured ?? isArsenkinConfigured)();
   const now = input.deps?.now ?? (() => new Date());
@@ -1850,7 +1871,7 @@ export async function syncArsenkinResultsToOrion(input: {
   deps?: ArsenkinUiOrchestrationDeps;
 }): Promise<ArsenkinUiStatusDto & { orphanedEvidenceIds: string[] }> {
   const prisma = input.deps?.prisma ?? defaultPrisma;
-  const rebuild = input.deps?.rebuild ?? rebuildClientContentForReportRun;
+  const rebuild = input.deps?.rebuild ?? null;
   resetArsenkinNetworkCallCount();
 
   const workflow = workflowForStage(input.stage);
@@ -1963,6 +1984,67 @@ export async function syncArsenkinResultsToOrion(input: {
     coverageCount,
     lastError: null,
   });
+
+  // Diagnostic-only production path: NO legacy client-content rebuild, NO report
+  // generation, NO REPORT_READY. Persist the enrichment run in the binding as
+  // TRANSFERRED, record provenance and mark any accepted canonical report stale.
+  // Full report generation stays with the unified CTA / canonical job.
+  if (!rebuild) {
+    const transferredAt = new Date().toISOString();
+    // Preserve any previously appended enrichment runs on the binding.
+    const priorBinding = loadArsenkinReportBinding(input.caseId);
+    const priorEnrichmentRuns = priorBinding
+      ? toCompositeBindingModel(priorBinding).enrichmentRuns
+      : [];
+    // Diagnostic-only: record the enrichment as READY_TO_TRANSFER (collected +
+    // provenance persisted, but NOT render-ready). This is intentionally NOT
+    // TRANSFERRED/REPORT_BOUND, so the client-content gate never treats it as a
+    // completed report transfer. The canonical unified CTA owns report generation.
+    saveArsenkinReportBinding({
+      caseId: input.caseId,
+      sourceReportRunId: mapping.sourceReportRunId,
+      effectiveReportRunId: arsenkinReportRunId,
+      provider: "arsenkin",
+      workflow,
+      stage: input.stage,
+      status: "READY_TO_TRANSFER",
+      transferredAt,
+      providerTaskCount,
+      observationCount: obs.length,
+      coverageCount,
+      version: "arsenkin-report-binding-v2",
+      enrichmentRuns: priorEnrichmentRuns,
+      lastError: null,
+      contentPromotionError: null,
+    });
+    writeJsonAtomic(join(caseRoot, "arsenkin-ui-sync.json"), {
+      synced: true,
+      diagnosticOnly: true,
+      reportGenerated: false,
+      reportRunId: arsenkinReportRunId,
+      sourceReportRunId: mapping.sourceReportRunId,
+      effectiveReportRunId: arsenkinReportRunId,
+      stage: input.stage,
+      workflow,
+      status: "READY_TO_TRANSFER",
+      at: transferredAt,
+      observationCount: obs.length,
+      providerTaskCount,
+      coverageCount,
+    });
+    // Any accepted canonical report is now stale (new enrichment collected).
+    markUnifiedReportArtifactsStale(input.caseId, "arsenkin-standalone-diagnostic-sync");
+    if (getArsenkinNetworkCallCount() !== 0) {
+      throw new ConflictError("sync leaked network calls");
+    }
+    const status = await getArsenkinUiStatus(
+      input.caseId,
+      input.reportRunId,
+      input.stage,
+      input.deps
+    );
+    return { ...status, orphanedEvidenceIds: [] };
+  }
 
   const tempRoot = join(caseRoot, `.arsenkin-sync-tmp-${process.pid}-${Date.now()}`);
   mkdirSync(tempRoot, { recursive: true });

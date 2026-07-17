@@ -6,7 +6,7 @@
 
 import { createHash } from "node:crypto";
 import type { FragmentKey, SectionPackV2, SectionType } from "./contracts";
-import { SECTION_PACK_V2_SCHEMA_VERSION } from "./contracts";
+import { SECTION_PACK_SCHEMA_VERSION } from "./contracts";
 import { getFragmentPrompt } from "./prompts";
 import {
   buildScopedInput,
@@ -233,6 +233,8 @@ export function buildSectionPackForFragment(
     previous.contentVersion === ctx.contentVersion &&
     previous.reportRunId === ctx.reportRunId &&
     previous.sourceDatasetId === ctx.sourceDatasetId &&
+    previous.caseId === ctx.caseId &&
+    previous.datasetId === ctx.sourceDatasetId &&
     previous.status !== "INSUFFICIENT_DATA" &&
     previous.status !== "FAILED"
   ) {
@@ -258,11 +260,15 @@ export function buildSectionPackForFragment(
     ...Object.keys(scoped.evidenceIndex),
   ]);
 
+  const sourceFindingIds = scoped.findings.map((f) => f.findingId);
+  const evidenceRefs = [...datasetRefs];
   const pack: SectionPackV2 = {
-    schemaVersion: SECTION_PACK_V2_SCHEMA_VERSION,
+    schemaVersion: SECTION_PACK_SCHEMA_VERSION,
     sectionId: sectionTypeOf(key),
     sectionType: sectionTypeOf(key),
     fragmentKey: key,
+    caseId: ctx.caseId,
+    datasetId: ctx.sourceDatasetId,
     reportRunId: ctx.reportRunId,
     sourceDatasetId: ctx.sourceDatasetId,
     contentVersion: ctx.contentVersion,
@@ -272,9 +278,11 @@ export function buildSectionPackForFragment(
     generatedAt: new Date().toISOString(),
     required: !OPTIONAL_FRAGMENTS.includes(key),
     status: output.status,
+    sourceFindingIds,
+    evidenceRefs,
     inputs: {
-      findingIds: scoped.findings.map((f) => f.findingId),
-      evidenceRefs: [...datasetRefs],
+      findingIds: sourceFindingIds,
+      evidenceRefs,
       metricSnapshotId: ctx.metricSnapshot.metricSnapshotId,
     },
     slides: output.slides,

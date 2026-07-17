@@ -1,47 +1,48 @@
 /**
- * POST/GET /api/digital-profile/cases/[id]/orion-golden/report/generate
- * Classic ORION audit PDF/PPTX (post-review content + full commercial pack).
+ * RETIRED: POST/GET /api/digital-profile/cases/[id]/orion-golden/report/generate
+ *
+ * The legacy monolithic ORION Classic audit composer has been retired. Report
+ * generation is now owned exclusively by the unified canonical job (single CTA):
+ *   POST /api/digital-profile/cases/[id]/unified-collection
+ * and accepted artifacts are downloaded via:
+ *   GET  /api/digital-profile/cases/[id]/unified-collection/download?jobId=..&artifact=pdf|pptx
+ *
+ * This route never imports the legacy composer, never creates legacy artifacts and
+ * never sets REPORT_READY. It returns an explicit LEGACY_REPORT_PATH_RETIRED code.
  */
 
-import type { NextRequest } from "next/server";
-import { jsonOk, withModule } from "@/modules/digital-profile/http/errors";
-import { digitalProfileConfig } from "@/modules/digital-profile/config";
-import { ForbiddenError } from "@/modules/digital-profile/http/errors";
-import {
-  assertCanRegenerateClientContent,
-  requireOrionAdminApiAccess,
-} from "@/modules/digital-profile/orion-golden/auth/orion-admin-auth";
-import {
-  enqueueOrionClassicAuditReport,
-  getOrionClassicAuditSummary,
-  isOrionClassicAuditUiEnabled,
-} from "@/modules/digital-profile/services/orion-classic-audit-report-service";
+import { NextResponse, type NextRequest } from "next/server";
+import { withModule } from "@/modules/digital-profile/http/errors";
 
 export const dynamic = "force-dynamic";
-/** Classic audit render can take several minutes. */
-export const maxDuration = 300;
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
+function retired(caseId: string): NextResponse {
+  return NextResponse.json(
+    {
+      ok: false as const,
+      error: {
+        code: "LEGACY_REPORT_PATH_RETIRED",
+        message:
+          "The legacy ORION Classic report path is retired. Run the unified audit (POST /unified-collection) and download accepted artifacts from /unified-collection/download.",
+        details: {
+          canonicalStart: `/api/digital-profile/cases/${caseId}/unified-collection`,
+          canonicalStatus: `/api/digital-profile/cases/${caseId}/unified-collection`,
+          canonicalDownload: `/api/digital-profile/cases/${caseId}/unified-collection/download`,
+        },
+      },
+    },
+    { status: 410 }
+  );
+}
+
+export const POST = withModule(async (_req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
-  const user = await requireOrionAdminApiAccess(req, id, "review");
-  assertCanRegenerateClientContent(user);
-
-  if (!digitalProfileConfig.orionGoldenEnabled || !isOrionClassicAuditUiEnabled()) {
-    throw new ForbiddenError("ORION Classic Audit is disabled.");
-  }
-
-  const body = (await req.json().catch(() => ({}))) as { regenerateContent?: boolean };
-  const summary = enqueueOrionClassicAuditReport({
-    caseId: id,
-    regenerateContent: Boolean(body.regenerateContent),
-  });
-  return jsonOk(summary, 202);
+  return retired(id);
 });
 
-export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
+export const GET = withModule(async (_req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
-  await requireOrionAdminApiAccess(req, id, "view");
-  return jsonOk(getOrionClassicAuditSummary(id));
+  return retired(id);
 });

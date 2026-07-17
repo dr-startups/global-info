@@ -15,13 +15,13 @@ import {
   getOrionManualReviewQueue,
   listOrionAdminReviewDecisions,
   regenerateOrionClientContentAfterReview,
-  generateOrionClassicAuditReport,
-  getOrionClassicAuditReportStatus,
   captureLiveSerp,
   listSerpCaptures,
   prepareOrionGoldenArtifacts,
   getOrionGoldenPrepareStatus,
-  type OrionClassicAuditReportSummary,
+  getUnifiedOrionCollectionStatus,
+  getCanonicalArtifactDownloadUrl,
+  type UnifiedCollectionJobStatus,
   type OrionGoldenPrepareSummary,
   type SerpCaptureDto,
   submitOrionAdminReviewDecision,
@@ -104,8 +104,8 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
   const [banner, setBanner] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [regenResult, setRegenResult] = useState<RegenerateClientContentResult | null>(null);
   const [regenBusy, setRegenBusy] = useState(false);
-  const [classicAudit, setClassicAudit] = useState<OrionClassicAuditReportSummary | null>(null);
-  const [classicAuditBusy, setClassicAuditBusy] = useState(false);
+  const [unifiedReport, setUnifiedReport] = useState<UnifiedCollectionJobStatus | null>(null);
+  const [unifiedReportBusy, setUnifiedReportBusy] = useState(false);
   const [prepareStatus, setPrepareStatus] = useState<OrionGoldenPrepareSummary | null>(null);
   const [prepareBusy, setPrepareBusy] = useState(false);
   const [lastRegenAt, setLastRegenAt] = useState<string | null>(null);
@@ -147,17 +147,17 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
     setLoading(true);
     setError(null);
     try {
-      const [c, q, d, classicStatus, prepStatus] = await Promise.all([
+      const [c, q, d, unifiedStatus, prepStatus] = await Promise.all([
         getCase(caseId),
         getOrionManualReviewQueue(caseId),
         listOrionAdminReviewDecisions(caseId).catch(() => null),
-        getOrionClassicAuditReportStatus(caseId).catch(() => null),
+        getUnifiedOrionCollectionStatus(caseId).catch(() => null),
         getOrionGoldenPrepareStatus(caseId).catch(() => null),
       ]);
       setCaseDetail(c);
       setQueue(q);
       if (d) setDecisions(d);
-      if (classicStatus) setClassicAudit(classicStatus);
+      if (unifiedStatus?.job) setUnifiedReport(unifiedStatus.job);
       if (prepStatus) setPrepareStatus(prepStatus);
     } catch (err) {
       const msg =
@@ -503,48 +503,23 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
     }
   };
 
-  const generateClassicAudit = async (regenerateContent: boolean) => {
-    if (!canDecide) return;
-    setClassicAuditBusy(true);
+  const refreshUnifiedReport = async () => {
+    setUnifiedReportBusy(true);
     setBanner(null);
     try {
-      let result = await generateOrionClassicAuditReport(caseId, { regenerateContent });
-      setClassicAudit(result);
-      setBanner({
-        kind: "ok",
-        text: "Генерация ORION Audit запущена в фоне. Обычно 3–10 минут — статус обновится ниже.",
-      });
-
-      for (let i = 0; i < 120; i += 1) {
-        if (result.status === "completed" || result.status === "failed") break;
-        await new Promise((r) => setTimeout(r, 5000));
-        result = await getOrionClassicAuditReportStatus(caseId);
-        setClassicAudit(result);
-      }
-
-      if (result.status === "completed") {
-        const hasPdf = Boolean(result.artifacts.clientPdf.available);
-        setBanner({
-          kind: result.verdict === "PASS" || hasPdf ? "ok" : "error",
-          text:
-            result.verdict === "PASS"
-              ? `ORION Audit готов: ${result.pageCount} стр.`
-              : hasPdf
-                ? `Отчёт собран (${result.pageCount} стр.), QA: ${result.verdict}. PDF доступен для скачивания.`
-                : `Генерация завершилась: ${result.verdict}. ${result.warnings.slice(0, 2).join("; ")}`,
-        });
-      } else if (result.status === "running") {
+      const { job } = await getUnifiedOrionCollectionStatus(caseId);
+      setUnifiedReport(job);
+      if (!job) {
         setBanner({
           kind: "error",
-          text: "Генерация ещё идёт. Обновите страницу через минуту.",
+          text: "Единый аудит ORION ещё не запускался для этого кейса.",
         });
+      } else if (job.stage === "REPORT_READY") {
+        setBanner({ kind: "ok", text: "Канонический отчёт принят — доступен для скачивания." });
+      } else if (job.stage === "COMPLETED_PARTIAL") {
+        setBanner({ kind: "error", text: "Отчёт собран частично — не принят для выдачи." });
       } else {
-        setBanner({
-          kind: "error",
-          text:
-            result.warnings[0] ||
-            `Генерация не удалась (${result.verdict ?? "FAIL"}). Проверьте HTTP Logs.`,
-        });
+        setBanner({ kind: "ok", text: `Статус единого job: ${job.stage}.` });
       }
     } catch (err) {
       const msg =
@@ -552,10 +527,10 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
           ? `${err.code}: ${err.message}`
           : err instanceof Error
             ? err.message
-            : "Ошибка генерации ORION Audit";
+            : "Не удалось получить статус единого job";
       setBanner({ kind: "error", text: msg });
     } finally {
-      setClassicAuditBusy(false);
+      setUnifiedReportBusy(false);
     }
   };
 
@@ -564,11 +539,20 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
     setPrepareBusy(true);
     setBanner(null);
     try {
-      let result = await prepareOrionGoldenArtifacts(caseId);
+      const { job } = await getUnifiedOrionCollectionStatus(caseId);
+      const jobId = job?.unifiedJobId ?? "";
+      if (!jobId) {
+        setBanner({
+          kind: "error",
+          text: "Сначала запустите единый аудит ORION — canonical prepare работает только по job-scoped артефактам.",
+        });
+        return;
+      }
+      let result = await prepareOrionGoldenArtifacts(caseId, jobId);
       setPrepareStatus(result);
       setBanner({
         kind: "ok",
-        text: "Подготовка запущена в фоне. Обычно 3–10 минут — не закрывайте вкладку.",
+        text: "Canonical prepare запущен в фоне — не закрывайте вкладку.",
       });
 
       for (let i = 0; i < 90; i += 1) {
@@ -581,7 +565,7 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
       if (result.ok && result.queueReady) {
         setBanner({
           kind: "ok",
-          text: `Артефакты ORION Golden готовы. В очереди: ${result.pendingCount}. Обновляем страницу…`,
+          text: `Отчёт собран (${result.pageCount} стр.). Обновляем страницу…`,
         });
         await loadQueue();
       } else if (result.status === "running") {
@@ -728,7 +712,7 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
           <p className="dp-muted" style={{ marginTop: 8 }}>
             Статус подготовки: {prepareStatus.status}
             {prepareStatus.verdict ? ` · ${prepareStatus.verdict}` : ""}
-            {prepareStatus.queueReady ? ` · очередь готова (${prepareStatus.pendingCount})` : ""}
+            {prepareStatus.queueReady ? ` · отчёт готов (${prepareStatus.pageCount} стр.)` : ""}
           </p>
         ) : null}
         {banner ? (
@@ -855,7 +839,7 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
           {prepareStatus ? (
             <div className="dp-muted">
               Статус: {prepareStatus.status}
-              {prepareStatus.queueReady ? ` · очередь готова (${prepareStatus.pendingCount})` : ""}
+              {prepareStatus.queueReady ? ` · отчёт готов (${prepareStatus.pageCount} стр.)` : ""}
               {prepareStatus.verdict ? ` · ${prepareStatus.verdict}` : ""}
             </div>
           ) : null}
@@ -999,64 +983,60 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
       <Card data-testid="classic-audit-panel">
         <div className="dp-stack" style={{ gap: 8 }}>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <strong>ORION Audit (полный отчёт)</strong>
-            {canDecide ? (
-              <>
-                <button
-                  type="button"
-                  className="dp-btn dp-btn-primary"
-                  disabled={classicAuditBusy}
-                  onClick={() => void generateClassicAudit(false)}
-                  title={
-                    classicAudit?.status === "running"
-                      ? "Если зависло на PENDING после деплоя — нажмите ещё раз после обновления сервиса"
-                      : undefined
-                  }
-                >
-                  {classicAuditBusy ? "Генерация…" : "Сгенерировать ORION Audit"}
-                </button>
-                <button
-                  type="button"
-                  className="dp-btn"
-                  disabled={classicAuditBusy}
-                  onClick={() => void generateClassicAudit(true)}
-                >
-                  Пересобрать контент + PDF
-                </button>
-              </>
-            ) : (
-              <span className="dp-muted">Нужен risk.review для генерации отчёта</span>
-            )}
+            <strong>ORION Audit (канонический отчёт)</strong>
+            <button
+              type="button"
+              className="dp-btn"
+              disabled={unifiedReportBusy}
+              onClick={() => void refreshUnifiedReport()}
+            >
+              {unifiedReportBusy ? "Обновление…" : "Обновить статус"}
+            </button>
           </div>
           <Notice>
-            {gptAutoAnalyst
-              ? "Classic ORION audit: после Prepare с auto-analyst можно сразу генерировать PDF без ручного review."
-              : "Полный клиентский аудит по структуре ORION (~60+ стр.): резюме, RU/UAE, подсказки, compliance-базы и коммерческое предложение. Требует post-review контент."}
+            Отчёт собирается только единым аудитом ORION (кнопка «Запустить полный аудит»).
+            Здесь показывается статус канонического job и ссылки на принятые PDF/PPTX.
           </Notice>
-          {classicAudit ? (
+          {unifiedReport ? (
             <div className="dp-kv">
               <div>
-                <span className="dp-muted">Статус</span>
+                <span className="dp-muted">Статус job</span>
                 <div>
-                  {classicAudit.status} · {classicAudit.pageCount} стр. · {classicAudit.verdict ?? "—"}
+                  {unifiedReport.stage} · {unifiedReport.status}
+                  {unifiedReport.stage === "COMPLETED_PARTIAL" ? " · частичный (не принят)" : ""}
                 </div>
               </div>
-              {classicAudit.artifacts.clientPdf.available && classicAudit.artifacts.clientPdf.downloadUrl ? (
+              {unifiedReport.warnings.some((w) => w.startsWith("CANONICAL_ARTIFACTS_STALE")) ? (
                 <div>
-                  <a className="dp-btn" href={classicAudit.artifacts.clientPdf.downloadUrl}>
-                    Скачать PDF
-                  </a>
+                  <WarningBox>
+                    Артефакты устарели (REBUILD_REQUIRED) — перезапустите единый аудит.
+                  </WarningBox>
                 </div>
               ) : null}
-              {classicAudit.artifacts.clientPptx.available && classicAudit.artifacts.clientPptx.downloadUrl ? (
-                <div>
-                  <a className="dp-btn" href={classicAudit.artifacts.clientPptx.downloadUrl}>
-                    Скачать PPTX
-                  </a>
-                </div>
+              {unifiedReport.stage === "REPORT_READY" ? (
+                <>
+                  <div>
+                    <a
+                      className="dp-btn"
+                      href={getCanonicalArtifactDownloadUrl(caseId, unifiedReport.unifiedJobId, "pdf")}
+                    >
+                      Скачать PDF
+                    </a>
+                  </div>
+                  <div>
+                    <a
+                      className="dp-btn"
+                      href={getCanonicalArtifactDownloadUrl(caseId, unifiedReport.unifiedJobId, "pptx")}
+                    >
+                      Скачать PPTX
+                    </a>
+                  </div>
+                </>
               ) : null}
             </div>
-          ) : null}
+          ) : (
+            <span className="dp-muted">Единый аудит ещё не запускался.</span>
+          )}
         </div>
       </Card>
 

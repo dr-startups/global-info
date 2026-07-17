@@ -25,8 +25,8 @@ const IMAGE_ADVERSE_DOMAIN_RE =
 const IMAGE_SOFT_PROFILE_DOMAIN_RE =
   /forbes\.|klerk\.|tadviser\.|wikipedia\.|linkedin\.|rusprofile\.|audit-it\.|zachestnyibiznes\.|labyrinth\.|instagram\.|facebook\.|x\.com|twitter\.|youtube\.|amazon\./i;
 const IMAGE_STRONG_ADVERSE_BLOB_RE =
-  /adverse|undesirable|нежелат|негативн|санкц|sanction(?:ed|s)?|\bofac\b|корруп|corrupt|мошен|fraud|арест|arrest|уголов|\bcriminal\b|компромат|rucriminal|cybercriminal|acompromat|rupep|махмудов|makhmudov|бокарев|bokarev|defense\s+industry|оборонн|oligarch|олигарх|associate of sanction|под\s+санкц|\$100|dollar bills|пачк[аи]\s+(?:долларов|денег)/i;
-/** Classical / composer / album noise for businessman subjects (Mikhail Glinka bleed). */
+  /adverse|undesirable|нежелат|негативн|санкц|sanction(?:ed|s)?|\bofac\b|корруп|corrupt|мошен|fraud|арест|arrest|уголов|\bcriminal\b|компромат|rucriminal|cybercriminal|acompromat|rupep|defense\s+industry|оборонн|oligarch|олигарх|associate of sanction|под\s+санкц|\$100|dollar bills|пачк[аи]\s+(?:долларов|денег)/i;
+/** Classical / composer / album noise that bleeds into business-subject image sets. */
 const IMAGE_CLASSICAL_NAMESAKE_RE =
   /choir|хор\b|chamber music|piano concerto|lyapunov|ляпунов|bolshoi|discogs|imslp|allmusic|russia sings|anthem of moscow|classicalarchives|симфон|оперн|композитор|sheet\s*music|leningrad\s+choir/i;
 
@@ -38,19 +38,58 @@ function subjectGivenName(subjectName: string): string {
   return subjectName.trim().split(/\s+/).filter(Boolean)[1] ?? "";
 }
 
+const RU_TO_LAT: Array<[RegExp, string]> = [
+  [/щ/gi, "sch"],
+  [/ё/gi, "e"],
+  [/ж/gi, "zh"],
+  [/ч/gi, "ch"],
+  [/ш/gi, "sh"],
+  [/ю/gi, "yu"],
+  [/я/gi, "ya"],
+  [/й/gi, "y"],
+  [/х/gi, "kh"],
+  [/ц/gi, "ts"],
+  [/а/gi, "a"],
+  [/б/gi, "b"],
+  [/в/gi, "v"],
+  [/г/gi, "g"],
+  [/д/gi, "d"],
+  [/е/gi, "e"],
+  [/з/gi, "z"],
+  [/и/gi, "i"],
+  [/к/gi, "k"],
+  [/л/gi, "l"],
+  [/м/gi, "m"],
+  [/н/gi, "n"],
+  [/о/gi, "o"],
+  [/п/gi, "p"],
+  [/р/gi, "r"],
+  [/с/gi, "s"],
+  [/т/gi, "t"],
+  [/у/gi, "u"],
+  [/ф/gi, "f"],
+  [/ы/gi, "y"],
+  [/э/gi, "e"],
+  [/[ъь]/gi, ""],
+];
+
+/** Subject-agnostic RU→Latin transliteration of a single name token. */
+function transliterateRu(token: string): string {
+  let out = token;
+  for (const [re, rep] of RU_TO_LAT) out = out.replace(re, rep);
+  return out;
+}
+
 function blobHasSubjectGiven(blob: string, subjectName: string): boolean {
   const given = subjectGivenName(subjectName);
   if (!given || given.length < 2) return true;
-  const latin = given
-    .replace(/ё/gi, "e")
-    .replace(/й/gi, "y")
-    .replace(/сергей/i, "sergey|sergei|sergej")
-    .replace(/михаил/i, "mikhail|michael");
-  // Cyrillic given OR common latin forms for Сергей
+  // Cyrillic given name as-written…
   if (new RegExp(given.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(blob)) return true;
-  if (/сергей/i.test(given) && /sergey|sergei|sergej/i.test(blob)) return true;
-  if (/михаил/i.test(given) && /mikhail|michael/i.test(blob)) return true;
-  void latin;
+  // …or its generic transliteration (derived, never a hardcoded per-subject table).
+  const lat = transliterateRu(given);
+  if (lat.length >= 3 && new RegExp(lat.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i").test(blob)) {
+    return true;
+  }
   return false;
 }
 
@@ -73,7 +112,7 @@ export function isImageNamesakeNoise(ev: NormalizedEvidenceV1, subjectName: stri
   if (IMAGE_CLASSICAL_NAMESAKE_RE.test(blob) && !blobHasSubjectGiven(blob, subjectName)) {
     return true;
   }
-  // YouTube/Amazon classical albums mentioning only surname Glinka
+  // YouTube/Amazon classical albums mentioning only the subject's surname
   const domain = String(ev.domain ?? "");
   if (/youtube\.|amazon\./i.test(domain) && IMAGE_CLASSICAL_NAMESAKE_RE.test(blob)) {
     return true;
@@ -86,7 +125,7 @@ function imageSubjectScore(ev: NormalizedEvidenceV1, subjectName: string): numbe
   let score = 0;
   if (blobHasSubjectGiven(blob, subjectName)) score += 4;
   if (isImageEvidenceHighlighted(ev)) score += 5;
-  if (/nutriband|бизнес|businessman|предпринимат|инвестор|investor|биограф/i.test(blob)) score += 2;
+  if (/бизнес|businessman|предпринимат|инвестор|investor|биограф/i.test(blob)) score += 2;
   if (/vlasti\.|rucriminal\.|acompromat\.|rupep\./i.test(blob)) score += 3;
   if (isImageNamesakeNoise(ev, subjectName)) score -= 10;
   if (ev.imageUrl) score += 1;
@@ -149,7 +188,7 @@ function classifyImageIdentity(
   if (isImageNamesakeNoise(ev, subjectName)) return "namesake";
   const blob = imageEvidenceBlob(ev);
   const hasGiven = blobHasSubjectGiven(blob, subjectName);
-  if (hasGiven && /бизнес|businessman|предпринимат|инвестор|investor|nutriband|трансмаш/i.test(blob)) {
+  if (hasGiven && /бизнес|businessman|предпринимат|инвестор|investor/i.test(blob)) {
     return "likely_subject";
   }
   if (hasGiven) return "likely_subject";

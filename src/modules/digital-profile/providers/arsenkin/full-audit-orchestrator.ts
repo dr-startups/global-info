@@ -65,8 +65,16 @@ import {
   loadArsenkinUiRunMapping,
   type ArsenkinUiStage,
 } from "../../services/arsenkin-ui-orchestration-service";
-import { enqueueOrionClassicAuditReport } from "../../services/orion-classic-audit-report-service";
 import { recordAudit } from "../../services/audit-log-service";
+import { markUnifiedReportArtifactsStale } from "../../services/unified-report-staleness";
+
+/**
+ * Diagnostic finalize adapter. A standalone Arsenkin run NEVER generates the
+ * client report — full report generation is the unified canonical job's job.
+ * This seam exists only so tests can observe the finalize step; the default
+ * implementation just marks any existing canonical report artifacts stale.
+ */
+type DiagnosticFinalizeFn = (input: { caseId: string }) => unknown;
 
 const AMBIGUOUS_SUBMIT_RETRY_MAX = Math.max(
   0,
@@ -82,7 +90,8 @@ export type FullAuditOrchestratorDeps = {
   plan?: typeof planArsenkinUiRun;
   execute?: typeof executeArsenkinUiRun;
   sync?: typeof syncArsenkinResultsToOrion;
-  render?: typeof enqueueOrionClassicAuditReport;
+  /** Diagnostic finalize seam (tests only). Never the legacy report composer. */
+  render?: DiagnosticFinalizeFn;
   persistObservations?: typeof persistSerpObservations;
   readiness?: typeof probeArsenkinLightweightReadiness;
   /** Offline tests: skip live /get refetch during reconcile. */
@@ -1188,7 +1197,12 @@ async function stepRendering(
   job: ArsenkinOrchestrationJob,
   deps: FullAuditOrchestratorDeps
 ): Promise<ArsenkinOrchestrationJob> {
-  const render = deps.render ?? enqueueOrionClassicAuditReport;
+  // Diagnostic finalize only: a standalone Arsenkin run never invokes the legacy
+  // report composer. When no test seam is injected, we mark any existing
+  // canonical report artifacts stale (REBUILD_REQUIRED) — the unified CTA owns
+  // full report generation.
+  const finalize: DiagnosticFinalizeFn =
+    deps.render ?? (({ caseId }) => markUnifiedReportArtifactsStale(caseId, "arsenkin-diagnostic-run"));
   const jobReportRunId = job.jobReportRunId || job.reportRunId;
 
   if (isArsenkinProviderRunId(job.sourceReportRunId) || isArsenkinProviderRunId(job.sourceOrionReportRunId)) {
@@ -1259,7 +1273,7 @@ async function stepRendering(
   }
 
   try {
-    render({ caseId: job.caseId });
+    finalize({ caseId: job.caseId });
     const afterRender = evaluateFullAuditCompletionGate({
       workflowType: "FIRST36_FULL",
       expectedSurfaceCount: expected,

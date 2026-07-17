@@ -1,0 +1,25 @@
+{
+  "version": "canonical-glinka-replay-parity-v1",
+  "GLINKA_CANONICAL_REPLAY_PARITY": "PASS",
+  "structureParity": {
+    "baseSlotCoverage": 36,
+    "missingCanonicalSlots": [],
+    "lostAcceptedBaseSlots": [],
+    "builtPageCount": 41,
+    "acceptedPageCount": 41,
+    "tocMatch": true,
+    "pageCountMatch": true
+  },
+  "renderParity": {
+    "renderer": "python:render-orion-golden-artifacts",
+    "pptx": "C:\\Global Info\\baselines\\report-72\\artifacts\\canonical-replay\\render\\rendered-client.pptx",
+    "pdf": "C:\\Global Info\\baselines\\report-72\\artifacts\\canonical-replay\\render\\rendered-client.pdf",
+    "contactSheet": "C:\\Global Info\\baselines\\report-72\\artifacts\\canonical-replay\\render\\contact-sheet.png",
+    "pdfPages": 41,
+    "pngPages": 41,
+    "pdfPageParity": true,
+    "pngPageParity": true,
+    "acceptedPageParity": true
+  },
+  "generatedAt": "2026-07-17T00:37:49.928Z"
+}

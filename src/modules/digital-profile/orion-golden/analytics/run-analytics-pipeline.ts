@@ -158,10 +158,19 @@ function buildExecutiveSummaryInput(input: {
       conflictCounts.set(c, (conflictCounts.get(c) ?? 0) + 1);
     }
   }
-  const composerSignals = ["михаил глинка", "композитор", "composer", "опера", "opera"];
-  const composerHits = composerSignals.reduce((acc, s) => acc + (conflictCounts.get(s) ?? 0), 0);
-  const dominantOtherSubject =
-    otherSubjectCount > 0 && composerHits > 0 ? "Михаил Глинка (композитор)" : null;
+  // Dominant namesake is derived from the subject's OWN namesake profiles —
+  // no hardcoded homonym names. Pick the namesake with the most conflict hits.
+  let dominantOtherSubject: string | null = null;
+  if (otherSubjectCount > 0) {
+    let bestHits = 0;
+    for (const namesake of input.subject.namesakeProfiles) {
+      const hits = namesake.noiseTerms.reduce((acc, s) => acc + (conflictCounts.get(s) ?? 0), 0);
+      if (hits > bestHits) {
+        bestHits = hits;
+        dominantOtherSubject = namesake.label;
+      }
+    }
+  }
 
   const dataGaps: Array<{ area: string; detail: string }> = [];
   const notCollected = coverage.filter((c) => c.sampleStatus === "NOT_COLLECTED");

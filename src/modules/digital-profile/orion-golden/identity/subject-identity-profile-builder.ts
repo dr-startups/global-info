@@ -10,13 +10,6 @@ const INN_RE = /\b(?:инн[:\s]*)?(\d{12}|\d{10})\b/gi;
 const OGRNIP_RE = /\b(?:огрнип[:\s]*)?(\d{15})\b/gi;
 const OGRN_RE = /\b(?:огрн[:\s]*)?(\d{13})\b/gi;
 
-const COMMON_WRONG_PERSONS = [
-  "дерипаск",
-  "deripaska",
-  "олег владимирович",
-  "oleg vladimirovich",
-];
-
 const RU_PATRONYMIC_SUFFIX = /(ович|евич|ич|овна|евна|ична)$/i;
 
 function normalizeSpace(s: string): string {
@@ -275,9 +268,16 @@ export function buildSubjectIdentityProfile(input: {
   subjectName: string;
   aliases?: string[];
   regionHints?: string[];
+  /**
+   * Case-supplied disambiguation names (known homonyms / unrelated well-known
+   * persons for THIS subject). Never defaulted to any baseline subject — a
+   * generic profile carries no subject-specific wrong-person literals.
+   */
+  unrelatedKnownPersons?: string[];
   inventory?: FullEvidenceInventory | { items: RawInventoryItem[] };
 }): SubjectIdentityProfile {
   const aliases = uniq(input.aliases ?? []);
+  const unrelatedKnownPersons = uniq(input.unrelatedKnownPersons ?? []);
   const items = input.inventory?.items ?? [];
   const fullNameRu = parseRuFullName(input.subjectName);
   const nameVariants = fullNameRu
@@ -322,9 +322,9 @@ export function buildSubjectIdentityProfile(input: {
     },
     negativeIdentitySignals: {
       wrongPatronymics,
-      wrongNames: COMMON_WRONG_PERSONS,
+      wrongNames: unrelatedKnownPersons,
       wrongBirthDates: [],
-      unrelatedKnownPersons: COMMON_WRONG_PERSONS,
+      unrelatedKnownPersons,
     },
     regionHints: uniq(input.regionHints ?? []),
     languageHints: ["ru", "en"],

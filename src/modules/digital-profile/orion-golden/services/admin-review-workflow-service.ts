@@ -38,13 +38,13 @@ import {
 } from "../sections/orion-section-analysis-loader";
 import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
 import { digitalProfileConfig } from "../../config";
+import { markUnifiedReportArtifactsStale } from "../../services/unified-report-staleness";
 import {
   loadArsenkinReportBinding,
   resolveEffectiveReportRunIdForCase,
   saveArsenkinReportBinding,
   arsenkinCaseArtifactRoot,
 } from "../classic/arsenkin-report-binding";
-import { rebuildClientContentForReportRun } from "../rebuild-client-content-for-report-run";
 
 function artifactRootsForCase(caseId: string): string[] {
   // Prefer case-scoped artifacts (UI prepare / multi-case), then shared root, then calibration.
@@ -534,10 +534,67 @@ async function rebuildAndPersistForArsenkinEffectiveRun(input: {
 }> {
   const root = arsenkinCaseArtifactRoot(input.caseId);
   mkdirSync(root, { recursive: true });
-  await rebuildClientContentForReportRun(input.caseId, input.effectiveReportRunId, root, {
-    requireAi: false,
-    sourceReportRunId: input.sourceReportRunId,
-  });
+
+  // Canonical targeted regeneration for the SAME case/lineage. This preserves the
+  // accepted/rejected review state and rebuilds client content only from canonical
+  // section artifacts already present in the job-scoped root. It does NOT recollect
+  // provider data and NEVER calls runR10OrionGoldenE2e or any legacy composer.
+  // Missing canonical section artifacts fail closed (the unified CTA must run first).
+  if (
+    !hasSectionBasedClientArtifacts(root) ||
+    !existsSync(join(root, "full-evidence-inventory.json"))
+  ) {
+    throw new Error(
+      "CANONICAL_SECTION_ARTIFACTS_MISSING: run the unified ORION audit (canonical prepare) before review-driven regeneration"
+    );
+  }
+  {
+    const queuePath = join(root, "manual-review-queue.json");
+    const queue = (
+      existsSync(queuePath)
+        ? readJson<ManualReviewQueue>(queuePath)
+        : ({ caseId: input.caseId, items: [], pendingCount: 0 } as unknown as ManualReviewQueue)
+    ) as unknown as ReturnType<typeof getManualReviewQueue>;
+    const judgmentsPath = join(root, "evidence-judgment-inspection.json");
+    const judgments = existsSync(judgmentsPath)
+      ? readJson<{ judgments: EvidenceJudgment[] }>(judgmentsPath).judgments
+      : [];
+    const inventory = readJson<{
+      subject: { fullName: string; aliases: string[] };
+      reportRunId: string;
+    }>(join(root, "full-evidence-inventory.json"));
+    const productionDecisions = listAdminReviewDecisions(input.caseId);
+    const regenerated = buildSectionBasedClientContent({
+      caseId: input.caseId,
+      artifactRootDir: root,
+      queue,
+      judgments,
+      inventory,
+      reportRunId: input.effectiveReportRunId,
+      generatedAt: new Date().toISOString(),
+      productionDecisions,
+    });
+    writeFileSync(
+      join(root, "orion-client-content.pre-review.json"),
+      `${JSON.stringify(regenerated.preReview, null, 2)}\n`,
+      "utf-8"
+    );
+    writeFileSync(
+      join(root, "orion-client-content.post-review.json"),
+      `${JSON.stringify(regenerated.postReview, null, 2)}\n`,
+      "utf-8"
+    );
+    writeFileSync(
+      join(root, "orion-client-content.pre-review.md"),
+      regenerated.preReviewMarkdown,
+      "utf-8"
+    );
+    writeFileSync(
+      join(root, "orion-client-content.post-review.md"),
+      regenerated.postReviewMarkdown,
+      "utf-8"
+    );
+  }
 
   const existing = loadAdminReviewDecisions(input.caseId);
   if (existing && !existing.qaSampleOnly) {
@@ -626,6 +683,10 @@ export async function persistRegeneratedClientContentAsync(caseId: string): Prom
   preReviewApprovedCount: number;
   postReviewApprovedCount: number;
 }> {
+  // Review decisions change the client report → any accepted canonical report is
+  // now stale and must be rebuilt via the unified CTA (no legacy render here).
+  markUnifiedReportArtifactsStale(caseId, "admin-review-decision");
+
   let inventoryReportRunId = "";
   try {
     const inventory = readJson<{ reportRunId: string }>(

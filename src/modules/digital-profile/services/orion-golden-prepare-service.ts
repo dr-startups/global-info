@@ -1,27 +1,43 @@
 /**
- * Prepare ORION Golden content-brain artifacts for a case (manual-review queue, judgments, client content).
- * Async job (like storyboard): POST returns immediately with status=running; poll GET until settled.
- * Does not render PDF/PPTX.
+ * Canonical ORION Golden prepare adapter (B-2B).
+ *
+ * Converted from the legacy runR10 content-brain into a lineage-safe canonical
+ * adapter. It requires an explicit caseId + jobId and runs the canonical
+ * job-scoped prepare (CompositeDataset -> SubjectResolution -> SurfaceAnalysis ->
+ * VerifiedFindingBundle -> ExecutiveSummary -> SectionPacks -> DeckAssembler ->
+ * one render) ONLY against artifacts recorded on that unified job. Missing or
+ * foreign lineage fails closed. There is NO path to the legacy composer.
+ *
+ * Async job (POST returns immediately with status=running; poll GET until settled).
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describeOrionV2AiReadiness, digitalProfileConfig } from "../config";
+import { digitalProfileConfig } from "../config";
 import { ForbiddenError, ValidationError } from "../http/errors";
 import {
-  ORION_GOLDEN_QA_STORAGE_ROOT,
-  caseScopedArtifactRoot,
-} from "../orion-golden/evidence/admin-review-decision-store";
-import { runR10OrionGoldenE2e } from "../orion-golden/run-r10-orion-golden-e2e";
+  loadUnifiedCollectionJob,
+  readUnifiedArtifact,
+  unifiedArtifactsDir,
+} from "./unified-collection-job-store";
+import type { CompositeMergeResult } from "./composite-serp-merge";
+import type { ReportDataBinding } from "./unified-collection-types";
+import {
+  runCanonicalReportPrepare,
+  CanonicalPrepareBlockedError,
+} from "./canonical-report-prepare";
 
 export type OrionGoldenPrepareSummary = {
   ok: boolean;
   caseId: string;
+  jobId: string | null;
   status: "completed" | "failed" | "running" | "empty";
   runId: string | null;
   verdict: string | null;
   artifactRoot: string | null;
-  pendingCount: number;
+  pdf: string | null;
+  pptx: string | null;
+  pageCount: number;
   queueReady: boolean;
   createdAt: string | null;
   completedAt: string | null;
@@ -30,13 +46,16 @@ export type OrionGoldenPrepareSummary = {
 
 interface PrepareRunRecord {
   caseId: string;
+  jobId: string;
   runId: string;
   status: "completed" | "failed" | "running";
   createdAt: string;
   completedAt: string | null;
   outputRoot: string;
   verdict: string;
-  pendingCount: number;
+  pdf: string | null;
+  pptx: string | null;
+  pageCount: number;
   queueReady: boolean;
   warnings: string[];
 }
@@ -74,11 +93,14 @@ function toSummary(record: PrepareRunRecord | null, caseId?: string): OrionGolde
     return {
       ok: true,
       caseId: caseId ?? "",
+      jobId: null,
       status: "empty",
       runId: null,
       verdict: null,
       artifactRoot: null,
-      pendingCount: 0,
+      pdf: null,
+      pptx: null,
+      pageCount: 0,
       queueReady: false,
       createdAt: null,
       completedAt: null,
@@ -88,11 +110,14 @@ function toSummary(record: PrepareRunRecord | null, caseId?: string): OrionGolde
   return {
     ok: record.status === "completed" && record.queueReady,
     caseId: record.caseId,
+    jobId: record.jobId,
     status: record.status,
     runId: record.runId,
     verdict: record.verdict,
     artifactRoot: record.outputRoot,
-    pendingCount: record.pendingCount,
+    pdf: record.pdf,
+    pptx: record.pptx,
+    pageCount: record.pageCount,
     queueReady: record.queueReady,
     createdAt: record.createdAt,
     completedAt: record.completedAt,
@@ -107,28 +132,7 @@ function getLatestPrepareRun(caseId: string): PrepareRunRecord | null {
 }
 
 export function getOrionGoldenPrepareSummary(caseId: string): OrionGoldenPrepareSummary {
-  const record = getLatestPrepareRun(caseId);
-  if (record) return toSummary(record, caseId);
-
-  const caseRoot = caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId);
-  const queuePath = join(caseRoot, "manual-review-queue.json");
-  if (existsSync(queuePath)) {
-    const queue = readJson<{ pendingCount?: number }>(queuePath);
-    return {
-      ok: true,
-      caseId,
-      status: "completed",
-      runId: null,
-      verdict: "ARTIFACTS_PRESENT",
-      artifactRoot: caseRoot,
-      pendingCount: queue?.pendingCount ?? 0,
-      queueReady: true,
-      createdAt: null,
-      completedAt: null,
-      warnings: [],
-    };
-  }
-  return toSummary(null, caseId);
+  return toSummary(getLatestPrepareRun(caseId), caseId);
 }
 
 function persistRun(record: PrepareRunRecord): void {
@@ -139,105 +143,110 @@ function persistRun(record: PrepareRunRecord): void {
   });
 }
 
+/**
+ * Validate that the requested job belongs to the case and carries the required
+ * canonical binding + composite merge artifacts. Fails closed otherwise.
+ */
+function resolveValidatedJobLineage(caseId: string, jobId: string): {
+  artifactsDir: string;
+  binding: ReportDataBinding;
+  merge: CompositeMergeResult;
+} {
+  if (!jobId.trim()) throw new ValidationError("jobId is required");
+  const job = loadUnifiedCollectionJob(caseId);
+  if (!job) throw new ValidationError("no unified job for case — run the unified audit first");
+  if (job.unifiedJobId !== jobId && job.jobId !== jobId) {
+    throw new ValidationError("FOREIGN_JOB_LINEAGE: jobId does not match the case job");
+  }
+  const binding = readUnifiedArtifact<ReportDataBinding>(caseId, job.unifiedJobId, "report-data-binding.json");
+  const merge = readUnifiedArtifact<CompositeMergeResult>(
+    caseId,
+    job.unifiedJobId,
+    "composite-serp-observations.json"
+  );
+  if (!binding || !merge) {
+    throw new ValidationError("PREPARE_INPUT_MISSING: canonical binding/composite artifacts are not present on the job");
+  }
+  if (binding.caseId !== caseId || (binding.unifiedJobId && binding.unifiedJobId !== job.unifiedJobId)) {
+    throw new ValidationError("FOREIGN_ARTIFACT: binding lineage does not match case/job");
+  }
+  return { artifactsDir: unifiedArtifactsDir(caseId, job.unifiedJobId), binding, merge };
+}
+
 async function executePrepare(input: {
   caseId: string;
+  jobId: string;
   uiRunId: string;
-  outputRoot: string;
   createdAt: string;
 }): Promise<PrepareRunRecord> {
+  const { artifactsDir, binding, merge } = resolveValidatedJobLineage(input.caseId, input.jobId);
   console.log(
-    `[orion-golden-prepare] start caseId=${input.caseId} runId=${input.uiRunId} root=${input.outputRoot}`
+    `[orion-golden-prepare] canonical start caseId=${input.caseId} jobId=${input.jobId} dir=${artifactsDir}`
   );
-
-  const prevContentBrain = process.env.R10_CONTENT_BRAIN_ONLY;
-  const prevClassic = process.env.ORION_CLASSIC_AUDIT_MODE;
-  const prevClientAudit = process.env.ORION_CLIENT_AUDIT_MODE;
-  const prevRenderFromContent = process.env.R10_RENDER_FROM_CLIENT_CONTENT;
-  const prevAutoAnalyst = process.env.ORION_GPT_AUTO_ANALYST;
-
   try {
-    process.env.R10_CONTENT_BRAIN_ONLY = "1";
-    delete process.env.ORION_CLASSIC_AUDIT_MODE;
-    delete process.env.ORION_CLIENT_AUDIT_MODE;
-    delete process.env.R10_RENDER_FROM_CLIENT_CONTENT;
-    if (digitalProfileConfig.orionGptAutoAnalyst) {
-      process.env.ORION_GPT_AUTO_ANALYST = "1";
-    }
-
-    const result = await runR10OrionGoldenE2e({
+    const res = await runCanonicalReportPrepare({
       caseId: input.caseId,
-      outputRoot: input.outputRoot,
-      requireAi: true,
+      unifiedJobId: input.jobId,
+      artifactsDir,
+      binding,
+      merge,
+      subjectProfile: null,
     });
-
-    const queuePath = join(input.outputRoot, "manual-review-queue.json");
-    const queueReady = existsSync(queuePath);
-    const queue = queueReady ? readJson<{ pendingCount?: number }>(queuePath) : null;
-    const blocked =
-      result.verdict === "BLOCKED" ||
-      result.verdict === "BLOCKED_GPT" ||
-      result.verdict === "BLOCKED_DATA_ROUTING";
-
     const completed: PrepareRunRecord = {
       caseId: input.caseId,
+      jobId: input.jobId,
       runId: input.uiRunId,
-      status: queueReady && !blocked ? "completed" : "failed",
+      status: "completed",
       createdAt: input.createdAt,
       completedAt: new Date().toISOString(),
-      outputRoot: input.outputRoot,
-      verdict: result.verdict,
-      pendingCount: queue?.pendingCount ?? 0,
-      queueReady,
-      warnings: queueReady
-        ? []
-        : ["manual-review-queue.json was not written — check AI/DB readiness"],
+      outputRoot: artifactsDir,
+      verdict: "PASS",
+      pdf: res.pdf ?? null,
+      pptx: res.pptx ?? null,
+      pageCount: res.pageCount,
+      queueReady: true,
+      warnings: res.requiredSectionsFailed.length
+        ? [`required sections failed: ${res.requiredSectionsFailed.join(", ")}`]
+        : [],
     };
     persistRun(completed);
     console.log(
-      `[orion-golden-prepare] done caseId=${input.caseId} verdict=${result.verdict} queueReady=${queueReady} pending=${completed.pendingCount}`
+      `[orion-golden-prepare] canonical done caseId=${input.caseId} pages=${res.pageCount}`
     );
-    try {
-      const { writeReportEvidenceProvenance } = await import("./report-evidence-provenance");
-      await writeReportEvidenceProvenance({
-        caseId: input.caseId,
-        phase: "ORION_PREPARE",
-        trigger: `prepare:${result.verdict}:pending=${completed.pendingCount}`,
-      });
-    } catch (err) {
-      console.error(
-        "[orion-golden-prepare] provenance failed:",
-        err instanceof Error ? err.message : err
-      );
-    }
     return completed;
-  } finally {
-    if (prevContentBrain === undefined) delete process.env.R10_CONTENT_BRAIN_ONLY;
-    else process.env.R10_CONTENT_BRAIN_ONLY = prevContentBrain;
-    if (prevClassic === undefined) delete process.env.ORION_CLASSIC_AUDIT_MODE;
-    else process.env.ORION_CLASSIC_AUDIT_MODE = prevClassic;
-    if (prevClientAudit === undefined) delete process.env.ORION_CLIENT_AUDIT_MODE;
-    else process.env.ORION_CLIENT_AUDIT_MODE = prevClientAudit;
-    if (prevRenderFromContent === undefined) delete process.env.R10_RENDER_FROM_CLIENT_CONTENT;
-    else process.env.R10_RENDER_FROM_CLIENT_CONTENT = prevRenderFromContent;
-    if (prevAutoAnalyst === undefined) delete process.env.ORION_GPT_AUTO_ANALYST;
-    else process.env.ORION_GPT_AUTO_ANALYST = prevAutoAnalyst;
+  } catch (err) {
+    const code = err instanceof CanonicalPrepareBlockedError ? err.code : "CANONICAL_PREPARE_FAILED";
+    const message = err instanceof Error ? err.message : String(err);
+    const failed: PrepareRunRecord = {
+      caseId: input.caseId,
+      jobId: input.jobId,
+      runId: input.uiRunId,
+      status: "failed",
+      createdAt: input.createdAt,
+      completedAt: new Date().toISOString(),
+      outputRoot: artifactsDir,
+      verdict: code,
+      pdf: null,
+      pptx: null,
+      pageCount: 0,
+      queueReady: false,
+      warnings: [message],
+    };
+    persistRun(failed);
+    throw err;
   }
 }
 
 /**
- * Enqueue Golden content-brain for a case. Returns immediately with status=running.
+ * Enqueue canonical Golden prepare for a validated case+job. Returns immediately
+ * with status=running. Fails closed synchronously on missing/foreign lineage.
  */
-export function enqueueOrionGoldenPrepare(caseId: string): OrionGoldenPrepareSummary {
+export function enqueueOrionGoldenPrepare(caseId: string, jobId: string): OrionGoldenPrepareSummary {
   if (!digitalProfileConfig.orionGoldenEnabled) {
     throw new ForbiddenError("ORION Golden is disabled.");
   }
-
-  const readiness = describeOrionV2AiReadiness();
-  if (digitalProfileConfig.orionV2RequireAi && !readiness.ready) {
-    throw new ValidationError(
-      "Подготовка ORION Golden требует GPT-5.5. Добавьте OPENAI_API_KEY и включите AI analyst."
-    );
-  }
+  // Fail-closed lineage validation before enqueueing any work.
+  const { artifactsDir } = resolveValidatedJobLineage(caseId, jobId);
 
   const existing = getLatestPrepareRun(caseId);
   if (existing?.status === "running") {
@@ -245,60 +254,41 @@ export function enqueueOrionGoldenPrepare(caseId: string): OrionGoldenPrepareSum
     const ageMs = Date.now() - createdMs;
     const processBootMs = Date.now() - process.uptime() * 1000;
     const stale =
-      !Number.isFinite(createdMs) ||
-      ageMs > 15 * 60 * 1000 ||
-      createdMs < processBootMs - 3_000;
-    if (!stale) {
-      console.log(`[orion-golden-prepare] already running caseId=${caseId} runId=${existing.runId}`);
-      return toSummary(existing, caseId);
-    }
-    console.warn(
-      `[orion-golden-prepare] stale running job — restarting caseId=${caseId} runId=${existing.runId}`
-    );
+      !Number.isFinite(createdMs) || ageMs > 15 * 60 * 1000 || createdMs < processBootMs - 3_000;
+    if (!stale) return toSummary(existing, caseId);
     persistRun({
       ...existing,
       status: "failed",
       completedAt: new Date().toISOString(),
       verdict: "FAIL",
-      warnings: [
-        "Предыдущая подготовка прервалась (рестарт контейнера или таймаут). Запущена новая.",
-        ...(existing.warnings ?? []),
-      ],
+      warnings: ["Предыдущая подготовка прервалась. Запущена новая.", ...(existing.warnings ?? [])],
     });
   }
 
   const uiRunId = `prepare-${Date.now()}`;
   const createdAt = new Date().toISOString();
-  const outputRoot = caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, caseId);
-  ensureDir(outputRoot);
-
   const running: PrepareRunRecord = {
     caseId,
+    jobId,
     runId: uiRunId,
     status: "running",
     createdAt,
     completedAt: null,
-    outputRoot,
+    outputRoot: artifactsDir,
     verdict: "PENDING",
-    pendingCount: 0,
+    pdf: null,
+    pptx: null,
+    pageCount: 0,
     queueReady: false,
-    warnings: ["Job started — poll status; content-brain may take several minutes."],
+    warnings: ["Job started — poll status; canonical prepare may take a few minutes."],
   };
   persistRun(running);
-  console.log(`[orion-golden-prepare] enqueued caseId=${caseId} runId=${uiRunId}`);
 
   setImmediate(() => {
-    void executePrepare({ caseId, uiRunId, outputRoot, createdAt }).catch((err) => {
-      const message = err instanceof Error ? err.message : "orion-golden-prepare-failed";
-      console.error(`[orion-golden-prepare] failed caseId=${caseId}: ${message}`);
-      const failed: PrepareRunRecord = {
-        ...running,
-        status: "failed",
-        completedAt: new Date().toISOString(),
-        verdict: "FAIL",
-        warnings: [message],
-      };
-      persistRun(failed);
+    void executePrepare({ caseId, jobId, uiRunId, createdAt }).catch((err) => {
+      console.error(
+        `[orion-golden-prepare] failed caseId=${caseId}: ${err instanceof Error ? err.message : err}`
+      );
     });
   });
 

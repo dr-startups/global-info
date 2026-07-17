@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "provider-delta-v1",
+  "caseId": "cmreamy2t0002o30f29urzcog",
+  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "baseCount": 235,
+  "arsenkinObservationCount": 108,
+  "duplicateCount": 0,
+  "uniqueArsenkinCount": 108,
+  "uniqueDomainCount": 12,
+  "relevantCount": 78,
+  "ambiguousCount": 12,
+  "otherSubjectCount": 3,
+  "newAdverseFindingCount": 3
+}

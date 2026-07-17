@@ -227,13 +227,14 @@ export async function collectArsenkinPilotSurfaces(
       payload = done.payload;
       providerTaskId = done.task.id;
     } else {
+      const stubUrl = "https://example.com/uae/profile";
       payload = {
             result: {
               result: {
-                collect: [[["https://highways.today/2025/11/06/biography-of-glinka-sergei/"]]],
+                collect: [[[stubUrl]]],
                 snippets: {
-                  "https://highways.today/2025/11/06/biography-of-glinka-sergei/": [
-                    { title: "Biography of Glinka Sergei", snippet: "UAE fixture" },
+                  [stubUrl]: [
+                    { title: uaeQuery || "UAE profile", snippet: "UAE fixture" },
                   ],
                 },
               },

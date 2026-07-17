@@ -14,6 +14,7 @@ import {
   patchUnifiedCollectionJob,
   readUnifiedArtifact,
   releaseUnifiedJobLease,
+  unifiedArtifactsDir,
   writeUnifiedArtifact,
 } from "./unified-collection-job-store";
 import type {
@@ -39,6 +40,13 @@ import {
   type CompositeObservation,
 } from "./composite-serp-merge";
 import { assertReportReadyGates } from "./report-ready-gates";
+import {
+  runCanonicalReportPrepare,
+  CanonicalPrepareBlockedError,
+} from "./canonical-report-prepare";
+import type { DeckRenderAdapter } from "./render-deck-artifacts";
+import { resolveJobSubjectProfile } from "./job-subject-profile";
+import type { ClassifierSubjectProfile } from "../orion-golden/analytics/subject-resolution-classifier";
 import type { FullAuditResultDTO } from "./agent-run-service";
 
 export type UnifiedOrchestratorDeps = {
@@ -64,12 +72,26 @@ export type UnifiedOrchestratorDeps = {
     warnings?: string[];
     partial?: boolean;
   }>;
-  /** Returns dataset id prepare actually used (for fail-closed gate). */
+  /**
+   * Override the canonical prepare (tests). Returns the dataset id prepare
+   * actually consumed (for the fail-closed gate) plus one-assembly/one-render
+   * counts. When omitted, the canonical job-scoped pipeline runs.
+   */
   runPrepare?: (input: {
     caseId: string;
     binding: ReportDataBinding;
     merge: CompositeMergeResult;
-  }) => Promise<{ prepareDatasetId: string; pdf?: string; pptx?: string }>;
+  }) => Promise<{
+    prepareDatasetId: string;
+    pdf?: string;
+    pptx?: string;
+    assemblyCount?: number;
+    renderCount?: number;
+  }>;
+  /** Subject identity for canonical prepare (production resolves from the case). */
+  subjectProfile?: ClassifierSubjectProfile | null;
+  /** Injectable renderer for canonical prepare (default: local python). */
+  renderDeck?: DeckRenderAdapter;
   fixtureBaseRows?: CompositeObservation[];
   allowMockReport?: boolean;
   /** When false, caller must drain ticks manually (tests). Default true. */
@@ -438,6 +460,22 @@ async function stepComposite(
     providerCounts: merge.providerCounts,
   });
 
+  // Persist the canonical subject identity into the job dir so the canonical
+  // prepare is fully job-scoped. Injected (tests) or case-owned only — never a
+  // baseline default. Absence is allowed here; prepare fails closed later.
+  const subjectProfile = await resolveJobSubjectProfile({
+    caseId: job.caseId,
+    injected: deps.subjectProfile ?? null,
+  });
+  if (subjectProfile) {
+    writeUnifiedArtifact(
+      job.caseId,
+      job.unifiedJobId,
+      "subject-identity-profile.json",
+      subjectProfile
+    );
+  }
+
   const paths = {
     compositeObservations: writeUnifiedArtifact(
       job.caseId,
@@ -515,16 +553,62 @@ async function stepPrepare(
     );
   }
 
+  // Default = canonical job-scoped pipeline. There is NO legacy composer path:
+  // a disabled/blocked canonical prepare fails closed and never falls back.
   const runPrepare =
     deps.runPrepare ??
-    (async ({ binding: b }) => ({
-      // Default: honest path uses compositeDatasetId. Tests inject stale ids to fail-closed.
-      prepareDatasetId: b.compositeDatasetId,
-      pdf: undefined,
-      pptx: undefined,
-    }));
+    (async ({ caseId, binding: b, merge: m }) => {
+      const res = await runCanonicalReportPrepare({
+        caseId,
+        unifiedJobId: job.unifiedJobId,
+        artifactsDir: unifiedArtifactsDir(caseId, job.unifiedJobId),
+        binding: b,
+        merge: m,
+        subjectProfile: deps.subjectProfile ?? null,
+        render: deps.renderDeck,
+      });
+      return {
+        prepareDatasetId: res.prepareDatasetId,
+        pdf: res.pdf,
+        pptx: res.pptx,
+        assemblyCount: res.assemblyCount,
+        renderCount: res.renderCount,
+      };
+    });
 
-  const prepared = await runPrepare({ caseId: job.caseId, binding, merge });
+  let prepared: Awaited<ReturnType<typeof runPrepare>>;
+  try {
+    prepared = await runPrepare({ caseId: job.caseId, binding, merge });
+  } catch (err) {
+    const code =
+      err instanceof CanonicalPrepareBlockedError ? err.code : "CANONICAL_PREPARE_FAILED";
+    return (
+      patchUnifiedCollectionJob(job.caseId, {
+        stage: "FAILED_TERMINAL",
+        status: "FAILED",
+        lastError: err instanceof Error ? err.message : String(err),
+        lastErrorCode: code,
+        completedAt: new Date().toISOString(),
+        warnings: [...job.warnings, "CANONICAL_PREPARE_BLOCKED"],
+      }) ?? job
+    );
+  }
+
+  // Assert exactly one assembly and one render per completed job (fail-closed).
+  if (
+    (prepared.assemblyCount != null && prepared.assemblyCount !== 1) ||
+    (prepared.renderCount != null && prepared.renderCount !== 1)
+  ) {
+    return (
+      patchUnifiedCollectionJob(job.caseId, {
+        stage: "FAILED_TERMINAL",
+        status: "FAILED",
+        lastError: `expected exactly one assembly and one render, got assembly=${prepared.assemblyCount} render=${prepared.renderCount}`,
+        lastErrorCode: "ASSEMBLY_RENDER_COUNT_INVALID",
+        completedAt: new Date().toISOString(),
+      }) ?? job
+    );
+  }
 
   const gate = assertReportReadyGates({
     binding,

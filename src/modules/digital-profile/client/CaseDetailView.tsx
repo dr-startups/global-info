@@ -351,11 +351,20 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
                       setPrepareBusy(true);
                       setBanner(null);
                       try {
-                        let result = await prepareOrionGoldenArtifacts(caseId);
+                        const { job } = await getUnifiedOrionCollectionStatus(caseId);
+                        const jobId = job?.unifiedJobId ?? "";
+                        if (!jobId) {
+                          setBanner({
+                            kind: "error",
+                            text: "Сначала запустите единый аудит ORION — canonical prepare работает только по job-scoped артефактам.",
+                          });
+                          return;
+                        }
+                        let result = await prepareOrionGoldenArtifacts(caseId, jobId);
                         setPrepareStatus(result);
                         setBanner({
                           kind: "ok",
-                          text: "Подготовка запущена в фоне. Обычно 3–10 минут.",
+                          text: "Canonical prepare запущен в фоне. Обычно несколько минут.",
                         });
                         for (let i = 0; i < 90; i += 1) {
                           if (result.status === "completed" || result.status === "failed") break;
@@ -366,7 +375,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
                         setBanner({
                           kind: result.ok ? "ok" : "error",
                           text: result.ok
-                            ? `Артефакты готовы. В очереди: ${result.pendingCount}.`
+                            ? `Отчёт собран (${result.pageCount} стр.).`
                             : result.warnings[0] ||
                               `Подготовка не завершена (${result.verdict ?? result.status})`,
                         });
@@ -401,7 +410,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
             {prepareStatus ? (
               <p className="dp-muted" style={{ margin: 0 }}>
                 Статус: {prepareStatus.status}
-                {prepareStatus.queueReady ? ` · очередь готова (${prepareStatus.pendingCount})` : ""}
+                {prepareStatus.queueReady ? ` · отчёт готов (${prepareStatus.pageCount} стр.)` : ""}
                 {prepareStatus.verdict ? ` · ${prepareStatus.verdict}` : ""}
               </p>
             ) : null}

@@ -32,7 +32,9 @@ import {
   waitForArsenkinTaskCompletion,
 } from "../src/modules/digital-profile/providers/arsenkin/poll-worker";
 import { classifyBackfillMatch } from "../src/modules/digital-profile/orion-golden/classic/arsenkin-provenance-backfill-match";
-import { inspectFirst36Acceptance } from "../src/modules/digital-profile/orion-golden/classic/first36-acceptance-gate";
+// NOTE: legacy First36 acceptance-gate tests retired with the monolithic composer.
+// Canonical acceptance (foreign/stale rejection, provenance, admin-decision gating) is
+// covered by smoke:canonical-orchestration-e2e / smoke:canonical-report-prepare.
 import { selectPostReviewAdminDecisions } from "../src/modules/digital-profile/orion-golden/evidence/admin-review-decision";
 
 function mockClient(handlers: {
@@ -330,174 +332,6 @@ describe("arsenkin p0.1 follow-up", () => {
     assert.equal([].length, 0); // no fake drafts
   });
 
-  it("final readiness cannot bypass acceptance (foreign client => INTERNAL_PREVIEW)", () => {
-    const slides = Array.from({ length: 36 }, (_, i) => ({
-      pageNumber: i + 1,
-      title: i === 18 || i === 35 ? "slot" : `p${i + 1}`,
-      narrative: i === 18 || i === 35 ? "content" : undefined,
-    }));
-    const dir = mkdtempSync(join(tmpdir(), "acc-"));
-    mkdirSync(join(dir, "pages-png"));
-    for (let i = 1; i <= 36; i += 1) {
-      writeFileSync(join(dir, "pages-png", `${String(i).padStart(2, "0")}.png`), Buffer.alloc(4000));
-    }
-    writeFileSync(join(dir, "rendered-client.pdf"), "x");
-    writeFileSync(join(dir, "rendered-client.pptx"), "x");
-
-    const r = inspectFirst36Acceptance({
-      slideCount: 36,
-      slides,
-      runScopedMerge: { usedRunScoped: true, observationCount: 5 },
-      arsenkinRequired: true,
-      clientFinalize: true,
-      expectedRunId: "run-new",
-      clientContentSourceReportRunId: "run-old",
-      arsenkinEnrich: { mode: "live", skipped: true, reason: "already_enriched organic=20" },
-      providerTasks: [{ id: "t1", reportRunId: "run-new", state: "DONE" }],
-      observations: [{ auditRunId: "run-new", provider: "arsenkin", providerTaskId: "t1" }],
-      provenanceSummary: {
-        linkedObservations: 1,
-        totalObservations: 1,
-        linkedCoverage: 6,
-        totalCoverage: 6,
-      },
-      coverageSummary: {
-        reportRunId: "run-new",
-        rows: [
-          { tool: "check-top", engine: "GOOGLE", region: "RU", surface: "organic", status: "OK", providerTaskId: "t1" },
-          { tool: "suggest", engine: "YANDEX", region: "RU", surface: "autocomplete", status: "NO_RESULTS", providerTaskId: "t1" },
-          { tool: "suggest", engine: "GOOGLE", region: "RU", surface: "autocomplete", status: "OK", providerTaskId: "t1" },
-          { tool: "suggest", engine: "GOOGLE", region: "UAE", surface: "autocomplete", status: "OK", providerTaskId: "t1" },
-          { tool: "paa", engine: "GOOGLE", region: "RU", surface: "paa", status: "OK", providerTaskId: "t1" },
-          { tool: "paa", engine: "GOOGLE", region: "UAE", surface: "paa", status: "OK", providerTaskId: "t1" },
-        ],
-      },
-      geometryReport: {
-        overlaps: [],
-        overflow: [],
-        blank: [],
-        summary: { issueCount: 0, severity: "PASS", pageCount: 36 },
-      },
-      geometryReportPresent: true,
-      paths: {
-        pdf: join(dir, "rendered-client.pdf"),
-        pptx: join(dir, "rendered-client.pptx"),
-        pagesPngDir: join(dir, "pages-png"),
-      },
-      assets: [],
-      requiredVisualAssetRefs: [],
-    });
-    assert.equal(r.ceoReady, false);
-    assert.ok(r.issues.some((i) => i.code === "foreign-client-content-run"));
-    // Even if renderQaReady were true, acceptance blocks CEO_READY.
-  });
-
-  it("rebuilt client content binding passes when source matches expected run", () => {
-    const slides = Array.from({ length: 36 }, (_, i) => ({
-      pageNumber: i + 1,
-      title: i === 18 || i === 35 ? "slot" : `p${i + 1}`,
-      narrative: i === 18 || i === 35 ? "content" : undefined,
-    }));
-    const dir = mkdtempSync(join(tmpdir(), "acc-bound-"));
-    mkdirSync(join(dir, "pages-png"));
-    for (let i = 1; i <= 36; i += 1) {
-      writeFileSync(join(dir, "pages-png", `${String(i).padStart(2, "0")}.png`), Buffer.alloc(4000));
-    }
-    writeFileSync(join(dir, "rendered-client.pdf"), "x");
-    writeFileSync(join(dir, "rendered-client.pptx"), "x");
-
-    const runId = "orion-r10-rebuilt-123";
-    const r = inspectFirst36Acceptance({
-      slideCount: 36,
-      slides,
-      runScopedMerge: { usedRunScoped: true, observationCount: 5 },
-      arsenkinRequired: true,
-      clientFinalize: true,
-      expectedRunId: runId,
-      clientContentSourceReportRunId: runId,
-      arsenkinEnrich: { mode: "live", skipped: true, reason: "already_enriched organic=20" },
-      providerTasks: [{ id: "t1", reportRunId: runId, state: "DONE" }],
-      observations: [{ auditRunId: runId, provider: "arsenkin", providerTaskId: "t1" }],
-      provenanceSummary: {
-        linkedObservations: 1,
-        totalObservations: 1,
-        linkedCoverage: 6,
-        totalCoverage: 6,
-      },
-      coverageSummary: {
-        reportRunId: runId,
-        rows: [
-          { tool: "check-top", engine: "GOOGLE", region: "RU", surface: "organic", status: "OK", providerTaskId: "t1" },
-          { tool: "suggest", engine: "YANDEX", region: "RU", surface: "autocomplete", status: "NO_RESULTS", providerTaskId: "t1" },
-          { tool: "suggest", engine: "GOOGLE", region: "RU", surface: "autocomplete", status: "OK", providerTaskId: "t1" },
-          { tool: "suggest", engine: "GOOGLE", region: "UAE", surface: "autocomplete", status: "OK", providerTaskId: "t1" },
-          { tool: "paa", engine: "GOOGLE", region: "RU", surface: "paa", status: "OK", providerTaskId: "t1" },
-          { tool: "paa", engine: "GOOGLE", region: "UAE", surface: "paa", status: "OK", providerTaskId: "t1" },
-        ],
-      },
-      geometryReport: {
-        overlaps: [],
-        overflow: [],
-        blank: [],
-        summary: { issueCount: 0, severity: "PASS", pageCount: 36 },
-      },
-      geometryReportPresent: true,
-      paths: {
-        pdf: join(dir, "rendered-client.pdf"),
-        pptx: join(dir, "rendered-client.pptx"),
-        pagesPngDir: join(dir, "pages-png"),
-      },
-      assets: [],
-      requiredVisualAssetRefs: [],
-    });
-    assert.ok(!r.issues.some((i) => i.code === "foreign-client-content-run"));
-    if (r.passed) {
-      assert.equal(r.ceoReady, true);
-    }
-  });
-
-  it("client-final forbids QA sample admin decisions", () => {
-    const base = {
-      slideCount: 36,
-      slides: Array.from({ length: 36 }, (_, i) => ({
-        pageNumber: i + 1,
-        title: i === 18 || i === 35 ? "slot" : `p${i + 1}`,
-        narrative: i === 18 || i === 35 ? "content" : undefined,
-      })),
-      runScopedMerge: { usedRunScoped: true, observationCount: 1 },
-      clientFinalize: true,
-      expectedRunId: "run",
-      clientContentSourceReportRunId: "run",
-    };
-    const sampleBlocked = inspectFirst36Acceptance({
-      ...base,
-      adminDecisionSet: {
-        qaSampleOnly: true,
-        decisions: [{ reviewedBy: "qa-fixture-analyst", reviewerNote: "QA sample fixture" }],
-      },
-    });
-    assert.ok(sampleBlocked.issues.some((i) => i.code === "qa-sample-decisions-forbidden"));
-
-    const fixtureReviewerBlocked = inspectFirst36Acceptance({
-      ...base,
-      adminDecisionSet: {
-        qaSampleOnly: false,
-        decisions: [{ reviewedBy: "qa-fixture-analyst", reviewerNote: "not real approval" }],
-      },
-    });
-    assert.ok(fixtureReviewerBlocked.issues.some((i) => i.code === "qa-fixture-reviewer-forbidden"));
-
-    const productionOk = inspectFirst36Acceptance({
-      ...base,
-      adminDecisionSet: {
-        qaSampleOnly: false,
-        decisions: [{ reviewedBy: "human-reviewer" }],
-      },
-    });
-    assert.ok(!productionOk.issues.some((i) => i.code === "qa-sample-decisions-forbidden"));
-    assert.ok(!productionOk.issues.some((i) => i.code === "qa-fixture-reviewer-forbidden"));
-  });
-
   it("post-review admin decisions: GPT ON uses resolved, OFF uses production pending", () => {
     const production = [
       { evidenceId: "e1", status: "PENDING" as const },
@@ -526,22 +360,6 @@ describe("arsenkin p0.1 follow-up", () => {
     });
     assert.deepEqual(on, resolved);
     assert.notEqual(on, sample);
-  });
-
-  it("missing production admin decisions artifact does not trigger QA sample gates", () => {
-    const r = inspectFirst36Acceptance({
-      slideCount: 36,
-      slides: Array.from({ length: 36 }, (_, i) => ({
-        pageNumber: i + 1,
-        title: `p${i + 1}`,
-      })),
-      runScopedMerge: { usedRunScoped: true, observationCount: 1 },
-      clientFinalize: true,
-      expectedRunId: "run",
-      clientContentSourceReportRunId: "run",
-    });
-    assert.ok(!r.issues.some((i) => i.code === "qa-sample-decisions-forbidden"));
-    assert.ok(!r.issues.some((i) => i.code === "qa-fixture-reviewer-forbidden"));
   });
 
   it("exact planner: same tool different hashes → WOULD_CREATE by hash", () => {

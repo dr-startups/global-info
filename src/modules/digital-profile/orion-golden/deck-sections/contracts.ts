@@ -9,6 +9,9 @@
 
 import { z } from "zod";
 
+/** Current self-contained pack schema (carries explicit caseId/datasetId). */
+export const SECTION_PACK_SCHEMA_VERSION = "section-pack-v3" as const;
+/** Legacy pack schema (no caseId/datasetId) — accepted only by the offline migration. */
 export const SECTION_PACK_V2_SCHEMA_VERSION = "section-pack-v2" as const;
 export const SLIDE_CONTENT_SCHEMA_VERSION = "slide-content-v1" as const;
 export const REPORT_SECTION_MANIFEST_VERSION = "report-section-manifest-v1" as const;
@@ -133,7 +136,94 @@ export const SlideContentContractSchema = z.object({
 });
 export type SlideContentContract = z.infer<typeof SlideContentContractSchema>;
 
-export const SectionPackV2Schema = z.object({
+/**
+ * Self-contained SectionPack (v3). Every pack carries its OWN lineage —
+ * `caseId`, `datasetId`, `reportRunId`, `schemaVersion`, `contentHash` — and
+ * its top-level `sourceFindingIds`/`evidenceRefs`. `caseId` is never inferred
+ * from the dataset string or the owning manifest at assembly time.
+ */
+export const SectionPackV2Schema = z
+  .object({
+    schemaVersion: z.literal(SECTION_PACK_SCHEMA_VERSION),
+    sectionId: z.string().min(1),
+    sectionType: SectionTypeSchema,
+    fragmentKey: FragmentKeySchema,
+    caseId: z.string().min(1),
+    datasetId: z.string().min(1),
+    reportRunId: z.string().min(1),
+    /** Retained alias of datasetId for lineage checks; must equal datasetId. */
+    sourceDatasetId: z.string().min(1),
+    contentVersion: z.string().min(1),
+    promptVersion: z.string().min(1),
+    /** Hash of generated slides content (reuse detection). */
+    contentHash: z.string().min(1),
+    /** Hash of scoped inputs (cache key together with promptVersion). */
+    inputHash: z.string().min(1),
+    generatedAt: z.string().min(1),
+
+    required: z.boolean(),
+    status: SectionPackStatusSchema,
+
+    /** Explicit top-level scope (mirrors inputs.findingIds/evidenceRefs). */
+    sourceFindingIds: z.array(z.string()),
+    evidenceRefs: z.array(z.string()),
+
+    inputs: z.object({
+      findingIds: z.array(z.string()),
+      evidenceRefs: z.array(z.string()),
+      metricSnapshotId: z.string().min(1),
+    }),
+
+    slides: z.array(SlideContentContractSchema),
+
+    metrics: z.object({
+      datasetCount: z.number().int().nonnegative(),
+      displayedCount: z.number().int().nonnegative(),
+      adverseDatasetCount: z.number().int().nonnegative(),
+      adverseDisplayedCount: z.number().int().nonnegative(),
+    }),
+
+    provenance: z.object({
+      providers: z.array(z.string()),
+      reportRunIds: z.array(z.string()),
+      evidenceRefs: z.array(z.string()),
+    }),
+
+    validation: z.object({
+      passed: z.boolean(),
+      issues: z.array(z.string()),
+    }),
+  })
+  .superRefine((pack, ctx) => {
+    if (pack.datasetId !== pack.sourceDatasetId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `datasetId !== sourceDatasetId (${pack.datasetId} != ${pack.sourceDatasetId})`,
+      });
+    }
+    const sameSet = (a: string[], b: string[]): boolean =>
+      a.length === b.length && new Set(a).size === new Set([...a, ...b]).size;
+    if (!sameSet(pack.sourceFindingIds, pack.inputs.findingIds)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "sourceFindingIds must equal inputs.findingIds",
+      });
+    }
+    if (!sameSet(pack.evidenceRefs, pack.inputs.evidenceRefs)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "top-level evidenceRefs must equal inputs.evidenceRefs",
+      });
+    }
+  });
+export type SectionPackV2 = z.infer<typeof SectionPackV2Schema>;
+
+/**
+ * Legacy pack (v2, no caseId/datasetId/sourceFindingIds/evidenceRefs).
+ * Recognized ONLY by the offline migration script — never accepted by
+ * production build/assembly, which require v3 self-contained packs.
+ */
+export const LegacySectionPackV2Schema = z.object({
   schemaVersion: z.literal(SECTION_PACK_V2_SCHEMA_VERSION),
   sectionId: z.string().min(1),
   sectionType: SectionTypeSchema,
@@ -142,42 +232,34 @@ export const SectionPackV2Schema = z.object({
   sourceDatasetId: z.string().min(1),
   contentVersion: z.string().min(1),
   promptVersion: z.string().min(1),
-  /** Hash of generated slides content (reuse detection). */
   contentHash: z.string().min(1),
-  /** Hash of scoped inputs (cache key together with promptVersion). */
   inputHash: z.string().min(1),
   generatedAt: z.string().min(1),
-
   required: z.boolean(),
   status: SectionPackStatusSchema,
-
   inputs: z.object({
     findingIds: z.array(z.string()),
     evidenceRefs: z.array(z.string()),
     metricSnapshotId: z.string().min(1),
   }),
-
   slides: z.array(SlideContentContractSchema),
-
   metrics: z.object({
     datasetCount: z.number().int().nonnegative(),
     displayedCount: z.number().int().nonnegative(),
     adverseDatasetCount: z.number().int().nonnegative(),
     adverseDisplayedCount: z.number().int().nonnegative(),
   }),
-
   provenance: z.object({
     providers: z.array(z.string()),
     reportRunIds: z.array(z.string()),
     evidenceRefs: z.array(z.string()),
   }),
-
   validation: z.object({
     passed: z.boolean(),
     issues: z.array(z.string()),
   }),
 });
-export type SectionPackV2 = z.infer<typeof SectionPackV2Schema>;
+export type LegacySectionPackV2 = z.infer<typeof LegacySectionPackV2Schema>;
 
 export const ManifestEntrySchema = z.object({
   order: z.number().int().positive(),

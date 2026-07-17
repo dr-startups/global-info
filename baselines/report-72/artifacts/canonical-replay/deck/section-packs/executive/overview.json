@@ -1,0 +1,247 @@
+{
+  "schemaVersion": "section-pack-v3",
+  "sectionId": "EXECUTIVE",
+  "sectionType": "EXECUTIVE",
+  "fragmentKey": "DIGITAL_PROFILE_OVERVIEW",
+  "caseId": "cmreamy2t0002o30f29urzcog",
+  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "reportRunId": "orion-canary-1783980828528",
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "contentVersion": "deck-sections-v14",
+  "promptVersion": "digital-profile-overview-deterministic-v1",
+  "contentHash": "sha256:285251f011ecbe93a9c9c2dacf4caec43d2f29f6b0918fbab278a87efaf404d0",
+  "inputHash": "sha256:3ca5bb7ca8274e3786585624dfa2d791e00dfe99f6574fb4166abf68ec237d10:095c68b0eecae74b",
+  "generatedAt": "2026-07-17T00:37:40.383Z",
+  "required": true,
+  "status": "READY",
+  "sourceFindingIds": [
+    "finding-criminal_legal-subject_match-16447175",
+    "finding-security_scrutiny-subject_match-0ae970c7",
+    "finding-pep_rca_watchlist-subject_match-dfa7da39",
+    "finding-political_exposure-subject_match-774a7b39",
+    "finding-business_profile-subject_match-a59d6fee",
+    "finding-family_associates-subject_match-a4427a53",
+    "finding-offshore_corporate-subject_match-1b4c64c7"
+  ],
+  "evidenceRefs": [
+    "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
+    "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+    "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+    "inventory:ss-cmrebadwt00hkmm0fnkag0v9w",
+    "inventory:ss-cmrebadwu00idmm0fnx76yk6p",
+    "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+    "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+    "inventory:ss-cmreb9zhz00ddmm0feohikekq",
+    "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
+    "inventory:ss-cmreb9zi000elmm0fyqi9iclm",
+    "inventory:db-cmreb8ztt001zmm0fluvc61al",
+    "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
+    "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+    "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
+    "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
+    "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
+    "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
+    "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
+    "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
+    "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
+    "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
+    "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
+    "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
+    "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+    "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr",
+    "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+    "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
+    "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
+    "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
+    "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
+    "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
+    "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
+    "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
+    "inventory:serp-obs-cmrjsolqp001zvd3w5zpjp2om",
+    "inventory:serp-obs-cmrjsolqw0023vd3w2eoqixj7",
+    "inventory:serp-obs-cmrjsolr20027vd3wxzfboo2x",
+    "inventory:serp-obs-cmrjsolrk002jvd3wopqyvu5g",
+    "inventory:serp-obs-cmrjsolrr002nvd3w3psml6tj",
+    "inventory:serp-obs-cmrjsolrx002rvd3w7k3h8bv0",
+    "inventory:serp-obs-cmrjsols3002vvd3wfs38b7sp",
+    "inventory:serp-obs-cmrjsolsl0037vd3wp23d4o2n",
+    "inventory:serp-obs-cmrjsolsr003bvd3wj9cf1gw7",
+    "inventory:ss-cmreb9zhz00cfmm0fdhgfiqvh",
+    "inventory:ss-cmreb9zhz00cjmm0f03cgzeo5",
+    "inventory:ss-cmreb9zi000dvmm0fhbtw7vrt",
+    "inventory:ss-cmreb9zi100f7mm0f5gkolgg2",
+    "inventory:ss-cmrebadwu00hlmm0fexst4rg8",
+    "inventory:ss-cmrebadwu00hnmm0f9hi612mw",
+    "inventory:ss-cmrebadwv00itmm0fe89nzyp4",
+    "inventory:ss-cmrebadwv00iumm0fje1armmu",
+    "inventory:ss-cmrebbrxv012nmm0f1n653sah",
+    "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+    "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+    "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+    "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
+  ],
+  "inputs": {
+    "findingIds": [
+      "finding-criminal_legal-subject_match-16447175",
+      "finding-security_scrutiny-subject_match-0ae970c7",
+      "finding-pep_rca_watchlist-subject_match-dfa7da39",
+      "finding-political_exposure-subject_match-774a7b39",
+      "finding-business_profile-subject_match-a59d6fee",
+      "finding-family_associates-subject_match-a4427a53",
+      "finding-offshore_corporate-subject_match-1b4c64c7"
+    ],
+    "evidenceRefs": [
+      "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
+      "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+      "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+      "inventory:ss-cmrebadwt00hkmm0fnkag0v9w",
+      "inventory:ss-cmrebadwu00idmm0fnx76yk6p",
+      "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+      "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+      "inventory:ss-cmreb9zhz00ddmm0feohikekq",
+      "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
+      "inventory:ss-cmreb9zi000elmm0fyqi9iclm",
+      "inventory:db-cmreb8ztt001zmm0fluvc61al",
+      "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
+      "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+      "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
+      "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
+      "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
+      "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
+      "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
+      "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
+      "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
+      "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
+      "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
+      "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
+      "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+      "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr",
+      "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+      "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
+      "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
+      "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
+      "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
+      "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
+      "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
+      "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
+      "inventory:serp-obs-cmrjsolqp001zvd3w5zpjp2om",
+      "inventory:serp-obs-cmrjsolqw0023vd3w2eoqixj7",
+      "inventory:serp-obs-cmrjsolr20027vd3wxzfboo2x",
+      "inventory:serp-obs-cmrjsolrk002jvd3wopqyvu5g",
+      "inventory:serp-obs-cmrjsolrr002nvd3w3psml6tj",
+      "inventory:serp-obs-cmrjsolrx002rvd3w7k3h8bv0",
+      "inventory:serp-obs-cmrjsols3002vvd3wfs38b7sp",
+      "inventory:serp-obs-cmrjsolsl0037vd3wp23d4o2n",
+      "inventory:serp-obs-cmrjsolsr003bvd3wj9cf1gw7",
+      "inventory:ss-cmreb9zhz00cfmm0fdhgfiqvh",
+      "inventory:ss-cmreb9zhz00cjmm0f03cgzeo5",
+      "inventory:ss-cmreb9zi000dvmm0fhbtw7vrt",
+      "inventory:ss-cmreb9zi100f7mm0f5gkolgg2",
+      "inventory:ss-cmrebadwu00hlmm0fexst4rg8",
+      "inventory:ss-cmrebadwu00hnmm0f9hi612mw",
+      "inventory:ss-cmrebadwv00itmm0fe89nzyp4",
+      "inventory:ss-cmrebadwv00iumm0fje1armmu",
+      "inventory:ss-cmrebbrxv012nmm0f1n653sah",
+      "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+      "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+      "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+      "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
+    ],
+    "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
+  },
+  "slides": [
+    {
+      "schemaVersion": "slide-content-v1",
+      "slideId": "p05_profile_dashboard",
+      "baseSlotId": "p05_profile_dashboard",
+      "sectionId": "EXECUTIVE",
+      "isContinuation": false,
+      "continuationOf": null,
+      "continuationIndex": null,
+      "templateId": "regional-summary",
+      "title": "Обзор цифрового профиля",
+      "content": {
+        "narrative": "Составной набор данных: 343 материалов из 2 региональных контуров (RU: 214, UAE: 129). Идентификация субъекта выполнена для каждого материала.",
+        "kpis": [
+          {
+            "label": "Материалов проанализировано",
+            "value": "343",
+            "tone": "neutral"
+          },
+          {
+            "label": "Связаны с проверяемым лицом",
+            "value": "153",
+            "tone": "good"
+          },
+          {
+            "label": "Требуют идентификации",
+            "value": "80",
+            "tone": "warn"
+          },
+          {
+            "label": "Относятся к другим лицам",
+            "value": "41",
+            "tone": "warn"
+          },
+          {
+            "label": "Тем повышенного внимания",
+            "value": "4",
+            "tone": "risk"
+          },
+          {
+            "label": "Региональные контуры",
+            "value": "RU · UAE",
+            "tone": "accent"
+          }
+        ],
+        "bullets": [
+          "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка. [finding-criminal_legal-subject_match-16447175]",
+          "Внимание по линии безопасности / оборонный контур: 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-security_scrutiny-subject_match-0ae970c7]",
+          "PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
+          "Политические связи (вкл. Молдову): 6 свидетельств (2 негативных) в источниках x.com, vlasti.io, m.sledst.org, sledst.org. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-political_exposure-subject_match-774a7b39]"
+        ],
+        "whatToCheck": "Детализация каждой темы повышенного внимания приведена в матрице рисков и региональных разделах.",
+        "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk"
+      },
+      "evidenceRefs": [],
+      "findingIds": [
+        "finding-criminal_legal-subject_match-16447175",
+        "finding-security_scrutiny-subject_match-0ae970c7",
+        "finding-pep_rca_watchlist-subject_match-dfa7da39",
+        "finding-political_exposure-subject_match-774a7b39",
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-family_associates-subject_match-a4427a53",
+        "finding-offshore_corporate-subject_match-1b4c64c7"
+      ],
+      "metrics": {
+        "compositeCount": 343,
+        "subjectMatchCount": 153,
+        "adverseFindingCount": 4
+      },
+      "visualAssetRefs": []
+    }
+  ],
+  "metrics": {
+    "datasetCount": 55,
+    "displayedCount": 0,
+    "adverseDatasetCount": 4,
+    "adverseDisplayedCount": 4
+  },
+  "provenance": {
+    "providers": [
+      "arsenkin",
+      "google",
+      "dow_jones",
+      "yandex",
+      "multi"
+    ],
+    "reportRunIds": [
+      "orion-canary-1783980828528"
+    ],
+    "evidenceRefs": []
+  },
+  "validation": {
+    "passed": true,
+    "issues": []
+  }
+}

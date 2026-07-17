@@ -11,3 +11,4 @@ export * from "./section-manifest";
 export * from "./deck-assembler";
 export * from "./assembly-validation";
 export * from "./run-deck-build";
+export * from "./load-deck-inputs";

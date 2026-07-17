@@ -3,7 +3,7 @@
  * Keeps provider observations in DB; only affects the rendered snapshot.
  */
 
-import { classifyWikipediaHit } from "../orion-golden/classic/orion-classic-theme-set";
+import { classifyWikipediaHit } from "./classify-wikipedia-hit";
 import type { PersistedSerpObservation } from "./types";
 
 function escapeRe(s: string): string {
@@ -12,7 +12,8 @@ function escapeRe(s: string): string {
 
 /**
  * True when the hit is likely a different person / place / encyclopedia noise
- * for the given subject (e.g. composer Mikhail Glinka on Wikipedia/IMSLP).
+ * for the given subject (e.g. a same-surname composer on Wikipedia/IMSLP).
+ * Subject-agnostic: everything is derived from `subjectName`.
  */
 export function isSyntheticSerpNoiseHit(
   obs: Pick<PersistedSerpObservation, "title" | "url" | "snippet" | "domain">,
@@ -34,25 +35,22 @@ export function isSyntheticSerpNoiseHit(
     if (wiki.status === "WRONG_SUBJECT" || wiki.status === "AMBIGUOUS") return true;
   }
 
-  // Sheet-music / classical composer corpus (Mikhail Glinka)
+  // Sheet-music / classical composer corpus (same-surname musician namesakes)
   if (/imslp\.|allmusic\.|discogs\.|classic-music|classicalarchives/i.test(`${url} ${domain}`)) {
     return true;
   }
 
-  // Explicit composer / historical namesake when subject given name differs
-  if (given && !/михаил|mikhail/i.test(given)) {
-    if (
-      /(?:mikhail|михаил)\s+glinka|glinka\s+(?:mikhail|михаил)|композитор\s+глинк|composer\s+glinka/i.test(
-        blob
-      )
-    ) {
-      return true;
-    }
-  }
-  if (given && !/ф[её]дор|fedor|fyodor/i.test(given)) {
-    if (/(?:fedor|fyodor|ф[её]дор)\s+glinka|glinka,?\s+(?:fedor|fyodor)/i.test(blob)) {
-      return true;
-    }
+  // Same-surname artistic/historical namesake whose given name is not the
+  // subject's (composer/writer/poet/painter/general/prince/count).
+  if (
+    given &&
+    new RegExp(`${escapeRe(surname)}`, "i").test(blob) &&
+    !new RegExp(escapeRe(given), "i").test(blob) &&
+    /композитор|composer|musician|писатель|поэт|painter|художник|генерал|княз|граф|poet|writer/i.test(
+      blob
+    )
+  ) {
+    return true;
   }
 
   // Surname-only Wikipedia-style titles with parenthetical identity that isn't the subject

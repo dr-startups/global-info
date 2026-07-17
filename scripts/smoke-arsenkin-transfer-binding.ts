@@ -28,6 +28,12 @@ import {
   syncArsenkinResultsToOrion,
   type ArsenkinUiOrchestrationDeps,
 } from "../src/modules/digital-profile/services/arsenkin-ui-orchestration-service";
+import {
+  findOrCreateUnifiedCollectionJob,
+  patchUnifiedCollectionJob,
+  loadUnifiedCollectionJob,
+  deleteUnifiedCollectionJobForTests,
+} from "../src/modules/digital-profile/services/unified-collection-job-store";
 import { ConflictError } from "../src/modules/digital-profile/http/errors";
 
 const CASE_ID = "cmreamy2t0002o30f29urzcog-xfer-test";
@@ -577,6 +583,92 @@ describe("arsenkin-transfer-binding", () => {
     if (!bad.ok) {
       assert.ok(bad.issues.some((i) => i.code === "ARSENKIN_SUGGESTION_ASSETS_MISSING"));
     }
+  });
+
+  it("standalone diagnostic sync (no rebuild) updates binding, marks report stale, renders nothing", async () => {
+    resetArsenkinNetworkCallCount();
+    const caseRoot = caseScopedArtifactRoot(ORION_GOLDEN_QA_STORAGE_ROOT, CASE_ID);
+    rmSync(caseRoot, { recursive: true, force: true });
+    mkdirSync(caseRoot, { recursive: true });
+    seedMapping();
+
+    // Seed an accepted canonical unified job so staleness has a target.
+    deleteUnifiedCollectionJobForTests(CASE_ID);
+    findOrCreateUnifiedCollectionJob({ caseId: CASE_ID, requestedBy: "tester" });
+    patchUnifiedCollectionJob(CASE_ID, { stage: "REPORT_READY", status: "COMPLETED" });
+
+    const state: FakeState = {
+      run: {
+        id: ARSENKIN_RUN,
+        caseId: CASE_ID,
+        status: "DONE",
+        metadataJson: { workflow: "suggest-canary" },
+      },
+      stages: [
+        {
+          reportRunId: ARSENKIN_RUN,
+          stage: "SUGGEST_RU_CANARY",
+          status: "DONE",
+          planDigest: "d1",
+          errorJson: null,
+          updatedAt: new Date(),
+        },
+      ],
+      observations: make18Observations(ARSENKIN_RUN),
+      providerTaskCount: 2,
+      coverageCount: 2,
+    };
+
+    // NOTE: no `rebuild` in deps → production diagnostic-only path.
+    const result = await syncArsenkinResultsToOrion({
+      caseId: CASE_ID,
+      reportRunId: SOURCE_RUN,
+      stage: "SUGGEST_RU_CANARY",
+      deps: {
+        prisma: makeFakePrisma(state),
+        readinessBlockers: () => [],
+        isConfigured: () => true,
+      },
+    });
+
+    // Diagnostic-only: enrichment collected/appended but NOT promoted to a report.
+    // Honest state is READY_TO_TRANSFER (not render-ready) — never TRANSFERRED.
+    assert.equal(result.status, "READY_TO_TRANSFER");
+    assert.equal(result.synced, false);
+    assert.equal(getArsenkinNetworkCallCount(), 0);
+
+    // Binding + provenance persisted, not render-ready (no legacy render happened).
+    const binding = loadArsenkinReportBinding(CASE_ID);
+    assert.ok(binding);
+    assert.equal(binding!.status, "READY_TO_TRANSFER");
+    assert.equal(binding!.effectiveReportRunId, ARSENKIN_RUN);
+
+    // Diagnostic sync marker: no report generated.
+    const sync = JSON.parse(readFileSync(join(caseRoot, "arsenkin-ui-sync.json"), "utf-8")) as {
+      diagnosticOnly?: boolean;
+      reportGenerated?: boolean;
+      status?: string;
+    };
+    assert.equal(sync.diagnosticOnly, true);
+    assert.equal(sync.reportGenerated, false);
+    assert.equal(sync.status, "READY_TO_TRANSFER");
+
+    // No client-content report was rebuilt/promoted.
+    assert.equal(
+      existsSync(join(caseRoot, "orion-client-content.post-review.json")),
+      false,
+      "diagnostic sync must not produce client content"
+    );
+
+    // Accepted canonical report is now marked stale (REBUILD_REQUIRED).
+    const job = loadUnifiedCollectionJob(CASE_ID);
+    assert.ok(job);
+    assert.ok(
+      job!.warnings.some((w) => w.startsWith("CANONICAL_ARTIFACTS_STALE")),
+      `expected stale warning, got ${JSON.stringify(job!.warnings)}`
+    );
+
+    deleteUnifiedCollectionJobForTests(CASE_ID);
   });
 
   it("NETWORK_CALLS remains 0", () => {

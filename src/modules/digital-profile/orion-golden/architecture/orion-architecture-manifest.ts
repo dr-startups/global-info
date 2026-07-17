@@ -131,7 +131,7 @@ export function catalogLlmUsagePoints(): LlmUsagePoint[] {
       id: "section-analysis-orchestrator",
       file: "orion-golden/gpt/orion-section-analysis-orchestrator.ts",
       symbol: "analyzeOrionSections",
-      whenCalled: "runR10OrionGoldenE2e / prepare",
+      whenCalled: "canonical report prepare (runCanonicalReportPrepare)",
       liveNetwork: true,
     },
     {

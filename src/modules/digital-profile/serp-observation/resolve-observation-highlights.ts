@@ -20,7 +20,7 @@ const SOFT_PROFILE_DOMAIN_RE =
 
 /** Strong adverse signals — enough alone, including on soft profile domains. */
 const STRONG_ADVERSE_BLOB_RE =
-  /adverse|undesirable|нежелат|негативн|санкц|sanction|\bofac\b|корруп|corrupt|мошен|fraud|арест|arrest|уголов|\bcriminal\b|lawsuit|\bpep\b|watchlist|\brca\b|компромат|rucriminal|cybercriminal|acompromat|rupep|opensanctions|defense\s+industry|оборонн(?:ая|ой)\s+промыш|махмудов|makhmudov|бокарев|bokarev/i;
+  /adverse|undesirable|нежелат|негативн|санкц|sanction|\bofac\b|корруп|corrupt|мошен|fraud|арест|arrest|уголов|\bcriminal\b|lawsuit|\bpep\b|watchlist|\brca\b|компромат|rucriminal|cybercriminal|acompromat|rupep|opensanctions|defense\s+industry|оборонн(?:ая|ой)\s+промыш/i;
 
 /**
  * Weaker signals — only for non-soft domains (avoid «associate» / «политич» on bios).
@@ -39,7 +39,7 @@ const THEME_RULES: ThemeRule[] = [
   {
     key: "sanctions",
     title: "Санкционный контур и связанные лица",
-    match: /санкц|sanction|\bofac\b|махмудов|makhmudov|бокарев|bokarev|трансмаш|watchlist|defense\s+industry|оборонн/i,
+    match: /санкц|sanction|\bofac\b|watchlist|defense\s+industry|оборонн/i,
   },
   {
     key: "pep",

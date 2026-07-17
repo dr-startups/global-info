@@ -175,30 +175,13 @@ async function main() {
   mkdirSync(outputRoot, { recursive: true });
 
   if (!skipGolden) {
-    console.log(`[import-glinka] golden content-brain → ${outputRoot}`);
-    process.env.R10_CONTENT_BRAIN_ONLY = "1";
-    process.env.ORION_GPT_AUTO_ANALYST = "1";
-    delete process.env.ORION_CLASSIC_AUDIT_MODE;
-    delete process.env.ORION_CLIENT_AUDIT_MODE;
-    delete process.env.R10_RENDER_FROM_CLIENT_CONTENT;
-
-    const { runR10OrionGoldenE2e } = await import(
-      "../src/modules/digital-profile/orion-golden/run-r10-orion-golden-e2e"
-    );
-    const golden = await runR10OrionGoldenE2e({
-      caseId,
-      outputRoot,
-      requireAi: true,
-    });
-    console.log(`[import-glinka] golden verdict=${golden.verdict}`);
-
-    const postPath = join(outputRoot, "orion-client-content.post-review.json");
-    if (!existsSync(postPath)) {
-      throw new Error(`post-review client content missing at ${postPath}`);
-    }
-    const post = JSON.parse(readFileSync(postPath, "utf-8")) as { caseId?: string; subject?: { displayName?: string } };
+    // The legacy R10 content-brain / monolithic composer was retired. Report content
+    // is now produced exclusively by the canonical unified job. This importer only
+    // seeds the case + evidence; run the canonical report separately:
+    //   POST /api/digital-profile/cases/<caseId>/unified-collection
+    // (offline canonical replay: npm run smoke:canonical-orchestration-e2e).
     console.log(
-      `[import-glinka] post-review ok caseId=${post.caseId} subject=${post.subject?.displayName ?? "?"}`
+      `[import-glinka] golden content-brain retired — run the canonical unified job for ${caseId} (POST /unified-collection). Case + evidence seeded at ${outputRoot}.`
     );
   } else {
     console.log("[import-glinka] skip golden");
@@ -221,24 +204,10 @@ async function main() {
   console.log(`[import-glinka] evidence counts`, counts?._count);
 
   if (renderFirst36) {
-    console.log("[import-glinka] First36 live render…");
-    process.env.ORION_CLASSIC_AUDIT_MODE = "1";
-    process.env.ORION_FIRST36_CEO_MODE = "1";
-    process.env.ORION_GOLDEN_FORCE_LOCAL_RENDER = "1";
-    process.env.ORION_CLASSIC_CLIENT_FINALIZE = "0";
-    const { runOrionClassicAuditRender } = await import(
-      "../src/modules/digital-profile/orion-golden/classic/run-orion-classic-audit-render"
+    // Legacy First36 monolithic render retired. Use the canonical unified job render.
+    console.log(
+      "[import-glinka] First36 legacy render retired — render via the canonical unified job (one DeckAssembler + one renderer)."
     );
-    const renderRoot = join(
-      process.cwd(),
-      "storage",
-      "digital-profile",
-      "qa-first36-live-render",
-      caseId,
-      String(Date.now())
-    );
-    const result = await runOrionClassicAuditRender({ caseId, outputRoot: renderRoot });
-    console.log(JSON.stringify({ renderRoot, ...result }, null, 2));
   }
 
   console.log(

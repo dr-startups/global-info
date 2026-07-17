@@ -56,6 +56,22 @@ function item(partial: Partial<RawInventoryItem> & Pick<RawInventoryItem, "title
   };
 }
 
+const GLINKA_COMPOSER_NOISE = [
+  "михаил глинка",
+  "михаила глинки",
+  "mikhail glinka",
+  "композитор",
+  "composer",
+  "опера",
+  "opera",
+  "жизнь за царя",
+  "руслан и людмила",
+  "imslp",
+  "симфони",
+  "романс",
+  "партитур",
+];
+
 const GLINKA_SUBJECT: SubjectIdentity = {
   displayName: "Глинка Сергей Михайлович",
   lastName: "Глинка",
@@ -68,6 +84,8 @@ const GLINKA_SUBJECT: SubjectIdentity = {
   wrongFirstNames: [],
   wrongPatronymics: ["николаевич"],
   unrelatedKnownPersons: ["дерипаск"],
+  namesakeProfiles: [{ label: "Михаил Глинка (композитор)", noiseTerms: GLINKA_COMPOSER_NOISE }],
+  namesakeNoise: GLINKA_COMPOSER_NOISE,
 };
 
 function subjectItems(): {
@@ -650,6 +668,13 @@ describe("7. summary evidence coverage (end-to-end wiring)", () => {
       subjectProfile: {
         displayName: GLINKA_SUBJECT.displayName,
         fullNameRu: { lastName: "Глинка", firstName: "Сергей", patronymic: "Михайлович" },
+        givenNames: ["Сергей", "sergey", "sergei"],
+        familyNames: ["Глинка", "glinka"],
+        patronymics: ["Михайлович", "mikhaylovich", "mikhailovich"],
+        contextIdentifiers: GLINKA_SUBJECT.contextIdentifiers,
+        namesakeProfiles: [
+          { label: "Михаил Глинка (композитор)", noiseTerms: GLINKA_COMPOSER_NOISE },
+        ],
         aliases: GLINKA_SUBJECT.aliases,
         transliterations: ["glinka sergey mikhaylovich", "sergey glinka"],
         knownIdentifiers: { inn: ["773800015809"] },

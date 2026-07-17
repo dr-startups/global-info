@@ -32,7 +32,7 @@ function makeCtx(): Omit<SectionBuildContext, "previousPacks" | "buildLog"> {
     caseId: inputs.caseId,
     reportRunId: inputs.reportRunId,
     sourceDatasetId: inputs.sourceDatasetId,
-    contentVersion: "deck-sections-v13",
+    contentVersion: "deck-sections-v14",
     subject: { displayName: "Сергей Глинка", aliases: ["Sergey Glinka"] },
     bundle: structuredClone(inputs.mergedBundle),
     surfaceUnits: structuredClone(inputs.surfaceUnits),

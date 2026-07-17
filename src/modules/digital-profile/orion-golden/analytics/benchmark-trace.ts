@@ -29,9 +29,9 @@ export type BenchmarkThemeDef = {
 /** ORION coverage checklist (themes only, not claims). */
 export const BENCHMARK_THEMES: BenchmarkThemeDef[] = [
   {
-    benchmarkId: "bm-politics-moldova",
-    label: "Политика / Молдова",
-    keywords: /полит|politic|молдов|moldova|депутат|парти/iu,
+    benchmarkId: "bm-political-exposure",
+    label: "Политическая / публичная экспозиция",
+    keywords: /полит|politic|депутат|парти|выбор|electoral|минист|правительств|парламент/iu,
     findingThemeIds: ["political_exposure"],
   },
   {
