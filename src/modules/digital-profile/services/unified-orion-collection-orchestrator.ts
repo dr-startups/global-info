@@ -60,12 +60,27 @@ import {
   legacyEnrichmentResultToTick,
   offlineSyntheticCompleteTick,
   runDurableArsenkinEnrichmentTick,
+  type EnrichmentPollTaskSnap,
 } from "./arsenkin-enrichment-tick";
 import { buildBaseObservationCoverage } from "./base-observation-coverage";
+
+/** Bounded delay before re-scheduling a WAITING Arsenkin ingest tick. */
+export function computeUnifiedPollDelayMs(job: UnifiedCollectionJob, now = Date.now()): number {
+  if (job.nextPollAt) {
+    const due = Date.parse(job.nextPollAt);
+    if (!Number.isNaN(due)) return Math.max(50, due - now);
+  }
+  const attempt = Math.max(0, Number(job.pollAttempt ?? 0));
+  return Math.min(30_000, Math.max(50, 2_000 * 2 ** Math.min(attempt, 4)));
+}
 
 export type UnifiedOrchestratorDeps = {
   prisma?: PrismaClient | null;
   runFullAudit?: (caseId: string, actorId: string) => Promise<FullAuditResultDTO>;
+  /** Offline: ProviderTasks for durable enrichment poll/ingest. */
+  listEnrichmentProviderTasks?: (enrichmentRunIds: string[]) => Promise<EnrichmentPollTaskSnap[]>;
+  /** Offline: poll adapter (never /set). */
+  pollEnrichmentTask?: (task: EnrichmentPollTaskSnap) => Promise<EnrichmentPollTaskSnap>;
   /**
    * Arsenkin enrichment tick (may be incomplete). Prefer enrichmentComplete flag.
    * Schedule-only (enrichmentRunIds length 5) is NOT completion.
@@ -298,13 +313,20 @@ export async function startUnifiedOrionCollection(input: {
       caseId: input.caseId,
       job: existing,
     });
+    // Durable post-submit / ingest wait: always resume the same job (never 409 / new collection).
+    const inFlightArsenkinIngest =
+      existing.stage === "ARSENKIN_ENRICHMENT" &&
+      (existing.status === "WAITING" || existing.status === "RUNNING") &&
+      existing.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" &&
+      (existing.enrichmentRunIds?.length ?? 0) >= ARSENKIN_REAL_AGENT_NAMES.length;
     // In-flight WAITING/RUNNING ingest or idempotent resume → reuse, do not 409.
     if (
-      elig.recoveryAllowed &&
-      (existing.status === "WAITING" || existing.status === "RUNNING") &&
-      (elig.recoveryReason === "ARSENKIN_INGEST_RESUME" ||
-        elig.recoveryReason === "IDEMPOTENT_RESUME" ||
-        elig.recoveryReason === "IDEMPOTENT_RENDER_RESUME")
+      inFlightArsenkinIngest ||
+      (elig.recoveryAllowed &&
+        (existing.status === "WAITING" || existing.status === "RUNNING") &&
+        (elig.recoveryReason === "ARSENKIN_INGEST_RESUME" ||
+          elig.recoveryReason === "IDEMPOTENT_RESUME" ||
+          elig.recoveryReason === "IDEMPOTENT_RENDER_RESUME"))
     ) {
       if (input.deps?.autoSchedule !== false) {
         scheduleUnifiedTick(input.caseId, input.deps);
@@ -370,8 +392,9 @@ export function scheduleUnifiedTick(caseId: string, deps: UnifiedOrchestratorDep
             (job.status === "WAITING" &&
               job.stage === "ARSENKIN_ENRICHMENT" &&
               job.resumeCheckpoint === "ARSENKIN_RESULT_INGEST"));
-        if (keepPolling) {
-          setTimeout(() => scheduleUnifiedTick(caseId, deps), 50);
+        if (keepPolling && job) {
+          const delayMs = computeUnifiedPollDelayMs(job, deps.now?.().getTime() ?? Date.now());
+          setTimeout(() => scheduleUnifiedTick(caseId, deps), delayMs);
         }
       });
   });
@@ -382,6 +405,18 @@ export function resumeUnifiedCollectionsOnStartup(deps: UnifiedOrchestratorDeps 
   for (const { caseId } of listResumableUnifiedJobs()) {
     scheduleUnifiedTick(caseId, deps);
   }
+}
+
+/**
+ * Periodic pump for persisted WAITING unified jobs (durable across HTTP end).
+ * Idempotent with scheduleUnifiedTick's in-process guard + job lease.
+ */
+export function pumpResumableUnifiedCollections(deps: UnifiedOrchestratorDeps = {}): number {
+  const jobs = listResumableUnifiedJobs();
+  for (const { caseId } of jobs) {
+    scheduleUnifiedTick(caseId, deps);
+  }
+  return jobs.length;
 }
 
 export async function runUnifiedCollectionTick(
@@ -566,19 +601,29 @@ async function stepArsenkin(
   }
 
   const networkOff = String(process.env.NETWORK_CALLS ?? "") === "0";
+  const hasOfflinePollDeps = Boolean(
+    deps.listEnrichmentProviderTasks || deps.pollEnrichmentTask
+  );
+  const resumeIngest =
+    job.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" &&
+    (job.enrichmentRunIds?.length ?? 0) >= ARSENKIN_REAL_AGENT_NAMES.length;
   let tick;
 
   if (deps.runArsenkinEnrichment) {
     const raw = await deps.runArsenkinEnrichment(job);
     tick = legacyEnrichmentResultToTick(job, raw);
-  } else if (networkOff) {
-    // Offline: honest EMPTY_VALID for all five — no live submits.
+  } else if (networkOff && !hasOfflinePollDeps && !resumeIngest) {
+    // Offline happy-path: honest EMPTY_VALID for all five — no live submits.
+    // WAITING ingest resume / injected poll deps use the durable poll path instead.
     tick = offlineSyntheticCompleteTick(job);
   } else {
     tick = await runDurableArsenkinEnrichmentTick({
       job,
       prisma: deps.prisma,
-      offlineEmptyValid: false,
+      offlineEmptyValid: networkOff && !hasOfflinePollDeps && !resumeIngest,
+      listProviderTasks: deps.listEnrichmentProviderTasks,
+      pollTask: deps.pollEnrichmentTask,
+      now: deps.now,
       scheduleIfMissing:
         (job.enrichmentRunIds?.length ?? 0) >= ARSENKIN_REAL_AGENT_NAMES.length
           ? undefined
@@ -644,19 +689,26 @@ async function stepArsenkin(
   }
 
   if (tick.waiting || !state.enrichmentComplete) {
-    // Persist schedule ids; do NOT write empty observations as "complete".
+    // Persist partial observations + durable nextPollAt (restart-safe).
     const obsPath = writeUnifiedArtifact(
       job.caseId,
       job.unifiedJobId,
       "arsenkin-enrichment-observations.json",
       {
-        observations: [],
+        observations: tick.observations,
         arsenkinReportRunId: tick.arsenkinReportRunId,
         enrichmentRunIds,
         enrichmentComplete: false,
         state,
+        ingestedResultHashes: state.ingestedResultHashes,
       }
     );
+    const nextPollAt =
+      tick.nextPollAt ??
+      new Date(
+        (deps.now?.() ?? new Date()).getTime() +
+          Math.min(30_000, Math.max(2_000, 2_000 * 2 ** Math.min(Number(job.pollAttempt ?? 0), 4)))
+      ).toISOString();
     return (
       patchUnifiedCollectionJob(job.caseId, {
         stage: "ARSENKIN_ENRICHMENT",
@@ -666,6 +718,8 @@ async function stepArsenkin(
         enrichmentRunIds,
         arsenkinEnrichmentState: state,
         resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
+        nextPollAt,
+        pollAttempt: Math.max(0, Number(job.pollAttempt ?? 0)) + 1,
         coverage: { ...coverage, progressRatio: computeCoverageProgress(coverage) },
         warnings: [...job.warnings, ...tick.warnings, "arsenkin-awaiting-ingest"],
         artifactPaths: { ...job.artifactPaths, arsenkinObservations: obsPath },
@@ -717,6 +771,8 @@ async function stepArsenkin(
       enrichmentRunIds,
       arsenkinEnrichmentState: state,
       resumeCheckpoint: null,
+      nextPollAt: null,
+      pollAttempt: 0,
       coverage: { ...coverage, progressRatio: computeCoverageProgress(coverage) },
       warnings: [
         ...(invalidationWarnings.length > 0 ? invalidationWarnings : job.warnings),

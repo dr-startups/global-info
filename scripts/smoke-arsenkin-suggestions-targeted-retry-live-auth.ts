@@ -211,6 +211,7 @@ describe("A–L targeted live-auth + reuse", () => {
           confirmPaidEnrichmentRetry: false,
           actorId: "smoke",
           deps: {
+            autoSchedule: false,
             loadSubject: async () => ({ fullName: "Live Auth Subject", aliases: [] }),
             listProviderTasks: async () => taskStore,
             requeueNoExternalRequestTask: async () => {
@@ -273,6 +274,7 @@ describe("A–L targeted live-auth + reuse", () => {
     ];
 
     const deps = {
+      autoSchedule: false as const,
       loadSubject: async () => ({ fullName: "Live Auth Subject", aliases: [] as string[] }),
       listProviderTasks: async () => taskStore,
       requeueNoExternalRequestTask: async (id: string) => {
@@ -383,6 +385,7 @@ describe("A–L targeted live-auth + reuse", () => {
           confirmPaidEnrichmentRetry: true,
           actorId: "smoke",
           deps: {
+            autoSchedule: false,
             loadSubject: async () => ({ fullName: "Ambiguous Subject", aliases: [] }),
             listProviderTasks: async () => taskStore,
             submitSuggestTask: async () => {
@@ -417,6 +420,7 @@ describe("A–L targeted live-auth + reuse", () => {
       },
     ];
     const deps = {
+      autoSchedule: false as const,
       loadSubject: async () => ({ fullName: "Lease Subject", aliases: [] as string[] }),
       listProviderTasks: async () => taskStore,
       requeueNoExternalRequestTask: async (id: string) => {

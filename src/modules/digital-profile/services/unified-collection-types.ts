@@ -130,6 +130,13 @@ export type UnifiedCollectionJob = {
     | null;
   /** Persisted Arsenkin enrichment state contract (not schedule-only). */
   arsenkinEnrichmentState?: import("./arsenkin-enrichment-state").ArsenkinEnrichmentState | null;
+  /**
+   * Durable poll cadence for WAITING / ARSENKIN_RESULT_INGEST.
+   * Survives process restart; startup resume honors nextPollAt.
+   */
+  nextPollAt?: string | null;
+  /** Bounded backoff attempt counter for persisted WAITING polls. */
+  pollAttempt?: number;
 };
 
 export const FIRST36_PLANNED_SUPPORTED_SURFACES = [

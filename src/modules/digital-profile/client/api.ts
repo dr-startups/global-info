@@ -1496,6 +1496,9 @@ export type UnifiedCollectionJobStatus = {
     previousLastErrorCode: string | null;
   } | null;
   resumeCheckpoint?: string | null;
+  /** Durable Arsenkin poll cadence (persists across F5 / restart). */
+  nextPollAt?: string | null;
+  pollAttempt?: number;
   /** Suggestions enrichment gap — targeted paid retry. */
   suggestionsMissingResult?: boolean;
   suggestionsFailureReason?: string | null;

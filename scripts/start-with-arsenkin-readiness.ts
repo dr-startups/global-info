@@ -61,9 +61,24 @@ async function main() {
         );
       });
     void import("../src/modules/digital-profile/services/unified-orion-collection-orchestrator")
-      .then(({ resumeUnifiedCollectionsOnStartup }) => {
+      .then(({ resumeUnifiedCollectionsOnStartup, pumpResumableUnifiedCollections }) => {
         console.error("[unified-startup] Bounded resume of unified collection jobs…");
         resumeUnifiedCollectionsOnStartup();
+        // Durable pump: WAITING / ARSENKIN_RESULT_INGEST survives HTTP end + deploy.
+        // Idempotent with scheduleUnifiedTick + job-scoped lease.
+        setInterval(() => {
+          try {
+            const n = pumpResumableUnifiedCollections();
+            if (n > 0) {
+              console.error(`[unified-startup] pump scheduled ${n} resumable job(s)`);
+            }
+          } catch (err) {
+            console.error(
+              "[unified-startup] pump failed:",
+              err instanceof Error ? err.message : err
+            );
+          }
+        }, 5_000);
       })
       .catch(() => undefined);
     void import("../src/modules/digital-profile/services/arsenkin-case-agent-execution")

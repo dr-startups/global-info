@@ -90,6 +90,8 @@ export type ArsenkinEnrichmentTickResult = {
   blockMessage?: string;
   /** Stay on ARSENKIN_ENRICHMENT waiting for next tick. */
   waiting: boolean;
+  /** Earliest ProviderTask.nextPollAt (or computed backoff) while waiting. */
+  nextPollAt?: string | null;
 };
 
 export function emptyArsenkinEnrichmentState(input: {

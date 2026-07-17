@@ -133,7 +133,15 @@ function progressFromTasks(input: {
   const execFinalized =
     input.executionStatus === "FINALIZED" || input.executionPhase === "FINALIZED";
 
-  if (submitRejected.length > 0 && done.length === 0 && !input.allowEmptyValid) {
+  // Prefer in-flight pollable work over fail-closed on sibling REJECTED/UNKNOWN rows
+  // (targeted retry leaves prior rejected Google suggest while Yandex RUNNING).
+  if (pending.length > 0) {
+    terminal = false;
+    terminalKind = null;
+    if (submitRejected.length > 0) {
+      warnings.push("submit-rejected-sibling-awaiting-pending");
+    }
+  } else if (submitRejected.length > 0 && done.length === 0 && !input.allowEmptyValid) {
     terminal = true;
     terminalKind = "SUBMIT_UNKNOWN_UNRECONCILED";
     const rejected = submitRejected[0]!;
@@ -171,8 +179,11 @@ function progressFromTasks(input: {
         terminalKind = "SUCCESS";
       }
       ingested = true;
+      if (submitRejected.length > 0) {
+        warnings.push("submit-rejected-sibling-ignored-after-done");
+      }
     }
-  } else if (pending.length > 0 || (!execFinalized && tasks.length === 0 && !input.allowEmptyValid)) {
+  } else if (!execFinalized && tasks.length === 0 && !input.allowEmptyValid) {
     terminal = false;
     terminalKind = null;
   }
@@ -354,6 +365,100 @@ export function legacyEnrichmentResultToTick(
   };
 }
 
+/** Pollable ProviderTask states that already have an externalTaskId (never /set). */
+const POLLABLE_WITH_EXTERNAL = new Set([
+  "RUNNING",
+  "SUBMITTED",
+  "RATE_LIMITED",
+  "WAITING",
+  "POLLING",
+]);
+
+export type EnrichmentPollTaskSnap = ProviderTaskSnap & {
+  nextPollAt?: Date | string | null;
+  attempts?: number;
+};
+
+/**
+ * Poll existing Arsenkin tasks that already have externalTaskId.
+ * Never schedules /set. Injectable for NETWORK_CALLS=0 tests.
+ */
+export async function pollDueEnrichmentProviderTasks(input: {
+  tasks: EnrichmentPollTaskSnap[];
+  now?: Date;
+  /**
+   * Live adapter: check+get for one row. Must never call /set.
+   * Offline tests inject a fake that flips RUNNING → DONE with responseJson.
+   */
+  pollTask: (task: EnrichmentPollTaskSnap) => Promise<EnrichmentPollTaskSnap>;
+}): Promise<{
+  tasks: EnrichmentPollTaskSnap[];
+  polledExternalTaskIds: string[];
+  earliestNextPollAt: Date | null;
+}> {
+  const now = input.now ?? new Date();
+  const byId = new Map(input.tasks.map((t) => [t.id, { ...t }]));
+  const polledExternalTaskIds: string[] = [];
+  let earliestNextPollAt: Date | null = null;
+
+  for (const task of input.tasks) {
+    const ext = String(task.externalTaskId ?? "").trim();
+    if (!ext) continue;
+    const state = String(task.state).toUpperCase();
+    if (!POLLABLE_WITH_EXTERNAL.has(state)) continue;
+    const dueAt = task.nextPollAt ? new Date(task.nextPollAt) : null;
+    if (dueAt && !Number.isNaN(dueAt.getTime()) && dueAt.getTime() > now.getTime()) {
+      if (!earliestNextPollAt || dueAt.getTime() < earliestNextPollAt.getTime()) {
+        earliestNextPollAt = dueAt;
+      }
+      continue;
+    }
+    const updated = await input.pollTask(task);
+    byId.set(task.id, { ...updated });
+    polledExternalTaskIds.push(ext);
+    const next = updated.nextPollAt ? new Date(updated.nextPollAt) : null;
+    if (next && !Number.isNaN(next.getTime()) && String(updated.state).toUpperCase() !== "DONE") {
+      if (!earliestNextPollAt || next.getTime() < earliestNextPollAt.getTime()) {
+        earliestNextPollAt = next;
+      }
+    }
+  }
+
+  return {
+    tasks: [...byId.values()],
+    polledExternalTaskIds,
+    earliestNextPollAt,
+  };
+}
+
+/** Default live poll: Arsenkin check+get via pollArsenkinTask (never /set). */
+export async function defaultLivePollEnrichmentTask(
+  task: EnrichmentPollTaskSnap
+): Promise<EnrichmentPollTaskSnap> {
+  const { createArsenkinClientFromEnv } = await import("../providers/arsenkin/client");
+  const { createPrismaProviderTaskStore } = await import(
+    "../providers/arsenkin/prisma-provider-task-store"
+  );
+  const { pollArsenkinTask } = await import("../providers/arsenkin/poll-worker");
+  const client = createArsenkinClientFromEnv();
+  if (!client) return task;
+  const store = createPrismaProviderTaskStore();
+  const row = await store.findById(task.id);
+  if (!row) return task;
+  const polled = await pollArsenkinTask(client, store, row);
+  return {
+    id: polled.id,
+    reportRunId: String(polled.reportRunId ?? task.reportRunId),
+    externalTaskId: polled.externalTaskId,
+    toolName: polled.toolName,
+    state: String(polled.state),
+    responseJson: polled.responseJson,
+    requestJson: polled.requestJson,
+    nextPollAt: polled.nextPollAt,
+    attempts: polled.attempts,
+  };
+}
+
 /**
  * Live durable tick: reuse enrichmentRunIds, poll ProviderTasks, ingest, no new submits.
  */
@@ -367,10 +472,16 @@ export async function runDurableArsenkinEnrichmentTick(input: {
     arsenkinReportRunId: string | null;
     warnings: string[];
   }>;
+  /** Offline / test: load ProviderTasks without Prisma. */
+  listProviderTasks?: (enrichmentRunIds: string[]) => Promise<EnrichmentPollTaskSnap[]>;
+  /** Offline / test: poll adapter (must not call /set). */
+  pollTask?: (task: EnrichmentPollTaskSnap) => Promise<EnrichmentPollTaskSnap>;
+  now?: () => Date;
 }): Promise<ArsenkinEnrichmentTickResult> {
   const job = input.job;
   let enrichmentRunIds = [...(job.enrichmentRunIds ?? [])];
   const warnings: string[] = [];
+  let earliestNextPollAt: Date | null = null;
 
   if (enrichmentRunIds.length < ARSENKIN_REAL_AGENT_NAMES.length) {
     if (!input.scheduleIfMissing) {
@@ -423,40 +534,67 @@ export async function runDurableArsenkinEnrichmentTick(input: {
   }
 
   // Poll existing tasks — never create new external submissions here.
-  let prisma = input.prisma ?? null;
-  if (!prisma) {
-    try {
-      prisma = (await import("@/server/prisma/client")).prisma;
-    } catch {
-      prisma = null;
+  let tasks: EnrichmentPollTaskSnap[] = [];
+  if (input.listProviderTasks) {
+    tasks = await input.listProviderTasks(enrichmentRunIds);
+  } else {
+    let prisma = input.prisma ?? null;
+    if (!prisma) {
+      try {
+        prisma = (await import("@/server/prisma/client")).prisma;
+      } catch {
+        prisma = null;
+      }
+    }
+    if (prisma) {
+      const rows = await prisma.providerTask.findMany({
+        where: { reportRunId: { in: enrichmentRunIds } },
+        select: {
+          id: true,
+          reportRunId: true,
+          externalTaskId: true,
+          toolName: true,
+          state: true,
+          responseJson: true,
+          requestJson: true,
+          nextPollAt: true,
+          attempts: true,
+        },
+      });
+      tasks = rows
+        .filter((r): r is typeof r & { reportRunId: string } => Boolean(r.reportRunId))
+        .map((r) => ({
+          id: r.id,
+          reportRunId: r.reportRunId,
+          externalTaskId: r.externalTaskId,
+          toolName: r.toolName,
+          state: String(r.state),
+          responseJson: r.responseJson,
+          requestJson: r.requestJson,
+          nextPollAt: r.nextPollAt,
+          attempts: r.attempts,
+        }));
     }
   }
 
-  let tasks: ProviderTaskSnap[] = [];
-  if (prisma) {
-    const rows = await prisma.providerTask.findMany({
-      where: { reportRunId: { in: enrichmentRunIds } },
-      select: {
-        id: true,
-        reportRunId: true,
-        externalTaskId: true,
-        toolName: true,
-        state: true,
-        responseJson: true,
-        requestJson: true,
-      },
-    });
-    tasks = rows
-      .filter((r): r is typeof r & { reportRunId: string } => Boolean(r.reportRunId))
-      .map((r) => ({
-        id: r.id,
-        reportRunId: r.reportRunId,
-        externalTaskId: r.externalTaskId,
-        toolName: r.toolName,
-        state: String(r.state),
-        responseJson: r.responseJson,
-        requestJson: r.requestJson,
-      }));
+  const networkOff = String(process.env.NETWORK_CALLS ?? "") === "0";
+  const pollTask =
+    input.pollTask ??
+    (networkOff
+      ? async (t: EnrichmentPollTaskSnap) => t
+      : defaultLivePollEnrichmentTask);
+  const polled = await pollDueEnrichmentProviderTasks({
+    tasks,
+    now: input.now?.(),
+    pollTask,
+  });
+  tasks = polled.tasks;
+  earliestNextPollAt = polled.earliestNextPollAt;
+  if (polled.polledExternalTaskIds.length > 0) {
+    warnings.push(
+      `arsenkin-polled:${polled.polledExternalTaskIds.length}`,
+      ...polled.polledExternalTaskIds.map((id) => `arsenkin-poll-externalTaskId:${id}`)
+    );
   }
 
   // Load CaseAgent execution files for terminal status.
@@ -596,6 +734,18 @@ export async function runDurableArsenkinEnrichmentTick(input: {
 
   const state = exactly.state;
   const failed = state.failedAgents.length > 0;
+  const waiting = !state.enrichmentComplete && !failed;
+  const nowMs = (input.now?.() ?? new Date()).getTime();
+  const pollAttempt = Math.max(0, Number(job.pollAttempt ?? 0));
+  const backoffMs = waiting
+    ? Math.min(30_000, Math.max(2_000, 2_000 * 2 ** Math.min(pollAttempt, 4)))
+    : 0;
+  const computedNext =
+    earliestNextPollAt && earliestNextPollAt.getTime() > nowMs
+      ? earliestNextPollAt
+      : waiting
+        ? new Date(nowMs + backoffMs)
+        : null;
   return {
     state,
     observations: exactly.observations,
@@ -619,7 +769,8 @@ export async function runDurableArsenkinEnrichmentTick(input: {
     blockMessage: failed
       ? `Arsenkin failed/unreconciled: ${state.failedAgents.join(",")}`
       : undefined,
-    waiting: !state.enrichmentComplete && !failed,
+    waiting,
+    nextPollAt: computedNext ? computedNext.toISOString() : null,
   };
 }
 

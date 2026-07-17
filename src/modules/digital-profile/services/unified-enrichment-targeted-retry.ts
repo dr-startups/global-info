@@ -79,8 +79,27 @@ export type TargetedEnrichmentRetryDeps = {
     priorRequestHash: string | null;
   }) => Promise<void>;
   now?: () => Date;
+  /** When false, caller drains ticks manually (tests). Default true. */
   autoSchedule?: boolean;
+  /** Injectable scheduler (tests). Default: scheduleUnifiedTick. */
+  scheduleTick?: (caseId: string) => void;
 };
+
+function schedulePostSubmitUnifiedTick(
+  caseId: string,
+  deps?: TargetedEnrichmentRetryDeps
+): void {
+  if (deps?.autoSchedule === false) return;
+  if (deps?.scheduleTick) {
+    deps.scheduleTick(caseId);
+    return;
+  }
+  void import("./unified-orion-collection-orchestrator")
+    .then(({ scheduleUnifiedTick }) => {
+      scheduleUnifiedTick(caseId);
+    })
+    .catch(() => undefined);
+}
 
 export type TargetedEnrichmentRetryResult = {
   accepted: true;
@@ -359,6 +378,8 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
         stage: "ARSENKIN_ENRICHMENT",
         status: "WAITING",
         resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
+        nextPollAt: (input.deps?.now ?? (() => new Date()))().toISOString(),
+        pollAttempt: 0,
         lastError: null,
         lastErrorCode: null,
         completedAt: null,
@@ -367,6 +388,7 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
           "targeted-retry:reused-existing-suggestions-task",
         ],
       });
+      schedulePostSubmitUnifiedTick(input.caseId, input.deps);
       return {
         accepted: true,
         jobId: job.jobId,
@@ -523,6 +545,8 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       stage: "ARSENKIN_ENRICHMENT",
       status: "WAITING",
       resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
+      nextPollAt: (input.deps?.now ?? (() => new Date()))().toISOString(),
+      pollAttempt: 0,
       lastError: null,
       lastErrorCode: null,
       completedAt: null,
@@ -541,6 +565,9 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
             : "targeted-retry:new-or-fresh-queued-task",
       ],
     });
+
+    // Durable continuation: poll existing externalTaskId → ingest → composite…
+    schedulePostSubmitUnifiedTick(input.caseId, input.deps);
 
     return {
       accepted: true,

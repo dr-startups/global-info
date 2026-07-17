@@ -69,6 +69,16 @@ describe("A — targeted CTA API contract", () => {
     );
   });
 
+  it("GET unified status exposes persisted nextPollAt / enrichment progress (F5 source of truth)", () => {
+    const statusRoute = read(
+      "src/app/api/digital-profile/cases/[id]/unified-collection/route.ts"
+    );
+    assert.match(statusRoute, /nextPollAt:\s*job\.nextPollAt/);
+    assert.match(statusRoute, /pollAttempt:\s*job\.pollAttempt/);
+    assert.match(statusRoute, /arsenkinEnrichmentState/);
+    assert.match(api, /nextPollAt\?:/);
+  });
+
   it("handler builds body via helper and requires confirm before POST", () => {
     assert.match(view, /buildSuggestionsTargetedRetryBody/);
     assert.match(view, /retryUnifiedEnrichmentSuggestionsTask\(caseId, body\)/);

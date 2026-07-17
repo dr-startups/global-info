@@ -378,6 +378,7 @@ describe("1. SUGGESTIONS request schema — exactly one query", () => {
           confirmPaidEnrichmentRetry: true,
           actorId: "smoke",
           deps: {
+            autoSchedule: false,
             loadSubject: async () => ({ fullName: "", aliases: [] }),
             listProviderTasks: async () => [
               {
@@ -478,6 +479,7 @@ describe("3. targeted retry contract", () => {
     ];
 
     const deps = {
+      autoSchedule: false as const,
       loadSubject: async () => ({
         fullName: "Синтетический Субъект",
         aliases: ["Synthetic Subject Alias"],
@@ -611,6 +613,7 @@ describe("3. targeted retry contract", () => {
       },
     ];
     const deps = {
+      autoSchedule: false as const,
       loadSubject: async () => ({ fullName: "Субъект Два", aliases: [] as string[] }),
       listProviderTasks: async () => taskStore,
       supersedeRejectedSuggestTask: async (input: {

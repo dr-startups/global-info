@@ -133,6 +133,8 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
           recoveryReason: recovery.recoveryReason,
           recoveryAudit: job.recoveryAudit ?? null,
           resumeCheckpoint: job.resumeCheckpoint ?? null,
+          nextPollAt: job.nextPollAt ?? null,
+          pollAttempt: job.pollAttempt ?? 0,
           ...suggestionsGap,
           fullAuditBlocked,
           fullAuditBlockReason: fullAuditBlocked
