@@ -1,0 +1,30 @@
+{
+  "code": "TASK_RESULT",
+  "task_id": "30662281",
+  "created_at": "2026-07-17 16:45:35",
+  "finished_at": "2026-07-17 16:47:41",
+  "result": {
+    "g": 1,
+    "y": 1,
+    "resp": {
+      "https://directory.example/person/1001": {
+        "google": 0,
+        "yandex": 1,
+        "indexdate": "2019-11-22",
+        "yandex_doc": "https://cache.example/yandbtm?id=1"
+      },
+      "https://registry.example/subject/p1": {
+        "google": 1,
+        "yandex": 1,
+        "indexdate": "2020-01-15",
+        "yandex_doc": null
+      },
+      "https://sanctions.example/entities/Q1/": {
+        "google": 1,
+        "yandex": 0,
+        "indexdate": null,
+        "yandex_doc": null
+      }
+    }
+  }
+}

@@ -297,32 +297,184 @@ function promoteAiSearch(payload: Record<string, unknown>): Record<string, unkno
   };
 }
 
+function indexFlagStatus(yandex: unknown, google: unknown, indexdate?: unknown): string {
+  const y =
+    yandex === true || yandex === 1 || yandex === "1"
+      ? "yandex:indexed"
+      : yandex === false || yandex === 0 || yandex === "0"
+        ? "yandex:missing"
+        : null;
+  const g =
+    google === true || google === 1 || google === "1"
+      ? "google:indexed"
+      : google === false || google === 0 || google === "0"
+        ? "google:missing"
+        : null;
+  const d = indexdate != null && asString(indexdate) ? `indexdate:${asString(indexdate)}` : null;
+  return [y, g, d].filter(Boolean).join("; ");
+}
+
+/**
+ * Proven live URL_AUDIT shapes (Job B RO):
+ * - indexation: `{ g, y, resp: { [url]: { google, yandex, indexdate?, yandex_doc? } } }`
+ * - check-h: `{ result: [ {url,title,headers,description} | boolean, ... ] }`
+ *   boolean → typed URL_FETCH_STATUS diagnostic (never silent drop).
+ * - fixture table: `{ table: [{url,yandex,google}] }`
+ *
+ * Invariant: `_rawItemCount === items.length` (every raw entry becomes an item marker).
+ */
 function promoteUrlAudit(payload: Record<string, unknown>): Record<string, unknown> {
-  if (hasToolArray(payload) || asString(payload.url ?? payload.link)) {
-    return payload;
+  // Live indexation map (must win over generic array promote).
+  if (isPlainObject(payload.resp)) {
+    const entries = Object.entries(payload.resp);
+    const items: Record<string, unknown>[] = [];
+    for (let sourceIndex = 0; sourceIndex < entries.length; sourceIndex++) {
+      const [urlKey, val] = entries[sourceIndex]!;
+      const url = asString(urlKey);
+      if (!/^https?:\/\//i.test(url)) {
+        items.push({
+          __schemaInvalid: true,
+          reason: "resp-map-key-not-http-url",
+          path: `result.resp[${sourceIndex}]`,
+          sourceIndex,
+          respMapKey: urlKey,
+        });
+        continue;
+      }
+      if (!isPlainObject(val)) {
+        items.push({
+          __schemaInvalid: true,
+          reason: `resp-map-value-not-object:${val == null ? "null" : typeof val}`,
+          path: `result.resp[${JSON.stringify(url)}]`,
+          sourceIndex,
+          respMapKey: url,
+        });
+        continue;
+      }
+      const status = indexFlagStatus(val.yandex, val.google, val.indexdate);
+      items.push({
+        url,
+        title: "URL audit",
+        status,
+        snippet: status || undefined,
+        yandex: val.yandex,
+        google: val.google,
+        indexdate: val.indexdate ?? null,
+        yandex_doc: val.yandex_doc ?? null,
+        sourceIndex,
+        respMapKey: url,
+      });
+    }
+    return {
+      ...payload,
+      items,
+      urls: items,
+      results: items,
+      _rawItemCount: entries.length,
+    };
   }
-  const table = Array.isArray(payload.table)
-    ? payload.table
-    : isPlainObject(payload.result) && Array.isArray(payload.result.table)
-      ? payload.result.table
-      : null;
-  if (!table) return promoteArsenkinToolPayload(payload);
+
+  const arrCandidates = [
+    payload.table,
+    payload.result,
+    payload.items,
+    payload.results,
+    payload.pages,
+    payload.urls,
+  ];
+  let arr: unknown[] | null = null;
+  let arrPath = "result";
+  for (const [path, c] of [
+    ["table", payload.table],
+    ["result", payload.result],
+    ["items", payload.items],
+    ["results", payload.results],
+    ["pages", payload.pages],
+    ["urls", payload.urls],
+  ] as const) {
+    if (Array.isArray(c)) {
+      arr = c;
+      arrPath = path;
+      break;
+    }
+  }
+  void arrCandidates;
+
+  if (!arr) {
+    if (asString(payload.url ?? payload.link)) {
+      return { ...payload, _rawItemCount: 1 };
+    }
+    return promoteArsenkinToolPayload(payload);
+  }
+
   const items: Record<string, unknown>[] = [];
-  for (const raw of table) {
-    if (!isPlainObject(raw)) continue;
-    const url = asString(raw.url ?? raw.link);
-    if (!url) continue;
-    const yandex = raw.yandex;
-    const google = raw.google;
-    const status = [
-      yandex === true ? "yandex:indexed" : yandex === false ? "yandex:missing" : null,
-      google === true ? "google:indexed" : google === false ? "google:missing" : null,
-    ]
-      .filter(Boolean)
-      .join("; ");
-    items.push({ url, title: "URL audit", status, snippet: status });
+  for (let i = 0; i < arr.length; i++) {
+    const raw = arr[i];
+    // Documented Arsenkin check-h filler → diagnostic marker (never drop).
+    if (typeof raw === "boolean") {
+      items.push({
+        __urlFetchStatus: true,
+        value: raw,
+        sourceIndex: i,
+        path: `${arrPath}[${i}]`,
+        diagnosticCode: "ARSENKIN_URL_FETCH_STATUS",
+        exclusionReason: "check-h-boolean-slot",
+      });
+      continue;
+    }
+    if (typeof raw === "string") {
+      const url = raw.trim();
+      if (/^https?:\/\//i.test(url)) {
+        items.push({ url, title: "URL audit", sourceIndex: i, path: `${arrPath}[${i}]` });
+      } else {
+        items.push({
+          __schemaInvalid: true,
+          reason: "non-url-string",
+          path: `${arrPath}[${i}]`,
+          sourceIndex: i,
+        });
+      }
+      continue;
+    }
+    if (isPlainObject(raw)) {
+      const url = asString(raw.url ?? raw.link);
+      if (!url) {
+        items.push({
+          __schemaInvalid: true,
+          reason: "object-without-url",
+          path: `${arrPath}[${i}]`,
+          sourceIndex: i,
+        });
+        continue;
+      }
+      const status =
+        asString(raw.status) ||
+        indexFlagStatus(raw.yandex ?? raw.ya, raw.google ?? raw.g, raw.indexdate);
+      items.push({
+        ...raw,
+        url,
+        title: asString(raw.title) || "URL audit",
+        status: status || undefined,
+        snippet: asString(raw.snippet ?? raw.description ?? status) || undefined,
+        sourceIndex: i,
+        path: `${arrPath}[${i}]`,
+      });
+      continue;
+    }
+    items.push({
+      __schemaInvalid: true,
+      reason: `ambiguous-scalar:${typeof raw}`,
+      path: `${arrPath}[${i}]`,
+      sourceIndex: i,
+    });
   }
-  return { ...payload, items, urls: items, results: items };
+  return {
+    ...payload,
+    items,
+    urls: items,
+    results: items,
+    _rawItemCount: arr.length,
+  };
 }
 
 /**

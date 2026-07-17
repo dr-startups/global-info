@@ -1,0 +1,38 @@
+{
+  "code": "TASK_RESULT",
+  "task_id": "30662296",
+  "created_at": "2026-07-17 16:47:58",
+  "finished_at": "2026-07-17 16:50:58",
+  "result": {
+    "result": [
+      {
+        "url": "https://directory.example/person/1001",
+        "title": "Subject profile — directory",
+        "description": "Open-source directory card.",
+        "headers": [
+          { "i": "1", "value": "Subject Name" },
+          { "i": "2", "value": "Biography" }
+        ]
+      },
+      {
+        "url": "https://registry.example/subject/p1",
+        "title": "Registry entry",
+        "description": null,
+        "headers": [{ "i": "1", "value": "Entry" }]
+      },
+      false,
+      true,
+      false,
+      {
+        "url": "https://sanctions.example/entities/Q1/",
+        "title": "Sanctions entity",
+        "description": "Watchlist mention.",
+        "headers": []
+      },
+      false,
+      true,
+      false,
+      false
+    ]
+  }
+}

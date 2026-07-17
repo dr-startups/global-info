@@ -90,9 +90,10 @@ export async function mergeCompositeSerp(input: {
     snippet?: string;
     suggestion?: string;
     question?: string;
-    kind?: "organic" | "suggestion" | "paa" | "other";
+    kind?: "organic" | "suggestion" | "paa" | "other" | "URL_FETCH_STATUS";
     providerTaskId?: string | null;
     riskLabel?: string | null;
+    clientEvidence?: boolean;
   }>;
   /** Offline/fixture base rows when prisma unavailable. */
   fixtureBaseRows?: CompositeObservation[];
@@ -225,8 +226,14 @@ export async function mergeCompositeSerp(input: {
 
   let arsenkin = 0;
   for (const obs of input.arsenkinObservations ?? []) {
+    // Provenance/diagnostic rows (check-h boolean slots) never enter composite/client evidence.
+    if (obs.kind === "URL_FETCH_STATUS" || obs.clientEvidence === false) continue;
     arsenkin += 1;
-    const kind = obs.kind ?? (obs.question ? "paa" : obs.suggestion ? "suggestion" : "organic");
+    const kindRaw = obs.kind ?? (obs.question ? "paa" : obs.suggestion ? "suggestion" : "organic");
+    const kind: CompositeObservation["kind"] =
+      kindRaw === "suggestion" || kindRaw === "paa" || kindRaw === "organic" || kindRaw === "other"
+        ? kindRaw
+        : "other";
     let key: string;
     if (kind === "suggestion") {
       key = suggestKey(obs.region ?? "", obs.engine ?? "", obs.query ?? "", obs.suggestion ?? "");

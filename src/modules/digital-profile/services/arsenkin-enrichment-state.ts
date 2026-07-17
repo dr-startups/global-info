@@ -62,7 +62,11 @@ export type ArsenkinIngestedObservation = {
   snippet?: string;
   suggestion?: string;
   question?: string;
-  kind?: "organic" | "suggestion" | "paa" | "other";
+  /**
+   * URL_FETCH_STATUS = provenance/diagnostic only (check-h boolean slots).
+   * Never a client finding / KPI / summary evidence row.
+   */
+  kind?: "organic" | "suggestion" | "paa" | "other" | "URL_FETCH_STATUS";
   providerTaskId?: string | null;
   riskLabel?: string | null;
   /** Provenance required for ingested rows. */
@@ -75,7 +79,30 @@ export type ArsenkinIngestedObservation = {
   /** Full sha256 hex — never truncated. */
   resultHash?: string | null;
   provider?: string | null;
+  /** Original index in Arsenkin result array / resp map order (URL_AUDIT). */
+  sourceIndex?: number | null;
+  /** Arsenkin task_id from envelope when present. */
+  taskId?: string | null;
+  /** Boolean slot value for kind=URL_FETCH_STATUS. */
+  fetchStatusValue?: boolean | null;
+  diagnosticCode?: string | null;
+  exclusionReason?: string | null;
+  /** false for diagnostic rows; default true for evidence rows. */
+  clientEvidence?: boolean;
+  /** Indexation resp-map fields (status evidence, not synthesized findings). */
+  yandexIndexed?: boolean | number | null;
+  googleIndexed?: boolean | number | null;
+  indexedAt?: string | null;
+  yandexDoc?: string | null;
+  respMapKey?: string | null;
 };
+
+/** Client KPI/findings must ignore diagnostic fetch-status rows. */
+export function isArsenkinClientEvidenceObservation(obs: ArsenkinIngestedObservation): boolean {
+  if (obs.kind === "URL_FETCH_STATUS") return false;
+  if (obs.clientEvidence === false) return false;
+  return true;
+}
 
 export type ArsenkinEnrichmentTickResult = {
   state: ArsenkinEnrichmentState;

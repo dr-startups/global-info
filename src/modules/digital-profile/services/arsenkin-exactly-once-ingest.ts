@@ -32,12 +32,15 @@ function observationContentKey(obs: ArsenkinIngestedObservation): string {
   return [
     String(obs.externalTaskId ?? ""),
     String(obs.kind ?? ""),
+    String(obs.sourceIndex ?? ""),
     String(obs.url ?? ""),
     String(obs.suggestion ?? ""),
     String(obs.question ?? ""),
     String(obs.title ?? ""),
     String(obs.query ?? ""),
     String(obs.sourceUrlOrQuery ?? ""),
+    String(obs.fetchStatusValue ?? ""),
+    String(obs.respMapKey ?? ""),
   ].join("|");
 }
 

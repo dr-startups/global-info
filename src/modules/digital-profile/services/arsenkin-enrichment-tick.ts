@@ -9,6 +9,7 @@ import {
   buildArsenkinEnrichmentState,
   emptyArsenkinEnrichmentState,
   hashArsenkinResultPayload,
+  isArsenkinClientEvidenceObservation,
   normalizeArsenkinEnrichmentState,
   type ArsenkinAgentProgress,
   type ArsenkinEnrichmentTickResult,
@@ -183,7 +184,8 @@ function progressFromTasks(input: {
       ingested = false;
       observations = [];
     } else if (!schemaError) {
-      if (observations.length === 0) {
+      const clientEvidenceCount = observations.filter(isArsenkinClientEvidenceObservation).length;
+      if (clientEvidenceCount === 0) {
         terminalKind = "EMPTY_VALID";
       } else {
         terminalKind = "SUCCESS";
@@ -198,6 +200,7 @@ function progressFromTasks(input: {
     terminalKind = null;
   }
 
+  const clientEvidenceCount = observations.filter(isArsenkinClientEvidenceObservation).length;
   return {
     progress: {
       agentName: input.agentName,
@@ -209,7 +212,8 @@ function progressFromTasks(input: {
       pendingTaskCount: pending.length,
       doneTaskCount: done.length,
       submitUnknownCount: submitRejected.length,
-      observationCount: observations.length,
+      // KPI/subject metrics exclude URL_FETCH_STATUS diagnostics (still in observations[]).
+      observationCount: clientEvidenceCount,
       errorCode:
         schemaError
           ? "ARSENKIN_SCHEMA_INVALID"
@@ -753,7 +757,7 @@ export async function runDurableArsenkinEnrichmentTick(input: {
     candidateObservations.push(...obs);
     agents.push({
       ...built.progress,
-      observationCount: obs.length,
+      observationCount: obs.filter(isArsenkinClientEvidenceObservation).length,
     });
   }
 
@@ -777,7 +781,7 @@ export async function runDurableArsenkinEnrichmentTick(input: {
       observations: exactly.observations,
       enrichmentRunIds,
       arsenkinReportRunId: enrichmentRunIds[0] ?? null,
-      coverageMeasured: exactly.observations.length,
+      coverageMeasured: exactly.observations.filter(isArsenkinClientEvidenceObservation).length,
       warnings: [...warnings, "ARSENKIN_INGEST_CONFLICT"],
       blockPipeline: true,
       blockCode: exactly.conflictCode,
@@ -819,7 +823,7 @@ export async function runDurableArsenkinEnrichmentTick(input: {
     observations: exactly.observations,
     enrichmentRunIds,
     arsenkinReportRunId: enrichmentRunIds[0] ?? null,
-    coverageMeasured: exactly.observations.length,
+    coverageMeasured: exactly.observations.filter(isArsenkinClientEvidenceObservation).length,
     warnings: [
       ...warnings,
       failed

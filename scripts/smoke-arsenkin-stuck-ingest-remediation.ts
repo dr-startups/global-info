@@ -160,7 +160,7 @@ function jobBDoneTasks(): EnrichmentPollTaskSnap[] {
     "get-suggest.json",
     "get-paa.json",
     "get-ai-serp.json",
-    "get-indexation.json",
+    "get-indexation-resp-map.json",
   ] as const;
   const extIds = ["ext-top-1", EXT_SUGGEST, "ext-paa-1", "ext-ai-1", "ext-url-1"];
   return ENRICHMENT_RUN_IDS.map((runId, i) => ({

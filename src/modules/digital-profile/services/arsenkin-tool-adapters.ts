@@ -5,7 +5,10 @@
  */
 
 import { createHash } from "node:crypto";
-import type { ArsenkinIngestedObservation } from "./arsenkin-enrichment-state";
+import {
+  isArsenkinClientEvidenceObservation,
+  type ArsenkinIngestedObservation,
+} from "./arsenkin-enrichment-state";
 import {
   normalizeArsenkinToolPayload,
   unwrapArsenkinTaskEnvelope,
@@ -29,6 +32,10 @@ export type ArsenkinAdapterResult =
       emptyValid: boolean;
       observations: ArsenkinIngestedObservation[];
       warnings: string[];
+      /** URL_AUDIT raw-item accounting (no silent drops). */
+      rawItemCount?: number;
+      emittedObservationCount?: number;
+      diagnosticExcludedCount?: number;
     }
   | {
       ok: false;
@@ -306,49 +313,209 @@ function adaptAiSearch(
 function adaptUrlAudit(
   response: Record<string, unknown>,
   ctx: ArsenkinAdapterContext,
-  hashSource: unknown
+  hashSource: unknown,
+  envelopeTaskId: string | null
 ): ArsenkinAdapterResult {
   const items = itemsArray(response, ["items", "urls", "results", "pages"]);
+  const declaredRaw =
+    typeof response._rawItemCount === "number" && Number.isFinite(response._rawItemCount)
+      ? response._rawItemCount
+      : null;
+
   if (items === null) {
     const url = asString(response.url ?? response.link);
     if (url) {
+      const observations = [
+        withProvenance(
+          {
+            kind: "other",
+            region: asString(response.region ?? "RU") || "RU",
+            engine: "ARSENKIN",
+            query: asString(response.query ?? ""),
+            url,
+            title: asString(response.title ?? response.status ?? "URL audit"),
+            snippet: asString(response.snippet ?? response.indexation ?? response.status) || undefined,
+            sourceUrlOrQuery: url,
+            sourceIndex: 0,
+            taskId: envelopeTaskId,
+            clientEvidence: true,
+          },
+          ctx,
+          "URL_AUDIT",
+          hashSource
+        ),
+      ];
       return {
         ok: true,
         emptyValid: false,
-        observations: [
-          withProvenance(
-            {
-              kind: "other",
-              region: asString(response.region ?? "RU") || "RU",
-              engine: "ARSENKIN",
-              query: asString(response.query ?? ""),
-              url,
-              title: asString(response.title ?? response.status ?? "URL audit"),
-              snippet: asString(response.snippet ?? response.indexation ?? response.status) || undefined,
-              sourceUrlOrQuery: url,
-            },
-            ctx,
-            "URL_AUDIT",
-            hashSource
-          ),
-        ],
+        observations,
         warnings: [],
+        rawItemCount: 1,
+        emittedObservationCount: 1,
+        diagnosticExcludedCount: 0,
       };
     }
-    return { ok: false, code: "ARSENKIN_SCHEMA_INVALID", message: "URL_AUDIT requires items|urls|results|pages or url" };
+    return {
+      ok: false,
+      code: "ARSENKIN_SCHEMA_INVALID",
+      message: "URL_AUDIT requires items|urls|results|pages, resp map, or url",
+    };
   }
   if (items.length === 0) {
-    return { ok: true, emptyValid: true, observations: [], warnings: ["URL_AUDIT:EMPTY_VALID"] };
+    return {
+      ok: true,
+      emptyValid: true,
+      observations: [],
+      warnings: ["URL_AUDIT:EMPTY_VALID"],
+      rawItemCount: 0,
+      emittedObservationCount: 0,
+      diagnosticExcludedCount: 0,
+    };
   }
+
+  const rawItemCount = declaredRaw ?? items.length;
+  if (rawItemCount !== items.length) {
+    return {
+      ok: false,
+      code: "ARSENKIN_SCHEMA_INVALID",
+      message: `URL_AUDIT raw-item accounting mismatch: _rawItemCount=${rawItemCount} items=${items.length}`,
+    };
+  }
+
   const observations: ArsenkinIngestedObservation[] = [];
-  for (const raw of items.slice(0, 50)) {
+  const warnings: string[] = [];
+  let emittedObservationCount = 0;
+  let diagnosticExcludedCount = 0;
+
+  for (let i = 0; i < items.length; i++) {
+    const raw = items[i];
+    if (typeof raw === "string") {
+      const url = raw.trim();
+      if (!/^https?:\/\//i.test(url)) {
+        return {
+          ok: false,
+          code: "ARSENKIN_SCHEMA_INVALID",
+          message: `URL_AUDIT ambiguous string item at path=items[${i}] sourceIndex=${i} (not http URL)`,
+        };
+      }
+      observations.push(
+        withProvenance(
+          {
+            kind: "other",
+            region: asString(response.region ?? "RU") || "RU",
+            engine: "ARSENKIN",
+            query: asString(response.query ?? ""),
+            url,
+            title: "URL audit",
+            sourceUrlOrQuery: url,
+            sourceIndex: i,
+            taskId: envelopeTaskId,
+            clientEvidence: true,
+          },
+          ctx,
+          "URL_AUDIT",
+          hashSource
+        )
+      );
+      emittedObservationCount += 1;
+      continue;
+    }
+    if (typeof raw === "boolean") {
+      // Residual boolean (should already be marked by promote) → diagnostic, never drop.
+      observations.push(
+        withProvenance(
+          {
+            kind: "URL_FETCH_STATUS",
+            region: asString(response.region ?? "RU") || "RU",
+            engine: "ARSENKIN",
+            query: asString(response.query ?? ""),
+            sourceIndex: i,
+            fetchStatusValue: raw,
+            diagnosticCode: "ARSENKIN_URL_FETCH_STATUS",
+            exclusionReason: "check-h-boolean-slot",
+            taskId: envelopeTaskId,
+            clientEvidence: false,
+            sourceUrlOrQuery: null,
+          },
+          ctx,
+          "URL_AUDIT",
+          hashSource
+        )
+      );
+      diagnosticExcludedCount += 1;
+      continue;
+    }
     if (!isPlainObject(raw)) {
-      return { ok: false, code: "ARSENKIN_SCHEMA_INVALID", message: "URL_AUDIT item must be object" };
+      return {
+        ok: false,
+        code: "ARSENKIN_SCHEMA_INVALID",
+        message: `URL_AUDIT item must be object or http URL string (path=items[${i}] sourceIndex=${i} typeof=${typeof raw})`,
+      };
+    }
+    if (raw.__schemaInvalid) {
+      const path = asString(raw.path) || `items[${i}]`;
+      const sourceIndex =
+        typeof raw.sourceIndex === "number" && Number.isFinite(raw.sourceIndex)
+          ? raw.sourceIndex
+          : i;
+      return {
+        ok: false,
+        code: "ARSENKIN_SCHEMA_INVALID",
+        message: `URL_AUDIT ambiguous item at path=${path} sourceIndex=${sourceIndex}: ${asString(raw.reason) || "invalid"}`,
+      };
+    }
+    if (raw.__urlFetchStatus === true) {
+      const sourceIndex =
+        typeof raw.sourceIndex === "number" && Number.isFinite(raw.sourceIndex)
+          ? raw.sourceIndex
+          : i;
+      const value = typeof raw.value === "boolean" ? raw.value : null;
+      if (value == null) {
+        return {
+          ok: false,
+          code: "ARSENKIN_SCHEMA_INVALID",
+          message: `URL_AUDIT URL_FETCH_STATUS missing boolean value at path=${asString(raw.path) || `items[${i}]`} sourceIndex=${sourceIndex}`,
+        };
+      }
+      observations.push(
+        withProvenance(
+          {
+            kind: "URL_FETCH_STATUS",
+            region: asString(response.region ?? "RU") || "RU",
+            engine: "ARSENKIN",
+            query: asString(response.query ?? ""),
+            sourceIndex,
+            fetchStatusValue: value,
+            diagnosticCode: asString(raw.diagnosticCode) || "ARSENKIN_URL_FETCH_STATUS",
+            exclusionReason: asString(raw.exclusionReason) || "check-h-boolean-slot",
+            taskId: envelopeTaskId,
+            clientEvidence: false,
+            sourceUrlOrQuery: null,
+          },
+          ctx,
+          "URL_AUDIT",
+          hashSource
+        )
+      );
+      diagnosticExcludedCount += 1;
+      continue;
     }
     const url = asString(raw.url ?? raw.link);
     if (!url) {
-      return { ok: false, code: "ARSENKIN_SCHEMA_INVALID", message: "URL_AUDIT item requires url" };
+      return {
+        ok: false,
+        code: "ARSENKIN_SCHEMA_INVALID",
+        message: `URL_AUDIT item requires url (path=${asString(raw.path) || `items[${i}]`} sourceIndex=${i})`,
+      };
     }
+    const sourceIndex =
+      typeof raw.sourceIndex === "number" && Number.isFinite(raw.sourceIndex)
+        ? raw.sourceIndex
+        : i;
+    const yandexIndexed = raw.yandex == null ? null : (raw.yandex as boolean | number);
+    const googleIndexed = raw.google == null ? null : (raw.google as boolean | number);
+    const indexedAt = raw.indexdate == null ? null : asString(raw.indexdate) || null;
+    const yandexDoc = raw.yandex_doc == null ? null : asString(raw.yandex_doc) || null;
     observations.push(
       withProvenance(
         {
@@ -358,16 +525,58 @@ function adaptUrlAudit(
           query: asString(raw.query ?? response.query ?? ""),
           url,
           title: asString(raw.title ?? raw.status ?? "URL audit"),
-          snippet: asString(raw.snippet ?? raw.indexation ?? raw.status) || undefined,
+          snippet: asString(raw.snippet ?? raw.description ?? raw.indexation ?? raw.status) || undefined,
           sourceUrlOrQuery: url,
+          sourceIndex,
+          taskId: envelopeTaskId,
+          clientEvidence: true,
+          yandexIndexed,
+          googleIndexed,
+          indexedAt,
+          yandexDoc,
+          respMapKey: asString(raw.respMapKey) || null,
         },
         ctx,
         "URL_AUDIT",
         hashSource
       )
     );
+    emittedObservationCount += 1;
   }
-  return { ok: true, emptyValid: false, observations, warnings: [] };
+
+  if (rawItemCount !== emittedObservationCount + diagnosticExcludedCount) {
+    return {
+      ok: false,
+      code: "ARSENKIN_SCHEMA_INVALID",
+      message: `URL_AUDIT accounting invariant failed: raw=${rawItemCount} emitted=${emittedObservationCount} diagnostic=${diagnosticExcludedCount}`,
+    };
+  }
+  if (observations.length !== rawItemCount) {
+    return {
+      ok: false,
+      code: "ARSENKIN_SCHEMA_INVALID",
+      message: `URL_AUDIT silent-drop detected: raw=${rawItemCount} observations=${observations.length}`,
+    };
+  }
+
+  const clientCount = observations.filter(isArsenkinClientEvidenceObservation).length;
+  if (clientCount !== emittedObservationCount) {
+    return {
+      ok: false,
+      code: "ARSENKIN_SCHEMA_INVALID",
+      message: `URL_AUDIT clientEvidence mismatch: client=${clientCount} emitted=${emittedObservationCount}`,
+    };
+  }
+
+  return {
+    ok: true,
+    emptyValid: clientCount === 0,
+    observations,
+    warnings,
+    rawItemCount,
+    emittedObservationCount,
+    diagnosticExcludedCount,
+  };
 }
 
 /**
@@ -406,6 +615,7 @@ export function adaptArsenkinToolResponse(input: {
     warnings.push("arsenkin-envelope-unwrapped");
   }
   const hashSource = input.responseJson;
+  const envelopeTaskId = unwrapped.envelope?.taskId ?? null;
 
   let adapted: ArsenkinAdapterResult;
   switch (adapter) {
@@ -422,7 +632,7 @@ export function adaptArsenkinToolResponse(input: {
       adapted = adaptAiSearch(payload, input.ctx, hashSource);
       break;
     case "URL_AUDIT":
-      adapted = adaptUrlAudit(payload, input.ctx, hashSource);
+      adapted = adaptUrlAudit(payload, input.ctx, hashSource, envelopeTaskId);
       break;
     default:
       return { ok: false, code: "ARSENKIN_UNKNOWN_TOOL", message: `unhandled adapter ${adapter}` };
@@ -433,5 +643,8 @@ export function adaptArsenkinToolResponse(input: {
     emptyValid: adapted.emptyValid,
     observations: adapted.observations,
     warnings: [...warnings, ...adapted.warnings],
+    rawItemCount: adapted.rawItemCount,
+    emittedObservationCount: adapted.emittedObservationCount,
+    diagnosticExcludedCount: adapted.diagnosticExcludedCount,
   };
 }
