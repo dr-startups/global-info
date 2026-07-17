@@ -44,3 +44,7 @@ next-env.d.ts
 # Python (renderer)
 __pycache__/
 *.pyc
+
+# local-only report-72 generated duplicates (not regression fixtures)
+/baselines/report-72/artifacts/canonical-replay/
+/baselines/report-72/artifacts/deck-sections/render-payload.json
