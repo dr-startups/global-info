@@ -40,6 +40,7 @@ import {
 } from "./components";
 import { CaseHeader } from "./CaseHeader";
 import { CaseTabs } from "./CaseTabs";
+import { SubjectProfilePanel } from "./SubjectProfilePanel";
 import { OrionV2ReportPanel } from "./OrionV2ReportPanel";
 import { OrionClientStoryboardReportPanel } from "./OrionClientStoryboardReportPanel";
 import { useDigitalProfileI18n } from "./i18n-provider";
@@ -601,6 +602,12 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
             <ErrorBox>{banner.text}</ErrorBox>
           )}
         </div>
+      ) : null}
+
+      {can("case.view") ? (
+        <Card>
+          <SubjectProfilePanel caseId={state.caseDetail.id} />
+        </Card>
       ) : null}
 
       {isAdmin ? (

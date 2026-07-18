@@ -1546,6 +1546,57 @@ export function recoverUnifiedOrionCollection(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Subject identity profile (classification context) — case-owned artifact
+// ---------------------------------------------------------------------------
+
+export type SubjectIdentityProfileDTO = {
+  version?: string;
+  caseId: string;
+  displayName: string;
+  fullNameRu?: { lastName: string; firstName: string; patronymic?: string };
+  contextIdentifiers?: string[];
+  namesakeProfiles?: Array<{ label: string; noiseTerms: string[] }>;
+  aliases: string[];
+  transliterations: string[];
+  queryVariants?: string[];
+  knownIdentifiers?: { inn?: string[]; ogrn?: string[]; ogrnip?: string[]; locations?: string[] };
+  negativeIdentitySignals?: {
+    wrongPatronymics: string[];
+    wrongNames: string[];
+    wrongBirthDates?: string[];
+    unrelatedKnownPersons: string[];
+  };
+  regionHints?: string[];
+  languageHints?: string[];
+};
+
+export type SubjectProfileEditsInput = {
+  contextIdentifiers?: string[];
+  aliases?: string[];
+  unrelatedKnownPersons?: string[];
+  wrongPatronymics?: string[];
+  namesakeProfiles?: Array<{ label: string; noiseTerms: string[] }>;
+  inn?: string[];
+};
+
+export function getSubjectIdentityProfile(
+  caseId: string
+): Promise<{ profile: SubjectIdentityProfileDTO; exists: boolean }> {
+  return request(`/cases/${caseId}/subject-profile`);
+}
+
+export function saveSubjectIdentityProfile(
+  caseId: string,
+  edits: SubjectProfileEditsInput
+): Promise<{ profile: SubjectIdentityProfileDTO; droppedSelfConflicting: string[] }> {
+  // Persists classification context only — never triggers collection/render.
+  return request(`/cases/${caseId}/subject-profile`, {
+    method: "PUT",
+    body: JSON.stringify(edits),
+  });
+}
+
 export function rebuildUnifiedReport(
   caseId: string,
   jobId: string

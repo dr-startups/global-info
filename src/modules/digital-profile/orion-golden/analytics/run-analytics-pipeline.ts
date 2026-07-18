@@ -30,10 +30,10 @@ import {
   type EnrichmentRunReconciliation,
 } from "./enrichment-run-reconciler";
 import {
-  buildSubjectResolution,
   subjectIdentityFromProfile,
   type SubjectIdentity,
 } from "./subject-resolution-classifier";
+import { resolveSubjectWithDerivedContext } from "./subject-context-miner";
 import { runSurfaceAnalyzers, ADVERSE_PATTERNS } from "./surface-analyzers";
 import { synthesizeFindings, type FindingSynthesisResult } from "./finding-synthesizer";
 import { buildBenchmarkTrace, type BenchmarkTrace } from "./benchmark-trace";
@@ -306,14 +306,26 @@ export async function runOrionAnalyticsPipeline(
   const datasetId = composite.dataset.datasetId;
   const sourceHashes = composite.dataset.sourceHashes;
 
-  // 2. Subject resolution over every composite item.
+  // 2. Subject resolution over every composite item — two-pass with
+  // automatically derived context: terms mined from conflict-free
+  // SUBJECT_MATCH items enrich contextIdentifiers, no manual input required.
   const subject = subjectIdentityFromProfile(input.subjectProfile);
-  const subjectResolution = buildSubjectResolution({
+  const derived = resolveSubjectWithDerivedContext({
     caseId: input.caseId,
     datasetId,
     subject,
     items: input.items,
     sourceHashes,
+  });
+  const subjectResolution = derived.resolution;
+  emit("derived-subject-context.json", {
+    version: "derived-subject-context-v1",
+    caseId: input.caseId,
+    datasetId,
+    suppliedContext: derived.suppliedContext,
+    minedContext: derived.minedContext,
+    effectiveContext: derived.effectiveContext,
+    matchedItemCount: derived.matchedItemCount,
   });
   const resolutionByRef = new Map(subjectResolution.items.map((i) => [i.evidenceRef, i]));
 

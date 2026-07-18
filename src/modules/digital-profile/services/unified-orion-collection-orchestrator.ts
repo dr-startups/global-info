@@ -47,6 +47,10 @@ import {
 } from "./canonical-report-prepare";
 import type { DeckRenderAdapter } from "./render-deck-artifacts";
 import { resolveJobSubjectProfile } from "./job-subject-profile";
+import {
+  bootstrapSubjectProfileFromCollection,
+  type CaseSubjectRef,
+} from "./job-subject-profile-bootstrap";
 import type { ClassifierSubjectProfile } from "../orion-golden/analytics/subject-resolution-classifier";
 import { invalidateDownstreamAfterEnrichmentIngest } from "./unified-downstream-invalidation";
 import { normalizeArsenkinEnrichmentState } from "./arsenkin-enrichment-state";
@@ -239,6 +243,8 @@ export type UnifiedOrchestratorDeps = {
   }>;
   /** Subject identity for canonical prepare (production resolves from the case). */
   subjectProfile?: ClassifierSubjectProfile | null;
+  /** Case subject for the automatic profile bootstrap (offline tests inject it). */
+  caseSubject?: CaseSubjectRef | null;
   /** Injectable renderer for canonical prepare (default: local python). */
   renderDeck?: DeckRenderAdapter;
   fixtureBaseRows?: CompositeObservation[];
@@ -1048,12 +1054,25 @@ async function stepComposite(
   });
 
   // Persist the canonical subject identity into the job dir so the canonical
-  // prepare is fully job-scoped. Injected (tests) or case-owned only — never a
-  // baseline default. Absence is allowed here; prepare fails closed later.
-  const subjectProfile = await resolveJobSubjectProfile({
+  // prepare is fully job-scoped. Order: injected (tests) → case-owned artifact
+  // → automatic bootstrap from the case subject + the just-collected data.
+  // Only when even the bootstrap cannot resolve a subject does prepare later
+  // fail closed with SUBJECT_PROFILE_MISSING.
+  let subjectProfile = await resolveJobSubjectProfile({
     caseId: job.caseId,
     injected: deps.subjectProfile ?? null,
   });
+  if (!subjectProfile) {
+    const bootstrap = await bootstrapSubjectProfileFromCollection({
+      caseId: job.caseId,
+      baseReportRunId,
+      enrichmentRunId: enrichmentRunIds[0] ?? null,
+      observations: merge.observations,
+      subject: deps.caseSubject ?? null,
+      prisma,
+    });
+    subjectProfile = bootstrap?.profile ?? null;
+  }
   if (subjectProfile) {
     writeUnifiedArtifact(
       job.caseId,

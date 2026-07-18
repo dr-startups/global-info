@@ -19,8 +19,16 @@ import { join } from "node:path";
 import type { RawInventoryItem } from "../orion-golden/types";
 import type { ClassifierSubjectProfile } from "../orion-golden/analytics/subject-resolution-classifier";
 import { runOrionAnalyticsPipeline } from "../orion-golden/analytics/run-analytics-pipeline";
-import { runDeckBuild } from "../orion-golden/deck-sections/run-deck-build";
+import {
+  runDeckBuildWithGptCopy,
+  type GptDeckLayer,
+} from "../orion-golden/deck-sections/gpt-enhanced-deck-build";
 import { loadDeckInputsFromAnalyticsDir } from "../orion-golden/deck-sections/load-deck-inputs";
+import {
+  runGptCaseAnalysis,
+  type GptJsonCaller,
+} from "../orion-golden/gpt/gpt-case-analysis";
+import { digitalProfileConfig } from "../config";
 import {
   CANONICAL_SLOT_IDS,
   MERGED_SLOT_IDS,
@@ -70,6 +78,13 @@ export type CanonicalPrepareInput = {
   subjectDisplayName?: string;
   /** Injectable renderer; defaults to HTTP canonical adapter (no silent local fallback). */
   render?: DeckRenderAdapter;
+  /**
+   * GPT report layer: full-corpus case analysis + per-slide client copy.
+   * `undefined` → auto (live OpenAI when the AI analyst is configured and
+   * NETWORK_CALLS!=0); explicit `null` → disabled; injected caller → offline
+   * tests. Fail-safe: any GPT failure keeps the deterministic report.
+   */
+  gptCaller?: GptJsonCaller | null;
   /**
    * `render` — reuse valid assembled deck artifacts; skip analytics/SectionPacks/assembly.
    * `full` (default) — run the complete prepare pipeline.
@@ -193,6 +208,23 @@ export function compositeObservationsToInventory(input: {
       },
     } satisfies RawInventoryItem;
   });
+}
+
+/**
+ * Resolve the GPT caller for the report layer. Explicit injection wins;
+ * otherwise live OpenAI is used only when the AI analyst is configured,
+ * NETWORK_CALLS is not 0 and ORION_GPT_REPORT_COPY is not explicitly off.
+ */
+function resolveGptCaller(input: CanonicalPrepareInput): GptJsonCaller | null {
+  if (input.gptCaller !== undefined) return input.gptCaller;
+  if (process.env.NETWORK_CALLS === "0") return null;
+  if (String(process.env.ORION_GPT_REPORT_COPY ?? "1") === "0") return null;
+  const ai = digitalProfileConfig.aiAnalyst;
+  if (!ai.enabled || !ai.openAiApiKey) return null;
+  return async (args) => {
+    const { callOpenAiStrictJson } = await import("../orion-golden/gpt/openai-json-client");
+    return callOpenAiStrictJson(args);
+  };
 }
 
 function resolveSubjectProfile(input: CanonicalPrepareInput): ClassifierSubjectProfile {
@@ -451,7 +483,33 @@ export async function runCanonicalReportPrepare(
 
     const deckInputs = loadDeckInputsFromAnalyticsDir(analyticsDir);
     analyticsDatasetId = deckInputs.sourceDatasetId;
-    const deck = runDeckBuild({
+
+    // GPT layer (fail-safe): stage 1 analyzes the WHOLE verified corpus and
+    // stage 2 rewrites per-slide client copy grounded in that analysis. Any
+    // failure keeps the deterministic report.
+    let gptLayer: GptDeckLayer | null = null;
+    const gptCaller = resolveGptCaller(input);
+    if (gptCaller) {
+      const caseAnalysis = await runGptCaseAnalysis({
+        caller: gptCaller,
+        subjectName: subjectDisplayName,
+        aliases: subjectProfile.aliases ?? [],
+        contextIdentifiers: subjectProfile.contextIdentifiers ?? [],
+        bundle: deckInputs.mergedBundle,
+        surfaceUnits: deckInputs.surfaceUnits,
+        metricSnapshot: deckInputs.metricSnapshot,
+      });
+      if (caseAnalysis) {
+        writeFileSync(
+          join(analyticsDir, "gpt-case-analysis.json"),
+          `${JSON.stringify(caseAnalysis, null, 2)}\n`,
+          "utf8"
+        );
+      }
+      gptLayer = { caller: gptCaller, caseAnalysis };
+    }
+
+    const deck = await runDeckBuildWithGptCopy({
       ctx: {
         caseId: deckInputs.caseId,
         reportRunId: deckInputs.reportRunId,
@@ -472,6 +530,7 @@ export async function runCanonicalReportPrepare(
       outputRoot: deckDir,
       baseObservationCountBefore: deckInputs.baseCountBefore,
       baseObservationCountAfter: deckInputs.baseCountAfter,
+      gpt: gptLayer,
     });
     assemblyCount = 1;
 

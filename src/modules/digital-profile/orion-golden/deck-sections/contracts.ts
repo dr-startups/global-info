@@ -193,6 +193,14 @@ export const SectionPackV2Schema = z
       passed: z.boolean(),
       issues: z.array(z.string()),
     }),
+
+    /** GPT client-copy layer marker (stage 2); absent on deterministic packs. */
+    gptCopy: z
+      .object({
+        promptVersion: z.string().min(1),
+        appliedSlides: z.number().int().nonnegative(),
+      })
+      .optional(),
   })
   .superRefine((pack, ctx) => {
     if (pack.datasetId !== pack.sourceDatasetId) {

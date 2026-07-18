@@ -50,14 +50,17 @@ export function runDeckBuild(input: {
   outputRoot: string;
   baseObservationCountBefore: number;
   baseObservationCountAfter: number;
+  /** Packs already built (and possibly GPT-enhanced) by a wrapper stage. */
+  prebuiltPacks?: SectionPackV2[];
+  prebuiltBuildLog?: DeckBuildResult["buildLog"];
 }): DeckBuildResult {
-  const buildLog: DeckBuildResult["buildLog"] = [];
+  const buildLog: DeckBuildResult["buildLog"] = input.prebuiltBuildLog ?? [];
   const artifacts: Record<string, string> = {};
   const previousPacks = loadPreviousPacks(input.outputRoot);
   const ctx: SectionBuildContext = { ...input.ctx, previousPacks, buildLog };
 
-  // 1. Independent SectionPacks (cache-aware).
-  const packs = buildAllSections(ctx);
+  // 1. Independent SectionPacks (cache-aware) — or the prebuilt set.
+  const packs = input.prebuiltPacks ?? buildAllSections(ctx);
 
   // 2. Section-level QA before assembly.
   const validationReports = new Map<FragmentKey, SectionValidationReport>();
