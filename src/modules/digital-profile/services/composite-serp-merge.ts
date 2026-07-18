@@ -25,6 +25,8 @@ export type CompositeObservation = {
   engine?: string;
   query?: string;
   url?: string;
+  /** Direct image URL for images-surface rows (preview fetch in visual assets). */
+  imageUrl?: string;
   title?: string;
   snippet?: string;
   suggestion?: string;
@@ -172,6 +174,7 @@ export async function mergeCompositeSerp(input: {
     existing.evidenceRefs = Array.from(new Set([...existing.evidenceRefs, ...row.evidenceRefs]));
     existing.riskLabel = preferRisk(existing.riskLabel, row.riskLabel);
     if (!existing.arsenkinTaskId && row.arsenkinTaskId) existing.arsenkinTaskId = row.arsenkinTaskId;
+    if (!existing.imageUrl && row.imageUrl) existing.imageUrl = row.imageUrl;
     if (!existing.baseSearchResultId && row.baseSearchResultId) {
       existing.baseSearchResultId = row.baseSearchResultId;
     }
@@ -287,6 +290,10 @@ export async function mergeCompositeSerp(input: {
       } else {
         key = `surface|${s.id}`;
       }
+      const rowImageUrl =
+        (s as { imageUrl?: string | null; thumbnailUrl?: string | null }).imageUrl ??
+        (s as { thumbnailUrl?: string | null }).thumbnailUrl ??
+        null;
       add(
         {
           key,
@@ -300,6 +307,7 @@ export async function mergeCompositeSerp(input: {
           suggestion: kind === "suggestion" ? String(s.title ?? s.snippet ?? "") : undefined,
           question: kind === "paa" ? String(s.title ?? "") : undefined,
           url: s.url ?? undefined,
+          imageUrl: st.includes("IMAGE") ? rowImageUrl ?? undefined : undefined,
           providers: [provider],
           primaryProvider: provider,
           evidenceRefs: [`searchSurfaceItem:${s.id}`],

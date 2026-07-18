@@ -199,6 +199,7 @@ export function compositeObservationsToInventory(input: {
       title: text || obs.title || obs.url || obs.key,
       snippet: obs.snippet ?? "",
       sourceUrl: obs.url ?? (isArsenkin ? `arsenkin://${obs.kind}/${inventoryId}` : undefined),
+      imageUrl: obs.imageUrl ?? undefined,
       classification: obs.riskLabel ?? undefined,
       rawMetadata: {
         engine: obs.engine,
@@ -540,6 +541,9 @@ export async function runCanonicalReportPrepare(
         extras: {
           executiveSummary: deckInputs.executiveSummary as never,
           visualAssets: visualAssetsBySlot,
+          // Sanitized stage-1 analysis feeds deterministic builders too:
+          // executive summary narrative/cards and risk-matrix explanations.
+          gptCaseAnalysis: gptLayer?.caseAnalysis ?? undefined,
         },
       },
       bundleForValidation: deckInputs.mergedBundle,

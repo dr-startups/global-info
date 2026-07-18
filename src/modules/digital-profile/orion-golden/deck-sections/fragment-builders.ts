@@ -45,13 +45,56 @@ export type ExecutiveSummaryExtras = {
   dataLimitations: string[];
 };
 
+/**
+ * Sanitized stage-1 GPT case analysis (already client-safe): a holistic
+ * assessment of the whole verified corpus. Used to write the executive
+ * summary and to expand each risk theme with a client-language explanation
+ * and concrete advice.
+ */
+export type GptCaseAnalysisExtras = {
+  overallRiskLevel: string;
+  executiveConclusion: string;
+  digitalPortrait?: string;
+  keyRisks: Array<{ theme: string; severity: string; explanation: string; advice: string }>;
+  positiveSignals: string[];
+  recommendations: string[];
+};
+
 export type FragmentExtras = {
   executiveSummary?: ExecutiveSummaryExtras;
   /** Existing compliance client copy (no source expansion). */
   complianceNarrative?: string[];
   /** Typed visual assets bound per canonical slot. */
   visualAssets?: VisualAssetsBySlot;
+  /** Holistic GPT case analysis (client-safe, optional). */
+  gptCaseAnalysis?: GptCaseAnalysisExtras;
 };
+
+/** Loose theme match: token overlap between a finding theme and a GPT risk theme. */
+export function matchGptKeyRisk(
+  theme: string,
+  risks: GptCaseAnalysisExtras["keyRisks"] | undefined
+): GptCaseAnalysisExtras["keyRisks"][number] | undefined {
+  if (!risks?.length) return undefined;
+  const tokens = (s: string) =>
+    new Set(
+      s
+        .toLowerCase()
+        .split(/[^a-zа-яё0-9]+/iu)
+        .filter((w) => w.length > 3)
+    );
+  const a = tokens(theme);
+  if (a.size === 0) return undefined;
+  let best: { risk: GptCaseAnalysisExtras["keyRisks"][number]; score: number } | null = null;
+  for (const risk of risks) {
+    const b = tokens(risk.theme);
+    let hit = 0;
+    for (const w of a) if (b.has(w)) hit += 1;
+    const score = hit / Math.max(1, Math.min(a.size, b.size));
+    if (score >= 0.5 && (!best || score > best.score)) best = { risk, score };
+  }
+  return best?.risk;
+}
 
 export type FragmentBuildOutput = {
   slides: SlideContentContract[];
@@ -166,6 +209,47 @@ function domainOfUrl(url: string | undefined): string {
   } catch {
     return "—";
   }
+}
+
+/**
+ * Compose client text from whole sentences of the given parts, appending
+ * sentences while they fit the budget — never a mid-sentence cut.
+ */
+export function fitClientSentences(parts: string[], max: number): string {
+  const sentences = parts
+    .flatMap((p) => p.split(/(?<=[.!?…])\s+/u))
+    .map((s) => s.trim())
+    .filter(Boolean);
+  let out = "";
+  for (const s of sentences) {
+    const trial = out ? `${out} ${s}` : s;
+    if (trial.length > max) break;
+    out = trial;
+  }
+  if (!out && sentences[0]) return clampClientText(sentences[0], max);
+  return /[.!?…]$/u.test(out) ? out : `${out}.`;
+}
+
+/**
+ * Split client text into complete-sentence paragraphs of at most `maxPerPara`
+ * characters (for renderer layouts that draw one card per paragraph).
+ */
+export function splitClientParagraphs(text: string, maxPerPara: number, maxParas: number): string[] {
+  const sentences = text.split(/(?<=[.!?…])\s+/u).map((s) => s.trim()).filter(Boolean);
+  const paras: string[] = [];
+  let buf = "";
+  for (const s of sentences) {
+    const trial = buf ? `${buf} ${s}` : s;
+    if (trial.length > maxPerPara && buf) {
+      paras.push(buf);
+      if (paras.length >= maxParas) return paras;
+      buf = s.length > maxPerPara ? clampClientText(s, maxPerPara) : s;
+    } else {
+      buf = trial.length > maxPerPara ? clampClientText(trial, maxPerPara) : trial;
+    }
+  }
+  if (buf && paras.length < maxParas) paras.push(buf);
+  return paras;
 }
 
 /**
@@ -579,42 +663,91 @@ export function buildExecutiveSummaryFragment(
     return { slides: [], status: "INSUFFICIENT_DATA", emptyStateReason: "executive-summary-artifact-missing" };
   }
   const [slot] = slotsForFragment("EXECUTIVE_SUMMARY");
-  const bullets = es.keyFindings.map(
-    (k) => clampClientText(`${k.title}: ${k.factualBasis}`, 340) + ` [${k.findingId}]`
-  );
+  const gpt = extras.gptCaseAnalysis;
+  // Each key finding: factual basis + (when the GPT case analysis knows this
+  // theme) a client-language explanation of WHY it is risky and what to do
+  // about it — instead of a bare publication count. Top cards are narrow, so
+  // they lead with the first factual sentence and the explanation; the
+  // continuation page carries the full detail.
+  const cardTexts = es.keyFindings.map((k) => {
+    const risk = matchGptKeyRisk(k.title, gpt?.keyRisks);
+    if (!risk) return clampClientText(`${k.title}: ${k.factualBasis}`, 340) + ` [${k.findingId}]`;
+    // The top card's job is to explain the risk; the full factual basis
+    // follows on the continuation page.
+    return (
+      fitClientSentences([`${k.title}: ${risk.explanation}`, `Что делать: ${risk.advice}`], 340) +
+      ` [${k.findingId}]`
+    );
+  });
+  const bullets = es.keyFindings.map((k) => {
+    const risk = matchGptKeyRisk(k.title, gpt?.keyRisks);
+    const text = risk
+      ? fitClientSentences(
+          [`${k.title}: ${k.factualBasis}`, `Почему это важно: ${risk.explanation}`, `Что делать: ${risk.advice}`],
+          380
+        )
+      : clampClientText(`${k.title}: ${k.factualBasis}`, 380);
+    return text + ` [${k.findingId}]`;
+  });
   // Sparse but complete collection: keep a client-safe page that states
   // there are no confirmed findings — never invent risks.
   const sparse =
     es.keyFindings.length === 0 ||
     /INSUFFICIENT|недостат/i.test(es.verdict) ||
     /недостат|insufficient|no confirmed/i.test(es.executiveConclusion);
+  // Narrative: prefer the holistic GPT conclusion + digital portrait. The
+  // renderer draws one card per paragraph (up to 3 incl. the subtitle line),
+  // clipping each at ~420 chars — split on sentence boundaries to never lose
+  // mid-sentence text.
+  const gptParagraphs =
+    !sparse && gpt
+      ? gpt.digitalPortrait
+        ? [
+            ...splitClientParagraphs(gpt.executiveConclusion, 400, 1),
+            ...splitClientParagraphs(gpt.digitalPortrait, 400, 1),
+          ]
+        : splitClientParagraphs(gpt.executiveConclusion, 400, 2)
+      : [];
   const narrative = sparse
     ? clampClientText(
         es.executiveConclusion ||
           "Подтверждённых adverse-находок по собранным источникам недостаточно для риск-выводов. Выводы не выдуманы.",
         600
       )
-    : es.executiveConclusion;
+    : gptParagraphs.length > 0
+      ? gptParagraphs.join("\n")
+      : es.executiveConclusion;
   // Base slide feeds the executive dashboard layout (conclusion + top risk
   // cards); the remaining key findings continue on an adjacent slide so no
   // finding is lost visually.
   const TOP_CARDS = 2;
+  const ms = scoped.metricSnapshot;
   const base = makeSlotSlide({
     slot,
     sectionId,
     subtitle: `Итоговая оценка: ${verdictClientLabel(es.verdict)}`,
     content: {
       narrative,
+      // Right-column KPI cards on the executive dashboard: the headline
+      // numbers of the whole audit at a glance (short labels — narrow cards).
+      kpis: [
+        { label: "Материалов", value: String(ms.compositeCount), tone: "neutral" },
+        { label: "О субъекте", value: String(ms.subjectMatchCount), tone: "good" },
+        { label: "Тем риска", value: String(ms.adverseFindingCount), tone: "risk" },
+        { label: "Выводов", value: String(es.keyFindings.length), tone: "accent" },
+      ],
       bullets:
-        bullets.length > 0
-          ? bullets.slice(0, TOP_CARDS)
+        cardTexts.length > 0
+          ? cardTexts.slice(0, TOP_CARDS)
           : [
               "Подтверждённых наблюдений с привязкой к источникам нет — сводные показатели не заполняются предположениями.",
             ],
       whatToCheck:
-        es.priorityActions.length > 0
-          ? clampClientText(es.priorityActions.slice(0, 3).join(" "), 220)
-          : "Повторите сбор после расширения источников; не интерпретируйте отсутствие данных как отсутствие риска.",
+        gpt && gpt.recommendations.length > 0
+          ? clampClientText(gpt.recommendations.slice(0, 2).join(" "), 220)
+          : es.priorityActions.length > 0
+            ? clampClientText(es.priorityActions.slice(0, 3).join(" "), 220)
+            : "Повторите сбор после расширения источников; не интерпретируйте отсутствие данных как отсутствие риска.",
       sourceNote: sourceLine(scoped),
     },
     evidenceRefs: uniqueRefs(scoped),
@@ -622,7 +755,13 @@ export function buildExecutiveSummaryFragment(
     metrics: { keyFindings: es.keyFindings.length, sparse: sparse ? 1 : 0 },
   });
   const slides: SlideContentContract[] = [base];
-  if (bullets.length > TOP_CARDS) {
+  const contBullets = bullets.slice(TOP_CARDS);
+  if (gpt && !sparse && gpt.positiveSignals.length > 0) {
+    contBullets.push(
+      clampClientText(`Позитивные сигналы: ${gpt.positiveSignals.slice(0, 3).join(" ")}`, 380)
+    );
+  }
+  if (contBullets.length > 0) {
     slides.push({
       ...base,
       slideId: `${base.slideId}__cont1`,
@@ -633,7 +772,7 @@ export function buildExecutiveSummaryFragment(
       title: "Резюме — ключевые факты (продолжение)",
       subtitle: undefined,
       content: {
-        bullets: bullets.slice(TOP_CARDS),
+        bullets: contBullets,
         whatToCheck: undefined,
         sourceNote: sourceLine(scoped),
       },
@@ -644,7 +783,8 @@ export function buildExecutiveSummaryFragment(
 
 export function buildRiskMatrixFragment(
   sectionId: SectionType,
-  scoped: ScopedFragmentInput
+  scoped: ScopedFragmentInput,
+  extras?: FragmentExtras
 ): FragmentBuildOutput {
   const [slot] = slotsForFragment("RISK_MATRIX");
   if (scoped.findings.length === 0) {
@@ -668,13 +808,26 @@ export function buildRiskMatrixFragment(
     });
     return { slides: [base], status: "READY", emptyStateReason: "no-verified-findings" };
   }
-  const rows = [...scoped.findings]
-    .sort((a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0))
-    .map((f) => [f.theme, riskLabel(f.riskLevel), f.promotionPriority, f.findingId]);
+  const sorted = [...scoped.findings].sort(
+    (a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0)
+  );
+  const rows = sorted.map((f) => [f.theme, riskLabel(f.riskLevel), f.promotionPriority, f.findingId]);
+  // Per-theme detail (same order as rows): what exactly was found + why it is
+  // risky + what to do — the matrix card explains the risk instead of only
+  // repeating its level. GPT case analysis expands; the claim is the fallback.
+  const details = sorted.map((f) => {
+    const risk = matchGptKeyRisk(f.theme, extras?.gptCaseAnalysis?.keyRisks);
+    return risk
+      ? fitClientSentences([themedClaim(f), risk.explanation, `Что делать: ${risk.advice}`], 400)
+      : fitClientSentences([themedClaim(f), `Рекомендация: ${f.recommendedAction}`], 400);
+  });
   const base = makeSlotSlide({
     slot,
     sectionId,
-    content: { table: { headers: ["Тема", "Уровень", "Приоритет", "Идентификатор"], rows } },
+    content: {
+      table: { headers: ["Тема", "Уровень", "Приоритет", "Идентификатор"], rows },
+      bullets: details,
+    },
     evidenceRefs: uniqueRefs(scoped),
     findingIds: scoped.findings.map((f) => f.findingId),
     metrics: { themes: rows.length, adverse: scoped.findings.filter(isAdverse).length },
@@ -1291,6 +1444,13 @@ export function buildImagesFragment(
               whyItMatters: clampClientText(
                 "Выделенные изображения связаны с негативными источниками и формируют нежелательный визуальный фон в блоке «Картинки»: пользователь видит их до перехода на сайты.",
                 320
+              ),
+              // The generic page status says "no risk conclusions" when the
+              // page findings are empty — contradicting the red frames above.
+              statusNote: `Статус: изображений с привязкой к негативным источникам — ${sidebar.adverseRows.length}; требуется проверка первоисточников.`,
+              whatToCheck: clampClientText(
+                "Проверить сайты-источники выделенных изображений и подготовить позицию по каждому негативному материалу.",
+                220
               ),
               highlightExplanations: sidebar.explanations,
             }

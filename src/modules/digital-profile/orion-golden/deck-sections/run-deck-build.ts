@@ -231,11 +231,18 @@ export function toRendererPayload(input: {
       dashboardNarrative = narrative;
       keyFindings = (s.bullets ?? []).slice(0, 2).map((b) => ({ detail: b, tone: "warn" }));
       if (s.whatToCheck) actions = [{ label: s.whatToCheck }];
+      // Right-column KPI cards (audit headline numbers) — same wire contract
+      // as the metrics dashboard.
+      if (s.kpis?.length) {
+        metrics = s.kpis.map((k) => ({ label: k.label, value: k.value, tone: k.tone ?? "neutral" }));
+      }
     }
     if (s.template === "orion_golden_risk_matrix_grid" && s.table) {
-      keyFindings = s.table.rows.slice(0, 6).map((row) => ({
+      // bullets[i] carries the rich per-theme explanation aligned with rows[i]
+      // (what was found + why risky + advice); level/priority is the fallback.
+      keyFindings = s.table.rows.slice(0, 6).map((row, i) => ({
         headline: row[0] ?? "Тема",
-        detail: `Уровень риска: ${row[1] ?? "—"}; приоритет: ${row[2] ?? "—"}.`,
+        detail: s.bullets?.[i] ?? `Уровень риска: ${row[1] ?? "—"}; приоритет: ${row[2] ?? "—"}.`,
         status: row[1] ?? "",
         tone: RISK_TONES[row[1] ?? ""] ?? "warn",
       }));

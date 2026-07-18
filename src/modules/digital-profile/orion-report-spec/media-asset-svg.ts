@@ -21,7 +21,8 @@ export type ImageGridItem = {
   themeLabel?: string;
 };
 
-async function tryFetchImagePreview(url: string): Promise<string | undefined> {
+export async function tryFetchImagePreview(url: string | undefined): Promise<string | undefined> {
+  if (!url || !/^https?:\/\//i.test(url)) return undefined;
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);

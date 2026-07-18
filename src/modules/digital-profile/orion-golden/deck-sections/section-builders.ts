@@ -155,7 +155,7 @@ function composeFragment(
     case "EXECUTIVE_SUMMARY":
       return buildExecutiveSummaryFragment(section, scoped, extras);
     case "RISK_MATRIX":
-      return buildRiskMatrixFragment(section, scoped);
+      return buildRiskMatrixFragment(section, scoped, extras);
     case "DIGITAL_PROFILE_OVERVIEW":
       return buildDigitalProfileOverviewFragment(section, scoped);
     case "RU_SUMMARY":

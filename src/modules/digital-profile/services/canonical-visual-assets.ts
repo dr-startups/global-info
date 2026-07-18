@@ -38,6 +38,7 @@ import {
   buildKnowledgePanelSvg,
   buildSurfacePanelSvg,
   svgToPngBase64,
+  tryFetchImagePreview,
 } from "../orion-report-spec/media-asset-svg";
 import { mapSurfaceBucket } from "../orion-golden/classic/composite-serp-overlay-merge";
 
@@ -286,7 +287,14 @@ async function buildListPanelAsset(input: {
 export async function buildCanonicalVisualAssets(input: {
   subjectName: string;
   items: RawInventoryItem[];
+  /**
+   * Fetch real image previews from item.imageUrl/sourceUrl for image grids.
+   * Defaults to live mode (NETWORK_CALLS !== "0"); every fetch is fail-safe —
+   * on any error the synthetic placeholder card is kept.
+   */
+  fetchImagePreviews?: boolean;
 }): Promise<CanonicalVisualAssets> {
+  const fetchPreviews = input.fetchImagePreviews ?? process.env.NETWORK_CALLS !== "0";
   const assets: RendererAssetEntry[] = [];
   const visualAssets: VisualAssetsBySlot = {};
   const push = (a: RendererAssetEntry) => assets.push(a);
@@ -515,27 +523,31 @@ export async function buildCanonicalVisualAssets(input: {
     title: string
   ): Promise<boolean> => {
     if (rows.length === 0) return false;
-    const png = await svgToPngBase64(
-      buildImageGridSvg({
-        title,
-        items: rows.slice(0, 6).map((r) => {
-          const hl = classifyObservationHighlight({
-            url: r.sourceUrl ?? null,
-            domain: domainOf(r.sourceUrl) || null,
-            title: r.title ?? null,
-            snippet: r.snippet ?? null,
-          } as unknown as PersistedSerpObservation);
-          return {
-            title: String(r.title ?? "").slice(0, 80) || "Изображение из поиска",
-            domain: domainOf(r.sourceUrl) || domainOf(r.imageUrl) || "источник в выдаче",
-            unavailableNote: "Синтетическая карточка: превью из API недоступно офлайн",
-            highlight: hl.isHighlighted,
-            frameTone: hl.isHighlighted ? ("red" as const) : ("none" as const),
-            themeLabel: hl.themeTitle ?? undefined,
-          };
-        }),
+    const gridItems = await Promise.all(
+      rows.slice(0, 6).map(async (r) => {
+        const hl = classifyObservationHighlight({
+          url: r.sourceUrl ?? null,
+          domain: domainOf(r.sourceUrl) || null,
+          title: r.title ?? null,
+          snippet: r.snippet ?? null,
+        } as unknown as PersistedSerpObservation);
+        const previewBase64 = fetchPreviews
+          ? await tryFetchImagePreview(r.imageUrl || r.sourceUrl)
+          : undefined;
+        return {
+          title: String(r.title ?? "").slice(0, 80) || "Изображение из поиска",
+          domain: domainOf(r.sourceUrl) || domainOf(r.imageUrl) || "источник в выдаче",
+          previewBase64,
+          unavailableNote: previewBase64
+            ? undefined
+            : "Превью недоступно: источник не отдал изображение",
+          highlight: hl.isHighlighted,
+          frameTone: hl.isHighlighted ? ("red" as const) : ("none" as const),
+          themeLabel: hl.themeTitle ?? undefined,
+        };
       })
     );
+    const png = await svgToPngBase64(buildImageGridSvg({ title, items: gridItems }));
     const visibleItems = rows.slice(0, 6).map(toVisibleItem);
     const asset: RendererAssetEntry = {
       assetRef,
