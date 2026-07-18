@@ -116,18 +116,34 @@ function selectKeyFindings(eligible: Finding[], conflictedDomains: Set<string>):
   return picked;
 }
 
+const REGION_CLIENT_LABELS: Record<string, string> = {
+  RU: "Россия",
+  UAE: "ОАЭ / международный контур",
+};
+
+function clientRegionList(regions: string[]): string {
+  const labels = [
+    ...new Set(
+      regions
+        .map((r) => REGION_CLIENT_LABELS[String(r).toUpperCase()])
+        .filter((l): l is string => Boolean(l))
+    ),
+  ];
+  return labels.length > 0 ? ` Контур: ${labels.join(", ")}.` : "";
+}
+
 function toKeyFinding(finding: Finding, conflictedDomains: Set<string>): ExecutiveKeyFinding {
   const kind = basisKindFor(finding, conflictedDomains);
-  const regions = finding.regions.length > 0 ? ` Регионы: ${finding.regions.join(", ")}.` : "";
-  const domains =
-    finding.sourceDomains.length > 0
-      ? ` Источники: ${finding.sourceDomains.slice(0, 3).join(", ")}.`
-      : "";
+  // The claim already carries sources and examples; only the client-readable
+  // region contour is appended (raw region codes never reach the client).
   return {
     findingId: finding.findingId,
     title: fitText(finding.theme, 140),
     basisKind: kind,
-    factualBasis: fitText(`${basisKindLabel(kind)}: ${finding.claim}${regions}${domains}`, 320),
+    factualBasis: fitText(
+      `${basisKindLabel(kind)}: ${finding.claim}${clientRegionList(finding.regions)}`,
+      320
+    ),
     clientImpact: fitText(clientImpactFor(finding, kind), 220),
     confidence: finding.confidence,
     recommendedAction: fitText(finding.recommendedAction, 180),
@@ -156,14 +172,20 @@ function buildConclusion(
   const confirmed = keyFindings.filter((f) => f.basisKind === "CONFIRMED_FACT").length;
   const signals = keyFindings.filter((f) => f.basisKind === "PRELIMINARY_SIGNAL").length;
   const hypotheses = keyFindings.filter((f) => f.basisKind === "HYPOTHESIS").length;
-  const regions = [...new Set(input.regionalMetrics.map((r) => r.region))];
+  const regions = [
+    ...new Set(
+      input.regionalMetrics
+        .map((r) => REGION_CLIENT_LABELS[String(r.region).toUpperCase()])
+        .filter((l): l is string => Boolean(l))
+    ),
+  ];
   const sentences: string[] = [];
   sentences.push(`По итогам проверки открытых источников в отношении ${subject} ${verdictWording(verdict)}.`);
   sentences.push(
     `В сводку включены ${keyFindings.length} ключевых наблюдений: подтверждённых фактов — ${confirmed}, предварительных сигналов — ${signals}, гипотез — ${hypotheses}.`
   );
   if (regions.length > 0) {
-    sentences.push(`Оценка охватывает регионы: ${regions.join(", ")}.`);
+    sentences.push(`Оценка охватывает контуры: ${regions.join("; ")}.`);
   }
   if (input.identityPollution.otherSubjectCount > 0) {
     const dom = input.identityPollution.dominantOtherSubject;
@@ -279,7 +301,14 @@ export function composeExecutiveSummaryDeterministic(
     methodologyNote,
   };
 
-  if (eligible.length < MIN_KEY_FINDINGS) {
+  // Degrade to INSUFFICIENT_DATA only when the eligible set is BOTH small and
+  // weak. A case with even one solid medium+ subject-match finding (e.g. a
+  // confirmed criminal/court theme) must produce a real verdict — telling the
+  // client "недостаточно данных" next to a critical finding is factually wrong.
+  const hasSolidFinding = eligible.some(
+    (f) => (RISK_ORDER[f.riskLevel] ?? 0) >= 2 && f.confidence >= 0.5
+  );
+  if (eligible.length < MIN_KEY_FINDINGS && !hasSolidFinding) {
     return {
       ...base,
       verdict: "INSUFFICIENT_DATA",

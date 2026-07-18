@@ -250,18 +250,21 @@ async function buildListPanelAsset(input: {
 }): Promise<boolean> {
   const rows = input.rows.filter((r) => String(r.title ?? "").trim()).slice(0, 10);
   if (rows.length === 0) return false;
+  const visibleItems = rows.map(toVisibleItem);
   const png = await svgToPngBase64(
     buildSurfacePanelSvg({
       title: input.title,
       subtitle: input.subtitle,
       engineLabel: input.engineLabel,
-      items: rows.map((r) => ({
+      items: rows.map((r, i) => ({
         label: String(r.title).trim(),
         meta: input.rowMeta?.(r),
+        // Same red-frame classifier the SERP snapshot uses: negative phrases
+        // are visibly marked on the panel itself (ORION style).
+        adverse: visibleItems[i].adverse,
       })),
     })
   );
-  const visibleItems = rows.map(toVisibleItem);
   const asset: RendererAssetEntry = {
     assetRef: input.assetRef,
     kind: input.kind,

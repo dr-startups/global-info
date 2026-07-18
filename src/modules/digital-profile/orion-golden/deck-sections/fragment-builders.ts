@@ -28,6 +28,7 @@ import {
 } from "./canonical-slots";
 import type { Finding } from "../contracts/finding";
 import type { SurfaceClaim } from "../contracts/surface-analysis";
+import { ADVERSE_PATTERNS } from "../analytics/surface-analyzers";
 
 export type ExecutiveSummaryExtras = {
   verdict: string;
@@ -410,6 +411,13 @@ const COVERAGE_EMPTY_COPY: Record<string, { what: string; why: string; check: st
     why: "Региональный контур показывает, как субъект представлен в локальной выдаче; отсутствие материалов — это статус покрытия, а не вывод об отсутствии рисков.",
     check: "Рекомендуем повторить сбор по региону при следующем обновлении.",
   },
+  // Follow-up pages of a multi-slot block with no data: short reference back
+  // instead of repeating the same full-page explanation three more times.
+  "no-images-continued": {
+    what: "Продолжение блока изображений: дополнительных материалов по этой поверхности в текущем сборе не зафиксировано.",
+    why: "Статус и рекомендации по блоку изображений приведены на первой странице раздела.",
+    check: "См. рекомендации на первой странице блока изображений.",
+  },
 };
 
 function coverageContent(reason: string): SlideBody {
@@ -457,6 +465,18 @@ function riskLabel(level: string): string {
     none: "Нет",
   };
   return map[level] ?? level;
+}
+
+/** Executive verdict → client label. Raw enum (HIGH/ELEVATED/…) never leaks. */
+function verdictClientLabel(verdict: string): string {
+  const map: Record<string, string> = {
+    HIGH: "Высокий риск",
+    ELEVATED: "Повышенный риск",
+    MIXED: "Смешанный фон",
+    LOW: "Низкий риск",
+    INSUFFICIENT_DATA: "Недостаточно данных",
+  };
+  return map[String(verdict).toUpperCase()] ?? verdict;
 }
 
 /**
@@ -582,14 +602,14 @@ export function buildExecutiveSummaryFragment(
   const base = makeSlotSlide({
     slot,
     sectionId,
-    subtitle: `Итоговая оценка: ${es.verdict}`,
+    subtitle: `Итоговая оценка: ${verdictClientLabel(es.verdict)}`,
     content: {
       narrative,
       bullets:
         bullets.length > 0
           ? bullets.slice(0, TOP_CARDS)
           : [
-              "Подтверждённых findings с evidenceRefs нет — матрица рисков и KPI не заполняются вымышленными данными.",
+              "Подтверждённых наблюдений с привязкой к источникам нет — сводные показатели не заполняются предположениями.",
             ],
       whatToCheck:
         es.priorityActions.length > 0
@@ -803,8 +823,9 @@ export function buildRegionalSummaryFragment(
     slides.push(...withContinuations(base, "regional-summary"));
   }
 
-  // Metrics slot: compact check-h / indexation / coverage rows — no full
-  // per-URL pages, one compact table.
+  // Metrics slot: full per-surface coverage breakdown (what was collected on
+  // each search surface and how much of it is negative), plus URL-audit and
+  // region totals — a nearly empty two-row table reads as a defect to clients.
   const urlAuditUnits = scoped.surfaceUnits.filter((u) => u.surface === "url_audit");
   const rows: string[][] = [];
   // Provider tokens (e.g. enrichment vendor names) are internal — client sees
@@ -815,17 +836,47 @@ export function buildRegionalSummaryFragment(
     if (/GOOGLE|SERPER/.test(e)) return "Google";
     return "Поисковые системы";
   };
+  const SURFACE_TABLE_LABELS: Record<string, string> = {
+    organic: "Результаты поиска",
+    suggestions: "Поисковые подсказки",
+    paa_related: "Связанные запросы",
+    images: "Изображения в поиске",
+    wikipedia: "Википедия и справочники",
+    ai_answers: "ИИ-ответы и панели знаний",
+  };
+  const metricOf = (u: (typeof scoped.surfaceUnits)[number], key: string): number => {
+    const m = u.metrics.find((x) => x.key === key);
+    return typeof m?.value === "number" ? m.value : Number(m?.value ?? 0) || 0;
+  };
+  for (const u of scoped.surfaceUnits) {
+    const label = SURFACE_TABLE_LABELS[u.surface];
+    if (!label) continue;
+    const total = metricOf(u, "totalCount");
+    if (total === 0) continue;
+    const adverse = metricOf(u, "adverseSubjectCount");
+    const matched = metricOf(u, "subjectMatchCount");
+    const comment =
+      adverse > 0
+        ? `негативных: ${adverse}; подтверждена связь с лицом: ${matched}`
+        : matched > 0
+          ? `подтверждена связь с лицом: ${matched}`
+          : "негативных сигналов не выявлено";
+    rows.push([engineLabel(u.engine), label, String(total), comment]);
+  }
   for (const u of urlAuditUnits) {
     const checked = u.evidenceRefs.length;
-    const metricLine = u.metrics
-      .slice(0, 3)
-      .map((m) => `${m.key}: ${String(m.value)}`)
-      .join("; ");
-    rows.push([engineLabel(u.engine), "Проверка URL / индексация", String(checked), metricLine || "—"]);
+    // Metric keys are internal (totalCount/…); the client sees a plain summary.
+    const audited = metricOf(u, "totalCount");
+    rows.push([
+      engineLabel(u.engine),
+      "Проверка URL / индексация",
+      String(checked),
+      audited > 0 ? `проверено адресов: ${audited}` : "—",
+    ]);
   }
-  rows.push(["—", "Материалы региона", String(materialCount), "по составному набору данных"]);
+  rows.push(["Все системы", "Материалы региона", String(materialCount), "по составному набору данных"]);
   rows.push([
-    "—",
+    "Все системы",
     "Темы повышенного внимания",
     String(scoped.findings.filter(isAdverse).length),
     "см. матрицу рисков",
@@ -881,7 +932,13 @@ export function buildSerpFragment(
   const displayedRefs = refs.slice(0, 36);
   const rows = displayedRefs.map((ref, i) => {
     const e = scoped.evidenceIndex[ref] ?? {};
-    const adverse = e.adverse === true || adverseRefSet.has(ref);
+    // A row is marked when its evidence backs an adverse finding OR its own
+    // title carries an adverse pattern (sanctions/criminal/court wording) —
+    // clearly negative rows must never show a green "Нейтральный" badge.
+    const adverse =
+      e.adverse === true ||
+      adverseRefSet.has(ref) ||
+      ADVERSE_PATTERNS.test(String(e.title ?? ""));
     // Red marker must always carry its label; domain comes from evidence URL.
     return [
       String(i + 1),
@@ -998,10 +1055,13 @@ export function buildSerpScreenshotFragment(
 
   // Headline: page-specific summary of what is framed on THIS snapshot —
   // details per theme live in the highlight explanations (no duplication).
+  const headlineDomains = explainedDomains.slice(0, 4);
   const whatWasFound = adverseRows.length
     ? clampClientText(
         `На снимке выделено результатов повышенного внимания: ${explanations.length}` +
-          (explainedDomains.length ? ` (${explainedDomains.join(", ")})` : "") +
+          (headlineDomains.length
+            ? ` (${headlineDomains.join(", ")}${explainedDomains.length > headlineDomains.length ? " и др." : ""})`
+            : "") +
           "; остальные результаты — нейтральные или деловые.",
         400
       )
@@ -1010,8 +1070,12 @@ export function buildSerpScreenshotFragment(
   const neutralVisibleDomains = [
     ...new Set(visibleRows.map((v) => v.domain).filter((d): d is string => Boolean(d))),
   ].slice(0, 3);
+  // The sidebar footer is narrow: cap the listed domains so the note always
+  // ends with a complete phrase instead of clipping mid-sentence.
+  const listedDomains = explainedDomains.slice(0, 3);
+  const moreDomains = explainedDomains.length - listedDomains.length;
   const sourceNote = explainedDomains.length
-    ? `Источники: ${explainedDomains.join(", ")} (результаты на снимке).`
+    ? `Источники: ${listedDomains.join(", ")}${moreDomains > 0 ? ` и ещё ${moreDomains}` : ""} — результаты на снимке.`
     : neutralVisibleDomains.length
       ? `Источники: ${neutralVisibleDomains.join(", ")} (видимые результаты снимка).`
       : "Источники: снимок поисковой выдачи.";
@@ -1064,6 +1128,49 @@ export function buildSerpScreenshotFragment(
 // SUGGESTIONS (RU p11/p12 per engine; UAE p28)
 // ---------------------------------------------------------------------------
 
+/**
+ * Sidebar material for red-framed rows on a slot's bound visual asset:
+ * one client-language explanation per highlighted row (theme + destination +
+ * level), plus the refs the visual actually draws. Shared by the image grids
+ * and the suggestion/related panels (ORION style: every red frame explained).
+ */
+function adverseVisualSidebar(
+  slotId: string,
+  extras: FragmentExtras,
+  scoped: ScopedFragmentInput,
+  rowNoun: string
+): {
+  visibleRows: VisibleAssetItem[];
+  adverseRows: VisibleAssetItem[];
+  gridRefs: string[];
+  explanations: NonNullable<SlideBody["highlightExplanations"]>;
+  explainedFindingIds: string[];
+} {
+  const visibleRows = (extras.visualAssets?.[slotId] ?? []).flatMap((a) => a.visibleItems ?? []);
+  const adverseRows = visibleRows.filter((v) => v.adverse);
+  const seen = new Set<string>();
+  const explanations: NonNullable<SlideBody["highlightExplanations"]> = [];
+  const explainedFindingIds: string[] = [];
+  for (const row of adverseRows) {
+    const f = findingForVisibleRow(row, scoped);
+    const theme = f?.theme ?? row.themeTitle ?? "Потенциально нежелательный материал";
+    const target = row.domain ? ` — ${rowNoun} ведёт на ${row.domain}` : "";
+    const dedupKey = `${f?.findingId ?? theme}|${row.domain ?? row.title ?? ""}`;
+    if (seen.has(dedupKey)) continue;
+    seen.add(dedupKey);
+    explanations.push({
+      clientReason: clampClientText(
+        `«${theme}»${target}${f ? `; уровень: ${riskLabel(f.riskLevel).toLowerCase()}` : "; требует ручной проверки"}.`,
+        300
+      ),
+      frameTone: "red" as const,
+    });
+    if (f && !explainedFindingIds.includes(f.findingId)) explainedFindingIds.push(f.findingId);
+  }
+  const gridRefs = visibleRows.map((v) => v.ref).filter((r) => Boolean(scoped.evidenceIndex[r]));
+  return { visibleRows, adverseRows, gridRefs, explanations, explainedFindingIds };
+}
+
 export function buildSuggestionsFragment(
   key: FragmentKey,
   sectionId: SectionType,
@@ -1091,6 +1198,7 @@ export function buildSuggestionsFragment(
       .slice(0, 10);
     // Sidebar strictly scoped to the queries displayed on THIS page.
     const view = buildPageEvidenceView(scoped, refs);
+    const sidebar = adverseVisualSidebar(slot.slotId, extras, scoped, "подсказка");
     slides.push(
       visualSlide({
         slot,
@@ -1100,10 +1208,25 @@ export function buildSuggestionsFragment(
         content: {
           bullets: bullets.length ? bullets : suggestionLines,
           ...pageFindingBlocks(scoped, view),
+          ...(sidebar.explanations.length
+            ? {
+                whatWasFound: clampClientText(
+                  `Подсказок на панели: ${sidebar.visibleRows.length}; выделено красным (негативные формулировки): ${sidebar.adverseRows.length}.`,
+                  400
+                ),
+                whyItMatters: clampClientText(
+                  "Негативные подсказки видны пользователю ещё до просмотра результатов: они формируют первое впечатление и подталкивают к поиску компрометирующих материалов.",
+                  320
+                ),
+                highlightExplanations: sidebar.explanations,
+              }
+            : {}),
         },
-        evidenceRefs: refs,
-        findingIds: view.findings.map((f) => f.findingId),
-        metrics: { items: refs.length },
+        evidenceRefs: [...new Set([...refs, ...sidebar.gridRefs])],
+        findingIds: [
+          ...new Set([...view.findings.map((f) => f.findingId), ...sidebar.explainedFindingIds]),
+        ],
+        metrics: { items: refs.length, adverseSuggestions: sidebar.adverseRows.length },
         noUnderlyingData: refs.length === 0,
         noDataReason: "no-suggestions",
       })
@@ -1142,6 +1265,13 @@ export function buildImagesFragment(
     // Sidebar strictly scoped to the image cards carried by THIS page's slice
     // of the evidence (the slide's own evidenceRefs).
     const view = buildPageEvidenceView(scoped, refChunks[i]);
+
+    // Red-framed image cards on THIS page's bound grid are explained in the
+    // sidebar (ORION style: highlighted image → which theme and why), exactly
+    // like the SERP snapshot page does for its red frames.
+    const sidebar = adverseVisualSidebar(slot.slotId, extras, scoped, "изображение");
+
+    const pageBlocks = pageFindingBlocks(scoped, view);
     return visualSlide({
       slot,
       sectionId,
@@ -1149,13 +1279,32 @@ export function buildImagesFragment(
       scoped,
       content: {
         bullets: claimChunks[i].map((c) => clampClientText(claimText(c), 400)),
-        ...pageFindingBlocks(scoped, view),
+        ...pageBlocks,
+        ...(sidebar.explanations.length
+          ? {
+              whatWasFound: clampClientText(
+                `Изображения на этой странице: ${Math.min(sidebar.visibleRows.length, 6)}; выделено красным (ведут на негативные источники): ${sidebar.adverseRows.length}.`,
+                400
+              ),
+              // Consistent with the red frames: the page DOES carry adverse
+              // visual signals, so the meaning block must not claim otherwise.
+              whyItMatters: clampClientText(
+                "Выделенные изображения связаны с негативными источниками и формируют нежелательный визуальный фон в блоке «Картинки»: пользователь видит их до перехода на сайты.",
+                320
+              ),
+              highlightExplanations: sidebar.explanations,
+            }
+          : {}),
       },
-      evidenceRefs: refChunks[i],
-      findingIds: view.findings.map((f) => f.findingId),
-      metrics: { items: refChunks[i].length },
+      // The bound grid draws its own rows; the slide must carry those refs
+      // too, otherwise the domain gate rejects the sidebar explanations.
+      evidenceRefs: [...new Set([...refChunks[i], ...sidebar.gridRefs])],
+      findingIds: [
+        ...new Set([...view.findings.map((f) => f.findingId), ...sidebar.explainedFindingIds]),
+      ],
+      metrics: { items: refChunks[i].length, adverseImages: sidebar.adverseRows.length },
       noUnderlyingData: refs.length === 0,
-      noDataReason: "no-images",
+      noDataReason: i === 0 ? "no-images" : "no-images-continued",
     });
   });
   return { slides, status: "READY" };
@@ -1191,6 +1340,15 @@ export function buildIdentityFragment(
       status: "READY",
     };
   }
+  const identityRefs = units.flatMap((u) => u.evidenceRefs);
+  // Encyclopedia rows actually captured (titles + domains) — shown to the
+  // client even when none of them is adverse, so the page reflects reality
+  // ("article exists, content neutral") instead of an empty claim list.
+  const referenceEntries = identityRefs
+    .map((r) => scoped.evidenceIndex[r])
+    .filter((e): e is NonNullable<typeof e> => Boolean(e?.title))
+    .slice(0, 6)
+    .map((e) => clampClientText(`${e.title}${e.domain ? ` — ${e.domain}` : ""}`, 400));
   const bullets = [
     ...subjectClaims.slice(0, 5).map((c) => clampClientText(c.text, 400)),
     // OTHER_SUBJECT is identity pollution, never a neutral subject signal.
@@ -1198,7 +1356,22 @@ export function buildIdentityFragment(
       .slice(0, 3)
       .map((c) => clampClientText(`Риск смешения с другим лицом (не относится к субъекту): ${c.text}`, 400)),
   ];
-  const identityRefs = units.flatMap((u) => u.evidenceRefs);
+  const shownBullets = bullets.length > 0 ? bullets : referenceEntries;
+  const wikiDomains = [
+    ...new Set(
+      identityRefs
+        .map((r) => scoped.evidenceIndex[r]?.domain)
+        .filter((d): d is string => Boolean(d))
+    ),
+  ].slice(0, 4);
+  const hasAdverseRow = identityRefs.some((r) =>
+    ADVERSE_PATTERNS.test(String(scoped.evidenceIndex[r]?.title ?? ""))
+  );
+  const presenceNarrative = `В выдаче зафиксированы энциклопедические материалы о проверяемом субъекте${wikiDomains.length ? ` (${wikiDomains.join(", ")})` : ""}. ${
+    hasAdverseRow
+      ? "Отдельные карточки содержат чувствительные формулировки — их содержание отражено в темах повышенного внимания."
+      : "Существенных негативных или спорных формулировок в этих карточках не выявлено."
+  } Материалов об одноимённых лицах в контуре ${regionLabel} не зафиксировано.`;
   // Sidebar strictly scoped to the identity materials displayed on this page.
   const view = buildPageEvidenceView(scoped, identityRefs);
   const base = makeSlotSlide({
@@ -1208,8 +1381,8 @@ export function buildIdentityFragment(
       narrative:
         foreignClaims.length > 0
           ? `Справочные ресурсы (${regionLabel}) содержат материалы об одноимённом лице; ниже они отделены от данных проверяемого субъекта.`
-          : `Справочные ресурсы (${regionLabel}) корректно идентифицируют проверяемого субъекта; материалов об одноимённых лицах в этом контуре не зафиксировано.`,
-      bullets,
+          : presenceNarrative,
+      bullets: shownBullets,
       ...pageFindingBlocks(scoped, view),
     },
     evidenceRefs: identityRefs,

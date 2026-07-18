@@ -15,6 +15,7 @@ import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle
 import type { Finding } from "../contracts/finding";
 import type { SurfaceAnalysis } from "../contracts/surface-analysis";
 import type { ScopedEvidenceIndex, MetricSnapshot } from "./scoped-input";
+import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
 
 type CompositeObservationRow = {
   surface: string;
@@ -85,7 +86,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
   const knownEvidenceRefs = new Set<string>();
   const perRegionCounts: Record<string, number> = {};
   for (const obs of observations.observations) {
-    const regionKey = obs.region === "RU" ? "RU" : "UAE";
+    const regionKey = mapRegionBucket(obs.region) === "UAE" ? "UAE" : "RU";
     perRegionCounts[regionKey] = (perRegionCounts[regionKey] ?? 0) + 1;
     for (const ref of obs.evidenceRefs) {
       knownEvidenceRefs.add(ref);

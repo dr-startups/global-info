@@ -80,7 +80,9 @@ function layout(grid: TemplateLayoutSpec["grid"], overrides: Partial<TemplateLay
   return { ...LAYOUT_DEFAULTS, grid, ...overrides };
 }
 
-export const RED_MARKER_LABEL = "Потенциально нежелательный" as const;
+// Short enough to fit the table's status column without clipping; keeps the
+// "нежелат" stem the renderer's row-tone detector matches on.
+export const RED_MARKER_LABEL = "Нежелательный" as const;
 
 const FINDING_BLOCKS = ["Что обнаружено", "Почему важно", "Что проверить", "Источник"];
 

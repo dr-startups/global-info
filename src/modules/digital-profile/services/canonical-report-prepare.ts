@@ -490,6 +490,7 @@ export async function runCanonicalReportPrepare(
     let gptLayer: GptDeckLayer | null = null;
     const gptCaller = resolveGptCaller(input);
     if (gptCaller) {
+      let caseAnalysisFailure: string | null = null;
       const caseAnalysis = await runGptCaseAnalysis({
         caller: gptCaller,
         subjectName: subjectDisplayName,
@@ -498,11 +499,27 @@ export async function runCanonicalReportPrepare(
         bundle: deckInputs.mergedBundle,
         surfaceUnits: deckInputs.surfaceUnits,
         metricSnapshot: deckInputs.metricSnapshot,
+        onFailure: (reason) => {
+          caseAnalysisFailure = reason;
+        },
       });
       if (caseAnalysis) {
         writeFileSync(
           join(analyticsDir, "gpt-case-analysis.json"),
           `${JSON.stringify(caseAnalysis, null, 2)}\n`,
+          "utf8"
+        );
+      } else {
+        // The fail-safe path used to be silent (caseAnalysisUsed:false with no
+        // trace); persist the reason so operators can see why GPT stage 1 fell
+        // back to the deterministic report.
+        writeFileSync(
+          join(analyticsDir, "gpt-case-analysis-diagnostics.json"),
+          `${JSON.stringify(
+            { status: "FAILED", reason: caseAnalysisFailure ?? "unknown", at: new Date().toISOString() },
+            null,
+            2
+          )}\n`,
           "utf8"
         );
       }

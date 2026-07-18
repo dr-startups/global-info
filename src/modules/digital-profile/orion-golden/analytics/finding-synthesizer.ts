@@ -124,6 +124,16 @@ function itemText(item: RawInventoryItem): string {
     .join(" ");
 }
 
+/** Russian plural form: 1 публикация, 2 публикации, 5 публикаций. */
+export function pluralRu(n: number, one: string, few: string, many: string): string {
+  const abs = Math.abs(n) % 100;
+  const last = abs % 10;
+  if (abs > 10 && abs < 20) return many;
+  if (last === 1) return one;
+  if (last >= 2 && last <= 4) return few;
+  return many;
+}
+
 /**
  * One evidence item may support multiple genuinely different claims: it is
  * matched against EVERY theme, not consumed by the first/highest-priority one.
@@ -292,6 +302,18 @@ export function synthesizeFindings(input: {
       .map((i) => String(i.title ?? "").trim())
       .filter(Boolean);
 
+    // Client-grade claim: no theme echo (the theme label is prepended by
+    // consumers), correct Russian plural forms, honest adverse share.
+    const total = pluralRu(items.length, "публикация", "публикации", "публикаций");
+    const adverseNote =
+      adverseItems.length > 0
+        ? `, из них с негативным содержанием — ${adverseItems.length}`
+        : ", негативного содержания не зафиксировано";
+    const claim =
+      `${items.length} ${total}${adverseNote}. ` +
+      `Источники: ${domains.slice(0, 4).join(", ") || "без URL"}.` +
+      (topTitles.length ? ` Примеры заголовков: ${topTitles.join(" · ").slice(0, 380)}` : "");
+
     return FindingSchema.parse({
       schemaVersion: FINDING_SCHEMA_VERSION,
       caseId: input.caseId,
@@ -303,7 +325,7 @@ export function synthesizeFindings(input: {
         .digest("hex")
         .slice(0, 8)}`,
       theme: theme.label,
-      claim: `${theme.label}: ${items.length} свидетельств (${adverseItems.length} негативных) в источниках ${domains.slice(0, 4).join(", ") || "без URL"}. Примеры: ${topTitles.join(" · ").slice(0, 400)}`,
+      claim,
       subjectMatch,
       riskLevel: risk,
       confidence,

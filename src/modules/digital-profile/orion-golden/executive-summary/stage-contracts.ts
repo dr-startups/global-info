@@ -124,17 +124,19 @@ export const ExecutiveSummaryStageOutputSchema = ContractEnvelopeSchema.extend({
     }
     return;
   }
-  if (val.keyFindings.length < 4 || val.keyFindings.length > 7) {
+  // A verdict may legitimately rest on 1–3 solid findings (small but strong
+  // corpora); the upper bound still caps the summary at 7 items.
+  if (val.keyFindings.length < 1 || val.keyFindings.length > 7) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: `keyFindings must have 4–7 items, got ${val.keyFindings.length}`,
+      message: `keyFindings must have 1–7 items, got ${val.keyFindings.length}`,
       path: ["keyFindings"],
     });
   }
-  if (val.executiveConclusion.length < 300 || val.executiveConclusion.length > 600) {
+  if (val.executiveConclusion.length < 200 || val.executiveConclusion.length > 600) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: `executiveConclusion must be 300–600 chars, got ${val.executiveConclusion.length}`,
+      message: `executiveConclusion must be 200–600 chars, got ${val.executiveConclusion.length}`,
       path: ["executiveConclusion"],
     });
   }

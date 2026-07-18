@@ -6,9 +6,9 @@
  *  1. Profiles that list the subject's own name/transliteration among negative
  *     signals are sanitized — genuine subject mentions classify SUBJECT_MATCH.
  *  2. Rebuild eligibility: COMPLETED jobs only, lineage-safe, fail-closed.
- *  3. Rebuild transition: same jobId, ORION_PREPARE full prepare, refreshed
- *     job-scoped subject profile from case root, zero base/Arsenkin calls,
- *     one prepare/render, back to REPORT_READY.
+ *  3. Rebuild transition: same jobId, COMPOSITE_MERGE (composite regenerated,
+ *     then full prepare), refreshed job-scoped subject profile from case root,
+ *     zero base/Arsenkin calls, one prepare/render, back to REPORT_READY.
  */
 
 import assert from "node:assert/strict";
@@ -411,7 +411,9 @@ describe("unified report rebuild («Пересобрать отчёт»)", () =>
     });
     assert.equal(accepted.jobId, jobId);
     assert.equal(accepted.unifiedJobId, jobId);
-    assert.equal(accepted.stage, "ORION_PREPARE");
+    // Rebuild restarts from COMPOSITE_MERGE so the composite dataset itself is
+    // regenerated (surface hints, region normalization) — not just re-rendered.
+    assert.equal(accepted.stage, "COMPOSITE_MERGE");
     assert.equal(accepted.status, "WAITING");
     assert.equal(accepted.subjectProfileRefreshed, true);
 
@@ -439,6 +441,23 @@ describe("unified report rebuild («Пересобрать отчёт»)", () =>
 
     const job = await drain(caseId, {
       autoSchedule: false,
+      // Offline stand-in for the base rows Prisma would return: the rebuild's
+      // COMPOSITE_MERGE step re-merges the composite without any live calls.
+      fixtureBaseRows: [
+        {
+          key: "k1",
+          kind: "organic",
+          region: "RU",
+          engine: "YANDEX",
+          query: "Дерипаска Олег Владимирович",
+          providers: ["yandex"],
+          primaryProvider: "yandex",
+          evidenceRefs: ["searchResult:sr1"],
+          baseSearchResultId: "sr1",
+          url: "https://example.com/a",
+          title: "Дерипаска Олег Владимирович — статья",
+        },
+      ],
       runFullAudit: async () => {
         baseCalls += 1;
         throw new Error("base must not run");

@@ -139,8 +139,10 @@ async function scheduleRebuildTick(
 }
 
 /**
- * Atomically transition the same jobId back to ORION_PREPARE (full prepare, not
- * render-only resume): the tick re-reads the persisted composite dataset, runs
+ * Atomically transition the same jobId back to COMPOSITE_MERGE (full rebuild,
+ * not render-only resume): the tick re-merges the composite from the persisted
+ * base manifest + already-ingested Arsenkin observations (refreshing surface
+ * hints, region normalization and the case-corpus image supplement), then runs
  * analytics/assembly and exactly one render. Zero base/Arsenkin provider calls.
  */
 export async function rebuildUnifiedReport(input: {
@@ -224,10 +226,10 @@ export async function rebuildUnifiedReport(input: {
 
     const patched =
       patchUnifiedCollectionJob(job.caseId, {
-        stage: "ORION_PREPARE",
+        stage: "COMPOSITE_MERGE",
         status: "WAITING",
-        progress: 0.9,
-        // Full prepare, not render-only resume: analytics + assembly re-run.
+        progress: 0.55,
+        // Full rebuild: composite re-merge + analytics + assembly re-run.
         resumeCheckpoint: null,
         lastError: null,
         lastErrorCode: null,

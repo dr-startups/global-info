@@ -18,6 +18,7 @@ import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle
 import type { SurfaceAnalysisUnit } from "../contracts/surface-analysis";
 import type { MetricSnapshot } from "../deck-sections/scoped-input";
 import { scanOrionGoldenClientTextForForbiddenTokens } from "../client/client-text-sanitizer";
+import { engineRu, metricKeyRu, riskLevelRu, subjectMatchRu, surfaceRu } from "./client-payload-labels";
 
 export const GPT_CASE_ANALYSIS_VERSION = "gpt-case-analysis-v1" as const;
 
@@ -99,12 +100,13 @@ function buildCorpusPayload(input: {
       adverseFindings: input.metricSnapshot.adverseFindingCount,
       perRegion: input.metricSnapshot.perRegionCounts,
     },
+    // Client-language labels only: the model echoes payload tokens, so raw
+    // enums/ids here would leak into generated text and be rejected later.
     findings: input.bundle.findings.map((f) => ({
-      findingId: f.findingId,
       theme: f.theme,
       claim: f.claim,
-      subjectMatch: f.subjectMatch,
-      riskLevel: f.riskLevel,
+      subjectMatch: subjectMatchRu(f.subjectMatch),
+      riskLevel: riskLevelRu(f.riskLevel),
       confidence: f.confidence,
       regions: f.regions,
       sourceDomains: f.sourceDomains.slice(0, 8),
@@ -112,14 +114,14 @@ function buildCorpusPayload(input: {
       limitations: f.limitations.slice(0, 3),
     })),
     surfaces: input.surfaceUnits.map((u) => ({
-      surface: u.surface,
+      surface: surfaceRu(u.surface),
       region: u.region,
-      engine: u.engine,
-      metrics: u.metrics.map((m) => ({ key: m.key, value: m.value })),
+      engine: engineRu(u.engine),
+      metrics: u.metrics.map((m) => ({ key: metricKeyRu(m.key), value: m.value })),
       claims: u.claims.slice(0, 12).map((c) => ({
         text: c.text,
-        subjectMatch: c.subjectMatch,
-        riskHint: c.riskHint,
+        subjectMatch: subjectMatchRu(c.subjectMatch),
+        riskHint: c.riskHint ? riskLevelRu(c.riskHint) : undefined,
       })),
     })),
   };
@@ -138,7 +140,13 @@ export async function runGptCaseAnalysis(input: {
   bundle: VerifiedFindingBundle;
   surfaceUnits: SurfaceAnalysisUnit[];
   metricSnapshot: MetricSnapshot;
+  /** Called with a short reason whenever the analysis is discarded (fail-safe path). */
+  onFailure?: (reason: string) => void;
 }): Promise<GptCaseAnalysis | null> {
+  const fail = (reason: string): null => {
+    input.onFailure?.(reason);
+    return null;
+  };
   try {
     const raw = await input.caller({
       systemPrompt: CASE_ANALYSIS_SYSTEM_PROMPT,
@@ -152,17 +160,19 @@ export async function runGptCaseAnalysis(input: {
       }),
     });
     const parsed = GptCaseAnalysisSchema.safeParse(raw);
-    if (!parsed.success) return null;
+    if (!parsed.success) {
+      return fail(`schema: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`);
+    }
 
     // Sanitize: the conclusion must be client-safe; unsafe list entries are
     // dropped individually (fail-closed per entry, not per analysis).
     const a = parsed.data;
-    if (!clientSafe(a.executiveConclusion)) return null;
+    if (!clientSafe(a.executiveConclusion)) return fail("unsafe executiveConclusion");
     const keyRisks = a.keyRisks.filter(
       (r) => clientSafe(r.theme) && clientSafe(r.explanation) && clientSafe(r.advice)
     );
     const recommendations = a.recommendations.filter(clientSafe);
-    if (recommendations.length === 0) return null;
+    if (recommendations.length === 0) return fail("no client-safe recommendations");
 
     return {
       version: GPT_CASE_ANALYSIS_VERSION,
@@ -174,7 +184,7 @@ export async function runGptCaseAnalysis(input: {
       positiveSignals: a.positiveSignals.filter(clientSafe),
       recommendations,
     };
-  } catch {
-    return null;
+  } catch (err) {
+    return fail(`transport: ${err instanceof Error ? err.message : String(err)}`);
   }
 }

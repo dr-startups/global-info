@@ -191,7 +191,7 @@ export function buildSurfacePanelSvg(input: {
   title: string;
   subtitle?: string;
   engineLabel?: string;
-  items: Array<{ label: string; meta?: string }>;
+  items: Array<{ label: string; meta?: string; adverse?: boolean }>;
 }): string {
   const width = 1200;
   const height = 720;
@@ -216,6 +216,19 @@ export function buildSurfacePanelSvg(input: {
   const startY = input.subtitle || input.engineLabel ? 168 : 120;
   items.forEach((item, idx) => {
     const y = startY + idx * 48;
+    // ORION style: negative phrases (criminal/court/compromising wording) are
+    // framed red with a tag so the client immediately sees which suggestions
+    // are undesirable.
+    if (item.adverse) {
+      parts.push(
+        `<rect x="56" y="${y}" width="1088" height="40" rx="6" fill="#FDF2F2" stroke="#C0392B" stroke-width="2"/>`,
+        `<rect x="60" y="${y + 4}" width="6" height="32" rx="3" fill="#C0392B"/>`,
+        `<text x="80" y="${y + 26}" font-family="${FONT_STACK}" font-size="15" fill="#7B241C">${esc(truncateToWidth(item.label, 760, 15))}</text>`,
+        `<rect x="980" y="${y + 8}" width="150" height="24" rx="6" fill="#C0392B"/>`,
+        `<text x="1055" y="${y + 25}" font-family="${FONT_STACK}" font-size="12" fill="#FFFFFF" text-anchor="middle">нежелательный</text>`
+      );
+      return;
+    }
     parts.push(
       `<rect x="56" y="${y}" width="1088" height="40" rx="6" fill="#F7F9FC" stroke="${COLORS.panelBorder}"/>`,
       `<text x="72" y="${y + 26}" font-family="${FONT_STACK}" font-size="15" fill="${COLORS.text}">${esc(truncateToWidth(item.label, 820, 15))}</text>`

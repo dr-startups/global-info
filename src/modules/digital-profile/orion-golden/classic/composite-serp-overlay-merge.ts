@@ -79,6 +79,8 @@ function valueHash(url: string, title: string | null | undefined): string {
 
 export function mapRegionBucket(raw: string): string {
   const r = String(raw ?? "").toUpperCase();
+  // Yandex numeric region codes (213 = Moscow, 2 = SPb, …) are RU-locale.
+  if (/^\d+$/.test(r)) return "RU";
   if (/UAE|AE|INTL|EN|GLOBAL_INTL/.test(r)) return "UAE";
   if (/RU|RUSSIA|RF/.test(r)) return "RU";
   return r || "RU";

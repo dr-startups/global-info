@@ -150,7 +150,13 @@ export const SURFACE_ANALYZERS: AnalyzerDef[] = [
   {
     surface: "wikipedia",
     withEngine: false,
-    select: (i) => i.evidenceType === "wikipedia" || surfaceOf(i) === "wikipedia",
+    // Encyclopedia articles usually arrive as ORGANIC rows — detect them by
+    // domain too, otherwise the identity page falsely reports "no Wikipedia
+    // article" while wikipedia.org rows sit in the SERP table of the report.
+    select: (i) =>
+      i.evidenceType === "wikipedia" ||
+      surfaceOf(i) === "wikipedia" ||
+      /(?:^|[./])(?:wikipedia\.org|ruwiki\.ru|cyclowiki\.org)\//iu.test(String(i.sourceUrl ?? "")),
   },
   {
     surface: "ai_answers",

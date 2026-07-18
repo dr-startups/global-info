@@ -28,8 +28,9 @@ import { normalizeEvidenceRef, type ScopedEvidenceIndex, type SubjectProfileInpu
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import type { GptCaseAnalysis, GptJsonCaller } from "../gpt/gpt-case-analysis";
 import { scanOrionGoldenClientTextForForbiddenTokens } from "../client/client-text-sanitizer";
+import { riskLevelRu, subjectMatchRu } from "../gpt/client-payload-labels";
 
-export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v1";
+export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v2";
 
 /** Mirrors section-validation budgets — a GPT field must fit the same box. */
 const TEXT_BUDGETS = {
@@ -63,7 +64,7 @@ const COPY_INSTRUCTIONS = [
   "Для каждого негативного или неоднозначного сигнала объясняй, ПОЧЕМУ он рискован (влияние на репутацию, сделки, банковские и партнёрские проверки), и давай конкретный совет, что с этой информацией делать.",
   "Опирайся только на переданные findings, claims и черновой текст; не добавляй новых фактов, имён, компаний и доменов.",
   "Используй переданный общий анализ кейса (caseAnalysis), чтобы все слайды говорили согласованными выводами.",
-  "Не используй внутренние технические термины (audit, reportRunId, pipeline, dataset, provider) и идентификаторы; не вставляй URL.",
+  "Не используй внутренние технические термины (audit, reportRunId, pipeline, dataset, provider) и идентификаторы; не вставляй URL. Пиши только по-русски: не копируй в текст английские служебные слова и коды из данных.",
   "Соблюдай лимиты длины: narrative до 850 символов, каждый bullet до 380, whatWasFound до 380, whyItMatters до 300, whatToCheck до 200.",
   'Верни ТОЛЬКО JSON: {"slides": [{"slideId": string, "narrative"?: string, "bullets"?: [string], "whatWasFound"?: string, "whyItMatters"?: string, "whatToCheck"?: string}]}. Поле можно опустить, если черновик лучше не менять.',
 ].join(" ");
@@ -150,12 +151,14 @@ function buildFragmentPayload(input: {
     .map((id) => findingById.get(id))
     .filter((f): f is NonNullable<typeof f> => Boolean(f))
     .slice(0, 24)
+    // Client-language labels only: the model echoes payload tokens, and raw
+    // enums (riskLevel "high", SUBJECT_MATCH, finding ids) would leak into the
+    // generated text and be rejected by the token scanner afterwards.
     .map((f) => ({
-      findingId: f.findingId,
       theme: f.theme,
       claim: f.claim,
-      riskLevel: f.riskLevel,
-      subjectMatch: f.subjectMatch,
+      riskLevel: riskLevelRu(f.riskLevel),
+      subjectMatch: subjectMatchRu(f.subjectMatch),
       recommendedAction: f.recommendedAction,
       sourceDomains: f.sourceDomains.slice(0, 6),
     }));

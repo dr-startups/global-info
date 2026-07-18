@@ -51,6 +51,12 @@ export type CompositeMergeResult = {
     baseSearchResultIds: string[];
     baseSearchSurfaceItemIds: string[];
     enrichmentRunIds: string[];
+    /**
+     * Case-owned real surface rows (images / knowledge blocks) collected by
+     * earlier paid runs of the SAME case and referenced by the composite in
+     * addition to the job's own manifest delta. Traceable by ID; never mock.
+     */
+    caseCorpusSurfaceItemIds?: string[];
   };
 };
 
@@ -59,6 +65,22 @@ function norm(s: string | null | undefined): string {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ");
+}
+
+/**
+ * Normalize raw provider region tokens to client region buckets.
+ * Yandex numeric region codes (213 = Moscow, 2 = SPb, …) and RU-locale hints
+ * collapse to "RU"; UAE/international hints to "UAE". Raw codes leaking into
+ * findings previously showed the client "Регионы: 213, RU".
+ */
+export function normalizeCompositeRegion(raw: string | null | undefined): string | undefined {
+  const r = String(raw ?? "").trim();
+  if (!r) return undefined;
+  const up = r.toUpperCase();
+  if (/^\d+$/.test(up)) return "RU";
+  if (/UAE|^AE$|INTL|INTERNATIONAL|GLOBAL|DUBAI/.test(up)) return "UAE";
+  if (/^RU|RUSSIA|МОСКВА|MOSCOW|MSK|SPB/.test(up)) return "RU";
+  return up;
 }
 
 function organicKey(region: string, engine: string, query: string, url: string): string {
@@ -137,6 +159,7 @@ export async function mergeCompositeSerp(input: {
   const map = new Map<string, CompositeObservation>();
   let yandex = 0;
   let serper = 0;
+  const caseCorpusIds: string[] = [];
 
   const add = (row: CompositeObservation, provider: string) => {
     const existing = map.get(row.key);
@@ -218,7 +241,28 @@ export async function mergeCompositeSerp(input: {
     const surfaces = await input.prisma.searchSurfaceItem.findMany({
       where: { id: { in: input.manifest.searchSurfaceItemIds } },
     });
-    for (const s of surfaces) {
+    // Case-corpus supplement: the manifest carries only rows CREATED during
+    // this job's base collection (delta), so previously collected real image /
+    // knowledge rows of the same case silently vanish from the client report
+    // (dedupe by URL prevents re-creation). Reference them here explicitly —
+    // real providers only, mock/demo rows are excluded fail-closed.
+    const manifestSurfaceIds = new Set(input.manifest.searchSurfaceItemIds);
+    const corpusCandidates = await input.prisma.searchSurfaceItem.findMany({
+      where: {
+        caseId: input.manifest.caseId,
+        type: { in: ["IMAGE_RESULT", "KNOWLEDGE_BLOCK"] },
+      },
+      take: 400,
+    });
+    const isMockRow = (row: { provider?: string | null; title?: string | null; url?: string | null }) =>
+      /mock|demo|fixture/i.test(String(row.provider ?? "")) ||
+      /^\[demo\]/i.test(String(row.title ?? "")) ||
+      /example\.|images\.example|\.invalid\b/i.test(String(row.url ?? ""));
+    const corpusRows = corpusCandidates.filter(
+      (row) => !manifestSurfaceIds.has(row.id) && !isMockRow(row)
+    );
+    caseCorpusIds.push(...corpusRows.map((row) => row.id));
+    for (const s of [...surfaces, ...corpusRows]) {
       const st = String(s.type ?? "");
       const attr = resolveSerpProviderAttribution({
         surfaceProvider: s.provider,
@@ -228,14 +272,18 @@ export async function mergeCompositeSerp(input: {
       const provider = attr.provider;
       if (provider === "yandex") yandex += 1;
       else if (provider === "serper") serper += 1;
+      const region = normalizeCompositeRegion(s.region);
       let key: string;
       let kind: CompositeObservation["kind"] = "other";
       if (st.includes("SUGGEST")) {
         kind = "suggestion";
-        key = suggestKey(String(s.region ?? ""), engine, String(s.query ?? ""), String(s.title ?? s.snippet ?? ""));
+        key = suggestKey(region ?? "", engine, String(s.query ?? ""), String(s.title ?? s.snippet ?? ""));
       } else if (st.includes("RELATED") || /paa|people.?also/i.test(st)) {
         kind = "paa";
-        key = paaKey(String(s.region ?? ""), engine, String(s.query ?? ""), String(s.title ?? ""));
+        key = paaKey(region ?? "", engine, String(s.query ?? ""), String(s.title ?? ""));
+      } else if (st.includes("IMAGE")) {
+        // Same image URL captured by different runs/queries is ONE client row.
+        key = `images|${norm(region)}|${norm(s.url ?? "")}|${norm(s.title ?? "")}`;
       } else {
         key = `surface|${s.id}`;
       }
@@ -244,7 +292,7 @@ export async function mergeCompositeSerp(input: {
           key,
           kind,
           surface: surfaceOfBaseSurfaceType(st),
-          region: s.region ?? undefined,
+          region,
           engine,
           query: s.query ?? undefined,
           title: s.title ?? undefined,
@@ -272,13 +320,14 @@ export async function mergeCompositeSerp(input: {
       kindRaw === "suggestion" || kindRaw === "paa" || kindRaw === "organic" || kindRaw === "other"
         ? kindRaw
         : "other";
+    const region = normalizeCompositeRegion(obs.region);
     let key: string;
     if (kind === "suggestion") {
-      key = suggestKey(obs.region ?? "", obs.engine ?? "", obs.query ?? "", obs.suggestion ?? "");
+      key = suggestKey(region ?? "", obs.engine ?? "", obs.query ?? "", obs.suggestion ?? "");
     } else if (kind === "paa") {
-      key = paaKey(obs.region ?? "", obs.engine ?? "", obs.query ?? "", obs.question ?? "");
+      key = paaKey(region ?? "", obs.engine ?? "", obs.query ?? "", obs.question ?? "");
     } else {
-      key = organicKey(obs.region ?? "", obs.engine ?? "", obs.query ?? "", obs.url ?? "");
+      key = organicKey(region ?? "", obs.engine ?? "", obs.query ?? "", obs.url ?? "");
     }
     const surface =
       obs.surface ??
@@ -289,7 +338,7 @@ export async function mergeCompositeSerp(input: {
         key,
         kind,
         surface,
-        region: obs.region,
+        region,
         engine: obs.engine,
         query: obs.query,
         url: obs.url,
@@ -347,6 +396,7 @@ export async function mergeCompositeSerp(input: {
       baseSearchResultIds: [...input.manifest.searchResultIds],
       baseSearchSurfaceItemIds: [...input.manifest.searchSurfaceItemIds],
       enrichmentRunIds: input.enrichmentRunIds ?? [],
+      ...(caseCorpusIds.length > 0 ? { caseCorpusSurfaceItemIds: caseCorpusIds } : {}),
     },
   };
 }

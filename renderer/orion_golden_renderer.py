@@ -1380,8 +1380,10 @@ def _add_search_table(
     for i, h in enumerate(heights):
         tbl.rows[i].height = Emu(h)
 
-    def paint(cell: Any, text: str, *, bold: bool = False, color: Any = BODY_COLOR, bg: Any = WHITE, size: float = 10.0) -> None:
-        cell.text = _clip_words(text, 200)
+    def paint(cell: Any, text: str, *, bold: bool = False, color: Any = BODY_COLOR, bg: Any = WHITE, size: float = 10.0, clip: bool = True) -> None:
+        # Status badges ("● Нежелательный") are complete labels, not clipped
+        # prose — the dangling-tail trimmer would strip the word after the dot.
+        cell.text = _clip_words(text, 200) if clip else _safe(text)
         cell.vertical_anchor = MSO_ANCHOR.MIDDLE
         for p in cell.text_frame.paragraphs:
             p.font.name = FONT
@@ -1411,7 +1413,7 @@ def _add_search_table(
                 val = str(row[c]) if c < len(row) else ""
                 if c == cols - 1:
                     dot, tone = _status_tone(val)
-                    paint(tbl.cell(r_idx, c), f"{dot} {val}", color=tone, bg=row_bg, size=9.5)
+                    paint(tbl.cell(r_idx, c), f"{dot} {val}", color=tone, bg=row_bg, size=9.5, clip=False)
                 else:
                     paint(tbl.cell(r_idx, c), val, bg=row_bg, size=10.0)
 
