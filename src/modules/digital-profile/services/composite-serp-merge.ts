@@ -13,6 +13,14 @@ import {
 export type CompositeObservation = {
   key: string;
   kind: "organic" | "suggestion" | "paa" | "other";
+  /**
+   * Fine-grained surface hint preserved from the source row (organic /
+   * autocomplete / related / images / video / knowledge_block / wikipedia /
+   * ai_answer / indexation / serp_screenshot). Keeps non-organic base surfaces
+   * and Arsenkin AI/url-audit rows routable to their deck sections instead of
+   * collapsing into "organic".
+   */
+  surface?: string;
   region?: string;
   engine?: string;
   query?: string;
@@ -65,6 +73,31 @@ function paaKey(region: string, engine: string, query: string, question: string)
   return `paa|${norm(region)}|${norm(engine)}|${norm(query)}|${norm(question)}`;
 }
 
+/** SearchSurfaceItem.type → fine-grained surface hint. */
+function surfaceOfBaseSurfaceType(type: string): string {
+  const t = type.toUpperCase();
+  if (t.includes("SUGGEST")) return "autocomplete";
+  if (t.includes("RELATED") || /PAA|PEOPLE.?ALSO/i.test(t)) return "related";
+  if (t.includes("IMAGE")) return "images";
+  if (t.includes("VIDEO")) return "video";
+  if (t.includes("KNOWLEDGE")) return "knowledge_block";
+  if (t.includes("SCREENSHOT")) return "serp_screenshot";
+  if (t.includes("ORGANIC")) return "organic";
+  return "other";
+}
+
+/** Arsenkin tool name → surface hint for kind:"other" rows (AI answers / URL audit). */
+function surfaceOfArsenkinTool(tool: string | null | undefined): string | null {
+  const t = String(tool ?? "").trim().toLowerCase();
+  if (!t) return null;
+  if (/ai[-_]?(serp|search)/.test(t)) return "ai_answer";
+  if (/check-?h|indexation|url[-_]?audit/.test(t)) return "indexation";
+  if (/check-?top|search[-_]?top/.test(t)) return "organic";
+  if (/suggest/.test(t)) return "autocomplete";
+  if (/paa/.test(t)) return "related";
+  return null;
+}
+
 function preferRisk(a: string | null | undefined, b: string | null | undefined): string | null {
   const rank = (x: string | null | undefined) => {
     const v = norm(x);
@@ -91,6 +124,9 @@ export async function mergeCompositeSerp(input: {
     suggestion?: string;
     question?: string;
     kind?: "organic" | "suggestion" | "paa" | "other" | "URL_FETCH_STATUS";
+    /** Producing Arsenkin tool (ai-serp / check-h / …) — used as surface hint. */
+    tool?: string | null;
+    surface?: string;
     providerTaskId?: string | null;
     riskLabel?: string | null;
     clientEvidence?: boolean;
@@ -162,6 +198,7 @@ export async function mergeCompositeSerp(input: {
         {
           key,
           kind: "organic",
+          surface: "organic",
           region: "RU",
           engine,
           query: r.query?.queryText ?? "",
@@ -206,6 +243,7 @@ export async function mergeCompositeSerp(input: {
         {
           key,
           kind,
+          surface: surfaceOfBaseSurfaceType(st),
           region: s.region ?? undefined,
           engine,
           query: s.query ?? undefined,
@@ -242,10 +280,15 @@ export async function mergeCompositeSerp(input: {
     } else {
       key = organicKey(obs.region ?? "", obs.engine ?? "", obs.query ?? "", obs.url ?? "");
     }
+    const surface =
+      obs.surface ??
+      surfaceOfArsenkinTool(obs.tool) ??
+      (kind === "suggestion" ? "autocomplete" : kind === "paa" ? "related" : kind === "organic" ? "organic" : undefined);
     add(
       {
         key,
         kind,
+        surface,
         region: obs.region,
         engine: obs.engine,
         query: obs.query,

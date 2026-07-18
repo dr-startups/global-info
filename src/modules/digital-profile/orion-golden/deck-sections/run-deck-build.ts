@@ -182,6 +182,10 @@ export function toRendererPayload(input: {
   assets?: RendererAssetEntry[];
 }): Record<string, unknown> {
   const assetByRef = new Map((input.assets ?? []).map((a) => [a.assetRef, a]));
+  // Traceability markers ([finding-…]) stay in SectionPacks for validation,
+  // but are internal IDs and never reach the client-facing renderer payload.
+  const stripFindingMarkers = (text: string): string =>
+    text.replace(/\s*\[finding-[^\]]+\]/gu, "").trim();
   // Renderer layouts that expect visual assets draw sidebar boxes; when a
   // slide carries no bound asset (explicit VISUAL_ASSET_UNAVAILABLE fallback)
   // we downgrade to the plain text layout — the renderer itself is untouched.
@@ -199,7 +203,12 @@ export function toRendererPayload(input: {
     Нет: "neutral",
   };
   const usedAssetRefs = new Set<string>();
-  const finalSlides = input.rendererSlides.map((s) => {
+  const finalSlides = input.rendererSlides.map((raw) => {
+    const s: RendererSlide = {
+      ...raw,
+      narrative: raw.narrative ? stripFindingMarkers(raw.narrative) : raw.narrative,
+      bullets: raw.bullets?.map(stripFindingMarkers),
+    };
     const boundAssets = s.visualAssetRefs.filter((r) => assetByRef.has(r));
     for (const r of boundAssets) usedAssetRefs.add(r);
     const hasVisual = boundAssets.length > 0;
@@ -235,6 +244,27 @@ export function toRendererPayload(input: {
     }
     const isDashboard = keyFindings !== undefined;
     const isMetricsDashboard = metrics !== undefined;
+
+    // The compact no-data layout draws only `narrative`; fold the honest
+    // coverage explanation (why the surface matters + recommendation) into it
+    // so empty states keep their full ORION-style client copy.
+    if (s.template === "orion_golden_no_data_compact" && mergedBullets?.length) {
+      return {
+        slideKey: s.slideKey,
+        sectionKey: s.sectionKey,
+        template: s.template,
+        title: s.title,
+        pageNumber: s.pageNumber,
+        totalPageCount: s.totalPageCount,
+        baseSlotId: s.baseSlotId,
+        isContinuation: s.isContinuation,
+        continuationOf: s.continuationOf,
+        continuationIndex: s.continuationIndex,
+        narrative: mergedBullets.join("\n"),
+        evidenceRefs: s.evidenceRefs,
+        assetRefs: boundAssets,
+      };
+    }
 
     // Analytical sidebar next to a bound visual: the renderer's unified
     // sidebar panel consumes `visualAnalysis` (headline conclusion, adverse

@@ -75,6 +75,7 @@
     "smoke:orion-deck-sections": "tsx --test scripts/smoke-orion-deck-sections.ts",
     "smoke:orion-subject-universality": "tsx --test scripts/smoke-orion-subject-universality.ts",
     "smoke:canonical-report-prepare": "tsx --test scripts/smoke-canonical-report-prepare.ts",
+    "smoke:canonical-visual-assets": "tsx --test scripts/smoke-canonical-visual-assets.ts",
     "smoke:canonical-orchestration-e2e": "tsx --test scripts/smoke-canonical-orchestration-e2e.ts",
     "smoke:orion-import-graph-isolation": "tsx --test scripts/smoke-orion-import-graph-isolation.ts",
     "smoke:canonical-route-ui-e2e": "tsx --test scripts/smoke-canonical-route-ui-e2e.ts",

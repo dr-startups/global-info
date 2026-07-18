@@ -238,7 +238,8 @@ describe("B-1 — canonical prepare converts composite observations to inventory
     assert.ok(items.every((i) => i.caseId === "c1"));
     assert.ok(items.some((i) => i.rawMetadata?.surface === "organic"));
     assert.ok(items.some((i) => i.rawMetadata?.surface === "autocomplete"));
-    assert.ok(items.some((i) => i.rawMetadata?.surface === "related"));
+    // paa rows normalize to the canonical "paa" surface bucket (was "related").
+    assert.ok(items.some((i) => i.rawMetadata?.surface === "paa"));
     assert.ok(items.some((i) => i.region === "UAE"));
   });
 });

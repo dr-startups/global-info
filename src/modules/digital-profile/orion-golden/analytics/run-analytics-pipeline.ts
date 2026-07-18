@@ -172,11 +172,23 @@ function buildExecutiveSummaryInput(input: {
     }
   }
 
+  // Client-facing surface labels — internal SurfaceKind keys never leak into
+  // the executive conclusion ("Не закрыты направления: …").
+  const SURFACE_CLIENT_LABELS: Record<string, string> = {
+    organic: "органическая выдача",
+    suggestions: "поисковые подсказки",
+    paa_related: "связанные запросы",
+    images: "изображения в поиске",
+    wikipedia: "Википедия",
+    ai_answers: "ответы ИИ-поиска",
+    url_audit: "проверка URL и индексации",
+    compliance: "комплаенс-базы",
+  };
   const dataGaps: Array<{ area: string; detail: string }> = [];
   const notCollected = coverage.filter((c) => c.sampleStatus === "NOT_COLLECTED");
   for (const c of notCollected) {
     dataGaps.push({
-      area: `${c.surface} (${c.region})`,
+      area: `${SURFACE_CLIENT_LABELS[c.surface] ?? c.surface} (${c.region})`,
       detail: "поверхность не собрана в текущем прогоне",
     });
   }

@@ -1702,7 +1702,13 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     if template == "orion_golden_no_data_compact":
         ctx.light_bg()
         y = ctx.title(title, 320000, NAVY)
-        ctx.body(narrative or "Для данного раздела недостаточно подтверждённых данных.", y)
+        # Coverage empty states carry a full client explanation (what the
+        # surface is, why it matters, recommendation) — allow multi-paragraph.
+        ctx.body(
+            narrative or "Для данного раздела недостаточно подтверждённых данных.",
+            y,
+            2600000,
+        )
         return
 
     if template == "orion_golden_audit_dashboard":

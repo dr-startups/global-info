@@ -34,6 +34,10 @@ import {
 } from "./render-deck-artifacts";
 import type { CompositeMergeResult, CompositeObservation } from "./composite-serp-merge";
 import type { ReportDataBinding } from "./unified-collection-types";
+import { mapSurfaceBucket } from "../orion-golden/classic/composite-serp-overlay-merge";
+import type { RendererAssetEntry } from "../orion-golden/deck-sections/run-deck-build";
+import type { VisualAssetsBySlot } from "../orion-golden/deck-sections/canonical-slots";
+import { buildCanonicalVisualAssets } from "./canonical-visual-assets";
 
 export type CanonicalPrepareBlockerCode =
   | "CANONICAL_PREPARE_DISABLED"
@@ -97,17 +101,6 @@ export function isCanonicalPrepareEnabled(): boolean {
   return String(process.env.ORION_CANONICAL_PREPARE ?? "1") !== "0";
 }
 
-function mapKindToEvidenceType(kind: CompositeObservation["kind"]): string {
-  switch (kind) {
-    case "suggestion":
-      return "suggestion";
-    case "paa":
-      return "related_query";
-    default:
-      return "search_result";
-  }
-}
-
 function mapKindToSurface(kind: CompositeObservation["kind"]): string {
   switch (kind) {
     case "suggestion":
@@ -116,6 +109,41 @@ function mapKindToSurface(kind: CompositeObservation["kind"]): string {
       return "related";
     default:
       return "organic";
+  }
+}
+
+/**
+ * Resolve the analytics surface bucket for a composite observation. Prefers
+ * the fine-grained `surface` hint preserved by the merge (images / video /
+ * knowledge_block / ai_answer / indexation / …) and falls back to the coarse
+ * kind mapping. Without the hint, non-organic base surfaces and Arsenkin
+ * AI/url-audit rows collapsed into "organic" and starved their deck slots.
+ */
+export function observationSurfaceBucket(obs: CompositeObservation): string {
+  return mapSurfaceBucket(obs.surface ?? mapKindToSurface(obs.kind));
+}
+
+function mapSurfaceToEvidenceType(surface: string): string {
+  switch (surface) {
+    case "autocomplete":
+      return "suggestion";
+    case "paa":
+      return "related_query";
+    case "images":
+      return "image_result";
+    case "video":
+      return "video_result";
+    case "wikipedia":
+      return "wikipedia";
+    case "ai_answer":
+      return "ai_answer";
+    case "knowledge_block":
+      return "knowledge_block";
+    case "indexation":
+    case "page_meta":
+      return "indexation";
+    default:
+      return "search_result";
   }
 }
 
@@ -136,6 +164,7 @@ export function compositeObservationsToInventory(input: {
       ? input.enrichmentRunId ?? input.baseReportRunId
       : input.baseReportRunId;
     const inventoryId = `obs-${createHash("sha1").update(obs.key).digest("hex").slice(0, 16)}`;
+    const surface = observationSurfaceBucket(obs);
     const text =
       obs.kind === "suggestion"
         ? obs.suggestion ?? obs.title ?? ""
@@ -151,14 +180,14 @@ export function compositeObservationsToInventory(input: {
       region: obs.region ?? "RU",
       query: obs.query,
       collectedAt: new Date(0).toISOString(),
-      evidenceType: mapKindToEvidenceType(obs.kind),
+      evidenceType: mapSurfaceToEvidenceType(surface),
       title: text || obs.title || obs.url || obs.key,
       snippet: obs.snippet ?? "",
       sourceUrl: obs.url ?? (isArsenkin ? `arsenkin://${obs.kind}/${inventoryId}` : undefined),
       classification: obs.riskLabel ?? undefined,
       rawMetadata: {
         engine: obs.engine,
-        surface: mapKindToSurface(obs.kind),
+        surface,
         queryText: obs.query,
         provider,
       },
@@ -314,6 +343,8 @@ export async function runCanonicalReportPrepare(
   let deckManifest: ReportDeckManifest | null = null;
   let rendererSlides: RendererSlide[] | null = null;
   let assemblyHash: string | null = null;
+  let rendererAssets: RendererAssetEntry[] = [];
+  let visualAssetWarning: string | null = null;
 
   if (resumeFrom === "render") {
     const reused = loadReusableAssembledDeck({
@@ -327,6 +358,19 @@ export async function runCanonicalReportPrepare(
       assemblyHash = reused.assemblyHash;
       pageCount = reused.deckManifest.pageCount;
       baseSlotCoverage = CANONICAL_SLOT_IDS.length;
+      // Reuse the job's persisted synthetic visual assets so the resumed
+      // render keeps its screenshots/panels (slides reference them by ref).
+      const assetsPath = join(input.artifactsDir, "report-assets.json");
+      if (existsSync(assetsPath)) {
+        try {
+          const parsed = JSON.parse(readFileSync(assetsPath, "utf8")) as
+            | RendererAssetEntry[]
+            | { assets: RendererAssetEntry[] };
+          rendererAssets = Array.isArray(parsed) ? parsed : parsed.assets ?? [];
+        } catch {
+          visualAssetWarning = "persisted report-assets.json unreadable; render resumed without visual assets";
+        }
+      }
       writeRenderCheckpoint(input.artifactsDir, {
         version: "render-checkpoint-v1",
         stage: "RENDER",
@@ -356,7 +400,7 @@ export async function runCanonicalReportPrepare(
     for (const obs of input.merge.observations) {
       const region = obs.region ?? "RU";
       const engine = (obs.engine ?? "").toUpperCase() || "UNKNOWN";
-      const surface = mapKindToSurface(obs.kind);
+      const surface = observationSurfaceBucket(obs);
       coverageSet.set(`${region}|${engine}|${surface}`, { region, engine, surface });
     }
     const coverageRows = [...coverageSet.values()].map((c) => ({
@@ -376,6 +420,35 @@ export async function runCanonicalReportPrepare(
       artifactsDir: analyticsDir,
     });
 
+    // Synthetic API-derived visuals (ORION style): SERP snapshots, suggestion /
+    // related / AI panels, image grids — built from the same inventory the
+    // analytics consumed, with evidenceRefs binding each drawn row.
+    let visualAssetsBySlot: VisualAssetsBySlot = {};
+    try {
+      const visuals = await buildCanonicalVisualAssets({
+        subjectName: subjectDisplayName,
+        items,
+      });
+      rendererAssets = visuals.assets;
+      visualAssetsBySlot = visuals.visualAssets;
+      writeFileSync(
+        join(input.artifactsDir, "report-assets.json"),
+        `${JSON.stringify(visuals.assets, null, 2)}\n`,
+        "utf8"
+      );
+      writeFileSync(
+        join(input.artifactsDir, "visual-assets-by-slot.json"),
+        `${JSON.stringify({ counts: visuals.counts, visualAssets: visuals.visualAssets }, null, 2)}\n`,
+        "utf8"
+      );
+    } catch (err) {
+      // Visuals are additive: a failed synthetic asset never blocks the report,
+      // slots downgrade to their honest text/empty-state templates.
+      visualAssetWarning = `visual asset build failed: ${err instanceof Error ? err.message : String(err)}`;
+      rendererAssets = [];
+      visualAssetsBySlot = {};
+    }
+
     const deckInputs = loadDeckInputsFromAnalyticsDir(analyticsDir);
     analyticsDatasetId = deckInputs.sourceDatasetId;
     const deck = runDeckBuild({
@@ -389,7 +462,10 @@ export async function runCanonicalReportPrepare(
         surfaceUnits: deckInputs.surfaceUnits,
         metricSnapshot: deckInputs.metricSnapshot,
         evidenceIndex: deckInputs.evidenceIndex,
-        extras: { executiveSummary: deckInputs.executiveSummary as never, visualAssets: {} },
+        extras: {
+          executiveSummary: deckInputs.executiveSummary as never,
+          visualAssets: visualAssetsBySlot,
+        },
       },
       bundleForValidation: deckInputs.mergedBundle,
       knownEvidenceRefs: deckInputs.knownEvidenceRefs,
@@ -499,7 +575,7 @@ export async function runCanonicalReportPrepare(
       deckManifest,
       rendererSlides,
       subjectName: subjectDisplayName,
-      assets: [],
+      assets: rendererAssets,
       outputRoot: renderDir,
     });
   } catch (err) {
@@ -562,6 +638,8 @@ export async function runCanonicalReportPrepare(
     renderCount,
     renderer: rendered.renderer,
     resumeFrom,
+    visualAssetCount: rendererAssets.length,
+    visualAssetWarning,
     pdf: rendered.pdf ?? null,
     pptx: rendered.pptx ?? null,
     generatedAt: new Date().toISOString(),

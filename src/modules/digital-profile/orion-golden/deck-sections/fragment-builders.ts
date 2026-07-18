@@ -365,12 +365,70 @@ function sourceLine(scoped: ScopedFragmentInput): string {
   return list.length ? `Источники: ${list.join(", ")}` : "Источники: поисковая выдача (см. приложение).";
 }
 
+/**
+ * ORION-style client copy for surfaces with no collected material: what the
+ * surface is, why it matters for the subject's reputation, and what to do.
+ * Internal reason keys never leak into client text.
+ */
+const COVERAGE_EMPTY_COPY: Record<string, { what: string; why: string; check: string }> = {
+  "no-suggestions": {
+    what: "Поисковые подсказки (автодополнение) по запросам о субъекте в текущем сборе не зафиксированы.",
+    why: "Подсказки формируются поисковыми системами на основе массовых запросов пользователей; негативные формулировки в подсказках видны ещё до просмотра результатов и напрямую влияют на первое впечатление.",
+    check:
+      "Рекомендуем повторить проверку подсказок при следующем обновлении: эта поверхность меняется быстрее остальных.",
+  },
+  "no-images": {
+    what: "Изображения по запросам о субъекте в текущем сборе не зафиксированы.",
+    why: "Блок «Картинки» — одна из первых точек контакта: пользователь видит фотографии и связанные с ними заголовки ещё до перехода на сайты-источники.",
+    check:
+      "Рекомендуем проверить блок изображений вручную и обеспечить присутствие качественных официальных фотографий.",
+  },
+  "no-identity-data": {
+    what: "Статья о субъекте в Википедии и связанные энциклопедические материалы в текущем сборе не зафиксированы.",
+    why: "Википедия и энциклопедические карточки — ключевой источник «официальной» биографии: их содержимое поисковые системы используют в панелях знаний и ответах ИИ.",
+    check:
+      "Рекомендуем проверить наличие статьи вручную; при отсутствии — рассмотреть создание нейтральной биографической статьи, при наличии — контролировать корректность её содержимого.",
+  },
+  "no-ai-answers": {
+    what: "Ответы ИИ-поиска (AI Overview, нейро-ответы) по запросам о субъекте в текущем сборе не зафиксированы.",
+    why: "Ответы ИИ всё чаще заменяют пользователю классическую выдачу: он получает готовый вывод о человеке, не открывая источники, поэтому их содержание критично для репутации.",
+    check:
+      "Рекомендуем отслеживать появление ИИ-ответов при следующих обновлениях: они формируются на основе тех же источников, что и обычная выдача.",
+  },
+  "no-related": {
+    what: "Связанные запросы и вопросы «Люди также спрашивают» по субъекту в текущем сборе не зафиксированы.",
+    why: "Связанные запросы подсказывают пользователю, что искать дальше; негативные формулировки в этом блоке расширяют охват нежелательного контента.",
+    check: "Рекомендуем повторить сбор связанных запросов при следующем обновлении.",
+  },
+  "no-organic-data": {
+    what: "Результаты органической поисковой выдачи по данному контуру в текущем сборе не зафиксированы.",
+    why: "Органическая выдача — основная поверхность: первые страницы результатов формируют репутационную картину для большинства пользователей.",
+    check: "Рекомендуем проверить региональные настройки сбора и повторить проверку.",
+  },
+  "no-regional-findings": {
+    what: "По данному региональному контуру материалы в текущем сборе не зафиксированы.",
+    why: "Региональный контур показывает, как субъект представлен в локальной выдаче; отсутствие материалов — это статус покрытия, а не вывод об отсутствии рисков.",
+    check: "Рекомендуем повторить сбор по региону при следующем обновлении.",
+  },
+};
+
 function coverageContent(reason: string): SlideBody {
+  const copy = COVERAGE_EMPTY_COPY[reason];
+  if (!copy) {
+    return {
+      narrative:
+        "Материалы по данной поверхности в рамках текущего сбора не зафиксированы. Это статус покрытия, а не вывод об отсутствии рисков.",
+      bullets: ["Отсутствие материалов отражает состояние сбора на дату отчёта."],
+      whatToCheck: "Повторить сбор по данной поверхности при следующем обновлении.",
+    };
+  }
   return {
-    narrative:
-      "Материалы по данной поверхности в рамках текущего сбора не зафиксированы. Это статус покрытия, а не вывод об отсутствии рисков.",
-    bullets: [`Статус сбора: ${reason}`],
-    whatToCheck: "Повторить сбор по данной поверхности при следующем обновлении.",
+    narrative: copy.what,
+    bullets: [
+      copy.why,
+      "Отсутствие материалов в текущем сборе — это статус покрытия на дату отчёта, а не вывод об отсутствии рисков.",
+    ],
+    whatToCheck: copy.check,
   };
 }
 
@@ -682,7 +740,7 @@ export function buildRegionalSummaryFragment(
     }),
   ];
 
-  if (scoped.findings.length === 0) {
+  if (scoped.findings.length === 0 && materialCount === 0) {
     slides.push(
       makeSlotSlide({
         slot: summarySlot,
@@ -692,6 +750,34 @@ export function buildRegionalSummaryFragment(
         evidenceRefs: [],
         findingIds: [],
         emptyStateReason: "no-regional-findings",
+      })
+    );
+  } else if (scoped.findings.length === 0) {
+    // Materials exist but none reached a verified finding: an honest summary
+    // (ORION style) instead of a coverage placeholder.
+    const ambiguous = scoped.metricSnapshot.ambiguousCount;
+    slides.push(
+      makeSlotSlide({
+        slot: summarySlot,
+        sectionId,
+        content: {
+          narrative: `По региону ${regionLabel} собрано и проанализировано материалов: ${materialCount}. Подтверждённых тем повышенного внимания, однозначно связанных с проверяемым лицом, по итогам идентификации не выявлено.`,
+          bullets: [
+            "Каждый материал прошёл проверку принадлежности: учитываются только публикации, уверенно связанные с проверяемым лицом.",
+            ...(ambiguous > 0
+              ? [
+                  `Часть материалов (${ambiguous} по всему набору) требует дополнительной идентификации — они не включаются в выводы, пока принадлежность не подтверждена.`,
+                ]
+              : []),
+            "Отсутствие подтверждённых тем — результат идентификации на дату отчёта, а не гарантия отсутствия рисков.",
+          ],
+          whatToCheck:
+            "Рекомендуем плановое обновление мониторинга: состав выдачи и подсказок меняется, а материалы, требующие идентификации, могут быть подтверждены при появлении дополнительных признаков.",
+          sourceNote: sourceLine(scoped),
+        },
+        evidenceRefs: [],
+        findingIds: [],
+        metrics: { materials: materialCount, findings: 0 },
       })
     );
   } else {
@@ -721,13 +807,21 @@ export function buildRegionalSummaryFragment(
   // per-URL pages, one compact table.
   const urlAuditUnits = scoped.surfaceUnits.filter((u) => u.surface === "url_audit");
   const rows: string[][] = [];
+  // Provider tokens (e.g. enrichment vendor names) are internal — client sees
+  // only search-engine labels.
+  const engineLabel = (raw: string | undefined): string => {
+    const e = String(raw ?? "").toUpperCase();
+    if (/YANDEX/.test(e)) return "Яндекс";
+    if (/GOOGLE|SERPER/.test(e)) return "Google";
+    return "Поисковые системы";
+  };
   for (const u of urlAuditUnits) {
     const checked = u.evidenceRefs.length;
     const metricLine = u.metrics
       .slice(0, 3)
       .map((m) => `${m.key}: ${String(m.value)}`)
       .join("; ");
-    rows.push([u.engine ?? "—", "Проверка URL / индексация", String(checked), metricLine || "—"]);
+    rows.push([engineLabel(u.engine), "Проверка URL / индексация", String(checked), metricLine || "—"]);
   }
   rows.push(["—", "Материалы региона", String(materialCount), "по составному набору данных"]);
   rows.push([
