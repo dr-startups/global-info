@@ -17,6 +17,7 @@ import {
   getOrionGoldenPrepareStatus,
   startUnifiedOrionCollection,
   recoverUnifiedOrionCollection,
+  rebuildUnifiedReport,
   retryUnifiedEnrichmentSuggestionsTask,
   getUnifiedOrionCollectionStatus,
   type AgentInfo,
@@ -71,6 +72,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
   const [generating, setGenerating] = useState(false);
   const [auditing, setAuditing] = useState(false);
   const [recovering, setRecovering] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
   const [unifiedJob, setUnifiedJob] = useState<UnifiedCollectionJobStatus | null>(null);
   const [banner, setBanner] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
   const [prepareBusy, setPrepareBusy] = useState(false);
@@ -328,6 +330,59 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
     tError,
   ]);
 
+  const handleRebuildReport = useCallback(async () => {
+    if (auditing || generating || recovering || rebuilding) return;
+    const jobId = unifiedJob?.unifiedJobId || unifiedJob?.jobId;
+    if (!jobId || !unifiedJob?.rebuildAllowed) {
+      setBanner({
+        kind: "error",
+        text: `Пересборка недоступна${
+          unifiedJob?.rebuildBlockerReason ? ` (${unifiedJob.rebuildBlockerReason})` : ""
+        }.`,
+      });
+      return;
+    }
+    const ok = window.confirm(
+      "Отчёт будет пересобран из уже собранных данных (аналитика, сборка и рендер). " +
+        "Повторный платный сбор (base/Arsenkin) не выполняется. Продолжить?"
+    );
+    if (!ok) return;
+    setRebuilding(true);
+    setBanner(null);
+    try {
+      const result = await rebuildUnifiedReport(caseId, jobId);
+      setUnifiedJob((prev) =>
+        prev
+          ? {
+              ...prev,
+              jobId: result.jobId,
+              unifiedJobId: result.unifiedJobId,
+              stage: result.stage,
+              status: result.status,
+            }
+          : prev
+      );
+      await pollUnifiedUntilTerminal();
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setBanner({ kind: "error", text: tError(code, msg) });
+    } finally {
+      setRebuilding(false);
+      const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
+      if (job) setUnifiedJob(job);
+    }
+  }, [
+    auditing,
+    generating,
+    recovering,
+    rebuilding,
+    caseId,
+    unifiedJob,
+    pollUnifiedUntilTerminal,
+    tError,
+  ]);
+
   const handleRetrySuggestions = useCallback(async () => {
     if (auditing || generating || recovering) return;
     if (!suggestionsRetryFlightRef.current.tryEnter()) return;
@@ -530,8 +585,10 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
           onRecoverUnifiedCollection={handleRecoverUnifiedCollection}
           onRetrySuggestions={handleRetrySuggestions}
           onPaidRecollection={handlePaidRecollection}
+          onRebuildReport={handleRebuildReport}
           auditing={auditing}
           recovering={recovering}
+          rebuilding={rebuilding}
           unifiedJob={unifiedJob}
         />
       </Card>

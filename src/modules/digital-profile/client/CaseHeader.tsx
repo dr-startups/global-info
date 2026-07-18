@@ -140,8 +140,10 @@ export function CaseHeader({
   onRecoverUnifiedCollection,
   onRetrySuggestions,
   onPaidRecollection,
+  onRebuildReport,
   auditing,
   recovering,
+  rebuilding,
   unifiedJob,
 }: {
   caseDetail: CaseDetail;
@@ -151,8 +153,11 @@ export function CaseHeader({
   onRecoverUnifiedCollection: () => void;
   onRetrySuggestions?: () => void;
   onPaidRecollection?: () => void;
+  /** Re-run analytics/assembly/render from the persisted composite (no paid collection). */
+  onRebuildReport?: () => void;
   auditing: boolean;
   recovering: boolean;
+  rebuilding?: boolean;
   /** Current unified job (not legacy AgentRun). */
   unifiedJob: UnifiedCollectionJobStatus | null;
 }) {
@@ -254,6 +259,21 @@ export function CaseHeader({
               ) : null}
               {unifiedJob.stage === "REPORT_READY" ? (
                 <UnifiedCanonicalDownloadButtons caseId={caseDetail.id} job={unifiedJob} />
+              ) : null}
+              {can("agents.run") && unifiedJob.rebuildAllowed && onRebuildReport ? (
+                <div className="dp-inline" style={{ marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="dp-btn"
+                    onClick={onRebuildReport}
+                    disabled={Boolean(rebuilding) || recovering || auditing || generating}
+                    title="Пересобрать аналитику и рендер из уже собранных данных. Повторный платный сбор (base/Arsenkin) не выполняется."
+                    data-testid="unified-rebuild-report-cta"
+                  >
+                    {rebuilding ? <span className="dp-spinner" /> : null}
+                    {rebuilding ? "Пересборка отчёта…" : "Пересобрать отчёт"}
+                  </button>
+                </div>
               ) : null}
             </div>
           ) : null}

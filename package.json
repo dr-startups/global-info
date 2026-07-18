@@ -54,6 +54,7 @@
     "smoke:unified-orion-collection": "tsx --test scripts/smoke-unified-orion-collection.ts",
     "smoke:unified-collection-recovery": "tsx --test scripts/smoke-unified-collection-recovery.ts",
     "smoke:unified-render-resume": "tsx --test scripts/smoke-unified-render-resume.ts",
+    "smoke:unified-report-rebuild": "tsx --test scripts/smoke-unified-report-rebuild.ts",
     "smoke:arsenkin-enrichment-ingest": "tsx --test scripts/smoke-arsenkin-enrichment-ingest.ts",
     "smoke:arsenkin-suggestions-targeted-retry": "tsx --test scripts/smoke-arsenkin-suggestions-targeted-retry.ts",
     "smoke:arsenkin-suggestions-targeted-retry-ui": "tsx --test scripts/smoke-arsenkin-suggestions-targeted-retry-ui.ts",

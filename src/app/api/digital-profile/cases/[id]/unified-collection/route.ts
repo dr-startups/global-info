@@ -19,6 +19,7 @@ import {
   unifiedJobHasPreservedStages,
 } from "@/modules/digital-profile/services/unified-orion-collection-orchestrator";
 import { withUnifiedRecoveryStatusFields } from "@/modules/digital-profile/services/unified-collection-recovery";
+import { evaluateUnifiedReportRebuildEligibility } from "@/modules/digital-profile/services/unified-report-rebuild";
 import { withSuggestionsGapStatus } from "@/modules/digital-profile/services/unified-suggestions-gap";
 import { getCanonicalDownloadAvailability } from "@/modules/digital-profile/services/canonical-report-artifacts";
 
@@ -99,6 +100,7 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
     job && job.stage === "REPORT_READY" && job.status === "COMPLETED"
       ? getCanonicalDownloadAvailability({ caseId: id, jobId: job.unifiedJobId })
       : { pdf: false, pptx: false, contactSheet: false };
+  const rebuild = evaluateUnifiedReportRebuildEligibility({ caseId: id, job });
   return jsonOk({
     job: job
       ? {
@@ -137,6 +139,8 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
           recoveryAllowed: recovery.recoveryAllowed,
           recoveryBlockerReason: recovery.recoveryBlockerReason,
           recoveryReason: recovery.recoveryReason,
+          rebuildAllowed: rebuild.rebuildAllowed,
+          rebuildBlockerReason: rebuild.rebuildBlockerReason,
           recoveryAudit: job.recoveryAudit ?? null,
           resumeCheckpoint: job.resumeCheckpoint ?? null,
           nextPollAt: job.nextPollAt ?? null,

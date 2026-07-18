@@ -5,6 +5,10 @@
 import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
 import type { RawInventoryItem } from "../types";
 import type { SubjectFullNameRu, SubjectIdentityProfile } from "./subject-identity-profile";
+import {
+  isSelfConflictingNegativeSignal,
+  ownNameTextOfVariants,
+} from "../analytics/subject-resolution-classifier";
 
 const INN_RE = /\b(?:инн[:\s]*)?(\d{12}|\d{10})\b/gi;
 const OGRNIP_RE = /\b(?:огрнип[:\s]*)?(\d{15})\b/gi;
@@ -277,7 +281,6 @@ export function buildSubjectIdentityProfile(input: {
   inventory?: FullEvidenceInventory | { items: RawInventoryItem[] };
 }): SubjectIdentityProfile {
   const aliases = uniq(input.aliases ?? []);
-  const unrelatedKnownPersons = uniq(input.unrelatedKnownPersons ?? []);
   const items = input.inventory?.items ?? [];
   const fullNameRu = parseRuFullName(input.subjectName);
   const nameVariants = fullNameRu
@@ -293,6 +296,14 @@ export function buildSubjectIdentityProfile(input: {
         ]
       : []),
   ]);
+
+  // Negative identity signals must describe OTHER people. Drop any supplied
+  // entry that matches the subject's own name/transliteration/alias — such an
+  // entry would poison classification of every genuine subject mention.
+  const ownNameText = ownNameTextOfVariants([...nameVariants, ...transliterations]);
+  const unrelatedKnownPersons = uniq(input.unrelatedKnownPersons ?? []).filter(
+    (w) => !isSelfConflictingNegativeSignal(ownNameText, w)
+  );
 
   const inns = discoverInnsLinkedToSubject(items, fullNameRu, input.subjectName);
   const { ogrn, ogrnip } = discoverOgrn(items, nameVariants);

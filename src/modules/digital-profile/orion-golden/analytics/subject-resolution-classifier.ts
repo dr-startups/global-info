@@ -69,6 +69,31 @@ function matchesToken(text: string, name: string): boolean {
   return false;
 }
 
+/**
+ * True when a negative identity signal would fire on the subject's OWN name
+ * text (same substring/stem matching the classifier uses). Such an entry is
+ * self-conflicting: it marks every genuine mention of the subject as a
+ * namesake conflict. Negative signals must describe OTHER people only
+ * (e.g. a homonym's distinct patronymic), never the subject's own name,
+ * transliteration or alias.
+ */
+export function isSelfConflictingNegativeSignal(
+  ownNameText: string,
+  entry: string
+): boolean {
+  const n = norm(entry);
+  if (n.length < 3) return false;
+  return matchesToken(ownNameText, entry) || ownNameText.includes(n);
+}
+
+/** Normalized own-name haystack (one variant per line) for self-conflict checks. */
+export function ownNameTextOfVariants(variants: Array<string | undefined | null>): string {
+  return variants
+    .filter((v): v is string => Boolean(v && v.trim()))
+    .map(norm)
+    .join("\n");
+}
+
 export function classifySubjectRelevance(
   item: RawInventoryItem,
   subject: SubjectIdentity
@@ -272,9 +297,29 @@ export function subjectIdentityFromProfile(profile: ClassifierSubjectProfile): S
   ];
   const patronymics = [...new Set([...structuredPatr, positionalPatr].filter(Boolean))];
 
+  // Guard against misconfigured profiles that list the subject's own name /
+  // transliteration / alias among negative signals: dropping them here keeps
+  // genuine subject mentions from being classified as namesake conflicts.
+  const ownNameText = ownNameTextOfVariants([
+    profile.displayName,
+    lastName,
+    ...lastNameVariants,
+    ...firstNames,
+    ...patronymics,
+    ...(profile.aliases ?? []),
+    ...(profile.transliterations ?? []),
+    profile.fullNameRu
+      ? [profile.fullNameRu.lastName, profile.fullNameRu.firstName, profile.fullNameRu.patronymic]
+          .filter(Boolean)
+          .join(" ")
+      : "",
+  ]);
+  const notSelfConflicting = (w: string): boolean =>
+    !isSelfConflictingNegativeSignal(ownNameText, w);
+
   const namesakeProfiles = (profile.namesakeProfiles ?? []).map((n) => ({
     label: n.label,
-    noiseTerms: n.noiseTerms.map((t) => t.toLowerCase()),
+    noiseTerms: n.noiseTerms.map((t) => t.toLowerCase()).filter(notSelfConflicting),
   }));
   const namesakeNoise = [...new Set(namesakeProfiles.flatMap((n) => n.noiseTerms))];
 
@@ -287,9 +332,13 @@ export function subjectIdentityFromProfile(profile: ClassifierSubjectProfile): S
     aliases: [...new Set([...(profile.aliases ?? []), ...(profile.transliterations ?? [])])],
     strongIdentifiers: profile.knownIdentifiers?.inn ?? [],
     contextIdentifiers: [...new Set(profile.contextIdentifiers ?? [])],
-    wrongFirstNames: profile.negativeIdentitySignals?.wrongNames ?? [],
-    wrongPatronymics: profile.negativeIdentitySignals?.wrongPatronymics ?? [],
-    unrelatedKnownPersons: profile.negativeIdentitySignals?.unrelatedKnownPersons ?? [],
+    wrongFirstNames: (profile.negativeIdentitySignals?.wrongNames ?? []).filter(notSelfConflicting),
+    wrongPatronymics: (profile.negativeIdentitySignals?.wrongPatronymics ?? []).filter(
+      notSelfConflicting
+    ),
+    unrelatedKnownPersons: (profile.negativeIdentitySignals?.unrelatedKnownPersons ?? []).filter(
+      notSelfConflicting
+    ),
     namesakeProfiles,
     namesakeNoise,
   };

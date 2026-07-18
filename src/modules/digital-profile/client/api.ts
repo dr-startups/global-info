@@ -1499,6 +1499,9 @@ export type UnifiedCollectionJobStatus = {
     previousLastErrorCode: string | null;
   } | null;
   resumeCheckpoint?: string | null;
+  /** Server-side eligibility for «Пересобрать отчёт» (analytics+render only, no paid collection). */
+  rebuildAllowed?: boolean;
+  rebuildBlockerReason?: string | null;
   /** Durable Arsenkin poll cadence (persists across F5 / restart). */
   nextPollAt?: string | null;
   pollAttempt?: number;
@@ -1538,6 +1541,25 @@ export function recoverUnifiedOrionCollection(
   idempotent: boolean;
 }> {
   return request(`/cases/${caseId}/unified-collection/recover`, {
+    method: "POST",
+    body: JSON.stringify({ jobId }),
+  });
+}
+
+export function rebuildUnifiedReport(
+  caseId: string,
+  jobId: string
+): Promise<{
+  accepted: boolean;
+  jobId: string;
+  unifiedJobId: string;
+  stage: string;
+  status: string;
+  subjectProfileRefreshed: boolean;
+}> {
+  // Rebuild only re-runs analytics/assembly/render from persisted composite —
+  // never POST /unified-collection (paid) and never /recover.
+  return request(`/cases/${caseId}/unified-collection/rebuild-report`, {
     method: "POST",
     body: JSON.stringify({ jobId }),
   });
