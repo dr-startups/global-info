@@ -848,10 +848,33 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
     max_bottom = min(y + h, CONTENT_BOTTOM) - pad
     ctx.card(y, h=min(h, max_bottom - y + pad), x=x, w=w, fill=CARD_BG)
 
-    def write_block(title: str | None, body: str, *, size: float = 11, bold_title: bool = True) -> None:
+    def write_block(title: str | None, body: str, *, size: float = 11, bold_title: bool = True, required: bool = False) -> None:
         nonlocal cy
         if not body:
             return
+        title_h = 200_000 if title else 0
+        # Prefer complete text; do not ellipsis-clip sidebar
+        fitted = body
+        needed = measure_text_height(fitted, w - 2 * pad, size, line_spacing=1.2)
+        avail = max_bottom - cy - 160_000 - title_h
+        if needed > avail:
+            # Keep complete sentences only (no ellipsis). When even the first
+            # sentence cannot fit: the mandatory headline is a QA failure, but
+            # optional trailing blocks are simply dropped whole (title included)
+            # — a shorter sidebar beats failing the entire render.
+            sentences = re.split(r"(?<=[.!?…])\s+", fitted)
+            kept: list[str] = []
+            for sent in sentences:
+                trial = " ".join(kept + [sent]).strip()
+                if measure_text_height(trial, w - 2 * pad, size, line_spacing=1.2) <= avail:
+                    kept.append(sent)
+                else:
+                    break
+            if not kept:
+                if required:
+                    fail("sidebar overflow without complete sentence")
+                return
+            fitted = " ".join(kept)
         if title:
             box = ctx.slide.shapes.add_textbox(Emu(x + pad), Emu(cy), Emu(w - 2 * pad), Emu(220_000))
             tf = box.text_frame
@@ -864,30 +887,6 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
             r.font.size = Pt(10.5)
             r.font.color.rgb = NAVY
             cy += 200_000
-        # Prefer complete text; do not ellipsis-clip sidebar
-        fitted = body
-        needed = measure_text_height(fitted, w - 2 * pad, size, line_spacing=1.2)
-        avail = max_bottom - cy - 160_000
-        if needed > avail:
-            # Keep complete sentences only; if still too long — QA fail (no ellipsis).
-            sentences = re.split(r"(?<=[.!?…])\s+", fitted)
-            kept: list[str] = []
-            for sent in sentences:
-                trial = " ".join(kept + [sent]).strip()
-                if measure_text_height(trial, w - 2 * pad, size, line_spacing=1.2) <= avail:
-                    kept.append(sent)
-                else:
-                    break
-            if not kept:
-                fail("sidebar overflow without complete sentence")
-                fitted = ""
-            else:
-                fitted = " ".join(kept)
-                if fitted != body:
-                    # Truncated to sentences is OK; bare ellipsis is not.
-                    pass
-        if not fitted:
-            return
         bh = measure_text_height(fitted, w - 2 * pad, size, line_spacing=1.2)
         box = ctx.slide.shapes.add_textbox(Emu(x + pad), Emu(cy), Emu(w - 2 * pad), Emu(max(bh, 120_000)))
         tf = box.text_frame
@@ -900,7 +899,7 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         r.font.color.rgb = BODY_COLOR
         cy += bh + gap
 
-    write_block(None, headline, size=12)
+    write_block(None, headline, size=12, required=True)
     write_block(mid_title, mid_body, size=11)
     if meaning and meaning != mid_body and meaning != headline:
         write_block("Что это значит", meaning, size=11)
