@@ -22,7 +22,8 @@ import type {
   ArsenkinTaskState,
 } from "./types";
 
-const DEFAULT_BASE = "https://arsenkin.ru/api/tools";
+export const ARSENKIN_DEFAULT_API_BASE = "https://arsenkin.ru/api/tools";
+const DEFAULT_BASE = ARSENKIN_DEFAULT_API_BASE;
 
 export class ArsenkinRequestError extends Error {
   constructor(
@@ -178,6 +179,11 @@ export class ArsenkinClient {
     return { activeTasks: active, queueSize: queue, raw };
   }
 
+  /** Configured Arsenkin API base URL (no secrets) — for poll-auth binding. */
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
   /** Transport contract constants for tests / diagnostics. */
   static readonly TRANSPORT = {
     method: "POST" as const,
@@ -224,7 +230,14 @@ export class ArsenkinClient {
           ? "get"
           : "info";
     if (!this.skipLiveAuthorizationCheck) {
-      assertLiveNetworkAllowed(kind);
+      const bodyObj =
+        body && typeof body === "object" && !Array.isArray(body)
+          ? (body as Record<string, unknown>)
+          : null;
+      const rawTaskId = bodyObj?.task_id ?? bodyObj?.taskId ?? null;
+      const taskId =
+        typeof rawTaskId === "string" || typeof rawTaskId === "number" ? rawTaskId : null;
+      assertLiveNetworkAllowed(kind, { taskId, requestUrl: url });
     }
     let lastErr: Error | null = null;
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {

@@ -170,13 +170,11 @@ export function listResumableUnifiedJobs(): Array<{ caseId: string; stage: Unifi
     if (job.stage === "REPORT_READY" || job.stage === "COMPLETED_PARTIAL" || job.stage === "FAILED_TERMINAL") {
       continue;
     }
-    // WAITING + FAILED_RETRYABLE are resume checkpoints (do not re-collect base).
-    if (
-      ACTIVE_STAGES.has(job.stage) ||
-      job.stage === "FAILED_RETRYABLE" ||
-      job.status === "WAITING" ||
-      job.status === "RUNNING"
-    ) {
+    // FAILED_RETRYABLE waits for explicit recovery — never auto-pump
+    // (status may still be WAITING; stage is the source of truth).
+    if (job.stage === "FAILED_RETRYABLE") continue;
+    // Active pipeline stages only (do not re-collect base).
+    if (ACTIVE_STAGES.has(job.stage) && (job.status === "WAITING" || job.status === "RUNNING")) {
       out.push({ caseId, stage: job.stage });
     }
   }

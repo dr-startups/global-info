@@ -61,6 +61,7 @@
     "smoke:arsenkin-post-submit-poll-orchestration": "tsx --test scripts/smoke-arsenkin-post-submit-poll-orchestration.ts",
     "smoke:arsenkin-stuck-ingest-remediation": "tsx --test scripts/smoke-arsenkin-stuck-ingest-remediation.ts",
     "smoke:arsenkin-url-audit-envelope": "tsx --test scripts/smoke-arsenkin-url-audit-envelope.ts",
+    "smoke:arsenkin-existing-task-poll-auth": "tsx --test scripts/smoke-arsenkin-existing-task-poll-auth.ts",
     "smoke:base-observation-coverage": "tsx --test scripts/smoke-base-observation-coverage.ts",
     "smoke:arsenkin-precommit-gaps": "tsx --test scripts/smoke-arsenkin-precommit-gaps.ts",
     "smoke:arsenkin-case-agent-outcomes": "tsx --test scripts/smoke-arsenkin-case-agent-outcomes.ts",

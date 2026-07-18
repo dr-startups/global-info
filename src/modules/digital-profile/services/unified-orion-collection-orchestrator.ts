@@ -398,6 +398,10 @@ function failRetryable(
       lastError: message,
       lastErrorCode: code,
       resumeCheckpoint,
+      // Preserve enrichment progress for UI + exact resume (never wipe on fail).
+      arsenkinEnrichmentState: job.arsenkinEnrichmentState ?? undefined,
+      enrichmentRunIds: job.enrichmentRunIds,
+      baseReportRunId: job.baseReportRunId,
       warnings: [...job.warnings, ...extraWarnings, code],
       completedAt: new Date().toISOString(),
     }) ?? job
@@ -561,7 +565,7 @@ export async function runUnifiedCollectionTick(
           job = await stepPrepare(job, deps);
           break;
         case "FAILED_RETRYABLE":
-          job = resumeFromRetryableCheckpoint(job);
+          // Explicit recovery only — background pump must not auto-lift FAILED_RETRYABLE.
           break;
         default:
           break;
@@ -818,6 +822,13 @@ async function stepArsenkin(
   };
 
   writeUnifiedArtifact(job.caseId, job.unifiedJobId, "arsenkin-enrichment-state.json", state);
+  // Keep job-scoped enrichment state even when failing closed (UI + exact resume).
+  job =
+    patchUnifiedCollectionJob(job.caseId, {
+      arsenkinEnrichmentState: state,
+      enrichmentRunIds,
+      arsenkinReportRunId: tick.arsenkinReportRunId,
+    }) ?? job;
 
   if (tick.blockPipeline) {
     return failRetryable(

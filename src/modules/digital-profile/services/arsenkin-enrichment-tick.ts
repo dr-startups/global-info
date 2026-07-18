@@ -400,22 +400,24 @@ export type EnrichmentPollTaskSnap = ProviderTaskSnap & {
 export async function pollDueEnrichmentProviderTasks(input: {
   tasks: EnrichmentPollTaskSnap[];
   now?: Date;
+  jobPollAttempt?: number | null;
   /**
    * Live adapter: check+get for one row. Must never call /set.
    * Offline tests inject a fake that flips RUNNING → DONE with responseJson.
    */
   pollTask: (task: EnrichmentPollTaskSnap) => Promise<EnrichmentPollTaskSnap>;
+  /** Persist safe poll diagnostics (ProviderTask / artifact). Never swallow. */
+  persistPollError?: (diag: ArsenkinPollErrorDiagnostic) => Promise<void> | void;
 }): Promise<{
   tasks: EnrichmentPollTaskSnap[];
   polledExternalTaskIds: string[];
   earliestNextPollAt: Date | null;
-  pollErrors: Array<{ providerTaskId: string; externalTaskId: string; message: string }>;
+  pollErrors: Array<ArsenkinPollErrorDiagnostic>;
 }> {
   const now = input.now ?? new Date();
   const byId = new Map(input.tasks.map((t) => [t.id, { ...t }]));
   const polledExternalTaskIds: string[] = [];
-  const pollErrors: Array<{ providerTaskId: string; externalTaskId: string; message: string }> =
-    [];
+  const pollErrors: ArsenkinPollErrorDiagnostic[] = [];
   let earliestNextPollAt: Date | null = null;
 
   for (const task of input.tasks) {
@@ -441,40 +443,61 @@ export async function pollDueEnrichmentProviderTasks(input: {
       byId.set(task.id, preFlight);
       updated = await input.pollTask(preFlight);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      pollErrors.push({ providerTaskId: task.id, externalTaskId: ext, message: message.slice(0, 500) });
+      const nextPollAt = new Date(
+        now.getTime() + Math.min(30_000, 2_000 * 2 ** Math.min(Number(task.attempts ?? 0), 4))
+      );
+      const diag = buildSafePollErrorDiagnostic({
+        providerTaskId: task.id,
+        externalTaskId: ext,
+        operation: "poll",
+        error: err,
+        pollAttempt: input.jobPollAttempt ?? null,
+        nextPollAt,
+        now,
+      });
+      pollErrors.push(diag);
       console.error(
         JSON.stringify({
           event: "arsenkin_enrichment_poll_error",
-          providerTaskId: task.id,
-          externalTaskId: ext,
-          agentName: null,
-          errorCode: "ARSENKIN_POLL_FAILED",
-          message: message.slice(0, 500),
+          providerTaskId: diag.providerTaskId,
+          externalTaskId: diag.externalTaskId,
+          operation: diag.operation,
+          errorCode: diag.errorCode,
+          httpStatus: diag.httpStatus,
+          pollAttempt: diag.pollAttempt,
+          nextPollAt: diag.nextPollAt,
+          lastErrorAt: diag.lastErrorAt,
+          message: diag.message,
         })
       );
+      try {
+        await input.persistPollError?.(diag);
+      } catch (persistErr) {
+        console.error(
+          JSON.stringify({
+            event: "arsenkin_enrichment_poll_error_persist_failed",
+            providerTaskId: task.id,
+            externalTaskId: ext,
+            message: (persistErr instanceof Error ? persistErr.message : String(persistErr)).slice(
+              0,
+              300
+            ),
+          })
+        );
+      }
       updated = {
         ...task,
         attempts: Math.max(0, Number(task.attempts ?? 0)) + 1,
-        nextPollAt: new Date(
-          now.getTime() + Math.min(30_000, 2_000 * 2 ** Math.min(Number(task.attempts ?? 0), 4))
-        ),
+        nextPollAt,
         responseJson: {
           ...(isPlainObject(task.responseJson) ? task.responseJson : {}),
-          _pollDiagnostics: {
-            errorCode: "ARSENKIN_POLL_FAILED",
-            message: message.slice(0, 500),
-            at: now.toISOString(),
-          },
+          _pollDiagnostics: diag,
         },
       };
       byId.set(task.id, updated);
       polledExternalTaskIds.push(ext);
-      const errNext = updated.nextPollAt ? new Date(updated.nextPollAt) : null;
-      if (errNext && !Number.isNaN(errNext.getTime())) {
-        if (!earliestNextPollAt || errNext.getTime() < earliestNextPollAt.getTime()) {
-          earliestNextPollAt = errNext;
-        }
+      if (!earliestNextPollAt || nextPollAt.getTime() < earliestNextPollAt.getTime()) {
+        earliestNextPollAt = nextPollAt;
       }
       continue;
     }
@@ -496,21 +519,128 @@ export async function pollDueEnrichmentProviderTasks(input: {
   };
 }
 
-/** Default live poll: Arsenkin check+get via pollArsenkinTask (never /set). */
+export type LivePollEnrichmentContext = {
+  caseId: string;
+  unifiedJobId: string;
+  enrichmentRunIds: readonly string[];
+  jobPollAttempt?: number | null;
+};
+
+/** Safe poll diagnostic (no tokens / secret URLs / raw bodies). */
+export type ArsenkinPollErrorDiagnostic = {
+  providerTaskId: string;
+  externalTaskId: string;
+  operation: "check" | "get" | "poll";
+  errorCode: string;
+  httpStatus: number | null;
+  pollAttempt: number | null;
+  nextPollAt: string | null;
+  lastErrorAt: string;
+  message: string;
+};
+
+export function buildSafePollErrorDiagnostic(input: {
+  providerTaskId: string;
+  externalTaskId: string;
+  operation?: "check" | "get" | "poll";
+  error: unknown;
+  pollAttempt?: number | null;
+  nextPollAt?: Date | string | null;
+  now?: Date;
+}): ArsenkinPollErrorDiagnostic {
+  const err = input.error;
+  const message = (err instanceof Error ? err.message : String(err)).slice(0, 400);
+  const httpStatus =
+    err && typeof err === "object" && "options" in err
+      ? Number((err as { options?: { status?: number } }).options?.status) || null
+      : err && typeof err === "object" && "status" in err
+        ? Number((err as { status?: number }).status) || null
+        : null;
+  let errorCode = "ARSENKIN_POLL_FAILED";
+  if (/live-network-blocked|poll-auth-blocked|no-authorization/i.test(message)) {
+    errorCode = "ARSENKIN_POLL_AUTH_BLOCKED";
+  } else if (/ARSENKIN_SCHEMA_INVALID/i.test(message)) {
+    errorCode = "ARSENKIN_SCHEMA_INVALID";
+  } else if (httpStatus != null) {
+    errorCode = `ARSENKIN_POLL_HTTP_${httpStatus}`;
+  }
+  const next =
+    input.nextPollAt == null
+      ? null
+      : typeof input.nextPollAt === "string"
+        ? input.nextPollAt
+        : input.nextPollAt.toISOString();
+  return {
+    providerTaskId: input.providerTaskId,
+    externalTaskId: input.externalTaskId,
+    operation: input.operation ?? "poll",
+    errorCode,
+    httpStatus,
+    pollAttempt: input.pollAttempt ?? null,
+    nextPollAt: next,
+    lastErrorAt: (input.now ?? new Date()).toISOString(),
+    message,
+  };
+}
+
+/**
+ * Default live poll: Arsenkin check+get via pollArsenkinTask (never /set).
+ * Requires withExistingExternalTaskPollAuthorization scope for the persisted task.
+ */
 export async function defaultLivePollEnrichmentTask(
-  task: EnrichmentPollTaskSnap
+  task: EnrichmentPollTaskSnap,
+  ctx: LivePollEnrichmentContext
 ): Promise<EnrichmentPollTaskSnap> {
-  const { createArsenkinClientFromEnv } = await import("../providers/arsenkin/client");
+  const { createArsenkinClientFromEnv, ARSENKIN_DEFAULT_API_BASE } = await import(
+    "../providers/arsenkin/client"
+  );
   const { createPrismaProviderTaskStore } = await import(
     "../providers/arsenkin/prisma-provider-task-store"
   );
   const { pollArsenkinTask } = await import("../providers/arsenkin/poll-worker");
+  const { withExistingExternalTaskPollAuthorization } = await import(
+    "../providers/arsenkin/live-execution-authorization"
+  );
   const client = createArsenkinClientFromEnv();
-  if (!client) return task;
+  if (!client) {
+    throw new Error("ARSENKIN_POLL_FAILED:client-unavailable");
+  }
   const store = createPrismaProviderTaskStore();
   const row = await store.findById(task.id);
-  if (!row) return task;
-  const polled = await pollArsenkinTask(client, store, row);
+  if (!row) {
+    throw new Error(`ARSENKIN_POLL_FAILED:providerTask-missing:${task.id}`);
+  }
+  const externalTaskId = String(row.externalTaskId ?? task.externalTaskId ?? "").trim();
+  const enrichmentRunId = String(row.reportRunId ?? task.reportRunId ?? "").trim();
+  if (!externalTaskId || !enrichmentRunId) {
+    throw new Error("ARSENKIN_POLL_FAILED:missing-externalTaskId-or-enrichmentRunId");
+  }
+
+  const polled = await withExistingExternalTaskPollAuthorization(
+    {
+      caseId: ctx.caseId,
+      unifiedJobId: ctx.unifiedJobId,
+      enrichmentRunId,
+      providerTaskId: row.id,
+      externalTaskId,
+      allowedOperations: ["check", "get"],
+      maxNewTasks: 0,
+      expectedBaseUrl: client.getBaseUrl() || ARSENKIN_DEFAULT_API_BASE,
+      providerTask: {
+        id: row.id,
+        caseId: row.caseId,
+        reportRunId: row.reportRunId,
+        externalTaskId: row.externalTaskId,
+        submittedAt: row.submittedAt,
+        state: row.state,
+      },
+      jobEnrichmentRunIds: ctx.enrichmentRunIds,
+      jobCaseId: ctx.caseId,
+      jobUnifiedJobId: ctx.unifiedJobId,
+    },
+    async () => pollArsenkinTask(client, store, row)
+  );
+
   return {
     id: polled.id,
     reportRunId: String(polled.reportRunId ?? task.reportRunId),
@@ -612,46 +742,92 @@ export async function runDurableArsenkinEnrichmentTick(input: {
       }
     }
     if (prisma) {
-      const rows = await prisma.providerTask.findMany({
-        where: { reportRunId: { in: enrichmentRunIds } },
-        select: {
-          id: true,
-          reportRunId: true,
-          externalTaskId: true,
-          toolName: true,
-          state: true,
-          responseJson: true,
-          requestJson: true,
-          nextPollAt: true,
-          attempts: true,
-        },
-      });
-      tasks = rows
-        .filter((r): r is typeof r & { reportRunId: string } => Boolean(r.reportRunId))
-        .map((r) => ({
-          id: r.id,
-          reportRunId: r.reportRunId,
-          externalTaskId: r.externalTaskId,
-          toolName: r.toolName,
-          state: String(r.state),
-          responseJson: r.responseJson,
-          requestJson: r.requestJson,
-          nextPollAt: r.nextPollAt,
-          attempts: r.attempts,
-        }));
+      try {
+        const rows = await prisma.providerTask.findMany({
+          where: { reportRunId: { in: enrichmentRunIds } },
+          select: {
+            id: true,
+            reportRunId: true,
+            externalTaskId: true,
+            toolName: true,
+            state: true,
+            responseJson: true,
+            requestJson: true,
+            nextPollAt: true,
+            attempts: true,
+          },
+        });
+        tasks = rows
+          .filter((r): r is typeof r & { reportRunId: string } => Boolean(r.reportRunId))
+          .map((r) => ({
+            id: r.id,
+            reportRunId: r.reportRunId,
+            externalTaskId: r.externalTaskId,
+            toolName: r.toolName,
+            state: String(r.state),
+            responseJson: r.responseJson,
+            requestJson: r.requestJson,
+            nextPollAt: r.nextPollAt,
+            attempts: r.attempts,
+          }));
+      } catch (err) {
+        warnings.push(
+          `arsenkin-providerTask-list-failed:${(err instanceof Error ? err.message : String(err)).slice(0, 120)}`
+        );
+      }
     }
   }
 
   const networkOff = String(process.env.NETWORK_CALLS ?? "") === "0";
+  const pollCtx: LivePollEnrichmentContext = {
+    caseId: job.caseId,
+    unifiedJobId: job.unifiedJobId,
+    enrichmentRunIds,
+    jobPollAttempt: job.pollAttempt ?? null,
+  };
   const pollTask =
     input.pollTask ??
     (networkOff
       ? async (t: EnrichmentPollTaskSnap) => t
-      : defaultLivePollEnrichmentTask);
+      : (t: EnrichmentPollTaskSnap) => defaultLivePollEnrichmentTask(t, pollCtx));
+
+  const persistPollError = async (diag: ArsenkinPollErrorDiagnostic) => {
+    try {
+      const { writeUnifiedArtifact } = await import("./unified-collection-job-store");
+      writeUnifiedArtifact(job.caseId, job.unifiedJobId, "arsenkin-poll-error-latest.json", diag);
+    } catch {
+      /* best-effort artifact */
+    }
+    if (networkOff || input.pollTask) return;
+    try {
+      const { createPrismaProviderTaskStore } = await import(
+        "../providers/arsenkin/prisma-provider-task-store"
+      );
+      const store = createPrismaProviderTaskStore();
+      const row = await store.findById(diag.providerTaskId);
+      if (!row) return;
+      const prev = isPlainObject(row.responseJson) ? row.responseJson : {};
+      await store.updateState(diag.providerTaskId, {
+        state: row.state,
+        attempts: Math.max(0, Number(row.attempts ?? 0)) + 1,
+        nextPollAt: diag.nextPollAt ? new Date(diag.nextPollAt) : row.nextPollAt,
+        errorCode: diag.errorCode.slice(0, 80),
+        responseJson: {
+          ...prev,
+          _pollDiagnostics: diag,
+        },
+      });
+    } catch {
+      /* persistence best-effort; console already logged */
+    }
+  };
+
   const polled = await pollDueEnrichmentProviderTasks({
     tasks,
     now: input.now?.(),
+    jobPollAttempt: job.pollAttempt ?? null,
     pollTask,
+    persistPollError,
   });
   tasks = polled.tasks;
   earliestNextPollAt = polled.earliestNextPollAt;
@@ -663,9 +839,13 @@ export async function runDurableArsenkinEnrichmentTick(input: {
   }
   for (const pe of polled.pollErrors) {
     warnings.push(
-      `arsenkin-poll-error:${pe.externalTaskId}`,
-      `providerTaskId:${pe.providerTaskId}`,
-      `ARSENKIN_POLL_FAILED:${pe.message.slice(0, 120)}`
+      ...[
+        `arsenkin-poll-error:${pe.externalTaskId}`,
+        `providerTaskId:${pe.providerTaskId}`,
+        `${pe.errorCode}:${pe.message.slice(0, 120)}`,
+        pe.httpStatus != null ? `httpStatus:${pe.httpStatus}` : "",
+        pe.pollAttempt != null ? `jobPollAttempt:${pe.pollAttempt}` : "",
+      ].filter(Boolean)
     );
   }
 

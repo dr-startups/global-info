@@ -539,6 +539,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
       });
     }
 
+    const nowIso = nowFn().toISOString();
     const patched =
       patchUnifiedCollectionJob(job.caseId, {
         stage: nextStage,
@@ -551,16 +552,23 @@ export async function recoverUnifiedOrionCollectionJob(input: {
         lastError: null,
         lastErrorCode: null,
         completedAt: null,
+        // Ceiling reset so durable poll can resume the same paid externalTaskIds.
+        pollAttempt: ingestResume || renderResume ? 0 : job.pollAttempt ?? 0,
+        nextPollAt: ingestResume ? nowIso : job.nextPollAt ?? null,
+        // Keep enrichment lineage; do not wipe progress artifact binding.
+        arsenkinEnrichmentState: job.arsenkinEnrichmentState ?? undefined,
+        enrichmentRunIds: job.enrichmentRunIds,
         recoveryAudit,
         warnings: [
           ...job.warnings.filter((w) => !/recovery-accepted/i.test(w)),
           `recovery-accepted:${elig2.recoveryReason}`,
+          ingestResume ? "pollAttempt-reset:0" : "",
           renderResume
             ? "bounded-resume:from-render"
             : ingestResume
               ? "bounded-resume:from-arsenkin-ingest"
               : "bounded-resume:from-arsenkin",
-        ],
+        ].filter(Boolean),
       }) ?? job;
 
     writeUnifiedArtifact(job.caseId, job.unifiedJobId, "unified-recovery-audit.json", recoveryAudit);

@@ -1,6 +1,9 @@
 /**
  * Capability boundary for paid Arsenkin live calls.
  * Token alone is never sufficient — an installed LiveExecutionAuthorization is required.
+ *
+ * Separately: durable poll of already-submitted ProviderTasks may install a narrow
+ * check/get-only scope via withExistingExternalTaskPollAuthorization (never /set).
  */
 
 import { createHash } from "node:crypto";
@@ -22,6 +25,19 @@ export type LiveAuthBudgetState = {
   countedRequestHashes: string[];
 };
 
+/** Narrow read-only poll of one already-paid external Arsenkin task. */
+export type ExistingExternalTaskPollAuthorization = {
+  caseId: string;
+  unifiedJobId: string;
+  enrichmentRunId: string;
+  providerTaskId: string;
+  externalTaskId: string;
+  allowedOperations: ReadonlyArray<"check" | "get">;
+  maxNewTasks: 0;
+  /** Configured Arsenkin API base (no secrets). */
+  expectedBaseUrl: string;
+};
+
 type ActiveLiveSession = {
   auth: LiveExecutionAuthorization;
   budget: LiveAuthBudgetState;
@@ -29,9 +45,14 @@ type ActiveLiveSession = {
 };
 
 let active: ActiveLiveSession | null = null;
+let activePoll: ExistingExternalTaskPollAuthorization | null = null;
 
 export function getActiveLiveAuthorization(): LiveExecutionAuthorization | null {
   return active?.auth ?? null;
+}
+
+export function getActiveExistingTaskPollAuthorization(): ExistingExternalTaskPollAuthorization | null {
+  return activePoll;
 }
 
 export function getActiveLiveBudget(): LiveAuthBudgetState | null {
@@ -142,10 +163,164 @@ export function assertLiveSetAllowed(input: {
   return requestHash;
 }
 
-/** Defense-in-depth for any Arsenkin HTTP when live session is expected. */
-export function assertLiveNetworkAllowed(kind: string): void {
-  if (!active) {
-    throw new Error(`arsenkin-live-network-blocked:no-authorization:${kind}`);
+/**
+ * Defense-in-depth for Arsenkin HTTP.
+ * - Full live session: any kind.
+ * - Existing-task poll scope: only check/get for the authorized externalTaskId.
+ * - /set never authorized by poll scope.
+ */
+export function assertLiveNetworkAllowed(
+  kind: string,
+  extras?: { taskId?: string | number | null; requestUrl?: string | null }
+): void {
+  if (active) return;
+
+  if (kind === "check" || kind === "get") {
+    if (!activePoll) {
+      throw new Error(`arsenkin-live-network-blocked:no-authorization:${kind}`);
+    }
+    if (!activePoll.allowedOperations.includes(kind)) {
+      throw new Error(`arsenkin-poll-auth-blocked:operation-not-allowed:${kind}`);
+    }
+    if (activePoll.maxNewTasks !== 0) {
+      throw new Error("arsenkin-poll-auth-blocked:maxNewTasks-must-be-zero");
+    }
+    const taskId = String(extras?.taskId ?? "").trim();
+    if (!taskId || taskId !== activePoll.externalTaskId) {
+      throw new Error(
+        `arsenkin-poll-auth-blocked:externalTaskId-mismatch expected=${activePoll.externalTaskId} got=${taskId || "empty"}`
+      );
+    }
+    const url = String(extras?.requestUrl ?? "").trim();
+    if (url) {
+      const expected = activePoll.expectedBaseUrl.replace(/\/$/, "");
+      if (!url.startsWith(expected + "/") && url !== expected) {
+        throw new Error("arsenkin-poll-auth-blocked:base-url-mismatch");
+      }
+      if (url.includes("/set")) {
+        throw new Error("arsenkin-poll-auth-blocked:set-not-allowed");
+      }
+    }
+    return;
+  }
+
+  throw new Error(`arsenkin-live-network-blocked:no-authorization:${kind}`);
+}
+
+export type ExistingExternalTaskPollAuthInput = {
+  caseId: string;
+  unifiedJobId: string;
+  enrichmentRunId: string;
+  providerTaskId: string;
+  externalTaskId: string;
+  allowedOperations: ReadonlyArray<"check" | "get">;
+  maxNewTasks: 0;
+  expectedBaseUrl: string;
+  /** Persisted ProviderTask row used to prove lineage (fail-closed). */
+  providerTask: {
+    id: string;
+    caseId?: string | null;
+    reportRunId?: string | null;
+    externalTaskId?: string | null;
+    submittedAt?: Date | string | null;
+    state?: string | null;
+  };
+  /** Job enrichmentRunIds must include providerTask.reportRunId. */
+  jobEnrichmentRunIds: readonly string[];
+  jobCaseId: string;
+  jobUnifiedJobId: string;
+};
+
+/**
+ * Validate + install a check/get-only poll scope for one persisted ProviderTask.
+ * Never authorizes /set. Foreign / arbitrary externalTaskId → fail-closed.
+ */
+export function assertExistingExternalTaskPollAuthorized(
+  input: ExistingExternalTaskPollAuthInput
+): ExistingExternalTaskPollAuthorization {
+  const externalTaskId = String(input.externalTaskId ?? "").trim();
+  const providerTaskId = String(input.providerTaskId ?? "").trim();
+  const enrichmentRunId = String(input.enrichmentRunId ?? "").trim();
+  const caseId = String(input.caseId ?? "").trim();
+  const unifiedJobId = String(input.unifiedJobId ?? "").trim();
+
+  if (!externalTaskId) {
+    throw new Error("arsenkin-poll-auth-blocked:empty-externalTaskId");
+  }
+  if (!providerTaskId || !enrichmentRunId || !caseId || !unifiedJobId) {
+    throw new Error("arsenkin-poll-auth-blocked:missing-lineage");
+  }
+  if (input.maxNewTasks !== 0) {
+    throw new Error("arsenkin-poll-auth-blocked:maxNewTasks-must-be-zero");
+  }
+  const ops = [...input.allowedOperations];
+  if (ops.length === 0 || ops.some((o) => o !== "check" && o !== "get")) {
+    throw new Error("arsenkin-poll-auth-blocked:invalid-operations");
+  }
+  if (ops.includes("set" as never)) {
+    throw new Error("arsenkin-poll-auth-blocked:set-not-allowed");
+  }
+
+  const row = input.providerTask;
+  if (String(row.id ?? "").trim() !== providerTaskId) {
+    throw new Error("arsenkin-poll-auth-blocked:providerTaskId-mismatch");
+  }
+  if (String(row.externalTaskId ?? "").trim() !== externalTaskId) {
+    throw new Error("arsenkin-poll-auth-blocked:persisted-externalTaskId-mismatch");
+  }
+  if (String(row.reportRunId ?? "").trim() !== enrichmentRunId) {
+    throw new Error("arsenkin-poll-auth-blocked:enrichmentRunId-mismatch");
+  }
+  if (caseId !== String(input.jobCaseId ?? "").trim()) {
+    throw new Error("arsenkin-poll-auth-blocked:foreign-caseId");
+  }
+  if (unifiedJobId !== String(input.jobUnifiedJobId ?? "").trim()) {
+    throw new Error("arsenkin-poll-auth-blocked:foreign-unifiedJobId");
+  }
+  if (row.caseId != null && String(row.caseId).trim() && String(row.caseId).trim() !== caseId) {
+    throw new Error("arsenkin-poll-auth-blocked:foreign-providerTask-caseId");
+  }
+  if (!input.jobEnrichmentRunIds.map(String).includes(enrichmentRunId)) {
+    throw new Error("arsenkin-poll-auth-blocked:enrichmentRunId-not-on-job");
+  }
+  if (!row.submittedAt) {
+    throw new Error("arsenkin-poll-auth-blocked:not-submitted");
+  }
+  const expectedBase = String(input.expectedBaseUrl ?? "").trim().replace(/\/$/, "");
+  if (!expectedBase || !/^https?:\/\//i.test(expectedBase)) {
+    throw new Error("arsenkin-poll-auth-blocked:invalid-base-url");
+  }
+
+  return {
+    caseId,
+    unifiedJobId,
+    enrichmentRunId,
+    providerTaskId,
+    externalTaskId,
+    allowedOperations: ops as Array<"check" | "get">,
+    maxNewTasks: 0,
+    expectedBaseUrl: expectedBase,
+  };
+}
+
+/** Install existing-task poll authorization for the duration of fn. */
+export async function withExistingExternalTaskPollAuthorization<T>(
+  input: ExistingExternalTaskPollAuthInput,
+  fn: () => Promise<T>
+): Promise<T> {
+  if (activePoll) {
+    throw new Error("arsenkin-poll-auth-already-active");
+  }
+  // Poll scope must not run nested inside a paid live-set session (keeps budgets honest).
+  if (active) {
+    throw new Error("arsenkin-poll-auth-blocked:live-session-active");
+  }
+  const auth = assertExistingExternalTaskPollAuthorized(input);
+  activePoll = auth;
+  try {
+    return await fn();
+  } finally {
+    activePoll = null;
   }
 }
 
