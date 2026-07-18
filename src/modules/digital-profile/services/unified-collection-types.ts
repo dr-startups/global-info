@@ -103,7 +103,7 @@ export type UnifiedCollectionJob = {
   lastError: string | null;
   lastErrorCode: string | null;
   artifactPaths: Record<string, string>;
-  reportLinks: { pdf?: string; pptx?: string };
+  reportLinks: { pdf?: string; pptx?: string; contactSheet?: string };
   cancelRequested: boolean;
   /** Set by staff recover endpoint — never written by client. */
   recoveryAudit?: {

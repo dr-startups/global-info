@@ -233,6 +233,7 @@ export type UnifiedOrchestratorDeps = {
     prepareDatasetId: string;
     pdf?: string;
     pptx?: string;
+    contactSheet?: string;
     assemblyCount?: number;
     renderCount?: number;
   }>;
@@ -935,7 +936,7 @@ async function stepArsenkin(
       ...(priorComposite || priorLinks?.pdf || priorLinks?.pptx
         ? {
             compositeDatasetId: null as string | null,
-            reportLinks: {} as { pdf?: string; pptx?: string },
+            reportLinks: {} as { pdf?: string; pptx?: string; contactSheet?: string },
           }
         : {}),
     }) ?? job
@@ -1213,6 +1214,7 @@ async function stepPrepare(
         prepareDatasetId: res.prepareDatasetId,
         pdf: res.pdf,
         pptx: res.pptx,
+        contactSheet: res.contactSheet,
         assemblyCount: res.assemblyCount,
         renderCount: res.renderCount,
       };
@@ -1322,7 +1324,11 @@ async function stepPrepare(
       status: "COMPLETED",
       progress: 1,
       completedAt: new Date().toISOString(),
-      reportLinks: { pdf: prepared.pdf, pptx: prepared.pptx },
+      reportLinks: {
+        pdf: prepared.pdf,
+        pptx: prepared.pptx,
+        ...(prepared.contactSheet ? { contactSheet: prepared.contactSheet } : {}),
+      },
     }) ?? job
   );
 }

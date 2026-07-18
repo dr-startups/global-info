@@ -1,7 +1,8 @@
 /**
- * /api/digital-profile/cases/[id]/unified-collection/download?jobId=..&artifact=pdf|pptx
- *   GET — stream an accepted canonical report artifact (PDF/PPTX) for a completed
- *   unified job. Lineage-safe & fail-closed (see resolveCanonicalArtifactForDownload).
+ * /api/digital-profile/cases/[id]/unified-collection/download?jobId=..&artifact=pdf|pptx|contactSheet
+ *   GET — stream an accepted canonical report artifact for a completed unified job.
+ *   Lineage-safe & fail-closed (see resolveCanonicalArtifactForDownload).
+ *   Auth: requireDigitalProfileUser + requireCaseAccess(VIEWER).
  *   No legacy composer path; never creates artifacts; never sets REPORT_READY.
  */
 

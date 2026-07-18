@@ -20,6 +20,7 @@ import {
 } from "@/modules/digital-profile/services/unified-orion-collection-orchestrator";
 import { withUnifiedRecoveryStatusFields } from "@/modules/digital-profile/services/unified-collection-recovery";
 import { withSuggestionsGapStatus } from "@/modules/digital-profile/services/unified-suggestions-gap";
+import { getCanonicalDownloadAvailability } from "@/modules/digital-profile/services/canonical-report-artifacts";
 
 export const dynamic = "force-dynamic";
 
@@ -94,6 +95,10 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
       preserved ||
       job?.status === "RUNNING" ||
       job?.status === "WAITING");
+  const downloadArtifacts =
+    job && job.stage === "REPORT_READY" && job.status === "COMPLETED"
+      ? getCanonicalDownloadAvailability({ caseId: id, jobId: job.unifiedJobId })
+      : { pdf: false, pptx: false, contactSheet: false };
   return jsonOk({
     job: job
       ? {
@@ -112,6 +117,7 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
           enrichmentRunIds: job.enrichmentRunIds ?? [],
           compositeDatasetId: job.compositeDatasetId,
           reportLinks: job.reportLinks,
+          downloadArtifacts,
           artifactPaths: job.artifactPaths,
           createdAt: job.createdAt,
           updatedAt: job.updatedAt,

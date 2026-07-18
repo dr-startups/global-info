@@ -1393,11 +1393,12 @@ export function captureLiveSerp(
 /**
  * Canonical, lineage-safe download URL for an accepted unified-job artifact.
  * Only valid once the job is REPORT_READY; the server re-validates lineage.
+ * Does not start collection, recovery, or render — GET download only.
  */
 export function getCanonicalArtifactDownloadUrl(
   caseId: string,
   jobId: string,
-  artifact: "pdf" | "pptx"
+  artifact: "pdf" | "pptx" | "contactSheet"
 ): string {
   const q = new URLSearchParams({ jobId, artifact });
   return `${BASE}/cases/${caseId}/unified-collection/download?${q.toString()}`;
@@ -1464,7 +1465,9 @@ export type UnifiedCollectionJobStatus = {
   arsenkinReportRunId: string | null;
   enrichmentRunIds?: string[];
   compositeDatasetId: string | null;
-  reportLinks: { pdf?: string; pptx?: string };
+  reportLinks: { pdf?: string; pptx?: string; contactSheet?: string };
+  /** Server-side fail-closed availability for Unified download buttons. */
+  downloadArtifacts?: { pdf: boolean; pptx: boolean; contactSheet: boolean };
   artifactPaths: Record<string, string>;
   createdAt?: string;
   updatedAt?: string;

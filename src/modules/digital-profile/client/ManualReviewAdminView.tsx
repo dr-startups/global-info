@@ -1019,18 +1019,36 @@ export function ManualReviewAdminView({ caseId }: { caseId: string }) {
                     <a
                       className="dp-btn"
                       href={getCanonicalArtifactDownloadUrl(caseId, unifiedReport.unifiedJobId, "pdf")}
+                      data-testid="admin-unified-download-pdf"
                     >
-                      Скачать PDF
+                      Скачать Unified PDF
                     </a>
                   </div>
                   <div>
                     <a
                       className="dp-btn"
                       href={getCanonicalArtifactDownloadUrl(caseId, unifiedReport.unifiedJobId, "pptx")}
+                      data-testid="admin-unified-download-pptx"
                     >
-                      Скачать PPTX
+                      Скачать Unified PPTX
                     </a>
                   </div>
+                  {unifiedReport.downloadArtifacts?.contactSheet ||
+                  unifiedReport.reportLinks?.contactSheet ? (
+                    <div>
+                      <a
+                        className="dp-btn"
+                        href={getCanonicalArtifactDownloadUrl(
+                          caseId,
+                          unifiedReport.unifiedJobId,
+                          "contactSheet"
+                        )}
+                        data-testid="admin-unified-download-contact-sheet"
+                      >
+                        Скачать contact sheet
+                      </a>
+                    </div>
+                  ) : null}
                 </>
               ) : null}
             </div>

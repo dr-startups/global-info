@@ -96,6 +96,19 @@ describe("C — canonical artifact download resolver", () => {
     );
   });
 
+  it("contactSheet resolves from well-known render path when present", () => {
+    const { jobId } = seedAcceptedJob();
+    const contactPath = join(unifiedArtifactsDir(CASE_ID, jobId), "render", "contact-sheet.png");
+    writeFileSync(contactPath, "PNG fake\n", "utf8");
+    const meta = resolveCanonicalArtifactForDownload({
+      caseId: CASE_ID,
+      jobId,
+      artifact: "contactSheet",
+    });
+    assert.equal(meta.mimeType, "image/png");
+    assert.equal(meta.path, contactPath);
+  });
+
   it("unaccepted job (mid-flow) is rejected", () => {
     const { jobId } = seedAcceptedJob();
     patchUnifiedCollectionJob(CASE_ID, { stage: "COMPOSITE_MERGE", status: "RUNNING" });

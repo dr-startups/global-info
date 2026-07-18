@@ -81,6 +81,7 @@
     "smoke:canonical-glinka-parity": "tsx --test scripts/smoke-canonical-glinka-parity.ts",
     "smoke:orion-src-identity-scan": "tsx --test scripts/smoke-orion-src-identity-scan.ts",
     "smoke:canonical-artifact-download": "tsx --test scripts/smoke-canonical-artifact-download.ts",
+    "smoke:unified-canonical-downloads-ui": "tsx --test scripts/smoke-unified-canonical-downloads-ui.ts",
     "orion:canonical-prepare-glinka-replay": "tsx scripts/run-canonical-prepare-glinka-replay.ts",
     "orion:deck-sections-report72": "tsx scripts/run-orion-deck-sections-report72.ts",
     "orion:deck-regeneration-demos": "tsx scripts/demo-orion-deck-regeneration.ts",

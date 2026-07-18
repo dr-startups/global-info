@@ -1,7 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import type { CaseDetail, UnifiedCollectionJobStatus } from "./api";
+import {
+  getCanonicalArtifactDownloadUrl,
+  type CaseDetail,
+  type UnifiedCollectionJobStatus,
+} from "./api";
 import { StatusBadge } from "./components";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
@@ -48,6 +52,65 @@ function unifiedStatusLabel(job: UnifiedCollectionJobStatus | null): string | nu
   if (job.stage === "COMPLETED_PARTIAL") return "COMPLETED_PARTIAL";
   if (job.status === "RUNNING" || job.status === "WAITING") return job.status;
   return job.stage;
+}
+
+/** Job-scoped Unified downloads only — never ORION v2/Storyboard artifact IDs. */
+export function UnifiedCanonicalDownloadButtons({
+  caseId,
+  job,
+}: {
+  caseId: string;
+  job: UnifiedCollectionJobStatus;
+}) {
+  const downloads = job.downloadArtifacts ?? {
+    pdf: Boolean(job.reportLinks?.pdf),
+    pptx: Boolean(job.reportLinks?.pptx),
+    contactSheet: Boolean(job.reportLinks?.contactSheet),
+  };
+  const jobId = job.unifiedJobId || job.jobId;
+  return (
+    <div
+      className="dp-inline"
+      style={{ marginTop: 10, gap: 8, flexWrap: "wrap" }}
+      data-testid="unified-canonical-downloads"
+    >
+      {downloads.pdf ? (
+        <a
+          className="dp-btn"
+          href={getCanonicalArtifactDownloadUrl(caseId, jobId, "pdf")}
+          data-testid="unified-download-pdf"
+        >
+          Скачать Unified PDF
+        </a>
+      ) : (
+        <button type="button" className="dp-btn" disabled data-testid="unified-download-pdf">
+          Скачать Unified PDF
+        </button>
+      )}
+      {downloads.pptx ? (
+        <a
+          className="dp-btn"
+          href={getCanonicalArtifactDownloadUrl(caseId, jobId, "pptx")}
+          data-testid="unified-download-pptx"
+        >
+          Скачать Unified PPTX
+        </a>
+      ) : (
+        <button type="button" className="dp-btn" disabled data-testid="unified-download-pptx">
+          Скачать Unified PPTX
+        </button>
+      )}
+      {downloads.contactSheet ? (
+        <a
+          className="dp-btn"
+          href={getCanonicalArtifactDownloadUrl(caseId, jobId, "contactSheet")}
+          data-testid="unified-download-contact-sheet"
+        >
+          Скачать contact sheet
+        </a>
+      ) : null}
+    </div>
+  );
 }
 
 function prepareRenderLabel(job: UnifiedCollectionJobStatus): string {
@@ -188,6 +251,9 @@ export function CaseHeader({
                     ? ` — ${unifiedJob.suggestionsFailureReason}`
                     : ""}
                 </div>
+              ) : null}
+              {unifiedJob.stage === "REPORT_READY" ? (
+                <UnifiedCanonicalDownloadButtons caseId={caseDetail.id} job={unifiedJob} />
               ) : null}
             </div>
           ) : null}
