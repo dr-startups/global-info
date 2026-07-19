@@ -288,15 +288,21 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
       unifiedJob.resumeCheckpoint === "RENDER" ||
       unifiedJob.recoveryReason === "RENDER_RESUME" ||
       unifiedJob.lastErrorCode === "RENDER_FAILED";
+    const assemblyResume =
+      unifiedJob.recoveryReason === "ASSEMBLY_RESUME" ||
+      unifiedJob.lastErrorCode === "ASSEMBLY_FAILED" ||
+      unifiedJob.lastErrorCode === "REQUIRED_SECTION_FAILED";
     const ingestResume =
       unifiedJob.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" ||
       unifiedJob.recoveryReason === "ARSENKIN_INGEST_RESUME";
     const ok = window.confirm(
       renderResume
         ? "Рендер будет выполнен через renderer service. Базовый поиск и Arsenkin повторно не запускаются. Продолжить с этапа рендера?"
-        : ingestResume
-          ? "Будут импортированы уже выполненные Arsenkin задачи без новых submit и без повторного base-сбора. Продолжить импорт?"
-          : "Базовый поиск повторно выполняться не будет. Продолжить аудит с этапа Arsenkin?"
+        : assemblyResume
+          ? "Будет пересобран отчёт из уже собранных данных (analytics + deck + render). Base и Arsenkin повторно не запускаются. Продолжить?"
+          : ingestResume
+            ? "Будут импортированы уже выполненные Arsenkin задачи без новых submit и без повторного base-сбора. Продолжить импорт?"
+            : "Базовый поиск повторно выполняться не будет. Продолжить аудит с этапа Arsenkin?"
     );
     if (!ok) return;
     setRecovering(true);

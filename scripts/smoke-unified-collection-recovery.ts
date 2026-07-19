@@ -540,7 +540,8 @@ describe("unified collection staff recovery", () => {
     assert.match(api, /unified-collection\/recover/);
     assert.match(api, /export function recoverUnifiedOrionCollection/);
     assert.match(header, /unified-orion-recovery-cta/);
-    assert.match(header, /Продолжить аудит с этапа Arsenkin/);
+    assert.match(header, /Пересобрать отчёт \(без повторного сбора\)|Продолжить аудит с этапа Arsenkin/);
+    assert.match(view, /ASSEMBLY_RESUME|Пересобрать отчёт из уже собранных данных/);
     assert.match(view, /recoverUnifiedOrionCollection/);
     assert.match(view, /Базовый поиск повторно выполняться не будет/);
     assert.match(view, /getUnifiedOrionCollectionStatus/);

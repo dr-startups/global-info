@@ -44,6 +44,15 @@ function isRenderRecovery(job: UnifiedCollectionJobStatus | null): boolean {
   );
 }
 
+function isAssemblyRecovery(job: UnifiedCollectionJobStatus | null): boolean {
+  if (!job) return false;
+  return (
+    job.recoveryReason === "ASSEMBLY_RESUME" ||
+    job.lastErrorCode === "ASSEMBLY_FAILED" ||
+    job.lastErrorCode === "REQUIRED_SECTION_FAILED"
+  );
+}
+
 function unifiedStatusLabel(job: UnifiedCollectionJobStatus | null): string | null {
   if (!job) return null;
   if (job.stage === "FAILED_TERMINAL" || job.status === "FAILED") return "FAILED";
@@ -169,6 +178,7 @@ export function CaseHeader({
   const suggestionsRetry = isSuggestionsTargetedRetryState(unifiedJob);
   const showGeneralRecovery = shouldShowGeneralRecoveryCta(unifiedJob);
   const renderRecovery = isRenderRecovery(unifiedJob);
+  const assemblyRecovery = isAssemblyRecovery(unifiedJob);
   const ingestRecovery =
     unifiedJob?.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" ||
     unifiedJob?.recoveryReason === "ARSENKIN_INGEST_RESUME";
@@ -299,18 +309,22 @@ export function CaseHeader({
               title={
                 renderRecovery
                   ? "Продолжить с этапа рендера без повторного сбора"
-                  : ingestRecovery
-                    ? "Импортировать уже выполненные Arsenkin задачи без новых submit"
-                    : "Продолжить с этапа Arsenkin без повторного базового поиска"
+                  : assemblyRecovery
+                    ? "Пересобрать аналитику и deck из уже собранных данных без base/Arsenkin"
+                    : ingestRecovery
+                      ? "Импортировать уже выполненные Arsenkin задачи без новых submit"
+                      : "Продолжить с этапа Arsenkin без повторного базового поиска"
               }
               data-testid="unified-orion-recovery-cta"
             >
               {recovering ? <span className="dp-spinner" /> : null}
               {renderRecovery
                 ? "Продолжить с этапа рендера"
-                : ingestRecovery
-                  ? "Продолжить импорт Arsenkin"
-                  : "Продолжить аудит с этапа Arsenkin"}
+                : assemblyRecovery
+                  ? "Пересобрать отчёт (без повторного сбора)"
+                  : ingestRecovery
+                    ? "Продолжить импорт Arsenkin"
+                    : "Продолжить аудит с этапа Arsenkin"}
             </button>
           ) : null}
           {can("agents.run") &&
