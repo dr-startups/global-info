@@ -1492,7 +1492,46 @@ export function buildIdentityFragment(
   const units = scoped.surfaceUnits.filter((u) => u.surface === "wikipedia");
   const subjectClaims = units.flatMap((u) => u.claims.filter((c) => c.subjectMatch === "SUBJECT_MATCH"));
   const foreignClaims = units.flatMap((u) => u.claims.filter((c) => c.subjectMatch === "OTHER_SUBJECT"));
-  if (units.length === 0) {
+
+  // §1.4 — prefer factual WikipediaCheck over SERP-domain inference.
+  const regionHint = /ОАЭ|UAE|международ/i.test(regionLabel) ? "UAE" : "RU";
+  const wikiCheckEntries = Object.entries(scoped.evidenceIndex).filter(([, e]) => {
+    if (e.kind !== "wikipedia_check") return false;
+    const lang = String(e.language ?? "").toLowerCase();
+    const er = String(e.region ?? "").toUpperCase();
+    if (regionHint === "RU") {
+      return lang.startsWith("ru") || er === "RU" || (!lang && !er);
+    }
+    return !lang.startsWith("ru") || er === "UAE";
+  });
+  const wikiCheck = wikiCheckEntries[0];
+  const checkExists = wikiCheck ? Boolean(wikiCheck[1].wikipediaExists) : null;
+  const checkRef = wikiCheck?.[0];
+
+  if (units.length === 0 && checkExists === false) {
+    return {
+      slides: [
+        makeSlotSlide({
+          slot,
+          sectionId,
+          templateId: "coverage-empty-state",
+          content: {
+            ...coverageContent("no-identity-data"),
+            narrative:
+              "Фактическая проверка Wikipedia: статья о проверяемом субъекте не найдена. В составном наборе энциклопедических материалов по этому контуру также нет.",
+            whatWasFound: "Статья Wikipedia не найдена (проверка WikipediaCheck).",
+          },
+          evidenceRefs: checkRef ? [checkRef] : [],
+          findingIds: [],
+          emptyStateReason: "wikipedia-not-found",
+          metrics: { wikipediaCheckExists: 0 },
+        }),
+      ],
+      status: "READY",
+    };
+  }
+
+  if (units.length === 0 && checkExists !== true) {
     return {
       slides: [
         makeSlotSlide({
@@ -1508,7 +1547,11 @@ export function buildIdentityFragment(
       status: "READY",
     };
   }
-  const identityRefs = units.flatMap((u) => u.evidenceRefs);
+
+  const identityRefs = [
+    ...units.flatMap((u) => u.evidenceRefs),
+    ...(checkRef ? [checkRef] : []),
+  ];
   // Encyclopedia rows actually captured (titles + domains) — shown to the
   // client even when none of them is adverse, so the page reflects reality
   // ("article exists, content neutral") instead of an empty claim list.
@@ -1517,7 +1560,19 @@ export function buildIdentityFragment(
     .filter((e): e is NonNullable<typeof e> => Boolean(e?.title))
     .slice(0, 6)
     .map((e) => clampClientText(`${e.title}${e.domain ? ` — ${e.domain}` : ""}`, 400));
+  const checkBullet =
+    wikiCheck && checkExists === true
+      ? clampClientText(
+          `Проверка Wikipedia (${wikiCheck[1].language ?? "—"}): статья найдена${
+            wikiCheck[1].url ? ` — ${wikiCheck[1].url}` : ""
+          }${wikiCheck[1].title ? ` «${wikiCheck[1].title}»` : ""}.`,
+          400
+        )
+      : wikiCheck && checkExists === false
+        ? "Проверка Wikipedia: статья не найдена."
+        : null;
   const bullets = [
+    ...(checkBullet ? [checkBullet] : []),
     ...subjectClaims.slice(0, 5).map((c) => clampClientText(c.text, 400)),
     // OTHER_SUBJECT is identity pollution, never a neutral subject signal.
     ...foreignClaims
@@ -1535,11 +1590,24 @@ export function buildIdentityFragment(
   const hasAdverseRow = identityRefs.some((r) =>
     ADVERSE_PATTERNS.test(String(scoped.evidenceIndex[r]?.title ?? ""))
   );
-  const presenceNarrative = `В выдаче зафиксированы энциклопедические материалы о проверяемом субъекте${wikiDomains.length ? ` (${wikiDomains.join(", ")})` : ""}. ${
+  const checkNarrative =
+    checkExists === true
+      ? `Фактическая проверка Wikipedia подтверждает наличие статьи о проверяемом субъекте${
+          wikiCheck?.[1].url ? ` (${wikiCheck[1].url})` : ""
+        }. `
+      : checkExists === false
+        ? "Фактическая проверка Wikipedia: статья не найдена. "
+        : "";
+  const presenceNarrative = `${checkNarrative}В выдаче зафиксированы энциклопедические материалы о проверяемом субъекте${wikiDomains.length ? ` (${wikiDomains.join(", ")})` : ""}. ${
     hasAdverseRow
       ? "Отдельные карточки содержат чувствительные формулировки — их содержание отражено в темах повышенного внимания."
       : "Существенных негативных или спорных формулировок в этих карточках не выявлено."
   } Материалов об одноимённых лицах в контуре ${regionLabel} не зафиксировано.`;
+  // When only the check exists (no SERP wiki rows), narrate from the check alone.
+  const checkOnlyNarrative =
+    units.length === 0 && checkExists === true
+      ? `${checkNarrative}Энциклопедических строк в составной выдаче по контуру ${regionLabel} не зафиксировано; статус страницы опирается на проверку WikipediaCheck.`
+      : null;
   // Sidebar strictly scoped to the identity materials displayed on this page.
   const view = buildPageEvidenceView(scoped, identityRefs);
   const base = makeSlotSlide({
@@ -1549,13 +1617,17 @@ export function buildIdentityFragment(
       narrative:
         foreignClaims.length > 0
           ? `Справочные ресурсы (${regionLabel}) содержат материалы об одноимённом лице; ниже они отделены от данных проверяемого субъекта.`
-          : presenceNarrative,
+          : checkOnlyNarrative ?? presenceNarrative,
       bullets: shownBullets,
       ...pageFindingBlocks(scoped, view),
     },
     evidenceRefs: identityRefs,
     findingIds: view.findings.map((f) => f.findingId),
-    metrics: { subjectClaims: subjectClaims.length, identityPollution: foreignClaims.length },
+    metrics: {
+      subjectClaims: subjectClaims.length,
+      identityPollution: foreignClaims.length,
+      wikipediaCheckExists: checkExists === true ? 1 : checkExists === false ? 0 : -1,
+    },
   });
   return { slides: withContinuations(base, "wikipedia-knowledge"), status: "READY" };
 }

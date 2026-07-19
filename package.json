@@ -86,6 +86,7 @@
     "smoke:case-corpus-manifest": "tsx --test scripts/smoke-case-corpus-manifest.ts",
     "smoke:compliance-inventory-adapter": "tsx --test scripts/smoke-compliance-inventory-adapter.ts",
     "smoke:analyst-overrides": "tsx --test scripts/smoke-analyst-overrides.ts",
+    "smoke:evidence-supplement": "tsx --test scripts/smoke-evidence-supplement.ts",
     "golden-case": "tsx scripts/run-golden-case-report.ts",
     "smoke:golden-case": "tsx --test scripts/smoke-golden-case-report.ts",
     "smoke:orion-import-graph-isolation": "tsx --test scripts/smoke-orion-import-graph-isolation.ts",

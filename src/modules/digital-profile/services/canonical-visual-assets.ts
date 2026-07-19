@@ -41,6 +41,10 @@ import {
   tryFetchImagePreview,
 } from "../orion-report-spec/media-asset-svg";
 import { mapSurfaceBucket } from "../orion-golden/classic/composite-serp-overlay-merge";
+import {
+  pickRealSerpScreenshot,
+  type RealSerpScreenshotInput,
+} from "./evidence-supplement-adapter";
 
 export type CanonicalVisualAssets = {
   assets: RendererAssetEntry[];
@@ -52,6 +56,8 @@ export type CanonicalVisualAssets = {
     relatedPanels: number;
     aiPanels: number;
     imageGrids: number;
+    /** How many SERP slots used a real (LIVE/fixture) screenshot. */
+    realSerpSnapshots: number;
   };
 };
 
@@ -293,6 +299,13 @@ export async function buildCanonicalVisualAssets(input: {
    * on any error the synthetic placeholder card is kept.
    */
   fetchImagePreviews?: boolean;
+  /**
+   * Fresh real SERP screenshots (§1.4). When present for a region, they replace
+   * the synthetic snapshot for p10 (RU) / p27 (UAE).
+   */
+  realSerpScreenshots?: RealSerpScreenshotInput[];
+  /** Optional clock for freshness tests. */
+  nowMs?: number;
 }): Promise<CanonicalVisualAssets> {
   const fetchPreviews = input.fetchImagePreviews ?? process.env.NETWORK_CALLS !== "0";
   const assets: RendererAssetEntry[] = [];
@@ -309,13 +322,45 @@ export async function buildCanonicalVisualAssets(input: {
     relatedPanels: 0,
     aiPanels: 0,
     imageGrids: 0,
+    realSerpSnapshots: 0,
   };
 
-  // --- Synthetic SERP snapshots (organic) ---------------------------------
+  // --- SERP snapshots: prefer real (§1.4), else synthetic -----------------
   for (const [region, assetRef, slotId] of [
     ["RU", "ru_serp_snapshot", "p10_ru_serp_visual"],
     ["UAE", "uae_serp_snapshot", "p27_uae_serp_visual"],
   ] as const) {
+    const real = pickRealSerpScreenshot(input.realSerpScreenshots ?? [], region, {
+      nowMs: input.nowMs,
+    });
+    if (real) {
+      const organic = by(
+        (it) => surfaceOf(it) === "organic" && regionOf(it.region) === region
+      );
+      const visibleItems = organic.slice(0, 10).map(toVisibleItem);
+      const asset: RendererAssetEntry = {
+        assetRef: `${assetRef}_real_${real.id}`,
+        kind: "live_serp",
+        title:
+          real.title ??
+          (region === "UAE"
+            ? "ОАЭ — снимок выдачи (LIVE)"
+            : "Россия — снимок выдачи (LIVE)"),
+        caption:
+          real.caption ??
+          "Реальный снимок поисковой выдачи (существующий контур захвата).",
+        imageData: real.imageData,
+        evidenceRefs: [
+          ...(real.evidenceRefs ?? [`serp_capture:${real.id}`]),
+          ...visibleItems.map((v) => v.ref),
+        ],
+      };
+      push(asset);
+      bind(slotId, meta(asset, visibleItems));
+      counts.serpSnapshots += 1;
+      counts.realSerpSnapshots += 1;
+      continue;
+    }
     const ok = await buildSerpSnapshotAsset({
       assetRef,
       region,

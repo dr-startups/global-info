@@ -44,6 +44,11 @@ import {
 } from "../fixtures/golden-case/build-observations";
 import type { DatabaseProfileHitInput } from "../src/modules/digital-profile/services/compliance-inventory-adapter";
 import type { AnalystOverridesBundle } from "../src/modules/digital-profile/services/analyst-overrides-loader";
+import type { EvidenceSupplementBundle } from "../src/modules/digital-profile/services/evidence-supplement-adapter";
+import {
+  buildSurfacePanelSvg,
+  svgToPngBase64,
+} from "../src/modules/digital-profile/orion-report-spec/media-asset-svg";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURE_DIR = join(ROOT, "fixtures", "golden-case");
@@ -51,6 +56,7 @@ const BASELINE_PATH = join(FIXTURE_DIR, "baseline.json");
 const PROFILE_PATH = join(FIXTURE_DIR, "subject-profile.json");
 const COMPLIANCE_HITS_PATH = join(FIXTURE_DIR, "compliance-hits.json");
 const ANALYST_OVERRIDES_PATH = join(FIXTURE_DIR, "analyst-overrides.json");
+const EVIDENCE_SUPPLEMENT_PATH = join(FIXTURE_DIR, "evidence-supplement.json");
 
 const CASE_ID = "case-golden-holmstrom";
 const UNIFIED_JOB_ID = "unified-golden-1";
@@ -78,6 +84,54 @@ function loadComplianceHits(): DatabaseProfileHitInput[] {
 function loadAnalystOverrides(): AnalystOverridesBundle | null {
   if (!existsSync(ANALYST_OVERRIDES_PATH)) return null;
   return JSON.parse(readFileSync(ANALYST_OVERRIDES_PATH, "utf8")) as AnalystOverridesBundle;
+}
+
+async function loadEvidenceSupplement(): Promise<EvidenceSupplementBundle | null> {
+  if (!existsSync(EVIDENCE_SUPPLEMENT_PATH)) return null;
+  const bundle = JSON.parse(
+    readFileSync(EVIDENCE_SUPPLEMENT_PATH, "utf8")
+  ) as EvidenceSupplementBundle;
+  // Fill empty imageData with a deterministic offline PNG (keeps git fixture small).
+  for (const shot of bundle.serpScreenshots ?? []) {
+    if (shot.imageData && shot.imageData.length >= 80) continue;
+    shot.imageData = await svgToPngBase64(
+      buildSurfacePanelSvg({
+        title: shot.title ?? "Golden SERP fixture",
+        subtitle: "golden-case",
+        engineLabel: String(shot.engine ?? "Yandex"),
+        items: [
+          { label: "Anders Holmström — Nordkap Capital", meta: "ru.example" },
+          { label: "Fixture SERP row (real screenshot path)", meta: "news.example" },
+        ],
+      })
+    );
+  }
+  return bundle;
+}
+
+function assertEvidenceSupplementSlides(artifactsDir: string): void {
+  const visualsPath = join(artifactsDir, "visual-assets-by-slot.json");
+  assert.ok(existsSync(visualsPath), "visual-assets-by-slot.json missing");
+  const visuals = JSON.parse(readFileSync(visualsPath, "utf8")) as {
+    counts?: { realSerpSnapshots?: number };
+    visualAssets?: Record<string, Array<{ kind?: string; assetRef?: string }>>;
+  };
+  assert.ok((visuals.counts?.realSerpSnapshots ?? 0) >= 1, "expected real SERP snapshot count ≥ 1");
+  const p10 = visuals.visualAssets?.["p10_ru_serp_visual"]?.[0];
+  assert.ok(p10, "p10_ru_serp_visual missing");
+  assert.equal(p10.kind, "live_serp", `p10 must use real screenshot, got kind=${p10.kind}`);
+  assert.match(String(p10.assetRef), /_real_golden-serp-ru-1$/);
+
+  const assembled = JSON.parse(
+    readFileSync(join(artifactsDir, "deck", "assembled-deck.json"), "utf8")
+  ) as { slides: Array<{ baseSlotId?: string; narrative?: string }> };
+  const p13 = assembled.slides.find((s) => s.baseSlotId === "p13_ru_wikipedia");
+  assert.ok(p13, "p13_ru_wikipedia missing");
+  assert.match(
+    String(p13.narrative ?? ""),
+    /проверк|Wikipedia/i,
+    `p13 should mention Wikipedia check: ${p13.narrative}`
+  );
 }
 
 function assertComplianceSlides(artifactsDir: string): void {
@@ -223,10 +277,12 @@ export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
     gptCaller: null,
     complianceHits: loadComplianceHits(),
     analystOverrides: loadAnalystOverrides(),
+    evidenceSupplement: await loadEvidenceSupplement(),
   };
 
   const res = await runCanonicalReportPrepare(input);
   assertComplianceSlides(artifactsDir);
+  assertEvidenceSupplementSlides(artifactsDir);
   const overridesPath = join(artifactsDir, "analytics", "analyst-overrides-applied.json");
   assert.ok(existsSync(overridesPath), "analyst-overrides-applied.json missing");
   const overridesApplied = JSON.parse(readFileSync(overridesPath, "utf8")) as {

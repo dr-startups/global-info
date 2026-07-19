@@ -159,6 +159,7 @@ export const SURFACE_ANALYZERS: AnalyzerDef[] = [
     // article" while wikipedia.org rows sit in the SERP table of the report.
     select: (i) =>
       i.evidenceType === "wikipedia" ||
+      i.evidenceType === "wikipedia_check" ||
       surfaceOf(i) === "wikipedia" ||
       /(?:^|[./])(?:wikipedia\.org|ruwiki\.ru|cyclowiki\.org)\//iu.test(String(i.sourceUrl ?? "")),
   },

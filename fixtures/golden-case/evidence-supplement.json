@@ -1,0 +1,26 @@
+{
+  "version": "evidence-supplement-v1",
+  "caseId": "case-golden-holmstrom",
+  "wikipediaChecks": [
+    {
+      "id": "golden-wiki-ru-1",
+      "exists": true,
+      "url": "https://ru.wikipedia.org/wiki/Anders_Holmstrom",
+      "language": "ru",
+      "pageTitle": "Anders Holmström",
+      "lastChecked": "2026-07-01T12:00:00.000Z"
+    }
+  ],
+  "serpScreenshots": [
+    {
+      "id": "golden-serp-ru-1",
+      "region": "RU",
+      "engine": "YANDEX",
+      "capturedAt": "2026-07-01T12:00:00.000Z",
+      "title": "Россия — снимок выдачи (fixture)",
+      "caption": "Реальный снимок выдачи (golden-case fixture)",
+      "evidenceRefs": ["serp_capture:golden-serp-ru-1"],
+      "imageData": ""
+    }
+  ]
+}

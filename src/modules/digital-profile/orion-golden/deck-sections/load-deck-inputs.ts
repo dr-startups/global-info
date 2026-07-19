@@ -144,6 +144,59 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     }
   }
 
+  // §1.4 — WikipediaCheck (+ screenshot provenance refs) for identity / visuals.
+  const supplementPath = join(analyticsDir, "evidence-supplement.json");
+  if (existsSync(supplementPath)) {
+    try {
+      const supplement = readJson<{
+        wikipediaChecks?: Array<{
+          id?: string;
+          exists?: boolean;
+          url?: string | null;
+          language?: string | null;
+          pageTitle?: string | null;
+        }>;
+        serpScreenshots?: Array<{
+          id?: string;
+          region?: string;
+          engine?: string | null;
+          evidenceRefs?: string[];
+        }>;
+      }>(supplementPath);
+      for (const w of supplement.wikipediaChecks ?? []) {
+        if (!w.id) continue;
+        const ref = `inventory:wiki-${w.id}`;
+        const existing = evidenceIndex[ref] ?? {};
+        evidenceIndex[ref] = {
+          ...existing,
+          kind: "wikipedia_check",
+          title: w.pageTitle ?? existing.title,
+          url: w.url ?? existing.url,
+          wikipediaExists: Boolean(w.exists),
+          language: w.language ?? existing.language,
+          region:
+            String(w.language ?? "").toLowerCase().startsWith("ru") ? "RU" : existing.region,
+        };
+        knownEvidenceRefs.add(ref);
+      }
+      for (const s of supplement.serpScreenshots ?? []) {
+        if (!s.id) continue;
+        const ref = `serp_capture:${s.id}`;
+        evidenceIndex[ref] = {
+          ...(evidenceIndex[ref] ?? {}),
+          kind: "serp_screenshot",
+          region: s.region,
+          engine: s.engine ?? undefined,
+          title: "SERP screenshot",
+        };
+        knownEvidenceRefs.add(ref);
+        for (const r of s.evidenceRefs ?? []) knownEvidenceRefs.add(r);
+      }
+    } catch {
+      // non-fatal
+    }
+  }
+
   for (const f of mergedBundle.findings) for (const r of f.evidenceRefs) knownEvidenceRefs.add(r);
   for (const u of surfaceUnits) {
     for (const r of u.evidenceRefs) knownEvidenceRefs.add(r);

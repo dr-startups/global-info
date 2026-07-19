@@ -63,6 +63,11 @@ import type {
   AnalystOverridesBundle,
   AnalystOverridesPrisma,
 } from "./analyst-overrides-loader";
+import {
+  resolveEvidenceSupplement,
+  type EvidenceSupplementBundle,
+  type EvidenceSupplementPrisma,
+} from "./evidence-supplement-adapter";
 
 export type CanonicalPrepareBlockerCode =
   | "CANONICAL_PREPARE_DISABLED"
@@ -113,7 +118,8 @@ export type CanonicalPrepareInput = {
    */
   prisma?: (ReportQualityPrismaCounts &
     Partial<ComplianceInventoryPrisma> &
-    Partial<AnalystOverridesPrisma>) | null;
+    Partial<AnalystOverridesPrisma> &
+    Partial<EvidenceSupplementPrisma>) | null;
   /**
    * Offline/fixture compliance hits (§1.2). When set, skips prisma load.
    * Pass `[]` to force an empty compliance surface.
@@ -121,6 +127,8 @@ export type CanonicalPrepareInput = {
   complianceHits?: DatabaseProfileHitInput[] | null;
   /** Offline/fixture analyst overrides (§1.3). When set, skips prisma load. */
   analystOverrides?: AnalystOverridesBundle | null;
+  /** Offline/fixture WikipediaCheck + SERP screenshots (§1.4). */
+  evidenceSupplement?: EvidenceSupplementBundle | null;
 };
 
 export type CanonicalPrepareResult = {
@@ -506,7 +514,17 @@ export async function runCanonicalReportPrepare(
       complianceHits: input.complianceHits,
       prisma: input.prisma?.databaseProfile ? input.prisma : null,
     });
-    const items = [...serpItems, ...complianceItems];
+    const supplement = await resolveEvidenceSupplement({
+      caseId: input.caseId,
+      reportRunId: baseReportRunId,
+      fixture: input.evidenceSupplement,
+      prisma:
+        input.evidenceSupplement == null &&
+        (input.prisma?.wikipediaCheck || input.prisma?.serpCapture)
+          ? input.prisma
+          : null,
+    });
+    const items = [...serpItems, ...complianceItems, ...supplement.wikipediaItems];
     writeFileSync(
       join(analyticsDir, "compliance-inventory.json"),
       `${JSON.stringify(
@@ -519,6 +537,11 @@ export async function runCanonicalReportPrepare(
         null,
         2
       )}\n`,
+      "utf8"
+    );
+    writeFileSync(
+      join(analyticsDir, "evidence-supplement.json"),
+      `${JSON.stringify(supplement.bundle, null, 2)}\n`,
       "utf8"
     );
 
@@ -564,6 +587,7 @@ export async function runCanonicalReportPrepare(
       const visuals = await buildCanonicalVisualAssets({
         subjectName: subjectDisplayName,
         items,
+        realSerpScreenshots: supplement.serpScreenshots,
       });
       rendererAssets = visuals.assets;
       visualAssetsBySlot = visuals.visualAssets;

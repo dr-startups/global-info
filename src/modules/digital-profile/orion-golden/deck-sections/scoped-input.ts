@@ -66,6 +66,10 @@ export type ScopedEvidenceIndex = Record<
     matchScore?: number;
     /** Compliance databases: review status (e.g. PENDING). */
     reviewStatus?: string;
+    /** WikipediaCheck.exists — factual check, not SERP domain inference. */
+    wikipediaExists?: boolean;
+    /** WikipediaCheck.language (ru / en / …). */
+    language?: string;
   }
 >;
 
