@@ -1435,6 +1435,45 @@ export function prepareOrionGoldenArtifacts(
 // Unified ORION collection (base + Arsenkin + composite + Golden)
 // ---------------------------------------------------------------------------
 
+/** Compact report-quality payload from GET unified-collection (REMEDIATION §0.1/0.4). */
+export type JobReportQualityDTO = {
+  version: string;
+  generatedAt: string;
+  counts: {
+    dbSearchResults: number | null;
+    dbSurfaceItems: number | null;
+    manifestIds: number | null;
+    compositeObservations: number | null;
+    subjectMatch: number | null;
+    ambiguous: number | null;
+    otherSubject: number | null;
+    insufficient: number | null;
+    verifiedFindings: number | null;
+    ambiguousFindings: number | null;
+  };
+  gpt: {
+    stage1Status: string;
+    stage1Reason?: string;
+    stage2Applied: number;
+    stage2FallbackError: number;
+    stage2FallbackValidation: number;
+    caseAnalysisUsed: boolean;
+  };
+  visuals: { built: number; failed: number; warning: string | null };
+  slides: {
+    total: number;
+    withContent: number;
+    emptyStateCount: number;
+    emptyState: Array<{ slotId: string; reason: string }>;
+  };
+  arsenkin: {
+    enrichmentComplete: boolean | null;
+    enrichmentObservationCount: number | null;
+    agentsOk: number;
+    agentsFailed: number;
+  };
+};
+
 export type UnifiedCollectionJobStatus = {
   jobId: string;
   unifiedJobId: string;
@@ -1459,6 +1498,8 @@ export type UnifiedCollectionJobStatus = {
     progressRatio: number;
   } | null;
   warnings: string[];
+  /** Funnel / GPT / empty-state quality summary when prepare has run. */
+  reportQuality?: JobReportQualityDTO | null;
   lastError: string | null;
   lastErrorCode: string | null;
   baseReportRunId: string | null;

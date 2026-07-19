@@ -105,7 +105,13 @@ export type JobReportQuality = {
     caseAnalysisUsed: boolean;
   };
   visuals: { built: number; failed: number; warning: string | null };
-  slides: { total: number; withContent: number; emptyStateCount: number };
+  slides: {
+    total: number;
+    withContent: number;
+    emptyStateCount: number;
+    /** Empty-state slots for the operator quality panel (REMEDIATION §0.4). */
+    emptyState: Array<{ slotId: string; reason: string }>;
+  };
   arsenkin: {
     enrichmentComplete: boolean | null;
     enrichmentObservationCount: number | null;
@@ -481,6 +487,10 @@ export function toJobReportQuality(summary: ReportQualitySummary): JobReportQual
       total: summary.slides.total,
       withContent: summary.slides.withContent,
       emptyStateCount: summary.slides.emptyState.length,
+      emptyState: summary.slides.emptyState.map((e) => ({
+        slotId: e.slotId,
+        reason: e.reason,
+      })),
     },
     arsenkin: {
       enrichmentComplete: summary.arsenkin.enrichmentComplete,

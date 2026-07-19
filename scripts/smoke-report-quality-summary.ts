@@ -194,6 +194,8 @@ describe("report-quality-summary aggregator (§0.1)", () => {
     const compact = toJobReportQuality(parsed);
     assert.equal(compact.gpt.stage1Status, "FAILED");
     assert.equal(compact.slides.emptyStateCount, 2);
+    assert.equal(compact.slides.emptyState.length, 2);
+    assert.ok(compact.slides.emptyState.every((e) => e.slotId && e.reason));
     assert.equal(compact.arsenkin.agentsFailed, 1);
     assert.equal(compact.arsenkin.agentsOk, 4);
   });

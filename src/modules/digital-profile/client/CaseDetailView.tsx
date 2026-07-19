@@ -41,6 +41,7 @@ import {
 import { CaseHeader } from "./CaseHeader";
 import { CaseTabs } from "./CaseTabs";
 import { SubjectProfilePanel } from "./SubjectProfilePanel";
+import { ReportQualityPanel } from "./ReportQualityPanel";
 import { OrionV2ReportPanel } from "./OrionV2ReportPanel";
 import { OrionClientStoryboardReportPanel } from "./OrionClientStoryboardReportPanel";
 import { useDigitalProfileI18n } from "./i18n-provider";
@@ -607,6 +608,12 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
       {can("case.view") ? (
         <Card>
           <SubjectProfilePanel caseId={state.caseDetail.id} />
+        </Card>
+      ) : null}
+
+      {unifiedJob?.reportQuality ? (
+        <Card>
+          <ReportQualityPanel quality={unifiedJob.reportQuality} />
         </Card>
       ) : null}
 
