@@ -21,11 +21,15 @@ import type { ClassifierSubjectProfile } from "../orion-golden/analytics/subject
 import { runOrionAnalyticsPipeline } from "../orion-golden/analytics/run-analytics-pipeline";
 import {
   runDeckBuildWithGptCopy,
+  runDeckGptCopyRetry,
   type GptDeckLayer,
 } from "../orion-golden/deck-sections/gpt-enhanced-deck-build";
 import { loadDeckInputsFromAnalyticsDir } from "../orion-golden/deck-sections/load-deck-inputs";
 import {
+  GptCaseAnalysisSchema,
+  GPT_CASE_ANALYSIS_VERSION,
   runGptCaseAnalysis,
+  type GptCaseAnalysis,
   type GptJsonCaller,
 } from "../orion-golden/gpt/gpt-case-analysis";
 import { digitalProfileConfig } from "../config";
@@ -77,7 +81,9 @@ export type CanonicalPrepareBlockerCode =
   | "SUBJECT_PROFILE_MISSING"
   | "ASSEMBLY_FAILED"
   | "REQUIRED_SECTION_FAILED"
-  | "RENDER_FAILED";
+  | "RENDER_FAILED"
+  | "GPT_COPY_RESUME_INPUTS_MISSING"
+  | "GPT_COPY_CALLER_UNAVAILABLE";
 
 export class CanonicalPrepareBlockedError extends Error {
   code: CanonicalPrepareBlockerCode;
@@ -109,9 +115,10 @@ export type CanonicalPrepareInput = {
   gptCaller?: GptJsonCaller | null;
   /**
    * `render` — reuse valid assembled deck artifacts; skip analytics/SectionPacks/assembly.
+   * `gpt-copy` — retry FALLBACK_* stage-2 fragments on existing packs, reassemble, one render.
    * `full` (default) — run the complete prepare pipeline.
    */
-  resumeFrom?: "full" | "render";
+  resumeFrom?: "full" | "render" | "gpt-copy";
   /**
    * Optional Prisma for live DB funnel counts, DatabaseProfile loading,
    * analyst overrides, WikipediaCheck and SerpCapture (§1.2–1.4).
@@ -514,6 +521,143 @@ export async function runCanonicalReportPrepare(
     }
     // If assembled payload is missing/corrupt, fall through to rebuild deck from
     // existing composite (never base/Arsenkin provider calls).
+  }
+
+  if (resumeFrom === "gpt-copy") {
+    // Selective stage-2 retry: reuse analytics + section packs on disk.
+    // Never recollect base/Arsenkin and never re-run the analytics pipeline.
+    const bundlePath = join(analyticsDir, "verified-finding-bundle.json");
+    if (!existsSync(bundlePath)) {
+      throw new CanonicalPrepareBlockedError(
+        "GPT_COPY_RESUME_INPUTS_MISSING",
+        "analytics artifacts missing for gpt-copy resume"
+      );
+    }
+    const gptCallerOnce = resolveGptCaller(input);
+    if (!gptCallerOnce) {
+      throw new CanonicalPrepareBlockedError(
+        "GPT_COPY_CALLER_UNAVAILABLE",
+        "GPT caller unavailable for gpt-copy resume"
+      );
+    }
+
+    let visualAssetsBySlot: VisualAssetsBySlot = {};
+    const assetsPath = join(input.artifactsDir, "report-assets.json");
+    if (existsSync(assetsPath)) {
+      try {
+        const parsed = JSON.parse(readFileSync(assetsPath, "utf8")) as
+          | RendererAssetEntry[]
+          | { assets: RendererAssetEntry[] };
+        rendererAssets = Array.isArray(parsed) ? parsed : parsed.assets ?? [];
+      } catch {
+        visualAssetWarning =
+          "persisted report-assets.json unreadable; gpt-copy resume without visual assets";
+      }
+    }
+    const slotAssetsPath = join(input.artifactsDir, "visual-assets-by-slot.json");
+    if (existsSync(slotAssetsPath)) {
+      try {
+        const parsed = JSON.parse(readFileSync(slotAssetsPath, "utf8")) as {
+          visualAssets?: VisualAssetsBySlot;
+        };
+        visualAssetsBySlot = parsed.visualAssets ?? {};
+      } catch {
+        // non-fatal — packs already carry slide refs
+      }
+    }
+
+    const deckInputs = loadDeckInputsFromAnalyticsDir(analyticsDir);
+    analyticsDatasetId = deckInputs.sourceDatasetId;
+
+    let caseAnalysis: GptCaseAnalysis | null = null;
+    const caseAnalysisPath = join(analyticsDir, "gpt-case-analysis.json");
+    if (existsSync(caseAnalysisPath)) {
+      try {
+        const raw = JSON.parse(readFileSync(caseAnalysisPath, "utf8")) as unknown;
+        const parsed = GptCaseAnalysisSchema.safeParse(raw);
+        if (parsed.success) {
+          const stamp = raw as { version?: string; generatedAt?: string };
+          caseAnalysis = {
+            ...parsed.data,
+            version: GPT_CASE_ANALYSIS_VERSION,
+            generatedAt:
+              typeof stamp.generatedAt === "string"
+                ? stamp.generatedAt
+                : new Date().toISOString(),
+          };
+        }
+      } catch {
+        caseAnalysis = null;
+      }
+    }
+
+    const deck = await runDeckGptCopyRetry({
+      ctx: {
+        caseId: deckInputs.caseId,
+        reportRunId: deckInputs.reportRunId,
+        sourceDatasetId: deckInputs.sourceDatasetId,
+        contentVersion: "deck-sections-v15",
+        subject: {
+          displayName: subjectDisplayName,
+          aliases: subjectProfile.aliases ?? [],
+        },
+        bundle: deckInputs.mergedBundle,
+        surfaceUnits: deckInputs.surfaceUnits,
+        metricSnapshot: deckInputs.metricSnapshot,
+        evidenceIndex: deckInputs.evidenceIndex,
+        extras: {
+          executiveSummary: deckInputs.executiveSummary as never,
+          visualAssets: visualAssetsBySlot,
+          gptCaseAnalysis: caseAnalysis ?? undefined,
+        },
+      },
+      bundleForValidation: deckInputs.mergedBundle,
+      knownEvidenceRefs: deckInputs.knownEvidenceRefs,
+      outputRoot: deckDir,
+      baseObservationCountBefore: deckInputs.baseCountBefore,
+      baseObservationCountAfter: deckInputs.baseCountAfter,
+      gpt: { caller: gptCallerOnce, caseAnalysis },
+    });
+
+    if (deck.assembly.errors.length > 0) {
+      throw new CanonicalPrepareBlockedError(
+        "ASSEMBLY_FAILED",
+        `deck assembly failed: ${deck.assembly.errors.slice(0, 4).join("; ")}`
+      );
+    }
+    if (deck.manifest.requiredSectionsFailed.length > 0) {
+      throw new CanonicalPrepareBlockedError(
+        "REQUIRED_SECTION_FAILED",
+        `required sections failed: ${deck.manifest.requiredSectionsFailed.join(", ")}`
+      );
+    }
+
+    const presentSlots = new Set(
+      deck.assembly.deckManifest.slides
+        .filter((s) => !s.isContinuation)
+        .map((s) => s.baseSlotId)
+    );
+    const coveredSlots = new Set([...presentSlots, ...MERGED_SLOT_IDS]);
+    const missingSlots = CANONICAL_SLOT_IDS.filter((id) => !coveredSlots.has(id));
+    if (missingSlots.length > 0) {
+      throw new CanonicalPrepareBlockedError(
+        "ASSEMBLY_FAILED",
+        `baseSlotCoverage != 36; missing canonical slots: ${missingSlots.join(", ")}`
+      );
+    }
+
+    assemblyCount = 1;
+    baseSlotCoverage = CANONICAL_SLOT_IDS.length;
+    requiredSectionsFailed = deck.manifest.requiredSectionsFailed;
+    pageCount = deck.assembly.deckManifest.pageCount;
+    deckManifest = deck.assembly.deckManifest;
+    rendererSlides = deck.assembly.rendererSlides;
+    const reusedCheck = loadReusableAssembledDeck({
+      artifactsDir: input.artifactsDir,
+      caseId: input.caseId,
+      expectedDatasetId: input.binding.compositeDatasetId,
+    });
+    assemblyHash = reusedCheck?.assemblyHash ?? null;
   }
 
   if (!deckManifest || !rendererSlides) {

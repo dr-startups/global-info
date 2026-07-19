@@ -1550,6 +1550,10 @@ export type UnifiedCollectionJobStatus = {
   /** Server-side eligibility for «Пересобрать отчёт» (analytics+render only, no paid collection). */
   rebuildAllowed?: boolean;
   rebuildBlockerReason?: string | null;
+  /** REMEDIATION §4.3 — selective GPT stage-2 FALLBACK_* retry (no paid collection). */
+  gptCopyRetryAllowed?: boolean;
+  gptCopyRetryBlockerReason?: string | null;
+  gptCopyFallbackFragmentCount?: number;
   /** Durable Arsenkin poll cadence (persists across F5 / restart). */
   nextPollAt?: string | null;
   pollAttempt?: number;
@@ -1659,6 +1663,25 @@ export function rebuildUnifiedReport(
   // Rebuild only re-runs analytics/assembly/render from persisted composite —
   // never POST /unified-collection (paid) and never /recover.
   return request(`/cases/${caseId}/unified-collection/rebuild-report`, {
+    method: "POST",
+    body: JSON.stringify({ jobId }),
+  });
+}
+
+export function retryUnifiedGptCopy(
+  caseId: string,
+  jobId: string
+): Promise<{
+  accepted: boolean;
+  jobId: string;
+  unifiedJobId: string;
+  stage: string;
+  status: string;
+  resumeCheckpoint: string;
+  fallbackFragmentCount: number;
+}> {
+  // Selective stage-2 retry only — never paid collection / full rebuild.
+  return request(`/cases/${caseId}/unified-collection/retry-gpt-copy`, {
     method: "POST",
     body: JSON.stringify({ jobId }),
   });

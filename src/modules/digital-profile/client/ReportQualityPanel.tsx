@@ -38,21 +38,33 @@ function FunnelCell({ label, value }: { label: string; value: string }) {
 
 export function ReportQualityPanel({
   quality,
+  onRetryGptCopy,
+  retryingGptCopy,
+  gptCopyRetryAllowed,
 }: {
   quality: JobReportQualityDTO | null | undefined;
+  /** REMEDIATION §4.3 — selective FALLBACK_* stage-2 retry. */
+  onRetryGptCopy?: () => void;
+  retryingGptCopy?: boolean;
+  gptCopyRetryAllowed?: boolean;
 }) {
   if (!quality) return null;
 
   const q = normalizeJobReportQuality(quality);
   const { counts, gpt, visuals, slides, arsenkin } = q;
+  const fallbackTotal =
+    (gpt.stage2FallbackError ?? 0) + (gpt.stage2FallbackValidation ?? 0);
   const stage2Tone: "ok" | "warn" | "danger" | "neutral" =
-    (gpt.stage2FallbackError ?? 0) + (gpt.stage2FallbackValidation ?? 0) > 0
+    fallbackTotal > 0
       ? "danger"
       : (gpt.stage2Applied ?? 0) > 0
         ? "ok"
         : (gpt.stage2SkippedCached ?? 0) > 0 || (gpt.stage2NoChanges ?? 0) > 0
           ? "warn"
           : "neutral";
+  const showRetry =
+    Boolean(onRetryGptCopy) &&
+    (gptCopyRetryAllowed ?? fallbackTotal > 0);
 
   return (
     <div className="dp-stack" style={{ gap: 12 }} data-testid="report-quality-panel">
@@ -116,13 +128,25 @@ export function ReportQualityPanel({
           </div>
           <Badge tone={stage2Tone}>
             применено {gpt.stage2Applied ?? 0}
-            {(gpt.stage2FallbackError ?? 0) + (gpt.stage2FallbackValidation ?? 0) > 0
-              ? ` / fallback ${(gpt.stage2FallbackError ?? 0) + (gpt.stage2FallbackValidation ?? 0)}`
-              : ""}
+            {fallbackTotal > 0 ? ` / fallback ${fallbackTotal}` : ""}
             {(gpt.stage2SkippedCached ?? 0) > 0 ? ` · кэш ${gpt.stage2SkippedCached}` : ""}
             {(gpt.stage2NoChanges ?? 0) > 0 ? ` · без изменений ${gpt.stage2NoChanges}` : ""}
             {gpt.caseAnalysisUsed ? " · анализ кейса" : ""}
           </Badge>
+          {showRetry ? (
+            <div style={{ marginTop: 8 }}>
+              <button
+                type="button"
+                className="dp-btn"
+                data-testid="retry-gpt-copy-cta"
+                disabled={retryingGptCopy}
+                title="Повторно вызвать GPT только для фрагментов со статусом FALLBACK. Платный сбор не запускается."
+                onClick={onRetryGptCopy}
+              >
+                {retryingGptCopy ? "Дожимаем GPT…" : "Дожать GPT-копирайт"}
+              </button>
+            </div>
+          ) : null}
         </div>
         <div>
           <div className="dp-muted" style={{ fontSize: 12, marginBottom: 4 }}>

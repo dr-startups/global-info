@@ -1176,6 +1176,7 @@ async function stepPrepare(
 
   const resumeFromRender =
     job.resumeCheckpoint === "RENDER" || job.lastErrorCode === "RENDER_FAILED";
+  const resumeFromGptCopy = job.resumeCheckpoint === "GPT_COPY";
 
   const enrichmentState =
     job.arsenkinEnrichmentState ??
@@ -1186,8 +1187,8 @@ async function stepPrepare(
     );
 
   // PRE_RENDER_DATA_GATE — never call expensive HTTP render without data readiness.
-  // RENDER-only resume already passed data gates; skip re-checking enrichment ingest.
-  if (!resumeFromRender) {
+  // RENDER / GPT_COPY resume already passed data gates; skip re-checking enrichment ingest.
+  if (!resumeFromRender && !resumeFromGptCopy) {
     const preGate = assertPreRenderDataGates({
       binding,
       manifest,
@@ -1253,7 +1254,11 @@ async function stepPrepare(
         merge: m,
         subjectProfile: deps.subjectProfile ?? null,
         render: deps.renderDeck,
-        resumeFrom: resumeFromRender ? "render" : "full",
+        resumeFrom: resumeFromGptCopy
+          ? "gpt-copy"
+          : resumeFromRender
+            ? "render"
+            : "full",
         prisma: preparePrisma
           ? {
               searchResult: preparePrisma.searchResult,
@@ -1328,12 +1333,12 @@ async function stepPrepare(
     );
   }
 
-  // Full prepare: exactly one assembly. Render-resume: assembly may be 0 (reused).
+  // Full / gpt-copy prepare: exactly one assembly. Render-resume: assembly may be 0 (reused).
   // Always exactly one render per successful prepare.
   const assemblyOk =
     prepared.assemblyCount == null ||
     prepared.assemblyCount === 1 ||
-    (resumeFromRender && prepared.assemblyCount === 0);
+    (resumeFromRender && !resumeFromGptCopy && prepared.assemblyCount === 0);
   if (!assemblyOk || (prepared.renderCount != null && prepared.renderCount !== 1)) {
     return (
       patchUnifiedCollectionJob(job.caseId, {
@@ -1355,7 +1360,7 @@ async function stepPrepare(
     realCollectionSufficient: manifest.realCollectionSufficient,
     allowMockReport: deps.allowMockReport,
     coverage: job.coverage,
-    skipBaseCoverage: resumeFromRender,
+    skipBaseCoverage: resumeFromRender || resumeFromGptCopy,
     requireAiReport: digitalProfileConfig.requireAiReport,
     gptLayerApplied: gptLayerAppliedFromQuality(prepared.reportQuality),
   });

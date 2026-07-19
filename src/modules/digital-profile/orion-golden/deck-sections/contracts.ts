@@ -197,7 +197,8 @@ export const SectionPackV2Schema = z
     /** GPT client-copy layer marker (stage 2); absent on deterministic packs. */
     gptCopy: z
       .object({
-        promptVersion: z.string().min(1),
+        /** Empty when only a FALLBACK_* stamp is present (not a cache hit). */
+        promptVersion: z.string(),
         appliedSlides: z.number().int().nonnegative(),
         /**
          * Whether stage-1 case analysis was injected when this copy was written.
@@ -205,6 +206,9 @@ export const SectionPackV2Schema = z
          * starts succeeding (live Deripaska: applied 0 / SKIPPED_CACHED).
          */
         caseAnalysisUsed: z.boolean().optional(),
+        /** REMEDIATION §4.3 — last stage-2 outcome for selective retry. */
+        lastStatus: z.string().optional(),
+        lastDetail: z.string().optional(),
       })
       .optional(),
   })

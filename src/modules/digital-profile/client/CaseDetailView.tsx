@@ -18,6 +18,7 @@ import {
   startUnifiedOrionCollection,
   recoverUnifiedOrionCollection,
   rebuildUnifiedReport,
+  retryUnifiedGptCopy,
   retryUnifiedEnrichmentSuggestionsTask,
   getUnifiedOrionCollectionStatus,
   type AgentInfo,
@@ -76,6 +77,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
   const [auditing, setAuditing] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
+  const [retryingGptCopy, setRetryingGptCopy] = useState(false);
   const [unifiedJob, setUnifiedJob] = useState<UnifiedCollectionJobStatus | null>(null);
   const [banner, setBanner] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
   const [prepareBusy, setPrepareBusy] = useState(false);
@@ -334,7 +336,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
   ]);
 
   const handleRebuildReport = useCallback(async () => {
-    if (auditing || generating || recovering || rebuilding) return;
+    if (auditing || generating || recovering || rebuilding || retryingGptCopy) return;
     const jobId = unifiedJob?.unifiedJobId || unifiedJob?.jobId;
     if (!jobId || !unifiedJob?.rebuildAllowed) {
       setBanner({
@@ -380,6 +382,64 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
     generating,
     recovering,
     rebuilding,
+    retryingGptCopy,
+    caseId,
+    unifiedJob,
+    pollUnifiedUntilTerminal,
+    tError,
+  ]);
+
+  const handleRetryGptCopy = useCallback(async () => {
+    if (auditing || generating || recovering || rebuilding || retryingGptCopy) return;
+    const jobId = unifiedJob?.unifiedJobId || unifiedJob?.jobId;
+    if (!jobId || !unifiedJob?.gptCopyRetryAllowed) {
+      setBanner({
+        kind: "error",
+        text: `Дожать GPT недоступно${
+          unifiedJob?.gptCopyRetryBlockerReason
+            ? ` (${unifiedJob.gptCopyRetryBlockerReason})`
+            : ""
+        }.`,
+      });
+      return;
+    }
+    const ok = window.confirm(
+      "Будут повторно обработаны только GPT-фрагменты со статусом FALLBACK. " +
+        "Полная пересборка аналитики и платный сбор не выполняются. Продолжить?"
+    );
+    if (!ok) return;
+    setRetryingGptCopy(true);
+    setBanner(null);
+    try {
+      const result = await retryUnifiedGptCopy(caseId, jobId);
+      setUnifiedJob((prev) =>
+        prev
+          ? {
+              ...prev,
+              jobId: result.jobId,
+              unifiedJobId: result.unifiedJobId,
+              stage: result.stage,
+              status: result.status,
+              resumeCheckpoint: result.resumeCheckpoint,
+            }
+          : prev
+      );
+      await pollUnifiedUntilTerminal();
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setBanner({ kind: "error", text: tError(code, msg) });
+    } finally {
+      setRetryingGptCopy(false);
+      const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
+      if (job) setUnifiedJob(job);
+    }
+  }, [
+    auditing,
+    generating,
+    recovering,
+    rebuilding,
+    retryingGptCopy,
     caseId,
     unifiedJob,
     pollUnifiedUntilTerminal,
@@ -615,7 +675,12 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
       {unifiedJob?.reportQuality ? (
         <Card>
           <SoftRenderBoundary>
-            <ReportQualityPanel quality={unifiedJob.reportQuality} />
+            <ReportQualityPanel
+              quality={unifiedJob.reportQuality}
+              onRetryGptCopy={handleRetryGptCopy}
+              retryingGptCopy={retryingGptCopy}
+              gptCopyRetryAllowed={Boolean(unifiedJob.gptCopyRetryAllowed)}
+            />
           </SoftRenderBoundary>
         </Card>
       ) : null}

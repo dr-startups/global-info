@@ -20,6 +20,7 @@ import {
 } from "@/modules/digital-profile/services/unified-orion-collection-orchestrator";
 import { withUnifiedRecoveryStatusFields } from "@/modules/digital-profile/services/unified-collection-recovery";
 import { evaluateUnifiedReportRebuildEligibility } from "@/modules/digital-profile/services/unified-report-rebuild";
+import { evaluateUnifiedGptCopyRetryEligibility } from "@/modules/digital-profile/services/unified-gpt-copy-retry";
 import { withSuggestionsGapStatus } from "@/modules/digital-profile/services/unified-suggestions-gap";
 import { getCanonicalDownloadAvailability } from "@/modules/digital-profile/services/canonical-report-artifacts";
 
@@ -101,6 +102,7 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
       ? getCanonicalDownloadAvailability({ caseId: id, jobId: job.unifiedJobId })
       : { pdf: false, pptx: false, contactSheet: false };
   const rebuild = evaluateUnifiedReportRebuildEligibility({ caseId: id, job });
+  const gptCopyRetry = evaluateUnifiedGptCopyRetryEligibility({ caseId: id, job });
   return jsonOk({
     job: job
       ? {
@@ -142,6 +144,9 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
           recoveryReason: recovery.recoveryReason,
           rebuildAllowed: rebuild.rebuildAllowed,
           rebuildBlockerReason: rebuild.rebuildBlockerReason,
+          gptCopyRetryAllowed: gptCopyRetry.gptCopyRetryAllowed,
+          gptCopyRetryBlockerReason: gptCopyRetry.gptCopyRetryBlockerReason,
+          gptCopyFallbackFragmentCount: gptCopyRetry.fallbackFragmentCount,
           recoveryAudit: job.recoveryAudit ?? null,
           resumeCheckpoint: job.resumeCheckpoint ?? null,
           nextPollAt: job.nextPollAt ?? null,

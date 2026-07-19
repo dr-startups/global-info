@@ -165,6 +165,7 @@ function buildFragmentPayload(input: {
       sourceDomains: f.sourceDomains.slice(0, 6),
     }));
   return {
+    fragmentKey: input.pack.fragmentKey,
     subject: { displayName: input.subject.displayName, aliases: input.subject.aliases },
     caseAnalysis: input.caseAnalysis
       ? {
@@ -258,6 +259,58 @@ type PendingGptPack = {
   wantCaseAnalysis: boolean;
 };
 
+/** REMEDIATION §4.3 — cache hit only for successful stage-2 stamps. */
+export function isGptCopyCacheHit(
+  pack: SectionPackV2,
+  wantCaseAnalysis: boolean
+): boolean {
+  const g = pack.gptCopy;
+  if (!g) return false;
+  if (!g.promptVersion || g.promptVersion !== GPT_SLIDE_COPY_PROMPT_VERSION) {
+    return false;
+  }
+  if (g.lastStatus?.startsWith("FALLBACK_")) return false;
+  if (Boolean(g.caseAnalysisUsed) !== wantCaseAnalysis) return false;
+  return true;
+}
+
+export function packNeedsGptCopyFallbackRetry(
+  pack: SectionPackV2,
+  fallbackKeys?: ReadonlySet<string>
+): boolean {
+  if (pack.gptCopy?.lastStatus?.startsWith("FALLBACK_")) return true;
+  // Compat: report listed FALLBACK_* before packs stamped lastStatus.
+  if (
+    fallbackKeys?.has(pack.fragmentKey) &&
+    !isGptCopyCacheHit(pack, Boolean(pack.gptCopy?.caseAnalysisUsed))
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function stampGptCopy(
+  pack: SectionPackV2,
+  input: {
+    status: GptSlideCopyFragmentStatus;
+    detail?: string;
+    wantCaseAnalysis: boolean;
+    appliedSlides?: number;
+    cacheable: boolean;
+  }
+): SectionPackV2 {
+  return {
+    ...pack,
+    gptCopy: {
+      promptVersion: input.cacheable ? GPT_SLIDE_COPY_PROMPT_VERSION : "",
+      appliedSlides: input.appliedSlides ?? pack.gptCopy?.appliedSlides ?? 0,
+      caseAnalysisUsed: input.wantCaseAnalysis,
+      lastStatus: input.status,
+      ...(input.detail ? { lastDetail: input.detail } : {}),
+    },
+  };
+}
+
 function applyGptRawToPack(input: {
   pack: SectionPackV2;
   targets: SlideContentContract[];
@@ -276,7 +329,15 @@ function applyGptRawToPack(input: {
   if (!parsed.success) {
     report.status = "FALLBACK_ERROR";
     report.detail = "invalid response schema";
-    return { pack: input.pack, report };
+    return {
+      pack: stampGptCopy(input.pack, {
+        status: "FALLBACK_ERROR",
+        detail: report.detail,
+        wantCaseAnalysis: input.wantCaseAnalysis,
+        cacheable: false,
+      }),
+      report,
+    };
   }
 
   const knownIds = new Set(input.targets.map((s) => s.slideId));
@@ -289,26 +350,44 @@ function applyGptRawToPack(input: {
   });
   report.appliedFields = appliedFields;
   if (appliedFields === 0) {
-    return { pack: input.pack, report };
+    report.status = "NO_CHANGES";
+    return {
+      pack: stampGptCopy(input.pack, {
+        status: "NO_CHANGES",
+        wantCaseAnalysis: input.wantCaseAnalysis,
+        cacheable: true,
+      }),
+      report,
+    };
   }
 
+  const appliedSlides = new Set(
+    overrides.filter((o) => knownIds.has(o.slideId)).map((o) => o.slideId)
+  ).size;
   const candidate: SectionPackV2 = {
     ...input.pack,
     slides,
     contentHash: contentHashOf(slides),
     gptCopy: {
       promptVersion: GPT_SLIDE_COPY_PROMPT_VERSION,
-      appliedSlides: new Set(
-        overrides.filter((o) => knownIds.has(o.slideId)).map((o) => o.slideId)
-      ).size,
+      appliedSlides,
       caseAnalysisUsed: input.wantCaseAnalysis,
+      lastStatus: "APPLIED",
     },
   };
   const validation = input.validatePack(candidate);
   if (!validation.passed) {
     report.status = "FALLBACK_VALIDATION";
     report.detail = validation.issues.slice(0, 3).join("; ");
-    return { pack: input.pack, report };
+    return {
+      pack: stampGptCopy(input.pack, {
+        status: "FALLBACK_VALIDATION",
+        detail: report.detail,
+        wantCaseAnalysis: input.wantCaseAnalysis,
+        cacheable: false,
+      }),
+      report,
+    };
   }
 
   report.status = "APPLIED";
@@ -337,6 +416,13 @@ export async function enhanceSectionPacksWithGptCopy(input: {
   validatePack: (pack: SectionPackV2) => { passed: boolean; issues: string[] };
   /** Optional queue overrides (tests inject fake sleep / short deadline). */
   queueOptions?: Parameters<typeof runGptCallQueue>[0]["options"];
+  /**
+   * REMEDIATION §4.3 — only call GPT for FALLBACK_* fragments; others stay
+   * SKIPPED_CACHED / deterministic / empty.
+   */
+  retryOnlyFallback?: boolean;
+  /** Fragment keys listed as FALLBACK_* in gpt-report-copy.json (compat). */
+  fallbackFragmentKeys?: ReadonlySet<string>;
 }): Promise<{ packs: SectionPackV2[]; report: GptSlideCopyReport }> {
   const byKey = new Map<
     string,
@@ -344,6 +430,7 @@ export async function enhanceSectionPacksWithGptCopy(input: {
   >();
   const pending: PendingGptPack[] = [];
   const wantCaseAnalysis = Boolean(input.caseAnalysis);
+  const fallbackKeys = input.fallbackFragmentKeys;
 
   for (const pack of input.packs) {
     const prompt = getFragmentPrompt(pack.fragmentKey);
@@ -364,11 +451,13 @@ export async function enhanceSectionPacksWithGptCopy(input: {
       byKey.set(pack.fragmentKey, { pack, report });
       continue;
     }
-    const cachedCaseAnalysis = Boolean(pack.gptCopy?.caseAnalysisUsed);
-    if (
-      pack.gptCopy?.promptVersion === GPT_SLIDE_COPY_PROMPT_VERSION &&
-      cachedCaseAnalysis === wantCaseAnalysis
-    ) {
+    if (input.retryOnlyFallback) {
+      if (!packNeedsGptCopyFallbackRetry(pack, fallbackKeys)) {
+        report.status = "SKIPPED_CACHED";
+        byKey.set(pack.fragmentKey, { pack, report });
+        continue;
+      }
+    } else if (isGptCopyCacheHit(pack, wantCaseAnalysis)) {
       report.status = "SKIPPED_CACHED";
       byKey.set(pack.fragmentKey, { pack, report });
       continue;
@@ -417,17 +506,25 @@ export async function enhanceSectionPacksWithGptCopy(input: {
     const queued = rawByKey.get(item.pack.fragmentKey);
     if (!queued || !queued.ok) {
       const reason = queued && !queued.ok ? queued.reason : "FALLBACK_ERROR";
+      const status =
+        reason === "FALLBACK_TIMEOUT" ? "FALLBACK_TIMEOUT" : "FALLBACK_ERROR";
+      const detail =
+        queued && !queued.ok
+          ? queued.error.message
+          : "gpt-queue-missing-result";
       byKey.set(item.pack.fragmentKey, {
-        pack: item.pack,
+        pack: stampGptCopy(item.pack, {
+          status,
+          detail,
+          wantCaseAnalysis: item.wantCaseAnalysis,
+          cacheable: false,
+        }),
         report: {
           fragmentKey: item.pack.fragmentKey,
-          status: reason === "FALLBACK_TIMEOUT" ? "FALLBACK_TIMEOUT" : "FALLBACK_ERROR",
+          status,
           appliedFields: 0,
           rejectedFields: [],
-          detail:
-            queued && !queued.ok
-              ? queued.error.message
-              : "gpt-queue-missing-result",
+          detail,
         },
       });
       continue;

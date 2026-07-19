@@ -586,3 +586,129 @@ describe("stage 2 — GPT client copy inside the canonical prepare", () => {
     void blob;
   });
 });
+
+// ---------- REMEDIATION §4.3 — selective FALLBACK retry ----------
+
+describe("stage 2 — gpt-copy resume retries FALLBACK_* only", () => {
+  it("fail 2 fragments → resumeFrom gpt-copy applies them → second resume SKIPPED_CACHED", async () => {
+    const { OpenAiCallError } = await import(
+      "../src/modules/digital-profile/orion-golden/gpt/gpt-call-queue"
+    );
+    const { loadPreviousPacks } = await import(
+      "../src/modules/digital-profile/orion-golden/deck-sections/run-deck-build"
+    );
+
+    const failKeys = new Set(["EXECUTIVE_SUMMARY", "RU_SERP"]);
+    const root = tmp("gpt-copy-retry-");
+
+    const firstCaller: GptJsonCaller = async ({ systemPrompt, userPayload }) => {
+      if (systemPrompt.includes("ПОЛНЫЙ верифицированный аналитический корпус")) {
+        return validCaseAnalysisJson();
+      }
+      const payload = userPayload as {
+        fragmentKey?: string;
+        slides: Array<{ slideId: string; title: string }>;
+      };
+      const key = String(payload.fragmentKey ?? "");
+      if (failKeys.has(key)) {
+        // Non-retryable so the queue does not multiply attempts under §4.2.
+        throw new OpenAiCallError(`forced-fallback:${key}`, { retryable: false });
+      }
+      return {
+        slides: payload.slides.map((s) => ({
+          slideId: s.slideId,
+          narrative: `${GPT_NARRATIVE_MARKER}: ok «${s.title}».`,
+          whatToCheck: "Проверить первоисточник.",
+        })),
+      };
+    };
+
+    const input1 = await seededPrepareInput(root, firstCaller);
+    const res1 = await runCanonicalReportPrepare(input1);
+    assert.equal(res1.ok, true);
+    const report1 = readGptReport(root);
+    const fallbacks1 = report1.fragments.filter((f) => f.status.startsWith("FALLBACK_"));
+    assert.equal(fallbacks1.length, 2, fallbacks1.map((f) => f.fragmentKey).join(","));
+    const fallbackKeys = fallbacks1.map((f) => f.fragmentKey);
+    assert.ok(fallbackKeys.includes("EXECUTIVE_SUMMARY"));
+    assert.ok(fallbackKeys.includes("RU_SERP"));
+
+    const packs1 = loadPreviousPacks(join(root, "deck"));
+    for (const key of fallbackKeys) {
+      const pack = packs1.get(key as never);
+      assert.ok(pack?.gptCopy?.lastStatus?.startsWith("FALLBACK_"), key);
+    }
+
+    let retryHits = 0;
+    const retryCaller: GptJsonCaller = async ({ systemPrompt, userPayload }) => {
+      if (systemPrompt.includes("ПОЛНЫЙ верифицированный аналитический корпус")) {
+        return validCaseAnalysisJson();
+      }
+      retryHits += 1;
+      const payload = userPayload as {
+        fragmentKey?: string;
+        slides: Array<{ slideId: string; title: string }>;
+      };
+      assert.ok(
+        failKeys.has(String(payload.fragmentKey ?? "")),
+        `retry must only call FALLBACK keys, got ${payload.fragmentKey}`
+      );
+      return {
+        slides: payload.slides.map((s) => ({
+          slideId: s.slideId,
+          narrative: `${GPT_NARRATIVE_MARKER}: retry «${s.title}».`,
+          whatToCheck: "Проверить первоисточник после retry.",
+        })),
+      };
+    };
+
+    const res2 = await runCanonicalReportPrepare({
+      ...input1,
+      gptCaller: retryCaller,
+      resumeFrom: "gpt-copy",
+    });
+    assert.equal(res2.ok, true);
+    assert.equal(res2.assemblyCount, 1);
+    assert.equal(retryHits, 2, `retry GPT hits=${retryHits}`);
+
+    const report2 = readGptReport(root);
+    for (const key of fallbackKeys) {
+      const frag = report2.fragments.find((f) => f.fragmentKey === key);
+      assert.equal(frag?.status, "APPLIED", `${key} → ${frag?.status}`);
+    }
+    assert.equal(
+      report2.fragments.filter((f) => f.status.startsWith("FALLBACK_")).length,
+      0
+    );
+
+    let secondHits = 0;
+    const cachedCaller: GptJsonCaller = async ({ systemPrompt, userPayload }) => {
+      if (systemPrompt.includes("ПОЛНЫЙ верифицированный аналитический корпус")) {
+        return validCaseAnalysisJson();
+      }
+      secondHits += 1;
+      const payload = userPayload as { slides: Array<{ slideId: string; title: string }> };
+      return {
+        slides: payload.slides.map((s) => ({
+          slideId: s.slideId,
+          narrative: `${GPT_NARRATIVE_MARKER}: should-not-apply.`,
+        })),
+      };
+    };
+    const res3 = await runCanonicalReportPrepare({
+      ...input1,
+      gptCaller: cachedCaller,
+      resumeFrom: "gpt-copy",
+    });
+    assert.equal(res3.ok, true);
+    assert.equal(secondHits, 0, "no FALLBACK left → zero stage-2 GPT calls");
+    const report3 = readGptReport(root);
+    for (const key of fallbackKeys) {
+      assert.equal(
+        report3.fragments.find((f) => f.fragmentKey === key)?.status,
+        "SKIPPED_CACHED",
+        key
+      );
+    }
+  });
+});

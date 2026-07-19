@@ -161,6 +161,8 @@ export type UnifiedCollectionJob = {
     | "PRE_RENDER_DATA_GATE"
     | "ORION_PREPARE"
     | "RENDER"
+    /** REMEDIATION §4.3 — retry GPT stage-2 FALLBACK_* fragments only. */
+    | "GPT_COPY"
     | null;
   /** Persisted Arsenkin enrichment state contract (not schedule-only). */
   arsenkinEnrichmentState?: import("./arsenkin-enrichment-state").ArsenkinEnrichmentState | null;
