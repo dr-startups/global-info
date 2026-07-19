@@ -6,7 +6,7 @@
  * classes defined in globals.css.
  */
 
-import type { ReactNode } from "react";
+import { Component, type ErrorInfo, type ReactNode } from "react";
 import { useDigitalProfileI18n } from "./i18n-provider";
 
 type BadgeTone = "neutral" | "ok" | "warn" | "danger" | "info";
@@ -131,6 +131,35 @@ export function Loading({ label }: { label?: string }) {
 
 export function Card({ children }: { children: ReactNode }) {
   return <div className="dp-card">{children}</div>;
+}
+
+/**
+ * Isolates a child-tree crash so one panel cannot blank the whole case page.
+ */
+export class SoftRenderBoundary extends Component<
+  { children: ReactNode; fallback?: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    console.error("SoftRenderBoundary caught", error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        this.props.fallback ?? (
+          <Notice>Блок временно недоступен из‑за ошибки отображения.</Notice>
+        )
+      );
+    }
+    return this.props.children;
+  }
 }
 
 // Date formatting and API-error messages are now locale-aware via the i18n

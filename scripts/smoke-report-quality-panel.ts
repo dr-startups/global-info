@@ -90,8 +90,10 @@ describe("report-quality panel wiring (§0.4)", () => {
     assert.match(api, /reportQuality\?:/);
     assert.match(view, /ReportQualityPanel/);
     assert.match(view, /unifiedJob\?\.reportQuality/);
+    assert.match(view, /SoftRenderBoundary/);
     assert.match(panel, /data-testid="report-quality-panel"/);
     assert.match(panel, /Качество отчёта/);
+    assert.match(panel, /slides\.emptyState \?\? \[\]/);
     assert.doesNotMatch(panel, /onClick|button/);
   });
 

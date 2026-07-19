@@ -205,10 +205,10 @@ export function OrionClientStoryboardReportPanel({ caseId }: { caseId: string })
             </div>
           </div>
 
-          {status.warnings.length > 0 ? (
+          {(status.warnings?.length ?? 0) > 0 ? (
             <ErrorBox>
               <ul style={{ margin: "8px 0 0", paddingLeft: "18px" }}>
-                {status.warnings.map((warning) => (
+                {(status.warnings ?? []).map((warning) => (
                   <li key={warning}>{warning}</li>
                 ))}
               </ul>

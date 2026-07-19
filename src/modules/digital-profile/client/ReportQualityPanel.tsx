@@ -163,11 +163,11 @@ export function ReportQualityPanel({
 
       <div>
         <div className="dp-muted" style={{ fontSize: 12, marginBottom: 6 }}>
-          Пустые слайды ({slides.emptyStateCount})
+          Пустые слайды ({slides.emptyStateCount ?? 0})
         </div>
-        {slides.emptyState.length === 0 ? (
+        {(slides.emptyState ?? []).length === 0 ? (
           <div className="dp-muted" style={{ fontSize: 13 }}>
-            {slides.emptyStateCount > 0
+            {(slides.emptyStateCount ?? 0) > 0
               ? `Список причин недоступен в старой версии сводки (счётчик: ${slides.emptyStateCount}). Пересоберите отчёт.`
               : "Пустых слайдов нет"}
           </div>
@@ -176,7 +176,7 @@ export function ReportQualityPanel({
             data-testid="report-quality-empty-states"
             style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.45 }}
           >
-            {slides.emptyState.map((e) => (
+            {(slides.emptyState ?? []).map((e) => (
               <li key={`${e.slotId}:${e.reason}`}>
                 <span className="dp-mono">{e.slotId}</span>
                 {" — "}

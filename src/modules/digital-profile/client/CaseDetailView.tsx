@@ -36,6 +36,7 @@ import {
   ErrorBox,
   Loading,
   Notice,
+  SoftRenderBoundary,
   SuccessBox,
 } from "./components";
 import { CaseHeader } from "./CaseHeader";
@@ -613,19 +614,25 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
 
       {unifiedJob?.reportQuality ? (
         <Card>
-          <ReportQualityPanel quality={unifiedJob.reportQuality} />
+          <SoftRenderBoundary>
+            <ReportQualityPanel quality={unifiedJob.reportQuality} />
+          </SoftRenderBoundary>
         </Card>
       ) : null}
 
       {isAdmin ? (
         <Card>
-          <OrionV2ReportPanel caseId={state.caseDetail.id} />
+          <SoftRenderBoundary>
+            <OrionV2ReportPanel caseId={state.caseDetail.id} />
+          </SoftRenderBoundary>
         </Card>
       ) : null}
 
       {isAdmin ? (
         <Card>
-          <OrionClientStoryboardReportPanel caseId={state.caseDetail.id} />
+          <SoftRenderBoundary>
+            <OrionClientStoryboardReportPanel caseId={state.caseDetail.id} />
+          </SoftRenderBoundary>
         </Card>
       ) : null}
 
