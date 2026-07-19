@@ -795,6 +795,68 @@ export function buildExecutiveSummaryFragment(
   return { slides, status: "READY" };
 }
 
+/** Cards that fit on one risk-matrix page with typical GPT detail length. */
+const RISK_MATRIX_PAGE_CAPACITY = 5;
+/** Always keep ≥1 first-page slot for LIKELY when any exist (§2.1 visibility). */
+const RISK_MATRIX_LIKELY_RESERVED = 1;
+
+function riskMatrixDetail(f: Finding, extras?: FragmentExtras): string {
+  if (f.subjectMatch === "LIKELY_SUBJECT") {
+    return fitClientSentences(
+      [
+        `Требует подтверждения: ${themedClaim(f)}`,
+        "Принадлежность вероятна, но не входит в KPI «О субъекте» до уточнения идентификации.",
+      ],
+      320
+    );
+  }
+  const risk = matchGptKeyRisk(f.theme, extras?.gptCaseAnalysis?.keyRisks);
+  return risk
+    ? fitClientSentences([themedClaim(f), risk.explanation, `Что делать: ${risk.advice}`], 360)
+    : fitClientSentences([themedClaim(f), `Рекомендация: ${f.recommendedAction}`], 360);
+}
+
+function riskMatrixRow(f: Finding): string[] {
+  return [
+    f.theme,
+    f.subjectMatch === "LIKELY_SUBJECT" ? "Требует подтверждения" : riskLabel(f.riskLevel),
+    f.promotionPriority,
+    f.findingId,
+  ];
+}
+
+/**
+ * Pack confirmed + LIKELY findings into page-sized groups. When LIKELY exists,
+ * page 1 always reserves a slot so «Требует подтверждения» is not clipped by
+ * five full-height confirmed cards.
+ */
+export function packRiskMatrixPages(
+  confirmed: Finding[],
+  likely: Finding[],
+  pageCapacity = RISK_MATRIX_PAGE_CAPACITY,
+  likelyReserved = RISK_MATRIX_LIKELY_RESERVED
+): Finding[][] {
+  const conf = [...confirmed].sort(
+    (a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0)
+  );
+  const lik = [...likely].sort(
+    (a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0)
+  );
+  if (conf.length === 0 && lik.length === 0) return [];
+  if (lik.length === 0) {
+    const pages: Finding[][] = [];
+    for (let i = 0; i < conf.length; i += pageCapacity) pages.push(conf.slice(i, i + pageCapacity));
+    return pages;
+  }
+  const reserve = Math.min(likelyReserved, lik.length, pageCapacity);
+  const confOnFirst = Math.max(0, pageCapacity - reserve);
+  const first = [...conf.slice(0, confOnFirst), ...lik.slice(0, reserve)];
+  const rest = [...conf.slice(confOnFirst), ...lik.slice(reserve)];
+  const pages: Finding[][] = [first];
+  for (let i = 0; i < rest.length; i += pageCapacity) pages.push(rest.slice(i, i + pageCapacity));
+  return pages.filter((p) => p.length > 0);
+}
+
 export function buildRiskMatrixFragment(
   sectionId: SectionType,
   scoped: ScopedFragmentInput,
@@ -824,78 +886,52 @@ export function buildRiskMatrixFragment(
     });
     return { slides: [base], status: "READY", emptyStateReason: "no-verified-findings" };
   }
-  const sorted = [...confirmed].sort(
-    (a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0)
-  );
-  // Renderer shows at most 6 cards from table.rows — put LIKELY themes into
-  // the table with explicit «Требует подтверждения» so they are not dropped
-  // when packed only into trailing bullets.
-  const likelySlots = Math.max(0, 6 - sorted.length);
-  const likelyShown = [...likely]
-    .sort((a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0))
-    .slice(0, likelySlots);
-  const confirmedRows = sorted.map((f) => [
-    f.theme,
-    riskLabel(f.riskLevel),
-    f.promotionPriority,
-    f.findingId,
-  ]);
-  const likelyRows = likelyShown.map((f) => [
-    f.theme,
-    "Требует подтверждения",
-    f.promotionPriority,
-    f.findingId,
-  ]);
-  const rows =
-    confirmedRows.length + likelyRows.length > 0
-      ? [...confirmedRows, ...likelyRows]
-      : [["Нет подтверждённых тем", "Нет данных", "—", "—"]];
-  // Per-theme detail (same order as rows): what exactly was found + why it is
-  // risky + what to do — the matrix card explains the risk instead of only
-  // repeating its level. GPT case analysis expands; the claim is the fallback.
-  const details = [
-    ...sorted.map((f) => {
-      const risk = matchGptKeyRisk(f.theme, extras?.gptCaseAnalysis?.keyRisks);
-      return risk
-        ? fitClientSentences([themedClaim(f), risk.explanation, `Что делать: ${risk.advice}`], 400)
-        : fitClientSentences([themedClaim(f), `Рекомендация: ${f.recommendedAction}`], 400);
-    }),
-    ...likelyShown.map((f) =>
-      fitClientSentences(
-        [
-          `Требует подтверждения: ${themedClaim(f)}`,
-          "Принадлежность вероятна, но не входит в KPI «О субъекте» до уточнения идентификации.",
-        ],
-        400
-      )
-    ),
-  ];
-  if (likely.length > likelyShown.length) {
-    details.push(
-      `Ещё ${likely.length - likelyShown.length} ${pluralRu(
-        likely.length - likelyShown.length,
-        "тема",
-        "темы",
-        "тем"
-      )} с вероятной принадлежностью — см. приложение.`
-    );
-  }
-  const base = makeSlotSlide({
+
+  const pages = packRiskMatrixPages(confirmed, likely);
+  const headers = ["Тема", "Уровень", "Приоритет", "Идентификатор"];
+  const baseSlide = makeSlotSlide({
     slot,
     sectionId,
     content: {
-      table: { headers: ["Тема", "Уровень", "Приоритет", "Идентификатор"], rows },
-      bullets: details,
+      table: { headers, rows: pages[0]!.map(riskMatrixRow) },
+      bullets: pages[0]!.map((f) => riskMatrixDetail(f, extras)),
+      sourceNote: sourceLine(scoped),
     },
     evidenceRefs: uniqueRefs(scoped),
-    findingIds: [...confirmed, ...likely].map((f) => f.findingId),
+    findingIds: pages[0]!.map((f) => f.findingId),
     metrics: {
-      themes: sorted.length,
+      themes: confirmed.length,
       likelyThemes: likely.length,
+      page: 1,
+      pages: pages.length,
       adverse: confirmed.filter(isAdverse).length,
     },
   });
-  return { slides: withContinuations(base, "risk-matrix"), status: "READY" };
+  const slides: SlideContentContract[] = [baseSlide];
+  for (let pageIdx = 1; pageIdx < pages.length; pageIdx += 1) {
+    const pageFindings = pages[pageIdx]!;
+    slides.push({
+      ...baseSlide,
+      slideId: `${baseSlide.slideId}__cont${pageIdx}`,
+      isContinuation: true,
+      continuationOf: baseSlide.slideId,
+      continuationIndex: pageIdx,
+      title: `${baseSlide.title} (продолжение ${pageIdx + 1}/${pages.length})`,
+      content: {
+        table: { headers, rows: pageFindings.map(riskMatrixRow) },
+        bullets: pageFindings.map((f) => riskMatrixDetail(f, extras)),
+      },
+      findingIds: pageFindings.map((f) => f.findingId),
+      metrics: {
+        themes: confirmed.length,
+        likelyThemes: likely.length,
+        page: pageIdx + 1,
+        pages: pages.length,
+      },
+    });
+  }
+
+  return { slides, status: "READY" };
 }
 
 export function buildDigitalProfileOverviewFragment(

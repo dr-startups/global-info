@@ -117,9 +117,10 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
     templateId: "risk-matrix",
     rendererTemplate: "orion_golden_risk_matrix_grid",
     staticBlocks: ["Матрица рисков", "Уровень", "Тема", "Статус"],
-    legend: ["Критический", "Высокий", "Средний", "Низкий"],
+    legend: ["Критический", "Высокий", "Средний", "Низкий", "Требует подтверждения"],
+    // Keep ≤5 cards/page: long GPT details make a 6th card clip off-canvas.
     maxBulletsPerSlide: 0,
-    maxTableRowsPerSlide: 10,
+    maxTableRowsPerSlide: 5,
     layout: layout("table", { itemCharBudget: 80 }),
   },
   "regional-summary": {

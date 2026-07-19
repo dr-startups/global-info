@@ -25,6 +25,8 @@ import {
   bestIdentityDecision,
   countIdentityByObservation,
 } from "../src/modules/digital-profile/orion-golden/deck-sections/load-deck-inputs";
+import { packRiskMatrixPages } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders";
+import type { Finding } from "../src/modules/digital-profile/orion-golden/contracts/finding";
 import { runSurfaceAnalyzers } from "../src/modules/digital-profile/orion-golden/analytics/surface-analyzers";
 import {
   synthesizeFindings,
@@ -448,6 +450,32 @@ describe("3. subject resolution", () => {
       if (reason) assert.equal(decision.reasonCode, reason);
     });
   }
+
+  it("risk matrix reserves a first-page slot for LIKELY «Требует подтверждения»", () => {
+    const mk = (id: string, subjectMatch: Finding["subjectMatch"], riskLevel: Finding["riskLevel"]): Finding =>
+      ({
+        findingId: id,
+        theme: id,
+        subjectMatch,
+        riskLevel,
+        claim: "x",
+        promotionPriority: "APPENDIX",
+      }) as Finding;
+    const confirmed = [
+      mk("c1", "SUBJECT_MATCH", "critical"),
+      mk("c2", "SUBJECT_MATCH", "high"),
+      mk("c3", "SUBJECT_MATCH", "high"),
+      mk("c4", "SUBJECT_MATCH", "high"),
+      mk("c5", "SUBJECT_MATCH", "medium"),
+    ];
+    const likely = [mk("l1", "LIKELY_SUBJECT", "low"), mk("l2", "LIKELY_SUBJECT", "none")];
+    const pages = packRiskMatrixPages(confirmed, likely, 5, 1);
+    assert.ok(pages.length >= 2);
+    assert.equal(pages[0]!.length, 5);
+    assert.ok(pages[0]!.some((f) => f.subjectMatch === "LIKELY_SUBJECT"));
+    assert.equal(pages[0]!.filter((f) => f.subjectMatch === "SUBJECT_MATCH").length, 4);
+    assert.ok(pages.flat().some((f) => f.findingId === "l2"));
+  });
 
   it("KPI identity counts one decision per observation, not per inventory duplicate", () => {
     const decisionByRef = new Map([
