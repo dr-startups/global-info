@@ -279,10 +279,25 @@ export async function buildReportQualitySummary(input: {
     baseCount?: number;
   }>(join(dir, "base-collection-manifest.json"));
 
-  const composite = readJsonSafe<{
-    observations?: Array<{ observationKey?: string; evidenceRefs?: string[] }>;
-    compositeCount?: number;
-  }>(join(dir, "composite-serp-observations.json"));
+  // Prefer analytics/ copies (same source as the deck KPI) over job-root
+  // snapshots that can lag or diverge after partial rebuilds.
+  const composite =
+    readJsonSafe<{
+      observations?: Array<{
+        observationKey?: string;
+        key?: string;
+        evidenceRefs?: string[]
+      }>;
+      compositeCount?: number;
+    }>(join(dir, "analytics", "composite-serp-observations.json")) ??
+    readJsonSafe<{
+      observations?: Array<{
+        observationKey?: string;
+        key?: string;
+        evidenceRefs?: string[]
+      }>;
+      compositeCount?: number;
+    }>(join(dir, "composite-serp-observations.json"));
 
   const subjectResolution = readJsonSafe<{
     items?: Array<{ evidenceRef?: string; decision?: string }>;
@@ -423,7 +438,8 @@ export async function buildReportQualitySummary(input: {
     const obs = composite?.observations ?? [];
     if (decisionByRef.size > 0 && obs.length > 0) {
       const groups = obs.map((o) => {
-        const fromProv = o.observationKey ? provByKey.get(o.observationKey) : undefined;
+        const obsKey = o.observationKey ?? o.key;
+        const fromProv = obsKey ? provByKey.get(obsKey) : undefined;
         return fromProv && fromProv.length > 0 ? fromProv : (o.evidenceRefs ?? []);
       });
       const byObs = countIdentityByObservation({

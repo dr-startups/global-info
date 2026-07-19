@@ -25,7 +25,10 @@ import {
   bestIdentityDecision,
   countIdentityByObservation,
 } from "../src/modules/digital-profile/orion-golden/deck-sections/load-deck-inputs";
-import { packRiskMatrixPages } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders";
+import {
+  buildRiskMatrixFragment,
+  packRiskMatrixPages,
+} from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders";
 import type { Finding } from "../src/modules/digital-profile/orion-golden/contracts/finding";
 import { runSurfaceAnalyzers } from "../src/modules/digital-profile/orion-golden/analytics/surface-analyzers";
 import {
@@ -475,6 +478,54 @@ describe("3. subject resolution", () => {
     assert.ok(pages[0]!.some((f) => f.subjectMatch === "LIKELY_SUBJECT"));
     assert.equal(pages[0]!.filter((f) => f.subjectMatch === "SUBJECT_MATCH").length, 4);
     assert.ok(pages.flat().some((f) => f.findingId === "l2"));
+  });
+
+  it("risk matrix shows Требует подтверждения from likelySubjectCount without LIKELY findings", () => {
+    const confirmed = [
+      {
+        findingId: "c1",
+        theme: "Тема A",
+        subjectMatch: "SUBJECT_MATCH",
+        riskLevel: "high",
+        claim: "claim a",
+        promotionPriority: "P1",
+        evidenceRefs: ["inventory:1"],
+        recommendedAction: "act",
+      } as Finding,
+    ];
+    const out = buildRiskMatrixFragment(
+      "EXECUTIVE",
+      {
+        subject: { displayName: "Test", aliases: [] },
+        findings: confirmed,
+        surfaceUnits: [],
+        metricSnapshot: {
+          metricSnapshotId: "m",
+          datasetId: "d",
+          reportRunId: "r",
+          baseCount: 10,
+          enrichmentCount: 0,
+          compositeCount: 10,
+          subjectMatchCount: 5,
+          likelySubjectCount: 28,
+          ambiguousCount: 1,
+          otherSubjectCount: 0,
+          adverseFindingCount: 1,
+          perRegionCounts: { RU: 10 },
+        },
+        scope: {
+          regions: null,
+          surfaces: [],
+          subjectMatch: ["SUBJECT_MATCH", "LIKELY_SUBJECT"],
+          findingIds: null,
+        },
+        evidenceIndex: {},
+      },
+      {}
+    );
+    const rows = out.slides.flatMap((s) => s.content.table?.rows ?? []);
+    assert.ok(rows.some((r) => String(r[1]).includes("Требует подтверждения")));
+    assert.ok(rows.some((r) => String(r[0]).includes("вероятной принадлежностью")));
   });
 
   it("KPI identity counts one decision per observation, not per inventory duplicate", () => {

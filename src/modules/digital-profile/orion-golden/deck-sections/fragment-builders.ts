@@ -864,7 +864,31 @@ export function buildRiskMatrixFragment(
 ): FragmentBuildOutput {
   const [slot] = slotsForFragment("RISK_MATRIX");
   const confirmed = scoped.findings.filter((f) => f.subjectMatch === "SUBJECT_MATCH");
-  const likely = scoped.findings.filter((f) => f.subjectMatch === "LIKELY_SUBJECT");
+  let likely = scoped.findings.filter((f) => f.subjectMatch === "LIKELY_SUBJECT");
+  const likelyMaterialCount = scoped.metricSnapshot.likelySubjectCount ?? 0;
+  // Identity KPI can show LIKELY materials before themed findings exist (or
+  // when packs were cached). Still surface an honest «Требует подтверждения»
+  // card so the matrix matches the executive KPI.
+  if (likely.length === 0 && likelyMaterialCount > 0) {
+    likely = [
+      {
+        findingId: "finding-likely-aggregate",
+        theme: "Материалы с вероятной принадлежностью",
+        claim: `${likelyMaterialCount} ${pluralRu(
+          likelyMaterialCount,
+          "материал",
+          "материала",
+          "материалов"
+        )} отнесены к уровню «вероятно о субъекте» по фамилии и контексту; не входят в KPI «О субъекте» до уточнения идентификации.`,
+        subjectMatch: "LIKELY_SUBJECT",
+        riskLevel: "low",
+        promotionPriority: "APPENDIX",
+        evidenceRefs: [],
+        recommendedAction:
+          "Проверить принадлежность материалов с оценкой «Вероятно» в выдаче и приложении; при подтверждении — включить в выводы следующего прогона.",
+      } as unknown as Finding,
+    ];
+  }
   if (confirmed.length === 0 && likely.length === 0) {
     // Honest empty-valid page after completed collection — not a lost required section.
     const base = makeSlotSlide({

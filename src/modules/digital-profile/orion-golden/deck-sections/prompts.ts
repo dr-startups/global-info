@@ -54,7 +54,11 @@ export const FRAGMENT_PROMPTS: Record<FragmentKey, FragmentPromptDef> = {
     "executive-summary",
     "итоговое резюме по проверяемому лицу на основе VerifiedFindingBundle"
   ),
-  RISK_MATRIX: deterministicPrompt("risk-matrix"),
+  // v2: reserve first-page slot for LIKELY «Требует подтверждения» (§2.1).
+  RISK_MATRIX: {
+    ...deterministicPrompt("risk-matrix"),
+    promptVersion: "risk-matrix-deterministic-v2",
+  },
   DIGITAL_PROFILE_OVERVIEW: deterministicPrompt("digital-profile-overview"),
   RU_SUMMARY: llmPrompt("ru-regional-summary", "региональный обзор RU-поверхностей"),
   RU_SERP: llmPrompt("ru-serp-analysis", "анализ органической выдачи RU"),
