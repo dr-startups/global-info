@@ -179,6 +179,18 @@ export function buildScopedInput(input: {
       evidenceIndex[ref] = entry;
       continue;
     }
+    // REMEDIATION §3.2 — themeless subject materials are not attached to
+    // findings/units; admit them by region so regional summaries can cite them
+    // without failing sidebar-scope QA.
+    if (entry.kind === "uncategorized") {
+      if (
+        input.scope.regions == null ||
+        input.scope.regions.some((r) => regionMatches(r, entry.region))
+      ) {
+        evidenceIndex[ref] = entry;
+      }
+      continue;
+    }
     const surfaceOfKind = entry.kind ? KIND_TO_SURFACE[entry.kind] ?? entry.kind : undefined;
     if (
       surfaceOfKind &&

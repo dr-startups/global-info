@@ -28,10 +28,12 @@ import {
   countIdentityByObservation,
 } from "../src/modules/digital-profile/orion-golden/deck-sections/load-deck-inputs";
 import {
-  buildRegionalSummaryFragment,
   buildRiskMatrixFragment,
   packRiskMatrixPages,
 } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders";
+import { buildScopedInput } from "../src/modules/digital-profile/orion-golden/deck-sections/scoped-input";
+import { buildSectionPackForFragment } from "../src/modules/digital-profile/orion-golden/deck-sections/section-builders";
+import { validateSectionPack } from "../src/modules/digital-profile/orion-golden/deck-sections/section-validation";
 import type { Finding } from "../src/modules/digital-profile/orion-golden/contracts/finding";
 import { runSurfaceAnalyzers } from "../src/modules/digital-profile/orion-golden/analytics/surface-analyzers";
 import {
@@ -830,49 +832,100 @@ describe("4. finding synthesis", () => {
     assert.ok(result.uncategorized.byRegion.RU?.count >= 1);
     assert.ok(result.uncategorized.byRegion.UAE?.count >= 1);
 
-    const scoped = {
-      subject: { displayName: GLINKA_SUBJECT.displayName, aliases: [] },
-      findings: result.bundle.findings.filter((f) => f.subjectMatch === "SUBJECT_MATCH"),
-      surfaceUnits: [],
-      metricSnapshot: {
-        metricSnapshotId: "m",
-        datasetId: "ds-uncat",
-        reportRunId: "r",
-        baseCount: 3,
-        enrichmentCount: 0,
-        compositeCount: 3,
-        subjectMatchCount: 2,
-        likelySubjectCount: 1,
-        ambiguousCount: 0,
-        otherSubjectCount: 0,
-        adverseFindingCount: 1,
-        perRegionCounts: { RU: 2, UAE: 1 },
-      },
-      scope: {
-        regions: ["RU"],
-        surfaces: null,
-        subjectMatch: ["SUBJECT_MATCH"] as const,
-        findingIds: null,
-      },
-      evidenceIndex: {},
-    };
-    const frag = buildRegionalSummaryFragment(
-      "RU_SUMMARY",
-      "RU_PROFILE",
-      "Россия",
-      scoped as never,
-      {
-        uncategorizedMaterials: {
-          count: result.uncategorized.count,
-          byRegion: result.uncategorized.byRegion,
-        },
+    const evidenceIndex: Record<
+      string,
+      { title?: string; domain?: string; kind?: string; region?: string }
+    > = {};
+    for (const [region, bucket] of Object.entries(result.uncategorized.byRegion)) {
+      for (const ex of bucket.examples) {
+        evidenceIndex[ex.evidenceRef] = {
+          title: ex.title,
+          domain: ex.domain,
+          kind: "uncategorized",
+          region,
+        };
       }
+    }
+    for (const f of result.bundle.findings) {
+      for (const r of f.evidenceRefs) {
+        if (!evidenceIndex[r]) evidenceIndex[r] = { kind: "organic", region: "RU" };
+      }
+    }
+
+    const metricSnapshot = {
+      metricSnapshotId: "m",
+      datasetId: "ds-uncat",
+      reportRunId: "r",
+      baseCount: 3,
+      enrichmentCount: 0,
+      compositeCount: 3,
+      subjectMatchCount: 2,
+      likelySubjectCount: 1,
+      ambiguousCount: 0,
+      otherSubjectCount: 0,
+      adverseFindingCount: 1,
+      perRegionCounts: { RU: 2, UAE: 1 },
+    };
+    const extras = {
+      uncategorizedMaterials: {
+        count: result.uncategorized.count,
+        byRegion: result.uncategorized.byRegion,
+      },
+    };
+    const pack = buildSectionPackForFragment("RU_SUMMARY", {
+      caseId: CASE_ID,
+      reportRunId: "r",
+      sourceDatasetId: "ds-uncat",
+      contentVersion: "deck-sections-v15",
+      subject: { displayName: GLINKA_SUBJECT.displayName, aliases: [] },
+      bundle: result.bundle,
+      surfaceUnits: [],
+      metricSnapshot,
+      evidenceIndex,
+      extras,
+    });
+    const knownEvidenceRefs = new Set([
+      ...Object.keys(evidenceIndex),
+      ...result.bundle.findings.flatMap((f) => f.evidenceRefs),
+    ]);
+    const validation = validateSectionPack({
+      pack,
+      expectedCaseId: CASE_ID,
+      expectedReportRunId: "r",
+      expectedDatasetId: "ds-uncat",
+      bundle: result.bundle,
+      knownEvidenceRefs,
+      evidenceIndex,
+    });
+    assert.equal(
+      validation.passed,
+      true,
+      `RU_SUMMARY must pass QA with uncategorized refs: ${validation.issues.slice(0, 6).join("; ")}`
     );
-    const summarySlide = frag.slides.find((s) => s.baseSlotId.includes("summary") || s.templateId === "regional-summary")
-      ?? frag.slides[1];
-    const blob = JSON.stringify(summarySlide?.content ?? {});
+    assert.equal(pack.status, "READY");
+    const blob = JSON.stringify(pack.slides.map((s) => s.content));
     assert.ok(/Другие материалы о субъекте/u.test(blob), blob.slice(0, 400));
     assert.ok(/посетил выставку/iu.test(blob), "example title must appear");
+
+    // Scoped index must admit uncategorized by region (live ASSEMBLY_FAILED root cause).
+    const scoped = buildScopedInput({
+      subject: { displayName: GLINKA_SUBJECT.displayName, aliases: [] },
+      bundle: result.bundle,
+      surfaceUnits: [],
+      metricSnapshot,
+      scope: {
+        regions: ["RU"],
+        surfaces: [],
+        unitSurfaces: ["url_audit"],
+        subjectMatch: ["SUBJECT_MATCH"],
+        findingIds: null,
+      },
+      evidenceIndex,
+    });
+    assert.ok(
+      scoped.evidenceIndex[`inventory:${neutral.inventoryId}`],
+      "uncategorized RU ref must enter scoped evidenceIndex"
+    );
   });
 });
 

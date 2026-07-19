@@ -340,16 +340,15 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
         count: Number(raw.count ?? 0) || 0,
         byRegion,
       };
-      for (const bucket of Object.values(byRegion)) {
+      for (const [region, bucket] of Object.entries(byRegion)) {
         for (const ex of bucket.examples) {
           knownEvidenceRefs.add(ex.evidenceRef);
-          if (!evidenceIndex[ex.evidenceRef]) {
-            evidenceIndex[ex.evidenceRef] = {
-              title: ex.title,
-              domain: ex.domain,
-              kind: "uncategorized",
-            };
-          }
+          evidenceIndex[ex.evidenceRef] = {
+            title: ex.title,
+            domain: ex.domain,
+            kind: "uncategorized",
+            region: mapRegionBucket(region),
+          };
         }
       }
       for (const ex of raw.topExamples ?? []) {

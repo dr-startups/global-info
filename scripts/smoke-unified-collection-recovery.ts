@@ -256,6 +256,45 @@ describe("unified collection staff recovery", () => {
     assert.equal(elig.recoveryBlockerReason, "FAILED_TERMINAL_NOT_RECOVERABLE");
   });
 
+  it("FAILED_TERMINAL ASSEMBLY_FAILED with intact composite → ASSEMBLY_RESUME", () => {
+    const caseId = "rec-assembly-resume";
+    const jobId = "unified-assembly-fail";
+    seedDeripaskaFailedJob(caseId, jobId);
+    patchUnifiedCollectionJob(caseId, {
+      baseReportRunId: "base-run-assembly",
+      enrichmentRunIds: ["e1", "e2", "e3", "e4", "e5"],
+      compositeDatasetId: "composite-assembly",
+      arsenkinEnrichmentState: {
+        version: "arsenkin-enrichment-state-v1",
+        enrichmentComplete: true,
+        agents: [],
+      } as never,
+      warnings: ["CANONICAL_PREPARE_BLOCKED"],
+      lastErrorCode: "ASSEMBLY_FAILED",
+      lastError:
+        "deck assembly failed: required sections failed: RU_PROFILE/RU_SUMMARY:FAILED",
+    });
+    writeUnifiedArtifact(caseId, jobId, "base-collection-manifest.json", {
+      version: "base-collection-manifest-v1",
+      unifiedJobId: jobId,
+      caseId,
+      capturedAt: new Date().toISOString(),
+      baseReportRunId: "base-run-assembly",
+      searchResultIds: ["sr1"],
+      searchSurfaceItemIds: [],
+      baseCount: 1,
+      actualProviders: [],
+      realCollectionSufficient: true,
+    });
+    const elig = evaluateUnifiedCollectionRecoveryEligibility({
+      caseId,
+      job: loadUnifiedCollectionJob(caseId),
+    });
+    assert.equal(elig.recoveryAllowed, true);
+    assert.equal(elig.recoveryReason, "ASSEMBLY_RESUME");
+    assert.equal(elig.recoveryBlockerReason, null);
+  });
+
   it("active lease → ConflictError 409", async () => {
     const caseId = "rec-active-lease";
     const jobId = "unified-lease-job";

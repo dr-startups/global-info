@@ -346,6 +346,26 @@ function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): UnifiedCollec
     (manifest!.baseCount > 0 ||
       manifest!.searchResultIds.length + manifest!.searchSurfaceItemIds.length > 0);
 
+  // Full prepare retry after section/assembly QA failure — no re-collection.
+  const assemblyResume =
+    job.resumeCheckpoint === "ORION_PREPARE" ||
+    job.lastErrorCode === "ASSEMBLY_FAILED" ||
+    job.lastErrorCode === "REQUIRED_SECTION_FAILED" ||
+    /required sections failed/i.test(job.lastError ?? "");
+  if (assemblyResume && hasBase && job.compositeDatasetId) {
+    return (
+      patchUnifiedCollectionJob(job.caseId, {
+        stage: "ORION_PREPARE",
+        status: "RUNNING",
+        resumeCheckpoint: null,
+        lastError: null,
+        lastErrorCode: null,
+        completedAt: null,
+        warnings: [...job.warnings, "bounded-resume:from-assembly"],
+      }) ?? job
+    );
+  }
+
   if (hasBase && ingestResume) {
     return (
       patchUnifiedCollectionJob(job.caseId, {
@@ -398,19 +418,23 @@ function failRetryable(
   const resumeCheckpoint =
     code === "RENDER_FAILED" || extraWarnings.some((w) => /render-checkpoint:RENDER/i.test(w))
       ? ("RENDER" as const)
-      : code === "PRE_RENDER_DATA_GATE_FAILED" ||
-          extraWarnings.some((w) => /PRE_RENDER_DATA_GATE/i.test(w))
-        ? ("PRE_RENDER_DATA_GATE" as const)
-        : code === "ARSENKIN_ENRICHMENT_INCOMPLETE" ||
-            code === "ARSENKIN_ENRICHMENT_FAILED" ||
-            code === "ARSENKIN_SUBMIT_UNKNOWN" ||
-            code === "ARSENKIN_SCHEMA_INVALID" ||
-            code === "ARSENKIN_POLL_ATTEMPTS_EXCEEDED" ||
-            code === "UNIFIED_TICK_FAILED" ||
-            code === "EXTERNAL_TASK_HASH_CONFLICT" ||
-            extraWarnings.some((w) => /arsenkin-ingest|ARSENKIN_RESULT_INGEST/i.test(w))
-          ? ("ARSENKIN_RESULT_INGEST" as const)
-          : job.resumeCheckpoint ?? null;
+      : code === "ASSEMBLY_FAILED" ||
+          code === "REQUIRED_SECTION_FAILED" ||
+          extraWarnings.some((w) => /retryable-assembly-failure/i.test(w))
+        ? ("ORION_PREPARE" as const)
+        : code === "PRE_RENDER_DATA_GATE_FAILED" ||
+            extraWarnings.some((w) => /PRE_RENDER_DATA_GATE/i.test(w))
+          ? ("PRE_RENDER_DATA_GATE" as const)
+          : code === "ARSENKIN_ENRICHMENT_INCOMPLETE" ||
+              code === "ARSENKIN_ENRICHMENT_FAILED" ||
+              code === "ARSENKIN_SUBMIT_UNKNOWN" ||
+              code === "ARSENKIN_SCHEMA_INVALID" ||
+              code === "ARSENKIN_POLL_ATTEMPTS_EXCEEDED" ||
+              code === "UNIFIED_TICK_FAILED" ||
+              code === "EXTERNAL_TASK_HASH_CONFLICT" ||
+              extraWarnings.some((w) => /arsenkin-ingest|ARSENKIN_RESULT_INGEST/i.test(w))
+            ? ("ARSENKIN_RESULT_INGEST" as const)
+            : job.resumeCheckpoint ?? null;
   return (
     patchUnifiedCollectionJob(job.caseId, {
       stage: "FAILED_RETRYABLE",
@@ -1302,13 +1326,25 @@ async function stepPrepare(
         /arsenkin-blocked|arsenkin-skipped:no-base|ARSENKIN_STAGE_NOT_STARTED|BASE_REPORT_RUN/i.test(w)
       ) ||
       (enrichmentIds.length === 0 && String(process.env.NETWORK_CALLS ?? "") !== "0");
-    const assemblySparse =
-      (code === "ASSEMBLY_FAILED" || /required sections failed/i.test(message)) && linkageIncomplete;
+    const isAssemblyFailure =
+      code === "ASSEMBLY_FAILED" ||
+      code === "REQUIRED_SECTION_FAILED" ||
+      /required sections failed/i.test(message);
+    const assemblySparse = isAssemblyFailure && linkageIncomplete;
 
     if (code === "RENDER_FAILED") {
       return failRetryable(job, "RENDER_FAILED", message, [
         "render-checkpoint:RENDER",
         "CANONICAL_PREPARE_BLOCKED",
+      ]);
+    }
+
+    // Assembly/section QA failures are retryable when collection data is intact
+    // (live §3.2 regression: uncategorized refs → RU/UAE SUMMARY FAILED).
+    if (isAssemblyFailure && !linkageIncomplete) {
+      return failRetryable(job, code, message, [
+        "CANONICAL_PREPARE_BLOCKED",
+        "retryable-assembly-failure",
       ]);
     }
 

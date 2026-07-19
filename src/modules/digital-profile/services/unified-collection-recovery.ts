@@ -276,6 +276,23 @@ export function evaluateUnifiedCollectionRecoveryEligibility(input: {
         recoveryReason: "ARSENKIN_INGEST_RESUME",
       };
     }
+    // Section/assembly QA failure with intact composite — retry prepare only.
+    const isAssemblyFailure =
+      job.lastErrorCode === "ASSEMBLY_FAILED" ||
+      job.lastErrorCode === "REQUIRED_SECTION_FAILED" ||
+      /required sections failed|ASSEMBLY_FAILED/i.test(job.lastError ?? "");
+    if (
+      isAssemblyFailure &&
+      Boolean(job.compositeDatasetId) &&
+      Boolean(job.baseReportRunId) &&
+      manifestHasBaseObservations(manifest)
+    ) {
+      return {
+        recoveryAllowed: true,
+        recoveryBlockerReason: null,
+        recoveryReason: "ASSEMBLY_RESUME",
+      };
+    }
     return {
       recoveryAllowed: false,
       recoveryBlockerReason: "FAILED_TERMINAL_NOT_RECOVERABLE",
@@ -433,6 +450,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
 
     const renderResume = elig2.recoveryReason === "RENDER_RESUME";
     const ingestResume = elig2.recoveryReason === "ARSENKIN_INGEST_RESUME";
+    const assemblyResume = elig2.recoveryReason === "ASSEMBLY_RESUME";
     const ensure = input.deps?.ensureBaseReportRun ?? ensurePersistedUnifiedBaseReportRun;
     let baseReportRunId: string;
     let createdBaseReportRun = false;
@@ -498,12 +516,15 @@ export async function recoverUnifiedOrionCollectionJob(input: {
       previousLastErrorCode: job.lastErrorCode,
     };
 
-    const nextStage = renderResume ? "ORION_PREPARE" : "ARSENKIN_ENRICHMENT";
+    const nextStage =
+      renderResume || assemblyResume ? "ORION_PREPARE" : "ARSENKIN_ENRICHMENT";
     const resumeCheckpoint = renderResume
       ? "RENDER"
-      : ingestResume
-        ? "ARSENKIN_RESULT_INGEST"
-        : "ARSENKIN_ENRICHMENT";
+      : assemblyResume
+        ? null
+        : ingestResume
+          ? "ARSENKIN_RESULT_INGEST"
+          : "ARSENKIN_ENRICHMENT";
     const artifactsDir = unifiedArtifactsDir(job.caseId, job.unifiedJobId);
 
     // Ingest recovery: mark stale composite/analytics/section/render lineage before new observations land.
@@ -568,11 +589,22 @@ export async function recoverUnifiedOrionCollectionJob(input: {
           ingestResume ? "pollAttempt-reset:0" : "",
           renderResume
             ? "bounded-resume:from-render"
-            : ingestResume
-              ? "bounded-resume:from-arsenkin-ingest"
-              : "bounded-resume:from-arsenkin",
+            : assemblyResume
+              ? "bounded-resume:from-assembly"
+              : ingestResume
+                ? "bounded-resume:from-arsenkin-ingest"
+                : "bounded-resume:from-arsenkin",
         ].filter(Boolean),
       }) ?? job;
+
+    if (assemblyResume) {
+      writeUnifiedArtifact(job.caseId, job.unifiedJobId, "force-gpt-copy.json", {
+        version: "force-gpt-copy-v1",
+        requestedAt: nowIso,
+        requestedBy: input.actorId,
+        reason: "assembly-resume-recovery",
+      });
+    }
 
     writeUnifiedArtifact(job.caseId, job.unifiedJobId, "unified-recovery-audit.json", recoveryAudit);
 
