@@ -60,6 +60,7 @@
     "smoke:gpt-report-copy": "tsx --test scripts/smoke-gpt-report-copy.ts",
     "smoke:gpt-call-queue": "tsx --test scripts/smoke-gpt-call-queue.ts",
     "smoke:openai-truncation-retry": "tsx --test scripts/smoke-openai-truncation-retry.ts",
+    "smoke:finding-themes-config": "tsx --test scripts/smoke-finding-themes-config.ts",
     "smoke:env-validation-ai": "tsx --test scripts/smoke-env-validation-ai.ts",
     "smoke:arsenkin-enrichment-ingest": "tsx --test scripts/smoke-arsenkin-enrichment-ingest.ts",
     "smoke:arsenkin-suggestions-targeted-retry": "tsx --test scripts/smoke-arsenkin-suggestions-targeted-retry.ts",

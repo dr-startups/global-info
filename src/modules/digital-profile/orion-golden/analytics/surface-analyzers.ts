@@ -20,11 +20,14 @@ import {
 } from "../contracts/surface-analysis";
 import type { SubjectRelevanceDecision, SurfaceKind } from "../contracts/common";
 import type { SubjectResolutionItem } from "../contracts/subject-resolution";
+import { getAdversePatterns } from "../../config/finding-themes";
 
 export type ResolutionLookup = Map<string, SubjectResolutionItem>; // by evidenceRef
 
-export const ADVERSE_PATTERNS =
-  /санкц|sanction|watch.?list|уголов|criminal|арест|arrest|суд|court|прокур|мошенн|fraud|коррупц|corrupt|отмыв|launder|обыск|розыск|компромат|скандал|расследован|investigat|adverse|безопасн.*служб|спецслужб|security service|national security|фсб|fsb/iu;
+/** REMEDIATION §3.1 — live view of configured adversePatterns. */
+export const ADVERSE_PATTERNS: Pick<RegExp, "test"> = {
+  test: (text: string) => getAdversePatterns().test(text),
+};
 
 export const NOT_FOUND_PATTERNS =
   /не найден|not found|отсутствует или пуст|нет блока|no results|н\/д/iu;

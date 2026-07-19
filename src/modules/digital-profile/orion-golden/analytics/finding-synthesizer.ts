@@ -23,83 +23,30 @@ import {
   type VerifiedFindingBundle,
 } from "../contracts/verified-finding-bundle";
 import type { SubjectResolutionItem } from "../contracts/subject-resolution";
-import { ADVERSE_PATTERNS } from "./surface-analyzers";
+import {
+  getAdversePatterns,
+  getFindingThemes,
+  resolveFindingThemesConfig,
+  type ThemeDef,
+} from "../../config/finding-themes";
 import { domainOf } from "./composite-dataset-builder";
 import { mapRegionBucket, mapSurfaceBucket } from "../classic/composite-serp-overlay-merge";
 
-export type ThemeDef = {
-  themeId: string;
-  label: string;
-  keywords: RegExp;
-  baseRisk: RiskLevel;
-  recommendedAction: string;
-};
+export type { ThemeDef };
 
-/** Priority-ordered: first matching theme claims the evidence. */
-export const FINDING_THEMES: ThemeDef[] = [
-  {
-    themeId: "security_scrutiny",
-    label: "Внимание по линии безопасности / оборонный контур",
-    keywords:
-      /оборон|defen[cs]e|national security|спецслужб|фсб|fsb|безопасн\w* служб|security service|транспортн\w+ контур/iu,
-    baseRisk: "high",
-    recommendedAction:
-      "Сверить публикации с первоисточниками, подготовить документированную позицию и план ответов на запросы контрагентов; при недостоверности — инициировать опровержение или удаление у площадок.",
+/**
+ * Live view of configured themes (REMEDIATION §3.1). Prefer getFindingThemes().
+ * Proxy keeps `.find` / `.filter` / indexing working for existing call sites.
+ */
+export const FINDING_THEMES: ThemeDef[] = new Proxy([] as ThemeDef[], {
+  get(_target, prop, receiver) {
+    const themes = getFindingThemes();
+    if (prop === "length") return themes.length;
+    if (typeof prop === "string" && /^\d+$/.test(prop)) return themes[Number(prop)];
+    const value = Reflect.get(themes, prop, receiver);
+    return typeof value === "function" ? (value as (...a: unknown[]) => unknown).bind(themes) : value;
   },
-  {
-    themeId: "criminal_legal",
-    label: "Криминальные / судебные материалы",
-    keywords: /уголов|criminal|арест|arrest|обыск|розыск|прокур|следств|sledstvie|rucriminal|компромат|суд(?!острое)|court/iu,
-    baseRisk: "high",
-    recommendedAction:
-      "Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе; недостоверные публикации — вытеснять из топ-20 официальными материалами и добиваться удаления на агрегаторах.",
-  },
-  {
-    themeId: "pep_rca_watchlist",
-    label: "PEP / RCA / watchlist-сигналы",
-    keywords: /\bpep\b|\brca\b|watch.?list|санкц|sanction|world.?check|dow.?jones|lexis|rupep|комплаенс|compliance/iu,
-    baseRisk: "medium",
-    recommendedAction:
-      "Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы.",
-  },
-  {
-    themeId: "political_exposure",
-    label: "Политические связи / публичная экспозиция",
-    keywords: /полит|politic|депутат|парти|выбор|electoral|минист|правительств|govern|парламент|parliament/iu,
-    baseRisk: "medium",
-    recommendedAction:
-      "Зафиксировать фактическую хронологию публичных должностей и связей, подготовить согласованную позицию для СМИ и комплаенс-запросов банков и партнёров.",
-  },
-  {
-    themeId: "offshore_corporate",
-    label: "Офшоры / корпоративное владение",
-    keywords: /офшор|offshore|кипр|cyprus|\bbvi\b|панам|panama|бенефициар|beneficia|владел|ownership|opencorporates/iu,
-    baseRisk: "medium",
-    recommendedAction:
-      "Провести корпоративную проверку структуры владения по реестрам, подготовить документальное подтверждение легальности структуры для KYC-запросов.",
-  },
-  {
-    themeId: "family_associates",
-    label: "Семья и деловые связи",
-    keywords: /жена|супруг|spouse|дети|сын|дочь|партнер|associate|соучредител|co-?founder/iu,
-    baseRisk: "low",
-    recommendedAction:
-      "Собрать документальные подтверждения по активам и связям; отслеживать, чтобы негатив в адрес связанных лиц не переносился на профиль субъекта в выдаче.",
-  },
-  {
-    themeId: "business_profile",
-    label: "Деловой профиль",
-    keywords: /бизнесмен|businessman|предпринимател|инвестор|investor|биограф|biography|forbes|логистик|logistics|транспорт|transport|девелоп/iu,
-    baseRisk: "none",
-    recommendedAction:
-      "Поддерживать и усиливать позитивный деловой контент (профили, интервью, официальные сайты): он закрепляет верхние позиции выдачи и вытесняет потенциальный негатив.",
-  },
-];
-
-const UNVERIFIED_PATTERNS = /not verified|potential match|requires analyst review|предварительн|не подтвержд|potential\s+\w+\s+in/iu;
-const POSITIVE_PATTERNS = /биограф|biography|pioneer|интервью|interview|эксперт|expert|forbes|достижени/iu;
-const ASSERTION_PATTERNS = /подтвержден|подтверждено|confirmed|установлен[оа]?\b|введены/iu;
-const DENIAL_PATTERNS = /отклонил|опроверг|не вводил|не подтвержд|отрицает|denied|dismissed|снял обвинени/iu;
+});
 
 export type FindingSynthesisResult = {
   bundle: VerifiedFindingBundle;
@@ -129,7 +76,7 @@ function itemIsAdverse(item: RawInventoryItem): boolean {
   const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
   if (meta.analystNeutral === true) return false;
   if (meta.analystAdverse === true) return true;
-  return ADVERSE_PATTERNS.test(itemText(item));
+  return getAdversePatterns().test(itemText(item));
 }
 
 /** Russian plural form: 1 публикация, 2 публикации, 5 публикаций. */
@@ -148,7 +95,7 @@ export function pluralRu(n: number, one: string, few: string, many: string): str
  */
 function themesFor(item: RawInventoryItem): ThemeDef[] {
   const text = itemText(item);
-  return FINDING_THEMES.filter((theme) => theme.keywords.test(text));
+  return getFindingThemes().filter((theme) => theme.keywords.test(text));
 }
 
 /** Same evidence + same normalized claim must collapse into one contribution. */
@@ -183,9 +130,10 @@ function detectContradictions(
   const contradictions: FindingContradiction[] = [];
   const limitations: string[] = [];
 
-  const unverified = items.filter((i) => UNVERIFIED_PATTERNS.test(itemText(i)));
+  const cfg = resolveFindingThemesConfig();
+  const unverified = items.filter((i) => cfg.unverifiedClaimPatterns.test(itemText(i)));
   const adverse = items.filter((i) => itemIsAdverse(i));
-  const positive = items.filter((i) => POSITIVE_PATTERNS.test(itemText(i)));
+  const positive = items.filter((i) => cfg.positivePatterns.test(itemText(i)));
 
   if (unverified.length > 0) {
     limitations.push(
@@ -200,8 +148,8 @@ function detectContradictions(
     }
   }
 
-  const asserting = items.filter((i) => ASSERTION_PATTERNS.test(itemText(i)));
-  const denying = items.filter((i) => DENIAL_PATTERNS.test(itemText(i)));
+  const asserting = items.filter((i) => cfg.assertionPatterns.test(itemText(i)));
+  const denying = items.filter((i) => cfg.denialPatterns.test(itemText(i)));
   if (asserting.length > 0 && denying.length > 0) {
     contradictions.push({
       description:

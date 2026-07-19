@@ -54,6 +54,7 @@ import {
   type AnalystOverridesBundle,
   type AnalystOverridesPrisma,
 } from "../../services/analyst-overrides-loader";
+import { resolveFindingThemesConfig } from "../../config/finding-themes";
 
 export type AnalyticsPipelineInput = {
   caseId: string;
@@ -90,10 +91,6 @@ export type AnalyticsPipelineResult = {
   artifactPaths: Record<string, string>;
 };
 
-const UNVERIFIED_DOMAINS = /rucriminal|sledstvie|compromat|kompromat/iu;
-const AUTHORITATIVE_DOMAINS = /\.gov|nalog\.ru|kad\.arbitr|wikipedia\.org/iu;
-const REPUTABLE_DOMAINS = /forbes|rbc\.ru|vedomosti|kommersant|tadviser|interfax/iu;
-
 function sha256(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
 }
@@ -106,13 +103,14 @@ function writeArtifact(dir: string, name: string, value: unknown): { path: strin
 }
 
 function sourceQualityFor(domains: string[]): SourceQualityEntry[] {
+  const cfg = resolveFindingThemesConfig();
   return domains.map((domain) => ({
     domain,
-    reliability: AUTHORITATIVE_DOMAINS.test(domain)
+    reliability: cfg.authoritativeDomains.test(domain)
       ? ("AUTHORITATIVE" as const)
-      : REPUTABLE_DOMAINS.test(domain)
+      : cfg.reputableDomains.test(domain)
         ? ("REPUTABLE" as const)
-        : UNVERIFIED_DOMAINS.test(domain)
+        : cfg.unverifiedDomains.test(domain)
           ? ("UNVERIFIED" as const)
           : ("AGGREGATOR" as const),
   }));
