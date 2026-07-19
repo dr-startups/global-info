@@ -223,6 +223,14 @@ export async function rebuildUnifiedReport(input: {
       subjectProfileRefreshed: Boolean(refreshedProfile),
     };
     writeUnifiedArtifact(job.caseId, job.unifiedJobId, "unified-rebuild-audit.json", audit);
+    // Force GPT stage-2 to re-run: reused SectionPacks keep gptCopy and would
+    // otherwise all become SKIPPED_CACHED (live symptom: применено 0 · кэш N).
+    writeUnifiedArtifact(job.caseId, job.unifiedJobId, "force-gpt-copy.json", {
+      version: "force-gpt-copy-v1",
+      requestedAt: nowFn().toISOString(),
+      requestedBy: input.actorId,
+      reason: "unified-report-rebuild",
+    });
 
     const patched =
       patchUnifiedCollectionJob(job.caseId, {

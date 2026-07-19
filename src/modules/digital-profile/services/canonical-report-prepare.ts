@@ -13,7 +13,7 @@
  * deck-sections graph and the injectable render adapter.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type { RawInventoryItem } from "../orion-golden/types";
@@ -701,6 +701,12 @@ export async function runCanonicalReportPrepare(
       gptLayer = { caller: gptCallerOnce, caseAnalysis };
     }
 
+    // Unified «Пересобрать отчёт» writes this marker so stage 2 cannot stay on
+    // SKIPPED_CACHED from reused SectionPacks that still carry gptCopy.
+    const forceGptCopyPath = join(input.artifactsDir, "force-gpt-copy.json");
+    const forceGptCopy =
+      existsSync(forceGptCopyPath) || String(process.env.ORION_GPT_FORCE_COPY ?? "") === "1";
+
     const deck = await runDeckBuildWithGptCopy({
       ctx: {
         caseId: deckInputs.caseId,
@@ -726,7 +732,15 @@ export async function runCanonicalReportPrepare(
       baseObservationCountBefore: deckInputs.baseCountBefore,
       baseObservationCountAfter: deckInputs.baseCountAfter,
       gpt: gptLayer,
+      forceGptCopy,
     });
+    if (forceGptCopy && existsSync(forceGptCopyPath)) {
+      try {
+        unlinkSync(forceGptCopyPath);
+      } catch {
+        // Marker cleanup must not fail the report.
+      }
+    }
     assemblyCount = 1;
 
     if (deck.assembly.errors.length > 0) {

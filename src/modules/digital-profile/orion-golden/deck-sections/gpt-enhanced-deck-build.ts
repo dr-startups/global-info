@@ -44,6 +44,11 @@ export async function runDeckBuildWithGptCopy(input: {
   baseObservationCountAfter: number;
   /** GPT layer; null/undefined → pure deterministic build. */
   gpt?: GptDeckLayer | null;
+  /**
+   * When true, drop persisted `gptCopy` markers before stage 2 so reused
+   * SectionPacks cannot short-circuit as SKIPPED_CACHED (unified «Пересобрать»).
+   */
+  forceGptCopy?: boolean;
 }): Promise<GptDeckBuildResult> {
   const buildLog: DeckBuildResult["buildLog"] = [];
   const previousPacks = loadPreviousPacks(input.outputRoot);
@@ -53,6 +58,13 @@ export async function runDeckBuildWithGptCopy(input: {
   let gptReport: GptSlideCopyReport | null = null;
 
   if (input.gpt) {
+    if (input.forceGptCopy) {
+      packs = packs.map((p) => {
+        if (!p.gptCopy) return p;
+        const { gptCopy: _drop, ...rest } = p;
+        return rest as SectionPackV2;
+      });
+    }
     const validatePack = (pack: SectionPackV2) =>
       validateSectionPack({
         pack,
