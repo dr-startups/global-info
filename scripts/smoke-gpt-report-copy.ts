@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { before, describe, it } from "node:test";
+import { after, before, describe, it } from "node:test";
 
 import {
   runCanonicalReportPrepare,
@@ -32,6 +32,13 @@ import {
   type GptCaseAnalysis,
   type GptJsonCaller,
 } from "../src/modules/digital-profile/orion-golden/gpt/gpt-case-analysis";
+import {
+  GPT_STAGE1_MAP_PROMPT_MARKER,
+  GPT_STAGE1_REDUCE_PROMPT_MARKER,
+  splitCorpusIntoMapBatches,
+} from "../src/modules/digital-profile/orion-golden/gpt/gpt-case-analysis-mapreduce";
+import type { SurfaceAnalysisUnit } from "../src/modules/digital-profile/orion-golden/contracts/surface-analysis";
+import type { Finding } from "../src/modules/digital-profile/orion-golden/contracts/finding";
 import {
   enhanceSectionPacksWithGptCopy,
   GPT_SLIDE_COPY_PROMPT_VERSION,
@@ -236,8 +243,14 @@ function validCaseAnalysisJson(): unknown {
 /** Fake GPT: stage 1 returns the case analysis; stage 2 rewrites every slide. */
 function makeHappyCaller(): GptJsonCaller {
   return async ({ systemPrompt, userPayload }) => {
-    if (systemPrompt.includes("ПОЛНЫЙ верифицированный аналитический корпус")) {
+    if (
+      systemPrompt.includes("ПОЛНЫЙ верифицированный аналитический корпус") ||
+      systemPrompt.includes(GPT_STAGE1_REDUCE_PROMPT_MARKER)
+    ) {
       return validCaseAnalysisJson();
+    }
+    if (systemPrompt.includes(GPT_STAGE1_MAP_PROMPT_MARKER)) {
+      return miniMapJson();
     }
     const payload = userPayload as {
       slides: Array<{ slideId: string; title: string }>;
@@ -381,6 +394,339 @@ describe("stage 1 — full-corpus GPT case analysis", () => {
       metricSnapshot: MINI_METRICS,
     });
     assert.equal(unsafe, null);
+  });
+});
+
+function miniMapJson(): unknown {
+  return {
+    keyRisks: [
+      {
+        theme: "Налоговое расследование",
+        severity: "высокий",
+        explanation:
+          "Публикации о расследовании видны при банковской проверке и осложняют сделки.",
+        advice: "Подготовить официальную позицию и подтверждающие документы.",
+      },
+    ],
+    notableFacts: ["В выдаче присутствуют материалы о налоговой проверке."],
+    positiveSignals: ["Есть деловой профиль в авторитетном издании."],
+  };
+}
+
+function largeCorpusFixture(): {
+  bundle: VerifiedFindingBundle;
+  surfaceUnits: SurfaceAnalysisUnit[];
+  metricSnapshot: MetricSnapshot;
+} {
+  const baseFinding = {
+    schemaVersion: "finding-v2" as const,
+    caseId: "c1",
+    datasetId: "d1",
+    sourceHashes: [] as string[],
+    providers: ["yandex"],
+    contradictions: [] as Finding["contradictions"],
+    limitations: [] as string[],
+    promotionPriority: "P2" as const,
+  };
+  const findings: Finding[] = [
+    {
+      ...baseFinding,
+      findingId: "f-ru-1",
+      theme: "Налоговое расследование",
+      claim: "В RU-выдаче есть материалы о налоговом расследовании субъекта.",
+      subjectMatch: "SUBJECT_MATCH",
+      riskLevel: "high",
+      confidence: 0.8,
+      regions: ["RU"],
+      surfaceKinds: ["organic"],
+      sourceDomains: ["di.se"],
+      recommendedAction: "Проверить первоисточник.",
+      evidenceRefs: ["e1"],
+    },
+    {
+      ...baseFinding,
+      findingId: "f-uae-1",
+      theme: "PEP/RCA упоминание",
+      claim: "В UAE-выдаче есть потенциальная PEP/RCA ссылка на субъекта.",
+      subjectMatch: "SUBJECT_MATCH",
+      riskLevel: "medium",
+      confidence: 0.7,
+      regions: ["UAE"],
+      surfaceKinds: ["organic"],
+      sourceDomains: ["gulfnews.com"],
+      recommendedAction: "Уточнить статус записи.",
+      evidenceRefs: ["e2"],
+    },
+    {
+      ...baseFinding,
+      findingId: "f-sug-1",
+      theme: "Негативные подсказки",
+      claim: "Подсказки связывают субъекта с fraud.",
+      subjectMatch: "SUBJECT_MATCH",
+      riskLevel: "medium",
+      confidence: 0.6,
+      regions: ["RU"],
+      surfaceKinds: ["suggestions"],
+      sourceDomains: ["yandex.ru"],
+      recommendedAction: "Зафиксировать формулировки подсказок.",
+      evidenceRefs: ["e3"],
+    },
+    {
+      ...baseFinding,
+      findingId: "f-ai-1",
+      theme: "AI-карточка",
+      claim: "AI-ответ кратко описывает субъекта как основателя компании.",
+      subjectMatch: "SUBJECT_MATCH",
+      riskLevel: "low",
+      confidence: 0.5,
+      regions: ["RU"],
+      surfaceKinds: ["ai_answers"],
+      sourceDomains: ["yandex.ru"],
+      recommendedAction: "Сверить с первоисточниками.",
+      evidenceRefs: ["e4"],
+    },
+    {
+      ...baseFinding,
+      findingId: "f-comp-1",
+      theme: "Комплаенс-хит",
+      claim: "В комплаенс-базе есть запись, требующая проверки.",
+      subjectMatch: "SUBJECT_MATCH",
+      riskLevel: "high",
+      confidence: 0.7,
+      regions: ["RU"],
+      surfaceKinds: ["compliance"],
+      sourceDomains: ["internal"],
+      recommendedAction: "Провести ручную сверку.",
+      evidenceRefs: ["e5"],
+    },
+  ];
+
+  const surfaceUnits: SurfaceAnalysisUnit[] = [
+    {
+      surface: "organic",
+      region: "RU",
+      engine: "YANDEX",
+      metrics: [{ key: "organic_count", value: 12, sampleStatus: "MEASURED" }],
+      claims: [
+        {
+          claimId: "c1",
+          text: "Материал о налоговом расследовании",
+          subjectMatch: "SUBJECT_MATCH",
+          evidenceRefs: ["e1"],
+          riskHint: "high",
+        },
+      ],
+      evidenceRefs: ["e1"],
+    },
+    {
+      surface: "organic",
+      region: "UAE",
+      engine: "GOOGLE",
+      metrics: [{ key: "organic_count", value: 4, sampleStatus: "MEASURED" }],
+      claims: [
+        {
+          claimId: "c2",
+          text: "Упоминание в UAE-выдаче",
+          subjectMatch: "SUBJECT_MATCH",
+          evidenceRefs: ["e2"],
+        },
+      ],
+      evidenceRefs: ["e2"],
+    },
+    {
+      surface: "suggestions",
+      region: "RU",
+      engine: "YANDEX",
+      metrics: [{ key: "suggestion_count", value: 6, sampleStatus: "MEASURED" }],
+      claims: [
+        {
+          claimId: "c3",
+          text: "Подсказка с fraud",
+          subjectMatch: "SUBJECT_MATCH",
+          evidenceRefs: ["e3"],
+        },
+      ],
+      evidenceRefs: ["e3"],
+    },
+    {
+      surface: "ai_answers",
+      region: "RU",
+      engine: "YANDEX",
+      metrics: [{ key: "ai_count", value: 1, sampleStatus: "MEASURED" }],
+      claims: [
+        {
+          claimId: "c4",
+          text: "AI-карточка о субъекте",
+          subjectMatch: "SUBJECT_MATCH",
+          evidenceRefs: ["e4"],
+        },
+      ],
+      evidenceRefs: ["e4"],
+    },
+    {
+      surface: "compliance",
+      region: "RU",
+      engine: "INTERNAL",
+      metrics: [{ key: "compliance_hits", value: 1, sampleStatus: "MEASURED" }],
+      claims: [
+        {
+          claimId: "c5",
+          text: "Комплаенс-запись",
+          subjectMatch: "SUBJECT_MATCH",
+          evidenceRefs: ["e5"],
+          riskHint: "high",
+        },
+      ],
+      evidenceRefs: ["e5"],
+    },
+  ];
+
+  const bundle = {
+    ...MINI_BUNDLE,
+    findings,
+  } as VerifiedFindingBundle;
+
+  return {
+    bundle,
+    surfaceUnits,
+    metricSnapshot: {
+      ...MINI_METRICS,
+      compositeCount: 40,
+      subjectMatchCount: 30,
+      adverseFindingCount: 3,
+      perRegionCounts: { RU: 30, UAE: 10 },
+    },
+  };
+}
+
+describe("stage 1 — map-reduce (§4.4)", () => {
+  after(() => {
+    process.env.ORION_GPT_STAGE1_MAP_THRESHOLD_CHARS = "60000";
+  });
+
+  it("small corpus → exactly 1 GPT call (single path)", async () => {
+    process.env.ORION_GPT_STAGE1_MAP_THRESHOLD_CHARS = "60000";
+    let calls = 0;
+    const analysis = await runGptCaseAnalysis({
+      caller: async ({ systemPrompt }) => {
+        calls += 1;
+        assert.ok(
+          systemPrompt.includes("ПОЛНЫЙ верифицированный аналитический корпус"),
+          "small corpus must use single-call prompt"
+        );
+        assert.ok(!systemPrompt.includes(GPT_STAGE1_MAP_PROMPT_MARKER));
+        return validCaseAnalysisJson();
+      },
+      subjectName: "Anders Holmström",
+      bundle: MINI_BUNDLE,
+      surfaceUnits: [],
+      metricSnapshot: MINI_METRICS,
+    });
+    assert.ok(analysis);
+    assert.equal(calls, 1);
+  });
+
+  it("large corpus → K map + 1 reduce", async () => {
+    process.env.ORION_GPT_STAGE1_MAP_THRESHOLD_CHARS = "100";
+    const fixture = largeCorpusFixture();
+    const batches = splitCorpusIntoMapBatches({
+      subjectName: "Anders Holmström",
+      aliases: [],
+      contextIdentifiers: [],
+      bundle: fixture.bundle,
+      surfaceUnits: fixture.surfaceUnits,
+      metricSnapshot: fixture.metricSnapshot,
+    });
+    assert.ok(batches.length >= 3, `expected several batches, got ${batches.length}`);
+
+    const stages: string[] = [];
+    const analysis = await runGptCaseAnalysis({
+      caller: async ({ systemPrompt }) => {
+        if (systemPrompt.includes(GPT_STAGE1_MAP_PROMPT_MARKER)) {
+          stages.push("map");
+          return miniMapJson();
+        }
+        if (systemPrompt.includes(GPT_STAGE1_REDUCE_PROMPT_MARKER)) {
+          stages.push("reduce");
+          return validCaseAnalysisJson();
+        }
+        stages.push("single");
+        return validCaseAnalysisJson();
+      },
+      subjectName: "Anders Holmström",
+      bundle: fixture.bundle,
+      surfaceUnits: fixture.surfaceUnits,
+      metricSnapshot: fixture.metricSnapshot,
+    });
+    assert.ok(analysis);
+    assert.equal(analysis!.version, "gpt-case-analysis-v1");
+    assert.ok(analysis!.recommendations.length >= 1);
+    assert.equal(stages.filter((s) => s === "map").length, batches.length);
+    assert.equal(stages.filter((s) => s === "reduce").length, 1);
+    assert.equal(stages.filter((s) => s === "single").length, 0);
+  });
+
+  it("one map batch fails → analysis still returned", async () => {
+    const { OpenAiCallError } = await import(
+      "../src/modules/digital-profile/orion-golden/gpt/gpt-call-queue"
+    );
+    process.env.ORION_GPT_STAGE1_MAP_THRESHOLD_CHARS = "100";
+    const fixture = largeCorpusFixture();
+    let mapCalls = 0;
+    let reduceCalls = 0;
+    const analysis = await runGptCaseAnalysis({
+      caller: async ({ systemPrompt, userPayload }) => {
+        if (systemPrompt.includes(GPT_STAGE1_MAP_PROMPT_MARKER)) {
+          mapCalls += 1;
+          const key = String((userPayload as { batchKey?: string }).batchKey ?? "");
+          if (key === "ru_organic") {
+            throw new OpenAiCallError("forced-map-fail", { retryable: false });
+          }
+          return miniMapJson();
+        }
+        if (systemPrompt.includes(GPT_STAGE1_REDUCE_PROMPT_MARKER)) {
+          reduceCalls += 1;
+          const dropped = (userPayload as { droppedBatches?: string[] }).droppedBatches ?? [];
+          assert.ok(dropped.includes("ru_organic"), "failed map must be listed");
+          return validCaseAnalysisJson();
+        }
+        throw new Error("unexpected single path");
+      },
+      subjectName: "Anders Holmström",
+      bundle: fixture.bundle,
+      surfaceUnits: fixture.surfaceUnits,
+      metricSnapshot: fixture.metricSnapshot,
+    });
+    assert.ok(analysis, "partial map failure must not discard analysis");
+    assert.ok(mapCalls >= 3);
+    assert.equal(reduceCalls, 1);
+  });
+
+  it("reduce fails → null (fail-safe)", async () => {
+    const { OpenAiCallError } = await import(
+      "../src/modules/digital-profile/orion-golden/gpt/gpt-call-queue"
+    );
+    process.env.ORION_GPT_STAGE1_MAP_THRESHOLD_CHARS = "100";
+    const fixture = largeCorpusFixture();
+    let reason: string | null = null;
+    const analysis = await runGptCaseAnalysis({
+      caller: async ({ systemPrompt }) => {
+        if (systemPrompt.includes(GPT_STAGE1_MAP_PROMPT_MARKER)) return miniMapJson();
+        if (systemPrompt.includes(GPT_STAGE1_REDUCE_PROMPT_MARKER)) {
+          throw new OpenAiCallError("forced-reduce-fail", { retryable: false });
+        }
+        throw new Error("unexpected single path");
+      },
+      subjectName: "Anders Holmström",
+      bundle: fixture.bundle,
+      surfaceUnits: fixture.surfaceUnits,
+      metricSnapshot: fixture.metricSnapshot,
+      onFailure: (r) => {
+        reason = r;
+      },
+    });
+    assert.equal(analysis, null);
+    assert.ok(reason && /reduce/i.test(reason), reason ?? "");
   });
 });
 

@@ -41,7 +41,7 @@ export const GPT_CASE_ANALYSIS_BUDGETS = {
   recommendation: 400,
 } as const;
 
-const KeyRiskSchema = z.object({
+export const KeyRiskSchema = z.object({
   theme: z.string().min(1).max(GPT_CASE_ANALYSIS_BUDGETS.theme),
   severity: RiskWordSchema,
   /** Client-language explanation of WHY this is risky for the subject. */
@@ -74,7 +74,8 @@ export type GptCaseAnalysis = z.infer<typeof GptCaseAnalysisSchema> & {
 
 export const GPT_CASE_ANALYSIS_PROMPT_VERSION = "gpt-case-analysis-prompt-v2";
 
-const CASE_ANALYSIS_SYSTEM_PROMPT = [
+/** Marker substring used by offline smokes to detect the single-call stage-1 prompt. */
+export const CASE_ANALYSIS_SYSTEM_PROMPT = [
   "Ты — старший аналитик reputational due diligence, готовящий клиентский отчёт о цифровом профиле проверяемого лица.",
   "Тебе передан ПОЛНЫЙ верифицированный аналитический корпус: все findings (проверенные выводы с уровнем риска), метрики покрытия и заявления по каждой поисковой поверхности.",
   "Проанализируй корпус целиком и составь целостную клиентскую оценку.",
@@ -84,6 +85,17 @@ const CASE_ANALYSIS_SYSTEM_PROMPT = [
   "Пиши по-русски.",
   "Верни ТОЛЬКО JSON по схеме: {\"overallRiskLevel\": \"низкий|средний|высокий|критический\", \"executiveConclusion\": string, \"digitalPortrait\": string, \"keyRisks\": [{\"theme\": string, \"severity\": \"низкий|средний|высокий|критический\", \"explanation\": string, \"advice\": string}], \"positiveSignals\": [string], \"recommendations\": [string]}.",
 ].join(" ");
+
+const INTERNAL_TOKENS =
+  /\baudit\b|reportRunId|report_run|datasetId|pipeline|arsenkin|serp[-_]obs|inventoryId|schemaVersion/iu;
+
+/** A case-analysis string is client-safe: no internal/forbidden tokens, no URLs. */
+export function clientSafeCaseAnalysisText(text: string): boolean {
+  if (!text.trim()) return false;
+  if (INTERNAL_TOKENS.test(text)) return false;
+  if (/https?:\/\//iu.test(text)) return false;
+  return scanOrionGoldenClientTextForForbiddenTokens(text).length === 0;
+}
 
 /**
  * Clamp at a sentence/word boundary so overlong model output still validates.
@@ -150,18 +162,7 @@ export function coerceGptCaseAnalysisRaw(raw: unknown): unknown {
   return o;
 }
 
-const INTERNAL_TOKENS =
-  /\baudit\b|reportRunId|report_run|datasetId|pipeline|arsenkin|serp[-_]obs|inventoryId|schemaVersion/iu;
-
-/** A case-analysis string is client-safe: no internal/forbidden tokens, no URLs. */
-function clientSafe(text: string): boolean {
-  if (!text.trim()) return false;
-  if (INTERNAL_TOKENS.test(text)) return false;
-  if (/https?:\/\//iu.test(text)) return false;
-  return scanOrionGoldenClientTextForForbiddenTokens(text).length === 0;
-}
-
-function buildCorpusPayload(input: {
+export function buildCorpusPayload(input: {
   subjectName: string;
   aliases: string[];
   contextIdentifiers: string[];
@@ -210,12 +211,66 @@ function buildCorpusPayload(input: {
   };
 }
 
-/**
- * Run the full-corpus GPT case analysis. Returns null on ANY failure
- * (transport, invalid JSON, unsafe strings) — callers fall back to the
- * deterministic report without blocking the pipeline.
- */
-export async function runGptCaseAnalysis(input: {
+/** Parse + sanitize a full-schema stage-1 response; null on hard failures. */
+export function finalizeGptCaseAnalysis(
+  raw: unknown,
+  onFailure?: (reason: string) => void
+): GptCaseAnalysis | null {
+  const fail = (reason: string): null => {
+    onFailure?.(reason);
+    return null;
+  };
+  const coerced = coerceGptCaseAnalysisRaw(raw);
+  const parsed = GptCaseAnalysisSchema.safeParse(coerced);
+  if (!parsed.success) {
+    return fail(
+      `schema: ${parsed.error.issues
+        .slice(0, 3)
+        .map((i) => `${i.path.join(".")} ${i.message}`)
+        .join("; ")}`
+    );
+  }
+
+  const a = parsed.data;
+  if (!clientSafeCaseAnalysisText(a.executiveConclusion)) {
+    return fail("unsafe executiveConclusion");
+  }
+  const keyRisks = a.keyRisks.filter(
+    (r) =>
+      clientSafeCaseAnalysisText(r.theme) &&
+      clientSafeCaseAnalysisText(r.explanation) &&
+      clientSafeCaseAnalysisText(r.advice)
+  );
+  const recommendations = a.recommendations.filter(clientSafeCaseAnalysisText);
+  if (recommendations.length === 0) return fail("no client-safe recommendations");
+
+  return {
+    version: GPT_CASE_ANALYSIS_VERSION,
+    generatedAt: new Date().toISOString(),
+    overallRiskLevel: a.overallRiskLevel,
+    executiveConclusion: a.executiveConclusion,
+    digitalPortrait:
+      a.digitalPortrait && clientSafeCaseAnalysisText(a.digitalPortrait)
+        ? a.digitalPortrait
+        : undefined,
+    keyRisks,
+    positiveSignals: a.positiveSignals.filter(clientSafeCaseAnalysisText),
+    recommendations,
+  };
+}
+
+/** Observability for single vs map-reduce stage 1 (§4.4). */
+export type GptCaseAnalysisDiagnostics = {
+  mode: "single" | "map_reduce";
+  thresholdChars: number;
+  payloadChars: number;
+  mapCalls: number;
+  reduceCall: boolean;
+  batchKeys: string[];
+  mapFailures?: Array<{ batch: string; reason: string }>;
+};
+
+export type GptCaseAnalysisRunInput = {
   caller: GptJsonCaller;
   subjectName: string;
   aliases?: string[];
@@ -225,49 +280,92 @@ export async function runGptCaseAnalysis(input: {
   metricSnapshot: MetricSnapshot;
   /** Called with a short reason whenever the analysis is discarded (fail-safe path). */
   onFailure?: (reason: string) => void;
-}): Promise<GptCaseAnalysis | null> {
+  /** Optional queue overrides (tests inject fake sleep / short deadline). */
+  queueOptions?: import("./gpt-call-queue").GptCallQueueOptions;
+  /** Observability for single vs map-reduce (§4.4). */
+  onDiagnostics?: (d: GptCaseAnalysisDiagnostics) => void;
+};
+
+/**
+ * Run the full-corpus GPT case analysis. Large corpora use map-reduce (§4.4);
+ * small ones keep a single call. Returns null on ANY hard failure (transport,
+ * invalid JSON, unsafe strings) — callers fall back to the deterministic report.
+ */
+export async function runGptCaseAnalysis(
+  input: GptCaseAnalysisRunInput
+): Promise<GptCaseAnalysis | null> {
+  const {
+    estimateCorpusPayloadChars,
+    readStage1MapThresholdChars,
+    runGptCaseAnalysisMapReduce,
+    splitCorpusIntoMapBatches,
+  } = await import("./gpt-case-analysis-mapreduce");
+
+  const corpus = {
+    subjectName: input.subjectName,
+    aliases: input.aliases ?? [],
+    contextIdentifiers: input.contextIdentifiers ?? [],
+    bundle: input.bundle,
+    surfaceUnits: input.surfaceUnits,
+    metricSnapshot: input.metricSnapshot,
+  };
+  const payloadChars = estimateCorpusPayloadChars(corpus);
+  const thresholdChars = readStage1MapThresholdChars();
+  const batches = splitCorpusIntoMapBatches(corpus);
+
+  if (payloadChars >= thresholdChars && batches.length > 1) {
+    return runGptCaseAnalysisMapReduce(input);
+  }
+
+  input.onDiagnostics?.({
+    mode: "single",
+    thresholdChars,
+    payloadChars,
+    mapCalls: 0,
+    reduceCall: false,
+    batchKeys: batches.map((b) => b.key),
+  });
+
   const fail = (reason: string): null => {
     input.onFailure?.(reason);
     return null;
   };
+
   try {
-    const raw = await input.caller({
-      systemPrompt: CASE_ANALYSIS_SYSTEM_PROMPT,
-      userPayload: buildCorpusPayload({
-        subjectName: input.subjectName,
-        aliases: input.aliases ?? [],
-        contextIdentifiers: input.contextIdentifiers ?? [],
-        bundle: input.bundle,
-        surfaceUnits: input.surfaceUnits,
-        metricSnapshot: input.metricSnapshot,
-      }),
-    });
-    const coerced = coerceGptCaseAnalysisRaw(raw);
-    const parsed = GptCaseAnalysisSchema.safeParse(coerced);
-    if (!parsed.success) {
-      return fail(`schema: ${parsed.error.issues.slice(0, 3).map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`);
-    }
-
-    // Sanitize: the conclusion must be client-safe; unsafe list entries are
-    // dropped individually (fail-closed per entry, not per analysis).
-    const a = parsed.data;
-    if (!clientSafe(a.executiveConclusion)) return fail("unsafe executiveConclusion");
-    const keyRisks = a.keyRisks.filter(
-      (r) => clientSafe(r.theme) && clientSafe(r.explanation) && clientSafe(r.advice)
+    const { defaultGptCallQueueOptions, runGptCallQueue } = await import(
+      "./gpt-call-queue"
     );
-    const recommendations = a.recommendations.filter(clientSafe);
-    if (recommendations.length === 0) return fail("no client-safe recommendations");
-
-    return {
-      version: GPT_CASE_ANALYSIS_VERSION,
-      generatedAt: new Date().toISOString(),
-      overallRiskLevel: a.overallRiskLevel,
-      executiveConclusion: a.executiveConclusion,
-      digitalPortrait: a.digitalPortrait && clientSafe(a.digitalPortrait) ? a.digitalPortrait : undefined,
-      keyRisks,
-      positiveSignals: a.positiveSignals.filter(clientSafe),
-      recommendations,
-    };
+    const defaults = defaultGptCallQueueOptions();
+    const offlineSleep =
+      process.env.NETWORK_CALLS === "0" ? async () => undefined : undefined;
+    const queued = await runGptCallQueue({
+      tasks: [
+        {
+          key: "gpt-stage1-single",
+          run: () =>
+            input.caller({
+              systemPrompt: CASE_ANALYSIS_SYSTEM_PROMPT,
+              userPayload: buildCorpusPayload(corpus),
+            }),
+        },
+      ],
+      options: {
+        concurrency: 1,
+        maxAttempts: defaults.maxAttempts,
+        deadlineMs: defaults.deadlineMs,
+        sleep: offlineSleep,
+        ...input.queueOptions,
+      },
+    });
+    const result = queued[0];
+    if (!result || !result.ok) {
+      return fail(
+        `transport: ${
+          result && !result.ok ? result.error.message : "gpt-stage1-missing-result"
+        }`
+      );
+    }
+    return finalizeGptCaseAnalysis(result.value, input.onFailure);
   } catch (err) {
     return fail(`transport: ${err instanceof Error ? err.message : String(err)}`);
   }

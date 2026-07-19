@@ -30,6 +30,7 @@ import {
   GPT_CASE_ANALYSIS_VERSION,
   runGptCaseAnalysis,
   type GptCaseAnalysis,
+  type GptCaseAnalysisDiagnostics,
   type GptJsonCaller,
 } from "../orion-golden/gpt/gpt-case-analysis";
 import { digitalProfileConfig } from "../config";
@@ -784,33 +785,15 @@ export async function runCanonicalReportPrepare(
     let gptLayer: GptDeckLayer | null = null;
     const gptCallerOnce = resolveGptCaller(input);
     if (gptCallerOnce) {
-      // Stage 1: queue-backed retries around the resolved one-shot caller
-      // (injected fakes in tests, OpenAI once-client in production).
-      const stage1Caller: typeof gptCallerOnce = async (args) => {
-        const {
-          runGptCallQueue,
-          defaultGptCallQueueOptions,
-        } = await import("../orion-golden/gpt/gpt-call-queue");
-        const defaults = defaultGptCallQueueOptions();
-        const queued = await runGptCallQueue({
-          tasks: [{ key: "gpt-stage1", run: () => gptCallerOnce(args) }],
-          options: {
-            concurrency: 1,
-            maxAttempts: defaults.maxAttempts,
-            deadlineMs: defaults.deadlineMs,
-            sleep:
-              process.env.NETWORK_CALLS === "0" ? async () => undefined : undefined,
-          },
-        });
-        const result = queued[0];
-        if (!result || !result.ok) {
-          throw result && !result.ok ? result.error : new Error("gpt-stage1-failed");
-        }
-        return result.value;
-      };
+      // Stage 1 owns its queue (single or map-reduce §4.4). Stage 2 keeps a
+      // separate once-caller — enhanceSectionPacksWithGptCopy owns that queue.
       let caseAnalysisFailure: string | null = null;
+      // Box: TS does not track assignments inside onDiagnostics for narrowing.
+      const stage1DiagBox: { current: GptCaseAnalysisDiagnostics | null } = {
+        current: null,
+      };
       const caseAnalysis = await runGptCaseAnalysis({
-        caller: stage1Caller,
+        caller: gptCallerOnce,
         subjectName: subjectDisplayName,
         aliases: subjectProfile.aliases ?? [],
         contextIdentifiers: subjectProfile.contextIdentifiers ?? [],
@@ -820,13 +803,37 @@ export async function runCanonicalReportPrepare(
         onFailure: (reason) => {
           caseAnalysisFailure = reason;
         },
+        onDiagnostics: (d) => {
+          stage1DiagBox.current = d;
+        },
       });
+      const stage1Diagnostics = stage1DiagBox.current;
       if (caseAnalysis) {
         writeFileSync(
           join(analyticsDir, "gpt-case-analysis.json"),
           `${JSON.stringify(caseAnalysis, null, 2)}\n`,
           "utf8"
         );
+        // Persist map-reduce observability even on success (dropped map batches).
+        if (
+          stage1Diagnostics &&
+          (stage1Diagnostics.mode === "map_reduce" ||
+            (stage1Diagnostics.mapFailures?.length ?? 0) > 0)
+        ) {
+          writeFileSync(
+            join(analyticsDir, "gpt-case-analysis-diagnostics.json"),
+            `${JSON.stringify(
+              {
+                status: "APPLIED",
+                ...stage1Diagnostics,
+                at: new Date().toISOString(),
+              },
+              null,
+              2
+            )}\n`,
+            "utf8"
+          );
+        }
       } else {
         // The fail-safe path used to be silent (caseAnalysisUsed:false with no
         // trace); persist the reason so operators can see why GPT stage 1 fell
@@ -834,14 +841,18 @@ export async function runCanonicalReportPrepare(
         writeFileSync(
           join(analyticsDir, "gpt-case-analysis-diagnostics.json"),
           `${JSON.stringify(
-            { status: "FAILED", reason: caseAnalysisFailure ?? "unknown", at: new Date().toISOString() },
+            {
+              status: "FAILED",
+              reason: caseAnalysisFailure ?? "unknown",
+              ...(stage1Diagnostics ?? {}),
+              at: new Date().toISOString(),
+            },
             null,
             2
           )}\n`,
           "utf8"
         );
       }
-      // Stage 2: once-caller; enhanceSectionPacksWithGptCopy owns the queue.
       gptLayer = { caller: gptCallerOnce, caseAnalysis };
     }
 
