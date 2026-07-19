@@ -1,0 +1,20 @@
+{
+  "displayName": "Anders Holmström",
+  "givenNames": ["Anders"],
+  "familyNames": ["Holmström", "Holmstrom"],
+  "patronymics": [],
+  "aliases": ["A. Holmström", "Anders Holmstrom"],
+  "transliterations": ["Anders Holmstrom"],
+  "contextIdentifiers": ["Nordkap Capital", "fintech", "Stockholm", "Dubai"],
+  "namesakeProfiles": [
+    {
+      "label": "Anders Holmström (ice-hockey goaltender)",
+      "noiseTerms": ["hockey", "nhl", "goaltender", "хоккей", "вратарь"]
+    }
+  ],
+  "negativeIdentitySignals": {
+    "wrongPatronymics": [],
+    "wrongNames": [],
+    "unrelatedKnownPersons": []
+  }
+}

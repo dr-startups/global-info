@@ -266,6 +266,13 @@ export function clampClientText(text: string, max: number): string {
   return `${out}.`;
 }
 
+/** Clamp body so `body + [findingId]` stays within the slide bullet budget. */
+function bulletWithFindingId(body: string, findingId: string, budget = 400): string {
+  const marker = ` [${findingId}]`;
+  const room = Math.max(48, budget - marker.length);
+  return clampClientText(body, room) + marker;
+}
+
 /**
  * Region-level finding blocks — used ONLY by summary-level slides whose page
  * content IS the regional dataset (regional summary, full SERP table).
@@ -671,12 +678,13 @@ export function buildExecutiveSummaryFragment(
   // continuation page carries the full detail.
   const cardTexts = es.keyFindings.map((k) => {
     const risk = matchGptKeyRisk(k.title, gpt?.keyRisks);
-    if (!risk) return clampClientText(`${k.title}: ${k.factualBasis}`, 340) + ` [${k.findingId}]`;
+    if (!risk) return bulletWithFindingId(`${k.title}: ${k.factualBasis}`, k.findingId, 340);
     // The top card's job is to explain the risk; the full factual basis
     // follows on the continuation page.
-    return (
-      fitClientSentences([`${k.title}: ${risk.explanation}`, `Что делать: ${risk.advice}`], 340) +
-      ` [${k.findingId}]`
+    return bulletWithFindingId(
+      fitClientSentences([`${k.title}: ${risk.explanation}`, `Что делать: ${risk.advice}`], 340),
+      k.findingId,
+      340
     );
   });
   const bullets = es.keyFindings.map((k) => {
@@ -686,8 +694,8 @@ export function buildExecutiveSummaryFragment(
           [`${k.title}: ${k.factualBasis}`, `Почему это важно: ${risk.explanation}`, `Что делать: ${risk.advice}`],
           380
         )
-      : clampClientText(`${k.title}: ${k.factualBasis}`, 380);
-    return text + ` [${k.findingId}]`;
+      : `${k.title}: ${k.factualBasis}`;
+    return bulletWithFindingId(text, k.findingId, 400);
   });
   // Sparse but complete collection: keep a client-safe page that states
   // there are no confirmed findings — never invent risks.

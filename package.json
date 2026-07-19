@@ -82,6 +82,8 @@
     "smoke:canonical-visual-assets": "tsx --test scripts/smoke-canonical-visual-assets.ts",
     "smoke:canonical-orchestration-e2e": "tsx --test scripts/smoke-canonical-orchestration-e2e.ts",
     "smoke:report-quality-summary": "tsx --test scripts/smoke-report-quality-summary.ts",
+    "golden-case": "tsx scripts/run-golden-case-report.ts",
+    "smoke:golden-case": "tsx --test scripts/smoke-golden-case-report.ts",
     "smoke:orion-import-graph-isolation": "tsx --test scripts/smoke-orion-import-graph-isolation.ts",
     "smoke:canonical-route-ui-e2e": "tsx --test scripts/smoke-canonical-route-ui-e2e.ts",
     "smoke:canonical-glinka-parity": "tsx --test scripts/smoke-canonical-glinka-parity.ts",

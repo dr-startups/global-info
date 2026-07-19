@@ -1,0 +1,109 @@
+{
+  "version": "golden-case-baseline-v1",
+  "observationCount": 311,
+  "observationStats": {
+    "total": 311,
+    "organic:organic:RU": 126,
+    "organic:organic:UAE": 41,
+    "suggestion:autocomplete:RU": 36,
+    "suggestion:autocomplete:UAE": 18,
+    "paa:related:RU": 24,
+    "paa:related:UAE": 12,
+    "other:images:RU": 16,
+    "other:images:UAE": 8,
+    "other:ai_answer:RU": 8,
+    "other:ai_answer:UAE": 4,
+    "other:wikipedia:RU": 6,
+    "other:knowledge_block:RU": 4,
+    "other:serp_screenshot:RU": 5,
+    "other:serp_screenshot:UAE": 3
+  },
+  "quality": {
+    "version": "report-quality-summary-v1",
+    "caseId": "case-golden-holmstrom",
+    "unifiedJobId": "unified-golden-1",
+    "counts": {
+      "dbSearchResults": null,
+      "dbSurfaceItems": null,
+      "manifestIds": 299,
+      "compositeObservations": 311,
+      "subjectMatch": 300,
+      "ambiguous": 2,
+      "otherSubject": 3,
+      "insufficient": 6,
+      "verifiedFindings": 5,
+      "ambiguousFindings": 0
+    },
+    "gpt": {
+      "stage1": {
+        "status": "SKIPPED"
+      },
+      "stage2": {
+        "applied": 0,
+        "noChanges": 0,
+        "skippedDeterministic": 0,
+        "skippedEmpty": 0,
+        "skippedCached": 0,
+        "fallbackError": 0,
+        "fallbackValidation": 0,
+        "rejectedFieldsTop": [],
+        "caseAnalysisUsed": false
+      }
+    },
+    "visuals": {
+      "built": 15,
+      "failed": 0,
+      "warning": null,
+      "byKind": {
+        "serpSnapshots": 2,
+        "suggestionPanels": 2,
+        "relatedPanels": 4,
+        "aiPanels": 3,
+        "imageGrids": 4
+      }
+    },
+    "slides": {
+      "total": 41,
+      "withContent": 37,
+      "emptyState": [
+        {
+          "slotId": "p12_ru_suggestions_google",
+          "reason": "no-suggestions"
+        },
+        {
+          "slotId": "p17_ru_images_4",
+          "reason": "VISUAL_ASSET_UNAVAILABLE"
+        },
+        {
+          "slotId": "p29_uae_wikipedia",
+          "reason": "no-identity-data"
+        },
+        {
+          "slotId": "p35_lexis_visual",
+          "reason": "VISUAL_ASSET_UNAVAILABLE"
+        }
+      ]
+    },
+    "arsenkin": {
+      "agents": [
+        {
+          "name": "ai-serp",
+          "terminalKind": "EMPTY_VALID",
+          "observationCount": 12
+        },
+        {
+          "name": "paa",
+          "terminalKind": "EMPTY_VALID",
+          "observationCount": 36
+        },
+        {
+          "name": "suggest",
+          "terminalKind": "EMPTY_VALID",
+          "observationCount": 54
+        }
+      ],
+      "enrichmentComplete": true,
+      "enrichmentObservationCount": 12
+    }
+  }
+}
