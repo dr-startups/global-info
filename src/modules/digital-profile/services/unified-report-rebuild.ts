@@ -8,6 +8,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import { ConflictError, NotFoundError, ValidationError } from "../http/errors";
 import {
   claimUnifiedJobLease,
@@ -15,6 +16,7 @@ import {
   readUnifiedArtifact,
   patchUnifiedCollectionJob,
   releaseUnifiedJobLease,
+  unifiedArtifactsDir,
   writeUnifiedArtifact,
 } from "./unified-collection-job-store";
 import type {
@@ -25,6 +27,7 @@ import type {
 import type { CompositeMergeResult } from "./composite-serp-merge";
 import { resolveJobSubjectProfile } from "./job-subject-profile";
 import type { ClassifierSubjectProfile } from "../orion-golden/analytics/subject-resolution-classifier";
+import { stripGptCopyFromSectionPacksOnDisk } from "../orion-golden/deck-sections/run-deck-build";
 
 export type UnifiedReportRebuildEligibility = {
   rebuildAllowed: boolean;
@@ -223,13 +226,17 @@ export async function rebuildUnifiedReport(input: {
       subjectProfileRefreshed: Boolean(refreshedProfile),
     };
     writeUnifiedArtifact(job.caseId, job.unifiedJobId, "unified-rebuild-audit.json", audit);
-    // Force GPT stage-2 to re-run: reused SectionPacks keep gptCopy and would
-    // otherwise all become SKIPPED_CACHED (live symptom: применено 0 · кэш N).
+    // Defense in depth: full prepare always forceRefresh-es stage 2, but also
+    // strip on-disk gptCopy + audit marker so a partial deploy cannot revive
+    // SKIPPED_CACHED (live symptom: применено 0 · кэш N).
+    const deckDir = join(unifiedArtifactsDir(job.caseId, job.unifiedJobId), "deck");
+    const strippedGptCopy = stripGptCopyFromSectionPacksOnDisk(deckDir);
     writeUnifiedArtifact(job.caseId, job.unifiedJobId, "force-gpt-copy.json", {
       version: "force-gpt-copy-v1",
       requestedAt: nowFn().toISOString(),
       requestedBy: input.actorId,
       reason: "unified-report-rebuild",
+      strippedGptCopy,
     });
 
     const patched =

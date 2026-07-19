@@ -730,6 +730,107 @@ describe("stage 1 — map-reduce (§4.4)", () => {
   });
 });
 
+describe("stage 2 — forceRefresh bypasses SKIPPED_CACHED", () => {
+  it("re-calls GPT for packs that would otherwise be cache hits", async () => {
+    const pack = {
+      schemaVersion: SECTION_PACK_SCHEMA_VERSION,
+      sectionId: "EXECUTIVE",
+      sectionType: "EXECUTIVE",
+      fragmentKey: "EXECUTIVE_SUMMARY",
+      caseId: "c1",
+      datasetId: "d1",
+      reportRunId: "r1",
+      sourceDatasetId: "d1",
+      contentVersion: "deck-sections-v14",
+      promptVersion: "executive-summary-v1",
+      contentHash: "sha256:x",
+      inputHash: "h1",
+      generatedAt: "2026-01-01T00:00:00.000Z",
+      required: true,
+      status: "READY",
+      sourceFindingIds: [],
+      evidenceRefs: [],
+      inputs: { findingIds: [], evidenceRefs: [], metricSnapshotId: "m1" },
+      slides: [
+        {
+          schemaVersion: "slide-content-v1",
+          slideId: "p03_executive",
+          baseSlotId: "p03_executive",
+          sectionId: "EXECUTIVE",
+          fragmentKey: "EXECUTIVE_SUMMARY",
+          templateId: "executive-summary",
+          title: "Резюме",
+          findingIds: [],
+          evidenceRefs: [],
+          content: { narrative: "Черновик резюме." },
+        },
+      ],
+      metrics: {
+        datasetCount: 0,
+        displayedCount: 0,
+        adverseDatasetCount: 0,
+        adverseDisplayedCount: 0,
+      },
+      provenance: { providers: [], reportRunIds: ["r1"], evidenceRefs: [] },
+      validation: { passed: true, issues: [] },
+      gptCopy: {
+        promptVersion: GPT_SLIDE_COPY_PROMPT_VERSION,
+        appliedSlides: 1,
+        caseAnalysisUsed: true,
+        lastStatus: "APPLIED",
+      },
+    } as unknown as SectionPackV2;
+
+    const analysis = (await runGptCaseAnalysis({
+      caller: async () => validCaseAnalysisJson(),
+      subjectName: "Anders Holmström",
+      bundle: MINI_BUNDLE,
+      surfaceUnits: [],
+      metricSnapshot: MINI_METRICS,
+    }))!;
+
+    let cachedCalls = 0;
+    const cached = await enhanceSectionPacksWithGptCopy({
+      packs: [pack],
+      subject: { displayName: "Anders Holmström", aliases: [] },
+      caller: async () => {
+        cachedCalls += 1;
+        return { slides: [] };
+      },
+      caseAnalysis: analysis,
+      bundle: MINI_BUNDLE,
+      evidenceIndex: {},
+      validatePack: () => ({ passed: true, issues: [] }),
+    });
+    assert.equal(cachedCalls, 0);
+    assert.equal(cached.report.fragments[0]?.status, "SKIPPED_CACHED");
+
+    let forcedCalls = 0;
+    const forced = await enhanceSectionPacksWithGptCopy({
+      packs: [pack],
+      subject: { displayName: "Anders Holmström", aliases: [] },
+      caller: async () => {
+        forcedCalls += 1;
+        return {
+          slides: [
+            {
+              slideId: "p03_executive",
+              narrative: `${GPT_NARRATIVE_MARKER}: принудительное обновление копирайта после пересборки.`,
+            },
+          ],
+        };
+      },
+      caseAnalysis: analysis,
+      bundle: MINI_BUNDLE,
+      evidenceIndex: {},
+      validatePack: () => ({ passed: true, issues: [] }),
+      forceRefresh: true,
+    });
+    assert.equal(forcedCalls, 1, "forceRefresh must re-call GPT");
+    assert.equal(forced.report.fragments[0]?.status, "APPLIED");
+  });
+});
+
 describe("stage 2 — cache invalidation when case analysis appears", () => {
   it("does not SKIPPED_CACHED packs that were written without case analysis", async () => {
     const pack = {
@@ -899,6 +1000,48 @@ describe("stage 2 — GPT client copy inside the canonical prepare", () => {
     assert.ok(llmFragments.length > 0);
     assert.ok(llmFragments.every((f) => f.status === "FALLBACK_ERROR"));
     assert.ok(!readDeckBlob(root).includes(GPT_NARRATIVE_MARKER));
+  });
+
+  it("second full prepare re-runs stage 2 (no SKIPPED_CACHED from prior gptCopy)", async () => {
+    const root = tmp("gpt-copy-full-rerun-");
+    const input1 = await seededPrepareInput(root, makeHappyCaller());
+    const res1 = await runCanonicalReportPrepare(input1);
+    assert.equal(res1.ok, true);
+    const report1 = readGptReport(root);
+    assert.ok(report1.fragments.some((f) => f.status === "APPLIED"));
+    assert.equal(
+      report1.fragments.filter((f) => f.status === "SKIPPED_CACHED").length,
+      0
+    );
+
+    let stage2Hits = 0;
+    const countingCaller: GptJsonCaller = async ({ systemPrompt, userPayload }) => {
+      if (systemPrompt.includes("ПОЛНЫЙ верифицированный аналитический корпус")) {
+        return validCaseAnalysisJson();
+      }
+      stage2Hits += 1;
+      const payload = userPayload as { slides: Array<{ slideId: string; title: string }> };
+      return {
+        slides: payload.slides.map((s) => ({
+          slideId: s.slideId,
+          narrative: `${GPT_NARRATIVE_MARKER}: повтор «${s.title}».`,
+          whatToCheck: "Проверить первоисточник после полной пересборки.",
+        })),
+      };
+    };
+    const res2 = await runCanonicalReportPrepare({
+      ...input1,
+      gptCaller: countingCaller,
+      resumeFrom: "full",
+    });
+    assert.equal(res2.ok, true);
+    assert.ok(stage2Hits >= 3, `full prepare must re-call stage 2, hits=${stage2Hits}`);
+    const report2 = readGptReport(root);
+    assert.equal(
+      report2.fragments.filter((f) => f.status === "SKIPPED_CACHED").length,
+      0,
+      "full prepare must never report SKIPPED_CACHED"
+    );
   });
 
   it("NETWORK_CALLS=0 without an injected caller → fully deterministic, no GPT artifacts", async () => {

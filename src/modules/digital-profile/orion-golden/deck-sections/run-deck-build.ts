@@ -43,6 +43,29 @@ export function loadPreviousPacks(outputRoot: string): Map<FragmentKey, SectionP
   return previous;
 }
 
+/**
+ * Drop persisted gptCopy stamps from section-packs on disk so a subsequent
+ * full prepare cannot revive SKIPPED_CACHED if forceRefresh is skipped.
+ * Used by unified «Пересобрать отчёт».
+ */
+export function stripGptCopyFromSectionPacksOnDisk(outputRoot: string): number {
+  let stripped = 0;
+  for (const rel of Object.values(FRAGMENT_ARTIFACT_PATHS)) {
+    const path = join(outputRoot, rel);
+    if (!existsSync(path)) continue;
+    try {
+      const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+      if (!raw || typeof raw !== "object" || !("gptCopy" in raw)) continue;
+      const { gptCopy: _drop, ...rest } = raw;
+      writeFileSync(path, `${JSON.stringify(rest, null, 2)}\n`, "utf8");
+      stripped += 1;
+    } catch {
+      // leave pack for rebuild / schema validation
+    }
+  }
+  return stripped;
+}
+
 export function runDeckBuild(input: {
   ctx: Omit<SectionBuildContext, "previousPacks" | "buildLog">;
   bundleForValidation: VerifiedFindingBundle;

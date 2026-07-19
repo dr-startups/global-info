@@ -871,11 +871,11 @@ export async function runCanonicalReportPrepare(
       gptLayer = { caller: gptCallerOnce, caseAnalysis };
     }
 
-    // Unified «Пересобрать отчёт» writes this marker so stage 2 cannot stay on
-    // SKIPPED_CACHED from reused SectionPacks that still carry gptCopy.
+    // Full prepare always re-runs GPT stage 2. SKIPPED_CACHED is reserved for
+    // selective resumeFrom:"gpt-copy" (FALLBACK_* retry). A file marker alone
+    // was not enough — live rebuilds still showed «применено 0 · кэш N».
     const forceGptCopyPath = join(input.artifactsDir, "force-gpt-copy.json");
-    const forceGptCopy =
-      existsSync(forceGptCopyPath) || String(process.env.ORION_GPT_FORCE_COPY ?? "") === "1";
+    const forceGptCopy = true;
 
     const deck = await runDeckBuildWithGptCopy({
       ctx: {
@@ -904,7 +904,7 @@ export async function runCanonicalReportPrepare(
       gpt: gptLayer,
       forceGptCopy,
     });
-    if (forceGptCopy && existsSync(forceGptCopyPath)) {
+    if (existsSync(forceGptCopyPath)) {
       try {
         unlinkSync(forceGptCopyPath);
       } catch {

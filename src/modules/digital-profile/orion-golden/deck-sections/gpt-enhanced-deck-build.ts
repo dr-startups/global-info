@@ -89,6 +89,8 @@ export async function runDeckBuildWithGptCopy(input: {
   let gptReport: GptSlideCopyReport | null = null;
 
   if (input.gpt) {
+    // Belt-and-suspenders: strip stamps AND pass forceRefresh so a missed
+    // strip cannot revive SKIPPED_CACHED (live: применено 0 · кэш N).
     if (input.forceGptCopy) {
       packs = packs.map((p) => {
         if (!p.gptCopy) return p;
@@ -114,6 +116,7 @@ export async function runDeckBuildWithGptCopy(input: {
       bundle: input.bundleForValidation,
       evidenceIndex: ctx.evidenceIndex,
       validatePack,
+      forceRefresh: Boolean(input.forceGptCopy),
     });
     packs = enhanced.packs;
     gptReport = enhanced.report;

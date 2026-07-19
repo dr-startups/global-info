@@ -423,6 +423,11 @@ export async function enhanceSectionPacksWithGptCopy(input: {
   retryOnlyFallback?: boolean;
   /** Fragment keys listed as FALLBACK_* in gpt-report-copy.json (compat). */
   fallbackFragmentKeys?: ReadonlySet<string>;
+  /**
+   * Full prepare / «Пересобрать»: never short-circuit as SKIPPED_CACHED.
+   * Selective gpt-copy retry must leave this false (uses retryOnlyFallback).
+   */
+  forceRefresh?: boolean;
 }): Promise<{ packs: SectionPackV2[]; report: GptSlideCopyReport }> {
   const byKey = new Map<
     string,
@@ -457,7 +462,10 @@ export async function enhanceSectionPacksWithGptCopy(input: {
         byKey.set(pack.fragmentKey, { pack, report });
         continue;
       }
-    } else if (isGptCopyCacheHit(pack, wantCaseAnalysis)) {
+    } else if (
+      !input.forceRefresh &&
+      isGptCopyCacheHit(pack, wantCaseAnalysis)
+    ) {
       report.status = "SKIPPED_CACHED";
       byKey.set(pack.fragmentKey, { pack, report });
       continue;
