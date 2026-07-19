@@ -100,6 +100,9 @@ export type JobReportQuality = {
     stage1Status: ReportQualitySummary["gpt"]["stage1"]["status"];
     stage1Reason?: string;
     stage2Applied: number;
+    stage2NoChanges: number;
+    stage2SkippedCached: number;
+    stage2SkippedDeterministic: number;
     stage2FallbackError: number;
     stage2FallbackValidation: number;
     caseAnalysisUsed: boolean;
@@ -474,6 +477,9 @@ export function toJobReportQuality(summary: ReportQualitySummary): JobReportQual
       stage1Status: summary.gpt.stage1.status,
       ...(summary.gpt.stage1.reason ? { stage1Reason: summary.gpt.stage1.reason } : {}),
       stage2Applied: summary.gpt.stage2.applied,
+      stage2NoChanges: summary.gpt.stage2.noChanges,
+      stage2SkippedCached: summary.gpt.stage2.skippedCached,
+      stage2SkippedDeterministic: summary.gpt.stage2.skippedDeterministic,
       stage2FallbackError: summary.gpt.stage2.fallbackError,
       stage2FallbackValidation: summary.gpt.stage2.fallbackValidation,
       caseAnalysisUsed: summary.gpt.stage2.caseAnalysisUsed,

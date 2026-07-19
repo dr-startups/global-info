@@ -1455,6 +1455,9 @@ export type JobReportQualityDTO = {
     stage1Status: string;
     stage1Reason?: string;
     stage2Applied: number;
+    stage2NoChanges?: number;
+    stage2SkippedCached?: number;
+    stage2SkippedDeterministic?: number;
     stage2FallbackError: number;
     stage2FallbackValidation: number;
     caseAnalysisUsed: boolean;

@@ -32,9 +32,15 @@ import {
   type GptCaseAnalysis,
   type GptJsonCaller,
 } from "../src/modules/digital-profile/orion-golden/gpt/gpt-case-analysis";
-import type { GptSlideCopyReport } from "../src/modules/digital-profile/orion-golden/deck-sections/llm-slide-copy";
+import {
+  enhanceSectionPacksWithGptCopy,
+  GPT_SLIDE_COPY_PROMPT_VERSION,
+  type GptSlideCopyReport,
+} from "../src/modules/digital-profile/orion-golden/deck-sections/llm-slide-copy";
 import type { VerifiedFindingBundle } from "../src/modules/digital-profile/orion-golden/contracts/verified-finding-bundle";
 import type { MetricSnapshot } from "../src/modules/digital-profile/orion-golden/deck-sections/scoped-input";
+import type { SectionPackV2 } from "../src/modules/digital-profile/orion-golden/deck-sections/contracts";
+import { SECTION_PACK_SCHEMA_VERSION } from "../src/modules/digital-profile/orion-golden/deck-sections/contracts";
 
 before(() => {
   process.env.NETWORK_CALLS = "0";
@@ -374,6 +380,88 @@ describe("stage 1 — full-corpus GPT case analysis", () => {
       metricSnapshot: MINI_METRICS,
     });
     assert.equal(unsafe, null);
+  });
+});
+
+describe("stage 2 — cache invalidation when case analysis appears", () => {
+  it("does not SKIPPED_CACHED packs that were written without case analysis", async () => {
+    const pack = {
+      schemaVersion: SECTION_PACK_SCHEMA_VERSION,
+      sectionId: "EXECUTIVE",
+      sectionType: "EXECUTIVE",
+      fragmentKey: "EXECUTIVE_SUMMARY",
+      caseId: "c1",
+      datasetId: "d1",
+      reportRunId: "r1",
+      sourceDatasetId: "d1",
+      contentVersion: "deck-sections-v14",
+      promptVersion: "executive-summary-v1",
+      contentHash: "sha256:x",
+      inputHash: "h1",
+      generatedAt: "2026-01-01T00:00:00.000Z",
+      required: true,
+      status: "READY",
+      sourceFindingIds: [],
+      evidenceRefs: [],
+      inputs: { findingIds: [], evidenceRefs: [], metricSnapshotId: "m1" },
+      slides: [
+        {
+          schemaVersion: "slide-content-v1",
+          slideId: "p03_executive",
+          baseSlotId: "p03_executive",
+          sectionId: "EXECUTIVE",
+          fragmentKey: "EXECUTIVE_SUMMARY",
+          templateId: "executive-summary",
+          title: "Резюме",
+          findingIds: [],
+          evidenceRefs: [],
+          content: { narrative: "Черновик резюме." },
+        },
+      ],
+      metrics: {
+        datasetCount: 0,
+        displayedCount: 0,
+        adverseDatasetCount: 0,
+        adverseDisplayedCount: 0,
+      },
+      provenance: { providers: [], reportRunIds: ["r1"], evidenceRefs: [] },
+      validation: { passed: true, issues: [] },
+      // Legacy cache marker: GPT ran while stage 1 was null.
+      gptCopy: { promptVersion: GPT_SLIDE_COPY_PROMPT_VERSION, appliedSlides: 1 },
+    } as unknown as SectionPackV2;
+
+    let calls = 0;
+    const analysis = (await runGptCaseAnalysis({
+      caller: async () => validCaseAnalysisJson(),
+      subjectName: "Anders Holmström",
+      bundle: MINI_BUNDLE,
+      surfaceUnits: [],
+      metricSnapshot: MINI_METRICS,
+    }))!;
+
+    const out = await enhanceSectionPacksWithGptCopy({
+      packs: [pack],
+      subject: { displayName: "Anders Holmström", aliases: [] },
+      caller: async () => {
+        calls += 1;
+        return {
+          slides: [
+            {
+              slideId: "p03_executive",
+              narrative: `${GPT_NARRATIVE_MARKER}: обновлённый текст с анализом кейса для банков и контрагентов.`,
+            },
+          ],
+        };
+      },
+      caseAnalysis: analysis,
+      bundle: MINI_BUNDLE,
+      evidenceIndex: {},
+      validatePack: () => ({ passed: true, issues: [] }),
+    });
+
+    assert.equal(calls, 1, "must re-call GPT when cached copy lacked caseAnalysisUsed");
+    assert.equal(out.report.fragments[0]?.status, "APPLIED");
+    assert.equal(out.packs[0]?.gptCopy?.caseAnalysisUsed, true);
   });
 });
 

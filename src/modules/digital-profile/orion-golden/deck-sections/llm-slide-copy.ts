@@ -286,7 +286,14 @@ export async function enhanceSectionPacksWithGptCopy(input: {
       outPacks.push(pack);
       continue;
     }
-    if (pack.gptCopy?.promptVersion === GPT_SLIDE_COPY_PROMPT_VERSION) {
+    // Reuse cached GPT copy only when prompt + case-analysis presence match.
+    // Packs written while stage 1 was null must be rewritten after analysis appears.
+    const wantCaseAnalysis = Boolean(input.caseAnalysis);
+    const cachedCaseAnalysis = Boolean(pack.gptCopy?.caseAnalysisUsed);
+    if (
+      pack.gptCopy?.promptVersion === GPT_SLIDE_COPY_PROMPT_VERSION &&
+      cachedCaseAnalysis === wantCaseAnalysis
+    ) {
       report.status = "SKIPPED_CACHED";
       fragments.push(report);
       outPacks.push(pack);
@@ -339,6 +346,7 @@ export async function enhanceSectionPacksWithGptCopy(input: {
           appliedSlides: new Set(
             overrides.filter((o) => knownIds.has(o.slideId)).map((o) => o.slideId)
           ).size,
+          caseAnalysisUsed: wantCaseAnalysis,
         },
       };
       const validation = input.validatePack(candidate);

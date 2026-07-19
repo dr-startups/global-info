@@ -199,6 +199,12 @@ export const SectionPackV2Schema = z
       .object({
         promptVersion: z.string().min(1),
         appliedSlides: z.number().int().nonnegative(),
+        /**
+         * Whether stage-1 case analysis was injected when this copy was written.
+         * Cache reuse must not keep copy produced without analysis after stage 1
+         * starts succeeding (live Deripaska: applied 0 / SKIPPED_CACHED).
+         */
+        caseAnalysisUsed: z.boolean().optional(),
       })
       .optional(),
   })

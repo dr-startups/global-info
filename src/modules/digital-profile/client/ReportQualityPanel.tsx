@@ -45,16 +45,14 @@ export function ReportQualityPanel({
 
   const q = normalizeJobReportQuality(quality);
   const { counts, gpt, visuals, slides, arsenkin } = q;
-  const stage2Total =
-    (gpt.stage2Applied ?? 0) +
-    (gpt.stage2FallbackError ?? 0) +
-    (gpt.stage2FallbackValidation ?? 0);
   const stage2Tone: "ok" | "warn" | "danger" | "neutral" =
     (gpt.stage2FallbackError ?? 0) + (gpt.stage2FallbackValidation ?? 0) > 0
       ? "danger"
       : (gpt.stage2Applied ?? 0) > 0
         ? "ok"
-        : "neutral";
+        : (gpt.stage2SkippedCached ?? 0) > 0 || (gpt.stage2NoChanges ?? 0) > 0
+          ? "warn"
+          : "neutral";
 
   return (
     <div className="dp-stack" style={{ gap: 12 }} data-testid="report-quality-panel">
@@ -111,9 +109,11 @@ export function ReportQualityPanel({
           </div>
           <Badge tone={stage2Tone}>
             применено {gpt.stage2Applied ?? 0}
-            {stage2Total > 0
+            {(gpt.stage2FallbackError ?? 0) + (gpt.stage2FallbackValidation ?? 0) > 0
               ? ` / fallback ${(gpt.stage2FallbackError ?? 0) + (gpt.stage2FallbackValidation ?? 0)}`
               : ""}
+            {(gpt.stage2SkippedCached ?? 0) > 0 ? ` · кэш ${gpt.stage2SkippedCached}` : ""}
+            {(gpt.stage2NoChanges ?? 0) > 0 ? ` · без изменений ${gpt.stage2NoChanges}` : ""}
             {gpt.caseAnalysisUsed ? " · анализ кейса" : ""}
           </Badge>
         </div>
