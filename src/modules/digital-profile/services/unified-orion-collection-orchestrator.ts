@@ -1239,14 +1239,17 @@ async function stepPrepare(
         subjectProfile: deps.subjectProfile ?? null,
         render: deps.renderDeck,
         resumeFrom: resumeFromRender ? "render" : "full",
-        prisma: deps.prisma
+        // Prefer injected deps.prisma; fall back to the locally resolved client
+        // so rebuild/tick without explicit deps still loads WikipediaCheck /
+        // SerpCapture / DatabaseProfile (§1.2–1.4).
+        prisma: prisma
           ? {
-              searchResult: deps.prisma.searchResult,
-              searchSurfaceItem: deps.prisma.searchSurfaceItem,
-              databaseProfile: deps.prisma.databaseProfile,
-              riskFinding: deps.prisma.riskFinding,
-              wikipediaCheck: deps.prisma.wikipediaCheck,
-              serpCapture: deps.prisma.serpCapture,
+              searchResult: prisma.searchResult,
+              searchSurfaceItem: prisma.searchSurfaceItem,
+              databaseProfile: prisma.databaseProfile,
+              riskFinding: prisma.riskFinding,
+              wikipediaCheck: prisma.wikipediaCheck,
+              serpCapture: prisma.serpCapture,
             }
           : null,
       });

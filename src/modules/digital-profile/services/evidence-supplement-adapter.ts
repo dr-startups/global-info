@@ -18,6 +18,8 @@ export type WikipediaCheckInput = {
   language?: string | null;
   pageTitle?: string | null;
   lastChecked?: string | Date | null;
+  /** e.g. "real:WIKIPEDIA" vs demo — prefer real when ranking. */
+  checkedBy?: string | null;
 };
 
 /** Resolved screenshot ready to bind into p10 / p27. */
@@ -177,9 +179,17 @@ export async function loadWikipediaChecksFromPrisma(input: {
   caseId: string;
 }): Promise<WikipediaCheckInput[]> {
   if (!input.prisma.wikipediaCheck) return [];
-  return input.prisma.wikipediaCheck.findMany({
+  const rows = await input.prisma.wikipediaCheck.findMany({
     where: { caseId: input.caseId },
     orderBy: [{ lastChecked: "desc" }],
+  });
+  // Prefer real checks, then exists=true, keep stable order otherwise.
+  return [...rows].sort((a, b) => {
+    const realA = String(a.checkedBy ?? "").startsWith("real") ? 1 : 0;
+    const realB = String(b.checkedBy ?? "").startsWith("real") ? 1 : 0;
+    if (realA !== realB) return realB - realA;
+    if (Boolean(a.exists) !== Boolean(b.exists)) return a.exists ? -1 : 1;
+    return 0;
   });
 }
 

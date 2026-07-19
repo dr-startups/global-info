@@ -167,6 +167,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
         if (!w.id) continue;
         const ref = `inventory:wiki-${w.id}`;
         const existing = evidenceIndex[ref] ?? {};
+        const lang = String(w.language ?? "").toLowerCase();
         evidenceIndex[ref] = {
           ...existing,
           kind: "wikipedia_check",
@@ -174,8 +175,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           url: w.url ?? existing.url,
           wikipediaExists: Boolean(w.exists),
           language: w.language ?? existing.language,
-          region:
-            String(w.language ?? "").toLowerCase().startsWith("ru") ? "RU" : existing.region,
+          region: lang.startsWith("ru") ? "RU" : lang ? "UAE" : existing.region,
         };
         knownEvidenceRefs.add(ref);
       }

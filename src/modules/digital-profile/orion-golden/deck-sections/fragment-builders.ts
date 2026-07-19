@@ -1500,11 +1500,14 @@ export function buildIdentityFragment(
     const lang = String(e.language ?? "").toLowerCase();
     const er = String(e.region ?? "").toUpperCase();
     if (regionHint === "RU") {
-      return lang.startsWith("ru") || er === "RU" || (!lang && !er);
+      return lang.startsWith("ru") || er === "RU";
     }
-    return !lang.startsWith("ru") || er === "UAE";
+    // UAE / intl: non-ru languages (en, ar, …).
+    return Boolean(lang) && !lang.startsWith("ru");
   });
-  const wikiCheck = wikiCheckEntries[0];
+  // Prefer an exists=true check when several languages/entries match the region.
+  const wikiCheck =
+    wikiCheckEntries.find(([, e]) => e.wikipediaExists === true) ?? wikiCheckEntries[0];
   const checkExists = wikiCheck ? Boolean(wikiCheck[1].wikipediaExists) : null;
   const checkRef = wikiCheck?.[0];
 
@@ -1608,8 +1611,23 @@ export function buildIdentityFragment(
     units.length === 0 && checkExists === true
       ? `${checkNarrative}Энциклопедических строк в составной выдаче по контуру ${regionLabel} не зафиксировано; статус страницы опирается на проверку WikipediaCheck.`
       : null;
+  const whatWasFoundFromCheck =
+    checkExists === true
+      ? clampClientText(
+          `Проверка Wikipedia (${wikiCheck?.[1].language ?? "—"}): статья найдена` +
+            (wikiCheck?.[1].title ? ` «${wikiCheck[1].title}»` : "") +
+            (wikiCheck?.[1].url ? `. URL: ${wikiCheck[1].url}` : ".") +
+            (wikiDomains.length
+              ? ` В выдаче также есть энциклопедические домены: ${wikiDomains.join(", ")}.`
+              : ""),
+          500
+        )
+      : checkExists === false
+        ? "Проверка Wikipedia: статья не найдена."
+        : undefined;
   // Sidebar strictly scoped to the identity materials displayed on this page.
   const view = buildPageEvidenceView(scoped, identityRefs);
+  const pageBlocks = pageFindingBlocks(scoped, view);
   const base = makeSlotSlide({
     slot,
     sectionId,
@@ -1619,7 +1637,9 @@ export function buildIdentityFragment(
           ? `Справочные ресурсы (${regionLabel}) содержат материалы об одноимённом лице; ниже они отделены от данных проверяемого субъекта.`
           : checkOnlyNarrative ?? presenceNarrative,
       bullets: shownBullets,
-      ...pageFindingBlocks(scoped, view),
+      ...pageBlocks,
+      // Factual WikipediaCheck wins over GPT/page-finding blurbs in whatWasFound.
+      whatWasFound: whatWasFoundFromCheck ?? pageBlocks.whatWasFound,
     },
     evidenceRefs: identityRefs,
     findingIds: view.findings.map((f) => f.findingId),

@@ -180,5 +180,10 @@ describe("§1.4 evidence-supplement", () => {
     const found = buildIdentityFragment("RU_IDENTITY_WIKIPEDIA", "RU_PROFILE", "Россия", scoped);
     assert.equal(found.slides[0]?.emptyStateReason, undefined);
     assert.match(found.slides[0]?.content.narrative ?? "", /WikipediaCheck|проверк/i);
+    assert.match(
+      found.slides[0]?.content.whatWasFound ?? "",
+      /статья найдена|Тестов|wikipedia\.org/i,
+      "whatWasFound must surface factual WikipediaCheck details"
+    );
   });
 });
