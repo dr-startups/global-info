@@ -17,6 +17,8 @@ import { before, describe, it } from "node:test";
 
 import {
   buildReportQualitySummary,
+  buildReportQualityWarnings,
+  mergeJobWarnings,
   toJobReportQuality,
   ReportQualitySummarySchema,
   REPORT_QUALITY_SUMMARY_VERSION,
@@ -233,6 +235,74 @@ describe("report-quality-summary aggregator (§0.1)", () => {
   });
 });
 
+describe("report-quality warnings mapping (§0.2)", () => {
+  it("maps visual / GPT stage1 / stage2 / empty-state into job warning strings", async () => {
+    const root = mkdtempSync(join(tmpdir(), "rqs-warn-"));
+    seedFixtureJobDir(root);
+    const summary = await buildReportQualitySummary({
+      jobDir: root,
+      caseId: "case-q",
+    });
+    const warnings = buildReportQualityWarnings(summary);
+    assert.ok(warnings.some((w) => w.startsWith("visual-asset-warning:")), warnings.join("|"));
+    assert.ok(warnings.some((w) => w.startsWith("gpt-stage1-fallback:")), warnings.join("|"));
+    assert.ok(warnings.some((w) => /^gpt-stage2-fallback:2\/\d+$/.test(w)), warnings.join("|"));
+    assert.ok(warnings.some((w) => w === "empty-state-slides:2"), warnings.join("|"));
+  });
+
+  it("mergeJobWarnings replaces prior quality warnings with the same prefix", () => {
+    const merged = mergeJobWarnings(
+      ["arsenkin-awaiting-ingest", "gpt-stage1-fallback:old", "empty-state-slides:9"],
+      ["gpt-stage1-fallback:schema: x", "empty-state-slides:2", "visual-asset-warning:sharp"]
+    );
+    assert.deepEqual(merged, [
+      "arsenkin-awaiting-ingest",
+      "gpt-stage1-fallback:schema: x",
+      "empty-state-slides:2",
+      "visual-asset-warning:sharp",
+    ]);
+  });
+
+  it("omits GPT/visual warnings when the funnel is clean", () => {
+    const warnings = buildReportQualityWarnings({
+      version: REPORT_QUALITY_SUMMARY_VERSION,
+      caseId: "c",
+      unifiedJobId: "j",
+      generatedAt: new Date().toISOString(),
+      counts: {
+        dbSearchResults: null,
+        dbSurfaceItems: null,
+        manifestIds: 1,
+        compositeObservations: 1,
+        subjectMatch: 1,
+        ambiguous: 0,
+        otherSubject: 0,
+        insufficient: 0,
+        verifiedFindings: 1,
+        ambiguousFindings: 0,
+      },
+      gpt: {
+        stage1: { status: "APPLIED" },
+        stage2: {
+          applied: 3,
+          noChanges: 0,
+          skippedDeterministic: 2,
+          skippedEmpty: 0,
+          skippedCached: 0,
+          fallbackError: 0,
+          fallbackValidation: 0,
+          rejectedFieldsTop: [],
+          caseAnalysisUsed: true,
+        },
+      },
+      visuals: { built: 4, failed: 0, warning: null },
+      slides: { total: 36, withContent: 30, emptyState: [] },
+      arsenkin: { agents: [], enrichmentComplete: true, enrichmentObservationCount: 0 },
+    });
+    assert.deepEqual(warnings, []);
+  });
+});
+
 describe("canonical prepare emits report-quality-summary.json", () => {
   function subjectProfile(): ClassifierSubjectProfile {
     return {
@@ -334,6 +404,12 @@ describe("canonical prepare emits report-quality-summary.json", () => {
     assert.equal(res.reportQuality!.version, REPORT_QUALITY_SUMMARY_VERSION);
     assert.ok((res.reportQuality!.counts.compositeObservations ?? 0) >= rows.length);
     assert.ok((res.reportQuality!.slides.total ?? 0) > 0);
+    assert.ok(Array.isArray(res.qualityWarnings), "prepare must return qualityWarnings");
+    // gptCaller=null → stage1 SKIPPED (no fallback warning); empty slides may appear.
+    assert.ok(
+      !res.qualityWarnings!.some((w) => w.startsWith("gpt-stage1-fallback:")),
+      `unexpected stage1 fallback: ${res.qualityWarnings!.join("|")}`
+    );
 
     const onDisk = JSON.parse(readFileSync(join(root, "report-quality-summary.json"), "utf8"));
     assert.equal(onDisk.version, REPORT_QUALITY_SUMMARY_VERSION);

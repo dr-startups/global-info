@@ -112,6 +112,7 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
           actualProviders: job.actualProviders,
           coverage: job.coverage,
           warnings: job.warnings,
+          reportQuality: job.reportQuality ?? null,
           lastError: job.lastError,
           lastErrorCode: job.lastErrorCode,
           baseReportRunId: job.baseReportRunId,

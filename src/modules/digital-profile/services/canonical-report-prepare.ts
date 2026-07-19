@@ -48,6 +48,7 @@ import type { VisualAssetsBySlot } from "../orion-golden/deck-sections/canonical
 import { buildCanonicalVisualAssets } from "./canonical-visual-assets";
 import {
   buildReportQualitySummary,
+  buildReportQualityWarnings,
   toJobReportQuality,
   type JobReportQuality,
   type ReportQualityPrismaCounts,
@@ -119,6 +120,8 @@ export type CanonicalPrepareResult = {
   /** Funnel aggregate written to report-quality-summary.json (REMEDIATION §0.1). */
   reportQualitySummary?: ReportQualitySummary;
   reportQuality?: JobReportQuality;
+  /** Machine-readable degradations for job.warnings (REMEDIATION §0.2). */
+  qualityWarnings?: string[];
 };
 
 const SUBJECT_PROFILE_FILE = "subject-identity-profile.json";
@@ -129,10 +132,12 @@ export function isCanonicalPrepareEnabled(): boolean {
 }
 
 async function writeReportQualityArtifact(
-  input: CanonicalPrepareInput
+  input: CanonicalPrepareInput,
+  extras?: { visualAssetWarning?: string | null }
 ): Promise<{
   reportQualitySummary?: ReportQualitySummary;
   reportQuality?: JobReportQuality;
+  qualityWarnings?: string[];
 }> {
   try {
     const reportQualitySummary = await buildReportQualitySummary({
@@ -147,7 +152,10 @@ async function writeReportQualityArtifact(
       `${JSON.stringify(reportQualitySummary, null, 2)}\n`,
       "utf8"
     );
-    return { reportQualitySummary, reportQuality };
+    const qualityWarnings = buildReportQualityWarnings(reportQualitySummary, {
+      visualAssetWarning: extras?.visualAssetWarning ?? reportQualitySummary.visuals.warning,
+    });
+    return { reportQualitySummary, reportQuality, qualityWarnings };
   } catch {
     return {};
   }
@@ -647,7 +655,7 @@ export async function runCanonicalReportPrepare(
           idempotentReuse: true,
           updatedAt: new Date().toISOString(),
         });
-        const quality = await writeReportQualityArtifact(input);
+        const quality = await writeReportQualityArtifact(input, { visualAssetWarning });
         return {
           ok: true,
           prepareDatasetId: input.binding.compositeDatasetId,
@@ -769,7 +777,7 @@ export async function runCanonicalReportPrepare(
     "utf8"
   );
 
-  const quality = await writeReportQualityArtifact(input);
+  const quality = await writeReportQualityArtifact(input, { visualAssetWarning });
 
   return {
     ok: true,

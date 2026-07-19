@@ -490,3 +490,98 @@ export function toJobReportQuality(summary: ReportQualitySummary): JobReportQual
     },
   };
 }
+
+/**
+ * Map funnel degradations to machine-readable job.warnings (REMEDIATION §0.2).
+ * Does not change error codes or fail-closed gates — observability only.
+ */
+export function buildReportQualityWarnings(
+  summary: ReportQualitySummary | JobReportQuality,
+  extras?: { visualAssetWarning?: string | null }
+): string[] {
+  const out: string[] = [];
+
+  const visualWarning =
+    extras?.visualAssetWarning ??
+    ("visuals" in summary ? summary.visuals.warning : null);
+  if (visualWarning && String(visualWarning).trim()) {
+    const msg = String(visualWarning).trim().slice(0, 240);
+    out.push(msg.startsWith("visual-asset-warning:") ? msg : `visual-asset-warning:${msg}`);
+  }
+
+  const stage1Status =
+    "gpt" in summary && "stage1" in summary.gpt
+      ? (summary as ReportQualitySummary).gpt.stage1.status
+      : (summary as JobReportQuality).gpt.stage1Status;
+  const stage1Reason =
+    "gpt" in summary && "stage1" in summary.gpt
+      ? (summary as ReportQualitySummary).gpt.stage1.reason
+      : (summary as JobReportQuality).gpt.stage1Reason;
+  if (stage1Status === "FAILED") {
+    const reason = (stage1Reason ?? "unknown").replace(/\s+/g, " ").trim().slice(0, 160);
+    out.push(`gpt-stage1-fallback:${reason}`);
+  }
+
+  const stage2Fallback =
+    "gpt" in summary && "stage2" in summary.gpt
+      ? (summary as ReportQualitySummary).gpt.stage2.fallbackError +
+        (summary as ReportQualitySummary).gpt.stage2.fallbackValidation
+      : (summary as JobReportQuality).gpt.stage2FallbackError +
+        (summary as JobReportQuality).gpt.stage2FallbackValidation;
+  const stage2Attempted =
+    "gpt" in summary && "stage2" in summary.gpt
+      ? (() => {
+          const s2 = (summary as ReportQualitySummary).gpt.stage2;
+          return (
+            s2.applied +
+            s2.noChanges +
+            s2.fallbackError +
+            s2.fallbackValidation +
+            s2.skippedCached
+          );
+        })()
+      : (summary as JobReportQuality).gpt.stage2Applied +
+        (summary as JobReportQuality).gpt.stage2FallbackError +
+        (summary as JobReportQuality).gpt.stage2FallbackValidation;
+  if (stage2Fallback > 0) {
+    out.push(`gpt-stage2-fallback:${stage2Fallback}/${Math.max(stage2Attempted, stage2Fallback)}`);
+  }
+
+  const emptyCount =
+    "slides" in summary && "emptyState" in summary.slides
+      ? (summary as ReportQualitySummary).slides.emptyState.length
+      : (summary as JobReportQuality).slides.emptyStateCount;
+  if (emptyCount > 0) {
+    out.push(`empty-state-slides:${emptyCount}`);
+  }
+
+  return out;
+}
+
+/** Merge quality warnings into an existing list without duplicates (prefix-stable). */
+export function mergeJobWarnings(existing: string[], qualityWarnings: string[]): string[] {
+  const seen = new Set(existing);
+  const out = [...existing];
+  for (const w of qualityWarnings) {
+    // Replace prior warning with the same machine prefix (e.g. gpt-stage1-fallback:*).
+    const prefix = w.includes(":") ? `${w.split(":")[0]}:` : w;
+    const isPrefixed =
+      prefix.startsWith("visual-asset-warning:") ||
+      prefix.startsWith("gpt-stage1-fallback:") ||
+      prefix.startsWith("gpt-stage2-fallback:") ||
+      prefix.startsWith("empty-state-slides:");
+    if (isPrefixed) {
+      for (let i = out.length - 1; i >= 0; i -= 1) {
+        if (out[i]!.startsWith(prefix)) {
+          seen.delete(out[i]!);
+          out.splice(i, 1);
+        }
+      }
+    }
+    if (!seen.has(w)) {
+      seen.add(w);
+      out.push(w);
+    }
+  }
+  return out;
+}

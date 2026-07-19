@@ -47,6 +47,8 @@ import {
 } from "./canonical-report-prepare";
 import {
   buildReportQualitySummary,
+  buildReportQualityWarnings,
+  mergeJobWarnings,
   toJobReportQuality,
   type JobReportQuality,
 } from "./report-quality-summary";
@@ -246,6 +248,7 @@ export type UnifiedOrchestratorDeps = {
     assemblyCount?: number;
     renderCount?: number;
     reportQuality?: JobReportQuality | null;
+    qualityWarnings?: string[];
   }>;
   /** Subject identity for canonical prepare (production resolves from the case). */
   subjectProfile?: ClassifierSubjectProfile | null;
@@ -1249,6 +1252,7 @@ async function stepPrepare(
         assemblyCount: res.assemblyCount,
         renderCount: res.renderCount,
         reportQuality: res.reportQuality ?? null,
+        qualityWarnings: res.qualityWarnings ?? [],
       };
     });
 
@@ -1353,6 +1357,7 @@ async function stepPrepare(
   // Persist funnel summary on the job (REMEDIATION §0.1). Prefer the value
   // returned by prepare; otherwise rebuild from the job artifact directory.
   let reportQuality = prepared.reportQuality ?? null;
+  let qualityWarnings = [...(prepared.qualityWarnings ?? [])];
   try {
     if (!reportQuality) {
       const summary = await buildReportQualitySummary({
@@ -1368,6 +1373,9 @@ async function stepPrepare(
       });
       reportQuality = toJobReportQuality(summary);
       writeUnifiedArtifact(job.caseId, job.unifiedJobId, "report-quality-summary.json", summary);
+      if (qualityWarnings.length === 0) {
+        qualityWarnings = buildReportQualityWarnings(summary);
+      }
     } else {
       // Ensure the full artifact is present even when prepare already wrote it
       // (idempotent overwrite from the same source of truth).
@@ -1380,6 +1388,9 @@ async function stepPrepare(
         });
         writeUnifiedArtifact(job.caseId, job.unifiedJobId, "report-quality-summary.json", summary);
         reportQuality = toJobReportQuality(summary);
+        if (qualityWarnings.length === 0) {
+          qualityWarnings = buildReportQualityWarnings(summary);
+        }
       }
     }
   } catch {
@@ -1397,6 +1408,7 @@ async function stepPrepare(
         pptx: prepared.pptx,
         ...(prepared.contactSheet ? { contactSheet: prepared.contactSheet } : {}),
       },
+      warnings: mergeJobWarnings(job.warnings, qualityWarnings),
       ...(reportQuality ? { reportQuality } : {}),
     }) ?? job
   );
