@@ -306,6 +306,42 @@ describe("stage 1 — full-corpus GPT case analysis", () => {
     assert.equal(analysis!.recommendations.length, 2);
   });
 
+  it("clamps over-budget stage-1 fields instead of failing schema", async () => {
+    const longPortrait = `${"Портрет субъекта в выдаче выглядит негативно. ".repeat(40)}Конец.`;
+    const longExpl = `${"Объяснение риска для банковских и партнёрских проверок. ".repeat(20)}Конец.`;
+    const longAdvice = `${"Рекомендуем подготовить официальную позицию. ".repeat(15)}Конец.`;
+    assert.ok(longPortrait.length > 1000);
+    assert.ok(longExpl.length > 700);
+    assert.ok(longAdvice.length > 400);
+
+    const analysis = await runGptCaseAnalysis({
+      caller: async () => ({
+        overallRiskLevel: "высокий",
+        executiveConclusion:
+          "По итогам анализа цифровой профиль содержит существенные репутационные риски, видимые при первичной проверке.",
+        digitalPortrait: longPortrait,
+        keyRisks: [
+          {
+            theme: "Налоговое расследование",
+            severity: "высокий",
+            explanation: longExpl,
+            advice: longAdvice,
+          },
+        ],
+        positiveSignals: ["Деловой профиль подтверждает статус основателя."],
+        recommendations: ["Сформировать пул позитивных публикаций."],
+      }),
+      subjectName: "Anders Holmström",
+      bundle: MINI_BUNDLE,
+      surfaceUnits: [],
+      metricSnapshot: MINI_METRICS,
+    });
+    assert.ok(analysis, "over-length fields must be clamped, not discard the analysis");
+    assert.ok((analysis!.digitalPortrait ?? "").length <= 1000);
+    assert.ok(analysis!.keyRisks[0]!.explanation.length <= 700);
+    assert.ok(analysis!.keyRisks[0]!.advice.length <= 400);
+  });
+
   it("fails safe to null on transport error, bad schema and unsafe conclusion", async () => {
     const boom = await runGptCaseAnalysis({
       caller: async () => {
