@@ -38,6 +38,8 @@ export type CompositeObservation = {
   baseSearchResultId?: string | null;
   baseSearchSurfaceItemId?: string | null;
   riskLabel?: string | null;
+  /** True when the row came from caseCorpus* manifest IDs (REMEDIATION §1.1). */
+  fromCaseCorpus?: boolean;
 };
 
 export type CompositeMergeResult = {
@@ -54,13 +56,30 @@ export type CompositeMergeResult = {
     baseSearchSurfaceItemIds: string[];
     enrichmentRunIds: string[];
     /**
-     * Case-owned real surface rows (images / knowledge blocks) collected by
-     * earlier paid runs of the SAME case and referenced by the composite in
-     * addition to the job's own manifest delta. Traceable by ID; never mock.
+     * Case-owned rows from earlier runs of the SAME case (manifest corpus),
+     * referenced in addition to the job's delta. Traceable by ID; never mock.
      */
+    caseCorpusSearchResultIds?: string[];
     caseCorpusSurfaceItemIds?: string[];
+    /** Manifest base IDs skipped as mock/demo (excluded from coverage expected set). */
+    skippedMockBaseIds?: string[];
   };
 };
+
+/** Fail-closed mock/demo filter for SearchResult and SearchSurfaceItem rows. */
+export function isMockBaseRow(row: {
+  provider?: string | null;
+  source?: string | null;
+  title?: string | null;
+  url?: string | null;
+}): boolean {
+  const providerOrSource = `${row.provider ?? ""} ${row.source ?? ""}`;
+  return (
+    /mock|demo|fixture/i.test(providerOrSource) ||
+    /^\[demo\]/i.test(String(row.title ?? "")) ||
+    /example\.|images\.example|\.invalid\b/i.test(String(row.url ?? ""))
+  );
+}
 
 function norm(s: string | null | undefined): string {
   return String(s ?? "")
@@ -161,7 +180,11 @@ export async function mergeCompositeSerp(input: {
   const map = new Map<string, CompositeObservation>();
   let yandex = 0;
   let serper = 0;
-  const caseCorpusIds: string[] = [];
+  const caseCorpusSearchResultIds: string[] = [];
+  const caseCorpusSurfaceItemIds: string[] = [];
+  const skippedMockBaseIds: string[] = [];
+  const corpusResultIdSet = new Set(input.manifest.caseCorpusSearchResultIds ?? []);
+  const corpusSurfaceIdSet = new Set(input.manifest.caseCorpusSurfaceItemIds ?? []);
 
   const add = (row: CompositeObservation, provider: string) => {
     const existing = map.get(row.key);
@@ -178,6 +201,10 @@ export async function mergeCompositeSerp(input: {
     if (!existing.baseSearchResultId && row.baseSearchResultId) {
       existing.baseSearchResultId = row.baseSearchResultId;
     }
+    if (!existing.baseSearchSurfaceItemId && row.baseSearchSurfaceItemId) {
+      existing.baseSearchSurfaceItemId = row.baseSearchSurfaceItemId;
+    }
+    if (row.fromCaseCorpus) existing.fromCaseCorpus = true;
   };
 
   if (input.fixtureBaseRows) {
@@ -185,13 +212,37 @@ export async function mergeCompositeSerp(input: {
       add(row, row.primaryProvider);
       if (row.primaryProvider.includes("yandex")) yandex += 1;
       if (row.primaryProvider.includes("serper") || row.primaryProvider.includes("google")) serper += 1;
+      if (row.fromCaseCorpus && row.baseSearchResultId) {
+        caseCorpusSearchResultIds.push(row.baseSearchResultId);
+      }
+      if (row.fromCaseCorpus && row.baseSearchSurfaceItemId) {
+        caseCorpusSurfaceItemIds.push(row.baseSearchSurfaceItemId);
+      }
     }
   } else if (input.prisma) {
-    const results = await input.prisma.searchResult.findMany({
-      where: { id: { in: input.manifest.searchResultIds } },
-      include: { query: true },
-    });
+    const resultIds = [
+      ...input.manifest.searchResultIds,
+      ...(input.manifest.caseCorpusSearchResultIds ?? []),
+    ];
+    const surfaceIds = [
+      ...input.manifest.searchSurfaceItemIds,
+      ...(input.manifest.caseCorpusSurfaceItemIds ?? []),
+    ];
+
+    const results =
+      resultIds.length === 0
+        ? []
+        : await input.prisma.searchResult.findMany({
+            where: { id: { in: resultIds } },
+            include: { query: true },
+          });
     for (const r of results) {
+      if (isMockBaseRow({ source: r.source, title: r.title, url: r.url })) {
+        skippedMockBaseIds.push(r.id);
+        continue;
+      }
+      const fromCaseCorpus = corpusResultIdSet.has(r.id);
+      if (fromCaseCorpus) caseCorpusSearchResultIds.push(r.id);
       // Prefer SearchResult.engine / source — query.engine alone caused yandex=0 live.
       const meta = (r as { metadataJson?: Record<string, unknown> | null }).metadataJson ?? null;
       const attr = resolveSerpProviderAttribution({
@@ -214,12 +265,7 @@ export async function mergeCompositeSerp(input: {
       const provider = attr.provider;
       if (provider === "yandex") yandex += 1;
       if (provider === "serper") serper += 1;
-      const key = organicKey(
-        "RU",
-        engine,
-        r.query?.queryText ?? "",
-        r.url ?? ""
-      );
+      const key = organicKey("RU", engine, r.query?.queryText ?? "", r.url ?? "");
       add(
         {
           key,
@@ -236,36 +282,25 @@ export async function mergeCompositeSerp(input: {
           evidenceRefs: [`searchResult:${r.id}`],
           baseSearchResultId: r.id,
           riskLabel: null,
+          fromCaseCorpus,
         },
         provider
       );
     }
 
-    const surfaces = await input.prisma.searchSurfaceItem.findMany({
-      where: { id: { in: input.manifest.searchSurfaceItemIds } },
-    });
-    // Case-corpus supplement: the manifest carries only rows CREATED during
-    // this job's base collection (delta), so previously collected real image /
-    // knowledge rows of the same case silently vanish from the client report
-    // (dedupe by URL prevents re-creation). Reference them here explicitly —
-    // real providers only, mock/demo rows are excluded fail-closed.
-    const manifestSurfaceIds = new Set(input.manifest.searchSurfaceItemIds);
-    const corpusCandidates = await input.prisma.searchSurfaceItem.findMany({
-      where: {
-        caseId: input.manifest.caseId,
-        type: { in: ["IMAGE_RESULT", "KNOWLEDGE_BLOCK"] },
-      },
-      take: 400,
-    });
-    const isMockRow = (row: { provider?: string | null; title?: string | null; url?: string | null }) =>
-      /mock|demo|fixture/i.test(String(row.provider ?? "")) ||
-      /^\[demo\]/i.test(String(row.title ?? "")) ||
-      /example\.|images\.example|\.invalid\b/i.test(String(row.url ?? ""));
-    const corpusRows = corpusCandidates.filter(
-      (row) => !manifestSurfaceIds.has(row.id) && !isMockRow(row)
-    );
-    caseCorpusIds.push(...corpusRows.map((row) => row.id));
-    for (const s of [...surfaces, ...corpusRows]) {
+    const surfaces =
+      surfaceIds.length === 0
+        ? []
+        : await input.prisma.searchSurfaceItem.findMany({
+            where: { id: { in: surfaceIds } },
+          });
+    for (const s of surfaces) {
+      if (isMockBaseRow({ provider: s.provider, source: s.source, title: s.title, url: s.url })) {
+        skippedMockBaseIds.push(s.id);
+        continue;
+      }
+      const fromCaseCorpus = corpusSurfaceIdSet.has(s.id);
+      if (fromCaseCorpus) caseCorpusSurfaceItemIds.push(s.id);
       const st = String(s.type ?? "");
       const attr = resolveSerpProviderAttribution({
         surfaceProvider: s.provider,
@@ -312,6 +347,7 @@ export async function mergeCompositeSerp(input: {
           primaryProvider: provider,
           evidenceRefs: [`searchSurfaceItem:${s.id}`],
           baseSearchSurfaceItemId: s.id,
+          fromCaseCorpus,
         },
         provider
       );
@@ -404,7 +440,15 @@ export async function mergeCompositeSerp(input: {
       baseSearchResultIds: [...input.manifest.searchResultIds],
       baseSearchSurfaceItemIds: [...input.manifest.searchSurfaceItemIds],
       enrichmentRunIds: input.enrichmentRunIds ?? [],
-      ...(caseCorpusIds.length > 0 ? { caseCorpusSurfaceItemIds: caseCorpusIds } : {}),
+      ...(caseCorpusSearchResultIds.length > 0
+        ? { caseCorpusSearchResultIds: [...new Set(caseCorpusSearchResultIds)] }
+        : {}),
+      ...(caseCorpusSurfaceItemIds.length > 0
+        ? { caseCorpusSurfaceItemIds: [...new Set(caseCorpusSurfaceItemIds)] }
+        : {}),
+      ...(skippedMockBaseIds.length > 0
+        ? { skippedMockBaseIds: [...new Set(skippedMockBaseIds)] }
+        : {}),
     },
   };
 }

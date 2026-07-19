@@ -26,6 +26,8 @@
       "dbSearchResults": null,
       "dbSurfaceItems": null,
       "manifestIds": 299,
+      "manifestDeltaCount": 299,
+      "manifestCorpusCount": 0,
       "compositeObservations": 311,
       "subjectMatch": 300,
       "ambiguous": 2,

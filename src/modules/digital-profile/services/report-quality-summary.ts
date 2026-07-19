@@ -63,7 +63,12 @@ export const ReportQualitySummarySchema = z.object({
   counts: z.object({
     dbSearchResults: z.number().int().nonnegative().nullable(),
     dbSurfaceItems: z.number().int().nonnegative().nullable(),
+    /** Delta + corpus (total expected base IDs). */
     manifestIds: z.number().int().nonnegative().nullable(),
+    /** Job delta only (REMEDIATION §1.1). */
+    manifestDeltaCount: z.number().int().nonnegative().nullable(),
+    /** Pre-existing case corpus not in the delta. */
+    manifestCorpusCount: z.number().int().nonnegative().nullable(),
     compositeObservations: z.number().int().nonnegative().nullable(),
     subjectMatch: z.number().int().nonnegative().nullable(),
     ambiguous: z.number().int().nonnegative().nullable(),
@@ -258,6 +263,8 @@ export async function buildReportQualitySummary(input: {
   const manifest = readJsonSafe<{
     searchResultIds?: string[];
     searchSurfaceItemIds?: string[];
+    caseCorpusSearchResultIds?: string[];
+    caseCorpusSurfaceItemIds?: string[];
     baseCount?: number;
   }>(join(dir, "base-collection-manifest.json"));
 
@@ -346,10 +353,19 @@ export async function buildReportQualitySummary(input: {
     }
   }
 
-  const manifestIds =
+  const manifestDeltaCount =
     manifest == null
       ? null
       : (manifest.searchResultIds?.length ?? 0) + (manifest.searchSurfaceItemIds?.length ?? 0);
+  const manifestCorpusCount =
+    manifest == null
+      ? null
+      : (manifest.caseCorpusSearchResultIds?.length ?? 0) +
+        (manifest.caseCorpusSurfaceItemIds?.length ?? 0);
+  const manifestIds =
+    manifest == null
+      ? null
+      : (manifestDeltaCount ?? 0) + (manifestCorpusCount ?? 0);
 
   const compositeObservations =
     composite == null
@@ -421,6 +437,8 @@ export async function buildReportQualitySummary(input: {
       dbSearchResults,
       dbSurfaceItems,
       manifestIds,
+      manifestDeltaCount,
+      manifestCorpusCount,
       compositeObservations,
       subjectMatch: identity.subjectMatch,
       ambiguous: identity.ambiguous,

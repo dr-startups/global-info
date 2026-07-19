@@ -1443,6 +1443,8 @@ export type JobReportQualityDTO = {
     dbSearchResults: number | null;
     dbSurfaceItems: number | null;
     manifestIds: number | null;
+    manifestDeltaCount?: number | null;
+    manifestCorpusCount?: number | null;
     compositeObservations: number | null;
     subjectMatch: number | null;
     ambiguous: number | null;

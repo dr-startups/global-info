@@ -71,6 +71,12 @@ export function ReportQualityPanel({
           <FunnelCell label="БД (organic)" value={formatFunnelValue(counts.dbSearchResults)} />
           <FunnelCell label="БД (surfaces)" value={formatFunnelValue(counts.dbSurfaceItems)} />
           <FunnelCell label="Манифест" value={formatFunnelValue(counts.manifestIds)} />
+          {(counts.manifestCorpusCount ?? 0) > 0 ? (
+            <FunnelCell
+              label="Дельта / корпус"
+              value={`${formatFunnelValue(counts.manifestDeltaCount)}/${formatFunnelValue(counts.manifestCorpusCount)}`}
+            />
+          ) : null}
           <FunnelCell label="Composite" value={formatFunnelValue(counts.compositeObservations)} />
           <FunnelCell label="Субъект" value={formatFunnelValue(counts.subjectMatch)} />
           <FunnelCell label="Тёзки/шум" value={formatFunnelValue(counts.otherSubject)} />

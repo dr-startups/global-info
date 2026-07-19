@@ -2,7 +2,10 @@
  * Base observation coverage contract — replaces false compositeCount >= baseCount gate.
  */
 
-import type { BaseCollectionManifest } from "./unified-collection-types";
+import {
+  manifestBaseObservationIds,
+  type BaseCollectionManifest,
+} from "./unified-collection-types";
 import type { CompositeMergeResult, CompositeObservation } from "./composite-serp-merge";
 
 export const BASE_OBSERVATION_COVERAGE_VERSION = "base-observation-coverage-v1" as const;
@@ -50,10 +53,10 @@ export function buildBaseObservationCoverage(input: {
   manifest: BaseCollectionManifest;
   merge: CompositeMergeResult;
 }): BaseObservationCoverage {
-  const baseObservationIds = [
-    ...input.manifest.searchResultIds,
-    ...input.manifest.searchSurfaceItemIds,
-  ];
+  const skippedMock = new Set(input.merge.provenance.skippedMockBaseIds ?? []);
+  const baseObservationIds = manifestBaseObservationIds(input.manifest).filter(
+    (id) => !skippedMock.has(id)
+  );
   const baseSet = new Set(baseObservationIds);
   const covered = new Set<string>();
   const byKey = new Map<string, string[]>();

@@ -63,7 +63,10 @@ function manifestHasBaseObservations(manifest: BaseCollectionManifest | null | u
     return false;
   }
   const idCount =
-    (manifest.searchResultIds?.length ?? 0) + (manifest.searchSurfaceItemIds?.length ?? 0);
+    (manifest.searchResultIds?.length ?? 0) +
+    (manifest.searchSurfaceItemIds?.length ?? 0) +
+    (manifest.caseCorpusSearchResultIds?.length ?? 0) +
+    (manifest.caseCorpusSurfaceItemIds?.length ?? 0);
   return (manifest.baseCount ?? 0) > 0 || idCount > 0;
 }
 

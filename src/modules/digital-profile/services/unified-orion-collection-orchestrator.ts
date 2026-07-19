@@ -637,6 +637,8 @@ async function stepBaseCollection(
       searchSurfaceItemIds: deps.fixtureBaseRows
         .map((r) => r.baseSearchSurfaceItemId)
         .filter((x): x is string => Boolean(x)),
+      caseCorpusSearchResultIds: [],
+      caseCorpusSurfaceItemIds: [],
       baseCount: deps.fixtureBaseRows.length,
       actualProviders,
       realCollectionSufficient:

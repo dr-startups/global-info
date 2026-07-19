@@ -1,6 +1,9 @@
 /**
  * Capture exact SearchResult / SearchSurfaceItem IDs for a unified job snapshot.
  * Composite merge must use ONLY this manifest — never "latest" case rows.
+ *
+ * REMEDIATION §1.1 / F5: the manifest stores the run delta plus the rest of the
+ * case corpus so a partial re-collection never shrinks the report.
  */
 
 import type { PrismaClient } from "@prisma/client";
@@ -58,20 +61,21 @@ export async function captureBaseCollectionManifest(input: {
     select: { id: true },
   });
 
-  const searchResultIds = results
-    .map((r) => r.id)
-    .filter((id) => !input.beforeSearchResultIds.has(id));
-  const searchSurfaceItemIds = surfaces
-    .map((s) => s.id)
-    .filter((id) => !input.beforeSearchSurfaceItemIds.has(id));
+  const afterResultIds = results.map((r) => r.id);
+  const afterSurfaceIds = surfaces.map((s) => s.id);
+
+  const deltaResultIds = afterResultIds.filter((id) => !input.beforeSearchResultIds.has(id));
+  const deltaSurfaceIds = afterSurfaceIds.filter((id) => !input.beforeSearchSurfaceItemIds.has(id));
 
   // If diff empty (re-run / upsert), fall back to all current IDs tagged by capture window —
-  // still explicit IDs, not "latest report run". Prefer union of before+after for stability
-  // when agents upsert in place: use AFTER set when diff is empty.
-  const finalResultIds =
-    searchResultIds.length > 0 ? searchResultIds : results.map((r) => r.id);
-  const finalSurfaceIds =
-    searchSurfaceItemIds.length > 0 ? searchSurfaceItemIds : surfaces.map((s) => s.id);
+  // still explicit IDs, not "latest report run". Prefer AFTER set when diff is empty.
+  const searchResultIds = deltaResultIds.length > 0 ? deltaResultIds : afterResultIds;
+  const searchSurfaceItemIds = deltaSurfaceIds.length > 0 ? deltaSurfaceIds : afterSurfaceIds;
+
+  const deltaResultSet = new Set(searchResultIds);
+  const deltaSurfaceSet = new Set(searchSurfaceItemIds);
+  const caseCorpusSearchResultIds = afterResultIds.filter((id) => !deltaResultSet.has(id));
+  const caseCorpusSurfaceItemIds = afterSurfaceIds.filter((id) => !deltaSurfaceSet.has(id));
 
   const actualProviders = input.actualProviders;
   return {
@@ -80,9 +84,15 @@ export async function captureBaseCollectionManifest(input: {
     caseId: input.caseId,
     capturedAt: new Date().toISOString(),
     baseReportRunId: input.baseReportRunId ?? null,
-    searchResultIds: finalResultIds,
-    searchSurfaceItemIds: finalSurfaceIds,
-    baseCount: finalResultIds.length + finalSurfaceIds.length,
+    searchResultIds,
+    searchSurfaceItemIds,
+    caseCorpusSearchResultIds,
+    caseCorpusSurfaceItemIds,
+    baseCount:
+      searchResultIds.length +
+      searchSurfaceItemIds.length +
+      caseCorpusSearchResultIds.length +
+      caseCorpusSurfaceItemIds.length,
     actualProviders,
     realCollectionSufficient: isRealCollectionSufficient(actualProviders),
   };

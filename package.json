@@ -83,6 +83,7 @@
     "smoke:canonical-orchestration-e2e": "tsx --test scripts/smoke-canonical-orchestration-e2e.ts",
     "smoke:report-quality-summary": "tsx --test scripts/smoke-report-quality-summary.ts",
     "smoke:report-quality-panel": "tsx --test scripts/smoke-report-quality-panel.ts",
+    "smoke:case-corpus-manifest": "tsx --test scripts/smoke-case-corpus-manifest.ts",
     "golden-case": "tsx scripts/run-golden-case-report.ts",
     "smoke:golden-case": "tsx --test scripts/smoke-golden-case-report.ts",
     "smoke:orion-import-graph-isolation": "tsx --test scripts/smoke-orion-import-graph-isolation.ts",

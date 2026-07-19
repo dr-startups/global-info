@@ -51,13 +51,42 @@ export type BaseCollectionManifest = {
   caseId: string;
   capturedAt: string;
   baseReportRunId: string | null;
+  /** IDs created (or attributed) by this job's base collection — the delta. */
   searchResultIds: string[];
   searchSurfaceItemIds: string[];
+  /**
+   * Pre-existing case-owned IDs not in the delta (REMEDIATION §1.1 / F5).
+   * Absent/empty on legacy manifests — merge treats as [].
+   */
+  caseCorpusSearchResultIds?: string[];
+  caseCorpusSurfaceItemIds?: string[];
+  /** Delta + corpus ID count (base observation union). */
   baseCount: number;
   actualProviders: ActualProviderRecord[];
   /** True when every required collection provider completed as real (not mock fallback). */
   realCollectionSufficient: boolean;
 };
+
+/** All base observation IDs the composite must cover (delta ∪ corpus). */
+export function manifestBaseObservationIds(manifest: BaseCollectionManifest): string[] {
+  return [
+    ...manifest.searchResultIds,
+    ...manifest.searchSurfaceItemIds,
+    ...(manifest.caseCorpusSearchResultIds ?? []),
+    ...(manifest.caseCorpusSurfaceItemIds ?? []),
+  ];
+}
+
+export function manifestDeltaIdCount(manifest: BaseCollectionManifest): number {
+  return (manifest.searchResultIds?.length ?? 0) + (manifest.searchSurfaceItemIds?.length ?? 0);
+}
+
+export function manifestCorpusIdCount(manifest: BaseCollectionManifest): number {
+  return (
+    (manifest.caseCorpusSearchResultIds?.length ?? 0) +
+    (manifest.caseCorpusSurfaceItemIds?.length ?? 0)
+  );
+}
 
 export type ReportDataBinding = {
   version: "report-data-binding-v1";

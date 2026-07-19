@@ -53,7 +53,9 @@ function seedFixtureJobDir(root: string): void {
     version: "base-collection-manifest-v1",
     searchResultIds: ["sr1", "sr2", "sr3"],
     searchSurfaceItemIds: ["ss1", "ss2"],
-    baseCount: 5,
+    caseCorpusSearchResultIds: ["sr-old-1", "sr-old-2"],
+    caseCorpusSurfaceItemIds: [],
+    baseCount: 7,
   });
   writeJson(join(root, "composite-serp-observations.json"), {
     compositeDatasetId: "comp-1",
@@ -159,7 +161,9 @@ describe("report-quality-summary aggregator (§0.1)", () => {
     assert.equal(parsed.version, REPORT_QUALITY_SUMMARY_VERSION);
     assert.equal(parsed.counts.dbSearchResults, 120);
     assert.equal(parsed.counts.dbSurfaceItems, 80);
-    assert.equal(parsed.counts.manifestIds, 5);
+    assert.equal(parsed.counts.manifestDeltaCount, 5);
+    assert.equal(parsed.counts.manifestCorpusCount, 2);
+    assert.equal(parsed.counts.manifestIds, 7);
     assert.equal(parsed.counts.compositeObservations, 12);
     assert.equal(parsed.counts.subjectMatch, 2);
     assert.equal(parsed.counts.ambiguous, 3);
@@ -275,6 +279,8 @@ describe("report-quality warnings mapping (§0.2)", () => {
         dbSearchResults: null,
         dbSurfaceItems: null,
         manifestIds: 1,
+        manifestDeltaCount: 1,
+        manifestCorpusCount: 0,
         compositeObservations: 1,
         subjectMatch: 1,
         ambiguous: 0,
