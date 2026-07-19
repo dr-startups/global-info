@@ -4,9 +4,16 @@
  * AMBIGUOUS / OTHER_SUBJECT / INSUFFICIENT_IDENTIFIERS.
  *
  * Surname-only never becomes SUBJECT_MATCH. Surname + context (or shared
- * confirmed domain / soft-surface full-name phrase) may become LIKELY_SUBJECT
- * (confidence 0.6–0.7) — visible in SERP/appendix/matrix «Требует подтверждения»
- * but never in KPI «О субъекте». Only SUBJECT_MATCH may affect KPI.
+ * confirmed domain / soft-surface full-name phrase / subject-query signal §2.2)
+ * may become LIKELY_SUBJECT (confidence 0.6–0.7) — visible in SERP/appendix/
+ * matrix «Требует подтверждения» but never in KPI «О субъекте».
+ * Only SUBJECT_MATCH may affect KPI.
+ *
+ * §2.2 methodology: the SERP query is operator intent, not content evidence.
+ * When we searched the subject's full name and the hit still only shows the
+ * surname in title/snippet, that is a weak positive prior → LIKELY_SUBJECT
+ * (`surname_with_subject_query`), never SUBJECT_MATCH. Namesake conflicts and
+ * mixed identity signals remain stronger and are not upgraded by the query.
  */
 
 import { createHash } from "node:crypto";
@@ -56,6 +63,31 @@ function itemText(item: RawInventoryItem): string {
   // Exception: query-является-контентом surfaces (suggestions/PAA) store the
   // line in title, so title/snippet/sourceUrl are sufficient.
   return norm([item.title, item.snippet, item.sourceUrl].filter(Boolean).join(" "));
+}
+
+/** Search query that produced this hit (operator intent — not content). */
+function itemQueryText(item: RawInventoryItem): string {
+  const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
+  return norm(String(item.query ?? meta.queryText ?? meta.query ?? ""));
+}
+
+/**
+ * True when the query carries surname + given name of the subject.
+ * Used only as a LIKELY upgrade prior (§2.2), never as content evidence.
+ */
+export function queryContainsSubjectFullName(
+  query: string,
+  subject: SubjectIdentity
+): boolean {
+  const q = norm(query);
+  if (q.length < 5) return false;
+  const hasLast =
+    matchesToken(q, subject.lastName) ||
+    subject.lastNameVariants.some((v) => matchesToken(q, v));
+  const hasFirst = subject.firstNames.some((n) => matchesToken(q, n));
+  if (hasLast && hasFirst) return true;
+  const display = norm(subject.displayName);
+  return display.length >= 6 && q.includes(display);
 }
 
 function surfaceOf(item: RawInventoryItem): string {
@@ -223,8 +255,9 @@ export function classifySubjectRelevance(
         : "full_name_match";
     confidence = matchedStrong ? 0.98 : matchedContext.length > 0 ? 0.92 : 0.85;
   } else if (hasSurname && !hasGivenName) {
-    // Surname without given name: never SUBJECT_MATCH. Strong context or a
-    // soft-surface full-name phrase → LIKELY_SUBJECT; otherwise AMBIGUOUS.
+    // Surname without given name: never SUBJECT_MATCH. Strong context, a
+    // soft-surface full-name phrase, or a subject full-name query (§2.2) →
+    // LIKELY_SUBJECT; otherwise AMBIGUOUS.
     if (matchedContext.length > 0) {
       decision = "LIKELY_SUBJECT";
       reasonCode = "surname_with_context";
@@ -238,6 +271,11 @@ export function classifySubjectRelevance(
         ? "paa_full_name"
         : "suggestion_full_name";
       confidence = 0.68;
+    } else if (queryContainsSubjectFullName(itemQueryText(item), subject)) {
+      decision = "LIKELY_SUBJECT";
+      reasonCode = "surname_with_subject_query";
+      confidence = 0.62;
+      matchedIdentifiers.push("subject_query");
     } else {
       decision = "AMBIGUOUS";
       reasonCode = "surname_only";

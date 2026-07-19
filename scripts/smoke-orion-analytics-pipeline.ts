@@ -416,6 +416,32 @@ describe("3. subject resolution", () => {
       "AMBIGUOUS",
     ],
     [
+      "surname-only + subject full-name query → LIKELY (§2.2)",
+      item({
+        title: "Глинка: справочная статья",
+        query: "Глинка Сергей Михайлович",
+      }),
+      "LIKELY_SUBJECT",
+      "surname_with_subject_query",
+    ],
+    [
+      "surname-only + unrelated query → AMBIGUOUS (§2.2)",
+      item({
+        title: "Глинка: справочная статья",
+        query: "транспортные новости региона",
+      }),
+      "AMBIGUOUS",
+      "surname_only",
+    ],
+    [
+      "surname + conflict + subject query → OTHER (query does not override)",
+      item({
+        title: "Глинка — композитор, опера",
+        query: "Глинка Сергей",
+      }),
+      "OTHER_SUBJECT",
+    ],
+    [
       "surname + context → LIKELY_SUBJECT (§2.1)",
       item({ title: "Глинка инвестирует в транспортный бизнес" }),
       "LIKELY_SUBJECT",

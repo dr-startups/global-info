@@ -29,7 +29,7 @@
       "manifestDeltaCount": 302,
       "manifestCorpusCount": 0,
       "compositeObservations": 314,
-      "subjectMatch": 301,
+      "subjectMatch": 298,
       "likelySubject": 3,
       "ambiguous": 3,
       "otherSubject": 4,
@@ -67,8 +67,8 @@
       }
     },
     "slides": {
-      "total": 42,
-      "withContent": 38,
+      "total": 43,
+      "withContent": 39,
       "emptyState": [
         {
           "slotId": "p12_ru_suggestions_google",
