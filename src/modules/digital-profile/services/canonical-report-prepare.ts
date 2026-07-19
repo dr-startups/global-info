@@ -808,24 +808,38 @@ export async function runCanonicalReportPrepare(
         },
       });
       const stage1Diagnostics = stage1DiagBox.current;
+      // REMEDIATION §4.5 — truncation bumps from openai-json-client (if used live).
+      let truncationRetries = 0;
+      try {
+        const { consumeOpenAiTruncationRetryCount } = await import(
+          "../orion-golden/gpt/openai-json-client"
+        );
+        truncationRetries = consumeOpenAiTruncationRetryCount();
+      } catch {
+        truncationRetries = 0;
+      }
       if (caseAnalysis) {
         writeFileSync(
           join(analyticsDir, "gpt-case-analysis.json"),
           `${JSON.stringify(caseAnalysis, null, 2)}\n`,
           "utf8"
         );
-        // Persist map-reduce observability even on success (dropped map batches).
+        // Persist map-reduce / truncation observability on success when useful.
         if (
-          stage1Diagnostics &&
-          (stage1Diagnostics.mode === "map_reduce" ||
-            (stage1Diagnostics.mapFailures?.length ?? 0) > 0)
+          truncationRetries > 0 ||
+          (stage1Diagnostics &&
+            (stage1Diagnostics.mode === "map_reduce" ||
+              (stage1Diagnostics.mapFailures?.length ?? 0) > 0))
         ) {
           writeFileSync(
             join(analyticsDir, "gpt-case-analysis-diagnostics.json"),
             `${JSON.stringify(
               {
                 status: "APPLIED",
-                ...stage1Diagnostics,
+                ...(stage1Diagnostics ?? {}),
+                ...(truncationRetries > 0
+                  ? { truncationRetries }
+                  : {}),
                 at: new Date().toISOString(),
               },
               null,
@@ -845,6 +859,7 @@ export async function runCanonicalReportPrepare(
               status: "FAILED",
               reason: caseAnalysisFailure ?? "unknown",
               ...(stage1Diagnostics ?? {}),
+              ...(truncationRetries > 0 ? { truncationRetries } : {}),
               at: new Date().toISOString(),
             },
             null,

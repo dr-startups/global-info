@@ -154,9 +154,14 @@ export const digitalProfileConfig: DigitalProfileConfig = {
     model: process.env.DIGITAL_PROFILE_AI_ANALYST_MODEL?.trim() || "gpt-5.5",
     timeoutMs: envInt(process.env.DIGITAL_PROFILE_AI_ANALYST_TIMEOUT_MS, 60000, 1000, 180000),
     maxInputItems: envInt(process.env.DIGITAL_PROFILE_AI_ANALYST_MAX_INPUT_ITEMS, 120, 20, 500),
-    // Reasoning models spend part of this budget on reasoning tokens, so keep it
-    // generous — a truncated response yields invalid JSON and forces fallback.
-    maxOutputTokens: envInt(process.env.DIGITAL_PROFILE_AI_ANALYST_MAX_OUTPUT_TOKENS, 8000, 200, 32000),
+    // REMEDIATION §4.5 — stage-1 default 12000 (was 8000). Reasoning models spend
+    // part of the budget on reasoning tokens; truncation triggers one adaptive retry.
+    maxOutputTokens: envInt(
+      process.env.DIGITAL_PROFILE_AI_ANALYST_MAX_OUTPUT_TOKENS,
+      12000,
+      200,
+      32000
+    ),
     openAiApiKey: process.env.OPENAI_API_KEY?.trim() || undefined,
   },
   orionPipelineStore:
