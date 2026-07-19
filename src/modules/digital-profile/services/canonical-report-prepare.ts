@@ -46,6 +46,13 @@ import { mapSurfaceBucket } from "../orion-golden/classic/composite-serp-overlay
 import type { RendererAssetEntry } from "../orion-golden/deck-sections/run-deck-build";
 import type { VisualAssetsBySlot } from "../orion-golden/deck-sections/canonical-slots";
 import { buildCanonicalVisualAssets } from "./canonical-visual-assets";
+import {
+  buildReportQualitySummary,
+  toJobReportQuality,
+  type JobReportQuality,
+  type ReportQualityPrismaCounts,
+  type ReportQualitySummary,
+} from "./report-quality-summary";
 
 export type CanonicalPrepareBlockerCode =
   | "CANONICAL_PREPARE_DISABLED"
@@ -90,6 +97,8 @@ export type CanonicalPrepareInput = {
    * `full` (default) — run the complete prepare pipeline.
    */
   resumeFrom?: "full" | "render";
+  /** Optional Prisma for live DB funnel counts in report-quality-summary. */
+  prisma?: ReportQualityPrismaCounts | null;
 };
 
 export type CanonicalPrepareResult = {
@@ -107,6 +116,9 @@ export type CanonicalPrepareResult = {
   renderCount: number;
   baseSlotCoverage: number;
   requiredSectionsFailed: string[];
+  /** Funnel aggregate written to report-quality-summary.json (REMEDIATION §0.1). */
+  reportQualitySummary?: ReportQualitySummary;
+  reportQuality?: JobReportQuality;
 };
 
 const SUBJECT_PROFILE_FILE = "subject-identity-profile.json";
@@ -114,6 +126,31 @@ const SUBJECT_PROFILE_FILE = "subject-identity-profile.json";
 /** Canonical prepare is on unless explicitly disabled. */
 export function isCanonicalPrepareEnabled(): boolean {
   return String(process.env.ORION_CANONICAL_PREPARE ?? "1") !== "0";
+}
+
+async function writeReportQualityArtifact(
+  input: CanonicalPrepareInput
+): Promise<{
+  reportQualitySummary?: ReportQualitySummary;
+  reportQuality?: JobReportQuality;
+}> {
+  try {
+    const reportQualitySummary = await buildReportQualitySummary({
+      jobDir: input.artifactsDir,
+      caseId: input.caseId,
+      unifiedJobId: input.unifiedJobId,
+      prisma: input.prisma ?? null,
+    });
+    const reportQuality = toJobReportQuality(reportQualitySummary);
+    writeFileSync(
+      join(input.artifactsDir, "report-quality-summary.json"),
+      `${JSON.stringify(reportQualitySummary, null, 2)}\n`,
+      "utf8"
+    );
+    return { reportQualitySummary, reportQuality };
+  } catch {
+    return {};
+  }
 }
 
 function mapKindToSurface(kind: CompositeObservation["kind"]): string {
@@ -610,6 +647,7 @@ export async function runCanonicalReportPrepare(
           idempotentReuse: true,
           updatedAt: new Date().toISOString(),
         });
+        const quality = await writeReportQualityArtifact(input);
         return {
           ok: true,
           prepareDatasetId: input.binding.compositeDatasetId,
@@ -624,6 +662,7 @@ export async function runCanonicalReportPrepare(
           renderCount: 1,
           baseSlotCoverage,
           requiredSectionsFailed,
+          ...quality,
         };
       }
     } catch {
@@ -730,6 +769,8 @@ export async function runCanonicalReportPrepare(
     "utf8"
   );
 
+  const quality = await writeReportQualityArtifact(input);
+
   return {
     ok: true,
     prepareDatasetId: input.binding.compositeDatasetId,
@@ -745,5 +786,6 @@ export async function runCanonicalReportPrepare(
     renderCount,
     baseSlotCoverage,
     requiredSectionsFailed,
+    ...quality,
   };
 }

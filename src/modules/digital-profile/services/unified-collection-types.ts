@@ -104,6 +104,11 @@ export type UnifiedCollectionJob = {
   lastErrorCode: string | null;
   artifactPaths: Record<string, string>;
   reportLinks: { pdf?: string; pptx?: string; contactSheet?: string };
+  /**
+   * Compact funnel snapshot (REMEDIATION_PLAN §0.1). Full detail lives in
+   * `report-quality-summary.json` under the job artifact directory.
+   */
+  reportQuality?: import("./report-quality-summary").JobReportQuality | null;
   cancelRequested: boolean;
   /** Set by staff recover endpoint — never written by client. */
   recoveryAudit?: {

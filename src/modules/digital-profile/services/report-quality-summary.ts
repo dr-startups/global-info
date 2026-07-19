@@ -1,0 +1,492 @@
+/**
+ * Report quality funnel aggregator (REMEDIATION_PLAN §0.1).
+ *
+ * Reads already-written job artifacts and produces one machine-readable summary:
+ * collected → manifest → composite → identity → findings → slides, plus GPT /
+ * visual / Arsenkin statuses. Never recomputes analytics — only aggregates.
+ */
+
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { z } from "zod";
+
+export const REPORT_QUALITY_SUMMARY_VERSION = "report-quality-summary-v1" as const;
+
+const GptStage1Schema = z.object({
+  status: z.enum(["APPLIED", "FAILED", "SKIPPED", "MISSING"]),
+  reason: z.string().optional(),
+});
+
+const GptStage2Schema = z.object({
+  applied: z.number().int().nonnegative(),
+  noChanges: z.number().int().nonnegative(),
+  skippedDeterministic: z.number().int().nonnegative(),
+  skippedEmpty: z.number().int().nonnegative(),
+  skippedCached: z.number().int().nonnegative(),
+  fallbackError: z.number().int().nonnegative(),
+  fallbackValidation: z.number().int().nonnegative(),
+  rejectedFieldsTop: z.array(z.string()).max(20),
+  caseAnalysisUsed: z.boolean(),
+});
+
+const VisualsSchema = z.object({
+  built: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  warning: z.string().nullable(),
+  byKind: z
+    .object({
+      serpSnapshots: z.number().int().nonnegative().optional(),
+      suggestionPanels: z.number().int().nonnegative().optional(),
+      relatedPanels: z.number().int().nonnegative().optional(),
+      aiPanels: z.number().int().nonnegative().optional(),
+      imageGrids: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
+});
+
+const EmptySlideSchema = z.object({
+  slotId: z.string().min(1),
+  reason: z.string().min(1),
+});
+
+const ArsenkinAgentSchema = z.object({
+  name: z.string().min(1),
+  terminalKind: z.string().nullable(),
+  observationCount: z.number().int().nonnegative(),
+});
+
+export const ReportQualitySummarySchema = z.object({
+  version: z.literal(REPORT_QUALITY_SUMMARY_VERSION),
+  caseId: z.string().min(1),
+  unifiedJobId: z.string().nullable(),
+  generatedAt: z.string().min(1),
+  counts: z.object({
+    dbSearchResults: z.number().int().nonnegative().nullable(),
+    dbSurfaceItems: z.number().int().nonnegative().nullable(),
+    manifestIds: z.number().int().nonnegative().nullable(),
+    compositeObservations: z.number().int().nonnegative().nullable(),
+    subjectMatch: z.number().int().nonnegative().nullable(),
+    ambiguous: z.number().int().nonnegative().nullable(),
+    otherSubject: z.number().int().nonnegative().nullable(),
+    insufficient: z.number().int().nonnegative().nullable(),
+    verifiedFindings: z.number().int().nonnegative().nullable(),
+    ambiguousFindings: z.number().int().nonnegative().nullable(),
+  }),
+  gpt: z.object({
+    stage1: GptStage1Schema,
+    stage2: GptStage2Schema,
+  }),
+  visuals: VisualsSchema,
+  slides: z.object({
+    total: z.number().int().nonnegative(),
+    withContent: z.number().int().nonnegative(),
+    emptyState: z.array(EmptySlideSchema),
+  }),
+  arsenkin: z.object({
+    agents: z.array(ArsenkinAgentSchema),
+    enrichmentComplete: z.boolean().nullable(),
+    enrichmentObservationCount: z.number().int().nonnegative().nullable(),
+  }),
+});
+
+export type ReportQualitySummary = z.infer<typeof ReportQualitySummarySchema>;
+
+/** Compact job-status payload (same shape, no heavy empty-state lists truncated). */
+export type JobReportQuality = {
+  version: typeof REPORT_QUALITY_SUMMARY_VERSION;
+  generatedAt: string;
+  counts: ReportQualitySummary["counts"];
+  gpt: {
+    stage1Status: ReportQualitySummary["gpt"]["stage1"]["status"];
+    stage1Reason?: string;
+    stage2Applied: number;
+    stage2FallbackError: number;
+    stage2FallbackValidation: number;
+    caseAnalysisUsed: boolean;
+  };
+  visuals: { built: number; failed: number; warning: string | null };
+  slides: { total: number; withContent: number; emptyStateCount: number };
+  arsenkin: {
+    enrichmentComplete: boolean | null;
+    enrichmentObservationCount: number | null;
+    agentsOk: number;
+    agentsFailed: number;
+  };
+};
+
+/** Optional Prisma-like counts for live DB funnel numbers. */
+export type ReportQualityPrismaCounts = {
+  searchResult: { count: (args: { where: { caseId: string } }) => Promise<number> };
+  searchSurfaceItem: { count: (args: { where: { caseId: string } }) => Promise<number> };
+};
+
+function readJsonSafe<T>(path: string): T | null {
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, "utf8")) as T;
+  } catch {
+    return null;
+  }
+}
+
+function countByDecision(
+  items: Array<{ decision?: string }> | undefined
+): Pick<ReportQualitySummary["counts"], "subjectMatch" | "ambiguous" | "otherSubject" | "insufficient"> {
+  let subjectMatch = 0;
+  let ambiguous = 0;
+  let otherSubject = 0;
+  let insufficient = 0;
+  for (const it of items ?? []) {
+    switch (it.decision) {
+      case "SUBJECT_MATCH":
+        subjectMatch += 1;
+        break;
+      case "AMBIGUOUS":
+        ambiguous += 1;
+        break;
+      case "OTHER_SUBJECT":
+        otherSubject += 1;
+        break;
+      case "INSUFFICIENT_IDENTIFIERS":
+        insufficient += 1;
+        break;
+      default:
+        break;
+    }
+  }
+  return { subjectMatch, ambiguous, otherSubject, insufficient };
+}
+
+function aggregateGptStage2(
+  report: {
+    caseAnalysisUsed?: boolean;
+    fragments?: Array<{ status?: string; rejectedFields?: string[] }>;
+  } | null
+): ReportQualitySummary["gpt"]["stage2"] {
+  const empty: ReportQualitySummary["gpt"]["stage2"] = {
+    applied: 0,
+    noChanges: 0,
+    skippedDeterministic: 0,
+    skippedEmpty: 0,
+    skippedCached: 0,
+    fallbackError: 0,
+    fallbackValidation: 0,
+    rejectedFieldsTop: [],
+    caseAnalysisUsed: Boolean(report?.caseAnalysisUsed),
+  };
+  if (!report?.fragments) return empty;
+
+  const rejectedFreq = new Map<string, number>();
+  for (const f of report.fragments) {
+    switch (f.status) {
+      case "APPLIED":
+        empty.applied += 1;
+        break;
+      case "NO_CHANGES":
+        empty.noChanges += 1;
+        break;
+      case "SKIPPED_DETERMINISTIC":
+        empty.skippedDeterministic += 1;
+        break;
+      case "SKIPPED_EMPTY":
+        empty.skippedEmpty += 1;
+        break;
+      case "SKIPPED_CACHED":
+        empty.skippedCached += 1;
+        break;
+      case "FALLBACK_ERROR":
+        empty.fallbackError += 1;
+        break;
+      case "FALLBACK_VALIDATION":
+        empty.fallbackValidation += 1;
+        break;
+      default:
+        break;
+    }
+    for (const r of f.rejectedFields ?? []) {
+      const key = String(r).split(":")[0] ?? String(r);
+      rejectedFreq.set(key, (rejectedFreq.get(key) ?? 0) + 1);
+    }
+  }
+  empty.rejectedFieldsTop = [...rejectedFreq.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 10)
+    .map(([k, n]) => `${k}×${n}`);
+  return empty;
+}
+
+function slideHasContent(slide: {
+  narrative?: string;
+  bullets?: string[];
+  table?: { rows?: unknown[] };
+  whatWasFound?: string;
+  visualAssetRefs?: string[];
+  kpis?: unknown[];
+  keyFindings?: unknown[];
+}): boolean {
+  if (slide.narrative?.trim()) return true;
+  if ((slide.bullets ?? []).some((b) => String(b).trim())) return true;
+  if ((slide.table?.rows?.length ?? 0) > 0) return true;
+  if (slide.whatWasFound?.trim()) return true;
+  if ((slide.visualAssetRefs ?? []).length > 0) return true;
+  if ((slide.kpis ?? []).length > 0) return true;
+  if ((slide.keyFindings ?? []).length > 0) return true;
+  return false;
+}
+
+/**
+ * Aggregate funnel metrics from a prepared job artifact directory.
+ * Prisma counts are optional — offline fixtures leave them null.
+ */
+export async function buildReportQualitySummary(input: {
+  jobDir: string;
+  caseId: string;
+  unifiedJobId?: string | null;
+  prisma?: ReportQualityPrismaCounts | null;
+}): Promise<ReportQualitySummary> {
+  const dir = input.jobDir;
+
+  const manifest = readJsonSafe<{
+    searchResultIds?: string[];
+    searchSurfaceItemIds?: string[];
+    baseCount?: number;
+  }>(join(dir, "base-collection-manifest.json"));
+
+  const composite = readJsonSafe<{
+    observations?: unknown[];
+    compositeCount?: number;
+  }>(join(dir, "composite-serp-observations.json"));
+
+  const subjectResolution = readJsonSafe<{
+    items?: Array<{ decision?: string }>;
+  }>(join(dir, "analytics", "subject-resolution.json"));
+
+  const verifiedBundle = readJsonSafe<{ findings?: unknown[] }>(
+    join(dir, "analytics", "verified-finding-bundle.json")
+  );
+  const ambiguousFindings = readJsonSafe<unknown[]>(
+    join(dir, "analytics", "ambiguous-findings.json")
+  );
+
+  const gptAnalysis = readJsonSafe<{ overallRiskLevel?: string }>(
+    join(dir, "analytics", "gpt-case-analysis.json")
+  );
+  const gptDiagnostics = readJsonSafe<{ status?: string; reason?: string }>(
+    join(dir, "analytics", "gpt-case-analysis-diagnostics.json")
+  );
+
+  const gptCopy = readJsonSafe<{
+    caseAnalysisUsed?: boolean;
+    fragments?: Array<{ status?: string; rejectedFields?: string[] }>;
+  }>(join(dir, "deck", "gpt-report-copy.json"));
+
+  const visualsMeta = readJsonSafe<{
+    counts?: {
+      serpSnapshots?: number;
+      suggestionPanels?: number;
+      relatedPanels?: number;
+      aiPanels?: number;
+      imageGrids?: number;
+    };
+    visualAssets?: Record<string, unknown[]>;
+  }>(join(dir, "visual-assets-by-slot.json"));
+
+  const prepareSummary = readJsonSafe<{
+    visualAssetCount?: number;
+    visualAssetWarning?: string | null;
+  }>(join(dir, "canonical-prepare-summary.json"));
+
+  const assembled = readJsonSafe<{
+    slides?: Array<{
+      baseSlotId?: string;
+      slideKey?: string;
+      emptyStateReason?: string;
+      narrative?: string;
+      bullets?: string[];
+      table?: { rows?: unknown[] };
+      whatWasFound?: string;
+      visualAssetRefs?: string[];
+      kpis?: unknown[];
+      keyFindings?: unknown[];
+    }>;
+  }>(join(dir, "deck", "assembled-deck.json"));
+
+  const arsenkin = readJsonSafe<{
+    agents?: Array<{
+      agentName?: string;
+      terminalKind?: string | null;
+      observationCount?: number;
+    }>;
+    enrichmentComplete?: boolean;
+    enrichmentObservationCount?: number;
+  }>(join(dir, "arsenkin-enrichment-state.json"));
+
+  let dbSearchResults: number | null = null;
+  let dbSurfaceItems: number | null = null;
+  if (input.prisma) {
+    try {
+      dbSearchResults = await input.prisma.searchResult.count({
+        where: { caseId: input.caseId },
+      });
+      dbSurfaceItems = await input.prisma.searchSurfaceItem.count({
+        where: { caseId: input.caseId },
+      });
+    } catch {
+      dbSearchResults = null;
+      dbSurfaceItems = null;
+    }
+  }
+
+  const manifestIds =
+    manifest == null
+      ? null
+      : (manifest.searchResultIds?.length ?? 0) + (manifest.searchSurfaceItemIds?.length ?? 0);
+
+  const compositeObservations =
+    composite == null
+      ? null
+      : typeof composite.compositeCount === "number"
+        ? composite.compositeCount
+        : (composite.observations?.length ?? 0);
+
+  const identity = subjectResolution
+    ? countByDecision(subjectResolution.items)
+    : {
+        subjectMatch: null,
+        ambiguous: null,
+        otherSubject: null,
+        insufficient: null,
+      };
+
+  let stage1: ReportQualitySummary["gpt"]["stage1"];
+  if (gptAnalysis) {
+    stage1 = { status: "APPLIED" };
+  } else if (gptDiagnostics?.status === "FAILED") {
+    stage1 = { status: "FAILED", reason: gptDiagnostics.reason ?? "unknown" };
+  } else if (gptCopy && gptCopy.caseAnalysisUsed === false && !gptAnalysis) {
+    stage1 = { status: "FAILED", reason: gptDiagnostics?.reason ?? "caseAnalysisUsed:false" };
+  } else if (!gptCopy && !gptAnalysis && !gptDiagnostics) {
+    stage1 = { status: "SKIPPED" };
+  } else {
+    stage1 = { status: "MISSING" };
+  }
+
+  const stage2 = aggregateGptStage2(gptCopy);
+
+  const byKind = visualsMeta?.counts;
+  const builtFromKinds = byKind
+    ? (byKind.serpSnapshots ?? 0) +
+      (byKind.suggestionPanels ?? 0) +
+      (byKind.relatedPanels ?? 0) +
+      (byKind.aiPanels ?? 0) +
+      (byKind.imageGrids ?? 0)
+    : null;
+  const built =
+    typeof prepareSummary?.visualAssetCount === "number"
+      ? prepareSummary.visualAssetCount
+      : (builtFromKinds ?? 0);
+  const warning = prepareSummary?.visualAssetWarning ?? null;
+  const failed = warning ? 1 : 0;
+
+  const slides = assembled?.slides ?? [];
+  const emptyState = slides
+    .filter((s) => Boolean(s.emptyStateReason))
+    .map((s) => ({
+      slotId: s.baseSlotId || s.slideKey || "unknown",
+      reason: String(s.emptyStateReason),
+    }));
+  const withContent = slides.filter((s) => slideHasContent(s) && !s.emptyStateReason).length;
+
+  const agents = (arsenkin?.agents ?? []).map((a) => ({
+    name: String(a.agentName ?? "unknown"),
+    terminalKind: a.terminalKind ?? null,
+    observationCount: a.observationCount ?? 0,
+  }));
+
+  const summary: ReportQualitySummary = {
+    version: REPORT_QUALITY_SUMMARY_VERSION,
+    caseId: input.caseId,
+    unifiedJobId: input.unifiedJobId ?? null,
+    generatedAt: new Date().toISOString(),
+    counts: {
+      dbSearchResults,
+      dbSurfaceItems,
+      manifestIds,
+      compositeObservations,
+      subjectMatch: identity.subjectMatch,
+      ambiguous: identity.ambiguous,
+      otherSubject: identity.otherSubject,
+      insufficient: identity.insufficient,
+      verifiedFindings: verifiedBundle?.findings?.length ?? null,
+      ambiguousFindings: Array.isArray(ambiguousFindings) ? ambiguousFindings.length : null,
+    },
+    gpt: { stage1, stage2 },
+    visuals: {
+      built,
+      failed,
+      warning,
+      byKind: byKind
+        ? {
+            serpSnapshots: byKind.serpSnapshots ?? 0,
+            suggestionPanels: byKind.suggestionPanels ?? 0,
+            relatedPanels: byKind.relatedPanels ?? 0,
+            aiPanels: byKind.aiPanels ?? 0,
+            imageGrids: byKind.imageGrids ?? 0,
+          }
+        : undefined,
+    },
+    slides: {
+      total: slides.length,
+      withContent,
+      emptyState,
+    },
+    arsenkin: {
+      agents,
+      enrichmentComplete: arsenkin?.enrichmentComplete ?? null,
+      enrichmentObservationCount: arsenkin?.enrichmentObservationCount ?? null,
+    },
+  };
+
+  return ReportQualitySummarySchema.parse(summary);
+}
+
+export function toJobReportQuality(summary: ReportQualitySummary): JobReportQuality {
+  const agentsFailed = summary.arsenkin.agents.filter(
+    (a) => a.terminalKind === "FAILED" || a.terminalKind === "SUBMIT_UNKNOWN_UNRECONCILED"
+  ).length;
+  const agentsOk = summary.arsenkin.agents.filter(
+    (a) =>
+      a.terminalKind != null &&
+      a.terminalKind !== "FAILED" &&
+      a.terminalKind !== "SUBMIT_UNKNOWN_UNRECONCILED"
+  ).length;
+  return {
+    version: REPORT_QUALITY_SUMMARY_VERSION,
+    generatedAt: summary.generatedAt,
+    counts: summary.counts,
+    gpt: {
+      stage1Status: summary.gpt.stage1.status,
+      ...(summary.gpt.stage1.reason ? { stage1Reason: summary.gpt.stage1.reason } : {}),
+      stage2Applied: summary.gpt.stage2.applied,
+      stage2FallbackError: summary.gpt.stage2.fallbackError,
+      stage2FallbackValidation: summary.gpt.stage2.fallbackValidation,
+      caseAnalysisUsed: summary.gpt.stage2.caseAnalysisUsed,
+    },
+    visuals: {
+      built: summary.visuals.built,
+      failed: summary.visuals.failed,
+      warning: summary.visuals.warning,
+    },
+    slides: {
+      total: summary.slides.total,
+      withContent: summary.slides.withContent,
+      emptyStateCount: summary.slides.emptyState.length,
+    },
+    arsenkin: {
+      enrichmentComplete: summary.arsenkin.enrichmentComplete,
+      enrichmentObservationCount: summary.arsenkin.enrichmentObservationCount,
+      agentsOk,
+      agentsFailed,
+    },
+  };
+}

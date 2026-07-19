@@ -45,6 +45,11 @@ import {
   runCanonicalReportPrepare,
   CanonicalPrepareBlockedError,
 } from "./canonical-report-prepare";
+import {
+  buildReportQualitySummary,
+  toJobReportQuality,
+  type JobReportQuality,
+} from "./report-quality-summary";
 import type { DeckRenderAdapter } from "./render-deck-artifacts";
 import { resolveJobSubjectProfile } from "./job-subject-profile";
 import {
@@ -240,6 +245,7 @@ export type UnifiedOrchestratorDeps = {
     contactSheet?: string;
     assemblyCount?: number;
     renderCount?: number;
+    reportQuality?: JobReportQuality | null;
   }>;
   /** Subject identity for canonical prepare (production resolves from the case). */
   subjectProfile?: ClassifierSubjectProfile | null;
@@ -1228,6 +1234,12 @@ async function stepPrepare(
         subjectProfile: deps.subjectProfile ?? null,
         render: deps.renderDeck,
         resumeFrom: resumeFromRender ? "render" : "full",
+        prisma: deps.prisma
+          ? {
+              searchResult: deps.prisma.searchResult,
+              searchSurfaceItem: deps.prisma.searchSurfaceItem,
+            }
+          : null,
       });
       return {
         prepareDatasetId: res.prepareDatasetId,
@@ -1236,6 +1248,7 @@ async function stepPrepare(
         contactSheet: res.contactSheet,
         assemblyCount: res.assemblyCount,
         renderCount: res.renderCount,
+        reportQuality: res.reportQuality ?? null,
       };
     });
 
@@ -1337,6 +1350,42 @@ async function stepPrepare(
     (job.coverage?.failedFinal ?? 0) > 0 ||
     job.warnings.some((w) => /arsenkin-failed|arsenkin-skipped|partial/i.test(w));
 
+  // Persist funnel summary on the job (REMEDIATION §0.1). Prefer the value
+  // returned by prepare; otherwise rebuild from the job artifact directory.
+  let reportQuality = prepared.reportQuality ?? null;
+  try {
+    if (!reportQuality) {
+      const summary = await buildReportQualitySummary({
+        jobDir: unifiedArtifactsDir(job.caseId, job.unifiedJobId),
+        caseId: job.caseId,
+        unifiedJobId: job.unifiedJobId,
+        prisma: deps.prisma
+          ? {
+              searchResult: deps.prisma.searchResult,
+              searchSurfaceItem: deps.prisma.searchSurfaceItem,
+            }
+          : null,
+      });
+      reportQuality = toJobReportQuality(summary);
+      writeUnifiedArtifact(job.caseId, job.unifiedJobId, "report-quality-summary.json", summary);
+    } else {
+      // Ensure the full artifact is present even when prepare already wrote it
+      // (idempotent overwrite from the same source of truth).
+      const existing = readUnifiedArtifact(job.caseId, job.unifiedJobId, "report-quality-summary.json");
+      if (!existing) {
+        const summary = await buildReportQualitySummary({
+          jobDir: unifiedArtifactsDir(job.caseId, job.unifiedJobId),
+          caseId: job.caseId,
+          unifiedJobId: job.unifiedJobId,
+        });
+        writeUnifiedArtifact(job.caseId, job.unifiedJobId, "report-quality-summary.json", summary);
+        reportQuality = toJobReportQuality(summary);
+      }
+    }
+  } catch {
+    // Observability must never block REPORT_READY.
+  }
+
   return (
     patchUnifiedCollectionJob(job.caseId, {
       stage: partial ? "COMPLETED_PARTIAL" : "REPORT_READY",
@@ -1348,6 +1397,7 @@ async function stepPrepare(
         pptx: prepared.pptx,
         ...(prepared.contactSheet ? { contactSheet: prepared.contactSheet } : {}),
       },
+      ...(reportQuality ? { reportQuality } : {}),
     }) ?? job
   );
 }
