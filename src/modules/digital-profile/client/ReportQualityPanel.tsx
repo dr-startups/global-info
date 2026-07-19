@@ -79,6 +79,7 @@ export function ReportQualityPanel({
           ) : null}
           <FunnelCell label="Composite" value={formatFunnelValue(counts.compositeObservations)} />
           <FunnelCell label="Субъект" value={formatFunnelValue(counts.subjectMatch)} />
+          <FunnelCell label="Вероятно" value={formatFunnelValue(counts.likelySubject)} />
           <FunnelCell label="Тёзки/шум" value={formatFunnelValue(counts.otherSubject)} />
           <FunnelCell label="Findings" value={formatFunnelValue(counts.verifiedFindings)} />
           <FunnelCell

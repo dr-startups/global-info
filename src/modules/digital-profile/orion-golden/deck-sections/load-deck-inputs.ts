@@ -72,8 +72,14 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     baseCount: number;
     compositeCount: number;
   }>(join(analyticsDir, "composite-serp-observations.json"));
-  const subjectResolution = readJson<{ items: Array<{ decision: string }> }>(
-    join(analyticsDir, "subject-resolution.json")
+  const subjectResolution = readJson<{
+    items: Array<{ evidenceRef?: string; decision: string }>;
+  }>(join(analyticsDir, "subject-resolution.json"));
+
+  const decisionByRef = new Map(
+    (subjectResolution.items ?? [])
+      .filter((i) => i.evidenceRef)
+      .map((i) => [i.evidenceRef!, i.decision] as const)
   );
 
   const mergedBundle: VerifiedFindingBundle = {
@@ -97,6 +103,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
         kind: obs.surface,
         region: obs.region,
         engine: obs.engine,
+        subjectDecision: decisionByRef.get(ref),
       };
     }
   }
@@ -215,6 +222,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     enrichmentCount: providerDelta.arsenkinObservationCount,
     compositeCount: observations.compositeCount,
     subjectMatchCount: decisions.SUBJECT_MATCH ?? 0,
+    likelySubjectCount: decisions.LIKELY_SUBJECT ?? 0,
     ambiguousCount: decisions.AMBIGUOUS ?? 0,
     otherSubjectCount: decisions.OTHER_SUBJECT ?? 0,
     adverseFindingCount: bundle.findings.filter(

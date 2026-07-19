@@ -352,6 +352,7 @@ function loadDeckInputsFromDir(analyticsDir: string) {
     enrichmentCount: providerDelta.arsenkinObservationCount,
     compositeCount: observations.compositeCount,
     subjectMatchCount: decisions.SUBJECT_MATCH ?? 0,
+    likelySubjectCount: decisions.LIKELY_SUBJECT ?? 0,
     ambiguousCount: decisions.AMBIGUOUS ?? 0,
     otherSubjectCount: decisions.OTHER_SUBJECT ?? 0,
     adverseFindingCount: bundle.findings.filter(

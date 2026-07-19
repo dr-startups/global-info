@@ -234,6 +234,45 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
     );
   }
 
+  // --- LIKELY_SUBJECT (§2.1): surname + context / shared SUBJECT_MATCH domain ---
+  // No given name → never SUBJECT_MATCH; visible as «вероятно», KPI unchanged.
+  const LIKELY_ROWS: Array<{ title: string; url: string; snippet: string }> = [
+    {
+      title: "Holmström of Nordkap Capital mentioned in Stockholm market brief",
+      url: "https://biz.example/likely-nordkap-brief",
+      snippet: "Surname + Nordkap Capital / Stockholm context without given name.",
+    },
+    {
+      title: "Holmstrom fintech outlook for Nordic credit markets",
+      url: "https://biz.example/likely-fintech-outlook",
+      snippet: "Surname + fintech context; identity not fully confirmed.",
+    },
+    {
+      title: "Holmström: company registry notice",
+      url: "https://ru.example/likely-registry-notice",
+      snippet: "Surname-only on a domain that already hosts confirmed subject matches.",
+    },
+  ];
+  for (let i = 0; i < LIKELY_ROWS.length; i++) {
+    const row = LIKELY_ROWS[i]!;
+    rows.push(
+      base({
+        key: `organic|ru|google|q|${row.url}`,
+        kind: "organic",
+        surface: "organic",
+        region: "RU",
+        engine: "GOOGLE",
+        providers: ["serper"],
+        primaryProvider: "serper",
+        url: row.url,
+        title: row.title,
+        snippet: row.snippet,
+        evidenceRefs: [`searchResult:sr-likely-${i}`],
+        baseSearchResultId: `sr-likely-${i}`,
+      })
+    );
+  }
+
   // --- Suggestions ---
   for (let i = 0; i < SUGGESTIONS_RU.length; i++) {
     const s = SUGGESTIONS_RU[i]!;

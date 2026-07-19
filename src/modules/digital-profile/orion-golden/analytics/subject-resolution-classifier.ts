@@ -1,9 +1,12 @@
 /**
  * Prompt 2 — subject resolution classifier.
- * Classifies every composite observation as SUBJECT_MATCH / AMBIGUOUS /
- * OTHER_SUBJECT / INSUFFICIENT_IDENTIFIERS.
- * Surname-only matches never become SUBJECT_MATCH; only SUBJECT_MATCH may
- * affect KPI. Ambiguous evidence is retained for review/appendix.
+ * Classifies every composite observation as SUBJECT_MATCH / LIKELY_SUBJECT /
+ * AMBIGUOUS / OTHER_SUBJECT / INSUFFICIENT_IDENTIFIERS.
+ *
+ * Surname-only never becomes SUBJECT_MATCH. Surname + context (or shared
+ * confirmed domain / soft-surface full-name phrase) may become LIKELY_SUBJECT
+ * (confidence 0.6–0.7) — visible in SERP/appendix/matrix «Требует подтверждения»
+ * but never in KPI «О субъекте». Only SUBJECT_MATCH may affect KPI.
  */
 
 import { createHash } from "node:crypto";
@@ -53,6 +56,36 @@ function itemText(item: RawInventoryItem): string {
   // Exception: query-является-контентом surfaces (suggestions/PAA) store the
   // line in title, so title/snippet/sourceUrl are sufficient.
   return norm([item.title, item.snippet, item.sourceUrl].filter(Boolean).join(" "));
+}
+
+function surfaceOf(item: RawInventoryItem): string {
+  const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
+  return String(meta.surface ?? item.evidenceType ?? "").toLowerCase();
+}
+
+/** Soft SERP lines where a full-name phrase is suggestive, not confirmatory. */
+function isSuggestionOrPaaSurface(surface: string): boolean {
+  return /suggest|paa|people_also|related/.test(surface);
+}
+
+function domainOfUrl(url: string | undefined | null): string {
+  if (!url) return "";
+  try {
+    return new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+/** Display-name or first+last phrase present in text (upgrade path for soft surfaces). */
+function hasFullNamePhrase(text: string, subject: SubjectIdentity): boolean {
+  const display = norm(subject.displayName);
+  if (display.length >= 6 && text.includes(display)) return true;
+  const first = subject.firstNames.find((n) => matchesToken(text, n));
+  const last =
+    matchesToken(text, subject.lastName) ||
+    subject.lastNameVariants.some((v) => matchesToken(text, v));
+  return Boolean(first && last);
 }
 
 /**
@@ -190,10 +223,26 @@ export function classifySubjectRelevance(
         : "full_name_match";
     confidence = matchedStrong ? 0.98 : matchedContext.length > 0 ? 0.92 : 0.85;
   } else if (hasSurname && !hasGivenName) {
-    // Surname-only: NEVER SUBJECT_MATCH.
-    decision = "AMBIGUOUS";
-    reasonCode = "surname_only";
-    confidence = 0.4;
+    // Surname without given name: never SUBJECT_MATCH. Strong context or a
+    // soft-surface full-name phrase → LIKELY_SUBJECT; otherwise AMBIGUOUS.
+    if (matchedContext.length > 0) {
+      decision = "LIKELY_SUBJECT";
+      reasonCode = "surname_with_context";
+      confidence = 0.65;
+    } else if (
+      isSuggestionOrPaaSurface(surfaceOf(item)) &&
+      hasFullNamePhrase(text, subject)
+    ) {
+      decision = "LIKELY_SUBJECT";
+      reasonCode = /paa|people_also|related/.test(surfaceOf(item))
+        ? "paa_full_name"
+        : "suggestion_full_name";
+      confidence = 0.68;
+    } else {
+      decision = "AMBIGUOUS";
+      reasonCode = "surname_only";
+      confidence = 0.4;
+    }
   } else {
     // Given name without surname (rare) — insufficient.
     decision = "INSUFFICIENT_IDENTIFIERS";
@@ -211,6 +260,48 @@ export function classifySubjectRelevance(
   };
 }
 
+/**
+ * Pass after text classification: surname_only AMBIGUOUS on a domain that
+ * already hosts conflict-free SUBJECT_MATCH evidence → LIKELY_SUBJECT.
+ * Never promotes to SUBJECT_MATCH; conflicts stay untouched.
+ */
+export function promoteLikelyBySharedDomain(input: {
+  items: RawInventoryItem[];
+  resolution: SubjectResolution;
+}): SubjectResolution {
+  const byRef = new Map(input.resolution.items.map((r) => [r.evidenceRef, r]));
+  const matchDomains = new Set<string>();
+  for (const item of input.items) {
+    const ref = `inventory:${item.inventoryId}`;
+    const r = byRef.get(ref);
+    if (r?.decision !== "SUBJECT_MATCH" || r.conflictingIdentifiers.length > 0) continue;
+    const domain = domainOfUrl(item.sourceUrl);
+    if (domain) matchDomains.add(domain);
+  }
+  if (matchDomains.size === 0) return input.resolution;
+
+  const items = input.resolution.items.map((r) => {
+    if (r.decision !== "AMBIGUOUS" || r.reasonCode !== "surname_only") return r;
+    if (r.conflictingIdentifiers.length > 0) return r;
+    const item = input.items.find((i) => `inventory:${i.inventoryId}` === r.evidenceRef);
+    const domain = domainOfUrl(item?.sourceUrl);
+    if (!domain || !matchDomains.has(domain)) return r;
+    return {
+      ...r,
+      decision: "LIKELY_SUBJECT" as const,
+      reasonCode: "surname_with_confirmed_domain",
+      confidence: 0.62,
+    };
+  });
+
+  return SubjectResolutionSchema.parse({
+    ...input.resolution,
+    schemaVersion: SUBJECT_RESOLUTION_SCHEMA_VERSION,
+    items,
+    evidenceRefs: items.map((i) => i.evidenceRef),
+  });
+}
+
 export function buildSubjectResolution(input: {
   caseId: string;
   datasetId: string;
@@ -218,16 +309,17 @@ export function buildSubjectResolution(input: {
   items: RawInventoryItem[];
   sourceHashes: string[];
 }): SubjectResolution {
-  const items = input.items.map((i) => classifySubjectRelevance(i, input.subject));
-  return SubjectResolutionSchema.parse({
+  const classified = input.items.map((i) => classifySubjectRelevance(i, input.subject));
+  const base = SubjectResolutionSchema.parse({
     schemaVersion: SUBJECT_RESOLUTION_SCHEMA_VERSION,
     caseId: input.caseId,
     datasetId: input.datasetId,
     sourceHashes: input.sourceHashes,
-    evidenceRefs: items.map((i) => i.evidenceRef),
+    evidenceRefs: classified.map((i) => i.evidenceRef),
     subjectDisplayName: input.subject.displayName,
-    items,
+    items: classified,
   });
+  return promoteLikelyBySharedDomain({ items: input.items, resolution: base });
 }
 
 /** Profile shape consumed by the classifier (subset of SubjectIdentityProfile). */

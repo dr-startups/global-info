@@ -29,6 +29,7 @@ import {
 import type { Finding } from "../contracts/finding";
 import type { SurfaceClaim } from "../contracts/surface-analysis";
 import { ADVERSE_PATTERNS } from "../analytics/surface-analyzers";
+import { pluralRu } from "../analytics/finding-synthesizer";
 
 export type ExecutiveSummaryExtras = {
   verdict: string;
@@ -741,6 +742,11 @@ export function buildExecutiveSummaryFragment(
       kpis: [
         { label: "Материалов", value: String(ms.compositeCount), tone: "neutral" },
         { label: "О субъекте", value: String(ms.subjectMatchCount), tone: "good" },
+        {
+          label: "Вероятно о субъекте",
+          value: String(ms.likelySubjectCount ?? 0),
+          tone: "warn",
+        },
         { label: "Тем риска", value: String(ms.adverseFindingCount), tone: "risk" },
         { label: "Выводов", value: String(es.keyFindings.length), tone: "accent" },
       ],
@@ -795,7 +801,9 @@ export function buildRiskMatrixFragment(
   extras?: FragmentExtras
 ): FragmentBuildOutput {
   const [slot] = slotsForFragment("RISK_MATRIX");
-  if (scoped.findings.length === 0) {
+  const confirmed = scoped.findings.filter((f) => f.subjectMatch === "SUBJECT_MATCH");
+  const likely = scoped.findings.filter((f) => f.subjectMatch === "LIKELY_SUBJECT");
+  if (confirmed.length === 0 && likely.length === 0) {
     // Honest empty-valid page after completed collection — not a lost required section.
     const base = makeSlotSlide({
       slot,
@@ -816,10 +824,13 @@ export function buildRiskMatrixFragment(
     });
     return { slides: [base], status: "READY", emptyStateReason: "no-verified-findings" };
   }
-  const sorted = [...scoped.findings].sort(
+  const sorted = [...confirmed].sort(
     (a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0)
   );
-  const rows = sorted.map((f) => [f.theme, riskLabel(f.riskLevel), f.promotionPriority, f.findingId]);
+  const rows =
+    sorted.length > 0
+      ? sorted.map((f) => [f.theme, riskLabel(f.riskLevel), f.promotionPriority, f.findingId])
+      : [["Нет подтверждённых тем", "Нет данных", "—", "—"]];
   // Per-theme detail (same order as rows): what exactly was found + why it is
   // risky + what to do — the matrix card explains the risk instead of only
   // repeating its level. GPT case analysis expands; the claim is the fallback.
@@ -829,6 +840,16 @@ export function buildRiskMatrixFragment(
       ? fitClientSentences([themedClaim(f), risk.explanation, `Что делать: ${risk.advice}`], 400)
       : fitClientSentences([themedClaim(f), `Рекомендация: ${f.recommendedAction}`], 400);
   });
+  if (likely.length > 0) {
+    details.push(
+      `Требует подтверждения: ${likely.length} ${pluralRu(likely.length, "тема", "темы", "тем")} с вероятной принадлежностью субъекту (не входят в KPI «О субъекте»).`
+    );
+    for (const f of likely.slice(0, 6)) {
+      details.push(
+        clampClientText(`• ${f.theme}: ${f.claim}`, 340) + ` [${f.findingId}]`
+      );
+    }
+  }
   const base = makeSlotSlide({
     slot,
     sectionId,
@@ -837,8 +858,12 @@ export function buildRiskMatrixFragment(
       bullets: details,
     },
     evidenceRefs: uniqueRefs(scoped),
-    findingIds: scoped.findings.map((f) => f.findingId),
-    metrics: { themes: rows.length, adverse: scoped.findings.filter(isAdverse).length },
+    findingIds: [...confirmed, ...likely].map((f) => f.findingId),
+    metrics: {
+      themes: sorted.length,
+      likelyThemes: likely.length,
+      adverse: confirmed.filter(isAdverse).length,
+    },
   });
   return { slides: withContinuations(base, "risk-matrix"), status: "READY" };
 }
@@ -868,6 +893,11 @@ export function buildDigitalProfileOverviewFragment(
           kpis: [
             { label: "Материалов проанализировано", value: String(s.compositeCount), tone: "neutral" },
             { label: "Связаны с проверяемым лицом", value: String(s.subjectMatchCount), tone: "good" },
+            {
+              label: "Вероятно о субъекте",
+              value: String(s.likelySubjectCount ?? 0),
+              tone: "warn",
+            },
             { label: "Требуют идентификации", value: String(s.ambiguousCount), tone: "warn" },
             { label: "Относятся к другим лицам", value: String(s.otherSubjectCount), tone: "warn" },
             { label: "Тем повышенного внимания", value: String(s.adverseFindingCount), tone: "risk" },
@@ -883,6 +913,7 @@ export function buildDigitalProfileOverviewFragment(
         metrics: {
           compositeCount: s.compositeCount,
           subjectMatchCount: s.subjectMatchCount,
+          likelySubjectCount: s.likelySubjectCount ?? 0,
           adverseFindingCount: s.adverseFindingCount,
         },
       }),
@@ -937,6 +968,7 @@ export function buildRegionalSummaryFragment(
     // Materials exist but none reached a verified finding: an honest summary
     // (ORION style) instead of a coverage placeholder.
     const ambiguous = scoped.metricSnapshot.ambiguousCount;
+    const likely = scoped.metricSnapshot.likelySubjectCount ?? 0;
     slides.push(
       makeSlotSlide({
         slot: summarySlot,
@@ -945,6 +977,11 @@ export function buildRegionalSummaryFragment(
           narrative: `По региону ${regionLabel} собрано и проанализировано материалов: ${materialCount}. Подтверждённых тем повышенного внимания, однозначно связанных с проверяемым лицом, по итогам идентификации не выявлено.`,
           bullets: [
             "Каждый материал прошёл проверку принадлежности: учитываются только публикации, уверенно связанные с проверяемым лицом.",
+            ...(likely > 0
+              ? [
+                  `Материалы, вероятно относящиеся к субъекту: ${likely} — не входят в подтверждённые выводы, пока принадлежность не уточнена.`,
+                ]
+              : []),
             ...(ambiguous > 0
               ? [
                   `Часть материалов (${ambiguous} по всему набору) требует дополнительной идентификации — они не включаются в выводы, пока принадлежность не подтверждена.`,
@@ -962,9 +999,17 @@ export function buildRegionalSummaryFragment(
       })
     );
   } else {
-    const bullets = scoped.findings
-      .slice(0, 8)
-      .map((f) => clampClientText(themedClaim(f), 340) + ` [${f.findingId}]`);
+    const likelyN = scoped.metricSnapshot.likelySubjectCount ?? 0;
+    const bullets = [
+      ...scoped.findings
+        .slice(0, 8)
+        .map((f) => clampClientText(themedClaim(f), 340) + ` [${f.findingId}]`),
+      ...(likelyN > 0
+        ? [
+            `Материалы, вероятно относящиеся к субъекту: ${likelyN} — не входят в подтверждённые выводы.`,
+          ]
+        : []),
+    ];
     const base = makeSlotSlide({
       slot: summarySlot,
       sectionId,
@@ -978,6 +1023,7 @@ export function buildRegionalSummaryFragment(
       metrics: {
         materials: materialCount,
         findings: scoped.findings.length,
+        likely: likelyN,
         adverse: scoped.findings.filter(isAdverse).length,
       },
     });
@@ -1100,12 +1146,15 @@ export function buildSerpFragment(
       e.adverse === true ||
       adverseRefSet.has(ref) ||
       ADVERSE_PATTERNS.test(String(e.title ?? ""));
+    const likely = e.subjectDecision === "LIKELY_SUBJECT";
     // Red marker must always carry its label; domain comes from evidence URL.
+    // LIKELY (§2.1) → «Вероятно» — visible but not confirmed-subject KPI.
+    const rating = adverse ? RED_MARKER_LABEL : likely ? "Вероятно" : "Нейтральный";
     return [
       String(i + 1),
       e.domain ?? domainOfUrl(e.url),
       e.title ?? "(без заголовка)",
-      adverse ? RED_MARKER_LABEL : "Нейтральный",
+      rating,
     ];
   });
   // Dynamic blocks derive from the rows displayed on this page only.
@@ -1123,6 +1172,7 @@ export function buildSerpFragment(
       datasetCount: refs.length,
       displayedCount: rows.length,
       adverseDisplayed: rows.filter((r) => r[3] === RED_MARKER_LABEL).length,
+      likelyDisplayed: rows.filter((r) => r[3] === "Вероятно").length,
     },
   });
   return { slides: withContinuations(base, "serp-table"), status: "READY" };

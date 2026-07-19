@@ -283,6 +283,7 @@ describe("report-quality warnings mapping (§0.2)", () => {
         manifestCorpusCount: 0,
         compositeObservations: 1,
         subjectMatch: 1,
+        likelySubject: 0,
         ambiguous: 0,
         otherSubject: 0,
         insufficient: 0,

@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { ContractEnvelopeSchema, SubjectRelevanceDecisionSchema } from "./common";
 
-export const SUBJECT_RESOLUTION_SCHEMA_VERSION = "subject-resolution-v1" as const;
+/** Current write version (§2.1 — LIKELY_SUBJECT). */
+export const SUBJECT_RESOLUTION_SCHEMA_VERSION = "subject-resolution-v2" as const;
+/** Read compat: accept pre-2.1 artifacts. */
+export const SUBJECT_RESOLUTION_SCHEMA_VERSIONS = [
+  "subject-resolution-v1",
+  "subject-resolution-v2",
+] as const;
 
 export const SubjectResolutionItemSchema = z.object({
   evidenceRef: z.string().min(1),
@@ -15,7 +21,7 @@ export const SubjectResolutionItemSchema = z.object({
 });
 
 export const SubjectResolutionSchema = ContractEnvelopeSchema.extend({
-  schemaVersion: z.literal(SUBJECT_RESOLUTION_SCHEMA_VERSION),
+  schemaVersion: z.enum(SUBJECT_RESOLUTION_SCHEMA_VERSIONS),
   subjectDisplayName: z.string().min(1),
   items: z.array(SubjectResolutionItemSchema),
 });

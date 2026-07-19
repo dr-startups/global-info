@@ -288,6 +288,7 @@ const MINI_METRICS: MetricSnapshot = {
   enrichmentCount: 0,
   compositeCount: 4,
   subjectMatchCount: 3,
+  likelySubjectCount: 0,
   ambiguousCount: 1,
   otherSubjectCount: 0,
   adverseFindingCount: 1,

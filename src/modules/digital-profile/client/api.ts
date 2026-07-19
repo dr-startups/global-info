@@ -1447,6 +1447,7 @@ export type JobReportQualityDTO = {
     manifestCorpusCount?: number | null;
     compositeObservations: number | null;
     subjectMatch: number | null;
+    likelySubject?: number | null;
     ambiguous: number | null;
     otherSubject: number | null;
     insufficient: number | null;

@@ -6,7 +6,11 @@ import {
   SurfaceKindSchema,
 } from "./common";
 
-export const SURFACE_ANALYSIS_SCHEMA_VERSION = "surface-analysis-v1" as const;
+export const SURFACE_ANALYSIS_SCHEMA_VERSION = "surface-analysis-v2" as const;
+export const SURFACE_ANALYSIS_SCHEMA_VERSIONS = [
+  "surface-analysis-v1",
+  "surface-analysis-v2",
+] as const;
 
 export const SurfaceMetricSchema = z.object({
   key: z.string().min(1),
@@ -33,7 +37,7 @@ export const SurfaceAnalysisUnitSchema = z.object({
 });
 
 export const SurfaceAnalysisSchema = ContractEnvelopeSchema.extend({
-  schemaVersion: z.literal(SURFACE_ANALYSIS_SCHEMA_VERSION),
+  schemaVersion: z.enum(SURFACE_ANALYSIS_SCHEMA_VERSIONS),
   units: z.array(SurfaceAnalysisUnitSchema),
 });
 

@@ -5,8 +5,9 @@
  * are then mined ONLY from conflict-free SUBJECT_MATCH items (full-name /
  * strong-identifier evidence), so a namesake's vocabulary can never leak in.
  * Pass 2 re-classifies with the enriched contextIdentifiers, upgrading matched
- * items to full_name_with_context confidence. Deterministic and offline;
- * subject-supplied context always stays and mined terms are only additive.
+ * items to full_name_with_context confidence and surname+context to
+ * LIKELY_SUBJECT (§2.1). Deterministic and offline; subject-supplied context
+ * always stays and mined terms are only additive.
  */
 
 import type { RawInventoryItem } from "../types";

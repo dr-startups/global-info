@@ -82,6 +82,7 @@ function buildUnit(acc: UnitAccumulator, lookup: ResolutionLookup): SurfaceAnaly
   const collected = acc.items.filter((i) => !isEmptyMarker(i));
   const emptyMarkers = acc.items.length - collected.length;
   const subjectMatched = collected.filter((i) => decisionFor(i, lookup) === "SUBJECT_MATCH");
+  const likelySubject = collected.filter((i) => decisionFor(i, lookup) === "LIKELY_SUBJECT");
   const otherSubject = collected.filter((i) => decisionFor(i, lookup) === "OTHER_SUBJECT");
   const ambiguous = collected.filter((i) => decisionFor(i, lookup) === "AMBIGUOUS");
   const adverseSubject = subjectMatched.filter(isAdverse);
@@ -104,6 +105,7 @@ function buildUnit(acc: UnitAccumulator, lookup: ResolutionLookup): SurfaceAnaly
     metrics: [
       { key: "totalCount", value: collected.length, sampleStatus, denominator: collected.length },
       { key: "subjectMatchCount", value: subjectMatched.length, sampleStatus },
+      { key: "likelySubjectCount", value: likelySubject.length, sampleStatus },
       { key: "otherSubjectCount", value: otherSubject.length, sampleStatus },
       { key: "ambiguousCount", value: ambiguous.length, sampleStatus },
       {

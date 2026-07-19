@@ -22,6 +22,7 @@ export function riskLevelRu(level: string): string {
 export function subjectMatchRu(value: string): string {
   const map: Record<string, string> = {
     SUBJECT_MATCH: "о проверяемом лице",
+    LIKELY_SUBJECT: "вероятно о проверяемом лице",
     AMBIGUOUS: "принадлежность требует подтверждения",
     OTHER_SUBJECT: "о другом лице (тёзке)",
   };
@@ -61,6 +62,7 @@ export function metricKeyRu(key: string): string {
   const map: Record<string, string> = {
     totalCount: "всего материалов",
     subjectMatchCount: "о проверяемом лице",
+    likelySubjectCount: "вероятно о субъекте",
     ambiguousCount: "требуют подтверждения",
     otherSubjectCount: "о других лицах",
     adverseCount: "негативных",

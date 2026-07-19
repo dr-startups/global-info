@@ -82,11 +82,19 @@ function fragmentScope(key: FragmentKey): FragmentScope {
       // edits must never regenerate front matter.
       return { regions: null, surfaces: [], subjectMatch: ["SUBJECT_MATCH"], findingIds: [] };
     case "EXECUTIVE_SUMMARY":
-    case "RISK_MATRIX":
     case "DIGITAL_PROFILE_OVERVIEW":
       // Findings + metric snapshot only: per-surface claim changes must not
       // invalidate executive fragments unless findings/summary change.
+      // KPI / confirmed themes stay SUBJECT_MATCH only (§2.1).
       return { regions: null, surfaces: [], subjectMatch: ["SUBJECT_MATCH"], findingIds: null };
+    case "RISK_MATRIX":
+      // Confirmed themes + LIKELY «Требует подтверждения» (§2.1).
+      return {
+        regions: null,
+        surfaces: [],
+        subjectMatch: ["SUBJECT_MATCH", "LIKELY_SUBJECT"],
+        findingIds: null,
+      };
     case "RU_SUMMARY":
       // All regional findings + url_audit units (compact check-h/indexation
       // rows on the metrics slot p08).
@@ -122,12 +130,12 @@ function fragmentScope(key: FragmentKey): FragmentScope {
     case "COMPLIANCE_MAIN":
       return { regions: null, surfaces: ["compliance"], subjectMatch: ["SUBJECT_MATCH"], findingIds: null };
     case "APPENDIX_MAIN":
-      // Findings-only scope: appendix lists ambiguous/foreign findings and
+      // Findings-only scope: appendix lists likely/ambiguous/foreign findings and
       // must not be invalidated by per-surface claim changes.
       return {
         regions: null,
         surfaces: [],
-        subjectMatch: ["AMBIGUOUS", "OTHER_SUBJECT"],
+        subjectMatch: ["LIKELY_SUBJECT", "AMBIGUOUS", "OTHER_SUBJECT"],
         findingIds: null,
       };
   }

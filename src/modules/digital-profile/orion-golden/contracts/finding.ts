@@ -5,7 +5,8 @@ import {
   SubjectRelevanceDecisionSchema,
 } from "./common";
 
-export const FINDING_SCHEMA_VERSION = "finding-v1" as const;
+export const FINDING_SCHEMA_VERSION = "finding-v2" as const;
+export const FINDING_SCHEMA_VERSIONS = ["finding-v1", "finding-v2"] as const;
 
 export const PromotionPrioritySchema = z.enum(["P1", "P2", "P3", "APPENDIX"]);
 export type PromotionPriority = z.infer<typeof PromotionPrioritySchema>;
@@ -18,7 +19,7 @@ export const FindingContradictionSchema = z.object({
 export type FindingContradiction = z.infer<typeof FindingContradictionSchema>;
 
 export const FindingSchema = ContractEnvelopeSchema.extend({
-  schemaVersion: z.literal(FINDING_SCHEMA_VERSION),
+  schemaVersion: z.enum(FINDING_SCHEMA_VERSIONS),
   findingId: z.string().min(1),
   theme: z.string().min(1),
   claim: z.string().min(1),

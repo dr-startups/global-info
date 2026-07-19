@@ -6,7 +6,7 @@ export const VERIFIED_FINDING_BUNDLE_SCHEMA_VERSION = "verified-finding-bundle-v
 
 export const VerifiedFindingBundleSchema = ContractEnvelopeSchema.extend({
   schemaVersion: z.literal(VERIFIED_FINDING_BUNDLE_SCHEMA_VERSION),
-  /** Only SUBJECT_MATCH findings may later feed KPI/risk (documented; unwired in Stage 1). */
+  /** Only SUBJECT_MATCH may feed KPI; LIKELY_SUBJECT is visible but not KPI-eligible (§2.1). */
   kpiEligibleSubjectMatches: z.array(SubjectRelevanceDecisionSchema),
   findings: z.array(FindingSchema),
   excludedFindingIds: z.array(z.string()),

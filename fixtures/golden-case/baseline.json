@@ -1,9 +1,9 @@
 {
   "version": "golden-case-baseline-v1",
-  "observationCount": 311,
+  "observationCount": 314,
   "observationStats": {
-    "total": 311,
-    "organic:organic:RU": 126,
+    "total": 314,
+    "organic:organic:RU": 129,
     "organic:organic:UAE": 41,
     "suggestion:autocomplete:RU": 36,
     "suggestion:autocomplete:UAE": 18,
@@ -25,11 +25,12 @@
     "counts": {
       "dbSearchResults": null,
       "dbSurfaceItems": null,
-      "manifestIds": 299,
-      "manifestDeltaCount": 299,
+      "manifestIds": 302,
+      "manifestDeltaCount": 302,
       "manifestCorpusCount": 0,
-      "compositeObservations": 311,
+      "compositeObservations": 314,
       "subjectMatch": 301,
+      "likelySubject": 3,
       "ambiguous": 3,
       "otherSubject": 4,
       "insufficient": 6,

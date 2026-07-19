@@ -166,6 +166,7 @@ describe("§1.2 compliance-inventory-adapter", () => {
         enrichmentCount: 0,
         compositeCount: 0,
         subjectMatchCount: 0,
+        likelySubjectCount: 0,
         ambiguousCount: 0,
         otherSubjectCount: 0,
         adverseFindingCount: 0,

@@ -71,6 +71,7 @@ export const ReportQualitySummarySchema = z.object({
     manifestCorpusCount: z.number().int().nonnegative().nullable(),
     compositeObservations: z.number().int().nonnegative().nullable(),
     subjectMatch: z.number().int().nonnegative().nullable(),
+    likelySubject: z.number().int().nonnegative().nullable(),
     ambiguous: z.number().int().nonnegative().nullable(),
     otherSubject: z.number().int().nonnegative().nullable(),
     insufficient: z.number().int().nonnegative().nullable(),
@@ -147,8 +148,12 @@ function readJsonSafe<T>(path: string): T | null {
 
 function countByDecision(
   items: Array<{ decision?: string }> | undefined
-): Pick<ReportQualitySummary["counts"], "subjectMatch" | "ambiguous" | "otherSubject" | "insufficient"> {
+): Pick<
+  ReportQualitySummary["counts"],
+  "subjectMatch" | "likelySubject" | "ambiguous" | "otherSubject" | "insufficient"
+> {
   let subjectMatch = 0;
+  let likelySubject = 0;
   let ambiguous = 0;
   let otherSubject = 0;
   let insufficient = 0;
@@ -156,6 +161,9 @@ function countByDecision(
     switch (it.decision) {
       case "SUBJECT_MATCH":
         subjectMatch += 1;
+        break;
+      case "LIKELY_SUBJECT":
+        likelySubject += 1;
         break;
       case "AMBIGUOUS":
         ambiguous += 1;
@@ -170,7 +178,7 @@ function countByDecision(
         break;
     }
   }
-  return { subjectMatch, ambiguous, otherSubject, insufficient };
+  return { subjectMatch, likelySubject, ambiguous, otherSubject, insufficient };
 }
 
 function aggregateGptStage2(
@@ -380,6 +388,7 @@ export async function buildReportQualitySummary(input: {
     ? countByDecision(subjectResolution.items)
     : {
         subjectMatch: null,
+        likelySubject: null,
         ambiguous: null,
         otherSubject: null,
         insufficient: null,
@@ -455,6 +464,7 @@ export async function buildReportQualitySummary(input: {
       manifestCorpusCount,
       compositeObservations,
       subjectMatch: identity.subjectMatch,
+      likelySubject: identity.likelySubject,
       ambiguous: identity.ambiguous,
       otherSubject: identity.otherSubject,
       insufficient: identity.insufficient,

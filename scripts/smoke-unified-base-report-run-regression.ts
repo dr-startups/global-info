@@ -347,6 +347,7 @@ describe("unified baseReportRun + Yandex provenance regression", () => {
         enrichmentCount: 0,
         compositeCount: 5,
         subjectMatchCount: 0,
+        likelySubjectCount: 0,
         ambiguousCount: 0,
         otherSubjectCount: 0,
         adverseFindingCount: 0,

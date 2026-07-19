@@ -17,12 +17,14 @@ export type ContractEnvelope = z.infer<typeof ContractEnvelopeSchema>;
 
 export type SubjectRelevanceDecision =
   | "SUBJECT_MATCH"
+  | "LIKELY_SUBJECT"
   | "AMBIGUOUS"
   | "OTHER_SUBJECT"
   | "INSUFFICIENT_IDENTIFIERS";
 
 export const SubjectRelevanceDecisionSchema = z.enum([
   "SUBJECT_MATCH",
+  "LIKELY_SUBJECT",
   "AMBIGUOUS",
   "OTHER_SUBJECT",
   "INSUFFICIENT_IDENTIFIERS",

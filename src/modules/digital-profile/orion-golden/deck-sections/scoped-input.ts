@@ -27,6 +27,8 @@ export type MetricSnapshot = {
   enrichmentCount: number;
   compositeCount: number;
   subjectMatchCount: number;
+  /** Surname+context / shared domain — visible but not KPI (§2.1). */
+  likelySubjectCount: number;
   ambiguousCount: number;
   otherSubjectCount: number;
   adverseFindingCount: number;
@@ -70,6 +72,8 @@ export type ScopedEvidenceIndex = Record<
     wikipediaExists?: boolean;
     /** WikipediaCheck.language (ru / en / …). */
     language?: string;
+    /** Subject-resolution decision for this evidence ref (§2.1). */
+    subjectDecision?: string;
   }
 >;
 

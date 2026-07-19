@@ -390,7 +390,7 @@ describe("2b. fail-closed enrichment-run reconciliation", () => {
 });
 
 describe("3. subject resolution", () => {
-  const cases: Array<[string, RawInventoryItem, string]> = [
+  const cases: Array<[string, RawInventoryItem, string, string?]> = [
     [
       "full name + business context → SUBJECT_MATCH",
       item({ title: "Сергей Глинка, бизнесмен, инвестирует в транспорт" }),
@@ -407,6 +407,26 @@ describe("3. subject resolution", () => {
       "AMBIGUOUS",
     ],
     [
+      "surname + context → LIKELY_SUBJECT (§2.1)",
+      item({ title: "Глинка инвестирует в транспортный бизнес" }),
+      "LIKELY_SUBJECT",
+      "surname_with_context",
+    ],
+    [
+      "surname + namesake conflict → OTHER_SUBJECT (not LIKELY)",
+      item({ title: "Глинка — композитор, опера" }),
+      "OTHER_SUBJECT",
+    ],
+    [
+      "suggestion surname + context → LIKELY_SUBJECT (§2.1)",
+      item({
+        title: "глинка транспорт инвестиции",
+        rawMetadata: { surface: "suggestions" },
+      }),
+      "LIKELY_SUBJECT",
+      "surname_with_context",
+    ],
+    [
       "no identifiers → INSUFFICIENT_IDENTIFIERS",
       item({ title: "Транспортные новости региона" }),
       "INSUFFICIENT_IDENTIFIERS",
@@ -417,12 +437,40 @@ describe("3. subject resolution", () => {
       "SUBJECT_MATCH",
     ],
   ];
-  for (const [label, testItem, expected] of cases) {
+  for (const [label, testItem, expected, reason] of cases) {
     it(label, () => {
       const decision = classifySubjectRelevance(testItem, GLINKA_SUBJECT);
       assert.equal(decision.decision, expected);
+      if (reason) assert.equal(decision.reasonCode, reason);
     });
   }
+
+  it("surname_only on SUBJECT_MATCH domain → LIKELY via shared domain (§2.1)", () => {
+    const matched = item({
+      title: "Сергей Глинка — бизнесмен",
+      sourceUrl: "https://rbc.ru/person/glinka",
+    });
+    const surnameOnly = item({
+      title: "Глинка: новости компании",
+      sourceUrl: "https://rbc.ru/business/glinka-news",
+    });
+    const resolution = buildSubjectResolution({
+      caseId: CASE_ID,
+      datasetId: "ds-likely-domain",
+      subject: GLINKA_SUBJECT,
+      items: [matched, surnameOnly],
+      sourceHashes: ["sha256:test"],
+    });
+    const byTitle = new Map(
+      resolution.items.map((r) => {
+        const it = [matched, surnameOnly].find((i) => `inventory:${i.inventoryId}` === r.evidenceRef)!;
+        return [it.title, r] as const;
+      })
+    );
+    assert.equal(byTitle.get(matched.title)?.decision, "SUBJECT_MATCH");
+    assert.equal(byTitle.get(surnameOnly.title)?.decision, "LIKELY_SUBJECT");
+    assert.equal(byTitle.get(surnameOnly.title)?.reasonCode, "surname_with_confirmed_domain");
+  });
 
   it("keeps ambiguous evidence for review instead of dropping it", () => {
     const { base } = subjectItems();

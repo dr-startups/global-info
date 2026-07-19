@@ -108,6 +108,7 @@ export type FindingSynthesisResult = {
   themeAssignments: Map<string, string[]>;
   stats: {
     subjectMatchEvidence: number;
+    likelySubjectEvidence: number;
     ambiguousEvidence: number;
     otherSubjectEvidence: number;
     adverseFindingCount: number;
@@ -240,6 +241,7 @@ export function synthesizeFindings(input: {
   const seenClaimFingerprints = new Map<string, Set<string>>(); // `${decision}|${themeId}` -> fingerprints
 
   let subjectMatchEvidence = 0;
+  let likelySubjectEvidence = 0;
   let ambiguousEvidence = 0;
   let otherSubjectEvidence = 0;
 
@@ -248,6 +250,7 @@ export function synthesizeFindings(input: {
     const resolution = input.resolutionByRef.get(ref);
     const decision = resolution?.decision ?? "INSUFFICIENT_IDENTIFIERS";
     if (decision === "SUBJECT_MATCH") subjectMatchEvidence += 1;
+    else if (decision === "LIKELY_SUBJECT") likelySubjectEvidence += 1;
     else if (decision === "AMBIGUOUS") ambiguousEvidence += 1;
     else if (decision === "OTHER_SUBJECT") otherSubjectEvidence += 1;
 
@@ -274,7 +277,7 @@ export function synthesizeFindings(input: {
   const makeFinding = (
     themeId: string,
     items: RawInventoryItem[],
-    subjectMatch: "SUBJECT_MATCH" | "AMBIGUOUS" | "OTHER_SUBJECT"
+    subjectMatch: "SUBJECT_MATCH" | "LIKELY_SUBJECT" | "AMBIGUOUS" | "OTHER_SUBJECT"
   ): Finding => {
     const theme = FINDING_THEMES.find((t) => t.themeId === themeId)!;
     const adverseItems = items.filter((i) => itemIsAdverse(i));
@@ -296,13 +299,20 @@ export function synthesizeFindings(input: {
     if (subjectMatch === "AMBIGUOUS") {
       limitations.push("Принадлежность части свидетельств проверяемому лицу не установлена однозначно.");
     }
+    if (subjectMatch === "LIKELY_SUBJECT") {
+      limitations.push(
+        "Принадлежность вероятна по фамилии и контексту, но не подтверждена однозначно — требуется проверка."
+      );
+    }
     for (const l of input.coverageLimitations ?? []) limitations.push(l);
 
     const sourceDiversity = Math.min(domains.length / 3, 1);
     const confidence =
       subjectMatch === "SUBJECT_MATCH"
         ? Math.min(0.55 + 0.3 * sourceDiversity + (adverseItems.length > 0 ? 0.05 : 0.1), 0.95)
-        : 0.35;
+        : subjectMatch === "LIKELY_SUBJECT"
+          ? Math.min(0.45 + 0.2 * sourceDiversity, 0.7)
+          : 0.35;
 
     const topTitles = items
       .slice(0, 3)
@@ -349,12 +359,15 @@ export function synthesizeFindings(input: {
   };
 
   const verified: Finding[] = [];
+  const likelyFindings: Finding[] = [];
   const ambiguousFindings: Finding[] = [];
   const excludedFindings: Finding[] = [];
 
   for (const [key, items] of byDecisionTheme) {
     const [decision, themeId] = key.split("|");
     if (decision === "SUBJECT_MATCH") verified.push(makeFinding(themeId, items, "SUBJECT_MATCH"));
+    else if (decision === "LIKELY_SUBJECT")
+      likelyFindings.push(makeFinding(themeId, items, "LIKELY_SUBJECT"));
     else if (decision === "AMBIGUOUS") ambiguousFindings.push(makeFinding(themeId, items, "AMBIGUOUS"));
     else if (decision === "OTHER_SUBJECT") excludedFindings.push(makeFinding(themeId, items, "OTHER_SUBJECT"));
   }
@@ -365,6 +378,7 @@ export function synthesizeFindings(input: {
     return d !== 0 ? d : a.findingId.localeCompare(b.findingId);
   };
   verified.sort(sortByPriority);
+  likelyFindings.sort(sortByPriority);
   ambiguousFindings.sort(sortByPriority);
 
   const exclusionReasons: Record<string, string> = {};
@@ -377,9 +391,11 @@ export function synthesizeFindings(input: {
     caseId: input.caseId,
     datasetId: input.datasetId,
     sourceHashes: input.sourceHashes,
+    // KPI / confirmed evidence: SUBJECT_MATCH only (§2.1 invariant).
     evidenceRefs: verified.flatMap((f) => f.evidenceRefs),
     kpiEligibleSubjectMatches: ["SUBJECT_MATCH"],
-    findings: [...verified, ...excludedFindings],
+    // LIKELY stays in the bundle for matrix «Требует подтверждения», not KPI.
+    findings: [...verified, ...likelyFindings, ...excludedFindings],
     excludedFindingIds: excludedFindings.map((f) => f.findingId),
     exclusionReasons,
   });
@@ -390,6 +406,7 @@ export function synthesizeFindings(input: {
     themeAssignments,
     stats: {
       subjectMatchEvidence,
+      likelySubjectEvidence,
       ambiguousEvidence,
       otherSubjectEvidence,
       adverseFindingCount: verified.filter((f) =>

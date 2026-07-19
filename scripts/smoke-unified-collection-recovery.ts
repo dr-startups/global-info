@@ -385,6 +385,7 @@ describe("unified collection staff recovery", () => {
             enrichmentCount: 5,
             compositeCount: rows.length,
             subjectMatchCount: 0,
+            likelySubjectCount: 0,
             ambiguousCount: 0,
             otherSubjectCount: 0,
             adverseFindingCount: 0,
