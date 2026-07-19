@@ -39,7 +39,11 @@ import {
   type CompositeMergeResult,
   type CompositeObservation,
 } from "./composite-serp-merge";
-import { assertReportReadyGates } from "./report-ready-gates";
+import {
+  assertReportReadyGates,
+  gptLayerAppliedFromQuality,
+} from "./report-ready-gates";
+import { digitalProfileConfig } from "../config";
 import { assertPreRenderDataGates } from "./pre-render-data-gates";
 import {
   runCanonicalReportPrepare,
@@ -1352,6 +1356,8 @@ async function stepPrepare(
     allowMockReport: deps.allowMockReport,
     coverage: job.coverage,
     skipBaseCoverage: resumeFromRender,
+    requireAiReport: digitalProfileConfig.requireAiReport,
+    gptLayerApplied: gptLayerAppliedFromQuality(prepared.reportQuality),
   });
 
   if (!gate.ok) {

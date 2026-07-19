@@ -58,6 +58,8 @@
     "smoke:subject-profile-admin": "tsx --test scripts/smoke-subject-profile-admin.ts",
     "smoke:subject-context-automation": "tsx --test scripts/smoke-subject-context-automation.ts",
     "smoke:gpt-report-copy": "tsx --test scripts/smoke-gpt-report-copy.ts",
+    "smoke:gpt-call-queue": "tsx --test scripts/smoke-gpt-call-queue.ts",
+    "smoke:env-validation-ai": "tsx --test scripts/smoke-env-validation-ai.ts",
     "smoke:arsenkin-enrichment-ingest": "tsx --test scripts/smoke-arsenkin-enrichment-ingest.ts",
     "smoke:arsenkin-suggestions-targeted-retry": "tsx --test scripts/smoke-arsenkin-suggestions-targeted-retry.ts",
     "smoke:arsenkin-suggestions-targeted-retry-ui": "tsx --test scripts/smoke-arsenkin-suggestions-targeted-retry-ui.ts",

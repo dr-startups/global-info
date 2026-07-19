@@ -317,9 +317,11 @@ function resolveGptCaller(input: CanonicalPrepareInput): GptJsonCaller | null {
   if (String(process.env.ORION_GPT_REPORT_COPY ?? "1") === "0") return null;
   const ai = digitalProfileConfig.aiAnalyst;
   if (!ai.enabled || !ai.openAiApiKey) return null;
+  // One-shot HTTP attempt. Stage 2 retries via enhanceSectionPacksWithGptCopy
+  // queue; stage 1 uses callOpenAiStrictJson (queued) below.
   return async (args) => {
-    const { callOpenAiStrictJson } = await import("../orion-golden/gpt/openai-json-client");
-    return callOpenAiStrictJson(args);
+    const { callOpenAiStrictJsonOnce } = await import("../orion-golden/gpt/openai-json-client");
+    return callOpenAiStrictJsonOnce(args);
   };
 }
 
@@ -636,11 +638,35 @@ export async function runCanonicalReportPrepare(
     // stage 2 rewrites per-slide client copy grounded in that analysis. Any
     // failure keeps the deterministic report.
     let gptLayer: GptDeckLayer | null = null;
-    const gptCaller = resolveGptCaller(input);
-    if (gptCaller) {
+    const gptCallerOnce = resolveGptCaller(input);
+    if (gptCallerOnce) {
+      // Stage 1: queue-backed retries around the resolved one-shot caller
+      // (injected fakes in tests, OpenAI once-client in production).
+      const stage1Caller: typeof gptCallerOnce = async (args) => {
+        const {
+          runGptCallQueue,
+          defaultGptCallQueueOptions,
+        } = await import("../orion-golden/gpt/gpt-call-queue");
+        const defaults = defaultGptCallQueueOptions();
+        const queued = await runGptCallQueue({
+          tasks: [{ key: "gpt-stage1", run: () => gptCallerOnce(args) }],
+          options: {
+            concurrency: 1,
+            maxAttempts: defaults.maxAttempts,
+            deadlineMs: defaults.deadlineMs,
+            sleep:
+              process.env.NETWORK_CALLS === "0" ? async () => undefined : undefined,
+          },
+        });
+        const result = queued[0];
+        if (!result || !result.ok) {
+          throw result && !result.ok ? result.error : new Error("gpt-stage1-failed");
+        }
+        return result.value;
+      };
       let caseAnalysisFailure: string | null = null;
       const caseAnalysis = await runGptCaseAnalysis({
-        caller: gptCaller,
+        caller: stage1Caller,
         subjectName: subjectDisplayName,
         aliases: subjectProfile.aliases ?? [],
         contextIdentifiers: subjectProfile.contextIdentifiers ?? [],
@@ -671,7 +697,8 @@ export async function runCanonicalReportPrepare(
           "utf8"
         );
       }
-      gptLayer = { caller: gptCaller, caseAnalysis };
+      // Stage 2: once-caller; enhanceSectionPacksWithGptCopy owns the queue.
+      gptLayer = { caller: gptCallerOnce, caseAnalysis };
     }
 
     const deck = await runDeckBuildWithGptCopy({

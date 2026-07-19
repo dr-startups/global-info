@@ -8,6 +8,8 @@ export class OpenAiRateLimitError extends Error {
   }
 }
 
+/** True for HTTP 429 status numbers or Error messages that name a 429. */
 export function isOpenAiHttp429(error: unknown): boolean {
-  return error instanceof Error && /openai-http-429/i.test(error.message);
+  if (typeof error === "number") return error === 429;
+  return error instanceof Error && /openai-http-429|openai-429/i.test(error.message);
 }

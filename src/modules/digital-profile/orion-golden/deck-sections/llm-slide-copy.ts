@@ -27,6 +27,7 @@ import { getFragmentPrompt } from "./prompts";
 import { normalizeEvidenceRef, type ScopedEvidenceIndex, type SubjectProfileInput } from "./scoped-input";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import type { GptCaseAnalysis, GptJsonCaller } from "../gpt/gpt-case-analysis";
+import { defaultGptCallQueueOptions, runGptCallQueue } from "../gpt/gpt-call-queue";
 import { scanOrionGoldenClientTextForForbiddenTokens } from "../client/client-text-sanitizer";
 import { riskLevelRu, subjectMatchRu } from "../gpt/client-payload-labels";
 
@@ -76,7 +77,8 @@ export type GptSlideCopyFragmentStatus =
   | "SKIPPED_EMPTY"
   | "SKIPPED_CACHED"
   | "FALLBACK_VALIDATION"
-  | "FALLBACK_ERROR";
+  | "FALLBACK_ERROR"
+  | "FALLBACK_TIMEOUT";
 
 export type GptSlideCopyFragmentReport = {
   fragmentKey: FragmentKey;
@@ -248,10 +250,82 @@ function applyOverrides(input: {
   return { slides, appliedFields };
 }
 
+type PendingGptPack = {
+  pack: SectionPackV2;
+  targets: SlideContentContract[];
+  systemPrompt: string;
+  userPayload: unknown;
+  wantCaseAnalysis: boolean;
+};
+
+function applyGptRawToPack(input: {
+  pack: SectionPackV2;
+  targets: SlideContentContract[];
+  raw: unknown;
+  wantCaseAnalysis: boolean;
+  evidenceIndex: ScopedEvidenceIndex;
+  validatePack: (pack: SectionPackV2) => { passed: boolean; issues: string[] };
+}): { pack: SectionPackV2; report: GptSlideCopyFragmentReport } {
+  const report: GptSlideCopyFragmentReport = {
+    fragmentKey: input.pack.fragmentKey,
+    status: "NO_CHANGES",
+    appliedFields: 0,
+    rejectedFields: [],
+  };
+  const parsed = FragmentCopyResponseSchema.safeParse(input.raw);
+  if (!parsed.success) {
+    report.status = "FALLBACK_ERROR";
+    report.detail = "invalid response schema";
+    return { pack: input.pack, report };
+  }
+
+  const knownIds = new Set(input.targets.map((s) => s.slideId));
+  const overrides = parsed.data.slides.filter((o) => knownIds.has(o.slideId));
+  const { slides, appliedFields } = applyOverrides({
+    pack: input.pack,
+    overrides,
+    evidenceIndex: input.evidenceIndex,
+    rejectedFields: report.rejectedFields,
+  });
+  report.appliedFields = appliedFields;
+  if (appliedFields === 0) {
+    return { pack: input.pack, report };
+  }
+
+  const candidate: SectionPackV2 = {
+    ...input.pack,
+    slides,
+    contentHash: contentHashOf(slides),
+    gptCopy: {
+      promptVersion: GPT_SLIDE_COPY_PROMPT_VERSION,
+      appliedSlides: new Set(
+        overrides.filter((o) => knownIds.has(o.slideId)).map((o) => o.slideId)
+      ).size,
+      caseAnalysisUsed: input.wantCaseAnalysis,
+    },
+  };
+  const validation = input.validatePack(candidate);
+  if (!validation.passed) {
+    report.status = "FALLBACK_VALIDATION";
+    report.detail = validation.issues.slice(0, 3).join("; ");
+    return { pack: input.pack, report };
+  }
+
+  report.status = "APPLIED";
+  return {
+    pack: { ...candidate, validation: { passed: true, issues: [] } },
+    report,
+  };
+}
+
 /**
  * Enhance analytical SectionPacks with GPT-written client copy.
  * Deterministic fragments, cached GPT packs and anything that fails QA keep
  * their existing content — the result is never worse than the input.
+ *
+ * REMEDIATION §4.2: eligible fragment calls go through `runGptCallQueue`
+ * (concurrency + retries + stage deadline). Application order is sorted by
+ * fragmentKey for deterministic artifacts.
  */
 export async function enhanceSectionPacksWithGptCopy(input: {
   packs: SectionPackV2[];
@@ -261,9 +335,15 @@ export async function enhanceSectionPacksWithGptCopy(input: {
   bundle: VerifiedFindingBundle;
   evidenceIndex: ScopedEvidenceIndex;
   validatePack: (pack: SectionPackV2) => { passed: boolean; issues: string[] };
+  /** Optional queue overrides (tests inject fake sleep / short deadline). */
+  queueOptions?: Parameters<typeof runGptCallQueue>[0]["options"];
 }): Promise<{ packs: SectionPackV2[]; report: GptSlideCopyReport }> {
-  const fragments: GptSlideCopyFragmentReport[] = [];
-  const outPacks: SectionPackV2[] = [];
+  const byKey = new Map<
+    string,
+    { pack: SectionPackV2; report: GptSlideCopyFragmentReport }
+  >();
+  const pending: PendingGptPack[] = [];
+  const wantCaseAnalysis = Boolean(input.caseAnalysis);
 
   for (const pack of input.packs) {
     const prompt = getFragmentPrompt(pack.fragmentKey);
@@ -276,105 +356,110 @@ export async function enhanceSectionPacksWithGptCopy(input: {
 
     if (prompt.deterministic) {
       report.status = "SKIPPED_DETERMINISTIC";
-      fragments.push(report);
-      outPacks.push(pack);
+      byKey.set(pack.fragmentKey, { pack, report });
       continue;
     }
     if (pack.status !== "READY" || pack.slides.length === 0) {
       report.status = "SKIPPED_EMPTY";
-      fragments.push(report);
-      outPacks.push(pack);
+      byKey.set(pack.fragmentKey, { pack, report });
       continue;
     }
-    // Reuse cached GPT copy only when prompt + case-analysis presence match.
-    // Packs written while stage 1 was null must be rewritten after analysis appears.
-    const wantCaseAnalysis = Boolean(input.caseAnalysis);
     const cachedCaseAnalysis = Boolean(pack.gptCopy?.caseAnalysisUsed);
     if (
       pack.gptCopy?.promptVersion === GPT_SLIDE_COPY_PROMPT_VERSION &&
       cachedCaseAnalysis === wantCaseAnalysis
     ) {
       report.status = "SKIPPED_CACHED";
-      fragments.push(report);
-      outPacks.push(pack);
+      byKey.set(pack.fragmentKey, { pack, report });
       continue;
     }
 
     const targets = pack.slides.filter((s) => !s.isContinuation);
-    try {
-      const raw = await input.caller({
-        systemPrompt: `${prompt.systemPrompt} ${COPY_INSTRUCTIONS}`,
-        userPayload: buildFragmentPayload({
-          pack,
-          subject: input.subject,
-          bundle: input.bundle,
-          caseAnalysis: input.caseAnalysis,
-          targets,
-        }),
-      });
-      const parsed = FragmentCopyResponseSchema.safeParse(raw);
-      if (!parsed.success) {
-        report.status = "FALLBACK_ERROR";
-        report.detail = "invalid response schema";
-        fragments.push(report);
-        outPacks.push(pack);
-        continue;
-      }
-
-      const knownIds = new Set(targets.map((s) => s.slideId));
-      const overrides = parsed.data.slides.filter((o) => knownIds.has(o.slideId));
-      const { slides, appliedFields } = applyOverrides({
+    pending.push({
+      pack,
+      targets,
+      systemPrompt: `${prompt.systemPrompt} ${COPY_INSTRUCTIONS}`,
+      userPayload: buildFragmentPayload({
         pack,
-        overrides,
-        evidenceIndex: input.evidenceIndex,
-        rejectedFields: report.rejectedFields,
-      });
-      report.appliedFields = appliedFields;
-      if (appliedFields === 0) {
-        report.status = "NO_CHANGES";
-        fragments.push(report);
-        outPacks.push(pack);
-        continue;
-      }
-
-      const candidate: SectionPackV2 = {
-        ...pack,
-        slides,
-        contentHash: contentHashOf(slides),
-        gptCopy: {
-          promptVersion: GPT_SLIDE_COPY_PROMPT_VERSION,
-          appliedSlides: new Set(
-            overrides.filter((o) => knownIds.has(o.slideId)).map((o) => o.slideId)
-          ).size,
-          caseAnalysisUsed: wantCaseAnalysis,
-        },
-      };
-      const validation = input.validatePack(candidate);
-      if (!validation.passed) {
-        report.status = "FALLBACK_VALIDATION";
-        report.detail = validation.issues.slice(0, 3).join("; ");
-        fragments.push(report);
-        outPacks.push(pack);
-        continue;
-      }
-
-      report.status = "APPLIED";
-      fragments.push(report);
-      outPacks.push({ ...candidate, validation: { passed: true, issues: [] } });
-    } catch (err) {
-      report.status = "FALLBACK_ERROR";
-      report.detail = err instanceof Error ? err.message : String(err);
-      fragments.push(report);
-      outPacks.push(pack);
-    }
+        subject: input.subject,
+        bundle: input.bundle,
+        caseAnalysis: input.caseAnalysis,
+        targets,
+      }),
+      wantCaseAnalysis,
+    });
   }
+
+  const defaults = defaultGptCallQueueOptions();
+  // Offline smokes must not pay real backoff sleeps when fakes throw 429/5xx.
+  const offlineSleep =
+    process.env.NETWORK_CALLS === "0" ? async () => undefined : undefined;
+  const queueResults = await runGptCallQueue({
+    tasks: pending.map((p) => ({
+      key: p.pack.fragmentKey,
+      run: () =>
+        input.caller({
+          systemPrompt: p.systemPrompt,
+          userPayload: p.userPayload,
+        }),
+    })),
+    options: {
+      concurrency: defaults.concurrency,
+      maxAttempts: defaults.maxAttempts,
+      deadlineMs: defaults.deadlineMs,
+      sleep: offlineSleep,
+      ...input.queueOptions,
+    },
+  });
+
+  const rawByKey = new Map(queueResults.map((r) => [r.key, r]));
+  for (const item of pending) {
+    const queued = rawByKey.get(item.pack.fragmentKey);
+    if (!queued || !queued.ok) {
+      const reason = queued && !queued.ok ? queued.reason : "FALLBACK_ERROR";
+      byKey.set(item.pack.fragmentKey, {
+        pack: item.pack,
+        report: {
+          fragmentKey: item.pack.fragmentKey,
+          status: reason === "FALLBACK_TIMEOUT" ? "FALLBACK_TIMEOUT" : "FALLBACK_ERROR",
+          appliedFields: 0,
+          rejectedFields: [],
+          detail:
+            queued && !queued.ok
+              ? queued.error.message
+              : "gpt-queue-missing-result",
+        },
+      });
+      continue;
+    }
+    byKey.set(
+      item.pack.fragmentKey,
+      applyGptRawToPack({
+        pack: item.pack,
+        targets: item.targets,
+        raw: queued.value,
+        wantCaseAnalysis: item.wantCaseAnalysis,
+        evidenceIndex: input.evidenceIndex,
+        validatePack: input.validatePack,
+      })
+    );
+  }
+
+  // Deterministic artifact order: original pack order for packs, fragmentKey
+  // sort for the report (stable across concurrent completion).
+  const outPacks = input.packs.map(
+    (p) => byKey.get(p.fragmentKey)?.pack ?? p
+  );
+  const fragments = [...byKey.values()]
+    .map((v) => v.report)
+    .sort((a, b) => a.fragmentKey.localeCompare(b.fragmentKey));
 
   return {
     packs: outPacks,
     report: {
       version: "gpt-report-copy-v1",
       promptVersion: GPT_SLIDE_COPY_PROMPT_VERSION,
-      caseAnalysisUsed: Boolean(input.caseAnalysis),
+      caseAnalysisUsed: wantCaseAnalysis,
       fragments,
     },
   };

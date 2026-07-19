@@ -220,6 +220,7 @@ function aggregateGptStage2(
         empty.skippedCached += 1;
         break;
       case "FALLBACK_ERROR":
+      case "FALLBACK_TIMEOUT":
         empty.fallbackError += 1;
         break;
       case "FALLBACK_VALIDATION":

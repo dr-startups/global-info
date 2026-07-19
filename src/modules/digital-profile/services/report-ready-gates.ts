@@ -32,6 +32,12 @@ export function assertReportReadyGates(input: {
   coverage?: SurfaceCoverageBreakdown | null;
   /** RENDER-only resume: dataset lineage only (coverage already enforced pre-render). */
   skipBaseCoverage?: boolean;
+  /**
+   * REMEDIATION §4.1 — when true, REPORT_READY requires an applied GPT layer
+   * (stage-2 APPLIED > 0 or stage-1 case analysis used).
+   */
+  requireAiReport?: boolean;
+  gptLayerApplied?: boolean;
 }): ReportReadyGateResult {
   const errors: string[] = [];
 
@@ -84,9 +90,34 @@ export function assertReportReadyGates(input: {
     errors.push("real collection insufficient (mock/fallback cannot unlock REPORT_READY)");
   }
 
+  if (input.requireAiReport && !input.gptLayerApplied) {
+    errors.push(
+      "DIGITAL_PROFILE_REQUIRE_AI_REPORT=true but GPT layer was not applied (no stage-1 analysis / no stage-2 APPLIED fragments)"
+    );
+  }
+
   return {
     ok: errors.length === 0,
     code: errors.length === 0 ? null : "REPORT_READY_GATE_FAILED",
     errors,
   };
+}
+
+/** True when quality summary shows an applied GPT client layer. */
+export function gptLayerAppliedFromQuality(quality: {
+  gpt?: {
+    stage1?: { status?: string };
+    stage1Status?: string;
+    stage2?: { applied?: number; caseAnalysisUsed?: boolean };
+    stage2Applied?: number;
+    caseAnalysisUsed?: boolean;
+  };
+} | null | undefined): boolean {
+  if (!quality?.gpt) return false;
+  const stage2Applied =
+    quality.gpt.stage2?.applied ?? quality.gpt.stage2Applied ?? 0;
+  if (stage2Applied > 0) return true;
+  if (quality.gpt.stage2?.caseAnalysisUsed || quality.gpt.caseAnalysisUsed) return true;
+  const stage1 = quality.gpt.stage1?.status ?? quality.gpt.stage1Status;
+  return stage1 === "APPLIED";
 }

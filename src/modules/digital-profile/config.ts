@@ -68,6 +68,12 @@ export interface DigitalProfileConfig {
    */
   orionV2RequireAi: boolean;
   /**
+   * REMEDIATION §4.1 — when true, unified REPORT_READY is blocked unless the
+   * canonical GPT layer applied at least one fragment (or stage-1 analysis).
+   * Off by default; independent of legacy orionV2RequireAi.
+   */
+  requireAiReport: boolean;
+  /**
    * R9.5c — deterministic fallback for ORION v2 is allowed ONLY for explicit
    * dev/test/local QA. In production/preview it must stay false so a fallback
    * never silently produces a user-facing client report.
@@ -166,6 +172,8 @@ export const digitalProfileConfig: DigitalProfileConfig = {
     process.env.DIGITAL_PROFILE_ORION_V2_REQUIRE_AI,
     process.env.NODE_ENV === "production"
   ),
+  // Canonical REPORT_READY AI gate (off by default — opt-in strictness).
+  requireAiReport: envBool(process.env.DIGITAL_PROFILE_REQUIRE_AI_REPORT, false),
   // Default: allowed only outside production/preview (smoke/local QA).
   orionV2AllowDeterministicFallback: envBool(
     process.env.DIGITAL_PROFILE_ORION_V2_ALLOW_DETERMINISTIC_FALLBACK,

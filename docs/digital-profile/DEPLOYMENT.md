@@ -47,9 +47,28 @@ See `.env.example` for the full, commented list. Key ones:
 | `DIGITAL_PROFILE_AUTH_ENABLED` | Auth + roles master switch (default `false`) |
 | `DIGITAL_PROFILE_SESSION_SECRET` | HMAC secret for the session cookie (required when auth enabled) |
 | `DIGITAL_PROFILE_DEMO_ADMIN_EMAIL` / `DIGITAL_PROFILE_DEMO_ADMIN_PASSWORD` | Seed-only demo admin (DEMO-ONLY) |
+| `DIGITAL_PROFILE_AI_ANALYST_ENABLED` + `OPENAI_API_KEY` + `DIGITAL_PROFILE_AI_ANALYST_MODEL` | GPT analyst / report-copy layer (REMEDIATION §4.1) |
+| `ORION_GPT_REPORT_COPY` | `1` (default) enables stage-2 slide copy when AI is configured; `0` forces deterministic copy |
+| `ORION_GPT_CONCURRENCY` / `ORION_GPT_STAGE_DEADLINE_MS` | GPT call queue (default concurrency 2, deadline 10 min) — §4.2 |
+| `DIGITAL_PROFILE_REQUIRE_AI_REPORT` | Opt-in: block `REPORT_READY` unless GPT layer applied (default `false`) |
 
 **Production:** always set a strong, unique `DIGITAL_PROFILE_SIGNED_URL_SECRET`
 and a non-default `DATABASE_URL`. Never commit real secrets.
+
+### AI report layer (REMEDIATION §4.1–4.2)
+
+- With `DIGITAL_PROFILE_AI_ANALYST_ENABLED=false` (or a missing `OPENAI_API_KEY`),
+  client reports are **deterministic** — env validation prints an explicit WARN in
+  production: «клиентские отчёты будут детерминированными».
+- Set the AI block on Railway / host secrets the same way as other paid keys
+  (`OPENAI_API_KEY`, `DIGITAL_PROFILE_AI_ANALYST_ENABLED=true`). See
+  `.env.production.example`.
+- `DIGITAL_PROFILE_REQUIRE_AI_REPORT=true` fails closed at `REPORT_READY` when the
+  GPT layer did not apply (no stage-1 analysis / no stage-2 `APPLIED` fragments).
+  Leave it `false` until the deploy’s GPT path is stable.
+- GPT HTTP retries and 429 backoff are handled by the call queue
+  (`ORION_GPT_CONCURRENCY`, `ORION_GPT_STAGE_DEADLINE_MS`), not by ad-hoc loops
+  in individual callers.
 
 ### Auth (Stage M1)
 
