@@ -38,6 +38,10 @@ function decisionFor(item: RawInventoryItem, lookup: ResolutionLookup): SubjectR
 }
 
 function isAdverse(item: RawInventoryItem): boolean {
+  const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
+  // Analyst overrides (§1.3): manual neutral wins; manual adverse forces adverse.
+  if (meta.analystNeutral === true) return false;
+  if (meta.analystAdverse === true) return true;
   const text = [item.title, item.snippet, item.classification].filter(Boolean).join(" ");
   if (/criminal_allegation|adverse_media|sanctions|pep_rca|PEP|SANCTIONS/iu.test(String(item.classification ?? ""))) {
     return true;

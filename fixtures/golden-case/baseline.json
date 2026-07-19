@@ -29,12 +29,13 @@
       "manifestDeltaCount": 299,
       "manifestCorpusCount": 0,
       "compositeObservations": 311,
-      "subjectMatch": 301,
+      "subjectMatch": 300,
       "ambiguous": 3,
-      "otherSubject": 3,
+      "otherSubject": 4,
       "insufficient": 6,
       "verifiedFindings": 5,
-      "ambiguousFindings": 1
+      "ambiguousFindings": 1,
+      "appliedOverrides": 3
     },
     "gpt": {
       "stage1": {

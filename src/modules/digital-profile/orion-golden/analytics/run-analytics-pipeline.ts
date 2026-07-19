@@ -47,6 +47,13 @@ import {
   runExecutiveSummaryStage,
   type ExecutiveSummaryStageResult,
 } from "../executive-summary/run-stage";
+import {
+  applyAnalystOverrides,
+  loadAnalystOverrides,
+  mergeGuaranteedFindings,
+  type AnalystOverridesBundle,
+  type AnalystOverridesPrisma,
+} from "../../services/analyst-overrides-loader";
 
 export type AnalyticsPipelineInput = {
   caseId: string;
@@ -64,6 +71,10 @@ export type AnalyticsPipelineInput = {
   coverageRunIds?: string[];
   /** Durable CaseAgent run records (strictly verified before binding). */
   caseAgentRecords?: CaseAgentRunRecord[];
+  /** Offline fixture overrides (§1.3); when set, skips prisma load. */
+  analystOverrides?: AnalystOverridesBundle | null;
+  /** Live load of SearchResult / RiskFinding overrides. */
+  analystOverridesPrisma?: AnalystOverridesPrisma | null;
 };
 
 export type AnalyticsPipelineResult = {
@@ -329,6 +340,19 @@ export async function runOrionAnalyticsPipeline(
   });
   const resolutionByRef = new Map(subjectResolution.items.map((i) => [i.evidenceRef, i]));
 
+  // 2b. Analyst overrides (§1.3) — after identity, before surfaces/findings.
+  const overridesBundle = await loadAnalystOverrides({
+    caseId: input.caseId,
+    fixture: input.analystOverrides,
+    prisma: input.analystOverrides == null ? input.analystOverridesPrisma ?? null : null,
+  });
+  const overrideResult = applyAnalystOverrides({
+    items: input.items,
+    resolutionByRef,
+    subjectResolution,
+    overrides: overridesBundle,
+  });
+
   // Complete provider delta with relevance/adverse figures.
   const enrichmentRefs = new Set(enrichmentItems.map((i) => `inventory:${i.inventoryId}`));
   let relevantCount = 0;
@@ -340,10 +364,13 @@ export async function runOrionAnalyticsPipeline(
     if (d === "SUBJECT_MATCH") relevantCount += 1;
     else if (d === "AMBIGUOUS") ambiguousCount += 1;
     else if (d === "OTHER_SUBJECT") otherSubjectCount += 1;
-    if (
-      d === "SUBJECT_MATCH" &&
-      ADVERSE_PATTERNS.test([item.title, item.snippet].filter(Boolean).join(" "))
-    ) {
+    const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
+    const adverse =
+      meta.analystNeutral === true
+        ? false
+        : meta.analystAdverse === true ||
+          ADVERSE_PATTERNS.test([item.title, item.snippet, item.classification].filter(Boolean).join(" "));
+    if (d === "SUBJECT_MATCH" && adverse) {
       newAdverse += 1;
     }
   }
@@ -366,13 +393,31 @@ export async function runOrionAnalyticsPipeline(
   const coverageLimitations = input.coverageRows
     .filter((r) => !["OK", "NO_RESULTS"].includes(String(r.status).toUpperCase()))
     .map((r) => `${r.surface} (${r.region}/${r.engine}): статус ${r.status}, данные не собраны`);
-  const synthesis = synthesizeFindings({
+  let synthesis = synthesizeFindings({
     caseId: input.caseId,
     datasetId,
     items: input.items,
     resolutionByRef,
     sourceHashes,
     coverageLimitations: [...new Set(coverageLimitations)].slice(0, 3),
+  });
+  synthesis = {
+    ...synthesis,
+    bundle: mergeGuaranteedFindings({
+      caseId: input.caseId,
+      datasetId,
+      sourceHashes,
+      bundle: synthesis.bundle,
+      guaranteed: overrideResult.guaranteedFindings,
+      items: input.items,
+      applied: overrideResult.applied,
+    }),
+  };
+  emit("analyst-overrides-applied.json", {
+    version: "analyst-overrides-applied-v1",
+    caseId: input.caseId,
+    count: overrideResult.applied.length,
+    applied: overrideResult.applied,
   });
 
   // 5. Executive summary wired to actual pipeline output.

@@ -288,6 +288,7 @@ describe("report-quality warnings mapping (§0.2)", () => {
         insufficient: 0,
         verifiedFindings: 1,
         ambiguousFindings: 0,
+        appliedOverrides: null,
       },
       gpt: {
         stage1: { status: "APPLIED" },

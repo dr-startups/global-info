@@ -124,6 +124,13 @@ function itemText(item: RawInventoryItem): string {
     .join(" ");
 }
 
+function itemIsAdverse(item: RawInventoryItem): boolean {
+  const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
+  if (meta.analystNeutral === true) return false;
+  if (meta.analystAdverse === true) return true;
+  return ADVERSE_PATTERNS.test(itemText(item));
+}
+
 /** Russian plural form: 1 публикация, 2 публикации, 5 публикаций. */
 export function pluralRu(n: number, one: string, few: string, many: string): string {
   const abs = Math.abs(n) % 100;
@@ -176,7 +183,7 @@ function detectContradictions(
   const limitations: string[] = [];
 
   const unverified = items.filter((i) => UNVERIFIED_PATTERNS.test(itemText(i)));
-  const adverse = items.filter((i) => ADVERSE_PATTERNS.test(itemText(i)));
+  const adverse = items.filter((i) => itemIsAdverse(i));
   const positive = items.filter((i) => POSITIVE_PATTERNS.test(itemText(i)));
 
   if (unverified.length > 0) {
@@ -270,7 +277,7 @@ export function synthesizeFindings(input: {
     subjectMatch: "SUBJECT_MATCH" | "AMBIGUOUS" | "OTHER_SUBJECT"
   ): Finding => {
     const theme = FINDING_THEMES.find((t) => t.themeId === themeId)!;
-    const adverseItems = items.filter((i) => ADVERSE_PATTERNS.test(itemText(i)));
+    const adverseItems = items.filter((i) => itemIsAdverse(i));
     const risk = riskFor(theme, adverseItems.length, items.length);
     const evidenceRefs = items.map(refOf);
     const domains = [...new Set(items.map((i) => domainOf(i.sourceUrl)).filter(Boolean))];

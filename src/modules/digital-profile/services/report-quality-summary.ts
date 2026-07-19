@@ -76,6 +76,8 @@ export const ReportQualitySummarySchema = z.object({
     insufficient: z.number().int().nonnegative().nullable(),
     verifiedFindings: z.number().int().nonnegative().nullable(),
     ambiguousFindings: z.number().int().nonnegative().nullable(),
+    /** Applied analyst overrides (§1.3). */
+    appliedOverrides: z.number().int().nonnegative().nullable(),
   }),
   gpt: z.object({
     stage1: GptStage1Schema,
@@ -383,6 +385,18 @@ export async function buildReportQualitySummary(input: {
         insufficient: null,
       };
 
+  const overridesApplied = readJsonSafe<{ count?: number; applied?: unknown[] }>(
+    join(dir, "analytics", "analyst-overrides-applied.json")
+  );
+  const appliedOverrides =
+    overridesApplied == null
+      ? null
+      : typeof overridesApplied.count === "number"
+        ? overridesApplied.count
+        : Array.isArray(overridesApplied.applied)
+          ? overridesApplied.applied.length
+          : 0;
+
   let stage1: ReportQualitySummary["gpt"]["stage1"];
   if (gptAnalysis) {
     stage1 = { status: "APPLIED" };
@@ -446,6 +460,7 @@ export async function buildReportQualitySummary(input: {
       insufficient: identity.insufficient,
       verifiedFindings: verifiedBundle?.findings?.length ?? null,
       ambiguousFindings: Array.isArray(ambiguousFindings) ? ambiguousFindings.length : null,
+      appliedOverrides,
     },
     gpt: { stage1, stage2 },
     visuals: {

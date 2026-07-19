@@ -43,12 +43,14 @@ import {
   goldenCaseObservationStats,
 } from "../fixtures/golden-case/build-observations";
 import type { DatabaseProfileHitInput } from "../src/modules/digital-profile/services/compliance-inventory-adapter";
+import type { AnalystOverridesBundle } from "../src/modules/digital-profile/services/analyst-overrides-loader";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURE_DIR = join(ROOT, "fixtures", "golden-case");
 const BASELINE_PATH = join(FIXTURE_DIR, "baseline.json");
 const PROFILE_PATH = join(FIXTURE_DIR, "subject-profile.json");
 const COMPLIANCE_HITS_PATH = join(FIXTURE_DIR, "compliance-hits.json");
+const ANALYST_OVERRIDES_PATH = join(FIXTURE_DIR, "analyst-overrides.json");
 
 const CASE_ID = "case-golden-holmstrom";
 const UNIFIED_JOB_ID = "unified-golden-1";
@@ -71,6 +73,11 @@ function loadSubjectProfile(): ClassifierSubjectProfile {
 function loadComplianceHits(): DatabaseProfileHitInput[] {
   if (!existsSync(COMPLIANCE_HITS_PATH)) return [];
   return JSON.parse(readFileSync(COMPLIANCE_HITS_PATH, "utf8")) as DatabaseProfileHitInput[];
+}
+
+function loadAnalystOverrides(): AnalystOverridesBundle | null {
+  if (!existsSync(ANALYST_OVERRIDES_PATH)) return null;
+  return JSON.parse(readFileSync(ANALYST_OVERRIDES_PATH, "utf8")) as AnalystOverridesBundle;
 }
 
 function assertComplianceSlides(artifactsDir: string): void {
@@ -215,10 +222,25 @@ export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
     render: fakeRender,
     gptCaller: null,
     complianceHits: loadComplianceHits(),
+    analystOverrides: loadAnalystOverrides(),
   };
 
   const res = await runCanonicalReportPrepare(input);
   assertComplianceSlides(artifactsDir);
+  const overridesPath = join(artifactsDir, "analytics", "analyst-overrides-applied.json");
+  assert.ok(existsSync(overridesPath), "analyst-overrides-applied.json missing");
+  const overridesApplied = JSON.parse(readFileSync(overridesPath, "utf8")) as {
+    count: number;
+    applied: Array<{ kind: string }>;
+  };
+  assert.ok(overridesApplied.count >= 3, `expected ≥3 applied overrides, got ${overridesApplied.count}`);
+  assert.ok(overridesApplied.applied.some((a) => a.kind === "classification_neutral"));
+  assert.ok(overridesApplied.applied.some((a) => a.kind === "classification_adverse"));
+  assert.ok(
+    overridesApplied.applied.some(
+      (a) => a.kind === "identity_other_subject" || a.kind === "manual_review_wrong_subject"
+    )
+  );
   const summaryPath = join(artifactsDir, "report-quality-summary.json");
   assert.ok(existsSync(summaryPath), "report-quality-summary.json missing");
   const summary = JSON.parse(readFileSync(summaryPath, "utf8")) as ReportQualitySummary;

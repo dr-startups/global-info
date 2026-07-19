@@ -1244,6 +1244,7 @@ async function stepPrepare(
               searchResult: deps.prisma.searchResult,
               searchSurfaceItem: deps.prisma.searchSurfaceItem,
               databaseProfile: deps.prisma.databaseProfile,
+              riskFinding: deps.prisma.riskFinding,
             }
           : null,
       });

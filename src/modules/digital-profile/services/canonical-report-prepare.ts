@@ -59,6 +59,10 @@ import {
   type ComplianceInventoryPrisma,
   type DatabaseProfileHitInput,
 } from "./compliance-inventory-adapter";
+import type {
+  AnalystOverridesBundle,
+  AnalystOverridesPrisma,
+} from "./analyst-overrides-loader";
 
 export type CanonicalPrepareBlockerCode =
   | "CANONICAL_PREPARE_DISABLED"
@@ -104,15 +108,19 @@ export type CanonicalPrepareInput = {
    */
   resumeFrom?: "full" | "render";
   /**
-   * Optional Prisma for live DB funnel counts and DatabaseProfile loading.
-   * `databaseProfile.findMany` enables §1.2 compliance inventory (F6).
+   * Optional Prisma for live DB funnel counts, DatabaseProfile loading,
+   * and analyst-override sources (SearchResult / RiskFinding).
    */
-  prisma?: (ReportQualityPrismaCounts & Partial<ComplianceInventoryPrisma>) | null;
+  prisma?: (ReportQualityPrismaCounts &
+    Partial<ComplianceInventoryPrisma> &
+    Partial<AnalystOverridesPrisma>) | null;
   /**
    * Offline/fixture compliance hits (§1.2). When set, skips prisma load.
    * Pass `[]` to force an empty compliance surface.
    */
   complianceHits?: DatabaseProfileHitInput[] | null;
+  /** Offline/fixture analyst overrides (§1.3). When set, skips prisma load. */
+  analystOverrides?: AnalystOverridesBundle | null;
 };
 
 export type CanonicalPrepareResult = {
@@ -264,6 +272,12 @@ export function compositeObservationsToInventory(input: {
         surface,
         queryText: obs.query,
         provider,
+        // Source lineage for §1.3 override matching. Do NOT put searchResult:*
+        // into evidenceRefs — composite builder would drop the inventory: fallback
+        // and break deck evidenceIndex / assembly validation.
+        sourceEvidenceRefs: obs.evidenceRefs ?? [],
+        baseSearchResultId: obs.baseSearchResultId ?? null,
+        baseSearchSurfaceItemId: obs.baseSearchSurfaceItemId ?? null,
       },
     } satisfies RawInventoryItem;
   });
@@ -530,6 +544,16 @@ export async function runCanonicalReportPrepare(
       coverageRows,
       subjectProfile,
       artifactsDir: analyticsDir,
+      analystOverrides: input.analystOverrides,
+      analystOverridesPrisma:
+        input.analystOverrides == null &&
+        input.prisma?.searchResult &&
+        input.prisma?.riskFinding
+          ? {
+              searchResult: input.prisma.searchResult,
+              riskFinding: input.prisma.riskFinding,
+            }
+          : null,
     });
 
     // Synthetic API-derived visuals (ORION style): SERP snapshots, suggestion /
