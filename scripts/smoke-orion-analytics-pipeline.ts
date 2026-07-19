@@ -21,6 +21,10 @@ import {
   classifySubjectRelevance,
   type SubjectIdentity,
 } from "../src/modules/digital-profile/orion-golden/analytics/subject-resolution-classifier";
+import {
+  bestIdentityDecision,
+  countIdentityByObservation,
+} from "../src/modules/digital-profile/orion-golden/deck-sections/load-deck-inputs";
 import { runSurfaceAnalyzers } from "../src/modules/digital-profile/orion-golden/analytics/surface-analyzers";
 import {
   synthesizeFindings,
@@ -444,6 +448,29 @@ describe("3. subject resolution", () => {
       if (reason) assert.equal(decision.reasonCode, reason);
     });
   }
+
+  it("KPI identity counts one decision per observation, not per inventory duplicate", () => {
+    const decisionByRef = new Map([
+      ["inventory:a", "SUBJECT_MATCH"],
+      ["inventory:b", "SUBJECT_MATCH"],
+      ["inventory:c", "LIKELY_SUBJECT"],
+      ["inventory:d", "AMBIGUOUS"],
+    ]);
+    // Two inventory SUBJECT_MATCH refs collapse into one observation row.
+    const counts = countIdentityByObservation({
+      decisionByRef,
+      observationRefGroups: [
+        ["inventory:a", "inventory:b"],
+        ["inventory:c"],
+        ["inventory:d"],
+      ],
+    });
+    assert.equal(counts.subjectMatchCount, 1);
+    assert.equal(counts.likelySubjectCount, 1);
+    assert.equal(counts.ambiguousCount, 1);
+    assert.equal(bestIdentityDecision(["inventory:a", "inventory:c"], decisionByRef), "SUBJECT_MATCH");
+    assert.ok(counts.subjectMatchCount + counts.likelySubjectCount + counts.ambiguousCount <= 3);
+  });
 
   it("surname_only on SUBJECT_MATCH domain → LIKELY via shared domain (§2.1)", () => {
     const matched = item({

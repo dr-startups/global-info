@@ -18,6 +18,7 @@ import type { ScopedEvidenceIndex, MetricSnapshot } from "./scoped-input";
 import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
 
 type CompositeObservationRow = {
+  observationKey?: string;
   surface: string;
   region: string;
   engine?: string;
@@ -26,6 +27,57 @@ type CompositeObservationRow = {
   domain?: string;
   evidenceRefs: string[];
 };
+
+/** Higher wins when an observation has multiple inventory decisions (§KPI honesty). */
+const DECISION_RANK: Record<string, number> = {
+  SUBJECT_MATCH: 4,
+  LIKELY_SUBJECT: 3,
+  AMBIGUOUS: 2,
+  OTHER_SUBJECT: 1,
+  INSUFFICIENT_IDENTIFIERS: 0,
+};
+
+/** Pick the strongest identity decision among linked evidence refs. */
+export function bestIdentityDecision(
+  refs: string[],
+  decisionByRef: Map<string, string>
+): string | undefined {
+  let best: string | undefined;
+  for (const ref of refs) {
+    const d = decisionByRef.get(ref);
+    if (!d) continue;
+    if (!best || (DECISION_RANK[d] ?? -1) > (DECISION_RANK[best] ?? -1)) best = d;
+  }
+  return best;
+}
+
+/**
+ * Client KPI identity counts — one bucket per composite observation row, not
+ * per inventory item. Prevents «О субъекте» > «Материалов» when duplicates
+ * collapse into a single observation.
+ */
+export function countIdentityByObservation(input: {
+  observationRefGroups: string[][];
+  decisionByRef: Map<string, string>;
+}): {
+  subjectMatchCount: number;
+  likelySubjectCount: number;
+  ambiguousCount: number;
+  otherSubjectCount: number;
+} {
+  let subjectMatchCount = 0;
+  let likelySubjectCount = 0;
+  let ambiguousCount = 0;
+  let otherSubjectCount = 0;
+  for (const refs of input.observationRefGroups) {
+    const best = bestIdentityDecision(refs, input.decisionByRef);
+    if (best === "SUBJECT_MATCH") subjectMatchCount += 1;
+    else if (best === "LIKELY_SUBJECT") likelySubjectCount += 1;
+    else if (best === "AMBIGUOUS") ambiguousCount += 1;
+    else if (best === "OTHER_SUBJECT") otherSubjectCount += 1;
+  }
+  return { subjectMatchCount, likelySubjectCount, ambiguousCount, otherSubjectCount };
+}
 
 export type CanonicalDeckInputs = {
   caseId: string;
@@ -82,6 +134,35 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
       .map((i) => [i.evidenceRef!, i.decision] as const)
   );
 
+  // Provenance keeps inventory: refs even when observation.evidenceRefs use
+  // serp_observation: / databaseProfile: keys — required for honest KPI join.
+  const provenancePath = join(analyticsDir, "composite-serp-provenance.json");
+  let observationRefGroups: string[][] = observations.observations.map((o) => o.evidenceRefs ?? []);
+  const provenanceByKey = new Map<string, string[]>();
+  if (existsSync(provenancePath)) {
+    try {
+      const provenance = readJson<{
+        entries?: Array<{ observationKey?: string; evidenceRefs?: string[] }>;
+      }>(provenancePath);
+      for (const e of provenance.entries ?? []) {
+        if (e.observationKey) provenanceByKey.set(e.observationKey, e.evidenceRefs ?? []);
+      }
+      if (provenanceByKey.size > 0) {
+        observationRefGroups = observations.observations.map((o) => {
+          const fromProv = o.observationKey ? provenanceByKey.get(o.observationKey) : undefined;
+          return fromProv && fromProv.length > 0 ? fromProv : (o.evidenceRefs ?? []);
+        });
+      }
+    } catch {
+      // non-fatal: fall back to observation evidenceRefs
+    }
+  }
+
+  const identityCounts = countIdentityByObservation({
+    observationRefGroups,
+    decisionByRef,
+  });
+
   const mergedBundle: VerifiedFindingBundle = {
     ...bundle,
     findings: [...bundle.findings, ...ambiguous],
@@ -91,19 +172,24 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
   const evidenceIndex: ScopedEvidenceIndex = {};
   const knownEvidenceRefs = new Set<string>();
   const perRegionCounts: Record<string, number> = {};
-  for (const obs of observations.observations) {
+  for (let i = 0; i < observations.observations.length; i += 1) {
+    const obs = observations.observations[i]!;
     const regionKey = mapRegionBucket(obs.region) === "UAE" ? "UAE" : "RU";
     perRegionCounts[regionKey] = (perRegionCounts[regionKey] ?? 0) + 1;
-    for (const ref of obs.evidenceRefs) {
+    const linkedRefs = observationRefGroups[i] ?? obs.evidenceRefs ?? [];
+    const subjectDecision = bestIdentityDecision(linkedRefs, decisionByRef);
+    const allRefs = [...new Set([...(obs.evidenceRefs ?? []), ...linkedRefs])];
+    for (const ref of allRefs) {
       knownEvidenceRefs.add(ref);
       evidenceIndex[ref] = {
+        ...(evidenceIndex[ref] ?? {}),
         url: obs.url,
         domain: obs.domain,
         title: obs.title,
         kind: obs.surface,
         region: obs.region,
         engine: obs.engine,
-        subjectDecision: decisionByRef.get(ref),
+        subjectDecision: subjectDecision ?? decisionByRef.get(ref) ?? evidenceIndex[ref]?.subjectDecision,
       };
     }
   }
@@ -210,10 +296,6 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     for (const c of u.claims) for (const r of c.evidenceRefs) knownEvidenceRefs.add(r);
   }
 
-  const decisions = subjectResolution.items.reduce<Record<string, number>>((acc, i) => {
-    acc[i.decision] = (acc[i.decision] ?? 0) + 1;
-    return acc;
-  }, {});
   const metricSnapshot: MetricSnapshot = {
     metricSnapshotId: `${binding.datasetId}-metrics`,
     datasetId: binding.datasetId,
@@ -221,10 +303,11 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     baseCount: observations.baseCount,
     enrichmentCount: providerDelta.arsenkinObservationCount,
     compositeCount: observations.compositeCount,
-    subjectMatchCount: decisions.SUBJECT_MATCH ?? 0,
-    likelySubjectCount: decisions.LIKELY_SUBJECT ?? 0,
-    ambiguousCount: decisions.AMBIGUOUS ?? 0,
-    otherSubjectCount: decisions.OTHER_SUBJECT ?? 0,
+    // Same unit as compositeCount (observation rows), not inventory decisions.
+    subjectMatchCount: identityCounts.subjectMatchCount,
+    likelySubjectCount: identityCounts.likelySubjectCount,
+    ambiguousCount: identityCounts.ambiguousCount,
+    otherSubjectCount: identityCounts.otherSubjectCount,
     adverseFindingCount: bundle.findings.filter(
       (f) => f.subjectMatch === "SUBJECT_MATCH" && (RISK_ORDER[f.riskLevel] ?? 0) >= 2
     ).length,

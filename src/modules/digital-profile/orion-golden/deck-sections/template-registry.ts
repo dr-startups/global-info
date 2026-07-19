@@ -144,9 +144,9 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
     templateId: "serp-table",
     rendererTemplate: "orion_golden_search_table",
     staticBlocks: ["Результаты поиска", "Позиция", "Домен", "Заголовок", "Оценка"],
-    legend: [RED_MARKER_LABEL, "Нейтральный", "Позитивный"],
+    legend: [RED_MARKER_LABEL, "Вероятно", "Нейтральный", "Позитивный"],
     methodologyNote:
-      "Домены выводятся из URL источника; оценка присваивается по содержанию материала.",
+      "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно.",
     maxBulletsPerSlide: 0,
     maxTableRowsPerSlide: 12,
     layout: layout("table", { itemCharBudget: 110 }),

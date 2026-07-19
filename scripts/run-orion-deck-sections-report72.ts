@@ -283,6 +283,8 @@ export function loadReport72DeckInputs() {
     baseCount: observations.baseCount,
     enrichmentCount: providerDelta.arsenkinObservationCount,
     compositeCount: observations.compositeCount,
+    // Replay loader: inventory tallies OK for baseline parity; live path uses
+    // loadDeckInputsFromAnalyticsDir (observation-scoped KPI).
     subjectMatchCount: decisions.SUBJECT_MATCH ?? 0,
     likelySubjectCount: decisions.LIKELY_SUBJECT ?? 0,
     ambiguousCount: decisions.AMBIGUOUS ?? 0,

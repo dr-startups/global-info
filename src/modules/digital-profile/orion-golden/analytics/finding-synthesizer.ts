@@ -256,7 +256,17 @@ export function synthesizeFindings(input: {
 
     // Multi-theme: evidence supports every distinct claim it matches;
     // duplicates of the same normalized claim within a theme collapse.
-    for (const theme of themesFor(item)) {
+    // LIKELY/AMBIGUOUS without keyword hits still get a review theme so they
+    // reach the matrix «Требует подтверждения» / appendix (§2.1).
+    let themes = themesFor(item);
+    if (
+      themes.length === 0 &&
+      (decision === "LIKELY_SUBJECT" || decision === "AMBIGUOUS")
+    ) {
+      const fallback = FINDING_THEMES.find((t) => t.themeId === "business_profile");
+      if (fallback) themes = [fallback];
+    }
+    for (const theme of themes) {
       const key = `${decision}|${theme.themeId}`;
       const fp = claimFingerprint(theme.themeId, item);
       const fingerprints = seenClaimFingerprints.get(key) ?? new Set<string>();

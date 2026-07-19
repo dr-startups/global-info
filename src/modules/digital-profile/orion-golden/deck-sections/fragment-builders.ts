@@ -827,28 +827,58 @@ export function buildRiskMatrixFragment(
   const sorted = [...confirmed].sort(
     (a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0)
   );
+  // Renderer shows at most 6 cards from table.rows — put LIKELY themes into
+  // the table with explicit «Требует подтверждения» so they are not dropped
+  // when packed only into trailing bullets.
+  const likelySlots = Math.max(0, 6 - sorted.length);
+  const likelyShown = [...likely]
+    .sort((a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0))
+    .slice(0, likelySlots);
+  const confirmedRows = sorted.map((f) => [
+    f.theme,
+    riskLabel(f.riskLevel),
+    f.promotionPriority,
+    f.findingId,
+  ]);
+  const likelyRows = likelyShown.map((f) => [
+    f.theme,
+    "Требует подтверждения",
+    f.promotionPriority,
+    f.findingId,
+  ]);
   const rows =
-    sorted.length > 0
-      ? sorted.map((f) => [f.theme, riskLabel(f.riskLevel), f.promotionPriority, f.findingId])
+    confirmedRows.length + likelyRows.length > 0
+      ? [...confirmedRows, ...likelyRows]
       : [["Нет подтверждённых тем", "Нет данных", "—", "—"]];
   // Per-theme detail (same order as rows): what exactly was found + why it is
   // risky + what to do — the matrix card explains the risk instead of only
   // repeating its level. GPT case analysis expands; the claim is the fallback.
-  const details = sorted.map((f) => {
-    const risk = matchGptKeyRisk(f.theme, extras?.gptCaseAnalysis?.keyRisks);
-    return risk
-      ? fitClientSentences([themedClaim(f), risk.explanation, `Что делать: ${risk.advice}`], 400)
-      : fitClientSentences([themedClaim(f), `Рекомендация: ${f.recommendedAction}`], 400);
-  });
-  if (likely.length > 0) {
+  const details = [
+    ...sorted.map((f) => {
+      const risk = matchGptKeyRisk(f.theme, extras?.gptCaseAnalysis?.keyRisks);
+      return risk
+        ? fitClientSentences([themedClaim(f), risk.explanation, `Что делать: ${risk.advice}`], 400)
+        : fitClientSentences([themedClaim(f), `Рекомендация: ${f.recommendedAction}`], 400);
+    }),
+    ...likelyShown.map((f) =>
+      fitClientSentences(
+        [
+          `Требует подтверждения: ${themedClaim(f)}`,
+          "Принадлежность вероятна, но не входит в KPI «О субъекте» до уточнения идентификации.",
+        ],
+        400
+      )
+    ),
+  ];
+  if (likely.length > likelyShown.length) {
     details.push(
-      `Требует подтверждения: ${likely.length} ${pluralRu(likely.length, "тема", "темы", "тем")} с вероятной принадлежностью субъекту (не входят в KPI «О субъекте»).`
+      `Ещё ${likely.length - likelyShown.length} ${pluralRu(
+        likely.length - likelyShown.length,
+        "тема",
+        "темы",
+        "тем"
+      )} с вероятной принадлежностью — см. приложение.`
     );
-    for (const f of likely.slice(0, 6)) {
-      details.push(
-        clampClientText(`• ${f.theme}: ${f.claim}`, 340) + ` [${f.findingId}]`
-      );
-    }
   }
   const base = makeSlotSlide({
     slot,

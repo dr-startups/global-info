@@ -9,6 +9,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { countIdentityByObservation } from "../orion-golden/deck-sections/load-deck-inputs";
 
 export const REPORT_QUALITY_SUMMARY_VERSION = "report-quality-summary-v1" as const;
 
@@ -279,13 +280,21 @@ export async function buildReportQualitySummary(input: {
   }>(join(dir, "base-collection-manifest.json"));
 
   const composite = readJsonSafe<{
-    observations?: unknown[];
+    observations?: Array<{ observationKey?: string; evidenceRefs?: string[] }>;
     compositeCount?: number;
   }>(join(dir, "composite-serp-observations.json"));
 
   const subjectResolution = readJsonSafe<{
-    items?: Array<{ decision?: string }>;
+    items?: Array<{ evidenceRef?: string; decision?: string }>;
   }>(join(dir, "analytics", "subject-resolution.json"));
+
+  const provenance =
+    readJsonSafe<{
+      entries?: Array<{ observationKey?: string; evidenceRefs?: string[] }>;
+    }>(join(dir, "analytics", "composite-serp-provenance.json")) ??
+    readJsonSafe<{
+      entries?: Array<{ observationKey?: string; evidenceRefs?: string[] }>;
+    }>(join(dir, "composite-serp-provenance.json"));
 
   const verifiedBundle = readJsonSafe<{ findings?: unknown[] }>(
     join(dir, "analytics", "verified-finding-bundle.json")
@@ -384,15 +393,61 @@ export async function buildReportQualitySummary(input: {
         ? composite.compositeCount
         : (composite.observations?.length ?? 0);
 
-  const identity = subjectResolution
-    ? countByDecision(subjectResolution.items)
-    : {
-        subjectMatch: null,
-        likelySubject: null,
-        ambiguous: null,
-        otherSubject: null,
-        insufficient: null,
-      };
+  // Prefer observation-scoped identity (same unit as compositeCount) when
+  // provenance/obs refs join to inventory decisions — avoids KPI inflation.
+  let identity: Pick<
+    ReportQualitySummary["counts"],
+    "subjectMatch" | "likelySubject" | "ambiguous" | "otherSubject" | "insufficient"
+  > = {
+    subjectMatch: null,
+    likelySubject: null,
+    ambiguous: null,
+    otherSubject: null,
+    insufficient: null,
+  };
+  if (subjectResolution?.items) {
+    const inventoryIdentity = countByDecision(subjectResolution.items);
+    identity = inventoryIdentity;
+    const decisionByRef = new Map(
+      subjectResolution.items
+        .filter((i): i is { evidenceRef: string; decision: string } =>
+          Boolean(i.evidenceRef && i.decision)
+        )
+        .map((i) => [i.evidenceRef, i.decision] as const)
+    );
+    const provByKey = new Map(
+      (provenance?.entries ?? [])
+        .filter((e) => e.observationKey)
+        .map((e) => [e.observationKey!, e.evidenceRefs ?? []] as const)
+    );
+    const obs = composite?.observations ?? [];
+    if (decisionByRef.size > 0 && obs.length > 0) {
+      const groups = obs.map((o) => {
+        const fromProv = o.observationKey ? provByKey.get(o.observationKey) : undefined;
+        return fromProv && fromProv.length > 0 ? fromProv : (o.evidenceRefs ?? []);
+      });
+      const byObs = countIdentityByObservation({
+        observationRefGroups: groups,
+        decisionByRef,
+      });
+      const joined =
+        byObs.subjectMatchCount +
+        byObs.likelySubjectCount +
+        byObs.ambiguousCount +
+        byObs.otherSubjectCount;
+      // Only switch when provenance/obs refs actually join — otherwise keep
+      // inventory tallies (offline fixtures without linked refs).
+      if (joined > 0) {
+        identity = {
+          subjectMatch: byObs.subjectMatchCount,
+          likelySubject: byObs.likelySubjectCount,
+          ambiguous: byObs.ambiguousCount,
+          otherSubject: byObs.otherSubjectCount,
+          insufficient: inventoryIdentity.insufficient,
+        };
+      }
+    }
+  }
 
   const overridesApplied = readJsonSafe<{ count?: number; applied?: unknown[] }>(
     join(dir, "analytics", "analyst-overrides-applied.json")

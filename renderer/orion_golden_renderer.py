@@ -1294,7 +1294,8 @@ def _status_tone(status: str) -> tuple[str, "RGBColor"]:
     s = (status or "").strip().lower()
     if "нежелат" in s:
         return "●", RGBColor(0xB9, 0x1C, 0x1C)
-    if "проверк" in s or "требует" in s:
+    # LIKELY_SUBJECT (§2.1) and manual-review statuses — amber, not green.
+    if "вероятн" in s or "проверк" in s or "требует" in s:
         return "●", RGBColor(0xC2, 0x41, 0x0C)
     return "●", RGBColor(0x04, 0x78, 0x57)
 
@@ -1406,8 +1407,15 @@ def _add_search_table(
         else:
             row = payload
             status = str(row[cols - 1] if len(row) >= cols else "").strip()
-            adverse = "нежелат" in status.lower()
-            row_bg = RGBColor(0xFE, 0xF2, 0xF2) if adverse else WHITE
+            status_l = status.lower()
+            adverse = "нежелат" in status_l
+            likely = "вероятн" in status_l or "проверк" in status_l or "требует" in status_l
+            if adverse:
+                row_bg = RGBColor(0xFE, 0xF2, 0xF2)
+            elif likely:
+                row_bg = RGBColor(0xFF, 0xF7, 0xED)  # soft amber for LIKELY
+            else:
+                row_bg = WHITE
             for c in range(cols):
                 val = str(row[c]) if c < len(row) else ""
                 if c == cols - 1:

@@ -34,8 +34,8 @@
       "ambiguous": 3,
       "otherSubject": 4,
       "insufficient": 6,
-      "verifiedFindings": 5,
-      "ambiguousFindings": 1,
+      "verifiedFindings": 6,
+      "ambiguousFindings": 2,
       "appliedOverrides": 3
     },
     "gpt": {

@@ -204,6 +204,7 @@ export function toRendererPayload(input: {
     Средний: "warn",
     Низкий: "neutral",
     Нет: "neutral",
+    "Требует подтверждения": "warn",
   };
   const usedAssetRefs = new Set<string>();
   const finalSlides = input.rendererSlides.map((raw) => {
