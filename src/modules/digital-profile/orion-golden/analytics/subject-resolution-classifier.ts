@@ -14,6 +14,12 @@
  * surname in title/snippet, that is a weak positive prior → LIKELY_SUBJECT
  * (`surname_with_subject_query`), never SUBJECT_MATCH. Namesake conflicts and
  * mixed identity signals remain stronger and are not upgraded by the query.
+ *
+ * §2.3 morphology: token match uses deterministic Russian case-form generation
+ * (ending tables, no stem libraries) plus Unicode letter-boundary matching.
+ * The old «drop last letter» heuristic is gone — it false-fired on longer
+ * derivatives (Петров ⊂ Петровский). Latin/translit tokens keep exact
+ * boundary match only.
  */
 
 import { createHash } from "node:crypto";
@@ -120,23 +126,139 @@ function hasFullNamePhrase(text: string, subject: SubjectIdentity): boolean {
   return Boolean(first && last);
 }
 
+/** True when the token is primarily Cyrillic (Russian inflection applies). */
+function isPrimarilyCyrillic(token: string): boolean {
+  const letters = token.replace(/[^\p{L}]/gu, "");
+  if (!letters) return false;
+  const cyr = letters.replace(/[^а-я]/gu, "").length;
+  return cyr >= letters.length / 2;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
- * Morphology-tolerant token match: Russian case endings inflect the last
- * letter(s), so for tokens >=5 chars also try the stem without the final
- * letter (e.g. a given name "иван" → matches "Ивана"/"Ивану"; a surname
- * "петров" → "петро" matches inflected forms).
+ * Word-boundary presence of `form` in `text`. JS `\b` is ASCII-centric, so
+ * boundaries are expressed via `\p{L}` / `\p{N}` lookarounds (Unicode-aware).
  */
-function matchesToken(text: string, name: string): boolean {
+function hasBoundedForm(text: string, form: string): boolean {
+  if (!form || form.length < 2) return false;
+  const re = new RegExp(
+    `(?<![\\p{L}\\p{N}_])${escapeRegExp(form)}(?![\\p{L}\\p{N}_])`,
+    "u"
+  );
+  return re.test(text);
+}
+
+/**
+ * Deterministic Russian case-form set for a nominative person-name token.
+ * Ending tables only — no morphological libraries, no «trim last letter».
+ * Covers common surname/given-name/patronymic patterns used in SERP text.
+ */
+export function generateRussianNameForms(lemma: string): string[] {
+  const n = norm(lemma);
+  if (n.length < 3) return n ? [n] : [];
+  const forms = new Set<string>([n]);
+
+  // Masculine surnames -ов/-ев/-ин/-ын (Петров → Петрова/Петрову/Петровым/Петровой).
+  if (n.length >= 4 && /(ов|ев|ин|ын)$/u.test(n)) {
+    for (const suf of ["а", "у", "ым", "е", "ой", "ых", "ыми", "ам", "ами", "ы"]) {
+      forms.add(n + suf);
+    }
+    return [...forms];
+  }
+
+  // Adjectival surnames -ский/-цкий/-ской/-цкой.
+  if (n.length >= 6 && /(ский|цкий|ской|цкой)$/u.test(n)) {
+    const base = n.replace(/(ий|ой)$/u, "");
+    for (const suf of [
+      "ий",
+      "ой",
+      "ого",
+      "ому",
+      "им",
+      "ом",
+      "ая",
+      "ую",
+      "ое",
+      "ие",
+      "их",
+      "ими",
+      "ым",
+      "ем",
+    ]) {
+      forms.add(base + suf);
+    }
+    return [...forms];
+  }
+
+  // Given names -ей/-ай (Сергей, Николай, Алексей).
+  if (n.length >= 4 && /[аеоуыэюя]й$/u.test(n)) {
+    const stem = n.slice(0, -1);
+    for (const suf of ["й", "я", "ю", "ем", "е", "и"]) {
+      forms.add(stem + suf);
+    }
+    return [...forms];
+  }
+
+  // Soft-sign names (Игорь, Юрий is -ий handled below via consonant? Юрий → ий).
+  if (n.length >= 4 && n.endsWith("ь")) {
+    const stem = n.slice(0, -1);
+    for (const suf of ["ь", "я", "ю", "ем", "е"]) {
+      forms.add(stem + suf);
+    }
+    return [...forms];
+  }
+
+  // -ий adjectival / given (Юрий, Василий) — not -ский (handled above).
+  if (n.length >= 4 && n.endsWith("ий") && !/(ский|цкий)$/u.test(n)) {
+    const stem = n.slice(0, -2);
+    for (const suf of ["ий", "ия", "ию", "ием", "ии", "ья", "ью", "ьем", "ье"]) {
+      forms.add(stem + suf);
+    }
+    return [...forms];
+  }
+
+  // Feminine -а/-я (Глинка, Анна, Мария; also -овна/-евна patronymics).
+  if (n.length >= 4 && /[ая]$/u.test(n)) {
+    const stem = n.slice(0, -1);
+    if (n.endsWith("я")) {
+      for (const suf of ["я", "и", "ю", "ей", "ею"]) forms.add(stem + suf);
+    } else {
+      for (const suf of ["а", "ы", "е", "у", "ой", "ою"]) forms.add(stem + suf);
+      // After velars/hushers genitive uses -и (Глинки, Ольги).
+      if (/[кгхшщжч]$/u.test(stem)) forms.add(stem + "и");
+    }
+    return [...forms];
+  }
+
+  // Consonant-final lemmas (Олег, Пётр→петр, Михайлович): add core oblique endings.
+  if (n.length >= 3 && /[бвгджзклмнпрстфхцчшщ]$/u.test(n)) {
+    for (const suf of ["а", "у", "ом", "е", "ы", "ов", "ам", "ами", "ах", "ем"]) {
+      forms.add(n + suf);
+    }
+    return [...forms];
+  }
+
+  return [...forms];
+}
+
+/**
+ * Morphology-tolerant token match (§2.3): Cyrillic names expand to an explicit
+ * case-form set; Latin/translit keeps exact form. Matching is always
+ * letter-boundary — never bare substring / never «stem −1».
+ */
+export function matchesToken(text: string, name: string): boolean {
   const n = norm(name);
   if (n.length < 3) return false;
-  if (text.includes(n)) return true;
-  if (n.length >= 5 && text.includes(n.slice(0, -1))) return true;
-  return false;
+  const forms = isPrimarilyCyrillic(n) ? generateRussianNameForms(n) : [n];
+  return forms.some((f) => hasBoundedForm(text, f));
 }
 
 /**
  * True when a negative identity signal would fire on the subject's OWN name
- * text (same substring/stem matching the classifier uses). Such an entry is
+ * text (same bounded morphology matching the classifier uses). Such an entry is
  * self-conflicting: it marks every genuine mention of the subject as a
  * namesake conflict. Negative signals must describe OTHER people only
  * (e.g. a homonym's distinct patronymic), never the subject's own name,

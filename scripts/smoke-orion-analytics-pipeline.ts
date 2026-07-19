@@ -19,6 +19,8 @@ import {
 import {
   buildSubjectResolution,
   classifySubjectRelevance,
+  generateRussianNameForms,
+  matchesToken,
   type SubjectIdentity,
 } from "../src/modules/digital-profile/orion-golden/analytics/subject-resolution-classifier";
 import {
@@ -479,6 +481,32 @@ describe("3. subject resolution", () => {
       if (reason) assert.equal(decision.reasonCode, reason);
     });
   }
+
+  it("morphology (§2.3): case forms match; longer derivatives do not", () => {
+    const table: Array<[string, string, string, boolean]> = [
+      ["instr Петровым", "Интервью с Петровым о бизнесе", "Петров", true],
+      ["dat Петрову", "Письмо Петрову от партнёра", "Петров", true],
+      ["fem Петровой", "Заявление Петровой в суд", "Петров", true],
+      ["gen Петрова", "Активы Петрова в реестре", "Петров", true],
+      ["no Петровский", "Петровский район и новости", "Петров", false],
+      ["no substring mid-word", "суперпетровский проект", "Петров", false],
+      ["latin exact", "Biography of Deripaska in London", "Deripaska", true],
+      ["latin no prefix-extend", "Deripaskan holdings report", "Deripaska", false],
+      ["given Сергей oblique", "Комментарий для Сергея Глинки", "Сергей", true],
+      ["surname Глинки", "Дело Глинки в арбитраже", "Глинка", true],
+    ];
+    for (const [label, text, name, expected] of table) {
+      assert.equal(
+        matchesToken(text.toLowerCase().replace(/ё/gu, "е"), name),
+        expected,
+        label
+      );
+    }
+    const petrovForms = generateRussianNameForms("Петров");
+    assert.ok(petrovForms.includes("петровым"));
+    assert.ok(petrovForms.includes("петровой"));
+    assert.ok(!petrovForms.includes("петровский"));
+  });
 
   it("risk matrix reserves a first-page slot for LIKELY «Требует подтверждения»", () => {
     const mk = (id: string, subjectMatch: Finding["subjectMatch"], riskLevel: Finding["riskLevel"]): Finding =>
