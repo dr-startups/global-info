@@ -477,6 +477,7 @@ export async function runOrionAnalyticsPipeline(
   emit("surface-analysis.json", surfaceAnalyses);
   emit("verified-finding-bundle.json", synthesis.bundle);
   emit("ambiguous-findings.json", synthesis.ambiguousFindings);
+  emit("uncategorized-materials.json", synthesis.uncategorized);
   emit("executive-summary-input.json", executiveSummaryInput);
   emit("benchmark-trace.json", benchmarkTrace);
 

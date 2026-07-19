@@ -610,6 +610,7 @@ export async function runCanonicalReportPrepare(
           executiveSummary: deckInputs.executiveSummary as never,
           visualAssets: visualAssetsBySlot,
           gptCaseAnalysis: caseAnalysis ?? undefined,
+          uncategorizedMaterials: deckInputs.uncategorizedMaterials ?? undefined,
         },
       },
       bundleForValidation: deckInputs.mergedBundle,
@@ -894,6 +895,7 @@ export async function runCanonicalReportPrepare(
           // Sanitized stage-1 analysis feeds deterministic builders too:
           // executive summary narrative/cards and risk-matrix explanations.
           gptCaseAnalysis: gptLayer?.caseAnalysis ?? undefined,
+          uncategorizedMaterials: deckInputs.uncategorizedMaterials ?? undefined,
         },
       },
       bundleForValidation: deckInputs.mergedBundle,

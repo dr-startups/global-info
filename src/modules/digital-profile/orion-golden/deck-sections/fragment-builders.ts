@@ -61,6 +61,18 @@ export type GptCaseAnalysisExtras = {
   recommendations: string[];
 };
 
+/** REMEDIATION §3.2 — themeless SUBJECT_MATCH/LIKELY examples for regional summary. */
+export type UncategorizedMaterialsExtras = {
+  count: number;
+  byRegion: Record<
+    string,
+    {
+      count: number;
+      examples: Array<{ title: string; evidenceRef: string; domain?: string }>;
+    }
+  >;
+};
+
 export type FragmentExtras = {
   executiveSummary?: ExecutiveSummaryExtras;
   /** Existing compliance client copy (no source expansion). */
@@ -69,6 +81,8 @@ export type FragmentExtras = {
   visualAssets?: VisualAssetsBySlot;
   /** Holistic GPT case analysis (client-safe, optional). */
   gptCaseAnalysis?: GptCaseAnalysisExtras;
+  /** Themeless subject materials — regional summary only, not risk matrix. */
+  uncategorizedMaterials?: UncategorizedMaterialsExtras;
 };
 
 /** Loose theme match: token overlap between a finding theme and a GPT risk theme. */
@@ -1017,11 +1031,46 @@ export function buildDigitalProfileOverviewFragment(
 //                   UAE: p23 divider, p24 summary, p25 metrics)
 // ---------------------------------------------------------------------------
 
+function uncategorizedBulletForRegion(
+  regionKey: string,
+  extras?: FragmentExtras
+): { bullet: string; evidenceRefs: string[]; count: number } | null {
+  const block = extras?.uncategorizedMaterials;
+  if (!block) return null;
+  const regionAliases =
+    regionKey === "RU" ? ["RU"] : ["UAE", "INTERNATIONAL", "GLOBAL"];
+  let count = 0;
+  const examples: Array<{ title: string; evidenceRef: string; domain?: string }> = [];
+  for (const alias of regionAliases) {
+    const bucket = block.byRegion[alias];
+    if (!bucket) continue;
+    count += bucket.count;
+    for (const ex of bucket.examples) {
+      if (examples.length >= 4) break;
+      examples.push(ex);
+    }
+  }
+  if (count === 0) return null;
+  const titles = examples
+    .map((e) => e.title.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  const examplesNote = titles.length
+    ? ` (примеры: ${titles.map((t) => clampClientText(t, 80)).join(" · ")})`
+    : "";
+  return {
+    bullet: `Другие материалы о субъекте: ${count}${examplesNote}`,
+    evidenceRefs: examples.map((e) => e.evidenceRef),
+    count,
+  };
+}
+
 export function buildRegionalSummaryFragment(
   key: FragmentKey,
   sectionId: SectionType,
   regionLabel: string,
-  scoped: ScopedFragmentInput
+  scoped: ScopedFragmentInput,
+  extras: FragmentExtras = {}
 ): FragmentBuildOutput {
   const slots = slotsForFragment(key);
   const divider = slots.find((s) => s.templateId === "section-divider")!;
@@ -1029,6 +1078,7 @@ export function buildRegionalSummaryFragment(
   const metricsSlot = slots.find((s) => s.templateId === "serp-table")!;
   const regionKey = key.startsWith("RU_") ? "RU" : "UAE";
   const materialCount = scoped.metricSnapshot.perRegionCounts[regionKey] ?? 0;
+  const uncategorized = uncategorizedBulletForRegion(regionKey, extras);
 
   const slides: SlideContentContract[] = [
     makeSlotSlide({
@@ -1042,7 +1092,7 @@ export function buildRegionalSummaryFragment(
     }),
   ];
 
-  if (scoped.findings.length === 0 && materialCount === 0) {
+  if (scoped.findings.length === 0 && materialCount === 0 && !uncategorized) {
     slides.push(
       makeSlotSlide({
         slot: summarySlot,
@@ -1067,6 +1117,7 @@ export function buildRegionalSummaryFragment(
           narrative: `По региону ${regionLabel} собрано и проанализировано материалов: ${materialCount}. Подтверждённых тем повышенного внимания, однозначно связанных с проверяемым лицом, по итогам идентификации не выявлено.`,
           bullets: [
             "Каждый материал прошёл проверку принадлежности: учитываются только публикации, уверенно связанные с проверяемым лицом.",
+            ...(uncategorized ? [uncategorized.bullet] : []),
             ...(likely > 0
               ? [
                   `Материалы, вероятно относящиеся к субъекту: ${likely} — не входят в подтверждённые выводы, пока принадлежность не уточнена.`,
@@ -1083,9 +1134,13 @@ export function buildRegionalSummaryFragment(
             "Рекомендуем плановое обновление мониторинга: состав выдачи и подсказок меняется, а материалы, требующие идентификации, могут быть подтверждены при появлении дополнительных признаков.",
           sourceNote: sourceLine(scoped),
         },
-        evidenceRefs: [],
+        evidenceRefs: uncategorized?.evidenceRefs ?? [],
         findingIds: [],
-        metrics: { materials: materialCount, findings: 0 },
+        metrics: {
+          materials: materialCount,
+          findings: 0,
+          uncategorized: uncategorized?.count ?? 0,
+        },
       })
     );
   } else {
@@ -1094,6 +1149,7 @@ export function buildRegionalSummaryFragment(
       ...scoped.findings
         .slice(0, 8)
         .map((f) => clampClientText(themedClaim(f), 340) + ` [${f.findingId}]`),
+      ...(uncategorized ? [uncategorized.bullet] : []),
       ...(likelyN > 0
         ? [
             `Материалы, вероятно относящиеся к субъекту: ${likelyN} — не входят в подтверждённые выводы.`,
@@ -1108,13 +1164,17 @@ export function buildRegionalSummaryFragment(
         bullets,
         ...findingBlocks(scoped),
       },
-      evidenceRefs: uniqueRefs(scoped),
+      evidenceRefs: [
+        ...uniqueRefs(scoped),
+        ...(uncategorized?.evidenceRefs ?? []),
+      ],
       findingIds: scoped.findings.map((f) => f.findingId),
       metrics: {
         materials: materialCount,
         findings: scoped.findings.length,
         likely: likelyN,
         adverse: scoped.findings.filter(isAdverse).length,
+        uncategorized: uncategorized?.count ?? 0,
       },
     });
     slides.push(...withContinuations(base, "regional-summary"));

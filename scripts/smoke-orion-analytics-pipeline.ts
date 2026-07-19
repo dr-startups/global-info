@@ -28,6 +28,7 @@ import {
   countIdentityByObservation,
 } from "../src/modules/digital-profile/orion-golden/deck-sections/load-deck-inputs";
 import {
+  buildRegionalSummaryFragment,
   buildRiskMatrixFragment,
   packRiskMatrixPages,
 } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders";
@@ -750,6 +751,128 @@ describe("4. finding synthesis", () => {
     // No two findings share the same (theme, subjectMatch) fingerprint.
     const findingKeys = verified.map((f) => f.findingId.replace(/-[0-9a-f]{8}$/u, ""));
     assert.equal(new Set(findingKeys).size, findingKeys.length);
+  });
+
+  it("SUBJECT_MATCH/LIKELY without theme → uncategorized (not a finding, §3.2)", () => {
+    const themed = item({
+      title: "Уголовное дело бизнесмена Сергея Глинки: суд и следствие",
+      sourceUrl: "https://news.example/criminal",
+      region: "RU",
+    });
+    // No keyword hits for any configured theme (incl. business_profile).
+    const neutral = item({
+      title: "Сергей Глинка посетил выставку в Москве",
+      sourceUrl: "https://news.example/exhibit",
+      region: "RU",
+    });
+    const likelyNeutral = item({
+      title: "Глинка выступил с комментарием на форуме в Дубае",
+      sourceUrl: "https://uae.example/forum",
+      region: "UAE",
+    });
+    const items = [themed, neutral, likelyNeutral];
+    const resolution = buildSubjectResolution({
+      caseId: CASE_ID,
+      datasetId: "ds-uncat",
+      subject: GLINKA_SUBJECT,
+      items,
+      sourceHashes: ["sha256:test"],
+    });
+    // Force decisions: themed+neutral SUBJECT_MATCH, likelyNeutral LIKELY.
+    const byRef = new Map(resolution.items.map((i) => [i.evidenceRef, i]));
+    byRef.set(`inventory:${themed.inventoryId}`, {
+      ...byRef.get(`inventory:${themed.inventoryId}`)!,
+      decision: "SUBJECT_MATCH",
+    });
+    byRef.set(`inventory:${neutral.inventoryId}`, {
+      ...byRef.get(`inventory:${neutral.inventoryId}`)!,
+      decision: "SUBJECT_MATCH",
+    });
+    byRef.set(`inventory:${likelyNeutral.inventoryId}`, {
+      ...byRef.get(`inventory:${likelyNeutral.inventoryId}`)!,
+      decision: "LIKELY_SUBJECT",
+    });
+
+    const result = synthesizeFindings({
+      caseId: CASE_ID,
+      datasetId: "ds-uncat",
+      items,
+      resolutionByRef: byRef,
+      sourceHashes: ["sha256:test"],
+    });
+
+    assert.ok(result.stats.uncategorizedCount >= 2, `uncat=${result.stats.uncategorizedCount}`);
+    assert.equal(result.uncategorized.count, result.stats.uncategorizedCount);
+    const uncatRefs = new Set(result.uncategorized.topExamples.map((e) => e.evidenceRef));
+    assert.ok(uncatRefs.has(`inventory:${neutral.inventoryId}`));
+    assert.ok(uncatRefs.has(`inventory:${likelyNeutral.inventoryId}`));
+    assert.ok(!uncatRefs.has(`inventory:${themed.inventoryId}`), "themed must not be uncategorized");
+
+    // Uncategorized must never become a finding / risk-matrix theme.
+    const allFindings = [
+      ...result.bundle.findings,
+      ...result.ambiguousFindings,
+    ];
+    for (const f of allFindings) {
+      assert.ok(
+        !f.evidenceRefs.includes(`inventory:${neutral.inventoryId}`),
+        "uncategorized SUBJECT_MATCH must not enter findings"
+      );
+      assert.ok(
+        !f.evidenceRefs.includes(`inventory:${likelyNeutral.inventoryId}`),
+        "uncategorized LIKELY must not enter findings"
+      );
+    }
+    assert.ok(
+      allFindings.some((f) => f.findingId.includes("criminal_legal")),
+      "themed criminal finding still synthesized"
+    );
+    assert.ok(result.uncategorized.byRegion.RU?.count >= 1);
+    assert.ok(result.uncategorized.byRegion.UAE?.count >= 1);
+
+    const scoped = {
+      subject: { displayName: GLINKA_SUBJECT.displayName, aliases: [] },
+      findings: result.bundle.findings.filter((f) => f.subjectMatch === "SUBJECT_MATCH"),
+      surfaceUnits: [],
+      metricSnapshot: {
+        metricSnapshotId: "m",
+        datasetId: "ds-uncat",
+        reportRunId: "r",
+        baseCount: 3,
+        enrichmentCount: 0,
+        compositeCount: 3,
+        subjectMatchCount: 2,
+        likelySubjectCount: 1,
+        ambiguousCount: 0,
+        otherSubjectCount: 0,
+        adverseFindingCount: 1,
+        perRegionCounts: { RU: 2, UAE: 1 },
+      },
+      scope: {
+        regions: ["RU"],
+        surfaces: null,
+        subjectMatch: ["SUBJECT_MATCH"] as const,
+        findingIds: null,
+      },
+      evidenceIndex: {},
+    };
+    const frag = buildRegionalSummaryFragment(
+      "RU_SUMMARY",
+      "RU_PROFILE",
+      "Россия",
+      scoped as never,
+      {
+        uncategorizedMaterials: {
+          count: result.uncategorized.count,
+          byRegion: result.uncategorized.byRegion,
+        },
+      }
+    );
+    const summarySlide = frag.slides.find((s) => s.baseSlotId.includes("summary") || s.templateId === "regional-summary")
+      ?? frag.slides[1];
+    const blob = JSON.stringify(summarySlide?.content ?? {});
+    assert.ok(/Другие материалы о субъекте/u.test(blob), blob.slice(0, 400));
+    assert.ok(/посетил выставку/iu.test(blob), "example title must appear");
   });
 });
 

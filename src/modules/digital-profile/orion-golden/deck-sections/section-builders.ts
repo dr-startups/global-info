@@ -168,7 +168,7 @@ function composeFragment(
       return buildDigitalProfileOverviewFragment(section, scoped);
     case "RU_SUMMARY":
     case "UAE_SUMMARY":
-      return buildRegionalSummaryFragment(key, section, region, scoped);
+      return buildRegionalSummaryFragment(key, section, region, scoped, extras);
     case "RU_SERP":
     case "UAE_SERP":
       return buildSerpFragment(key, section, region, scoped);
@@ -203,7 +203,9 @@ function extrasHash(key: FragmentKey, extras: FragmentExtras): string {
       ? extras.executiveSummary ?? null
       : key === "COMPLIANCE_MAIN"
         ? extras.complianceNarrative ?? null
-        : null;
+        : key === "RU_SUMMARY" || key === "UAE_SUMMARY"
+          ? extras.uncategorizedMaterials ?? null
+          : null;
   // Visual asset bindings are fragment inputs: adding/removing an asset for a
   // slot the fragment owns must regenerate it (layout templates are NOT here —
   // template-only changes never invalidate packs).

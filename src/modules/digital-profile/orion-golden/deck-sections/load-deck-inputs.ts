@@ -79,6 +79,17 @@ export function countIdentityByObservation(input: {
   return { subjectMatchCount, likelySubjectCount, ambiguousCount, otherSubjectCount };
 }
 
+export type UncategorizedMaterialsDeckInput = {
+  count: number;
+  byRegion: Record<
+    string,
+    {
+      count: number;
+      examples: Array<{ title: string; evidenceRef: string; domain?: string }>;
+    }
+  >;
+};
+
 export type CanonicalDeckInputs = {
   caseId: string;
   reportRunId: string;
@@ -92,6 +103,8 @@ export type CanonicalDeckInputs = {
   subjectResolution: { items: Array<{ decision: string }> };
   baseCountBefore: number;
   baseCountAfter: number;
+  /** REMEDIATION §3.2 — optional; absent on older analytics dirs. */
+  uncategorizedMaterials: UncategorizedMaterialsDeckInput | null;
 };
 
 function readJson<T>(path: string): T {
@@ -296,6 +309,66 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     for (const c of u.claims) for (const r of c.evidenceRefs) knownEvidenceRefs.add(r);
   }
 
+  let uncategorizedMaterials: UncategorizedMaterialsDeckInput | null = null;
+  const uncategorizedPath = join(analyticsDir, "uncategorized-materials.json");
+  if (existsSync(uncategorizedPath)) {
+    try {
+      const raw = readJson<{
+        count?: number;
+        byRegion?: UncategorizedMaterialsDeckInput["byRegion"];
+        topExamples?: Array<{
+          title?: string;
+          evidenceRef?: string;
+          domain?: string;
+          region?: string;
+        }>;
+      }>(uncategorizedPath);
+      const byRegion: UncategorizedMaterialsDeckInput["byRegion"] = {};
+      for (const [region, bucket] of Object.entries(raw.byRegion ?? {})) {
+        byRegion[region] = {
+          count: Number(bucket?.count ?? 0) || 0,
+          examples: (bucket?.examples ?? [])
+            .filter((e) => e?.evidenceRef)
+            .map((e) => ({
+              title: String(e.title ?? "").trim() || "(без заголовка)",
+              evidenceRef: String(e.evidenceRef),
+              domain: e.domain ? String(e.domain) : undefined,
+            })),
+        };
+      }
+      uncategorizedMaterials = {
+        count: Number(raw.count ?? 0) || 0,
+        byRegion,
+      };
+      for (const bucket of Object.values(byRegion)) {
+        for (const ex of bucket.examples) {
+          knownEvidenceRefs.add(ex.evidenceRef);
+          if (!evidenceIndex[ex.evidenceRef]) {
+            evidenceIndex[ex.evidenceRef] = {
+              title: ex.title,
+              domain: ex.domain,
+              kind: "uncategorized",
+            };
+          }
+        }
+      }
+      for (const ex of raw.topExamples ?? []) {
+        if (!ex?.evidenceRef) continue;
+        knownEvidenceRefs.add(ex.evidenceRef);
+        if (!evidenceIndex[ex.evidenceRef]) {
+          evidenceIndex[ex.evidenceRef] = {
+            title: String(ex.title ?? "").trim() || undefined,
+            domain: ex.domain ? String(ex.domain) : undefined,
+            kind: "uncategorized",
+            region: ex.region ? mapRegionBucket(ex.region) : undefined,
+          };
+        }
+      }
+    } catch {
+      uncategorizedMaterials = null;
+    }
+  }
+
   const metricSnapshot: MetricSnapshot = {
     metricSnapshotId: `${binding.datasetId}-metrics`,
     datasetId: binding.datasetId,
@@ -327,5 +400,6 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     subjectResolution,
     baseCountBefore: providerDelta.baseCount,
     baseCountAfter: observations.baseCount,
+    uncategorizedMaterials,
   };
 }

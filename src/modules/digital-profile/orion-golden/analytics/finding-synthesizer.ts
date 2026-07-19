@@ -48,19 +48,44 @@ export const FINDING_THEMES: ThemeDef[] = new Proxy([] as ThemeDef[], {
   },
 });
 
+/** REMEDIATION §3.2 — SUBJECT_MATCH/LIKELY with no theme keyword hit. */
+export type UncategorizedMaterial = {
+  evidenceRef: string;
+  title: string;
+  domain: string;
+  region: string;
+  subjectMatch: "SUBJECT_MATCH" | "LIKELY_SUBJECT";
+};
+
+export type UncategorizedMaterialsBlock = {
+  version: "uncategorized-materials-v1";
+  count: number;
+  subjectMatchCount: number;
+  likelySubjectCount: number;
+  /** Global top-N examples (titles + refs) for operators / LLM theming (3.3). */
+  topExamples: UncategorizedMaterial[];
+  byRegion: Record<string, { count: number; examples: UncategorizedMaterial[] }>;
+};
+
 export type FindingSynthesisResult = {
   bundle: VerifiedFindingBundle;
   ambiguousFindings: Finding[];
   /** evidenceRef -> all themeIds the evidence supports (shared provenance). */
   themeAssignments: Map<string, string[]>;
+  /** Not a finding — visible in regional summary only (§3.2). */
+  uncategorized: UncategorizedMaterialsBlock;
   stats: {
     subjectMatchEvidence: number;
     likelySubjectEvidence: number;
     ambiguousEvidence: number;
     otherSubjectEvidence: number;
     adverseFindingCount: number;
+    uncategorizedCount: number;
   };
 };
+
+const UNCATEGORIZED_TOP_N = 12;
+const UNCATEGORIZED_PER_REGION_N = 8;
 
 function refOf(item: RawInventoryItem): string {
   return `inventory:${item.inventoryId}`;
@@ -187,6 +212,8 @@ export function synthesizeFindings(input: {
   const themeAssignments = new Map<string, string[]>();
   const byDecisionTheme = new Map<string, RawInventoryItem[]>(); // `${decision}|${themeId}`
   const seenClaimFingerprints = new Map<string, Set<string>>(); // `${decision}|${themeId}` -> fingerprints
+  const uncategorizedItems: UncategorizedMaterial[] = [];
+  const seenUncategorizedRefs = new Set<string>();
 
   let subjectMatchEvidence = 0;
   let likelySubjectEvidence = 0;
@@ -204,15 +231,28 @@ export function synthesizeFindings(input: {
 
     // Multi-theme: evidence supports every distinct claim it matches;
     // duplicates of the same normalized claim within a theme collapse.
-    // LIKELY/AMBIGUOUS without keyword hits still get a review theme so they
-    // reach the matrix «Требует подтверждения» / appendix (§2.1).
+    // SUBJECT_MATCH/LIKELY without keyword hits → uncategorized (§3.2), not a
+    // finding (never enters the risk matrix). AMBIGUOUS without hits still gets
+    // a review theme so they reach «Требует подтверждения» / appendix (§2.1).
     let themes = themesFor(item);
-    if (
-      themes.length === 0 &&
-      (decision === "LIKELY_SUBJECT" || decision === "AMBIGUOUS")
-    ) {
-      const fallback = FINDING_THEMES.find((t) => t.themeId === "business_profile");
-      if (fallback) themes = [fallback];
+    if (themes.length === 0) {
+      if (decision === "SUBJECT_MATCH" || decision === "LIKELY_SUBJECT") {
+        if (!seenUncategorizedRefs.has(ref)) {
+          seenUncategorizedRefs.add(ref);
+          uncategorizedItems.push({
+            evidenceRef: ref,
+            title: String(item.title ?? "").trim() || "(без заголовка)",
+            domain: domainOf(item.sourceUrl) || "—",
+            region: mapRegionBucket(item.region),
+            subjectMatch: decision,
+          });
+        }
+        continue;
+      }
+      if (decision === "AMBIGUOUS") {
+        const fallback = FINDING_THEMES.find((t) => t.themeId === "business_profile");
+        if (fallback) themes = [fallback];
+      }
     }
     for (const theme of themes) {
       const key = `${decision}|${theme.themeId}`;
@@ -231,6 +271,26 @@ export function synthesizeFindings(input: {
       byDecisionTheme.set(key, bucket);
     }
   }
+
+  const byRegion: UncategorizedMaterialsBlock["byRegion"] = {};
+  for (const row of uncategorizedItems) {
+    const bucket = byRegion[row.region] ?? { count: 0, examples: [] };
+    bucket.count += 1;
+    if (bucket.examples.length < UNCATEGORIZED_PER_REGION_N) {
+      bucket.examples.push(row);
+    }
+    byRegion[row.region] = bucket;
+  }
+  const uncategorized: UncategorizedMaterialsBlock = {
+    version: "uncategorized-materials-v1",
+    count: uncategorizedItems.length,
+    subjectMatchCount: uncategorizedItems.filter((r) => r.subjectMatch === "SUBJECT_MATCH")
+      .length,
+    likelySubjectCount: uncategorizedItems.filter((r) => r.subjectMatch === "LIKELY_SUBJECT")
+      .length,
+    topExamples: uncategorizedItems.slice(0, UNCATEGORIZED_TOP_N),
+    byRegion,
+  };
 
   const makeFinding = (
     themeId: string,
@@ -362,6 +422,7 @@ export function synthesizeFindings(input: {
     bundle,
     ambiguousFindings,
     themeAssignments,
+    uncategorized,
     stats: {
       subjectMatchEvidence,
       likelySubjectEvidence,
@@ -370,6 +431,7 @@ export function synthesizeFindings(input: {
       adverseFindingCount: verified.filter((f) =>
         ["medium", "high", "critical"].includes(f.riskLevel)
       ).length,
+      uncategorizedCount: uncategorized.count,
     },
   };
 }
