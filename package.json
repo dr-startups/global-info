@@ -84,6 +84,7 @@
     "smoke:report-quality-summary": "tsx --test scripts/smoke-report-quality-summary.ts",
     "smoke:report-quality-panel": "tsx --test scripts/smoke-report-quality-panel.ts",
     "smoke:case-corpus-manifest": "tsx --test scripts/smoke-case-corpus-manifest.ts",
+    "smoke:compliance-inventory-adapter": "tsx --test scripts/smoke-compliance-inventory-adapter.ts",
     "golden-case": "tsx scripts/run-golden-case-report.ts",
     "smoke:golden-case": "tsx --test scripts/smoke-golden-case-report.ts",
     "smoke:orion-import-graph-isolation": "tsx --test scripts/smoke-orion-import-graph-isolation.ts",

@@ -42,11 +42,13 @@ import {
   buildGoldenCaseObservations,
   goldenCaseObservationStats,
 } from "../fixtures/golden-case/build-observations";
+import type { DatabaseProfileHitInput } from "../src/modules/digital-profile/services/compliance-inventory-adapter";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURE_DIR = join(ROOT, "fixtures", "golden-case");
 const BASELINE_PATH = join(FIXTURE_DIR, "baseline.json");
 const PROFILE_PATH = join(FIXTURE_DIR, "subject-profile.json");
+const COMPLIANCE_HITS_PATH = join(FIXTURE_DIR, "compliance-hits.json");
 
 const CASE_ID = "case-golden-holmstrom";
 const UNIFIED_JOB_ID = "unified-golden-1";
@@ -64,6 +66,39 @@ export type GoldenBaseline = {
 
 function loadSubjectProfile(): ClassifierSubjectProfile {
   return JSON.parse(readFileSync(PROFILE_PATH, "utf8")) as ClassifierSubjectProfile;
+}
+
+function loadComplianceHits(): DatabaseProfileHitInput[] {
+  if (!existsSync(COMPLIANCE_HITS_PATH)) return [];
+  return JSON.parse(readFileSync(COMPLIANCE_HITS_PATH, "utf8")) as DatabaseProfileHitInput[];
+}
+
+function assertComplianceSlides(artifactsDir: string): void {
+  const assembledPath = join(artifactsDir, "deck", "assembled-deck.json");
+  assert.ok(existsSync(assembledPath), "assembled-deck.json missing");
+  const assembled = JSON.parse(readFileSync(assembledPath, "utf8")) as {
+    slides: Array<{
+      baseSlotId?: string;
+      table?: { rows?: unknown[][] };
+      whatWasFound?: string;
+    }>;
+  };
+  const bySlot = new Map(assembled.slides.map((s) => [s.baseSlotId, s]));
+  const p33 = bySlot.get("p33_compliance_toc");
+  const p34 = bySlot.get("p34_dow_jones");
+  const p35 = bySlot.get("p35_lexis_visual");
+  assert.ok(p33, "p33_compliance_toc missing");
+  assert.ok(p34, "p34_dow_jones missing");
+  assert.ok(p35, "p35_lexis_visual missing");
+  assert.equal(p33!.table?.rows?.length, 2, "p33 must show 2 compliance hit rows");
+  assert.ok(
+    (p34!.whatWasFound ?? "").includes("Потенциальное совпадение"),
+    `p34 Dow Jones card empty: ${p34!.whatWasFound}`
+  );
+  assert.ok(
+    (p35!.whatWasFound ?? "").includes("Потенциальное совпадение"),
+    `p35 LexisNexis card empty: ${p35!.whatWasFound}`
+  );
 }
 
 function writeJson(path: string, value: unknown): void {
@@ -179,9 +214,11 @@ export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
     subjectProfile: profile,
     render: fakeRender,
     gptCaller: null,
+    complianceHits: loadComplianceHits(),
   };
 
   const res = await runCanonicalReportPrepare(input);
+  assertComplianceSlides(artifactsDir);
   const summaryPath = join(artifactsDir, "report-quality-summary.json");
   assert.ok(existsSync(summaryPath), "report-quality-summary.json missing");
   const summary = JSON.parse(readFileSync(summaryPath, "utf8")) as ReportQualitySummary;

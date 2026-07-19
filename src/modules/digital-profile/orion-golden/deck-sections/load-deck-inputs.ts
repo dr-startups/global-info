@@ -9,7 +9,7 @@
  * This is the canonical, universal counterpart of the report-72 replay loader.
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import type { Finding } from "../contracts/finding";
@@ -100,6 +100,50 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
       };
     }
   }
+
+  // Enrich compliance_hit entries with typed match metadata (provider /
+  // category / score / review) so p33–p36 tables are evidence-backed.
+  // Written by runCanonicalReportPrepare / analytics after the adapter runs.
+  const complianceInventoryPath = join(analyticsDir, "compliance-inventory.json");
+  if (existsSync(complianceInventoryPath)) {
+    try {
+      const inventory = readJson<{
+        items?: Array<{
+          inventoryId?: string;
+          evidenceType?: string;
+          title?: string;
+          rawMetadata?: {
+            provider?: string;
+            matchType?: string;
+            matchCategory?: string;
+            matchScore?: number;
+            reviewStatus?: string;
+          };
+        }>;
+      }>(complianceInventoryPath);
+      for (const item of inventory.items ?? []) {
+        if (item.evidenceType !== "compliance_hit" || !item.inventoryId) continue;
+        const ref = `inventory:${item.inventoryId}`;
+        const existing = evidenceIndex[ref] ?? {};
+        evidenceIndex[ref] = {
+          ...existing,
+          kind: "compliance_hit",
+          title: item.title ?? existing.title,
+          providerLabel: item.rawMetadata?.provider ?? existing.providerLabel,
+          matchCategory:
+            item.rawMetadata?.matchCategory ??
+            item.rawMetadata?.matchType ??
+            existing.matchCategory,
+          matchScore: item.rawMetadata?.matchScore ?? existing.matchScore,
+          reviewStatus: item.rawMetadata?.reviewStatus ?? existing.reviewStatus,
+        };
+        knownEvidenceRefs.add(ref);
+      }
+    } catch {
+      // Missing/unreadable enrichment is non-fatal; fragment falls back to titles.
+    }
+  }
+
   for (const f of mergedBundle.findings) for (const r of f.evidenceRefs) knownEvidenceRefs.add(r);
   for (const u of surfaceUnits) {
     for (const r of u.evidenceRefs) knownEvidenceRefs.add(r);

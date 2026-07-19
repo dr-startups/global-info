@@ -1694,8 +1694,11 @@ const COMPLIANCE_CATEGORY_LABELS: Record<string, string> = {
 };
 const COMPLIANCE_STATUS_LABELS: Record<string, string> = {
   PENDING: "Требует ручной проверки",
+  NEEDS_REVIEW: "Требует ручной проверки",
   CONFIRMED: "Подтверждено",
+  MATCH_CONFIRMED: "Подтверждено",
   DISMISSED: "Отклонено",
+  FALSE_POSITIVE: "Ложное срабатывание",
 };
 
 export function buildComplianceFragment(

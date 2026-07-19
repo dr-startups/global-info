@@ -100,6 +100,22 @@ export function classifySubjectRelevance(
 ): SubjectResolutionItem {
   const text = itemText(item);
   const evidenceRef = `inventory:${item.inventoryId}`;
+  const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
+
+  // Compliance hits: decision comes from DatabaseProfile.reviewStatus.
+  // Surname/token F1 must not reclassify LexisNexis / Dow Jones rows.
+  if (meta.skipTextClassifier === true || meta.identityFromReview === true) {
+    const reviewStatus = String(meta.reviewStatus ?? item.classification ?? "").toUpperCase();
+    const confirmed = reviewStatus === "MATCH_CONFIRMED" || reviewStatus === "CONFIRMED";
+    return {
+      evidenceRef,
+      decision: confirmed ? "SUBJECT_MATCH" : "AMBIGUOUS",
+      confidence: confirmed ? 0.95 : 0.55,
+      matchedIdentifiers: confirmed ? ["compliance_review_confirmed"] : [],
+      conflictingIdentifiers: [],
+      reasonCode: confirmed ? "compliance_match_confirmed" : "compliance_review_pending",
+    };
+  }
 
   const hasSurname =
     [subject.lastName, ...subject.lastNameVariants].some((s) => matchesToken(text, s)) ||

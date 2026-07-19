@@ -54,6 +54,11 @@ import {
   type ReportQualityPrismaCounts,
   type ReportQualitySummary,
 } from "./report-quality-summary";
+import {
+  resolveComplianceInventoryItems,
+  type ComplianceInventoryPrisma,
+  type DatabaseProfileHitInput,
+} from "./compliance-inventory-adapter";
 
 export type CanonicalPrepareBlockerCode =
   | "CANONICAL_PREPARE_DISABLED"
@@ -98,8 +103,16 @@ export type CanonicalPrepareInput = {
    * `full` (default) — run the complete prepare pipeline.
    */
   resumeFrom?: "full" | "render";
-  /** Optional Prisma for live DB funnel counts in report-quality-summary. */
-  prisma?: ReportQualityPrismaCounts | null;
+  /**
+   * Optional Prisma for live DB funnel counts and DatabaseProfile loading.
+   * `databaseProfile.findMany` enables §1.2 compliance inventory (F6).
+   */
+  prisma?: (ReportQualityPrismaCounts & Partial<ComplianceInventoryPrisma>) | null;
+  /**
+   * Offline/fixture compliance hits (§1.2). When set, skips prisma load.
+   * Pass `[]` to force an empty compliance surface.
+   */
+  complianceHits?: DatabaseProfileHitInput[] | null;
 };
 
 export type CanonicalPrepareResult = {
@@ -467,12 +480,33 @@ export async function runCanonicalReportPrepare(
   if (!deckManifest || !rendererSlides) {
     const baseReportRunId = input.binding.baseReportRunId ?? `${input.caseId}-base`;
     const enrichmentRunId = input.binding.enrichmentRunIds[0] ?? null;
-    const items = compositeObservationsToInventory({
+    const serpItems = compositeObservationsToInventory({
       caseId: input.caseId,
       baseReportRunId,
       enrichmentRunId,
       observations: input.merge.observations,
     });
+    const complianceItems = await resolveComplianceInventoryItems({
+      caseId: input.caseId,
+      reportRunId: baseReportRunId,
+      complianceHits: input.complianceHits,
+      prisma: input.prisma?.databaseProfile ? input.prisma : null,
+    });
+    const items = [...serpItems, ...complianceItems];
+    writeFileSync(
+      join(analyticsDir, "compliance-inventory.json"),
+      `${JSON.stringify(
+        {
+          version: "compliance-inventory-v1",
+          caseId: input.caseId,
+          count: complianceItems.length,
+          items: complianceItems,
+        },
+        null,
+        2
+      )}\n`,
+      "utf8"
+    );
 
     const coverageSet = new Map<string, { region: string; engine: string; surface: string }>();
     for (const obs of input.merge.observations) {

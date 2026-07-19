@@ -29,12 +29,12 @@
       "manifestDeltaCount": 299,
       "manifestCorpusCount": 0,
       "compositeObservations": 311,
-      "subjectMatch": 300,
-      "ambiguous": 2,
+      "subjectMatch": 301,
+      "ambiguous": 3,
       "otherSubject": 3,
       "insufficient": 6,
       "verifiedFindings": 5,
-      "ambiguousFindings": 0
+      "ambiguousFindings": 1
     },
     "gpt": {
       "stage1": {
@@ -65,8 +65,8 @@
       }
     },
     "slides": {
-      "total": 41,
-      "withContent": 37,
+      "total": 42,
+      "withContent": 38,
       "emptyState": [
         {
           "slotId": "p12_ru_suggestions_google",
