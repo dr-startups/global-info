@@ -1225,6 +1225,17 @@ async function stepPrepare(
     }
   }
 
+  // Prefer injected deps.prisma; fall back to the server client so rebuild/tick
+  // without explicit deps still loads WikipediaCheck / SerpCapture / profiles.
+  let preparePrisma: PrismaClient | null = deps.prisma ?? null;
+  if (!preparePrisma) {
+    try {
+      preparePrisma = (await import("@/server/prisma/client")).prisma;
+    } catch {
+      preparePrisma = null;
+    }
+  }
+
   // Default = canonical job-scoped pipeline. There is NO legacy composer path:
   // a disabled/blocked canonical prepare fails closed and never falls back.
   const runPrepare =
@@ -1239,17 +1250,14 @@ async function stepPrepare(
         subjectProfile: deps.subjectProfile ?? null,
         render: deps.renderDeck,
         resumeFrom: resumeFromRender ? "render" : "full",
-        // Prefer injected deps.prisma; fall back to the locally resolved client
-        // so rebuild/tick without explicit deps still loads WikipediaCheck /
-        // SerpCapture / DatabaseProfile (§1.2–1.4).
-        prisma: prisma
+        prisma: preparePrisma
           ? {
-              searchResult: prisma.searchResult,
-              searchSurfaceItem: prisma.searchSurfaceItem,
-              databaseProfile: prisma.databaseProfile,
-              riskFinding: prisma.riskFinding,
-              wikipediaCheck: prisma.wikipediaCheck,
-              serpCapture: prisma.serpCapture,
+              searchResult: preparePrisma.searchResult,
+              searchSurfaceItem: preparePrisma.searchSurfaceItem,
+              databaseProfile: preparePrisma.databaseProfile,
+              riskFinding: preparePrisma.riskFinding,
+              wikipediaCheck: preparePrisma.wikipediaCheck,
+              serpCapture: preparePrisma.serpCapture,
             }
           : null,
       });

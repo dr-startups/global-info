@@ -114,12 +114,17 @@ export type CanonicalPrepareInput = {
   resumeFrom?: "full" | "render";
   /**
    * Optional Prisma for live DB funnel counts, DatabaseProfile loading,
-   * and analyst-override sources (SearchResult / RiskFinding).
+   * analyst overrides, WikipediaCheck and SerpCapture (§1.2–1.4).
+   * Intersection is structural; call sites may pass PrismaClient delegates.
    */
-  prisma?: (ReportQualityPrismaCounts &
+  prisma?: (Partial<ReportQualityPrismaCounts> &
     Partial<ComplianceInventoryPrisma> &
     Partial<AnalystOverridesPrisma> &
-    Partial<EvidenceSupplementPrisma>) | null;
+    Partial<EvidenceSupplementPrisma> & {
+      searchResult?: ReportQualityPrismaCounts["searchResult"] &
+        Partial<AnalystOverridesPrisma["searchResult"]>;
+      searchSurfaceItem?: ReportQualityPrismaCounts["searchSurfaceItem"];
+    }) | null;
   /**
    * Offline/fixture compliance hits (§1.2). When set, skips prisma load.
    * Pass `[]` to force an empty compliance surface.
@@ -169,11 +174,21 @@ async function writeReportQualityArtifact(
   qualityWarnings?: string[];
 }> {
   try {
+    const qualityPrisma =
+      input.prisma?.searchResult &&
+      typeof input.prisma.searchResult.count === "function" &&
+      input.prisma.searchSurfaceItem &&
+      typeof input.prisma.searchSurfaceItem.count === "function"
+        ? {
+            searchResult: input.prisma.searchResult,
+            searchSurfaceItem: input.prisma.searchSurfaceItem,
+          }
+        : null;
     const reportQualitySummary = await buildReportQualitySummary({
       jobDir: input.artifactsDir,
       caseId: input.caseId,
       unifiedJobId: input.unifiedJobId,
-      prisma: input.prisma ?? null,
+      prisma: qualityPrisma,
     });
     const reportQuality = toJobReportQuality(reportQualitySummary);
     writeFileSync(
@@ -512,7 +527,9 @@ export async function runCanonicalReportPrepare(
       caseId: input.caseId,
       reportRunId: baseReportRunId,
       complianceHits: input.complianceHits,
-      prisma: input.prisma?.databaseProfile ? input.prisma : null,
+      prisma: input.prisma?.databaseProfile
+        ? { databaseProfile: input.prisma.databaseProfile }
+        : null,
     });
     const supplement = await resolveEvidenceSupplement({
       caseId: input.caseId,
@@ -521,7 +538,10 @@ export async function runCanonicalReportPrepare(
       prisma:
         input.evidenceSupplement == null &&
         (input.prisma?.wikipediaCheck || input.prisma?.serpCapture)
-          ? input.prisma
+          ? {
+              wikipediaCheck: input.prisma.wikipediaCheck,
+              serpCapture: input.prisma.serpCapture,
+            }
           : null,
     });
     const items = [...serpItems, ...complianceItems, ...supplement.wikipediaItems];

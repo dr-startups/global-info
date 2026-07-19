@@ -30,10 +30,8 @@ export type DatabaseProfileHitInput = {
 
 export type ComplianceInventoryPrisma = {
   databaseProfile: {
-    findMany: (args: {
-      where: { caseId: string };
-      orderBy?: Array<Record<string, "asc" | "desc">>;
-    }) => Promise<DatabaseProfileHitInput[]>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    findMany: (args: any) => Promise<DatabaseProfileHitInput[]>;
   };
 };
 

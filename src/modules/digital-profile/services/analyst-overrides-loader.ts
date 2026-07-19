@@ -81,10 +81,9 @@ export type AnalystOverridesAppliedArtifact = {
 
 export type AnalystOverridesPrisma = {
   searchResult: {
-    findMany: (args: {
-      where: { caseId: string };
-      select?: Record<string, boolean>;
-    }) => Promise<
+    // `any` args: PrismaClient delegates must assign without enum/filter friction.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    findMany: (args: any) => Promise<
       Array<{
         id: string;
         url?: string | null;
@@ -93,10 +92,8 @@ export type AnalystOverridesPrisma = {
     >;
   };
   riskFinding: {
-    findMany: (args: {
-      where: { caseId: string; reviewStatus: string };
-      select?: Record<string, boolean>;
-    }) => Promise<
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    findMany: (args: any) => Promise<
       Array<{
         id: string;
         category: string;

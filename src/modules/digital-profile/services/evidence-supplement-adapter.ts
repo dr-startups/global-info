@@ -46,16 +46,12 @@ export type EvidenceSupplementBundle = {
 
 export type EvidenceSupplementPrisma = {
   wikipediaCheck?: {
-    findMany: (args: {
-      where: { caseId: string };
-      orderBy?: Array<Record<string, "asc" | "desc">>;
-    }) => Promise<WikipediaCheckInput[]>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    findMany: (args: any) => Promise<WikipediaCheckInput[]>;
   };
   serpCapture?: {
-    findMany: (args: {
-      where: Record<string, unknown>;
-      orderBy?: Array<Record<string, "asc" | "desc">>;
-    }) => Promise<
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    findMany: (args: any) => Promise<
       Array<{
         id: string;
         region: string;
