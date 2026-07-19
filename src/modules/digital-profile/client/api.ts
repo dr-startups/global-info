@@ -1464,7 +1464,8 @@ export type JobReportQualityDTO = {
     total: number;
     withContent: number;
     emptyStateCount: number;
-    emptyState: Array<{ slotId: string; reason: string }>;
+    /** Absent on jobs saved before remediation §0.4. */
+    emptyState?: Array<{ slotId: string; reason: string }>;
   };
   arsenkin: {
     enrichmentComplete: boolean | null;

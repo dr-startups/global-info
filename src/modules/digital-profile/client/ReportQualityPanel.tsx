@@ -12,6 +12,7 @@ import {
   describeGptStage1Status,
   formatFunnelValue,
   gptStage1Tone,
+  normalizeJobReportQuality,
 } from "./report-quality-labels";
 
 function FunnelCell({ label, value }: { label: string; value: string }) {
@@ -42,13 +43,16 @@ export function ReportQualityPanel({
 }) {
   if (!quality) return null;
 
-  const { counts, gpt, visuals, slides, arsenkin } = quality;
+  const q = normalizeJobReportQuality(quality);
+  const { counts, gpt, visuals, slides, arsenkin } = q;
   const stage2Total =
-    gpt.stage2Applied + gpt.stage2FallbackError + gpt.stage2FallbackValidation;
+    (gpt.stage2Applied ?? 0) +
+    (gpt.stage2FallbackError ?? 0) +
+    (gpt.stage2FallbackValidation ?? 0);
   const stage2Tone: "ok" | "warn" | "danger" | "neutral" =
-    gpt.stage2FallbackError + gpt.stage2FallbackValidation > 0
+    (gpt.stage2FallbackError ?? 0) + (gpt.stage2FallbackValidation ?? 0) > 0
       ? "danger"
-      : gpt.stage2Applied > 0
+      : (gpt.stage2Applied ?? 0) > 0
         ? "ok"
         : "neutral";
 
@@ -106,8 +110,10 @@ export function ReportQualityPanel({
             GPT stage 2
           </div>
           <Badge tone={stage2Tone}>
-            применено {gpt.stage2Applied}
-            {stage2Total > 0 ? ` / fallback ${gpt.stage2FallbackError + gpt.stage2FallbackValidation}` : ""}
+            применено {gpt.stage2Applied ?? 0}
+            {stage2Total > 0
+              ? ` / fallback ${(gpt.stage2FallbackError ?? 0) + (gpt.stage2FallbackValidation ?? 0)}`
+              : ""}
             {gpt.caseAnalysisUsed ? " · анализ кейса" : ""}
           </Badge>
         </div>
@@ -115,9 +121,17 @@ export function ReportQualityPanel({
           <div className="dp-muted" style={{ fontSize: 12, marginBottom: 4 }}>
             Визуалы
           </div>
-          <Badge tone={visuals.warning || visuals.failed > 0 ? "warn" : visuals.built > 0 ? "ok" : "neutral"}>
-            собрано {visuals.built}
-            {visuals.failed > 0 ? ` · сбой ${visuals.failed}` : ""}
+          <Badge
+            tone={
+              visuals.warning || (visuals.failed ?? 0) > 0
+                ? "warn"
+                : (visuals.built ?? 0) > 0
+                  ? "ok"
+                  : "neutral"
+            }
+          >
+            собрано {visuals.built ?? 0}
+            {(visuals.failed ?? 0) > 0 ? ` · сбой ${visuals.failed}` : ""}
           </Badge>
           {visuals.warning ? (
             <div style={{ color: "#b42318", fontSize: 12, marginTop: 4, maxWidth: 420 }}>
@@ -131,15 +145,15 @@ export function ReportQualityPanel({
           </div>
           <Badge
             tone={
-              arsenkin.agentsFailed > 0
+              (arsenkin.agentsFailed ?? 0) > 0
                 ? "warn"
                 : arsenkin.enrichmentComplete
                   ? "ok"
                   : "neutral"
             }
           >
-            агентов ок {arsenkin.agentsOk}
-            {arsenkin.agentsFailed > 0 ? ` · сбой ${arsenkin.agentsFailed}` : ""}
+            агентов ок {arsenkin.agentsOk ?? 0}
+            {(arsenkin.agentsFailed ?? 0) > 0 ? ` · сбой ${arsenkin.agentsFailed}` : ""}
             {arsenkin.enrichmentObservationCount != null
               ? ` · наблюдений ${arsenkin.enrichmentObservationCount}`
               : ""}
@@ -153,7 +167,9 @@ export function ReportQualityPanel({
         </div>
         {slides.emptyState.length === 0 ? (
           <div className="dp-muted" style={{ fontSize: 13 }}>
-            Пустых слайдов нет
+            {slides.emptyStateCount > 0
+              ? `Список причин недоступен в старой версии сводки (счётчик: ${slides.emptyStateCount}). Пересоберите отчёт.`
+              : "Пустых слайдов нет"}
           </div>
         ) : (
           <ul

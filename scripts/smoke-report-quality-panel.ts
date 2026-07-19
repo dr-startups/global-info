@@ -15,6 +15,8 @@ import {
   describeGptStage1Status,
   gptStage1Tone,
 } from "../src/modules/digital-profile/client/report-quality-labels";
+import { normalizeJobReportQuality } from "../src/modules/digital-profile/client/report-quality-labels";
+import type { JobReportQualityDTO } from "../src/modules/digital-profile/client/api";
 
 const SRC = join(fileURLToPath(new URL(".", import.meta.url)), "..", "src");
 const read = (rel: string): string => readFileSync(join(SRC, rel), "utf8");
@@ -32,6 +34,45 @@ describe("report-quality empty-state / GPT labels (§0.4)", () => {
     assert.equal(gptStage1Tone("FAILED"), "danger");
     assert.equal(gptStage1Tone("SKIPPED"), "neutral");
     assert.match(describeGptStage1Status("FAILED"), /Fallback/i);
+  });
+
+  it("normalizes legacy reportQuality without emptyState (pre-0.4 jobs)", () => {
+    const legacy = {
+      version: "report-quality-v1",
+      generatedAt: "2026-07-19T00:00:00.000Z",
+      counts: {
+        dbSearchResults: null,
+        dbSurfaceItems: null,
+        manifestIds: 10,
+        compositeObservations: 10,
+        subjectMatch: 8,
+        ambiguous: 0,
+        otherSubject: 1,
+        insufficient: 1,
+        verifiedFindings: 2,
+        ambiguousFindings: 0,
+      },
+      gpt: {
+        stage1Status: "FAILED",
+        stage1Reason: "schema",
+        stage2Applied: 0,
+        stage2FallbackError: 0,
+        stage2FallbackValidation: 0,
+        caseAnalysisUsed: false,
+      },
+      visuals: { built: 14, failed: 0, warning: null },
+      slides: { total: 39, withContent: 34, emptyStateCount: 5 },
+      arsenkin: {
+        enrichmentComplete: true,
+        enrichmentObservationCount: 12,
+        agentsOk: 3,
+        agentsFailed: 0,
+      },
+    } as JobReportQualityDTO;
+    const n = normalizeJobReportQuality(legacy);
+    assert.ok(Array.isArray(n.slides.emptyState));
+    assert.equal(n.slides.emptyState.length, 0);
+    assert.equal(n.slides.emptyStateCount, 5);
   });
 });
 
