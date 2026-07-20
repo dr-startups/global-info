@@ -44,6 +44,12 @@ export type ExecutiveSummaryExtras = {
   priorityActions: string[];
   identityCaveats: string[];
   dataLimitations: string[];
+  /** Optional regional one-liners from the executive-summary stage artifact. */
+  regionalOverview?: Array<{
+    region: string;
+    oneLiner: string;
+    totalCount?: number | null;
+  }>;
 };
 
 /**
@@ -794,6 +800,162 @@ export function buildFrontMatterFragment(
 // EXECUTIVE (p03, p04, p05)
 // ---------------------------------------------------------------------------
 
+const EXEC_SURFACE_LABELS: Record<string, string> = {
+  organic: "поиск",
+  suggestions: "подсказки",
+  paa_related: "связанные запросы",
+  images: "изображения",
+  wikipedia: "Википедия",
+  ai_answers: "ИИ-ответы",
+  compliance: "комплаенс-базы",
+  url_audit: "проверка URL",
+};
+
+const EXEC_REGION_LABELS: Record<string, string> = {
+  RU: "Россия",
+  UAE: "ОАЭ",
+  INTERNATIONAL: "международный контур",
+  GLOBAL: "глобальный контур",
+};
+
+/** REMEDIATION §7.3 — structured executive page blocks (вывод → факты → действия). */
+export type ExecutivePageStructure = {
+  /** Left-column cards on the dashboard (≤3 paragraphs). */
+  narrativeParagraphs: string[];
+  /** Bottom «факт» cards mapped to renderer keyFindings (≤2). */
+  factCards: string[];
+  /** Bottom «Следующий шаг» action. */
+  recommendations: string;
+};
+
+/**
+ * Build coverage / LIKELY-AMBIGUOUS / namesake / recommendations blocks so a
+ * sparse executive page never collapses to a single empty-looking paragraph.
+ */
+export function composeExecutivePageStructure(
+  scoped: ScopedFragmentInput,
+  es: ExecutiveSummaryExtras,
+  opts?: { gptRecommendations?: string[] }
+): ExecutivePageStructure {
+  const ms = scoped.metricSnapshot;
+  const materialWord = pluralRu(ms.compositeCount, "материал", "материала", "материалов");
+  const regionBits = Object.entries(ms.perRegionCounts ?? {})
+    .filter(([, n]) => typeof n === "number" && n > 0)
+    .map(([r, n]) => `${EXEC_REGION_LABELS[String(r).toUpperCase()] ?? r} — ${n}`);
+  const overviewBits = (es.regionalOverview ?? [])
+    .filter((r) => (r.totalCount ?? 0) > 0 || /собра|материал|негатив/i.test(r.oneLiner))
+    .map((r) => r.oneLiner)
+    .slice(0, 2);
+  const surfaces = [
+    ...new Set(
+      scoped.surfaceUnits
+        .map((u) => EXEC_SURFACE_LABELS[u.surface])
+        .filter((x): x is string => Boolean(x))
+    ),
+  ];
+  const coverage = clampClientText(
+    [
+      `Карта покрытия: собрано ${ms.compositeCount} ${materialWord}, из них о субъекте — ${ms.subjectMatchCount}`,
+      regionBits.length > 0 ? `; контуры: ${regionBits.join("; ")}` : "",
+      surfaces.length > 0 ? `. Проверенные поверхности: ${surfaces.slice(0, 7).join(", ")}` : "",
+      overviewBits.length > 0 ? `. ${overviewBits.join(" ")}` : "",
+      ".",
+    ].join(""),
+    400
+  );
+
+  const likelyN = ms.likelySubjectCount ?? 0;
+  const ambN = ms.ambiguousCount ?? 0;
+  const caveatLikely = (es.identityCaveats ?? []).find((c) =>
+    /не удалось однозначно|неоднознач|вероятн|требуют подтвержд/i.test(c)
+  );
+  const likelyBlock =
+    likelyN > 0 || ambN > 0 || caveatLikely
+      ? clampClientText(
+          caveatLikely ??
+            [
+              likelyN > 0
+                ? `Материалы, требующие подтверждения: ${likelyN} — см. матрицу рисков и приложение.`
+                : "",
+              ambN > 0
+                ? `Неоднозначная атрибуция: ${ambN} ${pluralRu(ambN, "наблюдение", "наблюдения", "наблюдений")} — не учтены как факты о субъекте.`
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" "),
+          380
+        )
+      : undefined;
+
+  const otherN = ms.otherSubjectCount ?? 0;
+  const caveatOther = (es.identityCaveats ?? []).find((c) =>
+    /другом лице|тёз|тезк|однофамил/i.test(c)
+  );
+  const namesakeBlock =
+    otherN > 0 || caveatOther
+      ? clampClientText(
+          caveatOther ??
+            `Значимая часть выдачи относится к другому лицу (${otherN} ${pluralRu(
+              otherN,
+              "наблюдение",
+              "наблюдения",
+              "наблюдений"
+            )}) и исключена из выводов о проверяемом субъекте.`,
+          380
+        )
+      : undefined;
+
+  const recommendations = clampClientText(
+    (opts?.gptRecommendations?.length
+      ? opts.gptRecommendations.slice(0, 2).join(" ")
+      : (es.priorityActions ?? []).slice(0, 3).join(" ")) ||
+      "Расширить проверку по незакрытым направлениям; не интерпретировать отсутствие подтверждённых находок как отсутствие риска.",
+    220
+  );
+
+  const conclusion = clampClientText(
+    es.executiveConclusion ||
+      "Подтверждённых adverse-находок по собранным источникам недостаточно для риск-выводов. Выводы не выдуманы.",
+    600
+  );
+
+  const narrativeParagraphs = [conclusion, coverage];
+  const identityCombined = [likelyBlock, namesakeBlock].filter(Boolean).join(" ");
+  if (identityCombined) {
+    narrativeParagraphs.push(clampClientText(identityCombined, 400));
+  } else if ((es.dataLimitations ?? [])[0]) {
+    narrativeParagraphs.push(
+      clampClientText(`Ограничения данных: ${es.dataLimitations[0]}`, 400)
+    );
+  }
+
+  const factCards: string[] = [];
+  if (likelyBlock) factCards.push(likelyBlock);
+  if (namesakeBlock && namesakeBlock !== likelyBlock) factCards.push(namesakeBlock);
+  for (const lim of es.dataLimitations ?? []) {
+    if (factCards.length >= 2) break;
+    const text = clampClientText(`Ограничения: ${lim}`, 340);
+    if (!factCards.includes(text)) factCards.push(text);
+  }
+  if (factCards.length === 0) {
+    factCards.push(
+      clampClientText(
+        "Подтверждённых наблюдений с привязкой к источникам нет — сводные риск-карточки не заполняются предположениями.",
+        340
+      )
+    );
+  }
+  if (factCards.length < 2) {
+    factCards.push(clampClientText(coverage, 340));
+  }
+
+  return {
+    narrativeParagraphs: narrativeParagraphs.slice(0, 3),
+    factCards: factCards.slice(0, 2),
+    recommendations,
+  };
+}
+
 export function buildExecutiveSummaryFragment(
   sectionId: SectionType,
   scoped: ScopedFragmentInput,
@@ -833,11 +995,16 @@ export function buildExecutiveSummaryFragment(
     return bulletWithFindingId(text, k.findingId, 400);
   });
   // Sparse but complete collection: keep a client-safe page that states
-  // there are no confirmed findings — never invent risks.
+  // there are no confirmed findings — never invent risks. Still show
+  // coverage / LIKELY / namesake / recommendations (§7.3).
   const sparse =
     es.keyFindings.length === 0 ||
     /INSUFFICIENT|недостат/i.test(es.verdict) ||
     /недостат|insufficient|no confirmed/i.test(es.executiveConclusion);
+  const structure = composeExecutivePageStructure(scoped, es, {
+    gptRecommendations: gpt?.recommendations,
+  });
+  const ms = scoped.metricSnapshot;
   // Narrative: prefer the holistic GPT conclusion + digital portrait. The
   // renderer draws one card per paragraph (up to 3 incl. the subtitle line),
   // clipping each at ~420 chars — split on sentence boundaries to never lose
@@ -851,20 +1018,29 @@ export function buildExecutiveSummaryFragment(
           ]
         : splitClientParagraphs(gpt.executiveConclusion, 400, 2)
       : [];
-  const narrative = sparse
-    ? clampClientText(
-        es.executiveConclusion ||
-          "Подтверждённых adverse-находок по собранным источникам недостаточно для риск-выводов. Выводы не выдуманы.",
-        600
-      )
-    : gptParagraphs.length > 0
-      ? gptParagraphs.join("\n")
-      : es.executiveConclusion;
+  let narrative: string;
+  if (sparse) {
+    narrative = structure.narrativeParagraphs.join("\n");
+  } else if (gptParagraphs.length > 0) {
+    const paras = [...gptParagraphs];
+    // Dense path: still surface identity pollution / LIKELY when GPT omitted them.
+    const needsIdentity =
+      ((ms.otherSubjectCount ?? 0) > 0 || (ms.likelySubjectCount ?? 0) > 0) &&
+      !/другом лице|требуют подтвержд|тёз|однофамил/i.test(paras.join(" "));
+    if (needsIdentity && paras.length < 3) {
+      const identityBits = [structure.factCards[0], structure.factCards[1]]
+        .filter(Boolean)
+        .filter((t) => /другом лице|требуют подтвержд|неоднознач|тёз|однофамил/i.test(t));
+      if (identityBits[0]) paras.push(clampClientText(identityBits[0], 400));
+    }
+    narrative = paras.slice(0, 3).join("\n");
+  } else {
+    narrative = es.executiveConclusion;
+  }
   // Base slide feeds the executive dashboard layout (conclusion + top risk
   // cards); the remaining key findings continue on an adjacent slide so no
   // finding is lost visually.
   const TOP_CARDS = 2;
-  const ms = scoped.metricSnapshot;
   const base = makeSlotSlide({
     slot,
     sectionId,
@@ -884,26 +1060,30 @@ export function buildExecutiveSummaryFragment(
         { label: "Тем риска", value: String(ms.adverseFindingCount), tone: "risk" },
         { label: "Выводов", value: String(es.keyFindings.length), tone: "accent" },
       ],
-      bullets:
-        cardTexts.length > 0
+      bullets: sparse
+        ? structure.factCards.slice(0, TOP_CARDS)
+        : cardTexts.length > 0
           ? cardTexts.slice(0, TOP_CARDS)
-          : [
-              "Подтверждённых наблюдений с привязкой к источникам нет — сводные показатели не заполняются предположениями.",
-            ],
-      whatToCheck:
-        gpt && gpt.recommendations.length > 0
-          ? clampClientText(gpt.recommendations.slice(0, 2).join(" "), 220)
-          : es.priorityActions.length > 0
-            ? clampClientText(es.priorityActions.slice(0, 3).join(" "), 220)
-            : "Повторите сбор после расширения источников; не интерпретируйте отсутствие данных как отсутствие риска.",
+          : structure.factCards.slice(0, TOP_CARDS),
+      whatToCheck: structure.recommendations,
       sourceNote: sourceLine(scoped),
     },
     evidenceRefs: uniqueRefs(scoped),
     findingIds: es.keyFindings.map((k) => k.findingId),
-    metrics: { keyFindings: es.keyFindings.length, sparse: sparse ? 1 : 0 },
+    metrics: {
+      keyFindings: es.keyFindings.length,
+      sparse: sparse ? 1 : 0,
+      structureBlocks: structure.narrativeParagraphs.length + structure.factCards.length + 1,
+    },
   });
   const slides: SlideContentContract[] = [base];
-  const contBullets = bullets.slice(TOP_CARDS);
+  const contBullets = sparse
+    ? [
+        ...structure.narrativeParagraphs.slice(1),
+        ...(es.identityCaveats ?? []).slice(0, 3).map((c) => clampClientText(c, 380)),
+        ...(es.dataLimitations ?? []).slice(0, 2).map((c) => clampClientText(`Ограничения: ${c}`, 380)),
+      ].filter((b, i, arr) => arr.indexOf(b) === i)
+    : bullets.slice(TOP_CARDS);
   if (gpt && !sparse && gpt.positiveSignals.length > 0) {
     contBullets.push(
       clampClientText(`Позитивные сигналы: ${gpt.positiveSignals.slice(0, 3).join(" ")}`, 380)
@@ -917,10 +1097,12 @@ export function buildExecutiveSummaryFragment(
       continuationOf: base.slideId,
       continuationIndex: 1,
       templateId: "continuation",
-      title: "Резюме — ключевые факты (продолжение)",
+      title: sparse
+        ? "Резюме — покрытие и ограничения"
+        : "Резюме — ключевые факты (продолжение)",
       subtitle: undefined,
       content: {
-        bullets: contBullets,
+        bullets: contBullets.slice(0, 8),
         whatToCheck: undefined,
         sourceNote: sourceLine(scoped),
       },

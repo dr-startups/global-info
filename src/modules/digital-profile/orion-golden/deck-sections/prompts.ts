@@ -50,10 +50,14 @@ function deterministicPrompt(promptKey: string): FragmentPromptDef {
 
 export const FRAGMENT_PROMPTS: Record<FragmentKey, FragmentPromptDef> = {
   FRONT_MATTER_MAIN: deterministicPrompt("front-matter"),
-  EXECUTIVE_SUMMARY: llmPrompt(
-    "executive-summary",
-    "итоговое резюме по проверяемому лицу на основе VerifiedFindingBundle"
-  ),
+  // v2: §7.3 sparse structure — coverage / LIKELY / namesake / recommendations.
+  EXECUTIVE_SUMMARY: {
+    ...llmPrompt(
+      "executive-summary",
+      "итоговое резюме по проверяемому лицу на основе VerifiedFindingBundle"
+    ),
+    promptVersion: "executive-summary-v2",
+  },
   // v2: reserve first-page slot for LIKELY «Требует подтверждения» (§2.1).
   RISK_MATRIX: {
     ...deterministicPrompt("risk-matrix"),

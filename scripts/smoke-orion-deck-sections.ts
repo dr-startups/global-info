@@ -24,6 +24,7 @@ import {
   buildSectionPackForFragment,
   buildSerpFragment,
   buildUaeProfileSection,
+  composeExecutivePageStructure,
   composePageRowComposition,
   fragmentScope,
   pageRowCompositionBlocks,
@@ -743,6 +744,76 @@ describe("sidebar evidence scope (fail closed)", () => {
     });
     assert.equal(report.passed, false);
     assert.ok(report.issues.some((i) => i.includes("outside fragment scope")));
+  });
+});
+
+describe("REMEDIATION §7.3 executive sparse structure", () => {
+  it("composeExecutivePageStructure yields ≥3 content blocks (coverage + identity + actions)", () => {
+    const ctx = makeCtx();
+    const es = {
+      verdict: "INSUFFICIENT_DATA",
+      executiveConclusion:
+        "Собранных подтверждённых данных по субъекту недостаточно для доказательного вывода о репутационных рисках. Значительная часть найденных материалов относится к другому лицу и не может использоваться в выводах.",
+      keyFindings: [] as Array<{
+        findingId: string;
+        title: string;
+        factualBasis: string;
+        clientImpact: string;
+        recommendedAction: string;
+      }>,
+      priorityActions: ["Расширить проверку по незакрытым направлениям до принятия решений."],
+      identityCaveats: [
+        "В выдаче присутствуют материалы о другом лице — Тёзка (12 набл.); они исключены из выводов о проверяемом субъекте.",
+        "4 наблюдений не удалось однозначно отнести к проверяемому лицу; они не учитывались как факты.",
+      ],
+      dataLimitations: ["Комплаенс-базы: выборка ограничена доступными провайдерами."],
+      regionalOverview: [
+        { region: "RU", oneLiner: "Регион RU: негативные материалы — 2 из 40 (5%).", totalCount: 40 },
+      ],
+    };
+    const scoped = {
+      subject: ctx.subject,
+      findings: [],
+      surfaceUnits: ctx.surfaceUnits.slice(0, 6),
+      metricSnapshot: {
+        ...ctx.metricSnapshot,
+        compositeCount: 80,
+        subjectMatchCount: 3,
+        likelySubjectCount: 7,
+        ambiguousCount: 4,
+        otherSubjectCount: 12,
+        adverseFindingCount: 0,
+        perRegionCounts: { RU: 50, UAE: 30 },
+      },
+      scope: fragmentScope("EXECUTIVE_SUMMARY"),
+      evidenceIndex: ctx.evidenceIndex,
+    };
+    const structure = composeExecutivePageStructure(scoped as never, es);
+    const blockCount =
+      structure.narrativeParagraphs.length + structure.factCards.length + (structure.recommendations ? 1 : 0);
+    assert.ok(blockCount >= 3, `expected ≥3 blocks, got ${blockCount}`);
+    assert.ok(structure.narrativeParagraphs.some((p) => /Карта покрытия/i.test(p)));
+    assert.ok(
+      structure.narrativeParagraphs.some((p) => /другом лице|требуют подтвержд|неоднознач/i.test(p)) ||
+        structure.factCards.some((p) => /другом лице|требуют подтвержд|неоднознач/i.test(p))
+    );
+    assert.match(structure.recommendations, /Расширить проверку|проверка/i);
+
+    const pack = buildSectionPackForFragment("EXECUTIVE_SUMMARY", {
+      ...ctx,
+      metricSnapshot: scoped.metricSnapshot,
+      extras: { executiveSummary: es, visualAssets: ctx.extras.visualAssets },
+      buildLog: [],
+    });
+    assert.equal(pack.status, "READY");
+    const slide = pack.slides[0]!;
+    const paras = String(slide.content.narrative ?? "").split(/\n+/).filter(Boolean);
+    assert.ok(paras.length >= 2, "sparse narrative must not be a single collapsed paragraph");
+    assert.ok(slide.content.bullets && slide.content.bullets.length >= 2);
+    assert.ok(String(slide.content.whatToCheck ?? "").length > 20);
+    assert.ok(
+      slide.content.kpis?.some((k) => k.label === "Вероятно о субъекте" && k.value === "7")
+    );
   });
 });
 
