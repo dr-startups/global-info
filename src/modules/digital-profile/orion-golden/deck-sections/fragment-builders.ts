@@ -11,6 +11,7 @@
  * `VISUAL_ASSET_UNAVAILABLE` fallback when the underlying asset is missing.
  */
 
+import { createHash } from "node:crypto";
 import type {
   FragmentKey,
   SectionType,
@@ -672,10 +673,15 @@ function stripExecutiveFreshnessChangeSentences(text: string): string {
     .trim();
 }
 
+/** Must stay ≤ client-text-contract narrative budget (900). */
+const EXEC_NARRATIVE_BUDGET = 900;
+
 /**
  * Ensure §7.2 copy is present as its own short narrative paragraph.
  * The executive dashboard clips long cards (~420 chars / height) — folding into
  * the lead paragraph (PDF 28) hid the line; a dedicated short card stays visible.
+ * Total narrative is clamped to the section-QA budget so «Дожать GPT» cannot
+ * fail ASSEMBLY with EXECUTIVE_SUMMARY:FAILED (over-budget).
  */
 export function ensureExecutiveFreshnessChangeInNarrative(
   narrative: string,
@@ -683,14 +689,31 @@ export function ensureExecutiveFreshnessChangeInNarrative(
 ): string {
   const line = executiveFreshnessChangeVisibleLine(extras);
   if (!line) return narrative;
-  const shortLine = clampClientText(line, 280);
+  const shortLine = clampClientText(line, 220);
   const paras = narrative
     .split("\n")
     .map((p) => stripExecutiveFreshnessChangeSentences(p))
     .filter(Boolean);
   if (paras.length === 0) return shortLine;
+  // Reserve room for §7.2 paragraph + newlines inside the 900-char budget.
+  const leadBudget = Math.max(120, EXEC_NARRATIVE_BUDGET - shortLine.length - 2);
+  const lead = clampClientText(paras[0]!, leadBudget);
+  const restBudget = Math.max(
+    0,
+    EXEC_NARRATIVE_BUDGET - lead.length - shortLine.length - 2
+  );
+  const rest: string[] = [];
+  let used = 0;
+  for (const p of paras.slice(1)) {
+    if (rest.length >= 1) break;
+    if (used >= restBudget) break;
+    const piece = clampClientText(p, restBudget - used);
+    if (!piece) break;
+    rest.push(piece);
+    used += piece.length + 1;
+  }
   // Slot 1: short §7.2 card between lead conclusion and portrait/coverage.
-  return [paras[0], shortLine, ...paras.slice(1)].filter(Boolean).slice(0, 3).join("\n");
+  return [lead, shortLine, ...rest].filter(Boolean).join("\n");
 }
 
 /**
@@ -701,6 +724,7 @@ export function ensureExecutiveFreshnessChangeInNarrative(
 export function applyExecutiveFreshnessChangeToPacks<
   T extends {
     fragmentKey: string;
+    contentHash?: string;
     slides: Array<{
       isContinuation?: boolean;
       content: {
@@ -737,7 +761,10 @@ export function applyExecutiveFreshnessChangeToPacks<
         },
       };
     });
-    return { ...pack, slides };
+    const contentHash = `sha256:${createHash("sha256")
+      .update(JSON.stringify(slides))
+      .digest("hex")}`;
+    return { ...pack, slides, contentHash };
   });
 }
 

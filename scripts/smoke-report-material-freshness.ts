@@ -373,12 +373,15 @@ describe("REMEDIATION §7.2 post-GPT executive freshness pass", () => {
         previousJobId: "unified-prev",
       },
     };
+    // Live failure mode: GPT left ~860 chars; appending §7.2 exceeded narrative 900.
     const wipedNarrative =
-      "Цифровой профиль Олега Владимировича Дерипаски несёт критический репутационный риск: негативные и комплаенс-чувствительные темы представлены не единично, а устойчивыми блоками публикаций о проверяемом лице. Наиболее значимые зоны — 21 судебно-криминальная публикация с негативным содержанием, 50 материалов по PEP.";
+      "Цифровой профиль Олега Владимировича Дерипаски несёт критический репутационный риск: негативные и комплаенс-чувствительные темы представлены не единично, а устойчивыми блоками публикаций о проверяемом лице. Наиболее значимые зоны — 21 судебно-криминальная публикация с негативным содержанием, 50 материалов по PEP, RCA и watchlist-сигналам, из них 49 негативных, а также сюжеты о политической экспозиции, семейных и деловых связях, корпоративном владении и финансовых претензиях. При этом деловой профиль заметен: выявлено 89 публикаций деловой тематики, но 10 из них также имеют негативное содержание, поэтому позитивный контур не снимает комплаенс-риск. Для банков, контрагентов и инвесторов ключевым будет не общий имидж, а документально подтверждённые ответы по санкционному статусу, источникам финансирования и связанным структурам.";
+    assert.ok(wipedNarrative.length > 800);
     const packs = applyExecutiveFreshnessChangeToPacks(
       [
         {
           fragmentKey: "EXECUTIVE_SUMMARY",
+          contentHash: "sha256:old",
           slides: [
             {
               content: { narrative: wipedNarrative, bullets: ["Риск A"] },
@@ -397,13 +400,14 @@ describe("REMEDIATION §7.2 post-GPT executive freshness pass", () => {
       extras
     );
     const exec = packs[0]!;
-    const paras = String(exec.slides[0]!.content.narrative ?? "")
-      .split("\n")
-      .filter(Boolean);
+    const narrative = String(exec.slides[0]!.content.narrative ?? "");
+    assert.ok(narrative.length <= 900, `narrative budget 900, got ${narrative.length}`);
+    const paras = narrative.split("\n").filter(Boolean);
     assert.ok(paras.length >= 2);
     assert.match(paras[1]!, /Данные собраны 01\.07\.2025/i);
     assert.match(paras[1]!, /Новых материалов с прошлого отчёта: 610/);
     assert.ok(paras[1]!.length < 320);
+    assert.ok(exec.contentHash && exec.contentHash !== "sha256:old");
     assert.ok(
       (exec.slides[1]!.content.bullets ?? [])[0]?.match(/Новых материалов|данные собраны/i)
     );
