@@ -31,6 +31,17 @@ describe("REMEDIATION §8.1 / 9.3 legacy report UI gate", () => {
     assert.match(view, /ReportQualityPanel/);
     assert.doesNotMatch(view, /OrionV2ReportPanel/);
     assert.doesNotMatch(view, /OrionClientStoryboardReportPanel/);
+    // Case page must not hard-fail on retired GET /report when legacy UI is off.
+    assert.match(
+      view,
+      /legacyReportUi\s*\?\s*getReport\(caseId\)\s*:\s*Promise\.resolve\(null\)/
+    );
+  });
+
+  it("getReport treats LEGACY_REPORT_PATH_RETIRED as empty", () => {
+    const api = read("modules/digital-profile/client/api.ts");
+    assert.match(api, /LEGACY_REPORT_PATH_RETIRED/);
+    assert.match(api, /err\.code === "NOT_FOUND" \|\| err\.code === "LEGACY_REPORT_PATH_RETIRED"/);
   });
 
   it("default-visible surfaces gate legacy generate CTAs; one unified CTA remains", () => {

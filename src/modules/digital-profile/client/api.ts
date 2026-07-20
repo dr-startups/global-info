@@ -20,6 +20,7 @@ export type ApiErrorCode =
   | "NOT_FOUND"
   | "CONFLICT"
   | "RENDERER_UNAVAILABLE"
+  | "LEGACY_REPORT_PATH_RETIRED"
   | "INTERNAL_ERROR"
   | "NETWORK_ERROR";
 
@@ -890,7 +891,11 @@ export async function getReport(caseId: string): Promise<ReportVersion | null> {
   try {
     return await request<ReportVersion>(`/cases/${caseId}/report`);
   } catch (err) {
-    if (err instanceof DigitalProfileApiError && err.code === "NOT_FOUND") {
+    if (
+      err instanceof DigitalProfileApiError &&
+      (err.code === "NOT_FOUND" || err.code === "LEGACY_REPORT_PATH_RETIRED")
+    ) {
+      // REMEDIATION 9.3 — GET /report is retired; unified downloads use job artifacts.
       return null;
     }
     throw err;

@@ -103,7 +103,8 @@ export function CaseDetailView({
         await Promise.all([
           getCase(caseId),
           getEvidence(caseId),
-          getReport(caseId),
+          // REMEDIATION 9.3 — legacy GET /report is retired; only fetch when UI flag is on.
+          legacyReportUi ? getReport(caseId) : Promise.resolve(null),
           listAgents(caseId),
           listAgentRuns(caseId),
           listSearchSurfaces(caseId),
@@ -126,7 +127,7 @@ export function CaseDetailView({
       const msg = err instanceof Error ? err.message : undefined;
       setState({ kind: "error", message: tError(code, msg) });
     }
-  }, [caseId, tError]);
+  }, [caseId, legacyReportUi, tError]);
 
   const refreshEvidence = useCallback(async () => {
     try {
