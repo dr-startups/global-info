@@ -23,9 +23,10 @@ export const GET = withModule(async (_req: NextRequest, ctx: RouteContext) => {
       error: {
         code: "LEGACY_REPORT_PATH_RETIRED",
         message:
-          "The legacy diagnostics bundle path is retired. Use the unified job status and canonical download endpoints.",
+          "The legacy diagnostics bundle path is retired. Use GET /unified-collection/diagnostics-bundle?jobId=…",
         details: {
           canonicalStatus: `/api/digital-profile/cases/${id}/unified-collection`,
+          diagnosticsBundle: `/api/digital-profile/cases/${id}/unified-collection/diagnostics-bundle?jobId=…`,
         },
       },
     },

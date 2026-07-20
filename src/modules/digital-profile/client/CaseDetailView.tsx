@@ -693,6 +693,8 @@ export function CaseDetailView({
             <ReportQualityPanel
               quality={unifiedJob?.reportQuality}
               jobWarnings={unifiedJob?.warnings}
+              caseId={caseId}
+              jobId={unifiedJob?.unifiedJobId ?? unifiedJob?.jobId}
               onRetryGptCopy={handleRetryGptCopy}
               retryingGptCopy={retryingGptCopy}
               gptCopyRetryAllowed={Boolean(unifiedJob?.gptCopyRetryAllowed)}

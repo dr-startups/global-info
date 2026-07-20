@@ -1404,6 +1404,12 @@ export function getCanonicalArtifactDownloadUrl(
   return `${BASE}/cases/${caseId}/unified-collection/download?${q.toString()}`;
 }
 
+/** REMEDIATION §8.3 — support zip of JSON/text job artifacts (no binaries). */
+export function getUnifiedDiagnosticsBundleUrl(caseId: string, jobId: string): string {
+  const q = new URLSearchParams({ jobId });
+  return `${BASE}/cases/${caseId}/unified-collection/diagnostics-bundle?${q.toString()}`;
+}
+
 export type OrionGoldenPrepareSummary = {
   ok: boolean;
   caseId: string;

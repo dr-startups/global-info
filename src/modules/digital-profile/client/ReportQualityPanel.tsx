@@ -7,6 +7,7 @@
 
 import { Badge } from "./components";
 import type { JobReportQualityDTO } from "./api";
+import { getUnifiedDiagnosticsBundleUrl } from "./api";
 import {
   describeEmptyStateReason,
   describeGptStage1Status,
@@ -18,6 +19,7 @@ import {
   OFFLINE_ENRICHMENT_CLIENT_MESSAGE,
   OFFLINE_ENRICHMENT_WARNING,
 } from "../config/offline-enrichment-guard";
+import { useDpAuth } from "./auth-provider";
 
 function FunnelCell({ label, value }: { label: string; value: string }) {
   return (
@@ -43,6 +45,8 @@ function FunnelCell({ label, value }: { label: string; value: string }) {
 export function ReportQualityPanel({
   quality,
   jobWarnings,
+  caseId,
+  jobId,
   onRetryGptCopy,
   retryingGptCopy,
   gptCopyRetryAllowed,
@@ -50,14 +54,22 @@ export function ReportQualityPanel({
   quality: JobReportQualityDTO | null | undefined;
   /** Unified job.warnings — used for §8.2 offline-enrichment banner. */
   jobWarnings?: string[] | null;
+  /** REMEDIATION §8.3 — diagnostics zip download. */
+  caseId?: string;
+  jobId?: string;
   /** REMEDIATION §4.3 — selective FALLBACK_* stage-2 retry. */
   onRetryGptCopy?: () => void;
   retryingGptCopy?: boolean;
   gptCopyRetryAllowed?: boolean;
 }) {
+  const { can } = useDpAuth();
   const offlineEnrichment = (jobWarnings ?? []).some(
     (w) => w === OFFLINE_ENRICHMENT_WARNING || w.startsWith(`${OFFLINE_ENRICHMENT_WARNING}:`)
   );
+  const diagnosticsUrl =
+    caseId && jobId && can("evidence.viewRaw")
+      ? getUnifiedDiagnosticsBundleUrl(caseId, jobId)
+      : null;
 
   if (!quality && !offlineEnrichment) return null;
 
@@ -102,6 +114,19 @@ export function ReportQualityPanel({
           }}
         >
           {OFFLINE_ENRICHMENT_CLIENT_MESSAGE}
+        </div>
+      ) : null}
+
+      {diagnosticsUrl ? (
+        <div>
+          <a
+            className="dp-btn"
+            href={diagnosticsUrl}
+            data-testid="diagnostics-bundle-download"
+            title="JSON/текстовые артефакты job-каталога без PDF/PNG; секреты вырезаны"
+          >
+            Скачать diagnostics bundle
+          </a>
         </div>
       ) : null}
 
