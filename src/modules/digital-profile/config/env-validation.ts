@@ -10,6 +10,8 @@
  * be exercised by smoke tests.
  */
 
+import { offlineEnrichmentEnvWarning } from "./offline-enrichment-guard";
+
 type Env = Record<string, string | undefined>;
 
 const DEFAULT_SECRET = "change-me-in-production";
@@ -204,6 +206,10 @@ export function validateDigitalProfileEnv(
       );
     }
   }
+
+  // REMEDIATION §8.2 — silent offline enrichment in deploy-like envs.
+  const offlineWarn = offlineEnrichmentEnvWarning(env);
+  if (offlineWarn) warnings.push(offlineWarn);
 
   return { ok: errors.length === 0, errors, warnings };
 }

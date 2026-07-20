@@ -44,6 +44,10 @@ import {
   gptLayerAppliedFromQuality,
 } from "./report-ready-gates";
 import { digitalProfileConfig } from "../config";
+import {
+  ensureOfflineEnrichmentJobWarning,
+  isOfflineEnrichmentMode,
+} from "../config/offline-enrichment-guard";
 import { assertPreRenderDataGates } from "./pre-render-data-gates";
 import {
   runCanonicalReportPrepare,
@@ -511,15 +515,23 @@ export async function startUnifiedOrionCollection(input: {
     arsenkinMode: input.arsenkinMode ?? "full-first36",
     forceNew: Boolean(input.confirmPaidRecollection && existing && unifiedJobHasPreservedStages(existing)),
   });
+  // REMEDIATION §8.2 — surface silent offline enrichment in deploy-like envs.
+  let started = job;
+  if (isOfflineEnrichmentMode()) {
+    started =
+      patchUnifiedCollectionJob(job.caseId, {
+        warnings: ensureOfflineEnrichmentJobWarning(job.warnings ?? []),
+      }) ?? job;
+  }
   if (input.deps?.autoSchedule !== false) {
     scheduleUnifiedTick(input.caseId, input.deps);
   }
   return {
     accepted: true,
-    jobId: job.jobId,
-    unifiedJobId: job.unifiedJobId,
+    jobId: started.jobId,
+    unifiedJobId: started.unifiedJobId,
     created,
-    stage: job.stage,
+    stage: started.stage,
   };
 }
 

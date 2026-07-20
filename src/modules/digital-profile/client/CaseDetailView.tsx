@@ -686,14 +686,16 @@ export function CaseDetailView({
         </Card>
       ) : null}
 
-      {unifiedJob?.reportQuality ? (
+      {unifiedJob?.reportQuality ||
+      (unifiedJob?.warnings ?? []).some((w) => w.startsWith("offline-enrichment-mode")) ? (
         <Card>
           <SoftRenderBoundary>
             <ReportQualityPanel
-              quality={unifiedJob.reportQuality}
+              quality={unifiedJob?.reportQuality}
+              jobWarnings={unifiedJob?.warnings}
               onRetryGptCopy={handleRetryGptCopy}
               retryingGptCopy={retryingGptCopy}
-              gptCopyRetryAllowed={Boolean(unifiedJob.gptCopyRetryAllowed)}
+              gptCopyRetryAllowed={Boolean(unifiedJob?.gptCopyRetryAllowed)}
             />
           </SoftRenderBoundary>
         </Card>
