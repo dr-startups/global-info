@@ -315,14 +315,37 @@ describe("REMEDIATION §7.2 material freshness and report-diff", () => {
       extras.gptCaseAnalysis.executiveConclusion,
       extras
     );
-    assert.match(folded, /Данные собраны 01\.07\.2025/i);
-    assert.match(folded, /Новых материалов с прошлого отчёта: 610/);
+    const foldedParas = folded.split("\n").filter(Boolean);
+    assert.ok(foldedParas.length >= 2, "§7.2 must be its own paragraph");
+    assert.match(foldedParas[1]!, /Данные собраны 01\.07\.2025/i);
+    assert.match(foldedParas[1]!, /Новых материалов с прошлого отчёта: 610/);
+    assert.ok(!EXEC_MARKER_IN_LEAD(foldedParas[0]!), "lead para must not bury §7.2");
+
+    // Long lead (PDF 28 failure mode): §7.2 was clipped inside para 0 — promote out.
+    const longLead =
+      "Цифровой профиль субъекта характеризуется высокой публичной узнаваемостью и значительным объёмом материалов, напрямую относящихся к проверяемому лицу: 631 совпадение из 742. Ключевой репутационный фон формируют санкционные, PEP/watchlist, судебно-криминальные, политические и корпоративно-финансовые сюжеты. Данные собраны 03.07.2026; самый свежий материал — 19.07.2026.\n" +
+      "Проверяемое лицо имеет крайне заметный публичный цифровой след.";
+    const promoted = ensureExecutiveFreshnessChangeInNarrative(longLead, extras);
+    const promotedParas = promoted.split("\n").filter(Boolean);
+    assert.equal(promotedParas.length, 3);
+    assert.match(promotedParas[1]!, /Данные собраны 01\.07\.2025/i);
+    assert.ok(!/данные собраны|Новых материалов/i.test(promotedParas[0]!));
+    assert.ok(!/данные собраны|Новых материалов/i.test(promotedParas[2]!));
 
     const out = buildExecutiveSummaryFragment("EXECUTIVE_SUMMARY" as never, scoped as never, extras);
     assert.equal(out.status, "READY");
     const narrative = String(out.slides[0]?.content.narrative ?? "");
-    assert.match(narrative, /Данные собраны 01\.07\.2025|данные собраны 01\.07\.2025/i);
-    assert.match(narrative, /Новых материалов с прошлого отчёта: 610/);
+    const narParas = narrative.split("\n").filter(Boolean);
+    assert.ok(narParas.some((p) => /Новых материалов с прошлого отчёта: 610/i.test(p)));
+    assert.ok(
+      narParas.some(
+        (p) =>
+          /Данные собраны 01\.07\.2025/i.test(p) &&
+          p.length < 320 &&
+          !/цифровой профиль|критический репутационный/i.test(p)
+      ),
+      "§7.2 must be a short standalone paragraph for the executive dashboard"
+    );
     const cont = out.slides.find((s) => s.isContinuation);
     assert.ok(cont, "continuation slide expected");
     assert.ok(
@@ -331,3 +354,7 @@ describe("REMEDIATION §7.2 material freshness and report-diff", () => {
     );
   });
 });
+
+function EXEC_MARKER_IN_LEAD(text: string): boolean {
+  return /данные собраны|Новых материалов с прошлого отчёта/i.test(text);
+}

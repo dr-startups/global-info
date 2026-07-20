@@ -661,19 +661,36 @@ export function executiveFreshnessChangeVisibleLine(
 const EXEC_FRESHNESS_CHANGE_RE =
   /данные собраны|самый свежий материал|Новых материалов с прошлого отчёта/i;
 
-/** Ensure §7.2 copy is present in client-visible narrative (not only sourceNote). */
+/** Drop §7.2 sentences so they can be re-placed as their own short paragraph. */
+function stripExecutiveFreshnessChangeSentences(text: string): string {
+  return text
+    .replace(/[^.?!\n]*данные собраны[^.?!\n]*[.?!]?/giu, " ")
+    .replace(/[^.?!\n]*самый свежий материал[^.?!\n]*[.?!]?/giu, " ")
+    .replace(/[^.?!\n]*Новых материалов с прошлого отчёта[^.?!\n]*[.?!]?/giu, " ")
+    .replace(/\s+/gu, " ")
+    .replace(/\s+([,;:.])/gu, "$1")
+    .trim();
+}
+
+/**
+ * Ensure §7.2 copy is present as its own short narrative paragraph.
+ * The executive dashboard clips long cards (~420 chars / height) — folding into
+ * the lead paragraph (PDF 28) hid the line; a dedicated short card stays visible.
+ */
 export function ensureExecutiveFreshnessChangeInNarrative(
   narrative: string,
   extras?: FragmentExtras
 ): string {
   const line = executiveFreshnessChangeVisibleLine(extras);
   if (!line) return narrative;
-  if (EXEC_FRESHNESS_CHANGE_RE.test(narrative)) return narrative;
-  const paras = narrative.split("\n").filter(Boolean);
-  if (paras.length === 0) return clampClientText(line, 420);
-  // Executive dashboard renders the first narrative card — fold into it.
-  paras[0] = clampClientText(`${paras[0]} ${line}`, 420);
-  return paras.join("\n");
+  const shortLine = clampClientText(line, 280);
+  const paras = narrative
+    .split("\n")
+    .map((p) => stripExecutiveFreshnessChangeSentences(p))
+    .filter(Boolean);
+  if (paras.length === 0) return shortLine;
+  // Slot 1: short §7.2 card between lead conclusion and portrait/coverage.
+  return [paras[0], shortLine, ...paras.slice(1)].filter(Boolean).slice(0, 3).join("\n");
 }
 
 /**
