@@ -37,8 +37,9 @@ import {
   buildImageGridSvg,
   buildKnowledgePanelSvg,
   buildSurfacePanelSvg,
+  fetchImagePreviewsWithBudget,
   svgToPngBase64,
-  tryFetchImagePreview,
+  type ImagePreviewFetchOptions,
 } from "../orion-report-spec/media-asset-svg";
 import { mapSurfaceBucket } from "../orion-golden/classic/composite-serp-overlay-merge";
 import {
@@ -330,6 +331,13 @@ export async function buildCanonicalVisualAssets(input: {
    */
   fetchImagePreviews?: boolean;
   /**
+   * REMEDIATION §5.2 — disk cache dir for URL→preview (job artifacts).
+   * Resume/rebuild skips network when the URL is already cached.
+   */
+  previewCacheDir?: string;
+  /** Test-only (§5.2): injected fetch / concurrency / budget overrides. */
+  previewFetch?: ImagePreviewFetchOptions;
+  /**
    * Fresh real SERP screenshots (§1.4). When present for a region, they replace
    * the synthetic snapshot for p10 (RU) / p27 (UAE).
    */
@@ -343,6 +351,13 @@ export async function buildCanonicalVisualAssets(input: {
   await assertSharpAvailable();
 
   const fetchPreviews = input.fetchImagePreviews ?? process.env.NETWORK_CALLS !== "0";
+  const previewOpts: ImagePreviewFetchOptions = {
+    concurrency: 4,
+    timeoutMs: 5000,
+    budgetMs: 30_000,
+    ...input.previewFetch,
+    cacheDir: input.previewFetch?.cacheDir ?? input.previewCacheDir,
+  };
   const assets: RendererAssetEntry[] = [];
   const visualAssets: VisualAssetsBySlot = {};
   const failed: VisualAssetFailure[] = [];
@@ -650,30 +665,32 @@ export async function buildCanonicalVisualAssets(input: {
     title: string
   ): Promise<boolean> => {
     if (rows.length === 0) return false;
-    const gridItems = await Promise.all(
-      rows.slice(0, 6).map(async (r) => {
-        const hl = classifyObservationHighlight({
-          url: r.sourceUrl ?? null,
-          domain: domainOf(r.sourceUrl) || null,
-          title: r.title ?? null,
-          snippet: r.snippet ?? null,
-        } as unknown as PersistedSerpObservation);
-        const previewBase64 = fetchPreviews
-          ? await tryFetchImagePreview(r.imageUrl || r.sourceUrl)
-          : undefined;
-        return {
-          title: String(r.title ?? "").slice(0, 80) || "Изображение из поиска",
-          domain: domainOf(r.sourceUrl) || domainOf(r.imageUrl) || "источник в выдаче",
-          previewBase64,
-          unavailableNote: previewBase64
-            ? undefined
-            : "Превью недоступно: источник не отдал изображение",
-          highlight: hl.isHighlighted,
-          frameTone: hl.isHighlighted ? ("red" as const) : ("none" as const),
-          themeLabel: hl.themeTitle ?? undefined,
-        };
-      })
-    );
+    const slice = rows.slice(0, 6);
+    const previewUrls = slice.map((r) => r.imageUrl || r.sourceUrl);
+    const previews = fetchPreviews
+      ? await fetchImagePreviewsWithBudget(previewUrls, previewOpts)
+      : new Map<string, string | undefined>();
+    const gridItems = slice.map((r) => {
+      const hl = classifyObservationHighlight({
+        url: r.sourceUrl ?? null,
+        domain: domainOf(r.sourceUrl) || null,
+        title: r.title ?? null,
+        snippet: r.snippet ?? null,
+      } as unknown as PersistedSerpObservation);
+      const url = r.imageUrl || r.sourceUrl;
+      const previewBase64 = url ? previews.get(url) : undefined;
+      return {
+        title: String(r.title ?? "").slice(0, 80) || "Изображение из поиска",
+        domain: domainOf(r.sourceUrl) || domainOf(r.imageUrl) || "источник в выдаче",
+        previewBase64,
+        unavailableNote: previewBase64
+          ? undefined
+          : "Превью недоступно: источник не отдал изображение",
+        highlight: hl.isHighlighted,
+        frameTone: hl.isHighlighted ? ("red" as const) : ("none" as const),
+        themeLabel: hl.themeTitle ?? undefined,
+      };
+    });
     const png = await svgToPngBase64(buildImageGridSvg({ title, items: gridItems }));
     const visibleItems = rows.slice(0, 6).map(toVisibleItem);
     const asset: RendererAssetEntry = {

@@ -15,16 +15,39 @@ process.env.NETWORK_CALLS = "0";
 
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { RawInventoryItem } from "../src/modules/digital-profile/orion-golden/types";
+import {
+  buildImageGridItems,
+  fetchImagePreviewsWithBudget,
+} from "../src/modules/digital-profile/orion-report-spec/media-asset-svg";
 import { buildCanonicalVisualAssets } from "../src/modules/digital-profile/services/canonical-visual-assets";
 import {
   compositeObservationsToInventory,
   runCanonicalReportPrepare,
 } from "../src/modules/digital-profile/services/canonical-report-prepare";
 import type { CompositeObservation } from "../src/modules/digital-profile/services/composite-serp-merge";
+
+/** 1×1 PNG — sharp-decodable bytes for fake preview fetch (§5.2). */
+const TINY_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64"
+);
+
+function fakeOkResponse(): Response {
+  return {
+    ok: true,
+    status: 200,
+    arrayBuffer: async () =>
+      TINY_PNG.buffer.slice(TINY_PNG.byteOffset, TINY_PNG.byteOffset + TINY_PNG.byteLength),
+  } as Response;
+}
+
+function fakeFailResponse(): Response {
+  return { ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) } as Response;
+}
 
 function item(over: Partial<RawInventoryItem>): RawInventoryItem {
   return {
@@ -163,6 +186,115 @@ describe("canonical visual assets", () => {
     assert.equal(out.failed.length, 1);
     // Sibling suggestion panel still builds.
     assert.ok(out.visualAssets["p12_ru_suggestions_google"]?.length);
+  });
+
+  it("REMEDIATION §5.2: 2 of 6 fetches fail → grid built with 2 placeholders", async () => {
+    let fetchCalls = 0;
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      fetchCalls += 1;
+      const url = String(input);
+      return url.includes("/fail-") ? fakeFailResponse() : fakeOkResponse();
+    }) as typeof fetch;
+    const items = Array.from({ length: 6 }, (_, i) => ({
+      title: `Фото ${i + 1}`,
+      domain: `cdn${i}.example.org`,
+      imageUrl:
+        i < 2
+          ? `https://cdn.example.org/fail-${i}.jpg`
+          : `https://cdn.example.org/ok-${i}.jpg`,
+    }));
+    const grid = await buildImageGridItems(items, {
+      fetchImpl,
+      concurrency: 4,
+      timeoutMs: 5000,
+      budgetMs: 30_000,
+    });
+    assert.equal(grid.length, 6);
+    assert.equal(grid.filter((g) => !g.previewBase64).length, 2);
+    assert.equal(grid.filter((g) => Boolean(g.previewBase64)).length, 4);
+    assert.ok(grid.every((g) => g.unavailableNote || g.previewBase64));
+    assert.equal(fetchCalls, 6);
+  });
+
+  it("REMEDIATION §5.2: offline NETWORK_CALLS=0 does not fetch", async () => {
+    let fetchCalls = 0;
+    const fetchImpl = (async () => {
+      fetchCalls += 1;
+      return fakeOkResponse();
+    }) as typeof fetch;
+    // Without inject, tryFetch short-circuits under NETWORK_CALLS=0.
+    const offline = await fetchImagePreviewsWithBudget(
+      ["https://cdn.example.org/a.jpg", "https://cdn.example.org/b.jpg"],
+      { concurrency: 4, budgetMs: 30_000 }
+    );
+    assert.equal(offline.get("https://cdn.example.org/a.jpg"), undefined);
+    assert.equal(offline.get("https://cdn.example.org/b.jpg"), undefined);
+    // Injected fetch still runs (tests); production offline never passes inject.
+    const withInject = await fetchImagePreviewsWithBudget(["https://cdn.example.org/c.jpg"], {
+      fetchImpl,
+      concurrency: 1,
+    });
+    assert.ok(withInject.get("https://cdn.example.org/c.jpg"));
+    assert.equal(fetchCalls, 1);
+  });
+
+  it("REMEDIATION §5.2: disk cache skips network on second pass", async () => {
+    const cacheDir = join(tmpdir(), `img-preview-cache-${Date.now()}`);
+    mkdirSync(cacheDir, { recursive: true });
+    try {
+      let fetchCalls = 0;
+      const fetchImpl = (async () => {
+        fetchCalls += 1;
+        return fakeOkResponse();
+      }) as typeof fetch;
+      const url = "https://cdn.example.org/cached.jpg";
+      const first = await fetchImagePreviewsWithBudget([url], {
+        fetchImpl,
+        cacheDir,
+        concurrency: 1,
+      });
+      assert.ok(first.get(url));
+      assert.equal(fetchCalls, 1);
+      const second = await fetchImagePreviewsWithBudget([url], {
+        fetchImpl,
+        cacheDir,
+        concurrency: 1,
+      });
+      assert.ok(second.get(url));
+      assert.equal(fetchCalls, 1, "second pass must hit disk cache");
+      assert.ok(readdirSync(cacheDir).some((f) => f.endsWith(".b64")));
+    } finally {
+      rmSync(cacheDir, { recursive: true, force: true });
+    }
+  });
+
+  it("REMEDIATION §5.2: canonical grids use injected preview fetch + placeholders", async () => {
+    let fetchCalls = 0;
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      fetchCalls += 1;
+      return String(input).includes("fail") ? fakeFailResponse() : fakeOkResponse();
+    }) as typeof fetch;
+    const items: RawInventoryItem[] = Array.from({ length: 6 }, (_, i) =>
+      item({
+        inventoryId: `img-${i}`,
+        evidenceType: "image_result",
+        title: `Фото ${i}`,
+        sourceUrl: `https://cdn.example.org/${i < 2 ? "fail" : "ok"}-${i}.jpg`,
+        imageUrl: `https://cdn.example.org/${i < 2 ? "fail" : "ok"}-${i}.jpg`,
+        rawMetadata: { engine: "GOOGLE", surface: "images", queryText: "иван тестов" },
+      })
+    );
+    const out = await buildCanonicalVisualAssets({
+      subjectName: "Тестов Иван",
+      items,
+      fetchImagePreviews: true,
+      previewFetch: { fetchImpl, concurrency: 4, budgetMs: 30_000 },
+    });
+    assert.ok(out.visualAssets["p14_ru_images_1"]?.length);
+    assert.equal(out.counts.imageGrids, 1);
+    assert.equal(fetchCalls, 6);
+    const asset = out.assets.find((a) => a.assetRef === "ru_image_grid_1");
+    assert.ok(asset && String(asset.imageData ?? "").length > 1000);
   });
 
   it("surface hints survive composite → inventory → visual build (images/ai)", async () => {

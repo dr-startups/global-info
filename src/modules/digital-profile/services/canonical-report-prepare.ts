@@ -757,6 +757,8 @@ export async function runCanonicalReportPrepare(
         subjectName: subjectDisplayName,
         items,
         realSerpScreenshots: supplement.serpScreenshots,
+        // REMEDIATION §5.2 — resume/rebuild reuses URL→preview without re-fetch.
+        previewCacheDir: join(input.artifactsDir, "image-preview-cache"),
       });
       rendererAssets = visuals.assets;
       visualAssetsBySlot = visuals.visualAssets;

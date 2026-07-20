@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import sharp from "sharp";
 import { COLORS, FONT_STACK, FS, truncateToWidth } from "../serp-snapshot/layout";
 
@@ -21,21 +24,117 @@ export type ImageGridItem = {
   themeLabel?: string;
 };
 
-export async function tryFetchImagePreview(url: string | undefined): Promise<string | undefined> {
+export type ImagePreviewFetchOptions = {
+  /** Per-URL timeout (default 5000). */
+  timeoutMs?: number;
+  /** Max parallel fetches (default 4). */
+  concurrency?: number;
+  /** Wall-clock budget for the whole batch (default 30000). */
+  budgetMs?: number;
+  /** Disk cache directory (URL sha → base64 PNG). */
+  cacheDir?: string;
+  /** Injected fetch for offline tests. */
+  fetchImpl?: typeof fetch;
+  nowMs?: () => number;
+};
+
+function previewCacheKey(url: string): string {
+  return createHash("sha256").update(url).digest("hex").slice(0, 32);
+}
+
+function readPreviewCache(cacheDir: string | undefined, url: string): string | undefined {
+  if (!cacheDir) return undefined;
+  const path = join(cacheDir, `${previewCacheKey(url)}.b64`);
+  if (!existsSync(path)) return undefined;
+  try {
+    const raw = readFileSync(path, "utf8").trim();
+    return raw.length > 0 ? raw : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writePreviewCache(cacheDir: string | undefined, url: string, b64: string): void {
+  if (!cacheDir || !b64) return;
+  try {
+    mkdirSync(cacheDir, { recursive: true });
+    writeFileSync(join(cacheDir, `${previewCacheKey(url)}.b64`), b64, "utf8");
+  } catch {
+    // Cache is best-effort — never fail the grid.
+  }
+}
+
+/**
+ * Fetch one image preview. Disk cache first; NETWORK_CALLS=0 without inject →
+ * placeholder (no network). Failures never throw (§5.2).
+ */
+export async function tryFetchImagePreview(
+  url: string | undefined,
+  opts?: Pick<ImagePreviewFetchOptions, "timeoutMs" | "fetchImpl" | "cacheDir">
+): Promise<string | undefined> {
   if (!url || !/^https?:\/\//i.test(url)) return undefined;
+  const cached = readPreviewCache(opts?.cacheDir, url);
+  if (cached) return cached;
+  if (process.env.NETWORK_CALLS === "0" && !opts?.fetchImpl) return undefined;
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(url, { signal: controller.signal });
+    const timeoutMs = opts?.timeoutMs ?? 5000;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const fetchImpl = opts?.fetchImpl ?? fetch;
+    const res = await fetchImpl(url, { signal: controller.signal });
     clearTimeout(timeout);
     if (!res.ok) return undefined;
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.length > 2_000_000) return undefined;
     const png = await sharp(buf).rotate().resize(320, 200, { fit: "inside" }).png().toBuffer();
-    return png.toString("base64");
+    const b64 = png.toString("base64");
+    writePreviewCache(opts?.cacheDir, url, b64);
+    return b64;
   } catch {
     return undefined;
   }
+}
+
+/**
+ * REMEDIATION §5.2 — parallel preview fetch with concurrency + wall budget.
+ * Returns a map url → base64 | undefined (undefined = placeholder tile).
+ */
+export async function fetchImagePreviewsWithBudget(
+  urls: Array<string | undefined>,
+  opts?: ImagePreviewFetchOptions
+): Promise<Map<string, string | undefined>> {
+  const concurrency = Math.max(1, opts?.concurrency ?? 4);
+  const budgetMs = opts?.budgetMs ?? 30_000;
+  const now = opts?.nowMs ?? (() => Date.now());
+  const started = now();
+  const unique = [...new Set(urls.filter((u): u is string => Boolean(u && /^https?:\/\//i.test(u))))];
+  const out = new Map<string, string | undefined>();
+  let cursor = 0;
+
+  const worker = async () => {
+    while (cursor < unique.length) {
+      if (now() - started >= budgetMs) break;
+      const idx = cursor;
+      cursor += 1;
+      const url = unique[idx]!;
+      if (out.has(url)) continue;
+      out.set(
+        url,
+        await tryFetchImagePreview(url, {
+          timeoutMs: opts?.timeoutMs,
+          fetchImpl: opts?.fetchImpl,
+          cacheDir: opts?.cacheDir,
+        })
+      );
+    }
+  };
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, unique.length) }, () => worker()));
+  // URLs skipped after budget → explicit undefined (placeholder).
+  for (const url of unique) {
+    if (!out.has(url)) out.set(url, undefined);
+  }
+  return out;
 }
 
 export async function buildImageGridItems(
@@ -46,17 +145,19 @@ export async function buildImageGridItems(
     highlight?: boolean;
     frameTone?: "red" | "amber" | "none";
     themeLabel?: string;
-  }>
+  }>,
+  opts?: ImagePreviewFetchOptions
 ): Promise<ImageGridItem[]> {
-  const out: ImageGridItem[] = [];
-  for (const item of items.slice(0, 6)) {
+  const slice = items.slice(0, 6);
+  const previews = await fetchImagePreviewsWithBudget(
+    slice.map((i) => i.imageUrl),
+    opts
+  );
+  return slice.map((item) => {
     const domain = item.domain ?? "";
-    let previewBase64: string | undefined;
-    if (item.imageUrl) {
-      previewBase64 = await tryFetchImagePreview(item.imageUrl);
-    }
+    const previewBase64 = item.imageUrl ? previews.get(item.imageUrl) : undefined;
     const frameTone = item.frameTone ?? (item.highlight ? "red" : "none");
-    out.push({
+    return {
       title: item.title,
       domain,
       previewBase64,
@@ -64,9 +165,8 @@ export async function buildImageGridItems(
       highlight: frameTone === "red" || frameTone === "amber",
       frameTone,
       themeLabel: item.themeLabel,
-    });
-  }
-  return out;
+    };
+  });
 }
 
 export function buildImageGridSvg(input: { title: string; items: ImageGridItem[] }): string {
