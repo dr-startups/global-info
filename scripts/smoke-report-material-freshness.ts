@@ -25,8 +25,10 @@ import {
   reportDiffClientLine,
 } from "../src/modules/digital-profile/services/report-material-freshness";
 import {
+  buildExecutiveSummaryFragment,
   buildRegionalSummaryFragment,
   composeExecutivePageStructure,
+  ensureExecutiveFreshnessChangeInNarrative,
 } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders";
 import type { BaseCollectionManifest } from "../src/modules/digital-profile/services/unified-collection-types";
 
@@ -247,5 +249,85 @@ describe("REMEDIATION §7.2 material freshness and report-diff", () => {
     const text = JSON.stringify(regional.slides);
     assert.match(text, /данные собраны 01\.07\.2025/i);
     assert.match(text, /Новых материалов с прошлого отчёта: 2, ушло из выдачи: 1/);
+  });
+
+  it("dense executive narrative folds §7.2 even when GPT omits coverage", () => {
+    const extras = {
+      materialFreshness: {
+        earliestAt: "2025-07-01T00:00:00.000Z",
+        latestAt: "2025-07-18T00:00:00.000Z",
+      },
+      reportDiff: {
+        addedCount: 610,
+        removedCount: 46,
+        previousJobId: "unified-prev",
+      },
+      executiveSummary: {
+        verdict: "HIGH_RISK",
+        executiveConclusion:
+          "Итоговая оценка — критический репутационный риск. В проверенном массиве значительная часть материалов прямо относится к проверяемому лицу: 631 из 742.",
+        keyFindings: [
+          {
+            findingId: "f1",
+            title: "Санкции",
+            factualBasis: "Подтверждённый факт: 10 публикаций.",
+            clientImpact: "Банковский риск.",
+            recommendedAction: "Проверить статус.",
+          },
+        ],
+        priorityActions: ["Собрать пакет для банков."],
+        identityCaveats: [],
+        dataLimitations: [],
+        regionalOverview: [],
+      },
+      gptCaseAnalysis: {
+        executiveConclusion:
+          "Итоговая оценка по субъекту — критический репутационный риск. В проверенном массиве значительная часть материалов прямо относится к проверяемому лицу: 631 из 742.",
+        digitalPortrait: "Публичный деловой профиль с устойчивым негативным фоном.",
+        keyRisks: [],
+        recommendations: ["Подготовить единый пакет для банков."],
+        positiveSignals: [],
+      },
+    };
+    const scoped = {
+      subject: { displayName: "Test Subject", aliases: [] },
+      findings: [],
+      surfaceUnits: [],
+      metricSnapshot: {
+        metricSnapshotId: "m1",
+        datasetId: "d1",
+        reportRunId: "r1",
+        baseCount: 742,
+        enrichmentCount: 0,
+        compositeCount: 742,
+        subjectMatchCount: 631,
+        likelySubjectCount: 30,
+        ambiguousCount: 0,
+        otherSubjectCount: 0,
+        adverseFindingCount: 6,
+        perRegionCounts: { RU: 500, UAE: 242 },
+      },
+      scope: { regions: null, surfaces: null, subjectMatch: null, findingIds: null },
+      evidenceIndex: {},
+    };
+
+    const folded = ensureExecutiveFreshnessChangeInNarrative(
+      extras.gptCaseAnalysis.executiveConclusion,
+      extras
+    );
+    assert.match(folded, /Данные собраны 01\.07\.2025/i);
+    assert.match(folded, /Новых материалов с прошлого отчёта: 610/);
+
+    const out = buildExecutiveSummaryFragment("EXECUTIVE_SUMMARY" as never, scoped as never, extras);
+    assert.equal(out.status, "READY");
+    const narrative = String(out.slides[0]?.content.narrative ?? "");
+    assert.match(narrative, /Данные собраны 01\.07\.2025|данные собраны 01\.07\.2025/i);
+    assert.match(narrative, /Новых материалов с прошлого отчёта: 610/);
+    const cont = out.slides.find((s) => s.isContinuation);
+    assert.ok(cont, "continuation slide expected");
+    assert.ok(
+      (cont!.content.bullets ?? []).some((b) => /Новых материалов|данные собраны/i.test(b)),
+      "continuation should keep §7.2 bullet"
+    );
   });
 });

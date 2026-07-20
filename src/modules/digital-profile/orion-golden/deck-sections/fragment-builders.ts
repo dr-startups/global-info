@@ -638,6 +638,45 @@ function changeSinceLastReportLine(extras?: FragmentExtras): string | undefined 
 }
 
 /**
+ * §7.2 — compact freshness + change line for surfaces that render narrative/bullets
+ * but not sourceNote (executive dashboard).
+ */
+export function executiveFreshnessChangeVisibleLine(
+  extras?: FragmentExtras
+): string | undefined {
+  const fresh =
+    extras?.materialFreshness != null
+      ? freshnessFootnote(extras.materialFreshness)
+      : undefined;
+  const change = changeSinceLastReportLine(extras);
+  const parts = [
+    fresh ? `${fresh.charAt(0).toUpperCase()}${fresh.slice(1)}` : undefined,
+    change,
+  ].filter((x): x is string => Boolean(x));
+  if (parts.length === 0) return undefined;
+  const joined = parts.join(". ");
+  return joined.endsWith(".") ? joined : `${joined}.`;
+}
+
+const EXEC_FRESHNESS_CHANGE_RE =
+  /данные собраны|самый свежий материал|Новых материалов с прошлого отчёта/i;
+
+/** Ensure §7.2 copy is present in client-visible narrative (not only sourceNote). */
+export function ensureExecutiveFreshnessChangeInNarrative(
+  narrative: string,
+  extras?: FragmentExtras
+): string {
+  const line = executiveFreshnessChangeVisibleLine(extras);
+  if (!line) return narrative;
+  if (EXEC_FRESHNESS_CHANGE_RE.test(narrative)) return narrative;
+  const paras = narrative.split("\n").filter(Boolean);
+  if (paras.length === 0) return clampClientText(line, 420);
+  // Executive dashboard renders the first narrative card — fold into it.
+  paras[0] = clampClientText(`${paras[0]} ${line}`, 420);
+  return paras.join("\n");
+}
+
+/**
  * ORION-style client copy for surfaces with no collected material: what the
  * surface is, why it matters for the subject's reputation, and what to do.
  * Internal reason keys never leak into client text.
@@ -1161,6 +1200,10 @@ export function buildExecutiveSummaryFragment(
   } else {
     narrative = es.executiveConclusion;
   }
+  // Dense GPT path often omits coverage; sourceNote is not drawn on the
+  // executive dashboard — fold §7.2 into the visible narrative card.
+  narrative = ensureExecutiveFreshnessChangeInNarrative(narrative, extras);
+  const freshnessChangeLine = executiveFreshnessChangeVisibleLine(extras);
   // Base slide feeds the executive dashboard layout (conclusion + top risk
   // cards); the remaining key findings continue on an adjacent slide so no
   // finding is lost visually.
@@ -1208,6 +1251,12 @@ export function buildExecutiveSummaryFragment(
         ...(es.dataLimitations ?? []).slice(0, 2).map((c) => clampClientText(`Ограничения: ${c}`, 380)),
       ].filter((b, i, arr) => arr.indexOf(b) === i)
     : bullets.slice(TOP_CARDS);
+  if (
+    freshnessChangeLine &&
+    !contBullets.some((b) => EXEC_FRESHNESS_CHANGE_RE.test(b))
+  ) {
+    contBullets.unshift(clampClientText(freshnessChangeLine, 380));
+  }
   if (gpt && !sparse && gpt.positiveSignals.length > 0) {
     contBullets.push(
       clampClientText(`Позитивные сигналы: ${gpt.positiveSignals.slice(0, 3).join(" ")}`, 380)
@@ -1228,7 +1277,7 @@ export function buildExecutiveSummaryFragment(
       content: {
         bullets: contBullets.slice(0, 8),
         whatToCheck: undefined,
-        sourceNote: sourceLine(scoped),
+        sourceNote: sourceLine(scoped, extras),
       },
     });
   }
