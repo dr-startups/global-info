@@ -129,6 +129,42 @@ describe("canonical visual assets", () => {
     assert.equal(out.visualAssets["p28_uae_suggestions"], undefined);
   });
 
+  it("REMEDIATION §5.1: one panel failure leaves SERP snapshots built", async () => {
+    const items: RawInventoryItem[] = [
+      item({
+        inventoryId: "o1",
+        title: "Иван Тестов — биография",
+        sourceUrl: "https://forbes.ru/ivan-testov",
+      }),
+      item({
+        inventoryId: "s1",
+        evidenceType: "suggestion",
+        title: "иван тестов уголовное дело",
+        sourceUrl: undefined,
+        rawMetadata: { engine: "YANDEX", surface: "autocomplete", queryText: "иван тестов" },
+      }),
+      item({
+        inventoryId: "s2",
+        evidenceType: "suggestion",
+        title: "иван тестов биография",
+        sourceUrl: undefined,
+        rawMetadata: { engine: "GOOGLE", surface: "autocomplete", queryText: "иван тестов" },
+      }),
+    ];
+    const out = await buildCanonicalVisualAssets({
+      subjectName: "Тестов Иван",
+      items,
+      injectFailureForAssetRef: "ru_suggestions_yandex",
+    });
+    assert.equal(out.counts.serpSnapshots, 1, "SERP snapshot must survive panel failure");
+    assert.ok(out.visualAssets["p10_ru_serp_visual"]?.length, "p10 SERP bound");
+    assert.equal(out.visualAssets["p11_ru_suggestions_yandex"], undefined);
+    assert.ok(out.failed.some((f) => f.assetRef === "ru_suggestions_yandex"));
+    assert.equal(out.failed.length, 1);
+    // Sibling suggestion panel still builds.
+    assert.ok(out.visualAssets["p12_ru_suggestions_google"]?.length);
+  });
+
   it("surface hints survive composite → inventory → visual build (images/ai)", async () => {
     const observations: CompositeObservation[] = [
       {

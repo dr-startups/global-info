@@ -597,7 +597,7 @@ export async function runCanonicalReportPrepare(
         caseId: deckInputs.caseId,
         reportRunId: deckInputs.reportRunId,
         sourceDatasetId: deckInputs.sourceDatasetId,
-        contentVersion: "deck-sections-v19",
+        contentVersion: "deck-sections-v20",
         subject: {
           displayName: subjectDisplayName,
           aliases: subjectProfile.aliases ?? [],
@@ -760,6 +760,13 @@ export async function runCanonicalReportPrepare(
       });
       rendererAssets = visuals.assets;
       visualAssetsBySlot = visuals.visualAssets;
+      if (visuals.failed.length > 0) {
+        const head = visuals.failed
+          .slice(0, 3)
+          .map((f) => `${f.slotId}:${f.reason}`)
+          .join("; ");
+        visualAssetWarning = `visual-asset-partial-failures:${visuals.failed.length} (${head})`;
+      }
       writeFileSync(
         join(input.artifactsDir, "report-assets.json"),
         `${JSON.stringify(visuals.assets, null, 2)}\n`,
@@ -767,12 +774,21 @@ export async function runCanonicalReportPrepare(
       );
       writeFileSync(
         join(input.artifactsDir, "visual-assets-by-slot.json"),
-        `${JSON.stringify({ counts: visuals.counts, visualAssets: visuals.visualAssets }, null, 2)}\n`,
+        `${JSON.stringify(
+          {
+            counts: visuals.counts,
+            visualAssets: visuals.visualAssets,
+            failed: visuals.failed,
+          },
+          null,
+          2
+        )}\n`,
         "utf8"
       );
     } catch (err) {
       // Visuals are additive: a failed synthetic asset never blocks the report,
       // slots downgrade to their honest text/empty-state templates.
+      // SHARP_UNAVAILABLE is raised once (§5.1), not N times per asset.
       visualAssetWarning = `visual asset build failed: ${err instanceof Error ? err.message : String(err)}`;
       rendererAssets = [];
       visualAssetsBySlot = {};
@@ -884,7 +900,7 @@ export async function runCanonicalReportPrepare(
         caseId: deckInputs.caseId,
         reportRunId: deckInputs.reportRunId,
         sourceDatasetId: deckInputs.sourceDatasetId,
-        contentVersion: "deck-sections-v19",
+        contentVersion: "deck-sections-v20",
         subject: { displayName: subjectDisplayName, aliases: subjectProfile.aliases ?? [] },
         bundle: deckInputs.mergedBundle,
         surfaceUnits: deckInputs.surfaceUnits,

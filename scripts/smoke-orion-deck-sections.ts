@@ -821,6 +821,8 @@ describe("REMEDIATION §7.4 empty surface collection status", () => {
     assert.equal(absent.kind, "NOT_COLLECTED");
     const absentCopy = coverageContent("no-related", absent);
     assert.match(String(absentCopy.narrative), /не собиралась/i);
+    // No duplicated «причина: …не собиралась».
+    assert.ok(!/причина:\s*поверхность не собиралась/i.test(String(absentCopy.narrative)));
   });
 });
 

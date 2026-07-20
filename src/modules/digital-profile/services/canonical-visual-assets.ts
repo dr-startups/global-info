@@ -46,6 +46,14 @@ import {
   type RealSerpScreenshotInput,
 } from "./evidence-supplement-adapter";
 
+/** REMEDIATION §5.1 — one asset failure must not wipe the whole visual set. */
+export type VisualAssetFailure = {
+  kind: string;
+  slotId: string;
+  assetRef: string;
+  reason: string;
+};
+
 export type CanonicalVisualAssets = {
   assets: RendererAssetEntry[];
   visualAssets: VisualAssetsBySlot;
@@ -59,7 +67,21 @@ export type CanonicalVisualAssets = {
     /** How many SERP slots used a real (LIVE/fixture) screenshot. */
     realSerpSnapshots: number;
   };
+  /** Per-asset failures (F7); remaining assets stay built. */
+  failed: VisualAssetFailure[];
 };
+
+/** Probe sharp once so a missing native binary surfaces as one clear error. */
+export async function assertSharpAvailable(): Promise<void> {
+  const tiny =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" fill="#fff"/></svg>';
+  try {
+    await svgToPngBase64(tiny);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`SHARP_UNAVAILABLE: ${msg}`);
+  }
+}
 
 type Region = "RU" | "UAE";
 
@@ -254,7 +276,15 @@ async function buildListPanelAsset(input: {
   slotId: string;
   bind: (slotId: string, meta: VisualAssetMeta) => void;
   push: (asset: RendererAssetEntry) => void;
+  /** Test hook (§5.1): force this panel to throw. */
+  injectFailureForAssetRef?: string;
 }): Promise<boolean> {
+  if (
+    input.injectFailureForAssetRef &&
+    input.injectFailureForAssetRef === input.assetRef
+  ) {
+    throw new Error(`injected-visual-failure:${input.assetRef}`);
+  }
   const rows = input.rows.filter((r) => String(r.title ?? "").trim()).slice(0, 10);
   if (rows.length === 0) return false;
   const visibleItems = rows.map(toVisibleItem);
@@ -306,13 +336,37 @@ export async function buildCanonicalVisualAssets(input: {
   realSerpScreenshots?: RealSerpScreenshotInput[];
   /** Optional clock for freshness tests. */
   nowMs?: number;
+  /** Test-only (§5.1): throw inside the builder for this assetRef. */
+  injectFailureForAssetRef?: string;
 }): Promise<CanonicalVisualAssets> {
+  // One sharp probe up front — missing natives → single SHARP_UNAVAILABLE.
+  await assertSharpAvailable();
+
   const fetchPreviews = input.fetchImagePreviews ?? process.env.NETWORK_CALLS !== "0";
   const assets: RendererAssetEntry[] = [];
   const visualAssets: VisualAssetsBySlot = {};
+  const failed: VisualAssetFailure[] = [];
   const push = (a: RendererAssetEntry) => assets.push(a);
   const bind = (slotId: string, m: VisualAssetMeta) => {
     (visualAssets[slotId] ??= []).push(m);
+  };
+  const runAsset = async (
+    kind: string,
+    slotId: string,
+    assetRef: string,
+    fn: () => Promise<boolean>
+  ): Promise<boolean> => {
+    try {
+      return await fn();
+    } catch (err) {
+      failed.push({
+        kind,
+        slotId,
+        assetRef,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
   };
 
   const by = (pred: (it: RawInventoryItem) => boolean) => input.items.filter(pred);
@@ -330,45 +384,46 @@ export async function buildCanonicalVisualAssets(input: {
     ["RU", "ru_serp_snapshot", "p10_ru_serp_visual"],
     ["UAE", "uae_serp_snapshot", "p27_uae_serp_visual"],
   ] as const) {
-    const real = pickRealSerpScreenshot(input.realSerpScreenshots ?? [], region, {
-      nowMs: input.nowMs,
-    });
-    if (real) {
-      const organic = by(
-        (it) => surfaceOf(it) === "organic" && regionOf(it.region) === region
-      );
-      const visibleItems = organic.slice(0, 10).map(toVisibleItem);
-      const asset: RendererAssetEntry = {
-        assetRef: `${assetRef}_real_${real.id}`,
-        kind: "live_serp",
-        title:
-          real.title ??
-          (region === "UAE"
-            ? "ОАЭ — снимок выдачи (LIVE)"
-            : "Россия — снимок выдачи (LIVE)"),
-        caption:
-          real.caption ??
-          "Реальный снимок поисковой выдачи (существующий контур захвата).",
-        imageData: real.imageData,
-        evidenceRefs: [
-          ...(real.evidenceRefs ?? [`serp_capture:${real.id}`]),
-          ...visibleItems.map((v) => v.ref),
-        ],
-      };
-      push(asset);
-      bind(slotId, meta(asset, visibleItems));
-      counts.serpSnapshots += 1;
-      counts.realSerpSnapshots += 1;
-      continue;
-    }
-    const ok = await buildSerpSnapshotAsset({
-      assetRef,
-      region,
-      slotId,
-      subjectName: input.subjectName,
-      items: by((it) => surfaceOf(it) === "organic" && regionOf(it.region) === region),
-      bind,
-      push,
+    const ok = await runAsset("serp_snapshot", slotId, assetRef, async () => {
+      const real = pickRealSerpScreenshot(input.realSerpScreenshots ?? [], region, {
+        nowMs: input.nowMs,
+      });
+      if (real) {
+        const organic = by(
+          (it) => surfaceOf(it) === "organic" && regionOf(it.region) === region
+        );
+        const visibleItems = organic.slice(0, 10).map(toVisibleItem);
+        const asset: RendererAssetEntry = {
+          assetRef: `${assetRef}_real_${real.id}`,
+          kind: "live_serp",
+          title:
+            real.title ??
+            (region === "UAE"
+              ? "ОАЭ — снимок выдачи (LIVE)"
+              : "Россия — снимок выдачи (LIVE)"),
+          caption:
+            real.caption ??
+            "Реальный снимок поисковой выдачи (существующий контур захвата).",
+          imageData: real.imageData,
+          evidenceRefs: [
+            ...(real.evidenceRefs ?? [`serp_capture:${real.id}`]),
+            ...visibleItems.map((v) => v.ref),
+          ],
+        };
+        push(asset);
+        bind(slotId, meta(asset, visibleItems));
+        counts.realSerpSnapshots += 1;
+        return true;
+      }
+      return buildSerpSnapshotAsset({
+        assetRef,
+        region,
+        slotId,
+        subjectName: input.subjectName,
+        items: by((it) => surfaceOf(it) === "organic" && regionOf(it.region) === region),
+        bind,
+        push,
+      });
     });
     if (ok) counts.serpSnapshots += 1;
   }
@@ -384,61 +439,70 @@ export async function buildCanonicalVisualAssets(input: {
   const p11Rows = ruYandex.length > 0 ? ruYandex : ruUnattributed;
   const p11Label = ruYandex.length > 0 ? "Яндекс" : "Яндекс / Google";
   if (
-    await buildListPanelAsset({
-      assetRef: "ru_suggestions_yandex",
-      kind: "surface_panel",
-      title:
-        ruYandex.length > 0
-          ? "Россия — поисковые подсказки Яндекса"
-          : "Россия — поисковые подсказки",
-      subtitle: `${p11Rows.length} строк · собрано через API`,
-      engineLabel: p11Label,
-      caption: "Автодополнение поисковой строки по запросам о субъекте",
-      rows: p11Rows,
-      rowMeta: (r) => (r.query ? String(r.query) : p11Label),
-      slotId: "p11_ru_suggestions_yandex",
-      bind,
-      push,
-    })
+    await runAsset("suggestion_panel", "p11_ru_suggestions_yandex", "ru_suggestions_yandex", () =>
+      buildListPanelAsset({
+        assetRef: "ru_suggestions_yandex",
+        kind: "surface_panel",
+        title:
+          ruYandex.length > 0
+            ? "Россия — поисковые подсказки Яндекса"
+            : "Россия — поисковые подсказки",
+        subtitle: `${p11Rows.length} строк · собрано через API`,
+        engineLabel: p11Label,
+        caption: "Автодополнение поисковой строки по запросам о субъекте",
+        rows: p11Rows,
+        rowMeta: (r) => (r.query ? String(r.query) : p11Label),
+        slotId: "p11_ru_suggestions_yandex",
+        bind,
+        push,
+        injectFailureForAssetRef: input.injectFailureForAssetRef,
+      })
+    )
   ) {
     counts.suggestionPanels += 1;
   }
   const p12Rows =
     ruGoogle.length > 0 ? ruGoogle : ruYandex.length > 0 ? ruUnattributed : [];
   if (
-    await buildListPanelAsset({
-      assetRef: "ru_suggestions_google",
-      kind: "surface_panel",
-      title:
-        ruGoogle.length > 0
-          ? "Россия — поисковые подсказки Google"
-          : "Россия — поисковые подсказки (дополнительно)",
-      subtitle: `${p12Rows.length} строк · собрано через API`,
-      engineLabel: ruGoogle.length > 0 ? "Google" : "Яндекс / Google",
-      caption: "Автодополнение поисковой строки по запросам о субъекте",
-      rows: p12Rows,
-      rowMeta: (r) => (r.query ? String(r.query) : undefined),
-      slotId: "p12_ru_suggestions_google",
-      bind,
-      push,
-    })
+    await runAsset("suggestion_panel", "p12_ru_suggestions_google", "ru_suggestions_google", () =>
+      buildListPanelAsset({
+        assetRef: "ru_suggestions_google",
+        kind: "surface_panel",
+        title:
+          ruGoogle.length > 0
+            ? "Россия — поисковые подсказки Google"
+            : "Россия — поисковые подсказки (дополнительно)",
+        subtitle: `${p12Rows.length} строк · собрано через API`,
+        engineLabel: ruGoogle.length > 0 ? "Google" : "Яндекс / Google",
+        caption: "Автодополнение поисковой строки по запросам о субъекте",
+        rows: p12Rows,
+        rowMeta: (r) => (r.query ? String(r.query) : undefined),
+        slotId: "p12_ru_suggestions_google",
+        bind,
+        push,
+        injectFailureForAssetRef: input.injectFailureForAssetRef,
+      })
+    )
   ) {
     counts.suggestionPanels += 1;
   }
   if (
-    await buildListPanelAsset({
-      assetRef: "uae_suggestions",
-      kind: "surface_panel",
-      title: "ОАЭ — поисковые подсказки",
-      subtitle: `${uaeSuggest.length} строк · собрано через API`,
-      engineLabel: "Google",
-      caption: "Автодополнение поисковой строки по запросам о субъекте (международный контур)",
-      rows: uaeSuggest,
-      rowMeta: (r) => (r.query ? String(r.query) : undefined),
-      slotId: "p28_uae_suggestions",
-      bind,
-      push,
-    })
+    await runAsset("suggestion_panel", "p28_uae_suggestions", "uae_suggestions", () =>
+      buildListPanelAsset({
+        assetRef: "uae_suggestions",
+        kind: "surface_panel",
+        title: "ОАЭ — поисковые подсказки",
+        subtitle: `${uaeSuggest.length} строк · собрано через API`,
+        engineLabel: "Google",
+        caption: "Автодополнение поисковой строки по запросам о субъекте (международный контур)",
+        rows: uaeSuggest,
+        rowMeta: (r) => (r.query ? String(r.query) : undefined),
+        slotId: "p28_uae_suggestions",
+        bind,
+        push,
+        injectFailureForAssetRef: input.injectFailureForAssetRef,
+      })
+    )
   ) {
     counts.suggestionPanels += 1;
   }
@@ -451,38 +515,45 @@ export async function buildCanonicalVisualAssets(input: {
   const relatedSlots = ["p20_ru_related_1", "p21_ru_related_2", "p22_ru_related_3"];
   for (let i = 0; i < 3; i += 1) {
     const rows = ruRelatedChunks[i] ?? [];
+    const assetRef = `ru_related_${i + 1}`;
     if (
-      await buildListPanelAsset({
-        assetRef: `ru_related_${i + 1}`,
-        kind: "surface_panel",
-        title: `Россия — связанные запросы (${i + 1})`,
-        subtitle: `${rows.length} строк · собрано через API`,
-        engineLabel: "Связанные запросы / PAA",
-        caption: "Вопросы и запросы, которые поиск связывает с субъектом",
-        rows,
-        rowMeta: (r) => (r.snippet ? String(r.snippet).slice(0, 80) : undefined),
-        slotId: relatedSlots[i],
-        bind,
-        push,
-      })
+      await runAsset("related_panel", relatedSlots[i], assetRef, () =>
+        buildListPanelAsset({
+          assetRef,
+          kind: "surface_panel",
+          title: `Россия — связанные запросы (${i + 1})`,
+          subtitle: `${rows.length} строк · собрано через API`,
+          engineLabel: "Связанные запросы / PAA",
+          caption: "Вопросы и запросы, которые поиск связывает с субъектом",
+          rows,
+          rowMeta: (r) => (r.snippet ? String(r.snippet).slice(0, 80) : undefined),
+          slotId: relatedSlots[i],
+          bind,
+          push,
+          injectFailureForAssetRef: input.injectFailureForAssetRef,
+        })
+      )
     ) {
       counts.relatedPanels += 1;
     }
   }
   if (
-    await buildListPanelAsset({
-      assetRef: "uae_related",
-      kind: "surface_panel",
-      title: "ОАЭ — связанные запросы",
-      subtitle: `${uaeRelated.length} строк · собрано через API`,
-      engineLabel: "Связанные запросы / PAA",
-      caption: "Вопросы и запросы, которые поиск связывает с субъектом (международный контур)",
-      rows: uaeRelated,
-      rowMeta: (r) => (r.snippet ? String(r.snippet).slice(0, 80) : undefined),
-      slotId: "p32_uae_related",
-      bind,
-      push,
-    })
+    await runAsset("related_panel", "p32_uae_related", "uae_related", () =>
+      buildListPanelAsset({
+        assetRef: "uae_related",
+        kind: "surface_panel",
+        title: "ОАЭ — связанные запросы",
+        subtitle: `${uaeRelated.length} строк · собрано через API`,
+        engineLabel: "Связанные запросы / PAA",
+        caption: "Вопросы и запросы, которые поиск связывает с субъектом (международный контур)",
+        rows: uaeRelated,
+        rowMeta: (r) => (r.snippet ? String(r.snippet).slice(0, 80) : undefined),
+        slotId: "p32_uae_related",
+        bind,
+        push,
+        injectFailureForAssetRef: input.injectFailureForAssetRef,
+      })
+    )
   ) {
     counts.relatedPanels += 1;
   }
@@ -534,7 +605,9 @@ export async function buildCanonicalVisualAssets(input: {
 
   if (ruAi.length > 0) {
     if (
-      await buildAiPanel(ruAi, "ru_ai_answers", "p19_ru_knowledge_2", "Россия — ИИ-ответы поисковых систем")
+      await runAsset("ai_panel", "p19_ru_knowledge_2", "ru_ai_answers", () =>
+        buildAiPanel(ruAi, "ru_ai_answers", "p19_ru_knowledge_2", "Россия — ИИ-ответы поисковых систем")
+      )
     ) {
       counts.aiPanels += 1;
     }
@@ -542,14 +615,23 @@ export async function buildCanonicalVisualAssets(input: {
   const ruKnowledge = ruAi.filter((it) => surfaceOf(it) === "knowledge_block");
   if (ruKnowledge.length > 0) {
     if (
-      await buildAiPanel(ruKnowledge, "ru_knowledge_panel", "p18_ru_knowledge_1", "Россия — панель знаний поиска")
+      await runAsset("ai_panel", "p18_ru_knowledge_1", "ru_knowledge_panel", () =>
+        buildAiPanel(
+          ruKnowledge,
+          "ru_knowledge_panel",
+          "p18_ru_knowledge_1",
+          "Россия — панель знаний поиска"
+        )
+      )
     ) {
       counts.aiPanels += 1;
     }
   }
   if (uaeAi.length > 0) {
     if (
-      await buildAiPanel(uaeAi, "uae_ai_answers", "p31_uae_knowledge", "ОАЭ — панель знаний и AI Overview")
+      await runAsset("ai_panel", "p31_uae_knowledge", "uae_ai_answers", () =>
+        buildAiPanel(uaeAi, "uae_ai_answers", "p31_uae_knowledge", "ОАЭ — панель знаний и AI Overview")
+      )
     ) {
       counts.aiPanels += 1;
     }
@@ -607,20 +689,27 @@ export async function buildCanonicalVisualAssets(input: {
     return true;
   };
   for (let i = 0; i < ruImageChunks.length; i += 1) {
+    const assetRef = `ru_image_grid_${i + 1}`;
     if (
-      await buildGrid(
-        ruImageChunks[i],
-        `ru_image_grid_${i + 1}`,
-        imageSlots[i],
-        `Россия — изображения в поиске (${i + 1})`
+      await runAsset("image_grid", imageSlots[i], assetRef, () =>
+        buildGrid(
+          ruImageChunks[i],
+          assetRef,
+          imageSlots[i],
+          `Россия — изображения в поиске (${i + 1})`
+        )
       )
     ) {
       counts.imageGrids += 1;
     }
   }
-  if (await buildGrid(uaeImages, "uae_image_grid", "p30_uae_images", "ОАЭ — изображения в поиске")) {
+  if (
+    await runAsset("image_grid", "p30_uae_images", "uae_image_grid", () =>
+      buildGrid(uaeImages, "uae_image_grid", "p30_uae_images", "ОАЭ — изображения в поиске")
+    )
+  ) {
     counts.imageGrids += 1;
   }
 
-  return { assets, visualAssets, counts };
+  return { assets, visualAssets, counts, failed };
 }

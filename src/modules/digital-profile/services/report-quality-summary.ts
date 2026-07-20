@@ -30,10 +30,19 @@ const GptStage2Schema = z.object({
   caseAnalysisUsed: z.boolean(),
 });
 
+const VisualFailureSchema = z.object({
+  kind: z.string().min(1),
+  slotId: z.string().min(1),
+  assetRef: z.string().min(1),
+  reason: z.string().min(1),
+});
+
 const VisualsSchema = z.object({
   built: z.number().int().nonnegative(),
   failed: z.number().int().nonnegative(),
   warning: z.string().nullable(),
+  /** REMEDIATION §5.1 — per-asset failures (optional on older artifacts). */
+  failures: z.array(VisualFailureSchema).optional(),
   byKind: z
     .object({
       serpSnapshots: z.number().int().nonnegative().optional(),
@@ -340,6 +349,7 @@ export async function buildReportQualitySummary(input: {
       imageGrids?: number;
     };
     visualAssets?: Record<string, unknown[]>;
+    failed?: Array<{ kind?: string; slotId?: string; assetRef?: string; reason?: string }>;
   }>(join(dir, "visual-assets-by-slot.json"));
 
   const prepareSummary = readJsonSafe<{
@@ -506,7 +516,16 @@ export async function buildReportQualitySummary(input: {
       ? prepareSummary.visualAssetCount
       : (builtFromKinds ?? 0);
   const warning = prepareSummary?.visualAssetWarning ?? null;
-  const failed = warning ? 1 : 0;
+  const failures = (visualsMeta?.failed ?? [])
+    .filter((f) => f?.slotId && f?.reason)
+    .map((f) => ({
+      kind: String(f.kind ?? "visual"),
+      slotId: String(f.slotId),
+      assetRef: String(f.assetRef ?? f.slotId),
+      reason: String(f.reason),
+    }));
+  // Prefer granular §5.1 failures; fall back to one opaque warning from prepare.
+  const failed = failures.length > 0 ? failures.length : warning ? 1 : 0;
 
   const slides = assembled?.slides ?? [];
   const emptyState = slides
@@ -549,6 +568,7 @@ export async function buildReportQualitySummary(input: {
       built,
       failed,
       warning,
+      failures: failures.length > 0 ? failures : undefined,
       byKind: byKind
         ? {
             serpSnapshots: byKind.serpSnapshots ?? 0,
