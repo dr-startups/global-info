@@ -54,6 +54,7 @@
     "smoke:unified-orion-collection": "tsx --test scripts/smoke-unified-orion-collection.ts",
     "smoke:unified-collection-recovery": "tsx --test scripts/smoke-unified-collection-recovery.ts",
     "smoke:unified-render-resume": "tsx --test scripts/smoke-unified-render-resume.ts",
+    "smoke:render-http-retry": "tsx --test scripts/smoke-render-http-retry.ts",
     "smoke:unified-report-rebuild": "tsx --test scripts/smoke-unified-report-rebuild.ts",
     "smoke:subject-profile-admin": "tsx --test scripts/smoke-subject-profile-admin.ts",
     "smoke:subject-context-automation": "tsx --test scripts/smoke-subject-context-automation.ts",

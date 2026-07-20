@@ -280,7 +280,11 @@ describe("unified RENDER_FAILED resume (HTTP renderer)", () => {
     let assemblyCalls = 0;
     let spawnTouched = false;
 
-    const fakeFetch: typeof fetch = async (_url, init) => {
+    const fakeFetch: typeof fetch = async (url, init) => {
+      const u = String(url);
+      if (u.includes("/health")) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
       httpCalls += 1;
       const body = JSON.parse(String(init?.body ?? "{}")) as {
         reportSpec?: unknown;
@@ -307,6 +311,7 @@ describe("unified RENDER_FAILED resume (HTTP renderer)", () => {
     const renderDeck = createCanonicalDeckRenderAdapter({
       fetchImpl: fakeFetch,
       rendererBaseUrl: "http://renderer.test:8080",
+      sleepMs: async () => {},
     });
 
     const recovered = await recoverUnifiedOrionCollectionJob({
@@ -441,12 +446,17 @@ describe("unified RENDER_FAILED resume (HTTP renderer)", () => {
     const jobId = "unified-render-http-fail";
     seedRenderFailedJob(caseId, jobId);
 
-    const fakeFetch: typeof fetch = async () =>
-      new Response("upstream boom", { status: 502 });
+    const fakeFetch: typeof fetch = async (url) => {
+      if (String(url).includes("/health")) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
+      return new Response("upstream boom", { status: 502 });
+    };
 
     const renderDeck = createCanonicalDeckRenderAdapter({
       fetchImpl: fakeFetch,
       rendererBaseUrl: "http://renderer.test:8080",
+      sleepMs: async () => {},
     });
 
     await recoverUnifiedOrionCollectionJob({
@@ -495,7 +505,10 @@ describe("unified RENDER_FAILED resume (HTTP renderer)", () => {
 
     let assemblyCount = -1;
     let httpCalls = 0;
-    const fakeFetch: typeof fetch = async () => {
+    const fakeFetch: typeof fetch = async (url) => {
+      if (String(url).includes("/health")) {
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }
       httpCalls += 1;
       return new Response(
         JSON.stringify({
@@ -510,6 +523,7 @@ describe("unified RENDER_FAILED resume (HTTP renderer)", () => {
     const renderDeck = createCanonicalDeckRenderAdapter({
       fetchImpl: fakeFetch,
       rendererBaseUrl: "http://renderer.test:8080",
+      sleepMs: async () => {},
     });
 
     await recoverUnifiedOrionCollectionJob({
