@@ -4,7 +4,7 @@
  * separate manual-review / appendix slides, capped SERP/Lexis density.
  */
 
-import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
+import type { ReportAssetV1 } from "../assets/asset-builder";
 import { sanitizeOrionGoldenClientText } from "../client/client-text-sanitizer";
 import { humanizeClientRiskMatrixRow } from "../client/risk-matrix-normalizer";
 import type { OrionGoldenReportSpec, SectionBlock } from "../report-spec/orion-report-spec";

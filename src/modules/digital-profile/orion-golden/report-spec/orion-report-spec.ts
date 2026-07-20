@@ -2,7 +2,7 @@
  * R10 — ORION Golden ReportSpec (sole renderer input).
  */
 
-import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
+import type { ReportAssetV1 } from "../assets/asset-builder";
 import type { OrionGoldenExecutiveSynthesis, OrionGoldenSectionAnalysis } from "../types";
 import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
 import { ORION_GOLDEN_BLUEPRINT } from "../blueprint/orion-golden-blueprint";

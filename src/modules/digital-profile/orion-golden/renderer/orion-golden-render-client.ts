@@ -6,7 +6,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { digitalProfileConfig } from "../../config";
-import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
+import type { ReportAssetV1 } from "../assets/asset-builder";
 import type { OrionGoldenDeckManifest } from "../composer/orion-deck-composer";
 import type { OrionGoldenReportSpec } from "../report-spec/orion-report-spec";
 

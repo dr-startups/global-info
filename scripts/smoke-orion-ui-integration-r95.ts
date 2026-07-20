@@ -90,7 +90,7 @@ function main() {
   }
 
   const oldRouteText = file(existingReportRoute);
-  check("existing report route still present", oldRouteText.includes("getLatestReport"));
+  check("existing report route still present", oldRouteText.includes("legacyReportPathRetired"));
   check(
     "existing report route unchanged semantics",
     oldRouteText.includes("requireRole(user, \"evidence.viewRaw\")")

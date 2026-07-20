@@ -2,13 +2,13 @@
  * R10 — ORION Golden deck composer (section parts → final manifest).
  */
 
-import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
+import type { ReportAssetV1 } from "../assets/asset-builder";
 import { ORION_GOLDEN_BLUEPRINT } from "../blueprint/orion-golden-blueprint";
 import { sanitizeOrionGoldenClientText } from "../client/client-text-sanitizer";
 import { humanizeClientRiskMatrixRow } from "../client/risk-matrix-normalizer";
 import type { OrionGoldenReportSpec, SectionBlock } from "../report-spec/orion-report-spec";
 
-import type { HighlightExplanation } from "../../orion-report-spec/highlight-explanation";
+import type { HighlightExplanation } from "../evidence/highlight-explanation";
 
 export type MetricTone = "neutral" | "good" | "warn" | "risk";
 

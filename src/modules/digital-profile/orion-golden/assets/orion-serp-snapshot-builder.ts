@@ -3,9 +3,9 @@
  * Reuses serp-snapshot layout tokens for visual consistency with production SERP snapshots.
  */
 
-import { renderSerpSnapshotPng } from "../serp-snapshot/renderer";
-import type { ResultView, SerpEngine, SerpSnapshotViewModel } from "../serp-snapshot/types";
-import { riskThemeLabel, type EvidenceRiskTheme, type NormalizedEvidenceV1 } from "./normalized-evidence";
+import { renderSerpSnapshotPng } from "../../serp-snapshot/renderer";
+import type { ResultView, SerpEngine, SerpSnapshotViewModel } from "../../serp-snapshot/types";
+import { riskThemeLabel, type EvidenceRiskTheme, type NormalizedEvidenceV1 } from "../evidence/normalized-evidence";
 
 function isHighlighted(ev: NormalizedEvidenceV1): boolean {
   if (ev.riskTheme === "neutral_profile" || ev.reviewStatus === "excluded_noise") return false;

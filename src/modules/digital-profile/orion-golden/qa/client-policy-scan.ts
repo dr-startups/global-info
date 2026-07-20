@@ -1,5 +1,5 @@
-import { FORBIDDEN_CLIENT_TERMS } from "./normalized-evidence";
-import type { OrionReportSpecV1 } from "./report-spec-schema";
+import { FORBIDDEN_CLIENT_TERMS } from "../evidence/normalized-evidence";
+import type { OrionReportSpecV1 } from "../report-spec/report-spec-schema";
 
 const RAW_ENUM_PATTERN = /\b[a-z]+_[a-z0-9_]+\b/gi;
 const GENERIC_TABLE_PATTERNS = [/поле\s*\/\s*значение/i, /этап анализа/i, /showing top \d+/i];

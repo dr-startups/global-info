@@ -2,7 +2,7 @@
  * R10 — Client text policy inspection for ORION Golden ReportSpec + deck.
  */
 
-import { scanReportSpecClientText } from "../../orion-report-spec/client-policy-scan";
+import { scanReportSpecClientText } from "./client-policy-scan";
 import type { OrionGoldenDeckManifest } from "../composer/orion-deck-composer";
 import {
   ORION_GOLDEN_FORBIDDEN_RAW_TOKENS,

@@ -17,7 +17,7 @@ import {
   resolveLiveCaptureOutcome,
   buildDefaultLiveSerpSlots,
 } from "../src/modules/digital-profile/orion-golden/classic/orion-classic-live-serp-assets";
-import type { ReportAssetV1 } from "../src/modules/digital-profile/orion-report-spec/asset-builder";
+import type { ReportAssetV1 } from "../src/modules/digital-profile/orion-golden/assets/asset-builder";
 
 let failures = 0;
 function check(name: string, ok: boolean, extra?: string) {

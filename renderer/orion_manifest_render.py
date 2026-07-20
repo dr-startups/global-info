@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import json
-import os
 import re
 from pathlib import Path
 from typing import Any
@@ -15,10 +14,8 @@ from pptx.dml.color import RGBColor
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Pt
 
-try:
-    from render_pptx import build_pptx as _renderer_build_pptx
-except Exception:  # pragma: no cover - optional import
-    _renderer_build_pptx = None
+# REMEDIATION 9.3 — do not call legacy report_template_v3 via render_pptx.
+# Manifest decks use the local fallback PPTX builder only.
 
 ALLOW_BRANDS = {
     "orion",
@@ -141,19 +138,7 @@ def _write_pptx_fallback(report_json: dict[str, Any], pptx_path: Path) -> int:
 
 
 def _write_pptx(report_json: dict[str, Any], pptx_path: Path, audience: str) -> int:
-    if _renderer_build_pptx is not None:
-        warnings, slide_count = _renderer_build_pptx(
-            report_json,
-            str(pptx_path),
-            os.getcwd(),
-            "report-template-v3",
-            audience,
-            "draft",
-        )
-        if int(slide_count or 0) > 0:
-            return int(slide_count or 0)
-        _ = warnings
-        return _write_pptx_fallback(report_json, pptx_path)
+    _ = audience
     return _write_pptx_fallback(report_json, pptx_path)
 
 

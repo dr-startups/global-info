@@ -2,8 +2,8 @@
  * RETIRED: POST /api/digital-profile/cases/[id]/report/render
  * REMEDIATION 9.3 — legacy v1–v3 PPTX/PDF render. Canonical: unified-collection/download.
  *
- * Note: report-builder-service / report-renderer-service / Python templates remain
- * for download helpers and internal use until a 9.3 follow-up.
+ * Historical ReportVersion files remain downloadable via /reports/[id]/download
+ * (streaming only; Python report_template_v* deleted).
  */
 
 import type { NextRequest } from "next/server";

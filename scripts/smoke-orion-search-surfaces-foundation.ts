@@ -4,7 +4,7 @@
  * Run: npm run smoke:orion-search-surfaces-foundation
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildOrionQueryPlan, transliterateRuToEn } from "../src/modules/digital-profile/search-surfaces/orion-query-plan";
 import { buildSearchMatrix } from "../src/modules/digital-profile/search-surfaces/search-matrix";
@@ -21,8 +21,6 @@ import {
   classifySearchResultRecord,
   isRiskyResultClass,
 } from "../src/modules/digital-profile/risk-classifier/result-classifier";
-import { buildReportJson } from "../src/modules/digital-profile/services/report-builder-service";
-
 const SUBJECT_RU = "Томилин Константин Романович";
 
 let failures = 0;
@@ -276,7 +274,8 @@ async function main() {
   const caps = getProviderCapabilities("GOOGLE");
   check("Google capabilities object", typeof caps.organicSearch.method === "string");
 
-  // 9–14. Report JSON structure (requires DB — skip if no DATABASE_URL)
+  // 9–14. Search-surfaces report block (requires DB — skip if no DATABASE_URL).
+  // Legacy report_json builder / report_template_v3 retired (REMEDIATION 9.3).
   if (process.env.DATABASE_URL) {
     try {
       const { prisma } = await import("../src/server/prisma/client");
@@ -287,18 +286,11 @@ async function main() {
       });
       if (demoCase) {
         const block = await buildSearchSurfacesReportBlock(demoCase.id);
-        const reportJson = await buildReportJson(demoCase.id, 1, "DRAFT", "en");
         check("searchSurfaces has ru/uae/intl", Boolean(block.regions.ru && block.regions.uae && block.regions.international));
-        const auditRegions = (reportJson.auditSummary?.regions ?? []) as Array<{ region: string; organicTotal?: number; relatedQueriesTotal?: number }>;
-        check(
-          "INTERNATIONAL not in UAE audit row",
-          !auditRegions.some((r) => r.region === "UAE" && (r.organicTotal ?? 0) > 100)
-        );
+        const intlAudit = regionBlockToAuditRegion(block.regions.international);
         check(
           "INTERNATIONAL audit row when data present",
-          block.regions.international.relatedQueries.total > 0
-            ? auditRegions.some((r) => r.region === "INTERNATIONAL")
-            : true
+          block.regions.international.relatedQueries.total > 0 ? Boolean(intlAudit) : true
         );
         check(
           "global relatedQueriesTotal matches regions",
@@ -315,25 +307,23 @@ async function main() {
             : true,
           block.globalSummary.knowledgePanelStatus
         );
-        check("report_json.searchSurfaces present", Boolean(reportJson.searchSurfaces));
-        const jsonStr = JSON.stringify(reportJson);
-        check("No secrets in report_json", !/"apiKey"\s*:\s*"[^"]+"/.test(jsonStr) && !jsonStr.includes("sk-live"));
+        const jsonStr = JSON.stringify(block);
+        check("No secrets in searchSurfaces block", !/"apiKey"\s*:\s*"[^"]+"/.test(jsonStr) && !jsonStr.includes("sk-live"));
         check("No demo wording EN client", !jsonStr.toLowerCase().includes("mock fixture"));
-        check("SERP snapshot synthetic", !reportJson.serpSnapshot || reportJson.serpSnapshot.mode === "SYNTHETIC");
       } else {
-        console.log("[SKIP] No case in DB for report_json checks");
+        console.log("[SKIP] No case in DB for searchSurfaces checks");
       }
     } catch (e) {
-      console.log(`[SKIP] DB report checks: ${e instanceof Error ? e.message : e}`);
+      console.log(`[SKIP] DB searchSurfaces checks: ${e instanceof Error ? e.message : e}`);
     }
   } else {
-    console.log("[SKIP] DATABASE_URL not set — report_json checks skipped");
+    console.log("[SKIP] DATABASE_URL not set — searchSurfaces DB checks skipped");
   }
 
-  // Template slide count preserved (static check)
-  const template = readFileSync(join(process.cwd(), "renderer/report_template_v3.py"), "utf8");
-  check("Template v3 50-slide builders", template.includes("ctx.total = len(builders)"));
-
+  check(
+    "Legacy report_template_v3 retired",
+    !existsSync(join(process.cwd(), "renderer/report_template_v3.py"))
+  );
   console.log(`\n${failures === 0 ? "ALL CHECKS PASSED" : `${failures} CHECK(S) FAILED`}`);
   process.exit(failures > 0 ? 1 : 0);
 }

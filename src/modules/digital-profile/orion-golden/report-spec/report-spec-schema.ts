@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { ReportAssetV1 } from "./asset-builder";
-export type { ReportAssetV1 } from "./asset-builder";
-import type { NormalizedEvidenceV1 } from "./normalized-evidence";
+import type { ReportAssetV1 } from "../assets/asset-builder";
+export type { ReportAssetV1 } from "../assets/asset-builder";
+import type { NormalizedEvidenceV1 } from "../evidence/normalized-evidence";
 
 export type OrionReportSectionKey = "executive_summary" | "ru_audit_summary" | "ru_search_results";
 

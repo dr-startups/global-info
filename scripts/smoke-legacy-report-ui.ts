@@ -5,7 +5,7 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 
@@ -55,6 +55,7 @@ describe("REMEDIATION §8.1 / 9.3 legacy report UI gate", () => {
     const helper = read("modules/digital-profile/http/legacy-report-retired.ts");
     assert.match(helper, /LEGACY_REPORT_PATH_RETIRED/);
     for (const rel of [
+      "app/api/digital-profile/cases/[id]/report/route.ts",
       "app/api/digital-profile/cases/[id]/report/orion-v2/route.ts",
       "app/api/digital-profile/cases/[id]/report/orion-client-storyboard/route.ts",
       "app/api/digital-profile/cases/[id]/report/generate/route.ts",
@@ -64,6 +65,20 @@ describe("REMEDIATION §8.1 / 9.3 legacy report UI gate", () => {
       assert.match(src, /legacyReportPathRetired/);
       assert.match(src, /RETIRED/);
     }
+  });
+
+  it("historical report download stays streaming-only; builder/templates gone", () => {
+    const download = read("app/api/digital-profile/reports/[id]/download/route.ts");
+    assert.match(download, /getReportFileForDownload/);
+    assert.equal(
+      existsSync(join(process.cwd(), "src/modules/digital-profile/services/report-builder-service.ts")),
+      false
+    );
+    assert.equal(existsSync(join(process.cwd(), "renderer/report_template_v3.py")), false);
+    assert.equal(
+      existsSync(join(process.cwd(), "src/modules/digital-profile/orion-report-spec")),
+      false
+    );
   });
 
   it("no default-mounted client path calls legacy generate without gate", () => {

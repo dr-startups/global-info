@@ -1,5 +1,5 @@
-import type { OrionRealCaseContext } from "../orion-golden/evidence/real-case-context";
-import { classifyWikipediaHit } from "../serp-observation/classify-wikipedia-hit";
+import type { OrionRealCaseContext } from "./real-case-context";
+import { classifyWikipediaHit } from "../../serp-observation/classify-wikipedia-hit";
 import {
   clientSourceLabel,
   extractDomain,

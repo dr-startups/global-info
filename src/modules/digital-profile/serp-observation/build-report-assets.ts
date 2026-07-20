@@ -5,7 +5,7 @@
  */
 
 import { renderSerpSnapshotPng } from "../serp-snapshot/renderer";
-import type { ReportAssetV1 } from "../orion-report-spec/asset-builder";
+import type { ReportAssetV1 } from "../orion-golden/assets/asset-builder";
 import {
   buildSyntheticSerpViewModelFromObservations,
 } from "./synthetic-asset";

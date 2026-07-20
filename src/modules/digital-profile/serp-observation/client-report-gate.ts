@@ -1,4 +1,4 @@
-import type { ReportAssetV1 } from "../orion-report-spec/asset-builder";
+import type { ReportAssetV1 } from "../orion-golden/assets/asset-builder";
 
 export type RequiredVisualSection = {
   sectionKey: string;

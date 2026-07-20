@@ -151,7 +151,7 @@ def health() -> dict:
     }
 
 
-DEFAULT_TEMPLATE_VERSION = "report-template-v3"
+DEFAULT_TEMPLATE_VERSION = "simple"
 
 
 @app.post("/orion/render-manifest", response_model=OrionManifestRenderResponse)
@@ -257,7 +257,20 @@ def lexis_process_docx(req: LexisDocxProcessRequest) -> LexisDocxProcessResponse
 
 @app.post("/render", response_model=RenderResponse)
 def render(req: RenderRequest) -> RenderResponse:
+    """Legacy report_json → PPTX/PDF.
+
+    REMEDIATION 9.3: report_template_v1/v2/v3 are retired. Only template_version
+    "simple" remains; new production decks use /orion/render-golden.
+    """
     version = (req.templateVersion or DEFAULT_TEMPLATE_VERSION).strip()
+    if version.startswith("report-template-v"):
+        raise HTTPException(
+            status_code=410,
+            detail=(
+                f"Legacy template {version!r} is retired (REMEDIATION 9.3). "
+                "Use /orion/render-golden for ORION Golden decks."
+            ),
+        )
     audience = (req.audience or "internal").strip().lower()
     watermark_mode = (req.watermarkMode or "draft").strip().lower()
 

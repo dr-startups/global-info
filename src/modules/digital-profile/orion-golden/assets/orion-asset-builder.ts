@@ -3,9 +3,9 @@
  */
 
 import type { OrionRealCaseContext } from "../evidence/real-case-context";
-import { buildReportAssets } from "../../orion-report-spec/asset-builder";
-import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
-import { buildRuSearchEvidence, buildUaeSearchEvidence } from "../../orion-report-spec/section-evidence-adapter";
+import { buildReportAssets } from "./asset-builder";
+import type { ReportAssetV1 } from "./asset-builder";
+import { buildRuSearchEvidence, buildUaeSearchEvidence } from "../evidence/section-evidence-adapter";
 import { buildLexisReportAssets } from "./lexis-asset-builder";
 import { buildComplianceVisualAssets } from "../classic/orion-compliance-visual-assets";
 import { loadFile } from "../../storage/private-store";

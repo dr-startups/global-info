@@ -4,16 +4,16 @@
  */
 
 import type { OrionRealCaseContext } from "../evidence/real-case-context";
-import { buildOrionSingleEngineSerpPng } from "../../orion-report-spec/orion-serp-snapshot-builder";
-import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
-import { buildRuSearchEvidence } from "../../orion-report-spec/section-evidence-adapter";
+import { buildOrionSingleEngineSerpPng } from "../assets/orion-serp-snapshot-builder";
+import type { ReportAssetV1 } from "../assets/asset-builder";
+import { buildRuSearchEvidence } from "../evidence/section-evidence-adapter";
 import {
   extractDomain,
   mapRiskTheme,
   mapReviewStatus,
   type EvidenceRiskTheme,
   type NormalizedEvidenceV1,
-} from "../../orion-report-spec/normalized-evidence";
+} from "../evidence/normalized-evidence";
 import { buildOrionGoldenAssets } from "../assets/orion-asset-builder";
 import { loadFile } from "../../storage/private-store";
 import {

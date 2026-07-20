@@ -6,7 +6,7 @@
  * NOT modified at this stage — this mapper is standalone and only consumed once
  * the full template lands.
  *
- * TODO (Stage K): wire `buildSurfacesReportSection` into report-builder-service
+ * TODO (Stage K): wire `buildSurfacesReportSection` into canonical/golden report assembly
  * and the PPTX template once the report layout for surfaces is finalized.
  */
 

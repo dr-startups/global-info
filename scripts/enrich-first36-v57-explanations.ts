@@ -6,13 +6,13 @@
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ReportAssetV1 } from "../src/modules/digital-profile/orion-report-spec/asset-builder";
-import type { HighlightExplanation } from "../src/modules/digital-profile/orion-report-spec/highlight-explanation";
+import type { ReportAssetV1 } from "../src/modules/digital-profile/orion-golden/assets/asset-builder";
+import type { HighlightExplanation } from "../src/modules/digital-profile/orion-golden/evidence/highlight-explanation";
 import {
   assertValidHighlightExplanation,
   isValidSourceDomain,
   resolveFrameTone,
-} from "../src/modules/digital-profile/orion-report-spec/highlight-explanation";
+} from "../src/modules/digital-profile/orion-golden/evidence/highlight-explanation";
 
 const DOMAIN_REASON_RE =
   /([a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+)\s*[—–-]\s*([^.;]+)/gi;

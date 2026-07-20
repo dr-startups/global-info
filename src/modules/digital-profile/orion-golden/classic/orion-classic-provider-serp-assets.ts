@@ -6,7 +6,7 @@
 
 import { ensureOrionReportRunForCapture } from "../../serp-capture";
 import { loadFile } from "../../storage/private-store";
-import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
+import type { ReportAssetV1 } from "../assets/asset-builder";
 import {
   transliterateRuToEn,
   type OrionRegionCode,

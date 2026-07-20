@@ -54,11 +54,10 @@ export {
   ReviewRiskFindingSchema,
 } from "./validation/evidence-schemas";
 
-// Stage D — report_json builder
-export * as reportBuilderService from "./services/report-builder-service";
+// Stage D — static commercial pages (legacy report_json builder retired — 9.3)
 export { buildStaticPages } from "./report/static-pages";
 
-// Stage E — report renderer (PPTX/PDF via renderer microservice)
+// Stage E — historical ReportVersion file download only (template render retired — 9.3)
 export * as reportRendererService from "./services/report-renderer-service";
 
 // Stage G — mock agents + orchestration

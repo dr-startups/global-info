@@ -3,7 +3,7 @@
  * Client_audit mode: no commercial/product/about blocks; no raw inventory as narrative source.
  */
 
-import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
+import type { ReportAssetV1 } from "../assets/asset-builder";
 import type { OrionClientContent } from "../content/orion-client-content-builder";
 import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
 import type { ExecutiveSynthesisOutput } from "../gpt/orion-executive-synthesis-from-sections";

@@ -2,7 +2,7 @@
  * Build ReportAssetV1 entries from READY LIVE SerpCapture rows.
  */
 
-import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
+import type { ReportAssetV1 } from "../assets/asset-builder";
 import { loadFile } from "../../storage/private-store";
 import {
   selectLiveSerpCaptures,

@@ -1,5 +1,5 @@
-import type { NormalizedEvidenceV1 } from "./normalized-evidence";
-import { riskThemeLabel } from "./normalized-evidence";
+import type { NormalizedEvidenceV1 } from "../evidence/normalized-evidence";
+import { riskThemeLabel } from "../evidence/normalized-evidence";
 import { buildOrionSingleEngineSerpPng } from "./orion-serp-snapshot-builder";
 import {
   buildImageGridItems,
@@ -8,8 +8,8 @@ import {
   buildSurfacePanelSvg,
   buildVideoCardsSvg,
   svgToPngBase64,
-} from "../orion-golden/assets/media-asset-svg";
-import { isSyntheticSerpNoiseHit } from "../serp-observation/filter-synthetic-serp-noise";
+} from "./media-asset-svg";
+import { isSyntheticSerpNoiseHit } from "../../serp-observation/filter-synthetic-serp-noise";
 import { isClientSafeEvidence } from "./client-safe-evidence";
 import {
   assertValidHighlightExplanation,
@@ -18,7 +18,7 @@ import {
   type HighlightExplanation,
   type HighlightIdentityStatus,
   type HighlightRiskCategory,
-} from "./highlight-explanation";
+} from "../evidence/highlight-explanation";
 
 const IMAGE_ADVERSE_DOMAIN_RE =
   /rucriminal\.|cybercriminal\.|acompromat\.|rucompromat\.|compromat\.|rupep\.|opensanctions\.|ofac\.|justice\.gov|home\.treasury\.gov|vlasti\.|rumafia\.|dossier\.|kompromat\./i;
@@ -284,7 +284,7 @@ export type ReportAssetV1 = {
   connectionMode?: "PROXY" | "DIRECT";
   captureId?: string;
   /** Structured red/amber frame reasons — never parse from caption. */
-  highlightExplanations?: import("./highlight-explanation").HighlightExplanation[];
+  highlightExplanations?: import("../evidence/highlight-explanation").HighlightExplanation[];
   /**
    * Typed asset metadata for First36 analysis (not provider raw payloads).
    * Prefer this over casting unknown fields onto ReportAssetV1.
