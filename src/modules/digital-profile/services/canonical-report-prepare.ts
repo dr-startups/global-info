@@ -597,7 +597,7 @@ export async function runCanonicalReportPrepare(
         caseId: deckInputs.caseId,
         reportRunId: deckInputs.reportRunId,
         sourceDatasetId: deckInputs.sourceDatasetId,
-        contentVersion: "deck-sections-v15",
+        contentVersion: "deck-sections-v16",
         subject: {
           displayName: subjectDisplayName,
           aliases: subjectProfile.aliases ?? [],
@@ -883,7 +883,7 @@ export async function runCanonicalReportPrepare(
         caseId: deckInputs.caseId,
         reportRunId: deckInputs.reportRunId,
         sourceDatasetId: deckInputs.sourceDatasetId,
-        contentVersion: "deck-sections-v15",
+        contentVersion: "deck-sections-v16",
         subject: { displayName: subjectDisplayName, aliases: subjectProfile.aliases ?? [] },
         bundle: deckInputs.mergedBundle,
         surfaceUnits: deckInputs.surfaceUnits,

@@ -61,7 +61,11 @@ export const FRAGMENT_PROMPTS: Record<FragmentKey, FragmentPromptDef> = {
   },
   DIGITAL_PROFILE_OVERVIEW: deterministicPrompt("digital-profile-overview"),
   RU_SUMMARY: llmPrompt("ru-regional-summary", "региональный обзор RU-поверхностей"),
-  RU_SERP: llmPrompt("ru-serp-analysis", "анализ органической выдачи RU"),
+  // v2: §7.1 page composition mirrored into narrative (above-table copy).
+  RU_SERP: {
+    ...llmPrompt("ru-serp-analysis", "анализ органической выдачи RU"),
+    promptVersion: "ru-serp-analysis-v2",
+  },
   RU_SERP_SCREENSHOT: llmPrompt("ru-serp-screenshot-analysis", "анализ скриншота выдачи RU"),
   RU_SUGGESTIONS: llmPrompt("ru-suggestions-analysis", "анализ поисковых подсказок RU"),
   RU_IMAGES: llmPrompt("ru-images-analysis", "анализ изображений в выдаче RU"),
@@ -69,7 +73,11 @@ export const FRAGMENT_PROMPTS: Record<FragmentKey, FragmentPromptDef> = {
   RU_KNOWLEDGE_AI: llmPrompt("ru-ai-analysis", "анализ AI-ответов поисковых систем RU"),
   RU_RELATED: llmPrompt("ru-related-analysis", "анализ связанных запросов RU"),
   UAE_SUMMARY: llmPrompt("uae-regional-summary", "региональный обзор UAE-поверхностей"),
-  UAE_SERP: llmPrompt("uae-serp-analysis", "анализ органической выдачи UAE"),
+  // v2: §7.1 page composition mirrored into narrative (above-table copy).
+  UAE_SERP: {
+    ...llmPrompt("uae-serp-analysis", "анализ органической выдачи UAE"),
+    promptVersion: "uae-serp-analysis-v2",
+  },
   UAE_SERP_SCREENSHOT: llmPrompt("uae-serp-screenshot-analysis", "анализ скриншота выдачи UAE"),
   UAE_SUGGESTIONS: llmPrompt("uae-suggestions-analysis", "анализ поисковых подсказок UAE"),
   UAE_IMAGES: llmPrompt("uae-images-analysis", "анализ изображений в выдаче UAE"),
