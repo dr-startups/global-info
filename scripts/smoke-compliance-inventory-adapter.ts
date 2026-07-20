@@ -11,12 +11,17 @@ import {
   adaptDatabaseProfilesToInventory,
   adaptDatabaseProfileToInventoryItem,
   isActiveComplianceHit,
+  isNarrativeOrPlaceholderMatchName,
+  pickComplianceClientMatchTitle,
   resolveComplianceInventoryItems,
   type DatabaseProfileHitInput,
 } from "../src/modules/digital-profile/services/compliance-inventory-adapter";
 import { classifySubjectRelevance } from "../src/modules/digital-profile/orion-golden/analytics/subject-resolution-classifier";
 import type { SubjectIdentity } from "../src/modules/digital-profile/orion-golden/analytics/subject-resolution-classifier";
-import { buildComplianceFragment } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders";
+import {
+  buildComplianceFragment,
+  dedupeComplianceHits,
+} from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders";
 import type { ScopedFragmentInput } from "../src/modules/digital-profile/orion-golden/deck-sections/scoped-input";
 
 process.env.NETWORK_CALLS = "0";
@@ -85,6 +90,105 @@ describe("§1.2 compliance-inventory-adapter", () => {
     assert.ok(item);
     assert.equal(item!.rawMetadata?.matchCategory, "ADVERSE_MEDIA");
     assert.equal(item!.title, "Дерипаска Олег Владимирович");
+  });
+
+  it("rejects English narrative blobs as match names (PDF p41)", () => {
+    const blob =
+      "Additional Information On December 11, 2025, the Moldova Interinstitutional Supervisory Council designated Oleg Vladimir";
+    assert.equal(isNarrativeOrPlaceholderMatchName(blob), true);
+    assert.equal(
+      pickComplianceClientMatchTitle({
+        matchedName: blob,
+        subjectName: "Дерипаска Олег Владимирович",
+      }),
+      "Дерипаска Олег Владимирович"
+    );
+    const item = adaptDatabaseProfileToInventoryItem({
+      row: {
+        ...BASE_ROW,
+        id: "ln-blob",
+        provider: "LEXISNEXIS",
+        matchType: "LEXISNEXIS_SIGNAL",
+        matchedName: blob,
+        subjectName: "Дерипаска Олег Владимирович",
+        riskTypes: ["SANCTIONS"],
+      },
+      caseId: "c",
+      reportRunId: "r",
+    });
+    assert.equal(item!.title, "Дерипаска Олег Владимирович");
+  });
+
+  it("dedupes Lexis hits with same provider/category/score/name", () => {
+    const subject = "Дерипаска Олег Владимирович";
+    const hits: Array<[string, { kind: string; providerLabel: string; matchCategory: string; matchScore: number; title: string; reviewStatus: string }]> = [
+      [
+        "inventory:db-a",
+        {
+          kind: "compliance_hit",
+          providerLabel: "LEXISNEXIS",
+          matchCategory: "SANCTIONS",
+          matchScore: 85,
+          title:
+            "Additional Information On December 11, 2025, the Moldova Interinstitutional Supervisory Council designated Oleg Vladimir",
+          reviewStatus: "NEEDS_REVIEW",
+        },
+      ],
+      [
+        "inventory:db-b",
+        {
+          kind: "compliance_hit",
+          providerLabel: "LEXISNEXIS",
+          matchCategory: "SANCTIONS",
+          matchScore: 85,
+          title:
+            "Additional Information On December 11, 2025, the Moldova Interinstitutional Supervisory Council designated Oleg Vladimir",
+          reviewStatus: "NEEDS_REVIEW",
+        },
+      ],
+      [
+        "inventory:db-c",
+        {
+          kind: "compliance_hit",
+          providerLabel: "LEXISNEXIS",
+          matchCategory: "ADVERSE_MEDIA",
+          matchScore: 52,
+          title: subject,
+          reviewStatus: "NEEDS_REVIEW",
+        },
+      ],
+    ];
+    const deduped = dedupeComplianceHits(hits as never, subject);
+    assert.equal(deduped.length, 2);
+    const scoped: ScopedFragmentInput = {
+      subject: { displayName: subject },
+      findings: [],
+      surfaceUnits: [],
+      metricSnapshot: {
+        metricSnapshotId: "m",
+        datasetId: "d",
+        reportRunId: "r",
+        baseCount: 0,
+        enrichmentCount: 0,
+        compositeCount: 0,
+        subjectMatchCount: 0,
+        likelySubjectCount: 0,
+        ambiguousCount: 0,
+        otherSubjectCount: 0,
+        adverseFindingCount: 0,
+        perRegionCounts: {},
+      },
+      scope: { region: null, engine: null, surface: "compliance", subjectMatch: null, findingIds: null },
+      evidenceIndex: Object.fromEntries(hits),
+    };
+    const out = buildComplianceFragment("COMPLIANCE", scoped, {});
+    const lexis = out.slides.find((s) => s.baseSlotId === "p35_lexis_visual")!;
+    const nameCells = (lexis.content.table?.rows ?? [])
+      .filter((r) => r[0] === "Совпадение по имени")
+      .map((r) => r[1]);
+    assert.equal(nameCells.length, 2);
+    assert.ok(nameCells.every((n) => n === subject));
+    assert.ok(!nameCells.some((n) => /Additional Information/i.test(String(n))));
   });
 
   it("excludes DISMISSED and FALSE_POSITIVE", () => {

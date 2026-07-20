@@ -84,13 +84,38 @@ function buildSignal(
   };
 }
 
+function detectSubjectNameFromReport(lines: string[]): string | undefined {
+  // Prefer a short Cyrillic FIO before any English narrative / "name"-substring traps.
+  const cyrillicFio = lines.find((line) =>
+    /^[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,3}$/u.test(line)
+  );
+  if (cyrillicFio) return cyrillicFio.slice(0, 120);
+  const labeled = lines.find((line) =>
+    /^(?:subject(?:\s+name)?|entity(?:\s+name)?|фио|субъект)\s*[:：]/i.test(line)
+  );
+  if (labeled) {
+    const cleaned = labeled
+      .replace(/^(?:subject(?:\s+name)?|entity(?:\s+name)?|фио|субъект)\s*[:：]\s*/i, "")
+      .trim();
+    if (
+      cleaned &&
+      cleaned.length <= 90 &&
+      !/^additional information\b/i.test(cleaned) &&
+      cleaned.split(/\s+/).length < 8
+    ) {
+      return cleaned.slice(0, 120);
+    }
+  }
+  return undefined;
+}
+
 function parseSignals(documentId: string, text: string): LexisNexisParsedAnalytics {
   const started = Date.now();
   const lines = text
     .split(/\r?\n/)
     .map((x) => x.trim())
     .filter(Boolean);
-  const subjectNameDetected = lines.find((line) => /subject|entity|name|фио|субъект/i.test(line))?.slice(0, 120);
+  const subjectNameDetected = detectSubjectNameFromReport(lines);
   const reportDateDetected = lines
     .join(" ")
     .match(/\b(20\d{2}[-/.](0[1-9]|1[0-2])[-/.](0[1-9]|[12]\d|3[01]))\b/)?.[1];
@@ -131,7 +156,15 @@ function parseSignals(documentId: string, text: string): LexisNexisParsedAnalyti
   if (candidates.length === 0 && lines.length > 0) {
     candidates.push({ category: "unknown", line: lines[0] });
   }
-  const signals = candidates.slice(0, 40).map((c, idx) => {
+  // Soft-dedupe identical category+line prefixes (duplicate Moldova/sanction rows).
+  const seenCandidate = new Set<string>();
+  const uniqueCandidates = candidates.filter((c) => {
+    const key = `${c.category}|${c.line.slice(0, 96).toLowerCase()}`;
+    if (seenCandidate.has(key)) return false;
+    seenCandidate.add(key);
+    return true;
+  });
+  const signals = uniqueCandidates.slice(0, 40).map((c, idx) => {
     const signal = buildSignal(documentId, idx, c.category, c.line);
     if (c.sourceDomain) signal.sourceDomain = c.sourceDomain;
     if (/moldav|moldova|prezident/i.test(c.line)) {

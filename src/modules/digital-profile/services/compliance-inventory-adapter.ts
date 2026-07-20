@@ -77,6 +77,48 @@ export function isActiveComplianceHit(row: DatabaseProfileHitInput): boolean {
 }
 
 /**
+ * Reject placeholders and English narrative blobs that must not appear as
+ * «Совпадение по имени» in the client PDF (PDF review p41).
+ */
+export function isNarrativeOrPlaceholderMatchName(name: string): boolean {
+  const n = String(name ?? "").trim();
+  if (!n) return true;
+  if (/^(potential\s+match|потенциальное совпадение)$/i.test(n)) return true;
+  if (/^imported\s+lexisnexis/i.test(n)) return true;
+  if (/^additional information\b/i.test(n)) return true;
+  if (n.length > 90) return true;
+  const words = n.split(/\s+/).filter(Boolean);
+  const mostlyLatin = /^[\x00-\x7F]+$/.test(n);
+  if (mostlyLatin && words.length >= 8) return true;
+  if (
+    mostlyLatin &&
+    words.length >= 5 &&
+    /\b(designated|supervisory|council|december|january|february|march|april|may|june|july|august|september|october|november)\b/i.test(
+      n
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/** Pick a short client-safe match label (FIO / entity), never a snippet. */
+export function pickComplianceClientMatchTitle(input: {
+  matchedName?: string | null;
+  subjectName?: string | null;
+  summary?: string | null;
+  fallback?: string | null;
+}): string {
+  const candidates = [input.matchedName, input.subjectName, input.fallback]
+    .map((s) => String(s ?? "").trim())
+    .filter(Boolean);
+  for (const c of candidates) {
+    if (!isNarrativeOrPlaceholderMatchName(c)) return c;
+  }
+  return "Потенциальное совпадение";
+}
+
+/**
  * Map a DatabaseProfile row (or fixture DTO) to a RawInventoryItem for the
  * canonical analytics pipeline. Identity is decided from reviewStatus later
  * (skipTextClassifier marker) — not by the surname/token classifier.
@@ -95,12 +137,11 @@ export function adaptDatabaseProfileToInventoryItem(input: {
   const riskTypes = riskTypesOf(row.riskTypes);
   const safeMeta = asObj(row.rawMetadataSafe);
   const profileUrl = String(row.profileUrl ?? "").trim();
-  const rawName = String(row.matchedName ?? "").trim();
-  const title =
-    (rawName && !/^potential\s+match$/i.test(rawName) ? rawName : "") ||
-    String(row.subjectName ?? "").trim() ||
-    String(row.summary ?? "").trim() ||
-    "Потенциальное совпадение";
+  const title = pickComplianceClientMatchTitle({
+    matchedName: row.matchedName,
+    subjectName: row.subjectName,
+    summary: row.summary,
+  });
 
   return {
     inventoryId: `db-${row.id}`,

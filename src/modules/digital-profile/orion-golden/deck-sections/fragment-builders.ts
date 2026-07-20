@@ -37,6 +37,7 @@ import type { Finding } from "../contracts/finding";
 import type { SurfaceClaim } from "../contracts/surface-analysis";
 import { ADVERSE_PATTERNS, NOT_FOUND_PATTERNS } from "../analytics/surface-analyzers";
 import { pluralRu } from "../analytics/finding-synthesizer";
+import { pickComplianceClientMatchTitle } from "../../services/compliance-inventory-adapter";
 
 export type ExecutiveSummaryExtras = {
   verdict: string;
@@ -2478,10 +2479,15 @@ const COMPLIANCE_STATUS_LABELS: Record<string, string> = {
   FALSE_POSITIVE: "Ложное срабатывание",
 };
 
-function humanizeComplianceMatchName(name: string | undefined): string {
-  const n = String(name ?? "").trim();
-  if (!n || /^potential\s+match$/i.test(n)) return "Потенциальное совпадение";
-  return n;
+function humanizeComplianceMatchName(
+  name: string | undefined,
+  subjectDisplayName?: string
+): string {
+  return pickComplianceClientMatchTitle({
+    matchedName: name,
+    subjectName: subjectDisplayName,
+    fallback: subjectDisplayName,
+  });
 }
 
 function humanizeComplianceCategory(category: string | undefined): string {
@@ -2493,6 +2499,30 @@ function humanizeComplianceCategory(category: string | undefined): string {
   // Never leak SCREAMING_SNAKE enums into the PDF.
   if (/^[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+$/.test(key)) return "Сигнал комплаенс-базы";
   return String(category).replace(/_/g, " ").trim() || "—";
+}
+
+type ComplianceHitEntry = [string, ScopedFragmentInput["evidenceIndex"][string]];
+
+/** Collapse duplicate Lexis/Dow rows (same provider+category+score+name). */
+export function dedupeComplianceHits(
+  hits: ComplianceHitEntry[],
+  subjectDisplayName?: string
+): ComplianceHitEntry[] {
+  const seen = new Set<string>();
+  const out: ComplianceHitEntry[] = [];
+  for (const h of hits) {
+    const [, e] = h;
+    const key = [
+      String(e.providerLabel ?? "").toUpperCase(),
+      humanizeComplianceCategory(e.matchCategory),
+      e.matchScore ?? "",
+      humanizeComplianceMatchName(e.title, subjectDisplayName).toLowerCase(),
+    ].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(h);
+  }
+  return out;
 }
 
 export function buildComplianceFragment(
@@ -2507,17 +2537,21 @@ export function buildComplianceFragment(
   const complianceUnits = scoped.surfaceUnits.filter((u) => u.surface === "compliance");
   const refs = complianceUnits.flatMap((u) => u.evidenceRefs);
   const narrative = extras.complianceNarrative ?? [];
-  const hits = Object.entries(scoped.evidenceIndex).filter(([, e]) => e.kind === "compliance_hit");
+  const subjectName = scoped.subject.displayName;
+  const hits = dedupeComplianceHits(
+    Object.entries(scoped.evidenceIndex).filter(([, e]) => e.kind === "compliance_hit"),
+    subjectName
+  );
   const checkedCount = complianceUnits
     .flatMap((u) => u.metrics)
     .find((m) => m.key === "totalCount")?.value;
 
-  const hitLabel = ([, e]: (typeof hits)[number]) => ({
+  const hitLabel = ([, e]: ComplianceHitEntry) => ({
     provider: COMPLIANCE_PROVIDER_LABELS[e.providerLabel ?? ""] ?? e.providerLabel ?? "База данных",
     category: humanizeComplianceCategory(e.matchCategory),
     score: e.matchScore != null ? `${e.matchScore}/100` : "—",
     status: COMPLIANCE_STATUS_LABELS[e.reviewStatus ?? ""] ?? e.reviewStatus ?? "—",
-    name: humanizeComplianceMatchName(e.title) || "Совпадение в базе",
+    name: humanizeComplianceMatchName(e.title, subjectName) || "Совпадение в базе",
   });
 
   const summaryRows = hits.map((h) => {
