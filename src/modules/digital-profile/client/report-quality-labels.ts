@@ -89,5 +89,10 @@ export function normalizeJobReportQuality(
       emptyStateCount: slides.emptyStateCount ?? emptyState.length,
       emptyState,
     },
+    render: quality.render ?? {
+      pdfExportMode: null,
+      warningCount: 0,
+      sidebarDegradedCount: 0,
+    },
   };
 }

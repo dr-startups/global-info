@@ -361,6 +361,10 @@ def _clip_words(text: str, max_chars: int) -> str:
     return _trim_dangling_tail(slice_)
 
 
+# REMEDIATION §6.2 — replace QA-violating sidebar fields; never fail the whole render.
+SIDEBAR_SAFE_FALLBACK = "См. таблицу результатов на этой странице."
+
+
 class _Ctx:
     def __init__(
         self,
@@ -374,6 +378,7 @@ class _Ctx:
         self.page = page
         self.total = total
         self.client_text_contract = resolve_contract(client_text_contract)
+        self.warnings: list[str] = []
         layout = prs.slide_layouts[6] if len(prs.slide_layouts) > 6 else prs.slide_layouts[0]
         self.slide = prs.slides.add_slide(layout)
 
@@ -799,15 +804,25 @@ def _qa_preview(text: str, match_index: int = 0) -> str:
     return (snippet[:60] + "…") if len(snippet) > 60 else snippet
 
 
+def _sidebar_sanitize_field(ctx: _Ctx, field: str, text: str) -> str:
+    """REMEDIATION §6.2 — bad field → neutral fallback + warning (no raise)."""
+    value = _safe(text)
+    if not value:
+        return value
+    failures = sidebar_check_failures(value, field, ctx.client_text_contract)
+    if not failures:
+        return value
+    for msg in failures:
+        preview = _qa_preview(value)
+        ctx.warnings.append(f"sidebar-qa:p{ctx.page}:{field}:{msg} preview=\"{preview}\"")
+    return SIDEBAR_SAFE_FALLBACK
+
+
 def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, h: int) -> None:
     """Unified client sidebar panel (v57): one column, no stacked framed cards."""
     analysis = slide.get("visualAnalysis") or {}
     if not isinstance(analysis, dict):
         analysis = {}
-    qa_failures: list[str] = []
-
-    def fail(msg: str) -> None:
-        qa_failures.append(f"p{ctx.page}:{msg}")
 
     mode = str(analysis.get("sidebarMode") or "")
     headline = _safe(analysis.get("headlineConclusion") or slide.get("clientTakeaway") or "Вывод")
@@ -840,21 +855,11 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         mid_title = "Что показывает экран"
         mid_body = visible or meaning
 
-    # Hard client-safe bans in sidebar — shared contract (§6.1).
-    field_names = {
-        "headline": "headlineConclusion",
-        "mid": "whatIsVisible",
-        "meaning": "clientMeaning",
-        "action": "recommendedActions",
-    }
-    for label, text in (("headline", headline), ("mid", mid_body), ("meaning", meaning), ("action", action)):
-        field = field_names.get(label, label)
-        for msg in sidebar_check_failures(text, field, ctx.client_text_contract):
-            # Keep a short preview for diagnostics (same spirit as before).
-            if "ellipsis" in msg:
-                fail(f'{msg}: "{_qa_preview(text)}"')
-            else:
-                fail(f'{msg}: "{_qa_preview(text)}"')
+    # Soft-degrade contract violations per field (§6.2); render continues.
+    headline = _sidebar_sanitize_field(ctx, "headlineConclusion", headline)
+    mid_body = _sidebar_sanitize_field(ctx, "whatIsVisible", mid_body)
+    meaning = _sidebar_sanitize_field(ctx, "clientMeaning", meaning)
+    action = _sidebar_sanitize_field(ctx, "recommendedActions", action)
 
     # Draw one outer panel
     pad = 70_000
@@ -863,7 +868,15 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
     max_bottom = min(y + h, CONTENT_BOTTOM) - pad
     ctx.card(y, h=min(h, max_bottom - y + pad), x=x, w=w, fill=CARD_BG)
 
-    def write_block(title: str | None, body: str, *, size: float = 11, bold_title: bool = True, required: bool = False) -> None:
+    def write_block(
+        title: str | None,
+        body: str,
+        *,
+        field: str,
+        size: float = 11,
+        bold_title: bool = True,
+        required: bool = False,
+    ) -> None:
         nonlocal cy
         if not body:
             return
@@ -874,9 +887,8 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         avail = max_bottom - cy - 160_000 - title_h
         if needed > avail:
             # Keep complete sentences only (no ellipsis). When even the first
-            # sentence cannot fit: the mandatory headline is a QA failure, but
-            # optional trailing blocks are simply dropped whole (title included)
-            # — a shorter sidebar beats failing the entire render.
+            # sentence cannot fit: required headline → safe fallback (§6.2);
+            # optional blocks are dropped whole.
             sentences = re.split(r"(?<=[.!?…])\s+", fitted)
             kept: list[str] = []
             for sent in sentences:
@@ -887,9 +899,14 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
                     break
             if not kept:
                 if required:
-                    fail("sidebar overflow without complete sentence")
-                return
-            fitted = " ".join(kept)
+                    ctx.warnings.append(
+                        f"sidebar-qa:p{ctx.page}:{field}:overflow without complete sentence"
+                    )
+                    fitted = SIDEBAR_SAFE_FALLBACK
+                else:
+                    return
+            else:
+                fitted = " ".join(kept)
         if title:
             box = ctx.slide.shapes.add_textbox(Emu(x + pad), Emu(cy), Emu(w - 2 * pad), Emu(220_000))
             tf = box.text_frame
@@ -914,12 +931,12 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         r.font.color.rgb = BODY_COLOR
         cy += bh + gap
 
-    write_block(None, headline, size=12, required=True)
-    write_block(mid_title, mid_body, size=11)
+    write_block(None, headline, field="headlineConclusion", size=12, required=True)
+    write_block(mid_title, mid_body, field="whatIsVisible", size=11)
     if meaning and meaning != mid_body and meaning != headline:
-        write_block("Что это значит", meaning, size=11)
+        write_block("Что это значит", meaning, field="clientMeaning", size=11)
     if action:
-        write_block("Что сделать", action, size=11)
+        write_block("Что сделать", action, field="recommendedActions", size=11)
     if provenance:
         # Fine print, no frame
         if cy < max_bottom - 80_000:
@@ -932,9 +949,6 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
             r.font.name = FONT
             r.font.size = Pt(8.5)
             r.font.color.rgb = MUTED_COLOR
-
-    if qa_failures:
-        raise RuntimeError("ORION sidebar QA failed: " + "; ".join(qa_failures))
 
 
 
@@ -1968,13 +1982,13 @@ def render_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:
     prs.slide_height = Emu(SLIDE_H)
     client_text_contract = resolve_contract(payload.get("clientTextContract"))
 
+    warnings: list[str] = [f"client-text-contract:{client_text_contract.get('version')}"]
     for idx, slide in enumerate(slides, start=1):
         ctx = _Ctx(prs, idx, total, client_text_contract=client_text_contract)
         _render_slide(ctx, slide, assets)
         ctx.footer()
+        warnings.extend(ctx.warnings)
 
-    warnings: list[str] = []
-    warnings.append(f"client-text-contract:{client_text_contract.get('version')}")
     with tempfile.TemporaryDirectory(prefix="orion-golden-") as tmp:
         tmp_path = Path(tmp)
         pptx_path = tmp_path / "report.pptx"
@@ -2031,6 +2045,7 @@ if __name__ == "__main__":
         "slideCount": out["slideCount"],
         "pages": len(out.get("pages") or []),
         "pdfExportMode": out.get("pdfExportMode"),
+        "warnings": out.get("warnings") or [],
     }
     Path(pages_dir.parent / "golden-render-meta.json").write_text(json.dumps(meta), encoding="utf-8")
     telemetry = out.get("layoutTelemetry")

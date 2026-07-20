@@ -128,6 +128,15 @@ function seedFixtureJobDir(root: string): void {
       { agentName: "check-h", terminalKind: "SUCCEEDED", observationCount: 22 },
     ],
   });
+  mkdirSync(join(root, "render"), { recursive: true });
+  writeJson(join(root, "render", "golden-render-meta.json"), {
+    pdfExportMode: "fitz-fallback",
+    slideCount: 4,
+    warnings: [
+      "client-text-contract:client-text-contract-v1",
+      'sidebar-qa:p1:headlineConclusion:sidebar forbidden token "provider" in headlineConclusion',
+    ],
+  });
 }
 
 describe("report-quality-summary aggregator (§0.1)", () => {
@@ -195,6 +204,10 @@ describe("report-quality-summary aggregator (§0.1)", () => {
     assert.equal(parsed.arsenkin.enrichmentComplete, true);
     assert.equal(parsed.arsenkin.enrichmentObservationCount, 40);
 
+    assert.equal(parsed.render.pdfExportMode, "fitz-fallback");
+    assert.equal(parsed.render.sidebarDegradedCount, 1);
+    assert.ok(parsed.render.warningCount >= 2);
+
     const compact = toJobReportQuality(parsed);
     assert.equal(compact.gpt.stage1Status, "FAILED");
     assert.equal(compact.slides.emptyStateCount, 2);
@@ -202,6 +215,7 @@ describe("report-quality-summary aggregator (§0.1)", () => {
     assert.ok(compact.slides.emptyState.every((e) => e.slotId && e.reason));
     assert.equal(compact.arsenkin.agentsFailed, 1);
     assert.equal(compact.arsenkin.agentsOk, 4);
+    assert.equal(compact.render.sidebarDegradedCount, 1);
   });
 
   it("leaves DB counts null when prisma is omitted; survives missing optional artifacts", async () => {
@@ -225,6 +239,8 @@ describe("report-quality-summary aggregator (§0.1)", () => {
     assert.equal(summary.gpt.stage1.status, "SKIPPED");
     assert.equal(summary.slides.total, 0);
     assert.equal(summary.arsenkin.agents.length, 0);
+    assert.equal(summary.render.sidebarDegradedCount, 0);
+    assert.equal(summary.render.warningCount, 0);
   });
 
   it("marks stage1 APPLIED when gpt-case-analysis.json is present", async () => {
@@ -254,6 +270,7 @@ describe("report-quality warnings mapping (§0.2)", () => {
     assert.ok(warnings.some((w) => w.startsWith("gpt-stage1-fallback:")), warnings.join("|"));
     assert.ok(warnings.some((w) => /^gpt-stage2-fallback:2\/\d+$/.test(w)), warnings.join("|"));
     assert.ok(warnings.some((w) => w === "empty-state-slides:2"), warnings.join("|"));
+    assert.ok(warnings.some((w) => w === "sidebar-degraded:1"), warnings.join("|"));
   });
 
   it("mergeJobWarnings replaces prior quality warnings with the same prefix", () => {
@@ -308,6 +325,12 @@ describe("report-quality warnings mapping (§0.2)", () => {
       visuals: { built: 4, failed: 0, warning: null },
       slides: { total: 36, withContent: 30, emptyState: [] },
       arsenkin: { agents: [], enrichmentComplete: true, enrichmentObservationCount: 0 },
+      render: {
+        pdfExportMode: "libreoffice",
+        warningCount: 1,
+        sidebarDegradedCount: 0,
+        warnings: ["client-text-contract:client-text-contract-v1"],
+      },
     });
     assert.deepEqual(warnings, []);
   });

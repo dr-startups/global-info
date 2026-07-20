@@ -1479,6 +1479,12 @@ export type JobReportQualityDTO = {
     agentsOk: number;
     agentsFailed: number;
   };
+  /** REMEDIATION §6.2 — absent on jobs saved before soft sidebar degrade. */
+  render?: {
+    pdfExportMode: string | null;
+    warningCount: number;
+    sidebarDegradedCount: number;
+  };
 };
 
 export type UnifiedCollectionJobStatus = {

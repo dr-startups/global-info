@@ -65,6 +65,14 @@ const ArsenkinAgentSchema = z.object({
   observationCount: z.number().int().nonnegative(),
 });
 
+/** REMEDIATION §6.2 — soft sidebar degrade / render warnings from golden-render-meta. */
+const RenderSchema = z.object({
+  pdfExportMode: z.string().nullable(),
+  warningCount: z.number().int().nonnegative(),
+  sidebarDegradedCount: z.number().int().nonnegative(),
+  warnings: z.array(z.string()).max(40),
+});
+
 export const ReportQualitySummarySchema = z.object({
   version: z.literal(REPORT_QUALITY_SUMMARY_VERSION),
   caseId: z.string().min(1),
@@ -105,6 +113,7 @@ export const ReportQualitySummarySchema = z.object({
     enrichmentComplete: z.boolean().nullable(),
     enrichmentObservationCount: z.number().int().nonnegative().nullable(),
   }),
+  render: RenderSchema,
 });
 
 export type ReportQualitySummary = z.infer<typeof ReportQualitySummarySchema>;
@@ -138,6 +147,12 @@ export type JobReportQuality = {
     enrichmentObservationCount: number | null;
     agentsOk: number;
     agentsFailed: number;
+  };
+  /** REMEDIATION §6.2 */
+  render: {
+    pdfExportMode: string | null;
+    warningCount: number;
+    sidebarDegradedCount: number;
   };
 };
 
@@ -382,6 +397,11 @@ export async function buildReportQualitySummary(input: {
     enrichmentObservationCount?: number;
   }>(join(dir, "arsenkin-enrichment-state.json"));
 
+  const renderMeta = readJsonSafe<{
+    pdfExportMode?: string;
+    warnings?: string[];
+  }>(join(dir, "render", "golden-render-meta.json"));
+
   let dbSearchResults: number | null = null;
   let dbSurfaceItems: number | null = null;
   if (input.prisma) {
@@ -542,6 +562,17 @@ export async function buildReportQualitySummary(input: {
     observationCount: a.observationCount ?? 0,
   }));
 
+  const renderWarnings = Array.isArray(renderMeta?.warnings)
+    ? renderMeta!.warnings!.map((w) => String(w)).filter(Boolean)
+    : [];
+  const sidebarDegradedCount = renderWarnings.filter((w) => w.startsWith("sidebar-qa:")).length;
+  const renderBlock = {
+    pdfExportMode: renderMeta?.pdfExportMode ?? null,
+    warningCount: renderWarnings.length,
+    sidebarDegradedCount,
+    warnings: renderWarnings.slice(0, 40),
+  };
+
   const summary: ReportQualitySummary = {
     version: REPORT_QUALITY_SUMMARY_VERSION,
     caseId: input.caseId,
@@ -589,6 +620,7 @@ export async function buildReportQualitySummary(input: {
       enrichmentComplete: arsenkin?.enrichmentComplete ?? null,
       enrichmentObservationCount: arsenkin?.enrichmentObservationCount ?? null,
     },
+    render: renderBlock,
   };
 
   return ReportQualitySummarySchema.parse(summary);
@@ -638,6 +670,11 @@ export function toJobReportQuality(summary: ReportQualitySummary): JobReportQual
       enrichmentObservationCount: summary.arsenkin.enrichmentObservationCount,
       agentsOk,
       agentsFailed,
+    },
+    render: {
+      pdfExportMode: summary.render.pdfExportMode,
+      warningCount: summary.render.warningCount,
+      sidebarDegradedCount: summary.render.sidebarDegradedCount,
     },
   };
 }
@@ -706,6 +743,14 @@ export function buildReportQualityWarnings(
     out.push(`empty-state-slides:${emptyCount}`);
   }
 
+  const sidebarDegraded =
+    "render" in summary
+      ? summary.render.sidebarDegradedCount
+      : 0;
+  if (sidebarDegraded > 0) {
+    out.push(`sidebar-degraded:${sidebarDegraded}`);
+  }
+
   return out;
 }
 
@@ -720,7 +765,8 @@ export function mergeJobWarnings(existing: string[], qualityWarnings: string[]):
       prefix.startsWith("visual-asset-warning:") ||
       prefix.startsWith("gpt-stage1-fallback:") ||
       prefix.startsWith("gpt-stage2-fallback:") ||
-      prefix.startsWith("empty-state-slides:");
+      prefix.startsWith("empty-state-slides:") ||
+      prefix.startsWith("sidebar-degraded:");
     if (isPrefixed) {
       for (let i = out.length - 1; i >= 0; i -= 1) {
         if (out[i]!.startsWith(prefix)) {
