@@ -1387,6 +1387,11 @@ export function buildExecutiveSummaryFragment(
 const RISK_MATRIX_PAGE_CAPACITY = 5;
 /** Always keep ≥1 first-page slot for LIKELY when any exist (§2.1 visibility). */
 const RISK_MATRIX_LIKELY_RESERVED = 1;
+/**
+ * Synthetic matrix card when KPI shows LIKELY materials but themed findings
+ * are absent. Not a bundle findingId — must not enter slide.findingIds / QA.
+ */
+export const RISK_MATRIX_LIKELY_AGGREGATE_ID = "finding-likely-aggregate";
 
 function riskMatrixDetail(f: Finding, extras?: FragmentExtras): string {
   if (f.subjectMatch === "LIKELY_SUBJECT") {
@@ -1409,8 +1414,14 @@ function riskMatrixRow(f: Finding): string[] {
     f.theme,
     f.subjectMatch === "LIKELY_SUBJECT" ? "Требует подтверждения" : riskLabel(f.riskLevel),
     f.promotionPriority,
-    f.findingId,
+    f.findingId === RISK_MATRIX_LIKELY_AGGREGATE_ID ? "сводка" : f.findingId,
   ];
+}
+
+function riskMatrixSlideFindingIds(findings: Finding[]): string[] {
+  return findings
+    .map((f) => f.findingId)
+    .filter((id) => id !== RISK_MATRIX_LIKELY_AGGREGATE_ID);
 }
 
 /**
@@ -1460,7 +1471,7 @@ export function buildRiskMatrixFragment(
   if (likely.length === 0 && likelyMaterialCount > 0) {
     likely = [
       {
-        findingId: "finding-likely-aggregate",
+        findingId: RISK_MATRIX_LIKELY_AGGREGATE_ID,
         theme: "Материалы с вероятной принадлежностью",
         claim: `${likelyMaterialCount} ${pluralRu(
           likelyMaterialCount,
@@ -1510,7 +1521,7 @@ export function buildRiskMatrixFragment(
       sourceNote: sourceLine(scoped),
     },
     evidenceRefs: uniqueRefs(scoped),
-    findingIds: pages[0]!.map((f) => f.findingId),
+    findingIds: riskMatrixSlideFindingIds(pages[0]!),
     metrics: {
       themes: confirmed.length,
       likelyThemes: likely.length,
@@ -1533,7 +1544,7 @@ export function buildRiskMatrixFragment(
         table: { headers, rows: pageFindings.map(riskMatrixRow) },
         bullets: pageFindings.map((f) => riskMatrixDetail(f, extras)),
       },
-      findingIds: pageFindings.map((f) => f.findingId),
+      findingIds: riskMatrixSlideFindingIds(pageFindings),
       metrics: {
         themes: confirmed.length,
         likelyThemes: likely.length,

@@ -1,0 +1,48 @@
+# REMEDIATION §9.2 — offline gate: typecheck + unit + key smokes
+name: CI
+
+on:
+  push:
+    branches: [main, master, Arsenkin-integration-2]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  offline:
+    name: typecheck · unit · offline smokes
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NETWORK_CALLS: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests (vitest)
+        run: npm test
+
+      - name: Offline smoke gate
+        run: npm run ci:smokes

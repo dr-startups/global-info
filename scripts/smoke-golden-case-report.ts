@@ -13,6 +13,11 @@ import { describe, it, before } from "node:test";
 
 import { buildGoldenCaseObservations } from "../fixtures/golden-case/build-observations";
 import { main as runGoldenCaseCli } from "./run-golden-case-report";
+import {
+  buildExecutiveSummaryFragment,
+  composeExecutivePageStructure,
+  fragmentScope,
+} from "../src/modules/digital-profile/orion-golden/deck-sections";
 
 before(() => {
   process.env.NETWORK_CALLS = "0";
@@ -47,5 +52,72 @@ describe("golden-case report harness", () => {
   it("is deterministic and matches baseline", async () => {
     const code = await runGoldenCaseCli([]);
     assert.equal(code, 0, "golden-case CLI must exit 0 against baseline");
+  });
+});
+
+/** REMEDIATION §7.3 — sparse («мало findings») executive acceptance on golden harness. */
+describe("REMEDIATION §7.3 golden sparse executive", () => {
+  it("мало findings → ≥3 content blocks + structureBlocks metric", () => {
+    const es = {
+      verdict: "INSUFFICIENT_DATA",
+      executiveConclusion:
+        "Собранных подтверждённых данных по субъекту недостаточно для доказательного вывода.",
+      keyFindings: [] as Array<{
+        findingId: string;
+        title: string;
+        factualBasis: string;
+        clientImpact: string;
+        recommendedAction: string;
+      }>,
+      priorityActions: ["Расширить проверку по незакрытым направлениям."],
+      identityCaveats: [
+        "Материалы о другом лице исключены из выводов о проверяемом субъекте.",
+        "Неоднозначные наблюдения не учитывались как факты.",
+      ],
+      dataLimitations: ["Выборка комплаенс-баз ограничена."],
+      regionalOverview: [{ region: "RU", oneLiner: "Регион RU: мало подтверждённых материалов.", totalCount: 12 }],
+    };
+    const scoped = {
+      subject: { displayName: "Golden Sparse", aliases: [] as string[] },
+      findings: [],
+      surfaceUnits: [
+        { surface: "organic" as const, region: "RU", metrics: [], claims: [], evidenceRefs: [] },
+        { surface: "suggestions" as const, region: "RU", metrics: [], claims: [], evidenceRefs: [] },
+        { surface: "images" as const, region: "RU", metrics: [], claims: [], evidenceRefs: [] },
+      ],
+      metricSnapshot: {
+        metricSnapshotId: "m-golden-sparse",
+        datasetId: "d-golden-sparse",
+        reportRunId: "r-golden-sparse",
+        baseCount: 40,
+        enrichmentCount: 0,
+        compositeCount: 40,
+        subjectMatchCount: 2,
+        likelySubjectCount: 5,
+        ambiguousCount: 3,
+        otherSubjectCount: 8,
+        adverseFindingCount: 0,
+        perRegionCounts: { RU: 25, UAE: 15 },
+      },
+      scope: fragmentScope("EXECUTIVE_SUMMARY"),
+      evidenceIndex: {},
+    };
+    const structure = composeExecutivePageStructure(scoped as never, es);
+    const blockCount =
+      structure.narrativeParagraphs.length +
+      structure.factCards.length +
+      (structure.recommendations ? 1 : 0);
+    assert.ok(blockCount >= 3, `expected ≥3 blocks, got ${blockCount}`);
+
+    const out = buildExecutiveSummaryFragment("EXECUTIVE" as never, scoped as never, {
+      executiveSummary: es,
+    });
+    assert.equal(out.status, "READY");
+    const slide = out.slides[0]!;
+    assert.ok(String(slide.content.narrative ?? "").split(/\n+/).filter(Boolean).length >= 2);
+    assert.ok((slide.content.bullets?.length ?? 0) >= 2);
+    assert.ok(String(slide.content.whatToCheck ?? "").length > 20);
+    assert.ok(Number(slide.metrics?.structureBlocks ?? 0) >= 3);
+    assert.equal(slide.metrics?.sparse, 1);
   });
 });
