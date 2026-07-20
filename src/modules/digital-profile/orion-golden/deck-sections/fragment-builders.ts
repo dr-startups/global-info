@@ -696,24 +696,31 @@ export function ensureExecutiveFreshnessChangeInNarrative(
     .filter(Boolean);
   if (paras.length === 0) return shortLine;
   // Reserve room for §7.2 paragraph + newlines inside the 900-char budget.
+  // Prefer lead + §7.2; keep a trailing para only when it is a real sentence
+  // (tiny clamps produced garbage like "07. 07.2026.").
   const leadBudget = Math.max(120, EXEC_NARRATIVE_BUDGET - shortLine.length - 2);
   const lead = clampClientText(paras[0]!, leadBudget);
-  const restBudget = Math.max(
-    0,
-    EXEC_NARRATIVE_BUDGET - lead.length - shortLine.length - 2
-  );
+  const restBudget =
+    EXEC_NARRATIVE_BUDGET - lead.length - shortLine.length - 2;
   const rest: string[] = [];
-  let used = 0;
-  for (const p of paras.slice(1)) {
-    if (rest.length >= 1) break;
-    if (used >= restBudget) break;
-    const piece = clampClientText(p, restBudget - used);
-    if (!piece) break;
-    rest.push(piece);
-    used += piece.length + 1;
+  if (restBudget >= 40) {
+    for (const p of paras.slice(1)) {
+      const piece = clampClientText(p, restBudget);
+      if (isMeaningfulExecNarrativePara(piece)) rest.push(piece);
+      break;
+    }
   }
   // Slot 1: short §7.2 card between lead conclusion and portrait/coverage.
   return [lead, shortLine, ...rest].filter(Boolean).join("\n");
+}
+
+/** Reject clamp leftovers (date stubs / digit soup) that are not a real card. */
+function isMeaningfulExecNarrativePara(text: string): boolean {
+  const t = text.trim();
+  if (t.length < 40) return false;
+  if (/^\d{1,2}\.\s*\d{1,2}\.\d{2,4}/u.test(t)) return false;
+  const letters = (t.match(/\p{L}/gu) ?? []).length;
+  return letters >= 24;
 }
 
 /**

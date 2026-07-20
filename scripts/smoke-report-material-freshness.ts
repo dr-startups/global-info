@@ -403,10 +403,11 @@ describe("REMEDIATION §7.2 post-GPT executive freshness pass", () => {
     const narrative = String(exec.slides[0]!.content.narrative ?? "");
     assert.ok(narrative.length <= 900, `narrative budget 900, got ${narrative.length}`);
     const paras = narrative.split("\n").filter(Boolean);
-    assert.ok(paras.length >= 2);
+    assert.equal(paras.length, 2, "lead + §7.2 only — no tiny clamp leftovers");
     assert.match(paras[1]!, /Данные собраны 01\.07\.2025/i);
     assert.match(paras[1]!, /Новых материалов с прошлого отчёта: 610/);
     assert.ok(paras[1]!.length < 320);
+    assert.ok(!/^\d{2}\.\s*\d{2}\.\d{4}/.test(paras[paras.length - 1]!));
     assert.ok(exec.contentHash && exec.contentHash !== "sha256:old");
     assert.ok(
       (exec.slides[1]!.content.bullets ?? [])[0]?.match(/Новых материалов|данные собраны/i)
