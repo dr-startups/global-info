@@ -55,6 +55,15 @@ import {
   type AnalystOverridesPrisma,
 } from "../../services/analyst-overrides-loader";
 import { resolveFindingThemesConfig } from "../../config/finding-themes";
+import type { GptJsonCaller } from "../gpt/gpt-case-analysis";
+import {
+  isGptIdentityEnabled,
+  runGptIdentityResolution,
+} from "../gpt/gpt-identity-resolver";
+import {
+  isGptThemesEnabled,
+  runGptThemeSuggestion,
+} from "../gpt/gpt-theme-suggester";
 
 export type AnalyticsPipelineInput = {
   caseId: string;
@@ -76,6 +85,9 @@ export type AnalyticsPipelineInput = {
   analystOverrides?: AnalystOverridesBundle | null;
   /** Live load of SearchResult / RiskFinding overrides. */
   analystOverridesPrisma?: AnalystOverridesPrisma | null;
+  /** Injectable GPT callers for offline tests (§2.4 / §3.3). */
+  gptIdentityCaller?: GptJsonCaller;
+  gptThemesCaller?: GptJsonCaller;
 };
 
 export type AnalyticsPipelineResult = {
@@ -351,6 +363,23 @@ export async function runOrionAnalyticsPipeline(
     overrides: overridesBundle,
   });
 
+  // 2c. Optional GPT identity disambiguation of AMBIGUOUS (§2.4).
+  // Fail-safe: errors leave materials AMBIGUOUS. Never raises to SUBJECT_MATCH.
+  if (isGptIdentityEnabled() || input.gptIdentityCaller) {
+    const identityArtifact = await runGptIdentityResolution({
+      caseId: input.caseId,
+      datasetId,
+      subject,
+      items: input.items,
+      resolutionByRef,
+      subjectResolution,
+      sourceHashes,
+      enabled: isGptIdentityEnabled() || Boolean(input.gptIdentityCaller),
+      caller: input.gptIdentityCaller,
+    });
+    emit("gpt-identity-resolution.json", identityArtifact);
+  }
+
   // Complete provider delta with relevance/adverse figures.
   const enrichmentRefs = new Set(enrichmentItems.map((i) => `inventory:${i.inventoryId}`));
   let relevantCount = 0;
@@ -417,6 +446,61 @@ export async function runOrionAnalyticsPipeline(
     count: overrideResult.applied.length,
     applied: overrideResult.applied,
   });
+
+  // 4b. Optional GPT theme suggestions for uncategorized materials (§3.3).
+  // Accepted themes → LIKELY_SUBJECT findings with origin llm-suggested (not KPI).
+  if (isGptThemesEnabled() || input.gptThemesCaller) {
+    const themeResult = await runGptThemeSuggestion({
+      caseId: input.caseId,
+      datasetId,
+      items: input.items,
+      uncategorized: synthesis.uncategorized,
+      sourceHashes,
+      enabled: isGptThemesEnabled() || Boolean(input.gptThemesCaller),
+      caller: input.gptThemesCaller,
+    });
+    emit("gpt-theme-suggestion.json", themeResult.artifact);
+    if (themeResult.findings.length > 0) {
+      const usedRefs = new Set(themeResult.findings.flatMap((f) => f.evidenceRefs));
+      const allEvidenceRefs = synthesis.uncategorized.allEvidenceRefs.filter(
+        (r) => !usedRefs.has(r)
+      );
+      const topExamples = synthesis.uncategorized.topExamples.filter(
+        (e) => !usedRefs.has(e.evidenceRef)
+      );
+      const byRegion: typeof synthesis.uncategorized.byRegion = {};
+      for (const [region, bucket] of Object.entries(synthesis.uncategorized.byRegion)) {
+        const examples = bucket.examples.filter((e) => !usedRefs.has(e.evidenceRef));
+        const count = Math.max(0, bucket.count - (bucket.examples.length - examples.length));
+        if (count > 0 || examples.length > 0) {
+          byRegion[region] = { count: examples.length || count, examples };
+        }
+      }
+      const remainingUncat = {
+        ...synthesis.uncategorized,
+        allEvidenceRefs,
+        topExamples,
+        byRegion,
+        count: allEvidenceRefs.length,
+        subjectMatchCount: topExamples.filter((e) => e.subjectMatch === "SUBJECT_MATCH")
+          .length,
+        likelySubjectCount: topExamples.filter((e) => e.subjectMatch === "LIKELY_SUBJECT")
+          .length,
+      };
+      synthesis = {
+        ...synthesis,
+        uncategorized: remainingUncat,
+        stats: {
+          ...synthesis.stats,
+          uncategorizedCount: remainingUncat.count,
+        },
+        bundle: {
+          ...synthesis.bundle,
+          findings: [...synthesis.bundle.findings, ...themeResult.findings],
+        },
+      };
+    }
+  }
 
   // 5. Executive summary wired to actual pipeline output.
   const executiveSummaryInput = buildExecutiveSummaryInput({

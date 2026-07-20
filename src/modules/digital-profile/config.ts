@@ -90,6 +90,10 @@ export interface DigitalProfileConfig {
   /** R10 — ORION Golden 3-layer agent architecture (parallel to R9 storyboard). */
   orionGoldenEnabled: boolean;
   orionGptAutoAnalyst: boolean;
+  /** REMEDIATION §2.4 — LLM disambiguation of AMBIGUOUS (ORION_GPT_IDENTITY=1). */
+  orionGptIdentity: boolean;
+  /** REMEDIATION §3.3 — LLM theme suggestions for uncategorized (ORION_GPT_THEMES=1). */
+  orionGptThemes: boolean;
 }
 
 /** Client-safe booleans describing ORION v2 AI readiness. Never exposes secrets. */
@@ -201,6 +205,10 @@ export const digitalProfileConfig: DigitalProfileConfig = {
   ),
   /** When true, GPT auto-analyst resolves manual review queue (ORION_GPT_AUTO_ANALYST=1). */
   orionGptAutoAnalyst: envBool(process.env.ORION_GPT_AUTO_ANALYST, false),
+  /** Optional §2.4 — LLM AMBIGUOUS disambiguation (default off; never on Railway by default). */
+  orionGptIdentity: envBool(process.env.ORION_GPT_IDENTITY, false),
+  /** Optional §3.3 — LLM theme suggestion for uncategorized (default off). */
+  orionGptThemes: envBool(process.env.ORION_GPT_THEMES, false),
 };
 
 /**

@@ -64,6 +64,8 @@ export type UncategorizedMaterialsBlock = {
   likelySubjectCount: number;
   /** Global top-N examples (titles + refs) for operators / LLM theming (3.3). */
   topExamples: UncategorizedMaterial[];
+  /** Full ref list (not capped) for §3.3 verification. */
+  allEvidenceRefs: string[];
   byRegion: Record<string, { count: number; examples: UncategorizedMaterial[] }>;
 };
 
@@ -289,6 +291,7 @@ export function synthesizeFindings(input: {
     likelySubjectCount: uncategorizedItems.filter((r) => r.subjectMatch === "LIKELY_SUBJECT")
       .length,
     topExamples: uncategorizedItems.slice(0, UNCATEGORIZED_TOP_N),
+    allEvidenceRefs: uncategorizedItems.map((r) => r.evidenceRef),
     byRegion,
   };
 

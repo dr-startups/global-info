@@ -34,6 +34,8 @@ export const FindingSchema = ContractEnvelopeSchema.extend({
   limitations: z.array(z.string()),
   promotionPriority: PromotionPrioritySchema,
   surfaceKinds: z.array(z.string()).optional(),
+  /** REMEDIATION §3.3 — LLM-proposed themes carry origin "llm-suggested". */
+  origin: z.enum(["deterministic", "llm-suggested"]).optional(),
 });
 
 export type Finding = z.infer<typeof FindingSchema>;
