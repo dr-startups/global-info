@@ -1,0 +1,44 @@
+{
+  "version": "client-text-contract-v1",
+  "forbiddenRawTokens": [
+    "review_required",
+    "requires_review",
+    "manual_review",
+    "unknown",
+    "fallback",
+    "mock",
+    "debug",
+    "manifest",
+    "micro-stage",
+    "micro_stage",
+    "localhost",
+    "storage/",
+    "/app/",
+    "evidence_",
+    "openai",
+    "deterministic",
+    "storagekey",
+    "no_data",
+    "excluded_noise",
+    "strong_relevant",
+    "potentially_relevant",
+    "weak_match"
+  ],
+  "allowedSnakeTokens": ["lexis_nexis"],
+  "internalTokenPattern": "\\baudit\\b|reportRunId|report_run|datasetId|pipeline|arsenkin|serp[-_]obs|inventoryId|schemaVersion",
+  "fieldBudgets": {
+    "title": 120,
+    "narrative": 900,
+    "bullet": 400,
+    "whatWasFound": 400,
+    "whyItMatters": 320,
+    "whatToCheck": 220
+  },
+  "sidebarBannedPattern": "(\\[DEMO\\]|\\.example\\b|\\bSUGGESTION\\b|knowledge-строк|не\\s+live|\\bprovider\\b|\\bmanifest\\b|\\bsynthetic\\b|\\breconstruction\\b)",
+  "sidebarEllipsisForbidden": true,
+  "rawCaseIdPattern": "\\bcmr[a-z0-9]{10,}\\b",
+  "rendererStripPattern": "(storage/|C:\\\\\\\\|openai[_-]?api[_-]?key|cmr[a-z0-9]{10,}|adverse_media|requires_review)",
+  "notes": {
+    "apiAndEngine": "REMEDIATION §6.1 — «API» and «движок» removed from hard sidebar bans; keep only clearly internal tokens."
+  }
+}

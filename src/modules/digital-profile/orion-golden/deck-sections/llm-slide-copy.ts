@@ -29,27 +29,31 @@ import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle
 import type { GptCaseAnalysis, GptJsonCaller } from "../gpt/gpt-case-analysis";
 import { defaultGptCallQueueOptions, runGptCallQueue } from "../gpt/gpt-call-queue";
 import { scanOrionGoldenClientTextForForbiddenTokens } from "../client/client-text-sanitizer";
+import {
+  getClientTextFieldBudgets,
+  matchInternalClientToken,
+} from "../client/load-client-text-contract";
 import { riskLevelRu, subjectMatchRu } from "../gpt/client-payload-labels";
 
 /** REMEDIATION §7.5 density + skip honest empty-state slides (UAE SERP fix). */
 export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v4";
 
-/** Mirrors section-validation budgets — a GPT field must fit the same box. */
-export const GPT_SLIDE_COPY_FIELD_BUDGETS = {
-  narrative: 900,
-  bullet: 400,
-  whatWasFound: 400,
-  whyItMatters: 320,
-  whatToCheck: 220,
-} as const;
+/** Mirrors section-validation budgets — from client-text-contract (§6.1). */
+export const GPT_SLIDE_COPY_FIELD_BUDGETS = (() => {
+  const b = getClientTextFieldBudgets();
+  return {
+    narrative: b.narrative,
+    bullet: b.bullet,
+    whatWasFound: b.whatWasFound,
+    whyItMatters: b.whyItMatters,
+    whatToCheck: b.whatToCheck,
+  } as const;
+})();
 
 const TEXT_BUDGETS = GPT_SLIDE_COPY_FIELD_BUDGETS;
 
 /** Prompt marker for offline smokes asserting §7.5 density instructions. */
 export const GPT_SLIDE_COPY_DENSITY_MARKER = "заполняй ВСЕ поля черновика";
-
-const INTERNAL_TOKENS =
-  /\baudit\b|reportRunId|report_run|datasetId|pipeline|arsenkin|serp[-_]obs|inventoryId|schemaVersion/iu;
 
 const DOMAIN_TOKEN_RE = /\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b/giu;
 
@@ -204,7 +208,7 @@ function rejectReason(value: string, budget: number, allowedDomains: Set<string>
   const text = value.trim();
   if (!text) return "empty";
   if (text.length > budget) return `over-budget:${text.length}>${budget}`;
-  if (INTERNAL_TOKENS.test(text)) return "internal-token";
+  if (matchInternalClientToken(text)) return "internal-token";
   const forbidden = scanOrionGoldenClientTextForForbiddenTokens(text);
   if (forbidden.length > 0) return `forbidden:${forbidden[0]}`;
   for (const m of text.matchAll(DOMAIN_TOKEN_RE)) {

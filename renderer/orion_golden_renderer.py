@@ -22,6 +22,19 @@ try:
 except ImportError:  # pragma: no cover
     Image = None  # type: ignore
 
+try:
+    from client_text_contract import (
+        renderer_strip_re,
+        resolve_contract,
+        sidebar_check_failures,
+    )
+except ImportError:  # pragma: no cover — package-style import inside container
+    from renderer.client_text_contract import (  # type: ignore
+        renderer_strip_re,
+        resolve_contract,
+        sidebar_check_failures,
+    )
+
 FONT = "DejaVu Sans"
 FS_TITLE = 26
 FS_SECTION = 22
@@ -53,10 +66,8 @@ TONE_RISK = RGBColor(0xB9, 0x1C, 0x1C)
 TONE_WARN = RGBColor(0xC2, 0x41, 0x0C)
 TONE_GOOD = RGBColor(0x04, 0x78, 0x57)
 
-FORBIDDEN = re.compile(
-    r"(storage/|C:\\\\|openai[_-]?api[_-]?key|cmr[a-z0-9]{10,}|adverse_media|requires_review)",
-    re.I,
-)
+# REMEDIATION §6.1 — pattern sourced from client_text_contract.json
+FORBIDDEN = renderer_strip_re()
 
 # EMU helpers: 914400 EMU = 1 inch; 72 pt = 1 inch
 EMU_PER_PT = 12_700
@@ -351,10 +362,18 @@ def _clip_words(text: str, max_chars: int) -> str:
 
 
 class _Ctx:
-    def __init__(self, prs: Presentation, page: int, total: int):
+    def __init__(
+        self,
+        prs: Presentation,
+        page: int,
+        total: int,
+        *,
+        client_text_contract: dict[str, Any] | None = None,
+    ):
         self.prs = prs
         self.page = page
         self.total = total
+        self.client_text_contract = resolve_contract(client_text_contract)
         layout = prs.slide_layouts[6] if len(prs.slide_layouts) > 6 else prs.slide_layouts[0]
         self.slide = prs.slides.add_slide(layout)
 
@@ -821,11 +840,7 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         mid_title = "Что показывает экран"
         mid_body = visible or meaning
 
-    # Hard client-safe bans in sidebar
-    banned = re.compile(
-        r"(\[DEMO\]|\.example\b|\bAPI\b|\bSUGGESTION\b|knowledge-строк|не\s+live|\bprovider\b|\bmanifest\b|\bsynthetic\b|\breconstruction\b|\bдвижок\b)",
-        re.I,
-    )
+    # Hard client-safe bans in sidebar — shared contract (§6.1).
     field_names = {
         "headline": "headlineConclusion",
         "mid": "whatIsVisible",
@@ -834,12 +849,12 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
     }
     for label, text in (("headline", headline), ("mid", mid_body), ("meaning", meaning), ("action", action)):
         field = field_names.get(label, label)
-        if "…" in text or "..." in text:
-            fail(f'sidebar ellipsis in {field}: "{_qa_preview(text)}"')
-        m = banned.search(text)
-        if m:
-            # Diagnostic (not a bypass): surface field, matched token and a safe preview.
-            fail(f'sidebar forbidden token "{m.group(0)}" in {field}: "{_qa_preview(text, m.start())}"')
+        for msg in sidebar_check_failures(text, field, ctx.client_text_contract):
+            # Keep a short preview for diagnostics (same spirit as before).
+            if "ellipsis" in msg:
+                fail(f'{msg}: "{_qa_preview(text)}"')
+            else:
+                fail(f'{msg}: "{_qa_preview(text)}"')
 
     # Draw one outer panel
     pad = 70_000
@@ -1951,13 +1966,15 @@ def render_orion_golden(payload: dict[str, Any]) -> dict[str, Any]:
     prs = Presentation()
     prs.slide_width = Emu(SLIDE_W)
     prs.slide_height = Emu(SLIDE_H)
+    client_text_contract = resolve_contract(payload.get("clientTextContract"))
 
     for idx, slide in enumerate(slides, start=1):
-        ctx = _Ctx(prs, idx, total)
+        ctx = _Ctx(prs, idx, total, client_text_contract=client_text_contract)
         _render_slide(ctx, slide, assets)
         ctx.footer()
 
     warnings: list[str] = []
+    warnings.append(f"client-text-contract:{client_text_contract.get('version')}")
     with tempfile.TemporaryDirectory(prefix="orion-golden-") as tmp:
         tmp_path = Path(tmp)
         pptx_path = tmp_path / "report.pptx"

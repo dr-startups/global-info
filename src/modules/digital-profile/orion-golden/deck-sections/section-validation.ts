@@ -6,6 +6,10 @@
 import { SectionPackV2Schema, type SectionPackV2 } from "./contracts";
 import { normalizeEvidenceRef, type ScopedEvidenceIndex } from "./scoped-input";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
+import {
+  getClientTextFieldBudgets,
+  matchInternalClientToken,
+} from "../client/load-client-text-contract";
 
 export type SectionValidationReport = {
   fragmentKey: string;
@@ -34,17 +38,7 @@ const REGION_SUMMARY_FRAGMENTS = new Set(["RU_SUMMARY", "UAE_SUMMARY", "COMPLIAN
 // Domain-like tokens: labels ending in an alphabetic TLD (avoids numbers/dates).
 const DOMAIN_TOKEN_RE = /\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b/giu;
 
-const INTERNAL_TOKENS =
-  /\baudit\b|reportRunId|report_run|datasetId|pipeline|arsenkin|serp[-_]obs|inventoryId|schemaVersion/iu;
-
-const TEXT_BUDGETS = {
-  title: 120,
-  narrative: 900,
-  bullet: 400,
-  whatWasFound: 400,
-  whyItMatters: 320,
-  whatToCheck: 220,
-};
+const TEXT_BUDGETS = getClientTextFieldBudgets();
 
 export function validateSectionPack(input: {
   pack: SectionPackV2;
@@ -132,7 +126,7 @@ export function validateSectionPack(input: {
     }
     for (const row of slide.content.table?.rows ?? []) {
       for (const cell of row) {
-        if (INTERNAL_TOKENS.test(stripFindingMarkers(cell))) {
+        if (matchInternalClientToken(stripFindingMarkers(cell))) {
           issues.push(`internal token in table cell on ${slide.slideId}: "${cell.slice(0, 60)}"`);
         }
       }
@@ -252,7 +246,7 @@ function checkText(
   if (value.length > budget) {
     issues.push(`${field} over budget on ${slideId}: ${value.length}>${budget}`);
   }
-  if (INTERNAL_TOKENS.test(stripFindingMarkers(value))) {
+  if (matchInternalClientToken(stripFindingMarkers(value))) {
     issues.push(`internal token in ${field} on ${slideId}: "${value.slice(0, 60)}"`);
   }
 }

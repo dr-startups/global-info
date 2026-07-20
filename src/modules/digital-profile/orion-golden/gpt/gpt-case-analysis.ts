@@ -18,6 +18,7 @@ import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle
 import type { SurfaceAnalysisUnit } from "../contracts/surface-analysis";
 import type { MetricSnapshot } from "../deck-sections/scoped-input";
 import { scanOrionGoldenClientTextForForbiddenTokens } from "../client/client-text-sanitizer";
+import { matchInternalClientToken } from "../client/load-client-text-contract";
 import { engineRu, metricKeyRu, riskLevelRu, subjectMatchRu, surfaceRu } from "./client-payload-labels";
 
 export const GPT_CASE_ANALYSIS_VERSION = "gpt-case-analysis-v1" as const;
@@ -86,13 +87,10 @@ export const CASE_ANALYSIS_SYSTEM_PROMPT = [
   "Верни ТОЛЬКО JSON по схеме: {\"overallRiskLevel\": \"низкий|средний|высокий|критический\", \"executiveConclusion\": string, \"digitalPortrait\": string, \"keyRisks\": [{\"theme\": string, \"severity\": \"низкий|средний|высокий|критический\", \"explanation\": string, \"advice\": string}], \"positiveSignals\": [string], \"recommendations\": [string]}.",
 ].join(" ");
 
-const INTERNAL_TOKENS =
-  /\baudit\b|reportRunId|report_run|datasetId|pipeline|arsenkin|serp[-_]obs|inventoryId|schemaVersion/iu;
-
 /** A case-analysis string is client-safe: no internal/forbidden tokens, no URLs. */
 export function clientSafeCaseAnalysisText(text: string): boolean {
   if (!text.trim()) return false;
-  if (INTERNAL_TOKENS.test(text)) return false;
+  if (matchInternalClientToken(text)) return false;
   if (/https?:\/\//iu.test(text)) return false;
   return scanOrionGoldenClientTextForForbiddenTokens(text).length === 0;
 }

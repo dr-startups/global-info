@@ -17,6 +17,7 @@ import { buildReportSectionManifest } from "./section-manifest";
 import { assembleDeck, type DeckAssemblyResult, type RendererSlide } from "./deck-assembler";
 import { validateAssembly, type AssemblyValidationReport } from "./assembly-validation";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
+import { getClientTextContract } from "../client/load-client-text-contract";
 
 export type DeckBuildResult = {
   packs: SectionPackV2[];
@@ -207,6 +208,7 @@ export function toRendererPayload(input: {
   /** Existing report assets; slides reference them via visualAssetRefs. */
   assets?: RendererAssetEntry[];
 }): Record<string, unknown> {
+  const clientTextContract = getClientTextContract();
   const assetByRef = new Map((input.assets ?? []).map((a) => [a.assetRef, a]));
   // Traceability markers ([finding-…]) stay in SectionPacks for validation,
   // but are internal IDs and never reach the client-facing renderer payload.
@@ -358,6 +360,9 @@ export function toRendererPayload(input: {
         slides: [],
       })),
     },
+    /** REMEDIATION §6.1 — renderer must not depend on app FS for text rules. */
+    clientTextContract,
+    clientTextContractVersion: clientTextContract.version,
     assets: (input.assets ?? [])
       .filter((a) => usedAssetRefs.has(a.assetRef))
       // image_grid captions render at the page bottom and collide with the

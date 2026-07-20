@@ -1,6 +1,12 @@
 /**
  * R10.2 — Central client-facing text sanitizer for ORION Golden deck/report output.
+ * Forbidden tokens come from client-text-contract.json (REMEDIATION §6.1).
  */
+
+import {
+  getClientTextContract,
+  matchInternalClientToken,
+} from "./load-client-text-contract";
 
 const RISK_LEVEL_LABELS: Record<string, string> = {
   review_required: "Требует ручной проверки",
@@ -38,34 +44,12 @@ const VERIFICATION_LABELS: Record<string, string> = {
 };
 
 /** Raw tokens that must never appear in client-facing ORION Golden text. */
-export const ORION_GOLDEN_FORBIDDEN_RAW_TOKENS = [
-  "review_required",
-  "requires_review",
-  "manual_review",
-  "unknown",
-  "fallback",
-  "mock",
-  "debug",
-  "manifest",
-  "micro-stage",
-  "micro_stage",
-  "localhost",
-  "storage/",
-  "/app/",
-  "evidence_",
-  "openai",
-  "deterministic",
-  "storagekey",
-  "no_data",
-  "excluded_noise",
-  "strong_relevant",
-  "potentially_relevant",
-  "weak_match",
-] as const;
+export const ORION_GOLDEN_FORBIDDEN_RAW_TOKENS =
+  getClientTextContract().forbiddenRawTokens;
 
 const ENUM_TOKEN_PATTERN = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/gi;
 
-const ALLOWED_SNAKE_TOKENS = new Set(["lexis_nexis"]);
+const ALLOWED_SNAKE_TOKENS = new Set(getClientTextContract().allowedSnakeTokens);
 
 function replaceMappedToken(raw: string, map: Record<string, string>): string {
   const key = raw.toLowerCase();
@@ -248,13 +232,20 @@ export function sanitizeOrionGoldenClientText(text: string): string {
 
 export function scanOrionGoldenClientTextForForbiddenTokens(text: string): string[] {
   const issues = new Set<string>();
+  const contract = getClientTextContract();
   const lower = text.toLowerCase();
 
-  for (const token of ORION_GOLDEN_FORBIDDEN_RAW_TOKENS) {
+  for (const token of contract.forbiddenRawTokens) {
     if (lower.includes(token.toLowerCase())) issues.add(`forbidden:${token}`);
   }
 
-  if (/\bcmr[a-z0-9]{10,}\b/i.test(text)) issues.add("forbidden:raw-case-id");
+  if (new RegExp(contract.rawCaseIdPattern, "i").test(text)) {
+    issues.add("forbidden:raw-case-id");
+  }
+
+  if (matchInternalClientToken(text, contract)) {
+    issues.add("forbidden:internal-token");
+  }
 
   const enumHits = text.match(ENUM_TOKEN_PATTERN) ?? [];
   for (const hit of enumHits) {
