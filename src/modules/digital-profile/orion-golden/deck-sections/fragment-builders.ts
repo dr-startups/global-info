@@ -416,11 +416,110 @@ function pageScopedConclusion(f: Finding, view: PageEvidenceView): string {
   );
 }
 
+/** REMEDIATION §7.1 — row-level composition of one page (evidence-first). */
+export type PageRowComposition = {
+  shown: number;
+  subjectMatch: number;
+  likelySubject: number;
+  adverseHeadlines: number;
+  topDomains: string[];
+};
+
+/**
+ * Count identity / adverse / domains from the page's own evidence refs.
+ * Used when page-supported findings are empty but the table/list is not.
+ */
+export function composePageRowComposition(
+  scoped: ScopedFragmentInput,
+  pageRefs: string[]
+): PageRowComposition {
+  const adverseRefSet = new Set<string>();
+  for (const f of scoped.findings.filter(isAdverse)) {
+    for (const r of f.evidenceRefs) adverseRefSet.add(r);
+  }
+  let subjectMatch = 0;
+  let likelySubject = 0;
+  let adverseHeadlines = 0;
+  const domainCounts = new Map<string, number>();
+  for (const ref of pageRefs) {
+    const e = scoped.evidenceIndex[ref] ?? {};
+    if (e.subjectDecision === "SUBJECT_MATCH") subjectMatch += 1;
+    else if (e.subjectDecision === "LIKELY_SUBJECT") likelySubject += 1;
+    const adverse =
+      e.adverse === true ||
+      adverseRefSet.has(ref) ||
+      ADVERSE_PATTERNS.test(String(e.title ?? ""));
+    if (adverse) adverseHeadlines += 1;
+    const domain =
+      e.domain && e.domain !== "—" ? e.domain : domainOfUrl(e.url);
+    if (domain && domain !== "—") {
+      domainCounts.set(domain, (domainCounts.get(domain) ?? 0) + 1);
+    }
+  }
+  const topDomains = [...domainCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru"))
+    .slice(0, 4)
+    .map(([d]) => d);
+  return {
+    shown: pageRefs.length,
+    subjectMatch,
+    likelySubject,
+    adverseHeadlines,
+    topDomains,
+  };
+}
+
+/** Descriptive sidebar from page rows when no finding is page-supported (§7.1). */
+export function pageRowCompositionBlocks(
+  composition: PageRowComposition,
+  view: PageEvidenceView,
+  extraCheck?: string
+): Partial<SlideBody> {
+  const resultWord = pluralRu(
+    composition.shown,
+    "результат",
+    "результата",
+    "результатов"
+  );
+  const domainsNote = composition.topDomains.length
+    ? `; преобладающие источники: ${composition.topDomains.slice(0, 3).join(", ")}`
+    : "";
+  return {
+    whatWasFound: clampClientText(
+      `Показано ${composition.shown} ${resultWord}; из них о субъекте — ${composition.subjectMatch}, вероятно о субъекте — ${composition.likelySubject}, негативных заголовков — ${composition.adverseHeadlines}${domainsNote}.`,
+      400
+    ),
+    whyItMatters: clampClientText(
+      composition.adverseHeadlines > 0
+        ? `На странице есть негативные заголовки (${composition.adverseHeadlines}) — они влияют на первое впечатление при проверке, даже если тема ещё не выделена отдельным выводом.`
+        : composition.likelySubject > 0
+          ? `Часть строк отмечена как «Вероятно» о субъекте — их нельзя игнорировать, но и нельзя включать в подтверждённые выводы без уточнения принадлежности.`
+          : "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
+      320
+    ),
+    whatToCheck: clampClientText(
+      extraCheck ??
+        (composition.subjectMatch > 0 || composition.likelySubject > 0
+          ? "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно»."
+          : "Мониторить изменения выдачи."),
+      220
+    ),
+    statusNote:
+      composition.adverseHeadlines > 0
+        ? `Статус: на странице ${composition.adverseHeadlines} негативных заголовков; подтверждённая тема по этим строкам не выделена.`
+        : "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+    sourceNote: pageSourceLine(view),
+  };
+}
+
 /**
  * Finding blocks strictly scoped to ONE page's displayed evidence.
  * Dynamic conclusion, significance, status and the source footer are derived
  * only from the page's own refs/domains; static methodology stays in the
  * template layer.
+ *
+ * REMEDIATION §7.1: when findings are empty but the page has rows/refs,
+ * describe the page composition instead of the empty-state boilerplate.
  */
 function pageFindingBlocks(
   scoped: ScopedFragmentInput,
@@ -429,21 +528,42 @@ function pageFindingBlocks(
 ): Partial<SlideBody> {
   const adverse = view.findings.filter(isAdverse);
   const top = view.findings[0];
+  if (top) {
+    return {
+      whatWasFound: pageScopedConclusion(top, view),
+      whyItMatters: clampClientText(
+        adverse.length
+          ? `Материалы этой страницы затрагивают тем повышенного внимания: ${adverse.length}. Они видны при первичной проверке субъекта.`
+          : "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+        320
+      ),
+      whatToCheck: clampClientText(
+        top.recommendedAction ?? extraCheck ?? "Мониторить изменения выдачи.",
+        220
+      ),
+      statusNote: statusLine(top),
+      sourceNote: pageSourceLine(view),
+    };
+  }
+  if (view.refs.length > 0) {
+    return pageRowCompositionBlocks(
+      composePageRowComposition(scoped, view.refs),
+      view,
+      extraCheck
+    );
+  }
   return {
-    whatWasFound: top
-      ? pageScopedConclusion(top, view)
-      : "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
+    whatWasFound:
+      "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
     whyItMatters: clampClientText(
-      adverse.length
-        ? `Материалы этой страницы затрагивают тем повышенного внимания: ${adverse.length}. Они видны при первичной проверке субъекта.`
-        : "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+      "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
       320
     ),
     whatToCheck: clampClientText(
-      top?.recommendedAction ?? extraCheck ?? "Мониторить изменения выдачи.",
+      extraCheck ?? "Мониторить изменения выдачи.",
       220
     ),
-    statusNote: statusLine(top),
+    statusNote: statusLine(undefined),
     sourceNote: pageSourceLine(view),
   };
 }
@@ -1307,25 +1427,55 @@ export function buildSerpFragment(
       rating,
     ];
   });
-  // Dynamic blocks derive from the rows displayed on this page only.
-  const view = buildPageEvidenceView(scoped, displayedRefs);
-  const base = makeSlotSlide({
-    slot,
-    sectionId,
-    content: {
-      table: { headers: ["№", "Домен", "Заголовок", "Оценка"], rows },
-      ...pageFindingBlocks(scoped, view),
-    },
-    evidenceRefs: refs,
-    findingIds: view.findings.map((f) => f.findingId),
-    metrics: {
-      datasetCount: refs.length,
-      displayedCount: rows.length,
-      adverseDisplayed: rows.filter((r) => r[3] === RED_MARKER_LABEL).length,
-      likelyDisplayed: rows.filter((r) => r[3] === "Вероятно").length,
-    },
-  });
-  return { slides: withContinuations(base, "serp-table"), status: "READY" };
+  // §7.1: each continuation page gets its own row-scoped sidebar (not a blank
+  // strip of the first page's finding blocks).
+  const maxRows =
+    DECK_TEMPLATE_REGISTRY["serp-table"].maxTableRowsPerSlide > 0
+      ? DECK_TEMPLATE_REGISTRY["serp-table"].maxTableRowsPerSlide
+      : 12;
+  const rowChunks = chunk(rows, maxRows);
+  const refChunks = chunk(displayedRefs, maxRows);
+  const slides: SlideContentContract[] = [];
+  const baseSlideId = slot.slotId;
+  for (let i = 0; i < rowChunks.length; i += 1) {
+    const pageRefs = refChunks[i] ?? [];
+    const pageRows = rowChunks[i] ?? [];
+    const view = buildPageEvidenceView(scoped, pageRefs);
+    const slide = makeSlotSlide({
+      slot,
+      sectionId,
+      title:
+        i === 0
+          ? undefined
+          : `${slot.title} (продолжение ${i + 1}/${rowChunks.length})`,
+      content: {
+        table: { headers: ["№", "Домен", "Заголовок", "Оценка"], rows: pageRows },
+        ...pageFindingBlocks(scoped, view),
+      },
+      evidenceRefs: pageRefs,
+      findingIds: view.findings.map((f) => f.findingId),
+      metrics: {
+        datasetCount: refs.length,
+        displayedCount: pageRows.length,
+        adverseDisplayed: pageRows.filter((r) => r[3] === RED_MARKER_LABEL).length,
+        likelyDisplayed: pageRows.filter((r) => r[3] === "Вероятно").length,
+        pageIndex: i + 1,
+        pageCount: rowChunks.length,
+      },
+    });
+    if (i === 0) {
+      slides.push(slide);
+    } else {
+      slides.push({
+        ...slide,
+        slideId: `${baseSlideId}__cont${i}`,
+        isContinuation: true,
+        continuationOf: baseSlideId,
+        continuationIndex: i,
+      });
+    }
+  }
+  return { slides, status: "READY" };
 }
 
 /**

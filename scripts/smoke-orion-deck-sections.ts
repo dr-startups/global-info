@@ -22,8 +22,11 @@ import {
   buildRuProfileSection,
   buildScopedInput,
   buildSectionPackForFragment,
+  buildSerpFragment,
   buildUaeProfileSection,
+  composePageRowComposition,
   fragmentScope,
+  pageRowCompositionBlocks,
   runDeckBuild,
   validateAssembly,
   validateSectionPack,
@@ -693,13 +696,29 @@ describe("sidebar evidence scope (fail closed)", () => {
     assert.ok(!uaeShot.findingIds.includes(criminal.findingId));
   });
 
-  it("no global-finding fallback: sidebar with no page-supported findings shows the explicit no-finding state", () => {
+  it("no global-finding fallback: empty page → no-finding; non-empty rows → composition (§7.1)", () => {
     const ruSuggestions = ruPacks.find((p) => p.fragmentKey === "RU_SUGGESTIONS")!;
     for (const s of ruSuggestions.slides) {
       if (s.findingIds.length === 0) {
+        const found = s.content.whatWasFound ?? "";
         assert.ok(
-          s.content.whatWasFound?.includes("не обнаружено"),
-          `${s.slideId}: empty scope must state the explicit no-finding conclusion`
+          found.includes("не обнаружено") || /Показано \d+/u.test(found),
+          `${s.slideId}: empty findings must be no-finding OR row-composition, got: ${found.slice(0, 120)}`
+        );
+      }
+    }
+    // SERP: non-empty table must never keep the empty-finding boilerplate.
+    for (const key of ["RU_SERP", "UAE_SERP"] as const) {
+      const pack = [...ruPacks, ...uaePacks].find((p) => p.fragmentKey === key);
+      if (!pack) continue;
+      for (const s of pack.slides) {
+        const rows = s.content.table?.rows?.length ?? 0;
+        if (rows === 0) continue;
+        const found = s.content.whatWasFound ?? "";
+        assert.ok(found.length > 0, `${s.slideId}: sidebar must not be blank`);
+        assert.ok(
+          !found.includes("не обнаружено") || s.findingIds.length > 0,
+          `${s.slideId}: non-empty table must not use empty-finding boilerplate`
         );
       }
     }
@@ -724,6 +743,84 @@ describe("sidebar evidence scope (fail closed)", () => {
     });
     assert.equal(report.passed, false);
     assert.ok(report.issues.some((i) => i.includes("outside fragment scope")));
+  });
+});
+
+describe("REMEDIATION §7.1 page row composition sidebar", () => {
+  it("composePageRowComposition counts subject / likely / adverse / domains", () => {
+    const scoped = {
+      subject: { displayName: "Test", aliases: [] },
+      findings: [],
+      surfaceUnits: [],
+      metricSnapshot: makeCtx().metricSnapshot,
+      scope: fragmentScope("RU_SERP"),
+      evidenceIndex: {
+        "inventory:a": {
+          title: "Санкции против субъекта",
+          domain: "rbc.ru",
+          subjectDecision: "SUBJECT_MATCH",
+          adverse: true,
+        },
+        "inventory:b": {
+          title: "Обычная новость",
+          domain: "example.com",
+          subjectDecision: "LIKELY_SUBJECT",
+        },
+        "inventory:c": {
+          title: "Биография",
+          domain: "rbc.ru",
+          subjectDecision: "SUBJECT_MATCH",
+        },
+      },
+    };
+    const c = composePageRowComposition(scoped as never, [
+      "inventory:a",
+      "inventory:b",
+      "inventory:c",
+    ]);
+    assert.equal(c.shown, 3);
+    assert.equal(c.subjectMatch, 2);
+    assert.equal(c.likelySubject, 1);
+    assert.ok(c.adverseHeadlines >= 1);
+    assert.equal(c.topDomains[0], "rbc.ru");
+    const blocks = pageRowCompositionBlocks(c, {
+      refs: ["inventory:a", "inventory:b", "inventory:c"],
+      domains: ["rbc.ru", "example.com"],
+      findings: [],
+      supportDomains: new Map(),
+    });
+    assert.match(String(blocks.whatWasFound), /Показано 3/);
+    assert.match(String(blocks.whatWasFound), /о субъекте — 2/);
+    assert.match(String(blocks.whatWasFound), /вероятно о субъекте — 1/);
+    assert.ok(!String(blocks.whatWasFound).includes("не обнаружено"));
+  });
+
+  it("SERP with rows but no page findings uses composition, not empty boilerplate", () => {
+    const ctx = makeCtx();
+    // Build a scoped organic slice whose findings do not intersect page refs.
+    const organicUnits = ctx.surfaceUnits.filter((u) => u.surface === "organic");
+    const refs = organicUnits.flatMap((u) => u.evidenceRefs).slice(0, 5);
+    assert.ok(refs.length >= 2, "fixture must have organic refs");
+    const scoped = {
+      subject: ctx.subject,
+      findings: [], // force empty page findings
+      surfaceUnits: organicUnits,
+      metricSnapshot: ctx.metricSnapshot,
+      scope: fragmentScope("RU_SERP"),
+      evidenceIndex: ctx.evidenceIndex,
+    };
+    const out = buildSerpFragment("RU_SERP", "RU_PROFILE", "Россия", scoped as never);
+    assert.ok(out.slides.length >= 1);
+    for (const s of out.slides) {
+      const rows = s.content.table?.rows?.length ?? 0;
+      if (rows === 0) continue;
+      assert.match(String(s.content.whatWasFound), /Показано \d+/u);
+      assert.ok(!String(s.content.whatWasFound).includes("не обнаружено"));
+      // Continuations must keep a filled sidebar (§7.1).
+      if (s.isContinuation) {
+        assert.ok(String(s.content.whatWasFound ?? "").length > 20);
+      }
+    }
   });
 });
 
