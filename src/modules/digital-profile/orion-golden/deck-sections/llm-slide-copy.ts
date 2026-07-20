@@ -31,8 +31,8 @@ import { defaultGptCallQueueOptions, runGptCallQueue } from "../gpt/gpt-call-que
 import { scanOrionGoldenClientTextForForbiddenTokens } from "../client/client-text-sanitizer";
 import { riskLevelRu, subjectMatchRu } from "../gpt/client-payload-labels";
 
-/** REMEDIATION §7.5 — denser fill-all + length-floor instructions. */
-export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v3";
+/** REMEDIATION §7.5 density + skip honest empty-state slides (UAE SERP fix). */
+export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v4";
 
 /** Mirrors section-validation budgets — a GPT field must fit the same box. */
 export const GPT_SLIDE_COPY_FIELD_BUDGETS = {
@@ -76,8 +76,19 @@ const COPY_INSTRUCTIONS = [
   "Не используй внутренние технические термины (audit, reportRunId, pipeline, dataset, provider) и идентификаторы; не вставляй URL. Пиши только по-русски: не копируй в текст английские служебные слова и коды из данных.",
   "Лимиты длины (верхняя граница с зазором до бюджета валидации): narrative до 850, каждый bullet до 380, whatWasFound до 380, whyItMatters до 300, whatToCheck до 200.",
   "Нижняя граница для страниц с данными: каждый заполняемый текстовый блок — не короче ~40% своего бюджета (narrative ≳360, whatWasFound ≳160, whyItMatters ≳130, whatToCheck ≳90, bullet ≳160), если в черновике/findings есть материал для раскрытия.",
+  "Не переписывай честные пустые состояния: если черновик говорит, что поверхность не собиралась / проверена и пуста / визуал недоступен — не подставляй findings с других поверхностей или регионов.",
   'Верни ТОЛЬКО JSON: {"slides": [{"slideId": string, "narrative": string, "bullets": [string], "whatWasFound": string, "whyItMatters": string, "whatToCheck": string}]}. Опускай поле только если поверхность пустая и черновик честно сообщает об отсутствии данных.',
 ].join(" ");
+
+/**
+ * Honest coverage / visual fallbacks must keep deterministic copy.
+ * GPT must not invent organic/AI content from sibling findings (§UAE SERP).
+ */
+export function isHonestEmptyStateSlide(slide: SlideContentContract): boolean {
+  if (slide.templateId === "coverage-empty-state") return true;
+  if (slide.emptyStateReason && slide.emptyStateReason.trim().length > 0) return true;
+  return false;
+}
 
 /** Offline metric for §7.5 — field fill + length-vs-budget on data slides. */
 export type SlideCopyDensityStats = {
@@ -271,6 +282,9 @@ function applyOverrides(input: {
 
   const slides = pack.slides.map((slide) => {
     if (slide.isContinuation) return slide;
+    // Fail-closed: never overwrite coverage/visual empty states even if the
+    // model returns an override for that slideId.
+    if (isHonestEmptyStateSlide(slide)) return slide;
     const o = overrideById.get(slide.slideId);
     if (!o) return slide;
     const allowed = allowedDomainsForSlide(slide, evidenceIndex);
@@ -536,7 +550,26 @@ export async function enhanceSectionPacksWithGptCopy(input: {
       continue;
     }
 
-    const targets = pack.slides.filter((s) => !s.isContinuation);
+    // Never send honest empty-state slides to GPT — it otherwise pulls
+    // pack-level findings (other surfaces/regions) into «проверено, пусто».
+    const targets = pack.slides.filter(
+      (s) => !s.isContinuation && !isHonestEmptyStateSlide(s)
+    );
+    if (targets.length === 0) {
+      report.status = "SKIPPED_EMPTY";
+      report.detail = "honest-empty-state";
+      byKey.set(pack.fragmentKey, {
+        pack: stampGptCopy(pack, {
+          status: "SKIPPED_EMPTY",
+          detail: "honest-empty-state",
+          wantCaseAnalysis,
+          cacheable: true,
+          appliedSlides: 0,
+        }),
+        report,
+      });
+      continue;
+    }
     pending.push({
       pack,
       targets,

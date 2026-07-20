@@ -44,9 +44,12 @@ import {
   GPT_SLIDE_COPY_DENSITY_MARKER,
   GPT_SLIDE_COPY_FIELD_BUDGETS,
   GPT_SLIDE_COPY_PROMPT_VERSION,
+  isHonestEmptyStateSlide,
   measureSlideCopyDensity,
   type GptSlideCopyReport,
 } from "../src/modules/digital-profile/orion-golden/deck-sections/llm-slide-copy";
+import { buildSerpFragment } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders";
+import { fragmentScope } from "../src/modules/digital-profile/orion-golden/deck-sections";
 import type { VerifiedFindingBundle } from "../src/modules/digital-profile/orion-golden/contracts/verified-finding-bundle";
 import type { MetricSnapshot } from "../src/modules/digital-profile/orion-golden/deck-sections/scoped-input";
 import type { SectionPackV2 } from "../src/modules/digital-profile/orion-golden/deck-sections/contracts";
@@ -735,6 +738,149 @@ describe("stage 1 — map-reduce (§4.4)", () => {
     });
     assert.equal(analysis, null);
     assert.ok(reason && /reduce/i.test(reason), reason ?? "");
+  });
+});
+
+describe("honest empty-state slides — GPT must not invent surface data", () => {
+  it("SKIPPED_EMPTY for coverage-empty SERP; invented GPT narrative discarded", async () => {
+    const emptyDraft =
+      "Органическая поисковая выдача по данному контуру проверена: материалов нет — это результат проверки.";
+    const pack = {
+      schemaVersion: SECTION_PACK_SCHEMA_VERSION,
+      sectionId: "UAE_PROFILE",
+      sectionType: "UAE_PROFILE",
+      fragmentKey: "UAE_SERP",
+      caseId: "c1",
+      datasetId: "d1",
+      reportRunId: "r1",
+      sourceDatasetId: "d1",
+      contentVersion: "deck-sections-v19",
+      promptVersion: "uae-serp-analysis-v3",
+      contentHash: "sha256:empty-serp",
+      inputHash: "h-empty-serp",
+      generatedAt: "2026-01-01T00:00:00.000Z",
+      required: true,
+      status: "READY",
+      // Pack may still list regional findings — GPT must not use them here.
+      sourceFindingIds: ["f-pep", "f-court"],
+      evidenceRefs: [],
+      inputs: { findingIds: ["f-pep", "f-court"], evidenceRefs: [], metricSnapshotId: "m1" },
+      slides: [
+        {
+          schemaVersion: "slide-content-v1",
+          slideId: "p26_uae_serp_table",
+          baseSlotId: "p26_uae_serp_table",
+          sectionId: "UAE_PROFILE",
+          fragmentKey: "UAE_SERP",
+          templateId: "coverage-empty-state",
+          title: "ОАЭ — позиции в поисковой выдаче",
+          findingIds: [],
+          evidenceRefs: [],
+          content: {
+            narrative: emptyDraft,
+            bullets: [
+              "Проверено, материалов нет — это результат проверки на дату отчёта, а не вывод об отсутствии рисков.",
+            ],
+            whatToCheck: "Рекомендуем проверить региональные настройки сбора и повторить проверку.",
+          },
+          emptyStateReason: "no-organic-data",
+          isContinuation: false,
+          continuationOf: null,
+          continuationIndex: null,
+          visualAssetRefs: [],
+          metrics: {},
+        },
+      ],
+      metrics: {
+        datasetCount: 0,
+        displayedCount: 0,
+        adverseDatasetCount: 0,
+        adverseDisplayedCount: 0,
+      },
+      provenance: { providers: [], reportRunIds: ["r1"], evidenceRefs: [] },
+      validation: { passed: true, issues: [] },
+    } as unknown as SectionPackV2;
+
+    assert.equal(isHonestEmptyStateSlide(pack.slides[0]!), true);
+
+    let calls = 0;
+    const out = await enhanceSectionPacksWithGptCopy({
+      packs: [pack],
+      subject: { displayName: "Anders Holmström", aliases: [] },
+      caller: async () => {
+        calls += 1;
+        return {
+          slides: [
+            {
+              slideId: "p26_uae_serp_table",
+              narrative:
+                "В органической выдаче по ОАЭ профиль выглядит высокорисковым: 50 публикаций PEP и 21 судебная — сбор не запускался.",
+              whatWasFound: "Выдумано из findings другого региона.",
+            },
+          ],
+        };
+      },
+      caseAnalysis: null,
+      bundle: MINI_BUNDLE,
+      evidenceIndex: {},
+      validatePack: () => ({ passed: true, issues: [] }),
+    });
+
+    assert.equal(calls, 0, "GPT must not be called for honest empty packs");
+    assert.equal(out.report.fragments[0]?.status, "SKIPPED_EMPTY");
+    assert.equal(out.packs[0]?.slides[0]?.content.narrative, emptyDraft);
+    assert.ok(!String(out.packs[0]?.slides[0]?.content.narrative).includes("50 публикаций"));
+  });
+
+  it("SERP with only NO_RESULTS markers → coverage-empty, not a fake table", () => {
+    const scoped = {
+      subject: { displayName: "Test", aliases: [] as string[] },
+      findings: [
+        {
+          findingId: "f-global",
+          theme: "PEP / RCA / watchlist-сигналы",
+          claim: "Глобальный finding не должен попасть на пустой UAE SERP.",
+          riskLevel: "high",
+          confidence: 0.9,
+          subjectMatch: "SUBJECT_MATCH",
+          evidenceRefs: ["inventory:ru-only"],
+          sourceDomains: ["rupep.org"],
+          recommendedAction: "Проверить",
+          promotionPriority: "P1",
+          limitations: [],
+        },
+      ],
+      surfaceUnits: [
+        {
+          surface: "organic" as const,
+          region: "UAE",
+          engine: "GOOGLE",
+          metrics: [
+            { key: "totalCount", value: 0, sampleStatus: "MEASURED" as const, denominator: 0 },
+            { key: "emptyMarkerCount", value: 1, sampleStatus: "MEASURED" as const },
+          ],
+          claims: [],
+          evidenceRefs: ["inventory:uae-empty"],
+        },
+      ],
+      metricSnapshot: MINI_METRICS,
+      scope: fragmentScope("UAE_SERP"),
+      evidenceIndex: {
+        "inventory:uae-empty": {
+          title: "Результаты не найдены",
+          domain: "—",
+          region: "UAE",
+          kind: "organic",
+        },
+      },
+    };
+    const out = buildSerpFragment("UAE_SERP", "UAE_PROFILE", "ОАЭ", scoped as never);
+    assert.equal(out.slides.length, 1);
+    assert.equal(out.slides[0]?.templateId, "coverage-empty-state");
+    assert.equal(out.slides[0]?.emptyStateReason, "no-organic-data");
+    assert.equal(out.slides[0]?.findingIds.length, 0);
+    assert.match(String(out.slides[0]?.content.narrative), /проверен|не собиралась|не зафиксир/i);
+    assert.ok(!String(out.slides[0]?.content.narrative).includes("50"));
   });
 });
 

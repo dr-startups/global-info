@@ -35,7 +35,7 @@ import {
 } from "./canonical-slots";
 import type { Finding } from "../contracts/finding";
 import type { SurfaceClaim } from "../contracts/surface-analysis";
-import { ADVERSE_PATTERNS } from "../analytics/surface-analyzers";
+import { ADVERSE_PATTERNS, NOT_FOUND_PATTERNS } from "../analytics/surface-analyzers";
 import { pluralRu } from "../analytics/finding-synthesizer";
 
 export type ExecutiveSummaryExtras = {
@@ -1648,7 +1648,15 @@ export function buildSerpFragment(
 ): FragmentBuildOutput {
   const [slot] = slotsForFragment(key);
   const organic = scoped.surfaceUnits.filter((u) => u.surface === "organic");
-  const refs = organic.flatMap((u) => u.evidenceRefs);
+  // NO_RESULTS / «не найден» markers are not real SERP rows — treat as empty
+  // so GPT cannot later paint global findings over a phantom table.
+  const refs = organic
+    .flatMap((u) => u.evidenceRefs)
+    .filter((ref) => {
+      const e = scoped.evidenceIndex[ref];
+      if (!e) return true;
+      return !NOT_FOUND_PATTERNS.test(`${e.title ?? ""} ${e.domain ?? ""}`);
+    });
   if (refs.length === 0) {
     return {
       slides: [
