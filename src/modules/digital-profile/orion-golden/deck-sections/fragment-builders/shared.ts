@@ -1,0 +1,940 @@
+/**
+ * Independent surface fragment builders — canonical-slot aware.
+ * Split from fragment-builders.ts (REMEDIATION §9.5) — mechanical move only.
+ */
+
+import type {
+  SectionType,
+  SlideBody,
+  SlideContentContract,
+} from "../contracts";
+import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
+import { DECK_TEMPLATE_REGISTRY, type DeckTemplateId } from "../template-registry";
+import {
+  normalizeEvidenceRef,
+  regionMatches,
+  resolveEmptySurfaceCollection,
+  type EmptySurfaceCollectionStatus,
+  type ScopedFragmentInput,
+  type SurfaceCollectionHint,
+} from "../scoped-input";
+import {
+  type CanonicalSlotDef,
+  type VisibleAssetItem,
+  type VisualAssetsBySlot,
+} from "../canonical-slots";
+import type { Finding } from "../../contracts/finding";
+import type { SurfaceClaim } from "../../contracts/surface-analysis";
+import { ADVERSE_PATTERNS } from "../../analytics/surface-analyzers";
+import { pluralRu } from "../../analytics/finding-synthesizer";
+import {
+  freshnessFootnote,
+  reportDiffClientLine,
+} from "../../../services/report-material-freshness";
+
+export type ExecutiveSummaryExtras = {
+  verdict: string;
+  executiveConclusion: string;
+  keyFindings: Array<{
+    findingId: string;
+    title: string;
+    factualBasis: string;
+    clientImpact: string;
+    recommendedAction: string;
+  }>;
+  priorityActions: string[];
+  identityCaveats: string[];
+  dataLimitations: string[];
+  /** Optional regional one-liners from the executive-summary stage artifact. */
+  regionalOverview?: Array<{
+    region: string;
+    oneLiner: string;
+    totalCount?: number | null;
+  }>;
+};
+
+/**
+ * Sanitized stage-1 GPT case analysis (already client-safe): a holistic
+ * assessment of the whole verified corpus. Used to write the executive
+ * summary and to expand each risk theme with a client-language explanation
+ * and concrete advice.
+ */
+export type GptCaseAnalysisExtras = {
+  overallRiskLevel: string;
+  executiveConclusion: string;
+  digitalPortrait?: string;
+  keyRisks: Array<{ theme: string; severity: string; explanation: string; advice: string }>;
+  positiveSignals: string[];
+  recommendations: string[];
+};
+
+/** REMEDIATION §3.2 — themeless SUBJECT_MATCH/LIKELY examples for regional summary. */
+export type UncategorizedMaterialsExtras = {
+  count: number;
+  byRegion: Record<
+    string,
+    {
+      count: number;
+      examples: Array<{ title: string; evidenceRef: string; domain?: string }>;
+    }
+  >;
+};
+
+export type FragmentExtras = {
+  executiveSummary?: ExecutiveSummaryExtras;
+  /** Existing compliance client copy (no source expansion). */
+  complianceNarrative?: string[];
+  /** Typed visual assets bound per canonical slot. */
+  visualAssets?: VisualAssetsBySlot;
+  /** Holistic GPT case analysis (client-safe, optional). */
+  gptCaseAnalysis?: GptCaseAnalysisExtras;
+  /** Themeless subject materials — regional summary only, not risk matrix. */
+  uncategorizedMaterials?: UncategorizedMaterialsExtras;
+  /** Coverage/provider hints for empty-state copy (§7.4). */
+  surfaceCollectionHints?: SurfaceCollectionHint[];
+  /** REMEDIATION §7.2 — earliest/latest material capture times. */
+  materialFreshness?: { earliestAt: string; latestAt: string };
+  /** REMEDIATION §7.2 — counts vs previous successful report for the case. */
+  reportDiff?: {
+    addedCount: number;
+    removedCount: number;
+    previousJobId: string | null;
+  };
+};
+
+/** Loose theme match: token overlap between a finding theme and a GPT risk theme. */
+export function matchGptKeyRisk(
+  theme: string,
+  risks: GptCaseAnalysisExtras["keyRisks"] | undefined
+): GptCaseAnalysisExtras["keyRisks"][number] | undefined {
+  if (!risks?.length) return undefined;
+  const tokens = (s: string) =>
+    new Set(
+      s
+        .toLowerCase()
+        .split(/[^a-zа-яё0-9]+/iu)
+        .filter((w) => w.length > 3)
+    );
+  const a = tokens(theme);
+  if (a.size === 0) return undefined;
+  let best: { risk: GptCaseAnalysisExtras["keyRisks"][number]; score: number } | null = null;
+  for (const risk of risks) {
+    const b = tokens(risk.theme);
+    let hit = 0;
+    for (const w of a) if (b.has(w)) hit += 1;
+    const score = hit / Math.max(1, Math.min(a.size, b.size));
+    if (score >= 0.5 && (!best || score > best.score)) best = { risk, score };
+  }
+  return best?.risk;
+}
+
+export type FragmentBuildOutput = {
+  slides: SlideContentContract[];
+  status: "READY" | "EMPTY_VALID" | "INSUFFICIENT_DATA";
+  emptyStateReason?: string;
+};
+
+export const VISUAL_ASSET_UNAVAILABLE = "VISUAL_ASSET_UNAVAILABLE" as const;
+
+export const RISK_ORDER: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
+
+export function isAdverse(f: Finding): boolean {
+  return (RISK_ORDER[f.riskLevel] ?? 0) >= 2;
+}
+
+export function assetsFor(extras: FragmentExtras, slotId: string): string[] {
+  return (extras.visualAssets?.[slotId] ?? []).filter((a) => a.hasImage).map((a) => a.assetRef);
+}
+
+export function makeSlotSlide(input: {
+  slot: CanonicalSlotDef;
+  sectionId: SectionType;
+  templateId?: DeckTemplateId;
+  title?: string;
+  subtitle?: string;
+  content: SlideBody;
+  evidenceRefs: string[];
+  findingIds: string[];
+  metrics?: Record<string, number | string>;
+  visualAssetRefs?: string[];
+  emptyStateReason?: string;
+}): SlideContentContract {
+  return {
+    schemaVersion: SLIDE_CONTENT_SCHEMA_VERSION,
+    slideId: input.slot.slotId,
+    baseSlotId: input.slot.slotId,
+    sectionId: input.sectionId,
+    isContinuation: false,
+    continuationOf: null,
+    continuationIndex: null,
+    templateId: input.templateId ?? input.slot.templateId,
+    title: input.title ?? input.slot.title,
+    subtitle: input.subtitle,
+    content: input.content,
+    evidenceRefs: input.evidenceRefs,
+    findingIds: input.findingIds,
+    metrics: input.metrics ?? {},
+    visualAssetRefs: input.visualAssetRefs ?? [],
+    emptyStateReason: input.emptyStateReason,
+  };
+}
+
+/** Chunk oversized bullets/table rows into adjacent continuation slides. */
+export function withContinuations(base: SlideContentContract, templateId: DeckTemplateId): SlideContentContract[] {
+  const tpl = DECK_TEMPLATE_REGISTRY[templateId];
+  const slides: SlideContentContract[] = [];
+  const bullets = base.content.bullets ?? [];
+  const rows = base.content.table?.rows ?? [];
+
+  const bulletChunks =
+    tpl.maxBulletsPerSlide > 0 && bullets.length > tpl.maxBulletsPerSlide
+      ? chunk(bullets, tpl.maxBulletsPerSlide)
+      : [bullets];
+  const rowChunks =
+    tpl.maxTableRowsPerSlide > 0 && rows.length > tpl.maxTableRowsPerSlide
+      ? chunk(rows, tpl.maxTableRowsPerSlide)
+      : [rows];
+  const total = Math.max(bulletChunks.length, rowChunks.length);
+
+  for (let i = 0; i < total; i += 1) {
+    const content: SlideBody = {
+      ...base.content,
+      bullets: bulletChunks[i] ?? [],
+      table: base.content.table
+        ? { headers: base.content.table.headers, rows: rowChunks[i] ?? [] }
+        : undefined,
+    };
+    if (i === 0) {
+      slides.push({ ...base, content });
+    } else {
+      slides.push({
+        ...base,
+        slideId: `${base.slideId}__cont${i}`,
+        isContinuation: true,
+        continuationOf: base.slideId,
+        continuationIndex: i,
+        title: `${base.title} (продолжение ${i + 1}/${total})`,
+        content: { ...content, narrative: undefined, whatWasFound: undefined, whyItMatters: undefined },
+      });
+    }
+  }
+  return slides;
+}
+
+export function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
+/** Distribute items across N slots as evenly-sized contiguous chunks. */
+export function distribute<T>(items: T[], slots: number): T[][] {
+  const out: T[][] = Array.from({ length: slots }, () => []);
+  items.forEach((item, i) => out[Math.min(Math.floor((i * slots) / Math.max(items.length, 1)), slots - 1)].push(item));
+  return out;
+}
+
+export function domainOfUrl(url: string | undefined): string {
+  if (!url || !/^https?:\/\//iu.test(url)) return "—";
+  try {
+    return new URL(url).hostname.replace(/^www\./u, "");
+  } catch {
+    return "—";
+  }
+}
+
+/**
+ * Compose client text from whole sentences of the given parts, appending
+ * sentences while they fit the budget — never a mid-sentence cut.
+ */
+export function fitClientSentences(parts: string[], max: number): string {
+  const sentences = parts
+    .flatMap((p) => p.split(/(?<=[.!?…])\s+/u))
+    .map((s) => s.trim())
+    .filter(Boolean);
+  let out = "";
+  for (const s of sentences) {
+    const trial = out ? `${out} ${s}` : s;
+    if (trial.length > max) break;
+    out = trial;
+  }
+  if (!out && sentences[0]) return clampClientText(sentences[0], max);
+  return /[.!?…]$/u.test(out) ? out : `${out}.`;
+}
+
+/**
+ * Split client text into complete-sentence paragraphs of at most `maxPerPara`
+ * characters (for renderer layouts that draw one card per paragraph).
+ */
+export function splitClientParagraphs(text: string, maxPerPara: number, maxParas: number): string[] {
+  const sentences = text.split(/(?<=[.!?…])\s+/u).map((s) => s.trim()).filter(Boolean);
+  const paras: string[] = [];
+  let buf = "";
+  for (const s of sentences) {
+    const trial = buf ? `${buf} ${s}` : s;
+    if (trial.length > maxPerPara && buf) {
+      paras.push(buf);
+      if (paras.length >= maxParas) return paras;
+      buf = s.length > maxPerPara ? clampClientText(s, maxPerPara) : s;
+    } else {
+      buf = trial.length > maxPerPara ? clampClientText(trial, maxPerPara) : trial;
+    }
+  }
+  if (buf && paras.length < maxParas) paras.push(buf);
+  return paras;
+}
+
+/**
+ * Clamp client text to its budget at a sentence/list boundary — a complete
+ * phrase, never an ellipsis or a mid-word cut.
+ */
+export function clampClientText(text: string, max: number): string {
+  if (text.length <= max) return text;
+  const slice = text.slice(0, max);
+  const boundaries = [slice.lastIndexOf(". "), slice.lastIndexOf(" · "), slice.lastIndexOf("; ")];
+  const cut = Math.max(...boundaries);
+  let out = cut > max * 0.4 ? slice.slice(0, cut) : slice.slice(0, slice.lastIndexOf(" "));
+  out = out.replace(/[\s·;,.]+$/u, "");
+  return `${out}.`;
+}
+
+/** Clamp body so `body + [findingId]` stays within the slide bullet budget. */
+export function bulletWithFindingId(body: string, findingId: string, budget = 400): string {
+  const marker = ` [${findingId}]`;
+  const room = Math.max(48, budget - marker.length);
+  return clampClientText(body, room) + marker;
+}
+
+/**
+ * Region-level finding blocks — used ONLY by summary-level slides whose page
+ * content IS the regional dataset (regional summary, full SERP table).
+ * Visual/per-page fragments must use `pageFindingBlocks` instead.
+ */
+export function findingBlocks(
+  scoped: ScopedFragmentInput,
+  extraCheck?: string,
+  extras?: FragmentExtras
+): Partial<SlideBody> {
+  const adverse = scoped.findings.filter(isAdverse);
+  const top = [...scoped.findings].sort(
+    (a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0)
+  )[0];
+  return {
+    whatWasFound: clampClientText(
+      top ? top.claim : "Существенных материалов по данной поверхности не обнаружено.",
+      400
+    ),
+    whyItMatters: clampClientText(
+      adverse.length
+        ? `Обнаружено сигналов повышенного внимания: ${adverse.length}. Они влияют на восприятие субъекта при первичной проверке.`
+        : "Поверхность не формирует негативного фона вокруг субъекта.",
+      320
+    ),
+    whatToCheck: clampClientText(
+      top?.recommendedAction ?? extraCheck ?? "Мониторить изменения выдачи.",
+      220
+    ),
+    statusNote: statusLine(top),
+    sourceNote: sourceLine(scoped, extras),
+  };
+}
+
+/** Confidence/status line: confirmed theme vs preliminary signal + level. */
+export function statusLine(top: Finding | undefined): string {
+  if (!top) return "Статус: по данной поверхности выводов о рисках нет.";
+  const kind = top.confidence >= 0.7 ? "подтверждённая тема" : "предварительный сигнал";
+  return `Статус: ${kind}; уровень: ${riskLabel(top.riskLevel).toLowerCase()}; уверенность ${Math.round(
+    top.confidence * 100
+  )}%.`;
+}
+
+export function normalizeEvidenceUrl(url: string | undefined): string {
+  return (url ?? "")
+    .replace(/^https?:\/\/(www\.)?/u, "")
+    .replace(/[?#].*$/u, "")
+    .replace(/\/+$/u, "")
+    .toLowerCase();
+}
+
+/**
+ * Page-scoped evidence view: which of this fragment's findings are actually
+ * supported by the evidence displayed on ONE page (refs/URLs of the shown
+ * rows/cards), and which domains that support comes from. This is the ONLY
+ * source for dynamic sidebar copy on visual pages — no fallback to region- or
+ * bundle-level findings/domains.
+ */
+export type PageEvidenceView = {
+  refs: string[];
+  /** Domains derivable from the page's own evidence refs. */
+  domains: string[];
+  /** Fragment findings supported by the page's evidence. */
+  findings: Finding[];
+  /** findingId → domains of its on-page supporting evidence. */
+  supportDomains: Map<string, string[]>;
+};
+
+export function buildPageEvidenceView(scoped: ScopedFragmentInput, pageRefs: string[]): PageEvidenceView {
+  const entries = pageRefs.map((ref) => ({ ref, e: scoped.evidenceIndex[ref] }));
+  const domainByNormRef = new Map<string, string>();
+  const urlToDomain = new Map<string, string>();
+  const domains = new Set<string>();
+  for (const { ref, e } of entries) {
+    const domain = e?.domain && e.domain !== "—" ? e.domain : undefined;
+    if (domain) {
+      domains.add(domain);
+      domainByNormRef.set(normalizeEvidenceRef(ref), domain);
+      const u = normalizeEvidenceUrl(e?.url);
+      if (u) urlToDomain.set(u, domain);
+    } else {
+      domainByNormRef.set(normalizeEvidenceRef(ref), "");
+    }
+  }
+  const findings: Finding[] = [];
+  const supportDomains = new Map<string, string[]>();
+  for (const f of scoped.findings) {
+    const support = new Set<string>();
+    let hit = false;
+    for (const r of f.evidenceRefs) {
+      const norm = normalizeEvidenceRef(r);
+      const e = scoped.evidenceIndex[r];
+      if (domainByNormRef.has(norm)) {
+        hit = true;
+        // Page entry may lack a resolvable domain (opaque asset ref); the
+        // finding's own evidence entry names the same source then.
+        const d = domainByNormRef.get(norm) || (e?.domain && e.domain !== "—" ? e.domain : "");
+        if (d) support.add(d);
+        continue;
+      }
+      const u = normalizeEvidenceUrl(e?.url);
+      if (u && urlToDomain.has(u)) {
+        hit = true;
+        support.add(urlToDomain.get(u)!);
+      }
+    }
+    if (hit) {
+      findings.push(f);
+      supportDomains.set(f.findingId, [...support]);
+      // Support domains name the same on-page rows (resolved through the
+      // finding's evidence entry when the page ref itself is opaque).
+      for (const d of support) domains.add(d);
+    }
+  }
+  findings.sort((a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0));
+  return { refs: pageRefs, domains: [...domains], findings, supportDomains };
+}
+
+/**
+ * Page-specific conclusion for one finding: theme + risk + the on-page
+ * source domains. Deliberately NOT the finding's global claim text — the
+ * claim may cite evidence from other pages/regions.
+ */
+export function pageScopedConclusion(f: Finding, view: PageEvidenceView): string {
+  const where = (view.supportDomains.get(f.findingId) ?? []).slice(0, 3);
+  const src = where.length ? ` — материалы на этой странице: ${where.join(", ")}` : "";
+  return clampClientText(
+    `«${f.theme}»: уровень внимания — ${riskLabel(f.riskLevel).toLowerCase()}${src}.`,
+    400
+  );
+}
+
+/** REMEDIATION §7.1 — row-level composition of one page (evidence-first). */
+export type PageRowComposition = {
+  shown: number;
+  subjectMatch: number;
+  likelySubject: number;
+  adverseHeadlines: number;
+  topDomains: string[];
+};
+
+/**
+ * Count identity / adverse / domains from the page's own evidence refs.
+ * Used when page-supported findings are empty but the table/list is not.
+ */
+export function composePageRowComposition(
+  scoped: ScopedFragmentInput,
+  pageRefs: string[]
+): PageRowComposition {
+  const adverseRefSet = new Set<string>();
+  for (const f of scoped.findings.filter(isAdverse)) {
+    for (const r of f.evidenceRefs) adverseRefSet.add(r);
+  }
+  let subjectMatch = 0;
+  let likelySubject = 0;
+  let adverseHeadlines = 0;
+  const domainCounts = new Map<string, number>();
+  for (const ref of pageRefs) {
+    const e = scoped.evidenceIndex[ref] ?? {};
+    if (e.subjectDecision === "SUBJECT_MATCH") subjectMatch += 1;
+    else if (e.subjectDecision === "LIKELY_SUBJECT") likelySubject += 1;
+    const adverse =
+      e.adverse === true ||
+      adverseRefSet.has(ref) ||
+      ADVERSE_PATTERNS.test(String(e.title ?? ""));
+    if (adverse) adverseHeadlines += 1;
+    const domain =
+      e.domain && e.domain !== "—" ? e.domain : domainOfUrl(e.url);
+    if (domain && domain !== "—") {
+      domainCounts.set(domain, (domainCounts.get(domain) ?? 0) + 1);
+    }
+  }
+  const topDomains = [...domainCounts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru"))
+    .slice(0, 4)
+    .map(([d]) => d);
+  return {
+    shown: pageRefs.length,
+    subjectMatch,
+    likelySubject,
+    adverseHeadlines,
+    topDomains,
+  };
+}
+
+/** Descriptive sidebar from page rows when no finding is page-supported (§7.1). */
+export function pageRowCompositionBlocks(
+  composition: PageRowComposition,
+  view: PageEvidenceView,
+  extraCheck?: string
+): Partial<SlideBody> {
+  const resultWord = pluralRu(
+    composition.shown,
+    "результат",
+    "результата",
+    "результатов"
+  );
+  const domainsNote = composition.topDomains.length
+    ? `; преобладающие источники: ${composition.topDomains.slice(0, 3).join(", ")}`
+    : "";
+  return {
+    whatWasFound: clampClientText(
+      `Показано ${composition.shown} ${resultWord}; из них о субъекте — ${composition.subjectMatch}, вероятно о субъекте — ${composition.likelySubject}, негативных заголовков — ${composition.adverseHeadlines}${domainsNote}.`,
+      400
+    ),
+    whyItMatters: clampClientText(
+      composition.adverseHeadlines > 0
+        ? `На странице есть негативные заголовки (${composition.adverseHeadlines}) — они влияют на первое впечатление при проверке, даже если тема ещё не выделена отдельным выводом.`
+        : composition.likelySubject > 0
+          ? `Часть строк отмечена как «Вероятно» о субъекте — их нельзя игнорировать, но и нельзя включать в подтверждённые выводы без уточнения принадлежности.`
+          : "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
+      320
+    ),
+    whatToCheck: clampClientText(
+      extraCheck ??
+        (composition.subjectMatch > 0 || composition.likelySubject > 0
+          ? "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно»."
+          : "Мониторить изменения выдачи."),
+      220
+    ),
+    statusNote:
+      composition.adverseHeadlines > 0
+        ? `Статус: на странице ${composition.adverseHeadlines} негативных заголовков; подтверждённая тема по этим строкам не выделена.`
+        : "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+    sourceNote: pageSourceLine(view),
+  };
+}
+
+/**
+ * Finding blocks strictly scoped to ONE page's displayed evidence.
+ * Dynamic conclusion, significance, status and the source footer are derived
+ * only from the page's own refs/domains; static methodology stays in the
+ * template layer.
+ *
+ * REMEDIATION §7.1: when findings are empty but the page has rows/refs,
+ * describe the page composition instead of the empty-state boilerplate.
+ */
+export function pageFindingBlocks(
+  scoped: ScopedFragmentInput,
+  view: PageEvidenceView,
+  extraCheck?: string
+): Partial<SlideBody> {
+  const adverse = view.findings.filter(isAdverse);
+  const top = view.findings[0];
+  if (top) {
+    return {
+      whatWasFound: pageScopedConclusion(top, view),
+      whyItMatters: clampClientText(
+        adverse.length
+          ? `Материалы этой страницы затрагивают тем повышенного внимания: ${adverse.length}. Они видны при первичной проверке субъекта.`
+          : "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+        320
+      ),
+      whatToCheck: clampClientText(
+        top.recommendedAction ?? extraCheck ?? "Мониторить изменения выдачи.",
+        220
+      ),
+      statusNote: statusLine(top),
+      sourceNote: pageSourceLine(view),
+    };
+  }
+  if (view.refs.length > 0) {
+    return pageRowCompositionBlocks(
+      composePageRowComposition(scoped, view.refs),
+      view,
+      extraCheck
+    );
+  }
+  return {
+    whatWasFound:
+      "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
+    whyItMatters: clampClientText(
+      "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+      320
+    ),
+    whatToCheck: clampClientText(
+      extraCheck ?? "Мониторить изменения выдачи.",
+      220
+    ),
+    statusNote: statusLine(undefined),
+    sourceNote: pageSourceLine(view),
+  };
+}
+
+/** Source footer derived ONLY from the page's own evidence refs. */
+export function pageSourceLine(view: PageEvidenceView): string {
+  const list = view.domains.slice(0, 5);
+  return list.length
+    ? `Источники: ${list.join(", ")}`
+    : "Источники: поисковая выдача (см. приложение).";
+}
+
+/** «Тема» — claim; skip the prefix when the claim already names the theme. */
+export function themedClaim(f: Finding): string {
+  return f.claim.toLowerCase().startsWith(f.theme.toLowerCase())
+    ? f.claim
+    : `«${f.theme}» — ${f.claim}`;
+}
+
+/** Region-level source line — summary pages only (page IS the region). */
+export function sourceLine(scoped: ScopedFragmentInput, extras?: FragmentExtras): string {
+  const domains = new Set<string>();
+  for (const f of scoped.findings) for (const d of f.sourceDomains ?? []) domains.add(d);
+  for (const e of Object.values(scoped.evidenceIndex)) if (e.domain) domains.add(e.domain);
+  const list = [...domains].filter((d) => d && d !== "—").sort().slice(0, 6);
+  const sources = list.length
+    ? `Источники: ${list.join(", ")}`
+    : "Источники: поисковая выдача (см. приложение).";
+  const fresh =
+    extras?.materialFreshness != null
+      ? freshnessFootnote(extras.materialFreshness)
+      : undefined;
+  return fresh ? `${sources}. ${fresh.charAt(0).toUpperCase()}${fresh.slice(1)}` : sources;
+}
+
+/** §7.2 — one client line about material turnover vs prior report. */
+export function changeSinceLastReportLine(extras?: FragmentExtras): string | undefined {
+  if (!extras?.reportDiff) return undefined;
+  return reportDiffClientLine(extras.reportDiff);
+}
+
+/**
+ * ORION-style client copy for surfaces with no collected material: what the
+ * surface is, why it matters for the subject's reputation, and what to do.
+ * Internal reason keys never leak into client text.
+ */
+export const COVERAGE_EMPTY_COPY: Record<
+  string,
+  { surface: string; measuredWhat: string; why: string; measuredCheck: string }
+> = {
+  "no-suggestions": {
+    surface: "suggestions",
+    measuredWhat:
+      "Поисковые подсказки (автодополнение) по запросам о субъекте проверены: материалов нет — это результат проверки.",
+    why: "Подсказки формируются поисковыми системами на основе массовых запросов пользователей; негативные формулировки в подсказках видны ещё до просмотра результатов и напрямую влияют на первое впечатление.",
+    measuredCheck:
+      "Рекомендуем повторить проверку подсказок при следующем обновлении: эта поверхность меняется быстрее остальных.",
+  },
+  "no-images": {
+    surface: "images",
+    measuredWhat:
+      "Блок изображений по запросам о субъекте проверен: материалов нет — это результат проверки.",
+    why: "Блок «Картинки» — одна из первых точек контакта: пользователь видит фотографии и связанные с ними заголовки ещё до перехода на сайты-источники.",
+    measuredCheck:
+      "Рекомендуем проверить блок изображений вручную и обеспечить присутствие качественных официальных фотографий.",
+  },
+  "no-identity-data": {
+    surface: "wikipedia",
+    measuredWhat:
+      "Наличие статьи о субъекте в Википедии и связанных энциклопедических материалов проверено: материалов нет — это результат проверки.",
+    why: "Википедия и энциклопедические карточки — ключевой источник «официальной» биографии: их содержимое поисковые системы используют в панелях знаний и ответах ИИ.",
+    measuredCheck:
+      "Рекомендуем проверить наличие статьи вручную; при отсутствии — рассмотреть создание нейтральной биографической статьи, при наличии — контролировать корректность её содержимого.",
+  },
+  "no-ai-answers": {
+    surface: "ai_answers",
+    measuredWhat:
+      "Ответы ИИ-поиска (AI Overview, нейро-ответы) по запросам о субъекте проверены: материалов нет — это результат проверки.",
+    why: "Ответы ИИ всё чаще заменяют пользователю классическую выдачу: он получает готовый вывод о человеке, не открывая источники, поэтому их содержание критично для репутации.",
+    measuredCheck:
+      "Рекомендуем отслеживать появление ИИ-ответов при следующих обновлениях: они формируются на основе тех же источников, что и обычная выдача.",
+  },
+  "no-related": {
+    surface: "paa_related",
+    measuredWhat:
+      "Связанные запросы и вопросы «Люди также спрашивают» по субъекту проверены: материалов нет — это результат проверки.",
+    why: "Связанные запросы подсказывают пользователю, что искать дальше; негативные формулировки в этом блоке расширяют охват нежелательного контента.",
+    measuredCheck: "Рекомендуем повторить сбор связанных запросов при следующем обновлении.",
+  },
+  "no-organic-data": {
+    surface: "organic",
+    measuredWhat:
+      "Органическая поисковая выдача по данному контуру проверена: материалов нет — это результат проверки.",
+    why: "Органическая выдача — основная поверхность: первые страницы результатов формируют репутационную картину для большинства пользователей.",
+    measuredCheck: "Рекомендуем проверить региональные настройки сбора и повторить проверку.",
+  },
+  "no-regional-findings": {
+    surface: "organic",
+    measuredWhat:
+      "По данному региональному контуру проверка выполнена: материалы не зафиксированы — это результат проверки.",
+    why: "Региональный контур показывает, как субъект представлен в локальной выдаче; отсутствие материалов — это результат проверки, а не вывод об отсутствии рисков.",
+    measuredCheck: "Рекомендуем повторить сбор по региону при следующем обновлении.",
+  },
+  // Follow-up pages of a multi-slot block with no data: short reference back
+  // instead of repeating the same full-page explanation three more times.
+  "no-images-continued": {
+    surface: "images",
+    measuredWhat:
+      "Продолжение блока изображений: дополнительных материалов по этой поверхности при проверке не зафиксировано.",
+    why: "Статус и рекомендации по блоку изображений приведены на первой странице раздела.",
+    measuredCheck: "См. рекомендации на первой странице блока изображений.",
+  },
+};
+
+export const EMPTY_REASON_SURFACE: Record<string, string> = Object.fromEntries(
+  Object.entries(COVERAGE_EMPTY_COPY).map(([reason, v]) => [reason, v.surface])
+);
+
+/** Exported for §7.4 smokes — builds client-safe empty-state copy. */
+export function coverageContent(
+  reason: string,
+  status?: EmptySurfaceCollectionStatus
+): SlideBody {
+  const copy = COVERAGE_EMPTY_COPY[reason];
+  const kind = status?.kind ?? "MEASURED_EMPTY";
+  const reasonLabel = status?.reasonLabel;
+
+  if (kind === "COLLECTION_FAILED") {
+    const cause = (reasonLabel ?? "ошибка при сборе данных").trim();
+    const narrative = /не удалось собрать/i.test(cause)
+      ? `${cause.endsWith(".") ? cause : `${cause}.`} Это не результат проверки «материалов нет».`
+      : `Не удалось собрать данные по этой поверхности в текущем прогоне — причина: ${cause}.`;
+    return {
+      narrative,
+      bullets: [
+        copy?.why ??
+          "Без фактического сбора по поверхности нельзя сделать вывод о наличии или отсутствии материалов.",
+        "Внутренние коды ошибок в отчёт не выводятся; показана только человекочитаемая причина.",
+      ],
+      whatToCheck: "Повторить сбор после устранения причины сбоя; до этого не интерпретировать пустую страницу как «проверено, пусто».",
+    };
+  }
+
+  if (kind === "NOT_COLLECTED") {
+    const cause = (reasonLabel ?? "поверхность не собиралась в этом прогоне").trim();
+    // Avoid «не собиралась — причина: не собиралась» when label repeats the lead-in.
+    const narrative = /не собиралась|не запускался|был пропущен/i.test(cause)
+      ? `Поверхность не собиралась в этом прогоне. Это не результат проверки «материалов нет» — сбор не запускался или был пропущен.`
+      : `Поверхность не собиралась в этом прогоне — причина: ${cause}.`;
+    return {
+      narrative,
+      bullets: [
+        copy?.why ??
+          "Отсутствие страницы с данными означает, что проверка по поверхности не выполнялась, а не что рисков нет.",
+        "Статус отражает факт сбора на дату отчёта, а не вывод об отсутствии рисков.",
+      ],
+      whatToCheck: copy?.measuredCheck ?? "Включить сбор по поверхности и повторить проверку.",
+    };
+  }
+
+  // MEASURED_EMPTY — probed, zero materials.
+  if (!copy) {
+    return {
+      narrative: "Поверхность проверена: материалов нет — это результат проверки.",
+      bullets: [
+        "Отсутствие материалов отражает итог проверки на дату отчёта, а не технический пропуск сбора.",
+      ],
+      whatToCheck: "Повторить проверку при следующем обновлении при необходимости.",
+    };
+  }
+  return {
+    narrative: copy.measuredWhat,
+    bullets: [
+      copy.why,
+      "Проверено, материалов нет — это результат проверки на дату отчёта, а не вывод об отсутствии рисков.",
+    ],
+    whatToCheck: copy.measuredCheck,
+  };
+}
+
+export function emptyStatusForReason(
+  scoped: ScopedFragmentInput,
+  reason: string
+): EmptySurfaceCollectionStatus {
+  const surface = EMPTY_REASON_SURFACE[reason] ?? "organic";
+  return resolveEmptySurfaceCollection(scoped, surface);
+}
+
+export function claimText(c: SurfaceClaim): string {
+  return c.subjectMatch === "OTHER_SUBJECT" ? `Относится к другому лицу: ${c.text}` : c.text;
+}
+
+export function uniqueRefs(scoped: ScopedFragmentInput): string[] {
+  const s = new Set<string>();
+  for (const f of scoped.findings) for (const r of f.evidenceRefs) s.add(r);
+  for (const u of scoped.surfaceUnits) for (const r of u.evidenceRefs) s.add(r);
+  if (!scoped.scope.regions) return [...s];
+  return [...s].filter((ref) => {
+    const region = scoped.evidenceIndex[ref]?.region;
+    if (!region) return true;
+    return scoped.scope.regions!.some((r) => regionMatches(r, region));
+  });
+}
+
+export function riskLabel(level: string): string {
+  const map: Record<string, string> = {
+    critical: "Критический",
+    high: "Высокий",
+    medium: "Средний",
+    low: "Низкий",
+    none: "Нет",
+  };
+  return map[level] ?? level;
+}
+
+/** Executive verdict → client label. Raw enum (HIGH/ELEVATED/…) never leaks. */
+export function verdictClientLabel(verdict: string): string {
+  const map: Record<string, string> = {
+    HIGH: "Высокий риск",
+    ELEVATED: "Повышенный риск",
+    MIXED: "Смешанный фон",
+    LOW: "Низкий риск",
+    INSUFFICIENT_DATA: "Недостаточно данных",
+  };
+  return map[String(verdict).toUpperCase()] ?? verdict;
+}
+
+/**
+ * Visual slide helper: binds the slot's asset when available; otherwise emits
+ * the explicit VISUAL_ASSET_UNAVAILABLE fallback text card.
+ */
+export function visualSlide(input: {
+  slot: CanonicalSlotDef;
+  sectionId: SectionType;
+  extras: FragmentExtras;
+  scoped: ScopedFragmentInput;
+  content: SlideBody;
+  evidenceRefs: string[];
+  findingIds: string[];
+  metrics?: Record<string, number | string>;
+  /** True when the underlying surface genuinely has no data (not just no image). */
+  noUnderlyingData?: boolean;
+  noDataReason?: string;
+}): SlideContentContract {
+  const refs = assetsFor(input.extras, input.slot.slotId);
+  if (refs.length > 0) {
+    return makeSlotSlide({
+      slot: input.slot,
+      sectionId: input.sectionId,
+      content: input.content,
+      evidenceRefs: input.evidenceRefs,
+      findingIds: input.findingIds,
+      metrics: input.metrics,
+      visualAssetRefs: refs,
+    });
+  }
+  if (input.noUnderlyingData) {
+    const reason = input.noDataReason ?? "нет данных по поверхности";
+    return makeSlotSlide({
+      slot: input.slot,
+      sectionId: input.sectionId,
+      templateId: "coverage-empty-state",
+      content: coverageContent(reason, emptyStatusForReason(input.scoped, reason)),
+      evidenceRefs: [],
+      findingIds: [],
+      metrics: { datasetCount: 0 },
+      emptyStateReason: input.noDataReason ?? "no-data",
+    });
+  }
+  return makeSlotSlide({
+    slot: input.slot,
+    sectionId: input.sectionId,
+    content: input.content,
+    evidenceRefs: input.evidenceRefs,
+    findingIds: input.findingIds,
+    metrics: input.metrics,
+    visualAssetRefs: [],
+    emptyStateReason: VISUAL_ASSET_UNAVAILABLE,
+  });
+}
+
+/**
+ * Match one red-framed snapshot row to the fragment finding it represents.
+ * Specificity order: exact observation ref → exact URL → source domain.
+ * Adverse findings win over non-adverse; ties resolve by risk level.
+ */
+export function findingForVisibleRow(row: VisibleAssetItem, scoped: ScopedFragmentInput): Finding | undefined {
+  const rowNorm = normalizeEvidenceRef(row.ref);
+  const rowUrl = normalizeEvidenceUrl(row.url);
+  let best: { f: Finding; score: number } | undefined;
+  for (const f of scoped.findings) {
+    let specificity = 0;
+    for (const r of f.evidenceRefs) {
+      if (normalizeEvidenceRef(r) === rowNorm) {
+        specificity = Math.max(specificity, 3);
+        continue;
+      }
+      const e = scoped.evidenceIndex[r];
+      if (rowUrl && normalizeEvidenceUrl(e?.url) === rowUrl) specificity = Math.max(specificity, 2);
+    }
+    if (specificity === 0 && row.domain && (f.sourceDomains ?? []).includes(row.domain)) {
+      specificity = 1;
+    }
+    if (specificity === 0) continue;
+    const score =
+      specificity * 100 + (isAdverse(f) ? 50 : 0) + (RISK_ORDER[f.riskLevel] ?? 0);
+    if (!best || score > best.score) best = { f, score };
+  }
+  return best?.f;
+}
+
+/**
+ * Sidebar material for red-framed rows on a slot's bound visual asset:
+ * one client-language explanation per highlighted row (theme + destination +
+ * level), plus the refs the visual actually draws. Shared by the image grids
+ * and the suggestion/related panels (ORION style: every red frame explained).
+ */
+export function adverseVisualSidebar(
+  slotId: string,
+  extras: FragmentExtras,
+  scoped: ScopedFragmentInput,
+  rowNoun: string
+): {
+  visibleRows: VisibleAssetItem[];
+  adverseRows: VisibleAssetItem[];
+  gridRefs: string[];
+  explanations: NonNullable<SlideBody["highlightExplanations"]>;
+  explainedFindingIds: string[];
+} {
+  const visibleRows = (extras.visualAssets?.[slotId] ?? []).flatMap((a) => a.visibleItems ?? []);
+  const adverseRows = visibleRows.filter((v) => v.adverse);
+  const seen = new Set<string>();
+  const explanations: NonNullable<SlideBody["highlightExplanations"]> = [];
+  const explainedFindingIds: string[] = [];
+  for (const row of adverseRows) {
+    const f = findingForVisibleRow(row, scoped);
+    const theme = f?.theme ?? row.themeTitle ?? "Потенциально нежелательный материал";
+    const target = row.domain ? ` — ${rowNoun} ведёт на ${row.domain}` : "";
+    const dedupKey = `${f?.findingId ?? theme}|${row.domain ?? row.title ?? ""}`;
+    if (seen.has(dedupKey)) continue;
+    seen.add(dedupKey);
+    explanations.push({
+      clientReason: clampClientText(
+        `«${theme}»${target}${f ? `; уровень: ${riskLabel(f.riskLevel).toLowerCase()}` : "; требует ручной проверки"}.`,
+        300
+      ),
+      frameTone: "red" as const,
+    });
+    if (f && !explainedFindingIds.includes(f.findingId)) explainedFindingIds.push(f.findingId);
+  }
+  const gridRefs = visibleRows.map((v) => v.ref).filter((r) => Boolean(scoped.evidenceIndex[r]));
+  return { visibleRows, adverseRows, gridRefs, explanations, explainedFindingIds };
+}
