@@ -122,12 +122,16 @@ function isAdminRole(role: DpRole): boolean {
 }
 
 export function isOrionClientStoryboardUiEnabled(): boolean {
-  return digitalProfileConfig.orionClientStoryboardUiEnabled;
+  // §8.1 — legacy panels stay off unless DIGITAL_PROFILE_LEGACY_REPORT_UI=1.
+  return (
+    digitalProfileConfig.legacyReportUiEnabled &&
+    digitalProfileConfig.orionClientStoryboardUiEnabled
+  );
 }
 
 export function assertOrionClientStoryboardUiFlagForRole(role: DpRole): void {
-  if (digitalProfileConfig.orionClientStoryboardUiEnabled) return;
-  if (isAdminRole(role)) return;
+  if (isOrionClientStoryboardUiEnabled()) return;
+  if (isAdminRole(role) && digitalProfileConfig.legacyReportUiEnabled) return;
   throw new ForbiddenError("ORION client storyboard UI is disabled.");
 }
 
@@ -147,7 +151,7 @@ function toPublicSummary(record: OrionClientStoryboardRunRecord | null): OrionCl
   if (!record) {
     return {
       ok: true,
-      uiEnabled: digitalProfileConfig.orionClientStoryboardUiEnabled,
+      uiEnabled: isOrionClientStoryboardUiEnabled(),
       reportMode: "orion_client_storyboard_r912",
       status: "empty",
       runId: null,
@@ -178,7 +182,7 @@ function toPublicSummary(record: OrionClientStoryboardRunRecord | null): OrionCl
 
   return {
     ok: true,
-    uiEnabled: digitalProfileConfig.orionClientStoryboardUiEnabled,
+    uiEnabled: isOrionClientStoryboardUiEnabled(),
     reportMode: record.reportMode,
     status: record.status,
     runId: record.runId,

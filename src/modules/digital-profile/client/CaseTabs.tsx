@@ -71,6 +71,7 @@ export function CaseTabs({
   fullAuditBlocked = false,
   lastFullAuditSummary,
   onRunFullAudit,
+  legacyReportUi = false,
   onAgentsChanged,
   onEvidenceChanged,
   onSurfacesChanged,
@@ -89,6 +90,8 @@ export function CaseTabs({
     items: FullAuditRunSummaryItem[];
   } | null;
   onRunFullAudit: () => void;
+  /** REMEDIATION §8.1 — legacy v1 generate controls in report tab. */
+  legacyReportUi?: boolean;
   onAgentsChanged: () => void;
   onEvidenceChanged: () => void;
   onSurfacesChanged: () => void;
@@ -163,6 +166,7 @@ export function CaseTabs({
           fullAuditBlocked={fullAuditBlocked}
           lastFullAuditSummary={lastFullAuditSummary}
           onRunFullAudit={onRunFullAudit}
+          showUnifiedCta={false}
           onChanged={onAgentsChanged}
         />
       ) : null}
@@ -210,6 +214,7 @@ export function CaseTabs({
           caseId={caseDetail.id}
           report={report}
           onReportChange={onReportChange}
+          legacyReportUi={legacyReportUi}
         />
       ) : null}
     </div>

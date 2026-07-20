@@ -29,16 +29,19 @@ export function ReportPreviewPanel({
   caseId,
   report,
   onReportChange,
+  legacyReportUi = false,
 }: {
   caseId: string;
   report: ReportVersion | null;
   onReportChange: (r: ReportVersion) => void;
+  /** REMEDIATION §8.1 — legacy POST /report/generate controls. */
+  legacyReportUi?: boolean;
 }) {
   const { t, tError, tTemplate, fmtDate, locale } = useDigitalProfileI18n();
   const { can } = useDpAuth();
   const canGenerateInternal = can("report.generateInternal");
   const canGenerateClient = can("report.generateClient");
-  const canGenerate = canGenerateInternal || canGenerateClient;
+  const canGenerate = legacyReportUi && (canGenerateInternal || canGenerateClient);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);

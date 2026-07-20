@@ -64,7 +64,14 @@ type LoadState =
   | { kind: "error"; message: string }
   | { kind: "ready"; caseDetail: CaseDetail; evidence: CaseEvidence };
 
-export function CaseDetailView({ caseId }: { caseId: string }) {
+export function CaseDetailView({
+  caseId,
+  legacyReportUi = false,
+}: {
+  caseId: string;
+  /** REMEDIATION §8.1 — legacy v1/v2/storyboard/Golden prepare panels. */
+  legacyReportUi?: boolean;
+}) {
   const { t, tError } = useDigitalProfileI18n();
   const { user, can } = useDpAuth();
   const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
@@ -659,6 +666,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
           recovering={recovering}
           rebuilding={rebuilding}
           unifiedJob={unifiedJob}
+          legacyReportUi={legacyReportUi}
         />
       </Card>
 
@@ -691,7 +699,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
         </Card>
       ) : null}
 
-      {isAdmin ? (
+      {legacyReportUi && isAdmin ? (
         <Card>
           <SoftRenderBoundary>
             <OrionV2ReportPanel caseId={state.caseDetail.id} />
@@ -699,7 +707,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
         </Card>
       ) : null}
 
-      {isAdmin ? (
+      {legacyReportUi && isAdmin ? (
         <Card>
           <SoftRenderBoundary>
             <OrionClientStoryboardReportPanel caseId={state.caseDetail.id} />
@@ -707,7 +715,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
         </Card>
       ) : null}
 
-      {can("evidence.viewRaw") ? (
+      {legacyReportUi && can("evidence.viewRaw") ? (
         <Card>
           <div className="dp-stack" style={{ gap: 8 }}>
             <strong>ORION Golden — ручная проверка</strong>
@@ -804,6 +812,7 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
           fullAuditBlocked={fullAuditBlockedForTabs}
           lastFullAuditSummary={lastFullAuditSummary}
           onRunFullAudit={handleRunUnifiedCollection}
+          legacyReportUi={legacyReportUi}
           onAgentsChanged={() => void refreshAgents()}
           onEvidenceChanged={() => void refreshEvidence()}
           onSurfacesChanged={() => void refreshSurfaces()}

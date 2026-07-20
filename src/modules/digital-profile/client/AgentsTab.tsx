@@ -39,6 +39,7 @@ export function AgentsTab({
   fullAuditBlocked = false,
   lastFullAuditSummary,
   onRunFullAudit,
+  showUnifiedCta = false,
   onChanged,
 }: {
   caseId: string;
@@ -52,6 +53,8 @@ export function AgentsTab({
     items: FullAuditRunSummaryItem[];
   } | null;
   onRunFullAudit: () => void;
+  /** §8.1 — duplicate of header CTA; off by default (one primary CTA). */
+  showUnifiedCta?: boolean;
   onChanged: () => void;
 }) {
   const { t, tError, tKind, tStatus, fmtDate } = useDigitalProfileI18n();
@@ -120,7 +123,7 @@ export function AgentsTab({
         <h2 className="dp-h2" style={{ margin: 0 }}>
           {t("agents.title")} <span className="dp-muted">{t("agents.unifiedCollectionHint")}</span>
         </h2>
-        {canRun && !fullAuditBlocked ? (
+        {showUnifiedCta && canRun && !fullAuditBlocked ? (
           <button
             className="dp-btn dp-btn-primary"
             onClick={onRunFullAudit}

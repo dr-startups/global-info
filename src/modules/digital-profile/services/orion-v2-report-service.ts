@@ -302,7 +302,7 @@ function toPublicSummary(
   if (!record) {
     return {
       ok: true,
-      uiEnabled: digitalProfileConfig.orionV2UiEnabled,
+      uiEnabled: isOrionV2UiEnabled(),
       reportMode: "orion_section_pipeline_v1",
       status: "empty",
       runId: null,
@@ -347,7 +347,7 @@ function toPublicSummary(
 
   return {
     ok: true,
-    uiEnabled: digitalProfileConfig.orionV2UiEnabled,
+    uiEnabled: isOrionV2UiEnabled(),
     reportMode: record.reportMode,
     status: record.status,
     runId: record.runId,
@@ -410,7 +410,10 @@ function sanitizeStoreMode(value: unknown): OrionStoreMode | null {
 }
 
 export function isOrionV2UiEnabled(): boolean {
-  return digitalProfileConfig.orionV2UiEnabled;
+  // §8.1 — legacy panels stay off unless DIGITAL_PROFILE_LEGACY_REPORT_UI=1.
+  return (
+    digitalProfileConfig.legacyReportUiEnabled && digitalProfileConfig.orionV2UiEnabled
+  );
 }
 
 export function resolveOrionStoreMode(
@@ -716,8 +719,8 @@ export function resolveOrionArtifactForDownload(input: {
 }
 
 export function assertOrionUiFlagForRole(role: DpRole): void {
-  if (digitalProfileConfig.orionV2UiEnabled) return;
-  if (isAdminRole(role)) return;
+  if (isOrionV2UiEnabled()) return;
+  if (isAdminRole(role) && digitalProfileConfig.legacyReportUiEnabled) return;
   throw new ForbiddenError("ORION v2 UI is disabled.");
 }
 

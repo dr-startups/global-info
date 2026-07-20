@@ -63,6 +63,12 @@ function unifiedStatusLabel(job: UnifiedCollectionJobStatus | null): string | nu
   return job.stage;
 }
 
+/** Prefer stage for in-flight jobs so the badge matches the pipeline step. */
+function unifiedStageForDisplay(job: UnifiedCollectionJobStatus | null): string | null {
+  if (!job) return null;
+  return job.stage || job.status || null;
+}
+
 /** Job-scoped Unified downloads only — never ORION v2/Storyboard artifact IDs. */
 export function UnifiedCanonicalDownloadButtons({
   caseId,
@@ -154,6 +160,7 @@ export function CaseHeader({
   recovering,
   rebuilding,
   unifiedJob,
+  legacyReportUi = false,
 }: {
   caseDetail: CaseDetail;
   onGenerate: () => void;
@@ -169,11 +176,14 @@ export function CaseHeader({
   rebuilding?: boolean;
   /** Current unified job (not legacy AgentRun). */
   unifiedJob: UnifiedCollectionJobStatus | null;
+  /** REMEDIATION §8.1 — show legacy «Сгенерировать отчёт» CTA. */
+  legacyReportUi?: boolean;
 }) {
-  const { t, fmtDate } = useDigitalProfileI18n();
+  const { t, tStatus, fmtDate } = useDigitalProfileI18n();
   const { can } = useDpAuth();
   const subjectName = caseDetail.subject?.fullName ?? caseDetail.title;
   const unifiedLabel = unifiedStatusLabel(unifiedJob);
+  const stageLabel = unifiedStageForDisplay(unifiedJob);
   const serverRecoveryAllowed = Boolean(unifiedJob?.recoveryAllowed);
   const suggestionsRetry = isSuggestionsTargetedRetryState(unifiedJob);
   const showGeneralRecovery = shouldShowGeneralRecoveryCta(unifiedJob);
@@ -222,9 +232,9 @@ export function CaseHeader({
                 <StatusBadge status={unifiedLabel} />
               </span>
             ) : null}
-            {unifiedJob ? (
+            {stageLabel ? (
               <span className="dp-muted">
-                · {t("agents.unifiedStage")}: {unifiedJob.stage}
+                · {t("agents.unifiedStage")}: {tStatus(stageLabel)}
               </span>
             ) : null}
           </div>
@@ -359,11 +369,12 @@ export function CaseHeader({
                 : t("agents.runUnifiedCollection")}
             </button>
           ) : null}
-          {can("report.generateInternal") ? (
+          {legacyReportUi && can("report.generateInternal") ? (
             <button
               className="dp-btn"
               onClick={onGenerate}
               disabled={generating || runningUnified}
+              data-testid="legacy-report-generate-cta"
             >
               {generating ? <span className="dp-spinner" /> : null}
               {generating ? t("report.generating") : t("report.generateReport")}

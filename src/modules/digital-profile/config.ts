@@ -63,6 +63,12 @@ export interface DigitalProfileConfig {
   orionPipelineStore: "file" | "db";
   orionV2UiEnabled: boolean;
   /**
+   * REMEDIATION §8.1 — show legacy report CTAs/panels (v1 generate, ORION v2,
+   * client storyboard, Golden prepare card). Off by default; main flow is
+   * unified collection + quality panel + recover/rebuild.
+   */
+  legacyReportUiEnabled: boolean;
+  /**
    * R9.5c — user-facing ORION v2 reports must be GPT-5.5-backed.
    * When true, generation is blocked unless the AI analyst is fully configured.
    */
@@ -172,6 +178,7 @@ export const digitalProfileConfig: DigitalProfileConfig = {
     process.env.DIGITAL_PROFILE_ORION_V2_UI_ENABLED,
     process.env.NODE_ENV !== "production"
   ),
+  legacyReportUiEnabled: envBool(process.env.DIGITAL_PROFILE_LEGACY_REPORT_UI, false),
   // Default: required in production/preview-like envs, relaxed only in local/test.
   orionV2RequireAi: envBool(
     process.env.DIGITAL_PROFILE_ORION_V2_REQUIRE_AI,
