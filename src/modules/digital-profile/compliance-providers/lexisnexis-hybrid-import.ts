@@ -65,8 +65,8 @@ function buildSignal(
   return {
     id: `lexis-signal-${idx + 1}`,
     sourceLabel: "LexisNexis",
-    matchName: "Potential match",
-    normalizedName: "potential match",
+    matchName: "Потенциальное совпадение",
+    normalizedName: "потенциальное совпадение",
     category,
     categoryLabelRu: labels.ru,
     categoryLabelEn: labels.en,

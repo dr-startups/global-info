@@ -22,10 +22,13 @@
     "excluded_noise",
     "strong_relevant",
     "potentially_relevant",
-    "weak_match"
+    "weak_match",
+    "visual_asset_unavailable",
+    "lexisnexis_signal",
+    "potential match"
   ],
   "allowedSnakeTokens": ["lexis_nexis"],
-  "internalTokenPattern": "\\baudit\\b|reportRunId|report_run|datasetId|pipeline|arsenkin|serp[-_]obs|inventoryId|schemaVersion",
+  "internalTokenPattern": "\\baudit\\b|reportRunId|report_run|datasetId|pipeline|arsenkin|serp[-_]obs|inventoryId|schemaVersion|VISUAL_ASSET_UNAVAILABLE|LEXISNEXIS_SIGNAL",
   "fieldBudgets": {
     "title": 120,
     "narrative": 900,
@@ -37,7 +40,7 @@
   "sidebarBannedPattern": "(\\[DEMO\\]|\\.example\\b|\\bSUGGESTION\\b|knowledge-строк|не\\s+live|\\bprovider\\b|\\bmanifest\\b|\\bsynthetic\\b|\\breconstruction\\b)",
   "sidebarEllipsisForbidden": true,
   "rawCaseIdPattern": "\\bcmr[a-z0-9]{10,}\\b",
-  "rendererStripPattern": "(storage/|C:\\\\\\\\|openai[_-]?api[_-]?key|cmr[a-z0-9]{10,}|adverse_media|requires_review)",
+  "rendererStripPattern": "(storage/|C:\\\\\\\\|openai[_-]?api[_-]?key|cmr[a-z0-9]{10,}|adverse_media|requires_review|VISUAL_ASSET_UNAVAILABLE|LEXISNEXIS_SIGNAL)",
   "notes": {
     "apiAndEngine": "REMEDIATION §6.1 — «API» and «движок» removed from hard sidebar bans; keep only clearly internal tokens."
   }

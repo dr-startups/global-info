@@ -394,6 +394,15 @@ describe("canonical coverage and visual assets", () => {
       .slides.find((s) => s.baseSlotId === "p10_ru_serp_visual")!;
     assert.equal(serpShot.emptyStateReason, "VISUAL_ASSET_UNAVAILABLE");
     assert.deepEqual(serpShot.visualAssetRefs, []);
+    const blob = [
+      serpShot.content.narrative,
+      serpShot.content.whatWasFound,
+      serpShot.content.whyItMatters,
+      ...(serpShot.content.bullets ?? []),
+    ].join(" ");
+    assert.doesNotMatch(blob, /деловые и справочные материалы/i);
+    assert.doesNotMatch(blob, /на этом снимке/i);
+    assert.match(blob, /недоступен/i);
     // Validation for the report-72 build (with assets) stays green.
     assert.equal(
       validateAssembly({
@@ -632,6 +641,37 @@ describe("sidebar evidence scope (fail closed)", () => {
           if (kinds.length === 0) continue;
           assert.ok(kinds.includes(surface), `${p.fragmentKey}: finding ${id} lacks ${surface}`);
         }
+      }
+    }
+  });
+
+  it("image-grid evidenceRefs stay on visible tiles (PDF p19 scope)", () => {
+    const imgPack = allPacks.find((p) => p.fragmentKey === "RU_IMAGES");
+    assert.ok(imgPack);
+    for (const s of imgPack!.slides) {
+      if (s.emptyStateReason) continue;
+      const metas = ctx.extras.visualAssets?.[s.baseSlotId] ?? [];
+      const tileRefs = new Set(
+        metas.flatMap((a) => (a.visibleItems ?? []).map((v) => v.ref)).filter(Boolean)
+      );
+      if (tileRefs.size === 0) continue;
+      for (const ref of s.evidenceRefs) {
+        assert.ok(
+          tileRefs.has(ref),
+          `${s.slideId}: evidenceRef ${ref} not on visible image tiles`
+        );
+      }
+      const blob = slideText(s);
+      // Domains in whatWasFound / explanations must appear on the grid.
+      const tileDomains = new Set(
+        metas
+          .flatMap((a) => (a.visibleItems ?? []).map((v) => (v.domain ?? "").toLowerCase()))
+          .filter(Boolean)
+      );
+      for (const m of blob.matchAll(/\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)+\b/giu)) {
+        const d = m[0]!.toLowerCase();
+        if (d === "example.com" || d.endsWith(".example")) continue;
+        assert.ok(tileDomains.has(d), `${s.slideId}: domain ${d} not on visible tiles`);
       }
     }
   });

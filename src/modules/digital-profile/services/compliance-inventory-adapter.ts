@@ -50,11 +50,18 @@ function riskTypesOf(value: unknown): string[] {
   return value.map((x) => String(x)).filter(Boolean);
 }
 
+/** Persist-only matchType values — prefer riskTypes for client category. */
+const INTERNAL_MATCH_TYPES = new Set([
+  "LEXISNEXIS_SIGNAL",
+  "LEXISNEXIS_IMPORTED_REPORT",
+]);
+
 function matchCategoryOf(row: DatabaseProfileHitInput): string | undefined {
-  const fromType = String(row.matchType ?? "").trim();
-  if (fromType) return fromType.toUpperCase();
   const firstRisk = riskTypesOf(row.riskTypes)[0];
-  return firstRisk ? firstRisk.toUpperCase() : undefined;
+  if (firstRisk) return firstRisk.toUpperCase();
+  const fromType = String(row.matchType ?? "").trim().toUpperCase();
+  if (fromType && !INTERNAL_MATCH_TYPES.has(fromType)) return fromType;
+  return fromType || undefined;
 }
 
 function collectedAtOf(row: DatabaseProfileHitInput): string {
@@ -88,11 +95,12 @@ export function adaptDatabaseProfileToInventoryItem(input: {
   const riskTypes = riskTypesOf(row.riskTypes);
   const safeMeta = asObj(row.rawMetadataSafe);
   const profileUrl = String(row.profileUrl ?? "").trim();
+  const rawName = String(row.matchedName ?? "").trim();
   const title =
-    String(row.matchedName ?? "").trim() ||
+    (rawName && !/^potential\s+match$/i.test(rawName) ? rawName : "") ||
     String(row.subjectName ?? "").trim() ||
     String(row.summary ?? "").trim() ||
-    provider;
+    "Потенциальное совпадение";
 
   return {
     inventoryId: `db-${row.id}`,

@@ -68,6 +68,25 @@ describe("§1.2 compliance-inventory-adapter", () => {
     assert.deepEqual(item!.rawMetadata?.evidenceRefs, ["databaseProfile:hit-1"]);
   });
 
+  it("prefers riskTypes over LEXISNEXIS_SIGNAL; humanizes Potential match title", () => {
+    const item = adaptDatabaseProfileToInventoryItem({
+      row: {
+        ...BASE_ROW,
+        id: "ln-1",
+        provider: "LEXISNEXIS",
+        matchType: "LEXISNEXIS_SIGNAL",
+        matchedName: "Potential match",
+        subjectName: "Дерипаска Олег Владимирович",
+        riskTypes: ["ADVERSE_MEDIA"],
+      },
+      caseId: "c",
+      reportRunId: "r",
+    });
+    assert.ok(item);
+    assert.equal(item!.rawMetadata?.matchCategory, "ADVERSE_MEDIA");
+    assert.equal(item!.title, "Дерипаска Олег Владимирович");
+  });
+
   it("excludes DISMISSED and FALSE_POSITIVE", () => {
     assert.equal(isActiveComplianceHit({ ...BASE_ROW, reviewStatus: "DISMISSED" }), false);
     assert.equal(isActiveComplianceHit({ ...BASE_ROW, reviewStatus: "FALSE_POSITIVE" }), false);

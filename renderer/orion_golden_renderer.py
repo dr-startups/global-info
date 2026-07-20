@@ -340,6 +340,9 @@ def _safe(text: object) -> str:
     val = re.sub(r"\bWRONG[_\s-]?SUBJECT\b", "другой субъект", val, flags=re.I)
     val = re.sub(r"\bPENDING\b", "требует проверки", val, flags=re.I)
     val = re.sub(r"\bGPT\b", "модельный анализ", val)
+    val = re.sub(r"\bVISUAL_ASSET_UNAVAILABLE\b", "визуальный экспорт недоступен", val, flags=re.I)
+    val = re.sub(r"\bLEXISNEXIS_SIGNAL\b", "сигнал LexisNexis", val, flags=re.I)
+    val = re.sub(r"\bPotential match\b", "Потенциальное совпадение", val, flags=re.I)
     return val.strip()
 
 
@@ -1083,7 +1086,17 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
     if actions:
         act = actions[0]
         label = _safe(act.get("label"))
-        text = _clip_words(label, 220)
+        # Keep a complete sentence for the narrow action card — never mid-phrase
+        # stubs like «…и карту ключевых» (PDF review). No pre-_clip_words.
+        text = label
+        if len(text) > 200:
+            punct = max(text.rfind(". "), text.rfind("! "), text.rfind("? "), text.rfind("; "))
+            if punct > 60:
+                text = text[: punct + 1].strip()
+            else:
+                text = _clip_words(text, 160)
+                if text and text[-1] not in ".!?…":
+                    text = text.rstrip(".,;: ") + "."
         cards.append(("Следующий шаг", text, "accent"))
     if cards:
         gap = 80_000

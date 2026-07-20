@@ -988,12 +988,15 @@ export function composeExecutivePageStructure(
         )
       : undefined;
 
-  const recommendations = clampClientText(
-    (opts?.gptRecommendations?.length
-      ? opts.gptRecommendations.slice(0, 2).join(" ")
-      : (es.priorityActions ?? []).slice(0, 3).join(" ")) ||
-      "Расширить проверку по незакрытым направлениям; не интерпретировать отсутствие подтверждённых находок как отсутствие риска.",
-    220
+  // One complete imperative for the narrow «Следующий шаг» card — never a
+  // mid-phrase stub like «…и карту ключевых» (PDF review p03).
+  const recommendations = fitClientSentences(
+    [
+      opts?.gptRecommendations?.[0] ||
+        (es.priorityActions ?? [])[0] ||
+        "Расширить проверку по незакрытым направлениям; не интерпретировать отсутствие подтверждённых находок как отсутствие риска.",
+    ],
+    180
   );
 
   const conclusion = clampClientText(
@@ -1809,6 +1812,31 @@ export function buildSerpScreenshotFragment(
   const visibleRows = (extras.visualAssets?.[slot.slotId] ?? []).flatMap(
     (a) => a.visibleItems ?? []
   );
+  const boundAssetRefs = assetsFor(extras, slot.slotId);
+  // Fail-closed: no bound visual → never invent «на этом снимке / деловые материалы».
+  if (boundAssetRefs.length === 0 && visibleRows.length === 0) {
+    const slide = visualSlide({
+      slot,
+      sectionId,
+      extras,
+      scoped,
+      content: {
+        narrative: `Снимок первой страницы выдачи (${regionLabel}) недоступен в текущем наборе.`,
+        whatWasFound:
+          "Визуальный снимок выдачи недоступен; текстовые выводы по содержимому снимка не формируются.",
+        whyItMatters:
+          "Без снимка нельзя подтвердить, что именно видит пользователь на первой странице в этом регионе.",
+        whatToCheck:
+          "Повторить сбор скриншота выдачи или сверить органическую таблицу результатов на соседних страницах.",
+        sourceNote: "Источник: снимок поисковой выдачи недоступен.",
+      },
+      evidenceRefs: screenshots.map(([ref]) => ref),
+      findingIds: [],
+      metrics: { screenshots: screenshots.length, adverseHighlights: 0 },
+      noUnderlyingData: false,
+    });
+    return { slides: [slide], status: "READY" };
+  }
   const adverseRows = visibleRows.filter((v) => v.adverse);
 
   // One explanation per red-framed row, attributed to the finding whose
@@ -1860,7 +1888,9 @@ export function buildSerpScreenshotFragment(
           "; остальные результаты — нейтральные или деловые.",
         400
       )
-    : "Выделенных результатов повышенного внимания на этом снимке нет; зафиксированы деловые и справочные материалы.";
+    : visibleRows.length > 0
+      ? "Выделенных результатов повышенного внимания на этом снимке нет; зафиксированы деловые и справочные материалы."
+      : "На снимке нет сохранённых строк выдачи для описания состава страницы.";
 
   const neutralVisibleDomains = [
     ...new Set(visibleRows.map((v) => v.domain).filter((d): d is string => Boolean(d))),
@@ -2055,25 +2085,37 @@ export function buildImagesFragment(
     });
   const refs = units.flatMap((u) => u.evidenceRefs);
   const claimChunks = distribute(claims, slots.length);
-  const refChunks = distribute(refs, slots.length);
   const slides = slots.map((slot, i) => {
-    // Sidebar strictly scoped to the image cards carried by THIS page's slice
-    // of the evidence (the slide's own evidenceRefs).
-    const view = buildPageEvidenceView(scoped, refChunks[i]);
-
-    // Red-framed image cards on THIS page's bound grid are explained in the
-    // sidebar (ORION style: highlighted image → which theme and why), exactly
-    // like the SERP snapshot page does for its red frames.
+    // Red-framed image cards on THIS page's bound grid (§7.1 / PDF p19):
+    // page scope = visible tiles only — never region-level refChunks.
     const sidebar = adverseVisualSidebar(slot.slotId, extras, scoped, "изображение");
-
+    const pageRefs =
+      sidebar.gridRefs.length > 0
+        ? sidebar.gridRefs
+        : (extras.visualAssets?.[slot.slotId] ?? [])
+            .flatMap((a) => (a.visibleItems ?? []).map((v) => v.ref))
+            .filter((r) => Boolean(scoped.evidenceIndex[r]));
+    const view = buildPageEvidenceView(scoped, pageRefs);
     const pageBlocks = pageFindingBlocks(scoped, view);
+    const pageDomainSet = new Set(
+      view.domains.map((d) => d.toLowerCase()).filter((d) => d && d !== "—")
+    );
+    // Drop claim bullets that cite domains not on this grid.
+    const pageClaims = claimChunks[i].filter((c) => {
+      const domains = (c.text.match(/\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)+\b/giu) ?? []).map((d) =>
+        d.toLowerCase()
+      );
+      if (domains.length === 0) return true;
+      if (pageDomainSet.size === 0) return true;
+      return domains.some((d) => pageDomainSet.has(d));
+    });
     return visualSlide({
       slot,
       sectionId,
       extras,
       scoped,
       content: {
-        bullets: claimChunks[i].map((c) => clampClientText(claimText(c), 400)),
+        bullets: pageClaims.map((c) => clampClientText(claimText(c), 400)),
         ...pageBlocks,
         ...(sidebar.explanations.length
           ? {
@@ -2098,13 +2140,11 @@ export function buildImagesFragment(
             }
           : {}),
       },
-      // The bound grid draws its own rows; the slide must carry those refs
-      // too, otherwise the domain gate rejects the sidebar explanations.
-      evidenceRefs: [...new Set([...refChunks[i], ...sidebar.gridRefs])],
+      evidenceRefs: [...new Set(pageRefs)],
       findingIds: [
         ...new Set([...view.findings.map((f) => f.findingId), ...sidebar.explainedFindingIds]),
       ],
-      metrics: { items: refChunks[i].length, adverseImages: sidebar.adverseRows.length },
+      metrics: { items: pageRefs.length, adverseImages: sidebar.adverseRows.length },
       noUnderlyingData: refs.length === 0,
       noDataReason: i === 0 ? "no-images" : "no-images-continued",
     });
@@ -2418,8 +2458,16 @@ const COMPLIANCE_PROVIDER_LABELS: Record<string, string> = {
 };
 const COMPLIANCE_CATEGORY_LABELS: Record<string, string> = {
   PEP: "PEP (политически значимое лицо)",
+  POLITICAL_EXPOSURE: "Политическая аффилированность",
   ADVERSE_MEDIA: "Негативные публикации",
   SANCTIONS: "Санкционные списки",
+  WATCHLIST: "Сторожевые списки",
+  LEGAL: "Правовые и регуляторные риски",
+  LAW_ENFORCEMENT: "Правоохранительные сигналы",
+  OTHER: "Требует ручной классификации",
+  /** Internal persist tokens — never show raw to the client. */
+  LEXISNEXIS_SIGNAL: "Сигнал LexisNexis",
+  LEXISNEXIS_IMPORTED_REPORT: "Импортированный отчёт LexisNexis",
 };
 const COMPLIANCE_STATUS_LABELS: Record<string, string> = {
   PENDING: "Требует ручной проверки",
@@ -2429,6 +2477,23 @@ const COMPLIANCE_STATUS_LABELS: Record<string, string> = {
   DISMISSED: "Отклонено",
   FALSE_POSITIVE: "Ложное срабатывание",
 };
+
+function humanizeComplianceMatchName(name: string | undefined): string {
+  const n = String(name ?? "").trim();
+  if (!n || /^potential\s+match$/i.test(n)) return "Потенциальное совпадение";
+  return n;
+}
+
+function humanizeComplianceCategory(category: string | undefined): string {
+  const key = String(category ?? "")
+    .trim()
+    .toUpperCase();
+  if (!key || key === "—" || key === "-") return "—";
+  if (COMPLIANCE_CATEGORY_LABELS[key]) return COMPLIANCE_CATEGORY_LABELS[key]!;
+  // Never leak SCREAMING_SNAKE enums into the PDF.
+  if (/^[A-Z][A-Z0-9]+(?:_[A-Z0-9]+)+$/.test(key)) return "Сигнал комплаенс-базы";
+  return String(category).replace(/_/g, " ").trim() || "—";
+}
 
 export function buildComplianceFragment(
   sectionId: SectionType,
@@ -2449,10 +2514,10 @@ export function buildComplianceFragment(
 
   const hitLabel = ([, e]: (typeof hits)[number]) => ({
     provider: COMPLIANCE_PROVIDER_LABELS[e.providerLabel ?? ""] ?? e.providerLabel ?? "База данных",
-    category: COMPLIANCE_CATEGORY_LABELS[e.matchCategory ?? ""] ?? e.matchCategory ?? "—",
+    category: humanizeComplianceCategory(e.matchCategory),
     score: e.matchScore != null ? `${e.matchScore}/100` : "—",
     status: COMPLIANCE_STATUS_LABELS[e.reviewStatus ?? ""] ?? e.reviewStatus ?? "—",
-    name: e.title ?? "Совпадение в базе",
+    name: humanizeComplianceMatchName(e.title) || "Совпадение в базе",
   });
 
   const summaryRows = hits.map((h) => {
@@ -2531,7 +2596,7 @@ export function buildComplianceFragment(
       templateId: "serp-table",
       content: {
         narrative:
-          "Страница профиля LexisNexis. Визуальный экспорт страницы в текущем офлайн-наборе недоступен (VISUAL_ASSET_UNAVAILABLE); содержимое записи приведено в текстовом виде без потерь. Вторая страница профиля из отчёта v72 объединена с этой: отдельного содержимого у неё нет.",
+          "Страница профиля LexisNexis. Визуальный экспорт страницы в текущем наборе недоступен; содержимое записи приведено в текстовом виде без потерь. Вторая страница профиля из отчёта v72 объединена с этой: отдельного содержимого у неё нет.",
         table: {
           headers: ["Параметр", "Значение"],
           rows: [
@@ -2551,7 +2616,7 @@ export function buildComplianceFragment(
             ["Что сделать", "Запросить полную запись LexisNexis и проверить первоисточники публикаций."],
             [
               "Визуальный экспорт",
-              "Недоступен в текущем офлайн-наборе (VISUAL_ASSET_UNAVAILABLE); данные приведены в текстовом виде без потерь.",
+              "Недоступен в текущем наборе; данные приведены в текстовом виде без потерь.",
             ],
           ],
         },

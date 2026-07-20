@@ -335,6 +335,8 @@ export function synthesizeFindings(input: {
     const topTitles = items
       .slice(0, 3)
       .map((i) => String(i.title ?? "").trim())
+      .filter((t) => Boolean(t) && !/^potential\s+match$/i.test(t))
+      .map((t) => (/^потенциальное совпадение$/i.test(t) ? "" : t))
       .filter(Boolean);
 
     // Client-grade claim: no theme echo (the theme label is prepended by
