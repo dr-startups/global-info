@@ -41,7 +41,10 @@ import type { SurfaceAnalysisUnit } from "../src/modules/digital-profile/orion-g
 import type { Finding } from "../src/modules/digital-profile/orion-golden/contracts/finding";
 import {
   enhanceSectionPacksWithGptCopy,
+  GPT_SLIDE_COPY_DENSITY_MARKER,
+  GPT_SLIDE_COPY_FIELD_BUDGETS,
   GPT_SLIDE_COPY_PROMPT_VERSION,
+  measureSlideCopyDensity,
   type GptSlideCopyReport,
 } from "../src/modules/digital-profile/orion-golden/deck-sections/llm-slide-copy";
 import type { VerifiedFindingBundle } from "../src/modules/digital-profile/orion-golden/contracts/verified-finding-bundle";
@@ -262,9 +265,14 @@ function makeHappyCaller(): GptJsonCaller {
       slides: payload.slides.map((s) => ({
         slideId: s.slideId,
         narrative: `${GPT_NARRATIVE_MARKER}: сигналы на странице «${s.title}» рискованны, потому что видны банкам и контрагентам при проверке и влияют на решения о сотрудничестве. Рекомендуем подготовить официальную позицию и план вытеснения негатива.`,
+        whatWasFound:
+          "На странице зафиксированы материалы по темам повышенного внимания из scoped findings; детали опираются на переданные источники.",
         whyItMatters:
-          "Эти материалы формируют первое впечатление о субъекте при любой проверке.",
+          "Эти материалы формируют первое впечатление о субъекте при любой проверке и могут влиять на банковские и партнёрские решения.",
         whatToCheck: "Подтвердить первоисточник и подготовить официальный комментарий.",
+        bullets: [
+          `По странице «${s.title}»: требуется проверка первоисточников и единая позиция по негативным сигналам.`,
+        ],
       })),
     };
   };
@@ -727,6 +735,149 @@ describe("stage 1 — map-reduce (§4.4)", () => {
     });
     assert.equal(analysis, null);
     assert.ok(reason && /reduce/i.test(reason), reason ?? "");
+  });
+});
+
+describe("REMEDIATION §7.5 GPT stage-2 density", () => {
+  function densityPack(): SectionPackV2 {
+    return {
+      schemaVersion: SECTION_PACK_SCHEMA_VERSION,
+      sectionId: "RU_PROFILE",
+      sectionType: "RU_PROFILE",
+      fragmentKey: "RU_SERP",
+      caseId: "c1",
+      datasetId: "d1",
+      reportRunId: "r1",
+      sourceDatasetId: "d1",
+      contentVersion: "deck-sections-v18",
+      promptVersion: "ru-serp-analysis-v3",
+      contentHash: "sha256:density",
+      inputHash: "h-density",
+      generatedAt: "2026-01-01T00:00:00.000Z",
+      required: true,
+      status: "READY",
+      sourceFindingIds: ["f1"],
+      evidenceRefs: ["inventory:a"],
+      inputs: { findingIds: ["f1"], evidenceRefs: ["inventory:a"], metricSnapshotId: "m1" },
+      slides: [
+        {
+          schemaVersion: "slide-content-v1",
+          slideId: "p10_ru_serp",
+          baseSlotId: "p10_ru_serp",
+          sectionId: "RU_PROFILE",
+          fragmentKey: "RU_SERP",
+          templateId: "serp-table",
+          title: "Россия — позиции в поисковой выдаче",
+          findingIds: ["f1"],
+          evidenceRefs: ["inventory:a"],
+          content: {
+            narrative: "Краткий черновик.",
+            whatWasFound: "",
+            whyItMatters: "",
+            whatToCheck: "",
+            bullets: ["Черновой пункт."],
+          },
+        },
+      ],
+      metrics: {
+        datasetCount: 1,
+        displayedCount: 1,
+        adverseDatasetCount: 1,
+        adverseDisplayedCount: 1,
+      },
+      provenance: { providers: [], reportRunIds: ["r1"], evidenceRefs: ["inventory:a"] },
+      validation: { passed: true, issues: [] },
+    } as unknown as SectionPackV2;
+  }
+
+  function padTo(minChars: number, seed: string): string {
+    let out = seed;
+    while (out.length < minChars) out += ` ${seed}`;
+    return out.slice(0, Math.max(minChars, seed.length));
+  }
+
+  it("prompt requires fill-all fields and length floors; dense caller beats sparse baseline", async () => {
+    const pack = densityPack();
+    let sawDensityMarker = false;
+
+    const sparse = await enhanceSectionPacksWithGptCopy({
+      packs: [structuredClone(pack)],
+      subject: { displayName: "Anders Holmström", aliases: [] },
+      caller: async ({ systemPrompt }) => {
+        if (systemPrompt.includes(GPT_SLIDE_COPY_DENSITY_MARKER)) sawDensityMarker = true;
+        return {
+          slides: [
+            {
+              slideId: "p10_ru_serp",
+              narrative: "Короткий переписанный вывод без деталей.",
+            },
+          ],
+        };
+      },
+      caseAnalysis: null,
+      bundle: MINI_BUNDLE,
+      evidenceIndex: {
+        "inventory:a": { domain: "di.se", title: "Tax probe", adverse: true },
+      },
+      validatePack: () => ({ passed: true, issues: [] }),
+    });
+    assert.ok(sawDensityMarker, "stage-2 system prompt must carry §7.5 density marker");
+
+    const dense = await enhanceSectionPacksWithGptCopy({
+      packs: [structuredClone(pack)],
+      subject: { displayName: "Anders Holmström", aliases: [] },
+      caller: async () => ({
+        slides: [
+          {
+            slideId: "p10_ru_serp",
+            narrative: padTo(
+              Math.ceil(GPT_SLIDE_COPY_FIELD_BUDGETS.narrative * 0.42),
+              "По выдаче видны публикации о налоговой проверке основателя Nordkap; это повышает комплаенс-риск при банковских и партнёрских проверках."
+            ),
+            whatWasFound: padTo(
+              Math.ceil(GPT_SLIDE_COPY_FIELD_BUDGETS.whatWasFound * 0.42),
+              "Зафиксированы материалы по теме финансовых претензий; источники включают di.se."
+            ),
+            whyItMatters: padTo(
+              Math.ceil(GPT_SLIDE_COPY_FIELD_BUDGETS.whyItMatters * 0.42),
+              "Такие сигналы влияют на решения банков и контрагентов о сотрудничестве."
+            ),
+            whatToCheck: padTo(
+              Math.ceil(GPT_SLIDE_COPY_FIELD_BUDGETS.whatToCheck * 0.42),
+              "Подтвердить статус расследования и подготовить официальный комментарий."
+            ),
+            bullets: [
+              padTo(
+                Math.ceil(GPT_SLIDE_COPY_FIELD_BUDGETS.bullet * 0.42),
+                "Тема риска: финансовые претензии; требуется проверка первоисточника di.se."
+              ),
+            ],
+          },
+        ],
+      }),
+      caseAnalysis: null,
+      bundle: MINI_BUNDLE,
+      evidenceIndex: {
+        "inventory:a": { domain: "di.se", title: "Tax probe", adverse: true },
+      },
+      validatePack: () => ({ passed: true, issues: [] }),
+    });
+
+    const sparseStats = measureSlideCopyDensity(sparse.packs[0]!.slides);
+    const denseStats = measureSlideCopyDensity(dense.packs[0]!.slides);
+    assert.ok(sparseStats.dataSlides >= 1);
+    assert.ok(denseStats.dataSlides >= 1);
+    assert.ok(
+      denseStats.fieldFillRatio > sparseStats.fieldFillRatio,
+      `fill dense=${denseStats.fieldFillRatio} sparse=${sparseStats.fieldFillRatio}`
+    );
+    assert.ok(
+      denseStats.avgLengthRatio > sparseStats.avgLengthRatio,
+      `length dense=${denseStats.avgLengthRatio} sparse=${sparseStats.avgLengthRatio}`
+    );
+    assert.ok(denseStats.fieldFillRatio >= 0.8, `dense fill=${denseStats.fieldFillRatio}`);
+    assert.ok(dense.report.fragments[0]?.status === "APPLIED");
+    assert.equal(dense.report.promptVersion, GPT_SLIDE_COPY_PROMPT_VERSION);
   });
 });
 

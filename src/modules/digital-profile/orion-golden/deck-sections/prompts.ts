@@ -27,13 +27,17 @@ const ANALYST_BASE = [
   "Каждый существенный тезис связывай с findingId.",
   "Не используй внутренние технические термины (audit, reportRunId, pipeline, dataset).",
   "Не называй материалы другого субъекта нейтральными данными проверяемого лица.",
+  // REMEDIATION §7.5 — density: fill all SlideBody fields with concrete scoped facts.
+  "Для страниц с данными заполняй все поля SlideBody (narrative, bullets, whatWasFound, whyItMatters, whatToCheck); опирайся на числа, домены и темы из scoped findings.",
+  "Тексты для страниц с данными не короче ~40% бюджета соответствующего поля, если есть материал для раскрытия.",
   "Верни только JSON по схеме SlideBody (narrative, bullets, whatWasFound, whyItMatters, whatToCheck, sourceNote).",
 ].join(" ");
 
 function llmPrompt(promptKey: string, topic: string): FragmentPromptDef {
   return {
     promptKey,
-    promptVersion: `${promptKey}-v1`,
+    // v3: §7.5 density requirements in ANALYST_BASE.
+    promptVersion: `${promptKey}-v3`,
     deterministic: false,
     systemPrompt: `${ANALYST_BASE} Тема фрагмента: ${topic}.`,
   };
@@ -50,14 +54,11 @@ function deterministicPrompt(promptKey: string): FragmentPromptDef {
 
 export const FRAGMENT_PROMPTS: Record<FragmentKey, FragmentPromptDef> = {
   FRONT_MATTER_MAIN: deterministicPrompt("front-matter"),
-  // v2: §7.3 sparse structure — coverage / LIKELY / namesake / recommendations.
-  EXECUTIVE_SUMMARY: {
-    ...llmPrompt(
-      "executive-summary",
-      "итоговое резюме по проверяемому лицу на основе VerifiedFindingBundle"
-    ),
-    promptVersion: "executive-summary-v2",
-  },
+  // v3: §7.3 structure + §7.5 density (fill-all + length floors).
+  EXECUTIVE_SUMMARY: llmPrompt(
+    "executive-summary",
+    "итоговое резюме по проверяемому лицу на основе VerifiedFindingBundle"
+  ),
   // v2: reserve first-page slot for LIKELY «Требует подтверждения» (§2.1).
   RISK_MATRIX: {
     ...deterministicPrompt("risk-matrix"),
@@ -65,11 +66,8 @@ export const FRAGMENT_PROMPTS: Record<FragmentKey, FragmentPromptDef> = {
   },
   DIGITAL_PROFILE_OVERVIEW: deterministicPrompt("digital-profile-overview"),
   RU_SUMMARY: llmPrompt("ru-regional-summary", "региональный обзор RU-поверхностей"),
-  // v2: §7.1 page composition mirrored into narrative (above-table copy).
-  RU_SERP: {
-    ...llmPrompt("ru-serp-analysis", "анализ органической выдачи RU"),
-    promptVersion: "ru-serp-analysis-v2",
-  },
+  // v3: §7.1 page composition + §7.5 density.
+  RU_SERP: llmPrompt("ru-serp-analysis", "анализ органической выдачи RU"),
   RU_SERP_SCREENSHOT: llmPrompt("ru-serp-screenshot-analysis", "анализ скриншота выдачи RU"),
   RU_SUGGESTIONS: llmPrompt("ru-suggestions-analysis", "анализ поисковых подсказок RU"),
   RU_IMAGES: llmPrompt("ru-images-analysis", "анализ изображений в выдаче RU"),
@@ -77,11 +75,8 @@ export const FRAGMENT_PROMPTS: Record<FragmentKey, FragmentPromptDef> = {
   RU_KNOWLEDGE_AI: llmPrompt("ru-ai-analysis", "анализ AI-ответов поисковых систем RU"),
   RU_RELATED: llmPrompt("ru-related-analysis", "анализ связанных запросов RU"),
   UAE_SUMMARY: llmPrompt("uae-regional-summary", "региональный обзор UAE-поверхностей"),
-  // v2: §7.1 page composition mirrored into narrative (above-table copy).
-  UAE_SERP: {
-    ...llmPrompt("uae-serp-analysis", "анализ органической выдачи UAE"),
-    promptVersion: "uae-serp-analysis-v2",
-  },
+  // v3: §7.1 page composition + §7.5 density.
+  UAE_SERP: llmPrompt("uae-serp-analysis", "анализ органической выдачи UAE"),
   UAE_SERP_SCREENSHOT: llmPrompt("uae-serp-screenshot-analysis", "анализ скриншота выдачи UAE"),
   UAE_SUGGESTIONS: llmPrompt("uae-suggestions-analysis", "анализ поисковых подсказок UAE"),
   UAE_IMAGES: llmPrompt("uae-images-analysis", "анализ изображений в выдаче UAE"),

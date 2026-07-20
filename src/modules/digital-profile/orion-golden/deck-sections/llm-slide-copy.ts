@@ -31,16 +31,22 @@ import { defaultGptCallQueueOptions, runGptCallQueue } from "../gpt/gpt-call-que
 import { scanOrionGoldenClientTextForForbiddenTokens } from "../client/client-text-sanitizer";
 import { riskLevelRu, subjectMatchRu } from "../gpt/client-payload-labels";
 
-export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v2";
+/** REMEDIATION §7.5 — denser fill-all + length-floor instructions. */
+export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v3";
 
 /** Mirrors section-validation budgets — a GPT field must fit the same box. */
-const TEXT_BUDGETS = {
+export const GPT_SLIDE_COPY_FIELD_BUDGETS = {
   narrative: 900,
   bullet: 400,
   whatWasFound: 400,
   whyItMatters: 320,
   whatToCheck: 220,
 } as const;
+
+const TEXT_BUDGETS = GPT_SLIDE_COPY_FIELD_BUDGETS;
+
+/** Prompt marker for offline smokes asserting §7.5 density instructions. */
+export const GPT_SLIDE_COPY_DENSITY_MARKER = "заполняй ВСЕ поля черновика";
 
 const INTERNAL_TOKENS =
   /\baudit\b|reportRunId|report_run|datasetId|pipeline|arsenkin|serp[-_]obs|inventoryId|schemaVersion/iu;
@@ -62,13 +68,72 @@ type SlideOverride = z.infer<typeof SlideOverrideSchema>;
 
 const COPY_INSTRUCTIONS = [
   "Твоя задача — переписать клиентский текст каждого переданного слайда лучше чернового варианта: подробным клиентским языком, без жаргона.",
+  `Для страниц с данными ${GPT_SLIDE_COPY_DENSITY_MARKER} (narrative, whatWasFound, whyItMatters, whatToCheck, bullets) — не ограничивайся правкой одного поля, если остальные пустые или слишком короткие.`,
+  "Для страниц с данными опирайся на конкретику из scoped findings и черновика: числа публикаций, домены источников, темы риска; не пиши общими фразами без опоры на переданные факты.",
   "Для каждого негативного или неоднозначного сигнала объясняй, ПОЧЕМУ он рискован (влияние на репутацию, сделки, банковские и партнёрские проверки), и давай конкретный совет, что с этой информацией делать.",
   "Опирайся только на переданные findings, claims и черновой текст; не добавляй новых фактов, имён, компаний и доменов.",
   "Используй переданный общий анализ кейса (caseAnalysis), чтобы все слайды говорили согласованными выводами.",
   "Не используй внутренние технические термины (audit, reportRunId, pipeline, dataset, provider) и идентификаторы; не вставляй URL. Пиши только по-русски: не копируй в текст английские служебные слова и коды из данных.",
-  "Соблюдай лимиты длины: narrative до 850 символов, каждый bullet до 380, whatWasFound до 380, whyItMatters до 300, whatToCheck до 200.",
-  'Верни ТОЛЬКО JSON: {"slides": [{"slideId": string, "narrative"?: string, "bullets"?: [string], "whatWasFound"?: string, "whyItMatters"?: string, "whatToCheck"?: string}]}. Поле можно опустить, если черновик лучше не менять.',
+  "Лимиты длины (верхняя граница с зазором до бюджета валидации): narrative до 850, каждый bullet до 380, whatWasFound до 380, whyItMatters до 300, whatToCheck до 200.",
+  "Нижняя граница для страниц с данными: каждый заполняемый текстовый блок — не короче ~40% своего бюджета (narrative ≳360, whatWasFound ≳160, whyItMatters ≳130, whatToCheck ≳90, bullet ≳160), если в черновике/findings есть материал для раскрытия.",
+  'Верни ТОЛЬКО JSON: {"slides": [{"slideId": string, "narrative": string, "bullets": [string], "whatWasFound": string, "whyItMatters": string, "whatToCheck": string}]}. Опускай поле только если поверхность пустая и черновик честно сообщает об отсутствии данных.',
 ].join(" ");
+
+/** Offline metric for §7.5 — field fill + length-vs-budget on data slides. */
+export type SlideCopyDensityStats = {
+  dataSlides: number;
+  fieldsExpected: number;
+  fieldsFilled: number;
+  fieldFillRatio: number;
+  avgLengthRatio: number;
+};
+
+export function measureSlideCopyDensity(
+  slides: SlideContentContract[]
+): SlideCopyDensityStats {
+  const textFields = ["narrative", "whatWasFound", "whyItMatters", "whatToCheck"] as const;
+  let dataSlides = 0;
+  let fieldsExpected = 0;
+  let fieldsFilled = 0;
+  let lengthRatioSum = 0;
+  let lengthSamples = 0;
+
+  for (const s of slides) {
+    if (s.isContinuation) continue;
+    const hasData =
+      (s.evidenceRefs?.length ?? 0) > 0 ||
+      (s.findingIds?.length ?? 0) > 0 ||
+      (s.content.table?.rows?.length ?? 0) > 0 ||
+      (s.content.bullets?.length ?? 0) > 0 ||
+      Boolean(s.content.narrative?.trim());
+    if (!hasData) continue;
+    dataSlides += 1;
+    for (const field of textFields) {
+      fieldsExpected += 1;
+      const text = String(s.content[field] ?? "").trim();
+      if (!text) continue;
+      fieldsFilled += 1;
+      lengthRatioSum += Math.min(1, text.length / TEXT_BUDGETS[field]);
+      lengthSamples += 1;
+    }
+    fieldsExpected += 1;
+    const bullets = (s.content.bullets ?? []).map((b) => b.trim()).filter(Boolean);
+    if (bullets.length > 0) {
+      fieldsFilled += 1;
+      const joined = bullets.join(" ");
+      lengthRatioSum += Math.min(1, joined.length / (TEXT_BUDGETS.bullet * Math.min(3, bullets.length)));
+      lengthSamples += 1;
+    }
+  }
+
+  return {
+    dataSlides,
+    fieldsExpected,
+    fieldsFilled,
+    fieldFillRatio: fieldsExpected > 0 ? fieldsFilled / fieldsExpected : 0,
+    avgLengthRatio: lengthSamples > 0 ? lengthRatioSum / lengthSamples : 0,
+  };
+}
 
 export type GptSlideCopyFragmentStatus =
   | "APPLIED"
