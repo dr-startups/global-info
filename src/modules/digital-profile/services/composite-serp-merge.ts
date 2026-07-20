@@ -9,6 +9,7 @@ import {
   normalizeSerpProviderBucket,
   resolveSerpProviderAttribution,
 } from "./unified-base-report-run";
+import { preferNewerCollectedAt } from "./report-material-freshness";
 
 export type CompositeObservation = {
   key: string;
@@ -40,6 +41,8 @@ export type CompositeObservation = {
   riskLabel?: string | null;
   /** True when the row came from caseCorpus* manifest IDs (REMEDIATION §1.1). */
   fromCaseCorpus?: boolean;
+  /** ISO capture/collection time from DB or enrichment (§7.2). */
+  collectedAt?: string;
 };
 
 export type CompositeMergeResult = {
@@ -173,6 +176,8 @@ export async function mergeCompositeSerp(input: {
     providerTaskId?: string | null;
     riskLabel?: string | null;
     clientEvidence?: boolean;
+    /** Optional capture time from enrichment rows (§7.2). */
+    collectedAt?: string | null;
   }>;
   /** Offline/fixture base rows when prisma unavailable. */
   fixtureBaseRows?: CompositeObservation[];
@@ -205,6 +210,8 @@ export async function mergeCompositeSerp(input: {
       existing.baseSearchSurfaceItemId = row.baseSearchSurfaceItemId;
     }
     if (row.fromCaseCorpus) existing.fromCaseCorpus = true;
+    const newer = preferNewerCollectedAt(existing.collectedAt, row.collectedAt);
+    if (newer) existing.collectedAt = newer;
   };
 
   if (input.fixtureBaseRows) {
@@ -283,6 +290,7 @@ export async function mergeCompositeSerp(input: {
           baseSearchResultId: r.id,
           riskLabel: null,
           fromCaseCorpus,
+          collectedAt: r.createdAt?.toISOString?.() ?? undefined,
         },
         provider
       );
@@ -329,6 +337,9 @@ export async function mergeCompositeSerp(input: {
         (s as { imageUrl?: string | null; thumbnailUrl?: string | null }).imageUrl ??
         (s as { thumbnailUrl?: string | null }).thumbnailUrl ??
         null;
+      const surfaceTs = s.capturedAt ?? s.createdAt;
+      const surfaceCollectedAt =
+        surfaceTs instanceof Date ? surfaceTs.toISOString() : undefined;
       add(
         {
           key,
@@ -348,6 +359,7 @@ export async function mergeCompositeSerp(input: {
           evidenceRefs: [`searchSurfaceItem:${s.id}`],
           baseSearchSurfaceItemId: s.id,
           fromCaseCorpus,
+          collectedAt: surfaceCollectedAt,
         },
         provider
       );
@@ -395,6 +407,7 @@ export async function mergeCompositeSerp(input: {
         evidenceRefs: obs.providerTaskId ? [`providerTask:${obs.providerTaskId}`] : [],
         arsenkinTaskId: obs.providerTaskId ?? null,
         riskLabel: obs.riskLabel,
+        collectedAt: obs.collectedAt ? String(obs.collectedAt) : undefined,
       },
       "arsenkin"
     );

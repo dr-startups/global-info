@@ -218,6 +218,8 @@ function extrasHash(key: FragmentKey, extras: FragmentExtras): string {
         base,
         slotAssets,
         surfaceCollectionHints: extras.surfaceCollectionHints ?? [],
+        materialFreshness: extras.materialFreshness ?? null,
+        reportDiff: extras.reportDiff ?? null,
       })
     )
     .digest("hex")

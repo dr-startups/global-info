@@ -73,6 +73,10 @@ import {
   type EvidenceSupplementBundle,
   type EvidenceSupplementPrisma,
 } from "./evidence-supplement-adapter";
+import {
+  buildReportDiffArtifact,
+  computeMaterialFreshness,
+} from "./report-material-freshness";
 
 export type CanonicalPrepareBlockerCode =
   | "CANONICAL_PREPARE_DISABLED"
@@ -291,7 +295,7 @@ export function compositeObservationsToInventory(input: {
       provider,
       region: obs.region ?? "RU",
       query: obs.query,
-      collectedAt: new Date(0).toISOString(),
+      collectedAt: obs.collectedAt ?? new Date(0).toISOString(),
       evidenceType: mapSurfaceToEvidenceType(surface),
       title: text || obs.title || obs.url || obs.key,
       snippet: obs.snippet ?? "",
@@ -466,6 +470,32 @@ export async function runCanonicalReportPrepare(
   const subjectProfile = resolveSubjectProfile(input);
   const subjectDisplayName = input.subjectDisplayName ?? subjectProfile.displayName;
 
+  const materialFreshness = computeMaterialFreshness(
+    input.merge.observations.map((o) => o.collectedAt)
+  );
+  const reportDiff = buildReportDiffArtifact({
+    caseId: input.caseId,
+    currentJobId: input.unifiedJobId,
+    currentKeys: input.merge.observations.map((o) => o.key),
+  });
+  mkdirSync(input.artifactsDir, { recursive: true });
+  writeFileSync(
+    join(input.artifactsDir, "report-diff.json"),
+    `${JSON.stringify(reportDiff, null, 2)}\n`,
+    "utf8"
+  );
+  const deckFreshnessExtras = {
+    materialFreshness: materialFreshness ?? undefined,
+    reportDiff:
+      reportDiff.status === "OK"
+        ? {
+            addedCount: reportDiff.addedCount,
+            removedCount: reportDiff.removedCount,
+            previousJobId: reportDiff.previousJobId,
+          }
+        : undefined,
+  };
+
   const analyticsDir = join(input.artifactsDir, "analytics");
   const deckDir = join(input.artifactsDir, "deck");
   const renderDir = join(input.artifactsDir, "render");
@@ -597,7 +627,7 @@ export async function runCanonicalReportPrepare(
         caseId: deckInputs.caseId,
         reportRunId: deckInputs.reportRunId,
         sourceDatasetId: deckInputs.sourceDatasetId,
-        contentVersion: "deck-sections-v22",
+        contentVersion: "deck-sections-v23",
         subject: {
           displayName: subjectDisplayName,
           aliases: subjectProfile.aliases ?? [],
@@ -612,6 +642,7 @@ export async function runCanonicalReportPrepare(
           gptCaseAnalysis: caseAnalysis ?? undefined,
           uncategorizedMaterials: deckInputs.uncategorizedMaterials ?? undefined,
           surfaceCollectionHints: deckInputs.surfaceCollectionHints,
+          ...deckFreshnessExtras,
         },
       },
       bundleForValidation: deckInputs.mergedBundle,
@@ -902,7 +933,7 @@ export async function runCanonicalReportPrepare(
         caseId: deckInputs.caseId,
         reportRunId: deckInputs.reportRunId,
         sourceDatasetId: deckInputs.sourceDatasetId,
-        contentVersion: "deck-sections-v22",
+        contentVersion: "deck-sections-v23",
         subject: { displayName: subjectDisplayName, aliases: subjectProfile.aliases ?? [] },
         bundle: deckInputs.mergedBundle,
         surfaceUnits: deckInputs.surfaceUnits,
@@ -916,6 +947,7 @@ export async function runCanonicalReportPrepare(
           gptCaseAnalysis: gptLayer?.caseAnalysis ?? undefined,
           uncategorizedMaterials: deckInputs.uncategorizedMaterials ?? undefined,
           surfaceCollectionHints: deckInputs.surfaceCollectionHints,
+          ...deckFreshnessExtras,
         },
       },
       bundleForValidation: deckInputs.mergedBundle,

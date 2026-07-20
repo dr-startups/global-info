@@ -38,6 +38,10 @@ import type { SurfaceClaim } from "../contracts/surface-analysis";
 import { ADVERSE_PATTERNS, NOT_FOUND_PATTERNS } from "../analytics/surface-analyzers";
 import { pluralRu } from "../analytics/finding-synthesizer";
 import { pickComplianceClientMatchTitle } from "../../services/compliance-inventory-adapter";
+import {
+  freshnessFootnote,
+  reportDiffClientLine,
+} from "../../services/report-material-freshness";
 
 export type ExecutiveSummaryExtras = {
   verdict: string;
@@ -99,6 +103,14 @@ export type FragmentExtras = {
   uncategorizedMaterials?: UncategorizedMaterialsExtras;
   /** Coverage/provider hints for empty-state copy (§7.4). */
   surfaceCollectionHints?: SurfaceCollectionHint[];
+  /** REMEDIATION §7.2 — earliest/latest material capture times. */
+  materialFreshness?: { earliestAt: string; latestAt: string };
+  /** REMEDIATION §7.2 — counts vs previous successful report for the case. */
+  reportDiff?: {
+    addedCount: number;
+    removedCount: number;
+    previousJobId: string | null;
+  };
 };
 
 /** Loose theme match: token overlap between a finding theme and a GPT risk theme. */
@@ -309,7 +321,11 @@ function bulletWithFindingId(body: string, findingId: string, budget = 400): str
  * content IS the regional dataset (regional summary, full SERP table).
  * Visual/per-page fragments must use `pageFindingBlocks` instead.
  */
-function findingBlocks(scoped: ScopedFragmentInput, extraCheck?: string): Partial<SlideBody> {
+function findingBlocks(
+  scoped: ScopedFragmentInput,
+  extraCheck?: string,
+  extras?: FragmentExtras
+): Partial<SlideBody> {
   const adverse = scoped.findings.filter(isAdverse);
   const top = [...scoped.findings].sort(
     (a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0)
@@ -330,7 +346,7 @@ function findingBlocks(scoped: ScopedFragmentInput, extraCheck?: string): Partia
       220
     ),
     statusNote: statusLine(top),
-    sourceNote: sourceLine(scoped),
+    sourceNote: sourceLine(scoped, extras),
   };
 }
 
@@ -600,12 +616,25 @@ function themedClaim(f: Finding): string {
 }
 
 /** Region-level source line — summary pages only (page IS the region). */
-function sourceLine(scoped: ScopedFragmentInput): string {
+function sourceLine(scoped: ScopedFragmentInput, extras?: FragmentExtras): string {
   const domains = new Set<string>();
   for (const f of scoped.findings) for (const d of f.sourceDomains ?? []) domains.add(d);
   for (const e of Object.values(scoped.evidenceIndex)) if (e.domain) domains.add(e.domain);
   const list = [...domains].filter((d) => d && d !== "—").sort().slice(0, 6);
-  return list.length ? `Источники: ${list.join(", ")}` : "Источники: поисковая выдача (см. приложение).";
+  const sources = list.length
+    ? `Источники: ${list.join(", ")}`
+    : "Источники: поисковая выдача (см. приложение).";
+  const fresh =
+    extras?.materialFreshness != null
+      ? freshnessFootnote(extras.materialFreshness)
+      : undefined;
+  return fresh ? `${sources}. ${fresh.charAt(0).toUpperCase()}${fresh.slice(1)}` : sources;
+}
+
+/** §7.2 — one client line about material turnover vs prior report. */
+function changeSinceLastReportLine(extras?: FragmentExtras): string | undefined {
+  if (!extras?.reportDiff) return undefined;
+  return reportDiffClientLine(extras.reportDiff);
 }
 
 /**
@@ -919,7 +948,7 @@ export type ExecutivePageStructure = {
 export function composeExecutivePageStructure(
   scoped: ScopedFragmentInput,
   es: ExecutiveSummaryExtras,
-  opts?: { gptRecommendations?: string[] }
+  opts?: { gptRecommendations?: string[]; extras?: FragmentExtras }
 ): ExecutivePageStructure {
   const ms = scoped.metricSnapshot;
   const materialWord = pluralRu(ms.compositeCount, "материал", "материала", "материалов");
@@ -937,15 +966,22 @@ export function composeExecutivePageStructure(
         .filter((x): x is string => Boolean(x))
     ),
   ];
+  const fresh =
+    opts?.extras?.materialFreshness != null
+      ? freshnessFootnote(opts.extras.materialFreshness)
+      : undefined;
+  const changeLine = changeSinceLastReportLine(opts?.extras);
   const coverage = clampClientText(
     [
       `Карта покрытия: собрано ${ms.compositeCount} ${materialWord}, из них о субъекте — ${ms.subjectMatchCount}`,
       regionBits.length > 0 ? `; контуры: ${regionBits.join("; ")}` : "",
       surfaces.length > 0 ? `. Проверенные поверхности: ${surfaces.slice(0, 7).join(", ")}` : "",
       overviewBits.length > 0 ? `. ${overviewBits.join(" ")}` : "",
+      fresh ? `. ${fresh.charAt(0).toUpperCase()}${fresh.slice(1)}` : "",
+      changeLine ? `. ${changeLine}` : "",
       ".",
     ].join(""),
-    400
+    450
   );
 
   const likelyN = ms.likelySubjectCount ?? 0;
@@ -1090,6 +1126,7 @@ export function buildExecutiveSummaryFragment(
     /недостат|insufficient|no confirmed/i.test(es.executiveConclusion);
   const structure = composeExecutivePageStructure(scoped, es, {
     gptRecommendations: gpt?.recommendations,
+    extras,
   });
   const ms = scoped.metricSnapshot;
   // Narrative: prefer the holistic GPT conclusion + digital portrait. The
@@ -1153,7 +1190,7 @@ export function buildExecutiveSummaryFragment(
           ? cardTexts.slice(0, TOP_CARDS)
           : structure.factCards.slice(0, TOP_CARDS),
       whatToCheck: structure.recommendations,
-      sourceNote: sourceLine(scoped),
+      sourceNote: sourceLine(scoped, extras),
     },
     evidenceRefs: uniqueRefs(scoped),
     findingIds: es.keyFindings.map((k) => k.findingId),
@@ -1501,6 +1538,7 @@ export function buildRegionalSummaryFragment(
     // (ORION style) instead of a coverage placeholder.
     const ambiguous = scoped.metricSnapshot.ambiguousCount;
     const likely = scoped.metricSnapshot.likelySubjectCount ?? 0;
+    const changeLineEmpty = changeSinceLastReportLine(extras);
     slides.push(
       makeSlotSlide({
         slot: summarySlot,
@@ -1521,10 +1559,11 @@ export function buildRegionalSummaryFragment(
                 ]
               : []),
             "Отсутствие подтверждённых тем — результат идентификации на дату отчёта, а не гарантия отсутствия рисков.",
+            ...(changeLineEmpty ? [changeLineEmpty] : []),
           ],
           whatToCheck:
             "Рекомендуем плановое обновление мониторинга: состав выдачи и подсказок меняется, а материалы, требующие идентификации, могут быть подтверждены при появлении дополнительных признаков.",
-          sourceNote: sourceLine(scoped),
+          sourceNote: sourceLine(scoped, extras),
         },
         evidenceRefs: uncategorized?.evidenceRefs ?? [],
         findingIds: [],
@@ -1537,6 +1576,7 @@ export function buildRegionalSummaryFragment(
     );
   } else {
     const likelyN = scoped.metricSnapshot.likelySubjectCount ?? 0;
+    const changeLine = changeSinceLastReportLine(extras);
     const bullets = [
       ...scoped.findings
         .slice(0, 8)
@@ -1547,6 +1587,7 @@ export function buildRegionalSummaryFragment(
             `Материалы, вероятно относящиеся к субъекту: ${likelyN} — не входят в подтверждённые выводы.`,
           ]
         : []),
+      ...(changeLine ? [changeLine] : []),
     ];
     const base = makeSlotSlide({
       slot: summarySlot,
@@ -1554,7 +1595,7 @@ export function buildRegionalSummaryFragment(
       content: {
         narrative: `По региону ${regionLabel} собрано материалов: ${materialCount}; подтверждённых тем: ${scoped.findings.length}.`,
         bullets,
-        ...findingBlocks(scoped),
+        ...findingBlocks(scoped, undefined, extras),
       },
       evidenceRefs: [
         ...uniqueRefs(scoped),
@@ -1636,7 +1677,7 @@ export function buildRegionalSummaryFragment(
       sectionId,
       content: {
         table: { headers: ["Система", "Показатель", "Объём", "Комментарий"], rows },
-        sourceNote: sourceLine(scoped),
+        sourceNote: sourceLine(scoped, extras),
       },
       evidenceRefs: urlAuditUnits.flatMap((u) => u.evidenceRefs),
       findingIds: [],
