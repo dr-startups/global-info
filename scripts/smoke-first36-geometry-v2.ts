@@ -204,7 +204,7 @@ const tests = [
     assert.ok(String(intentional.inspectorVersion || "").includes("first36-geometry-v2"));
   }),
 
-  it("36 correct PNG count + clean report = PASS", () => {
+  it("36 correct PNG count + clean report = PASS", async () => {
     const report = buildGeometryReportFromParts({
       overlaps: [],
       overflow: [],

@@ -356,7 +356,7 @@ describe("3. exactly-once persisted ingestion", () => {
 describe("4. process restart A→B + concurrent lease", () => {
   it("Process A schedules → disk WAITING; Process B reloads, submissions=0, composite=1", async () => {
     const CASE = "smoke-restart-ab-case";
-    deleteUnifiedCollectionJobForTests(CASE);
+    await deleteUnifiedCollectionJobForTests(CASE);
     let externalSubmissions = 0;
     let compositeCalls = 0;
 
@@ -397,7 +397,7 @@ describe("4. process restart A→B + concurrent lease", () => {
     for (let i = 0; i < 6; i++) {
       await runUnifiedCollectionTick(CASE, processADeps);
     }
-    const afterA = loadUnifiedCollectionJob(CASE)!;
+    const afterA = await loadUnifiedCollectionJob(CASE)!;
     assert.equal(afterA.status, "WAITING");
     assert.equal(afterA.resumeCheckpoint, "ARSENKIN_RESULT_INGEST");
     assert.equal(afterA.enrichmentRunIds?.length, 5);
@@ -466,7 +466,7 @@ describe("4. process restart A→B + concurrent lease", () => {
         break;
       }
     }
-    const afterB = loadUnifiedCollectionJob(CASE)!;
+    const afterB = await loadUnifiedCollectionJob(CASE)!;
     assert.equal(afterB.jobId, savedJobId);
     assert.equal(afterB.arsenkinEnrichmentState?.enrichmentComplete, true);
     assert.equal(externalSubmissions, 0);
@@ -476,7 +476,7 @@ describe("4. process restart A→B + concurrent lease", () => {
 
   it("concurrent lease: one owner; submissions=0; lease released on success and exception", async () => {
     const CASE = "smoke-concurrent-lease-case";
-    deleteUnifiedCollectionJobForTests(CASE);
+    await deleteUnifiedCollectionJobForTests(CASE);
     await startUnifiedOrionCollection({
       caseId: CASE,
       requestedBy: "lease",
@@ -542,9 +542,9 @@ describe("4. process restart A→B + concurrent lease", () => {
 
     const ownerA = "orch-a";
     const ownerB = "orch-b";
-    const claimedA = claimUnifiedJobLease({ caseId: CASE, ownerId: ownerA, leaseMs: 60_000 });
+    const claimedA = await claimUnifiedJobLease({ caseId: CASE, ownerId: ownerA, leaseMs: 60_000 });
     assert.ok(claimedA);
-    const claimedB = claimUnifiedJobLease({ caseId: CASE, ownerId: ownerB, leaseMs: 60_000 });
+    const claimedB = await claimUnifiedJobLease({ caseId: CASE, ownerId: ownerB, leaseMs: 60_000 });
     assert.equal(claimedB, null);
 
     let externalSubmissions = 0;
@@ -590,7 +590,7 @@ describe("4. process restart A→B + concurrent lease", () => {
     };
 
     // Tick under owner A (orchestrator claims its own lease internally — release first)
-    releaseUnifiedJobLease(CASE, ownerA);
+    await releaseUnifiedJobLease(CASE, ownerA);
     for (let i = 0; i < 12; i++) {
       const job = await runUnifiedCollectionTick(CASE, deps);
       if (job && ["REPORT_READY", "COMPLETED_PARTIAL", "FAILED_TERMINAL"].includes(job.stage)) break;
@@ -600,8 +600,8 @@ describe("4. process restart A→B + concurrent lease", () => {
 
     // Exception path releases lease
     const CASE2 = "smoke-lease-exc-case";
-    deleteUnifiedCollectionJobForTests(CASE2);
-    saveUnifiedCollectionJob({
+    await deleteUnifiedCollectionJobForTests(CASE2);
+    await saveUnifiedCollectionJob({
       version: "unified-orion-collection-job-v1",
       jobId: "unified-lease-exc",
       unifiedJobId: "unified-lease-exc",
@@ -632,7 +632,7 @@ describe("4. process restart A→B + concurrent lease", () => {
       cancelRequested: false,
       resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
     });
-    writeUnifiedArtifact(CASE2, "unified-lease-exc", "base-collection-manifest.json", {
+    await writeUnifiedArtifact(CASE2, "unified-lease-exc", "base-collection-manifest.json", {
       version: "base-collection-manifest-v1",
       unifiedJobId: "unified-lease-exc",
       caseId: CASE2,
@@ -655,11 +655,11 @@ describe("4. process restart A→B + concurrent lease", () => {
     } catch {
       /* expected */
     }
-    const afterExc = loadUnifiedCollectionJob(CASE2)!;
+    const afterExc = await loadUnifiedCollectionJob(CASE2)!;
     // lease must not remain stuck forever for a foreign owner after failure path
     assert.ok(!afterExc.leaseOwnerId || afterExc.leaseOwnerId.length > 0);
-    releaseUnifiedJobLease(CASE2, afterExc.leaseOwnerId ?? "x");
-    const released = loadUnifiedCollectionJob(CASE2)!;
+    await releaseUnifiedJobLease(CASE2, afterExc.leaseOwnerId ?? "x");
+    const released = await loadUnifiedCollectionJob(CASE2)!;
     assert.equal(released.leaseOwnerId, null);
 
     FLAGS.CONCURRENT_LEASE_PASS = true;
@@ -670,7 +670,7 @@ describe("5. full synthetic Job B recovery fixture", () => {
   it("E2E recovery: same jobId, ingest, invalidate, composite/render=1, idempotent", async () => {
     const CASE = "smoke-jobb-fixture-case";
     const jobId = "unified-synth-job-b-fixture-001";
-    deleteUnifiedCollectionJobForTests(CASE);
+    await deleteUnifiedCollectionJobForTests(CASE);
 
     const enrichmentRunIds = ARSENKIN_REAL_AGENT_NAMES.map((n) => `er-${n.toLowerCase()}`);
     const externalTaskIds = enrichmentRunIds.map((id, i) => `ext-task-${i + 1}`);
@@ -690,7 +690,7 @@ describe("5. full synthetic Job B recovery fixture", () => {
 
     const oldCompositeId = "composite-stale-jobb";
     const oldContentHash = "old-content-hash-abc";
-    saveUnifiedCollectionJob({
+    await saveUnifiedCollectionJob({
       version: "unified-orion-collection-job-v1",
       jobId,
       unifiedJobId: jobId,
@@ -755,24 +755,24 @@ describe("5. full synthetic Job B recovery fixture", () => {
       ],
       realCollectionSufficient: true,
     };
-    writeUnifiedArtifact(CASE, jobId, "base-collection-manifest.json", manifest);
-    writeUnifiedArtifact(CASE, jobId, "arsenkin-enrichment-observations.json", {
+    await writeUnifiedArtifact(CASE, jobId, "base-collection-manifest.json", manifest);
+    await writeUnifiedArtifact(CASE, jobId, "arsenkin-enrichment-observations.json", {
       observations: [],
       enrichmentComplete: false,
       enrichmentRunIds,
     });
-    writeUnifiedArtifact(CASE, jobId, "composite-serp-observations.json", {
+    await writeUnifiedArtifact(CASE, jobId, "composite-serp-observations.json", {
       compositeDatasetId: oldCompositeId,
       contentHash: oldContentHash,
       observations: [],
     });
-    writeUnifiedArtifact(CASE, jobId, "assembled-deck.json", { stale: true, datasetId: oldCompositeId });
-    writeUnifiedArtifact(CASE, jobId, "acceptance-report.json", { stale: true });
-    writeUnifiedArtifact(CASE, jobId, "golden-render-meta.json", { pdf: "/stale/old.pdf" });
+    await writeUnifiedArtifact(CASE, jobId, "assembled-deck.json", { stale: true, datasetId: oldCompositeId });
+    await writeUnifiedArtifact(CASE, jobId, "acceptance-report.json", { stale: true });
+    await writeUnifiedArtifact(CASE, jobId, "golden-render-meta.json", { pdf: "/stale/old.pdf" });
 
-    const elig = evaluateUnifiedCollectionRecoveryEligibility({
+    const elig = await evaluateUnifiedCollectionRecoveryEligibility({
       caseId: CASE,
-      job: loadUnifiedCollectionJob(CASE),
+      job: await loadUnifiedCollectionJob(CASE),
       manifest,
     });
     assert.equal(elig.recoveryAllowed, true);
@@ -881,10 +881,10 @@ describe("5. full synthetic Job B recovery fixture", () => {
       }
     }
 
-    const finished = loadUnifiedCollectionJob(CASE)!;
+    const finished = await loadUnifiedCollectionJob(CASE)!;
     assert.equal(finished.jobId, jobId);
     assert.ok(finished.arsenkinEnrichmentState?.enrichmentComplete);
-    const obsArt = readUnifiedArtifact<{ observations: unknown[] }>(
+    const obsArt = await readUnifiedArtifact<{ observations: unknown[] }>(
       CASE,
       jobId,
       "arsenkin-enrichment-observations.json"
@@ -944,7 +944,7 @@ describe("6. failed PRE_RENDER counter", () => {
   it("42/43 coverage → FAIL; assembly/render/acceptance=0; checkpoint PRE_RENDER_DATA_GATE", async () => {
     const CASE = "smoke-prerender-fail-case";
     const jobId = "unified-prerender-fail";
-    deleteUnifiedCollectionJobForTests(CASE);
+    await deleteUnifiedCollectionJobForTests(CASE);
     const ids = Array.from({ length: 43 }, (_, i) => `pr-${i + 1}`);
     const rows: CompositeObservation[] = ids.slice(0, 42).map((id, i) => ({
       key: `organic|ru|yandex|q|https://p${i}.example`,
@@ -963,7 +963,7 @@ describe("6. failed PRE_RENDER counter", () => {
     });
     enrichmentState.enrichmentComplete = true;
 
-    saveUnifiedCollectionJob({
+    await saveUnifiedCollectionJob({
       version: "unified-orion-collection-job-v1",
       jobId,
       unifiedJobId: jobId,
@@ -1007,8 +1007,8 @@ describe("6. failed PRE_RENDER counter", () => {
       actualProviders: [],
       realCollectionSufficient: true,
     };
-    writeUnifiedArtifact(CASE, jobId, "base-collection-manifest.json", manifest);
-    writeUnifiedArtifact(CASE, jobId, "arsenkin-enrichment-observations.json", {
+    await writeUnifiedArtifact(CASE, jobId, "base-collection-manifest.json", manifest);
+    await writeUnifiedArtifact(CASE, jobId, "arsenkin-enrichment-observations.json", {
       observations: [],
       enrichmentComplete: true,
     });
@@ -1021,8 +1021,8 @@ describe("6. failed PRE_RENDER counter", () => {
     merge.observations = rows;
     merge.compositeCount = 42;
     merge.providerCounts.composite = 42;
-    writeUnifiedArtifact(CASE, jobId, "composite-serp-observations.json", merge);
-    writeUnifiedArtifact(CASE, jobId, "composite-serp-provenance.json", merge.provenance);
+    await writeUnifiedArtifact(CASE, jobId, "composite-serp-observations.json", merge);
+    await writeUnifiedArtifact(CASE, jobId, "composite-serp-provenance.json", merge.provenance);
     const binding = buildReportDataBinding({
       caseId: CASE,
       unifiedJobId: jobId,
@@ -1031,7 +1031,7 @@ describe("6. failed PRE_RENDER counter", () => {
       compositeDatasetId: merge.compositeDatasetId,
       providerCounts: merge.providerCounts,
     });
-    writeUnifiedArtifact(CASE, jobId, "report-data-binding.json", binding);
+    await writeUnifiedArtifact(CASE, jobId, "report-data-binding.json", binding);
 
     const coverage = buildBaseObservationCoverage({ manifest, merge });
     assert.equal(assertBaseObservationCoverage(coverage).ok, false);
@@ -1126,12 +1126,12 @@ describe("7. Yandex attribution full contract", () => {
 });
 
 describe("8. downstream invalidation helper", () => {
-  it("marks stale markers without deleting forensic lineage", () => {
+  it("marks stale markers without deleting forensic lineage", async () => {
     const CASE = "smoke-invalidate-case";
     const jobId = "unified-inv";
-    deleteUnifiedCollectionJobForTests(CASE);
+    await deleteUnifiedCollectionJobForTests(CASE);
     const now = new Date().toISOString();
-    saveUnifiedCollectionJob({
+    await saveUnifiedCollectionJob({
       version: "unified-orion-collection-job-v1",
       jobId,
       unifiedJobId: jobId,
@@ -1161,9 +1161,9 @@ describe("8. downstream invalidation helper", () => {
       reportLinks: { pdf: "/old.pdf" },
       cancelRequested: false,
     });
-    writeUnifiedArtifact(CASE, jobId, "base-collection-manifest.json", { keep: true });
+    await writeUnifiedArtifact(CASE, jobId, "base-collection-manifest.json", { keep: true });
     const inv = invalidateDownstreamAfterEnrichmentIngest({
-      job: loadUnifiedCollectionJob(CASE)!,
+      job: await loadUnifiedCollectionJob(CASE)!,
       reason: "test",
     });
     assert.ok(inv.report.markedStale.length > 0);

@@ -83,8 +83,8 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
   const user = await requireDigitalProfileUser(req);
   await requireCaseAccess(user, id, "VIEWER");
-  const job = getUnifiedCollectionStatus(id);
-  const recovery = withUnifiedRecoveryStatusFields(job);
+  const job = await getUnifiedCollectionStatus(id);
+  const recovery = await withUnifiedRecoveryStatusFields(job);
   const suggestionsRunId =
     (job?.enrichmentRunIds ?? []).find((rid) => /suggestions/i.test(rid)) ?? null;
   const suggestTasks = await loadSuggestTasksForGap(suggestionsRunId);
@@ -99,10 +99,10 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
       job?.status === "WAITING");
   const downloadArtifacts =
     job && job.stage === "REPORT_READY" && job.status === "COMPLETED"
-      ? getCanonicalDownloadAvailability({ caseId: id, jobId: job.unifiedJobId })
+      ? await getCanonicalDownloadAvailability({ caseId: id, jobId: job.unifiedJobId })
       : { pdf: false, pptx: false, contactSheet: false };
-  const rebuild = evaluateUnifiedReportRebuildEligibility({ caseId: id, job });
-  const gptCopyRetry = evaluateUnifiedGptCopyRetryEligibility({ caseId: id, job });
+  const rebuild = await evaluateUnifiedReportRebuildEligibility({ caseId: id, job });
+  const gptCopyRetry = await evaluateUnifiedGptCopyRetryEligibility({ caseId: id, job });
   return jsonOk({
     job: job
       ? {

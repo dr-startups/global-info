@@ -1202,7 +1202,7 @@ async function stepRendering(
   // canonical report artifacts stale (REBUILD_REQUIRED) — the unified CTA owns
   // full report generation.
   const finalize: DiagnosticFinalizeFn =
-    deps.render ?? (({ caseId }) => markUnifiedReportArtifactsStale(caseId, "arsenkin-diagnostic-run"));
+    deps.render ?? (async ({ caseId }) => markUnifiedReportArtifactsStale(caseId, "arsenkin-diagnostic-run"));
   const jobReportRunId = job.jobReportRunId || job.reportRunId;
 
   if (isArsenkinProviderRunId(job.sourceReportRunId) || isArsenkinProviderRunId(job.sourceOrionReportRunId)) {

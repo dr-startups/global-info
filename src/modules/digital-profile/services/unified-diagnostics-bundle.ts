@@ -149,7 +149,7 @@ export async function buildUnifiedDiagnosticsBundle(input: {
   const jobId = String(input.jobId ?? "").trim();
   if (!jobId) throw new ValidationError("jobId is required");
 
-  const job = loadUnifiedCollectionJob(input.caseId);
+  const job = await loadUnifiedCollectionJob(input.caseId);
   if (!job || (job.unifiedJobId !== jobId && job.jobId !== jobId)) {
     throw new NotFoundError("Unified collection job not found for this case.");
   }

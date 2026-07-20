@@ -29,8 +29,8 @@ before(() => {
   process.env.NETWORK_CALLS = "0";
 });
 
-after(() => {
-  deleteUnifiedCollectionJobForTests(CASE_ID);
+after(async () => {
+  await deleteUnifiedCollectionJobForTests(CASE_ID);
   try {
     rmSync(unifiedJobDir(CASE_ID), { recursive: true, force: true });
   } catch {
@@ -39,13 +39,13 @@ after(() => {
 });
 
 function seedReportReadyJob(): { jobId: string; renderDir: string } {
-  deleteUnifiedCollectionJobForTests(CASE_ID);
+  await deleteUnifiedCollectionJobForTests(CASE_ID);
   try {
     rmSync(unifiedJobDir(CASE_ID), { recursive: true, force: true });
   } catch {
     /* ignore */
   }
-  const { job } = findOrCreateUnifiedCollectionJob({ caseId: CASE_ID, requestedBy: "tester" });
+  const { job } = await findOrCreateUnifiedCollectionJob({ caseId: CASE_ID, requestedBy: "tester" });
   const renderDir = join(unifiedArtifactsDir(CASE_ID, job.unifiedJobId), "render");
   mkdirSync(renderDir, { recursive: true });
   const pdfPath = join(renderDir, "rendered-client.pdf");
@@ -54,7 +54,7 @@ function seedReportReadyJob(): { jobId: string; renderDir: string } {
   writeFileSync(pdfPath, "%PDF-1.4 fake\n", "utf8");
   writeFileSync(pptxPath, "PK fake pptx\n", "utf8");
   writeFileSync(contactPath, "PNG fake\n", "utf8");
-  patchUnifiedCollectionJob(CASE_ID, {
+  await patchUnifiedCollectionJob(CASE_ID, {
     stage: "REPORT_READY",
     status: "COMPLETED",
     reportLinks: { pdf: pdfPath, pptx: pptxPath, contactSheet: contactPath },
@@ -74,13 +74,13 @@ function expectError(fn: () => unknown, code: string): void {
 }
 
 describe("Unified canonical downloads UI/API (offline)", () => {
-  it("REPORT_READY → pdf/pptx/contactSheet keys resolve and URL uses unified-collection/download", () => {
+  it("REPORT_READY → pdf/pptx/contactSheet keys resolve and URL uses unified-collection/download", async () => {
     const { jobId } = seedReportReadyJob();
-    const avail = getCanonicalDownloadAvailability({ caseId: CASE_ID, jobId });
+    const avail = await getCanonicalDownloadAvailability({ caseId: CASE_ID, jobId });
     assert.deepEqual(avail, { pdf: true, pptx: true, contactSheet: true });
 
     for (const artifact of ["pdf", "pptx", "contactSheet"] as const) {
-      const meta = resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId, artifact });
+      const meta = await resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId, artifact });
       assert.equal(meta.jobId, jobId);
       assert.equal(meta.caseId, CASE_ID);
       const url = getCanonicalArtifactDownloadUrl(CASE_ID, jobId, artifact);
@@ -92,32 +92,32 @@ describe("Unified canonical downloads UI/API (offline)", () => {
     }
   });
 
-  it("foreign jobId → FOREIGN_JOB_LINEAGE (404 fail-closed)", () => {
+  it("foreign jobId → FOREIGN_JOB_LINEAGE (404 fail-closed)", async () => {
     seedReportReadyJob();
     expectError(
       () =>
-        resolveCanonicalArtifactForDownload({
+        await resolveCanonicalArtifactForDownload({
           caseId: CASE_ID,
           jobId: "unified-foreign-job",
           artifact: "pdf",
         }),
       "FOREIGN_JOB_LINEAGE"
     );
-    const avail = getCanonicalDownloadAvailability({
+    const avail = await getCanonicalDownloadAvailability({
       caseId: CASE_ID,
       jobId: "unified-foreign-job",
     });
     assert.deepEqual(avail, { pdf: false, pptx: false, contactSheet: false });
   });
 
-  it("well-known contact-sheet path works without reportLinks.contactSheet", () => {
+  it("well-known contact-sheet path works without reportLinks.contactSheet", async () => {
     const { jobId, renderDir } = seedReportReadyJob();
     const pdfPath = join(renderDir, "rendered-client.pdf");
     const pptxPath = join(renderDir, "rendered-client.pptx");
-    patchUnifiedCollectionJob(CASE_ID, {
+    await patchUnifiedCollectionJob(CASE_ID, {
       reportLinks: { pdf: pdfPath, pptx: pptxPath },
     });
-    const meta = resolveCanonicalArtifactForDownload({
+    const meta = await resolveCanonicalArtifactForDownload({
       caseId: CASE_ID,
       jobId,
       artifact: "contactSheet",
@@ -125,30 +125,30 @@ describe("Unified canonical downloads UI/API (offline)", () => {
     assert.ok(meta.path.endsWith(`${join("render", "contact-sheet.png")}`) || meta.path.includes("contact-sheet.png"));
   });
 
-  it("building download URLs does not imply pipeline start (no POST side effects in helper)", () => {
+  it("building download URLs does not imply pipeline start (no POST side effects in helper)", async () => {
     const { jobId } = seedReportReadyJob();
-    const before = getCanonicalDownloadAvailability({ caseId: CASE_ID, jobId });
+    const before = await getCanonicalDownloadAvailability({ caseId: CASE_ID, jobId });
     // Repeated "clicks" = repeated URL builds + resolve; still read-only.
     for (let i = 0; i < 3; i++) {
       getCanonicalArtifactDownloadUrl(CASE_ID, jobId, "pdf");
       getCanonicalArtifactDownloadUrl(CASE_ID, jobId, "pptx");
-      resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId, artifact: "pdf" });
+      await resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId, artifact: "pdf" });
     }
-    const after = getCanonicalDownloadAvailability({ caseId: CASE_ID, jobId });
+    const after = await getCanonicalDownloadAvailability({ caseId: CASE_ID, jobId });
     assert.deepEqual(after, before);
     assert.equal(after.pdf, true);
   });
 
-  it("missing contact sheet → availability false (button omitted)", () => {
+  it("missing contact sheet → availability false (button omitted)", async () => {
     const { jobId, renderDir } = seedReportReadyJob();
     rmSync(join(renderDir, "contact-sheet.png"), { force: true });
-    patchUnifiedCollectionJob(CASE_ID, {
+    await patchUnifiedCollectionJob(CASE_ID, {
       reportLinks: {
         pdf: join(renderDir, "rendered-client.pdf"),
         pptx: join(renderDir, "rendered-client.pptx"),
       },
     });
-    const avail = getCanonicalDownloadAvailability({ caseId: CASE_ID, jobId });
+    const avail = await getCanonicalDownloadAvailability({ caseId: CASE_ID, jobId });
     assert.equal(avail.pdf, true);
     assert.equal(avail.pptx, true);
     assert.equal(avail.contactSheet, false);

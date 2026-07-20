@@ -83,7 +83,7 @@ function hasHistoricalNoBaseReportDefect(job: UnifiedCollectionJob): boolean {
  * Pure eligibility. Does not mutate storage. Server is the source of truth —
  * never trust a client recoveryAllowed flag.
  */
-export function evaluateUnifiedCollectionRecoveryEligibility(input: {
+export async function evaluateUnifiedCollectionRecoveryEligibility(input: {
   caseId: string;
   job: UnifiedCollectionJob | null;
   /** When set, must match the loaded job's jobId/unifiedJobId. */
@@ -94,7 +94,7 @@ export function evaluateUnifiedCollectionRecoveryEligibility(input: {
   leaseOwnerId?: string | null;
   /** Skip lease gate entirely (internal re-check after claim). */
   ignoreLease?: boolean;
-}): UnifiedRecoveryEligibility {
+}): Promise<UnifiedRecoveryEligibility> {
   const now = input.now ?? new Date();
   const job = input.job;
   if (!job) {
@@ -155,7 +155,7 @@ export function evaluateUnifiedCollectionRecoveryEligibility(input: {
   const manifest =
     input.manifest !== undefined
       ? input.manifest
-      : readUnifiedArtifact<BaseCollectionManifest>(
+      : await readUnifiedArtifact<BaseCollectionManifest>(
           job.caseId,
           job.unifiedJobId,
           "base-collection-manifest.json"
@@ -360,18 +360,18 @@ export async function recoverUnifiedOrionCollectionJob(input: {
   if (!jobId) throw new ValidationError("jobId is required");
 
   const nowFn = input.deps?.now ?? (() => new Date());
-  const job0 = loadUnifiedCollectionJob(input.caseId);
+  const job0 = await loadUnifiedCollectionJob(input.caseId);
   if (!job0) throw new NotFoundError("unified collection job not found");
   if (job0.jobId !== jobId && job0.unifiedJobId !== jobId) {
     throw new NotFoundError("jobId does not belong to this case");
   }
 
-  const manifest0 = readUnifiedArtifact<BaseCollectionManifest>(
+  const manifest0 = await readUnifiedArtifact<BaseCollectionManifest>(
     job0.caseId,
     job0.unifiedJobId,
     "base-collection-manifest.json"
   );
-  const elig = evaluateUnifiedCollectionRecoveryEligibility({
+  const elig = await evaluateUnifiedCollectionRecoveryEligibility({
     caseId: input.caseId,
     job: job0,
     requestedJobId: jobId,
@@ -405,7 +405,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
   }
 
   const ownerId = `unified-recover-${process.pid}-${randomUUID().slice(0, 6)}`;
-  const claimed = claimUnifiedJobLease({
+  const claimed = await claimUnifiedJobLease({
     caseId: input.caseId,
     ownerId,
     leaseMs: 120_000,
@@ -417,16 +417,16 @@ export async function recoverUnifiedOrionCollectionJob(input: {
 
   try {
     // Re-check after lease (fail-closed race).
-    const job = loadUnifiedCollectionJob(input.caseId);
+    const job = await loadUnifiedCollectionJob(input.caseId);
     if (!job || (job.jobId !== jobId && job.unifiedJobId !== jobId)) {
       throw new NotFoundError("unified collection job not found");
     }
-    const manifest = readUnifiedArtifact<BaseCollectionManifest>(
+    const manifest = await readUnifiedArtifact<BaseCollectionManifest>(
       job.caseId,
       job.unifiedJobId,
       "base-collection-manifest.json"
     );
-    const elig2 = evaluateUnifiedCollectionRecoveryEligibility({
+    const elig2 = await evaluateUnifiedCollectionRecoveryEligibility({
       caseId: input.caseId,
       job,
       requestedJobId: jobId,
@@ -486,20 +486,20 @@ export async function recoverUnifiedOrionCollectionJob(input: {
 
     if (!renderResume) {
       const nextManifest: BaseCollectionManifest = { ...manifest, baseReportRunId };
-      writeUnifiedArtifact(
+      await writeUnifiedArtifact(
         job.caseId,
         job.unifiedJobId,
         "base-collection-manifest.json",
         nextManifest
       );
 
-      const existingBinding = readUnifiedArtifact<ReportDataBinding>(
+      const existingBinding = await readUnifiedArtifact<ReportDataBinding>(
         job.caseId,
         job.unifiedJobId,
         "report-data-binding.json"
       );
       if (existingBinding) {
-        writeUnifiedArtifact(job.caseId, job.unifiedJobId, "report-data-binding.json", {
+        await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "report-data-binding.json", {
           ...existingBinding,
           baseReportRunId,
         });
@@ -532,7 +532,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
       const { invalidateDownstreamAfterEnrichmentIngest } = await import(
         "./unified-downstream-invalidation"
       );
-      invalidateDownstreamAfterEnrichmentIngest({
+      await invalidateDownstreamAfterEnrichmentIngest({
         job,
         reason: "arsenkin-ingest-recovery",
         previousCompositeDatasetId: job.compositeDatasetId,
@@ -540,7 +540,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
     }
 
     if (renderResume) {
-      const binding = readUnifiedArtifact<ReportDataBinding>(
+      const binding = await readUnifiedArtifact<ReportDataBinding>(
         job.caseId,
         job.unifiedJobId,
         "report-data-binding.json"
@@ -552,7 +552,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
             expectedDatasetId: binding.compositeDatasetId,
           })
         : null;
-      writeUnifiedArtifact(job.caseId, job.unifiedJobId, "render-checkpoint.json", {
+      await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "render-checkpoint.json", {
         version: "render-checkpoint-v1",
         stage: "RENDER",
         status: reusable ? "READY" : "NEEDS_ASSEMBLY",
@@ -565,7 +565,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
 
     const nowIso = nowFn().toISOString();
     const patched =
-      patchUnifiedCollectionJob(job.caseId, {
+      await patchUnifiedCollectionJob(job.caseId, {
         stage: nextStage,
         status: "WAITING",
         baseReportRunId,
@@ -598,7 +598,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
       }) ?? job;
 
     if (assemblyResume) {
-      writeUnifiedArtifact(job.caseId, job.unifiedJobId, "force-gpt-copy.json", {
+      await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "force-gpt-copy.json", {
         version: "force-gpt-copy-v1",
         requestedAt: nowIso,
         requestedBy: input.actorId,
@@ -606,7 +606,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
       });
     }
 
-    writeUnifiedArtifact(job.caseId, job.unifiedJobId, "unified-recovery-audit.json", recoveryAudit);
+    await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "unified-recovery-audit.json", recoveryAudit);
 
     return {
       accepted: true,
@@ -620,17 +620,17 @@ export async function recoverUnifiedOrionCollectionJob(input: {
       idempotent: false,
     };
   } finally {
-    releaseUnifiedJobLease(input.caseId, ownerId);
+    await releaseUnifiedJobLease(input.caseId, ownerId);
     await scheduleRecoverTick(input.caseId, input.deps);
   }
 }
 
 /** Attach server-calculated recovery fields for GET status. */
-export function withUnifiedRecoveryStatusFields(job: UnifiedCollectionJob | null): {
+export async function withUnifiedRecoveryStatusFields(job: UnifiedCollectionJob | null): Promise<{
   recoveryAllowed: boolean;
   recoveryBlockerReason: string | null;
   recoveryReason: string | null;
-} {
+}> {
   if (!job) {
     return {
       recoveryAllowed: false,
@@ -638,7 +638,7 @@ export function withUnifiedRecoveryStatusFields(job: UnifiedCollectionJob | null
       recoveryReason: null,
     };
   }
-  const elig = evaluateUnifiedCollectionRecoveryEligibility({
+  const elig = await evaluateUnifiedCollectionRecoveryEligibility({
     caseId: job.caseId,
     job,
   });

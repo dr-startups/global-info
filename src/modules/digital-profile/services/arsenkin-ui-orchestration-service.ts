@@ -2033,7 +2033,7 @@ export async function syncArsenkinResultsToOrion(input: {
       coverageCount,
     });
     // Any accepted canonical report is now stale (new enrichment collected).
-    markUnifiedReportArtifactsStale(input.caseId, "arsenkin-standalone-diagnostic-sync");
+    await markUnifiedReportArtifactsStale(input.caseId, "arsenkin-standalone-diagnostic-sync");
     if (getArsenkinNetworkCallCount() !== 0) {
       throw new ConflictError("sync leaked network calls");
     }

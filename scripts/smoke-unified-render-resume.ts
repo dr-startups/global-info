@@ -33,7 +33,7 @@ import type { ClassifierSubjectProfile } from "../src/modules/digital-profile/or
 import type { CompositeMergeResult } from "../src/modules/digital-profile/services/composite-serp-merge";
 import type { ReportDataBinding } from "../src/modules/digital-profile/services/unified-collection-types";
 
-before(() => {
+before(async () => {
   process.env.NETWORK_CALLS = "0";
   process.env.DIGITAL_PROFILE_RENDERER_URL = "http://renderer.test:8080";
   delete process.env.ORION_CANONICAL_ALLOW_LOCAL_RENDER;
@@ -57,7 +57,7 @@ function subjectProfile(): ClassifierSubjectProfile {
 }
 
 function seedRenderFailedJob(caseId: string, jobId: string, opts?: { corruptAssembly?: boolean }) {
-  deleteUnifiedCollectionJobForTests(caseId);
+  await deleteUnifiedCollectionJobForTests(caseId);
   const now = new Date().toISOString();
   const compositeDatasetId = `composite-${jobId}`;
   const enrichmentRunIds = [
@@ -67,7 +67,7 @@ function seedRenderFailedJob(caseId: string, jobId: string, opts?: { corruptAsse
     "enr-AI_SEARCH",
     "enr-URL_AUDIT",
   ];
-  saveUnifiedCollectionJob({
+  await saveUnifiedCollectionJob({
     version: "unified-orion-collection-job-v1",
     jobId,
     unifiedJobId: jobId,
@@ -103,7 +103,7 @@ function seedRenderFailedJob(caseId: string, jobId: string, opts?: { corruptAsse
     cancelRequested: false,
   });
 
-  writeUnifiedArtifact(caseId, jobId, "base-collection-manifest.json", {
+  await writeUnifiedArtifact(caseId, jobId, "base-collection-manifest.json", {
     version: "base-collection-manifest-v1",
     unifiedJobId: jobId,
     caseId,
@@ -126,7 +126,7 @@ function seedRenderFailedJob(caseId: string, jobId: string, opts?: { corruptAsse
     providerCounts: { yandex: 3, serper: 1, arsenkin: 5, composite: 4 },
     generatedAt: now,
   };
-  writeUnifiedArtifact(caseId, jobId, "report-data-binding.json", binding);
+  await writeUnifiedArtifact(caseId, jobId, "report-data-binding.json", binding);
 
   const merge: CompositeMergeResult = {
     compositeDatasetId,
@@ -157,8 +157,8 @@ function seedRenderFailedJob(caseId: string, jobId: string, opts?: { corruptAsse
       enrichmentRunIds,
     },
   };
-  writeUnifiedArtifact(caseId, jobId, "composite-serp-observations.json", merge);
-  writeUnifiedArtifact(caseId, jobId, "arsenkin-enrichment-observations.json", {
+  await writeUnifiedArtifact(caseId, jobId, "composite-serp-observations.json", merge);
+  await writeUnifiedArtifact(caseId, jobId, "arsenkin-enrichment-observations.json", {
     observations: [],
     arsenkinReportRunId: enrichmentRunIds[0],
     enrichmentRunIds,
@@ -228,7 +228,7 @@ function seedRenderFailedJob(caseId: string, jobId: string, opts?: { corruptAsse
     writeFileSync(join(deckDir, "assembled-deck.json"), "{not-json", "utf8");
   }
 
-  writeUnifiedArtifact(caseId, jobId, "subject-identity-profile.json", subjectProfile());
+  await writeUnifiedArtifact(caseId, jobId, "subject-identity-profile.json", subjectProfile());
 }
 
 async function drain(caseId: string, deps: Parameters<typeof runUnifiedCollectionTick>[1], max = 20) {
@@ -243,7 +243,7 @@ async function drain(caseId: string, deps: Parameters<typeof runUnifiedCollectio
       return job;
     }
   }
-  return loadUnifiedCollectionJob(caseId);
+  return await loadUnifiedCollectionJob(caseId);
 }
 
 describe("unified RENDER_FAILED resume (HTTP renderer)", () => {
@@ -258,11 +258,11 @@ describe("unified RENDER_FAILED resume (HTTP renderer)", () => {
     assert.doesNotMatch(safe, /storageKey=abc/i);
   });
 
-  it("GET marks RENDER_RESUME recoveryAllowed", () => {
+  it("GET marks RENDER_RESUME recoveryAllowed", async () => {
     const caseId = "render-resume-get";
     const jobId = "unified-render-get";
     seedRenderFailedJob(caseId, jobId);
-    const fields = withUnifiedRecoveryStatusFields(loadUnifiedCollectionJob(caseId));
+    const fields = await withUnifiedRecoveryStatusFields(await loadUnifiedCollectionJob(caseId));
     assert.equal(fields.recoveryAllowed, true);
     assert.equal(fields.recoveryReason, "RENDER_RESUME");
   });
@@ -413,7 +413,7 @@ describe("unified RENDER_FAILED resume (HTTP renderer)", () => {
     const artifactsDir = unifiedArtifactsDir(caseId, jobId);
     assert.ok(existsSync(join(artifactsDir, "render", "rendered-client.pdf")));
     assert.ok(existsSync(join(artifactsDir, "render", "rendered-client.pptx")));
-    const checkpoint = readUnifiedArtifact<{ status?: string; stage?: string }>(
+    const checkpoint = await readUnifiedArtifact<{ status?: string; stage?: string }>(
       caseId,
       jobId,
       "render-checkpoint.json"
@@ -422,9 +422,9 @@ describe("unified RENDER_FAILED resume (HTTP renderer)", () => {
     assert.equal(checkpoint?.stage, "RENDER");
 
     // Job completed — recovery blocked; double click must not render again.
-    const elig = evaluateUnifiedCollectionRecoveryEligibility({
+    const elig = await evaluateUnifiedCollectionRecoveryEligibility({
       caseId,
-      job: loadUnifiedCollectionJob(caseId),
+      job: await loadUnifiedCollectionJob(caseId),
     });
     assert.equal(elig.recoveryAllowed, false);
     assert.equal(elig.recoveryBlockerReason, "JOB_ALREADY_COMPLETED");
@@ -535,15 +535,15 @@ describe("unified RENDER_FAILED resume (HTTP renderer)", () => {
 
     // Without valid assembly, render-resume falls through to full prepare which
     // needs richer analytics fixtures — assert eligibility + checkpoint only here.
-    const elig = evaluateUnifiedCollectionRecoveryEligibility({
+    const elig = await evaluateUnifiedCollectionRecoveryEligibility({
       caseId,
-      job: loadUnifiedCollectionJob(caseId),
+      job: await loadUnifiedCollectionJob(caseId),
     });
     // After recover, stage is ORION_PREPARE WAITING with recovery audit → idempotent
     assert.ok(
       elig.recoveryReason === "IDEMPOTENT_RENDER_RESUME" || elig.recoveryReason === "RENDER_RESUME"
     );
-    const cp = readUnifiedArtifact<{ status?: string }>(caseId, jobId, "render-checkpoint.json");
+    const cp = await readUnifiedArtifact<{ status?: string }>(caseId, jobId, "render-checkpoint.json");
     assert.equal(cp?.status, "NEEDS_ASSEMBLY");
     void assemblyCount;
     void httpCalls;

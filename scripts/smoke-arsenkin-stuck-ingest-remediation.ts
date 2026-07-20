@@ -75,7 +75,7 @@ function loadFixture(name: string): unknown {
 }
 
 function seedJobB(overrides: Partial<UnifiedCollectionJob> = {}): UnifiedCollectionJob {
-  deleteUnifiedCollectionJobForTests(CASE);
+  await deleteUnifiedCollectionJobForTests(CASE);
   const now = new Date().toISOString();
   const job: UnifiedCollectionJob = {
     version: "unified-orion-collection-job-v1",
@@ -115,8 +115,8 @@ function seedJobB(overrides: Partial<UnifiedCollectionJob> = {}): UnifiedCollect
     pollAttempt: 0,
     ...overrides,
   };
-  saveUnifiedCollectionJob(job);
-  return loadUnifiedCollectionJob(CASE)!;
+  await saveUnifiedCollectionJob(job);
+  return await loadUnifiedCollectionJob(CASE)!;
 }
 
 function writeBaseManifest(): void {
@@ -135,7 +135,7 @@ function writeBaseManifest(): void {
     ],
     realCollectionSufficient: true,
   };
-  writeUnifiedArtifact(CASE, JOB_B, "base-collection-manifest.json", manifest);
+  await writeUnifiedArtifact(CASE, JOB_B, "base-collection-manifest.json", manifest);
 }
 
 function fixtureBaseRows(): CompositeObservation[] {
@@ -223,7 +223,7 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
         throw new Error("base forbidden");
       },
     };
-    const listed = listResumableUnifiedJobs().filter((j) => j.caseId === CASE);
+    const listed = await listResumableUnifiedJobs().filter((j) => j.caseId === CASE);
     assert.equal(listed.length, 1);
     assert.equal(typeof pumpResumableUnifiedCollections, "function");
     assert.equal(typeof resumeUnifiedCollectionsOnStartup, "function");
@@ -239,7 +239,7 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
     seedJobB({ pollAttempt: 0, nextPollAt: null });
     writeBaseManifest();
     const tasks = runningSuggestTasks();
-    const before = loadUnifiedCollectionJob(CASE)!;
+    const before = await loadUnifiedCollectionJob(CASE)!;
     assert.equal(before.pollAttempt, 0);
     const job = await runUnifiedCollectionTick(CASE, {
       autoSchedule: false,
@@ -266,7 +266,7 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
       "arsenkin-enrichment-state.json"
     );
     // Artifact written via writeUnifiedArtifact — may live under case/job dir used by store.
-    const artifact = readUnifiedArtifact(CASE, JOB_B, "arsenkin-enrichment-state.json");
+    const artifact = await readUnifiedArtifact(CASE, JOB_B, "arsenkin-enrichment-state.json");
     assert.ok(artifact, "arsenkin-enrichment-state.json must be written");
     void statePath;
     FLAGS.B_POLL_ATTEMPT_PERSISTED = true;
@@ -283,7 +283,7 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
     assert.equal(src.includes(".catch(() => undefined)"), false);
     assert.ok(src.includes("persistUnifiedTickFailure"));
     seedJobB({ pollAttempt: 2 });
-    const patched = persistUnifiedTickFailure(CASE, new Error("boom-poll"), {
+    const patched = await persistUnifiedTickFailure(CASE, new Error("boom-poll"), {
       externalTaskId: EXT_SUGGEST,
       providerTaskId: "pt-suggest",
       agentName: "ARSENKIN_SUGGESTIONS_REAL",
@@ -392,7 +392,7 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
         throw new Error("no");
       },
     };
-    assert.equal(listResumableUnifiedJobs().filter((j) => j.caseId === CASE).length, 1);
+    assert.equal(await listResumableUnifiedJobs().filter((j) => j.caseId === CASE).length, 1);
     const job = await runUnifiedCollectionTick(CASE, deps);
     assert.ok(polls >= 1);
     assert.equal(job?.jobId, JOB_B);
@@ -438,7 +438,7 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
     });
 
     const first = await runDurableArsenkinEnrichmentTick({
-      job: loadUnifiedCollectionJob(CASE)!,
+      job: await loadUnifiedCollectionJob(CASE)!,
       listProviderTasks: async () => tasks,
       pollTask: async (t) => t,
     });
@@ -450,19 +450,19 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
     assert.ok(obs1 > 0);
     assert.equal(new Set(hashes1).size, hashes1.length);
 
-    saveUnifiedCollectionJob({
-      ...loadUnifiedCollectionJob(CASE)!,
+    await saveUnifiedCollectionJob({
+      ...await loadUnifiedCollectionJob(CASE)!,
       arsenkinEnrichmentState: first.state,
     });
     const second = await runDurableArsenkinEnrichmentTick({
-      job: loadUnifiedCollectionJob(CASE)!,
+      job: await loadUnifiedCollectionJob(CASE)!,
       listProviderTasks: async () => tasks,
       pollTask: async (t) => t,
     });
     assert.equal(second.observations.length, obs1);
     assert.deepEqual(second.state.ingestedResultHashes, hashes1);
 
-    const gap = withSuggestionsGapStatus(loadUnifiedCollectionJob(CASE), [
+    const gap = withSuggestionsGapStatus(await loadUnifiedCollectionJob(CASE), [
       { state: "DONE", toolName: "suggest", externalTaskId: EXT_SUGGEST },
       { state: "SUBMIT_UNKNOWN", toolName: "suggest", externalTaskId: null },
     ]);
@@ -520,7 +520,7 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
       if (job?.stage === "REPORT_READY" || (job?.reportLinks?.pdf && complete)) break;
       if (job?.stage === "FAILED_RETRYABLE" && complete && sawComposite) break;
     }
-    const final = loadUnifiedCollectionJob(CASE)!;
+    const final = await loadUnifiedCollectionJob(CASE)!;
     assert.equal(final.jobId, JOB_B);
     assert.equal(final.arsenkinEnrichmentState?.enrichmentComplete, true);
     assert.equal(final.arsenkinEnrichmentState?.ingestedAgents.length, 5);
@@ -536,7 +536,7 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
     FLAGS.K_JOB_B_ONE_COMPOSITE_RENDER = true;
   });
 
-  it("M. UI GET fields: poll progress visible; retry CTA hidden after ingest", () => {
+  it("M. UI GET fields: poll progress visible; retry CTA hidden after ingest", async () => {
     seedJobB({
       pollAttempt: 4,
       nextPollAt: new Date(Date.now() + 5_000).toISOString(),
@@ -558,7 +558,7 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
         externalTaskIdToResultHash: { [EXT_SUGGEST]: "a".repeat(64) },
       },
     });
-    const job = loadUnifiedCollectionJob(CASE)!;
+    const job = await loadUnifiedCollectionJob(CASE)!;
     assert.ok((job.pollAttempt ?? 0) >= 1);
     assert.ok(job.nextPollAt);
     const gap = withSuggestionsGapStatus(job, [
@@ -574,7 +574,7 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
       nextPollAt: new Date(Date.now() + 2_000).toISOString(),
       arsenkinEnrichmentState: null,
     });
-    const mid = withSuggestionsGapStatus(loadUnifiedCollectionJob(CASE), [
+    const mid = withSuggestionsGapStatus(await loadUnifiedCollectionJob(CASE), [
       { state: "RUNNING", toolName: "suggest", externalTaskId: EXT_SUGGEST },
       { state: "SUBMIT_UNKNOWN", toolName: "suggest", externalTaskId: null },
     ]);
@@ -583,9 +583,9 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
     FLAGS.M_UI_POLL_PROGRESS = true;
   });
 
-  it("fail-closed: poll attempt ceiling → FAILED_RETRYABLE", () => {
+  it("fail-closed: poll attempt ceiling → FAILED_RETRYABLE", async () => {
     seedJobB({ pollAttempt: MAX_ARSENKIN_INGEST_POLL_ATTEMPTS });
-    const patched = persistUnifiedTickFailure(CASE, new Error("still failing"), {
+    const patched = await persistUnifiedTickFailure(CASE, new Error("still failing"), {
       externalTaskId: EXT_SUGGEST,
     });
     assert.equal(patched?.stage, "FAILED_RETRYABLE");

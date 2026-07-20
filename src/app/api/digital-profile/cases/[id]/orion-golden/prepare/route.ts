@@ -33,7 +33,7 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
 
   const body = (await req.json().catch(() => ({}))) as { jobId?: string };
   const jobId = String(body?.jobId ?? req.nextUrl.searchParams.get("jobId") ?? "").trim();
-  const summary = enqueueOrionGoldenPrepare(id, jobId);
+  const summary = await enqueueOrionGoldenPrepare(id, jobId);
   return jsonOk(summary, 202);
 });
 

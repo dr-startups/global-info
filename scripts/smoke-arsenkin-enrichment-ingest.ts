@@ -155,13 +155,13 @@ function agentsSnapshot(kind: "scheduled" | "4done1run" | "doneNotIngested" | "d
 }
 
 describe("arsenkin enrichment ingest contract", () => {
-  before(() => {
+  before(async () => {
     process.env.NETWORK_CALLS = "0";
-    deleteUnifiedCollectionJobForTests(CASE);
+    await deleteUnifiedCollectionJobForTests(CASE);
   });
 
   it("A: 5 scheduled, 0 completed → compositeCalls=0", async () => {
-    deleteUnifiedCollectionJobForTests(CASE);
+    await deleteUnifiedCollectionJobForTests(CASE);
     let compositeCalls = 0;
     let ticks = 0;
     const deps = {
@@ -195,7 +195,7 @@ describe("arsenkin enrichment ingest contract", () => {
       const job = await runUnifiedCollectionTick(CASE, deps);
       if (job?.stage === "COMPOSITE_MERGE") compositeCalls += 1;
     }
-    const job = loadUnifiedCollectionJob(CASE);
+    const job = await loadUnifiedCollectionJob(CASE);
     assert.equal(compositeCalls, 0);
     assert.equal(job?.stage, "ARSENKIN_ENRICHMENT");
     assert.equal(job?.status, "WAITING");
@@ -205,7 +205,7 @@ describe("arsenkin enrichment ingest contract", () => {
   });
 
   it("B: 4 completed, 1 running → compositeCalls=0", async () => {
-    deleteUnifiedCollectionJobForTests(CASE);
+    await deleteUnifiedCollectionJobForTests(CASE);
     let compositeCalls = 0;
     const deps = {
       autoSchedule: false as const,
@@ -234,11 +234,11 @@ describe("arsenkin enrichment ingest contract", () => {
       if (job?.stage === "COMPOSITE_MERGE" || job?.stage === "ORION_PREPARE") compositeCalls += 1;
     }
     assert.equal(compositeCalls, 0);
-    assert.equal(loadUnifiedCollectionJob(CASE)?.stage, "ARSENKIN_ENRICHMENT");
+    assert.equal(await loadUnifiedCollectionJob(CASE)?.stage, "ARSENKIN_ENRICHMENT");
   });
 
   it("C: 5 completed, not ingested → compositeCalls=0", async () => {
-    deleteUnifiedCollectionJobForTests(CASE);
+    await deleteUnifiedCollectionJobForTests(CASE);
     let compositeCalls = 0;
     const deps = {
       autoSchedule: false as const,
@@ -269,7 +269,7 @@ describe("arsenkin enrichment ingest contract", () => {
   });
 
   it("D: 5 completed + ingested → compositeCalls=1", async () => {
-    deleteUnifiedCollectionJobForTests(CASE);
+    await deleteUnifiedCollectionJobForTests(CASE);
     let compositeCalls = 0;
     const deps = {
       autoSchedule: false as const,
@@ -323,7 +323,7 @@ describe("arsenkin enrichment ingest contract", () => {
     }
     // prepare called once; composite stage visited once en route
     assert.equal(compositeCalls, 1);
-    const job = loadUnifiedCollectionJob(CASE);
+    const job = await loadUnifiedCollectionJob(CASE);
     assert.ok(job?.arsenkinEnrichmentState?.enrichmentComplete);
   });
 
@@ -338,8 +338,8 @@ describe("arsenkin enrichment ingest contract", () => {
     assert.ok(tick.state.failedAgents.length >= 1);
   });
 
-  it("F: Job B recovery fixture — ingest checkpoint, no new base/arsenkin schedule", () => {
-    deleteUnifiedCollectionJobForTests(CASE);
+  it("F: Job B recovery fixture — ingest checkpoint, no new base/arsenkin schedule", async () => {
+    await deleteUnifiedCollectionJobForTests(CASE);
     const unifiedJobId = "unified-1784295388553-269bc3cf-fixture";
     const manifest: BaseCollectionManifest = {
       version: "base-collection-manifest-v1",
@@ -361,9 +361,9 @@ describe("arsenkin enrichment ingest contract", () => {
       realCollectionSufficient: true,
     };
     // Seed a terminal job with scheduled-but-not-complete enrichment (Job B pattern).
-    writeUnifiedArtifact(CASE, unifiedJobId, "base-collection-manifest.json", manifest);
+    await writeUnifiedArtifact(CASE, unifiedJobId, "base-collection-manifest.json", manifest);
     const now = new Date().toISOString();
-    saveUnifiedCollectionJob({
+    await saveUnifiedCollectionJob({
       version: "unified-orion-collection-job-v1",
       jobId: unifiedJobId,
       unifiedJobId,
@@ -399,8 +399,8 @@ describe("arsenkin enrichment ingest contract", () => {
       cancelRequested: false,
     });
 
-    const job = loadUnifiedCollectionJob(CASE)!;
-    const elig = evaluateUnifiedCollectionRecoveryEligibility({
+    const job = await loadUnifiedCollectionJob(CASE)!;
+    const elig = await evaluateUnifiedCollectionRecoveryEligibility({
       caseId: CASE,
       job,
       manifest,
@@ -421,7 +421,7 @@ describe("arsenkin enrichment ingest contract", () => {
   });
 
   it("J: double tick does not duplicate enrichmentComplete transition", async () => {
-    deleteUnifiedCollectionJobForTests(CASE);
+    await deleteUnifiedCollectionJobForTests(CASE);
     let scheduleCount = 0;
     const deps = {
       autoSchedule: false as const,
@@ -453,7 +453,7 @@ describe("arsenkin enrichment ingest contract", () => {
     };
     await startUnifiedOrionCollection({ caseId: CASE, requestedBy: "t", deps });
     for (let i = 0; i < 10; i++) await runUnifiedCollectionTick(CASE, deps);
-    const job = loadUnifiedCollectionJob(CASE);
+    const job = await loadUnifiedCollectionJob(CASE);
     assert.ok(job?.stage === "REPORT_READY" || job?.stage === "COMPLETED_PARTIAL");
     // Enrichment handler may be called once per arsenkin tick; must not explode.
     assert.ok(scheduleCount >= 1 && scheduleCount <= 3);

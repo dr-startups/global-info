@@ -74,14 +74,14 @@ function leaseIsActive(job: UnifiedCollectionJob, now: Date): boolean {
  * (failed jobs go through recovery instead) and whose prepare inputs
  * (manifest + binding + composite) are present with matching lineage.
  */
-export function evaluateUnifiedReportRebuildEligibility(input: {
+export async function evaluateUnifiedReportRebuildEligibility(input: {
   caseId: string;
   job: UnifiedCollectionJob | null;
   requestedJobId?: string | null;
   now?: Date;
   /** Skip lease gate (internal re-check after claim). */
   ignoreLease?: boolean;
-}): UnifiedReportRebuildEligibility {
+}): Promise<UnifiedReportRebuildEligibility> {
   const now = input.now ?? new Date();
   const job = input.job;
   if (!job) return { rebuildAllowed: false, rebuildBlockerReason: "JOB_NOT_FOUND" };
@@ -102,17 +102,17 @@ export function evaluateUnifiedReportRebuildEligibility(input: {
     return { rebuildAllowed: false, rebuildBlockerReason: "ACTIVE_LEASE" };
   }
 
-  const manifest = readUnifiedArtifact<BaseCollectionManifest>(
+  const manifest = await readUnifiedArtifact<BaseCollectionManifest>(
     job.caseId,
     job.unifiedJobId,
     "base-collection-manifest.json"
   );
-  const binding = readUnifiedArtifact<ReportDataBinding>(
+  const binding = await readUnifiedArtifact<ReportDataBinding>(
     job.caseId,
     job.unifiedJobId,
     "report-data-binding.json"
   );
-  const merge = readUnifiedArtifact<CompositeMergeResult>(
+  const merge = await readUnifiedArtifact<CompositeMergeResult>(
     job.caseId,
     job.unifiedJobId,
     "composite-serp-observations.json"
@@ -158,13 +158,13 @@ export async function rebuildUnifiedReport(input: {
   if (!jobId) throw new ValidationError("jobId is required");
 
   const nowFn = input.deps?.now ?? (() => new Date());
-  const job0 = loadUnifiedCollectionJob(input.caseId);
+  const job0 = await loadUnifiedCollectionJob(input.caseId);
   if (!job0) throw new NotFoundError("unified collection job not found");
   if (job0.jobId !== jobId && job0.unifiedJobId !== jobId) {
     throw new NotFoundError("jobId does not belong to this case");
   }
 
-  const elig = evaluateUnifiedReportRebuildEligibility({
+  const elig = await evaluateUnifiedReportRebuildEligibility({
     caseId: input.caseId,
     job: job0,
     requestedJobId: jobId,
@@ -175,7 +175,7 @@ export async function rebuildUnifiedReport(input: {
   }
 
   const ownerId = `unified-rebuild-${process.pid}-${randomUUID().slice(0, 6)}`;
-  const claimed = claimUnifiedJobLease({
+  const claimed = await claimUnifiedJobLease({
     caseId: input.caseId,
     ownerId,
     leaseMs: 120_000,
@@ -185,11 +185,11 @@ export async function rebuildUnifiedReport(input: {
 
   try {
     // Re-check after lease (fail-closed race).
-    const job = loadUnifiedCollectionJob(input.caseId);
+    const job = await loadUnifiedCollectionJob(input.caseId);
     if (!job || (job.jobId !== jobId && job.unifiedJobId !== jobId)) {
       throw new NotFoundError("unified collection job not found");
     }
-    const elig2 = evaluateUnifiedReportRebuildEligibility({
+    const elig2 = await evaluateUnifiedReportRebuildEligibility({
       caseId: input.caseId,
       job,
       requestedJobId: jobId,
@@ -209,7 +209,7 @@ export async function rebuildUnifiedReport(input: {
       injected: input.deps?.subjectProfile ?? null,
     });
     if (refreshedProfile) {
-      writeUnifiedArtifact(
+      await writeUnifiedArtifact(
         job.caseId,
         job.unifiedJobId,
         "subject-identity-profile.json",
@@ -225,13 +225,13 @@ export async function rebuildUnifiedReport(input: {
       previousCompletedAt: job.completedAt,
       subjectProfileRefreshed: Boolean(refreshedProfile),
     };
-    writeUnifiedArtifact(job.caseId, job.unifiedJobId, "unified-rebuild-audit.json", audit);
+    await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "unified-rebuild-audit.json", audit);
     // Defense in depth: full prepare always forceRefresh-es stage 2, but also
     // strip on-disk gptCopy + audit marker so a partial deploy cannot revive
     // SKIPPED_CACHED (live symptom: применено 0 · кэш N).
     const deckDir = join(unifiedArtifactsDir(job.caseId, job.unifiedJobId), "deck");
     const strippedGptCopy = stripGptCopyFromSectionPacksOnDisk(deckDir);
-    writeUnifiedArtifact(job.caseId, job.unifiedJobId, "force-gpt-copy.json", {
+    await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "force-gpt-copy.json", {
       version: "force-gpt-copy-v1",
       requestedAt: nowFn().toISOString(),
       requestedBy: input.actorId,
@@ -240,7 +240,7 @@ export async function rebuildUnifiedReport(input: {
     });
 
     const patched =
-      patchUnifiedCollectionJob(job.caseId, {
+      await patchUnifiedCollectionJob(job.caseId, {
         stage: "COMPOSITE_MERGE",
         status: "WAITING",
         progress: 0.55,
@@ -267,7 +267,7 @@ export async function rebuildUnifiedReport(input: {
       subjectProfileRefreshed: Boolean(refreshedProfile),
     };
   } finally {
-    releaseUnifiedJobLease(input.caseId, ownerId);
+    await releaseUnifiedJobLease(input.caseId, ownerId);
     await scheduleRebuildTick(input.caseId, input.deps);
   }
 }

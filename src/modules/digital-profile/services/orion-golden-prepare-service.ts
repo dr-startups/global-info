@@ -147,19 +147,19 @@ function persistRun(record: PrepareRunRecord): void {
  * Validate that the requested job belongs to the case and carries the required
  * canonical binding + composite merge artifacts. Fails closed otherwise.
  */
-function resolveValidatedJobLineage(caseId: string, jobId: string): {
+async function resolveValidatedJobLineage(caseId: string, jobId: string): Promise<{
   artifactsDir: string;
   binding: ReportDataBinding;
   merge: CompositeMergeResult;
-} {
+}> {
   if (!jobId.trim()) throw new ValidationError("jobId is required");
-  const job = loadUnifiedCollectionJob(caseId);
+  const job = await loadUnifiedCollectionJob(caseId);
   if (!job) throw new ValidationError("no unified job for case — run the unified audit first");
   if (job.unifiedJobId !== jobId && job.jobId !== jobId) {
     throw new ValidationError("FOREIGN_JOB_LINEAGE: jobId does not match the case job");
   }
-  const binding = readUnifiedArtifact<ReportDataBinding>(caseId, job.unifiedJobId, "report-data-binding.json");
-  const merge = readUnifiedArtifact<CompositeMergeResult>(
+  const binding = await readUnifiedArtifact<ReportDataBinding>(caseId, job.unifiedJobId, "report-data-binding.json");
+  const merge = await readUnifiedArtifact<CompositeMergeResult>(
     caseId,
     job.unifiedJobId,
     "composite-serp-observations.json"
@@ -179,7 +179,7 @@ async function executePrepare(input: {
   uiRunId: string;
   createdAt: string;
 }): Promise<PrepareRunRecord> {
-  const { artifactsDir, binding, merge } = resolveValidatedJobLineage(input.caseId, input.jobId);
+  const { artifactsDir, binding, merge } = await resolveValidatedJobLineage(input.caseId, input.jobId);
   console.log(
     `[orion-golden-prepare] canonical start caseId=${input.caseId} jobId=${input.jobId} dir=${artifactsDir}`
   );
@@ -241,12 +241,15 @@ async function executePrepare(input: {
  * Enqueue canonical Golden prepare for a validated case+job. Returns immediately
  * with status=running. Fails closed synchronously on missing/foreign lineage.
  */
-export function enqueueOrionGoldenPrepare(caseId: string, jobId: string): OrionGoldenPrepareSummary {
+export async function enqueueOrionGoldenPrepare(
+  caseId: string,
+  jobId: string
+): Promise<OrionGoldenPrepareSummary> {
   if (!digitalProfileConfig.orionGoldenEnabled) {
     throw new ForbiddenError("ORION Golden is disabled.");
   }
   // Fail-closed lineage validation before enqueueing any work.
-  const { artifactsDir } = resolveValidatedJobLineage(caseId, jobId);
+  const { artifactsDir } = await resolveValidatedJobLineage(caseId, jobId);
 
   const existing = getLatestPrepareRun(caseId);
   if (existing?.status === "running") {

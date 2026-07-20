@@ -106,11 +106,11 @@ function resolveArtifactPath(
   return assertWithinJobRoot(jobRoot, join(jobRoot, "render", "contact-sheet.png"));
 }
 
-export function resolveCanonicalArtifactForDownload(input: {
+export async function resolveCanonicalArtifactForDownload(input: {
   caseId: string;
   jobId: string;
   artifact: string;
-}): ResolvedCanonicalArtifact {
+}): Promise<ResolvedCanonicalArtifact> {
   const { caseId } = input;
   if (!input.jobId) {
     throw new CanonicalArtifactError(400, "JOB_ID_REQUIRED", "jobId is required");
@@ -123,7 +123,7 @@ export function resolveCanonicalArtifactForDownload(input: {
     );
   }
 
-  const job = loadUnifiedCollectionJob(caseId);
+  const job = await loadUnifiedCollectionJob(caseId);
   if (!job) {
     throw new CanonicalArtifactError(404, "JOB_NOT_FOUND", "no unified job for case");
   }
@@ -153,15 +153,15 @@ export function resolveCanonicalArtifactForDownload(input: {
 }
 
 /** Fail-closed availability map for UI buttons (never invents artifacts). */
-export function getCanonicalDownloadAvailability(input: {
+export async function getCanonicalDownloadAvailability(input: {
   caseId: string;
   jobId: string;
-}): CanonicalDownloadAvailability {
+}): Promise<CanonicalDownloadAvailability> {
   const kinds: CanonicalArtifactKind[] = ["pdf", "pptx", "contactSheet"];
   const out: CanonicalDownloadAvailability = { pdf: false, pptx: false, contactSheet: false };
   for (const artifact of kinds) {
     try {
-      resolveCanonicalArtifactForDownload({ ...input, artifact });
+      await resolveCanonicalArtifactForDownload({ ...input, artifact });
       out[artifact] = true;
     } catch {
       out[artifact] = false;

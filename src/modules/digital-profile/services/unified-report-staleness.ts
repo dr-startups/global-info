@@ -16,11 +16,11 @@ import {
 
 export const CANONICAL_ARTIFACTS_STALE_WARNING = "CANONICAL_ARTIFACTS_STALE";
 
-export function markUnifiedReportArtifactsStale(
+export async function markUnifiedReportArtifactsStale(
   caseId: string,
   reason: string
-): { marked: boolean; reason: string } {
-  const job = loadUnifiedCollectionJob(caseId);
+): Promise<{ marked: boolean; reason: string }> {
+  const job = await loadUnifiedCollectionJob(caseId);
   if (!job) return { marked: false, reason: "no-unified-job" };
   // Only a completed, accepted (or partial) report can go stale.
   if (job.stage !== "REPORT_READY" && job.stage !== "COMPLETED_PARTIAL") {
@@ -28,7 +28,7 @@ export function markUnifiedReportArtifactsStale(
   }
   const tag = `${CANONICAL_ARTIFACTS_STALE_WARNING}:${reason}`;
   if (job.warnings.includes(tag)) return { marked: true, reason: "already-stale" };
-  patchUnifiedCollectionJob(caseId, { warnings: [...job.warnings, tag] });
+  await patchUnifiedCollectionJob(caseId, { warnings: [...job.warnings, tag] });
   return { marked: true, reason: tag };
 }
 

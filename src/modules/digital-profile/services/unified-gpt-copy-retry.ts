@@ -98,13 +98,13 @@ function countFallbackPackStamps(caseId: string, unifiedJobId: string): number {
  * Allowed for REPORT_READY / COMPLETED_PARTIAL and FAILED_RETRYABLE when the
  * failure is render-related (packs already exist).
  */
-export function evaluateUnifiedGptCopyRetryEligibility(input: {
+export async function evaluateUnifiedGptCopyRetryEligibility(input: {
   caseId: string;
   job: UnifiedCollectionJob | null;
   requestedJobId?: string | null;
   now?: Date;
   ignoreLease?: boolean;
-}): UnifiedGptCopyRetryEligibility {
+}): Promise<UnifiedGptCopyRetryEligibility> {
   const now = input.now ?? new Date();
   const job = input.job;
   if (!job) {
@@ -153,17 +153,17 @@ export function evaluateUnifiedGptCopyRetryEligibility(input: {
     };
   }
 
-  const manifest = readUnifiedArtifact<BaseCollectionManifest>(
+  const manifest = await readUnifiedArtifact<BaseCollectionManifest>(
     job.caseId,
     job.unifiedJobId,
     "base-collection-manifest.json"
   );
-  const binding = readUnifiedArtifact<ReportDataBinding>(
+  const binding = await readUnifiedArtifact<ReportDataBinding>(
     job.caseId,
     job.unifiedJobId,
     "report-data-binding.json"
   );
-  const merge = readUnifiedArtifact<CompositeMergeResult>(
+  const merge = await readUnifiedArtifact<CompositeMergeResult>(
     job.caseId,
     job.unifiedJobId,
     "composite-serp-observations.json"
@@ -214,13 +214,13 @@ export async function retryUnifiedGptCopy(input: {
   if (!jobId) throw new ValidationError("jobId is required");
 
   const nowFn = input.deps?.now ?? (() => new Date());
-  const job0 = loadUnifiedCollectionJob(input.caseId);
+  const job0 = await loadUnifiedCollectionJob(input.caseId);
   if (!job0) throw new NotFoundError("unified collection job not found");
   if (job0.jobId !== jobId && job0.unifiedJobId !== jobId) {
     throw new NotFoundError("jobId does not belong to this case");
   }
 
-  const elig = evaluateUnifiedGptCopyRetryEligibility({
+  const elig = await evaluateUnifiedGptCopyRetryEligibility({
     caseId: input.caseId,
     job: job0,
     requestedJobId: jobId,
@@ -231,7 +231,7 @@ export async function retryUnifiedGptCopy(input: {
   }
 
   const ownerId = `unified-gpt-copy-${process.pid}-${randomUUID().slice(0, 6)}`;
-  const claimed = claimUnifiedJobLease({
+  const claimed = await claimUnifiedJobLease({
     caseId: input.caseId,
     ownerId,
     leaseMs: 120_000,
@@ -240,11 +240,11 @@ export async function retryUnifiedGptCopy(input: {
   if (!claimed) throw new ConflictError("ACTIVE_LEASE");
 
   try {
-    const job = loadUnifiedCollectionJob(input.caseId);
+    const job = await loadUnifiedCollectionJob(input.caseId);
     if (!job || (job.jobId !== jobId && job.unifiedJobId !== jobId)) {
       throw new NotFoundError("unified collection job not found");
     }
-    const elig2 = evaluateUnifiedGptCopyRetryEligibility({
+    const elig2 = await evaluateUnifiedGptCopyRetryEligibility({
       caseId: input.caseId,
       job,
       requestedJobId: jobId,
@@ -265,7 +265,7 @@ export async function retryUnifiedGptCopy(input: {
       previousCompletedAt: job.completedAt,
       fallbackFragmentCount: elig2.fallbackFragmentCount,
     };
-    writeUnifiedArtifact(
+    await writeUnifiedArtifact(
       job.caseId,
       job.unifiedJobId,
       "unified-gpt-copy-retry-audit.json",
@@ -273,7 +273,7 @@ export async function retryUnifiedGptCopy(input: {
     );
 
     const patched =
-      patchUnifiedCollectionJob(job.caseId, {
+      await patchUnifiedCollectionJob(job.caseId, {
         stage: "ORION_PREPARE",
         status: "WAITING",
         progress: 0.7,
@@ -299,7 +299,7 @@ export async function retryUnifiedGptCopy(input: {
       fallbackFragmentCount: elig2.fallbackFragmentCount,
     };
   } finally {
-    releaseUnifiedJobLease(input.caseId, ownerId);
+    await releaseUnifiedJobLease(input.caseId, ownerId);
     await scheduleRetryTick(input.caseId, input.deps);
   }
 }

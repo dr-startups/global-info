@@ -65,9 +65,9 @@ function ctx(tool: string) {
 }
 
 function seedJobB(overrides: Partial<UnifiedCollectionJob> = {}): void {
-  deleteUnifiedCollectionJobForTests(CASE);
+  await deleteUnifiedCollectionJobForTests(CASE);
   const now = new Date().toISOString();
-  saveUnifiedCollectionJob({
+  await saveUnifiedCollectionJob({
     version: "unified-orion-collection-job-v1",
     caseId: CASE,
     jobId: JOB_B,
@@ -123,7 +123,7 @@ function writeBaseManifest(): void {
     ],
     realCollectionSufficient: true,
   };
-  writeUnifiedArtifact(CASE, JOB_B, "base-collection-manifest.json", manifest);
+  await writeUnifiedArtifact(CASE, JOB_B, "base-collection-manifest.json", manifest);
 }
 
 function fixtureBaseRows(): CompositeObservation[] {
@@ -387,7 +387,7 @@ describe("URL_AUDIT live envelope regression", () => {
       responseJson: loadFixture("get-check-h-mixed-boolean.json"),
     });
     const first = await runDurableArsenkinEnrichmentTick({
-      job: loadUnifiedCollectionJob(CASE)!,
+      job: await loadUnifiedCollectionJob(CASE)!,
       listProviderTasks: async () => tasks,
       pollTask: async (t) => {
         FLAGS.EXTERNAL_SUBMISSIONS += 0;
@@ -408,12 +408,12 @@ describe("URL_AUDIT live envelope regression", () => {
     const obs1 = first.observations.length;
     const hashes1 = [...first.state.ingestedResultHashes];
 
-    saveUnifiedCollectionJob({
-      ...loadUnifiedCollectionJob(CASE)!,
+    await saveUnifiedCollectionJob({
+      ...await loadUnifiedCollectionJob(CASE)!,
       arsenkinEnrichmentState: first.state,
     });
     const second = await runDurableArsenkinEnrichmentTick({
-      job: loadUnifiedCollectionJob(CASE)!,
+      job: await loadUnifiedCollectionJob(CASE)!,
       listProviderTasks: async () => tasks,
       pollTask: async (t) => t,
     });
@@ -435,7 +435,7 @@ describe("URL_AUDIT live envelope regression", () => {
       state: "RUNNING",
       responseJson: null,
     }));
-    assert.equal(listResumableUnifiedJobs().filter((j) => j.caseId === CASE).length, 1);
+    assert.equal(await listResumableUnifiedJobs().filter((j) => j.caseId === CASE).length, 1);
     const job = await runUnifiedCollectionTick(CASE, {
       autoSchedule: false,
       listEnrichmentProviderTasks: async () => running,

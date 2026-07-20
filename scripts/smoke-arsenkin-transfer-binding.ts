@@ -593,9 +593,9 @@ describe("arsenkin-transfer-binding", () => {
     seedMapping();
 
     // Seed an accepted canonical unified job so staleness has a target.
-    deleteUnifiedCollectionJobForTests(CASE_ID);
-    findOrCreateUnifiedCollectionJob({ caseId: CASE_ID, requestedBy: "tester" });
-    patchUnifiedCollectionJob(CASE_ID, { stage: "REPORT_READY", status: "COMPLETED" });
+    await deleteUnifiedCollectionJobForTests(CASE_ID);
+    await findOrCreateUnifiedCollectionJob({ caseId: CASE_ID, requestedBy: "tester" });
+    await patchUnifiedCollectionJob(CASE_ID, { stage: "REPORT_READY", status: "COMPLETED" });
 
     const state: FakeState = {
       run: {
@@ -661,14 +661,14 @@ describe("arsenkin-transfer-binding", () => {
     );
 
     // Accepted canonical report is now marked stale (REBUILD_REQUIRED).
-    const job = loadUnifiedCollectionJob(CASE_ID);
+    const job = await loadUnifiedCollectionJob(CASE_ID);
     assert.ok(job);
     assert.ok(
       job!.warnings.some((w) => w.startsWith("CANONICAL_ARTIFACTS_STALE")),
       `expected stale warning, got ${JSON.stringify(job!.warnings)}`
     );
 
-    deleteUnifiedCollectionJobForTests(CASE_ID);
+    await deleteUnifiedCollectionJobForTests(CASE_ID);
   });
 
   it("NETWORK_CALLS remains 0", () => {

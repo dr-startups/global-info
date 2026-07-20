@@ -36,7 +36,7 @@ import {
 import { buildRiskMatrixFragment } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders";
 import { ARSENKIN_REAL_AGENT_NAMES } from "../src/modules/digital-profile/agents/real/real-arsenkin-agents";
 
-before(() => {
+before(async () => {
   process.env.NETWORK_CALLS = "0";
 });
 
@@ -155,7 +155,7 @@ async function drain(caseId: string, deps: Parameters<typeof runUnifiedCollectio
       return job;
     }
   }
-  return loadUnifiedCollectionJob(caseId);
+  return await loadUnifiedCollectionJob(caseId);
 }
 
 describe("unified baseReportRun + Yandex provenance regression", () => {
@@ -196,7 +196,7 @@ describe("unified baseReportRun + Yandex provenance regression", () => {
 
   it("persists baseReportRunId and schedules five Arsenkin agents once", async () => {
     const caseId = "deripaska-base-run-fix";
-    deleteUnifiedCollectionJobForTests(caseId);
+    await deleteUnifiedCollectionJobForTests(caseId);
     let arsenkinCalls = 0;
     let baseCalls = 0;
     const deps = {
@@ -236,13 +236,13 @@ describe("unified baseReportRun + Yandex provenance regression", () => {
     assert.equal(job!.stage, "REPORT_READY", `stage=${job!.stage} err=${job!.lastError}`);
     assert.equal(arsenkinCalls, 1, "Arsenkin scheduled exactly once");
     assert.equal(baseCalls, 1, "base providers collected once");
-    const enrichment = readUnifiedArtifact<{ enrichmentRunIds?: string[] }>(
+    const enrichment = await readUnifiedArtifact<{ enrichmentRunIds?: string[] }>(
       caseId,
       job!.unifiedJobId,
       "arsenkin-enrichment-observations.json"
     );
     assert.equal(enrichment?.enrichmentRunIds?.length, 5);
-    const binding = readUnifiedArtifact<{ providerCounts: { yandex: number; composite: number } }>(
+    const binding = await readUnifiedArtifact<{ providerCounts: { yandex: number; composite: number } }>(
       caseId,
       job!.unifiedJobId,
       "report-data-binding.json"
@@ -253,7 +253,7 @@ describe("unified baseReportRun + Yandex provenance regression", () => {
 
   it("missing baseReportRunId fail-closes as FAILED_RETRYABLE (no silent Arsenkin skip)", async () => {
     const caseId = "deripaska-no-base-id";
-    deleteUnifiedCollectionJobForTests(caseId);
+    await deleteUnifiedCollectionJobForTests(caseId);
     const deps = {
       autoSchedule: false as const,
       fixtureBaseRows: fixtureBaseRows(),
@@ -267,10 +267,10 @@ describe("unified baseReportRun + Yandex provenance regression", () => {
     await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps });
     // Advance BASE_COLLECTION once…
     await runUnifiedCollectionTick(caseId, deps);
-    let job = loadUnifiedCollectionJob(caseId);
+    let job = await loadUnifiedCollectionJob(caseId);
     assert.ok(job?.baseReportRunId);
     // Simulate the live defect: wipe baseReportRunId before Arsenkin.
-    patchUnifiedCollectionJob(caseId, { baseReportRunId: null });
+    await patchUnifiedCollectionJob(caseId, { baseReportRunId: null });
     job = await runUnifiedCollectionTick(caseId, deps);
     assert.equal(job?.stage, "FAILED_RETRYABLE");
     assert.equal(job?.lastErrorCode, "BASE_REPORT_RUN_MISSING");
@@ -279,7 +279,7 @@ describe("unified baseReportRun + Yandex provenance regression", () => {
 
   it("resume from FAILED_RETRYABLE does not re-run base providers", async () => {
     const caseId = "deripaska-resume-no-recollect";
-    deleteUnifiedCollectionJobForTests(caseId);
+    await deleteUnifiedCollectionJobForTests(caseId);
     let baseCalls = 0;
     let arsenkinCalls = 0;
     const { recoverUnifiedOrionCollectionJob } = await import(
@@ -315,7 +315,7 @@ describe("unified baseReportRun + Yandex provenance regression", () => {
     await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps });
     await runUnifiedCollectionTick(caseId, deps); // BASE -> ARSENKIN
     assert.equal(baseCalls, 1);
-    patchUnifiedCollectionJob(caseId, {
+    await patchUnifiedCollectionJob(caseId, {
       baseReportRunId: null,
       stage: "ARSENKIN_ENRICHMENT",
       status: "RUNNING",

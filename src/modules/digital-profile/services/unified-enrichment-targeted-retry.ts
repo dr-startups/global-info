@@ -263,7 +263,7 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
   if (!enrichmentRunId) throw new ValidationError("enrichmentRunId is required");
   const agentName = normalizeAgentName(input.agentName);
 
-  const job = loadUnifiedCollectionJob(input.caseId);
+  const job = await loadUnifiedCollectionJob(input.caseId);
   if (!job) throw new NotFoundError("unified collection job not found");
   if (job.jobId !== jobId && job.unifiedJobId !== jobId) {
     throw new NotFoundError("jobId does not belong to this case");
@@ -369,7 +369,7 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
   }
 
   const ownerId = `enrichment-retry-${process.pid}-${randomUUID().slice(0, 6)}`;
-  const claimed = claimUnifiedJobLease({
+  const claimed = await claimUnifiedJobLease({
     caseId: input.caseId,
     ownerId,
     leaseMs: 120_000,
@@ -390,7 +390,7 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
         isIngestibleResponse(t.responseJson)
     );
     if (reusable?.externalTaskId) {
-      writeUnifiedArtifact(input.caseId, job.unifiedJobId, "enrichment-targeted-retry-audit.json", {
+      await writeUnifiedArtifact(input.caseId, job.unifiedJobId, "enrichment-targeted-retry-audit.json", {
         version: "enrichment-targeted-retry-audit-v1",
         at: (input.deps?.now ?? (() => new Date()))().toISOString(),
         actorId: input.actorId,
@@ -402,7 +402,7 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
         providerTaskId: reusable.id,
         submissions: 0,
       });
-      patchUnifiedCollectionJob(input.caseId, {
+      await patchUnifiedCollectionJob(input.caseId, {
         stage: "ARSENKIN_ENRICHMENT",
         status: "WAITING",
         resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
@@ -542,7 +542,7 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       throw new ConflictError("SUBMIT_DID_NOT_YIELD_EXTERNAL_TASK_ID");
     }
 
-    writeUnifiedArtifact(input.caseId, job.unifiedJobId, "enrichment-targeted-retry-audit.json", {
+    await writeUnifiedArtifact(input.caseId, job.unifiedJobId, "enrichment-targeted-retry-audit.json", {
       version: "enrichment-targeted-retry-audit-v1",
       at: (input.deps?.now ?? (() => new Date()))().toISOString(),
       actorId: input.actorId,
@@ -569,7 +569,7 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       queryCount: Array.isArray(requestJson.data.queries) ? requestJson.data.queries.length : 0,
     });
 
-    patchUnifiedCollectionJob(input.caseId, {
+    await patchUnifiedCollectionJob(input.caseId, {
       stage: "ARSENKIN_ENRICHMENT",
       status: "WAITING",
       resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
@@ -616,7 +616,7 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
     };
   } finally {
-    releaseUnifiedJobLease(input.caseId, ownerId);
+    await releaseUnifiedJobLease(input.caseId, ownerId);
   }
 }
 

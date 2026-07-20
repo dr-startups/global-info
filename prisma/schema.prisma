@@ -227,6 +227,7 @@ model Case {
   serpObservations   SerpObservation[]
   serpSyntheticAssets SerpSyntheticAsset[]
   providerTasks      ProviderTask[]
+  unifiedCollectionJobs UnifiedCollectionJobRecord[]
 
   @@index([status])
   @@index([deletedAt])
@@ -587,7 +588,49 @@ model ReportVersion {
 }
 
 // ----------------------------------------------------------------------------
-// 11b. ORION section pipeline persistence (R9.4 additive, experimental)
+// 11b. Unified ORION collection job store (REMEDIATION §9.4)
+// ----------------------------------------------------------------------------
+
+/// Durable unified-collection job row (domain type remains UnifiedCollectionJob).
+model UnifiedCollectionJobRecord {
+  id                  String    @id @default(cuid())
+  caseId              String    @unique
+  jobId               String    @unique
+  unifiedJobId        String
+  stage               String
+  status              String
+  progress            Float     @default(0)
+  versionNum          Int       @default(0)
+  leaseOwnerId        String?
+  leaseUntil          DateTime?
+  requestedBy         String
+  arsenkinMode        String?
+  baseReportRunId     String?
+  arsenkinReportRunId String?
+  compositeDatasetId  String?
+  cancelRequested     Boolean   @default(false)
+  resumeCheckpoint    String?
+  nextPollAt          DateTime?
+  pollAttempt         Int?
+  startedAt           DateTime?
+  completedAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  /// Full UnifiedCollectionJob JSON (domain type) minus fields that are columns
+  payloadJson         Json
+  /// logicalName → storage key (db) or absolute path (file bootstrap)
+  artifactKeys        Json      @default("{}")
+  reportLinkKeys      Json      @default("{}")
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([status, stage])
+  @@index([leaseUntil])
+  @@map("dp_unified_collection_jobs")
+}
+
+// ----------------------------------------------------------------------------
+// 11c. ORION report runs
 // ----------------------------------------------------------------------------
 
 model OrionReportRun {

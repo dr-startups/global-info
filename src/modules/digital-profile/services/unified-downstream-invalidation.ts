@@ -47,19 +47,19 @@ const FORENSIC_PRESERVE = [
 /**
  * Write stale markers next to existing artifacts without deleting forensic lineage.
  */
-export function invalidateDownstreamAfterEnrichmentIngest(input: {
+export async function invalidateDownstreamAfterEnrichmentIngest(input: {
   job: UnifiedCollectionJob;
   reason: string;
   previousCompositeDatasetId?: string | null;
   previousContentHash?: string | null;
-}): {
+}): Promise<{
   jobPatch: Partial<UnifiedCollectionJob>;
   report: DownstreamInvalidationReport;
-} {
+}> {
   const epoch = `invalidated-${Date.now().toString(36)}`;
   const markedStale: string[] = [];
   for (const name of STALE_ARTIFACT_MARKERS) {
-    const path = writeUnifiedArtifact(input.job.caseId, input.job.unifiedJobId, `${name}.stale.json`, {
+    const path = await writeUnifiedArtifact(input.job.caseId, input.job.unifiedJobId, `${name}.stale.json`, {
       version: "downstream-stale-marker-v1",
       artifact: name,
       reason: input.reason,
@@ -73,7 +73,7 @@ export function invalidateDownstreamAfterEnrichmentIngest(input: {
   }
 
   // Explicit invalidation ledger (UI / recovery reads this).
-  writeUnifiedArtifact(input.job.caseId, input.job.unifiedJobId, "downstream-invalidation.json", {
+  await writeUnifiedArtifact(input.job.caseId, input.job.unifiedJobId, "downstream-invalidation.json", {
     version: "downstream-invalidation-v1",
     reason: input.reason,
     markedStale: [...STALE_ARTIFACT_MARKERS],

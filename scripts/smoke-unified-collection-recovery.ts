@@ -41,7 +41,7 @@ import type { ClassifierSubjectProfile } from "../src/modules/digital-profile/or
 import type { DeckRenderAdapter } from "../src/modules/digital-profile/services/render-deck-artifacts";
 import { buildRiskMatrixFragment } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders";
 
-before(() => {
+before(async () => {
   process.env.NETWORK_CALLS = "0";
 });
 
@@ -138,7 +138,7 @@ function fakePrisma(): PrismaClient {
 }
 
 function seedDeripaskaFailedJob(caseId: string, jobId: string): void {
-  deleteUnifiedCollectionJobForTests(caseId);
+  await deleteUnifiedCollectionJobForTests(caseId);
   const now = new Date().toISOString();
   const rows = fixtureBaseRows();
   const job = {
@@ -175,7 +175,7 @@ function seedDeripaskaFailedJob(caseId: string, jobId: string): void {
     reportLinks: {},
     cancelRequested: false,
   };
-  saveUnifiedCollectionJob(job);
+  await saveUnifiedCollectionJob(job);
   const manifest: BaseCollectionManifest = {
     version: "base-collection-manifest-v1",
     unifiedJobId: jobId,
@@ -188,7 +188,7 @@ function seedDeripaskaFailedJob(caseId: string, jobId: string): void {
     actualProviders: job.actualProviders,
     realCollectionSufficient: true,
   };
-  writeUnifiedArtifact(caseId, jobId, "base-collection-manifest.json", manifest);
+  await writeUnifiedArtifact(caseId, jobId, "base-collection-manifest.json", manifest);
 }
 
 async function drain(
@@ -207,7 +207,7 @@ async function drain(
       return job;
     }
   }
-  return loadUnifiedCollectionJob(caseId);
+  return await loadUnifiedCollectionJob(caseId);
 }
 
 describe("unified collection staff recovery", () => {
@@ -228,39 +228,39 @@ describe("unified collection staff recovery", () => {
     assert.equal(new ConflictError().status, 409);
   });
 
-  it("GET exposes server-side recoveryAllowed for Deripaska-shaped failure", () => {
+  it("GET exposes server-side recoveryAllowed for Deripaska-shaped failure", async () => {
     const caseId = "rec-get-f5";
     const jobId = "unified-fixture-deripaska-get";
     seedDeripaskaFailedJob(caseId, jobId);
-    const job = loadUnifiedCollectionJob(caseId);
-    const fields = withUnifiedRecoveryStatusFields(job);
+    const job = await loadUnifiedCollectionJob(caseId);
+    const fields = await withUnifiedRecoveryStatusFields(job);
     assert.equal(fields.recoveryAllowed, true);
     assert.equal(fields.recoveryReason, "HISTORICAL_NO_BASE_REPORT_RUN");
     assert.equal(fields.recoveryBlockerReason, null);
   });
 
-  it("unrelated FAILED_TERMINAL is not recoverable", () => {
+  it("unrelated FAILED_TERMINAL is not recoverable", async () => {
     const caseId = "rec-unrelated-terminal";
     const jobId = "unified-unrelated-fail";
     seedDeripaskaFailedJob(caseId, jobId);
-    patchUnifiedCollectionJob(caseId, {
+    await patchUnifiedCollectionJob(caseId, {
       warnings: ["something-else"],
       lastErrorCode: "RENDER_FAILED",
       lastError: "renderer exploded",
     });
-    const elig = evaluateUnifiedCollectionRecoveryEligibility({
+    const elig = await evaluateUnifiedCollectionRecoveryEligibility({
       caseId,
-      job: loadUnifiedCollectionJob(caseId),
+      job: await loadUnifiedCollectionJob(caseId),
     });
     assert.equal(elig.recoveryAllowed, false);
     assert.equal(elig.recoveryBlockerReason, "FAILED_TERMINAL_NOT_RECOVERABLE");
   });
 
-  it("FAILED_TERMINAL ASSEMBLY_FAILED with intact composite → ASSEMBLY_RESUME", () => {
+  it("FAILED_TERMINAL ASSEMBLY_FAILED with intact composite → ASSEMBLY_RESUME", async () => {
     const caseId = "rec-assembly-resume";
     const jobId = "unified-assembly-fail";
     seedDeripaskaFailedJob(caseId, jobId);
-    patchUnifiedCollectionJob(caseId, {
+    await patchUnifiedCollectionJob(caseId, {
       baseReportRunId: "base-run-assembly",
       enrichmentRunIds: ["e1", "e2", "e3", "e4", "e5"],
       compositeDatasetId: "composite-assembly",
@@ -274,7 +274,7 @@ describe("unified collection staff recovery", () => {
       lastError:
         "deck assembly failed: required sections failed: RU_PROFILE/RU_SUMMARY:FAILED",
     });
-    writeUnifiedArtifact(caseId, jobId, "base-collection-manifest.json", {
+    await writeUnifiedArtifact(caseId, jobId, "base-collection-manifest.json", {
       version: "base-collection-manifest-v1",
       unifiedJobId: jobId,
       caseId,
@@ -286,9 +286,9 @@ describe("unified collection staff recovery", () => {
       actualProviders: [],
       realCollectionSufficient: true,
     });
-    const elig = evaluateUnifiedCollectionRecoveryEligibility({
+    const elig = await evaluateUnifiedCollectionRecoveryEligibility({
       caseId,
-      job: loadUnifiedCollectionJob(caseId),
+      job: await loadUnifiedCollectionJob(caseId),
     });
     assert.equal(elig.recoveryAllowed, true);
     assert.equal(elig.recoveryReason, "ASSEMBLY_RESUME");
@@ -299,7 +299,7 @@ describe("unified collection staff recovery", () => {
     const caseId = "rec-active-lease";
     const jobId = "unified-lease-job";
     seedDeripaskaFailedJob(caseId, jobId);
-    claimUnifiedJobLease({ caseId, ownerId: "other-owner", leaseMs: 60_000 });
+    await claimUnifiedJobLease({ caseId, ownerId: "other-owner", leaseMs: 60_000 });
     await assert.rejects(
       () =>
         recoverUnifiedOrionCollectionJob({
@@ -317,7 +317,7 @@ describe("unified collection staff recovery", () => {
     const jobId = "unified-no-manifest";
     seedDeripaskaFailedJob(caseId, jobId);
     // Empty / corrupt base manifest (fail-closed).
-    writeUnifiedArtifact(caseId, jobId, "base-collection-manifest.json", {
+    await writeUnifiedArtifact(caseId, jobId, "base-collection-manifest.json", {
       version: "base-collection-manifest-v1",
       unifiedJobId: jobId,
       caseId,
@@ -460,7 +460,7 @@ describe("unified collection staff recovery", () => {
     assert.equal(recovered.idempotent, false);
     assert.ok(recovered.baseReportRunId);
 
-    const afterRecover = loadUnifiedCollectionJob(caseId)!;
+    const afterRecover = await loadUnifiedCollectionJob(caseId)!;
     assert.equal(afterRecover.jobId, jobId);
     assert.equal(afterRecover.stage, "ARSENKIN_ENRICHMENT");
     assert.equal(afterRecover.status, "WAITING");
@@ -468,7 +468,7 @@ describe("unified collection staff recovery", () => {
     assert.ok(afterRecover.recoveryAudit);
     assert.equal(afterRecover.recoveryAudit?.previousLastErrorCode, "ASSEMBLY_FAILED");
 
-    const manifest = readUnifiedArtifact<BaseCollectionManifest>(
+    const manifest = await readUnifiedArtifact<BaseCollectionManifest>(
       caseId,
       jobId,
       "base-collection-manifest.json"
@@ -492,7 +492,7 @@ describe("unified collection staff recovery", () => {
     assert.equal(assemblyCount, 1);
     assert.ok(renderCount <= 1);
 
-    const binding = readUnifiedArtifact<{ providerCounts: { yandex: number; composite: number } }>(
+    const binding = await readUnifiedArtifact<{ providerCounts: { yandex: number; composite: number } }>(
       caseId,
       jobId,
       "report-data-binding.json"
@@ -501,9 +501,9 @@ describe("unified collection staff recovery", () => {
 
     // Second recovery is idempotent (completed job → not allowed OR same id path).
     // After REPORT_READY, recovery must be blocked.
-    const eligDone = evaluateUnifiedCollectionRecoveryEligibility({
+    const eligDone = await evaluateUnifiedCollectionRecoveryEligibility({
       caseId,
-      job: loadUnifiedCollectionJob(caseId),
+      job: await loadUnifiedCollectionJob(caseId),
     });
     assert.equal(eligDone.recoveryAllowed, false);
     assert.equal(eligDone.recoveryBlockerReason, "JOB_ALREADY_COMPLETED");

@@ -123,13 +123,13 @@ async function drainJob(caseId: string, deps: Parameters<typeof runUnifiedCollec
       return job;
     }
   }
-  return loadUnifiedCollectionJob(caseId);
+  return await loadUnifiedCollectionJob(caseId);
 }
 
 describe("unified orion arsenkin collection", () => {
-  before(() => {
+  before(async () => {
     process.env.NETWORK_CALLS = "0";
-    deleteUnifiedCollectionJobForTests(CASE_ID);
+    await deleteUnifiedCollectionJobForTests(CASE_ID);
   });
 
   it("NETWORK_CALLS=0", () => {
@@ -252,7 +252,7 @@ describe("unified orion arsenkin collection", () => {
   });
 
   it("happy path: real base + arsenkin partial → COMPLETED_PARTIAL or REPORT_READY with artifacts", async () => {
-    deleteUnifiedCollectionJobForTests(CASE_ID);
+    await deleteUnifiedCollectionJobForTests(CASE_ID);
     const deps = {
       autoSchedule: false as const,
       allowMockReport: false,
@@ -301,7 +301,7 @@ describe("unified orion arsenkin collection", () => {
       job!.stage === "REPORT_READY" || job!.stage === "COMPLETED_PARTIAL",
       `stage=${job!.stage} err=${job!.lastError}`
     );
-    const manifest = readUnifiedArtifact<BaseCollectionManifest>(
+    const manifest = await readUnifiedArtifact<BaseCollectionManifest>(
       CASE_ID,
       job!.unifiedJobId,
       "base-collection-manifest.json"
@@ -334,7 +334,7 @@ describe("unified orion arsenkin collection", () => {
 
   it("mock/fallback base cannot unlock REPORT_READY", async () => {
     const caseId = "unified-smoke-mock-base";
-    deleteUnifiedCollectionJobForTests(caseId);
+    await deleteUnifiedCollectionJobForTests(caseId);
     const deps = {
       autoSchedule: false as const,
       fixtureBaseRows,
@@ -359,7 +359,7 @@ describe("unified orion arsenkin collection", () => {
 
   it("stale prepare dataset → fail-closed not REPORT_READY", async () => {
     const caseId = "unified-smoke-stale-prepare";
-    deleteUnifiedCollectionJobForTests(caseId);
+    await deleteUnifiedCollectionJobForTests(caseId);
     const deps = {
       autoSchedule: false as const,
       fixtureBaseRows,
@@ -383,7 +383,7 @@ describe("unified orion arsenkin collection", () => {
 
   it("idempotent start does not create second active job", async () => {
     const caseId = "unified-smoke-idempotent";
-    deleteUnifiedCollectionJobForTests(caseId);
+    await deleteUnifiedCollectionJobForTests(caseId);
     const holdDeps = {
       autoSchedule: false as const,
       fixtureBaseRows,

@@ -121,7 +121,7 @@ function fixtureBaseRows(): CompositeObservation[] {
 }
 
 function seedJob(overrides: Partial<UnifiedCollectionJob> = {}): UnifiedCollectionJob {
-  deleteUnifiedCollectionJobForTests(CASE);
+  await deleteUnifiedCollectionJobForTests(CASE);
   const now = new Date().toISOString();
   const job: UnifiedCollectionJob = {
     version: "unified-orion-collection-job-v1",
@@ -161,9 +161,9 @@ function seedJob(overrides: Partial<UnifiedCollectionJob> = {}): UnifiedCollecti
     pollAttempt: 0,
     ...overrides,
   };
-  saveUnifiedCollectionJob(job);
-  writeUnifiedArtifact(CASE, JOB_B, "base-collection-manifest.json", baseManifest());
-  return loadUnifiedCollectionJob(CASE)!;
+  await saveUnifiedCollectionJob(job);
+  await writeUnifiedArtifact(CASE, JOB_B, "base-collection-manifest.json", baseManifest());
+  return await loadUnifiedCollectionJob(CASE)!;
 }
 
 function validPollAuthInput(overrides: Record<string, unknown> = {}) {
@@ -389,16 +389,16 @@ describe("C. FAILED_RETRYABLE pump vs explicit recovery", () => {
       } as never,
     });
 
-    const beforePump = listResumableUnifiedJobs().filter((j) => j.caseId === CASE);
+    const beforePump = await listResumableUnifiedJobs().filter((j) => j.caseId === CASE);
     assert.equal(beforePump.length, 0, "FAILED_RETRYABLE must not be auto-pumped");
     // Do not call pumpResumableUnifiedCollections() here — it schedules every WAITING
     // job on disk (other smoke leftovers) and would open live Prisma connections.
-    const listedAll = listResumableUnifiedJobs();
+    const listedAll = await listResumableUnifiedJobs();
     assert.ok(
       !listedAll.some((j) => j.caseId === CASE && j.stage === "FAILED_RETRYABLE"),
       "FAILED_RETRYABLE must be excluded from resumable list"
     );
-    const afterPump = loadUnifiedCollectionJob(CASE)!;
+    const afterPump = await loadUnifiedCollectionJob(CASE)!;
     assert.equal(afterPump.stage, "FAILED_RETRYABLE");
     assert.equal(afterPump.pollAttempt, 40);
     FLAGS.FAILED_RETRYABLE_NOT_AUTO_PUMPED = true;
@@ -411,11 +411,11 @@ describe("C. FAILED_RETRYABLE pump vs explicit recovery", () => {
         throw new Error("no base");
       },
     });
-    assert.equal(loadUnifiedCollectionJob(CASE)!.stage, "FAILED_RETRYABLE");
+    assert.equal(await loadUnifiedCollectionJob(CASE)!.stage, "FAILED_RETRYABLE");
 
-    const elig = evaluateUnifiedCollectionRecoveryEligibility({
+    const elig = await evaluateUnifiedCollectionRecoveryEligibility({
       caseId: CASE,
-      job: loadUnifiedCollectionJob(CASE)!,
+      job: await loadUnifiedCollectionJob(CASE)!,
       requestedJobId: JOB_B,
       manifest: baseManifest(),
       now: new Date(),
@@ -440,7 +440,7 @@ describe("C. FAILED_RETRYABLE pump vs explicit recovery", () => {
     assert.equal(recovered.unifiedJobId, JOB_B);
     FLAGS.SAME_JOB_ID_ON_RECOVERY = true;
 
-    const job = loadUnifiedCollectionJob(CASE)!;
+    const job = await loadUnifiedCollectionJob(CASE)!;
     assert.equal(job.jobId, JOB_B);
     assert.equal(job.stage, "ARSENKIN_ENRICHMENT");
     assert.equal(job.status, "WAITING");
@@ -535,7 +535,7 @@ describe("D. Job B fixture: poll → ingest → one render", () => {
     }
 
     const first = await runDurableArsenkinEnrichmentTick({
-      job: loadUnifiedCollectionJob(CASE)!,
+      job: await loadUnifiedCollectionJob(CASE)!,
       listProviderTasks: async () => tasks,
       pollTask,
     });
@@ -546,12 +546,12 @@ describe("D. Job B fixture: poll → ingest → one render", () => {
     const obs1 = first.observations.length;
     const hashes1 = [...first.state.ingestedResultHashes];
 
-    saveUnifiedCollectionJob({
-      ...loadUnifiedCollectionJob(CASE)!,
+    await saveUnifiedCollectionJob({
+      ...await loadUnifiedCollectionJob(CASE)!,
       arsenkinEnrichmentState: first.state,
     });
     const second = await runDurableArsenkinEnrichmentTick({
-      job: loadUnifiedCollectionJob(CASE)!,
+      job: await loadUnifiedCollectionJob(CASE)!,
       listProviderTasks: async () =>
         tasks.map((t) =>
           String(t.externalTaskId) === EXT_SUGGEST
@@ -565,8 +565,8 @@ describe("D. Job B fixture: poll → ingest → one render", () => {
     FLAGS.EXACTLY_ONCE_INGEST = true;
 
     // Drive composite → prepare/render once.
-    saveUnifiedCollectionJob({
-      ...loadUnifiedCollectionJob(CASE)!,
+    await saveUnifiedCollectionJob({
+      ...await loadUnifiedCollectionJob(CASE)!,
       arsenkinEnrichmentState: first.state,
       stage: "ARSENKIN_ENRICHMENT",
       status: "WAITING",
@@ -669,7 +669,7 @@ describe("E. poll errors persisted; restart/lease", () => {
         throw new Error("no");
       },
     });
-    const after = loadUnifiedCollectionJob(CASE)!;
+    const after = await loadUnifiedCollectionJob(CASE)!;
     assert.ok((after.pollAttempt ?? 0) >= 3);
     assert.ok(after.nextPollAt);
 

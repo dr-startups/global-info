@@ -103,9 +103,9 @@ const FLAGS: Record<string, boolean> = {
 };
 
 function seedJobB() {
-  deleteUnifiedCollectionJobForTests(CASE);
+  await deleteUnifiedCollectionJobForTests(CASE);
   const now = new Date().toISOString();
-  saveUnifiedCollectionJob({
+  await saveUnifiedCollectionJob({
     version: "unified-orion-collection-job-v1",
     caseId: CASE,
     jobId: JOB_B,
@@ -400,7 +400,7 @@ describe("1. SUGGESTIONS request schema — exactly one query", () => {
         err instanceof ConflictError && /SUGGEST_QUERY_UNAVAILABLE/i.test(err.message)
     );
     assert.equal(submissions, 0);
-    const job = loadUnifiedCollectionJob(CASE)!;
+    const job = await loadUnifiedCollectionJob(CASE)!;
     assert.equal(job.leaseOwnerId, null);
     leased = job.leaseOwnerId != null;
     assert.equal(leased, false);
@@ -563,7 +563,7 @@ describe("3. targeted retry contract", () => {
     assert.equal(newAgentRuns, 0);
     assert.equal(newEnrichmentRuns, 0);
 
-    const jobAfter = loadUnifiedCollectionJob(CASE)!;
+    const jobAfter = await loadUnifiedCollectionJob(CASE)!;
     assert.equal(jobAfter.jobId, JOB_B);
     assert.equal(jobAfter.enrichmentRunIds?.length, 5);
     assert.equal(jobAfter.arsenkinEnrichmentState?.enrichmentComplete, false);
@@ -638,7 +638,7 @@ describe("3. targeted retry contract", () => {
     };
 
     const ownerA = "process-a";
-    const claimedA = claimUnifiedJobLease({ caseId: CASE, ownerId: ownerA, leaseMs: 60_000 });
+    const claimedA = await claimUnifiedJobLease({ caseId: CASE, ownerId: ownerA, leaseMs: 60_000 });
     assert.ok(claimedA);
     const blocked = await retryUnifiedEnrichmentSuggestionsTask({
       caseId: CASE,
@@ -655,7 +655,7 @@ describe("3. targeted retry contract", () => {
     assert.ok(blocked instanceof ConflictError);
     assert.match(blocked.message, /ACTIVE_LEASE/);
     assert.equal(submissions, 0);
-    releaseUnifiedJobLease(CASE, ownerA);
+    await releaseUnifiedJobLease(CASE, ownerA);
 
     const ok = await retryUnifiedEnrichmentSuggestionsTask({
       caseId: CASE,
@@ -818,8 +818,8 @@ describe("4. ingest + downstream after 5/5; failed suggestions blocks composite"
     });
     const now = new Date().toISOString();
     const oldComposite = "composite-stale-suggestions";
-    const prev = loadUnifiedCollectionJob(CASE)!;
-    saveUnifiedCollectionJob({
+    const prev = await loadUnifiedCollectionJob(CASE)!;
+    await saveUnifiedCollectionJob({
       ...prev,
       stage: "ARSENKIN_ENRICHMENT",
       status: "WAITING",
@@ -845,8 +845,8 @@ describe("4. ingest + downstream after 5/5; failed suggestions blocks composite"
       ],
       realCollectionSufficient: true,
     };
-    writeUnifiedArtifact(CASE, JOB_B, "base-collection-manifest.json", manifest);
-    writeUnifiedArtifact(CASE, JOB_B, "composite-serp-observations.json", {
+    await writeUnifiedArtifact(CASE, JOB_B, "base-collection-manifest.json", manifest);
+    await writeUnifiedArtifact(CASE, JOB_B, "composite-serp-observations.json", {
       compositeDatasetId: oldComposite,
       contentHash: "old-hash",
       observations: [],
@@ -929,7 +929,7 @@ describe("4. ingest + downstream after 5/5; failed suggestions blocks composite"
       }
     }
 
-    const finished = loadUnifiedCollectionJob(CASE)!;
+    const finished = await loadUnifiedCollectionJob(CASE)!;
     assert.equal(finished.jobId, JOB_B);
     assert.equal(finished.arsenkinEnrichmentState?.enrichmentComplete, true);
     assert.notEqual(finished.compositeDatasetId, oldComposite);
@@ -996,9 +996,9 @@ describe("4. ingest + downstream after 5/5; failed suggestions blocks composite"
     FLAGS.BASE_COVERAGE_PASS = gate.ok;
   });
 
-  it("UI gap status exposes retry CTA fields without secrets", () => {
+  it("UI gap status exposes retry CTA fields without secrets", async () => {
     seedJobB();
-    const gap = withSuggestionsGapStatus(loadUnifiedCollectionJob(CASE), [
+    const gap = withSuggestionsGapStatus(await loadUnifiedCollectionJob(CASE), [
       {
         state: "SUBMIT_REJECTED_RETRYABLE",
         toolName: "suggest",
@@ -1013,9 +1013,9 @@ describe("4. ingest + downstream after 5/5; failed suggestions blocks composite"
     assert.match(gap.suggestionsFailureReason!, /queries|не получен|Suggestions/i);
   });
 
-  it("empty suggest tasks for suggestions enrichment run still marks gap", () => {
+  it("empty suggest tasks for suggestions enrichment run still marks gap", async () => {
     seedJobB();
-    const gap = withSuggestionsGapStatus(loadUnifiedCollectionJob(CASE), []);
+    const gap = withSuggestionsGapStatus(await loadUnifiedCollectionJob(CASE), []);
     assert.equal(gap.suggestionsMissingResult, true);
     assert.equal(gap.suggestionsRetryAllowed, true);
   });

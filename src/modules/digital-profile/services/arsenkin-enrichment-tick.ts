@@ -794,7 +794,7 @@ export async function runDurableArsenkinEnrichmentTick(input: {
   const persistPollError = async (diag: ArsenkinPollErrorDiagnostic) => {
     try {
       const { writeUnifiedArtifact } = await import("./unified-collection-job-store");
-      writeUnifiedArtifact(job.caseId, job.unifiedJobId, "arsenkin-poll-error-latest.json", diag);
+      await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "arsenkin-poll-error-latest.json", diag);
     } catch {
       /* best-effort artifact */
     }

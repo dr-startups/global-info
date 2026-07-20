@@ -134,7 +134,7 @@ function extractTickErrorCode(err: unknown): string {
  * Persist tick/poll failures so lease churn cannot continue without pollAttempt/nextPollAt.
  * Never swallows — caller logs via logUnifiedTickError first.
  */
-export function persistUnifiedTickFailure(
+export async function persistUnifiedTickFailure(
   caseId: string,
   err: unknown,
   extras?: {
@@ -143,8 +143,8 @@ export function persistUnifiedTickFailure(
     agentName?: string | null;
     now?: Date;
   }
-): UnifiedCollectionJob | null {
-  const job = loadUnifiedCollectionJob(caseId);
+): Promise<UnifiedCollectionJob | null> {
+  const job = await loadUnifiedCollectionJob(caseId);
   if (!job) return null;
   const errorCode = extractTickErrorCode(err);
   const message = err instanceof Error ? err.message : String(err);
@@ -162,7 +162,7 @@ export function persistUnifiedTickFailure(
   const backoffMs = Math.min(30_000, Math.max(2_000, 2_000 * 2 ** Math.min(attempt, 4)));
   const nextPollAt = new Date(nowMs + backoffMs).toISOString();
   if (attempt >= MAX_ARSENKIN_INGEST_POLL_ATTEMPTS) {
-    return failRetryable(
+    return await failRetryable(
       job,
       "ARSENKIN_POLL_ATTEMPTS_EXCEEDED",
       message.slice(0, 500),
@@ -177,7 +177,7 @@ export function persistUnifiedTickFailure(
     );
   }
   return (
-    patchUnifiedCollectionJob(caseId, {
+    await patchUnifiedCollectionJob(caseId, {
       stage: "ARSENKIN_ENRICHMENT",
       status: "WAITING",
       resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
@@ -307,7 +307,7 @@ export function unifiedJobHasPreservedStages(job: UnifiedCollectionJob | null | 
   return Object.keys(job.artifactPaths ?? {}).length > 0;
 }
 
-function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): UnifiedCollectionJob {
+async function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): Promise<UnifiedCollectionJob> {
   const renderResume =
     job.resumeCheckpoint === "RENDER" ||
     job.lastErrorCode === "RENDER_FAILED" ||
@@ -327,7 +327,7 @@ function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): UnifiedCollec
     enrichmentComplete
   ) {
     return (
-      patchUnifiedCollectionJob(job.caseId, {
+      await patchUnifiedCollectionJob(job.caseId, {
         stage: "ORION_PREPARE",
         status: "RUNNING",
         resumeCheckpoint: "RENDER",
@@ -339,7 +339,7 @@ function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): UnifiedCollec
     );
   }
 
-  const manifest = readUnifiedArtifact<BaseCollectionManifest>(
+  const manifest = await readUnifiedArtifact<BaseCollectionManifest>(
     job.caseId,
     job.unifiedJobId,
     "base-collection-manifest.json"
@@ -358,7 +358,7 @@ function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): UnifiedCollec
     /required sections failed/i.test(job.lastError ?? "");
   if (assemblyResume && hasBase && job.compositeDatasetId) {
     return (
-      patchUnifiedCollectionJob(job.caseId, {
+      await patchUnifiedCollectionJob(job.caseId, {
         stage: "ORION_PREPARE",
         status: "RUNNING",
         resumeCheckpoint: null,
@@ -372,7 +372,7 @@ function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): UnifiedCollec
 
   if (hasBase && ingestResume) {
     return (
-      patchUnifiedCollectionJob(job.caseId, {
+      await patchUnifiedCollectionJob(job.caseId, {
         stage: "ARSENKIN_ENRICHMENT",
         status: "RUNNING",
         resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
@@ -387,7 +387,7 @@ function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): UnifiedCollec
 
   if (hasBase) {
     return (
-      patchUnifiedCollectionJob(job.caseId, {
+      await patchUnifiedCollectionJob(job.caseId, {
         stage: "ARSENKIN_ENRICHMENT",
         status: "RUNNING",
         resumeCheckpoint: "ARSENKIN_ENRICHMENT",
@@ -401,7 +401,7 @@ function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): UnifiedCollec
   }
 
   return (
-    patchUnifiedCollectionJob(job.caseId, {
+    await patchUnifiedCollectionJob(job.caseId, {
       stage: "BASE_COLLECTION",
       status: "RUNNING",
       resumeCheckpoint: "BASE_COLLECTION",
@@ -413,12 +413,12 @@ function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): UnifiedCollec
   );
 }
 
-function failRetryable(
+async function failRetryable(
   job: UnifiedCollectionJob,
   code: string,
   message: string,
   extraWarnings: string[] = []
-): UnifiedCollectionJob {
+): Promise<UnifiedCollectionJob> {
   const resumeCheckpoint =
     code === "RENDER_FAILED" || extraWarnings.some((w) => /render-checkpoint:RENDER/i.test(w))
       ? ("RENDER" as const)
@@ -440,7 +440,7 @@ function failRetryable(
             ? ("ARSENKIN_RESULT_INGEST" as const)
             : job.resumeCheckpoint ?? null;
   return (
-    patchUnifiedCollectionJob(job.caseId, {
+    await patchUnifiedCollectionJob(job.caseId, {
       stage: "FAILED_RETRYABLE",
       status: "WAITING",
       lastError: message,
@@ -464,9 +464,9 @@ export async function startUnifiedOrionCollection(input: {
   confirmPaidRecollection?: boolean;
   deps?: UnifiedOrchestratorDeps;
 }): Promise<{ accepted: true; jobId: string; unifiedJobId: string; created: boolean; stage: string }> {
-  const existing = loadUnifiedCollectionJob(input.caseId);
+  const existing = await loadUnifiedCollectionJob(input.caseId);
   if (existing) {
-    const elig = evaluateUnifiedCollectionRecoveryEligibility({
+    const elig = await evaluateUnifiedCollectionRecoveryEligibility({
       caseId: input.caseId,
       job: existing,
     });
@@ -509,7 +509,7 @@ export async function startUnifiedOrionCollection(input: {
     }
   }
 
-  const { job, created } = findOrCreateUnifiedCollectionJob({
+  const { job, created } = await findOrCreateUnifiedCollectionJob({
     caseId: input.caseId,
     requestedBy: input.requestedBy ?? "system",
     arsenkinMode: input.arsenkinMode ?? "full-first36",
@@ -519,7 +519,7 @@ export async function startUnifiedOrionCollection(input: {
   let started = job;
   if (isOfflineEnrichmentMode()) {
     started =
-      patchUnifiedCollectionJob(job.caseId, {
+      await patchUnifiedCollectionJob(job.caseId, {
         warnings: ensureOfflineEnrichmentJobWarning(job.warnings ?? []),
       }) ?? job;
   }
@@ -542,13 +542,13 @@ export function scheduleUnifiedTick(caseId: string, deps: UnifiedOrchestratorDep
   ticking.add(caseId);
   setImmediate(() => {
     void runUnifiedCollectionTick(caseId, deps)
-      .catch((err) => {
+      .catch(async (err) => {
         // Never silent — persist pollAttempt/nextPollAt/error so lease churn stops.
-        persistUnifiedTickFailure(caseId, err, { now: deps.now?.() });
+        await persistUnifiedTickFailure(caseId, err, { now: deps.now?.() });
       })
-      .finally(() => {
+      .finally(async () => {
         ticking.delete(caseId);
-        const job = loadUnifiedCollectionJob(caseId);
+        const job = await loadUnifiedCollectionJob(caseId);
         const keepPolling =
           job &&
           job.stage !== "REPORT_READY" &&
@@ -569,8 +569,8 @@ export function scheduleUnifiedTick(caseId: string, deps: UnifiedOrchestratorDep
 }
 
 /** Bounded resume after deploy — only active/retryable jobs. */
-export function resumeUnifiedCollectionsOnStartup(deps: UnifiedOrchestratorDeps = {}): void {
-  for (const { caseId } of listResumableUnifiedJobs()) {
+export async function resumeUnifiedCollectionsOnStartup(deps: UnifiedOrchestratorDeps = {}): Promise<void> {
+  for (const { caseId } of await listResumableUnifiedJobs()) {
     scheduleUnifiedTick(caseId, deps);
   }
 }
@@ -579,8 +579,8 @@ export function resumeUnifiedCollectionsOnStartup(deps: UnifiedOrchestratorDeps 
  * Periodic pump for persisted WAITING unified jobs (durable across HTTP end).
  * Idempotent with scheduleUnifiedTick's in-process guard + job lease.
  */
-export function pumpResumableUnifiedCollections(deps: UnifiedOrchestratorDeps = {}): number {
-  const jobs = listResumableUnifiedJobs();
+export async function pumpResumableUnifiedCollections(deps: UnifiedOrchestratorDeps = {}): Promise<number> {
+  const jobs = await listResumableUnifiedJobs();
   for (const { caseId } of jobs) {
     scheduleUnifiedTick(caseId, deps);
   }
@@ -592,13 +592,13 @@ export async function runUnifiedCollectionTick(
   deps: UnifiedOrchestratorDeps = {}
 ): Promise<UnifiedCollectionJob | null> {
   const ownerId = `unified-${process.pid}-${randomUUID().slice(0, 6)}`;
-  const claimed = claimUnifiedJobLease({ caseId, ownerId, leaseMs: 120_000, now: deps.now?.() });
-  if (!claimed) return loadUnifiedCollectionJob(caseId);
+  const claimed = await claimUnifiedJobLease({ caseId, ownerId, leaseMs: 120_000, now: deps.now?.() });
+  if (!claimed) return await loadUnifiedCollectionJob(caseId);
 
   try {
     let job = claimed;
     if (job.cancelRequested) {
-      return patchUnifiedCollectionJob(caseId, {
+      return await patchUnifiedCollectionJob(caseId, {
         stage: "CANCELLED",
         status: "CANCELLED",
         completedAt: new Date().toISOString(),
@@ -628,11 +628,11 @@ export async function runUnifiedCollectionTick(
       }
     } catch (err) {
       // Persist + stop silent lease churn; do not rethrow (scheduler catch is backup).
-      persistUnifiedTickFailure(caseId, err, { now: deps.now?.() });
+      await persistUnifiedTickFailure(caseId, err, { now: deps.now?.() });
     }
-    return loadUnifiedCollectionJob(caseId);
+    return await loadUnifiedCollectionJob(caseId);
   } finally {
-    releaseUnifiedJobLease(caseId, ownerId);
+    await releaseUnifiedJobLease(caseId, ownerId);
   }
 }
 
@@ -696,7 +696,7 @@ async function stepBaseCollection(
       baseReportRunId: job.baseReportRunId,
     });
   } else {
-    return failRetryable(
+    return await failRetryable(
       job,
       "MANIFEST_CAPTURE_FAILED",
       "prisma unavailable for base-collection-manifest"
@@ -716,7 +716,7 @@ async function stepBaseCollection(
       baseReportRunId = ensured.baseReportRunId;
       manifest = { ...manifest, baseReportRunId };
     } catch (err) {
-      return failRetryable(
+      return await failRetryable(
         job,
         "BASE_REPORT_RUN_PERSIST_FAILED",
         err instanceof Error ? err.message : String(err),
@@ -731,7 +731,7 @@ async function stepBaseCollection(
   }
 
   if (!baseReportRunId) {
-    return failRetryable(
+    return await failRetryable(
       job,
       "BASE_REPORT_RUN_MISSING",
       "base collection completed but baseReportRunId was not persisted",
@@ -739,7 +739,7 @@ async function stepBaseCollection(
     );
   }
 
-  const path = writeUnifiedArtifact(
+  const path = await writeUnifiedArtifact(
     job.caseId,
     job.unifiedJobId,
     "base-collection-manifest.json",
@@ -747,7 +747,7 @@ async function stepBaseCollection(
   );
 
   return (
-    patchUnifiedCollectionJob(job.caseId, {
+    await patchUnifiedCollectionJob(job.caseId, {
       stage: "ARSENKIN_ENRICHMENT",
       status: "RUNNING",
       progress: stageProgress("ARSENKIN_ENRICHMENT"),
@@ -767,7 +767,7 @@ async function stepArsenkin(
 ): Promise<UnifiedCollectionJob> {
   const baseId = String(job.baseReportRunId ?? "").trim();
   if (!baseId) {
-    return failRetryable(
+    return await failRetryable(
       job,
       "BASE_REPORT_RUN_MISSING",
       "Arsenkin enrichment requires persisted baseReportRunId — refuse silent skip",
@@ -788,7 +788,7 @@ async function stepArsenkin(
   if (resumeIngest) {
     const attempt = Math.max(0, Number(job.pollAttempt ?? 0)) + 1;
     if (attempt > MAX_ARSENKIN_INGEST_POLL_ATTEMPTS) {
-      return failRetryable(
+      return await failRetryable(
         job,
         "ARSENKIN_POLL_ATTEMPTS_EXCEEDED",
         `Arsenkin durable poll exceeded ${MAX_ARSENKIN_INGEST_POLL_ATTEMPTS} attempts`,
@@ -798,7 +798,7 @@ async function stepArsenkin(
     const nowMs = (deps.now?.() ?? new Date()).getTime();
     const backoffMs = Math.min(30_000, Math.max(2_000, 2_000 * 2 ** Math.min(attempt - 1, 4)));
     job =
-      patchUnifiedCollectionJob(job.caseId, {
+      await patchUnifiedCollectionJob(job.caseId, {
         stage: "ARSENKIN_ENRICHMENT",
         status: "WAITING",
         resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
@@ -879,17 +879,17 @@ async function stepArsenkin(
     progressRatio: state.completedAgents.length / ARSENKIN_REAL_AGENT_NAMES.length,
   };
 
-  writeUnifiedArtifact(job.caseId, job.unifiedJobId, "arsenkin-enrichment-state.json", state);
+  await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "arsenkin-enrichment-state.json", state);
   // Keep job-scoped enrichment state even when failing closed (UI + exact resume).
   job =
-    patchUnifiedCollectionJob(job.caseId, {
+    await patchUnifiedCollectionJob(job.caseId, {
       arsenkinEnrichmentState: state,
       enrichmentRunIds,
       arsenkinReportRunId: tick.arsenkinReportRunId,
     }) ?? job;
 
   if (tick.blockPipeline) {
-    return failRetryable(
+    return await failRetryable(
       job,
       tick.blockCode ?? "ARSENKIN_ENRICHMENT_FAILED",
       tick.blockMessage ?? "Arsenkin enrichment failed",
@@ -899,7 +899,7 @@ async function stepArsenkin(
 
   if (tick.waiting || !state.enrichmentComplete) {
     // Persist partial observations + durable nextPollAt (restart-safe).
-    const obsPath = writeUnifiedArtifact(
+    const obsPath = await writeUnifiedArtifact(
       job.caseId,
       job.unifiedJobId,
       "arsenkin-enrichment-observations.json",
@@ -920,7 +920,7 @@ async function stepArsenkin(
           Math.min(30_000, Math.max(2_000, 2_000 * 2 ** Math.min(Number(job.pollAttempt ?? 0), 4)))
       ).toISOString();
     return (
-      patchUnifiedCollectionJob(job.caseId, {
+      await patchUnifiedCollectionJob(job.caseId, {
         stage: "ARSENKIN_ENRICHMENT",
         status: "WAITING",
         progress: stageProgress("ARSENKIN_ENRICHMENT"),
@@ -945,13 +945,13 @@ async function stepArsenkin(
   const priorComposite = job.compositeDatasetId;
   const priorLinks = job.reportLinks;
   const staleCompositeOnDisk = Boolean(
-    readUnifiedArtifact(job.caseId, job.unifiedJobId, "composite-serp-observations.json") ||
-      readUnifiedArtifact(job.caseId, job.unifiedJobId, "assembled-deck.json") ||
-      readUnifiedArtifact(job.caseId, job.unifiedJobId, "downstream-invalidation.json")
+    await readUnifiedArtifact(job.caseId, job.unifiedJobId, "composite-serp-observations.json") ||
+      await readUnifiedArtifact(job.caseId, job.unifiedJobId, "assembled-deck.json") ||
+      await readUnifiedArtifact(job.caseId, job.unifiedJobId, "downstream-invalidation.json")
   );
   let invalidationWarnings: string[] = [];
   if (priorComposite || priorLinks?.pdf || priorLinks?.pptx || staleCompositeOnDisk) {
-    const inv = invalidateDownstreamAfterEnrichmentIngest({
+    const inv = await invalidateDownstreamAfterEnrichmentIngest({
       job,
       reason: "arsenkin-observations-ingested",
       previousCompositeDatasetId: priorComposite,
@@ -959,7 +959,7 @@ async function stepArsenkin(
     invalidationWarnings = inv.jobPatch.warnings ?? [];
   }
 
-  const obsPath = writeUnifiedArtifact(
+  const obsPath = await writeUnifiedArtifact(
     job.caseId,
     job.unifiedJobId,
     "arsenkin-enrichment-observations.json",
@@ -974,7 +974,7 @@ async function stepArsenkin(
   );
 
   return (
-    patchUnifiedCollectionJob(job.caseId, {
+    await patchUnifiedCollectionJob(job.caseId, {
       stage: "COMPOSITE_MERGE",
       status: "RUNNING",
       progress: stageProgress("COMPOSITE_MERGE"),
@@ -1004,14 +1004,14 @@ async function stepComposite(
   job: UnifiedCollectionJob,
   deps: UnifiedOrchestratorDeps
 ): Promise<UnifiedCollectionJob> {
-  const manifest = readUnifiedArtifact<BaseCollectionManifest>(
+  const manifest = await readUnifiedArtifact<BaseCollectionManifest>(
     job.caseId,
     job.unifiedJobId,
     "base-collection-manifest.json"
   );
   if (!manifest) {
     return (
-      patchUnifiedCollectionJob(job.caseId, {
+      await patchUnifiedCollectionJob(job.caseId, {
         stage: "FAILED_TERMINAL",
         status: "FAILED",
         lastError: "base-collection-manifest missing",
@@ -1021,7 +1021,7 @@ async function stepComposite(
     );
   }
 
-  const enrichment = readUnifiedArtifact<{
+  const enrichment = await readUnifiedArtifact<{
     observations: Parameters<typeof mergeCompositeSerp>[0]["arsenkinObservations"];
     arsenkinReportRunId: string | null;
     enrichmentRunIds?: string[];
@@ -1029,7 +1029,7 @@ async function stepComposite(
 
   const baseReportRunId = job.baseReportRunId ?? manifest.baseReportRunId;
   if (!baseReportRunId) {
-    return failRetryable(
+    return await failRetryable(
       job,
       "BASE_REPORT_RUN_MISSING",
       "composite merge refused: baseReportRunId missing after base collection",
@@ -1050,7 +1050,7 @@ async function stepComposite(
     Boolean(job.arsenkinEnrichmentState?.enrichmentComplete) ||
     Boolean((enrichment as { enrichmentComplete?: boolean } | null)?.enrichmentComplete);
   if (!enrichmentComplete) {
-    return failRetryable(
+    return await failRetryable(
       job,
       "ARSENKIN_ENRICHMENT_INCOMPLETE",
       "composite refused: Arsenkin enrichmentComplete=false (schedule≠complete)",
@@ -1076,7 +1076,7 @@ async function stepComposite(
   });
 
   if (merge.providerCounts.composite === 0 && manifest.baseCount > 0) {
-    return failRetryable(
+    return await failRetryable(
       job,
       "COMPOSITE_BASE_EMPTY",
       "composite merge produced zero observations from a non-empty base manifest",
@@ -1085,9 +1085,9 @@ async function stepComposite(
   }
 
   const coverageProbe = buildBaseObservationCoverage({ manifest, merge });
-  writeUnifiedArtifact(job.caseId, job.unifiedJobId, "base-observation-coverage.json", coverageProbe);
+  await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "base-observation-coverage.json", coverageProbe);
   if (!coverageProbe.allBaseObservationsTraceable) {
-    return failRetryable(
+    return await failRetryable(
       job,
       "BASE_OBSERVATION_COVERAGE_FAILED",
       `missing base ids: ${coverageProbe.missingBaseObservationIds.join(",")}`,
@@ -1125,7 +1125,7 @@ async function stepComposite(
     subjectProfile = bootstrap?.profile ?? null;
   }
   if (subjectProfile) {
-    writeUnifiedArtifact(
+    await writeUnifiedArtifact(
       job.caseId,
       job.unifiedJobId,
       "subject-identity-profile.json",
@@ -1134,31 +1134,31 @@ async function stepComposite(
   }
 
   const paths = {
-    compositeObservations: writeUnifiedArtifact(
+    compositeObservations: await writeUnifiedArtifact(
       job.caseId,
       job.unifiedJobId,
       "composite-serp-observations.json",
       merge
     ),
-    compositeProvenance: writeUnifiedArtifact(
+    compositeProvenance: await writeUnifiedArtifact(
       job.caseId,
       job.unifiedJobId,
       "composite-serp-provenance.json",
       merge.provenance
     ),
-    providerSurfaceCoverage: writeUnifiedArtifact(
+    providerSurfaceCoverage: await writeUnifiedArtifact(
       job.caseId,
       job.unifiedJobId,
       "provider-surface-coverage.json",
       job.coverage
     ),
-    reportDataBinding: writeUnifiedArtifact(
+    reportDataBinding: await writeUnifiedArtifact(
       job.caseId,
       job.unifiedJobId,
       "report-data-binding.json",
       binding
     ),
-    unifiedSummary: writeUnifiedArtifact(job.caseId, job.unifiedJobId, "unified-collection-summary.json", {
+    unifiedSummary: await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "unified-collection-summary.json", {
       unifiedJobId: job.unifiedJobId,
       stage: "COMPOSITE_MERGE",
       providerCounts: merge.providerCounts,
@@ -1168,7 +1168,7 @@ async function stepComposite(
   };
 
   return (
-    patchUnifiedCollectionJob(job.caseId, {
+    await patchUnifiedCollectionJob(job.caseId, {
       stage: "ORION_PREPARE",
       status: "RUNNING",
       progress: stageProgress("ORION_PREPARE"),
@@ -1182,17 +1182,17 @@ async function stepPrepare(
   job: UnifiedCollectionJob,
   deps: UnifiedOrchestratorDeps
 ): Promise<UnifiedCollectionJob> {
-  const manifest = readUnifiedArtifact<BaseCollectionManifest>(
+  const manifest = await readUnifiedArtifact<BaseCollectionManifest>(
     job.caseId,
     job.unifiedJobId,
     "base-collection-manifest.json"
   );
-  const binding = readUnifiedArtifact<ReportDataBinding>(
+  const binding = await readUnifiedArtifact<ReportDataBinding>(
     job.caseId,
     job.unifiedJobId,
     "report-data-binding.json"
   );
-  const merge = readUnifiedArtifact<CompositeMergeResult>(
+  const merge = await readUnifiedArtifact<CompositeMergeResult>(
     job.caseId,
     job.unifiedJobId,
     "composite-serp-observations.json"
@@ -1200,7 +1200,7 @@ async function stepPrepare(
 
   if (!binding || !merge || !manifest) {
     return (
-      patchUnifiedCollectionJob(job.caseId, {
+      await patchUnifiedCollectionJob(job.caseId, {
         stage: "FAILED_TERMINAL",
         status: "FAILED",
         lastError: "missing binding/merge/manifest before prepare",
@@ -1216,7 +1216,7 @@ async function stepPrepare(
 
   const enrichmentState =
     job.arsenkinEnrichmentState ??
-    readUnifiedArtifact<ArsenkinEnrichmentState>(
+    await readUnifiedArtifact<ArsenkinEnrichmentState>(
       job.caseId,
       job.unifiedJobId,
       "arsenkin-enrichment-state.json"
@@ -1234,7 +1234,7 @@ async function stepPrepare(
       allowMockReport: deps.allowMockReport,
     });
     if (preGate.coverage) {
-      writeUnifiedArtifact(
+      await writeUnifiedArtifact(
         job.caseId,
         job.unifiedJobId,
         "base-observation-coverage.json",
@@ -1248,7 +1248,7 @@ async function stepPrepare(
       // Mock/fallback base is terminal (cannot unlock REPORT_READY by retry alone).
       if (mockInsufficient) {
         return (
-          patchUnifiedCollectionJob(job.caseId, {
+          await patchUnifiedCollectionJob(job.caseId, {
             stage: "FAILED_TERMINAL",
             status: "FAILED",
             lastError: errText,
@@ -1258,7 +1258,7 @@ async function stepPrepare(
           }) ?? job
         );
       }
-      return failRetryable(job, "PRE_RENDER_DATA_GATE_FAILED", errText, [
+      return await failRetryable(job, "PRE_RENDER_DATA_GATE_FAILED", errText, [
         ingestIncomplete ? "ARSENKIN_RESULT_INGEST" : "PRE_RENDER_DATA_GATE",
         "NO_RENDER_BEFORE_DATA_GATE",
         "HTTP_RENDER_CALLS_ON_FAILED_GATE_ZERO",
@@ -1325,14 +1325,13 @@ async function stepPrepare(
     const message = err instanceof Error ? err.message : String(err);
     const code =
       err instanceof CanonicalPrepareBlockedError ? err.code : "CANONICAL_PREPARE_FAILED";
+    const enrichmentObs = await readUnifiedArtifact<{ enrichmentRunIds?: string[] }>(
+      job.caseId,
+      job.unifiedJobId,
+      "arsenkin-enrichment-observations.json"
+    );
     const enrichmentIds =
-      readUnifiedArtifact<{ enrichmentRunIds?: string[] }>(
-        job.caseId,
-        job.unifiedJobId,
-        "arsenkin-enrichment-observations.json"
-      )?.enrichmentRunIds ??
-      job.enrichmentRunIds ??
-      [];
+      enrichmentObs?.enrichmentRunIds ?? job.enrichmentRunIds ?? [];
     const linkageIncomplete =
       job.warnings.some((w) =>
         /arsenkin-blocked|arsenkin-skipped:no-base|ARSENKIN_STAGE_NOT_STARTED|BASE_REPORT_RUN/i.test(w)
@@ -1345,7 +1344,7 @@ async function stepPrepare(
     const assemblySparse = isAssemblyFailure && linkageIncomplete;
 
     if (code === "RENDER_FAILED") {
-      return failRetryable(job, "RENDER_FAILED", message, [
+      return await failRetryable(job, "RENDER_FAILED", message, [
         "render-checkpoint:RENDER",
         "CANONICAL_PREPARE_BLOCKED",
       ]);
@@ -1354,14 +1353,14 @@ async function stepPrepare(
     // Assembly/section QA failures are retryable when collection data is intact
     // (live §3.2 regression: uncategorized refs → RU/UAE SUMMARY FAILED).
     if (isAssemblyFailure && !linkageIncomplete) {
-      return failRetryable(job, code, message, [
+      return await failRetryable(job, code, message, [
         "CANONICAL_PREPARE_BLOCKED",
         "retryable-assembly-failure",
       ]);
     }
 
     if (linkageIncomplete || assemblySparse) {
-      return failRetryable(
+      return await failRetryable(
         job,
         assemblySparse ? "ASSEMBLY_INCOMPLETE_ENRICHMENT" : code,
         message,
@@ -1370,7 +1369,7 @@ async function stepPrepare(
     }
 
     return (
-      patchUnifiedCollectionJob(job.caseId, {
+      await patchUnifiedCollectionJob(job.caseId, {
         stage: "FAILED_TERMINAL",
         status: "FAILED",
         lastError: message,
@@ -1389,7 +1388,7 @@ async function stepPrepare(
     (resumeFromRender && !resumeFromGptCopy && prepared.assemblyCount === 0);
   if (!assemblyOk || (prepared.renderCount != null && prepared.renderCount !== 1)) {
     return (
-      patchUnifiedCollectionJob(job.caseId, {
+      await patchUnifiedCollectionJob(job.caseId, {
         stage: "FAILED_TERMINAL",
         status: "FAILED",
         lastError: `expected valid assembly/render counts, got assembly=${prepared.assemblyCount} render=${prepared.renderCount}`,
@@ -1415,7 +1414,7 @@ async function stepPrepare(
 
   if (!gate.ok) {
     return (
-      patchUnifiedCollectionJob(job.caseId, {
+      await patchUnifiedCollectionJob(job.caseId, {
         stage: "FAILED_TERMINAL",
         status: "FAILED",
         lastError: gate.errors.join("; "),
@@ -1448,21 +1447,21 @@ async function stepPrepare(
           : null,
       });
       reportQuality = toJobReportQuality(summary);
-      writeUnifiedArtifact(job.caseId, job.unifiedJobId, "report-quality-summary.json", summary);
+      await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "report-quality-summary.json", summary);
       if (qualityWarnings.length === 0) {
         qualityWarnings = buildReportQualityWarnings(summary);
       }
     } else {
       // Ensure the full artifact is present even when prepare already wrote it
       // (idempotent overwrite from the same source of truth).
-      const existing = readUnifiedArtifact(job.caseId, job.unifiedJobId, "report-quality-summary.json");
+      const existing = await readUnifiedArtifact(job.caseId, job.unifiedJobId, "report-quality-summary.json");
       if (!existing) {
         const summary = await buildReportQualitySummary({
           jobDir: unifiedArtifactsDir(job.caseId, job.unifiedJobId),
           caseId: job.caseId,
           unifiedJobId: job.unifiedJobId,
         });
-        writeUnifiedArtifact(job.caseId, job.unifiedJobId, "report-quality-summary.json", summary);
+        await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "report-quality-summary.json", summary);
         reportQuality = toJobReportQuality(summary);
         if (qualityWarnings.length === 0) {
           qualityWarnings = buildReportQualityWarnings(summary);
@@ -1474,7 +1473,7 @@ async function stepPrepare(
   }
 
   return (
-    patchUnifiedCollectionJob(job.caseId, {
+    await patchUnifiedCollectionJob(job.caseId, {
       stage: partial ? "COMPLETED_PARTIAL" : "REPORT_READY",
       status: "COMPLETED",
       progress: 1,
@@ -1490,6 +1489,6 @@ async function stepPrepare(
   );
 }
 
-export function getUnifiedCollectionStatus(caseId: string): UnifiedCollectionJob | null {
-  return loadUnifiedCollectionJob(caseId);
+export async function getUnifiedCollectionStatus(caseId: string): Promise<UnifiedCollectionJob | null> {
+  return await loadUnifiedCollectionJob(caseId);
 }

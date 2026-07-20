@@ -154,7 +154,7 @@ describe("self-conflicting negative identity signals", () => {
     assert.deepEqual(profile.negativeIdentitySignals.wrongNames, ["Петров Игорь Саулович"]);
   });
 
-  it("predicate: own tokens conflict, foreign tokens do not", () => {
+  it("predicate: own tokens conflict, foreign tokens do not", async () => {
     const ownText = ownNameTextOfVariants([
       "Дерипаска Олег Владимирович",
       "deripaska oleg vladimirovich",
@@ -168,11 +168,11 @@ describe("self-conflicting negative identity signals", () => {
 });
 
 function seedCompletedJob(caseId: string, jobId: string) {
-  deleteUnifiedCollectionJobForTests(caseId);
+  await deleteUnifiedCollectionJobForTests(caseId);
   const now = new Date().toISOString();
   const compositeDatasetId = `composite-${jobId}`;
   const enrichmentRunIds = AGENTS.map((a) => `enr-${a}`);
-  saveUnifiedCollectionJob({
+  await saveUnifiedCollectionJob({
     version: "unified-orion-collection-job-v1",
     jobId,
     unifiedJobId: jobId,
@@ -223,7 +223,7 @@ function seedCompletedJob(caseId: string, jobId: string) {
     },
   });
 
-  writeUnifiedArtifact(caseId, jobId, "base-collection-manifest.json", {
+  await writeUnifiedArtifact(caseId, jobId, "base-collection-manifest.json", {
     version: "base-collection-manifest-v1",
     unifiedJobId: jobId,
     caseId,
@@ -246,7 +246,7 @@ function seedCompletedJob(caseId: string, jobId: string) {
     providerCounts: { yandex: 1, serper: 0, arsenkin: 5, composite: 6 },
     generatedAt: now,
   };
-  writeUnifiedArtifact(caseId, jobId, "report-data-binding.json", binding);
+  await writeUnifiedArtifact(caseId, jobId, "report-data-binding.json", binding);
 
   const merge: CompositeMergeResult = {
     compositeDatasetId,
@@ -277,15 +277,15 @@ function seedCompletedJob(caseId: string, jobId: string) {
       enrichmentRunIds,
     },
   };
-  writeUnifiedArtifact(caseId, jobId, "composite-serp-observations.json", merge);
-  writeUnifiedArtifact(caseId, jobId, "arsenkin-enrichment-observations.json", {
+  await writeUnifiedArtifact(caseId, jobId, "composite-serp-observations.json", merge);
+  await writeUnifiedArtifact(caseId, jobId, "arsenkin-enrichment-observations.json", {
     observations: [],
     arsenkinReportRunId: enrichmentRunIds[0],
     enrichmentRunIds,
     enrichmentComplete: true,
   });
   // Stale job-scoped profile (pre-edit) — rebuild must refresh it from case root.
-  writeUnifiedArtifact(caseId, jobId, "subject-identity-profile.json", {
+  await writeUnifiedArtifact(caseId, jobId, "subject-identity-profile.json", {
     displayName: "Дерипаска Олег Владимирович",
     aliases: ["Дерипаска"],
     transliterations: [],
@@ -340,54 +340,54 @@ async function drain(caseId: string, deps: Parameters<typeof runUnifiedCollectio
       return job;
     }
   }
-  return loadUnifiedCollectionJob(caseId);
+  return await loadUnifiedCollectionJob(caseId);
 }
 
 describe("unified report rebuild («Пересобрать отчёт»)", () => {
-  it("eligibility: COMPLETED job with lineage-safe prepare inputs only", () => {
+  it("eligibility: COMPLETED job with lineage-safe prepare inputs only", async () => {
     const caseId = "rebuild-elig-case";
     const jobId = "unified-rebuild-elig";
     seedCompletedJob(caseId, jobId);
 
-    const ok = evaluateUnifiedReportRebuildEligibility({
+    const ok = await evaluateUnifiedReportRebuildEligibility({
       caseId,
-      job: loadUnifiedCollectionJob(caseId),
+      job: await loadUnifiedCollectionJob(caseId),
     });
     assert.equal(ok.rebuildAllowed, true);
     assert.equal(ok.rebuildBlockerReason, null);
 
     // Foreign jobId → mismatch.
-    const foreign = evaluateUnifiedReportRebuildEligibility({
+    const foreign = await evaluateUnifiedReportRebuildEligibility({
       caseId,
-      job: loadUnifiedCollectionJob(caseId),
+      job: await loadUnifiedCollectionJob(caseId),
       requestedJobId: "unified-other-job",
     });
     assert.equal(foreign.rebuildAllowed, false);
     assert.equal(foreign.rebuildBlockerReason, "JOB_ID_MISMATCH");
 
     // Running job → not completed.
-    saveUnifiedCollectionJob({
-      ...loadUnifiedCollectionJob(caseId)!,
+    await saveUnifiedCollectionJob({
+      ...await loadUnifiedCollectionJob(caseId)!,
       stage: "ORION_PREPARE",
       status: "RUNNING",
     });
-    const running = evaluateUnifiedReportRebuildEligibility({
+    const running = await evaluateUnifiedReportRebuildEligibility({
       caseId,
-      job: loadUnifiedCollectionJob(caseId),
+      job: await loadUnifiedCollectionJob(caseId),
     });
     assert.equal(running.rebuildAllowed, false);
     assert.equal(running.rebuildBlockerReason, "JOB_NOT_COMPLETED");
   });
 
-  it("missing composite artifacts → REBUILD_INPUTS_MISSING (fail-closed)", () => {
+  it("missing composite artifacts → REBUILD_INPUTS_MISSING (fail-closed)", async () => {
     const caseId = "rebuild-noinputs-case";
     const jobId = "unified-rebuild-noinputs";
     seedCompletedJob(caseId, jobId);
     // Wipe binding by pointing at a different job dir: simulate missing input.
-    writeUnifiedArtifact(caseId, jobId, "report-data-binding.json", null);
-    const elig = evaluateUnifiedReportRebuildEligibility({
+    await writeUnifiedArtifact(caseId, jobId, "report-data-binding.json", null);
+    const elig = await evaluateUnifiedReportRebuildEligibility({
       caseId,
-      job: loadUnifiedCollectionJob(caseId),
+      job: await loadUnifiedCollectionJob(caseId),
     });
     assert.equal(elig.rebuildAllowed, false);
     assert.equal(elig.rebuildBlockerReason, "REBUILD_INPUTS_MISSING");
@@ -418,7 +418,7 @@ describe("unified report rebuild («Пересобрать отчёт»)", () =>
     assert.equal(accepted.subjectProfileRefreshed, true);
 
     // Job-scoped profile now carries the case-root edits.
-    const jobProfile = readUnifiedArtifact<{ contextIdentifiers?: string[] }>(
+    const jobProfile = await readUnifiedArtifact<{ contextIdentifiers?: string[] }>(
       caseId,
       jobId,
       "subject-identity-profile.json"
@@ -426,7 +426,7 @@ describe("unified report rebuild («Пересобрать отчёт»)", () =>
     assert.ok(jobProfile?.contextIdentifiers?.includes("Русал"), "profile refreshed from case root");
 
     // Rebuild audit persisted.
-    const audit = readUnifiedArtifact<{ previousStage?: string; subjectProfileRefreshed?: boolean }>(
+    const audit = await readUnifiedArtifact<{ previousStage?: string; subjectProfileRefreshed?: boolean }>(
       caseId,
       jobId,
       "unified-rebuild-audit.json"
@@ -435,7 +435,7 @@ describe("unified report rebuild («Пересобрать отчёт»)", () =>
     assert.equal(audit?.subjectProfileRefreshed, true);
 
     // Full prepare (not render-only): checkpoint cleared.
-    const midJob = loadUnifiedCollectionJob(caseId);
+    const midJob = await loadUnifiedCollectionJob(caseId);
     assert.equal(midJob?.resumeCheckpoint ?? null, null);
     assert.equal(midJob?.lastErrorCode, null);
 
@@ -489,7 +489,7 @@ describe("unified report rebuild («Пересобрать отчёт»)", () =>
 
     // Double-click while completed again → allowed (idempotent new cycle), but
     // rebuild during RUNNING/WAITING is rejected: simulate mid-flight state.
-    saveUnifiedCollectionJob({ ...job!, stage: "ORION_PREPARE", status: "RUNNING" });
+    await saveUnifiedCollectionJob({ ...job!, stage: "ORION_PREPARE", status: "RUNNING" });
     await assert.rejects(
       () =>
         rebuildUnifiedReport({

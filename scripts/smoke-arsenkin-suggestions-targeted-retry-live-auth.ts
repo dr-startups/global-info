@@ -65,9 +65,9 @@ const FLAGS: Record<string, boolean> = {
 };
 
 function seedJobB() {
-  deleteUnifiedCollectionJobForTests(CASE);
+  await deleteUnifiedCollectionJobForTests(CASE);
   const now = new Date().toISOString();
-  saveUnifiedCollectionJob({
+  await saveUnifiedCollectionJob({
     version: "unified-orion-collection-job-v1",
     caseId: CASE,
     jobId: JOB_B,
@@ -230,7 +230,7 @@ describe("A–L targeted live-auth + reuse", () => {
     assert.equal(submissions, 0);
     assert.equal(requeues, 0);
     assert.equal(getActiveLiveAuthorization(), null);
-    const job = loadUnifiedCollectionJob(CASE)!;
+    const job = await loadUnifiedCollectionJob(CASE)!;
     assert.equal(job.leaseOwnerId, null);
   });
 
@@ -436,7 +436,7 @@ describe("A–L targeted live-auth + reuse", () => {
       },
     };
     const ownerA = "proc-a";
-    assert.ok(claimUnifiedJobLease({ caseId: CASE, ownerId: ownerA, leaseMs: 60_000 }));
+    assert.ok(await claimUnifiedJobLease({ caseId: CASE, ownerId: ownerA, leaseMs: 60_000 }));
     const blocked = await retryUnifiedEnrichmentSuggestionsTask({
       caseId: CASE,
       jobId: JOB_B,
@@ -452,7 +452,7 @@ describe("A–L targeted live-auth + reuse", () => {
     assert.ok(blocked instanceof ConflictError);
     assert.match(blocked.message, /ACTIVE_LEASE/);
     assert.equal(submissions, 0);
-    releaseUnifiedJobLease(CASE, ownerA);
+    await releaseUnifiedJobLease(CASE, ownerA);
 
     const ok = await retryUnifiedEnrichmentSuggestionsTask({
       caseId: CASE,
@@ -467,9 +467,9 @@ describe("A–L targeted live-auth + reuse", () => {
     assert.equal(submissions, 1);
   });
 
-  it("Full Audit still guarded while Suggestions gap; global live-auth not weakened", () => {
+  it("Full Audit still guarded while Suggestions gap; global live-auth not weakened", async () => {
     seedJobB();
-    const gap = withSuggestionsGapStatus(loadUnifiedCollectionJob(CASE), [
+    const gap = withSuggestionsGapStatus(await loadUnifiedCollectionJob(CASE), [
       {
         state: "SUBMIT_UNKNOWN",
         toolName: "suggest",

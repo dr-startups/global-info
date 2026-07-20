@@ -54,3 +54,10 @@ Same pattern as `orion-golden/report/generate` (`LEGACY_REPORT_PATH_RETIRED`):
 artifacts for historical `ReportVersion` rows (no template generation).
 
 Do **not** break: `unified-collection`, canonical prepare, `orion-golden` render (`/orion/render-golden`).
+
+---
+
+## Follow-on: unified collection job store (§9.4)
+
+See [`docs/unified-collection-job-store.md`](./unified-collection-job-store.md).
+Flag `UNIFIED_COLLECTION_JOB_STORE=file|db` (default **`file`** for CI / offline smokes).

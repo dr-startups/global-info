@@ -41,18 +41,18 @@ describe("REMEDIATION §8.3 unified diagnostics bundle", () => {
     try {
       process.chdir(root);
       const caseId = `case-diag-${Date.now()}`;
-      const { job } = findOrCreateUnifiedCollectionJob({
+      const { job } = await findOrCreateUnifiedCollectionJob({
         caseId,
         requestedBy: "smoke",
       });
       const jobId = job.unifiedJobId;
 
-      writeUnifiedArtifact(caseId, jobId, "report-quality-summary.json", {
+      await writeUnifiedArtifact(caseId, jobId, "report-quality-summary.json", {
         version: "report-quality-summary-v1",
         apiKey: "SHOULD_NOT_LEAK",
         counts: { compositeObservations: 3 },
       });
-      writeUnifiedArtifact(caseId, jobId, "composite-serp-observations.json", {
+      await writeUnifiedArtifact(caseId, jobId, "composite-serp-observations.json", {
         observations: [{ key: "k1", title: "Hello" }],
       });
       // Binaries must be skipped.
@@ -90,7 +90,7 @@ describe("REMEDIATION §8.3 unified diagnostics bundle", () => {
       ).join("\n");
       assert.ok(!/sk-live|OPENAI_API_KEY=sk-|apiKey":\s*"SHOULD/i.test(allText));
 
-      deleteUnifiedCollectionJobForTests(caseId);
+      await deleteUnifiedCollectionJobForTests(caseId);
     } finally {
       process.chdir(prevCwd);
       try {

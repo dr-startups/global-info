@@ -30,8 +30,8 @@ before(() => {
   process.env.NETWORK_CALLS = "0";
 });
 
-after(() => {
-  deleteUnifiedCollectionJobForTests(CASE_ID);
+after(async () => {
+  await deleteUnifiedCollectionJobForTests(CASE_ID);
   try {
     rmSync(unifiedJobDir(CASE_ID), { recursive: true, force: true });
   } catch {
@@ -40,20 +40,20 @@ after(() => {
 });
 
 function seedAcceptedJob(): { jobId: string; pdfPath: string } {
-  deleteUnifiedCollectionJobForTests(CASE_ID);
+  await deleteUnifiedCollectionJobForTests(CASE_ID);
   try {
     rmSync(unifiedJobDir(CASE_ID), { recursive: true, force: true });
   } catch {
     /* ignore */
   }
-  const { job } = findOrCreateUnifiedCollectionJob({ caseId: CASE_ID, requestedBy: "tester" });
+  const { job } = await findOrCreateUnifiedCollectionJob({ caseId: CASE_ID, requestedBy: "tester" });
   const renderDir = join(unifiedArtifactsDir(CASE_ID, job.unifiedJobId), "render");
   mkdirSync(renderDir, { recursive: true });
   const pdfPath = join(renderDir, "rendered-client.pdf");
   const pptxPath = join(renderDir, "rendered-client.pptx");
   writeFileSync(pdfPath, "%PDF-1.4 fake\n", "utf8");
   writeFileSync(pptxPath, "PK fake pptx\n", "utf8");
-  patchUnifiedCollectionJob(CASE_ID, {
+  await patchUnifiedCollectionJob(CASE_ID, {
     stage: "REPORT_READY",
     status: "COMPLETED",
     reportLinks: { pdf: pdfPath, pptx: pptxPath },
@@ -72,35 +72,35 @@ function expectError(fn: () => unknown, code: string): void {
 }
 
 describe("C — canonical artifact download resolver", () => {
-  it("happy path: resolves the accepted PDF within job lineage", () => {
+  it("happy path: resolves the accepted PDF within job lineage", async () => {
     const { jobId, pdfPath } = seedAcceptedJob();
-    const meta = resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId, artifact: "pdf" });
+    const meta = await resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId, artifact: "pdf" });
     assert.equal(meta.path, pdfPath);
     assert.equal(meta.mimeType, "application/pdf");
     assert.equal(meta.jobId, jobId);
   });
 
-  it("foreign jobId is rejected", () => {
+  it("foreign jobId is rejected", async () => {
     seedAcceptedJob();
     expectError(
-      () => resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId: "unified-does-not-exist", artifact: "pdf" }),
+      () => await resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId: "unified-does-not-exist", artifact: "pdf" }),
       "FOREIGN_JOB_LINEAGE"
     );
   });
 
-  it("invalid artifact kind is rejected", () => {
+  it("invalid artifact kind is rejected", async () => {
     const { jobId } = seedAcceptedJob();
     expectError(
-      () => resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId, artifact: "docx" }),
+      () => await resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId, artifact: "docx" }),
       "ARTIFACT_KIND_INVALID"
     );
   });
 
-  it("contactSheet resolves from well-known render path when present", () => {
+  it("contactSheet resolves from well-known render path when present", async () => {
     const { jobId } = seedAcceptedJob();
     const contactPath = join(unifiedArtifactsDir(CASE_ID, jobId), "render", "contact-sheet.png");
     writeFileSync(contactPath, "PNG fake\n", "utf8");
-    const meta = resolveCanonicalArtifactForDownload({
+    const meta = await resolveCanonicalArtifactForDownload({
       caseId: CASE_ID,
       jobId,
       artifact: "contactSheet",
@@ -109,42 +109,42 @@ describe("C — canonical artifact download resolver", () => {
     assert.equal(meta.path, contactPath);
   });
 
-  it("unaccepted job (mid-flow) is rejected", () => {
+  it("unaccepted job (mid-flow) is rejected", async () => {
     const { jobId } = seedAcceptedJob();
-    patchUnifiedCollectionJob(CASE_ID, { stage: "COMPOSITE_MERGE", status: "RUNNING" });
+    await patchUnifiedCollectionJob(CASE_ID, { stage: "COMPOSITE_MERGE", status: "RUNNING" });
     expectError(
-      () => resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId, artifact: "pdf" }),
+      () => await resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId, artifact: "pdf" }),
       "REPORT_NOT_ACCEPTED"
     );
   });
 
-  it("partial job is rejected", () => {
+  it("partial job is rejected", async () => {
     const { jobId } = seedAcceptedJob();
-    patchUnifiedCollectionJob(CASE_ID, { stage: "COMPLETED_PARTIAL", status: "COMPLETED" });
+    await patchUnifiedCollectionJob(CASE_ID, { stage: "COMPLETED_PARTIAL", status: "COMPLETED" });
     expectError(
-      () => resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId, artifact: "pdf" }),
+      () => await resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId, artifact: "pdf" }),
       "REPORT_PARTIAL_NOT_ACCEPTED"
     );
   });
 
-  it("out-of-lineage path (traversal) is rejected", () => {
+  it("out-of-lineage path (traversal) is rejected", async () => {
     const { jobId } = seedAcceptedJob();
-    patchUnifiedCollectionJob(CASE_ID, {
+    await patchUnifiedCollectionJob(CASE_ID, {
       reportLinks: { pdf: join(process.cwd(), "package.json") },
     });
     expectError(
-      () => resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId, artifact: "pdf" }),
+      () => await resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId, artifact: "pdf" }),
       "ARTIFACT_OUT_OF_LINEAGE"
     );
   });
 
-  it("missing-on-disk artifact is rejected", () => {
+  it("missing-on-disk artifact is rejected", async () => {
     const { jobId } = seedAcceptedJob();
-    patchUnifiedCollectionJob(CASE_ID, {
+    await patchUnifiedCollectionJob(CASE_ID, {
       reportLinks: { pdf: join(unifiedArtifactsDir(CASE_ID, jobId), "render", "does-not-exist.pdf") },
     });
     expectError(
-      () => resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId, artifact: "pdf" }),
+      () => await resolveCanonicalArtifactForDownload({ caseId: CASE_ID, jobId, artifact: "pdf" }),
       "ARTIFACT_MISSING_ON_DISK"
     );
   });

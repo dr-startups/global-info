@@ -685,7 +685,7 @@ export async function persistRegeneratedClientContentAsync(caseId: string): Prom
 }> {
   // Review decisions change the client report → any accepted canonical report is
   // now stale and must be rebuilt via the unified CTA (no legacy render here).
-  markUnifiedReportArtifactsStale(caseId, "admin-review-decision");
+  await markUnifiedReportArtifactsStale(caseId, "admin-review-decision");
 
   let inventoryReportRunId = "";
   try {

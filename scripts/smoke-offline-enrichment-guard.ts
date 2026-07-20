@@ -105,10 +105,10 @@ describe("REMEDIATION §8.2 offline enrichment guard", () => {
         requestedBy: "smoke",
         deps: { autoSchedule: false },
       });
-      const job = loadUnifiedCollectionJob(caseId);
+      const job = await loadUnifiedCollectionJob(caseId);
       assert.ok(job);
       assert.ok((job!.warnings ?? []).includes(OFFLINE_ENRICHMENT_WARNING));
-      deleteUnifiedCollectionJobForTests(caseId);
+      await deleteUnifiedCollectionJobForTests(caseId);
     } finally {
       process.chdir(prevCwd);
       if (prevNode === undefined) delete process.env.NODE_ENV;

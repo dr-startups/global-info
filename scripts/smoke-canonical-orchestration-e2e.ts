@@ -35,7 +35,7 @@ import type { ClassifierSubjectProfile } from "../src/modules/digital-profile/or
 import type { DeckRenderAdapter } from "../src/modules/digital-profile/services/render-deck-artifacts";
 import { emptyCoverage, FIRST36_PLANNED_SUPPORTED_SURFACES } from "../src/modules/digital-profile/services/unified-collection-types";
 
-before(() => {
+before(async () => {
   process.env.NETWORK_CALLS = "0";
 });
 
@@ -143,13 +143,13 @@ async function drain(caseId: string, deps: Parameters<typeof runUnifiedCollectio
       return job;
     }
   }
-  return loadUnifiedCollectionJob(caseId);
+  return await loadUnifiedCollectionJob(caseId);
 }
 
 describe("B-1 — unified orchestration via canonical prepare", () => {
   it("reaches REPORT_READY with job-scoped canonical artifacts + one render", async () => {
     const caseId = "canon-orch-ready";
-    deleteUnifiedCollectionJobForTests(caseId);
+    await deleteUnifiedCollectionJobForTests(caseId);
     renderCount = 0;
     const deps = baseDeps();
     await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps });
@@ -166,7 +166,7 @@ describe("B-1 — unified orchestration via canonical prepare", () => {
 
   it("idempotent re-tick on a terminal REPORT_READY job is a no-op (no second render)", async () => {
     const caseId = "canon-orch-idem";
-    deleteUnifiedCollectionJobForTests(caseId);
+    await deleteUnifiedCollectionJobForTests(caseId);
     renderCount = 0;
     const deps = baseDeps();
     await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps });
@@ -177,7 +177,7 @@ describe("B-1 — unified orchestration via canonical prepare", () => {
     // Re-tick the completed job: no stage change, no re-render.
     await runUnifiedCollectionTick(caseId, deps);
     await runUnifiedCollectionTick(caseId, deps);
-    const after = loadUnifiedCollectionJob(caseId);
+    const after = await loadUnifiedCollectionJob(caseId);
     assert.equal(after!.stage, "REPORT_READY", "terminal job stays REPORT_READY");
     assert.equal(after!.unifiedJobId, uid, "re-tick does not create a new job");
     assert.equal(renderCount, 1, "no second render on re-tick");
@@ -185,13 +185,13 @@ describe("B-1 — unified orchestration via canonical prepare", () => {
 
   it("restart resume: a mid-flow job continues to REPORT_READY on the next tick", async () => {
     const caseId = "canon-orch-restart";
-    deleteUnifiedCollectionJobForTests(caseId);
+    await deleteUnifiedCollectionJobForTests(caseId);
     renderCount = 0;
     const deps = baseDeps();
     await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps });
     // One tick = advance one stage (BASE_COLLECTION -> ARSENKIN_ENRICHMENT).
     await runUnifiedCollectionTick(caseId, deps);
-    const mid = loadUnifiedCollectionJob(caseId);
+    const mid = await loadUnifiedCollectionJob(caseId);
     assert.ok(mid && mid.stage !== "REPORT_READY", `mid stage=${mid?.stage}`);
     // Simulate restart: brand-new drain loop resumes the persisted job.
     const job = await drain(caseId, deps);
@@ -201,7 +201,7 @@ describe("B-1 — unified orchestration via canonical prepare", () => {
 
   it("partial arsenkin -> COMPLETED_PARTIAL, base preserved, still one render", async () => {
     const caseId = "canon-orch-partial";
-    deleteUnifiedCollectionJobForTests(caseId);
+    await deleteUnifiedCollectionJobForTests(caseId);
     renderCount = 0;
     const deps = baseDeps({
       runArsenkinEnrichment: async () => ({
@@ -222,7 +222,7 @@ describe("B-1 — unified orchestration via canonical prepare", () => {
 describe("B-1 — orchestration fail-closed (never legacy)", () => {
   it("ORION_CANONICAL_PREPARE=0 -> FAILED_TERMINAL CANONICAL_PREPARE_DISABLED", async () => {
     const caseId = "canon-orch-disabled";
-    deleteUnifiedCollectionJobForTests(caseId);
+    await deleteUnifiedCollectionJobForTests(caseId);
     const prev = process.env.ORION_CANONICAL_PREPARE;
     process.env.ORION_CANONICAL_PREPARE = "0";
     try {
@@ -239,7 +239,7 @@ describe("B-1 — orchestration fail-closed (never legacy)", () => {
 
   it("missing subject profile -> FAILED_TERMINAL SUBJECT_PROFILE_MISSING", async () => {
     const caseId = "canon-orch-noprofile";
-    deleteUnifiedCollectionJobForTests(caseId);
+    await deleteUnifiedCollectionJobForTests(caseId);
     const deps = baseDeps({ subjectProfile: null });
     await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps });
     const job = await drain(caseId, deps);

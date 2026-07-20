@@ -303,7 +303,7 @@ describe("automatic subject profile bootstrap", () => {
   it("unified job without any case profile gets a bootstrapped job-scoped profile", async () => {
     const caseId = "bootstrap-orchestrator-case";
     freshCaseRoot(caseId);
-    deleteUnifiedCollectionJobForTests(caseId);
+    await deleteUnifiedCollectionJobForTests(caseId);
 
     const fullAudit: FullAuditResultDTO = {
       outcome: "SUCCESS",
@@ -360,7 +360,7 @@ describe("automatic subject profile bootstrap", () => {
       if (!job) break;
       if (["REPORT_READY", "COMPLETED_PARTIAL", "FAILED_TERMINAL", "CANCELLED"].includes(job.stage)) break;
     }
-    const job = loadUnifiedCollectionJob(caseId);
+    const job = await loadUnifiedCollectionJob(caseId);
     assert.ok(job);
     assert.ok(
       job!.stage === "REPORT_READY" || job!.stage === "COMPLETED_PARTIAL",
@@ -368,7 +368,7 @@ describe("automatic subject profile bootstrap", () => {
     );
 
     // The job dir received a bootstrapped classifier profile...
-    const jobProfile = readUnifiedArtifact<ClassifierSubjectProfile>(
+    const jobProfile = await readUnifiedArtifact<ClassifierSubjectProfile>(
       caseId,
       job!.unifiedJobId,
       "subject-identity-profile.json"
