@@ -2,24 +2,38 @@
 
 from __future__ import annotations
 
+import io
+import re
 from typing import Any
 
 from pptx.dml.color import RGBColor
+from pptx.util import Emu, Pt
+
+try:
+    from PIL import Image
+except ImportError:  # pragma: no cover
+    Image = None  # type: ignore
 
 from .common import (
     BODY_COLOR,
+    CARD_BG,
+    CARD_BORDER,
+    CONTENT_BOTTOM,
     CONTENT_W,
+    FONT,
     FS_BODY,
+    FS_CAPTION,
     FS_SECTION,
     MARGIN_X,
     MUTED_COLOR,
+    NAVY,
     WHITE,
     _Ctx,
-    _asset_map,
+    _clip_words,
     _embed_image,
-    _embed_image_contain,
-    _first_visual_asset,
+    _resolve_image_bytes,
     _safe,
+    _trim_dangling_tail,
 )
 from .executive import (
     _render_executive_dashboard,
@@ -28,8 +42,9 @@ from .executive import (
 )
 from .visual import (
     _add_search_table,
+    _render_kpi_cards,
+    _render_status_badge,
     _render_visual_with_sidebar,
-    _sidebar_analysis,
 )
 
 def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> None:

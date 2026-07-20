@@ -6,13 +6,18 @@ import re
 from typing import Any
 
 from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
+from pptx.util import Emu, Pt
 
 from .common import (
     ACCENT,
+    ACCENT_SOFT,
     BODY_COLOR,
     CARD_BG,
     CARD_BORDER,
+    CONTENT_BOTTOM,
     CONTENT_W,
+    FONT,
     FS_BODY,
     FS_SECTION,
     GOOD_BG,
@@ -24,7 +29,11 @@ from .common import (
     WARN_BG,
     WHITE,
     _Ctx,
+    _clip_words,
+    _fit_text_to_height,
     _safe,
+    _trim_dangling_tail,
+    measure_text_height,
 )
 from .visual import _render_kpi_cards, _render_status_badge, _tone_fill, _tone_value_color
 

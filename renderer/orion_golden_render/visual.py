@@ -2,25 +2,36 @@
 
 from __future__ import annotations
 
+import io
 import re
 from typing import Any
 
 from pptx.dml.color import RGBColor
+from pptx.enum.text import MSO_ANCHOR
 from pptx.util import Emu, Pt
+
+try:
+    from PIL import Image
+except ImportError:  # pragma: no cover
+    Image = None  # type: ignore
 
 from .common import (
     ACCENT,
+    ACCENT_SOFT,
     BODY_COLOR,
     CARD_BG,
     CARD_BORDER,
+    CONTENT_BOTTOM,
     CONTENT_W,
     EMU_PER_PT,
+    FONT,
     FORBIDDEN,
     FS_BODY,
     FS_CAPTION,
     GOOD_BG,
     MARGIN_X,
     MUTED_COLOR,
+    NAVY,
     RISK_BG,
     SIDEBAR_SAFE_FALLBACK,
     TONE_GOOD,
@@ -34,6 +45,7 @@ from .common import (
     _embed_image_contain,
     _first_visual_asset,
     _fit_text_to_height,
+    _resolve_image_bytes,
     _safe,
     measure_text_height,
     record_text_layout,
