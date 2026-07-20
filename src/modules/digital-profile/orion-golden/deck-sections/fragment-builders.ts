@@ -694,6 +694,54 @@ export function ensureExecutiveFreshnessChangeInNarrative(
 }
 
 /**
+ * Post-pass after GPT/cache: re-assert §7.2 on EXECUTIVE_SUMMARY slides.
+ * Stage-2 / SKIPPED_CACHED can replace narrative with one long paragraph and
+ * drop the dedicated short card (PDF 29).
+ */
+export function applyExecutiveFreshnessChangeToPacks<
+  T extends {
+    fragmentKey: string;
+    slides: Array<{
+      isContinuation?: boolean;
+      content: {
+        narrative?: string;
+        bullets?: string[];
+        sourceNote?: string;
+      };
+    }>;
+  },
+>(packs: T[], extras?: FragmentExtras): T[] {
+  const line = executiveFreshnessChangeVisibleLine(extras);
+  if (!line) return packs;
+  return packs.map((pack) => {
+    if (pack.fragmentKey !== "EXECUTIVE_SUMMARY") return pack;
+    const slides = pack.slides.map((slide) => {
+      if (slide.isContinuation) {
+        const bullets = [...(slide.content.bullets ?? [])];
+        if (!bullets.some((b) => EXEC_FRESHNESS_CHANGE_RE.test(b))) {
+          bullets.unshift(clampClientText(line, 380));
+        }
+        return {
+          ...slide,
+          content: { ...slide.content, bullets },
+        };
+      }
+      return {
+        ...slide,
+        content: {
+          ...slide.content,
+          narrative: ensureExecutiveFreshnessChangeInNarrative(
+            String(slide.content.narrative ?? ""),
+            extras
+          ),
+        },
+      };
+    });
+    return { ...pack, slides };
+  });
+}
+
+/**
  * ORION-style client copy for surfaces with no collected material: what the
  * surface is, why it matters for the subject's reputation, and what to do.
  * Internal reason keys never leak into client text.

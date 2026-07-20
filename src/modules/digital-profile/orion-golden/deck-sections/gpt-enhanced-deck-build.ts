@@ -23,6 +23,7 @@ import {
   enhanceSectionPacksWithGptCopy,
   type GptSlideCopyReport,
 } from "./llm-slide-copy";
+import { applyExecutiveFreshnessChangeToPacks } from "./fragment-builders";
 import type { GptCaseAnalysis, GptJsonCaller } from "../gpt/gpt-case-analysis";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 
@@ -128,6 +129,9 @@ export async function runDeckBuildWithGptCopy(input: {
     );
   }
 
+  // After GPT/cache — §7.2 must stay a short dedicated narrative card on p03.
+  packs = applyExecutiveFreshnessChangeToPacks(packs, ctx.extras);
+
   const result = runDeckBuild({
     ctx: input.ctx,
     bundleForValidation: input.bundleForValidation,
@@ -197,6 +201,11 @@ export async function runDeckGptCopyRetry(input: {
     fallbackFragmentKeys: loadFallbackKeysFromReport(input.outputRoot),
   });
 
+  const packsWithFreshness = applyExecutiveFreshnessChangeToPacks(
+    enhanced.packs,
+    ctx.extras
+  );
+
   mkdirSync(input.outputRoot, { recursive: true });
   writeFileSync(
     join(input.outputRoot, "gpt-report-copy.json"),
@@ -211,7 +220,7 @@ export async function runDeckGptCopyRetry(input: {
     outputRoot: input.outputRoot,
     baseObservationCountBefore: input.baseObservationCountBefore,
     baseObservationCountAfter: input.baseObservationCountAfter,
-    prebuiltPacks: enhanced.packs,
+    prebuiltPacks: packsWithFreshness,
     prebuiltBuildLog: buildLog,
   });
   result.artifacts["gpt-report-copy.json"] = join(

@@ -25,6 +25,7 @@ import {
   reportDiffClientLine,
 } from "../src/modules/digital-profile/services/report-material-freshness";
 import {
+  applyExecutiveFreshnessChangeToPacks,
   buildExecutiveSummaryFragment,
   buildRegionalSummaryFragment,
   composeExecutivePageStructure,
@@ -358,3 +359,54 @@ describe("REMEDIATION §7.2 material freshness and report-diff", () => {
 function EXEC_MARKER_IN_LEAD(text: string): boolean {
   return /данные собраны|Новых материалов с прошлого отчёта/i.test(text);
 }
+
+describe("REMEDIATION §7.2 post-GPT executive freshness pass", () => {
+  it("applyExecutiveFreshnessChangeToPacks restores short §7.2 card after GPT wipe", () => {
+    const extras = {
+      materialFreshness: {
+        earliestAt: "2025-07-01T00:00:00.000Z",
+        latestAt: "2025-07-18T00:00:00.000Z",
+      },
+      reportDiff: {
+        addedCount: 610,
+        removedCount: 46,
+        previousJobId: "unified-prev",
+      },
+    };
+    const wipedNarrative =
+      "Цифровой профиль Олега Владимировича Дерипаски несёт критический репутационный риск: негативные и комплаенс-чувствительные темы представлены не единично, а устойчивыми блоками публикаций о проверяемом лице. Наиболее значимые зоны — 21 судебно-криминальная публикация с негативным содержанием, 50 материалов по PEP.";
+    const packs = applyExecutiveFreshnessChangeToPacks(
+      [
+        {
+          fragmentKey: "EXECUTIVE_SUMMARY",
+          slides: [
+            {
+              content: { narrative: wipedNarrative, bullets: ["Риск A"] },
+            },
+            {
+              isContinuation: true,
+              content: { bullets: ["Факт без свежести"] },
+            },
+          ],
+        },
+        {
+          fragmentKey: "RU_SUMMARY",
+          slides: [{ content: { narrative: "Регион без изменений." } }],
+        },
+      ],
+      extras
+    );
+    const exec = packs[0]!;
+    const paras = String(exec.slides[0]!.content.narrative ?? "")
+      .split("\n")
+      .filter(Boolean);
+    assert.ok(paras.length >= 2);
+    assert.match(paras[1]!, /Данные собраны 01\.07\.2025/i);
+    assert.match(paras[1]!, /Новых материалов с прошлого отчёта: 610/);
+    assert.ok(paras[1]!.length < 320);
+    assert.ok(
+      (exec.slides[1]!.content.bullets ?? [])[0]?.match(/Новых материалов|данные собраны/i)
+    );
+    assert.equal(packs[1]!.slides[0]!.content.narrative, "Регион без изменений.");
+  });
+});
