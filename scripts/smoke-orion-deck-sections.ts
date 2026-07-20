@@ -816,6 +816,8 @@ describe("REMEDIATION §7.1 page row composition sidebar", () => {
       if (rows === 0) continue;
       assert.match(String(s.content.whatWasFound), /Показано \d+/u);
       assert.ok(!String(s.content.whatWasFound).includes("не обнаружено"));
+      // Renderer reads narrative above the table — must carry the same copy.
+      assert.equal(s.content.narrative, s.content.whatWasFound);
       // Continuations must keep a filled sidebar (§7.1).
       if (s.isContinuation) {
         assert.ok(String(s.content.whatWasFound ?? "").length > 20);

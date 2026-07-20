@@ -1441,6 +1441,10 @@ export function buildSerpFragment(
     const pageRefs = refChunks[i] ?? [];
     const pageRows = rowChunks[i] ?? [];
     const view = buildPageEvidenceView(scoped, pageRefs);
+    // Renderer `orion_golden_search_table` paints only `narrative` above the
+    // table (not whatWasFound/bullets when rows exist) — put the §7.1 sidebar
+    // conclusion there so the page composition is visible in PDF/PPTX.
+    const pageBlocks = pageFindingBlocks(scoped, view);
     const slide = makeSlotSlide({
       slot,
       sectionId,
@@ -1450,7 +1454,8 @@ export function buildSerpFragment(
           : `${slot.title} (продолжение ${i + 1}/${rowChunks.length})`,
       content: {
         table: { headers: ["№", "Домен", "Заголовок", "Оценка"], rows: pageRows },
-        ...pageFindingBlocks(scoped, view),
+        ...pageBlocks,
+        narrative: pageBlocks.whatWasFound,
       },
       evidenceRefs: pageRefs,
       findingIds: view.findings.map((f) => f.findingId),
