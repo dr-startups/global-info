@@ -19,7 +19,14 @@ import type {
 } from "./contracts";
 import { SLIDE_CONTENT_SCHEMA_VERSION } from "./contracts";
 import { DECK_TEMPLATE_REGISTRY, RED_MARKER_LABEL, type DeckTemplateId } from "./template-registry";
-import { normalizeEvidenceRef, regionMatches, type ScopedFragmentInput } from "./scoped-input";
+import {
+  normalizeEvidenceRef,
+  regionMatches,
+  resolveEmptySurfaceCollection,
+  type EmptySurfaceCollectionStatus,
+  type ScopedFragmentInput,
+  type SurfaceCollectionHint,
+} from "./scoped-input";
 import {
   slotsForFragment,
   type CanonicalSlotDef,
@@ -89,6 +96,8 @@ export type FragmentExtras = {
   gptCaseAnalysis?: GptCaseAnalysisExtras;
   /** Themeless subject materials — regional summary only, not risk matrix. */
   uncategorizedMaterials?: UncategorizedMaterialsExtras;
+  /** Coverage/provider hints for empty-state copy (§7.4). */
+  surfaceCollectionHints?: SurfaceCollectionHint[];
 };
 
 /** Loose theme match: token overlap between a finding theme and a GPT risk theme. */
@@ -603,73 +612,139 @@ function sourceLine(scoped: ScopedFragmentInput): string {
  * surface is, why it matters for the subject's reputation, and what to do.
  * Internal reason keys never leak into client text.
  */
-const COVERAGE_EMPTY_COPY: Record<string, { what: string; why: string; check: string }> = {
+const COVERAGE_EMPTY_COPY: Record<
+  string,
+  { surface: string; measuredWhat: string; why: string; measuredCheck: string }
+> = {
   "no-suggestions": {
-    what: "Поисковые подсказки (автодополнение) по запросам о субъекте в текущем сборе не зафиксированы.",
+    surface: "suggestions",
+    measuredWhat:
+      "Поисковые подсказки (автодополнение) по запросам о субъекте проверены: материалов нет — это результат проверки.",
     why: "Подсказки формируются поисковыми системами на основе массовых запросов пользователей; негативные формулировки в подсказках видны ещё до просмотра результатов и напрямую влияют на первое впечатление.",
-    check:
+    measuredCheck:
       "Рекомендуем повторить проверку подсказок при следующем обновлении: эта поверхность меняется быстрее остальных.",
   },
   "no-images": {
-    what: "Изображения по запросам о субъекте в текущем сборе не зафиксированы.",
+    surface: "images",
+    measuredWhat:
+      "Блок изображений по запросам о субъекте проверен: материалов нет — это результат проверки.",
     why: "Блок «Картинки» — одна из первых точек контакта: пользователь видит фотографии и связанные с ними заголовки ещё до перехода на сайты-источники.",
-    check:
+    measuredCheck:
       "Рекомендуем проверить блок изображений вручную и обеспечить присутствие качественных официальных фотографий.",
   },
   "no-identity-data": {
-    what: "Статья о субъекте в Википедии и связанные энциклопедические материалы в текущем сборе не зафиксированы.",
+    surface: "wikipedia",
+    measuredWhat:
+      "Наличие статьи о субъекте в Википедии и связанных энциклопедических материалов проверено: материалов нет — это результат проверки.",
     why: "Википедия и энциклопедические карточки — ключевой источник «официальной» биографии: их содержимое поисковые системы используют в панелях знаний и ответах ИИ.",
-    check:
+    measuredCheck:
       "Рекомендуем проверить наличие статьи вручную; при отсутствии — рассмотреть создание нейтральной биографической статьи, при наличии — контролировать корректность её содержимого.",
   },
   "no-ai-answers": {
-    what: "Ответы ИИ-поиска (AI Overview, нейро-ответы) по запросам о субъекте в текущем сборе не зафиксированы.",
+    surface: "ai_answers",
+    measuredWhat:
+      "Ответы ИИ-поиска (AI Overview, нейро-ответы) по запросам о субъекте проверены: материалов нет — это результат проверки.",
     why: "Ответы ИИ всё чаще заменяют пользователю классическую выдачу: он получает готовый вывод о человеке, не открывая источники, поэтому их содержание критично для репутации.",
-    check:
+    measuredCheck:
       "Рекомендуем отслеживать появление ИИ-ответов при следующих обновлениях: они формируются на основе тех же источников, что и обычная выдача.",
   },
   "no-related": {
-    what: "Связанные запросы и вопросы «Люди также спрашивают» по субъекту в текущем сборе не зафиксированы.",
+    surface: "paa_related",
+    measuredWhat:
+      "Связанные запросы и вопросы «Люди также спрашивают» по субъекту проверены: материалов нет — это результат проверки.",
     why: "Связанные запросы подсказывают пользователю, что искать дальше; негативные формулировки в этом блоке расширяют охват нежелательного контента.",
-    check: "Рекомендуем повторить сбор связанных запросов при следующем обновлении.",
+    measuredCheck: "Рекомендуем повторить сбор связанных запросов при следующем обновлении.",
   },
   "no-organic-data": {
-    what: "Результаты органической поисковой выдачи по данному контуру в текущем сборе не зафиксированы.",
+    surface: "organic",
+    measuredWhat:
+      "Органическая поисковая выдача по данному контуру проверена: материалов нет — это результат проверки.",
     why: "Органическая выдача — основная поверхность: первые страницы результатов формируют репутационную картину для большинства пользователей.",
-    check: "Рекомендуем проверить региональные настройки сбора и повторить проверку.",
+    measuredCheck: "Рекомендуем проверить региональные настройки сбора и повторить проверку.",
   },
   "no-regional-findings": {
-    what: "По данному региональному контуру материалы в текущем сборе не зафиксированы.",
-    why: "Региональный контур показывает, как субъект представлен в локальной выдаче; отсутствие материалов — это статус покрытия, а не вывод об отсутствии рисков.",
-    check: "Рекомендуем повторить сбор по региону при следующем обновлении.",
+    surface: "organic",
+    measuredWhat:
+      "По данному региональному контуру проверка выполнена: материалы не зафиксированы — это результат проверки.",
+    why: "Региональный контур показывает, как субъект представлен в локальной выдаче; отсутствие материалов — это результат проверки, а не вывод об отсутствии рисков.",
+    measuredCheck: "Рекомендуем повторить сбор по региону при следующем обновлении.",
   },
   // Follow-up pages of a multi-slot block with no data: short reference back
   // instead of repeating the same full-page explanation three more times.
   "no-images-continued": {
-    what: "Продолжение блока изображений: дополнительных материалов по этой поверхности в текущем сборе не зафиксировано.",
+    surface: "images",
+    measuredWhat:
+      "Продолжение блока изображений: дополнительных материалов по этой поверхности при проверке не зафиксировано.",
     why: "Статус и рекомендации по блоку изображений приведены на первой странице раздела.",
-    check: "См. рекомендации на первой странице блока изображений.",
+    measuredCheck: "См. рекомендации на первой странице блока изображений.",
   },
 };
 
-function coverageContent(reason: string): SlideBody {
+const EMPTY_REASON_SURFACE: Record<string, string> = Object.fromEntries(
+  Object.entries(COVERAGE_EMPTY_COPY).map(([reason, v]) => [reason, v.surface])
+);
+
+/** Exported for §7.4 smokes — builds client-safe empty-state copy. */
+export function coverageContent(
+  reason: string,
+  status?: EmptySurfaceCollectionStatus
+): SlideBody {
   const copy = COVERAGE_EMPTY_COPY[reason];
+  const kind = status?.kind ?? "MEASURED_EMPTY";
+  const reasonLabel = status?.reasonLabel;
+
+  if (kind === "COLLECTION_FAILED") {
+    const cause = reasonLabel ?? "ошибка при сборе данных";
+    return {
+      narrative: `Не удалось собрать данные по этой поверхности в текущем прогоне — причина: ${cause}.`,
+      bullets: [
+        copy?.why ??
+          "Без фактического сбора по поверхности нельзя сделать вывод о наличии или отсутствии материалов.",
+        "Внутренние коды ошибок в отчёт не выводятся; показана только человекочитаемая причина.",
+      ],
+      whatToCheck: "Повторить сбор после устранения причины сбоя; до этого не интерпретировать пустую страницу как «проверено, пусто».",
+    };
+  }
+
+  if (kind === "NOT_COLLECTED") {
+    const cause = reasonLabel ?? "поверхность не собиралась в этом прогоне";
+    return {
+      narrative: `Поверхность не собиралась в этом прогоне — причина: ${cause}.`,
+      bullets: [
+        copy?.why ??
+          "Отсутствие страницы с данными означает, что проверка по поверхности не выполнялась, а не что рисков нет.",
+        "Это не результат проверки «материалов нет» — сбор по поверхности не запускался или был пропущен.",
+      ],
+      whatToCheck: copy?.measuredCheck ?? "Включить сбор по поверхности и повторить проверку.",
+    };
+  }
+
+  // MEASURED_EMPTY — probed, zero materials.
   if (!copy) {
     return {
-      narrative:
-        "Материалы по данной поверхности в рамках текущего сбора не зафиксированы. Это статус покрытия, а не вывод об отсутствии рисков.",
-      bullets: ["Отсутствие материалов отражает состояние сбора на дату отчёта."],
-      whatToCheck: "Повторить сбор по данной поверхности при следующем обновлении.",
+      narrative: "Поверхность проверена: материалов нет — это результат проверки.",
+      bullets: [
+        "Отсутствие материалов отражает итог проверки на дату отчёта, а не технический пропуск сбора.",
+      ],
+      whatToCheck: "Повторить проверку при следующем обновлении при необходимости.",
     };
   }
   return {
-    narrative: copy.what,
+    narrative: copy.measuredWhat,
     bullets: [
       copy.why,
-      "Отсутствие материалов в текущем сборе — это статус покрытия на дату отчёта, а не вывод об отсутствии рисков.",
+      "Проверено, материалов нет — это результат проверки на дату отчёта, а не вывод об отсутствии рисков.",
     ],
-    whatToCheck: copy.check,
+    whatToCheck: copy.measuredCheck,
   };
+}
+
+function emptyStatusForReason(
+  scoped: ScopedFragmentInput,
+  reason: string
+): EmptySurfaceCollectionStatus {
+  const surface = EMPTY_REASON_SURFACE[reason] ?? "organic";
+  return resolveEmptySurfaceCollection(scoped, surface);
 }
 
 function claimText(c: SurfaceClaim): string {
@@ -741,11 +816,12 @@ function visualSlide(input: {
     });
   }
   if (input.noUnderlyingData) {
+    const reason = input.noDataReason ?? "нет данных по поверхности";
     return makeSlotSlide({
       slot: input.slot,
       sectionId: input.sectionId,
       templateId: "coverage-empty-state",
-      content: coverageContent(input.noDataReason ?? "нет данных по поверхности"),
+      content: coverageContent(reason, emptyStatusForReason(input.scoped, reason)),
       evidenceRefs: [],
       findingIds: [],
       metrics: { datasetCount: 0 },
@@ -1400,7 +1476,10 @@ export function buildRegionalSummaryFragment(
         slot: summarySlot,
         sectionId,
         templateId: "coverage-empty-state",
-        content: coverageContent("no-regional-findings"),
+        content: coverageContent(
+          "no-regional-findings",
+          emptyStatusForReason(scoped, "no-regional-findings")
+        ),
         evidenceRefs: [],
         findingIds: [],
         emptyStateReason: "no-regional-findings",
@@ -1577,7 +1656,10 @@ export function buildSerpFragment(
           slot,
           sectionId,
           templateId: "coverage-empty-state",
-          content: coverageContent("no-organic-data"),
+          content: coverageContent(
+            "no-organic-data",
+            emptyStatusForReason(scoped, "no-organic-data")
+          ),
           evidenceRefs: [],
           findingIds: [],
           emptyStateReason: "no-organic-data",
@@ -2056,10 +2138,10 @@ export function buildIdentityFragment(
           sectionId,
           templateId: "coverage-empty-state",
           content: {
-            ...coverageContent("no-identity-data"),
+            ...coverageContent("no-identity-data", { kind: "MEASURED_EMPTY" }),
             narrative:
-              "Фактическая проверка Wikipedia: статья о проверяемом субъекте не найдена. В составном наборе энциклопедических материалов по этому контуру также нет.",
-            whatWasFound: "Статья Wikipedia не найдена (проверка WikipediaCheck).",
+              "Фактическая проверка Wikipedia выполнена: статья о проверяемом субъекте не найдена — это результат проверки. В составном наборе энциклопедических материалов по этому контуру также нет.",
+            whatWasFound: "Статья Wikipedia не найдена (проверка выполнена).",
           },
           evidenceRefs: checkRef ? [checkRef] : [],
           findingIds: [],
@@ -2078,7 +2160,10 @@ export function buildIdentityFragment(
           slot,
           sectionId,
           templateId: "coverage-empty-state",
-          content: coverageContent("no-identity-data"),
+          content: coverageContent(
+            "no-identity-data",
+            emptyStatusForReason(scoped, "no-identity-data")
+          ),
           evidenceRefs: [],
           findingIds: [],
           emptyStateReason: "no-identity-data",

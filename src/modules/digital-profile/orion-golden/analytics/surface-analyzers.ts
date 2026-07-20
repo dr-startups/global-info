@@ -90,8 +90,10 @@ function buildUnit(acc: UnitAccumulator, lookup: ResolutionLookup): SurfaceAnaly
   const ambiguous = collected.filter((i) => decisionFor(i, lookup) === "AMBIGUOUS");
   const adverseSubject = subjectMatched.filter(isAdverse);
 
+  // Empty markers (NO_RESULTS / «не найден») mean the surface was probed —
+  // that is MEASURED-empty, not NOT_COLLECTED (§7.4).
   const sampleStatus =
-    collected.length > 0 ? "MEASURED" : emptyMarkers > 0 ? "NOT_COLLECTED" : "NOT_COLLECTED";
+    collected.length > 0 || emptyMarkers > 0 ? ("MEASURED" as const) : ("NOT_COLLECTED" as const);
 
   const claims = [...adverseSubject, ...otherSubject.slice(0, 3)].map((item, idx) => ({
     claimId: `${acc.surface}-${acc.region}-${acc.engine ?? "any"}-${idx}-${item.inventoryId}`,

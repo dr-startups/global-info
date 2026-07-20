@@ -597,7 +597,7 @@ export async function runCanonicalReportPrepare(
         caseId: deckInputs.caseId,
         reportRunId: deckInputs.reportRunId,
         sourceDatasetId: deckInputs.sourceDatasetId,
-        contentVersion: "deck-sections-v17",
+        contentVersion: "deck-sections-v18",
         subject: {
           displayName: subjectDisplayName,
           aliases: subjectProfile.aliases ?? [],
@@ -611,6 +611,7 @@ export async function runCanonicalReportPrepare(
           visualAssets: visualAssetsBySlot,
           gptCaseAnalysis: caseAnalysis ?? undefined,
           uncategorizedMaterials: deckInputs.uncategorizedMaterials ?? undefined,
+          surfaceCollectionHints: deckInputs.surfaceCollectionHints,
         },
       },
       bundleForValidation: deckInputs.mergedBundle,
@@ -883,7 +884,7 @@ export async function runCanonicalReportPrepare(
         caseId: deckInputs.caseId,
         reportRunId: deckInputs.reportRunId,
         sourceDatasetId: deckInputs.sourceDatasetId,
-        contentVersion: "deck-sections-v17",
+        contentVersion: "deck-sections-v18",
         subject: { displayName: subjectDisplayName, aliases: subjectProfile.aliases ?? [] },
         bundle: deckInputs.mergedBundle,
         surfaceUnits: deckInputs.surfaceUnits,
@@ -896,6 +897,7 @@ export async function runCanonicalReportPrepare(
           // executive summary narrative/cards and risk-matrix explanations.
           gptCaseAnalysis: gptLayer?.caseAnalysis ?? undefined,
           uncategorizedMaterials: deckInputs.uncategorizedMaterials ?? undefined,
+          surfaceCollectionHints: deckInputs.surfaceCollectionHints,
         },
       },
       bundleForValidation: deckInputs.mergedBundle,

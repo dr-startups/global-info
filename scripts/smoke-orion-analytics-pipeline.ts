@@ -1290,4 +1290,32 @@ describe("surface analyzers output typed data", () => {
     const compliance = analyses.compliance;
     assert.ok(compliance.units.length > 0, "compliance evidence must be analyzed");
   });
+
+  it("REMEDIATION §7.4: empty markers (NO_RESULTS) → MEASURED, not NOT_COLLECTED", () => {
+    const emptyItem = {
+      inventoryId: "empty-suggest-1",
+      evidenceType: "suggestion",
+      title: "Подсказки не найдены",
+      snippet: "no results",
+      sourceUrl: "",
+      region: "RU",
+      provider: "arsenkin",
+      classification: "neutral",
+      rawMetadata: { surface: "autocomplete", engine: "YANDEX" },
+    } as never;
+    const analyses = runSurfaceAnalyzers({
+      caseId: CASE_ID,
+      datasetId: "ds-empty-marker",
+      items: [emptyItem],
+      resolutionLookup: new Map(),
+      sourceHashes: ["sha256:empty"],
+    });
+    const unit = analyses.suggestions.units.find((u) => u.region === "RU");
+    assert.ok(unit, "suggestions unit must exist for empty marker");
+    const total = unit!.metrics.find((m) => m.key === "totalCount");
+    assert.equal(total?.value, 0);
+    assert.equal(total?.sampleStatus, "MEASURED");
+    const emptyMarkers = unit!.metrics.find((m) => m.key === "emptyMarkerCount");
+    assert.ok(Number(emptyMarkers?.value ?? 0) >= 1);
+  });
 });

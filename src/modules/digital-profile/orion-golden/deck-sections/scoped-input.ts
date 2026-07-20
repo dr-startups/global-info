@@ -77,6 +77,32 @@ export type ScopedEvidenceIndex = Record<
   }
 >;
 
+/**
+ * REMEDIATION §7.4 — why a surface page is empty.
+ * - MEASURED_EMPTY: collection ran, zero materials (honest «проверено, пусто»)
+ * - NOT_COLLECTED: surface was not gathered in this run
+ * - COLLECTION_FAILED: agent/provider failed (client-safe reasonLabel only)
+ */
+export type EmptySurfaceCollectionKind =
+  | "MEASURED_EMPTY"
+  | "NOT_COLLECTED"
+  | "COLLECTION_FAILED";
+
+export type SurfaceCollectionHint = {
+  surface: string;
+  region?: string;
+  /** Raw coverage status (OK / NO_RESULTS / ERROR / …) — never shown to client. */
+  status: string;
+  errorCode?: string | null;
+  provider?: string;
+};
+
+export type EmptySurfaceCollectionStatus = {
+  kind: EmptySurfaceCollectionKind;
+  /** Human-readable cause for NOT_COLLECTED / FAILED; never internal codes. */
+  reasonLabel?: string;
+};
+
 export type ScopedFragmentInput = {
   subject: SubjectProfileInput;
   findings: Finding[];
@@ -85,6 +111,8 @@ export type ScopedFragmentInput = {
   scope: FragmentScope;
   /** Evidence details restricted to refs reachable from the scoped slice. */
   evidenceIndex: ScopedEvidenceIndex;
+  /** Optional coverage/provider hints for empty-state copy (§7.4). */
+  surfaceCollectionHints?: SurfaceCollectionHint[];
 };
 
 const REGION_ALIASES: Record<string, string[]> = {
@@ -144,6 +172,112 @@ export function scopeSurfaceUnits(
   });
 }
 
+/** Map Arsenkin/coverage surface tokens onto SurfaceKind keys. */
+export function normalizeCoverageSurface(raw: string): string {
+  const s = String(raw ?? "")
+    .trim()
+    .toLowerCase();
+  if (!s) return s;
+  if (s === "paa" || s === "related" || s === "paa_related") return "paa_related";
+  if (s === "ai_answer" || s === "ai" || s === "ai_answers" || s === "knowledge") return "ai_answers";
+  if (s === "autocomplete" || s === "suggest" || s === "suggestions") return "suggestions";
+  if (s === "indexation" || s === "page_meta" || s === "url_audit") return "url_audit";
+  if (s === "wiki" || s === "wikipedia") return "wikipedia";
+  if (s === "image" || s === "images") return "images";
+  if (s === "organic" || s === "serp" || s === "search") return "organic";
+  if (s === "compliance" || s === "databases") return "compliance";
+  return s;
+}
+
+/** Client-safe failure cause — internal status/errorCode never leak. */
+export function clientCollectionFailureLabel(
+  status: string,
+  errorCode?: string | null
+): string {
+  const code = String(errorCode ?? "").toUpperCase();
+  const st = String(status ?? "").toUpperCase();
+  if (/DISABLED|SKIPPED|UNAVAILABLE|NOT_ENABLED/i.test(code) || /DISABLED|SKIPPED|UNAVAILABLE/i.test(st)) {
+    return "агент отключён в этом прогоне";
+  }
+  if (/NOT_SUPPORTED/i.test(st) || /NOT_SUPPORTED/i.test(code)) {
+    return "поверхность не поддерживается выбранным провайдером";
+  }
+  if (/FAILED_PARSE|PARSE/i.test(st) || /FAILED_PARSE|PARSE/i.test(code)) {
+    return "ответ провайдера не удалось разобрать";
+  }
+  if (/RESULT_FETCH_FAILED|FETCH/i.test(st) || /FETCH/i.test(code)) {
+    return "не удалось получить результат у провайдера";
+  }
+  if (/HTTP_?5|TIMEOUT|ERROR|FAIL/i.test(st) || /HTTP_?5|TIMEOUT|ERROR/i.test(code)) {
+    return "ошибка при сборе данных";
+  }
+  return "сбор по поверхности завершился с ошибкой";
+}
+
+/**
+ * Decide empty-state kind for a surface from unit metrics + coverage hints.
+ * Prefer MEASURED (incl. empty markers / NO_RESULTS) over NOT_COLLECTED.
+ */
+export function resolveEmptySurfaceCollection(
+  scoped: Pick<ScopedFragmentInput, "surfaceUnits" | "scope" | "surfaceCollectionHints">,
+  surface: string
+): EmptySurfaceCollectionStatus {
+  const surfaceKey = normalizeCoverageSurface(surface);
+  const units = scoped.surfaceUnits.filter((u) => u.surface === surfaceKey);
+  const regionScope = scoped.scope.regions;
+
+  const hints = (scoped.surfaceCollectionHints ?? []).filter((h) => {
+    if (normalizeCoverageSurface(h.surface) !== surfaceKey) return false;
+    if (!regionScope || !h.region) return true;
+    return regionScope.some((r) => regionMatches(r, h.region));
+  });
+
+  const failedHint = hints.find((h) => {
+    const st = String(h.status ?? "").toUpperCase();
+    return (
+      st.length > 0 &&
+      !["OK", "NO_RESULTS", "EMPTY_VALID", "SUCCESS", "MEASURED"].includes(st) &&
+      !/^N\/?A$/i.test(st)
+    );
+  });
+  if (failedHint) {
+    return {
+      kind: "COLLECTION_FAILED",
+      reasonLabel: clientCollectionFailureLabel(failedHint.status, failedHint.errorCode),
+    };
+  }
+
+  const measuredHint = hints.some((h) =>
+    /^(OK|NO_RESULTS|EMPTY_VALID|SUCCESS|MEASURED)$/i.test(String(h.status ?? ""))
+  );
+
+  let anyMeasured = measuredHint;
+  let anyNotCollected = false;
+  for (const u of units) {
+    for (const m of u.metrics) {
+      if (m.sampleStatus === "MEASURED") anyMeasured = true;
+      if (m.sampleStatus === "NOT_COLLECTED") anyNotCollected = true;
+    }
+  }
+
+  if (anyMeasured || units.some((u) => u.evidenceRefs.length > 0)) {
+    return { kind: "MEASURED_EMPTY" };
+  }
+  if (units.length === 0 && hints.length === 0) {
+    return {
+      kind: "NOT_COLLECTED",
+      reasonLabel: "поверхность не собиралась в этом прогоне",
+    };
+  }
+  if (anyNotCollected || hints.length > 0 || units.length === 0) {
+    return {
+      kind: "NOT_COLLECTED",
+      reasonLabel: "поверхность не собиралась в этом прогоне",
+    };
+  }
+  return { kind: "MEASURED_EMPTY" };
+}
+
 export function buildScopedInput(input: {
   subject: SubjectProfileInput;
   bundle: VerifiedFindingBundle;
@@ -151,6 +285,7 @@ export function buildScopedInput(input: {
   metricSnapshot: MetricSnapshot;
   scope: FragmentScope;
   evidenceIndex?: ScopedEvidenceIndex;
+  surfaceCollectionHints?: SurfaceCollectionHint[];
 }): ScopedFragmentInput {
   const findings = scopeFindings(input.bundle, input.scope);
   const surfaceUnits = scopeSurfaceUnits(input.surfaceUnits, input.scope);
@@ -208,6 +343,7 @@ export function buildScopedInput(input: {
     metricSnapshot: input.metricSnapshot,
     scope: input.scope,
     evidenceIndex,
+    surfaceCollectionHints: input.surfaceCollectionHints,
   };
 }
 
@@ -232,6 +368,7 @@ export function scopedInputHash(scoped: ScopedFragmentInput): string {
     snapshot: scoped.metricSnapshot,
     scope: scoped.scope,
     evidence: scoped.evidenceIndex,
+    surfaceCollectionHints: scoped.surfaceCollectionHints ?? [],
   });
   return `sha256:${createHash("sha256").update(payload).digest("hex")}`;
 }

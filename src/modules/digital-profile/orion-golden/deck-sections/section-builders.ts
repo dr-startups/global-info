@@ -213,7 +213,13 @@ function extrasHash(key: FragmentKey, extras: FragmentExtras): string {
     slotsForFragment(key).map((s) => [s.slotId, extras.visualAssets?.[s.slotId] ?? []])
   );
   return createHash("sha256")
-    .update(JSON.stringify({ base, slotAssets }))
+    .update(
+      JSON.stringify({
+        base,
+        slotAssets,
+        surfaceCollectionHints: extras.surfaceCollectionHints ?? [],
+      })
+    )
     .digest("hex")
     .slice(0, 16);
 }
@@ -230,6 +236,7 @@ export function buildSectionPackForFragment(
     metricSnapshot: ctx.metricSnapshot,
     scope: fragmentScope(key),
     evidenceIndex: ctx.evidenceIndex,
+    surfaceCollectionHints: ctx.extras.surfaceCollectionHints,
   });
   const inputHash = `${scopedInputHash(scoped)}:${extrasHash(key, ctx.extras)}`;
 

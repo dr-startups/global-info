@@ -14,7 +14,11 @@ import { join } from "node:path";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import type { Finding } from "../contracts/finding";
 import type { SurfaceAnalysis } from "../contracts/surface-analysis";
-import type { ScopedEvidenceIndex, MetricSnapshot } from "./scoped-input";
+import type {
+  ScopedEvidenceIndex,
+  MetricSnapshot,
+  SurfaceCollectionHint,
+} from "./scoped-input";
 import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
 
 type CompositeObservationRow = {
@@ -105,6 +109,8 @@ export type CanonicalDeckInputs = {
   baseCountAfter: number;
   /** REMEDIATION §3.2 — optional; absent on older analytics dirs. */
   uncategorizedMaterials: UncategorizedMaterialsDeckInput | null;
+  /** REMEDIATION §7.4 — coverage cells for empty-state copy (optional). */
+  surfaceCollectionHints: SurfaceCollectionHint[];
 };
 
 function readJson<T>(path: string): T {
@@ -152,10 +158,18 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
   const provenancePath = join(analyticsDir, "composite-serp-provenance.json");
   let observationRefGroups: string[][] = observations.observations.map((o) => o.evidenceRefs ?? []);
   const provenanceByKey = new Map<string, string[]>();
+  let surfaceCollectionHints: SurfaceCollectionHint[] = [];
   if (existsSync(provenancePath)) {
     try {
       const provenance = readJson<{
         entries?: Array<{ observationKey?: string; evidenceRefs?: string[] }>;
+        nonOkCoverageCells?: Array<{
+          region?: string;
+          surface?: string;
+          status?: string;
+          errorCode?: string | null;
+          provider?: string;
+        }>;
       }>(provenancePath);
       for (const e of provenance.entries ?? []) {
         if (e.observationKey) provenanceByKey.set(e.observationKey, e.evidenceRefs ?? []);
@@ -166,6 +180,15 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           return fromProv && fromProv.length > 0 ? fromProv : (o.evidenceRefs ?? []);
         });
       }
+      surfaceCollectionHints = (provenance.nonOkCoverageCells ?? [])
+        .filter((c) => c.surface && c.status)
+        .map((c) => ({
+          surface: String(c.surface),
+          region: c.region ? mapRegionBucket(c.region) : undefined,
+          status: String(c.status),
+          errorCode: c.errorCode ?? null,
+          provider: c.provider,
+        }));
     } catch {
       // non-fatal: fall back to observation evidenceRefs
     }
@@ -400,5 +423,6 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     baseCountBefore: providerDelta.baseCount,
     baseCountAfter: observations.baseCount,
     uncategorizedMaterials,
+    surfaceCollectionHints,
   };
 }

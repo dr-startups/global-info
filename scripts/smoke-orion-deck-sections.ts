@@ -26,8 +26,10 @@ import {
   buildUaeProfileSection,
   composeExecutivePageStructure,
   composePageRowComposition,
+  coverageContent,
   fragmentScope,
   pageRowCompositionBlocks,
+  resolveEmptySurfaceCollection,
   runDeckBuild,
   validateAssembly,
   validateSectionPack,
@@ -744,6 +746,81 @@ describe("sidebar evidence scope (fail closed)", () => {
     });
     assert.equal(report.passed, false);
     assert.ok(report.issues.some((i) => i.includes("outside fragment scope")));
+  });
+});
+
+describe("REMEDIATION §7.4 empty surface collection status", () => {
+  it("EMPTY_VALID / MEASURED units → «проверено, пусто»; FAILED → «не удалось собрать»", () => {
+    const measuredScoped = {
+      subject: { displayName: "Test", aliases: [] as string[] },
+      findings: [],
+      surfaceUnits: [
+        {
+          surface: "suggestions" as const,
+          region: "RU",
+          metrics: [
+            { key: "totalCount", value: 0, sampleStatus: "MEASURED" as const, denominator: 0 },
+            { key: "emptyMarkerCount", value: 1, sampleStatus: "MEASURED" as const },
+          ],
+          claims: [],
+          evidenceRefs: ["inventory:empty-suggest"],
+        },
+      ],
+      metricSnapshot: makeCtx().metricSnapshot,
+      scope: fragmentScope("RU_SUGGESTIONS"),
+      evidenceIndex: {},
+      surfaceCollectionHints: [
+        { surface: "suggestions", region: "RU", status: "NO_RESULTS" },
+      ],
+    };
+    const measured = resolveEmptySurfaceCollection(measuredScoped as never, "suggestions");
+    assert.equal(measured.kind, "MEASURED_EMPTY");
+    const measuredCopy = coverageContent("no-suggestions", measured);
+    assert.match(String(measuredCopy.narrative), /проверен/i);
+    assert.match(String(measuredCopy.narrative), /результат проверки/i);
+    assert.ok(!/NOT_COLLECTED|NO_RESULTS|EMPTY_VALID|HTTP_500/i.test(JSON.stringify(measuredCopy)));
+
+    const failedScoped = {
+      ...measuredScoped,
+      surfaceUnits: [],
+      surfaceCollectionHints: [
+        {
+          surface: "ai_answer",
+          region: "RU",
+          status: "HTTP_500",
+          errorCode: "PROVIDER_TIMEOUT",
+        },
+      ],
+    };
+    const failed = resolveEmptySurfaceCollection(failedScoped as never, "ai_answers");
+    assert.equal(failed.kind, "COLLECTION_FAILED");
+    assert.match(String(failed.reasonLabel), /ошибка|не удалось/i);
+    const failedCopy = coverageContent("no-ai-answers", failed);
+    assert.match(String(failedCopy.narrative), /Не удалось собрать/i);
+    assert.ok(!/HTTP_500|PROVIDER_TIMEOUT/i.test(JSON.stringify(failedCopy)));
+
+    const skippedScoped = {
+      ...measuredScoped,
+      surfaceUnits: [],
+      surfaceCollectionHints: [
+        { surface: "images", region: "RU", status: "SKIPPED", errorCode: "DISABLED" },
+      ],
+    };
+    const skipped = resolveEmptySurfaceCollection(skippedScoped as never, "images");
+    assert.equal(skipped.kind, "COLLECTION_FAILED");
+    const skippedCopy = coverageContent("no-images", skipped);
+    assert.match(String(skippedCopy.narrative), /агент отключён|Не удалось собрать/i);
+    assert.ok(!/\bDISABLED\b|\bSKIPPED\b/i.test(JSON.stringify(skippedCopy)));
+
+    const absentScoped = {
+      ...measuredScoped,
+      surfaceUnits: [],
+      surfaceCollectionHints: [],
+    };
+    const absent = resolveEmptySurfaceCollection(absentScoped as never, "paa_related");
+    assert.equal(absent.kind, "NOT_COLLECTED");
+    const absentCopy = coverageContent("no-related", absent);
+    assert.match(String(absentCopy.narrative), /не собиралась/i);
   });
 });
 
