@@ -8,7 +8,7 @@ import {
   buildSurfacePanelSvg,
   buildVideoCardsSvg,
   svgToPngBase64,
-} from "./media-asset-svg";
+} from "../orion-golden/assets/media-asset-svg";
 import { isSyntheticSerpNoiseHit } from "../serp-observation/filter-synthetic-serp-noise";
 import { isClientSafeEvidence } from "./client-safe-evidence";
 import {

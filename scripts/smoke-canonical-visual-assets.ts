@@ -22,7 +22,7 @@ import type { RawInventoryItem } from "../src/modules/digital-profile/orion-gold
 import {
   buildImageGridItems,
   fetchImagePreviewsWithBudget,
-} from "../src/modules/digital-profile/orion-report-spec/media-asset-svg";
+} from "../src/modules/digital-profile/orion-golden/assets/media-asset-svg";
 import { buildCanonicalVisualAssets } from "../src/modules/digital-profile/services/canonical-visual-assets";
 import {
   compositeObservationsToInventory,

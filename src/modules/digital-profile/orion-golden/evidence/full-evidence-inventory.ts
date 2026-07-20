@@ -2,7 +2,7 @@
  * R10 — Full evidence inventory (no early slicing).
  */
 
-import type { OrionRealCaseContext } from "../../orion-section-pipeline/real-case-data-adapter";
+import type { OrionRealCaseContext } from "./real-case-context";
 import type { RawInventoryItem } from "../types";
 import {
   countSearchSurfaceMediaAvailability,

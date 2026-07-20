@@ -1,5 +1,5 @@
 /**
- * REMEDIATION §8.1 — legacy report UI gated behind DIGITAL_PROFILE_LEGACY_REPORT_UI.
+ * REMEDIATION §8.1 / 9.3 — legacy report UI gated; v2/storyboard panels retired.
  *
  * Run: NETWORK_CALLS=0 npx tsx --test scripts/smoke-legacy-report-ui.ts
  */
@@ -15,7 +15,7 @@ function read(rel: string): string {
   return readFileSync(join(SRC, rel), "utf8");
 }
 
-describe("REMEDIATION §8.1 legacy report UI gate", () => {
+describe("REMEDIATION §8.1 / 9.3 legacy report UI gate", () => {
   it("config wires DIGITAL_PROFILE_LEGACY_REPORT_UI default false", () => {
     const cfg = read("modules/digital-profile/config.ts");
     assert.match(cfg, /legacyReportUiEnabled:\s*boolean/);
@@ -25,13 +25,12 @@ describe("REMEDIATION §8.1 legacy report UI gate", () => {
     );
   });
 
-  it("CaseDetailView mounts Orion/storyboard/Golden only when legacyReportUi", () => {
+  it("CaseDetailView mounts Golden manual review only when legacyReportUi; v2/storyboard panels gone", () => {
     const view = read("modules/digital-profile/client/CaseDetailView.tsx");
-    assert.match(view, /legacyReportUi\s*&&\s*isAdmin/);
     assert.match(view, /legacyReportUi\s*&&\s*can\("evidence\.viewRaw"\)/);
-    assert.match(view, /OrionV2ReportPanel/);
-    assert.match(view, /OrionClientStoryboardReportPanel/);
     assert.match(view, /ReportQualityPanel/);
+    assert.doesNotMatch(view, /OrionV2ReportPanel/);
+    assert.doesNotMatch(view, /OrionClientStoryboardReportPanel/);
   });
 
   it("default-visible surfaces gate legacy generate CTAs; one unified CTA remains", () => {
@@ -52,29 +51,24 @@ describe("REMEDIATION §8.1 legacy report UI gate", () => {
     assert.match(page, /legacyReportUi=\{digitalProfileConfig\.legacyReportUiEnabled\}/);
   });
 
-  it("orion v2 / storyboard is*Enabled require legacyReportUiEnabled", () => {
-    const v2 = read("modules/digital-profile/services/orion-v2-report-service.ts");
-    const sb = read(
-      "modules/digital-profile/services/orion-client-storyboard-report-service.ts"
-    );
-    assert.match(v2, /legacyReportUiEnabled && digitalProfileConfig\.orionV2UiEnabled/);
-    assert.match(
-      sb,
-      /legacyReportUiEnabled &&\s*digitalProfileConfig\.orionClientStoryboardUiEnabled/
-    );
+  it("legacy report routes return LEGACY_REPORT_PATH_RETIRED helper", () => {
+    const helper = read("modules/digital-profile/http/legacy-report-retired.ts");
+    assert.match(helper, /LEGACY_REPORT_PATH_RETIRED/);
+    for (const rel of [
+      "app/api/digital-profile/cases/[id]/report/orion-v2/route.ts",
+      "app/api/digital-profile/cases/[id]/report/orion-client-storyboard/route.ts",
+      "app/api/digital-profile/cases/[id]/report/generate/route.ts",
+      "app/api/digital-profile/cases/[id]/report/render/route.ts",
+    ]) {
+      const src = read(rel);
+      assert.match(src, /legacyReportPathRetired/);
+      assert.match(src, /RETIRED/);
+    }
   });
 
-  it("no default-mounted client path calls legacy endpoints without gate", () => {
-    // Acceptance: components that call these APIs are only reached when legacyReportUi.
+  it("no default-mounted client path calls legacy generate without gate", () => {
     const preview = read("modules/digital-profile/client/ReportPreviewPanel.tsx");
-    const v2 = read("modules/digital-profile/client/OrionV2ReportPanel.tsx");
-    const sb = read("modules/digital-profile/client/OrionClientStoryboardReportPanel.tsx");
     assert.match(preview, /generateReport\(/);
-    assert.match(v2, /orion-v2|generateOrionV2Report/);
-    assert.match(sb, /orion-client-storyboard|generateOrionClientStoryboardReport/);
-    // Mount gates are in CaseDetailView / ReportPreviewPanel canGenerate.
-    const view = read("modules/digital-profile/client/CaseDetailView.tsx");
-    assert.match(view, /legacyReportUi && isAdmin/);
     assert.match(preview, /legacyReportUi \?\? false|legacyReportUi = false/);
   });
 });

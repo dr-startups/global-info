@@ -21,7 +21,7 @@ import type { ScopedFragmentInput } from "../src/modules/digital-profile/orion-g
 import {
   buildSurfacePanelSvg,
   svgToPngBase64,
-} from "../src/modules/digital-profile/orion-report-spec/media-asset-svg";
+} from "../src/modules/digital-profile/orion-golden/assets/media-asset-svg";
 
 process.env.NETWORK_CALLS = "0";
 

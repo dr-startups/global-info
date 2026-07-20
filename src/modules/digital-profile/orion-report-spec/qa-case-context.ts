@@ -1,4 +1,4 @@
-import type { OrionRealCaseContext } from "../orion-section-pipeline/real-case-data-adapter";
+import type { OrionRealCaseContext } from "../orion-golden/evidence/real-case-context";
 import type { ReportJson } from "../types";
 
 /** Deterministic QA fixture — no DB required for R9.7a vertical slice smoke/QA. */

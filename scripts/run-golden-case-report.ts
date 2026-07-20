@@ -48,7 +48,7 @@ import type { EvidenceSupplementBundle } from "../src/modules/digital-profile/se
 import {
   buildSurfacePanelSvg,
   svgToPngBase64,
-} from "../src/modules/digital-profile/orion-report-spec/media-asset-svg";
+} from "../src/modules/digital-profile/orion-golden/assets/media-asset-svg";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURE_DIR = join(ROOT, "fixtures", "golden-case");

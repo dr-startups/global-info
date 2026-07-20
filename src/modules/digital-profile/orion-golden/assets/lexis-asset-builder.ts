@@ -1,7 +1,7 @@
-import { digitalProfileConfig } from "../config";
-import { loadFile } from "../storage/private-store";
-import type { ReportAssetV1 } from "../orion-report-spec/asset-builder";
-import type { OrionRealCaseContext } from "../orion-section-pipeline/real-case-data-adapter";
+import { digitalProfileConfig } from "../../config";
+import { loadFile } from "../../storage/private-store";
+import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
+import type { OrionRealCaseContext } from "../evidence/real-case-context";
 
 async function renderLexisPagesFromDocx(docxBase64: string): Promise<ReportAssetV1[]> {
   const url = `${digitalProfileConfig.rendererUrl}/lexis/process-docx`;

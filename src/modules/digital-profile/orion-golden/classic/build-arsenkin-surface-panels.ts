@@ -5,7 +5,7 @@
 
 import { listSerpObservationsForAuditRun } from "../../serp-observation";
 import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
-import { buildSurfacePanelSvg, svgToPngBase64 } from "../../orion-report-spec/media-asset-svg";
+import { buildSurfacePanelSvg, svgToPngBase64 } from "../assets/media-asset-svg";
 import { listArsenkinObservationAuditRunIds } from "./arsenkin-report-binding";
 
 function mapRegion(raw: string): "RU" | "UAE" {

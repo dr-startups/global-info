@@ -13,7 +13,7 @@
 
 import { loadFile } from "../../storage/private-store";
 import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
-import type { OrionRealCaseContext } from "../../orion-section-pipeline/real-case-data-adapter";
+import type { OrionRealCaseContext } from "../evidence/real-case-context";
 
 function asObj(v: unknown): Record<string, unknown> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return {};

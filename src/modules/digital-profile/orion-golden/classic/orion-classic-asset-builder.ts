@@ -3,7 +3,7 @@
  * Prefers captured/persisted SERP screenshots from private storage; synthetic PNG is explicit fallback.
  */
 
-import type { OrionRealCaseContext } from "../../orion-section-pipeline/real-case-data-adapter";
+import type { OrionRealCaseContext } from "../evidence/real-case-context";
 import { buildOrionSingleEngineSerpPng } from "../../orion-report-spec/orion-serp-snapshot-builder";
 import type { ReportAssetV1 } from "../../orion-report-spec/asset-builder";
 import { buildRuSearchEvidence } from "../../orion-report-spec/section-evidence-adapter";

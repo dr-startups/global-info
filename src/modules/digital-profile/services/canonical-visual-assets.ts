@@ -40,7 +40,7 @@ import {
   fetchImagePreviewsWithBudget,
   svgToPngBase64,
   type ImagePreviewFetchOptions,
-} from "../orion-report-spec/media-asset-svg";
+} from "../orion-golden/assets/media-asset-svg";
 import { mapSurfaceBucket } from "../orion-golden/classic/composite-serp-overlay-merge";
 import {
   pickRealSerpScreenshot,

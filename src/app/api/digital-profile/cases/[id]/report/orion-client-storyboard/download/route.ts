@@ -1,51 +1,17 @@
-import { NextResponse, type NextRequest } from "next/server";
+/**
+ * RETIRED: GET /api/digital-profile/cases/[id]/report/orion-client-storyboard/download
+ * REMEDIATION 9.3
+ */
+
+import type { NextRequest } from "next/server";
 import { withModule } from "@/modules/digital-profile/http/errors";
-import {
-  requireCaseAccess,
-  requireDigitalProfileUser,
-} from "@/modules/digital-profile/auth/guard";
-import { loadFile } from "@/modules/digital-profile/storage/private-store";
-import { recordAudit } from "@/modules/digital-profile/services/audit-log-service";
-import { resolveOrionClientStoryboardArtifactForDownload } from "@/modules/digital-profile/services/orion-client-storyboard-report-service";
+import { legacyReportPathRetired } from "@/modules/digital-profile/http/legacy-report-retired";
 
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
+export const GET = withModule(async (_req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
-  const user = await requireDigitalProfileUser(req);
-  await requireCaseAccess(user, id, "VIEWER");
-
-  const runId = req.nextUrl.searchParams.get("runId") ?? "";
-  const artifact = req.nextUrl.searchParams.get("artifact") ?? "";
-  const token = req.nextUrl.searchParams.get("token") ?? "";
-  const meta = resolveOrionClientStoryboardArtifactForDownload({
-    caseId: id,
-    role: user.role,
-    runId,
-    artifact,
-    token,
-  });
-
-  const buffer = await loadFile(meta.storageKey);
-  await recordAudit({
-    caseId: id,
-    action: "REPORT_DOWNLOADED",
-    actorId: user.id,
-    metadata: {
-      mode: "orion_client_storyboard_r912",
-      runId,
-      artifact,
-    },
-  });
-
-  return new NextResponse(new Uint8Array(buffer), {
-    status: 200,
-    headers: {
-      "content-type": meta.mimeType,
-      "cache-control": "private, no-store",
-      "content-disposition": `inline; filename="${meta.fileName}"`,
-    },
-  });
+  return legacyReportPathRetired(id);
 });

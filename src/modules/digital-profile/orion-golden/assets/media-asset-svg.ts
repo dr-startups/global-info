@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import sharp from "sharp";
-import { COLORS, FONT_STACK, FS, truncateToWidth } from "../serp-snapshot/layout";
+import { COLORS, FONT_STACK, FS, truncateToWidth } from "../../serp-snapshot/layout";
 
 function esc(text: string): string {
   return text

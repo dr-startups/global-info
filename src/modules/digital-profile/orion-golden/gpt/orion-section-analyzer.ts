@@ -8,7 +8,7 @@
 
 import { z } from "zod";
 
-import { OpenAiRateLimitError } from "../../orion-report-spec/openai-rate-limit";
+import { OpenAiRateLimitError } from "./openai-rate-limit";
 
 import type { SectionEvidencePack, OrionGoldenSectionAnalysis } from "../types";
 

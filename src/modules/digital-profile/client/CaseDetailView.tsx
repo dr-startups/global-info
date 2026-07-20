@@ -44,8 +44,6 @@ import { CaseHeader } from "./CaseHeader";
 import { CaseTabs } from "./CaseTabs";
 import { SubjectProfilePanel } from "./SubjectProfilePanel";
 import { ReportQualityPanel } from "./ReportQualityPanel";
-import { OrionV2ReportPanel } from "./OrionV2ReportPanel";
-import { OrionClientStoryboardReportPanel } from "./OrionClientStoryboardReportPanel";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
 import {
@@ -74,7 +72,6 @@ export function CaseDetailView({
 }) {
   const { t, tError } = useDigitalProfileI18n();
   const { user, can } = useDpAuth();
-  const isAdmin = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
   const [state, setState] = useState<LoadState>({ kind: "loading" });
   const [report, setReport] = useState<ReportVersion | null>(null);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
@@ -699,22 +696,6 @@ export function CaseDetailView({
               retryingGptCopy={retryingGptCopy}
               gptCopyRetryAllowed={Boolean(unifiedJob?.gptCopyRetryAllowed)}
             />
-          </SoftRenderBoundary>
-        </Card>
-      ) : null}
-
-      {legacyReportUi && isAdmin ? (
-        <Card>
-          <SoftRenderBoundary>
-            <OrionV2ReportPanel caseId={state.caseDetail.id} />
-          </SoftRenderBoundary>
-        </Card>
-      ) : null}
-
-      {legacyReportUi && isAdmin ? (
-        <Card>
-          <SoftRenderBoundary>
-            <OrionClientStoryboardReportPanel caseId={state.caseDetail.id} />
           </SoftRenderBoundary>
         </Card>
       ) : null}

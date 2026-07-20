@@ -4,7 +4,7 @@
 
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { OpenAiRateLimitError } from "../../orion-report-spec/openai-rate-limit";
+import { OpenAiRateLimitError } from "./openai-rate-limit";
 import { callOpenAiStrictJson } from "./openai-json-client";
 import { normalizeSectionAnalysis } from "./normalize-section-analysis";
 import {

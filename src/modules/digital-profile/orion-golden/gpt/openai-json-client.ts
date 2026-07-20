@@ -10,7 +10,7 @@
  */
 
 import { digitalProfileConfig } from "../../config";
-import { OpenAiRateLimitError, isOpenAiHttp429 } from "../../orion-report-spec/openai-rate-limit";
+import { OpenAiRateLimitError, isOpenAiHttp429 } from "./openai-rate-limit";
 import {
   OpenAiCallError,
   retryAfterMsFromResponse,
