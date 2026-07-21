@@ -10,7 +10,6 @@ import { slotsForFragment } from "../canonical-slots";
 import { pluralRu } from "../../analytics/finding-synthesizer";
 import type { FragmentBuildOutput, FragmentExtras, UncategorizedMaterialsExtras } from "./shared";
 import {
-  changeSinceLastReportLine,
   claimText,
   clampClientText,
   coverageContent,
@@ -18,11 +17,11 @@ import {
   findingBlocks,
   fitClientSentences,
   isAdverse,
+  localizedThemedClaim,
   makeSlotSlide,
   sourceLine,
   splitClientParagraphs,
   statusLine,
-  themedClaim,
   uniqueRefs,
   withContinuations,
 } from "./shared";
@@ -108,7 +107,6 @@ export function buildRegionalSummaryFragment(
     // (ORION style) instead of a coverage placeholder.
     const ambiguous = scoped.metricSnapshot.ambiguousCount;
     const likely = scoped.metricSnapshot.likelySubjectCount ?? 0;
-    const changeLineEmpty = changeSinceLastReportLine(extras);
     slides.push(
       makeSlotSlide({
         slot: summarySlot,
@@ -128,9 +126,8 @@ export function buildRegionalSummaryFragment(
                   `Часть материалов (${ambiguous} по всему набору) требует дополнительной идентификации — они не включаются в выводы, пока принадлежность не подтверждена.`,
                 ]
               : []),
-            "Отсутствие подтверждённых тем — результат идентификации на дату отчёта, а не гарантия отсутствия рисков.",
-            ...(changeLineEmpty ? [changeLineEmpty] : []),
-          ],
+          "Отсутствие подтверждённых тем — результат идентификации на дату отчёта, а не гарантия отсутствия рисков.",
+        ],
           whatToCheck:
             "Рекомендуем плановое обновление мониторинга: состав выдачи и подсказок меняется, а материалы, требующие идентификации, могут быть подтверждены при появлении дополнительных признаков.",
           sourceNote: sourceLine(scoped, extras),
@@ -146,24 +143,30 @@ export function buildRegionalSummaryFragment(
     );
   } else {
     const likelyN = scoped.metricSnapshot.likelySubjectCount ?? 0;
-    const changeLine = changeSinceLastReportLine(extras);
+    // B.2 — one formula for both counters: total confirmed themes vs the
+    // high-attention subset. Adjacent pages print the subset (M), so the
+    // summary must explain the relationship instead of a bare N.
+    const adverseN = scoped.findings.filter(isAdverse).length;
+    const themesPhrase =
+      adverseN === scoped.findings.length
+        ? `подтверждённых тем: ${scoped.findings.length}, все — повышенного внимания`
+        : `подтверждённых тем: ${scoped.findings.length}, из них повышенного внимания: ${adverseN}`;
     const bullets = [
       ...scoped.findings
         .slice(0, 8)
-        .map((f) => clampClientText(themedClaim(f), 340) + ` [${f.findingId}]`),
+        .map((f) => clampClientText(localizedThemedClaim(f, scoped), 340) + ` [${f.findingId}]`),
       ...(uncategorized ? [uncategorized.bullet] : []),
       ...(likelyN > 0
         ? [
             `Материалы, вероятно относящиеся к субъекту: ${likelyN} — не входят в подтверждённые выводы.`,
           ]
         : []),
-      ...(changeLine ? [changeLine] : []),
     ];
     const base = makeSlotSlide({
       slot: summarySlot,
       sectionId,
       content: {
-        narrative: `По региону ${regionLabel} собрано материалов: ${materialCount}; подтверждённых тем: ${scoped.findings.length}.`,
+        narrative: `По региону ${regionLabel} собрано материалов: ${materialCount}; ${themesPhrase}.`,
         bullets,
         ...findingBlocks(scoped, undefined, extras),
       },

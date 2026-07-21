@@ -263,6 +263,23 @@ export function resolveEmptySurfaceCollection(
   if (anyMeasured || units.some((u) => u.evidenceRefs.length > 0)) {
     return { kind: "MEASURED_EMPTY" };
   }
+
+  // B.4 — «сбор не запускался» и «сбор выполнен, для региона данных нет» —
+  // разные состояния. Если по этой же поверхности в прогоне есть измеренный
+  // сбор за пределами регионального скоупа, страница региона честно говорит
+  // «выполнено, по региону пусто», а не «не собиралась».
+  const measuredElsewhere = (scoped.surfaceCollectionHints ?? []).some(
+    (h) =>
+      normalizeCoverageSurface(h.surface) === surfaceKey &&
+      /^(OK|NO_RESULTS|EMPTY_VALID|SUCCESS|MEASURED)$/i.test(String(h.status ?? ""))
+  );
+  if (measuredElsewhere) {
+    return {
+      kind: "MEASURED_EMPTY",
+      reasonLabel: "сбор по поверхности выполнен; материалов по данному региону не получено",
+    };
+  }
+
   if (units.length === 0 && hints.length === 0) {
     return {
       kind: "NOT_COLLECTED",

@@ -73,6 +73,17 @@ export const SlideBodySchema = z.object({
     .object({
       headers: z.array(z.string()),
       rows: z.array(z.array(z.string())),
+      /** C.4 — optional row grouping (record bands in compliance tables). */
+      groups: z
+        .array(
+          z.object({
+            rowStart: z.number().int().nonnegative(),
+            rowCount: z.number().int().positive(),
+            queryDisplay: z.string(),
+            qTag: z.string().optional(),
+          })
+        )
+        .optional(),
     })
     .optional(),
   /** «Что обнаружено» — dynamic finding text under the static label. */

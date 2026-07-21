@@ -57,7 +57,11 @@ export type RendererSlide = {
   continuationIndex?: number;
   narrative?: string;
   bullets?: string[];
-  table?: { headers: string[]; rows: string[][] };
+  table?: {
+    headers: string[];
+    rows: string[][];
+    groups?: Array<{ rowStart: number; rowCount: number; queryDisplay: string; qTag?: string }>;
+  };
   evidenceRefs: string[];
   findingIds: string[];
   metrics: Record<string, number | string>;

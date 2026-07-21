@@ -48,6 +48,7 @@ from .common import (
     _resolve_image_bytes,
     _safe,
     measure_text_height,
+    plural_ru,
     record_text_layout,
 )
 
@@ -134,7 +135,8 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
             if reason:
                 mid_bits.append(reason)
         if more_n > 0:
-            mid_bits.append(f"Ещё {more_n} похожих сигналов.")
+            noun = plural_ru(more_n, "похожий сигнал", "похожих сигнала", "похожих сигналов")
+            mid_bits.append(f"Ещё {more_n} {noun}.")
         mid_body = " ".join(mid_bits) if mid_bits else visible
     else:
         mid_title = "Что показывает экран"
@@ -378,10 +380,11 @@ def _title_line_estimate(text: str, col_width_emu: int, font_pt: float, max_line
 
 def _status_tone(status: str) -> tuple[str, "RGBColor"]:
     s = (status or "").strip().lower()
-    if "нежелат" in s:
+    # C.4 — negative/sanction values must never carry a green marker.
+    if "нежелат" in s or "негатив" in s or "санкц" in s or "критич" in s:
         return "●", RGBColor(0xB9, 0x1C, 0x1C)
     # LIKELY_SUBJECT (§2.1) and manual-review statuses — amber, not green.
-    if "вероятн" in s or "проверк" in s or "требует" in s:
+    if "вероятн" in s or "проверк" in s or "требует" in s or "pep" in s:
         return "●", RGBColor(0xC2, 0x41, 0x0C)
     return "●", RGBColor(0x04, 0x78, 0x57)
 
@@ -481,6 +484,12 @@ def _add_search_table(
         fill.solid()
         fill.fore_color.rgb = bg
 
+    # C.4 — the colored status badge belongs only to a genuine status column;
+    # generic value columns («Значение», «Комментарий») stay plain text so
+    # negative categories never receive a misleading green marker.
+    last_header = str(headers[cols - 1]) if cols - 1 < len(headers) else ""
+    badge_last_col = bool(re.search(r"статус|риск|провер", last_header, re.I))
+
     for r_idx, (kind, payload) in enumerate(plan):
         if kind == "header":
             for c in range(cols):
@@ -504,7 +513,7 @@ def _add_search_table(
                 row_bg = WHITE
             for c in range(cols):
                 val = str(row[c]) if c < len(row) else ""
-                if c == cols - 1:
+                if c == cols - 1 and badge_last_col:
                     dot, tone = _status_tone(val)
                     paint(tbl.cell(r_idx, c), f"{dot} {val}", color=tone, bg=row_bg, size=9.5, clip=False)
                 else:

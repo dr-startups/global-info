@@ -633,11 +633,84 @@ export function themedClaim(f: Finding): string {
     : `«${f.theme}» — ${f.claim}`;
 }
 
+/**
+ * B.3 — regional pages must not quote foreign-region sources. Cross-regional
+ * findings carry globally aggregated «Источники: …» / «Примеры заголовков: …»
+ * segments inside the claim; rebuild both from evidence captured for the
+ * page's own region. Single-region findings keep the original claim, and the
+ * global claim stays untouched for the executive contour.
+ */
+export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): string {
+  const regions = scoped.scope.regions;
+  if (!regions || regions.length === 0) return themedClaim(f);
+  const frs = f.regions ?? [];
+  const exclusive =
+    frs.length > 0 && frs.every((fr) => regions.some((r) => regionMatches(r, fr)));
+  if (exclusive) return themedClaim(f);
+
+  const domains: string[] = [];
+  const titles: string[] = [];
+  const seenDomains = new Set<string>();
+  const seenTitles = new Set<string>();
+  for (const ref of f.evidenceRefs) {
+    const e = scoped.evidenceIndex[ref];
+    if (!e) continue;
+    if (e.region && !regions.some((r) => regionMatches(r, e.region))) continue;
+    if (e.domain && !seenDomains.has(e.domain) && !isMockClientDomain(e.domain)) {
+      seenDomains.add(e.domain);
+      domains.push(e.domain);
+    }
+    const t = String(e.title ?? "").trim();
+    if (t && !seenTitles.has(t.toLowerCase()) && !/^potential\s+match$/i.test(t)) {
+      seenTitles.add(t.toLowerCase());
+      titles.push(t);
+    }
+  }
+
+  let claim = f.claim;
+  const sourceSegment = domains.length
+    ? `Источники в регионе: ${domains.slice(0, 4).join(", ")}.`
+    : "Источники по данной теме относятся к другим разделам отчёта.";
+  claim = claim.replace(/Источники:\s.*?\.(?=\s|$)/u, sourceSegment);
+  if (/Примеры заголовков:/u.test(claim)) {
+    claim = titles.length
+      ? claim.replace(
+          /Примеры заголовков:.*$/u,
+          `Примеры заголовков: ${titles.slice(0, 3).join(" · ").slice(0, 380)}`
+        )
+      : claim.replace(/\s*Примеры заголовков:.*$/u, "");
+  }
+  return claim.toLowerCase().startsWith(f.theme.toLowerCase())
+    ? claim
+    : `«${f.theme}» — ${claim}`;
+}
+
 /** Region-level source line — summary pages only (page IS the region). */
 export function sourceLine(scoped: ScopedFragmentInput, extras?: FragmentExtras): string {
   const domains = new Set<string>();
-  for (const f of scoped.findings) for (const d of f.sourceDomains ?? []) domains.add(d);
-  for (const e of Object.values(scoped.evidenceIndex)) if (e.domain) domains.add(e.domain);
+  const scopeRegions = scoped.scope?.regions;
+  if (scopeRegions && scopeRegions.length > 0) {
+    // B.3 — cross-regional findings carry globally aggregated sourceDomains;
+    // a regional page must cite only evidence captured for ITS region.
+    // Region-neutral evidence (compliance, wikipedia checks) stays visible.
+    for (const e of Object.values(scoped.evidenceIndex)) {
+      if (!e.domain) continue;
+      if (e.region && !scopeRegions.some((r) => regionMatches(r, e.region))) continue;
+      domains.add(e.domain);
+    }
+    // Findings whose regions all belong to this scope may add their own
+    // sourceDomains (they cannot carry foreign-region sources).
+    for (const f of scoped.findings) {
+      const frs = f.regions ?? [];
+      const exclusive =
+        frs.length > 0 &&
+        frs.every((fr) => scopeRegions.some((r) => regionMatches(r, fr)));
+      if (exclusive) for (const d of f.sourceDomains ?? []) domains.add(d);
+    }
+  } else {
+    for (const f of scoped.findings) for (const d of f.sourceDomains ?? []) domains.add(d);
+    for (const e of Object.values(scoped.evidenceIndex)) if (e.domain) domains.add(e.domain);
+  }
   const list = [...domains]
     .filter((d) => d && d !== "—" && !isMockClientDomain(d))
     .sort()
@@ -778,6 +851,21 @@ export function coverageContent(
   }
 
   // MEASURED_EMPTY — probed, zero materials.
+  // B.4 — collection ran in this run but yielded nothing for THIS region:
+  // an explicit regional wording instead of the generic «проверено, пусто».
+  if (reasonLabel && /по данному региону/i.test(reasonLabel)) {
+    return {
+      narrative:
+        "Сбор по этой поверхности в текущем прогоне выполнен; материалов по данному региону не получено — это результат проверки, а не пропуск сбора.",
+      bullets: [
+        copy?.why ??
+          "Отсутствие материалов по региону отражает итог проверки на дату отчёта, а не вывод об отсутствии рисков.",
+        "Материалы по этой поверхности из других регионов отчёта показаны в соответствующих разделах.",
+      ],
+      whatToCheck:
+        copy?.measuredCheck ?? "Повторить проверку по региону при следующем обновлении.",
+    };
+  }
   if (!copy) {
     return {
       narrative: "Поверхность проверена: материалов нет — это результат проверки.",

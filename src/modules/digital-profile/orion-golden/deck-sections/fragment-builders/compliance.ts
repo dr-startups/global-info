@@ -8,6 +8,7 @@ import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
 import type { ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import { pickComplianceClientMatchTitle } from "../../../services/compliance-inventory-adapter";
+import { pluralRu } from "../../analytics/finding-synthesizer";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
 import {
   VISUAL_ASSET_UNAVAILABLE,
@@ -129,6 +130,53 @@ export function buildComplianceFragment(
     return [l.provider, l.category, l.score, l.status];
   });
 
+  // C.4 — several records of one provider go into the param table as separate
+  // banded blocks («Запись 1 из N — имя»), not one flat list with repeating keys.
+  const providerParamTable = (
+    provHits: ComplianceHitEntry[],
+    infoRows: string[][]
+  ): {
+    headers: string[];
+    rows: string[][];
+    groups?: Array<{ rowStart: number; rowCount: number; queryDisplay: string; qTag?: string }>;
+  } => {
+    const headers = ["Параметр", "Значение"];
+    const recordRows = (h: ComplianceHitEntry): string[][] => {
+      const l = hitLabel(h);
+      return [
+        ["Совпадение по имени", l.name],
+        ["Категория", l.category],
+        ["Оценка совпадения", l.score],
+        ["Статус", l.status],
+      ];
+    };
+    if (provHits.length <= 1) {
+      return { headers, rows: [...provHits.flatMap(recordRows), ...infoRows] };
+    }
+    const rows: string[][] = [];
+    const groups: Array<{ rowStart: number; rowCount: number; queryDisplay: string; qTag?: string }> = [];
+    provHits.forEach((h, i) => {
+      const rec = recordRows(h);
+      groups.push({
+        rowStart: rows.length,
+        rowCount: rec.length,
+        qTag: `Запись ${i + 1} из ${provHits.length}`,
+        queryDisplay: hitLabel(h).name,
+      });
+      rows.push(...rec);
+    });
+    if (infoRows.length > 0) {
+      groups.push({
+        rowStart: rows.length,
+        rowCount: infoRows.length,
+        qTag: "Справка",
+        queryDisplay: "значение раздела и рекомендации",
+      });
+      rows.push(...infoRows);
+    }
+    return { headers, rows, groups };
+  };
+
   const dowHits = hits.filter(([, e]) => (e.providerLabel ?? "").toUpperCase() === "DOW_JONES");
   const lexisHits = hits.filter(([, e]) => (e.providerLabel ?? "").toUpperCase() === "LEXISNEXIS");
 
@@ -138,9 +186,20 @@ export function buildComplianceFragment(
       sectionId,
       templateId: "serp-table",
       content: {
-        narrative:
-          narrative.join(" ") ||
-          `Проверено записей комплаенс-контура: ${String(checkedCount ?? refs.length)}. Потенциальных совпадений в базах: ${hits.length}; подтверждённых совпадений нет — каждое требует ручной верификации.`,
+        // B.2 — the checked counter can exceed the table rows (records without
+        // a match are not listed); say so explicitly instead of looking off-by-N.
+        narrative: (() => {
+          const checkedN = Number(checkedCount ?? refs.length) || 0;
+          const noMatchN = Math.max(0, checkedN - hits.length);
+          const clarifier =
+            noMatchN > 0
+              ? ` По ${noMatchN} ${pluralRu(noMatchN, "записи", "записям", "записям")} совпадений не выявлено — в таблицу они не включены.`
+              : "";
+          const base =
+            narrative.join(" ") ||
+            `Проверено записей комплаенс-контура: ${String(checkedN)}. Потенциальных совпадений в базах: ${hits.length}; подтверждённых совпадений нет — каждое требует ручной верификации.`;
+          return base + clarifier;
+        })(),
         table: {
           headers: ["База данных", "Тип совпадения", "Оценка совпадения", "Статус проверки"],
           rows: summaryRows,
@@ -160,25 +219,13 @@ export function buildComplianceFragment(
       content: {
         narrative:
           "Профиль по данным Dow Jones: существующий комплаенс-контент, источники не расширялись.",
-        table: {
-          headers: ["Параметр", "Значение"],
-          rows: [
-            ...dowHits.flatMap((h) => {
-              const l = hitLabel(h);
-              return [
-                ["Совпадение по имени", l.name],
-                ["Категория", l.category],
-                ["Оценка совпадения", l.score],
-                ["Статус", l.status],
-              ];
-            }),
-            [
-              "Почему важно",
-              "Категория PEP влияет на уровень комплаенс-контроля при онбординге и мониторинге клиента.",
-            ],
-            ["Что сделать", "Запросить полную запись Dow Jones и сверить идентификаторы субъекта."],
+        table: providerParamTable(dowHits, [
+          [
+            "Почему важно",
+            "Категория PEP влияет на уровень комплаенс-контроля при онбординге и мониторинге клиента.",
           ],
-        },
+          ["Что сделать", "Запросить полную запись Dow Jones и сверить идентификаторы субъекта."],
+        ]),
         whatWasFound: dowHits.length
           ? clampClientText(
               `Потенциальное совпадение категории «${hitLabel(dowHits[0]).category}» с оценкой ${hitLabel(dowHits[0]).score}; совпадение не подтверждено и требует ручной проверки.`,
@@ -201,29 +248,17 @@ export function buildComplianceFragment(
       content: {
         narrative:
           "Страница профиля LexisNexis. Визуальный экспорт страницы в текущем наборе недоступен; содержимое записи приведено в текстовом виде без потерь. Вторая страница профиля из отчёта v72 объединена с этой: отдельного содержимого у неё нет.",
-        table: {
-          headers: ["Параметр", "Значение"],
-          rows: [
-            ...lexisHits.flatMap((h) => {
-              const l = hitLabel(h);
-              return [
-                ["Совпадение по имени", l.name],
-                ["Категория", l.category],
-                ["Оценка совпадения", l.score],
-                ["Статус", l.status],
-              ];
-            }),
-            [
-              "Почему важно",
-              "Негативные публикации в базе увеличивают репутационный риск и требуют проверки первоисточников.",
-            ],
-            ["Что сделать", "Запросить полную запись LexisNexis и проверить первоисточники публикаций."],
-            [
-              "Визуальный экспорт",
-              "Недоступен в текущем наборе; данные приведены в текстовом виде без потерь.",
-            ],
+        table: providerParamTable(lexisHits, [
+          [
+            "Почему важно",
+            "Негативные публикации в базе увеличивают репутационный риск и требуют проверки первоисточников.",
           ],
-        },
+          ["Что сделать", "Запросить полную запись LexisNexis и проверить первоисточники публикаций."],
+          [
+            "Визуальный экспорт",
+            "Недоступен в текущем наборе; данные приведены в текстовом виде без потерь.",
+          ],
+        ]),
         whatWasFound: lexisHits.length
           ? clampClientText(
               `Потенциальное совпадение категории «${hitLabel(lexisHits[0]).category}» с оценкой ${hitLabel(lexisHits[0]).score}; совпадение не подтверждено и требует ручной проверки.`,

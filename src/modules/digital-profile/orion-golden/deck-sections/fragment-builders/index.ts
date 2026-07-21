@@ -21,6 +21,9 @@ export {
   composePageRowComposition,
   pageRowCompositionBlocks,
   coverageContent,
+  sourceLine,
+  localizedThemedClaim,
+  themedClaim,
 } from "./shared";
 
 export { buildFrontMatterFragment } from "./front-matter";

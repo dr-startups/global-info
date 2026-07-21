@@ -464,15 +464,65 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         return
 
     if template == "orion_golden_no_data_compact":
+        # C.2 — honest empty state as a structured page: status card,
+        # "what it means" card, recommendation card, methodology footnote.
         ctx.light_bg()
         y = ctx.title(title, 320000, NAVY)
-        # Coverage empty states carry a full client explanation (what the
-        # surface is, why it matters, recommendation) — allow multi-paragraph.
-        ctx.body(
-            narrative or "Для данного раздела недостаточно подтверждённых данных.",
-            y,
-            2600000,
+        status_text = narrative or "Для данного раздела недостаточно подтверждённых данных."
+        y = ctx.content_card(
+            title="Статус сбора",
+            text=_clip_words(status_text, 700),
+            x=MARGIN_X,
+            y=y,
+            width=CONTENT_W,
+            min_h=380_000,
+            max_h=1_500_000,
+            tone="accent",
+            title_size=11,
+            body_size=12,
         )
+        y += 110_000
+        if bullets:
+            why_text = "\n".join(_clip_words(b, 360) for b in bullets[:4])
+            y = ctx.content_card(
+                title="Что это означает",
+                text=why_text,
+                x=MARGIN_X,
+                y=y,
+                width=CONTENT_W,
+                min_h=360_000,
+                max_h=1_800_000,
+                tone="neutral",
+                title_size=11,
+                body_size=11,
+            )
+            y += 110_000
+        actions_nd = [a for a in (slide.get("actions") or []) if isinstance(a, dict)]
+        if actions_nd:
+            y = ctx.content_card(
+                title="Что проверить",
+                text=_clip_words(_safe(actions_nd[0].get("label")), 320),
+                x=MARGIN_X,
+                y=y,
+                width=CONTENT_W,
+                min_h=320_000,
+                max_h=900_000,
+                tone="warn",
+                title_size=11,
+                body_size=11,
+            )
+            y += 110_000
+        methodology = _safe(slide.get("methodologyNote") or "")
+        source_note = _safe(slide.get("sourceNote") or "")
+        footnote = " ".join(x for x in (methodology, source_note) if x)
+        if footnote and y < CONTENT_BOTTOM - 400_000:
+            ctx.body(
+                _clip_words(footnote, 300),
+                y,
+                max_h=CONTENT_BOTTOM - y - 60_000,
+                color=MUTED_COLOR,
+                font_size=9,
+            )
         return
 
     if template == "orion_golden_audit_dashboard":

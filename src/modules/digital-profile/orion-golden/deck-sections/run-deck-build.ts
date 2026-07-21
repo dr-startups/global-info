@@ -269,8 +269,13 @@ export function toRendererPayload(input: {
     if (s.template === "orion_golden_risk_matrix_grid" && s.table) {
       // bullets[i] carries the rich per-theme explanation aligned with rows[i]
       // (what was found + why risky + advice); level/priority is the fallback.
+      // C.3 — the same theme can appear twice (confirmed + likely); mark the
+      // unconfirmed card in the headline so it never reads as a duplicate.
       keyFindings = s.table.rows.slice(0, 6).map((row, i) => ({
-        headline: row[0] ?? "Тема",
+        headline:
+          row[1] === "Требует подтверждения"
+            ? `${row[0] ?? "Тема"} — требует подтверждения`
+            : row[0] ?? "Тема",
         detail: s.bullets?.[i] ?? `Уровень риска: ${row[1] ?? "—"}; приоритет: ${row[2] ?? "—"}.`,
         status: row[1] ?? "",
         tone: RISK_TONES[row[1] ?? ""] ?? "warn",
@@ -284,10 +289,11 @@ export function toRendererPayload(input: {
     const isDashboard = keyFindings !== undefined;
     const isMetricsDashboard = metrics !== undefined;
 
-    // The compact no-data layout draws only `narrative`; fold the honest
-    // coverage explanation (why the surface matters + recommendation) into it
-    // so empty states keep their full ORION-style client copy.
-    if (s.template === "orion_golden_no_data_compact" && mergedBullets?.length) {
+    // C.2 — honest empty states go to the renderer as STRUCTURED fields
+    // (status narrative / why-bullets / recommendation / methodology), and the
+    // no-data layout draws them as separate cards instead of one glued
+    // paragraph on a 90%-empty page.
+    if (s.template === "orion_golden_no_data_compact") {
       return {
         slideKey: s.slideKey,
         sectionKey: s.sectionKey,
@@ -299,7 +305,11 @@ export function toRendererPayload(input: {
         isContinuation: s.isContinuation,
         continuationOf: s.continuationOf,
         continuationIndex: s.continuationIndex,
-        narrative: mergedBullets.join("\n"),
+        narrative,
+        bullets: s.bullets?.length ? s.bullets : undefined,
+        actions: s.whatToCheck ? [{ label: s.whatToCheck }] : undefined,
+        methodologyNote: s.methodologyNote,
+        sourceNote: s.sourceNote,
         evidenceRefs: s.evidenceRefs,
         assetRefs: boundAssets,
       };
@@ -362,7 +372,9 @@ export function toRendererPayload(input: {
       actions,
       metrics,
       visualAnalysis,
-      table: s.table ? { headers: s.table.headers, rows: s.table.rows } : undefined,
+      table: s.table
+        ? { headers: s.table.headers, rows: s.table.rows, groups: s.table.groups }
+        : undefined,
       evidenceRefs: s.evidenceRefs,
       assetRefs: boundAssets,
     };

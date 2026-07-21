@@ -351,6 +351,19 @@ def _safe(text: object) -> str:
     return val.strip()
 
 
+def plural_ru(n: int, one: str, few: str, many: str) -> str:
+    """Russian plural agreement: 1 сигнал / 2–4 сигнала / 5+ сигналов."""
+    abs_n = abs(int(n)) % 100
+    last = abs_n % 10
+    if 10 < abs_n < 20:
+        return many
+    if last == 1:
+        return one
+    if 2 <= last <= 4:
+        return few
+    return many
+
+
 def _clip_words(text: str, max_chars: int) -> str:
     """Clip on sentence/word boundary; avoid mid-thought stubs and dangling prepositions."""
     val = _safe(text)

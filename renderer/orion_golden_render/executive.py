@@ -209,11 +209,21 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
             r.font.size = Pt(11)
             r.font.color.rgb = BODY_COLOR
         if pill:
+            # C.3 — auto-size the badge: shrink the font, then grow the pill
+            # height, so «Требует подтверждения» never spills past the plate.
             bx = MARGIN_X + CONTENT_W - badge_w - 80_000
             by = y + pad_y
-            bh = 280_000
+            inner_w = badge_w - 100_000
+            pill_size = 11
+            need = measure_text_height(pill, inner_w, pill_size, line_spacing=1.1)
+            if need > 180_000:
+                pill_size = 9
+                need = measure_text_height(pill, inner_w, pill_size, line_spacing=1.1)
+            bh = max(280_000, min(520_000, need + 150_000))
             ctx.card(by, h=bh, x=bx, w=badge_w, fill=WHITE)
-            b = ctx.slide.shapes.add_textbox(Emu(bx + 50_000), Emu(by + 70_000), Emu(badge_w - 100_000), Emu(160_000))
+            b = ctx.slide.shapes.add_textbox(
+                Emu(bx + 50_000), Emu(by + 60_000), Emu(inner_w), Emu(max(need, 160_000))
+            )
             btf = b.text_frame
             btf.word_wrap = True
             bp = btf.paragraphs[0]
@@ -222,7 +232,7 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
             br.text = pill
             br.font.name = FONT
             br.font.bold = True
-            br.font.size = Pt(11)
+            br.font.size = Pt(pill_size)
             br.font.color.rgb = _tone_value_color(tone)
         y += h + 50_000
         if y > CONTENT_BOTTOM - 360_000:
