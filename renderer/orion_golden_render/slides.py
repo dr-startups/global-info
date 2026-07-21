@@ -60,9 +60,31 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
 
     if template == "orion_golden_cover":
         ctx.dark_bg()
-        y = ctx.title("ORION Digital Profile", 1800000, WHITE, 34)
-        ctx.body(narrative or title, y, max_h=700000, color=RGBColor(0xBF, 0xDB, 0xFE))
-        ctx.body("Клиентский аудит · предварительная оценка", y + 900000, max_h=400000, color=MUTED_COLOR)
+        # Design v2 cover: gold kicker → large title → subject line → meta rule.
+        kicker = ctx.slide.shapes.add_textbox(
+            Emu(MARGIN_X), Emu(1_450_000), Emu(CONTENT_W), Emu(300_000)
+        )
+        kp = kicker.text_frame.paragraphs[0]
+        kr = kp.add_run()
+        kr.text = "ОТЧЁТ О ЦИФРОВОМ ПРОФИЛЕ"
+        kr.font.name = FONT
+        kr.font.bold = True
+        kr.font.size = Pt(12)
+        kr.font.color.rgb = RGBColor(0xC0, 0x9A, 0x4F)
+        y = ctx.title("ORION Digital Profile", 1_850_000, WHITE, 38)
+        ctx.body(narrative or title, y + 100_000, max_h=900_000, color=RGBColor(0xBF, 0xDB, 0xFE), font_size=14)
+        rule = ctx.slide.shapes.add_shape(
+            1, Emu(MARGIN_X), Emu(5_650_000), Emu(2_400_000), Emu(16_000)
+        )
+        rule.fill.solid()
+        rule.fill.fore_color.rgb = RGBColor(0xC0, 0x9A, 0x4F)
+        rule.line.fill.background()
+        ctx.body(
+            "Клиентский аудит · предварительная оценка · конфиденциально",
+            5_800_000,
+            max_h=400000,
+            color=MUTED_COLOR,
+        )
         return
 
     if template == "orion_golden_toc":
@@ -168,21 +190,34 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     if template == "orion_golden_region_divider":
         ctx.dark_bg()
         if variant == "hero":
-            # Hero divider: accent bar + large title + lead paragraph.
+            # Hero divider: tall gold bar + large title + lead paragraph.
             bar = ctx.slide.shapes.add_shape(
-                1, Emu(MARGIN_X), Emu(2_450_000), Emu(140_000), Emu(1_500_000)
+                5, Emu(MARGIN_X), Emu(2_450_000), Emu(110_000), Emu(1_600_000)
             )
             bar.fill.solid()
-            bar.fill.fore_color.rgb = RGBColor(0x3B, 0x82, 0xF6)
+            bar.fill.fore_color.rgb = RGBColor(0xC0, 0x9A, 0x4F)
             bar.line.fill.background()
-            y = ctx.title(title, 2_500_000, WHITE, 36)
+            text_x = MARGIN_X + 300_000
+            text_w = CONTENT_W - 300_000
+            box = ctx.slide.shapes.add_textbox(Emu(text_x), Emu(2_450_000), Emu(text_w), Emu(900_000))
+            tf = box.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            r = p.add_run()
+            r.text = _safe(title)
+            r.font.name = FONT
+            r.font.bold = True
+            r.font.size = Pt(36)
+            r.font.color.rgb = WHITE
             if narrative:
                 ctx.body(
                     narrative,
-                    y + 150_000,
-                    max_h=1_400_000,
+                    3_450_000,
+                    max_h=1_500_000,
                     color=RGBColor(0xBF, 0xDB, 0xFE),
                     font_size=13,
+                    x=text_x,
+                    w=text_w,
                 )
             return
         ctx.title(title, 2800000, WHITE, 34)
@@ -314,10 +349,15 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 top = cy + (cell_h - dh) // 2
                 ctx.slide.shapes.add_picture(stream, Emu(left), Emu(top), width=Emu(dw), height=Emu(dh))
             else:
-                shape = ctx.slide.shapes.add_shape(1, Emu(cx), Emu(cy), Emu(cell_w), Emu(cell_h))
+                shape = ctx.slide.shapes.add_shape(5, Emu(cx), Emu(cy), Emu(cell_w), Emu(cell_h))
+                try:
+                    shape.adjustments[0] = 0.05
+                except Exception:  # noqa: BLE001
+                    pass
                 shape.fill.solid()
                 shape.fill.fore_color.rgb = CARD_BG
                 shape.line.color.rgb = CARD_BORDER
+                shape.line.width = Pt(0.75)
                 tf = shape.text_frame
                 tf.word_wrap = True
                 p = tf.paragraphs[0]

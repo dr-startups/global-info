@@ -496,7 +496,7 @@ describe("level 2 — deck composer fail-closed validation", () => {
       caseAnalysis: null,
       composition: {
         version: "gpt-deck-composition-v1",
-        promptVersion: "gpt-deck-composer-v2",
+        promptVersion: "gpt-deck-composer-v3",
         generatedAt: new Date().toISOString(),
         fragments: [
           {

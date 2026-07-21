@@ -45,7 +45,7 @@ import {
   type DeckTemplateId,
 } from "./template-registry";
 
-export const GPT_DECK_COMPOSER_PROMPT_VERSION = "gpt-deck-composer-v2";
+export const GPT_DECK_COMPOSER_PROMPT_VERSION = "gpt-deck-composer-v3";
 
 /** Prompt marker for offline smokes asserting the composer call. */
 export const GPT_DECK_COMPOSER_PROMPT_MARKER = "план композиции отчёта";
@@ -83,7 +83,7 @@ const COMPOSER_INSTRUCTIONS = [
   "Для каждого фрагмента реши: с какого смыслового акцента начать рассказ (storyAngle — одно клиентское предложение без жаргона), какие findings раскрыть в первую очередь (emphasisFindingIds — по убыванию важности) и какие домены источников вынести на передний план (keyDomains).",
   "Используй ТОЛЬКО переданные findingId и домены конкретного фрагмента; не переноси findings и домены между фрагментами; не добавляй новых фактов.",
   `storyAngle — по-русски, до ${COMPOSER_STORY_ANGLE_BUDGET} символов, без слов «черновик», «фрагмент», «findings», без URL и внутренних идентификаторов.`,
-  "Отдельно передан список layoutOptions: слайды, у которых есть альтернативные варианты вёрстки, с описанием каждого варианта. Для каждого такого слайда реши, оставить ли стандартную вёрстку (не возвращай слайд) или выбрать вариант, который лучше подаёт содержание страницы (верни slideId и layoutVariant из списка).",
+  "Отдельно передан список layoutOptions: слайды, у которых есть альтернативные варианты вёрстки, с описанием каждого варианта. Ты — ещё и арт-директор: для каждого такого слайда ПРЕДПОЧИТАЙ выразительный вариант вёрстки (верни slideId и layoutVariant из списка), если содержание страницы это позволяет; стандартную вёрстку оставляй (не возвращай слайд) только когда данных для варианта явно недостаточно (например, нет нарратива или метрик).",
   'Верни ТОЛЬКО JSON: {"fragments": [{"fragmentKey": string, "storyAngle": string, "emphasisFindingIds": [string], "keyDomains": [string]}], "layouts": [{"slideId": string, "layoutVariant": string}]}.',
 ].join(" ");
 

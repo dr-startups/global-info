@@ -67,6 +67,9 @@ GOOD_BG = RGBColor(0xEC, 0xFD, 0xF5)
 TONE_RISK = RGBColor(0xB9, 0x1C, 0x1C)
 TONE_WARN = RGBColor(0xC2, 0x41, 0x0C)
 TONE_GOOD = RGBColor(0x04, 0x78, 0x57)
+# ORION Golden design system v2: premium gold accent + dark-page hairlines.
+GOLD = RGBColor(0xC0, 0x9A, 0x4F)
+DARK_RULE = RGBColor(0x24, 0x33, 0x52)
 
 # REMEDIATION §6.1 — pattern sourced from client_text_contract.json
 FORBIDDEN = renderer_strip_re()
@@ -385,10 +388,27 @@ class _Ctx:
         self.total = total
         self.client_text_contract = resolve_contract(client_text_contract)
         self.warnings: list[str] = []
+        self.dark = False
         layout = prs.slide_layouts[6] if len(prs.slide_layouts) > 6 else prs.slide_layouts[0]
         self.slide = prs.slides.add_slide(layout)
 
     def footer(self) -> None:
+        # Hairline rule + brand line left, page counter right (design v2).
+        rule = self.slide.shapes.add_shape(
+            1, Emu(MARGIN_X), Emu(FOOTER_Y - 40_000), Emu(CONTENT_W), Emu(12_700)
+        )
+        rule.fill.solid()
+        rule.fill.fore_color.rgb = DARK_RULE if self.dark else CARD_BORDER
+        rule.line.fill.background()
+        brand = self.slide.shapes.add_textbox(
+            Emu(MARGIN_X), Emu(FOOTER_Y), Emu(CONTENT_W // 2), Emu(250000)
+        )
+        bp = brand.text_frame.paragraphs[0]
+        br = bp.add_run()
+        br.text = "ORION · Конфиденциально"
+        br.font.name = FONT
+        br.font.size = Pt(FS_CAPTION)
+        br.font.color.rgb = MUTED_COLOR
         box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(FOOTER_Y), Emu(CONTENT_W), Emu(250000))
         try:
             box.name = f"orion_footer_p{self.page}"
@@ -404,17 +424,40 @@ class _Ctx:
         r.font.color.rgb = MUTED_COLOR
 
     def dark_bg(self) -> None:
+        self.dark = True
         fill = self.slide.background.fill
         fill.solid()
         fill.fore_color.rgb = NAVY
 
     def light_bg(self) -> None:
+        self.dark = False
         fill = self.slide.background.fill
         fill.solid()
         fill.fore_color.rgb = WHITE
 
-    def title(self, text: str, y: int = 280000, color: RGBColor = TITLE_COLOR, size: int = FS_TITLE) -> int:
-        box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(900000))
+    def title(
+        self,
+        text: str,
+        y: int = 280000,
+        color: RGBColor = TITLE_COLOR,
+        size: int = FS_TITLE,
+        *,
+        accent: bool = True,
+    ) -> int:
+        # Gold accent tick aligned with the first title line (design v2).
+        text_x = MARGIN_X
+        text_w = CONTENT_W
+        if accent:
+            bar_h = int(size * EMU_PER_PT * 1.05)
+            bar = self.slide.shapes.add_shape(
+                5, Emu(MARGIN_X), Emu(y + 55_000), Emu(55_000), Emu(bar_h)
+            )
+            bar.fill.solid()
+            bar.fill.fore_color.rgb = GOLD
+            bar.line.fill.background()
+            text_x = MARGIN_X + 165_000
+            text_w = CONTENT_W - 165_000
+        box = self.slide.shapes.add_textbox(Emu(text_x), Emu(y), Emu(text_w), Emu(900000))
         tf = box.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
@@ -434,18 +477,29 @@ class _Ctx:
         x: int | None = None,
         w: int | None = None,
         fill: RGBColor = CARD_BG,
+        border: RGBColor | None = CARD_BORDER,
+        radius: float = 0.055,
     ) -> None:
         left = MARGIN_X if x is None else x
         width = CONTENT_W if w is None else w
         avail = max(200_000, min(h, CONTENT_BOTTOM - y))
-        shape = self.slide.shapes.add_shape(1, Emu(left), Emu(y), Emu(width), Emu(avail))
+        # 5 = rounded rectangle: soft corners across every card (design v2).
+        shape = self.slide.shapes.add_shape(5, Emu(left), Emu(y), Emu(width), Emu(avail))
+        try:
+            shape.adjustments[0] = radius
+        except Exception:  # noqa: BLE001
+            pass
         try:
             shape.name = f"orion_card_p{self.page}"
         except Exception:  # noqa: BLE001
             pass
         shape.fill.solid()
         shape.fill.fore_color.rgb = fill
-        shape.line.color.rgb = CARD_BORDER
+        if border is None:
+            shape.line.fill.background()
+        else:
+            shape.line.color.rgb = border
+            shape.line.width = Pt(0.75)
 
     def body(
         self,
@@ -558,6 +612,13 @@ class _Ctx:
             "risk": RISK_BG,
             "good": GOOD_BG,
         }.get(tone, CARD_BG)
+        # Design v2: card titles pick up the tone colour instead of flat navy.
+        title_color = {
+            "accent": RGBColor(0x1D, 0x4E, 0xD8),
+            "warn": TONE_WARN,
+            "risk": TONE_RISK,
+            "good": TONE_GOOD,
+        }.get(tone, NAVY)
         title_s = _safe(title or "")
         body_s = _safe(text)
         budget = max(200_000, min(max_h, CONTENT_BOTTOM - y))
@@ -595,7 +656,7 @@ class _Ctx:
             r.font.name = FONT
             r.font.bold = True
             r.font.size = Pt(title_size)
-            r.font.color.rgb = NAVY
+            r.font.color.rgb = title_color
             cy += title_h
         if body_s:
             rem = max(100_000, y + h - cy - pad)

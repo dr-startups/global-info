@@ -262,9 +262,16 @@ def _render_kpi_cards(ctx: _Ctx, metrics: list[dict[str, Any]], x: int, y: int, 
         # Keep room for Russian status phrases like «Данные не собраны» / «0 / 10».
         value = _clip_words(_safe(m.get("value")), 36)
         label = _clip_words(_safe(m.get("label")), 28)
-        ctx.card(row_y, h=card_h, x=cx, w=card_w, fill=_tone_fill(tone))
+        ctx.card(row_y, h=card_h, x=cx, w=card_w, fill=_tone_fill(tone), border=None)
+        # Tone stripe on the left edge (design v2) — reads at a glance.
+        stripe = ctx.slide.shapes.add_shape(
+            5, Emu(cx + 45_000), Emu(row_y + 120_000), Emu(45_000), Emu(card_h - 240_000)
+        )
+        stripe.fill.solid()
+        stripe.fill.fore_color.rgb = _tone_value_color(tone)
+        stripe.line.fill.background()
         box = ctx.slide.shapes.add_textbox(
-            Emu(cx + 70_000), Emu(row_y + 100_000), Emu(card_w - 140_000), Emu(card_h - 180_000)
+            Emu(cx + 160_000), Emu(row_y + 100_000), Emu(card_w - 230_000), Emu(card_h - 180_000)
         )
         tf = box.text_frame
         tf.word_wrap = True
@@ -273,14 +280,14 @@ def _render_kpi_cards(ctx: _Ctx, metrics: list[dict[str, Any]], x: int, y: int, 
         r0.text = value
         r0.font.name = FONT
         r0.font.bold = True
-        r0.font.size = Pt(18 if len(value) <= 10 else 12 if len(value) <= 22 else 10)
+        r0.font.size = Pt(20 if len(value) <= 10 else 13 if len(value) <= 22 else 10)
         r0.font.color.rgb = _tone_value_color(tone)
         p1 = tf.add_paragraph()
-        p1.space_before = Pt(6)
+        p1.space_before = Pt(5)
         r1 = p1.add_run()
         r1.text = label
         r1.font.name = FONT
-        r1.font.size = Pt(11)
+        r1.font.size = Pt(10.5)
         r1.font.color.rgb = MUTED_COLOR
     rows = (len(items) + cols - 1) // cols
     return y + rows * card_h + max(0, rows - 1) * gap
