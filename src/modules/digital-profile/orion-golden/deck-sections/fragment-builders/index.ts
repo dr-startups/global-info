@@ -23,6 +23,7 @@ export {
   coverageContent,
   sourceLine,
   localizedThemedClaim,
+  statusLine,
   themedClaim,
 } from "./shared";
 

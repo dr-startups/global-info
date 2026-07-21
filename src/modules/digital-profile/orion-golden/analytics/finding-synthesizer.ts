@@ -117,6 +117,43 @@ export function pluralRu(n: number, one: string, few: string, many: string): str
 }
 
 /**
+ * PDF-36 D.5 — SERP headline quoted as a client example: strip raw source
+ * suffixes («… | Дзен»), trailing timestamps («- 03.12.25 22:27») and a
+ * final fragment the search engine itself truncated with an ellipsis.
+ */
+export function cleanExampleTitle(raw: string): string {
+  let t = String(raw ?? "").replace(/\s+/gu, " ").trim();
+  // Source suffix after a pipe: "Заголовок | Дзен" / "… | Forbes.ru".
+  t = t.replace(/\s*\|\s*[^|]{1,40}$/u, "").trim();
+  // Trailing date/time stamps: "- 03.12.25 22:27", "· 02.03.2020".
+  t = t.replace(/\s*[-–—·]\s*\d{1,2}\.\d{1,2}\.\d{2,4}(?:\s+\d{1,2}:\d{2})?\s*$/u, "").trim();
+  // Search engines truncate long titles with an ellipsis: drop the broken
+  // last fragment when a complete sentence remains before it.
+  const m = t.match(/^(.*[.!?…»])\s*[^.!?…»]*(?:\.\.\.|…)$/u);
+  if (m && m[1].length >= 20) t = m[1].trim();
+  return t.replace(/\s*(?:\.\.\.|…)\s*$/u, "").trim();
+}
+
+/** Join whole titles while the segment fits the budget — never a mid-title cut. */
+export function joinTitlesWithinBudget(titles: string[], budget: number): string {
+  const kept: string[] = [];
+  let used = 0;
+  for (const t of titles) {
+    const extra = (kept.length > 0 ? 3 : 0) + t.length; // " · " separator
+    if (used + extra > budget) break;
+    kept.push(t);
+    used += extra;
+  }
+  if (kept.length === 0 && titles.length > 0) {
+    // Single overlong title: keep it whole up to the budget word boundary.
+    const slice = titles[0].slice(0, budget);
+    const cut = slice.lastIndexOf(" ");
+    return (cut > budget * 0.5 ? slice.slice(0, cut) : slice).trim();
+  }
+  return kept.join(" · ");
+}
+
+/**
  * One evidence item may support multiple genuinely different claims: it is
  * matched against EVERY theme, not consumed by the first/highest-priority one.
  */
@@ -337,7 +374,7 @@ export function synthesizeFindings(input: {
 
     const topTitles = items
       .slice(0, 3)
-      .map((i) => String(i.title ?? "").trim())
+      .map((i) => cleanExampleTitle(String(i.title ?? "")))
       .filter((t) => Boolean(t) && !/^potential\s+match$/i.test(t))
       .map((t) => (/^потенциальное совпадение$/i.test(t) ? "" : t))
       .filter(Boolean);
@@ -349,10 +386,11 @@ export function synthesizeFindings(input: {
       adverseItems.length > 0
         ? `, из них с негативным содержанием — ${adverseItems.length}`
         : ", негативного содержания не зафиксировано";
+    const titlesSegment = joinTitlesWithinBudget(topTitles, 380);
     const claim =
       `${items.length} ${total}${adverseNote}. ` +
       `Источники: ${domains.slice(0, 4).join(", ") || "без URL"}.` +
-      (topTitles.length ? ` Примеры заголовков: ${topTitles.join(" · ").slice(0, 380)}` : "");
+      (titlesSegment ? ` Примеры заголовков: ${titlesSegment}` : "");
 
     return FindingSchema.parse({
       schemaVersion: FINDING_SCHEMA_VERSION,

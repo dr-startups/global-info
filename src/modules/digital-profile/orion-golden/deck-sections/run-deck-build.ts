@@ -409,20 +409,37 @@ export function toRendererPayload(input: {
   };
 }
 
-/** Sidebar text must be complete sentences without ellipsis (renderer QA). */
-function sidebarSafe(text: string | undefined, budget = 240): string | undefined {
+/** Dangling tails after a word-boundary cut («…относящийся к», «…и ещё»). */
+const SIDEBAR_DANGLING_RE =
+  /(?:\s+(?:и|а|но|или|же|то|что|как|при|про|для|без|под|над|из|из-за|от|до|по|к|ко|в|во|на|с|со|о|об|обо|у|за|ещё|еще|также|более|менее|чем|котор\p{L}*|относящ\p{L}*|связанн\p{L}*|требующ\p{L}*))+$/iu;
+
+/**
+ * Sidebar text must be complete sentences without ellipsis (renderer QA).
+ * PDF-36 D.1 — cut ONLY on sentence boundaries: a shorter complete thought
+ * beats a longer broken one («…зафиксирован 1 результат, относящийся к.»).
+ * Exported for unit tests.
+ */
+export function sidebarSafe(text: string | undefined, budget = 240): string | undefined {
   if (!text) return undefined;
-  let out = text.replace(/\s*(\.\.\.|…)\s*/gu, ". ").replace(/\.\s*\./gu, ".").trim();
-  if (out.length > budget) {
-    // Cut at a sentence boundary; the narrow sidebar panel cannot fit long
-    // paragraphs and the renderer fails closed on incomplete sentences.
-    const slice = out.slice(0, budget);
-    const cut = Math.max(slice.lastIndexOf(". "), slice.lastIndexOf("; "));
-    out = (cut > budget * 0.3 ? slice.slice(0, cut) : slice.slice(0, slice.lastIndexOf(" ")))
-      .replace(/[\s;,.]+$/u, "");
-    out = out ? `${out}.` : "";
+  const out = text.replace(/\s*(\.\.\.|…)\s*/gu, ". ").replace(/\.\s*\./gu, ".").trim();
+  if (out.length <= budget) return out || undefined;
+  // Keep whole sentences that fit the budget.
+  const sentences = out.split(/(?<=[.!?…])\s+/u);
+  const kept: string[] = [];
+  let used = 0;
+  for (const s of sentences) {
+    const extra = (kept.length > 0 ? 1 : 0) + s.length;
+    if (used + extra > budget) break;
+    kept.push(s);
+    used += extra;
   }
-  return out || undefined;
+  if (kept.length > 0) return kept.join(" ");
+  // First sentence alone is over budget: word-boundary cut + dangling trim,
+  // closed with a period so the renderer QA sees a complete sentence.
+  const slice = out.slice(0, budget);
+  let head = slice.slice(0, Math.max(slice.lastIndexOf(" "), 0)) || slice;
+  head = head.replace(/[\s;,.:—–-]+$/u, "").replace(SIDEBAR_DANGLING_RE, "").replace(/[\s;,.:—–-]+$/u, "");
+  return head ? `${head}.` : undefined;
 }
 
 /**
@@ -431,10 +448,12 @@ function sidebarSafe(text: string | undefined, budget = 240): string | undefined
  * why adverse, confidence/status and recommended action.
  */
 function buildVisualAnalysis(s: RendererSlide): Record<string, unknown> {
-  // Budgets keep the narrow sidebar panel within its box: the renderer fails
-  // closed on any block that cannot fit a complete sentence.
+  // PDF-36 D.1 — budgets mirror the measured sidebar capacity (~0.38 page
+  // width × content height ≈ 1300–1500 chars across all blocks). The old
+  // 130–200-char budgets pre-truncated GPT text the panel could easily hold;
+  // the renderer still sentence-fits each block, so overflow degrades safely.
   const explanations = (s.highlightExplanations ?? []).map((h) => ({
-    clientReason: sidebarSafe(h.clientReason, 170),
+    clientReason: sidebarSafe(h.clientReason, 240),
     frameTone: h.frameTone,
   }));
   // On adverse pages the "why adverse" is carried by the highlight
@@ -443,20 +462,20 @@ function buildVisualAnalysis(s: RendererSlide): Record<string, unknown> {
   // to complete sentences and fails closed on true overflow.
   const meaning = (
     explanations.length
-      ? [sidebarSafe(s.whyItMatters, 190), sidebarSafe(s.statusNote, 110)]
-      : [sidebarSafe(s.whyItMatters, 130), sidebarSafe(s.statusNote, 90)]
+      ? [sidebarSafe(s.whyItMatters, 300), sidebarSafe(s.statusNote, 140)]
+      : [sidebarSafe(s.whyItMatters, 260), sidebarSafe(s.statusNote, 140)]
   )
     .filter(Boolean)
     .join(" ");
   return {
     sidebarMode: explanations.length ? "adverse_explanation" : "context",
-    headlineConclusion: sidebarSafe(s.whatWasFound, 200) ?? sidebarSafe(s.narrative, 200),
-    whatIsVisible: sidebarSafe(s.narrative, 170) ?? sidebarSafe(s.methodologyNote, 170),
+    headlineConclusion: sidebarSafe(s.whatWasFound, 300) ?? sidebarSafe(s.narrative, 300),
+    whatIsVisible: sidebarSafe(s.narrative, 420) ?? sidebarSafe(s.methodologyNote, 420),
     clientMeaning: meaning || undefined,
     highlightExplanations: explanations.slice(0, 2),
     moreSignalsCount: Math.max(0, explanations.length - 2),
-    recommendedActions: s.whatToCheck ? [sidebarSafe(s.whatToCheck, 150)] : [],
-    provenanceLabel: sidebarSafe(s.sourceNote, 120),
+    recommendedActions: s.whatToCheck ? [sidebarSafe(s.whatToCheck, 260)] : [],
+    provenanceLabel: sidebarSafe(s.sourceNote, 140),
   };
 }
 

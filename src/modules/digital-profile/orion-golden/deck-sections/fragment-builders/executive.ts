@@ -151,10 +151,11 @@ export function applyExecutiveFreshnessChangeToPacks<
     if (pack.fragmentKey !== "EXECUTIVE_SUMMARY") return pack;
     const slides = pack.slides.map((slide) => {
       if (slide.isContinuation) {
-        const bullets = [...(slide.content.bullets ?? [])];
-        if (!bullets.some((b) => EXEC_FRESHNESS_CHANGE_RE.test(b))) {
-          bullets.unshift(clampClientText(line, 380));
-        }
+        // PDF-36 D.5 — §7.2 lives ONCE in the p03 narrative card; repeating
+        // it as the first continuation bullet duplicated the line on p04.
+        const bullets = (slide.content.bullets ?? []).filter(
+          (b) => !EXEC_FRESHNESS_CHANGE_RE.test(b)
+        );
         return {
           ...slide,
           content: { ...slide.content, bullets },
@@ -429,7 +430,6 @@ export function buildExecutiveSummaryFragment(
   // Dense GPT path often omits coverage; sourceNote is not drawn on the
   // executive dashboard — fold §7.2 into the visible narrative card.
   narrative = ensureExecutiveFreshnessChangeInNarrative(narrative, extras);
-  const freshnessChangeLine = executiveFreshnessChangeVisibleLine(extras);
   // Base slide feeds the executive dashboard layout (conclusion + top risk
   // cards); the remaining key findings continue on an adjacent slide so no
   // finding is lost visually.
@@ -477,12 +477,8 @@ export function buildExecutiveSummaryFragment(
         ...(es.dataLimitations ?? []).slice(0, 2).map((c) => clampClientText(`Ограничения: ${c}`, 380)),
       ].filter((b, i, arr) => arr.indexOf(b) === i)
     : bullets.slice(TOP_CARDS);
-  if (
-    freshnessChangeLine &&
-    !contBullets.some((b) => EXEC_FRESHNESS_CHANGE_RE.test(b))
-  ) {
-    contBullets.unshift(clampClientText(freshnessChangeLine, 380));
-  }
+  // PDF-36 D.5 — §7.2 already lives in the p03 narrative card (see
+  // ensureExecutiveFreshnessChangeInNarrative above); no duplicate bullet.
   if (gpt && !sparse && gpt.positiveSignals.length > 0) {
     contBullets.push(
       clampClientText(`Позитивные сигналы: ${gpt.positiveSignals.slice(0, 3).join(" ")}`, 380)
@@ -510,8 +506,12 @@ export function buildExecutiveSummaryFragment(
   return { slides, status: "READY" };
 }
 
-/** Cards that fit on one risk-matrix page with typical GPT detail length. */
-const RISK_MATRIX_PAGE_CAPACITY = 5;
+/**
+ * Cards that fit on one risk-matrix page with typical GPT detail length.
+ * PDF-36 E.2 — five cards clipped the last one against the footer once GPT
+ * details grew; four cards render whole and the rest flow to continuations.
+ */
+const RISK_MATRIX_PAGE_CAPACITY = 4;
 /** Always keep ≥1 first-page slot for LIKELY when any exist (§2.1 visibility). */
 const RISK_MATRIX_LIKELY_RESERVED = 1;
 /**

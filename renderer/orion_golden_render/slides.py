@@ -88,15 +88,43 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         return
 
     if template == "orion_golden_toc":
+        # PDF-36 E.5 — structured TOC: gold index numbers + hairline rows
+        # instead of a plain bullet list.
         ctx.dark_bg()
         y = ctx.title("Содержание отчёта", 400000, WHITE, FS_SECTION)
-        ctx.bullets(
-            bullets or ["Резюме", "Россия", "ОАЭ", "Compliance", "LexisNexis", "Рекомендации"],
-            y,
-            color=WHITE,
-            max_items=22,
-            max_chars=120,
-        )
+        entries = [
+            _clip_words(b, 110)
+            for b in (bullets or ["Резюме", "Россия", "ОАЭ", "Compliance", "LexisNexis", "Рекомендации"])
+        ][:10]
+        row_h = min(560_000, max(420_000, (CONTENT_BOTTOM - y - 200_000) // max(1, len(entries))))
+        ry = y + 150_000
+        for i, entry in enumerate(entries, start=1):
+            num = ctx.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(ry), Emu(560_000), Emu(row_h))
+            np_ = num.text_frame.paragraphs[0]
+            nr = np_.add_run()
+            nr.text = f"{i:02d}"
+            nr.font.name = FONT
+            nr.font.bold = True
+            nr.font.size = Pt(16)
+            nr.font.color.rgb = RGBColor(0xC0, 0x9A, 0x4F)
+            box = ctx.slide.shapes.add_textbox(
+                Emu(MARGIN_X + 640_000), Emu(ry + 20_000), Emu(CONTENT_W - 640_000), Emu(row_h)
+            )
+            tf = box.text_frame
+            tf.word_wrap = True
+            p = tf.paragraphs[0]
+            r = p.add_run()
+            r.text = entry
+            r.font.name = FONT
+            r.font.size = Pt(13)
+            r.font.color.rgb = WHITE
+            rule = ctx.slide.shapes.add_shape(
+                1, Emu(MARGIN_X), Emu(ry + row_h - 60_000), Emu(CONTENT_W), Emu(9_000)
+            )
+            rule.fill.solid()
+            rule.fill.fore_color.rgb = RGBColor(0x24, 0x33, 0x52)
+            rule.line.fill.background()
+            ry += row_h
         return
 
     if template == "orion_golden_executive_dashboard":
@@ -150,7 +178,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 )
                 y += 100_000
             if bullets:
-                ctx.bullets(bullets, y, max_items=7, max_chars=280)
+                ctx.bullets(bullets, y, max_items=7, max_chars=380)
             return
         narr = narrative.strip()
         if narr and not bullets:
@@ -180,7 +208,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             )
             y += 100_000
         if bullets:
-            ctx.bullets(bullets, y, max_items=7, max_chars=280)
+            ctx.bullets(bullets, y, max_items=7, max_chars=380)
         return
 
     if template == "orion_golden_risk_matrix":
@@ -236,14 +264,15 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             if metrics_kf:
                 y = _render_kpi_cards(ctx, metrics_kf[:6], MARGIN_X, y, CONTENT_W, cols=3) + 100_000
             if narrative:
+                # PDF-36 E.4 — cards height-fit; no 420-char starvation.
                 y = ctx.content_card(
                     title=None,
-                    text=_clip_words(narrative, 420),
+                    text=narrative,
                     x=MARGIN_X,
                     y=y,
                     width=CONTENT_W,
                     min_h=260_000,
-                    max_h=800_000,
+                    max_h=1_100_000,
                     tone="neutral",
                     body_size=11,
                 )
@@ -252,29 +281,29 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             if actions_kf:
                 y = ctx.content_card(
                     title="Действие",
-                    text=_clip_words(_safe(actions_kf[0].get("label")), 160),
+                    text=_safe(actions_kf[0].get("label")),
                     x=MARGIN_X,
                     y=y,
                     width=CONTENT_W,
                     min_h=260_000,
-                    max_h=600_000,
+                    max_h=800_000,
                     tone="warn",
                     title_size=11,
                     body_size=11,
                 )
                 y += 60_000
             if bullets:
-                ctx.bullets(bullets, y, max_items=5, max_chars=260)
+                ctx.bullets(bullets, y, max_items=6, max_chars=340)
             return
         if narrative:
             y = ctx.content_card(
                 title=None,
-                text=_clip_words(narrative, 420),
+                text=narrative,
                 x=MARGIN_X,
                 y=y,
                 width=CONTENT_W,
                 min_h=260_000,
-                max_h=800_000,
+                max_h=1_100_000,
                 tone="neutral",
                 body_size=11,
             )
@@ -286,19 +315,19 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         if actions:
             y = ctx.content_card(
                 title="Действие",
-                text=_clip_words(_safe(actions[0].get("label")), 160),
+                text=_safe(actions[0].get("label")),
                 x=MARGIN_X,
                 y=y,
                 width=CONTENT_W,
                 min_h=260_000,
-                max_h=600_000,
+                max_h=800_000,
                 tone="warn",
                 title_size=11,
                 body_size=11,
             )
             y += 60_000
         if bullets:
-            ctx.bullets(bullets, y, max_items=5, max_chars=260)
+            ctx.bullets(bullets, y, max_items=6, max_chars=340)
         return
 
     if template == "orion_golden_serp_screenshot":
@@ -454,7 +483,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 p.space_before = Pt(2)
                 p.space_after = Pt(5)
                 r = p.add_run()
-                clipped = _clip_words(bullet, 160)
+                clipped = _clip_words(bullet, 240)
                 r.text = f"• {clipped}"
                 r.font.name = FONT
                 r.font.size = Pt(11)
@@ -469,21 +498,22 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         ctx.light_bg()
         y = ctx.title(title, 320000, NAVY)
         status_text = narrative or "Для данного раздела недостаточно подтверждённых данных."
+        # PDF-36 D.3 — cards height-fit with font step-down; no char starvation.
         y = ctx.content_card(
             title="Статус сбора",
-            text=_clip_words(status_text, 700),
+            text=status_text,
             x=MARGIN_X,
             y=y,
             width=CONTENT_W,
             min_h=380_000,
-            max_h=1_500_000,
+            max_h=1_700_000,
             tone="accent",
             title_size=11,
             body_size=12,
         )
         y += 110_000
         if bullets:
-            why_text = "\n".join(_clip_words(b, 360) for b in bullets[:4])
+            why_text = "\n".join(bullets[:4])
             y = ctx.content_card(
                 title="Что это означает",
                 text=why_text,
@@ -491,7 +521,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 y=y,
                 width=CONTENT_W,
                 min_h=360_000,
-                max_h=1_800_000,
+                max_h=2_200_000,
                 tone="neutral",
                 title_size=11,
                 body_size=11,
@@ -501,12 +531,12 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         if actions_nd:
             y = ctx.content_card(
                 title="Что проверить",
-                text=_clip_words(_safe(actions_nd[0].get("label")), 320),
+                text=_safe(actions_nd[0].get("label")),
                 x=MARGIN_X,
                 y=y,
                 width=CONTENT_W,
                 min_h=320_000,
-                max_h=900_000,
+                max_h=1_100_000,
                 tone="warn",
                 title_size=11,
                 body_size=11,
@@ -530,24 +560,27 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY, FS_SECTION)
         if narrative:
-            y = ctx.body(_clip_words(narrative, 520), y, max_h=1000000)
+            # PDF-36 D.3 — ctx.body height-fits with font step-down; feed it
+            # the full text instead of a pre-starved 520-char slice.
+            y = ctx.body(_clip_words(narrative, 760), y, max_h=1200000)
             y = y + 80000
         if bullets:
-            ctx.bullets(bullets, y, max_items=14, max_chars=220)
+            ctx.bullets(bullets, y, max_items=14, max_chars=340)
         return
 
     # default section summary / appendix
     ctx.light_bg()
     y = ctx.title(title, 280000, NAVY, FS_SECTION)
-    # Prefer bullets for dense content; keep narrative short to avoid overlap
-    short_narrative = _clip_words(narrative, 480) if narrative else ""
+    # PDF-36 D.3 — these pages ended half-empty while text was cut at 480
+    # chars; the page bottom is the real budget, not a character count.
+    short_narrative = _clip_words(narrative, 900) if narrative else ""
     if short_narrative and not bullets:
         ctx.body(short_narrative, y, max_h=CONTENT_BOTTOM - y - 100000)
         return
     if short_narrative:
-        y = ctx.body(short_narrative, y, max_h=900000)
+        y = ctx.body(short_narrative, y, max_h=1100000)
         y = y + 80000
     if bullets:
-        ctx.bullets(bullets, y, max_items=8)
+        ctx.bullets(bullets, y, max_items=9, max_chars=520)
 
 

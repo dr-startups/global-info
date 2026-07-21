@@ -35,7 +35,13 @@ from .common import (
     _trim_dangling_tail,
     measure_text_height,
 )
-from .visual import _render_kpi_cards, _render_status_badge, _tone_fill, _tone_value_color
+from .visual import (
+    _render_kpi_cards,
+    _render_status_badge,
+    _title_line_estimate,
+    _tone_fill,
+    _tone_value_color,
+)
 
 def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) -> None:
     ctx.light_bg()
@@ -65,14 +71,16 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
     right_x = MARGIN_X + left_w + 120_000
     cy = y
     for para in paras:
+        # PDF-36 D.3 — content_card height-fits with font step-down; the old
+        # 420-char pre-clip starved the §7.2 line and lead conclusions.
         cy = ctx.content_card(
             title=None,
-            text=_clip_words(_safe(para), 420),
+            text=_safe(para),
             x=left_x,
             y=cy,
             width=left_w,
             min_h=240_000,
-            max_h=900_000,
+            max_h=1_100_000,
             tone="neutral",
             body_size=11,
         )
@@ -164,14 +172,29 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         left = MARGIN_X + 100_000
         pad_y = 80_000
         headline_h = measure_text_height(headline, text_w, 13, line_spacing=1.15)
-        detail_budget = 2_200_000
+        # PDF-36 E.2 — a card that cannot fit whole above the footer is not
+        # drawn at all (TS pagination carries the rest to the continuation
+        # page); a half-card bleeding into the footer reads as a defect.
+        remaining = CONTENT_BOTTOM - y - 40_000
+        if remaining < max(420_000, pad_y + headline_h + pad_y):
+            break
+        detail_font = 11
         if detail:
             # Grow card to fit complete detail when possible.
-            detail_h = measure_text_height(detail, text_w, 11, line_spacing=1.2)
+            detail_h = measure_text_height(detail, text_w, detail_font, line_spacing=1.2)
             needed = pad_y + headline_h + 40_000 + detail_h + pad_y
-            max_h = max(480_000, CONTENT_BOTTOM - y - 40_000)
+            max_h = max(480_000, remaining)
             if needed > max_h:
-                fitted = _fit_text_to_height(detail, text_w, 11, max(180_000, max_h - pad_y - headline_h - pad_y - 40_000))
+                # PDF-36 D.3 — font step-down before dropping sentences.
+                for candidate in (10, 9.5):
+                    cand_h = measure_text_height(detail, text_w, candidate, line_spacing=1.2)
+                    if pad_y + headline_h + 40_000 + cand_h + pad_y <= max_h:
+                        detail_font = candidate
+                        detail_h = cand_h
+                        needed = pad_y + headline_h + 40_000 + detail_h + pad_y
+                        break
+            if needed > max_h:
+                fitted = _fit_text_to_height(detail, text_w, detail_font, max(180_000, max_h - pad_y - headline_h - pad_y - 40_000))
                 if dangling.search(fitted) or fitted != detail and not fitted.endswith((".", "!", "?")):
                     # Fall back to first complete sentence only.
                     sentences = re.split(r"(?<=[.!?])\s+", detail)
@@ -179,11 +202,11 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
                     if dangling.search(fitted):
                         raise RuntimeError(f"ORION risk-matrix dangling detail on p{ctx.page}: {fitted[-40:]}")
                 detail = fitted
-                detail_h = measure_text_height(detail, text_w, 11, line_spacing=1.2)
+                detail_h = measure_text_height(detail, text_w, detail_font, line_spacing=1.2)
             h = min(max_h, pad_y + headline_h + 40_000 + detail_h + pad_y)
         else:
             h = max(420_000, pad_y + headline_h + pad_y)
-        h = max(420_000, min(h, CONTENT_BOTTOM - y - 40_000))
+        h = max(420_000, min(h, remaining))
         ctx.card(y, h=h, fill=_tone_fill(tone))
         # Headline
         box = ctx.slide.shapes.add_textbox(Emu(left), Emu(y + pad_y), Emu(text_w), Emu(max(headline_h + 20_000, 160_000)))
@@ -206,23 +229,27 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
             r = p.add_run()
             r.text = detail
             r.font.name = FONT
-            r.font.size = Pt(11)
+            r.font.size = Pt(detail_font)
             r.font.color.rgb = BODY_COLOR
         if pill:
-            # C.3 — auto-size the badge: shrink the font, then grow the pill
-            # height, so «Требует подтверждения» never spills past the plate.
+            # E.1 — badge height from conservative wrap estimate; long Russian
+            # labels like «Требует подтверждения» always get ≥2 lines of room
+            # so the plate border never bisects the text (PDF 36 p5–7).
             bx = MARGIN_X + CONTENT_W - badge_w - 80_000
             by = y + pad_y
-            inner_w = badge_w - 100_000
-            pill_size = 11
-            need = measure_text_height(pill, inner_w, pill_size, line_spacing=1.1)
-            if need > 180_000:
-                pill_size = 9
-                need = measure_text_height(pill, inner_w, pill_size, line_spacing=1.1)
-            bh = max(280_000, min(520_000, need + 150_000))
-            ctx.card(by, h=bh, x=bx, w=badge_w, fill=WHITE)
+            inner_w = badge_w - 140_000
+            pill_size = 10
+            lines = _title_line_estimate(pill, inner_w, pill_size, max_lines=3)
+            if len(pill) > 14 or " " in pill:
+                lines = max(lines, 2)
+            line_h = int(pill_size * 12_700 * 1.35)
+            need = lines * line_h + 60_000
+            bh = min(max(360_000, need + 140_000), max(360_000, h - 2 * pad_y))
+            # Soft tone fill, no hard border — a stroked plate was reading as
+            # a mid-text strike-through after LibreOffice PDF conversion.
+            ctx.card(by, h=bh, x=bx, w=badge_w, fill=_tone_fill(tone), border=None)
             b = ctx.slide.shapes.add_textbox(
-                Emu(bx + 50_000), Emu(by + 60_000), Emu(inner_w), Emu(max(need, 160_000))
+                Emu(bx + 70_000), Emu(by + 70_000), Emu(inner_w), Emu(bh - 140_000)
             )
             btf = b.text_frame
             btf.word_wrap = True

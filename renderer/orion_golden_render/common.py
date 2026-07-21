@@ -365,13 +365,16 @@ def plural_ru(n: int, one: str, few: str, many: str) -> str:
 
 
 def _clip_words(text: str, max_chars: int) -> str:
-    """Clip on sentence/word boundary; avoid mid-thought stubs and dangling prepositions."""
+    """Emergency brake only (PDF-36 D.4): drop the incomplete last sentence
+    whole whenever a complete one fits — a shorter finished thought beats a
+    longer broken one. Word-boundary cut is the last resort."""
     val = _safe(text)
     if len(val) <= max_chars:
         return _trim_dangling_tail(val)
     slice_ = val[:max_chars]
     punct = max(slice_.rfind(". "), slice_.rfind("! "), slice_.rfind("? "), slice_.rfind("; "))
-    if punct > max_chars * 0.45:
+    # Any complete sentence ≥20% of the budget wins over a broken tail.
+    if punct > max_chars * 0.2:
         return slice_[: punct + 1].rstrip()
     sp = max(slice_.rfind(" "), slice_.rfind("\u00a0"))
     if sp > max_chars * 0.4:
@@ -534,6 +537,15 @@ class _Ctx:
             return y
         # Prefer height-fit over crude char starvation (was ~200 chars at 420k emu).
         joined_raw = "\n".join(chunks[:8])
+        # PDF-36 D.3 — before dropping sentences, shrink the font 1–2 pt
+        # (min 9pt): full text at 10pt beats a cut paragraph at 11pt.
+        if measure_text_height(joined_raw, width, font_size, line_spacing=1.2) > avail:
+            for candidate in (font_size - 1, font_size - 2):
+                if candidate < 9:
+                    break
+                if measure_text_height(joined_raw, width, candidate, line_spacing=1.2) <= avail:
+                    font_size = candidate
+                    break
         fitted = _fit_text_to_height(joined_raw, width, font_size, avail, line_spacing=1.2)
         fitted = _trim_dangling_tail(fitted)
         dangling = re.compile(
@@ -652,8 +664,20 @@ class _Ctx:
         short_phrase = bool(body_s) and len(body_s) <= 110 and len(body_s.split()) <= 16
         if body_s and needed > budget and not short_phrase:
             body_budget = max(100_000, budget - 2 * pad - title_h)
-            body_s = _fit_text_to_height(body_s, inner_w, body_size, body_budget)
-            body_h = measure_text_height(body_s, inner_w, body_size, line_spacing=1.2) if body_s else 0
+            # PDF-36 D.3 — step the font down (−1/−2 pt, min 9pt) before any
+            # text is dropped: +20–30% capacity, imperceptible to the eye.
+            for candidate in (body_size - 1, body_size - 2):
+                if candidate < 9:
+                    break
+                if measure_text_height(body_s, inner_w, candidate, line_spacing=1.2) <= body_budget:
+                    body_size = candidate
+                    break
+            else:
+                body_size = max(9, body_size - 2)
+            body_h = measure_text_height(body_s, inner_w, body_size, line_spacing=1.2)
+            if body_h > body_budget:
+                body_s = _fit_text_to_height(body_s, inner_w, body_size, body_budget)
+                body_h = measure_text_height(body_s, inner_w, body_size, line_spacing=1.2) if body_s else 0
         else:
             body_h = full_body_h
         h = max(min_h, min(budget, 2 * pad + title_h + body_h + 30_000))
@@ -750,6 +774,17 @@ class _Ctx:
             kept.append(clipped)
         if not kept:
             return y
+        # PDF-36 E.2 — whole bullets only: drop trailing items that cannot fit
+        # above the footer instead of letting the textbox overflow the page.
+        page_avail = CONTENT_BOTTOM - y
+        while len(kept) > 1:
+            trial = "\n".join(f"• {b}" for b in kept)
+            if (
+                measure_text_height(trial, CONTENT_W, FS_BODY, line_spacing=1.2, paragraph_spacing_pt=6)
+                <= page_avail
+            ):
+                break
+            kept.pop()
         text = "\n".join(f"• {b}" for b in kept)
         needed = measure_text_height(text, CONTENT_W, FS_BODY, line_spacing=1.2, paragraph_spacing_pt=6)
         avail = max(300000, min(needed + 80_000, CONTENT_BOTTOM - y))

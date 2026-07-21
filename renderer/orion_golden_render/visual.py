@@ -172,6 +172,16 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         fitted = body
         needed = measure_text_height(fitted, w - 2 * pad, size, line_spacing=1.2)
         avail = max_bottom - cy - 160_000 - title_h
+        # PDF-36 D.3 — shrink the font 1–1.5 pt before dropping sentences.
+        if needed > avail:
+            for candidate in (size - 1, size - 1.5):
+                if candidate < 9.5:
+                    break
+                cand_h = measure_text_height(fitted, w - 2 * pad, candidate, line_spacing=1.2)
+                if cand_h <= avail:
+                    size = candidate
+                    needed = cand_h
+                    break
         if needed > avail:
             # Keep complete sentences only (no ellipsis). When even the first
             # sentence cannot fit: required headline → safe fallback (§6.2);
@@ -321,39 +331,151 @@ def _render_visual_with_sidebar(
     assets: dict[str, dict[str, Any]],
     title: str,
 ) -> None:
-    """Title + left visual (contain) + right analytical sidebar."""
+    """Title + left visual (contain) + right analytical sidebar.
+    PDF-36 E.4 — pages without a visual switch to a full-width card layout
+    instead of wasting 62% of the page on «материал недоступен»."""
     ctx.light_bg()
     y = ctx.title(title, 280000, NAVY)
     refs = slide.get("assetRefs") or []
     visual = _first_visual_asset(refs, assets)
     has_sidebar = bool(slide.get("visualAnalysis") or slide.get("clientTakeaway") or slide.get("bullets"))
+    if not visual:
+        _render_analysis_cards_full_width(ctx, slide, y)
+        return
     img_w = int(CONTENT_W * 0.62) if has_sidebar else CONTENT_W
     side_w = CONTENT_W - img_w - 120000
     img_h = CONTENT_BOTTOM - y - 80000
-    if visual:
-        # Temporarily embed into a narrower box by using contain math inline
-        raw = _resolve_image_bytes(visual)
-        if raw:
-            iw, ih = img_w, img_h
-            if Image is not None:
-                try:
-                    with Image.open(io.BytesIO(raw)) as im:
-                        iw, ih = im.size
-                except Exception:  # noqa: BLE001
-                    pass
-            # Top-align visual with sidebar (do not vertically center in full column).
-            scale = min(img_w / max(iw, 1), (img_h - 60000) / max(ih, 1))
-            dw, dh = int(iw * scale), int(ih * scale)
-            left = MARGIN_X + (img_w - dw) // 2
-            top = y + 60000
-            ctx.slide.shapes.add_picture(io.BytesIO(raw), Emu(left), Emu(top), width=Emu(dw), height=Emu(dh))
-        else:
-            ctx.body("Визуальный материал недоступен.", y + 80000, max_h=600000, color=MUTED_COLOR)
+    # Temporarily embed into a narrower box by using contain math inline
+    raw = _resolve_image_bytes(visual)
+    if raw:
+        iw, ih = img_w, img_h
+        if Image is not None:
+            try:
+                with Image.open(io.BytesIO(raw)) as im:
+                    iw, ih = im.size
+            except Exception:  # noqa: BLE001
+                pass
+        # Top-align visual with sidebar (do not vertically center in full column).
+        scale = min(img_w / max(iw, 1), (img_h - 60000) / max(ih, 1))
+        dw, dh = int(iw * scale), int(ih * scale)
+        left = MARGIN_X + (img_w - dw) // 2
+        top = y + 60000
+        ctx.slide.shapes.add_picture(io.BytesIO(raw), Emu(left), Emu(top), width=Emu(dw), height=Emu(dh))
     else:
-        reason = _safe(slide.get("blockedReason") or "Визуальный материал недоступен для данного раздела.")
-        ctx.body(reason, y + 80000, max_h=800000, color=MUTED_COLOR)
+        ctx.body("Визуальный материал недоступен.", y + 80000, max_h=600000, color=MUTED_COLOR)
     if has_sidebar and side_w > 400000:
         _sidebar_analysis(ctx, slide, MARGIN_X + img_w + 120000, y + 60000, side_w, img_h - 60000)
+
+
+def _render_analysis_cards_full_width(ctx: _Ctx, slide: dict[str, Any], y: int) -> None:
+    """No-visual layout: headline accent card, two analysis cards side by
+    side, an action card and fine-print provenance — the sidebar content
+    spread over the whole page instead of a starved right column."""
+    analysis = slide.get("visualAnalysis") or {}
+    if not isinstance(analysis, dict):
+        analysis = {}
+    headline = _sidebar_sanitize_field(
+        ctx,
+        "headlineConclusion",
+        _safe(analysis.get("headlineConclusion") or slide.get("clientTakeaway") or slide.get("narrative") or ""),
+    )
+    visible = _sidebar_sanitize_field(
+        ctx, "whatIsVisible", _safe(analysis.get("whatIsVisible") or "")
+    )
+    meaning = _sidebar_sanitize_field(
+        ctx, "clientMeaning", _safe(analysis.get("clientMeaning") or analysis.get("whyItMatters") or "")
+    )
+    actions = analysis.get("recommendedActions") or []
+    action = _sidebar_sanitize_field(
+        ctx, "recommendedActions", _safe(actions[0]) if isinstance(actions, list) and actions else ""
+    )
+    provenance = _safe(analysis.get("provenanceLabel") or "")
+    explanations = analysis.get("highlightExplanations") or []
+    reasons = [
+        _safe(ex.get("clientReason"))
+        for ex in explanations
+        if isinstance(ex, dict) and _safe(ex.get("clientReason"))
+    ][:2]
+
+    if not any((headline, visible, meaning, action)):
+        reason = _safe(slide.get("blockedReason") or "Материалы по данному разделу недоступны.")
+        ctx.body(reason, y + 80_000, max_h=800_000, color=MUTED_COLOR)
+        return
+
+    if headline:
+        y = ctx.content_card(
+            title=None,
+            text=headline,
+            x=MARGIN_X,
+            y=y,
+            width=CONTENT_W,
+            min_h=340_000,
+            max_h=1_200_000,
+            tone="accent",
+            body_size=12,
+        )
+        y += 110_000
+    gap = 110_000
+    col_w = (CONTENT_W - gap) // 2
+    left_body = visible or (reasons[0] if reasons else "")
+    right_body = meaning or (reasons[1] if len(reasons) > 1 else "")
+    if left_body and right_body:
+        max_col_h = max(600_000, CONTENT_BOTTOM - y - (620_000 if action else 200_000))
+        lb = ctx.content_card(
+            title="Что показывает раздел",
+            text=left_body,
+            x=MARGIN_X,
+            y=y,
+            width=col_w,
+            min_h=420_000,
+            max_h=max_col_h,
+            tone="neutral",
+            title_size=11,
+            body_size=11,
+        )
+        rb = ctx.content_card(
+            title="Что это значит",
+            text=right_body,
+            x=MARGIN_X + col_w + gap,
+            y=y,
+            width=col_w,
+            min_h=420_000,
+            max_h=max_col_h,
+            tone="neutral",
+            title_size=11,
+            body_size=11,
+        )
+        y = max(lb, rb) + gap
+    elif left_body or right_body:
+        y = ctx.content_card(
+            title="Что показывает раздел" if left_body else "Что это значит",
+            text=left_body or right_body,
+            x=MARGIN_X,
+            y=y,
+            width=CONTENT_W,
+            min_h=420_000,
+            max_h=max(600_000, CONTENT_BOTTOM - y - (620_000 if action else 200_000)),
+            tone="neutral",
+            title_size=11,
+            body_size=11,
+        )
+        y += gap
+    if action and y < CONTENT_BOTTOM - 420_000:
+        y = ctx.content_card(
+            title="Что сделать",
+            text=action,
+            x=MARGIN_X,
+            y=y,
+            width=CONTENT_W,
+            min_h=340_000,
+            max_h=900_000,
+            tone="warn",
+            title_size=11,
+            body_size=11,
+        )
+        y += 90_000
+    if provenance and y < CONTENT_BOTTOM - 200_000:
+        ctx.body(provenance, y, max_h=300_000, color=MUTED_COLOR, font_size=8.5)
 
 
 def _title_line_estimate(text: str, col_width_emu: int, font_pt: float, max_lines: int = 2) -> int:
@@ -386,6 +508,9 @@ def _status_tone(status: str) -> tuple[str, "RGBColor"]:
     # LIKELY_SUBJECT (§2.1) and manual-review statuses — amber, not green.
     if "вероятн" in s or "проверк" in s or "требует" in s or "pep" in s:
         return "●", RGBColor(0xC2, 0x41, 0x0C)
+    # E.6 — neutral verdicts read gray, green stays for explicit positives.
+    if "нейтрал" in s or s in {"·", "—", "-", ""}:
+        return "●", RGBColor(0x64, 0x74, 0x8B)
     return "●", RGBColor(0x04, 0x78, 0x57)
 
 
@@ -488,7 +613,8 @@ def _add_search_table(
     # generic value columns («Значение», «Комментарий») stay plain text so
     # negative categories never receive a misleading green marker.
     last_header = str(headers[cols - 1]) if cols - 1 < len(headers) else ""
-    badge_last_col = bool(re.search(r"статус|риск|провер", last_header, re.I))
+    # E.6 — «Оценка» is the SERP verdict column and must carry the badge too.
+    badge_last_col = bool(re.search(r"статус|риск|провер|оценк", last_header, re.I))
 
     for r_idx, (kind, payload) in enumerate(plan):
         if kind == "header":

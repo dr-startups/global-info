@@ -26,7 +26,11 @@ import {
 import type { Finding } from "../../contracts/finding";
 import type { SurfaceClaim } from "../../contracts/surface-analysis";
 import { ADVERSE_PATTERNS } from "../../analytics/surface-analyzers";
-import { pluralRu } from "../../analytics/finding-synthesizer";
+import {
+  cleanExampleTitle,
+  joinTitlesWithinBudget,
+  pluralRu,
+} from "../../analytics/finding-synthesizer";
 import {
   freshnessFootnote,
   reportDiffClientLine,
@@ -368,13 +372,22 @@ export function findingBlocks(
   };
 }
 
-/** Confidence/status line: confirmed theme vs preliminary signal + level. */
+/**
+ * Confidence/status line: confirmed theme vs preliminary signal + level.
+ * PDF-36 D.4 — human phrasing instead of the telegraph string
+ * «Статус: …; уровень: …; уверенность 90%.» repeated verbatim across pages.
+ */
 export function statusLine(top: Finding | undefined): string {
   if (!top) return "Статус: по данной поверхности выводов о рисках нет.";
-  const kind = top.confidence >= 0.7 ? "подтверждённая тема" : "предварительный сигнал";
-  return `Статус: ${kind}; уровень: ${riskLabel(top.riskLevel).toLowerCase()}; уверенность ${Math.round(
-    top.confidence * 100
-  )}%.`;
+  const kind =
+    top.confidence >= 0.7 ? "тема подтверждена" : "сигнал предварительный";
+  const conf =
+    top.confidence >= 0.85
+      ? "достоверность оценки высокая"
+      : top.confidence >= 0.6
+        ? "достоверность оценки уверенная"
+        : "оценка требует подтверждения";
+  return `Статус: ${kind}, уровень внимания — ${riskLabel(top.riskLevel).toLowerCase()}; ${conf}.`;
 }
 
 export function normalizeEvidenceUrl(url: string | undefined): string {
@@ -660,7 +673,7 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
       seenDomains.add(e.domain);
       domains.push(e.domain);
     }
-    const t = String(e.title ?? "").trim();
+    const t = cleanExampleTitle(String(e.title ?? ""));
     if (t && !seenTitles.has(t.toLowerCase()) && !/^potential\s+match$/i.test(t)) {
       seenTitles.add(t.toLowerCase());
       titles.push(t);
@@ -673,11 +686,10 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
     : "Источники по данной теме относятся к другим разделам отчёта.";
   claim = claim.replace(/Источники:\s.*?\.(?=\s|$)/u, sourceSegment);
   if (/Примеры заголовков:/u.test(claim)) {
-    claim = titles.length
-      ? claim.replace(
-          /Примеры заголовков:.*$/u,
-          `Примеры заголовков: ${titles.slice(0, 3).join(" · ").slice(0, 380)}`
-        )
+    // PDF-36 D.5 — whole-title join, no mid-title character slice.
+    const titlesSegment = joinTitlesWithinBudget(titles.slice(0, 3), 380);
+    claim = titlesSegment
+      ? claim.replace(/Примеры заголовков:.*$/u, `Примеры заголовков: ${titlesSegment}`)
       : claim.replace(/\s*Примеры заголовков:.*$/u, "");
   }
   return claim.toLowerCase().startsWith(f.theme.toLowerCase())
