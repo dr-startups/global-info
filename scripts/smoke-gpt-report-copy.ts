@@ -44,10 +44,13 @@ import {
   GPT_SLIDE_COPY_DENSITY_MARKER,
   GPT_SLIDE_COPY_FIELD_BUDGETS,
   GPT_SLIDE_COPY_PROMPT_VERSION,
+  GPT_SLIDE_COPY_REPAIR_PROMPT_MARKER,
   isHonestEmptyStateSlide,
   measureSlideCopyDensity,
   type GptSlideCopyReport,
 } from "../src/modules/digital-profile/orion-golden/deck-sections/llm-slide-copy";
+import { GPT_DECK_COMPOSER_PROMPT_MARKER } from "../src/modules/digital-profile/orion-golden/deck-sections/gpt-deck-composer";
+import { GPT_DECK_EDITOR_PROMPT_MARKER } from "../src/modules/digital-profile/orion-golden/deck-sections/gpt-deck-editor";
 import { buildSerpFragment } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders";
 import { fragmentScope } from "../src/modules/digital-profile/orion-golden/deck-sections";
 import type { VerifiedFindingBundle } from "../src/modules/digital-profile/orion-golden/contracts/verified-finding-bundle";
@@ -246,6 +249,29 @@ function validCaseAnalysisJson(): unknown {
   };
 }
 
+/**
+ * Composer (stage 1.5) fake: echo a valid plan from the payload itself —
+ * first finding and first available domain of each fragment.
+ */
+function composerEchoPlan(userPayload: unknown): unknown {
+  const payload = userPayload as {
+    fragments: Array<{
+      fragmentKey: string;
+      findings: Array<{ findingId: string; theme: string }>;
+      availableDomains: string[];
+    }>;
+  };
+  return {
+    fragments: payload.fragments.map((f) => ({
+      fragmentKey: f.fragmentKey,
+      storyAngle:
+        "Начните с главного репутационного сигнала страницы и его влияния на проверку субъекта банками и контрагентами.",
+      emphasisFindingIds: f.findings.slice(0, 2).map((x) => x.findingId),
+      keyDomains: f.availableDomains.slice(0, 2),
+    })),
+  };
+}
+
 /** Fake GPT: stage 1 returns the case analysis; stage 2 rewrites every slide. */
 function makeHappyCaller(): GptJsonCaller {
   return async ({ systemPrompt, userPayload }) => {
@@ -257,6 +283,15 @@ function makeHappyCaller(): GptJsonCaller {
     }
     if (systemPrompt.includes(GPT_STAGE1_MAP_PROMPT_MARKER)) {
       return miniMapJson();
+    }
+    if (systemPrompt.includes(GPT_DECK_COMPOSER_PROMPT_MARKER)) {
+      return composerEchoPlan(userPayload);
+    }
+    if (systemPrompt.includes(GPT_DECK_EDITOR_PROMPT_MARKER)) {
+      return { slides: [] };
+    }
+    if (systemPrompt.includes(GPT_SLIDE_COPY_REPAIR_PROMPT_MARKER)) {
+      return { items: [] };
     }
     const payload = userPayload as {
       slides: Array<{ slideId: string; title: string }>;
@@ -1241,6 +1276,19 @@ describe("stage 2 — GPT client copy inside the canonical prepare", () => {
     const blob = readDeckBlob(root);
     assert.ok(blob.includes(GPT_NARRATIVE_MARKER), "GPT narrative must reach assembled deck");
     assert.ok(blob.includes("Рекомендуем подготовить официальную позицию"));
+
+    // Level 2: the composition plan is persisted and marked as used.
+    const compositionPath = join(root, "deck", "gpt-deck-composition.json");
+    assert.ok(existsSync(compositionPath), "gpt-deck-composition.json must be written");
+    const composition = JSON.parse(readFileSync(compositionPath, "utf8")) as {
+      fragments: Array<{ fragmentKey: string; storyAngle: string }>;
+    };
+    assert.ok(composition.fragments.length >= 1);
+    assert.equal(report.compositionUsed, true);
+
+    // Level 1 (stage 3): the editorial pass ran and left an artifact.
+    const editorPath = join(root, "deck", "gpt-deck-editor.json");
+    assert.ok(existsSync(editorPath), "gpt-deck-editor.json must be written");
   });
 
   it("rejects unsafe GPT fields individually (internal tokens, foreign domains)", async () => {
@@ -1249,6 +1297,8 @@ describe("stage 2 — GPT client copy inside the canonical prepare", () => {
       if (systemPrompt.includes("ПОЛНЫЙ верифицированный аналитический корпус")) {
         return validCaseAnalysisJson();
       }
+      if (systemPrompt.includes(GPT_DECK_COMPOSER_PROMPT_MARKER)) return { fragments: [] };
+      if (systemPrompt.includes(GPT_DECK_EDITOR_PROMPT_MARKER)) return { slides: [] };
       const payload = userPayload as { slides: Array<{ slideId: string; title: string }> };
       return {
         slides: payload.slides.map((s) => ({
@@ -1316,6 +1366,8 @@ describe("stage 2 — GPT client copy inside the canonical prepare", () => {
       if (systemPrompt.includes("ПОЛНЫЙ верифицированный аналитический корпус")) {
         return validCaseAnalysisJson();
       }
+      if (systemPrompt.includes(GPT_DECK_COMPOSER_PROMPT_MARKER)) return { fragments: [] };
+      if (systemPrompt.includes(GPT_DECK_EDITOR_PROMPT_MARKER)) return { slides: [] };
       stage2Hits += 1;
       const payload = userPayload as { slides: Array<{ slideId: string; title: string }> };
       return {
@@ -1391,6 +1443,8 @@ describe("stage 2 — gpt-copy resume retries FALLBACK_* only", () => {
       if (systemPrompt.includes("ПОЛНЫЙ верифицированный аналитический корпус")) {
         return validCaseAnalysisJson();
       }
+      if (systemPrompt.includes(GPT_DECK_COMPOSER_PROMPT_MARKER)) return { fragments: [] };
+      if (systemPrompt.includes(GPT_DECK_EDITOR_PROMPT_MARKER)) return { slides: [] };
       const payload = userPayload as {
         fragmentKey?: string;
         slides: Array<{ slideId: string; title: string }>;
@@ -1430,6 +1484,8 @@ describe("stage 2 — gpt-copy resume retries FALLBACK_* only", () => {
       if (systemPrompt.includes("ПОЛНЫЙ верифицированный аналитический корпус")) {
         return validCaseAnalysisJson();
       }
+      if (systemPrompt.includes(GPT_DECK_COMPOSER_PROMPT_MARKER)) return { fragments: [] };
+      if (systemPrompt.includes(GPT_DECK_EDITOR_PROMPT_MARKER)) return { slides: [] };
       retryHits += 1;
       const payload = userPayload as {
         fragmentKey?: string;
@@ -1472,6 +1528,8 @@ describe("stage 2 — gpt-copy resume retries FALLBACK_* only", () => {
       if (systemPrompt.includes("ПОЛНЫЙ верифицированный аналитический корпус")) {
         return validCaseAnalysisJson();
       }
+      if (systemPrompt.includes(GPT_DECK_COMPOSER_PROMPT_MARKER)) return { fragments: [] };
+      if (systemPrompt.includes(GPT_DECK_EDITOR_PROMPT_MARKER)) return { slides: [] };
       secondHits += 1;
       const payload = userPayload as { slides: Array<{ slideId: string; title: string }> };
       return {

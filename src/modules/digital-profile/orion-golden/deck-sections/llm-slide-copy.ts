@@ -34,9 +34,10 @@ import {
   matchInternalClientToken,
 } from "../client/load-client-text-contract";
 import { riskLevelRu, subjectMatchRu } from "../gpt/client-payload-labels";
+import type { GptDeckComposition } from "./gpt-deck-composer";
 
-/** v5 — Phase A.2: hard ban on meta-speak («черновик», «переданный фрагмент») in client text. */
-export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v5";
+/** v6 — GPT levels plan: composition plan (level 2) wired into fragment prompts. */
+export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v6";
 
 /** Mirrors section-validation budgets — from client-text-contract (§6.1). */
 export const GPT_SLIDE_COPY_FIELD_BUDGETS = (() => {
@@ -55,6 +56,10 @@ const TEXT_BUDGETS = GPT_SLIDE_COPY_FIELD_BUDGETS;
 /** Prompt marker for offline smokes asserting §7.5 density instructions. */
 export const GPT_SLIDE_COPY_DENSITY_MARKER = "заполняй ВСЕ поля черновика";
 
+/** Prompt marker for the over-budget repair pass (PDF-31 B.1a). */
+export const GPT_SLIDE_COPY_REPAIR_PROMPT_MARKER =
+  "сожми каждый переданный текст";
+
 const DOMAIN_TOKEN_RE = /\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b/giu;
 
 const SlideOverrideSchema = z.object({
@@ -70,6 +75,136 @@ const FragmentCopyResponseSchema = z.object({
 });
 type SlideOverride = z.infer<typeof SlideOverrideSchema>;
 
+// ---------- PDF-31 B.1a — repair-retry for over-budget GPT fields ----------
+//
+// Before B.1a an over-budget field was rejected outright and the slide kept
+// the deterministic draft — the model's richer text was lost entirely. Now
+// the field gets ONE repair call («сожми, сохранив факты»); rejection happens
+// only when the repaired text still violates the budget/token/domain gates.
+
+type ScalarCopyField = "narrative" | "whatWasFound" | "whyItMatters" | "whatToCheck";
+
+type OverBudgetItem = {
+  slideId: string;
+  field: ScalarCopyField | "bullets";
+  /** Scalar field text (absent for bullets). */
+  text?: string;
+  /** Full bullet list (absent for scalar fields). */
+  texts?: string[];
+  /** Target length communicated to the model (below the validation budget). */
+  maxChars: number;
+};
+
+const RepairResponseSchema = z.object({
+  items: z
+    .array(
+      z.object({
+        slideId: z.string().min(1),
+        field: z.string().min(1),
+        text: z.string().optional(),
+        texts: z.array(z.string()).optional(),
+      })
+    )
+    .max(64),
+});
+
+const REPAIR_INSTRUCTIONS = [
+  `Ты — выпускающий редактор отчёта. Твоя задача — ${GPT_SLIDE_COPY_REPAIR_PROMPT_MARKER} до maxChars символов, сохранив ВСЕ факты, числа, названия тем и домены источников.`,
+  "Не добавляй новых фактов и доменов; не используй внутренние технические термины; пиши только по-русски.",
+  "Каждый текст должен заканчиваться завершённым предложением с точкой — не обрывай мысль.",
+  "Для элементов с полем texts верни массив той же длины: каждый пункт сжат до maxChars.",
+  'Верни ТОЛЬКО JSON: {"items": [{"slideId": string, "field": string, "text": string | undefined, "texts": [string] | undefined}]}.',
+].join(" ");
+
+/** Margin below the validation budget so the compressed text passes cleanly. */
+function repairTargetChars(budget: number): number {
+  return Math.max(80, Math.floor(budget * 0.94));
+}
+
+function collectOverBudgetItems(
+  overrides: SlideOverride[],
+  knownIds: Set<string>
+): OverBudgetItem[] {
+  const items: OverBudgetItem[] = [];
+  const scalarFields: ScalarCopyField[] = [
+    "narrative",
+    "whatWasFound",
+    "whyItMatters",
+    "whatToCheck",
+  ];
+  for (const o of overrides) {
+    if (!knownIds.has(o.slideId)) continue;
+    for (const field of scalarFields) {
+      const value = o[field];
+      if (value !== undefined && value.trim().length > TEXT_BUDGETS[field]) {
+        items.push({
+          slideId: o.slideId,
+          field,
+          text: value.trim(),
+          maxChars: repairTargetChars(TEXT_BUDGETS[field]),
+        });
+      }
+    }
+    if (o.bullets && o.bullets.some((b) => b.trim().length > TEXT_BUDGETS.bullet)) {
+      items.push({
+        slideId: o.slideId,
+        field: "bullets",
+        texts: o.bullets.map((b) => b.trim()),
+        maxChars: repairTargetChars(TEXT_BUDGETS.bullet),
+      });
+    }
+  }
+  return items;
+}
+
+/**
+ * Merge repaired texts back into the overrides. Only fields that were sent
+ * for repair are replaced, and only when the model actually shortened them
+ * into the target; everything else keeps the original round-1 value (and is
+ * later re-checked field-by-field in applyOverrides — safety is unchanged).
+ */
+function mergeRepairedFields(input: {
+  overrides: SlideOverride[];
+  requested: OverBudgetItem[];
+  raw: unknown;
+}): { overrides: SlideOverride[]; repairedFields: number } {
+  const parsed = RepairResponseSchema.safeParse(input.raw);
+  if (!parsed.success) return { overrides: input.overrides, repairedFields: 0 };
+
+  const requestedKeys = new Map(
+    input.requested.map((r) => [`${r.slideId}.${r.field}`, r])
+  );
+  const byId = new Map(input.overrides.map((o) => [o.slideId, { ...o }]));
+  let repairedFields = 0;
+
+  for (const item of parsed.data.items) {
+    const req = requestedKeys.get(`${item.slideId}.${item.field}`);
+    const target = byId.get(item.slideId);
+    if (!req || !target) continue;
+    if (req.field === "bullets") {
+      const texts = (item.texts ?? []).map((t) => t.trim());
+      if (
+        texts.length > 0 &&
+        texts.length === (req.texts?.length ?? 0) &&
+        texts.every((t) => t.length > 0 && t.length <= TEXT_BUDGETS.bullet)
+      ) {
+        target.bullets = texts;
+        repairedFields += 1;
+      }
+      continue;
+    }
+    const text = (item.text ?? "").trim();
+    if (text.length > 0 && text.length <= TEXT_BUDGETS[req.field]) {
+      target[req.field] = text;
+      repairedFields += 1;
+    }
+  }
+  return {
+    overrides: input.overrides.map((o) => byId.get(o.slideId) ?? o),
+    repairedFields,
+  };
+}
+
 const COPY_INSTRUCTIONS = [
   "Твоя задача — переписать клиентский текст каждого переданного слайда лучше чернового варианта: подробным клиентским языком, без жаргона.",
   `Для страниц с данными ${GPT_SLIDE_COPY_DENSITY_MARKER} (narrative, whatWasFound, whyItMatters, whatToCheck, bullets) — не ограничивайся правкой одного поля, если остальные пустые или слишком короткие.`,
@@ -82,6 +217,7 @@ const COPY_INSTRUCTIONS = [
   "Лимиты длины (верхняя граница с зазором до бюджета валидации): narrative до 850, каждый bullet до 380, whatWasFound до 380, whyItMatters до 300, whatToCheck до 200.",
   "Нижняя граница для страниц с данными: каждый заполняемый текстовый блок — не короче ~40% своего бюджета (narrative ≳360, whatWasFound ≳160, whyItMatters ≳130, whatToCheck ≳90, bullet ≳160), если в черновике/findings есть материал для раскрытия.",
   "Не переписывай честные пустые состояния: если черновик говорит, что поверхность не собиралась / проверена и пуста / визуал недоступен — не подставляй findings с других поверхностей или регионов.",
+  "Если передан compositionPlan — следуй ему: начни narrative с указанного смыслового акцента (storyAngle), раскрой в первую очередь темы из emphasisThemes (в заданном порядке) и упоминай прежде всего домены из keyDomains; план не добавляет новых фактов — используй только материал слайда.",
   'Верни ТОЛЬКО JSON: {"slides": [{"slideId": string, "narrative": string, "bullets": [string], "whatWasFound": string, "whyItMatters": string, "whatToCheck": string}]}. Опускай поле только если поверхность пустая и черновик честно сообщает об отсутствии данных.',
 ].join(" ");
 
@@ -166,6 +302,8 @@ export type GptSlideCopyFragmentReport = {
   status: GptSlideCopyFragmentStatus;
   appliedFields: number;
   rejectedFields: string[];
+  /** PDF-31 B.1a: over-budget fields recovered by the repair pass. */
+  repairedFields?: number;
   detail?: string;
 };
 
@@ -173,11 +311,13 @@ export type GptSlideCopyReport = {
   version: "gpt-report-copy-v1";
   promptVersion: string;
   caseAnalysisUsed: boolean;
+  /** Level 2: whether a validated composition plan shaped the prompts. */
+  compositionUsed?: boolean;
   fragments: GptSlideCopyFragmentReport[];
 };
 
 /** Domains a slide is allowed to mention: its own evidence + existing draft. */
-function allowedDomainsForSlide(
+export function allowedDomainsForSlide(
   slide: SlideContentContract,
   evidenceIndex: ScopedEvidenceIndex
 ): Set<string> {
@@ -205,7 +345,7 @@ function allowedDomainsForSlide(
 }
 
 /** null when acceptable; otherwise a rejection reason. */
-function rejectReason(value: string, budget: number, allowedDomains: Set<string>): string | null {
+export function rejectReason(value: string, budget: number, allowedDomains: Set<string>): string | null {
   const text = value.trim();
   if (!text) return "empty";
   if (text.length > budget) return `over-budget:${text.length}>${budget}`;
@@ -218,7 +358,7 @@ function rejectReason(value: string, budget: number, allowedDomains: Set<string>
   return null;
 }
 
-function contentHashOf(slides: SlideContentContract[]): string {
+export function contentHashOf(slides: SlideContentContract[]): string {
   return `sha256:${createHash("sha256").update(JSON.stringify(slides)).digest("hex")}`;
 }
 
@@ -228,8 +368,24 @@ function buildFragmentPayload(input: {
   bundle: VerifiedFindingBundle;
   caseAnalysis: GptCaseAnalysis | null;
   targets: SlideContentContract[];
+  /** Level 2: validated composition plan for THIS fragment (client-safe). */
+  composition?: GptDeckComposition | null;
 }): Record<string, unknown> {
   const findingById = new Map(input.bundle.findings.map((f) => [f.findingId, f]));
+  const plan = input.composition?.fragments.find(
+    (f) => f.fragmentKey === input.pack.fragmentKey
+  );
+  // Themes instead of raw findingIds: the model must never echo internal ids
+  // into client text, and themes are already client language.
+  const compositionPlan = plan
+    ? {
+        storyAngle: plan.storyAngle,
+        emphasisThemes: plan.emphasisFindingIds
+          .map((id) => findingById.get(id)?.theme)
+          .filter((t): t is string => Boolean(t)),
+        keyDomains: plan.keyDomains,
+      }
+    : null;
   const scopedFindings = input.pack.sourceFindingIds
     .map((id) => findingById.get(id))
     .filter((f): f is NonNullable<typeof f> => Boolean(f))
@@ -256,6 +412,7 @@ function buildFragmentPayload(input: {
           recommendations: input.caseAnalysis.recommendations,
         }
       : null,
+    compositionPlan,
     findings: scopedFindings,
     slides: input.targets.map((s) => ({
       slideId: s.slideId,
@@ -495,6 +652,8 @@ export async function enhanceSectionPacksWithGptCopy(input: {
   subject: SubjectProfileInput;
   caller: GptJsonCaller;
   caseAnalysis: GptCaseAnalysis | null;
+  /** Level 2: validated deck composition plan (fail-safe null). */
+  composition?: GptDeckComposition | null;
   bundle: VerifiedFindingBundle;
   evidenceIndex: ScopedEvidenceIndex;
   validatePack: (pack: SectionPackV2) => { passed: boolean; issues: string[] };
@@ -585,6 +744,7 @@ export async function enhanceSectionPacksWithGptCopy(input: {
         bundle: input.bundle,
         caseAnalysis: input.caseAnalysis,
         targets,
+        composition: input.composition,
       }),
       wantCaseAnalysis,
     });
@@ -613,6 +773,18 @@ export async function enhanceSectionPacksWithGptCopy(input: {
   });
 
   const rawByKey = new Map(queueResults.map((r) => [r.key, r]));
+
+  // PDF-31 B.1a: fields the model wrote over budget get ONE compression retry
+  // before the reject/fallback machinery sees them. Any repair failure keeps
+  // the round-1 value — the field is then rejected exactly as before.
+  const rawToApply = new Map<string, unknown>();
+  const repairedByKey = new Map<string, number>();
+  const repairPending: Array<{
+    item: PendingGptPack;
+    overrides: SlideOverride[];
+    requested: OverBudgetItem[];
+  }> = [];
+
   for (const item of pending) {
     const queued = rawByKey.get(item.pack.fragmentKey);
     if (!queued || !queued.ok) {
@@ -640,17 +812,74 @@ export async function enhanceSectionPacksWithGptCopy(input: {
       });
       continue;
     }
-    byKey.set(
-      item.pack.fragmentKey,
-      applyGptRawToPack({
-        pack: item.pack,
-        targets: item.targets,
-        raw: queued.value,
-        wantCaseAnalysis: item.wantCaseAnalysis,
-        evidenceIndex: input.evidenceIndex,
-        validatePack: input.validatePack,
-      })
-    );
+    const parsed = FragmentCopyResponseSchema.safeParse(queued.value);
+    if (parsed.success) {
+      const knownIds = new Set(item.targets.map((s) => s.slideId));
+      const requested = collectOverBudgetItems(parsed.data.slides, knownIds);
+      if (requested.length > 0) {
+        repairPending.push({ item, overrides: parsed.data.slides, requested });
+        continue;
+      }
+    }
+    rawToApply.set(item.pack.fragmentKey, queued.value);
+  }
+
+  if (repairPending.length > 0) {
+    const repairResults = await runGptCallQueue({
+      tasks: repairPending.map((r) => ({
+        key: r.item.pack.fragmentKey,
+        run: () =>
+          input.caller({
+            systemPrompt: REPAIR_INSTRUCTIONS,
+            userPayload: {
+              fragmentKey: r.item.pack.fragmentKey,
+              items: r.requested,
+            },
+          }),
+      })),
+      options: {
+        concurrency: defaults.concurrency,
+        maxAttempts: defaults.maxAttempts,
+        deadlineMs: defaults.deadlineMs,
+        sleep: offlineSleep,
+        ...input.queueOptions,
+      },
+    });
+    const repairByKey = new Map(repairResults.map((r) => [r.key, r]));
+    for (const r of repairPending) {
+      const key = r.item.pack.fragmentKey;
+      const repaired = repairByKey.get(key);
+      if (repaired?.ok) {
+        const merged = mergeRepairedFields({
+          overrides: r.overrides,
+          requested: r.requested,
+          raw: repaired.value,
+        });
+        rawToApply.set(key, { slides: merged.overrides });
+        if (merged.repairedFields > 0) {
+          repairedByKey.set(key, merged.repairedFields);
+        }
+      } else {
+        // Repair call failed → apply round-1 output; over-budget fields will
+        // be rejected individually (pre-B.1a behavior).
+        rawToApply.set(key, { slides: r.overrides });
+      }
+    }
+  }
+
+  for (const item of pending) {
+    if (byKey.has(item.pack.fragmentKey)) continue;
+    const applied = applyGptRawToPack({
+      pack: item.pack,
+      targets: item.targets,
+      raw: rawToApply.get(item.pack.fragmentKey),
+      wantCaseAnalysis: item.wantCaseAnalysis,
+      evidenceIndex: input.evidenceIndex,
+      validatePack: input.validatePack,
+    });
+    const repairedFields = repairedByKey.get(item.pack.fragmentKey);
+    if (repairedFields) applied.report.repairedFields = repairedFields;
+    byKey.set(item.pack.fragmentKey, applied);
   }
 
   // Deterministic artifact order: original pack order for packs, fragmentKey
@@ -668,6 +897,9 @@ export async function enhanceSectionPacksWithGptCopy(input: {
       version: "gpt-report-copy-v1",
       promptVersion: GPT_SLIDE_COPY_PROMPT_VERSION,
       caseAnalysisUsed: wantCaseAnalysis,
+      compositionUsed: Boolean(
+        input.composition && input.composition.fragments.length > 0
+      ),
       fragments,
     },
   };

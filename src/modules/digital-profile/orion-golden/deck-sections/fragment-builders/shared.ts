@@ -32,6 +32,7 @@ import {
   reportDiffClientLine,
 } from "../../../services/report-material-freshness";
 import { isMockClientDomain } from "../../../services/composite-serp-merge";
+import { getClientTextFieldBudgets } from "../../client/load-client-text-contract";
 
 export type ExecutiveSummaryExtras = {
   verdict: string;
@@ -180,12 +181,19 @@ export function makeSlotSlide(input: {
   };
 }
 
-/** Chunk oversized bullets/table rows into adjacent continuation slides. */
+/**
+ * Chunk oversized bullets/table rows into adjacent continuation slides.
+ * PDF-31 B.1b: an over-budget narrative flows to continuation slides as
+ * complete-sentence paragraphs instead of being clamped — the full meaning
+ * stays in the report, each slide's narrative stays within its budget.
+ */
 export function withContinuations(base: SlideContentContract, templateId: DeckTemplateId): SlideContentContract[] {
   const tpl = DECK_TEMPLATE_REGISTRY[templateId];
   const slides: SlideContentContract[] = [];
   const bullets = base.content.bullets ?? [];
   const rows = base.content.table?.rows ?? [];
+  const narrativeBudget = getClientTextFieldBudgets().narrative;
+  const narrative = base.content.narrative ?? "";
 
   const bulletChunks =
     tpl.maxBulletsPerSlide > 0 && bullets.length > tpl.maxBulletsPerSlide
@@ -195,7 +203,11 @@ export function withContinuations(base: SlideContentContract, templateId: DeckTe
     tpl.maxTableRowsPerSlide > 0 && rows.length > tpl.maxTableRowsPerSlide
       ? chunk(rows, tpl.maxTableRowsPerSlide)
       : [rows];
-  const total = Math.max(bulletChunks.length, rowChunks.length);
+  const narrativeChunks =
+    narrative.length > narrativeBudget
+      ? splitClientParagraphs(narrative, narrativeBudget, 4)
+      : [narrative || undefined];
+  const total = Math.max(bulletChunks.length, rowChunks.length, narrativeChunks.length);
 
   for (let i = 0; i < total; i += 1) {
     const content: SlideBody = {
@@ -206,7 +218,7 @@ export function withContinuations(base: SlideContentContract, templateId: DeckTe
         : undefined,
     };
     if (i === 0) {
-      slides.push({ ...base, content });
+      slides.push({ ...base, content: { ...content, narrative: narrativeChunks[0] || undefined } });
     } else {
       slides.push({
         ...base,
@@ -215,7 +227,12 @@ export function withContinuations(base: SlideContentContract, templateId: DeckTe
         continuationOf: base.slideId,
         continuationIndex: i,
         title: `${base.title} (продолжение ${i + 1}/${total})`,
-        content: { ...content, narrative: undefined, whatWasFound: undefined, whyItMatters: undefined },
+        content: {
+          ...content,
+          narrative: narrativeChunks[i] || undefined,
+          whatWasFound: undefined,
+          whyItMatters: undefined,
+        },
       });
     }
   }
@@ -286,16 +303,27 @@ export function splitClientParagraphs(text: string, maxPerPara: number, maxParas
 }
 
 /**
- * Clamp client text to its budget at a sentence/list boundary — a complete
- * phrase, never an ellipsis or a mid-word cut.
+ * Trailing conjunctions/prepositions left dangling after a word-boundary cut
+ * («…владению и.», «требуют ещё.») — stripped before the final period.
+ */
+const DANGLING_TAIL_RE =
+  /(?:\s+(?:и|а|но|или|же|то|что|как|при|про|для|без|под|над|из|из-за|от|до|по|к|ко|в|во|на|с|со|о|об|обо|у|за|ещё|еще|также|а также|более|менее|чем))+$/iu;
+
+/**
+ * Clamp client text to its budget — last-resort safety net (PDF-31 B.1c).
+ * Prefers a sentence/list boundary even when it is early in the budget
+ * (a shorter complete phrase beats a longer broken one); the word-boundary
+ * fallback is used only when the slice has no boundary at all, and dangling
+ * conjunctions/prepositions are stripped so the text never ends in «…и.».
  */
 export function clampClientText(text: string, max: number): string {
   if (text.length <= max) return text;
   const slice = text.slice(0, max);
   const boundaries = [slice.lastIndexOf(". "), slice.lastIndexOf(" · "), slice.lastIndexOf("; ")];
   const cut = Math.max(...boundaries);
-  let out = cut > max * 0.4 ? slice.slice(0, cut) : slice.slice(0, slice.lastIndexOf(" "));
+  let out = cut > 0 ? slice.slice(0, cut) : slice.slice(0, slice.lastIndexOf(" "));
   out = out.replace(/[\s·;,.]+$/u, "");
+  out = out.replace(DANGLING_TAIL_RE, "").replace(/[\s·;,.]+$/u, "");
   return `${out}.`;
 }
 

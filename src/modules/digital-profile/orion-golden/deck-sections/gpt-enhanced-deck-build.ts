@@ -23,6 +23,14 @@ import {
   enhanceSectionPacksWithGptCopy,
   type GptSlideCopyReport,
 } from "./llm-slide-copy";
+import {
+  runGptDeckEditorPass,
+  type GptDeckEditorReport,
+} from "./gpt-deck-editor";
+import {
+  runGptDeckComposer,
+  type GptDeckComposition,
+} from "./gpt-deck-composer";
 import { applyExecutiveFreshnessChangeToPacks } from "./fragment-builders";
 import type { GptCaseAnalysis, GptJsonCaller } from "../gpt/gpt-case-analysis";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
@@ -65,7 +73,21 @@ export type GptDeckLayer = {
 
 export type GptDeckBuildResult = DeckBuildResult & {
   gptReport: GptSlideCopyReport | null;
+  /** Stage-3 whole-deck editorial pass (level 1); null when the pass did not run. */
+  gptEditorReport?: GptDeckEditorReport | null;
+  /** Stage-1.5 composition plan (level 2); null when the composer did not run. */
+  gptComposition?: GptDeckComposition | null;
 };
+
+/** Stage-3 editor is on by default with a GPT layer; ORION_GPT_DECK_EDITOR=0 disables. */
+function deckEditorEnabled(): boolean {
+  return String(process.env.ORION_GPT_DECK_EDITOR ?? "1") !== "0";
+}
+
+/** Stage-1.5 composer is on by default with a GPT layer; ORION_GPT_DECK_COMPOSER=0 disables. */
+function deckComposerEnabled(): boolean {
+  return String(process.env.ORION_GPT_DECK_COMPOSER ?? "1") !== "0";
+}
 
 export async function runDeckBuildWithGptCopy(input: {
   ctx: Omit<SectionBuildContext, "previousPacks" | "buildLog">;
@@ -88,6 +110,8 @@ export async function runDeckBuildWithGptCopy(input: {
 
   let packs: SectionPackV2[] = buildAllSections(ctx);
   let gptReport: GptSlideCopyReport | null = null;
+  let gptEditorReport: GptDeckEditorReport | null = null;
+  let gptComposition: GptDeckComposition | null = null;
 
   if (input.gpt) {
     // Belt-and-suspenders: strip stamps AND pass forceRefresh so a missed
@@ -109,11 +133,34 @@ export async function runDeckBuildWithGptCopy(input: {
         knownEvidenceRefs: input.knownEvidenceRefs,
         evidenceIndex: ctx.evidenceIndex,
       });
+    // Stage 1.5 (level 2): GPT plans the composition — story angles, finding
+    // emphasis and key domains per fragment. Fail-safe null keeps stage 2
+    // exactly as before; the plan itself is validated fail-closed inside.
+    if (deckComposerEnabled()) {
+      gptComposition = await runGptDeckComposer({
+        packs,
+        subject: ctx.subject,
+        caller: input.gpt.caller,
+        caseAnalysis: input.gpt.caseAnalysis,
+        bundle: input.bundleForValidation,
+        evidenceIndex: ctx.evidenceIndex,
+      });
+      if (gptComposition) {
+        mkdirSync(input.outputRoot, { recursive: true });
+        writeFileSync(
+          join(input.outputRoot, "gpt-deck-composition.json"),
+          `${JSON.stringify(gptComposition, null, 2)}\n`,
+          "utf8"
+        );
+      }
+    }
+
     const enhanced = await enhanceSectionPacksWithGptCopy({
       packs,
       subject: ctx.subject,
       caller: input.gpt.caller,
       caseAnalysis: input.gpt.caseAnalysis,
+      composition: gptComposition,
       bundle: input.bundleForValidation,
       evidenceIndex: ctx.evidenceIndex,
       validatePack,
@@ -127,6 +174,25 @@ export async function runDeckBuildWithGptCopy(input: {
       `${JSON.stringify(enhanced.report, null, 2)}\n`,
       "utf8"
     );
+
+    // Stage 3 (level 1): one whole-deck editorial pass for cross-page
+    // coherence. Fail-safe — any failure keeps the stage-2 packs.
+    if (deckEditorEnabled()) {
+      const edited = await runGptDeckEditorPass({
+        packs,
+        subject: ctx.subject,
+        caller: input.gpt.caller,
+        evidenceIndex: ctx.evidenceIndex,
+        validatePack,
+      });
+      packs = edited.packs;
+      gptEditorReport = edited.report;
+      writeFileSync(
+        join(input.outputRoot, "gpt-deck-editor.json"),
+        `${JSON.stringify(edited.report, null, 2)}\n`,
+        "utf8"
+      );
+    }
   }
 
   // After GPT/cache — §7.2 must stay a short dedicated narrative card on p03.
@@ -145,7 +211,16 @@ export async function runDeckBuildWithGptCopy(input: {
   if (gptReport) {
     result.artifacts["gpt-report-copy.json"] = join(input.outputRoot, "gpt-report-copy.json");
   }
-  return { ...result, gptReport };
+  if (gptEditorReport) {
+    result.artifacts["gpt-deck-editor.json"] = join(input.outputRoot, "gpt-deck-editor.json");
+  }
+  if (gptComposition) {
+    result.artifacts["gpt-deck-composition.json"] = join(
+      input.outputRoot,
+      "gpt-deck-composition.json"
+    );
+  }
+  return { ...result, gptReport, gptEditorReport, gptComposition };
 }
 
 /**
