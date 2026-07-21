@@ -31,6 +31,7 @@ import {
   freshnessFootnote,
   reportDiffClientLine,
 } from "../../../services/report-material-freshness";
+import { isMockClientDomain } from "../../../services/composite-serp-merge";
 
 export type ExecutiveSummaryExtras = {
   verdict: string;
@@ -591,7 +592,7 @@ export function pageFindingBlocks(
 
 /** Source footer derived ONLY from the page's own evidence refs. */
 export function pageSourceLine(view: PageEvidenceView): string {
-  const list = view.domains.slice(0, 5);
+  const list = view.domains.filter((d) => !isMockClientDomain(d)).slice(0, 5);
   return list.length
     ? `Источники: ${list.join(", ")}`
     : "Источники: поисковая выдача (см. приложение).";
@@ -609,7 +610,10 @@ export function sourceLine(scoped: ScopedFragmentInput, extras?: FragmentExtras)
   const domains = new Set<string>();
   for (const f of scoped.findings) for (const d of f.sourceDomains ?? []) domains.add(d);
   for (const e of Object.values(scoped.evidenceIndex)) if (e.domain) domains.add(e.domain);
-  const list = [...domains].filter((d) => d && d !== "—").sort().slice(0, 6);
+  const list = [...domains]
+    .filter((d) => d && d !== "—" && !isMockClientDomain(d))
+    .sort()
+    .slice(0, 6);
   const sources = list.length
     ? `Источники: ${list.join(", ")}`
     : "Источники: поисковая выдача (см. приложение).";

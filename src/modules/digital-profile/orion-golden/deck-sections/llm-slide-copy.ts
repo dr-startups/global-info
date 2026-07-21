@@ -35,8 +35,8 @@ import {
 } from "../client/load-client-text-contract";
 import { riskLevelRu, subjectMatchRu } from "../gpt/client-payload-labels";
 
-/** REMEDIATION §7.5 density + skip honest empty-state slides (UAE SERP fix). */
-export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v4";
+/** v5 — Phase A.2: hard ban on meta-speak («черновик», «переданный фрагмент») in client text. */
+export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v5";
 
 /** Mirrors section-validation budgets — from client-text-contract (§6.1). */
 export const GPT_SLIDE_COPY_FIELD_BUDGETS = (() => {
@@ -78,6 +78,7 @@ const COPY_INSTRUCTIONS = [
   "Опирайся только на переданные findings, claims и черновой текст; не добавляй новых фактов, имён, компаний и доменов.",
   "Используй переданный общий анализ кейса (caseAnalysis), чтобы все слайды говорили согласованными выводами.",
   "Не используй внутренние технические термины (audit, reportRunId, pipeline, dataset, provider) и идентификаторы; не вставляй URL. Пиши только по-русски: не копируй в текст английские служебные слова и коды из данных.",
+  "СТРОГО ЗАПРЕЩЕНО упоминать в клиентском тексте процесс подготовки отчёта и источник данных для тебя: слова «черновик», «черновой», «переданный фрагмент», «переданные данные», «scoped», «findings» и любые рассуждения о том, что в черновике чего-то нет или что страницу не следует чем-то наполнять. Клиент видит только выводы о субъекте и фактах, а не твою работу с материалами.",
   "Лимиты длины (верхняя граница с зазором до бюджета валидации): narrative до 850, каждый bullet до 380, whatWasFound до 380, whyItMatters до 300, whatToCheck до 200.",
   "Нижняя граница для страниц с данными: каждый заполняемый текстовый блок — не короче ~40% своего бюджета (narrative ≳360, whatWasFound ≳160, whyItMatters ≳130, whatToCheck ≳90, bullet ≳160), если в черновике/findings есть материал для раскрытия.",
   "Не переписывай честные пустые состояния: если черновик говорит, что поверхность не собиралась / проверена и пуста / визуал недоступен — не подставляй findings с других поверхностей или регионов.",

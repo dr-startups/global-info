@@ -69,6 +69,20 @@ export type CompositeMergeResult = {
   };
 };
 
+/**
+ * Mock/demo URL detector shared by every path into client-facing output.
+ * Catches both `example.<tld>` hosts and the reserved `.example` TLD
+ * (e.g. `en.wikipedia-mock.example/wiki/...`, which `example\.` alone missed).
+ */
+export const MOCK_URL_PATTERN = /example\.|\.example\b|\.invalid\b/i;
+
+/** Domain-only variant for source lines («Источники: …») and evidence domains. */
+export function isMockClientDomain(domain: string | null | undefined): boolean {
+  const d = String(domain ?? "").trim();
+  if (!d) return false;
+  return MOCK_URL_PATTERN.test(d) || /(^|\.)mock(\.|-)|-mock\./i.test(d);
+}
+
 /** Fail-closed mock/demo filter for SearchResult and SearchSurfaceItem rows. */
 export function isMockBaseRow(row: {
   provider?: string | null;
@@ -80,7 +94,7 @@ export function isMockBaseRow(row: {
   return (
     /mock|demo|fixture/i.test(providerOrSource) ||
     /^\[demo\]/i.test(String(row.title ?? "")) ||
-    /example\.|images\.example|\.invalid\b/i.test(String(row.url ?? ""))
+    MOCK_URL_PATTERN.test(String(row.url ?? ""))
   );
 }
 

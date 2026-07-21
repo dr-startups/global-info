@@ -8,6 +8,7 @@ import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
 import type { ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import { ADVERSE_PATTERNS } from "../../analytics/surface-analyzers";
+import { isMockClientDomain } from "../../../services/composite-serp-merge";
 import type { FragmentBuildOutput } from "./shared";
 import {
   buildPageEvidenceView,
@@ -132,7 +133,7 @@ export function buildIdentityFragment(
     ...new Set(
       identityRefs
         .map((r) => scoped.evidenceIndex[r]?.domain)
-        .filter((d): d is string => Boolean(d))
+        .filter((d): d is string => Boolean(d) && !isMockClientDomain(d))
     ),
   ].slice(0, 4);
   const hasAdverseRow = identityRefs.some((r) =>

@@ -7,6 +7,7 @@
 
 import type { RawInventoryItem } from "../orion-golden/types";
 import { loadFile } from "../storage/private-store";
+import { MOCK_URL_PATTERN } from "./composite-serp-merge";
 
 /** Freshness window for live SERP captures (§5.3 / §1.4). */
 export const SERP_SCREENSHOT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
@@ -74,6 +75,17 @@ function languageToRegion(language: string | null | undefined): "RU" | "UAE" {
   const l = String(language ?? "en").toLowerCase();
   if (l === "ru" || l.startsWith("ru-")) return "RU";
   return "UAE";
+}
+
+/**
+ * Fail-closed guard: WikipediaCheck rows written by mock/demo agents
+ * (checkedBy "mock:*" or reserved test domains like `.example`) must never
+ * reach the evidence contour — they previously leaked into client source
+ * lines as `en.wikipedia-mock.example`.
+ */
+export function isMockWikipediaCheck(row: Pick<WikipediaCheckInput, "url" | "checkedBy">): boolean {
+  if (/mock|demo|fixture/i.test(String(row.checkedBy ?? ""))) return true;
+  return MOCK_URL_PATTERN.test(String(row.url ?? ""));
 }
 
 function isFresh(capturedAt: string | Date | null | undefined, nowMs: number): boolean {
@@ -269,6 +281,10 @@ export async function resolveEvidenceSupplement(input: {
       nowMs: input.nowMs,
     });
   }
+
+  // Fail-closed regardless of source (fixture or prisma): mock-era checks
+  // never enter inventory, evidence-supplement.json or slide source lines.
+  wikipediaChecks = wikipediaChecks.filter((w) => !isMockWikipediaCheck(w));
 
   const wikipediaItems = adaptWikipediaChecksToInventory({
     rows: wikipediaChecks,
