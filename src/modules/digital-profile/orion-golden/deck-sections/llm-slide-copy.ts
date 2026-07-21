@@ -37,7 +37,7 @@ import { riskLevelRu, subjectMatchRu } from "../gpt/client-payload-labels";
 import type { GptDeckComposition } from "./gpt-deck-composer";
 
 /** v6 — GPT levels plan: composition plan (level 2) wired into fragment prompts. */
-export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v6";
+export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v7";
 
 /** Mirrors section-validation budgets — from client-text-contract (§6.1). */
 export const GPT_SLIDE_COPY_FIELD_BUDGETS = (() => {
@@ -62,18 +62,81 @@ export const GPT_SLIDE_COPY_REPAIR_PROMPT_MARKER =
 
 const DOMAIN_TOKEN_RE = /\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b/giu;
 
-const SlideOverrideSchema = z.object({
+/**
+ * Lenient per-slide schema (PDF-38 F.3): live model pads unchanged fields with
+ * null / "" / empty arrays — same failure mode as the deck editor on report 32.
+ * Strict zod previously turned whole RU_SUMMARY / UAE_SUMMARY / RU_SUGGESTIONS
+ * responses into FALLBACK_ERROR «invalid response schema».
+ */
+const SlideOverrideLooseSchema = z.object({
   slideId: z.string().min(1),
-  narrative: z.string().optional(),
-  bullets: z.array(z.string().min(1)).min(1).max(8).optional(),
-  whatWasFound: z.string().optional(),
-  whyItMatters: z.string().optional(),
-  whatToCheck: z.string().optional(),
+  narrative: z.string().nullish(),
+  bullets: z.array(z.string().nullish()).max(12).nullish(),
+  whatWasFound: z.string().nullish(),
+  whyItMatters: z.string().nullish(),
+  whatToCheck: z.string().nullish(),
 });
-const FragmentCopyResponseSchema = z.object({
-  slides: z.array(SlideOverrideSchema).max(16),
-});
-type SlideOverride = z.infer<typeof SlideOverrideSchema>;
+
+type SlideOverride = {
+  slideId: string;
+  narrative?: string;
+  bullets?: string[];
+  whatWasFound?: string;
+  whyItMatters?: string;
+  whatToCheck?: string;
+};
+
+function normalizeCopyScalar(value: string | null | undefined): string | undefined {
+  const text = (value ?? "").trim();
+  return text.length > 0 ? text : undefined;
+}
+
+/**
+ * Fail-open parse: invalid entries dropped, valid slides kept. Accepts both
+ * {slides:[...]} and a bare array. Returns null only when the payload has no
+ * recognizable shape at all.
+ */
+export function parseFragmentCopyResponse(raw: unknown): {
+  slides: SlideOverride[];
+  droppedSlides: number;
+} | null {
+  const list = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object" && Array.isArray((raw as { slides?: unknown }).slides)
+      ? ((raw as { slides: unknown[] }).slides)
+      : null;
+  if (!list) return null;
+
+  const slides: SlideOverride[] = [];
+  let droppedSlides = 0;
+  for (const item of list.slice(0, 16)) {
+    const parsed = SlideOverrideLooseSchema.safeParse(item);
+    if (!parsed.success) {
+      droppedSlides += 1;
+      continue;
+    }
+    const s = parsed.data;
+    const bullets = (s.bullets ?? [])
+      .map((b) => (b ?? "").replace(/\r\n/gu, "\n").trim())
+      .filter((b) => b.length > 0);
+    const override: SlideOverride = {
+      slideId: s.slideId,
+      narrative: normalizeCopyScalar(s.narrative),
+      bullets: bullets.length > 0 ? bullets : undefined,
+      whatWasFound: normalizeCopyScalar(s.whatWasFound),
+      whyItMatters: normalizeCopyScalar(s.whyItMatters),
+      whatToCheck: normalizeCopyScalar(s.whatToCheck),
+    };
+    const hasContent =
+      override.narrative !== undefined ||
+      override.bullets !== undefined ||
+      override.whatWasFound !== undefined ||
+      override.whyItMatters !== undefined ||
+      override.whatToCheck !== undefined;
+    if (hasContent) slides.push(override);
+  }
+  return { slides, droppedSlides };
+}
 
 // ---------- PDF-31 B.1a — repair-retry for over-budget GPT fields ----------
 //
@@ -214,11 +277,12 @@ const COPY_INSTRUCTIONS = [
   "Используй переданный общий анализ кейса (caseAnalysis), чтобы все слайды говорили согласованными выводами.",
   "Не используй внутренние технические термины (audit, reportRunId, pipeline, dataset, provider) и идентификаторы; не вставляй URL. Пиши только по-русски: не копируй в текст английские служебные слова и коды из данных.",
   "СТРОГО ЗАПРЕЩЕНО упоминать в клиентском тексте процесс подготовки отчёта и источник данных для тебя: слова «черновик», «черновой», «переданный фрагмент», «переданные данные», «scoped», «findings» и любые рассуждения о том, что в черновике чего-то нет или что страницу не следует чем-то наполнять. Клиент видит только выводы о субъекте и фактах, а не твою работу с материалами.",
-  "Лимиты длины (верхняя граница с зазором до бюджета валидации): narrative до 850, каждый bullet до 380, whatWasFound до 380, whyItMatters до 300, whatToCheck до 200.",
+  "Лимиты длины (верхняя граница с зазором до бюджета валидации): narrative до 850, каждый bullet до 500, whatWasFound до 380, whyItMatters до 300, whatToCheck до 200.",
   "Нижняя граница для страниц с данными: каждый заполняемый текстовый блок — не короче ~40% своего бюджета (narrative ≳360, whatWasFound ≳160, whyItMatters ≳130, whatToCheck ≳90, bullet ≳160), если в черновике/findings есть материал для раскрытия.",
+  "Для тематических bullets сохраняй многострочную структуру: первая строка — название темы в «ёлочках», затем строка статистики (N публикаций…), затем «Источники: …», затем «Примеры: …». Не склеивай это в один серый абзац.",
   "Не переписывай честные пустые состояния: если черновик говорит, что поверхность не собиралась / проверена и пуста / визуал недоступен — не подставляй findings с других поверхностей или регионов.",
   "Если передан compositionPlan — следуй ему: начни narrative с указанного смыслового акцента (storyAngle), раскрой в первую очередь темы из emphasisThemes (в заданном порядке) и упоминай прежде всего домены из keyDomains; план не добавляет новых фактов — используй только материал слайда.",
-  'Верни ТОЛЬКО JSON: {"slides": [{"slideId": string, "narrative": string, "bullets": [string], "whatWasFound": string, "whyItMatters": string, "whatToCheck": string}]}. Опускай поле только если поверхность пустая и черновик честно сообщает об отсутствии данных.',
+  'Верни ТОЛЬКО JSON: {"slides": [{"slideId": string, "narrative"?: string, "bullets"?: [string], "whatWasFound"?: string, "whyItMatters"?: string, "whatToCheck"?: string}]}. Не возвращай null, пустые строки и пустые массивы — неизменённое поле просто опускай. Опускай слайд целиком, если поверхность пустая и черновик честно сообщает об отсутствии данных.',
 ].join(" ");
 
 /**
@@ -566,8 +630,8 @@ function applyGptRawToPack(input: {
     appliedFields: 0,
     rejectedFields: [],
   };
-  const parsed = FragmentCopyResponseSchema.safeParse(input.raw);
-  if (!parsed.success) {
+  const parsed = parseFragmentCopyResponse(input.raw);
+  if (!parsed) {
     report.status = "FALLBACK_ERROR";
     report.detail = "invalid response schema";
     return {
@@ -582,7 +646,7 @@ function applyGptRawToPack(input: {
   }
 
   const knownIds = new Set(input.targets.map((s) => s.slideId));
-  const overrides = parsed.data.slides.filter((o) => knownIds.has(o.slideId));
+  const overrides = parsed.slides.filter((o) => knownIds.has(o.slideId));
   const { slides, appliedFields } = applyOverrides({
     pack: input.pack,
     overrides,
@@ -812,12 +876,12 @@ export async function enhanceSectionPacksWithGptCopy(input: {
       });
       continue;
     }
-    const parsed = FragmentCopyResponseSchema.safeParse(queued.value);
-    if (parsed.success) {
+    const parsed = parseFragmentCopyResponse(queued.value);
+    if (parsed) {
       const knownIds = new Set(item.targets.map((s) => s.slideId));
-      const requested = collectOverBudgetItems(parsed.data.slides, knownIds);
+      const requested = collectOverBudgetItems(parsed.slides, knownIds);
       if (requested.length > 0) {
-        repairPending.push({ item, overrides: parsed.data.slides, requested });
+        repairPending.push({ item, overrides: parsed.slides, requested });
         continue;
       }
     }

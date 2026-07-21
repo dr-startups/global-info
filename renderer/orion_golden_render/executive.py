@@ -19,6 +19,7 @@ from .common import (
     CONTENT_W,
     FONT,
     FS_BODY,
+    FS_CAPTION,
     FS_SECTION,
     GOOD_BG,
     MARGIN_X,
@@ -29,9 +30,12 @@ from .common import (
     WARN_BG,
     WHITE,
     _Ctx,
+    _bullet_line_style,
+    _clip_structured_bullet,
     _clip_words,
     _fit_text_to_height,
     _safe,
+    _split_structured_bullet,
     _trim_dangling_tail,
     measure_text_height,
 )
@@ -161,7 +165,7 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         headline = _safe(finding.get("headline") or "Тема")
         if len(headline) > 72:
             headline = _clip_words(headline, 72)
-        detail = _safe(finding.get("detail") or "")
+        detail = _clip_structured_bullet(_safe(finding.get("detail") or ""), 520)
         # Prefer complete source text; only sentence-fit if height is tight.
         marker = _safe(finding.get("manualReview") or "")
         # Embed "requires review" into status instead of a cramped footer.
@@ -195,9 +199,9 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
                         break
             if needed > max_h:
                 fitted = _fit_text_to_height(detail, text_w, detail_font, max(180_000, max_h - pad_y - headline_h - pad_y - 40_000))
-                if dangling.search(fitted) or fitted != detail and not fitted.endswith((".", "!", "?")):
+                if dangling.search(fitted.replace("\n", " ")) or fitted != detail and not fitted.rstrip().endswith((".", "!", "?")):
                     # Fall back to first complete sentence only.
-                    sentences = re.split(r"(?<=[.!?])\s+", detail)
+                    sentences = re.split(r"(?<=[.!?])\s+", detail.replace("\n", " "))
                     fitted = sentences[0].rstrip(".,;: ") + ("." if sentences and not sentences[0].endswith((".", "!", "?")) else "")
                     if dangling.search(fitted):
                         raise RuntimeError(f"ORION risk-matrix dangling detail on p{ctx.page}: {fitted[-40:]}")
@@ -225,12 +229,28 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
             box = ctx.slide.shapes.add_textbox(Emu(left), Emu(text_y), Emu(text_w), Emu(rem))
             tf = box.text_frame
             tf.word_wrap = True
-            p = tf.paragraphs[0]
-            r = p.add_run()
-            r.text = detail
-            r.font.name = FONT
-            r.font.size = Pt(detail_font)
-            r.font.color.rgb = BODY_COLOR
+            # PDF-38 F.1 — hierarchical detail: stats body, muted Sources/Examples.
+            detail_lines = _split_structured_bullet(detail) or [detail]
+            first = True
+            for li, line in enumerate(detail_lines):
+                p = tf.paragraphs[0] if first else tf.add_paragraph()
+                first = False
+                p.space_before = Pt(0 if li == 0 else 1)
+                p.space_after = Pt(1)
+                p.line_spacing = 1.12
+                bold, line_color, size_pt = _bullet_line_style(line, is_first=(li == 0))
+                # Inside a card the headline already carries the theme — demote
+                # a repeated guillemet theme line to body weight.
+                if li == 0 and line.startswith("«"):
+                    bold, line_color, size_pt = False, BODY_COLOR, float(detail_font)
+                elif not bold:
+                    size_pt = float(detail_font) if line_color == BODY_COLOR else FS_CAPTION + 0.5
+                r = p.add_run()
+                r.text = line
+                r.font.name = FONT
+                r.font.bold = bold
+                r.font.size = Pt(size_pt)
+                r.font.color.rgb = line_color
         if pill:
             # E.1 — badge height from conservative wrap estimate; long Russian
             # labels like «Требует подтверждения» always get ≥2 lines of room

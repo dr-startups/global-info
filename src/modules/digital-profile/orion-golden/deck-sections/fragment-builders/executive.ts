@@ -521,19 +521,42 @@ const RISK_MATRIX_LIKELY_RESERVED = 1;
 export const RISK_MATRIX_LIKELY_AGGREGATE_ID = "finding-likely-aggregate";
 
 function riskMatrixDetail(f: Finding, extras?: FragmentExtras): string {
+  // PDF-38 F.1 — keep multi-line theme / stats / sources; flatten only when
+  // the structured body exceeds the card budget.
+  const claim = themedClaim(f);
   if (f.subjectMatch === "LIKELY_SUBJECT") {
-    return fitClientSentences(
-      [
-        `Требует подтверждения: ${themedClaim(f)}`,
-        "Принадлежность вероятна, но не входит в KPI «О субъекте» до уточнения идентификации.",
-      ],
-      320
-    );
+    const body = [
+      "Требует подтверждения.",
+      claim,
+      "Принадлежность вероятна, но не входит в KPI «О субъекте» до уточнения идентификации.",
+    ].join("\n");
+    return body.length <= 480
+      ? body
+      : fitClientSentences(
+          [
+            `Требует подтверждения: ${claim.replace(/\n/gu, " ")}`,
+            "Принадлежность вероятна, но не входит в KPI «О субъекте» до уточнения идентификации.",
+          ],
+          320
+        );
   }
   const risk = matchGptKeyRisk(f.theme, extras?.gptCaseAnalysis?.keyRisks);
-  return risk
-    ? fitClientSentences([themedClaim(f), risk.explanation, `Что делать: ${risk.advice}`], 360)
-    : fitClientSentences([themedClaim(f), `Рекомендация: ${f.recommendedAction}`], 360);
+  if (risk) {
+    const body = [claim, risk.explanation, `Что делать: ${risk.advice}`].join("\n");
+    return body.length <= 520
+      ? body
+      : fitClientSentences(
+          [claim.replace(/\n/gu, " "), risk.explanation, `Что делать: ${risk.advice}`],
+          360
+        );
+  }
+  const body = [claim, `Рекомендация: ${f.recommendedAction}`].join("\n");
+  return body.length <= 520
+    ? body
+    : fitClientSentences(
+        [claim.replace(/\n/gu, " "), `Рекомендация: ${f.recommendedAction}`],
+        360
+      );
 }
 
 function riskMatrixRow(f: Finding): string[] {
@@ -695,7 +718,13 @@ export function buildDigitalProfileOverviewFragment(
     .filter(isAdverse)
     .sort((a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0))
     .slice(0, 4)
-    .map((f) => clampClientText(themedClaim(f), 260) + ` [${f.findingId}]`);
+    .map((f) => {
+      const body = themedClaim(f);
+      const marker = ` [${f.findingId}]`;
+      return body.length + marker.length <= 520
+        ? body + marker
+        : clampClientText(body.replace(/\n/gu, " "), 480) + marker;
+    });
   return {
     slides: [
       makeSlotSlide({

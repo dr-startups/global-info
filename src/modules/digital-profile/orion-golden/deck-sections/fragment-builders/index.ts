@@ -24,7 +24,9 @@ export {
   sourceLine,
   localizedThemedClaim,
   statusLine,
+  structureThemeClaimText,
   themedClaim,
+  withContinuations,
 } from "./shared";
 
 export { buildFrontMatterFragment } from "./front-matter";

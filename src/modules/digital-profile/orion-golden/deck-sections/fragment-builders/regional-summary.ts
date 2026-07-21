@@ -151,10 +151,20 @@ export function buildRegionalSummaryFragment(
       adverseN === scoped.findings.length
         ? `подтверждённых тем: ${scoped.findings.length}, все — повышенного внимания`
         : `подтверждённых тем: ${scoped.findings.length}, из них повышенного внимания: ${adverseN}`;
+    // PDF-38 F.1/F.2 — structured multi-line theme claims; pagination (5/page)
+    // carries overflow to continuation so nothing is silently dropped.
     const bullets = [
       ...scoped.findings
         .slice(0, 8)
-        .map((f) => clampClientText(localizedThemedClaim(f, scoped), 340) + ` [${f.findingId}]`),
+        .map((f) => {
+          const body = localizedThemedClaim(f, scoped);
+          // Multi-line claims need a wider char budget; clamp per line later
+          // in the renderer. Keep the finding marker on the last line.
+          const marker = ` [${f.findingId}]`;
+          return body.length + marker.length <= 520
+            ? body + marker
+            : clampClientText(body.replace(/\n/gu, " "), 480) + marker;
+        }),
       ...(uncategorized ? [uncategorized.bullet] : []),
       ...(likelyN > 0
         ? [

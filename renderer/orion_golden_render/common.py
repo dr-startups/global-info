@@ -385,6 +385,85 @@ def _clip_words(text: str, max_chars: int) -> str:
     return _trim_dangling_tail(slice_)
 
 
+_META_LINE_RE = re.compile(r"^(Источники(?:\s+в\s+регионе)?|Примеры(?:\s+заголовков)?)\s*:", re.I)
+_THEME_LINE_RE = re.compile(r"^«[^»]{2,80}»\s*$")
+
+
+def _split_structured_bullet(text: str) -> list[str]:
+    """PDF-38 F.1 — normalize a theme bullet into theme / stats / meta lines."""
+    raw = _safe(text).replace("\r\n", "\n").strip()
+    if not raw:
+        return []
+    if "\n" in raw:
+        return [ln.strip() for ln in raw.split("\n") if ln.strip()]
+    # One-line «Theme» — body with optional Sources/Examples tails.
+    m = re.match(r"^(«[^»]+»)\s*[—\-–:]?\s*(.+)$", raw, re.S)
+    if m:
+        theme, rest = m.group(1).strip(), m.group(2).strip()
+        sources = re.search(
+            r"(Источники(?:\s+в\s+регионе)?:\s*.+?)(?=\s*Примеры|\s*$)", rest, re.I
+        )
+        examples = re.search(r"((?:Примеры(?:\s+заголовков)?):\s*.+)$", rest, re.I)
+        stats = rest
+        if sources:
+            stats = stats.replace(sources.group(0), "").strip()
+        if examples:
+            stats = stats.replace(examples.group(0), "").strip()
+        stats = re.sub(r"\s+", " ", stats).strip(" ;,.")
+        if stats and not re.search(r"[.!?…]$", stats):
+            stats = f"{stats}."
+        lines = [theme]
+        if stats:
+            lines.append(stats)
+        if sources:
+            lines.append(re.sub(r"\s+", " ", sources.group(1)).strip())
+        if examples:
+            lines.append(
+                re.sub(r"\s+", " ", examples.group(1)).replace("Примеры заголовков:", "Примеры:").strip()
+            )
+        return lines
+    return [raw]
+
+
+def _clip_structured_bullet(text: str, max_chars: int) -> str:
+    """Keep whole structural lines; clip only the last line if needed."""
+    lines = _split_structured_bullet(text)
+    if not lines:
+        return ""
+    if sum(len(ln) for ln in lines) + max(0, len(lines) - 1) <= max_chars:
+        return "\n".join(lines)
+    kept: list[str] = []
+    used = 0
+    for i, ln in enumerate(lines):
+        sep = 1 if kept else 0
+        room = max_chars - used - sep
+        if room < 12:
+            break
+        if len(ln) <= room:
+            kept.append(ln)
+            used += sep + len(ln)
+            continue
+        # Never leave a dangling meta label without content.
+        if _META_LINE_RE.match(ln) and room < 24:
+            break
+        clipped = _clip_words(ln, room)
+        if clipped:
+            kept.append(clipped)
+        break
+    return "\n".join(kept) if kept else _clip_words(lines[0], max_chars)
+
+
+def _bullet_line_style(line: str, *, is_first: bool) -> tuple[bool, RGBColor, float]:
+    """Return (bold, color, size_pt) for one line inside a structured bullet."""
+    if _META_LINE_RE.match(line):
+        return False, MUTED_COLOR, FS_CAPTION + 0.5
+    if is_first and (_THEME_LINE_RE.match(line) or (line.endswith(":") and len(line) <= 80)):
+        return True, NAVY, FS_BODY + 0.5
+    if is_first and line.startswith("«") and "»" in line[:90]:
+        return True, NAVY, FS_BODY + 0.5
+    return False, BODY_COLOR, float(FS_BODY)
+
+
 # REMEDIATION §6.2 — replace QA-violating sidebar fields; never fail the whole render.
 
 SIDEBAR_SAFE_FALLBACK = "См. таблицу результатов на этой странице."
@@ -751,7 +830,7 @@ class _Ctx:
         rows = (len(items) + cols - 1) // cols
         return y + rows * chip_h + max(0, rows - 1) * gap
 
-    def bullets(self, items: list[str], y: int, color: RGBColor = BODY_COLOR, max_items: int = 8, max_chars: int = 320) -> int:
+    def bullets(self, items: list[str], y: int, color: RGBColor = BODY_COLOR, max_items: int = 8, max_chars: int = 520) -> int:
         dangling = re.compile(
             r"(?:\bв\s+т\.?\s*ч\.?|\bс\s+[А-ЯA-Z]\.?|\b[А-ЯA-Z]\.?|,|;|—|–|-)\s*$",
             re.I,
@@ -761,16 +840,17 @@ class _Ctx:
             raw = _safe(b)
             if not raw:
                 continue
-            clipped = _clip_words(raw, max_chars)
-            if dangling.search(clipped):
-                # Prefer previous sentence boundary inside the clip window.
+            clipped = _clip_structured_bullet(raw, max_chars)
+            flat_tail = clipped.replace("\n", " ").rstrip()
+            if dangling.search(flat_tail):
                 punct = max(clipped.rfind(". "), clipped.rfind("! "), clipped.rfind("? "))
                 if punct > 40:
                     clipped = clipped[: punct + 1].strip()
                 else:
                     clipped = _trim_dangling_tail(clipped)
-            if dangling.search(clipped) or clipped.endswith(("—", "–", "-")):
-                raise RuntimeError(f"ORION bullet dangling on p{self.page}: {clipped[-48:]}")
+            flat_tail = clipped.replace("\n", " ").rstrip()
+            if dangling.search(flat_tail) or flat_tail.endswith(("—", "–", "-")):
+                raise RuntimeError(f"ORION bullet dangling on p{self.page}: {flat_tail[-48:]}")
             kept.append(clipped)
         if not kept:
             return y
@@ -791,18 +871,25 @@ class _Ctx:
         box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(avail))
         tf = box.text_frame
         tf.word_wrap = True
-        first = True
+        first_para = True
         for bullet in kept:
-            p = tf.paragraphs[0] if first else tf.add_paragraph()
-            first = False
-            p.space_before = Pt(4)
-            p.space_after = Pt(8)
-            p.line_spacing = 1.15
-            r = p.add_run()
-            r.text = f"• {bullet}"
-            r.font.name = FONT
-            r.font.size = Pt(FS_BODY)
-            r.font.color.rgb = color
+            lines = _split_structured_bullet(bullet) or [bullet]
+            for li, line in enumerate(lines):
+                p = tf.paragraphs[0] if first_para else tf.add_paragraph()
+                first_para = False
+                p.space_before = Pt(6 if li == 0 else 1)
+                p.space_after = Pt(6 if li == len(lines) - 1 else 1)
+                p.line_spacing = 1.12
+                bold, line_color, size_pt = _bullet_line_style(line, is_first=(li == 0))
+                # Fallback color arg only for flat single-line bullets.
+                if len(lines) == 1 and color != BODY_COLOR:
+                    line_color = color
+                r = p.add_run()
+                r.text = f"• {line}" if li == 0 else f"   {line}"
+                r.font.name = FONT
+                r.font.bold = bold
+                r.font.size = Pt(size_pt)
+                r.font.color.rgb = line_color
         return y + min(avail, needed + 60_000)
 
 

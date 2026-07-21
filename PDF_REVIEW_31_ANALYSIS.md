@@ -384,6 +384,34 @@ GPT выбирает только между проверенными вариа
 
 ---
 
+## Фаза F (PDF 38) — иерархия текста + не терять темы + GPT schema — ✅
+
+Диагностика PDF 38: обрывы в основном ушли; главная жалоба — «стена серого
+текста» без иерархии. Реальная потеря контента — renderer `max_items=6` на
+regional-summary при 8 bullets в deck (темы «Деловой профиль» / «Другие
+материалы» на cont). GPT stage 2 падал с `FALLBACK_ERROR invalid response
+schema` на RU_SUMMARY / UAE_SUMMARY / RU_SUGGESTIONS из‑за null/пустых массивов.
+
+### F.1 — иерархия
+- Claim synthesizer пишет многострочно: статистика / Источники / Примеры.
+- `themedClaim` / `structureThemeClaimText` — тема на первой строке в «ёлочках».
+- Renderer `bullets()`: тема bold navy, мета-строки muted caption.
+- Risk-matrix detail тоже рендерит structured lines.
+
+### F.2 — capacity
+- `regional-summary.maxBulletsPerSlide` 8→5 (overflow → continuation).
+- Renderer metrics_dashboard `max_items` 6→8, `max_chars` 520.
+- Bullet budget в client-text-contract 400→520.
+
+### F.3 — GPT schema
+- `parseFragmentCopyResponse` fail-open (как `parseEditorResponse`).
+- Prompt v7: многострочные thematic bullets; не возвращать null/[].
+- `contentVersion` → `deck-sections-v29`.
+
+**Приёмка:** `tests/unit/pdf-review-phase-f.test.ts`.
+
+---
+
 ## Приоритет и порядок
 
 | Очередь | Шаги | Критерий готовности |

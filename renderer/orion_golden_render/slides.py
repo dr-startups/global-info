@@ -293,7 +293,9 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 )
                 y += 60_000
             if bullets:
-                ctx.bullets(bullets, y, max_items=6, max_chars=340)
+                # PDF-38 F.2 — show every paginated theme (TS caps at 5/page);
+                # never silently drop the last two with max_items=6.
+                ctx.bullets(bullets, y, max_items=8, max_chars=520)
             return
         if narrative:
             y = ctx.content_card(
@@ -327,7 +329,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             )
             y += 60_000
         if bullets:
-            ctx.bullets(bullets, y, max_items=6, max_chars=340)
+            ctx.bullets(bullets, y, max_items=8, max_chars=520)
         return
 
     if template == "orion_golden_serp_screenshot":

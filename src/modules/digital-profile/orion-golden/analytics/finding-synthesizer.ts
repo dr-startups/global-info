@@ -386,11 +386,16 @@ export function synthesizeFindings(input: {
       adverseItems.length > 0
         ? `, из них с негативным содержанием — ${adverseItems.length}`
         : ", негативного содержания не зафиксировано";
-    const titlesSegment = joinTitlesWithinBudget(topTitles, 380);
-    const claim =
-      `${items.length} ${total}${adverseNote}. ` +
-      `Источники: ${domains.slice(0, 4).join(", ") || "без URL"}.` +
-      (titlesSegment ? ` Примеры заголовков: ${titlesSegment}` : "");
+    const titlesSegment = joinTitlesWithinBudget(topTitles, 220);
+    // PDF-38 F.1 — claim as scan-friendly lines (theme is prepended by
+    // consumers). Renderer bolds the theme and mutes Sources/Examples.
+    const claim = [
+      `${items.length} ${total}${adverseNote}.`,
+      `Источники: ${domains.slice(0, 4).join(", ") || "без URL"}.`,
+      titlesSegment ? `Примеры: ${titlesSegment}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
 
     return FindingSchema.parse({
       schemaVersion: FINDING_SCHEMA_VERSION,

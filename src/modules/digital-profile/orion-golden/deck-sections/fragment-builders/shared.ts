@@ -640,10 +640,72 @@ export function pageSourceLine(view: PageEvidenceView): string {
 }
 
 /** «Тема» — claim; skip the prefix when the claim already names the theme. */
+/**
+ * PDF-38 F.1 — split a one-line theme claim into scan-friendly lines:
+ * theme · stats · sources · examples. Already-structured text is kept.
+ */
+export function structureThemeClaimText(text: string): string {
+  const raw = String(text ?? "").replace(/\r\n/gu, "\n").trim();
+  if (!raw) return raw;
+  if (raw.includes("\n") && /(?:^|\n)(?:Источники|Примеры)\b/u.test(raw)) {
+    return raw
+      .replace(/Примеры заголовков:/gu, "Примеры:")
+      .replace(/\n{2,}/gu, "\n")
+      .trim();
+  }
+  let theme = "";
+  let rest = raw;
+  const guillemet = raw.match(/^«([^»]+)»\s*[—\-–:]?\s*(.*)$/us);
+  if (guillemet) {
+    theme = `«${guillemet[1].trim()}»`;
+    rest = (guillemet[2] ?? "").trim();
+  } else {
+    // Only treat "Title: body" as a theme when the left side is a short
+    // label — never a stats sentence that happens to contain
+    // «Источники в регионе: …» (PDF-38 F.1 regression).
+    const colon = raw.match(/^([^:\n]{3,80}):\s+(.*)$/us);
+    const left = colon?.[1]?.trim() ?? "";
+    if (
+      colon &&
+      left &&
+      !/^(Источники|Примеры|Что|Статус|Методология)\b/u.test(left) &&
+      !/[.!?…]/.test(left) &&
+      !/\d+\s+публикац/iu.test(left)
+    ) {
+      theme = left;
+      rest = (colon[2] ?? "").trim();
+    }
+  }
+  const sourcesMatch = rest.match(/\s*(Источники(?:\s+в\s+регионе)?:\s*.+?)(?=\s*Примеры|\s*$)/u);
+  const examplesMatch = rest.match(/\s*((?:Примеры(?:\s+заголовков)?):\s*.+)$/u);
+  let stats = rest;
+  if (sourcesMatch) stats = stats.replace(sourcesMatch[0], "").trim();
+  if (examplesMatch) stats = stats.replace(examplesMatch[0], "").trim();
+  stats = stats.replace(/\s+/gu, " ").replace(/[\s;,.]+$/u, "");
+  if (stats && !/[.!?…]$/u.test(stats)) stats = `${stats}.`;
+  const sources = sourcesMatch
+    ? sourcesMatch[1].replace(/\s+/gu, " ").trim()
+    : "";
+  const examples = examplesMatch
+    ? examplesMatch[1]
+        .replace(/^Примеры заголовков:/u, "Примеры:")
+        .replace(/\s+/gu, " ")
+        .trim()
+    : "";
+  return [theme, stats, sources, examples].filter(Boolean).join("\n");
+}
+
+/**
+ * PDF-38 F.1 — theme on its own line (renderer bolds it), claim body below.
+ * Keeps multi-line claim structure from the synthesizer (stats / sources /
+ * examples) so the PDF never collapses into one grey paragraph.
+ */
 export function themedClaim(f: Finding): string {
-  return f.claim.toLowerCase().startsWith(f.theme.toLowerCase())
-    ? f.claim
-    : `«${f.theme}» — ${f.claim}`;
+  const claim = structureThemeClaimText(String(f.claim ?? "").trim());
+  if (!claim) return `«${f.theme}»`;
+  if (claim.toLowerCase().startsWith(f.theme.toLowerCase())) return claim;
+  if (claim.startsWith("«")) return claim;
+  return `«${f.theme}»\n${claim}`;
 }
 
 /**
@@ -685,16 +747,19 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
     ? `Источники в регионе: ${domains.slice(0, 4).join(", ")}.`
     : "Источники по данной теме относятся к другим разделам отчёта.";
   claim = claim.replace(/Источники:\s.*?\.(?=\s|$)/u, sourceSegment);
-  if (/Примеры заголовков:/u.test(claim)) {
+  if (/Примеры(?:\s+заголовков)?:/u.test(claim)) {
     // PDF-36 D.5 — whole-title join, no mid-title character slice.
-    const titlesSegment = joinTitlesWithinBudget(titles.slice(0, 3), 380);
+    const titlesSegment = joinTitlesWithinBudget(titles.slice(0, 3), 220);
     claim = titlesSegment
-      ? claim.replace(/Примеры заголовков:.*$/u, `Примеры заголовков: ${titlesSegment}`)
-      : claim.replace(/\s*Примеры заголовков:.*$/u, "");
+      ? claim.replace(/Примеры(?:\s+заголовков)?:.*$/u, `Примеры: ${titlesSegment}`)
+      : claim.replace(/\n?Примеры(?:\s+заголовков)?:.*$/u, "");
   }
-  return claim.toLowerCase().startsWith(f.theme.toLowerCase())
-    ? claim
-    : `«${f.theme}» — ${claim}`;
+  // Prefer multi-line structure even when the stored claim was one paragraph.
+  claim = structureThemeClaimText(claim);
+  if (!claim) return `«${f.theme}»`;
+  if (claim.toLowerCase().startsWith(f.theme.toLowerCase())) return claim;
+  if (claim.startsWith("«")) return claim;
+  return `«${f.theme}»\n${claim}`;
 }
 
 /** Region-level source line — summary pages only (page IS the region). */
