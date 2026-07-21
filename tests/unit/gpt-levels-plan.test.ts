@@ -21,6 +21,7 @@ import {
   GPT_SLIDE_COPY_REPAIR_PROMPT_MARKER,
 } from "../../src/modules/digital-profile/orion-golden/deck-sections/llm-slide-copy";
 import {
+  parseEditorResponse,
   runGptDeckEditorPass,
   GPT_DECK_EDITOR_PROMPT_MARKER,
 } from "../../src/modules/digital-profile/orion-golden/deck-sections/gpt-deck-editor";
@@ -285,6 +286,43 @@ describe("level 1 — stage-3 deck editor pass", () => {
     expect(out.packs[0]!.slides[0]!.content.narrative).toBe(
       "Черновой вывод по странице."
     );
+  });
+
+  it("tolerates null / empty / partly invalid slides in the live response (report 32)", async () => {
+    // Live model padded unchanged fields with null and empty arrays — the v1
+    // strict schema failed the WHOLE response as «invalid response schema».
+    const out = await runGptDeckEditorPass({
+      packs: [ruSerpPack()],
+      subject: { displayName: "Anders Holmström", aliases: [] },
+      caller: async () => ({
+        slides: [
+          { slideId: "p10_ru_serp", narrative: EDITED, bullets: [], whatWasFound: null },
+          { slideId: "p99_unknown", narrative: "Чужой слайд — игнорируется." },
+          { notEvenASlide: true },
+          { slideId: "p10_ru_serp_2", narrative: null, bullets: [""] },
+        ],
+      }),
+      evidenceIndex: EVIDENCE_INDEX,
+      validatePack: okValidate,
+    });
+    expect(out.report.status).toBe("APPLIED");
+    expect(out.report.appliedFields).toBe(1);
+    expect(out.packs[0]!.slides[0]!.content.narrative).toBe(EDITED);
+    // Deterministic bullets survive the empty-array padding.
+    expect(out.packs[0]!.slides[0]!.content.bullets).toEqual(["Черновой пункт."]);
+  });
+
+  it("parseEditorResponse accepts a bare array and drops invalid entries", () => {
+    const parsed = parseEditorResponse([
+      { slideId: "a", narrative: "Текст." },
+      { slideId: "b", narrative: null, bullets: [] },
+      "garbage",
+    ]);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.overrides).toHaveLength(1);
+    expect(parsed!.overrides[0]!.slideId).toBe("a");
+    expect(parsed!.droppedSlides).toBe(1);
+    expect(parseEditorResponse({ totally: "wrong" })).toBeNull();
   });
 
   it("fails safe on transport errors — packs unchanged", async () => {

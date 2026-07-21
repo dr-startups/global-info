@@ -37,18 +37,81 @@ export const GPT_DECK_EDITOR_PROMPT_MARKER = "выпускающий редак�
 
 const TEXT_BUDGETS = GPT_SLIDE_COPY_FIELD_BUDGETS;
 
-const EditorSlideOverrideSchema = z.object({
+/**
+ * Lenient per-slide schema: the live model habitually pads unchanged fields
+ * with null / "" / empty bullet arrays. Report 32 showed that one such slide
+ * must not fail the WHOLE response (v1 strict schema → FALLBACK_ERROR
+ * «invalid response schema» and zero edits applied).
+ */
+const EditorSlideLooseSchema = z.object({
   slideId: z.string().min(1),
-  narrative: z.string().optional(),
-  bullets: z.array(z.string().min(1)).min(1).max(8).optional(),
-  whatWasFound: z.string().optional(),
-  whyItMatters: z.string().optional(),
-  whatToCheck: z.string().optional(),
+  narrative: z.string().nullish(),
+  bullets: z.array(z.string().nullish()).max(12).nullish(),
+  whatWasFound: z.string().nullish(),
+  whyItMatters: z.string().nullish(),
+  whatToCheck: z.string().nullish(),
 });
-const EditorResponseSchema = z.object({
-  slides: z.array(EditorSlideOverrideSchema).max(64),
-});
-type EditorSlideOverride = z.infer<typeof EditorSlideOverrideSchema>;
+
+type EditorSlideOverride = {
+  slideId: string;
+  narrative?: string;
+  bullets?: string[];
+  whatWasFound?: string;
+  whyItMatters?: string;
+  whatToCheck?: string;
+};
+
+function normalizeScalar(value: string | null | undefined): string | undefined {
+  const text = (value ?? "").trim();
+  return text.length > 0 ? text : undefined;
+}
+
+/**
+ * Parse the editor response fail-open per slide: invalid entries are dropped
+ * (and counted), valid ones survive. Accepts both {slides:[...]} and a bare
+ * array. Returns null only when the payload has no recognizable shape at all.
+ */
+export function parseEditorResponse(raw: unknown): {
+  overrides: EditorSlideOverride[];
+  droppedSlides: number;
+} | null {
+  const list = Array.isArray(raw)
+    ? raw
+    : raw && typeof raw === "object" && Array.isArray((raw as { slides?: unknown }).slides)
+      ? ((raw as { slides: unknown[] }).slides)
+      : null;
+  if (!list) return null;
+
+  const overrides: EditorSlideOverride[] = [];
+  let droppedSlides = 0;
+  for (const item of list.slice(0, 64)) {
+    const parsed = EditorSlideLooseSchema.safeParse(item);
+    if (!parsed.success) {
+      droppedSlides += 1;
+      continue;
+    }
+    const s = parsed.data;
+    const bullets = (s.bullets ?? [])
+      .map((b) => (b ?? "").trim())
+      .filter((b) => b.length > 0);
+    const override: EditorSlideOverride = {
+      slideId: s.slideId,
+      narrative: normalizeScalar(s.narrative),
+      bullets: bullets.length > 0 ? bullets : undefined,
+      whatWasFound: normalizeScalar(s.whatWasFound),
+      whyItMatters: normalizeScalar(s.whyItMatters),
+      whatToCheck: normalizeScalar(s.whatToCheck),
+    };
+    const hasContent =
+      override.narrative !== undefined ||
+      override.bullets !== undefined ||
+      override.whatWasFound !== undefined ||
+      override.whyItMatters !== undefined ||
+      override.whatToCheck !== undefined;
+    if (hasContent) overrides.push(override);
+  }
+  return { overrides, droppedSlides };
+}
 
 const EDITOR_INSTRUCTIONS = [
   `Ты — ${GPT_DECK_EDITOR_PROMPT_MARKER} о цифровом профиле субъекта. Тебе передан клиентский текст ВСЕХ страниц уже собранного отчёта.`,
@@ -57,7 +120,7 @@ const EDITOR_INSTRUCTIONS = [
   "СТРОГО ЗАПРЕЩЕНО упоминать процесс подготовки отчёта: слова «черновик», «переданный фрагмент», «scoped», «findings» и рассуждения о твоей работе с материалами.",
   "Не трогай страницы, где текст честно сообщает, что поверхность не собиралась или проверена и пуста.",
   `Лимиты длины: narrative до ${Math.floor(TEXT_BUDGETS.narrative * 0.94)}, каждый bullet до ${Math.floor(TEXT_BUDGETS.bullet * 0.94)}, whatWasFound до ${Math.floor(TEXT_BUDGETS.whatWasFound * 0.94)}, whyItMatters до ${Math.floor(TEXT_BUDGETS.whyItMatters * 0.94)}, whatToCheck до ${Math.floor(TEXT_BUDGETS.whatToCheck * 0.94)} символов.`,
-  'Верни ТОЛЬКО JSON: {"slides": [{"slideId": string, "narrative"?: string, "bullets"?: [string], "whatWasFound"?: string, "whyItMatters"?: string, "whatToCheck"?: string}]} — и только те слайды и поля, которые ты реально улучшил. Если правки не нужны, верни {"slides": []}.',
+  'Верни ТОЛЬКО JSON: {"slides": [{"slideId": string, "narrative"?: string, "bullets"?: [string], "whatWasFound"?: string, "whyItMatters"?: string, "whatToCheck"?: string}]} — и только те слайды и поля, которые ты реально улучшил. Не возвращай null, пустые строки и пустые массивы — неизменённое поле просто опускай. Если правки не нужны, верни {"slides": []}.',
 ].join(" ");
 
 export type GptDeckEditorFragmentReport = {
@@ -239,8 +302,8 @@ export async function runGptDeckEditorPass(input: {
       queued && !queued.ok ? queued.error.message : "gpt-queue-missing-result";
     return { packs: input.packs, report: emptyReport("FALLBACK_ERROR", detail) };
   }
-  const parsed = EditorResponseSchema.safeParse(queued.value);
-  if (!parsed.success) {
+  const parsed = parseEditorResponse(queued.value);
+  if (!parsed) {
     return {
       packs: input.packs,
       report: emptyReport("FALLBACK_ERROR", "invalid response schema"),
@@ -249,7 +312,7 @@ export async function runGptDeckEditorPass(input: {
 
   // Group returned overrides by owning fragment; unknown slideIds are dropped.
   const byFragment = new Map<FragmentKey, EditorSlideOverride[]>();
-  for (const o of parsed.data.slides) {
+  for (const o of parsed.overrides) {
     const fragmentKey = slideToFragment.get(o.slideId);
     if (!fragmentKey) continue;
     const list = byFragment.get(fragmentKey) ?? [];
@@ -258,6 +321,9 @@ export async function runGptDeckEditorPass(input: {
   }
 
   const report = emptyReport(byFragment.size === 0 ? "NO_CHANGES" : "APPLIED");
+  if (parsed.droppedSlides > 0) {
+    report.detail = `dropped-invalid-slides:${parsed.droppedSlides}`;
+  }
   const outPacks = input.packs.map((pack) => {
     const overrides = byFragment.get(pack.fragmentKey);
     if (!overrides || overrides.length === 0) return pack;
