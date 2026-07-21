@@ -305,6 +305,28 @@ export function toRendererPayload(input: {
       };
     }
 
+    // Section dividers draw only the title and the narrative lead (hero
+    // variant); the default narrative→bullets folding would hide the lead in
+    // a field the divider layout never renders.
+    if (s.template === "orion_golden_region_divider") {
+      return {
+        slideKey: s.slideKey,
+        sectionKey: s.sectionKey,
+        template: s.template,
+        layoutVariant: s.layoutVariant,
+        title: s.title,
+        pageNumber: s.pageNumber,
+        totalPageCount: s.totalPageCount,
+        baseSlotId: s.baseSlotId,
+        isContinuation: s.isContinuation,
+        continuationOf: s.continuationOf,
+        continuationIndex: s.continuationIndex,
+        narrative,
+        evidenceRefs: s.evidenceRefs,
+        assetRefs: boundAssets,
+      };
+    }
+
     // Analytical sidebar next to a bound visual: the renderer's unified
     // sidebar panel consumes `visualAnalysis` (headline conclusion, adverse
     // highlight explanations, meaning, action, provenance) — an empty titled
