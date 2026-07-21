@@ -65,7 +65,52 @@ export type DeckTemplateDef = {
  * must NOT invalidate SectionPacks — packs hash analytical inputs, not layout.
  * The assembler/render stage picks up the new layout on reassembly.
  */
-export const TEMPLATE_LAYOUT_VERSION = "deck-templates-layout-v1";
+export const TEMPLATE_LAYOUT_VERSION = "deck-templates-layout-v2";
+
+/** A named, pre-built alternative rendering of a template (level 2.5). */
+export type TemplateLayoutVariantDef = {
+  id: string;
+  /** Client-safe description shown to the GPT composer when it picks layouts. */
+  description: string;
+};
+
+/**
+ * Per-template layout variants the GPT composer may choose from. The default
+ * rendering (no variant) is always valid. Every variant maps to a
+ * deterministic layout implemented in the Python renderer — GPT never invents
+ * geometry, it only selects among vetted, pre-built options.
+ */
+export const TEMPLATE_LAYOUT_VARIANTS: Partial<
+  Record<DeckTemplateId, TemplateLayoutVariantDef[]>
+> = {
+  "section-divider": [
+    {
+      id: "hero",
+      description:
+        "Акцентный титульный разворот раздела: цветная плашка, крупный заголовок и лид-абзац о содержании раздела. Подходит, когда у раздела есть содержательный вводный текст.",
+    },
+  ],
+  "finding-cards": [
+    {
+      id: "accent-headline",
+      description:
+        "Главный вывод страницы выделен акцентной карточкой, детали — списком под ним. Подходит для страниц с одним сильным выводом и короткими деталями.",
+    },
+  ],
+  "regional-summary": [
+    {
+      id: "kpi-first",
+      description:
+        "Числовые показатели региона крупными карточками сверху, текстовый вывод под ними. Подходит, когда цифры выразительнее текста.",
+    },
+  ],
+};
+
+/** Fail-closed check used by the composer validator and the assembler. */
+export function isAllowedLayoutVariant(templateId: string, variant: string): boolean {
+  const defs = TEMPLATE_LAYOUT_VARIANTS[templateId as DeckTemplateId];
+  return Boolean(defs?.some((d) => d.id === variant));
+}
 
 const LAYOUT_DEFAULTS: Omit<TemplateLayoutSpec, "grid"> = {
   bodyFontPt: 12,

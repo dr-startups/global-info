@@ -319,6 +319,34 @@ emphasisThemes + keyDomains — темы, не внутренние id). GPT р�
 (e2e: артефакты композиции и редактора пишутся, `compositionUsed=true`),
 `ci:smokes` — зелёные.
 
+#### Шаг D.3 (уровень 2.5). GPT-верстальщик: выбор вёрстки страниц — ✅
+**Файлы:** `deck-sections/template-registry.ts` (реестр вариантов),
+`deck-sections/gpt-deck-composer.ts` (промпт v2, выбор `layouts`),
+`deck-sections/deck-assembler.ts`, `run-deck-build.ts`,
+`gpt-enhanced-deck-build.ts`, `renderer/orion_golden_render/slides.py`.
+**Что сделано:** «красоту» страниц рисует Python-рендерер по фиксированным
+шаблонам, поэтому GPT получил право выбирать вёрстку, но не изобретать её:
+- `TEMPLATE_LAYOUT_VARIANTS` — реестр именованных, заранее реализованных
+  вариантов вёрстки: `section-divider:hero` (акцентная плашка + крупный
+  заголовок + лид-абзац), `finding-cards:accent-headline` (главный вывод в
+  акцентной карточке), `regional-summary:kpi-first` (цифры сверху, текст ниже);
+- композитор (stage 1.5) получает `layoutOptions` — слайды с вариантами,
+  описания вариантов и плотность контента страницы — и возвращает `layouts`
+  (slideId → layoutVariant). Валидация fail-closed: неизвестный слайд,
+  неизвестный вариант и дубли отбрасываются в `droppedFields`;
+- выбранный вариант едет в `RendererSlide.layoutVariant` (presentation-only:
+  SectionPack, contentHash и кэш не затрагиваются) и в
+  `render-payload.json` → `_render_slide` рисует вариант; неизвестное значение
+  в рендерере молча падает в дефолтную вёрстку;
+- retry-путь stage 2 переиспользует layouts из сохранённого
+  `gpt-deck-composition.json` — пересобранный дек не «прыгает» по вёрстке.
+Скелет (какие страницы, порядок, цифры, evidence) остаётся детерминированным;
+GPT выбирает только между проверенными вариантами подачи.
+**Приёмка:** `tests/unit/gpt-levels-plan.test.ts` (fail-closed выбор),
+`smoke:gpt-report-copy` (e2e: layouts в артефакте и `layoutVariant` в
+`assembled-deck.json`), `smoke:orion-deck-sections`, python import smoke +
+прогон всех четырёх вариантов рендера, `ci:smokes` — зелёные.
+
 #### Уровень 3 — НЕ делаем (решение)
 Полная генерация deck-manifest моделью дала бы красивый текст и нестабильные
 факты: каждое число пришлось бы дублировать детерминированным подсчётом, а

@@ -49,6 +49,9 @@ from .visual import (
 
 def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> None:
     template = str(slide.get("template") or "")
+    # Level 2.5 — named pre-built layout variant picked by the GPT composer.
+    # Validated upstream (TS registry); unknown values fall back to default.
+    variant = str(slide.get("layoutVariant") or "")
     title = _safe(slide.get("title") or "ORION")
     narrative = _safe(slide.get("narrative") or "")
     bullets = [_safe(b) for b in slide.get("bullets") or [] if _safe(b)]
@@ -92,6 +95,41 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         metrics = [m for m in (slide.get("metrics") or []) if isinstance(m, dict)]
         if metrics:
             y = _render_kpi_cards(ctx, metrics[:4], MARGIN_X, y, CONTENT_W, cols=4) + 100_000
+        if variant == "accent-headline" and narrative.strip():
+            # Accent-headline: the lead sentence in an accent card, the rest
+            # of the narrative below it, then the detail bullets.
+            narr_full = narrative.strip()
+            sentences = re.split(r"(?<=[.!?…])\s+", narr_full)
+            lead = sentences[0] if sentences else narr_full
+            rest = " ".join(sentences[1:]).strip()
+            y = ctx.content_card(
+                title=None,
+                text=_clip_words(lead, 420),
+                x=MARGIN_X,
+                y=y,
+                width=CONTENT_W,
+                min_h=360_000,
+                max_h=1_100_000,
+                tone="accent",
+                body_size=13,
+            )
+            y += 100_000
+            if rest:
+                y = ctx.content_card(
+                    title=None,
+                    text=_clip_words(rest, 1400),
+                    x=MARGIN_X,
+                    y=y,
+                    width=CONTENT_W,
+                    min_h=320_000,
+                    max_h=min(2_400_000, CONTENT_BOTTOM - y - (1_200_000 if bullets else 100_000)),
+                    tone="neutral",
+                    body_size=11,
+                )
+                y += 100_000
+            if bullets:
+                ctx.bullets(bullets, y, max_items=7, max_chars=280)
+            return
         narr = narrative.strip()
         if narr and not bullets:
             y = ctx.content_card(
@@ -129,6 +167,24 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
 
     if template == "orion_golden_region_divider":
         ctx.dark_bg()
+        if variant == "hero":
+            # Hero divider: accent bar + large title + lead paragraph.
+            bar = ctx.slide.shapes.add_shape(
+                1, Emu(MARGIN_X), Emu(2_450_000), Emu(140_000), Emu(1_500_000)
+            )
+            bar.fill.solid()
+            bar.fill.fore_color.rgb = RGBColor(0x3B, 0x82, 0xF6)
+            bar.line.fill.background()
+            y = ctx.title(title, 2_500_000, WHITE, 36)
+            if narrative:
+                ctx.body(
+                    narrative,
+                    y + 150_000,
+                    max_h=1_400_000,
+                    color=RGBColor(0xBF, 0xDB, 0xFE),
+                    font_size=13,
+                )
+            return
         ctx.title(title, 2800000, WHITE, 34)
         return
 
@@ -138,6 +194,43 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         badge = slide.get("statusBadge") if isinstance(slide.get("statusBadge"), dict) else None
         if badge:
             y = _render_status_badge(ctx, badge, MARGIN_X, y, CONTENT_W) + 80_000
+        if variant == "kpi-first":
+            # KPI-first: headline numbers lead the page, the narrative and the
+            # action follow — same content, inverted visual hierarchy.
+            metrics_kf = [m for m in (slide.get("metrics") or []) if isinstance(m, dict)]
+            if metrics_kf:
+                y = _render_kpi_cards(ctx, metrics_kf[:6], MARGIN_X, y, CONTENT_W, cols=3) + 100_000
+            if narrative:
+                y = ctx.content_card(
+                    title=None,
+                    text=_clip_words(narrative, 420),
+                    x=MARGIN_X,
+                    y=y,
+                    width=CONTENT_W,
+                    min_h=260_000,
+                    max_h=800_000,
+                    tone="neutral",
+                    body_size=11,
+                )
+                y += 80_000
+            actions_kf = [a for a in (slide.get("actions") or []) if isinstance(a, dict)]
+            if actions_kf:
+                y = ctx.content_card(
+                    title="Действие",
+                    text=_clip_words(_safe(actions_kf[0].get("label")), 160),
+                    x=MARGIN_X,
+                    y=y,
+                    width=CONTENT_W,
+                    min_h=260_000,
+                    max_h=600_000,
+                    tone="warn",
+                    title_size=11,
+                    body_size=11,
+                )
+                y += 60_000
+            if bullets:
+                ctx.bullets(bullets, y, max_items=5, max_chars=260)
+            return
         if narrative:
             y = ctx.content_card(
                 title=None,

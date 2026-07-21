@@ -19,7 +19,11 @@ import type {
   SlideContentContract,
 } from "./contracts";
 import { REPORT_DECK_MANIFEST_VERSION, SECTION_TITLES, type PageKind } from "./contracts";
-import { DECK_TEMPLATE_REGISTRY, type DeckTemplateId } from "./template-registry";
+import {
+  DECK_TEMPLATE_REGISTRY,
+  isAllowedLayoutVariant,
+  type DeckTemplateId,
+} from "./template-registry";
 import { CANONICAL_SLOT_IDS, EXPLICIT_SLOT_MERGES } from "./canonical-slots";
 
 export type AssemblyRejection = {
@@ -38,6 +42,11 @@ export type RendererSlide = {
   slideKey: string;
   sectionKey: string;
   template: string;
+  /**
+   * Level 2.5 — named pre-built layout variant picked by the composer stage.
+   * Absent → the renderer's default layout; always a registered variant.
+   */
+  layoutVariant?: string;
   title: string;
   subtitle?: string;
   pageNumber: number;
@@ -79,6 +88,12 @@ export function assembleDeck(input: {
   expectedCaseId: string;
   expectedReportRunId: string;
   expectedDatasetId: string;
+  /**
+   * Level 2.5 — slideId → layout variant picked by the composer stage
+   * upstream. Applied defensively: an unregistered variant is ignored.
+   * The assembler itself stays pure — the map is plain validated data.
+   */
+  layoutVariants?: ReadonlyMap<string, string>;
 }): DeckAssemblyResult {
   const rejections: AssemblyRejection[] = [];
   const errors: string[] = [];
@@ -222,10 +237,16 @@ export function assembleDeck(input: {
   const rendererSlides: RendererSlide[] = acceptedSlides.map(({ slide }, i) => {
     const tpl = DECK_TEMPLATE_REGISTRY[slide.templateId as DeckTemplateId];
     const isToc = slide.templateId === "toc";
+    const pickedVariant = input.layoutVariants?.get(slide.slideId);
+    const layoutVariant =
+      pickedVariant && isAllowedLayoutVariant(slide.templateId, pickedVariant)
+        ? pickedVariant
+        : undefined;
     return {
       slideKey: slide.slideId,
       sectionKey: slide.sectionId,
       template: tpl?.rendererTemplate ?? "orion_golden_surface_panel",
+      ...(layoutVariant ? { layoutVariant } : {}),
       title: slide.title,
       subtitle: slide.subtitle,
       pageNumber: i + 1,

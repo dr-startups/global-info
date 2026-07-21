@@ -426,6 +426,64 @@ describe("level 2 — deck composer fail-closed validation", () => {
     expect(composition).toBeNull();
   });
 
+  it("level 2.5 — validates layout picks fail-closed against the variant registry", async () => {
+    // Add a divider slide (has a registered "hero" variant) to the pack.
+    const pack = ruSerpPack();
+    pack.slides.push({
+      ...pack.slides[0]!,
+      slideId: "p06_ru_toc",
+      baseSlotId: "p06_ru_toc",
+      templateId: "section-divider",
+      title: "Россия: Цифровой профиль",
+      content: { narrative: "Раздел описывает цифровой профиль субъекта в регионе." },
+    } as never);
+
+    let offeredOptions: Array<{ slideId: string; variants: Array<{ id: string }> }> = [];
+    const composition = await runGptDeckComposer({
+      packs: [pack],
+      subject: { displayName: "Anders Holmström", aliases: [] },
+      caller: async ({ userPayload }) => {
+        const payload = userPayload as {
+          layoutOptions: Array<{ slideId: string; variants: Array<{ id: string }> }>;
+        };
+        offeredOptions = payload.layoutOptions;
+        return {
+          fragments: [
+            {
+              fragmentKey: "RU_SERP",
+              storyAngle:
+                "Начните с материалов о налоговом расследовании — они определяют восприятие субъекта.",
+            },
+          ],
+          layouts: [
+            { slideId: "p06_ru_toc", layoutVariant: "hero" },
+            // Duplicate pick for the same slide — dropped.
+            { slideId: "p06_ru_toc", layoutVariant: "hero" },
+            // Slide without registered variants — dropped.
+            { slideId: "p10_ru_serp", layoutVariant: "hero" },
+            // Unknown variant id — dropped.
+            { slideId: "p06_ru_toc", layoutVariant: "made-up" },
+            // Unknown slide — dropped.
+            { slideId: "p99_unknown", layoutVariant: "hero" },
+          ],
+        };
+      },
+      caseAnalysis: null,
+      bundle: BUNDLE,
+      evidenceIndex: EVIDENCE_INDEX,
+    });
+
+    // Only the divider slide is offered (serp-table has no variants).
+    expect(offeredOptions.map((o) => o.slideId)).toEqual(["p06_ru_toc"]);
+    expect(offeredOptions[0]!.variants.map((v) => v.id)).toEqual(["hero"]);
+
+    expect(composition).not.toBeNull();
+    expect(composition!.layouts).toEqual([{ slideId: "p06_ru_toc", layoutVariant: "hero" }]);
+    expect(
+      composition!.droppedFields.filter((d) => d.startsWith("layouts.")).length
+    ).toBe(4);
+  });
+
   it("passes the validated plan into stage-2 prompts (themes, not ids)", async () => {
     let stage2Payload: Record<string, unknown> | null = null;
     await enhanceSectionPacksWithGptCopy({
@@ -438,7 +496,7 @@ describe("level 2 — deck composer fail-closed validation", () => {
       caseAnalysis: null,
       composition: {
         version: "gpt-deck-composition-v1",
-        promptVersion: "gpt-deck-composer-v1",
+        promptVersion: "gpt-deck-composer-v2",
         generatedAt: new Date().toISOString(),
         fragments: [
           {
@@ -448,6 +506,7 @@ describe("level 2 — deck composer fail-closed validation", () => {
             keyDomains: ["di.se"],
           },
         ],
+        layouts: [],
         droppedFragments: [],
         droppedFields: [],
       },

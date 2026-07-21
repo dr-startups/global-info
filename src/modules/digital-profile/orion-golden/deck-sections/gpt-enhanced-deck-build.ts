@@ -46,6 +46,30 @@ function packsInArtifactOrder(
   return ordered;
 }
 
+/**
+ * Level 2.5 — reuse the persisted composition's layout picks on the stage-2
+ * retry path so a retried deck keeps the same page layouts as the full run.
+ */
+function loadCompositionLayoutsFromDisk(
+  outputRoot: string
+): ReadonlyMap<string, string> | undefined {
+  const path = join(outputRoot, "gpt-deck-composition.json");
+  if (!existsSync(path)) return undefined;
+  try {
+    const parsed = JSON.parse(readFileSync(path, "utf8")) as {
+      layouts?: Array<{ slideId?: string; layoutVariant?: string }>;
+    };
+    const entries = (parsed.layouts ?? [])
+      .filter((l): l is { slideId: string; layoutVariant: string } =>
+        Boolean(l.slideId && l.layoutVariant)
+      )
+      .map((l) => [l.slideId, l.layoutVariant] as const);
+    return entries.length > 0 ? new Map(entries) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function loadFallbackKeysFromReport(outputRoot: string): Set<string> {
   const path = join(outputRoot, "gpt-report-copy.json");
   const keys = new Set<string>();
@@ -198,6 +222,12 @@ export async function runDeckBuildWithGptCopy(input: {
   // After GPT/cache — §7.2 must stay a short dedicated narrative card on p03.
   packs = applyExecutiveFreshnessChangeToPacks(packs, ctx.extras);
 
+  // Level 2.5 — the composer's per-slide layout picks reach the assembler as
+  // a presentation-only map; SectionPack content and hashes stay untouched.
+  const layoutVariants = gptComposition?.layouts?.length
+    ? new Map(gptComposition.layouts.map((l) => [l.slideId, l.layoutVariant]))
+    : undefined;
+
   const result = runDeckBuild({
     ctx: input.ctx,
     bundleForValidation: input.bundleForValidation,
@@ -207,6 +237,7 @@ export async function runDeckBuildWithGptCopy(input: {
     baseObservationCountAfter: input.baseObservationCountAfter,
     prebuiltPacks: packs,
     prebuiltBuildLog: buildLog,
+    layoutVariants,
   });
   if (gptReport) {
     result.artifacts["gpt-report-copy.json"] = join(input.outputRoot, "gpt-report-copy.json");
@@ -297,6 +328,7 @@ export async function runDeckGptCopyRetry(input: {
     baseObservationCountAfter: input.baseObservationCountAfter,
     prebuiltPacks: packsWithFreshness,
     prebuiltBuildLog: buildLog,
+    layoutVariants: loadCompositionLayoutsFromDisk(input.outputRoot),
   });
   result.artifacts["gpt-report-copy.json"] = join(
     input.outputRoot,

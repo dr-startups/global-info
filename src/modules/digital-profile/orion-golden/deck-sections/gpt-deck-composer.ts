@@ -15,10 +15,17 @@
  *    domains and pass the mock-domain guard;
  *  - the story angle passes the client-text token scans and a length budget.
  *
- * The plan only shapes the stage-2 prompts (emphasis and ordering of the
- * client text). Slide structure, metrics, tables and evidence stay fully
- * deterministic. Fail-safe: any error returns null and the pipeline proceeds
- * exactly as before level 2.
+ * Level 2.5 addition: the composer may also pick a LAYOUT VARIANT for slides
+ * whose template offers pre-built alternatives (TEMPLATE_LAYOUT_VARIANTS).
+ * GPT never invents geometry — it selects among vetted deterministic layouts
+ * implemented in the Python renderer; unknown slideIds/variants are dropped
+ * fail-closed. The variant travels outside SectionPack content (presentation
+ * only), so packs, hashes and caching are untouched.
+ *
+ * The plan shapes the stage-2 prompts (emphasis and ordering of the client
+ * text) and the renderer layout choice. Slide structure, metrics, tables and
+ * evidence stay fully deterministic. Fail-safe: any error returns null and
+ * the pipeline proceeds exactly as before level 2.
  */
 
 import { z } from "zod";
@@ -32,8 +39,13 @@ import { riskLevelRu } from "../gpt/client-payload-labels";
 import { scanOrionGoldenClientTextForForbiddenTokens } from "../client/client-text-sanitizer";
 import { matchInternalClientToken } from "../client/load-client-text-contract";
 import { isMockClientDomain } from "../../services/composite-serp-merge";
+import {
+  isAllowedLayoutVariant,
+  TEMPLATE_LAYOUT_VARIANTS,
+  type DeckTemplateId,
+} from "./template-registry";
 
-export const GPT_DECK_COMPOSER_PROMPT_VERSION = "gpt-deck-composer-v1";
+export const GPT_DECK_COMPOSER_PROMPT_VERSION = "gpt-deck-composer-v2";
 
 /** Prompt marker for offline smokes asserting the composer call. */
 export const GPT_DECK_COMPOSER_PROMPT_MARKER = "план композиции отчёта";
@@ -52,6 +64,17 @@ const ComposerResponseSchema = z.object({
       })
     )
     .max(32),
+  // Level 2.5: layout picks are optional and tolerated as null/absent — the
+  // model may return them only for slides that offer variants.
+  layouts: z
+    .array(
+      z.object({
+        slideId: z.string().min(1),
+        layoutVariant: z.string().min(1),
+      })
+    )
+    .max(64)
+    .nullish(),
 });
 
 const COMPOSER_INSTRUCTIONS = [
@@ -60,7 +83,8 @@ const COMPOSER_INSTRUCTIONS = [
   "Для каждого фрагмента реши: с какого смыслового акцента начать рассказ (storyAngle — одно клиентское предложение без жаргона), какие findings раскрыть в первую очередь (emphasisFindingIds — по убыванию важности) и какие домены источников вынести на передний план (keyDomains).",
   "Используй ТОЛЬКО переданные findingId и домены конкретного фрагмента; не переноси findings и домены между фрагментами; не добавляй новых фактов.",
   `storyAngle — по-русски, до ${COMPOSER_STORY_ANGLE_BUDGET} символов, без слов «черновик», «фрагмент», «findings», без URL и внутренних идентификаторов.`,
-  'Верни ТОЛЬКО JSON: {"fragments": [{"fragmentKey": string, "storyAngle": string, "emphasisFindingIds": [string], "keyDomains": [string]}]}.',
+  "Отдельно передан список layoutOptions: слайды, у которых есть альтернативные варианты вёрстки, с описанием каждого варианта. Для каждого такого слайда реши, оставить ли стандартную вёрстку (не возвращай слайд) или выбрать вариант, который лучше подаёт содержание страницы (верни slideId и layoutVariant из списка).",
+  'Верни ТОЛЬКО JSON: {"fragments": [{"fragmentKey": string, "storyAngle": string, "emphasisFindingIds": [string], "keyDomains": [string]}], "layouts": [{"slideId": string, "layoutVariant": string}]}.',
 ].join(" ");
 
 export type GptFragmentCompositionPlan = {
@@ -72,11 +96,19 @@ export type GptFragmentCompositionPlan = {
   keyDomains: string[];
 };
 
+/** A validated layout pick: slide exists and the variant is registered. */
+export type GptSlideLayoutPick = {
+  slideId: string;
+  layoutVariant: string;
+};
+
 export type GptDeckComposition = {
   version: "gpt-deck-composition-v1";
   promptVersion: string;
   generatedAt: string;
   fragments: GptFragmentCompositionPlan[];
+  /** Level 2.5: per-slide layout variant picks (presentation only). */
+  layouts: GptSlideLayoutPick[];
   /** Fail-closed observability: what the validator refused and why. */
   droppedFragments: string[];
   droppedFields: string[];
@@ -134,6 +166,33 @@ export async function runGptDeckComposer(input: {
   const allowedDomainsByFragment = new Map<string, Set<string>>();
   const scopedIdsByFragment = new Map<string, Set<string>>();
 
+  // Level 2.5 — slides that offer pre-built layout variants. Deterministic
+  // fragments participate too: a layout pick changes presentation only and
+  // never touches pack content.
+  const templateBySlideId = new Map<string, string>();
+  const layoutOptionsPayload: Array<Record<string, unknown>> = [];
+  for (const pack of input.packs) {
+    if (pack.status !== "READY") continue;
+    for (const slide of pack.slides) {
+      if (slide.isContinuation) continue;
+      const variants = TEMPLATE_LAYOUT_VARIANTS[slide.templateId as DeckTemplateId];
+      if (!variants || variants.length === 0) continue;
+      templateBySlideId.set(slide.slideId, slide.templateId);
+      layoutOptionsPayload.push({
+        slideId: slide.slideId,
+        templateId: slide.templateId,
+        title: slide.title,
+        content: {
+          narrativeChars: slide.content.narrative?.length ?? 0,
+          bulletCount: slide.content.bullets?.length ?? 0,
+          tableRowCount: slide.content.table?.rows.length ?? 0,
+          kpiCount: slide.content.kpis?.length ?? 0,
+        },
+        variants: variants.map((v) => ({ id: v.id, description: v.description })),
+      });
+    }
+  }
+
   const fragmentsPayload = eligible.map((pack) => {
     const allowedDomains = fragmentAllowedDomains({
       pack,
@@ -184,6 +243,7 @@ export async function runGptDeckComposer(input: {
                   }
                 : null,
               fragments: fragmentsPayload,
+              layoutOptions: layoutOptionsPayload,
             },
           }),
       },
@@ -245,12 +305,32 @@ export async function runGptDeckComposer(input: {
     });
   }
 
-  if (fragments.length === 0) return null;
+  // Level 2.5 — validate layout picks fail-closed: the slide must be one we
+  // offered and the variant must be registered for its template.
+  const layouts: GptSlideLayoutPick[] = [];
+  const seenLayoutSlides = new Set<string>();
+  for (const raw of parsed.data.layouts ?? []) {
+    const templateId = templateBySlideId.get(raw.slideId);
+    const variant = raw.layoutVariant.trim();
+    if (
+      !templateId ||
+      seenLayoutSlides.has(raw.slideId) ||
+      !isAllowedLayoutVariant(templateId, variant)
+    ) {
+      droppedFields.push(`layouts.${raw.slideId}:${variant || "?"}`);
+      continue;
+    }
+    seenLayoutSlides.add(raw.slideId);
+    layouts.push({ slideId: raw.slideId, layoutVariant: variant });
+  }
+
+  if (fragments.length === 0 && layouts.length === 0) return null;
   return {
     version: "gpt-deck-composition-v1",
     promptVersion: GPT_DECK_COMPOSER_PROMPT_VERSION,
     generatedAt: new Date().toISOString(),
     fragments,
+    layouts,
     droppedFragments,
     droppedFields,
   };

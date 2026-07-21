@@ -77,6 +77,8 @@ export function runDeckBuild(input: {
   /** Packs already built (and possibly GPT-enhanced) by a wrapper stage. */
   prebuiltPacks?: SectionPackV2[];
   prebuiltBuildLog?: DeckBuildResult["buildLog"];
+  /** Level 2.5 — slideId → layout variant picked by the GPT composer. */
+  layoutVariants?: ReadonlyMap<string, string>;
 }): DeckBuildResult {
   const buildLog: DeckBuildResult["buildLog"] = input.prebuiltBuildLog ?? [];
   const artifacts: Record<string, string> = {};
@@ -137,6 +139,7 @@ export function runDeckBuild(input: {
     expectedCaseId: ctx.caseId,
     expectedReportRunId: ctx.reportRunId,
     expectedDatasetId: ctx.sourceDatasetId,
+    layoutVariants: input.layoutVariants,
   });
   const deckManifestPath = join(input.outputRoot, "report-deck-manifest.json");
   writeFileSync(deckManifestPath, JSON.stringify(assembly.deckManifest, null, 2), "utf8");
@@ -313,6 +316,7 @@ export function toRendererPayload(input: {
       sectionKey: s.sectionKey,
       template:
         VISUAL_TEMPLATES.has(s.template) && !hasVisual ? "orion_golden_prose" : s.template,
+      layoutVariant: s.layoutVariant,
       title: s.title,
       pageNumber: s.pageNumber,
       totalPageCount: s.totalPageCount,

@@ -251,7 +251,8 @@ function validCaseAnalysisJson(): unknown {
 
 /**
  * Composer (stage 1.5) fake: echo a valid plan from the payload itself —
- * first finding and first available domain of each fragment.
+ * first finding and first available domain of each fragment, plus the first
+ * offered layout variant of every slide with alternatives (level 2.5).
  */
 function composerEchoPlan(userPayload: unknown): unknown {
   const payload = userPayload as {
@@ -260,6 +261,7 @@ function composerEchoPlan(userPayload: unknown): unknown {
       findings: Array<{ findingId: string; theme: string }>;
       availableDomains: string[];
     }>;
+    layoutOptions?: Array<{ slideId: string; variants: Array<{ id: string }> }>;
   };
   return {
     fragments: payload.fragments.map((f) => ({
@@ -269,6 +271,9 @@ function composerEchoPlan(userPayload: unknown): unknown {
       emphasisFindingIds: f.findings.slice(0, 2).map((x) => x.findingId),
       keyDomains: f.availableDomains.slice(0, 2),
     })),
+    layouts: (payload.layoutOptions ?? [])
+      .filter((o) => o.variants.length > 0)
+      .map((o) => ({ slideId: o.slideId, layoutVariant: o.variants[0]!.id })),
   };
 }
 
@@ -1282,9 +1287,28 @@ describe("stage 2 — GPT client copy inside the canonical prepare", () => {
     assert.ok(existsSync(compositionPath), "gpt-deck-composition.json must be written");
     const composition = JSON.parse(readFileSync(compositionPath, "utf8")) as {
       fragments: Array<{ fragmentKey: string; storyAngle: string }>;
+      layouts: Array<{ slideId: string; layoutVariant: string }>;
     };
     assert.ok(composition.fragments.length >= 1);
     assert.equal(report.compositionUsed, true);
+
+    // Level 2.5: the layout picks are validated and reach the assembled deck.
+    assert.ok(
+      composition.layouts.length >= 1,
+      "composer must pick at least one layout variant (section dividers offer «hero»)"
+    );
+    const assembled = JSON.parse(blob) as {
+      slides: Array<{ slideKey: string; layoutVariant?: string }>;
+    };
+    for (const pick of composition.layouts) {
+      const slide = assembled.slides.find((s) => s.slideKey === pick.slideId);
+      assert.ok(slide, `picked slide ${pick.slideId} must exist in the assembled deck`);
+      assert.equal(
+        slide!.layoutVariant,
+        pick.layoutVariant,
+        `layoutVariant must reach assembled deck for ${pick.slideId}`
+      );
+    }
 
     // Level 1 (stage 3): the editorial pass ran and left an artifact.
     const editorPath = join(root, "deck", "gpt-deck-editor.json");

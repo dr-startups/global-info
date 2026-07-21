@@ -167,7 +167,7 @@ describe("self-conflicting negative identity signals", () => {
   });
 });
 
-function seedCompletedJob(caseId: string, jobId: string) {
+async function seedCompletedJob(caseId: string, jobId: string) {
   await deleteUnifiedCollectionJobForTests(caseId);
   const now = new Date().toISOString();
   const compositeDatasetId = `composite-${jobId}`;
@@ -347,7 +347,7 @@ describe("unified report rebuild («Пересобрать отчёт»)", () =>
   it("eligibility: COMPLETED job with lineage-safe prepare inputs only", async () => {
     const caseId = "rebuild-elig-case";
     const jobId = "unified-rebuild-elig";
-    seedCompletedJob(caseId, jobId);
+    await seedCompletedJob(caseId, jobId);
 
     const ok = await evaluateUnifiedReportRebuildEligibility({
       caseId,
@@ -382,7 +382,7 @@ describe("unified report rebuild («Пересобрать отчёт»)", () =>
   it("missing composite artifacts → REBUILD_INPUTS_MISSING (fail-closed)", async () => {
     const caseId = "rebuild-noinputs-case";
     const jobId = "unified-rebuild-noinputs";
-    seedCompletedJob(caseId, jobId);
+    await seedCompletedJob(caseId, jobId);
     // Wipe binding by pointing at a different job dir: simulate missing input.
     await writeUnifiedArtifact(caseId, jobId, "report-data-binding.json", null);
     const elig = await evaluateUnifiedReportRebuildEligibility({
@@ -396,7 +396,7 @@ describe("unified report rebuild («Пересобрать отчёт»)", () =>
   it("happy path: same jobId, refreshed profile, zero base/Arsenkin, one prepare", async () => {
     const caseId = "rebuild-happy-case";
     const jobId = "unified-rebuild-happy";
-    seedCompletedJob(caseId, jobId);
+    await seedCompletedJob(caseId, jobId);
     writeCaseRootProfile(caseId);
 
     let baseCalls = 0;
@@ -505,7 +505,7 @@ describe("unified report rebuild («Пересобрать отчёт»)", () =>
   it("foreign jobId rejected fail-closed", async () => {
     const caseId = "rebuild-foreign-case";
     const jobId = "unified-rebuild-foreign";
-    seedCompletedJob(caseId, jobId);
+    await seedCompletedJob(caseId, jobId);
     await assert.rejects(
       () =>
         rebuildUnifiedReport({
