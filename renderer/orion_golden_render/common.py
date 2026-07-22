@@ -909,7 +909,7 @@ class _Ctx:
 
     def bullets(self, items: list[str], y: int, color: RGBColor = BODY_COLOR, max_items: int = 8, max_chars: int = 520) -> int:
         dangling = re.compile(
-            r"(?:\bв\s+т\.?\s*ч\.?|\bс\s+[А-ЯA-Z]\.?|\b[А-ЯA-Z]\.?|,|;|—|–|-)\s*$",
+            r"(?:\bв\s+т\.?\s*ч\.?|\bс\s+[А-ЯA-Z]\.?|\b[А-ЯA-Z]\.?|,|;|—|–|-|\()\s*$",
             re.I,
         )
         kept: list[str] = []
@@ -918,6 +918,9 @@ class _Ctx:
             if not raw:
                 continue
             clipped = _clip_structured_bullet(raw, max_chars)
+            # Drop incomplete trailing parentheticals from mid-clip
+            # (e.g. «…спорах (в.» from «(в т.ч. материалы на …)»).
+            clipped = re.sub(r"\s*\([^)\n]*$", "", clipped).rstrip(" :;")
             flat_tail = clipped.replace("\n", " ").rstrip()
             if dangling.search(flat_tail):
                 punct = max(clipped.rfind(". "), clipped.rfind("! "), clipped.rfind("? "))
@@ -925,8 +928,22 @@ class _Ctx:
                     clipped = clipped[: punct + 1].strip()
                 else:
                     clipped = _trim_dangling_tail(clipped)
+                clipped = re.sub(r"\s*\([^)\n]*$", "", clipped).rstrip(" :;")
             flat_tail = clipped.replace("\n", " ").rstrip()
-            if dangling.search(flat_tail) or flat_tail.endswith(("—", "–", "-")):
+            if dangling.search(flat_tail) or flat_tail.endswith(("—", "–", "-", "(")):
+                # Prefer dropping the broken last structural line over failing render.
+                lines = [ln.strip() for ln in clipped.split("\n") if ln.strip()]
+                while lines and (
+                    dangling.search(lines[-1])
+                    or lines[-1].endswith(("—", "–", "-", "("))
+                    or "(" in lines[-1] and ")" not in lines[-1]
+                ):
+                    lines.pop()
+                clipped = "\n".join(lines).strip()
+                flat_tail = clipped.replace("\n", " ").rstrip()
+            if not clipped:
+                continue
+            if dangling.search(flat_tail) or flat_tail.endswith(("—", "–", "-", "(")):
                 raise RuntimeError(f"ORION bullet dangling on p{self.page}: {flat_tail[-48:]}")
             kept.append(clipped)
         if not kept:

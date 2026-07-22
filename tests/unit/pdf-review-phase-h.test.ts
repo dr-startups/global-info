@@ -124,7 +124,7 @@ describe("H.1/H.2 — rank and resolve quotes", () => {
     expect(ex!.title).toMatch(/долг|иск|обязательств/iu);
   });
 
-  it("buildClientFacingClaim drops bare FIO and adds domain anchor", () => {
+  it("buildClientFacingClaim drops bare FIO and adds Где видно domain line", () => {
     const claim = buildClientFacingClaim({
       theme: financialTheme,
       itemsCount: 6,
@@ -139,8 +139,9 @@ describe("H.1/H.2 — rank and resolve quotes", () => {
       domains: ["nytimes.com", "cnbc.com"],
     });
     expect(claim).not.toMatch(/«Oleg V Deripaska»/u);
+    expect(claim).not.toMatch(/\(в т\.ч\. материалы/u);
     expect(claim).toMatch(/Sanctions Deal|Allies Could Benefit/u);
-    expect(claim).toMatch(/материалы на nytimes\.com/u);
+    expect(claim).toMatch(/Где видно:.*nytimes\.com/u);
   });
 
   it("honest gap when no strong quotes remain", () => {

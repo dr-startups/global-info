@@ -900,16 +900,15 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
   if (regionalQuotes.length > 0) {
     // Never reuse a legacy one-line stats dump as framing — it still carries
     // foreign «Источники: dzen.ru…» and defeats regional localization.
-    let framing = g2bFrame ?? "Найдены публикации по теме:";
+    // Domain anchors go on a short «Где видно:» line — not an inline
+    // parenthetical that the renderer mid-clips into «(в.» (PDF-44 p4).
+    const framing = g2bFrame ?? "Найдены публикации по теме:";
+    const frame = /:\s*$/u.test(framing) ? framing : `${framing.replace(/[.:]\s*$/u, "")}:`;
     const anchors = [
       ...new Set(titleCandidates.slice(0, 2).map((c) => c.domain).filter(Boolean)),
     ].slice(0, 2);
-    if (anchors.length > 0 && !/материалы на /u.test(framing)) {
-      framing = framing.replace(/:\s*$/u, "");
-      framing = `${framing} (в т.ч. материалы на ${anchors.join(" / ")}):`;
-    }
-    const frame = /:\s*$/u.test(framing) ? framing : `${framing.replace(/[.:]\s*$/u, "")}:`;
-    claim = [frame, ...regionalQuotes, scale, why].filter(Boolean).join("\n");
+    const whereLine = anchors.length > 0 ? `Где видно: ${anchors.join(", ")}.` : "";
+    claim = [frame, ...regionalQuotes, scale, whereLine, why].filter(Boolean).join("\n");
   } else {
     const sourceSegment = domains.length
       ? `По теме в источниках ${domains.slice(0, 3).join(", ")}; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.`

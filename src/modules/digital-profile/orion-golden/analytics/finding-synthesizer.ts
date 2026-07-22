@@ -369,6 +369,10 @@ export function buildClientFacingClaim(input: {
       ? `Всего по теме: ${input.itemsCount} ${total}, с негативным контекстом — ${input.adverseCount}.`
       : `Всего по теме: ${input.itemsCount} ${total}.`;
 
+  // Domain anchors stay on quote lines («…» — источник domain) — do NOT append
+  // «(в т.ч. материалы на …)» to framing: long parentheticals get mid-clipped by
+  // the renderer and trip the dangling-bullet QA (PDF-44 render 500 on p4).
+  const framing = baseFraming;
   const anchorDomains = [
     ...new Set(
       [
@@ -377,10 +381,6 @@ export function buildClientFacingClaim(input: {
       ].filter(Boolean)
     ),
   ].slice(0, 2);
-  const framing =
-    quoteLines.length > 0 && anchorDomains.length > 0
-      ? `${baseFraming} (в т.ч. материалы на ${anchorDomains.join(" / ")})`
-      : baseFraming;
 
   if (quoteLines.length === 0) {
     const domainHint = (input.domains ?? []).filter(Boolean).slice(0, 3).join(", ");
@@ -389,7 +389,9 @@ export function buildClientFacingClaim(input: {
       : `По теме ${input.itemsCount} ${total}; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.`;
     return [`${framing}.`, gap, scale, why].join("\n");
   }
-  return [`${framing}:`, ...quoteLines, scale, why].join("\n");
+  const whereLine =
+    anchorDomains.length > 0 ? `Где видно: ${anchorDomains.join(", ")}.` : "";
+  return [`${framing}:`, ...quoteLines, scale, whereLine, why].filter(Boolean).join("\n");
 }
 
 /**
