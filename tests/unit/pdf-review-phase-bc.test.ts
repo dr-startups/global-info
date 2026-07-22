@@ -89,7 +89,7 @@ describe("B.3 — regional source localization", () => {
       CROSS_REGIONAL_FINDING as never,
       UAE_SCOPED as never
     );
-    expect(localized).toMatch(/Где видно: gulfnews\.com|Источники в регионе: gulfnews\.com/u);
+    expect(localized).toMatch(/— источник gulfnews\.com|Где видно: gulfnews\.com|Источники в регионе: gulfnews\.com/u);
     expect(localized).not.toContain("dzen.ru");
     expect(localized).not.toContain("24smi.org");
     expect(localized).toContain("Business profile in UAE");
@@ -98,7 +98,7 @@ describe("B.3 — regional source localization", () => {
 
   it("localizedThemedClaim keeps single-region findings untouched", () => {
     const localized = localizedThemedClaim(UAE_ONLY_FINDING as never, UAE_SCOPED as never);
-    expect(localized).toMatch(/Источники: gulfnews\.com|Где видно: gulfnews\.com/u);
+    expect(localized).toMatch(/Источники: gulfnews\.com|Где видно: gulfnews\.com|— источник gulfnews\.com/u);
   });
 
   it("global (executive) scope keeps the aggregated claim", () => {
@@ -134,7 +134,9 @@ describe("B.2 + C.5 — regional summary counters and diff line", () => {
   it("regional summary bullets quote only regional sources for cross-regional findings", () => {
     const joined = (summary.content.bullets ?? []).join("\n");
     expect(joined).not.toContain("dzen.ru");
-    expect(joined).toMatch(/Где видно: gulfnews\.com|Источники в регионе: gulfnews\.com/u);
+    expect(joined).toMatch(
+      /— источник gulfnews\.com|Где видно: gulfnews\.com|Источники в регионе: gulfnews\.com|Источники: gulfnews\.com/u
+    );
   });
 
   it("the global diff line is not repeated in regional summaries (C.5)", () => {

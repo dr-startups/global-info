@@ -649,7 +649,8 @@ export function structureThemeClaimText(text: string): string {
   if (!raw) return raw;
   if (
     raw.includes("\n") &&
-    /(?:^|\n)(?:Источники|Примеры|Где видно|В корпусе|Пример)\b/u.test(raw)
+    (/(?:^|\n)(?:Источники|Примеры|Где видно|В корпусе|Всего по теме|Пример)\b/u.test(raw) ||
+      /(?:^|\n)«[^»]{8,}»\s*—\s*источник\b/u.test(raw))
   ) {
     return raw
       .replace(/Примеры заголовков:/gu, "Примеры:")
@@ -679,7 +680,9 @@ export function structureThemeClaimText(text: string): string {
       rest = (colon[2] ?? "").trim();
     }
   }
-  const corpusMatch = rest.match(/\s*(В корпусе:\s*.+?)(?=\s*(?:Где видно|Источники|Пример|Примеры)|\s*$)/u);
+  const corpusMatch = rest.match(
+    /\s*((?:В корпусе|Всего по теме):\s*.+?)(?=\s*(?:Где видно|Источники|Пример|Примеры)|\s*$)/u
+  );
   const sourcesMatch = rest.match(
     /\s*((?:Где видно|Источники(?:\s+в\s+регионе)?):\s*.+?)(?=\s*(?:Пример|Примеры)|\s*$)/u
   );
@@ -764,19 +767,49 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
     }
   }
 
-  let claim = f.claim;
-  const sourceSegment = domains.length
-    ? `Где видно: ${domains.slice(0, 3).join(", ")}.`
-    : "По этой теме источники в данном регионе не выделены — см. другие разделы отчёта.";
-  claim = claim
-    .replace(/(?:Где видно|Источники(?:\s+в\s+регионе)?):\s*.+?(?=\n|(?:\s*(?:Пример|Примеры))|$)/u, sourceSegment)
-    .replace(/Источники:\s.*?\.(?=\s|$)/u, sourceSegment);
-  if (/(?:Пример|Примеры(?:\s+заголовков)?):/u.test(claim)) {
-    // PDF-36 D.5 / G.1d — at most one whole title, short budget.
-    const titlesSegment = joinTitlesWithinBudget(titles.slice(0, 1), 90);
-    claim = titlesSegment
-      ? claim.replace(/(?:Пример|Примеры(?:\s+заголовков)?):.*$/u, `Пример: ${titlesSegment}`)
-      : claim.replace(/\n?(?:Пример|Примеры(?:\s+заголовков)?):.*$/u, "");
+  // PDF-40 G.2b — rebuild claim from this region's evidence only (no foreign
+  // domains/titles leaking into RU/UAE summary cards).
+  const regionalQuotes = titles.slice(0, 2).map((t, i) => {
+    const domain = domains[i] ?? domains[0] ?? "";
+    return domain ? `«${t}» — источник ${domain}` : `«${t}»`;
+  });
+  const lines = String(f.claim ?? "")
+    .replace(/\r\n/gu, "\n")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const g2bFrame = lines.find(
+    (l) =>
+      /^(Найдены|Есть публикации)/u.test(l) && !/«[^»]+»\s*—\s*источник/u.test(l)
+  );
+  const scale = lines.find((l) => /^(Всего по теме|В корпусе):/u.test(l)) ?? "";
+  const why =
+    lines.find((l) =>
+      /^(Для банка|Банки |Это усиливает|Риск в том|Деловой фон)/u.test(l)
+    ) ?? "";
+  let claim: string;
+  if (regionalQuotes.length > 0) {
+    // Never reuse a legacy one-line stats dump as framing — it still carries
+    // foreign «Источники: dzen.ru…» and defeats regional localization.
+    const framing = g2bFrame ?? "Найдены публикации по теме:";
+    const frame = /:\s*$/u.test(framing) ? framing : `${framing.replace(/[.:]\s*$/u, "")}:`;
+    claim = [frame, ...regionalQuotes, scale, why].filter(Boolean).join("\n");
+  } else {
+    const sourceSegment = domains.length
+      ? `Где видно: ${domains.slice(0, 3).join(", ")}.`
+      : "По этой теме источники в данном регионе не выделены — см. другие разделы отчёта.";
+    claim = String(f.claim ?? "")
+      .replace(
+        /(?:Где видно|Источники(?:\s+в\s+регионе)?):\s*.+?(?=\n|(?:\s*(?:Пример|Примеры))|$)/u,
+        sourceSegment
+      )
+      .replace(/Источники:\s.*?\.(?=\s|$)/u, sourceSegment);
+    if (/(?:Пример|Примеры(?:\s+заголовков)?):/u.test(claim)) {
+      const titlesSegment = joinTitlesWithinBudget(titles.slice(0, 1), 90);
+      claim = titlesSegment
+        ? claim.replace(/(?:Пример|Примеры(?:\s+заголовков)?):.*$/u, `Пример: ${titlesSegment}`)
+        : claim.replace(/\n?(?:Пример|Примеры(?:\s+заголовков)?):.*$/u, "");
+    }
   }
   // Prefer multi-line structure even when the stored claim was one paragraph.
   claim = structureThemeClaimText(claim);

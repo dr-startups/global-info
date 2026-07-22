@@ -117,57 +117,116 @@ export function pluralRu(n: number, one: string, few: string, many: string): str
 }
 
 /**
- * PDF-40 G.2 — client-facing insight per theme (ORION GSM tone): what a bank /
- * partner / investor should understand, not a corpus counter.
+ * PDF-40 G.2b — short framing lead (what was found). The concrete meaning
+ * comes from quoted headlines + domains, not from these templates alone.
  */
-const CLIENT_THEME_INSIGHTS: Record<string, string> = {
+const CLIENT_THEME_FRAMING: Record<string, string> = {
   criminal_legal:
-    "В открытой выдаче устойчиво поднимаются судебные и криминальные сюжеты — для банка или партнёра это обычно первый повод для расширенной проверки.",
+    "Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами",
   pep_rca_watchlist:
-    "Материалы связывают персону с санкционными и мониторинговыми списками (PEP/RCA) — такие сигналы банки и комплаенс-команды отрабатывают в первую очередь.",
+    "Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA)",
   political_exposure:
-    "В выдаче заметна политическая и публичная экспозиция — это усиливает вопросы к связям, влиянию и приемлемости контрагента для сделки.",
+    "Найдены материалы о политической и публичной экспозиции субъекта",
   offshore_corporate:
-    "Публикации затрагивают офшорные и корпоративные структуры владения — для KYC это типичный запрос на раскрытие бенефициаров и источников контроля.",
+    "Найдены публикации об офшорных и корпоративных структурах владения",
   family_associates:
-    "В выдаче видны семейные и деловые связи — риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого.",
+    "Найдены материалы о семейных и деловых связях субъекта",
   financial_claims:
-    "Есть публикации о финансовых претензиях и долговых спорах — банки и инвесторы обычно запрашивают статус обязательств и судебные справки.",
-  business_profile:
-    "Деловой профиль широко представлен в выдаче — это основа для управляемого позиционирования, но сам по себе не перекрывает чувствительные темы риска.",
+    "Найдены публикации о финансовых претензиях и долговых спорах",
+  business_profile: "Найдены материалы делового и биографического профиля",
   security_scrutiny:
-    "В выдаче встречаются материалы с акцентом на безопасность и оборонный контур — для международных проверок это зона повышенного внимания.",
+    "Найдены материалы с акцентом на безопасность и оборонный контур",
 };
 
+const CLIENT_THEME_WHY: Record<string, string> = {
+  criminal_legal:
+    "Для банка или партнёра такие сюжеты обычно становятся первым поводом для расширенной проверки.",
+  pep_rca_watchlist:
+    "Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC.",
+  political_exposure:
+    "Это усиливает вопросы к связям, влиянию и приемлемости контрагента для сделки.",
+  offshore_corporate:
+    "Для KYC это типичный запрос на раскрытие бенефициаров и источников контроля.",
+  family_associates:
+    "Риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого.",
+  financial_claims:
+    "Банки и инвесторы обычно запрашивают статус обязательств и судебные справки.",
+  business_profile:
+    "Деловой фон важен для позиционирования, но сам по себе не перекрывает чувствительные темы риска.",
+  security_scrutiny:
+    "Для международных проверок это зона повышенного внимания.",
+};
+
+export type ClaimEvidenceExample = { title: string; domain: string };
+
+/** Cap a quote for a bullet line without mid-word cuts when possible. */
+function quoteForClaim(title: string, budget = 110): string {
+  const t = cleanExampleTitle(title);
+  if (t.length <= budget) return t;
+  const slice = t.slice(0, budget);
+  const cut = Math.max(slice.lastIndexOf(" "), slice.lastIndexOf(","), slice.lastIndexOf("—"));
+  const body = (cut > budget * 0.45 ? slice.slice(0, cut) : slice).trim();
+  return `${body.replace(/[\s,;:.—–-]+$/u, "")}…`;
+}
+
 /**
- * PDF-40 G.2 — claim as insight → corpus note → where visible (optional example).
+ * PDF-40 G.2b — concrete claim: framing → «headline» — источник domain → why.
  * Theme label is prepended by consumers (`themedClaim`).
  */
 export function buildClientFacingClaim(input: {
   theme: ThemeDef;
   itemsCount: number;
   adverseCount: number;
-  domains: string[];
-  titles: string[];
+  /** Prefer adverse evidence first; title+domain pairs from the corpus. */
+  examples: ClaimEvidenceExample[];
+  /** @deprecated kept for call-site compat; ignored when examples is set. */
+  domains?: string[];
+  /** @deprecated kept for call-site compat; ignored when examples is set. */
+  titles?: string[];
 }): string {
-  const insight =
-    CLIENT_THEME_INSIGHTS[input.theme.themeId] ??
-    `В открытой выдаче устойчиво видны материалы по теме «${input.theme.label}» — для банка, инвестора или контрагента это может стать поводом для углублённой проверки.`;
+  const framing =
+    CLIENT_THEME_FRAMING[input.theme.themeId] ??
+    `Найдены публикации по теме «${input.theme.label}»`;
+  const why =
+    CLIENT_THEME_WHY[input.theme.themeId] ??
+    "Для банка, инвестора или контрагента это сигнал к углублённой проверке.";
+
+  let examples = (input.examples ?? [])
+    .map((e) => ({
+      title: cleanExampleTitle(e.title),
+      domain: String(e.domain ?? "")
+        .replace(/^www\./iu, "")
+        .trim(),
+    }))
+    .filter(
+      (e) =>
+        e.title.length >= 12 &&
+        !/^potential\s+match$/i.test(e.title) &&
+        !/^потенциальное совпадение$/i.test(e.title)
+    );
+  // Compat path: old callers still pass titles/domains separately.
+  if (examples.length === 0 && (input.titles?.length || input.domains?.length)) {
+    const domains = input.domains ?? [];
+    examples = (input.titles ?? [])
+      .map((t, i) => ({ title: cleanExampleTitle(t), domain: domains[i] ?? domains[0] ?? "" }))
+      .filter((e) => e.title.length >= 12);
+  }
+
+  const quoteLines = examples.slice(0, 2).map((e) => {
+    const q = quoteForClaim(e.title, 110);
+    return e.domain ? `«${q}» — источник ${e.domain}` : `«${q}»`;
+  });
+
   const total = pluralRu(input.itemsCount, "материал", "материала", "материалов");
-  const corpus =
+  const scale =
     input.adverseCount > 0
-      ? `В корпусе: ${input.itemsCount} ${total}, из них с негативным контекстом — ${input.adverseCount}.`
-      : `В корпусе: ${input.itemsCount} ${total}; негативный контекст не зафиксирован.`;
-  const where = input.domains.length
-    ? `Где видно: ${input.domains.slice(0, 3).join(", ")}.`
-    : "";
-  const example = joinTitlesWithinBudget(
-    input.titles.map(cleanExampleTitle).filter(Boolean).slice(0, 1),
-    90
-  );
-  return [insight, corpus, where, example ? `Пример: ${example}` : ""]
-    .filter(Boolean)
-    .join("\n");
+      ? `Всего по теме: ${input.itemsCount} ${total}, с негативным контекстом — ${input.adverseCount}.`
+      : `Всего по теме: ${input.itemsCount} ${total}.`;
+
+  if (quoteLines.length === 0) {
+    return [`${framing}.`, scale, why].join("\n");
+  }
+  return [`${framing}:`, ...quoteLines, scale, why].join("\n");
 }
 
 /**
@@ -426,21 +485,29 @@ export function synthesizeFindings(input: {
           ? Math.min(0.45 + 0.2 * sourceDiversity, 0.7)
           : 0.35;
 
-    const topTitles = items
-      .slice(0, 3)
-      .map((i) => cleanExampleTitle(String(i.title ?? "")))
-      .filter((t) => Boolean(t) && !/^potential\s+match$/i.test(t))
-      .map((t) => (/^потенциальное совпадение$/i.test(t) ? "" : t))
-      .filter(Boolean);
+    // Prefer adverse evidence for quoted examples; fall back to other items.
+    const exampleItems = [
+      ...adverseItems,
+      ...items.filter((i) => !adverseItems.includes(i)),
+    ];
+    const seenExample = new Set<string>();
+    const examples: ClaimEvidenceExample[] = [];
+    for (const i of exampleItems) {
+      const title = cleanExampleTitle(String(i.title ?? ""));
+      const domain = domainOf(i.sourceUrl);
+      const key = `${title.toLowerCase()}|${domain}`;
+      if (!title || seenExample.has(key)) continue;
+      seenExample.add(key);
+      examples.push({ title, domain });
+      if (examples.length >= 2) break;
+    }
 
-    // PDF-40 G.2 — client insight first; corpus/domains as secondary lines.
-    // Theme label is prepended by consumers (`themedClaim`).
+    // PDF-40 G.2b — concrete quotes + domains; theme prepended by consumers.
     const claim = buildClientFacingClaim({
       theme,
       itemsCount: items.length,
       adverseCount: adverseItems.length,
-      domains,
-      titles: topTitles,
+      examples,
     });
 
     return FindingSchema.parse({

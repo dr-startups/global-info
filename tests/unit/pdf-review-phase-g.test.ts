@@ -71,18 +71,23 @@ describe("G.1b / G.2 — client claim shape", () => {
     recommendedAction: "Проверить статусы дел.",
   } as ThemeDef;
 
-  it("buildClientFacingClaim leads with client insight, not «N публикаций…»", () => {
+  it("buildClientFacingClaim leads with concrete quotes + источник domain", () => {
     const claim = buildClientFacingClaim({
       theme,
       itemsCount: 21,
       adverseCount: 21,
-      domains: ["dzen.ru", "secrets.tbank.ru"],
-      titles: ["Самый говорливый олигарх."],
+      examples: [
+        { title: "Самый говорливый олигарх. Как Дерипаска из-под…", domain: "dzen.ru" },
+        { title: "Олег Дерипаска: биография предпринимателя", domain: "secrets.tbank.ru" },
+      ],
     });
+    expect(claim).toMatch(/Найдены публикации/u);
+    expect(claim).toContain("«Самый говорливый олигарх.");
+    expect(claim).toContain("— источник dzen.ru");
+    expect(claim).toContain("— источник secrets.tbank.ru");
+    expect(claim).toContain("Всего по теме:");
     expect(claim).toMatch(/банк|партн/iu);
-    expect(claim).toContain("В корпусе:");
-    expect(claim).toContain("Где видно:");
-    expect(claim).not.toMatch(/^21 публикац/u);
+    expect(claim).not.toMatch(/в выдаче устойчиво видны/iu);
     expect(claim).not.toContain("негативным содержанием —");
   });
 
@@ -90,14 +95,14 @@ describe("G.1b / G.2 — client claim shape", () => {
     const body = claimBodyWithoutTheme({
       theme: "Криминальные / судебные материалы",
       claim:
-        "В открытой выдаче устойчиво поднимаются судебные сюжеты.\nВ корпусе: 21 материал.",
+        "Найдены публикации, в которых субъект связывается с судебными сюжетами:\n«Самый говорливый олигарх.» — источник dzen.ru\nВсего по теме: 21 материал.",
     } as never);
-    expect(body).not.toMatch(/^«/u);
-    expect(body).toContain("В корпусе:");
+    expect(body).toContain("— источник dzen.ru");
+    expect(body).toContain("Всего по теме:");
   });
 
-  it("slide-copy prompt is v8 (client voice)", () => {
-    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v8");
+  it("slide-copy prompt is v9 (concrete evidence)", () => {
+    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v9");
   });
 });
 

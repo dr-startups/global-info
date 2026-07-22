@@ -364,45 +364,37 @@ export function buildExecutiveSummaryFragment(
   // about it — instead of a bare publication count. Top cards are narrow, so
   // they lead with the first factual sentence and the explanation; the
   // continuation page carries the full detail.
-  // PDF-40 G.3 — ORION-style theme cards: theme → why it matters → what to do.
-  // Corpus counters stay in the risk matrix / regional pages, not on p03.
+  // PDF-40 G.2b/G.3 — concrete evidence first (quotes + источник); GPT advice
+  // is a short trailing line, never a replacement for the factual basis.
   const cardTexts = es.keyFindings.map((k) => {
+    const finding = scoped.findings.find((f) => f.findingId === k.findingId);
+    const concrete = finding
+      ? claimBodyWithoutTheme(finding)
+      : String(k.factualBasis ?? "")
+          .replace(/^Подтверждённый факт:\s*/iu, "")
+          .trim();
     const risk = matchGptKeyRisk(k.title, gpt?.keyRisks);
-    if (risk) {
-      return bulletWithFindingId(
-        [`«${k.title}»`, risk.explanation, `Что делать: ${risk.advice}`].join("\n"),
-        k.findingId,
-        340
-      );
-    }
-    const basis = String(k.factualBasis ?? "")
-      .replace(/^Подтверждённый факт:\s*/iu, "")
-      .replace(/\s*Источники:.*$/iu, "")
-      .replace(/\s*Примеры(?:\s+заголовков)?:.*$/iu, "")
-      .trim();
-    return bulletWithFindingId(
-      [`«${k.title}»`, clampClientText(basis, 220)].join("\n"),
-      k.findingId,
-      340
-    );
+    // Keep framing + up to 2 quote lines (+ scale); drop a long why-tail if tight.
+    const core = concrete
+      .split("\n")
+      .filter((ln) => ln.trim().length > 0)
+      .slice(0, 4)
+      .join("\n");
+    const lines = [`«${k.title}»`, core];
+    if (risk?.advice) lines.push(`Что делать: ${risk.advice}`);
+    return bulletWithFindingId(lines.filter(Boolean).join("\n"), k.findingId, 420);
   });
   const bullets = es.keyFindings.map((k) => {
+    const finding = scoped.findings.find((f) => f.findingId === k.findingId);
+    const concrete = finding
+      ? claimBodyWithoutTheme(finding)
+      : String(k.factualBasis ?? "")
+          .replace(/^Подтверждённый факт:\s*/iu, "")
+          .trim();
     const risk = matchGptKeyRisk(k.title, gpt?.keyRisks);
-    if (risk) {
-      return bulletWithFindingId(
-        [`«${k.title}»`, risk.explanation, `Что делать: ${risk.advice}`].join("\n"),
-        k.findingId,
-        380
-      );
-    }
-    const basis = String(k.factualBasis ?? "")
-      .replace(/^Подтверждённый факт:\s*/iu, "")
-      .trim();
-    return bulletWithFindingId(
-      fitClientSentences([`«${k.title}»`, basis], 360),
-      k.findingId,
-      380
-    );
+    const lines = [`«${k.title}»`, concrete];
+    if (risk?.advice) lines.push(`Что делать: ${risk.advice}`);
+    return bulletWithFindingId(lines.filter(Boolean).join("\n"), k.findingId, 480);
   });
   // Sparse but complete collection: keep a client-safe page that states
   // there are no confirmed findings — never invent risks. Still show

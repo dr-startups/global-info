@@ -425,10 +425,11 @@ schema` на RU_SUMMARY / UAE_SUMMARY / RU_SUGGESTIONS из‑за null/пуст
 - regional-summary: 4 theme-cards / page; footer safety band в renderer.
 - risk-matrix: без дубля темы в detail; examples drop before clip; padding↑.
 
-### G.2 — клиентский голос
-- `buildClientFacingClaim`: insight → «В корпусе» → «Где видно» → 1 пример.
-- Prompt `gpt-slide-copy-v8`; запрет KPI/«тематический блок» в клиентском тексте.
-- `contentVersion` → `deck-sections-v30`.
+### G.2 — клиентский голос → G.2b конкретика (PDF 41)
+- PDF 41: читабельнее, но слишком общие фразы («в выдаче устойчиво видны…»).
+- **G.2b:** claim = рамка → `«заголовок» — источник domain` (до 2) → масштаб → why.
+- Executive cards берут claim findings, GPT advice только хвостом.
+- Prompt `gpt-slide-copy-v9` (не выкидывать цитаты/домены); `contentVersion` → `v31`.
 
 ### G.3 — структура резюме
 - Executive theme cards: «Тема» → почему важно → что делать (без corpus dump).

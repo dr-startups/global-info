@@ -386,9 +386,10 @@ def _clip_words(text: str, max_chars: int) -> str:
 
 
 _META_LINE_RE = re.compile(
-    r"^(Источники(?:\s+в\s+регионе)?|Примеры(?:\s+заголовков)?|Где видно|В корпусе|Пример)\s*:",
+    r"^(Источники(?:\s+в\s+регионе)?|Примеры(?:\s+заголовков)?|Где видно|В корпусе|Всего по теме|Пример)\s*:",
     re.I,
 )
+_QUOTE_SOURCE_RE = re.compile(r"^«[^»]{8,}»\s*—\s*источник\b", re.I)
 _THEME_LINE_RE = re.compile(r"^«[^»]{2,80}»\s*$")
 
 
@@ -460,9 +461,12 @@ def _bullet_line_style(line: str, *, is_first: bool) -> tuple[bool, RGBColor, fl
     """Return (bold, color, size_pt) for one line inside a structured bullet."""
     if _META_LINE_RE.match(line):
         return False, MUTED_COLOR, FS_CAPTION + 0.5
+    # Concrete evidence quotes are body text, not theme headers.
+    if _QUOTE_SOURCE_RE.match(line):
+        return False, BODY_COLOR, float(FS_BODY)
     if is_first and (_THEME_LINE_RE.match(line) or (line.endswith(":") and len(line) <= 80)):
         return True, NAVY, FS_BODY + 0.5
-    if is_first and line.startswith("«") and "»" in line[:90]:
+    if is_first and line.startswith("«") and "»" in line[:90] and "источник" not in line.lower():
         return True, NAVY, FS_BODY + 0.5
     return False, BODY_COLOR, float(FS_BODY)
 

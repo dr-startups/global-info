@@ -19,8 +19,8 @@ import { getClientTextFieldBudgets } from "../../src/modules/digital-profile/ori
 const FINDING = {
   findingId: "finding-crime-subject_match-aaaa1111",
   theme: "Криминальные / судебные материалы",
-  claim:
-    "21 публикация, из них с негативным содержанием — 21.\nИсточники: dzen.ru, secrets.tbank.ru.\nПримеры: Биография предпринимателя · Личная жизнь",
+      claim:
+        "Найдены публикации, в которых субъект связывается с судебными сюжетами:\n«Биография предпринимателя» — источник dzen.ru\n«Личная жизнь» — источник secrets.tbank.ru\nВсего по теме: 21 материал, с негативным контекстом — 21.",
   subjectMatch: "SUBJECT_MATCH",
   riskLevel: "high",
   confidence: 0.9,
@@ -48,8 +48,8 @@ describe("F.1 — structured theme claim hierarchy", () => {
     const out = themedClaim(FINDING as never);
     const lines = out.split("\n");
     expect(lines[0]).toBe("«Криминальные / судебные материалы»");
-    expect(lines.some((l) => l.startsWith("Источники:"))).toBe(true);
-    expect(lines.some((l) => l.startsWith("Примеры:"))).toBe(true);
+    expect(lines.some((l) => /— источник /u.test(l))).toBe(true);
+    expect(lines.some((l) => l.startsWith("Всего по теме:"))).toBe(true);
   });
 
   it("bullet field budget fits a structured multi-line theme claim", () => {
@@ -109,11 +109,11 @@ describe("F.2 — regional summary does not silently drop themes", () => {
       regions: ["RU", "UAE"],
       evidenceRefs: ["ev-ru", "ev-uae"],
       claim:
-        "В открытой выдаче видны материалы по теме.\nВ корпусе: 21 материал, из них с негативным контекстом — 21.\nГде видно: dzen.ru, gulfnews.com.\nПример: RU title",
+        "Найдены публикации по теме:\n«RU title» — источник dzen.ru\n«UAE title» — источник gulfnews.com\nВсего по теме: 21 материал, с негативным контекстом — 21.",
     };
     const out = localizedThemedClaim(finding as never, scoped as never);
     expect(out).toContain("\n");
-    expect(out).toContain("Где видно: gulfnews.com");
+    expect(out).toContain("— источник gulfnews.com");
     expect(out).not.toContain("dzen.ru");
   });
 });
