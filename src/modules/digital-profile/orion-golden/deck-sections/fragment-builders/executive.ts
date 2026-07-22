@@ -41,6 +41,12 @@ import {
   uniqueRefs,
   verdictClientLabel,
 } from "./shared";
+import {
+  assertSemanticSummaryGatesPass,
+  paginateComposedClientSummary,
+  type SemanticBlock,
+} from "../semantic-summary-pagination";
+import type { ComposedClientSummary } from "../../contracts/composed-client-summary";
 
 /**
  * §7.2 — compact freshness + change line for surfaces that render narrative/bullets
@@ -347,11 +353,157 @@ export function composeExecutivePageStructure(
   };
 }
 
+function formatSemanticBullet(block: SemanticBlock): string {
+  if (block.heading && block.kind === "theme") {
+    // Heading already leads most composer theme bodies; avoid duplicate title line
+    // when the body starts with the same heading.
+    if (block.text.startsWith(block.heading)) return block.text;
+    return `${block.heading}. ${block.text}`;
+  }
+  return block.text;
+}
+
+function adverseFindingIdsForExecutive(
+  scoped: ScopedFragmentInput,
+  es?: ExecutiveSummaryExtras
+): string[] {
+  const fromEs = (es?.keyFindings ?? []).map((k) => k.findingId);
+  // Assembly gate: every promoted adverse P1/P2 must appear on executive slides.
+  const p12 = scoped.findings
+    .filter(
+      (f) =>
+        f.subjectMatch === "SUBJECT_MATCH" &&
+        (f.promotionPriority === "P1" || f.promotionPriority === "P2") &&
+        (RISK_ORDER[f.riskLevel] ?? 0) >= 2
+    )
+    .map((f) => f.findingId);
+  return [...new Set([...fromEs, ...p12])];
+}
+
+/**
+ * Stage 6 — executive slides from ComposedClientSummary with semantic pagination.
+ * Full theme text is preserved across adjacent continuations; no clamp/slice.
+ */
+export function buildExecutiveSummaryFromComposed(
+  sectionId: SectionType,
+  scoped: ScopedFragmentInput,
+  extras: FragmentExtras,
+  composed: ComposedClientSummary
+): FragmentBuildOutput {
+  const es = extras.executiveSummary;
+  const plan = paginateComposedClientSummary(composed, { leadThemeCount: 3 });
+  assertSemanticSummaryGatesPass(plan);
+
+  const [slot] = slotsForFragment("EXECUTIVE_SUMMARY");
+  const ms = scoped.metricSnapshot;
+  const riskLevel = composed.sections.overallAssessment.match(
+    /критический|высокий|средний|низкий/i
+  )?.[0];
+  const verdictLabel = es
+    ? verdictClientLabel(es.verdict)
+    : riskLevel
+      ? riskLevel
+      : "по открытым источникам";
+
+  // Do not clamp composed narrative (§6: CLIENT_TEXT_TRUNCATIONS=0). Fold §7.2
+  // into the packed overview when it fits; otherwise it rides as a continuation block.
+  const freshLine = executiveFreshnessChangeVisibleLine(extras);
+  let narrative = plan.overviewNarrative.join("\n");
+  if (freshLine) {
+    const trial = narrative ? `${narrative}\n${freshLine}` : freshLine;
+    if (trial.length <= EXEC_NARRATIVE_BUDGET) {
+      narrative = trial;
+    }
+  }
+
+  const overviewBullets = plan.overviewBlocks.map(formatSemanticBullet);
+  const findingIds = adverseFindingIdsForExecutive(scoped, es);
+  const themeCount = composed.sections.themes.length;
+
+  const base = makeSlotSlide({
+    slot,
+    sectionId,
+    subtitle: `Итоговая оценка: ${verdictLabel}`,
+    content: {
+      narrative,
+      kpis: [
+        { label: "Материалов", value: String(ms.compositeCount), tone: "neutral" },
+        { label: "О субъекте", value: String(ms.subjectMatchCount), tone: "good" },
+        {
+          label: "Вероятно о субъекте",
+          value: String(ms.likelySubjectCount ?? 0),
+          tone: "warn",
+        },
+        { label: "Тем риска", value: String(ms.adverseFindingCount), tone: "risk" },
+        { label: "Ключевых тем", value: String(themeCount), tone: "accent" },
+      ],
+      bullets: overviewBullets,
+      // Full next-steps text lives in semantic blocks (overview or continuation).
+      // Do not clamp a short card copy — that would be CLIENT_TEXT_TRUNCATIONS.
+      whatToCheck: undefined,
+      sourceNote: sourceLine(scoped, extras),
+    },
+    evidenceRefs: uniqueRefs(scoped),
+    findingIds,
+    metrics: {
+      keyFindings: themeCount,
+      sparse: themeCount === 0 ? 1 : 0,
+      composedSummary: 1,
+      CLIENT_TEXT_TRUNCATIONS: plan.gates.CLIENT_TEXT_TRUNCATIONS,
+      CONTINUATION_PAGES: plan.continuationPages.length,
+    },
+  });
+
+  const slides: SlideContentContract[] = [base];
+  const totalPages = plan.continuationPages.length;
+  for (let pageIdx = 0; pageIdx < totalPages; pageIdx += 1) {
+    const pageBlocks = plan.continuationPages[pageIdx]!;
+    const kinds = new Set(pageBlocks.map((b) => b.kind));
+    const themeOnly = [...kinds].every((k) => k === "theme");
+    const baseTitle = themeOnly
+      ? "Резюме — темы риска"
+      : "Резюме — продолжение";
+    slides.push({
+      ...base,
+      slideId: pageIdx === 0 ? `${base.slideId}__cont1` : `${base.slideId}__cont${pageIdx + 1}`,
+      isContinuation: true,
+      continuationOf: base.slideId,
+      continuationIndex: pageIdx + 1,
+      templateId: "continuation",
+      title:
+        totalPages > 1
+          ? `${baseTitle} (продолжение ${pageIdx + 1}/${totalPages})`
+          : baseTitle,
+      subtitle: undefined,
+      content: {
+        bullets: pageBlocks.map(formatSemanticBullet),
+        whatToCheck: undefined,
+        sourceNote: pageIdx === 0 ? sourceLine(scoped, extras) : undefined,
+      },
+      metrics: {
+        ...base.metrics,
+        continuationBlocks: pageBlocks.length,
+        CLIENT_TEXT_TRUNCATIONS: plan.gates.CLIENT_TEXT_TRUNCATIONS,
+      },
+    });
+  }
+
+  return { slides, status: "READY" };
+}
+
 export function buildExecutiveSummaryFragment(
   sectionId: SectionType,
   scoped: ScopedFragmentInput,
   extras: FragmentExtras
 ): FragmentBuildOutput {
+  if (extras.composedClientSummary) {
+    return buildExecutiveSummaryFromComposed(
+      sectionId,
+      scoped,
+      extras,
+      extras.composedClientSummary
+    );
+  }
   const es = extras.executiveSummary;
   if (!es) {
     // Missing artifact is a technical defect — not an honest sparse-data page.

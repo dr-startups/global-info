@@ -32,8 +32,24 @@ export type CompositeSurfaceOwnership = SurfaceCellKey & {
   sampleStatus: SampleStatus;
 };
 
+/** Stage 7 — fate of every base SERP-like inventory row through overlay. */
+export type OverlayBaseLineageFate =
+  | "kept_uncovered_cell"
+  | "replaced_by_enrichment"
+  | "preserved_material_despite_overlay"
+  | "preserved_empty_enrichment_cell"
+  | "non_serp_kept";
+
+export type OverlayBaseLineageEntry = {
+  inventoryId: string;
+  cellKey: string;
+  fate: OverlayBaseLineageFate;
+  reasonCode: string;
+  title: string;
+};
+
 export type CompositeMergeProvenance = {
-  version: "composite-serp-merge-v1";
+  version: "composite-serp-merge-v1" | "composite-serp-merge-v2";
   baseReportRunId: string | null;
   enrichmentRunIds: string[];
   ownership: CompositeSurfaceOwnership[];
@@ -50,6 +66,9 @@ export type CompositeMergeProvenance = {
   replacedCells: number;
   preservedCells: number;
   warnings: string[];
+  /** Stage 7 — 100% accounting of base SERP-like rows. */
+  baseLineage?: OverlayBaseLineageEntry[];
+  baseLineageCoveragePercent?: number;
 };
 
 export type CompositeMergeResult = {
@@ -281,9 +300,27 @@ function isSerpLike(item: RawInventoryItem): boolean {
   );
 }
 
+/** Material adverse heuristic — preserve these across empty/weak overlay cells. */
+const OVERLAY_MATERIAL_ADVERSE_RE =
+  /уголов|criminal|арест|санкц|sanction|корруп|corrupt|фбк|расследован|investigat|суд|court|офшор|offshore|pep|rca|watch.?list|скандал|yacht|рыбк|navalny|навальн|fraud|bribe|взятк/iu;
+
+export function isOverlayMaterialAdverseItem(item: RawInventoryItem): boolean {
+  return OVERLAY_MATERIAL_ADVERSE_RE.test(
+    [item.title, item.snippet, item.classification].filter(Boolean).join(" ")
+  );
+}
+
+function itemUrlIdentity(item: RawInventoryItem): string {
+  if (item.sourceUrl) return normalizeUrl(item.sourceUrl);
+  return valueHash("", item.title);
+}
+
 /**
  * Overlay enrichment observations onto base inventory by coverage cell.
  * Uncovered cells keep base items with their original reportRunId.
+ *
+ * Stage 7: empty enrichment cells and material-adverse base rows missing from
+ * enrichment are preserved with lineage — never silent erase → «no risk».
  */
 export function overlayInventoryByCoverageCells(input: {
   baseInventory: FullEvidenceInventory;
@@ -311,23 +348,117 @@ export function overlayInventoryByCoverageCells(input: {
     });
   }
 
+  // Deduplicate enrichment within each cell first (needed for preserve decisions).
+  const seenInCell = new Map<string, Set<string>>();
+  const duplicateKeys: string[] = [];
+  const enrichmentDeduped: RawInventoryItem[] = [];
+  const enrichmentIdsByCell = new Map<string, Set<string>>();
+  for (const item of input.enrichmentItems) {
+    const cell = itemCell(item);
+    const ck = cellKey(cell);
+    const obsKey = String((item.rawMetadata as { observationKey?: string } | undefined)?.observationKey ?? item.inventoryId);
+    const set = seenInCell.get(ck) ?? new Set<string>();
+    if (set.has(obsKey)) {
+      duplicateKeys.push(obsKey);
+      continue;
+    }
+    set.add(obsKey);
+    seenInCell.set(ck, set);
+    enrichmentDeduped.push(item);
+    const idSet = enrichmentIdsByCell.get(ck) ?? new Set<string>();
+    idSet.add(itemUrlIdentity(item));
+    enrichmentIdsByCell.set(ck, idSet);
+  }
+
   const keptBase: RawInventoryItem[] = [];
   const preservedCellKeys = new Set<string>();
+  const baseLineage: OverlayBaseLineageEntry[] = [];
+  let preservedMaterial = 0;
+  let preservedEmptyCell = 0;
+
   for (const item of input.baseInventory.items) {
     if (!isSerpLike(item)) {
       keptBase.push(item);
+      baseLineage.push({
+        inventoryId: item.inventoryId,
+        cellKey: cellKey(itemCell(item)),
+        fate: "non_serp_kept",
+        reasonCode: "overlay:non_serp_passthrough",
+        title: String(item.title ?? ""),
+      });
       continue;
     }
     const cell = itemCell(item);
     const k = cellKey(cell);
-    if (replacedKeys.has(k)) {
-      // Dropped — enrichment owns this cell.
+    if (!replacedKeys.has(k)) {
+      preservedCellKeys.add(k);
+      const meta = { ...(item.rawMetadata ?? {}) } as Record<string, unknown>;
+      if (!meta.provenanceStatus) meta.provenanceStatus = "inherited_base";
+      keptBase.push({ ...item, rawMetadata: meta });
+      baseLineage.push({
+        inventoryId: item.inventoryId,
+        cellKey: k,
+        fate: "kept_uncovered_cell",
+        reasonCode: "overlay:uncovered_cell_kept",
+        title: String(item.title ?? ""),
+      });
       continue;
     }
-    preservedCellKeys.add(k);
-    const meta = { ...(item.rawMetadata ?? {}) } as Record<string, unknown>;
-    if (!meta.provenanceStatus) meta.provenanceStatus = "inherited_base";
-    keptBase.push({ ...item, rawMetadata: meta });
+
+    const covered = input.coveredCells.get(k);
+    const enrichmentEmpty = !covered || covered.count <= 0;
+    const inEnrichment = enrichmentIdsByCell.get(k)?.has(itemUrlIdentity(item)) ?? false;
+    const material = isOverlayMaterialAdverseItem(item);
+
+    if (enrichmentEmpty) {
+      // NOT_COLLECTED / empty enrichment must not erase base evidence.
+      const meta = { ...(item.rawMetadata ?? {}) } as Record<string, unknown>;
+      meta.provenanceStatus = "preserved_empty_enrichment_cell";
+      meta.overlayReasonCode = "overlay:empty_enrichment_preserve_base";
+      keptBase.push({ ...item, rawMetadata: meta });
+      preservedEmptyCell += 1;
+      baseLineage.push({
+        inventoryId: item.inventoryId,
+        cellKey: k,
+        fate: "preserved_empty_enrichment_cell",
+        reasonCode: "overlay:empty_enrichment_preserve_base",
+        title: String(item.title ?? ""),
+      });
+      continue;
+    }
+
+    if (material && !inEnrichment) {
+      const meta = { ...(item.rawMetadata ?? {}) } as Record<string, unknown>;
+      meta.provenanceStatus = "preserved_material_despite_overlay";
+      meta.overlayReasonCode = "overlay:preserve_material_adverse_missing_from_enrichment";
+      keptBase.push({ ...item, rawMetadata: meta });
+      preservedMaterial += 1;
+      baseLineage.push({
+        inventoryId: item.inventoryId,
+        cellKey: k,
+        fate: "preserved_material_despite_overlay",
+        reasonCode: "overlay:preserve_material_adverse_missing_from_enrichment",
+        title: String(item.title ?? ""),
+      });
+      continue;
+    }
+
+    baseLineage.push({
+      inventoryId: item.inventoryId,
+      cellKey: k,
+      fate: "replaced_by_enrichment",
+      reasonCode: inEnrichment
+        ? "overlay:replaced_duplicate_in_enrichment"
+        : "overlay:replaced_non_material_by_enrichment",
+      title: String(item.title ?? ""),
+    });
+  }
+
+  if (preservedMaterial > 0) {
+    warnings.push(`overlay-preserved-material-adverse:${preservedMaterial}`);
+  }
+  if (preservedEmptyCell > 0) {
+    warnings.push(`overlay-preserved-empty-enrichment-cell:${preservedEmptyCell}`);
   }
 
   for (const k of preservedCellKeys) {
@@ -346,26 +477,12 @@ export function overlayInventoryByCoverageCells(input: {
     });
   }
 
-  // Deduplicate enrichment within each cell only.
-  const seenInCell = new Map<string, Set<string>>();
-  const duplicateKeys: string[] = [];
-  const enrichmentDeduped: RawInventoryItem[] = [];
-  for (const item of input.enrichmentItems) {
-    const cell = itemCell(item);
-    const ck = cellKey(cell);
-    const obsKey = String((item.rawMetadata as { observationKey?: string } | undefined)?.observationKey ?? item.inventoryId);
-    const set = seenInCell.get(ck) ?? new Set<string>();
-    if (set.has(obsKey)) {
-      duplicateKeys.push(obsKey);
-      continue;
-    }
-    set.add(obsKey);
-    seenInCell.set(ck, set);
-    enrichmentDeduped.push(item);
-  }
-
   const mergedItems = [...keptBase, ...enrichmentDeduped];
   const after = countKinds(mergedItems);
+  const baseLineageCoveragePercent =
+    input.baseInventory.items.length === 0
+      ? 100
+      : Math.round((baseLineage.length / input.baseInventory.items.length) * 10000) / 100;
 
   // Detect unexpected loss of organic when enrichment did not cover organic.
   const enrichmentCoversOrganic = [...input.coveredCells.values()].some((c) => c.surface === "organic");
@@ -388,7 +505,7 @@ export function overlayInventoryByCoverageCells(input: {
   }
 
   const provenance: CompositeMergeProvenance = {
-    version: "composite-serp-merge-v1",
+    version: "composite-serp-merge-v2",
     baseReportRunId: input.baseReportRunId,
     enrichmentRunIds: input.enrichmentRunIds,
     ownership,
@@ -397,6 +514,8 @@ export function overlayInventoryByCoverageCells(input: {
     replacedCells: replacedKeys.size,
     preservedCells: preservedCellKeys.size,
     warnings: [...warnings],
+    baseLineage,
+    baseLineageCoveragePercent,
   };
 
   const suggestionCount = after.suggestions;

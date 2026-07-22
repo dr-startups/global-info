@@ -26,6 +26,11 @@ import {
   sampleCompositeDataset,
   sampleExecutiveSummary,
   sampleFinding,
+  sampleCanonicalClaimsBundle,
+  sampleObservationDispositionLedger,
+  sampleClientSummaryPack,
+  sampleComposedClientSummary,
+  sampleRepresentativeEvidenceSelection,
   sampleSectionPack,
   sampleSubjectResolution,
   sampleSurfaceAnalysis,
@@ -57,6 +62,11 @@ describe("orion-stage1 contract schemas", () => {
     SectionPack: sampleSectionPack(),
     SurfaceFragment: sampleSurfaceFragment(),
     AssembledDeckModel: sampleAssembledDeckModel(),
+    ObservationDispositionLedger: sampleObservationDispositionLedger(),
+    CanonicalClaimsBundle: sampleCanonicalClaimsBundle(),
+    RepresentativeEvidenceSelection: sampleRepresentativeEvidenceSelection(),
+    ClientSummaryPack: sampleClientSummaryPack(),
+    ComposedClientSummary: sampleComposedClientSummary(),
   };
 
   for (const name of Object.keys(STAGE1_CONTRACT_VALIDATORS) as Stage1ContractName[]) {

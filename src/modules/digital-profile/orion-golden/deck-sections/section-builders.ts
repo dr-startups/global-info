@@ -200,7 +200,20 @@ function composeFragment(
 function extrasHash(key: FragmentKey, extras: FragmentExtras): string {
   const base =
     key === "EXECUTIVE_SUMMARY"
-      ? extras.executiveSummary ?? null
+      ? {
+          executiveSummary: extras.executiveSummary ?? null,
+          composedClientSummary: extras.composedClientSummary
+            ? {
+                schemaVersion: extras.composedClientSummary.schemaVersion,
+                caseId: extras.composedClientSummary.caseId,
+                themeIds: extras.composedClientSummary.sections.themes.map((t) => t.themeId),
+                fullTextHash: createHash("sha256")
+                  .update(extras.composedClientSummary.fullText)
+                  .digest("hex")
+                  .slice(0, 16),
+              }
+            : null,
+        }
       : key === "COMPLIANCE_MAIN"
         ? extras.complianceNarrative ?? null
         : key === "RU_SUMMARY" || key === "UAE_SUMMARY"

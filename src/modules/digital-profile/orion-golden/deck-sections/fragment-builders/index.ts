@@ -43,9 +43,16 @@ export {
   RISK_MATRIX_LIKELY_AGGREGATE_ID,
   packRiskMatrixPages,
   buildExecutiveSummaryFragment,
+  buildExecutiveSummaryFromComposed,
   buildRiskMatrixFragment,
   buildDigitalProfileOverviewFragment,
 } from "./executive";
+
+export {
+  paginateComposedClientSummary,
+  assertSemanticSummaryGatesPass,
+  packSentencesNoTruncate,
+} from "../semantic-summary-pagination";
 
 export { buildRegionalSummaryFragment } from "./regional-summary";
 export { buildSerpFragment, buildSerpScreenshotFragment } from "./serp";

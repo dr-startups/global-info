@@ -39,6 +39,7 @@ import {
 } from "../../../services/report-material-freshness";
 import { isMockClientDomain } from "../../../services/composite-serp-merge";
 import { getClientTextFieldBudgets } from "../../client/load-client-text-contract";
+import type { ComposedClientSummary } from "../../contracts/composed-client-summary";
 
 export type ExecutiveSummaryExtras = {
   verdict: string;
@@ -90,6 +91,11 @@ export type UncategorizedMaterialsExtras = {
 
 export type FragmentExtras = {
   executiveSummary?: ExecutiveSummaryExtras;
+  /**
+   * Stage 5/6 — deterministic composed client summary.
+   * When present, EXECUTIVE_SUMMARY uses semantic pagination (no mid-cut).
+   */
+  composedClientSummary?: ComposedClientSummary;
   /** Existing compliance client copy (no source expansion). */
   complianceNarrative?: string[];
   /** Typed visual assets bound per canonical slot. */
@@ -348,7 +354,7 @@ export function fitStructuredBullet(text: string, maxChars: number): string {
     /^(Что делать|Всего по теме|В корпусе|Где видно)\s*:\s*\.?$/iu;
   const danglingCountRe = /,\s*с негативным контекстом\s+[—–-]\s*\.?$/u;
   // PDF-49 — dangling token must be preceded by « or whitespace. Bare `и»`
-  // inside «…Дерипаски» was a false positive that deleted the ФБК quote.
+  // inside genitive «…Фамилии» was a false positive that deleted an evidence quote.
   const danglingQuoteRe =
     /^«.*(?:«|\s)(?:из-за|и|в|во|на|по|с|со|о|об|and|or|of|the|to|for|with|from|by|over)\s*»/iu;
   const incompleteQuoteRe = /^«.*[,;:]\s*»/u;

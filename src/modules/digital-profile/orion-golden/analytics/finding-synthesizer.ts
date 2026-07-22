@@ -182,13 +182,13 @@ const STRONG_DOMAIN_RE =
 /** True for titles that are only a person name (no risk essence). */
 function looksLikeBarePersonName(title: string): boolean {
   let t = title.replace(/^[«"]|[»"]$/gu, "").trim();
-  // Topic / hub pages: «Oleg V Deripaska - The New York Times»
+  // Topic / hub pages: «Given Family - The New York Times»
   t = t.replace(/\s*[-–—]\s*(?:The\s+)?New\s+York\s+Times\s*$/iu, "").trim();
   t = t.replace(/\s*[-–—]\s*[A-Za-z0-9.-]+\.[a-z]{2,}\s*$/iu, "").trim();
   if (/[0-9:/]/u.test(t) || BIO_SEO_RE.test(t)) return false;
-  // Latin: Oleg V Deripaska / Oleg Deripaska
+  // Latin: Given F. Family / Given Family
   if (/^[A-Z][a-z]+(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-z]+){1,2}$/u.test(t)) return true;
-  // Cyrillic FIO only: Олег Дерипаска / Олег Владимирович Дерипаска
+  // Cyrillic FIO only: Имя Фамилия / Имя Отчество Фамилия
   if (/^[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2}$/u.test(t)) return true;
   return false;
 }
@@ -200,7 +200,7 @@ export function hasDanglingTail(text: string): boolean {
 
 /**
  * PDF-48 — reject client quotes that are clearly mid-cut:
- * «…Дерипаски,», unbalanced `"…`, subordinate clause without an end.
+ * «…Фамилии,», unbalanced `"…`, subordinate clause without an end.
  */
 export function isIncompleteClientQuote(text: string): boolean {
   const t = String(text ?? "").trim();
@@ -220,8 +220,8 @@ export function isIncompleteClientQuote(text: string): boolean {
 
 /**
  * Turn a provider-truncated snippet into a closed headline (no trailing comma/…).
- * e.g. «После публикации расследования ФБК … Дерипаски, ...» →
- * «Расследование ФБК об отдыхе … Дерипаски».
+ * e.g. «После публикации расследования ФБК … Фамилии, ...» →
+ * «Расследование ФБК об отдыхе … Фамилии».
  */
 export function snippetToClientHeadline(snippet: string): string {
   let s = String(snippet ?? "").replace(/\s+/gu, " ").trim();
@@ -243,7 +243,7 @@ export function snippetToClientHeadline(snippet: string): string {
 /**
  * Cap a quote for a bullet line. PDF-45/46/48: prefer the WHOLE title;
  * if over budget or incomplete / dangling / SERP-truncated, return "".
- * Never publish «…visa over» / «…из-за» / «…Дерипаски,».
+ * Never publish «…visa over» / «…из-за» / «…Фамилии,».
  */
 export function quoteForClaim(title: string, budget = 220): string {
   const raw = String(title ?? "").trim();
@@ -259,7 +259,7 @@ export function quoteForClaim(title: string, budget = 220): string {
     slice.lastIndexOf(" — "),
     slice.lastIndexOf(" – ")
   );
-  // Do NOT cut on ", " — that produces «…Дерипаски,» stubs.
+  // Do NOT cut on ", " — that produces «…Фамилии,» stubs.
   if (cut < budget * 0.55) return "";
   let body = slice.slice(0, cut).trim().replace(/[\s,;:.—–-]+$/u, "").trim();
   if (hasDanglingTail(body)) {
@@ -288,7 +288,7 @@ export function isWeakExampleTitle(
 
   const themeHit = opts?.theme ? opts.theme.keywords.test(t) : false;
 
-  // Bare / near-bare person name: «Oleg V Deripaska», «Олег Дерипаска».
+  // Bare / near-bare person name: «Given F. Family», «Имя Фамилия».
   if (!themeHit && looksLikeBarePersonName(t)) {
     return true;
   }

@@ -119,7 +119,7 @@ function clampStringList(value: unknown, max: number): unknown {
 
 /**
  * Soft-coerce raw model JSON into budget before zod — length overflow must not
- * discard an otherwise valid holistic analysis (Deripaska live failure mode).
+ * discard an otherwise valid holistic analysis (dense-case live failure mode).
  */
 export function coerceGptCaseAnalysisRaw(raw: unknown): unknown {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;

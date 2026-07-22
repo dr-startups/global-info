@@ -64,6 +64,42 @@ import {
   isGptThemesEnabled,
   runGptThemeSuggestion,
 } from "../gpt/gpt-theme-suggester";
+import {
+  assertDispositionGatesPass,
+  buildDispositionSummary,
+  buildObservationDispositionLedger,
+} from "./observation-disposition-ledger";
+import type { ObservationDispositionLedger } from "../contracts/observation-disposition";
+import type { DispositionSummary } from "../contracts/observation-disposition";
+import {
+  assertCanonicalClaimGatesPass,
+  buildCanonicalClaimsBundle,
+  buildCanonicalClaimsSummary,
+} from "./canonical-claim-builder";
+import type { CanonicalClaimsBundle } from "../contracts/canonical-claim";
+import type { CanonicalClaimsSummary } from "../contracts/canonical-claim";
+import {
+  assertRepresentativeGatesPass,
+  selectRepresentativeEvidence,
+} from "./representative-evidence-selector";
+import type { RepresentativeEvidenceSelection } from "../contracts/representative-evidence";
+import type { RepresentativeCoverageReport } from "../contracts/representative-evidence";
+import type { ExcludedMaterialityReport } from "../contracts/representative-evidence";
+import {
+  assertClientSummaryPackGatesPass,
+  buildClientSummaryPack,
+} from "./client-summary-pack-builder";
+import type { ClientSummaryPack } from "../contracts/client-summary-pack";
+import {
+  assertComposedSummaryGatesPass,
+  composeClientSummary,
+} from "./client-summary-composer";
+import type { ComposedClientSummary } from "../contracts/composed-client-summary";
+import {
+  assertFilterLossGatesPass,
+  buildFilterLossMatrix,
+} from "./filter-loss-audit";
+import type { FilterLossMatrix } from "../contracts/filter-loss-matrix";
 
 export type AnalyticsPipelineInput = {
   caseId: string;
@@ -99,6 +135,16 @@ export type AnalyticsPipelineResult = {
   executiveSummaryInput: ExecutiveSummaryStageInput;
   executiveSummary: ExecutiveSummaryStageResult;
   benchmarkTrace: BenchmarkTrace;
+  dispositionLedger: ObservationDispositionLedger;
+  dispositionSummary: DispositionSummary;
+  canonicalClaims: CanonicalClaimsBundle;
+  canonicalClaimsSummary: CanonicalClaimsSummary;
+  representativeEvidence: RepresentativeEvidenceSelection;
+  representativeCoverage: RepresentativeCoverageReport;
+  excludedMateriality: ExcludedMaterialityReport;
+  clientSummaryPack: ClientSummaryPack;
+  composedClientSummary: ComposedClientSummary;
+  filterLossMatrix: FilterLossMatrix;
   reportDataBinding: ReportDataBinding;
   artifactPaths: Record<string, string>;
 };
@@ -549,6 +595,97 @@ export async function runOrionAnalyticsPipeline(
     baseReportRunId: reconciliation.baseReportRunId,
   });
 
+  // Stage 1 — ObservationDisposition ledger (100% raw accounting).
+  const dispositionLedger = buildObservationDispositionLedger({
+    caseId: input.caseId,
+    datasetId,
+    inventoryReportRunId: input.inventoryReportRunId,
+    sourceHashes,
+    items: input.items,
+    resolutionByRef,
+    synthesis,
+    provenance: composite.provenance,
+    kpiFindingIds: promotedFindingIds,
+  });
+  assertDispositionGatesPass(dispositionLedger);
+  const dispositionSummary = buildDispositionSummary(dispositionLedger);
+
+  // Stage 2 — CanonicalClaim bundle (themes + materiality + qualifications).
+  const canonicalClaims = buildCanonicalClaimsBundle({
+    caseId: input.caseId,
+    datasetId,
+    subjectId: subject.displayName || input.caseId,
+    sourceHashes,
+    items: input.items,
+    synthesis,
+    dispositionLedger,
+  });
+  assertCanonicalClaimGatesPass(canonicalClaims);
+  const canonicalClaimsSummary = buildCanonicalClaimsSummary(canonicalClaims);
+
+  // Stage 3 — coverage-aware representative evidence selection.
+  const representative = selectRepresentativeEvidence({
+    caseId: input.caseId,
+    datasetId,
+    subjectId: subject.displayName || input.caseId,
+    sourceHashes,
+    claimsBundle: canonicalClaims,
+  });
+  assertRepresentativeGatesPass(representative.selection);
+
+  // Stage 4 — ClientSummaryPack (typed summary input; not wired to renderer).
+  const regions = [
+    ...new Set(input.items.map((i) => String(i.region || "").toUpperCase()).filter(Boolean)),
+  ];
+  const clientSummaryPack = buildClientSummaryPack({
+    caseId: input.caseId,
+    datasetId,
+    subjectId: subject.displayName || input.caseId,
+    sourceHashes,
+    claimsBundle: canonicalClaims,
+    representative: representative.selection,
+    scope: {
+      regions: regions.length > 0 ? regions : ["RU", "UAE"],
+      coverageLimitations: executiveSummaryInput.dataGaps?.map((g) => g.detail) ?? [],
+    },
+  });
+  assertClientSummaryPackGatesPass(clientSummaryPack);
+
+  // Stage 5 — deterministic client summary composer (not wired to renderer).
+  const composedClientSummary = composeClientSummary({ pack: clientSummaryPack });
+  assertComposedSummaryGatesPass(composedClientSummary);
+
+  // Stage 7 — filter-loss matrix + stop-gates.
+  const surfaceMetricRows = Object.values(surfaceAnalyses).flatMap((sa) =>
+    (sa.units ?? []).map((u) => {
+      const adverse = u.metrics.find((m) => /adverse/i.test(m.key));
+      const total = u.metrics.find((m) => /^(total|count|subjectMatch)/i.test(m.key));
+      return {
+        region: String(u.region ?? ""),
+        status: adverse?.sampleStatus,
+        adverseSharePercent: typeof adverse?.value === "number" ? adverse.value : null,
+        totalCount:
+          typeof total?.value === "number"
+            ? total.value
+            : typeof adverse?.denominator === "number"
+              ? adverse.denominator
+              : 0,
+      };
+    })
+  );
+  const filterLossMatrix = buildFilterLossMatrix({
+    caseId: input.caseId,
+    datasetId,
+    sourceHashes,
+    dispositionLedger,
+    analyticsProvenance: composite.provenance,
+    findings: synthesis.bundle.findings,
+    kpiFindingIds: promotedFindingIds,
+    coverageLimitations: executiveSummaryInput.dataGaps?.map((g) => g.detail) ?? [],
+    surfaceMetricRows,
+  });
+  assertFilterLossGatesPass(filterLossMatrix);
+
   // Emit artifacts.
   emit("enrichment-run-reconciliation.json", {
     ...reconciliation,
@@ -564,6 +701,16 @@ export async function runOrionAnalyticsPipeline(
   emit("uncategorized-materials.json", synthesis.uncategorized);
   emit("executive-summary-input.json", executiveSummaryInput);
   emit("benchmark-trace.json", benchmarkTrace);
+  emit("observation-disposition-ledger.json", dispositionLedger);
+  emit("disposition-summary.json", dispositionSummary);
+  emit("canonical-claims.json", canonicalClaims);
+  emit("canonical-claims-summary.json", canonicalClaimsSummary);
+  emit("representative-evidence-selection.json", representative.selection);
+  emit("representative-evidence-coverage.json", representative.coverage);
+  emit("excluded-materiality-report.json", representative.excluded);
+  emit("client-summary-pack.json", clientSummaryPack);
+  emit("composed-client-summary.json", composedClientSummary);
+  emit("filter-loss-matrix.json", filterLossMatrix);
 
   const reportDataBinding: ReportDataBinding = {
     schemaVersion: "report-data-binding-v1",
@@ -589,6 +736,16 @@ export async function runOrionAnalyticsPipeline(
     executiveSummaryInput,
     executiveSummary,
     benchmarkTrace,
+    dispositionLedger,
+    dispositionSummary,
+    canonicalClaims,
+    canonicalClaimsSummary,
+    representativeEvidence: representative.selection,
+    representativeCoverage: representative.coverage,
+    excludedMateriality: representative.excluded,
+    clientSummaryPack,
+    composedClientSummary,
+    filterLossMatrix,
     reportDataBinding,
     artifactPaths,
   };

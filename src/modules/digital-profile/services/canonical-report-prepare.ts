@@ -638,6 +638,7 @@ export async function runCanonicalReportPrepare(
         evidenceIndex: deckInputs.evidenceIndex,
         extras: {
           executiveSummary: deckInputs.executiveSummary as never,
+          composedClientSummary: (deckInputs.composedClientSummary as never) ?? undefined,
           visualAssets: visualAssetsBySlot,
           gptCaseAnalysis: caseAnalysis ?? undefined,
           uncategorizedMaterials: deckInputs.uncategorizedMaterials ?? undefined,
@@ -941,6 +942,7 @@ export async function runCanonicalReportPrepare(
         evidenceIndex: deckInputs.evidenceIndex,
         extras: {
           executiveSummary: deckInputs.executiveSummary as never,
+          composedClientSummary: (deckInputs.composedClientSummary as never) ?? undefined,
           visualAssets: visualAssetsBySlot,
           // Sanitized stage-1 analysis feeds deterministic builders too:
           // executive summary narrative/cards and risk-matrix explanations.

@@ -104,6 +104,8 @@ export type CanonicalDeckInputs = {
   knownEvidenceRefs: Set<string>;
   metricSnapshot: MetricSnapshot;
   executiveSummary: Record<string, unknown>;
+  /** Stage 5/6 — optional; when present, executive SectionPack uses semantic pagination. */
+  composedClientSummary: Record<string, unknown> | null;
   subjectResolution: { items: Array<{ decision: string }> };
   baseCountBefore: number;
   baseCountAfter: number;
@@ -132,6 +134,10 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
   const executiveSummary = readJson<Record<string, unknown>>(
     join(analyticsDir, "executive-summary.json")
   );
+  const composedPath = join(analyticsDir, "composed-client-summary.json");
+  const composedClientSummary = existsSync(composedPath)
+    ? readJson<Record<string, unknown>>(composedPath)
+    : null;
   const binding = readJson<{ baseReportRunId: string; datasetId: string; caseId: string }>(
     join(analyticsDir, "report-data-binding.json")
   );
@@ -419,6 +425,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     knownEvidenceRefs,
     metricSnapshot,
     executiveSummary,
+    composedClientSummary,
     subjectResolution,
     baseCountBefore: providerDelta.baseCount,
     baseCountAfter: observations.baseCount,

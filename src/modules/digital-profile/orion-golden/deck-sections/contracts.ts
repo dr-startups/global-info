@@ -214,7 +214,7 @@ export const SectionPackV2Schema = z
         /**
          * Whether stage-1 case analysis was injected when this copy was written.
          * Cache reuse must not keep copy produced without analysis after stage 1
-         * starts succeeding (live Deripaska: applied 0 / SKIPPED_CACHED).
+         * starts succeeding (live dense case: applied 0 / SKIPPED_CACHED).
          */
         caseAnalysisUsed: z.boolean().optional(),
         /** REMEDIATION §4.3 — last stage-2 outcome for selective retry. */

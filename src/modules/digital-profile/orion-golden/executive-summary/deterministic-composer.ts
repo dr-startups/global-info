@@ -84,18 +84,36 @@ function isMandatoryPromotion(f: Finding): boolean {
   );
 }
 
-function selectKeyFindings(eligible: Finding[], conflictedDomains: Set<string>): Finding[] {
+/**
+ * Stage 7 — top-N only after material theme coverage among adverse P1/P2.
+ * Distinct mandatory themes are never collapsed by MAX_KEY_FINDINGS.
+ */
+export function selectKeyFindings(eligible: Finding[], conflictedDomains: Set<string>): Finding[] {
   const sorted = [...eligible].sort((a, b) => {
     const risk = (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0);
     if (risk !== 0) return risk;
     if (b.confidence !== a.confidence) return b.confidence - a.confidence;
     return a.findingId.localeCompare(b.findingId);
   });
-  // Mandatory first: adverse P1/P2 can only be displaced by other P1/P2.
-  const mandatory = sorted.filter(isMandatoryPromotion).slice(0, MAX_KEY_FINDINGS);
-  const picked = [...mandatory];
+  const mandatoryAll = sorted.filter(isMandatoryPromotion);
+  // One representative per theme first (material theme coverage).
+  const themeCovered: Finding[] = [];
+  const seenThemes = new Set<string>();
+  for (const f of mandatoryAll) {
+    const theme = String(f.theme ?? f.findingId);
+    if (seenThemes.has(theme)) continue;
+    seenThemes.add(theme);
+    themeCovered.push(f);
+  }
+  const cap = Math.max(MAX_KEY_FINDINGS, themeCovered.length);
+  const picked: Finding[] = [...themeCovered];
+  // Remaining mandatory (same-theme extras) then other eligible, up to cap.
+  for (const f of mandatoryAll) {
+    if (picked.length >= cap) break;
+    if (!picked.includes(f)) picked.push(f);
+  }
   for (const f of sorted) {
-    if (picked.length >= MAX_KEY_FINDINGS) break;
+    if (picked.length >= cap) break;
     if (!picked.includes(f)) picked.push(f);
   }
   // Adverse and neutral signals must be shown simultaneously: if the slice is
@@ -105,7 +123,7 @@ function selectKeyFindings(eligible: Finding[], conflictedDomains: Set<string>):
     const neutral = sorted.find((f) => (RISK_ORDER[f.riskLevel] ?? 0) <= 1);
     if (neutral) {
       for (let i = picked.length - 1; i >= 0; i -= 1) {
-        if (!isMandatoryPromotion(picked[i])) {
+        if (!isMandatoryPromotion(picked[i]!)) {
           picked[i] = neutral;
           break;
         }

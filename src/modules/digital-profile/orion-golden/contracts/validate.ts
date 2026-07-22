@@ -2,6 +2,11 @@ import { AssembledDeckModelSchema } from "./assembled-deck-model";
 import { CompositeDatasetSchema } from "./composite-dataset";
 import { ExecutiveSummarySchema } from "./executive-summary";
 import { FindingSchema } from "./finding";
+import { CanonicalClaimsBundleSchema } from "./canonical-claim";
+import { ObservationDispositionLedgerSchema } from "./observation-disposition";
+import { ClientSummaryPackSchema } from "./client-summary-pack";
+import { ComposedClientSummarySchema } from "./composed-client-summary";
+import { RepresentativeEvidenceSelectionSchema } from "./representative-evidence";
 import { SectionPackSchema } from "./section-pack";
 import { SubjectResolutionSchema } from "./subject-resolution";
 import { SurfaceAnalysisSchema } from "./surface-analysis";
@@ -18,6 +23,11 @@ export const STAGE1_CONTRACT_VALIDATORS = {
   SectionPack: SectionPackSchema,
   SurfaceFragment: SurfaceFragmentSchema,
   AssembledDeckModel: AssembledDeckModelSchema,
+  ObservationDispositionLedger: ObservationDispositionLedgerSchema,
+  CanonicalClaimsBundle: CanonicalClaimsBundleSchema,
+  RepresentativeEvidenceSelection: RepresentativeEvidenceSelectionSchema,
+  ClientSummaryPack: ClientSummaryPackSchema,
+  ComposedClientSummary: ComposedClientSummarySchema,
 } as const;
 
 export type Stage1ContractName = keyof typeof STAGE1_CONTRACT_VALIDATORS;

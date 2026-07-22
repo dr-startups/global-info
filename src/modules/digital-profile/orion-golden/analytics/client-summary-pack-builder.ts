@@ -1,0 +1,580 @@
+/**
+ * Stage 4 — build ClientSummaryPack from CanonicalClaims + RepresentativeEvidence.
+ * Not wired to production renderer/composer yet.
+ */
+
+import type { CanonicalClaim, CanonicalThemeId, MaterialityLevel } from "../contracts/canonical-claim";
+import type { CanonicalClaimsBundle } from "../contracts/canonical-claim";
+import type { RiskLevel } from "../contracts/common";
+import {
+  CLIENT_SUMMARY_PACK_SCHEMA_VERSION,
+  ClientSummaryPackSchema,
+  type ClientSummaryPack,
+  type ClientMaterialTheme,
+  type RepresentativeArticle,
+  type ClientIsolatedItem,
+  type InternationalDatabaseEntry,
+} from "../contracts/client-summary-pack";
+import type { RepresentativeEvidenceSelection } from "../contracts/representative-evidence";
+import { themeLabelRu } from "./canonical-themes";
+
+const LEVEL_RANK: Record<MaterialityLevel, number> = {
+  CRITICAL: 5,
+  HIGH: 4,
+  MEDIUM: 3,
+  LOW: 2,
+  CONTEXT_ONLY: 1,
+};
+
+const DATABASE_DOMAIN =
+  /world.?check|dowjones|lexis|rupep|opensanctions|peps\.dossier|ofac/iu;
+
+/** Tokens that must never appear in client-facing pack fields. */
+export const INTERNAL_CLIENT_TOKEN_RE =
+  /\b(?:findingId|reportRunId|datasetId|sourceDatasetId|inventoryReportRunId|schemaVersion|contentVersion|promptVersion|subjectMatch|promotionPriority|evidenceRef|storageRef|observationKey|compositeDigest|ORION_GPT|llm-suggested|SUBJECT_MATCH|LIKELY_SUBJECT|OTHER_SUBJECT|INSUFFICIENT_IDENTIFIERS|APPENDIX|KEEP_PRIMARY|KEEP_SUPPORTING)\b|inventory:[a-z0-9_-]+|claim-[a-f0-9]{8,}|finding-[a-z0-9_]+-|sha256:[a-f0-9]+|\/storage\/|prisma\.|rawMetadata/iu;
+
+export type ClientSummaryPackBuildInput = {
+  caseId: string;
+  datasetId: string;
+  subjectId: string;
+  sourceHashes: string[];
+  claimsBundle: CanonicalClaimsBundle;
+  representative: RepresentativeEvidenceSelection;
+  scope?: {
+    regions?: string[];
+    sourceClasses?: string[];
+    surfaces?: string[];
+    collectedLabel?: string;
+    newestLabel?: string | null;
+    coverageLimitations?: string[];
+  };
+  changesSinceBaseline?: {
+    summary?: string;
+    addedCount?: number | null;
+    removedCount?: number | null;
+  };
+};
+
+function claimsById(bundle: CanonicalClaimsBundle): Map<string, CanonicalClaim> {
+  return new Map(bundle.claims.map((c) => [c.claimId, c]));
+}
+
+function stripInternalLeak(text: string): string {
+  return String(text ?? "")
+    .replace(/\[finding-[^\]]+\]/giu, "")
+    .replace(/inventory:[a-z0-9_-]+/giu, "")
+    .replace(/claim-[a-f0-9]{8,}/giu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function collectClientStrings(pack: Omit<ClientSummaryPack, "gates" | "trace" | "schemaVersion" | "caseId" | "datasetId" | "sourceHashes" | "evidenceRefs" | "subjectId"> & {
+  overallAssessment: ClientSummaryPack["overallAssessment"];
+  materialThemes: ClientMaterialTheme[];
+  isolatedSignificantItems: ClientIsolatedItem[];
+  internationalDatabases: InternationalDatabaseEntry[];
+  nextSteps: string[];
+  scope: ClientSummaryPack["scope"];
+  changesSinceBaseline: ClientSummaryPack["changesSinceBaseline"];
+}): string[] {
+  const out: string[] = [];
+  const push = (v: string | string[] | null | undefined) => {
+    if (Array.isArray(v)) for (const x of v) out.push(String(x));
+    else if (v) out.push(String(v));
+  };
+  push(pack.overallAssessment.conclusion);
+  push(pack.overallAssessment.reasons);
+  push(pack.overallAssessment.limitations);
+  push(pack.scope.coverageLimitations);
+  push(pack.scope.period.collectedLabel);
+  push(pack.scope.period.newestLabel);
+  push(pack.changesSinceBaseline.summary);
+  push(pack.nextSteps);
+  for (const t of pack.materialThemes) {
+    push(t.clientTitle);
+    push(t.conclusion);
+    push(t.concreteClaims);
+    push(t.whyItMatters);
+    push(t.qualification);
+    push(t.recommendedChecks);
+    for (const a of t.representativeArticles) {
+      push(a.title);
+      push(a.domain);
+      push(a.conciseCompleteDescription);
+      push(a.sourceAllegationOrStatus);
+      push(a.clientQualification);
+    }
+  }
+  for (const i of pack.isolatedSignificantItems) {
+    push(i.title);
+    push(i.domain);
+    push(i.description);
+    push(i.qualification);
+  }
+  for (const d of pack.internationalDatabases) {
+    push(d.databaseName);
+    push(d.statusSummary);
+    push(d.qualification);
+  }
+  return out;
+}
+
+function countInternalTokens(texts: string[]): number {
+  let n = 0;
+  for (const t of texts) {
+    if (INTERNAL_CLIENT_TOKEN_RE.test(t)) n += 1;
+  }
+  return n;
+}
+
+function riskFromMateriality(levels: MaterialityLevel[]): RiskLevel {
+  const max = levels.reduce((a, b) => (LEVEL_RANK[b] > LEVEL_RANK[a] ? b : a), "CONTEXT_ONLY" as MaterialityLevel);
+  if (max === "CRITICAL") return "critical";
+  if (max === "HIGH") return "high";
+  if (max === "MEDIUM") return "medium";
+  if (max === "LOW") return "low";
+  return "none";
+}
+
+function whyItMatters(themeId: CanonicalThemeId): string {
+  switch (themeId) {
+    case "criminal_judicial":
+      return "Для банка или партнёра судебные и криминальные сюжеты обычно становятся поводом для расширенной проверки статусов дел и первоисточников.";
+    case "corruption_integrity":
+      return "Коррупционные и этические сюжеты повышают требования к проверке связей, конфликтов интересов и первичных документов.";
+    case "sanctions_pep_rca_compliance":
+      return "Санкционные и мониторинговые совпадения отрабатываются в первую очередь при KYC и онбординге.";
+    case "political_public_exposure":
+      return "Политическая публичная экспозиция усиливает вопросы о влиянии, приемлемости контрагента и согласованной позиции для комплаенс-запросов.";
+    case "offshore_financial_transparency":
+      return "Офшорные и непрозрачные структуры владения типично требуют раскрытия бенефициаров и источников контроля.";
+    case "business_ownership_associates":
+      return "Деловые связи и круг связанных лиц могут расширять периметр due diligence.";
+    case "regulatory":
+      return "Регуляторное внимание повышает необходимость сверки ограничений и официальных статусов.";
+    case "reputational_scandal":
+      return "Устойчивые скандальные сюжеты влияют на репутационную оценку даже при отсутствии судебного приговора.";
+    case "family_personal_risk_relevant":
+      return "Семейные и личные связи учитываются, если они меняют профиль риска или переносят негатив на субъекта.";
+    case "identity_mismatch":
+      return "Ошибочная идентификация требует отделения материалов других лиц от профиля субъекта.";
+    default:
+      return "Тема учитывается при оценке комплаенс- и репутационных рисков сделки.";
+  }
+}
+
+function articleFromSelection(
+  claim: CanonicalClaim,
+  title: string,
+  domain: string,
+  excerpt: string
+): RepresentativeArticle {
+  const cleanTitle = stripInternalLeak(title || claim.originalTitle || "Материал без заголовка");
+  const cleanDomain = domain || claim.sourceDomains[0] || "неизвестный источник";
+  const description = stripInternalLeak(
+    excerpt ||
+      claim.displayExcerpt ||
+      (cleanTitle
+        ? `«${cleanTitle}» — источник ${cleanDomain}.`
+        : "Описание материала сохранено в доказательной трассе.")
+  );
+  const allegation = stripInternalLeak(
+    claim.claimKind === "DATABASE_STATUS"
+      ? "Статус в комплаенс-/мониторинговой базе требует сверки карточки."
+      : claim.claimKind === "OFFICIAL_RECORD"
+        ? "Официальная или реестровая запись; сверить актуальность статуса."
+        : "В материале сообщается о связанных с субъектом обстоятельствах; утверждения источника не равны установленному факту."
+  );
+  return {
+    title: cleanTitle,
+    domain: cleanDomain,
+    sourceDate: claim.dates[0] ?? null,
+    conciseCompleteDescription: description,
+    sourceAllegationOrStatus: allegation,
+    evidenceRefs: [...claim.evidenceRefs],
+    confidence: claim.confidence,
+    materialityLevel: claim.materialityLevel,
+    clientQualification: stripInternalLeak(claim.clientQualification),
+    claimKind: claim.claimKind,
+  };
+}
+
+function buildThemeBlock(
+  themeId: CanonicalThemeId,
+  selection: RepresentativeEvidenceSelection,
+  byClaim: Map<string, CanonicalClaim>
+): ClientMaterialTheme | null {
+  const selected = selection.selectedByTheme[themeId] ?? [];
+  if (selected.length === 0) return null;
+
+  const articles: RepresentativeArticle[] = [];
+  const evidenceRefs = new Set<string>();
+  const domains = new Set<string>();
+  const concreteClaims: string[] = [];
+  let ceiling: MaterialityLevel = "CONTEXT_ONLY";
+  let qualification = "";
+
+  for (const sel of selected) {
+    const claim = byClaim.get(sel.claimId);
+    if (!claim) continue;
+    if (claim.subjectMatch === "OTHER_SUBJECT") continue;
+    if (LEVEL_RANK[claim.materialityLevel] > LEVEL_RANK[ceiling]) {
+      ceiling = claim.materialityLevel;
+    }
+    const article = articleFromSelection(
+      claim,
+      sel.originalTitle,
+      sel.sourceDomain,
+      sel.displayExcerpt
+    );
+    // Invariant: if data exists, title/domain/description must be present.
+    if (!article.title || !article.domain || !article.conciseCompleteDescription) continue;
+    articles.push(article);
+    for (const r of article.evidenceRefs) evidenceRefs.add(r);
+    domains.add(article.domain);
+    concreteClaims.push(
+      stripInternalLeak(
+        `В выборке: «${article.title}» (${article.domain}). ${article.sourceAllegationOrStatus}`
+      )
+    );
+    if (!qualification) qualification = article.clientQualification;
+  }
+
+  if (articles.length === 0 || evidenceRefs.size === 0 || concreteClaims.length === 0) {
+    return null;
+  }
+
+  const clientTitle = themeLabelRu(themeId);
+  const lead = articles[0]!;
+  const conclusion = stripInternalLeak(
+    `По теме «${clientTitle}» найдены конкретные материалы, в том числе «${lead.title}» (${lead.domain}).`
+  );
+
+  return {
+    themeId,
+    clientTitle,
+    conclusion,
+    concreteClaims,
+    representativeArticles: articles,
+    whyItMatters: whyItMatters(themeId),
+    qualification:
+      qualification ||
+      "Сведения требуют проверки по первичным документам; наличие публикации не подтверждает изложенные обвинения.",
+    recommendedChecks: [
+      stripInternalLeak(
+        `Сверить первоисточники и статус материалов по теме «${clientTitle}».`
+      ),
+      "Подготовить согласованную позицию для KYC и партнёрских запросов.",
+    ],
+    materialityLevel: ceiling,
+    evidenceRefs: [...evidenceRefs],
+    sourceDomains: [...domains],
+  };
+}
+
+function buildInternationalDatabases(
+  claims: CanonicalClaim[]
+): InternationalDatabaseEntry[] {
+  const dbClaims = claims.filter(
+    (c) =>
+      c.subjectMatch !== "OTHER_SUBJECT" &&
+      (c.claimKind === "DATABASE_STATUS" ||
+        c.sourceDomains.some((d) => DATABASE_DOMAIN.test(d)) ||
+        c.themeIds.includes("sanctions_pep_rca_compliance"))
+  );
+  const byDomain = new Map<string, CanonicalClaim[]>();
+  for (const c of dbClaims) {
+    const domain =
+      c.sourceDomains.find((d) => DATABASE_DOMAIN.test(d)) ?? c.sourceDomains[0] ?? "compliance-db";
+    // Keep media sanctions out of "international databases" block unless DB-like.
+    if (!DATABASE_DOMAIN.test(domain) && c.claimKind !== "DATABASE_STATUS") continue;
+    const list = byDomain.get(domain) ?? [];
+    list.push(c);
+    byDomain.set(domain, list);
+  }
+  const out: InternationalDatabaseEntry[] = [];
+  for (const [domain, list] of [...byDomain.entries()].sort((a, b) =>
+    a[0].localeCompare(b[0])
+  )) {
+    const top = list.sort(
+      (a, b) => LEVEL_RANK[b.materialityLevel] - LEVEL_RANK[a.materialityLevel]
+    )[0]!;
+    const name = /rupep/i.test(domain)
+      ? "RuPEP"
+      : /lexis/i.test(domain)
+        ? "LexisNexis"
+        : /dowjones|dow.?jones/i.test(domain)
+          ? "Dow Jones"
+          : /world.?check/i.test(domain)
+            ? "World-Check"
+            : /ofac/i.test(domain)
+              ? "OFAC / sanctions list"
+              : domain;
+    out.push({
+      databaseName: name,
+      statusSummary: stripInternalLeak(
+        top.originalTitle
+          ? `По открытым/импортированным данным есть сигнал, связанный с записью «${top.originalTitle}».`
+          : "Зафиксирован предварительный сигнал международной или комплаенс-базы."
+      ),
+      qualification: stripInternalLeak(
+        top.clientQualification ||
+          "Сигнал базы требует сверки идентификаторов и полной карточки; без подтверждения не считается установленным фактом."
+      ),
+      evidenceRefs: [...new Set(list.flatMap((c) => c.evidenceRefs))],
+      sourceDomains: [domain],
+    });
+  }
+  return out;
+}
+
+function buildOverallAssessment(
+  subjectId: string,
+  themes: ClientMaterialTheme[],
+  allEvidence: string[]
+): ClientSummaryPack["overallAssessment"] {
+  const levels = themes.map((t) => t.materialityLevel);
+  const riskLevel = riskFromMateriality(levels);
+  const topTitles = themes
+    .slice(0, 4)
+    .map((t) => t.clientTitle)
+    .join("; ");
+  const conclusion = stripInternalLeak(
+    riskLevel === "none"
+      ? `По собранным открытым источникам существенных рисковых тем по субъекту не выделено; вывод ограничен доступностью данных.`
+      : `Итоговая оценка: ${
+          riskLevel === "critical"
+            ? "критический"
+            : riskLevel === "high"
+              ? "высокий"
+              : riskLevel === "medium"
+                ? "средний"
+                : "низкий"
+        } риск. Основные основания: ${topTitles || "подтверждённые темы риска в открытых источниках"}.`
+  );
+  const reasons = themes.slice(0, 6).map((t) =>
+    stripInternalLeak(
+      `${t.clientTitle}: ${t.representativeArticles[0]?.title ?? t.concreteClaims[0]}`
+    )
+  );
+  if (reasons.length === 0) {
+    reasons.push("Существенные темы риска в текущей выборке не сформированы.");
+  }
+  return {
+    riskLevel,
+    conclusion,
+    reasons,
+    limitations: [
+      "Вывод основан на открытых и импортированных источниках; первичные документы могут изменить оценку.",
+      "Медийные утверждения не приравниваются к установленным фактам.",
+    ],
+    evidenceRefs: allEvidence.length > 0 ? allEvidence : ["trace:no-material-themes"],
+  };
+}
+
+export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): ClientSummaryPack {
+  const byClaim = claimsById(input.claimsBundle);
+  const materialThemes: ClientMaterialTheme[] = [];
+
+  // CRITICAL/HIGH themes from representative selection must appear.
+  const requiredHigh = new Set<CanonicalThemeId>();
+  for (const themeId of input.representative.materialThemeIds) {
+    const sels = input.representative.selectedByTheme[themeId] ?? [];
+    const ceiling = sels.reduce(
+      (acc, s) => (LEVEL_RANK[s.materialityLevel] > LEVEL_RANK[acc] ? s.materialityLevel : acc),
+      "CONTEXT_ONLY" as MaterialityLevel
+    );
+    if (ceiling === "CRITICAL" || ceiling === "HIGH" || ceiling === "MEDIUM") {
+      if (themeId !== "identity_mismatch") requiredHigh.add(themeId);
+    }
+  }
+
+  for (const themeId of [...input.representative.materialThemeIds].sort()) {
+    if (themeId === "identity_mismatch") continue;
+    const block = buildThemeBlock(themeId, input.representative, byClaim);
+    if (block) materialThemes.push(block);
+  }
+
+  // Count missing CRITICAL/HIGH themes (gate).
+  let missing = 0;
+  for (const themeId of requiredHigh) {
+    const ceiling = (input.representative.selectedByTheme[themeId] ?? []).reduce(
+      (acc, s) => (LEVEL_RANK[s.materialityLevel] > LEVEL_RANK[acc] ? s.materialityLevel : acc),
+      "CONTEXT_ONLY" as MaterialityLevel
+    );
+    if (
+      (ceiling === "CRITICAL" || ceiling === "HIGH") &&
+      !materialThemes.some((t) => t.themeId === themeId)
+    ) {
+      missing += 1;
+    }
+  }
+
+  const isolatedSignificantItems: ClientIsolatedItem[] = [];
+  for (const iso of input.representative.isolatedSignificantItems) {
+    const claim = byClaim.get(iso.claimId);
+    if (!claim || claim.subjectMatch === "OTHER_SUBJECT") continue;
+    // AMBIGUOUS never presented as established fact.
+    const qualification =
+      claim.subjectMatch === "AMBIGUOUS" ||
+      claim.subjectMatch === "INSUFFICIENT_IDENTIFIERS"
+        ? "Принадлежность субъекту не подтверждена; материал не включается в итог как факт об этом лице."
+        : stripInternalLeak(claim.clientQualification);
+    const domain = iso.sourceDomains[0] || claim.sourceDomains[0] || "неизвестный источник";
+    isolatedSignificantItems.push({
+      title: stripInternalLeak(iso.originalTitle || claim.originalTitle || "Единичный материал"),
+      domain,
+      description: stripInternalLeak(iso.displayExcerpt),
+      qualification,
+      materialityLevel: iso.materialityLevel,
+      evidenceRefs: [...iso.evidenceRefs],
+    });
+  }
+
+  const internationalDatabases = buildInternationalDatabases(
+    input.claimsBundle.claims.filter((c) => c.subjectMatch !== "OTHER_SUBJECT")
+  );
+
+  const allEvidence = [
+    ...new Set(materialThemes.flatMap((t) => t.evidenceRefs)),
+  ];
+  const overallAssessment = buildOverallAssessment(
+    input.subjectId,
+    materialThemes,
+    allEvidence
+  );
+
+  const nextSteps = [
+    ...new Set(
+      materialThemes.flatMap((t) => t.recommendedChecks).concat([
+        "Сверить актуальность санкционных и мониторинговых записей по официальным источникам.",
+        "Подготовить единый пакет документов для KYC и партнёрских запросов.",
+      ])
+    ),
+  ].slice(0, 8);
+
+  const scope = {
+    regions: input.scope?.regions ?? ["RU", "UAE"],
+    sourceClasses: input.scope?.sourceClasses ?? [
+      "поисковая выдача",
+      "открытые СМИ",
+      "комплаенс-базы",
+    ],
+    surfaces: input.scope?.surfaces ?? [
+      "organic",
+      "suggestions",
+      "images",
+      "ai_answers",
+      "compliance",
+    ],
+    period: {
+      collectedLabel: input.scope?.collectedLabel ?? "по дате сбора в кейсе",
+      newestLabel: input.scope?.newestLabel ?? null,
+    },
+    coverageLimitations: (input.scope?.coverageLimitations ?? []).map(stripInternalLeak),
+  };
+
+  const changesSinceBaseline = {
+    summary: stripInternalLeak(
+      input.changesSinceBaseline?.summary ??
+        "Сравнение с baseline отражено в отдельном отчёте об изменениях, если он доступен."
+    ),
+    addedCount: input.changesSinceBaseline?.addedCount ?? null,
+    removedCount: input.changesSinceBaseline?.removedCount ?? null,
+  };
+
+  const findingIds = [
+    ...new Set(input.claimsBundle.claims.flatMap((c) => c.provenance.findingIds)),
+  ];
+  const dispositionRefs = [
+    ...new Set(input.claimsBundle.claims.map((c) => c.dispositionRef)),
+  ];
+
+  const draftClient = {
+    scope,
+    overallAssessment,
+    materialThemes,
+    isolatedSignificantItems,
+    internationalDatabases,
+    changesSinceBaseline,
+    nextSteps,
+  };
+  const internalTokenHits = countInternalTokens(collectClientStrings(draftClient));
+
+  let assertionsWithoutEvidence = 0;
+  for (const t of materialThemes) {
+    if (t.evidenceRefs.length === 0) assertionsWithoutEvidence += 1;
+    if (t.concreteClaims.length === 0) assertionsWithoutEvidence += 1;
+    for (const a of t.representativeArticles) {
+      if (a.evidenceRefs.length === 0) assertionsWithoutEvidence += 1;
+      if (a.claimKind === "SOURCE_ALLEGATION" && !a.clientQualification.trim()) {
+        assertionsWithoutEvidence += 1;
+      }
+    }
+  }
+
+  const valid =
+    missing === 0 &&
+    assertionsWithoutEvidence === 0 &&
+    internalTokenHits === 0 &&
+    materialThemes.every(
+      (t) =>
+        t.representativeArticles.every(
+          (a) => a.title && a.domain && a.conciseCompleteDescription
+        ) && t.evidenceRefs.length > 0
+    );
+
+  const pack: ClientSummaryPack = {
+    schemaVersion: CLIENT_SUMMARY_PACK_SCHEMA_VERSION,
+    caseId: input.caseId,
+    datasetId: input.datasetId,
+    sourceHashes: input.sourceHashes,
+    evidenceRefs: allEvidence,
+    subjectId: input.subjectId,
+    scope,
+    overallAssessment,
+    materialThemes,
+    isolatedSignificantItems,
+    internationalDatabases,
+    changesSinceBaseline,
+    nextSteps,
+    trace: {
+      claimIds: input.claimsBundle.claims.map((c) => c.claimId),
+      findingIds,
+      dispositionRefs,
+      representativeSelectionRef: "representative-evidence-selection.json",
+      canonicalClaimsRef: "canonical-claims.json",
+      p1p2Account: input.representative.p1p2Account.map((p) => ({
+        findingId: p.findingId,
+        status: p.status,
+        reasonCode: p.reasonCode,
+      })),
+    },
+    gates: {
+      CLIENT_SUMMARY_PACK_VALID: valid,
+      MATERIAL_THEMES_MISSING: missing,
+      CLIENT_ASSERTIONS_WITHOUT_EVIDENCE: assertionsWithoutEvidence,
+      INTERNAL_TOKENS_IN_CLIENT_FIELDS: internalTokenHits,
+    },
+  };
+
+  return ClientSummaryPackSchema.parse(pack);
+}
+
+export function assertClientSummaryPackGatesPass(pack: ClientSummaryPack): void {
+  const g = pack.gates;
+  if (!g.CLIENT_SUMMARY_PACK_VALID) {
+    throw new Error("CLIENT_SUMMARY_PACK_VALID=false");
+  }
+  if (g.MATERIAL_THEMES_MISSING !== 0) {
+    throw new Error(`MATERIAL_THEMES_MISSING=${g.MATERIAL_THEMES_MISSING}`);
+  }
+  if (g.CLIENT_ASSERTIONS_WITHOUT_EVIDENCE !== 0) {
+    throw new Error(
+      `CLIENT_ASSERTIONS_WITHOUT_EVIDENCE=${g.CLIENT_ASSERTIONS_WITHOUT_EVIDENCE}`
+    );
+  }
+  if (g.INTERNAL_TOKENS_IN_CLIENT_FIELDS !== 0) {
+    throw new Error(`INTERNAL_TOKENS_IN_CLIENT_FIELDS=${g.INTERNAL_TOKENS_IN_CLIENT_FIELDS}`);
+  }
+}
