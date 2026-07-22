@@ -538,10 +538,11 @@ def _clip_structured_bullet(text: str, max_chars: int) -> str:
             continue
         if re.search(r",\s*с негативным контекстом\s+[—–-]\s*\.?$", ln, re.I):
             continue
+        # PDF-49 — dangling token must follow « or whitespace (not «…Дерипаски»).
         if re.search(
-            r"«[^»]*(?:из-за|и|в|во|на|по|с|со|and|or|of|to|for|with|from|by|over)\s*»",
+            r"«.*(?:«|\s)(?:из-за|и|в|во|на|по|с|со|о|об|and|or|of|the|to|for|with|from|by|over)\s*»",
             ln,
-            re.I,
+            re.I | re.S,
         ):
             continue
         # PDF-48 — drop quotes that end on a comma/colon stub («…Дерипаски,»).

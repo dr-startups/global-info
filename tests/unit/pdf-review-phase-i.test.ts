@@ -140,11 +140,29 @@ describe("I.4 — structured fit preserves meta", () => {
     );
     expect(fitted).not.toMatch(/из-за»/u);
   });
+
+  it("keeps ФБК/Дерипаски evidence quote (no false dangling on genitive -и)", () => {
+    const fitted = fitStructuredBullet(
+      [
+        "«Политические связи / публичная экспозиция»",
+        "Найдены материалы о политической и публичной экспозиции субъекта:",
+        "«Oleg Deripaska: Putin 'favourite' with strong ties to UK politics» — источник theguardian.com",
+        "«Расследование ФБК об отдыхе заместителя главы правительства России Сергея Приходько в компании Олега Дерипаски» — источник currenttime.tv",
+        "Всего по теме: 14 материалов, с негативным контекстом — 4.",
+        "Где видно: theguardian.com, currenttime.tv.",
+        "Что делать: Зафиксировать хронологию публичных контактов.",
+      ].join("\n"),
+      900
+    );
+    expect(fitted).toMatch(/ФБК/u);
+    expect(fitted).toMatch(/currenttime\.tv/u);
+    expect(fitted).toMatch(/Дерипаски»/u);
+  });
 });
 
 describe("I.5 — versions", () => {
   it("bumps GPT slide-copy prompt", () => {
-    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v15");
+    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v16");
   });
 });
 

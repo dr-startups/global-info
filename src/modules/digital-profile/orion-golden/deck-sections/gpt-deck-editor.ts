@@ -27,6 +27,7 @@ import {
   contentHashOf,
   GPT_SLIDE_COPY_FIELD_BUDGETS,
   isHonestEmptyStateSlide,
+  rejectDroppedEvidenceQuotes,
   rejectReason,
   rejectWeakQuoteLines,
 } from "./llm-slide-copy";
@@ -214,9 +215,15 @@ function applyEditorOverridesToPack(input: {
 
     // Chunked bullet sequences stay untouched (same guard as stage 2).
     if (o.bullets && !continuationBases.has(slide.slideId)) {
+      const draftBullets = slide.content.bullets ?? [];
       const reflowed = o.bullets.map((b) => reflowThemeBullet(b.trim()));
       const reasons = reflowed
-        .map((b) => rejectReason(b, TEXT_BUDGETS.bullet, allowed) ?? rejectWeakQuoteLines(b))
+        .map(
+          (b, i) =>
+            rejectReason(b, TEXT_BUDGETS.bullet, allowed) ??
+            rejectWeakQuoteLines(b) ??
+            rejectDroppedEvidenceQuotes(draftBullets[i] ?? "", b)
+        )
         .filter((r): r is string => Boolean(r));
       if (reasons.length > 0) {
         report.rejectedFields.push(`${slide.slideId}.bullets:${reasons[0]}`);

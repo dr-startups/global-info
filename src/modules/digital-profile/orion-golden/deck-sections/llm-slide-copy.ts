@@ -38,8 +38,8 @@ import type { GptDeckComposition } from "./gpt-deck-composer";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
 import { isWeakExampleTitle } from "../analytics/finding-synthesizer";
 
-/** v15 — PDF-48: never publish incomplete snippet quotes («…Дерипаски,»). */
-export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v15";
+/** v16 — PDF-49: never drop evidence quotes ending in «…Дерипаски». */
+export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v16";
 
 /** Mirrors section-validation budgets — from client-text-contract (§6.1). */
 export const GPT_SLIDE_COPY_FIELD_BUDGETS = (() => {
@@ -443,6 +443,29 @@ export function rejectWeakQuoteLines(bullet: string): string | null {
   return null;
 }
 
+/**
+ * PDF-49 — GPT must not silently drop evidence quotes/domains already present
+ * in the deterministic draft (e.g. currenttime.tv / ФБК line).
+ */
+export function rejectDroppedEvidenceQuotes(draft: string, next: string): string | null {
+  const srcRe = /—\s*источник\s+([A-Za-z0-9][A-Za-z0-9.-]*)/giu;
+  const quoteRe = /«[^»]{8,}»\s*—\s*источник\s+[A-Za-z0-9][A-Za-z0-9.-]*/giu;
+  const draftDomains = [...String(draft ?? "").matchAll(srcRe)].map((m) => m[1]!.toLowerCase());
+  if (draftDomains.length === 0) return null;
+  const nextDomains = new Set(
+    [...String(next ?? "").matchAll(srcRe)].map((m) => m[1]!.toLowerCase())
+  );
+  for (const d of draftDomains) {
+    if (!nextDomains.has(d)) return `dropped-evidence-domain:${d}`;
+  }
+  const draftQuotes = [...String(draft ?? "").matchAll(quoteRe)].length;
+  const nextQuotes = [...String(next ?? "").matchAll(quoteRe)].length;
+  if (draftQuotes > 0 && nextQuotes < draftQuotes) {
+    return `dropped-evidence-quotes:${nextQuotes}<${draftQuotes}`;
+  }
+  return null;
+}
+
 export function contentHashOf(slides: SlideContentContract[]): string {
   return `sha256:${createHash("sha256").update(JSON.stringify(slides)).digest("hex")}`;
 }
@@ -562,9 +585,15 @@ function applyOverrides(input: {
     // Bullets stay deterministic when the slide has chunked continuations
     // (rewriting only the base chunk would desynchronize the sequence).
     if (o.bullets && !continuationBases.has(slide.slideId)) {
+      const draftBullets = slide.content.bullets ?? [];
       const reflowed = o.bullets.map((b) => reflowThemeBullet(b.trim()));
       const reasons = reflowed
-        .map((b) => rejectReason(b, TEXT_BUDGETS.bullet, allowed) ?? rejectWeakQuoteLines(b))
+        .map(
+          (b, i) =>
+            rejectReason(b, TEXT_BUDGETS.bullet, allowed) ??
+            rejectWeakQuoteLines(b) ??
+            rejectDroppedEvidenceQuotes(draftBullets[i] ?? "", b)
+        )
         .filter((r): r is string => Boolean(r));
       if (reasons.length > 0) {
         rejectedFields.push(`${slide.slideId}.bullets:${reasons[0]}`);

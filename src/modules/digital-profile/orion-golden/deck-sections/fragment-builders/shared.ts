@@ -347,8 +347,10 @@ export function fitStructuredBullet(text: string, maxChars: number): string {
   const incompleteMetaRe =
     /^(Что делать|Всего по теме|В корпусе|Где видно)\s*:\s*\.?$/iu;
   const danglingCountRe = /,\s*с негативным контекстом\s+[—–-]\s*\.?$/u;
+  // PDF-49 — dangling token must be preceded by « or whitespace. Bare `и»`
+  // inside «…Дерипаски» was a false positive that deleted the ФБК quote.
   const danglingQuoteRe =
-    /^«.*(?:из-за|и|в|во|на|по|с|со|о|об|and|or|of|the|to|for|with|from|by|over)\s*»/iu;
+    /^«.*(?:«|\s)(?:из-за|и|в|во|на|по|с|со|о|об|and|or|of|the|to|for|with|from|by|over)\s*»/iu;
   const incompleteQuoteRe = /^«.*[,;:]\s*»/u;
 
   let lines = raw
@@ -370,11 +372,13 @@ export function fitStructuredBullet(text: string, maxChars: number): string {
   const isScale = (l: string) => /^(Всего по теме:|В корпусе:)/u.test(l);
   const isQuote = (l: string) => /^«/.test(l) && /источник/iu.test(l);
 
+  // PDF-49 — evidence quotes are last to drop (why/where/scale go first).
+  // Previously the 2nd quote was sacrificed before meta, so ФБК/currenttime vanished.
   const droppers: Array<(l: string, all: string[]) => boolean> = [
     (l) => isWhy(l),
-    (l, all) => isQuote(l) && all.filter(isQuote).indexOf(l) >= 1,
     (l) => isWhere(l),
     (l) => isScale(l),
+    (l, all) => isQuote(l) && all.filter(isQuote).indexOf(l) >= 1,
   ];
   let kept = [...lines];
   for (const pred of droppers) {
