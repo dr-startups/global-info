@@ -159,18 +159,159 @@ const CLIENT_THEME_WHY: Record<string, string> = {
 
 export type ClaimEvidenceExample = { title: string; domain: string };
 
-/** Cap a quote for a bullet line without mid-word cuts when possible. */
-function quoteForClaim(title: string, budget = 110): string {
+const DANGLING_TAIL_RE =
+  /\b(and|or|of|the|a|an|to|for|with|from|by|и|в|на|по|с|о|об|из|для|как|что)\s*$/iu;
+const BIO_SEO_RE = /биограф(?:ия|ии)?|личная жизнь|фото|новости|карьера|wiki(?:pedia)?/iu;
+const ADVERSE_THEME_IDS = new Set([
+  "criminal_legal",
+  "pep_rca_watchlist",
+  "political_exposure",
+  "offshore_corporate",
+  "family_associates",
+  "financial_claims",
+  "security_scrutiny",
+]);
+const STRONG_DOMAIN_RE =
+  /reuters\.|nytimes\.|justice\.gov|treasury\.gov|ofac\.|europa\.eu|bbc\.|theguardian\.|kommersant\.|rbc\.ru|vedomosti\.|cnbc\.|ft\.com|wsj\.|bloomberg\./iu;
+
+/** True for titles that are only a person name (no risk essence). */
+function looksLikeBarePersonName(title: string): boolean {
+  const t = title.replace(/^[«"]|[»"]$/gu, "").trim();
+  if (/[0-9:/]/u.test(t) || BIO_SEO_RE.test(t)) return false;
+  // Latin: Oleg V Deripaska / Oleg Deripaska
+  if (/^[A-Z][a-z]+(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-z]+){1,2}$/u.test(t)) return true;
+  // Cyrillic FIO only: Олег Дерипаска / Олег Владимирович Дерипаска
+  if (/^[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2}$/u.test(t)) return true;
+  return false;
+}
+
+/** Cap a quote for a bullet line; never leave a dangling function-word tail. */
+export function quoteForClaim(title: string, budget = 120): string {
   const t = cleanExampleTitle(title);
-  if (t.length <= budget) return t;
+  if (t.length <= budget) {
+    return DANGLING_TAIL_RE.test(t) ? t.replace(DANGLING_TAIL_RE, "").trim() : t;
+  }
   const slice = t.slice(0, budget);
   const cut = Math.max(slice.lastIndexOf(" "), slice.lastIndexOf(","), slice.lastIndexOf("—"));
-  const body = (cut > budget * 0.45 ? slice.slice(0, cut) : slice).trim();
-  return `${body.replace(/[\s,;:.—–-]+$/u, "")}…`;
+  let body = (cut > budget * 0.45 ? slice.slice(0, cut) : slice).trim();
+  body = body.replace(/[\s,;:.—–-]+$/u, "").trim();
+  if (DANGLING_TAIL_RE.test(body)) {
+    body = body.replace(DANGLING_TAIL_RE, "").trim();
+  }
+  return body ? `${body}…` : t.slice(0, Math.min(budget, t.length)).trim();
 }
 
 /**
- * PDF-40 G.2b — concrete claim: framing → «headline» — источник domain → why.
+ * PDF-44 H.1 — reject bare FIO / SEO-bio / truncated SERP titles that hide risk essence.
+ */
+export function isWeakExampleTitle(
+  title: string,
+  opts?: { theme?: ThemeDef }
+): boolean {
+  const t = cleanExampleTitle(title);
+  if (!t || t.length < 12) return true;
+  if (/^potential\s+match$/i.test(t) || /^потенциальное совпадение$/i.test(t)) return true;
+  if (DANGLING_TAIL_RE.test(t)) return true;
+  // SERP cut mid-phrase: trailing ellipsis in the raw title + dangling function word.
+  const raw = String(title ?? "");
+  if (/(?:\.\.\.|…)\s*$/u.test(raw) && DANGLING_TAIL_RE.test(t)) return true;
+
+  const themeHit = opts?.theme ? opts.theme.keywords.test(t) : false;
+
+  // Bare / near-bare person name: «Oleg V Deripaska», «Олег Дерипаска».
+  if (!themeHit && looksLikeBarePersonName(t)) {
+    return true;
+  }
+
+  // SEO biography blurbs as the only “evidence” for an adverse theme.
+  if (
+    opts?.theme &&
+    ADVERSE_THEME_IDS.has(opts.theme.themeId) &&
+    BIO_SEO_RE.test(t) &&
+    !themeHit
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+/** PDF-44 H.1 — rank evidence for client quotes (theme hit in title beats snippet-only). */
+export function scoreExampleForTheme(item: RawInventoryItem, theme: ThemeDef): number {
+  const title = cleanExampleTitle(String(item.title ?? ""));
+  const snippet = String(item.snippet ?? "").trim();
+  const domain = domainOf(item.sourceUrl);
+  let score = 0;
+  if (theme.keywords.test(title)) score += 8;
+  else if (snippet && theme.keywords.test(snippet)) score += 3;
+  if (itemIsAdverse(item)) score += 2;
+  const tokens = title.split(/\s+/u).filter(Boolean).length;
+  if (tokens >= 6) score += 2;
+  else if (tokens >= 4) score += 1;
+  if (title.length >= 40) score += 1;
+  if (STRONG_DOMAIN_RE.test(domain)) score += 1;
+  if (isWeakExampleTitle(title, { theme })) score -= 12;
+  if (!title && snippet.length >= 40) score += 1;
+  return score;
+}
+
+/**
+ * PDF-44 H.2 — pick a client-facing quote: strong title, else theme-relevant snippet.
+ */
+export function resolveExampleQuote(
+  item: RawInventoryItem,
+  theme: ThemeDef
+): ClaimEvidenceExample | null {
+  const domain = domainOf(item.sourceUrl);
+  const title = cleanExampleTitle(String(item.title ?? ""));
+  if (title && !isWeakExampleTitle(title, { theme })) {
+    const q = quoteForClaim(title, 120);
+    if (q && !isWeakExampleTitle(q, { theme })) {
+      return { title: q, domain };
+    }
+  }
+
+  const snip = String(item.snippet ?? "")
+    .replace(/\s+/gu, " ")
+    .trim();
+  if (snip.length >= 40 && (theme.keywords.test(snip) || getAdversePatterns().test(snip))) {
+    const sentence = (snip.split(/(?<=[.!?…])\s+/u)[0] ?? snip).trim();
+    const q = quoteForClaim(sentence, 120);
+    if (q.length >= 24 && !isWeakExampleTitle(q, { theme })) {
+      return { title: q, domain };
+    }
+  }
+  return null;
+}
+
+/** Pick up to 2 ranked, non-weak quotes from a finding evidence bucket. */
+export function pickClaimExamples(
+  items: RawInventoryItem[],
+  theme: ThemeDef,
+  adverseItems: RawInventoryItem[] = []
+): ClaimEvidenceExample[] {
+  const adverseSet = new Set(adverseItems);
+  const ranked = [...items].sort((a, b) => {
+    const sa = scoreExampleForTheme(a, theme) + (adverseSet.has(a) ? 0.5 : 0);
+    const sb = scoreExampleForTheme(b, theme) + (adverseSet.has(b) ? 0.5 : 0);
+    return sb - sa;
+  });
+  const examples: ClaimEvidenceExample[] = [];
+  const seen = new Set<string>();
+  for (const i of ranked) {
+    const ex = resolveExampleQuote(i, theme);
+    if (!ex?.title) continue;
+    const key = `${ex.title.toLowerCase()}|${ex.domain}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    examples.push(ex);
+    if (examples.length >= 2) break;
+  }
+  return examples;
+}
+
+/**
+ * PDF-40 G.2b / PDF-44 H — concrete claim: framing (+ domain anchor) → quotes → scale → why.
  * Theme label is prepended by consumers (`themedClaim`).
  */
 export function buildClientFacingClaim(input: {
@@ -184,7 +325,7 @@ export function buildClientFacingClaim(input: {
   /** @deprecated kept for call-site compat; ignored when examples is set. */
   titles?: string[];
 }): string {
-  const framing =
+  const baseFraming =
     CLIENT_THEME_FRAMING[input.theme.themeId] ??
     `Найдены публикации по теме «${input.theme.label}»`;
   const why =
@@ -202,20 +343,25 @@ export function buildClientFacingClaim(input: {
       (e) =>
         e.title.length >= 12 &&
         !/^potential\s+match$/i.test(e.title) &&
-        !/^потенциальное совпадение$/i.test(e.title)
+        !/^потенциальное совпадение$/i.test(e.title) &&
+        !isWeakExampleTitle(e.title, { theme: input.theme })
     );
   // Compat path: old callers still pass titles/domains separately.
   if (examples.length === 0 && (input.titles?.length || input.domains?.length)) {
     const domains = input.domains ?? [];
     examples = (input.titles ?? [])
       .map((t, i) => ({ title: cleanExampleTitle(t), domain: domains[i] ?? domains[0] ?? "" }))
-      .filter((e) => e.title.length >= 12);
+      .filter(
+        (e) => e.title.length >= 12 && !isWeakExampleTitle(e.title, { theme: input.theme })
+      );
   }
 
-  const quoteLines = examples.slice(0, 2).map((e) => {
-    const q = quoteForClaim(e.title, 110);
-    return e.domain ? `«${q}» — источник ${e.domain}` : `«${q}»`;
-  });
+  const quoteLines: string[] = [];
+  for (const e of examples.slice(0, 2)) {
+    const q = quoteForClaim(e.title, 120);
+    if (!q || isWeakExampleTitle(q, { theme: input.theme })) continue;
+    quoteLines.push(e.domain ? `«${q}» — источник ${e.domain}` : `«${q}»`);
+  }
 
   const total = pluralRu(input.itemsCount, "материал", "материала", "материалов");
   const scale =
@@ -223,8 +369,25 @@ export function buildClientFacingClaim(input: {
       ? `Всего по теме: ${input.itemsCount} ${total}, с негативным контекстом — ${input.adverseCount}.`
       : `Всего по теме: ${input.itemsCount} ${total}.`;
 
+  const anchorDomains = [
+    ...new Set(
+      [
+        ...examples.map((e) => e.domain),
+        ...(input.domains ?? []).map((d) => d.replace(/^www\./iu, "").trim()),
+      ].filter(Boolean)
+    ),
+  ].slice(0, 2);
+  const framing =
+    quoteLines.length > 0 && anchorDomains.length > 0
+      ? `${baseFraming} (в т.ч. материалы на ${anchorDomains.join(" / ")})`
+      : baseFraming;
+
   if (quoteLines.length === 0) {
-    return [`${framing}.`, scale, why].join("\n");
+    const domainHint = (input.domains ?? []).filter(Boolean).slice(0, 3).join(", ");
+    const gap = domainHint
+      ? `По теме ${input.itemsCount} ${total} в источниках ${domainHint}; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.`
+      : `По теме ${input.itemsCount} ${total}; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.`;
+    return [`${framing}.`, gap, scale, why].join("\n");
   }
   return [`${framing}:`, ...quoteLines, scale, why].join("\n");
 }
@@ -485,22 +648,8 @@ export function synthesizeFindings(input: {
           ? Math.min(0.45 + 0.2 * sourceDiversity, 0.7)
           : 0.35;
 
-    // Prefer adverse evidence for quoted examples; fall back to other items.
-    const exampleItems = [
-      ...adverseItems,
-      ...items.filter((i) => !adverseItems.includes(i)),
-    ];
-    const seenExample = new Set<string>();
-    const examples: ClaimEvidenceExample[] = [];
-    for (const i of exampleItems) {
-      const title = cleanExampleTitle(String(i.title ?? ""));
-      const domain = domainOf(i.sourceUrl);
-      const key = `${title.toLowerCase()}|${domain}`;
-      if (!title || seenExample.has(key)) continue;
-      seenExample.add(key);
-      examples.push({ title, domain });
-      if (examples.length >= 2) break;
-    }
+    // PDF-44 H.1/H.2 — rank by theme substance; never quote bare FIO / SEO-bio.
+    const examples = pickClaimExamples(items, theme, adverseItems);
 
     // PDF-40 G.2b — concrete quotes + domains; theme prepended by consumers.
     const claim = buildClientFacingClaim({
@@ -508,6 +657,7 @@ export function synthesizeFindings(input: {
       itemsCount: items.length,
       adverseCount: adverseItems.length,
       examples,
+      domains,
     });
 
     return FindingSchema.parse({

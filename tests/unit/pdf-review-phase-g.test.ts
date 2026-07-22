@@ -79,13 +79,16 @@ describe("G.1b / G.2 — client claim shape", () => {
       adverseCount: 21,
       examples: [
         { title: "Самый говорливый олигарх. Как Дерипаска из-под…", domain: "dzen.ru" },
-        { title: "Олег Дерипаска: биография предпринимателя", domain: "secrets.tbank.ru" },
+        {
+          title: "Russian tycoon Deripaska cleared of contempt of court in London",
+          domain: "reuters.com",
+        },
       ],
     });
     expect(claim).toMatch(/Найдены публикации/u);
     expect(claim).toContain("«Самый говорливый олигарх.");
     expect(claim).toContain("— источник dzen.ru");
-    expect(claim).toContain("— источник secrets.tbank.ru");
+    expect(claim).toContain("— источник reuters.com");
     expect(claim).toContain("Всего по теме:");
     expect(claim).toMatch(/банк|партн/iu);
     expect(claim).not.toMatch(/в выдаче устойчиво видны/iu);
@@ -102,8 +105,8 @@ describe("G.1b / G.2 — client claim shape", () => {
     expect(body).toContain("Всего по теме:");
   });
 
-  it("slide-copy prompt is v10 (preserve newlines)", () => {
-    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v10");
+  it("slide-copy prompt is v11 (risk essence quotes)", () => {
+    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v11");
   });
 
   it("reflowThemeBullet restores flattened G.2b quote lines (PDF-43)", () => {

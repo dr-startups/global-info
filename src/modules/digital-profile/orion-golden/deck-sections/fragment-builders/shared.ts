@@ -28,9 +28,11 @@ import type { SurfaceClaim } from "../../contracts/surface-analysis";
 import { ADVERSE_PATTERNS } from "../../analytics/surface-analyzers";
 import {
   cleanExampleTitle,
+  isWeakExampleTitle,
   joinTitlesWithinBudget,
   pluralRu,
 } from "../../analytics/finding-synthesizer";
+import { getFindingThemes } from "../../../config/finding-themes";
 import {
   freshnessFootnote,
   reportDiffClientLine,
@@ -842,8 +844,12 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
     frs.length > 0 && frs.every((fr) => regions.some((r) => regionMatches(r, fr)));
   if (exclusive) return themedClaim(f);
 
+  const themeDef = getFindingThemes().find(
+    (t) => t.label === f.theme || f.theme.toLowerCase().includes(t.label.toLowerCase())
+  );
+
   const domains: string[] = [];
-  const titles: string[] = [];
+  const titleCandidates: Array<{ title: string; domain: string; score: number }> = [];
   const seenDomains = new Set<string>();
   const seenTitles = new Set<string>();
   for (const ref of f.evidenceRefs) {
@@ -855,17 +861,26 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
       domains.push(e.domain);
     }
     const t = cleanExampleTitle(String(e.title ?? ""));
-    if (t && !seenTitles.has(t.toLowerCase()) && !/^potential\s+match$/i.test(t)) {
-      seenTitles.add(t.toLowerCase());
-      titles.push(t);
+    if (
+      !t ||
+      seenTitles.has(t.toLowerCase()) ||
+      /^potential\s+match$/i.test(t) ||
+      isWeakExampleTitle(t, { theme: themeDef })
+    ) {
+      continue;
     }
+    seenTitles.add(t.toLowerCase());
+    let score = t.split(/\s+/u).length >= 6 ? 2 : 1;
+    if (themeDef?.keywords.test(t)) score += 8;
+    titleCandidates.push({ title: t, domain: e.domain ?? domains[0] ?? "", score });
   }
+  titleCandidates.sort((a, b) => b.score - a.score);
+  const titles = titleCandidates.map((c) => c.title);
 
-  // PDF-40 G.2b — rebuild claim from this region's evidence only (no foreign
-  // domains/titles leaking into RU/UAE summary cards).
-  const regionalQuotes = titles.slice(0, 2).map((t, i) => {
-    const domain = domains[i] ?? domains[0] ?? "";
-    return domain ? `«${t}» — источник ${domain}` : `«${t}»`;
+  // PDF-40 G.2b / PDF-44 H — rebuild from this region's evidence only; skip weak titles.
+  const regionalQuotes = titleCandidates.slice(0, 2).map((c) => {
+    const domain = c.domain || domains[0] || "";
+    return domain ? `«${c.title}» — источник ${domain}` : `«${c.title}»`;
   });
   const lines = String(f.claim ?? "")
     .replace(/\r\n/gu, "\n")
@@ -885,12 +900,19 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
   if (regionalQuotes.length > 0) {
     // Never reuse a legacy one-line stats dump as framing — it still carries
     // foreign «Источники: dzen.ru…» and defeats regional localization.
-    const framing = g2bFrame ?? "Найдены публикации по теме:";
+    let framing = g2bFrame ?? "Найдены публикации по теме:";
+    const anchors = [
+      ...new Set(titleCandidates.slice(0, 2).map((c) => c.domain).filter(Boolean)),
+    ].slice(0, 2);
+    if (anchors.length > 0 && !/материалы на /u.test(framing)) {
+      framing = framing.replace(/:\s*$/u, "");
+      framing = `${framing} (в т.ч. материалы на ${anchors.join(" / ")}):`;
+    }
     const frame = /:\s*$/u.test(framing) ? framing : `${framing.replace(/[.:]\s*$/u, "")}:`;
     claim = [frame, ...regionalQuotes, scale, why].filter(Boolean).join("\n");
   } else {
     const sourceSegment = domains.length
-      ? `Где видно: ${domains.slice(0, 3).join(", ")}.`
+      ? `По теме в источниках ${domains.slice(0, 3).join(", ")}; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.`
       : "По этой теме источники в данном регионе не выделены — см. другие разделы отчёта.";
     claim = String(f.claim ?? "")
       .replace(
@@ -898,6 +920,15 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
         sourceSegment
       )
       .replace(/Источники:\s.*?\.(?=\s|$)/u, sourceSegment);
+    // Drop weak quote lines from the global claim when rebuilding regionally.
+    claim = claim
+      .split("\n")
+      .filter((ln) => {
+        const m = ln.match(/^«([^»]+)»/u);
+        if (!m) return true;
+        return !isWeakExampleTitle(m[1]!, { theme: themeDef });
+      })
+      .join("\n");
     if (/(?:Пример|Примеры(?:\s+заголовков)?):/u.test(claim)) {
       const titlesSegment = joinTitlesWithinBudget(titles.slice(0, 1), 90);
       claim = titlesSegment

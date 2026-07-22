@@ -36,9 +36,10 @@ import {
 import { riskLevelRu, subjectMatchRu } from "../gpt/client-payload-labels";
 import type { GptDeckComposition } from "./gpt-deck-composer";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
+import { isWeakExampleTitle } from "../analytics/finding-synthesizer";
 
-/** v10 — preserve G.2b newlines in theme bullets / narrative paragraphs (PDF-43). */
-export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v10";
+/** v11 — ban bare-FIO / SEO-bio quotes; demand risk essence (PDF-44 H.3). */
+export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v11";
 
 /** Mirrors section-validation budgets — from client-text-contract (§6.1). */
 export const GPT_SLIDE_COPY_FIELD_BUDGETS = (() => {
@@ -282,7 +283,8 @@ const COPY_INSTRUCTIONS = [
   "Нижняя граница для страниц с данными: каждый заполняемый текстовый блок — не короче ~40% своего бюджета (narrative ≳360, whatWasFound ≳160, whyItMatters ≳130, whatToCheck ≳90, bullet ≳160), если в черновике/findings есть материал для раскрытия.",
   "Пиши КЛИЕНТСКИМ языком консультанта: тема риска → конкретика из заголовков статей → источник (домен) → коротко почему важно. Запрещены внутренние формулировки: «KPI», «тематический блок», «составной набор данных».",
   "СТРОГО: не заменяй конкретику общими фразами вроде «в выдаче устойчиво видны…», «заметны семейные связи», «формируют риск». Если в черновике есть строки ««заголовок» — источник domain.com», сохрани их (можно слегка отредактировать заголовок, но не выкидывай цитату и домен).",
-  "Для тематических bullets структура (каждый пункт — ОТДЕЛЬНАЯ строка через \\n, не склеивай в один абзац): 1) тема в «ёлочках», 2) короткая рамка «найдены публикации…», 3) 1–2 строки ««заголовок» — источник domain» (каждая цитата на своей строке), 4) «Всего по теме: N…», 5) одно предложение почему это важно / что делать.",
+  "ЗАПРЕЩЕНО оставлять или вставлять quotes, где внутри «ёлочек» только ФИО субъекта (например «Oleg V Deripaska», «Олег Дерипаска») или SEO-био без риска («биография, личная жизнь, фото»). Такие строки перепиши в СУТЬ риска по title/snippet/domains из findings (санкции, суд, долг, структура владения, связанное лицо) — без новых фактов.",
+  "Для тематических bullets структура (каждый пункт — ОТДЕЛЬНАЯ строка через \\n, не склеивай в один абзац): 1) тема в «ёлочках», 2) короткая рамка «найдены публикации…» с якорем доменов при наличии, 3) 1–2 строки ««суть сюжета» — источник domain» (каждая цитата на своей строке), 4) «Всего по теме: N…», 5) одно предложение почему это важно / что делать.",
   "В narrative резюме: итог для проверки + 2–4 темы с опорой на конкретные сюжеты/источники из findings; без воды. Финал — что делать. Разбивай narrative на 2–3 абзаца через \\n — не пиши одной «простынёй».",
   "Не переписывай честные пустые состояния: если черновик говорит, что поверхность не собиралась / проверена и пуста / визуал недоступен — не подставляй findings с других поверхностей или регионов.",
   "Если передан compositionPlan — следуй ему: начни narrative с указанного смыслового акцента (storyAngle), раскрой в первую очередь темы из emphasisThemes (в заданном порядке) и упоминай прежде всего домены из keyDomains; план не добавляет новых фактов — используй только материал слайда.",
@@ -426,6 +428,19 @@ export function rejectReason(value: string, budget: number, allowedDomains: Set<
   return null;
 }
 
+/** PDF-44 H.3 — GPT bullets must not quote bare FIO / SEO-bio as “evidence”. */
+export function rejectWeakQuoteLines(bullet: string): string | null {
+  for (const m of bullet.matchAll(/«([^»]{3,120})»/gu)) {
+    const inner = m[1]!;
+    // Theme labels («Криминальные / …») are headers, not evidence quotes.
+    if (/\//u.test(inner) || /материалы|сигналы|связи|профиль|экспозици/iu.test(inner)) {
+      continue;
+    }
+    if (isWeakExampleTitle(inner)) return `weak-quote:${inner.slice(0, 40)}`;
+  }
+  return null;
+}
+
 export function contentHashOf(slides: SlideContentContract[]): string {
   return `sha256:${createHash("sha256").update(JSON.stringify(slides)).digest("hex")}`;
 }
@@ -547,7 +562,7 @@ function applyOverrides(input: {
     if (o.bullets && !continuationBases.has(slide.slideId)) {
       const reflowed = o.bullets.map((b) => reflowThemeBullet(b.trim()));
       const reasons = reflowed
-        .map((b) => rejectReason(b, TEXT_BUDGETS.bullet, allowed))
+        .map((b) => rejectReason(b, TEXT_BUDGETS.bullet, allowed) ?? rejectWeakQuoteLines(b))
         .filter((r): r is string => Boolean(r));
       if (reasons.length > 0) {
         rejectedFields.push(`${slide.slideId}.bullets:${reasons[0]}`);

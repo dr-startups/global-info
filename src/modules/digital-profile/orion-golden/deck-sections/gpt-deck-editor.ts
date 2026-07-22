@@ -28,6 +28,7 @@ import {
   GPT_SLIDE_COPY_FIELD_BUDGETS,
   isHonestEmptyStateSlide,
   rejectReason,
+  rejectWeakQuoteLines,
 } from "./llm-slide-copy";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
 
@@ -215,7 +216,7 @@ function applyEditorOverridesToPack(input: {
     if (o.bullets && !continuationBases.has(slide.slideId)) {
       const reflowed = o.bullets.map((b) => reflowThemeBullet(b.trim()));
       const reasons = reflowed
-        .map((b) => rejectReason(b, TEXT_BUDGETS.bullet, allowed))
+        .map((b) => rejectReason(b, TEXT_BUDGETS.bullet, allowed) ?? rejectWeakQuoteLines(b))
         .filter((r): r is string => Boolean(r));
       if (reasons.length > 0) {
         report.rejectedFields.push(`${slide.slideId}.bullets:${reasons[0]}`);
