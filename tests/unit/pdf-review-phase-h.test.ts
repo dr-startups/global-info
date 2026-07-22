@@ -166,8 +166,8 @@ describe("H.1/H.2 — rank and resolve quotes", () => {
 });
 
 describe("H.3 — GPT guard", () => {
-  it("slide-copy prompt is v11", () => {
-    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v12");
+  it("slide-copy prompt is v13", () => {
+    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v13");
   });
 
   it("rejectWeakQuoteLines catches bare FIO evidence quotes", () => {

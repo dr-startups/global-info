@@ -50,9 +50,9 @@ SLIDE_H = 7_315_200
 MARGIN_X = 480_000
 CONTENT_W = SLIDE_W - 2 * MARGIN_X
 FOOTER_Y = SLIDE_H - 440_000
-# PDF-45 — wider footer clearance so multi-line theme bullets never paint
-# into «ORION · Конфиденциально» / page number.
-CONTENT_BOTTOM = SLIDE_H - 920_000
+# PDF-46 I.2 — hard clearance above confidential footer (measure underestimates
+# multi-line theme cards; keep a wide safety band).
+CONTENT_BOTTOM = SLIDE_H - 1_100_000
 
 NAVY = RGBColor(0x0B, 0x1A, 0x33)
 TITLE_COLOR = RGBColor(0xF8, 0xFA, 0xFC)
@@ -513,16 +513,25 @@ def _split_structured_bullet(text: str) -> list[str]:
 
 
 def _clip_structured_bullet(text: str, max_chars: int) -> str:
-    """Keep whole structural lines only — never mid-cut a quote/phrase (PDF-45)."""
+    """Keep whole structural lines only — never mid-cut a quote/phrase (PDF-45/46)."""
     lines = _split_structured_bullet(text)
     if not lines:
         return ""
-    # Drop empty GPT stubs («Что делать:.», «Всего по теме:.»).
-    lines = [
-        ln
-        for ln in lines
-        if not re.match(r"^(Что делать|Всего по теме|В корпусе)\s*:\s*\.?$", ln, re.I)
-    ]
+    # Drop empty / broken GPT stubs («Что делать:.», «контекстом —.», «Где видно:.»).
+    cleaned: list[str] = []
+    for ln in lines:
+        if re.match(r"^(Что делать|Всего по теме|В корпусе|Где видно)\s*:\s*\.?$", ln, re.I):
+            continue
+        if re.search(r",\s*с негативным контекстом\s+[—–-]\s*\.?$", ln, re.I):
+            continue
+        if re.search(
+            r"«[^»]*(?:из-за|и|в|во|на|по|с|со|and|or|of|to|for|with|from|by|over)\s*»",
+            ln,
+            re.I,
+        ):
+            continue
+        cleaned.append(ln)
+    lines = cleaned
     if not lines:
         return ""
     if sum(len(ln) for ln in lines) + max(0, len(lines) - 1) <= max_chars:
@@ -538,7 +547,7 @@ def _clip_structured_bullet(text: str, max_chars: int) -> str:
             kept.append(ln)
             used += sep + len(ln)
             continue
-        # Quote / theme lines: skip whole line rather than publish «…visa over».
+        # Quote / theme / meta: skip whole line rather than publish «…visa over».
         if _QUOTE_SOURCE_RE.match(ln) or ln.startswith("«") or _META_LINE_RE.match(ln):
             break
         # Non-quote prose: only keep if a complete sentence fits.
@@ -546,7 +555,8 @@ def _clip_structured_bullet(text: str, max_chars: int) -> str:
         if punct > 20 and punct + 1 <= room:
             kept.append(ln[: punct + 1].strip())
         break
-    return "\n".join(kept) if kept else lines[0][:max_chars].rsplit(" ", 1)[0]
+    # Never fall back to a mid-word / mid-phrase slice of the first line.
+    return "\n".join(kept)
 
 
 def _bullet_line_style(line: str, *, is_first: bool) -> tuple[bool, RGBColor, float]:
@@ -982,30 +992,47 @@ class _Ctx:
             kept.append(clipped)
         if not kept:
             return y
-        # PDF-36 E.2 / PDF-45 — whole bullets only; generous footer safety band
-        # so multi-line theme cards never paint into the confidential footer.
-        page_avail = max(0, CONTENT_BOTTOM - y - 280_000)
-        while len(kept) > 1:
+        # PDF-46 I.2 — whole bullets only; inflate measure (estimator is short
+        # on multi-line theme cards) and never paint past CONTENT_BOTTOM.
+        page_avail = max(0, CONTENT_BOTTOM - y - 120_000)
+        measure_slack = 1.18
+
+        def _bullet_block_height(blocks: list[str]) -> int:
             trial_lines: list[str] = []
-            for b in kept:
+            for b in blocks:
                 parts = _split_structured_bullet(b) or [b]
                 trial_lines.append(f"• {parts[0]}")
                 trial_lines.extend(f"   {p}" for p in parts[1:])
             trial = "\n".join(trial_lines)
-            if (
-                measure_text_height(trial, CONTENT_W, FS_BODY, line_spacing=1.15, paragraph_spacing_pt=5)
-                <= page_avail
-            ):
+            raw_h = measure_text_height(
+                trial, CONTENT_W, FS_BODY, line_spacing=1.2, paragraph_spacing_pt=6
+            )
+            return int(raw_h * measure_slack) + 60_000
+
+        while kept and _bullet_block_height(kept) > page_avail:
+            if len(kept) == 1:
+                # Drop whole structural lines from the sole bullet until it fits.
+                parts = _split_structured_bullet(kept[0]) or [kept[0]]
+                while len(parts) > 1 and _bullet_block_height(["\n".join(parts)]) > page_avail:
+                    parts.pop()
+                kept = ["\n".join(parts)] if parts and _bullet_block_height(["\n".join(parts)]) <= page_avail else []
                 break
             kept.pop()
+        if not kept:
+            return y
         text_lines: list[str] = []
         for b in kept:
             parts = _split_structured_bullet(b) or [b]
             text_lines.append(f"• {parts[0]}")
             text_lines.extend(f"   {p}" for p in parts[1:])
         text = "\n".join(text_lines)
-        needed = measure_text_height(text, CONTENT_W, FS_BODY, line_spacing=1.15, paragraph_spacing_pt=5)
-        avail = max(300000, min(needed + 80_000, page_avail))
+        needed = _bullet_block_height(kept)
+        avail = max(200_000, min(needed, page_avail))
+        # Hard cap: textbox bottom must stay at/above CONTENT_BOTTOM.
+        if y + avail > CONTENT_BOTTOM:
+            avail = max(0, CONTENT_BOTTOM - y)
+        if avail < 200_000:
+            return y
         box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(avail))
         tf = box.text_frame
         tf.word_wrap = True

@@ -34,10 +34,8 @@ from .common import (
     _bullet_line_style,
     _clip_structured_bullet,
     _clip_words,
-    _fit_text_to_height,
     _safe,
     _split_structured_bullet,
-    _trim_dangling_tail,
     measure_text_height,
 )
 from .visual import (
@@ -150,10 +148,6 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         bullets = [_safe(b) for b in slide.get("bullets") or [] if _safe(b)]
         findings = [{"headline": b.split("—")[0].strip()[:60], "detail": b, "tone": "warn"} for b in bullets[:6]]
     badge_w = 1_900_000
-    dangling = re.compile(
-        r"(?:\bв\s+т\.?\s*ч\.?|\bс\s+[А-ЯA-Z]\.?|\b[А-ЯA-Z]\.?|,|;|—|–|-)\s*$",
-        re.I,
-    )
     for finding in findings[:6]:
         tone = str(finding.get("tone") or "warn")
         pill = _safe(finding.get("status") or finding.get("severity") or "")
@@ -191,50 +185,51 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         # PDF-36 E.2 — a card that cannot fit whole above the footer is not
         # drawn at all (TS pagination carries the rest to the continuation
         # page); a half-card bleeding into the footer reads as a defect.
-        remaining = CONTENT_BOTTOM - y - 80_000
-        if remaining < max(480_000, pad_y + headline_h + pad_y):
+        remaining = CONTENT_BOTTOM - y - 100_000
+        if remaining < max(520_000, pad_y + headline_h + pad_y):
             break
         detail_font = 10.5
         if detail:
             # Grow card to fit complete detail when possible.
-            detail_h = measure_text_height(detail, text_w, detail_font, line_spacing=1.15)
-            needed = pad_y + headline_h + 40_000 + detail_h + pad_y
+            detail_h = measure_text_height(detail, text_w, detail_font, line_spacing=1.2)
+            needed = int((pad_y + headline_h + 40_000 + detail_h + pad_y) * 1.12)
             max_h = remaining
             if needed > max_h:
-                # PDF-36 D.3 — font step-down before dropping sentences.
+                # PDF-36 D.3 — font step-down before dropping lines.
                 for candidate in (10, 9.5):
-                    cand_h = measure_text_height(detail, text_w, candidate, line_spacing=1.15)
-                    if pad_y + headline_h + 40_000 + cand_h + pad_y <= max_h:
+                    cand_h = measure_text_height(detail, text_w, candidate, line_spacing=1.2)
+                    trial = int((pad_y + headline_h + 40_000 + cand_h + pad_y) * 1.12)
+                    if trial <= max_h:
                         detail_font = candidate
                         detail_h = cand_h
-                        needed = pad_y + headline_h + 40_000 + detail_h + pad_y
+                        needed = trial
                         break
             if needed > max_h:
-                # Prefer insight + corpus only; drop meta lines rather than clip.
+                # PDF-46 I.2 — drop whole structural lines only; never mid-cut.
                 core_lines = [
                     ln
                     for ln in (_split_structured_bullet(detail) or [detail])
-                    if not _META_LINE_RE.match(ln) or ln.lower().startswith("в корпусе:")
+                    if not _META_LINE_RE.match(ln)
                 ]
-                # Keep first two non-example lines max.
-                core = "\n".join(core_lines[:2]) if core_lines else detail
-                fitted = _fit_text_to_height(core, text_w, detail_font, max(160_000, max_h - pad_y - headline_h - pad_y - 40_000))
-                if dangling.search(fitted.replace("\n", " ")) or fitted != core and not fitted.rstrip().endswith((".", "!", "?")):
-                    sentences = re.split(r"(?<=[.!?])\s+", core.replace("\n", " "))
-                    fitted = sentences[0].rstrip(".,;: ") + ("." if sentences and not sentences[0].endswith((".", "!", "?")) else "")
-                    if dangling.search(fitted):
-                        raise RuntimeError(f"ORION risk-matrix dangling detail on p{ctx.page}: {fitted[-40:]}")
-                detail = fitted
-                detail_h = measure_text_height(detail, text_w, detail_font, line_spacing=1.15)
-                needed = pad_y + headline_h + 40_000 + detail_h + pad_y
-            # If still cannot fit a whole card above the footer — skip drawing
-            # (TS pagination / continuation carries the rest). Never clip glyphs.
-            if needed > max_h and remaining < 520_000:
+                while core_lines:
+                    core = "\n".join(core_lines)
+                    detail_h = measure_text_height(core, text_w, detail_font, line_spacing=1.2)
+                    needed = int((pad_y + headline_h + 40_000 + detail_h + pad_y) * 1.12)
+                    if needed <= max_h:
+                        detail = core
+                        break
+                    core_lines.pop()
+                else:
+                    # Cannot fit even a minimal card — leave for continuation.
+                    break
+            if needed > max_h:
                 break
             h = min(max_h, needed)
         else:
             h = max(420_000, pad_y + headline_h + pad_y)
         h = max(420_000, min(h, remaining))
+        if y + h > CONTENT_BOTTOM:
+            break
         ctx.card(y, h=h, fill=_tone_fill(tone))
         # Headline
         box = ctx.slide.shapes.add_textbox(Emu(left), Emu(y + pad_y), Emu(text_w), Emu(max(headline_h + 20_000, 160_000)))

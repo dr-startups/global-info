@@ -163,9 +163,9 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
     rendererTemplate: "orion_golden_risk_matrix_grid",
     staticBlocks: ["Матрица рисков", "Уровень", "Тема", "Статус"],
     legend: ["Критический", "Высокий", "Средний", "Низкий", "Требует подтверждения"],
-    // Keep ≤5 cards/page: long GPT details make a 6th card clip off-canvas.
+    // PDF-46 I.3 — capacity enforced in packRiskMatrixPages (3 cards/page).
     maxBulletsPerSlide: 0,
-    maxTableRowsPerSlide: 5,
+    maxTableRowsPerSlide: 3,
     layout: layout("table", { itemCharBudget: 80 }),
   },
   "regional-summary": {
@@ -174,9 +174,9 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
     staticBlocks: ["Обзор региона", ...FINDING_BLOCKS],
     methodologyNote:
       "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI.",
-    // PDF-45 — 3 multi-line theme cards above the footer (more pages OK);
-    // never crush quotes into the confidential band.
-    maxBulletsPerSlide: 3,
+    // PDF-46 I.3 — with KPI chrome only 2 multi-line theme cards fit above
+    // the footer; overflow continues on the next page (more pages OK).
+    maxBulletsPerSlide: 2,
     maxTableRowsPerSlide: 0,
     layout: layout("two-column", { narrativeCharBudget: 700, itemCharBudget: 860 }),
   },
@@ -275,7 +275,8 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
     templateId: "continuation",
     rendererTemplate: "orion_golden_surface_panel",
     staticBlocks: ["Продолжение"],
-    maxBulletsPerSlide: 10,
+    // PDF-46 I.3 — theme continuations stay airy; table rows still chunk separately.
+    maxBulletsPerSlide: 3,
     maxTableRowsPerSlide: 12,
     layout: layout("single-column", {}),
   },

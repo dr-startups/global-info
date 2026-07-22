@@ -58,8 +58,8 @@ describe("F.1 — structured theme claim hierarchy", () => {
 });
 
 describe("F.2 — regional summary does not silently drop themes", () => {
-  it("regional-summary paginates at 3 bullets per slide (PDF-45 footer air)", () => {
-    expect(DECK_TEMPLATE_REGISTRY["regional-summary"].maxBulletsPerSlide).toBe(3);
+  it("regional-summary paginates at 2 bullets per slide (PDF-46 KPI chrome)", () => {
+    expect(DECK_TEMPLATE_REGISTRY["regional-summary"].maxBulletsPerSlide).toBe(2);
   });
 
   it("withContinuations carries overflow themes to a continuation slide", () => {
@@ -73,10 +73,10 @@ describe("F.2 — regional summary does not silently drop themes", () => {
       } as never,
       "regional-summary"
     );
-    expect(slides).toHaveLength(3);
-    expect(slides[0]!.content.bullets).toHaveLength(3);
-    expect(slides[1]!.content.bullets).toHaveLength(3);
-    expect(slides[2]!.content.bullets).toHaveLength(2);
+    expect(slides).toHaveLength(4);
+    expect(slides[0]!.content.bullets).toHaveLength(2);
+    expect(slides[1]!.content.bullets).toHaveLength(2);
+    expect(slides[3]!.content.bullets).toHaveLength(2);
     expect(slides[1]!.isContinuation).toBe(true);
   });
 

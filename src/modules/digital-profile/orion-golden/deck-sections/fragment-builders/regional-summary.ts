@@ -10,6 +10,7 @@ import { slotsForFragment } from "../canonical-slots";
 import { pluralRu } from "../../analytics/finding-synthesizer";
 import type { FragmentBuildOutput, FragmentExtras, UncategorizedMaterialsExtras } from "./shared";
 import {
+  bulletWithFindingId,
   claimText,
   clampClientText,
   coverageContent,
@@ -160,17 +161,12 @@ export function buildRegionalSummaryFragment(
       topThemes.length > 0
         ? `Ключевые темы для проверки: ${topThemes.join("; ")}.`
         : "Подтверждённых тем повышенного внимания в регионе немного — смотрите детализацию ниже.";
-    // PDF-40 G.4 — client lead + B.2 counters; theme cards paginate at 4/page.
+    // PDF-40 G.4 / PDF-46 I.3–I.4 — full multi-line claims; paginate via
+    // withContinuations (2/page with KPI chrome). Never flatten+mid-cut.
     const bullets = [
       ...scoped.findings
         .slice(0, 8)
-        .map((f) => {
-          const body = localizedThemedClaim(f, scoped);
-          const marker = ` [${f.findingId}]`;
-          return body.length + marker.length <= 420
-            ? body + marker
-            : clampClientText(body.replace(/\n/gu, " "), 380) + marker;
-        }),
+        .map((f) => bulletWithFindingId(localizedThemedClaim(f, scoped), f.findingId, 900)),
       ...(uncategorized ? [uncategorized.bullet] : []),
       ...(likelyN > 0
         ? [

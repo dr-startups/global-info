@@ -59,7 +59,7 @@ describe("G.1 — regional summary does not merge methodology into bullets", () 
   });
 
   it("regional-summary capacity is 4 theme cards per page", () => {
-    expect(DECK_TEMPLATE_REGISTRY["regional-summary"].maxBulletsPerSlide).toBe(3);
+    expect(DECK_TEMPLATE_REGISTRY["regional-summary"].maxBulletsPerSlide).toBe(2);
   });
 });
 
@@ -88,7 +88,9 @@ describe("G.1b / G.2 — client claim shape", () => {
     expect(claim).toMatch(/Найдены публикации/u);
     expect(claim).toContain("«Самый говорливый олигарх.");
     expect(claim).toContain("— источник dzen.ru");
-    expect(claim).toContain("— источник reuters.com");
+    // PDF-46 I.4 — one full quote; second domain stays on «Где видно».
+    expect(claim.split("\n").filter((l) => /— источник /u.test(l))).toHaveLength(1);
+    expect(claim).toMatch(/Где видно:.*(?:dzen\.ru|reuters\.com)/u);
     expect(claim).toContain("Всего по теме:");
     expect(claim).toMatch(/банк|партн/iu);
     expect(claim).not.toMatch(/в выдаче устойчиво видны/iu);
@@ -105,8 +107,8 @@ describe("G.1b / G.2 — client claim shape", () => {
     expect(body).toContain("Всего по теме:");
   });
 
-  it("slide-copy prompt is v12 (larger budgets, no mid-cut)", () => {
-    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v12");
+  it("slide-copy prompt is v13 (PDF-46 fit / no mid-cut)", () => {
+    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v13");
   });
 
   it("reflowThemeBullet restores flattened G.2b quote lines (PDF-43)", () => {

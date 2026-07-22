@@ -333,11 +333,71 @@ export function clampClientText(text: string, max: number): string {
   return `${out}.`;
 }
 
+/**
+ * PDF-46 I.4 — fit a multi-line theme bullet by dropping whole structural lines
+ * (why → 2nd quote → where → scale). Never flatten+mid-cut «контекстом — 10».
+ */
+export function fitStructuredBullet(text: string, maxChars: number): string {
+  const reflowed = reflowThemeBullet(String(text ?? ""));
+  const markerMatch = reflowed.match(/(\s*\[finding-[^\]]+\])\s*$/u);
+  const marker = markerMatch?.[1] ?? "";
+  const raw = reflowed.replace(/\s*\[finding-[^\]]+\]\s*$/u, "").trim();
+  if (!raw) return marker.trim();
+
+  const incompleteMetaRe =
+    /^(Что делать|Всего по теме|В корпусе|Где видно)\s*:\s*\.?$/iu;
+  const danglingCountRe = /,\s*с негативным контекстом\s+[—–-]\s*\.?$/u;
+  const danglingQuoteRe =
+    /^«.*(?:из-за|и|в|во|на|по|с|со|о|об|and|or|of|the|to|for|with|from|by|over)\s*»/iu;
+
+  let lines = raw
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+    .filter((l) => !incompleteMetaRe.test(l) && !danglingCountRe.test(l))
+    .filter((l) => !danglingQuoteRe.test(l));
+
+  const lenOf = (ls: string[]) => ls.join("\n").length;
+  if (lenOf(lines) <= maxChars) {
+    const body = lines.join("\n");
+    return marker ? `${body}${marker}` : body;
+  }
+
+  const isWhy = (l: string) =>
+    /^(Для банка|Банки |Это усиливает|Риск в том|Деловой фон|Что делать:)/u.test(l);
+  const isWhere = (l: string) => /^Где видно:/u.test(l);
+  const isScale = (l: string) => /^(Всего по теме:|В корпусе:)/u.test(l);
+  const isQuote = (l: string) => /^«/.test(l) && /источник/iu.test(l);
+
+  const droppers: Array<(l: string, all: string[]) => boolean> = [
+    (l) => isWhy(l),
+    (l, all) => isQuote(l) && all.filter(isQuote).indexOf(l) >= 1,
+    (l) => isWhere(l),
+    (l) => isScale(l),
+  ];
+  let kept = [...lines];
+  for (const pred of droppers) {
+    while (lenOf(kept) > maxChars) {
+      const idx = kept.findIndex((l) => pred(l, kept));
+      if (idx < 0) break;
+      kept.splice(idx, 1);
+    }
+  }
+  while (lenOf(kept) > maxChars && kept.length > 2) kept.pop();
+  if (lenOf(kept) > maxChars) {
+    const first = kept[0] ?? "";
+    kept = first.length <= maxChars ? [first] : [clampClientText(first, maxChars)];
+  }
+  const body = kept.join("\n");
+  return marker ? `${body}${marker}` : body;
+}
+
 /** Clamp body so `body + [findingId]` stays within the slide bullet budget. */
-export function bulletWithFindingId(body: string, findingId: string, budget = 400): string {
+export function bulletWithFindingId(body: string, findingId: string, budget = 900): string {
   const marker = ` [${findingId}]`;
   const room = Math.max(48, budget - marker.length);
-  return clampClientText(body, room) + marker;
+  const fitted = fitStructuredBullet(body, room).replace(/\s*\[finding-[^\]]+\]\s*$/u, "").trim();
+  return `${fitted}${marker}`;
 }
 
 /**

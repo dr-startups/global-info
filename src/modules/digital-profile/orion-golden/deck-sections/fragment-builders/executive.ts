@@ -30,6 +30,7 @@ import {
   claimBodyWithoutTheme,
   clampClientText,
   fitClientSentences,
+  fitStructuredBullet,
   isAdverse,
   makeSlotSlide,
   matchGptKeyRisk,
@@ -39,7 +40,6 @@ import {
   themedClaim,
   uniqueRefs,
   verdictClientLabel,
-  withContinuations,
 } from "./shared";
 
 /**
@@ -382,7 +382,7 @@ export function buildExecutiveSummaryFragment(
       .join("\n");
     const lines = [`«${k.title}»`, core];
     if (risk?.advice) lines.push(`Что делать: ${risk.advice}`);
-    return bulletWithFindingId(lines.filter(Boolean).join("\n"), k.findingId, 420);
+    return bulletWithFindingId(lines.filter(Boolean).join("\n"), k.findingId, 900);
   });
   const bullets = es.keyFindings.map((k) => {
     const finding = scoped.findings.find((f) => f.findingId === k.findingId);
@@ -394,7 +394,7 @@ export function buildExecutiveSummaryFragment(
     const risk = matchGptKeyRisk(k.title, gpt?.keyRisks);
     const lines = [`«${k.title}»`, concrete];
     if (risk?.advice) lines.push(`Что делать: ${risk.advice}`);
-    return bulletWithFindingId(lines.filter(Boolean).join("\n"), k.findingId, 480);
+    return bulletWithFindingId(lines.filter(Boolean).join("\n"), k.findingId, 900);
   });
   // Sparse but complete collection: keep a client-safe page that states
   // there are no confirmed findings — never invent risks. Still show
@@ -501,34 +501,42 @@ export function buildExecutiveSummaryFragment(
     );
   }
   if (contBullets.length > 0) {
-    slides.push({
-      ...base,
-      slideId: `${base.slideId}__cont1`,
-      isContinuation: true,
-      continuationOf: base.slideId,
-      continuationIndex: 1,
-      templateId: "continuation",
-      // PDF-40 G.3 — cont page is the rest of risk themes, not a «факты» dump.
-      title: sparse
+    // PDF-46 I.3 — 3 theme blocks per continuation page (block-first; more pages OK).
+    const THEME_PER_PAGE = 3;
+    const totalPages = Math.ceil(contBullets.length / THEME_PER_PAGE);
+    for (let pageIdx = 0; pageIdx < totalPages; pageIdx += 1) {
+      const chunk = contBullets.slice(pageIdx * THEME_PER_PAGE, (pageIdx + 1) * THEME_PER_PAGE);
+      const baseTitle = sparse
         ? "Резюме — покрытие и ограничения"
-        : "Резюме — темы риска",
-      subtitle: undefined,
-      content: {
-        bullets: contBullets.slice(0, 8),
-        whatToCheck: undefined,
-        sourceNote: sourceLine(scoped, extras),
-      },
-    });
+        : "Резюме — темы риска";
+      slides.push({
+        ...base,
+        slideId: pageIdx === 0 ? `${base.slideId}__cont1` : `${base.slideId}__cont${pageIdx + 1}`,
+        isContinuation: true,
+        continuationOf: base.slideId,
+        continuationIndex: pageIdx + 1,
+        templateId: "continuation",
+        title:
+          totalPages > 1
+            ? `${baseTitle} (продолжение ${pageIdx + 1}/${totalPages})`
+            : baseTitle,
+        subtitle: undefined,
+        content: {
+          bullets: chunk,
+          whatToCheck: undefined,
+          sourceNote: pageIdx === 0 ? sourceLine(scoped, extras) : undefined,
+        },
+      });
+    }
   }
   return { slides, status: "READY" };
 }
 
 /**
  * Cards that fit on one risk-matrix page with typical GPT detail length.
- * PDF-36 E.2 — five cards clipped the last one against the footer once GPT
- * details grew; four cards render whole and the rest flow to continuations.
+ * PDF-46 I.3 — three full cards above the footer; overflow → continuations.
  */
-const RISK_MATRIX_PAGE_CAPACITY = 4;
+const RISK_MATRIX_PAGE_CAPACITY = 3;
 /** Always keep ≥1 first-page slot for LIKELY when any exist (§2.1 visibility). */
 const RISK_MATRIX_LIKELY_RESERVED = 1;
 /**
@@ -538,40 +546,25 @@ const RISK_MATRIX_LIKELY_RESERVED = 1;
 export const RISK_MATRIX_LIKELY_AGGREGATE_ID = "finding-likely-aggregate";
 
 function riskMatrixDetail(f: Finding, extras?: FragmentExtras): string {
-  // PDF-40 G.1b — headline already shows the theme; detail is body only.
+  // PDF-40 G.1b / PDF-46 I.4 — headline shows theme; keep structured lines whole.
   const claim = claimBodyWithoutTheme(f);
   if (f.subjectMatch === "LIKELY_SUBJECT") {
-    const body = [
-      claim,
-      "Принадлежность пока не подтверждена — до уточнения идентификации материал не включаем в итог «об этом лице».",
-    ].join("\n");
-    return body.length <= 420
-      ? body
-      : fitClientSentences(
-          [
-            claim.replace(/\n/gu, " "),
-            "Принадлежность пока не подтверждена — до уточнения идентификации материал не включаем в итог «об этом лице».",
-          ],
-          300
-        );
+    return fitStructuredBullet(
+      [
+        claim,
+        "Принадлежность пока не подтверждена — до уточнения идентификации материал не включаем в итог «об этом лице».",
+      ].join("\n"),
+      900
+    );
   }
   const risk = matchGptKeyRisk(f.theme, extras?.gptCaseAnalysis?.keyRisks);
   if (risk) {
-    const body = [claim, risk.explanation, `Что делать: ${risk.advice}`].join("\n");
-    return body.length <= 420
-      ? body
-      : fitClientSentences(
-          [claim.replace(/\n/gu, " "), risk.explanation, `Что делать: ${risk.advice}`],
-          320
-        );
+    return fitStructuredBullet(
+      [claim, risk.explanation, `Что делать: ${risk.advice}`].join("\n"),
+      900
+    );
   }
-  const body = [claim, `Что делать: ${f.recommendedAction}`].join("\n");
-  return body.length <= 420
-    ? body
-    : fitClientSentences(
-        [claim.replace(/\n/gu, " "), `Что делать: ${f.recommendedAction}`],
-        320
-      );
+  return fitStructuredBullet([claim, `Что делать: ${f.recommendedAction}`].join("\n"), 900);
 }
 
 function riskMatrixRow(f: Finding): string[] {
