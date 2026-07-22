@@ -402,16 +402,18 @@ _META_LINE_RE = re.compile(
     r"^(Источники(?:\s+в\s+регионе)?|Примеры(?:\s+заголовков)?|Где видно|В корпусе|Всего по теме|Пример)\s*:",
     re.I,
 )
-_QUOTE_SOURCE_RE = re.compile(r"^«[^»]{8,}»\s*—\s*источник\b", re.I)
+# Allow one level of nested guillemets: «Экс-владелец «Главстроя»».
+_QUOTE_BODY = r"(?:[^«»]|«[^»]*»)+"
+_QUOTE_SOURCE_RE = re.compile(rf"^«{_QUOTE_BODY}»\s*—\s*источник\b", re.I)
 _THEME_LINE_RE = re.compile(r"^«[^»]{2,80}»\s*$")
 
 
 _QUOTE_SOURCE_INLINE_RE = re.compile(
-    r"«[^»]{8,}»\s*—\s*источник\s+[A-Za-z0-9][A-Za-z0-9.-]*",
+    rf"«{_QUOTE_BODY}»\s*—\s*источник\s+[A-Za-z0-9][A-Za-z0-9.-]*",
     re.I,
 )
 _TAIL_SPLIT_RE = re.compile(
-    r"(?=(?:Всего по теме:|В корпусе:|Что делать:|Для банка|Банки |Это усиливает|Риск в том|Деловой фон))"
+    r"(?=(?:Всего по теме:|В корпусе:|Где видно:|Что делать:|Для банка|Банки |Это усиливает|Риск в том|Деловой фон))"
 )
 
 
@@ -455,9 +457,20 @@ def _reflow_g2b_bullet(raw: str) -> list[str] | None:
     return out if len(out) >= 3 else None
 
 
+def _normalize_nested_guillemets(text: str) -> str:
+    """«Экс-владелец «Главстроя»» → «Экс-владелец \"Главстроя\"» for stable quote parse."""
+    prev = None
+    out = text
+    while prev != out:
+        prev = out
+        out = re.sub(r"«([^«»]*)«([^»]+)»([^»]*)»", r'«\1"\2"\3»', out)
+    return out
+
+
 def _split_structured_bullet(text: str) -> list[str]:
     """PDF-38 F.1 / PDF-43 — normalize a theme bullet into theme / quotes / meta lines."""
-    raw = _safe(text).replace("\r\n", "\n").strip()
+    # PDF-47 — never flatten newlines here (_safe would glue G.2b into one line).
+    raw = _normalize_nested_guillemets(_safe_preserve_breaks(text)).strip()
     if not raw:
         return []
     # Strip trailing finding marker before structural split (kept out of draw lines).
@@ -470,7 +483,8 @@ def _split_structured_bullet(text: str) -> list[str]:
             needs_reflow = True
             break
         if n == 1 and re.search(
-            r"(?:Всего по теме:|В корпусе:|Для банка|Банки |Риск в том)", ln
+            r"(?:Всего по теме:|В корпусе:|Где видно:|Для банка|Банки |Риск в том|Что делать:)",
+            ln,
         ):
             needs_reflow = True
             break

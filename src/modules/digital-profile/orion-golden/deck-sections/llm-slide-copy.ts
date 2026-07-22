@@ -38,8 +38,8 @@ import type { GptDeckComposition } from "./gpt-deck-composer";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
 import { isWeakExampleTitle } from "../analytics/finding-synthesizer";
 
-/** v13 — PDF-46: no SERP-truncated / dangling quotes; whole structural lines only. */
-export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v13";
+/** v14 — PDF-47: keep nested-quote themes; recover SERP-truncated via snippet. */
+export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v14";
 
 /** Mirrors section-validation budgets — from client-text-contract (§6.1). */
 export const GPT_SLIDE_COPY_FIELD_BUDGETS = (() => {

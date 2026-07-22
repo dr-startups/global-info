@@ -33,6 +33,7 @@ from .common import (
     _embed_image,
     _resolve_image_bytes,
     _safe,
+    _safe_preserve_breaks,
     _trim_dangling_tail,
 )
 from .executive import (
@@ -54,7 +55,13 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     variant = str(slide.get("layoutVariant") or "")
     title = _safe(slide.get("title") or "ORION")
     narrative = _safe(slide.get("narrative") or "")
-    bullets = [_safe(b) for b in slide.get("bullets") or [] if _safe(b)]
+    # PDF-47 — keep structured theme newlines; _safe() collapses them and then
+    # nested «…«…»» quotes cannot reflow → theme-only stubs («Офшоры»).
+    bullets = [
+        _safe_preserve_breaks(b)
+        for b in slide.get("bullets") or []
+        if _safe_preserve_breaks(b)
+    ]
     refs = slide.get("assetRefs") or []
     primary = assets.get(str(refs[0])) if refs else None
 
@@ -586,11 +593,11 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             ctx.bullets(bullets, y, max_items=14, max_chars=340)
         return
 
-    # default section summary / appendix
+    # orion_golden_prose (continuation themes) + default section / appendix
     ctx.light_bg()
     y = ctx.title(title, 280000, NAVY, FS_SECTION)
-    # PDF-36 D.3 — these pages ended half-empty while text was cut at 480
-    # chars; the page bottom is the real budget, not a character count.
+    # PDF-36 D.3 / PDF-47 — page bottom is the real budget; theme cards need
+    # the full 900-char structured budget (520 starved nested-quote bullets).
     short_narrative = _clip_words(narrative, 900) if narrative else ""
     if short_narrative and not bullets:
         ctx.body(short_narrative, y, max_h=CONTENT_BOTTOM - y - 100000)
@@ -599,6 +606,6 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         y = ctx.body(short_narrative, y, max_h=1100000)
         y = y + 80000
     if bullets:
-        ctx.bullets(bullets, y, max_items=9, max_chars=520)
+        ctx.bullets(bullets, y, max_items=9, max_chars=900)
 
 

@@ -8,11 +8,14 @@
 import { describe, expect, it } from "vitest";
 import {
   buildClientFacingClaim,
+  cleanExampleTitle,
   hasDanglingTail,
   isWeakExampleTitle,
   quoteForClaim,
+  resolveExampleQuote,
   type ThemeDef,
 } from "../../src/modules/digital-profile/orion-golden/analytics/finding-synthesizer";
+import type { RawInventoryItem } from "../../src/modules/digital-profile/orion-golden/types";
 import { GPT_SLIDE_COPY_PROMPT_VERSION } from "../../src/modules/digital-profile/orion-golden/deck-sections/llm-slide-copy";
 import { DECK_TEMPLATE_REGISTRY } from "../../src/modules/digital-profile/orion-golden/deck-sections/template-registry";
 import { packRiskMatrixPages } from "../../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/executive";
@@ -49,7 +52,7 @@ describe("I.1 — Cyrillic dangling + SERP truncation", () => {
     expect(quoteForClaim("Рыбка, Навальный, Папа и депутат из Красноярска: из-за ...")).toBe("");
   });
 
-  it("buildClientFacingClaim uses at most one quote line", () => {
+  it("buildClientFacingClaim keeps up to two full quote lines", () => {
     const claim = buildClientFacingClaim({
       theme: politicalTheme,
       itemsCount: 14,
@@ -67,7 +70,7 @@ describe("I.1 — Cyrillic dangling + SERP truncation", () => {
       domains: ["theguardian.com", "nytimes.com"],
     });
     const quotes = claim.split("\n").filter((l) => /— источник /u.test(l));
-    expect(quotes).toHaveLength(1);
+    expect(quotes).toHaveLength(2);
     expect(claim).toMatch(/Всего по теме: 14/u);
     expect(claim).toMatch(/негативным контекстом — 4/u);
   });
@@ -139,6 +142,36 @@ describe("I.4 — structured fit preserves meta", () => {
 
 describe("I.5 — versions", () => {
   it("bumps GPT slide-copy prompt", () => {
-    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v13");
+    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v14");
+  });
+});
+
+describe("PDF-47 — recover risk evidence, not drop it", () => {
+  it("resolves SERP-truncated Рыбка title via snippet essence", () => {
+    const row = {
+      inventoryId: "rybka",
+      caseId: "c",
+      reportRunId: "r",
+      source: "test",
+      provider: "test",
+      region: "RU",
+      collectedAt: "2026-01-01T00:00:00.000Z",
+      evidenceType: "search_result",
+      title: "Рыбка, Навальный, Папа и депутат из Красноярска: из-за ...",
+      snippet:
+        "После публикации расследования ФБК об отдыхе заместителя главы правительства России Сергея Приходько в компании Олега Дерипаски, ...",
+      sourceUrl: "https://www.currenttime.tv/a/29028978.html",
+    } as RawInventoryItem;
+    const ex = resolveExampleQuote(row, politicalTheme);
+    expect(ex).not.toBeNull();
+    expect(ex!.title).toMatch(/ФБК|Приходько|Дерипаск/iu);
+    expect(ex!.title).not.toMatch(/из-за\s*$/u);
+    expect(ex!.domain).toContain("currenttime.tv");
+  });
+
+  it("normalizes nested guillemets in titles", () => {
+    expect(cleanExampleTitle("Экс-владелец «Главстроя»")).toContain("Главстроя");
+    expect(cleanExampleTitle("«Экс-владелец «Главстроя»»")).toMatch(/Главстроя/);
+    expect(cleanExampleTitle("«Экс-владелец «Главстроя»»")).not.toMatch(/«Главстроя»/);
   });
 });

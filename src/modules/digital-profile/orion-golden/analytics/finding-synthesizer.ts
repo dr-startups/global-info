@@ -276,7 +276,13 @@ export function scoreExampleForTheme(item: RawInventoryItem, theme: ThemeDef): n
   else if (tokens >= 4) score += 1;
   if (title.length >= 40) score += 1;
   if (STRONG_DOMAIN_RE.test(domain)) score += 1;
-  if (isWeakExampleTitle(title, { theme })) score -= 12;
+  const rawTitle = String(item.title ?? "");
+  if (isWeakExampleTitle(rawTitle, { theme }) || isWeakExampleTitle(title, { theme })) {
+    // PDF-47 — SERP «…» title that still names the risk theme is recoverable
+    // via snippet; do not bury it under bare-FIO penalty.
+    if (SERP_TRUNCATED_RE.test(rawTitle.trim()) && theme.keywords.test(rawTitle)) score -= 3;
+    else score -= 12;
+  }
   if (!title && snippet.length >= 40) score += 1;
   return score;
 }
@@ -301,10 +307,22 @@ export function resolveExampleQuote(
   const snip = String(item.snippet ?? "")
     .replace(/\s+/gu, " ")
     .trim();
-  if (snip.length >= 40 && (theme.keywords.test(snip) || getAdversePatterns().test(snip))) {
-    const sentence = (snip.split(/(?<=[.!?…])\s+/u)[0] ?? snip).trim();
+  // PDF-47 — SERP-truncated title still carries theme keywords («Рыбка»,
+  // «Навальный»): recover essence from snippet even when snippet itself
+  // lacks the keyword regex hit.
+  const titleCarriesTheme = theme.keywords.test(rawTitle) || theme.keywords.test(title);
+  if (
+    snip.length >= 40 &&
+    (theme.keywords.test(snip) || getAdversePatterns().test(snip) || titleCarriesTheme)
+  ) {
+    // Snippets are often provider-truncated with «…» — strip the ellipsis and
+    // keep the intact leading clause (not a SERP title mid-cut).
+    const sentence = (snip.split(/(?<=[.!?…])\s+/u)[0] ?? snip)
+      .trim()
+      .replace(/\s*(?:\.\.\.|…)\s*$/u, "")
+      .trim();
     const q = quoteForClaim(sentence, 220);
-    if (q.length >= 24 && !isWeakExampleTitle(q, { theme }) && !hasDanglingTail(q)) {
+    if (q.length >= 24 && !hasDanglingTail(q)) {
       return { title: q, domain };
     }
   }
@@ -383,9 +401,10 @@ export function buildClientFacingClaim(input: {
       );
   }
 
-  // PDF-46 I.4 — one full quote per theme card (second evidence → domains only).
+  // PDF-46/47 — up to 2 full quotes (never mid-cut); second evidence is kept
+  // when it adds a distinct risk angle (e.g. FБК/Приходько + Guardian).
   const quoteLines: string[] = [];
-  for (const e of examples.slice(0, 1)) {
+  for (const e of examples.slice(0, 2)) {
     const q = quoteForClaim(e.title, 220);
     if (!q || isWeakExampleTitle(q, { theme: input.theme }) || hasDanglingTail(q)) continue;
     quoteLines.push(e.domain ? `«${q}» — источник ${e.domain}` : `«${q}»`);
@@ -433,6 +452,12 @@ export function cleanExampleTitle(raw: string): string {
   t = t.replace(/\s*\|\s*[^|]{1,40}$/u, "").trim();
   // Trailing date/time stamps: "- 03.12.25 22:27", "· 02.03.2020".
   t = t.replace(/\s*[-–—·]\s*\d{1,2}\.\d{1,2}\.\d{2,4}(?:\s+\d{1,2}:\d{2})?\s*$/u, "").trim();
+  // Nested guillemets break quote parsers: «Экс-владелец «Главстроя»».
+  for (let i = 0; i < 3; i += 1) {
+    const next = t.replace(/«([^«»]*)«([^»]+)»([^»]*)»/gu, "«$1\"$2\"$3»");
+    if (next === t) break;
+    t = next;
+  }
   // Search engines truncate long titles with an ellipsis: drop the broken
   // last fragment when a complete sentence remains before it.
   const m = t.match(/^(.*[.!?…»])\s*[^.!?…»]*(?:\.\.\.|…)$/u);
