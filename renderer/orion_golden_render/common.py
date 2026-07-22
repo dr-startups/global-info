@@ -50,7 +50,9 @@ SLIDE_H = 7_315_200
 MARGIN_X = 480_000
 CONTENT_W = SLIDE_W - 2 * MARGIN_X
 FOOTER_Y = SLIDE_H - 440_000
-CONTENT_BOTTOM = SLIDE_H - 700_000
+# PDF-45 — wider footer clearance so multi-line theme bullets never paint
+# into «ORION · Конфиденциально» / page number.
+CONTENT_BOTTOM = SLIDE_H - 920_000
 
 NAVY = RGBColor(0x0B, 0x1A, 0x33)
 TITLE_COLOR = RGBColor(0xF8, 0xFA, 0xFC)
@@ -351,6 +353,17 @@ def _safe(text: object) -> str:
     return val.strip()
 
 
+def _safe_preserve_breaks(text: object) -> str:
+    """Like _safe, but keeps intentional newlines for structured theme cards."""
+    raw = str(text or "").replace("\r\n", "\n")
+    parts = []
+    for ln in raw.split("\n"):
+        cleaned = _safe(ln)
+        if cleaned:
+            parts.append(cleaned)
+    return "\n".join(parts)
+
+
 def plural_ru(n: int, one: str, few: str, many: str) -> str:
     """Russian plural agreement: 1 сигнал / 2–4 сигнала / 5+ сигналов."""
     abs_n = abs(int(n)) % 100
@@ -500,15 +513,23 @@ def _split_structured_bullet(text: str) -> list[str]:
 
 
 def _clip_structured_bullet(text: str, max_chars: int) -> str:
-    """Keep whole structural lines; clip only the last line if needed."""
+    """Keep whole structural lines only — never mid-cut a quote/phrase (PDF-45)."""
     lines = _split_structured_bullet(text)
+    if not lines:
+        return ""
+    # Drop empty GPT stubs («Что делать:.», «Всего по теме:.»).
+    lines = [
+        ln
+        for ln in lines
+        if not re.match(r"^(Что делать|Всего по теме|В корпусе)\s*:\s*\.?$", ln, re.I)
+    ]
     if not lines:
         return ""
     if sum(len(ln) for ln in lines) + max(0, len(lines) - 1) <= max_chars:
         return "\n".join(lines)
     kept: list[str] = []
     used = 0
-    for i, ln in enumerate(lines):
+    for ln in lines:
         sep = 1 if kept else 0
         room = max_chars - used - sep
         if room < 12:
@@ -517,14 +538,15 @@ def _clip_structured_bullet(text: str, max_chars: int) -> str:
             kept.append(ln)
             used += sep + len(ln)
             continue
-        # Never leave a dangling meta label without content.
-        if _META_LINE_RE.match(ln) and room < 24:
+        # Quote / theme lines: skip whole line rather than publish «…visa over».
+        if _QUOTE_SOURCE_RE.match(ln) or ln.startswith("«") or _META_LINE_RE.match(ln):
             break
-        clipped = _clip_words(ln, room)
-        if clipped:
-            kept.append(clipped)
+        # Non-quote prose: only keep if a complete sentence fits.
+        punct = max(ln.rfind(". "), ln.rfind("! "), ln.rfind("? "))
+        if punct > 20 and punct + 1 <= room:
+            kept.append(ln[: punct + 1].strip())
         break
-    return "\n".join(kept) if kept else _clip_words(lines[0], max_chars)
+    return "\n".join(kept) if kept else lines[0][:max_chars].rsplit(" ", 1)[0]
 
 
 def _bullet_line_style(line: str, *, is_first: bool) -> tuple[bool, RGBColor, float]:
@@ -801,7 +823,8 @@ class _Ctx:
             "good": TONE_GOOD,
         }.get(tone, NAVY)
         title_s = _safe(title or "")
-        body_s = _safe(text)
+        # PDF-45 — keep structured theme newlines (quotes / scale) inside cards.
+        body_s = _safe_preserve_breaks(text) if "\n" in str(text or "") else _safe(text)
         budget = max(200_000, min(max_h, CONTENT_BOTTOM - y))
         # Shrink padding on short cards so body text is not starved to a stub line.
         pad = padding
@@ -822,7 +845,7 @@ class _Ctx:
             body_budget = max(100_000, budget - 2 * pad - title_h)
             # PDF-36 D.3 — step the font down (−1/−2 pt, min 9pt) before any
             # text is dropped: +20–30% capacity, imperceptible to the eye.
-            for candidate in (body_size - 1, body_size - 2):
+            for candidate in (body_size - 1, body_size - 2, 9):
                 if candidate < 9:
                     break
                 if measure_text_height(body_s, inner_w, candidate, line_spacing=1.2) <= body_budget:
@@ -832,7 +855,18 @@ class _Ctx:
                 body_size = max(9, body_size - 2)
             body_h = measure_text_height(body_s, inner_w, body_size, line_spacing=1.2)
             if body_h > body_budget:
-                body_s = _fit_text_to_height(body_s, inner_w, body_size, body_budget)
+                # Prefer dropping whole structural lines over mid-phrase clips.
+                if "\n" in body_s:
+                    kept_lines: list[str] = []
+                    for ln in body_s.split("\n"):
+                        trial = "\n".join(kept_lines + [ln]) if kept_lines else ln
+                        if measure_text_height(trial, inner_w, body_size, line_spacing=1.2) <= body_budget:
+                            kept_lines.append(ln)
+                        else:
+                            break
+                    body_s = "\n".join(kept_lines) if kept_lines else body_s.split("\n")[0]
+                else:
+                    body_s = _fit_text_to_height(body_s, inner_w, body_size, body_budget)
                 body_h = measure_text_height(body_s, inner_w, body_size, line_spacing=1.2) if body_s else 0
         else:
             body_h = full_body_h
@@ -907,7 +941,7 @@ class _Ctx:
         rows = (len(items) + cols - 1) // cols
         return y + rows * chip_h + max(0, rows - 1) * gap
 
-    def bullets(self, items: list[str], y: int, color: RGBColor = BODY_COLOR, max_items: int = 8, max_chars: int = 520) -> int:
+    def bullets(self, items: list[str], y: int, color: RGBColor = BODY_COLOR, max_items: int = 8, max_chars: int = 900) -> int:
         dangling = re.compile(
             r"(?:\bв\s+т\.?\s*ч\.?|\bс\s+[А-ЯA-Z]\.?|\b[А-ЯA-Z]\.?|,|;|—|–|-|\()\s*$",
             re.I,
@@ -948,11 +982,9 @@ class _Ctx:
             kept.append(clipped)
         if not kept:
             return y
-        # PDF-36 E.2 — whole bullets only: drop trailing items that cannot fit
-        # above the footer instead of letting the textbox overflow the page.
-        # PDF-40 G.1 — keep a footer safety band; multi-line theme bullets
-        # measure taller than a flat join, so drop whole cards before overlap.
-        page_avail = max(0, CONTENT_BOTTOM - y - 120_000)
+        # PDF-36 E.2 / PDF-45 — whole bullets only; generous footer safety band
+        # so multi-line theme cards never paint into the confidential footer.
+        page_avail = max(0, CONTENT_BOTTOM - y - 280_000)
         while len(kept) > 1:
             trial_lines: list[str] = []
             for b in kept:

@@ -657,7 +657,9 @@ export function reflowThemeBullet(text: string): string {
   const existing = raw
     .split("\n")
     .map((l) => l.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    // Drop empty GPT stubs that render as «Что делать:.»
+    .filter((l) => !/^(Что делать|Всего по теме|В корпусе)\s*:\s*\.?$/iu.test(l));
   const quoteRe = /«[^»]{8,}»\s*—\s*источник\s+[A-Za-z0-9][A-Za-z0-9.-]*/gu;
   const lineNeedsReflow = (l: string): boolean => {
     const n = (l.match(quoteRe) ?? []).length;

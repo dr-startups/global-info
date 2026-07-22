@@ -42,12 +42,12 @@
   "allowedSnakeTokens": ["lexis_nexis"],
   "internalTokenPattern": "\\baudit\\b|reportRunId|report_run|datasetId|pipeline|arsenkin|serp[-_]obs|inventoryId|schemaVersion|VISUAL_ASSET_UNAVAILABLE|LEXISNEXIS_SIGNAL",
   "fieldBudgets": {
-    "title": 120,
-    "narrative": 900,
-    "bullet": 520,
-    "whatWasFound": 400,
-    "whyItMatters": 320,
-    "whatToCheck": 220
+    "title": 140,
+    "narrative": 1100,
+    "bullet": 900,
+    "whatWasFound": 520,
+    "whyItMatters": 400,
+    "whatToCheck": 280
   },
   "sidebarBannedPattern": "(\\[DEMO\\]|\\.example\\b|\\bSUGGESTION\\b|knowledge-строк|не\\s+live|\\bprovider\\b|\\bmanifest\\b|\\bsynthetic\\b|\\breconstruction\\b)",
   "sidebarEllipsisForbidden": true,

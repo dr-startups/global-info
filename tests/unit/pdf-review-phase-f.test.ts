@@ -53,13 +53,13 @@ describe("F.1 — structured theme claim hierarchy", () => {
   });
 
   it("bullet field budget fits a structured multi-line theme claim", () => {
-    expect(getClientTextFieldBudgets().bullet).toBeGreaterThanOrEqual(520);
+    expect(getClientTextFieldBudgets().bullet).toBeGreaterThanOrEqual(900);
   });
 });
 
 describe("F.2 — regional summary does not silently drop themes", () => {
-  it("regional-summary paginates at 4 bullets per slide (G.1 capacity)", () => {
-    expect(DECK_TEMPLATE_REGISTRY["regional-summary"].maxBulletsPerSlide).toBe(4);
+  it("regional-summary paginates at 3 bullets per slide (PDF-45 footer air)", () => {
+    expect(DECK_TEMPLATE_REGISTRY["regional-summary"].maxBulletsPerSlide).toBe(3);
   });
 
   it("withContinuations carries overflow themes to a continuation slide", () => {
@@ -73,9 +73,10 @@ describe("F.2 — regional summary does not silently drop themes", () => {
       } as never,
       "regional-summary"
     );
-    expect(slides).toHaveLength(2);
-    expect(slides[0]!.content.bullets).toHaveLength(4);
-    expect(slides[1]!.content.bullets).toHaveLength(4);
+    expect(slides).toHaveLength(3);
+    expect(slides[0]!.content.bullets).toHaveLength(3);
+    expect(slides[1]!.content.bullets).toHaveLength(3);
+    expect(slides[2]!.content.bullets).toHaveLength(2);
     expect(slides[1]!.isContinuation).toBe(true);
   });
 
@@ -100,8 +101,16 @@ describe("F.2 — regional summary does not silently drop themes", () => {
       },
       scope: { regions: ["UAE"], surfaces: [], subjectMatch: null, findingIds: null },
       evidenceIndex: {
-        "ev-ru": { domain: "dzen.ru", region: "RU", title: "RU title" },
-        "ev-uae": { domain: "gulfnews.com", region: "UAE", title: "UAE title" },
+        "ev-ru": {
+          domain: "dzen.ru",
+          region: "RU",
+          title: "Судебный сюжет о проверяемом лице в российских СМИ",
+        },
+        "ev-uae": {
+          domain: "gulfnews.com",
+          region: "UAE",
+          title: "Court filings link the subject to a Dubai ownership dispute",
+        },
       },
     };
     const finding = {
@@ -109,7 +118,7 @@ describe("F.2 — regional summary does not silently drop themes", () => {
       regions: ["RU", "UAE"],
       evidenceRefs: ["ev-ru", "ev-uae"],
       claim:
-        "Найдены публикации по теме:\n«RU title» — источник dzen.ru\n«UAE title» — источник gulfnews.com\nВсего по теме: 21 материал, с негативным контекстом — 21.",
+        "Найдены публикации по теме:\n«Судебный сюжет о проверяемом лице в российских СМИ» — источник dzen.ru\n«Court filings link the subject to a Dubai ownership dispute» — источник gulfnews.com\nВсего по теме: 21 материал, с негативным контекстом — 21.",
     };
     const out = localizedThemedClaim(finding as never, scoped as never);
     expect(out).toContain("\n");

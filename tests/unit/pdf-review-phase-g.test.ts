@@ -59,7 +59,7 @@ describe("G.1 — regional summary does not merge methodology into bullets", () 
   });
 
   it("regional-summary capacity is 4 theme cards per page", () => {
-    expect(DECK_TEMPLATE_REGISTRY["regional-summary"].maxBulletsPerSlide).toBe(4);
+    expect(DECK_TEMPLATE_REGISTRY["regional-summary"].maxBulletsPerSlide).toBe(3);
   });
 });
 
@@ -105,8 +105,8 @@ describe("G.1b / G.2 — client claim shape", () => {
     expect(body).toContain("Всего по теме:");
   });
 
-  it("slide-copy prompt is v11 (risk essence quotes)", () => {
-    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v11");
+  it("slide-copy prompt is v12 (larger budgets, no mid-cut)", () => {
+    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v12");
   });
 
   it("reflowThemeBullet restores flattened G.2b quote lines (PDF-43)", () => {

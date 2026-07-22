@@ -178,7 +178,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 )
                 y += 100_000
             if bullets:
-                ctx.bullets(bullets, y, max_items=7, max_chars=380)
+                ctx.bullets(bullets, y, max_items=6, max_chars=900)
             return
         narr = narrative.strip()
         if narr and not bullets:
@@ -208,7 +208,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             )
             y += 100_000
         if bullets:
-            ctx.bullets(bullets, y, max_items=7, max_chars=380)
+            ctx.bullets(bullets, y, max_items=6, max_chars=900)
         return
 
     if template == "orion_golden_risk_matrix":
@@ -293,11 +293,10 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 )
                 y += 60_000
             if bullets:
-                ctx.bullets(bullets, y, max_items=4, max_chars=420)
+                ctx.bullets(bullets, y, max_items=3, max_chars=900)
             return
-        # PDF-40 G.4/G.5 — when KPIs exist, lead with the scorecard (ORION GSM
-        # regional audit), then a shorter narrative, then theme cards. Leave
-        # air above the footer so multi-line themes never clip glyphs.
+        # PDF-40 G.4/G.5 / PDF-45 — scorecard → narrative → theme cards.
+        # Fewer cards per page + higher char budget; overflow continues.
         metrics = [m for m in (slide.get("metrics") or []) if isinstance(m, dict)]
         if metrics:
             y = _render_kpi_cards(ctx, metrics[:6], MARGIN_X, y, CONTENT_W, cols=3) + 80_000
@@ -346,7 +345,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             )
             y += 50_000
         if bullets:
-            ctx.bullets(bullets, y, max_items=4, max_chars=420)
+            ctx.bullets(bullets, y, max_items=3, max_chars=900)
         return
 
     if template == "orion_golden_serp_screenshot":

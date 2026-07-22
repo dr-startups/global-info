@@ -107,29 +107,25 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
             text = detail
         else:
             text = headline
-        # Guard dangling tails from upstream clips.
-        text = _trim_dangling_tail(_safe(text))
+        # Keep structured newlines; content_card drops whole lines if tight.
+        text = _clip_structured_bullet(text, 900) or text
         cards.append(("Риск", text, tone))
     if actions:
         act = actions[0]
         label = _safe(act.get("label"))
-        # Keep a complete sentence for the narrow action card — never mid-phrase
-        # stubs like «…и карту ключевых» (PDF review). No pre-_clip_words.
+        # Keep a complete sentence for the narrow action card — never mid-phrase.
         text = label
-        if len(text) > 200:
+        if len(text) > 280:
             punct = max(text.rfind(". "), text.rfind("! "), text.rfind("? "), text.rfind("; "))
             if punct > 60:
                 text = text[: punct + 1].strip()
-            else:
-                text = _clip_words(text, 160)
-                if text and text[-1] not in ".!?…":
-                    text = text.rstrip(".,;: ") + "."
+            # else keep full label — card font-steps down rather than mid-cut
         cards.append(("Следующий шаг", text, "accent"))
     if cards:
         gap = 80_000
         col_w = (CONTENT_W - gap * (len(cards) - 1)) // max(1, len(cards))
         fx = MARGIN_X
-        card_max = min(1_500_000, max(520_000, CONTENT_BOTTOM - bottom_y - 40_000))
+        card_max = min(2_200_000, max(720_000, CONTENT_BOTTOM - bottom_y - 40_000))
         for card_title, text, tone in cards:
             ctx.content_card(
                 title=card_title,
@@ -137,11 +133,11 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
                 x=fx,
                 y=bottom_y,
                 width=col_w,
-                min_h=420_000,
+                min_h=520_000,
                 max_h=card_max,
                 tone=tone,
                 title_size=11,
-                body_size=11,
+                body_size=10.5,
             )
             fx += col_w + gap
 
@@ -166,7 +162,7 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         headline = _safe(finding.get("headline") or "Тема")
         if len(headline) > 72:
             headline = _clip_words(headline, 72)
-        detail = _clip_structured_bullet(_safe(finding.get("detail") or ""), 420)
+        detail = _clip_structured_bullet(_safe(finding.get("detail") or ""), 900)
         # PDF-40 G.1b — drop a leading «Theme» line that duplicates the headline.
         detail_lines = _split_structured_bullet(detail) or ([detail] if detail else [])
         if detail_lines and detail_lines[0].startswith("«"):

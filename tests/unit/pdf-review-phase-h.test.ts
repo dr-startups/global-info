@@ -83,9 +83,17 @@ describe("H.1 — weak title gate", () => {
     ).toBe(false);
   });
 
-  it("quoteForClaim does not leave dangling and/of tails", () => {
-    const q = quoteForClaim("Russian Oligarch Oleg Vladimirovich Deripaska and more words here about sanctions", 50);
-    expect(q).not.toMatch(/\band\s*$/iu);
+  it("quoteForClaim skips unsafe mid-phrase cuts instead of dangling tails", () => {
+    const q = quoteForClaim(
+      "Russian Oligarch Oleg Vladimirovich Deripaska and more words here about sanctions",
+      50
+    );
+    // No safe clause boundary under 50 chars → empty (caller picks another title).
+    expect(q === "" || !/\band\s*$/iu.test(q)).toBe(true);
+  });
+
+  it("treats NYT topic hub titles as bare/weak", () => {
+    expect(isWeakExampleTitle("Oleg V Deripaska - The New York Times")).toBe(true);
   });
 });
 
@@ -159,7 +167,7 @@ describe("H.1/H.2 — rank and resolve quotes", () => {
 
 describe("H.3 — GPT guard", () => {
   it("slide-copy prompt is v11", () => {
-    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v11");
+    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v12");
   });
 
   it("rejectWeakQuoteLines catches bare FIO evidence quotes", () => {

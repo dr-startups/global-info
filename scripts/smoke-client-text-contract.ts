@@ -41,7 +41,8 @@ describe("client-text-contract §6.1", () => {
     assert.equal(c.version, "client-text-contract-v1");
     assert.ok(c.forbiddenRawTokens.includes("manifest"));
     assert.ok(c.allowedSnakeTokens.includes("lexis_nexis"));
-    assert.equal(c.fieldBudgets.narrative, 900);
+    assert.equal(c.fieldBudgets.narrative, 1100);
+    assert.equal(c.fieldBudgets.bullet, 900);
     // «API» / «движок» are not hard sidebar bans after §6.1 review.
     assert.ok(!c.sidebarBannedPattern.includes("\\bAPI\\b"));
     assert.ok(!c.sidebarBannedPattern.includes("движок"));

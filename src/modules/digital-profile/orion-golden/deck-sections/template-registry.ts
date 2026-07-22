@@ -174,11 +174,11 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
     staticBlocks: ["Обзор региона", ...FINDING_BLOCKS],
     methodologyNote:
       "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI.",
-    // PDF-40 G.1 — 4 client-voice theme cards fit above the footer; overflow
-    // continues so Business / «Другие материалы» are never dropped.
-    maxBulletsPerSlide: 4,
+    // PDF-45 — 3 multi-line theme cards above the footer (more pages OK);
+    // never crush quotes into the confidential band.
+    maxBulletsPerSlide: 3,
     maxTableRowsPerSlide: 0,
-    layout: layout("two-column", { narrativeCharBudget: 500, itemCharBudget: 420 }),
+    layout: layout("two-column", { narrativeCharBudget: 700, itemCharBudget: 860 }),
   },
   "finding-cards": {
     templateId: "finding-cards",
@@ -186,7 +186,7 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
     staticBlocks: FINDING_BLOCKS,
     maxBulletsPerSlide: 6,
     maxTableRowsPerSlide: 0,
-    layout: layout("two-column", { itemCharBudget: 360 }),
+    layout: layout("two-column", { itemCharBudget: 860 }),
   },
   "serp-table": {
     templateId: "serp-table",

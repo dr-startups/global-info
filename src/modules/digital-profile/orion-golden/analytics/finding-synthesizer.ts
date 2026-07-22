@@ -176,7 +176,10 @@ const STRONG_DOMAIN_RE =
 
 /** True for titles that are only a person name (no risk essence). */
 function looksLikeBarePersonName(title: string): boolean {
-  const t = title.replace(/^[«"]|[»"]$/gu, "").trim();
+  let t = title.replace(/^[«"]|[»"]$/gu, "").trim();
+  // Topic / hub pages: «Oleg V Deripaska - The New York Times»
+  t = t.replace(/\s*[-–—]\s*(?:The\s+)?New\s+York\s+Times\s*$/iu, "").trim();
+  t = t.replace(/\s*[-–—]\s*[A-Za-z0-9.-]+\.[a-z]{2,}\s*$/iu, "").trim();
   if (/[0-9:/]/u.test(t) || BIO_SEO_RE.test(t)) return false;
   // Latin: Oleg V Deripaska / Oleg Deripaska
   if (/^[A-Z][a-z]+(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-z]+){1,2}$/u.test(t)) return true;
@@ -185,20 +188,35 @@ function looksLikeBarePersonName(title: string): boolean {
   return false;
 }
 
-/** Cap a quote for a bullet line; never leave a dangling function-word tail. */
-export function quoteForClaim(title: string, budget = 120): string {
+/**
+ * Cap a quote for a bullet line. PDF-45: prefer keeping the WHOLE title;
+ * if over budget, cut only at a clause boundary — never mid-preposition
+ * («…visa over», «…из-за»). If no safe cut, return "" so the caller skips.
+ */
+export function quoteForClaim(title: string, budget = 160): string {
   const t = cleanExampleTitle(title);
+  if (!t) return "";
   if (t.length <= budget) {
     return DANGLING_TAIL_RE.test(t) ? t.replace(DANGLING_TAIL_RE, "").trim() : t;
   }
   const slice = t.slice(0, budget);
-  const cut = Math.max(slice.lastIndexOf(" "), slice.lastIndexOf(","), slice.lastIndexOf("—"));
-  let body = (cut > budget * 0.45 ? slice.slice(0, cut) : slice).trim();
-  body = body.replace(/[\s,;:.—–-]+$/u, "").trim();
+  const cut = Math.max(
+    slice.lastIndexOf(": "),
+    slice.lastIndexOf(". "),
+    slice.lastIndexOf(", "),
+    slice.lastIndexOf(" — "),
+    slice.lastIndexOf(" – ")
+  );
+  if (cut < budget * 0.55) {
+    // No safe clause boundary — skip rather than publish a broken fragment.
+    return "";
+  }
+  let body = slice.slice(0, cut).trim().replace(/[\s,;:.—–-]+$/u, "").trim();
   if (DANGLING_TAIL_RE.test(body)) {
     body = body.replace(DANGLING_TAIL_RE, "").trim();
   }
-  return body ? `${body}…` : t.slice(0, Math.min(budget, t.length)).trim();
+  if (!body || body.length < 24 || DANGLING_TAIL_RE.test(body)) return "";
+  return `${body}…`;
 }
 
 /**
@@ -265,7 +283,7 @@ export function resolveExampleQuote(
   const domain = domainOf(item.sourceUrl);
   const title = cleanExampleTitle(String(item.title ?? ""));
   if (title && !isWeakExampleTitle(title, { theme })) {
-    const q = quoteForClaim(title, 120);
+    const q = quoteForClaim(title, 160);
     if (q && !isWeakExampleTitle(q, { theme })) {
       return { title: q, domain };
     }
@@ -276,7 +294,7 @@ export function resolveExampleQuote(
     .trim();
   if (snip.length >= 40 && (theme.keywords.test(snip) || getAdversePatterns().test(snip))) {
     const sentence = (snip.split(/(?<=[.!?…])\s+/u)[0] ?? snip).trim();
-    const q = quoteForClaim(sentence, 120);
+    const q = quoteForClaim(sentence, 160);
     if (q.length >= 24 && !isWeakExampleTitle(q, { theme })) {
       return { title: q, domain };
     }
@@ -358,7 +376,7 @@ export function buildClientFacingClaim(input: {
 
   const quoteLines: string[] = [];
   for (const e of examples.slice(0, 2)) {
-    const q = quoteForClaim(e.title, 120);
+    const q = quoteForClaim(e.title, 160);
     if (!q || isWeakExampleTitle(q, { theme: input.theme })) continue;
     quoteLines.push(e.domain ? `«${q}» — источник ${e.domain}` : `«${q}»`);
   }
