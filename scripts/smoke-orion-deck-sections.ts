@@ -911,7 +911,8 @@ describe("REMEDIATION §7.3 executive sparse structure", () => {
     const blockCount =
       structure.narrativeParagraphs.length + structure.factCards.length + (structure.recommendations ? 1 : 0);
     assert.ok(blockCount >= 3, `expected ≥3 blocks, got ${blockCount}`);
-    assert.ok(structure.narrativeParagraphs.some((p) => /Карта покрытия/i.test(p)));
+    // PDF-40 G.3 — coverage is client prose («По собранным источникам…»), not «Карта покрытия».
+    assert.ok(structure.narrativeParagraphs.some((p) => /По собранным источникам|материал/i.test(p)));
     assert.ok(
       structure.narrativeParagraphs.some((p) => /другом лице|требуют подтвержд|неоднознач/i.test(p)) ||
         structure.factCards.some((p) => /другом лице|требуют подтвержд|неоднознач/i.test(p))
