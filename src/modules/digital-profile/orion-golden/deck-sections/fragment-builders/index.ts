@@ -25,6 +25,8 @@ export {
   localizedThemedClaim,
   statusLine,
   structureThemeClaimText,
+  reflowThemeBullet,
+  reflowNarrativeParagraphs,
   claimBodyWithoutTheme,
   themedClaim,
   withContinuations,

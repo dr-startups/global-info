@@ -35,9 +35,10 @@ import {
 } from "../client/load-client-text-contract";
 import { riskLevelRu, subjectMatchRu } from "../gpt/client-payload-labels";
 import type { GptDeckComposition } from "./gpt-deck-composer";
+import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
 
-/** v6 — GPT levels plan: composition plan (level 2) wired into fragment prompts. */
-export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v9";
+/** v10 — preserve G.2b newlines in theme bullets / narrative paragraphs (PDF-43). */
+export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v10";
 
 /** Mirrors section-validation budgets — from client-text-contract (§6.1). */
 export const GPT_SLIDE_COPY_FIELD_BUDGETS = (() => {
@@ -281,8 +282,8 @@ const COPY_INSTRUCTIONS = [
   "Нижняя граница для страниц с данными: каждый заполняемый текстовый блок — не короче ~40% своего бюджета (narrative ≳360, whatWasFound ≳160, whyItMatters ≳130, whatToCheck ≳90, bullet ≳160), если в черновике/findings есть материал для раскрытия.",
   "Пиши КЛИЕНТСКИМ языком консультанта: тема риска → конкретика из заголовков статей → источник (домен) → коротко почему важно. Запрещены внутренние формулировки: «KPI», «тематический блок», «составной набор данных».",
   "СТРОГО: не заменяй конкретику общими фразами вроде «в выдаче устойчиво видны…», «заметны семейные связи», «формируют риск». Если в черновике есть строки ««заголовок» — источник domain.com», сохрани их (можно слегка отредактировать заголовок, но не выкидывай цитату и домен).",
-  "Для тематических bullets структура: 1) тема в «ёлочках», 2) короткая рамка «найдены публикации…», 3) 1–2 строки ««заголовок» — источник domain», 4) «Всего по теме: N…», 5) одно предложение почему это важно / что делать.",
-  "В narrative резюме: итог для проверки + 2–4 темы с опорой на конкретные сюжеты/источники из findings; без воды. Финал — что делать.",
+  "Для тематических bullets структура (каждый пункт — ОТДЕЛЬНАЯ строка через \\n, не склеивай в один абзац): 1) тема в «ёлочках», 2) короткая рамка «найдены публикации…», 3) 1–2 строки ««заголовок» — источник domain» (каждая цитата на своей строке), 4) «Всего по теме: N…», 5) одно предложение почему это важно / что делать.",
+  "В narrative резюме: итог для проверки + 2–4 темы с опорой на конкретные сюжеты/источники из findings; без воды. Финал — что делать. Разбивай narrative на 2–3 абзаца через \\n — не пиши одной «простынёй».",
   "Не переписывай честные пустые состояния: если черновик говорит, что поверхность не собиралась / проверена и пуста / визуал недоступен — не подставляй findings с других поверхностей или регионов.",
   "Если передан compositionPlan — следуй ему: начни narrative с указанного смыслового акцента (storyAngle), раскрой в первую очередь темы из emphasisThemes (в заданном порядке) и упоминай прежде всего домены из keyDomains; план не добавляет новых фактов — используй только материал слайда.",
   'Верни ТОЛЬКО JSON: {"slides": [{"slideId": string, "narrative"?: string, "bullets"?: [string], "whatWasFound"?: string, "whyItMatters"?: string, "whatToCheck"?: string}]}. Не возвращай null, пустые строки и пустые массивы — неизменённое поле просто опускай. Опускай слайд целиком, если поверхность пустая и черновик честно сообщает об отсутствии данных.',
@@ -525,12 +526,14 @@ function applyOverrides(input: {
       budget: number
     ) => {
       if (value === undefined) return;
-      const reason = rejectReason(value, budget, allowed);
+      const normalized =
+        field === "narrative" ? reflowNarrativeParagraphs(value.trim()) : value.trim();
+      const reason = rejectReason(normalized, budget, allowed);
       if (reason) {
         rejectedFields.push(`${slide.slideId}.${field}:${reason}`);
         return;
       }
-      content[field] = value.trim();
+      content[field] = normalized;
       appliedFields += 1;
     };
 
@@ -542,13 +545,14 @@ function applyOverrides(input: {
     // Bullets stay deterministic when the slide has chunked continuations
     // (rewriting only the base chunk would desynchronize the sequence).
     if (o.bullets && !continuationBases.has(slide.slideId)) {
-      const reasons = o.bullets
+      const reflowed = o.bullets.map((b) => reflowThemeBullet(b.trim()));
+      const reasons = reflowed
         .map((b) => rejectReason(b, TEXT_BUDGETS.bullet, allowed))
         .filter((r): r is string => Boolean(r));
       if (reasons.length > 0) {
         rejectedFields.push(`${slide.slideId}.bullets:${reasons[0]}`);
       } else {
-        content.bullets = o.bullets.map((b) => b.trim());
+        content.bullets = reflowed;
         appliedFields += 1;
       }
     }

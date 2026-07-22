@@ -13,6 +13,7 @@ import {
 import {
   claimBodyWithoutTheme,
   DECK_TEMPLATE_REGISTRY,
+  reflowThemeBullet,
   toRendererPayload,
 } from "../../src/modules/digital-profile/orion-golden/deck-sections";
 import { GPT_SLIDE_COPY_PROMPT_VERSION } from "../../src/modules/digital-profile/orion-golden/deck-sections/llm-slide-copy";
@@ -101,8 +102,26 @@ describe("G.1b / G.2 — client claim shape", () => {
     expect(body).toContain("Всего по теме:");
   });
 
-  it("slide-copy prompt is v9 (concrete evidence)", () => {
-    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v9");
+  it("slide-copy prompt is v10 (preserve newlines)", () => {
+    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v10");
+  });
+
+  it("reflowThemeBullet restores flattened G.2b quote lines (PDF-43)", () => {
+    const flat =
+      "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Самый говорливый олигарх.» — источник dzen.ru «КФХ Дерипаска Олег Владимирович ИНН... - узнать на saby.ru» — источник saby.ru Всего по теме: 21 материал, с негативным контекстом — 21. [finding-criminal_legal-subject_match-d51d53d8]";
+    const out = reflowThemeBullet(flat);
+    const lines = out.split("\n");
+    expect(lines[0]).toBe("«Криминальные / судебные материалы»");
+    expect(lines.some((l) => /^Найдены публикации/u.test(l))).toBe(true);
+    expect(lines.filter((l) => /— источник /u.test(l))).toHaveLength(2);
+    expect(lines.some((l) => /^Всего по теме:/u.test(l))).toBe(true);
+    expect(out).toContain("[finding-criminal_legal-subject_match-d51d53d8]");
+
+    const partial =
+      "«Семья и деловые связи»\nНайдены материалы о семейных и деловых связях субъекта\n«Олег Дерипаска – биография» — источник uznayvse.ru «Organized crime group.» — источник youtube.com Всего по теме: 23 материала.";
+    const partialOut = reflowThemeBullet(partial).split("\n");
+    expect(partialOut.filter((l) => /— источник /u.test(l))).toHaveLength(2);
+    expect(partialOut.some((l) => /^Всего по теме:/u.test(l))).toBe(true);
   });
 });
 

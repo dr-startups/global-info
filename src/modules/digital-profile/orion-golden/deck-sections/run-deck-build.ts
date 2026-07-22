@@ -18,6 +18,7 @@ import { assembleDeck, type DeckAssemblyResult, type RendererSlide } from "./dec
 import { validateAssembly, type AssemblyValidationReport } from "./assembly-validation";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import { getClientTextContract } from "../client/load-client-text-contract";
+import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
 
 export type DeckBuildResult = {
   packs: SectionPackV2[];
@@ -238,8 +239,10 @@ export function toRendererPayload(input: {
   const finalSlides = input.rendererSlides.map((raw) => {
     const s: RendererSlide = {
       ...raw,
-      narrative: raw.narrative ? stripFindingMarkers(raw.narrative) : raw.narrative,
-      bullets: raw.bullets?.map(stripFindingMarkers),
+      narrative: raw.narrative
+        ? reflowNarrativeParagraphs(stripFindingMarkers(raw.narrative))
+        : raw.narrative,
+      bullets: raw.bullets?.map((b) => reflowThemeBullet(stripFindingMarkers(b))),
     };
     const boundAssets = s.visualAssetRefs.filter((r) => assetByRef.has(r));
     for (const r of boundAssets) usedAssetRefs.add(r);

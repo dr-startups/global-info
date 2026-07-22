@@ -29,6 +29,7 @@ import {
   isHonestEmptyStateSlide,
   rejectReason,
 } from "./llm-slide-copy";
+import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
 
 export const GPT_DECK_EDITOR_PROMPT_VERSION = "gpt-deck-editor-v1";
 
@@ -192,13 +193,15 @@ function applyEditorOverridesToPack(input: {
       budget: number
     ) => {
       if (value === undefined) return;
-      const reason = rejectReason(value, budget, allowed);
+      const normalized =
+        field === "narrative" ? reflowNarrativeParagraphs(value.trim()) : value.trim();
+      const reason = rejectReason(normalized, budget, allowed);
       if (reason) {
         report.rejectedFields.push(`${slide.slideId}.${field}:${reason}`);
         return;
       }
-      if (content[field] === value.trim()) return;
-      content[field] = value.trim();
+      if (content[field] === normalized) return;
+      content[field] = normalized;
       report.appliedFields += 1;
       slideChanged = true;
     };
@@ -210,13 +213,14 @@ function applyEditorOverridesToPack(input: {
 
     // Chunked bullet sequences stay untouched (same guard as stage 2).
     if (o.bullets && !continuationBases.has(slide.slideId)) {
-      const reasons = o.bullets
+      const reflowed = o.bullets.map((b) => reflowThemeBullet(b.trim()));
+      const reasons = reflowed
         .map((b) => rejectReason(b, TEXT_BUDGETS.bullet, allowed))
         .filter((r): r is string => Boolean(r));
       if (reasons.length > 0) {
         report.rejectedFields.push(`${slide.slideId}.bullets:${reasons[0]}`);
       } else {
-        content.bullets = o.bullets.map((b) => b.trim());
+        content.bullets = reflowed;
         report.appliedFields += 1;
         slideChanged = true;
       }

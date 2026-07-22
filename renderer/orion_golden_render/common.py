@@ -393,15 +393,85 @@ _QUOTE_SOURCE_RE = re.compile(r"^«[^»]{8,}»\s*—\s*источник\b", re.I
 _THEME_LINE_RE = re.compile(r"^«[^»]{2,80}»\s*$")
 
 
+_QUOTE_SOURCE_INLINE_RE = re.compile(
+    r"«[^»]{8,}»\s*—\s*источник\s+[A-Za-z0-9][A-Za-z0-9.-]*",
+    re.I,
+)
+_TAIL_SPLIT_RE = re.compile(
+    r"(?=(?:Всего по теме:|В корпусе:|Что делать:|Для банка|Банки |Это усиливает|Риск в том|Деловой фон))"
+)
+
+
+def _reflow_g2b_bullet(raw: str) -> list[str] | None:
+    """PDF-43 — restore theme / framing / quotes / scale when GPT flattened G.2b."""
+    flat = re.sub(r"\s+", " ", raw.replace("\n", " ")).strip()
+    if not flat:
+        return None
+    quotes = _QUOTE_SOURCE_INLINE_RE.findall(flat)
+    if not quotes:
+        return None
+    theme = ""
+    rest = flat
+    theme_m = re.match(r"^(«[^»]{2,80}»)\s+(.*)$", flat)
+    if (
+        theme_m
+        and "источник" not in theme_m.group(1).lower()
+        and re.match(r"^(Найдены|Есть публикации|В открытой)", theme_m.group(2))
+    ):
+        theme = theme_m.group(1).strip()
+        rest = theme_m.group(2).strip()
+        quotes = _QUOTE_SOURCE_INLINE_RE.findall(rest)
+    first = _QUOTE_SOURCE_INLINE_RE.search(rest)
+    if not first:
+        return None
+    framing = rest[: first.start()].strip()
+    if framing and re.search(r"Найдены|публик|материал", framing, re.I) and not framing.endswith(":"):
+        framing = re.sub(r"[.:]\s*$", "", framing) + ":"
+    last_end = 0
+    for m in _QUOTE_SOURCE_INLINE_RE.finditer(rest):
+        last_end = m.end()
+    tail = rest[last_end:].strip()
+    out: list[str] = []
+    if theme:
+        out.append(theme)
+    if framing:
+        out.append(framing)
+    out.extend(q.strip() for q in quotes)
+    if tail:
+        out.extend(p.strip() for p in _TAIL_SPLIT_RE.split(tail) if p.strip())
+    return out if len(out) >= 3 else None
+
+
 def _split_structured_bullet(text: str) -> list[str]:
-    """PDF-38 F.1 — normalize a theme bullet into theme / stats / meta lines."""
+    """PDF-38 F.1 / PDF-43 — normalize a theme bullet into theme / quotes / meta lines."""
     raw = _safe(text).replace("\r\n", "\n").strip()
     if not raw:
         return []
-    if "\n" in raw:
-        return [ln.strip() for ln in raw.split("\n") if ln.strip()]
+    # Strip trailing finding marker before structural split (kept out of draw lines).
+    raw_core = re.sub(r"\s*\[finding-[^\]]+\]\s*$", "", raw).strip() or raw
+    lines_in = [ln.strip() for ln in raw_core.split("\n") if ln.strip()]
+    needs_reflow = False
+    for ln in lines_in:
+        n = len(_QUOTE_SOURCE_INLINE_RE.findall(ln))
+        if n > 1:
+            needs_reflow = True
+            break
+        if n == 1 and re.search(
+            r"(?:Всего по теме:|В корпусе:|Для банка|Банки |Риск в том)", ln
+        ):
+            needs_reflow = True
+            break
+        if re.match(r"^«[^»]{2,80}»\s+(?:Найдены|Есть публикации|В открытой)", ln):
+            needs_reflow = True
+            break
+    if needs_reflow or ("\n" not in raw_core and _QUOTE_SOURCE_INLINE_RE.search(raw_core)):
+        reflowed = _reflow_g2b_bullet(raw_core)
+        if reflowed:
+            return reflowed
+    if "\n" in raw_core:
+        return lines_in
     # One-line «Theme» — body with optional Sources/Examples tails.
-    m = re.match(r"^(«[^»]+»)\s*[—\-–:]?\s*(.+)$", raw, re.S)
+    m = re.match(r"^(«[^»]+»)\s*[—\-–:]?\s*(.+)$", raw_core, re.S)
     if m:
         theme, rest = m.group(1).strip(), m.group(2).strip()
         sources = re.search(
@@ -426,7 +496,7 @@ def _split_structured_bullet(text: str) -> list[str]:
                 re.sub(r"\s+", " ", examples.group(1)).replace("Примеры заголовков:", "Примеры:").strip()
             )
         return lines
-    return [raw]
+    return [raw_core]
 
 
 def _clip_structured_bullet(text: str, max_chars: int) -> str:

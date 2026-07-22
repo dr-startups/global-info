@@ -641,6 +641,98 @@ export function pageSourceLine(view: PageEvidenceView): string {
 
 /** «Тема» — claim; skip the prefix when the claim already names the theme. */
 /**
+ * PDF-43 — GPT stage2 often flattens G.2b bullets into one paragraph
+ * («тема» Найдены…: «q1» — источник a «q2» — источник b Всего…).
+ * Restore scan lines so the renderer can bold the theme and break quotes.
+ */
+export function reflowThemeBullet(text: string): string {
+  const original = String(text ?? "").replace(/\r\n/gu, "\n");
+  const markerMatch = original.match(/(\s*\[finding-[^\]]+\])\s*$/u);
+  const marker = markerMatch?.[1] ?? "";
+  const raw = original.replace(/\s*\[finding-[^\]]+\]\s*$/u, "").trim();
+  if (!raw) return original.trim();
+
+  const existing = raw
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const quoteRe = /«[^»]{8,}»\s*—\s*источник\s+[A-Za-z0-9][A-Za-z0-9.-]*/gu;
+  const lineNeedsReflow = (l: string): boolean => {
+    const n = (l.match(quoteRe) ?? []).length;
+    if (n > 1) return true;
+    if (n === 1 && /(?:Всего по теме:|В корпусе:|Для банка|Банки |Риск в том|Что делать:)/u.test(l)) {
+      return true;
+    }
+    return /^«[^»]{2,80}»\s+(?:Найдены|Есть публикации|В открытой)/u.test(l);
+  };
+  const quoteLines = existing.filter((l) => /^«[^»]{8,}»\s*—\s*источник\b/u.test(l));
+  if (
+    quoteLines.length >= 1 &&
+    existing.length >= 3 &&
+    !existing.some(lineNeedsReflow)
+  ) {
+    return marker ? `${existing.join("\n")}${marker}` : existing.join("\n");
+  }
+
+  const flat = existing.join(" ").replace(/\s+/gu, " ").trim();
+  let theme = "";
+  let rest = flat;
+  const themeM = flat.match(/^(«([^»]{2,80})»)\s+(.*)$/u);
+  if (
+    themeM &&
+    !/источник/iu.test(themeM[1]) &&
+    /^(Найдены|Есть публикации|В открытой)/u.test(themeM[3] ?? "")
+  ) {
+    theme = themeM[1];
+    rest = themeM[3] ?? "";
+  }
+
+  const quotes = [...rest.matchAll(quoteRe)].map((m) => m[0].trim());
+  const out: string[] = [];
+  if (theme) out.push(theme);
+
+  if (quotes.length > 0) {
+    const firstIdx = rest.search(quoteRe);
+    let framing = firstIdx >= 0 ? rest.slice(0, firstIdx).trim() : rest;
+    if (framing && /Найдены|публик|материал/iu.test(framing) && !/:\s*$/u.test(framing)) {
+      framing = `${framing.replace(/[.:]\s*$/u, "")}:`;
+    }
+    if (framing) out.push(framing);
+    out.push(...quotes);
+    let lastEnd = 0;
+    for (const m of rest.matchAll(quoteRe)) {
+      lastEnd = (m.index ?? 0) + m[0].length;
+    }
+    const tail = rest.slice(lastEnd).trim();
+    if (tail) {
+      for (const part of tail.split(
+        /(?=(?:Всего по теме:|В корпусе:|Что делать:|Для банка|Банки |Это усиливает|Риск в том|Деловой фон))/u
+      )) {
+        const t = part.trim();
+        if (t) out.push(t);
+      }
+    }
+  } else {
+    out.push(...(existing.length ? existing : [flat]));
+  }
+
+  const body = out.filter(Boolean).join("\n");
+  if (!marker) return body;
+  return `${body}${marker.startsWith(" ") || marker.startsWith("\n") ? marker : ` ${marker.trim()}`}`;
+}
+
+/** Split a wall-of-text narrative into 2–3 short paragraphs (PDF-43). */
+export function reflowNarrativeParagraphs(text: string, maxParas = 3): string {
+  const raw = String(text ?? "").replace(/\r\n/gu, "\n").trim();
+  if (!raw) return raw;
+  if (raw.includes("\n")) return raw.replace(/\n{3,}/gu, "\n\n").trim();
+  if (raw.length < 220) return raw;
+  return splitClientParagraphs(raw, Math.max(180, Math.floor(raw.length / maxParas)), maxParas).join(
+    "\n"
+  );
+}
+
+/**
  * PDF-38 F.1 — split a one-line theme claim into scan-friendly lines:
  * theme · stats · sources · examples. Already-structured text is kept.
  */
@@ -728,9 +820,11 @@ export function claimBodyWithoutTheme(f: Finding): string {
 export function themedClaim(f: Finding): string {
   const claim = structureThemeClaimText(String(f.claim ?? "").trim());
   if (!claim) return `«${f.theme}»`;
-  if (claim.toLowerCase().startsWith(f.theme.toLowerCase())) return claim;
-  if (claim.startsWith("«")) return claim;
-  return `«${f.theme}»\n${claim}`;
+  const withTheme =
+    claim.toLowerCase().startsWith(f.theme.toLowerCase()) || claim.startsWith("«")
+      ? claim
+      : `«${f.theme}»\n${claim}`;
+  return reflowThemeBullet(withTheme);
 }
 
 /**
@@ -814,9 +908,11 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
   // Prefer multi-line structure even when the stored claim was one paragraph.
   claim = structureThemeClaimText(claim);
   if (!claim) return `«${f.theme}»`;
-  if (claim.toLowerCase().startsWith(f.theme.toLowerCase())) return claim;
-  if (claim.startsWith("«")) return claim;
-  return `«${f.theme}»\n${claim}`;
+  const withTheme =
+    claim.toLowerCase().startsWith(f.theme.toLowerCase()) || claim.startsWith("«")
+      ? claim
+      : `«${f.theme}»\n${claim}`;
+  return reflowThemeBullet(withTheme);
 }
 
 /** Region-level source line — summary pages only (page IS the region). */
