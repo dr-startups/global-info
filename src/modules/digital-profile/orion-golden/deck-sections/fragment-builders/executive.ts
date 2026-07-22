@@ -27,6 +27,7 @@ import {
   bulletWithFindingId,
   changeSinceLastReportLine,
   chunk,
+  claimBodyWithoutTheme,
   clampClientText,
   fitClientSentences,
   isAdverse,
@@ -521,41 +522,39 @@ const RISK_MATRIX_LIKELY_RESERVED = 1;
 export const RISK_MATRIX_LIKELY_AGGREGATE_ID = "finding-likely-aggregate";
 
 function riskMatrixDetail(f: Finding, extras?: FragmentExtras): string {
-  // PDF-38 F.1 — keep multi-line theme / stats / sources; flatten only when
-  // the structured body exceeds the card budget.
-  const claim = themedClaim(f);
+  // PDF-40 G.1b — headline already shows the theme; detail is body only.
+  const claim = claimBodyWithoutTheme(f);
   if (f.subjectMatch === "LIKELY_SUBJECT") {
     const body = [
-      "Требует подтверждения.",
       claim,
-      "Принадлежность вероятна, но не входит в KPI «О субъекте» до уточнения идентификации.",
+      "Принадлежность пока не подтверждена — до уточнения идентификации материал не включаем в итог «об этом лице».",
     ].join("\n");
-    return body.length <= 480
+    return body.length <= 420
       ? body
       : fitClientSentences(
           [
-            `Требует подтверждения: ${claim.replace(/\n/gu, " ")}`,
-            "Принадлежность вероятна, но не входит в KPI «О субъекте» до уточнения идентификации.",
+            claim.replace(/\n/gu, " "),
+            "Принадлежность пока не подтверждена — до уточнения идентификации материал не включаем в итог «об этом лице».",
           ],
-          320
+          300
         );
   }
   const risk = matchGptKeyRisk(f.theme, extras?.gptCaseAnalysis?.keyRisks);
   if (risk) {
     const body = [claim, risk.explanation, `Что делать: ${risk.advice}`].join("\n");
-    return body.length <= 520
+    return body.length <= 420
       ? body
       : fitClientSentences(
           [claim.replace(/\n/gu, " "), risk.explanation, `Что делать: ${risk.advice}`],
-          360
+          320
         );
   }
-  const body = [claim, `Рекомендация: ${f.recommendedAction}`].join("\n");
-  return body.length <= 520
+  const body = [claim, `Что делать: ${f.recommendedAction}`].join("\n");
+  return body.length <= 420
     ? body
     : fitClientSentences(
-        [claim.replace(/\n/gu, " "), `Рекомендация: ${f.recommendedAction}`],
-        360
+        [claim.replace(/\n/gu, " "), `Что делать: ${f.recommendedAction}`],
+        320
       );
 }
 
@@ -628,7 +627,7 @@ export function buildRiskMatrixFragment(
           "материал",
           "материала",
           "материалов"
-        )} отнесены к уровню «вероятно о субъекте» по фамилии и контексту; не входят в KPI «О субъекте» до уточнения идентификации.`,
+        )} пока отнесены к уровню «вероятно об этом лице» по фамилии и контексту — до уточнения идентификации не включаем их в подтверждённый итог.`,
         subjectMatch: "LIKELY_SUBJECT",
         riskLevel: "low",
         promotionPriority: "APPENDIX",

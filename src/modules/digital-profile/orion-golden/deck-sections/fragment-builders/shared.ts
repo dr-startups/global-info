@@ -647,7 +647,10 @@ export function pageSourceLine(view: PageEvidenceView): string {
 export function structureThemeClaimText(text: string): string {
   const raw = String(text ?? "").replace(/\r\n/gu, "\n").trim();
   if (!raw) return raw;
-  if (raw.includes("\n") && /(?:^|\n)(?:Источники|Примеры)\b/u.test(raw)) {
+  if (
+    raw.includes("\n") &&
+    /(?:^|\n)(?:Источники|Примеры|Где видно|В корпусе|Пример)\b/u.test(raw)
+  ) {
     return raw
       .replace(/Примеры заголовков:/gu, "Примеры:")
       .replace(/\n{2,}/gu, "\n")
@@ -676,13 +679,18 @@ export function structureThemeClaimText(text: string): string {
       rest = (colon[2] ?? "").trim();
     }
   }
-  const sourcesMatch = rest.match(/\s*(Источники(?:\s+в\s+регионе)?:\s*.+?)(?=\s*Примеры|\s*$)/u);
-  const examplesMatch = rest.match(/\s*((?:Примеры(?:\s+заголовков)?):\s*.+)$/u);
+  const corpusMatch = rest.match(/\s*(В корпусе:\s*.+?)(?=\s*(?:Где видно|Источники|Пример|Примеры)|\s*$)/u);
+  const sourcesMatch = rest.match(
+    /\s*((?:Где видно|Источники(?:\s+в\s+регионе)?):\s*.+?)(?=\s*(?:Пример|Примеры)|\s*$)/u
+  );
+  const examplesMatch = rest.match(/\s*((?:Пример|Примеры(?:\s+заголовков)?):\s*.+)$/u);
   let stats = rest;
+  if (corpusMatch) stats = stats.replace(corpusMatch[0], "").trim();
   if (sourcesMatch) stats = stats.replace(sourcesMatch[0], "").trim();
   if (examplesMatch) stats = stats.replace(examplesMatch[0], "").trim();
   stats = stats.replace(/\s+/gu, " ").replace(/[\s;,.]+$/u, "");
   if (stats && !/[.!?…]$/u.test(stats)) stats = `${stats}.`;
+  const corpus = corpusMatch ? corpusMatch[1].replace(/\s+/gu, " ").trim() : "";
   const sources = sourcesMatch
     ? sourcesMatch[1].replace(/\s+/gu, " ").trim()
     : "";
@@ -692,7 +700,21 @@ export function structureThemeClaimText(text: string): string {
         .replace(/\s+/gu, " ")
         .trim()
     : "";
-  return [theme, stats, sources, examples].filter(Boolean).join("\n");
+  return [theme, stats, corpus, sources, examples].filter(Boolean).join("\n");
+}
+
+/** Detail body without the leading «Theme» line (risk-matrix headline already shows it). */
+export function claimBodyWithoutTheme(f: Finding): string {
+  const full = themedClaim(f);
+  const lines = full.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (lines.length <= 1) return full;
+  if (
+    lines[0]!.startsWith("«") ||
+    lines[0]!.toLowerCase().startsWith(f.theme.toLowerCase())
+  ) {
+    return lines.slice(1).join("\n");
+  }
+  return full;
 }
 
 /**
@@ -744,15 +766,17 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
 
   let claim = f.claim;
   const sourceSegment = domains.length
-    ? `Источники в регионе: ${domains.slice(0, 4).join(", ")}.`
-    : "Источники по данной теме относятся к другим разделам отчёта.";
-  claim = claim.replace(/Источники:\s.*?\.(?=\s|$)/u, sourceSegment);
-  if (/Примеры(?:\s+заголовков)?:/u.test(claim)) {
-    // PDF-36 D.5 — whole-title join, no mid-title character slice.
-    const titlesSegment = joinTitlesWithinBudget(titles.slice(0, 3), 220);
+    ? `Где видно: ${domains.slice(0, 3).join(", ")}.`
+    : "По этой теме источники в данном регионе не выделены — см. другие разделы отчёта.";
+  claim = claim
+    .replace(/(?:Где видно|Источники(?:\s+в\s+регионе)?):\s*.+?(?=\n|(?:\s*(?:Пример|Примеры))|$)/u, sourceSegment)
+    .replace(/Источники:\s.*?\.(?=\s|$)/u, sourceSegment);
+  if (/(?:Пример|Примеры(?:\s+заголовков)?):/u.test(claim)) {
+    // PDF-36 D.5 / G.1d — at most one whole title, short budget.
+    const titlesSegment = joinTitlesWithinBudget(titles.slice(0, 1), 90);
     claim = titlesSegment
-      ? claim.replace(/Примеры(?:\s+заголовков)?:.*$/u, `Примеры: ${titlesSegment}`)
-      : claim.replace(/\n?Примеры(?:\s+заголовков)?:.*$/u, "");
+      ? claim.replace(/(?:Пример|Примеры(?:\s+заголовков)?):.*$/u, `Пример: ${titlesSegment}`)
+      : claim.replace(/\n?(?:Пример|Примеры(?:\s+заголовков)?):.*$/u, "");
   }
   // Prefer multi-line structure even when the stored claim was one paragraph.
   claim = structureThemeClaimText(claim);

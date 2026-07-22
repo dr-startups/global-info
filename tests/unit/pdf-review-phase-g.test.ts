@@ -1,0 +1,102 @@
+/**
+ * PDF review 40 — phase G (overflow + client voice) — offline acceptance.
+ * - G.1: metrics dashboard never glues methodology into theme bullets
+ * - G.1b: risk-matrix detail omits duplicated theme line
+ * - G.2: synthesizer claims start with client insight, not corpus counters
+ */
+
+import { describe, expect, it } from "vitest";
+import {
+  buildClientFacingClaim,
+  type ThemeDef,
+} from "../../src/modules/digital-profile/orion-golden/analytics/finding-synthesizer";
+import {
+  claimBodyWithoutTheme,
+  DECK_TEMPLATE_REGISTRY,
+  toRendererPayload,
+} from "../../src/modules/digital-profile/orion-golden/deck-sections";
+import { GPT_SLIDE_COPY_PROMPT_VERSION } from "../../src/modules/digital-profile/orion-golden/deck-sections/llm-slide-copy";
+
+describe("G.1 — regional summary does not merge methodology into bullets", () => {
+  it("metrics_dashboard keeps theme bullets only (no Методология / Что обнаружено)", () => {
+    const payload = toRendererPayload({
+      deckManifest: {
+        toc: [],
+        sectionPageRanges: [{ sectionType: "RU_SUMMARY", firstPage: 10, lastPage: 11 }],
+      } as never,
+      subjectName: "Тест",
+      rendererSlides: [
+        {
+          slideKey: "p07_ru_summary",
+          sectionKey: "RU_SUMMARY",
+          template: "orion_golden_metrics_dashboard",
+          title: "Россия — резюме аудита",
+          pageNumber: 10,
+          totalPageCount: 44,
+          baseSlotId: "p07_ru_summary",
+          narrative: "Короткий обзор региона.",
+          bullets: [
+            "«Криминальные / судебные материалы»\nВ выдаче видны судебные сюжеты.\nВ корпусе: 21 материал.",
+          ],
+          whatWasFound: "Технический блок — не должен попасть в bullets.",
+          whyItMatters: "Тоже не должен.",
+          whatToCheck: "Сверить статусы дел.",
+          methodologyNote: "Метрики рассчитаны только по материалам…",
+          sourceNote: "Источники: dzen.ru.",
+          visualAssetRefs: [],
+          evidenceRefs: [],
+        } as never,
+      ],
+    });
+    const slide = (payload.deckManifest as { finalSlides: Array<Record<string, unknown>> })
+      .finalSlides[0]!;
+    const bullets = (slide.bullets as string[]) ?? [];
+    expect(bullets).toHaveLength(1);
+    expect(bullets.join("\n")).not.toMatch(/Методология|Что обнаружено|Почему важно/u);
+    expect(String(slide.narrative)).toContain("Короткий обзор");
+    expect(slide.actions).toEqual([{ label: "Сверить статусы дел." }]);
+  });
+
+  it("regional-summary capacity is 4 theme cards per page", () => {
+    expect(DECK_TEMPLATE_REGISTRY["regional-summary"].maxBulletsPerSlide).toBe(4);
+  });
+});
+
+describe("G.1b / G.2 — client claim shape", () => {
+  const theme = {
+    themeId: "criminal_legal",
+    label: "Криминальные / судебные материалы",
+    keywords: /суд/iu,
+    baseRisk: "high",
+    recommendedAction: "Проверить статусы дел.",
+  } as ThemeDef;
+
+  it("buildClientFacingClaim leads with client insight, not «N публикаций…»", () => {
+    const claim = buildClientFacingClaim({
+      theme,
+      itemsCount: 21,
+      adverseCount: 21,
+      domains: ["dzen.ru", "secrets.tbank.ru"],
+      titles: ["Самый говорливый олигарх."],
+    });
+    expect(claim).toMatch(/банк|партн/iu);
+    expect(claim).toContain("В корпусе:");
+    expect(claim).toContain("Где видно:");
+    expect(claim).not.toMatch(/^21 публикац/u);
+    expect(claim).not.toContain("негативным содержанием —");
+  });
+
+  it("claimBodyWithoutTheme drops the leading «Theme» line", () => {
+    const body = claimBodyWithoutTheme({
+      theme: "Криминальные / судебные материалы",
+      claim:
+        "В открытой выдаче устойчиво поднимаются судебные сюжеты.\nВ корпусе: 21 материал.",
+    } as never);
+    expect(body).not.toMatch(/^«/u);
+    expect(body).toContain("В корпусе:");
+  });
+
+  it("slide-copy prompt is v8 (client voice)", () => {
+    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v8");
+  });
+});

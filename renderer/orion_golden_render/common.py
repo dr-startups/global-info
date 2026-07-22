@@ -385,7 +385,10 @@ def _clip_words(text: str, max_chars: int) -> str:
     return _trim_dangling_tail(slice_)
 
 
-_META_LINE_RE = re.compile(r"^(Источники(?:\s+в\s+регионе)?|Примеры(?:\s+заголовков)?)\s*:", re.I)
+_META_LINE_RE = re.compile(
+    r"^(Источники(?:\s+в\s+регионе)?|Примеры(?:\s+заголовков)?|Где видно|В корпусе|Пример)\s*:",
+    re.I,
+)
 _THEME_LINE_RE = re.compile(r"^«[^»]{2,80}»\s*$")
 
 
@@ -856,18 +859,30 @@ class _Ctx:
             return y
         # PDF-36 E.2 — whole bullets only: drop trailing items that cannot fit
         # above the footer instead of letting the textbox overflow the page.
-        page_avail = CONTENT_BOTTOM - y
+        # PDF-40 G.1 — keep a footer safety band; multi-line theme bullets
+        # measure taller than a flat join, so drop whole cards before overlap.
+        page_avail = max(0, CONTENT_BOTTOM - y - 120_000)
         while len(kept) > 1:
-            trial = "\n".join(f"• {b}" for b in kept)
+            trial_lines: list[str] = []
+            for b in kept:
+                parts = _split_structured_bullet(b) or [b]
+                trial_lines.append(f"• {parts[0]}")
+                trial_lines.extend(f"   {p}" for p in parts[1:])
+            trial = "\n".join(trial_lines)
             if (
-                measure_text_height(trial, CONTENT_W, FS_BODY, line_spacing=1.2, paragraph_spacing_pt=6)
+                measure_text_height(trial, CONTENT_W, FS_BODY, line_spacing=1.15, paragraph_spacing_pt=5)
                 <= page_avail
             ):
                 break
             kept.pop()
-        text = "\n".join(f"• {b}" for b in kept)
-        needed = measure_text_height(text, CONTENT_W, FS_BODY, line_spacing=1.2, paragraph_spacing_pt=6)
-        avail = max(300000, min(needed + 80_000, CONTENT_BOTTOM - y))
+        text_lines: list[str] = []
+        for b in kept:
+            parts = _split_structured_bullet(b) or [b]
+            text_lines.append(f"• {parts[0]}")
+            text_lines.extend(f"   {p}" for p in parts[1:])
+        text = "\n".join(text_lines)
+        needed = measure_text_height(text, CONTENT_W, FS_BODY, line_spacing=1.15, paragraph_spacing_pt=5)
+        avail = max(300000, min(needed + 80_000, page_avail))
         box = self.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(y), Emu(CONTENT_W), Emu(avail))
         tf = box.text_frame
         tf.word_wrap = True

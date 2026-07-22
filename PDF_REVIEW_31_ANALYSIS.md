@@ -412,6 +412,33 @@ schema` на RU_SUMMARY / UAE_SUMMARY / RU_SUGGESTIONS из‑за null/пуст
 
 ---
 
+## Фаза G (PDF 40) — overflow + клиентский голос — 🚧 на `full-gpt2`
+
+Сверка с эталоном ORION ГСМ (без комплаенс/коммерции): эталон пишет
+«что увидит проверяющий», наш PDF 40 — audit-log метрик; текст режется
+карточками и футером.
+
+### G.1 — overflow / контуры
+- metrics_dashboard определяется по template, а не по наличию KPI (иначе
+  summary склеивал «Методология / Что обнаружено» в bullets).
+- methodology больше не попадает в клиентский bullet stream.
+- regional-summary: 4 theme-cards / page; footer safety band в renderer.
+- risk-matrix: без дубля темы в detail; examples drop before clip; padding↑.
+
+### G.2 — клиентский голос (старт)
+- `buildClientFacingClaim`: insight → «В корпусе» → «Где видно» → 1 пример.
+- Prompt `gpt-slide-copy-v8`; запрет KPI/«тематический блок» в клиентском тексте.
+- `contentVersion` → `deck-sections-v30`.
+
+### Далее (G.3–G.5)
+- Структура резюме ближе к ORION (итог → темы → что делать).
+- Региональный scorecard-lite.
+- Воздух / padding polish после стабильной вёрстки.
+
+**Приёмка:** `tests/unit/pdf-review-phase-g.test.ts`.
+
+---
+
 ## Приоритет и порядок
 
 | Очередь | Шаги | Критерий готовности |

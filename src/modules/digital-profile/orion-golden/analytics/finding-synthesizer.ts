@@ -117,6 +117,60 @@ export function pluralRu(n: number, one: string, few: string, many: string): str
 }
 
 /**
+ * PDF-40 G.2 — client-facing insight per theme (ORION GSM tone): what a bank /
+ * partner / investor should understand, not a corpus counter.
+ */
+const CLIENT_THEME_INSIGHTS: Record<string, string> = {
+  criminal_legal:
+    "В открытой выдаче устойчиво поднимаются судебные и криминальные сюжеты — для банка или партнёра это обычно первый повод для расширенной проверки.",
+  pep_rca_watchlist:
+    "Материалы связывают персону с санкционными и мониторинговыми списками (PEP/RCA) — такие сигналы банки и комплаенс-команды отрабатывают в первую очередь.",
+  political_exposure:
+    "В выдаче заметна политическая и публичная экспозиция — это усиливает вопросы к связям, влиянию и приемлемости контрагента для сделки.",
+  offshore_corporate:
+    "Публикации затрагивают офшорные и корпоративные структуры владения — для KYC это типичный запрос на раскрытие бенефициаров и источников контроля.",
+  family_associates:
+    "В выдаче видны семейные и деловые связи — риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого.",
+  financial_claims:
+    "Есть публикации о финансовых претензиях и долговых спорах — банки и инвесторы обычно запрашивают статус обязательств и судебные справки.",
+  business_profile:
+    "Деловой профиль широко представлен в выдаче — это основа для управляемого позиционирования, но сам по себе не перекрывает чувствительные темы риска.",
+  security_scrutiny:
+    "В выдаче встречаются материалы с акцентом на безопасность и оборонный контур — для международных проверок это зона повышенного внимания.",
+};
+
+/**
+ * PDF-40 G.2 — claim as insight → corpus note → where visible (optional example).
+ * Theme label is prepended by consumers (`themedClaim`).
+ */
+export function buildClientFacingClaim(input: {
+  theme: ThemeDef;
+  itemsCount: number;
+  adverseCount: number;
+  domains: string[];
+  titles: string[];
+}): string {
+  const insight =
+    CLIENT_THEME_INSIGHTS[input.theme.themeId] ??
+    `В открытой выдаче устойчиво видны материалы по теме «${input.theme.label}» — для банка, инвестора или контрагента это может стать поводом для углублённой проверки.`;
+  const total = pluralRu(input.itemsCount, "материал", "материала", "материалов");
+  const corpus =
+    input.adverseCount > 0
+      ? `В корпусе: ${input.itemsCount} ${total}, из них с негативным контекстом — ${input.adverseCount}.`
+      : `В корпусе: ${input.itemsCount} ${total}; негативный контекст не зафиксирован.`;
+  const where = input.domains.length
+    ? `Где видно: ${input.domains.slice(0, 3).join(", ")}.`
+    : "";
+  const example = joinTitlesWithinBudget(
+    input.titles.map(cleanExampleTitle).filter(Boolean).slice(0, 1),
+    90
+  );
+  return [insight, corpus, where, example ? `Пример: ${example}` : ""]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/**
  * PDF-36 D.5 — SERP headline quoted as a client example: strip raw source
  * suffixes («… | Дзен»), trailing timestamps («- 03.12.25 22:27») and a
  * final fragment the search engine itself truncated with an ellipsis.
@@ -379,23 +433,15 @@ export function synthesizeFindings(input: {
       .map((t) => (/^потенциальное совпадение$/i.test(t) ? "" : t))
       .filter(Boolean);
 
-    // Client-grade claim: no theme echo (the theme label is prepended by
-    // consumers), correct Russian plural forms, honest adverse share.
-    const total = pluralRu(items.length, "публикация", "публикации", "публикаций");
-    const adverseNote =
-      adverseItems.length > 0
-        ? `, из них с негативным содержанием — ${adverseItems.length}`
-        : ", негативного содержания не зафиксировано";
-    const titlesSegment = joinTitlesWithinBudget(topTitles, 220);
-    // PDF-38 F.1 — claim as scan-friendly lines (theme is prepended by
-    // consumers). Renderer bolds the theme and mutes Sources/Examples.
-    const claim = [
-      `${items.length} ${total}${adverseNote}.`,
-      `Источники: ${domains.slice(0, 4).join(", ") || "без URL"}.`,
-      titlesSegment ? `Примеры: ${titlesSegment}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
+    // PDF-40 G.2 — client insight first; corpus/domains as secondary lines.
+    // Theme label is prepended by consumers (`themedClaim`).
+    const claim = buildClientFacingClaim({
+      theme,
+      itemsCount: items.length,
+      adverseCount: adverseItems.length,
+      domains,
+      titles: topTitles,
+    });
 
     return FindingSchema.parse({
       schemaVersion: FINDING_SCHEMA_VERSION,

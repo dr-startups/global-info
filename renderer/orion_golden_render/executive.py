@@ -30,6 +30,7 @@ from .common import (
     WARN_BG,
     WHITE,
     _Ctx,
+    _META_LINE_RE,
     _bullet_line_style,
     _clip_structured_bullet,
     _clip_words,
@@ -165,7 +166,22 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         headline = _safe(finding.get("headline") or "Тема")
         if len(headline) > 72:
             headline = _clip_words(headline, 72)
-        detail = _clip_structured_bullet(_safe(finding.get("detail") or ""), 520)
+        detail = _clip_structured_bullet(_safe(finding.get("detail") or ""), 420)
+        # PDF-40 G.1b — drop a leading «Theme» line that duplicates the headline.
+        detail_lines = _split_structured_bullet(detail) or ([detail] if detail else [])
+        if detail_lines and detail_lines[0].startswith("«"):
+            theme_core = detail_lines[0].strip("«»").split("—")[0].strip().lower()
+            head_core = headline.split("—")[0].strip().lower()
+            if theme_core and (theme_core in head_core or head_core in theme_core):
+                detail_lines = detail_lines[1:]
+                detail = "\n".join(detail_lines)
+        # G.1d — drop Example line first when the card is tight (never clip mid-glyph).
+        if any(ln.lower().startswith(("пример:", "примеры:")) for ln in detail_lines):
+            without_ex = [ln for ln in detail_lines if not ln.lower().startswith(("пример:", "примеры:"))]
+            if without_ex:
+                detail_lines = without_ex
+                # Prefer full body without examples; restore only if height allows later.
+                detail = "\n".join(detail_lines)
         # Prefer complete source text; only sentence-fit if height is tight.
         marker = _safe(finding.get("manualReview") or "")
         # Embed "requires review" into status instead of a cramped footer.
@@ -174,40 +190,52 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
                 pill = pill  # keep level; marker dropped from footer
         text_w = CONTENT_W - badge_w - 220_000 if pill else int(CONTENT_W * 0.92)
         left = MARGIN_X + 100_000
-        pad_y = 80_000
+        pad_y = 100_000
         headline_h = measure_text_height(headline, text_w, 13, line_spacing=1.15)
         # PDF-36 E.2 — a card that cannot fit whole above the footer is not
         # drawn at all (TS pagination carries the rest to the continuation
         # page); a half-card bleeding into the footer reads as a defect.
-        remaining = CONTENT_BOTTOM - y - 40_000
-        if remaining < max(420_000, pad_y + headline_h + pad_y):
+        remaining = CONTENT_BOTTOM - y - 80_000
+        if remaining < max(480_000, pad_y + headline_h + pad_y):
             break
-        detail_font = 11
+        detail_font = 10.5
         if detail:
             # Grow card to fit complete detail when possible.
-            detail_h = measure_text_height(detail, text_w, detail_font, line_spacing=1.2)
+            detail_h = measure_text_height(detail, text_w, detail_font, line_spacing=1.15)
             needed = pad_y + headline_h + 40_000 + detail_h + pad_y
-            max_h = max(480_000, remaining)
+            max_h = remaining
             if needed > max_h:
                 # PDF-36 D.3 — font step-down before dropping sentences.
                 for candidate in (10, 9.5):
-                    cand_h = measure_text_height(detail, text_w, candidate, line_spacing=1.2)
+                    cand_h = measure_text_height(detail, text_w, candidate, line_spacing=1.15)
                     if pad_y + headline_h + 40_000 + cand_h + pad_y <= max_h:
                         detail_font = candidate
                         detail_h = cand_h
                         needed = pad_y + headline_h + 40_000 + detail_h + pad_y
                         break
             if needed > max_h:
-                fitted = _fit_text_to_height(detail, text_w, detail_font, max(180_000, max_h - pad_y - headline_h - pad_y - 40_000))
-                if dangling.search(fitted.replace("\n", " ")) or fitted != detail and not fitted.rstrip().endswith((".", "!", "?")):
-                    # Fall back to first complete sentence only.
-                    sentences = re.split(r"(?<=[.!?])\s+", detail.replace("\n", " "))
+                # Prefer insight + corpus only; drop meta lines rather than clip.
+                core_lines = [
+                    ln
+                    for ln in (_split_structured_bullet(detail) or [detail])
+                    if not _META_LINE_RE.match(ln) or ln.lower().startswith("в корпусе:")
+                ]
+                # Keep first two non-example lines max.
+                core = "\n".join(core_lines[:2]) if core_lines else detail
+                fitted = _fit_text_to_height(core, text_w, detail_font, max(160_000, max_h - pad_y - headline_h - pad_y - 40_000))
+                if dangling.search(fitted.replace("\n", " ")) or fitted != core and not fitted.rstrip().endswith((".", "!", "?")):
+                    sentences = re.split(r"(?<=[.!?])\s+", core.replace("\n", " "))
                     fitted = sentences[0].rstrip(".,;: ") + ("." if sentences and not sentences[0].endswith((".", "!", "?")) else "")
                     if dangling.search(fitted):
                         raise RuntimeError(f"ORION risk-matrix dangling detail on p{ctx.page}: {fitted[-40:]}")
                 detail = fitted
-                detail_h = measure_text_height(detail, text_w, detail_font, line_spacing=1.2)
-            h = min(max_h, pad_y + headline_h + 40_000 + detail_h + pad_y)
+                detail_h = measure_text_height(detail, text_w, detail_font, line_spacing=1.15)
+                needed = pad_y + headline_h + 40_000 + detail_h + pad_y
+            # If still cannot fit a whole card above the footer — skip drawing
+            # (TS pagination / continuation carries the rest). Never clip glyphs.
+            if needed > max_h and remaining < 520_000:
+                break
+            h = min(max_h, needed)
         else:
             h = max(420_000, pad_y + headline_h + pad_y)
         h = max(420_000, min(h, remaining))
@@ -225,22 +253,20 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         r.font.color.rgb = NAVY
         text_y = y + pad_y + headline_h + 30_000
         if detail:
-            rem = max(140_000, y + h - text_y - pad_y)
+            rem = max(120_000, y + h - text_y - pad_y)
             box = ctx.slide.shapes.add_textbox(Emu(left), Emu(text_y), Emu(text_w), Emu(rem))
             tf = box.text_frame
             tf.word_wrap = True
-            # PDF-38 F.1 — hierarchical detail: stats body, muted Sources/Examples.
-            detail_lines = _split_structured_bullet(detail) or [detail]
+            # PDF-38 F.1 / G.1 — hierarchical detail inside the card bounds.
+            draw_lines = _split_structured_bullet(detail) or [detail]
             first = True
-            for li, line in enumerate(detail_lines):
+            for li, line in enumerate(draw_lines):
                 p = tf.paragraphs[0] if first else tf.add_paragraph()
                 first = False
                 p.space_before = Pt(0 if li == 0 else 1)
                 p.space_after = Pt(1)
                 p.line_spacing = 1.12
                 bold, line_color, size_pt = _bullet_line_style(line, is_first=(li == 0))
-                # Inside a card the headline already carries the theme — demote
-                # a repeated guillemet theme line to body weight.
                 if li == 0 and line.startswith("«"):
                     bold, line_color, size_pt = False, BODY_COLOR, float(detail_font)
                 elif not bold:

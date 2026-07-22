@@ -282,12 +282,18 @@ export function toRendererPayload(input: {
       }));
     }
     // KPI cards for the metrics dashboard layout (label/value/tone contract).
-    if (s.template === "orion_golden_metrics_dashboard" && s.kpis?.length) {
+    // PDF-40 G.1 — the template itself is the dashboard even without KPIs.
+    // Previously `isMetricsDashboard` required kpis, so regional-summary fell
+    // through to mergedBullets and glued «Что обнаружено / Методология» onto
+    // theme cards — text then overflowed the footer (PDF 40 p10–11, p30–31).
+    const isMetricsDashboard = s.template === "orion_golden_metrics_dashboard";
+    if (isMetricsDashboard && s.kpis?.length) {
       metrics = s.kpis.map((k) => ({ label: k.label, value: k.value, tone: k.tone ?? "neutral" }));
-      if (s.whatToCheck) actions = [{ label: s.whatToCheck }];
+    }
+    if (isMetricsDashboard && s.whatToCheck) {
+      actions = [{ label: s.whatToCheck }];
     }
     const isDashboard = keyFindings !== undefined;
-    const isMetricsDashboard = metrics !== undefined;
 
     // C.2 — honest empty states go to the renderer as STRUCTURED fields
     // (status narrative / why-bullets / recommendation / methodology), and the
@@ -481,11 +487,13 @@ function buildVisualAnalysis(s: RendererSlide): Record<string, unknown> {
 
 function buildRendererBullets(s: RendererSlide): string[] | undefined {
   const bullets: string[] = [...(s.bullets ?? [])];
+  // PDF-40 G.1e — methodology stays on the structured no-data layout only;
+  // never append it into the client bullet stream (reads as internal jargon
+  // and pushes theme cards into the footer).
   if (s.whatWasFound) bullets.push(`Что обнаружено: ${s.whatWasFound}`);
   if (s.whyItMatters) bullets.push(`Почему важно: ${s.whyItMatters}`);
   if (s.whatToCheck) bullets.push(`Что проверить: ${s.whatToCheck}`);
   if (s.sourceNote) bullets.push(s.sourceNote);
-  if (s.methodologyNote) bullets.push(`Методология: ${s.methodologyNote}`);
   return bullets.length ? bullets : undefined;
 }
 

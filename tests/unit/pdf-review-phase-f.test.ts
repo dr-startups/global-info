@@ -58,8 +58,8 @@ describe("F.1 — structured theme claim hierarchy", () => {
 });
 
 describe("F.2 — regional summary does not silently drop themes", () => {
-  it("regional-summary paginates at 5 bullets per slide", () => {
-    expect(DECK_TEMPLATE_REGISTRY["regional-summary"].maxBulletsPerSlide).toBe(5);
+  it("regional-summary paginates at 4 bullets per slide (G.1 capacity)", () => {
+    expect(DECK_TEMPLATE_REGISTRY["regional-summary"].maxBulletsPerSlide).toBe(4);
   });
 
   it("withContinuations carries overflow themes to a continuation slide", () => {
@@ -74,8 +74,8 @@ describe("F.2 — regional summary does not silently drop themes", () => {
       "regional-summary"
     );
     expect(slides).toHaveLength(2);
-    expect(slides[0]!.content.bullets).toHaveLength(5);
-    expect(slides[1]!.content.bullets).toHaveLength(3);
+    expect(slides[0]!.content.bullets).toHaveLength(4);
+    expect(slides[1]!.content.bullets).toHaveLength(4);
     expect(slides[1]!.isContinuation).toBe(true);
   });
 
@@ -109,11 +109,11 @@ describe("F.2 — regional summary does not silently drop themes", () => {
       regions: ["RU", "UAE"],
       evidenceRefs: ["ev-ru", "ev-uae"],
       claim:
-        "21 публикация, из них с негативным содержанием — 21. Источники: dzen.ru, gulfnews.com. Примеры заголовков: RU title · UAE title",
+        "В открытой выдаче видны материалы по теме.\nВ корпусе: 21 материал, из них с негативным контекстом — 21.\nГде видно: dzen.ru, gulfnews.com.\nПример: RU title",
     };
     const out = localizedThemedClaim(finding as never, scoped as never);
     expect(out).toContain("\n");
-    expect(out).toContain("Источники в регионе: gulfnews.com");
+    expect(out).toContain("Где видно: gulfnews.com");
     expect(out).not.toContain("dzen.ru");
   });
 });

@@ -25,6 +25,7 @@ export {
   localizedThemedClaim,
   statusLine,
   structureThemeClaimText,
+  claimBodyWithoutTheme,
   themedClaim,
   withContinuations,
 } from "./shared";
