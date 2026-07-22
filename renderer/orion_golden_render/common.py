@@ -544,6 +544,9 @@ def _clip_structured_bullet(text: str, max_chars: int) -> str:
             re.I,
         ):
             continue
+        # PDF-48 — drop quotes that end on a comma/colon stub («…Дерипаски,»).
+        if re.search(r"«[^»]*[,;:]\s*»", ln):
+            continue
         cleaned.append(ln)
     lines = cleaned
     if not lines:

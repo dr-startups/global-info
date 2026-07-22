@@ -199,14 +199,56 @@ export function hasDanglingTail(text: string): boolean {
 }
 
 /**
- * Cap a quote for a bullet line. PDF-45/46: prefer the WHOLE title;
- * if over budget or dangling / SERP-truncated, return "" so the caller skips.
- * Never publish «…visa over» / «…из-за».
+ * PDF-48 — reject client quotes that are clearly mid-cut:
+ * «…Дерипаски,», unbalanced `"…`, subordinate clause without an end.
+ */
+export function isIncompleteClientQuote(text: string): boolean {
+  const t = String(text ?? "").trim();
+  if (!t || t.length < 12) return true;
+  if (/[,;:]$/u.test(t)) return true;
+  if (hasDanglingTail(t)) return true;
+  if (((t.match(/"/g) ?? []).length) % 2 === 1) return true;
+  // Leading subordinate clause that never finishes (provider-truncated snippet).
+  if (
+    /^(После|Before|After|When|While|During|Согласно|По данным)\b/iu.test(t) &&
+    !/[.!?]$/u.test(t)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Turn a provider-truncated snippet into a closed headline (no trailing comma/…).
+ * e.g. «После публикации расследования ФБК … Дерипаски, ...» →
+ * «Расследование ФБК об отдыхе … Дерипаски».
+ */
+export function snippetToClientHeadline(snippet: string): string {
+  let s = String(snippet ?? "").replace(/\s+/gu, " ").trim();
+  s = s.replace(/\s*(?:\.\.\.|…)\s*$/u, "").trim();
+  s = s.replace(/[,;:]\s*$/u, "").trim();
+  s = s.replace(/^После публикации\s+/iu, "").trim();
+  s = s.replace(/^After (?:the )?publication of\s+/iu, "").trim();
+  // JS `\b` is ASCII-only — use Unicode letter lookahead for Cyrillic stems.
+  s = s.replace(/^расследования(?=$|[^\p{L}])/iu, "Расследование");
+  s = s.replace(/^расследование(?=$|[^\p{L}])/iu, "Расследование");
+  if (!s) return "";
+  s = s.charAt(0).toLocaleUpperCase("ru-RU") + s.slice(1);
+  if (s.length < 24 || hasDanglingTail(s) || /[,;:]$/u.test(s)) return "";
+  // Headline noun-phrases are allowed; unfinished «После…» clauses are not.
+  if (/^(После|Before|After|When|While)\b/iu.test(s) && !/[.!?]$/u.test(s)) return "";
+  return s;
+}
+
+/**
+ * Cap a quote for a bullet line. PDF-45/46/48: prefer the WHOLE title;
+ * if over budget or incomplete / dangling / SERP-truncated, return "".
+ * Never publish «…visa over» / «…из-за» / «…Дерипаски,».
  */
 export function quoteForClaim(title: string, budget = 220): string {
   const raw = String(title ?? "").trim();
   const t = cleanExampleTitle(raw);
-  if (!t || t.length < 12 || hasDanglingTail(t)) return "";
+  if (!t || t.length < 12 || hasDanglingTail(t) || isIncompleteClientQuote(t)) return "";
   // SERP «…» titles: keep only when clean recovered a complete sentence.
   if (SERP_TRUNCATED_RE.test(raw) && !/[.!?»]$/u.test(t)) return "";
   if (t.length <= budget) return t;
@@ -214,16 +256,18 @@ export function quoteForClaim(title: string, budget = 220): string {
   const cut = Math.max(
     slice.lastIndexOf(": "),
     slice.lastIndexOf(". "),
-    slice.lastIndexOf(", "),
     slice.lastIndexOf(" — "),
     slice.lastIndexOf(" – ")
   );
+  // Do NOT cut on ", " — that produces «…Дерипаски,» stubs.
   if (cut < budget * 0.55) return "";
   let body = slice.slice(0, cut).trim().replace(/[\s,;:.—–-]+$/u, "").trim();
   if (hasDanglingTail(body)) {
     body = body.replace(DANGLING_TAIL_RE, "").trim().replace(/[\s,;:.—–-]+$/u, "");
   }
-  if (!body || body.length < 24 || hasDanglingTail(body)) return "";
+  if (!body || body.length < 24 || hasDanglingTail(body) || isIncompleteClientQuote(body)) {
+    return "";
+  }
   return `${body}…`;
 }
 
@@ -238,7 +282,7 @@ export function isWeakExampleTitle(
   const t = cleanExampleTitle(raw);
   if (!t || t.length < 12) return true;
   if (/^potential\s+match$/i.test(t) || /^потенциальное совпадение$/i.test(t)) return true;
-  if (hasDanglingTail(t)) return true;
+  if (hasDanglingTail(t) || isIncompleteClientQuote(t)) return true;
   // PDF-46 I.1 — provider-truncated SERP «…»: weak unless a full sentence remains.
   if (SERP_TRUNCATED_RE.test(raw.trim()) && !/[.!?»]$/u.test(t)) return true;
 
@@ -299,7 +343,12 @@ export function resolveExampleQuote(
   const rawTitle = String(item.title ?? "");
   if (title && !isWeakExampleTitle(rawTitle, { theme })) {
     const q = quoteForClaim(rawTitle, 220);
-    if (q && !isWeakExampleTitle(q, { theme }) && !hasDanglingTail(q)) {
+    if (
+      q &&
+      !isWeakExampleTitle(q, { theme }) &&
+      !hasDanglingTail(q) &&
+      !isIncompleteClientQuote(q)
+    ) {
       return { title: q, domain };
     }
   }
@@ -307,23 +356,21 @@ export function resolveExampleQuote(
   const snip = String(item.snippet ?? "")
     .replace(/\s+/gu, " ")
     .trim();
-  // PDF-47 — SERP-truncated title still carries theme keywords («Рыбка»,
-  // «Навальный»): recover essence from snippet even when snippet itself
-  // lacks the keyword regex hit.
+  // PDF-47/48 — SERP-truncated title still carries theme keywords («Рыбка»,
+  // «Навальный»): close the snippet into a complete headline, never «…,».
   const titleCarriesTheme = theme.keywords.test(rawTitle) || theme.keywords.test(title);
   if (
     snip.length >= 40 &&
     (theme.keywords.test(snip) || getAdversePatterns().test(snip) || titleCarriesTheme)
   ) {
-    // Snippets are often provider-truncated with «…» — strip the ellipsis and
-    // keep the intact leading clause (not a SERP title mid-cut).
-    const sentence = (snip.split(/(?<=[.!?…])\s+/u)[0] ?? snip)
-      .trim()
-      .replace(/\s*(?:\.\.\.|…)\s*$/u, "")
-      .trim();
-    const q = quoteForClaim(sentence, 220);
-    if (q.length >= 24 && !hasDanglingTail(q)) {
-      return { title: q, domain };
+    const headline = snippetToClientHeadline(snip);
+    if (
+      headline.length >= 24 &&
+      !hasDanglingTail(headline) &&
+      !isIncompleteClientQuote(headline)
+    ) {
+      const q = quoteForClaim(headline, 220) || (headline.length <= 220 ? headline : "");
+      if (q && !isIncompleteClientQuote(q)) return { title: q, domain };
     }
   }
   return null;

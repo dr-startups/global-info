@@ -10,9 +10,11 @@ import {
   buildClientFacingClaim,
   cleanExampleTitle,
   hasDanglingTail,
+  isIncompleteClientQuote,
   isWeakExampleTitle,
   quoteForClaim,
   resolveExampleQuote,
+  snippetToClientHeadline,
   type ThemeDef,
 } from "../../src/modules/digital-profile/orion-golden/analytics/finding-synthesizer";
 import type { RawInventoryItem } from "../../src/modules/digital-profile/orion-golden/types";
@@ -142,12 +144,21 @@ describe("I.4 — structured fit preserves meta", () => {
 
 describe("I.5 — versions", () => {
   it("bumps GPT slide-copy prompt", () => {
-    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v14");
+    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v15");
   });
 });
 
-describe("PDF-47 — recover risk evidence, not drop it", () => {
-  it("resolves SERP-truncated Рыбка title via snippet essence", () => {
+describe("PDF-47/48 — recover risk evidence without mid-cut commas", () => {
+  it("closes SERP-truncated snippet into a complete headline", () => {
+    const snip =
+      "После публикации расследования ФБК об отдыхе заместителя главы правительства России Сергея Приходько в компании Олега Дерипаски, ...";
+    expect(isIncompleteClientQuote(snip.replace(/\s*(?:\.\.\.|…)\s*$/u, "").trim())).toBe(true);
+    const closed = snippetToClientHeadline(snip);
+    expect(closed).toMatch(/^Расследование ФБК/u);
+    expect(closed).toMatch(/Дерипаски$/u);
+    expect(closed).not.toMatch(/,\s*$/u);
+    expect(isIncompleteClientQuote(closed)).toBe(false);
+
     const row = {
       inventoryId: "rybka",
       caseId: "c",
@@ -158,15 +169,26 @@ describe("PDF-47 — recover risk evidence, not drop it", () => {
       collectedAt: "2026-01-01T00:00:00.000Z",
       evidenceType: "search_result",
       title: "Рыбка, Навальный, Папа и депутат из Красноярска: из-за ...",
-      snippet:
-        "После публикации расследования ФБК об отдыхе заместителя главы правительства России Сергея Приходько в компании Олега Дерипаски, ...",
+      snippet: snip,
       sourceUrl: "https://www.currenttime.tv/a/29028978.html",
     } as RawInventoryItem;
     const ex = resolveExampleQuote(row, politicalTheme);
     expect(ex).not.toBeNull();
     expect(ex!.title).toMatch(/ФБК|Приходько|Дерипаск/iu);
-    expect(ex!.title).not.toMatch(/из-за\s*$/u);
+    expect(ex!.title).not.toMatch(/,\s*$/u);
+    expect(ex!.title).not.toMatch(/^После\b/u);
     expect(ex!.domain).toContain("currenttime.tv");
+  });
+
+  it("rejects trailing-comma and unbalanced-quote stubs", () => {
+    expect(
+      quoteForClaim(
+        "После публикации расследования ФБК об отдыхе заместителя главы правительства России Сергея Приходько в компании Олега Дерипаски,"
+      )
+    ).toBe("");
+    expect(
+      isIncompleteClientQuote('Oleg Deripaska: "I don\'t think anyone will take it away.')
+    ).toBe(true);
   });
 
   it("normalizes nested guillemets in titles", () => {

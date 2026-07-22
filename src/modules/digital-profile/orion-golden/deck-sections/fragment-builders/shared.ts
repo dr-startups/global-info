@@ -349,13 +349,14 @@ export function fitStructuredBullet(text: string, maxChars: number): string {
   const danglingCountRe = /,\s*с негативным контекстом\s+[—–-]\s*\.?$/u;
   const danglingQuoteRe =
     /^«.*(?:из-за|и|в|во|на|по|с|со|о|об|and|or|of|the|to|for|with|from|by|over)\s*»/iu;
+  const incompleteQuoteRe = /^«.*[,;:]\s*»/u;
 
   let lines = raw
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean)
     .filter((l) => !incompleteMetaRe.test(l) && !danglingCountRe.test(l))
-    .filter((l) => !danglingQuoteRe.test(l));
+    .filter((l) => !danglingQuoteRe.test(l) && !incompleteQuoteRe.test(l));
 
   const lenOf = (ls: string[]) => ls.join("\n").length;
   if (lenOf(lines) <= maxChars) {

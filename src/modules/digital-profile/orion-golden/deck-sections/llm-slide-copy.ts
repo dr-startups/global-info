@@ -38,8 +38,8 @@ import type { GptDeckComposition } from "./gpt-deck-composer";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
 import { isWeakExampleTitle } from "../analytics/finding-synthesizer";
 
-/** v14 — PDF-47: keep nested-quote themes; recover SERP-truncated via snippet. */
-export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v14";
+/** v15 — PDF-48: never publish incomplete snippet quotes («…Дерипаски,»). */
+export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v15";
 
 /** Mirrors section-validation budgets — from client-text-contract (§6.1). */
 export const GPT_SLIDE_COPY_FIELD_BUDGETS = (() => {
@@ -282,7 +282,7 @@ const COPY_INSTRUCTIONS = [
   "Лимиты длины (верхняя граница с зазором до бюджета валидации): narrative до 1050, каждый bullet до 860, whatWasFound до 480, whyItMatters до 380, whatToCheck до 260.",
   "Нижняя граница для страниц с данными: каждый заполняемый текстовый блок — не короче ~40% своего бюджета (narrative ≳440, whatWasFound ≳200, whyItMatters ≳160, whatToCheck ≳110, bullet ≳340), если в черновике/findings есть материал для раскрытия.",
   "НИКОГДА не обрывай цитату или предложение посередине и не оставляй пустые ярлыки вроде «Что делать:.» / «Всего по теме:.» / «Где видно:.» / «контекстом —.». Либо полная фраза с числом/доменом, либо опусти строку целиком.",
-  "Не используй заголовки, обрезанные поисковиком (хвост «…» / «из-за» / «Путина в»): замени на полную суть из snippet или опусти цитату.",
+  "Не используй заголовки/snippet, обрезанные поисковиком (хвост «…» / «из-за» / «Путина в» / «Дерипаски,»): либо полная закрытая формулировка, либо опусти цитату.",
   "Пиши КЛИЕНТСКИМ языком консультанта: тема риска → конкретика из заголовков статей → источник (домен) → коротко почему важно. Запрещены внутренние формулировки: «KPI», «тематический блок», «составной набор данных».",
   "СТРОГО: не заменяй конкретику общими фразами вроде «в выдаче устойчиво видны…», «заметны семейные связи», «формируют риск». Если в черновике есть строки ««заголовок» — источник domain.com», сохрани их (можно слегка отредактировать заголовок, но не выкидывай цитату и домен).",
   "ЗАПРЕЩЕНО оставлять или вставлять quotes, где внутри «ёлочек» только ФИО субъекта (например «Oleg V Deripaska», «Олег Дерипаска») или SEO-био без риска («биография, личная жизнь, фото»). Такие строки перепиши в СУТЬ риска по title/snippet/domains из findings (санкции, суд, долг, структура владения, связанное лицо) — без новых фактов.",
