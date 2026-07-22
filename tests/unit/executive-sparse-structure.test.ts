@@ -69,7 +69,9 @@ describe("REMEDIATION §7.3 executive sparse structure", () => {
       structure.factCards.length +
       (structure.recommendations ? 1 : 0);
     expect(blockCount).toBeGreaterThanOrEqual(3);
-    expect(structure.narrativeParagraphs.some((p) => /Карта покрытия/i.test(p))).toBe(true);
+    expect(
+      structure.narrativeParagraphs.some((p) => /По собранным источникам|Карта покрытия/i.test(p))
+    ).toBe(true);
     expect(
       structure.narrativeParagraphs.some((p) =>
         /другом лице|требуют подтвержд|неоднознач/i.test(p)

@@ -80,7 +80,8 @@ export function buildRegionalSummaryFragment(
       slot: divider,
       sectionId,
       content: {
-        narrative: `Раздел описывает цифровой профиль субъекта в регионе: ${regionLabel}.`,
+        // PDF-40 G.4 — divider as a client lead, not a catalog sentence.
+        narrative: `Раздел показывает, что увидит банк, инвестор или контрагент в выдаче по региону «${regionLabel}»: какие темы формируют риск и что проверить в первую очередь.`,
       },
       evidenceRefs: [],
       findingIds: [],
@@ -151,19 +152,24 @@ export function buildRegionalSummaryFragment(
       adverseN === scoped.findings.length
         ? `подтверждённых тем: ${scoped.findings.length}, все — повышенного внимания`
         : `подтверждённых тем: ${scoped.findings.length}, из них повышенного внимания: ${adverseN}`;
-    // PDF-38 F.1/F.2 — structured multi-line theme claims; pagination (5/page)
-    // carries overflow to continuation so nothing is silently dropped.
+    const topThemes = [...scoped.findings]
+      .filter(isAdverse)
+      .slice(0, 3)
+      .map((f) => f.theme.replace(/\s*\/\s*/gu, " / "));
+    const themeLead =
+      topThemes.length > 0
+        ? `Ключевые темы для проверки: ${topThemes.join("; ")}.`
+        : "Подтверждённых тем повышенного внимания в регионе немного — смотрите детализацию ниже.";
+    // PDF-40 G.4 — client lead + B.2 counters; theme cards paginate at 4/page.
     const bullets = [
       ...scoped.findings
         .slice(0, 8)
         .map((f) => {
           const body = localizedThemedClaim(f, scoped);
-          // Multi-line claims need a wider char budget; clamp per line later
-          // in the renderer. Keep the finding marker on the last line.
           const marker = ` [${f.findingId}]`;
-          return body.length + marker.length <= 520
+          return body.length + marker.length <= 420
             ? body + marker
-            : clampClientText(body.replace(/\n/gu, " "), 480) + marker;
+            : clampClientText(body.replace(/\n/gu, " "), 380) + marker;
         }),
       ...(uncategorized ? [uncategorized.bullet] : []),
       ...(likelyN > 0
@@ -172,13 +178,43 @@ export function buildRegionalSummaryFragment(
           ]
         : []),
     ];
+    const materialWord = pluralRu(materialCount, "материал", "материала", "материалов");
     const base = makeSlotSlide({
       slot: summarySlot,
       sectionId,
       content: {
-        narrative: `По региону ${regionLabel} собрано материалов: ${materialCount}; ${themesPhrase}.`,
+        narrative: fitClientSentences(
+          [
+            `В выдаче по региону «${regionLabel}» проверяющий увидит ${materialCount} ${materialWord}.`,
+            `${themesPhrase.charAt(0).toUpperCase()}${themesPhrase.slice(1)}.`,
+            themeLead,
+          ],
+          500
+        ),
+        // Scorecard-lite KPIs (ORION GSM regional audit vibe).
+        kpis: [
+          { label: "Материалов региона", value: String(materialCount), tone: "neutral" },
+          {
+            label: "Тем повышенного внимания",
+            value: String(adverseN),
+            tone: adverseN > 0 ? "risk" : "good",
+          },
+          {
+            label: "Тем подтверждено",
+            value: String(scoped.findings.length),
+            tone: "accent",
+          },
+          {
+            label: "Вероятно о субъекте",
+            value: String(likelyN),
+            tone: likelyN > 0 ? "warn" : "neutral",
+          },
+        ],
         bullets,
-        ...findingBlocks(scoped, undefined, extras),
+        // Keep action; omit whatWasFound/whyItMatters from findingBlocks so the
+        // page stays «итог → темы → действие», not a second technical essay.
+        whatToCheck: findingBlocks(scoped, undefined, extras).whatToCheck,
+        sourceNote: sourceLine(scoped, extras),
       },
       evidenceRefs: [
         ...uniqueRefs(scoped),
@@ -189,7 +225,7 @@ export function buildRegionalSummaryFragment(
         materials: materialCount,
         findings: scoped.findings.length,
         likely: likelyN,
-        adverse: scoped.findings.filter(isAdverse).length,
+        adverse: adverseN,
         uncategorized: uncategorized?.count ?? 0,
       },
     });

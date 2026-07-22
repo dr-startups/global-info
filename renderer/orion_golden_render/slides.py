@@ -293,10 +293,14 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 )
                 y += 60_000
             if bullets:
-                # PDF-38 F.2 — show every paginated theme (TS caps at 5/page);
-                # never silently drop the last two with max_items=6.
-                ctx.bullets(bullets, y, max_items=8, max_chars=520)
+                ctx.bullets(bullets, y, max_items=4, max_chars=420)
             return
+        # PDF-40 G.4/G.5 — when KPIs exist, lead with the scorecard (ORION GSM
+        # regional audit), then a shorter narrative, then theme cards. Leave
+        # air above the footer so multi-line themes never clip glyphs.
+        metrics = [m for m in (slide.get("metrics") or []) if isinstance(m, dict)]
+        if metrics:
+            y = _render_kpi_cards(ctx, metrics[:6], MARGIN_X, y, CONTENT_W, cols=3) + 80_000
         if narrative:
             y = ctx.content_card(
                 title=None,
@@ -304,32 +308,45 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 x=MARGIN_X,
                 y=y,
                 width=CONTENT_W,
-                min_h=260_000,
-                max_h=1_100_000,
+                min_h=220_000,
+                max_h=900_000 if metrics else 1_100_000,
                 tone="neutral",
                 body_size=11,
             )
-            y += 80_000
-        metrics = [m for m in (slide.get("metrics") or []) if isinstance(m, dict)]
-        if metrics:
-            y = _render_kpi_cards(ctx, metrics[:6], MARGIN_X, y, CONTENT_W, cols=3) + 80_000
+            y += 70_000
         actions = [a for a in (slide.get("actions") or []) if isinstance(a, dict)]
-        if actions:
+        if actions and not bullets:
+            # Action card only when there is room; with theme bullets the action
+            # is already in whatToCheck / cont pages — avoid crowding.
             y = ctx.content_card(
                 title="Действие",
                 text=_safe(actions[0].get("label")),
                 x=MARGIN_X,
                 y=y,
                 width=CONTENT_W,
-                min_h=260_000,
-                max_h=800_000,
+                min_h=220_000,
+                max_h=700_000,
                 tone="warn",
                 title_size=11,
                 body_size=11,
             )
-            y += 60_000
+            y += 50_000
+        elif actions and bullets and (CONTENT_BOTTOM - y) > 1_800_000:
+            y = ctx.content_card(
+                title="Действие",
+                text=_safe(actions[0].get("label")),
+                x=MARGIN_X,
+                y=y,
+                width=CONTENT_W,
+                min_h=200_000,
+                max_h=520_000,
+                tone="warn",
+                title_size=11,
+                body_size=10.5,
+            )
+            y += 50_000
         if bullets:
-            ctx.bullets(bullets, y, max_items=8, max_chars=520)
+            ctx.bullets(bullets, y, max_items=4, max_chars=420)
         return
 
     if template == "orion_golden_serp_screenshot":

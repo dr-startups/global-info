@@ -425,15 +425,23 @@ schema` на RU_SUMMARY / UAE_SUMMARY / RU_SUGGESTIONS из‑за null/пуст
 - regional-summary: 4 theme-cards / page; footer safety band в renderer.
 - risk-matrix: без дубля темы в detail; examples drop before clip; padding↑.
 
-### G.2 — клиентский голос (старт)
+### G.2 — клиентский голос
 - `buildClientFacingClaim`: insight → «В корпусе» → «Где видно» → 1 пример.
 - Prompt `gpt-slide-copy-v8`; запрет KPI/«тематический блок» в клиентском тексте.
 - `contentVersion` → `deck-sections-v30`.
 
-### Далее (G.3–G.5)
-- Структура резюме ближе к ORION (итог → темы → что делать).
-- Региональный scorecard-lite.
-- Воздух / padding polish после стабильной вёрстки.
+### G.3 — структура резюме
+- Executive theme cards: «Тема» → почему важно → что делать (без corpus dump).
+- Cont: «Резюме — темы риска»; coverage без «Карта покрытия».
+
+### G.4 — региональный scorecard-lite
+- Narrative: «проверяющий увидит N материалов» + B.2 counters + top themes.
+- KPI-карточки на regional-summary; divider — client lead.
+- whatWasFound/whyItMatters не дублируются на summary-странице.
+
+### G.5 — воздух
+- Metrics dashboard: KPI сверху, короче narrative, bullets max 4 / 420;
+  action не вытесняет theme cards.
 
 **Приёмка:** `tests/unit/pdf-review-phase-g.test.ts`.
 

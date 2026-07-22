@@ -100,3 +100,57 @@ describe("G.1b / G.2 — client claim shape", () => {
     expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v8");
   });
 });
+
+describe("G.3 / G.4 — executive and regional structure", () => {
+  it("regional-summary narrative leads with what a checker will see", async () => {
+    const { buildRegionalSummaryFragment } = await import(
+      "../../src/modules/digital-profile/orion-golden/deck-sections"
+    );
+    const scoped = {
+      subject: { displayName: "Тест", aliases: [] },
+      findings: [
+        {
+          findingId: "finding-a",
+          theme: "Криминальные / судебные материалы",
+          claim: "В выдаче видны судебные сюжеты.\nВ корпусе: 2 материала.",
+          subjectMatch: "SUBJECT_MATCH",
+          riskLevel: "high",
+          confidence: 0.9,
+          regions: ["UAE"],
+          sourceDomains: ["gulfnews.com"],
+          evidenceRefs: ["ev-1"],
+          recommendedAction: "Проверить.",
+          promotionPriority: "P1",
+        },
+      ],
+      surfaceUnits: [],
+      metricSnapshot: {
+        metricSnapshotId: "m",
+        datasetId: "d",
+        reportRunId: "r",
+        baseCount: 10,
+        enrichmentCount: 0,
+        compositeCount: 10,
+        subjectMatchCount: 5,
+        likelySubjectCount: 0,
+        ambiguousCount: 0,
+        otherSubjectCount: 0,
+        adverseFindingCount: 1,
+        perRegionCounts: { UAE: 10 },
+      },
+      scope: { regions: ["UAE"], surfaces: [], subjectMatch: null, findingIds: null },
+      evidenceIndex: { "ev-1": { domain: "gulfnews.com", region: "UAE", title: "T" } },
+    };
+    const out = buildRegionalSummaryFragment(
+      "UAE_SUMMARY" as never,
+      "UAE" as never,
+      "ОАЭ",
+      scoped as never,
+      {}
+    );
+    const summary = out.slides.find((s) => s.templateId === "regional-summary")!;
+    expect(summary.content.narrative).toMatch(/проверяющий увидит/u);
+    expect(summary.content.kpis?.length).toBeGreaterThanOrEqual(3);
+    expect(summary.content.whatWasFound).toBeUndefined();
+  });
+});

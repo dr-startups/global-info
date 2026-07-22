@@ -238,11 +238,12 @@ export function composeExecutivePageStructure(
       ? freshnessFootnote(opts.extras.materialFreshness)
       : undefined;
   const changeLine = changeSinceLastReportLine(opts?.extras);
+  // PDF-40 G.3 — coverage as a client sentence, not an internal «карта покрытия».
   const coverage = clampClientText(
     [
-      `Карта покрытия: собрано ${ms.compositeCount} ${materialWord}, из них о субъекте — ${ms.subjectMatchCount}`,
-      regionBits.length > 0 ? `; контуры: ${regionBits.join("; ")}` : "",
-      surfaces.length > 0 ? `. Проверенные поверхности: ${surfaces.slice(0, 7).join(", ")}` : "",
+      `По собранным источникам: ${ms.compositeCount} ${materialWord}, из них уверенно об этом лице — ${ms.subjectMatchCount}`,
+      regionBits.length > 0 ? ` (${regionBits.join("; ")})` : "",
+      surfaces.length > 0 ? `. Смотрели: ${surfaces.slice(0, 7).join(", ")}` : "",
       overviewBits.length > 0 ? `. ${overviewBits.join(" ")}` : "",
       fresh ? `. ${fresh.charAt(0).toUpperCase()}${fresh.slice(1)}` : "",
       changeLine ? `. ${changeLine}` : "",
@@ -363,26 +364,45 @@ export function buildExecutiveSummaryFragment(
   // about it — instead of a bare publication count. Top cards are narrow, so
   // they lead with the first factual sentence and the explanation; the
   // continuation page carries the full detail.
+  // PDF-40 G.3 — ORION-style theme cards: theme → why it matters → what to do.
+  // Corpus counters stay in the risk matrix / regional pages, not on p03.
   const cardTexts = es.keyFindings.map((k) => {
     const risk = matchGptKeyRisk(k.title, gpt?.keyRisks);
-    if (!risk) return bulletWithFindingId(`${k.title}: ${k.factualBasis}`, k.findingId, 340);
-    // The top card's job is to explain the risk; the full factual basis
-    // follows on the continuation page.
+    if (risk) {
+      return bulletWithFindingId(
+        [`«${k.title}»`, risk.explanation, `Что делать: ${risk.advice}`].join("\n"),
+        k.findingId,
+        340
+      );
+    }
+    const basis = String(k.factualBasis ?? "")
+      .replace(/^Подтверждённый факт:\s*/iu, "")
+      .replace(/\s*Источники:.*$/iu, "")
+      .replace(/\s*Примеры(?:\s+заголовков)?:.*$/iu, "")
+      .trim();
     return bulletWithFindingId(
-      fitClientSentences([`${k.title}: ${risk.explanation}`, `Что делать: ${risk.advice}`], 340),
+      [`«${k.title}»`, clampClientText(basis, 220)].join("\n"),
       k.findingId,
       340
     );
   });
   const bullets = es.keyFindings.map((k) => {
     const risk = matchGptKeyRisk(k.title, gpt?.keyRisks);
-    const text = risk
-      ? fitClientSentences(
-          [`${k.title}: ${k.factualBasis}`, `Почему это важно: ${risk.explanation}`, `Что делать: ${risk.advice}`],
-          380
-        )
-      : `${k.title}: ${k.factualBasis}`;
-    return bulletWithFindingId(text, k.findingId, 400);
+    if (risk) {
+      return bulletWithFindingId(
+        [`«${k.title}»`, risk.explanation, `Что делать: ${risk.advice}`].join("\n"),
+        k.findingId,
+        380
+      );
+    }
+    const basis = String(k.factualBasis ?? "")
+      .replace(/^Подтверждённый факт:\s*/iu, "")
+      .trim();
+    return bulletWithFindingId(
+      fitClientSentences([`«${k.title}»`, basis], 360),
+      k.findingId,
+      380
+    );
   });
   // Sparse but complete collection: keep a client-safe page that states
   // there are no confirmed findings — never invent risks. Still show
@@ -452,7 +472,7 @@ export function buildExecutiveSummaryFragment(
           tone: "warn",
         },
         { label: "Тем риска", value: String(ms.adverseFindingCount), tone: "risk" },
-        { label: "Выводов", value: String(es.keyFindings.length), tone: "accent" },
+        { label: "Ключевых тем", value: String(es.keyFindings.length), tone: "accent" },
       ],
       bullets: sparse
         ? structure.factCards.slice(0, TOP_CARDS)
@@ -482,7 +502,10 @@ export function buildExecutiveSummaryFragment(
   // ensureExecutiveFreshnessChangeInNarrative above); no duplicate bullet.
   if (gpt && !sparse && gpt.positiveSignals.length > 0) {
     contBullets.push(
-      clampClientText(`Позитивные сигналы: ${gpt.positiveSignals.slice(0, 3).join(" ")}`, 380)
+      clampClientText(
+        `Позитивный фон: ${gpt.positiveSignals.slice(0, 3).join(" ")}`,
+        380
+      )
     );
   }
   if (contBullets.length > 0) {
@@ -493,9 +516,10 @@ export function buildExecutiveSummaryFragment(
       continuationOf: base.slideId,
       continuationIndex: 1,
       templateId: "continuation",
+      // PDF-40 G.3 — cont page is the rest of risk themes, not a «факты» dump.
       title: sparse
         ? "Резюме — покрытие и ограничения"
-        : "Резюме — ключевые факты (продолжение)",
+        : "Резюме — темы риска",
       subtitle: undefined,
       content: {
         bullets: contBullets.slice(0, 8),
@@ -730,9 +754,9 @@ export function buildDigitalProfileOverviewFragment(
         slot,
         sectionId,
         content: {
-          narrative: `Составной набор данных: ${s.compositeCount} материалов из ${regions.length} региональных контуров (${regions
+          narrative: `По собранным источникам: ${s.compositeCount} материалов из ${regions.length} региональных контуров (${regions
             .map(([r, n]) => `${r}: ${n}`)
-            .join(", ")}). Идентификация субъекта выполнена для каждого материала.`,
+            .join(", ")}). Принадлежность каждого материала к проверяемому лицу проверена.`,
           // Labels fit the KPI card budget (28 chars) without clipping.
           kpis: [
             { label: "Материалов проанализировано", value: String(s.compositeCount), tone: "neutral" },
