@@ -277,7 +277,8 @@ export function CaseHeader({
                     : ""}
                 </div>
               ) : null}
-              {unifiedJob.stage === "REPORT_READY" ? (
+              {unifiedJob.stage === "REPORT_READY" ||
+              unifiedJob.stage === "COMPLETED_PARTIAL" ? (
                 <UnifiedCanonicalDownloadButtons caseId={caseDetail.id} job={unifiedJob} />
               ) : null}
               {can("agents.run") && unifiedJob.rebuildAllowed && onRebuildReport ? (

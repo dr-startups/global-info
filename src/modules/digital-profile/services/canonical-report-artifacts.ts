@@ -2,11 +2,12 @@
  * Lineage-safe resolver for downloadable canonical report artifacts.
  *
  * The ONLY artifacts a client may download are PDF/PPTX/contactSheet for a
- * COMPLETED, accepted (REPORT_READY) unified job for the requested case+job.
+ * COMPLETED unified job (REPORT_READY or COMPLETED_PARTIAL) for the requested
+ * case+job. COMPLETED_PARTIAL still has a rendered deck (some slides empty).
  * Everything is validated fail-closed:
  *   - the job must exist and belong to the case;
  *   - the requested jobId must match the job's id (foreign lineage rejected);
- *   - the job must be COMPLETED + REPORT_READY (stale/partial/unaccepted rejected);
+ *   - the job must be COMPLETED + REPORT_READY|COMPLETED_PARTIAL (in-flight rejected);
  *   - the artifact kind must be pdf|pptx|contactSheet;
  *   - the resolved path must be recorded on the job (pdf/pptx) or the well-known
  *     job-scoped contact-sheet path, and physically inside the job's own
@@ -131,11 +132,13 @@ export async function resolveCanonicalArtifactForDownload(input: {
   if (job.unifiedJobId !== input.jobId && job.jobId !== input.jobId) {
     throw new CanonicalArtifactError(404, "FOREIGN_JOB_LINEAGE", "jobId does not match case job");
   }
-  // Only fully accepted reports are downloadable (reject partial/unaccepted/stale).
-  if (job.status !== "COMPLETED" || job.stage !== "REPORT_READY") {
+  // Completed renders are downloadable (full or partial). Reject in-flight/failed.
+  const downloadableStage =
+    job.stage === "REPORT_READY" || job.stage === "COMPLETED_PARTIAL";
+  if (job.status !== "COMPLETED" || !downloadableStage) {
     throw new CanonicalArtifactError(
       409,
-      job.stage === "COMPLETED_PARTIAL" ? "REPORT_PARTIAL_NOT_ACCEPTED" : "REPORT_NOT_ACCEPTED",
+      "REPORT_NOT_ACCEPTED",
       `report not accepted for download (stage=${job.stage}, status=${job.status})`
     );
   }
