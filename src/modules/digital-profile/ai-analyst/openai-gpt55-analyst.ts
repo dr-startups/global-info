@@ -8,6 +8,12 @@ interface OpenAiAnalystOptions {
   maxOutputTokens: number;
 }
 
+/** gpt-5 and o-series are reasoning models: sampling params are fixed at the default. */
+function isReasoningModel(model: string): boolean {
+  const m = model.trim().toLowerCase();
+  return m.startsWith("gpt-5") || m.startsWith("o1") || m.startsWith("o3") || m.startsWith("o4");
+}
+
 function buildSystemPrompt(language: "ru" | "en"): string {
   if (language === "ru") {
     return [
@@ -60,6 +66,7 @@ async function postChatCompletion(
 ): Promise<unknown> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs);
+  const model = options.model || "gpt-5.5";
   try {
     const res = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -69,8 +76,11 @@ async function postChatCompletion(
         authorization: `Bearer ${options.apiKey}`,
       },
       body: JSON.stringify({
-        model: options.model || "gpt-5.5",
-        temperature: 0.1,
+        model,
+        // Reasoning models (gpt-5*/o*) reject any temperature other than the
+        // default 1 with HTTP 400 — which this layer treats as a permanent
+        // failure and silently degrades to the deterministic narrative.
+        ...(isReasoningModel(model) ? {} : { temperature: 0.1 }),
         max_completion_tokens: options.maxOutputTokens,
         response_format: { type: "json_object" },
         messages: [
@@ -80,6 +90,15 @@ async function postChatCompletion(
       }),
     });
     if (!res.ok) {
+      // Surface the API's own reason — an opaque `openai_http_400` hid a
+      // fully-configured AI layer failing on every single call.
+      const detail = await res
+        .text()
+        .then((t) => t.slice(0, 300).replace(/\s+/g, " ").trim())
+        .catch(() => "");
+      console.warn(
+        `[digital-profile][ai-analyst] OpenAI ${res.status} for model "${model}": ${detail}`
+      );
       throw new Error(`openai_http_${res.status}`);
     }
     const data = (await res.json()) as {
