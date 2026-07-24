@@ -334,6 +334,8 @@ export type RecoverUnifiedCollectionDeps = {
   renderDeck?: unknown;
   allowMockReport?: boolean;
   now?: () => Date;
+  /** Offline/tests: sibling remap task loaders for ingest resume. */
+  siblingRemap?: import("./unified-enrichment-sibling-remap").SiblingRemapDeps;
 };
 
 async function scheduleRecoverTick(
@@ -564,6 +566,44 @@ export async function recoverUnifiedOrionCollectionJob(input: {
     }
 
     const nowIso = nowFn().toISOString();
+
+    // Ingest resume: remap empty failed unified runs → sibling CaseAgent runs
+    // that already have DONE ProviderTasks (same pattern as Suggestions remap).
+    let enrichmentRunIds = job.enrichmentRunIds;
+    let arsenkinEnrichmentState = job.arsenkinEnrichmentState ?? undefined;
+    const siblingRemapWarnings: string[] = [];
+    if (ingestResume) {
+      const { remapFailedEnrichmentRunsToSiblings } = await import(
+        "./unified-enrichment-sibling-remap"
+      );
+      const remapped = await remapFailedEnrichmentRunsToSiblings({
+        caseId: job.caseId,
+        job,
+        deps: input.deps?.siblingRemap,
+      });
+      if (remapped.changed) {
+        enrichmentRunIds = remapped.enrichmentRunIds;
+        arsenkinEnrichmentState = remapped.arsenkinEnrichmentState ?? undefined;
+        siblingRemapWarnings.push(
+          `sibling-remap:${remapped.remaps.length}`,
+          ...remapped.remaps.map(
+            (r) => `sibling-remap:${r.agentName}:${r.fromRunId}->${r.toRunId}`
+          )
+        );
+        await writeUnifiedArtifact(
+          job.caseId,
+          job.unifiedJobId,
+          "enrichment-sibling-remap-audit.json",
+          {
+            version: "enrichment-sibling-remap-audit-v1",
+            at: nowIso,
+            remaps: remapped.remaps,
+            enrichmentRunIds: remapped.enrichmentRunIds,
+          }
+        );
+      }
+    }
+
     const patched =
       await patchUnifiedCollectionJob(job.caseId, {
         stage: nextStage,
@@ -580,13 +620,14 @@ export async function recoverUnifiedOrionCollectionJob(input: {
         pollAttempt: ingestResume || renderResume ? 0 : job.pollAttempt ?? 0,
         nextPollAt: ingestResume ? nowIso : job.nextPollAt ?? null,
         // Keep enrichment lineage; do not wipe progress artifact binding.
-        arsenkinEnrichmentState: job.arsenkinEnrichmentState ?? undefined,
-        enrichmentRunIds: job.enrichmentRunIds,
+        arsenkinEnrichmentState,
+        enrichmentRunIds,
         recoveryAudit,
         warnings: [
           ...job.warnings.filter((w) => !/recovery-accepted/i.test(w)),
           `recovery-accepted:${elig2.recoveryReason}`,
           ingestResume ? "pollAttempt-reset:0" : "",
+          ...siblingRemapWarnings,
           renderResume
             ? "bounded-resume:from-render"
             : assemblyResume
