@@ -96,6 +96,29 @@ export function computeUnifiedPollDelayMs(job: UnifiedCollectionJob, now = Date.
 /** Fail-closed ceiling for durable Arsenkin poll/ingest ticks (stops lease churn). */
 export const MAX_ARSENKIN_INGEST_POLL_ATTEMPTS = 40;
 
+/**
+ * A tick whose polls were all rejected by the in-process live-auth singleton
+ * (`withExistingExternalTaskPollAuthorization` refuses to nest inside an open
+ * `/set` session) never talked to Arsenkin at all. Counting it against the poll
+ * budget lets internal lock contention alone exhaust the 40 attempts and fail a
+ * job whose provider tasks are all completing normally — observed on a live run
+ * where every ProviderTask reached DONE while the job died RETRYABLE.
+ */
+const POLL_AUTH_BLOCKED_CODE = "ARSENKIN_POLL_AUTH_BLOCKED";
+
+export function isPollAuthContentionOnly(warnings: readonly string[]): boolean {
+  let blocked = false;
+  for (const w of warnings) {
+    if (w.startsWith(`${POLL_AUTH_BLOCKED_CODE}:`)) {
+      blocked = true;
+      continue;
+    }
+    // Any other poll diagnostic means the tick did real provider work.
+    if (/^ARSENKIN_POLL_(?!AUTH_BLOCKED)/.test(w) || w.startsWith("httpStatus:")) return false;
+  }
+  return blocked;
+}
+
 function logUnifiedTickError(input: {
   caseId: string;
   jobId?: string | null;
@@ -644,7 +667,15 @@ async function stepBaseCollection(
     deps.runFullAudit ??
     (async (caseId: string, actorId: string) => {
       const { runFullAudit: real } = await import("./agent-run-service");
-      return real(caseId, { actorId });
+      // Evidence-first: on a real (non-mock) run an unconfigured provider must
+      // be recorded as unavailable, never silently replaced by its mock agent.
+      // The default `real_first_with_fallback` did the opposite — it wrote
+      // synthetic SERP rows about a real subject into the corpus AND, because
+      // `isRealCollectionSufficient` rejects any mock runtime, turned a partial
+      // collection into a terminal PRE_RENDER_DATA_GATE_FAILED.
+      return real(caseId, { actorId }, {
+        runtimeMode: digitalProfileConfig.mockAgents ? undefined : "real_only",
+      });
     });
 
   let before = { searchResultIds: new Set<string>(), searchSurfaceItemIds: new Set<string>() };
@@ -929,8 +960,12 @@ async function stepArsenkin(
         arsenkinEnrichmentState: state,
         resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
         nextPollAt,
-        // pollAttempt already bumped pre-poll when resumeIngest; keep monotonic progress.
-        pollAttempt: Math.max(0, Number(job.pollAttempt ?? 0)),
+        // pollAttempt already bumped pre-poll when resumeIngest; keep monotonic
+        // progress — except for ticks blocked purely by the in-process live-auth
+        // singleton, which never reached Arsenkin and must not spend budget.
+        pollAttempt: isPollAuthContentionOnly(tick.warnings)
+          ? Math.max(0, Number(job.pollAttempt ?? 0) - 1)
+          : Math.max(0, Number(job.pollAttempt ?? 0)),
         coverage: { ...coverage, progressRatio: computeCoverageProgress(coverage) },
         warnings: [...job.warnings, ...tick.warnings, "arsenkin-awaiting-ingest"],
         artifactPaths: { ...job.artifactPaths, arsenkinObservations: obsPath },
