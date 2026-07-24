@@ -13,6 +13,7 @@ import { OpenAiRateLimitError } from "./openai-rate-limit";
 import type { SectionEvidencePack, OrionGoldenSectionAnalysis } from "../types";
 
 import { callOpenAiStrictJson } from "./openai-json-client";
+import { buildSectionAnalysisPayload } from "./section-analysis-payload";
 import { normalizeGoldenSectionAnalysis } from "./normalize-gpt-analysis";
 
 
@@ -146,6 +147,16 @@ Use manualReviewNeeded for such items. Do not elevate them to keyEvidence with v
 
 Evidence marked [ПРИЛОЖЕНИЕ — ОГРАНИЧЕННЫЙ ВЫВОД] may appear only with caveats, not as strong findings.
 
+Each selectedEvidence item carries: ref, title, snippet, domain, url, region, sourceType,
+relevance, riskTheme, riskLevel, entityMatchScore. Ground every statement in the snippet text —
+name what the material actually says (who, what, where, which organisation, which amount).
+Generic due-diligence commentary that would fit any subject is not acceptable output.
+Never assert anything the snippets do not support; if a snippet is cut (snippetTruncated),
+do not guess its ending. Attribute a source only to its own domain field.
+A low entityMatchScore means the material may concern a namesake — hedge accordingly.
+When evidenceOmitted is present, some weaker materials were left out of this call; say that
+coverage is partial rather than implying the section was exhaustively reviewed.
+
 Return ONE JSON object with keys:
 
 sectionKey, clientTitle, mainConclusion, riskLevel, whatWasChecked, whatWasFound, whyItMatters,
@@ -184,15 +195,7 @@ async function callGpt(
 
 ): Promise<OrionGoldenSectionAnalysis> {
 
-  const metrics = pack?.metrics ?? {};
-
-  const selected = (pack?.selectedForAnalysis ?? []).slice(0, 40);
-
-  const excluded = (pack?.excluded ?? []).slice(0, 15);
-
-
-
-  const userPayload = {
+  const userPayload = buildSectionAnalysisPayload({
 
     sectionKey,
 
@@ -200,29 +203,9 @@ async function callGpt(
 
     subjectName,
 
-    metrics,
+    pack,
 
-    selectedEvidence: selected.map((e) => ({
-
-      title: e.normalizedTitle,
-
-      domain: e.domain,
-
-      relevance: e.relevanceClass,
-
-      humanReason: e.humanReason,
-
-    })),
-
-    excludedSummary: excluded.map((e) => ({
-
-      title: e.normalizedTitle,
-
-      reason: e.exclusionReason ?? e.relevanceClass,
-
-    })),
-
-  };
+  });
 
 
 
