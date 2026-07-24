@@ -1,0 +1,30 @@
+# Development image for the Next.js app (local Docker stack).
+#
+# Unlike the production `Dockerfile`, nothing is baked in: the repo is bind-mounted
+# and `npm run dev` runs with hot reload. node_modules lives in a named volume so
+# native binaries (sharp, prisma engines) are built for the container, never mixed
+# with a host-side install.
+
+FROM node:22-slim
+
+# openssl: prisma engines. curl: healthcheck. fonts + fontconfig: sharp/librsvg
+# rasterizes text in the synthetic SERP snapshot SVGs; without fonts text vanishes.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       openssl ca-certificates curl \
+       fonts-dejavu-core fonts-liberation fontconfig \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=development
+
+COPY scripts/dev/app-entrypoint.sh /usr/local/bin/app-entrypoint.sh
+RUN chmod +x /usr/local/bin/app-entrypoint.sh
+
+EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=5 \
+    CMD curl -fsS "http://localhost:3000/api/digital-profile/health" || exit 1
+
+ENTRYPOINT ["/usr/local/bin/app-entrypoint.sh"]

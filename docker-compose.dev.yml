@@ -1,0 +1,107 @@
+# Full local development stack: Postgres + Python renderer + Next.js app.
+#
+# Everything the report pipeline touches is reachable from the host:
+#   - Postgres on localhost:5432  (psql / prisma studio / tsx scripts)
+#   - Renderer on localhost:8080  (/health, /orion/render-golden)
+#   - App      on localhost:3000  (/admin/digital-profile)
+#   - Artifacts bind-mounted to ./storage/digital-profile  (job.json, report_json, PNG/PPTX/PDF)
+#
+# Usage:
+#   cp .env.example .env          # (already prepared — fill in the secrets)
+#   docker compose -f docker-compose.dev.yml up -d --build
+#   docker compose -f docker-compose.dev.yml logs -f app
+#
+# Secrets come from .env only; nothing is baked into an image.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dp-dev-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-global_info}
+    ports:
+      # Exposed so host-side tooling (prisma studio, psql, tsx QA scripts) works.
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - dp_dev_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-global_info}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+    restart: unless-stopped
+
+  renderer:
+    build:
+      # Repo-root context so renderer/Dockerfile matches the Railway build.
+      context: .
+      dockerfile: renderer/Dockerfile
+    image: global-info-renderer
+    container_name: dp-dev-renderer
+    # Proper PID 1 so LibreOffice children are reaped.
+    init: true
+    ports:
+      - "${RENDERER_PORT:-8080}:8080"
+    volumes:
+      # Same private storage tree the app writes to — readable here for embedding
+      # screenshots/visual assets into the deck.
+      - ./storage/digital-profile:/data
+      # Live-edit the Python renderer without a rebuild.
+      - ./renderer:/app
+    tmpfs:
+      # Scratch for LibreOffice profiles/temp; wiped on restart.
+      - /tmp
+    environment:
+      DATA_ROOT: /data
+      # Docker bridge is IPv4-only; the image defaults to :: for Railway.
+      RENDERER_HOST: "0.0.0.0"
+    # No secrets belong here — the renderer never calls an external API.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 5
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: global-info-app-dev
+    container_name: dp-dev-app
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: development
+      # Container-network overrides: .env holds the host-facing values so the same
+      # file works for `npx tsx scripts/...` run directly on the host.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-global_info}?schema=public
+      RENDERER_URL: http://renderer:8080
+      DIGITAL_PROFILE_STORAGE_ROOT: /app/storage/digital-profile
+      DIGITAL_PROFILE_STORAGE_DIR: /app/storage/digital-profile
+      # Self-calls made by internal orchestration steps.
+      DIGITAL_PROFILE_API_BASE: http://localhost:3000
+      BASE_URL: http://localhost:3000
+      WATCHPACK_POLLING: "true"
+    volumes:
+      - .:/app
+      # Container-owned installs (native binaries differ from a host npm install).
+      - dp_dev_node_modules:/app/node_modules
+      - dp_dev_next:/app/.next
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      renderer:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  dp_dev_pgdata:
+  dp_dev_node_modules:
+  dp_dev_next:
