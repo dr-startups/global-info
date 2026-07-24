@@ -77,6 +77,7 @@ function observationsFromTask(
   const adapted = adaptArsenkinToolResponse({
     toolName: task.toolName,
     responseJson: task.responseJson,
+    requestJson: task.requestJson,
     ctx: {
       caseAgent: agentName,
       toolName: String(task.toolName ?? ""),

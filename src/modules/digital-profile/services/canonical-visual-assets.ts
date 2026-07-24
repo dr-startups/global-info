@@ -628,11 +628,19 @@ export async function buildCanonicalVisualAssets(input: {
     }
   }
   const ruKnowledge = ruAi.filter((it) => surfaceOf(it) === "knowledge_block");
-  if (ruKnowledge.length > 0) {
+  // Knowledge Graph is often absent for persons; fall back to Wikipedia / AI panel
+  // so p18 still gets a client-facing visual when RU evidence exists.
+  const ruKnowledgeFallback =
+    ruKnowledge.length > 0
+      ? ruKnowledge
+      : by((it) => surfaceOf(it) === "wikipedia" && regionOf(it.region) === "RU").length > 0
+        ? by((it) => surfaceOf(it) === "wikipedia" && regionOf(it.region) === "RU")
+        : ruAi;
+  if (ruKnowledgeFallback.length > 0) {
     if (
       await runAsset("ai_panel", "p18_ru_knowledge_1", "ru_knowledge_panel", () =>
         buildAiPanel(
-          ruKnowledge,
+          ruKnowledgeFallback,
           "ru_knowledge_panel",
           "p18_ru_knowledge_1",
           "Россия — панель знаний поиска"

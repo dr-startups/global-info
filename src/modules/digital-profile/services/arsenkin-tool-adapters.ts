@@ -5,6 +5,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { resolveRegionLabelFromArsenkinRequest } from "../providers/arsenkin/regions";
 import {
   isArsenkinClientEvidenceObservation,
   type ArsenkinIngestedObservation,
@@ -53,6 +54,22 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
 
 function asString(v: unknown): string {
   return typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim();
+}
+
+function resolveObservationRegion(
+  rawRegion: unknown,
+  responseRegion: unknown,
+  requestJson: unknown,
+  fallback = "RU"
+): string {
+  const fromRequest = resolveRegionLabelFromArsenkinRequest(requestJson);
+  if (fromRequest) return fromRequest;
+  const fromRaw = resolveRegionLabelFromArsenkinRequest({ region: rawRegion });
+  if (fromRaw) return fromRaw;
+  const fromResponse = resolveRegionLabelFromArsenkinRequest({ region: responseRegion });
+  if (fromResponse) return fromResponse;
+  const s = asString(rawRegion ?? responseRegion);
+  return s || fallback;
 }
 
 function itemsArray(response: Record<string, unknown>, keys: string[]): unknown[] | null {
@@ -105,7 +122,8 @@ function withProvenance(
 function adaptSearchTop(
   response: Record<string, unknown>,
   ctx: ArsenkinAdapterContext,
-  hashSource: unknown
+  hashSource: unknown,
+  requestJson?: unknown
 ): ArsenkinAdapterResult {
   const items = itemsArray(response, ["items", "results", "tops"]);
   if (items === null) {
@@ -133,7 +151,8 @@ function adaptSearchTop(
       withProvenance(
         {
           kind: "organic",
-          region: asString(raw.region ?? response.region ?? "RU") || "RU",
+          surface: "organic",
+          region: resolveObservationRegion(raw.region, response.region, requestJson),
           engine: "ARSENKIN",
           query,
           url: url || undefined,
@@ -153,7 +172,8 @@ function adaptSearchTop(
 function adaptSuggestions(
   response: Record<string, unknown>,
   ctx: ArsenkinAdapterContext,
-  hashSource: unknown
+  hashSource: unknown,
+  requestJson?: unknown
 ): ArsenkinAdapterResult {
   const items = itemsArray(response, ["items", "suggestions", "results"]);
   if (items === null) {
@@ -174,7 +194,12 @@ function adaptSuggestions(
       withProvenance(
         {
           kind: "suggestion",
-          region: asString(isPlainObject(raw) ? raw.region : response.region) || "RU",
+          surface: "autocomplete",
+          region: resolveObservationRegion(
+            isPlainObject(raw) ? raw.region : undefined,
+            response.region,
+            requestJson
+          ),
           engine: "ARSENKIN",
           query,
           suggestion,
@@ -193,7 +218,8 @@ function adaptSuggestions(
 function adaptPaa(
   response: Record<string, unknown>,
   ctx: ArsenkinAdapterContext,
-  hashSource: unknown
+  hashSource: unknown,
+  requestJson?: unknown
 ): ArsenkinAdapterResult {
   const items = itemsArray(response, ["items", "questions", "results", "paa"]);
   if (items === null) {
@@ -217,7 +243,12 @@ function adaptPaa(
       withProvenance(
         {
           kind: "paa",
-          region: asString(isPlainObject(raw) ? raw.region : response.region) || "RU",
+          surface: "related",
+          region: resolveObservationRegion(
+            isPlainObject(raw) ? raw.region : undefined,
+            response.region,
+            requestJson
+          ),
           engine: "ARSENKIN",
           query,
           question,
@@ -236,7 +267,8 @@ function adaptPaa(
 function adaptAiSearch(
   response: Record<string, unknown>,
   ctx: ArsenkinAdapterContext,
-  hashSource: unknown
+  hashSource: unknown,
+  requestJson?: unknown
 ): ArsenkinAdapterResult {
   const items = itemsArray(response, ["items", "answers", "results"]);
   if (items === null) {
@@ -251,11 +283,13 @@ function adaptAiSearch(
           withProvenance(
             {
               kind: "other",
-              region: asString(response.region ?? "RU") || "RU",
+              surface: "ai_answer",
+              region: resolveObservationRegion(undefined, response.region, requestJson),
               engine: "ARSENKIN",
               query,
               title: asString(response.title) || "AI answer",
               snippet: answer,
+              // Keep citation off the primary URL so composite does not collide with organic SERP.
               sourceUrlOrQuery: query || answer.slice(0, 120),
             },
             ctx,
@@ -289,17 +323,20 @@ function adaptAiSearch(
     if (!snippet && !title) {
       return { ok: false, code: "ARSENKIN_SCHEMA_INVALID", message: "AI_SEARCH item requires answer/text" };
     }
+    const citation = asString(raw.url ?? raw.citation);
     observations.push(
       withProvenance(
         {
           kind: "other",
-          region: asString(raw.region ?? response.region ?? "RU") || "RU",
+          surface: "ai_answer",
+          region: resolveObservationRegion(raw.region, response.region, requestJson),
           engine: "ARSENKIN",
           query: asString(raw.query ?? response.query ?? ""),
           title,
           snippet: snippet || undefined,
-          url: asString(raw.url ?? raw.citation) || undefined,
-          sourceUrlOrQuery: asString(raw.url ?? raw.citation ?? raw.query ?? response.query) || null,
+          // Citation URLs are evidence, not the AI-row identity (avoids organic collision).
+          url: snippet ? undefined : citation || undefined,
+          sourceUrlOrQuery: citation || asString(raw.query ?? response.query) || null,
         },
         ctx,
         "AI_SEARCH",
@@ -587,6 +624,8 @@ export function adaptArsenkinToolResponse(input: {
   toolName: string | null | undefined;
   responseJson: unknown;
   ctx: ArsenkinAdapterContext;
+  /** ProviderTask.requestJson — used to recover RU/UAE from se.region. */
+  requestJson?: unknown;
 }): ArsenkinAdapterResult {
   const adapter = resolveToolAdapterName(input.toolName);
   if (!adapter) {
@@ -620,16 +659,16 @@ export function adaptArsenkinToolResponse(input: {
   let adapted: ArsenkinAdapterResult;
   switch (adapter) {
     case "SEARCH_TOP":
-      adapted = adaptSearchTop(payload, input.ctx, hashSource);
+      adapted = adaptSearchTop(payload, input.ctx, hashSource, input.requestJson);
       break;
     case "SUGGESTIONS":
-      adapted = adaptSuggestions(payload, input.ctx, hashSource);
+      adapted = adaptSuggestions(payload, input.ctx, hashSource, input.requestJson);
       break;
     case "PAA":
-      adapted = adaptPaa(payload, input.ctx, hashSource);
+      adapted = adaptPaa(payload, input.ctx, hashSource, input.requestJson);
       break;
     case "AI_SEARCH":
-      adapted = adaptAiSearch(payload, input.ctx, hashSource);
+      adapted = adaptAiSearch(payload, input.ctx, hashSource, input.requestJson);
       break;
     case "URL_AUDIT":
       adapted = adaptUrlAudit(payload, input.ctx, hashSource, envelopeTaskId);

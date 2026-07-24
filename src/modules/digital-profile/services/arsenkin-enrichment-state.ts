@@ -67,6 +67,8 @@ export type ArsenkinIngestedObservation = {
    * Never a client finding / KPI / summary evidence row.
    */
   kind?: "organic" | "suggestion" | "paa" | "other" | "URL_FETCH_STATUS";
+  /** Fine-grained surface for composite/deck routing (ai_answer, organic, …). */
+  surface?: string;
   providerTaskId?: string | null;
   riskLabel?: string | null;
   /** Provenance required for ingested rows. */

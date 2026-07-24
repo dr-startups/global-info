@@ -4,6 +4,10 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
+import {
+  arsenkinRegionIdToLabel,
+  resolveRegionLabelFromArsenkinRequest,
+} from "../providers/arsenkin/regions";
 import type { BaseCollectionManifest, ReportDataBinding } from "./unified-collection-types";
 import {
   normalizeSerpProviderBucket,
@@ -114,11 +118,19 @@ function norm(s: string | null | undefined): string {
 export function normalizeCompositeRegion(raw: string | null | undefined): string | undefined {
   const r = String(raw ?? "").trim();
   if (!r) return undefined;
+  // Prefer Arsenkin numeric location map (1011981=UAE) before digit→RU fallback.
+  const mapped = arsenkinRegionIdToLabel(r);
+  if (mapped) return mapped;
   const up = r.toUpperCase();
   if (/^\d+$/.test(up)) return "RU";
   if (/UAE|^AE$|INTL|INTERNATIONAL|GLOBAL|DUBAI/.test(up)) return "UAE";
   if (/^RU|RUSSIA|МОСКВА|MOSCOW|MSK|SPB/.test(up)) return "RU";
   return up;
+}
+
+function aiAnswerKey(region: string, engine: string, query: string, title: string, snippet: string): string {
+  const body = norm(snippet).slice(0, 160) || norm(title);
+  return `ai_answer|${norm(region)}|${norm(engine)}|${norm(query)}|${body}`;
 }
 
 function organicKey(region: string, engine: string, query: string, url: string): string {
@@ -186,6 +198,7 @@ export async function mergeCompositeSerp(input: {
     kind?: "organic" | "suggestion" | "paa" | "other" | "URL_FETCH_STATUS";
     /** Producing Arsenkin tool (ai-serp / check-h / …) — used as surface hint. */
     tool?: string | null;
+    /** Fine-grained surface when adapter sets it (ai_answer / organic / …). */
     surface?: string;
     providerTaskId?: string | null;
     riskLabel?: string | null;
@@ -224,6 +237,19 @@ export async function mergeCompositeSerp(input: {
       existing.baseSearchSurfaceItemId = row.baseSearchSurfaceItemId;
     }
     if (row.fromCaseCorpus) existing.fromCaseCorpus = true;
+    // Prefer fine-grained Arsenkin surfaces (ai_answer) over generic organic.
+    if (
+      row.surface &&
+      (!existing.surface || existing.surface === "organic" || existing.surface === "other") &&
+      row.surface !== "organic" &&
+      row.surface !== "other"
+    ) {
+      existing.surface = row.surface;
+    }
+    if ((row.snippet?.length ?? 0) > (existing.snippet?.length ?? 0)) {
+      existing.snippet = row.snippet;
+    }
+    if (!existing.title && row.title) existing.title = row.title;
     const newer = preferNewerCollectedAt(existing.collectedAt, row.collectedAt);
     if (newer) existing.collectedAt = newer;
   };
@@ -380,6 +406,33 @@ export async function mergeCompositeSerp(input: {
     }
   }
 
+  // Heal stale enrichment rows: adapters once defaulted region to "RU" even for
+  // Google UAE tasks (se.region=1011981). Re-read requestJson by providerTaskId.
+  const regionByTaskId = new Map<string, "RU" | "UAE">();
+  if (input.prisma) {
+    const taskIds = Array.from(
+      new Set(
+        (input.arsenkinObservations ?? [])
+          .map((o) => String(o.providerTaskId ?? "").trim())
+          .filter(Boolean)
+      )
+    );
+    if (taskIds.length > 0) {
+      try {
+        const rows = await input.prisma.providerTask.findMany({
+          where: { id: { in: taskIds } },
+          select: { id: true, requestJson: true },
+        });
+        for (const row of rows) {
+          const label = resolveRegionLabelFromArsenkinRequest(row.requestJson);
+          if (label) regionByTaskId.set(row.id, label);
+        }
+      } catch {
+        /* offline / missing table — keep observation regions */
+      }
+    }
+  }
+
   let arsenkin = 0;
   for (const obs of input.arsenkinObservations ?? []) {
     // Provenance/diagnostic rows (check-h boolean slots) never enter composite/client evidence.
@@ -390,19 +443,31 @@ export async function mergeCompositeSerp(input: {
       kindRaw === "suggestion" || kindRaw === "paa" || kindRaw === "organic" || kindRaw === "other"
         ? kindRaw
         : "other";
-    const region = normalizeCompositeRegion(obs.region);
+    const surface =
+      obs.surface ??
+      surfaceOfArsenkinTool(obs.tool) ??
+      (kind === "suggestion" ? "autocomplete" : kind === "paa" ? "related" : kind === "organic" ? "organic" : undefined);
+    const taskRegion = obs.providerTaskId
+      ? regionByTaskId.get(String(obs.providerTaskId))
+      : undefined;
+    const region = normalizeCompositeRegion(taskRegion ?? obs.region);
     let key: string;
     if (kind === "suggestion") {
       key = suggestKey(region ?? "", obs.engine ?? "", obs.query ?? "", obs.suggestion ?? "");
     } else if (kind === "paa") {
       key = paaKey(region ?? "", obs.engine ?? "", obs.query ?? "", obs.question ?? "");
+    } else if (surface === "ai_answer") {
+      // Never collapse AI overview text into organic SERP rows sharing a citation URL.
+      key = aiAnswerKey(
+        region ?? "",
+        obs.engine ?? "",
+        obs.query ?? "",
+        obs.title ?? "",
+        obs.snippet ?? ""
+      );
     } else {
       key = organicKey(region ?? "", obs.engine ?? "", obs.query ?? "", obs.url ?? "");
     }
-    const surface =
-      obs.surface ??
-      surfaceOfArsenkinTool(obs.tool) ??
-      (kind === "suggestion" ? "autocomplete" : kind === "paa" ? "related" : kind === "organic" ? "organic" : undefined);
     add(
       {
         key,
