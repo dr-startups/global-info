@@ -15,7 +15,12 @@ export const CLIENT_SUMMARY_PACK_SCHEMA_VERSION = "client-summary-pack-v1" as co
 
 export const RepresentativeArticleSchema = z.object({
   title: z.string().min(1),
-  domain: z.string().min(1),
+  /**
+   * Domain of THIS material. Empty when the lead material carries no URL —
+   * an unknown source is a legitimate state and must be rendered as no
+   * attribution at all, never as another material's domain (step 05.3).
+   */
+  domain: z.string(),
   sourceDate: z.string().nullable(),
   conciseCompleteDescription: z.string().min(1),
   sourceAllegationOrStatus: z.string().min(1),
@@ -44,7 +49,8 @@ export type ClientMaterialTheme = z.infer<typeof ClientMaterialThemeSchema>;
 
 export const ClientIsolatedItemSchema = z.object({
   title: z.string().min(1),
-  domain: z.string().min(1),
+  /** Empty when unknown — see RepresentativeArticleSchema.domain. */
+  domain: z.string(),
   description: z.string().min(1),
   qualification: z.string().min(1),
   materialityLevel: MaterialityLevelSchema,

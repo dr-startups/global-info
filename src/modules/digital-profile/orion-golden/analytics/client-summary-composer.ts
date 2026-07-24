@@ -105,6 +105,12 @@ function composeOverall(pack: ClientSummaryPack): string {
   return parts.join("\n");
 }
 
+/** Parenthetical source attribution, omitted when the domain is unknown. */
+function sourceSuffix(domain: string | undefined): string {
+  const d = (domain ?? "").trim();
+  return d ? ` (${d})` : "";
+}
+
 function articleSentence(
   title: string,
   domain: string,
@@ -114,7 +120,7 @@ function articleSentence(
   const key = title.trim().toLowerCase();
   if (alreadyUsedTitles.has(key)) {
     return finishSentence(
-      `Тот же материал «${title}» (${domain}) также относится к этой теме`
+      `Тот же материал «${title}»${sourceSuffix(domain)} также относится к этой теме`
     );
   }
   alreadyUsedTitles.add(key);
@@ -123,7 +129,7 @@ function articleSentence(
     return finishSentence(description);
   }
   return finishSentence(
-    `В выборке присутствует материал «${title}» (${domain}). ${description}`
+    `В выборке присутствует материал «${title}»${sourceSuffix(domain)}. ${description}`
   );
 }
 
@@ -168,7 +174,7 @@ function composeIsolated(pack: ClientSummaryPack): string {
   }
   const lines = pack.isolatedSignificantItems.slice(0, 5).map((item) =>
     finishSentence(
-      `«${item.title}» (${item.domain}). ${item.description} ${item.qualification}`
+      `«${item.title}»${sourceSuffix(item.domain)}. ${item.description} ${item.qualification}`
     )
   );
   return [`Единичные существенные публикации.`, ...lines].join(" ");

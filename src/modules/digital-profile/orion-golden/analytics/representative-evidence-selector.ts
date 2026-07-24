@@ -181,6 +181,18 @@ function concreteThesisScore(c: CanonicalClaim): number {
   return s;
 }
 
+/**
+ * Domain of the material `originalTitle` belongs to.
+ *
+ * `sourceDomains` aggregates every domain behind the claim in an order that has
+ * nothing to do with the lead title, so pairing the two misattributed
+ * headlines. Returns "" when the lead material has no known domain — callers
+ * must then omit the attribution rather than substitute another outlet.
+ */
+export function leadDomainOf(c: CanonicalClaim): string {
+  return (c.originalDomain ?? "").trim();
+}
+
 function domainScore(c: CanonicalClaim): number {
   if (c.sourceDomains.some((d) => OFFICIAL_DOMAIN.test(d))) return 40;
   if (c.sourceDomains.some((d) => REPUTABLE.test(d))) return 30;
@@ -240,14 +252,16 @@ function selectForTheme(
     if (selected.length >= 2) break;
     const plot = plotKeyOf(claim);
     if (usedPlots.has(plot)) continue;
-    const domain = claim.sourceDomains[0] ?? "";
+    // Domain of the material the lead title came from — never sourceDomains[0],
+    // whose order is unrelated to originalTitle (step 05.3).
+    const domain = leadDomainOf(claim);
     // Prefer independent domain for 2nd slot; allow same domain only if no alternative.
     if (
       selected.length === 1 &&
       domain &&
       usedDomainsInTheme.has(domain) &&
       ranked.some((c) => {
-        const d = c.sourceDomains[0] ?? "";
+        const d = leadDomainOf(c);
         return d && !usedDomainsInTheme.has(d) && !usedPlots.has(plotKeyOf(c));
       })
     ) {

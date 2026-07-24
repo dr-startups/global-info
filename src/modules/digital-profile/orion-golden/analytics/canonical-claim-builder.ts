@@ -240,9 +240,13 @@ function buildFromFinding(input: {
   });
 
   const fullClaimText = String(f.claim ?? "").trim() || String(f.theme);
+  // Lead material: title, domain and URL must all describe the SAME item, or
+  // the report attributes a headline to an outlet that never published it.
+  const leadItem = evidenceItems[0];
   const originalTitle =
-    evidenceItems[0]?.title ||
-    (fullClaimText.match(/«([^»]+)»/u)?.[1] ?? f.theme);
+    leadItem?.title || (fullClaimText.match(/«([^»]+)»/u)?.[1] ?? f.theme);
+  const originalUrl = leadItem?.title ? (leadItem.sourceUrl ?? null) : null;
+  const originalDomain = originalUrl ? domainOfUrl(originalUrl) || null : null;
 
   return {
     claimId: claimIdFor([f.findingId, themeIds.join(","), (f.evidenceRefs ?? []).join(",")]),
@@ -268,6 +272,8 @@ function buildFromFinding(input: {
       findingIds: [f.findingId],
     },
     originalTitle,
+    originalDomain,
+    originalUrl,
     originalFullTextRef: evidenceItems[0]?.storageRef
       ? evidenceItems[0].storageRef
       : evidenceItems[0]?.sourceUrl
@@ -379,6 +385,10 @@ function buildOrphanMaterialClaims(input: {
         findingIds: [],
       },
       originalTitle: entry.originalTitle,
+      // Single-item claim: title, domain and URL all come from `item`, so the
+      // attribution is exact by construction.
+      originalDomain: domains[0] ?? null,
+      originalUrl: item?.sourceUrl ?? null,
       originalFullTextRef: entry.fullTextRef,
       clientQualification: qualificationFor(
         kind === "FACT" ? "SOURCE_ALLEGATION" : kind,

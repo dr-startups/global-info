@@ -163,6 +163,12 @@ function whyItMatters(themeId: CanonicalThemeId): string {
   }
 }
 
+/** Parenthetical source attribution, omitted when the domain is unknown. */
+function sourceSuffix(domain: string | undefined): string {
+  const d = (domain ?? "").trim();
+  return d ? ` (${d})` : "";
+}
+
 function articleFromSelection(
   claim: CanonicalClaim,
   title: string,
@@ -170,12 +176,16 @@ function articleFromSelection(
   excerpt: string
 ): RepresentativeArticle {
   const cleanTitle = stripInternalLeak(title || claim.originalTitle || "Материал без заголовка");
-  const cleanDomain = domain || claim.sourceDomains[0] || "неизвестный источник";
+  // Never borrow sourceDomains[0]: it belongs to some other material of the
+  // same claim, and a misattributed source discredits the evidence (step 05.3).
+  const cleanDomain = (domain || claim.originalDomain || "").trim();
   const description = stripInternalLeak(
     excerpt ||
       claim.displayExcerpt ||
       (cleanTitle
-        ? `«${cleanTitle}» — источник ${cleanDomain}.`
+        ? cleanDomain
+          ? `«${cleanTitle}» — источник ${cleanDomain}.`
+          : `«${cleanTitle}».`
         : "Описание материала сохранено в доказательной трассе.")
   );
   const allegation = stripInternalLeak(
@@ -227,14 +237,18 @@ function buildThemeBlock(
       sel.sourceDomain,
       sel.displayExcerpt
     );
-    // Invariant: if data exists, title/domain/description must be present.
-    if (!article.title || !article.domain || !article.conciseCompleteDescription) continue;
+    // Invariant: title and description must be present. An unknown domain is
+    // tolerated — the attribution is then omitted rather than invented.
+    if (!article.title || !article.conciseCompleteDescription) continue;
     articles.push(article);
     for (const r of article.evidenceRefs) evidenceRefs.add(r);
-    domains.add(article.domain);
+    // Theme-level domains legitimately aggregate every source behind the theme.
+    // Only the per-article attribution must stay tied to its own material.
+    if (article.domain) domains.add(article.domain);
+    for (const d of claim.sourceDomains) if (d) domains.add(d);
     concreteClaims.push(
       stripInternalLeak(
-        `В выборке: «${article.title}» (${article.domain}). ${article.sourceAllegationOrStatus}`
+        `В выборке: «${article.title}»${sourceSuffix(article.domain)}. ${article.sourceAllegationOrStatus}`
       )
     );
     if (!qualification) qualification = article.clientQualification;
@@ -247,7 +261,7 @@ function buildThemeBlock(
   const clientTitle = themeLabelRu(themeId);
   const lead = articles[0]!;
   const conclusion = stripInternalLeak(
-    `По теме «${clientTitle}» найдены конкретные материалы, в том числе «${lead.title}» (${lead.domain}).`
+    `По теме «${clientTitle}» найдены конкретные материалы, в том числе «${lead.title}»${sourceSuffix(lead.domain)}.`
   );
 
   return {
@@ -519,9 +533,11 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
     internalTokenHits === 0 &&
     materialThemes.every(
       (t) =>
-        t.representativeArticles.every(
-          (a) => a.title && a.domain && a.conciseCompleteDescription
-        ) && t.evidenceRefs.length > 0
+        // An unknown domain is not an integrity failure — the attribution is
+        // simply omitted. Borrowing another material's domain would be one,
+        // and is now structurally impossible (step 05.3).
+        t.representativeArticles.every((a) => a.title && a.conciseCompleteDescription) &&
+        t.evidenceRefs.length > 0
     );
 
   const pack: ClientSummaryPack = {

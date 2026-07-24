@@ -68,6 +68,17 @@ export const CanonicalClaimSchema = z.object({
     findingIds: z.array(z.string()),
   }),
   originalTitle: z.string(),
+  /**
+   * Domain and URL of the material `originalTitle` came from.
+   *
+   * `sourceDomains` aggregates every domain behind the claim and its order is
+   * unrelated to the lead title, so quoting `sourceDomains[0]` next to
+   * `originalTitle` attributed a headline to a different outlet — a TASS card
+   * appeared as news.mail.ru and a cyclowiki.org article as ru.wikipedia.org.
+   * Optional so previously persisted bundles still parse.
+   */
+  originalDomain: z.string().nullable().optional(),
+  originalUrl: z.string().nullable().optional(),
   originalFullTextRef: z.string().nullable(),
   clientQualification: z.string(),
   recommendedAction: z.string(),
