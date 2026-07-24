@@ -254,6 +254,58 @@ export function isReusableSuggestTask(t: TargetedProviderTaskRow): boolean {
 }
 
 /**
+ * Tick resolves each agent via enrichmentRunIds.find(/suggestions/) — first match
+ * wins. When remapping to a sibling CaseAgent run we must REPLACE the stale
+ * suggestions id, not append (append leaves the failed run first → still FAILED).
+ */
+export function mergeSuggestionsEnrichmentRunId(
+  existing: readonly string[] | null | undefined,
+  effectiveSuggestionsRunId: string
+): string[] {
+  const effective = String(effectiveSuggestionsRunId ?? "").trim();
+  if (!effective) return [...(existing ?? [])];
+  let replaced = false;
+  const out = (existing ?? []).map((id) => {
+    if (/suggestions/i.test(String(id))) {
+      replaced = true;
+      return effective;
+    }
+    return id;
+  });
+  if (!replaced) out.push(effective);
+  return Array.from(new Set(out));
+}
+
+/** Drop Suggestions from failedAgents so a successful remap is not sticky. */
+export function clearSuggestionsFailureFromEnrichmentState(
+  state: UnifiedCollectionJob["arsenkinEnrichmentState"],
+  effectiveSuggestionsRunId?: string
+): UnifiedCollectionJob["arsenkinEnrichmentState"] {
+  if (!state) return state;
+  const drop = (names: string[] | undefined) =>
+    (names ?? []).filter((n) => !/SUGGESTIONS/i.test(String(n)));
+  const failedAgents = drop(state.failedAgents);
+  const runId = String(effectiveSuggestionsRunId ?? "").trim() || null;
+  const agents = (state.agents ?? []).map((a) => {
+    if (!/SUGGESTIONS/i.test(String(a.agentName ?? ""))) return a;
+    return {
+      ...a,
+      enrichmentRunId: runId ?? a.enrichmentRunId,
+      terminal: false,
+      terminalKind: null,
+      ingested: false,
+      errorCode: null,
+    };
+  });
+  return {
+    ...state,
+    failedAgents,
+    agents,
+    enrichmentComplete: false,
+  };
+}
+
+/**
  * Prefer tasks on the job's suggestions enrichment run; if that run has no
  * reusable suggest task, fall back to a sibling CaseAgent suggestions run on
  * the same case (manual agent success while unified poll timed out).
@@ -471,8 +523,9 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       /suggest/i.test(String(t.toolName ?? ""))
     );
     const reusable = suggestTasks.find(isReusableSuggestTask);
-    const enrichmentRunIdsNext = Array.from(
-      new Set([...(job.enrichmentRunIds ?? []), effectiveEnrichmentRunId])
+    const enrichmentRunIdsNext = mergeSuggestionsEnrichmentRunId(
+      job.enrichmentRunIds,
+      effectiveEnrichmentRunId
     );
     if (reusable?.externalTaskId) {
       await writeUnifiedArtifact(input.caseId, job.unifiedJobId, "enrichment-targeted-retry-audit.json", {
@@ -488,6 +541,7 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
         externalTaskId: reusable.externalTaskId,
         providerTaskId: reusable.id,
         submissions: 0,
+        enrichmentRunIdsNext,
       });
       await patchUnifiedCollectionJob(input.caseId, {
         stage: "ARSENKIN_ENRICHMENT",
@@ -499,12 +553,19 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
         lastErrorCode: null,
         completedAt: null,
         enrichmentRunIds: enrichmentRunIdsNext,
-        arsenkinReportRunId: effectiveEnrichmentRunId,
+        arsenkinReportRunId: job.arsenkinReportRunId ?? enrichmentRunIdsNext[0] ?? effectiveEnrichmentRunId,
+        arsenkinEnrichmentState: clearSuggestionsFailureFromEnrichmentState(
+          job.arsenkinEnrichmentState,
+          effectiveEnrichmentRunId
+        ),
         warnings: [
           ...job.warnings.filter((w) => !/^targeted-retry:/i.test(w)),
           "targeted-retry:reused-existing-suggestions-task",
           ...(resolved.remappedFromSibling || remappedFromSibling
-            ? [`targeted-retry:remapped-sibling-run:${effectiveEnrichmentRunId}`]
+            ? [
+                `targeted-retry:remapped-sibling-run:${effectiveEnrichmentRunId}`,
+                `targeted-retry:replaced-stale-suggestions-run:${enrichmentRunId}`,
+              ]
             : []),
         ],
       });
@@ -685,10 +746,11 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       lastErrorCode: null,
       completedAt: null,
       enrichmentRunIds: enrichmentRunIdsNext,
-      arsenkinReportRunId: effectiveEnrichmentRunId,
-      arsenkinEnrichmentState: job.arsenkinEnrichmentState
-        ? { ...job.arsenkinEnrichmentState, enrichmentComplete: false }
-        : job.arsenkinEnrichmentState,
+      arsenkinReportRunId: job.arsenkinReportRunId ?? enrichmentRunIdsNext[0] ?? effectiveEnrichmentRunId,
+      arsenkinEnrichmentState: clearSuggestionsFailureFromEnrichmentState(
+        job.arsenkinEnrichmentState,
+        effectiveEnrichmentRunId
+      ),
       warnings: [
         ...job.warnings.filter((w) => !/^targeted-retry:/i.test(w)),
         "targeted-retry:suggestions-submitted:1",

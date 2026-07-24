@@ -5,10 +5,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  clearSuggestionsFailureFromEnrichmentState,
   isReusableSuggestTask,
+  mergeSuggestionsEnrichmentRunId,
   resolveSuggestTasksForRetry,
   type TargetedProviderTaskRow,
 } from "../../src/modules/digital-profile/services/unified-enrichment-targeted-retry";
+import { emptyArsenkinEnrichmentState } from "../../src/modules/digital-profile/services/arsenkin-enrichment-state";
 
 describe("resolveSuggestTasksForRetry", () => {
   it("keeps primary run when it already has a reusable suggest task", async () => {
@@ -113,5 +116,59 @@ describe("resolveSuggestTasksForRetry", () => {
       }),
       false
     );
+  });
+
+  it("mergeSuggestionsEnrichmentRunId replaces stale suggestions id (not append)", () => {
+    const merged = mergeSuggestionsEnrichmentRunId(
+      [
+        "orion-arsenkin-agent-arsenkin-search-top-real-aaa",
+        "orion-arsenkin-agent-arsenkin-suggestions-real-OLD",
+        "orion-arsenkin-agent-arsenkin-paa-real-bbb",
+      ],
+      "orion-arsenkin-agent-arsenkin-suggestions-real-NEW"
+    );
+    assert.deepEqual(merged, [
+      "orion-arsenkin-agent-arsenkin-search-top-real-aaa",
+      "orion-arsenkin-agent-arsenkin-suggestions-real-NEW",
+      "orion-arsenkin-agent-arsenkin-paa-real-bbb",
+    ]);
+    assert.equal(merged.filter((id) => /suggestions/i.test(id)).length, 1);
+  });
+
+  it("clearSuggestionsFailureFromEnrichmentState drops Suggestions from failedAgents", () => {
+    const state = emptyArsenkinEnrichmentState({
+      caseId: "c1",
+      unifiedJobId: "u1",
+    });
+    state.failedAgents = [
+      "ARSENKIN_SUGGESTIONS_REAL",
+      "ARSENKIN_PAA_REAL",
+      "ARSENKIN_URL_AUDIT_REAL",
+    ];
+    state.agents = [
+      {
+        agentName: "ARSENKIN_SUGGESTIONS_REAL",
+        enrichmentRunId: "old-suggestions",
+        scheduled: true,
+        terminal: true,
+        terminalKind: "FAILED",
+        ingested: false,
+        pendingTaskCount: 0,
+        doneTaskCount: 0,
+        submitUnknownCount: 0,
+        observationCount: 0,
+        errorCode: "FAILED",
+      },
+    ];
+    const next = clearSuggestionsFailureFromEnrichmentState(
+      state,
+      "new-suggestions-run"
+    );
+    assert.deepEqual(next?.failedAgents, [
+      "ARSENKIN_PAA_REAL",
+      "ARSENKIN_URL_AUDIT_REAL",
+    ]);
+    assert.equal(next?.agents[0]?.enrichmentRunId, "new-suggestions-run");
+    assert.equal(next?.agents[0]?.terminalKind, null);
   });
 });
