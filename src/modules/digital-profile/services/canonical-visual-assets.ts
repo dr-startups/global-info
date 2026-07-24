@@ -97,6 +97,9 @@ function engineOf(item: RawInventoryItem): "YANDEX" | "GOOGLE" | null {
   ).toUpperCase();
   if (/YANDEX|\bYA\b/.test(raw)) return "YANDEX";
   if (/GOOGLE|SERPER|GSEARCH/.test(raw)) return "GOOGLE";
+  // Arsenkin check-top rows are stored as engine=ARSENKIN (not GOOGLE/YANDEX).
+  // Without this, UAE organic never becomes attributable and p27 stays empty.
+  if (/ARSENKIN/.test(raw)) return "GOOGLE";
   return null;
 }
 

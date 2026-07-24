@@ -1425,9 +1425,16 @@ async function stepPrepare(
     );
   }
 
+  // Do not treat historical `arsenkin-failed:*` warnings as live failures once
+  // enrichment completed with zero failedAgents (stale warnings sticky otherwise).
+  const liveArsenkinFailed =
+    (job.arsenkinEnrichmentState?.failedAgents?.length ?? 0) > 0 ||
+    (!job.arsenkinEnrichmentState?.enrichmentComplete &&
+      job.warnings.some((w) => /arsenkin-failed/i.test(w)));
   const partial =
     (job.coverage?.failedFinal ?? 0) > 0 ||
-    job.warnings.some((w) => /arsenkin-failed|arsenkin-skipped|partial/i.test(w));
+    liveArsenkinFailed ||
+    job.warnings.some((w) => /arsenkin-skipped|visual-asset-partial-failures/i.test(w));
 
   // Persist funnel summary on the job (REMEDIATION §0.1). Prefer the value
   // returned by prepare; otherwise rebuild from the job artifact directory.
@@ -1472,6 +1479,18 @@ async function stepPrepare(
     // Observability must never block REPORT_READY.
   }
 
+  const warningsForReady = mergeJobWarnings(job.warnings, qualityWarnings).filter((w) => {
+    // Drop sticky historical Arsenkin failures once enrichment is clean.
+    if (
+      /arsenkin-failed:/i.test(w) &&
+      job.arsenkinEnrichmentState?.enrichmentComplete &&
+      (job.arsenkinEnrichmentState.failedAgents?.length ?? 0) === 0
+    ) {
+      return false;
+    }
+    return true;
+  });
+
   return (
     await patchUnifiedCollectionJob(job.caseId, {
       stage: partial ? "COMPLETED_PARTIAL" : "REPORT_READY",
@@ -1483,7 +1502,7 @@ async function stepPrepare(
         pptx: prepared.pptx,
         ...(prepared.contactSheet ? { contactSheet: prepared.contactSheet } : {}),
       },
-      warnings: mergeJobWarnings(job.warnings, qualityWarnings),
+      warnings: warningsForReady,
       ...(reportQuality ? { reportQuality } : {}),
     }) ?? job
   );

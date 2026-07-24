@@ -77,10 +77,14 @@ export function UnifiedCanonicalDownloadButtons({
   caseId: string;
   job: UnifiedCollectionJobStatus;
 }) {
-  const downloads = job.downloadArtifacts ?? {
-    pdf: Boolean(job.reportLinks?.pdf),
-    pptx: Boolean(job.reportLinks?.pptx),
-    contactSheet: Boolean(job.reportLinks?.contactSheet),
+  // Prefer server availability; fall back to reportLinks so COMPLETED_PARTIAL
+  // with a rendered PDF is never stuck behind a stale downloadArtifacts=false.
+  const downloads = {
+    pdf: Boolean(job.downloadArtifacts?.pdf || job.reportLinks?.pdf),
+    pptx: Boolean(job.downloadArtifacts?.pptx || job.reportLinks?.pptx),
+    contactSheet: Boolean(
+      job.downloadArtifacts?.contactSheet || job.reportLinks?.contactSheet
+    ),
   };
   const jobId = job.unifiedJobId || job.jobId;
   return (

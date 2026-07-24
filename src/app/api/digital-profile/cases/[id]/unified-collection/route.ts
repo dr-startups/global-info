@@ -98,7 +98,9 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
       job?.status === "RUNNING" ||
       job?.status === "WAITING");
   const downloadArtifacts =
-    job && job.stage === "REPORT_READY" && job.status === "COMPLETED"
+    job &&
+    job.status === "COMPLETED" &&
+    (job.stage === "REPORT_READY" || job.stage === "COMPLETED_PARTIAL")
       ? await getCanonicalDownloadAvailability({ caseId: id, jobId: job.unifiedJobId })
       : { pdf: false, pptx: false, contactSheet: false };
   const rebuild = await evaluateUnifiedReportRebuildEligibility({ caseId: id, job });
