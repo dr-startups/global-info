@@ -48,6 +48,8 @@ export type TargetedProviderTaskRow = {
   responseJson?: unknown;
   requestJson?: unknown;
   errorCode?: string | null;
+  /** Present when row was loaded via case-wide sibling lookup. */
+  reportRunId?: string | null;
 };
 
 export type TargetedEnrichmentRetryDeps = {
@@ -62,6 +64,19 @@ export type TargetedEnrichmentRetryDeps = {
   loadSubject?: (caseId: string) => Promise<{ fullName: string | null; aliases: string[] }>;
   /** Existing ProviderTasks for the enrichment run (offline fixture). */
   listProviderTasks?: (enrichmentRunId: string) => Promise<TargetedProviderTaskRow[]>;
+  /**
+   * Case-wide suggest tasks (sibling CaseAgent runs). Offline fixtures omit this
+   * so smokes stay scoped to the injected enrichment run.
+   */
+  listCaseSuggestTasks?: (caseId: string) => Promise<TargetedProviderTaskRow[]>;
+  /**
+   * Ensure dp_orion_report_runs row exists before ProviderTask upsert (FK).
+   * Live default upserts a lightweight ARSENKIN_CASE_AGENT run.
+   */
+  ensureEnrichmentReportRun?: (input: {
+    caseId: string;
+    enrichmentRunId: string;
+  }) => Promise<void>;
   /**
    * Re-queue a proven NO_EXTERNAL_REQUEST SUBMIT_UNKNOWN row to QUEUED so
    * ensureArsenkinTask may submit once without creating a duplicate row.
@@ -230,6 +245,72 @@ function findSuggestionsEnrichmentRunId(job: UnifiedCollectionJob): string | nul
   return hit ?? null;
 }
 
+export function isReusableSuggestTask(t: TargetedProviderTaskRow): boolean {
+  return (
+    Boolean(String(t.externalTaskId ?? "").trim()) ||
+    String(t.state).toUpperCase() === "DONE" ||
+    isIngestibleResponse(t.responseJson)
+  );
+}
+
+/**
+ * Prefer tasks on the job's suggestions enrichment run; if that run has no
+ * reusable suggest task, fall back to a sibling CaseAgent suggestions run on
+ * the same case (manual agent success while unified poll timed out).
+ */
+export async function resolveSuggestTasksForRetry(input: {
+  caseId: string;
+  enrichmentRunId: string;
+  deps?: TargetedEnrichmentRetryDeps;
+}): Promise<{
+  enrichmentRunId: string;
+  tasks: TargetedProviderTaskRow[];
+  remappedFromSibling: boolean;
+}> {
+  const primary =
+    (await input.deps?.listProviderTasks?.(input.enrichmentRunId)) ??
+    (await defaultListProviderTasks(input.enrichmentRunId));
+  const primarySuggest = primary.filter((t) => /suggest/i.test(String(t.toolName ?? "")));
+  if (primarySuggest.some(isReusableSuggestTask)) {
+    return {
+      enrichmentRunId: input.enrichmentRunId,
+      tasks: primary,
+      remappedFromSibling: false,
+    };
+  }
+
+  // Injected listProviderTasks without listCaseSuggestTasks → keep smoke scope.
+  if (input.deps?.listProviderTasks && !input.deps.listCaseSuggestTasks) {
+    return {
+      enrichmentRunId: input.enrichmentRunId,
+      tasks: primary,
+      remappedFromSibling: false,
+    };
+  }
+
+  const siblings =
+    (await input.deps?.listCaseSuggestTasks?.(input.caseId)) ??
+    (await defaultListCaseSuggestTasks(input.caseId));
+  const reusableSibling = siblings.find(isReusableSuggestTask);
+  const siblingRunId = String(reusableSibling?.reportRunId ?? "").trim();
+  if (reusableSibling && siblingRunId && siblingRunId !== input.enrichmentRunId) {
+    const siblingTasks = siblings.filter(
+      (t) => String(t.reportRunId ?? "") === siblingRunId
+    );
+    return {
+      enrichmentRunId: siblingRunId,
+      tasks: siblingTasks.length > 0 ? siblingTasks : [reusableSibling],
+      remappedFromSibling: true,
+    };
+  }
+
+  return {
+    enrichmentRunId: input.enrichmentRunId,
+    tasks: primary,
+    remappedFromSibling: false,
+  };
+}
+
 export function buildTargetedSuggestionsLiveAuthorization(input: {
   enrichmentRunId: string;
   requestHash: string;
@@ -277,16 +358,18 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
   }
 
   // Pre-lease: detect reusable accepted task / require confirmation for paid submit.
-  const tasksPreview =
-    (await input.deps?.listProviderTasks?.(enrichmentRunId)) ??
-    (await defaultListProviderTasks(enrichmentRunId));
-  const suggestPreview = tasksPreview.filter((t) => /suggest/i.test(String(t.toolName ?? "")));
-  const reusablePreview = suggestPreview.find(
-    (t) =>
-      Boolean(t.externalTaskId) ||
-      String(t.state).toUpperCase() === "DONE" ||
-      isIngestibleResponse(t.responseJson)
+  // May remap to a sibling CaseAgent suggestions run that already has results.
+  const resolvedPreview = await resolveSuggestTasksForRetry({
+    caseId: input.caseId,
+    enrichmentRunId,
+    deps: input.deps,
+  });
+  let effectiveEnrichmentRunId = resolvedPreview.enrichmentRunId;
+  const remappedFromSibling = resolvedPreview.remappedFromSibling;
+  const suggestPreview = resolvedPreview.tasks.filter((t) =>
+    /suggest/i.test(String(t.toolName ?? ""))
   );
+  const reusablePreview = suggestPreview.find(isReusableSuggestTask);
 
   if (!reusablePreview?.externalTaskId && !input.confirmPaidEnrichmentRetry) {
     throw new ConflictError(PAID_ENRICHMENT_RETRY_CONFIRMATION_REQUIRED);
@@ -378,16 +461,18 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
   if (!claimed) throw new ConflictError("ACTIVE_LEASE");
 
   try {
-    const tasks =
-      (await input.deps?.listProviderTasks?.(enrichmentRunId)) ??
-      (await defaultListProviderTasks(enrichmentRunId));
-
-    const suggestTasks = tasks.filter((t) => /suggest/i.test(String(t.toolName ?? "")));
-    const reusable = suggestTasks.find(
-      (t) =>
-        Boolean(t.externalTaskId) ||
-        String(t.state).toUpperCase() === "DONE" ||
-        isIngestibleResponse(t.responseJson)
+    const resolved = await resolveSuggestTasksForRetry({
+      caseId: input.caseId,
+      enrichmentRunId,
+      deps: input.deps,
+    });
+    effectiveEnrichmentRunId = resolved.enrichmentRunId;
+    const suggestTasks = resolved.tasks.filter((t) =>
+      /suggest/i.test(String(t.toolName ?? ""))
+    );
+    const reusable = suggestTasks.find(isReusableSuggestTask);
+    const enrichmentRunIdsNext = Array.from(
+      new Set([...(job.enrichmentRunIds ?? []), effectiveEnrichmentRunId])
     );
     if (reusable?.externalTaskId) {
       await writeUnifiedArtifact(input.caseId, job.unifiedJobId, "enrichment-targeted-retry-audit.json", {
@@ -395,7 +480,9 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
         at: (input.deps?.now ?? (() => new Date()))().toISOString(),
         actorId: input.actorId,
         jobId,
-        enrichmentRunId,
+        enrichmentRunId: effectiveEnrichmentRunId,
+        requestedEnrichmentRunId: enrichmentRunId,
+        remappedFromSibling: remappedFromSibling || resolved.remappedFromSibling,
         agentName,
         reusedExisting: true,
         externalTaskId: reusable.externalTaskId,
@@ -411,9 +498,14 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
         lastError: null,
         lastErrorCode: null,
         completedAt: null,
+        enrichmentRunIds: enrichmentRunIdsNext,
+        arsenkinReportRunId: effectiveEnrichmentRunId,
         warnings: [
           ...job.warnings.filter((w) => !/^targeted-retry:/i.test(w)),
           "targeted-retry:reused-existing-suggestions-task",
+          ...(resolved.remappedFromSibling || remappedFromSibling
+            ? [`targeted-retry:remapped-sibling-run:${effectiveEnrichmentRunId}`]
+            : []),
         ],
       });
       schedulePostSubmitUnifiedTick(input.caseId, input.deps);
@@ -421,7 +513,7 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
         accepted: true,
         jobId: job.jobId,
         unifiedJobId: job.unifiedJobId,
-        enrichmentRunId,
+        enrichmentRunId: effectiveEnrichmentRunId,
         agentName,
         externalTaskId: reusable.externalTaskId,
         providerTaskId: reusable.id,
@@ -447,7 +539,11 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
     const selection = prepared.selection;
     const requestHash = prepared.requestHash;
     const targetSe = Number(requestJson.data.se) === 1 ? 1 : Number(requestJson.data.se);
-    const fingerprint = taskFingerprint({ enrichmentRunId, agentName, requestHash });
+    const fingerprint = taskFingerprint({
+      enrichmentRunId: effectiveEnrichmentRunId,
+      agentName,
+      requestHash,
+    });
     if (
       input.expectedTaskFingerprint &&
       String(input.expectedTaskFingerprint).trim() &&
@@ -515,8 +611,16 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
         return defaultSubmitSuggestTask(args);
       });
 
+    // FK: ProviderTask.reportRunId → dp_orion_report_runs.id (P2003 without this).
+    const ensureRun =
+      input.deps?.ensureEnrichmentReportRun ?? defaultEnsureEnrichmentOrionReportRun;
+    await ensureRun({
+      caseId: input.caseId,
+      enrichmentRunId: effectiveEnrichmentRunId,
+    });
+
     const authorization = buildTargetedSuggestionsLiveAuthorization({
-      enrichmentRunId,
+      enrichmentRunId: effectiveEnrichmentRunId,
       requestHash,
     });
 
@@ -526,7 +630,7 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       }
       return submitInner({
         caseId: input.caseId,
-        enrichmentRunId,
+        enrichmentRunId: effectiveEnrichmentRunId,
         requestJson,
         requestHash,
       });
@@ -547,7 +651,8 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       at: (input.deps?.now ?? (() => new Date()))().toISOString(),
       actorId: input.actorId,
       jobId,
-      enrichmentRunId,
+      enrichmentRunId: effectiveEnrichmentRunId,
+      requestedEnrichmentRunId: enrichmentRunId,
       agentName,
       reusedExisting: false,
       reusedNoExternalRequestTask,
@@ -559,6 +664,7 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       submissions: 1,
       confirmPaidEnrichmentRetry: true,
       oneShotLiveAuth: true,
+      ensuredOrionReportRun: true,
       selection: {
         selectedQuery: selection.selectedQuery,
         selectedQueryHash: selection.selectedQueryHash,
@@ -578,6 +684,8 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       lastError: null,
       lastErrorCode: null,
       completedAt: null,
+      enrichmentRunIds: enrichmentRunIdsNext,
+      arsenkinReportRunId: effectiveEnrichmentRunId,
       arsenkinEnrichmentState: job.arsenkinEnrichmentState
         ? { ...job.arsenkinEnrichmentState, enrichmentComplete: false }
         : job.arsenkinEnrichmentState,
@@ -586,6 +694,7 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
         "targeted-retry:suggestions-submitted:1",
         `targeted-retry:externalTaskId:${externalTaskId}`,
         `targeted-retry:queries:1`,
+        "targeted-retry:ensured-orion-report-run",
         reusedNoExternalRequestTask
           ? "targeted-retry:reused-no-external-request-task"
           : reusedRejectedSuggestTask
@@ -601,7 +710,7 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
       accepted: true,
       jobId: job.jobId,
       unifiedJobId: job.unifiedJobId,
-      enrichmentRunId,
+      enrichmentRunId: effectiveEnrichmentRunId,
       agentName,
       externalTaskId,
       providerTaskId: submitted.providerTaskId,
@@ -620,6 +729,26 @@ export async function retryUnifiedEnrichmentSuggestionsTask(input: {
   }
 }
 
+async function defaultEnsureEnrichmentOrionReportRun(input: {
+  caseId: string;
+  enrichmentRunId: string;
+}): Promise<void> {
+  const { prisma } = await import("@/server/prisma/client");
+  const { ensureCaseAgentOrionReportRun } = await import(
+    "./arsenkin-case-agent-execution/shared"
+  );
+  await ensureCaseAgentOrionReportRun({
+    prisma,
+    enrichmentReportRunId: input.enrichmentRunId,
+    caseId: input.caseId,
+    agentId: "ARSENKIN_SUGGESTIONS_REAL",
+    agentRunId: `targeted-retry-${input.enrichmentRunId}`,
+    executionId: `targeted-retry-${Date.now().toString(36)}`,
+    tools: ["suggest"],
+    baseReportRunId: null,
+  });
+}
+
 async function defaultSubmitSuggestTask(input: {
   caseId: string;
   enrichmentRunId: string;
@@ -630,6 +759,11 @@ async function defaultSubmitSuggestTask(input: {
   if (!getActiveLiveAuthorization()) {
     throw new ConflictError("LIVE_AUTHORIZATION_NOT_INSTALLED");
   }
+  // Defense-in-depth: never upsert ProviderTask without a parent OrionReportRun.
+  await defaultEnsureEnrichmentOrionReportRun({
+    caseId: input.caseId,
+    enrichmentRunId: input.enrichmentRunId,
+  });
   const { createArsenkinClientFromEnv } = await import("../providers/arsenkin/client");
   const { createPrismaProviderTaskStore } = await import(
     "../providers/arsenkin/prisma-provider-task-store"
@@ -772,6 +906,7 @@ async function defaultListProviderTasks(enrichmentRunId: string): Promise<Target
         responseJson: true,
         requestJson: true,
         errorCode: true,
+        reportRunId: true,
       },
     });
     return rows.map((r) => ({
@@ -783,7 +918,57 @@ async function defaultListProviderTasks(enrichmentRunId: string): Promise<Target
       responseJson: r.responseJson,
       requestJson: r.requestJson,
       errorCode: r.errorCode,
+      reportRunId: r.reportRunId,
     }));
+  } catch {
+    return [];
+  }
+}
+
+/** Sibling CaseAgent suggest tasks for the same case (any suggestions-like report run). */
+async function defaultListCaseSuggestTasks(caseId: string): Promise<TargetedProviderTaskRow[]> {
+  try {
+    const { prisma } = await import("@/server/prisma/client");
+    const rows = await prisma.providerTask.findMany({
+      where: {
+        caseId,
+        provider: "arsenkin",
+        toolName: "suggest",
+        OR: [
+          { externalTaskId: { not: null } },
+          { state: { in: ["DONE", "RUNNING", "SUBMITTED", "RATE_LIMITED", "WAITING", "POLLING"] } },
+        ],
+      },
+      orderBy: { updatedAt: "desc" },
+      take: 40,
+      select: {
+        id: true,
+        state: true,
+        toolName: true,
+        externalTaskId: true,
+        requestHash: true,
+        responseJson: true,
+        requestJson: true,
+        errorCode: true,
+        reportRunId: true,
+      },
+    });
+    return rows
+      .filter((r) => {
+        const run = String(r.reportRunId ?? "");
+        return /suggest/i.test(run) || Boolean(String(r.externalTaskId ?? "").trim());
+      })
+      .map((r) => ({
+        id: r.id,
+        state: String(r.state),
+        toolName: r.toolName,
+        externalTaskId: r.externalTaskId,
+        requestHash: r.requestHash,
+        responseJson: r.responseJson,
+        requestJson: r.requestJson,
+        errorCode: r.errorCode,
+        reportRunId: r.reportRunId,
+      }));
   } catch {
     return [];
   }
