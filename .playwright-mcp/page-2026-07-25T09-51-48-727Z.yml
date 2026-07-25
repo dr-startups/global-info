@@ -1,0 +1,50 @@
+- generic [active] [ref=f7e1]:
+  - link "Global Info · Digital Profile Audit" [ref=f7e3] [cursor=pointer]:
+    - /url: /admin/digital-profile
+  - main [ref=f7e4]:
+    - group "Language" [ref=f7e17]:
+      - button "EN" [pressed] [ref=f7e7] [cursor=pointer]
+      - button "RU" [ref=f7e8] [cursor=pointer]
+    - generic [ref=f7e9]:
+      - generic [ref=f7e11]:
+        - heading "Digital Profile Audit" [level=1] [ref=f7e12]
+        - generic [ref=f7e13]: Evidence-based case management & report generation
+      - generic [ref=f7e19]:
+        - heading "Create case" [level=2] [ref=f7e20]
+        - generic [ref=f7e21]:
+          - generic [ref=f7e22]:
+            - generic [ref=f7e23]: Full name *
+            - textbox "e.g. John A. Sample" [ref=f7e24]
+          - generic [ref=f7e25]:
+            - generic [ref=f7e26]: Aliases (comma or newline separated)
+            - textbox "J. Sample, Johnny Sample" [ref=f7e27]
+          - generic [ref=f7e28]:
+            - generic [ref=f7e29]: Birth date
+            - textbox [ref=f7e30]
+          - generic [ref=f7e31]:
+            - generic [ref=f7e32]: Target regions (comma separated)
+            - textbox "RU, UAE" [ref=f7e33]
+          - generic [ref=f7e34]:
+            - generic [ref=f7e35]: Lawful basis *
+            - combobox [ref=f7e36]:
+              - option "CONSENT"
+              - option "CONTRACT"
+              - option "LEGAL OBLIGATION"
+              - option "LEGITIMATE INTEREST" [selected]
+              - option "PUBLIC INTEREST"
+              - option "VITAL INTEREST"
+          - generic [ref=f7e37]:
+            - generic [ref=f7e38]: Consent status *
+            - combobox [ref=f7e39]:
+              - option "Not required" [selected]
+              - option "Pending"
+              - option "Obtained"
+              - option "Refused"
+          - generic [ref=f7e40]:
+            - generic [ref=f7e41]: Notes
+            - textbox [ref=f7e42]
+        - generic [ref=f7e43]:
+          - button "Create case" [ref=f7e44] [cursor=pointer]
+          - button "Cancel" [ref=f7e45] [cursor=pointer]
+  - button "Open Next.js Dev Tools" [ref=f7e51] [cursor=pointer]
+  - alert [ref=f7e55]

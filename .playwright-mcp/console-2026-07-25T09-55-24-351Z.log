@@ -1,0 +1,3 @@
+[    2099ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ webpack-internal:///(app-pages-browser)/./node_modules/next/dist/compiled/react-dom/cjs/react-dom-client.development.js:25630
+[    3154ms] [ERROR] Failed to load resource: the server responded with a status of 410 (Gone) @ http://localhost:3000/api/digital-profile/cases/cms06xdwv0000qx7t76713jhp/report:0
+[    5224ms] [ERROR] Failed to load resource: the server responded with a status of 410 (Gone) @ http://localhost:3000/api/digital-profile/cases/cms06xdwv0000qx7t76713jhp/report:0

@@ -55,6 +55,12 @@ export type FactExtractionArtifact = {
     failedThemes: string[];
     /** Facts the model moved to a theme other than the one requested. */
     reassignedByModel: number;
+    /**
+     * Themes extraction actually ran for. Lets consumers tell "no facts because
+     * extraction was off" from "no facts because nothing in this theme's
+     * materials could be stated as a verified fact".
+     */
+    processedThemeIds: string[];
   };
 };
 
@@ -95,6 +101,7 @@ function emptyArtifact(input: {
       rejectedByReason: {},
       failedThemes: [],
       reassignedByModel: 0,
+      processedThemeIds: [],
     },
   };
 }
@@ -199,6 +206,7 @@ export async function runFactExtraction(input: {
     });
     if (materials.length === 0) continue;
     artifact.diagnostics.themesProcessed += 1;
+    artifact.diagnostics.processedThemeIds.push(themeId);
 
     try {
       const raw = await caller({

@@ -43,6 +43,14 @@ export type ClientSummaryPackBuildInput = {
   representative: RepresentativeEvidenceSelection;
   /** Verified facts per theme (05.2c2); absent when extraction is off. */
   factsByTheme?: Record<string, VerifiedFact[]>;
+  /**
+   * Themes fact extraction ran for. A processed theme survives only if at least
+   * one fact was **explicitly** assigned to it by the model: a fact that merely
+   * inherited the requested theme means the model declined to place it, and
+   * treating that silence as endorsement is what published «Репутационные
+   * скандалы … установлено: родился 10 октября 1984 года» (step 06.3).
+   */
+  factsProcessedThemes?: readonly string[];
   scope?: {
     regions?: string[];
     sourceClasses?: string[];
@@ -263,8 +271,15 @@ function buildThemeBlock(
   themeId: CanonicalThemeId,
   selection: RepresentativeEvidenceSelection,
   byClaim: Map<string, CanonicalClaim>,
-  facts: VerifiedFact[] = []
+  facts: VerifiedFact[] = [],
+  /** True when fact extraction ran for this theme and returned nothing for it. */
+  processedWithoutFacts = false
 ): ClientMaterialTheme | null {
+  // A theme the keyword filter invented: its materials were shown to the model
+  // and it filed no statement under this theme. Publishing it produced slides
+  // like «Репутационные скандалы … установлено: родился 10 октября 1984 года» —
+  // a theme title carrying a fact that only inherited it.
+  if (processedWithoutFacts) return null;
   const selected = selection.selectedByTheme[themeId] ?? [];
   if (selected.length === 0) return null;
 
@@ -464,11 +479,17 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
 
   for (const themeId of [...input.representative.materialThemeIds].sort()) {
     if (themeId === "identity_mismatch") continue;
+    const themeFacts = input.factsByTheme?.[themeId] ?? [];
+    // Only a fact the model explicitly filed under this theme justifies it.
+    const hasOwnFact = themeFacts.some((f) => f.themeId === themeId);
+    const processedWithoutFacts =
+      (input.factsProcessedThemes?.includes(themeId) ?? false) && !hasOwnFact;
     const block = buildThemeBlock(
       themeId,
       input.representative,
       byClaim,
-      input.factsByTheme?.[themeId] ?? []
+      themeFacts,
+      processedWithoutFacts
     );
     if (block) materialThemes.push(block);
   }

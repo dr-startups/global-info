@@ -661,6 +661,7 @@ export async function runOrionAnalyticsPipeline(
     claimsBundle: canonicalClaims,
     representative: representative.selection,
     factsByTheme: factExtraction.factsByTheme,
+    factsProcessedThemes: factExtraction.diagnostics.processedThemeIds,
     scope: {
       regions: regions.length > 0 ? regions : ["RU", "UAE"],
       coverageLimitations: executiveSummaryInput.dataGaps?.map((g) => g.detail) ?? [],

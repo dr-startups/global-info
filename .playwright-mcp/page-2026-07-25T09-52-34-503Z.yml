@@ -1,0 +1,10 @@
+- generic [active] [ref=f7e1]:
+  - link "Global Info · Digital Profile Audit" [ref=f7e3] [cursor=pointer]:
+    - /url: /admin/digital-profile
+  - main [ref=f7e4]:
+    - group "Language" [ref=f7e17]:
+      - button "EN" [pressed] [ref=f7e7] [cursor=pointer]
+      - button "RU" [ref=f7e8] [cursor=pointer]
+    - generic [ref=f7e56]: Loading…
+  - button "Open Next.js Dev Tools" [ref=f7e51] [cursor=pointer]
+  - alert [ref=f7e55]
