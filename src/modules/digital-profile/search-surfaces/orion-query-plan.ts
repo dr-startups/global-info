@@ -1,6 +1,16 @@
 /**
  * Stage O1/R5.2 — deterministic ORION query plan with explicit purpose/provider assignment.
  * No LLM, no network calls. Pure string composition and stable ordering.
+ *
+ * Правило, определяющее состав плана (шаг 10 переработки):
+ * **строка плана — это запрос, который набрал бы человек.** Подсказки, похожие
+ * запросы, изображения и видео — не запросы, а поля ответа провайдера; их читает
+ * `serperAllSurfacesForQuery` из ответа на обычный запрос. Раньше они
+ * запрашивались текстом («Павел Дуров похожие запросы», «Pavel Durov image»),
+ * что тратило платные вызовы и заносило в корпус доказательств выдачу по
+ * бессмысленной строке. Поэтому план не порождает строк с назначениями
+ * `suggestion_lookup`, `related_lookup`, `image_lookup`, `video_lookup` — они
+ * остаются в словаре назначений только для разметки уже собранных поверхностей.
  */
 
 import { parseSubjectName } from "../risk-classifier/entity-disambiguation";
@@ -58,6 +68,10 @@ export interface OrionQuerySpec {
 }
 
 export interface OrionQueryPlanOptions {
+  /**
+   * Cap on identity variants of the name per region (`subject_lookup` rows).
+   * Business, media and wikipedia anchors are added on top of this cap.
+   */
   maxPrimaryPerRegion?: number;
   includeRiskProbes?: boolean;
   regions?: OrionRegionCode[];
@@ -77,10 +91,34 @@ const RU_RISK_TERMS = ["суд", "арбитраж", "банкротство", "
 const EN_RISK_TERMS = ["litigation", "court", "bankruptcy", "sanctions", "fraud"] as const;
 const RU_BUSINESS_TERMS = ["инн", "огрн", "ип", "компания", "реестр"] as const;
 const EN_BUSINESS_TERMS = ["company", "registry", "business"] as const;
-const RU_MEDIA_TERMS = ["фото", "видео", "интервью", "публикация"] as const;
+const RU_MEDIA_TERMS = ["интервью", "новости"] as const;
 const EN_MEDIA_TERMS = ["news", "profile", "interview"] as const;
-const EN_IMAGE_TERMS = ["image", "photo"] as const;
-const EN_VIDEO_TERMS = ["video"] as const;
+
+/**
+ * Шаг 10 плана (docs/rework/10-query-matrix-service-tokens.md).
+ *
+ * Коды регионов — параметр запроса (`gl`/`hl` у Serper, региональный профиль у
+ * Яндекса), а не слово в его тексте. «Pavel Durov UAE» смещает выдачу к
+ * страницам, где буквально написано «UAE». Осмысленный географический контекст
+ * («Abu Dhabi», «Тверская область») в запросе, наоборот, полезен и остаётся.
+ */
+const REGION_CODE_TOKENS = new Set([
+  "ru",
+  "rus",
+  "russia",
+  "uae",
+  "ae",
+  "international",
+  "intl",
+  "global",
+  "eu",
+  "us",
+  "usa",
+]);
+
+function isRegionCode(hint: string): boolean {
+  return REGION_CODE_TOKENS.has(hint.trim().toLowerCase());
+}
 
 const CYR_TO_LAT: Record<string, string> = {
   а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "yo", ж: "zh", з: "z",
@@ -154,7 +192,11 @@ function toSubjectProfile(subject: QuerySubject): OrionQuerySubjectProfile {
   );
   const weakTokens = Array.from(new Set([firstName, patronymic].filter(Boolean)));
   const regionHints = Array.from(
-    new Set([...(subject.targetRegions ?? []), ...(subject.location ? [subject.location] : [])].filter(Boolean))
+    new Set(
+      [...(subject.targetRegions ?? []), ...(subject.location ? [subject.location] : [])]
+        .map((h) => String(h ?? "").trim())
+        .filter((h) => h && !isRegionCode(h))
+    )
   );
   return {
     fullName: subject.fullName.trim(),
@@ -352,15 +394,13 @@ export function buildOrionQueryPlanDetailed(
         }
       }
       for (const term of RU_MEDIA_TERMS) {
-        const purpose: OrionQueryPurpose =
-          term === "фото" ? "image_lookup" : term === "видео" ? "video_lookup" : "media_lookup";
         const row = mkRow({
           queryPlanId,
           queryText: `${profile.fullName} ${term}`,
           language: "ru",
           region,
           priority: "primary",
-          purpose,
+          purpose: "media_lookup",
           providerPreference: ["serper", "google"],
           requiredTokens: [profile.lastName].filter(Boolean),
           identityStrictness: "balanced",
@@ -370,32 +410,21 @@ export function buildOrionQueryPlanDetailed(
         });
         if (row) rows.push(row);
       }
-      rows.push(
-        ...((
-          [
-            ["suggestion_lookup", "подсказки"],
-            ["related_lookup", "похожие запросы"],
-            ["wikipedia_lookup", "биография wikipedia"],
-          ] as Array<[OrionQueryPurpose, string]>
-        )
-          .map(([purpose, suffix]) =>
-            mkRow({
-              queryPlanId,
-              queryText: `${profile.fullName} ${suffix}`.trim(),
-              language: "ru",
-              region,
-              priority: "primary",
-              purpose,
-              providerPreference: purpose === "wikipedia_lookup" ? ["wikipedia", "google"] : ["serper", "google"],
-              requiredTokens: [profile.lastName].filter(Boolean),
-              identityStrictness: "balanced",
-              maxResultsHint: 10,
-              internalReason: `ru_${purpose}`,
-              profile,
-            })
-          )
-          .filter((r): r is OrionQuerySpec => Boolean(r)))
-      );
+      const ruWiki = mkRow({
+        queryPlanId,
+        queryText: `${profile.fullName} биография wikipedia`.trim(),
+        language: "ru",
+        region,
+        priority: "primary",
+        purpose: "wikipedia_lookup",
+        providerPreference: ["wikipedia", "google"],
+        requiredTokens: [profile.lastName].filter(Boolean),
+        identityStrictness: "balanced",
+        maxResultsHint: 10,
+        internalReason: "ru_wikipedia_lookup",
+        profile,
+      });
+      if (ruWiki) rows.push(ruWiki);
       continue;
     }
 
@@ -489,66 +518,21 @@ export function buildOrionQueryPlanDetailed(
       });
       if (row) rows.push(row);
     }
-    for (const term of EN_IMAGE_TERMS) {
-      const row = mkRow({
-        queryPlanId,
-        queryText: `${profile.latinVariants[0] ?? profile.fullName} ${term}`,
-        language: "en",
-        region,
-        priority: "primary",
-        purpose: "image_lookup",
-        providerPreference: ["serper", "google"],
-        requiredTokens: [profile.lastName].filter(Boolean),
-        identityStrictness: "balanced",
-        maxResultsHint: 10,
-        internalReason: "intl_image_variant",
-        profile,
-      });
-      if (row) rows.push(row);
-    }
-    for (const term of EN_VIDEO_TERMS) {
-      const row = mkRow({
-        queryPlanId,
-        queryText: `${profile.latinVariants[0] ?? profile.fullName} ${term}`,
-        language: "en",
-        region,
-        priority: "primary",
-        purpose: "video_lookup",
-        providerPreference: ["serper", "google"],
-        requiredTokens: [profile.lastName].filter(Boolean),
-        identityStrictness: "balanced",
-        maxResultsHint: 10,
-        internalReason: "intl_video_variant",
-        profile,
-      });
-      if (row) rows.push(row);
-    }
-    rows.push(
-      ...((
-        [
-          ["suggestion_lookup", "autocomplete"],
-          ["related_lookup", "related queries"],
-          ["wikipedia_lookup", "biography wikipedia"],
-        ] as Array<[OrionQueryPurpose, string]>
-      )
-        .map(([purpose, suffix]) =>
-          mkRow({
-            queryPlanId,
-            queryText: `${profile.latinVariants[0] ?? profile.fullName} ${suffix}`.trim(),
-            language: "en",
-            region,
-            priority: "primary",
-            purpose,
-            providerPreference: purpose === "wikipedia_lookup" ? ["wikipedia", "google"] : ["serper", "google"],
-            requiredTokens: [profile.lastName].filter(Boolean),
-            identityStrictness: "balanced",
-            maxResultsHint: 10,
-            internalReason: `intl_${purpose}`,
-            profile,
-          })
-        )
-        .filter((r): r is OrionQuerySpec => Boolean(r)))
-    );
+    const intlWiki = mkRow({
+      queryPlanId,
+      queryText: `${profile.latinVariants[0] ?? profile.fullName} biography wikipedia`.trim(),
+      language: "en",
+      region,
+      priority: "primary",
+      purpose: "wikipedia_lookup",
+      providerPreference: ["wikipedia", "google"],
+      requiredTokens: [profile.lastName].filter(Boolean),
+      identityStrictness: "balanced",
+      maxResultsHint: 10,
+      internalReason: "intl_wikipedia_lookup",
+      profile,
+    });
+    if (intlWiki) rows.push(intlWiki);
   }
 
   const weakQuerySuppressedCount = rows.filter((r) => Boolean(r.forbiddenWeakOnlyReason)).length;

@@ -10,7 +10,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "ci:smokes": "npm run smoke:report-quality-summary && npm run smoke:golden-case && npm run smoke:unified-orion-collection && npm run smoke:gpt-call-queue && npm run smoke:render-http-retry && npm run smoke:client-text-contract && npm run smoke:orion-deck-sections && npm run smoke:orion-golden-render-imports",
-    "smoke:orion-golden-render-imports": "python scripts/smoke-orion-golden-render-imports.py",
+    "smoke:orion-golden-render-imports": "$(command -v python3 || command -v python) scripts/smoke-orion-golden-render-imports.py",
     "ci": "npm run typecheck && npm test && npm run ci:smokes",
     "test": "vitest run",
     "test:watch": "vitest",

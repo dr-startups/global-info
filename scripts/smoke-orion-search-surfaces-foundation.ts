@@ -39,7 +39,10 @@ async function main() {
   );
   const ruPrimary = plan.filter((q) => q.region === "RU" && q.priority === "primary");
   const enPrimary = plan.filter((q) => q.region === "UAE" && q.priority === "primary");
-  check("RU primary queries count <= 5", ruPrimary.length <= 5, String(ruPrimary.length));
+  // maxPrimaryPerRegion caps identity variants of the name, not every primary
+  // row: business/media/wikipedia anchors are added on top of them.
+  const ruIdentity = ruPrimary.filter((q) => q.purpose === "subject_lookup");
+  check("RU identity variants count <= 5", ruIdentity.length <= 5, String(ruIdentity.length));
   check("RU includes biography variant", ruPrimary.some((q) => q.query.includes("биография")));
   check("EN transliteration works", transliterateRuToEn("Константин").toLowerCase().includes("konstantin"));
   check("UAE EN queries present", enPrimary.length >= 3, String(enPrimary.length));

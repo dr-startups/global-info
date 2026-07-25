@@ -25,6 +25,19 @@ import type { ReportDeckManifest } from "../src/modules/digital-profile/orion-go
 import type { RendererSlide } from "../src/modules/digital-profile/orion-golden/deck-sections/deck-assembler";
 
 const ROOT = join(__dirname, "..");
+
+/**
+ * Many environments ship only `python3`; the bare `python` this smoke used to
+ * call does not exist there, so the gate failed for a reason unrelated to the
+ * contract it checks.
+ */
+function pythonInterpreter(): string {
+  for (const candidate of [process.env.PYTHON, "python3", "python"]) {
+    if (!candidate) continue;
+    if (spawnSync(candidate, ["--version"], { encoding: "utf8" }).status === 0) return candidate;
+  }
+  throw new Error("no Python interpreter found (tried $PYTHON, python3, python)");
+}
 const SRC_JSON = join(
   ROOT,
   "src/modules/digital-profile/orion-golden/client/client-text-contract.json"
@@ -121,7 +134,7 @@ describe("client-text-contract §6.1", () => {
     ];
 
     const py = spawnSync(
-      "python",
+      pythonInterpreter(),
       [
         join(ROOT, "scripts/smoke-client-text-contract.py"),
         "--json",

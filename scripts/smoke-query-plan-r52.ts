@@ -53,8 +53,20 @@ function main() {
   );
 
   check("query purposes include adverse", hasPurpose(p1.plan, "adverse_lookup"));
-  check("query purposes include media/image/video", hasPurpose(p1.plan, "media_lookup") && hasPurpose(p1.plan, "image_lookup") && hasPurpose(p1.plan, "video_lookup"));
-  check("query purposes include suggestion/related/wiki", hasPurpose(p1.plan, "suggestion_lookup") && hasPurpose(p1.plan, "related_lookup") && hasPurpose(p1.plan, "wikipedia_lookup"));
+  check("query purposes include media and wiki", hasPurpose(p1.plan, "media_lookup") && hasPurpose(p1.plan, "wikipedia_lookup"));
+  // Step 10: surfaces are read from provider response fields, so the plan must
+  // not ask for them by name. See tests/unit/query-plan-service-tokens.test.ts.
+  check(
+    "plan issues no surface-name queries",
+    !hasPurpose(p1.plan, "suggestion_lookup") &&
+      !hasPurpose(p1.plan, "related_lookup") &&
+      !hasPurpose(p1.plan, "image_lookup") &&
+      !hasPurpose(p1.plan, "video_lookup")
+  );
+  check(
+    "region codes stay out of query text",
+    !p1.plan.some((q) => /(^|\s)(ru|uae|international)(\s|$)/i.test(q.normalizedQuery))
+  );
 
   const runtimeRealOnly = resolveRuntimeStrategy({
     mode: "real_only",

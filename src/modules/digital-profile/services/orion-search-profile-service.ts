@@ -2,7 +2,9 @@
  * Stage O1–O3 — ORION search profile orchestrator.
  *
  * Runs multi-query organic search (Yandex RU + Google Serper) and collects
- * additional Serper surfaces (suggestions, related, images, videos, knowledge).
+ * additional Serper surfaces (suggestions, related, images, videos, knowledge)
+ * — all of them read from the responses to the subject and media queries, never
+ * requested by surface name (see orion-query-plan.ts).
  * Classifies evidence deterministically (R1.1.3 rules). No LLM, no scraping.
  */
 
@@ -320,14 +322,10 @@ async function runRegionSurfaces(
   const all: SearchSurfaceInput[] = [];
   let anySuccess = false;
 
-  const surfacePurposes = new Set([
-    "subject_lookup",
-    "media_lookup",
-    "image_lookup",
-    "video_lookup",
-    "suggestion_lookup",
-    "related_lookup",
-  ]);
+  // Каждая строка здесь — четыре платных вызова Serper (organic + images +
+  // videos + autocomplete). Поверхности читаются из ответов на эти запросы,
+  // отдельных «запросов за поверхностью» в плане больше нет (шаг 10).
+  const surfacePurposes = new Set(["subject_lookup", "media_lookup"]);
   for (const spec of queryRows) {
     if (!surfacePurposes.has(spec.purpose)) continue;
     if (!spec.providerPreference.includes("serper") && !spec.providerPreference.includes("google")) continue;
@@ -463,14 +461,7 @@ export async function runOrionSearchProfile(
     }
 
     if (!options.surfacesOnly) {
-      const surfaceQueries = queriesForRegionPurpose(plan, region, [
-        "subject_lookup",
-        "media_lookup",
-        "image_lookup",
-        "video_lookup",
-        "suggestion_lookup",
-        "related_lookup",
-      ]);
+      const surfaceQueries = queriesForRegionPurpose(plan, region, ["subject_lookup", "media_lookup"]);
       const surfaceRun = await runRegionSurfaces(caseId, subject, region, surfaceQueries, options.runtimeMode);
       surfaceInputs = surfaceRun.surfaces;
       if (surfaceRun.googleStatus === "COLLECTED") googleStatus = "COLLECTED";
