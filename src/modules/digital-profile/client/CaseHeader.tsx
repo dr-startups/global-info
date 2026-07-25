@@ -10,7 +10,6 @@ import { StatusBadge } from "./components";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
 import {
-  SUGGESTIONS_TARGETED_RETRY_CONFIRM,
   isSuggestionsTargetedRetryState,
   shouldShowGeneralRecoveryCta,
 } from "./unified-suggestions-retry-ui";
@@ -77,6 +76,7 @@ export function UnifiedCanonicalDownloadButtons({
   caseId: string;
   job: UnifiedCollectionJobStatus;
 }) {
+  const { t } = useDigitalProfileI18n();
   // Prefer server availability; fall back to reportLinks so COMPLETED_PARTIAL
   // with a rendered PDF is never stuck behind a stale downloadArtifacts=false.
   const downloads = {
@@ -99,11 +99,11 @@ export function UnifiedCanonicalDownloadButtons({
           href={getCanonicalArtifactDownloadUrl(caseId, jobId, "pdf")}
           data-testid="unified-download-pdf"
         >
-          Скачать Unified PDF
+          {t("unified.downloadPdf")}
         </a>
       ) : (
         <button type="button" className="dp-btn" disabled data-testid="unified-download-pdf">
-          Скачать Unified PDF
+          {t("unified.downloadPdf")}
         </button>
       )}
       {downloads.pptx ? (
@@ -112,11 +112,11 @@ export function UnifiedCanonicalDownloadButtons({
           href={getCanonicalArtifactDownloadUrl(caseId, jobId, "pptx")}
           data-testid="unified-download-pptx"
         >
-          Скачать Unified PPTX
+          {t("unified.downloadPptx")}
         </a>
       ) : (
         <button type="button" className="dp-btn" disabled data-testid="unified-download-pptx">
-          Скачать Unified PPTX
+          {t("unified.downloadPptx")}
         </button>
       )}
       {downloads.contactSheet ? (
@@ -125,7 +125,7 @@ export function UnifiedCanonicalDownloadButtons({
           href={getCanonicalArtifactDownloadUrl(caseId, jobId, "contactSheet")}
           data-testid="unified-download-contact-sheet"
         >
-          Скачать contact sheet
+          {t("unified.downloadContactSheet")}
         </a>
       ) : null}
     </div>
@@ -223,19 +223,19 @@ export function CaseHeader({
           <h1 className="dp-h1">{subjectName}</h1>
           <div className="dp-inline" style={{ marginTop: 6 }}>
             <span className="dp-mono">{caseDetail.caseNumber}</span>
-            <StatusBadge status={caseDetail.status} />
+            {/*
+              Один бейдж на кейс. Статус кейса следует за стадией прогона
+              (шаг 11.3), поэтому пока прогон идёт — показываем его состояние,
+              а без прогона остаётся статус кейса. Два бейджа рядом отвечали на
+              один вопрос по-разному и заставляли гадать, какой из них верный.
+            */}
+            <StatusBadge status={unifiedLabel ?? caseDetail.status} />
             <span className="dp-muted">
               {t("cases.created")} {fmtDate(caseDetail.createdAt)}
             </span>
             <span className="dp-muted">
               · {t("cases.updated")} {fmtDate(caseDetail.updatedAt)}
             </span>
-            {unifiedLabel ? (
-              <span className="dp-inline">
-                <span className="dp-muted">· Unified:</span>
-                <StatusBadge status={unifiedLabel} />
-              </span>
-            ) : null}
             {stageLabel ? (
               <span className="dp-muted">
                 · {t("agents.unifiedStage")}: {tStatus(stageLabel)}
@@ -275,7 +275,7 @@ export function CaseHeader({
               ) : null}
               {unifiedJob.suggestionsMissingResult ? (
                 <div style={{ color: "#b42318" }} data-testid="unified-suggestions-gap">
-                  Suggestions: результат не получен
+                  {t("unified.suggestionsGap")}
                   {unifiedJob.suggestionsFailureReason
                     ? ` — ${unifiedJob.suggestionsFailureReason}`
                     : ""}
@@ -292,11 +292,11 @@ export function CaseHeader({
                     className="dp-btn"
                     onClick={onRebuildReport}
                     disabled={Boolean(rebuilding) || recovering || auditing || generating}
-                    title="Пересобрать аналитику и рендер из уже собранных данных. Повторный платный сбор (base/Arsenkin) не выполняется."
+                    title={t("unified.rebuildHint")}
                     data-testid="unified-rebuild-report-cta"
                   >
                     {rebuilding ? <span className="dp-spinner" /> : null}
-                    {rebuilding ? "Пересборка отчёта…" : "Пересобрать отчёт"}
+                    {rebuilding ? t("unified.rebuilding") : t("unified.rebuild")}
                   </button>
                 </div>
               ) : null}
@@ -309,11 +309,11 @@ export function CaseHeader({
               className="dp-btn dp-btn-primary"
               onClick={onRetrySuggestions}
               disabled={recovering || generating || auditing}
-              title={SUGGESTIONS_TARGETED_RETRY_CONFIRM}
+              title={t("unified.retrySuggestionsConfirm")}
               data-testid="unified-suggestions-retry-cta"
             >
               {recovering ? <span className="dp-spinner" /> : null}
-              Повторить только задачу Suggestions
+              {t("unified.retrySuggestions")}
             </button>
           ) : null}
           {can("agents.run") && showGeneralRecovery ? (
@@ -323,23 +323,23 @@ export function CaseHeader({
               disabled={recovering || generating || suggestionsRetry}
               title={
                 renderRecovery
-                  ? "Продолжить с этапа рендера без повторного сбора"
+                  ? t("unified.resumeRenderHint")
                   : assemblyRecovery
-                    ? "Пересобрать аналитику и deck из уже собранных данных без base/Arsenkin"
+                    ? t("unified.resumeAssemblyHint")
                     : ingestRecovery
-                      ? "Импортировать уже выполненные Arsenkin задачи без новых submit"
-                      : "Продолжить с этапа Arsenkin без повторного базового поиска"
+                      ? t("unified.resumeIngestHint")
+                      : t("unified.resumeArsenkinHint")
               }
               data-testid="unified-orion-recovery-cta"
             >
               {recovering ? <span className="dp-spinner" /> : null}
               {renderRecovery
-                ? "Продолжить с этапа рендера"
+                ? t("unified.resumeRender")
                 : assemblyRecovery
-                  ? "Пересобрать отчёт (без повторного сбора)"
+                  ? t("unified.resumeAssembly")
                   : ingestRecovery
-                    ? "Продолжить импорт Arsenkin"
-                    : "Продолжить аудит с этапа Arsenkin"}
+                    ? t("unified.resumeIngest")
+                    : t("unified.resumeArsenkin")}
             </button>
           ) : null}
           {can("agents.run") &&
@@ -350,10 +350,10 @@ export function CaseHeader({
               className="dp-btn"
               onClick={onPaidRecollection}
               disabled={generating || recovering || !onPaidRecollection}
-              title="Явно подтверждает повторные платные вызовы провайдеров"
+              title={t("unified.paidRecollectionHint")}
               data-testid="unified-orion-paid-recollection-cta"
             >
-              Начать новый аудит с повторным сбором данных
+              {t("unified.paidRecollection")}
             </button>
           ) : null}
           {can("agents.run") && !suggestionsRetry ? (
@@ -363,7 +363,7 @@ export function CaseHeader({
               disabled={blockNewRun}
               title={
                 fullAuditBlocked
-                  ? unifiedJob?.fullAuditBlockReason ?? "Full Audit недоступен для текущего job"
+                  ? unifiedJob?.fullAuditBlockReason ?? t("unified.blockedFallback")
                   : t("agents.unifiedCollectionHint")
               }
               data-testid="unified-orion-collection-cta"

@@ -11,9 +11,10 @@ import { join } from "node:path";
 import { before, describe, it } from "node:test";
 import { fileURLToPath } from "node:url";
 import { getLocalizedApiError } from "../src/modules/digital-profile/i18n";
+import { ru } from "../src/modules/digital-profile/i18n/dictionaries/ru";
+import { en } from "../src/modules/digital-profile/i18n/dictionaries/en";
 import { withSuggestionsGapStatus } from "../src/modules/digital-profile/services/unified-suggestions-gap";
 import {
-  SUGGESTIONS_TARGETED_RETRY_CONFIRM,
   buildSuggestionsTargetedRetryBody,
   createSingleFlightGuard,
   isAcceptedSuggestionsRetryResult,
@@ -82,10 +83,12 @@ describe("A — targeted CTA API contract", () => {
   it("handler builds body via helper and requires confirm before POST", () => {
     assert.match(view, /buildSuggestionsTargetedRetryBody/);
     assert.match(view, /retryUnifiedEnrichmentSuggestionsTask\(caseId, body\)/);
-    assert.match(view, /SUGGESTIONS_TARGETED_RETRY_CONFIRM/);
-    assert.match(view, /window\.confirm\(SUGGESTIONS_TARGETED_RETRY_CONFIRM\)/);
+    // Шаг 11.4: продуктовая копия переехала в словари, поэтому проверяется
+    // ключ, а не русский текст в исходнике компонента.
+    assert.match(view, /unified\.retrySuggestionsConfirm/);
+    assert.match(view, /window\.confirm\(t\("unified\.retrySuggestionsConfirm"\)\)/);
     assert.match(header, /unified-suggestions-retry-cta/);
-    assert.match(header, /Повторить только задачу Suggestions/);
+    assert.match(header, /t\("unified\.retrySuggestions"\)/);
     FLAGS.CONFIRMATION_REQUIRED = true;
   });
 
@@ -147,11 +150,11 @@ describe("B — protection / single-flight", () => {
   it("Full Audit / recover handlers hard-block during Suggestions gap", () => {
     const view = read("src/modules/digital-profile/client/CaseDetailView.tsx");
     assert.match(view, /isSuggestionsTargetedRetryState\(unifiedJob\)/);
-    assert.match(
-      view,
-      /Full Audit недоступен: отсутствует результат Suggestions/
-    );
-    assert.match(view, /General recovery скрыт при gap Suggestions/);
+    // Шаг 11.4: сообщения переехали в словари — проверяются ключи.
+    assert.match(view, /t\("unified\.blockedBySuggestions"\)/);
+    assert.match(view, /t\("unified\.recoveryHiddenBySuggestions"\)/);
+    assert.match(ru.unified.blockedBySuggestions, /подсказ/i);
+    assert.match(en.unified.blockedBySuggestions, /suggestions/i);
     assert.match(view, /createSingleFlightGuard/);
   });
 });
@@ -182,11 +185,12 @@ describe("C — UI CTA priority + i18n", () => {
     FLAGS.CTA_PRIORITY_PASS = true;
   });
 
-  it("CONFIRM copy is exact product string", () => {
+  it("CONFIRM copy is exact product string in both locales", () => {
     assert.equal(
-      SUGGESTIONS_TARGETED_RETRY_CONFIRM,
+      ru.unified.retrySuggestionsConfirm,
       "Будет отправлена одна платная задача Arsenkin. Базовый поиск и остальные агенты повторно не запускаются."
     );
+    assert.match(en.unified.retrySuggestionsConfirm, /one paid Arsenkin task/i);
   });
 
   it("CONFLICT prefers server message over «Такой ресурс уже существует»", () => {

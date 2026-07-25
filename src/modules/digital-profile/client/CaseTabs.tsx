@@ -21,6 +21,7 @@ import {
   type ResultRiskThemeKey,
   type SearchResult,
   type SearchSurfaceItem,
+  type UnifiedCollectionJobStatus,
 } from "./api";
 import {
   Badge,
@@ -68,6 +69,7 @@ export function CaseTabs({
   agents,
   agentRuns,
   auditing,
+  unifiedJob = null,
   fullAuditBlocked = false,
   lastFullAuditSummary,
   onRunFullAudit,
@@ -84,6 +86,8 @@ export function CaseTabs({
   agents: AgentInfo[];
   agentRuns: AgentRun[];
   auditing: boolean;
+  /** Текущий unified-прогон: его артефакты и есть отчёт, который видит клиент. */
+  unifiedJob?: UnifiedCollectionJobStatus | null;
   fullAuditBlocked?: boolean;
   lastFullAuditSummary: {
     mode: "legacy_mock_first" | "real_first_with_fallback" | "real_only" | "mock_only";
@@ -213,6 +217,7 @@ export function CaseTabs({
         <ReportPreviewPanel
           caseId={caseDetail.id}
           report={report}
+          unifiedJob={unifiedJob}
           onReportChange={onReportChange}
           legacyReportUi={legacyReportUi}
         />

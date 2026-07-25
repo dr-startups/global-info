@@ -3,8 +3,11 @@
  * Kept free of React so offline smokes can prove the call contract.
  */
 
-export const SUGGESTIONS_TARGETED_RETRY_CONFIRM =
-  "Будет отправлена одна платная задача Arsenkin. Базовый поиск и остальные агенты повторно не запускаются.";
+/**
+ * Текст подтверждения живёт в словарях (`unified.retrySuggestionsConfirm`):
+ * это продуктовая копия, и при выбранном английском она обязана быть
+ * английской (шаг 11.4). Здесь остаются только чистые правила.
+ */
 
 export type SuggestionsRetryJobFields = {
   jobId?: string | null;

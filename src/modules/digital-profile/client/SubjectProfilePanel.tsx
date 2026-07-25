@@ -16,6 +16,7 @@ import {
 } from "./api";
 import { ErrorBox, Notice, SuccessBox } from "./components";
 import { useDpAuth } from "./auth-provider";
+import { useDigitalProfileI18n } from "./i18n-provider";
 
 function linesToList(text: string): string[] {
   return text
@@ -52,6 +53,7 @@ function namesakesToLines(
 
 export function SubjectProfilePanel({ caseId }: { caseId: string }) {
   const { can } = useDpAuth();
+  const { t } = useDigitalProfileI18n();
   const canEdit = can("case.update");
   const [profile, setProfile] = useState<SubjectIdentityProfileDTO | null>(null);
   const [exists, setExists] = useState(false);
@@ -112,9 +114,11 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
       setMessage({
         kind: "ok",
         text:
-          "Профиль сохранён. Чтобы изменения попали в готовый отчёт, нажмите «Пересобрать отчёт»." +
+          t("subjectProfile.saved") +
           (result.droppedSelfConflicting.length > 0
-            ? ` Отклонены записи, совпадающие с именем субъекта: ${result.droppedSelfConflicting.join(", ")}.`
+            ? ` ${t("subjectProfile.savedDropped", {
+                items: result.droppedSelfConflicting.join(", "),
+              })}`
             : ""),
       });
     } catch (err) {
@@ -123,7 +127,7 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
           ? `${err.code}${err.message ? `: ${err.message}` : ""}`
           : err instanceof Error
             ? err.message
-            : "Не удалось сохранить профиль";
+            : t("subjectProfile.saveFailed");
       setMessage({ kind: "error", text });
     } finally {
       setBusy(false);
@@ -148,12 +152,12 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
     <div data-testid="subject-profile-panel">
       <div className="dp-row" style={{ alignItems: "center" }}>
         <div>
-          <h3 style={{ margin: 0 }}>Профиль субъекта (контекст классификации)</h3>
+          <h3 style={{ margin: 0 }}>{t("subjectProfile.title")}</h3>
           <div className="dp-muted" style={{ marginTop: 4, fontSize: 13 }}>
-            {profile.displayName} · контекст-слова: {contextCount}
-            {exists ? "" : " · профиль ещё не сохранён (черновик из данных кейса)"}
+            {profile.displayName} · {t("subjectProfile.contextWordsCount")}: {contextCount}
+            {exists ? "" : ` · ${t("subjectProfile.notSavedYet")}`}
             {contextCount === 0
-              ? " — без контекст-слов много результатов останется в «неоднозначных»"
+              ? ` — ${t("subjectProfile.noContextWarning")}`
               : ""}
           </div>
         </div>
@@ -163,7 +167,7 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
           onClick={() => setOpen((v) => !v)}
           data-testid="subject-profile-edit-cta"
         >
-          {open ? "Свернуть" : "Редактировать профиль субъекта"}
+          {open ? t("subjectProfile.collapse") : t("subjectProfile.edit")}
         </button>
       </div>
 
@@ -171,11 +175,10 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
         <div className="dp-stack" style={{ marginTop: 12, gap: 10 }}>
           <label style={{ display: "block" }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>
-              Контекст-слова (по одному в строке)
+              {t("subjectProfile.contextWords")}
             </div>
             <div className="dp-muted" style={{ fontSize: 12, marginBottom: 4 }}>
-              Компании, отрасль, статусы — усиливают совпадение: «Русал», «En+ Group», «олигарх»,
-              «санкции»…
+              {t("subjectProfile.contextWordsHint")}
             </div>
             <textarea
               className="dp-input"
@@ -188,7 +191,7 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
           </label>
 
           <label style={{ display: "block" }}>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>Алиасы (по одному в строке)</div>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>{t("subjectProfile.aliases")}</div>
             <textarea
               className="dp-input"
               style={{ width: "100%", minHeight: 60, fontFamily: "inherit" }}
@@ -199,7 +202,7 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
           </label>
 
           <label style={{ display: "block" }}>
-            <div style={{ fontWeight: 600, marginBottom: 4 }}>ИНН (по одному в строке)</div>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>{t("subjectProfile.inn")}</div>
             <textarea
               className="dp-input"
               style={{ width: "100%", minHeight: 40, fontFamily: "inherit" }}
@@ -211,11 +214,10 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
 
           <label style={{ display: "block" }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>
-              Тёзки/однофамильцы: «Метка | отличительные слова через запятую»
+              {t("subjectProfile.namesakes")}
             </div>
             <div className="dp-muted" style={{ fontSize: 12, marginBottom: 4 }}>
-              Например: «Дерипаска Олег Игоревич (тёзка) | игоревич». Слова, совпадающие с именем
-              самого субъекта, будут отклонены автоматически.
+              {t("subjectProfile.namesakesHint")}
             </div>
             <textarea
               className="dp-input"
@@ -228,7 +230,7 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
 
           <label style={{ display: "block" }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>
-              Другие известные люди, с которыми путают субъекта (по одному в строке)
+              {t("subjectProfile.otherKnownPeople")}
             </div>
             <textarea
               className="dp-input"
@@ -241,7 +243,7 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
 
           <label style={{ display: "block" }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>
-              Чужие отчества (однофамильцев; по одному в строке)
+              {t("subjectProfile.foreignPatronymics")}
             </div>
             <textarea
               className="dp-input"
@@ -261,11 +263,11 @@ export function SubjectProfilePanel({ caseId }: { caseId: string }) {
               data-testid="subject-profile-save-cta"
             >
               {busy ? <span className="dp-spinner" /> : null}
-              {busy ? "Сохранение…" : "Сохранить профиль"}
+              {busy ? t("subjectProfile.saving") : t("subjectProfile.save")}
             </button>
             {!canEdit ? (
               <span className="dp-muted" style={{ fontSize: 12 }}>
-                Недостаточно прав для редактирования
+                {t("subjectProfile.noPermission")}
               </span>
             ) : null}
           </div>

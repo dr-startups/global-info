@@ -20,6 +20,7 @@ import {
   OFFLINE_ENRICHMENT_WARNING,
 } from "../config/offline-enrichment-guard";
 import { useDpAuth } from "./auth-provider";
+import { useDigitalProfileI18n } from "./i18n-provider";
 
 function FunnelCell({ label, value }: { label: string; value: string }) {
   return (
@@ -63,6 +64,7 @@ export function ReportQualityPanel({
   gptCopyRetryAllowed?: boolean;
 }) {
   const { can } = useDpAuth();
+  const { t, locale } = useDigitalProfileI18n();
   const offlineEnrichment = (jobWarnings ?? []).some(
     (w) => w === OFFLINE_ENRICHMENT_WARNING || w.startsWith(`${OFFLINE_ENRICHMENT_WARNING}:`)
   );
@@ -94,9 +96,9 @@ export function ReportQualityPanel({
   return (
     <div className="dp-stack" style={{ gap: 12 }} data-testid="report-quality-panel">
       <div>
-        <strong>Качество отчёта</strong>
+        <strong>{t("quality.title")}</strong>
         <p className="dp-muted" style={{ margin: "4px 0 0", fontSize: 13 }}>
-          Воронка данных и причины пустых слайдов. Обновляется после сборки / пересборки отчёта.
+          {t("quality.hint")}
         </p>
       </div>
 
@@ -123,9 +125,9 @@ export function ReportQualityPanel({
             className="dp-btn"
             href={diagnosticsUrl}
             data-testid="diagnostics-bundle-download"
-            title="JSON/текстовые артефакты job-каталога без PDF/PNG; секреты вырезаны"
+            title={t("quality.diagnosticsHint")}
           >
-            Скачать diagnostics bundle
+            {t("quality.diagnosticsDownload")}
           </a>
         </div>
       ) : null}
@@ -134,15 +136,15 @@ export function ReportQualityPanel({
         <>
           <div>
             <div className="dp-muted" style={{ fontSize: 12, marginBottom: 6 }}>
-              Воронка
+              {t("quality.funnel")}
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              <FunnelCell label="БД (organic)" value={formatFunnelValue(q.counts.dbSearchResults)} />
-              <FunnelCell label="БД (surfaces)" value={formatFunnelValue(q.counts.dbSurfaceItems)} />
-              <FunnelCell label="Манифест" value={formatFunnelValue(q.counts.manifestIds)} />
+              <FunnelCell label={t("quality.dbOrganic")} value={formatFunnelValue(q.counts.dbSearchResults)} />
+              <FunnelCell label={t("quality.dbSurfaces")} value={formatFunnelValue(q.counts.dbSurfaceItems)} />
+              <FunnelCell label={t("quality.manifest")} value={formatFunnelValue(q.counts.manifestIds)} />
               {(q.counts.manifestCorpusCount ?? 0) > 0 ? (
                 <FunnelCell
-                  label="Дельта / корпус"
+                  label={t("quality.deltaCorpus")}
                   value={`${formatFunnelValue(q.counts.manifestDeltaCount)}/${formatFunnelValue(q.counts.manifestCorpusCount)}`}
                 />
               ) : null}
@@ -150,12 +152,12 @@ export function ReportQualityPanel({
                 label="Composite"
                 value={formatFunnelValue(q.counts.compositeObservations)}
               />
-              <FunnelCell label="Субъект" value={formatFunnelValue(q.counts.subjectMatch)} />
-              <FunnelCell label="Вероятно" value={formatFunnelValue(q.counts.likelySubject)} />
-              <FunnelCell label="Тёзки/шум" value={formatFunnelValue(q.counts.otherSubject)} />
+              <FunnelCell label={t("quality.subject")} value={formatFunnelValue(q.counts.subjectMatch)} />
+              <FunnelCell label={t("quality.likely")} value={formatFunnelValue(q.counts.likelySubject)} />
+              <FunnelCell label={t("quality.namesakes")} value={formatFunnelValue(q.counts.otherSubject)} />
               <FunnelCell label="Findings" value={formatFunnelValue(q.counts.verifiedFindings)} />
               <FunnelCell
-                label="Слайды"
+                label={t("quality.slides")}
                 value={`${formatFunnelValue(q.slides.withContent)}/${formatFunnelValue(q.slides.total)}`}
               />
             </div>
@@ -174,7 +176,7 @@ export function ReportQualityPanel({
                 GPT stage 1
               </div>
               <Badge tone={gptStage1Tone(q.gpt.stage1Status)} title={q.gpt.stage1Reason}>
-                {describeGptStage1Status(q.gpt.stage1Status)}
+                {describeGptStage1Status(q.gpt.stage1Status, locale)}
               </Badge>
               {q.gpt.stage1Reason ? (
                 <div className="dp-muted" style={{ fontSize: 12, marginTop: 4, maxWidth: 360 }}>
@@ -187,11 +189,15 @@ export function ReportQualityPanel({
                 GPT stage 2
               </div>
               <Badge tone={stage2Tone}>
-                применено {q.gpt.stage2Applied ?? 0}
+                {t("quality.applied")} {q.gpt.stage2Applied ?? 0}
                 {fallbackTotal > 0 ? ` / fallback ${fallbackTotal}` : ""}
-                {(q.gpt.stage2SkippedCached ?? 0) > 0 ? ` · кэш ${q.gpt.stage2SkippedCached}` : ""}
-                {(q.gpt.stage2NoChanges ?? 0) > 0 ? ` · без изменений ${q.gpt.stage2NoChanges}` : ""}
-                {q.gpt.caseAnalysisUsed ? " · анализ кейса" : ""}
+                {(q.gpt.stage2SkippedCached ?? 0) > 0
+                  ? ` · ${t("quality.cached")} ${q.gpt.stage2SkippedCached}`
+                  : ""}
+                {(q.gpt.stage2NoChanges ?? 0) > 0
+                  ? ` · ${t("quality.noChanges")} ${q.gpt.stage2NoChanges}`
+                  : ""}
+                {q.gpt.caseAnalysisUsed ? ` · ${t("quality.caseAnalysis")}` : ""}
               </Badge>
               {showRetry ? (
                 <div style={{ marginTop: 8 }}>
@@ -200,17 +206,17 @@ export function ReportQualityPanel({
                     className="dp-btn"
                     data-testid="retry-gpt-copy-cta"
                     disabled={retryingGptCopy}
-                    title="Повторно вызвать GPT только для фрагментов со статусом FALLBACK. Платный сбор не запускается."
+                    title={t("quality.retryGptHint")}
                     onClick={onRetryGptCopy}
                   >
-                    {retryingGptCopy ? "Дожимаем GPT…" : "Дожать GPT-копирайт"}
+                    {retryingGptCopy ? t("quality.retryingGpt") : t("quality.retryGpt")}
                   </button>
                 </div>
               ) : null}
             </div>
             <div>
               <div className="dp-muted" style={{ fontSize: 12, marginBottom: 4 }}>
-                Визуалы
+                {t("quality.visuals")}
               </div>
               <Badge
                 tone={
@@ -221,8 +227,8 @@ export function ReportQualityPanel({
                       : "neutral"
                 }
               >
-                собрано {q.visuals.built ?? 0}
-                {(q.visuals.failed ?? 0) > 0 ? ` · сбой ${q.visuals.failed}` : ""}
+                {t("quality.built")} {q.visuals.built ?? 0}
+                {(q.visuals.failed ?? 0) > 0 ? ` · ${t("quality.failed")} ${q.visuals.failed}` : ""}
               </Badge>
               {q.visuals.warning ? (
                 <div style={{ color: "#b42318", fontSize: 12, marginTop: 4, maxWidth: 420 }}>
@@ -243,10 +249,10 @@ export function ReportQualityPanel({
                       : "neutral"
                 }
               >
-                агентов ок {q.arsenkin.agentsOk ?? 0}
-                {(q.arsenkin.agentsFailed ?? 0) > 0 ? ` · сбой ${q.arsenkin.agentsFailed}` : ""}
+                {t("quality.agentsOk")} {q.arsenkin.agentsOk ?? 0}
+                {(q.arsenkin.agentsFailed ?? 0) > 0 ? ` · ${t("quality.failed")} ${q.arsenkin.agentsFailed}` : ""}
                 {q.arsenkin.enrichmentObservationCount != null
-                  ? ` · наблюдений ${q.arsenkin.enrichmentObservationCount}`
+                  ? ` · ${t("quality.observations")} ${q.arsenkin.enrichmentObservationCount}`
                   : ""}
               </Badge>
             </div>
@@ -254,13 +260,13 @@ export function ReportQualityPanel({
 
           <div>
             <div className="dp-muted" style={{ fontSize: 12, marginBottom: 6 }}>
-              Пустые слайды ({q.slides.emptyStateCount ?? 0})
+              {t("quality.emptySlides")} ({q.slides.emptyStateCount ?? 0})
             </div>
             {(q.slides.emptyState ?? []).length === 0 ? (
               <div className="dp-muted" style={{ fontSize: 13 }}>
                 {(q.slides.emptyStateCount ?? 0) > 0
-                  ? `Список причин недоступен в старой версии сводки (счётчик: ${q.slides.emptyStateCount}). Пересоберите отчёт.`
-                  : "Пустых слайдов нет"}
+                  ? t("quality.emptyListUnavailable", { count: q.slides.emptyStateCount ?? 0 })
+                  : t("quality.noEmptySlides")}
               </div>
             ) : (
               <ul
@@ -271,7 +277,7 @@ export function ReportQualityPanel({
                   <li key={`${e.slotId}:${e.reason}`}>
                     <span className="dp-mono">{e.slotId}</span>
                     {" — "}
-                    {describeEmptyStateReason(e.reason)}
+                    {describeEmptyStateReason(e.reason, locale)}
                   </li>
                 ))}
               </ul>

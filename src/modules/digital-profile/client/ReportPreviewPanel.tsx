@@ -7,7 +7,10 @@ import {
   getSerpSnapshot,
   renderReport,
   type ReportVersion,
+  type UnifiedCollectionJobStatus,
 } from "./api";
+import { UnifiedCanonicalDownloadButtons } from "./CaseHeader";
+import { unifiedArtifactsReady } from "./report-preview-state";
 import {
   EmptyState,
   ErrorBox,
@@ -28,16 +31,19 @@ import { useDpAuth } from "./auth-provider";
 export function ReportPreviewPanel({
   caseId,
   report,
+  unifiedJob = null,
   onReportChange,
   legacyReportUi = false,
 }: {
   caseId: string;
   report: ReportVersion | null;
+  /** Прогон, чьи артефакты и есть текущий отчёт кейса. */
+  unifiedJob?: UnifiedCollectionJobStatus | null;
   onReportChange: (r: ReportVersion) => void;
   /** REMEDIATION §8.1 — legacy POST /report/generate controls. */
   legacyReportUi?: boolean;
 }) {
-  const { t, tError, tTemplate, fmtDate, locale } = useDigitalProfileI18n();
+  const { t, tError, tTemplate, fmtDate } = useDigitalProfileI18n();
   const { can } = useDpAuth();
   const canGenerateInternal = can("report.generateInternal");
   const canGenerateClient = can("report.generateClient");
@@ -54,10 +60,10 @@ export function ReportPreviewPanel({
     }
   }, [audience, canGenerateInternal, canGenerateClient]);
   const [watermarkMode, setWatermarkMode] = useState<"draft" | "none">("draft");
-  // Report language defaults to the current UI locale but can be chosen separately.
-  const [reportLanguage, setReportLanguage] = useState<"ru" | "en">(
-    locale === "en" ? "en" : "ru"
-  );
+  // Отчёт собирается по-русски независимо от языка интерфейса, поэтому
+  // подставлять сюда локаль UI значит предлагать по умолчанию язык, которого
+  // дека не даёт. Выбор остаётся за оператором, но начинается с правды.
+  const [reportLanguage, setReportLanguage] = useState<"ru" | "en">("ru");
   const [warnings, setWarnings] = useState<string[]>([]);
   // Stage S1.5 — whether a SERP snapshot exists for this case (drives the hint
   // about the ORION-style page being included in the rendered report).
@@ -126,6 +132,8 @@ export function ReportPreviewPanel({
       setBusy(false);
     }
   }
+
+  const unifiedReady = unifiedArtifactsReady(unifiedJob);
 
   const aiStatus =
     report &&
@@ -242,8 +250,31 @@ export function ReportPreviewPanel({
         </div>
       ) : null}
 
+      {unifiedReady ? (
+        <div style={{ marginBottom: 18 }} data-testid="report-preview-unified">
+          <h3 className="dp-h3" style={{ marginTop: 0 }}>
+            {t("report.unifiedTitle")}
+          </h3>
+          <dl className="dp-kv">
+            <dt>{t("cases.status")}</dt>
+            <dd>
+              <StatusBadge status={unifiedJob!.stage} />
+            </dd>
+            <dt>{t("report.unifiedSource")}</dt>
+            <dd className="dp-mono">{unifiedJob!.unifiedJobId || unifiedJob!.jobId}</dd>
+          </dl>
+          <UnifiedCanonicalDownloadButtons caseId={caseId} job={unifiedJob!} />
+        </div>
+      ) : null}
+
+      {report && unifiedReady ? (
+        <h3 className="dp-h3">{t("report.legacyTitle")}</h3>
+      ) : null}
+
       {!report ? (
-        <EmptyState title={t("report.emptyTitle")} hint={t("report.emptyHint")} />
+        unifiedReady ? null : (
+          <EmptyState title={t("report.emptyTitle")} hint={t("report.emptyHint")} />
+        )
       ) : (
         <>
           <dl className="dp-kv">
@@ -281,24 +312,24 @@ export function ReportPreviewPanel({
             <dd>{fmtDate(report.createdAt)}</dd>
             {aiStatus ? (
               <>
-                <dt>AI-аналитика</dt>
+                <dt>{t("report.aiAnalytics")}</dt>
                 <dd>{String(aiStatus.model ?? "GPT-5.5")}</dd>
-                <dt>Статус</dt>
+                <dt>{t("cases.status")}</dt>
                 <dd>
                   {String(aiStatus.status ?? "fallback") === "ready"
-                    ? "готово"
+                    ? t("report.aiReady")
                     : String(aiStatus.status ?? "fallback") === "fallback"
-                      ? "резервная аналитика"
-                      : "недоступно"}
+                      ? t("report.aiFallback")
+                      : t("report.aiUnavailable")}
                 </dd>
                 {aiStatus.reason ? (
                   <>
-                    <dt>Причина fallback</dt>
+                    <dt>{t("report.aiFallbackReason")}</dt>
                     <dd>{String(aiStatus.reason)}</dd>
                   </>
                 ) : null}
-                <dt>Нарратив в отчёте</dt>
-                <dd>В отчёт добавлена клиентская аналитика простым языком</dd>
+                <dt>{t("report.aiNarrative")}</dt>
+                <dd>{t("report.aiNarrativeValue")}</dd>
               </>
             ) : null}
           </dl>

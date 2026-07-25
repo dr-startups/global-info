@@ -47,7 +47,6 @@ import { ReportQualityPanel } from "./ReportQualityPanel";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
 import {
-  SUGGESTIONS_TARGETED_RETRY_CONFIRM,
   buildSuggestionsTargetedRetryBody,
   createSingleFlightGuard,
   isAcceptedSuggestionsRetryResult,
@@ -202,23 +201,21 @@ export function CaseDetailView({
     if (isSuggestionsTargetedRetryState(unifiedJob)) {
       setBanner({
         kind: "error",
-        text:
-          "Full Audit недоступен: отсутствует результат Suggestions. Используйте «Повторить только задачу Suggestions».",
+        text: t("unified.blockedBySuggestions"),
       });
       return;
     }
     if (unifiedJob?.recoveryAllowed) {
       setBanner({
         kind: "error",
-        text: `Восстанавливаемый job ${unifiedJob.jobId}. Используйте recovery, а не Full Audit.`,
+        text: t("unified.blockedByRecoverable", { jobId: unifiedJob.jobId }),
       });
       return;
     }
     if (unifiedJob?.fullAuditBlocked || unifiedJob?.paidRecollectionRequired) {
       setBanner({
         kind: "error",
-        text:
-          "Full Audit недоступен: есть job с сохранёнными стадиями. Используйте recovery или «Начать новый аудит с повторным сбором данных».",
+        text: t("unified.blockedByPreserved"),
       });
       return;
     }
@@ -248,10 +245,7 @@ export function CaseDetailView({
 
   const handlePaidRecollection = useCallback(async () => {
     if (auditing || generating || recovering) return;
-    const ok = window.confirm(
-      "Будут повторно вызваны платные провайдеры (Yandex/Google/Serper/Wikipedia и Arsenkin). " +
-        "Текущий job не будет продолжен — создастся новый сбор. Продолжить?"
-    );
+    const ok = window.confirm(t("unified.paidRecollectionConfirm"));
     if (!ok) return;
     setAuditing(true);
     setBanner(null);
@@ -274,8 +268,7 @@ export function CaseDetailView({
     if (isSuggestionsTargetedRetryState(unifiedJob)) {
       setBanner({
         kind: "error",
-        text:
-          "General recovery скрыт при gap Suggestions. Используйте «Повторить только задачу Suggestions».",
+        text: t("unified.recoveryHiddenBySuggestions"),
       });
       return;
     }
@@ -283,9 +276,9 @@ export function CaseDetailView({
     if (!jobId || !unifiedJob?.recoveryAllowed) {
       setBanner({
         kind: "error",
-        text: `Recovery недоступен${
-          unifiedJob?.recoveryBlockerReason ? ` (${unifiedJob.recoveryBlockerReason})` : ""
-        }.`,
+        text: t("unified.recoveryUnavailable", {
+          reason: unifiedJob?.recoveryBlockerReason ? ` (${unifiedJob.recoveryBlockerReason})` : "",
+        }),
       });
       return;
     }
@@ -302,12 +295,12 @@ export function CaseDetailView({
       unifiedJob.recoveryReason === "ARSENKIN_INGEST_RESUME";
     const ok = window.confirm(
       renderResume
-        ? "Рендер будет выполнен через renderer service. Базовый поиск и Arsenkin повторно не запускаются. Продолжить с этапа рендера?"
+        ? t("unified.confirmResumeRender")
         : assemblyResume
-          ? "Будет пересобран отчёт из уже собранных данных (analytics + deck + render). Base и Arsenkin повторно не запускаются. Продолжить?"
+          ? t("unified.confirmResumeAssembly")
           : ingestResume
-            ? "Будут импортированы уже выполненные Arsenkin задачи без новых submit и без повторного base-сбора. Продолжить импорт?"
-            : "Базовый поиск повторно выполняться не будет. Продолжить аудит с этапа Arsenkin?"
+            ? t("unified.confirmResumeIngest")
+            : t("unified.confirmResumeArsenkin")
     );
     if (!ok) return;
     setRecovering(true);
@@ -352,16 +345,13 @@ export function CaseDetailView({
     if (!jobId || !unifiedJob?.rebuildAllowed) {
       setBanner({
         kind: "error",
-        text: `Пересборка недоступна${
-          unifiedJob?.rebuildBlockerReason ? ` (${unifiedJob.rebuildBlockerReason})` : ""
-        }.`,
+        text: t("unified.rebuildUnavailable", {
+          reason: unifiedJob?.rebuildBlockerReason ? ` (${unifiedJob.rebuildBlockerReason})` : "",
+        }),
       });
       return;
     }
-    const ok = window.confirm(
-      "Отчёт будет пересобран из уже собранных данных (аналитика, сборка и рендер). " +
-        "Повторный платный сбор (base/Arsenkin) не выполняется. Продолжить?"
-    );
+    const ok = window.confirm(t("unified.rebuildConfirm"));
     if (!ok) return;
     setRebuilding(true);
     setBanner(null);
@@ -406,18 +396,15 @@ export function CaseDetailView({
     if (!jobId || !unifiedJob?.gptCopyRetryAllowed) {
       setBanner({
         kind: "error",
-        text: `Дожать GPT недоступно${
-          unifiedJob?.gptCopyRetryBlockerReason
+        text: t("unified.gptRetryUnavailable", {
+          reason: unifiedJob?.gptCopyRetryBlockerReason
             ? ` (${unifiedJob.gptCopyRetryBlockerReason})`
-            : ""
-        }.`,
+            : "",
+        }),
       });
       return;
     }
-    const ok = window.confirm(
-      "Будут повторно обработаны только GPT-фрагменты со статусом FALLBACK. " +
-        "Полная пересборка аналитики и платный сбор не выполняются. Продолжить?"
-    );
+    const ok = window.confirm(t("unified.gptRetryConfirm"));
     if (!ok) return;
     setRetryingGptCopy(true);
     setBanner(null);
@@ -466,11 +453,11 @@ export function CaseDetailView({
       suggestionsRetryFlightRef.current.leave();
       setBanner({
         kind: "error",
-        text: "Повтор Suggestions недоступен для текущего job.",
+        text: t("unified.suggestionsRetryUnavailable"),
       });
       return;
     }
-    const ok = window.confirm(SUGGESTIONS_TARGETED_RETRY_CONFIRM);
+    const ok = window.confirm(t("unified.retrySuggestionsConfirm"));
     if (!ok) {
       suggestionsRetryFlightRef.current.leave();
       return;
@@ -487,7 +474,7 @@ export function CaseDetailView({
       if (!isAcceptedSuggestionsRetryResult(result)) {
         setBanner({
           kind: "error",
-          text: "Повтор Suggestions не принят: нет externalTaskId в ответе сервера.",
+          text: t("unified.suggestionsRetryNoTaskId"),
         });
         return;
       }
@@ -505,8 +492,8 @@ export function CaseDetailView({
       setBanner({
         kind: "ok",
         text: result.reusedExisting
-          ? `Suggestions: переиспользована существующая задача (${result.externalTaskId}).`
-          : `Suggestions: отправлена 1 задача (${result.externalTaskId}).`,
+          ? t("unified.suggestionsReused", { taskId: result.externalTaskId })
+          : t("unified.suggestionsSubmitted", { taskId: result.externalTaskId }),
       });
       await pollUnifiedUntilTerminal();
     } catch (err) {
@@ -704,9 +691,9 @@ export function CaseDetailView({
       {legacyReportUi && can("evidence.viewRaw") ? (
         <Card>
           <div className="dp-stack" style={{ gap: 8 }}>
-            <strong>ORION Golden — ручная проверка</strong>
+            <strong>{t("unified.goldenTitle")}</strong>
             <p className="dp-muted" style={{ margin: 0 }}>
-              Сначала подготовьте артефакты (очередь review), затем откройте manual review и сгенерируйте полный ORION Audit.
+              {t("unified.goldenHint")}
             </p>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               {can("risk.review") ? (
@@ -724,7 +711,7 @@ export function CaseDetailView({
                         if (!jobId) {
                           setBanner({
                             kind: "error",
-                            text: "Сначала запустите единый аудит ORION — canonical prepare работает только по job-scoped артефактам.",
+                            text: t("unified.goldenNeedsRun"),
                           });
                           return;
                         }
@@ -732,7 +719,7 @@ export function CaseDetailView({
                         setPrepareStatus(result);
                         setBanner({
                           kind: "ok",
-                          text: "Canonical prepare запущен в фоне. Обычно несколько минут.",
+                          text: t("unified.goldenStarted"),
                         });
                         for (let i = 0; i < 90; i += 1) {
                           if (result.status === "completed" || result.status === "failed") break;
@@ -743,9 +730,11 @@ export function CaseDetailView({
                         setBanner({
                           kind: result.ok ? "ok" : "error",
                           text: result.ok
-                            ? `Отчёт собран (${result.pageCount} стр.).`
+                            ? t("unified.goldenDone", { pages: result.pageCount ?? 0 })
                             : result.warnings[0] ||
-                              `Подготовка не завершена (${result.verdict ?? result.status})`,
+                              t("unified.goldenNotFinished", {
+                                verdict: String(result.verdict ?? result.status),
+                              }),
                         });
                       } catch (err) {
                         const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
@@ -757,28 +746,29 @@ export function CaseDetailView({
                     })();
                   }}
                 >
-                  {prepareBusy ? "Подготовка…" : "Подготовить ORION Golden / очередь review"}
+                  {prepareBusy ? t("unified.goldenPreparing") : t("unified.goldenPrepare")}
                 </button>
               ) : null}
               <Link className="dp-btn" href={`/admin/digital-profile/${state.caseDetail.id}/orion-golden/manual-review`}>
-                Открыть manual review
+                {t("unified.goldenOpenReview")}
               </Link>
               <Link
                 className="dp-btn dp-btn-primary"
                 href={`/admin/digital-profile/${state.caseDetail.id}/orion-golden/manual-review#arsenkin-tools`}
                 data-testid="case-arsenkin-audit-link"
               >
-                Запустить аудит с Arsenkin
+                {t("unified.goldenRunArsenkin")}
               </Link>
             </div>
             <p className="dp-muted" style={{ margin: 0, fontSize: 13 }}>
-              «Запустить аудит с Arsenkin» открывает панель API-сбора. Кнопка «Подготовить ORION Golden»
-              не запускает платный Arsenkin.
+              {t("unified.goldenFootnote")}
             </p>
             {prepareStatus ? (
               <p className="dp-muted" style={{ margin: 0 }}>
-                Статус: {prepareStatus.status}
-                {prepareStatus.queueReady ? ` · отчёт готов (${prepareStatus.pageCount} стр.)` : ""}
+                {t("unified.goldenStatus")}: {prepareStatus.status}
+                {prepareStatus.queueReady
+                  ? ` · ${t("unified.goldenQueueReady", { pages: prepareStatus.pageCount ?? 0 })}`
+                  : ""}
                 {prepareStatus.verdict ? ` · ${prepareStatus.verdict}` : ""}
               </p>
             ) : null}
@@ -795,6 +785,7 @@ export function CaseDetailView({
           agents={agents}
           agentRuns={agentRuns}
           auditing={auditing}
+          unifiedJob={unifiedJob}
           fullAuditBlocked={fullAuditBlockedForTabs}
           lastFullAuditSummary={lastFullAuditSummary}
           onRunFullAudit={handleRunUnifiedCollection}

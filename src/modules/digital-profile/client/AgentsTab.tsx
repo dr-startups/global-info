@@ -12,17 +12,28 @@ import { Badge, EmptyState, ErrorBox, StatusBadge, SuccessBox } from "./componen
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
 
-function arsenkinOutcomeBadge(outcome: string | null | undefined, status: string): {
+function arsenkinOutcomeBadge(
+  outcome: string | null | undefined,
+  status: string,
+  t: (key: string) => string
+): {
   label: string;
   tone: "ok" | "warn" | "danger" | "neutral" | "info";
 } {
   const o = String(outcome ?? "").toUpperCase();
-  if (status === "RUNNING" || o === "RUNNING") return { label: "Выполняется", tone: "info" };
-  if (o === "SUCCESS" || o === "REUSED") return { label: o === "REUSED" ? "Переиспользовано" : "Успешно", tone: "ok" };
-  if (o === "PARTIAL_SUCCESS") return { label: "Частично успешно", tone: "warn" };
-  if (o === "NO_RESULTS") return { label: "Нет результатов", tone: "neutral" };
-  if (o === "FAILED" || status === "FAILED") return { label: "Ошибка", tone: "danger" };
-  if (status === "SUCCEEDED") return { label: "Успешно", tone: "ok" };
+  if (status === "RUNNING" || o === "RUNNING") {
+    return { label: t("agents.outcomeRunning"), tone: "info" };
+  }
+  if (o === "SUCCESS" || o === "REUSED") {
+    return {
+      label: o === "REUSED" ? t("agents.outcomeReused") : t("agents.outcomeSuccess"),
+      tone: "ok",
+    };
+  }
+  if (o === "PARTIAL_SUCCESS") return { label: t("agents.outcomePartial"), tone: "warn" };
+  if (o === "NO_RESULTS") return { label: t("agents.outcomeNoResults"), tone: "neutral" };
+  if (o === "FAILED" || status === "FAILED") return { label: t("agents.outcomeFailed"), tone: "danger" };
+  if (status === "SUCCEEDED") return { label: t("agents.outcomeSuccess"), tone: "ok" };
   return { label: status || "—", tone: "neutral" };
 }
 
@@ -101,7 +112,7 @@ export function AgentsTab({
     try {
       const result = await runAgentApi(caseId, name);
       if (result.status === "RUNNING") {
-        setInfo("Arsenkin-агент выполняется. Статус обновится автоматически…");
+        setInfo(t("agents.durableRunning"));
       } else if (name === "REAL_YANDEX_SEARCH") setInfo(t("agents.realYandexHint"));
       else if (name === "REAL_GOOGLE_SEARCH") setInfo(t("agents.realGoogleHint"));
       else if (name === "REAL_ORION_SEARCH_PROFILE") setInfo(t("agents.realOrionProfileHint"));
@@ -220,7 +231,7 @@ export function AgentsTab({
           {agents.map((a) => {
             const isDurable = a.executionMode === "DURABLE_ASYNC";
             const badge = isDurable
-              ? arsenkinOutcomeBadge(a.lastRun?.outcome, a.lastRun?.status ?? "")
+              ? arsenkinOutcomeBadge(a.lastRun?.outcome, a.lastRun?.status ?? "", t)
               : null;
             const running =
               a.lastRun?.status === "RUNNING" || a.lastRun?.outcome === "RUNNING";
@@ -274,7 +285,7 @@ export function AgentsTab({
                       data-testid={`agent-run-${a.name}`}
                       title={
                         running && isDurable
-                          ? "Принудительно перезапустить (прервать зависший RUNNING)"
+                          ? t("agents.forceRestartHint")
                           : undefined
                       }
                     >
@@ -282,7 +293,7 @@ export function AgentsTab({
                       {thisBusy
                         ? t("agents.running")
                         : running && isDurable
-                          ? "Перезапустить"
+                          ? t("agents.restart")
                           : t("agents.runAudit")}
                     </button>
                   ) : null}
@@ -313,7 +324,7 @@ export function AgentsTab({
             {agentRuns.slice(0, 20).map((r) => {
               const durableOutcome = r.outcome;
               const badge = durableOutcome
-                ? arsenkinOutcomeBadge(durableOutcome, r.status)
+                ? arsenkinOutcomeBadge(durableOutcome, r.status, t)
                 : null;
               return (
                 <tr key={r.id}>

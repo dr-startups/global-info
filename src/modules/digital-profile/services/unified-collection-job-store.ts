@@ -16,6 +16,7 @@ import {
   type UnifiedCollectionStage,
 } from "./unified-collection-types";
 import { writeJsonAtomic } from "../providers/arsenkin/arsenkin-db-readiness";
+import { caseStatusForStage } from "./unified-case-status-sync";
 
 const ACTIVE_STAGES = new Set<UnifiedCollectionStage>([
   "BASE_COLLECTION",
@@ -781,7 +782,32 @@ export async function patchUnifiedCollectionJob(
   caseId: string,
   patch: Partial<UnifiedCollectionJob>
 ): Promise<UnifiedCollectionJob | null> {
-  return getUnifiedCollectionJobStoreMode() === "db" ? dbPatch(caseId, patch) : filePatch(caseId, patch);
+  const job =
+    getUnifiedCollectionJobStoreMode() === "db" ? await dbPatch(caseId, patch) : await filePatch(caseId, patch);
+  if (job && patch.stage) await syncCaseStatusToStage(caseId, patch.stage);
+  return job;
+}
+
+/**
+ * Статус кейса следует за стадией прогона (шаг 11.3): иначе кейс с готовым
+ * отчётом вечно значится черновиком, а рядом печатается второй, противоречащий
+ * ему статус. Обновление вспомогательное — его неудача не должна ронять джобу.
+ */
+async function syncCaseStatusToStage(caseId: string, stage: UnifiedCollectionStage): Promise<void> {
+  try {
+    const prisma = await getPrisma();
+    if (!prisma) return;
+    const row = await prisma.case.findUnique({ where: { id: caseId }, select: { status: true } });
+    if (!row) return;
+    const next = caseStatusForStage(stage, row.status);
+    if (!next) return;
+    await prisma.case.update({
+      where: { id: caseId },
+      data: { status: next as never },
+    });
+  } catch {
+    /* статус кейса — отображение, а не источник правды пайплайна */
+  }
 }
 
 export async function claimUnifiedJobLease(input: {

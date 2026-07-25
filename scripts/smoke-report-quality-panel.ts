@@ -5,6 +5,8 @@
  */
 
 import assert from "node:assert/strict";
+import { ru } from "../src/modules/digital-profile/i18n/dictionaries/ru";
+import { en } from "../src/modules/digital-profile/i18n/dictionaries/en";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it } from "node:test";
@@ -33,7 +35,10 @@ describe("report-quality empty-state / GPT labels (§0.4)", () => {
     assert.equal(gptStage1Tone("APPLIED"), "ok");
     assert.equal(gptStage1Tone("FAILED"), "danger");
     assert.equal(gptStage1Tone("SKIPPED"), "neutral");
-    assert.match(describeGptStage1Status("FAILED"), /Fallback/i);
+    // Шаг 11.4: русская подпись стала русской, английская осталась
+    // с техническим термином.
+    assert.match(describeGptStage1Status("FAILED"), /Резервный вариант/);
+    assert.match(describeGptStage1Status("FAILED", "en"), /Fallback/i);
   });
 
   it("normalizes legacy reportQuality without emptyState (pre-0.4 jobs)", () => {
@@ -92,9 +97,18 @@ describe("report-quality panel wiring (§0.4)", () => {
     assert.match(view, /unifiedJob\?\.reportQuality/);
     assert.match(view, /SoftRenderBoundary/);
     assert.match(panel, /data-testid="report-quality-panel"/);
-    assert.match(panel, /Качество отчёта/);
+    // Шаг 11.4: заголовок переехал в словари — проверяется ключ и обе копии.
+    assert.match(panel, /t\("quality\.title"\)/);
+    assert.equal(ru.quality.title, "Качество отчёта");
+    assert.equal(en.quality.title, "Report quality");
     assert.match(panel, /slides\.emptyState \?\? \[\]/);
-    assert.doesNotMatch(panel, /onClick|button/);
+    // Панель перестала быть строго read-only, когда в неё добавили повтор
+    // GPT-фрагментов (§4.3). Запрет действий заменён на точный учёт: ровно
+    // одно действие, и оно не запускает платный сбор.
+    const clickHandlers = panel.match(/onClick=/g) ?? [];
+    assert.equal(clickHandlers.length, 1, "панель качества имеет ровно одно действие");
+    assert.match(panel, /data-testid="retry-gpt-copy-cta"/);
+    assert.doesNotMatch(panel, /startUnifiedOrionCollection|runFullAudit/);
   });
 
   it("JobReportQuality carries emptyState list for the panel", () => {

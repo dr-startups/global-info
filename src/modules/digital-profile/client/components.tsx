@@ -143,6 +143,15 @@ export function Card({ children }: { children: ReactNode }) {
 }
 
 /**
+ * Класс-компонент не может пользоваться хуком локали, поэтому запасное
+ * сообщение выносится в обычную функцию (шаг 11.4).
+ */
+function RenderBoundaryNotice() {
+  const { t } = useDigitalProfileI18n();
+  return <Notice>{t("common.renderBoundary")}</Notice>;
+}
+
+/**
  * Isolates a child-tree crash so one panel cannot blank the whole case page.
  */
 export class SoftRenderBoundary extends Component<
@@ -162,9 +171,7 @@ export class SoftRenderBoundary extends Component<
   render() {
     if (this.state.failed) {
       return (
-        this.props.fallback ?? (
-          <Notice>Блок временно недоступен из‑за ошибки отображения.</Notice>
-        )
+        this.props.fallback ?? <RenderBoundaryNotice />
       );
     }
     return this.props.children;
