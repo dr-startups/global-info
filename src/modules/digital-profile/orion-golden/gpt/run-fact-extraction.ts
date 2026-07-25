@@ -11,7 +11,9 @@
  * is not.
  */
 
+import { CANONICAL_THEME_IDS } from "../contracts/canonical-claim";
 import type { CanonicalClaimsBundle, CanonicalThemeId } from "../contracts/canonical-claim";
+import { themeLabelRu } from "../analytics/canonical-themes";
 import type { RepresentativeEvidenceSelection } from "../contracts/representative-evidence";
 import type { RawInventoryItem } from "../types";
 import { digitalProfileConfig } from "../../config";
@@ -51,6 +53,8 @@ export type FactExtractionArtifact = {
     rejectedByReason: Record<string, number>;
     /** Theme ids whose call failed; they keep deterministic text. */
     failedThemes: string[];
+    /** Facts the model moved to a theme other than the one requested. */
+    reassignedByModel: number;
   };
 };
 
@@ -90,9 +94,13 @@ function emptyArtifact(input: {
       rejected: 0,
       rejectedByReason: {},
       failedThemes: [],
+      reassignedByModel: 0,
     },
   };
 }
+
+const ALLOWED_THEMES: readonly CanonicalThemeId[] = CANONICAL_THEME_IDS;
+const ALLOWED_THEME_SET: ReadonlySet<string> = new Set<string>(CANONICAL_THEME_IDS);
 
 /** Materials behind the claims a theme actually shows, deduplicated by ref. */
 export function materialsForTheme(input: {
@@ -198,6 +206,7 @@ export async function runFactExtraction(input: {
         userPayload: {
           subjectName: input.subjectName,
           themeId,
+          allowedThemes: ALLOWED_THEMES.map((id) => ({ id, label: themeLabelRu(id) })),
           materials: materials.map((m) => ({
             ref: m.ref,
             title: m.title,
@@ -213,7 +222,11 @@ export async function runFactExtraction(input: {
         continue;
       }
 
-      const outcome = verifyExtractedFacts({ facts: parsed.data.facts, materials });
+      const outcome = verifyExtractedFacts({
+        facts: parsed.data.facts,
+        materials,
+        allowedThemes: ALLOWED_THEME_SET,
+      });
       artifact.diagnostics.proposed += parsed.data.facts.length;
       artifact.diagnostics.accepted += outcome.accepted.length;
       artifact.diagnostics.rejected += outcome.rejected.length;
@@ -221,7 +234,16 @@ export async function runFactExtraction(input: {
         artifact.diagnostics.rejectedByReason[reason] =
           (artifact.diagnostics.rejectedByReason[reason] ?? 0) + count;
       }
-      if (outcome.accepted.length > 0) artifact.factsByTheme[themeId] = outcome.accepted;
+      // Facts land under the theme they belong to, not the theme they were
+      // requested for: inheriting the call's theme published a company-founding
+      // fact under «Регуляторные расследования» (step 06.2).
+      for (const fact of outcome.accepted) {
+        const target = fact.themeId ?? themeId;
+        (artifact.factsByTheme[target] ??= []).push(fact);
+        if (fact.themeId && fact.themeId !== themeId) {
+          artifact.diagnostics.reassignedByModel += 1;
+        }
+      }
     } catch {
       // Fail-open: this theme keeps its deterministic text.
       artifact.diagnostics.failedThemes.push(themeId);

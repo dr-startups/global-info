@@ -215,6 +215,84 @@ describe("runFactExtraction", () => {
   });
 });
 
+describe("перегруппировка фактов по их теме (шаг 06.2)", () => {
+  it("кладёт факт в тему, которую выбрала модель, а не в запрошенную", async () => {
+    const artifact = await runFactExtraction({
+      ...base,
+      enabled: true,
+      caller: async () => ({
+        facts: [
+          {
+            statement: "Факт о деловом профиле.",
+            quote: "задержан в аэропорту Ле-Бурже 24 августа 2024 года",
+            ref: "e1",
+            status: "established_fact",
+            theme: "business_ownership_associates",
+          },
+        ],
+      }),
+    });
+    // Вызов был по теме criminal_judicial — факт ушёл в деловую.
+    expect(artifact.factsByTheme["criminal_judicial"]).toBeUndefined();
+    expect(artifact.factsByTheme["business_ownership_associates"]).toHaveLength(1);
+    expect(artifact.diagnostics.reassignedByModel).toBe(1);
+  });
+
+  it("оставляет факт в запрошенной теме, когда модель тему не указала", async () => {
+    const artifact = await runFactExtraction({
+      ...base,
+      enabled: true,
+      caller: async () => ({
+        facts: [
+          {
+            statement: "Факт без темы.",
+            quote: "задержан в аэропорту Ле-Бурже 24 августа 2024 года",
+            ref: "e1",
+            status: "source_allegation",
+          },
+        ],
+      }),
+    });
+    expect(artifact.factsByTheme["criminal_judicial"]).toHaveLength(1);
+    expect(artifact.diagnostics.reassignedByModel).toBe(0);
+  });
+
+  it("игнорирует тему вне таксономии и оставляет факт в запрошенной", async () => {
+    const artifact = await runFactExtraction({
+      ...base,
+      enabled: true,
+      caller: async () => ({
+        facts: [
+          {
+            statement: "Факт с выдуманной темой.",
+            quote: "задержан в аэропорту Ле-Бурже 24 августа 2024 года",
+            ref: "e1",
+            status: "source_allegation",
+            theme: "нет_такой_темы",
+          },
+        ],
+      }),
+    });
+    expect(artifact.factsByTheme["criminal_judicial"]).toHaveLength(1);
+    expect(artifact.diagnostics.reassignedByModel).toBe(0);
+  });
+
+  it("передаёт модели список допустимых тем", async () => {
+    let seen: unknown = null;
+    await runFactExtraction({
+      ...base,
+      enabled: true,
+      caller: async ({ userPayload }) => {
+        seen = (userPayload as { allowedThemes?: unknown }).allowedThemes;
+        return { facts: [] };
+      },
+    });
+    const themes = seen as Array<{ id: string; label: string }>;
+    expect(Array.isArray(themes)).toBe(true);
+    expect(themes.some((t) => t.id === "criminal_judicial" && t.label.length > 0)).toBe(true);
+  });
+});
+
 describe("isFactExtractionEnabled", () => {
   it("выключается явным нулём", () => {
     expect(isFactExtractionEnabled({ ORION_GPT_FACTS: "0" } as never)).toBe(false);

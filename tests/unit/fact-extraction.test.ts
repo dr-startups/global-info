@@ -194,3 +194,36 @@ describe("verifyExtractedFacts", () => {
     expect(out).toEqual({ accepted: [], rejected: [], rejectedByReason: {} });
   });
 });
+
+describe("тема факта (шаг 06.2)", () => {
+  const ALLOWED = new Set(["criminal_judicial", "business_ownership_associates"]);
+
+  const verifyWithThemes = (f: ExtractedFact) =>
+    verifyExtractedFact({
+      fact: f,
+      materialsByRef: new Map([[MATERIAL.ref, MATERIAL]]),
+      seenQuotes: new Set<string>(),
+      allowedThemes: ALLOWED,
+    });
+
+  it("сохраняет тему, выбранную моделью, если она из таксономии", () => {
+    const res = verifyWithThemes(fact({ theme: "business_ownership_associates" }));
+    expect(res.accepted).toBe(true);
+    if (!res.accepted) return;
+    expect(res.fact.themeId).toBe("business_ownership_associates");
+  });
+
+  it("игнорирует тему вне таксономии, не отбрасывая сам факт", () => {
+    const res = verifyWithThemes(fact({ theme: "выдуманная_тема" }));
+    expect(res.accepted).toBe(true);
+    if (!res.accepted) return;
+    expect(res.fact.themeId).toBeUndefined();
+  });
+
+  it("не требует темы: факт без неё остаётся валидным", () => {
+    const res = verifyWithThemes(fact());
+    expect(res.accepted).toBe(true);
+    if (!res.accepted) return;
+    expect(res.fact.themeId).toBeUndefined();
+  });
+});

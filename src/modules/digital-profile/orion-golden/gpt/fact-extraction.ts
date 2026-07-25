@@ -51,6 +51,15 @@ export const ExtractedFactSchema = z.object({
   /** Positional handle of the material in the payload (`e1`..`eN`). */
   ref: z.string().min(1),
   status: FactStatusSchema,
+  /**
+   * Theme this statement itself belongs to (step 06.2).
+   *
+   * Themes used to be inherited from the claim, which aggregates many
+   * materials, so a fact about founding a company was published under
+   * «Регуляторные расследования». The fact carries its own theme now; an
+   * unrecognised or absent value falls back to the theme the call was made for.
+   */
+  theme: z.string().optional(),
 });
 export type ExtractedFact = z.infer<typeof ExtractedFactSchema>;
 
@@ -81,6 +90,8 @@ export type VerifiedFact = {
   statement: string;
   quote: string;
   status: FactStatus;
+  /** Canonical theme of this statement; absent when the model gave none valid. */
+  themeId?: string;
   /** Resolved by code from the referenced material, never from the model. */
   evidenceRef: string;
   sourceDomain?: string;
@@ -132,6 +143,8 @@ export function verifyExtractedFact(input: {
   fact: ExtractedFact;
   materialsByRef: Map<string, FactSourceMaterial>;
   seenQuotes: Set<string>;
+  /** Canonical theme ids the model may choose from. */
+  allowedThemes?: ReadonlySet<string>;
 }): FactVerification {
   const statement = String(input.fact.statement ?? "").trim();
   const ref = String(input.fact.ref ?? "").trim();
@@ -161,12 +174,16 @@ export function verifyExtractedFact(input: {
   }
   input.seenQuotes.add(dedupeKey);
 
+  const theme = String(input.fact.theme ?? "").trim();
+  const themeId = input.allowedThemes?.has(theme) ? theme : undefined;
+
   return {
     accepted: true,
     fact: {
       statement,
       quote,
       status: input.fact.status,
+      ...(themeId ? { themeId } : {}),
       evidenceRef: material.evidenceRef,
       ...(material.domain ? { sourceDomain: material.domain } : {}),
       ...(material.url ? { sourceUrl: material.url } : {}),
@@ -186,6 +203,7 @@ export type FactExtractionOutcome = {
 export function verifyExtractedFacts(input: {
   facts: ExtractedFact[];
   materials: FactSourceMaterial[];
+  allowedThemes?: ReadonlySet<string>;
 }): FactExtractionOutcome {
   const materialsByRef = new Map(input.materials.map((m) => [m.ref, m]));
   const seenQuotes = new Set<string>();
@@ -194,7 +212,12 @@ export function verifyExtractedFacts(input: {
   const rejectedByReason: Record<string, number> = {};
 
   for (const fact of input.facts) {
-    const result = verifyExtractedFact({ fact, materialsByRef, seenQuotes });
+    const result = verifyExtractedFact({
+      fact,
+      materialsByRef,
+      seenQuotes,
+      ...(input.allowedThemes ? { allowedThemes: input.allowedThemes } : {}),
+    });
     if (result.accepted) {
       accepted.push(result.fact);
       continue;
@@ -224,6 +247,13 @@ export const FACT_EXTRACTION_SYSTEM_PROMPT = [
   "5. Не выдумывай фактов, которых нет в материалах. Лучше меньше утверждений.",
   "6. Одно утверждение — одна цитата. Не повторяй одну цитату в разных утверждениях.",
   "7. Домен, ссылку и дату НЕ указывай: они берутся из наших записей.",
+  "8. theme — тема, к которой относится САМО утверждение, из списка allowedThemes.",
+  "   Не подстраивайся под тему запроса: факт о создании компании относится к",
+  "   деловым связям, даже если запрошена тема о регуляторных расследованиях.",
+  "   Если ни одна тема не подходит — поле theme не указывай вовсе.",
+  "9. Материал, не относящийся к проверяемому лицу по существу (реклама, чужой",
+  "   контент, случайное упоминание имени), пропускай: лучше ноль утверждений,",
+  "   чем утверждение ни о чём.",
   "",
-  "Верни ТОЛЬКО JSON: {\"facts\": [{\"statement\": \"...\", \"quote\": \"...\", \"ref\": \"e1\", \"status\": \"...\"}]}",
+  "Верни ТОЛЬКО JSON: {\"facts\": [{\"statement\": \"...\", \"quote\": \"...\", \"ref\": \"e1\", \"status\": \"...\", \"theme\": \"...\"}]}",
 ].join("\n");
