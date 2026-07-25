@@ -27,15 +27,42 @@ function safeReason(raw: string | null | undefined): string {
   return s || "Suggestions: результат не получен";
 }
 
+/**
+ * Terminal failure of the Suggestions agent.
+ *
+ * "Scheduled but not finished yet" is NOT a failure: the five Arsenkin agents
+ * start sequentially, so Suggestions is legitimately unstarted for the first
+ * minutes of every run. Treating that as a gap made the UI demand a paid retry
+ * of a task that was about to run on its own — observed on every run, clearing
+ * itself a few minutes later, which is what "errors keep popping up" meant.
+ */
 function suggestionsAgentFailed(job: UnifiedCollectionJob): boolean {
   const st = job.arsenkinEnrichmentState;
   if (!st) return false;
   if (st.failedAgents?.some((a) => /SUGGESTIONS/i.test(a))) return true;
+  // Enrichment finished without a Suggestions result — that is a real gap.
+  if (st.enrichmentComplete) {
+    return !st.ingestedAgents?.some((a) => /SUGGESTIONS/i.test(a));
+  }
+  return false;
+}
+
+/**
+ * The agent has not had its turn yet: enrichment is still in flight and
+ * Suggestions is neither failed nor finished. Nothing to report and nothing
+ * to retry.
+ */
+function suggestionsStillInFlight(job: UnifiedCollectionJob): boolean {
+  const st = job.arsenkinEnrichmentState;
+  if (!st) return false;
   if (st.enrichmentComplete) return false;
-  const scheduled = st.scheduledAgents?.some((a) => /SUGGESTIONS/i.test(a));
-  const completed = st.completedAgents?.some((a) => /SUGGESTIONS/i.test(a));
-  const ingested = st.ingestedAgents?.some((a) => /SUGGESTIONS/i.test(a));
-  return Boolean(scheduled && !completed && !ingested);
+  if (st.failedAgents?.some((a) => /SUGGESTIONS/i.test(a))) return false;
+  const stageActive =
+    job.stage === "ARSENKIN_ENRICHMENT" &&
+    (job.status === "WAITING" || job.status === "RUNNING");
+  const pending = st.pendingAgents?.some((a) => /SUGGESTIONS/i.test(a)) ?? false;
+  const scheduled = st.scheduledAgents?.some((a) => /SUGGESTIONS/i.test(a)) ?? false;
+  return stageActive && (pending || scheduled);
 }
 
 function suggestionsIngested(job: UnifiedCollectionJob): boolean {
@@ -152,7 +179,12 @@ export function withSuggestionsGapStatus(
       warningHit ||
       (scheduledSuggest && enrichmentIncomplete && Boolean(enrichmentRunId)));
 
-  const suggestionsMissingResult = Boolean(missingFromTasks || missingFromJob);
+  // An explicit rejection is a real failure at any moment; everything else must
+  // wait until the agent has actually had its turn.
+  const explicitFailure = Boolean(rejected) || stateFailed || warningHit;
+  const suggestionsMissingResult =
+    Boolean(missingFromTasks || missingFromJob) &&
+    (explicitFailure || !suggestionsStillInFlight(job));
   if (!suggestionsMissingResult) {
     return {
       ...empty,
