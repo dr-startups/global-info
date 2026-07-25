@@ -659,6 +659,58 @@ export async function runUnifiedCollectionTick(
   }
 }
 
+
+/** Marker the rebuild path leaves on the job for the duration of the attempt. */
+const REBUILD_MARKER = "report-rebuild-accepted";
+
+/**
+ * Puts a job back the way it was when a report rebuild fails.
+ *
+ * Rebuilding report text runs analytics and render again over an already
+ * collected dataset. A failure there says nothing about the collection, so it
+ * must not cost the finished report: previously the job went FAILED_TERMINAL
+ * and both /rebuild-report and /recover then refused it, stranding a completed
+ * case whose PDF was still on disk (step 08.0-ter).
+ *
+ * Returns null when this run is not a rebuild or no snapshot was recorded, so
+ * the caller falls through to its normal terminal handling.
+ */
+async function restoreAfterFailedRebuild(
+  job: UnifiedCollectionJob,
+  code: string,
+  message: string
+): Promise<UnifiedCollectionJob | null> {
+  if (!job.warnings.some((w) => w === REBUILD_MARKER)) return null;
+  const audit = await readUnifiedArtifact<{
+    restoreSnapshot?: {
+      stage: string;
+      status: string;
+      progress: number;
+      completedAt: string | null;
+      reportLinks: Record<string, string>;
+    };
+  }>(job.caseId, job.unifiedJobId, "unified-rebuild-audit.json");
+  const snap = audit?.restoreSnapshot;
+  if (!snap) return null;
+
+  return (
+    (await patchUnifiedCollectionJob(job.caseId, {
+      stage: snap.stage as UnifiedCollectionJob["stage"],
+      status: snap.status as UnifiedCollectionJob["status"],
+      progress: snap.progress,
+      completedAt: snap.completedAt,
+      reportLinks: snap.reportLinks,
+      lastError: null,
+      lastErrorCode: null,
+      warnings: [
+        ...job.warnings.filter((w) => w !== REBUILD_MARKER),
+        `report-rebuild-failed:${code}`,
+        `report-rebuild-failed-detail:${message.slice(0, 160)}`,
+      ],
+    })) ?? job
+  );
+}
+
 async function stepBaseCollection(
   job: UnifiedCollectionJob,
   deps: UnifiedOrchestratorDeps
@@ -1403,6 +1455,9 @@ async function stepPrepare(
       );
     }
 
+    const restored = await restoreAfterFailedRebuild(job, code, message);
+    if (restored) return restored;
+
     return (
       await patchUnifiedCollectionJob(job.caseId, {
         stage: "FAILED_TERMINAL",
@@ -1523,6 +1578,9 @@ async function stepPrepare(
     ) {
       return false;
     }
+    // The rebuild attempt is over — drop its marker so a later, unrelated
+    // failure cannot restore this run's stale snapshot.
+    if (w === REBUILD_MARKER) return false;
     return true;
   });
 

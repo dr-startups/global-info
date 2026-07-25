@@ -41,6 +41,14 @@ export type UnifiedReportRebuildAudit = {
   previousStage: string;
   previousCompletedAt: string | null;
   subjectProfileRefreshed: boolean;
+  /** State to put the job back into when the rebuild fails. */
+  restoreSnapshot?: {
+    stage: string;
+    status: string;
+    progress: number;
+    completedAt: string | null;
+    reportLinks: Record<string, string>;
+  };
 };
 
 export type RebuildUnifiedReportResult = {
@@ -217,6 +225,10 @@ export async function rebuildUnifiedReport(input: {
       );
     }
 
+    // Snapshot enough to put the job back exactly as it was. Rebuilding report
+    // text must never be able to destroy the result of a successful paid
+    // collection: a failed attempt used to leave the job FAILED_TERMINAL, which
+    // both /rebuild-report and /recover then refuse (step 08.0-ter).
     const audit: UnifiedReportRebuildAudit = {
       version: "unified-report-rebuild-audit-v1",
       rebuildRequestedAt: nowFn().toISOString(),
@@ -224,6 +236,13 @@ export async function rebuildUnifiedReport(input: {
       previousStage: job.stage,
       previousCompletedAt: job.completedAt,
       subjectProfileRefreshed: Boolean(refreshedProfile),
+      restoreSnapshot: {
+        stage: job.stage,
+        status: job.status,
+        progress: job.progress,
+        completedAt: job.completedAt ?? null,
+        reportLinks: job.reportLinks ?? {},
+      },
     };
     await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "unified-rebuild-audit.json", audit);
     // Defense in depth: full prepare always forceRefresh-es stage 2, but also
