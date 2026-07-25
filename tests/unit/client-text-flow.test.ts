@@ -30,15 +30,28 @@ describe("clampClientText — sentence-safe last resort (B.1c)", () => {
       "Материалы относятся к санкциям спорам корпоративному владению и разбирательствам по множеству юрисдикций без сентенционных границ вовсе";
     // Budget lands mid-«разбирательствам» → the word cut leaves a dangling «и».
     const out = clampClientText(text, text.indexOf("разбирательствам") + 4);
-    expect(out).toMatch(/владению\.$/u);
-    expect(out).not.toMatch(/\s(и|по|к|ещё|а также|для|от|на|с|о|у|же|то)\.$/iu);
+    expect(out).toMatch(/владению$/u);
+    expect(out).not.toMatch(/\s(и|по|к|ещё|а также|для|от|на|с|о|у|же|то)$/iu);
 
-    // «…ещё.» (p17/p26): a dangling «ещё» before the period is stripped too.
+    // «…ещё.» (p17/p26): a dangling «ещё» before the cut is stripped too.
     const text2 =
       "Пользователь Яндекса столкнётся с проблемной ассоциацией ещё раньше чем откроет первую ссылку выдачи";
     const out2 = clampClientText(text2, text2.indexOf("раньше") + 3);
-    expect(out2).toMatch(/ассоциацией\.$/u);
-    expect(out2).not.toMatch(/\s(и|ещё|по|к|а также)\.$/iu);
+    expect(out2).toMatch(/ассоциацией$/u);
+    expect(out2).not.toMatch(/\s(и|ещё|по|к|а также)$/iu);
+  });
+
+  it("не дописывает точку к обрубку — оборванная фраза выглядит оборванной", () => {
+    // Шаг 13, C7: точка превращала обрубок в «законченную мысль», и в отчёт
+    // попадали «Для банка или партнёра такие.», «Деловой фон.», «Всего.».
+    const text =
+      "Для банка или партнёра такие сюжеты обычно становятся первым поводом для расширенной проверки.";
+    expect(clampClientText(text, 30)).toBe("Для банка или партнёра такие");
+  });
+
+  it("точка сохраняется, когда резали по границе предложения", () => {
+    const text = "Первое предложение. Второе предложение длинное и не помещается.";
+    expect(clampClientText(text, 30)).toBe("Первое предложение.");
   });
 
   it("keeps within-budget text untouched", () => {

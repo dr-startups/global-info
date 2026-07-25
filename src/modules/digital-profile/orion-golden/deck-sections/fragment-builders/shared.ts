@@ -333,10 +333,16 @@ export function clampClientText(text: string, max: number): string {
   const slice = text.slice(0, max);
   const boundaries = [slice.lastIndexOf(". "), slice.lastIndexOf(" · "), slice.lastIndexOf("; ")];
   const cut = Math.max(...boundaries);
-  let out = cut > 0 ? slice.slice(0, cut) : slice.slice(0, slice.lastIndexOf(" "));
+  const atSentenceBoundary = cut > 0;
+  let out = atSentenceBoundary ? slice.slice(0, cut) : slice.slice(0, slice.lastIndexOf(" "));
   out = out.replace(/[\s·;,.]+$/u, "");
   out = out.replace(DANGLING_TAIL_RE, "").replace(/[\s·;,.]+$/u, "");
-  return `${out}.`;
+  if (!out) return "";
+  // Точка ставится только там, где резали по границе предложения. Прежде она
+  // дописывалась всегда, и обрубок выдавался за законченную мысль: в отчёт
+  // попадали «Для банка или партнёра такие.», «Деловой фон.», «Всего.»
+  // (шаг 13, C7). Оборванная фраза должна выглядеть оборванной.
+  return atSentenceBoundary ? `${out}.` : out;
 }
 
 /**

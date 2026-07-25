@@ -23,6 +23,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { conflictingPatronymics } from "./patronymic-conflict";
 import { publicDomainOf } from "./public-domain";
 import type { RawInventoryItem } from "../types";
 import {
@@ -332,6 +333,11 @@ export function classifySubjectRelevance(
   for (const w of subject.wrongPatronymics) {
     if (norm(w).length > 3 && matchesToken(text, w)) conflictingIdentifiers.push(w);
   }
+  // Чужое отчество рядом с фамилией субъекта выводится, а не заполняется
+  // оператором вручную: «Дуров Павел Юрьевич» — другой человек, и на свежем
+  // кейсе, где отрицательные признаки не заполнены, защиты не было (шаг 13, C9).
+  const derivedPatronymicConflicts = conflictingPatronymics(text, subject);
+  conflictingIdentifiers.push(...derivedPatronymicConflicts);
   for (const n of subject.namesakeNoise) {
     if (n.length > 2 && text.includes(norm(n))) conflictingIdentifiers.push(n);
   }
@@ -357,6 +363,13 @@ export function classifySubjectRelevance(
     // Surname + composer/wrong-person context → other subject.
     decision = "OTHER_SUBJECT";
     reasonCode = "namesake_conflict";
+    confidence = 0.9;
+  } else if (derivedPatronymicConflicts.length > 0 && !matchedStrong) {
+    // Именная тройка названа целиком, и отчество в ней чужое. В русской
+    // системе имён это решающий признак другого человека, а не повод для
+    // сомнений. Сильный идентификатор (ИНН) такой вывод перебивает.
+    decision = "OTHER_SUBJECT";
+    reasonCode = "patronymic_conflict";
     confidence = 0.9;
   } else if (hasConflict && hasGivenName) {
     // Both subject identifiers and conflicting identity — ambiguous, review.

@@ -185,6 +185,9 @@ function looksLikeBarePersonName(title: string): boolean {
   // Topic / hub pages: «Given Family - The New York Times»
   t = t.replace(/\s*[-–—]\s*(?:The\s+)?New\s+York\s+Times\s*$/iu, "").trim();
   t = t.replace(/\s*[-–—]\s*[A-Za-z0-9.-]+\.[a-z]{2,}\s*$/iu, "").trim();
+  // Инвертированная справочная форма: «Дуров, Павел Валерьевич» — то же голое
+  // имя, что и «Павел Валерьевич Дуров», только с запятой (шаг 13, C3).
+  t = t.replace(/^([А-ЯЁ][а-яё]+),\s+/u, "$1 ").trim();
   if (/[0-9:/]/u.test(t) || BIO_SEO_RE.test(t)) return false;
   // Latin: Given F. Family / Given Family
   if (/^[A-Z][a-z]+(?:\s+[A-Z]\.?)?(?:\s+[A-Z][a-z]+){1,2}$/u.test(t)) return true;
@@ -493,10 +496,20 @@ export function buildClientFacingClaim(input: {
  * suffixes («… | Дзен»), trailing timestamps («- 03.12.25 22:27») and a
  * final fragment the search engine itself truncated with an ellipsis.
  */
+/** Названия справочных площадок, приклеиваемые к заголовку карточки. */
+const REFERENCE_SOURCE_SUFFIX =
+  /\s*[-–—]\s*(?:Википедия|Wikipedia|Wikidata|Циклопедия|Рувики|RuWiki|Энциклопедия[^-–—]*|ПЕРСОНА\s+ТАСС|Telegram\s+Вики|[A-Za-zА-Яа-яЁё ]{0,20}Вики(?:педия)?)\s*$/iu;
+
 export function cleanExampleTitle(raw: string): string {
   let t = String(raw ?? "").replace(/\s+/gu, " ").trim();
   // Source suffix after a pipe: "Заголовок | Дзен" / "… | Forbes.ru".
   t = t.replace(/\s*\|\s*[^|]{1,40}$/u, "").trim();
+  // Справочный суффикс через тире: «Дуров, Павел Валерьевич — Википедия».
+  // Без этого карточка-справка не опознаётся как голое имя и проходит в
+  // доказательства темы, которой не касается: единственным «материалом» об
+  // офшорах в отчёте оказалась статья Википедии (шаг 13, C3). Название
+  // источника и так печатается отдельно.
+  t = t.replace(REFERENCE_SOURCE_SUFFIX, "").trim();
   // Trailing date/time stamps: "- 03.12.25 22:27", "· 02.03.2020".
   t = t.replace(/\s*[-–—·]\s*\d{1,2}\.\d{1,2}\.\d{2,4}(?:\s+\d{1,2}:\d{2})?\s*$/u, "").trim();
   // Nested guillemets break quote parsers: «Экс-владелец «Главстроя»».
