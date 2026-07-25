@@ -239,3 +239,51 @@ describe("происхождение темы", () => {
     expect(themeIds.length).toBeGreaterThan(0);
   });
 });
+
+describe("единый вердикт (шаг 07.9)", () => {
+  it("текст резюме использует переданный вердикт, а не пересчитывает свой", () => {
+    // Плашка берёт вердикт executive summary (шкала без «критического»),
+    // а текст считал по материальности тем, где «критический» есть. На одном
+    // слайде стояло «Итоговая оценка: Высокий риск» и сразу под ним
+    // «Итоговая оценка: критический риск».
+    const { representative } = chain();
+    const themeIds = Object.keys(representative.selectedByTheme);
+    const target = themeIds[0]!;
+    const built = pack({
+      factsByTheme: {
+        [target]: [
+          {
+            statement: "Источник сообщает о задержании.",
+            quote: "Тестов Сергей Михайлович задержан по подозрению",
+            status: "source_allegation",
+            evidenceRef: "inventory:tp-1",
+            themeId: target,
+          },
+        ],
+      },
+      overallVerdict: "HIGH",
+    });
+    expect(built.overallAssessment.conclusion).toContain("высокий");
+    expect(built.overallAssessment.conclusion).not.toContain("критический");
+  });
+
+  it("без переданного вердикта поведение прежнее", () => {
+    const { representative } = chain();
+    const themeIds = Object.keys(representative.selectedByTheme);
+    const target = themeIds[0]!;
+    const built = pack({
+      factsByTheme: {
+        [target]: [
+          {
+            statement: "Источник сообщает о задержании.",
+            quote: "Тестов Сергей Михайлович задержан по подозрению",
+            status: "source_allegation",
+            evidenceRef: "inventory:tp-1",
+            themeId: target,
+          },
+        ],
+      },
+    });
+    expect(built.overallAssessment.conclusion).toContain("Итоговая оценка");
+  });
+});

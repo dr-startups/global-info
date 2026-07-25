@@ -662,6 +662,11 @@ export async function runOrionAnalyticsPipeline(
     representative: representative.selection,
     factsByTheme: factExtraction.factsByTheme,
     factsProcessedThemes: factExtraction.diagnostics.processedThemeIds,
+    // Single source of truth for the verdict — the badge and the summary
+    // sentence must not answer differently (step 07.9).
+    ...(executiveSummary.output?.verdict
+      ? { overallVerdict: executiveSummary.output.verdict }
+      : {}),
     scope: {
       regions: regions.length > 0 ? regions : ["RU", "UAE"],
       coverageLimitations: executiveSummaryInput.dataGaps?.map((g) => g.detail) ?? [],

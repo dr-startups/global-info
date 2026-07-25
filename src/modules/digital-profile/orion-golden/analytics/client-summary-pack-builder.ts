@@ -44,6 +44,16 @@ export type ClientSummaryPackBuildInput = {
   /** Verified facts per theme (05.2c2); absent when extraction is off. */
   factsByTheme?: Record<string, VerifiedFact[]>;
   /**
+   * Authoritative overall verdict (executive summary scale).
+   *
+   * Without it the summary text recomputed its own verdict from theme
+   * materiality, on a different scale that has «критический» while the badge
+   * scale tops out at HIGH. One slide therefore carried two answers:
+   * «Итоговая оценка: Высокий риск» directly above «Итоговая оценка:
+   * критический риск» (step 07.9).
+   */
+  overallVerdict?: string;
+  /**
    * Themes fact extraction ran for. A processed theme survives only if at least
    * one fact was **explicitly** assigned to it by the model: a fact that merely
    * inherited the requested theme means the model declined to place it, and
@@ -416,13 +426,27 @@ function buildInternationalDatabases(
   return out;
 }
 
+/** Verdict wording for the summary sentence, on the executive summary scale. */
+function verdictSentenceLabel(verdict: string): string | null {
+  const map: Record<string, string> = {
+    HIGH: "высокий",
+    ELEVATED: "повышенный",
+    MIXED: "смешанный",
+    LOW: "низкий",
+  };
+  return map[String(verdict).toUpperCase()] ?? null;
+}
+
 function buildOverallAssessment(
   subjectId: string,
   themes: ClientMaterialTheme[],
-  allEvidence: string[]
+  allEvidence: string[],
+  overallVerdict?: string
 ): ClientSummaryPack["overallAssessment"] {
   const levels = themes.map((t) => t.materialityLevel);
   const riskLevel = riskFromMateriality(levels);
+  // One verdict per report: prefer the authoritative one when supplied.
+  const authoritative = overallVerdict ? verdictSentenceLabel(overallVerdict) : null;
   const topTitles = themes
     .slice(0, 4)
     .map((t) => t.clientTitle)
@@ -431,13 +455,14 @@ function buildOverallAssessment(
     riskLevel === "none"
       ? `По собранным открытым источникам существенных рисковых тем по субъекту не выделено; вывод ограничен доступностью данных.`
       : `Итоговая оценка: ${
-          riskLevel === "critical"
+          authoritative ??
+          (riskLevel === "critical"
             ? "критический"
             : riskLevel === "high"
               ? "высокий"
               : riskLevel === "medium"
                 ? "средний"
-                : "низкий"
+                : "низкий")
         } риск. Основные основания: ${topTitles || "подтверждённые темы риска в открытых источниках"}.`
   );
   const reasons = themes.slice(0, 6).map((t) =>
@@ -553,7 +578,8 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
   const overallAssessment = buildOverallAssessment(
     input.subjectId,
     materialThemes,
-    allEvidence
+    allEvidence,
+    input.overallVerdict
   );
 
   const nextSteps = collapseRecommendations(
