@@ -167,10 +167,11 @@ describe("проверенные факты доходят до текста р�
       itemsByRef,
       enabled: true,
       caller: async ({ userPayload }) => {
-        const materials = (userPayload as {
+        const payload = userPayload as {
+          themeId: string;
           materials: Array<{ ref: string; snippet?: string }>;
-        }).materials;
-        const carrier = materials.find((m) => (m.snippet ?? "").includes(QUOTE));
+        };
+        const carrier = payload.materials.find((m) => (m.snippet ?? "").includes(QUOTE));
         if (!carrier) return { facts: [] };
         return {
           facts: [
@@ -179,6 +180,9 @@ describe("проверенные факты доходят до текста р�
               quote: QUOTE,
               ref: carrier.ref,
               status: "source_allegation",
+              // Тема указана явно: факт без темы модель к разделу не относила,
+              // и с шага 06.3 такие в текст темы не попадают.
+              theme: payload.themeId,
             },
           ],
         };
