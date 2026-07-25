@@ -1,7 +1,7 @@
 # Railway Deployment (Stage M4)
 
 Production deployment of the Digital Profile Audit module on
-[Railway](https://railway.com) as **three services in one project/environment**.
+[Railway](https://railway.com) as **four services in one project/environment**.
 
 ## Architecture
 
@@ -36,13 +36,66 @@ Dockerfiles selected by a per-service **Custom Config Path**.
 | Service | Custom Config Path | Builder | Dockerfile |
 | --- | --- | --- | --- |
 | app | `/railway.app.json` | DOCKERFILE | `Dockerfile` |
+| worker | `/railway.worker.json` | DOCKERFILE | `Dockerfile` |
 | renderer | `/railway.renderer.json` | DOCKERFILE | `renderer/Dockerfile` |
 
 - `railway.app.json` — `preDeployCommand: npm run db:deploy`,
   `healthcheckPath: /api/digital-profile/health`, `healthcheckTimeout: 300`,
   `restartPolicyType: ON_FAILURE`, `restartPolicyMaxRetries: 5`.
+- `railway.worker.json` — `startCommand: npm run worker`,
+  `restartPolicyType: ALWAYS`. **No** `healthcheckPath` (it serves no HTTP) and
+  **no** `preDeployCommand`: migrations belong to `app` alone, or two services
+  race for the same migration.
 - `railway.renderer.json` — `healthcheckPath: /health`, same timeout/restart
   policy, **no** migrations / pre-deploy command.
+
+### worker
+
+Runs the collection pipeline: claims due steps from `dp_workflow_steps` and
+executes them. Before step 12 this work advanced through a chain of
+`setTimeout` inside the web process, so a deploy during collection threw away
+work that had already been paid for.
+
+It scales horizontally without extra configuration — steps are claimed with
+`FOR UPDATE SKIP LOCKED` under a lease, so two instances never take the same
+step. It needs **the same variables as `app`**, because it does the work the
+web process used to do: `DATABASE_URL`, provider keys, `OPENAI_API_KEY`,
+`RENDERER_URL`, `DIGITAL_PROFILE_STORAGE_*`.
+
+Loop tuning: `WORKFLOW_WORKER_IDLE_MS` (pause when idle, default 1000),
+`WORKFLOW_WORKER_LEASE_MS` (step lease, default 120000).
+
+> **Blocking prerequisite — shared storage.** Run artifacts (manifests,
+> checkpoints, and the built PPTX/PDF) are written to disk, and the download
+> route serves them with a plain file read. A Railway Volume mounts to exactly
+> **one** service, so a `worker` on its own service writes the report to a disk
+> `app` cannot read: the run finishes, the money is spent, and there is nothing
+> to download.
+>
+> The worker probes this at startup and says so plainly instead of letting it
+> surface at the end of the first paid run.
+>
+> Until artifacts move to shared storage, deploy the worker **in the same
+> service as `app`** (see below). Resolution options, cheapest first:
+> 1. store artifact bytes in Postgres (`bytea`) — no new infrastructure, and
+>    the JSON artifacts are small; decks are a few MB each;
+> 2. object storage (S3-compatible) for decks, keys in the DB — the usual
+>    answer, and the one to pick if artifacts are ever served at scale;
+> 3. give the Volume to `worker` and have it serve downloads over the private
+>    network — makes the worker an HTTP service, so it is the least attractive.
+
+#### Single-service variant (until artifacts are shared)
+
+Do not create a separate `worker` service. Set `WORKFLOW_WORKER_INLINE=true`
+on `app` instead: the step worker then runs alongside the web process, on the
+same Volume.
+
+This keeps the part that matters — the schedule lives in `nextRunAt` in the
+database, so a restart no longer loses paid work — and gives up the part that
+needs shared storage. The remaining cost is the one the split was meant to
+remove: collection competes with request serving. A second `app` instance is
+still safe (steps are leased), but both would hold the Volume, which Railway
+does not allow, so stay at one replica until artifacts are shared.
 
 Both listen on Railway's injected `PORT`:
 - app: `next start` respects `PORT` (binds `0.0.0.0`).
@@ -59,6 +112,10 @@ Both listen on Railway's injected `PORT`:
 4. **renderer:** New → GitHub repo → the **same** repo. Settings → Custom Config
    Path = `/railway.renderer.json`. **Do not** add a Volume. **Do not** generate
    a public domain (keep the private domain only).
+5. **worker:** only once artifacts are on shared storage (see the prerequisite
+   above). New → GitHub repo → the **same** repo. Settings → Custom Config Path
+   = `/railway.worker.json`. **Do not** generate a public domain. Copy every
+   variable from `app`.
 
 ## Variables (names only — never commit values)
 

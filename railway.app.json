@@ -14,5 +14,10 @@
   "_digitalProfileAiEnvReminder": [
     "Set on Railway (do not commit secrets): DIGITAL_PROFILE_AI_ANALYST_ENABLED, OPENAI_API_KEY, DIGITAL_PROFILE_AI_ANALYST_MODEL, ORION_GPT_REPORT_COPY, ORION_GPT_CONCURRENCY, ORION_GPT_STAGE_DEADLINE_MS, DIGITAL_PROFILE_REQUIRE_AI_REPORT (optional).",
     "See .env.production.example and docs/digital-profile/DEPLOYMENT.md § AI report layer."
+  ],
+  "_workflowWorkerReminder": [
+    "Прогоны двигает воркер шагов (шаг 12). Пока артефакты лежат на томе, отдельный сервис их отдать не сможет — том Railway монтируется к одному сервису.",
+    "До переноса артефактов в общее хранилище ставьте WORKFLOW_WORKER_INLINE=true здесь, а сервис из railway.worker.json не создавайте.",
+    "См. docs/digital-profile/RAILWAY_DEPLOYMENT.md § worker."
   ]
 }

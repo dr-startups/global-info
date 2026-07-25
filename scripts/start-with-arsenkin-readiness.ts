@@ -46,6 +46,36 @@ async function main() {
     shell: process.platform === "win32",
   });
 
+  // Пока артефакты прогона лежат на диске, отдельный сервис-воркер не может
+  // отдать собранный отчёт: том Railway монтируется к одному сервису
+  // (docs/digital-profile/RAILWAY_DEPLOYMENT.md § worker). До переноса
+  // артефактов в общее хранилище воркер поднимается здесь же, рядом с
+  // веб-процессом — расписание при этом всё равно живёт в БД, поэтому деплой
+  // посреди сбора работу больше не теряет.
+  if (String(process.env.WORKFLOW_WORKER_INLINE ?? "").toLowerCase() === "true") {
+    console.error("[worker] встроенный режим: шаги исполняются в процессе приложения");
+    void (async () => {
+      const { runStepWorker } = await import("../src/modules/digital-profile/workflow/step-runner");
+      const { reconcileStageAfterStep, unifiedStepHandlers } = await import(
+        "../src/modules/digital-profile/workflow/unified-step-handlers"
+      );
+      await runStepWorker({
+        handlers: unifiedStepHandlers(),
+        idleDelayMs: Number(process.env.WORKFLOW_WORKER_IDLE_MS ?? 1_000),
+        leaseMs: Number(process.env.WORKFLOW_WORKER_LEASE_MS ?? 120_000),
+        onStepSettled: reconcileStageAfterStep,
+        onError: (err, step) => {
+          const where = step ? `${step.jobId}/${step.name}` : "цикл";
+          console.error(`[worker] сбой в ${where}:`, err);
+        },
+      });
+    })().catch((err) => {
+      // Веб-процесс продолжает работать: без воркера прогоны стоят, но
+      // приложение остаётся доступным, и это видно в статусе.
+      console.error("[worker] встроенный воркер остановлен:", err);
+    });
+  }
+
   // Auto-resume FAILED_RETRYABLE / WAITING_PROVIDER Full jobs after deploy.
   // Runs in this Node process (outside Next instrumentation webpack graph).
   setTimeout(() => {

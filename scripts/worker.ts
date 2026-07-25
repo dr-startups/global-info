@@ -13,7 +13,12 @@
  * Run: npm run worker
  */
 
+import { join } from "node:path";
 import { runStepWorker } from "../src/modules/digital-profile/workflow/step-runner";
+import {
+  NOT_SHARED_MESSAGE,
+  probeSharedStorage,
+} from "../src/modules/digital-profile/workflow/shared-storage-probe";
 import {
   reconcileStageAfterStep,
   unifiedStepHandlers,
@@ -37,6 +42,19 @@ async function main(): Promise<void> {
   console.log(
     `[worker] запущен (pid ${process.pid}, пауза ${IDLE_MS} мс, лиза ${LEASE_MS} мс)`
   );
+  console.log(`[worker] хранилище: ${join(process.cwd(), "storage", "digital-profile")}`);
+
+  // Артефакты пишет воркер, а отдаёт приложение. Если диск не общий, это
+  // выяснилось бы в конце первого платного прогона.
+  const storage = await probeSharedStorage();
+  if (storage.kind === "not_shared") {
+    console.error(NOT_SHARED_MESSAGE);
+    console.error(`[worker] проверено путей: ${storage.checked}, не найдено ни одного`);
+  } else if (storage.kind === "ok") {
+    console.log(`[worker] хранилище общее с приложением (проверено путей: ${storage.checked})`);
+  } else {
+    console.log(`[worker] проверка общего хранилища пропущена: ${storage.reason}`);
+  }
 
   await runStepWorker({
     handlers: unifiedStepHandlers(),
