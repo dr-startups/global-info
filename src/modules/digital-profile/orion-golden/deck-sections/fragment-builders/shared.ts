@@ -244,6 +244,13 @@ export function withContinuations(base: SlideContentContract, templateId: DeckTe
           narrative: narrativeChunks[i] || undefined,
           whatWasFound: undefined,
           whyItMatters: undefined,
+          // Заголовочные числа блока принадлежат его первой странице. Повторяясь
+          // на каждом продолжении, они занимали треть листа и не сообщали ничего
+          // нового: «312 / 5 / 6 / 31» пять страниц подряд (шаг 13, D4).
+          kpis: undefined,
+          // Рекомендация тоже одна на блок — на продолжении она вырождалась
+          // в обрубок «Проверить» (шаг 13, D3).
+          whatToCheck: undefined,
         },
       });
     }

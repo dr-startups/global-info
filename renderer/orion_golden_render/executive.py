@@ -35,6 +35,7 @@ from .common import (
     _clip_structured_bullet,
     _clip_words,
     _safe,
+    _fit_lines_to_height,
     _split_structured_bullet,
     measure_text_height,
 )
@@ -172,6 +173,13 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
                 detail_lines = without_ex
                 # Prefer full body without examples; restore only if height allows later.
                 detail = "\n".join(detail_lines)
+        # Мерить надо ровно то, что будет нарисовано. При отрисовке текст
+        # прогоняется через _split_structured_bullet, и тот может раздробить
+        # его сильнее, чем было при замере: строк становится больше, высота —
+        # выше, и текст вылезал за карточку, перекрываясь следующей
+        # (шаг 13, D1). Повторное дробление уже разбитого текста идемпотентно.
+        if detail:
+            detail = "\n".join(_split_structured_bullet(detail) or [detail])
         # Prefer complete source text; only sentence-fit if height is tight.
         marker = _safe(finding.get("manualReview") or "")
         # Embed "requires review" into status instead of a cramped footer.
@@ -245,6 +253,12 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         text_y = y + pad_y + headline_h + 30_000
         if detail:
             rem = max(120_000, y + h - text_y - pad_y)
+            # Страховка на случай остаточной погрешности замера: короб текста
+            # не может быть выше карточки, поэтому лишние строки отбрасываются
+            # целиком, а не обрезаются посередине.
+            detail = _fit_lines_to_height(detail, text_w, detail_font, rem)
+            if not detail:
+                continue
             box = ctx.slide.shapes.add_textbox(Emu(left), Emu(text_y), Emu(text_w), Emu(rem))
             tf = box.text_frame
             tf.word_wrap = True

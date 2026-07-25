@@ -133,7 +133,7 @@ def _count_measured_lines(
     font_size_pt: float,
 ) -> tuple[int, bool]:
     """Return (line_count, measurement_uncertain)."""
-    raw = _safe(text)
+    raw = _safe_preserve_breaks(text)
     if not raw:
         return 1, False
     width_px = max(40, int(width_emu / EMU_PER_INCH * 96 * 0.90))
@@ -229,7 +229,11 @@ def measure_text_height(
     paragraph_spacing_pt: float = 6.0,
 ) -> int:
     """Measure wrapped text height in EMU using real font metrics when available."""
-    raw = _safe(text)
+    # Переводы строк обязаны дожить до замера. `_safe` схлопывает любые пробелы,
+    # включая `\n`, поэтому многострочная карточка мерилась как один абзац:
+    # строки «упаковывались» плотнее, чем рисуются, высота выходила заниженной,
+    # и текст вылезал за карточку, перекрываясь следующей (шаг 13, D1).
+    raw = _safe_preserve_breaks(text)
     if not raw:
         return int(font_size_pt * EMU_PER_PT * line_spacing)
     # Slightly narrower than box so PPTX wrap is not underestimated.
@@ -351,6 +355,25 @@ def _safe(text: object) -> str:
     val = re.sub(r"\bLEXISNEXIS_SIGNAL\b", "сигнал LexisNexis", val, flags=re.I)
     val = re.sub(r"\bPotential match\b", "Потенциальное совпадение", val, flags=re.I)
     return val.strip()
+
+
+def _fit_lines_to_height(text: str, width_emu: int, size_pt: float, budget_emu: int) -> str:
+    """Оставляет столько целых строк, сколько помещается по высоте.
+
+    Строка отбрасывается целиком: обрезка посередине даёт обрубок, который
+    читается как сбой. Если не помещается даже первая, она остаётся — пустая
+    карточка хуже плотной.
+    """
+    lines = [ln for ln in str(text or "").split("\n") if ln.strip()]
+    if not lines:
+        return ""
+    kept: list[str] = []
+    for ln in lines:
+        trial = "\n".join(kept + [ln])
+        if measure_text_height(trial, width_emu, size_pt, line_spacing=1.2) > budget_emu and kept:
+            break
+        kept.append(ln)
+    return _close_dangling_lead_in("\n".join(kept))
 
 
 def _close_dangling_lead_in(text: str) -> str:
@@ -858,8 +881,15 @@ class _Ctx:
         tone: str = "neutral",
         title_size: int = 10,
         body_size: int = 11,
+        skip_if_stub: bool = False,
     ) -> int:
-        """Draw a content-sized card; clip text to fit; return actual bottom Y."""
+        """Draw a content-sized card; clip text to fit; return actual bottom Y.
+
+        `skip_if_stub`: не рисовать карточку, если от текста осталась только
+        обрубленная часть. Карточка «Действие» со словом «Проверить» вместо
+        рекомендации занимает полосу во всю ширину и не сообщает ничего —
+        отсутствие карточки честнее (шаг 13, D3).
+        """
         fill = {
             "accent": ACCENT_SOFT,
             "warn": WARN_BG,
@@ -920,6 +950,12 @@ class _Ctx:
                     body_s = _fit_text_to_height(body_s, inner_w, body_size, body_budget)
                 # Строки могли быть отброшены — снять обещание, если продолжения нет.
                 body_s = _close_dangling_lead_in(body_s)
+                if skip_if_stub:
+                    original = _safe(text)
+                    fitted = _safe(body_s)
+                    # Обрубок: от текста осталась малая часть и меньше строки.
+                    if len(fitted) < min(60, int(len(original) * 0.5)):
+                        return y
                 body_h = measure_text_height(body_s, inner_w, body_size, line_spacing=1.2) if body_s else 0
         else:
             body_h = full_body_h

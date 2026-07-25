@@ -293,9 +293,10 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                     y=y,
                     width=CONTENT_W,
                     min_h=260_000,
-                    max_h=800_000,
+                    max_h=1_000_000,
                     tone="warn",
                     title_size=11,
+                    skip_if_stub=True,
                     body_size=11,
                 )
                 y += 60_000
@@ -331,9 +332,10 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 y=y,
                 width=CONTENT_W,
                 min_h=220_000,
-                max_h=700_000,
+                max_h=1_000_000,
                 tone="warn",
                 title_size=11,
+                skip_if_stub=True,
                 body_size=11,
             )
             y += 50_000
@@ -345,9 +347,12 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 y=y,
                 width=CONTENT_W,
                 min_h=200_000,
-                max_h=520_000,
+                # 520 000 EMU оставляли под текст меньше строки, и рекомендация
+                # вырождалась в одно слово (шаг 13, D3).
+                max_h=1_000_000,
                 tone="warn",
                 title_size=11,
+                skip_if_stub=True,
                 body_size=10.5,
             )
             y += 50_000
