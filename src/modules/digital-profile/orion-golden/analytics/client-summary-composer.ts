@@ -12,6 +12,7 @@ import {
   type ComposedThemeSection,
 } from "../contracts/composed-client-summary";
 import { INTERNAL_CLIENT_TOKEN_RE } from "./client-summary-pack-builder";
+import { looksLikeSearchQuery } from "./client-quote-hygiene";
 
 /** Lead block keeps this many theme sections; the rest remain full text as continuation. */
 const LEAD_THEME_COUNT = 3;
@@ -132,6 +133,14 @@ function articleSentence(
   // Prefer concrete description when it already names title/domain.
   if (description.includes(title) || description.includes(domain)) {
     return finishSentence(description);
+  }
+  // Строка автодополнения — не публикация: у неё нет ни автора, ни адреса, и
+  // называть её «материалом» значит выдавать запрос пользователя за источник
+  // (шаг 13, C2). Называем тем, что она есть.
+  if (looksLikeSearchQuery(title)) {
+    return finishSentence(
+      `Среди поисковых подсказок встречается запрос «${title}». ${description}`
+    );
   }
   return finishSentence(
     `В выборке присутствует материал «${title}»${sourceSuffix(domain)}. ${description}`

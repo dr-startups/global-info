@@ -17,6 +17,10 @@ import {
 } from "../contracts/client-summary-pack";
 import type { RepresentativeEvidenceSelection } from "../contracts/representative-evidence";
 import { themeLabelRu } from "./canonical-themes";
+import {
+  isQuotableEvidence,
+  stripPromotionalTail,
+} from "./client-quote-hygiene";
 import type { VerifiedFact } from "../gpt/fact-extraction";
 
 const LEVEL_RANK: Record<MaterialityLevel, number> = {
@@ -235,9 +239,16 @@ function articleFromSelection(
   // Never borrow sourceDomains[0]: it belongs to some other material of the
   // same claim, and a misattributed source discredits the evidence (step 05.3).
   const cleanDomain = (domain || claim.originalDomain || "").trim();
+  // Рекламная обвязка площадки и голые адреса — не содержание материала
+  // (шаг 13, C4). Если после чистки цитировать нечего, описание строится по
+  // заголовку, а не публикует обрывок призыва подписаться.
+  const cleanExcerpt = isQuotableEvidence(excerpt) ? stripPromotionalTail(excerpt) : "";
+  const cleanClaimExcerpt = isQuotableEvidence(claim.displayExcerpt)
+    ? stripPromotionalTail(claim.displayExcerpt)
+    : "";
   const description = stripInternalLeak(
-    excerpt ||
-      claim.displayExcerpt ||
+    cleanExcerpt ||
+      cleanClaimExcerpt ||
       (cleanTitle
         ? cleanDomain
           ? `«${cleanTitle}» — источник ${cleanDomain}.`

@@ -12,6 +12,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { publicDomainOf } from "./public-domain";
 import type { RawInventoryItem } from "../types";
 import {
   mapEngineBucket,
@@ -115,13 +116,7 @@ export function normalizeUrlForIdentity(url: string | undefined): string {
     .replace(/\/+$/, "");
 }
 
-export function domainOf(url: string | undefined): string {
-  // Pseudo-URLs (e.g. provider-internal schemes) are not client-facing domains.
-  if (!url || !/^https?:\/\//iu.test(url.trim())) return "";
-  const n = normalizeUrlForIdentity(url);
-  const host = n.split("/")[0] ?? "";
-  return host.includes(".") ? host : "";
-}
+export const domainOf = publicDomainOf;
 
 /** Normalized identity: query|engine|region|surface|url-or-title-hash. */
 export function compositeObservationKey(item: RawInventoryItem): string {

@@ -23,6 +23,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { publicDomainOf } from "./public-domain";
 import type { RawInventoryItem } from "../types";
 import {
   SUBJECT_RESOLUTION_SCHEMA_VERSION,
@@ -106,14 +107,8 @@ function isSuggestionOrPaaSurface(surface: string): boolean {
   return /suggest|paa|people_also|related/.test(surface);
 }
 
-function domainOfUrl(url: string | undefined | null): string {
-  if (!url) return "";
-  try {
-    return new URL(url).hostname.replace(/^www\./i, "").toLowerCase();
-  } catch {
-    return "";
-  }
-}
+/** Домен публикации; служебные схемы доменом не считаются (шаг 13, C2). */
+const domainOfUrl = publicDomainOf;
 
 /** Display-name or first+last phrase present in text (upgrade path for soft surfaces). */
 function hasFullNamePhrase(text: string, subject: SubjectIdentity): boolean {

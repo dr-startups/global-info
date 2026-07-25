@@ -353,6 +353,29 @@ def _safe(text: object) -> str:
     return val.strip()
 
 
+def _close_dangling_lead_in(text: str) -> str:
+    """Двоеточие обещает продолжение — если его нет, обещание надо снять.
+
+    Строка вида «…установлено: … В выборке присутствует материал «X» (Y):»
+    получает двоеточие как ввод к списку цитат, которые идут следующими
+    строками. Карточка с ограниченной высотой эти строки отбрасывает — и на
+    главном слайде клиента оставалось предложение, обрывающееся двоеточием
+    (шаг 13, C1).
+
+    Короткий чистый ввод («Найдены публикации:») без продолжения выбрасывается
+    целиком: он не несёт содержания. Длинная строка сохраняется, но
+    заканчивается точкой — мысль в ней уже высказана.
+    """
+    val = (text or "").rstrip()
+    if not val.endswith(":"):
+        return text
+    lines = val.split("\n")
+    last = lines[-1].strip()
+    if len(lines) > 1 and len(last) <= 80:
+        return "\n".join(lines[:-1]).rstrip()
+    return val[:-1].rstrip(" ,;—-") + "."
+
+
 def _safe_preserve_breaks(text: object) -> str:
     """Like _safe, but keeps intentional newlines for structured theme cards."""
     raw = str(text or "").replace("\r\n", "\n")
@@ -574,7 +597,7 @@ def _clip_structured_bullet(text: str, max_chars: int) -> str:
             kept.append(ln[: punct + 1].strip())
         break
     # Never fall back to a mid-word / mid-phrase slice of the first line.
-    return "\n".join(kept)
+    return _close_dangling_lead_in("\n".join(kept))
 
 
 def _bullet_line_style(line: str, *, is_first: bool) -> tuple[bool, RGBColor, float]:
@@ -895,6 +918,8 @@ class _Ctx:
                     body_s = "\n".join(kept_lines) if kept_lines else body_s.split("\n")[0]
                 else:
                     body_s = _fit_text_to_height(body_s, inner_w, body_size, body_budget)
+                # Строки могли быть отброшены — снять обещание, если продолжения нет.
+                body_s = _close_dangling_lead_in(body_s)
                 body_h = measure_text_height(body_s, inner_w, body_size, line_spacing=1.2) if body_s else 0
         else:
             body_h = full_body_h

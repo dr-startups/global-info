@@ -4,6 +4,7 @@
 
 import { createHash } from "node:crypto";
 import { toDisplayDate } from "../../providers/published-date";
+import { publicDomainOf } from "./public-domain";
 import type { RawInventoryItem } from "../types";
 import type { Finding } from "../contracts/finding";
 import type { ObservationDispositionLedger } from "../contracts/observation-disposition";
@@ -49,14 +50,8 @@ export type CanonicalClaimBuildInput = {
   dispositionLedger: ObservationDispositionLedger;
 };
 
-function domainOfUrl(url: string | undefined): string {
-  if (!url) return "";
-  try {
-    return new URL(url).hostname.replace(/^www\./iu, "").toLowerCase();
-  } catch {
-    return "";
-  }
-}
+/** Домен публикации; служебные схемы доменом не считаются (шаг 13, C2). */
+const domainOfUrl = publicDomainOf;
 
 function refOf(item: RawInventoryItem): string {
   return `inventory:${item.inventoryId}`;
