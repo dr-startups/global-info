@@ -8,6 +8,7 @@
 
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { runFactExtraction, type GptJsonCaller as FactGptCaller } from "../gpt/run-fact-extraction";
 import { join } from "node:path";
 import type { RawInventoryItem } from "../types";
 import type { ArsenkinReportBindingV2 } from "../classic/arsenkin-report-binding";
@@ -110,6 +111,8 @@ export type AnalyticsPipelineInput = {
   coverageRows: CoverageCellStatusRow[];
   subjectProfile: Parameters<typeof subjectIdentityFromProfile>[0];
   artifactsDir: string;
+  /** Injected in tests/offline smokes; production resolves its own caller. */
+  factExtractionCaller?: FactGptCaller;
   missingSources?: string[];
   /** reportRunIds referenced by persisted provider tasks (diagnostics). */
   providerTaskRunIds?: string[];
@@ -633,6 +636,19 @@ export async function runOrionAnalyticsPipeline(
   });
   assertRepresentativeGatesPass(representative.selection);
 
+  // Stage 3b — verified facts per theme (05.2c2). Fail-open: a theme whose
+  // extraction fails keeps its deterministic text.
+  const factExtraction = await runFactExtraction({
+    caseId: input.caseId,
+    datasetId,
+    subjectName: subject.displayName || input.caseId,
+    claimsBundle: canonicalClaims,
+    representative: representative.selection,
+    itemsByRef: new Map(input.items.map((i) => [`inventory:${i.inventoryId}`, i])),
+    ...(input.factExtractionCaller ? { caller: input.factExtractionCaller, enabled: true } : {}),
+  });
+  emit("extracted-facts.json", factExtraction);
+
   // Stage 4 — ClientSummaryPack (typed summary input; not wired to renderer).
   const regions = [
     ...new Set(input.items.map((i) => String(i.region || "").toUpperCase()).filter(Boolean)),
@@ -644,6 +660,7 @@ export async function runOrionAnalyticsPipeline(
     sourceHashes,
     claimsBundle: canonicalClaims,
     representative: representative.selection,
+    factsByTheme: factExtraction.factsByTheme,
     scope: {
       regions: regions.length > 0 ? regions : ["RU", "UAE"],
       coverageLimitations: executiveSummaryInput.dataGaps?.map((g) => g.detail) ?? [],

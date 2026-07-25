@@ -17,6 +17,7 @@ import {
 } from "../contracts/client-summary-pack";
 import type { RepresentativeEvidenceSelection } from "../contracts/representative-evidence";
 import { themeLabelRu } from "./canonical-themes";
+import type { VerifiedFact } from "../gpt/fact-extraction";
 
 const LEVEL_RANK: Record<MaterialityLevel, number> = {
   CRITICAL: 5,
@@ -40,6 +41,8 @@ export type ClientSummaryPackBuildInput = {
   sourceHashes: string[];
   claimsBundle: CanonicalClaimsBundle;
   representative: RepresentativeEvidenceSelection;
+  /** Verified facts per theme (05.2c2); absent when extraction is off. */
+  factsByTheme?: Record<string, VerifiedFact[]>;
   scope?: {
     regions?: string[];
     sourceClasses?: string[];
@@ -209,10 +212,23 @@ function articleFromSelection(
   };
 }
 
+/**
+ * Sentence for one verified fact: the statement, its verbatim quote and the
+ * attribution resolved from our own records. Replaces the old
+ * "Найдены публикации, в том числе «заголовок»" template, which named sources
+ * without ever saying what they reported.
+ */
+function factSentence(fact: VerifiedFact): string {
+  const source = [fact.sourceDomain, fact.publishedAt].filter(Boolean).join(", ");
+  const attribution = source ? ` (${source})` : "";
+  return stripInternalLeak(`${fact.statement} Цитата: «${fact.quote}»${attribution}.`);
+}
+
 function buildThemeBlock(
   themeId: CanonicalThemeId,
   selection: RepresentativeEvidenceSelection,
-  byClaim: Map<string, CanonicalClaim>
+  byClaim: Map<string, CanonicalClaim>,
+  facts: VerifiedFact[] = []
 ): ClientMaterialTheme | null {
   const selected = selection.selectedByTheme[themeId] ?? [];
   if (selected.length === 0) return null;
@@ -259,9 +275,17 @@ function buildThemeBlock(
   }
 
   const clientTitle = themeLabelRu(themeId);
+  // Verified facts say what the materials report; the title-based sentences
+  // only say which materials exist. Prefer the former when we have them.
+  if (facts.length > 0) {
+    concreteClaims.length = 0;
+    concreteClaims.push(...facts.map(factSentence));
+  }
   const lead = articles[0]!;
   const conclusion = stripInternalLeak(
-    `По теме «${clientTitle}» найдены конкретные материалы, в том числе «${lead.title}»${sourceSuffix(lead.domain)}.`
+    facts.length > 0
+      ? `По теме «${clientTitle}» установлено: ${facts[0]!.statement}`
+      : `По теме «${clientTitle}» найдены конкретные материалы, в том числе «${lead.title}»${sourceSuffix(lead.domain)}.`
   );
 
   return {
@@ -405,7 +429,12 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
 
   for (const themeId of [...input.representative.materialThemeIds].sort()) {
     if (themeId === "identity_mismatch") continue;
-    const block = buildThemeBlock(themeId, input.representative, byClaim);
+    const block = buildThemeBlock(
+      themeId,
+      input.representative,
+      byClaim,
+      input.factsByTheme?.[themeId] ?? []
+    );
     if (block) materialThemes.push(block);
   }
 
