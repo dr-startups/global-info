@@ -462,6 +462,9 @@ function buildOverallAssessment(
 
 export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): ClientSummaryPack {
   const byClaim = claimsById(input.claimsBundle);
+  // Themes dropped for want of an own verified fact — excluded on purpose,
+  // so the coverage gate must not read them as unexplained disappearances.
+  const prunedThemeIds = new Set<string>();
   const materialThemes: ClientMaterialTheme[] = [];
 
   // CRITICAL/HIGH themes from representative selection must appear.
@@ -484,6 +487,7 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
     const hasOwnFact = themeFacts.some((f) => f.themeId === themeId);
     const processedWithoutFacts =
       (input.factsProcessedThemes?.includes(themeId) ?? false) && !hasOwnFact;
+    if (processedWithoutFacts) prunedThemeIds.add(themeId);
     const block = buildThemeBlock(
       themeId,
       input.representative,
@@ -497,6 +501,11 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
   // Count missing CRITICAL/HIGH themes (gate).
   let missing = 0;
   for (const themeId of requiredHigh) {
+    // Pruned by 06.3: the theme had no verified fact of its own. That is an
+    // accounted-for exclusion, not a missing theme; counting it here turned a
+    // cosmetic defect into CLIENT_SUMMARY_PACK_VALID=false and killed the whole
+    // report.
+    if (prunedThemeIds.has(themeId)) continue;
     const ceiling = (input.representative.selectedByTheme[themeId] ?? []).reduce(
       (acc, s) => (LEVEL_RANK[s.materialityLevel] > LEVEL_RANK[acc] ? s.materialityLevel : acc),
       "CONTEXT_ONLY" as MaterialityLevel

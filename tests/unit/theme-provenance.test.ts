@@ -183,6 +183,19 @@ describe("происхождение темы", () => {
     expect(withoutExtraction.materialThemes.length).toBeGreaterThan(0);
   });
 
+  it("отсев темы не роняет гейт валидности пака", () => {
+    // Регрессия: гейт считал отсеянную CRITICAL/HIGH тему «пропавшей»,
+    // CLIENT_SUMMARY_PACK_VALID становился false, и отчёт не собирался вовсе —
+    // хуже исходного дефекта. Отсев осознан и должен учитываться как таковой.
+    const { representative } = chain();
+    const themeIds = Object.keys(representative.selectedByTheme);
+    const built = pack({ factsByTheme: {}, factsProcessedThemes: themeIds });
+
+    expect(built.materialThemes).toEqual([]);
+    expect(built.gates.CLIENT_SUMMARY_PACK_VALID).toBe(true);
+    expect(built.gates.MATERIAL_THEMES_MISSING).toBe(0);
+  });
+
   it("не убирает тему, для которой извлечение не запускалось", () => {
     const { representative } = chain();
     const themeIds = Object.keys(representative.selectedByTheme);
