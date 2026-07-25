@@ -546,7 +546,10 @@ export async function startUnifiedOrionCollection(input: {
         warnings: ensureOfflineEnrichmentJobWarning(job.warnings ?? []),
       }) ?? job;
   }
+  // Шаг 12: расписание работы кладётся в БД, а не в таймер этого процесса.
+  // Дальше прогон двигает воркер, поэтому деплой посреди сбора его не теряет.
   if (input.deps?.autoSchedule !== false) {
+    await enqueueUnifiedPipeline(started);
     scheduleUnifiedTick(input.caseId, input.deps);
   }
   return {
@@ -558,8 +561,31 @@ export async function startUnifiedOrionCollection(input: {
   };
 }
 
+/**
+ * Заводит конвейер шагов для прогона. Идемпотентно и не фатально: если таблица
+ * шагов недоступна, прогон всё равно стартует — в переходный период его ещё
+ * двигает внутрипроцессный планировщик.
+ */
+async function enqueueUnifiedPipeline(job: UnifiedCollectionJob): Promise<void> {
+  try {
+    const { ensurePipelineSteps } = await import("../workflow/step-store");
+    await ensurePipelineSteps({ caseId: job.caseId, jobId: job.unifiedJobId });
+  } catch (err) {
+    console.error("[unified] не удалось завести конвейер шагов", err);
+  }
+}
+
 const ticking = new Set<string>();
 
+/**
+ * Выполняет один тик немедленно, чтобы ответ на запуск не выглядел пустым.
+ *
+ * Продвижением дальше владеет воркер (шаг 12): расписание лежит в
+ * `dp_workflow_steps.nextRunAt`, а не в таймере этого процесса. Здесь раньше
+ * стояла цепочка `setTimeout`, из-за которой обычный деплой посреди сбора
+ * бросал оплаченную работу — джоба оставалась в WAITING навсегда, потому что
+ * будильник умирал вместе с процессом.
+ */
 export function scheduleUnifiedTick(caseId: string, deps: UnifiedOrchestratorDeps = {}): void {
   if (ticking.has(caseId)) return;
   ticking.add(caseId);
@@ -569,24 +595,8 @@ export function scheduleUnifiedTick(caseId: string, deps: UnifiedOrchestratorDep
         // Never silent — persist pollAttempt/nextPollAt/error so lease churn stops.
         await persistUnifiedTickFailure(caseId, err, { now: deps.now?.() });
       })
-      .finally(async () => {
+      .finally(() => {
         ticking.delete(caseId);
-        const job = await loadUnifiedCollectionJob(caseId);
-        const keepPolling =
-          job &&
-          job.stage !== "REPORT_READY" &&
-          job.stage !== "COMPLETED_PARTIAL" &&
-          job.stage !== "FAILED_TERMINAL" &&
-          job.stage !== "FAILED_RETRYABLE" &&
-          job.stage !== "CANCELLED" &&
-          (job.status === "RUNNING" ||
-            (job.status === "WAITING" &&
-              job.stage === "ARSENKIN_ENRICHMENT" &&
-              job.resumeCheckpoint === "ARSENKIN_RESULT_INGEST"));
-        if (keepPolling && job) {
-          const delayMs = computeUnifiedPollDelayMs(job, deps.now?.().getTime() ?? Date.now());
-          setTimeout(() => scheduleUnifiedTick(caseId, deps), delayMs);
-        }
       });
   });
 }

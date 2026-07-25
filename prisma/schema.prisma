@@ -228,6 +228,7 @@ model Case {
   serpSyntheticAssets SerpSyntheticAsset[]
   providerTasks      ProviderTask[]
   unifiedCollectionJobs UnifiedCollectionJobRecord[]
+  workflowSteps      WorkflowStep[]
 
   @@index([status])
   @@index([deletedAt])
@@ -627,6 +628,46 @@ model UnifiedCollectionJobRecord {
   @@index([status, stage])
   @@index([leaseUntil])
   @@map("dp_unified_collection_jobs")
+}
+
+/// Единица долговечной работы (шаг 12). Строка этой таблицы — и запись о
+/// прогрессе, и элемент очереди: воркер забирает готовые к исполнению шаги
+/// через FOR UPDATE SKIP LOCKED. Отдельного брокера нет намеренно — источник
+/// правды один, поэтому второй правды о том, что делать дальше, не возникает.
+model WorkflowStep {
+  id            String    @id @default(cuid())
+  caseId        String
+  /// unifiedJobId прогона, которому принадлежит шаг
+  jobId         String
+  /// Имя шага из реестра конвейера (BASE_COLLECTION, ARSENKIN_ENRICHMENT, …)
+  name          String
+  /// Порядок в конвейере — для вывода стадии джобы и выбора следующего шага
+  position      Int
+  /// PENDING | RUNNING | WAITING | DONE | FAILED | SKIPPED
+  state         String    @default("PENDING")
+  attempts      Int       @default(0)
+  maxAttempts   Int       @default(40)
+  /// Когда шаг снова готов к исполнению; null — не запланирован
+  nextRunAt     DateTime?
+  leaseOwner    String?
+  leaseUntil    DateTime?
+  /// Ключ идемпотентности платного эффекта
+  inputHash     String?
+  /// Указатель на артефакт результата
+  outputRef     String?
+  lastError     String?
+  lastErrorCode String?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, name])
+  @@index([state, nextRunAt])
+  @@index([caseId, position])
+  @@map("dp_workflow_steps")
 }
 
 // ----------------------------------------------------------------------------
