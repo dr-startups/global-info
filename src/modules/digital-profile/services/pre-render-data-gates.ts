@@ -25,6 +25,8 @@ export function assertPreRenderDataGates(input: {
   merge: CompositeMergeResult | null;
   enrichmentState: ArsenkinEnrichmentState | null;
   realCollectionSufficient: boolean;
+  /** Провайдеры, подменённые демо-данными, — для внятного сообщения. */
+  mockProviders?: string[];
   allowMockReport?: boolean;
 }): PreRenderDataGateResult {
   const errors: string[] = [];
@@ -93,7 +95,13 @@ export function assertPreRenderDataGates(input: {
   }
 
   if (!input.allowMockReport && !input.realCollectionSufficient) {
-    errors.push("real collection insufficient (mock/fallback cannot unlock REPORT_READY)");
+    // Причина называется явно: «mock/fallback» вводило в заблуждение, когда
+    // никакой подмены не было — например, провайдер просто отказал (шаг 13, B2).
+    errors.push(
+      input.mockProviders?.length
+        ? `demo data cannot be presented as a real collection (${input.mockProviders.join(", ")})`
+        : "no required search provider completed a real collection"
+    );
   }
 
   return {

@@ -23,24 +23,69 @@ export function mapFullAuditToActualProviders(audit: FullAuditResultDTO): Actual
   }));
 }
 
-/** Required collection providers must complete as real for REPORT_READY honesty. */
-export function isRealCollectionSufficient(providers: ActualProviderRecord[]): boolean {
-  const required = ["yandex", "google", "orion_profile"];
-  for (const id of required) {
+const REQUIRED_COLLECTION_PROVIDERS = ["yandex", "google", "orion_profile"] as const;
+
+export type RealCollectionAssessment = {
+  /**
+   * Можно ли показывать результат как настоящий сбор. Ложь здесь — вопрос
+   * честности: демо-данные не имеют права выглядеть как реальные.
+   */
+  sufficient: boolean;
+  /** Все ли обязательные провайдеры отработали. */
+  complete: boolean;
+  /** Провайдеры, упавшие при живом вызове. */
+  failedProviders: string[];
+  /** Провайдеры, подменённые демо-данными или не вызванные вовсе. */
+  mockProviders: string[];
+};
+
+/**
+ * Оценка базового сбора: отдельно честность, отдельно полнота.
+ *
+ * Раньше это был один флаг, и **отказ любого провайдера обнулял весь прогон**.
+ * На живом прогоне Serper вернул «кончились кредиты» — и двадцать минут работы
+ * Яндекса, Wikipedia и пяти агентов Arsenkin вместе с уже отрендеренной декой
+ * ушли в `FAILED_TERMINAL` (шаг 13, B1).
+ *
+ * Это разные вещи. Подмена демо-данными — обман, и она запрещена. Отказ одного
+ * из нескольких живых источников — неполнота, и для неё существует
+ * `COMPLETED_PARTIAL`.
+ */
+export function assessRealCollection(providers: ActualProviderRecord[]): RealCollectionAssessment {
+  const failedProviders: string[] = [];
+  const mockProviders: string[] = [];
+
+  for (const id of REQUIRED_COLLECTION_PROVIDERS) {
     const row = providers.find((p) => p.providerId === id);
     if (!row) continue;
     if (row.status === "skipped" || row.status === "unavailable") continue;
-    if (row.status === "failed") return false;
-    if (row.runtime === "mock" || row.runtime === "none") return false;
+    if (row.status === "failed") {
+      failedProviders.push(id);
+      continue;
+    }
+    if (row.runtime === "mock" || row.runtime === "none") mockProviders.push(id);
   }
-  // At least one of yandex/google/orion_profile must have completed as real
-  const collectionOk = providers.some(
+
+  // Хотя бы один обязательный источник обязан отработать по-настоящему:
+  // без этого показывать нечего.
+  const anyReal = providers.some(
     (p) =>
-      (p.providerId === "yandex" || p.providerId === "google" || p.providerId === "orion_profile") &&
+      (REQUIRED_COLLECTION_PROVIDERS as readonly string[]).includes(p.providerId) &&
       p.status === "completed" &&
       p.runtime === "real"
   );
-  return collectionOk;
+
+  return {
+    sufficient: anyReal && mockProviders.length === 0,
+    complete: anyReal && mockProviders.length === 0 && failedProviders.length === 0,
+    failedProviders,
+    mockProviders,
+  };
+}
+
+/** Можно ли показывать сбор как настоящий (честность, не полнота). */
+export function isRealCollectionSufficient(providers: ActualProviderRecord[]): boolean {
+  return assessRealCollection(providers).sufficient;
 }
 
 export async function captureBaseCollectionManifest(input: {

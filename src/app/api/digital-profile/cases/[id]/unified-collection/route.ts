@@ -23,6 +23,10 @@ import { evaluateUnifiedReportRebuildEligibility } from "@/modules/digital-profi
 import { evaluateUnifiedGptCopyRetryEligibility } from "@/modules/digital-profile/services/unified-gpt-copy-retry";
 import { withSuggestionsGapStatus } from "@/modules/digital-profile/services/unified-suggestions-gap";
 import { getCanonicalDownloadAvailability } from "@/modules/digital-profile/services/canonical-report-artifacts";
+import {
+  fullAuditBlockReason,
+  paidRecollectionRequired,
+} from "@/modules/digital-profile/services/unified-action-policy";
 
 export const dynamic = "force-dynamic";
 
@@ -85,12 +89,17 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
   await requireCaseAccess(user, id, "VIEWER");
   const job = await getUnifiedCollectionStatus(id);
   const recovery = await withUnifiedRecoveryStatusFields(job);
-  const jobProgressing = recovery.recoveryBlockerReason === "JOB_PROGRESSING";
   const suggestionsRunId =
     (job?.enrichmentRunIds ?? []).find((rid) => /suggestions/i.test(rid)) ?? null;
   const suggestTasks = await loadSuggestTasksForGap(suggestionsRunId);
   const suggestionsGap = withSuggestionsGapStatus(job, suggestTasks);
   const preserved = unifiedJobHasPreservedStages(job);
+  const actionState = {
+    preserved,
+    recoveryAllowed: Boolean(recovery.recoveryAllowed),
+    recoveryBlockerReason: recovery.recoveryBlockerReason ?? null,
+    suggestionsMissingResult: Boolean(suggestionsGap.suggestionsMissingResult),
+  };
   const fullAuditBlocked =
     Boolean(job) &&
     (Boolean(recovery.recoveryAllowed) ||
@@ -156,23 +165,10 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
           pollAttempt: job.pollAttempt ?? 0,
           ...suggestionsGap,
           fullAuditBlocked,
-          fullAuditBlockReason: fullAuditBlocked
-            ? suggestionsGap.suggestionsMissingResult
-              ? "USE_SUGGESTIONS_TARGETED_RETRY"
-              : recovery.recoveryAllowed
-                ? "USE_RECOVERY"
-                : jobProgressing
-                  ? "JOB_ACTIVE"
-                  : preserved
-                    ? "PRESERVED_STAGES_REQUIRE_PAID_RECOLLECTION"
-                    : "JOB_ACTIVE"
-            : null,
-          // Never invite a paid re-collection while the job is still working.
-          // `recoveryAllowed` is false both when a job is stalled and when it is
-          // simply progressing (JOB_PROGRESSING), and conflating the two put a
-          // "start a new paid audit" button on a healthy run (step 11.1-bis).
-          paidRecollectionRequired:
-            preserved && !recovery.recoveryAllowed && !jobProgressing,
+          fullAuditBlockReason: fullAuditBlocked ? fullAuditBlockReason(actionState) : null,
+          // Пока прогон работает, вмешиваться не предлагают: кнопка повторного
+          // платного сбора выбрасывает уже оплаченную работу (шаг 13, B4).
+          paidRecollectionRequired: paidRecollectionRequired(actionState),
         }
       : null,
   });

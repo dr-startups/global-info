@@ -28,6 +28,8 @@ export function assertReportReadyGates(input: {
   prepareDatasetId: string | null;
   clientContentDatasetId?: string | null;
   realCollectionSufficient: boolean;
+  /** Провайдеры, подменённые демо-данными, — для внятного сообщения. */
+  mockProviders?: string[];
   allowMockReport?: boolean;
   coverage?: SurfaceCoverageBreakdown | null;
   /** RENDER-only resume: dataset lineage only (coverage already enforced pre-render). */
@@ -87,7 +89,13 @@ export function assertReportReadyGates(input: {
     if (!hasBase) errors.push("provenance missing base providers/ids");
   }
   if (!input.allowMockReport && !input.realCollectionSufficient) {
-    errors.push("real collection insufficient (mock/fallback cannot unlock REPORT_READY)");
+    // Причина называется явно: «mock/fallback» вводило в заблуждение, когда
+    // никакой подмены не было — например, провайдер просто отказал (шаг 13, B2).
+    errors.push(
+      input.mockProviders?.length
+        ? `demo data cannot be presented as a real collection (${input.mockProviders.join(", ")})`
+        : "no required search provider completed a real collection"
+    );
   }
 
   if (input.requireAiReport && !input.gptLayerApplied) {

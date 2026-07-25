@@ -364,7 +364,11 @@ describe("unified orion arsenkin collection", () => {
     await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps });
     const job = await drainJob(caseId, deps);
     assert.equal(job?.stage, "FAILED_TERMINAL");
-    assert.match(String(job?.lastError ?? ""), /real collection insufficient/i);
+    // Шаг 13, B2: сообщение называет причину вместо «mock/fallback».
+    assert.match(
+      String(job?.lastError ?? ""),
+      /demo data cannot be presented as a real collection|no required search provider/i
+    );
   });
 
   it("stale prepare dataset → fail-closed not REPORT_READY", async () => {

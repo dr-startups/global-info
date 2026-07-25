@@ -29,6 +29,7 @@ import {
   FIRST36_PLANNED_SUPPORTED_SURFACES,
 } from "./unified-collection-types";
 import {
+  assessRealCollection,
   captureBaseCollectionManifest,
   mapFullAuditToActualProviders,
   snapshotExistingIds,
@@ -1339,6 +1340,7 @@ async function stepPrepare(
       merge,
       enrichmentState,
       realCollectionSufficient: manifest.realCollectionSufficient,
+      mockProviders: assessRealCollection(manifest.actualProviders).mockProviders,
       allowMockReport: deps.allowMockReport,
     });
     if (preGate.coverage) {
@@ -1352,9 +1354,12 @@ async function stepPrepare(
     if (!preGate.ok) {
       const errText = preGate.errors.join("; ");
       const ingestIncomplete = /enrichment/i.test(errText);
-      const mockInsufficient = /real collection insufficient/i.test(errText);
-      // Mock/fallback base is terminal (cannot unlock REPORT_READY by retry alone).
-      if (mockInsufficient) {
+      // Терминальность решается фактом, а не сопоставлением строки: подмена
+      // демо-данными повтором не лечится, и от формулировки сообщения это
+      // зависеть не должно.
+      const preAssessment = assessRealCollection(manifest.actualProviders);
+      const dishonestBase = !deps.allowMockReport && !preAssessment.sufficient;
+      if (dishonestBase) {
         return (
           await patchUnifiedCollectionJob(job.caseId, {
             stage: "FAILED_TERMINAL",
@@ -1509,6 +1514,8 @@ async function stepPrepare(
     );
   }
 
+  const baseAssessment = assessRealCollection(manifest.actualProviders);
+
   const gate = assertReportReadyGates({
     binding,
     manifest,
@@ -1516,6 +1523,7 @@ async function stepPrepare(
     prepareDatasetId: prepared.prepareDatasetId,
     clientContentDatasetId: prepared.prepareDatasetId,
     realCollectionSufficient: manifest.realCollectionSufficient,
+    mockProviders: baseAssessment.mockProviders,
     allowMockReport: deps.allowMockReport,
     coverage: job.coverage,
     skipBaseCoverage: resumeFromRender || resumeFromGptCopy,
@@ -1542,9 +1550,12 @@ async function stepPrepare(
     (job.arsenkinEnrichmentState?.failedAgents?.length ?? 0) > 0 ||
     (!job.arsenkinEnrichmentState?.enrichmentComplete &&
       job.warnings.some((w) => /arsenkin-failed/i.test(w)));
+  // Отказ одного из живых провайдеров — неполнота, а не повод выбросить прогон:
+  // именно для этого и существует COMPLETED_PARTIAL (шаг 13, B1).
   const partial =
     (job.coverage?.failedFinal ?? 0) > 0 ||
     liveArsenkinFailed ||
+    baseAssessment.failedProviders.length > 0 ||
     job.warnings.some((w) => /arsenkin-skipped|visual-asset-partial-failures/i.test(w));
 
   // Persist funnel summary on the job (REMEDIATION §0.1). Prefer the value
