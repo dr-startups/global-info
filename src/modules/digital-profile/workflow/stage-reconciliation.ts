@@ -18,8 +18,14 @@
 import { deriveJobStage } from "./step-plan";
 import type { WorkflowStepRow } from "./step-types";
 
-/** Стадии, которых вывод по шагам не описывает — они про результат, не про место. */
-const RESULT_STAGES = new Set(["COMPLETED_PARTIAL", "CANCELLED"]);
+/**
+ * Стадии, которых вывод по шагам не описывает.
+ *
+ * `COMPLETED_PARTIAL` из этого списка ушёл: полнота результата теперь хранится
+ * отдельным полем `completeness`, и вывод её больше не затирает (шаг 12.4b).
+ * Отмена остаётся: она приходит извне конвейера.
+ */
+const RESULT_STAGES = new Set(["CANCELLED"]);
 
 export const STAGE_DRIFT_WARNING = "workflow-stage-drift";
 
@@ -36,13 +42,14 @@ export type StageDrift = {
  */
 export function detectStageDrift(
   storedStage: string | null | undefined,
-  steps: readonly WorkflowStepRow[]
+  steps: readonly WorkflowStepRow[],
+  completeness?: "full" | "partial" | null
 ): StageDrift | null {
   const stored = String(storedStage ?? "").trim();
   if (!stored || steps.length === 0) return null;
   if (RESULT_STAGES.has(stored)) return null;
 
-  const derived = deriveJobStage(steps).stage;
+  const derived = deriveJobStage(steps, completeness).stage;
   if (derived === stored) return null;
 
   // `CLIENT_CONTENT` — внутренняя стадия шага подготовки отчёта: конвейер

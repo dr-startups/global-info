@@ -74,7 +74,14 @@ export type DerivedJobStage = {
  * Прежде это были отдельные поля, которые каждый обработчик обновлял сам, и
  * рассинхронизация с реальностью была вопросом времени.
  */
-export function deriveJobStage(steps: readonly WorkflowStepRow[]): DerivedJobStage {
+export function deriveJobStage(
+  steps: readonly WorkflowStepRow[],
+  /**
+   * Полнота результата — свойство того, что собрали, а не места в конвейере.
+   * Без неё вывод стадии затирал бы факт «собрали не всё» (шаг 12.4b).
+   */
+  completeness?: "full" | "partial" | null
+): DerivedJobStage {
   const list = ordered(steps);
   if (list.length === 0) {
     return { stage: "BASE_COLLECTION", status: "WAITING", progress: 0 };
@@ -85,15 +92,26 @@ export function deriveJobStage(steps: readonly WorkflowStepRow[]): DerivedJobSta
 
   const failed = list.find((s) => s.state === "FAILED");
   if (failed) {
+    // Признак повторяемости — запланированный повтор, а не остаток бюджета.
+    // Невосстановимый отказ (`retryable: false`) закрывает шаг, не потратив
+    // весь бюджет, и по числу попыток выглядел бы как «можно попробовать ещё»,
+    // то есть выдавал бы безнадёжную джобу за восстановимую.
+    const willRetry = failed.nextRunAt !== null && failed.attempts < failed.maxAttempts;
     return {
-      stage: failed.attempts >= failed.maxAttempts ? "FAILED_TERMINAL" : "FAILED_RETRYABLE",
+      stage: willRetry ? "FAILED_RETRYABLE" : "FAILED_TERMINAL",
       status: "FAILED",
       progress,
     };
   }
 
   const current = list.find((s) => s.state !== "DONE" && s.state !== "SKIPPED");
-  if (!current) return { stage: "REPORT_READY", status: "COMPLETED", progress: 1 };
+  if (!current) {
+    return {
+      stage: completeness === "partial" ? "COMPLETED_PARTIAL" : "REPORT_READY",
+      status: "COMPLETED",
+      progress: 1,
+    };
+  }
 
   const def = stepDefinition(current.name);
   return {

@@ -133,20 +133,42 @@ export async function reconcileStageAfterStep(step: WorkflowStepRow): Promise<vo
     const job = await loadUnifiedCollectionJob(step.caseId);
     if (!job) return;
     const steps = await listPipelineSteps(step.jobId);
-    const drift = detectStageDrift(job.stage, steps);
-    const next = mergeDriftWarning(job.warnings ?? [], drift);
-    // Патчим только когда набор предупреждений действительно поменялся —
-    // иначе каждый шаг писал бы в джобу без нужды.
-    const same =
-      next.length === (job.warnings ?? []).length &&
-      next.every((w, i) => w === (job.warnings ?? [])[i]);
-    if (same) return;
-    if (drift) {
-      console.warn(
-        `[workflow] стадия джобы ${job.unifiedJobId} расходится с шагами: ${drift.warning}`
-      );
+    const drift = detectStageDrift(job.stage, steps, job.completeness);
+    if (!drift) {
+      const cleaned = mergeDriftWarning(job.warnings ?? [], null);
+      if (cleaned.length !== (job.warnings ?? []).length) {
+        await patchUnifiedCollectionJob(step.caseId, { warnings: cleaned });
+      }
+      return;
     }
-    await patchUnifiedCollectionJob(step.caseId, { warnings: next });
+
+    // На границе шага побеждают шаги: место в конвейере — это их предмет.
+    // Отказы исключены намеренно — их семантикой владеют обработчики стадий,
+    // и переписать её здесь значило бы менять поведение вслепую.
+    const settled = steps.find((s) => s.id === step.id);
+    const boundary =
+      settled?.state === "DONE" || settled?.state === "SKIPPED";
+    const failureInvolved =
+      drift.derivedStage.startsWith("FAILED") || drift.storedStage.startsWith("FAILED");
+
+    if (boundary && !failureInvolved) {
+      console.warn(
+        `[workflow] стадия джобы ${job.unifiedJobId} приведена к шагам: ` +
+          `${drift.storedStage} → ${drift.derivedStage}`
+      );
+      await patchUnifiedCollectionJob(step.caseId, {
+        stage: drift.derivedStage as UnifiedCollectionJob["stage"],
+        warnings: mergeDriftWarning(job.warnings ?? [], null),
+      });
+      return;
+    }
+
+    console.warn(
+      `[workflow] стадия джобы ${job.unifiedJobId} расходится с шагами: ${drift.warning}`
+    );
+    await patchUnifiedCollectionJob(step.caseId, {
+      warnings: mergeDriftWarning(job.warnings ?? [], drift),
+    });
   } catch {
     /* сверка вспомогательна: её сбой не должен ронять шаг */
   }

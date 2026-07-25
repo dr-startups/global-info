@@ -1604,6 +1604,9 @@ async function stepPrepare(
   return (
     await patchUnifiedCollectionJob(job.caseId, {
       stage: partial ? "COMPLETED_PARTIAL" : "REPORT_READY",
+      // Полнота результата записывается отдельно от места в конвейере, чтобы
+      // стадию можно было вывести из шагов, ничего не потеряв (шаг 12.4b).
+      completeness: partial ? "partial" : "full",
       status: "COMPLETED",
       progress: 1,
       completedAt: new Date().toISOString(),

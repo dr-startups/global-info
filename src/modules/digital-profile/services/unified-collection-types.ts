@@ -111,6 +111,15 @@ export type UnifiedCollectionJob = {
   caseId: string;
   stage: UnifiedCollectionStage;
   status: "RUNNING" | "WAITING" | "COMPLETED" | "FAILED" | "CANCELLED";
+  /**
+   * Полнота результата: собрали всё или не всё (шаг 12.4b).
+   *
+   * Раньше этот факт кодировался стадией `COMPLETED_PARTIAL`, из-за чего
+   * стадия отвечала сразу на два вопроса — «где прогон» и «что получилось».
+   * Пока они смешаны, стадию нельзя вывести из шагов: вывод по месту в
+   * конвейере затирал бы сведение о полноте.
+   */
+  completeness?: "full" | "partial";
   progress: number;
   versionNum: number;
   leaseOwnerId: string | null;

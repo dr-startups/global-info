@@ -123,14 +123,41 @@ describe("стадия джобы выводится из шагов", () => {
     expect(deriveJobStage(steps)).toMatchObject({ stage: "REPORT_READY", status: "COMPLETED", progress: 1 });
   });
 
-  it("отказ с оставшимися попытками восстановим", () => {
-    const steps = pipeline({ ARSENKIN_ENRICHMENT: { state: "FAILED", attempts: 3, maxAttempts: 40 } });
+  it("отказ с запланированным повтором восстановим", () => {
+    const steps = pipeline({
+      ARSENKIN_ENRICHMENT: {
+        state: "FAILED",
+        attempts: 3,
+        maxAttempts: 40,
+        nextRunAt: new Date(NOW.getTime() + 5_000),
+      },
+    });
     expect(deriveJobStage(steps).stage).toBe("FAILED_RETRYABLE");
   });
 
   it("исчерпанный бюджет попыток терминален", () => {
     const steps = pipeline({ ARSENKIN_ENRICHMENT: { state: "FAILED", attempts: 40, maxAttempts: 40 } });
     expect(deriveJobStage(steps).stage).toBe("FAILED_TERMINAL");
+  });
+
+  it("невосстановимый отказ терминален, даже когда бюджет не исчерпан", () => {
+    // `retryable: false` закрывает шаг, не потратив бюджет. По остатку попыток
+    // это выглядело бы как «можно попробовать ещё» и выдавало бы безнадёжную
+    // джобу за восстановимую.
+    const steps = pipeline({
+      ARSENKIN_ENRICHMENT: { state: "FAILED", attempts: 1, maxAttempts: 40, nextRunAt: null },
+    });
+    expect(deriveJobStage(steps).stage).toBe("FAILED_TERMINAL");
+  });
+
+  it("полнота результата не теряется при выводе", () => {
+    // COMPLETED_PARTIAL — свойство результата, а не места в конвейере.
+    const done = pipeline(
+      Object.fromEntries(UNIFIED_PIPELINE.map((d) => [d.name, { state: "DONE" as const }]))
+    );
+    expect(deriveJobStage(done, "partial").stage).toBe("COMPLETED_PARTIAL");
+    expect(deriveJobStage(done, "full").stage).toBe("REPORT_READY");
+    expect(deriveJobStage(done).stage).toBe("REPORT_READY");
   });
 
   it("прогресс считается по доле завершённых шагов", () => {

@@ -61,13 +61,19 @@ describe("детектор расхождения стадии", () => {
     expect(detectStageDrift("CLIENT_CONTENT", steps)).toBeNull();
   });
 
-  it("частичный результат и отмена сравнению не подлежат", () => {
-    // Это свойства результата, а не места в конвейере: вывод по шагам их бы
-    // затёр, поэтому сверка их не трогает.
+  it("частичный результат сверяется через полноту, а не игнорируется", () => {
+    // Шаг 12.4b: полнота переехала в отдельное поле, поэтому вывод её больше
+    // не затирает и сравнение снова осмысленно.
     const done = pipeline(
       Object.fromEntries(UNIFIED_PIPELINE.map((d) => [d.name, { state: "DONE" as const }]))
     );
-    expect(detectStageDrift("COMPLETED_PARTIAL", done)).toBeNull();
+    expect(detectStageDrift("COMPLETED_PARTIAL", done, "partial")).toBeNull();
+    expect(detectStageDrift("COMPLETED_PARTIAL", done, "full")).toMatchObject({
+      derivedStage: "REPORT_READY",
+    });
+  });
+
+  it("отмена приходит извне конвейера и сравнению не подлежит", () => {
     expect(detectStageDrift("CANCELLED", pipeline())).toBeNull();
   });
 
