@@ -85,6 +85,7 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
   await requireCaseAccess(user, id, "VIEWER");
   const job = await getUnifiedCollectionStatus(id);
   const recovery = await withUnifiedRecoveryStatusFields(job);
+  const jobProgressing = recovery.recoveryBlockerReason === "JOB_PROGRESSING";
   const suggestionsRunId =
     (job?.enrichmentRunIds ?? []).find((rid) => /suggestions/i.test(rid)) ?? null;
   const suggestTasks = await loadSuggestTasksForGap(suggestionsRunId);
@@ -160,11 +161,18 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
               ? "USE_SUGGESTIONS_TARGETED_RETRY"
               : recovery.recoveryAllowed
                 ? "USE_RECOVERY"
-                : preserved
-                  ? "PRESERVED_STAGES_REQUIRE_PAID_RECOLLECTION"
-                  : "JOB_ACTIVE"
+                : jobProgressing
+                  ? "JOB_ACTIVE"
+                  : preserved
+                    ? "PRESERVED_STAGES_REQUIRE_PAID_RECOLLECTION"
+                    : "JOB_ACTIVE"
             : null,
-          paidRecollectionRequired: preserved && !recovery.recoveryAllowed,
+          // Never invite a paid re-collection while the job is still working.
+          // `recoveryAllowed` is false both when a job is stalled and when it is
+          // simply progressing (JOB_PROGRESSING), and conflating the two put a
+          // "start a new paid audit" button on a healthy run (step 11.1-bis).
+          paidRecollectionRequired:
+            preserved && !recovery.recoveryAllowed && !jobProgressing,
         }
       : null,
   });
