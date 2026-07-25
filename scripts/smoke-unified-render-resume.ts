@@ -4,6 +4,9 @@
  */
 
 import assert from "node:assert/strict";
+import { ru } from "../src/modules/digital-profile/i18n/dictionaries/ru";
+import { en } from "../src/modules/digital-profile/i18n/dictionaries/en";
+import { ensureSmokeCase } from "./lib/ensure-smoke-case";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, before } from "node:test";
@@ -56,7 +59,9 @@ function subjectProfile(): ClassifierSubjectProfile {
   };
 }
 
-function seedRenderFailedJob(caseId: string, jobId: string, opts?: { corruptAssembly?: boolean }) {
+async function seedRenderFailedJob(caseId: string, jobId: string, opts?: { corruptAssembly?: boolean }): Promise<void> {
+  // Джоба ссылается на кейс внешним ключом (шаг 08).
+  await ensureSmokeCase(caseId);
   await deleteUnifiedCollectionJobForTests(caseId);
   const now = new Date().toISOString();
   const compositeDatasetId = `composite-${jobId}`;
@@ -261,7 +266,7 @@ describe("unified RENDER_FAILED resume (HTTP renderer)", () => {
   it("GET marks RENDER_RESUME recoveryAllowed", async () => {
     const caseId = "render-resume-get";
     const jobId = "unified-render-get";
-    seedRenderFailedJob(caseId, jobId);
+    await seedRenderFailedJob(caseId, jobId);
     const fields = await withUnifiedRecoveryStatusFields(await loadUnifiedCollectionJob(caseId));
     assert.equal(fields.recoveryAllowed, true);
     assert.equal(fields.recoveryReason, "RENDER_RESUME");
@@ -270,7 +275,7 @@ describe("unified RENDER_FAILED resume (HTTP renderer)", () => {
   it("happy path: one HTTP render, zero base/arsenkin/composite/analytics/assembly", async () => {
     const caseId = "render-resume-happy";
     const jobId = "unified-1784290383122-fixture-render";
-    seedRenderFailedJob(caseId, jobId);
+    await seedRenderFailedJob(caseId, jobId);
 
     let httpCalls = 0;
     let baseCalls = 0;
@@ -444,7 +449,7 @@ describe("unified RENDER_FAILED resume (HTTP renderer)", () => {
   it("HTTP renderer error stays FAILED_RETRYABLE with RENDER checkpoint", async () => {
     const caseId = "render-resume-http-fail";
     const jobId = "unified-render-http-fail";
-    seedRenderFailedJob(caseId, jobId);
+    await seedRenderFailedJob(caseId, jobId);
 
     const fakeFetch: typeof fetch = async (url) => {
       if (String(url).includes("/health")) {
@@ -501,7 +506,7 @@ describe("unified RENDER_FAILED resume (HTTP renderer)", () => {
   it("corrupt assembled payload falls back to assembly rebuild (not base/Arsenkin)", async () => {
     const caseId = "render-resume-corrupt";
     const jobId = "unified-render-corrupt";
-    seedRenderFailedJob(caseId, jobId, { corruptAssembly: true });
+    await seedRenderFailedJob(caseId, jobId, { corruptAssembly: true });
 
     let assemblyCount = -1;
     let httpCalls = 0;
@@ -539,10 +544,12 @@ describe("unified RENDER_FAILED resume (HTTP renderer)", () => {
       caseId,
       job: await loadUnifiedCollectionJob(caseId),
     });
-    // After recover, stage is ORION_PREPARE WAITING with recovery audit → idempotent
-    assert.ok(
-      elig.recoveryReason === "IDEMPOTENT_RENDER_RESUME" || elig.recoveryReason === "RENDER_RESUME"
-    );
+    // Шаг 11.1-bis: сразу после восстановления джоба идёт штатно, и кнопка
+    // «продолжить» не предлагается — иначе оператора зовут вмешаться в
+    // здоровый прогон. Прежнее ожидание идемпотентной причины устарело
+    // вместе с появлением гейта, но смок не парсился и этого не показал.
+    assert.equal(elig.recoveryAllowed, false, `blocker=${elig.recoveryBlockerReason}`);
+    assert.equal(elig.recoveryBlockerReason, "JOB_PROGRESSING");
     const cp = await readUnifiedArtifact<{ status?: string }>(caseId, jobId, "render-checkpoint.json");
     assert.equal(cp?.status, "NEEDS_ASSEMBLY");
     void assemblyCount;
@@ -559,8 +566,11 @@ describe("unified RENDER_FAILED resume (HTTP renderer)", () => {
       join(SRC, "modules/digital-profile/client/CaseDetailView.tsx"),
       "utf8"
     );
-    assert.match(header, /Продолжить с этапа рендера/);
-    assert.match(view, /Продолжить с этапа рендера/);
+    // Шаг 11.4: копия переехала в словари — проверяются ключи и обе локали.
+    assert.match(header, /t\("unified\.resumeRender"\)/);
+    assert.match(view, /t\("unified\.confirmResumeRender"\)/);
+    assert.match(ru.unified.resumeRender, /Продолжить с этапа рендера/);
+    assert.match(en.unified.resumeRender, /Resume from rendering/i);
     assert.match(header, /renderRecovery/);
   });
 });

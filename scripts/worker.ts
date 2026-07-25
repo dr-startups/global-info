@@ -14,7 +14,10 @@
  */
 
 import { runStepWorker } from "../src/modules/digital-profile/workflow/step-runner";
-import { unifiedStepHandlers } from "../src/modules/digital-profile/workflow/unified-step-handlers";
+import {
+  reconcileStageAfterStep,
+  unifiedStepHandlers,
+} from "../src/modules/digital-profile/workflow/unified-step-handlers";
 
 const IDLE_MS = Number(process.env.WORKFLOW_WORKER_IDLE_MS ?? 1_000);
 const LEASE_MS = Number(process.env.WORKFLOW_WORKER_LEASE_MS ?? 120_000);
@@ -40,6 +43,7 @@ async function main(): Promise<void> {
     idleDelayMs: IDLE_MS,
     leaseMs: LEASE_MS,
     signal: controller.signal,
+    onStepSettled: reconcileStageAfterStep,
     onError: (err, step) => {
       const where = step ? `${step.jobId}/${step.name}` : "цикл";
       console.error(`[worker] сбой в ${where}:`, err);

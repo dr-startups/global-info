@@ -4,6 +4,9 @@
  */
 
 import assert from "node:assert/strict";
+import { ru } from "../src/modules/digital-profile/i18n/dictionaries/ru";
+import { en } from "../src/modules/digital-profile/i18n/dictionaries/en";
+import { ensureSmokeCase } from "./lib/ensure-smoke-case";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, before } from "node:test";
@@ -137,7 +140,9 @@ function fakePrisma(): PrismaClient {
   } as unknown as PrismaClient;
 }
 
-function seedDeripaskaFailedJob(caseId: string, jobId: string): void {
+async function seedDeripaskaFailedJob(caseId: string, jobId: string): Promise<void> {
+  // Джоба ссылается на кейс внешним ключом (шаг 08).
+  await ensureSmokeCase(caseId);
   await deleteUnifiedCollectionJobForTests(caseId);
   const now = new Date().toISOString();
   const rows = fixtureBaseRows();
@@ -231,7 +236,7 @@ describe("unified collection staff recovery", () => {
   it("GET exposes server-side recoveryAllowed for Deripaska-shaped failure", async () => {
     const caseId = "rec-get-f5";
     const jobId = "unified-fixture-deripaska-get";
-    seedDeripaskaFailedJob(caseId, jobId);
+    await seedDeripaskaFailedJob(caseId, jobId);
     const job = await loadUnifiedCollectionJob(caseId);
     const fields = await withUnifiedRecoveryStatusFields(job);
     assert.equal(fields.recoveryAllowed, true);
@@ -242,7 +247,7 @@ describe("unified collection staff recovery", () => {
   it("unrelated FAILED_TERMINAL is not recoverable", async () => {
     const caseId = "rec-unrelated-terminal";
     const jobId = "unified-unrelated-fail";
-    seedDeripaskaFailedJob(caseId, jobId);
+    await seedDeripaskaFailedJob(caseId, jobId);
     await patchUnifiedCollectionJob(caseId, {
       warnings: ["something-else"],
       lastErrorCode: "RENDER_FAILED",
@@ -259,7 +264,7 @@ describe("unified collection staff recovery", () => {
   it("FAILED_TERMINAL ASSEMBLY_FAILED with intact composite → ASSEMBLY_RESUME", async () => {
     const caseId = "rec-assembly-resume";
     const jobId = "unified-assembly-fail";
-    seedDeripaskaFailedJob(caseId, jobId);
+    await seedDeripaskaFailedJob(caseId, jobId);
     await patchUnifiedCollectionJob(caseId, {
       baseReportRunId: "base-run-assembly",
       enrichmentRunIds: ["e1", "e2", "e3", "e4", "e5"],
@@ -298,7 +303,7 @@ describe("unified collection staff recovery", () => {
   it("active lease → ConflictError 409", async () => {
     const caseId = "rec-active-lease";
     const jobId = "unified-lease-job";
-    seedDeripaskaFailedJob(caseId, jobId);
+    await seedDeripaskaFailedJob(caseId, jobId);
     await claimUnifiedJobLease({ caseId, ownerId: "other-owner", leaseMs: 60_000 });
     await assert.rejects(
       () =>
@@ -315,7 +320,7 @@ describe("unified collection staff recovery", () => {
   it("missing/corrupt manifest → 409; foreign jobId → 404", async () => {
     const caseId = "rec-manifest-missing";
     const jobId = "unified-no-manifest";
-    seedDeripaskaFailedJob(caseId, jobId);
+    await seedDeripaskaFailedJob(caseId, jobId);
     // Empty / corrupt base manifest (fail-closed).
     await writeUnifiedArtifact(caseId, jobId, "base-collection-manifest.json", {
       version: "base-collection-manifest-v1",
@@ -341,7 +346,7 @@ describe("unified collection staff recovery", () => {
         err instanceof ConflictError && /BASE_MANIFEST_EMPTY_OR_CORRUPT/i.test(String(err.message))
     );
 
-    seedDeripaskaFailedJob(caseId, jobId);
+    await seedDeripaskaFailedJob(caseId, jobId);
     await assert.rejects(
       () =>
         recoverUnifiedOrionCollectionJob({
@@ -357,7 +362,7 @@ describe("unified collection staff recovery", () => {
   it("recovers Deripaska fixture: same jobId, baseCalls=0, five Arsenkin, assembly=1, render<=1", async () => {
     const caseId = "rec-deripaska-happy";
     const jobId = "unified-1784290383122-fixture";
-    seedDeripaskaFailedJob(caseId, jobId);
+    await seedDeripaskaFailedJob(caseId, jobId);
 
     const baseCalls = { yandex: 0, google: 0, wikipedia: 0, serper: 0 };
     let arsenkinSchedules = 0;
@@ -512,7 +517,7 @@ describe("unified collection staff recovery", () => {
   it("double recovery before drain is idempotent (same jobId, one base run)", async () => {
     const caseId = "rec-idempotent-double";
     const jobId = "unified-idempotent-rec";
-    seedDeripaskaFailedJob(caseId, jobId);
+    await seedDeripaskaFailedJob(caseId, jobId);
     const prisma = fakePrisma();
     const deps = { autoSchedule: false as const, prisma };
 
@@ -540,10 +545,15 @@ describe("unified collection staff recovery", () => {
     assert.match(api, /unified-collection\/recover/);
     assert.match(api, /export function recoverUnifiedOrionCollection/);
     assert.match(header, /unified-orion-recovery-cta/);
-    assert.match(header, /Пересобрать отчёт \(без повторного сбора\)|Продолжить аудит с этапа Arsenkin/);
-    assert.match(view, /ASSEMBLY_RESUME|Пересобрать отчёт из уже собранных данных/);
+    // Шаг 11.4: продуктовая копия переехала в словари — проверяются ключи
+    // и обе локали.
+    assert.match(header, /t\("unified\.resumeAssembly"\)|t\("unified\.resumeArsenkin"\)/);
+    assert.match(view, /ASSEMBLY_RESUME|t\("unified\.confirmResumeAssembly"\)/);
+    assert.match(ru.unified.resumeAssembly, /Пересобрать отчёт/);
+    assert.match(en.unified.resumeAssembly, /Rebuild the report/i);
     assert.match(view, /recoverUnifiedOrionCollection/);
-    assert.match(view, /Базовый поиск повторно выполняться не будет/);
+    assert.match(view, /t\("unified\.confirmResumeArsenkin"\)/);
+    assert.match(ru.unified.confirmResumeArsenkin, /Базовый поиск повторно выполняться не будет/);
     assert.match(view, /getUnifiedOrionCollectionStatus/);
     assert.doesNotMatch(header, /agentRuns\[0\]/);
   });

@@ -117,6 +117,41 @@ function handlerForStage(deps: UnifiedOrchestratorDeps): StepHandler {
   };
 }
 
+/**
+ * Сверяет стадию джобы с состоянием шагов после каждого шага.
+ *
+ * Расхождение — это дефект (класс 08.0-bis и 11.1), и до сих пор оно
+ * обнаруживалось только на живом платном прогоне. Теперь оно попадает в
+ * предупреждения джобы, то есть видно в интерфейсе и в диагностике.
+ */
+export async function reconcileStageAfterStep(step: WorkflowStepRow): Promise<void> {
+  try {
+    const { listPipelineSteps } = await import("./step-store");
+    const { patchUnifiedCollectionJob } = await import("../services/unified-collection-job-store");
+    const { detectStageDrift, mergeDriftWarning } = await import("./stage-reconciliation");
+
+    const job = await loadUnifiedCollectionJob(step.caseId);
+    if (!job) return;
+    const steps = await listPipelineSteps(step.jobId);
+    const drift = detectStageDrift(job.stage, steps);
+    const next = mergeDriftWarning(job.warnings ?? [], drift);
+    // Патчим только когда набор предупреждений действительно поменялся —
+    // иначе каждый шаг писал бы в джобу без нужды.
+    const same =
+      next.length === (job.warnings ?? []).length &&
+      next.every((w, i) => w === (job.warnings ?? [])[i]);
+    if (same) return;
+    if (drift) {
+      console.warn(
+        `[workflow] стадия джобы ${job.unifiedJobId} расходится с шагами: ${drift.warning}`
+      );
+    }
+    await patchUnifiedCollectionJob(step.caseId, { warnings: next });
+  } catch {
+    /* сверка вспомогательна: её сбой не должен ронять шаг */
+  }
+}
+
 /** Реестр обработчиков для воркера. */
 export function unifiedStepHandlers(deps: UnifiedOrchestratorDeps = {}): Record<string, StepHandler> {
   const handler = handlerForStage(deps);

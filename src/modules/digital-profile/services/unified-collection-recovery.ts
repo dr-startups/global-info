@@ -24,6 +24,10 @@ import type {
   UnifiedCollectionStage,
 } from "./unified-collection-types";
 import { loadReusableAssembledDeck } from "./canonical-report-prepare";
+import {
+  planResumeFromSteps,
+  type StepResumePlan,
+} from "../workflow/resume-plan";
 
 export type UnifiedRecoveryAudit = {
   recoveredFromStatus: string;
@@ -75,6 +79,27 @@ function leaseIsActive(job: UnifiedCollectionJob, now: Date): boolean {
   if (!job.leaseOwnerId || !job.leaseUntil) return false;
   const until = Date.parse(job.leaseUntil);
   return Number.isFinite(until) && until > now.getTime();
+}
+
+/**
+ * План возобновления по шагам, если конвейер у прогона есть.
+ *
+ * `null` означает «шагов нет» — прогон создан до шага 12, и отвечать на вопрос
+ * будет прежняя эвристика. Недоступность таблицы тоже даёт `null`: потерять
+ * возможность восстановления из-за сбоя чтения хуже, чем ответить по-старому.
+ */
+async function resumePlanFromSteps(
+  job: UnifiedCollectionJob,
+  now: Date
+): Promise<StepResumePlan | null> {
+  try {
+    const { listPipelineSteps } = await import("../workflow/step-store");
+    const steps = await listPipelineSteps(job.unifiedJobId);
+    if (steps.length === 0) return null;
+    return planResumeFromSteps(steps, now);
+  } catch {
+    return null;
+  }
 }
 
 function manifestHasBaseObservations(manifest: BaseCollectionManifest | null | undefined): boolean {
@@ -184,6 +209,39 @@ export async function evaluateUnifiedCollectionRecoveryEligibility(input: {
       recoveryBlockerReason: "JOB_PROGRESSING",
       recoveryReason: null,
     };
+  }
+
+  // Шаг 12.4: «где мы остановились» спрашивается у шагов, а не выводится
+  // эвристиками из шести полей джобы. Прежний вывод оставлен ниже для
+  // прогонов, созданных до появления конвейера шагов.
+  const stepPlan = await resumePlanFromSteps(job, now);
+  if (stepPlan) {
+    switch (stepPlan.kind) {
+      case "completed":
+        return {
+          recoveryAllowed: false,
+          recoveryBlockerReason: "JOB_ALREADY_COMPLETED",
+          recoveryReason: null,
+        };
+      case "in_progress":
+        return {
+          recoveryAllowed: false,
+          recoveryBlockerReason: "JOB_PROGRESSING",
+          recoveryReason: null,
+        };
+      case "exhausted":
+        return {
+          recoveryAllowed: false,
+          recoveryBlockerReason: "STEP_ATTEMPTS_EXHAUSTED",
+          recoveryReason: null,
+        };
+      case "resume":
+        return {
+          recoveryAllowed: true,
+          recoveryBlockerReason: null,
+          recoveryReason: stepPlan.reason,
+        };
+    }
   }
 
   const manifest =
@@ -382,6 +440,28 @@ async function scheduleRecoverTick(
 }
 
 /**
+ * Возвращает остановившийся шаг в очередь, чтобы его подобрал воркер.
+ *
+ * Без этого восстановление чинило бы джобу, о которой исполнитель не узнает:
+ * упавший шаг сам себя не разбудит, а расписание живёт в его строке.
+ */
+async function requeueResumeStep(job: UnifiedCollectionJob, now: Date): Promise<string | null> {
+  try {
+    const { listPipelineSteps, requeueStep } = await import("../workflow/step-store");
+    const steps = await listPipelineSteps(job.unifiedJobId);
+    if (steps.length === 0) return null;
+    const plan = planResumeFromSteps(steps, now);
+    if (plan.kind !== "resume" || !plan.requeue) return null;
+    const ok = await requeueStep({ jobId: job.unifiedJobId, name: plan.stepName, now });
+    return ok ? plan.stepName : null;
+  } catch {
+    // Пробуждение — вспомогательное действие: его сбой не должен отменять
+    // восстановление, которое уже поправило состояние джобы.
+    return null;
+  }
+}
+
+/**
  * Atomically recover the same jobId: persist base OrionReportRun from the
  * existing manifest, checkpoint at ARSENKIN_ENRICHMENT, schedule tick.
  * Never calls runFullAudit / base providers.
@@ -444,6 +524,7 @@ export async function recoverUnifiedOrionCollectionJob(input: {
       (job0.enrichmentRunIds?.length ?? 0) >= 5 &&
       ACTIVE_STAGES.has(job0.stage))
   ) {
+    await requeueResumeStep(job0, nowFn());
     await scheduleRecoverTick(input.caseId, input.deps);
     return {
       accepted: true,
@@ -714,6 +795,10 @@ export async function recoverUnifiedOrionCollectionJob(input: {
     };
   } finally {
     await releaseUnifiedJobLease(input.caseId, ownerId);
+    // Разбудить остановившийся шаг до тика: иначе воркер не узнает, что
+    // работа снова готова, и восстановление осталось бы бумажным.
+    const current = await loadUnifiedCollectionJob(input.caseId);
+    if (current) await requeueResumeStep(current, nowFn());
     await scheduleRecoverTick(input.caseId, input.deps);
   }
 }

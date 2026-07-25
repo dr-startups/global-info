@@ -24,6 +24,8 @@ export interface StepRunnerDeps {
   leaseMs?: number;
   ownerId?: string;
   onError?: (err: unknown, step: WorkflowStepRow | null) => void;
+  /** Вызывается после записи исхода — точка сверки состояний. */
+  onStepSettled?: (step: WorkflowStepRow) => Promise<void>;
 }
 
 /**
@@ -70,6 +72,7 @@ export async function runOneStep(deps: StepRunnerDeps): Promise<boolean> {
 
   try {
     await completeStep({ step, outcome, now: deps.now?.() ?? new Date() });
+    await deps.onStepSettled?.(step);
   } catch (err) {
     // Не удалось записать исход — снимаем лизу, чтобы шаг не висел «в работе»
     // до её истечения. Исход потерян, но шаг будет исполнен заново.
