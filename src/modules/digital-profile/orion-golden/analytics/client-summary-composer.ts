@@ -111,18 +111,23 @@ function sourceSuffix(domain: string | undefined): string {
   return d ? ` (${d})` : "";
 }
 
+/**
+ * Sentence for one representative article, or null when the same material was
+ * already described in this summary.
+ *
+ * A repeat used to produce «Тот же материал «X» также относится к этой теме» —
+ * a sentence that carries no information and, on a thin corpus, filled whole
+ * slides. Repetition of a source is not a finding; it means the theme has one
+ * material, which the caller states once instead.
+ */
 function articleSentence(
   title: string,
   domain: string,
   description: string,
   alreadyUsedTitles: Set<string>
-): string {
+): string | null {
   const key = title.trim().toLowerCase();
-  if (alreadyUsedTitles.has(key)) {
-    return finishSentence(
-      `Тот же материал «${title}»${sourceSuffix(domain)} также относится к этой теме`
-    );
-  }
+  if (alreadyUsedTitles.has(key)) return null;
   alreadyUsedTitles.add(key);
   // Prefer concrete description when it already names title/domain.
   if (description.includes(title) || description.includes(domain)) {
@@ -138,9 +143,9 @@ function composeThemeSection(
   alreadyUsedTitles: Set<string>
 ): ComposedThemeSection {
   const articles = theme.representativeArticles.slice(0, 2);
-  const articleBits = articles.map((a) =>
-    articleSentence(a.title, a.domain, a.conciseCompleteDescription, alreadyUsedTitles)
-  );
+  const articleBits = articles
+    .map((a) => articleSentence(a.title, a.domain, a.conciseCompleteDescription, alreadyUsedTitles))
+    .filter((s): s is string => Boolean(s));
   const allegation = articles[0]
     ? finishSentence(articles[0].sourceAllegationOrStatus)
     : finishSentence(theme.concreteClaims[0] ?? theme.conclusion);

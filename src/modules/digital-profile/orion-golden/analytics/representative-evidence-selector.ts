@@ -239,8 +239,24 @@ function selectForTheme(
   themeId: CanonicalThemeId,
   candidates: CanonicalClaim[],
   usedPlots: Set<string>,
-  usedDomainsInTheme: Set<string>
+  usedDomainsInTheme: Set<string>,
+  options: {
+    /**
+     * When false, evidence already representing another theme is skipped. The
+     * caller retries with true only for a theme that would otherwise end up
+     * empty, so a theme still gets a representative but the deck stops showing
+     * one article as proof of five unrelated themes (step 05.3-bis).
+     */
+    allowReuse?: boolean;
+    /** Slots to fill in this pass. */
+    maxSlots?: number;
+    /** Already chosen for this theme by an earlier pass. */
+    existing?: SelectedRepresentative[];
+  } = {}
 ): SelectedRepresentative[] {
+  const allowReuse = options.allowReuse ?? false;
+  const maxSlots = options.maxSlots ?? 2;
+  const existing = options.existing ?? [];
   const ranked = [...candidates].sort((a, b) => {
     const diff = rankClaimForTheme(b, themeId) - rankClaimForTheme(a, themeId);
     if (diff !== 0) return diff;
@@ -248,21 +264,23 @@ function selectForTheme(
   });
 
   const selected: SelectedRepresentative[] = [];
+  const alreadyChosen = new Set(existing.map((e) => e.claimId));
   for (const claim of ranked) {
-    if (selected.length >= 2) break;
+    if (selected.length >= maxSlots) break;
+    if (alreadyChosen.has(claim.claimId)) continue;
     const plot = plotKeyOf(claim);
-    if (usedPlots.has(plot)) continue;
+    if (!allowReuse && usedPlots.has(plot)) continue;
     // Domain of the material the lead title came from — never sourceDomains[0],
     // whose order is unrelated to originalTitle (step 05.3).
     const domain = leadDomainOf(claim);
     // Prefer independent domain for 2nd slot; allow same domain only if no alternative.
     if (
-      selected.length === 1 &&
+      existing.length + selected.length === 1 &&
       domain &&
       usedDomainsInTheme.has(domain) &&
       ranked.some((c) => {
         const d = leadDomainOf(c);
-        return d && !usedDomainsInTheme.has(d) && !usedPlots.has(plotKeyOf(c));
+        return d && !usedDomainsInTheme.has(d) && (allowReuse || !usedPlots.has(plotKeyOf(c)));
       })
     ) {
       continue;
@@ -277,14 +295,15 @@ function selectForTheme(
     ];
     if (domain && REPUTABLE.test(domain)) reasons.push("reputable_domain");
     if (domain && OFFICIAL_DOMAIN.test(domain)) reasons.push("official_domain");
-    if (selected.length === 1 && domain && !usedDomainsInTheme.has(domain)) {
+    if (existing.length + selected.length === 1 && domain && !usedDomainsInTheme.has(domain)) {
       reasons.push("independent_domain_slot");
     }
+    if (allowReuse && usedPlots.has(plot)) reasons.push("reused_across_themes");
 
     selected.push({
       claimId: claim.claimId,
       themeId,
-      rankInTheme: selected.length + 1,
+      rankInTheme: existing.length + selected.length + 1,
       originalTitle: claim.originalTitle,
       sourceDomain: domain,
       displayExcerpt: excerpt,
@@ -315,25 +334,60 @@ export function selectRepresentativeEvidence(
   const materialThemes = collectMaterialThemes(claims);
 
   // Pass 1: CRITICAL/HIGH themes, Pass 2: MEDIUM — already ordered in materialThemes.
-  // Plot dedupe is per-theme so one evidence can fill slots in two themes.
+  // Plot dedupe spans themes: a theme first looks for evidence nobody else is
+  // using. Reuse stays possible, but only as a fallback for a theme that would
+  // otherwise be empty — see selectForTheme(allowReuse).
+  const usedPlotsAcrossThemes = new Set<string>();
   const selectedByTheme: Record<string, SelectedRepresentative[]> = {};
   const selectedClaimIds = new Set<string>();
   let excerptTruncations = 0;
 
+  // Slots are handed out in rounds rather than theme by theme: a greedy first
+  // theme used to take both of its slots and leave the next theme nothing but
+  // reused evidence. Round 1 gives every theme one material nobody else shows,
+  // round 2 tops themes up to two, and only then may a still-empty theme reuse.
+  const candidatesByTheme = new Map<CanonicalThemeId, CanonicalClaim[]>();
+  const domainsByTheme = new Map<CanonicalThemeId, Set<string>>();
   for (const themeId of materialThemes) {
-    const candidates = claims.filter(
-      (c) =>
-        isMaterialClaim(c) &&
-        c.themeIds.includes(themeId) &&
-        (c.subjectMatch === "SUBJECT_MATCH" ||
-          c.subjectMatch === "LIKELY_SUBJECT" ||
-          c.summaryOverrideRequired)
+    candidatesByTheme.set(
+      themeId,
+      claims.filter(
+        (c) =>
+          isMaterialClaim(c) &&
+          c.themeIds.includes(themeId) &&
+          (c.subjectMatch === "SUBJECT_MATCH" ||
+            c.subjectMatch === "LIKELY_SUBJECT" ||
+            c.summaryOverrideRequired)
+      )
     );
-    const usedPlotsInTheme = new Set<string>();
-    const usedDomains = new Set<string>();
-    const selected = selectForTheme(themeId, candidates, usedPlotsInTheme, usedDomains);
-    selectedByTheme[themeId] = selected;
-    for (const s of selected) {
+    domainsByTheme.set(themeId, new Set<string>());
+    selectedByTheme[themeId] = [];
+  }
+
+  const passes: Array<{ maxSlots: number; allowReuse: boolean; onlyIfEmpty: boolean }> = [
+    { maxSlots: 1, allowReuse: false, onlyIfEmpty: false },
+    { maxSlots: 1, allowReuse: false, onlyIfEmpty: false },
+    { maxSlots: 1, allowReuse: true, onlyIfEmpty: true },
+  ];
+
+  for (const pass of passes) {
+    for (const themeId of materialThemes) {
+      const existing = selectedByTheme[themeId]!;
+      if (pass.onlyIfEmpty && existing.length > 0) continue;
+      if (existing.length >= 2) continue;
+      const picked = selectForTheme(
+        themeId,
+        candidatesByTheme.get(themeId) ?? [],
+        usedPlotsAcrossThemes,
+        domainsByTheme.get(themeId)!,
+        { allowReuse: pass.allowReuse, maxSlots: pass.maxSlots, existing }
+      );
+      existing.push(...picked);
+    }
+  }
+
+  for (const themeId of materialThemes) {
+    for (const s of selectedByTheme[themeId] ?? []) {
       selectedClaimIds.add(s.claimId);
       const claim = claims.find((c) => c.claimId === s.claimId);
       if (claim) {
