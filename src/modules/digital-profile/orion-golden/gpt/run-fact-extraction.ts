@@ -119,8 +119,10 @@ export function materialsForTheme(input: {
       evidenceRef: ref,
       title: item.title,
       ...(item.snippet ? { snippet: item.snippet } : {}),
-      ...(item.sourceUrl ? { url: item.sourceUrl } : {}),
-      ...(item.sourceUrl ? { domain: domainOf(item.sourceUrl) } : {}),
+      ...(isPublicUrl(item.sourceUrl) ? { url: item.sourceUrl! } : {}),
+      ...(isPublicUrl(item.sourceUrl) && domainOf(item.sourceUrl!)
+        ? { domain: domainOf(item.sourceUrl!) }
+        : {}),
       ...(toDisplayDate(publishedIso) ? { publishedAt: toDisplayDate(publishedIso)! } : {}),
     });
     if (materials.length >= FACT_EXTRACTION_MAX_MATERIALS) break;
@@ -128,12 +130,29 @@ export function materialsForTheme(input: {
   return materials;
 }
 
+/**
+ * Public domain of a material, or "" when there is none.
+ *
+ * Surfaces without a published source (Arsenkin AI answers, PAA) carry a
+ * synthetic `arsenkin://other/<id>` handle. Parsing that as a URL yields the
+ * hostname "other", which reached the client as the name of a source — 15 of 35
+ * facts on the first live run were attributed to «other». Only http(s) origins
+ * are real sources; anything else means "no public source", and the attribution
+ * must then be omitted rather than invented (step 05.3).
+ */
 function domainOf(url: string): string {
   try {
-    return new URL(url).hostname.replace(/^www\./iu, "").toLowerCase();
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+    return parsed.hostname.replace(/^www\./iu, "").toLowerCase();
   } catch {
     return "";
   }
+}
+
+/** True for internal handles that must never be shown as a source link. */
+function isPublicUrl(url: string | undefined): boolean {
+  return Boolean(url && /^https?:\/\//iu.test(url));
 }
 
 /**

@@ -1,0 +1,146 @@
+- generic [active] [ref=f1e1]:
+  - link "Global Info · Digital Profile Audit" [ref=f1e3] [cursor=pointer]:
+    - /url: /admin/digital-profile
+  - main [ref=f1e4]:
+    - group "Language" [ref=f1e12]:
+      - button "EN" [pressed] [ref=f1e7] [cursor=pointer]
+      - button "RU" [ref=f1e8] [cursor=pointer]
+    - generic [ref=f1e23]:
+      - generic [ref=f1e25]:
+        - link "← Back to cases" [ref=f1e26] [cursor=pointer]:
+          - /url: /admin/digital-profile
+        - generic [ref=f1e27]:
+          - generic [ref=f1e28]:
+            - heading "Павел Валерьевич Дуров" [level=1] [ref=f1e29]
+            - generic [ref=f1e30]:
+              - generic [ref=f1e31]: DPA-2026-0004
+              - generic "DRAFT" [ref=f1e32]: Draft
+              - generic [ref=f1e33]: Created Jul 24, 2026, 10:53 PM
+              - generic [ref=f1e34]: · Updated Jul 24, 2026, 10:53 PM
+              - generic [ref=f1e35]:
+                - generic [ref=f1e36]: "· Unified:"
+                - generic "REPORT_READY" [ref=f1e37]: Report ready
+              - generic [ref=f1e38]: "· Stage: Report ready"
+            - generic [ref=f1e39]:
+              - generic [ref=f1e40]: "jobId: unified-1784922795672-d6851822"
+              - generic [ref=f1e41]: "base: ok · Arsenkin scheduled 5/5 · completed 5/5 · ingested 5/5 (complete) · composite/analytics/assembly: ok · render: ok"
+              - generic [ref=f1e42]: "recovery: blocked (JOB_ALREADY_COMPLETED)"
+              - generic [ref=f1e43]:
+                - link "Скачать Unified PDF" [ref=f1e44] [cursor=pointer]:
+                  - /url: /api/digital-profile/cases/cmrzcy3f00000qx7ttxrzqyqt/unified-collection/download?jobId=unified-1784922795672-d6851822&artifact=pdf
+                - link "Скачать Unified PPTX" [ref=f1e45] [cursor=pointer]:
+                  - /url: /api/digital-profile/cases/cmrzcy3f00000qx7ttxrzqyqt/unified-collection/download?jobId=unified-1784922795672-d6851822&artifact=pptx
+              - button "Пересобрать отчёт" [ref=f1e47] [cursor=pointer]
+          - generic [ref=f1e48]:
+            - button "Начать новый аудит с повторным сбором данных" [ref=f1e49] [cursor=pointer]
+            - button "Run full audit and build ORION Golden" [disabled] [ref=f1e50]
+            - button "Generate report" [ref=f1e51] [cursor=pointer]
+      - generic [ref=f1e54]:
+        - generic [ref=f1e55]:
+          - heading "Профиль субъекта (контекст классификации)" [level=3] [ref=f1e56]
+          - generic [ref=f1e57]: "Павел Валерьевич Дуров · контекст-слова: 0 — без контекст-слов много результатов останется в «неоднозначных»"
+        - button "Редактировать профиль субъекта" [ref=f1e58] [cursor=pointer]
+      - generic [ref=f1e60]:
+        - generic [ref=f1e61]:
+          - strong [ref=f1e62]: Качество отчёта
+          - paragraph [ref=f1e63]: Воронка данных и причины пустых слайдов. Обновляется после сборки / пересборки отчёта.
+        - link "Скачать diagnostics bundle" [ref=f1e65] [cursor=pointer]:
+          - /url: /api/digital-profile/cases/cmrzcy3f00000qx7ttxrzqyqt/unified-collection/diagnostics-bundle?jobId=unified-1784922795672-d6851822
+        - generic [ref=f1e66]:
+          - generic [ref=f1e67]: Воронка
+          - generic [ref=f1e68]:
+            - generic [ref=f1e69]:
+              - generic [ref=f1e70]: БД (organic)
+              - generic [ref=f1e71]: "399"
+            - generic [ref=f1e72]:
+              - generic [ref=f1e73]: БД (surfaces)
+              - generic [ref=f1e74]: "436"
+            - generic [ref=f1e75]:
+              - generic [ref=f1e76]: Манифест
+              - generic [ref=f1e77]: "835"
+            - generic [ref=f1e78]:
+              - generic [ref=f1e79]: Composite
+              - generic [ref=f1e80]: "736"
+            - generic [ref=f1e81]:
+              - generic [ref=f1e82]: Субъект
+              - generic [ref=f1e83]: "666"
+            - generic [ref=f1e84]:
+              - generic [ref=f1e85]: Вероятно
+              - generic [ref=f1e86]: "1"
+            - generic [ref=f1e87]:
+              - generic [ref=f1e88]: Тёзки/шум
+              - generic [ref=f1e89]: "0"
+            - generic [ref=f1e90]:
+              - generic [ref=f1e91]: Findings
+              - generic [ref=f1e92]: "7"
+            - generic [ref=f1e93]:
+              - generic [ref=f1e94]: Слайды
+              - generic [ref=f1e95]: 55/57
+        - generic [ref=f1e96]:
+          - generic [ref=f1e97]:
+            - generic [ref=f1e98]: GPT stage 1
+            - generic [ref=f1e99]: Применён
+          - generic [ref=f1e100]:
+            - generic [ref=f1e101]: GPT stage 2
+            - generic [ref=f1e102]: применено 17 · анализ кейса
+          - generic [ref=f1e103]:
+            - generic [ref=f1e104]: Визуалы
+            - generic [ref=f1e105]: собрано 16
+          - generic [ref=f1e106]:
+            - generic [ref=f1e107]: Arsenkin
+            - generic [ref=f1e108]: агентов ок 5 · наблюдений 222
+        - generic [ref=f1e109]:
+          - generic [ref=f1e110]: Пустые слайды (2)
+          - list [ref=f1e111]:
+            - listitem [ref=f1e112]: p11_ru_suggestions_yandex — Подсказки поиска не найдены (или не дошли до composite)
+            - listitem [ref=f1e113]: p35_lexis_visual — Визуальный актив недоступен (показан текстовый fallback)
+      - generic [ref=f1e115]:
+        - strong [ref=f1e116]: ORION Golden — ручная проверка
+        - paragraph [ref=f1e117]: Сначала подготовьте артефакты (очередь review), затем откройте manual review и сгенерируйте полный ORION Audit.
+        - generic [ref=f1e118]:
+          - button "Подготовить ORION Golden / очередь review" [ref=f1e119] [cursor=pointer]
+          - link "Открыть manual review" [ref=f1e120] [cursor=pointer]:
+            - /url: /admin/digital-profile/cmrzcy3f00000qx7ttxrzqyqt/orion-golden/manual-review
+          - link "Запустить аудит с Arsenkin" [ref=f1e121] [cursor=pointer]:
+            - /url: /admin/digital-profile/cmrzcy3f00000qx7ttxrzqyqt/orion-golden/manual-review#arsenkin-tools
+        - paragraph [ref=f1e122]: «Запустить аудит с Arsenkin» открывает панель API-сбора. Кнопка «Подготовить ORION Golden» не запускает платный Arsenkin.
+        - paragraph [ref=f1e123]: "Статус: empty"
+      - generic [ref=f1e125]:
+        - tablist [ref=f1e126]:
+          - tab "Subject" [selected] [ref=f1e127] [cursor=pointer]
+          - tab "Agents21" [ref=f1e128] [cursor=pointer]
+          - tab "Search Results399" [ref=f1e129] [cursor=pointer]
+          - tab "Suggestions97" [ref=f1e130] [cursor=pointer]
+          - tab "Related Queries23" [ref=f1e131] [cursor=pointer]
+          - tab "Images129" [ref=f1e132] [cursor=pointer]
+          - tab "Videos163" [ref=f1e133] [cursor=pointer]
+          - tab "Knowledge Block6" [ref=f1e134] [cursor=pointer]
+          - tab "Screenshots0" [ref=f1e135] [cursor=pointer]
+          - tab "SERP Snapshot" [ref=f1e136] [cursor=pointer]
+          - tab "Wikipedia2" [ref=f1e137] [cursor=pointer]
+          - tab "AI Profile0" [ref=f1e138] [cursor=pointer]
+          - tab "Compliance Databases0" [ref=f1e139] [cursor=pointer]
+          - tab "Risk Findings74" [ref=f1e140] [cursor=pointer]
+          - tab "Evidence Quality" [ref=f1e141] [cursor=pointer]
+          - tab "Audit Summary" [ref=f1e142] [cursor=pointer]
+          - tab "Report Preview" [ref=f1e143] [cursor=pointer]
+        - generic [ref=f1e144]:
+          - heading "Subject" [level=2] [ref=f1e145]
+          - generic [ref=f1e146]:
+            - term [ref=f1e147]: Full name
+            - definition [ref=f1e148]: Павел Валерьевич Дуров
+            - term [ref=f1e149]: Aliases
+            - definition [ref=f1e150]: Pavel Durov, Павел Дуров
+            - term [ref=f1e151]: Birth date
+            - definition [ref=f1e152]: —
+            - term [ref=f1e153]: Target regions
+            - definition [ref=f1e154]: RU, UAE
+            - term [ref=f1e155]: Lawful basis
+            - definition [ref=f1e156]: LEGITIMATE INTEREST
+            - term [ref=f1e157]: Consent status
+            - definition [ref=f1e158]:
+              - generic "NOT_REQUIRED" [ref=f1e159]: Not required
+            - term [ref=f1e160]: Notes
+            - definition [ref=f1e161]: "QA run #4 — full provider coverage incl. Serper."
+  - button "Open Next.js Dev Tools" [ref=f1e18] [cursor=pointer]
+  - alert [ref=f1e22]

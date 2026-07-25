@@ -94,6 +94,50 @@ describe("materialsForTheme", () => {
   });
 });
 
+describe("атрибуция источника материала", () => {
+  it("не выдаёт внутренний псевдо-URL за источник", () => {
+    // Arsenkin AI-ответы и PAA не имеют публичного источника и несут
+    // синтетический handle. Разбор его как URL давал хост «other», который
+    // уезжал клиенту как название источника (15 из 35 фактов на первом
+    // живом прогоне).
+    const materials = materialsForTheme({
+      themeId: "criminal_judicial" as never,
+      claimsBundle: {
+        claims: [
+          { claimId: "c1", evidenceRefs: ["inventory:ai"], themeIds: ["criminal_judicial"] },
+        ],
+      } as never,
+      representative: REPRESENTATIVE,
+      itemsByRef: new Map([
+        [
+          "inventory:ai",
+          item("ai", { sourceUrl: "arsenkin://other/obs-71a1698ccd5591ae" }),
+        ],
+      ]),
+    });
+    expect(materials).toHaveLength(1);
+    expect(materials[0]).not.toHaveProperty("domain");
+    expect(materials[0]).not.toHaveProperty("url");
+  });
+
+  it("сохраняет домен обычного http(s)-источника", () => {
+    const materials = materialsForTheme({
+      themeId: "criminal_judicial" as never,
+      claimsBundle: {
+        claims: [
+          { claimId: "c1", evidenceRefs: ["inventory:web"], themeIds: ["criminal_judicial"] },
+        ],
+      } as never,
+      representative: REPRESENTATIVE,
+      itemsByRef: new Map([
+        ["inventory:web", item("web", { sourceUrl: "https://www.Reuters.com/article/x" })],
+      ]),
+    });
+    expect(materials[0].domain).toBe("reuters.com");
+    expect(materials[0].url).toBe("https://www.Reuters.com/article/x");
+  });
+});
+
 describe("runFactExtraction", () => {
   it("возвращает пустой артефакт, когда извлечение выключено", async () => {
     const artifact = await runFactExtraction({

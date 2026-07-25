@@ -1,0 +1,8 @@
+- generic [active] [ref=f4e1]:
+  - link "Global Info · Digital Profile Audit" [ref=f4e3] [cursor=pointer]:
+    - /url: /admin/digital-profile
+  - main [ref=f4e4]:
+    - group "Язык" [ref=f4e6]:
+      - button "EN" [ref=f4e7] [cursor=pointer]
+      - button "RU" [pressed] [ref=f4e8] [cursor=pointer]
+    - generic [ref=f4e9]: Загрузка…

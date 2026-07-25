@@ -1,0 +1,151 @@
+- generic [ref=f6e1]:
+  - link "Global Info · Digital Profile Audit" [ref=f6e3] [cursor=pointer]:
+    - /url: /admin/digital-profile
+  - main [ref=f6e4]:
+    - group "Language" [ref=f6e12]:
+      - button "EN" [pressed] [ref=f6e7] [cursor=pointer]
+      - button "RU" [ref=f6e8] [cursor=pointer]
+    - generic [ref=f6e13]:
+      - generic [ref=f6e15]:
+        - link "← Back to cases" [ref=f6e16] [cursor=pointer]:
+          - /url: /admin/digital-profile
+        - generic [ref=f6e17]:
+          - generic [ref=f6e18]:
+            - heading "Павел Валерьевич Дуров" [level=1] [ref=f6e19]
+            - generic [ref=f6e20]:
+              - generic [ref=f6e21]: DPA-2026-0004
+              - generic "DRAFT" [ref=f6e22]: Draft
+              - generic [ref=f6e23]: Created Jul 24, 2026, 10:53 PM
+              - generic [ref=f6e24]: · Updated Jul 24, 2026, 10:53 PM
+              - generic [ref=f6e25]:
+                - generic [ref=f6e26]: "· Unified:"
+                - generic "REPORT_READY" [ref=f6e27]: Report ready
+              - generic [ref=f6e28]: "· Stage: Report ready"
+            - generic [ref=f6e29]:
+              - generic [ref=f6e30]: "jobId: unified-1784922795672-d6851822"
+              - generic [ref=f6e31]: "base: ok · Arsenkin scheduled 5/5 · completed 5/5 · ingested 5/5 (complete) · composite/analytics/assembly: ok · render: ok"
+              - generic [ref=f6e32]: "recovery: blocked (JOB_ALREADY_COMPLETED)"
+              - generic [ref=f6e33]:
+                - link "Скачать Unified PDF" [ref=f6e34] [cursor=pointer]:
+                  - /url: /api/digital-profile/cases/cmrzcy3f00000qx7ttxrzqyqt/unified-collection/download?jobId=unified-1784922795672-d6851822&artifact=pdf
+                - link "Скачать Unified PPTX" [ref=f6e35] [cursor=pointer]:
+                  - /url: /api/digital-profile/cases/cmrzcy3f00000qx7ttxrzqyqt/unified-collection/download?jobId=unified-1784922795672-d6851822&artifact=pptx
+              - button "Пересобрать отчёт" [ref=f6e37] [cursor=pointer]
+          - generic [ref=f6e38]:
+            - button "Начать новый аудит с повторным сбором данных" [ref=f6e39] [cursor=pointer]
+            - button "Run full audit and build ORION Golden" [disabled] [ref=f6e40]
+            - button "Generate report" [ref=f6e41] [cursor=pointer]
+      - generic [ref=f6e44]:
+        - generic [ref=f6e45]:
+          - heading "Профиль субъекта (контекст классификации)" [level=3] [ref=f6e46]
+          - generic [ref=f6e47]: "Павел Валерьевич Дуров · контекст-слова: 0 — без контекст-слов много результатов останется в «неоднозначных»"
+        - button "Редактировать профиль субъекта" [ref=f6e48] [cursor=pointer]
+      - generic [ref=f6e50]:
+        - generic [ref=f6e51]:
+          - strong [ref=f6e52]: Качество отчёта
+          - paragraph [ref=f6e53]: Воронка данных и причины пустых слайдов. Обновляется после сборки / пересборки отчёта.
+        - link "Скачать diagnostics bundle" [ref=f6e55] [cursor=pointer]:
+          - /url: /api/digital-profile/cases/cmrzcy3f00000qx7ttxrzqyqt/unified-collection/diagnostics-bundle?jobId=unified-1784922795672-d6851822
+        - generic [ref=f6e56]:
+          - generic [ref=f6e57]: Воронка
+          - generic [ref=f6e58]:
+            - generic [ref=f6e59]:
+              - generic [ref=f6e60]: БД (organic)
+              - generic [ref=f6e61]: "399"
+            - generic [ref=f6e62]:
+              - generic [ref=f6e63]: БД (surfaces)
+              - generic [ref=f6e64]: "436"
+            - generic [ref=f6e65]:
+              - generic [ref=f6e66]: Манифест
+              - generic [ref=f6e67]: "835"
+            - generic [ref=f6e68]:
+              - generic [ref=f6e69]: Composite
+              - generic [ref=f6e70]: "736"
+            - generic [ref=f6e71]:
+              - generic [ref=f6e72]: Субъект
+              - generic [ref=f6e73]: "666"
+            - generic [ref=f6e74]:
+              - generic [ref=f6e75]: Вероятно
+              - generic [ref=f6e76]: "1"
+            - generic [ref=f6e77]:
+              - generic [ref=f6e78]: Тёзки/шум
+              - generic [ref=f6e79]: "0"
+            - generic [ref=f6e80]:
+              - generic [ref=f6e81]: Findings
+              - generic [ref=f6e82]: "7"
+            - generic [ref=f6e83]:
+              - generic [ref=f6e84]: Слайды
+              - generic [ref=f6e85]: 55/57
+        - generic [ref=f6e86]:
+          - generic [ref=f6e87]:
+            - generic [ref=f6e88]: GPT stage 1
+            - generic [ref=f6e89]: Применён
+          - generic [ref=f6e90]:
+            - generic [ref=f6e91]: GPT stage 2
+            - generic [ref=f6e92]: применено 17 · анализ кейса
+          - generic [ref=f6e93]:
+            - generic [ref=f6e94]: Визуалы
+            - generic [ref=f6e95]: собрано 16
+          - generic [ref=f6e96]:
+            - generic [ref=f6e97]: Arsenkin
+            - generic [ref=f6e98]: агентов ок 5 · наблюдений 222
+        - generic [ref=f6e99]:
+          - generic [ref=f6e100]: Пустые слайды (2)
+          - list [ref=f6e101]:
+            - listitem [ref=f6e102]: p11_ru_suggestions_yandex — Подсказки поиска не найдены (или не дошли до composite)
+            - listitem [ref=f6e103]: p35_lexis_visual — Визуальный актив недоступен (показан текстовый fallback)
+      - generic [ref=f6e105]:
+        - strong [ref=f6e106]: ORION Golden — ручная проверка
+        - paragraph [ref=f6e107]: Сначала подготовьте артефакты (очередь review), затем откройте manual review и сгенерируйте полный ORION Audit.
+        - generic [ref=f6e108]:
+          - button "Подготовить ORION Golden / очередь review" [ref=f6e109] [cursor=pointer]
+          - link "Открыть manual review" [ref=f6e110] [cursor=pointer]:
+            - /url: /admin/digital-profile/cmrzcy3f00000qx7ttxrzqyqt/orion-golden/manual-review
+          - link "Запустить аудит с Arsenkin" [ref=f6e111] [cursor=pointer]:
+            - /url: /admin/digital-profile/cmrzcy3f00000qx7ttxrzqyqt/orion-golden/manual-review#arsenkin-tools
+        - paragraph [ref=f6e112]: «Запустить аудит с Arsenkin» открывает панель API-сбора. Кнопка «Подготовить ORION Golden» не запускает платный Arsenkin.
+        - paragraph [ref=f6e113]: "Статус: empty"
+      - generic [ref=f6e115]:
+        - tablist [ref=f6e116]:
+          - tab "Subject" [ref=f6e117] [cursor=pointer]
+          - tab "Agents21" [ref=f6e118] [cursor=pointer]
+          - tab "Search Results399" [ref=f6e119] [cursor=pointer]
+          - tab "Suggestions97" [ref=f6e120] [cursor=pointer]
+          - tab "Related Queries23" [ref=f6e121] [cursor=pointer]
+          - tab "Images129" [ref=f6e122] [cursor=pointer]
+          - tab "Videos163" [ref=f6e123] [cursor=pointer]
+          - tab "Knowledge Block6" [ref=f6e124] [cursor=pointer]
+          - tab "Screenshots0" [ref=f6e125] [cursor=pointer]
+          - tab "SERP Snapshot" [ref=f6e126] [cursor=pointer]
+          - tab "Wikipedia2" [ref=f6e127] [cursor=pointer]
+          - tab "AI Profile0" [ref=f6e128] [cursor=pointer]
+          - tab "Compliance Databases0" [ref=f6e129] [cursor=pointer]
+          - tab "Risk Findings74" [ref=f6e130] [cursor=pointer]
+          - tab "Evidence Quality" [ref=f6e131] [cursor=pointer]
+          - tab "Audit Summary" [ref=f6e132] [cursor=pointer]
+          - tab "Report Preview" [active] [selected] [ref=f6e133] [cursor=pointer]
+        - generic [ref=f6e162]:
+          - generic [ref=f6e163]:
+            - heading "Report preview" [level=2] [ref=f6e164]
+            - generic [ref=f6e165]:
+              - combobox "Template" [ref=f6e166]:
+                - option "Template v3 (polished + offer)" [selected]
+                - option "Template v2 (full audit)"
+                - option "Template v1 (corporate)"
+                - option "Simple (generic)"
+              - combobox "Audience" [ref=f6e167]:
+                - option "Internal" [selected]
+                - option "Client"
+              - combobox "Watermark" [ref=f6e168]:
+                - 'option "Watermark: Draft" [selected]'
+                - 'option "Watermark: None"'
+              - combobox "Report language" [ref=f6e169]:
+                - 'option "Report language: Russian"'
+                - 'option "Report language: English" [selected]'
+              - button "Generate report" [ref=f6e170] [cursor=pointer]
+          - generic [ref=f6e171]: Generate a SERP Snapshot to include the ORION-style page in the report.
+          - generic [ref=f6e173]:
+            - generic [ref=f6e174]: No report generated yet
+            - generic [ref=f6e175]: Click “Generate report” to build the report and render PPTX/PDF.
+  - button "Open Next.js Dev Tools" [ref=f6e157] [cursor=pointer]
+  - alert [ref=f6e161]
