@@ -117,7 +117,14 @@ export abstract class RealSearchAgentBase implements CaseAgent {
         snippet: r.snippet || null,
         rank: r.rank,
         source,
-        rawMetadata: { demo: false, provider: this.provider.name, ...(r.rawMetadata as object) } as Prisma.InputJsonValue,
+        rawMetadata: {
+          demo: false,
+          provider: this.provider.name,
+          ...(r.rawMetadata as object),
+          // Normalised publication date (step 05.2a). Kept in rawMetadata so no
+          // migration is needed; downstream reads it via publishedAtOf().
+          ...(r.publishedAt ? { publishedAt: r.publishedAt } : {}),
+        } as Prisma.InputJsonValue,
       };
     });
 

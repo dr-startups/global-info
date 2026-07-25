@@ -8,6 +8,7 @@
  * structured ProviderRunResult instead of throwing.
  */
 
+import { parseSerperDate } from "./published-date";
 import { providerConfig } from "./config";
 import { postJson, ProviderHttpError, toProviderError } from "./http";
 import type { ProviderRunResult, SearchProviderRequest, SearchProviderResult } from "./types";
@@ -66,6 +67,7 @@ export function normalizeSerperResponse(
       snippet: String(item.snippet ?? ""),
       url,
       domain: domainOf(url),
+      ...(parseSerperDate(item.date) ? { publishedAt: parseSerperDate(item.date)! } : {}),
       rawMetadata: {
         source: "serper",
         position: rank,

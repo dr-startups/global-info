@@ -12,6 +12,7 @@
  * testable without touching the network.
  */
 
+import { toDisplayDate } from "../../providers/published-date";
 import type { EvidenceDecisionRecord, SectionEvidencePack } from "../types";
 
 /**
@@ -41,6 +42,8 @@ export type SectionPayloadEvidence = {
   region?: string;
   language?: string;
   sourceType?: string;
+  /** `YYYY-MM-DD`; absent when the provider reported no date. */
+  publishedAt?: string;
   relevance: string;
   riskTheme?: string;
   riskLevel?: string;
@@ -113,6 +116,7 @@ function toPayloadEvidence(record: EvidenceDecisionRecord, index: number): Secti
     ...(optional(record.region) ? { region: record.region!.trim() } : {}),
     ...(optional(record.language) ? { language: record.language!.trim() } : {}),
     ...(optional(record.evidenceType) ? { sourceType: record.evidenceType.trim() } : {}),
+    ...(toDisplayDate(record.publishedAt) ? { publishedAt: toDisplayDate(record.publishedAt)! } : {}),
     relevance: record.relevanceClass,
     ...(optional(record.riskTheme) ? { riskTheme: record.riskTheme!.trim() } : {}),
     ...(optional(record.riskLevel) ? { riskLevel: record.riskLevel!.trim() } : {}),

@@ -6,6 +6,7 @@
  * base organic / UAE / other surfaces.
  */
 
+import { publishedAtOf } from "../../providers/published-date";
 import { createHash } from "node:crypto";
 import { listSerpObservationsForAuditRun } from "../../serp-observation";
 import type { FullEvidenceInventory } from "../evidence/full-evidence-inventory";
@@ -204,6 +205,9 @@ export async function mergeRunScopedSerpObservations(input: {
         region,
         query: row.queryText,
         collectedAt: row.capturedAt.toISOString(),
+        ...(publishedAtOf(row.rawPayloadJson)
+          ? { publishedAt: publishedAtOf(row.rawPayloadJson)! }
+          : {}),
         evidenceType: "search_result",
         title: String(row.title ?? "").trim() || row.url,
         snippet: row.snippet ?? "",

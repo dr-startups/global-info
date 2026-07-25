@@ -66,6 +66,8 @@ export type EvidenceDecisionRecord = {
   language?: string;
   region?: string;
   evidenceType: string;
+  /** Publication date of the material (ISO), when the provider reported one. */
+  publishedAt?: string;
   entityMatchScore?: number;
   relevanceClass: RelevanceClass;
   riskTheme?: string;
@@ -144,6 +146,8 @@ export type RawInventoryItem = {
   region: string;
   query?: string;
   collectedAt: string;
+  /** Publication date of the material (ISO), when the provider reported one. */
+  publishedAt?: string;
   evidenceType: string;
   title: string;
   snippet?: string;

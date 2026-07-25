@@ -148,7 +148,9 @@ Use manualReviewNeeded for such items. Do not elevate them to keyEvidence with v
 Evidence marked [ПРИЛОЖЕНИЕ — ОГРАНИЧЕННЫЙ ВЫВОД] may appear only with caveats, not as strong findings.
 
 Each selectedEvidence item carries: ref, title, snippet, domain, url, region, sourceType,
-relevance, riskTheme, riskLevel, entityMatchScore. Ground every statement in the snippet text —
+publishedAt, relevance, riskTheme, riskLevel, entityMatchScore.
+State when material is dated and distinguish recent coverage from years-old items;
+never imply a date for an item that has none. Ground every statement in the snippet text —
 name what the material actually says (who, what, where, which organisation, which amount).
 Generic due-diligence commentary that would fit any subject is not acceptable output.
 Never assert anything the snippets do not support; if a snippet is cut (snippetTruncated),

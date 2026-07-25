@@ -3,6 +3,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { toDisplayDate } from "../../providers/published-date";
 import type { RawInventoryItem } from "../types";
 import type { Finding } from "../contracts/finding";
 import type { ObservationDispositionLedger } from "../contracts/observation-disposition";
@@ -143,6 +144,20 @@ function extractDates(text: string): string[] {
   return [...out].slice(0, 8);
 }
 
+/**
+ * Publication dates of the materials behind a claim (step 05.2a).
+ *
+ * Real dates come first: `extractDates` only ever scraped years out of the
+ * generated claim sentence, which says nothing about when anything happened.
+ * Newest first, so the lead date describes the most recent coverage.
+ */
+function materialDates(items: RawInventoryItem[]): string[] {
+  const dates = items
+    .map((i) => toDisplayDate(i.publishedAt))
+    .filter((d): d is string => Boolean(d));
+  return [...new Set(dates)].sort((a, b) => b.localeCompare(a)).slice(0, 8);
+}
+
 function mergeThemes(
   ...groups: Array<CanonicalThemeId[] | string[] | undefined>
 ): CanonicalThemeId[] {
@@ -261,7 +276,7 @@ function buildFromFinding(input: {
     materialityLevel: materiality.level,
     materialityReasons: materiality.reasons,
     namedEntities: extractNamedEntities(fullClaimText),
-    dates: extractDates(fullClaimText),
+    dates: [...new Set([...materialDates(evidenceItems), ...extractDates(fullClaimText)])].slice(0, 8),
     regions: [...(f.regions ?? [])],
     contradictions: (f.contradictions ?? []).map((c) => c.description),
     evidenceRefs: [...(f.evidenceRefs ?? [])],
