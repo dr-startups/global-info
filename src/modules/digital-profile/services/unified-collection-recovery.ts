@@ -35,6 +35,28 @@ export type UnifiedRecoveryAudit = {
   previousLastErrorCode: string | null;
 };
 
+/**
+ * Grace beyond the scheduled poll before a waiting job counts as stalled.
+ * The durable poll backoff caps at 30s, so two minutes of silence is well
+ * outside normal operation.
+ */
+export const POLL_STALL_GRACE_MS = 120_000;
+
+/**
+ * True when the next scheduled tick is overdue (or was never scheduled), i.e.
+ * nothing is going to move without help.
+ */
+export function isPollOverdue(
+  job: { nextPollAt?: string | null; updatedAt?: string | null },
+  now: Date
+): boolean {
+  const raw = job.nextPollAt ?? job.updatedAt ?? null;
+  if (!raw) return true;
+  const due = Date.parse(raw);
+  if (Number.isNaN(due)) return true;
+  return now.getTime() - due > POLL_STALL_GRACE_MS;
+}
+
 export type UnifiedRecoveryEligibility = {
   recoveryAllowed: boolean;
   recoveryBlockerReason: string | null;
@@ -148,6 +170,18 @@ export async function evaluateUnifiedCollectionRecoveryEligibility(input: {
     return {
       recoveryAllowed: false,
       recoveryBlockerReason: "JOB_ALREADY_RUNNING",
+      recoveryReason: null,
+    };
+  }
+  // WAITING with a poll still due is the normal state of durable Arsenkin
+  // ingest, not a stall: the backoff caps at 30s, so a tick that is not yet
+  // overdue means the job is working. Offering "Продолжить импорт Arsenkin"
+  // then invites the operator to intervene in a healthy run — the same class of
+  // problem as the false Suggestions retry (step 11.1-bis).
+  if (ACTIVE_STAGES.has(job.stage) && job.status === "WAITING" && !isPollOverdue(job, now)) {
+    return {
+      recoveryAllowed: false,
+      recoveryBlockerReason: "JOB_PROGRESSING",
       recoveryReason: null,
     };
   }
