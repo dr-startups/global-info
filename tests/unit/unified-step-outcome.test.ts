@@ -100,6 +100,22 @@ describe("исход шага выводится из состояния джо�
     expect(out).toMatchObject({ kind: "failed", code: "JOB_DISAPPEARED", retryable: false });
   });
 
+  it("шаг закрыт, если джоба обогнала его ещё до исполнения", () => {
+    // Первый живой прогон: веб-процесс успевал продвинуть джобу на следующую
+    // стадию раньше, чем воркер брал первый шаг. Сравнение «сдвинулась ли
+    // джоба за этот вызов» давало «работа идёт» каждый раз — шаг ждал вечно,
+    // сжигал бюджет попыток и останавливал конвейер.
+    const base: WorkflowStepRow = { ...STEP, name: "BASE_COLLECTION", position: 1 };
+    const ahead = job({ stage: "ARSENKIN_ENRICHMENT" });
+    expect(outcomeFromJob(base, ahead, ahead, NOW).kind).toBe("done");
+  });
+
+  it("шаг ждёт, пока джоба стоит на его собственной стадии", () => {
+    const base: WorkflowStepRow = { ...STEP, name: "BASE_COLLECTION", position: 1 };
+    const here = job({ stage: "BASE_COLLECTION" });
+    expect(outcomeFromJob(base, here, here, NOW).kind).toBe("waiting");
+  });
+
   it("переход между внутренними стадиями шага подготовки не считается завершением", () => {
     // ORION_PREPARE → CLIENT_CONTENT — движение внутри одного шага REPORT_PREPARE.
     const prepare: WorkflowStepRow = { ...STEP, name: "REPORT_PREPARE", position: 4 };

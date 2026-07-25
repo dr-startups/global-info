@@ -252,6 +252,22 @@ describe("ручной повтор", () => {
   });
 });
 
+describe("бюджеты попыток", () => {
+  it("долгим шагам дан бюджет, соответствующий их длительности", () => {
+    // maxAttempts тратится и на ожидание: при потолке backoff в 30 секунд
+    // бюджет в 5 попыток — около минуты. Подготовка отчёта столько не
+    // укладывается и на первом живом прогоне была объявлена упавшей, успев
+    // собрать деку из 53 слайдов.
+    const byName = new Map(UNIFIED_PIPELINE.map((d) => [d.name, d.maxAttempts ?? 0]));
+    expect(byName.get("REPORT_PREPARE")).toBeGreaterThanOrEqual(40);
+    expect(byName.get("ARSENKIN_ENRICHMENT")).toBeGreaterThanOrEqual(40);
+  });
+
+  it("у каждого шага бюджет задан явно", () => {
+    for (const d of UNIFIED_PIPELINE) expect(d.maxAttempts).toBeGreaterThan(0);
+  });
+});
+
 describe("реестр конвейера", () => {
   it("позиции уникальны и идут подряд", () => {
     const positions = UNIFIED_PIPELINE.map((s) => s.position);

@@ -13,6 +13,7 @@
  */
 
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 
 export type StorageProbeVerdict =
   | { kind: "ok"; checked: number }
@@ -33,12 +34,23 @@ export type ProbeJobArtifacts = {
  */
 export function judgeSharedStorage(
   jobs: readonly ProbeJobArtifacts[],
-  fileExists: (path: string) => boolean
+  fileExists: (path: string) => boolean,
+  /**
+   * Корень хранилища этого процесса. Пути вне него сравнению не подлежат:
+   * запись, сделанная с другим корнем (хост против контейнера), говорит о
+   * смене окружения, а не о раздельных дисках. Без этого условия проба
+   * поднимала ложную тревогу на локальном стенде, где диск как раз общий.
+   */
+  storageRoot?: string
 ): StorageProbeVerdict {
-  const paths = jobs.flatMap((j) => j.paths).filter((p) => p.startsWith("/"));
+  const root = String(storageRoot ?? "").trim();
+  const paths = jobs
+    .flatMap((j) => j.paths)
+    .filter((p) => p.startsWith("/"))
+    .filter((p) => !root || p.startsWith(root));
   if (paths.length === 0) {
-    // Свежее развёртывание: сравнивать не с чем, и это не повод пугать.
-    return { kind: "no_data", reason: "нет артефактов прошлых прогонов" };
+    // Свежее развёртывание либо смена корня: сравнивать не с чем.
+    return { kind: "no_data", reason: "нет сопоставимых артефактов прошлых прогонов" };
   }
 
   const missing = paths.filter((p) => !fileExists(p));
@@ -59,6 +71,14 @@ export const NOT_SHARED_MESSAGE = [
   "одним сервисом, либо переносите артефакты в общее хранилище.",
 ].join(" ");
 
+/** Корень хранилища этого процесса. */
+export function storageRoot(): string {
+  return (
+    process.env.DIGITAL_PROFILE_STORAGE_ROOT?.trim() ||
+    join(process.cwd(), "storage", "digital-profile")
+  );
+}
+
 /** Читает пути артефактов последних прогонов и выносит вердикт. */
 export async function probeSharedStorage(limit = 5): Promise<StorageProbeVerdict> {
   try {
@@ -74,7 +94,7 @@ export async function probeSharedStorage(limit = 5): Promise<StorageProbeVerdict
         .map((v) => String(v ?? ""))
         .filter(Boolean),
     }));
-    return judgeSharedStorage(jobs, existsSync);
+    return judgeSharedStorage(jobs, existsSync, storageRoot());
   } catch (err) {
     return {
       kind: "no_data",

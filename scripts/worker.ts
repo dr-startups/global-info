@@ -13,11 +13,11 @@
  * Run: npm run worker
  */
 
-import { join } from "node:path";
 import { runStepWorker } from "../src/modules/digital-profile/workflow/step-runner";
 import {
   NOT_SHARED_MESSAGE,
   probeSharedStorage,
+  storageRoot,
 } from "../src/modules/digital-profile/workflow/shared-storage-probe";
 import {
   reconcileStageAfterStep,
@@ -42,7 +42,7 @@ async function main(): Promise<void> {
   console.log(
     `[worker] запущен (pid ${process.pid}, пауза ${IDLE_MS} мс, лиза ${LEASE_MS} мс)`
   );
-  console.log(`[worker] хранилище: ${join(process.cwd(), "storage", "digital-profile")}`);
+  console.log(`[worker] хранилище: ${storageRoot()}`);
 
   // Артефакты пишет воркер, а отдаёт приложение. Если диск не общий, это
   // выяснилось бы в конце первого платного прогона.

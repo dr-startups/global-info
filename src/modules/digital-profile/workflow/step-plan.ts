@@ -19,12 +19,21 @@ import {
   type WorkflowStepRow,
 } from "./step-types";
 
-/** Конвейер сбора. Порядок здесь — единственный источник правды о порядке. */
+/**
+ * Конвейер сбора. Порядок здесь — единственный источник правды о порядке.
+ *
+ * `maxAttempts` — это бюджет **пробуждений**, а не только повторов после
+ * ошибки: шаг, который ждёт внешнего события, тратит попытку на каждый опрос.
+ * При потолке backoff в 30 секунд бюджет в 5 попыток — это около минуты
+ * работы. Подготовка отчёта столько не укладывается: там вызовы модели и
+ * рендер, и на первом живом прогоне она была объявлена упавшей за минуту,
+ * успев дойти до готовой деки. Долгим шагам нужен бюджет уровня Arsenkin.
+ */
 export const UNIFIED_PIPELINE: readonly StepDefinition[] = [
-  { name: "BASE_COLLECTION", position: 1, stage: "BASE_COLLECTION", maxAttempts: 5 },
+  { name: "BASE_COLLECTION", position: 1, stage: "BASE_COLLECTION", maxAttempts: 10 },
   { name: "ARSENKIN_ENRICHMENT", position: 2, stage: "ARSENKIN_ENRICHMENT", maxAttempts: 40 },
-  { name: "COMPOSITE_MERGE", position: 3, stage: "COMPOSITE_MERGE", maxAttempts: 5 },
-  { name: "REPORT_PREPARE", position: 4, stage: "ORION_PREPARE", maxAttempts: 5 },
+  { name: "COMPOSITE_MERGE", position: 3, stage: "COMPOSITE_MERGE", maxAttempts: 10 },
+  { name: "REPORT_PREPARE", position: 4, stage: "ORION_PREPARE", maxAttempts: 60 },
 ] as const;
 
 export function stepDefinition(name: string): StepDefinition | null {

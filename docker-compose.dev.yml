@@ -120,7 +120,9 @@ services:
       DIGITAL_PROFILE_STORAGE_DIR: /app/storage/digital-profile
       DIGITAL_PROFILE_API_BASE: http://app:3000
       BASE_URL: http://app:3000
-    command: ["npm", "run", "worker"]
+    command: ["worker"]
+    healthcheck:
+      disable: true
     volumes:
       - .:/app
       - dp_dev_node_modules:/app/node_modules

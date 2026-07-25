@@ -43,6 +43,27 @@ describe("проверка общего хранилища", () => {
     expect(v.kind).toBe("ok");
   });
 
+  it("пути вне текущего корня хранилища сравнению не подлежат", () => {
+    // Запись, сделанная с другим корнем (хост против контейнера), говорит о
+    // смене окружения, а не о раздельных дисках. Без этого условия проба
+    // поднимала ложную тревогу на локальном стенде, где диск как раз общий.
+    const v = judgeSharedStorage(
+      [{ unifiedJobId: "j", paths: ["/root/proj/storage/a.json"] }],
+      NONE,
+      "/app/storage"
+    );
+    expect(v).toMatchObject({ kind: "no_data" });
+  });
+
+  it("пути внутри текущего корня сравниваются как обычно", () => {
+    const v = judgeSharedStorage(
+      [{ unifiedJobId: "j", paths: ["/app/storage/a.json"] }],
+      NONE,
+      "/app/storage"
+    );
+    expect(v).toMatchObject({ kind: "not_shared" });
+  });
+
   it("относительные пути в расчёт не берутся", () => {
     // Ключи хранилища в режиме БД не абсолютны и файлами не являются.
     expect(judgeSharedStorage([{ unifiedJobId: "j", paths: ["case/job/a.json"] }], NONE)).toMatchObject(

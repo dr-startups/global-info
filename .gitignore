@@ -48,3 +48,6 @@ __pycache__/
 # local-only report-72 generated duplicates (not regression fixtures)
 /baselines/report-72/artifacts/canonical-replay/
 /baselines/report-72/artifacts/deck-sections/render-payload.json
+
+# Artifacts of the Playwright MCP browser session
+.playwright-mcp/

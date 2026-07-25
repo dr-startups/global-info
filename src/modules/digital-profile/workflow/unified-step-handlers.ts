@@ -21,7 +21,7 @@ import {
   runUnifiedCollectionTick,
   type UnifiedOrchestratorDeps,
 } from "../services/unified-orion-collection-orchestrator";
-import { stepDefinition } from "./step-plan";
+import { UNIFIED_PIPELINE, stepDefinition } from "./step-plan";
 import type { StepHandler } from "./step-runner";
 import type { StepOutcome, WorkflowStepRow } from "./step-types";
 
@@ -32,6 +32,19 @@ const TERMINAL_STAGES = new Set([
   "FAILED_TERMINAL",
   "CANCELLED",
 ]);
+
+/**
+ * Позиция стадии джобы в конвейере — чтобы понимать «дошли до сюда или дальше».
+ *
+ * `CLIENT_CONTENT` делит позицию с `ORION_PREPARE`: это движение внутри одного
+ * шага подготовки отчёта.
+ */
+function jobStagePosition(stage: string): number {
+  const byStage = UNIFIED_PIPELINE.find((d) => d.stage === stage);
+  if (byStage) return byStage.position;
+  if (stage === "CLIENT_CONTENT") return 4;
+  return 0;
+}
 
 /**
  * Что стало с джобой после вызова обработчика.
@@ -76,13 +89,20 @@ export function outcomeFromJob(
     };
   }
 
-  const stepStage = stepDefinition(step.name)?.stage ?? step.name;
-  const stillHere = after.stage === stepStage || after.stage === before?.stage;
-
-  if (!stillHere || TERMINAL_STAGES.has(after.stage)) {
+  // Шаг завершён, когда джоба **дошла до его стадии или дальше**.
+  //
+  // Сравнивать «сдвинулась ли джоба за этот вызов» нельзя: если она обогнала
+  // шаг ещё до его исполнения, каждый вызов выглядел бы как «работа идёт», шаг
+  // ждал бы вечно и сжёг бы бюджет попыток, остановив конвейер. Ровно это и
+  // случилось на первом живом прогоне.
+  if (TERMINAL_STAGES.has(after.stage)) {
     return { kind: "done", outputRef: after.compositeDatasetId ?? after.baseReportRunId ?? null };
   }
-
+  const stepPos = stepDefinition(step.name)?.position ?? 0;
+  const jobPos = jobStagePosition(after.stage);
+  if (jobPos > stepPos) {
+    return { kind: "done", outputRef: after.compositeDatasetId ?? after.baseReportRunId ?? null };
+  }
   // Осталась на своей стадии — работа продолжается. Пауза берётся из
   // расписания джобы, чтобы опрос провайдера не участился.
   return {

@@ -38,5 +38,12 @@ npx --no-install prisma migrate deploy
 # --- private storage ---------------------------------------------------------
 mkdir -p "${DIGITAL_PROFILE_STORAGE_ROOT:-/app/storage/digital-profile}"
 
+# Один образ, две роли: приложение и воркер шагов. Роль выбирается аргументом
+# (compose передаёт его через `command`), а не отдельным образом.
+if [ "${1:-app}" = "worker" ]; then
+  log "starting step worker"
+  exec npm run worker
+fi
+
 log "starting next dev on 0.0.0.0:3000"
 exec npm run dev -- --hostname 0.0.0.0 --port 3000
