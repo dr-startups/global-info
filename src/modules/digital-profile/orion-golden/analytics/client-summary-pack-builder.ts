@@ -172,6 +172,41 @@ function sourceSuffix(domain: string | undefined): string {
   return d ? ` (${d})` : "";
 }
 
+/**
+ * Collapses recommendations that differ only by the theme they name.
+ *
+ * `new Set` removed exact duplicates only, so eight themes produced eight
+ * copies of "Сверить первоисточники и статус материалов по теме «X»" — a whole
+ * slide of one sentence repeated. Same-shaped lines become one line listing
+ * every theme, which is what an analyst would write.
+ */
+export function collapseRecommendations(items: string[]): string[] {
+  const groups = new Map<string, { sample: string; subjects: string[] }>();
+  const order: string[] = [];
+
+  for (const raw of items) {
+    const text = String(raw ?? "").trim();
+    if (!text) continue;
+    // Shape = the sentence with its quoted subject blanked out.
+    const shape = text.replace(/«[^»]*»/gu, "«»");
+    const subject = /«([^»]*)»/u.exec(text)?.[1]?.trim();
+    const existing = groups.get(shape);
+    if (!existing) {
+      groups.set(shape, { sample: text, subjects: subject ? [subject] : [] });
+      order.push(shape);
+      continue;
+    }
+    if (subject && !existing.subjects.includes(subject)) existing.subjects.push(subject);
+  }
+
+  return order.map((shape) => {
+    const { sample, subjects } = groups.get(shape)!;
+    if (subjects.length <= 1) return sample;
+    const list = subjects.map((s) => `«${s}»`).join(", ");
+    return sample.replace(/«[^»]*»/u, list);
+  });
+}
+
 function articleFromSelection(
   claim: CanonicalClaim,
   title: string,
@@ -487,14 +522,12 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
     allEvidence
   );
 
-  const nextSteps = [
-    ...new Set(
-      materialThemes.flatMap((t) => t.recommendedChecks).concat([
-        "Сверить актуальность санкционных и мониторинговых записей по официальным источникам.",
-        "Подготовить единый пакет документов для KYC и партнёрских запросов.",
-      ])
-    ),
-  ].slice(0, 8);
+  const nextSteps = collapseRecommendations(
+    materialThemes.flatMap((t) => t.recommendedChecks).concat([
+      "Сверить актуальность санкционных и мониторинговых записей по официальным источникам.",
+      "Подготовить единый пакет документов для KYC и партнёрских запросов.",
+    ])
+  ).slice(0, 8);
 
   const scope = {
     regions: input.scope?.regions ?? ["RU", "UAE"],

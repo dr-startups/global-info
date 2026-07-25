@@ -124,26 +124,49 @@ function textBlock(
   };
 }
 
+/** Blocks per continuation page — a page of four bullets stops reading as a list. */
+export const MAX_BLOCKS_PER_CONTINUATION_PAGE = 3;
+
+/**
+ * Characters a continuation page may hold, as a multiple of the per-bullet
+ * budget. Three bullets of full budget is what the layout already supports —
+ * `packContinuationPages` used to allow exactly that for short blocks.
+ */
+export const CONTINUATION_PAGE_BUDGET_FACTOR = 3;
+
 /**
  * Pack theme/other blocks into continuation pages.
- * Long blocks (near bullet budget) get their own page; short ones share up to 3.
+ *
+ * The old rule gave any block longer than 66% of the bullet budget a page to
+ * itself. Theme blocks are typically 600–900 characters, so nearly every one
+ * monopolised a page: the delivered report spread its summary over nine
+ * continuation pages, each holding a single bullet on about a sixth of the
+ * sheet. Density now follows a cumulative page budget — a block only gets a
+ * page alone when it does not fit beside anything else.
  */
 function packContinuationPages(blocks: SemanticBlock[], bulletBudget: number): SemanticBlock[][] {
+  const pageBudget = bulletBudget * CONTINUATION_PAGE_BUDGET_FACTOR;
   const pages: SemanticBlock[][] = [];
   let cur: SemanticBlock[] = [];
+  let curChars = 0;
   const flush = () => {
     if (cur.length) pages.push(cur);
     cur = [];
+    curChars = 0;
   };
   for (const b of blocks) {
-    const long = b.text.length > Math.floor(bulletBudget * 0.66);
-    if (long) {
+    const size = b.text.length;
+    // Oversized on its own: nothing would fit beside it anyway.
+    if (size > pageBudget) {
       flush();
       pages.push([b]);
       continue;
     }
-    if (cur.length >= 3) flush();
+    const wouldOverflow = curChars + size > pageBudget;
+    const wouldExceedCount = cur.length >= MAX_BLOCKS_PER_CONTINUATION_PAGE;
+    if (cur.length > 0 && (wouldOverflow || wouldExceedCount)) flush();
     cur.push(b);
+    curChars += size;
   }
   flush();
   return pages;
