@@ -183,6 +183,40 @@ describe("происхождение темы", () => {
     expect(withoutExtraction.materialThemes.length).toBeGreaterThan(0);
   });
 
+  it("в текст темы не попадает унаследованный факт", () => {
+    const { representative } = chain();
+    const themeIds = Object.keys(representative.selectedByTheme);
+    const target = themeIds[0]!;
+
+    const built = pack({
+      factsByTheme: {
+        [target]: [
+          {
+            // Унаследованный: модель к этой теме его не относила.
+            statement: "Посторонний биографический факт.",
+            quote: "Тестов Сергей Михайлович основал несколько компаний",
+            status: "established_fact",
+            evidenceRef: "inventory:tp-2",
+          },
+          {
+            statement: "Источник сообщает о задержании.",
+            quote: "Тестов Сергей Михайлович задержан по подозрению",
+            status: "source_allegation",
+            evidenceRef: "inventory:tp-1",
+            themeId: target,
+          },
+        ],
+      },
+      factsProcessedThemes: themeIds,
+    });
+
+    const theme = built.materialThemes.find((t) => t.themeId === target);
+    expect(theme).toBeDefined();
+    const text = [theme!.conclusion, ...theme!.concreteClaims].join(" ");
+    expect(text).toContain("задержании");
+    expect(text).not.toContain("Посторонний биографический факт");
+  });
+
   it("отсев темы не роняет гейт валидности пака", () => {
     // Регрессия: гейт считал отсеянную CRITICAL/HIGH тему «пропавшей»,
     // CLIENT_SUMMARY_PACK_VALID становился false, и отчёт не собирался вовсе —

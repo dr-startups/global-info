@@ -482,9 +482,13 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
 
   for (const themeId of [...input.representative.materialThemeIds].sort()) {
     if (themeId === "identity_mismatch") continue;
-    const themeFacts = input.factsByTheme?.[themeId] ?? [];
-    // Only a fact the model explicitly filed under this theme justifies it.
-    const hasOwnFact = themeFacts.some((f) => f.themeId === themeId);
+    const allThemeFacts = input.factsByTheme?.[themeId] ?? [];
+    // A fact that merely inherited this theme was not filed here by the model,
+    // so it must not appear in the theme's text either. Otherwise the lead
+    // sentence picks it up and the deck reads «Репутационные скандалы …
+    // установлено: родился 10 октября 1984 года» (step 06.3).
+    const themeFacts = allThemeFacts.filter((f) => f.themeId === themeId);
+    const hasOwnFact = themeFacts.length > 0;
     const processedWithoutFacts =
       (input.factsProcessedThemes?.includes(themeId) ?? false) && !hasOwnFact;
     if (processedWithoutFacts) prunedThemeIds.add(themeId);
