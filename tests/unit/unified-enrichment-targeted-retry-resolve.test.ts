@@ -3,7 +3,7 @@
  * and ensure path stays scoped when listProviderTasks is injected alone.
  */
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import {
   clearSuggestionsFailureFromEnrichmentState,
   isReusableSuggestTask,

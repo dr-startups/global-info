@@ -45,9 +45,9 @@ function item(partial: Partial<RawInventoryItem> & { title: string }): RawInvent
     region: "RU",
     collectedAt: "2026-01-01T00:00:00.000Z",
     evidenceType: "search_result",
-    title: partial.title,
-    snippet: partial.snippet,
     sourceUrl: partial.sourceUrl ?? "https://example.com/x",
+    // title/snippet come from the spread below; listing them here as well made
+    // the explicit values dead and tripped TS2783.
     ...partial,
   } as RawInventoryItem;
 }

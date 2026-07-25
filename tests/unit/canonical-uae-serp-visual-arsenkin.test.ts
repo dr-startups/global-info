@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import { buildCanonicalVisualAssets } from "../../src/modules/digital-profile/services/canonical-visual-assets";
 import type { RawInventoryItem } from "../../src/modules/digital-profile/orion-golden/types";
 

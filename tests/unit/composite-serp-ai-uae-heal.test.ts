@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import { mergeCompositeSerp } from "../../src/modules/digital-profile/services/composite-serp-merge";
 import type { BaseCollectionManifest } from "../../src/modules/digital-profile/services/unified-collection-types";
 

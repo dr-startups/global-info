@@ -84,6 +84,8 @@ describe("I.3 — pagination density", () => {
   });
 
   it("risk matrix packs 3 cards per page", () => {
+    // Partial fixture: only the fields the packing rule reads. Cast through
+    // unknown so the omission is explicit rather than an unchecked assertion.
     const mk = (id: string): Finding =>
       ({
         findingId: id,
@@ -94,7 +96,7 @@ describe("I.3 — pagination density", () => {
         promotionPriority: "EXECUTIVE",
         evidenceRefs: [],
         recommendedAction: "x",
-      }) as Finding;
+      }) as unknown as Finding;
     const pages = packRiskMatrixPages(
       [mk("a"), mk("b"), mk("c"), mk("d"), mk("e")],
       []

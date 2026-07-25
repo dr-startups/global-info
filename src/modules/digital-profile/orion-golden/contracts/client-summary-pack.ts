@@ -43,7 +43,12 @@ export const ClientMaterialThemeSchema = z.object({
   recommendedChecks: z.array(z.string()).min(1),
   materialityLevel: MaterialityLevelSchema,
   evidenceRefs: z.array(z.string()).min(1),
-  sourceDomains: z.array(z.string()).min(1),
+  /**
+   * Domains behind the theme. May be empty when no material carries a public
+   * URL: the builder stopped substituting «неизвестный источник» in step 05.3,
+   * and an invented source is worse than none.
+   */
+  sourceDomains: z.array(z.string()),
 });
 export type ClientMaterialTheme = z.infer<typeof ClientMaterialThemeSchema>;
 
