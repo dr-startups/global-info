@@ -166,6 +166,17 @@ export async function runAgent(
   const agent = getAgent(agentName);
   if (!agent) throw new ValidationError(`Unknown agent: ${agentName}`);
 
+  // Hiding a button is not enforcement: a disabled agent must be unreachable
+  // through the API too. Without this, a demo agent could still be driven
+  // straight into a live case's evidence base (step 11.2).
+  const availability = agent.availability();
+  if (availability.status !== "ENABLED") {
+    throw new ValidationError(
+      `Agent ${agentName} is not available: ${availability.status}` +
+        (availability.message ? ` — ${availability.message}` : "")
+    );
+  }
+
   const agentCtx: AgentContext = {
     caseId,
     actorId: ctx.actorId ?? "system",
