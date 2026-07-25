@@ -41,6 +41,56 @@ import {
   withContinuations,
 } from "./shared";
 
+/**
+ * Ключ материала для таблицы выдачи (шаг 13, D7).
+ *
+ * Один и тот же материал приходит из разных запросов с разными идентификаторами
+ * наблюдения, поэтому объединяем по тому, что видит читатель: домен и
+ * заголовок. Без заголовка ориентируемся на адрес — иначе в одну строку
+ * склеились бы разные страницы одного сайта.
+ */
+export function serpMaterialKey(e: {
+  url?: string;
+  domain?: string;
+  title?: string;
+}): string {
+  const domain = String(e.domain ?? domainOfUrl(e.url) ?? "")
+    .toLowerCase()
+    .replace(/^www\./u, "");
+  const title = String(e.title ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/gu, " ");
+  if (title) return `${domain}|${title}`;
+  const url = String(e.url ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//u, "")
+    .replace(/^www\./u, "")
+    .replace(/\/+$/u, "");
+  return url ? `url:${url}` : `domain:${domain}`;
+}
+
+/** Наблюдения одного материала — в одну строку, в порядке первого появления. */
+export function mergeSerpRowsByMaterial(
+  refs: string[],
+  scoped: ScopedFragmentInput
+): Array<{ key: string; refs: string[] }> {
+  const order: string[] = [];
+  const byKey = new Map<string, string[]>();
+  for (const ref of refs) {
+    const key = serpMaterialKey(scoped.evidenceIndex[ref] ?? {});
+    const list = byKey.get(key);
+    if (list) {
+      list.push(ref);
+      continue;
+    }
+    byKey.set(key, [ref]);
+    order.push(key);
+  }
+  return order.map((key) => ({ key, refs: byKey.get(key)! }));
+}
+
 export function buildSerpFragment(
   key: FragmentKey,
   sectionId: SectionType,
@@ -79,17 +129,30 @@ export function buildSerpFragment(
   }
   const adverseRefSet = new Set<string>();
   for (const f of scoped.findings.filter(isAdverse)) for (const r of f.evidenceRefs) adverseRefSet.add(r);
-  const displayedRefs = refs.slice(0, 36);
-  const rows = displayedRefs.map((ref, i) => {
-    const e = scoped.evidenceIndex[ref] ?? {};
+  // Шаг 13, D7 — одна и та же страница, найденная несколькими запросами,
+  // печаталась как несколько разных «позиций» (ru.wikipedia.org на 1 и 19,
+  // instagram.com на 2, 21 и 28), а у одного ролика соседние строки несли
+  // противоположные оценки. Материал в таблице один; оценка у него —
+  // сильнейшая из всех наблюдений этого материала.
+  const merged = mergeSerpRowsByMaterial(refs, scoped);
+  const displayed = merged.slice(0, 36);
+  const displayedRefs = displayed.flatMap((g) => g.refs);
+  const rows = displayed.map((group, i) => {
+    const e = scoped.evidenceIndex[group.refs[0]!] ?? {};
     // A row is marked when its evidence backs an adverse finding OR its own
     // title carries an adverse pattern (sanctions/criminal/court wording) —
     // clearly negative rows must never show a green "Нейтральный" badge.
-    const adverse =
-      e.adverse === true ||
-      adverseRefSet.has(ref) ||
-      ADVERSE_PATTERNS.test(String(e.title ?? ""));
-    const likely = e.subjectDecision === "LIKELY_SUBJECT";
+    const adverse = group.refs.some((ref) => {
+      const ev = scoped.evidenceIndex[ref] ?? {};
+      return (
+        ev.adverse === true ||
+        adverseRefSet.has(ref) ||
+        ADVERSE_PATTERNS.test(String(ev.title ?? ""))
+      );
+    });
+    const likely = group.refs.some(
+      (ref) => scoped.evidenceIndex[ref]?.subjectDecision === "LIKELY_SUBJECT"
+    );
     // Red marker must always carry its label; domain comes from evidence URL.
     // LIKELY (§2.1) → «Вероятно» — visible but not confirmed-subject KPI.
     const rating = adverse ? RED_MARKER_LABEL : likely ? "Вероятно" : "Нейтральный";
@@ -107,7 +170,12 @@ export function buildSerpFragment(
       ? DECK_TEMPLATE_REGISTRY["serp-table"].maxTableRowsPerSlide
       : 12;
   const rowChunks = chunk(rows, maxRows);
-  const refChunks = chunk(displayedRefs, maxRows);
+  // Ссылки страницы — все наблюдения её строк: доказательная трасса не должна
+  // терять дубли, даже когда читателю они показаны одной строкой.
+  const refChunks = chunk(
+    displayed.map((g) => g.refs),
+    maxRows
+  ).map((c) => c.flat());
   const slides: SlideContentContract[] = [];
   const baseSlideId = slot.slotId;
   for (let i = 0; i < rowChunks.length; i += 1) {
@@ -134,6 +202,7 @@ export function buildSerpFragment(
       findingIds: view.findings.map((f) => f.findingId),
       metrics: {
         datasetCount: refs.length,
+        uniqueMaterials: merged.length,
         displayedCount: pageRows.length,
         adverseDisplayed: pageRows.filter((r) => r[3] === RED_MARKER_LABEL).length,
         likelyDisplayed: pageRows.filter((r) => r[3] === "Вероятно").length,

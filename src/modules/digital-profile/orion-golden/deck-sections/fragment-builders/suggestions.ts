@@ -16,6 +16,13 @@ import {
   visualSlide,
 } from "./shared";
 
+/** Клиентское имя поисковой системы; для общей страницы — без уточнения. */
+function engineLabel(engine: string | null): string {
+  if (engine === "YANDEX") return "Яндекс";
+  if (engine === "GOOGLE") return "Google";
+  return "";
+}
+
 export function buildSuggestionsFragment(
   key: FragmentKey,
   sectionId: SectionType,
@@ -74,6 +81,10 @@ export function buildSuggestionsFragment(
         metrics: { items: refs.length, adverseSuggestions: sidebar.adverseRows.length },
         noUnderlyingData: refs.length === 0,
         noDataReason: "no-suggestions",
+        // Шаг 13, C11 — страница отвечает за одну поисковую систему в одном
+        // регионе, и пустой статус не должен звучать как вывод обо всех
+        // подсказках: рядом отчёт цитирует подсказку из другой системы.
+        noDataScopeLabel: [engineLabel(engine), regionLabel].filter(Boolean).join(", "),
       })
     );
   }

@@ -460,9 +460,10 @@ export function buildExecutiveSummaryFromComposed(
     const pageBlocks = plan.continuationPages[pageIdx]!;
     const kinds = new Set(pageBlocks.map((b) => b.kind));
     const themeOnly = [...kinds].every((k) => k === "theme");
-    const baseTitle = themeOnly
-      ? "Резюме — темы риска"
-      : "Резюме — продолжение";
+    // «Резюме — продолжение (продолжение 3/4)» — слово дважды в одном
+    // заголовке (шаг 13, D5). Нумерация продолжений добавляется ниже, поэтому
+    // базовый заголовок её не повторяет.
+    const baseTitle = themeOnly ? "Резюме — темы риска" : "Резюме";
     slides.push({
       ...base,
       slideId: pageIdx === 0 ? `${base.slideId}__cont1` : `${base.slideId}__cont${pageIdx + 1}`,

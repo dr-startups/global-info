@@ -180,6 +180,66 @@ export function buildComplianceFragment(
   const dowHits = hits.filter(([, e]) => (e.providerLabel ?? "").toUpperCase() === "DOW_JONES");
   const lexisHits = hits.filter(([, e]) => (e.providerLabel ?? "").toUpperCase() === "LEXISNEXIS");
 
+  /**
+   * Страница одной комплаенс-базы.
+   *
+   * Шаг 13, C13 — при нуле записей страница печатала таблицу «Параметр /
+   * Значение», где значениями была проза («Категория PEP влияет на уровень
+   * комплаенс-контроля…»), и подавала это как содержание профиля. Утверждать
+   * значимость категории PEP, не имея ни одной записи, нельзя: пустая база —
+   * это результат проверки, и выглядеть он должен как результат проверки.
+   */
+  const providerSlide = (input: {
+    slot: (typeof slots)[number];
+    provider: string;
+    hits: ComplianceHitEntry[];
+    infoRows: string[][];
+    narrative: string;
+    whyWithRecords: string;
+    whyWithoutRecords: string;
+    whatToCheckWithRecords: string;
+    sourceNote: string;
+    emptyStateReason?: string;
+  }): SlideContentContract => {
+    if (input.hits.length === 0) {
+      return makeSlotSlide({
+        slot: input.slot,
+        sectionId,
+        templateId: "coverage-empty-state",
+        content: {
+          narrative: `Проверка по базе ${input.provider} выполнена: записей о субъекте не зафиксировано — это результат проверки на дату отчёта, а не вывод об отсутствии рисков.`,
+          bullets: [input.whyWithoutRecords],
+          whatToCheck: `Повторить сверку по базе ${input.provider} при следующем обновлении данных; при появлении записи запросить полную карточку и сверить идентификаторы субъекта.`,
+          sourceNote: input.sourceNote,
+        },
+        evidenceRefs: [],
+        findingIds: [],
+        metrics: { hits: 0 },
+        emptyStateReason: "no-compliance-records",
+      });
+    }
+    return makeSlotSlide({
+      slot: input.slot,
+      sectionId,
+      templateId: "serp-table",
+      content: {
+        narrative: input.narrative,
+        table: providerParamTable(input.hits, input.infoRows),
+        whatWasFound: clampClientText(
+          `Потенциальное совпадение категории «${hitLabel(input.hits[0]!).category}» с оценкой ${hitLabel(input.hits[0]!).score}; совпадение не подтверждено и требует ручной проверки.`,
+          400
+        ),
+        whyItMatters: input.whyWithRecords,
+        whatToCheck: input.whatToCheckWithRecords,
+        sourceNote: input.sourceNote,
+      },
+      evidenceRefs: input.hits.map(([r]) => r),
+      findingIds: [],
+      metrics: { hits: input.hits.length },
+      ...(input.emptyStateReason ? { emptyStateReason: input.emptyStateReason } : {}),
+    });
+  };
+
   const slides: SlideContentContract[] = [
     makeSlotSlide({
       slot: summarySlot,
@@ -212,67 +272,51 @@ export function buildComplianceFragment(
       findingIds: scoped.findings.map((f) => f.findingId),
       metrics: { complianceItems: refs.length, hits: hits.length },
     }),
-    makeSlotSlide({
-      slot: dowSlot,
-      sectionId,
-      templateId: "serp-table",
-      content: {
-        narrative:
-          "Профиль по данным Dow Jones: существующий комплаенс-контент, источники не расширялись.",
-        table: providerParamTable(dowHits, [
-          [
-            "Почему важно",
-            "Категория PEP влияет на уровень комплаенс-контроля при онбординге и мониторинге клиента.",
-          ],
-          ["Что сделать", "Запросить полную запись Dow Jones и сверить идентификаторы субъекта."],
-        ]),
-        whatWasFound: dowHits.length
-          ? clampClientText(
-              `Потенциальное совпадение категории «${hitLabel(dowHits[0]).category}» с оценкой ${hitLabel(dowHits[0]).score}; совпадение не подтверждено и требует ручной проверки.`,
-              400
-            )
-          : "Совпадений в базе Dow Jones не зафиксировано.",
-        whyItMatters:
+    providerSlide({
+      slot: dowSlot!,
+      provider: "Dow Jones",
+      hits: dowHits,
+      narrative:
+        "Профиль по данным Dow Jones: существующий комплаенс-контент, источники не расширялись.",
+      infoRows: [
+        [
+          "Почему важно",
           "Категория PEP влияет на уровень комплаенс-контроля при онбординге и мониторинге клиента.",
-        whatToCheck: "Запросить полную запись Dow Jones и сверить идентификаторы субъекта.",
-        sourceNote: "Источник: Dow Jones (существующий контур).",
-      },
-      evidenceRefs: dowHits.map(([r]) => r),
-      findingIds: [],
-      metrics: { hits: dowHits.length },
+        ],
+        ["Что сделать", "Запросить полную запись Dow Jones и сверить идентификаторы субъекта."],
+      ],
+      whyWithRecords:
+        "Категория PEP влияет на уровень комплаенс-контроля при онбординге и мониторинге клиента.",
+      whyWithoutRecords:
+        "База Dow Jones отвечает на вопрос о статусе политически значимого лица: запись в ней подняла бы уровень контроля при онбординге и мониторинге. В текущем наборе такой записи по субъекту нет.",
+      whatToCheckWithRecords:
+        "Запросить полную запись Dow Jones и сверить идентификаторы субъекта.",
+      sourceNote: "Источник: Dow Jones (существующий контур).",
     }),
-    makeSlotSlide({
-      slot: lexisSlot,
-      sectionId,
-      templateId: "serp-table",
-      content: {
-        narrative:
-          "Страница профиля LexisNexis. Визуальный экспорт страницы в текущем наборе недоступен; содержимое записи приведено в текстовом виде без потерь. Вторая страница профиля из отчёта v72 объединена с этой: отдельного содержимого у неё нет.",
-        table: providerParamTable(lexisHits, [
-          [
-            "Почему важно",
-            "Негативные публикации в базе увеличивают репутационный риск и требуют проверки первоисточников.",
-          ],
-          ["Что сделать", "Запросить полную запись LexisNexis и проверить первоисточники публикаций."],
-          [
-            "Визуальный экспорт",
-            "Недоступен в текущем наборе; данные приведены в текстовом виде без потерь.",
-          ],
-        ]),
-        whatWasFound: lexisHits.length
-          ? clampClientText(
-              `Потенциальное совпадение категории «${hitLabel(lexisHits[0]).category}» с оценкой ${hitLabel(lexisHits[0]).score}; совпадение не подтверждено и требует ручной проверки.`,
-              400
-            )
-          : "Совпадений в базе LexisNexis не зафиксировано.",
-        whyItMatters:
+    providerSlide({
+      slot: lexisSlot!,
+      provider: "LexisNexis",
+      hits: lexisHits,
+      narrative:
+        "Страница профиля LexisNexis. Визуальный экспорт страницы в текущем наборе недоступен; содержимое записи приведено в текстовом виде без потерь. Вторая страница профиля из отчёта v72 объединена с этой: отдельного содержимого у неё нет.",
+      infoRows: [
+        [
+          "Почему важно",
           "Негативные публикации в базе увеличивают репутационный риск и требуют проверки первоисточников.",
-        whatToCheck: "Запросить полную запись LexisNexis и проверить первоисточники публикаций.",
-        sourceNote: "Источник: LexisNexis (существующий контур).",
-      },
-      evidenceRefs: lexisHits.map(([r]) => r),
-      findingIds: [],
-      metrics: { hits: lexisHits.length },
+        ],
+        ["Что сделать", "Запросить полную запись LexisNexis и проверить первоисточники публикаций."],
+        [
+          "Визуальный экспорт",
+          "Недоступен в текущем наборе; данные приведены в текстовом виде без потерь.",
+        ],
+      ],
+      whyWithRecords:
+        "Негативные публикации в базе увеличивают репутационный риск и требуют проверки первоисточников.",
+      whyWithoutRecords:
+        "База LexisNexis собирает негативные публикации и правовые сюжеты: запись в ней потребовала бы проверки первоисточников. В текущем наборе такой записи по субъекту нет.",
+      whatToCheckWithRecords:
+        "Запросить полную запись LexisNexis и проверить первоисточники публикаций.",
+      sourceNote: "Источник: LexisNexis (существующий контур).",
       emptyStateReason: VISUAL_ASSET_UNAVAILABLE,
     }),
   ];

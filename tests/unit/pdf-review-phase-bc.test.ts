@@ -224,4 +224,44 @@ describe("B.2 + C.4 — compliance table", () => {
     const covered = table.groups!.reduce((n, g) => n + g.rowCount, 0);
     expect(covered).toBe(table.rows.length);
   });
+
+  /**
+   * Шаг 13, C13 — база без записей печаталась как содержательный профиль:
+   * таблица «Параметр / Значение», где значениями была проза, и утверждение
+   * «Категория PEP влияет на уровень комплаенс-контроля» при нуле записей.
+   */
+  describe("C13 — база без записей подаётся как результат проверки", () => {
+    const empty = buildComplianceFragment(
+      "COMPLIANCE" as never,
+      { ...scoped, evidenceIndex: {} } as never,
+      {} as never
+    );
+    const dow = empty.slides.find((s) =>
+      String(s.content.narrative ?? "").includes("Dow Jones")
+    )!;
+
+    it("вместо таблицы из прозы — пустое состояние", () => {
+      expect(dow.templateId).toBe("coverage-empty-state");
+      expect(dow.content.table).toBeUndefined();
+      expect(dow.content.narrative).toMatch(/записей о субъекте не зафиксировано/);
+    });
+
+    it("не утверждает значимость категории PEP без единой записи", () => {
+      const text = JSON.stringify(dow.content);
+      expect(text).not.toContain("Категория PEP влияет");
+      expect(text).toContain("В текущем наборе такой записи по субъекту нет");
+    });
+
+    it("рекомендация выполнима: нечего запрашивать — нечего и сверять", () => {
+      expect(dow.content.whatToCheck).toMatch(/Повторить сверку/);
+      expect(dow.content.whatToCheck).not.toMatch(/^Запросить полную запись/);
+    });
+
+    it("страница с записями остаётся таблицей", () => {
+      const lexis = out.slides.find((s) =>
+        String(s.content.narrative ?? "").includes("LexisNexis")
+      )!;
+      expect(lexis.content.table?.rows.length).toBeGreaterThan(0);
+    });
+  });
 });

@@ -68,19 +68,33 @@ export function countIdentityByObservation(input: {
   likelySubjectCount: number;
   ambiguousCount: number;
   otherSubjectCount: number;
+  /** Нет признаков субъекта вовсе — и нет решения по наблюдению. */
+  insufficientCount: number;
 } {
   let subjectMatchCount = 0;
   let likelySubjectCount = 0;
   let ambiguousCount = 0;
   let otherSubjectCount = 0;
+  // Классификатор возвращает пять решений, а считались четыре: наблюдения с
+  // `INSUFFICIENT_IDENTIFIERS` (и вовсе без решения) не попадали никуда, и
+  // плитки на обложке не сходились — 504 материала против 473 в разбивке
+  // (шаг 13, C10). Разбивка обязана быть полной.
+  let insufficientCount = 0;
   for (const refs of input.observationRefGroups) {
     const best = bestIdentityDecision(refs, input.decisionByRef);
     if (best === "SUBJECT_MATCH") subjectMatchCount += 1;
     else if (best === "LIKELY_SUBJECT") likelySubjectCount += 1;
     else if (best === "AMBIGUOUS") ambiguousCount += 1;
     else if (best === "OTHER_SUBJECT") otherSubjectCount += 1;
+    else insufficientCount += 1;
   }
-  return { subjectMatchCount, likelySubjectCount, ambiguousCount, otherSubjectCount };
+  return {
+    subjectMatchCount,
+    likelySubjectCount,
+    ambiguousCount,
+    otherSubjectCount,
+    insufficientCount,
+  };
 }
 
 export type UncategorizedMaterialsDeckInput = {
@@ -214,12 +228,19 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
   const evidenceIndex: ScopedEvidenceIndex = {};
   const knownEvidenceRefs = new Set<string>();
   const perRegionCounts: Record<string, number> = {};
+  // Разбивка «вероятно о субъекте» по регионам. Раньше на региональную
+  // страницу печаталось глобальное число, из-за чего у России (312 материалов)
+  // и ОАЭ (192) стояло одно и то же «31» (шаг 13, C10).
+  const perRegionLikelyCounts: Record<string, number> = {};
   for (let i = 0; i < observations.observations.length; i += 1) {
     const obs = observations.observations[i]!;
     const regionKey = mapRegionBucket(obs.region) === "UAE" ? "UAE" : "RU";
     perRegionCounts[regionKey] = (perRegionCounts[regionKey] ?? 0) + 1;
     const linkedRefs = observationRefGroups[i] ?? obs.evidenceRefs ?? [];
     const subjectDecision = bestIdentityDecision(linkedRefs, decisionByRef);
+    if (subjectDecision === "LIKELY_SUBJECT") {
+      perRegionLikelyCounts[regionKey] = (perRegionLikelyCounts[regionKey] ?? 0) + 1;
+    }
     const allRefs = [...new Set([...(obs.evidenceRefs ?? []), ...linkedRefs])];
     for (const ref of allRefs) {
       knownEvidenceRefs.add(ref);
@@ -407,12 +428,15 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     // Same unit as compositeCount (observation rows), not inventory decisions.
     subjectMatchCount: identityCounts.subjectMatchCount,
     likelySubjectCount: identityCounts.likelySubjectCount,
-    ambiguousCount: identityCounts.ambiguousCount,
+    // «Требуют идентификации» покрывает и смешанные признаки, и полное их
+    // отсутствие: для читателя это один вопрос — материал не отнесён к лицу.
+    ambiguousCount: identityCounts.ambiguousCount + identityCounts.insufficientCount,
     otherSubjectCount: identityCounts.otherSubjectCount,
     adverseFindingCount: bundle.findings.filter(
       (f) => f.subjectMatch === "SUBJECT_MATCH" && (RISK_ORDER[f.riskLevel] ?? 0) >= 2
     ).length,
     perRegionCounts,
+    perRegionLikelyCounts,
   };
 
   return {

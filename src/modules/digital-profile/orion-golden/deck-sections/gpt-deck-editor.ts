@@ -32,6 +32,7 @@ import {
   rejectWeakQuoteLines,
 } from "./llm-slide-copy";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
+import { fixSubjectNameOrder } from "../analytics/russian-name-order";
 
 export const GPT_DECK_EDITOR_PROMPT_VERSION = "gpt-deck-editor-v1";
 
@@ -173,8 +174,12 @@ function applyEditorOverridesToPack(input: {
   overrides: EditorSlideOverride[];
   evidenceIndex: ScopedEvidenceIndex;
   report: GptDeckEditorFragmentReport;
+  /** Имя субъекта — порядок «имя отчество фамилия» в прозе (шаг 13, C8). */
+  subjectDisplayName?: string;
 }): { pack: SectionPackV2; changed: boolean } {
   const { pack, overrides, report } = input;
+  const fixName = (text: string): string =>
+    input.subjectDisplayName ? fixSubjectNameOrder(text, input.subjectDisplayName) : text;
   const overrideById = new Map(overrides.map((o) => [o.slideId, o]));
   const continuationBases = new Set(
     pack.slides.filter((s) => s.isContinuation).map((s) => s.continuationOf)
@@ -195,8 +200,9 @@ function applyEditorOverridesToPack(input: {
       budget: number
     ) => {
       if (value === undefined) return;
-      const normalized =
-        field === "narrative" ? reflowNarrativeParagraphs(value.trim()) : value.trim();
+      const normalized = fixName(
+        field === "narrative" ? reflowNarrativeParagraphs(value.trim()) : value.trim()
+      );
       const reason = rejectReason(normalized, budget, allowed);
       if (reason) {
         report.rejectedFields.push(`${slide.slideId}.${field}:${reason}`);
@@ -216,7 +222,7 @@ function applyEditorOverridesToPack(input: {
     // Chunked bullet sequences stay untouched (same guard as stage 2).
     if (o.bullets && !continuationBases.has(slide.slideId)) {
       const draftBullets = slide.content.bullets ?? [];
-      const reflowed = o.bullets.map((b) => reflowThemeBullet(b.trim()));
+      const reflowed = o.bullets.map((b) => fixName(reflowThemeBullet(b.trim())));
       const reasons = reflowed
         .map(
           (b, i) =>
@@ -345,6 +351,7 @@ export async function runGptDeckEditorPass(input: {
       rejectedFields: [],
     };
     const { pack: edited, changed } = applyEditorOverridesToPack({
+      subjectDisplayName: input.subject.displayName,
       pack,
       overrides,
       evidenceIndex: input.evidenceIndex,

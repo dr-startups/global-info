@@ -147,24 +147,59 @@ function articleSentence(
   );
 }
 
+/**
+ * Форма фразы: имя темы и перечень доменов не делают её другой.
+ *
+ * Шаг 13, C5 — оговорка «Публикация (…) содержит утверждения источника…»
+ * печаталась шесть раз, а «Сверить первоисточники… по теме «X»» — пять.
+ * Отличались они только подставленным именем темы и списком доменов, то есть
+ * читателю сообщали одно и то же.
+ */
+export function boilerplateShape(text: string): string {
+  return String(text ?? "")
+    .toLowerCase()
+    .replace(/«[^»]*»/gu, "«»")
+    .replace(/(?:«»)(?:\s*,\s*«»)+/gu, "«»")
+    .replace(/\([^)]*\)/gu, "()")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
 function composeThemeSection(
   theme: ClientSummaryPack["materialThemes"][number],
-  alreadyUsedTitles: Set<string>
+  alreadyUsedTitles: Set<string>,
+  seenBoilerplate: Set<string>,
+  coveredCheckShapes: Set<string>
 ): ComposedThemeSection {
   const articles = theme.representativeArticles.slice(0, 2);
   const articleBits = articles
     .map((a) => articleSentence(a.title, a.domain, a.conciseCompleteDescription, alreadyUsedTitles))
     .filter((s): s is string => Boolean(s));
+  // Оговорку и общий совет читатель уже видел в предыдущей теме — повторять их
+  // дословно значит превращать резюме в бланк.
+  const once = (sentence: string): string => {
+    const s = finishSentence(sentence);
+    if (!s) return "";
+    const shape = boilerplateShape(s);
+    if (seenBoilerplate.has(shape)) return "";
+    seenBoilerplate.add(shape);
+    return s;
+  };
   const allegation = articles[0]
-    ? finishSentence(articles[0].sourceAllegationOrStatus)
-    : finishSentence(theme.concreteClaims[0] ?? theme.conclusion);
+    ? once(articles[0].sourceAllegationOrStatus)
+    : once(theme.concreteClaims[0] ?? theme.conclusion);
+  // Проверки, уже перечисленные разделом «Следующие проверки», в теле темы
+  // не повторяются: там они собраны по всем темам одной строкой.
+  const ownChecks = theme.recommendedChecks.filter(
+    (c) => !coveredCheckShapes.has(boilerplateShape(c))
+  );
   const body = [
     finishSentence(`${theme.clientTitle}. ${theme.conclusion}`),
     articleBits.join(" "),
     allegation,
-    finishSentence(theme.whyItMatters),
-    finishSentence(`Что проверить: ${theme.recommendedChecks.join(" ")}`),
-    finishSentence(theme.qualification),
+    once(theme.whyItMatters),
+    ownChecks.length ? once(`Что проверить: ${ownChecks.join(" ")}`) : "",
+    once(theme.qualification),
   ]
     .filter(Boolean)
     .join(" ");
@@ -282,7 +317,11 @@ export function composeClientSummary(
     return a.themeId.localeCompare(b.themeId);
   });
 
-  const themeSections = themesSorted.map((t) => composeThemeSection(t, alreadyUsedTitles));
+  const seenBoilerplate = new Set<string>();
+  const coveredCheckShapes = new Set(pack.nextSteps.map(boilerplateShape));
+  const themeSections = themesSorted.map((t) =>
+    composeThemeSection(t, alreadyUsedTitles, seenBoilerplate, coveredCheckShapes)
+  );
   const continuationThemeIds = themeSections
     .slice(LEAD_THEME_COUNT)
     .map((t) => t.themeId);

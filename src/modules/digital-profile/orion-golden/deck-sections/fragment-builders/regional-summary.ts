@@ -144,7 +144,12 @@ export function buildRegionalSummaryFragment(
       })
     );
   } else {
-    const likelyN = scoped.metricSnapshot.likelySubjectCount ?? 0;
+    // Региональная страница печатает региональное число: глобальное давало
+    // одинаковое «31» и России, и ОАЭ (шаг 13, C10).
+    const likelyN =
+      scoped.metricSnapshot.perRegionLikelyCounts?.[regionKey] ??
+      scoped.metricSnapshot.likelySubjectCount ??
+      0;
     // B.2 — one formula for both counters: total confirmed themes vs the
     // high-attention subset. Adjacent pages print the subset (M), so the
     // summary must explain the relationship instead of a bare N.

@@ -20,7 +20,7 @@ import {
   type IsolatedSignificantItem,
   type P1P2Account,
 } from "../contracts/representative-evidence";
-import { themeLabelRu } from "./canonical-themes";
+import { classifyCanonicalThemes, themeLabelRu } from "./canonical-themes";
 
 const MATERIAL_LEVELS = new Set<MaterialityLevel>(["CRITICAL", "HIGH", "MEDIUM"]);
 const LEVEL_RANK: Record<MaterialityLevel, number> = {
@@ -200,6 +200,25 @@ function domainScore(c: CanonicalClaim): number {
   return 0;
 }
 
+/**
+ * Говорит ли сам текст материала об этой теме (шаг 13, C4).
+ *
+ * Тема достаётся заявке от соседних материалов той же находки, поэтому почти
+ * каждая заявка числится сразу в пяти темах. Представлять тему должен тот
+ * материал, который о ней и написан: иначе «Офшоры и финансовая прозрачность»
+ * иллюстрируются профилем во «ВКонтакте», а материал про офшорные структуры
+ * уходит в другую тему только потому, что его раньше занял сосед.
+ */
+export function claimSpeaksAboutTheme(
+  c: CanonicalClaim,
+  themeId: CanonicalThemeId
+): boolean {
+  const own = [c.originalTitle, c.displayExcerpt, c.fullClaimText]
+    .filter(Boolean)
+    .join("\n");
+  return classifyCanonicalThemes(own).includes(themeId);
+}
+
 function rankClaimForTheme(c: CanonicalClaim, themeId: CanonicalThemeId): number {
   return (
     LEVEL_RANK[c.materialityLevel] * 50 +
@@ -257,7 +276,13 @@ function selectForTheme(
   const allowReuse = options.allowReuse ?? false;
   const maxSlots = options.maxSlots ?? 2;
   const existing = options.existing ?? [];
+  // Топикальность идёт перед весом: материал, который о теме молчит, не может
+  // её представлять, каким бы существенным он ни был сам по себе (C4). Внутри
+  // каждой группы порядок прежний.
   const ranked = [...candidates].sort((a, b) => {
+    const voice =
+      Number(claimSpeaksAboutTheme(b, themeId)) - Number(claimSpeaksAboutTheme(a, themeId));
+    if (voice !== 0) return voice;
     const diff = rankClaimForTheme(b, themeId) - rankClaimForTheme(a, themeId);
     if (diff !== 0) return diff;
     return a.claimId.localeCompare(b.claimId);
@@ -293,6 +318,7 @@ function selectForTheme(
       `subject:${claim.subjectMatch}`,
       `rank:${rankClaimForTheme(claim, themeId)}`,
     ];
+    if (claimSpeaksAboutTheme(claim, themeId)) reasons.push("topical_voice");
     if (domain && REPUTABLE.test(domain)) reasons.push("reputable_domain");
     if (domain && OFFICIAL_DOMAIN.test(domain)) reasons.push("official_domain");
     if (existing.length + selected.length === 1 && domain && !usedDomainsInTheme.has(domain)) {

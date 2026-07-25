@@ -731,6 +731,39 @@ export function pageSourceLine(view: PageEvidenceView): string {
  * («тема» Найдены…: «q1» — источник a «q2» — источник b Всего…).
  * Restore scan lines so the renderer can bold the theme and break quotes.
  */
+/**
+ * Служебные врезки, каждая из которых читается как отдельный абзац.
+ *
+ * Шаг 13, C6 — «Где видно: …» и «Для банка …» приклеивались к цитате
+ * источника и превращали строку доказательства в нечитаемую ленту.
+ */
+const STRUCTURED_TAIL_RE =
+  /(?=(?:Всего по теме:|В корпусе:|Где видно:|Что делать:|Для банка|Банки |Это усиливает|Риск в том|Деловой фон))/u;
+
+/** Разбить строку по служебным врезкам, сохранив порядок. */
+function splitStructuredTail(line: string): string[] {
+  return line
+    .split(STRUCTURED_TAIL_RE)
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Строки тела без вынесенного заголовка темы.
+ *
+ * Заголовок мог занимать отдельную строку или стоять в начале первой строки —
+ * в обоих случаях повторять его в теле нельзя.
+ */
+function withoutLeadingTheme(lines: string[], theme: string): string[] {
+  if (!theme) return lines;
+  const first = (lines[0] ?? "").trim();
+  if (first === theme) return lines.slice(1);
+  if (first.startsWith(theme)) {
+    return [first.slice(theme.length).trim(), ...lines.slice(1)].filter(Boolean);
+  }
+  return lines;
+}
+
 export function reflowThemeBullet(text: string): string {
   const original = String(text ?? "").replace(/\r\n/gu, "\n");
   const markerMatch = original.match(/(\s*\[finding-[^\]]+\])\s*$/u);
@@ -792,16 +825,14 @@ export function reflowThemeBullet(text: string): string {
       lastEnd = (m.index ?? 0) + m[0].length;
     }
     const tail = rest.slice(lastEnd).trim();
-    if (tail) {
-      for (const part of tail.split(
-        /(?=(?:Всего по теме:|В корпусе:|Что делать:|Для банка|Банки |Это усиливает|Риск в том|Деловой фон))/u
-      )) {
-        const t = part.trim();
-        if (t) out.push(t);
-      }
-    }
+    if (tail) out.push(...splitStructuredTail(tail));
   } else {
-    out.push(...(existing.length ? existing : [flat]));
+    // Шаг 13, C6 — тема уже вынесена в `out` отдельной строкой. Исходные
+    // строки несут её же, поэтому без вычитания заголовок печатался дважды
+    // подряд: «Офшоры / корпоративное владение» / «Офшоры / корпоративное
+    // владение» / Найдены публикации…
+    const bodyLines = existing.length ? withoutLeadingTheme(existing, theme) : [rest || flat];
+    out.push(...bodyLines.flatMap(splitStructuredTail));
   }
 
   const body = out.filter(Boolean).join("\n");
@@ -1154,10 +1185,29 @@ export const EMPTY_REASON_SURFACE: Record<string, string> = Object.fromEntries(
   Object.entries(COVERAGE_EMPTY_COPY).map(([reason, v]) => [reason, v.surface])
 );
 
+/**
+ * Шаг 13, C11 — «Поисковые подсказки проверены: материалов нет» читалось как
+ * вывод обо всех подсказках, хотя на соседней странице отчёт цитировал
+ * подсказку из другой поисковой системы. Контур проверки называем в том же
+ * предложении, до двоеточия, чтобы утверждение сразу было ограниченным.
+ *
+ * Вставка опирается на то, что каждая формулировка в COVERAGE_EMPTY_COPY
+ * построена как «<что проверено>: материалов нет — …»; инвариант закреплён
+ * тестом. Без двоеточия контур дописывается отдельной фразой.
+ */
+export function narrativeWithScope(measuredWhat: string, scopeLabel?: string): string {
+  const label = String(scopeLabel ?? "").trim();
+  if (!label) return measuredWhat;
+  const at = measuredWhat.indexOf(":");
+  if (at < 0) return `${measuredWhat} Проверенный контур — ${label}.`;
+  return `${measuredWhat.slice(0, at)} (${label})${measuredWhat.slice(at)}`;
+}
+
 /** Exported for §7.4 smokes — builds client-safe empty-state copy. */
 export function coverageContent(
   reason: string,
-  status?: EmptySurfaceCollectionStatus
+  status?: EmptySurfaceCollectionStatus,
+  scopeLabel?: string
 ): SlideBody {
   const copy = COVERAGE_EMPTY_COPY[reason];
   const kind = status?.kind ?? "MEASURED_EMPTY";
@@ -1222,10 +1272,12 @@ export function coverageContent(
     };
   }
   return {
-    narrative: copy.measuredWhat,
+    narrative: narrativeWithScope(copy.measuredWhat, scopeLabel),
     bullets: [
       copy.why,
-      "Проверено, материалов нет — это результат проверки на дату отчёта, а не вывод об отсутствии рисков.",
+      scopeLabel
+        ? `Проверено, материалов нет — это результат проверки на дату отчёта, а не вывод об отсутствии рисков. Находки по другим поисковым системам и регионам приведены на своих страницах.`
+        : "Проверено, материалов нет — это результат проверки на дату отчёта, а не вывод об отсутствии рисков.",
     ],
     whatToCheck: copy.measuredCheck,
   };
@@ -1294,6 +1346,8 @@ export function visualSlide(input: {
   /** True when the underlying surface genuinely has no data (not just no image). */
   noUnderlyingData?: boolean;
   noDataReason?: string;
+  /** Контур страницы («Яндекс, Россия») — чтобы пустой статус не звучал глобально. */
+  noDataScopeLabel?: string;
 }): SlideContentContract {
   const refs = assetsFor(input.extras, input.slot.slotId);
   if (refs.length > 0) {
@@ -1313,7 +1367,11 @@ export function visualSlide(input: {
       slot: input.slot,
       sectionId: input.sectionId,
       templateId: "coverage-empty-state",
-      content: coverageContent(reason, emptyStatusForReason(input.scoped, reason)),
+      content: coverageContent(
+        reason,
+        emptyStatusForReason(input.scoped, reason),
+        input.noDataScopeLabel
+      ),
       evidenceRefs: [],
       findingIds: [],
       metrics: { datasetCount: 0 },

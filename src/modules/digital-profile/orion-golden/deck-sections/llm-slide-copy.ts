@@ -37,6 +37,7 @@ import { riskLevelRu, subjectMatchRu } from "../gpt/client-payload-labels";
 import type { GptDeckComposition } from "./gpt-deck-composer";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
 import { isWeakExampleTitle } from "../analytics/finding-synthesizer";
+import { fixSubjectNameOrder } from "../analytics/russian-name-order";
 
 /** v16 — PDF-49: never drop evidence quotes ending in genitive «…Фамилии». */
 export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v16";
@@ -542,8 +543,14 @@ function applyOverrides(input: {
   overrides: SlideOverride[];
   evidenceIndex: ScopedEvidenceIndex;
   rejectedFields: string[];
+  /** Имя субъекта — для порядка «имя отчество фамилия» в прозе (шаг 13, C8). */
+  subjectDisplayName?: string;
 }): { slides: SlideContentContract[]; appliedFields: number } {
   const { pack, overrides, evidenceIndex, rejectedFields } = input;
+  // Модель склоняет анкетное «Дуров Павел Валерьевич» целиком и выдаёт
+  // «связать с Павлом Дуровым Валерьевичем». Падежи верные, порядок — нет.
+  const fixName = (text: string): string =>
+    input.subjectDisplayName ? fixSubjectNameOrder(text, input.subjectDisplayName) : text;
   const overrideById = new Map(overrides.map((o) => [o.slideId, o]));
   const continuationBases = new Set(
     pack.slides.filter((s) => s.isContinuation).map((s) => s.continuationOf)
@@ -566,8 +573,9 @@ function applyOverrides(input: {
       budget: number
     ) => {
       if (value === undefined) return;
-      const normalized =
-        field === "narrative" ? reflowNarrativeParagraphs(value.trim()) : value.trim();
+      const normalized = fixName(
+        field === "narrative" ? reflowNarrativeParagraphs(value.trim()) : value.trim()
+      );
       const reason = rejectReason(normalized, budget, allowed);
       if (reason) {
         rejectedFields.push(`${slide.slideId}.${field}:${reason}`);
@@ -586,7 +594,7 @@ function applyOverrides(input: {
     // (rewriting only the base chunk would desynchronize the sequence).
     if (o.bullets && !continuationBases.has(slide.slideId)) {
       const draftBullets = slide.content.bullets ?? [];
-      const reflowed = o.bullets.map((b) => reflowThemeBullet(b.trim()));
+      const reflowed = o.bullets.map((b) => fixName(reflowThemeBullet(b.trim())));
       const reasons = reflowed
         .map(
           (b, i) =>
@@ -676,6 +684,7 @@ function applyGptRawToPack(input: {
   wantCaseAnalysis: boolean;
   evidenceIndex: ScopedEvidenceIndex;
   validatePack: (pack: SectionPackV2) => { passed: boolean; issues: string[] };
+  subjectDisplayName?: string;
 }): { pack: SectionPackV2; report: GptSlideCopyFragmentReport } {
   const report: GptSlideCopyFragmentReport = {
     fragmentKey: input.pack.fragmentKey,
@@ -705,6 +714,7 @@ function applyGptRawToPack(input: {
     overrides,
     evidenceIndex: input.evidenceIndex,
     rejectedFields: report.rejectedFields,
+    subjectDisplayName: input.subjectDisplayName,
   });
   report.appliedFields = appliedFields;
   if (appliedFields === 0) {
@@ -993,6 +1003,7 @@ export async function enhanceSectionPacksWithGptCopy(input: {
       wantCaseAnalysis: item.wantCaseAnalysis,
       evidenceIndex: input.evidenceIndex,
       validatePack: input.validatePack,
+      subjectDisplayName: input.subject.displayName,
     });
     const repairedFields = repairedByKey.get(item.pack.fragmentKey);
     if (repairedFields) applied.report.repairedFields = repairedFields;

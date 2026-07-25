@@ -33,6 +33,8 @@ export type MetricSnapshot = {
   otherSubjectCount: number;
   adverseFindingCount: number;
   perRegionCounts: Record<string, number>;
+  /** «Вероятно о субъекте» в разрезе региона — глобальное число здесь врёт. */
+  perRegionLikelyCounts?: Record<string, number>;
 };
 
 export type FragmentScope = {
