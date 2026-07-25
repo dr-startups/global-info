@@ -909,40 +909,47 @@ async function stepArsenkin(
       listProviderTasks: deps.listEnrichmentProviderTasks,
       pollTask: deps.pollEnrichmentTask,
       now: deps.now,
-      scheduleIfMissing:
-        (job.enrichmentRunIds?.length ?? 0) >= ARSENKIN_REAL_AGENT_NAMES.length
-          ? undefined
-          : async () => {
-              const { startArsenkinCaseAgentDurable } = await import("./arsenkin-case-agent-execution");
-              const { getAgent } = await import("../agents/registry");
-              const enrichmentRunIds: string[] = [];
-              const warnings: string[] = [];
-              for (const agentName of ARSENKIN_REAL_AGENT_NAMES) {
-                const agent = getAgent(agentName);
-                const tools =
-                  agent && "tools" in agent && Array.isArray((agent as { tools?: string[] }).tools)
-                    ? ((agent as { tools: import("../providers/arsenkin/flags").ArsenkinToolName[] })
-                        .tools)
-                    : [];
-                const agentRunId = `unified-${job.unifiedJobId}-${agentName}`;
-                const started = await startArsenkinCaseAgentDurable({
-                  caseId: job.caseId,
-                  agentRunId,
-                  agentId: agentName,
-                  tools,
-                  actorId: job.requestedBy,
-                  scheduleWorker: true,
-                  resolveBaseReportRunId: async () => baseId,
-                });
-                enrichmentRunIds.push(started.enrichmentReportRunId);
-                warnings.push(`arsenkin-scheduled:${agentName}`);
-              }
-              return {
-                enrichmentRunIds,
-                arsenkinReportRunId: enrichmentRunIds[0] ?? null,
-                warnings,
-              };
-            },
+      // Отправка предлагается всегда: тик сам решает, кому она нужна, по
+      // наличию строки ProviderTask. Прежде она подавлялась, как только было
+      // зарегистрировано пять прогонов, — и агент, зарегистрированный без
+      // отправленной задачи, опрашивался до исчерпания бюджета (шаг 08.0-bis).
+      scheduleIfMissing: async (agentsToSubmit) => {
+        const { startArsenkinCaseAgentDurable } = await import("./arsenkin-case-agent-execution");
+        const { getAgent } = await import("../agents/registry");
+        const { mergeAgentEnrichmentRunId } = await import("./unified-enrichment-sibling-remap");
+        let enrichmentRunIds = [...(job.enrichmentRunIds ?? [])];
+        const warnings: string[] = [];
+        for (const agentName of agentsToSubmit) {
+          const agent = getAgent(agentName);
+          const tools =
+            agent && "tools" in agent && Array.isArray((agent as { tools?: string[] }).tools)
+              ? ((agent as { tools: import("../providers/arsenkin/flags").ArsenkinToolName[] }).tools)
+              : [];
+          const agentRunId = `unified-${job.unifiedJobId}-${agentName}`;
+          const started = await startArsenkinCaseAgentDurable({
+            caseId: job.caseId,
+            agentRunId,
+            agentId: agentName,
+            tools,
+            actorId: job.requestedBy,
+            scheduleWorker: true,
+            resolveBaseReportRunId: async () => baseId,
+          });
+          // Слияние, а не перезапись: прогоны уже отправленных агентов обязаны
+          // пережить эту отправку, иначе их задачи потеряются.
+          enrichmentRunIds = mergeAgentEnrichmentRunId(
+            enrichmentRunIds,
+            agentName,
+            started.enrichmentReportRunId
+          );
+          warnings.push(`arsenkin-scheduled:${agentName}`);
+        }
+        return {
+          enrichmentRunIds,
+          arsenkinReportRunId: enrichmentRunIds[0] ?? null,
+          warnings,
+        };
+      },
     });
   }
 

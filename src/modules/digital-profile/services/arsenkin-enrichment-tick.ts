@@ -18,6 +18,11 @@ import {
 } from "./arsenkin-enrichment-state";
 import { applyExactlyOnceIngest } from "./arsenkin-exactly-once-ingest";
 import { adaptArsenkinToolResponse } from "./arsenkin-tool-adapters";
+import { agentNameFromEnrichmentRunId } from "./unified-enrichment-sibling-remap";
+import {
+  computeArsenkinSubmissionGap,
+  describeSubmissionGap,
+} from "./arsenkin-submission-gap";
 import type { UnifiedCollectionJob } from "./unified-collection-types";
 import { emptyCoverage, FIRST36_PLANNED_SUPPORTED_SURFACES } from "./unified-collection-types";
 
@@ -49,20 +54,6 @@ type ProviderTaskSnap = {
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
   return Boolean(v) && typeof v === "object" && !Array.isArray(v);
-}
-
-function agentNameFromEnrichmentRunId(runId: string): string | null {
-  const lower = runId.toLowerCase();
-  for (const name of ARSENKIN_REAL_AGENT_NAMES) {
-    const slug = name.toLowerCase().replace(/_/g, "-");
-    if (lower.includes(slug) || lower.includes(name.toLowerCase())) return name;
-  }
-  if (lower.includes("search-top")) return "ARSENKIN_SEARCH_TOP_REAL";
-  if (lower.includes("suggestions")) return "ARSENKIN_SUGGESTIONS_REAL";
-  if (lower.includes("-paa-") || lower.includes("paa-real")) return "ARSENKIN_PAA_REAL";
-  if (lower.includes("ai-search")) return "ARSENKIN_AI_SEARCH_REAL";
-  if (lower.includes("url-audit")) return "ARSENKIN_URL_AUDIT_REAL";
-  return null;
 }
 
 type TaskAdaptOutcome =
@@ -663,7 +654,12 @@ export async function runDurableArsenkinEnrichmentTick(input: {
   prisma?: PrismaClient | null;
   /** When true (NETWORK_CALLS=0), empty offline agents may EMPTY_VALID without tasks. */
   offlineEmptyValid?: boolean;
-  scheduleIfMissing?: () => Promise<{
+  /**
+   * Отправляет задачи перечисленных агентов и возвращает ПОЛНЫЙ список
+   * enrichmentRunIds (слитый с уже известными). Вызывается только для агентов
+   * без единой строки ProviderTask — повторная отправка стоила бы денег.
+   */
+  scheduleIfMissing?: (agents: readonly string[]) => Promise<{
     enrichmentRunIds: string[];
     arsenkinReportRunId: string | null;
     warnings: string[];
@@ -679,59 +675,13 @@ export async function runDurableArsenkinEnrichmentTick(input: {
   const warnings: string[] = [];
   let earliestNextPollAt: Date | null = null;
 
-  if (enrichmentRunIds.length < ARSENKIN_REAL_AGENT_NAMES.length) {
-    if (!input.scheduleIfMissing) {
-      const state = emptyArsenkinEnrichmentState({
-        caseId: job.caseId,
-        unifiedJobId: job.unifiedJobId,
-      });
-      return {
-        state,
-        observations: [],
-        enrichmentRunIds,
-        arsenkinReportRunId: null,
-        warnings: ["arsenkin-not-scheduled"],
-        blockPipeline: true,
-        blockCode: "ARSENKIN_STAGE_NOT_STARTED",
-        blockMessage: "Arsenkin CaseAgents not scheduled",
-        waiting: false,
-      };
-    }
-    const scheduled = await input.scheduleIfMissing();
-    enrichmentRunIds = scheduled.enrichmentRunIds;
-    warnings.push(...scheduled.warnings, "arsenkin-five-agents-scheduled");
-    // After schedule — wait for next ticks; do NOT advance to composite.
-    const agents: ArsenkinAgentProgress[] = ARSENKIN_REAL_AGENT_NAMES.map((agentName, i) => ({
-      agentName,
-      enrichmentRunId: enrichmentRunIds[i] ?? null,
-      scheduled: true,
-      terminal: false,
-      terminalKind: null,
-      ingested: false,
-      pendingTaskCount: 1,
-      doneTaskCount: 0,
-      submitUnknownCount: 0,
-      observationCount: 0,
-    }));
-    const state = buildArsenkinEnrichmentState({
-      caseId: job.caseId,
-      unifiedJobId: job.unifiedJobId,
-      agents,
-    });
-    return {
-      state,
-      observations: [],
-      enrichmentRunIds,
-      arsenkinReportRunId: enrichmentRunIds[0] ?? scheduled.arsenkinReportRunId,
-      warnings,
-      blockPipeline: false,
-      waiting: true,
-    };
-  }
-
   // Poll existing tasks — never create new external submissions here.
+  // Задачи читаются ДО решения об отправке: без них нельзя отличить
+  // зарегистрированного агента от отправленного (шаг 08.0-bis).
   let tasks: EnrichmentPollTaskSnap[] = [];
-  if (input.listProviderTasks) {
+  if (enrichmentRunIds.length === 0) {
+    tasks = [];
+  } else if (input.listProviderTasks) {
     tasks = await input.listProviderTasks(enrichmentRunIds);
   } else {
     let prisma = input.prisma ?? null;
@@ -776,6 +726,86 @@ export async function runDurableArsenkinEnrichmentTick(input: {
           `arsenkin-providerTask-list-failed:${(err instanceof Error ? err.message : String(err)).slice(0, 120)}`
         );
       }
+    }
+  }
+
+  // Отправка или опрос? Признак — наличие строки ProviderTask у агента, а не
+  // наличие у него зарегистрированного прогона. Рестарт между регистрацией и
+  // отправкой оставлял агентов без задач, и джоба опрашивала пустоту до
+  // исчерпания бюджета, откуда уже не выходила (шаг 08.0-bis).
+  const gap = computeArsenkinSubmissionGap({ enrichmentRunIds, tasks });
+  if (gap.needsSubmit.length > 0 && !input.offlineEmptyValid) {
+    warnings.push(...describeSubmissionGap(gap));
+
+    if (input.scheduleIfMissing) {
+      const scheduled = await input.scheduleIfMissing(gap.needsSubmit);
+      enrichmentRunIds = scheduled.enrichmentRunIds;
+      warnings.push(...scheduled.warnings, `arsenkin-agents-scheduled:${gap.needsSubmit.length}`);
+      // После отправки — ждать следующих тиков; к composite не продвигаться.
+      const agents: ArsenkinAgentProgress[] = ARSENKIN_REAL_AGENT_NAMES.map((agentName, i) => ({
+        agentName,
+        enrichmentRunId:
+          enrichmentRunIds.find((id) => agentNameFromEnrichmentRunId(id) === agentName) ??
+          enrichmentRunIds[i] ??
+          null,
+        scheduled: true,
+        terminal: false,
+        terminalKind: null,
+        ingested: false,
+        pendingTaskCount: 1,
+        doneTaskCount: 0,
+        submitUnknownCount: 0,
+        observationCount: 0,
+      }));
+      return {
+        state: buildArsenkinEnrichmentState({
+          caseId: job.caseId,
+          unifiedJobId: job.unifiedJobId,
+          agents,
+        }),
+        observations: [],
+        enrichmentRunIds,
+        arsenkinReportRunId: enrichmentRunIds[0] ?? scheduled.arsenkinReportRunId,
+        warnings,
+        blockPipeline: false,
+        waiting: true,
+      };
+    }
+
+    if (gap.unregistered.length === ARSENKIN_REAL_AGENT_NAMES.length) {
+      return {
+        state: emptyArsenkinEnrichmentState({
+          caseId: job.caseId,
+          unifiedJobId: job.unifiedJobId,
+        }),
+        observations: [],
+        enrichmentRunIds,
+        arsenkinReportRunId: null,
+        warnings: [...warnings, "arsenkin-not-scheduled"],
+        blockPipeline: true,
+        blockCode: "ARSENKIN_STAGE_NOT_STARTED",
+        blockMessage: "Arsenkin CaseAgents not scheduled",
+        waiting: false,
+      };
+    }
+
+    if (tasks.length === 0) {
+      // Опрашивать нечего и отправить некому: честный отказ вместо сжигания
+      // бюджета попыток на задачи, которых не существует.
+      return {
+        state: emptyArsenkinEnrichmentState({
+          caseId: job.caseId,
+          unifiedJobId: job.unifiedJobId,
+        }),
+        observations: [],
+        enrichmentRunIds,
+        arsenkinReportRunId: null,
+        warnings,
+        blockPipeline: true,
+        blockCode: "ARSENKIN_NO_TASKS_TO_POLL",
+        blockMessage: `Arsenkin agents registered without provider tasks: ${gap.registeredWithoutTask.join(", ")}`,
+        waiting: false,
+      };
     }
   }
 

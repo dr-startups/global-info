@@ -4,6 +4,7 @@
  */
 
 import assert from "node:assert/strict";
+import { ensureSmokeCase } from "./lib/ensure-smoke-case";
 import { describe, it, before } from "node:test";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -38,7 +39,7 @@ import type { CompositeObservation } from "../src/modules/digital-profile/servic
 process.env.NETWORK_CALLS = "0";
 
 const CASE = "smoke-stuck-ingest-case";
-const JOB_B = "unified-1784295388553-269bc3cf";
+const JOB_B = "unified-1784295388553-stuck";
 const EXT_SUGGEST = "30664641";
 const ENRICHMENT_RUN_IDS = [
   "orion-arsenkin-agent-arsenkin-search-top-real-mrozh14w",
@@ -74,7 +75,7 @@ function loadFixture(name: string): unknown {
   return JSON.parse(readFileSync(join(FIX, name), "utf-8"));
 }
 
-function seedJobB(overrides: Partial<UnifiedCollectionJob> = {}): UnifiedCollectionJob {
+async function seedJobB(overrides: Partial<UnifiedCollectionJob> = {}): Promise<UnifiedCollectionJob> {
   await deleteUnifiedCollectionJobForTests(CASE);
   const now = new Date().toISOString();
   const job: UnifiedCollectionJob = {
@@ -94,7 +95,7 @@ function seedJobB(overrides: Partial<UnifiedCollectionJob> = {}): UnifiedCollect
     completedAt: null,
     requestedBy: "smoke",
     arsenkinMode: "full-first36",
-    baseReportRunId: "orion-unified-base-unified-1784295388553-269bc3cf",
+    baseReportRunId: "orion-unified-base-unified-1784295388553-stuck",
     arsenkinReportRunId: ENRICHMENT_RUN_IDS[0],
     enrichmentRunIds: [...ENRICHMENT_RUN_IDS],
     arsenkinEnrichmentState: null,
@@ -119,13 +120,13 @@ function seedJobB(overrides: Partial<UnifiedCollectionJob> = {}): UnifiedCollect
   return await loadUnifiedCollectionJob(CASE)!;
 }
 
-function writeBaseManifest(): void {
+async function writeBaseManifest(): Promise<void> {
   const manifest: BaseCollectionManifest = {
     version: "base-collection-manifest-v1",
     unifiedJobId: JOB_B,
     caseId: CASE,
     capturedAt: new Date().toISOString(),
-    baseReportRunId: "orion-unified-base-unified-1784295388553-269bc3cf",
+    baseReportRunId: "orion-unified-base-unified-1784295388553-stuck",
     searchResultIds: ["sr0", "sr1", "sr2"],
     searchSurfaceItemIds: [],
     baseCount: 3,
@@ -199,14 +200,15 @@ function runningSuggestTasks(): EnrichmentPollTaskSnap[] {
   });
 }
 
-before(() => {
+before(async () => {
   assert.equal(process.env.NETWORK_CALLS, "0");
+  await ensureSmokeCase(CASE);
 });
 
 describe("stuck Arsenkin ingest remediation A–M", () => {
   it("A. startup pump finds WAITING job and performs persisted poll", async () => {
-    seedJobB();
-    writeBaseManifest();
+    await seedJobB();
+    await writeBaseManifest();
     let pollCalls = 0;
     const tasks = runningSuggestTasks();
     const deps = {
@@ -223,7 +225,7 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
         throw new Error("base forbidden");
       },
     };
-    const listed = await listResumableUnifiedJobs().filter((j) => j.caseId === CASE);
+    const listed = (await listResumableUnifiedJobs()).filter((j) => j.caseId === CASE);
     assert.equal(listed.length, 1);
     assert.equal(typeof pumpResumableUnifiedCollections, "function");
     assert.equal(typeof resumeUnifiedCollectionsOnStartup, "function");
@@ -236,8 +238,8 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
   });
 
   it("B. pollAttempt/nextPollAt persisted before/after poll", async () => {
-    seedJobB({ pollAttempt: 0, nextPollAt: null });
-    writeBaseManifest();
+    await seedJobB({ pollAttempt: 0, nextPollAt: null });
+    await writeBaseManifest();
     const tasks = runningSuggestTasks();
     const before = await loadUnifiedCollectionJob(CASE)!;
     assert.equal(before.pollAttempt, 0);
@@ -282,7 +284,7 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
     );
     assert.equal(src.includes(".catch(() => undefined)"), false);
     assert.ok(src.includes("persistUnifiedTickFailure"));
-    seedJobB({ pollAttempt: 2 });
+    await seedJobB({ pollAttempt: 2 });
     const patched = await persistUnifiedTickFailure(CASE, new Error("boom-poll"), {
       externalTaskId: EXT_SUGGEST,
       providerTaskId: "pt-suggest",
@@ -350,8 +352,8 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
   });
 
   it("F/G. existing externalTaskIds reused; submissions=0; baseCalls=0", async () => {
-    seedJobB();
-    writeBaseManifest();
+    await seedJobB();
+    await writeBaseManifest();
     let setCalls = 0;
     const tasks = runningSuggestTasks();
     await runUnifiedCollectionTick(CASE, {
@@ -376,8 +378,8 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
   });
 
   it("H. process restart continues the same job", async () => {
-    seedJobB();
-    writeBaseManifest();
+    await seedJobB();
+    await writeBaseManifest();
     let polls = 0;
     const tasks = runningSuggestTasks();
     const deps = {
@@ -392,7 +394,7 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
         throw new Error("no");
       },
     };
-    assert.equal(await listResumableUnifiedJobs().filter((j) => j.caseId === CASE).length, 1);
+    assert.equal((await listResumableUnifiedJobs()).filter((j) => j.caseId === CASE).length, 1);
     const job = await runUnifiedCollectionTick(CASE, deps);
     assert.ok(polls >= 1);
     assert.equal(job?.jobId, JOB_B);
@@ -401,8 +403,8 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
   });
 
   it("I. concurrent ticks protected by lease", async () => {
-    seedJobB();
-    writeBaseManifest();
+    await seedJobB();
+    await writeBaseManifest();
     let polls = 0;
     const tasks = runningSuggestTasks();
     const deps = {
@@ -424,8 +426,8 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
   });
 
   it("J/L. resultHash exactly-once; second tick no new observations/render", async () => {
-    seedJobB({ compositeDatasetId: null, reportLinks: {} });
-    writeBaseManifest();
+    await seedJobB({ compositeDatasetId: null, reportLinks: {} });
+    await writeBaseManifest();
     const tasks = jobBDoneTasks();
     // sibling SUBMIT_UNKNOWN must not reopen Suggestions gap after ingest
     tasks.push({
@@ -474,8 +476,8 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
   });
 
   it("K. Job B fixture: 5/5 ingested → one composite → one HTTP render", async () => {
-    seedJobB({ compositeDatasetId: null, reportLinks: {} });
-    writeBaseManifest();
+    await seedJobB({ compositeDatasetId: null, reportLinks: {} });
+    await writeBaseManifest();
     FLAGS.COMPOSITE_CALLS = 0;
     FLAGS.RENDER_CALLS = 0;
     const tasks = jobBDoneTasks();
@@ -537,7 +539,7 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
   });
 
   it("M. UI GET fields: poll progress visible; retry CTA hidden after ingest", async () => {
-    seedJobB({
+    await seedJobB({
       pollAttempt: 4,
       nextPollAt: new Date(Date.now() + 5_000).toISOString(),
       arsenkinEnrichmentState: {
@@ -569,7 +571,7 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
     assert.equal(gap.suggestionsRetryAllowed, false);
 
     // In-progress poll: retry hidden while externalTaskId is being ingested.
-    seedJobB({
+    await seedJobB({
       pollAttempt: 2,
       nextPollAt: new Date(Date.now() + 2_000).toISOString(),
       arsenkinEnrichmentState: null,
@@ -584,7 +586,7 @@ describe("stuck Arsenkin ingest remediation A–M", () => {
   });
 
   it("fail-closed: poll attempt ceiling → FAILED_RETRYABLE", async () => {
-    seedJobB({ pollAttempt: MAX_ARSENKIN_INGEST_POLL_ATTEMPTS });
+    await seedJobB({ pollAttempt: MAX_ARSENKIN_INGEST_POLL_ATTEMPTS });
     const patched = await persistUnifiedTickFailure(CASE, new Error("still failing"), {
       externalTaskId: EXT_SUGGEST,
     });

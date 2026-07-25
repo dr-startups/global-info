@@ -64,8 +64,22 @@ function isIngestibleResponse(responseJson: unknown): boolean {
   return false;
 }
 
+/**
+ * Опознаёт агента по идентификатору прогона. Форматов два: собственный
+ * `unified-<job>-ARSENKIN_PAA_REAL` и «человеческий» `...-paa-real` из ручных
+ * sibling-запусков, поэтому проверяются и полное имя, и слаг, и шаблон.
+ *
+ * Раньше эта функция и её копия в `arsenkin-enrichment-tick.ts` расходились:
+ * копия узнавала `unified-<job>-ARSENKIN_SEARCH_TOP_REAL`, а эта — нет,
+ * поскольку `/search-top/i` не совпадает с подчёркиваниями.
+ */
 export function agentNameFromEnrichmentRunId(runId: string): string | null {
   const lower = String(runId ?? "").toLowerCase();
+  if (!lower) return null;
+  for (const name of ARSENKIN_REAL_AGENT_NAMES) {
+    const slug = name.toLowerCase().replace(/_/g, "-");
+    if (lower.includes(name.toLowerCase()) || lower.includes(slug)) return name;
+  }
   for (const name of ARSENKIN_REAL_AGENT_NAMES) {
     const re = AGENT_RUN_RE[name];
     if (re?.test(lower)) return name;
@@ -82,7 +96,7 @@ export function isReusableSiblingTask(t: SiblingRemapTaskRow): boolean {
   );
 }
 
-function toolMatchesAgent(toolName: string | null | undefined, agentName: string): boolean {
+export function toolMatchesAgent(toolName: string | null | undefined, agentName: string): boolean {
   const re = AGENT_TOOL_RE[agentName];
   if (!re) return false;
   return re.test(String(toolName ?? ""));
@@ -95,15 +109,17 @@ export function mergeAgentEnrichmentRunId(
 ): string[] {
   const effective = String(effectiveRunId ?? "").trim();
   if (!effective) return [...(existing ?? [])];
-  const re = AGENT_RUN_RE[agentName];
-  if (!re) {
+  if (!AGENT_RUN_RE[agentName]) {
     const out = [...(existing ?? [])];
     if (!out.includes(effective)) out.push(effective);
     return out;
   }
+  // Предикат замены — та же атрибуция, что и везде. С узким шаблоном
+  // `unified-<job>-ARSENKIN_SEARCH_TOP_REAL` не опознавался как прогон своего
+  // агента, и вместо замены список получал второй идентификатор того же агента.
   let replaced = false;
   const out = (existing ?? []).map((id) => {
-    if (re.test(String(id))) {
+    if (agentNameFromEnrichmentRunId(String(id)) === agentName) {
       replaced = true;
       return effective;
     }

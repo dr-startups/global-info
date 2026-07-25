@@ -415,6 +415,24 @@ export async function recoverUnifiedOrionCollectionJob(input: {
     now: nowFn(),
   });
   if (!elig.recoveryAllowed) {
+    // Повторное восстановление уже возобновлённой джобы — не ошибка, а
+    // отсутствие работы: запрошенное состояние уже достигнуто. Гейт
+    // JOB_PROGRESSING нужен, чтобы не предлагать кнопку на здоровом прогоне
+    // (шаг 11.1-bis), но отвечать на повторный запрос 409 CONFLICT значит
+    // показывать клиенту ошибку там, где всё в порядке.
+    if (elig.recoveryBlockerReason === "JOB_PROGRESSING" && job0.baseReportRunId) {
+      return {
+        accepted: true,
+        jobId: job0.jobId,
+        unifiedJobId: job0.unifiedJobId,
+        stage: job0.stage,
+        status: job0.status,
+        baseReportRunId: job0.baseReportRunId,
+        recoveryReason: "ALREADY_PROGRESSING",
+        createdBaseReportRun: false,
+        idempotent: true,
+      };
+    }
     throw new ConflictError(elig.recoveryBlockerReason ?? "recovery not allowed");
   }
 

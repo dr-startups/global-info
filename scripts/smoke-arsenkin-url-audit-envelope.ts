@@ -4,6 +4,7 @@
  */
 
 import assert from "node:assert/strict";
+import { ensureSmokeCase } from "./lib/ensure-smoke-case";
 import { describe, it, before } from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -32,7 +33,7 @@ import type { CompositeObservation } from "../src/modules/digital-profile/servic
 process.env.NETWORK_CALLS = "0";
 
 const CASE = "smoke-url-audit-envelope-case";
-const JOB_B = "unified-1784295388553-269bc3cf";
+const JOB_B = "unified-1784295388553-urlaudit";
 const FIX = join(process.cwd(), "src/modules/digital-profile/providers/arsenkin/fixtures");
 const ENRICHMENT_RUN_IDS = [
   "orion-arsenkin-agent-arsenkin-search-top-real-mrozh14w",
@@ -64,7 +65,7 @@ function ctx(tool: string) {
   };
 }
 
-function seedJobB(overrides: Partial<UnifiedCollectionJob> = {}): void {
+async function seedJobB(overrides: Partial<UnifiedCollectionJob> = {}): Promise<void> {
   await deleteUnifiedCollectionJobForTests(CASE);
   const now = new Date().toISOString();
   await saveUnifiedCollectionJob({
@@ -84,7 +85,7 @@ function seedJobB(overrides: Partial<UnifiedCollectionJob> = {}): void {
     completedAt: null,
     requestedBy: "smoke",
     arsenkinMode: "full-first36",
-    baseReportRunId: "orion-unified-base-unified-1784295388553-269bc3cf",
+    baseReportRunId: "orion-unified-base-unified-1784295388553-urlaudit",
     arsenkinReportRunId: ENRICHMENT_RUN_IDS[0],
     enrichmentRunIds: [...ENRICHMENT_RUN_IDS],
     arsenkinEnrichmentState: null,
@@ -107,13 +108,13 @@ function seedJobB(overrides: Partial<UnifiedCollectionJob> = {}): void {
   });
 }
 
-function writeBaseManifest(): void {
+async function writeBaseManifest(): Promise<void> {
   const manifest: BaseCollectionManifest = {
     version: "base-collection-manifest-v1",
     unifiedJobId: JOB_B,
     caseId: CASE,
     capturedAt: new Date().toISOString(),
-    baseReportRunId: "orion-unified-base-unified-1784295388553-269bc3cf",
+    baseReportRunId: "orion-unified-base-unified-1784295388553-urlaudit",
     searchResultIds: ["sr0", "sr1", "sr2"],
     searchSurfaceItemIds: [],
     baseCount: 3,
@@ -161,8 +162,9 @@ function allFiveDoneTasks(): EnrichmentPollTaskSnap[] {
   }));
 }
 
-before(() => {
+before(async () => {
   assert.equal(process.env.NETWORK_CALLS, "0");
+  await ensureSmokeCase(CASE);
 });
 
 describe("URL_AUDIT live envelope regression", () => {
@@ -288,14 +290,14 @@ describe("URL_AUDIT live envelope regression", () => {
     });
     assert.equal(adapted.ok, true);
     if (!adapted.ok) return;
-    writeBaseManifest();
+    await writeBaseManifest();
     const merged = await mergeCompositeSerp({
       manifest: {
         version: "base-collection-manifest-v1",
         unifiedJobId: JOB_B,
         caseId: CASE,
         capturedAt: new Date().toISOString(),
-        baseReportRunId: "orion-unified-base-unified-1784295388553-269bc3cf",
+        baseReportRunId: "orion-unified-base-unified-1784295388553-urlaudit",
         searchResultIds: ["sr0", "sr1", "sr2"],
         searchSurfaceItemIds: [],
         baseCount: 3,
@@ -375,7 +377,7 @@ describe("URL_AUDIT live envelope regression", () => {
   });
 
   it("6/7/10. Job B 5/5 ingested; exactly-once re-tick; submissions=0 base=0; raw accounting", async () => {
-    seedJobB();
+    await seedJobB();
     const tasks = allFiveDoneTasks();
     // Sibling check-h DONE on same URL_AUDIT run (live Job B pattern).
     tasks.push({
@@ -424,8 +426,8 @@ describe("URL_AUDIT live envelope regression", () => {
   });
 
   it("8. process restart between poll and ingest", async () => {
-    seedJobB();
-    writeBaseManifest();
+    await seedJobB();
+    await writeBaseManifest();
     let polls = 0;
     const running: EnrichmentPollTaskSnap[] = ENRICHMENT_RUN_IDS.map((runId, i) => ({
       id: `pt-${i}`,
@@ -435,7 +437,7 @@ describe("URL_AUDIT live envelope regression", () => {
       state: "RUNNING",
       responseJson: null,
     }));
-    assert.equal(await listResumableUnifiedJobs().filter((j) => j.caseId === CASE).length, 1);
+    assert.equal((await listResumableUnifiedJobs()).filter((j) => j.caseId === CASE).length, 1);
     const job = await runUnifiedCollectionTick(CASE, {
       autoSchedule: false,
       listEnrichmentProviderTasks: async () => running,
@@ -455,8 +457,8 @@ describe("URL_AUDIT live envelope regression", () => {
   });
 
   it("9. concurrent lease", async () => {
-    seedJobB();
-    writeBaseManifest();
+    await seedJobB();
+    await writeBaseManifest();
     let polls = 0;
     const tasks = allFiveDoneTasks().map((t) =>
       t.toolName === "indexation" ? { ...t, state: "RUNNING" as const, responseJson: null } : t
@@ -483,8 +485,8 @@ describe("URL_AUDIT live envelope regression", () => {
   });
 
   it("11. one composite → prepare/render after 5/5", async () => {
-    seedJobB({ compositeDatasetId: null, reportLinks: {} });
-    writeBaseManifest();
+    await seedJobB({ compositeDatasetId: null, reportLinks: {} });
+    await writeBaseManifest();
     FLAGS.COMPOSITE_CALLS = 0;
     FLAGS.RENDER_CALLS = 0;
     const tasks = allFiveDoneTasks();

@@ -5,6 +5,7 @@
  */
 
 import assert from "node:assert/strict";
+import { ensureSmokeCase } from "./lib/ensure-smoke-case";
 import { describe, it, before } from "node:test";
 import {
   deleteUnifiedCollectionJobForTests,
@@ -36,7 +37,7 @@ import { join } from "node:path";
 process.env.NETWORK_CALLS = "0";
 
 const CASE = "smoke-post-submit-poll-case";
-const JOB_B = "unified-1784295388553-269bc3cf";
+const JOB_B = "unified-1784295388553-postsubmit";
 const EXT = "30664641";
 const ENRICHMENT_RUN_IDS = [
   "orion-arsenkin-agent-arsenkin-search-top-real-mrozh14w",
@@ -65,7 +66,7 @@ const FLAGS = {
   BASE_CALLS: 0,
 };
 
-function seedJobB(overrides: Partial<UnifiedCollectionJob> = {}): UnifiedCollectionJob {
+async function seedJobB(overrides: Partial<UnifiedCollectionJob> = {}): Promise<UnifiedCollectionJob> {
   await deleteUnifiedCollectionJobForTests(CASE);
   const now = new Date().toISOString();
   const job: UnifiedCollectionJob = {
@@ -85,7 +86,7 @@ function seedJobB(overrides: Partial<UnifiedCollectionJob> = {}): UnifiedCollect
     completedAt: null,
     requestedBy: "smoke",
     arsenkinMode: "full-first36",
-    baseReportRunId: "orion-unified-base-unified-1784295388553-269bc3cf",
+    baseReportRunId: "orion-unified-base-unified-1784295388553-postsubmit",
     arsenkinReportRunId: ENRICHMENT_RUN_IDS[0],
     enrichmentRunIds: [...ENRICHMENT_RUN_IDS],
     arsenkinEnrichmentState: null,
@@ -165,13 +166,13 @@ function fixtureBaseRows(): CompositeObservation[] {
   }));
 }
 
-function writeBaseManifest(): void {
+async function writeBaseManifest(): Promise<void> {
   const manifest: BaseCollectionManifest = {
     version: "base-collection-manifest-v1",
     unifiedJobId: JOB_B,
     caseId: CASE,
     capturedAt: new Date().toISOString(),
-    baseReportRunId: "orion-unified-base-unified-1784295388553-269bc3cf",
+    baseReportRunId: "orion-unified-base-unified-1784295388553-postsubmit",
     searchResultIds: ["sr0", "sr1", "sr2"],
     searchSurfaceItemIds: [],
     baseCount: 3,
@@ -184,13 +185,14 @@ function writeBaseManifest(): void {
   await writeUnifiedArtifact(CASE, JOB_B, "base-collection-manifest.json", manifest);
 }
 
-before(() => {
+before(async () => {
   assert.equal(process.env.NETWORK_CALLS, "0");
+  await ensureSmokeCase(CASE);
 });
 
 describe("post-submit poll orchestration A–L", () => {
   it("A. targeted submit success calls scheduleUnifiedTick", async () => {
-    seedJobB();
+    await seedJobB();
     let scheduled = 0;
     const oldRequestJson = {
       tools_name: "suggest",
@@ -254,8 +256,8 @@ describe("post-submit poll orchestration A–L", () => {
   });
 
   it("B. pending then completed: poll → fetch → ingest → composite", async () => {
-    seedJobB({ compositeDatasetId: null, reportLinks: {} });
-    writeBaseManifest();
+    await seedJobB({ compositeDatasetId: null, reportLinks: {} });
+    await writeBaseManifest();
     let pollCalls = 0;
     let setCalls = 0;
     let phase: "pending" | "done" = "pending";
@@ -345,14 +347,14 @@ describe("post-submit poll orchestration A–L", () => {
     }
     assert.equal(ingestedComplete || sawComposite, true);
     assert.equal(sawComposite, true);
-    assert.equal(await loadUnifiedCollectionJob(CASE)?.jobId, JOB_B);
+    assert.equal((await loadUnifiedCollectionJob(CASE))?.jobId, JOB_B);
     FLAGS.B_PENDING_THEN_COMPLETE = true;
     FLAGS.F_NO_NEW_SET = setCalls === 0;
   });
 
   it("C. restart between submit and completion resumes WAITING job", async () => {
-    seedJobB();
-    writeBaseManifest();
+    await seedJobB();
+    await writeBaseManifest();
     let ticks = 0;
     const suggest: EnrichmentPollTaskSnap = {
       id: "pt-suggest",
@@ -376,7 +378,7 @@ describe("post-submit poll orchestration A–L", () => {
       },
     };
     // Simulate process restart: persisted WAITING job is listed, then a tick resumes poll.
-    const resumable = await listResumableUnifiedJobs().filter((j) => j.caseId === CASE);
+    const resumable = (await listResumableUnifiedJobs()).filter((j) => j.caseId === CASE);
     assert.equal(resumable.length, 1);
     assert.equal(typeof pumpResumableUnifiedCollections, "function");
     assert.equal(typeof resumeUnifiedCollectionsOnStartup, "function");
@@ -391,8 +393,8 @@ describe("post-submit poll orchestration A–L", () => {
   });
 
   it("D. two concurrent ticks: one poll/ingest, no duplicates", async () => {
-    seedJobB({ compositeDatasetId: null, reportLinks: {} });
-    writeBaseManifest();
+    await seedJobB({ compositeDatasetId: null, reportLinks: {} });
+    await writeBaseManifest();
     let pollCalls = 0;
     const suggest: EnrichmentPollTaskSnap = {
       id: "pt-suggest",
@@ -438,14 +440,14 @@ describe("post-submit poll orchestration A–L", () => {
     for (let i = 0; i < 8; i++) {
       await runUnifiedCollectionTick(CASE, deps);
     }
-    const state = await loadUnifiedCollectionJob(CASE)?.arsenkinEnrichmentState;
+    const state = (await loadUnifiedCollectionJob(CASE))?.arsenkinEnrichmentState;
     const hashes = state?.ingestedResultHashes ?? [];
     assert.equal(new Set(hashes).size, hashes.length);
     FLAGS.D_CONCURRENT_LEASE = true;
   });
 
   it("E. re-tick after ingest: observations and counters unchanged", async () => {
-    seedJobB({ compositeDatasetId: null, reportLinks: {} });
+    await seedJobB({ compositeDatasetId: null, reportLinks: {} });
     const suggest: EnrichmentPollTaskSnap = {
       id: "pt-suggest",
       reportRunId: SUGGEST_RUN,
@@ -480,7 +482,7 @@ describe("post-submit poll orchestration A–L", () => {
   });
 
   it("F/G. existing externalTaskId never /set; Job B fixture invariants", async () => {
-    seedJobB();
+    await seedJobB();
     let setCalls = 0;
     const suggest: EnrichmentPollTaskSnap = {
       id: "pt-suggest",
@@ -520,15 +522,15 @@ describe("post-submit poll orchestration A–L", () => {
     assert.equal(FLAGS.TARGETED_RETRY_SUBMISSIONS, 1); // A only; poll path never /set
     const job = await loadUnifiedCollectionJob(CASE)!;
     assert.equal(job.jobId, JOB_B);
-    assert.equal(job.baseReportRunId, "orion-unified-base-unified-1784295388553-269bc3cf");
+    assert.equal(job.baseReportRunId, "orion-unified-base-unified-1784295388553-postsubmit");
     assert.deepEqual(job.enrichmentRunIds, [...ENRICHMENT_RUN_IDS]);
     FLAGS.F_NO_NEW_SET = true;
     FLAGS.G_JOB_B_FIXTURE = true;
   });
 
   it("H. parse/fetch failure → FAILED_RETRYABLE, no composite/render", async () => {
-    seedJobB({ compositeDatasetId: null, reportLinks: {} });
-    writeBaseManifest();
+    await seedJobB({ compositeDatasetId: null, reportLinks: {} });
+    await writeBaseManifest();
     let composite = 0;
     let render = 0;
     const suggest: EnrichmentPollTaskSnap = {
@@ -567,7 +569,7 @@ describe("post-submit poll orchestration A–L", () => {
   });
 
   it("I. terminal rejected/unknown remains fail-closed", async () => {
-    seedJobB({ compositeDatasetId: null, reportLinks: {} });
+    await seedJobB({ compositeDatasetId: null, reportLinks: {} });
     const tasks: EnrichmentPollTaskSnap[] = ENRICHMENT_RUN_IDS.map((runId, i) => {
       if (i === 1) {
         return {
@@ -595,8 +597,8 @@ describe("post-submit poll orchestration A–L", () => {
   });
 
   it("J/K. successful ingest invalidates stale artifacts once; one HTTP render", async () => {
-    seedJobB();
-    writeBaseManifest();
+    await seedJobB();
+    await writeBaseManifest();
     await writeUnifiedArtifact(CASE, JOB_B, "composite-serp-observations.json", {
       compositeDatasetId: "composite-stale-jobb",
       contentHash: "stale",
@@ -658,7 +660,7 @@ describe("post-submit poll orchestration A–L", () => {
   });
 
   it("L. UI after F5 shows persisted WAITING/progress", async () => {
-    seedJobB({
+    await seedJobB({
       arsenkinEnrichmentState: {
         version: "arsenkin-enrichment-state-v1",
         caseId: CASE,

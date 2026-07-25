@@ -4,6 +4,7 @@
  */
 
 import assert from "node:assert/strict";
+import { ensureSmokeCase } from "./lib/ensure-smoke-case";
 import { describe, it, before } from "node:test";
 import {
   deleteUnifiedCollectionJobForTests,
@@ -157,6 +158,7 @@ function agentsSnapshot(kind: "scheduled" | "4done1run" | "doneNotIngested" | "d
 describe("arsenkin enrichment ingest contract", () => {
   before(async () => {
     process.env.NETWORK_CALLS = "0";
+    await ensureSmokeCase(CASE);
     await deleteUnifiedCollectionJobForTests(CASE);
   });
 
@@ -234,7 +236,7 @@ describe("arsenkin enrichment ingest contract", () => {
       if (job?.stage === "COMPOSITE_MERGE" || job?.stage === "ORION_PREPARE") compositeCalls += 1;
     }
     assert.equal(compositeCalls, 0);
-    assert.equal(await loadUnifiedCollectionJob(CASE)?.stage, "ARSENKIN_ENRICHMENT");
+    assert.equal((await loadUnifiedCollectionJob(CASE))?.stage, "ARSENKIN_ENRICHMENT");
   });
 
   it("C: 5 completed, not ingested → compositeCalls=0", async () => {
@@ -340,7 +342,7 @@ describe("arsenkin enrichment ingest contract", () => {
 
   it("F: Job B recovery fixture — ingest checkpoint, no new base/arsenkin schedule", async () => {
     await deleteUnifiedCollectionJobForTests(CASE);
-    const unifiedJobId = "unified-1784295388553-269bc3cf-fixture";
+    const unifiedJobId = "unified-1784295388553-ingest-fixture";
     const manifest: BaseCollectionManifest = {
       version: "base-collection-manifest-v1",
       unifiedJobId,
@@ -409,7 +411,7 @@ describe("arsenkin enrichment ingest contract", () => {
     assert.equal(elig.recoveryReason, "ARSENKIN_INGEST_RESUME");
 
     // Full audit without paid confirm must conflict.
-    assert.rejects(
+    await assert.rejects(
       async () =>
         startUnifiedOrionCollection({
           caseId: CASE,

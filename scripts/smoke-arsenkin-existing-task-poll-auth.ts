@@ -4,6 +4,7 @@
  */
 
 import assert from "node:assert/strict";
+import { ensureSmokeCase } from "./lib/ensure-smoke-case";
 import { describe, it, before } from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -51,7 +52,7 @@ import type { CompositeObservation } from "../src/modules/digital-profile/servic
 process.env.NETWORK_CALLS = "0";
 
 const CASE = "cmr51xzaj00ztn70f8toh6e7g-smoke-poll-auth";
-const JOB_B = "unified-1784295388553-269bc3cf";
+const JOB_B = "unified-1784295388553-pollauth";
 const EXT_SUGGEST = "30664641";
 const PT_SUGGEST = "cmrp5ufgv0005sw2rlv48s8kw";
 const ENRICHMENT_RUN_IDS = [
@@ -93,7 +94,7 @@ function baseManifest(): BaseCollectionManifest {
     unifiedJobId: JOB_B,
     caseId: CASE,
     capturedAt: new Date().toISOString(),
-    baseReportRunId: "orion-unified-base-unified-1784295388553-269bc3cf",
+    baseReportRunId: "orion-unified-base-unified-1784295388553-pollauth",
     searchResultIds: ["sr0", "sr1", "sr2"],
     searchSurfaceItemIds: [],
     baseCount: 3,
@@ -120,7 +121,7 @@ function fixtureBaseRows(): CompositeObservation[] {
   }));
 }
 
-function seedJob(overrides: Partial<UnifiedCollectionJob> = {}): UnifiedCollectionJob {
+async function seedJob(overrides: Partial<UnifiedCollectionJob> = {}): Promise<UnifiedCollectionJob> {
   await deleteUnifiedCollectionJobForTests(CASE);
   const now = new Date().toISOString();
   const job: UnifiedCollectionJob = {
@@ -140,7 +141,7 @@ function seedJob(overrides: Partial<UnifiedCollectionJob> = {}): UnifiedCollecti
     completedAt: null,
     requestedBy: "smoke",
     arsenkinMode: "full-first36",
-    baseReportRunId: "orion-unified-base-unified-1784295388553-269bc3cf",
+    baseReportRunId: "orion-unified-base-unified-1784295388553-pollauth",
     arsenkinReportRunId: ENRICHMENT_RUN_IDS[0],
     enrichmentRunIds: [...ENRICHMENT_RUN_IDS],
     arsenkinEnrichmentState: null,
@@ -215,8 +216,9 @@ function allFiveDoneTasks(suggestDone = true): EnrichmentPollTaskSnap[] {
   })) as EnrichmentPollTaskSnap[];
 }
 
-before(() => {
+before(async () => {
   assert.equal(process.env.NETWORK_CALLS, "0");
+  await ensureSmokeCase(CASE);
 });
 
 describe("A. existing task poll authorization", () => {
@@ -363,7 +365,7 @@ describe("B. security fail-closed", () => {
 
 describe("C. FAILED_RETRYABLE pump vs explicit recovery", () => {
   it("pump skips FAILED_RETRYABLE; recovery resets pollAttempt on same jobId", async () => {
-    seedJob({
+    await seedJob({
       stage: "FAILED_RETRYABLE",
       status: "WAITING",
       pollAttempt: 40,
@@ -389,7 +391,7 @@ describe("C. FAILED_RETRYABLE pump vs explicit recovery", () => {
       } as never,
     });
 
-    const beforePump = await listResumableUnifiedJobs().filter((j) => j.caseId === CASE);
+    const beforePump = (await listResumableUnifiedJobs()).filter((j) => j.caseId === CASE);
     assert.equal(beforePump.length, 0, "FAILED_RETRYABLE must not be auto-pumped");
     // Do not call pumpResumableUnifiedCollections() here — it schedules every WAITING
     // job on disk (other smoke leftovers) and would open live Prisma connections.
@@ -411,7 +413,7 @@ describe("C. FAILED_RETRYABLE pump vs explicit recovery", () => {
         throw new Error("no base");
       },
     });
-    assert.equal(await loadUnifiedCollectionJob(CASE)!.stage, "FAILED_RETRYABLE");
+    assert.equal((await loadUnifiedCollectionJob(CASE))!.stage, "FAILED_RETRYABLE");
 
     const elig = await evaluateUnifiedCollectionRecoveryEligibility({
       caseId: CASE,
@@ -431,7 +433,7 @@ describe("C. FAILED_RETRYABLE pump vs explicit recovery", () => {
         autoSchedule: false,
         fixtureBaseRows: fixtureBaseRows(),
         ensureBaseReportRun: async () => ({
-          baseReportRunId: "orion-unified-base-unified-1784295388553-269bc3cf",
+          baseReportRunId: "orion-unified-base-unified-1784295388553-pollauth",
           created: false,
         }),
       },
@@ -448,7 +450,7 @@ describe("C. FAILED_RETRYABLE pump vs explicit recovery", () => {
     assert.equal(job.pollAttempt, 0);
     assert.ok(job.nextPollAt);
     assert.deepEqual(job.enrichmentRunIds, [...ENRICHMENT_RUN_IDS]);
-    assert.equal(job.baseReportRunId, "orion-unified-base-unified-1784295388553-269bc3cf");
+    assert.equal(job.baseReportRunId, "orion-unified-base-unified-1784295388553-pollauth");
     FLAGS.EXPLICIT_RECOVERY_RESETS_POLL_ATTEMPT = true;
 
     // Idempotent second recovery — same jobId, still no base/submit.
@@ -460,7 +462,7 @@ describe("C. FAILED_RETRYABLE pump vs explicit recovery", () => {
         autoSchedule: false,
         fixtureBaseRows: fixtureBaseRows(),
         ensureBaseReportRun: async () => ({
-          baseReportRunId: "orion-unified-base-unified-1784295388553-269bc3cf",
+          baseReportRunId: "orion-unified-base-unified-1784295388553-pollauth",
           created: false,
         }),
       },
@@ -475,7 +477,7 @@ describe("C. FAILED_RETRYABLE pump vs explicit recovery", () => {
 
 describe("D. Job B fixture: poll → ingest → one render", () => {
   it("30664641 mock DONE; 5/5 ingested; one HTTP render; submissions=0", async () => {
-    seedJob({ pollAttempt: 0, compositeDatasetId: null, reportLinks: {} });
+    await seedJob({ pollAttempt: 0, compositeDatasetId: null, reportLinks: {} });
     FLAGS.RENDER_CALLS = 0;
     FLAGS.BASE_CALLS = 0;
     FLAGS.EXTERNAL_SUBMISSIONS = 0;
@@ -616,7 +618,7 @@ describe("D. Job B fixture: poll → ingest → one render", () => {
 
 describe("E. poll errors persisted; restart/lease", () => {
   it("poll errors are structured and not swallowed; concurrent lease", async () => {
-    seedJob({ pollAttempt: 3 });
+    await seedJob({ pollAttempt: 3 });
     const persisted: unknown[] = [];
     const { pollErrors } = await pollDueEnrichmentProviderTasks({
       tasks: [
@@ -655,7 +657,7 @@ describe("E. poll errors persisted; restart/lease", () => {
     FLAGS.POLL_ERRORS_PERSISTED = true;
 
     // Restart preserves pollAttempt after a waiting tick.
-    seedJob({ pollAttempt: 2, nextPollAt: new Date(Date.now() - 1000).toISOString() });
+    await seedJob({ pollAttempt: 2, nextPollAt: new Date(Date.now() - 1000).toISOString() });
     const tasks = allFiveDoneTasks(false);
     await runUnifiedCollectionTick(CASE, {
       autoSchedule: false,
@@ -674,7 +676,7 @@ describe("E. poll errors persisted; restart/lease", () => {
     assert.ok(after.nextPollAt);
 
     // Concurrent ticks: at most one poll under lease.
-    seedJob({ pollAttempt: 0 });
+    await seedJob({ pollAttempt: 0 });
     let polls = 0;
     const deps = {
       autoSchedule: false as const,

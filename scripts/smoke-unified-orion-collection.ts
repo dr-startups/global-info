@@ -4,6 +4,7 @@
  */
 
 import assert from "node:assert/strict";
+import { ensureSmokeCase } from "./lib/ensure-smoke-case";
 import { describe, it, before } from "node:test";
 import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
@@ -27,6 +28,12 @@ import { emptyCoverage, FIRST36_PLANNED_SUPPORTED_SURFACES } from "../src/module
 process.env.NETWORK_CALLS = "0";
 
 const CASE_ID = "unified-smoke-case-1";
+const SMOKE_CASE_IDS = [
+  CASE_ID,
+  "unified-smoke-mock-base",
+  "unified-smoke-stale-prepare",
+  "unified-smoke-idempotent",
+] as const;
 
 function mockFullAuditReal(): FullAuditResultDTO {
   return {
@@ -129,6 +136,9 @@ async function drainJob(caseId: string, deps: Parameters<typeof runUnifiedCollec
 describe("unified orion arsenkin collection", () => {
   before(async () => {
     process.env.NETWORK_CALLS = "0";
+    // Джоба ссылается на кейс внешним ключом: без него смок падает на чужой
+    // машине, а на машине разработчика проходит за счёт оставшихся строк.
+    for (const id of SMOKE_CASE_IDS) await ensureSmokeCase(id);
     await deleteUnifiedCollectionJobForTests(CASE_ID);
   });
 
