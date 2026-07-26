@@ -23,12 +23,23 @@ export {
   getComplianceProvider,
   runComplianceScreening,
   importManualComplianceHit,
+  importLexisNexisHybridReport,
+  importApprovedComplianceVisuals,
   reviewComplianceHit,
   syncComplianceRiskFinding,
   buildComplianceSummaryBlock,
   mapHitSourceLabel,
   COMPLIANCE_FINDING_OWNER,
 } from "./service";
+export type { ComplianceVisualImportResult } from "./service";
+export { openSanctionsProvider } from "./open-sanctions-provider";
+export {
+  buildOpenSanctionsMatchBody,
+  mapOpenSanctionsResponse,
+  riskTypesFromTopics,
+  confidenceFromScore,
+  normalizeBirthDate,
+} from "./open-sanctions-mapping";
 export { dowJonesProvider } from "./dow-jones-provider";
 export { lexisnexisProvider } from "./lexisnexis-provider";
 export { worldCheckProvider } from "./worldcheck-provider";

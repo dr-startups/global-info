@@ -29,6 +29,8 @@ RUN npm run build
 FROM base AS runner
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+# Stage S2 LIVE SERP — Playwright looks here for Chromium binaries.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # Built app + the bits needed to run, migrate and create an admin at runtime.
 COPY --from=build /app/node_modules ./node_modules
@@ -40,6 +42,13 @@ COPY --from=build /app/tsconfig.json ./tsconfig.json
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/src ./src
 COPY --from=build /app/scripts ./scripts
+# Local golden-render fallback imports orion_golden_renderer from here.
+COPY --from=build /app/renderer ./renderer
+
+# Chromium + OS libs for LIVE SERP capture (manual API only; not used by PDF render).
+# --with-deps installs apt packages required by headless Chrome on Debian slim.
+RUN npx playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 3000
 
@@ -48,4 +57,13 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD curl -fsS "http://localhost:${PORT:-3000}/api/digital-profile/health" || exit 1
 
-CMD ["npm", "run", "start"]
+# Явно, хотя это и значение по умолчанию: остановка контейнера обязана быть
+# сигналом, который процесс умеет обработать.
+STOPSIGNAL SIGTERM
+
+# Exec-форма и никакого `npm` в цепочке. `npm run` сигнал детям не передаёт —
+# замер показал, что после SIGTERM в `npm run` внуки остаются живы: сервер Next
+# не получал сигнала вовсе, контейнер добивался по таймауту, и Railway писал
+# Crashed на каждом деплое. Теперь PID 1 — обычный Node-процесс, который сам
+# получает сигнал и передаёт его дальше (scripts/start.mjs).
+CMD ["node", "scripts/start.mjs"]

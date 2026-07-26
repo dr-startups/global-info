@@ -1,0 +1,38 @@
+{
+  "version": "finding-themes-v1",
+  "_comment": "Copy to finding-themes.json to override defaults (REMEDIATION §3.1). Regex sources are validated at load.",
+  "themes": [
+    {
+      "themeId": "criminal_legal",
+      "label": "Криминальные / судебные материалы",
+      "keywords": "уголов|criminal|арест|arrest|суд(?!острое)|court",
+      "flags": "iu",
+      "baseRisk": "high",
+      "recommendedAction": "Проверить статусы дел по официальным источникам."
+    },
+    {
+      "themeId": "business_profile",
+      "label": "Деловой профиль",
+      "keywords": "бизнесмен|предпринимател|биограф|forbes",
+      "flags": "iu",
+      "baseRisk": "none",
+      "recommendedAction": "Поддерживать позитивный деловой контент."
+    },
+    {
+      "themeId": "industry_contour",
+      "label": "Отраслевой контур",
+      "keywords": "алюмин|aluminium|металлург",
+      "flags": "iu",
+      "baseRisk": "low",
+      "recommendedAction": "Уточнить отраслевой контекст по первоисточникам."
+    }
+  ],
+  "adversePatterns": "санкц|sanction|уголов|criminal|арест|суд|скандал|расследован",
+  "adverseFlags": "iu",
+  "unverifiedDomains": "rucriminal|compromat|kompromat",
+  "unverifiedDomainsFlags": "iu",
+  "authoritativeDomains": "\\.gov|nalog\\.ru|kad\\.arbitr|wikipedia\\.org",
+  "authoritativeDomainsFlags": "iu",
+  "reputableDomains": "forbes|rbc\\.ru|vedomosti|kommersant|tadviser|interfax",
+  "reputableDomainsFlags": "iu"
+}

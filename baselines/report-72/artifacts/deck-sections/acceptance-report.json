@@ -1,0 +1,29 @@
+{
+  "version": "deck-sections-acceptance-v1",
+  "reportRunId": "orion-canary-1783980828528",
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "gates": {
+    "sectionQa": true,
+    "manifestNotBlocked": true,
+    "assemblyValidation": true,
+    "coverageReconciliation": true,
+    "baseSlotCoverage36": true,
+    "geometryClean": true,
+    "manualVisual": true,
+    "emptySidebarCountZero": true,
+    "noEmptyTitledContainers": true,
+    "noMateriallyEmptyPages": true,
+    "noBlankVisualCards": true,
+    "unexplainedAdverseMarkerCountZero": true,
+    "pageAccountingComplete": true,
+    "sidebarScopeSubsets": true,
+    "regionScopeIsolation": true,
+    "sourceFooterFromSidebarEvidence": true,
+    "page13FooterListsHighlightDomains": true,
+    "page31NoRuCriminalEvidence": true,
+    "pageParity": true
+  },
+  "notes": [
+    "CEO_READY is NOT declared: production-like acceptance (First36 gate suite on a full run) not executed in this offline build."
+  ]
+}

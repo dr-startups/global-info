@@ -1,0 +1,18 @@
+{
+  "code": "TASK_RESULT",
+  "task_id": "7002",
+  "result": {
+    "table": [
+      {
+        "url": "https://forbes.ru/profile/example",
+        "yandex": true,
+        "google": true
+      },
+      {
+        "url": "https://tadviser.ru/example",
+        "yandex": false,
+        "google": true
+      }
+    ]
+  }
+}

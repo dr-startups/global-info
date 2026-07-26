@@ -1,0 +1,676 @@
+{
+  "version": "deck-coverage-reconciliation-v1",
+  "reportRunId": "orion-canary-1783980828528",
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "generatedAt": "2026-07-17T09:49:29.066Z",
+  "baseSlotCoverage": 36,
+  "requiredBaseSlotCount": 36,
+  "physicalPageCount": 41,
+  "continuationCount": 5,
+  "slots": [
+    {
+      "baseSlotId": "p01_cover",
+      "canonicalPage": 1,
+      "title": "ORION Digital Profile",
+      "status": "PRESERVED",
+      "newPageNumber": 1,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p02_toc",
+      "canonicalPage": 2,
+      "title": "Содержание отчёта",
+      "status": "PRESERVED",
+      "newPageNumber": 2,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p03_executive",
+      "canonicalPage": 3,
+      "title": "Резюме",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 3,
+      "continuationPages": [
+        4
+      ]
+    },
+    {
+      "baseSlotId": "p04_risk_dashboard",
+      "canonicalPage": 4,
+      "title": "Матрица комплаенс-рисков",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 5,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p05_profile_dashboard",
+      "canonicalPage": 5,
+      "title": "Обзор цифрового профиля",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 6,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p06_ru_toc",
+      "canonicalPage": 6,
+      "title": "Россия: Цифровой профиль",
+      "status": "PRESERVED",
+      "newPageNumber": 7,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p07_ru_summary",
+      "canonicalPage": 7,
+      "title": "Россия — резюме аудита",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 8,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p08_ru_metrics",
+      "canonicalPage": 8,
+      "title": "Россия — метрики и проверка URL",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 9,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p09_ru_serp_table",
+      "canonicalPage": 9,
+      "title": "Россия — позиции в поисковой выдаче",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 10,
+      "continuationPages": [
+        11,
+        12
+      ]
+    },
+    {
+      "baseSlotId": "p10_ru_serp_visual",
+      "canonicalPage": 10,
+      "title": "Россия — снимок выдачи",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 13,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p11_ru_suggestions_yandex",
+      "canonicalPage": 11,
+      "title": "Россия — подсказки Яндекса",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 14,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p12_ru_suggestions_google",
+      "canonicalPage": 12,
+      "title": "Россия — подсказки Google",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 15,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p13_ru_wikipedia",
+      "canonicalPage": 13,
+      "title": "Россия — Википедия",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 20,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p14_ru_images_1",
+      "canonicalPage": 14,
+      "title": "Россия — изображения (1)",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 16,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p15_ru_images_2",
+      "canonicalPage": 15,
+      "title": "Россия — изображения (2)",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 17,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p16_ru_images_3",
+      "canonicalPage": 16,
+      "title": "Россия — изображения (3)",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 18,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p17_ru_images_4",
+      "canonicalPage": 17,
+      "title": "Россия — изображения (4)",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 19,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p18_ru_knowledge_1",
+      "canonicalPage": 18,
+      "title": "Россия — панель знаний",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 21,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p19_ru_knowledge_2",
+      "canonicalPage": 19,
+      "title": "Россия — AI-ответы поисковых систем",
+      "status": "PRESERVED",
+      "newPageNumber": 22,
+      "emptyEvidence": "explicit state: VISUAL_ASSET_UNAVAILABLE",
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p20_ru_related_1",
+      "canonicalPage": 20,
+      "title": "Россия — связанные запросы (1)",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 23,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p21_ru_related_2",
+      "canonicalPage": 21,
+      "title": "Россия — связанные запросы (2)",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 24,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p22_ru_related_3",
+      "canonicalPage": 22,
+      "title": "Россия — связанные запросы (3)",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 25,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p23_uae_toc",
+      "canonicalPage": 23,
+      "title": "ОАЭ: Цифровой профиль",
+      "status": "PRESERVED",
+      "newPageNumber": 26,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p24_uae_summary",
+      "canonicalPage": 24,
+      "title": "ОАЭ — резюме аудита",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 27,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p25_uae_metrics",
+      "canonicalPage": 25,
+      "title": "ОАЭ — метрики покрытия",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 28,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p26_uae_serp_table",
+      "canonicalPage": 26,
+      "title": "ОАЭ — позиции в поисковой выдаче",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 29,
+      "continuationPages": [
+        30
+      ]
+    },
+    {
+      "baseSlotId": "p27_uae_serp_visual",
+      "canonicalPage": 27,
+      "title": "ОАЭ — снимок выдачи",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 31,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p28_uae_suggestions",
+      "canonicalPage": 28,
+      "title": "ОАЭ — подсказки поиска",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 32,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p29_uae_wikipedia",
+      "canonicalPage": 29,
+      "title": "ОАЭ — Википедия",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 34,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p30_uae_images",
+      "canonicalPage": 30,
+      "title": "ОАЭ — изображения в поиске",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 33,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p31_uae_knowledge",
+      "canonicalPage": 31,
+      "title": "ОАЭ — панель знаний и AI Overview",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 35,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p32_uae_related",
+      "canonicalPage": 32,
+      "title": "ОАЭ — связанные запросы",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 36,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p33_compliance_toc",
+      "canonicalPage": 33,
+      "title": "Комплаенс — сводка баз данных",
+      "status": "PRESERVED",
+      "newPageNumber": 37,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p34_dow_jones",
+      "canonicalPage": 34,
+      "title": "Dow Jones — профиль",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "newPageNumber": 38,
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p35_lexis_visual",
+      "canonicalPage": 35,
+      "title": "LexisNexis — страница профиля",
+      "status": "PRESERVED",
+      "newPageNumber": 39,
+      "emptyEvidence": "explicit state: VISUAL_ASSET_UNAVAILABLE",
+      "continuationPages": []
+    },
+    {
+      "baseSlotId": "p36_lexis_visual_2",
+      "canonicalPage": 36,
+      "title": "LexisNexis — страница профиля (2)",
+      "status": "MERGED_INTO",
+      "newPageNumber": 39,
+      "mergedInto": "p35_lexis_visual",
+      "emptyEvidence": "Обе страницы LexisNexis в v72 показывали один экспорт профиля; в текущем офлайн-наборе визуальный экспорт недоступен, а всё содержимое (совпадение ADVERSE_MEDIA и его статус) полностью помещается на одной странице. Вторая страница была бы пустым дублирующим placeholder-ом.",
+      "continuationPages": []
+    }
+  ],
+  "v72Pages": [
+    {
+      "v72Page": 1,
+      "v72Title": "ORION Digital Profile",
+      "v72Role": "base",
+      "status": "PRESERVED",
+      "mappedTo": "p01_cover",
+      "newPageNumber": 1
+    },
+    {
+      "v72Page": 2,
+      "v72Title": "Содержание отчёта",
+      "v72Role": "base",
+      "status": "PRESERVED",
+      "mappedTo": "p02_toc",
+      "newPageNumber": 2
+    },
+    {
+      "v72Page": 3,
+      "v72Title": "Резюме",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p03_executive",
+      "newPageNumber": 3
+    },
+    {
+      "v72Page": 4,
+      "v72Title": "Матрица комплаенс-рисков",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p04_risk_dashboard",
+      "newPageNumber": 5
+    },
+    {
+      "v72Page": 5,
+      "v72Title": "Обзор цифрового профиля",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p05_profile_dashboard",
+      "newPageNumber": 6
+    },
+    {
+      "v72Page": 6,
+      "v72Title": "Россия: Цифровой профиль",
+      "v72Role": "base",
+      "status": "PRESERVED",
+      "mappedTo": "p06_ru_toc",
+      "newPageNumber": 7
+    },
+    {
+      "v72Page": 7,
+      "v72Title": "Россия — резюме аудита",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p07_ru_summary",
+      "newPageNumber": 8
+    },
+    {
+      "v72Page": 8,
+      "v72Title": "Россия — карточки выдачи",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p08_ru_metrics",
+      "newPageNumber": 9
+    },
+    {
+      "v72Page": 9,
+      "v72Title": "Россия — позиции в поисковая выдача",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p09_ru_serp_table",
+      "newPageNumber": 10
+    },
+    {
+      "v72Page": 10,
+      "v72Title": "Россия — снимок выдачи",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p10_ru_serp_visual",
+      "newPageNumber": 13
+    },
+    {
+      "v72Page": 11,
+      "v72Title": "Россия — подсказки поиска",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p11_ru_suggestions_yandex",
+      "newPageNumber": 14
+    },
+    {
+      "v72Page": 12,
+      "v72Title": "Россия — подсказки Google",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p12_ru_suggestions_google",
+      "newPageNumber": 15
+    },
+    {
+      "v72Page": 13,
+      "v72Title": "Россия — Википедия",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p13_ru_wikipedia",
+      "newPageNumber": 20
+    },
+    {
+      "v72Page": 14,
+      "v72Title": "Россия — изображения (1)",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p14_ru_images_1",
+      "newPageNumber": 16
+    },
+    {
+      "v72Page": 15,
+      "v72Title": "Россия — изображения (2)",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p15_ru_images_2",
+      "newPageNumber": 17
+    },
+    {
+      "v72Page": 16,
+      "v72Title": "Россия — изображения (3)",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p16_ru_images_3",
+      "newPageNumber": 18
+    },
+    {
+      "v72Page": 17,
+      "v72Title": "Россия — изображения (4)",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p17_ru_images_4",
+      "newPageNumber": 19
+    },
+    {
+      "v72Page": 18,
+      "v72Title": "Россия — панель знаний (1)",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p18_ru_knowledge_1",
+      "newPageNumber": 21
+    },
+    {
+      "v72Page": 19,
+      "v72Title": "Россия — панель знаний (2)",
+      "v72Role": "base",
+      "status": "PRESERVED",
+      "mappedTo": "p19_ru_knowledge_2",
+      "newPageNumber": 22,
+      "emptyEvidence": "explicit state: VISUAL_ASSET_UNAVAILABLE"
+    },
+    {
+      "v72Page": 20,
+      "v72Title": "Россия — AI-выдача Яндекса",
+      "v72Role": "dynamic_insert",
+      "status": "MERGED_INTO",
+      "mappedTo": "p19_ru_knowledge_2",
+      "newPageNumber": 22
+    },
+    {
+      "v72Page": 21,
+      "v72Title": "Россия — Google AI Overview",
+      "v72Role": "dynamic_insert",
+      "status": "MERGED_INTO",
+      "mappedTo": "p19_ru_knowledge_2",
+      "newPageNumber": 22
+    },
+    {
+      "v72Page": 22,
+      "v72Title": "Россия — связанные запросы (1)",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p20_ru_related_1",
+      "newPageNumber": 23
+    },
+    {
+      "v72Page": 23,
+      "v72Title": "Россия — связанные запросы (2)",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p21_ru_related_2",
+      "newPageNumber": 24
+    },
+    {
+      "v72Page": 24,
+      "v72Title": "Россия — связанные запросы (3)",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p22_ru_related_3",
+      "newPageNumber": 25
+    },
+    {
+      "v72Page": 25,
+      "v72Title": "ОАЭ: Цифровой профиль",
+      "v72Role": "base",
+      "status": "PRESERVED",
+      "mappedTo": "p23_uae_toc",
+      "newPageNumber": 26
+    },
+    {
+      "v72Page": 26,
+      "v72Title": "ОАЭ — резюме аудита",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p24_uae_summary",
+      "newPageNumber": 27
+    },
+    {
+      "v72Page": 27,
+      "v72Title": "ОАЭ — ссылки Google",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p25_uae_metrics",
+      "newPageNumber": 28
+    },
+    {
+      "v72Page": 28,
+      "v72Title": "ОАЭ — позиции поисковая выдача",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p26_uae_serp_table",
+      "newPageNumber": 29
+    },
+    {
+      "v72Page": 29,
+      "v72Title": "ОАЭ — снимок выдачи",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p27_uae_serp_visual",
+      "newPageNumber": 31
+    },
+    {
+      "v72Page": 30,
+      "v72Title": "ОАЭ — подсказки поиска",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p28_uae_suggestions",
+      "newPageNumber": 32
+    },
+    {
+      "v72Page": 31,
+      "v72Title": "ОАЭ — Википедия",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p29_uae_wikipedia",
+      "newPageNumber": 34
+    },
+    {
+      "v72Page": 32,
+      "v72Title": "ОАЭ — изображения в поиске",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p30_uae_images",
+      "newPageNumber": 33
+    },
+    {
+      "v72Page": 33,
+      "v72Title": "ОАЭ — панель знаний",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p31_uae_knowledge",
+      "newPageNumber": 35
+    },
+    {
+      "v72Page": 34,
+      "v72Title": "ОАЭ — Google AI Overview (1/5)",
+      "v72Role": "dynamic_insert",
+      "status": "MERGED_INTO",
+      "mappedTo": "p31_uae_knowledge",
+      "newPageNumber": 35
+    },
+    {
+      "v72Page": 35,
+      "v72Title": "ОАЭ — Google AI Overview (2/5)",
+      "v72Role": "continuation",
+      "status": "EMPTY_COLLAPSED",
+      "mappedTo": "p31_uae_knowledge",
+      "newPageNumber": null,
+      "emptyEvidence": "current composite dataset carries 1 AI-answer observation(s) for this region; full source text fits on the base slide without truncation"
+    },
+    {
+      "v72Page": 36,
+      "v72Title": "ОАЭ — Google AI Overview (3/5)",
+      "v72Role": "continuation",
+      "status": "EMPTY_COLLAPSED",
+      "mappedTo": "p31_uae_knowledge",
+      "newPageNumber": null,
+      "emptyEvidence": "current composite dataset carries 1 AI-answer observation(s) for this region; full source text fits on the base slide without truncation"
+    },
+    {
+      "v72Page": 37,
+      "v72Title": "ОАЭ — Google AI Overview (4/5)",
+      "v72Role": "continuation",
+      "status": "EMPTY_COLLAPSED",
+      "mappedTo": "p31_uae_knowledge",
+      "newPageNumber": null,
+      "emptyEvidence": "current composite dataset carries 1 AI-answer observation(s) for this region; full source text fits on the base slide without truncation"
+    },
+    {
+      "v72Page": 38,
+      "v72Title": "ОАЭ — Google AI Overview (5/5)",
+      "v72Role": "continuation",
+      "status": "EMPTY_COLLAPSED",
+      "mappedTo": "p31_uae_knowledge",
+      "newPageNumber": null,
+      "emptyEvidence": "current composite dataset carries 1 AI-answer observation(s) for this region; full source text fits on the base slide without truncation"
+    },
+    {
+      "v72Page": 39,
+      "v72Title": "ОАЭ — связанные запросы",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p32_uae_related",
+      "newPageNumber": 36
+    },
+    {
+      "v72Page": 40,
+      "v72Title": "комплаенс — сводка баз данных",
+      "v72Role": "base",
+      "status": "PRESERVED",
+      "mappedTo": "p33_compliance_toc",
+      "newPageNumber": 37
+    },
+    {
+      "v72Page": 41,
+      "v72Title": "Dow Jones — профиль",
+      "v72Role": "base",
+      "status": "REPLACED_WITH_MEANINGFUL_CONTENT",
+      "mappedTo": "p34_dow_jones",
+      "newPageNumber": 38
+    },
+    {
+      "v72Page": 42,
+      "v72Title": "LexisNexis — страница профиля",
+      "v72Role": "base",
+      "status": "PRESERVED",
+      "mappedTo": "p35_lexis_visual",
+      "newPageNumber": 39,
+      "emptyEvidence": "explicit state: VISUAL_ASSET_UNAVAILABLE"
+    },
+    {
+      "v72Page": 43,
+      "v72Title": "LexisNexis — страница профиля (2)",
+      "v72Role": "base",
+      "status": "MERGED_INTO",
+      "mappedTo": "p36_lexis_visual_2",
+      "newPageNumber": 39,
+      "emptyEvidence": "Обе страницы LexisNexis в v72 показывали один экспорт профиля; в текущем офлайн-наборе визуальный экспорт недоступен, а всё содержимое (совпадение ADVERSE_MEDIA и его статус) полностью помещается на одной странице. Вторая страница была бы пустым дублирующим placeholder-ом."
+    }
+  ],
+  "checks": {
+    "allBaseSlotsMapped": true,
+    "allPromotedFindingsPresent": true,
+    "allPromotedEvidencePresent": true,
+    "allRequiredSurfacesPresent": true,
+    "allV72PagesMapped": true
+  },
+  "missingBaseSlots": [],
+  "missingPromotedFindings": [],
+  "missingEvidenceRefs": [],
+  "missingSurfaces": [],
+  "failed": false
+}

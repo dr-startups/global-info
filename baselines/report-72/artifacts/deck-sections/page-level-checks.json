@@ -1,0 +1,21 @@
+{
+  "version": "deck-page-level-checks-v1",
+  "tocNoPerLinePageCounts": true,
+  "adverseMarkersLabeled": true,
+  "noOtherSubjectInNeutralRows": true,
+  "noDuplicatedPageBodies": true,
+  "duplicatedBodies": [],
+  "aiSecurityFindingComplete": true,
+  "urlAuditCompactRowsNotFullPages": true,
+  "emptyStatesExplained": true,
+  "continuationsAdjacent": true,
+  "noInternalTokensInClientCopy": true,
+  "internalTokenSlides": [],
+  "page13FooterListsHighlightDomains": true,
+  "page31NoRuCriminalEvidence": true,
+  "page31ScopedToUaePepSignal": true,
+  "page31StatesCoverageLimitation": true,
+  "sidebarScopeSubsets": true,
+  "regionScopeIsolation": true,
+  "sourceFooterFromSidebarEvidence": true
+}

@@ -51,6 +51,14 @@ enum AgentName {
   RISK_CLASSIFIER
   REPORT_SYNTHESIS
   SEARCH_SURFACES
+  // Агенты Arsenkin (шаг 15, E10). Каждый — отдельная платная отправка, и во
+  // вкладке «Агенты» они должны различаться: свести их к SEARCH_SURFACES
+  // значило бы стереть ровно то, ради чего эта вкладка существует.
+  ARSENKIN_SEARCH_TOP_REAL
+  ARSENKIN_SUGGESTIONS_REAL
+  ARSENKIN_PAA_REAL
+  ARSENKIN_AI_SEARCH_REAL
+  ARSENKIN_URL_AUDIT_REAL
 }
 
 // Stage H3 — additional search surfaces beyond organic results.
@@ -130,6 +138,8 @@ enum DatabaseProvider {
   LEXISNEXIS
   DOW_JONES
   WORLD_CHECK
+  // Открытый агрегатор санкционных перечней и списков PEP (шаг 04.3).
+  OPEN_SANCTIONS
   OTHER
 }
 
@@ -203,6 +213,12 @@ model Case {
   // Soft delete (evidence is never hard-deleted without an explicit admin action)
   deletedAt     DateTime?
   deletedBy     String?
+  /**
+   * Кейс создан смоком, а не оператором (шаг 13, B6). Списку оператора такие
+   * строки не принадлежат: они не его работа. Признак хранится в записи, а не
+   * выводится из префикса номера — номер это текст, который может совпасть.
+   */
+  isFixture     Boolean       @default(false)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -220,9 +236,19 @@ model Case {
   reportVersions     ReportVersion[]
   auditLogs        AuditLog[]
   caseAccess         DpCaseAccess[]
+  orionReportRuns    OrionReportRun[]
+  arsenkinStageRuns  OrionArsenkinStageRun[]
+  serpCaptures       SerpCapture[]
+  searchDocuments    SearchDocument[]
+  serpObservations   SerpObservation[]
+  serpSyntheticAssets SerpSyntheticAsset[]
+  providerTasks      ProviderTask[]
+  unifiedCollectionJobs UnifiedCollectionJobRecord[]
+  workflowSteps      WorkflowStep[]
 
   @@index([status])
   @@index([deletedAt])
+  @@index([isFixture])
   @@map("dp_cases")
 }
 
@@ -273,6 +299,39 @@ model AgentRun {
 
   @@index([caseId, agentName])
   @@map("dp_agent_runs")
+}
+
+// ----------------------------------------------------------------------------
+// 3b. arsenkin ingest ledger (шаг 12.4f)
+// ----------------------------------------------------------------------------
+
+/**
+ * Журнал ровно однократного приёма результатов Arsenkin.
+ *
+ * Раньше лежал внутри блоба `arsenkinEnrichmentState` рядом с прогрессом, и это
+ * смешивало разное: прогресс выводится из строк задач, а журнал не выводится
+ * ниоткуда — это единственная запись о том, какие нагрузки уже приняты.
+ *
+ * Строка на принятую нагрузку. `externalTaskId` нужен для главной проверки:
+ * если для той же задачи пришла другая нагрузка, приём останавливается
+ * (`EXTERNAL_TASK_HASH_CONFLICT`) — молча принять вторую версию значило бы
+ * подменить доказательства.
+ */
+model ArsenkinIngestLedgerEntry {
+  id             String   @id @default(cuid())
+  caseId         String
+  unifiedJobId   String
+  /// Задача провайдера, чей результат принят; пусто — нагрузка без задачи
+  externalTaskId String?
+  /// Полный sha256 полезной нагрузки (никогда не усечённый)
+  resultHash     String
+  /// Идентификаторы наблюдений этой нагрузки — для разбора происхождения
+  observationIds Json     @default("[]")
+  ingestedAt     DateTime @default(now())
+
+  @@unique([unifiedJobId, resultHash])
+  @@index([unifiedJobId, externalTaskId])
+  @@map("dp_arsenkin_ingest_ledger")
 }
 
 // ----------------------------------------------------------------------------
@@ -578,6 +637,394 @@ model ReportVersion {
   @@index([caseId])
   @@map("dp_report_versions")
 }
+
+// ----------------------------------------------------------------------------
+// 11b. Unified ORION collection job store (REMEDIATION §9.4)
+// ----------------------------------------------------------------------------
+
+/// Durable unified-collection job row (domain type remains UnifiedCollectionJob).
+model UnifiedCollectionJobRecord {
+  id                  String    @id @default(cuid())
+  caseId              String    @unique
+  jobId               String    @unique
+  unifiedJobId        String
+  stage               String
+  status              String
+  progress            Float     @default(0)
+  versionNum          Int       @default(0)
+  leaseOwnerId        String?
+  leaseUntil          DateTime?
+  requestedBy         String
+  arsenkinMode        String?
+  baseReportRunId     String?
+  arsenkinReportRunId String?
+  compositeDatasetId  String?
+  cancelRequested     Boolean   @default(false)
+  resumeCheckpoint    String?
+  nextPollAt          DateTime?
+  pollAttempt         Int?
+  startedAt           DateTime?
+  completedAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  /// Full UnifiedCollectionJob JSON (domain type) minus fields that are columns
+  payloadJson         Json
+  /// logicalName → storage key (db) or absolute path (file bootstrap)
+  artifactKeys        Json      @default("{}")
+  reportLinkKeys      Json      @default("{}")
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([status, stage])
+  @@index([leaseUntil])
+  @@map("dp_unified_collection_jobs")
+}
+
+/// Единица долговечной работы (шаг 12). Строка этой таблицы — и запись о
+/// прогрессе, и элемент очереди: воркер забирает готовые к исполнению шаги
+/// через FOR UPDATE SKIP LOCKED. Отдельного брокера нет намеренно — источник
+/// правды один, поэтому второй правды о том, что делать дальше, не возникает.
+model WorkflowStep {
+  id            String    @id @default(cuid())
+  caseId        String
+  /// unifiedJobId прогона, которому принадлежит шаг
+  jobId         String
+  /// Имя шага из реестра конвейера (BASE_COLLECTION, ARSENKIN_ENRICHMENT, …)
+  name          String
+  /// Порядок в конвейере — для вывода стадии джобы и выбора следующего шага
+  position      Int
+  /// PENDING | RUNNING | WAITING | DONE | FAILED | SKIPPED
+  state         String    @default("PENDING")
+  attempts      Int       @default(0)
+  maxAttempts   Int       @default(40)
+  /// Когда шаг снова готов к исполнению; null — не запланирован
+  nextRunAt     DateTime?
+  leaseOwner    String?
+  leaseUntil    DateTime?
+  /// Ключ идемпотентности платного эффекта
+  inputHash     String?
+  /// Указатель на артефакт результата
+  outputRef     String?
+  lastError     String?
+  lastErrorCode String?
+  startedAt     DateTime?
+  finishedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([jobId, name])
+  @@index([state, nextRunAt])
+  @@index([caseId, position])
+  @@map("dp_workflow_steps")
+}
+
+// ----------------------------------------------------------------------------
+// 11c. ORION report runs
+// ----------------------------------------------------------------------------
+
+model OrionReportRun {
+  id          String   @id @default(cuid())
+  caseId      String
+  reportVersionId String?
+  mode        String
+  storeMode   String   @default("file")
+  status      String
+  internalOnly Boolean @default(true)
+  metadataJson Json?
+  warningsJson Json?
+  errorsJson  Json?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case Case @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  serpCaptures       SerpCapture[]
+  serpObservations   SerpObservation[]
+  serpSyntheticAssets SerpSyntheticAsset[]
+  providerTasks      ProviderTask[]
+  surfaceCollectionCoverage SurfaceCollectionCoverage[]
+  arsenkinStageRuns OrionArsenkinStageRun[]
+
+  @@index([caseId])
+  @@index([reportVersionId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("dp_orion_report_runs")
+}
+
+/// Run-scoped Arsenkin live stage ledger (P0.5). One row per (reportRunId, stage).
+model OrionArsenkinStageRun {
+  id                   String    @id @default(cuid())
+  reportRunId          String
+  caseId               String
+  stage                String
+  status               String
+  planDigest           String?
+  leaseOwnerId         String?
+  maxNewTasks          Int?
+  maxEstimatedLimits   Int?
+  estimatedLimitsTotal Int?
+  plannedNewTasks      Int?
+  errorJson            Json?
+  metadataJson         Json?
+  startedAt            DateTime?
+  finishedAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  case      Case           @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@unique([reportRunId, stage], map: "dp_orion_arsenkin_stage_unique")
+  @@index([reportRunId, status])
+  @@index([caseId])
+  @@map("dp_orion_arsenkin_stage_runs")
+}
+
+model ProviderTask {
+  id             String    @id @default(cuid())
+  caseId         String?
+  reportRunId    String?
+  provider       String
+  toolName       String
+  externalTaskId String?
+  requestHash    String
+  state          String
+  attempts       Int       @default(0)
+  nextPollAt     DateTime?
+  errorCode      String?
+  limitsSpent    Int?
+  lockedBy       String?
+  lockedAt       DateTime?
+  leaseUntil     DateTime?
+  submittedAt    DateTime?
+  latencyMs      Int?
+  limitsBefore   Int?
+  limitsAfter    Int?
+  requestJson    Json
+  responseJson   Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  completedAt    DateTime?
+
+  case      Case?           @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  reportRun OrionReportRun? @relation(fields: [reportRunId], references: [id], onDelete: SetNull)
+
+  serpObservations SerpObservation[]
+  surfaceCollectionCoverage SurfaceCollectionCoverage[]
+
+  @@unique([reportRunId, provider, requestHash])
+  @@index([state, nextPollAt])
+  @@index([reportRunId])
+  @@index([caseId])
+  @@index([externalTaskId])
+  @@map("dp_provider_tasks")
+}
+
+// ----------------------------------------------------------------------------
+// 11b. Run-scoped SERP observations (provider-first; no URL dedupe across queries)
+// ----------------------------------------------------------------------------
+
+model SearchDocument {
+  id          String   @id @default(cuid())
+  caseId      String
+  url         String
+  canonicalUrl String?
+  domain      String?
+  title       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  case         Case              @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  observations SerpObservation[]
+
+  @@unique([caseId, url])
+  @@index([caseId])
+  @@index([domain])
+  @@map("dp_search_documents")
+}
+
+model SerpObservation {
+  id               String   @id @default(cuid())
+  caseId           String
+  auditRunId       String
+  queryId          String
+  queryText        String
+  parentQueryId    String?
+  provider         String
+  engine           String
+  device           String   @default("DESKTOP")
+  surface          String   @default("organic")
+  region           String
+  language         String
+  rank             Int
+  url              String
+  title            String?
+  snippet          String?
+  domain           String?
+  searchDocumentId String?
+  providerTaskId   String?
+  providerStatus   String   @default("OK")
+  rawPayloadJson   Json?
+  capturedAt       DateTime
+  createdAt        DateTime @default(now())
+
+  case           Case                 @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  auditRun       OrionReportRun       @relation(fields: [auditRunId], references: [id], onDelete: Cascade)
+  searchDocument SearchDocument?      @relation(fields: [searchDocumentId], references: [id], onDelete: SetNull)
+  providerTask   ProviderTask?        @relation(fields: [providerTaskId], references: [id], onDelete: SetNull)
+  syntheticLinks SerpSyntheticAssetObservation[]
+
+  @@index([caseId])
+  @@index([auditRunId])
+  @@index([queryId])
+  @@index([providerTaskId])
+  @@index([provider, engine, surface])
+  @@index([url])
+  @@index([capturedAt])
+  @@unique([auditRunId, provider, engine, region, language, device, surface, queryId, rank, url], map: "serp_obs_run_unique")
+  @@map("dp_serp_observations")
+}
+
+model SurfaceCollectionCoverage {
+  id             String   @id @default(cuid())
+  reportRunId    String
+  provider       String
+  tool           String
+  providerTaskId String?
+  queryId        String
+  queryText      String
+  engine         String
+  region         String
+  language       String
+  device         String   @default("DESKTOP")
+  surface        String
+  status         String
+  resultCount    Int
+  errorCode      String?
+  capturedAt     DateTime
+  createdAt      DateTime @default(now())
+
+  reportRun     OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+  providerTask  ProviderTask?  @relation(fields: [providerTaskId], references: [id], onDelete: SetNull)
+
+  @@unique([reportRunId, provider, tool, queryId, surface, engine, region, language, device], map: "dp_surface_coverage_biz_unique")
+  @@index([reportRunId])
+  @@index([reportRunId, surface])
+  @@index([providerTaskId])
+  @@map("dp_surface_collection_coverage")
+}
+
+model ProviderAccountLimiter {
+  id              String   @id
+  windowStartedAt DateTime
+  requestCount    Int      @default(0)
+  inFlight        Int      @default(0)
+  maxConcurrent   Int
+  maxRpm          Int
+  updatedAt       DateTime @updatedAt
+
+  @@map("dp_provider_account_limiter")
+}
+
+/// Per-request lease for Arsenkin account concurrency + sliding RPM budget.
+model ProviderAccountRequestLease {
+  id         String    @id @default(cuid())
+  limiterId  String
+  ownerId    String
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  releasedAt DateTime?
+
+  @@index([limiterId, createdAt])
+  @@index([limiterId, expiresAt])
+  @@map("dp_provider_account_request_leases")
+}
+
+model SerpSyntheticAsset {
+  id            String   @id @default(cuid())
+  caseId        String
+  auditRunId    String
+  queryId       String
+  provider      String
+  engine        String
+  surface       String   @default("organic")
+  region        String
+  language      String
+  storageKey    String
+  sha256        String
+  mimeType      String   @default("image/png")
+  width         Int?
+  height        Int?
+  caption       String
+  status        String   @default("READY")
+  createdAt     DateTime @default(now())
+
+  case         Case                              @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  auditRun     OrionReportRun                    @relation(fields: [auditRunId], references: [id], onDelete: Cascade)
+  observations SerpSyntheticAssetObservation[]
+
+  @@index([caseId])
+  @@index([auditRunId])
+  @@index([queryId])
+  @@index([sha256])
+  @@map("dp_serp_synthetic_assets")
+}
+
+model SerpSyntheticAssetObservation {
+  id                String @id @default(cuid())
+  syntheticAssetId  String
+  observationId     String
+  rank              Int
+
+  syntheticAsset SerpSyntheticAsset @relation(fields: [syntheticAssetId], references: [id], onDelete: Cascade)
+  observation    SerpObservation    @relation(fields: [observationId], references: [id], onDelete: Cascade)
+
+  @@unique([syntheticAssetId, observationId])
+  @@index([observationId])
+  @@map("dp_serp_synthetic_asset_observations")
+}
+
+// ----------------------------------------------------------------------------
+// 11c. LIVE SERP browser captures (Stage S2)
+// ----------------------------------------------------------------------------
+
+model SerpCapture {
+  id             String    @id @default(cuid())
+  caseId         String
+  reportRunId    String
+  query          String
+  queryHash      String
+  engine         String
+  region         String
+  locale         String
+  device         String    @default("DESKTOP")
+  captureStatus  String
+  geoStatus      String    @default("UNKNOWN")
+  connectionMode String    @default("DIRECT")
+  storageKey     String?
+  sha256         String?
+  sourceUrl      String?
+  mimeType       String?
+  sizeBytes      Int?
+  capturedAt     DateTime?
+  capturedBy     String?
+  metadataJson   Json?
+  errorJson      Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  case      Case           @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  reportRun OrionReportRun @relation(fields: [reportRunId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([reportRunId, queryHash, engine, region, device, captureStatus])
+  @@map("dp_serp_captures")
+}
+
 
 // ----------------------------------------------------------------------------
 // 12. audit_logs

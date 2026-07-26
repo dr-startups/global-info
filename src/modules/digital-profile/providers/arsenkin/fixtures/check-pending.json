@@ -1,0 +1,6 @@
+{
+  "code": "TASK_STATUS",
+  "status": "process",
+  "progress": 5,
+  "msg": "Статус состояния задачи!"
+}

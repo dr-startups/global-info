@@ -10,6 +10,7 @@ No LLM, no network — pure layout helpers over python-pptx.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pptx.dml.color import RGBColor
@@ -91,15 +92,76 @@ CONTENT_SAFE_BOTTOM = Emu(int(FOOTER_Y) - 182880)
 ROUNDED_RECT = 5
 RECT = 1
 
+# ---------------------------------------------------------------------------
+# R2 Design System Foundation (tokens only; backward-compatible, unused by default)
+# ---------------------------------------------------------------------------
+
+# R2 typography scale (pt)
+R2_TYPO_SECTION_MARKER = 9
+R2_TYPO_PAGE_TITLE = 28
+R2_TYPO_SUBTITLE = 13
+R2_TYPO_BODY = 11
+R2_TYPO_METRIC_LABEL = 10
+R2_TYPO_METRIC_VALUE = 28
+R2_TYPO_TABLE_HEADER = 11
+R2_TYPO_TABLE_BODY = 10
+R2_TYPO_NOTE = 10
+R2_TYPO_BUTTON = 10
+
+# R2 spacing scale (EMU)
+R2_SPACE_XS = Emu(45720)     # 0.05"
+R2_SPACE_SM = Emu(91440)     # 0.10"
+R2_SPACE_MD = Emu(137160)    # 0.15"
+R2_SPACE_LG = Emu(182880)    # 0.20"
+R2_SPACE_XL = Emu(274320)    # 0.30"
+R2_CARD_PADDING = Emu(114300)
+R2_SECTION_GAP = Emu(160000)
+R2_TABLE_CELL_PAD = Emu(80000)
+R2_FOOTER_GAP = Emu(182880)
+R2_MEDIA_CARD_GAP = Emu(137160)
+
+# R2 safe-area zones
+R2_SLIDE_LEFT = MARGIN
+R2_SLIDE_RIGHT = Emu(int(SLIDE_W) - int(MARGIN))
+R2_CONTENT_LEFT = MARGIN
+R2_CONTENT_RIGHT = Emu(int(MARGIN) + int(CONTENT_W))
+R2_HEADER_TOP = Emu(131064)
+R2_HEADER_BOTTOM = Emu(1219200)
+R2_BODY_TOP = CONTENT_TOP
+R2_BODY_BOTTOM = CONTENT_SAFE_BOTTOM
+R2_FOOTER_TOP = FOOTER_Y
+R2_FOOTER_BOTTOM = Emu(int(SLIDE_H) - 36000)
+R2_FOOTER_SAFE_BOTTOM = CONTENT_SAFE_BOTTOM
+R2_MIN_GAP_BEFORE_FOOTER = Emu(182880)
+
+# R2 visual style tokens
+R2_CARD_RADIUS = ROUNDED_RECT
+R2_CARD_BORDER_WIDTH_PT = 0.75
+R2_CARD_SHADOW_DX = Emu(8000)
+R2_CARD_SHADOW_DY = Emu(12000)
+R2_BG_LIGHT = BG_LIGHT
+R2_TEXT_MUTED = NEUTRAL_GRAY
+R2_ACCENT = ACCENT
+R2_WARNING = WARNING
+R2_SUCCESS = SUCCESS
+R2_DANGER = DANGER
+
 # Localizable table footnote ("Showing top N of M."). Set per-render via
 # ``set_table_strings`` so v3 tables honour the report language.
 _SHOWING_TOP = "Showing top {n} of {total}."
+_SOURCE_PREFIX = "Source: "
 
 
 def set_table_strings(showing_top: str | None) -> None:
     global _SHOWING_TOP
     if showing_top:
         _SHOWING_TOP = showing_top
+
+
+def set_note_strings(source_prefix: str | None) -> None:
+    global _SOURCE_PREFIX
+    if source_prefix:
+        _SOURCE_PREFIX = source_prefix
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +259,1131 @@ def _watermark(slide, text: str) -> None:
     p = box.text_frame.paragraphs[0]
     p.alignment = PP_ALIGN.CENTER
     _run(p, text, 66, WATERMARK_COLOR, bold=True)
+
+
+# ---------------------------------------------------------------------------
+# R2 primitives (foundation only; intentionally not wired into slide builders yet)
+# ---------------------------------------------------------------------------
+
+def r2_truncate_lines(text: Any, max_lines: int = 2, line_len: int = 64) -> str:
+    """Conservative line-cap truncation for stable card/table text zones."""
+    s = " ".join(str(text or "").split())
+    if not s:
+        return ""
+    words = s.split(" ")
+    lines: list[str] = []
+    current = ""
+    for w in words:
+        candidate = (current + " " + w).strip()
+        if len(candidate) <= line_len:
+            current = candidate
+            continue
+        if current:
+            lines.append(current)
+        current = w
+        if len(lines) >= max_lines:
+            break
+    if current and len(lines) < max_lines:
+        lines.append(current)
+    joined = "\n".join(lines[:max_lines])
+    if len(" ".join(words)) > len(" ".join(" ".join(lines).split())):
+        return truncate(joined.replace("\n", " "), max_lines * line_len)
+    return joined
+
+
+def r2_text_box(
+    slide,
+    x: Emu,
+    y: Emu,
+    w: Emu,
+    h: Emu,
+    text: str,
+    *,
+    size: int = R2_TYPO_BODY,
+    color: RGBColor = NEUTRAL_DARK,
+    bold: bool = False,
+    italic: bool = False,
+    align: PP_ALIGN | None = None,
+):
+    """Simple typed text-box primitive with R2 defaults."""
+    box = textbox(slide, x, y, w, h)
+    tf = box.text_frame
+    p = tf.paragraphs[0]
+    if align is not None:
+        p.alignment = align
+    _run(p, text, size, color, bold=bold, italic=italic)
+    return box
+
+
+def r2_card(
+    slide,
+    x: Emu,
+    y: Emu,
+    w: Emu,
+    h: Emu,
+    *,
+    fill: RGBColor = R2_BG_LIGHT,
+    border: RGBColor = NEUTRAL_LINE,
+    radius: int = R2_CARD_RADIUS,
+):
+    """Base rounded card primitive for future slide migration."""
+    shp = slide.shapes.add_shape(radius, x, y, w, h)
+    shp.fill.solid()
+    shp.fill.fore_color.rgb = fill
+    shp.line.color.rgb = border
+    shp.line.width = Pt(R2_CARD_BORDER_WIDTH_PT)
+    return shp
+
+
+def r2_overflow_note(slide, top: Emu, text: str) -> Emu:
+    """R2 overflow note primitive; draw only if safe area allows."""
+    if not text:
+        return top
+    h = int(text_block_height([text], R2_TYPO_NOTE, CONTENT_W, space_after_pt=0.0, pad_pt=8.0))
+    if int(top) + h > int(R2_FOOTER_SAFE_BOTTOM):
+        return top
+    return note(slide, top, text, "info")
+
+
+def r2_page_header(
+    slide,
+    *,
+    title: str,
+    subtitle: str | None = None,
+    section_marker: str | None = None,
+    right_meta: str | None = None,
+) -> Emu:
+    """R2 header primitive; returns body top anchor."""
+    set_bg(slide, BG_LIGHT)
+    bar = slide.shapes.add_shape(RECT, Emu(0), Emu(0), SLIDE_W, Emu(73152))
+    bar.fill.solid()
+    bar.fill.fore_color.rgb = R2_ACCENT
+    bar.line.fill.background()
+    if section_marker:
+        m = r2_text_box(
+            slide,
+            R2_CONTENT_LEFT,
+            Emu(165000),
+            Emu(2200000),
+            Emu(140000),
+            section_marker,
+            size=R2_TYPO_SECTION_MARKER,
+            color=R2_ACCENT,
+            bold=True,
+        )
+        del m
+    title_w = Emu(int(CONTENT_W) - 1700000 if right_meta else int(CONTENT_W))
+    r2_text_box(
+        slide,
+        R2_CONTENT_LEFT,
+        Emu(250000),
+        title_w,
+        Emu(900000),
+        r2_truncate_lines(title, max_lines=2, line_len=56),
+        size=R2_TYPO_PAGE_TITLE,
+        color=BRAND_PRIMARY,
+        bold=True,
+    )
+    if subtitle:
+        r2_text_box(
+            slide,
+            R2_CONTENT_LEFT,
+            Emu(760000),
+            title_w,
+            Emu(260000),
+            truncate(subtitle, 90),
+            size=R2_TYPO_SUBTITLE,
+            color=R2_TEXT_MUTED,
+        )
+    if right_meta:
+        r2_text_box(
+            slide,
+            Emu(int(SLIDE_W) - int(MARGIN) - 1700000),
+            Emu(250000),
+            Emu(1700000),
+            Emu(260000),
+            truncate(right_meta, 42),
+            size=R2_TYPO_NOTE,
+            color=R2_TEXT_MUTED,
+            align=PP_ALIGN.RIGHT,
+        )
+    return R2_BODY_TOP
+
+
+def r2_page_footer(slide, *, brand: str, page_no: int | None, total: int | None) -> None:
+    """R2 footer primitive with fixed safe-area behavior."""
+    footer(slide, brand, page_no, total)
+
+
+def r2_metric_cards(slide, top: Emu, cards: list[dict], per_row: int = 4) -> Emu:
+    """R2 metric cards primitive (wrapper over stable existing renderer)."""
+    return metric_cards(slide, top, cards, per_row=per_row)
+
+
+def r2_no_data_state(slide, top: Emu, text: str, *, tone: str = "info") -> Emu:
+    """R2 no-data primitive with client-safe default copy."""
+    _ = tone  # reserved for future palette variants
+    return no_data_card(slide, top, text or "No relevant data available for this section.")
+
+
+R2_REGION_INTERNAL_RE = re.compile(
+    r"internal|debug|classifier|providerAdapter|sourceMode|rawMetadata|reviewQueue|UNCLASSIFIED"
+    r"|not collected|unavailable|undefined|null|none",
+    re.I,
+)
+R2_REGION_URL_RE = re.compile(r"https?://\S+|www\.\S+", re.I)
+
+
+def r2_region_safe_text(value: Any, *, labels: dict | None = None, max_len: int = 220) -> str:
+    """Sanitize region-page copy to client-safe visible wording."""
+    labels = labels or {}
+    raw = " ".join(str(value or "").split())
+    if not raw:
+        return ""
+    safe = raw
+    if R2_REGION_URL_RE.search(safe):
+        safe = R2_REGION_URL_RE.sub(lambda m: r2_domain_text(m.group(0), 36), safe)
+    safe = re.sub(r"\{label\}", "", safe, flags=re.I)
+    safe = re.sub(r"\bSource:\s*", labels.get("region_source_prefix", "Примечание: "), safe, flags=re.I)
+    safe = re.sub(r"\bevidence\b", labels.get("region_review_word", "проверки"), safe, flags=re.I)
+    safe = re.sub(r"\bABSENT\b", labels.get("metric_not_found", "НЕ НАЙДЕНО"), safe, flags=re.I)
+    safe = re.sub(r"\bn/ ?t\b|н/в", "", safe, flags=re.I)
+    safe = re.sub(r"\brelated:\s*\d+\b", "", safe, flags=re.I)
+    safe = re.sub(
+        r"No international subject-matched results in collected data\.",
+        labels.get("region_international_no_subject_results", "Подтверждённых международных материалов по субъекту не выявлено."),
+        safe,
+        flags=re.I,
+    )
+    safe = re.sub(
+        r"No adverse organic content in selected subject-matched results\.",
+        labels.get("region_no_adverse_organic", "Негативных органических материалов по выбранным релевантным результатам не выявлено."),
+        safe,
+        flags=re.I,
+    )
+    safe = R2_REGION_INTERNAL_RE.sub("", safe)
+    safe = re.sub(r"\s+", " ", safe).strip(" -,:;")
+    if not safe:
+        safe = labels.get("r24_fallback_no_data", "Insufficient data for a confident conclusion.")
+    return truncate(safe, max_len)
+
+
+def r2_ru_plural_suggestions(n: int) -> str:
+    """Russian plural form for 'подсказка'."""
+    n10 = n % 10
+    n100 = n % 100
+    if n10 == 1 and n100 != 11:
+        return "подсказка"
+    if 2 <= n10 <= 4 and not (12 <= n100 <= 14):
+        return "подсказки"
+    return "подсказок"
+
+
+def r2_region_metric_value(value: Any, *, labels: dict | None = None) -> str:
+    """Normalize metric values for client-safe region cards."""
+    labels = labels or {}
+    raw = str(value or "").strip()
+    up = raw.upper()
+    if up in {"ABSENT", "NONE", "NO_DATA", "UNKNOWN"}:
+        return labels.get("metric_no_data", "НЕТ")
+    return r2_region_safe_text(raw, labels=labels, max_len=26) or labels.get("metric_no_data", "НЕТ ДАННЫХ")
+
+
+def r2_region_header(
+    slide,
+    *,
+    title: str,
+    risk_level: str,
+    section_marker: str | None = None,
+    subtitle: str | None = None,
+) -> Emu:
+    """Consistent region-page header with protected title/badge spacing."""
+    top = r2_page_header(
+        slide,
+        title=title,
+        subtitle=subtitle,
+        section_marker=section_marker,
+        right_meta=" ",
+    )
+    risk_badge(
+        slide,
+        Emu(int(SLIDE_W) - int(MARGIN) - 1500000),
+        Emu(228600),
+        risk_level or "UNKNOWN",
+    )
+    return top
+
+
+def r2_region_metric_row(slide, top: Emu, cards: list[dict], *, per_row: int = 3) -> Emu:
+    """Region KPI row primitive with stable equal-height cards."""
+    return r2_metric_cards(slide, top, cards, per_row=per_row)
+
+
+def r2_region_summary_card(
+    slide,
+    top: Emu,
+    *,
+    title: str,
+    lines: list[str],
+    labels: dict | None = None,
+    card_h: Emu = Emu(1320000),
+) -> Emu:
+    """Short analytical summary card (max 4 concise lines)."""
+    labels = labels or {}
+    body = [r2_region_safe_text(x, labels=labels, max_len=140) for x in (lines or []) if str(x or "").strip()]
+    return card(slide, MARGIN, top, CONTENT_W, card_h, title, body[:4])
+
+
+def r2_region_bullet_sections(
+    slide,
+    top: Emu,
+    sections: list[dict[str, Any]],
+    *,
+    labels: dict | None = None,
+    max_items_per_section: int = 5,
+    layout_warnings: list[str] | None = None,
+) -> Emu:
+    """Bounded grouped bullets with overflow continuation note."""
+    labels = labels or {}
+    cleaned: list[dict[str, Any]] = []
+    for sec in sections:
+        raw_items = sec.get("items") or []
+        items = [r2_region_safe_text(x, labels=labels, max_len=120) for x in raw_items if str(x or "").strip()]
+        cleaned.append(
+            {
+                "label": r2_region_safe_text(sec.get("label"), labels=labels, max_len=56),
+                "items": items,
+            }
+        )
+    return bounded_bullet_sections(
+        slide,
+        top,
+        cleaned,
+        max_items_per_section=max_items_per_section,
+        overflow_note=labels.get("bullets_overflow_note", "+ {n} more items preserved in evidence."),
+        layout_warnings=layout_warnings,
+    )
+
+
+def r2_region_no_data_state(
+    slide,
+    top: Emu,
+    *,
+    headline: str,
+    body: str,
+    width_ratio: float = 0.70,
+) -> Emu:
+    """Premium region no-data card with separated title/body zones."""
+    return r2_risk_findings_empty_state(
+        slide,
+        top,
+        headline=headline,
+        body=body,
+        width_ratio=width_ratio,
+    )
+
+
+def r2_region_note(slide, top: Emu, text: str, *, labels: dict | None = None, kind: str = "disclaimer") -> Emu:
+    """Client-safe region note style wrapper."""
+    safe = r2_region_safe_text(text, labels=labels, max_len=240)
+    if not safe:
+        return top
+    return note(slide, top, safe, kind)
+
+
+def r2_region_two_column(slide, top: Emu) -> tuple[Emu, Emu, Emu]:
+    """Two-column layout helper: left/right anchors plus shared bottom."""
+    gutter = Emu(220000)
+    left_w = Emu((int(CONTENT_W) - int(gutter)) // 2)
+    right_x = Emu(int(MARGIN) + int(left_w) + int(gutter))
+    right_w = Emu(int(CONTENT_W) - int(left_w) - int(gutter))
+    r2_card(slide, MARGIN, top, left_w, Emu(2160000), fill=WHITE)
+    r2_card(slide, right_x, top, right_w, Emu(2160000), fill=WHITE)
+    return Emu(int(top) + 180000), Emu(int(top) + 180000), Emu(int(top) + 2240000)
+
+
+def r2_warning_card(slide, top: Emu, text: str) -> Emu:
+    """R2 warning/recommendation primitive."""
+    return warning_card(slide, top, text)
+
+
+def r2_media_empty_state(
+    slide,
+    top: Emu,
+    *,
+    message: str,
+    detail: str | None = None,
+) -> Emu:
+    """Centered premium no-media state card for client-facing pages."""
+    card_h = Emu(1280000 if detail else 980000)
+    if int(top) + int(card_h) > int(R2_FOOTER_SAFE_BOTTOM):
+        card_h = Emu(max(760000, int(R2_FOOTER_SAFE_BOTTOM) - int(top) - 60000))
+    r2_card(slide, MARGIN, top, CONTENT_W, card_h, fill=BG_LIGHT, border=NEUTRAL_LINE)
+    msg = r2_truncate_lines(message, max_lines=3, line_len=72)
+    r2_text_box(
+        slide,
+        Emu(int(MARGIN) + 180000),
+        Emu(int(top) + 150000),
+        Emu(int(CONTENT_W) - 360000),
+        Emu(360000),
+        msg,
+        size=R2_TYPO_BODY,
+        color=BRAND_PRIMARY,
+        bold=True,
+        align=PP_ALIGN.CENTER,
+    )
+    if detail:
+        det = r2_truncate_lines(detail, max_lines=3, line_len=96)
+        r2_text_box(
+            slide,
+            Emu(int(MARGIN) + 180000),
+            Emu(int(top) + 540000),
+            Emu(int(CONTENT_W) - 360000),
+            Emu(max(200000, int(card_h) - 640000)),
+            det,
+            size=R2_TYPO_NOTE,
+            color=R2_TEXT_MUTED,
+            align=PP_ALIGN.CENTER,
+        )
+    return Emu(int(top) + int(card_h) + int(_BLOCK_GAP))
+
+
+def r2_safe_table(
+    slide,
+    top: Emu,
+    columns: list[str],
+    rows: list[list[Any]],
+    *,
+    col_widths: list[float] | None = None,
+    max_rows: int | None = None,
+    overflow_note: str | None = None,
+    layout_warnings: list[str] | None = None,
+) -> Emu:
+    """R2 table primitive with optional overflow note below the table."""
+    bottom = table(
+        slide,
+        top,
+        columns,
+        rows,
+        col_widths=col_widths,
+        max_rows=max_rows,
+        layout_warnings=layout_warnings,
+    )
+    if max_rows is not None and len(rows) > max_rows:
+        line = overflow_note or _SHOWING_TOP.format(n=max_rows, total=len(rows))
+        bottom = r2_overflow_note(slide, bottom, line)
+    return bottom
+
+
+def r2_truncate_cell_text(text: Any, max_len: int = 56) -> str:
+    """Truncate table-cell text with stable ellipsis behavior."""
+    raw = str(text or "").strip()
+    if len(raw) <= max_len:
+        return raw
+    if max_len <= 1:
+        return raw[:max_len]
+    return raw[: max_len - 1].rstrip() + "…"
+
+
+def r2_status_pill(value: str, labels: dict | None = None) -> str:
+    """Return client-safe localized status label for evidence rows."""
+    labels = labels or {}
+    v = (value or "").strip().upper()
+    if v in ("EXACT_SUBJECT", "MATCH_CONFIRMED", "CONFIRMED", "ПОДТВЕРЖДЕНО"):
+        return labels.get("status_confirmed", "Подтверждено")
+    if v in ("LIKELY_SUBJECT", "LIKELY", "VERIFIED_LIKELY"):
+        return labels.get("status_likely_subject", "Вероятно относится к субъекту")
+    if v in ("PENDING", "NEEDS_REVIEW", "REVIEW_REQUIRED", "ON_REVIEW"):
+        return labels.get("status_needs_review", "Требует проверки")
+    txt = (value or "").strip()
+    if not txt:
+        return labels.get("status_confirmed", "Подтверждено")
+    if "review" in txt.lower() or "провер" in txt.lower():
+        return labels.get("status_needs_review", "Требует проверки")
+    return r2_truncate_cell_text(txt, 28)
+
+
+def r2_result_class_label(value: Any, labels: dict | None = None) -> str:
+    """Convert raw top-results class/status enum to client-safe label."""
+    labels = labels or {}
+    raw = str(value or "").strip()
+    key = raw.upper().strip()
+    mapping = {
+        "UNCLASSIFIED": labels.get("class_unclassified_compact", "Neutral"),
+        "RISK": labels.get("class_risk", "Risk"),
+        "NEGATIVE": labels.get("class_negative", "Negative"),
+        "EXACT_SUBJECT": labels.get("class_exact_subject_compact", "Exact"),
+        "LIKELY_SUBJECT": labels.get("class_likely_subject_compact", "Likely"),
+        "NAMESAKE": labels.get("class_namesake_compact", "Namesake"),
+        "INSUFFICIENT": labels.get("class_insufficient_compact", "Insuff."),
+        # R3.6 — client-safe tokens (see report-data-policy RAW_ENUM_SAFE_MAP) map
+        # back to the same compact labels so client tables match the internal report.
+        "NEUTRAL": labels.get("class_unclassified_compact", "Neutral"),
+        "SUBJECT_CONFIRMED": labels.get("class_exact_subject_compact", "Exact"),
+        "SUBJECT_LIKELY": labels.get("class_likely_subject_compact", "Likely"),
+        "SUBJECT_POSSIBLE": labels.get("class_likely_subject_compact", "Likely"),
+        "IDENTITY_LOW": labels.get("class_insufficient_compact", "Insuff."),
+        "NOT_RELATED": labels.get("class_namesake_compact", "Namesake"),
+    }
+    if key in mapping:
+        return mapping[key]
+    if not raw:
+        return labels.get("class_unclassified_compact", "Neutral")
+    # Keep unknown values readable but non-technical.
+    if "_" in raw:
+        raw = raw.replace("_", " ").title()
+    return r2_truncate_cell_text(raw, 10)
+
+
+def r2_domain_text(value: Any, max_len: int = 34) -> str:
+    """Normalize URL/domain text for compact appendix tables."""
+    from urllib.parse import urlparse
+
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+        host = (parsed.netloc or parsed.path or "").strip().lower()
+        host = host.replace("www.", "").split("/")[0]
+    except Exception:
+        host = raw.replace("http://", "").replace("https://", "").split("/")[0].lower()
+    return r2_truncate_cell_text(host, max_len)
+
+
+def r2_top_results_table(
+    slide,
+    top: Emu,
+    *,
+    rows: list[dict],
+    region: str,
+    max_rows: int,
+    labels: dict,
+    layout_warnings: list[str] | None = None,
+) -> Emu:
+    """Standardized compact top-results table for RU/INTL pages."""
+    _ = region  # reserved for future region-specific variants
+    internal_label_re = re.compile(
+        r"CLIENT_INCLUDE|REVIEW_REQUIRED|EXCLUDE|RELATED_QUERY|SEARCH_SUGGESTION"
+        r"|sourceMode|rawMetadata|reviewQueue|providerAdapter|contentClass",
+        re.I,
+    )
+
+    def _sanitize_text(text: Any) -> str:
+        s = str(text or "")
+        s = re.sub(r"https?://\S+", "", s, flags=re.I)
+        s = internal_label_re.sub("", s)
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
+
+    def _extract_domain_fallback(text: str) -> str:
+        m = re.search(r"[A-Za-zА-Яа-я0-9-]+\.[A-Za-zА-Яа-я0-9-]+", text or "")
+        if not m:
+            return ""
+        return r2_domain_text(m.group(0), 28)
+
+    safe_rows: list[list[str]] = []
+    for item in rows:
+        rank = r2_truncate_cell_text(_sanitize_text(item.get("rank")), 8)
+        title_src = _sanitize_text(item.get("title"))
+        domain_txt = r2_domain_text(item.get("domain") or item.get("url") or "", 28)
+        if not domain_txt:
+            domain_txt = _extract_domain_fallback(title_src)
+        if not domain_txt:
+            domain_txt = "—"
+        title_txt = r2_truncate_cell_text(title_src, 56)
+        cls_txt = r2_result_class_label(_sanitize_text(item.get("classification")), labels)
+        safe_rows.append([rank, domain_txt, title_txt, cls_txt])
+
+    if not safe_rows:
+        return top
+
+    total = len(safe_rows)
+    shown = min(total, max_rows)
+    note_tpl = labels.get("table_showing_first", labels.get("showing_top", "Showing first {n} of {total}."))
+
+    while shown > 0:
+        foot = note_tpl.format(shown=shown, total=total, n=shown)
+        if shown <= _max_table_data_rows(top, foot):
+            break
+        shown -= 1
+    shown = max(1, shown)
+
+    bottom = table(
+        slide,
+        top,
+        [labels.get("th_rank_compact", "#"), labels["th_domain"], labels["th_title"], labels["th_class"]],
+        safe_rows[:shown],
+        col_widths=[0.07, 0.21, 0.54, 0.18],
+        max_rows=shown,
+        layout_warnings=layout_warnings,
+    )
+    return r2_table_overflow_note(slide, bottom, shown=shown, total=total, template=note_tpl)
+
+
+def r2_compliance_status_label(value: Any, labels: dict | None = None) -> str:
+    """Normalize compliance status/severity/review to client-safe label."""
+    labels = labels or {}
+    raw = str(value or "").strip()
+    key = raw.lower().replace("_", " ")
+    if not key:
+        return labels.get("class_unclassified_compact", "Unclassified")
+    if any(tok in key for tok in ("confirm", "ok", "pass", "подтвержд")):
+        return labels.get("comp_status_confirmed", "Подтверждено")
+    if any(tok in key for tok in ("pending", "review", "на проверке", "needs", "требует", "ожида")):
+        return labels.get("comp_status_review", "На проверке")
+    if any(tok in key for tok in ("exclude", "noise", "исключ", "false", "ложн", "dismiss", "отклон")):
+        return labels.get("comp_status_excluded", "Исключено")
+    if "high" in key or "высок" in key:
+        return labels.get("comp_level_high", "Высокий")
+    if "medium" in key or "сред" in key:
+        return labels.get("comp_level_medium", "Средний")
+    if "low" in key or "низк" in key:
+        return labels.get("comp_level_low", "Низкий")
+    if any(tok in key for tok in ("unknown", "unclassified", "не классиф")):
+        return labels.get("comp_level_unclassified", "Не классиф.")
+    return r2_truncate_cell_text(raw, 22)
+
+
+def r2_compliance_status_pill(value: Any, labels: dict | None = None, *, compact: bool = False) -> str:
+    """Readable status token for compliance table cells."""
+    txt = r2_compliance_status_label(value, labels)
+    level_short_map = {
+        labels.get("comp_level_high", "Высокий"): labels.get("comp_level_high_short", "Выс."),
+        labels.get("comp_level_medium", "Средний"): labels.get("comp_level_medium_short", "Ср."),
+        labels.get("comp_level_low", "Низкий"): labels.get("comp_level_low_short", "Низ."),
+        labels.get("comp_level_unclassified", "Не классиф."): labels.get("comp_level_unclassified_short", "Не класс."),
+    }
+    if compact:
+        if txt in level_short_map:
+            return r2_truncate_cell_text(level_short_map[txt], 10)
+        short_map = {
+            labels.get("comp_status_confirmed", "Подтверждено"): labels.get("comp_status_confirmed_short", "Подтв."),
+            labels.get("comp_status_review", "На проверке"): labels.get("comp_status_review_short", "Проверка"),
+            labels.get("comp_status_excluded", "Исключено"): labels.get("comp_status_excluded_short", "Искл."),
+        }
+        return r2_truncate_cell_text(short_map.get(txt, txt), 14)
+    return r2_truncate_cell_text(txt, 28)
+
+
+def r2_compliance_type_label(value: Any, labels: dict | None = None) -> str:
+    """Normalize compliance type enums to client-safe labels."""
+    labels = labels or {}
+    text = str(value or "").strip()
+    if not text:
+        return labels.get("comp_level_unclassified", "Не классиф.")
+
+    mapping = {
+        "SANCTIONS": labels.get("comp_type_sanctions", "Санкции"),
+        "PEP": labels.get("comp_type_pep", "Политически значимое лицо"),
+        "PEP_RCA": labels.get("comp_type_pep_rca", "Связанные лица PEP"),
+        "ADVERSE_MEDIA": labels.get("comp_type_adverse_media", "Негативные публикации"),
+        "LEGAL": labels.get("comp_type_legal", "Правовые материалы"),
+        "WATCHLIST": labels.get("comp_type_watchlist", "Списки наблюдения"),
+        "COMPLIANCE": labels.get("comp_type_compliance", "Комплаенс"),
+        "BUSINESS": labels.get("comp_type_business", "Деловые связи"),
+    }
+    split_tokens = re.split(r"[,/|;]+", text)
+    out: list[str] = []
+    for token in split_tokens:
+        tok = token.strip().upper().replace("-", "_").replace(" ", "_")
+        if not tok:
+            continue
+        out.append(mapping.get(tok, ""))
+    out = [x for x in out if x]
+    if not out:
+        return labels.get("comp_level_unclassified", "Не классиф.")
+
+    # Compact special-case for combined SANCTIONS + PEP_RCA.
+    up = {t.strip().upper().replace("-", "_").replace(" ", "_") for t in split_tokens if t.strip()}
+    if "SANCTIONS" in up and "PEP_RCA" in up:
+        return labels.get("comp_type_sanctions_pep_compact", "Санкции / PEP-связи")
+    return r2_truncate_cell_text(" / ".join(dict.fromkeys(out)), 28)
+
+
+def r2_provider_source_text(value: Any, *, labels: dict | None = None) -> str:
+    """Normalize provider/source strings to compact readable text."""
+    labels = labels or {}
+    raw = str(value or "").strip()
+    if not raw:
+        return "—"
+    raw = re.sub(r"https?://\S+", "", raw, flags=re.I)
+    raw = re.sub(r"providerAdapter|sourceMode|rawMetadata|reviewQueue|warn_potential_review|contentClass", "", raw, flags=re.I)
+    raw = re.sub(r"\s+", " ", raw).strip(" -,:;")
+    if not raw:
+        return "—"
+    if re.fullmatch(r"manual[_\s-]*import", raw, flags=re.I):
+        return labels.get("src_manual_import", "Manual import")
+    # Keep known provider labels concise.
+    raw = raw.replace("Не настроен / не запрашивался", "Не настроен")
+    return r2_truncate_cell_text(raw, 28)
+
+
+def r2_risk_level_label(value: Any, labels: dict | None = None) -> str:
+    """Normalize risk level value to client-safe localized label."""
+    labels = labels or {}
+    raw = str(value or "").strip()
+    key = raw.lower().replace("_", " ")
+    if not key:
+        return labels.get("risk_level_unknown", "Unknown")
+    if any(tok in key for tok in ("critical", "крит")):
+        return labels.get("risk_level_critical", "Critical")
+    if any(tok in key for tok in ("high", "высок")):
+        return labels.get("risk_level_high", "High")
+    if any(tok in key for tok in ("medium", "сред")):
+        return labels.get("risk_level_medium", "Medium")
+    if any(tok in key for tok in ("low", "низк")):
+        return labels.get("risk_level_low", "Low")
+    if any(tok in key for tok in ("unknown", "undefined", "unclassified", "не определ", "не классиф")):
+        return labels.get("risk_level_unknown", "Unknown")
+    return labels.get("risk_level_unknown", "Unknown")
+
+
+def r2_source_label(value: Any, *, labels: dict | None = None) -> str:
+    """Normalize source text: no raw URLs, no technical/debug tokens."""
+    labels = labels or {}
+    raw = str(value or "").strip()
+    if not raw:
+        return labels.get("source_not_specified", "Source not specified")
+    clean = re.sub(
+        r"providerAdapter|sourceMode|rawMetadata|reviewQueue|classifier|internal|debug|contentClass",
+        "",
+        raw,
+        flags=re.I,
+    )
+    clean = re.sub(r"\s+", " ", clean).strip(" -,:;")
+    if not clean:
+        return labels.get("source_not_specified", "Source not specified")
+    if "http://" in clean or "https://" in clean or "www." in clean.lower():
+        host = r2_domain_text(clean, 28)
+        return host or labels.get("source_not_specified", "Source not specified")
+    up = clean.upper().replace("-", "_").replace(" ", "_")
+    mapping = {
+        "MANUAL_IMPORT": labels.get("src_manual_import", "Manual import"),
+        "GOOGLE_SEARCH_PROVIDER": labels.get("src_google", "Google"),
+        "GOOGLE": labels.get("src_google", "Google"),
+        "WIKIPEDIA": "Wikipedia",
+        "YOUTUBE": "YouTube",
+        "ADVERSE_MEDIA": labels.get("comp_type_adverse_media", "Adverse media"),
+        "ADVERSE_PUBLICITY": labels.get("comp_type_adverse_media", "Adverse media"),
+        "LEGAL": labels.get("comp_type_legal", "Legal"),
+        "WATCHLIST": labels.get("comp_type_watchlist", "Watchlist"),
+        "SANCTIONS": labels.get("comp_type_sanctions", "Sanctions"),
+        "REPUTATION": labels.get("rf_source_reputation", "Reputational sources"),
+        "LITIGATION": labels.get("rf_source_litigation", "Litigation sources"),
+        "OWNERSHIP": labels.get("rf_source_corporate", "Corporate records"),
+        "CONTROL": labels.get("rf_source_corporate", "Corporate records"),
+        "REGULATORY": labels.get("rf_source_regulatory", "Regulatory sources"),
+    }
+    if up in mapping:
+        return mapping[up]
+    if "_" in clean and " " not in clean:
+        clean = clean.replace("_", " ")
+    if re.fullmatch(r"[A-Z0-9_]{3,}", clean):
+        clean = clean.replace("_", " ").title()
+    return r2_truncate_cell_text(clean, 30)
+
+
+def r2_risk_action_label(value: Any, labels: dict | None = None) -> str:
+    """Normalize review/internal status into client-safe action wording."""
+    labels = labels or {}
+    raw = str(value or "").strip()
+    key = raw.lower().replace("_", " ")
+    if any(tok in key for tok in ("confirm", "подтвержд")):
+        return labels.get("rf_action_no_action", "No action needed")
+    if any(tok in key for tok in ("false", "dismiss", "exclude", "исключ", "ложн", "отклон")):
+        return labels.get("rf_action_exclude_noise", "Exclude as noise")
+    if any(tok in key for tok in ("pending", "review", "needs", "требует", "ожида")):
+        return labels.get("rf_action_review_source", "Review source")
+    if not key:
+        return labels.get("rf_action_assess_relevance", "Assess relevance")
+    return labels.get("rf_action_assess_relevance", "Assess relevance")
+
+
+def r2_risk_findings_table(
+    slide,
+    top: Emu,
+    *,
+    rows: list[dict[str, Any]],
+    labels: dict,
+    max_rows: int = 6,
+    col_widths: list[float] | None = None,
+    layout_warnings: list[str] | None = None,
+) -> Emu:
+    """Compact report-grade risk findings table used on slides 17/29."""
+    internal_re = re.compile(
+        r"reviewStatus|sourceMode|rawMetadata|providerAdapter|classifier|UNCLASSIFIED|internal|debug",
+        re.I,
+    )
+
+    def _clean_text(value: Any, limit: int) -> str:
+        s = str(value or "").strip()
+        s = internal_re.sub("", s)
+        s = re.sub(r"https?://\S+", "", s, flags=re.I)
+        s = re.sub(r"\s+", " ", s).strip(" -,:;")
+        return r2_truncate_cell_text(s, limit)
+
+    safe_rows: list[list[str]] = []
+    for item in rows:
+        finding = _clean_text(item.get("title"), 74)
+        source_raw = item.get("source") or item.get("theme")
+        source = r2_source_label(source_raw, labels=labels)
+        level = r2_risk_level_label(item.get("severity"), labels=labels)
+        action = r2_risk_action_label(item.get("reviewStatus"), labels=labels)
+        safe_rows.append(
+            [
+                finding or "—",
+                source,
+                r2_truncate_cell_text(level, 22),
+                r2_truncate_cell_text(action, 24),
+            ]
+        )
+    if not safe_rows:
+        return top
+
+    widths = col_widths or [0.46, 0.22, 0.14, 0.18]
+    total = len(safe_rows)
+    shown = min(max_rows, total)
+    note_tpl = labels.get("table_showing_first", labels.get("showing_top", "Showing first {n} of {total}."))
+    while shown > 0:
+        note = note_tpl.format(shown=shown, total=total, n=shown)
+        if shown <= _max_table_data_rows(top, note):
+            break
+        shown -= 1
+    shown = max(1, shown)
+
+    bottom = table(
+        slide,
+        top,
+        [
+            labels.get("th_finding", "Finding"),
+            labels.get("th_source", "Source"),
+            labels.get("th_level", "Level"),
+            labels.get("th_action", "Action"),
+        ],
+        safe_rows[:shown],
+        col_widths=widths,
+        max_rows=shown,
+        semantic_colors=False,
+        layout_warnings=layout_warnings,
+    )
+    return r2_table_overflow_note(slide, bottom, shown=shown, total=total, template=note_tpl)
+
+
+def r2_compliance_table(
+    slide,
+    top: Emu,
+    *,
+    columns: list[str],
+    rows: list[list[Any]],
+    max_rows: int,
+    labels: dict,
+    col_widths: list[float] | None = None,
+    note: str | None = None,
+    compact: bool = True,
+    semantic_colors: bool = False,
+    layout_warnings: list[str] | None = None,
+) -> Emu:
+    """Compliance-safe table wrapper with footer-safe continuation note."""
+    internal_re = re.compile(
+        r"CLIENT_INCLUDE|REVIEW_REQUIRED|EXCLUDE|RELATED_QUERY|SEARCH_SUGGESTION"
+        r"|sourceMode|rawMetadata|reviewQueue|providerAdapter|warn_potential_review|contentClass",
+        re.I,
+    )
+
+    def _clean_cell(val: Any, col_idx: int) -> str:
+        s = str(val or "").strip()
+        s = internal_re.sub("", s)
+        s = re.sub(r"\s+", " ", s).strip()
+        if "http://" in s or "https://" in s:
+            s = r2_domain_text(s, 28)
+        if col_idx == 0:
+            return r2_provider_source_text(s, labels=labels)
+        return r2_truncate_cell_text(s, 44 if compact else 56)
+
+    safe_rows: list[list[str]] = []
+    for row in rows:
+        safe_rows.append([_clean_cell(v, i) for i, v in enumerate(row)])
+    if not safe_rows:
+        return top
+
+    shown = min(max_rows, len(safe_rows))
+    bottom = table(
+        slide,
+        top,
+        columns,
+        safe_rows[:shown],
+        max_rows=shown,
+        col_widths=col_widths,
+        semantic_colors=semantic_colors,
+        layout_warnings=layout_warnings,
+    )
+    note_tpl = labels.get("table_showing_first", labels.get("showing_top", "Showing first {n} of {total}."))
+    bottom = r2_table_overflow_note(slide, bottom, shown=shown, total=len(safe_rows), template=note_tpl)
+    if note:
+        bottom = _safe_content_note(slide, bottom, note, "disclaimer")
+    return bottom
+
+
+def r2_compliance_empty_state(
+    slide,
+    top: Emu,
+    *,
+    headline: str,
+    body: str,
+    labels: dict | None = None,
+    checked: str | None = None,
+    result: str | None = None,
+    width_ratio: float = 0.78,
+) -> Emu:
+    """Premium no-data card for compliance slides."""
+    _ = labels
+    ratio = max(0.72, min(0.82, width_ratio))
+    card_w = Emu(int(CONTENT_W) * ratio)
+    card_h = Emu(1180000 if not (checked and result) else 1420000)
+    card_x = Emu(int(MARGIN) + (int(CONTENT_W) - int(card_w)) // 2)
+    card_y = top
+
+    card = slide.shapes.add_shape(ROUNDED_RECT, card_x, card_y, card_w, card_h)
+    card.fill.solid()
+    card.fill.fore_color.rgb = BG_PANEL
+    card.line.color.rgb = NEUTRAL_LINE
+    card.line.width = Pt(0.9)
+
+    marker_d = Emu(160000)
+    marker_x = Emu(int(card_x) + 170000)
+    marker_y = Emu(int(card_y) + 170000)
+    marker = slide.shapes.add_shape(OVAL, marker_x, marker_y, marker_d, marker_d)
+    marker.fill.solid()
+    marker.fill.fore_color.rgb = ACCENT_SOFT
+    marker.line.color.rgb = ACCENT
+    marker.line.width = Pt(0.8)
+
+    text_x = Emu(int(card_x) + 420000)
+    text_w = Emu(int(card_w) - 520000)
+    r2_text_box(
+        slide,
+        text_x,
+        Emu(int(card_y) + 145000),
+        text_w,
+        Emu(340000),
+        r2_truncate_lines(headline, max_lines=1, line_len=72),
+        size=FS_SECTION_TITLE - 2,
+        color=BRAND_PRIMARY,
+        bold=True,
+    )
+    r2_text_box(
+        slide,
+        text_x,
+        Emu(int(card_y) + 490000),
+        text_w,
+        Emu(420000),
+        r2_truncate_lines(body, max_lines=2, line_len=88),
+        size=FS_BODY - 2,
+        color=NEUTRAL_GRAY,
+    )
+
+    if checked and result:
+        meta = f"{truncate(checked, 24)}: {truncate(result, 32)}"
+        r2_text_box(
+            slide,
+            text_x,
+            Emu(int(card_y) + 910000),
+            text_w,
+            Emu(260000),
+            meta,
+            size=FS_NOTE,
+            color=NEUTRAL_GRAY,
+            italic=True,
+        )
+    return Emu(int(card_y) + int(card_h) + 120000)
+
+
+def r2_risk_findings_empty_state(
+    slide,
+    top: Emu,
+    *,
+    headline: str,
+    body: str,
+    width_ratio: float = 0.70,
+) -> Emu:
+    """Premium no-data card with strict non-overlapping title/body zones."""
+    ratio = max(0.66, min(0.72, width_ratio))
+    card_w = Emu(int(CONTENT_W) * ratio)
+    card_x = Emu(int(MARGIN) + (int(CONTENT_W) - int(card_w)) // 2)
+    card_y = Emu(max(int(top), 1650000))
+
+    CARD_PAD_TOP = 190000
+    CARD_PAD_BOTTOM = 240000
+    CARD_PAD_LEFT = 260000
+    CARD_PAD_RIGHT = 260000
+    ICON_SIZE = 128000
+    ICON_TO_TEXT_GAP = 240000
+    TITLE_H = 430000
+    TITLE_BODY_GAP = 90000
+    BODY_H = 430000
+
+    card_h = Emu(CARD_PAD_TOP + TITLE_H + TITLE_BODY_GAP + BODY_H + CARD_PAD_BOTTOM)
+
+    card = slide.shapes.add_shape(ROUNDED_RECT, card_x, card_y, card_w, card_h)
+    card.fill.solid()
+    card.fill.fore_color.rgb = BG_PANEL
+    card.line.color.rgb = NEUTRAL_LINE
+    card.line.width = Pt(0.9)
+
+    icon_d = Emu(ICON_SIZE)
+    icon_x = Emu(int(card_x) + 180000)
+    icon_y = Emu(int(card_y) + 190000)
+    icon = slide.shapes.add_shape(OVAL, icon_x, icon_y, icon_d, icon_d)
+    icon.fill.solid()
+    icon.fill.fore_color.rgb = ACCENT_SOFT
+    icon.line.color.rgb = ACCENT
+    icon.line.width = Pt(0.8)
+
+    title_x = Emu(int(card_x) + CARD_PAD_LEFT + ICON_SIZE + ICON_TO_TEXT_GAP)
+    title_y = Emu(int(card_y) + CARD_PAD_TOP)
+    title_h = Emu(TITLE_H)
+    text_w = Emu(int(card_w) - (int(title_x) - int(card_x)) - CARD_PAD_RIGHT)
+
+    r2_text_box(
+        slide,
+        title_x,
+        title_y,
+        text_w,
+        title_h,
+        r2_truncate_lines(headline, max_lines=2, line_len=60),
+        size=FS_SECTION_TITLE - 1,
+        color=BRAND_PRIMARY,
+        bold=True,
+    )
+
+    body_y = Emu(int(title_y) + TITLE_H + TITLE_BODY_GAP)
+    body_h = Emu(BODY_H)
+    body_box = textbox(slide, title_x, body_y, text_w, body_h)
+    body_tf = body_box.text_frame
+    body_p = body_tf.paragraphs[0]
+    body_p.line_spacing = 1.15
+    _run(
+        body_p,
+        r2_truncate_lines(body, max_lines=2, line_len=76),
+        FS_BODY - 2,
+        NEUTRAL_GRAY,
+    )
+    return Emu(int(card_y) + int(card_h) + 120000)
+
+
+def r2_table_overflow_note(
+    slide,
+    top: Emu,
+    *,
+    shown: int,
+    total: int,
+    template: str | None = None,
+) -> Emu:
+    """Place continuation note below table without footer collision."""
+    if total <= shown:
+        return top
+    tpl = template or _SHOWING_TOP
+    msg = tpl.format(shown=shown, total=total, n=shown)
+    return r2_overflow_note(slide, top, msg)
+
+
+def r2_evidence_appendix_table(
+    slide,
+    top: Emu,
+    *,
+    columns: list[str],
+    rows: list[list[Any]],
+    col_widths: list[float],
+    max_rows: int,
+    audience: str,
+    section_kind: str,
+    labels: dict,
+    layout_warnings: list[str] | None = None,
+) -> tuple[Emu, int]:
+    """Appendix-specific safe table with per-section overflow note."""
+    def _sanitize_cell(text: Any) -> str:
+        raw = str(text or "")
+        replacements = {
+            "CLIENT_INCLUDE": labels.get("status_confirmed", "Подтверждено"),
+            "REVIEW_REQUIRED": labels.get("status_needs_review", "Требует проверки"),
+            "EXCLUDE": labels.get("status_excluded_noise", "Исключено / шум"),
+            "RELATED_QUERY": "",
+            "SEARCH_SUGGESTION": "",
+            "sourceMode": "",
+            "rawMetadata": "",
+            "reviewQueue": "",
+            "providerAdapter": "",
+            "contentClass": "",
+        }
+        out = raw
+        for key, val in replacements.items():
+            out = re.sub(key, val, out, flags=re.I)
+        out = re.sub(r"\s+", " ", out).strip()
+        return out
+
+    safe_rows: list[list[str]] = []
+    for row in rows:
+        cells = [r2_truncate_cell_text(_sanitize_cell(c), 64) for c in row]
+        if len(cells) >= 2:
+            cells[1] = r2_domain_text(cells[1], 34) or cells[1]
+        if audience == "client":
+            cells = [c.replace("http://", "").replace("https://", "") for c in cells]
+        safe_rows.append(cells)
+
+    shown = min(len(safe_rows), max_rows)
+    table_bottom = table(
+        slide,
+        top,
+        columns,
+        safe_rows,
+        col_widths=col_widths,
+        max_rows=max_rows,
+        layout_warnings=layout_warnings,
+    )
+    return table_bottom, shown
+
+
+def r2_grouped_evidence_sections(
+    slide,
+    top: Emu,
+    *,
+    groups: list[dict],
+    audience: str,
+    labels: dict,
+    layout_warnings: list[str] | None = None,
+) -> Emu:
+    """Render grouped evidence sections with audience-aware gating."""
+    for group in groups:
+        rows = list(group.get("rows") or [])
+        if not rows:
+            continue
+        kind = str(group.get("kind") or "")
+        if audience == "client" and kind == "excluded":
+            continue
+        header = r2_truncate_lines(str(group.get("title") or ""), max_lines=1, line_len=72)
+        # Skip section when it cannot fit safely above footer.
+        if int(top) + 1000000 > int(CONTENT_SAFE_BOTTOM):
+            msg_tpl = labels.get(
+                "appendix_section_hidden_overflow",
+                "Section \"{title}\" is preserved in internal evidence.",
+            )
+            top = _safe_content_note(slide, top, msg_tpl.format(title=header), "disclaimer")
+            continue
+        top = note(slide, top, header, "info" if kind != "excluded" else "warning")
+        top, _ = r2_evidence_appendix_table(
+            slide,
+            top,
+            columns=list(group.get("columns") or []),
+            rows=rows,
+            col_widths=list(group.get("col_widths") or [0.4, 0.2, 0.2, 0.2]),
+            max_rows=int(group.get("max_rows") or 6),
+            audience=audience,
+            section_kind=kind,
+            labels=labels,
+            layout_warnings=layout_warnings,
+        )
+    return top
 
 
 # ---------------------------------------------------------------------------
@@ -511,6 +1698,32 @@ def card(slide, x: Emu, y: Emu, w: Emu, h: Emu, title: str, lines: list[str], to
     return Emu(int(y) + int(h) + int(_BLOCK_GAP))
 
 
+def card_auto(
+    slide,
+    x: Emu,
+    y: Emu,
+    w: Emu,
+    title: str,
+    lines: list[str],
+    *,
+    tone: RGBColor = ACCENT,
+    min_h: int = 560000,
+    max_h: int | None = None,
+    layout_warnings: list[str] | None = None,
+) -> Emu:
+    """Content-driven card height with footer-safe clamp."""
+    safe_lines = [str(line or "").strip() for line in (lines or []) if str(line or "").strip()]
+    content_w = Emu(max(1, int(w) - 240000))
+    body_h = int(text_block_height(safe_lines or ["—"], FS_BODY - 2, content_w, space_after_pt=2.0, pad_pt=8.0))
+    title_h = int(text_block_height([title], FS_SECTION_TITLE - 2, content_w, space_after_pt=2.0, pad_pt=6.0)) if title else 0
+    desired_h = max(min_h, body_h + title_h + 170000)
+    cap_by_footer = int(CONTENT_SAFE_BOTTOM) - int(y) - int(_BLOCK_GAP)
+    if max_h is not None:
+        cap_by_footer = min(cap_by_footer, int(max_h))
+    h = max(min_h, min(desired_h, max(min_h, cap_by_footer)))
+    return card(slide, x, y, w, Emu(h), title, safe_lines or ["—"], tone=tone)
+
+
 def metric_cards(slide, top: Emu, cards: list[dict], per_row: int = 4) -> Emu:
     """cards: [{label, value, tone?}]. Lays a responsive grid of metric cards."""
     if not cards:
@@ -518,31 +1731,48 @@ def metric_cards(slide, top: Emu, cards: list[dict], per_row: int = 4) -> Emu:
     per_row = max(1, min(per_row, len(cards)))
     gap = int(GUTTER)
     card_w = (int(CONTENT_W) - gap * (per_row - 1)) // per_row
-    card_h = 980000
     y = int(top)
-    for idx, c in enumerate(cards):
-        col = idx % per_row
-        if col == 0 and idx > 0:
-            y += card_h + gap
-        x = int(MARGIN) + col * (card_w + gap)
-        shape = slide.shapes.add_shape(ROUNDED_RECT, Emu(x), Emu(y), Emu(card_w), Emu(card_h))
-        shape.fill.solid()
-        shape.fill.fore_color.rgb = BG_PANEL
-        shape.line.color.rgb = NEUTRAL_LINE
-        shape.line.width = Pt(0.75)
-        box = textbox(slide, Emu(x + 110000), Emu(y + 90000), Emu(card_w - 180000), Emu(card_h - 160000))
-        tf = box.text_frame
-        _run(tf.paragraphs[0], str(c.get("label", "")), FS_METRIC_LABEL, NEUTRAL_GRAY)
-        vp = tf.add_paragraph()
-        val = str(c.get("value", ""))
-        val_size = FS_METRIC_VALUE - (8 if len(val) > 12 else 0) - (4 if len(val) > 8 else 0)
-        _run(vp, val, max(14, val_size), c.get("tone", ACCENT), bold=True)
+    row_bottom = y
+    for row_start in range(0, len(cards), per_row):
+        row_cards = cards[row_start : row_start + per_row]
+        content_w = Emu(max(1, card_w - 180000))
+        row_h = 0
+        for c in row_cards:
+            label = str(c.get("label", ""))
+            val = str(c.get("value", ""))
+            val_size = FS_METRIC_VALUE - (8 if len(val) > 12 else 0) - (4 if len(val) > 8 else 0)
+            est = int(text_block_height([label], FS_METRIC_LABEL, content_w, space_after_pt=1.0, pad_pt=6.0))
+            est += int(text_block_height([val], max(14, val_size), content_w, space_after_pt=1.0, pad_pt=6.0))
+            est += 190000
+            row_h = max(row_h, max(760000, min(est, 1280000)))
+        for col, c in enumerate(row_cards):
+            x = int(MARGIN) + col * (card_w + gap)
+            shape = slide.shapes.add_shape(ROUNDED_RECT, Emu(x), Emu(y), Emu(card_w), Emu(row_h))
+            shape.fill.solid()
+            shape.fill.fore_color.rgb = BG_PANEL
+            shape.line.color.rgb = NEUTRAL_LINE
+            shape.line.width = Pt(0.75)
+            box = textbox(slide, Emu(x + 110000), Emu(y + 90000), Emu(card_w - 180000), Emu(row_h - 160000))
+            tf = box.text_frame
+            tf.word_wrap = True
+            _run(tf.paragraphs[0], str(c.get("label", "")), FS_METRIC_LABEL, NEUTRAL_GRAY)
+            vp = tf.add_paragraph()
+            val = str(c.get("value", ""))
+            val_size = FS_METRIC_VALUE - (8 if len(val) > 12 else 0) - (4 if len(val) > 8 else 0)
+            _run(vp, val, max(14, val_size), c.get("tone", ACCENT), bold=True)
+            vp.line_spacing = 1.05
+        y += row_h + gap
+        row_bottom = y
     rows = (len(cards) + per_row - 1) // per_row
-    return Emu(int(top) + rows * (card_h + gap) + 60000)
+    _ = rows
+    return Emu(row_bottom + 60000)
 
 
 def no_data_card(slide, top: Emu, text: str) -> Emu:
-    h = 760000
+    content_h = int(text_block_height([text or "—"], FS_BODY - 1, CONTENT_W, space_after_pt=1.0, pad_pt=14.0))
+    desired = max(560000, min(980000, content_h + 160000))
+    cap = max(560000, int(CONTENT_SAFE_BOTTOM) - int(top) - int(_BLOCK_GAP))
+    h = max(560000, min(desired, cap))
     shape = slide.shapes.add_shape(ROUNDED_RECT, MARGIN, top, CONTENT_W, Emu(h))
     shape.fill.solid()
     shape.fill.fore_color.rgb = BG_PANEL
@@ -567,32 +1797,40 @@ def step_cards(slide, top: Emu, steps: list[str], per_row: int = 1) -> Emu:
     per_row = max(1, min(per_row, 2))
     gap = int(GUTTER)
     card_w = (int(CONTENT_W) - gap * (per_row - 1)) // per_row
-    card_h = 720000
     y = int(top)
-    for idx, step in enumerate(steps):
-        col = idx % per_row
-        if col == 0 and idx > 0:
-            y += card_h + gap
-        x = int(MARGIN) + col * (card_w + gap)
-        shape = slide.shapes.add_shape(ROUNDED_RECT, Emu(x), Emu(y), Emu(card_w), Emu(card_h))
-        shape.fill.solid()
-        shape.fill.fore_color.rgb = BG_PANEL
-        shape.line.color.rgb = NEUTRAL_LINE
-        shape.line.width = Pt(0.75)
-        num = slide.shapes.add_shape(ROUNDED_RECT, Emu(x + 90000), Emu(y + 90000), Emu(340000), Emu(340000))
-        num.fill.solid()
-        num.fill.fore_color.rgb = ACCENT
-        num.line.fill.background()
-        ntf = num.text_frame
-        ntf.vertical_anchor = MSO_ANCHOR.MIDDLE
-        np = ntf.paragraphs[0]
-        np.alignment = PP_ALIGN.CENTER
-        _run(np, str(idx + 1), 12, WHITE, bold=True)
-        box = textbox(slide, Emu(x + 480000), Emu(y + 80000), Emu(card_w - 560000), Emu(card_h - 140000))
-        tf = box.text_frame
-        _run(tf.paragraphs[0], truncate(step, 120), FS_BODY - 2, NEUTRAL_DARK)
-    rows = (len(steps) + per_row - 1) // per_row
-    return Emu(int(top) + rows * (card_h + gap) + 60000)
+    row_bottom = y
+    for row_start in range(0, len(steps), per_row):
+        row_steps = steps[row_start : row_start + per_row]
+        text_w = Emu(max(1, card_w - 560000))
+        row_h = 0
+        for step in row_steps:
+            est = int(text_block_height([str(step or "")], FS_BODY - 2, text_w, space_after_pt=1.0, pad_pt=8.0))
+            est += 220000
+            row_h = max(row_h, max(620000, min(est, 1220000)))
+        for col, step in enumerate(row_steps):
+            idx = row_start + col
+            x = int(MARGIN) + col * (card_w + gap)
+            shape = slide.shapes.add_shape(ROUNDED_RECT, Emu(x), Emu(y), Emu(card_w), Emu(row_h))
+            shape.fill.solid()
+            shape.fill.fore_color.rgb = BG_PANEL
+            shape.line.color.rgb = NEUTRAL_LINE
+            shape.line.width = Pt(0.75)
+            num = slide.shapes.add_shape(ROUNDED_RECT, Emu(x + 90000), Emu(y + 90000), Emu(340000), Emu(340000))
+            num.fill.solid()
+            num.fill.fore_color.rgb = ACCENT
+            num.line.fill.background()
+            ntf = num.text_frame
+            ntf.vertical_anchor = MSO_ANCHOR.MIDDLE
+            np = ntf.paragraphs[0]
+            np.alignment = PP_ALIGN.CENTER
+            _run(np, str(idx + 1), 12, WHITE, bold=True)
+            box = textbox(slide, Emu(x + 480000), Emu(y + 80000), Emu(card_w - 560000), Emu(row_h - 140000))
+            tf = box.text_frame
+            tf.word_wrap = True
+            _run(tf.paragraphs[0], str(step or ""), FS_BODY - 2, NEUTRAL_DARK)
+        y += row_h + gap
+        row_bottom = y
+    return Emu(row_bottom + 60000)
 
 
 # kind -> (border tone, label)
@@ -608,7 +1846,7 @@ def note(slide, top: Emu, text: str, kind: str = "info") -> Emu:
     if not text:
         return top
     tone = NOTE_TONES.get(kind, ACCENT)
-    prefix = {"warning": "\u26a0 ", "disclaimer": "", "source": "Source: ", "info": ""}.get(kind, "")
+    prefix = {"warning": "\u26a0 ", "disclaimer": "", "source": _SOURCE_PREFIX, "info": ""}.get(kind, "")
     full = f"{prefix}{text}"
     h = text_block_height([full], FS_NOTE, CONTENT_W, space_after_pt=0.0, pad_pt=10.0)
     box = textbox(slide, MARGIN, top, CONTENT_W, h)
@@ -623,7 +1861,7 @@ def _safe_content_note(slide, top: Emu, text: str, kind: str = "info") -> Emu:
     if not text:
         return top
     tone = NOTE_TONES.get(kind, ACCENT)
-    prefix = {"warning": "\u26a0 ", "disclaimer": "", "source": "Source: ", "info": ""}.get(kind, "")
+    prefix = {"warning": "\u26a0 ", "disclaimer": "", "source": _SOURCE_PREFIX, "info": ""}.get(kind, "")
     full = f"{prefix}{text}"
     h = int(text_block_height([full], FS_NOTE, CONTENT_W, space_after_pt=0.0, pad_pt=10.0))
     if int(top) + h > int(CONTENT_SAFE_BOTTOM):
@@ -702,6 +1940,7 @@ def table(
     col_widths: list[float] | None = None,
     note_text: str | None = None,
     *,
+    semantic_colors: bool = True,
     layout_warnings: list[str] | None = None,
 ) -> Emu:
     """Safe-area table: rows paginated; footnote always below table, never overlapping."""
@@ -750,13 +1989,15 @@ def table(
             cell.text = "" if val is None else str(val)
             para = cell.text_frame.paragraphs[0]
             para.font.size = Pt(FS_TABLE_BODY)
-            para.word_wrap = False
-            tone = _cell_color(str(val))
-            if tone:
+            para.word_wrap = True
+            tone = _cell_color(str(val)) if semantic_colors else None
+            if semantic_colors and tone:
                 para.font.color.rgb = tone
                 para.font.bold = True
             else:
                 para.font.color.rgb = NEUTRAL_DARK
+                if not semantic_colors:
+                    para.font.bold = False
             if r % 2 == 0:
                 cell.fill.solid()
                 cell.fill.fore_color.rgb = TABLE_ZEBRA
@@ -789,6 +2030,13 @@ MAX_VIDEO_ITEMS = 4
 MAX_UPSCALE_RATIO = 2.0
 MAX_INTL_SLIDE_FRAC = 0.55
 IMG_SLOT_FRAC = 0.50
+GAL_ORION_IMG_FRAC = 0.65
+GAL_ORION_IMG_FRAC_TALL = 0.72  # single-row 2-up — image dominates card
+GAL_ORION_MIN_IMG_FRAC = 0.55
+GAL_ORION_MIN_FRAME_H = 1333500  # ~140 px at 96 dpi
+GAL_ORION_MAX_FRAME_ASPECT = 2.35  # reject banner-like image frames (w/h)
+GAL_ASPECT_CONTAIN_LO = 0.55
+GAL_ASPECT_CONTAIN_HI = 2.2
 CARD_BOTTOM_PAD = 91440
 GAL_TITLE_ZONE_H = 228600   # max 2 title lines
 GAL_DOMAIN_ZONE_H = 101600  # 1 domain line
@@ -800,14 +2048,21 @@ def _gallery_title_zone_h(inner_h: int) -> int:
     return int(GAL_TITLE_ZONE_H) if inner_h >= GAL_TWO_LINE_INNER_H else int(GAL_DOMAIN_ZONE_H)
 
 
-VID_PLAY_DOMAIN_ZONE_H = 101600  # play icon + domain row (text-only cards)
+VID_PLAY_DOMAIN_ZONE_H = 101600  # legacy: play icon + domain row (text-only cards)
 VID_TITLE_ZONE_H = 228600        # max 2 title lines
-VID_DOMAIN_ZONE_H = 101600         # domain under real thumbnail
+VID_DOMAIN_ZONE_H = 101600         # domain row under preview
 VID_BADGE_ZONE_H = 101600
-VID_BUTTON_ZONE_H = 165100
+VID_BUTTON_ZONE_H = 190000
 VID_THUMB_MIN_H = 280000
 VID_TWO_LINE_INNER_H = 2000000
 MIN_THUMB_B64_LEN = 2000
+
+# ORION-like video evidence card — preview band + domain + title + button
+VID_PREVIEW_MIN_H = 380000       # min designed preview/placeholder band height
+VID_PREVIEW_MAX_H = 900000       # cap so preview stays balanced vs. text zones
+VID_PLAY_CIRCLE_D = 260000       # play-icon circle diameter inside preview
+VID_BUTTON_W = 1650000           # fixed "open source" button width
+OVAL = 9
 
 
 def _video_title_zone_h(inner_h: int) -> int:
@@ -953,6 +2208,8 @@ def _layout_image_card_zones(
     *,
     show_identity: bool,
     intl_compact: bool = False,
+    orion_tile: bool = False,
+    orion_tall: bool = False,
 ) -> dict[str, tuple[int, int]] | None:
     """Return fixed y-zones (top, bottom) relative to card top for image + captions."""
     pad = int(CARD_PAD)
@@ -960,16 +2217,23 @@ def _layout_image_card_zones(
     inner_h = max(1, ih - 2 * pad)
     title_h = _gallery_title_zone_h(inner_h)
     domain_h = int(GAL_DOMAIN_ZONE_H)
-    badge_h = int(GAL_BADGE_ZONE_H) if show_identity else 0
+    badge_h = int(GAL_BADGE_ZONE_H) if show_identity and not orion_tile else 0
     bottom_pad = int(CARD_BOTTOM_PAD)
     text_stack = title_h + gap + domain_h + bottom_pad
-    if show_identity:
+    if show_identity and not orion_tile:
         text_stack += gap + badge_h
-    slot_frac = 0.42 if intl_compact else IMG_SLOT_FRAC
+    if orion_tile:
+        slot_frac = GAL_ORION_IMG_FRAC_TALL if orion_tall else GAL_ORION_IMG_FRAC
+        min_img = max(int(inner_h * GAL_ORION_MIN_IMG_FRAC), 450000)
+    elif intl_compact:
+        slot_frac = 0.42
+        min_img = min(int(MIN_GALLERY_IMG_H), max(450000, int(inner_h * 0.38)))
+    else:
+        slot_frac = IMG_SLOT_FRAC
+        min_img = min(int(MIN_GALLERY_IMG_H), max(450000, int(inner_h * 0.38)))
     max_img_h = inner_h - text_stack - gap
     if max_img_h < 400000:
         return None
-    min_img = min(int(MIN_GALLERY_IMG_H), max(450000, int(inner_h * 0.38)))
     img_h = min(int(inner_h * slot_frac), max_img_h)
     if img_h < min_img:
         if max_img_h >= min_img:
@@ -984,7 +2248,7 @@ def _layout_image_card_zones(
     zones["title"] = (y, y + title_h)
     y = zones["title"][1] + gap
     zones["domain"] = (y, y + domain_h)
-    if show_identity:
+    if show_identity and not orion_tile:
         y = zones["domain"][1] + gap
         zones["badge"] = (y, y + badge_h)
     if not assert_no_vertical_overlap(list(zones.values())):
@@ -992,6 +2256,60 @@ def _layout_image_card_zones(
     if zones[list(zones.keys())[-1]][1] > ih - bottom_pad:
         return None
     return zones
+
+
+def _gallery_image_acceptable(raw: bytes, slot_w: int, slot_h: int) -> bool:
+    """Reject thumbnails that would upscale into blurry gallery tiles."""
+    size = _image_native_size(raw)
+    if not size:
+        return len(raw) >= MIN_THUMB_B64_LEN * 3 // 4
+    nw, nh = size
+    if nw <= 0 or nh <= 0:
+        return False
+    return max(slot_w / nw, slot_h / nh) <= MAX_UPSCALE_RATIO
+
+
+def _gallery_image_fit_mode(nw: int, nh: int, box_w: int, box_h: int) -> str:
+    """Cover when safe; contain for banners, upscale, or portrait-in-wide-box (no eye-strip crop)."""
+    if nw <= 0 or nh <= 0:
+        return "contain"
+    img_aspect = nw / nh
+    box_aspect = box_w / max(box_h, 1)
+    if max(box_w / nw, box_h / nh) > MAX_UPSCALE_RATIO:
+        return "contain"
+    if img_aspect > GAL_ASPECT_CONTAIN_HI or img_aspect < GAL_ASPECT_CONTAIN_LO:
+        return "contain"
+    # Portrait headshot in a wide short frame — letterbox instead of horizontal strip crop.
+    if img_aspect < 1.05 and box_aspect > 1.08:
+        return "contain"
+    if img_aspect < 0.90 and box_aspect > img_aspect * 1.35:
+        return "contain"
+    return "cover"
+
+
+def _fit_gallery_image(
+    slide,
+    stream,
+    box_left: int,
+    box_top: int,
+    box_w: int,
+    box_h: int,
+):
+    """Smart gallery fit — cover when safe, else letterboxed contain."""
+    if hasattr(stream, "seek"):
+        stream.seek(0)
+    pic = slide.shapes.add_picture(stream, box_left, box_top)
+    nw, nh = int(pic.width), int(pic.height)
+    mode = _gallery_image_fit_mode(nw, nh, box_w, box_h)
+    try:
+        slide.shapes._spTree.remove(pic._element)
+    except Exception:
+        pass
+    if hasattr(stream, "seek"):
+        stream.seek(0)
+    if mode == "cover":
+        return _fit_picture_cover(slide, stream, box_left, box_top, box_w, box_h)
+    return _fit_picture_contain(slide, stream, box_left, box_top, box_w, box_h)
 
 
 def _fit_picture_for_card(
@@ -1053,11 +2371,15 @@ def _gallery_caption_heights(show_identity: bool, inner_h: int | None = None) ->
     return title_h, domain_h, badge_h, stack
 
 
-def _image_card_min_height(show_identity: bool) -> int:
-    _, _, _, cap_stack = _gallery_caption_heights(show_identity, inner_h=0)
+def _image_card_min_height(show_identity: bool, *, orion_tile: bool = False) -> int:
+    _, _, _, cap_stack = _gallery_caption_heights(show_identity and not orion_tile, inner_h=0)
     pad = int(CARD_PAD)
     gap = int(CARD_ZONE_GAP)
-    return 2 * pad + MIN_GALLERY_IMG_H + cap_stack + gap
+    if orion_tile:
+        min_img = 550000
+    else:
+        min_img = MIN_GALLERY_IMG_H
+    return 2 * pad + min_img + cap_stack + gap
 
 
 def _gallery_notes_reserve_height(
@@ -1065,10 +2387,22 @@ def _gallery_notes_reserve_height(
     total: int,
     *,
     max_shown: int = MAX_GALLERY_ITEMS,
+    orion_gallery: bool = False,
+    planned_shown: int | None = None,
 ) -> int:
     """Conservative vertical reserve for overflow notes below the gallery grid."""
     if total <= 0:
         return 0
+    if orion_gallery:
+        shown = planned_shown if planned_shown is not None else min(total, max_shown)
+        if shown >= total:
+            return 0
+        tpl = labels.get(
+            "media_gallery_footer_note",
+            "Showing {shown} of {total} relevant images. Others saved in evidence.",
+        )
+        line = tpl.format(shown=shown, total=total)
+        return int(text_block_height([line], FS_NOTE, CONTENT_W, space_after_pt=0.0, pad_pt=8.0)) + int(_BLOCK_GAP) + 100000
     candidates: list[str] = []
     if total > max_shown:
         candidates.append(
@@ -1090,7 +2424,37 @@ def _gallery_notes_reserve_height(
     return h + 100000
 
 
-def _gallery_layout_candidates(try_n: int) -> list[tuple[int, int]]:
+def _orion_image_frame_ok(cell_w: int, row_h: int, *, orion_tall: bool = False) -> bool:
+    """True when the ORION image zone is tall enough and not a banner strip."""
+    zones = _layout_image_card_zones(
+        row_h, show_identity=False, orion_tile=True, orion_tall=orion_tall,
+    )
+    if not zones:
+        return False
+    pad = int(CARD_PAD)
+    inner_w = max(1, cell_w - 2 * pad)
+    img_h = zones["img"][1] - zones["img"][0]
+    if img_h < GAL_ORION_MIN_FRAME_H:
+        return False
+    if inner_w / max(img_h, 1) > GAL_ORION_MAX_FRAME_ASPECT:
+        return False
+    return True
+
+
+def _orion_gallery_layout_candidates(usable: int) -> list[tuple[int, int, int]]:
+    """ORION preference: 2x2 only when frames qualify; else 2-up large cards."""
+    if usable >= 4:
+        return [(2, 2, 4), (2, 1, 2)]
+    if usable == 3:
+        return [(2, 2, 3), (2, 1, 2)]
+    if usable == 2:
+        return [(2, 1, 2)]
+    return [(1, 1, min(usable, 1))]
+
+
+def _gallery_layout_candidates(try_n: int, *, orion_gallery: bool = False) -> list[tuple[int, int]]:
+    if orion_gallery:
+        return [(c, r) for c, r, _ in _orion_gallery_layout_candidates(try_n)]
     if try_n <= 1:
         return [(1, 1)]
     if try_n == 2:
@@ -1113,16 +2477,55 @@ def _plan_image_gallery(
     show_identity: bool = False,
     max_shown: int = MAX_GALLERY_ITEMS,
     labels: dict[str, str] | None = None,
-) -> tuple[int, int, int, int, int]:
+    orion_gallery: bool = False,
+) -> tuple[int, int, int, int, int, bool]:
     """Pick cols/rows/count so the full grid + notes fit within CONTENT_SAFE_BOTTOM."""
     labels = labels or {}
     usable = min(count, max_shown)
     gap = int(GUTTER)
-    note_reserve = _gallery_notes_reserve_height(labels, count, max_shown=max_shown)
+    note_reserve = _gallery_notes_reserve_height(
+        labels, count, max_shown=max_shown, orion_gallery=orion_gallery,
+        planned_shown=2 if orion_gallery and count >= 4 else None,
+    )
     safe_bottom = int(CONTENT_SAFE_BOTTOM)
     top_i = int(top)
-    min_card_h = _image_card_min_height(show_identity)
+    min_card_h = _image_card_min_height(show_identity, orion_tile=orion_gallery)
     inner_min_w = MIN_GALLERY_IMG_W
+
+    if orion_gallery:
+        for cols, rows, plan_n in _orion_gallery_layout_candidates(usable):
+            plan_n = min(plan_n, usable)
+            orion_tall = rows == 1 and cols == 2
+            if cols == 2 and rows == 2:
+                probe_note = _gallery_notes_reserve_height(
+                    labels, count, max_shown=plan_n, orion_gallery=True,
+                    planned_shown=plan_n,
+                )
+            else:
+                probe_note = _gallery_notes_reserve_height(
+                    labels, count, orion_gallery=True, planned_shown=plan_n,
+                )
+            avail_h = max(1, safe_bottom - top_i - probe_note)
+            max_row = (avail_h - gap * max(0, rows - 1)) // max(rows, 1)
+            if max_row < min_card_h:
+                continue
+            cell_w = (int(CONTENT_W) - gap * (cols - 1)) // cols
+            if cell_w - 2 * int(CARD_PAD) < inner_min_w:
+                continue
+            if not _orion_image_frame_ok(cell_w, max_row, orion_tall=orion_tall):
+                continue
+            grid_bottom = _gallery_grid_bottom(top_i, rows, max_row, gap)
+            if grid_bottom > safe_bottom - probe_note:
+                continue
+            if _layout_image_card_zones(
+                max_row,
+                show_identity=show_identity,
+                orion_tile=True,
+                orion_tall=orion_tall,
+            ) is None:
+                continue
+            return plan_n, cols, rows, cell_w, max_row, orion_tall
+        return 0, 0, 0, 0, 0, False
 
     for try_n in range(usable, 0, -1):
         for cols, rows in _gallery_layout_candidates(try_n):
@@ -1136,10 +2539,14 @@ def _plan_image_gallery(
             grid_bottom = _gallery_grid_bottom(top_i, rows, max_row, gap)
             if grid_bottom > safe_bottom - note_reserve:
                 continue
-            if _layout_image_card_zones(max_row, show_identity=show_identity) is None:
+            if _layout_image_card_zones(
+                max_row,
+                show_identity=show_identity,
+                orion_tile=orion_gallery,
+            ) is None:
                 continue
-            return try_n, cols, rows, cell_w, max_row
-    return 0, 0, 0, 0, 0
+            return try_n, cols, rows, cell_w, max_row, False
+    return 0, 0, 0, 0, 0, False
 
 
 def _image_gallery_geometry(
@@ -1150,7 +2557,7 @@ def _image_gallery_geometry(
     max_shown: int = 6,
 ) -> tuple[int, int, int, int]:
     """Backward-compatible wrapper — returns geometry for the best-fit plan."""
-    n, cols, rows, cell_w, row_h = _plan_image_gallery(
+    n, cols, rows, cell_w, row_h, _ = _plan_image_gallery(
         count, top, show_identity=show_identity, max_shown=max_shown,
     )
     if n <= 0:
@@ -1161,82 +2568,65 @@ def _image_gallery_geometry(
 def _layout_video_card_zones(
     ih: int,
     *,
-    show_badge: bool,
-    has_thumb: bool,
+    show_badge: bool = False,
+    has_thumb: bool = False,
 ) -> dict[str, tuple[int, int]] | None:
-    """Video card zones — text-only (play+domain) or thumbnail + captions + button."""
+    """ORION video card zones — preview band, domain row, title, button (top→bottom)."""
     pad = int(CARD_PAD)
     gap = int(CARD_ZONE_GAP)
     bottom_pad = int(CARD_BOTTOM_PAD)
-    inner_h = max(1, ih - 2 * pad)
     btn_h = int(VID_BUTTON_ZONE_H)
-    title_h = _video_title_zone_h(inner_h)
-    badge_h = int(VID_BADGE_ZONE_H) if show_badge else 0
+    title_h = int(VID_TITLE_ZONE_H)
+    domain_h = int(VID_DOMAIN_ZONE_H)
 
     y = ih - pad - bottom_pad
     button = (y - btn_h, y)
     y = button[0] - gap
-    if show_badge:
-        badge = (y - badge_h, y)
-        y = badge[0] - gap
-    else:
-        badge = None
     title = (y - title_h, y)
     y = title[0] - gap
+    domain = (y - domain_h, y)
+    y = domain[0] - gap
 
-    zones: dict[str, tuple[int, int]] = {"title": title, "button": button}
-    if badge:
-        zones["badge"] = badge
+    preview_top = pad
+    preview_bottom = y
+    preview_h = preview_bottom - preview_top
+    if preview_h < int(VID_PREVIEW_MIN_H):
+        return None
+    if preview_h > int(VID_PREVIEW_MAX_H):
+        preview_top = preview_bottom - int(VID_PREVIEW_MAX_H)
 
-    if has_thumb:
-        domain_h = int(VID_DOMAIN_ZONE_H)
-        domain = (y - domain_h, y)
-        y = domain[0] - gap
-        thumb_bottom = y
-        if thumb_bottom - pad < int(VID_THUMB_MIN_H):
-            return None
-        zones["thumb"] = (pad, thumb_bottom)
-        zones["domain"] = domain
-    else:
-        header_h = int(VID_PLAY_DOMAIN_ZONE_H)
-        header = (y - header_h, y)
-        if header[0] < pad:
-            return None
-        zones["header"] = header
-
+    zones: dict[str, tuple[int, int]] = {
+        "preview": (preview_top, preview_bottom),
+        "domain": domain,
+        "title": title,
+        "button": button,
+    }
     if not assert_no_vertical_overlap(sorted(zones.values(), key=lambda z: z[0])):
         return None
     return zones
 
 
-def _video_card_min_height(*, show_badge: bool, has_thumb: bool = False) -> int:
+def _video_card_min_height(*, show_badge: bool = False, has_thumb: bool = False) -> int:
     pad = 2 * int(CARD_PAD)
     gap = int(CARD_ZONE_GAP)
     bottom = int(CARD_BOTTOM_PAD)
-    stack = int(VID_PLAY_DOMAIN_ZONE_H) + gap + int(VID_TITLE_ZONE_H) + gap + int(VID_BUTTON_ZONE_H) + bottom
-    if show_badge:
-        stack += gap + int(VID_BADGE_ZONE_H)
-    if has_thumb:
-        stack += gap + int(VID_THUMB_MIN_H) + int(VID_DOMAIN_ZONE_H) + gap
+    stack = (
+        int(VID_PREVIEW_MIN_H) + gap
+        + int(VID_DOMAIN_ZONE_H) + gap
+        + int(VID_TITLE_ZONE_H) + gap
+        + int(VID_BUTTON_ZONE_H) + bottom
+    )
     return pad + stack
 
 
 def _video_notes_reserve_height(labels: dict[str, str], total: int, *, max_shown: int) -> int:
     if total <= max_shown:
         return 0
-    candidates = [
-        labels.get("media_showing_videos", "Showing {shown} of {total} subject-matched videos.").format(
-            shown=max_shown, total=total,
-        ),
-        labels.get("media_videos_saved_evidence", "+ {n} videos saved in evidence.").format(n=max(1, total - max_shown)),
-    ]
-    h = 0
-    for line in candidates:
-        if not line:
-            continue
-        h += int(text_block_height([line], FS_NOTE, CONTENT_W, space_after_pt=0.0, pad_pt=8.0))
-        h += int(_BLOCK_GAP)
-    return h + 100000
+    line = labels.get(
+        "media_videos_note", "Showing {shown} of {total} relevant video sources. + {n} saved in evidence.",
+    ).format(shown=max_shown, total=total, n=max(1, total - max_shown))
+    h = int(text_block_height([line], FS_NOTE, CONTENT_W, space_after_pt=0.0, pad_pt=8.0))
+    return h + int(_BLOCK_GAP) + 100000
 
 
 def _plan_video_grid(
@@ -1325,8 +2715,10 @@ def add_image_card(
     layout_warnings: list[str] | None = None,
     intl_compact: bool = False,
     allow_cover: bool = True,
+    orion_tile: bool = False,
+    orion_tall: bool = False,
 ) -> bool:
-    """Image card with fixed zones — title/domain/badge never overlap image or each other."""
+    """Image evidence tile — ORION single-frame gallery or legacy nested slot."""
     import io
 
     ix, iy, iw, ih = int(x), int(y), int(w), int(h)
@@ -1334,10 +2726,18 @@ def add_image_card(
     gap = int(CARD_ZONE_GAP)
     inner_w = max(1, iw - 2 * pad)
     inner_x = ix + pad
-    zones = _layout_image_card_zones(ih, show_identity=show_identity, intl_compact=intl_compact)
+    if orion_tile:
+        show_identity = False
+    zones = _layout_image_card_zones(
+        ih, show_identity=show_identity, intl_compact=intl_compact,
+        orion_tile=orion_tile, orion_tall=orion_tall,
+    )
     if not zones and show_identity:
         show_identity = False
-        zones = _layout_image_card_zones(ih, show_identity=False, intl_compact=intl_compact)
+        zones = _layout_image_card_zones(
+            ih, show_identity=False, intl_compact=intl_compact,
+            orion_tile=orion_tile, orion_tall=orion_tall,
+        )
     if not zones:
         return False
     if iy + ih > int(CONTENT_SAFE_BOTTOM):
@@ -1346,7 +2746,10 @@ def add_image_card(
     raw = _image_bytes_from_item(item)
     if not raw:
         return False
-    if intl_compact and not _intl_image_acceptable(raw, inner_w, zones["img"][1] - zones["img"][0]):
+
+    img_top, img_bottom = zones["img"]
+    img_box_h = img_bottom - img_top
+    if intl_compact and not _intl_image_acceptable(raw, inner_w, img_box_h):
         return False
 
     frame = slide.shapes.add_shape(ROUNDED_RECT, Emu(ix), Emu(iy), Emu(iw), Emu(ih))
@@ -1355,20 +2758,26 @@ def add_image_card(
     frame.line.color.rgb = NEUTRAL_LINE
     frame.line.width = Pt(0.75)
 
-    img_top, img_bottom = zones["img"]
-    img_box_h = img_bottom - img_top
-    img_slot = slide.shapes.add_shape(
-        ROUNDED_RECT, Emu(inner_x), Emu(iy + img_top), Emu(inner_w), Emu(img_box_h),
-    )
-    img_slot.fill.solid()
-    img_slot.fill.fore_color.rgb = BG_PANEL
-    img_slot.line.color.rgb = NEUTRAL_LINE
+    img_slot = None
+    if not orion_tile:
+        img_slot = slide.shapes.add_shape(
+            ROUNDED_RECT, Emu(inner_x), Emu(iy + img_top), Emu(inner_w), Emu(img_box_h),
+        )
+        img_slot.fill.solid()
+        img_slot.fill.fore_color.rgb = BG_PANEL
+        img_slot.line.color.rgb = NEUTRAL_LINE
+
     pic_ok = False
     try:
-        pic = _fit_picture_for_card(
-            slide, io.BytesIO(raw), inner_x, iy + img_top, inner_w, img_box_h,
-            allow_cover=allow_cover and not intl_compact,
-        )
+        if orion_tile:
+            pic = _fit_gallery_image(
+                slide, io.BytesIO(raw), inner_x, iy + img_top, inner_w, img_box_h,
+            )
+        else:
+            pic = _fit_picture_for_card(
+                slide, io.BytesIO(raw), inner_x, iy + img_top, inner_w, img_box_h,
+                allow_cover=allow_cover and not intl_compact,
+            )
         pic_ok = int(pic.width) >= 1 and int(pic.height) >= 1
         pic_bottom = int(pic.top) + int(pic.height)
         pic_right = int(pic.left) + int(pic.width)
@@ -1379,7 +2788,14 @@ def add_image_card(
             or pic_right > inner_x + inner_w + 5000
         ):
             pic_ok = False
-        if pic_ok and not intl_compact and allow_cover:
+        if pic_ok and orion_tile:
+            pic.width = min(int(pic.width), inner_w)
+            pic.height = min(int(pic.height), img_box_h)
+            pic.left = max(inner_x, min(int(pic.left), inner_x + inner_w - int(pic.width)))
+            pic.top = max(iy + img_top, min(int(pic.top), iy + img_bottom - int(pic.height)))
+            if int(pic.height) < img_box_h * 0.22 or int(pic.width) < inner_w * 0.18:
+                pic_ok = False
+        if pic_ok and not orion_tile and not intl_compact and allow_cover:
             pic_ok = int(pic.width) >= MIN_GALLERY_IMG_W // 3 and int(pic.height) >= MIN_GALLERY_IMG_H // 3
         if pic_ok:
             assert_shape_within_safe_area(pic, "image_card_picture", layout_warnings)
@@ -1392,10 +2808,11 @@ def add_image_card(
         pic_ok = False
     if not pic_ok:
         for shape in (frame, img_slot):
-            try:
-                slide.shapes._spTree.remove(shape._element)
-            except Exception:
-                pass
+            if shape is not None:
+                try:
+                    slide.shapes._spTree.remove(shape._element)
+                except Exception:
+                    pass
         return False
 
     source_url = str(item.get("sourcePageUrl") or item.get("url") or item.get("imageUrl") or "")
@@ -1440,6 +2857,27 @@ def add_image_card(
     return True
 
 
+def _video_preview_placeholder(slide, x: int, y: int, w: int, h: int) -> None:
+    """Designed neutral preview — light band with a centered play circle."""
+    circle_d = min(int(VID_PLAY_CIRCLE_D), max(1, h - 60000))
+    cx = x + (w - circle_d) // 2
+    cy = y + (h - circle_d) // 2
+    circle = slide.shapes.add_shape(OVAL, Emu(cx), Emu(cy), Emu(circle_d), Emu(circle_d))
+    circle.fill.solid()
+    circle.fill.fore_color.rgb = WHITE
+    circle.line.color.rgb = ACCENT_SOFT
+    circle.line.width = Pt(1.0)
+    ctf = circle.text_frame
+    ctf.margin_left = 0
+    ctf.margin_right = 0
+    ctf.margin_top = 0
+    ctf.margin_bottom = 0
+    ctf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    cp = ctf.paragraphs[0]
+    cp.alignment = PP_ALIGN.CENTER
+    _run(cp, "\u25b6", 9, ACCENT)
+
+
 def add_video_card(
     slide,
     x: Emu,
@@ -1450,7 +2888,7 @@ def add_video_card(
     link_label: str = "Open source",
     layout_warnings: list[str] | None = None,
 ) -> bool:
-    """Video card — text-only (play+domain, title, button) or real thumbnail when available."""
+    """ORION video evidence card — preview band, domain, 2-line title, link button."""
     import io
 
     ix, iy, iw, ih = int(x), int(y), int(w), int(h)
@@ -1459,28 +2897,15 @@ def add_video_card(
     inner_x = ix + pad
     url = str(item.get("url") or item.get("sourcePageUrl") or "")
     domain = truncate(item.get("source") or short_display_url(url), 32)
-    identity = truncate(item.get("selectionReason") or item.get("identityDecision") or "", 22)
-    has_badge = bool(identity)
     raw = _image_bytes_from_item(item)
-    has_thumb = bool(raw)
 
-    zones = _layout_video_card_zones(ih, show_badge=has_badge, has_thumb=has_thumb)
-    if not zones and has_badge:
-        has_badge = False
-        identity = ""
-        zones = _layout_video_card_zones(ih, show_badge=False, has_thumb=has_thumb)
-    if not zones and has_thumb:
-        has_thumb = False
-        zones = _layout_video_card_zones(ih, show_badge=has_badge, has_thumb=False)
+    zones = _layout_video_card_zones(ih)
     if not zones:
         return False
     if iy + ih > int(CONTENT_SAFE_BOTTOM):
         return False
 
-    title_top, title_bottom = zones["title"]
-    title_zone_h = title_bottom - title_top
-    two_line_title = title_zone_h >= int(VID_TITLE_ZONE_H) - 5000
-    title = truncate(item.get("title"), 44 if two_line_title else 26)
+    title = truncate(item.get("title"), 44)
 
     frame = slide.shapes.add_shape(ROUNDED_RECT, Emu(ix), Emu(iy), Emu(iw), Emu(ih))
     frame.fill.solid()
@@ -1488,19 +2913,22 @@ def add_video_card(
     frame.line.color.rgb = NEUTRAL_LINE
     frame.line.width = Pt(0.75)
 
+    p_top, p_bottom = zones["preview"]
+    preview_h = p_bottom - p_top
+    preview = slide.shapes.add_shape(
+        ROUNDED_RECT, Emu(inner_x), Emu(iy + p_top), Emu(inner_w), Emu(preview_h),
+    )
+    preview.fill.solid()
+    preview.fill.fore_color.rgb = BG_PANEL
+    preview.line.color.rgb = NEUTRAL_LINE
+    preview.line.width = Pt(0.5)
+
     thumb_ok = False
-    if has_thumb and "thumb" in zones:
-        t_top, t_bottom = zones["thumb"]
-        thumb_h = t_bottom - t_top
-        thumb_box = slide.shapes.add_shape(
-            ROUNDED_RECT, Emu(inner_x), Emu(iy + t_top), Emu(inner_w), Emu(thumb_h),
-        )
-        thumb_box.fill.solid()
-        thumb_box.fill.fore_color.rgb = BG_PANEL
-        thumb_box.line.color.rgb = NEUTRAL_LINE
+    if raw:
         try:
             pic = _fit_picture_for_card(
-                slide, io.BytesIO(raw), inner_x, iy + t_top, inner_w, thumb_h, allow_cover=True,
+                slide, io.BytesIO(raw), inner_x, iy + p_top, inner_w, preview_h,
+                allow_cover=False,
             )
             thumb_ok = int(pic.width) >= 1 and int(pic.height) >= 1
             if not thumb_ok:
@@ -1510,61 +2938,47 @@ def add_video_card(
                     pass
         except Exception:
             thumb_ok = False
-        if not thumb_ok:
-            for shape in (thumb_box,):
-                try:
-                    slide.shapes._spTree.remove(shape._element)
-                except Exception:
-                    pass
-            try:
-                slide.shapes._spTree.remove(frame._element)
-            except Exception:
-                pass
-            return add_video_card(
-                slide, x, y, w, h, {**item, "thumbnailBytesBase64": None, "thumbnailBase64": None},
-                link_label=link_label, layout_warnings=layout_warnings,
-            )
+    if not thumb_ok:
+        _video_preview_placeholder(slide, inner_x, iy + p_top, inner_w, preview_h)
 
-    if has_thumb and thumb_ok and "domain" in zones:
-        d_top, d_bottom = zones["domain"]
-        _card_text_zone(
-            slide, inner_x, iy + d_top, inner_w, d_bottom - d_top,
-            domain, FS_NOTE, NEUTRAL_GRAY, word_wrap=False,
-            layout_warnings=layout_warnings, context="video_card_domain",
-        )
-    elif "header" in zones:
-        h_top, h_bottom = zones["header"]
-        h_h = h_bottom - h_top
-        _card_text_zone(
-            slide, inner_x, iy + h_top, inner_w, h_h,
-            f"\u25b6  {domain}", FS_NOTE, NEUTRAL_GRAY, word_wrap=False,
-            layout_warnings=layout_warnings, context="video_card_header",
-        )
-
+    d_top, d_bottom = zones["domain"]
     _card_text_zone(
-        slide, inner_x, iy + title_top, inner_w, title_zone_h,
-        title, FS_NOTE, BRAND_PRIMARY, bold=True, word_wrap=two_line_title,
+        slide, inner_x, iy + d_top, inner_w, d_bottom - d_top,
+        domain, FS_NOTE - 1, NEUTRAL_GRAY, word_wrap=False,
+        layout_warnings=layout_warnings, context="video_card_domain",
+    )
+
+    title_top, title_bottom = zones["title"]
+    _card_text_zone(
+        slide, inner_x, iy + title_top, inner_w, title_bottom - title_top,
+        title, FS_NOTE, BRAND_PRIMARY, bold=True, word_wrap=True,
         layout_warnings=layout_warnings, context="video_card_title",
     )
-    if has_badge and "badge" in zones:
-        b_top, b_bottom = zones["badge"]
-        _card_text_zone(
-            slide, inner_x, iy + b_top, inner_w, b_bottom - b_top,
-            identity, FS_NOTE - 1, NEUTRAL_GRAY, italic=True, word_wrap=False,
-            layout_warnings=layout_warnings, context="video_card_badge",
-        )
-    btn_top, btn_bottom = zones["button"]
-    _card_text_zone(
-        slide, inner_x, iy + btn_top, inner_w, btn_bottom - btn_top,
-        link_label, FS_NOTE, ACCENT if url.startswith("http") else NEUTRAL_GRAY,
-        bold=True, hyperlink=url if url.startswith("http") else None, word_wrap=False,
-        layout_warnings=layout_warnings, context="video_card_button",
-    )
 
-    zone_keys = (["thumb"] if thumb_ok else []) + (["domain"] if thumb_ok else ["header"])
-    zone_keys += ["title"] + (["badge"] if has_badge else []) + ["button"]
-    zone_keys = [k for k in zone_keys if k in zones]
-    zone_pts = sorted([(iy + zones[k][0], iy + zones[k][1]) for k in zone_keys], key=lambda z: z[0])
+    btn_top, btn_bottom = zones["button"]
+    btn_h = btn_bottom - btn_top
+    btn_w = min(int(VID_BUTTON_W), inner_w)
+    has_link = url.startswith("http")
+    button = slide.shapes.add_shape(ROUNDED_RECT, Emu(inner_x), Emu(iy + btn_top), Emu(btn_w), Emu(btn_h))
+    button.fill.solid()
+    button.fill.fore_color.rgb = RGBColor(0xEA, 0xF1, 0xFB)
+    button.line.color.rgb = ACCENT if has_link else NEUTRAL_LINE
+    button.line.width = Pt(0.75)
+    btf = button.text_frame
+    btf.margin_top = 0
+    btf.margin_bottom = 0
+    btf.word_wrap = False
+    btf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    bp = btf.paragraphs[0]
+    bp.alignment = PP_ALIGN.CENTER
+    brun = _run(bp, link_label, FS_NOTE - 1, ACCENT if has_link else NEUTRAL_GRAY, bold=True)
+    if has_link:
+        try:
+            brun.hyperlink.address = url
+        except Exception:
+            pass
+
+    zone_pts = sorted([(iy + z[0], iy + z[1]) for z in zones.values()], key=lambda z: z[0])
     if not assert_no_vertical_overlap(zone_pts):
         try:
             slide.shapes._spTree.remove(frame._element)
@@ -1619,6 +3033,7 @@ def image_grid(
     layout_warnings: list[str] | None = None,
     intl_compact: bool = False,
     allow_cover: bool = False,
+    orion_gallery: bool = False,
 ) -> Emu:
     """Image evidence gallery — max 4 validated cards, deduped; grid + notes stay in safe area."""
     labels = labels or {}
@@ -1633,8 +3048,9 @@ def image_grid(
             return note(slide, top, msg, "info")
         return top
 
-    plan_n, cols, rows, cell_w, row_h = _plan_image_gallery(
+    plan_n, cols, rows, cell_w, row_h, orion_tall = _plan_image_gallery(
         len(usable), top, show_identity=show_identity, max_shown=max_items, labels=labels,
+        orion_gallery=orion_gallery,
     )
     if plan_n <= 0:
         msg = labels.get("nd_gallery_no_usable_images", "Selected images unavailable for gallery display.")
@@ -1662,6 +3078,8 @@ def image_grid(
             layout_warnings=layout_warnings,
             intl_compact=intl_compact,
             allow_cover=allow_cover,
+            orion_tile=orion_gallery,
+            orion_tall=orion_tall,
         ):
             rendered += 1
         else:
@@ -1672,19 +3090,27 @@ def image_grid(
         return note(slide, top, msg, "info")
 
     actual_rows = max(1, (rendered + cols - 1) // cols)
-    bottom = Emu(_gallery_grid_bottom(y0, actual_rows, row_h, gap))
+    bottom = Emu(_gallery_grid_bottom(y0, actual_rows, row_h, gap) + int(_BLOCK_GAP))
     skipped = skipped_bytes + skipped_layout + dup_skipped + max(0, len(usable) - candidate_idx)
     hidden = max(0, total - rendered)
-    if skipped > 0:
-        tpl = labels.get("media_gallery_skipped", "{n} images skipped (thumbnail too small or unavailable).")
-        bottom = _safe_gallery_note(slide, bottom, tpl.format(n=skipped))
-    if total > rendered:
-        tpl = labels.get("media_showing_images", "Showing {shown} of {total} subject-matched images.")
-        bottom = _safe_gallery_note(slide, bottom, tpl.format(shown=rendered, total=total))
-    if hidden > 0:
-        extra = labels.get("media_saved_in_evidence", "+ {n} saved in evidence.")
-        if extra:
-            bottom = _safe_gallery_note(slide, bottom, extra.format(n=hidden))
+    if orion_gallery:
+        if hidden > 0:
+            tpl = labels.get(
+                "media_gallery_footer_note",
+                "Showing {shown} of {total} relevant images. Others saved in evidence.",
+            )
+            bottom = _safe_gallery_note(slide, bottom, tpl.format(shown=rendered, total=total))
+    else:
+        if skipped > 0:
+            tpl = labels.get("media_gallery_skipped", "{n} images skipped (thumbnail too small or unavailable).")
+            bottom = _safe_gallery_note(slide, bottom, tpl.format(n=skipped))
+        if total > rendered:
+            tpl = labels.get("media_showing_images", "Showing {shown} of {total} subject-matched images.")
+            bottom = _safe_gallery_note(slide, bottom, tpl.format(shown=rendered, total=total))
+        if hidden > 0:
+            extra = labels.get("media_saved_in_evidence", "+ {n} saved in evidence.")
+            if extra:
+                bottom = _safe_gallery_note(slide, bottom, extra.format(n=hidden))
     return bottom
 
 
@@ -1697,8 +3123,9 @@ def video_cards(
     max_items: int = MAX_VIDEO_ITEMS,
     labels: dict[str, str] | None = None,
     layout_warnings: list[str] | None = None,
+    note_template: str | None = None,
 ) -> Emu:
-    """Compact 2-column video grid — max 4 cards; text-only when no real thumbnail."""
+    """ORION 2-column video evidence grid — max 4 cards with preview bands."""
     labels = labels or {}
     total = len(items)
     if not items:
@@ -1737,11 +3164,649 @@ def video_cards(
     actual_rows = max(1, (rendered + cols - 1) // cols)
     bottom = Emu(_gallery_grid_bottom(y0, actual_rows, row_h, gap) + int(_BLOCK_GAP))
     hidden = max(0, total - rendered)
-    if total > rendered:
-        tpl = labels.get("media_showing_videos", "Showing {shown} of {total} subject-matched videos.")
-        bottom = _safe_gallery_note(slide, bottom, tpl.format(shown=rendered, total=total))
     if hidden > 0:
-        extra = labels.get("media_videos_saved_evidence", "+ {n} videos saved in evidence.")
-        if extra:
-            bottom = _safe_gallery_note(slide, bottom, extra.format(n=hidden))
+        tpl = note_template or labels.get(
+            "media_videos_note", "Showing {shown} of {total} relevant video sources. + {n} saved in evidence.",
+        )
+        bottom = _safe_gallery_note(slide, bottom, tpl.format(shown=rendered, total=total, n=hidden))
     return bottom
+
+
+# ---------------------------------------------------------------------------
+# ORION-style slide 13 — compact fixed-grid layout (4:3)
+# ---------------------------------------------------------------------------
+
+YANDEX_RED = RGBColor(0xFC, 0x3F, 0x1C)
+
+# Zone fractions (content width)
+ORION_LEFT_FRAC = 0.45
+ORION_RIGHT_FRAC = 0.48
+ORION_GUTTER_FRAC = 0.035
+
+# Header / content zones (EMU)
+ORION_MARKER_TOP = 140000
+ORION_MARKER_H = 85000
+ORION_HEADLINE_Y = 335000
+ORION_HEADLINE_H = 300000
+ORION_HEADLINE_W_FRAC = 0.70
+ORION_CONTENT_Y = 1500000
+ORION_HEADER_GAP = 180000
+
+# Left column block geometry (fixed Y offsets from CONTENT_Y)
+ORION_SUMMARY_H = 880000
+ORION_SUMMARY_GAP = 230000
+ORION_QUERY_TITLE_H = 140000
+ORION_TITLE_CHIP_GAP = 80000
+ORION_CHIP_H = 285000
+ORION_CHIP_GAP = 70000
+ORION_QUERY_GAP = 250000
+ORION_EXPLAINER_H = 1050000
+
+# Left column internal padding (ORION premium spacing)
+ORION_SUMMARY_PAD_X = 95000
+ORION_SUMMARY_PAD_TOP = 75000
+ORION_SUMMARY_METRIC_H = 340000
+ORION_SUMMARY_METRIC_BODY_GAP = 60000
+ORION_SUMMARY_PAD_BOTTOM = 120000
+ORION_CHIP_PAD_X = 70000
+ORION_CHIP_ICON_W = 68000
+ORION_CHIP_TEXT_GAP = 55000
+ORION_EXPLAINER_PAD_X = 100000
+ORION_EXPLAINER_PAD_TOP = 90000
+ORION_EXPLAINER_PAD_BOTTOM = 95000
+ORION_EXPLAINER_BODY_LINE_SPACING = 1.2
+ORION_CHIP_LINE_SPACING = 1.05
+
+# Right panel — content-driven outer frame (generous inset)
+ORION_PANEL_Y_OFFSET = 50000
+ORION_PANEL_SIDE_PAD = 110000
+ORION_PANEL_TOP_PAD = 125000
+ORION_PANEL_BOTTOM_PAD = 140000
+ORION_SEARCH_BAND_H = 180000
+ORION_TABS_GAP = 45000
+ORION_TABS_BAND_H = 70000
+ORION_TITLE_GAP = 60000
+ORION_TITLE_BAND_H = 90000
+ORION_GRID_TOP_GAP = 80000
+ORION_BADGE_SIZE = 76000
+ORION_HIGHLIGHT_BADGE = 44000
+ORION_HIGHLIGHT_RING_PAD = 12000
+ORION_GRID_GAP = 36000
+ORION_FRAME_CORNER_ADJ = 0.035
+
+# Typography (pt) — compact ORION
+FS_ORION_MARKER = 7
+FS_ORION_DATE = 7
+FS_ORION_BRAND = 10
+FS_ORION_HEADLINE = 16
+FS_ORION_METRIC = 26
+FS_ORION_BODY = 8
+FS_ORION_CHIP_TITLE = 9
+FS_ORION_CHIP = 8
+FS_ORION_TAB = 5
+FS_ORION_LABEL = 9
+FS_ORION_INPUT = 7
+FS_ORION_WHY_TITLE = 11
+
+ORION_MIN_CELL = 210000
+ORION_MAX_GRID = 9
+ORION_MAX_HIGHLIGHTS = 3
+
+
+def _orion_compact_layout() -> dict[str, int]:
+    """Fixed zone coordinates — no dynamic stacking."""
+    cw = int(CONTENT_W)
+    left_w = int(cw * ORION_LEFT_FRAC)
+    gutter = max(int(cw * ORION_GUTTER_FRAC), int(GUTTER))
+    right_w = int(cw * ORION_RIGHT_FRAC)
+    left_x = int(MARGIN)
+    right_x = left_x + left_w + gutter
+    content_y = ORION_CONTENT_Y
+    panel_y = content_y + ORION_PANEL_Y_OFFSET
+    content_bottom = int(CONTENT_SAFE_BOTTOM)
+
+    summary_y = content_y
+    summary_bottom = summary_y + ORION_SUMMARY_H
+    query_title_y = summary_bottom + ORION_SUMMARY_GAP
+
+    headline_w = int(int(SLIDE_W) * ORION_HEADLINE_W_FRAC)
+    headline_bottom = ORION_HEADLINE_Y + ORION_HEADLINE_H
+
+    return {
+        "left_x": left_x,
+        "left_w": left_w,
+        "right_x": right_x,
+        "right_w": right_w,
+        "gutter": gutter,
+        "content_y": content_y,
+        "panel_y": panel_y,
+        "content_bottom": content_bottom,
+        "panel_max_bottom": content_bottom - 70000,
+        "headline_w": headline_w,
+        "headline_bottom": headline_bottom,
+        "summary_y": summary_y,
+        "summary_bottom": summary_bottom,
+        "query_title_y": query_title_y,
+    }
+
+
+def _orion_screenshot_frame(slide, x: int, y: int, w: int, h: int):
+    """Visible outer screenshot card — shadow (rect) then rounded frame behind content."""
+    shadow = slide.shapes.add_shape(RECT, Emu(x + 8000), Emu(y + 12000), Emu(w), Emu(h))
+    shadow.fill.solid()
+    shadow.fill.fore_color.rgb = RGBColor(0xE4, 0xE9, 0xF0)
+    shadow.line.fill.background()
+    card = slide.shapes.add_shape(ROUNDED_RECT, Emu(x), Emu(y), Emu(w), Emu(h))
+    card.fill.solid()
+    card.fill.fore_color.rgb = WHITE
+    card.line.color.rgb = NEUTRAL_LINE
+    card.line.width = Pt(1.0)
+    try:
+        if card.adjustments:
+            card.adjustments[0] = ORION_FRAME_CORNER_ADJ
+    except Exception:
+        pass
+    return card
+
+
+def _orion_shadow_card(slide, x: int, y: int, w: int, h: int, *, radius: int = ROUNDED_RECT):
+    return _orion_screenshot_frame(slide, x, y, w, h)
+
+
+def _orion_yandex_badge(slide, x: int, y: int, size: int = 85000) -> None:
+    badge = slide.shapes.add_shape(1, Emu(x), Emu(y), Emu(size), Emu(size))
+    badge.fill.solid()
+    badge.fill.fore_color.rgb = YANDEX_RED
+    badge.line.fill.background()
+    tf = badge.text_frame
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    p = tf.paragraphs[0]
+    p.alignment = PP_ALIGN.CENTER
+    _run(p, "Я", max(7, int(size / 12700 * 0.5)), WHITE, bold=True)
+
+
+def _orion_header(
+    slide,
+    oi: dict,
+    brand: str,
+    layout: dict[str, int],
+    layout_warnings: list[str] | None,
+) -> None:
+    """Compact ORION header — fixed zones only."""
+    x0 = int(MARGIN)
+    y0 = ORION_MARKER_TOP
+    right_x = layout["right_x"]
+    right_w = layout["right_w"]
+
+    marker = textbox(slide, Emu(x0), Emu(y0), Emu(layout["left_w"]), Emu(ORION_MARKER_H))
+    sec = str(oi.get("section") or "04  Images")
+    num, _, label = sec.partition("  ")
+    if not label:
+        label, num = sec, "04"
+    _run(marker.text_frame.paragraphs[0], f"{num.strip()}  {label.strip()}", FS_ORION_MARKER, ACCENT, bold=True)
+
+    headline = textbox(
+        slide, Emu(x0), Emu(ORION_HEADLINE_Y), Emu(layout["headline_w"]), Emu(ORION_HEADLINE_H),
+    )
+    htf = headline.text_frame
+    htf.word_wrap = False
+    headline_text = str(oi.get("headline") or "")
+    headline_lines = [ln.strip() for ln in headline_text.split("\n") if ln.strip()]
+    if not headline_lines:
+        headline_lines = [""]
+    _run(htf.paragraphs[0], headline_lines[0], FS_ORION_HEADLINE, NEUTRAL_DARK, bold=True)
+    for ln in headline_lines[1:]:
+        _run(htf.add_paragraph(), ln, FS_ORION_HEADLINE, NEUTRAL_DARK, bold=True)
+
+    date_box = textbox(slide, Emu(right_x), Emu(y0), Emu(right_w), Emu(90000))
+    dp = date_box.text_frame.paragraphs[0]
+    dp.alignment = PP_ALIGN.RIGHT
+    _run(dp, str(oi.get("asOf") or ""), FS_ORION_DATE, NEUTRAL_GRAY)
+
+    brand_label = str(oi.get("brandDisplay") or brand or "Digital Profile Audit")
+    brand_box = textbox(slide, Emu(right_x), Emu(y0 + 82000), Emu(right_w), Emu(105000))
+    btf = brand_box.text_frame
+    btf.word_wrap = False
+    bp = btf.paragraphs[0]
+    bp.alignment = PP_ALIGN.RIGHT
+    _run(bp, truncate(brand_label, 28), FS_ORION_BRAND, NEUTRAL_DARK, bold=True)
+
+
+def _orion_summary_box(slide, layout: dict[str, int], oi: dict) -> None:
+    x, y, w = layout["left_x"], layout["summary_y"], layout["left_w"]
+    h = ORION_SUMMARY_H
+    frame = slide.shapes.add_shape(ROUNDED_RECT, Emu(x), Emu(y), Emu(w), Emu(h))
+    frame.fill.solid()
+    frame.fill.fore_color.rgb = BG_LIGHT
+    frame.line.color.rgb = ACCENT_SOFT
+    frame.line.width = Pt(0.75)
+
+    pad_x = ORION_SUMMARY_PAD_X
+    inner_w = w - 2 * pad_x
+
+    metric = str(oi.get("metricLabel") or f"{oi.get('metricX', 0)} / {oi.get('metricY', 0)}")
+    metric_box = textbox(slide, Emu(x + pad_x), Emu(y + ORION_SUMMARY_PAD_TOP), Emu(inner_w), Emu(ORION_SUMMARY_METRIC_H))
+    mtf = metric_box.text_frame
+    mtf.word_wrap = True
+    mtf.margin_top = 0
+    mtf.margin_bottom = 0
+    _run(mtf.paragraphs[0], metric, FS_ORION_METRIC, RGBColor(0xE6, 0x5C, 0x00), bold=True)
+
+    body_y = y + ORION_SUMMARY_PAD_TOP + ORION_SUMMARY_METRIC_H + ORION_SUMMARY_METRIC_BODY_GAP
+    body_h = h - (ORION_SUMMARY_PAD_TOP + ORION_SUMMARY_METRIC_H + ORION_SUMMARY_METRIC_BODY_GAP) - ORION_SUMMARY_PAD_BOTTOM
+    body_box = textbox(slide, Emu(x + pad_x), Emu(body_y), Emu(inner_w), Emu(body_h))
+    btf = body_box.text_frame
+    btf.word_wrap = True
+    btf.margin_top = 0
+    btf.margin_bottom = 0
+    bp = btf.paragraphs[0]
+    bp.line_spacing = 1.15
+    _run(bp, truncate(str(oi.get("summaryLine") or ""), 72), FS_ORION_BODY, NEUTRAL_DARK)
+
+
+def _orion_query_chips(slide, layout: dict[str, int], oi: dict) -> int:
+    x, w = layout["left_x"], layout["left_w"]
+    y = layout["query_title_y"]
+    tb = textbox(slide, Emu(x), Emu(y), Emu(w), Emu(ORION_QUERY_TITLE_H))
+    _run(tb.text_frame.paragraphs[0], str(oi.get("queriesTitle") or ""), FS_ORION_CHIP_TITLE, NEUTRAL_DARK, bold=True)
+
+    queries = list(oi.get("queries") or [])[:4]
+    if not queries:
+        return y + ORION_QUERY_TITLE_H + ORION_TITLE_CHIP_GAP
+    chip_y = y + ORION_QUERY_TITLE_H + ORION_TITLE_CHIP_GAP
+    gap = ORION_CHIP_GAP
+    cols = 2
+    chip_w = (w - gap) // cols
+    pad_x = ORION_CHIP_PAD_X
+    icon_w = ORION_CHIP_ICON_W
+    text_w = max(1, chip_w - (pad_x + icon_w + ORION_CHIP_TEXT_GAP + pad_x))
+    # Content-driven chip height with a conservative range.
+    line_heights = [
+        int(text_block_height([truncate(str(q), 120)], FS_ORION_CHIP, Emu(text_w), space_after_pt=0.0, pad_pt=5.0))
+        for q in queries
+    ]
+    chip_h = max(ORION_CHIP_H, min(max(line_heights) + 30000, ORION_CHIP_H + 260000))
+    rendered_bottom = chip_y
+    for idx, q in enumerate(queries):
+        row, col = divmod(idx, cols)
+        cx = x + col * (chip_w + gap)
+        cy = chip_y + row * (chip_h + gap)
+        chip = slide.shapes.add_shape(ROUNDED_RECT, Emu(cx), Emu(cy), Emu(chip_w), Emu(chip_h))
+        chip.fill.solid()
+        chip.fill.fore_color.rgb = WHITE
+        chip.line.color.rgb = NEUTRAL_LINE
+        chip.line.width = Pt(0.5)
+        icon = textbox(slide, Emu(cx + pad_x), Emu(cy + (chip_h - icon_w) // 2), Emu(icon_w), Emu(icon_w))
+        itf = icon.text_frame
+        itf.margin_top = 0
+        itf.margin_bottom = 0
+        ip = itf.paragraphs[0]
+        ip.alignment = PP_ALIGN.CENTER
+        _run(ip, "⌕", FS_ORION_CHIP, ACCENT)
+        text_x = cx + pad_x + icon_w + ORION_CHIP_TEXT_GAP
+        qbox = textbox(slide, Emu(text_x), Emu(cy), Emu(text_w), Emu(chip_h))
+        qtf = qbox.text_frame
+        qtf.word_wrap = True
+        qtf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        qtf.margin_left = 0
+        qtf.margin_right = 0
+        qtf.margin_top = 0
+        qtf.margin_bottom = 0
+        qp = qtf.paragraphs[0]
+        qp.line_spacing = ORION_CHIP_LINE_SPACING
+        _run(qp, truncate(q, 120), FS_ORION_CHIP, NEUTRAL_DARK)
+        rendered_bottom = max(rendered_bottom, cy + chip_h)
+    return rendered_bottom
+
+
+def _orion_explainer_box(slide, layout: dict[str, int], oi: dict, start_y: int) -> int:
+    x, w = layout["left_x"], layout["left_w"]
+    y = start_y + ORION_QUERY_GAP
+    max_h = max(360000, layout["content_bottom"] - y)
+    title_h = int(text_block_height([str(oi.get("whyTitle") or "")], FS_ORION_WHY_TITLE, Emu(w - 2 * ORION_EXPLAINER_PAD_X), space_after_pt=1.0, pad_pt=4.0))
+    body_h = int(text_block_height([str(oi.get("whyBody") or "")], FS_ORION_BODY, Emu(w - 2 * ORION_EXPLAINER_PAD_X), space_after_pt=1.0, pad_pt=6.0))
+    desired_h = title_h + body_h + ORION_EXPLAINER_PAD_TOP + ORION_EXPLAINER_PAD_BOTTOM + 40000
+    h = max(360000, min(desired_h, min(ORION_EXPLAINER_H + 220000, max_h)))
+    box = slide.shapes.add_shape(ROUNDED_RECT, Emu(x), Emu(y), Emu(w), Emu(h))
+    box.fill.solid()
+    box.fill.fore_color.rgb = BG_PANEL
+    box.line.fill.background()
+    pad_x = ORION_EXPLAINER_PAD_X
+    inner = textbox(
+        slide,
+        Emu(x + pad_x),
+        Emu(y + ORION_EXPLAINER_PAD_TOP),
+        Emu(w - 2 * pad_x),
+        Emu(h - ORION_EXPLAINER_PAD_TOP - ORION_EXPLAINER_PAD_BOTTOM),
+    )
+    tf = inner.text_frame
+    tf.word_wrap = True
+    tf.margin_top = 0
+    tf.margin_bottom = 0
+    _run(tf.paragraphs[0], str(oi.get("whyTitle") or ""), FS_ORION_WHY_TITLE, NEUTRAL_DARK, bold=True)
+    body_p = tf.add_paragraph()
+    body_p.line_spacing = ORION_EXPLAINER_BODY_LINE_SPACING
+    body_p.space_before = Pt(4)
+    _run(body_p, truncate(str(oi.get("whyBody") or ""), 240), FS_ORION_BODY, NEUTRAL_GRAY)
+    return y + h
+
+
+def _orion_screenshot_plan(layout: dict[str, int], oi: dict) -> dict[str, int | list]:
+    """Content-driven outer frame — union of internal bands + explicit outer padding."""
+    panel_x = layout["right_x"]
+    panel_w = layout["right_w"]
+    panel_y = layout["panel_y"]
+    footer_limit = layout["panel_max_bottom"]
+
+    side = ORION_PANEL_SIDE_PAD
+    top = ORION_PANEL_TOP_PAD
+    inner_x = panel_x + side
+    inner_w = max(1, panel_w - 2 * side)
+
+    search_y = panel_y + top
+    search_h = ORION_SEARCH_BAND_H
+    tabs_y = search_y + search_h + ORION_TABS_GAP
+    tabs_h = ORION_TABS_BAND_H
+    title_y = tabs_y + tabs_h + ORION_TITLE_GAP
+    title_h = ORION_TITLE_BAND_H
+    grid_y = title_y + title_h + ORION_GRID_TOP_GAP
+
+    items = list(oi.get("gridItems") or [])[:ORION_MAX_GRID]
+    grid_limit_y = footer_limit - ORION_PANEL_BOTTOM_PAD - 110000
+    avail_h = max(1, grid_limit_y - grid_y)
+    cols, rows, cell_w, cell_h, gap = _orion_grid_geometry(inner_w, avail_h, len(items))
+    slots = min(len(items), cols * rows, ORION_MAX_GRID)
+    rows_used = 0 if slots <= 0 else (slots - 1) // cols + 1
+
+    badge_size = ORION_BADGE_SIZE
+    badge_y = search_y + (search_h - badge_size) // 2
+    search_x = inner_x + badge_size + 50000
+    search_w = inner_w - badge_size - 50000
+
+    tab_widths = (210000, 380000, 210000, 210000)
+    tab_gap = 35000
+    tabs_right = inner_x + sum(tab_widths) + tab_gap * (len(tab_widths) - 1)
+    tabs_right = min(inner_x + inner_w, tabs_right)
+
+    ring_out = 3500 + ORION_HIGHLIGHT_RING_PAD
+    content_boxes: list[dict[str, int]] = [
+        {"x": inner_x, "y": badge_y, "right": inner_x + badge_size, "bottom": badge_y + badge_size},
+        {"x": search_x, "y": search_y, "right": search_x + search_w, "bottom": search_y + search_h},
+        {"x": inner_x, "y": tabs_y, "right": tabs_right, "bottom": tabs_y + tabs_h},
+        {"x": inner_x, "y": title_y, "right": inner_x + inner_w, "bottom": title_y + title_h},
+    ]
+    for idx in range(slots):
+        row, col = divmod(idx, cols)
+        cx = inner_x + col * (cell_w + gap)
+        cy = grid_y + row * (cell_h + gap)
+        item = items[idx]
+        highlight = bool(item.get("highlight"))
+        badge_extra = ORION_HIGHLIGHT_BADGE + 3000 if highlight else 0
+        content_boxes.append(
+            {
+                "x": cx - ring_out,
+                "y": cy - ring_out,
+                "right": cx + cell_w + ring_out,
+                "bottom": cy + cell_h + ring_out + badge_extra,
+            }
+        )
+
+    min_x = min(b["x"] for b in content_boxes)
+    min_y = min(b["y"] for b in content_boxes)
+    max_x = max(b["right"] for b in content_boxes)
+    max_y = max(b["bottom"] for b in content_boxes)
+
+    out_l = out_t = out_r = 100000
+    out_b = 120000
+    frame_x = min_x - out_l
+    frame_y = min_y - out_t
+    frame_right = max_x + out_r
+    frame_bottom = max_y + out_b
+    if frame_bottom > footer_limit:
+        frame_bottom = footer_limit
+    frame_w = frame_right - frame_x
+    frame_h = frame_bottom - frame_y
+
+    grid_bottom = max_y if slots > 0 else grid_y
+
+    return {
+        "frame_x": frame_x,
+        "frame_y": frame_y,
+        "frame_w": frame_w,
+        "frame_h": frame_h,
+        "panel_x": frame_x,
+        "panel_y": frame_y,
+        "panel_w": frame_w,
+        "panel_h": frame_h,
+        "panel_bottom": frame_bottom,
+        "inner_x": inner_x,
+        "inner_w": inner_w,
+        "search_y": search_y,
+        "search_h": search_h,
+        "search_x": search_x,
+        "search_w": search_w,
+        "tabs_y": tabs_y,
+        "tabs_h": tabs_h,
+        "title_y": title_y,
+        "title_h": title_h,
+        "grid_y": grid_y,
+        "grid_bottom": grid_bottom,
+        "cols": cols,
+        "rows": rows,
+        "rows_used": rows_used,
+        "cell_w": cell_w,
+        "cell_h": cell_h,
+        "gap": gap,
+        "slots": slots,
+        "items": items,
+        "content_left": min_x,
+        "content_right": max_x,
+        "content_top": min_y,
+        "content_bottom": max_y,
+    }
+
+
+def _orion_centered_input_text(slide, x: int, y: int, w: int, h: int, text: str, size: int, color: RGBColor) -> None:
+    box = textbox(slide, Emu(x), Emu(y), Emu(w), Emu(h))
+    tf = box.text_frame
+    tf.word_wrap = False
+    tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    tf.margin_top = 0
+    tf.margin_bottom = 0
+    _run(tf.paragraphs[0], text, size, color)
+
+
+def _orion_search_tabs(slide, x: int, y: int, w: int, h: int, tabs: list[str], active_idx: int = 1) -> None:
+    shown = [tabs[0], tabs[1], tabs[2], tabs[3]] if len(tabs) >= 4 else tabs[:4]
+    widths = (210000, 380000, 210000, 210000)
+    gap = 35000
+    cx = x
+    for i, tab in enumerate(shown):
+        tw = widths[i] if i < len(widths) else 210000
+        tb = textbox(slide, Emu(cx), Emu(y), Emu(tw), Emu(h))
+        tf = tb.text_frame
+        tf.word_wrap = False
+        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        tf.margin_left = 0
+        tf.margin_right = 0
+        p = tf.paragraphs[0]
+        idx = tabs.index(tab) if tab in tabs else i
+        color = NEUTRAL_DARK if idx == active_idx else NEUTRAL_GRAY
+        _run(p, tab, FS_ORION_TAB, color, bold=(idx == active_idx))
+        cx += tw + gap
+        if cx > x + w - 60000:
+            break
+
+
+def _orion_grid_geometry(inner_w: int, inner_h: int, item_count: int) -> tuple[int, int, int, int, int]:
+    """Prefer 3×3, degrade to 2×3 → 2×2."""
+    n = min(max(item_count, 1), ORION_MAX_GRID)
+    for cols, rows in ((3, 3), (2, 3), (2, 2)):
+        if cols * rows < min(n, 4):
+            continue
+        gap = ORION_GRID_GAP
+        cell_w = (inner_w - gap * (cols - 1)) // cols
+        cell_h = (inner_h - gap * (rows - 1)) // rows
+        if cell_w >= ORION_MIN_CELL and cell_h >= ORION_MIN_CELL:
+            return cols, rows, cell_w, cell_h, gap
+    gap = ORION_GRID_GAP
+    cols, rows = 2, 2
+    cell_w = (inner_w - gap) // cols
+    cell_h = (inner_h - gap) // rows
+    return cols, rows, cell_w, cell_h, gap
+
+
+def _orion_thumb_in_cell(
+    slide,
+    item: dict[str, Any],
+    cell_x: int,
+    cell_y: int,
+    cell_w: int,
+    cell_h: int,
+    *,
+    highlight: bool = False,
+) -> bool:
+    import io
+
+    pad = 4000
+    ix, iy, iw, ih = cell_x + pad, cell_y + pad, cell_w - 2 * pad, cell_h - 2 * pad
+    raw = _image_bytes_from_item(item)
+    if not raw:
+        return False
+    try:
+        pic = _fit_picture_contain(slide, io.BytesIO(raw), ix, iy, iw, ih)
+        if int(pic.width) <= 0 or int(pic.height) <= 0:
+            return False
+    except Exception:
+        return False
+
+    if highlight:
+        ring = slide.shapes.add_shape(ROUNDED_RECT, Emu(ix - 3500), Emu(iy - 3500), Emu(iw + 7000), Emu(ih + 7000))
+        ring.fill.background()
+        ring.line.color.rgb = DANGER
+        ring.line.width = Pt(0.75)
+        bs = ORION_HIGHLIGHT_BADGE
+        badge = slide.shapes.add_shape(1, Emu(ix + 3000), Emu(iy + 3000), Emu(bs), Emu(bs))
+        badge.fill.solid()
+        badge.fill.fore_color.rgb = DANGER
+        badge.line.fill.background()
+        btf = badge.text_frame
+        btf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        bp = btf.paragraphs[0]
+        bp.alignment = PP_ALIGN.CENTER
+        _run(bp, "×", 7, WHITE, bold=True)
+    return True
+
+
+def _orion_synthetic_image_panel(
+    slide,
+    layout: dict[str, int],
+    oi: dict,
+    *,
+    layout_warnings: list[str] | None = None,
+) -> None:
+    plan = _orion_screenshot_plan(layout, oi)
+    fx = int(plan["frame_x"])
+    fy = int(plan["frame_y"])
+    fw = int(plan["frame_w"])
+    fh = int(plan["frame_h"])
+    _orion_screenshot_frame(slide, fx, fy, fw, fh)
+
+    inner_x = int(plan["inner_x"])
+    inner_w = int(plan["inner_w"])
+    search_y = int(plan["search_y"])
+    search_h = int(plan["search_h"])
+    search_x = int(plan["search_x"])
+    search_w = int(plan["search_w"])
+
+    badge_size = ORION_BADGE_SIZE
+    badge_y = search_y + (search_h - badge_size) // 2
+    _orion_yandex_badge(slide, inner_x, badge_y, badge_size)
+    bar = slide.shapes.add_shape(ROUNDED_RECT, Emu(search_x), Emu(search_y), Emu(search_w), Emu(search_h))
+    bar.fill.solid()
+    bar.fill.fore_color.rgb = WHITE
+    bar.line.color.rgb = NEUTRAL_LINE
+    bar.line.width = Pt(0.5)
+
+    close_w = 55000
+    inp_pad = 60000
+    query_text = truncate(str(oi.get("primaryQuery") or ""), 28)
+    _orion_centered_input_text(
+        slide,
+        search_x + inp_pad,
+        search_y,
+        search_w - inp_pad - close_w - 20000,
+        search_h,
+        query_text,
+        FS_ORION_INPUT,
+        NEUTRAL_DARK,
+    )
+    _orion_centered_input_text(
+        slide,
+        search_x + search_w - close_w,
+        search_y,
+        close_w,
+        search_h,
+        "×",
+        FS_ORION_TAB + 1,
+        NEUTRAL_GRAY,
+    )
+
+    _orion_search_tabs(
+        slide, inner_x, int(plan["tabs_y"]), inner_w, int(plan["tabs_h"]),
+        list(oi.get("tabs") or []), active_idx=1,
+    )
+    lbl = textbox(slide, Emu(inner_x), Emu(int(plan["title_y"])), Emu(inner_w), Emu(int(plan["title_h"])))
+    ltf = lbl.text_frame
+    ltf.vertical_anchor = MSO_ANCHOR.MIDDLE
+    ltf.margin_top = 0
+    ltf.margin_bottom = 0
+    _run(ltf.paragraphs[0], str(oi.get("gridTitle") or ""), FS_ORION_LABEL, NEUTRAL_DARK, bold=True)
+
+    grid_top = int(plan["grid_y"])
+    cols = int(plan["cols"])
+    cell_w = int(plan["cell_w"])
+    cell_h = int(plan["cell_h"])
+    gap = int(plan["gap"])
+    slots = int(plan["slots"])
+    items = list(plan["items"])
+    hi_used = 0
+    for idx in range(slots):
+        row, col = divmod(idx, cols)
+        cx = inner_x + col * (cell_w + gap)
+        cy = grid_top + row * (cell_h + gap)
+        item = items[idx]
+        highlight = bool(item.get("highlight")) and hi_used < ORION_MAX_HIGHLIGHTS
+        if highlight:
+            hi_used += 1
+        _orion_thumb_in_cell(slide, item, cx, cy, cell_w, cell_h, highlight=highlight)
+
+
+def orion_images_slide(
+    slide,
+    blk: dict[str, Any],
+    vm: dict[str, Any],
+    ctx,
+    *,
+    layout_warnings: list[str] | None = None,
+) -> None:
+    """Full ORION-style slide 13 — compact fixed-grid analytical layout."""
+    L = vm.get("labels") or {}
+    oi = dict(blk.get("orionImages") or {})
+    brand = str(getattr(ctx, "brand", None) or vm.get("meta", {}).get("brand", ""))
+    layout = _orion_compact_layout()
+
+    set_bg(slide, BG_LIGHT)
+    footer(slide, brand, getattr(ctx, "page", None), getattr(ctx, "total", None))
+
+    _orion_header(slide, oi, brand, layout, layout_warnings)
+
+    if not oi.get("gridItems"):
+        nd = textbox(slide, MARGIN, Emu(layout["content_y"] + 120000), CONTENT_W, Emu(400000))
+        _run(nd.text_frame.paragraphs[0], str(oi.get("noData") or L.get("nd_no_relevant_images", "")), FS_BODY, NEUTRAL_GRAY, italic=True)
+        return
+
+    _orion_summary_box(slide, layout, oi)
+    chips_bottom = _orion_query_chips(slide, layout, oi)
+    _orion_explainer_box(slide, layout, oi, chips_bottom)
+    _orion_synthetic_image_panel(slide, layout, oi, layout_warnings=layout_warnings)

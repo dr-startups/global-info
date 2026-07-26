@@ -1,0 +1,39 @@
+{
+  "inspectorVersion": "first36-geometry-v2",
+  "overlaps": [],
+  "overflow": [],
+  "clipping": [],
+  "blank": [],
+  "missingAssets": [
+    {
+      "page": 10,
+      "code": "missing-asset",
+      "severity": "BLOCKER",
+      "detail": "required visual slide has no assetRefs"
+    }
+  ],
+  "emptyContent": [],
+  "emptyPages": [],
+  "shapes": [],
+  "pages": [
+    {
+      "page": 10,
+      "issues": [
+        {
+          "page": 10,
+          "code": "missing-asset",
+          "severity": "BLOCKER",
+          "detail": "required visual slide has no assetRefs"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "issueCount": 1,
+    "severity": "BLOCKER",
+    "pageCount": 36,
+    "bySeverity": { "PASS": 0, "WARNING": 0, "CRITICAL": 0, "BLOCKER": 1 }
+  },
+  "inspectorError": null,
+  "source": { "fixture": "missing-image.json" }
+}

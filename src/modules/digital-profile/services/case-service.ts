@@ -232,20 +232,29 @@ export async function createCase(
   throw new Error("Failed to create case");
 }
 
-export async function listCases(
-  params: ListDigitalProfileCasesQuery,
-  opts: { restrictToCaseIds?: string[] | null } = {}
-): Promise<PaginatedCases> {
-  const { page, pageSize, status, q, includeDeleted } = params;
+export interface ListCasesOptions {
+  restrictToCaseIds?: string[] | null;
+  /**
+   * Показать кейсы-фикстуры смоков. По умолчанию нет: список принадлежит
+   * оператору, а фикстуры — это следы прогонов смоков (шаг 13, B6).
+   */
+  includeFixtures?: boolean;
+}
 
-  // CLIENT_VIEWER (or any restricted user) only ever sees granted cases. An
-  // empty array means "no accessible cases" -> empty page.
-  if (opts.restrictToCaseIds && opts.restrictToCaseIds.length === 0) {
-    return { items: [], total: 0, page, pageSize };
-  }
-
-  const where: Prisma.CaseWhereInput = {
+/**
+ * Условие выборки для списка кейсов.
+ *
+ * Вынесено отдельно, потому что здесь решается, что оператор видит, а что нет,
+ * и это решение проверяется тестом, а не живой базой.
+ */
+export function caseListWhere(
+  params: Partial<Pick<ListDigitalProfileCasesQuery, "status" | "q" | "includeDeleted">>,
+  opts: ListCasesOptions = {}
+): Prisma.CaseWhereInput {
+  const { status, q, includeDeleted } = params;
+  return {
     ...(includeDeleted ? {} : { deletedAt: null }),
+    ...(opts.includeFixtures ? {} : { isFixture: false }),
     ...(opts.restrictToCaseIds ? { id: { in: opts.restrictToCaseIds } } : {}),
     ...(status ? { status } : {}),
     ...(q
@@ -262,6 +271,21 @@ export async function listCases(
         }
       : {}),
   };
+}
+
+export async function listCases(
+  params: ListDigitalProfileCasesQuery,
+  opts: ListCasesOptions = {}
+): Promise<PaginatedCases> {
+  const { page, pageSize } = params;
+
+  // CLIENT_VIEWER (or any restricted user) only ever sees granted cases. An
+  // empty array means "no accessible cases" -> empty page.
+  if (opts.restrictToCaseIds && opts.restrictToCaseIds.length === 0) {
+    return { items: [], total: 0, page, pageSize };
+  }
+
+  const where = caseListWhere(params, opts);
 
   const [rows, total] = await Promise.all([
     prisma.case.findMany({

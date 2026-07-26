@@ -23,6 +23,13 @@ import {
 } from "./real/real-orion-search-profile-agent";
 import { RiskClassifierV1Agent } from "./real/risk-classifier-agent";
 import { AuditSummaryBuilderAgent } from "./real/audit-summary-agent";
+import {
+  ArsenkinAiSearchRealAgent,
+  ArsenkinPaaRealAgent,
+  ArsenkinSearchTopRealAgent,
+  ArsenkinSuggestionsRealAgent,
+  ArsenkinUrlAuditRealAgent,
+} from "./real/real-arsenkin-agents";
 
 const AGENT_LIST: CaseAgent[] = [
   new MockYandexSearchAgent(),
@@ -39,6 +46,11 @@ const AGENT_LIST: CaseAgent[] = [
   new RealOrionSearchProfileAgent(),
   new RealOrionGoogleSurfacesAgent(),
   new RealOrionUaeInternationalAgent(),
+  new ArsenkinSearchTopRealAgent(),
+  new ArsenkinSuggestionsRealAgent(),
+  new ArsenkinPaaRealAgent(),
+  new ArsenkinAiSearchRealAgent(),
+  new ArsenkinUrlAuditRealAgent(),
   new RiskClassifierV1Agent(),
   new AuditSummaryBuilderAgent(),
 ];
@@ -70,7 +82,19 @@ export const REAL_SAFE_AUDIT_ORDER: string[] = [
 ];
 
 /** Back-compat alias used by the orchestrator/full-audit service. */
-export const FULL_AUDIT_ORDER = MOCK_FULL_AUDIT_ORDER;
+export const FULL_AUDIT_ORDER: string[] = [
+  "REAL_YANDEX_SEARCH",
+  "REAL_GOOGLE_SEARCH",
+  "REAL_WIKIPEDIA",
+  "REAL_ORION_SEARCH_PROFILE",
+  "REAL_ORION_UAE_INTERNATIONAL",
+  "REAL_SEARCH_SURFACES",
+  "REAL_ORION_GOOGLE_SURFACES",
+  "AI_PROFILE",
+  "COMPLIANCE_DATABASE",
+  "RISK_CLASSIFIER_V1",
+  "AUDIT_SUMMARY_BUILDER",
+];
 
 export function getAgent(name: string): CaseAgent | undefined {
   return AGENTS.get(name);

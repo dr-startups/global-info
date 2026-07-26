@@ -1,0 +1,39 @@
+{
+  "inspectorVersion": "first36-geometry-v2",
+  "overlaps": [
+    {
+      "page": 14,
+      "code": "text-text-collision",
+      "severity": "CRITICAL",
+      "detail": "text-text collision ratio=0.45 't1' vs 't2'"
+    }
+  ],
+  "overflow": [],
+  "clipping": [],
+  "blank": [],
+  "missingAssets": [],
+  "emptyContent": [],
+  "emptyPages": [],
+  "shapes": [],
+  "pages": [
+    {
+      "page": 14,
+      "issues": [
+        {
+          "page": 14,
+          "code": "text-text-collision",
+          "severity": "CRITICAL",
+          "detail": "text-text collision ratio=0.45 't1' vs 't2'"
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "issueCount": 1,
+    "severity": "CRITICAL",
+    "pageCount": 36,
+    "bySeverity": { "PASS": 0, "WARNING": 0, "CRITICAL": 1, "BLOCKER": 0 }
+  },
+  "inspectorError": null,
+  "source": { "fixture": "overlap.json" }
+}

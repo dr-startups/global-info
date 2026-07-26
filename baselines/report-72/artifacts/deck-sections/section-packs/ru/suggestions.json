@@ -1,0 +1,174 @@
+{
+  "schemaVersion": "section-pack-v3",
+  "sectionId": "RU_PROFILE",
+  "sectionType": "RU_PROFILE",
+  "fragmentKey": "RU_SUGGESTIONS",
+  "caseId": "cmreamy2t0002o30f29urzcog",
+  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "reportRunId": "orion-canary-1783980828528",
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "contentVersion": "deck-sections-v14",
+  "promptVersion": "ru-suggestions-analysis-v1",
+  "contentHash": "sha256:83ce8462482ec5370b153a31b0ed07aec1568a35b0b93b24e7e682fc23f71a68",
+  "inputHash": "sha256:2d79ea88484e60a88698a3c89beba90074be534aad08db544c88b869baa926de:67ef49a214eab6e7",
+  "generatedAt": "2026-07-17T09:49:29.037Z",
+  "required": true,
+  "status": "READY",
+  "sourceFindingIds": [],
+  "evidenceRefs": [
+    "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+    "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+    "inventory:serp-obs-cmrjsczmj0095vd9gjvs7w1ii",
+    "inventory:serp-obs-cmrjsczmq0099vd9g5nz2mbuv",
+    "inventory:serp-obs-cmrjsczmw009dvd9gbykntjox",
+    "inventory:serp-obs-cmrjsczn3009hvd9gevj3bjc3",
+    "inventory:serp-obs-cmrjsczna009lvd9gy68cuiq3",
+    "inventory:serp-obs-cmrjsczng009pvd9gpbasmek8",
+    "inventory:serp-obs-cmrjsczke007tvd9gxodqlyme",
+    "inventory:serp-obs-cmrjsczkk007xvd9gwpqnt20i",
+    "inventory:serp-obs-cmrjsczkq0081vd9gj44sxc07",
+    "inventory:serp-obs-cmrjsczkw0085vd9gnw4nyux9",
+    "inventory:serp-obs-cmrjsczl20089vd9gpu8yp8qu",
+    "inventory:serp-obs-cmrjsczl9008dvd9g9sk1g955",
+    "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+    "inventory:serp-obs-cmrjsczlm008lvd9gz8ojdis0",
+    "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+    "inventory:serp-obs-cmrjsczlz008tvd9g23ztx8xf"
+  ],
+  "inputs": {
+    "findingIds": [],
+    "evidenceRefs": [
+      "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+      "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+      "inventory:serp-obs-cmrjsczmj0095vd9gjvs7w1ii",
+      "inventory:serp-obs-cmrjsczmq0099vd9g5nz2mbuv",
+      "inventory:serp-obs-cmrjsczmw009dvd9gbykntjox",
+      "inventory:serp-obs-cmrjsczn3009hvd9gevj3bjc3",
+      "inventory:serp-obs-cmrjsczna009lvd9gy68cuiq3",
+      "inventory:serp-obs-cmrjsczng009pvd9gpbasmek8",
+      "inventory:serp-obs-cmrjsczke007tvd9gxodqlyme",
+      "inventory:serp-obs-cmrjsczkk007xvd9gwpqnt20i",
+      "inventory:serp-obs-cmrjsczkq0081vd9gj44sxc07",
+      "inventory:serp-obs-cmrjsczkw0085vd9gnw4nyux9",
+      "inventory:serp-obs-cmrjsczl20089vd9gpu8yp8qu",
+      "inventory:serp-obs-cmrjsczl9008dvd9g9sk1g955",
+      "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+      "inventory:serp-obs-cmrjsczlm008lvd9gz8ojdis0",
+      "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+      "inventory:serp-obs-cmrjsczlz008tvd9g23ztx8xf"
+    ],
+    "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
+  },
+  "slides": [
+    {
+      "schemaVersion": "slide-content-v1",
+      "slideId": "p11_ru_suggestions_yandex",
+      "baseSlotId": "p11_ru_suggestions_yandex",
+      "sectionId": "RU_PROFILE",
+      "isContinuation": false,
+      "continuationOf": null,
+      "continuationIndex": null,
+      "templateId": "suggestions",
+      "title": "Россия — подсказки Яндекса",
+      "content": {
+        "bullets": [],
+        "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
+        "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+        "whatToCheck": "Мониторить изменения выдачи.",
+        "statusNote": "Статус: по данной поверхности выводов о рисках нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+      },
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczke007tvd9gxodqlyme",
+        "inventory:serp-obs-cmrjsczkk007xvd9gwpqnt20i",
+        "inventory:serp-obs-cmrjsczkq0081vd9gj44sxc07",
+        "inventory:serp-obs-cmrjsczkw0085vd9gnw4nyux9",
+        "inventory:serp-obs-cmrjsczl20089vd9gpu8yp8qu",
+        "inventory:serp-obs-cmrjsczl9008dvd9g9sk1g955",
+        "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+        "inventory:serp-obs-cmrjsczlm008lvd9gz8ojdis0",
+        "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+        "inventory:serp-obs-cmrjsczlz008tvd9g23ztx8xf"
+      ],
+      "findingIds": [],
+      "metrics": {
+        "items": 10
+      },
+      "visualAssetRefs": [
+        "ru_suggestions_yandex"
+      ]
+    },
+    {
+      "schemaVersion": "slide-content-v1",
+      "slideId": "p12_ru_suggestions_google",
+      "baseSlotId": "p12_ru_suggestions_google",
+      "sectionId": "RU_PROFILE",
+      "isContinuation": false,
+      "continuationOf": null,
+      "continuationIndex": null,
+      "templateId": "suggestions",
+      "title": "Россия — подсказки Google",
+      "content": {
+        "bullets": [],
+        "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
+        "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+        "whatToCheck": "Мониторить изменения выдачи.",
+        "statusNote": "Статус: по данной поверхности выводов о рисках нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+      },
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+        "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+        "inventory:serp-obs-cmrjsczmj0095vd9gjvs7w1ii",
+        "inventory:serp-obs-cmrjsczmq0099vd9g5nz2mbuv",
+        "inventory:serp-obs-cmrjsczmw009dvd9gbykntjox",
+        "inventory:serp-obs-cmrjsczn3009hvd9gevj3bjc3",
+        "inventory:serp-obs-cmrjsczna009lvd9gy68cuiq3",
+        "inventory:serp-obs-cmrjsczng009pvd9gpbasmek8"
+      ],
+      "findingIds": [],
+      "metrics": {
+        "items": 8
+      },
+      "visualAssetRefs": [
+        "ru_suggestions_google"
+      ]
+    }
+  ],
+  "metrics": {
+    "datasetCount": 18,
+    "displayedCount": 18,
+    "adverseDatasetCount": 0,
+    "adverseDisplayedCount": 0
+  },
+  "provenance": {
+    "providers": [],
+    "reportRunIds": [
+      "orion-canary-1783980828528"
+    ],
+    "evidenceRefs": [
+      "inventory:serp-obs-cmrjsczke007tvd9gxodqlyme",
+      "inventory:serp-obs-cmrjsczkk007xvd9gwpqnt20i",
+      "inventory:serp-obs-cmrjsczkq0081vd9gj44sxc07",
+      "inventory:serp-obs-cmrjsczkw0085vd9gnw4nyux9",
+      "inventory:serp-obs-cmrjsczl20089vd9gpu8yp8qu",
+      "inventory:serp-obs-cmrjsczl9008dvd9g9sk1g955",
+      "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+      "inventory:serp-obs-cmrjsczlm008lvd9gz8ojdis0",
+      "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+      "inventory:serp-obs-cmrjsczlz008tvd9g23ztx8xf",
+      "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+      "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+      "inventory:serp-obs-cmrjsczmj0095vd9gjvs7w1ii",
+      "inventory:serp-obs-cmrjsczmq0099vd9g5nz2mbuv",
+      "inventory:serp-obs-cmrjsczmw009dvd9gbykntjox",
+      "inventory:serp-obs-cmrjsczn3009hvd9gevj3bjc3",
+      "inventory:serp-obs-cmrjsczna009lvd9gy68cuiq3",
+      "inventory:serp-obs-cmrjsczng009pvd9gpbasmek8"
+    ]
+  },
+  "validation": {
+    "passed": true,
+    "issues": []
+  }
+}

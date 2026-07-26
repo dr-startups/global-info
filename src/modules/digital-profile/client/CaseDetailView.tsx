@@ -1,24 +1,31 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   DigitalProfileApiError,
-  generateReport,
   getCase,
   getEvidence,
-  getReport,
   listAgentRuns,
   listAgents,
   listSearchSurfaces,
-  renderReport,
   runFullAudit,
+  prepareOrionGoldenArtifacts,
+  getOrionGoldenPrepareStatus,
+  startUnifiedOrionCollection,
+  recoverUnifiedOrionCollection,
+  rebuildUnifiedReport,
+  retryUnifiedGptCopy,
+  retryUnifiedEnrichmentSuggestionsTask,
+  getUnifiedOrionCollectionStatus,
   type AgentInfo,
   type AgentRun,
   type CaseDetail,
   type CaseEvidence,
-  type ReportVersion,
+  type FullAuditRunSummaryItem,
+  type OrionGoldenPrepareSummary,
   type SearchSurfaceItem,
+  type UnifiedCollectionJobStatus,
 } from "./api";
 import {
   Card,
@@ -26,11 +33,22 @@ import {
   ErrorBox,
   Loading,
   Notice,
+  SoftRenderBoundary,
   SuccessBox,
 } from "./components";
 import { CaseHeader } from "./CaseHeader";
 import { CaseTabs } from "./CaseTabs";
+import { SubjectProfilePanel } from "./SubjectProfilePanel";
+import { ReportQualityPanel } from "./ReportQualityPanel";
 import { useDigitalProfileI18n } from "./i18n-provider";
+import { useDpAuth } from "./auth-provider";
+import {
+  buildSuggestionsTargetedRetryBody,
+  createSingleFlightGuard,
+  isAcceptedSuggestionsRetryResult,
+  isSuggestionsTargetedRetryState,
+  shouldBlockFullAuditCta,
+} from "./unified-suggestions-retry-ui";
 
 type LoadState =
   | { kind: "loading" }
@@ -39,32 +57,59 @@ type LoadState =
   | { kind: "error"; message: string }
   | { kind: "ready"; caseDetail: CaseDetail; evidence: CaseEvidence };
 
-export function CaseDetailView({ caseId }: { caseId: string }) {
+export function CaseDetailView({
+  caseId,
+  legacyReportUi = false,
+  manualAgentRun = false,
+}: {
+  caseId: string;
+  /** REMEDIATION §8.1 — legacy v1/v2/storyboard/Golden prepare panels. */
+  legacyReportUi?: boolean;
+  /** Режим отладки: ручной запуск отдельного агента (шаг 11.2, пункт 2). */
+  manualAgentRun?: boolean;
+}) {
   const { t, tError } = useDigitalProfileI18n();
+  const { user, can } = useDpAuth();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
-  const [report, setReport] = useState<ReportVersion | null>(null);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [surfaces, setSurfaces] = useState<SearchSurfaceItem[]>([]);
-  const [generating, setGenerating] = useState(false);
   const [auditing, setAuditing] = useState(false);
+  const [recovering, setRecovering] = useState(false);
+  const [rebuilding, setRebuilding] = useState(false);
+  const [retryingGptCopy, setRetryingGptCopy] = useState(false);
+  const [unifiedJob, setUnifiedJob] = useState<UnifiedCollectionJobStatus | null>(null);
   const [banner, setBanner] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
+  const [prepareBusy, setPrepareBusy] = useState(false);
+  const [prepareStatus, setPrepareStatus] = useState<OrionGoldenPrepareSummary | null>(null);
+  const [lastFullAuditSummary, setLastFullAuditSummary] = useState<{
+    mode: "legacy_mock_first" | "real_first_with_fallback" | "real_only" | "mock_only";
+    items: FullAuditRunSummaryItem[];
+  } | null>(null);
+  const suggestionsRetryFlightRef = useRef(createSingleFlightGuard());
+  const fullAuditBlockedForTabs = useMemo(
+    () => shouldBlockFullAuditCta(unifiedJob) || auditing || recovering,
+    [unifiedJob, auditing, recovering]
+  );
 
   const loadAll = useCallback(async () => {
     setState({ kind: "loading" });
     try {
-      const [caseDetail, evidence, latestReport, agentList, runs, surfaceList] = await Promise.all([
-        getCase(caseId),
-        getEvidence(caseId),
-        getReport(caseId),
-        listAgents(caseId),
-        listAgentRuns(caseId),
-        listSearchSurfaces(caseId),
-      ]);
-      setReport(latestReport);
+      const [caseDetail, evidence, agentList, runs, surfaceList, prep, unified] =
+        await Promise.all([
+          getCase(caseId),
+          getEvidence(caseId),
+          listAgents(caseId),
+          listAgentRuns(caseId),
+          listSearchSurfaces(caseId),
+          getOrionGoldenPrepareStatus(caseId).catch(() => null),
+          getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null })),
+        ]);
       setAgents(agentList);
       setAgentRuns(runs);
       setSurfaces(surfaceList);
+      if (prep) setPrepareStatus(prep);
+      setUnifiedJob(unified.job);
       setState({ kind: "ready", caseDetail, evidence });
     } catch (err) {
       if (err instanceof DigitalProfileApiError) {
@@ -114,22 +159,390 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
     }
   }, [caseId]);
 
-  const handleRunAudit = useCallback(async () => {
-    if (auditing || generating) return;
+  const pollUnifiedUntilTerminal = useCallback(async () => {
+    for (let i = 0; i < 120; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const { job } = await getUnifiedOrionCollectionStatus(caseId);
+      if (!job) continue;
+      setUnifiedJob(job);
+      const terminal =
+        job.stage === "REPORT_READY" ||
+        job.stage === "COMPLETED_PARTIAL" ||
+        job.stage === "FAILED_TERMINAL" ||
+        job.stage === "FAILED_RETRYABLE" ||
+        job.stage === "CANCELLED" ||
+        job.status === "COMPLETED";
+      if (!terminal) continue;
+      await refreshAgents();
+      if (job.stage === "REPORT_READY") {
+        setBanner({ kind: "ok", text: t("agents.unifiedDone") });
+      } else if (job.stage === "COMPLETED_PARTIAL") {
+        setBanner({ kind: "ok", text: t("agents.unifiedPartial") });
+      } else {
+        setBanner({
+          kind: "error",
+          text: `${t("agents.unifiedFailed")} [${job.lastErrorCode ?? job.stage}] jobId=${job.jobId}${
+            job.lastError ? `: ${job.lastError}` : ""
+          }`,
+        });
+      }
+      return;
+    }
+  }, [caseId, refreshAgents, t]);
+
+  const handleRunUnifiedCollection = useCallback(async () => {
+    if (auditing || recovering) return;
+    if (isSuggestionsTargetedRetryState(unifiedJob)) {
+      setBanner({
+        kind: "error",
+        text: t("unified.blockedBySuggestions"),
+      });
+      return;
+    }
+    if (unifiedJob?.recoveryAllowed) {
+      setBanner({
+        kind: "error",
+        text: t("unified.blockedByRecoverable", { jobId: unifiedJob.jobId }),
+      });
+      return;
+    }
+    if (unifiedJob?.fullAuditBlocked || unifiedJob?.paidRecollectionRequired) {
+      setBanner({
+        kind: "error",
+        text: t("unified.blockedByPreserved"),
+      });
+      return;
+    }
     setAuditing(true);
     setBanner(null);
     try {
-      const result = await runFullAudit(caseId);
+      await startUnifiedOrionCollection(caseId);
+      await pollUnifiedUntilTerminal();
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setBanner({ kind: "error", text: tError(code, msg) });
+    } finally {
+      setAuditing(false);
+      const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
+      if (job) setUnifiedJob(job);
+    }
+  }, [
+    auditing,
+    recovering,
+    caseId,
+    pollUnifiedUntilTerminal,
+    tError,
+    unifiedJob,
+  ]);
+
+  const handlePaidRecollection = useCallback(async () => {
+    if (auditing || recovering) return;
+    const ok = window.confirm(t("unified.paidRecollectionConfirm"));
+    if (!ok) return;
+    setAuditing(true);
+    setBanner(null);
+    try {
+      await startUnifiedOrionCollection(caseId, { confirmPaidRecollection: true });
+      await pollUnifiedUntilTerminal();
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setBanner({ kind: "error", text: tError(code, msg) });
+    } finally {
+      setAuditing(false);
+      const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
+      if (job) setUnifiedJob(job);
+    }
+  }, [auditing, recovering, caseId, pollUnifiedUntilTerminal, tError]);
+
+  const handleRecoverUnifiedCollection = useCallback(async () => {
+    if (auditing || recovering) return;
+    if (isSuggestionsTargetedRetryState(unifiedJob)) {
+      setBanner({
+        kind: "error",
+        text: t("unified.recoveryHiddenBySuggestions"),
+      });
+      return;
+    }
+    const jobId = unifiedJob?.jobId;
+    if (!jobId || !unifiedJob?.recoveryAllowed) {
+      setBanner({
+        kind: "error",
+        text: t("unified.recoveryUnavailable", {
+          reason: unifiedJob?.recoveryBlockerReason ? ` (${unifiedJob.recoveryBlockerReason})` : "",
+        }),
+      });
+      return;
+    }
+    const renderResume =
+      unifiedJob.resumeCheckpoint === "RENDER" ||
+      unifiedJob.recoveryReason === "RENDER_RESUME" ||
+      unifiedJob.lastErrorCode === "RENDER_FAILED";
+    const assemblyResume =
+      unifiedJob.recoveryReason === "ASSEMBLY_RESUME" ||
+      unifiedJob.lastErrorCode === "ASSEMBLY_FAILED" ||
+      unifiedJob.lastErrorCode === "REQUIRED_SECTION_FAILED";
+    const ingestResume =
+      unifiedJob.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" ||
+      unifiedJob.recoveryReason === "ARSENKIN_INGEST_RESUME";
+    const ok = window.confirm(
+      renderResume
+        ? t("unified.confirmResumeRender")
+        : assemblyResume
+          ? t("unified.confirmResumeAssembly")
+          : ingestResume
+            ? t("unified.confirmResumeIngest")
+            : t("unified.confirmResumeArsenkin")
+    );
+    if (!ok) return;
+    setRecovering(true);
+    setBanner(null);
+    try {
+      const recovered = await recoverUnifiedOrionCollection(caseId, jobId);
+      setUnifiedJob((prev) =>
+        prev
+          ? {
+              ...prev,
+              jobId: recovered.jobId,
+              unifiedJobId: recovered.unifiedJobId,
+              stage: recovered.stage,
+              status: recovered.status,
+              baseReportRunId: recovered.baseReportRunId,
+            }
+          : prev
+      );
+      await pollUnifiedUntilTerminal();
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setBanner({ kind: "error", text: tError(code, msg) });
+    } finally {
+      setRecovering(false);
+      const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
+      if (job) setUnifiedJob(job);
+    }
+  }, [
+    auditing,
+    recovering,
+    caseId,
+    unifiedJob,
+    pollUnifiedUntilTerminal,
+    tError,
+  ]);
+
+  const handleRebuildReport = useCallback(async () => {
+    if (auditing || recovering || rebuilding || retryingGptCopy) return;
+    const jobId = unifiedJob?.unifiedJobId || unifiedJob?.jobId;
+    if (!jobId || !unifiedJob?.rebuildAllowed) {
+      setBanner({
+        kind: "error",
+        text: t("unified.rebuildUnavailable", {
+          reason: unifiedJob?.rebuildBlockerReason ? ` (${unifiedJob.rebuildBlockerReason})` : "",
+        }),
+      });
+      return;
+    }
+    const ok = window.confirm(t("unified.rebuildConfirm"));
+    if (!ok) return;
+    setRebuilding(true);
+    setBanner(null);
+    try {
+      const result = await rebuildUnifiedReport(caseId, jobId);
+      setUnifiedJob((prev) =>
+        prev
+          ? {
+              ...prev,
+              jobId: result.jobId,
+              unifiedJobId: result.unifiedJobId,
+              stage: result.stage,
+              status: result.status,
+            }
+          : prev
+      );
+      await pollUnifiedUntilTerminal();
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setBanner({ kind: "error", text: tError(code, msg) });
+    } finally {
+      setRebuilding(false);
+      const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
+      if (job) setUnifiedJob(job);
+    }
+  }, [
+    auditing,
+    recovering,
+    rebuilding,
+    retryingGptCopy,
+    caseId,
+    unifiedJob,
+    pollUnifiedUntilTerminal,
+    tError,
+  ]);
+
+  const handleRetryGptCopy = useCallback(async () => {
+    if (auditing || recovering || rebuilding || retryingGptCopy) return;
+    const jobId = unifiedJob?.unifiedJobId || unifiedJob?.jobId;
+    if (!jobId || !unifiedJob?.gptCopyRetryAllowed) {
+      setBanner({
+        kind: "error",
+        text: t("unified.gptRetryUnavailable", {
+          reason: unifiedJob?.gptCopyRetryBlockerReason
+            ? ` (${unifiedJob.gptCopyRetryBlockerReason})`
+            : "",
+        }),
+      });
+      return;
+    }
+    const ok = window.confirm(t("unified.gptRetryConfirm"));
+    if (!ok) return;
+    setRetryingGptCopy(true);
+    setBanner(null);
+    try {
+      const result = await retryUnifiedGptCopy(caseId, jobId);
+      setUnifiedJob((prev) =>
+        prev
+          ? {
+              ...prev,
+              jobId: result.jobId,
+              unifiedJobId: result.unifiedJobId,
+              stage: result.stage,
+              status: result.status,
+              resumeCheckpoint: result.resumeCheckpoint,
+            }
+          : prev
+      );
+      await pollUnifiedUntilTerminal();
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      setBanner({ kind: "error", text: tError(code, msg) });
+    } finally {
+      setRetryingGptCopy(false);
+      const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
+      if (job) setUnifiedJob(job);
+    }
+  }, [
+    auditing,
+    recovering,
+    rebuilding,
+    retryingGptCopy,
+    caseId,
+    unifiedJob,
+    pollUnifiedUntilTerminal,
+    tError,
+  ]);
+
+  const handleRetrySuggestions = useCallback(async () => {
+    if (auditing || recovering) return;
+    if (!suggestionsRetryFlightRef.current.tryEnter()) return;
+    const jobId = unifiedJob?.jobId;
+    const enrichmentRunId = unifiedJob?.suggestionsEnrichmentRunId;
+    if (!jobId || !enrichmentRunId || !isSuggestionsTargetedRetryState(unifiedJob)) {
+      suggestionsRetryFlightRef.current.leave();
+      setBanner({
+        kind: "error",
+        text: t("unified.suggestionsRetryUnavailable"),
+      });
+      return;
+    }
+    const ok = window.confirm(t("unified.retrySuggestionsConfirm"));
+    if (!ok) {
+      suggestionsRetryFlightRef.current.leave();
+      return;
+    }
+    setRecovering(true);
+    setBanner(null);
+    try {
+      const body = buildSuggestionsTargetedRetryBody({
+        jobId,
+        enrichmentRunId,
+        confirmPaidEnrichmentRetry: true,
+      });
+      const result = await retryUnifiedEnrichmentSuggestionsTask(caseId, body);
+      if (!isAcceptedSuggestionsRetryResult(result)) {
+        setBanner({
+          kind: "error",
+          text: t("unified.suggestionsRetryNoTaskId"),
+        });
+        return;
+      }
+      setUnifiedJob((prev) =>
+        prev
+          ? {
+              ...prev,
+              jobId: result.jobId,
+              unifiedJobId: result.unifiedJobId,
+              stage: result.stage,
+              status: result.status,
+            }
+          : prev
+      );
+      setBanner({
+        kind: "ok",
+        text: result.reusedExisting
+          ? t("unified.suggestionsReused", { taskId: result.externalTaskId })
+          : t("unified.suggestionsSubmitted", { taskId: result.externalTaskId }),
+      });
+      await pollUnifiedUntilTerminal();
+    } catch (err) {
+      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+      const msg = err instanceof Error ? err.message : undefined;
+      // CONFLICT must surface the server code/message (not the generic i18n mask).
+      setBanner({ kind: "error", text: tError(code, msg) });
+    } finally {
+      suggestionsRetryFlightRef.current.leave();
+      setRecovering(false);
+      const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
+      if (job) setUnifiedJob(job);
+    }
+  }, [
+    auditing,
+    recovering,
+    caseId,
+    unifiedJob,
+    pollUnifiedUntilTerminal,
+    tError,
+  ]);
+
+  const handleRunAudit = useCallback(async () => {
+    // Admin/diagnostic path only — primary CTA is unified collection.
+    if (auditing) return;
+    setAuditing(true);
+    setBanner(null);
+    try {
+      const result = await runFullAudit(caseId, {
+        runtimeMode: "real_first_with_fallback",
+      });
       await refreshAgents();
+      setLastFullAuditSummary({
+        mode: result.runtimeStrategy?.mode ?? "real_first_with_fallback",
+        items: result.runSummary ?? [],
+      });
+      const completedCount = result.runSummary?.filter((item) => item.status === "completed").length ?? 0;
+      const skippedCount = result.runSummary?.filter((item) => item.status === "skipped").length ?? 0;
+      const unavailableCount = result.runSummary?.filter((item) => item.status === "unavailable").length ?? 0;
+      const failedCount = result.runSummary?.filter((item) => item.status === "failed").length ?? 0;
+      const fallbackCount = result.runSummary?.filter((item) => !!item.fallbackAgent).length ?? 0;
+      const mode = result.runtimeStrategy?.mode ?? "real_first_with_fallback";
       const ok = result.outcome === "SUCCESS";
+      const baseText =
+        result.outcome === "SUCCESS"
+          ? t("agents.auditDone")
+          : result.outcome === "PARTIAL_SUCCESS"
+            ? t("agents.auditPartial")
+            : t("agents.auditFailed");
       setBanner({
         kind: ok ? "ok" : "error",
-        text:
-          result.outcome === "SUCCESS"
-            ? t("agents.auditDone")
-            : result.outcome === "PARTIAL_SUCCESS"
-              ? t("agents.auditPartial")
-              : t("agents.auditFailed"),
+        text: `${baseText} ${t("agents.auditRunStats", {
+          completed: completedCount,
+          skipped: skippedCount,
+          unavailable: unavailableCount,
+          fallback: fallbackCount,
+          failed: failedCount,
+          mode,
+        })}`,
       });
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
@@ -138,34 +551,11 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
     } finally {
       setAuditing(false);
     }
-  }, [auditing, generating, caseId, refreshAgents, t, tError]);
+  }, [auditing, caseId, refreshAgents, t, tError]);
 
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
-
-  // "Generate report" from the header: build + render, then surface the result.
-  const handleHeaderGenerate = useCallback(async () => {
-    if (generating) return;
-    setGenerating(true);
-    setBanner(null);
-    try {
-      const generated = await generateReport(caseId);
-      setReport(generated);
-      const rendered = await renderReport(caseId);
-      setReport({ ...generated, ...rendered });
-      setBanner({
-        kind: "ok",
-        text: t("report.generatedShort", { version: rendered.version }),
-      });
-    } catch (err) {
-      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
-      const msg = err instanceof Error ? err.message : undefined;
-      setBanner({ kind: "error", text: tError(code, msg) });
-    } finally {
-      setGenerating(false);
-    }
-  }, [caseId, generating, t, tError]);
 
   if (state.kind === "loading") {
     return (
@@ -216,11 +606,15 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
       <Card>
         <CaseHeader
           caseDetail={state.caseDetail}
-          onGenerate={handleHeaderGenerate}
-          generating={generating}
-          onRunAudit={handleRunAudit}
+          onRunUnifiedCollection={handleRunUnifiedCollection}
+          onRecoverUnifiedCollection={handleRecoverUnifiedCollection}
+          onRetrySuggestions={handleRetrySuggestions}
+          onPaidRecollection={handlePaidRecollection}
+          onRebuildReport={handleRebuildReport}
           auditing={auditing}
-          lastRunStatus={agentRuns[0]?.status ?? null}
+          recovering={recovering}
+          rebuilding={rebuilding}
+          unifiedJob={unifiedJob}
         />
       </Card>
 
@@ -234,20 +628,133 @@ export function CaseDetailView({ caseId }: { caseId: string }) {
         </div>
       ) : null}
 
+      {can("case.view") ? (
+        <Card>
+          <SubjectProfilePanel caseId={state.caseDetail.id} />
+        </Card>
+      ) : null}
+
+      {unifiedJob?.reportQuality ||
+      (unifiedJob?.warnings ?? []).some((w) => w.startsWith("offline-enrichment-mode")) ? (
+        <Card>
+          <SoftRenderBoundary>
+            <ReportQualityPanel
+              quality={unifiedJob?.reportQuality}
+              jobWarnings={unifiedJob?.warnings}
+              caseId={caseId}
+              jobId={unifiedJob?.unifiedJobId ?? unifiedJob?.jobId}
+              onRetryGptCopy={handleRetryGptCopy}
+              retryingGptCopy={retryingGptCopy}
+              gptCopyRetryAllowed={Boolean(unifiedJob?.gptCopyRetryAllowed)}
+            />
+          </SoftRenderBoundary>
+        </Card>
+      ) : null}
+
+      {legacyReportUi && can("evidence.viewRaw") ? (
+        <Card>
+          <div className="dp-stack" style={{ gap: 8 }}>
+            <strong>{t("unified.goldenTitle")}</strong>
+            <p className="dp-muted" style={{ margin: 0 }}>
+              {t("unified.goldenHint")}
+            </p>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              {can("risk.review") ? (
+                <button
+                  type="button"
+                  className="dp-btn dp-btn-primary"
+                  disabled={prepareBusy}
+                  onClick={() => {
+                    void (async () => {
+                      setPrepareBusy(true);
+                      setBanner(null);
+                      try {
+                        const { job } = await getUnifiedOrionCollectionStatus(caseId);
+                        const jobId = job?.unifiedJobId ?? "";
+                        if (!jobId) {
+                          setBanner({
+                            kind: "error",
+                            text: t("unified.goldenNeedsRun"),
+                          });
+                          return;
+                        }
+                        let result = await prepareOrionGoldenArtifacts(caseId, jobId);
+                        setPrepareStatus(result);
+                        setBanner({
+                          kind: "ok",
+                          text: t("unified.goldenStarted"),
+                        });
+                        for (let i = 0; i < 90; i += 1) {
+                          if (result.status === "completed" || result.status === "failed") break;
+                          await new Promise((r) => setTimeout(r, 5000));
+                          result = await getOrionGoldenPrepareStatus(caseId);
+                          setPrepareStatus(result);
+                        }
+                        setBanner({
+                          kind: result.ok ? "ok" : "error",
+                          text: result.ok
+                            ? t("unified.goldenDone", { pages: result.pageCount ?? 0 })
+                            : result.warnings[0] ||
+                              t("unified.goldenNotFinished", {
+                                verdict: String(result.verdict ?? result.status),
+                              }),
+                        });
+                      } catch (err) {
+                        const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
+                        const msg = err instanceof Error ? err.message : undefined;
+                        setBanner({ kind: "error", text: tError(code, msg) });
+                      } finally {
+                        setPrepareBusy(false);
+                      }
+                    })();
+                  }}
+                >
+                  {prepareBusy ? t("unified.goldenPreparing") : t("unified.goldenPrepare")}
+                </button>
+              ) : null}
+              <Link className="dp-btn" href={`/admin/digital-profile/${state.caseDetail.id}/orion-golden/manual-review`}>
+                {t("unified.goldenOpenReview")}
+              </Link>
+              <Link
+                className="dp-btn dp-btn-primary"
+                href={`/admin/digital-profile/${state.caseDetail.id}/orion-golden/manual-review#arsenkin-tools`}
+                data-testid="case-arsenkin-audit-link"
+              >
+                {t("unified.goldenRunArsenkin")}
+              </Link>
+            </div>
+            <p className="dp-muted" style={{ margin: 0, fontSize: 13 }}>
+              {t("unified.goldenFootnote")}
+            </p>
+            {prepareStatus ? (
+              <p className="dp-muted" style={{ margin: 0 }}>
+                {t("unified.goldenStatus")}: {prepareStatus.status}
+                {prepareStatus.queueReady
+                  ? ` · ${t("unified.goldenQueueReady", { pages: prepareStatus.pageCount ?? 0 })}`
+                  : ""}
+                {prepareStatus.verdict ? ` · ${prepareStatus.verdict}` : ""}
+              </p>
+            ) : null}
+          </div>
+        </Card>
+      ) : null}
+
       <Card>
         <CaseTabs
           caseDetail={state.caseDetail}
           evidence={state.evidence}
           surfaces={surfaces}
-          report={report}
           agents={agents}
           agentRuns={agentRuns}
           auditing={auditing}
-          onRunFullAudit={handleRunAudit}
+          unifiedJob={unifiedJob}
+          fullAuditBlocked={fullAuditBlockedForTabs}
+          lastFullAuditSummary={lastFullAuditSummary}
+          manualAgentRun={manualAgentRun}
+          onRunFullAudit={handleRunUnifiedCollection}
           onAgentsChanged={() => void refreshAgents()}
           onEvidenceChanged={() => void refreshEvidence()}
           onSurfacesChanged={() => void refreshSurfaces()}
-          onReportChange={setReport}
         />
       </Card>
     </div>

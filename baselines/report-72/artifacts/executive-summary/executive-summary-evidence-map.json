@@ -1,0 +1,96 @@
+{
+  "caseId": "case-glinka-72",
+  "datasetId": "composite-glinka-72",
+  "entries": [
+    {
+      "basisKind": "CONFIRMED_FACT",
+      "evidenceRefs": [
+        "evidence:f-ai-security"
+      ],
+      "findingId": "f-ai-security",
+      "providers": [
+        "yandex"
+      ],
+      "sourceDomains": [
+        "ya.ru"
+      ]
+    },
+    {
+      "basisKind": "CONFIRMED_FACT",
+      "evidenceRefs": [
+        "evidence:f-politics-md"
+      ],
+      "findingId": "f-politics-md",
+      "providers": [
+        "yandex",
+        "serper"
+      ],
+      "sourceDomains": [
+        "newsmaker.md",
+        "zdg.md"
+      ]
+    },
+    {
+      "basisKind": "PRELIMINARY_SIGNAL",
+      "evidenceRefs": [
+        "evidence:f-offshore"
+      ],
+      "findingId": "f-offshore",
+      "providers": [
+        "serper"
+      ],
+      "sourceDomains": [
+        "opencorporates.com",
+        "occrp.org"
+      ]
+    },
+    {
+      "basisKind": "PRELIMINARY_SIGNAL",
+      "evidenceRefs": [
+        "evidence:f-spouse"
+      ],
+      "findingId": "f-spouse",
+      "providers": [
+        "yandex"
+      ],
+      "sourceDomains": [
+        "zdg.md"
+      ]
+    },
+    {
+      "basisKind": "PRELIMINARY_SIGNAL",
+      "evidenceRefs": [
+        "evidence:f-judicial"
+      ],
+      "findingId": "f-judicial",
+      "providers": [
+        "serper"
+      ],
+      "sourceDomains": [
+        "kad.arbitr.ru"
+      ]
+    },
+    {
+      "basisKind": "CONFIRMED_FACT",
+      "evidenceRefs": [
+        "evidence:f-business-neutral"
+      ],
+      "findingId": "f-business-neutral",
+      "providers": [
+        "yandex",
+        "serper"
+      ],
+      "sourceDomains": [
+        "rbc.ru",
+        "vedomosti.ru"
+      ]
+    }
+  ],
+  "excludedAsAmbiguous": [],
+  "excludedAsOtherSubject": [
+    "f-composer-opera",
+    "f-composer-museum"
+  ],
+  "inputHash": "43d3bb0ba173ed18fc5d13b90748dcbdf8a40529f9b4a1351550825cf5f08fa8",
+  "schemaVersion": "executive-summary-evidence-map-v1"
+}

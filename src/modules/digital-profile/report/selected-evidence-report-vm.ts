@@ -156,15 +156,24 @@ function isSubjectMatchedItem(item: SurfaceReportItem): boolean {
 }
 
 /** O5.4 — images/videos need a visible subject anchor, not weak LIKELY on social noise. */
-function isStrictMediaSubjectMatch(item: SurfaceReportItem): boolean {
+function isStrictMediaSubjectMatch(item: SurfaceReportItem, audience: ReportAudience): boolean {
+  const text = `${item.title ?? ""} ${item.query ?? ""}`.toLowerCase();
+  const hasSurname = text.includes("томилин") || text.includes("tomilin");
+  const hasGiven = text.includes("константин") || text.includes("konstantin");
   if (item.identityDecision === "EXACT_SUBJECT") return true;
   if (item.reportEligibility === "CLIENT_INCLUDE" && item.identityDecision !== "LIKELY_SUBJECT") {
     return true;
   }
-  if (!SUBJECT_IDENTITY.has(item.identityDecision ?? "")) return false;
-  const text = item.title.toLowerCase();
-  const hasSurname = text.includes("томилин") || text.includes("tomilin");
-  const hasGiven = text.includes("константин") || text.includes("konstantin");
+  if (!SUBJECT_IDENTITY.has(item.identityDecision ?? "")) {
+    if (
+      audience === "INTERNAL" &&
+      item.identityDecision === "POSSIBLE_SUBJECT" &&
+      item.reportEligibility === "REVIEW_REQUIRED"
+    ) {
+      return hasSurname && hasGiven && !WEAK_INTL_TITLE.test(text);
+    }
+    return false;
+  }
   return hasSurname && hasGiven;
 }
 
@@ -194,6 +203,33 @@ function isNegativeSelected(item: SurfaceReportItem): boolean {
   );
 }
 
+function decisionPriority(decision: string | undefined): number {
+  if (decision === "include") return 4;
+  if (decision === "review") return 3;
+  if (decision === "fallback") return 2;
+  if (decision === "duplicate") return 1;
+  return 0;
+}
+
+function identityPriority(identity: string | undefined): number {
+  if (identity === "EXACT_SUBJECT") return 3;
+  if (identity === "LIKELY_SUBJECT") return 2;
+  if (identity === "POSSIBLE_SUBJECT") return 1;
+  return 0;
+}
+
+function sortByEvidenceRank(items: SurfaceReportItem[]): SurfaceReportItem[] {
+  return [...items].sort((a, b) => {
+    const d = decisionPriority(b.sourceQualityDecision) - decisionPriority(a.sourceQualityDecision);
+    if (d !== 0) return d;
+    const i = identityPriority(b.identityDecision) - identityPriority(a.identityDecision);
+    if (i !== 0) return i;
+    const r = (b.sourceRank ?? 0) - (a.sourceRank ?? 0);
+    if (r !== 0) return r;
+    return (a.title ?? "").localeCompare(b.title ?? "");
+  });
+}
+
 function surfaceTypeLabel(item: SurfaceReportItem, bucket: "organic" | "image" | "video"): string {
   if (bucket === "image") return "IMAGE";
   if (bucket === "video") return "VIDEO";
@@ -217,7 +253,8 @@ function toAppendixRow(
 
 function toExcludedRow(item: SurfaceReportItem): ExcludedEvidenceRow {
   const reason =
-    item.identityDecision === "NAMESAKE"
+    item.clientSafeReason ??
+    (item.identityDecision === "NAMESAKE"
       ? "namesake"
       : item.identityDecision === "ENTITY_MISMATCH"
         ? "entity mismatch"
@@ -225,7 +262,7 @@ function toExcludedRow(item: SurfaceReportItem): ExcludedEvidenceRow {
           ? "insufficient match / Romanovich-only"
           : item.reportEligibility === "EXCLUDE"
             ? "excluded"
-            : "not subject";
+            : "not subject");
   return {
     title: item.title,
     domain: item.domain ?? domainOf(item.url),
@@ -274,29 +311,40 @@ function filterItemsForAudience(items: SurfaceReportItem[], audience: ReportAudi
 function buildRegionVm(
   block: RegionSearchSurfacesBlock,
   code: "RU" | "UAE" | "INTERNATIONAL",
-  audience: ReportAudience
+  audience: ReportAudience,
+  reportLanguage: "ru" | "en"
 ): SelectedEvidenceRegionVm {
-  const organicSelected = filterItemsForAudience(
+  const organicSelected = sortByEvidenceRank(filterItemsForAudience(
     block.organic.items.filter(
       code === "RU" ? isSubjectMatchedItem : isStrictIntlOrganicMatch
     ),
     audience
-  );
+  ));
   const organicNegativeSelected = organicSelected.filter(isNegativeSelected);
 
-  const imagesSelected = filterItemsForAudience(
-    block.images.items.filter(isStrictMediaSubjectMatch),
+  const imagesSelected = sortByEvidenceRank(filterItemsForAudience(
+    block.images.items.filter((i) => isStrictMediaSubjectMatch(i, audience)),
     audience
-  );
-  const videosSelected = filterItemsForAudience(
-    block.videos.items.filter(isStrictMediaSubjectMatch),
+  ));
+  const videosSelected = sortByEvidenceRank(filterItemsForAudience(
+    block.videos.items.filter((i) => isStrictMediaSubjectMatch(i, audience)),
     audience
-  );
+  ));
 
   const confirmedAppendix: SelectedEvidenceAppendixRow[] = [];
-  for (const item of organicSelected) confirmedAppendix.push(toAppendixRow(item, "organic"));
-  for (const item of imagesSelected) confirmedAppendix.push(toAppendixRow(item, "image"));
-  for (const item of videosSelected) confirmedAppendix.push(toAppendixRow(item, "video"));
+  const seen = new Set<string>();
+  const appendUnique = (item: SurfaceReportItem, bucket: "organic" | "image" | "video") => {
+    const key =
+      item.sourceFingerprint ??
+      item.canonicalUrlKey ??
+      `${item.domain ?? ""}|${item.title ?? ""}|${bucket}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    confirmedAppendix.push(toAppendixRow(item, bucket));
+  };
+  for (const item of organicSelected) appendUnique(item, "organic");
+  for (const item of imagesSelected) appendUnique(item, "image");
+  for (const item of videosSelected) appendUnique(item, "video");
 
   const excludedAppendix: ExcludedEvidenceRow[] = [];
   if (audience === "INTERNAL") {
@@ -316,6 +364,7 @@ function buildRegionVm(
 
   const auditRegion = regionBlockToAuditRegion(block, {
     audience,
+    reportLanguage,
     confirmedAppendix,
     excludedAppendix,
     organicSelected,
@@ -416,14 +465,21 @@ export function filterReportRiskFindings(
 export function buildSelectedEvidenceReportVm(input: {
   searchSurfaces: SearchSurfacesReportBlock;
   reportAudience?: ReportAudience;
+  reportLanguage?: "ru" | "en";
   riskSummary?: ReportRiskSummary | null;
   complianceSummary?: ComplianceSummaryBlock | null;
   evidenceQuality?: EvidenceQualitySummary | null;
 }): SelectedEvidenceReportVm {
   const audience = input.reportAudience ?? "INTERNAL";
-  const ru = buildRegionVm(input.searchSurfaces.regions.ru, "RU", audience);
-  const uae = buildRegionVm(input.searchSurfaces.regions.uae, "UAE", audience);
-  const intl = buildRegionVm(input.searchSurfaces.regions.international, "INTERNATIONAL", audience);
+  const reportLanguage = input.reportLanguage ?? "ru";
+  const ru = buildRegionVm(input.searchSurfaces.regions.ru, "RU", audience, reportLanguage);
+  const uae = buildRegionVm(input.searchSurfaces.regions.uae, "UAE", audience, reportLanguage);
+  const intl = buildRegionVm(
+    input.searchSurfaces.regions.international,
+    "INTERNATIONAL",
+    audience,
+    reportLanguage
+  );
 
   const allOrganic = [...ru.organicSelected, ...uae.organicSelected, ...intl.organicSelected];
   const allImages = [...ru.images, ...uae.images, ...intl.images];

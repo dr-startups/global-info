@@ -1,0 +1,30 @@
+[
+  {
+    "id": "golden-dj-pep-1",
+    "provider": "DOW_JONES",
+    "importMethod": "MANUAL",
+    "hitSource": "MANUAL",
+    "matchedName": "Holmstrom, Johan",
+    "subjectName": "Johan Holmstrom",
+    "matchType": "PEP",
+    "matchScore": 78,
+    "reviewStatus": "PENDING",
+    "riskTypes": ["PEP"],
+    "summary": "Potential PEP match in Dow Jones Risk & Compliance (fixture).",
+    "profileUrl": "https://example.com/dow-jones/golden-dj-pep-1"
+  },
+  {
+    "id": "golden-ln-am-1",
+    "provider": "LEXISNEXIS",
+    "importMethod": "MANUAL",
+    "hitSource": "MANUAL",
+    "matchedName": "Johan Holmstrom",
+    "subjectName": "Johan Holmstrom",
+    "matchType": "ADVERSE_MEDIA",
+    "matchScore": 64,
+    "reviewStatus": "MATCH_CONFIRMED",
+    "riskTypes": ["ADVERSE_MEDIA"],
+    "summary": "Adverse media hit in LexisNexis (fixture).",
+    "profileUrl": "https://example.com/lexisnexis/golden-ln-am-1"
+  }
+]

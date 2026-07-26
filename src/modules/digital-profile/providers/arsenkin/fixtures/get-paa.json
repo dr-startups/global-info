@@ -1,0 +1,26 @@
+{
+  "code": "TASK_RESULT",
+  "task_id": "5002",
+  "result": {
+    "ss": "Google",
+    "region": "Москва",
+    "total": 2,
+    "queries": ["Глинка Сергей Михайлович"],
+    "result": [
+      [
+        {
+          "link": "",
+          "question": "Кто такой Сергей Глинка?",
+          "answer": "Предприниматель, упоминаемый в открытых источниках.",
+          "level": 1
+        },
+        {
+          "link": "https://ru.wikipedia.org/wiki/Глинка",
+          "question": "Связан ли Глинка с санкциями?",
+          "answer": null,
+          "level": 1
+        }
+      ]
+    ]
+  }
+}

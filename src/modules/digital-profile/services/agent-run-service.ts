@@ -14,9 +14,11 @@ import { prisma } from "@/server/prisma/client";
 import { NotFoundError, ValidationError } from "../http/errors";
 import { recordAudit } from "./audit-log-service";
 import type { ActorContext } from "./case-service";
-import { FULL_AUDIT_ORDER, getAgent, listAgentDefinitions } from "../agents/registry";
+import { getAgent, listAgentDefinitions } from "../agents/registry";
+import { FULL_AUDIT_DEFAULT_RUNTIME_MODE, resolveRuntimeStrategy } from "../agents/runtime-strategy";
 import type { AgentAvailability, AgentKind, FullAuditOutcome } from "../agents/types";
 import type { AgentContext, SavedEvidenceSummary } from "../types";
+import type { ProviderRuntimeMode } from "../types";
 
 export interface AgentRunDTO {
   id: string;
@@ -25,6 +27,9 @@ export interface AgentRunDTO {
   kind: AgentKind;
   status: string;
   summary: string | null;
+  /** Arsenkin durable outcome from output.outcome when present. */
+  outcome?: string | null;
+  executionId?: string | null;
   itemsSaved: number;
   error: string | null;
   startedAt: Date | null;
@@ -39,8 +44,11 @@ export interface AgentInfoDTO {
   kind: AgentKind;
   enabled: boolean;
   availability: AgentAvailability;
+  executionMode?: "SYNC" | "DURABLE_ASYNC";
   lastRun: {
     status: string;
+    outcome?: string | null;
+    summary?: string | null;
     startedAt: Date | null;
     finishedAt: Date | null;
   } | null;
@@ -49,6 +57,41 @@ export interface AgentInfoDTO {
 export interface FullAuditResultDTO {
   outcome: FullAuditOutcome;
   runs: AgentRunDTO[];
+  runSummary: FullAuditRunSummaryItem[];
+  runtimeStrategy: {
+    mode: ProviderRuntimeMode;
+    selectedOrder: string[];
+    fallbackPolicy: "allow_mock_fallback" | "allow_empty_fallback" | "no_mock_fallback";
+    realProvidersAvailable: number;
+    mockProvidersAvailable: number;
+    fallbackEvents: Array<{
+      providerId: string;
+      reason: string;
+      from: "real" | "mock" | "none";
+      to: "real" | "mock" | "none";
+    }>;
+    warnings: string[];
+    decisions: Array<{
+      providerId: string;
+      phase: "collection" | "surfaces" | "enrichment" | "report";
+      status: "selected" | "skipped_unavailable" | "skipped_by_mode";
+      selectedAgent?: string;
+      selectedRuntime?: "real" | "mock";
+      fallbackAgent?: string;
+      reason: string;
+    }>;
+  };
+}
+
+export interface FullAuditRunSummaryItem {
+  providerId: string;
+  phase: "collection" | "surfaces" | "enrichment" | "report";
+  status: "completed" | "failed" | "skipped" | "unavailable";
+  runtime: "real" | "mock" | "none";
+  agentName?: string;
+  fallbackAgent?: string;
+  reason: string;
+  runId?: string;
 }
 
 const agentRunSelect = {
@@ -82,7 +125,11 @@ function runInput(row: { input: Prisma.JsonValue }): { agentId?: string; kind?: 
 function toRunDTO(
   row: Prisma.AgentRunGetPayload<{ select: typeof agentRunSelect }>
 ): AgentRunDTO {
-  const output = (row.output ?? null) as { summary?: string } | null;
+  const output = (row.output ?? null) as {
+    summary?: string;
+    outcome?: string;
+    arsenkinExecution?: { executionId?: string };
+  } | null;
   const input = runInput(row);
   return {
     id: row.id,
@@ -90,6 +137,8 @@ function toRunDTO(
     kind: input.kind ?? "MOCK",
     status: row.status,
     summary: output?.summary ?? null,
+    outcome: output?.outcome ?? null,
+    executionId: output?.arsenkinExecution?.executionId ?? null,
     itemsSaved: row.itemsSaved,
     error: row.error,
     startedAt: row.startedAt,
@@ -117,10 +166,21 @@ export async function runAgent(
   const agent = getAgent(agentName);
   if (!agent) throw new ValidationError(`Unknown agent: ${agentName}`);
 
+  // Hiding a button is not enforcement: a disabled agent must be unreachable
+  // through the API too. Without this, a demo agent could still be driven
+  // straight into a live case's evidence base (step 11.2).
+  const availability = agent.availability();
+  if (availability.status !== "ENABLED") {
+    throw new ValidationError(
+      `Agent ${agentName} is not available: ${availability.status}` +
+        (availability.message ? ` — ${availability.message}` : "")
+    );
+  }
+
   const agentCtx: AgentContext = {
     caseId,
     actorId: ctx.actorId ?? "system",
-    mock: true,
+    mock: agent.kind === "MOCK",
   };
   await agent.validateInput(agentCtx);
 
@@ -128,7 +188,11 @@ export async function runAgent(
     data: {
       caseId,
       agentName: agent.agentName,
-      input: { agentId: agent.name, kind: agent.kind },
+      input: {
+        agentId: agent.name,
+        kind: agent.kind,
+        executionMode: agent.executionMode ?? "SYNC",
+      },
       status: "RUNNING",
       startedAt: new Date(),
       triggeredBy: ctx.actorId ?? null,
@@ -141,6 +205,89 @@ export async function runAgent(
     actorId: ctx.actorId,
     metadata: { runId: run.id, agentName: agent.name },
   });
+
+  // ---- Durable async Arsenkin (and future) agents ----
+  if ((agent.executionMode ?? "SYNC") === "DURABLE_ASYNC") {
+    const tools =
+      "tools" in agent && Array.isArray((agent as { tools?: string[] }).tools)
+        ? ((agent as { tools: import("../providers/arsenkin/flags").ArsenkinToolName[] }).tools)
+        : [];
+    try {
+      const {
+        startArsenkinCaseAgentDurable,
+        runArsenkinCaseAgentWorker,
+      } = await import("./arsenkin-case-agent-execution");
+      // Same model as Yandex/Serper: run collection inside this HTTP request.
+      // Do NOT rely on setImmediate across Railway parent/child processes.
+      const started = await startArsenkinCaseAgentDurable({
+        caseId,
+        agentRunId: run.id,
+        agentId: agent.name,
+        tools,
+        actorId: ctx.actorId ?? undefined,
+        scheduleWorker: false,
+      });
+      await prisma.agentRun.update({
+        where: { id: run.id },
+        data: {
+          status: "RUNNING",
+          finishedAt: null,
+          itemsSaved: 0,
+          output: {
+            summary: `Выполняется Arsenkin (${started.plannedSurfaces.length} поверхностей)…`,
+            outcome: "RUNNING",
+            arsenkinExecution: {
+              agentId: agent.name,
+              executionId: started.executionId,
+              agentRunId: run.id,
+              baseReportRunId: started.baseReportRunId,
+              enrichmentReportRunId: started.enrichmentReportRunId,
+              plannedSurfaceCount: started.plannedSurfaces.length,
+              outcome: "RUNNING",
+              phase: "PREPARING",
+              reusedExisting: Boolean(started.reusedExisting),
+            },
+            demo: false,
+          } as unknown as Prisma.InputJsonValue,
+        },
+      });
+      await runArsenkinCaseAgentWorker({
+        caseId,
+        executionId: started.executionId,
+      });
+      const updated = await prisma.agentRun.findUniqueOrThrow({
+        where: { id: run.id },
+        select: agentRunSelect,
+      });
+      // Provenance already written inside CaseAgent finalize; mirror AGENT_COLLECT for parity.
+      void import("./report-evidence-provenance")
+        .then(({ writeReportEvidenceProvenance }) =>
+          writeReportEvidenceProvenance({
+            caseId,
+            phase: "AGENT_COLLECT",
+            trigger: `${agent.name}:${updated.status}`,
+          })
+        )
+        .catch(() => undefined);
+      return toRunDTO(updated);
+    } catch (err) {
+      const updated = await prisma.agentRun.update({
+        where: { id: run.id },
+        data: {
+          status: "FAILED",
+          finishedAt: new Date(),
+          error: err instanceof Error ? err.message : "Durable Arsenkin start failed",
+          output: {
+            summary: "Не удалось запустить durable Arsenkin execution",
+            outcome: "FAILED",
+            demo: false,
+          } as unknown as Prisma.InputJsonValue,
+        },
+        select: agentRunSelect,
+      });
+      return toRunDTO(updated);
+    }
+  }
 
   const result = await agent.run(agentCtx);
 
@@ -162,6 +309,33 @@ export async function runAgent(
       actorId: ctx.actorId,
       metadata: { runId: run.id, agentName: agent.name, summary },
     });
+    void import("./report-evidence-provenance")
+      .then(({ writeReportEvidenceProvenance }) =>
+        writeReportEvidenceProvenance({
+          caseId,
+          phase: "AGENT_COLLECT",
+          trigger: `${agent.name}:SUCCEEDED`,
+        })
+      )
+      .catch(() => undefined);
+    return toRunDTO(updated);
+  }
+
+  if (result.status === "RUNNING") {
+    // SYNC agents should not return RUNNING; keep RUNNING without fake SUCCESS.
+    const updated = await prisma.agentRun.update({
+      where: { id: run.id },
+      data: {
+        status: "RUNNING",
+        finishedAt: null,
+        output: {
+          summary: "Выполняется…",
+          outcome: "RUNNING",
+          ...(typeof result.output === "object" && result.output ? result.output : {}),
+        } as unknown as Prisma.InputJsonValue,
+      },
+      select: agentRunSelect,
+    });
     return toRunDTO(updated);
   }
 
@@ -180,6 +354,15 @@ export async function runAgent(
     actorId: ctx.actorId,
     metadata: { runId: run.id, agentName: agent.name },
   });
+  void import("./report-evidence-provenance")
+    .then(({ writeReportEvidenceProvenance }) =>
+      writeReportEvidenceProvenance({
+        caseId,
+        phase: "AGENT_COLLECT",
+        trigger: `${agent.name}:FAILED`,
+      })
+    )
+    .catch(() => undefined);
   return toRunDTO(updated);
 }
 
@@ -191,26 +374,104 @@ export async function runAgent(
  */
 export async function runFullAudit(
   caseId: string,
-  ctx: ActorContext = {}
+  ctx: ActorContext = {},
+  options: { runtimeMode?: ProviderRuntimeMode } = {}
 ): Promise<FullAuditResultDTO> {
   await ensureActiveCase(caseId);
+  const runtimeMode = options.runtimeMode ?? FULL_AUDIT_DEFAULT_RUNTIME_MODE;
+  const runtimeStrategy = resolveRuntimeStrategy({
+    mode: runtimeMode,
+    requestedBy: options.runtimeMode ? "request" : "default",
+  });
   await recordAudit({
     caseId,
     action: "FULL_AUDIT_STARTED",
     actorId: ctx.actorId,
-    metadata: { agents: FULL_AUDIT_ORDER },
+    metadata: {
+      agents: runtimeStrategy.selectedOrder,
+      runtimeStrategy: {
+        mode: runtimeStrategy.mode,
+        fallbackPolicy: runtimeStrategy.fallbackPolicy,
+        warnings: runtimeStrategy.warnings,
+        decisions: runtimeStrategy.decisions,
+      },
+    } as unknown as Prisma.InputJsonValue,
   });
 
   const runs: AgentRunDTO[] = [];
-  for (const name of FULL_AUDIT_ORDER) {
+  const runSummary: FullAuditRunSummaryItem[] = runtimeStrategy.decisions.map((decision) => {
+    if (decision.status === "selected") {
+      return {
+        providerId: decision.providerId,
+        phase: decision.phase,
+        status: "skipped",
+        runtime: decision.selectedRuntime ?? "none",
+        agentName: decision.selectedAgent,
+        fallbackAgent: decision.fallbackAgent,
+        reason: `Planned: ${decision.reason}`,
+      };
+    }
+    return {
+      providerId: decision.providerId,
+      phase: decision.phase,
+      status: decision.status === "skipped_unavailable" ? "unavailable" : "skipped",
+      runtime: "none",
+      reason: decision.reason,
+    };
+  });
+
+  const summaryByProvider = new Map<string, FullAuditRunSummaryItem>(
+    runSummary.map((item) => [item.providerId, item])
+  );
+
+  for (const step of runtimeStrategy.steps) {
     try {
-      runs.push(await runAgent(caseId, name, ctx));
+      const firstRun = await runAgent(caseId, step.primaryAgent, ctx);
+      runs.push(firstRun);
+      const summaryItem = summaryByProvider.get(step.providerId);
+      if (summaryItem) {
+        summaryItem.agentName = step.primaryAgent;
+        summaryItem.runtime = step.primaryRuntime;
+        summaryItem.runId = firstRun.id || undefined;
+      }
+      if (
+        runtimeStrategy.mode === "real_first_with_fallback" &&
+        firstRun.status !== "SUCCEEDED" &&
+        step.primaryRuntime === "real" &&
+        step.fallbackAgent
+      ) {
+        const fallbackRun = await runAgent(caseId, step.fallbackAgent, ctx);
+        runs.push(fallbackRun);
+        if (summaryItem) {
+          summaryItem.fallbackAgent = step.fallbackAgent;
+          summaryItem.agentName = fallbackRun.status === "SUCCEEDED" ? step.fallbackAgent : step.primaryAgent;
+          summaryItem.runtime = fallbackRun.status === "SUCCEEDED" ? "mock" : "real";
+          summaryItem.runId = fallbackRun.id || summaryItem.runId;
+          summaryItem.status = fallbackRun.status === "SUCCEEDED" ? "completed" : "failed";
+          summaryItem.reason =
+            fallbackRun.status === "SUCCEEDED"
+              ? `Primary real agent ${step.primaryAgent} failed; fallback ${step.fallbackAgent} completed.`
+              : `Primary real agent ${step.primaryAgent} failed and fallback ${step.fallbackAgent} failed.`;
+        }
+        runtimeStrategy.fallbackEvents.push({
+          providerId: step.providerId,
+          reason: `Primary real agent ${step.primaryAgent} failed; fallback agent ${step.fallbackAgent} executed.`,
+          from: "real",
+          to: "mock",
+        });
+      } else if (summaryItem) {
+        summaryItem.status = firstRun.status === "SUCCEEDED" ? "completed" : "failed";
+        summaryItem.reason =
+          firstRun.status === "SUCCEEDED"
+            ? `${step.primaryAgent} completed successfully.`
+            : `${step.primaryAgent} failed${firstRun.error ? `: ${firstRun.error}` : "."}`;
+      }
     } catch (err) {
       // Defensive: runAgent normally captures agent errors itself.
       runs.push({
         id: "",
-        agentName: name,
-        kind: "MOCK",
+        agentName: step.primaryAgent,
+        kind: step.primaryRuntime === "real" ? "REAL" : "MOCK",
         status: "FAILED",
         summary: null,
         itemsSaved: 0,
@@ -219,6 +480,51 @@ export async function runFullAudit(
         finishedAt: null,
         createdAt: new Date(),
       });
+      const summaryItem = summaryByProvider.get(step.providerId);
+      if (summaryItem) {
+        summaryItem.status = "failed";
+        summaryItem.reason = `${step.primaryAgent} threw before completion${
+          err instanceof Error ? `: ${err.message}` : "."
+        }`;
+      }
+      if (
+        runtimeStrategy.mode === "real_first_with_fallback" &&
+        step.primaryRuntime === "real" &&
+        step.fallbackAgent
+      ) {
+        try {
+          const fallbackRun = await runAgent(caseId, step.fallbackAgent, ctx);
+          runs.push(fallbackRun);
+          if (summaryItem) {
+            summaryItem.fallbackAgent = step.fallbackAgent;
+            summaryItem.agentName = fallbackRun.status === "SUCCEEDED" ? step.fallbackAgent : step.primaryAgent;
+            summaryItem.runtime = fallbackRun.status === "SUCCEEDED" ? "mock" : "real";
+            summaryItem.runId = fallbackRun.id || summaryItem.runId;
+            summaryItem.status = fallbackRun.status === "SUCCEEDED" ? "completed" : "failed";
+            summaryItem.reason =
+              fallbackRun.status === "SUCCEEDED"
+                ? `Primary real agent ${step.primaryAgent} threw; fallback ${step.fallbackAgent} completed.`
+                : `Primary real agent ${step.primaryAgent} threw and fallback ${step.fallbackAgent} failed.`;
+          }
+          runtimeStrategy.fallbackEvents.push({
+            providerId: step.providerId,
+            reason: `Primary real agent ${step.primaryAgent} threw; fallback ${step.fallbackAgent} executed.`,
+            from: "real",
+            to: "mock",
+          });
+        } catch {
+          runtimeStrategy.fallbackEvents.push({
+            providerId: step.providerId,
+            reason: `Primary real agent ${step.primaryAgent} failed and fallback ${step.fallbackAgent} failed.`,
+            from: "real",
+            to: "none",
+          });
+          if (summaryItem) {
+            summaryItem.status = "failed";
+            summaryItem.reason = `Primary real agent ${step.primaryAgent} failed and fallback ${step.fallbackAgent} failed.`;
+          }
+        }
+      }
     }
   }
 
@@ -233,10 +539,32 @@ export async function runFullAudit(
     metadata: {
       outcome,
       results: runs.map((r) => ({ agent: r.agentName, status: r.status })),
-    },
+      runSummary,
+      runtimeStrategy: {
+        mode: runtimeStrategy.mode,
+        fallbackPolicy: runtimeStrategy.fallbackPolicy,
+        fallbackEvents: runtimeStrategy.fallbackEvents,
+        warnings: runtimeStrategy.warnings,
+        decisions: runtimeStrategy.decisions,
+      },
+    } as unknown as Prisma.InputJsonValue,
   });
 
-  return { outcome, runs };
+  return {
+    outcome,
+    runs,
+    runSummary,
+    runtimeStrategy: {
+      mode: runtimeStrategy.mode,
+      selectedOrder: runtimeStrategy.selectedOrder,
+      fallbackPolicy: runtimeStrategy.fallbackPolicy,
+      realProvidersAvailable: runtimeStrategy.realProvidersAvailable,
+      mockProvidersAvailable: runtimeStrategy.mockProvidersAvailable,
+      fallbackEvents: runtimeStrategy.fallbackEvents,
+      warnings: runtimeStrategy.warnings,
+      decisions: runtimeStrategy.decisions,
+    },
+  };
 }
 
 export async function listAgentRuns(caseId: string): Promise<AgentRunDTO[]> {
@@ -267,17 +595,32 @@ export async function listAgents(caseId: string): Promise<AgentInfoDTO[]> {
   const runs = await prisma.agentRun.findMany({
     where: { caseId },
     orderBy: { createdAt: "desc" },
-    select: { agentName: true, input: true, status: true, startedAt: true, finishedAt: true },
+    select: {
+      agentName: true,
+      input: true,
+      status: true,
+      output: true,
+      startedAt: true,
+      finishedAt: true,
+    },
   });
-  // Key by the agent slug (input.agentId) so mock + real Wikipedia stay distinct.
+  // Key strictly by input.agentId so agents sharing Prisma AgentName (SEARCH_SURFACES)
+  // never collide. Legacy rows without agentId only map when enum is unique.
   const latest = new Map<string, (typeof runs)[number]>();
   for (const r of runs) {
-    const key = runInput(r).agentId ?? r.agentName;
-    if (!latest.has(key)) latest.set(key, r);
+    const agentId = runInput(r).agentId;
+    if (typeof agentId === "string" && agentId.trim()) {
+      if (!latest.has(agentId)) latest.set(agentId, r);
+      continue;
+    }
+    if (r.agentName === "SEARCH_SURFACES") continue;
+    if (!latest.has(r.agentName)) latest.set(r.agentName, r);
   }
 
   return defs.map((d) => {
     const last = latest.get(d.name);
+    const agent = getAgent(d.name);
+    const out = (last?.output ?? null) as { summary?: string; outcome?: string } | null;
     return {
       name: d.name,
       displayName: d.displayName,
@@ -285,8 +628,15 @@ export async function listAgents(caseId: string): Promise<AgentInfoDTO[]> {
       kind: d.kind,
       enabled: d.enabled,
       availability: d.availability,
+      executionMode: agent?.executionMode ?? "SYNC",
       lastRun: last
-        ? { status: last.status, startedAt: last.startedAt, finishedAt: last.finishedAt }
+        ? {
+            status: last.status,
+            outcome: out?.outcome ?? null,
+            summary: out?.summary ?? null,
+            startedAt: last.startedAt,
+            finishedAt: last.finishedAt,
+          }
         : null,
     };
   });

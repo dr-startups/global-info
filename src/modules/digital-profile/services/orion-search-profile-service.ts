@@ -2,7 +2,9 @@
  * Stage O1–O3 — ORION search profile orchestrator.
  *
  * Runs multi-query organic search (Yandex RU + Google Serper) and collects
- * additional Serper surfaces (suggestions, related, images, videos, knowledge).
+ * additional Serper surfaces (suggestions, related, images, videos, knowledge)
+ * — all of them read from the responses to the subject and media queries, never
+ * requested by surface name (see orion-query-plan.ts).
  * Classifies evidence deterministically (R1.1.3 rules). No LLM, no scraping.
  */
 
@@ -16,11 +18,12 @@ import type { SearchProviderRequest, SearchProviderResult } from "../providers/t
 import { normalizeUrl } from "./evidence-service";
 import { createManySearchSurfaceItems } from "./search-surface-service";
 import {
-  buildOrionQueryPlan,
-  primaryQueriesForRegion,
+  buildOrionQueryPlanDetailed,
+  queriesForRegionPurpose,
   type OrionQuerySpec,
   type OrionRegionCode,
 } from "../search-surfaces/orion-query-plan";
+import { resolveRuntimeStrategy } from "../agents/runtime-strategy";
 import { regionProfile, type RegionCollectionStatus } from "../search-surfaces/region-profiles";
 import {
   serperAllSurfacesForQuery,
@@ -36,6 +39,7 @@ import {
 } from "../risk-classifier/entity-disambiguation";
 import type { SearchSurfaceInput, SearchSurfaceType } from "../search-surfaces/types";
 import { loadCaseSubject, type CaseSubjectInfo } from "../agents/mock/mock-utils";
+import type { ProviderRuntimeMode } from "../types";
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -49,6 +53,8 @@ export interface OrionProfileRunOptions {
   surfacesOnly?: boolean;
   /** Skip organic matrix — surfaces collection only. */
   surfacesOnlyMode?: boolean;
+  /** Optional runtime selection mode for provider assignment safety. */
+  runtimeMode?: ProviderRuntimeMode;
 }
 
 export interface OrionRegionRunSummary {
@@ -64,6 +70,7 @@ export interface OrionRegionRunSummary {
 
 export interface OrionProfileRunResult {
   plan: OrionQuerySpec[];
+  queryPlanId: string;
   regions: OrionRegionRunSummary[];
   organicInserted: number;
   surfacesInserted: number;
@@ -181,7 +188,7 @@ async function persistOrganicResults(
   engine: SearchEngine,
   results: SearchProviderResult[],
   orionRegion: OrionRegionCode,
-  query: string
+  querySpec: OrionQuerySpec
 ): Promise<number> {
   const source = engine === "GOOGLE" ? "real:GOOGLE" : "real:YANDEX";
   const rows = results.map((r) => {
@@ -191,7 +198,7 @@ async function persistOrganicResults(
       engine,
       url: r.url,
       normalizedUrl: normUrl,
-      dedupHash: sha256(`${normUrl}|${query}|${orionRegion}`),
+      dedupHash: sha256(`${normUrl}|${querySpec.query}|${orionRegion}`),
       title: r.title || null,
       snippet: r.snippet || null,
       rank: r.rank,
@@ -199,8 +206,13 @@ async function persistOrganicResults(
       rawMetadata: {
         demo: false,
         provider: r.provider,
-        query,
-        orionQuery: query,
+        query: querySpec.query,
+        orionQuery: querySpec.query,
+        queryId: querySpec.queryId,
+        queryPlanId: querySpec.queryPlanId,
+        queryPurpose: querySpec.purpose,
+        providerPreference: querySpec.providerPreference,
+        identityStrictness: querySpec.identityStrictness,
         orionRegion,
         region: orionRegion,
         providerLimit: providerConfig.google.resultsPerQuery,
@@ -216,7 +228,8 @@ async function runRegionOrganic(
   caseId: string,
   subject: CaseSubjectInfo,
   queries: OrionQuerySpec[],
-  region: OrionRegionCode
+  region: OrionRegionCode,
+  runtimeMode?: ProviderRuntimeMode
 ): Promise<{ organic: number; googleStatus: string; yandexStatus: string }> {
   let organic = 0;
   let googleStatus = "NOT_QUERIED";
@@ -227,8 +240,18 @@ async function runRegionOrganic(
     providerConfig.yandex.resultsPerQuery,
     20
   );
+  const runtime = resolveRuntimeStrategy({ mode: runtimeMode, requestedBy: runtimeMode ? "request" : "default" });
+  const allowYandex = runtime.mode !== "mock_only" && runtime.steps.some((s) => s.providerId === "yandex");
+  const allowGoogle = runtime.mode !== "mock_only" && runtime.steps.some((s) => s.providerId === "google");
+  const organicPurposes = new Set([
+    "subject_lookup",
+    "adverse_lookup",
+    "business_lookup",
+    "media_lookup",
+  ]);
 
   for (const spec of queries) {
+    if (!organicPurposes.has(spec.purpose)) continue;
     const req: SearchProviderRequest = {
       caseId,
       subjectFullName: subject.fullName,
@@ -239,23 +262,25 @@ async function runRegionOrganic(
       limit,
     };
 
-    if (profile.yandexSupported && yandexReady()) {
+    const wantsYandex = spec.providerPreference.includes("yandex");
+    if (wantsYandex && allowYandex && profile.yandexSupported && yandexReady()) {
       const run = await yandexSearchProvider.search(req);
       if (run.status === "SUCCESS") {
         yandexStatus = "COLLECTED";
-        organic += await persistOrganicResults(caseId, "YANDEX", run.results, region, spec.query);
+        organic += await persistOrganicResults(caseId, "YANDEX", run.results, region, spec);
       } else if (run.status === "NOT_CONFIGURED" || run.status === "DISABLED") {
         yandexStatus = run.status === "NOT_CONFIGURED" ? "NOT_CONFIGURED" : "NOT_SUPPORTED";
       } else if (yandexStatus !== "COLLECTED") {
         yandexStatus = "FAILED";
       }
-    } else if (profile.yandexSupported) {
+    } else if (wantsYandex && profile.yandexSupported) {
       yandexStatus = "NOT_CONFIGURED";
     } else {
       yandexStatus = "NOT_SUPPORTED";
     }
 
-    if (googleReady()) {
+    const wantsGoogle = spec.providerPreference.includes("google") || spec.providerPreference.includes("serper");
+    if (wantsGoogle && allowGoogle && googleReady()) {
       const run = await externalGoogleSerpProvider.search({
         ...req,
         region: profile.googleGl,
@@ -263,13 +288,13 @@ async function runRegionOrganic(
       });
       if (run.status === "SUCCESS") {
         googleStatus = "COLLECTED";
-        organic += await persistOrganicResults(caseId, "GOOGLE", run.results, region, spec.query);
+        organic += await persistOrganicResults(caseId, "GOOGLE", run.results, region, spec);
       } else if (run.status === "NOT_CONFIGURED" || run.status === "DISABLED") {
         googleStatus = run.status === "NOT_CONFIGURED" ? "NOT_CONFIGURED" : "NOT_QUERIED";
       } else if (googleStatus !== "COLLECTED") {
         googleStatus = "FAILED";
       }
-    } else {
+    } else if (wantsGoogle) {
       googleStatus = "NOT_CONFIGURED";
     }
   }
@@ -281,9 +306,15 @@ async function runRegionSurfaces(
   caseId: string,
   subject: CaseSubjectInfo,
   region: OrionRegionCode,
-  primaryQueries: OrionQuerySpec[]
+  queryRows: OrionQuerySpec[],
+  runtimeMode?: ProviderRuntimeMode
 ): Promise<{ surfaces: SearchSurfaceInput[]; googleStatus: string }> {
-  if (!googleReady()) {
+  const runtime = resolveRuntimeStrategy({ mode: runtimeMode, requestedBy: runtimeMode ? "request" : "default" });
+  const allowSurfaces =
+    runtime.mode !== "mock_only" &&
+    (runtime.steps.some((s) => s.providerId === "surfaces") ||
+      runtime.steps.some((s) => s.providerId === "google"));
+  if (!allowSurfaces || !googleReady()) {
     return { surfaces: [], googleStatus: "NOT_CONFIGURED" };
   }
 
@@ -291,7 +322,13 @@ async function runRegionSurfaces(
   const all: SearchSurfaceInput[] = [];
   let anySuccess = false;
 
-  for (const spec of primaryQueries) {
+  // Каждая строка здесь — четыре платных вызова Serper (organic + images +
+  // videos + autocomplete). Поверхности читаются из ответов на эти запросы,
+  // отдельных «запросов за поверхностью» в плане больше нет (шаг 10).
+  const surfacePurposes = new Set(["subject_lookup", "media_lookup"]);
+  for (const spec of queryRows) {
+    if (!surfacePurposes.has(spec.purpose)) continue;
+    if (!spec.providerPreference.includes("serper") && !spec.providerPreference.includes("google")) continue;
     const req: SearchProviderRequest = {
       caseId,
       subjectFullName: subject.fullName,
@@ -365,7 +402,7 @@ export async function runOrionSearchProfile(
   options: OrionProfileRunOptions = {}
 ): Promise<OrionProfileRunResult> {
   const subject = await loadCaseSubject(caseId);
-  const plan = buildOrionQueryPlan(
+  const detailedPlan = buildOrionQueryPlanDetailed(
     {
       fullName: subject.fullName,
       aliases: subject.aliases,
@@ -380,6 +417,7 @@ export async function runOrionSearchProfile(
       regions: options.regions,
     }
   );
+  const plan = detailedPlan.plan;
 
   const regionsToRun = options.regions ?? [...new Set(plan.map((q) => q.region))];
   const regionSummaries: OrionRegionRunSummary[] = [];
@@ -403,23 +441,28 @@ export async function runOrionSearchProfile(
 
   for (const region of regionsToRun) {
     const regionQueries = plan.filter((q) => q.region === region);
-    const primary = primaryQueriesForRegion(plan, region);
-
     let organic = 0;
     let googleStatus = "NOT_QUERIED";
     let yandexStatus = "NOT_QUERIED";
     let surfaceInputs: SearchSurfaceInput[] = [];
 
     if (!options.surfacesOnlyMode) {
-      const organicRun = await runRegionOrganic(caseId, subject, regionQueries, region);
-      organic = organicRun.organic;
-      googleStatus = organicRun.googleStatus;
-      yandexStatus = organicRun.yandexStatus;
+      const organicRuntimeRun = await runRegionOrganic(
+        caseId,
+        subject,
+        regionQueries,
+        region,
+        options.runtimeMode
+      );
+      organic = organicRuntimeRun.organic;
+      googleStatus = organicRuntimeRun.googleStatus;
+      yandexStatus = organicRuntimeRun.yandexStatus;
       organicInserted += organic;
     }
 
     if (!options.surfacesOnly) {
-      const surfaceRun = await runRegionSurfaces(caseId, subject, region, primary);
+      const surfaceQueries = queriesForRegionPurpose(plan, region, ["subject_lookup", "media_lookup"]);
+      const surfaceRun = await runRegionSurfaces(caseId, subject, region, surfaceQueries, options.runtimeMode);
       surfaceInputs = surfaceRun.surfaces;
       if (surfaceRun.googleStatus === "COLLECTED") googleStatus = "COLLECTED";
     }
@@ -451,7 +494,15 @@ export async function runOrionSearchProfile(
     });
   }
 
-  return { plan, regions: regionSummaries, organicInserted, surfacesInserted, warnings };
+  warnings.push(...detailedPlan.warnings);
+  return {
+    queryPlanId: detailedPlan.queryPlanId,
+    plan,
+    regions: regionSummaries,
+    organicInserted,
+    surfacesInserted,
+    warnings,
+  };
 }
 
 /** Count adverse surface items from classification. */

@@ -82,6 +82,9 @@ export type ReportArtifact = "pptx" | "pdf";
  */
 export const SERP_SNAPSHOT_KEY_MARKER = "/serp-snapshots/";
 
+/** Stage S2 — LIVE browser SERP capture PNGs (distinct from Stage S1 synthetic snapshots). */
+export const SERP_CAPTURE_KEY_MARKER = "/serp-captures/";
+
 /** Builders for the canonical storage keys. All inputs are validated. */
 export const buildStorageKey = {
   reportArtifact(caseId: string, reportVersionId: string, type: ReportArtifact): string {
@@ -105,6 +108,14 @@ export const buildStorageKey = {
   /** Stage S1 — sidecar metadata for a SERP snapshot. */
   serpSnapshotMetadata(caseId: string, snapshotId: string): string {
     return `cases/${seg(caseId, "caseId")}/serp-snapshots/${seg(snapshotId, "snapshotId")}/metadata.json`;
+  },
+  /** Stage S2 — LIVE browser SERP capture image. */
+  serpCapture(caseId: string, captureId: string, ext: string): string {
+    return `cases/${seg(caseId, "caseId")}/serp-captures/${seg(captureId, "captureId")}.${seg(ext, "ext")}`;
+  },
+  /** Provider-first synthetic SERP PNG (API observations → image). */
+  serpSyntheticAsset(caseId: string, assetId: string, ext: string): string {
+    return `cases/${seg(caseId, "caseId")}/serp-synthetic/${seg(assetId, "assetId")}.${seg(ext, "ext")}`;
   },
   /** O5.3 — cached image thumbnail for report evidence grid. */
   imageThumbnail(caseId: string, hash: string, ext: string): string {

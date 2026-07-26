@@ -1,0 +1,147 @@
+{
+  "schemaVersion": "benchmark-trace-v1",
+  "caseId": "cmreamy2t0002o30f29urzcog",
+  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "disclaimer": "Benchmark items are coverage checklist themes. Their claims are not report facts; only pipeline statuses are recorded.",
+  "rows": [
+    {
+      "benchmarkId": "bm-political-exposure",
+      "label": "Политическая / публичная экспозиция",
+      "status": "SUBJECT_AMBIGUOUS",
+      "rawMatchCount": 6,
+      "subjectMatchCount": 0,
+      "ambiguousCount": 2,
+      "otherSubjectCount": 1,
+      "noiseCount": 0,
+      "findingIds": [
+        "finding-political_exposure-ambiguous-054edc90"
+      ],
+      "promotedFindingIds": [],
+      "notes": []
+    },
+    {
+      "benchmarkId": "bm-business-associations",
+      "label": "Деловые связи",
+      "status": "PROMOTED",
+      "rawMatchCount": 3,
+      "subjectMatchCount": 2,
+      "ambiguousCount": 0,
+      "otherSubjectCount": 0,
+      "noiseCount": 0,
+      "findingIds": [
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-family_associates-subject_match-a4427a53",
+        "finding-business_profile-ambiguous-7a2d3181"
+      ],
+      "promotedFindingIds": [
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-family_associates-subject_match-a4427a53"
+      ],
+      "notes": []
+    },
+    {
+      "benchmarkId": "bm-spouse",
+      "label": "Супруга / экс-супруга",
+      "status": "PROMOTED",
+      "rawMatchCount": 2,
+      "subjectMatchCount": 2,
+      "ambiguousCount": 0,
+      "otherSubjectCount": 0,
+      "noiseCount": 0,
+      "findingIds": [
+        "finding-family_associates-subject_match-a4427a53"
+      ],
+      "promotedFindingIds": [
+        "finding-family_associates-subject_match-a4427a53"
+      ],
+      "notes": []
+    },
+    {
+      "benchmarkId": "bm-offshore",
+      "label": "Офшоры",
+      "status": "ABSENT_IN_RAW",
+      "rawMatchCount": 0,
+      "subjectMatchCount": 0,
+      "ambiguousCount": 0,
+      "otherSubjectCount": 0,
+      "noiseCount": 0,
+      "findingIds": [],
+      "promotedFindingIds": [],
+      "notes": []
+    },
+    {
+      "benchmarkId": "bm-corporate-ownership",
+      "label": "Корпоративное владение",
+      "status": "PROMOTED",
+      "rawMatchCount": 3,
+      "subjectMatchCount": 3,
+      "ambiguousCount": 0,
+      "otherSubjectCount": 0,
+      "noiseCount": 0,
+      "findingIds": [
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-offshore_corporate-subject_match-1b4c64c7",
+        "finding-business_profile-ambiguous-7a2d3181"
+      ],
+      "promotedFindingIds": [
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-offshore_corporate-subject_match-1b4c64c7"
+      ],
+      "notes": []
+    },
+    {
+      "benchmarkId": "bm-pep-rca",
+      "label": "PEP / RCA",
+      "status": "PROMOTED",
+      "rawMatchCount": 28,
+      "subjectMatchCount": 4,
+      "ambiguousCount": 1,
+      "otherSubjectCount": 0,
+      "noiseCount": 0,
+      "findingIds": [
+        "finding-pep_rca_watchlist-subject_match-dfa7da39",
+        "finding-pep_rca_watchlist-ambiguous-976aa8fa"
+      ],
+      "promotedFindingIds": [
+        "finding-pep_rca_watchlist-subject_match-dfa7da39"
+      ],
+      "notes": []
+    },
+    {
+      "benchmarkId": "bm-criminal-judicial",
+      "label": "Криминал / суды",
+      "status": "PROMOTED",
+      "rawMatchCount": 53,
+      "subjectMatchCount": 9,
+      "ambiguousCount": 1,
+      "otherSubjectCount": 0,
+      "noiseCount": 0,
+      "findingIds": [
+        "finding-criminal_legal-subject_match-16447175",
+        "finding-criminal_legal-ambiguous-3d33fe91"
+      ],
+      "promotedFindingIds": [
+        "finding-criminal_legal-subject_match-16447175"
+      ],
+      "notes": []
+    },
+    {
+      "benchmarkId": "bm-defense-natsec",
+      "label": "Оборона / национальная безопасность",
+      "status": "PROMOTED",
+      "rawMatchCount": 8,
+      "subjectMatchCount": 6,
+      "ambiguousCount": 1,
+      "otherSubjectCount": 0,
+      "noiseCount": 0,
+      "findingIds": [
+        "finding-security_scrutiny-subject_match-0ae970c7",
+        "finding-security_scrutiny-ambiguous-3d33fe91"
+      ],
+      "promotedFindingIds": [
+        "finding-security_scrutiny-subject_match-0ae970c7"
+      ],
+      "notes": []
+    }
+  ]
+}

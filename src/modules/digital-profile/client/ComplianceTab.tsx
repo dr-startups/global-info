@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   DigitalProfileApiError,
+  importComplianceVisualPages,
+  importLexisNexisDocx,
   importManualComplianceHit,
   listProviders,
   reviewComplianceHit,
@@ -30,6 +32,35 @@ const RISK_TYPES: ComplianceRiskType[] = [
   "OTHER",
 ];
 const DB_PROVIDERS = ["DOW_JONES", "LEXISNEXIS", "WORLD_CHECK", "OTHER"] as const;
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const VISUAL_IMAGE_ACCEPT = "image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp";
+
+function isDocxFile(file: File): boolean {
+  return /\.docx$/i.test(file.name) || file.type === DOCX_MIME;
+}
+
+function isVisualImageFile(file: File): boolean {
+  return /\.(png|jpe?g|webp)$/i.test(file.name) || /^image\/(png|jpeg|webp)$/i.test(file.type);
+}
+
+function parseComplianceVisual(raw: unknown): {
+  kind: string;
+  approved: boolean;
+  pageCount: number;
+  approvedAt?: string;
+} | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const visual = (raw as Record<string, unknown>).complianceVisual;
+  if (!visual || typeof visual !== "object" || Array.isArray(visual)) return null;
+  const v = visual as Record<string, unknown>;
+  const pages = Array.isArray(v.renderedPages) ? v.renderedPages : [];
+  return {
+    kind: String(v.kind ?? ""),
+    approved: v.approved === true,
+    pageCount: pages.length,
+    approvedAt: v.approvedAt ? String(v.approvedAt) : undefined,
+  };
+}
 
 function reviewTone(status: string): "warn" | "ok" | "danger" | "info" | "neutral" {
   if (status === "MATCH_CONFIRMED") return "ok";
@@ -56,6 +87,9 @@ export function ComplianceTab({
   const [info, setInfo] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [lexisBusy, setLexisBusy] = useState(false);
+  const [lexisStatus, setLexisStatus] = useState<string | null>(null);
+  const [visualBusy, setVisualBusy] = useState<"DOW_JONES" | "WORLD_CHECK" | null>(null);
 
   const [form, setForm] = useState({
     provider: "DOW_JONES" as (typeof DB_PROVIDERS)[number],
@@ -141,7 +175,94 @@ export function ComplianceTab({
     }
   }
 
+  async function handleLexisUpload(file: File) {
+    if (lexisBusy) return;
+    if (!isDocxFile(file)) {
+      setLexisStatus(t("compliance.lexisError"));
+      setError(t("compliance.lexisInvalidFileType"));
+      return;
+    }
+    setLexisBusy(true);
+    setError(null);
+    setInfo(null);
+    setLexisStatus(t("compliance.lexisUploaded"));
+    try {
+      setLexisStatus(t("compliance.lexisConverting"));
+      const result = await importLexisNexisDocx(caseId, file);
+      setLexisStatus(t("compliance.lexisParsing"));
+      const conversionWarning =
+        result.conversionStatus !== "ready" ||
+        result.document.status === "conversion_warning" ||
+        result.document.pageCount <= 0;
+      const finalLabel =
+        result.document.status === "ready"
+          ? t("compliance.lexisReady")
+          : result.document.status === "conversion_warning" ||
+              result.document.status === "parse_warning"
+            ? t("compliance.lexisReviewRequired")
+            : t("compliance.lexisError");
+      const resultLine = t("compliance.lexisResultLine", {
+        source: result.document.sourceLabel || "LexisNexis",
+        file: result.document.fileName || file.name,
+      });
+      const compactSummary = t("compliance.lexisCompactSummary", {
+        pages: result.document.pageCount,
+        signals: result.document.parsedAnalytics.signalCounts.totalSignals,
+        review: result.document.parsedAnalytics.signalCounts.reviewRequired,
+        parser: result.parserStatus,
+        conversion: result.conversionStatus,
+      });
+      setInfo(
+        conversionWarning
+          ? `${t("compliance.lexisConversionWarningMessage")} ${resultLine} ${compactSummary}`
+          : `${t("compliance.lexisReadyMessage")} ${resultLine} ${compactSummary}`
+      );
+      setLexisStatus(finalLabel);
+      onChanged();
+    } catch (err) {
+      setLexisStatus(t("compliance.lexisError"));
+      setError(err instanceof DigitalProfileApiError ? err.message : t("errors.UNKNOWN"));
+    } finally {
+      setLexisBusy(false);
+    }
+  }
+
+  async function handleVisualUpload(provider: "DOW_JONES" | "WORLD_CHECK", fileList: FileList | null) {
+    if (visualBusy || !fileList?.length) return;
+    const files = Array.from(fileList).slice(0, 4);
+    if (files.some((f) => !isVisualImageFile(f))) {
+      setError(t("compliance.visualInvalidFileType"));
+      return;
+    }
+    setVisualBusy(provider);
+    setError(null);
+    setInfo(null);
+    try {
+      const result = await importComplianceVisualPages(caseId, { provider, files });
+      setInfo(
+        t("compliance.visualUploadSuccess", {
+          provider: provider.replace(/_/g, " "),
+          pages: String(result.pageCount),
+        })
+      );
+      onChanged();
+    } catch (err) {
+      setError(err instanceof DigitalProfileApiError ? err.message : t("errors.UNKNOWN"));
+    } finally {
+      setVisualBusy(null);
+    }
+  }
+
   const hits = evidence.databaseProfiles;
+  const lexisImports = hits.filter((h) => {
+    const safe = (h.rawMetadataSafe ?? {}) as Record<string, unknown>;
+    const hybrid = (safe.lexisNexisHybrid ?? {}) as Record<string, unknown>;
+    return String(hybrid.kind ?? "") === "lexisnexis_report";
+  });
+  const visualImports = hits.filter((h) => {
+    const visual = parseComplianceVisual(h.rawMetadataSafe);
+    return Boolean(visual?.approved && visual.pageCount > 0);
+  });
 
   return (
     <div>
@@ -185,6 +306,97 @@ export function ComplianceTab({
           <button type="button" className="dp-btn dp-btn-primary" onClick={() => setShowForm((v) => !v)}>
             {t("compliance.addManualHit")}
           </button>
+          <label className="dp-btn" style={{ marginLeft: 8, cursor: "pointer" }}>
+            {t("compliance.uploadLexisNexis")}
+            <input
+              type="file"
+              accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              style={{ display: "none" }}
+              disabled={lexisBusy}
+              onChange={(e) => {
+                const file = e.currentTarget.files?.[0];
+                if (file) void handleLexisUpload(file);
+                e.currentTarget.value = "";
+              }}
+            />
+          </label>
+          <label className="dp-btn" style={{ marginLeft: 8, cursor: visualBusy ? "wait" : "pointer" }}>
+            {visualBusy === "DOW_JONES" ? "…" : t("compliance.uploadDowJonesVisual")}
+            <input
+              type="file"
+              accept={VISUAL_IMAGE_ACCEPT}
+              multiple
+              style={{ display: "none" }}
+              disabled={visualBusy !== null}
+              onChange={(e) => {
+                void handleVisualUpload("DOW_JONES", e.currentTarget.files);
+                e.currentTarget.value = "";
+              }}
+            />
+          </label>
+          <label className="dp-btn" style={{ marginLeft: 8, cursor: visualBusy ? "wait" : "pointer" }}>
+            {visualBusy === "WORLD_CHECK" ? "…" : t("compliance.uploadWorldCheckVisual")}
+            <input
+              type="file"
+              accept={VISUAL_IMAGE_ACCEPT}
+              multiple
+              style={{ display: "none" }}
+              disabled={visualBusy !== null}
+              onChange={(e) => {
+                void handleVisualUpload("WORLD_CHECK", e.currentTarget.files);
+                e.currentTarget.value = "";
+              }}
+            />
+          </label>
+          {lexisStatus ? (
+            <span className="dp-muted" style={{ marginLeft: 8 }}>
+              {lexisStatus}
+            </span>
+          ) : null}
+          <p className="dp-muted" style={{ marginTop: 8, fontSize: 13 }}>
+            {t("compliance.visualUploadHint")}
+          </p>
+        </div>
+      ) : null}
+      {lexisImports.length > 0 ? (
+        <div className="dp-card" style={{ marginBottom: "1rem", padding: "0.75rem 1rem" }}>
+          <strong>{t("compliance.lexisLastImportTitle")}</strong>
+          {lexisImports.slice(0, 1).map((row) => {
+            const safe = (row.rawMetadataSafe ?? {}) as Record<string, unknown>;
+            const hybrid = (safe.lexisNexisHybrid ?? {}) as Record<string, unknown>;
+            const parsed = (hybrid.parsedAnalytics ?? {}) as Record<string, unknown>;
+            const counts = (parsed.signalCounts ?? {}) as Record<string, unknown>;
+            return (
+              <div key={row.id} className="dp-muted" style={{ marginTop: 6, fontSize: 13 }}>
+                <div>{t("compliance.lexisResultLine", { source: String(hybrid.sourceLabel ?? "LexisNexis"), file: String(hybrid.fileName ?? "—") })}</div>
+                {t("compliance.lexisCompactSummary", {
+                  pages: Number(hybrid.pageCount ?? 0),
+                  signals: Number(counts.totalSignals ?? 0),
+                  review: Number(counts.reviewRequired ?? 0),
+                  parser: String(parsed.parserStatus ?? "unknown"),
+                  conversion:
+                    String(hybrid.status ?? "").includes("conversion") || Number(hybrid.pageCount ?? 0) === 0
+                      ? "warning"
+                      : "ready",
+                })}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+      {visualImports.length > 0 ? (
+        <div className="dp-card" style={{ marginBottom: "1rem", padding: "0.75rem 1rem" }}>
+          <strong>{t("compliance.visualLastImportTitle")}</strong>
+          {visualImports.map((row) => {
+            const visual = parseComplianceVisual(row.rawMetadataSafe);
+            return (
+              <div key={row.id} className="dp-muted" style={{ marginTop: 6, fontSize: 13 }}>
+                <Badge tone="ok">{t("compliance.visualApprovedBadge")}</Badge>{" "}
+                {row.provider.replace(/_/g, " ")} · pages: {visual?.pageCount ?? 0}
+                {visual?.approvedAt ? ` · ${visual.approvedAt.slice(0, 10)}` : ""}
+              </div>
+            );
+          })}
         </div>
       ) : null}
 
@@ -275,7 +487,9 @@ export function ComplianceTab({
             </tr>
           </thead>
           <tbody>
-            {hits.map((d: DatabaseProfile) => (
+            {hits.map((d: DatabaseProfile) => {
+              const visual = parseComplianceVisual(d.rawMetadataSafe);
+              return (
               <tr key={d.id}>
                 <td>{d.provider.replace(/_/g, " ")}</td>
                 <td>{d.matchedName ?? "—"}</td>
@@ -286,6 +500,12 @@ export function ComplianceTab({
                   <Badge tone={reviewTone(d.reviewStatus ?? "PENDING")}>
                     {d.reviewStatus ?? "PENDING"}
                   </Badge>
+                  {visual?.approved ? (
+                    <>
+                      {" "}
+                      <Badge tone="ok">{t("compliance.visualApprovedBadge")}</Badge>
+                    </>
+                  ) : null}
                 </td>
                 <td>
                   <Badge tone="info">{d.hitSource === "MANUAL" ? t("compliance.sourceManual") : d.hitSource ?? d.importMethod}</Badge>
@@ -327,7 +547,8 @@ export function ComplianceTab({
                   </td>
                 ) : null}
               </tr>
-            ))}
+            );
+            })}
           </tbody>
         </table>
       )}

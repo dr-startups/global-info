@@ -298,6 +298,13 @@ export interface ReportMeta {
   demo?: boolean;
   /** Non-fatal notes surfaced to renderer / QA (structured; legacy string[] supported). */
   reportWarnings?: ReportWarning[] | string[];
+  /** Stage R8.3 — internal AI analyst execution status (no secrets). */
+  aiAnalystStatus?: {
+    provider: "openai" | "none";
+    model: string;
+    status: "ready" | "fallback" | "unavailable";
+    reason?: string;
+  };
 }
 
 /**
@@ -356,6 +363,96 @@ export interface ReportOffer {
   disclaimers?: string[];
 }
 
+export type AiAnalystItemStatus =
+  | "confirmed"
+  | "requires_review"
+  | "excluded_noise"
+  | "not_confirmed";
+
+export interface AiAnalystThemeSummary {
+  label: string;
+  explanation: string;
+  evidenceCount: number;
+  status: AiAnalystItemStatus;
+}
+
+export interface AiAnalystDomainSummary {
+  domain: string;
+  label: string;
+  explanation: string;
+  evidenceCount: number;
+  status: AiAnalystItemStatus;
+}
+
+export interface AiAnalystRegionNarrative {
+  confirmedNegativeSummary: string;
+  potentialNegativeSummary: string;
+  reviewRequiredSummary: string;
+  topThemes: AiAnalystThemeSummary[];
+  keyDomains: AiAnalystDomainSummary[];
+  riskExplanation: string;
+  recommendedActions: string[];
+  sanctionsWatchlistContext?: string;
+}
+
+export interface AiAnalystExecutiveSummary {
+  plainConclusion: string;
+  riskExplanation: string;
+  whyNotLow: string;
+  whatWasFound: string[];
+  whatWasNotConfirmed: string[];
+  manualReviewRequired: string[];
+  nextActions: string[];
+}
+
+export interface AiAnalystLexisNexisNarrative {
+  importStatus: string;
+  screeningConclusion: string;
+  matchesSummary: string;
+  reviewRequiredSummary: string;
+  visualPagesSummary: string;
+}
+
+export interface AiAnalystEvidenceInterpretation {
+  confirmed: string;
+  reviewRequired: string;
+  excludedNoise: string;
+  confidence: string;
+}
+
+export interface AiAnalystRecommendedAction {
+  label: string;
+  rationale: string;
+}
+
+export interface AiAnalystSourceNote {
+  source: string;
+  note: string;
+}
+
+export interface AiAnalystGenerationMeta {
+  evidenceItemsUsed: number;
+  truncatedInput: boolean;
+  warnings: string[];
+}
+
+export interface AiAnalystNarrative {
+  status: "ready" | "fallback" | "unavailable";
+  generatedBy: "gpt-5.5" | "deterministic";
+  provider: "openai" | "none";
+  language: "ru" | "en";
+  generatedAt?: string;
+  meta: AiAnalystGenerationMeta;
+  executiveSummary: AiAnalystExecutiveSummary;
+  regionNarratives: {
+    ru?: AiAnalystRegionNarrative;
+    intl?: AiAnalystRegionNarrative;
+  };
+  lexisNexisNarrative?: AiAnalystLexisNexisNarrative;
+  evidenceInterpretation: AiAnalystEvidenceInterpretation;
+  clientSafeWarnings: string[];
+}
+
 export interface ReportJson {
   meta: ReportMeta;
   subject: SubjectProfile;
@@ -386,6 +483,539 @@ export interface ReportJson {
   evidenceQuality?: import("./evidence-quality/types").EvidenceQualitySummary;
   /** Stage O5.4 — selected evidence VM for renderer enforcement. */
   selectedEvidence?: import("./report/selected-evidence-report-vm").SelectedEvidenceReportVm;
+  /** Stage R4.2 — dedup/source-quality explainability summary. */
+  sourceQualitySummary?: import("./report/source-quality-diagnostics").ReportSourceQualitySummary;
+  /** Stage R4.3 — query/surface/screenshot provenance summary + lineage. */
+  searchProvenanceSummary?: ReportSearchProvenanceSummary;
+  searchProvenance?: {
+    queryLineage: ReportQueryLineageRow[];
+    surfaceProvenance: ReportSearchSurfaceProvenanceRow[];
+    screenshotProvenance: ReportScreenshotProvenanceRow[];
+  };
+  /** Stage R3.2b — provider/runtime diagnostics block (no external calls). */
+  providerDiagnostics?: ReportProviderDiagnostics;
+  /** Stage R5.1 — provider readiness rollup (internal rich, client-safe subset). */
+  providerReadinessSummary?: ReportProviderReadinessSummary;
+  /** Stage R5.2 — deterministic query planning diagnostics (internal-only). */
+  queryPlanDiagnostics?: ReportQueryPlanDiagnostics;
+  /** Stage R5.3 — live-provider smoke diagnostics (internal-only). */
+  liveProviderSmoke?: ReportLiveProviderSmokeDiagnostics;
+  /** Stage R3.3 — entity/FIO filtering diagnostics (safe additive). */
+  entityFiltering?: ReportEntityFilteringDiagnostics;
+  /** Stage R3.5 — normalized compliance/risk intelligence (display-level, client-safe). */
+  complianceRiskIntel?: import("./report/compliance-risk-intel").ComplianceRiskIntel;
+  /** Stage R7.4 — LexisNexis hybrid import (visual pages + parsed analytics). */
+  lexisNexisHybrid?: LexisNexisHybridReportBlock;
+  /** Stage R8.3 — AI analyst narrative layer (client-readable structured summary). */
+  aiAnalystNarrative?: AiAnalystNarrative;
+}
+
+export type ImportedEvidenceDocumentStatus =
+  | "uploaded"
+  | "converting"
+  | "parsing"
+  | "ready"
+  | "conversion_warning"
+  | "parse_warning"
+  | "failed";
+
+export interface RenderedDocumentPage {
+  pageNumber: number;
+  storageKey?: string;
+  imageBase64?: string;
+  width: number;
+  height: number;
+  renderStatus: "ready" | "warning" | "failed";
+  renderWarning?: string;
+}
+
+export interface LexisNexisSignal {
+  id: string;
+  sourceLabel: "LexisNexis";
+  matchName: string;
+  normalizedName: string;
+  category:
+    | "sanctions_watchlist"
+    | "pep_political_exposure"
+    | "adverse_media"
+    | "legal_regulatory"
+    | "corporate_ownership"
+    | "identity_match"
+    | "unknown";
+  categoryLabelRu: string;
+  categoryLabelEn: string;
+  riskLevel: "low" | "medium" | "high" | "unknown";
+  reviewStatus: "review_required" | "potential_match" | "excluded";
+  confidenceLabel: "high" | "medium" | "low" | "unknown";
+  clientSafeFinding: string;
+  clientSafeReason: string;
+  internalReason?: string;
+  snippetShort?: string;
+  sourceDate?: string;
+  sourceDomain?: string;
+  pageRef?: number;
+  evidenceDocumentId: string;
+  requiresReview: boolean;
+  isConfirmed: boolean;
+  isExcludedNoise: boolean;
+}
+
+export interface LexisNexisParsedAnalytics {
+  parserVersion: string;
+  parserStatus: "parsed" | "partial" | "warning" | "failed";
+  subjectNameDetected?: string;
+  reportDateDetected?: string;
+  executiveSummaryClient: string;
+  executiveSummaryInternal?: string;
+  overallReviewStatus:
+    | "no_relevant_findings"
+    | "review_required"
+    | "confirmed_materials_present"
+    | "parse_uncertain";
+  riskLevelSuggestion: "low" | "medium" | "high" | "unknown";
+  confidenceLabel: "high" | "medium" | "low" | "unknown";
+  signalCounts: {
+    totalSignals: number;
+    reviewRequired: number;
+    potentialMatches: number;
+    adverseMedia: number;
+    sanctionsOrWatchlist: number;
+    legalOrRegulatory: number;
+    pepOrPoliticalExposure: number;
+    corporateOrOwnership: number;
+    unknown: number;
+  };
+  signals: LexisNexisSignal[];
+  parserWarnings?: string[];
+  provenance?: {
+    extractedTextLength?: number;
+    parserRuntimeMs?: number;
+    source: "lexisnexis_docx_import";
+  };
+}
+
+export interface ImportedEvidenceDocument {
+  id: string;
+  caseId: string;
+  kind: "lexisnexis_report";
+  sourceLabel: "LexisNexis";
+  fileName: string;
+  storageKey: string;
+  importedAt: string;
+  importedBy?: string | null;
+  status: ImportedEvidenceDocumentStatus;
+  pageCount: number;
+  renderedPages: RenderedDocumentPage[];
+  parsedAnalytics: LexisNexisParsedAnalytics;
+  clientVisible: boolean;
+  internalNotes?: string[];
+  provenance?: {
+    importMethod: "manual_upload";
+    parserVersion: string;
+    conversionAvailable: boolean;
+  };
+}
+
+export interface LexisNexisHybridReportBlock {
+  sourceLabel: "LexisNexis";
+  legalSafeDisclaimer: string;
+  documents: ImportedEvidenceDocument[];
+  parsedSignalSummary: {
+    totalDocuments: number;
+    totalSignals: number;
+    reviewRequired: number;
+    parserStatus: "parsed" | "partial" | "warning" | "failed";
+    conversionStatus: "ready" | "warning" | "failed";
+    executiveSummaryClient: string;
+  };
+}
+
+export type ProviderDiagnosticCategory =
+  | "search"
+  | "surface"
+  | "knowledge"
+  | "compliance"
+  | "screenshot"
+  | "pipeline";
+
+export type ProviderDiagnosticStatus =
+  | "ready"
+  | "configured"
+  | "not_configured"
+  | "stub"
+  | "mock"
+  | "fallback"
+  | "failed"
+  | "unknown";
+
+export type ProviderDiagnosticRuntimeMode =
+  | "real"
+  | "mock"
+  | "mixed"
+  | "manual"
+  | "synthetic"
+  | "unknown";
+
+export type ProviderDiagnosticRisk = "low" | "medium" | "high";
+export type ProviderCapabilityLevel = "full" | "partial" | "stub" | "mock" | "none";
+
+/** Stage R4.1 — normalized runtime nature of a provider (no secrets). */
+export type ProviderRuntimeKind = "real" | "mock" | "stub" | "manual" | "synthetic";
+
+/** Stage R4.1 — capability support flags per provider (display-level). */
+export interface ProviderSupportMatrix {
+  organicSearch: boolean;
+  suggestions: boolean;
+  relatedQueries: boolean;
+  images: boolean;
+  videos: boolean;
+  knowledge: boolean;
+  wikipedia: boolean;
+  compliance: boolean;
+  screenshots: boolean;
+  manualImport: boolean;
+}
+
+/** Stage R4.1 — per-provider source provenance row (internal-only via diagnostics). */
+export interface ReportSourceProvenanceRow {
+  sourceProvider: string;
+  sourceProviderLabel: string;
+  sourceCategory: ProviderDiagnosticCategory;
+  sourceRuntimeKind: ProviderRuntimeKind;
+  collectionMode: ProviderRuntimeKind | "fallback" | "unavailable";
+  inclusionDecision: "included" | "review" | "excluded" | "fallback" | "unavailable";
+  inclusionReason?: string;
+  fallbackReason?: string;
+  sourceQualityDecision?: "included" | "review" | "excluded" | "fallback" | "unavailable";
+  duplicateCount?: number;
+  collected?: number;
+  included?: number;
+  review?: number;
+  excluded?: number;
+  safeNote?: string;
+  internalNote?: string;
+}
+
+export interface ReportQueryLineageRow {
+  queryId: string;
+  queryPlanId?: string;
+  queryText: string;
+  normalizedQuery: string;
+  queryLanguage: string;
+  queryRegion: string;
+  queryPurpose:
+    | "subject_lookup"
+    | "adverse_lookup"
+    | "media_lookup"
+    | "suggestion_lookup"
+    | "related_lookup"
+    | "wikipedia_lookup"
+    | "compliance_lookup"
+    | "unknown";
+  providerId: string;
+  providerLabel: string;
+  providerRuntimeKind?: ProviderRuntimeKind;
+  issuedAtLabel: string;
+  resultCount: number;
+  selectedCount: number;
+  excludedCount: number;
+  duplicateCount: number;
+  fallbackUsed: boolean;
+  fallbackReason?: string;
+  sourceSurfaceIds: string[];
+  relatedScreenshotIds: string[];
+}
+
+export interface ReportSearchSurfaceProvenanceRow {
+  surfaceId: string;
+  surfaceType:
+    | "organic"
+    | "suggestion"
+    | "related"
+    | "image"
+    | "video"
+    | "wikipedia"
+    | "screenshot"
+    | "compliance"
+    | "manual"
+    | "unknown";
+  region: string;
+  language: string;
+  providerId: string;
+  providerLabel: string;
+  queryId?: string;
+  sourceFingerprint?: string;
+  duplicateGroupId?: string;
+  sourceQualityDecision?: string;
+  inclusionReason?: string;
+  clientSafeReason?: string;
+  screenshotId?: string;
+  evidencePageRefs?: string[];
+  reportPageRefs?: number[];
+}
+
+export interface ReportScreenshotProvenanceRow {
+  screenshotId: string;
+  screenshotKind: "real_serp" | "synthetic_serp" | "fallback_serp" | "media_thumbnail" | "none";
+  providerId: string;
+  queryId?: string;
+  region: string;
+  language: string;
+  sourceSurfaceIds: string[];
+  generatedFrom:
+    | "live_browser"
+    | "synthetic_renderer"
+    | "stored_result_data"
+    | "fallback_empty_state"
+    | "unknown";
+  fallbackReason?: string;
+  containsHighlightedEvidence: boolean;
+  highlightedSourceFingerprints?: string[];
+  clientSafeCaption: string;
+  internalCaption?: string;
+  artifactPathInternal?: string;
+  warningCodes?: string[];
+}
+
+export interface ReportSearchProvenanceSummary {
+  queryCount: number;
+  surfaceCount: number;
+  screenshotCount: number;
+  realScreenshotCount: number;
+  syntheticScreenshotCount: number;
+  fallbackScreenshotCount: number;
+  linkedEvidenceCount: number;
+  unlinkedEvidenceCount: number;
+  byProvider: Record<string, number>;
+  bySurfaceType: Record<string, number>;
+  byRegion: Record<string, number>;
+  warnings: string[];
+  searchSourcesReviewed?: number;
+  evidenceLinkedCount?: number;
+  screenshotSummaryLabel?: string;
+  safeNote?: string;
+}
+
+export type ProviderReadinessStatus =
+  | "ready"
+  | "missing_config"
+  | "unavailable"
+  | "fallback_only"
+  | "manual_only"
+  | "synthetic_only"
+  | "disabled"
+  | "unknown";
+
+export interface ReportProviderReadinessSummary {
+  totalProviders: number;
+  readyCount: number;
+  realReadyCount: number;
+  fallbackOnlyCount: number;
+  unavailableCount: number;
+  manualOnlyCount: number;
+  syntheticOnlyCount: number;
+  missingConfigCount: number;
+  productionReadyCount: number;
+  byCategory: Record<string, number>;
+  byRuntimeKind: Record<string, number>;
+  warnings: string[];
+  /** Optional client-safe rollup fields. */
+  safeSummaryLabel?: string;
+  readySourcesLabel?: string;
+}
+
+export interface ReportQueryPlanDiagnosticsRow {
+  queryId: string;
+  queryText: string;
+  normalizedQuery: string;
+  region: string;
+  language: string;
+  purpose:
+    | "subject_lookup"
+    | "adverse_lookup"
+    | "business_lookup"
+    | "media_lookup"
+    | "image_lookup"
+    | "video_lookup"
+    | "suggestion_lookup"
+    | "related_lookup"
+    | "wikipedia_lookup"
+    | "compliance_lookup"
+    | "unknown";
+  providerPreference: string[];
+  requiredTokens: string[];
+  optionalTokens: string[];
+  identityStrictness: "strict" | "balanced" | "broad" | "exploratory";
+  maxResultsHint: number;
+  clientVisible: boolean;
+  internalReason?: string;
+}
+
+export interface ReportQueryPlanDiagnostics {
+  queryPlanId: string;
+  totalQueries: number;
+  byPurpose: Record<string, number>;
+  byProviderPreference: Record<string, number>;
+  byRegion: Record<string, number>;
+  byLanguage: Record<string, number>;
+  byIdentityStrictness: Record<string, number>;
+  weakQuerySuppressedCount: number;
+  transliterationVariantCount: number;
+  regionHintCount: number;
+  providerUnavailableQueryCount: number;
+  fallbackEligibleQueryCount: number;
+  warnings: string[];
+  queryRows: ReportQueryPlanDiagnosticsRow[];
+}
+
+export interface ReportLiveProviderSmokeRow {
+  providerId: string;
+  providerLabel: string;
+  category: string;
+  runtimeKind: "real" | "mock" | "stub" | "manual" | "synthetic";
+  configured: boolean;
+  credentialsPresent: boolean;
+  smokeAttempted: boolean;
+  smokeSkippedReason?: string;
+  smokeStatus: "pass" | "fail" | "skipped" | "unavailable" | "fallback" | "not_supported";
+  safeStatusCode?: number;
+  safeErrorClass?: string;
+  latencyBucket: "none" | "fast" | "normal" | "slow" | "timeout";
+  resultCountBucket: "none" | "zero" | "one_to_five" | "six_to_twenty" | "many";
+  fallbackUsed: boolean;
+  fallbackProviderId?: string;
+  warningCodes?: string[];
+}
+
+export interface ReportLiveProviderSmokeDiagnostics {
+  smokeRunId: string;
+  requestedRuntimeMode: ProviderRuntimeMode;
+  resolvedRuntimeMode: ProviderRuntimeMode;
+  providerRows: ReportLiveProviderSmokeRow[];
+  summary: {
+    attemptedCount: number;
+    passCount: number;
+    failCount: number;
+    skippedCount: number;
+    unavailableCount: number;
+    fallbackCount: number;
+    realAttemptCount: number;
+    mockAttemptCount: number;
+    warningCount: number;
+  };
+}
+export type ProviderRuntimeMode =
+  | "legacy_mock_first"
+  | "real_first_with_fallback"
+  | "real_only"
+  | "mock_only";
+export type ProviderFallbackPolicy =
+  | "allow_mock_fallback"
+  | "allow_empty_fallback"
+  | "no_mock_fallback";
+
+export interface ReportProviderDiagnosticItem {
+  id: string;
+  label: string;
+  category: ProviderDiagnosticCategory;
+  status: ProviderDiagnosticStatus;
+  runtimeMode: ProviderDiagnosticRuntimeMode;
+  reachesReport: boolean;
+  clientVisible: boolean;
+  risk: ProviderDiagnosticRisk;
+  message: string;
+  safeDetail?: string;
+  internalDetail?: string;
+  selectedByStrategy?: boolean;
+  skippedReason?: string;
+  fallbackReason?: string;
+  configured?: boolean;
+  capabilityLevel?: ProviderCapabilityLevel;
+  /** Stage R4.1 — normalized capability/readiness fields (all client-safe booleans). */
+  runtimeKind?: ProviderRuntimeKind;
+  requiresSecrets?: boolean;
+  /** True only when required credentials are present — never exposes the values. */
+  hasCredentials?: boolean;
+  available?: boolean;
+  productionReady?: boolean;
+  supports?: ProviderSupportMatrix;
+  /** Stage R5.1 — normalized readiness metadata. */
+  readinessStatus?: ProviderReadinessStatus;
+  credentialsPresent?: boolean;
+  safeReason?: string;
+  internalReason?: string;
+  /** Key names only; never values. Internal diagnostics only. */
+  missingConfigKeys?: string[];
+  warnings?: string[];
+  recommendedAction?: string;
+}
+
+export interface ReportProviderDiagnostics {
+  auditMode: {
+    fullAuditOrderMode: "mock_first" | "real_first" | "mixed" | "unknown";
+    isMockDefault: boolean;
+    notes: string[];
+  };
+  runtimeStrategy: {
+    mode: ProviderRuntimeMode;
+    selectedOrder: string[];
+    fallbackPolicy: ProviderFallbackPolicy;
+    requestedBy: "default" | "request" | "config" | "test";
+    realProvidersAvailable: number;
+    mockProvidersAvailable: number;
+    fallbackEvents: Array<{
+      providerId: string;
+      reason: string;
+      from: "real" | "mock" | "none";
+      to: "real" | "mock" | "none";
+    }>;
+    warnings: string[];
+  };
+  providers: ReportProviderDiagnosticItem[];
+  summary: {
+    readyCount: number;
+    realCount: number;
+    mockOrStubCount: number;
+    highRiskCount: number;
+    productionReady: boolean;
+    /** Stage R4.1 — richer, additive counts (optional for back-compat). */
+    totalProviders?: number;
+    manualCount?: number;
+    unavailableCount?: number;
+    fallbackUsedCount?: number;
+    productionReadyCount?: number;
+    /** Stage R5.1 — readiness-focused additive fields. */
+    realReadyCount?: number;
+    fallbackOnlyCount?: number;
+    missingConfigCount?: number;
+    syntheticOnlyCount?: number;
+  };
+  /** Stage R4.1 — per-provider source provenance (internal-only). */
+  sourceProvenance?: ReportSourceProvenanceRow[];
+  /** Stage R5.1 — deterministic provider readiness summary. */
+  providerReadinessSummary?: ReportProviderReadinessSummary;
+}
+
+export interface ReportEntityFilteringDiagnostics {
+  enabled: boolean;
+  subjectIdentitySummary: {
+    hasPatronymic: boolean;
+    hasLatinAliases: boolean;
+    hasRegionHints: boolean;
+  };
+  counts: {
+    strictSubject: number;
+    likelySubject: number;
+    possibleSubject: number;
+    namesake: number;
+    notSubject: number;
+    insufficientIdentity: number;
+    excludedByIdentity: number;
+  };
+  topExclusionReasons: Array<{ reason: string; count: number }>;
+  internationalSuppressionCount: number;
+  mediaSuppressionCount: number;
+  complianceReviewCount: number;
 }
 
 /** Stage S1 — minimal SERP snapshot reference embedded in report_json. */

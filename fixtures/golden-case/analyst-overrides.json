@@ -1,0 +1,28 @@
+{
+  "version": "analyst-overrides-v1",
+  "caseId": "case-golden-holmstrom",
+  "classification": [
+    {
+      "searchResultId": "sr-ru-o-0",
+      "url": "https://ru.example/o-anders-holmstrom-founder-of-nordkap-capital-faces-tax-fraud-probe-in-stockholm-0",
+      "classification": "NEUTRAL",
+      "riskTheme": null,
+      "source": "result_classification"
+    },
+    {
+      "searchResultId": "sr-ru-o-3",
+      "url": "https://ru.example/o-anders-holmstrom-ceo-of-nordkap-capital-ab-fintech-investor-profile-3",
+      "classification": "ADVERSE_MEDIA",
+      "riskTheme": "adverse_media",
+      "source": "result_classification"
+    },
+    {
+      "searchResultId": "sr-ru-o-4",
+      "classification": "OTHER_SUBJECT",
+      "riskTheme": null,
+      "source": "result_classification"
+    }
+  ],
+  "manualReview": [],
+  "approvedFindings": []
+}

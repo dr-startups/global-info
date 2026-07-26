@@ -1,0 +1,750 @@
+/**
+ * Canonical job-scoped visual assets for the unified ORION report.
+ *
+ * Builds synthetic, API-derived visuals (ORION style) from the SAME composite
+ * inventory the analytics pipeline consumes — deterministic, offline, no DB,
+ * no network. Every asset carries the evidenceRefs of the rows actually drawn
+ * on it plus per-row visibleItems (with the same red-frame highlight
+ * classifier the legacy report-72 snapshots used), so deck sidebars can
+ * explain exactly what the client sees.
+ *
+ * Produced assets and their canonical slot binding:
+ *   - synthetic SERP snapshots (RU / UAE)        → p10 / p27
+ *   - suggestion panels (Yandex / Google / UAE)  → p11 / p12 / p28
+ *   - related-queries (PAA) panels               → p20–p22 / p32
+ *   - AI answers / knowledge panels              → p18 / p19 / p31
+ *   - image grids                                → p14–p17 / p30
+ */
+
+import type { RawInventoryItem } from "../orion-golden/types";
+import type {
+  VisibleAssetItem,
+  VisualAssetMeta,
+  VisualAssetsBySlot,
+} from "../orion-golden/deck-sections/canonical-slots";
+import type { RendererAssetEntry } from "../orion-golden/deck-sections/run-deck-build";
+import { renderSerpSnapshotPng } from "../serp-snapshot/renderer";
+import { buildSyntheticSerpViewModelFromObservations } from "../serp-observation/synthetic-asset";
+import {
+  filterObservationsForSyntheticSerp,
+} from "../serp-observation/filter-synthetic-serp-noise";
+import {
+  selectVisibleObservationsForEngine,
+} from "../serp-observation/synthetic-asset";
+import { classifyObservationHighlight } from "../serp-observation/resolve-observation-highlights";
+import type { PersistedSerpObservation } from "../serp-observation/types";
+import {
+  buildImageGridSvg,
+  buildKnowledgePanelSvg,
+  buildSurfacePanelSvg,
+  fetchImagePreviewsWithBudget,
+  svgToPngBase64,
+  type ImagePreviewFetchOptions,
+} from "../orion-golden/assets/media-asset-svg";
+import { mapSurfaceBucket } from "../orion-golden/classic/composite-serp-overlay-merge";
+import {
+  pickRealSerpScreenshot,
+  type RealSerpScreenshotInput,
+} from "./evidence-supplement-adapter";
+
+/** REMEDIATION §5.1 — one asset failure must not wipe the whole visual set. */
+export type VisualAssetFailure = {
+  kind: string;
+  slotId: string;
+  assetRef: string;
+  reason: string;
+};
+
+export type CanonicalVisualAssets = {
+  assets: RendererAssetEntry[];
+  visualAssets: VisualAssetsBySlot;
+  /** Counts for diagnostics / summary artifacts. */
+  counts: {
+    serpSnapshots: number;
+    suggestionPanels: number;
+    relatedPanels: number;
+    aiPanels: number;
+    imageGrids: number;
+    /** How many SERP slots used a real (LIVE/fixture) screenshot. */
+    realSerpSnapshots: number;
+  };
+  /** Per-asset failures (F7); remaining assets stay built. */
+  failed: VisualAssetFailure[];
+};
+
+/** Probe sharp once so a missing native binary surfaces as one clear error. */
+export async function assertSharpAvailable(): Promise<void> {
+  const tiny =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" fill="#fff"/></svg>';
+  try {
+    await svgToPngBase64(tiny);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`SHARP_UNAVAILABLE: ${msg}`);
+  }
+}
+
+type Region = "RU" | "UAE";
+
+function regionOf(raw: string | undefined): Region {
+  const r = String(raw ?? "").toUpperCase();
+  return /UAE|AE|INTL|EN|GLOBAL/.test(r) ? "UAE" : "RU";
+}
+
+function engineOf(item: RawInventoryItem): "YANDEX" | "GOOGLE" | null {
+  const raw = String(
+    (item.rawMetadata as Record<string, unknown> | undefined)?.engine ?? item.provider ?? ""
+  ).toUpperCase();
+  if (/YANDEX|\bYA\b/.test(raw)) return "YANDEX";
+  if (/GOOGLE|SERPER|GSEARCH/.test(raw)) return "GOOGLE";
+  // `ARSENKIN` означает «поставщик известен, система — нет»: так помечены
+  // только те инструменты, где систему не выбирают (аудит URL) или где один
+  // запрос охватывает обе сразу (`check-top` с массивом `se`). Для них выдача
+  // считается гугловой, иначе пустует слот органики по ОАЭ.
+  //
+  // Там, где система выбрана параметром `se`, она теперь и записывается —
+  // см. `resolveObservationEngine`. Прежде это правило переписывало её здесь
+  // задним числом, и подсказки Яндекса попадали на слайд Google под ярлыком
+  // Google, а слайд «Россия — подсказки Яндекса» выходил пустым.
+  if (/ARSENKIN/.test(raw)) return "GOOGLE";
+  return null;
+}
+
+function surfaceOf(item: RawInventoryItem): string {
+  const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
+  return mapSurfaceBucket(String(meta.surface ?? item.evidenceType ?? "organic"));
+}
+
+function refOf(item: RawInventoryItem): string {
+  return `inventory:${item.inventoryId}`;
+}
+
+function domainOf(url: string | undefined): string {
+  if (!url || !/^https?:\/\//i.test(url)) return "";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+/** Adapt an inventory item to the shape the SERP snapshot generator consumes. */
+function toSerpObservation(item: RawInventoryItem, rank: number): PersistedSerpObservation {
+  const engine = engineOf(item) ?? "GOOGLE";
+  const region = regionOf(item.region);
+  return {
+    id: refOf(item),
+    searchDocumentId: null,
+    caseId: item.caseId,
+    auditRunId: item.reportRunId,
+    queryId: "composite",
+    queryText: item.query ?? "",
+    provider: /arsenkin/i.test(item.provider) ? "arsenkin" : engine === "YANDEX" ? "yandex" : "serper",
+    engine,
+    surface: "organic",
+    region,
+    language: region === "UAE" ? "en" : "ru",
+    rank,
+    url: item.sourceUrl ?? "",
+    title: item.title ?? null,
+    snippet: item.snippet ?? null,
+    domain: domainOf(item.sourceUrl) || null,
+    providerStatus: "OK",
+    capturedAt: new Date(item.collectedAt || 0),
+  };
+}
+
+function toVisibleItem(item: RawInventoryItem): VisibleAssetItem {
+  const hl = classifyObservationHighlight({
+    url: item.sourceUrl ?? null,
+    domain: domainOf(item.sourceUrl) || null,
+    title: item.title ?? null,
+    snippet: item.snippet ?? null,
+  } as unknown as PersistedSerpObservation);
+  return {
+    ref: refOf(item),
+    url: item.sourceUrl,
+    domain: domainOf(item.sourceUrl) || undefined,
+    title: item.title,
+    engine: engineOf(item) ?? undefined,
+    region: regionOf(item.region),
+    adverse: hl.isHighlighted,
+    themeTitle: hl.themeTitle ?? undefined,
+  };
+}
+
+function meta(
+  asset: RendererAssetEntry,
+  visibleItems: VisibleAssetItem[]
+): VisualAssetMeta {
+  const evidenceRefs = visibleItems.map((v) => v.ref);
+  const evidenceDomains = [
+    ...new Set(visibleItems.map((v) => v.domain).filter((d): d is string => Boolean(d))),
+  ];
+  return {
+    assetRef: asset.assetRef,
+    kind: String(asset.kind ?? "visual"),
+    title: String(asset.title ?? asset.assetRef),
+    hasImage: Boolean(asset.imageData),
+    evidenceRefs,
+    evidenceDomains: evidenceDomains.length ? evidenceDomains : undefined,
+    visibleItems,
+  };
+}
+
+/** Most frequent non-empty query among rows (stable tie-break by first seen). */
+function dominantQuery(items: RawInventoryItem[], fallback: string): string {
+  const counts = new Map<string, number>();
+  for (const it of items) {
+    const q = String(it.query ?? "").trim();
+    if (!q) continue;
+    counts.set(q, (counts.get(q) ?? 0) + 1);
+  }
+  let best = "";
+  let bestCount = 0;
+  for (const [q, c] of counts) {
+    if (c > bestCount) {
+      best = q;
+      bestCount = c;
+    }
+  }
+  return best || fallback;
+}
+
+function chunk<T>(rows: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < rows.length; i += size) out.push(rows.slice(i, i + size));
+  return out;
+}
+
+async function buildSerpSnapshotAsset(input: {
+  assetRef: string;
+  region: Region;
+  subjectName: string;
+  items: RawInventoryItem[];
+  bind: (slotId: string, meta: VisualAssetMeta) => void;
+  push: (asset: RendererAssetEntry) => void;
+  slotId: string;
+}): Promise<boolean> {
+  // Only engine-attributable rows can appear in a Yandex/Google column.
+  const attributable = input.items.filter((it) => engineOf(it) !== null && it.sourceUrl);
+  if (attributable.length === 0) return false;
+
+  const rankByEngine = new Map<string, number>();
+  const observations = attributable.map((it) => {
+    const engine = engineOf(it)!;
+    const rank = (rankByEngine.get(engine) ?? 0) + 1;
+    rankByEngine.set(engine, rank);
+    return { item: it, obs: toSerpObservation(it, rank) };
+  });
+
+  const allObs = observations.map((o) => o.obs);
+  const filtered = filterObservationsForSyntheticSerp(allObs, input.subjectName);
+  const visibleIds = new Set(
+    [
+      ...selectVisibleObservationsForEngine(filtered, "YANDEX"),
+      ...selectVisibleObservationsForEngine(filtered, "GOOGLE"),
+    ].map((o) => o.id)
+  );
+  if (visibleIds.size === 0) return false;
+
+  const vm = buildSyntheticSerpViewModelFromObservations({
+    observations: allObs,
+    subjectName: input.subjectName,
+    queryText: dominantQuery(attributable, input.subjectName),
+    language: input.region === "UAE" ? "en" : "ru",
+  });
+  const png = await renderSerpSnapshotPng(vm);
+
+  const visibleItems = observations
+    .filter((o) => visibleIds.has(o.obs.id))
+    .map((o) => toVisibleItem(o.item));
+  const asset: RendererAssetEntry = {
+    assetRef: input.assetRef,
+    kind: "serp_screenshot",
+    title:
+      input.region === "UAE"
+        ? "ОАЭ — синтетический снимок выдачи"
+        : "Россия — синтетический снимок выдачи",
+    caption: "Синтетический снимок на основе сохранённых результатов API",
+    imageData: png.toString("base64"),
+    evidenceRefs: visibleItems.map((v) => v.ref),
+  };
+  input.push(asset);
+  input.bind(input.slotId, meta(asset, visibleItems));
+  return true;
+}
+
+async function buildListPanelAsset(input: {
+  assetRef: string;
+  kind: "surface_panel";
+  title: string;
+  subtitle: string;
+  engineLabel: string;
+  caption: string;
+  rows: RawInventoryItem[];
+  rowMeta?: (item: RawInventoryItem) => string | undefined;
+  slotId: string;
+  bind: (slotId: string, meta: VisualAssetMeta) => void;
+  push: (asset: RendererAssetEntry) => void;
+  /** Test hook (§5.1): force this panel to throw. */
+  injectFailureForAssetRef?: string;
+}): Promise<boolean> {
+  if (
+    input.injectFailureForAssetRef &&
+    input.injectFailureForAssetRef === input.assetRef
+  ) {
+    throw new Error(`injected-visual-failure:${input.assetRef}`);
+  }
+  const rows = input.rows.filter((r) => String(r.title ?? "").trim()).slice(0, 10);
+  if (rows.length === 0) return false;
+  const visibleItems = rows.map(toVisibleItem);
+  const png = await svgToPngBase64(
+    buildSurfacePanelSvg({
+      title: input.title,
+      subtitle: input.subtitle,
+      engineLabel: input.engineLabel,
+      items: rows.map((r, i) => ({
+        label: String(r.title).trim(),
+        meta: input.rowMeta?.(r),
+        // Same red-frame classifier the SERP snapshot uses: negative phrases
+        // are visibly marked on the panel itself (ORION style).
+        adverse: visibleItems[i].adverse,
+      })),
+    })
+  );
+  const asset: RendererAssetEntry = {
+    assetRef: input.assetRef,
+    kind: input.kind,
+    title: input.title,
+    caption: input.caption,
+    imageData: png,
+    evidenceRefs: visibleItems.map((v) => v.ref),
+  };
+  input.push(asset);
+  input.bind(input.slotId, meta(asset, visibleItems));
+  return true;
+}
+
+/**
+ * Build the full synthetic visual set from composite inventory items.
+ * Slots with no matching rows get no asset — the deck renders its honest
+ * empty state for them (fail-closed, never fabricated content).
+ */
+export async function buildCanonicalVisualAssets(input: {
+  subjectName: string;
+  items: RawInventoryItem[];
+  /**
+   * Fetch real image previews from item.imageUrl/sourceUrl for image grids.
+   * Defaults to live mode (NETWORK_CALLS !== "0"); every fetch is fail-safe —
+   * on any error the synthetic placeholder card is kept.
+   */
+  fetchImagePreviews?: boolean;
+  /**
+   * REMEDIATION §5.2 — disk cache dir for URL→preview (job artifacts).
+   * Resume/rebuild skips network when the URL is already cached.
+   */
+  previewCacheDir?: string;
+  /** Test-only (§5.2): injected fetch / concurrency / budget overrides. */
+  previewFetch?: ImagePreviewFetchOptions;
+  /**
+   * Fresh real SERP screenshots (§1.4). When present for a region, they replace
+   * the synthetic snapshot for p10 (RU) / p27 (UAE).
+   */
+  realSerpScreenshots?: RealSerpScreenshotInput[];
+  /** Optional clock for freshness tests. */
+  nowMs?: number;
+  /** Test-only (§5.1): throw inside the builder for this assetRef. */
+  injectFailureForAssetRef?: string;
+}): Promise<CanonicalVisualAssets> {
+  // One sharp probe up front — missing natives → single SHARP_UNAVAILABLE.
+  await assertSharpAvailable();
+
+  const fetchPreviews = input.fetchImagePreviews ?? process.env.NETWORK_CALLS !== "0";
+  const previewOpts: ImagePreviewFetchOptions = {
+    concurrency: 4,
+    timeoutMs: 5000,
+    budgetMs: 30_000,
+    ...input.previewFetch,
+    cacheDir: input.previewFetch?.cacheDir ?? input.previewCacheDir,
+  };
+  const assets: RendererAssetEntry[] = [];
+  const visualAssets: VisualAssetsBySlot = {};
+  const failed: VisualAssetFailure[] = [];
+  const push = (a: RendererAssetEntry) => assets.push(a);
+  const bind = (slotId: string, m: VisualAssetMeta) => {
+    (visualAssets[slotId] ??= []).push(m);
+  };
+  const runAsset = async (
+    kind: string,
+    slotId: string,
+    assetRef: string,
+    fn: () => Promise<boolean>
+  ): Promise<boolean> => {
+    try {
+      return await fn();
+    } catch (err) {
+      failed.push({
+        kind,
+        slotId,
+        assetRef,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
+  };
+
+  const by = (pred: (it: RawInventoryItem) => boolean) => input.items.filter(pred);
+  const counts = {
+    serpSnapshots: 0,
+    suggestionPanels: 0,
+    relatedPanels: 0,
+    aiPanels: 0,
+    imageGrids: 0,
+    realSerpSnapshots: 0,
+  };
+
+  // --- SERP snapshots: prefer real (§1.4), else synthetic -----------------
+  for (const [region, assetRef, slotId] of [
+    ["RU", "ru_serp_snapshot", "p10_ru_serp_visual"],
+    ["UAE", "uae_serp_snapshot", "p27_uae_serp_visual"],
+  ] as const) {
+    const ok = await runAsset("serp_snapshot", slotId, assetRef, async () => {
+      const real = pickRealSerpScreenshot(input.realSerpScreenshots ?? [], region, {
+        nowMs: input.nowMs,
+      });
+      if (real) {
+        const organic = by(
+          (it) => surfaceOf(it) === "organic" && regionOf(it.region) === region
+        );
+        const visibleItems = organic.slice(0, 10).map(toVisibleItem);
+        const asset: RendererAssetEntry = {
+          assetRef: `${assetRef}_real_${real.id}`,
+          kind: "live_serp",
+          title:
+            real.title ??
+            (region === "UAE"
+              ? "ОАЭ — снимок выдачи (LIVE)"
+              : "Россия — снимок выдачи (LIVE)"),
+          caption:
+            real.caption ??
+            "Реальный снимок поисковой выдачи (существующий контур захвата).",
+          imageData: real.imageData,
+          evidenceRefs: [
+            ...(real.evidenceRefs ?? [`serp_capture:${real.id}`]),
+            ...visibleItems.map((v) => v.ref),
+          ],
+        };
+        push(asset);
+        bind(slotId, meta(asset, visibleItems));
+        counts.realSerpSnapshots += 1;
+        return true;
+      }
+      return buildSerpSnapshotAsset({
+        assetRef,
+        region,
+        slotId,
+        subjectName: input.subjectName,
+        items: by((it) => surfaceOf(it) === "organic" && regionOf(it.region) === region),
+        bind,
+        push,
+      });
+    });
+    if (ok) counts.serpSnapshots += 1;
+  }
+
+  // --- Suggestion panels ----------------------------------------------------
+  const suggestions = by((it) => surfaceOf(it) === "autocomplete");
+  const ruSuggest = suggestions.filter((it) => regionOf(it.region) === "RU");
+  const ruYandex = ruSuggest.filter((it) => engineOf(it) === "YANDEX");
+  const ruGoogle = ruSuggest.filter((it) => engineOf(it) === "GOOGLE");
+  const ruUnattributed = ruSuggest.filter((it) => engineOf(it) === null);
+  const uaeSuggest = suggestions.filter((it) => regionOf(it.region) === "UAE");
+
+  const p11Rows = ruYandex.length > 0 ? ruYandex : ruUnattributed;
+  const p11Label = ruYandex.length > 0 ? "Яндекс" : "Яндекс / Google";
+  if (
+    await runAsset("suggestion_panel", "p11_ru_suggestions_yandex", "ru_suggestions_yandex", () =>
+      buildListPanelAsset({
+        assetRef: "ru_suggestions_yandex",
+        kind: "surface_panel",
+        title:
+          ruYandex.length > 0
+            ? "Россия — поисковые подсказки Яндекса"
+            : "Россия — поисковые подсказки",
+        subtitle: `${p11Rows.length} строк · собрано через API`,
+        engineLabel: p11Label,
+        caption: "Автодополнение поисковой строки по запросам о субъекте",
+        rows: p11Rows,
+        rowMeta: (r) => (r.query ? String(r.query) : p11Label),
+        slotId: "p11_ru_suggestions_yandex",
+        bind,
+        push,
+        injectFailureForAssetRef: input.injectFailureForAssetRef,
+      })
+    )
+  ) {
+    counts.suggestionPanels += 1;
+  }
+  const p12Rows =
+    ruGoogle.length > 0 ? ruGoogle : ruYandex.length > 0 ? ruUnattributed : [];
+  if (
+    await runAsset("suggestion_panel", "p12_ru_suggestions_google", "ru_suggestions_google", () =>
+      buildListPanelAsset({
+        assetRef: "ru_suggestions_google",
+        kind: "surface_panel",
+        title:
+          ruGoogle.length > 0
+            ? "Россия — поисковые подсказки Google"
+            : "Россия — поисковые подсказки (дополнительно)",
+        subtitle: `${p12Rows.length} строк · собрано через API`,
+        engineLabel: ruGoogle.length > 0 ? "Google" : "Яндекс / Google",
+        caption: "Автодополнение поисковой строки по запросам о субъекте",
+        rows: p12Rows,
+        rowMeta: (r) => (r.query ? String(r.query) : undefined),
+        slotId: "p12_ru_suggestions_google",
+        bind,
+        push,
+        injectFailureForAssetRef: input.injectFailureForAssetRef,
+      })
+    )
+  ) {
+    counts.suggestionPanels += 1;
+  }
+  if (
+    await runAsset("suggestion_panel", "p28_uae_suggestions", "uae_suggestions", () =>
+      buildListPanelAsset({
+        assetRef: "uae_suggestions",
+        kind: "surface_panel",
+        title: "ОАЭ — поисковые подсказки",
+        subtitle: `${uaeSuggest.length} строк · собрано через API`,
+        engineLabel: "Google",
+        caption: "Автодополнение поисковой строки по запросам о субъекте (международный контур)",
+        rows: uaeSuggest,
+        rowMeta: (r) => (r.query ? String(r.query) : undefined),
+        slotId: "p28_uae_suggestions",
+        bind,
+        push,
+        injectFailureForAssetRef: input.injectFailureForAssetRef,
+      })
+    )
+  ) {
+    counts.suggestionPanels += 1;
+  }
+
+  // --- Related queries / PAA panels ----------------------------------------
+  const related = by((it) => surfaceOf(it) === "paa");
+  const ruRelated = related.filter((it) => regionOf(it.region) === "RU");
+  const uaeRelated = related.filter((it) => regionOf(it.region) === "UAE");
+  const ruRelatedChunks = chunk(ruRelated, Math.max(1, Math.ceil(ruRelated.length / 3)));
+  const relatedSlots = ["p20_ru_related_1", "p21_ru_related_2", "p22_ru_related_3"];
+  for (let i = 0; i < 3; i += 1) {
+    const rows = ruRelatedChunks[i] ?? [];
+    const assetRef = `ru_related_${i + 1}`;
+    if (
+      await runAsset("related_panel", relatedSlots[i], assetRef, () =>
+        buildListPanelAsset({
+          assetRef,
+          kind: "surface_panel",
+          title: `Россия — связанные запросы (${i + 1})`,
+          subtitle: `${rows.length} строк · собрано через API`,
+          engineLabel: "Связанные запросы / PAA",
+          caption: "Вопросы и запросы, которые поиск связывает с субъектом",
+          rows,
+          rowMeta: (r) => (r.snippet ? String(r.snippet).slice(0, 80) : undefined),
+          slotId: relatedSlots[i],
+          bind,
+          push,
+          injectFailureForAssetRef: input.injectFailureForAssetRef,
+        })
+      )
+    ) {
+      counts.relatedPanels += 1;
+    }
+  }
+  if (
+    await runAsset("related_panel", "p32_uae_related", "uae_related", () =>
+      buildListPanelAsset({
+        assetRef: "uae_related",
+        kind: "surface_panel",
+        title: "ОАЭ — связанные запросы",
+        subtitle: `${uaeRelated.length} строк · собрано через API`,
+        engineLabel: "Связанные запросы / PAA",
+        caption: "Вопросы и запросы, которые поиск связывает с субъектом (международный контур)",
+        rows: uaeRelated,
+        rowMeta: (r) => (r.snippet ? String(r.snippet).slice(0, 80) : undefined),
+        slotId: "p32_uae_related",
+        bind,
+        push,
+        injectFailureForAssetRef: input.injectFailureForAssetRef,
+      })
+    )
+  ) {
+    counts.relatedPanels += 1;
+  }
+
+  // --- AI answers / knowledge panels ----------------------------------------
+  const aiRows = by((it) => {
+    const s = surfaceOf(it);
+    return s === "ai_answer" || s === "knowledge_block";
+  });
+  const ruAi = aiRows.filter((it) => regionOf(it.region) === "RU");
+  const uaeAi = aiRows.filter((it) => regionOf(it.region) === "UAE");
+
+  const buildAiPanel = async (
+    rows: RawInventoryItem[],
+    assetRef: string,
+    slotId: string,
+    title: string
+  ): Promise<boolean> => {
+    const answer = rows.find((r) => String(r.snippet ?? "").trim());
+    if (!answer && rows.length === 0) return false;
+    const facts = rows
+      .filter((r) => r !== answer)
+      .slice(0, 4)
+      .map((r) => String(r.title ?? r.sourceUrl ?? "").trim())
+      .filter(Boolean);
+    const png = await svgToPngBase64(
+      buildKnowledgePanelSvg({
+        title,
+        summary: String(answer?.snippet ?? answer?.title ?? "Ответ ИИ-поиска зафиксирован без развёрнутого текста"),
+        facts,
+      })
+    );
+    const used = [answer, ...rows.filter((r) => r !== answer).slice(0, 4)].filter(
+      (r): r is RawInventoryItem => Boolean(r)
+    );
+    const visibleItems = used.map(toVisibleItem);
+    const asset: RendererAssetEntry = {
+      assetRef,
+      kind: "knowledge_panel",
+      title,
+      caption: "Ответ ИИ-поиска по запросам о субъекте (синтетическая карточка на основе API)",
+      imageData: png,
+      evidenceRefs: visibleItems.map((v) => v.ref),
+    };
+    push(asset);
+    bind(slotId, meta(asset, visibleItems));
+    return true;
+  };
+
+  if (ruAi.length > 0) {
+    if (
+      await runAsset("ai_panel", "p19_ru_knowledge_2", "ru_ai_answers", () =>
+        buildAiPanel(ruAi, "ru_ai_answers", "p19_ru_knowledge_2", "Россия — ИИ-ответы поисковых систем")
+      )
+    ) {
+      counts.aiPanels += 1;
+    }
+  }
+  const ruKnowledge = ruAi.filter((it) => surfaceOf(it) === "knowledge_block");
+  // Knowledge Graph is often absent for persons; fall back to Wikipedia / AI panel
+  // so p18 still gets a client-facing visual when RU evidence exists.
+  const ruKnowledgeFallback =
+    ruKnowledge.length > 0
+      ? ruKnowledge
+      : by((it) => surfaceOf(it) === "wikipedia" && regionOf(it.region) === "RU").length > 0
+        ? by((it) => surfaceOf(it) === "wikipedia" && regionOf(it.region) === "RU")
+        : ruAi;
+  if (ruKnowledgeFallback.length > 0) {
+    if (
+      await runAsset("ai_panel", "p18_ru_knowledge_1", "ru_knowledge_panel", () =>
+        buildAiPanel(
+          ruKnowledgeFallback,
+          "ru_knowledge_panel",
+          "p18_ru_knowledge_1",
+          "Россия — панель знаний поиска"
+        )
+      )
+    ) {
+      counts.aiPanels += 1;
+    }
+  }
+  if (uaeAi.length > 0) {
+    if (
+      await runAsset("ai_panel", "p31_uae_knowledge", "uae_ai_answers", () =>
+        buildAiPanel(uaeAi, "uae_ai_answers", "p31_uae_knowledge", "ОАЭ — панель знаний и AI Overview")
+      )
+    ) {
+      counts.aiPanels += 1;
+    }
+  }
+
+  // --- Image grids -----------------------------------------------------------
+  const images = by((it) => surfaceOf(it) === "images");
+  const ruImages = images.filter((it) => regionOf(it.region) === "RU");
+  const uaeImages = images.filter((it) => regionOf(it.region) === "UAE");
+  const imageSlots = ["p14_ru_images_1", "p15_ru_images_2", "p16_ru_images_3", "p17_ru_images_4"];
+  const ruImageChunks = chunk(ruImages, 6).slice(0, 4);
+  const buildGrid = async (
+    rows: RawInventoryItem[],
+    assetRef: string,
+    slotId: string,
+    title: string
+  ): Promise<boolean> => {
+    if (rows.length === 0) return false;
+    const slice = rows.slice(0, 6);
+    const previewUrls = slice.map((r) => r.imageUrl || r.sourceUrl);
+    const previews = fetchPreviews
+      ? await fetchImagePreviewsWithBudget(previewUrls, previewOpts)
+      : new Map<string, string | undefined>();
+    const gridItems = slice.map((r) => {
+      const hl = classifyObservationHighlight({
+        url: r.sourceUrl ?? null,
+        domain: domainOf(r.sourceUrl) || null,
+        title: r.title ?? null,
+        snippet: r.snippet ?? null,
+      } as unknown as PersistedSerpObservation);
+      const url = r.imageUrl || r.sourceUrl;
+      const previewBase64 = url ? previews.get(url) : undefined;
+      return {
+        title: String(r.title ?? "").slice(0, 80) || "Изображение из поиска",
+        domain: domainOf(r.sourceUrl) || domainOf(r.imageUrl) || "источник в выдаче",
+        previewBase64,
+        unavailableNote: previewBase64
+          ? undefined
+          : "Превью недоступно: источник не отдал изображение",
+        highlight: hl.isHighlighted,
+        frameTone: hl.isHighlighted ? ("red" as const) : ("none" as const),
+        themeLabel: hl.themeTitle ?? undefined,
+      };
+    });
+    const png = await svgToPngBase64(buildImageGridSvg({ title, items: gridItems }));
+    const visibleItems = rows.slice(0, 6).map(toVisibleItem);
+    const asset: RendererAssetEntry = {
+      assetRef,
+      kind: "image_grid",
+      title,
+      caption: "Изображения из поисковой выдачи по запросам о субъекте (метаданные API)",
+      imageData: png,
+      evidenceRefs: visibleItems.map((v) => v.ref),
+    };
+    push(asset);
+    bind(slotId, meta(asset, visibleItems));
+    return true;
+  };
+  for (let i = 0; i < ruImageChunks.length; i += 1) {
+    const assetRef = `ru_image_grid_${i + 1}`;
+    if (
+      await runAsset("image_grid", imageSlots[i], assetRef, () =>
+        buildGrid(
+          ruImageChunks[i],
+          assetRef,
+          imageSlots[i],
+          `Россия — изображения в поиске (${i + 1})`
+        )
+      )
+    ) {
+      counts.imageGrids += 1;
+    }
+  }
+  if (
+    await runAsset("image_grid", "p30_uae_images", "uae_image_grid", () =>
+      buildGrid(uaeImages, "uae_image_grid", "p30_uae_images", "ОАЭ — изображения в поиске")
+    )
+  ) {
+    counts.imageGrids += 1;
+  }
+
+  return { assets, visualAssets, counts, failed };
+}

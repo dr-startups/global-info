@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "section-pack-v3",
+  "sectionId": "FRONT_MATTER",
+  "sectionType": "FRONT_MATTER",
+  "fragmentKey": "FRONT_MATTER_MAIN",
+  "caseId": "cmreamy2t0002o30f29urzcog",
+  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "reportRunId": "orion-canary-1783980828528",
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "contentVersion": "deck-sections-v14",
+  "promptVersion": "front-matter-deterministic-v1",
+  "contentHash": "sha256:72d6a53023319939042f7416d6e55dfc550d0af801268edc9002b9984f09417a",
+  "inputHash": "sha256:db119da7da61871fd7452f30548bf791b993b3687cddd6574e7d4d03ff338033:7e3fad1fd9355e37",
+  "generatedAt": "2026-07-17T09:49:29.031Z",
+  "required": true,
+  "status": "READY",
+  "sourceFindingIds": [],
+  "evidenceRefs": [],
+  "inputs": {
+    "findingIds": [],
+    "evidenceRefs": [],
+    "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
+  },
+  "slides": [
+    {
+      "schemaVersion": "slide-content-v1",
+      "slideId": "p01_cover",
+      "baseSlotId": "p01_cover",
+      "sectionId": "FRONT_MATTER",
+      "isContinuation": false,
+      "continuationOf": null,
+      "continuationIndex": null,
+      "templateId": "cover",
+      "title": "Отчёт о цифровом профиле — Сергей Глинка",
+      "content": {
+        "narrative": "Конфиденциально. Подготовлено для внутреннего использования клиента."
+      },
+      "evidenceRefs": [],
+      "findingIds": [],
+      "metrics": {},
+      "visualAssetRefs": []
+    },
+    {
+      "schemaVersion": "slide-content-v1",
+      "slideId": "p02_toc",
+      "baseSlotId": "p02_toc",
+      "sectionId": "FRONT_MATTER",
+      "isContinuation": false,
+      "continuationOf": null,
+      "continuationIndex": null,
+      "templateId": "toc",
+      "title": "Содержание отчёта",
+      "content": {
+        "bullets": []
+      },
+      "evidenceRefs": [],
+      "findingIds": [],
+      "metrics": {},
+      "visualAssetRefs": []
+    }
+  ],
+  "metrics": {
+    "datasetCount": 0,
+    "displayedCount": 0,
+    "adverseDatasetCount": 0,
+    "adverseDisplayedCount": 0
+  },
+  "provenance": {
+    "providers": [],
+    "reportRunIds": [
+      "orion-canary-1783980828528"
+    ],
+    "evidenceRefs": []
+  },
+  "validation": {
+    "passed": true,
+    "issues": []
+  }
+}

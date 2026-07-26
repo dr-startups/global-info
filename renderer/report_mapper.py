@@ -30,6 +30,25 @@ def _is_internal_hygiene_text(text: str) -> bool:
     return bool(_INTERNAL_HYGIENE_RE.search(str(text or "")))
 
 
+# R3.6 — identityDecision may arrive as internal raw enums (internal audience) or
+# as client-safe tokens after client sanitization. Both must resolve identically
+# so client image/video highlighting matches internal selection.
+_ID_EXACT = ("EXACT_SUBJECT", "subject_confirmed")
+_ID_LIKELY = ("LIKELY_SUBJECT", "subject_likely")
+
+
+def _id_is_exact(value: Any) -> bool:
+    return str(value or "") in _ID_EXACT
+
+
+def _id_is_likely(value: Any) -> bool:
+    return str(value or "") in _ID_LIKELY
+
+
+def _id_is_subject(value: Any) -> bool:
+    return _id_is_exact(value) or _id_is_likely(value)
+
+
 def _has_cyrillic(text: str) -> bool:
     return bool(re.search(r"[\u0400-\u04FF]", str(text or "")))
 
@@ -117,6 +136,150 @@ def domain(url: Any) -> str:
     if s.startswith("www."):
         s = s[4:]
     return s.split("/")[0][:60]
+
+
+def _normalized_domain(value: Any) -> str:
+    """Best-effort host normalization from URL/domain-like values."""
+    s = str(value or "").strip()
+    if not s:
+        return ""
+    if re.match(r"^[a-z]:\\", s, flags=re.I) or s.startswith("\\\\") or s.startswith("/"):
+        return ""
+    if "localhost" in s.lower():
+        return ""
+    s = s.split("?")[0].split("#")[0]
+    s = re.sub(r"^https?://", "", s, flags=re.I)
+    if "@" in s and "/" not in s:
+        s = s.split("@")[-1]
+    if "\\" in s:
+        return ""
+    s = s.split("/")[0].strip().lower()
+    s = re.sub(r"^www\.", "", s, flags=re.I)
+    if not s or "." not in s:
+        return ""
+    if ":" in s:
+        s = s.split(":")[0]
+    return s[:60]
+
+
+def _iter_domain_values(value: Any):
+    if value is None:
+        return
+    if isinstance(value, dict):
+        keys = (
+            "canonicalDomain",
+            "domain",
+            "sourceDomain",
+            "normalizedDomain",
+            "displayDomain",
+            "hostname",
+            "sourceHost",
+            "host",
+            "canonicalUrl",
+            "sourcePageUrl",
+            "url",
+            "link",
+        )
+        for key in keys:
+            if key in value:
+                yield value.get(key)
+        nested = value.get("rawMetadataSafe") or value.get("rawMetadata") or {}
+        if isinstance(nested, dict):
+            for key in ("url", "sourceUrl", "sourcePageUrl", "canonicalUrl", "sourceDomain", "domain", "hostname"):
+                if key in nested:
+                    yield nested.get(key)
+        evidence_ref = value.get("evidenceRef") or {}
+        if isinstance(evidence_ref, dict):
+            for key in ("url", "link", "sourceUrl"):
+                if key in evidence_ref:
+                    yield evidence_ref.get(key)
+        return
+    if isinstance(value, list):
+        for item in value[:8]:
+            yield from _iter_domain_values(item)
+        return
+    yield value
+
+
+def _domain_from_candidates(*values: Any) -> str:
+    for v in values:
+        for raw in _iter_domain_values(v):
+            d = _normalized_domain(raw)
+            if d:
+                return d
+    return ""
+
+
+def _domain_or_fallback(L: dict, *values: Any) -> str:
+    return _domain_from_candidates(*values) or L.get("domain_unavailable", "domain unavailable")
+
+
+def _topic_label(key: Any, L: dict) -> str:
+    k = str(key or "").strip().lower()
+    if not k:
+        return L.get("risk_topic_unknown", "Theme requires classification")
+    return L.get(f"risk_topic_{k}", L.get("risk_topic_unknown", "Theme requires classification"))
+
+
+def _theme_signal_present(r: dict) -> bool:
+    if list(r.get("topThemes") or []):
+        return True
+    if list(r.get("topNegativeDomains") or []):
+        return True
+    for k in ("suggestionsNegative", "relatedQueriesNegative", "imagesNegative", "videosNegative"):
+        if int(r.get(k, 0) or 0) > 0:
+            return True
+    return False
+
+
+_ADVERSE_CONCLUSION_RE = re.compile(
+    r"Adverse organic content detected\s*\((?P<neg>\d+)\s*/\s*(?P<tot>\d+)\)\.?",
+    re.I,
+)
+_NO_ADVERSE_RE = re.compile(r"No adverse organic content in selected subject-matched results\.?", re.I)
+
+
+def _localize_known_conclusion(text: Any, L: dict) -> str:
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+    if re.search(r"No international subject-matched results (in collected data|found)\.?", raw, flags=re.I):
+        return L.get("region_international_no_subject_results", raw)
+    if re.search(r"No confirmed materials were found in related queries\.?", raw, flags=re.I):
+        return L.get("nd_none_found_related", raw)
+    if _NO_ADVERSE_RE.search(raw):
+        return L.get("region_no_adverse_organic", raw)
+    m = _ADVERSE_CONCLUSION_RE.search(raw)
+    if m:
+        neg = int(m.group("neg"))
+        total = int(m.group("tot"))
+        return L.get("region_adverse_organic_detected", "Adverse organic content detected ({neg}/{total}).").format(
+            neg=neg, total=total
+        )
+    return raw
+
+
+def _consistent_region_conclusion(r: dict, L: dict) -> str:
+    """Client-safe conclusion with no contradiction vs. theme/domain signals."""
+    raw = _localize_known_conclusion(r.get("regionConclusion"), L)
+
+    organic_negative = int(r.get("organicNegative", 0) or 0)
+    organic_total = int(r.get("organicTotal", 0) or 0)
+    confirmed_negative_urls = len(list(r.get("topNegativeUrls") or []))
+    has_signals = _theme_signal_present(r)
+
+    if organic_negative > 0:
+        return L.get("region_adverse_organic_detected", "Adverse organic content detected ({neg}/{total}).").format(
+            neg=organic_negative, total=organic_total
+        )
+    if confirmed_negative_urls == 0 and has_signals:
+        return L.get(
+            "region_no_confirmed_urls_but_signals",
+            "Confirmed negative URLs were not detected in the primary list, but thematic risk signals and domains require analyst review.",
+        )
+    if raw:
+        return raw
+    return L.get("region_no_adverse_organic", "No adverse organic content in selected subject-matched results.")
 
 
 def _region(regions: list[dict], code: str) -> dict | None:
@@ -259,12 +422,20 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
             "videos": f"{r.get('videosNegative', 0)}/{r.get('videosTotal', 0)}",
             "knowledgeBlockStatus": r.get("knowledgeBlockStatus", "ABSENT"),
             "riskLevel": risk_level(r.get("regionRiskLevel")),
-            "conclusion": r.get("regionConclusion", ""),
+            "conclusion": _consistent_region_conclusion(r, L),
             "topResults": [
                 {
                     "provider": str(x.get("provider", "")),
                     "rank": "" if x.get("rank") is None else str(x.get("rank")),
-                    "domain": domain(x.get("domain") or x.get("url")),
+                    "domain": _domain_or_fallback(
+                        L,
+                        x.get("canonicalDomain"),
+                        x.get("domain"),
+                        x.get("sourcePageUrl"),
+                        x.get("url"),
+                        x.get("hostname"),
+                        x.get("normalizedDomain"),
+                    ),
                     "title": truncate(x.get("title"), 70),
                     "classification": str(x.get("classification", "")),
                 }
@@ -396,7 +567,7 @@ def build_view_model(report_json: dict) -> tuple[dict, list[str]]:
         "search": {
             "negativeDomains": list(search.get("negativeDomains", []) or [])[:10],
             "topNegativeThemes": [
-                {"theme": str(t.get("theme", "")), "count": t.get("count", 0)}
+                {"theme": _topic_label(t.get("theme"), L), "count": t.get("count", 0)}
                 for t in (search.get("topNegativeThemes", []) or [])
             ],
             "topNegativeUrls": [
@@ -498,7 +669,8 @@ def _selected_risk_themes(report_json: dict, audit: dict) -> list[dict]:
         if _compliance_stale_title(str(f.get("title", ""))):
             continue
         counts[tl] = counts.get(tl, 0) + max(1, int(f.get("evidenceCount", 1) or 1))
-    return [{"theme": k, "count": v} for k, v in sorted(counts.items(), key=lambda x: (-x[1], x[0]))][:8]
+    L = i18n_labels(_report_lang(report_json))
+    return [{"theme": _topic_label(k, L), "count": v} for k, v in sorted(counts.items(), key=lambda x: (-x[1], x[0]))][:8]
 
 
 def _image_thumbnail_b64(item: dict) -> str | None:
@@ -574,7 +746,13 @@ def _apply_selected_evidence_vm_overrides(report_json: dict, vm: dict) -> None:
                 {
                     "provider": "GOOGLE",
                     "rank": str(idx + 1),
-                    "domain": domain(item.get("domain") or item.get("url")),
+                    "domain": _domain_or_fallback(
+                        L,
+                        item.get("canonicalDomain"),
+                        item.get("domain"),
+                        item.get("sourcePageUrl"),
+                        item.get("url"),
+                    ),
                     "title": truncate(item.get("title"), 60),
                     "classification": str(item.get("classification", "")),
                 }
@@ -901,7 +1079,7 @@ def _region_block(
         "present": present,
         "noDataText": no_data_text,
         "riskLevel": risk_level(r.get("regionRiskLevel")),
-        "conclusion": r.get("regionConclusion", ""),
+        "conclusion": _consistent_region_conclusion(r, L),
         "summary": {
             "organicTotal": organic_total,
             "organicNegative": r.get("organicNegative", 0),
@@ -923,7 +1101,15 @@ def _region_block(
             {
                 "provider": str(x.get("provider", "")),
                 "rank": "" if x.get("rank") is None else str(x.get("rank")),
-                "domain": domain(x.get("domain") or x.get("url")),
+                "domain": _domain_or_fallback(
+                    L,
+                    x.get("canonicalDomain"),
+                    x.get("domain"),
+                    x.get("sourcePageUrl"),
+                    x.get("url"),
+                    x.get("hostname"),
+                    x.get("normalizedDomain"),
+                ),
                 "title": truncate(x.get("title"), 60),
                 "classification": str(x.get("classification", "")),
             }
@@ -931,14 +1117,22 @@ def _region_block(
         ],
         "themes": {
             "topThemes": [
-                {"theme": str(t.get("theme", "")), "count": t.get("count", 0)}
+                {"theme": _topic_label(t.get("theme"), L), "count": t.get("count", 0)}
                 for t in (r.get("topThemes", []) or [])
             ],
             "negativeDomains": list(r.get("topNegativeDomains", []) or [])[:10],
             "negativeUrls": [
                 {
                     "title": truncate(u.get("title"), 60),
-                    "domain": domain(u.get("domain") or u.get("url")),
+                    "domain": _domain_or_fallback(
+                        L,
+                        u.get("canonicalDomain"),
+                        u.get("domain"),
+                        u.get("sourcePageUrl"),
+                        u.get("url"),
+                        u.get("hostname"),
+                        u.get("normalizedDomain"),
+                    ),
                     "classification": str(u.get("classification", "")),
                 }
                 for u in (r.get("topNegativeUrls", []) or [])[:10]
@@ -980,7 +1174,7 @@ def _region_block(
                     "thumbnailMimeType": i.get("thumbnailMimeType"),
                     "identityDecision": i.get("identityDecision") or "",
                     "hasThumbnail": bool(_image_thumbnail_b64(i)),
-                    "subjectMatched": str(i.get("identityDecision") or "") in ("EXACT_SUBJECT", "LIKELY_SUBJECT"),
+                    "subjectMatched": _id_is_subject(i.get("identityDecision")),
                 }
                 for i in (r.get("topImages", []) or [])[:9]
             ],
@@ -999,9 +1193,9 @@ def _region_block(
                     "identityDecision": v.get("identityDecision") or "",
                     "selectionReason": (
                         "exact subject"
-                        if str(v.get("identityDecision") or "") == "EXACT_SUBJECT"
+                        if _id_is_exact(v.get("identityDecision"))
                         else "likely subject"
-                        if str(v.get("identityDecision") or "") == "LIKELY_SUBJECT"
+                        if _id_is_likely(v.get("identityDecision"))
                         else "manual include"
                         if str(v.get("reportEligibility") or "") == "CLIENT_INCLUDE"
                         else "selected"
@@ -1219,16 +1413,18 @@ def _offer_block(offer: dict, L: dict) -> dict:
 
     solutions = []
     for s in solutions_raw:
+        expected = list(s.get("expectedResults", []) or [])
         solutions.append(
             {
                 "title": s.get("title", ""),
                 "subtitle": s.get("subtitle", ""),
                 "objective": s.get("objective", ""),
+                "businessValue": s.get("businessValue", expected[0] if expected else ""),
                 "price": _fmt_price(s.get("price"), s.get("currency", currency)),
                 "duration": s.get("duration", "—"),
                 "includedItems": list(s.get("includedItems", []) or []),
                 "deliverables": list(s.get("deliverables", []) or []),
-                "expectedResults": list(s.get("expectedResults", []) or []),
+                "expectedResults": expected,
                 "workPlan": list(s.get("workPlan", []) or []),
                 "pricingNotes": s.get("pricingNotes", offer.get("pricingNotes", "")),
             }
@@ -1239,21 +1435,67 @@ def _offer_block(offer: dict, L: dict) -> dict:
             "title": offer.get("productName", brand),
             "subtitle": offer.get("reportSubtitle", L["offer_default_subtitle"]),
             "brand": brand,
+            "valueProposition": L.get("offer_cover_value_prop", L.get("offer_value", "")),
+            "outcomeCards": [
+                {
+                    "title": L.get("offer_cover_outcome_1_title", "Evidence map"),
+                    "text": L.get("offer_cover_outcome_1_text", ""),
+                },
+                {
+                    "title": L.get("offer_cover_outcome_2_title", "Risk priorities"),
+                    "text": L.get("offer_cover_outcome_2_text", ""),
+                },
+                {
+                    "title": L.get("offer_cover_outcome_3_title", "Action plan"),
+                    "text": L.get("offer_cover_outcome_3_text", ""),
+                },
+            ],
         },
         "productOverview": {
             "description": offer.get("companyDescription", ""),
             "includedItems": [s["subtitle"] for s in solutions],
             "value": L["offer_value"],
             "audienceNote": L["offer_audience_note"],
+            "capabilities": [
+                {
+                    "title": L.get("offer_capability_1_title", "Digital profile audit"),
+                    "text": L.get("offer_capability_1_text", ""),
+                },
+                {
+                    "title": L.get("offer_capability_2_title", "Source collection"),
+                    "text": L.get("offer_capability_2_text", ""),
+                },
+                {
+                    "title": L.get("offer_capability_3_title", "Evidence appendix"),
+                    "text": L.get("offer_capability_3_text", ""),
+                },
+                {
+                    "title": L.get("offer_capability_4_title", "Risk reasoning"),
+                    "text": L.get("offer_capability_4_text", ""),
+                },
+                {
+                    "title": L.get("offer_capability_5_title", "Client/internal export"),
+                    "text": L.get("offer_capability_5_text", ""),
+                },
+            ],
         },
         "solutions": solutions,
-        "process": {"steps": list(offer.get("processSteps", []) or [])},
+        "process": {
+            "steps": list(offer.get("processSteps", []) or []),
+            "outcomes": [
+                L.get("offer_process_outcome_1", ""),
+                L.get("offer_process_outcome_2", ""),
+                L.get("offer_process_outcome_3", ""),
+            ],
+        },
         "contact": {
             "company": offer.get("companyName", brand),
             "email": offer.get("contactEmail", ""),
             "website": offer.get("website", ""),
             "cta": offer.get("callToAction", ""),
             "disclaimers": list(offer.get("disclaimers", []) or []),
+            "deliveryNote": L.get("offer_contact_delivery_note", ""),
+            "responseSla": L.get("offer_contact_response_sla", ""),
         },
     }
 
@@ -1263,6 +1505,7 @@ def _serp_snapshot_vm(
     L: dict,
     audience: str = "internal",
     audit_search: dict | None = None,
+    search_provenance_summary: dict | None = None,
 ) -> dict:
     """Normalize the optional report_json.serpSnapshot into a safe view model.
 
@@ -1281,6 +1524,7 @@ def _serp_snapshot_vm(
             image_bytes = None
     meta = ss.get("metadata") or {}
     audit_search = audit_search or {}
+    search_provenance_summary = search_provenance_summary or {}
     # Stage N1.2 — map sourceMode to a localized provenance sentence.
     source_mode = str(meta.get("sourceMode") or "MOCK_ONLY").upper()
     has_real = bool(meta.get("hasRealResults"))
@@ -1304,6 +1548,13 @@ def _serp_snapshot_vm(
             source_note = L["serp_snapshot_source_client_real"]
         else:
             source_note = L["serp_snapshot_source_client_available"]
+    safe_note = str(search_provenance_summary.get("safeNote") or "").strip()
+    screenshot_label = str(search_provenance_summary.get("screenshotSummaryLabel") or "").strip()
+    caption = L["serp_snapshot_caption"]
+    if safe_note:
+        caption = f"{caption} {safe_note}"
+    elif screenshot_label:
+        caption = f"{caption} {screenshot_label}"
     return {
         "exists": bool(image_bytes),
         "image_bytes": image_bytes,
@@ -1318,7 +1569,7 @@ def _serp_snapshot_vm(
         "height": int(meta.get("height", 0) or 0),
         "title": L["serp_snapshot_page_title"],
         "subtitle": L["serp_snapshot_page_subtitle"],
-        "caption": L["serp_snapshot_caption"],
+        "caption": caption,
         "source_mode": source_mode,
         "source_note": source_note,
     }
@@ -1356,6 +1607,623 @@ def _evidence_quality_vm(eq: dict | None, L: dict, internal: bool) -> dict:
     }
 
 
+def _subject_image_query_variants(subject: str, L: dict) -> list[str]:
+    parts = [p for p in str(subject or "").split() if p.strip()]
+    out: list[str] = []
+    if subject:
+        out.append(str(subject).strip())
+    if len(parts) >= 2:
+        out.append(f"{parts[1]} {parts[0]}")
+    if len(parts) >= 3:
+        out.append(f"{parts[0]} {parts[1]} {parts[2]}")
+        out.append(f"{parts[1]} {parts[2]} {parts[0]}")
+        bio_tpl = L.get("orion_images_query_bio", "{name} biography")
+        out.append(bio_tpl.format(name=f"{parts[1]} {parts[0]}"))
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for q in out:
+        q = truncate(q, 52)
+        if q and q not in seen:
+            seen.add(q)
+            deduped.append(q)
+    return deduped
+
+
+def _audit_image_to_item(i: dict) -> dict:
+    url = i.get("sourcePageUrl") or i.get("url") or ""
+    b64 = _image_thumbnail_b64(i)
+    return {
+        "title": truncate(i.get("title"), 50),
+        "source": i.get("source") or domain(url),
+        "sourcePageUrl": url,
+        "url": url,
+        "thumbnailStorageKey": i.get("thumbnailStorageKey"),
+        "thumbnailBase64": b64,
+        "thumbnailBytesBase64": i.get("thumbnailBytesBase64") or b64,
+        "thumbnailMimeType": i.get("thumbnailMimeType"),
+        "identityDecision": i.get("identityDecision") or "",
+        "hasThumbnail": bool(b64),
+        "subjectMatched": _id_is_subject(i.get("identityDecision")),
+    }
+
+
+def _orion_short_query(subject: str, queries: list[str]) -> str:
+    parts = [p for p in str(subject or "").split() if p.strip()]
+    if len(parts) >= 2:
+        short = f"{parts[0]} {parts[1]}"
+        return truncate(short, 32)
+    if queries:
+        return truncate(str(queries[0]), 32)
+    return truncate(subject, 32)
+
+
+def _build_orion_image_grid(r: dict, items: list[dict]) -> list[dict]:
+    pool: list[dict] = []
+    seen: set[str] = set()
+
+    def _add(raw: dict) -> None:
+        if not raw.get("hasThumbnail") and not _image_thumbnail_b64(raw):
+            return
+        key = str(raw.get("thumbnailStorageKey") or raw.get("url") or raw.get("title") or "")
+        if key and key in seen:
+            return
+        if key:
+            seen.add(key)
+        pool.append({**raw, "highlight": False})
+
+    for it in items:
+        _add(it)
+    for i in (r.get("topImages") or []):
+        _add(_audit_image_to_item(i))
+
+    if not pool:
+        return []
+
+    selected_keys: list[str] = []
+    for it in items:
+        if not it.get("subjectMatched"):
+            continue
+        key = str(it.get("thumbnailStorageKey") or it.get("url") or it.get("title") or "")
+        if key and key not in selected_keys:
+            selected_keys.append(key)
+
+    max_grid = 12
+    max_hi = 3
+    grid: list[dict] = []
+    hi_count = 0
+    for it in pool:
+        key = str(it.get("thumbnailStorageKey") or it.get("url") or it.get("title") or "")
+        mark = key in selected_keys and hi_count < max_hi
+        if mark:
+            hi_count += 1
+        grid.append({**it, "highlight": mark})
+        if len(grid) >= max_grid:
+            break
+
+    idx = 0
+    while len(grid) < max_grid and pool:
+        src = pool[idx % len(pool)]
+        grid.append({**src, "highlight": False})
+        idx += 1
+        if idx > max_grid * 2:
+            break
+    return grid[:max_grid]
+
+
+def _build_orion_image_queries(r: dict, subject: str, L: dict) -> list[str]:
+    queries: list[str] = []
+    for s in (r.get("topSuggestions") or [])[:3]:
+        if s:
+            queries.append(truncate(str(s), 48))
+    for s in (r.get("topRelatedQueries") or [])[:2]:
+        if s:
+            queries.append(truncate(str(s), 48))
+    for q in _subject_image_query_variants(subject, L):
+        if q not in queries:
+            queries.append(q)
+    return queries[:4]
+
+
+def _build_orion_summary_bullets(blk: dict, L: dict) -> list[str]:
+    bullets: list[str] = []
+    themes = list((blk.get("themes") or {}).get("topThemes") or [])
+    for t in themes[:2]:
+        theme = str(t.get("theme") or "").strip()
+        if theme:
+            bullets.append(truncate(theme, 72))
+    if not bullets:
+        for u in list((blk.get("themes") or {}).get("negativeUrls") or [])[:2]:
+            title = str(u.get("title") or "").strip()
+            if title:
+                bullets.append(truncate(title, 72))
+    if not bullets:
+        findings = list(blk.get("riskFindings") or [])
+        for f in findings[:2]:
+            title = str(f.get("title") or "").strip()
+            if title:
+                bullets.append(truncate(title, 72))
+    if not bullets:
+        bullets.append(truncate(L.get("orion_images_why_body", "") or "—", 42))
+    return bullets[:1]
+
+
+def enrich_ru_orion_images(blk: dict, report_json: dict, *, subject: str, audit_date: str, L: dict) -> None:
+    """Slide 13 ORION layout — enrich RU block with presentation VM fields."""
+    if not blk or blk.get("code") != "RU":
+        return
+    audit = report_json.get("auditSummary") or {}
+    r = _region(audit.get("regions") or [], "RU") or {}
+    im = dict(blk.get("images") or {})
+    selected = int(im.get("selected") or len(im.get("items") or []))
+    total = int(im.get("total") or 0)
+    items = list(im.get("items") or [])
+    queries = _build_orion_image_queries(r, subject, L)
+    primary_query = queries[0] if queries else truncate(subject, 40)
+    blk["orionImages"] = {
+        "section": L.get("orion_images_section", "04  Images"),
+        "headline": L.get("orion_images_headline", ""),
+        "asOf": L.get("orion_images_as_of", "as of {date}").format(date=audit_date or "—"),
+        "brand": str((report_json.get("offer") or {}).get("companyName") or L.get("op_default_product", "ORION")),
+        "metricX": selected,
+        "metricY": total,
+        "metricLabel": L.get("orion_images_metric", "{x} из {y}").format(x=selected, y=total),
+        "summaryLine": L.get("orion_images_summary_line", ""),
+        "summaryBullets": _build_orion_summary_bullets(blk, L),
+        "queriesTitle": L.get("orion_images_queries_title", "Search queries"),
+        "queries": queries,
+        "primaryQuery": _orion_short_query(subject, queries),
+        "brandDisplay": L.get("orion_images_brand_compact", L.get("op_default_product", "Digital Profile Audit")),
+        "whyTitle": L.get("orion_images_why_title", ""),
+        "whyBody": truncate(L.get("orion_images_why_body", ""), 160),
+        "gridTitle": L.get("orion_images_grid_title", "Images"),
+        "tabs": [
+            L.get("orion_images_tab_search", "search"),
+            L.get("orion_images_tab_images", "images"),
+            L.get("orion_images_tab_video", "video"),
+            L.get("orion_images_tab_maps", "maps"),
+            L.get("orion_images_tab_products", "products"),
+            L.get("orion_images_tab_translator", "translator"),
+            L.get("orion_images_tab_all", "all"),
+        ],
+        "gridItems": _build_orion_image_grid(r, items),
+        "noData": L.get("orion_images_no_data", "No images."),
+    }
+
+
+def _is_review_appendix_entry(entry: dict) -> bool:
+    v = " ".join(
+        str(entry.get(k, "") or "")
+        for k in ("review", "classification", "identity")
+    ).lower()
+    return any(tok in v for tok in ("review", "pending", "needs", "провер"))
+
+
+def _appendix_region_vm(blk: dict) -> dict:
+    evidence_rows = list(blk.get("evidenceAppendix") or [])
+    excluded_rows = list(blk.get("excludedAppendix") or [])
+    confirmed = [e for e in evidence_rows if not _is_review_appendix_entry(e)]
+    review = [e for e in evidence_rows if _is_review_appendix_entry(e)]
+    return {
+        "label": blk.get("label", ""),
+        "riskLevel": blk.get("riskLevel", "UNKNOWN"),
+        "confirmed": confirmed,
+        "review": review,
+        "excluded": excluded_rows,
+    }
+
+
+def _appendix_overview_vm(vm: dict, L: dict) -> dict:
+    ru = _appendix_region_vm(vm.get("ru") or {})
+    intl = _appendix_region_vm(vm.get("intl") or {})
+    return {
+        "title": L.get("r31_appendix_overview_title", "Evidence appendix overview"),
+        "cards": [
+            {"label": L.get("r31_appendix_card_confirmed", "Confirmed evidence"), "value": len(ru["confirmed"]) + len(intl["confirmed"])},
+            {"label": L.get("r31_appendix_card_review", "Review queue"), "value": len(ru["review"]) + len(intl["review"])},
+            {"label": L.get("r31_appendix_card_excluded", "Excluded / noise"), "value": len(ru["excluded"]) + len(intl["excluded"])},
+            {"label": L.get("r31_appendix_card_media", "Media evidence"), "value": int((vm.get("ru") or {}).get("images", {}).get("selected", 0) or 0) + int((vm.get("ru") or {}).get("videos", {}).get("selected", 0) or 0) + int((vm.get("intl") or {}).get("images", {}).get("selected", 0) or 0) + int((vm.get("intl") or {}).get("videos", {}).get("selected", 0) or 0)},
+        ],
+        "lines": [
+            L.get("r31_appendix_overview_line_confirmed", "Confirmed materials are grouped separately from items pending analyst review."),
+            L.get("r31_appendix_overview_line_excluded", "Excluded and noise materials are preserved for traceability and quality control."),
+            L.get("r31_appendix_overview_line_media", "Media evidence is summarized across Russian and international segments."),
+        ],
+    }
+
+
+def _media_evidence_overview_vm(vm: dict, L: dict) -> dict:
+    ru = vm.get("ru") or {}
+    intl = vm.get("intl") or {}
+    ru_img = ru.get("images") or {}
+    ru_vid = ru.get("videos") or {}
+    in_img = intl.get("images") or {}
+    in_vid = intl.get("videos") or {}
+    return {
+        "cards": [
+            {"label": L.get("r31_media_images_total", "Images selected"), "value": int(ru_img.get("selected", 0) or 0) + int(in_img.get("selected", 0) or 0)},
+            {"label": L.get("r31_media_videos_total", "Videos selected"), "value": int(ru_vid.get("selected", 0) or 0) + int(in_vid.get("selected", 0) or 0)},
+            {"label": L.get("r31_media_ru_coverage", "RU media coverage"), "value": f"{int(ru_img.get('selected', 0) or 0)}/{int((ru_img.get('total', 0) or 0) + (ru_vid.get('total', 0) or 0))}"},
+            {"label": L.get("r31_media_intl_coverage", "INTL media coverage"), "value": f"{int(in_img.get('selected', 0) or 0)}/{int((in_img.get('total', 0) or 0) + (in_vid.get('total', 0) or 0))}"},
+        ],
+        "lines": [
+            L.get("r31_media_line_images", "Image search evidence is prioritized by relevance to the subject."),
+            L.get("r31_media_line_videos", "Video evidence is retained with source references for analyst verification."),
+            L.get("r31_media_line_sources", "Coverage combines Russian and international source sets without duplicate leakage."),
+        ],
+    }
+
+
+def _risk_reasoning_overview_vm(vm: dict, L: dict) -> dict:
+    final = vm.get("finalConclusion") or {}
+    rows = list((vm.get("riskMatrix") or {}).get("rows") or [])
+    intel = (vm.get("complianceRiskIntel") or {}).get("riskReasoning") or {}
+    return {
+        "overallRiskLevel": final.get("overallRiskLevel", "UNKNOWN"),
+        "topThemes": list(final.get("topThemes") or []),
+        "rows": rows,
+        "recommendedActions": list(final.get("recommendedActions") or []),
+        "warnings": list(final.get("warnings") or []),
+        "supportingSignals": [
+            L.get("r31_risk_signal_search", "Search profile signals"),
+            L.get("r31_risk_signal_compliance", "Compliance and regulatory signals"),
+            L.get("r31_risk_signal_media", "Media and narrative signals"),
+        ],
+        # Stage R3.5 — client-safe reasoning intelligence (already localized in TS).
+        "reasoningSummary": str(intel.get("reasoningSummary") or ""),
+        "recommendedAction": str(intel.get("recommendedAction") or ""),
+        "legalSafeDisclaimer": str(intel.get("legalSafeDisclaimer") or ""),
+        "limitingFactors": [str(x) for x in (intel.get("limitingFactors") or []) if str(x)],
+        "evidenceBuckets": {
+            "confirmed": int(intel.get("confirmedCount", 0) or 0),
+            "review": int(intel.get("reviewCount", 0) or 0),
+            "excluded": int(intel.get("excludedCount", 0) or 0),
+        },
+        "signalBuckets": {
+            "compliance": int(intel.get("complianceSignals", 0) or 0),
+            "media": int(intel.get("mediaSignals", 0) or 0),
+            "organic": int(intel.get("organicSignals", 0) or 0),
+        },
+    }
+
+
+def _risk_reasoning_by_region_vm(vm: dict, L: dict) -> dict:
+    def _one(blk: dict) -> dict:
+        summary = blk.get("summary") or {}
+        themes = list((blk.get("themes") or {}).get("topThemes") or [])
+        return {
+            "label": blk.get("label", ""),
+            "riskLevel": blk.get("riskLevel", "UNKNOWN"),
+            "conclusion": _localize_known_conclusion(
+                blk.get("conclusion") or L.get("interim_conclusion_fallback", ""),
+                L,
+            ),
+            "signals": [
+                f"{L.get('m_organic_negative', 'Negative organic')}: {summary.get('organicNegative', 0)}",
+                f"{L.get('m_suggestions_nt', 'Suggestions')}: {summary.get('suggestions', '0/0')}",
+                f"{L.get('m_images_nt', 'Images')}: {summary.get('images', '0/0')}",
+            ],
+            "themes": [str(t.get("theme", "")) for t in themes[:3] if str(t.get("theme", ""))],
+        }
+
+    return {"ru": _one(vm.get("ru") or {}), "intl": _one(vm.get("intl") or {})}
+
+
+def _r34_raw_cards(entries: list[dict]) -> list[dict]:
+    """Client-safe raw card payloads for R3.4 source cards (formatting done in template)."""
+    cards: list[dict] = []
+    for e in entries or []:
+        cards.append(
+            {
+                "title": str(e.get("title") or ""),
+                "domain": str(e.get("domain") or e.get("link") or ""),
+                "reason": str(e.get("reason") or ""),
+            }
+        )
+    return cards
+
+
+def _r34_appendix_vm(vm: dict, L: dict, internal: bool) -> dict:
+    """R3.4 — deeper evidence appendix display groups (additive, reuses R3.1/R3.3 VM)."""
+    ef = vm.get("entityFiltering") or {}
+    counts = ef.get("counts") or {}
+    conf_ru = vm.get("evidenceConfirmedRu") or {}
+    rev_ru = vm.get("evidenceReviewRu") or {}
+    exc_ru = vm.get("evidenceExcludedRu") or {}
+    conf_intl = vm.get("evidenceConfirmedIntl") or {}
+    rev_intl = vm.get("evidenceReviewIntl") or {}
+    exc_intl = vm.get("evidenceExcludedIntl") or {}
+    media_ov = vm.get("mediaEvidenceOverview") or {}
+    risk_ov = vm.get("riskReasoningOverview") or {}
+
+    n_confirmed = len(conf_ru.get("confirmed") or []) + len(conf_intl.get("confirmed") or [])
+    n_review = len(rev_ru.get("rows") or []) + len(rev_intl.get("rows") or [])
+    n_excluded = len(exc_ru.get("rows") or []) + len(exc_intl.get("rows") or [])
+    n_media = int(counts.get("strictSubject", 0) or 0)  # placeholder if unused
+    media_cards = list(media_ov.get("cards") or [])
+
+    nav_cards = [
+        {"label": L.get("r31_appendix_card_confirmed", "Confirmed evidence"), "value": n_confirmed},
+        {"label": L.get("r31_appendix_card_review", "Review queue"), "value": n_review},
+        {"label": L.get("r31_appendix_card_excluded", "Excluded / noise"), "value": n_excluded},
+        {"label": L.get("r31_appendix_card_media", "Media evidence"), "value": (media_cards[0].get("value") if media_cards else 0)},
+    ]
+    sections = [
+        L.get("r34_map_section_confirmed", ""),
+        L.get("r34_map_section_review", ""),
+        L.get("r34_map_section_excluded", ""),
+        L.get("r34_map_section_media", ""),
+        L.get("r34_map_section_provenance", ""),
+        L.get("r34_map_section_risk", ""),
+    ]
+
+    excluded_cards = [
+        {"label": L.get("r34_excluded_card_excluded", "Excluded by identity"), "value": int(counts.get("excludedByIdentity", 0) or 0)},
+        {"label": L.get("r34_excluded_card_namesake", "Namesakes"), "value": int(counts.get("namesake", 0) or 0)},
+        {"label": L.get("r34_excluded_card_intl", "International suppressed"), "value": int(ef.get("internationalSuppressionCount", 0) or 0)},
+        {"label": L.get("r34_excluded_card_media", "Media suppressed"), "value": int(ef.get("mediaSuppressionCount", 0) or 0)},
+    ]
+    # topExclusionReasons is internal-only (sanitized out for client audience upstream).
+    excluded_reasons: list[str] = []
+    if internal:
+        for r in list(ef.get("topExclusionReasons") or [])[:4]:
+            reason = str((r or {}).get("reason") or "").strip()
+            cnt = int((r or {}).get("count", 0) or 0)
+            if reason:
+                # Humanize raw snake_case reason codes into compact analyst-safe wording.
+                human = reason.replace("_", " ").strip().capitalize()
+                excluded_reasons.append(f"{human} — {cnt}")
+
+    return {
+        "navCards": nav_cards,
+        "sections": [s for s in sections if s],
+        "confirmedRu": _r34_raw_cards(list(conf_ru.get("confirmed") or [])),
+        "reviewRu": _r34_raw_cards(list(rev_ru.get("rows") or [])),
+        "confirmedIntl": _r34_raw_cards(list(conf_intl.get("confirmed") or [])),
+        "reviewIntl": _r34_raw_cards(list(rev_intl.get("rows") or [])),
+        "excluded": {"cards": excluded_cards, "reasons": excluded_reasons},
+        "media": {"cards": media_cards[:4], "lines": list(media_ov.get("lines") or [])[:3]},
+        "risk": {
+            "overallRiskLevel": risk_ov.get("overallRiskLevel", "UNKNOWN"),
+            "topThemes": list(risk_ov.get("topThemes") or []),
+            "recommendedActions": list(risk_ov.get("recommendedActions") or []),
+        },
+    }
+
+
+def _provider_diagnostics_vm(
+    block: dict, L: dict, internal: bool, search_provenance_summary: dict | None = None
+) -> dict:
+    src = block or {}
+    summary = src.get("summary") or {}
+    runtime = src.get("runtimeStrategy") or {}
+    rows = []
+    for p in list(src.get("providers") or []):
+        capability = str(p.get("capabilityLevel") or "none")
+        selected = bool(p.get("selectedByStrategy"))
+        fallback_reason = str(p.get("fallbackReason") or "").strip()
+        runtime_kind = str(p.get("runtimeKind") or "").strip()
+        prod_ready = bool(p.get("productionReady"))
+        note = str(
+            p.get("internalDetail")
+            if internal and p.get("internalDetail")
+            else p.get("safeDetail")
+            or p.get("message")
+            or "—"
+        )
+        note += f" | capability={capability}; selected={str(selected).lower()}"
+        if runtime_kind:
+            note += f"; kind={runtime_kind}"
+        note += f"; prod_ready={str(prod_ready).lower()}"
+        if fallback_reason:
+            note += f"; fallback={fallback_reason}"
+        rows.append(
+            {
+                "source": str(p.get("label") or p.get("id") or "—"),
+                "category": str(p.get("category") or "unknown"),
+                "mode": str(p.get("runtimeMode") or "unknown"),
+                "status": str(p.get("status") or "unknown"),
+                "risk": str(p.get("risk") or "unknown"),
+                "note": note,
+            }
+        )
+    runtime_notes = [
+        f"Runtime mode: {str(runtime.get('mode') or 'legacy_mock_first')}",
+        f"Fallback policy: {str(runtime.get('fallbackPolicy') or 'allow_mock_fallback')}",
+        f"Selected order: {', '.join([str(x) for x in list(runtime.get('selectedOrder') or [])]) or '—'}",
+    ]
+    runtime_notes.extend([str(x) for x in list(runtime.get("warnings") or []) if str(x)])
+    search_provenance_summary = search_provenance_summary or {}
+    fallback_events = list(runtime.get("fallbackEvents") or [])
+    if fallback_events:
+        runtime_notes.append(f"Fallback events: {len(fallback_events)}")
+    # R4.1 — richer summary + source provenance overview (internal-only).
+    total_providers = int(summary.get("totalProviders", len(rows)) or 0)
+    manual_count = int(summary.get("manualCount", 0) or 0)
+    unavailable_count = int(summary.get("unavailableCount", 0) or 0)
+    prod_ready_count = int(summary.get("productionReadyCount", 0) or 0)
+    runtime_notes.append(
+        f"Providers: {total_providers} total; {prod_ready_count} production-ready; "
+        f"{manual_count} manual; {unavailable_count} unavailable."
+    )
+    provenance = list(src.get("sourceProvenance") or [])
+    if provenance:
+        prov_bits = []
+        for row in provenance:
+            collected = row.get("collected")
+            included = row.get("included")
+            label = str(row.get("sourceProviderLabel") or row.get("sourceProvider") or "—")
+            decision = str(row.get("inclusionDecision") or "")
+            if collected is not None or included is not None:
+                prov_bits.append(
+                    f"{label}: {int(included or 0)}/{int(collected or 0)} ({decision})"
+                )
+            else:
+                prov_bits.append(f"{label}: {decision}")
+        if prov_bits:
+            runtime_notes.append("Source provenance — " + "; ".join(prov_bits))
+    if search_provenance_summary:
+        runtime_notes.append(
+            "Search provenance — "
+            + f"queries={int(search_provenance_summary.get('queryCount', 0) or 0)}, "
+            + f"surfaces={int(search_provenance_summary.get('surfaceCount', 0) or 0)}, "
+            + f"screenshots={int(search_provenance_summary.get('screenshotCount', 0) or 0)}"
+        )
+    return {
+        "title": L.get("r32_provider_diag_title", "Provider diagnostics"),
+        "subtitle": L.get(
+            "r32_provider_diag_subtitle",
+            "Runtime capability matrix from current configuration and resolver state.",
+        ),
+        "cards": [
+            {
+                "label": L.get("r32_provider_diag_real_ready", "Real / Ready"),
+                "value": f"{int(summary.get('realCount', 0) or 0)} / {int(summary.get('readyCount', 0) or 0)}",
+            },
+            {
+                "label": L.get("r32_provider_diag_mock_stub", "Mock / Stub"),
+                "value": int(summary.get("mockOrStubCount", 0) or 0),
+            },
+            {
+                "label": L.get("r32_provider_diag_high_risk", "High risk"),
+                "value": int(summary.get("highRiskCount", 0) or 0),
+            },
+            {
+                "label": L.get("r32_provider_diag_prod_ready", "Production ready"),
+                "value": L.get("yes", "Yes")
+                if bool(summary.get("productionReady"))
+                else L.get("no", "No"),
+            },
+        ],
+        "rows": rows,
+        "auditNotes": runtime_notes + list((src.get("auditMode") or {}).get("notes") or []),
+    }
+
+
+def _lexis_hybrid_vm(block: dict | None, L: dict, internal: bool) -> dict:
+    src = block or {}
+    docs: list[dict] = []
+    for d in list(src.get("documents") or []):
+        if not isinstance(d, dict):
+            continue
+        parsed = d.get("parsedAnalytics") or {}
+        pages: list[dict] = []
+        for p in list(d.get("renderedPages") or []):
+            if not isinstance(p, dict):
+                continue
+            image_bytes = None
+            raw_b64 = p.get("imageBase64")
+            if raw_b64:
+                try:
+                    image_bytes = base64.b64decode(str(raw_b64))
+                except Exception:  # noqa: BLE001
+                    image_bytes = None
+            pages.append(
+                {
+                    "pageNumber": int(p.get("pageNumber") or 0),
+                    "width": int(p.get("width") or 0),
+                    "height": int(p.get("height") or 0),
+                    "renderStatus": str(p.get("renderStatus") or "ready"),
+                    "imageBytes": image_bytes,
+                }
+            )
+        signals = []
+        for s in list(parsed.get("signals") or []):
+            if not isinstance(s, dict):
+                continue
+            signals.append(
+                {
+                    "categoryLabelRu": str(s.get("categoryLabelRu") or ""),
+                    "categoryLabelEn": str(s.get("categoryLabelEn") or ""),
+                    "clientSafeFinding": str(s.get("clientSafeFinding") or ""),
+                    "clientSafeReason": str(s.get("clientSafeReason") or ""),
+                    "reviewStatus": str(s.get("reviewStatus") or "review_required"),
+                    "confidenceLabel": str(s.get("confidenceLabel") or "unknown"),
+                    "pageRef": int(s.get("pageRef") or 0) if s.get("pageRef") else None,
+                }
+            )
+        docs.append(
+            {
+                "id": str(d.get("id") or ""),
+                "fileName": str(d.get("fileName") or "LexisNexis import"),
+                "status": str(d.get("status") or "unknown"),
+                "pageCount": int(d.get("pageCount") or len(pages)),
+                "pages": pages,
+                "parsedAnalytics": {
+                    "executiveSummaryClient": str(parsed.get("executiveSummaryClient") or ""),
+                    "executiveSummaryInternal": str(parsed.get("executiveSummaryInternal") or ""),
+                    "parserStatus": str(parsed.get("parserStatus") or "unknown"),
+                    "signalCounts": parsed.get("signalCounts") or {},
+                    "signals": signals,
+                },
+            }
+        )
+    summary = src.get("parsedSignalSummary") or {}
+    return {
+        "present": len(docs) > 0,
+        "sourceLabel": str(src.get("sourceLabel") or "LexisNexis"),
+        "legalSafeDisclaimer": str(
+            src.get("legalSafeDisclaimer")
+            or "Материалы требуют аналитической проверки и не являются юридическим заключением."
+        ),
+        "summary": {
+            "totalDocuments": int(summary.get("totalDocuments") or len(docs)),
+            "totalSignals": int(summary.get("totalSignals") or 0),
+            "reviewRequired": int(summary.get("reviewRequired") or 0),
+            "parserStatus": str(summary.get("parserStatus") or "unknown"),
+            "conversionStatus": str(summary.get("conversionStatus") or "unknown"),
+            "executiveSummaryClient": str(summary.get("executiveSummaryClient") or ""),
+        },
+        "documents": docs,
+        "internal": internal,
+        "labels": {
+            "introTitle": L.get("r74_intro_title", "Импортированный отчёт LexisNexis"),
+            "introBody": L.get("r74_intro_body", "Оригинальный документ включён в приложение в визуальном виде."),
+            "analyticsTitle": L.get("r74_analytics_title", "Аналитика импортированного отчёта"),
+            "signalsTitle": L.get("r74_signals_title", "Сигналы из импортированного отчёта"),
+            "visualTitle": L.get("r74_visual_title", "Страница импортированного документа"),
+        },
+    }
+
+
+def _ai_analyst_vm(block: dict | None, L: dict, internal: bool) -> dict:
+    src = block or {}
+    status = str(src.get("status") or "unavailable")
+    generated_by = str(src.get("generatedBy") or "deterministic")
+    provider = str(src.get("provider") or "none")
+    executive = src.get("executiveSummary") or {}
+    regions = src.get("regionNarratives") or {}
+    warnings = list(src.get("clientSafeWarnings") or [])
+    if not internal:
+        warnings = [w for w in warnings if "provider" not in str(w).lower() and "api" not in str(w).lower()]
+    return {
+        "present": bool(src),
+        "status": status,
+        "generatedBy": generated_by,
+        "provider": provider,
+        "executive": {
+            "plainConclusion": str(executive.get("plainConclusion") or ""),
+            "riskExplanation": str(executive.get("riskExplanation") or ""),
+            "whyNotLow": str(executive.get("whyNotLow") or ""),
+            "whatWasFound": [str(x) for x in list(executive.get("whatWasFound") or []) if str(x).strip()],
+            "whatWasNotConfirmed": [str(x) for x in list(executive.get("whatWasNotConfirmed") or []) if str(x).strip()],
+            "manualReviewRequired": [str(x) for x in list(executive.get("manualReviewRequired") or []) if str(x).strip()],
+            "nextActions": [str(x) for x in list(executive.get("nextActions") or []) if str(x).strip()],
+        },
+        "ru": regions.get("ru") or {},
+        "intl": regions.get("intl") or {},
+        "lexis": src.get("lexisNexisNarrative") or {},
+        "evidence": src.get("evidenceInterpretation") or {},
+        "warnings": warnings,
+        "labels": {
+            "simpleConclusion": L.get("ai_simple_conclusion", "Итог простыми словами"),
+            "whyMedium": L.get("ai_why_medium", "Почему риск MEDIUM"),
+            "found": L.get("ai_what_found", "Что подтверждено"),
+            "review": L.get("ai_review_required", "Что требует проверки"),
+            "next": L.get("ai_next_actions", "Что делать дальше"),
+        },
+    }
+
+
 def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[dict, list[str]]:
     vm, warnings = build_view_model_v2(report_json)
     internal = str(audience).lower() != "client"
@@ -1363,7 +2231,13 @@ def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[
     vm["audience"] = "client" if not internal else "internal"
     vm["offerBlock"] = _offer_block(report_json.get("offer") or {}, vm["labels"])
     audit_search = (report_json.get("auditSummary") or {}).get("searchSummary") or {}
-    serp = _serp_snapshot_vm(report_json.get("serpSnapshot"), vm["labels"], audience, audit_search)
+    serp = _serp_snapshot_vm(
+        report_json.get("serpSnapshot"),
+        vm["labels"],
+        audience,
+        audit_search,
+        report_json.get("searchProvenanceSummary") or {},
+    )
     vm["serp_snapshot"] = serp
     if not serp["exists"]:
         # Stage S1.5 renderWarning: the ORION-style page uses fallback text.
@@ -1396,6 +2270,76 @@ def build_view_model_v3(report_json: dict, audience: str = "internal") -> tuple[
             blk = vm.get(key)
             if blk:
                 vm[key] = _filter_client_region_block(blk)
+
+    ru_blk = vm.get("ru")
+    if ru_blk:
+        enrich_ru_orion_images(
+            ru_blk,
+            report_json,
+            subject=str((vm.get("cover") or {}).get("subjectFullName") or ""),
+            audit_date=str((vm.get("cover") or {}).get("auditDate") or ""),
+            L=vm["labels"],
+        )
+
+    vm["evidenceConfirmedRu"] = _appendix_region_vm(vm.get("ru") or {})
+    vm["evidenceReviewRu"] = {"rows": list(vm["evidenceConfirmedRu"]["review"])}
+    vm["evidenceExcludedRu"] = {"rows": list(vm["evidenceConfirmedRu"]["excluded"])}
+    vm["evidenceConfirmedIntl"] = _appendix_region_vm(vm.get("intl") or {})
+    vm["evidenceReviewIntl"] = {"rows": list(vm["evidenceConfirmedIntl"]["review"])}
+    vm["evidenceExcludedIntl"] = {"rows": list(vm["evidenceConfirmedIntl"]["excluded"])}
+    vm["appendixOverview"] = _appendix_overview_vm(vm, vm["labels"])
+    vm["mediaEvidenceOverview"] = _media_evidence_overview_vm(vm, vm["labels"])
+    # Stage R3.5 — normalized compliance/risk intelligence (client-safe display model).
+    vm["complianceRiskIntel"] = report_json.get("complianceRiskIntel") or {}
+    vm["riskReasoningOverview"] = _risk_reasoning_overview_vm(vm, vm["labels"])
+    vm["riskReasoningByRegion"] = _risk_reasoning_by_region_vm(vm, vm["labels"])
+    vm["providerDiagnostics"] = _provider_diagnostics_vm(
+        report_json.get("providerDiagnostics") or {},
+        vm["labels"],
+        internal,
+        report_json.get("searchProvenanceSummary") or {},
+    )
+    vm["entityFiltering"] = report_json.get("entityFiltering") or {}
+    vm["lexisHybrid"] = _lexis_hybrid_vm(report_json.get("lexisNexisHybrid"), vm["labels"], internal)
+    vm["aiAnalyst"] = _ai_analyst_vm(report_json.get("aiAnalystNarrative"), vm["labels"], internal)
+    if vm["aiAnalyst"].get("present"):
+        ai_exec = vm["aiAnalyst"].get("executive") or {}
+        ex = vm.get("executiveSummary") or {}
+        merged = []
+        if ai_exec.get("plainConclusion"):
+            merged.append(str(ai_exec.get("plainConclusion")))
+        if ai_exec.get("riskExplanation"):
+            merged.append(str(ai_exec.get("riskExplanation")))
+        if ai_exec.get("whyNotLow"):
+            merged.append(str(ai_exec.get("whyNotLow")))
+        merged.extend(list(ai_exec.get("manualReviewRequired") or [])[:2])
+        if merged:
+            ex["bullets"] = merged[:6]
+            vm["executiveSummary"] = ex
+        overview = vm.get("overview") or {}
+        if ai_exec.get("riskExplanation"):
+            overview["aiRiskExplanation"] = str(ai_exec.get("riskExplanation"))
+        vm["overview"] = overview
+        if vm.get("ru") and vm["aiAnalyst"].get("ru"):
+            ru_ai = vm["aiAnalyst"]["ru"]
+            vm["ru"]["conclusion"] = str(ru_ai.get("riskExplanation") or vm["ru"].get("conclusion") or "")
+        if vm.get("intl") and vm["aiAnalyst"].get("intl"):
+            intl_ai = vm["aiAnalyst"]["intl"]
+            vm["intl"]["conclusion"] = str(intl_ai.get("riskExplanation") or vm["intl"].get("conclusion") or "")
+    vm["appendixConclusion"] = {
+        "title": vm["labels"].get("r31_appendix_conclusion_title", "Appendix conclusion"),
+        "lines": [
+            vm["labels"].get(
+                "r31_appendix_conclusion_line_1",
+                "Detailed evidence is retained for analyst verification and traceability.",
+            ),
+            vm["labels"].get(
+                "r31_appendix_conclusion_line_2",
+                "The appendix structure supports transparent navigation between confirmed materials and review items.",
+            ),
+        ],
+    }
+    vm["r34Appendix"] = _r34_appendix_vm(vm, vm["labels"], internal)
 
     return vm, warnings
 

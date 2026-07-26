@@ -1,7 +1,7 @@
 /**
  * /api/digital-profile/cases/[id]/audit/run
- *   POST — run the full (mock) audit: all agents in order. A failing agent does
- *   not abort the others; the response carries the overall outcome.
+ *   POST — run the orchestrated full audit across all eligible agents.
+ *   A failing agent does not abort the others; response includes run summary.
  */
 
 import type { NextRequest } from "next/server";
@@ -13,6 +13,7 @@ import {
   requireRole,
 } from "@/modules/digital-profile/auth/guard";
 import { digitalProfileConfig } from "@/modules/digital-profile/config";
+import { parseRuntimeMode } from "@/modules/digital-profile/agents/runtime-strategy";
 import { runFullAudit } from "@/modules/digital-profile/services/agent-run-service";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +27,8 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   // Running real (non-mock) providers requires the stronger permission.
   if (!digitalProfileConfig.mockAgents) requireRole(user, "agents.runReal");
   await requireCaseAccess(user, id, "VIEWER");
-  const data = await runFullAudit(id, actorOf(user));
+  const body = await req.json().catch(() => ({} as Record<string, unknown>));
+  const mode = parseRuntimeMode((body as { runtimeMode?: unknown }).runtimeMode);
+  const data = await runFullAudit(id, actorOf(user), { runtimeMode: mode });
   return jsonOk(data, 201);
 });

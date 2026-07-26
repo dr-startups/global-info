@@ -1,0 +1,27 @@
+{
+  "code": "TASK_RESULT",
+  "task_id": "6062",
+  "result": {
+    "result": { "position": 0, "found": 1, "brand": 0 },
+    "top": { "hosts": [], "urls": [] },
+    "queries": ["Глинка Сергей Михайлович"],
+    "table": [
+      {
+        "found": true,
+        "details": "<p><strong>Sergey Glinka</strong> is mentioned in open web sources in connection with business activity.</p>",
+        "sources": [
+          {
+            "id": 1,
+            "url": "https://example.com/glinka",
+            "title": "Open-web mention",
+            "description": "Brief profile note"
+          }
+        ]
+      }
+    ],
+    "info": {
+      "se": "Google",
+      "region": { "text": "Moscow", "id": "1011969" }
+    }
+  }
+}

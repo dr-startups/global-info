@@ -22,6 +22,13 @@ yarn-error.log*
 # local env files
 .env
 .env*.local
+# Любая копия .env — это те же секреты. Правило добавлено после того, как
+# `.env.backup-<дата>`, сделанная перед правкой конфигурации, попала под
+# `git add -A`: ключи OpenAI и Yandex ушли в коммит, и пуш остановила защита
+# GitHub. Наружу ничего не ушло, историю переписали — но полагаться на защиту
+# как на последний рубеж нельзя.
+.env.backup*
+.env.bak*
 # production env (real secrets — never commit). The *.example is safe to commit.
 .env.production
 .env.production.*
@@ -44,3 +51,10 @@ next-env.d.ts
 # Python (renderer)
 __pycache__/
 *.pyc
+
+# local-only report-72 generated duplicates (not regression fixtures)
+/baselines/report-72/artifacts/canonical-replay/
+/baselines/report-72/artifacts/deck-sections/render-payload.json
+
+# Artifacts of the Playwright MCP browser session
+.playwright-mcp/

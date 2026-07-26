@@ -35,6 +35,7 @@ export type AuditAction =
   // Stage E — report renderer
   | "REPORT_RENDERED"
   | "REPORT_DOWNLOADED"
+  | "DIAGNOSTICS_BUNDLE_DOWNLOADED"
   // Stage G — mock agents & orchestration
   | "AGENT_RUN_STARTED"
   | "AGENT_RUN_SUCCEEDED"

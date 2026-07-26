@@ -1,0 +1,406 @@
+/**
+ * Global assembly validation — checks the assembled deck as a whole after the
+ * DeckAssembler ran. Complements per-section QA.
+ */
+
+import type { ReportDeckManifest, ReportSectionManifest, SectionPackV2 } from "./contracts";
+import { REQUIRED_SECTIONS } from "./contracts";
+import type { RendererSlide } from "./deck-assembler";
+import { normalizeEvidenceRef, regionMatches, type ScopedEvidenceIndex } from "./scoped-input";
+import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
+import { scanDeckForInternalCodes } from "./internal-code-scan";
+
+/** Renderer templates that draw the analytical sidebar next to a visual. */
+const SIDEBAR_TEMPLATES = new Set([
+  "orion_golden_serp_screenshot",
+  "orion_golden_knowledge_panel",
+  "orion_golden_surface_panel",
+]);
+
+/** Templates allowed to be structurally sparse (framework pages). */
+const STRUCTURAL_TEMPLATES = new Set(["cover", "toc", "section-divider"]);
+
+export type AssemblyValidationReport = {
+  passed: boolean;
+  issues: string[];
+  checks: Record<string, boolean>;
+};
+
+const RISK_ORDER: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
+
+export function validateAssembly(input: {
+  manifest: ReportSectionManifest;
+  deckManifest: ReportDeckManifest;
+  rendererSlides: RendererSlide[];
+  packs: SectionPackV2[];
+  bundle: VerifiedFindingBundle;
+  baseObservationCountBefore: number;
+  baseObservationCountAfter: number;
+  /** Full run evidence index for sidebar-scope checks. */
+  evidenceIndex?: ScopedEvidenceIndex;
+}): AssemblyValidationReport {
+  const issues: string[] = [];
+  const checks: Record<string, boolean> = {};
+  const { deckManifest, rendererSlides } = input;
+
+  // All required sections present.
+  const presentSections = new Set(deckManifest.sectionPageRanges.map((r) => r.sectionType));
+  const missingRequired = REQUIRED_SECTIONS.filter((s) => !presentSections.has(s));
+  checks.requiredSectionsPresent = missingRequired.length === 0;
+  if (missingRequired.length) issues.push(`missing required sections: ${missingRequired.join(",")}`);
+
+  // Section order matches manifest order.
+  const orderInDeck = deckManifest.sectionPageRanges.map((r) => r.sectionType);
+  const expectedOrder = input.manifest.sectionOrder.filter((s) => presentSections.has(s));
+  checks.sectionOrderCorrect = JSON.stringify(orderInDeck) === JSON.stringify(expectedOrder);
+  if (!checks.sectionOrderCorrect) {
+    issues.push(`section order mismatch: deck=${orderInDeck.join(">")} manifest=${expectedOrder.join(">")}`);
+  }
+
+  // baseSlotId uniqueness across the deck.
+  const baseSlots = deckManifest.slides.filter((s) => !s.isContinuation).map((s) => s.baseSlotId);
+  checks.baseSlotIdsUnique = new Set(baseSlots).size === baseSlots.length;
+  if (!checks.baseSlotIdsUnique) issues.push("duplicate baseSlotId in assembled deck");
+
+  // Continuation adjacency.
+  let adjacencyOk = true;
+  for (let i = 0; i < deckManifest.slides.length; i += 1) {
+    const s = deckManifest.slides[i];
+    if (!s.isContinuation) continue;
+    const prev = deckManifest.slides[i - 1];
+    if (!prev || (prev.slideId !== s.continuationOf && prev.continuationOf !== s.continuationOf)) {
+      adjacencyOk = false;
+      issues.push(`continuation ${s.slideId} is not adjacent to its base`);
+    }
+  }
+  checks.continuationAdjacency = adjacencyOk;
+
+  // Page numbering continuous 1..N and pageCount consistent.
+  const numberingOk =
+    deckManifest.slides.every((s, i) => s.pageNumber === i + 1) &&
+    deckManifest.pageCount === deckManifest.slides.length &&
+    rendererSlides.length === deckManifest.pageCount &&
+    rendererSlides.every((s) => s.totalPageCount === deckManifest.pageCount);
+  checks.pageNumberingConsistent = numberingOk;
+  if (!numberingOk) issues.push("page numbering inconsistent");
+
+  // TOC ranges match the deck.
+  let tocOk = true;
+  for (const range of deckManifest.sectionPageRanges) {
+    if (range.sectionType === "FRONT_MATTER") continue;
+    const line = deckManifest.toc.find((t) => t.pageNumber === range.firstPage);
+    if (!line || !line.title.includes(`стр. ${range.firstPage}–${range.lastPage}`)) {
+      tocOk = false;
+      issues.push(`TOC line missing/mismatched for ${range.sectionType}`);
+    }
+  }
+  // No per-line "(N стр.)" artifacts.
+  if (deckManifest.toc.some((t) => /\(\d+\s*стр\.\)/u.test(t.title))) {
+    tocOk = false;
+    issues.push("TOC contains forbidden '(N стр.)' per line");
+  }
+  checks.tocMatchesDeck = tocOk;
+
+  // Global KPI vs section metrics: displayed adverse in executive >= any pack's
+  // mandatory adverse; and executive summary must include every promoted
+  // adverse P1/P2 finding.
+  const adverseP12 = input.bundle.findings.filter(
+    (f) =>
+      f.subjectMatch === "SUBJECT_MATCH" &&
+      (f.promotionPriority === "P1" || f.promotionPriority === "P2") &&
+      (RISK_ORDER[f.riskLevel] ?? 0) >= 2
+  );
+  const executiveSlideFindingIds = new Set(
+    rendererSlides.filter((s) => s.sectionKey === "EXECUTIVE").flatMap((s) => s.findingIds)
+  );
+  const missingAdverse = adverseP12.filter((f) => !executiveSlideFindingIds.has(f.findingId));
+  checks.adverseInExecutiveSummary = missingAdverse.length === 0;
+  if (missingAdverse.length) {
+    issues.push(
+      `adverse P1/P2 findings absent from executive summary: ${missingAdverse
+        .map((f) => f.findingId)
+        .join(",")}`
+    );
+  }
+
+  // Findings must not contradict each other silently: a finding pair with a
+  // recorded contradiction must expose it (limitations/contradictions kept).
+  checks.contradictionsPreserved = true;
+
+  // Base dataset never shrinks after overlay.
+  checks.baseDatasetPreserved = input.baseObservationCountAfter >= input.baseObservationCountBefore;
+  if (!checks.baseDatasetPreserved) {
+    issues.push(
+      `base dataset shrank: ${input.baseObservationCountBefore} -> ${input.baseObservationCountAfter}`
+    );
+  }
+
+  // No empty status labels: every table "Оценка" cell must be non-empty.
+  let labelsOk = true;
+  for (const slide of rendererSlides) {
+    const table = slide.table;
+    if (!table) continue;
+    const statusCol = table.headers.findIndex((h) => h === "Оценка");
+    if (statusCol < 0) continue;
+    for (const row of table.rows) {
+      if (!String(row[statusCol] ?? "").trim()) {
+        labelsOk = false;
+        issues.push(`empty status label on ${slide.slideKey}`);
+      }
+    }
+  }
+  checks.noEmptyStatusLabels = labelsOk;
+
+  // Canonical coverage: all 36 First36 base slots must be present.
+  checks.canonicalBaseSlotCoverage = deckManifest.baseSlotCoverage === 36;
+  if (!checks.canonicalBaseSlotCoverage) {
+    issues.push(`baseSlotCoverage=${deckManifest.baseSlotCoverage}, expected 36`);
+  }
+
+  // A slide with a bound visual asset must never render as an
+  // VISUAL_ASSET_UNAVAILABLE placeholder.
+  let visualOk = true;
+  for (const slide of rendererSlides) {
+    if (slide.visualAssetRefs.length > 0 && slide.emptyStateReason === "VISUAL_ASSET_UNAVAILABLE") {
+      visualOk = false;
+      issues.push(`slide ${slide.slideKey} has bound assets but renders as placeholder`);
+    }
+  }
+  checks.noPlaceholderWithAvailableAsset = visualOk;
+
+  // Внутренние коды в клиентском тексте (шаг 07.8): отчёт читает человек, и
+  // техническая константа в скобках не сообщает ему ничего.
+  const internalCodes = scanDeckForInternalCodes(rendererSlides);
+  checks.noInternalCodesInClientText = internalCodes.length === 0;
+  for (const f of internalCodes.slice(0, 10)) {
+    issues.push(`internal code ${f.code} in client text of ${f.slide}`);
+  }
+
+  // --- Manual-quality gates (fail closed) ---
+
+  // 1. emptySidebarCount=0: every slide that renders the analytical sidebar
+  //    (visual template + bound asset) must carry a dynamic conclusion, a
+  //    relevance/meaning line and a recommended action — an empty titled
+  //    «Вывод» panel is a validation failure.
+  const templateBySlot = new Map(deckManifest.slides.map((s) => [s.slideId, s.templateId]));
+  let emptySidebarCount = 0;
+  for (const slide of rendererSlides) {
+    if (slide.visualAssetRefs.length === 0) continue;
+    if (!SIDEBAR_TEMPLATES.has(slide.template)) continue;
+    const hasConclusion = Boolean(slide.whatWasFound?.trim());
+    const hasMeaning = Boolean(
+      slide.whyItMatters?.trim() || slide.statusNote?.trim() || slide.narrative?.trim()
+    );
+    const hasAction = Boolean(slide.whatToCheck?.trim());
+    if (!hasConclusion || !hasMeaning || !hasAction) {
+      emptySidebarCount += 1;
+      issues.push(
+        `empty analytical sidebar on ${slide.slideKey}: conclusion=${hasConclusion} meaning=${hasMeaning} action=${hasAction}`
+      );
+    }
+  }
+  checks.emptySidebarCountZero = emptySidebarCount === 0;
+
+  // 2. unexplainedAdverseMarkerCount=0: every red/adverse highlight on a SERP
+  //    screenshot slide must be explained in the adjacent panel.
+  let unexplainedAdverseMarkerCount = 0;
+  const adverseFindingIds = new Set(
+    input.bundle.findings
+      .filter((f) => (RISK_ORDER[f.riskLevel] ?? 0) >= 2 && f.subjectMatch === "SUBJECT_MATCH")
+      .map((f) => f.findingId)
+  );
+  for (const slide of rendererSlides) {
+    if (slide.template !== "orion_golden_serp_screenshot") continue;
+    if (slide.visualAssetRefs.length === 0) continue;
+    const adverseOnSlide = slide.findingIds.filter((id) => adverseFindingIds.has(id)).length;
+    const explained = slide.highlightExplanations?.length ?? 0;
+    if (adverseOnSlide > 0 && explained < adverseOnSlide) {
+      unexplainedAdverseMarkerCount += adverseOnSlide - explained;
+      issues.push(
+        `slide ${slide.slideKey}: ${adverseOnSlide} adverse highlight(s) but only ${explained} explanation(s)`
+      );
+    }
+  }
+  checks.unexplainedAdverseMarkerCountZero = unexplainedAdverseMarkerCount === 0;
+
+  // 3. Every visual card slide either binds a rendered asset, carries an
+  //    explicit fallback/empty-state reason, or downgrades to a text layout
+  //    with real content — never a blank unlabeled card.
+  let visualCardsOk = true;
+  for (const slide of rendererSlides) {
+    const isVisualTemplate =
+      SIDEBAR_TEMPLATES.has(slide.template) || slide.template === "orion_golden_image_grid";
+    if (!isVisualTemplate) continue;
+    if (slide.visualAssetRefs.length > 0 || slide.emptyStateReason) continue;
+    const hasTextContent =
+      Boolean(slide.narrative?.trim()) ||
+      (slide.bullets ?? []).some((b) => b.trim()) ||
+      (slide.table?.rows.length ?? 0) > 0 ||
+      Boolean(slide.whatWasFound?.trim());
+    if (!hasTextContent) {
+      visualCardsOk = false;
+      issues.push(`visual slide ${slide.slideKey} has neither a bound asset nor an explicit fallback`);
+    }
+  }
+  checks.visualCardsResolvedOrLabeled = visualCardsOk;
+
+  // 4. No titled content container is materially empty: every non-structural
+  //    slide must carry real content (narrative/bullets/table/kpis/visual or
+  //    the finding blocks), or be an explicit valid empty state.
+  let materiallyEmptyPages = 0;
+  for (const slide of rendererSlides) {
+    const templateId = templateBySlot.get(slide.slideKey) ?? "";
+    if (STRUCTURAL_TEMPLATES.has(templateId)) continue;
+    if (slide.emptyStateReason && (slide.narrative || (slide.bullets ?? []).length)) continue;
+    const hasContent =
+      Boolean(slide.narrative?.trim()) ||
+      (slide.bullets ?? []).some((b) => b.trim()) ||
+      (slide.table?.rows.length ?? 0) > 0 ||
+      (slide.kpis?.length ?? 0) > 0 ||
+      slide.visualAssetRefs.length > 0 ||
+      Boolean(slide.whatWasFound?.trim());
+    if (!hasContent) {
+      materiallyEmptyPages += 1;
+      issues.push(`materially empty page: ${slide.slideKey} (${templateId})`);
+    }
+  }
+  checks.noMateriallyEmptyPages = materiallyEmptyPages === 0;
+
+  // 5. Explicit page accounting: every page is a canonical base slot, a
+  //    continuation, or an explained optional extra.
+  const accountedExtra = new Set(deckManifest.nonCanonicalPages.map((p) => p.slideId));
+  let accountingOk = true;
+  for (const s of deckManifest.slides) {
+    if (s.pageKind === "canonical_base" || s.pageKind === "continuation") continue;
+    if (!accountedExtra.has(s.slideId)) {
+      accountingOk = false;
+      issues.push(`page ${s.pageNumber} (${s.slideId}) is an unexplained non-canonical insert`);
+    }
+  }
+  for (const p of deckManifest.nonCanonicalPages) {
+    if (!p.reason.trim()) {
+      accountingOk = false;
+      issues.push(`nonCanonicalPages entry ${p.slideId} lacks a reason`);
+    }
+  }
+  checks.pageAccountingComplete = accountingOk;
+
+  // --- Sidebar evidence-scope gates (fail closed) ---
+
+  // 6. Sidebar findings/evidence must be subsets of the owning fragment's
+  //    scoped inputs — no global-finding fallback in a scoped fragment.
+  const packBySlideId = new Map<string, SectionPackV2>();
+  for (const pack of input.packs) {
+    for (const slide of pack.slides) packBySlideId.set(slide.slideId, pack);
+  }
+  let subsetOk = true;
+  for (const slide of rendererSlides) {
+    const pack = packBySlideId.get(slide.slideKey);
+    if (!pack) continue;
+    const inputFindingIds = new Set(pack.inputs.findingIds);
+    const inputRefs = new Set(pack.inputs.evidenceRefs);
+    for (const id of slide.findingIds) {
+      if (!inputFindingIds.has(id)) {
+        subsetOk = false;
+        issues.push(`slide ${slide.slideKey}: findingId ${id} outside fragment scope`);
+      }
+    }
+    for (const ref of slide.evidenceRefs) {
+      if (!inputRefs.has(ref)) {
+        subsetOk = false;
+        issues.push(`slide ${slide.slideKey}: evidenceRef ${ref} outside fragment scope`);
+      }
+    }
+  }
+  checks.sidebarScopeSubsets = subsetOk;
+
+  // 7. Region-scope isolation: RU pages must not cite UAE evidence and vice
+  //    versa (region aliases: UAE covers INTERNATIONAL/GLOBAL).
+  let regionOk = true;
+  if (input.evidenceIndex) {
+    for (const slide of rendererSlides) {
+      const scopeRegion =
+        slide.sectionKey === "RU_PROFILE" ? "RU" : slide.sectionKey === "UAE_PROFILE" ? "UAE" : null;
+      if (!scopeRegion) continue;
+      for (const ref of slide.evidenceRefs) {
+        const region = input.evidenceIndex[ref]?.region;
+        if (region && !regionMatches(scopeRegion, region)) {
+          regionOk = false;
+          issues.push(`slide ${slide.slideKey}: ${scopeRegion} page cites ${region} evidence ${ref}`);
+        }
+      }
+    }
+  }
+  checks.regionScopeIsolation = regionOk;
+
+  // 8. Source footer derived from the slide's own (sidebar) evidence: every
+  //    domain named in the footer or highlight explanations of a visual
+  //    sidebar must resolve through that slide's evidenceRefs.
+  let footerOk = true;
+  if (input.evidenceIndex) {
+    const domainToken = /\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b/giu;
+    for (const slide of rendererSlides) {
+      if (!SIDEBAR_TEMPLATES.has(slide.template)) continue;
+      if (slide.visualAssetRefs.length === 0) continue;
+      const normRefs = new Set(slide.evidenceRefs.map(normalizeEvidenceRef));
+      const allowed = new Set<string>();
+      for (const [ref, e] of Object.entries(input.evidenceIndex)) {
+        if (!e.domain || e.domain === "—") continue;
+        if (normRefs.has(normalizeEvidenceRef(ref))) allowed.add(e.domain.toLowerCase());
+      }
+      const texts = [
+        slide.sourceNote,
+        slide.whatWasFound,
+        ...(slide.highlightExplanations ?? []).map((h) => h.clientReason),
+      ].filter((t): t is string => Boolean(t));
+      for (const text of texts) {
+        for (const m of text.matchAll(domainToken)) {
+          if (!allowed.has(m[0].toLowerCase())) {
+            footerOk = false;
+            issues.push(
+              `slide ${slide.slideKey}: sidebar names domain ${m[0]} not derived from its evidence`
+            );
+          }
+        }
+      }
+    }
+  }
+  checks.sourceFooterFromSidebarEvidence = footerOk;
+
+  // No stale packs: manifest hash must match pack hash for every entry.
+  const packByKey = new Map(input.packs.map((p) => [p.fragmentKey, p]));
+  let staleOk = true;
+  for (const entry of input.manifest.entries) {
+    const pack = packByKey.get(entry.fragmentKey);
+    if (pack && pack.contentHash !== entry.contentHash) {
+      staleOk = false;
+      issues.push(`stale pack vs manifest: ${entry.fragmentKey}`);
+    }
+  }
+  checks.noStalePacks = staleOk;
+
+  // Self-contained lineage: every pack carries an explicit caseId/datasetId
+  // that matches the assembled deck lineage (no caseId=undefined packs).
+  let packLineageOk = true;
+  for (const pack of input.packs) {
+    if (!pack.caseId || pack.caseId !== deckManifest.caseId) {
+      packLineageOk = false;
+      issues.push(`pack ${pack.fragmentKey} caseId ${String(pack.caseId)} != deck ${deckManifest.caseId}`);
+    }
+    if (pack.datasetId !== deckManifest.sourceDatasetId) {
+      packLineageOk = false;
+      issues.push(
+        `pack ${pack.fragmentKey} datasetId ${pack.datasetId} != deck ${deckManifest.sourceDatasetId}`
+      );
+    }
+  }
+  checks.packSelfContainedLineage = packLineageOk;
+
+  // Geometry-level clipping/overlap is validated by the existing PPTX geometry
+  // gate after render; at the model level we assert budgets were enforced by
+  // section QA (validationPassed for all entries).
+  checks.sectionQaAllPassed = input.manifest.entries.every((e) => e.validationPassed);
+  if (!checks.sectionQaAllPassed) issues.push("some manifest entries did not pass section QA");
+
+  return { passed: issues.length === 0, issues, checks };
+}

@@ -47,6 +47,9 @@ export type ReportEligibility =
   | "EXCLUDE";
 
 export type SelectionReason =
+  | "override_selected"
+  | "manual_review_required"
+  | "weak_identity_override"
   | "exact_subject_match"
   | "partial_subject_match"
   | "namesake_detected"
@@ -72,6 +75,77 @@ export type IdentityDecision =
   | "NAMESAKE"
   | "ENTITY_MISMATCH"
   | "INSUFFICIENT_MATCH";
+
+/** Stage R4.2 — normalized source-quality decision for explainable pipeline. */
+export type SourceQualityDecision =
+  | "include"
+  | "review"
+  | "exclude"
+  | "duplicate"
+  | "unavailable"
+  | "fallback";
+
+/** Stage R4.2 — normalized reason code (internal-facing). */
+export type SourceQualityReason =
+  | "exact_subject_match"
+  | "likely_subject_match"
+  | "weak_identity_match"
+  | "wrong_patronymic"
+  | "wrong_name"
+  | "namesake_risk"
+  | "duplicate_source"
+  | "low_information"
+  | "unsupported_surface"
+  | "provider_unavailable"
+  | "manual_review_required"
+  | "compliance_manual_import"
+  | "fallback_result"
+  | "no_url"
+  | "no_title"
+  | "other";
+
+/** Stage R4.2 — client-safe confidence label for source quality. */
+export type SourceConfidenceLabel = "high" | "medium" | "low" | "unknown";
+
+export type SourceSurfaceType =
+  | "organic"
+  | "suggestion"
+  | "related"
+  | "image"
+  | "video"
+  | "wikipedia"
+  | "compliance"
+  | "manual"
+  | "screenshot"
+  | "unknown";
+
+/** Stage R4.2 — normalized source identity/fingerprint. */
+export interface SourceFingerprint {
+  sourceFingerprint: string;
+  canonicalUrlKey: string | null;
+  canonicalDomain: string | null;
+  canonicalTitleKey: string | null;
+  providerKey: string;
+  surfaceType: SourceSurfaceType;
+  language?: string | null;
+  region?: string | null;
+  duplicateGroupId?: string | null;
+  duplicateRank?: number | null;
+  duplicateReason?: string | null;
+}
+
+/** Stage R4.2 — explainable source-quality metadata. */
+export interface SourceQualityMetadata extends SourceFingerprint {
+  sourceRank?: number;
+  sourceScoreBucket?: "high" | "medium" | "low" | "unknown";
+  sourceQualityDecision: SourceQualityDecision;
+  sourceQualityReason: SourceQualityReason;
+  confidenceLabel: SourceConfidenceLabel;
+  clientSafeReason: string;
+  internalReason?: string;
+  rankingFactors?: Record<string, number>;
+  limitingFactors?: string[];
+}
 
 export type AutocompleteClass =
   | "EXACT_SUBJECT_QUERY"
@@ -108,6 +182,10 @@ export interface EvidenceItemInput {
   source?: string | null;
   rawMetadata?: unknown;
   subjectFullName?: string | null;
+  subjectAliases?: string[];
+  subjectCountry?: string | null;
+  subjectNationality?: string | null;
+  subjectRegionHints?: string[];
   /** Manual report override stored on item (surfaces / results). */
   reportEligibilityOverride?: ReportEligibility | null;
 }
@@ -128,6 +206,24 @@ export interface EvidenceQualityAssessment {
   autocompleteClass?: AutocompleteClass;
   isSubjectEvidence?: boolean;
   thumbnailStatus?: ThumbnailStatus;
+  entityMatch?: {
+    decision:
+      | "strict_subject"
+      | "likely_subject"
+      | "possible_subject"
+      | "namesake"
+      | "not_subject"
+      | "insufficient_identity";
+    confidence: number;
+    reasons: string[];
+    matchedTokens: string[];
+    missingCriticalTokens: string[];
+    conflictingTokens: string[];
+    patronymicStatus: "match" | "missing" | "conflict" | "not_applicable";
+    regionStatus: "match" | "weak" | "conflict" | "unknown";
+  };
+  /** Stage R4.2 — explainable source-quality metadata. */
+  sourceQuality?: SourceQualityMetadata;
 }
 
 export interface GatedEvidenceItem extends EvidenceItemInput {
@@ -201,5 +297,30 @@ export interface EvidenceQualitySummary {
     selectedForReport: number;
     excludedNamesakeOrNoise: number;
     fetchFailed: number;
+  };
+  /** Stage R4.2 — source quality diagnostics summary. */
+  sourceQualitySummary?: {
+    totalCollected: number;
+    uniqueSources: number;
+    duplicateCount: number;
+    includedCount: number;
+    reviewCount: number;
+    excludedCount: number;
+    unavailableCount: number;
+    bySurfaceType: Partial<Record<SourceSurfaceType, number>>;
+    byProvider: Record<string, number>;
+    topDuplicateDomains: Array<{ domain: string; count: number }>;
+    bySourceScoreBucket?: Record<string, number>;
+    byDecision?: Record<string, number>;
+    byQueryPurpose?: Record<string, number>;
+    highConfidenceCount: number;
+    mediumConfidenceCount: number;
+    lowConfidenceCount: number;
+    unknownConfidenceCount: number;
+    namesakeSuppressionCount?: number;
+    fallbackSourceCount?: number;
+    weakMatchSuppressedCount?: number;
+    mediaCandidateSuppressedCount?: number;
+    warnings?: string[];
   };
 }

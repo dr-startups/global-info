@@ -24,6 +24,11 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from convert_pdf import convert_to_pdf
+from lexis_docx import process_lexis_docx_bytes
+from orion_golden_renderer import render_orion_golden
+from orion_manifest_render import render_orion_manifest
+from orion_report_spec_render import render_report_spec
+from orion_visual_composer import render_client_storyboard
 from render_pptx import build_pptx
 from report_i18n import normalize_lang
 
@@ -69,6 +74,61 @@ class RenderResponse(BaseModel):
     warnings: list[str] = []
 
 
+class LexisDocxPage(BaseModel):
+    pageNumber: int
+    width: int
+    height: int
+    contentBase64: str
+
+
+class LexisDocxProcessRequest(BaseModel):
+    docxBase64: str
+
+
+class LexisDocxProcessResponse(BaseModel):
+    text: str
+    pages: list[LexisDocxPage]
+    parserWarnings: list[str] = []
+    conversionWarnings: list[str] = []
+
+
+class OrionManifestRenderRequest(BaseModel):
+    reportJson: dict
+    audience: str | None = "internal"
+
+
+class OrionManifestPage(BaseModel):
+    pageNumber: int
+    width: int
+    height: int
+    contentBase64: str
+
+
+class OrionManifestRenderResponse(BaseModel):
+    slideCount: int
+    pptxBase64: str
+    pdfBase64: str
+    pages: list[OrionManifestPage]
+    pdfExportMode: str | None = None
+    warnings: list[str] = []
+
+
+class OrionReportSpecRenderRequest(BaseModel):
+    reportSpec: dict
+    audience: str | None = "client"
+
+
+class OrionClientStoryboardRenderRequest(BaseModel):
+    storyboard: dict
+    assets: list[dict] = []
+
+
+class OrionGoldenRenderRequest(BaseModel):
+    reportSpec: dict
+    deckManifest: dict
+    assets: list[dict] = []
+
+
 def _file_info(key: str, path: str) -> FileInfo:
     with open(path, "rb") as fh:
         data = fh.read()
@@ -91,12 +151,126 @@ def health() -> dict:
     }
 
 
-DEFAULT_TEMPLATE_VERSION = "report-template-v3"
+DEFAULT_TEMPLATE_VERSION = "simple"
+
+
+@app.post("/orion/render-manifest", response_model=OrionManifestRenderResponse)
+def orion_render_manifest(req: OrionManifestRenderRequest) -> OrionManifestRenderResponse:
+    """Render ORION v2 manifest JSON into PPTX/PDF/PNG pages."""
+    audience = (req.audience or "internal").strip().lower()
+    if audience not in {"internal", "client"}:
+        raise HTTPException(status_code=400, detail="audience must be internal or client")
+    try:
+        result = render_orion_manifest(req.reportJson, audience=audience)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"ORION manifest render failed: {exc}") from exc
+    return OrionManifestRenderResponse(
+        slideCount=int(result.get("slideCount") or 0),
+        pptxBase64=str(result.get("pptxBase64") or ""),
+        pdfBase64=str(result.get("pdfBase64") or ""),
+        pages=[OrionManifestPage(**page) for page in result.get("pages") or []],
+        pdfExportMode=str(result.get("pdfExportMode") or "unknown"),
+        warnings=list(result.get("warnings") or []),
+    )
+
+
+@app.post("/orion/render-client-storyboard", response_model=OrionManifestRenderResponse)
+def orion_render_client_storyboard(req: OrionClientStoryboardRenderRequest) -> OrionManifestRenderResponse:
+    """Render ORION ClientStoryboard v1 into PPTX/PDF/PNG pages (R9.9)."""
+    try:
+        payload = {"storyboard": req.storyboard, "assets": req.assets}
+        result = render_client_storyboard(payload)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"ORION client storyboard render failed: {exc}") from exc
+    return OrionManifestRenderResponse(
+        slideCount=int(result.get("slideCount") or 0),
+        pptxBase64=str(result.get("pptxBase64") or ""),
+        pdfBase64=str(result.get("pdfBase64") or ""),
+        pages=[OrionManifestPage(**page) for page in result.get("pages") or []],
+        pdfExportMode=str(result.get("pdfExportMode") or "unknown"),
+        warnings=list(result.get("warnings") or []),
+    )
+
+
+@app.post("/orion/render-golden", response_model=OrionManifestRenderResponse)
+def orion_render_golden(req: OrionGoldenRenderRequest) -> OrionManifestRenderResponse:
+    """Render ORION Golden ReportSpec + deck manifest into PPTX/PDF/PNG pages (R10)."""
+    try:
+        payload = {
+            "reportSpec": req.reportSpec,
+            "deckManifest": req.deckManifest,
+            "assets": req.assets,
+        }
+        result = render_orion_golden(payload)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"ORION Golden render failed: {exc}") from exc
+    return OrionManifestRenderResponse(
+        slideCount=int(result.get("slideCount") or 0),
+        pptxBase64=str(result.get("pptxBase64") or ""),
+        pdfBase64=str(result.get("pdfBase64") or ""),
+        pages=[OrionManifestPage(**page) for page in result.get("pages") or []],
+        pdfExportMode=str(result.get("pdfExportMode") or "unknown"),
+        warnings=list(result.get("warnings") or []),
+    )
+
+
+@app.post("/orion/render-report-spec", response_model=OrionManifestRenderResponse)
+def orion_render_report_spec(req: OrionReportSpecRenderRequest) -> OrionManifestRenderResponse:
+    """Render ORION ReportSpec v1 JSON into PPTX/PDF/PNG pages."""
+    audience = (req.audience or "client").strip().lower()
+    if audience not in {"internal", "client"}:
+        raise HTTPException(status_code=400, detail="audience must be internal or client")
+    try:
+        result = render_report_spec(req.reportSpec)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"ORION ReportSpec render failed: {exc}") from exc
+    return OrionManifestRenderResponse(
+        slideCount=int(result.get("slideCount") or 0),
+        pptxBase64=str(result.get("pptxBase64") or ""),
+        pdfBase64=str(result.get("pdfBase64") or ""),
+        pages=[OrionManifestPage(**page) for page in result.get("pages") or []],
+        pdfExportMode=str(result.get("pdfExportMode") or "unknown"),
+        warnings=list(result.get("warnings") or []),
+    )
+
+
+@app.post("/lexis/process-docx", response_model=LexisDocxProcessResponse)
+def lexis_process_docx(req: LexisDocxProcessRequest) -> LexisDocxProcessResponse:
+    """Extract text and render visual PNG pages from a LexisNexis DOCX upload."""
+    try:
+        docx_bytes = base64.b64decode(req.docxBase64)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"Invalid docxBase64: {exc}") from exc
+    if not docx_bytes:
+        raise HTTPException(status_code=400, detail="Empty DOCX payload")
+    try:
+        result = process_lexis_docx_bytes(docx_bytes)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Lexis DOCX processing failed: {exc}") from exc
+    return LexisDocxProcessResponse(
+        text=str(result.get("text") or ""),
+        pages=[LexisDocxPage(**page) for page in result.get("pages") or []],
+        parserWarnings=list(result.get("parserWarnings") or []),
+        conversionWarnings=list(result.get("conversionWarnings") or []),
+    )
 
 
 @app.post("/render", response_model=RenderResponse)
 def render(req: RenderRequest) -> RenderResponse:
+    """Legacy report_json → PPTX/PDF.
+
+    REMEDIATION 9.3: report_template_v1/v2/v3 are retired. Only template_version
+    "simple" remains; new production decks use /orion/render-golden.
+    """
     version = (req.templateVersion or DEFAULT_TEMPLATE_VERSION).strip()
+    if version.startswith("report-template-v"):
+        raise HTTPException(
+            status_code=410,
+            detail=(
+                f"Legacy template {version!r} is retired (REMEDIATION 9.3). "
+                "Use /orion/render-golden for ORION Golden decks."
+            ),
+        )
     audience = (req.audience or "internal").strip().lower()
     watermark_mode = (req.watermarkMode or "draft").strip().lower()
 

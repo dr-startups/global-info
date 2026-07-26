@@ -24,6 +24,8 @@ export const COLORS = {
   countBorder: "#bae6fd",
   highlight: "#d1342f",
   highlightFill: "#fff5f5",
+  amber: "#d97706",
+  amberFill: "#fffbeb",
   tabActive: "#1f2937",
   yandex: "#ff0000",
   google: "#4285f4",

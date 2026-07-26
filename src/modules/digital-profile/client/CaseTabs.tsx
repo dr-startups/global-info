@@ -15,11 +15,12 @@ import {
   type AiProfile,
   type CaseDetail,
   type CaseEvidence,
+  type FullAuditRunSummaryItem,
   type ManualResultClass,
-  type ReportVersion,
   type ResultRiskThemeKey,
   type SearchResult,
   type SearchSurfaceItem,
+  type UnifiedCollectionJobStatus,
 } from "./api";
 import {
   Badge,
@@ -63,28 +64,37 @@ export function CaseTabs({
   caseDetail,
   evidence,
   surfaces,
-  report,
   agents,
   agentRuns,
   auditing,
+  unifiedJob = null,
+  fullAuditBlocked = false,
+  lastFullAuditSummary,
+  manualAgentRun = false,
   onRunFullAudit,
   onAgentsChanged,
   onEvidenceChanged,
   onSurfacesChanged,
-  onReportChange,
 }: {
   caseDetail: CaseDetail;
   evidence: CaseEvidence;
   surfaces: SearchSurfaceItem[];
-  report: ReportVersion | null;
   agents: AgentInfo[];
   agentRuns: AgentRun[];
   auditing: boolean;
+  /** Текущий unified-прогон: его артефакты и есть отчёт, который видит клиент. */
+  unifiedJob?: UnifiedCollectionJobStatus | null;
+  fullAuditBlocked?: boolean;
+  lastFullAuditSummary: {
+    mode: "legacy_mock_first" | "real_first_with_fallback" | "real_only" | "mock_only";
+    items: FullAuditRunSummaryItem[];
+  } | null;
+  /** Режим отладки: ручной запуск отдельного агента (шаг 11.2, пункт 2). */
+  manualAgentRun?: boolean;
   onRunFullAudit: () => void;
   onAgentsChanged: () => void;
   onEvidenceChanged: () => void;
   onSurfacesChanged: () => void;
-  onReportChange: (r: ReportVersion) => void;
 }) {
   const { t } = useDigitalProfileI18n();
   const { can } = useDpAuth();
@@ -93,28 +103,35 @@ export function CaseTabs({
   const canViewRaw = can("evidence.viewRaw");
   const [tab, setTab] = useState<TabKey>("subject");
 
-  const byType = (ty: SearchSurfaceItem["type"]) => surfaces.filter((s) => s.type === ty);
+  const surfaceList = surfaces ?? [];
+  const byType = (ty: SearchSurfaceItem["type"]) => surfaceList.filter((s) => s.type === ty);
   const suggestions = byType("SUGGESTION");
   const related = byType("RELATED_QUERY");
   const images = byType("IMAGE_RESULT");
   const videos = byType("VIDEO_RESULT");
   const knowledge = byType("KNOWLEDGE_BLOCK");
+  const searchResults = evidence.searchResults ?? [];
+  const screenshots = evidence.screenshots ?? [];
+  const wikipediaChecks = evidence.wikipediaChecks ?? [];
+  const aiProfiles = evidence.aiProfiles ?? [];
+  const databaseProfiles = evidence.databaseProfiles ?? [];
+  const riskFindings = evidence.riskFindings ?? [];
 
   const allTabs: { key: TabKey; label: string; count?: number; raw?: boolean }[] = [
     { key: "subject", label: t("tabs.subject") },
-    { key: "agents", label: t("tabs.agents"), count: agents.length, raw: true },
-    { key: "search", label: t("tabs.searchResults"), count: evidence.searchResults.length, raw: true },
+    { key: "agents", label: t("tabs.agents"), count: (agents ?? []).length, raw: true },
+    { key: "search", label: t("tabs.searchResults"), count: searchResults.length, raw: true },
     { key: "suggestions", label: t("tabs.suggestions"), count: suggestions.length, raw: true },
     { key: "related", label: t("tabs.relatedQueries"), count: related.length, raw: true },
     { key: "images", label: t("tabs.images"), count: images.length, raw: true },
     { key: "videos", label: t("tabs.videos"), count: videos.length, raw: true },
     { key: "knowledge", label: t("tabs.knowledgeBlock"), count: knowledge.length, raw: true },
-    { key: "screenshots", label: t("tabs.screenshots"), count: evidence.screenshots.length, raw: true },
+    { key: "screenshots", label: t("tabs.screenshots"), count: screenshots.length, raw: true },
     { key: "serpSnapshot", label: t("tabs.serpSnapshot"), raw: true },
-    { key: "wikipedia", label: t("tabs.wikipedia"), count: evidence.wikipediaChecks.length, raw: true },
-    { key: "ai", label: t("tabs.aiProfile"), count: evidence.aiProfiles.length, raw: true },
-    { key: "compliance", label: t("tabs.complianceDatabases"), count: evidence.databaseProfiles.length, raw: true },
-    { key: "risk", label: t("tabs.riskFindings"), count: evidence.riskFindings.length, raw: true },
+    { key: "wikipedia", label: t("tabs.wikipedia"), count: wikipediaChecks.length, raw: true },
+    { key: "ai", label: t("tabs.aiProfile"), count: aiProfiles.length, raw: true },
+    { key: "compliance", label: t("tabs.complianceDatabases"), count: databaseProfiles.length, raw: true },
+    { key: "risk", label: t("tabs.riskFindings"), count: riskFindings.length, raw: true },
     { key: "evidenceQuality", label: t("tabs.evidenceQuality"), raw: true },
     { key: "audit", label: t("tabs.auditSummary"), raw: true },
     { key: "report", label: t("tabs.reportPreview") },
@@ -145,7 +162,11 @@ export function CaseTabs({
           agents={agents}
           agentRuns={agentRuns}
           auditing={auditing}
+          fullAuditBlocked={fullAuditBlocked}
+          lastFullAuditSummary={lastFullAuditSummary}
           onRunFullAudit={onRunFullAudit}
+          showUnifiedCta={false}
+          manualAgentRun={manualAgentRun}
           onChanged={onAgentsChanged}
         />
       ) : null}
@@ -189,11 +210,7 @@ export function CaseTabs({
 
       {tab === "audit" ? <AuditSummaryTab caseId={caseDetail.id} /> : null}
       {tab === "report" ? (
-        <ReportPreviewPanel
-          caseId={caseDetail.id}
-          report={report}
-          onReportChange={onReportChange}
-        />
+        <ReportPreviewPanel caseId={caseDetail.id} unifiedJob={unifiedJob} />
       ) : null}
     </div>
   );
@@ -217,7 +234,11 @@ function SubjectTab({ caseDetail }: { caseDetail: CaseDetail }) {
         <dt>{t("subject.birthDate")}</dt>
         <dd>{s?.dateOfBirth ? fmtDate(s.dateOfBirth) : "—"}</dd>
         <dt>{t("subject.targetRegions")}</dt>
-        <dd>{caseDetail.targetRegions.length ? caseDetail.targetRegions.join(", ") : "—"}</dd>
+        <dd>
+          {(caseDetail.targetRegions ?? []).length
+            ? (caseDetail.targetRegions ?? []).join(", ")
+            : "—"}
+        </dd>
         <dt>{t("subject.lawfulBasis")}</dt>
         <dd>{caseDetail.lawfulBasis ? caseDetail.lawfulBasis.replace(/_/g, " ") : "—"}</dd>
         <dt>{t("subject.consentStatus")}</dt>
@@ -386,7 +407,8 @@ function SearchResultsTab({
     if ((src ?? "").startsWith("mock")) return "MOCK";
     return "MANUAL";
   }
-  const visibleResults = evidence.searchResults.filter(
+  const allResults = evidence.searchResults ?? [];
+  const visibleResults = allResults.filter(
     (r) => sourceFilter === "ALL" || sourceKind(r.source) === sourceFilter
   );
 
@@ -496,7 +518,7 @@ function SearchResultsTab({
           ))}
         </select>
         <span className="dp-muted" style={{ fontSize: 12 }}>
-          {visibleResults.length} {t("common.of")} {evidence.searchResults.length}
+          {visibleResults.length} {t("common.of")} {allResults.length}
         </span>
       </div>
 
@@ -587,7 +609,7 @@ function ScreenshotsTab({ evidence }: { evidence: CaseEvidence }) {
     <div>
       <h2 className="dp-h2">{t("screenshots.title")}</h2>
       <Notice>{t("screenshots.notice")}</Notice>
-      {evidence.screenshots.length === 0 ? (
+      {(evidence.screenshots ?? []).length === 0 ? (
         <EmptyState title={t("screenshots.emptyTitle")} hint={t("screenshots.emptyHint")} />
       ) : (
         <table className="dp-table">
@@ -601,7 +623,7 @@ function ScreenshotsTab({ evidence }: { evidence: CaseEvidence }) {
             </tr>
           </thead>
           <tbody>
-            {evidence.screenshots.map((s) => (
+            {(evidence.screenshots ?? []).map((s) => (
               <tr key={s.id}>
                 <td>{s.sourceUrl ?? <span className="dp-muted">—</span>}</td>
                 <td className="dp-muted">{s.mimeType}</td>
@@ -643,7 +665,7 @@ function WikipediaTab({ evidence }: { evidence: CaseEvidence }) {
   return (
     <div>
       <h2 className="dp-h2">{t("wikipedia.title")}</h2>
-      {evidence.wikipediaChecks.length === 0 ? (
+      {(evidence.wikipediaChecks ?? []).length === 0 ? (
         <EmptyState title={t("wikipedia.emptyTitle")} hint={t("wikipedia.emptyHint")} />
       ) : (
         <table className="dp-table">
@@ -659,7 +681,7 @@ function WikipediaTab({ evidence }: { evidence: CaseEvidence }) {
             </tr>
           </thead>
           <tbody>
-            {evidence.wikipediaChecks.map((w) => {
+            {(evidence.wikipediaChecks ?? []).map((w) => {
               const isReal = (w.checkedBy ?? "").startsWith("real");
               return (
               <tr key={w.id}>
@@ -707,11 +729,11 @@ function AiProfileTab({ evidence }: { evidence: CaseEvidence }) {
   return (
     <div>
       <h2 className="dp-h2">{t("ai.title")}</h2>
-      {evidence.aiProfiles.length === 0 ? (
+      {(evidence.aiProfiles ?? []).length === 0 ? (
         <EmptyState title={t("ai.emptyTitle")} hint={t("ai.emptyHint")} />
       ) : (
         <div className="dp-stack">
-          {evidence.aiProfiles.map((p: AiProfile) => {
+          {(evidence.aiProfiles ?? []).map((p: AiProfile) => {
             const cited = citedSourcesOf(p.classifications);
             return (
               <div key={p.id} className="dp-card" style={{ padding: 14 }}>
@@ -760,7 +782,7 @@ function RiskFindingsTab({
   const [levelFilter, setLevelFilter] = useState("ALL");
   const [themeFilter, setThemeFilter] = useState("ALL");
 
-  const findings = evidence.riskFindings;
+  const findings = evidence.riskFindings ?? [];
   const counts = {
     total: findings.length,
     pending: findings.filter((f) => f.reviewStatus === "PENDING").length,
@@ -954,9 +976,9 @@ function RiskFindingsTab({
                       {t("risk.why")}: {f.rationale}
                     </div>
                   ) : null}
-                  {f.evidenceRefs.length > 0 ? (
+                  {(f.evidenceRefs ?? []).length > 0 ? (
                     <div className="dp-muted" style={{ fontSize: 11, marginTop: 4 }}>
-                      {f.evidenceRefs.slice(0, 3).map((e, i) => (
+                      {(f.evidenceRefs ?? []).slice(0, 3).map((e, i) => (
                         <div key={i}>
                           {e.provider ? `[${e.provider}] ` : ""}
                           {e.url ? (
@@ -972,7 +994,7 @@ function RiskFindingsTab({
                   ) : null}
                 </td>
                 <td className="dp-muted">{f.confidence != null ? f.confidence.toFixed(2) : "—"}</td>
-                <td>{f.evidenceRefs.length}</td>
+                <td>{(f.evidenceRefs ?? []).length}</td>
                 <td>
                   <StatusBadge status={f.reviewStatus} />
                 </td>

@@ -31,6 +31,7 @@ import {
 } from "../evidence-quality/image-thumbnail-service";
 import type { AutocompleteClass, EvidenceSurfaceType, SurfaceQualityStats } from "../evidence-quality/types";
 import type { GatedEvidenceItem } from "../evidence-quality/types";
+import { annotateSourceQuality, type SourceQualitySummary } from "../evidence-quality/source-quality";
 import { Prisma } from "@prisma/client";
 
 export interface SurfaceReportItem {
@@ -53,6 +54,33 @@ export interface SurfaceReportItem {
   thumbnailStorageKey?: string | null;
   thumbnailStatus?: string;
   sourcePageUrl?: string | null;
+  /** Stage R4.2 — normalized source-quality and dedup metadata. */
+  sourceFingerprint?: string;
+  canonicalUrlKey?: string | null;
+  canonicalDomain?: string | null;
+  canonicalTitleKey?: string | null;
+  providerKey?: string;
+  sourceSurfaceType?: string;
+  language?: string | null;
+  sourceRegion?: string | null;
+  duplicateGroupId?: string | null;
+  duplicateRank?: number | null;
+  duplicateReason?: string | null;
+  sourceQualityDecision?: string;
+  sourceQualityReason?: string;
+  confidenceLabel?: string;
+  sourceRank?: number;
+  sourceScoreBucket?: string;
+  clientSafeReason?: string;
+  internalReason?: string;
+  rankingFactors?: Record<string, number>;
+  limitingFactors?: string[];
+  /** Stage R4.3 — query/screenshot provenance linkage. */
+  queryId?: string;
+  queryPurpose?: string;
+  providerLabel?: string;
+  screenshotId?: string | null;
+  surfaceId?: string;
 }
 
 export interface AutocompleteSuggestionGroup {
@@ -124,6 +152,141 @@ export interface SearchSurfacesReportBlock {
     knowledgePanelStatus: "PRESENT" | "ABSENT" | "NOT_COLLECTED" | "MISMATCH";
   };
   dataQualityWarnings: string[];
+  /** Stage R4.2 — report-level source quality summary. */
+  sourceQualitySummary?: SourceQualitySummary;
+}
+
+function normalizeDomainCandidate(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const raw = value.trim();
+  if (!raw) return null;
+  const withoutScheme = raw.replace(/^https?:\/\//i, "");
+  const host = withoutScheme.split("/")[0]?.trim().replace(/^www\./i, "") ?? "";
+  if (!host) return null;
+  const normalized = host.toLowerCase();
+  if (!/[a-z0-9-]+\.[a-z]{2,}/i.test(normalized)) return null;
+  return normalized;
+}
+
+function extractDomainFromMetadata(meta: unknown): string | null {
+  if (!meta || typeof meta !== "object") return null;
+  const rec = meta as Record<string, unknown>;
+  const candidates = [
+    rec.canonicalDomain,
+    rec.hostname,
+    rec.normalizedDomain,
+    rec.displayDomain,
+    rec.sourceDomain,
+    rec.sourceHost,
+    rec.canonicalUrl,
+    rec.sourcePageUrl,
+    rec.url,
+  ];
+  for (const candidate of candidates) {
+    const parsed = normalizeDomainCandidate(candidate);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function resolveSurfaceDomain(input: {
+  domain?: string | null;
+  canonicalDomain?: string | null;
+  canonicalUrl?: string | null;
+  sourcePageUrl?: string | null;
+  url?: string | null;
+  hostname?: string | null;
+  normalizedDomain?: string | null;
+  rawMetadata?: unknown;
+}): string | null {
+  const candidates: unknown[] = [
+    input.canonicalDomain,
+    input.domain,
+    input.canonicalUrl,
+    input.sourcePageUrl,
+    input.url,
+    input.hostname,
+    input.normalizedDomain,
+  ];
+  for (const candidate of candidates) {
+    const parsed = normalizeDomainCandidate(candidate);
+    if (parsed) return parsed;
+  }
+  return extractDomainFromMetadata(input.rawMetadata);
+}
+
+function hasCyrillic(value: string): boolean {
+  return /[\u0400-\u04FF]/.test(value);
+}
+
+function topicLabel(theme: string | null | undefined, ru: boolean): string {
+  const key = String(theme ?? "").trim().toLowerCase();
+  if (!key) return "";
+  const ruMap: Record<string, string> = {
+    political_exposure: "Политическая экспозиция",
+    criminal: "Уголовно-правовые упоминания",
+    legal_dispute: "Судебные / правовые споры",
+    sanctions: "Санкционные / watchlist-сигналы",
+    sanctions_watchlist: "Санкционные / watchlist-сигналы",
+    adverse_media: "Негативные публикации",
+    regulatory: "Регуляторные упоминания",
+    corporate_ownership: "Корпоративные и имущественные связи",
+    unknown: "Тема требует классификации",
+  };
+  const enMap: Record<string, string> = {
+    political_exposure: "Political exposure",
+    criminal: "Criminal-law mentions",
+    legal_dispute: "Legal disputes",
+    sanctions: "Sanctions / watchlist signals",
+    sanctions_watchlist: "Sanctions / watchlist signals",
+    adverse_media: "Adverse media coverage",
+    regulatory: "Regulatory mentions",
+    corporate_ownership: "Corporate and ownership links",
+    unknown: "Theme requires classification",
+  };
+  const mapped = (ru ? ruMap : enMap)[key];
+  return mapped ?? (ru ? "Тема требует классификации" : "Theme requires classification");
+}
+
+function buildRegionConclusion(
+  block: RegionSearchSurfacesBlock,
+  organicSelected: SurfaceReportItem[],
+  imageItems: SurfaceReportItem[],
+  videoItems: SurfaceReportItem[],
+  reportLanguage: "ru" | "en"
+): string {
+  const ruReport = reportLanguage === "ru";
+  const noIntlSubjectResults =
+    block.region !== "RU" &&
+    organicSelected.length === 0 &&
+    imageItems.length === 0 &&
+    videoItems.length === 0 &&
+    block.collectionStatus === "COLLECTED";
+  if (block.collectionStatus === "NOT_QUERIED" || block.collectionStatus === "NOT_CONFIGURED") {
+    return block.statusMessage;
+  }
+  if (noIntlSubjectResults) {
+    return ruReport
+      ? "Подтверждённых международных материалов по субъекту не выявлено."
+      : "No international subject-matched results in collected data.";
+  }
+  const adverseCount = block.organic.adverse;
+  const hasRiskSignals =
+    (block.summary.topAdverseThemes?.length ?? 0) > 0 ||
+    (block.summary.topAdverseDomains?.length ?? 0) > 0;
+  if (adverseCount > 0) {
+    return ruReport
+      ? `В открытых источниках обнаружены материалы, требующие аналитической проверки (${adverseCount}/${Math.max(1, block.organic.total)}). Часть сигналов может относиться к совпадениям по имени или контексту, поэтому итоговая оценка должна подтверждаться вручную.`
+      : `Detected ${adverseCount} potentially adverse material(s) (${adverseCount}/${Math.max(1, block.organic.total)}); analyst review is recommended.`;
+  }
+  if (hasRiskSignals) {
+    return ruReport
+      ? "Подтверждённых негативных URL в основном списке не выявлено, однако обнаружены тематические риск-сигналы и домены, требующие аналитической проверки."
+      : "No confirmed adverse URLs were detected in the primary list, but thematic risk signals and domains require analyst review.";
+  }
+  return ruReport
+    ? "Подтверждённых негативных материалов по выбранным релевантным результатам не выявлено. Отдельные сигналы сохранены для аналитической проверки."
+    : "No adverse organic content in selected subject-matched results.";
 }
 
 function isNegativeOrganic(
@@ -162,23 +325,98 @@ type SurfaceRowInput = {
   rawMetadata?: unknown;
   reviewStatus?: string | null;
   region?: string | null;
+  subjectAliases?: string[];
+  subjectCountry?: string | null;
+  subjectNationality?: string | null;
+  subjectRegionHints?: string[];
+};
+
+type SubjectIdentityContext = {
+  fullName: string | null;
+  aliases: string[];
+  country: string | null;
+  nationality: string | null;
+  regionHints: string[];
 };
 
 function mapGatedToReportItem(
   r: GatedEvidenceItem & { thumbnailUrl?: string | null; imageUrl?: string | null },
   idx: number
 ): SurfaceReportItem {
+  const rawUrl = (r.url ?? "").trim();
+  const sourceUrl =
+    rawUrl.startsWith("http://") || rawUrl.startsWith("https://")
+      ? rawUrl
+      : rawUrl.startsWith("/goto?url=")
+        ? `https://www.google.com/search?q=${encodeURIComponent(r.title ?? r.query ?? "source")}`
+        : rawUrl || null;
   const ac = r.quality.autocompleteClass;
   const group = ac ? AUTOCOMPLETE_EXPOSURE_GROUPS[ac as AutocompleteClass] : undefined;
   const eq =
     r.rawMetadata && typeof r.rawMetadata === "object"
       ? ((r.rawMetadata as Record<string, unknown>).evidenceQuality as Record<string, unknown> | undefined)
       : undefined;
+  const sq = ((r.quality as { sourceQuality?: Record<string, unknown> }).sourceQuality ??
+    (eq?.sourceQuality as Record<string, unknown> | undefined)) as
+    | Record<string, unknown>
+    | undefined;
+  const providerKey = (typeof sq?.providerKey === "string" ? sq.providerKey : "unknown").toLowerCase();
+  const providerLabel =
+    providerKey === "google"
+      ? "Google"
+      : providerKey === "yandex"
+        ? "Yandex"
+        : providerKey === "serper"
+          ? "Serper"
+          : providerKey === "wikipedia"
+            ? "Wikipedia"
+            : providerKey;
+  const qText = String(r.query ?? "").trim();
+  const qNorm = qText.toLowerCase().replace(/\s+/g, " ");
+  const queryId = qNorm
+    ? `q-${providerKey}-${String(r.region ?? "UNKNOWN").toUpperCase()}-${qNorm
+        .slice(0, 32)
+        .replace(/[^a-z0-9]+/g, "-")}`
+    : undefined;
+  const queryPurposeFromMeta =
+    r.rawMetadata && typeof r.rawMetadata === "object"
+      ? (r.rawMetadata as Record<string, unknown>).queryPurpose
+      : undefined;
+  const queryPurpose =
+    typeof queryPurposeFromMeta === "string" && queryPurposeFromMeta.trim()
+      ? queryPurposeFromMeta
+      : r.surfaceType === "IMAGE_RESULT"
+        ? "media_lookup"
+        : r.surfaceType === "VIDEO_RESULT"
+          ? "media_lookup"
+          : r.surfaceType === "SEARCH_SUGGESTION"
+            ? "suggestion_lookup"
+            : r.surfaceType === "RELATED_QUERY"
+              ? "related_lookup"
+              : "subject_lookup";
+  const surfaceId =
+    typeof r.id === "string" && r.id
+      ? r.id
+      : `surface-${String(r.surfaceType ?? "unknown").toLowerCase()}-${idx + 1}`;
+  const canonicalUrl =
+    typeof sq?.canonicalUrl === "string"
+      ? sq.canonicalUrl
+      : typeof sq?.canonicalUrlKey === "string"
+        ? sq.canonicalUrlKey
+        : null;
+  const domain = resolveSurfaceDomain({
+    domain: r.domain ?? null,
+    canonicalDomain: typeof sq?.canonicalDomain === "string" ? sq.canonicalDomain : null,
+    canonicalUrl,
+    sourcePageUrl: sourceUrl,
+    url: r.url ?? null,
+    rawMetadata: r.rawMetadata,
+  });
   return {
     title: r.title ?? r.query ?? "",
     snippet: r.snippet ?? null,
     url: r.url ?? null,
-    domain: r.domain ?? null,
+    domain,
     thumbnailUrl: r.thumbnailUrl ?? r.imageUrl ?? null,
     classification: r.classification ?? null,
     riskTheme: r.riskTheme ?? null,
@@ -191,7 +429,39 @@ function mapGatedToReportItem(
     autocompleteGroup: group,
     thumbnailStorageKey: typeof eq?.thumbnailStorageKey === "string" ? eq.thumbnailStorageKey : null,
     thumbnailStatus: (eq?.thumbnailStatus as string) ?? r.quality.thumbnailStatus,
-    sourcePageUrl: r.url ?? null,
+    sourcePageUrl: sourceUrl,
+    sourceFingerprint: typeof sq?.sourceFingerprint === "string" ? sq.sourceFingerprint : undefined,
+    canonicalUrlKey: typeof sq?.canonicalUrlKey === "string" ? sq.canonicalUrlKey : null,
+    canonicalDomain: typeof sq?.canonicalDomain === "string" ? sq.canonicalDomain : null,
+    canonicalTitleKey: typeof sq?.canonicalTitleKey === "string" ? sq.canonicalTitleKey : null,
+    providerKey: typeof sq?.providerKey === "string" ? sq.providerKey : undefined,
+    sourceSurfaceType: typeof sq?.surfaceType === "string" ? sq.surfaceType : undefined,
+    language: typeof sq?.language === "string" ? sq.language : null,
+    sourceRegion: typeof sq?.region === "string" ? sq.region : null,
+    duplicateGroupId: typeof sq?.duplicateGroupId === "string" ? sq.duplicateGroupId : null,
+    duplicateRank: typeof sq?.duplicateRank === "number" ? sq.duplicateRank : null,
+    duplicateReason: typeof sq?.duplicateReason === "string" ? sq.duplicateReason : null,
+    sourceQualityDecision: typeof sq?.sourceQualityDecision === "string" ? sq.sourceQualityDecision : undefined,
+    sourceQualityReason: typeof sq?.sourceQualityReason === "string" ? sq.sourceQualityReason : undefined,
+    confidenceLabel: typeof sq?.confidenceLabel === "string" ? sq.confidenceLabel : undefined,
+    sourceRank: typeof sq?.sourceRank === "number" ? sq.sourceRank : undefined,
+    sourceScoreBucket:
+      typeof sq?.sourceScoreBucket === "string" ? sq.sourceScoreBucket : undefined,
+    clientSafeReason: typeof sq?.clientSafeReason === "string" ? sq.clientSafeReason : undefined,
+    internalReason: typeof sq?.internalReason === "string" ? sq.internalReason : undefined,
+    rankingFactors:
+      sq?.rankingFactors && typeof sq.rankingFactors === "object"
+        ? (sq.rankingFactors as Record<string, number>)
+        : undefined,
+    limitingFactors:
+      Array.isArray(sq?.limitingFactors) && sq?.limitingFactors.every((v) => typeof v === "string")
+        ? (sq.limitingFactors as string[])
+        : undefined,
+    queryId,
+    queryPurpose,
+    providerLabel,
+    screenshotId: null,
+    surfaceId,
   };
 }
 
@@ -211,11 +481,11 @@ function bucketFromAutocompleteRows(
   surfaceType: EvidenceSurfaceType,
   regionStatus: RegionCollectionStatus,
   regionMessage: string,
-  subjectFullName: string | null,
+  subject: SubjectIdentityContext,
   reportLanguage: "ru" | "en",
   limit = 20
 ): SurfaceBucketSummary {
-  const gated: GatedEvidenceItem[] = dedupeEvidenceItems(
+  const gatedRaw: GatedEvidenceItem[] = dedupeEvidenceItems(
     rows.map((r) => ({
       id: r.id,
       surfaceType,
@@ -230,10 +500,15 @@ function bucketFromAutocompleteRows(
       region: r.region,
       rawMetadata: r.rawMetadata,
       reviewStatus: r.reviewStatus,
-      subjectFullName,
+      subjectFullName: subject.fullName,
+      subjectAliases: r.subjectAliases ?? subject.aliases,
+      subjectCountry: r.subjectCountry ?? subject.country,
+      subjectNationality: r.subjectNationality ?? subject.nationality,
+      subjectRegionHints: r.subjectRegionHints ?? subject.regionHints,
     })),
-    subjectFullName
+    subject.fullName
   ).items;
+  const gated = annotateSourceQuality(gatedRaw, reportLanguage);
 
   const exposure = gated.filter((r) => r.quality.reportEligibility !== "EXCLUDE");
   const picked = pickBestRepresentatives(exposure, limit);
@@ -325,11 +600,12 @@ async function bucketFromGatedRows(
   surfaceType: EvidenceSurfaceType,
   regionStatus: RegionCollectionStatus,
   regionMessage: string,
-  subjectFullName: string | null,
+  subject: SubjectIdentityContext,
+  reportLanguage: "ru" | "en",
   limit = 20,
   options: { caseId?: string; fetchThumbnails?: boolean } = {}
 ): Promise<SurfaceBucketSummary> {
-  const gated: GatedEvidenceItem[] = dedupeEvidenceItems(
+  const gatedRaw: GatedEvidenceItem[] = dedupeEvidenceItems(
     rows.map((r) => ({
       id: r.id,
       surfaceType,
@@ -344,10 +620,15 @@ async function bucketFromGatedRows(
       region: r.region,
       rawMetadata: r.rawMetadata,
       reviewStatus: r.reviewStatus,
-      subjectFullName,
+      subjectFullName: subject.fullName,
+      subjectAliases: r.subjectAliases ?? subject.aliases,
+      subjectCountry: r.subjectCountry ?? subject.country,
+      subjectNationality: r.subjectNationality ?? subject.nationality,
+      subjectRegionHints: r.subjectRegionHints ?? subject.regionHints,
     })),
-    subjectFullName
+    subject.fullName
   ).items;
+  const gated = annotateSourceQuality(gatedRaw, reportLanguage);
 
   const selection = selectEvidenceForReport(gated, "INTERNAL");
   const picked = pickBestRepresentatives(selection.selected, limit);
@@ -572,7 +853,7 @@ function buildRegionBlock(
   organicRows: Awaited<ReturnType<typeof loadOrganic>>,
   surfaceRows: Awaited<ReturnType<typeof loadSurfaces>>,
   wikiRows: Awaited<ReturnType<typeof loadWiki>>,
-  subjectFullName: string | null,
+  subject: SubjectIdentityContext,
   caseId: string,
   reportLanguage: "ru" | "en" = "ru"
 ): Promise<RegionSearchSurfacesBlock> {
@@ -581,7 +862,7 @@ function buildRegionBlock(
     organicRows,
     surfaceRows,
     wikiRows,
-    subjectFullName,
+    subject,
     caseId,
     reportLanguage
   );
@@ -592,7 +873,7 @@ async function buildRegionBlockAsync(
   organicRows: Awaited<ReturnType<typeof loadOrganic>>,
   surfaceRows: Awaited<ReturnType<typeof loadSurfaces>>,
   wikiRows: Awaited<ReturnType<typeof loadWiki>>,
-  subjectFullName: string | null,
+  subject: SubjectIdentityContext,
   caseId: string,
   reportLanguage: "ru" | "en" = "ru"
 ): Promise<RegionSearchSurfacesBlock> {
@@ -620,7 +901,7 @@ async function buildRegionBlockAsync(
     regionSurfaces.filter((s) => s.type === type);
 
   const organicAdverse = regionOrganic.filter((r) =>
-    isNegativeOrganic(r.classification, r.rawMetadata, subjectFullName, r.title, r.snippet)
+    isNegativeOrganic(r.classification, r.rawMetadata, subject.fullName, r.title, r.snippet)
   );
 
   const surfaceInput = (type: SearchSurfaceType) =>
@@ -639,6 +920,10 @@ async function buildRegionBlockAsync(
       rawMetadata: s.rawMetadata,
       reviewStatus: s.reviewStatus,
       region,
+      subjectAliases: subject.aliases,
+      subjectCountry: subject.country,
+      subjectNationality: subject.nationality,
+      subjectRegionHints: subject.regionHints,
     }));
 
   const autocompleteBucket = (type: SearchSurfaceType, limit = 20) =>
@@ -647,7 +932,7 @@ async function buildRegionBlockAsync(
       SURFACE_EVIDENCE_TYPE[type] ?? "SEARCH_SUGGESTION",
       derived.status,
       derived.message,
-      subjectFullName,
+      subject,
       reportLanguage,
       limit
     );
@@ -658,7 +943,8 @@ async function buildRegionBlockAsync(
       SURFACE_EVIDENCE_TYPE[type] ?? "SEARCH_SUGGESTION",
       derived.status,
       derived.message,
-      subjectFullName,
+      subject,
+      reportLanguage,
       limit,
       { caseId, fetchThumbnails }
     );
@@ -682,11 +968,16 @@ async function buildRegionBlockAsync(
       rawMetadata: r.rawMetadata,
       reviewStatus: null,
       region,
+      subjectAliases: subject.aliases,
+      subjectCountry: subject.country,
+      subjectNationality: subject.nationality,
+      subjectRegionHints: subject.regionHints,
     })),
     "SEARCH_RESULT",
     derived.status,
     derived.message,
-    subjectFullName,
+    subject,
+    reportLanguage,
     20
   );
   const images = await gatedBucket("IMAGE_RESULT", 9, true);
@@ -792,9 +1083,23 @@ export async function buildSearchSurfacesReportBlock(
 ): Promise<SearchSurfacesReportBlock> {
   const subjectRow = await prisma.case.findFirst({
     where: { id: caseId },
-    select: { subjects: { orderBy: { createdAt: "asc" }, take: 1, select: { fullName: true } } },
+    select: {
+      targetRegions: true,
+      subjects: {
+        orderBy: { createdAt: "asc" },
+        take: 1,
+        select: { fullName: true, aliases: true, country: true, nationality: true },
+      },
+    },
   });
-  const subjectFullName = subjectRow?.subjects[0]?.fullName ?? null;
+  const subject = subjectRow?.subjects[0];
+  const subjectContext: SubjectIdentityContext = {
+    fullName: subject?.fullName ?? null,
+    aliases: subject?.aliases ?? [],
+    country: subject?.country ?? null,
+    nationality: subject?.nationality ?? null,
+    regionHints: subjectRow?.targetRegions ?? [],
+  };
 
   const [organicRows, surfaceRows, wikiRows] = await Promise.all([
     loadOrganic(caseId),
@@ -806,14 +1111,14 @@ export async function buildSearchSurfacesReportBlock(
     ? organicRows
     : organicRows.filter((r) => !String(r.source ?? "").includes("mock"));
 
-  const ru = await buildRegionBlock("RU", organic, surfaceRows, wikiRows, subjectFullName, caseId);
-  const uae = await buildRegionBlock("UAE", organic, surfaceRows, wikiRows, subjectFullName, caseId);
+  const ru = await buildRegionBlock("RU", organic, surfaceRows, wikiRows, subjectContext, caseId);
+  const uae = await buildRegionBlock("UAE", organic, surfaceRows, wikiRows, subjectContext, caseId);
   const international = await buildRegionBlock(
     "INTERNATIONAL",
     organic,
     surfaceRows,
     wikiRows,
-    subjectFullName,
+    subjectContext,
     caseId
   );
 
@@ -885,6 +1190,7 @@ function regionHasEvidence(block: RegionSearchSurfacesBlock): boolean {
 /** Maps searchSurfaces region block onto auditSummary-compatible region dict. */
 export interface RegionAuditMapOptions {
   audience?: "CLIENT" | "INTERNAL";
+  reportLanguage?: "ru" | "en";
   confirmedAppendix?: Array<{
     title: string;
     domain: string;
@@ -949,6 +1255,9 @@ export function regionBlockToAuditRegion(
       link: i.sourcePageUrl ?? i.url ?? "",
     }));
 
+  const languageHint = options.reportLanguage ?? (hasCyrillic(String(block.label ?? "")) ? "ru" : "en");
+  const regionConclusion = buildRegionConclusion(block, organicItems, imageItems, videoItems, languageHint);
+  const ruReport = languageHint === "ru";
   return {
     region: block.region,
     language: block.language,
@@ -987,7 +1296,13 @@ export function regionBlockToAuditRegion(
     topResults: organicItems.slice(0, 20).map((i, idx) => ({
       provider: "GOOGLE",
       rank: i.rank ?? idx + 1,
-      domain: i.domain ?? "",
+      domain:
+        resolveSurfaceDomain({
+          domain: i.domain,
+          canonicalDomain: i.canonicalDomain ?? null,
+          sourcePageUrl: i.sourcePageUrl ?? null,
+          url: i.url ?? null,
+        }) ?? (ruReport ? "домен не указан" : "domain unavailable"),
       title: i.title,
       classification: i.classification,
       identityDecision: i.identityDecision ?? null,
@@ -1016,7 +1331,10 @@ export function regionBlockToAuditRegion(
       identityDecision: i.identityDecision ?? null,
       reportEligibility: i.reportEligibility ?? null,
     })),
-    topThemes: block.summary.topAdverseThemes.map((t) => ({ theme: t.theme, count: t.count })),
+    topThemes: block.summary.topAdverseThemes.map((t) => ({
+      theme: topicLabel(t.theme, ruReport),
+      count: t.count,
+    })),
     topNegativeDomains: block.summary.topAdverseDomains.map((d) => d.domain),
     topNegativeUrls: organicItems
       .filter((i) =>
@@ -1028,18 +1346,7 @@ export function regionBlockToAuditRegion(
         domain: i.domain ?? "",
         classification: i.classification,
       })),
-    regionConclusion:
-      block.collectionStatus === "NOT_QUERIED" || block.collectionStatus === "NOT_CONFIGURED"
-        ? block.statusMessage
-        : block.region !== "RU" &&
-            organicItems.length === 0 &&
-            imageItems.length === 0 &&
-            videoItems.length === 0 &&
-            block.collectionStatus === "COLLECTED"
-          ? "No international subject-matched results in collected data."
-          : block.organic.adverse > 0
-            ? `Adverse organic content detected (${block.organic.adverse}/${block.organic.total}).`
-            : "No adverse organic content in selected subject-matched results.",
+    regionConclusion,
     regionRiskLevel:
       block.collectionStatus !== "COLLECTED" && block.organic.total === 0
         ? "UNKNOWN"

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "Dockerfile"
+  },
+  "deploy": {
+    "startCommand": "npm run worker",
+    "restartPolicyType": "ALWAYS",
+    "restartPolicyMaxRetries": 10
+  },
+  "_notes": [
+    "Двигает прогоны вперёд: забирает готовые шаги из dp_workflow_steps и исполняет их (шаг 12). Тот же образ, что и app — отличается только командой.",
+    "Без healthcheckPath: это не HTTP-сервис, порт он не слушает.",
+    "Без preDeployCommand: миграции накатывает только app.",
+    "Набор переменных окружения тот же, что у app: воркер выполняет ту же работу, что раньше делал веб-процесс.",
+    "restartPolicyType=ALWAYS, а не ON_FAILURE: цикл воркера штатно не завершается, и выход по любой причине — повод подняться снова.",
+    "Масштабируется горизонтально: захват шага идёт через FOR UPDATE SKIP LOCKED с лизой, два экземпляра один шаг не возьмут.",
+    "Создавать этот сервис имеет смысл только когда артефакты переедут в общее хранилище — см. примечание в railway.app.json."
+  ]
+}

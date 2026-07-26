@@ -1,76 +1,20 @@
 /**
- * /api/digital-profile/cases/[id]/report/render
- *   POST — render the latest (or specified) report version into PPTX + PDF via
- *          the renderer microservice and store the artifact keys.
+ * RETIRED: POST /api/digital-profile/cases/[id]/report/render
+ * REMEDIATION 9.3 — legacy v1–v3 PPTX/PDF render. Canonical: unified-collection/download.
  *
- * Optional JSON body: {
- *   "version": number,
- *   "templateVersion": string,
- *   "audience": "internal" | "client",
- *   "watermarkMode": "draft" | "none",
- *   "reportLanguage": "ru" | "en"
- * }.
+ * Historical ReportVersion files remain downloadable via /reports/[id]/download
+ * (streaming only; Python report_template_v* deleted).
  */
 
 import type { NextRequest } from "next/server";
-import { jsonOk, withModule } from "@/modules/digital-profile/http/errors";
-import {
-  actorOf,
-  requireCaseAccess,
-  requireDigitalProfileUser,
-  requireRole,
-} from "@/modules/digital-profile/auth/guard";
-import { renderReportVersion } from "@/modules/digital-profile/services/report-renderer-service";
+import { withModule } from "@/modules/digital-profile/http/errors";
+import { legacyReportPathRetired } from "@/modules/digital-profile/http/legacy-report-retired";
 
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
-export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
+export const POST = withModule(async (_req: NextRequest, ctx: RouteContext) => {
   const { id } = await ctx.params;
-  let version: number | undefined;
-  let templateVersion: string | undefined;
-  let audience: "internal" | "client" | undefined;
-  let watermarkMode: "draft" | "none" | undefined;
-  let reportLanguage: "ru" | "en" | undefined;
-  try {
-    const body = (await req.json()) as
-      | {
-          version?: number;
-          templateVersion?: string;
-          audience?: string;
-          watermarkMode?: string;
-          reportLanguage?: string;
-        }
-      | null;
-    if (body && typeof body.version === "number") version = body.version;
-    if (body && typeof body.templateVersion === "string") {
-      templateVersion = body.templateVersion;
-    }
-    if (body && (body.audience === "internal" || body.audience === "client")) {
-      audience = body.audience;
-    }
-    if (body && (body.watermarkMode === "draft" || body.watermarkMode === "none")) {
-      watermarkMode = body.watermarkMode;
-    }
-    if (body && (body.reportLanguage === "ru" || body.reportLanguage === "en")) {
-      reportLanguage = body.reportLanguage;
-    }
-  } catch {
-    // No/invalid body: render the latest version with defaults.
-  }
-  const user = await requireDigitalProfileUser(req);
-  // Client-facing renders need the stricter client-report permission.
-  requireRole(
-    user,
-    audience === "client" ? "report.generateClient" : "report.generateInternal"
-  );
-  await requireCaseAccess(user, id, "VIEWER");
-  const data = await renderReportVersion(id, version, actorOf(user), {
-    templateVersion,
-    audience,
-    watermarkMode,
-    reportLanguage,
-  });
-  return jsonOk(data, 201);
+  return legacyReportPathRetired(id);
 });

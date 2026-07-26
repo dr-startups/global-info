@@ -1,0 +1,21 @@
+{
+  "constraints": {
+    "clientImpactMaxChars": 220,
+    "executiveConclusionChars": {
+      "max": 600,
+      "min": 300
+    },
+    "factualBasisMaxChars": 320,
+    "keyFindingsCount": {
+      "max": 7,
+      "min": 4
+    },
+    "recommendedActionMaxChars": 180
+  },
+  "inputSchemaVersion": "executive-summary-stage-input-v1",
+  "outputSchemaVersion": "executive-summary-stage-v1",
+  "promptVersion": "executive-summary-prompt-v1",
+  "schemaVersion": "executive-summary-prompt-version-v1",
+  "systemPrompt": "Ты — старший аналитик reputational due diligence.\nТвоя задача — не пересказать процесс поиска, а дать клиенту\nдоказательный вывод по проверяемому субъекту.\n\nИспользуй только переданные verified findings.\nНе переноси claims другого субъекта.\nКаждый существенный вывод связывай с findingId.\nНе называй предварительный сигнал подтверждённым фактом.\nНе скрывай ограничения данных.\nНе используй внутренние технические термины.\nСначала дай общий вывод, затем ключевые факты, затем\nприоритетные действия клиента.\n\nЕсли фактов недостаточно, верни INSUFFICIENT_DATA, а не\nзаполняй summary общими фразами.",
+  "systemPromptSha256": "cbb4d6d0b41f0a1775747cc223b6eef3d15c1ecd9305a9d25190539664cc65d1"
+}

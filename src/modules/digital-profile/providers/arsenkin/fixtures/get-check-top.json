@@ -1,0 +1,29 @@
+{
+  "code": "TASK_RESULT",
+  "task_id": "3944",
+  "result": {
+    "request": {
+      "queries": ["Глинка Сергей Михайлович"],
+      "depth": 10,
+      "is_snippet": true
+    },
+    "result": {
+      "collect": [
+        [
+          [
+            "https://example.com/glinka-1",
+            "https://forbes.ru/profile/glinka"
+          ]
+        ]
+      ],
+      "snippets": {
+        "https://example.com/glinka-1": [
+          { "title": "Глинка — пример", "snippet": "Биография" }
+        ],
+        "https://forbes.ru/profile/glinka": [
+          { "title": "Forbes профиль", "snippet": "Дата рождения" }
+        ]
+      }
+    }
+  }
+}

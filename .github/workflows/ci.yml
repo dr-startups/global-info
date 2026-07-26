@@ -1,0 +1,89 @@
+# Проверка до деплоя: типы, тесты, офлайн-смоки, сборка приложения и образа.
+#
+# Прежняя версия гоняла typecheck, тесты и смоки — но **не сборку**. Из-за этого
+# CI мог быть зелёным, а деплой падал на `next build`, и узнавали об этом уже в
+# Railway. Здесь сборка проверяется дважды и по делу: `next build` отдельным
+# шагом (быстро, с понятной ошибкой) и сборка Docker-образа тем же Dockerfile,
+# которым собирает Railway.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  # Одна ветка — один прогон: незачем гонять устаревшие коммиты.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: типы · тесты · смоки · сборка
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # Офлайн-контур: смоки обязаны отработать без единого сетевого вызова.
+      NETWORK_CALLS: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          # Смок рендерера проверяет замер текста — ему нужен python3.
+          python-version: "3.12"
+
+      - run: npm ci
+
+      - name: Prisma generate
+        run: npx prisma generate
+
+      - name: Типы
+        run: npm run typecheck
+
+      - name: Тесты
+        run: npm test
+
+      - name: Офлайн-смоки
+        run: npm run ci:smokes
+
+      # Сборка приложения — то, чего в прежнем CI не было и что ломало деплой.
+      - name: Сборка приложения
+        run: npm run build
+
+  image:
+    name: сборка образа
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Образ собирается, только если проверки прошли: тратить на него минуты
+    # при красных тестах незачем.
+    needs: checks
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Собираем ровно тем же Dockerfile, которым собирает Railway. Образ никуда
+      # не публикуется: цель — узнать о поломке сборки здесь, а не в деплое.
+      - name: Образ приложения
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Образ рендерера
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: renderer/Dockerfile
+          push: false
+          cache-from: type=gha,scope=renderer
+          cache-to: type=gha,mode=max,scope=renderer

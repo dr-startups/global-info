@@ -10,6 +10,9 @@
  * be exercised by smoke tests.
  */
 
+import { offlineEnrichmentEnvWarning } from "./offline-enrichment-guard";
+import { boolSetting, stringSetting } from "./defaults";
+
 type Env = Record<string, string | undefined>;
 
 const DEFAULT_SECRET = "change-me-in-production";
@@ -32,6 +35,118 @@ function isWeakSecret(value: string | undefined, minLen = 16): boolean {
   return v.length === 0 || v === DEFAULT_SECRET || v.length < minLen;
 }
 
+/** Готовность одного сборщика и, если он выключен, чего именно не хватает. */
+export interface CapabilityReadiness {
+  capability: string;
+  ready: boolean;
+  /** Только имена переменных, никогда значения. */
+  detail: string;
+}
+
+/**
+ * Готовность сборщиков по конфигурации.
+ *
+ * Появилось после того, как на стенде молча отключились Google и ORION.
+ * Настоящая причина каждый раз одна и та же: включение сборщика собрано из
+ * цепочки переменных, и пропуск любого звена превращает агента в
+ * `NOT_CONFIGURED` — тихо, потому что для самого агента это законный исход.
+ * Пропущенное звено легко не заметить: у ORION их пять.
+ *
+ * Здесь цепочки записаны данными и один раз, а не пересказываются в переписке.
+ * Сводка печатается на старте, поэтому вопрос «почему агент выключен»
+ * закрывается логом запуска.
+ */
+export function describeCapabilityReadiness(env: Env = process.env): CapabilityReadiness[] {
+  const out: CapabilityReadiness[] = [];
+  const has = (name: string) => Boolean((env[name] ?? "").trim());
+  const missing = (...names: string[]) => names.filter((n) => !has(n));
+
+  // Arsenkin. До сих пор эта проверка отсутствовала вовсе — при том что
+  // интеграция платная и без неё отчёт теряет пять поверхностей.
+  const arsenkinOn = boolSetting("ARSENKIN_ENABLED", env);
+  out.push({
+    capability: "Arsenkin (5 агентов обогащения)",
+    ready: arsenkinOn && has("ARSENKIN_API_TOKEN"),
+    detail: !arsenkinOn
+      ? "ARSENKIN_ENABLED не равен true"
+      : has("ARSENKIN_API_TOKEN")
+        ? "готов"
+        : "нет ARSENKIN_API_TOKEN",
+  });
+
+  // Google/ORION через внешний SERP. Ключ читается из
+  // GOOGLE_EXTERNAL_SERP_API_KEY либо из псевдонима SERPER_API_KEY.
+  const serpProvider = stringSetting("GOOGLE_EXTERNAL_SERP_PROVIDER", env);
+  const serpKey = has("GOOGLE_EXTERNAL_SERP_API_KEY") || has("SERPER_API_KEY");
+  const serpReady = serpProvider === "serper" && serpKey;
+  out.push({
+    capability: "ORION Search Profile (поверхности Google)",
+    ready: serpReady,
+    detail: serpReady
+      ? "готов"
+      : serpProvider !== "serper"
+        ? 'GOOGLE_EXTERNAL_SERP_PROVIDER должен быть "serper"'
+        : "нет GOOGLE_EXTERNAL_SERP_API_KEY (или псевдонима SERPER_API_KEY)",
+  });
+
+  const googleStrategy = stringSetting("GOOGLE_SEARCH_PROVIDER", env);
+  const googleReady =
+    boolSetting("DIGITAL_PROFILE_GOOGLE_REAL_ENABLED", env) &&
+    (googleStrategy === "external_serp"
+      ? serpReady
+      : googleStrategy === "custom_search" &&
+        missing("GOOGLE_SEARCH_API_KEY", "GOOGLE_SEARCH_ENGINE_ID").length === 0);
+  out.push({
+    capability: "Google Search (настоящий коннектор)",
+    ready: googleReady,
+    detail: googleReady
+      ? "готов"
+      : !boolSetting("DIGITAL_PROFILE_GOOGLE_REAL_ENABLED", env)
+        ? "DIGITAL_PROFILE_GOOGLE_REAL_ENABLED не равен true"
+        : googleStrategy !== "external_serp" && googleStrategy !== "custom_search"
+          ? 'GOOGLE_SEARCH_PROVIDER должен быть "external_serp" или "custom_search"'
+          : googleStrategy === "custom_search"
+            ? `нет ${missing("GOOGLE_SEARCH_API_KEY", "GOOGLE_SEARCH_ENGINE_ID").join(", ")}`
+            : "внешний SERP не настроен (см. строку ORION)",
+  });
+
+  const yandexReady =
+    boolSetting("DIGITAL_PROFILE_YANDEX_REAL_ENABLED", env) &&
+    missing("YANDEX_SEARCH_API_KEY", "YANDEX_SEARCH_FOLDER_ID").length === 0;
+  out.push({
+    capability: "Yandex Search (Cloud Search API v2)",
+    ready: yandexReady,
+    detail: yandexReady
+      ? "готов"
+      : !boolSetting("DIGITAL_PROFILE_YANDEX_REAL_ENABLED", env)
+        ? "DIGITAL_PROFILE_YANDEX_REAL_ENABLED не равен true"
+        : `нет ${missing("YANDEX_SEARCH_API_KEY", "YANDEX_SEARCH_FOLDER_ID").join(", ")}`,
+  });
+
+  const aiReady = boolSetting("DIGITAL_PROFILE_AI_ANALYST_ENABLED", env) && has("OPENAI_API_KEY");
+  out.push({
+    capability: "AI-аналитик (текст отчёта)",
+    ready: aiReady,
+    detail: aiReady
+      ? "готов"
+      : !boolSetting("DIGITAL_PROFILE_AI_ANALYST_ENABLED", env)
+        ? "DIGITAL_PROFILE_AI_ANALYST_ENABLED не равен true"
+        : "нет OPENAI_API_KEY",
+  });
+
+  // Адрес рендерера зависит от площадки, а не от секрета, и имеет значение по
+  // умолчанию: на Railway — внутреннее имя сервиса, локально — соседний порт.
+  // Переменная нужна только при другой раскладке.
+  const rendererExplicit = has("RENDERER_URL") || has("DIGITAL_PROFILE_RENDERER_URL");
+  out.push({
+    capability: "Отрисовка PPTX/PDF",
+    ready: true,
+    detail: rendererExplicit ? "адрес задан явно" : "адрес по умолчанию для этой площадки",
+  });
+
+  return out;
+}
+
 /**
  * Validates the Digital Profile env. Returns errors (critical) + warnings
  * (advisory). Never includes secret values — only variable names.
@@ -42,7 +157,7 @@ export function validateDigitalProfileEnv(
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  const moduleEnabled = bool(env.DIGITAL_PROFILE_ENABLED);
+  const moduleEnabled = boolSetting("DIGITAL_PROFILE_ENABLED", env);
 
   // DATABASE_URL is always required to run anything useful.
   if (!env.DATABASE_URL || env.DATABASE_URL.trim().length === 0) {
@@ -86,7 +201,7 @@ export function validateDigitalProfileEnv(
   }
 
   // Auth + session secret.
-  if (bool(env.DIGITAL_PROFILE_AUTH_ENABLED)) {
+  if (boolSetting("DIGITAL_PROFILE_AUTH_ENABLED", env)) {
     if (isWeakSecret(env.DIGITAL_PROFILE_SESSION_SECRET)) {
       errors.push(
         "DIGITAL_PROFILE_SESSION_SECRET must be a strong value (>=16 chars, not the default) when DIGITAL_PROFILE_AUTH_ENABLED=true."
@@ -98,23 +213,22 @@ export function validateDigitalProfileEnv(
     );
   }
 
-  // Renderer URL (has a default; warn if missing in a real deploy).
-  if (!env.RENDERER_URL && !env.DIGITAL_PROFILE_RENDERER_URL) {
-    warnings.push(
-      "RENDERER_URL is not set; defaulting to http://localhost:8080 (PPTX/PDF rendering may be unavailable)."
-    );
-  }
+  // Адрес рендерера зависит от площадки и имеет значение по умолчанию: на
+  // Railway — внутреннее имя сервиса, локально — соседний порт. Переменная
+  // нужна только при другой раскладке, поэтому её отсутствие не повод для
+  // предупреждения. Прежний текст к тому же называл адрес, который на Railway
+  // неверен.
 
   // Provider keys — only checked when the provider is enabled.
-  if (bool(env.DIGITAL_PROFILE_REAL_CONNECTORS_ENABLED)) {
-    if (bool(env.DIGITAL_PROFILE_GOOGLE_ENABLED)) {
+  if (boolSetting("DIGITAL_PROFILE_REAL_CONNECTORS_ENABLED", env)) {
+    if (boolSetting("DIGITAL_PROFILE_GOOGLE_ENABLED", env)) {
       if (!env.GOOGLE_SEARCH_API_KEY || !env.GOOGLE_SEARCH_ENGINE_ID) {
         warnings.push(
           "Google provider is enabled but GOOGLE_SEARCH_API_KEY / GOOGLE_SEARCH_ENGINE_ID are missing; it will resolve to NOT_CONFIGURED."
         );
       }
     }
-    if (bool(env.DIGITAL_PROFILE_YANDEX_ENABLED)) {
+    if (boolSetting("DIGITAL_PROFILE_YANDEX_ENABLED", env)) {
       if (!env.YANDEX_SEARCH_API_KEY || !env.YANDEX_SEARCH_FOLDER_ID) {
         warnings.push(
           "Yandex provider is enabled but YANDEX_SEARCH_API_KEY / YANDEX_SEARCH_FOLDER_ID are missing; it will resolve to NOT_CONFIGURED."
@@ -124,7 +238,7 @@ export function validateDigitalProfileEnv(
   }
 
   // Stage N1 — official Yandex Cloud Search API v2 (independent dedicated flag).
-  if (bool(env.DIGITAL_PROFILE_YANDEX_REAL_ENABLED)) {
+  if (boolSetting("DIGITAL_PROFILE_YANDEX_REAL_ENABLED", env)) {
     if (!env.YANDEX_SEARCH_API_KEY || !env.YANDEX_SEARCH_FOLDER_ID) {
       warnings.push(
         "DIGITAL_PROFILE_YANDEX_REAL_ENABLED=true but YANDEX_SEARCH_API_KEY / YANDEX_SEARCH_FOLDER_ID are missing; the real Yandex provider will resolve to NOT_CONFIGURED."
@@ -133,7 +247,7 @@ export function validateDigitalProfileEnv(
   }
 
   // Stage N2 — real Google connector (independent dedicated flag + strategy).
-  if (bool(env.DIGITAL_PROFILE_GOOGLE_REAL_ENABLED)) {
+  if (boolSetting("DIGITAL_PROFILE_GOOGLE_REAL_ENABLED", env)) {
     const strategy = (env.GOOGLE_SEARCH_PROVIDER ?? "").trim().toLowerCase();
     if (strategy !== "custom_search" && strategy !== "external_serp") {
       warnings.push(
@@ -158,6 +272,59 @@ export function validateDigitalProfileEnv(
     }
   }
 
+  // Stage R8.3 / REMEDIATION §4.1 — AI analyst narrative config.
+  const aiEnabled = boolSetting("DIGITAL_PROFILE_AI_ANALYST_ENABLED", env);
+  const isProd = (env.NODE_ENV ?? "").toLowerCase() === "production";
+  if (!aiEnabled && isProd) {
+    warnings.push(
+      "DIGITAL_PROFILE_AI_ANALYST_ENABLED is false in production — клиентские отчёты будут детерминированными."
+    );
+  }
+  if (aiEnabled) {
+    const provider = (env.DIGITAL_PROFILE_AI_ANALYST_PROVIDER ?? "openai").trim().toLowerCase();
+    if (provider !== "openai") {
+      warnings.push(
+        "DIGITAL_PROFILE_AI_ANALYST_PROVIDER is not 'openai'; deterministic fallback will be used."
+      );
+    }
+    if (!env.OPENAI_API_KEY || env.OPENAI_API_KEY.trim().length === 0) {
+      warnings.push(
+        "DIGITAL_PROFILE_AI_ANALYST_ENABLED=true but OPENAI_API_KEY is missing; deterministic fallback will be used."
+      );
+    }
+  }
+
+  // Strict canonical gate: require AI report layer (default off).
+  if (bool(env.DIGITAL_PROFILE_REQUIRE_AI_REPORT)) {
+    if (!aiEnabled) {
+      const msg =
+        "DIGITAL_PROFILE_REQUIRE_AI_REPORT=true but DIGITAL_PROFILE_AI_ANALYST_ENABLED is false.";
+      if (isProd) errors.push(msg);
+      else warnings.push(msg);
+    } else if (!env.OPENAI_API_KEY || env.OPENAI_API_KEY.trim().length === 0) {
+      const msg =
+        "DIGITAL_PROFILE_REQUIRE_AI_REPORT=true but OPENAI_API_KEY is missing.";
+      if (isProd) errors.push(msg);
+      else warnings.push(msg);
+    }
+  }
+
+  // Arsenkin: интеграция платная, и до сих пор её здесь не проверяли вовсе.
+  // Включённый флаг без токена — самый дорогой из тихих отказов: прогон дойдёт
+  // до обогащения и там встанет.
+  if (boolSetting("ARSENKIN_ENABLED", env) && !env.ARSENKIN_API_TOKEN?.trim()) {
+    errors.push("ARSENKIN_ENABLED=true, но ARSENKIN_API_TOKEN не задан.");
+  }
+  if (!boolSetting("ARSENKIN_ENABLED", env)) {
+    warnings.push(
+      "ARSENKIN_ENABLED не равен true — пять агентов обогащения Arsenkin выключены, отчёт соберётся без их поверхностей."
+    );
+  }
+
+  // REMEDIATION §8.2 — silent offline enrichment in deploy-like envs.
+  const offlineWarn = offlineEnrichmentEnvWarning(env);
+  if (offlineWarn) warnings.push(offlineWarn);
+
   return { ok: errors.length === 0, errors, warnings };
 }
 
@@ -169,6 +336,15 @@ export function validateDigitalProfileEnv(
 export function runEnvValidation(env: Env = process.env): void {
   const isProd = (env.NODE_ENV ?? "").toLowerCase() === "production";
   const { errors, warnings } = validateDigitalProfileEnv(env);
+
+  // Сводка готовности — первым делом. Выключенный сборщик виден сразу и с
+  // указанием недостающей переменной, а не через прогон, который вернул
+  // неполный отчёт.
+  for (const c of describeCapabilityReadiness(env)) {
+    console.warn(
+      `[digital-profile][env] ${c.ready ? "ГОТОВ  " : "ВЫКЛ   "} ${c.capability} — ${c.detail}`
+    );
+  }
 
   for (const w of warnings) {
     console.warn(`[digital-profile][env] WARN: ${w}`);

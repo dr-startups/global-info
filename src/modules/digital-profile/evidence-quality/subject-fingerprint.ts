@@ -4,6 +4,8 @@
  */
 
 import {
+  buildNormalizedSubjectIdentity,
+  evaluateEntityMatch,
   isLikelyNamesake,
   parseSubjectName,
   patronymicsInText,
@@ -30,6 +32,7 @@ export interface SubjectFingerprint {
   givenTokens: string[];
   patronymicTokens: string[];
   knownIdentifiers: string[];
+  normalized: ReturnType<typeof buildNormalizedSubjectIdentity>;
 }
 
 const CYR_TO_LAT: Record<string, string> = {
@@ -130,6 +133,9 @@ export function buildSubjectFingerprint(subject: {
   fullName: string;
   aliases?: string[];
   identifiers?: Record<string, unknown> | null;
+  nationality?: string | null;
+  country?: string | null;
+  regionHints?: string[];
 }): SubjectFingerprint {
   const parsed = parseSubjectName(subject.fullName);
   const surnameTokens = tokenVariants(parsed.surname);
@@ -157,12 +163,23 @@ export function buildSubjectFingerprint(subject: {
     givenTokens,
     patronymicTokens,
     knownIdentifiers,
+    normalized: buildNormalizedSubjectIdentity({
+      fullName: subject.fullName,
+      aliases: subject.aliases,
+      nationality: subject.nationality,
+      country: subject.country,
+      regionHints: subject.regionHints,
+    }),
   };
 }
 
 export function evaluateIdentityDecision(
   text: string,
-  fingerprint: SubjectFingerprint | null
+  fingerprint: SubjectFingerprint | null,
+  options: {
+    region?: string | null;
+    sourceType?: "organic" | "image" | "video" | "wikipedia" | "knowledge" | "compliance" | "other";
+  } = {}
 ): { decision: IdentityDecision; confidence: IdentityConfidence; reason: string } {
   if (!fingerprint?.fullName?.trim()) {
     return { decision: "POSSIBLE_SUBJECT", confidence: "MEDIUM", reason: "no_subject" };
@@ -194,13 +211,6 @@ export function evaluateIdentityDecision(
   }
 
   if (isEntityMismatchGivenPatronymic(text, fingerprint)) {
-    return { decision: "ENTITY_MISMATCH", confidence: "NONE", reason: "different_given_same_patronymic" };
-  }
-
-  const hasSurnameEarly = hayContainsAny(hay, fingerprint.surnameTokens);
-  const hasGivenEarly = hayContainsAny(hay, fingerprint.givenTokens);
-  const hasPatEarly = hayContainsAny(hay, fingerprint.patronymicTokens);
-  if (hasSurnameEarly && hasPatEarly && !hasGivenEarly && fingerprint.firstName) {
     return {
       decision: "ENTITY_MISMATCH",
       confidence: "NONE",
@@ -212,24 +222,27 @@ export function evaluateIdentityDecision(
     return { decision: "NAMESAKE", confidence: "NONE", reason: "different_patronymic_or_given" };
   }
 
-  const hasSurname = hayContainsAny(hay, fingerprint.surnameTokens);
-  const hasGiven = hayContainsAny(hay, fingerprint.givenTokens);
-  const hasPat = hayContainsAny(hay, fingerprint.patronymicTokens);
-
-  if (hasSurname && hasGiven && hasPat) {
-    return { decision: "EXACT_SUBJECT", confidence: "HIGH", reason: "surname_given_patronymic" };
+  const model = evaluateEntityMatch({
+    text,
+    subject: fingerprint.normalized,
+    region: options.region,
+    sourceType: options.sourceType,
+  });
+  const reason = model.reasons[0] ?? "entity_model";
+  switch (model.decision) {
+    case "strict_subject":
+      return { decision: "EXACT_SUBJECT", confidence: "HIGH", reason };
+    case "likely_subject":
+      return { decision: "LIKELY_SUBJECT", confidence: "MEDIUM", reason };
+    case "possible_subject":
+      return { decision: "POSSIBLE_SUBJECT", confidence: "LOW", reason };
+    case "namesake":
+      return { decision: "NAMESAKE", confidence: "NONE", reason };
+    case "not_subject":
+      return { decision: "ENTITY_MISMATCH", confidence: "NONE", reason };
+    default:
+      return { decision: "INSUFFICIENT_MATCH", confidence: "NONE", reason };
   }
-  if (hasSurname && hasGiven) {
-    return { decision: "LIKELY_SUBJECT", confidence: "MEDIUM", reason: "surname_and_given" };
-  }
-  if (hasSurname && hasPat) {
-    return { decision: "LIKELY_SUBJECT", confidence: "MEDIUM", reason: "surname_and_patronymic" };
-  }
-  if (hasSurname || hasGiven) {
-    return { decision: "POSSIBLE_SUBJECT", confidence: "LOW", reason: "partial_name_only" };
-  }
-
-  return { decision: "INSUFFICIENT_MATCH", confidence: "NONE", reason: "no_subject_tokens" };
 }
 
 export function identityDecisionToConfidence(decision: IdentityDecision): IdentityConfidence {

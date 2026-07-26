@@ -9,6 +9,7 @@ import { createHash } from "node:crypto";
 import { prisma } from "@/server/prisma/client";
 import { NotFoundError } from "../../http/errors";
 import { normalizeUrl } from "../../services/evidence-service";
+import { digitalProfileConfig } from "../../config";
 import type {
   AgentAvailability,
   AgentContext,
@@ -116,8 +117,24 @@ export abstract class BaseMockAgent<Raw, Norm> implements CaseAgent {
     return this.name as AgentNameValue;
   }
 
-  /** Mock agents are always available. */
+  /**
+   * Mock agents exist only for the demo/offline mode.
+   *
+   * They used to report ENABLED unconditionally, so on a live case the Agents
+   * tab listed «Yandex Search (mock)», «Compliance Databases (mock)» and five
+   * more beside the real ones with a working "Run audit" button. One click
+   * wrote synthetic results about a real person into the evidence base — the
+   * contamination step 01 removed from the collection path, still reachable
+   * from the UI.
+   */
   availability(): AgentAvailability {
+    if (!digitalProfileConfig.mockAgents) {
+      return {
+        status: "DISABLED",
+        message:
+          "Демо-агент доступен только в mock-режиме (DIGITAL_PROFILE_MOCK_AGENTS=true).",
+      };
+    }
     return { status: "ENABLED" };
   }
 

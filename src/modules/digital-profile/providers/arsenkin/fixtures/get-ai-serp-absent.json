@@ -1,0 +1,14 @@
+{
+  "code": "TASK_RESULT",
+  "task_id": "6061",
+  "result": {
+    "result": { "position": 0, "found": 0, "brand": 0 },
+    "top": { "hosts": [], "urls": [] },
+    "queries": ["Глинка Сергей Михайлович"],
+    "table": [{ "found": false, "position": false }],
+    "info": {
+      "se": "Яндекс",
+      "region": { "text": "Москва [213]", "id": "213" }
+    }
+  }
+}

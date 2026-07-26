@@ -11,6 +11,7 @@
  * ProviderRunResult instead of throwing.
  */
 
+import { parseYandexModTime } from "./published-date";
 import { providerConfig, getProviderAvailability } from "./config";
 import { getProviderCapabilities } from "./capabilities";
 import { postJson, toProviderError, ProviderHttpError } from "./http";
@@ -226,6 +227,9 @@ export class YandexSearchProvider implements SearchProvider {
         snippet: stripTags(headline),
         url,
         domain: stripTags(firstTag(block, "domain") ?? "") || domainOf(url),
+        // Yandex ships the document timestamp inside the block; without this it
+        // stayed buried in raw XML and the report could not date anything.
+        ...(parseYandexModTime(block) ? { publishedAt: parseYandexModTime(block)! } : {}),
         rawMetadata: { raw: block },
         capturedAt,
       });

@@ -1,0 +1,189 @@
+{
+  "schemaVersion": "section-pack-v3",
+  "sectionId": "APPENDIX",
+  "sectionType": "APPENDIX",
+  "fragmentKey": "APPENDIX_MAIN",
+  "caseId": "cmreamy2t0002o30f29urzcog",
+  "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "reportRunId": "orion-canary-1783980828528",
+  "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
+  "contentVersion": "deck-sections-v14",
+  "promptVersion": "appendix-deterministic-v1",
+  "contentHash": "sha256:045abe6a1cd4577bd54ecb4f9058f78660694b0de5d0deb6120bd2f027a63a68",
+  "inputHash": "sha256:eb5e9e7c9b2d1d2df2e772f849bcd988738a94e3712e5f7dc8ca46db72e42f88:46d598c0a974ea4e",
+  "generatedAt": "2026-07-17T09:49:29.043Z",
+  "required": false,
+  "status": "READY",
+  "sourceFindingIds": [
+    "finding-family_associates-other_subject-276ddd65",
+    "finding-business_profile-other_subject-b434e301",
+    "finding-political_exposure-other_subject-038d7d26",
+    "finding-business_profile-ambiguous-7a2d3181",
+    "finding-criminal_legal-ambiguous-3d33fe91",
+    "finding-pep_rca_watchlist-ambiguous-976aa8fa",
+    "finding-political_exposure-ambiguous-054edc90",
+    "finding-security_scrutiny-ambiguous-3d33fe91"
+  ],
+  "evidenceRefs": [
+    "inventory:serp-obs-cmrjsczp800atvd9g74u2yw40",
+    "inventory:ss-cmreb9zi000dumm0fji3fuqlz",
+    "inventory:ss-cmreb9zi100femm0foml58myw",
+    "inventory:ss-cmrebao1h00o6mm0fsel206zi",
+    "inventory:ss-cmreb9zi100ffmm0f8xerotcf",
+    "inventory:serp-obs-cmrjsdc7300cxvd9gxanvg8jn",
+    "inventory:ss-cmreb9zhz00ckmm0f342muxiw",
+    "inventory:ss-cmrebavrk00rnmm0fs3ur2xfz",
+    "inventory:ss-cmreb9zi000e9mm0fizup46pp",
+    "inventory:ss-cmreb9zi100ezmm0fsu4gfbqx"
+  ],
+  "inputs": {
+    "findingIds": [
+      "finding-family_associates-other_subject-276ddd65",
+      "finding-business_profile-other_subject-b434e301",
+      "finding-political_exposure-other_subject-038d7d26",
+      "finding-business_profile-ambiguous-7a2d3181",
+      "finding-criminal_legal-ambiguous-3d33fe91",
+      "finding-pep_rca_watchlist-ambiguous-976aa8fa",
+      "finding-political_exposure-ambiguous-054edc90",
+      "finding-security_scrutiny-ambiguous-3d33fe91"
+    ],
+    "evidenceRefs": [
+      "inventory:serp-obs-cmrjsczp800atvd9g74u2yw40",
+      "inventory:ss-cmreb9zi000dumm0fji3fuqlz",
+      "inventory:ss-cmreb9zi100femm0foml58myw",
+      "inventory:ss-cmrebao1h00o6mm0fsel206zi",
+      "inventory:ss-cmreb9zi100ffmm0f8xerotcf",
+      "inventory:serp-obs-cmrjsdc7300cxvd9gxanvg8jn",
+      "inventory:ss-cmreb9zhz00ckmm0f342muxiw",
+      "inventory:ss-cmrebavrk00rnmm0fs3ur2xfz",
+      "inventory:ss-cmreb9zi000e9mm0fizup46pp",
+      "inventory:ss-cmreb9zi100ezmm0fsu4gfbqx"
+    ],
+    "metricSnapshotId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b-metrics"
+  },
+  "slides": [
+    {
+      "schemaVersion": "slide-content-v1",
+      "slideId": "appendix_main_base",
+      "baseSlotId": "slot_appendix_main",
+      "sectionId": "APPENDIX",
+      "isContinuation": false,
+      "continuationOf": null,
+      "continuationIndex": null,
+      "templateId": "finding-cards",
+      "title": "Приложение: материалы, требующие идентификации",
+      "content": {
+        "bullets": [
+          "Семья и деловые связи: 1 свидетельств (0 негативных) в источниках ru.wikipedia.org. Примеры: В кого был влюблен Глинка? [finding-family_associates-other_subject-276ddd65]",
+          "Деловой профиль: 3 свидетельств (0 негативных) в источниках instagram.com, youtube.com, vkvideo.ru. Примеры: КНИГИ on Instagram: \"Прекрасная биография. Лаконичная ... · Михаил Глинка.Биография · Композитор Глинка (биографический, реж. Григорий ... [finding-business_profile-other_subject-b434e301]",
+          "Политические связи / публичная экспозиция: 1 свидетельств (0 негативных) в источниках youtube.com. Примеры: М. Глинка - Хор «Славься» из оперы «Жизнь за царя» [finding-political_exposure-other_subject-038d7d26]",
+          "Деловой профиль: 2 свидетельств (0 негативных) в источниках kulturologia.ru, eg.ru. Примеры: Сергей Глинка: транспорт, биотехнологии и инвестиции в Nutriband · Биография и личная жизнь: Ксения Лаврова-Глинка - Экспресс газета [finding-business_profile-ambiguous-7a2d3181]",
+          "Криминальные / судебные материалы: 1 свидетельств (1 негативных) в источниках rucriminal.info. Примеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-criminal_legal-ambiguous-3d33fe91]",
+          "PEP / RCA / watchlist-сигналы: 1 свидетельств (0 негативных) в источниках kulturologia.ru. Примеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром  культуры: О чем жалеет Ксения Лаврова-Глинки [finding-pep_rca_watchlist-ambiguous-976aa8fa]"
+        ],
+        "sourceNote": "Источники: eg.ru, instagram.com, kulturologia.ru, ru.wikipedia.org, rucriminal.info, vkvideo.ru"
+      },
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczp800atvd9g74u2yw40",
+        "inventory:ss-cmreb9zi000dumm0fji3fuqlz",
+        "inventory:ss-cmreb9zi100femm0foml58myw",
+        "inventory:ss-cmrebao1h00o6mm0fsel206zi",
+        "inventory:ss-cmreb9zi100ffmm0f8xerotcf",
+        "inventory:serp-obs-cmrjsdc7300cxvd9gxanvg8jn",
+        "inventory:ss-cmreb9zhz00ckmm0f342muxiw",
+        "inventory:ss-cmrebavrk00rnmm0fs3ur2xfz",
+        "inventory:ss-cmreb9zi000e9mm0fizup46pp",
+        "inventory:ss-cmreb9zi100ezmm0fsu4gfbqx"
+      ],
+      "findingIds": [
+        "finding-family_associates-other_subject-276ddd65",
+        "finding-business_profile-other_subject-b434e301",
+        "finding-political_exposure-other_subject-038d7d26",
+        "finding-business_profile-ambiguous-7a2d3181",
+        "finding-criminal_legal-ambiguous-3d33fe91",
+        "finding-pep_rca_watchlist-ambiguous-976aa8fa",
+        "finding-political_exposure-ambiguous-054edc90",
+        "finding-security_scrutiny-ambiguous-3d33fe91"
+      ],
+      "metrics": {
+        "items": 8
+      },
+      "visualAssetRefs": []
+    },
+    {
+      "schemaVersion": "slide-content-v1",
+      "slideId": "appendix_main_base__cont1",
+      "baseSlotId": "slot_appendix_main",
+      "sectionId": "APPENDIX",
+      "isContinuation": true,
+      "continuationOf": "appendix_main_base",
+      "continuationIndex": 1,
+      "templateId": "finding-cards",
+      "title": "Приложение: материалы, требующие идентификации (продолжение 2/2)",
+      "content": {
+        "bullets": [
+          "Политические связи / публичная экспозиция: 2 свидетельств (0 негативных) в источниках kulturologia.ru, youtube.com. Примеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром  культуры: О чем жалеет Ксения Лаврова-Глинки · Михаил Глинка \"Скажи,зачем явилась ты\"/Юрий Гуляев [finding-political_exposure-ambiguous-054edc90]",
+          "Внимание по линии безопасности / оборонный контур: 1 свидетельств (1 негативных) в источниках rucriminal.info. Примеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-security_scrutiny-ambiguous-3d33fe91]"
+        ],
+        "sourceNote": "Источники: eg.ru, instagram.com, kulturologia.ru, ru.wikipedia.org, rucriminal.info, vkvideo.ru"
+      },
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczp800atvd9g74u2yw40",
+        "inventory:ss-cmreb9zi000dumm0fji3fuqlz",
+        "inventory:ss-cmreb9zi100femm0foml58myw",
+        "inventory:ss-cmrebao1h00o6mm0fsel206zi",
+        "inventory:ss-cmreb9zi100ffmm0f8xerotcf",
+        "inventory:serp-obs-cmrjsdc7300cxvd9gxanvg8jn",
+        "inventory:ss-cmreb9zhz00ckmm0f342muxiw",
+        "inventory:ss-cmrebavrk00rnmm0fs3ur2xfz",
+        "inventory:ss-cmreb9zi000e9mm0fizup46pp",
+        "inventory:ss-cmreb9zi100ezmm0fsu4gfbqx"
+      ],
+      "findingIds": [
+        "finding-family_associates-other_subject-276ddd65",
+        "finding-business_profile-other_subject-b434e301",
+        "finding-political_exposure-other_subject-038d7d26",
+        "finding-business_profile-ambiguous-7a2d3181",
+        "finding-criminal_legal-ambiguous-3d33fe91",
+        "finding-pep_rca_watchlist-ambiguous-976aa8fa",
+        "finding-political_exposure-ambiguous-054edc90",
+        "finding-security_scrutiny-ambiguous-3d33fe91"
+      ],
+      "metrics": {
+        "items": 8
+      },
+      "visualAssetRefs": []
+    }
+  ],
+  "metrics": {
+    "datasetCount": 10,
+    "displayedCount": 10,
+    "adverseDatasetCount": 2,
+    "adverseDisplayedCount": 2
+  },
+  "provenance": {
+    "providers": [
+      "google",
+      "yandex"
+    ],
+    "reportRunIds": [
+      "orion-canary-1783980828528"
+    ],
+    "evidenceRefs": [
+      "inventory:serp-obs-cmrjsczp800atvd9g74u2yw40",
+      "inventory:ss-cmreb9zi000dumm0fji3fuqlz",
+      "inventory:ss-cmreb9zi100femm0foml58myw",
+      "inventory:ss-cmrebao1h00o6mm0fsel206zi",
+      "inventory:ss-cmreb9zi100ffmm0f8xerotcf",
+      "inventory:serp-obs-cmrjsdc7300cxvd9gxanvg8jn",
+      "inventory:ss-cmreb9zhz00ckmm0f342muxiw",
+      "inventory:ss-cmrebavrk00rnmm0fs3ur2xfz",
+      "inventory:ss-cmreb9zi000e9mm0fizup46pp",
+      "inventory:ss-cmreb9zi100ezmm0fsu4gfbqx"
+    ]
+  },
+  "validation": {
+    "passed": true,
+    "issues": []
+  }
+}

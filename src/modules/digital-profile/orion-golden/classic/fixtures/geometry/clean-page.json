@@ -1,0 +1,20 @@
+{
+  "inspectorVersion": "first36-geometry-v2",
+  "overlaps": [],
+  "overflow": [],
+  "clipping": [],
+  "blank": [],
+  "missingAssets": [],
+  "emptyContent": [],
+  "emptyPages": [],
+  "shapes": [],
+  "pages": [],
+  "summary": {
+    "issueCount": 0,
+    "severity": "PASS",
+    "pageCount": 36,
+    "bySeverity": { "PASS": 0, "WARNING": 0, "CRITICAL": 0, "BLOCKER": 0 }
+  },
+  "inspectorError": null,
+  "source": { "fixture": "clean-page.json" }
+}

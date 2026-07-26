@@ -1,18 +1,23 @@
 /**
- * Server-side auth guards for Digital Profile route handlers (Stage M1).
+ * Server-side auth guards for Digital Profile route handlers (Stage M1 / R10.10a).
  *
  *   requireDigitalProfileUser(req)      -> AuthUser (401 if missing when enabled)
  *   requireRole(user, action)           -> throws 403 if not permitted
  *   requireCaseAccess(user, caseId, lvl)-> throws 403 if no case access
  *
- * When auth is DISABLED (DIGITAL_PROFILE_AUTH_ENABLED=false), a synthetic
- * SUPER_ADMIN actor is returned so the demo/smoke flow keeps working unchanged.
+ * R10.10a: synthetic SUPER_ADMIN is local/dev-only. Production/staging-like
+ * environments never return a synthetic actor — they require real auth.
  * Node-only (Prisma) — never import into middleware/edge.
  */
 
 import { ForbiddenError, UnauthorizedError } from "../http/errors";
 import type { ActorContext } from "../services/case-service";
-import { assertAuthConfigSafe, getAuthConfig } from "./auth-config";
+import {
+  assertAuthConfigSafe,
+  getAuthConfig,
+  isDeployLikeEnvironment,
+  isSyntheticAuthBypassAllowed,
+} from "./auth-config";
 import { DP_SESSION_COOKIE, verifySessionToken } from "./session";
 import { findUserById, type AuthUser } from "./user-service";
 import { hasCaseAccess } from "./access-service";
@@ -51,7 +56,10 @@ function syntheticActor(req: Request): DpAuthUser {
 /** Resolves the current user from the session cookie, or null. */
 export async function getOptionalUser(req: Request): Promise<DpAuthUser | null> {
   const cfg = getAuthConfig();
-  if (!cfg.enabled) return syntheticActor(req);
+  if (!cfg.enabled) {
+    if (isSyntheticAuthBypassAllowed()) return syntheticActor(req);
+    return null;
+  }
   const token = readCookie(req, DP_SESSION_COOKIE);
   const payload = await verifySessionToken(token, cfg.sessionSecret);
   if (!payload) return null;
@@ -60,13 +68,30 @@ export async function getOptionalUser(req: Request): Promise<DpAuthUser | null> 
   return user;
 }
 
-/** Requires an authenticated user (or synthetic admin when auth disabled). */
+/**
+ * Requires an authenticated user.
+ * Local/dev may return synthetic SUPER_ADMIN when auth is disabled and bypass
+ * is allowed. Deploy-like environments always require a real session.
+ */
 export async function requireDigitalProfileUser(req: Request): Promise<DpAuthUser> {
   const cfg = getAuthConfig();
-  if (!cfg.enabled) return syntheticActor(req);
+  if (!cfg.enabled) {
+    if (isDeployLikeEnvironment() || !isSyntheticAuthBypassAllowed()) {
+      throw new UnauthorizedError(
+        "Authentication required (synthetic SUPER_ADMIN disabled in this environment)"
+      );
+    }
+    console.warn(
+      "[digital-profile][auth] WARNING: DIGITAL_PROFILE_AUTH_ENABLED=false — using synthetic SUPER_ADMIN (local/dev only)"
+    );
+    return syntheticActor(req);
+  }
   assertAuthConfigSafe();
   const user = await getOptionalUser(req);
   if (!user) throw new UnauthorizedError();
+  if (user.synthetic) {
+    throw new ForbiddenError("Synthetic SUPER_ADMIN is not allowed when auth is enabled");
+  }
   return user;
 }
 
