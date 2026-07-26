@@ -119,7 +119,14 @@ export function detectEnrichmentProgressDrift(
     if (left !== right) drift.push({ field, stored: left || "—", derived: right || "—" });
   };
 
-  compareSets("scheduledAgents", stored.scheduledAgents ?? [], derived.scheduledAgents);
+  // `scheduledAgents` из сравнения исключён намеренно (шаг 15, I2). В сводке
+  // это «намерены запустить», в выводе — «есть строка задачи»: разные величины,
+  // и расхождение между ними — норма, пока задачи создаются по очереди. На
+  // финальном прогоне детектор поднимал тревогу именно на этом, и тревога была
+  // ложной.
+  //
+  // Признак «зарегистрирован, но задачи нет» измеряется отдельно и по делу —
+  // `computeArsenkinSubmissionGap.registeredWithoutTask`.
   compareSets("completedAgents", stored.completedAgents ?? [], derived.completedAgents);
   if (Boolean(stored.enrichmentComplete) !== derived.enrichmentComplete) {
     drift.push({

@@ -32,6 +32,7 @@ import {
 import { domainOf } from "./composite-dataset-builder";
 import { mapRegionBucket, mapSurfaceBucket } from "../classic/composite-serp-overlay-merge";
 import { looksLikeSearchQuery } from "./client-quote-hygiene";
+import { themeHitIsNegated } from "./negated-theme-hit";
 
 export type { ThemeDef };
 
@@ -589,7 +590,12 @@ export function joinTitlesWithinBudget(titles: string[], budget: number): string
  */
 function themesFor(item: RawInventoryItem): ThemeDef[] {
   const text = itemText(item);
-  return getFindingThemes().filter((theme) => theme.keywords.test(text));
+  return getFindingThemes().filter(
+    // Материал, утверждающий отсутствие («не было выставленных претензий»),
+    // темой риска не является: иначе отчёт говорит противоположное источнику
+    // (шаг 15, J1).
+    (theme) => theme.keywords.test(text) && !themeHitIsNegated(text, theme.keywords)
+  );
 }
 
 /** Same evidence + same normalized claim must collapse into one contribution. */

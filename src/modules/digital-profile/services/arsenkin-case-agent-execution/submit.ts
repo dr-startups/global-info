@@ -306,6 +306,24 @@ export async function runArsenkinCaseAgentWorker(input: {
   });
 }
 
+/**
+ * Застряло ли исполнение настолько, что его пора заместить даже автоматически.
+ *
+ * Порог с запасом: отправка пяти агентов идёт последовательно, и живое
+ * исполнение может ждать своей очереди минутами. Замещать раньше — плодить
+ * ровно ту churn, ради которой правка и делается.
+ */
+const CASE_AGENT_STALE_MS = 15 * 60_000;
+
+export function isStaleCaseAgentExecution(
+  job: { updatedAt?: string | null; phase?: string },
+  now: Date
+): boolean {
+  const at = Date.parse(String(job.updatedAt ?? ""));
+  if (!Number.isFinite(at)) return true;
+  return now.getTime() - at > CASE_AGENT_STALE_MS;
+}
+
 export async function startArsenkinCaseAgentDurable(input: {
   caseId: string;
   agentRunId: string;
@@ -316,6 +334,11 @@ export async function startArsenkinCaseAgentDurable(input: {
   resolveBaseReportRunId?: () => Promise<string | null>;
   /** When false, caller schedules worker (default true). */
   scheduleWorker?: boolean;
+  /**
+   * Автоматический дозапуск: живое исполнение не замещать, а дождаться.
+   * Ручной повтор этого флага не ставит — там замещение и есть смысл действия.
+   */
+  reuseActiveExecution?: boolean;
 }): Promise<{
   executionId: string;
   enrichmentReportRunId: string;
@@ -325,6 +348,25 @@ export async function startArsenkinCaseAgentDurable(input: {
   reusedExisting?: boolean;
 }> {
   const existing = findActiveArsenkinCaseAgentExecution(input.caseId, input.agentId);
+  // Живое исполнение автоматическим дозапуском не замещается (шаг 15, I1).
+  //
+  // Тик предлагает отправку каждому агенту без строки `ProviderTask` и делает
+  // это на каждом обороте, пока задача не создана. Прежде каждый такой заход
+  // помечал предыдущее исполнение `ARSENKIN_SUPERSEDED`, и на здоровом прогоне
+  // оператор видел во вкладке «Агенты» четыре отказа подряд.
+  //
+  // Замещение остаётся правом человека: ручной повтор именно за тем и нужен,
+  // чтобы сбросить застрявшее исполнение. Автоматика же обязана дождаться.
+  if (existing && input.reuseActiveExecution && !isStaleCaseAgentExecution(existing, new Date())) {
+    return {
+      executionId: existing.executionId,
+      enrichmentReportRunId: existing.enrichmentReportRunId,
+      baseReportRunId: existing.baseReportRunId,
+      plannedSurfaces: existing.plannedSurfaces as FullFirst36SurfaceSlot[],
+      status: "RUNNING",
+      reusedExisting: true,
+    };
+  }
   if (existing) {
     // Always start a fresh execution on retry — do not reuse a stuck COLLECTING job.
     saveArsenkinCaseAgentExecution({

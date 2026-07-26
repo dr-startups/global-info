@@ -111,15 +111,31 @@ describe("расхождение хранимого и выведенного", 
     expect(drift).toEqual([]);
   });
 
-  it("ловит «зарегистрировано пять, задач две»", () => {
-    // Именно это состояние проходило прежнюю проверку и уводило
-    // восстановление опрашивать несуществующие задачи (шаг 08.0-bis).
+  it("разница в «запланировано» тревогой не считается", () => {
+    // В сводке это «намерены запустить», в выводе — «есть строка задачи».
+    // Пока задачи создаются по очереди, расхождение здесь норма, и на финальном
+    // прогоне детектор поднимал на нём ложную тревогу (шаг 15, I2).
     const twoTasks = ARSENKIN_REAL_AGENT_NAMES.slice(0, 2).map((a) => task(a, "RUNNING"));
     const drift = detectEnrichmentProgressDrift(
       stored({ scheduledAgents: [...ARSENKIN_REAL_AGENT_NAMES] }),
       derive(twoTasks)
     );
-    expect(drift.map((d) => d.field)).toContain("scheduledAgents");
+    expect(drift.map((d) => d.field)).not.toContain("scheduledAgents");
+  });
+
+  it("ложная полнота при незавершённых агентах ловится", () => {
+    // А вот это — настоящее расхождение: сводка объявляет обогащение
+    // завершённым, пока задачи ещё идут.
+    const drift = detectEnrichmentProgressDrift(
+      stored({
+        completedAgents: [...ARSENKIN_REAL_AGENT_NAMES],
+        enrichmentComplete: true,
+      }),
+      derive(ARSENKIN_REAL_AGENT_NAMES.slice(0, 2).map((a) => task(a, "RUNNING")))
+    );
+    expect(drift.map((d) => d.field)).toEqual(
+      expect.arrayContaining(["completedAgents", "enrichmentComplete"])
+    );
   });
 
   it("ловит ложную полноту", () => {
@@ -152,5 +168,52 @@ describe("расхождение хранимого и выведенного", 
       { field: "enrichmentComplete", stored: "true", derived: "false" },
     ]);
     expect(w).toEqual(["enrichment-progress-drift:enrichmentComplete:true!=false"]);
+  });
+});
+
+/**
+ * Шаг 15, I1 — автоматический дозапуск не замещает живое исполнение.
+ *
+ * Тик предлагает отправку каждому агенту без строки `ProviderTask` на каждом
+ * обороте. Прежде каждый заход помечал предыдущее исполнение
+ * `ARSENKIN_SUPERSEDED`, и на здоровом прогоне оператор видел во вкладке
+ * «Агенты» четыре отказа подряд.
+ */
+describe("живое исполнение агента автоматикой не замещается", () => {
+  it("свежее исполнение считается живым", async () => {
+    const { isStaleCaseAgentExecution } = await import(
+      "../../src/modules/digital-profile/services/arsenkin-case-agent-execution/submit"
+    );
+    const now = new Date("2026-07-26T12:00:00Z");
+    const fresh = { updatedAt: "2026-07-26T11:58:00Z", phase: "COLLECTING" };
+    expect(isStaleCaseAgentExecution(fresh, now)).toBe(false);
+  });
+
+  it("исполнение, молчащее дольше порога, замещается", async () => {
+    const { isStaleCaseAgentExecution } = await import(
+      "../../src/modules/digital-profile/services/arsenkin-case-agent-execution/submit"
+    );
+    const now = new Date("2026-07-26T12:00:00Z");
+    expect(
+      isStaleCaseAgentExecution({ updatedAt: "2026-07-26T11:30:00Z", phase: "COLLECTING" }, now)
+    ).toBe(true);
+  });
+
+  it("исполнение без отметки времени считается застрявшим", async () => {
+    const { isStaleCaseAgentExecution } = await import(
+      "../../src/modules/digital-profile/services/arsenkin-case-agent-execution/submit"
+    );
+    // Без отметки нельзя сказать, живо ли оно; блокировать отправку навсегда хуже.
+    expect(isStaleCaseAgentExecution({ updatedAt: null }, new Date())).toBe(true);
+  });
+
+  it("оркестратор просит автоматический дозапуск", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const src = readFileSync(
+      join(process.cwd(), "src/modules/digital-profile/services/unified-orion-collection-orchestrator.ts"),
+      "utf8"
+    );
+    expect(src).toMatch(/reuseActiveExecution: true/u);
   });
 });

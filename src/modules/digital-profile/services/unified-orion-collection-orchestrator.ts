@@ -1144,6 +1144,10 @@ async function stepArsenkin(
             tools,
             actorId: job.requestedBy,
             scheduleWorker: true,
+            // Дозапуск автоматический: живое исполнение ждём, а не замещаем.
+            // Иначе на здоровом прогоне агенты получают ARSENKIN_SUPERSEDED
+            // на каждом обороте тика (шаг 15, I1).
+            reuseActiveExecution: true,
             resolveBaseReportRunId: async () => baseId,
           });
           // Слияние, а не перезапись: прогоны уже отправленных агентов обязаны
