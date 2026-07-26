@@ -197,16 +197,6 @@ export function validateDigitalProfileEnv(
     }
   }
 
-  // Align legacy ORION v2 require-AI with the same readiness check.
-  if (bool(env.DIGITAL_PROFILE_ORION_V2_REQUIRE_AI) || (isProd && env.DIGITAL_PROFILE_ORION_V2_REQUIRE_AI == null)) {
-    // Default of orionV2RequireAi is true in production when unset — warn if AI cannot run.
-    if (isProd && (!aiEnabled || !env.OPENAI_API_KEY?.trim())) {
-      warnings.push(
-        "ORION v2 require-AI is active but the AI analyst is not fully configured (DIGITAL_PROFILE_AI_ANALYST_ENABLED / OPENAI_API_KEY)."
-      );
-    }
-  }
-
   // REMEDIATION §8.2 — silent offline enrichment in deploy-like envs.
   const offlineWarn = offlineEnrichmentEnvWarning(env);
   if (offlineWarn) warnings.push(offlineWarn);

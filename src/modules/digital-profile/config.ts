@@ -70,7 +70,6 @@ export interface DigitalProfileConfig {
     maxOutputTokens: number;
     openAiApiKey?: string;
   };
-  orionPipelineStore: "file" | "db";
   /**
    * REMEDIATION §8.1 — карточка подготовки ORION Golden на странице кейса.
    * Выключен по умолчанию; основной путь — unified-сбор, панель качества и
@@ -79,22 +78,11 @@ export interface DigitalProfileConfig {
    */
   legacyReportUiEnabled: boolean;
   /**
-   * R9.5c — user-facing ORION v2 reports must be GPT-5.5-backed.
-   * When true, generation is blocked unless the AI analyst is fully configured.
-   */
-  orionV2RequireAi: boolean;
-  /**
    * REMEDIATION §4.1 — when true, unified REPORT_READY is blocked unless the
    * canonical GPT layer applied at least one fragment (or stage-1 analysis).
-   * Off by default; independent of legacy orionV2RequireAi.
+   * Off by default.
    */
   requireAiReport: boolean;
-  /**
-   * R9.5c — deterministic fallback for ORION v2 is allowed ONLY for explicit
-   * dev/test/local QA. In production/preview it must stay false so a fallback
-   * never silently produces a user-facing client report.
-   */
-  orionV2AllowDeterministicFallback: boolean;
   /** R10 — ORION Golden 3-layer agent architecture (parallel to R9 storyboard). */
   orionGoldenEnabled: boolean;
   orionGptAutoAnalyst: boolean;
@@ -102,18 +90,6 @@ export interface DigitalProfileConfig {
   orionGptIdentity: boolean;
   /** REMEDIATION §3.3 — LLM theme suggestions for uncategorized (ORION_GPT_THEMES=1). */
   orionGptThemes: boolean;
-}
-
-/** Client-safe booleans describing ORION v2 AI readiness. Never exposes secrets. */
-export interface OrionV2AiReadiness {
-  hasOpenAiKey: boolean;
-  aiEnabled: boolean;
-  requireAi: boolean;
-  fallbackAllowed: boolean;
-  provider: "openai";
-  model: string;
-  /** True only when AI is fully configured to run GPT-5.5 analysis. */
-  ready: boolean;
 }
 
 function envLocale(value: string | undefined): "ru" | "en" {
@@ -189,23 +165,9 @@ export const digitalProfileConfig: DigitalProfileConfig = {
     ),
     openAiApiKey: process.env.OPENAI_API_KEY?.trim() || undefined,
   },
-  orionPipelineStore:
-    String(process.env.DIGITAL_PROFILE_ORION_PIPELINE_STORE ?? "").trim().toLowerCase() === "db"
-      ? "db"
-      : "file",
   legacyReportUiEnabled: envBool(process.env.DIGITAL_PROFILE_LEGACY_REPORT_UI, false),
-  // Default: required in production/preview-like envs, relaxed only in local/test.
-  orionV2RequireAi: envBool(
-    process.env.DIGITAL_PROFILE_ORION_V2_REQUIRE_AI,
-    process.env.NODE_ENV === "production"
-  ),
   // Canonical REPORT_READY AI gate (off by default — opt-in strictness).
   requireAiReport: envBool(process.env.DIGITAL_PROFILE_REQUIRE_AI_REPORT, false),
-  // Default: allowed only outside production/preview (smoke/local QA).
-  orionV2AllowDeterministicFallback: envBool(
-    process.env.DIGITAL_PROFILE_ORION_V2_ALLOW_DETERMINISTIC_FALLBACK,
-    process.env.NODE_ENV !== "production"
-  ),
   orionGoldenEnabled: envBool(
     process.env.DIGITAL_PROFILE_ORION_GOLDEN_ENABLED,
     process.env.NODE_ENV !== "production"
@@ -218,25 +180,6 @@ export const digitalProfileConfig: DigitalProfileConfig = {
   orionGptThemes: envBool(process.env.ORION_GPT_THEMES, false),
 };
 
-/**
- * Returns client-safe ORION v2 AI readiness booleans. Never returns the API key
- * value itself — only whether one is present and whether the analyst can run.
- */
-export function describeOrionV2AiReadiness(): OrionV2AiReadiness {
-  const ai = digitalProfileConfig.aiAnalyst;
-  const hasOpenAiKey = Boolean(ai.openAiApiKey && ai.openAiApiKey.trim().length > 0);
-  const aiEnabled = ai.enabled;
-  const providerOk = ai.provider === "openai";
-  return {
-    hasOpenAiKey,
-    aiEnabled,
-    requireAi: digitalProfileConfig.orionV2RequireAi,
-    fallbackAllowed: digitalProfileConfig.orionV2AllowDeterministicFallback,
-    provider: "openai",
-    model: ai.model,
-    ready: hasOpenAiKey && aiEnabled && providerOk,
-  };
-}
 
 /** Master feature flag check. Use this everywhere before exposing the module. */
 export function isDigitalProfileEnabled(): boolean {
