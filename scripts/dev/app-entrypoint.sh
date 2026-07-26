@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Entrypoint for the local dev app container (docker-compose.dev.yml).
+# Entrypoint for the local dev app container (docker-compose.yml).
 #
 # Installs deps into the node_modules volume on first boot, keeps the Prisma
 # client in sync with schema.prisma, applies migrations, then starts `next dev`.
