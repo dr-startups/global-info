@@ -486,6 +486,8 @@ export const ru: Dictionary = {
     noEmptySlides: "Пустых слайдов нет",
   },
   unified: {
+    autoResumeWaiting: "Сбор продолжается: система сама вернётся к работе, вмешательство не требуется.",
+    autoResumeAt: "Следующая попытка в {time}",
     downloadPdf: "Скачать PDF",
     downloadPptx: "Скачать PPTX",
     downloadContactSheet: "Скачать contact sheet",

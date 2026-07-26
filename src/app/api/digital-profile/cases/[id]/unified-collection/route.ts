@@ -24,6 +24,29 @@ import { evaluateUnifiedGptCopyRetryEligibility } from "@/modules/digital-profil
 import { withSuggestionsGapStatus } from "@/modules/digital-profile/services/unified-suggestions-gap";
 import { getCanonicalDownloadAvailability } from "@/modules/digital-profile/services/canonical-report-artifacts";
 import {
+  NO_AUTO_RESUME,
+  autoResumeState,
+  recoveryNeedsUser,
+  type AutoResumeState,
+} from "@/modules/digital-profile/workflow/auto-resume";
+
+/**
+ * Состояние «конвейер продолжит сам» по строкам шагов.
+ *
+ * Недоступность таблицы шагов не должна отнимать у оператора кнопку: без
+ * ответа считаем, что автоматического продолжения нет.
+ */
+async function loadAutoResumeState(jobId: string | null): Promise<AutoResumeState> {
+  if (!jobId) return NO_AUTO_RESUME;
+  try {
+    const { listPipelineSteps } = await import("@/modules/digital-profile/workflow/step-store");
+    return autoResumeState(await listPipelineSteps(jobId), new Date());
+  } catch {
+    return NO_AUTO_RESUME;
+  }
+}
+
+import {
   fullAuditBlockReason,
   paidRecollectionRequired,
 } from "@/modules/digital-profile/services/unified-action-policy";
@@ -94,15 +117,23 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const suggestTasks = await loadSuggestTasksForGap(suggestionsRunId);
   const suggestionsGap = withSuggestionsGapStatus(job, suggestTasks);
   const preserved = unifiedJobHasPreservedStages(job);
+  // Пока конвейер собирается вернуться к шагу сам, звать пользователя нельзя:
+  // он не ускорит провайдера, а его нажатие стоит денег (шаг 14).
+  const autoResume = await loadAutoResumeState(job?.jobId ?? null);
+  const needsUser = recoveryNeedsUser({
+    recoveryAllowed: Boolean(recovery.recoveryAllowed),
+    autoResume,
+  });
   const actionState = {
     preserved,
-    recoveryAllowed: Boolean(recovery.recoveryAllowed),
+    recoveryAllowed: needsUser,
     recoveryBlockerReason: recovery.recoveryBlockerReason ?? null,
     suggestionsMissingResult: Boolean(suggestionsGap.suggestionsMissingResult),
   };
   const fullAuditBlocked =
     Boolean(job) &&
-    (Boolean(recovery.recoveryAllowed) ||
+    (autoResume.pending ||
+      Boolean(recovery.recoveryAllowed) ||
       suggestionsGap.suggestionsMissingResult ||
       preserved ||
       job?.status === "RUNNING" ||
@@ -151,9 +182,14 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
                 enrichmentComplete: job.arsenkinEnrichmentState.enrichmentComplete,
               }
             : null,
-          recoveryAllowed: recovery.recoveryAllowed,
+          recoveryAllowed: needsUser,
           recoveryBlockerReason: recovery.recoveryBlockerReason,
           recoveryReason: recovery.recoveryReason,
+          // «Продолжится само» — отдельное состояние, а не отказ: пользователю
+          // показывается ожидание, а не приглашение вмешаться (шаг 14).
+          autoResumePending: autoResume.pending,
+          autoResumeAt: autoResume.resumeAt,
+          autoResumeStep: autoResume.stepName,
           rebuildAllowed: rebuild.rebuildAllowed,
           rebuildBlockerReason: rebuild.rebuildBlockerReason,
           gptCopyRetryAllowed: gptCopyRetry.gptCopyRetryAllowed,

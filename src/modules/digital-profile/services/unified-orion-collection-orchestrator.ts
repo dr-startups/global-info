@@ -84,6 +84,12 @@ import {
 } from "./arsenkin-enrichment-tick";
 import { buildBaseObservationCoverage } from "./base-observation-coverage";
 import {
+  MAX_IDLE_POLLS,
+  decideEnrichmentPoll,
+  markEnrichmentProgress,
+  pollBackoffMs,
+} from "./arsenkin-poll-budget";
+import {
   runUnifiedComplianceScreening,
   screeningWarning,
 } from "./unified-compliance-screening";
@@ -98,8 +104,16 @@ export function computeUnifiedPollDelayMs(job: UnifiedCollectionJob, now = Date.
   return Math.min(30_000, Math.max(50, 2_000 * 2 ** Math.min(attempt, 4)));
 }
 
-/** Fail-closed ceiling for durable Arsenkin poll/ingest ticks (stops lease churn). */
-export const MAX_ARSENKIN_INGEST_POLL_ATTEMPTS = 40;
+/**
+ * Потолок опросов Arsenkin без продвижения (шаг 14).
+ *
+ * Раньше считались **все** опросы, включая те, где провайдер честно работал, и
+ * потолок срабатывал на здоровом двадцатиминутном прогоне. Теперь это предел
+ * тишины: столько опросов подряд без единого сдвига.
+ *
+ * Имя сохранено — на константу ссылаются смоки.
+ */
+export const MAX_ARSENKIN_INGEST_POLL_ATTEMPTS = MAX_IDLE_POLLS;
 
 /**
  * A tick whose polls were all rejected by the in-process live-auth singleton
@@ -185,18 +199,19 @@ export async function persistUnifiedTickFailure(
     errorCode,
     error: err,
   });
+  // Опрос, завершившийся ошибкой, продвижением не является — он тратит тот же
+  // бюджет тишины, что и опрос без изменений (шаг 14).
   const attempt = Math.max(0, Number(job.pollAttempt ?? 0)) + 1;
   const nowMs = (extras?.now ?? new Date()).getTime();
-  const backoffMs = Math.min(30_000, Math.max(2_000, 2_000 * 2 ** Math.min(attempt, 4)));
-  const nextPollAt = new Date(nowMs + backoffMs).toISOString();
+  const nextPollAt = new Date(nowMs + pollBackoffMs(attempt)).toISOString();
   if (attempt >= MAX_ARSENKIN_INGEST_POLL_ATTEMPTS) {
     return await failRetryable(
       job,
       "ARSENKIN_POLL_ATTEMPTS_EXCEEDED",
-      message.slice(0, 500),
+      `Опрос Arsenkin не удаётся ${attempt} раз подряд: ${message.slice(0, 400)}`,
       [
         "ARSENKIN_RESULT_INGEST",
-        `pollAttempt:${attempt}`,
+        `idlePolls:${attempt}`,
         errorCode,
         extras?.externalTaskId ? `externalTaskId:${extras.externalTaskId}` : "",
         extras?.providerTaskId ? `providerTaskId:${extras.providerTaskId}` : "",
@@ -407,6 +422,15 @@ async function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): Promise
         status: "RUNNING",
         resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
         baseReportRunId: job.baseReportRunId ?? manifest!.baseReportRunId,
+        // Счётчик простоя обнуляется, иначе возобновление сразу упирается в тот
+        // же предел и «повторяемый отказ» оказывается неправдой. Именно здесь
+        // расходились автоматический путь и кнопка: ручное восстановление
+        // обнуляло счётчик, а этот — нет, поэтому оркестрация ложилась на
+        // пользователя (шаг 14).
+        pollAttempt: 0,
+        // Общий срок ожидания при этом НЕ продлевается: он и ограничивает
+        // худший случай, сколько бы возобновлений ни случилось.
+        enrichmentWaitStartedAt: job.enrichmentWaitStartedAt ?? null,
         lastError: null,
         lastErrorCode: null,
         completedAt: null,
@@ -441,6 +465,34 @@ async function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): Promise
       lastErrorCode: null,
       completedAt: null,
       warnings: [...job.warnings, "bounded-resume:from-base"],
+    }) ?? job
+  );
+}
+
+/**
+ * Отказ, который повтором не лечится.
+ *
+ * Используется там, где возобновление упрётся в то же условие сразу же —
+ * например, исчерпан общий срок ожидания обогащения. Предлагать оператору
+ * кнопку в таком случае значит звать его чинить то, что кнопкой не чинится.
+ */
+async function failTerminal(
+  job: UnifiedCollectionJob,
+  code: string,
+  message: string,
+  extraWarnings: string[] = []
+): Promise<UnifiedCollectionJob> {
+  return (
+    await patchUnifiedCollectionJob(job.caseId, {
+      stage: "FAILED_TERMINAL",
+      status: "FAILED",
+      lastError: message,
+      lastErrorCode: code,
+      arsenkinEnrichmentState: job.arsenkinEnrichmentState ?? undefined,
+      enrichmentRunIds: job.enrichmentRunIds,
+      baseReportRunId: job.baseReportRunId,
+      warnings: [...job.warnings, ...extraWarnings, code],
+      completedAt: new Date().toISOString(),
     }) ?? job
   );
 }
@@ -908,24 +960,18 @@ async function stepArsenkin(
   // Atomically persist pollAttempt + nextPollAt BEFORE HTTP poll (lease already held).
   // Prevents lease churn with missing poll progress when the tick throws mid-flight.
   if (resumeIngest) {
-    const attempt = Math.max(0, Number(job.pollAttempt ?? 0)) + 1;
-    if (attempt > MAX_ARSENKIN_INGEST_POLL_ATTEMPTS) {
-      return await failRetryable(
-        job,
-        "ARSENKIN_POLL_ATTEMPTS_EXCEEDED",
-        `Arsenkin durable poll exceeded ${MAX_ARSENKIN_INGEST_POLL_ATTEMPTS} attempts`,
-        ["ARSENKIN_RESULT_INGEST", `pollAttempt:${attempt}`]
-      );
-    }
+    // Расписание пишется ДО опроса, чтобы падение посреди тика не оставило
+    // прогон без следующего срока. Счётчик простоя при этом не трогается: его
+    // значение зависит от результата опроса, который ещё не сделан (шаг 14).
     const nowMs = (deps.now?.() ?? new Date()).getTime();
-    const backoffMs = Math.min(30_000, Math.max(2_000, 2_000 * 2 ** Math.min(attempt - 1, 4)));
     job =
       await patchUnifiedCollectionJob(job.caseId, {
         stage: "ARSENKIN_ENRICHMENT",
         status: "WAITING",
         resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
-        pollAttempt: attempt,
-        nextPollAt: new Date(nowMs + backoffMs).toISOString(),
+        enrichmentWaitStartedAt:
+          job.enrichmentWaitStartedAt ?? new Date(nowMs).toISOString(),
+        nextPollAt: new Date(nowMs + pollBackoffMs(Number(job.pollAttempt ?? 0))).toISOString(),
         lastError: null,
         lastErrorCode: null,
       }) ?? job;
@@ -1041,13 +1087,29 @@ async function stepArsenkin(
         ingestedResultHashes: state.ingestedResultHashes,
       }
     );
+    // Бюджет ожидания считает опросы БЕЗ продвижения, а не все подряд: пока
+    // задачи Arsenkin двигаются, ждать можно и нужно (шаг 14).
+    const nowDate = deps.now?.() ?? new Date();
+    const budget = decideEnrichmentPoll({
+      previous: job.enrichmentProgressMark ?? null,
+      current: markEnrichmentProgress(state),
+      idlePolls: Number(job.pollAttempt ?? 0),
+      waitStartedAt: job.enrichmentWaitStartedAt ?? null,
+      now: nowDate,
+    });
+    if (budget.kind === "exhausted") {
+      const fail = budget.retryable ? failRetryable : failTerminal;
+      return await fail(
+        job,
+        "ARSENKIN_POLL_ATTEMPTS_EXCEEDED",
+        budget.reason,
+        ["ARSENKIN_RESULT_INGEST", `idlePolls:${budget.idlePolls}`]
+      );
+    }
+    // Пауза растёт только при простое: продвижение — не повод ждать дольше.
     const nextPollAt =
       tick.nextPollAt ??
-      job.nextPollAt ??
-      new Date(
-        (deps.now?.() ?? new Date()).getTime() +
-          Math.min(30_000, Math.max(2_000, 2_000 * 2 ** Math.min(Number(job.pollAttempt ?? 0), 4)))
-      ).toISOString();
+      new Date(nowDate.getTime() + pollBackoffMs(budget.idlePolls)).toISOString();
     return (
       await patchUnifiedCollectionJob(job.caseId, {
         stage: "ARSENKIN_ENRICHMENT",
@@ -1058,12 +1120,14 @@ async function stepArsenkin(
         arsenkinEnrichmentState: state,
         resumeCheckpoint: "ARSENKIN_RESULT_INGEST",
         nextPollAt,
-        // pollAttempt already bumped pre-poll when resumeIngest; keep monotonic
-        // progress — except for ticks blocked purely by the in-process live-auth
-        // singleton, which never reached Arsenkin and must not spend budget.
+        // Тик, заблокированный внутренним синглтоном авторизации, до провайдера
+        // не дошёл и о простое ничего не говорит — бюджет он не тратит (шаг 03).
         pollAttempt: isPollAuthContentionOnly(tick.warnings)
-          ? Math.max(0, Number(job.pollAttempt ?? 0) - 1)
-          : Math.max(0, Number(job.pollAttempt ?? 0)),
+          ? Number(job.pollAttempt ?? 0)
+          : budget.idlePolls,
+        enrichmentProgressMark: markEnrichmentProgress(state),
+        enrichmentWaitStartedAt:
+          job.enrichmentWaitStartedAt ?? nowDate.toISOString(),
         coverage: { ...coverage, progressRatio: computeCoverageProgress(coverage) },
         warnings: [...job.warnings, ...tick.warnings, "arsenkin-awaiting-ingest"],
         artifactPaths: { ...job.artifactPaths, arsenkinObservations: obsPath },

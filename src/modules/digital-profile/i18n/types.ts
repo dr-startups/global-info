@@ -425,6 +425,8 @@ export interface Dictionary {
   /** Действия и статусы unified-прогона — шапка кейса (шаг 11.4). */
   unified: {
     downloadPdf: string;
+    autoResumeWaiting: string;
+    autoResumeAt: string;
     downloadPptx: string;
     downloadContactSheet: string;
     suggestionsGap: string;

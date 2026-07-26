@@ -6,7 +6,7 @@ import {
   type CaseDetail,
   type UnifiedCollectionJobStatus,
 } from "./api";
-import { StatusBadge } from "./components";
+import { Notice, StatusBadge } from "./components";
 import { useDigitalProfileI18n } from "./i18n-provider";
 import { useDpAuth } from "./auth-provider";
 import {
@@ -182,6 +182,7 @@ export function CaseHeader({
   const unifiedLabel = unifiedStatusLabel(unifiedJob);
   const stageLabel = unifiedStageForDisplay(unifiedJob);
   const serverRecoveryAllowed = Boolean(unifiedJob?.recoveryAllowed);
+  const autoResumePending = Boolean(unifiedJob?.autoResumePending);
   const suggestionsRetry = isSuggestionsTargetedRetryState(unifiedJob);
   const showGeneralRecovery = shouldShowGeneralRecoveryCta(unifiedJob);
   const renderRecovery = isRenderRecovery(unifiedJob);
@@ -235,11 +236,26 @@ export function CaseHeader({
               </span>
             ) : null}
           </div>
+          {autoResumePending ? (
+            /*
+             * Прогон, который продолжится сам, — это ожидание, а не отказ.
+             * Раньше здесь стоял код ошибки и кнопка, и пользователь нажимал её
+             * по нескольку раз, выполняя работу оркестратора (шаг 14).
+             */
+            <div style={{ marginTop: 8 }} data-testid="unified-auto-resume">
+              <Notice>
+                {t("unified.autoResumeWaiting")}
+                {unifiedJob?.autoResumeAt
+                  ? ` ${t("unified.autoResumeAt", { time: fmtDate(unifiedJob.autoResumeAt) })}`
+                  : ""}
+              </Notice>
+            </div>
+          ) : null}
           {unifiedJob ? (
             <div className="dp-muted" style={{ marginTop: 8, fontSize: 13, lineHeight: 1.45 }}>
               <div>
                 jobId: <span className="dp-mono">{unifiedJob.jobId}</span>
-                {unifiedJob.lastErrorCode ? (
+                {unifiedJob.lastErrorCode && !autoResumePending ? (
                   <>
                     {" "}
                     · error: <span className="dp-mono">{unifiedJob.lastErrorCode}</span>

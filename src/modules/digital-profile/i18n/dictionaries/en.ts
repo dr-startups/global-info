@@ -485,6 +485,8 @@ export const en: Dictionary = {
     noEmptySlides: "No empty slides",
   },
   unified: {
+    autoResumeWaiting: "Collection continues: the system will resume on its own, no action needed.",
+    autoResumeAt: "Next attempt at {time}",
     downloadPdf: "Download PDF",
     downloadPptx: "Download PPTX",
     downloadContactSheet: "Download contact sheet",

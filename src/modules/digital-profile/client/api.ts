@@ -1380,6 +1380,10 @@ export type UnifiedCollectionJobStatus = {
   } | null;
   /** Server-calculated — never trust a client-only flag. */
   recoveryAllowed?: boolean;
+  /** Конвейер вернётся к работе сам — вмешательство не требуется (шаг 14). */
+  autoResumePending?: boolean;
+  autoResumeAt?: string | null;
+  autoResumeStep?: string | null;
   recoveryBlockerReason?: string | null;
   recoveryReason?: string | null;
   fullAuditBlocked?: boolean;

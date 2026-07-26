@@ -201,7 +201,27 @@ export type UnifiedCollectionJob = {
    */
   nextPollAt?: string | null;
   /** Bounded backoff attempt counter for persisted WAITING polls. */
+  /**
+   * Сколько опросов Arsenkin подряд прошло **без продвижения** (шаг 14).
+   *
+   * Раньше это был счётчик всех опросов, включая те, где провайдер честно
+   * работал, — и он исчерпывался на здоровом прогоне. Считается то, что
+   * означает беду: тишина со стороны провайдера.
+   */
   pollAttempt?: number;
+  /**
+   * Начало ожидания обогащения (ISO). Ограничивает общий срок и **не
+   * сбрасывается** при автоматическом возобновлении: иначе ограничения не было
+   * бы вовсе (шаг 14).
+   */
+  enrichmentWaitStartedAt?: string | null;
+  /** Замер продвижения на прошлом опросе — с ним сравнивается текущий. */
+  enrichmentProgressMark?: {
+    terminalAgents: number;
+    ingestedAgents: number;
+    doneTasks: number;
+    observations: number;
+  } | null;
 };
 
 export const FIRST36_PLANNED_SUPPORTED_SURFACES = [
