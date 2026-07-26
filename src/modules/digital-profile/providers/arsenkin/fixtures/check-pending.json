@@ -1,5 +1,6 @@
 {
-  "task_id": "3944",
-  "status": "running",
-  "progress": 40
+  "code": "TASK_STATUS",
+  "status": "process",
+  "progress": 5,
+  "msg": "Статус состояния задачи!"
 }

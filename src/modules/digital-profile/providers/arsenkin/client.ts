@@ -95,7 +95,8 @@ export function isRecognizedCheckShape(raw: Record<string, unknown>): boolean {
   if (raw.result != null) return true;
   const status = String(raw.status ?? raw.state ?? raw.code ?? "").toLowerCase();
   if (!status) return false;
-  return /done|ready|result|queue|wait|run|work|progress|error|cancel|fail/.test(status);
+  // `process` — наблюдённое значение живого API, см. фикстуру check-pending.json.
+  return /done|ready|result|queue|wait|run|work|process|progress|error|cancel|fail/.test(status);
 }
 
 export function hashArsenkinRequest(body: unknown): string {

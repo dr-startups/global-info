@@ -351,7 +351,9 @@ async function fileRelease(caseId: string, ownerId: string): Promise<void> {
   await filePatch(caseId, { leaseOwnerId: null, leaseUntil: null });
 }
 
-async function fileListResumable(): Promise<Array<{ caseId: string; stage: UnifiedCollectionStage }>> {
+async function fileListResumable(
+  now: Date = new Date()
+): Promise<Array<{ caseId: string; stage: UnifiedCollectionStage }>> {
   const root = rootDir();
   if (!existsSync(root)) return [];
   const out: Array<{ caseId: string; stage: UnifiedCollectionStage }> = [];
@@ -362,9 +364,23 @@ async function fileListResumable(): Promise<Array<{ caseId: string; stage: Unifi
     if (fixtures.has(caseId)) continue;
     const job = await fileLoad(caseId);
     if (!job || !isResumableJob(job)) continue;
+    // Пауза до следующего опроса соблюдается и здесь — см. `dbListResumable`.
+    if (!isUnifiedPollDue(job.nextPollAt ?? null, now)) continue;
     out.push({ caseId, stage: job.stage });
   }
   return out;
+}
+
+/**
+ * Настало ли время следующего опроса.
+ *
+ * Отсутствие отметки означает «опрашивать можно»: так ведут себя только что
+ * созданные и никогда не опрошенные джобы.
+ */
+export function isUnifiedPollDue(nextPollAt: string | Date | null, now: Date): boolean {
+  if (!nextPollAt) return true;
+  const at = nextPollAt instanceof Date ? nextPollAt.getTime() : Date.parse(nextPollAt);
+  return !Number.isFinite(at) || at <= now.getTime();
 }
 
 
@@ -707,7 +723,9 @@ async function dbRelease(caseId: string, ownerId: string): Promise<void> {
   });
 }
 
-async function dbListResumable(): Promise<Array<{ caseId: string; stage: UnifiedCollectionStage }>> {
+async function dbListResumable(
+  now: Date = new Date()
+): Promise<Array<{ caseId: string; stage: UnifiedCollectionStage }>> {
   const prisma = await getPrisma();
   const rows = await prisma.unifiedCollectionJobRecord.findMany({
     where: {
@@ -719,6 +737,15 @@ async function dbListResumable(): Promise<Array<{ caseId: string; stage: Unified
       // молча отправлял **платные** задачи Arsenkin по данным смока. Поймано на
       // живом стенде — две задачи за пять минут.
       case: { isFixture: false },
+      // Пауза до следующего опроса обязана здесь соблюдаться. Без этого условия
+      // стадию дёргал каждый оборот обслуживания — раз в пять секунд, — и
+      // бюджет ожидания Arsenkin сгорал за две с половиной минуты вместо
+      // восемнадцати: замер на живом прогоне дал 16 опросов в минуту при
+      // `nextPollAt`, отстоящем на 15–30 секунд. Инструменты Arsenkin идут
+      // минутами, поэтому прогон объявлял застой на исправном провайдере и
+      // предлагал платный пересбор. Пауза, которую вычисляют и не соблюдают, —
+      // это не пауза.
+      OR: [{ nextPollAt: null }, { nextPollAt: { lte: now } }],
     },
     select: { caseId: true, stage: true },
   });
