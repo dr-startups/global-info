@@ -7,6 +7,7 @@ import type { FragmentKey, SectionType } from "../contracts";
 import type { ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
+import { collapseEmptySurfaceSlots } from "../empty-surface-collapse";
 import {
   buildPageEvidenceView,
   claimText,
@@ -54,7 +55,9 @@ export function buildRelatedQueriesFragment(
       noDataReason: "no-related",
     });
   });
-  return { slides, status: "READY" };
+  // Пустая поверхность занимает одну страницу, а не три одинаковые (шаг 15, E2).
+  const collapsed = collapseEmptySurfaceSlots(slides);
+  return { slides: collapsed.slides, status: "READY" };
 }
 
 // ---------------------------------------------------------------------------

@@ -181,3 +181,55 @@ describe("действия не предлагаются во время раб�
     );
   });
 });
+
+/**
+ * Шаг 15, E9 (docs/rework/15-final-regression.md).
+ *
+ * К концу живого прогона в предупреждениях набралось 368 строк, в основном
+ * дословные повторы `arsenkin-awaiting-ingest`. Повтор одного утверждения
+ * сведений не добавляет, а найти среди них важное нельзя.
+ */
+describe("предупреждения прогона — список фактов, а не журнал", () => {
+  it("дословные повторы схлопываются", async () => {
+    const { normalizeJobWarnings } = await import(
+      "../../src/modules/digital-profile/services/unified-collection-job-store"
+    );
+    const noisy = Array.from({ length: 50 }, () => "arsenkin-awaiting-ingest");
+    expect(normalizeJobWarnings(noisy)).toEqual(["arsenkin-awaiting-ingest"]);
+  });
+
+  it("разные значения одного префикса — разные факты", async () => {
+    const { normalizeJobWarnings } = await import(
+      "../../src/modules/digital-profile/services/unified-collection-job-store"
+    );
+    expect(
+      normalizeJobWarnings(["arsenkin-scheduled:A", "arsenkin-scheduled:B"])
+    ).toEqual(["arsenkin-scheduled:A", "arsenkin-scheduled:B"]);
+  });
+
+  it("остаётся последнее вхождение, а не первое", async () => {
+    const { normalizeJobWarnings } = await import(
+      "../../src/modules/digital-profile/services/unified-collection-job-store"
+    );
+    // Порядок отражает ход прогона: свежая запись информативнее старой.
+    expect(normalizeJobWarnings(["a", "b", "a"])).toEqual(["b", "a"]);
+  });
+
+  it("список ограничен сверху и хранит свежие", async () => {
+    const { normalizeJobWarnings, MAX_JOB_WARNINGS } = await import(
+      "../../src/modules/digital-profile/services/unified-collection-job-store"
+    );
+    const many = Array.from({ length: MAX_JOB_WARNINGS + 40 }, (_, i) => `w${i}`);
+    const out = normalizeJobWarnings(many);
+    expect(out).toHaveLength(MAX_JOB_WARNINGS);
+    expect(out.at(-1)).toBe(`w${MAX_JOB_WARNINGS + 39}`);
+  });
+
+  it("пустое и мусорное не роняет", async () => {
+    const { normalizeJobWarnings } = await import(
+      "../../src/modules/digital-profile/services/unified-collection-job-store"
+    );
+    expect(normalizeJobWarnings(null)).toEqual([]);
+    expect(normalizeJobWarnings(["", "  ", "x"])).toEqual(["x"]);
+  });
+});

@@ -778,12 +778,51 @@ export async function findOrCreateUnifiedCollectionJob(input: {
   return getUnifiedCollectionJobStoreMode() === "db" ? dbFindOrCreate(input) : fileFindOrCreate(input);
 }
 
+/**
+ * Предупреждения прогона: список фактов, а не журнал (шаг 15, E9).
+ *
+ * Каждый тик дописывал свои строки к прежним, и к концу живого прогона их
+ * набралось 368 — в основном дословные повторы `arsenkin-awaiting-ingest`.
+ * Повтор одного и того же утверждения не добавляет сведений, а найти среди них
+ * важное нельзя.
+ *
+ * Дубли схлопываются с сохранением **последнего** вхождения: порядок отражает
+ * ход прогона, и свежая запись информативнее старой. Разные значения одного
+ * префикса (`arsenkin-scheduled:AGENT_A` и `…_B`) — разные факты и остаются оба.
+ */
+export const MAX_JOB_WARNINGS = 200;
+
+export function normalizeJobWarnings(
+  warnings: readonly string[] | null | undefined,
+  max: number = MAX_JOB_WARNINGS
+): string[] {
+  const list = (warnings ?? []).map((w) => String(w ?? "").trim()).filter(Boolean);
+  const seen = new Set<string>();
+  const deduped: string[] = [];
+  // Идём с конца: так остаётся последнее вхождение каждой строки.
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const w = list[i]!;
+    if (seen.has(w)) continue;
+    seen.add(w);
+    deduped.push(w);
+  }
+  deduped.reverse();
+  return deduped.length > max ? deduped.slice(deduped.length - max) : deduped;
+}
+
 export async function patchUnifiedCollectionJob(
   caseId: string,
   patch: Partial<UnifiedCollectionJob>
 ): Promise<UnifiedCollectionJob | null> {
+  // Нормализация на границе записи: иначе её обязан помнить каждый вызывающий,
+  // а их десятки.
+  const normalized: Partial<UnifiedCollectionJob> = patch.warnings
+    ? { ...patch, warnings: normalizeJobWarnings(patch.warnings) }
+    : patch;
   const job =
-    getUnifiedCollectionJobStoreMode() === "db" ? await dbPatch(caseId, patch) : await filePatch(caseId, patch);
+    getUnifiedCollectionJobStoreMode() === "db"
+      ? await dbPatch(caseId, normalized)
+      : await filePatch(caseId, normalized);
   if (job && patch.stage) await syncCaseStatusToStage(caseId, patch.stage);
   return job;
 }

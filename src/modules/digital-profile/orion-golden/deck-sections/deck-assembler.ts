@@ -24,7 +24,12 @@ import {
   isAllowedLayoutVariant,
   type DeckTemplateId,
 } from "./template-registry";
-import { CANONICAL_SLOT_IDS, EXPLICIT_SLOT_MERGES } from "./canonical-slots";
+import {
+  CANONICAL_BASE_SLOTS,
+  CANONICAL_SLOT_IDS,
+  EXPLICIT_SLOT_MERGES,
+} from "./canonical-slots";
+import { emptySurfaceMergeReason } from "./empty-surface-collapse";
 
 export type AssemblyRejection = {
   fragmentKey: string;
@@ -286,9 +291,32 @@ export function assembleDeck(input: {
   // Canonical slot coverage: physically present slots plus slots covered via
   // an explicit reviewed merge whose target slot is present.
   const presentSlotIds = new Set(slideRefs.filter((s) => !s.isContinuation).map((s) => s.baseSlotId));
-  const mergedSlots = EXPLICIT_SLOT_MERGES.filter(
-    (m) => !presentSlotIds.has(m.baseSlotId) && presentSlotIds.has(m.mergedInto)
+  // Пустая поверхность печатает статус один раз, а остальные её слоты
+  // сворачиваются в эту страницу (шаг 15, E2). Слот при этом не теряется:
+  // он остаётся в `mergedSlots` с причиной и учитывается в покрытии, поэтому
+  // сверка по-прежнему отвечает за каждую каноническую позицию.
+  const emptySlotIds = new Set(
+    rendererSlides.filter((s) => s.emptyStateReason).map((s) => s.baseSlotId)
   );
+  const dynamicMerges: typeof EXPLICIT_SLOT_MERGES = [];
+  for (const slot of CANONICAL_BASE_SLOTS) {
+    if (presentSlotIds.has(slot.slotId)) continue;
+    const host = CANONICAL_BASE_SLOTS.find(
+      (s) => s.fragmentKey === slot.fragmentKey && emptySlotIds.has(s.slotId)
+    );
+    if (!host) continue;
+    dynamicMerges.push({
+      baseSlotId: slot.slotId,
+      mergedInto: host.slotId,
+      reason: emptySurfaceMergeReason(),
+    });
+  }
+  const mergedSlots = [
+    ...EXPLICIT_SLOT_MERGES.filter(
+      (m) => !presentSlotIds.has(m.baseSlotId) && presentSlotIds.has(m.mergedInto)
+    ),
+    ...dynamicMerges,
+  ];
   const mergedIds = new Set(mergedSlots.map((m) => m.baseSlotId));
   const coveredCanonical = CANONICAL_SLOT_IDS.filter(
     (id) => presentSlotIds.has(id) || mergedIds.has(id)
