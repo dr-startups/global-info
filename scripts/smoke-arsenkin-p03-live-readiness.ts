@@ -262,17 +262,27 @@ describe("arsenkin P0.3 live readiness", () => {
     );
   });
 
+  // Бюджет проверяется на плане, который его действительно превышает.
+  // Канареечная стадия для этого больше не годится: в ней один запрос
+  // (см. проверку 19), и «1 > 1» не выполняется ни при каком maxNewTasks ≥ 1.
+  // FIRST36_STAGE1 на тех же запросах даёт семь.
   it("16. plannedNewTasks > maxNewTasks blocks", () => {
-    const plan = buildArsenkinExecutionPlan(basePlanInput({ maxNewTasks: 1, maxEstimatedLimits: 10 }));
+    const plan = buildArsenkinExecutionPlan(
+      basePlanInput({ stage: "FIRST36_STAGE1", maxNewTasks: 1, maxEstimatedLimits: 10 })
+    );
+    assert.ok(plan.requests.length > 1);
     const budget = evaluateExecutionPlanBudget(plan);
     assert.equal(budget.ok, false);
     assert.ok(budget.blockers.some((b) => /plannedNewTasks/.test(b)));
   });
 
   it("17. estimatedLimitsTotal > maxEstimatedLimits blocks", () => {
-    const plan = buildArsenkinExecutionPlan(basePlanInput({ maxNewTasks: 10, maxEstimatedLimits: 1 }));
+    const plan = buildArsenkinExecutionPlan(
+      basePlanInput({ stage: "FIRST36_STAGE1", maxNewTasks: 10, maxEstimatedLimits: 1 })
+    );
     const budget = evaluateExecutionPlanBudget(plan);
     assert.equal(budget.ok, false);
+    assert.ok(budget.blockers.some((b) => /estimatedLimitsTotal/.test(b)));
   });
 
   it("18. unknown cost blocks by default", () => {
@@ -288,12 +298,25 @@ describe("arsenkin P0.3 live readiness", () => {
     assert.equal(budget.ok, false);
   });
 
-  it("19. SUGGEST_RU_CANARY has exactly 2 requests Yandex+Google RU", () => {
+  // Проверка описывала контракт до `abc580e` («одна каноническая строка на
+  // задачу suggest»). С тех пор Google suggest требует **латинский** запрос —
+  // кириллицу Arsenkin отклоняет, — а канареечная стадия RU-only и латинских
+  // запросов не имеет вовсе (`queriesUae: []`, проверка 20). Значит один
+  // запрос здесь не потеря покрытия, а следствие устройства стадии.
+  //
+  // В боевой стадии Google RU suggest на месте: `buildArsenkinSubjectQueryPlan`
+  // получает латинский вариант либо из алиаса, либо транслитерацией, и
+  // FIRST36_STAGE1 на тех же данных содержит `suggest:GOOGLE:RU`.
+  it("19. SUGGEST_RU_CANARY: один запрос Yandex RU (Google требует латиницу)", () => {
     const plan = buildArsenkinExecutionPlan(basePlanInput());
-    assert.equal(plan.requests.length, 2);
     assert.deepEqual(
-      plan.requests.map((r) => `${r.tool}:${r.engine}:${r.region}`).sort(),
-      ["suggest:GOOGLE:RU", "suggest:YANDEX:RU"].sort()
+      plan.requests.map((r) => `${r.tool}:${r.engine}:${r.region}`),
+      ["suggest:YANDEX:RU"]
+    );
+    const stage1 = buildArsenkinExecutionPlan(basePlanInput({ stage: "FIRST36_STAGE1" }));
+    assert.ok(
+      stage1.requests.some((r) => `${r.tool}:${r.engine}:${r.region}` === "suggest:GOOGLE:RU"),
+      "боевая стадия обязана содержать Google RU suggest"
     );
   });
 
@@ -358,9 +381,12 @@ describe("arsenkin P0.3 live readiness", () => {
     assert.match(cli, /executeCanonicalArsenkinStage/);
   });
 
-  it("26-28. DB integration mandatory profile", { skip: true }, () => {
-    // Real PASS requires test PostgreSQL — recorded as BLOCKED in readiness artifact.
-    assert.fail("unreachable");
+  // Заготовка без тела: проверки 26–28 профиля БД так и не были написаны, а не
+  // выключены. Оставлена намеренно и названа заготовкой, чтобы её не считали
+  // существующей проверкой, временно отключённой. Профиль БД сам по себе
+  // измеряется артефактом `db-integration-summary.json` ниже.
+  it("26-28. DB integration mandatory profile [ЗАГОТОВКА, тела нет]", { skip: true }, () => {
+    /* Проверка не написана; см. комментарий выше. */
   });
 
   it("29. duplicate audit finds groups", () => {
@@ -488,6 +514,9 @@ describe("arsenkin P0.3 live readiness", () => {
         2
       )}\n`
     );
-    assert.equal(readiness.verdict, "BLOCKED");
+    // Вердикт следует за окружением, а не задан константой: прежняя строка
+    // требовала ровно `BLOCKED`, и смок падал бы именно там, где профиль БД
+    // наконец настроен, — то есть наказывал за исправление.
+    assert.equal(readiness.verdict, hasRealDb ? "LIVE_READY_PENDING_HUMAN_EXECUTE" : "BLOCKED");
   });
 });
