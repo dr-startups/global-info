@@ -4,8 +4,37 @@
  *
  * Separately: durable poll of already-submitted ProviderTasks may install a narrow
  * check/get-only scope via withExistingExternalTaskPollAuthorization (never /set).
+ *
+ * ---
+ *
+ * Область видимости — цепочка вызовов, а не процесс (шаг 03, корень).
+ *
+ * Раньше авторизация жила в переменных уровня модуля, и это делало **весь
+ * процесс однопоточным по отношению к Arsenkin**: пока один из пяти агентов
+ * отправлял задачи, durable-поллер любого другого получал
+ * `arsenkin-poll-auth-blocked:live-session-active`. Отказ уходил в бюджет
+ * поллинга, и джоба умирала при полностью успешном сборе — воспроизводимо,
+ * дважды подряд.
+ *
+ * Замысел взаимоисключения («poll не выполняется внутри платной /set-сессии,
+ * чтобы бюджеты оставались честными») правилен. Неверна была **область**: она
+ * должна покрывать одну цепочку вызовов, а не всё, что происходит в процессе.
+ * `AsyncLocalStorage` даёт ровно это, и подписи `with…(auth, fn)` уже написаны
+ * в той форме, которая для него и нужна, — ни один вызывающий не меняется.
+ *
+ * Побочно закрывается дыра, которой процессная переменная и была: при открытой
+ * live-сессии `assertLiveNetworkAllowed` пропускала `check`/`get` **без единой
+ * проверки**, в том числе из совершенно другого кейса и на произвольный
+ * `taskId`. Теперь такой вызов сессии не видит и проходит через узкую
+ * poll-проверку или блокируется.
+ *
+ * Fail-closed сохранён двумя способами: сессия помечается закрытой по выходу из
+ * `fn`, поэтому отпущенная (не дождавшаяся) асинхронная работа авторизации уже
+ * не видит — как и при обнулении переменной; а отсутствие сессии по-прежнему
+ * означает отказ, а не разрешение.
  */
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 import { hashProviderRequest } from "./provider-task-store";
 
@@ -42,20 +71,38 @@ type ActiveLiveSession = {
   auth: LiveExecutionAuthorization;
   budget: LiveAuthBudgetState;
   countedHashes: Set<string>;
+  /** Взводится по выходу из `withLiveAuthorization`: отпущенная работа авторизации не наследует. */
+  closed: boolean;
 };
 
-let active: ActiveLiveSession | null = null;
-let activePoll: ExistingExternalTaskPollAuthorization | null = null;
+type ActivePollScope = {
+  auth: ExistingExternalTaskPollAuthorization;
+  closed: boolean;
+};
+
+const liveSessionStore = new AsyncLocalStorage<ActiveLiveSession>();
+const pollScopeStore = new AsyncLocalStorage<ActivePollScope>();
+
+function activeSession(): ActiveLiveSession | null {
+  const s = liveSessionStore.getStore();
+  return s && !s.closed ? s : null;
+}
+
+function activePollScope(): ExistingExternalTaskPollAuthorization | null {
+  const s = pollScopeStore.getStore();
+  return s && !s.closed ? s.auth : null;
+}
 
 export function getActiveLiveAuthorization(): LiveExecutionAuthorization | null {
-  return active?.auth ?? null;
+  return activeSession()?.auth ?? null;
 }
 
 export function getActiveExistingTaskPollAuthorization(): ExistingExternalTaskPollAuthorization | null {
-  return activePoll;
+  return activePollScope();
 }
 
 export function getActiveLiveBudget(): LiveAuthBudgetState | null {
+  const active = activeSession();
   if (!active) return null;
   return {
     createdNewTasks: active.budget.createdNewTasks,
@@ -72,18 +119,22 @@ export async function withLiveAuthorization<T>(
   if (!auth.liveConfirmed) {
     throw new Error("live-authorization-requires-liveConfirmed");
   }
-  if (active) {
+  // Вложение запрещено в пределах цепочки: у вложенной сессии был бы собственный
+  // бюджет, и внешний перестал бы что-либо ограничивать. Параллельная цепочка
+  // (другой агент, другой кейс) — не вложение и не мешает.
+  if (activeSession()) {
     throw new Error("live-authorization-already-active");
   }
-  active = {
+  const session: ActiveLiveSession = {
     auth,
     budget: { createdNewTasks: 0, estimatedLimitsSpent: 0, countedRequestHashes: [] },
     countedHashes: new Set(),
+    closed: false,
   };
   try {
-    return await fn();
+    return await liveSessionStore.run(session, fn);
   } finally {
-    active = null;
+    session.closed = true;
   }
 }
 
@@ -114,6 +165,7 @@ export function assertLiveSetAllowed(input: {
   estimatedLimits: number | null;
   allowUnknownCost?: boolean;
 }): string {
+  const active = activeSession();
   if (!active) {
     throw new Error("arsenkin-live-set-blocked:no-live-authorization");
   }
@@ -173,8 +225,9 @@ export function assertLiveNetworkAllowed(
   kind: string,
   extras?: { taskId?: string | number | null; requestUrl?: string | null }
 ): void {
-  if (active) return;
+  if (activeSession()) return;
 
+  const activePoll = activePollScope();
   if (kind === "check" || kind === "get") {
     if (!activePoll) {
       throw new Error(`arsenkin-live-network-blocked:no-authorization:${kind}`);
@@ -308,19 +361,21 @@ export async function withExistingExternalTaskPollAuthorization<T>(
   input: ExistingExternalTaskPollAuthInput,
   fn: () => Promise<T>
 ): Promise<T> {
-  if (activePoll) {
+  if (activePollScope()) {
     throw new Error("arsenkin-poll-auth-already-active");
   }
   // Poll scope must not run nested inside a paid live-set session (keeps budgets honest).
-  if (active) {
+  // Проверка про **вложенность**, а не про процесс: параллельная отправка другого
+  // агента этой цепочке не родитель и опрашивать не мешает (шаг 03).
+  if (activeSession()) {
     throw new Error("arsenkin-poll-auth-blocked:live-session-active");
   }
   const auth = assertExistingExternalTaskPollAuthorized(input);
-  activePoll = auth;
+  const scope: ActivePollScope = { auth, closed: false };
   try {
-    return await fn();
+    return await pollScopeStore.run(scope, fn);
   } finally {
-    activePoll = null;
+    scope.closed = true;
   }
 }
 

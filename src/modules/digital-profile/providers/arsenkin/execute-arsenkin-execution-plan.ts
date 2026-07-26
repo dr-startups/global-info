@@ -300,7 +300,24 @@ export async function executeArsenkinExecutionPlan(input: {
     };
   };
 
-  if (getActiveLiveAuthorization()) {
+  // Сессия уже открыта выше по этой же цепочке — переиспользуем её вместо
+  // вложенной, у которой был бы собственный бюджет.
+  //
+  // Пока авторизация жила в переменной модуля, «уже открыта» значило «где-то в
+  // процессе», и план одного агента мог поехать под авторизацией другого: до
+  // отказа `reportRunId-mismatch` дело доходило только на первом же /set. С
+  // областью видимости по цепочке (шаг 03) сюда попадает лишь настоящее
+  // вложение — но чужую авторизацию всё равно называем вслух и сразу.
+  const outer = getActiveLiveAuthorization();
+  if (outer) {
+    if (outer.reportRunId !== input.authorization.reportRunId) {
+      throw new Error(
+        `live-authorization-foreign-run outer=${outer.reportRunId} plan=${input.authorization.reportRunId}`
+      );
+    }
+    if (outer.confirmedPlanDigest !== input.authorization.confirmedPlanDigest) {
+      throw new Error("live-authorization-foreign-plan-digest");
+    }
     return run();
   }
   return withLiveAuthorization(input.authorization, run);

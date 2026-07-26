@@ -84,7 +84,7 @@ gpt-5.5 — каждый вызов клиентского нарратива п
 |---|---|---|
 | 01 | [Целостность доказательств: запрет подмены на mock](01-evidence-integrity-no-mock-substitution.md) | СДЕЛАНО |
 | 02 | [Транспорт GPT и контракт модели](02-gpt-transport-and-model-contract.md) | СДЕЛАНО |
-| 03 | [Глобальный синглтон авторизации Arsenkin](03-arsenkin-live-auth-singleton.md) | ЧАСТИЧНО — симптом купирован и покрыт тестом, корень остаётся |
+| 03 | [Глобальный синглтон авторизации Arsenkin](03-arsenkin-live-auth-singleton.md) | СДЕЛАНО — область авторизации стала цепочкой вызовов вместо процесса |
 | 04 | [Покрытие провайдеров и разрыв в compliance](04-provider-coverage-and-compliance-gap.md) | СДЕЛАНО — решение по комплаенсу: OpenSanctions |
 | 05 | [Синтез claim'ов и вход GPT](05-claim-synthesis-and-gpt-input.md) | СДЕЛАНО в шагах 13/C |
 | 06 | [Тематизация: ложные срабатывания регексов](06-theme-classification-false-positives.md) | СДЕЛАНО |
