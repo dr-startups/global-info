@@ -17,6 +17,7 @@ import {
   type ArsenkinAgentTerminalKind,
 } from "./arsenkin-enrichment-state";
 import { applyExactlyOnceIngest } from "./arsenkin-exactly-once-ingest";
+import { loadIngestLedger, saveIngestLedger } from "./arsenkin-ingest-ledger";
 import { adaptArsenkinToolResponse } from "./arsenkin-tool-adapters";
 import { agentNameFromEnrichmentRunId } from "./unified-enrichment-sibling-remap";
 import {
@@ -976,15 +977,43 @@ export async function runDurableArsenkinEnrichmentTick(input: {
     caseId: job.caseId,
     unifiedJobId: job.unifiedJobId,
   });
+  // Журнал принятых нагрузок читается из своей таблицы, а не из блоба
+  // состояния (шаг 12.4f). Прогоны, начатые до этой правки, переносят свой
+  // журнал при первом чтении — иначе повторный приём той же нагрузки прошёл бы
+  // как новый.
+  const ledger = await loadIngestLedger({
+    caseId: job.caseId,
+    unifiedJobId: job.unifiedJobId,
+    fromBlob: {
+      ingestedResultHashes: previousState.ingestedResultHashes,
+      resultHashToObservationIds: previousState.resultHashToObservationIds,
+      externalTaskIdToResultHash: previousState.externalTaskIdToResultHash,
+    },
+  }).catch(() => null);
   const exactly = applyExactlyOnceIngest({
     caseId: job.caseId,
     unifiedJobId: job.unifiedJobId,
     previousState,
+    ledger,
     previousObservations: [],
     candidates: candidateObservations,
     agents,
   });
   warnings.push(...exactly.warnings);
+  // Запись только добавляет строки: принятая нагрузка не перестаёт быть
+  // принятой, а повтор тика ничего не портит.
+  await saveIngestLedger({
+    caseId: job.caseId,
+    unifiedJobId: job.unifiedJobId,
+    ledger: exactly.ledger,
+  }).catch((err) => {
+    // Молчать здесь нельзя: без журнала следующий тик примет ту же нагрузку
+    // повторно. Прогон при этом не роняем — наблюдения уже сохранены.
+    console.error(
+      "[arsenkin] журнал приёма не записан:",
+      err instanceof Error ? err.message : err
+    );
+  });
 
   if (exactly.conflict) {
     return {

@@ -11,8 +11,11 @@ import {
   type ArsenkinEnrichmentState,
   type ArsenkinIngestedObservation,
 } from "./arsenkin-enrichment-state";
+import type { ArsenkinIngestLedger } from "./arsenkin-ingest-ledger";
 
 export type ExactlyOnceIngestResult = {
+  /** Журнал после приёма — его и сохраняет вызывающий (шаг 12.4f). */
+  ledger: ArsenkinIngestLedger;
   observations: ArsenkinIngestedObservation[];
   newlyIngestedCount: number;
   skippedDuplicateCount: number;
@@ -54,6 +57,12 @@ export function applyExactlyOnceIngest(input: {
   caseId: string;
   unifiedJobId: string;
   previousState?: ArsenkinEnrichmentState | null;
+  /**
+   * Журнал принятых нагрузок. Передаётся отдельно, потому что живёт отдельно
+   * (шаг 12.4f): прогресс выводится из строк задач, а это единственная запись
+   * о том, что уже принято. Когда не передан — берётся из блоба, как прежде.
+   */
+  ledger?: ArsenkinIngestLedger | null;
   previousObservations?: ArsenkinIngestedObservation[];
   candidates: ArsenkinIngestedObservation[];
   agents?: ArsenkinAgentProgress[];
@@ -69,9 +78,14 @@ export function applyExactlyOnceIngest(input: {
           unifiedJobId: input.unifiedJobId,
         });
 
-  const ingested = new Set(base.ingestedResultHashes);
-  const hashToIds = { ...base.resultHashToObservationIds };
-  const externalTaskHash = { ...base.externalTaskIdToResultHash };
+  const source = input.ledger ?? {
+    ingestedResultHashes: base.ingestedResultHashes,
+    resultHashToObservationIds: base.resultHashToObservationIds,
+    externalTaskIdToResultHash: base.externalTaskIdToResultHash,
+  };
+  const ingested = new Set(source.ingestedResultHashes);
+  const hashToIds = { ...source.resultHashToObservationIds };
+  const externalTaskHash = { ...source.externalTaskIdToResultHash };
   const kept: ArsenkinIngestedObservation[] = [...(input.previousObservations ?? [])];
   const keptKeys = new Set(kept.map(observationContentKey));
   let newlyIngestedCount = 0;
@@ -86,6 +100,11 @@ export function applyExactlyOnceIngest(input: {
 
     if (ext && externalTaskHash[ext] && externalTaskHash[ext] !== resultHash) {
       return {
+        ledger: {
+          ingestedResultHashes: [...ingested],
+          resultHashToObservationIds: hashToIds,
+          externalTaskIdToResultHash: externalTaskHash,
+        },
         observations: kept,
         newlyIngestedCount,
         skippedDuplicateCount,
@@ -131,6 +150,11 @@ export function applyExactlyOnceIngest(input: {
   rebuilt.enrichmentObservationCount = kept.length;
 
   return {
+    ledger: {
+      ingestedResultHashes: [...ingested],
+      resultHashToObservationIds: hashToIds,
+      externalTaskIdToResultHash: externalTaskHash,
+    },
     observations: kept,
     newlyIngestedCount,
     skippedDuplicateCount,
