@@ -63,6 +63,21 @@ export function createPrismaProviderTaskStore(): ProviderTaskStore {
       });
       return row ? map(row) : null;
     },
+    async findDoneByRequestHashInRuns(reportRunIds, requestHash) {
+      const runIds = [...reportRunIds].filter(Boolean);
+      if (runIds.length === 0) return null;
+      const row = await prisma.providerTask.findFirst({
+        where: {
+          provider: "arsenkin",
+          requestHash,
+          reportRunId: { in: runIds },
+          state: "DONE",
+          NOT: { responseJson: { equals: Prisma.DbNull } },
+        },
+        orderBy: { completedAt: "desc" },
+      });
+      return row ? map(row) : null;
+    },
     async findById(id) {
       const row = await prisma.providerTask.findUnique({ where: { id } });
       return row ? map(row) : null;

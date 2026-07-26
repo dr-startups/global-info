@@ -195,12 +195,19 @@ export async function runArsenkinCaseAgentWorker(input: {
 
       const auth = authorizationFromPlan(built.plan);
       const waitTimeoutMs = caseAgentWaitTimeoutMs(job.tools);
+      // Прогоны того же сбора: если такой же запрос уже оплачен и выполнен в
+      // соседнем прогоне, берётся его нагрузка вместо второго платного вызова.
+      // Прогон агента заводится заново при каждом дозапуске, и без этого каждый
+      // инструмент уходил в Arsenkin по два-три раза (замер: 6 задач `ai-serp`
+      // на 3 хеша).
+      const reuseFromRunIds = await siblingEnrichmentRunIds(job.caseId, job.enrichmentReportRunId);
       const collected = await executeArsenkinExecutionPlan({
         plan: built.plan,
         authorization: auth,
         client,
         store: createPrismaProviderTaskStore(),
         waitTimeoutMs,
+        reuseFromRunIds,
         onProgress: async (info) => {
           const label = `${info.tool}${info.engine ? `/${info.engine}` : ""}${
             info.region ? `:${info.region}` : ""
@@ -526,4 +533,22 @@ export async function enqueueArsenkinCaseAgentProviderTasks(_input: {
   return { setCalls: 0 };
 }
 
-
+/**
+ * Прогоны обогащения того же сбора, кроме текущего.
+ *
+ * Список лежит в джобе (`enrichmentRunIds`) — там же, где его ведёт тик. Сбой
+ * чтения означает «переиспользовать нечего», то есть прежнее поведение: платный
+ * вызов. Ошибиться в эту сторону безопаснее, чем принять чужую нагрузку за свою.
+ */
+async function siblingEnrichmentRunIds(
+  caseId: string,
+  currentRunId: string
+): Promise<readonly string[]> {
+  try {
+    const { loadUnifiedCollectionJob } = await import("../unified-collection-job-store");
+    const job = await loadUnifiedCollectionJob(caseId);
+    return (job?.enrichmentRunIds ?? []).filter((id) => id && id !== currentRunId);
+  } catch {
+    return [];
+  }
+}

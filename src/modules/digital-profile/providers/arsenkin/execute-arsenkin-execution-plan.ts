@@ -65,7 +65,7 @@ async function completePlannedRequest(
   client: ArsenkinClient,
   store: ProviderTaskStore,
   req: ArsenkinExecutionRequest,
-  meta: { caseId: string; reportRunId: string },
+  meta: { caseId: string; reportRunId: string; reuseFromRunIds?: readonly string[] },
   waitTimeoutMs: number
 ): Promise<{ payload: Record<string, unknown>; task: ProviderTaskRecord }> {
   const recomputed = hashProviderRequest(req.requestJson);
@@ -80,6 +80,7 @@ async function completePlannedRequest(
       data: req.requestJson.data,
       caseId: meta.caseId,
       reportRunId: meta.reportRunId,
+      reuseFromRunIds: meta.reuseFromRunIds,
     },
     waitTimeoutMs
   );
@@ -185,6 +186,11 @@ export async function executeArsenkinExecutionPlan(input: {
   client: ArsenkinClient;
   store: ProviderTaskStore;
   waitTimeoutMs?: number;
+  /**
+   * Прогоны того же сбора, чьи оплаченные ответы можно переиспользовать вместо
+   * повторного платного вызова (см. `EnsureArsenkinTaskInput.reuseFromRunIds`).
+   */
+  reuseFromRunIds?: readonly string[];
   /** Optional progress hook (CaseAgent UI heartbeat). */
   onProgress?: (info: {
     index: number;
@@ -232,7 +238,11 @@ export async function executeArsenkinExecutionPlan(input: {
         input.client,
         input.store,
         req,
-        { caseId: input.plan.caseId, reportRunId: input.plan.reportRunId },
+        {
+          caseId: input.plan.caseId,
+          reportRunId: input.plan.reportRunId,
+          reuseFromRunIds: input.reuseFromRunIds,
+        },
         waitTimeoutMs
       );
       taskIds.push(done.task.id);

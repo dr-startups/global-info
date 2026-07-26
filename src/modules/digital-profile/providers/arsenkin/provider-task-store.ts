@@ -44,6 +44,21 @@ export type ProviderTaskStore = {
   /** True for the database store; fixture stores intentionally avoid account DB state. */
   isPersistent?: boolean;
   findByRequestHash: (reportRunId: string, requestHash: string) => Promise<ProviderTaskRecord | null>;
+  /**
+   * Готовый ответ на тот же запрос в соседнем прогоне того же сбора.
+   *
+   * Дедупликация ограничена парой «прогон + хеш», а прогон агента заводится
+   * заново при каждом дозапуске. Один и тот же запрос уходил в Arsenkin как
+   * новый **платный**: замер на живом прогоне — 6 задач `ai-serp` на 3 хеша,
+   * 6 задач `suggest` на 3 хеша, то есть каждый инструмент оплачен дважды.
+   *
+   * Ищется только `DONE` с сохранённой нагрузкой: незавершённую переиспользовать
+   * нельзя — неизвестно, чем она кончится.
+   */
+  findDoneByRequestHashInRuns?: (
+    reportRunIds: readonly string[],
+    requestHash: string
+  ) => Promise<ProviderTaskRecord | null>;
   findById: (id: string) => Promise<ProviderTaskRecord | null>;
   upsertPending: (input: UpsertProviderTaskInput) => Promise<ProviderTaskRecord>;
   /**
@@ -102,6 +117,14 @@ export function createMemoryProviderTaskStore(): ProviderTaskStore {
     async findByRequestHash(reportRunId, requestHash) {
       const id = byHash.get(scope(reportRunId, requestHash));
       return id ? byId.get(id) ?? null : null;
+    },
+    async findDoneByRequestHashInRuns(reportRunIds, requestHash) {
+      for (const runId of reportRunIds) {
+        const id = byHash.get(scope(runId, requestHash));
+        const row = id ? byId.get(id) : null;
+        if (row && row.state === "DONE" && row.responseJson) return row;
+      }
+      return null;
     },
     async findById(id) {
       return byId.get(id) ?? null;

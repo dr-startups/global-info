@@ -23,6 +23,19 @@ export type EnsureArsenkinTaskInput = {
   submitLeaseMs?: number;
   /** Max /set attempts for RATE_LIMITED-without-externalTaskId. Default 5. */
   maxSubmitRetries?: number;
+  /**
+   * Прогоны того же сбора, ответы которых можно переиспользовать.
+   *
+   * Дедупликация ограничена парой «прогон + хеш», а прогон агента заводится
+   * заново при каждом дозапуске: тот же запрос уходил в Arsenkin как новый
+   * **платный**. Замер на живом прогоне: 6 задач `ai-serp` на 3 хеша, 6 задач
+   * `suggest` на 3 хеша — каждый инструмент оплачен дважды, и это ровно то, что
+   * заказчик увидел в личном кабинете Arsenkin.
+   *
+   * Пусто (или не задано) — прежнее поведение: сбор действительно новый, и
+   * данные должны быть свежими.
+   */
+  reuseFromRunIds?: readonly string[];
 };
 
 export function maxArsenkinSubmitRetries(env: NodeJS.ProcessEnv = process.env): number {
@@ -105,6 +118,69 @@ function submitFailedState(
  * Never calls /set for SUBMITTING or SUBMIT_UNKNOWN.
  * RATE_LIMITED without externalTaskId waits until nextPollAt, then CAS re-submit.
  */
+/**
+ * Готовый ответ на тот же запрос в соседнем прогоне того же сбора.
+ *
+ * Возвращает **новую** строку для текущего прогона с скопированной нагрузкой, а
+ * не чужую: учёт по прогонам остаётся честным, приём наблюдений привязывается к
+ * своему агенту, а платного вызова не происходит. `limitsSpent` — ноль, потому
+ * что за эту нагрузку уже заплачено.
+ */
+async function findReusableArsenkinResult(
+  store: ProviderTaskStore,
+  input: EnsureArsenkinTaskInput,
+  requestHash: string
+): Promise<ProviderTaskRecord | null> {
+  const siblings = (input.reuseFromRunIds ?? []).filter((r) => r && r !== input.reportRunId);
+  if (siblings.length === 0 || !store.findDoneByRequestHashInRuns) return null;
+
+  let done: ProviderTaskRecord | null = null;
+  try {
+    done = await store.findDoneByRequestHashInRuns(siblings, requestHash);
+  } catch {
+    // Поиск вспомогательный: его сбой не должен мешать обычной отправке.
+    return null;
+  }
+  if (!done?.responseJson) return null;
+
+  const row = await store.upsertPending({
+    caseId: input.caseId,
+    reportRunId: input.reportRunId,
+    toolName: input.toolName,
+    requestJson: { tools_name: input.toolName, data: input.data } as unknown as Record<
+      string,
+      unknown
+    >,
+    requestHash,
+  });
+  // Проходим тот же жизненный цикл, что и обычная задача: строка заводится
+  // QUEUED, и внешний идентификатор ей можно проставить только после захвата.
+  // Иначе стор справедливо отказывает — состояние не то.
+  const claimed = await store.claimForSubmission(row.id, `reuse-${process.pid}`, 60_000);
+  if (!claimed) return null;
+  if (done.externalTaskId) {
+    await store.markExternalId(row.id, done.externalTaskId);
+  }
+  const adopted = await store.updateState(row.id, {
+    state: "DONE",
+    responseJson: done.responseJson,
+    // Ноль — за эту нагрузку уже заплачено в соседнем прогоне.
+    limitsSpent: 0,
+    completedAt: new Date(),
+    nextPollAt: null,
+  });
+  console.log(
+    JSON.stringify({
+      event: "arsenkin_reuse_paid_result",
+      toolName: input.toolName,
+      requestHash,
+      fromReportRunId: done.reportRunId,
+      toReportRunId: input.reportRunId,
+    })
+  );
+  return adopted ?? row;
+}
+
 export async function ensureArsenkinTask(
   client: ArsenkinClient,
   store: ProviderTaskStore,
@@ -118,6 +194,10 @@ export async function ensureArsenkinTask(
   const maxRetries = input.maxSubmitRetries ?? maxArsenkinSubmitRetries();
   let row = await store.findByRequestHash(input.reportRunId, requestHash);
   if (!row) {
+    // Тот же запрос уже оплачен и выполнен в соседнем прогоне этого же сбора —
+    // берём его нагрузку вместо второго платного вызова.
+    const reused = await findReusableArsenkinResult(store, input, requestHash);
+    if (reused) return reused;
     row = await store.upsertPending({
       caseId: input.caseId,
       reportRunId: input.reportRunId,
