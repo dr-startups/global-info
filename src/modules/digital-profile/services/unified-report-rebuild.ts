@@ -140,11 +140,33 @@ export async function evaluateUnifiedReportRebuildEligibility(input: {
   return { rebuildAllowed: true, rebuildBlockerReason: null };
 }
 
-async function scheduleRebuildTick(
+/**
+ * Планирует пересборку долговечно: возвращает шаги сборки отчёта в очередь,
+ * чтобы работу вёл воркер (шаг 15, E12).
+ *
+ * Прежде здесь выполнялся один тик в веб-процессе. Он двигал джобу на одну
+ * стадию и заканчивался; шаги оставались `DONE`, воркер их не подбирал, и
+ * джоба зависала в `ORION_PREPARE RUNNING` без лизы и расписания.
+ *
+ * Возврат к прежнему поведению остаётся запасным путём: если конвейера у
+ * прогона нет (создан до шага 12), пересобрать его иначе нечем.
+ */
+async function scheduleRebuild(
   caseId: string,
+  unifiedJobId: string,
   deps: RebuildUnifiedReportDeps | undefined
 ): Promise<void> {
   if (deps?.autoSchedule === false) return;
+  try {
+    const { requeueStepsForRebuild } = await import("../workflow/step-store");
+    const requeued = await requeueStepsForRebuild({
+      jobId: unifiedJobId,
+      names: ["COMPOSITE_MERGE", "REPORT_PREPARE"],
+    });
+    if (requeued > 0) return;
+  } catch {
+    /* конвейер недоступен — ниже прежний путь */
+  }
   const { scheduleUnifiedTick } = await import("./unified-orion-collection-orchestrator");
   scheduleUnifiedTick(caseId, deps as Parameters<typeof scheduleUnifiedTick>[1]);
 }
@@ -287,6 +309,6 @@ export async function rebuildUnifiedReport(input: {
     };
   } finally {
     await releaseUnifiedJobLease(input.caseId, ownerId);
-    await scheduleRebuildTick(input.caseId, input.deps);
+    await scheduleRebuild(input.caseId, job0.unifiedJobId, input.deps);
   }
 }

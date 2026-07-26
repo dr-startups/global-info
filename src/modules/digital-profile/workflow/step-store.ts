@@ -211,6 +211,43 @@ export async function releaseStepLease(stepId: string, ownerId: string, prismaCl
  * Ставит упавший шаг обратно в очередь — путь ручного восстановления.
  * Сбрасывает счётчик попыток: оператор подтвердил, что причина устранена.
  */
+/**
+ * Возвращает шаги в очередь для пересборки отчёта (шаг 15, E12).
+ *
+ * Пересборка меняла стадию джобы и выполняла **один** тик в веб-процессе.
+ * Шаги при этом оставались `DONE`, воркеру брать было нечего, и джоба зависала
+ * в `ORION_PREPARE RUNNING` без лизы и расписания — ровно та потеря работы,
+ * ради которой делался шаг 12, оставшаяся в пути пересборки.
+ *
+ * Сбрасываются только шаги сборки отчёта: платный сбор не повторяется.
+ */
+export async function requeueStepsForRebuild(input: {
+  jobId: string;
+  names: readonly string[];
+  now?: Date;
+  prisma?: PrismaClient;
+}): Promise<number> {
+  const prisma = input.prisma ?? (await getPrisma());
+  const now = input.now ?? new Date();
+  const res = await prisma.workflowStep.updateMany({
+    where: { jobId: input.jobId, name: { in: [...input.names] } },
+    data: {
+      state: "PENDING",
+      attempts: 0,
+      nextRunAt: now,
+      leaseOwner: null,
+      leaseUntil: null,
+      lastError: null,
+      lastErrorCode: null,
+      // Право ждать отсчитывается заново: это новая работа, а не продолжение
+      // прежней (шаг 15, D1).
+      startedAt: null,
+      finishedAt: null,
+    },
+  });
+  return res.count;
+}
+
 export async function requeueStep(input: {
   jobId: string;
   name: string;
