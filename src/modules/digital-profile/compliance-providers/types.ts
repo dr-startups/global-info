@@ -6,6 +6,7 @@
 import type { AvailabilityStatus } from "../providers/types";
 
 export type ComplianceProviderName =
+  | "OPEN_SANCTIONS"
   | "DOW_JONES"
   | "LEXISNEXIS"
   | "WORLD_CHECK"

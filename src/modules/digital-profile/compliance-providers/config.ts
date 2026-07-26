@@ -24,6 +24,26 @@ function envInt(value: string | undefined, fallback: number, min: number, max: n
 
 export const complianceProviderConfig = {
   realEnabled: envBool(process.env.DIGITAL_PROFILE_COMPLIANCE_REAL_ENABLED, false),
+  /**
+   * OpenSanctions — открытый агрегатор санкционных списков, PEP и розыска
+   * (шаг 04.3). Включён по умолчанию: он не требует контракта, и раздел
+   * комплаенса без него остаётся пустым. Ключ нужен облачному сервису;
+   * самостоятельно поднятый `yente` работает без него, поэтому в обязательные
+   * ключи он не входит.
+   */
+  openSanctions: {
+    enabled: envBool(process.env.OPEN_SANCTIONS_ENABLED, true),
+    apiBaseUrl: envStr(process.env.OPEN_SANCTIONS_API_BASE_URL) ?? "https://api.opensanctions.org",
+    webBaseUrl: envStr(process.env.OPEN_SANCTIONS_WEB_BASE_URL) ?? "https://www.opensanctions.org",
+    apiKey: envStr(process.env.OPEN_SANCTIONS_API_KEY),
+    dataset: envStr(process.env.OPEN_SANCTIONS_DATASET) ?? "default",
+    /** Ниже этого счёта совпадение аналитику не показывается. */
+    minScore: Math.min(
+      1,
+      Math.max(0, Number(envStr(process.env.OPEN_SANCTIONS_MIN_SCORE) ?? "0.7"))
+    ),
+    timeoutMs: envInt(process.env.OPEN_SANCTIONS_TIMEOUT_MS, 20_000, 1000, 120_000),
+  },
   dowJones: {
     enabled: envBool(process.env.DOW_JONES_ENABLED, false),
     apiBaseUrl: envStr(process.env.DOW_JONES_API_BASE_URL),
@@ -49,6 +69,7 @@ export const complianceProviderConfig = {
 } as const;
 
 const LABELS: Record<ComplianceProviderName, string> = {
+  OPEN_SANCTIONS: "OpenSanctions",
   DOW_JONES: "Dow Jones Compliance Real",
   LEXISNEXIS: "LexisNexis Compliance Real",
   WORLD_CHECK: "World-Check Real",
@@ -56,6 +77,8 @@ const LABELS: Record<ComplianceProviderName, string> = {
 };
 
 const NOTES: Record<ComplianceProviderName, string> = {
+  OPEN_SANCTIONS:
+    "Открытый агрегатор санкционных перечней, списков PEP и розыска. Не заменяет глубину LexisNexis по судебным и медийным записям: отсутствие совпадения означает «не найден в санкционных перечнях и списках PEP», а не «проверен всюду». Совпадения всегда требуют сверки аналитиком.",
   DOW_JONES:
     "Dow Jones Risk & Compliance. Official API only when contracted and configured. Manual import always available.",
   LEXISNEXIS:
@@ -68,6 +91,14 @@ const NOTES: Record<ComplianceProviderName, string> = {
 
 export function missingComplianceConfigKeys(name: ComplianceProviderName): string[] {
   if (name === "MANUAL_IMPORT") return [];
+  if (name === "OPEN_SANCTIONS") {
+    // Ключ не обязателен: `yente` на своём хосте работает анонимно, а у
+    // облачного сервиса отказ по ключу приходит понятной ошибкой запроса.
+    // Требовать здесь ключ значило бы объявлять ненастроенным работающий
+    // экземпляр.
+    const c = complianceProviderConfig.openSanctions;
+    return c.apiBaseUrl ? [] : ["OPEN_SANCTIONS_API_BASE_URL"];
+  }
   if (name === "DOW_JONES") {
     const c = complianceProviderConfig.dowJones;
     const missing: string[] = [];
@@ -102,6 +133,9 @@ export function missingComplianceConfigKeys(name: ComplianceProviderName): strin
 
 function providerEnabled(name: ComplianceProviderName): boolean {
   if (name === "MANUAL_IMPORT") return true;
+  // Единственный источник, не требующий контракта, поэтому и общим рубильником
+  // платных подписок он не выключается.
+  if (name === "OPEN_SANCTIONS") return complianceProviderConfig.openSanctions.enabled;
   if (name === "DOW_JONES") {
     return complianceProviderConfig.realEnabled && complianceProviderConfig.dowJones.enabled;
   }
@@ -145,6 +179,12 @@ export function getComplianceProviderStatus(name: ComplianceProviderName): Compl
 
 export function listComplianceProviderStatus(): ComplianceProviderStatus[] {
   return (
-    ["DOW_JONES", "LEXISNEXIS", "WORLD_CHECK", "MANUAL_IMPORT"] as ComplianceProviderName[]
+    [
+      "OPEN_SANCTIONS",
+      "DOW_JONES",
+      "LEXISNEXIS",
+      "WORLD_CHECK",
+      "MANUAL_IMPORT",
+    ] as ComplianceProviderName[]
   ).map(getComplianceProviderStatus);
 }

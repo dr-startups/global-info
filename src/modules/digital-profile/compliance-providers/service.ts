@@ -13,6 +13,7 @@ import { buildStorageKey } from "../storage/keys";
 import { loadCaseSubject } from "../agents/mock/mock-utils";
 import { listComplianceProviderStatus, getComplianceProviderStatus } from "./config";
 import { dowJonesProvider } from "./dow-jones-provider";
+import { openSanctionsProvider } from "./open-sanctions-provider";
 import { lexisnexisProvider } from "./lexisnexis-provider";
 import { worldCheckProvider } from "./worldcheck-provider";
 import { manualImportProvider } from "./manual-import-provider";
@@ -62,6 +63,8 @@ function toJson(value: unknown): Prisma.InputJsonValue {
 
 function providerOf(name: ComplianceProviderName): ComplianceProvider {
   switch (name) {
+    case "OPEN_SANCTIONS":
+      return openSanctionsProvider;
     case "DOW_JONES":
       return dowJonesProvider;
     case "LEXISNEXIS":

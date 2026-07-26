@@ -130,6 +130,8 @@ enum DatabaseProvider {
   LEXISNEXIS
   DOW_JONES
   WORLD_CHECK
+  // Открытый агрегатор санкционных перечней и списков PEP (шаг 04.3).
+  OPEN_SANCTIONS
   OTHER
 }
 

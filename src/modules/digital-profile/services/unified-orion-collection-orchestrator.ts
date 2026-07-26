@@ -83,6 +83,10 @@ import {
   type EnrichmentPollTaskSnap,
 } from "./arsenkin-enrichment-tick";
 import { buildBaseObservationCoverage } from "./base-observation-coverage";
+import {
+  runUnifiedComplianceScreening,
+  screeningWarning,
+} from "./unified-compliance-screening";
 
 /** Bounded delay before re-scheduling a WAITING Arsenkin ingest tick. */
 export function computeUnifiedPollDelayMs(job: UnifiedCollectionJob, now = Date.now()): number {
@@ -844,6 +848,19 @@ async function stepBaseCollection(
     manifest
   );
 
+  // Проверка по санкционным перечням и спискам PEP — часть сбора, а не
+  // отдельное нажатие (шаг 04.3). Отказ источника прогон не роняет: один
+  // неответивший справочник не должен обнулять оплаченную работу.
+  const screeningWarnings: string[] = [];
+  if (!deps.fixtureBaseRows) {
+    const outcome = await runUnifiedComplianceScreening({
+      caseId: job.caseId,
+      actorId: job.requestedBy,
+    });
+    const warning = screeningWarning(outcome);
+    if (warning) screeningWarnings.push(warning);
+  }
+
   return (
     await patchUnifiedCollectionJob(job.caseId, {
       stage: "ARSENKIN_ENRICHMENT",
@@ -852,9 +869,12 @@ async function stepBaseCollection(
       actualProviders,
       baseReportRunId,
       artifactPaths: { ...job.artifactPaths, baseCollectionManifest: path },
-      warnings: manifest.realCollectionSufficient
-        ? job.warnings
-        : [...job.warnings, "base-collection used mock/fallback — REPORT_READY blocked unless allowMockReport"],
+      warnings: [
+        ...(manifest.realCollectionSufficient
+          ? job.warnings
+          : [...job.warnings, "base-collection used mock/fallback — REPORT_READY blocked unless allowMockReport"]),
+        ...screeningWarnings,
+      ],
     }) ?? job
   );
 }
