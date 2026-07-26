@@ -41,12 +41,29 @@ import {
   type SectionPackV2,
   type V72PageInventoryItem,
 } from "../src/modules/digital-profile/orion-golden/deck-sections";
-import { loadReport72DeckInputs, loadReportAssets } from "./run-orion-deck-sections-report72";
+import {
+  MissingDeckAssetFixture,
+  loadReport72DeckInputs,
+  loadReportAssets,
+} from "./run-orion-deck-sections-report72";
 import type { SectionValidationReport } from "../src/modules/digital-profile/orion-golden/deck-sections";
 import { migratePack } from "./migrate-section-packs-v2-to-v3";
 
 const inputs = loadReport72DeckInputs();
-const { visualAssets } = loadReportAssets(inputs.evidenceIndex);
+
+// Без метаданных ассетов часть проверок пропускается по собственному условию
+// («плиток нет — сравнивать не с чем»), то есть смок зеленел бы впустую.
+// Поэтому отсутствие фикстуры называется прямо и останавливает прогон.
+let visualAssets: ReturnType<typeof loadReportAssets>["visualAssets"];
+try {
+  ({ visualAssets } = loadReportAssets(inputs.evidenceIndex));
+} catch (err) {
+  if (err instanceof MissingDeckAssetFixture) {
+    console.error(`[smoke:orion-deck-sections] ПРОПУЩЕН\n${err.message}`);
+    process.exit(1);
+  }
+  throw err;
+}
 
 function makeCtx(): Omit<SectionBuildContext, "previousPacks" | "buildLog"> {
   return {

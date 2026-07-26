@@ -13,9 +13,17 @@ import type { Finding } from "../contracts/finding";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import type { SurfaceAnalysisUnit } from "../contracts/surface-analysis";
 import type { MetricSnapshot } from "../deck-sections/scoped-input";
+import { riskLevelPromptLine } from "./case-verdict";
+
+/** Добавляет к промпту строку с вычисленным уровнем риска, если он известен. */
+function withRiskLevelLine(prompt: string, verdict?: string | null): string {
+  const line = riskLevelPromptLine(verdict);
+  return line ? `${prompt} ${line}` : prompt;
+}
 import {
   buildCorpusPayload,
   CASE_ANALYSIS_SYSTEM_PROMPT,
+  caseAnalysisSystemPrompt,
   clampCaseAnalysisText,
   clientSafeCaseAnalysisText,
   finalizeGptCaseAnalysis,
@@ -333,7 +341,7 @@ export async function runGptCaseAnalysisMapReduce(
             key: "gpt-stage1-single",
             run: () =>
               input.caller({
-                systemPrompt: CASE_ANALYSIS_SYSTEM_PROMPT,
+                systemPrompt: caseAnalysisSystemPrompt(input.deterministicVerdict),
                 userPayload: buildCorpusPayload(corpus),
               }),
           },
@@ -351,7 +359,7 @@ export async function runGptCaseAnalysisMapReduce(
           }`
         );
       }
-      return finalizeGptCaseAnalysis(result.value, input.onFailure);
+      return finalizeGptCaseAnalysis(result.value, input.onFailure, input.deterministicVerdict);
     } catch (err) {
       return fail(`transport: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -437,7 +445,9 @@ export async function runGptCaseAnalysisMapReduce(
           key: "gpt-stage1-reduce",
           run: () =>
             input.caller({
-              systemPrompt: REDUCE_SYSTEM_PROMPT,
+              // Свод тоже получает вычисленный уровень: иначе он предложит свой,
+              // и объяснение разойдётся с плашкой по смыслу (шаг 07.9).
+              systemPrompt: withRiskLevelLine(REDUCE_SYSTEM_PROMPT, input.deterministicVerdict),
               userPayload: reducePayload,
             }),
         },
@@ -467,7 +477,11 @@ export async function runGptCaseAnalysisMapReduce(
       );
     }
 
-    const analysis = finalizeGptCaseAnalysis(reduceResult.value, input.onFailure);
+    const analysis = finalizeGptCaseAnalysis(
+      reduceResult.value,
+      input.onFailure,
+      input.deterministicVerdict
+    );
     input.onDiagnostics?.({
       mode: "map_reduce",
       thresholdChars,

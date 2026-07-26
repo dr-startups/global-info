@@ -28,6 +28,10 @@ import type { SurfaceAnalysis } from "../src/modules/digital-profile/orion-golde
 import type { VisibleAssetItem } from "../src/modules/digital-profile/orion-golden/deck-sections/canonical-slots";
 import { classifyObservationHighlight } from "../src/modules/digital-profile/serp-observation/resolve-observation-highlights";
 import type { PersistedSerpObservation } from "../src/modules/digital-profile/serp-observation/types";
+import {
+  DECK_ASSET_FIXTURE_MISSING,
+  DECK_ASSET_FIXTURE_PATH,
+} from "./deck-asset-fixture-path";
 
 const ANALYTICS_DIR = join(process.cwd(), "baselines", "report-72", "artifacts", "analytics");
 const OUTPUT_ROOT = join(process.cwd(), "baselines", "report-72", "artifacts", "deck-sections");
@@ -122,11 +126,33 @@ function resolveVisibleItems(evidenceRefs: string[] | undefined): VisibleAssetIt
   });
 }
 
+/** Фикстуры нет и приватного прогона тоже — смок обязан сказать это словами. */
+export class MissingDeckAssetFixture extends Error {
+  constructor() {
+    super(DECK_ASSET_FIXTURE_MISSING);
+    this.name = "MissingDeckAssetFixture";
+  }
+}
+
+/**
+ * Метаданные визуальных ассетов.
+ *
+ * Сначала берётся приватный прогон под `/storage/` — он полнее. Если его нет
+ * (а его нет у всех, кроме одной машины), берётся обезличенная фикстура из
+ * baselines. Если нет ни того ни другого — ошибка с объяснением, а не ENOENT.
+ */
 export function loadReportAssets(evidenceIndex?: ScopedEvidenceIndex): {
   assets: RendererAssetEntry[];
   visualAssets: VisualAssetsBySlot;
 } {
-  const raw = readFileSync(join(RUN_DIR, "report-assets.json"), "utf8");
+  const runPath = join(RUN_DIR, "report-assets.json");
+  const sourcePath = existsSync(runPath)
+    ? runPath
+    : existsSync(DECK_ASSET_FIXTURE_PATH)
+      ? DECK_ASSET_FIXTURE_PATH
+      : null;
+  if (!sourcePath) throw new MissingDeckAssetFixture();
+  const raw = readFileSync(sourcePath, "utf8");
   const parsed = JSON.parse(raw) as RendererAssetEntry[] | { assets: RendererAssetEntry[] };
   const assets = Array.isArray(parsed) ? parsed : parsed.assets;
   const byRef = new Map(assets.map((a) => [a.assetRef, a]));
@@ -155,7 +181,8 @@ export function loadReportAssets(evidenceIndex?: ScopedEvidenceIndex): {
           assetRef: a.assetRef,
           kind: String(a.kind ?? "visual"),
           title: String(a.title ?? a.assetRef),
-          hasImage: Boolean(a.imageData) || Boolean(a.storageKey),
+          // В фикстуре байтов нет — там уже посчитанный признак.
+          hasImage: Boolean(a.imageData) || Boolean(a.storageKey) || a.hasImage === true,
           evidenceRefs,
           evidenceDomains: evidenceDomains.length ? evidenceDomains : undefined,
           visibleItems,

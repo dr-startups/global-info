@@ -846,6 +846,11 @@ export async function runCanonicalReportPrepare(
       };
       const caseAnalysis = await runGptCaseAnalysis({
         caller: gptCallerOnce,
+        // Уровень риска считает аналитика; модель его объясняет, а не выводит
+        // собственный — иначе плашка и текст резюме называют разные оценки
+        // (шаг 07.9).
+        deterministicVerdict:
+          (deckInputs.executiveSummary as { verdict?: string } | undefined)?.verdict ?? null,
         subjectName: subjectDisplayName,
         aliases: subjectProfile.aliases ?? [],
         contextIdentifiers: subjectProfile.contextIdentifiers ?? [],

@@ -8,6 +8,7 @@ import { REQUIRED_SECTIONS } from "./contracts";
 import type { RendererSlide } from "./deck-assembler";
 import { normalizeEvidenceRef, regionMatches, type ScopedEvidenceIndex } from "./scoped-input";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
+import { scanDeckForInternalCodes } from "./internal-code-scan";
 
 /** Renderer templates that draw the analytical sidebar next to a visual. */
 const SIDEBAR_TEMPLATES = new Set([
@@ -166,6 +167,14 @@ export function validateAssembly(input: {
     }
   }
   checks.noPlaceholderWithAvailableAsset = visualOk;
+
+  // Внутренние коды в клиентском тексте (шаг 07.8): отчёт читает человек, и
+  // техническая константа в скобках не сообщает ему ничего.
+  const internalCodes = scanDeckForInternalCodes(rendererSlides);
+  checks.noInternalCodesInClientText = internalCodes.length === 0;
+  for (const f of internalCodes.slice(0, 10)) {
+    issues.push(`internal code ${f.code} in client text of ${f.slide}`);
+  }
 
   // --- Manual-quality gates (fail closed) ---
 

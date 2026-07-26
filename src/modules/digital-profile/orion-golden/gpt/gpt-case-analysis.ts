@@ -20,6 +20,7 @@ import type { MetricSnapshot } from "../deck-sections/scoped-input";
 import { scanOrionGoldenClientTextForForbiddenTokens } from "../client/client-text-sanitizer";
 import { matchInternalClientToken } from "../client/load-client-text-contract";
 import { engineRu, metricKeyRu, riskLevelRu, subjectMatchRu, surfaceRu } from "./client-payload-labels";
+import { riskLevelPromptLine, riskWordForVerdict } from "./case-verdict";
 
 export const GPT_CASE_ANALYSIS_VERSION = "gpt-case-analysis-v1" as const;
 
@@ -86,6 +87,18 @@ export const CASE_ANALYSIS_SYSTEM_PROMPT = [
   "Пиши по-русски.",
   "Верни ТОЛЬКО JSON по схеме: {\"overallRiskLevel\": \"низкий|средний|высокий|критический\", \"executiveConclusion\": string, \"digitalPortrait\": string, \"keyRisks\": [{\"theme\": string, \"severity\": \"низкий|средний|высокий|критический\", \"explanation\": string, \"advice\": string}], \"positiveSignals\": [string], \"recommendations\": [string]}.",
 ].join(" ");
+
+/**
+ * Системный промпт с уже вычисленным уровнем риска, когда он известен.
+ *
+ * Промпт — не гарантия: ответ модели всё равно приводится к вычисленному
+ * уровню (`withDeterministicRiskLevel`). Сообщать его в промпте нужно, чтобы
+ * объяснение не расходилось с оценкой по смыслу, а не только по слову.
+ */
+export function caseAnalysisSystemPrompt(verdict?: string | null): string {
+  const line = riskLevelPromptLine(verdict);
+  return line ? `${CASE_ANALYSIS_SYSTEM_PROMPT} ${line}` : CASE_ANALYSIS_SYSTEM_PROMPT;
+}
 
 /** A case-analysis string is client-safe: no internal/forbidden tokens, no URLs. */
 export function clientSafeCaseAnalysisText(text: string): boolean {
@@ -212,7 +225,9 @@ export function buildCorpusPayload(input: {
 /** Parse + sanitize a full-schema stage-1 response; null on hard failures. */
 export function finalizeGptCaseAnalysis(
   raw: unknown,
-  onFailure?: (reason: string) => void
+  onFailure?: (reason: string) => void,
+  /** Вердикт аналитики: он и есть уровень риска отчёта (шаг 07.9). */
+  deterministicVerdict?: string | null
 ): GptCaseAnalysis | null {
   const fail = (reason: string): null => {
     onFailure?.(reason);
@@ -245,7 +260,8 @@ export function finalizeGptCaseAnalysis(
   return {
     version: GPT_CASE_ANALYSIS_VERSION,
     generatedAt: new Date().toISOString(),
-    overallRiskLevel: a.overallRiskLevel,
+    // Уровень принадлежит аналитике; ответ модели к нему приводится (шаг 07.9).
+    overallRiskLevel: riskWordForVerdict(deterministicVerdict) ?? a.overallRiskLevel,
     executiveConclusion: a.executiveConclusion,
     digitalPortrait:
       a.digitalPortrait && clientSafeCaseAnalysisText(a.digitalPortrait)
@@ -282,6 +298,14 @@ export type GptCaseAnalysisRunInput = {
   queueOptions?: import("./gpt-call-queue").GptCallQueueOptions;
   /** Observability for single vs map-reduce (§4.4). */
   onDiagnostics?: (d: GptCaseAnalysisDiagnostics) => void;
+  /**
+   * Вердикт детерминированной аналитики (`executiveSummary.verdict`).
+   *
+   * Уровень риска считается один раз и по доказательствам; модель получает его
+   * как вход и объясняет, а не выводит собственный (шаг 07.9). Иначе плашка и
+   * текст на одном слайде называют разные оценки.
+   */
+  deterministicVerdict?: string | null;
 };
 
 /**
@@ -342,7 +366,7 @@ export async function runGptCaseAnalysis(
           key: "gpt-stage1-single",
           run: () =>
             input.caller({
-              systemPrompt: CASE_ANALYSIS_SYSTEM_PROMPT,
+              systemPrompt: caseAnalysisSystemPrompt(input.deterministicVerdict),
               userPayload: buildCorpusPayload(corpus),
             }),
         },
@@ -363,7 +387,7 @@ export async function runGptCaseAnalysis(
         }`
       );
     }
-    return finalizeGptCaseAnalysis(result.value, input.onFailure);
+    return finalizeGptCaseAnalysis(result.value, input.onFailure, input.deterministicVerdict);
   } catch (err) {
     return fail(`transport: ${err instanceof Error ? err.message : String(err)}`);
   }
