@@ -4,7 +4,7 @@ import { UNIFIED_PIPELINE } from "../../src/modules/digital-profile/workflow/ste
 import type { WorkflowStepRow } from "../../src/modules/digital-profile/workflow/step-types";
 
 /**
- * Шаг 12.4 плана (docs/rework/12-durable-step-execution.md).
+ * Шаг 12.4 плана.
  *
  * «Где мы остановились» выводилось эвристиками из шести полей джобы, и там
  * жили дефекты: состояние «пять прогонов зарегистрировано, задач две»

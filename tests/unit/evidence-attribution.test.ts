@@ -9,7 +9,7 @@ import {
 } from "../../src/modules/digital-profile/orion-golden/analytics/finding-synthesizer";
 
 /**
- * Шаг 13, этап 2 — C3 и C9 (docs/rework/13-regression-run-findings.md).
+ * Шаг 13, этап 2 — C3 и C9.
  *
  * В отчёт попали материал о другом человеке под профилем субъекта и статья
  * Википедии как единственное «доказательство» офшорного владения.

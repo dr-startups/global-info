@@ -1,5 +1,5 @@
 /**
- * REMEDIATION_PLAN §0.3 — golden-case offline report harness.
+ * §0.3 — golden-case offline report harness.
  *
  * Runs `runCanonicalReportPrepare` on fixtures/golden-case with a fake renderer,
  * prints report-quality-summary, and compares a stable projection to

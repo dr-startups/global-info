@@ -10,7 +10,7 @@ import {
 } from "../../src/modules/digital-profile/compliance-providers/open-sanctions-mapping";
 
 /**
- * Шаг 04.3 (docs/rework/04-provider-coverage-and-compliance-gap.md).
+ * Шаг 04.3.
  *
  * Раздел комплаенса никогда не наполнялся реальными данными: до перехода на
  * `real_only` его заполняли демо-агенты, а «совпадение по санкционным спискам»

@@ -1,5 +1,5 @@
 /**
- * REMEDIATION_PLAN §1.4 — WikipediaCheck + real SERP screenshots into the
+ * §1.4 — WikipediaCheck + real SERP screenshots into the
  * canonical evidence / visual contour.
  *
  * Offline fixtures win over prisma (same pattern as complianceHits).

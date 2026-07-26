@@ -10,7 +10,7 @@ import {
 } from "../../src/modules/digital-profile/orion-golden/gpt/gpt-case-analysis";
 
 /**
- * Шаг 07.9 / 07.4 (docs/rework/07-slide-density-pagination-empty-states.md).
+ * Шаг 07.9 / 07.4.
  *
  * Страница «Резюме» одновременно содержала плашку «Итоговая оценка: Высокий
  * риск» и текст «…но итоговая оценка критическая». Плашку считала аналитика,

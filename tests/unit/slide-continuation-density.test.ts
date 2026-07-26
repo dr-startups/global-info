@@ -3,7 +3,7 @@ import { withContinuations } from "../../src/modules/digital-profile/orion-golde
 import type { SlideContentContract } from "../../src/modules/digital-profile/orion-golden/deck-sections/contracts";
 
 /**
- * Шаг 13, этап 3 — D3 и D4 (docs/rework/13-regression-run-findings.md).
+ * Шаг 13, этап 3 — D3 и D4.
  *
  * Страницы-продолжения повторяли заголовочные плитки блока («312 / 5 / 6 / 31»
  * пять страниц подряд, треть листа каждый раз) и его рекомендацию, которая на

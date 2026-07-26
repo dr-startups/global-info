@@ -1,5 +1,5 @@
 /**
- * Offline acceptance for REMEDIATION_PLAN §0.1 — report-quality-summary aggregator.
+ * Offline acceptance for §0.1 — report-quality-summary aggregator.
  *
  * Builds a fixture job catalog with representative artifacts and asserts the
  * funnel counts / GPT / visuals / slides / arsenkin aggregates. Also checks

@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { UNIFIED_PIPELINE } from "../../src/modules/digital-profile/workflow/step-plan";
 
 /**
- * Шаг 12.4c (docs/rework/12-durable-step-execution.md).
+ * Шаг 12.4c.
  *
  * Прогресс был представлен трижды: `stage`, `resumeCheckpoint` и блоб
  * `arsenkinEnrichmentState`. Все дефекты 08.0-bis и 11.1 были расхождениями

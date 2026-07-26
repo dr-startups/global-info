@@ -7,7 +7,7 @@ import {
 } from "../../src/modules/digital-profile/orion-golden/deck-sections/empty-surface-collapse";
 
 /**
- * Шаг 15, E2 (docs/rework/15-final-regression.md).
+ * Шаг 15, E2.
  *
  * Страницы 31–33 «Россия — связанные запросы (1..3)» были дословно одинаковы:
  * «Поверхность не собиралась в этом прогоне». Тот же дефект был с четырьмя

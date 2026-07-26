@@ -8,7 +8,7 @@ import {
 import { computeAvailability } from "../../src/modules/digital-profile/providers/config";
 
 /**
- * Шаг 04.2 (docs/rework/04-provider-coverage-and-compliance-gap.md).
+ * Шаг 04.2.
  *
  * На живом прогоне `/api/digital-profile/providers` показывал
  * `GOOGLE status=ENABLED supportsRealCalls=true missingConfigKeys=[]`,

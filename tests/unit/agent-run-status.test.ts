@@ -5,7 +5,7 @@ import {
 } from "../../src/modules/digital-profile/services/arsenkin-case-agent-execution/agent-run-status";
 
 /**
- * Шаг 13, этап 5 (docs/rework/13-regression-run-findings.md, B6).
+ * Шаг 13, этап 5.
  *
  * Статус запуска агента писался через `update`, который бросает P2025, когда
  * записи нет. Запись законно может отсутствовать — прошлый запуск подчищен,

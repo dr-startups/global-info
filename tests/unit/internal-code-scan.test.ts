@@ -8,7 +8,7 @@ import {
 } from "../../src/modules/digital-profile/orion-golden/deck-sections/internal-code-scan";
 
 /**
- * Шаг 07.8 (docs/rework/07-slide-density-pagination-empty-states.md).
+ * Шаг 07.8.
  *
  * В деке контрольного прогона на странице профиля стояло: «Визуальный экспорт
  * страницы недоступен (VISUAL_ASSET_UNAVAILABLE)». Отчёт читает человек, а не

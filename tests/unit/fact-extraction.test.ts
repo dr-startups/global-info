@@ -10,7 +10,7 @@ import {
 } from "../../src/modules/digital-profile/orion-golden/gpt/fact-extraction";
 
 /**
- * Шаг 05.2(б) плана (docs/rework/05-claim-synthesis-and-gpt-input.md).
+ * Шаг 05.2(б) плана.
  *
  * Модель формулирует утверждение и обязана подкрепить его дословной цитатой;
  * код находит цитату в материале или отбрасывает утверждение. Атрибуция

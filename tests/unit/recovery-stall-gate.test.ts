@@ -5,7 +5,7 @@ import {
 } from "../../src/modules/digital-profile/services/unified-collection-recovery";
 
 /**
- * Шаг 11.1-bis плана (docs/rework/11-workflow-ux-and-false-failures.md).
+ * Шаг 11.1-bis плана.
  *
  * Восстановление блокировалось только при status === "RUNNING", а нормальное
  * состояние durable-импорта Arsenkin — "WAITING". Поэтому во время здорового

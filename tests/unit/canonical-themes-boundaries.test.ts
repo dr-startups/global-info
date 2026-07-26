@@ -5,7 +5,7 @@ import {
 } from "../../src/modules/digital-profile/orion-golden/analytics/canonical-themes";
 
 /**
- * Шаг 06.1 плана переработки (docs/rework/06-theme-classification-false-positives.md).
+ * Шаг 06.1 плана переработки.
  *
  * До исправления регексы работали по подстроке без границ слов (JS `\b` не
  * действует на кириллице), поэтому нейтральные тексты получали риск-темы:

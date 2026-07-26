@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * Шаг 13, этап 5 (docs/rework/13-regression-run-findings.md, B6).
+ * Шаг 13, этап 5.
  *
  * Легаси-контур отчёта отставлен на сервере (REMEDIATION 9.3): `GET /report`,
  * `POST /report/generate`, `/report/render`, `/report/orion-v2` и

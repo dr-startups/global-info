@@ -1,5 +1,5 @@
 /**
- * REMEDIATION_PLAN §1.3 / F6 part 2 — analyst overrides into analytics.
+ * §1.3 / F6 part 2 — analyst overrides into analytics.
  *
  * Sources: SearchResult manual classification, orion-golden admin-review
  * decisions, RiskFinding with reviewStatus REVIEWED ("approved").

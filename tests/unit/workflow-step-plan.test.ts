@@ -14,7 +14,7 @@ import { MAX_ENRICHMENT_WAIT_MS } from "../../src/modules/digital-profile/servic
 import type { WorkflowStepRow } from "../../src/modules/digital-profile/workflow/step-types";
 
 /**
- * Шаг 12 плана (docs/rework/12-durable-step-execution.md).
+ * Шаг 12 плана.
  *
  * Прогресс был представлен трижды: `job.stage` + `resumeCheckpoint`, блоб
  * `arsenkinEnrichmentState` и строки `ProviderTask`. Все дефекты шагов

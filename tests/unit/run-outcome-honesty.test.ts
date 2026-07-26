@@ -16,7 +16,7 @@ import {
 import type { ActualProviderRecord } from "../../src/modules/digital-profile/services/unified-collection-types";
 
 /**
- * Шаг 13, этап 1 (docs/rework/13-regression-run-findings.md).
+ * Шаг 13, этап 1.
  *
  * Три находки живого прогона: отказ одного провайдера обнулял весь платный
  * сбор; сообщение об отказе называло причину, которой не было; кнопка
@@ -183,7 +183,7 @@ describe("действия не предлагаются во время раб�
 });
 
 /**
- * Шаг 15, E9 (docs/rework/15-final-regression.md).
+ * Шаг 15, E9.
  *
  * К концу живого прогона в предупреждениях набралось 368 строк, в основном
  * дословные повторы `arsenkin-awaiting-ingest`. Повтор одного утверждения

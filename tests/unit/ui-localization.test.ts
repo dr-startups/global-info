@@ -9,7 +9,7 @@ import {
 } from "../../src/modules/digital-profile/client/report-quality-labels";
 
 /**
- * Шаг 11.4 плана (docs/rework/11-workflow-ux-and-false-failures.md).
+ * Шаг 11.4 плана.
  *
  * При выбранном английском половина панелей оставалась русской: «Профиль
  * субъекта», «Качество отчёта», «Скачать Unified PDF», «Пересобрать отчёт»,

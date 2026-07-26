@@ -1,5 +1,5 @@
 /**
- * Report quality funnel aggregator (REMEDIATION_PLAN §0.1).
+ * Report quality funnel aggregator (§0.1).
  *
  * Reads already-written job artifacts and produces one machine-readable summary:
  * collected → manifest → composite → identity → findings → slides, plus GPT /

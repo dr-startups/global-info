@@ -10,7 +10,7 @@ import type {
 } from "../../src/modules/digital-profile/orion-golden/types";
 
 /**
- * Шаг 05.1 плана (docs/rework/05-claim-synthesis-and-gpt-input.md).
+ * Шаг 05.1 плана.
  *
  * До исправления модель получала только title/domain/relevance/humanReason —
  * сниппеты, URL, регион и риск-сигналы лежали в EvidenceDecisionRecord и

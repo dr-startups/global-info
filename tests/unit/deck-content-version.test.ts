@@ -8,7 +8,7 @@ import {
 } from "../../src/modules/digital-profile/orion-golden/deck-sections/content-version";
 
 /**
- * Шаг 15, E13 (docs/rework/15-final-regression.md).
+ * Шаг 15, E13.
  *
  * Секции деки кэшируются, и ключ кэша включает `DECK_CONTENT_VERSION`. Механизм
  * рабочий, но версия задаётся руками: изменив построитель и забыв поднять

@@ -3,7 +3,7 @@ import { buildCanonicalClaimsBundle } from "../../src/modules/digital-profile/or
 import type { RawInventoryItem } from "../../src/modules/digital-profile/orion-golden/types";
 
 /**
- * Шаг 05.3 плана (docs/rework/05-claim-synthesis-and-gpt-input.md).
+ * Шаг 05.3 плана.
  *
  * `originalTitle` брался из evidenceItems[0], а домен рядом с ним — из
  * sourceDomains[0], то есть из агрегированного по всему finding'у списка,

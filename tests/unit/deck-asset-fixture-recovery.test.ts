@@ -7,7 +7,7 @@ import {
 import { DECK_ASSET_FIXTURE_PATH } from "../../scripts/deck-asset-fixture-path";
 
 /**
- * Шаг 16, E11 (docs/rework/15-final-regression.md).
+ * Шаг 16, E11.
  *
  * `smoke:orion-deck-sections` пропускал семь проверок: метаданные визуальных
  * ассетов report-72 лежали под `/storage/` и утрачены, а подкладывать ассеты

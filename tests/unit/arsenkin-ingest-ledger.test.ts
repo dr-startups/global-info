@@ -8,7 +8,7 @@ import {
 import { applyExactlyOnceIngest } from "../../src/modules/digital-profile/services/arsenkin-exactly-once-ingest";
 
 /**
- * Шаг 12.4f (docs/rework/12-durable-step-execution.md).
+ * Шаг 12.4f.
  *
  * Журнал ровно однократного приёма лежал внутри блоба `arsenkinEnrichmentState`
  * рядом с прогрессом. Прогресс выводится из строк задач и потому был дублем;

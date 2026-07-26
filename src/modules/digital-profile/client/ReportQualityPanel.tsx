@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Operator-facing report quality panel (REMEDIATION_PLAN §0.4).
+ * Operator-facing report quality panel (§0.4).
  * Read-only: funnel counts, GPT traffic lights, empty-state reasons, visual warnings.
  */
 

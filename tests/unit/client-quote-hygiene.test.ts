@@ -11,7 +11,7 @@ import {
 } from "../../src/modules/digital-profile/orion-golden/analytics/public-domain";
 
 /**
- * Шаг 13, этап 2 (docs/rework/13-regression-run-findings.md).
+ * Шаг 13, этап 2.
  *
  * Отчёт читает живой человек. В него попадали рекламная обвязка YouTube,
  * голые адреса и строки поискового автодополнения, поданные как материалы с

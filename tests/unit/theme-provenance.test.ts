@@ -11,7 +11,7 @@ import { selectRepresentativeEvidence } from "../../src/modules/digital-profile/
 import { buildClientSummaryPack } from "../../src/modules/digital-profile/orion-golden/analytics/client-summary-pack-builder";
 
 /**
- * Шаг 06.3 плана (docs/rework/06-theme-classification-false-positives.md).
+ * Шаг 06.3 плана.
  *
  * Тема могла возникнуть от срабатывания ключевого слова на мусорном материале.
  * Дальше в неё попадали любые факты, и отчёт печатал «Репутационные скандалы …

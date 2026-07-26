@@ -6,7 +6,7 @@ import type {
 } from "../../src/modules/digital-profile/orion-golden/contracts/canonical-claim";
 
 /**
- * Шаг 05.3-bis плана (docs/rework/05-claim-synthesis-and-gpt-input.md).
+ * Шаг 05.3-bis плана.
  *
  * Дедупликация представительных материалов была локальной для темы, поэтому
  * один и тот же материал занимал слоты сразу в нескольких темах. В отчёте это

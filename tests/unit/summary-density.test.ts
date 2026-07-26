@@ -8,7 +8,7 @@ import {
 import { getClientTextFieldBudgets } from "../../src/modules/digital-profile/orion-golden/client/load-client-text-contract";
 
 /**
- * Шаг 07 плана (docs/rework/07-slide-density-pagination-empty-states.md).
+ * Шаг 07 плана.
  *
  * В доставленном отчёте резюме занимало девять страниц-продолжений, на каждой
  * один буллет примерно на шестой части листа, а список «следующих проверок»

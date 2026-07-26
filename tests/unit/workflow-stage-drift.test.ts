@@ -8,7 +8,7 @@ import { UNIFIED_PIPELINE } from "../../src/modules/digital-profile/workflow/ste
 import type { WorkflowStepRow } from "../../src/modules/digital-profile/workflow/step-types";
 
 /**
- * Шаг 12.4 плана (docs/rework/12-durable-step-execution.md).
+ * Шаг 12.4 плана.
  *
  * Стадия джобы пока хранится, а не выводится: обработчики стадий не
  * переписывались. Значит, расхождение между тем, что джоба говорит о себе, и

@@ -1,5 +1,5 @@
 /**
- * REMEDIATION_PLAN §1.2 / F6 — DatabaseProfile → canonical RawInventoryItem.
+ * §1.2 / F6 — DatabaseProfile → canonical RawInventoryItem.
  *
  * Active compliance hits enter the analytics inventory as `compliance_hit`
  * so surface analyzers and p33–p36 fragments can render real LexisNexis /

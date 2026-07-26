@@ -12,7 +12,7 @@ import {
 import { hashProviderRequest } from "../../src/modules/digital-profile/providers/arsenkin/provider-task-store";
 
 /**
- * Шаг 03, корень (docs/rework/03-arsenkin-live-auth-singleton.md).
+ * Шаг 03, корень.
  *
  * Авторизация платных вызовов жила в переменных уровня модуля, и это делало
  * процесс однопоточным по отношению к Arsenkin: пока один агент отправлял

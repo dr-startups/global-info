@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * Шаг 12.4e (docs/rework/12-durable-step-execution.md).
+ * Шаг 12.4e.
  *
  * «Где мы остановились» отвечали двое: `planResumeFromSteps` по строкам шагов и
  * прежняя эвристика по шести полям джобы. Именно в эвристике нашлись дефекты

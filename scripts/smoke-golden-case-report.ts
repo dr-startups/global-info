@@ -1,5 +1,5 @@
 /**
- * Offline acceptance for REMEDIATION_PLAN §0.3 — golden-case harness.
+ * Offline acceptance for §0.3 — golden-case harness.
  *
  * Asserts: fixture size band, prepare succeeds, two runs match, baseline matches.
  * Run: npm run smoke:golden-case

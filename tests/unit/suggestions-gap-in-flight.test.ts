@@ -3,7 +3,7 @@ import { withSuggestionsGapStatus } from "../../src/modules/digital-profile/serv
 import type { UnifiedCollectionJob } from "../../src/modules/digital-profile/services/unified-collection-types";
 
 /**
- * Шаг 11.1 плана (docs/rework/11-workflow-ux-and-false-failures.md).
+ * Шаг 11.1 плана.
  *
  * Пять агентов Arsenkin стартуют последовательно, поэтому Suggestions первые
  * минуты любого прогона законно не начат. Раньше это состояние объявлялось

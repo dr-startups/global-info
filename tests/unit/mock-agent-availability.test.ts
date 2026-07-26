@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 /**
- * Шаг 11.2 плана (docs/rework/11-workflow-ux-and-false-failures.md).
+ * Шаг 11.2 плана.
  *
  * Демо-агенты сообщали ENABLED безусловно, поэтому на живом кейсе вкладка
  * Agents показывала «Yandex Search (mock)», «Compliance Databases (mock)» и ещё

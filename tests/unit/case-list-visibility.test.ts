@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { caseListWhere } from "../../src/modules/digital-profile/services/case-service";
 
 /**
- * Шаг 13, этап 5 (docs/rework/13-regression-run-findings.md, B6).
+ * Шаг 13, этап 5.
  *
  * В списке кейсов оператора лежали двадцать заглушек `SMOKE-*`, оставленных
  * смоками. Список принадлежит оператору: следы прогонов смоков — не его работа.

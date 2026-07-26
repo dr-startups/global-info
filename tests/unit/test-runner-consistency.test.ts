@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * Шаг 09 плана (docs/rework/09-test-and-ci-foundation.md).
+ * Шаг 09 плана.
  *
  * Пять файлов были написаны под встроенный раннер `node:test`. Vitest такие
  * сьюты не собирает и сообщает «No test suite found» — то есть 16 проверок

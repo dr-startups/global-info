@@ -26,7 +26,7 @@ import type { CanonicalClaim } from "../../src/modules/digital-profile/orion-gol
 import type { Finding } from "../../src/modules/digital-profile/orion-golden/contracts/finding";
 
 /**
- * Шаг 13, этап 4 — связность и честность (docs/rework/13-regression-run-findings.md).
+ * Шаг 13, этап 4 — связность и честность.
  *
  * Разделы C4, C5, C6, C10, C11, D7: отчёт повторял один и тот же абзац шесть
  * раз, печатал заголовок темы дважды подряд, заявлял отсутствие подсказок и тут
@@ -300,7 +300,7 @@ describe("C4 — тему представляет материал, котор�
 });
 
 /**
- * Шаг 15 (docs/rework/15-final-regression.md) — находки живого прогона.
+ * Шаг 15 — находки живого прогона.
  */
 describe("находки регрессионного прогона", () => {
   it("поисковая подсказка не может быть примером по теме (E5)", async () => {

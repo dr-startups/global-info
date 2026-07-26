@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { caseStatusForStage } from "../../src/modules/digital-profile/services/unified-case-status-sync";
 
 /**
- * Шаг 11.3 плана (docs/rework/11-workflow-ux-and-false-failures.md).
+ * Шаг 11.3 плана.
  *
  * Кейс, чей прогон дошёл до REPORT_READY, в списке и в шапке значился DRAFT,
  * а рядом печатался второй статус — «Unified: Report ready». Два разных

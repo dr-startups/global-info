@@ -7,7 +7,7 @@ import { ARSENKIN_REAL_AGENT_NAMES } from "../../src/modules/digital-profile/age
 import type { UnifiedCollectionJob } from "../../src/modules/digital-profile/services/unified-collection-types";
 
 /**
- * Шаг 08.0-bis плана (docs/rework/08-durable-orchestration.md).
+ * Шаг 08.0-bis плана.
  *
  * Проверяется поведение самого тика: рестарт, пришедшийся между регистрацией
  * агентов и отправкой их задач, не должен оставлять джобу опрашивать пустоту.

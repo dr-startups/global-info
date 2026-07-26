@@ -8,7 +8,7 @@ import {
 import type { RawInventoryItem } from "../../src/modules/digital-profile/orion-golden/types";
 
 /**
- * Шаг 05.2(в2) плана (docs/rework/05-claim-synthesis-and-gpt-input.md).
+ * Шаг 05.2(в2) плана.
  *
  * Раннер обязан быть fail-open: тема, на которой извлечение сорвалось, просто
  * сохраняет прежний детерминированный текст. Потерять обогащённый текст

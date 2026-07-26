@@ -7,7 +7,7 @@ import {
 } from "../../src/modules/digital-profile/providers/published-date";
 
 /**
- * Шаг 05.2(а) плана (docs/rework/05-claim-synthesis-and-gpt-input.md).
+ * Шаг 05.2(а) плана.
  *
  * Дата публикации приходила от обоих провайдеров и выбрасывалась: Яндекс
  * отдаёт <modtime> внутри сырого XML документа, Serper — человекочитаемую

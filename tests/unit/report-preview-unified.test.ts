@@ -5,7 +5,7 @@ import { unifiedArtifactsReady } from "../../src/modules/digital-profile/client/
 import type { UnifiedCollectionJobStatus } from "../../src/modules/digital-profile/client/api";
 
 /**
- * Шаг 11.5 плана (docs/rework/11-workflow-ux-and-false-failures.md).
+ * Шаг 11.5 плана.
  *
  * На кейсе, где прогон завершился REPORT_READY и PDF/PPTX доступны в шапке,
  * вкладка «Предпросмотр отчёта» показывала «Отчёт ещё не сгенерирован» и

@@ -11,7 +11,7 @@ import {
 import { ARSENKIN_REAL_AGENT_NAMES } from "../../src/modules/digital-profile/agents/real/real-arsenkin-agents";
 
 /**
- * Шаг 08.0-bis плана (docs/rework/08-durable-orchestration.md).
+ * Шаг 08.0-bis плана.
  *
  * Наблюдавшееся состояние: пять прогонов зарегистрировано, задач у провайдера
  * две. Возобновление опиралось на число прогонов, поэтому включало режим

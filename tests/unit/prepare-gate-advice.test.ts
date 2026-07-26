@@ -7,7 +7,7 @@ import {
 } from "../../src/modules/digital-profile/services/prepare-gate-advice";
 
 /**
- * Шаг 15, E1 (docs/rework/15-final-regression.md).
+ * Шаг 15, E1.
  *
  * Подготовка отчёта упала с `MATERIAL_THEME_COVERAGE=87.5`, прогон ушёл в
  * `FAILED_TERMINAL` с полностью собранными данными — и предложил кнопку

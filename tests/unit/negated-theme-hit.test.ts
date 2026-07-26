@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { themeHitIsNegated } from "../../src/modules/digital-profile/orion-golden/analytics/negated-theme-hit";
 
 /**
- * Шаг 15, J1 (docs/rework/15-final-regression.md).
+ * Шаг 15, J1.
  *
  * На финальном прогоне в отчёт попала тема «Финансовые претензии / долговые
  * споры», подпёртая материалом, который утверждает **отсутствие** претензий:

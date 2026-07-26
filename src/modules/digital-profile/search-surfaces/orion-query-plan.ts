@@ -95,7 +95,7 @@ const RU_MEDIA_TERMS = ["интервью", "новости"] as const;
 const EN_MEDIA_TERMS = ["news", "profile", "interview"] as const;
 
 /**
- * Шаг 10 плана (docs/rework/10-query-matrix-service-tokens.md).
+ * Шаг 10 плана.
  *
  * Коды регионов — параметр запроса (`gl`/`hl` у Serper, региональный профиль у
  * Яндекса), а не слово в его тексте. «Pavel Durov UAE» смещает выдачу к

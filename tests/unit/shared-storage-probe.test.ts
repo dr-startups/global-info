@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { judgeSharedStorage } from "../../src/modules/digital-profile/workflow/shared-storage-probe";
 
 /**
- * Шаг 12.2 плана (docs/rework/12-durable-step-execution.md).
+ * Шаг 12.2 плана.
  *
  * Артефакты прогона пишет воркер, а отдаёт их приложение обычным чтением
  * файла. С отдельным сервисом-воркером это требует общего тома, а на Railway

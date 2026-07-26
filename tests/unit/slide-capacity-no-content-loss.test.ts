@@ -9,7 +9,7 @@ import { balanceTailPage } from "../../src/modules/digital-profile/orion-golden/
 import { DECK_TEMPLATE_REGISTRY } from "../../src/modules/digital-profile/orion-golden/deck-sections/template-registry";
 
 /**
- * Шаг 16, 07.6 (docs/rework/07-slide-density-pagination-empty-states.md).
+ * Шаг 16, 07.6.
  *
  * Замер отрендеренных страниц финального прогона: 17 листов из 52 с пустым
  * хвостом больше трети, худший — один блок в 115 знаков на весь лист.

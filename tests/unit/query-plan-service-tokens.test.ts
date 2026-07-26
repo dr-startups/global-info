@@ -5,7 +5,7 @@ import {
 } from "../../src/modules/digital-profile/search-surfaces/orion-query-plan";
 
 /**
- * Шаг 10 плана (docs/rework/10-query-matrix-service-tokens.md).
+ * Шаг 10 плана.
  *
  * Поверхности выдачи запрашивались текстовым поиском по названию поверхности:
  * в Google уходил буквальный запрос «Павел Валерьевич Дуров похожие запросы».

@@ -16,7 +16,7 @@ import {
 import type { WorkflowStepRow } from "../../src/modules/digital-profile/workflow/step-types";
 
 /**
- * Шаг 14 (docs/rework/14-arsenkin-wait-orchestration.md).
+ * Шаг 14.
  *
  * Ручное тестирование: прогон падал с «Arsenkin durable poll exceeded 40
  * attempts» и предлагал начать заново, при том что в личном кабинете Arsenkin

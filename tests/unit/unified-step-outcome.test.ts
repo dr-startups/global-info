@@ -4,7 +4,7 @@ import type { WorkflowStepRow } from "../../src/modules/digital-profile/workflow
 import type { UnifiedCollectionJob } from "../../src/modules/digital-profile/services/unified-collection-types";
 
 /**
- * Шаг 12.3 плана (docs/rework/12-durable-step-execution.md).
+ * Шаг 12.3 плана.
  *
  * Обработчики стадий не переписывались — переписан тот, кто их вызывает.
  * Значит, весь риск переноса сосредоточен здесь: в чтении того, что стало
