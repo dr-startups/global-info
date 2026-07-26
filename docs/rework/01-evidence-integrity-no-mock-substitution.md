@@ -132,8 +132,9 @@ orion_uae_international  none  unavailable
       с `DIGITAL_PROFILE_MOCK_AGENTS=false`;
 - [x] неподконфигуренный провайдер попадает в манифест как `runtime: none, status: unavailable`;
 - [x] `realCollectionSufficient = true` при одном реальном успешном провайдере;
-- [ ] юнит-тест: `resolveRuntimeStrategy({mode:"real_only"})` не возвращает ни одного
-      mock-агента (добавить в `tests/unit/`, см. шаг 09).
+- [x] юнит-тест: `resolveRuntimeStrategy({mode:"real_only"})` не возвращает ни одного
+      mock-агента — `tests/unit/acceptance-criteria-01-03.test.ts`, проверяется в
+      худшем случае: демо-агенты доступны, реальные нет.
 
 ## Побочный эффект, требующий продуктового решения
 

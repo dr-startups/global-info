@@ -9,7 +9,7 @@ interface OpenAiAnalystOptions {
 }
 
 /** gpt-5 and o-series are reasoning models: sampling params are fixed at the default. */
-function isReasoningModel(model: string): boolean {
+export function isReasoningModel(model: string): boolean {
   const m = model.trim().toLowerCase();
   return m.startsWith("gpt-5") || m.startsWith("o1") || m.startsWith("o3") || m.startsWith("o4");
 }
@@ -60,6 +60,33 @@ function buildUserPrompt(pack: AiAnalystEvidencePack): string {
   );
 }
 
+/**
+ * Тело запроса к Chat Completions.
+ *
+ * Вынесено из отправки, потому что здесь живёт инвариант, стоивший всему слою
+ * работоспособности: модели рассуждения (gpt-5*, o*) отвергают любой
+ * `temperature`, кроме единицы, ответом HTTP 400. Этот слой считает 400
+ * постоянным отказом и молча переходит на детерминированный текст — то есть
+ * один лишний параметр выключал GPT целиком и незаметно (шаг 02).
+ */
+export function chatCompletionRequestBody(input: {
+  model: string;
+  maxOutputTokens: number;
+  systemPrompt: string;
+  userPrompt: string;
+}): Record<string, unknown> {
+  return {
+    model: input.model,
+    ...(isReasoningModel(input.model) ? {} : { temperature: 0.1 }),
+    max_completion_tokens: input.maxOutputTokens,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: input.systemPrompt },
+      { role: "user", content: input.userPrompt },
+    ],
+  };
+}
+
 async function postChatCompletion(
   options: OpenAiAnalystOptions,
   pack: AiAnalystEvidencePack
@@ -75,19 +102,14 @@ async function postChatCompletion(
         "content-type": "application/json",
         authorization: `Bearer ${options.apiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        // Reasoning models (gpt-5*/o*) reject any temperature other than the
-        // default 1 with HTTP 400 — which this layer treats as a permanent
-        // failure and silently degrades to the deterministic narrative.
-        ...(isReasoningModel(model) ? {} : { temperature: 0.1 }),
-        max_completion_tokens: options.maxOutputTokens,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: buildSystemPrompt(pack.language) },
-          { role: "user", content: buildUserPrompt(pack) },
-        ],
-      }),
+      body: JSON.stringify(
+        chatCompletionRequestBody({
+          model,
+          maxOutputTokens: options.maxOutputTokens,
+          systemPrompt: buildSystemPrompt(pack.language),
+          userPrompt: buildUserPrompt(pack),
+        })
+      ),
     });
     if (!res.ok) {
       // Surface the API's own reason — an opaque `openai_http_400` hid a

@@ -12,6 +12,7 @@
 
 import type { AvailabilityStatus } from "./types";
 import { getProviderCapabilities } from "./capabilities";
+import { secretDefect, secretDefectMessage, type SecretDefect } from "./secret-shape";
 
 function envBool(value: string | undefined, fallback = false): boolean {
   if (value == null) return fallback;
@@ -183,7 +184,13 @@ export interface ProviderAvailability {
  */
 export function computeAvailability(
   name: ProviderName,
-  input: { masterEnabled: boolean; enabled: boolean; hasKeys: boolean }
+  input: {
+    masterEnabled: boolean;
+    enabled: boolean;
+    hasKeys: boolean;
+    /** Человеческие причины непригодности ключей — попадают в сообщение статуса. */
+    keyDefects?: string[];
+  }
 ): { status: AvailabilityStatus; message?: string } {
   if (name === "WIKIPEDIA") {
     return input.enabled
@@ -194,38 +201,73 @@ export function computeAvailability(
     return { status: "DISABLED", message: `${name} connector is disabled.` };
   }
   if (!input.hasKeys) {
-    return { status: "NOT_CONFIGURED", message: `${name} API credentials are missing.` };
+    // Причина называется, если известна: «ключ не задан» и «в ключе осталась
+    // заглушка» требуют разных действий оператора (шаг 04.2).
+    return {
+      status: "NOT_CONFIGURED",
+      message: input.keyDefects?.length
+        ? `${name}: ${input.keyDefects.join("; ")}.`
+        : `${name} API credentials are missing.`,
+    };
   }
   return { status: "ENABLED" };
 }
 
-/** Config keys required by a provider that are currently missing (no values). */
+/**
+ * Config keys required by a provider that are not usable.
+ *
+ * «Не задан» и «стоит заглушка» — одно и то же с точки зрения работы
+ * провайдера, поэтому оба попадают сюда (шаг 04.2). Различие сохраняется в
+ * `configKeyDefects` — оператору нужны разные действия: вписать ключ или
+ * заменить оставшийся `<<<FILL>>>`.
+ */
 export function missingConfigKeys(name: ProviderName): string[] {
+  return configKeyDefects(name).map((d) => d.key);
+}
+
+/** Непригодные ключи провайдера с причиной непригодности. */
+export function configKeyDefects(
+  name: ProviderName
+): Array<{ key: string; defect: SecretDefect; message: string }> {
+  const bad: Array<{ key: string; defect: SecretDefect; message: string }> = [];
+  const check = (key: string, value: string | null | undefined): void => {
+    const defect = secretDefect(value);
+    if (defect) bad.push({ key, defect, message: secretDefectMessage(key, defect) });
+  };
+  // Не секрет, а выбор стратегии/идентификатор: заглушки к ним не применяются,
+  // проверяется только заполненность.
+  const checkPlain = (key: string, value: string | null | undefined): void => {
+    if (!String(value ?? "").trim()) {
+      bad.push({ key, defect: "empty", message: secretDefectMessage(key, "empty") });
+    }
+  };
+
   if (name === "GOOGLE") {
     const g = providerConfig.google;
-    const missing: string[] = [];
     if (g.provider === "disabled") {
       // Strategy not selected — the single thing that must be set first.
-      missing.push("GOOGLE_SEARCH_PROVIDER");
-      return missing;
+      checkPlain("GOOGLE_SEARCH_PROVIDER", "");
+      return bad;
     }
     if (g.provider === "custom_search") {
-      if (!g.apiKey) missing.push("GOOGLE_SEARCH_API_KEY");
-      if (!g.engineId) missing.push("GOOGLE_SEARCH_ENGINE_ID");
-      return missing;
+      check("GOOGLE_SEARCH_API_KEY", g.apiKey);
+      checkPlain("GOOGLE_SEARCH_ENGINE_ID", g.engineId);
+      return bad;
     }
     // external_serp
-    if (!g.external.provider) missing.push("GOOGLE_EXTERNAL_SERP_PROVIDER");
-    else if (!g.external.apiKey) missing.push("GOOGLE_EXTERNAL_SERP_API_KEY");
-    return missing;
+    if (!g.external.provider) {
+      checkPlain("GOOGLE_EXTERNAL_SERP_PROVIDER", "");
+      return bad;
+    }
+    check("GOOGLE_EXTERNAL_SERP_API_KEY", g.external.apiKey);
+    return bad;
   }
   if (name === "YANDEX") {
-    const missing: string[] = [];
-    if (!providerConfig.yandex.apiKey) missing.push("YANDEX_SEARCH_API_KEY");
-    if (!providerConfig.yandex.folderId) missing.push("YANDEX_SEARCH_FOLDER_ID");
-    return missing;
+    check("YANDEX_SEARCH_API_KEY", providerConfig.yandex.apiKey);
+    checkPlain("YANDEX_SEARCH_FOLDER_ID", providerConfig.yandex.folderId);
+    return bad;
   }
-  return [];
+  return bad;
 }
 
 /** Resolves the availability of a provider from config (no network calls). */
@@ -243,24 +285,28 @@ export function getProviderAvailability(name: ProviderName): ProviderAvailabilit
   // Stage N1: Yandex real availability is gated solely by its dedicated flag
   // (DIGITAL_PROFILE_YANDEX_REAL_ENABLED), independent of the H2 master switch.
   if (name === "YANDEX") {
+    const defects = configKeyDefects(name);
     return {
       name,
       ...computeAvailability(name, {
         masterEnabled: true,
         enabled: providerConfig.yandex.realEnabled,
-        hasKeys: missingConfigKeys(name).length === 0,
+        hasKeys: defects.length === 0,
+        keyDefects: defects.map((d) => d.message),
       }),
     };
   }
   // Stage N2 — Google real availability is gated solely by its dedicated flag
   // (DIGITAL_PROFILE_GOOGLE_REAL_ENABLED) + a selected strategy, independent of
   // the H2 master switch (mirrors the Yandex real model).
+  const defects = configKeyDefects(name);
   return {
     name,
     ...computeAvailability(name, {
       masterEnabled: true,
       enabled: providerConfig.google.realEnabled && providerConfig.google.provider !== "disabled",
-      hasKeys: missingConfigKeys(name).length === 0,
+      hasKeys: defects.length === 0,
+      keyDefects: defects.map((d) => d.message),
     }),
   };
 }
