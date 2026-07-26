@@ -50,7 +50,34 @@ describe("замер продвижения", () => {
       ingestedAgents: 1,
       doneTasks: 4,
       observations: 42,
+      doneProviderTasks: 0,
+      persistedObservations: 0,
     });
+  });
+
+  it("счёты из базы попадают в замер", () => {
+    // На живом прогоне сводка джобы обновляется только на границах агентов:
+    // пока первый из пяти работает, в ней всё по нулям. Строки задач при этом
+    // переходят в DONE по одной, и именно они показывают, что провайдер жив.
+    expect(
+      markEnrichmentProgress(null, { doneProviderTasks: 2, persistedObservations: 137 })
+    ).toMatchObject({ doneProviderTasks: 2, persistedObservations: 137 });
+  });
+
+  it("завершённая задача провайдера — это продвижение", () => {
+    expect(
+      progressAdvanced(mark({ doneProviderTasks: 1 }), mark({ doneProviderTasks: 2 }))
+    ).toBe(true);
+    expect(
+      progressAdvanced(mark({ persistedObservations: 10 }), mark({ persistedObservations: 11 }))
+    ).toBe(true);
+  });
+
+  it("замер старой формы читается как нули, а не ломает сравнение", () => {
+    // В базе лежат замеры, записанные до появления новых счётов.
+    const legacy = { terminalAgents: 0, ingestedAgents: 0, doneTasks: 0, observations: 0 };
+    expect(progressAdvanced(legacy, mark({ doneProviderTasks: 1 }))).toBe(true);
+    expect(progressAdvanced(legacy, mark())).toBe(false);
   });
 
   it("отсутствие состояния даёт пустой замер, а не падение", () => {

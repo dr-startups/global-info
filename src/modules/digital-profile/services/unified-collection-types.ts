@@ -221,6 +221,8 @@ export type UnifiedCollectionJob = {
     ingestedAgents: number;
     doneTasks: number;
     observations: number;
+    doneProviderTasks?: number;
+    persistedObservations?: number;
   } | null;
 };
 

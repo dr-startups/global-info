@@ -476,6 +476,34 @@ async function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): Promise
  * например, исчерпан общий срок ожидания обогащения. Предлагать оператору
  * кнопку в таком случае значит звать его чинить то, что кнопкой не чинится.
  */
+/**
+ * Продвижение, видимое в базе: завершённые задачи провайдера и сохранённые
+ * наблюдения.
+ *
+ * Сводное состояние джобы обновляется только на границах агентов — пять
+ * агентов идут по очереди, и пока первый работает, в сводке всё по нулям.
+ * Строки задач при этом переходят в `DONE` по одной, и именно они честно
+ * отвечают на вопрос «провайдер работает или молчит» (шаг 14, живой прогон).
+ *
+ * Сбой чтения не должен обрывать прогон: нули означают «сведений нет», и
+ * решение принимается по остальным признакам.
+ */
+async function countLiveEnrichmentProgress(
+  caseId: string,
+  deps: UnifiedOrchestratorDeps
+): Promise<{ doneProviderTasks: number; persistedObservations: number }> {
+  try {
+    const prisma = deps.prisma ?? (await import("@/server/prisma/client")).prisma;
+    const [doneProviderTasks, persistedObservations] = await Promise.all([
+      prisma.providerTask.count({ where: { caseId, state: "DONE" } }),
+      prisma.serpObservation.count({ where: { caseId } }),
+    ]);
+    return { doneProviderTasks, persistedObservations };
+  } catch {
+    return { doneProviderTasks: 0, persistedObservations: 0 };
+  }
+}
+
 async function failTerminal(
   job: UnifiedCollectionJob,
   code: string,
@@ -1090,9 +1118,11 @@ async function stepArsenkin(
     // Бюджет ожидания считает опросы БЕЗ продвижения, а не все подряд: пока
     // задачи Arsenkin двигаются, ждать можно и нужно (шаг 14).
     const nowDate = deps.now?.() ?? new Date();
+    const liveCounts = await countLiveEnrichmentProgress(job.caseId, deps);
+    const currentMark = markEnrichmentProgress(state, liveCounts);
     const budget = decideEnrichmentPoll({
       previous: job.enrichmentProgressMark ?? null,
-      current: markEnrichmentProgress(state),
+      current: currentMark,
       idlePolls: Number(job.pollAttempt ?? 0),
       waitStartedAt: job.enrichmentWaitStartedAt ?? null,
       now: nowDate,
@@ -1125,7 +1155,7 @@ async function stepArsenkin(
         pollAttempt: isPollAuthContentionOnly(tick.warnings)
           ? Number(job.pollAttempt ?? 0)
           : budget.idlePolls,
-        enrichmentProgressMark: markEnrichmentProgress(state),
+        enrichmentProgressMark: currentMark,
         enrichmentWaitStartedAt:
           job.enrichmentWaitStartedAt ?? nowDate.toISOString(),
         coverage: { ...coverage, progressRatio: computeCoverageProgress(coverage) },

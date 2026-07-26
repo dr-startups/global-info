@@ -38,6 +38,18 @@ export type EnrichmentProgressMark = {
   ingestedAgents: number;
   doneTasks: number;
   observations: number;
+  /**
+   * Задачи провайдера, дошедшие до `DONE`, и сохранённые наблюдения.
+   *
+   * Эти два счёта берутся из строк в базе, а не из сводного состояния джобы.
+   * На живом прогоне выяснилось, что сводка обновляется только на границах
+   * агентов: пять агентов идут по очереди, и пока первый работает, в сводке
+   * всё по нулям — то есть сигнал продвижения, выведенный только из неё,
+   * молчит там, где провайдер работает. Строки задач при этом переходят в
+   * `DONE` по одной.
+   */
+  doneProviderTasks: number;
+  persistedObservations: number;
 };
 
 export const EMPTY_PROGRESS_MARK: EnrichmentProgressMark = {
@@ -45,18 +57,23 @@ export const EMPTY_PROGRESS_MARK: EnrichmentProgressMark = {
   ingestedAgents: 0,
   doneTasks: 0,
   observations: 0,
+  doneProviderTasks: 0,
+  persistedObservations: 0,
 };
 
 export function markEnrichmentProgress(
-  state: ArsenkinEnrichmentState | null | undefined
+  state: ArsenkinEnrichmentState | null | undefined,
+  /** Счёты из базы: они двигаются внутри агента, а сводка — только на границах. */
+  live: { doneProviderTasks?: number; persistedObservations?: number } = {}
 ): EnrichmentProgressMark {
-  if (!state) return EMPTY_PROGRESS_MARK;
-  const agents = state.agents ?? [];
+  const agents = state?.agents ?? [];
   return {
     terminalAgents: agents.filter((a) => a.terminal).length,
     ingestedAgents: agents.filter((a) => a.ingested).length,
     doneTasks: agents.reduce((sum, a) => sum + Math.max(0, Number(a.doneTaskCount ?? 0)), 0),
-    observations: Math.max(0, Number(state.enrichmentObservationCount ?? 0)),
+    observations: Math.max(0, Number(state?.enrichmentObservationCount ?? 0)),
+    doneProviderTasks: Math.max(0, Number(live.doneProviderTasks ?? 0)),
+    persistedObservations: Math.max(0, Number(live.persistedObservations ?? 0)),
   };
 }
 
@@ -67,15 +84,20 @@ export function markEnrichmentProgress(
  * счётчик простоя и застрявший прогон ждал бы вечно.
  */
 export function progressAdvanced(
-  previous: EnrichmentProgressMark | null | undefined,
+  previous: Partial<EnrichmentProgressMark> | null | undefined,
   current: EnrichmentProgressMark
 ): boolean {
   if (!previous) return false;
+  // Замер прошлого опроса мог быть записан до появления нового счёта —
+  // отсутствующее поле читается как ноль, то есть «сведений не было».
+  const before = { ...EMPTY_PROGRESS_MARK, ...previous };
   return (
-    current.terminalAgents > previous.terminalAgents ||
-    current.ingestedAgents > previous.ingestedAgents ||
-    current.doneTasks > previous.doneTasks ||
-    current.observations > previous.observations
+    current.terminalAgents > before.terminalAgents ||
+    current.ingestedAgents > before.ingestedAgents ||
+    current.doneTasks > before.doneTasks ||
+    current.observations > before.observations ||
+    current.doneProviderTasks > before.doneProviderTasks ||
+    current.persistedObservations > before.persistedObservations
   );
 }
 
@@ -109,7 +131,7 @@ export type PollBudgetDecision =
   | { kind: "exhausted"; reason: string; retryable: boolean; idlePolls: number };
 
 export function decideEnrichmentPoll(input: {
-  previous: EnrichmentProgressMark | null | undefined;
+  previous: Partial<EnrichmentProgressMark> | null | undefined;
   current: EnrichmentProgressMark;
   /** Счётчик простоя перед этим опросом. */
   idlePolls: number;
