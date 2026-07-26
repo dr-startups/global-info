@@ -272,13 +272,13 @@ export function toRendererPayload(input: {
     if (s.template === "orion_golden_risk_matrix_grid" && s.table) {
       // bullets[i] carries the rich per-theme explanation aligned with rows[i]
       // (what was found + why risky + advice); level/priority is the fallback.
-      // C.3 — the same theme can appear twice (confirmed + likely); mark the
-      // unconfirmed card in the headline so it never reads as a duplicate.
+      // C.3 — одна тема может встретиться дважды (подтверждённая и спорная).
+      // Различает их бейдж статуса, который карточка и так печатает; дублировать
+      // его в заголовке не нужно. Приписанный суффикс к тому же обрезался по
+      // ширине: «Внимание по линии безопасности / оборонный контур — требует»
+      // (шаг 15, E4).
       keyFindings = s.table.rows.slice(0, 6).map((row, i) => ({
-        headline:
-          row[1] === "Требует подтверждения"
-            ? `${row[0] ?? "Тема"} — требует подтверждения`
-            : row[0] ?? "Тема",
+        headline: row[0] ?? "Тема",
         detail: s.bullets?.[i] ?? `Уровень риска: ${row[1] ?? "—"}; приоритет: ${row[2] ?? "—"}.`,
         status: row[1] ?? "",
         tone: RISK_TONES[row[1] ?? ""] ?? "warn",
