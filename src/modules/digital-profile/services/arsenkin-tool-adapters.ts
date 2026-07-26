@@ -72,6 +72,42 @@ function resolveObservationRegion(
   return s || fallback;
 }
 
+/**
+ * Какой поисковой системе принадлежит наблюдение.
+ *
+ * Раньше всё, что пришло от Arsenkin, записывалось как `engine: "ARSENKIN"` —
+ * то есть сохранялся поставщик данных, а не источник. Ниже по течению это
+ * приходилось чинить догадкой: `engineOf` в сборщике ассетов переводил
+ * `ARSENKIN` в `GOOGLE`, потому что иначе пустовал слот выдачи по ОАЭ. Под ту
+ * же догадку попали и подсказки Яндекса: на живом прогоне слайд «Россия —
+ * подсказки Яндекса» вышел пустым, а сами подсказки Яндекса встали на слайд
+ * Google под ярлыком Google. В отчёте о должной осмотрительности неверно
+ * названный источник хуже отсутствующего.
+ *
+ * Догадка не нужна: систему выбираем мы сами при отправке — параметром `se`
+ * (1 — Яндекс, 2 — Google). Подтверждено формой ответа: у `se=1` регион
+ * приходит яндексовым кодом (`213` — Москва), у `se=2` — гугловым
+ * (`1011981`). Здесь это значение просто не теряется.
+ */
+export function resolveObservationEngine(
+  response: Record<string, unknown> | undefined,
+  requestJson: unknown
+): "YANDEX" | "GOOGLE" | "ARSENKIN" {
+  const seOf = (source: unknown): number | null => {
+    if (!isPlainObject(source)) return null;
+    const data = isPlainObject(source.data) ? source.data : source;
+    const raw = (data as Record<string, unknown>).se;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
+  };
+  const se = seOf(requestJson) ?? seOf(response);
+  if (se === 1) return "YANDEX";
+  if (se === 2) return "GOOGLE";
+  // Инструмент без выбора системы (например, аудит URL) — источник назвать
+  // нечем, и придумывать его нельзя.
+  return "ARSENKIN";
+}
+
 function itemsArray(response: Record<string, unknown>, keys: string[]): unknown[] | null {
   for (const k of keys) {
     const v = response[k];
@@ -200,7 +236,7 @@ function adaptSuggestions(
             response.region,
             requestJson
           ),
-          engine: "ARSENKIN",
+          engine: resolveObservationEngine(response, requestJson),
           query,
           suggestion,
           title: suggestion,
@@ -249,7 +285,7 @@ function adaptPaa(
             response.region,
             requestJson
           ),
-          engine: "ARSENKIN",
+          engine: resolveObservationEngine(response, requestJson),
           query,
           question,
           title: question,
@@ -285,7 +321,7 @@ function adaptAiSearch(
               kind: "other",
               surface: "ai_answer",
               region: resolveObservationRegion(undefined, response.region, requestJson),
-              engine: "ARSENKIN",
+              engine: resolveObservationEngine(response, requestJson),
               query,
               title: asString(response.title) || "AI answer",
               snippet: answer,
@@ -330,7 +366,7 @@ function adaptAiSearch(
           kind: "other",
           surface: "ai_answer",
           region: resolveObservationRegion(raw.region, response.region, requestJson),
-          engine: "ARSENKIN",
+          engine: resolveObservationEngine(response, requestJson),
           query: asString(raw.query ?? response.query ?? ""),
           title,
           snippet: snippet || undefined,

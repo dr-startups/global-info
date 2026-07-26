@@ -97,8 +97,15 @@ function engineOf(item: RawInventoryItem): "YANDEX" | "GOOGLE" | null {
   ).toUpperCase();
   if (/YANDEX|\bYA\b/.test(raw)) return "YANDEX";
   if (/GOOGLE|SERPER|GSEARCH/.test(raw)) return "GOOGLE";
-  // Arsenkin check-top rows are stored as engine=ARSENKIN (not GOOGLE/YANDEX).
-  // Without this, UAE organic never becomes attributable and p27 stays empty.
+  // `ARSENKIN` означает «поставщик известен, система — нет»: так помечены
+  // только те инструменты, где систему не выбирают (аудит URL) или где один
+  // запрос охватывает обе сразу (`check-top` с массивом `se`). Для них выдача
+  // считается гугловой, иначе пустует слот органики по ОАЭ.
+  //
+  // Там, где система выбрана параметром `se`, она теперь и записывается —
+  // см. `resolveObservationEngine`. Прежде это правило переписывало её здесь
+  // задним числом, и подсказки Яндекса попадали на слайд Google под ярлыком
+  // Google, а слайд «Россия — подсказки Яндекса» выходил пустым.
   if (/ARSENKIN/.test(raw)) return "GOOGLE";
   return null;
 }
