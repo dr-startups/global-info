@@ -81,6 +81,8 @@ export const ru: Dictionary = {
     runningUnifiedCollection: "Сбор данных и построение отчёта…",
     unifiedCollectionHint:
       "Поиск по открытым источникам, проверка выдачи и сборка презентации. Платные вызовы провайдеров.",
+    observationOnlyHint:
+      "Агенты — внутренние шаги одного прогона: система запускает их сама и сама повторяет при сбое. Здесь видно, что происходит; вмешательство не требуется.",
     unifiedStage: "Этап",
     unifiedDone: "Unified collection завершён.",
     unifiedPartial: "Unified collection завершён частично (base сохранён).",

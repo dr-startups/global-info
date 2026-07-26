@@ -28,6 +28,15 @@ export const POST = withModule(async (req: NextRequest, ctx: RouteContext) => {
   const user = await requireDigitalProfileUser(req);
   requireRole(user, "agents.run");
   if (!digitalProfileConfig.mockAgents) requireRole(user, "agents.runReal");
+  // Скрытая в UI кнопка ничего не гарантирует — это уже выяснилось на пункте 1
+  // шага 11.2, где `runAgent` запускал любого агента по имени мимо проверки
+  // доступности. Поэтому режим отладки закрыт и на сервере.
+  if (!digitalProfileConfig.manualAgentRun) {
+    throw new Error(
+      "AGENT_MANUAL_RUN_DISABLED: агенты — шаги оркеструемого прогона; " +
+        "повторы ведёт система. Для отладки: DIGITAL_PROFILE_MANUAL_AGENT_RUN=true"
+    );
+  }
   await requireCaseAccess(user, id, "VIEWER");
   const data = await runAgent(id, agentName, actorOf(user));
   return jsonOk(data, 201);

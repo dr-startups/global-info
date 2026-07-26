@@ -60,10 +60,13 @@ type LoadState =
 export function CaseDetailView({
   caseId,
   legacyReportUi = false,
+  manualAgentRun = false,
 }: {
   caseId: string;
   /** REMEDIATION §8.1 — legacy v1/v2/storyboard/Golden prepare panels. */
   legacyReportUi?: boolean;
+  /** Режим отладки: ручной запуск отдельного агента (шаг 11.2, пункт 2). */
+  manualAgentRun?: boolean;
 }) {
   const { t, tError } = useDigitalProfileI18n();
   const { user, can } = useDpAuth();
@@ -747,6 +750,7 @@ export function CaseDetailView({
           unifiedJob={unifiedJob}
           fullAuditBlocked={fullAuditBlockedForTabs}
           lastFullAuditSummary={lastFullAuditSummary}
+          manualAgentRun={manualAgentRun}
           onRunFullAudit={handleRunUnifiedCollection}
           onAgentsChanged={() => void refreshAgents()}
           onEvidenceChanged={() => void refreshEvidence()}

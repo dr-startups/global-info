@@ -97,6 +97,7 @@ export interface Dictionary {
     runUnifiedCollection: string;
     runningUnifiedCollection: string;
     unifiedCollectionHint: string;
+    observationOnlyHint: string;
     unifiedStage: string;
     unifiedDone: string;
     unifiedPartial: string;

@@ -13,6 +13,7 @@ export default async function DigitalProfileCasePage({
     <CaseDetailView
       caseId={caseId}
       legacyReportUi={digitalProfileConfig.legacyReportUiEnabled}
+      manualAgentRun={digitalProfileConfig.manualAgentRun}
     />
   );
 }

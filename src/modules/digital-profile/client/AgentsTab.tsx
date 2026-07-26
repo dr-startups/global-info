@@ -38,9 +38,20 @@ function arsenkinOutcomeBadge(
 }
 
 /**
- * Agents tab: lists all agents, lets the user run one agent or the full
- * audit, and shows recent agent_runs. Durable Arsenkin agents stay RUNNING
- * until finalize; UI polls every 3s while any lastRun is RUNNING.
+ * Вкладка «Агенты»: наблюдение за внутренними шагами прогона.
+ *
+ * Агенты — не самостоятельные кнопки, а шаги одного оркеструемого сбора, и
+ * перечисление их панелью запуска породило привычку «дожимать» отчёт руками:
+ * заказчик жал повтор по нескольку раз, пока сбор не двигался (шаг 11.2,
+ * пункт 2). Повторы ведёт система; здесь остаются статусы, диагностика и
+ * история запусков.
+ *
+ * Ручной запуск отдельного агента — режим отладки, включается флагом
+ * `DIGITAL_PROFILE_MANUAL_AGENT_RUN` и закрыт также на сервере: скрытая кнопка
+ * ничего не гарантирует.
+ *
+ * Durable Arsenkin agents stay RUNNING until finalize; UI polls every 3s while
+ * any lastRun is RUNNING.
  */
 export function AgentsTab({
   caseId,
@@ -51,6 +62,7 @@ export function AgentsTab({
   lastFullAuditSummary,
   onRunFullAudit,
   showUnifiedCta = false,
+  manualAgentRun = false,
   onChanged,
 }: {
   caseId: string;
@@ -66,11 +78,13 @@ export function AgentsTab({
   onRunFullAudit: () => void;
   /** §8.1 — duplicate of header CTA; off by default (one primary CTA). */
   showUnifiedCta?: boolean;
+  /** Режим отладки: ручной запуск отдельного агента (шаг 11.2, пункт 2). */
+  manualAgentRun?: boolean;
   onChanged: () => void;
 }) {
   const { t, tError, tKind, tStatus, fmtDate } = useDigitalProfileI18n();
   const { can } = useDpAuth();
-  const canRun = can("agents.run");
+  const canRun = can("agents.run") && manualAgentRun;
   const [busyAgent, setBusyAgent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -146,6 +160,17 @@ export function AgentsTab({
           </button>
         ) : null}
       </div>
+
+      {/*
+        Без объяснения отсутствие кнопки читается как поломка. Пояснение стоит
+        на месте, где раньше жал оператор, и говорит ровно то, что происходит:
+        повторы ведёт система (шаг 11.2, пункт 2).
+      */}
+      {!canRun ? (
+        <div className="dp-muted" style={{ margin: "10px 0", fontSize: 13 }}>
+          {t("agents.observationOnlyHint")}
+        </div>
+      ) : null}
 
       {error ? (
         <div style={{ margin: "12px 0" }}>
@@ -224,7 +249,7 @@ export function AgentsTab({
             <th>{t("agents.availability")}</th>
             <th>{t("agents.lastRun")}</th>
             <th>{t("agents.finished")}</th>
-            <th />
+            {canRun ? <th /> : null}
           </tr>
         </thead>
         <tbody>
@@ -276,8 +301,8 @@ export function AgentsTab({
                   )}
                 </td>
                 <td className="dp-muted">{a.lastRun ? fmtDate(a.lastRun.finishedAt) : "—"}</td>
-                <td style={{ textAlign: "right" }}>
-                  {canRun ? (
+                {canRun ? (
+                  <td style={{ textAlign: "right" }}>
                     <button
                       className="dp-btn dp-btn-sm"
                       disabled={thisBusy || auditing}
@@ -296,8 +321,8 @@ export function AgentsTab({
                           ? t("agents.restart")
                           : t("agents.runAudit")}
                     </button>
-                  ) : null}
-                </td>
+                  </td>
+                ) : null}
               </tr>
             );
           })}

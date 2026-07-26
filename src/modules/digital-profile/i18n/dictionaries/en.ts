@@ -81,6 +81,8 @@ export const en: Dictionary = {
     runningUnifiedCollection: "Collecting data and building the report…",
     unifiedCollectionHint:
       "Searches open sources, checks the results and assembles the deck. Uses paid provider calls.",
+    observationOnlyHint:
+      "Agents are internal steps of a single run: the system starts them and retries them on failure. This view shows what is happening; no action is required.",
     unifiedStage: "Stage",
     unifiedDone: "Unified collection completed.",
     unifiedPartial: "Unified collection completed partially (base kept).",

@@ -44,6 +44,16 @@ export interface DigitalProfileConfig {
   priceCurrency: string;
   /** Mock mode: agents must not call external APIs. Defaults to true until Stage H. */
   mockAgents: boolean;
+  /**
+   * Ручной запуск отдельного агента — режим отладки (шаг 11.2, пункт 2).
+   *
+   * Агенты не самостоятельные кнопки, а внутренние шаги одного оркеструемого
+   * прогона. Перечисление их панелью запуска и породило привычку «дожимать»
+   * отчёт руками: заказчик жал повтор по нескольку раз, пока сбор не двигался.
+   * Наблюдение (статусы, диагностика, история) остаётся всегда; управление
+   * включается явно.
+   */
+  manualAgentRun: boolean;
   /** Base URL of the PPTX/PDF renderer microservice. */
   rendererUrl: string;
   /** Default report template version used by the renderer. */
@@ -145,6 +155,13 @@ export const digitalProfileConfig: DigitalProfileConfig = {
   },
   priceCurrency: process.env.DIGITAL_PROFILE_PRICE_CURRENCY ?? "EUR",
   mockAgents: envBool(process.env.DIGITAL_PROFILE_MOCK_AGENTS, true),
+  // По умолчанию выключен вне mock-режима: на реальном кейсе ручной запуск
+  // отдельного агента — отладка, а не рабочий ход. В mock-режиме оставлен,
+  // чтобы офлайн-контур и смоки продолжали работать без переменных окружения.
+  manualAgentRun: envBool(
+    process.env.DIGITAL_PROFILE_MANUAL_AGENT_RUN,
+    envBool(process.env.DIGITAL_PROFILE_MOCK_AGENTS, true)
+  ),
   // Canonical: RENDERER_URL. DIGITAL_PROFILE_RENDERER_URL is accepted as an alias.
   rendererUrl:
     process.env.RENDERER_URL ??

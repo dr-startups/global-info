@@ -70,6 +70,7 @@ export function CaseTabs({
   unifiedJob = null,
   fullAuditBlocked = false,
   lastFullAuditSummary,
+  manualAgentRun = false,
   onRunFullAudit,
   onAgentsChanged,
   onEvidenceChanged,
@@ -88,6 +89,8 @@ export function CaseTabs({
     mode: "legacy_mock_first" | "real_first_with_fallback" | "real_only" | "mock_only";
     items: FullAuditRunSummaryItem[];
   } | null;
+  /** Режим отладки: ручной запуск отдельного агента (шаг 11.2, пункт 2). */
+  manualAgentRun?: boolean;
   onRunFullAudit: () => void;
   onAgentsChanged: () => void;
   onEvidenceChanged: () => void;
@@ -163,6 +166,7 @@ export function CaseTabs({
           lastFullAuditSummary={lastFullAuditSummary}
           onRunFullAudit={onRunFullAudit}
           showUnifiedCta={false}
+          manualAgentRun={manualAgentRun}
           onChanged={onAgentsChanged}
         />
       ) : null}
