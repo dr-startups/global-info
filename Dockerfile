@@ -57,4 +57,13 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD curl -fsS "http://localhost:${PORT:-3000}/api/digital-profile/health" || exit 1
 
-CMD ["npm", "run", "start:railway"]
+# Явно, хотя это и значение по умолчанию: остановка контейнера обязана быть
+# сигналом, который процесс умеет обработать.
+STOPSIGNAL SIGTERM
+
+# Exec-форма и никакого `npm` в цепочке. `npm run` сигнал детям не передаёт —
+# замер показал, что после SIGTERM в `npm run` внуки остаются живы: сервер Next
+# не получал сигнала вовсе, контейнер добивался по таймауту, и Railway писал
+# Crashed на каждом деплое. Теперь PID 1 — обычный Node-процесс, который сам
+# получает сигнал и передаёт его дальше (scripts/start.mjs).
+CMD ["node", "scripts/start.mjs"]

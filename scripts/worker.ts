@@ -15,6 +15,10 @@
 
 import { runStepWorker } from "../src/modules/digital-profile/workflow/step-runner";
 import {
+  maintenanceTick,
+  resumeAfterDeploy,
+} from "../src/modules/digital-profile/workflow/deploy-resume";
+import {
   NOT_SHARED_MESSAGE,
   probeSharedStorage,
   storageRoot,
@@ -26,6 +30,7 @@ import {
 
 const IDLE_MS = Number(process.env.WORKFLOW_WORKER_IDLE_MS ?? 1_000);
 const LEASE_MS = Number(process.env.WORKFLOW_WORKER_LEASE_MS ?? 120_000);
+const MAINTENANCE_MS = Number(process.env.WORKFLOW_WORKER_MAINTENANCE_MS ?? 5_000);
 
 async function main(): Promise<void> {
   const controller = new AbortController();
@@ -56,17 +61,30 @@ async function main(): Promise<void> {
     console.log(`[worker] проверка общего хранилища пропущена: ${storage.reason}`);
   }
 
-  await runStepWorker({
-    handlers: unifiedStepHandlers(),
-    idleDelayMs: IDLE_MS,
-    leaseMs: LEASE_MS,
-    signal: controller.signal,
-    onStepSettled: reconcileStageAfterStep,
-    onError: (err, step) => {
-      const where = step ? `${step.jobId}/${step.name}` : "цикл";
-      console.error(`[worker] сбой в ${where}:`, err);
-    },
-  });
+  // Подобрать то, что осталось от прошлого процесса. Раньше это делал
+  // веб-сервер до того, как начинал слушать порт (см. deploy-resume.ts).
+  await resumeAfterDeploy();
+
+  const maintenance = setInterval(() => {
+    void maintenanceTick();
+  }, MAINTENANCE_MS);
+  maintenance.unref?.();
+
+  try {
+    await runStepWorker({
+      handlers: unifiedStepHandlers(),
+      idleDelayMs: IDLE_MS,
+      leaseMs: LEASE_MS,
+      signal: controller.signal,
+      onStepSettled: reconcileStageAfterStep,
+      onError: (err, step) => {
+        const where = step ? `${step.jobId}/${step.name}` : "цикл";
+        console.error(`[worker] сбой в ${where}:`, err);
+      },
+    });
+  } finally {
+    clearInterval(maintenance);
+  }
 
   console.log("[worker] остановлен");
   process.exit(0);
