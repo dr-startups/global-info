@@ -213,12 +213,11 @@ export function validateDigitalProfileEnv(
     );
   }
 
-  // Renderer URL (has a default; warn if missing in a real deploy).
-  if (!env.RENDERER_URL && !env.DIGITAL_PROFILE_RENDERER_URL) {
-    warnings.push(
-      "RENDERER_URL is not set; defaulting to http://localhost:8080 (PPTX/PDF rendering may be unavailable)."
-    );
-  }
+  // Адрес рендерера зависит от площадки и имеет значение по умолчанию: на
+  // Railway — внутреннее имя сервиса, локально — соседний порт. Переменная
+  // нужна только при другой раскладке, поэтому её отсутствие не повод для
+  // предупреждения. Прежний текст к тому же называл адрес, который на Railway
+  // неверен.
 
   // Provider keys — only checked when the provider is enabled.
   if (boolSetting("DIGITAL_PROFILE_REAL_CONNECTORS_ENABLED", env)) {

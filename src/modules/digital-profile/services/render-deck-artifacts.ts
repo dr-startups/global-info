@@ -345,16 +345,21 @@ export function createCanonicalDeckRenderAdapter(
   deps: CanonicalRenderDeps = {}
 ): DeckRenderAdapter {
   return async (input) => {
-    if (isExplicitHttpRendererConfigured() || deps.rendererBaseUrl) {
-      return renderDeckViaHttp(input, deps);
-    }
-    if (isLocalPythonRenderAllowed()) {
+    // Локальный python — только по явному требованию и только когда адрес
+    // сервиса не передан вызывающим.
+    if (!deps.rendererBaseUrl && isLocalPythonRenderAllowed()) {
       return renderDeckWithPython(input);
     }
-    throw new Error(
-      "Renderer not configured: set DIGITAL_PROFILE_RENDERER_URL (or RENDERER_URL), " +
-        "or ORION_CANONICAL_ALLOW_LOCAL_RENDER=1 for explicit local python"
-    );
+    // Во всех прочих случаях — сервис по HTTP. Адрес рендерера всегда
+    // разрешается (`digitalProfileConfig.rendererUrl`): на Railway это
+    // внутреннее имя сервиса, локально — соседний порт.
+    //
+    // Раньше здесь спрашивали не то: «задана ли переменная явно» вместо «какой
+    // адрес у рендерера». После переноса адреса в значения по умолчанию это
+    // роняло сборку отчёта сообщением «Renderer not configured» при полностью
+    // рабочей связке — тот же дефект, что и всюду в этом проекте: один вопрос,
+    // два разных ответа в двух местах.
+    return renderDeckViaHttp(input, deps);
   };
 }
 

@@ -103,6 +103,22 @@ function envLocale(value: string | undefined): "ru" | "en" {
 const ON_RAILWAY = Boolean(process.env.RAILWAY_ENVIRONMENT?.trim());
 
 /**
+ * Первое непустое значение.
+ *
+ * Пустая строка — это «не задано», а не «задано пустым». Оператор, оставивший
+ * поле переменной пустым, ожидает поведения по умолчанию; `??` же пропускает
+ * пустую строку дальше, и адрес рендерера обнулялся вместо того, чтобы взять
+ * значение для этой площадки.
+ */
+function firstNonEmpty(...values: (string | undefined)[]): string | undefined {
+  for (const v of values) {
+    const trimmed = v?.trim();
+    if (trimmed) return trimmed;
+  }
+  return undefined;
+}
+
+/**
  * Где лежат артефакты.
  *
  * Путь зависит от площадки, а не от секрета, поэтому переменная не нужна: на
@@ -110,9 +126,10 @@ const ON_RAILWAY = Boolean(process.env.RAILWAY_ENVIRONMENT?.trim());
  * Переопределение оставлено на случай другой раскладки тома.
  */
 const STORAGE_ROOT =
-  process.env.DIGITAL_PROFILE_STORAGE_ROOT ??
-  process.env.DIGITAL_PROFILE_STORAGE_DIR ??
-  (ON_RAILWAY ? "/data/digital-profile" : "./storage/digital-profile");
+  firstNonEmpty(
+    process.env.DIGITAL_PROFILE_STORAGE_ROOT,
+    process.env.DIGITAL_PROFILE_STORAGE_DIR
+  ) ?? (ON_RAILWAY ? "/data/digital-profile" : "./storage/digital-profile");
 
 // One canonical signed-URL TTL governs all private download links.
 const SIGNED_URL_TTL_SECONDS = Number(
@@ -157,8 +174,7 @@ export const digitalProfileConfig: DigitalProfileConfig = {
   // Адрес зависит от площадки, а не от секрета: на Railway сервисы видят друг
   // друга по внутреннему имени, локально рендерер поднят рядом.
   rendererUrl:
-    process.env.RENDERER_URL ??
-    process.env.DIGITAL_PROFILE_RENDERER_URL ??
+    firstNonEmpty(process.env.RENDERER_URL, process.env.DIGITAL_PROFILE_RENDERER_URL) ??
     (ON_RAILWAY ? "http://renderer.railway.internal:8080" : "http://localhost:8080"),
   reportTemplateVersion:
     process.env.DIGITAL_PROFILE_REPORT_TEMPLATE_VERSION ?? "report-template-v3",
