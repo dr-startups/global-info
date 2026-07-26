@@ -22,22 +22,62 @@ import {
 /**
  * Конвейер сбора. Порядок здесь — единственный источник правды о порядке.
  *
- * `maxAttempts` — это бюджет **пробуждений**, а не только повторов после
- * ошибки: шаг, который ждёт внешнего события, тратит попытку на каждый опрос.
- * При потолке backoff в 30 секунд бюджет в 5 попыток — это около минуты
- * работы. Подготовка отчёта столько не укладывается: там вызовы модели и
- * рендер, и на первом живом прогоне она была объявлена упавшей за минуту,
- * успев дойти до готовой деки. Долгим шагам нужен бюджет уровня Arsenkin.
+ * Два бюджета, и они разные:
+ *
+ * - `maxAttempts` — бюджет **отказов**. Сколько раз шаг вправе упасть с
+ *   ошибкой и быть повторённым.
+ * - `maxWaitMs` — сколько шаг вправе **ждать** внешнего события.
+ *
+ * Раньше это была одна величина, и ожидание тратило бюджет попыток. Число
+ * пробуждений зависит от интервала опроса, поэтому «40 попыток» означало
+ * около двадцати минут при паузе 30 секунд — ровно длину честного прогона
+ * Arsenkin. На живом прогоне шаг `ARSENKIN_ENRICHMENT` умер с
+ * `STEP_ATTEMPTS_EXCEEDED`, пока провайдер работал и агенты завершались один
+ * за другим (шаг 15).
  */
 export const UNIFIED_PIPELINE: readonly StepDefinition[] = [
-  { name: "BASE_COLLECTION", position: 1, stage: "BASE_COLLECTION", maxAttempts: 10 },
-  { name: "ARSENKIN_ENRICHMENT", position: 2, stage: "ARSENKIN_ENRICHMENT", maxAttempts: 40 },
-  { name: "COMPOSITE_MERGE", position: 3, stage: "COMPOSITE_MERGE", maxAttempts: 10 },
-  { name: "REPORT_PREPARE", position: 4, stage: "ORION_PREPARE", maxAttempts: 60 },
+  {
+    name: "BASE_COLLECTION",
+    position: 1,
+    stage: "BASE_COLLECTION",
+    maxAttempts: 10,
+    maxWaitMs: 30 * 60_000,
+  },
+  {
+    name: "ARSENKIN_ENRICHMENT",
+    position: 2,
+    stage: "ARSENKIN_ENRICHMENT",
+    maxAttempts: 10,
+    // Совпадает с потолком ожидания обогащения в `arsenkin-poll-budget`:
+    // два разных предела на одно и то же ожидание противоречили бы друг другу.
+    maxWaitMs: 4 * 60 * 60_000,
+  },
+  {
+    name: "COMPOSITE_MERGE",
+    position: 3,
+    stage: "COMPOSITE_MERGE",
+    maxAttempts: 10,
+    maxWaitMs: 30 * 60_000,
+  },
+  {
+    name: "REPORT_PREPARE",
+    position: 4,
+    stage: "ORION_PREPARE",
+    maxAttempts: 10,
+    maxWaitMs: 60 * 60_000,
+  },
 ] as const;
+
+/** Потолок ожидания шага, если реестр его не задаёт. */
+export const DEFAULT_STEP_MAX_WAIT_MS = 60 * 60_000;
 
 export function stepDefinition(name: string): StepDefinition | null {
   return UNIFIED_PIPELINE.find((s) => s.name === name) ?? null;
+}
+
+/** Право шага ждать внешнего события, мс. */
+export function stepMaxWaitMs(name: string | undefined): number {
+  return stepDefinition(name ?? "")?.maxWaitMs ?? DEFAULT_STEP_MAX_WAIT_MS;
 }
 
 /** Шаги конвейера в порядке исполнения, отсортированные по позиции. */
@@ -162,7 +202,11 @@ export type StepTransition = {
  * попыткой (и сжечь бюджет на работе, которая идёт штатно).
  */
 export function applyStepOutcome(
-  step: Pick<WorkflowStepRow, "attempts" | "maxAttempts">,
+  step: Pick<WorkflowStepRow, "attempts" | "maxAttempts"> & {
+    name?: string;
+    /** Начало исполнения — от него отсчитывается право ждать. */
+    startedAt?: Date | null;
+  },
   outcome: StepOutcome,
   now: Date
 ): StepTransition {
@@ -189,23 +233,29 @@ export function applyStepOutcome(
       };
 
     case "waiting": {
-      // Ожидание внешнего события — это попытка: иначе шаг, у которого
-      // провайдер никогда не ответит, крутился бы бесконечно.
-      const attempts = step.attempts + 1;
-      if (attempts >= step.maxAttempts) {
+      // Ожидание бюджет отказов НЕ тратит. Опасение «провайдер никогда не
+      // ответит» верное, но граница для него — время, а не число пробуждений:
+      // число пробуждений зависит от интервала опроса, и «40 попыток»
+      // означало двадцать минут при паузе 30 секунд (шаг 15).
+      const maxWaitMs = stepMaxWaitMs(step.name);
+      const startedMs = step.startedAt ? step.startedAt.getTime() : null;
+      const waitedMs = startedMs == null ? 0 : now.getTime() - startedMs;
+      if (waitedMs > maxWaitMs) {
         return {
           state: "FAILED",
-          attempts,
+          attempts: step.attempts,
           nextRunAt: null,
-          lastError: `Шаг не завершился за ${step.maxAttempts} попыток`,
-          lastErrorCode: "STEP_ATTEMPTS_EXCEEDED",
+          lastError:
+            `Шаг ждал внешнего события ${Math.round(waitedMs / 60_000)} минут ` +
+            `(предел ${Math.round(maxWaitMs / 60_000)})`,
+          lastErrorCode: "STEP_WAIT_TIMEOUT",
           finished: true,
         };
       }
-      const delay = outcome.retryAfterMs ?? stepBackoffMs(attempts);
+      const delay = outcome.retryAfterMs ?? stepBackoffMs(step.attempts);
       return {
         state: "WAITING",
-        attempts,
+        attempts: step.attempts,
         nextRunAt: new Date(now.getTime() + delay),
         lastError: null,
         lastErrorCode: null,

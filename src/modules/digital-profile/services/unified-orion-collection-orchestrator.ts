@@ -1743,6 +1743,11 @@ async function stepPrepare(
       status: "COMPLETED",
       progress: 1,
       completedAt: new Date().toISOString(),
+      // Ошибка неудавшейся попытки при успехе снимается. Иначе на готовом
+      // отчёте в шапке висит код прошлого отказа, и оператор читает
+      // завершённый прогон как сломанный (шаг 15, живой прогон).
+      lastError: null,
+      lastErrorCode: null,
       reportLinks: {
         pdf: prepared.pdf,
         pptx: prepared.pptx,

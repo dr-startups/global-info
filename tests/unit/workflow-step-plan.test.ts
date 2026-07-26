@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_STEP_MAX_WAIT_MS,
   UNIFIED_PIPELINE,
   applyStepOutcome,
   deriveJobStage,
   nextRunnableStep,
   stepBackoffMs,
   stepIsRetryable,
+  stepMaxWaitMs,
   MAX_STEP_BACKOFF_MS,
 } from "../../src/modules/digital-profile/workflow/step-plan";
+import { MAX_ENRICHMENT_WAIT_MS } from "../../src/modules/digital-profile/services/arsenkin-poll-budget";
 import type { WorkflowStepRow } from "../../src/modules/digital-profile/workflow/step-types";
 
 /**
@@ -181,13 +184,36 @@ describe("исход исполнения превращается в состо
     expect(t.attempts).toBe(2);
   });
 
-  it("ожидание планирует пробуждение и считается попыткой", () => {
-    // Иначе шаг, у которого провайдер никогда не ответит, крутился бы вечно.
-    const t = applyStepOutcome({ attempts: 0, maxAttempts: 40 }, { kind: "waiting" }, NOW);
+  it("ожидание планирует пробуждение и бюджет отказов не тратит", () => {
+    // Прежде ожидание считалось попыткой, и на живом прогоне шаг
+    // ARSENKIN_ENRICHMENT умер с STEP_ATTEMPTS_EXCEEDED, пока провайдер
+    // работал и агенты завершались один за другим (шаг 15). Бюджет попыток
+    // ограничивает отказы; у ожидания своя граница — срок.
+    const t = applyStepOutcome(
+      { attempts: 0, maxAttempts: 10, name: "ARSENKIN_ENRICHMENT", startedAt: NOW },
+      { kind: "waiting" },
+      NOW
+    );
     expect(t.state).toBe("WAITING");
-    expect(t.attempts).toBe(1);
+    expect(t.attempts).toBe(0);
     expect(t.nextRunAt!.getTime()).toBeGreaterThan(NOW.getTime());
     expect(t.finished).toBe(false);
+  });
+
+  it("сотня ожиданий подряд шаг не убивает", () => {
+    // Ровно то, что происходило на живом прогоне: опрос каждые 5-30 секунд в
+    // течение двадцати минут — это больше сорока пробуждений.
+    let attempts = 0;
+    for (let i = 0; i < 100; i += 1) {
+      const t = applyStepOutcome(
+        { attempts, maxAttempts: 10, name: "ARSENKIN_ENRICHMENT", startedAt: NOW },
+        { kind: "waiting" },
+        new Date(NOW.getTime() + i * 20_000)
+      );
+      expect(t.state).toBe("WAITING");
+      attempts = t.attempts;
+    }
+    expect(attempts).toBe(0);
   });
 
   it("ожидание уважает запрошенную провайдером паузу", () => {
@@ -195,11 +221,33 @@ describe("исход исполнения превращается в состо
     expect(t.nextRunAt!.getTime() - NOW.getTime()).toBe(7_000);
   });
 
-  it("бесконечное ожидание упирается в бюджет и падает внятно", () => {
-    const t = applyStepOutcome({ attempts: 39, maxAttempts: 40 }, { kind: "waiting" }, NOW);
+  it("бесконечное ожидание упирается в срок, а не в счётчик пробуждений", () => {
+    // Опасение «провайдер никогда не ответит» остаётся закрытым, но граница
+    // теперь не зависит от интервала опроса.
+    const t = applyStepOutcome(
+      {
+        attempts: 0,
+        maxAttempts: 10,
+        name: "ARSENKIN_ENRICHMENT",
+        startedAt: new Date(NOW.getTime() - 5 * 60 * 60_000),
+      },
+      { kind: "waiting" },
+      NOW
+    );
     expect(t.state).toBe("FAILED");
-    expect(t.lastErrorCode).toBe("STEP_ATTEMPTS_EXCEEDED");
+    expect(t.lastErrorCode).toBe("STEP_WAIT_TIMEOUT");
     expect(t.finished).toBe(true);
+    expect(t.lastError).toMatch(/минут/u);
+  });
+
+  it("шаг без отметки начала ожидание не обрывает", () => {
+    // Без отметки нельзя сказать, сколько он ждёт; обрывать на догадке нельзя.
+    const t = applyStepOutcome(
+      { attempts: 0, maxAttempts: 10, name: "ARSENKIN_ENRICHMENT", startedAt: null },
+      { kind: "waiting" },
+      NOW
+    );
+    expect(t.state).toBe("WAITING");
   });
 
   it("восстановимая ошибка планирует повтор", () => {
@@ -253,18 +301,30 @@ describe("ручной повтор", () => {
 });
 
 describe("бюджеты попыток", () => {
-  it("долгим шагам дан бюджет, соответствующий их длительности", () => {
-    // maxAttempts тратится и на ожидание: при потолке backoff в 30 секунд
-    // бюджет в 5 попыток — около минуты. Подготовка отчёта столько не
-    // укладывается и на первом живом прогоне была объявлена упавшей, успев
-    // собрать деку из 53 слайдов.
-    const byName = new Map(UNIFIED_PIPELINE.map((d) => [d.name, d.maxAttempts ?? 0]));
-    expect(byName.get("REPORT_PREPARE")).toBeGreaterThanOrEqual(40);
-    expect(byName.get("ARSENKIN_ENRICHMENT")).toBeGreaterThanOrEqual(40);
+  it("долгим шагам дан срок ожидания, соответствующий их длительности", () => {
+    // Наблюдённый полный прогон Arsenkin — около двадцати минут; подготовка
+    // отчёта это вызовы модели плюс рендер. Границу задаёт время, а не число
+    // пробуждений, поэтому она не зависит от интервала опроса (шаг 15).
+    const byName = new Map(UNIFIED_PIPELINE.map((d) => [d.name, d.maxWaitMs ?? 0]));
+    expect(byName.get("ARSENKIN_ENRICHMENT")).toBeGreaterThanOrEqual(60 * 60_000);
+    expect(byName.get("REPORT_PREPARE")).toBeGreaterThanOrEqual(30 * 60_000);
   });
 
-  it("у каждого шага бюджет задан явно", () => {
-    for (const d of UNIFIED_PIPELINE) expect(d.maxAttempts).toBeGreaterThan(0);
+  it("потолок ожидания шага Arsenkin совпадает с потолком обогащения", () => {
+    // Два разных предела на одно и то же ожидание противоречили бы друг другу.
+    expect(stepMaxWaitMs("ARSENKIN_ENRICHMENT")).toBe(MAX_ENRICHMENT_WAIT_MS);
+  });
+
+  it("у каждого шага заданы оба бюджета", () => {
+    for (const d of UNIFIED_PIPELINE) {
+      expect(d.maxAttempts, d.name).toBeGreaterThan(0);
+      expect(d.maxWaitMs, d.name).toBeGreaterThan(0);
+    }
+  });
+
+  it("незнакомому шагу даётся потолок по умолчанию", () => {
+    expect(stepMaxWaitMs("НЕТ_ТАКОГО")).toBe(DEFAULT_STEP_MAX_WAIT_MS);
+    expect(stepMaxWaitMs(undefined)).toBe(DEFAULT_STEP_MAX_WAIT_MS);
   });
 });
 

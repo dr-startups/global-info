@@ -53,6 +53,8 @@ const SELECT = {
   outputRef: true,
   lastError: true,
   lastErrorCode: true,
+  // Начало исполнения: от него отсчитывается право шага ждать (шаг 15).
+  startedAt: true,
 } as const;
 
 /**

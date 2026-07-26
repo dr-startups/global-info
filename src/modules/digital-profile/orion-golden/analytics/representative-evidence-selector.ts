@@ -230,10 +230,34 @@ function rankClaimForTheme(c: CanonicalClaim, themeId: CanonicalThemeId): number
   );
 }
 
+/**
+ * Может ли заявка представлять тему в резюме (шаг 15).
+ *
+ * Резюме опирается на материал, отнесённый к субъекту. Заявка со спорной
+ * идентификацией остаётся в выдаче и приложении под пометкой «требует
+ * подтверждения», но выдвигать её как лицо темы нельзя.
+ *
+ * Предикат один для двух вопросов — «какие темы обязаны быть покрыты» и «чем
+ * их покрывать». Раньше это были **разные** условия: тему объявляла любая
+ * существенная заявка, а покрыть её могла только заявка с подтверждённым
+ * субъектом. Тема, которую несли лишь спорные заявки, оказывалась обязательной
+ * и непокрываемой одновременно, гейт `MATERIAL_THEME_COVERAGE` требовал 100 %
+ * и выбрасывал целиком собранный платный прогон. На живом прогоне вышло 87.5 %.
+ */
+export function canRepresentTheme(c: CanonicalClaim): boolean {
+  return (
+    c.subjectMatch === "SUBJECT_MATCH" ||
+    c.subjectMatch === "LIKELY_SUBJECT" ||
+    Boolean(c.summaryOverrideRequired)
+  );
+}
+
 function collectMaterialThemes(claims: CanonicalClaim[]): CanonicalThemeId[] {
   const themeBest = new Map<CanonicalThemeId, MaterialityLevel>();
   for (const c of claims) {
     if (!isMaterialClaim(c)) continue;
+    // Тема обязательна к покрытию только если её есть чем покрыть.
+    if (!canRepresentTheme(c)) continue;
     for (const t of c.themeIds) {
       // identity_mismatch is not a summary risk theme for coverage.
       if (t === "identity_mismatch") continue;
@@ -378,12 +402,7 @@ export function selectRepresentativeEvidence(
     candidatesByTheme.set(
       themeId,
       claims.filter(
-        (c) =>
-          isMaterialClaim(c) &&
-          c.themeIds.includes(themeId) &&
-          (c.subjectMatch === "SUBJECT_MATCH" ||
-            c.subjectMatch === "LIKELY_SUBJECT" ||
-            c.summaryOverrideRequired)
+        (c) => isMaterialClaim(c) && c.themeIds.includes(themeId) && canRepresentTheme(c)
       )
     );
     domainsByTheme.set(themeId, new Set<string>());
