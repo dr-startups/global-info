@@ -11,6 +11,7 @@
  */
 
 import { offlineEnrichmentEnvWarning } from "./offline-enrichment-guard";
+import { boolSetting, stringSetting } from "./defaults";
 
 type Env = Record<string, string | undefined>;
 
@@ -62,7 +63,7 @@ export function describeCapabilityReadiness(env: Env = process.env): CapabilityR
 
   // Arsenkin. До сих пор эта проверка отсутствовала вовсе — при том что
   // интеграция платная и без неё отчёт теряет пять поверхностей.
-  const arsenkinOn = bool(env.ARSENKIN_ENABLED);
+  const arsenkinOn = boolSetting("ARSENKIN_ENABLED", env);
   out.push({
     capability: "Arsenkin (5 агентов обогащения)",
     ready: arsenkinOn && has("ARSENKIN_API_TOKEN"),
@@ -75,7 +76,7 @@ export function describeCapabilityReadiness(env: Env = process.env): CapabilityR
 
   // Google/ORION через внешний SERP. Ключ читается из
   // GOOGLE_EXTERNAL_SERP_API_KEY либо из псевдонима SERPER_API_KEY.
-  const serpProvider = (env.GOOGLE_EXTERNAL_SERP_PROVIDER ?? "").trim().toLowerCase();
+  const serpProvider = stringSetting("GOOGLE_EXTERNAL_SERP_PROVIDER", env);
   const serpKey = has("GOOGLE_EXTERNAL_SERP_API_KEY") || has("SERPER_API_KEY");
   const serpReady = serpProvider === "serper" && serpKey;
   out.push({
@@ -88,9 +89,9 @@ export function describeCapabilityReadiness(env: Env = process.env): CapabilityR
         : "нет GOOGLE_EXTERNAL_SERP_API_KEY (или псевдонима SERPER_API_KEY)",
   });
 
-  const googleStrategy = (env.GOOGLE_SEARCH_PROVIDER ?? "").trim().toLowerCase();
+  const googleStrategy = stringSetting("GOOGLE_SEARCH_PROVIDER", env);
   const googleReady =
-    bool(env.DIGITAL_PROFILE_GOOGLE_REAL_ENABLED) &&
+    boolSetting("DIGITAL_PROFILE_GOOGLE_REAL_ENABLED", env) &&
     (googleStrategy === "external_serp"
       ? serpReady
       : googleStrategy === "custom_search" &&
@@ -100,7 +101,7 @@ export function describeCapabilityReadiness(env: Env = process.env): CapabilityR
     ready: googleReady,
     detail: googleReady
       ? "готов"
-      : !bool(env.DIGITAL_PROFILE_GOOGLE_REAL_ENABLED)
+      : !boolSetting("DIGITAL_PROFILE_GOOGLE_REAL_ENABLED", env)
         ? "DIGITAL_PROFILE_GOOGLE_REAL_ENABLED не равен true"
         : googleStrategy !== "external_serp" && googleStrategy !== "custom_search"
           ? 'GOOGLE_SEARCH_PROVIDER должен быть "external_serp" или "custom_search"'
@@ -110,34 +111,37 @@ export function describeCapabilityReadiness(env: Env = process.env): CapabilityR
   });
 
   const yandexReady =
-    bool(env.DIGITAL_PROFILE_YANDEX_REAL_ENABLED) &&
+    boolSetting("DIGITAL_PROFILE_YANDEX_REAL_ENABLED", env) &&
     missing("YANDEX_SEARCH_API_KEY", "YANDEX_SEARCH_FOLDER_ID").length === 0;
   out.push({
     capability: "Yandex Search (Cloud Search API v2)",
     ready: yandexReady,
     detail: yandexReady
       ? "готов"
-      : !bool(env.DIGITAL_PROFILE_YANDEX_REAL_ENABLED)
+      : !boolSetting("DIGITAL_PROFILE_YANDEX_REAL_ENABLED", env)
         ? "DIGITAL_PROFILE_YANDEX_REAL_ENABLED не равен true"
         : `нет ${missing("YANDEX_SEARCH_API_KEY", "YANDEX_SEARCH_FOLDER_ID").join(", ")}`,
   });
 
-  const aiReady = bool(env.DIGITAL_PROFILE_AI_ANALYST_ENABLED) && has("OPENAI_API_KEY");
+  const aiReady = boolSetting("DIGITAL_PROFILE_AI_ANALYST_ENABLED", env) && has("OPENAI_API_KEY");
   out.push({
     capability: "AI-аналитик (текст отчёта)",
     ready: aiReady,
     detail: aiReady
       ? "готов"
-      : !bool(env.DIGITAL_PROFILE_AI_ANALYST_ENABLED)
+      : !boolSetting("DIGITAL_PROFILE_AI_ANALYST_ENABLED", env)
         ? "DIGITAL_PROFILE_AI_ANALYST_ENABLED не равен true"
         : "нет OPENAI_API_KEY",
   });
 
-  const rendererReady = has("RENDERER_URL") || has("DIGITAL_PROFILE_RENDERER_URL");
+  // Адрес рендерера зависит от площадки, а не от секрета, и имеет значение по
+  // умолчанию: на Railway — внутреннее имя сервиса, локально — соседний порт.
+  // Переменная нужна только при другой раскладке.
+  const rendererExplicit = has("RENDERER_URL") || has("DIGITAL_PROFILE_RENDERER_URL");
   out.push({
     capability: "Отрисовка PPTX/PDF",
-    ready: rendererReady,
-    detail: rendererReady ? "готов" : "нет RENDERER_URL",
+    ready: true,
+    detail: rendererExplicit ? "адрес задан явно" : "адрес по умолчанию для этой площадки",
   });
 
   return out;
@@ -153,7 +157,7 @@ export function validateDigitalProfileEnv(
   const errors: string[] = [];
   const warnings: string[] = [];
 
-  const moduleEnabled = bool(env.DIGITAL_PROFILE_ENABLED);
+  const moduleEnabled = boolSetting("DIGITAL_PROFILE_ENABLED", env);
 
   // DATABASE_URL is always required to run anything useful.
   if (!env.DATABASE_URL || env.DATABASE_URL.trim().length === 0) {
@@ -197,7 +201,7 @@ export function validateDigitalProfileEnv(
   }
 
   // Auth + session secret.
-  if (bool(env.DIGITAL_PROFILE_AUTH_ENABLED)) {
+  if (boolSetting("DIGITAL_PROFILE_AUTH_ENABLED", env)) {
     if (isWeakSecret(env.DIGITAL_PROFILE_SESSION_SECRET)) {
       errors.push(
         "DIGITAL_PROFILE_SESSION_SECRET must be a strong value (>=16 chars, not the default) when DIGITAL_PROFILE_AUTH_ENABLED=true."
@@ -217,15 +221,15 @@ export function validateDigitalProfileEnv(
   }
 
   // Provider keys — only checked when the provider is enabled.
-  if (bool(env.DIGITAL_PROFILE_REAL_CONNECTORS_ENABLED)) {
-    if (bool(env.DIGITAL_PROFILE_GOOGLE_ENABLED)) {
+  if (boolSetting("DIGITAL_PROFILE_REAL_CONNECTORS_ENABLED", env)) {
+    if (boolSetting("DIGITAL_PROFILE_GOOGLE_ENABLED", env)) {
       if (!env.GOOGLE_SEARCH_API_KEY || !env.GOOGLE_SEARCH_ENGINE_ID) {
         warnings.push(
           "Google provider is enabled but GOOGLE_SEARCH_API_KEY / GOOGLE_SEARCH_ENGINE_ID are missing; it will resolve to NOT_CONFIGURED."
         );
       }
     }
-    if (bool(env.DIGITAL_PROFILE_YANDEX_ENABLED)) {
+    if (boolSetting("DIGITAL_PROFILE_YANDEX_ENABLED", env)) {
       if (!env.YANDEX_SEARCH_API_KEY || !env.YANDEX_SEARCH_FOLDER_ID) {
         warnings.push(
           "Yandex provider is enabled but YANDEX_SEARCH_API_KEY / YANDEX_SEARCH_FOLDER_ID are missing; it will resolve to NOT_CONFIGURED."
@@ -235,7 +239,7 @@ export function validateDigitalProfileEnv(
   }
 
   // Stage N1 — official Yandex Cloud Search API v2 (independent dedicated flag).
-  if (bool(env.DIGITAL_PROFILE_YANDEX_REAL_ENABLED)) {
+  if (boolSetting("DIGITAL_PROFILE_YANDEX_REAL_ENABLED", env)) {
     if (!env.YANDEX_SEARCH_API_KEY || !env.YANDEX_SEARCH_FOLDER_ID) {
       warnings.push(
         "DIGITAL_PROFILE_YANDEX_REAL_ENABLED=true but YANDEX_SEARCH_API_KEY / YANDEX_SEARCH_FOLDER_ID are missing; the real Yandex provider will resolve to NOT_CONFIGURED."
@@ -244,7 +248,7 @@ export function validateDigitalProfileEnv(
   }
 
   // Stage N2 — real Google connector (independent dedicated flag + strategy).
-  if (bool(env.DIGITAL_PROFILE_GOOGLE_REAL_ENABLED)) {
+  if (boolSetting("DIGITAL_PROFILE_GOOGLE_REAL_ENABLED", env)) {
     const strategy = (env.GOOGLE_SEARCH_PROVIDER ?? "").trim().toLowerCase();
     if (strategy !== "custom_search" && strategy !== "external_serp") {
       warnings.push(
@@ -270,7 +274,7 @@ export function validateDigitalProfileEnv(
   }
 
   // Stage R8.3 / REMEDIATION §4.1 — AI analyst narrative config.
-  const aiEnabled = bool(env.DIGITAL_PROFILE_AI_ANALYST_ENABLED);
+  const aiEnabled = boolSetting("DIGITAL_PROFILE_AI_ANALYST_ENABLED", env);
   const isProd = (env.NODE_ENV ?? "").toLowerCase() === "production";
   if (!aiEnabled && isProd) {
     warnings.push(
@@ -309,10 +313,10 @@ export function validateDigitalProfileEnv(
   // Arsenkin: интеграция платная, и до сих пор её здесь не проверяли вовсе.
   // Включённый флаг без токена — самый дорогой из тихих отказов: прогон дойдёт
   // до обогащения и там встанет.
-  if (bool(env.ARSENKIN_ENABLED) && !env.ARSENKIN_API_TOKEN?.trim()) {
+  if (boolSetting("ARSENKIN_ENABLED", env) && !env.ARSENKIN_API_TOKEN?.trim()) {
     errors.push("ARSENKIN_ENABLED=true, но ARSENKIN_API_TOKEN не задан.");
   }
-  if (!bool(env.ARSENKIN_ENABLED)) {
+  if (!boolSetting("ARSENKIN_ENABLED", env)) {
     warnings.push(
       "ARSENKIN_ENABLED не равен true — пять агентов обогащения Arsenkin выключены, отчёт соберётся без их поверхностей."
     );

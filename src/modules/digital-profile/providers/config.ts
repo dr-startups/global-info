@@ -10,6 +10,7 @@
  *    never a fake call).
  */
 
+import { boolSetting, stringSetting } from "../config/defaults";
 import type { AvailabilityStatus } from "./types";
 import { getProviderCapabilities } from "./capabilities";
 import { secretDefect, secretDefectMessage, type SecretDefect } from "./secret-shape";
@@ -116,11 +117,15 @@ export interface ProviderConfig {
 }
 
 export const providerConfig: ProviderConfig = {
-  realConnectorsEnabled: envBool(process.env.DIGITAL_PROFILE_REAL_CONNECTORS_ENABLED, false),
+  // Включено по умолчанию. Это безопасно: провайдер без ключа отдаёт
+  // NOT_CONFIGURED с названной причиной и в сеть не ходит, — то есть флаг
+  // ничего не открывает сам по себе, ключ и есть разрешение. Держать его
+  // выключенным значило требовать переменную, без которой продукт неполон.
+  realConnectorsEnabled: boolSetting("DIGITAL_PROFILE_REAL_CONNECTORS_ENABLED"),
   timeoutMs: Number(process.env.DIGITAL_PROFILE_PROVIDER_TIMEOUT_MS ?? 15000),
   maxResults: Number(process.env.DIGITAL_PROFILE_PROVIDER_MAX_RESULTS ?? 20),
   wikipedia: {
-    enabled: envBool(process.env.DIGITAL_PROFILE_WIKIPEDIA_ENABLED, true),
+    enabled: boolSetting("DIGITAL_PROFILE_WIKIPEDIA_ENABLED"),
     languages: (envStr(process.env.DIGITAL_PROFILE_WIKIPEDIA_LANGS) ?? "ru,en")
       .split(",")
       .map((s) => s.trim().toLowerCase())
@@ -131,9 +136,11 @@ export const providerConfig: ProviderConfig = {
     minRequestIntervalMs: Number(process.env.DIGITAL_PROFILE_WIKIPEDIA_MIN_INTERVAL_MS ?? 250),
   },
   google: {
-    enabled: envBool(process.env.DIGITAL_PROFILE_GOOGLE_ENABLED, false),
-    realEnabled: envBool(process.env.DIGITAL_PROFILE_GOOGLE_REAL_ENABLED, false),
-    provider: toGoogleStrategy(process.env.GOOGLE_SEARCH_PROVIDER),
+    enabled: boolSetting("DIGITAL_PROFILE_GOOGLE_ENABLED"),
+    realEnabled: boolSetting("DIGITAL_PROFILE_GOOGLE_REAL_ENABLED"),
+    // Рабочая стратегия по умолчанию — внешняя выдача (Serper). Прежде тут
+    // стояло `disabled`, и без переменной Google молчал даже при живом ключе.
+    provider: toGoogleStrategy(stringSetting("GOOGLE_SEARCH_PROVIDER")),
     apiKey: envStr(process.env.GOOGLE_SEARCH_API_KEY),
     engineId: envStr(process.env.GOOGLE_SEARCH_ENGINE_ID),
     timeoutMs: envInt(process.env.GOOGLE_SEARCH_TIMEOUT_MS, 15000, 1000, 60000),
@@ -144,7 +151,11 @@ export const providerConfig: ProviderConfig = {
     external: {
       // Only an enum provider NAME is read from env — never an arbitrary URL
       // (prevents SSRF). The concrete adapter is selected separately.
-      provider: envStr(process.env.GOOGLE_EXTERNAL_SERP_PROVIDER)?.toLowerCase(),
+      //
+      // `serper` — единственная реализованная в этой сборке; она же и значение
+      // по умолчанию. Ровно этой переменной не хватало на стенде: ключ стоял,
+      // провайдер не был выбран, и ORION с Google выключались молча.
+      provider: stringSetting("GOOGLE_EXTERNAL_SERP_PROVIDER"),
       // Primary key name; SERPER_API_KEY is a backward-compatible alias.
       apiKey:
         envStr(process.env.GOOGLE_EXTERNAL_SERP_API_KEY) ??
@@ -158,8 +169,8 @@ export const providerConfig: ProviderConfig = {
     includeRiskProbes: envBool(process.env.ORION_INCLUDE_RISK_PROBES, false),
   },
   yandex: {
-    enabled: envBool(process.env.DIGITAL_PROFILE_YANDEX_ENABLED, false),
-    realEnabled: envBool(process.env.DIGITAL_PROFILE_YANDEX_REAL_ENABLED, false),
+    enabled: boolSetting("DIGITAL_PROFILE_YANDEX_ENABLED"),
+    realEnabled: boolSetting("DIGITAL_PROFILE_YANDEX_REAL_ENABLED"),
     apiKey: envStr(process.env.YANDEX_SEARCH_API_KEY),
     folderId: envStr(process.env.YANDEX_SEARCH_FOLDER_ID),
     region: envStr(process.env.YANDEX_SEARCH_REGION) ?? "ru",

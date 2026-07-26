@@ -99,7 +99,9 @@ export function defaultGptCallQueueOptions(
   const concurrency = Math.max(1, Number(env.ORION_GPT_CONCURRENCY ?? 2) || 2);
   const deadlineMs = Math.max(
     1_000,
-    Number(env.ORION_GPT_STAGE_DEADLINE_MS ?? 600_000) || 600_000
+    // 15 минут: на замеренных прогонах стадия текста укладывается, а прежние
+    // 10 обрывали её на больших делах.
+    Number(env.ORION_GPT_STAGE_DEADLINE_MS ?? 900_000) || 900_000
   );
   return { concurrency, maxAttempts: 5, deadlineMs };
 }

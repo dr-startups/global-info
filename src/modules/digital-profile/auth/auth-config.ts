@@ -16,6 +16,8 @@
 
 const DEFAULT_SECRET = "change-me-in-production";
 
+import { boolSetting } from "../config/defaults";
+
 function envBool(value: string | undefined, fallback = false): boolean {
   if (value == null) return fallback;
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
@@ -30,7 +32,10 @@ export interface AuthConfig {
 
 export function getAuthConfig(): AuthConfig {
   return {
-    enabled: envBool(process.env.DIGITAL_PROFILE_AUTH_ENABLED, false),
+    // Вход обязателен по умолчанию: незакрытая админка — это не «удобная
+    // настройка по умолчанию», а открытый доступ к делам клиентов. Локальный
+    // контур отключает её явной переменной.
+    enabled: boolSetting("DIGITAL_PROFILE_AUTH_ENABLED"),
     sessionSecret:
       process.env.DIGITAL_PROFILE_SESSION_SECRET?.trim() || DEFAULT_SECRET,
     demoAdminEmail:

@@ -3,6 +3,8 @@
  * Token must never appear in logs/report — only via env.
  */
 
+import { boolSetting } from "../../config/defaults";
+
 export type ArsenkinToolName =
   | "check-top"
   | "suggest"
@@ -41,8 +43,16 @@ function parseTools(raw: string | undefined): ArsenkinToolName[] {
   return out.length > 0 ? out : [...DEFAULT_TOOLS];
 }
 
+/**
+ * Обогащение Arsenkin включено по умолчанию.
+ *
+ * Разрешением служит токен, а не флаг: без `ARSENKIN_API_TOKEN` клиент не
+ * создаётся и ни одного платного вызова не происходит. Держать флаг
+ * выключенным значило требовать переменную, без которой отчёт теряет пять
+ * поверхностей.
+ */
 export function isArsenkinEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.ARSENKIN_ENABLED === "1" || env.ARSENKIN_ENABLED === "true";
+  return boolSetting("ARSENKIN_ENABLED", env);
 }
 
 /** Acceptance/CEO renders must fail rather than silently omit requested Arsenkin surfaces. */

@@ -32,7 +32,16 @@ import { once } from "node:events";
 const PORT = process.env.PORT ?? "3000";
 /** Сколько ждать штатного выхода детей, прежде чем добить. */
 const SHUTDOWN_GRACE_MS = Number(process.env.SHUTDOWN_GRACE_MS ?? 15_000);
-const WORKER_INLINE = String(process.env.WORKFLOW_WORKER_INLINE ?? "").toLowerCase() === "true";
+/**
+ * Воркер поднимается в этом же контейнере по умолчанию.
+ *
+ * Пока артефакты лежат на томе, а том Railway монтируется к одному сервису,
+ * отдельный сервис-воркер отчёт отдать не может. Без воркера шаги не исполняет
+ * никто — то есть выключенное значение по умолчанию давало неработающий
+ * продукт. Отключается явно, когда воркер вынесен отдельным сервисом.
+ */
+const WORKER_INLINE =
+  String(process.env.WORKFLOW_WORKER_INLINE ?? "true").toLowerCase() !== "false";
 
 /** @type {{name: string, child: import("node:child_process").ChildProcess}[]} */
 const children = [];

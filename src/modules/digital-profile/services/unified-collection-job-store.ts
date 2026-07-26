@@ -28,11 +28,18 @@ const ACTIVE_STAGES = new Set<UnifiedCollectionStage>([
 
 export type UnifiedCollectionJobStoreMode = "file" | "db";
 
+/**
+ * Где живут прогоны — по умолчанию в базе.
+ *
+ * Файловый режим переживает перезапуск контейнера только вместе с томом и не
+ * виден второму процессу, поэтому рабочая раскладка (веб и воркер порознь)
+ * требует базы. Файловый оставлен для офлайн-смоков, включается явно.
+ */
 export function getUnifiedCollectionJobStoreMode(): UnifiedCollectionJobStoreMode {
   const raw = String(process.env.UNIFIED_COLLECTION_JOB_STORE ?? "")
     .trim()
     .toLowerCase();
-  return raw === "db" ? "db" : "file";
+  return raw === "file" ? "file" : "db";
 }
 
 function rootDir(): string {

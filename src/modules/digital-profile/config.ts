@@ -8,6 +8,8 @@
 import type { ReportPriceItem } from "./types";
 import type { StorageDriver } from "./storage/types";
 
+import { boolSetting } from "./config/defaults";
+
 function envBool(value: string | undefined, fallback = false): boolean {
   if (value == null) return fallback;
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
@@ -97,10 +99,20 @@ function envLocale(value: string | undefined): "ru" | "en" {
   return v === "en" ? "en" : "ru";
 }
 
+/** Работаем ли мы на Railway (площадка выставляет это сама). */
+const ON_RAILWAY = Boolean(process.env.RAILWAY_ENVIRONMENT?.trim());
+
+/**
+ * Где лежат артефакты.
+ *
+ * Путь зависит от площадки, а не от секрета, поэтому переменная не нужна: на
+ * Railway том монтируется в `/data`, локально артефакты лежат в рабочей копии.
+ * Переопределение оставлено на случай другой раскладки тома.
+ */
 const STORAGE_ROOT =
   process.env.DIGITAL_PROFILE_STORAGE_ROOT ??
   process.env.DIGITAL_PROFILE_STORAGE_DIR ??
-  "./storage/digital-profile";
+  (ON_RAILWAY ? "/data/digital-profile" : "./storage/digital-profile");
 
 // One canonical signed-URL TTL governs all private download links.
 const SIGNED_URL_TTL_SECONDS = Number(
@@ -110,7 +122,7 @@ const SIGNED_URL_TTL_SECONDS = Number(
 );
 
 export const digitalProfileConfig: DigitalProfileConfig = {
-  enabled: envBool(process.env.DIGITAL_PROFILE_ENABLED, false),
+  enabled: boolSetting("DIGITAL_PROFILE_ENABLED"),
   // Back-compat alias: storageDir === storage.root.
   storageDir: STORAGE_ROOT,
   storage: {
@@ -130,24 +142,32 @@ export const digitalProfileConfig: DigitalProfileConfig = {
     ttlSeconds: SIGNED_URL_TTL_SECONDS,
   },
   priceCurrency: process.env.DIGITAL_PROFILE_PRICE_CURRENCY ?? "EUR",
-  mockAgents: envBool(process.env.DIGITAL_PROFILE_MOCK_AGENTS, true),
+  // Демо-агенты выключены: рабочий продукт собирает отчёт настоящими
+  // источниками. Офлайн-контур и смоки включают их сами, явной переменной.
+  mockAgents: boolSetting("DIGITAL_PROFILE_MOCK_AGENTS"),
   // По умолчанию выключен вне mock-режима: на реальном кейсе ручной запуск
   // отдельного агента — отладка, а не рабочий ход. В mock-режиме оставлен,
   // чтобы офлайн-контур и смоки продолжали работать без переменных окружения.
   manualAgentRun: envBool(
     process.env.DIGITAL_PROFILE_MANUAL_AGENT_RUN,
-    envBool(process.env.DIGITAL_PROFILE_MOCK_AGENTS, true)
+    boolSetting("DIGITAL_PROFILE_MOCK_AGENTS")
   ),
   // Canonical: RENDERER_URL. DIGITAL_PROFILE_RENDERER_URL is accepted as an alias.
+  //
+  // Адрес зависит от площадки, а не от секрета: на Railway сервисы видят друг
+  // друга по внутреннему имени, локально рендерер поднят рядом.
   rendererUrl:
     process.env.RENDERER_URL ??
     process.env.DIGITAL_PROFILE_RENDERER_URL ??
-    "http://localhost:8080",
+    (ON_RAILWAY ? "http://renderer.railway.internal:8080" : "http://localhost:8080"),
   reportTemplateVersion:
     process.env.DIGITAL_PROFILE_REPORT_TEMPLATE_VERSION ?? "report-template-v3",
   defaultLocale: envLocale(process.env.DIGITAL_PROFILE_DEFAULT_LOCALE),
   aiAnalyst: {
-    enabled: envBool(process.env.DIGITAL_PROFILE_AI_ANALYST_ENABLED, false),
+    // Включён: без него клиентский текст вырождается в детерминированный
+    // шаблон. Без OPENAI_API_KEY слой сам отступает к шаблону, поэтому
+    // «включено по умолчанию» ничего не ломает и ничего не тратит.
+    enabled: boolSetting("DIGITAL_PROFILE_AI_ANALYST_ENABLED"),
     provider:
       (process.env.DIGITAL_PROFILE_AI_ANALYST_PROVIDER ?? "openai").trim().toLowerCase() === "openai"
         ? "openai"
@@ -168,12 +188,11 @@ export const digitalProfileConfig: DigitalProfileConfig = {
   legacyReportUiEnabled: envBool(process.env.DIGITAL_PROFILE_LEGACY_REPORT_UI, false),
   // Canonical REPORT_READY AI gate (off by default — opt-in strictness).
   requireAiReport: envBool(process.env.DIGITAL_PROFILE_REQUIRE_AI_REPORT, false),
-  orionGoldenEnabled: envBool(
-    process.env.DIGITAL_PROFILE_ORION_GOLDEN_ENABLED,
-    process.env.NODE_ENV !== "production"
-  ),
-  /** When true, GPT auto-analyst resolves manual review queue (ORION_GPT_AUTO_ANALYST=1). */
-  orionGptAutoAnalyst: envBool(process.env.ORION_GPT_AUTO_ANALYST, false),
+  // Это и есть текущий формат отчёта — он нужен и в проде.
+  orionGoldenEnabled: boolSetting("DIGITAL_PROFILE_ORION_GOLDEN_ENABLED"),
+  // Разбирает очередь ручной проверки сам. Выключенным он оставляет работу
+  // человеку — ровно то, чего в продукте быть не должно.
+  orionGptAutoAnalyst: boolSetting("ORION_GPT_AUTO_ANALYST"),
   /** Optional §2.4 — LLM AMBIGUOUS disambiguation (default off; never on Railway by default). */
   orionGptIdentity: envBool(process.env.ORION_GPT_IDENTITY, false),
   /** Optional §3.3 — LLM theme suggestion for uncategorized (default off). */

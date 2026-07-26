@@ -38,9 +38,14 @@ describe("unified-collection-job-store (file mode)", () => {
     }
   });
 
-  it("defaults store mode to file when unset", () => {
+  // Без переменной прогоны живут в базе: файловый режим не переживает
+  // перезапуск без тома и не виден второму процессу, а веб и воркер работают
+  // порознь. Файловый остаётся для офлайн-смоков — включается явно.
+  it("без переменной хранилище — база, файловый режим включается явно", () => {
     const prev = process.env.UNIFIED_COLLECTION_JOB_STORE;
     delete process.env.UNIFIED_COLLECTION_JOB_STORE;
+    expect(getUnifiedCollectionJobStoreMode()).toBe("db");
+    process.env.UNIFIED_COLLECTION_JOB_STORE = "file";
     expect(getUnifiedCollectionJobStoreMode()).toBe("file");
     if (prev !== undefined) process.env.UNIFIED_COLLECTION_JOB_STORE = prev;
     else process.env.UNIFIED_COLLECTION_JOB_STORE = "file";
