@@ -97,6 +97,26 @@ export function buildIdentityFragment(
     };
   }
 
+/**
+ * Разные по написанию, одинаковые по сути строки — это один сигнал.
+ *
+ * Сравнение по нормализованному тексту: регистр и пробелы не делают заголовок
+ * другим материалом.
+ */
+function dedupeByText(texts: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of texts) {
+    const key = String(raw ?? "").toLowerCase().replace(/\s+/gu, " ").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(raw);
+  }
+  return out;
+}
+
+
+
   const identityRefs = [
     ...units.flatMap((u) => u.evidenceRefs),
     ...(checkRef ? [checkRef] : []),
@@ -124,9 +144,13 @@ export function buildIdentityFragment(
     ...(checkBullet ? [checkBullet] : []),
     ...subjectClaims.slice(0, 5).map((c) => clampClientText(c.text, 400)),
     // OTHER_SUBJECT is identity pollution, never a neutral subject signal.
-    ...foreignClaims
+    //
+    // Одинаковые заголовки схлопываются: на живом прогоне строка «Дуров, Павел
+    // Валерьевич» стояла трижды подряд, и читатель видел не три сигнала, а один
+    // и тот же трижды (шаг 15, E7).
+    ...dedupeByText(foreignClaims.map((c) => c.text))
       .slice(0, 3)
-      .map((c) => clampClientText(`Риск смешения с другим лицом (не относится к субъекту): ${c.text}`, 400)),
+      .map((text) => clampClientText(`Риск смешения с другим лицом (не относится к субъекту): ${text}`, 400)),
   ];
   const shownBullets = bullets.length > 0 ? bullets : referenceEntries;
   const wikiDomains = [

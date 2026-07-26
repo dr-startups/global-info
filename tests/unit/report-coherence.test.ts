@@ -298,3 +298,48 @@ describe("C4 — тему представляет материал, котор�
     ).toBe(false);
   });
 });
+
+/**
+ * Шаг 15 (docs/rework/15-final-regression.md) — находки живого прогона.
+ */
+describe("находки регрессионного прогона", () => {
+  it("поисковая подсказка не может быть примером по теме (E5)", async () => {
+    const { isWeakExampleTitle } = await import(
+      "../../src/modules/digital-profile/orion-golden/analytics/finding-synthesizer"
+    );
+    // Ровно строка из приложения живого прогона.
+    expect(isWeakExampleTitle("дуров суд сегодня")).toBe(true);
+    expect(isWeakExampleTitle("pavel valeryevich durov arrested")).toBe(true);
+    // Настоящий заголовок примером остаётся.
+    expect(
+      isWeakExampleTitle("Telegram arrest: Who is Pavel Durov and what is his app?")
+    ).toBe(false);
+  });
+
+  it("незнакомый код провайдера не печатается дословно (D4)", async () => {
+    const { complianceProviderLabel } = await import(
+      "../../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/compliance"
+    );
+    expect(complianceProviderLabel("OPEN_SANCTIONS")).toBe("OpenSanctions");
+    expect(complianceProviderLabel("DOW_JONES")).toBe("Dow Jones");
+    // Новый провайдер без ярлыка читается, а не выдаёт внутренний код.
+    expect(complianceProviderLabel("SOME_NEW_BASE")).toBe("Some new base");
+    expect(complianceProviderLabel("")).toBe("База данных");
+  });
+
+  it("тема обязательна к покрытию, только если её есть чем покрыть (D3)", async () => {
+    const { canRepresentTheme } = await import(
+      "../../src/modules/digital-profile/orion-golden/analytics/representative-evidence-selector"
+    );
+    // Гейт MATERIAL_THEME_COVERAGE требовал 100 %, а тему, которую несут только
+    // спорные заявки, покрыть было нечем — и платный прогон выбрасывался.
+    expect(canRepresentTheme({ subjectMatch: "SUBJECT_MATCH" } as never)).toBe(true);
+    expect(canRepresentTheme({ subjectMatch: "LIKELY_SUBJECT" } as never)).toBe(true);
+    expect(canRepresentTheme({ subjectMatch: "AMBIGUOUS" } as never)).toBe(false);
+    expect(canRepresentTheme({ subjectMatch: "OTHER_SUBJECT" } as never)).toBe(false);
+    // Явное указание аналитика перевешивает.
+    expect(
+      canRepresentTheme({ subjectMatch: "AMBIGUOUS", summaryOverrideRequired: true } as never)
+    ).toBe(true);
+  });
+});

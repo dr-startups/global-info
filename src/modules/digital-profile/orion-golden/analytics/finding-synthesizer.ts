@@ -31,6 +31,7 @@ import {
 } from "../../config/finding-themes";
 import { domainOf } from "./composite-dataset-builder";
 import { mapRegionBucket, mapSurfaceBucket } from "../classic/composite-serp-overlay-merge";
+import { looksLikeSearchQuery } from "./client-quote-hygiene";
 
 export type { ThemeDef };
 
@@ -286,6 +287,11 @@ export function isWeakExampleTitle(
   if (!t || t.length < 12) return true;
   if (/^potential\s+match$/i.test(t) || /^потенциальное совпадение$/i.test(t)) return true;
   if (hasDanglingTail(t) || isIncompleteClientQuote(t)) return true;
+  // Строка автодополнения — не публикация: у неё нет ни автора, ни адреса.
+  // Правило стояло в композиторе резюме, но приложение строится другим путём, и
+  // на живом прогоне «дуров суд сегодня» попало в приложение как доказательство
+  // криминальной темы (шаг 15, E5).
+  if (looksLikeSearchQuery(t)) return true;
   // PDF-46 I.1 — provider-truncated SERP «…»: weak unless a full sentence remains.
   if (SERP_TRUNCATED_RE.test(raw.trim()) && !/[.!?»]$/u.test(t)) return true;
 

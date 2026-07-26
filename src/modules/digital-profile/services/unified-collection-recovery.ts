@@ -24,6 +24,7 @@ import type {
   UnifiedCollectionStage,
 } from "./unified-collection-types";
 import { loadReusableAssembledDeck } from "./canonical-report-prepare";
+import { isDeterministicPrepareGate } from "./prepare-gate-advice";
 import {
   planResumeFromSteps,
   type StepResumePlan,
@@ -383,6 +384,16 @@ export async function evaluateUnifiedCollectionRecoveryEligibility(input: {
         recoveryAllowed: true,
         recoveryBlockerReason: null,
         recoveryReason: "ASSEMBLY_RESUME",
+      };
+    }
+    // Гейт подготовки, вычисляемый из собранных данных, повтором не лечится:
+    // та же сборка над тем же набором даст тот же ответ. Кнопка здесь была бы
+    // приглашением потратить время впустую (шаг 15, E1).
+    if (isDeterministicPrepareGate(job.lastError)) {
+      return {
+        recoveryAllowed: false,
+        recoveryBlockerReason: "PREPARE_GATE_NOT_FIXED_BY_RETRY",
+        recoveryReason: null,
       };
     }
     return {

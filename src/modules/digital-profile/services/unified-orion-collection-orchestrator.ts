@@ -83,6 +83,7 @@ import {
   type EnrichmentPollTaskSnap,
 } from "./arsenkin-enrichment-tick";
 import { buildBaseObservationCoverage } from "./base-observation-coverage";
+import { prepareGateFailureMessage } from "./prepare-gate-advice";
 import {
   MAX_IDLE_POLLS,
   decideEnrichmentPoll,
@@ -1606,7 +1607,10 @@ async function stepPrepare(
       await patchUnifiedCollectionJob(job.caseId, {
         stage: "FAILED_TERMINAL",
         status: "FAILED",
-        lastError: message,
+        // Гейт называет себя кодом («MATERIAL_THEME_COVERAGE=87.5»), по которому
+        // оператор не может действовать. Сообщение объясняет, что произошло и
+        // что делать, а код сохраняется для диагностики (шаг 15, E1).
+        lastError: prepareGateFailureMessage(message),
         lastErrorCode: code,
         completedAt: new Date().toISOString(),
         warnings: [...job.warnings, "CANONICAL_PREPARE_BLOCKED"],
