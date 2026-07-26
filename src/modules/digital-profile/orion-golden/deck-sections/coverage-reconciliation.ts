@@ -125,9 +125,14 @@ export function buildCoverageReconciliation(input: {
   for (const def of CANONICAL_BASE_SLOTS) {
     const page = baseSlotToPage.get(def.slotId) ?? null;
     if (page == null) {
-      // Explicit reviewed merge: the slot's content is carried in full by the
-      // target slot — a valid mapping, not a coverage loss.
-      const merge = EXPLICIT_SLOT_MERGES.find((m) => m.baseSlotId === def.slotId);
+      // Слияние слота: содержимое несёт соседний слот — это отображение, а не
+      // потеря покрытия. Слияния берутся из манифеста, а не из статического
+      // списка: часть выводится при сборке (пустая поверхность печатает статус
+      // один раз), и третий источник правды о покрытии разошёлся бы с двумя
+      // первыми — сборщиком и гейтом подготовки (шаг 15, E2).
+      const merge =
+        (deckManifest.mergedSlots ?? []).find((m) => m.baseSlotId === def.slotId) ??
+        EXPLICIT_SLOT_MERGES.find((m) => m.baseSlotId === def.slotId);
       const targetPage = merge ? baseSlotToPage.get(merge.mergedInto) : undefined;
       if (merge && targetPage != null) {
         slots.push({
