@@ -18,6 +18,10 @@ import {
 } from "./arsenkin-enrichment-state";
 import { applyExactlyOnceIngest } from "./arsenkin-exactly-once-ingest";
 import { loadIngestLedger, saveIngestLedger } from "./arsenkin-ingest-ledger";
+import {
+  classifyAgentTasks,
+  TERMINAL_SUBMIT_FAILURE_STATES,
+} from "./arsenkin-progress-derivation";
 import { adaptArsenkinToolResponse } from "./arsenkin-tool-adapters";
 import { agentNameFromEnrichmentRunId } from "./unified-enrichment-sibling-remap";
 import {
@@ -27,21 +31,9 @@ import {
 import type { UnifiedCollectionJob } from "./unified-collection-types";
 import { emptyCoverage, FIRST36_PLANNED_SUPPORTED_SURFACES } from "./unified-collection-types";
 
-const NON_TERMINAL_TASK = new Set([
-  "QUEUED",
-  "SUBMITTING",
-  "RUNNING",
-  "RATE_LIMITED",
-  "WAITING",
-  "POLLING",
-  "SUBMITTED",
-]);
-
-/** Terminal submit failures that must never unlock composite/render. */
-const TERMINAL_SUBMIT_FAILURE = new Set([
-  "SUBMIT_UNKNOWN",
-  "SUBMIT_REJECTED_RETRYABLE",
-]);
+// Классификация задач агента живёт в `arsenkin-progress-derivation`: тем же
+// правилом пользуется сверка хранимого прогресса с фактами. Пока правил было
+// два, они и разъезжались — ровно тот класс дефекта, что чинился всем планом.
 
 type ProviderTaskSnap = {
   id: string;
@@ -110,14 +102,13 @@ function progressFromTasks(input: {
   warnings: string[];
 } {
   const tasks = input.tasks;
-  const pending = tasks.filter((t) => NON_TERMINAL_TASK.has(String(t.state).toUpperCase()));
-  const done = tasks.filter((t) => String(t.state).toUpperCase() === "DONE");
-  const submitRejected = tasks.filter((t) =>
-    TERMINAL_SUBMIT_FAILURE.has(String(t.state).toUpperCase())
-  );
-  const failed = tasks.filter((t) =>
-    /FAIL|ERROR|TIMEOUT|CANCEL/i.test(String(t.state))
-  );
+  const upper = (t: ProviderTaskSnap) => String(t.state).toUpperCase();
+  // Классификация по строкам задач — общая со сверкой прогресса. Здесь она
+  // уточняется тем, чего в строках нет: статусом исполнения, режимом
+  // offlineEmptyValid и разбором нагрузки.
+  const cls = classifyAgentTasks(tasks);
+  const done = tasks.filter((t) => upper(t) === "DONE");
+  const submitRejected = tasks.filter((t) => TERMINAL_SUBMIT_FAILURE_STATES.has(upper(t)));
 
   let terminal = false;
   let terminalKind: ArsenkinAgentTerminalKind | null = null;
@@ -133,26 +124,26 @@ function progressFromTasks(input: {
 
   // Prefer in-flight pollable work over fail-closed on sibling REJECTED/UNKNOWN rows
   // (targeted retry leaves prior rejected Google suggest while Yandex RUNNING).
-  if (pending.length > 0) {
+  if (cls.pendingCount > 0) {
     terminal = false;
     terminalKind = null;
-    if (submitRejected.length > 0) {
+    if (cls.submitRejectedCount > 0) {
       warnings.push("submit-rejected-sibling-awaiting-pending");
     }
-  } else if (submitRejected.length > 0 && done.length === 0 && !input.allowEmptyValid) {
+  } else if (cls.failureKind === "SUBMIT_UNKNOWN_UNRECONCILED" && !input.allowEmptyValid) {
     terminal = true;
     terminalKind = "SUBMIT_UNKNOWN_UNRECONCILED";
     const rejected = submitRejected[0]!;
     if (String(rejected.state).toUpperCase() === "SUBMIT_REJECTED_RETRYABLE") {
       warnings.push("SUBMIT_REJECTED_RETRYABLE:no-externalTaskId");
     }
-  } else if (failed.length > 0 && done.length === 0) {
+  } else if (cls.failedCount > 0 && cls.doneCount === 0) {
     terminal = true;
     terminalKind = "FAILED";
   } else if (execFailed && tasks.length === 0) {
     terminal = true;
     terminalKind = "FAILED";
-  } else if (pending.length === 0 && (done.length > 0 || execFinalized || input.allowEmptyValid)) {
+  } else if (cls.pendingCount === 0 && (cls.doneCount > 0 || execFinalized || input.allowEmptyValid)) {
     terminal = true;
     let anyEmptyValid = false;
     let anyAdaptedOk = false;
@@ -202,7 +193,7 @@ function progressFromTasks(input: {
       terminal,
       terminalKind,
       ingested,
-      pendingTaskCount: pending.length,
+      pendingTaskCount: cls.pendingCount,
       doneTaskCount: done.length,
       submitUnknownCount: submitRejected.length,
       // KPI/subject metrics exclude URL_FETCH_STATUS diagnostics (still in observations[]).
