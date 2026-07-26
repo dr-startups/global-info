@@ -752,6 +752,10 @@ export async function recoverUnifiedOrionCollectionJob(input: {
         completedAt: null,
         // Ceiling reset so durable poll can resume the same paid externalTaskIds.
         pollAttempt: ingestResume || renderResume ? 0 : job.pollAttempt ?? 0,
+        // Общий срок ожидания отсчитывается заново: это осознанное решение
+        // человека, который видит очередь провайдера. Автоматическому пути
+        // такого права нет — иначе ограничения не существовало бы (шаг 14).
+        enrichmentWaitStartedAt: ingestResume ? null : job.enrichmentWaitStartedAt ?? null,
         nextPollAt: ingestResume ? nowIso : job.nextPollAt ?? null,
         // Keep enrichment lineage; do not wipe progress artifact binding.
         arsenkinEnrichmentState,
