@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   collapseEmptySurfaceSlots,
   emptySurfaceMergeReason,
@@ -63,6 +65,16 @@ describe("пустая поверхность занимает одну стра
 
   it("пустой список не роняет", () => {
     expect(collapseEmptySurfaceSlots([])).toEqual({ slides: [], mergedSlots: [] });
+  });
+
+  it("слот, слитый статическим правилом, второй раз не сливается", () => {
+    // Два адресата у одного слота — противоречие, а не полнота. На прогоне
+    // p36_lexis_visual_2 получил сразу два слияния: статическое и выведенное.
+    const src = readFileSync(
+      join(process.cwd(), "src/modules/digital-profile/orion-golden/deck-sections/deck-assembler.ts"),
+      "utf8"
+    );
+    expect(src).toMatch(/staticallyMerged\.has\(slot\.slotId\)/u);
   });
 
   it("причина объясняет читателю, а не ссылается на код", () => {

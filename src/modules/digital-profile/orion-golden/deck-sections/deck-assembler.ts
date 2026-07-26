@@ -298,9 +298,12 @@ export function assembleDeck(input: {
   const emptySlotIds = new Set(
     rendererSlides.filter((s) => s.emptyStateReason).map((s) => s.baseSlotId)
   );
+  // Слот, уже слитый статическим правилом, второй раз не сливается: два адресата
+  // у одного слота — это противоречие, а не полнота (найдено на прогоне).
+  const staticallyMerged = new Set(EXPLICIT_SLOT_MERGES.map((m) => m.baseSlotId));
   const dynamicMerges: typeof EXPLICIT_SLOT_MERGES = [];
   for (const slot of CANONICAL_BASE_SLOTS) {
-    if (presentSlotIds.has(slot.slotId)) continue;
+    if (presentSlotIds.has(slot.slotId) || staticallyMerged.has(slot.slotId)) continue;
     const host = CANONICAL_BASE_SLOTS.find(
       (s) => s.fragmentKey === slot.fragmentKey && emptySlotIds.has(s.slotId)
     );
