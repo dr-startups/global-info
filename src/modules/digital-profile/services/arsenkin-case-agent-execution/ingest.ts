@@ -23,6 +23,7 @@ import {
 } from "../../orion-golden/classic/arsenkin-execution-plan";
 import { pickEnrichmentUrls } from "../../orion-golden/classic/enrich-report-run-with-arsenkin";
 import { planArsenkinExactTasks } from "../../orion-golden/classic/plan-arsenkin-exact-tasks";
+import { writeAgentRunStatus } from "./agent-run-status";
 
 import type {
   ArsenkinCaseAgentExecutionJob,
@@ -117,8 +118,9 @@ export async function finalizeArsenkinCaseAgentRun(input: {
   }
 
   const prisma = input.prisma ?? (await import("@/server/prisma/client")).prisma;
-  await prisma.agentRun.update({
-    where: { id: input.agentRunId },
+  const recorded = await writeAgentRunStatus({
+    prisma,
+    agentRunId: input.agentRunId,
     data: {
       status: computed.agentDbStatus,
       finishedAt: new Date(),
@@ -137,6 +139,14 @@ export async function finalizeArsenkinCaseAgentRun(input: {
       } as unknown as Prisma.InputJsonValue,
     },
   });
+  if (!recorded) {
+    // Здесь пропажа записи значима: это итог прогона, и без неё оператор не
+    // увидит, чем он кончился. Одна строка вместо трассы — наблюдения уже
+    // сохранены, восстанавливать удалённую запись нечем.
+    console.warn(
+      `[arsenkin-case-agent] AgentRun ${input.agentRunId} отсутствует — итог прогона записать некуда`
+    );
+  }
 
   if (computed.agentDbStatus === "SUCCEEDED") {
     try {

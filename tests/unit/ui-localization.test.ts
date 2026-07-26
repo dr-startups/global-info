@@ -77,7 +77,7 @@ describe("словари", () => {
 
   it("в английском словаре нет кириллицы", () => {
     // Исключение — раздел выбора языка: «Русский» там и должен быть по-русски.
-    const allowed = new Set(["report.langRu", "language.ru"]);
+    const allowed = new Set(["language.ru"]);
     const offenders = enLeaves.filter(([k, v]) => !allowed.has(k) && CYRILLIC.test(v));
     expect(offenders.map(([k]) => k)).toEqual([]);
   });
@@ -116,11 +116,5 @@ describe("главная кнопка описывает результат, а 
   it("не упоминает внутреннее имя контура", () => {
     expect(ru.agents.runUnifiedCollection).not.toMatch(/ORION Golden/i);
     expect(en.agents.runUnifiedCollection).not.toMatch(/ORION Golden/i);
-  });
-
-  it("легаси-кнопка отличима от основной", () => {
-    expect(ru.report.generateReport).not.toBe(ru.agents.runUnifiedCollection);
-    expect(en.report.generateReport).toMatch(/legacy/i);
-    expect(ru.report.generateReport).toMatch(/устаревш/i);
   });
 });

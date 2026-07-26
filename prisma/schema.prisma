@@ -203,6 +203,12 @@ model Case {
   // Soft delete (evidence is never hard-deleted without an explicit admin action)
   deletedAt     DateTime?
   deletedBy     String?
+  /**
+   * Кейс создан смоком, а не оператором (шаг 13, B6). Списку оператора такие
+   * строки не принадлежат: они не его работа. Признак хранится в записи, а не
+   * выводится из префикса номера — номер это текст, который может совпасть.
+   */
+  isFixture     Boolean       @default(false)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -232,6 +238,7 @@ model Case {
 
   @@index([status])
   @@index([deletedAt])
+  @@index([isFixture])
   @@map("dp_cases")
 }
 

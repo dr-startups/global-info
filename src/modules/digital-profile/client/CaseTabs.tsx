@@ -17,7 +17,6 @@ import {
   type CaseEvidence,
   type FullAuditRunSummaryItem,
   type ManualResultClass,
-  type ReportVersion,
   type ResultRiskThemeKey,
   type SearchResult,
   type SearchSurfaceItem,
@@ -65,7 +64,6 @@ export function CaseTabs({
   caseDetail,
   evidence,
   surfaces,
-  report,
   agents,
   agentRuns,
   auditing,
@@ -73,16 +71,13 @@ export function CaseTabs({
   fullAuditBlocked = false,
   lastFullAuditSummary,
   onRunFullAudit,
-  legacyReportUi = false,
   onAgentsChanged,
   onEvidenceChanged,
   onSurfacesChanged,
-  onReportChange,
 }: {
   caseDetail: CaseDetail;
   evidence: CaseEvidence;
   surfaces: SearchSurfaceItem[];
-  report: ReportVersion | null;
   agents: AgentInfo[];
   agentRuns: AgentRun[];
   auditing: boolean;
@@ -94,12 +89,9 @@ export function CaseTabs({
     items: FullAuditRunSummaryItem[];
   } | null;
   onRunFullAudit: () => void;
-  /** REMEDIATION §8.1 — legacy v1 generate controls in report tab. */
-  legacyReportUi?: boolean;
   onAgentsChanged: () => void;
   onEvidenceChanged: () => void;
   onSurfacesChanged: () => void;
-  onReportChange: (r: ReportVersion) => void;
 }) {
   const { t } = useDigitalProfileI18n();
   const { can } = useDpAuth();
@@ -214,13 +206,7 @@ export function CaseTabs({
 
       {tab === "audit" ? <AuditSummaryTab caseId={caseDetail.id} /> : null}
       {tab === "report" ? (
-        <ReportPreviewPanel
-          caseId={caseDetail.id}
-          report={report}
-          unifiedJob={unifiedJob}
-          onReportChange={onReportChange}
-          legacyReportUi={legacyReportUi}
-        />
+        <ReportPreviewPanel caseId={caseDetail.id} unifiedJob={unifiedJob} />
       ) : null}
     </div>
   );

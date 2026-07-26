@@ -12,12 +12,15 @@ import { prisma } from "../../src/server/prisma/client";
 export async function ensureSmokeCase(caseId: string, subjectName = "Тестов Тест Тестович"): Promise<void> {
   await prisma.case.upsert({
     where: { id: caseId },
-    update: {},
+    // Существующая строка тоже помечается: кейсы, заведённые до появления
+    // признака, иначе так и остались бы в списке оператора (шаг 13, B6).
+    update: { isFixture: true },
     create: {
       id: caseId,
       caseNumber: `SMOKE-${caseId.slice(0, 24)}`,
       title: `Smoke fixture ${caseId}`,
       createdBy: "smoke",
+      isFixture: true,
     },
   });
   const subject = await prisma.subject.findFirst({ where: { caseId } });

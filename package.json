@@ -170,8 +170,6 @@
     "smoke:orion-real-case-bridge-r92": "tsx scripts/smoke-orion-real-case-bridge-r92.ts",
     "smoke:orion-lexis-gpt55-e2e-r93": "tsx scripts/smoke-orion-lexis-gpt55-e2e-r93.ts",
     "smoke:orion-db-persistence-r94": "tsx scripts/smoke-orion-db-persistence-r94.ts",
-    "smoke:orion-ui-integration-r95": "tsx scripts/smoke-orion-ui-integration-r95.ts",
-    "smoke:orion-ui-e2e-r95b": "tsx scripts/smoke-orion-ui-e2e-r95b.ts",
     "smoke:orion-gpt55-required-r95c": "tsx scripts/smoke-orion-gpt55-required-r95c.ts",
     "smoke:orion-report-quality-r96a": "tsx scripts/smoke-orion-report-quality-r96a.ts",
     "smoke:offer-block-r61": "tsx scripts/smoke-offer-block-r61.ts",

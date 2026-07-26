@@ -61,11 +61,11 @@ export interface DigitalProfileConfig {
     openAiApiKey?: string;
   };
   orionPipelineStore: "file" | "db";
-  orionV2UiEnabled: boolean;
   /**
-   * REMEDIATION §8.1 — show legacy report CTAs/panels (v1 generate, ORION v2,
-   * client storyboard, Golden prepare card). Off by default; main flow is
-   * unified collection + quality panel + recover/rebuild.
+   * REMEDIATION §8.1 — карточка подготовки ORION Golden на странице кейса.
+   * Выключен по умолчанию; основной путь — unified-сбор, панель качества и
+   * восстановление/пересборка. Кнопки легаси-отчёта отсюда убраны вместе с
+   * самим контуром (шаг 13, B6): он отставлен на сервере и отвечал 410.
    */
   legacyReportUiEnabled: boolean;
   /**
@@ -85,8 +85,6 @@ export interface DigitalProfileConfig {
    * never silently produces a user-facing client report.
    */
   orionV2AllowDeterministicFallback: boolean;
-  /** R9.12 — experimental client storyboard report UI (GPT-5.5 + visual composer). */
-  orionClientStoryboardUiEnabled: boolean;
   /** R10 — ORION Golden 3-layer agent architecture (parallel to R9 storyboard). */
   orionGoldenEnabled: boolean;
   orionGptAutoAnalyst: boolean;
@@ -178,10 +176,6 @@ export const digitalProfileConfig: DigitalProfileConfig = {
     String(process.env.DIGITAL_PROFILE_ORION_PIPELINE_STORE ?? "").trim().toLowerCase() === "db"
       ? "db"
       : "file",
-  orionV2UiEnabled: envBool(
-    process.env.DIGITAL_PROFILE_ORION_V2_UI_ENABLED,
-    process.env.NODE_ENV !== "production"
-  ),
   legacyReportUiEnabled: envBool(process.env.DIGITAL_PROFILE_LEGACY_REPORT_UI, false),
   // Default: required in production/preview-like envs, relaxed only in local/test.
   orionV2RequireAi: envBool(
@@ -193,10 +187,6 @@ export const digitalProfileConfig: DigitalProfileConfig = {
   // Default: allowed only outside production/preview (smoke/local QA).
   orionV2AllowDeterministicFallback: envBool(
     process.env.DIGITAL_PROFILE_ORION_V2_ALLOW_DETERMINISTIC_FALLBACK,
-    process.env.NODE_ENV !== "production"
-  ),
-  orionClientStoryboardUiEnabled: envBool(
-    process.env.DIGITAL_PROFILE_ORION_CLIENT_STORYBOARD_UI_ENABLED,
     process.env.NODE_ENV !== "production"
   ),
   orionGoldenEnabled: envBool(

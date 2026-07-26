@@ -27,6 +27,7 @@ import {
   stageForCaseAgentTools,
 } from "./shared";
 import { finalizeArsenkinCaseAgentRun } from "./ingest";
+import { writeAgentRunStatus } from "./agent-run-status";
 
 export async function runArsenkinCaseAgentWorker(input: {
   caseId: string;
@@ -152,8 +153,9 @@ export async function runArsenkinCaseAgentWorker(input: {
       saveArsenkinCaseAgentExecution(job);
 
       try {
-        await prisma.agentRun.update({
-          where: { id: job.agentRunId },
+        await writeAgentRunStatus({
+          prisma,
+          agentRunId: job.agentRunId,
           data: {
             status: "RUNNING",
             output: {
@@ -208,8 +210,9 @@ export async function runArsenkinCaseAgentWorker(input: {
               ? `Arsenkin API: задача ${info.index}/${info.total} (${label}) — /set→/check→/get…`
               : `Arsenkin API: задача ${info.index}/${info.total} (${label}) готова`;
           try {
-            await prisma.agentRun.update({
-              where: { id: job.agentRunId },
+            await writeAgentRunStatus({
+              prisma,
+              agentRunId: job.agentRunId,
               data: {
                 status: "RUNNING",
                 output: {
@@ -333,8 +336,11 @@ export async function startArsenkinCaseAgentDurable(input: {
     });
     try {
       const prisma = input.prisma ?? (await import("@/server/prisma/client")).prisma;
-      await prisma.agentRun.update({
-        where: { id: existing.agentRunId },
+      // Записи может не быть — прошлый запуск мог быть подчищен. Это не сбой:
+      // помечать нечего, и трассы Prisma в журнале здесь не нужны (шаг 13, B6).
+      await writeAgentRunStatus({
+        prisma,
+        agentRunId: existing.agentRunId,
         data: {
           status: "FAILED",
           finishedAt: new Date(),

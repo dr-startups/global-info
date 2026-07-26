@@ -153,8 +153,6 @@ function prepareRenderLabel(job: UnifiedCollectionJobStatus): string {
 
 export function CaseHeader({
   caseDetail,
-  onGenerate,
-  generating,
   onRunUnifiedCollection,
   onRecoverUnifiedCollection,
   onRetrySuggestions,
@@ -164,11 +162,8 @@ export function CaseHeader({
   recovering,
   rebuilding,
   unifiedJob,
-  legacyReportUi = false,
 }: {
   caseDetail: CaseDetail;
-  onGenerate: () => void;
-  generating: boolean;
   onRunUnifiedCollection: () => void;
   onRecoverUnifiedCollection: () => void;
   onRetrySuggestions?: () => void;
@@ -180,8 +175,6 @@ export function CaseHeader({
   rebuilding?: boolean;
   /** Current unified job (not legacy AgentRun). */
   unifiedJob: UnifiedCollectionJobStatus | null;
-  /** REMEDIATION §8.1 — show legacy «Сгенерировать отчёт» CTA. */
-  legacyReportUi?: boolean;
 }) {
   const { t, tStatus, fmtDate } = useDigitalProfileI18n();
   const { can } = useDpAuth();
@@ -212,7 +205,7 @@ export function CaseHeader({
     suggestionsRetry ||
     runningUnified;
   const paidRecollectionRequired = Boolean(unifiedJob?.paidRecollectionRequired);
-  const blockNewRun = fullAuditBlocked || generating;
+  const blockNewRun = fullAuditBlocked;
   return (
     <div>
       <Link className="dp-back" href="/admin/digital-profile">
@@ -291,7 +284,7 @@ export function CaseHeader({
                     type="button"
                     className="dp-btn"
                     onClick={onRebuildReport}
-                    disabled={Boolean(rebuilding) || recovering || auditing || generating}
+                    disabled={Boolean(rebuilding) || recovering || auditing}
                     title={t("unified.rebuildHint")}
                     data-testid="unified-rebuild-report-cta"
                   >
@@ -308,7 +301,7 @@ export function CaseHeader({
             <button
               className="dp-btn dp-btn-primary"
               onClick={onRetrySuggestions}
-              disabled={recovering || generating || auditing}
+              disabled={recovering || auditing}
               title={t("unified.retrySuggestionsConfirm")}
               data-testid="unified-suggestions-retry-cta"
             >
@@ -320,7 +313,7 @@ export function CaseHeader({
             <button
               className="dp-btn dp-btn-primary"
               onClick={onRecoverUnifiedCollection}
-              disabled={recovering || generating || suggestionsRetry}
+              disabled={recovering || suggestionsRetry}
               title={
                 renderRecovery
                   ? t("unified.resumeRenderHint")
@@ -349,7 +342,7 @@ export function CaseHeader({
             <button
               className="dp-btn"
               onClick={onPaidRecollection}
-              disabled={generating || recovering || !onPaidRecollection}
+              disabled={recovering || !onPaidRecollection}
               title={t("unified.paidRecollectionHint")}
               data-testid="unified-orion-paid-recollection-cta"
             >
@@ -372,17 +365,6 @@ export function CaseHeader({
               {runningUnified && !serverRecoveryAllowed
                 ? t("agents.runningUnifiedCollection")
                 : t("agents.runUnifiedCollection")}
-            </button>
-          ) : null}
-          {legacyReportUi && can("report.generateInternal") ? (
-            <button
-              className="dp-btn"
-              onClick={onGenerate}
-              disabled={generating || runningUnified}
-              data-testid="legacy-report-generate-cta"
-            >
-              {generating ? <span className="dp-spinner" /> : null}
-              {generating ? t("report.generating") : t("report.generateReport")}
             </button>
           ) : null}
         </div>

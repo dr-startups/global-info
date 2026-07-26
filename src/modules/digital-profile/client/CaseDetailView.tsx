@@ -4,14 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   DigitalProfileApiError,
-  generateReport,
   getCase,
   getEvidence,
-  getReport,
   listAgentRuns,
   listAgents,
   listSearchSurfaces,
-  renderReport,
   runFullAudit,
   prepareOrionGoldenArtifacts,
   getOrionGoldenPrepareStatus,
@@ -27,7 +24,6 @@ import {
   type CaseEvidence,
   type FullAuditRunSummaryItem,
   type OrionGoldenPrepareSummary,
-  type ReportVersion,
   type SearchSurfaceItem,
   type UnifiedCollectionJobStatus,
 } from "./api";
@@ -72,11 +68,9 @@ export function CaseDetailView({
   const { t, tError } = useDigitalProfileI18n();
   const { user, can } = useDpAuth();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
-  const [report, setReport] = useState<ReportVersion | null>(null);
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
   const [surfaces, setSurfaces] = useState<SearchSurfaceItem[]>([]);
-  const [generating, setGenerating] = useState(false);
   const [auditing, setAuditing] = useState(false);
   const [recovering, setRecovering] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
@@ -98,19 +92,16 @@ export function CaseDetailView({
   const loadAll = useCallback(async () => {
     setState({ kind: "loading" });
     try {
-      const [caseDetail, evidence, latestReport, agentList, runs, surfaceList, prep, unified] =
+      const [caseDetail, evidence, agentList, runs, surfaceList, prep, unified] =
         await Promise.all([
           getCase(caseId),
           getEvidence(caseId),
-          // REMEDIATION 9.3 — legacy GET /report is retired; only fetch when UI flag is on.
-          legacyReportUi ? getReport(caseId) : Promise.resolve(null),
           listAgents(caseId),
           listAgentRuns(caseId),
           listSearchSurfaces(caseId),
           getOrionGoldenPrepareStatus(caseId).catch(() => null),
           getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null })),
         ]);
-      setReport(latestReport);
       setAgents(agentList);
       setAgentRuns(runs);
       setSurfaces(surfaceList);
@@ -126,7 +117,7 @@ export function CaseDetailView({
       const msg = err instanceof Error ? err.message : undefined;
       setState({ kind: "error", message: tError(code, msg) });
     }
-  }, [caseId, legacyReportUi, tError]);
+  }, [caseId, tError]);
 
   const refreshEvidence = useCallback(async () => {
     try {
@@ -197,7 +188,7 @@ export function CaseDetailView({
   }, [caseId, refreshAgents, t]);
 
   const handleRunUnifiedCollection = useCallback(async () => {
-    if (auditing || generating || recovering) return;
+    if (auditing || recovering) return;
     if (isSuggestionsTargetedRetryState(unifiedJob)) {
       setBanner({
         kind: "error",
@@ -235,7 +226,6 @@ export function CaseDetailView({
     }
   }, [
     auditing,
-    generating,
     recovering,
     caseId,
     pollUnifiedUntilTerminal,
@@ -244,7 +234,7 @@ export function CaseDetailView({
   ]);
 
   const handlePaidRecollection = useCallback(async () => {
-    if (auditing || generating || recovering) return;
+    if (auditing || recovering) return;
     const ok = window.confirm(t("unified.paidRecollectionConfirm"));
     if (!ok) return;
     setAuditing(true);
@@ -261,10 +251,10 @@ export function CaseDetailView({
       const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
       if (job) setUnifiedJob(job);
     }
-  }, [auditing, generating, recovering, caseId, pollUnifiedUntilTerminal, tError]);
+  }, [auditing, recovering, caseId, pollUnifiedUntilTerminal, tError]);
 
   const handleRecoverUnifiedCollection = useCallback(async () => {
-    if (auditing || generating || recovering) return;
+    if (auditing || recovering) return;
     if (isSuggestionsTargetedRetryState(unifiedJob)) {
       setBanner({
         kind: "error",
@@ -331,7 +321,6 @@ export function CaseDetailView({
     }
   }, [
     auditing,
-    generating,
     recovering,
     caseId,
     unifiedJob,
@@ -340,7 +329,7 @@ export function CaseDetailView({
   ]);
 
   const handleRebuildReport = useCallback(async () => {
-    if (auditing || generating || recovering || rebuilding || retryingGptCopy) return;
+    if (auditing || recovering || rebuilding || retryingGptCopy) return;
     const jobId = unifiedJob?.unifiedJobId || unifiedJob?.jobId;
     if (!jobId || !unifiedJob?.rebuildAllowed) {
       setBanner({
@@ -380,7 +369,6 @@ export function CaseDetailView({
     }
   }, [
     auditing,
-    generating,
     recovering,
     rebuilding,
     retryingGptCopy,
@@ -391,7 +379,7 @@ export function CaseDetailView({
   ]);
 
   const handleRetryGptCopy = useCallback(async () => {
-    if (auditing || generating || recovering || rebuilding || retryingGptCopy) return;
+    if (auditing || recovering || rebuilding || retryingGptCopy) return;
     const jobId = unifiedJob?.unifiedJobId || unifiedJob?.jobId;
     if (!jobId || !unifiedJob?.gptCopyRetryAllowed) {
       setBanner({
@@ -434,7 +422,6 @@ export function CaseDetailView({
     }
   }, [
     auditing,
-    generating,
     recovering,
     rebuilding,
     retryingGptCopy,
@@ -445,7 +432,7 @@ export function CaseDetailView({
   ]);
 
   const handleRetrySuggestions = useCallback(async () => {
-    if (auditing || generating || recovering) return;
+    if (auditing || recovering) return;
     if (!suggestionsRetryFlightRef.current.tryEnter()) return;
     const jobId = unifiedJob?.jobId;
     const enrichmentRunId = unifiedJob?.suggestionsEnrichmentRunId;
@@ -509,7 +496,6 @@ export function CaseDetailView({
     }
   }, [
     auditing,
-    generating,
     recovering,
     caseId,
     unifiedJob,
@@ -519,7 +505,7 @@ export function CaseDetailView({
 
   const handleRunAudit = useCallback(async () => {
     // Admin/diagnostic path only — primary CTA is unified collection.
-    if (auditing || generating) return;
+    if (auditing) return;
     setAuditing(true);
     setBanner(null);
     try {
@@ -562,34 +548,11 @@ export function CaseDetailView({
     } finally {
       setAuditing(false);
     }
-  }, [auditing, generating, caseId, refreshAgents, t, tError]);
+  }, [auditing, caseId, refreshAgents, t, tError]);
 
   useEffect(() => {
     void loadAll();
   }, [loadAll]);
-
-  // "Generate report" from the header: build + render, then surface the result.
-  const handleHeaderGenerate = useCallback(async () => {
-    if (generating) return;
-    setGenerating(true);
-    setBanner(null);
-    try {
-      const generated = await generateReport(caseId);
-      setReport(generated);
-      const rendered = await renderReport(caseId);
-      setReport({ ...generated, ...rendered });
-      setBanner({
-        kind: "ok",
-        text: t("report.generatedShort", { version: rendered.version }),
-      });
-    } catch (err) {
-      const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
-      const msg = err instanceof Error ? err.message : undefined;
-      setBanner({ kind: "error", text: tError(code, msg) });
-    } finally {
-      setGenerating(false);
-    }
-  }, [caseId, generating, t, tError]);
 
   if (state.kind === "loading") {
     return (
@@ -640,8 +603,6 @@ export function CaseDetailView({
       <Card>
         <CaseHeader
           caseDetail={state.caseDetail}
-          onGenerate={handleHeaderGenerate}
-          generating={generating}
           onRunUnifiedCollection={handleRunUnifiedCollection}
           onRecoverUnifiedCollection={handleRecoverUnifiedCollection}
           onRetrySuggestions={handleRetrySuggestions}
@@ -651,7 +612,6 @@ export function CaseDetailView({
           recovering={recovering}
           rebuilding={rebuilding}
           unifiedJob={unifiedJob}
-          legacyReportUi={legacyReportUi}
         />
       </Card>
 
@@ -781,7 +741,6 @@ export function CaseDetailView({
           caseDetail={state.caseDetail}
           evidence={state.evidence}
           surfaces={surfaces}
-          report={report}
           agents={agents}
           agentRuns={agentRuns}
           auditing={auditing}
@@ -789,11 +748,9 @@ export function CaseDetailView({
           fullAuditBlocked={fullAuditBlockedForTabs}
           lastFullAuditSummary={lastFullAuditSummary}
           onRunFullAudit={handleRunUnifiedCollection}
-          legacyReportUi={legacyReportUi}
           onAgentsChanged={() => void refreshAgents()}
           onEvidenceChanged={() => void refreshEvidence()}
           onSurfacesChanged={() => void refreshSurfaces()}
-          onReportChange={setReport}
         />
       </Card>
     </div>

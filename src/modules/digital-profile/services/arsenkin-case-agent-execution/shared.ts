@@ -23,6 +23,7 @@ import {
 } from "../../orion-golden/classic/arsenkin-execution-plan";
 import { pickEnrichmentUrls } from "../../orion-golden/classic/enrich-report-run-with-arsenkin";
 import { planArsenkinExactTasks } from "../../orion-golden/classic/plan-arsenkin-exact-tasks";
+import { writeAgentRunStatus } from "./agent-run-status";
 
 
 export type ArsenkinAgentOutcome =
@@ -722,8 +723,9 @@ export async function failJobAndAgentRun(input: {
       })
       .catch(() => undefined);
 
-    await prisma.agentRun.update({
-      where: { id: job.agentRunId },
+    await writeAgentRunStatus({
+      prisma,
+      agentRunId: job.agentRunId,
       data: {
         status: "FAILED",
         finishedAt: new Date(),

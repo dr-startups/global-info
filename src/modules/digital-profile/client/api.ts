@@ -437,93 +437,6 @@ export interface CaseEvidence {
   riskFindings: RiskFinding[];
 }
 
-export interface ReportVersion {
-  id: string;
-  caseId: string;
-  version: number;
-  status: string;
-  watermark: string | null;
-  renderedAt: string | null;
-  pptxDownloadUrl: string | null;
-  pdfDownloadUrl: string | null;
-  createdAt: string;
-  reportJson?: unknown;
-}
-
-export interface OrionV2ArtifactSummary {
-  available: boolean;
-  downloadUrl: string | null;
-}
-
-export interface OrionV2Artifacts {
-  clientPdf: OrionV2ArtifactSummary;
-  clientPptx: OrionV2ArtifactSummary;
-  internalDraftPdf?: OrionV2ArtifactSummary;
-  internalDraftPptx?: OrionV2ArtifactSummary;
-}
-
-export type OrionV2LexisStatus =
-  | "not_uploaded"
-  | "uploaded_parsed"
-  | "visual_pages_ready"
-  | "conversion_failed"
-  | "requires_manual_review"
-  | "unknown";
-
-export type OrionV2Gpt55Status =
-  | "used"
-  | "skipped"
-  | "deterministic_fallback"
-  | "required_missing"
-  | "unknown";
-
-export type OrionV2AiEnforcementStatus =
-  | "SKIPPED"
-  | "PASS"
-  | "PASS_WITH_DETERMINISTIC_FALLBACK"
-  | "BLOCKED"
-  | "unknown";
-
-export interface OrionV2ReportStatus {
-  ok: boolean;
-  uiEnabled: boolean;
-  reportMode: "orion_section_pipeline_v1";
-  status: "completed" | "failed" | "running" | "empty";
-  runId: string | null;
-  storeMode: "file" | "db" | null;
-  createdAt: string | null;
-  completedAt: string | null;
-  pageCount: number;
-  clientPageCount: number;
-  lexisVisualPageCount: number;
-  lexisStatus: OrionV2LexisStatus;
-  gpt55Status: OrionV2Gpt55Status;
-  deterministicFallbackUsed: boolean;
-  aiRequired: boolean;
-  aiReady: boolean;
-  aiEnforcementStatus: OrionV2AiEnforcementStatus;
-  clientPolicyStatus: string | null;
-  artifacts: OrionV2Artifacts;
-  warnings: string[];
-}
-
-export interface RenderedReport {
-  id: string;
-  caseId: string;
-  version: number;
-  status: string;
-  watermark: string | null;
-  renderedAt: string | null;
-  pptxDownloadUrl: string | null;
-  pdfDownloadUrl: string | null;
-  templateVersion?: string | null;
-  slideCount?: number;
-  audience?: string;
-  watermarkMode?: string;
-  reportLanguage?: string;
-  warnings?: string[];
-}
-
 export interface AddSearchResultInput {
   engine: string;
   url: string;
@@ -886,98 +799,16 @@ export function getAuditSummary(caseId: string): Promise<{ auditSummary: AuditSu
   return request<{ auditSummary: AuditSummary }>(`/cases/${caseId}/audit-summary`);
 }
 
-/** Returns the latest report version, or null if none has been generated. */
-export async function getReport(caseId: string): Promise<ReportVersion | null> {
-  try {
-    return await request<ReportVersion>(`/cases/${caseId}/report`);
-  } catch (err) {
-    if (
-      err instanceof DigitalProfileApiError &&
-      (err.code === "NOT_FOUND" || err.code === "LEGACY_REPORT_PATH_RETIRED")
-    ) {
-      // REMEDIATION 9.3 — GET /report is retired; unified downloads use job artifacts.
-      return null;
-    }
-    throw err;
-  }
-}
-
-export function generateReport(caseId: string): Promise<ReportVersion> {
-  return request<ReportVersion>(`/cases/${caseId}/report/generate`, {
-    method: "POST",
-  });
-}
-
-export function generateOrionV2Report(
-  caseId: string,
-  options?: { store?: "file" | "db"; gpt55Validate?: boolean }
-): Promise<OrionV2ReportStatus> {
-  return request<OrionV2ReportStatus>(`/cases/${caseId}/report/orion-v2`, {
-    method: "POST",
-    body: options ? JSON.stringify(options) : undefined,
-  });
-}
-
-export function getOrionV2ReportStatus(
-  caseId: string
-): Promise<OrionV2ReportStatus> {
-  return request<OrionV2ReportStatus>(`/cases/${caseId}/report/orion-v2`);
-}
-
-export interface OrionClientStoryboardReportStatus {
-  ok: boolean;
-  uiEnabled: boolean;
-  reportMode: "orion_client_storyboard_r912";
-  status: "completed" | "failed" | "running" | "empty";
-  runId: string | null;
-  createdAt: string | null;
-  completedAt: string | null;
-  slideCount: number;
-  gpt55Status: "used" | "required_missing" | "deterministic_fallback" | "unknown";
-  clientQualityVerdict: string | null;
-  clientPolicyStatus: string | null;
-  aiRequired: boolean;
-  aiReady: boolean;
-  artifacts: {
-    clientPdf: { available: boolean; downloadUrl: string | null };
-    clientPptx: { available: boolean; downloadUrl: string | null };
-  };
-  warnings: string[];
-}
-
-export function generateOrionClientStoryboardReport(
-  caseId: string
-): Promise<OrionClientStoryboardReportStatus> {
-  return request<OrionClientStoryboardReportStatus>(
-    `/cases/${caseId}/report/orion-client-storyboard`,
-    { method: "POST" }
-  );
-}
-
-export function getOrionClientStoryboardReportStatus(
-  caseId: string
-): Promise<OrionClientStoryboardReportStatus> {
-  return request<OrionClientStoryboardReportStatus>(
-    `/cases/${caseId}/report/orion-client-storyboard`
-  );
-}
-
-export interface RenderReportOptions {
-  templateVersion?: string;
-  audience?: "internal" | "client";
-  watermarkMode?: "draft" | "none";
-  reportLanguage?: "ru" | "en";
-}
-
-export function renderReport(
-  caseId: string,
-  options?: RenderReportOptions
-): Promise<RenderedReport> {
-  return request<RenderedReport>(`/cases/${caseId}/report/render`, {
-    method: "POST",
-    body: options ? JSON.stringify(options) : undefined,
-  });
-}
+// ---------------------------------------------------------------------------
+// Легаси-контур отчёта здесь отсутствует намеренно (шаг 13, B6).
+//
+// GET /report, POST /report/generate, /report/render, /report/orion-v2 и
+// /report/orion-client-storyboard отставлены на сервере (REMEDIATION 9.3) и
+// отвечают 410 при любых настройках. Клиент их вызывал: при открытии кейса —
+// сразу, остальные по кнопкам. В консоли браузера это выглядело как ошибка на
+// каждом открытии, а кнопки не могли сработать ни при каких условиях.
+// Актуальный путь — unified-collection и его артефакты.
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // Stage G — agents

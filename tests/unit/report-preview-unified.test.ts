@@ -73,15 +73,13 @@ describe("проводка прогона до вкладки предпросм
 
   it("пустое состояние не показывается поверх готового отчёта", () => {
     const panel = read("ReportPreviewPanel.tsx");
-    expect(panel).toMatch(/unifiedReady \? null : \(/);
     expect(panel).toMatch(/report-preview-unified/);
-  });
-
-  it("язык легаси-отчёта не берётся из локали интерфейса", () => {
-    // Дека собирается по-русски; подстановка локали UI предлагала язык,
-    // которого пайплайн не даёт.
-    const panel = read("ReportPreviewPanel.tsx");
-    expect(panel).toMatch(/useState<"ru" \| "en">\("ru"\)/);
+    // Пустое состояние живёт в ветке «артефактов нет» — после проверки
+    // готовности, а не рядом с готовым отчётом.
+    const ready = panel.indexOf("unifiedReady ? (");
+    const empty = panel.indexOf("<EmptyState");
+    expect(ready).toBeGreaterThan(-1);
+    expect(empty).toBeGreaterThan(ready);
   });
 });
 

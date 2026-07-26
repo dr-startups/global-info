@@ -80,9 +80,9 @@ check("ru: all values non-empty strings", allNonEmpty(ru));
 console.log("\nt() lookup");
 check("t(page.title) resolves", t(ru, "page.title").length > 0);
 check(
-  "t(report.successMessage, params) interpolates",
-  t(en, "report.successMessage", { version: 3, template: "Template v3", slides: 50 }).includes("3") &&
-    !t(en, "report.successMessage", { version: 3, template: "Template v3", slides: 50 }).includes("{version}")
+  "t(unified.goldenDone, params) interpolates",
+  t(en, "unified.goldenDone", { pages: 50 }).includes("50") &&
+    !t(en, "unified.goldenDone", { pages: 50 }).includes("{pages}")
 );
 check("missing key returns the key itself", t(ru, "does.not.exist") === "does.not.exist");
 
