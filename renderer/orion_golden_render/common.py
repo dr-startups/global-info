@@ -331,7 +331,18 @@ _DANGLING_TAIL = re.compile(
 def _trim_dangling_tail(text: str) -> str:
     val = text.strip()
     end = ""
-    if val and val[-1] in ".!?…":
+    # Многоточие в конце — маркер обрезки, поставленный поисковой системой:
+    # «Как Павел Дуров создал «ВКонтакте», Telegram и стал...». Прежний разбор
+    # брал последнюю точку как знак конца, а остальные срезал вместе с
+    # пунктуацией, и обрубок превращался в законченную с виду мысль
+    # («…и стал.»). Читателю это врёт о полноте заголовка (шаг 15, E3).
+    if val.endswith("…"):
+        end = "…"
+        val = val[:-1].rstrip(",;: ")
+    elif val.endswith("..."):
+        end = "…"
+        val = val[:-3].rstrip(",;: ")
+    elif val and val[-1] in ".!?":
         end = val[-1]
         val = val[:-1].rstrip(".,;: ")
     for _ in range(4):

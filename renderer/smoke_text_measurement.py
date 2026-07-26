@@ -18,7 +18,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from orion_golden_render.common import (  # noqa: E402
+from orion_golden_render.common import (
+    _trim_dangling_tail,  # noqa: E402
     _close_dangling_lead_in,
     _fit_lines_to_height,
     measure_text_height,
@@ -74,6 +75,29 @@ def main() -> int:
     check(
         "короткий ввод без продолжения выбрасывается",
         _close_dangling_lead_in("Тема. Факт.\nНайдены публикации:") == "Тема. Факт.",
+    )
+
+    # Шаг 15, E3: многоточие поисковой системы — маркер обрезки заголовка.
+    # Прежний разбор оставлял от «Telegram...» одну точку, и обрубок читался
+    # как законченная мысль.
+    check(
+        "многоточие обрезки не превращается в точку",
+        _trim_dangling_tail("Как Павел Дуров создал «ВКонтакте», Telegram и стал...")
+        == "Как Павел Дуров создал «ВКонтакте», Telegram и стал…",
+    )
+    check(
+        "многоточие с пробелом перед ним тоже сохраняется",
+        _trim_dangling_tail("Дуров Павел Валерьевич | биография и последние ...").endswith("…"),
+    )
+    check(
+        "готовый заголовок с точкой не трогается",
+        _trim_dangling_tail("Полная биография Павла Дурова: где он живет.")
+        == "Полная биография Павла Дурова: где он живет.",
+    )
+    check(
+        "заголовок без конечной пунктуации не получает её",
+        _trim_dangling_tail("Дуров, Павел Валерьевич — Википедия")
+        == "Дуров, Павел Валерьевич — Википедия",
     )
 
     print(f"\n{'FAILED (' + str(len(failures)) + ')' if failures else 'PASSED (0 failures)'}")
