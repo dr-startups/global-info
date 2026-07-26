@@ -355,13 +355,18 @@ async function fileListResumable(): Promise<Array<{ caseId: string; stage: Unifi
   const root = rootDir();
   if (!existsSync(root)) return [];
   const out: Array<{ caseId: string; stage: UnifiedCollectionStage }> = [];
+  const { fixtureCaseIds } = await import("../workflow/fixture-cases");
+  const fixtures = await fixtureCaseIds();
   for (const caseId of readdirSync(root)) {
+    // Фикстуры не возобновляются — см. `dbListResumable`.
+    if (fixtures.has(caseId)) continue;
     const job = await fileLoad(caseId);
     if (!job || !isResumableJob(job)) continue;
     out.push({ caseId, stage: job.stage });
   }
   return out;
 }
+
 
 async function fileDelete(caseId: string): Promise<void> {
   const path = unifiedJobPath(caseId);
@@ -708,6 +713,12 @@ async function dbListResumable(): Promise<Array<{ caseId: string; stage: Unified
     where: {
       status: { in: ["WAITING", "RUNNING"] },
       stage: { in: [...ACTIVE_STAGES] },
+      // Фикстурные кейсы не возобновляются. Смоки оставляют после себя джобы в
+      // `ARSENKIN_ENRICHMENT/WAITING`, и подборка после деплоя принимала их за
+      // работу, которую надо доделать: на стенде с настоящими ключами воркер
+      // молча отправлял **платные** задачи Arsenkin по данным смока. Поймано на
+      // живом стенде — две задачи за пять минут.
+      case: { isFixture: false },
     },
     select: { caseId: true, stage: true },
   });

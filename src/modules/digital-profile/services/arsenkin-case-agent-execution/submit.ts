@@ -481,10 +481,15 @@ export async function resumeArsenkinCaseAgentExecutions(deps?: {
 }): Promise<number> {
   const minAgeMs = deps?.minAgeMs ?? 90_000;
   const running = listRunningArsenkinCaseAgentExecutions();
+  // Фикстурные кейсы не возобновляются: их незавершённые исполнения — след
+  // смоков, а не потерянная работа (workflow/fixture-cases.ts).
+  const { fixtureCaseIds } = await import("../../workflow/fixture-cases");
+  const fixtures = await fixtureCaseIds(deps?.prisma);
   let n = 0;
   const now = Date.now();
   for (const job of running) {
     if (job.phase === "FINALIZED" || job.phase === "FAILED") continue;
+    if (fixtures.has(job.caseId)) continue;
     const updatedMs = Date.parse(job.updatedAt || job.createdAt);
     if (Number.isFinite(updatedMs) && now - updatedMs < minAgeMs) {
       continue;
