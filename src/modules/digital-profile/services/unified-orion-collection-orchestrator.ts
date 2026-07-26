@@ -380,6 +380,8 @@ async function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): Promise
 
   // Full prepare retry after section/assembly QA failure — no re-collection.
   const assemblyResume =
+    job.resumeCheckpoint === "ASSEMBLY" ||
+    // Прогоны до переименования (шаг 12.4c) хранят прежнее значение.
     job.resumeCheckpoint === "ORION_PREPARE" ||
     job.lastErrorCode === "ASSEMBLY_FAILED" ||
     job.lastErrorCode === "REQUIRED_SECTION_FAILED" ||
@@ -418,7 +420,9 @@ async function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): Promise
       await patchUnifiedCollectionJob(job.caseId, {
         stage: "ARSENKIN_ENRICHMENT",
         status: "RUNNING",
-        resumeCheckpoint: "ARSENKIN_ENRICHMENT",
+        // Внутри шага возобновляться некуда: обогащение начинается сначала.
+        // Дублировать здесь стадию нечем и незачем (шаг 12.4c).
+        resumeCheckpoint: null,
         baseReportRunId: job.baseReportRunId ?? manifest!.baseReportRunId,
         lastError: null,
         lastErrorCode: null,
@@ -432,7 +436,7 @@ async function resumeFromRetryableCheckpoint(job: UnifiedCollectionJob): Promise
     await patchUnifiedCollectionJob(job.caseId, {
       stage: "BASE_COLLECTION",
       status: "RUNNING",
-      resumeCheckpoint: "BASE_COLLECTION",
+      resumeCheckpoint: null,
       lastError: null,
       lastErrorCode: null,
       completedAt: null,
@@ -453,7 +457,7 @@ async function failRetryable(
       : code === "ASSEMBLY_FAILED" ||
           code === "REQUIRED_SECTION_FAILED" ||
           extraWarnings.some((w) => /retryable-assembly-failure/i.test(w))
-        ? ("ORION_PREPARE" as const)
+        ? ("ASSEMBLY" as const)
         : code === "PRE_RENDER_DATA_GATE_FAILED" ||
             extraWarnings.some((w) => /PRE_RENDER_DATA_GATE/i.test(w))
           ? ("PRE_RENDER_DATA_GATE" as const)

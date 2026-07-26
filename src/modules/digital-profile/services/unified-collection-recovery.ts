@@ -653,13 +653,14 @@ export async function recoverUnifiedOrionCollectionJob(input: {
 
     const nextStage =
       renderResume || assemblyResume ? "ORION_PREPARE" : "ARSENKIN_ENRICHMENT";
+    // Место остановки внутри шага; сама стадия задаётся `nextStage` выше.
+    // «Начать обогащение сначала» внутренней позицией не является — там был
+    // дубль стадии, который никто не читал (шаг 12.4c).
     const resumeCheckpoint = renderResume
       ? "RENDER"
-      : assemblyResume
-        ? null
-        : ingestResume
-          ? "ARSENKIN_RESULT_INGEST"
-          : "ARSENKIN_ENRICHMENT";
+      : ingestResume && !assemblyResume
+        ? "ARSENKIN_RESULT_INGEST"
+        : null;
     const artifactsDir = unifiedArtifactsDir(job.caseId, job.unifiedJobId);
 
     // Ingest recovery: mark stale composite/analytics/section/render lineage before new observations land.

@@ -163,11 +163,31 @@ export type UnifiedCollectionJob = {
    * ARSENKIN_RESULT_INGEST = poll/reconcile/ingest existing CaseAgent tasks (no new submits).
    * RENDER = skip base/Arsenkin/composite/analytics/assembly when payload valid.
    */
+  /**
+   * Место остановки **внутри** шага конвейера (шаг 12.4c).
+   *
+   * Это не стадия и не её дубль: где прогон находится, отвечают шаги
+   * (`planResumeFromSteps`), и хранить тот же ответ во второй раз было третьей
+   * правдой о прогрессе. Значения `BASE_COLLECTION` и `ARSENKIN_ENRICHMENT`
+   * повторяли `stage`, никем не читались и убраны.
+   *
+   * Оставшиеся значения шагами не выражаются: шаг `ARSENKIN_ENRICHMENT` — это
+   * и отправка задач, и опрос, и приём результата, а `REPORT_PREPARE` — это
+   * подготовка, генерация текста и рендер. `ARSENKIN_RESULT_INGEST` при этом
+   * отделяет «задачи уже отправлены» от «ещё нет», то есть охраняет платную
+   * отправку: убирать его можно только вместе с выводом состояния из
+   * `ProviderTask`, что делается отдельным заходом.
+   */
   resumeCheckpoint?:
-    | "BASE_COLLECTION"
-    | "ARSENKIN_ENRICHMENT"
     | "ARSENKIN_RESULT_INGEST"
     | "PRE_RENDER_DATA_GATE"
+    /**
+     * Пересборка деки после отказа QA секций. Раньше называлась `ORION_PREPARE`
+     * — именем стадии, из-за чего внутришаговая позиция была неотличима от
+     * дубля стадии. Старое значение принимается при чтении: оно записано в
+     * прогонах, созданных до переименования.
+     */
+    | "ASSEMBLY"
     | "ORION_PREPARE"
     | "RENDER"
     /** REMEDIATION §4.3 — retry GPT stage-2 FALLBACK_* fragments only. */
