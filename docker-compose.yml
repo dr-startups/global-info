@@ -61,8 +61,10 @@ services:
       - /tmp
     environment:
       DATA_ROOT: /data
-      # Docker bridge is IPv4-only; the image defaults to :: for Railway.
-      RENDERER_HOST: "0.0.0.0"
+      # RENDERER_HOST здесь больше не нужен: слушатель образа двустековый и
+      # отвечает и по IPv6 (приватная сеть Railway), и по IPv4 (мост Docker).
+      # Чем меньше расхождений между локальным контуром и продом, тем меньше
+      # дефектов, которые видны только на одном из них.
     # No secrets belong here — the renderer never calls an external API.
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]

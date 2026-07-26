@@ -30,9 +30,15 @@ EXPOSE 8080
 
 # Liveness/readiness: reports unhealthy if LibreOffice is missing. Uses $PORT so
 # it works both locally (default 8080) and on Railway (assigned PORT).
+#
+# Адрес 127.0.0.1, а не localhost: последний может разрешиться в ::1, и проверка
+# начнёт зависеть от того, какая петля отвечает. Слушатель двустековый
+# (см. serve.py), поэтому годятся оба, но выбирать наугад незачем.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD curl -fsS "http://localhost:${PORT:-8080}/health" | grep -q '"ok":true' || exit 1
+    CMD curl -fsS "http://127.0.0.1:${PORT:-8080}/health" | grep -q '"ok":true' || exit 1
 
-# Shell form so env expands. Default host :: (IPv6) for Railway private
-# networking; override RENDERER_HOST=0.0.0.0 on IPv4-only networks (Docker bridge).
-CMD uvicorn app:app --host ${RENDERER_HOST:-::} --port ${PORT:-8080}
+# Один слушатель на оба протокола: приватная сеть Railway работает по IPv6, а
+# проверки работоспособности и мостовая сеть Docker — по IPv4. Прежняя строка
+# `uvicorn --host ::` поднимала слушатель ТОЛЬКО IPv6 (asyncio выставляет
+# IPV6_V6ONLY), из-за чего проверка образа не проходила никогда.
+CMD ["python", "serve.py"]
