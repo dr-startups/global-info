@@ -111,7 +111,31 @@ if (WORKER_INLINE) {
   // хранилище воркер живёт здесь же — но отдельным процессом, которому сигнал
   // доходит.
   console.error("[start] встроенный воркер: шаги исполняет отдельный процесс в этом контейнере");
-  start("worker", [TSX, "scripts/worker.ts"]);
+  startWorkerWithRestart();
+}
+
+/**
+ * Воркер поднимается заново, а не роняет контейнер.
+ *
+ * Сначала его выход считался фатальным — «половина без второй половины отчёт не
+ * соберёт». Но веб-процесс и без воркера полезен: он отдаёт готовые отчёты и
+ * статусы, а на старте воркер вполне может не достучаться до базы за отведённое
+ * ей время. Контейнер уходил в Crashed из-за того, что ещё не успело
+ * подняться, — и Railway показывал это на каждом деплое.
+ *
+ * Пауза растёт до минуты: бесконечный цикл перезапусков не должен превращаться
+ * в нагрузку на базу.
+ */
+function startWorkerWithRestart(attempt = 0) {
+  if (shuttingDown) return;
+  const child = start("worker", [TSX, "scripts/worker.ts"], { essential: false });
+  child.once("exit", (code) => {
+    if (shuttingDown) return;
+    const delay = Math.min(60_000, 2_000 * 2 ** Math.min(attempt, 5));
+    console.error(`[start] воркер вышел (код ${code}); перезапуск через ${delay} мс`);
+    const timer = setTimeout(() => startWorkerWithRestart(attempt + 1), delay);
+    timer.unref?.();
+  });
 }
 
 // Проверка готовности БД Arsenkin — рядом со стартом, а не до него, и её исход

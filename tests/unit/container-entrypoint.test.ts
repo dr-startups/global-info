@@ -49,6 +49,18 @@ describe("вход в контейнер", () => {
     expect(start).toMatch(/spawn\(process\.execPath/u);
   });
 
+  it("падение воркера не роняет контейнер", () => {
+    // Сначала выход воркера считался фатальным, и контейнер уходил в Crashed
+    // из-за того, что ещё не успело подняться: на старте воркер вполне может не
+    // достучаться до базы. Веб-процесс и без него полезен — отдаёт готовые
+    // отчёты и статусы.
+    const start = readFileSync(join(ROOT, "scripts/start.mjs"), "utf8");
+    expect(start).toMatch(/startWorkerWithRestart/u);
+    expect(start).toMatch(/essential: false/u);
+    // Пауза растёт: бесконечный цикл перезапусков не должен нагружать базу.
+    expect(start).toMatch(/Math\.min\(60_000/u);
+  });
+
   it("сигнал доходит до детей и они дожидаются выхода", () => {
     const start = readFileSync(join(ROOT, "scripts/start.mjs"), "utf8");
     for (const signal of ["SIGTERM", "SIGINT"]) {
