@@ -20,6 +20,9 @@ export const DECK_ASSET_FIXTURE_PATH = join(
 export const DECK_ASSET_FIXTURE_MISSING = [
   "Фикстура визуальных ассетов отсутствует.",
   `Ожидается: ${DECK_ASSET_FIXTURE_PATH}`,
-  "Она обезличена (метаданные без байтов изображений) и создаётся из прогона:",
+  "Она обезличена (метаданные без байтов изображений). Восстанавливается из",
+  "записанных пакетов секций самого report-72:",
+  "  npm run fixture:deck-assets:rebuild",
+  "Из живого прогона (когда он есть) — из его report-assets.json:",
   "  npm run fixture:deck-assets -- storage/digital-profile/<case>/<run>/report-assets.json",
 ].join("\n");

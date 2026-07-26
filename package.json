@@ -94,6 +94,7 @@
     "smoke:orion-executive-summary": "tsx --test scripts/smoke-orion-executive-summary.ts",
     "smoke:orion-analytics-pipeline": "tsx --test scripts/smoke-orion-analytics-pipeline.ts",
     "fixture:deck-assets": "tsx scripts/export-deck-asset-fixture.ts",
+    "fixture:deck-assets:rebuild": "tsx scripts/rebuild-deck-asset-fixture-from-baseline.ts",
     "smoke:orion-deck-sections": "tsx --test scripts/smoke-orion-deck-sections.ts",
     "smoke:orion-subject-universality": "tsx --test scripts/smoke-orion-subject-universality.ts",
     "smoke:canonical-report-prepare": "tsx --test scripts/smoke-canonical-report-prepare.ts",
