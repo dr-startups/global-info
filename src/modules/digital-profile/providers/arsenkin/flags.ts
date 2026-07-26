@@ -70,15 +70,7 @@ export function isArsenkinConfigured(env: NodeJS.ProcessEnv = process.env): bool
   return isArsenkinEnabled(env) && Boolean(arsenkinApiToken(env));
 }
 
-/** STANDARD=3 concurrent, CORPORATE=5 — default STANDARD for pilot. */
-export function arsenkinMaxConcurrent(env: NodeJS.ProcessEnv = process.env): number {
-  const n = Number(env.ARSENKIN_MAX_CONCURRENT ?? 3);
-  if (!Number.isFinite(n) || n < 1) return 3;
-  return Math.min(5, Math.floor(n));
-}
-
-export function arsenkinRequestsPerMinute(env: NodeJS.ProcessEnv = process.env): number {
-  const n = Number(env.ARSENKIN_REQUESTS_PER_MINUTE ?? 30);
-  if (!Number.isFinite(n) || n < 1) return 30;
-  return Math.min(30, Math.floor(n));
-}
+// Пределы аккаунта — одновременные обращения и запросы в минуту — заданы в
+// `account-rate-limit.ts`: там они общие на все процессы, а не на экземпляр
+// клиента. Здесь стояли их вторые копии, с другим значением по умолчанию
+// (3 против 2), и не вызывались ниоткуда.

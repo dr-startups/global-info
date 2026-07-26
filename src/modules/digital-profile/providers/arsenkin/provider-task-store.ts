@@ -91,14 +91,43 @@ export function hashProviderRequest(body: unknown): string {
   return createHash("sha256").update(JSON.stringify(body ?? {})).digest("hex");
 }
 
-function isPollable(r: ProviderTaskRecord, now: Date): boolean {
+/**
+ * Состояния, после которых опрашивать нечего.
+ *
+ * Три первых — исход задачи. `SUBMIT_UNKNOWN` и `SUBMIT_REJECTED_RETRYABLE`
+ * исключены намеренно: неопределённый исход отправки разбирается отдельным
+ * согласованием, а не слепым опросом.
+ */
+export const ARSENKIN_UNPOLLABLE_STATES: readonly ArsenkinTaskState[] = [
+  "DONE",
+  "FAILED",
+  "CANCELLED",
+  "SUBMIT_UNKNOWN",
+  "SUBMIT_REJECTED_RETRYABLE",
+];
+
+/**
+ * Можно ли опрашивать строку.
+ *
+ * Признак — данные, а не название состояния: есть внешний идентификатор,
+ * значит в Arsenkin есть что спросить. Перечисление разрешённых состояний
+ * (`RUNNING`/`RATE_LIMITED`) здесь уже стояло — и оно теряло задачи, которым
+ * `/check` однажды ответил «в очереди»: такие записывались как `QUEUED` и
+ * выпадали из выборки навсегда. Правило одно на оба хранилища.
+ */
+export function isPollableProviderTask(
+  r: Pick<ProviderTaskRecord, "state" | "externalTaskId" | "nextPollAt">,
+  now: Date
+): boolean {
   return (
-    (r.state === "RUNNING" || r.state === "RATE_LIMITED") &&
+    !ARSENKIN_UNPOLLABLE_STATES.includes(r.state) &&
     r.externalTaskId != null &&
     String(r.externalTaskId).length > 0 &&
     (!r.nextPollAt || r.nextPollAt.getTime() <= now.getTime())
   );
 }
+
+const isPollable = isPollableProviderTask;
 
 export function createMemoryProviderTaskStore(): ProviderTaskStore {
   const byId = new Map<string, ProviderTaskRecord>();

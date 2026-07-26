@@ -4,6 +4,7 @@ import type { ArsenkinTaskState, ProviderTaskRecord } from "./types";
 import {
   hashProviderRequest,
   type ProviderTaskStore,
+  ARSENKIN_UNPOLLABLE_STATES,
   type ProviderTaskStatePatch,
   type ProviderTaskUpdateOptions,
   type UpsertProviderTaskInput,
@@ -160,7 +161,9 @@ export function createPrismaProviderTaskStore(): ProviderTaskStore {
       return (
         await prisma.providerTask.findMany({
           where: {
-            state: { in: ["RUNNING", "RATE_LIMITED"] },
+            // Признак — наличие внешнего идентификатора, а не название
+            // состояния: см. `isPollableProviderTask`.
+            state: { notIn: [...ARSENKIN_UNPOLLABLE_STATES] },
             externalTaskId: { not: null },
             OR: [{ nextPollAt: null }, { nextPollAt: { lte: now } }],
           },
@@ -174,7 +177,9 @@ export function createPrismaProviderTaskStore(): ProviderTaskStore {
       return prisma.$transaction(async (tx) => {
         const candidates = await tx.providerTask.findMany({
           where: {
-            state: { in: ["RUNNING", "RATE_LIMITED"] },
+            // Признак — наличие внешнего идентификатора, а не название
+            // состояния: см. `isPollableProviderTask`.
+            state: { notIn: [...ARSENKIN_UNPOLLABLE_STATES] },
             externalTaskId: { not: null },
             OR: [{ nextPollAt: null }, { nextPollAt: { lte: now } }],
             AND: [{ OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }] }],
@@ -187,7 +192,7 @@ export function createPrismaProviderTaskStore(): ProviderTaskStore {
           const result = await tx.providerTask.updateMany({
             where: {
               id: candidate.id,
-              state: { in: ["RUNNING", "RATE_LIMITED"] },
+              state: { notIn: [...ARSENKIN_UNPOLLABLE_STATES] },
               externalTaskId: { not: null },
               OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }],
               AND: [{ OR: [{ nextPollAt: null }, { nextPollAt: { lte: now } }] }],

@@ -48,6 +48,19 @@ function taskIdOf(raw: Record<string, unknown>): string {
   return id == null ? "" : String(id);
 }
 
+/**
+ * Ответ `/check` → состояние задачи.
+ *
+ * Здесь **никогда** не возвращается `QUEUED`. В этой модели `QUEUED` значит
+ * ровно одно: «строка заведена у нас, в Arsenkin ещё не отправлена» — так её
+ * заводит `upsertPending`, и по ней же отправка выбирает работу. Очередь на
+ * стороне Arsenkin (у аккаунта 5 одновременных задач при очереди на 50) — это
+ * не «не отправлена», а «отправлена и ещё не готова», то есть `RUNNING`.
+ *
+ * Разница стоила прогона: раньше ответ «в очереди» записывался как `QUEUED`,
+ * опрос считал такую строку неотправленной и переставал её опрашивать — задача
+ * не доходила до `DONE` никогда.
+ */
 function mapCheckState(raw: Record<string, unknown>): ArsenkinTaskState {
   const blob = JSON.stringify(raw).toLowerCase();
   if (raw.code === "429" || /too many requests/.test(blob)) return "RATE_LIMITED";
@@ -55,22 +68,34 @@ function mapCheckState(raw: Record<string, unknown>): ArsenkinTaskState {
     if (/cancel/.test(blob)) return "CANCELLED";
     if (/fail|error/.test(blob) && (raw.status === "Error" || raw.error)) return "FAILED";
   }
-  // Common patterns: progress/percent, status strings
   const status = String(raw.status ?? raw.state ?? raw.code ?? "").toLowerCase();
   if (status.includes("done") || status.includes("ready") || status === "task_result") {
     return "DONE";
   }
-  if (status.includes("queue") || status.includes("wait")) return "QUEUED";
-  if (status.includes("run") || status.includes("work") || status.includes("progress")) {
-    return "RUNNING";
-  }
-  // If result is already present in check payload, treat as done
+  // Результат уже в ответе `/check` — ждать больше нечего.
   if (raw.result != null || raw.code === "TASK_RESULT") return "DONE";
-  // Numeric progress 100
   const progress = Number(raw.progress ?? raw.percent ?? NaN);
   if (Number.isFinite(progress) && progress >= 100) return "DONE";
-  if (Number.isFinite(progress) && progress > 0) return "RUNNING";
+  // Всё остальное — «Arsenkin взял задачу и ещё не отдал результат»: очередь,
+  // работа, неизвестная нам форма ответа. Во всех этих случаях верно одно и то
+  // же действие — опросить снова.
   return "RUNNING";
+}
+
+/**
+ * Узнали ли мы форму ответа `/check`.
+ *
+ * Документация Arsenkin тел ответа не приводит, а фикстуры в репозитории были
+ * выдуманы (`{"status":"done","progress":100}` — такого формата у провайдера
+ * нет). Поэтому неизвестная форма не роняет опрос (ждать дальше — безопасное
+ * поведение), но и не проходит молча: её видно в логе, и по живому прогону
+ * контракт можно наконец записать по факту.
+ */
+export function isRecognizedCheckShape(raw: Record<string, unknown>): boolean {
+  if (raw.result != null) return true;
+  const status = String(raw.status ?? raw.state ?? raw.code ?? "").toLowerCase();
+  if (!status) return false;
+  return /done|ready|result|queue|wait|run|work|progress|error|cancel|fail/.test(status);
 }
 
 export function hashArsenkinRequest(body: unknown): string {
@@ -134,9 +159,22 @@ export class ArsenkinClient {
   async checkTask(taskId: string | number): Promise<ArsenkinCheckTaskResponse> {
     const raw = await this.postJson(`${this.baseUrl}/check`, { task_id: taskId }, { retryAmbiguousNetwork: true });
     const id = taskIdOf(raw) || String(taskId);
+    const state = mapCheckState(raw);
+    if (!isRecognizedCheckShape(raw)) {
+      // Не ошибка: опрос продолжается. Но форму надо увидеть — контракт `/check`
+      // в документации не описан, и это единственный способ узнать его точно.
+      console.info(
+        JSON.stringify({
+          event: "arsenkin_check_shape_unknown",
+          externalTaskId: id,
+          assumedState: state,
+          payload: redactSecrets(JSON.stringify(raw).slice(0, 400)),
+        })
+      );
+    }
     return {
       task_id: id,
-      state: mapCheckState(raw),
+      state,
       statusPayload: raw,
       raw,
     };

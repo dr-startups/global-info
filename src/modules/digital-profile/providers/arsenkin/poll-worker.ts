@@ -47,6 +47,25 @@ export function isSubmitRetryRateLimited(row: ProviderTaskRecord): boolean {
   return row.state === "RATE_LIMITED" && !row.externalTaskId;
 }
 
+/**
+ * Когда опрашивать задачу снова.
+ *
+ * Раньше здесь стояли неизменные две секунды. У аккаунта Arsenkin бюджет — 30
+ * запросов в минуту на **все** обращения вместе (`/set`, `/check`, `/get`,
+ * `/info`), и мы держим 24. То есть одна задача при опросе раз в две секунды
+ * запрашивала больше всего бюджета аккаунта, а инструменты идут минутами:
+ * `check-top` — три-шесть. Опросы вытесняли отправки, ограничитель ставил всех
+ * в очередь, и прогон выглядел замершим при исправном провайдере.
+ *
+ * Пауза растёт: первые проверки частые — короткие задачи отвечают быстро, —
+ * дальше реже, потому что ждать всё равно минуты.
+ */
+export function taskPollBackoffMs(attempts: number): number {
+  const n = Math.max(0, Number(attempts ?? 0));
+  if (n <= 1) return 5_000;
+  return Math.min(30_000, 5_000 * 2 ** Math.min(n - 1, 3));
+}
+
 async function accountRequest<T>(store: ProviderTaskStore, fn: () => Promise<T>): Promise<T> {
   if (!store.isPersistent) return fn();
   const lease = await acquireArsenkinAccountSlot();
@@ -329,6 +348,12 @@ export async function ensureArsenkinTask(
         limitsBefore,
         nextPollAt: new Date(),
         errorCode: null,
+        // Аренда бралась под отправку, и отправка состоялась. Не снять её —
+        // значит на весь её срок спрятать задачу от фонового опроса, который
+        // выбирает работу как раз по свободным строкам.
+        lockedBy: null,
+        lockedAt: null,
+        leaseUntil: null,
       },
       { ownerId: workerId }
     );
@@ -376,16 +401,23 @@ export async function pollArsenkinTask(
   row: ProviderTaskRecord
 ): Promise<ProviderTaskRecord> {
   if (row.nextPollAt && row.nextPollAt.getTime() > Date.now()) return row;
-  if (
-    row.state === "QUEUED" ||
-    row.state === "SUBMITTING" ||
-    row.state === "SUBMIT_UNKNOWN" ||
-    isSubmitRetryRateLimited(row)
-  ) {
-    // Never mark submit-retry RATE_LIMITED as missing_external_task_id.
-    return row;
-  }
+  // Опрашивать можно ровно тогда, когда есть что опрашивать: внешний
+  // идентификатор. Раньше решение принималось по названию состояния — и это
+  // ломалось об `QUEUED`, у которого два смысла: «мы ещё не отправили» и
+  // «Arsenkin поставил в очередь». Признак задан данными и двух смыслов иметь
+  // не может.
   if (!row.externalTaskId) {
+    if (
+      row.state === "QUEUED" ||
+      row.state === "SUBMITTING" ||
+      row.state === "SUBMIT_UNKNOWN" ||
+      row.state === "SUBMIT_REJECTED_RETRYABLE" ||
+      isSubmitRetryRateLimited(row)
+    ) {
+      // Ещё не отправлена — это работа отправки, а не опроса. Никогда не
+      // помечать ожидающую повтора RATE_LIMITED как missing_external_task_id.
+      return row;
+    }
     return store.updateState(row.id, {
       state: "FAILED",
       errorCode: "missing_external_task_id",
@@ -415,7 +447,7 @@ export async function pollArsenkinTask(
     return store.updateState(row.id, {
       state: check.state,
       attempts: row.attempts + 1,
-      nextPollAt: new Date(Date.now() + 2_000),
+      nextPollAt: new Date(Date.now() + taskPollBackoffMs(row.attempts + 1)),
     });
   }
   const got = await accountRequest(store, () => client.getTask(externalTaskId));
@@ -468,7 +500,13 @@ export async function waitForArsenkinTaskCompletion(
     if (row.state === "SUBMIT_UNKNOWN" || row.state === "SUBMIT_REJECTED_RETRYABLE") {
       break;
     }
-    if (row.state === "SUBMITTING" || row.state === "QUEUED" || isSubmitRetryRateLimited(row)) {
+    // Отправленную задачу двигает опрос, а не повторная отправка. Проверка идёт
+    // по внешнему идентификатору: строка, оставшаяся с прежней записью `QUEUED`
+    // от ответа провайдера, иначе крутилась бы здесь до самого таймаута.
+    if (
+      !row.externalTaskId &&
+      (row.state === "SUBMITTING" || row.state === "QUEUED" || isSubmitRetryRateLimited(row))
+    ) {
       if (isSubmitRetryRateLimited(row) && row.nextPollAt && row.nextPollAt.getTime() > Date.now()) {
         const waitMs = Math.min(1_500, Math.max(50, row.nextPollAt.getTime() - Date.now()));
         await new Promise((r) => setTimeout(r, waitMs));
@@ -480,7 +518,11 @@ export async function waitForArsenkinTaskCompletion(
     }
     row = await pollArsenkinTask(client, store, row);
     if (row.state !== "DONE") {
-      await new Promise((r) => setTimeout(r, 1500));
+      // Ждём ровно до времени, которое назначил сам опрос: раньше него
+      // `pollArsenkinTask` всё равно выйдет, не сделав запроса, а бюджет
+      // аккаунта тратить на холостые обороты незачем.
+      const dueInMs = row.nextPollAt ? row.nextPollAt.getTime() - Date.now() : 0;
+      await new Promise((r) => setTimeout(r, Math.min(30_000, Math.max(500, dueInMs))));
     }
   }
   return row;
