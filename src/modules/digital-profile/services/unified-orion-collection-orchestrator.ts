@@ -85,6 +85,11 @@ import {
 import { buildBaseObservationCoverage } from "./base-observation-coverage";
 import { prepareGateFailureMessage } from "./prepare-gate-advice";
 import {
+  deriveEnrichmentProgress,
+  detectEnrichmentProgressDrift,
+  enrichmentDriftWarnings,
+} from "./arsenkin-progress-derivation";
+import {
   MAX_IDLE_POLLS,
   decideEnrichmentPoll,
   markEnrichmentProgress,
@@ -538,6 +543,50 @@ async function ensureUnifiedAgentRun(input: {
       `[unified] строка запуска ${input.agentName} не заведена:`,
       err instanceof Error ? err.message : err
     );
+  }
+}
+
+
+/**
+ * Сверяет хранимый прогресс обогащения с выведенным из строк задач.
+ *
+ * Возвращает предупреждения; пустой список — ответы совпадают. Сбой чтения
+ * молчит: детектор вспомогательный, и его неудача не должна ронять прогон.
+ */
+async function detectStoredEnrichmentDrift(
+  job: UnifiedCollectionJob,
+  state: ArsenkinEnrichmentState | null | undefined,
+  deps: UnifiedOrchestratorDeps
+): Promise<string[]> {
+  try {
+    const prisma = deps.prisma ?? (await import("@/server/prisma/client")).prisma;
+    const { agentNameFromEnrichmentRunId } = await import("./unified-enrichment-sibling-remap");
+    const runIds = (job.enrichmentRunIds ?? []).filter(Boolean);
+    if (runIds.length === 0) return [];
+    const rows = await prisma.providerTask.findMany({
+      where: { caseId: job.caseId, reportRunId: { in: runIds } },
+      select: { reportRunId: true, state: true },
+    });
+    const byAgent: Record<string, string | null> = {};
+    for (const agent of ARSENKIN_REAL_AGENT_NAMES) {
+      byAgent[agent] =
+        runIds.find((r) => agentNameFromEnrichmentRunId(r) === agent) ?? null;
+    }
+    const derived = deriveEnrichmentProgress({
+      enrichmentRunIdByAgent: byAgent,
+      tasks: rows.map((r) => ({ reportRunId: String(r.reportRunId ?? ""), state: String(r.state) })),
+      observationCount: Number(state?.enrichmentObservationCount ?? 0),
+    });
+    const drift = detectEnrichmentProgressDrift(state, derived);
+    if (drift.length > 0) {
+      console.warn(
+        `[unified] прогресс обогащения расходится с задачами: ` +
+          drift.map((d) => `${d.field} ${d.stored}!=${d.derived}`).join("; ")
+      );
+    }
+    return enrichmentDriftWarnings(drift);
+  } catch {
+    return [];
   }
 }
 
@@ -1164,6 +1213,11 @@ async function stepArsenkin(
         ingestedResultHashes: state.ingestedResultHashes,
       }
     );
+    // Прогресс обогащения выводится из строк задач и сверяется с хранимой
+    // сводкой (шаг 12.4d). Пока это детектор: расхождение попадает в
+    // предупреждения, поведение не меняется — так же поступили со стадией в
+    // 12.4a, и это дало увидеть расхождение до того, как на него положились.
+    const progressDrift = await detectStoredEnrichmentDrift(job, state, deps);
     // Бюджет ожидания считает опросы БЕЗ продвижения, а не все подряд: пока
     // задачи Arsenkin двигаются, ждать можно и нужно (шаг 14).
     const nowDate = deps.now?.() ?? new Date();
@@ -1208,7 +1262,12 @@ async function stepArsenkin(
         enrichmentWaitStartedAt:
           job.enrichmentWaitStartedAt ?? nowDate.toISOString(),
         coverage: { ...coverage, progressRatio: computeCoverageProgress(coverage) },
-        warnings: [...job.warnings, ...tick.warnings, "arsenkin-awaiting-ingest"],
+        warnings: [
+          ...job.warnings,
+          ...tick.warnings,
+          ...progressDrift,
+          "arsenkin-awaiting-ingest",
+        ],
         artifactPaths: { ...job.artifactPaths, arsenkinObservations: obsPath },
         lastError: null,
         lastErrorCode: null,
