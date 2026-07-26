@@ -25,6 +25,7 @@ import type {
 } from "./unified-collection-types";
 import { loadReusableAssembledDeck } from "./canonical-report-prepare";
 import { isDeterministicPrepareGate } from "./prepare-gate-advice";
+import { evaluateLegacyRecoveryEligibility } from "./unified-recovery-legacy-heuristic";
 import {
   planResumeFromSteps,
   type StepResumePlan,
@@ -103,29 +104,7 @@ async function resumePlanFromSteps(
   }
 }
 
-function manifestHasBaseObservations(manifest: BaseCollectionManifest | null | undefined): boolean {
-  if (!manifest) return false;
-  if (manifest.caseId && manifest.unifiedJobId) {
-    /* lineage fields present */
-  } else {
-    return false;
-  }
-  const idCount =
-    (manifest.searchResultIds?.length ?? 0) +
-    (manifest.searchSurfaceItemIds?.length ?? 0) +
-    (manifest.caseCorpusSearchResultIds?.length ?? 0) +
-    (manifest.caseCorpusSurfaceItemIds?.length ?? 0);
-  return (manifest.baseCount ?? 0) > 0 || idCount > 0;
-}
 
-function hasHistoricalNoBaseReportDefect(job: UnifiedCollectionJob): boolean {
-  const blob = [...(job.warnings ?? []), job.lastErrorCode ?? "", job.lastError ?? ""].join("\n");
-  return (
-    /arsenkin-skipped:no-baseReportRunId/i.test(blob) ||
-    /arsenkin-blocked:no-baseReportRunId/i.test(blob) ||
-    /BASE_REPORT_RUN_MISSING/i.test(blob)
-  );
-}
 
 /**
  * Pure eligibility. Does not mutate storage. Server is the source of truth —
@@ -245,169 +224,11 @@ export async function evaluateUnifiedCollectionRecoveryEligibility(input: {
     }
   }
 
-  const manifest =
-    input.manifest !== undefined
-      ? input.manifest
-      : await readUnifiedArtifact<BaseCollectionManifest>(
-          job.caseId,
-          job.unifiedJobId,
-          "base-collection-manifest.json"
-        );
-
-  if (!manifest) {
-    return {
-      recoveryAllowed: false,
-      recoveryBlockerReason: "BASE_MANIFEST_MISSING",
-      recoveryReason: null,
-    };
-  }
-  if (manifest.caseId !== job.caseId || manifest.unifiedJobId !== job.unifiedJobId) {
-    return {
-      recoveryAllowed: false,
-      recoveryBlockerReason: "MANIFEST_LINEAGE_MISMATCH",
-      recoveryReason: null,
-    };
-  }
-  if (!manifestHasBaseObservations(manifest)) {
-    return {
-      recoveryAllowed: false,
-      recoveryBlockerReason: "BASE_MANIFEST_EMPTY_OR_CORRUPT",
-      recoveryReason: null,
-    };
-  }
-
-  // Idempotent in-flight recovery checkpoint (same job, already rebound).
-  if (
-    (job.stage === "ARSENKIN_ENRICHMENT" || job.stage === "ORION_PREPARE") &&
-    (job.status === "WAITING" || job.status === "RUNNING") &&
-    Boolean(job.baseReportRunId) &&
-    Boolean(job.recoveryAudit)
-  ) {
-    return {
-      recoveryAllowed: true,
-      recoveryBlockerReason: null,
-      recoveryReason:
-        job.resumeCheckpoint === "RENDER" || job.stage === "ORION_PREPARE"
-          ? "IDEMPOTENT_RENDER_RESUME"
-          : "IDEMPOTENT_RESUME",
-    };
-  }
-
-  const enrichmentCount = job.enrichmentRunIds?.length ?? 0;
-  const enrichmentComplete = Boolean(job.arsenkinEnrichmentState?.enrichmentComplete);
-  const isRenderFailure =
-    job.resumeCheckpoint === "RENDER" ||
-    job.lastErrorCode === "RENDER_FAILED" ||
-    /render failed/i.test(job.lastError ?? "");
-  // Ingest resume must not steal RENDER_FAILED jobs (isRenderFailure).
-  // Job B pattern: FAILED_TERMINAL + composite present + enrichment never ingested.
-  const needsArsenkinIngest =
-    !isRenderFailure &&
-    (job.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" ||
-      (enrichmentCount >= 5 && !enrichmentComplete && Boolean(job.baseReportRunId)));
-
-  // Waiting for Arsenkin ingest (durable poll) — recoverable / idempotent.
-  if (
-    job.stage === "ARSENKIN_ENRICHMENT" &&
-    (job.status === "WAITING" || job.status === "RUNNING") &&
-    (job.resumeCheckpoint === "ARSENKIN_RESULT_INGEST" ||
-      (enrichmentCount >= 5 && !enrichmentComplete))
-  ) {
-    return {
-      recoveryAllowed: true,
-      recoveryBlockerReason: null,
-      recoveryReason: "ARSENKIN_INGEST_RESUME",
-    };
-  }
-
-  if (job.stage === "FAILED_RETRYABLE" && isRenderFailure) {
-    if (!job.baseReportRunId || enrichmentCount < 5 || !job.compositeDatasetId) {
-      return {
-        recoveryAllowed: false,
-        recoveryBlockerReason: "RENDER_RESUME_PRECONDITIONS_MISSING",
-        recoveryReason: null,
-      };
-    }
-    return {
-      recoveryAllowed: true,
-      recoveryBlockerReason: null,
-      recoveryReason: "RENDER_RESUME",
-    };
-  }
-
-  if (job.stage === "FAILED_RETRYABLE" && needsArsenkinIngest) {
-    return {
-      recoveryAllowed: true,
-      recoveryBlockerReason: null,
-      recoveryReason: "ARSENKIN_INGEST_RESUME",
-    };
-  }
-
-  if (job.stage === "FAILED_RETRYABLE") {
-    return {
-      recoveryAllowed: true,
-      recoveryBlockerReason: null,
-      recoveryReason: "FAILED_RETRYABLE_RESUME",
-    };
-  }
-
-  if (job.stage === "FAILED_TERMINAL") {
-    const missingBaseId = !String(job.baseReportRunId ?? "").trim();
-    const historical = hasHistoricalNoBaseReportDefect(job);
-    if (missingBaseId && historical) {
-      return {
-        recoveryAllowed: true,
-        recoveryBlockerReason: null,
-        recoveryReason: "HISTORICAL_NO_BASE_REPORT_RUN",
-      };
-    }
-    // Job B pattern: terminal after gate/render but Arsenkin never ingested.
-    if (needsArsenkinIngest && manifestHasBaseObservations(manifest)) {
-      return {
-        recoveryAllowed: true,
-        recoveryBlockerReason: null,
-        recoveryReason: "ARSENKIN_INGEST_RESUME",
-      };
-    }
-    // Section/assembly QA failure with intact composite — retry prepare only.
-    const isAssemblyFailure =
-      job.lastErrorCode === "ASSEMBLY_FAILED" ||
-      job.lastErrorCode === "REQUIRED_SECTION_FAILED" ||
-      /required sections failed|ASSEMBLY_FAILED/i.test(job.lastError ?? "");
-    if (
-      isAssemblyFailure &&
-      Boolean(job.compositeDatasetId) &&
-      Boolean(job.baseReportRunId) &&
-      manifestHasBaseObservations(manifest)
-    ) {
-      return {
-        recoveryAllowed: true,
-        recoveryBlockerReason: null,
-        recoveryReason: "ASSEMBLY_RESUME",
-      };
-    }
-    // Гейт подготовки, вычисляемый из собранных данных, повтором не лечится:
-    // та же сборка над тем же набором даст тот же ответ. Кнопка здесь была бы
-    // приглашением потратить время впустую (шаг 15, E1).
-    if (isDeterministicPrepareGate(job.lastError)) {
-      return {
-        recoveryAllowed: false,
-        recoveryBlockerReason: "PREPARE_GATE_NOT_FIXED_BY_RETRY",
-        recoveryReason: null,
-      };
-    }
-    return {
-      recoveryAllowed: false,
-      recoveryBlockerReason: "FAILED_TERMINAL_NOT_RECOVERABLE",
-      recoveryReason: null,
-    };
-  }
-
-  return {
-    recoveryAllowed: false,
-    recoveryBlockerReason: `STAGE_NOT_RECOVERABLE:${job.stage}`,
-    recoveryReason: null,
-  };
+  // Прогонов без конвейера шагов уже не создаётся, но они могут лежать в базе,
+  // и чтение таблицы шагов может отказать. Прежний вывод отвечает ровно в этих
+  // двух случаях и вынесен отдельно, чтобы две реализации одного вопроса не
+  // жили в одном файле (шаг 12.4e).
+  return await evaluateLegacyRecoveryEligibility({ job, manifest: input.manifest });
 }
 
 export type RecoverUnifiedCollectionResult = {
