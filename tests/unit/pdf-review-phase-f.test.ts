@@ -62,7 +62,11 @@ describe("F.2 — regional summary does not silently drop themes", () => {
     expect(DECK_TEMPLATE_REGISTRY["regional-summary"].maxBulletsPerSlide).toBe(2);
   });
 
-  it("withContinuations carries overflow themes to a continuation slide", () => {
+  it("страница-продолжение принимает больше первой: обвязки на ней нет", () => {
+    // Замер финального прогона (шаг 16, 07.6): продолжение без KPI-плиток,
+    // нарратива и карточки «Действие» вмещает три тематических блока. Пока оно
+    // получало столько же, сколько первая страница, резюме растягивалось на
+    // пять листов, заполненных на 18–62 %.
     const bullets = Array.from({ length: 8 }, (_, i) => `«Тема ${i + 1}»\n${i + 1} публикаций.`);
     const slides = withContinuations(
       {
@@ -73,11 +77,33 @@ describe("F.2 — regional summary does not silently drop themes", () => {
       } as never,
       "regional-summary"
     );
-    expect(slides).toHaveLength(4);
+    expect(slides).toHaveLength(3);
     expect(slides[0]!.content.bullets).toHaveLength(2);
-    expect(slides[1]!.content.bullets).toHaveLength(2);
-    expect(slides[3]!.content.bullets).toHaveLength(2);
+    expect(slides[1]!.content.bullets).toHaveLength(3);
+    expect(slides[2]!.content.bullets).toHaveLength(3);
     expect(slides[1]!.isContinuation).toBe(true);
+    // Ни один блок не потерян — это и есть смысл проверки F.2.
+    expect(slides.flatMap((s) => s.content.bullets ?? [])).toEqual(bullets);
+  });
+
+  it("крупные блоки делят страницу по объёму, а не по счёту", () => {
+    // Три блока по 860 знаков на страницу-продолжение не влезут: счётчик
+    // разрешает, объём — нет. Разбиение обязано смотреть на оба.
+    const big = Array.from({ length: 4 }, (_, i) => `«Тема ${i + 1}»\n${"я".repeat(840)}`);
+    const slides = withContinuations(
+      {
+        slideId: "p07_ru_summary",
+        templateId: "regional-summary",
+        title: "Россия — резюме",
+        content: { bullets: big },
+      } as never,
+      "regional-summary"
+    );
+    for (const s of slides) {
+      const chars = (s.content.bullets ?? []).reduce((n, b) => n + b.length, 0);
+      expect(chars).toBeLessThanOrEqual(3 * 860);
+    }
+    expect(slides.flatMap((s) => s.content.bullets ?? [])).toEqual(big);
   });
 
   it("localizedThemedClaim keeps multi-line sources for cross-regional findings", () => {

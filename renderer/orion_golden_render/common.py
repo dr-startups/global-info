@@ -107,24 +107,30 @@ def record_text_layout(
     text_length: int,
     clipped: bool,
     measurement_uncertain: bool = False,
+    dropped_bullets: int = 0,
+    dropped_lines: int = 0,
 ) -> None:
-    _LAYOUT_TELEMETRY.append(
-        {
-            "page": page,
-            "name": name,
-            "role": role,
-            "fontFamily": font_family,
-            "fontSizePt": font_size_pt,
-            "boxWidth": box_width,
-            "boxHeight": box_height,
-            "availableHeight": available_height,
-            "requiredHeight": required_height,
-            "measuredLines": measured_lines,
-            "textLength": text_length,
-            "clipped": clipped,
-            "measurementUncertain": measurement_uncertain,
-        }
-    )
+    entry: dict[str, Any] = {
+        "page": page,
+        "name": name,
+        "role": role,
+        "fontFamily": font_family,
+        "fontSizePt": font_size_pt,
+        "boxWidth": box_width,
+        "boxHeight": box_height,
+        "availableHeight": available_height,
+        "requiredHeight": required_height,
+        "measuredLines": measured_lines,
+        "textLength": text_length,
+        "clipped": clipped,
+        "measurementUncertain": measurement_uncertain,
+    }
+    # Потеря содержимого — не то же самое, что вылезший за рамку текст, и
+    # называется отдельно (шаг 16, 07.6).
+    if dropped_bullets or dropped_lines:
+        entry["droppedBullets"] = dropped_bullets
+        entry["droppedLines"] = dropped_lines
+    _LAYOUT_TELEMETRY.append(entry)
 
 
 def _count_measured_lines(
@@ -1082,32 +1088,72 @@ class _Ctx:
             kept.append(clipped)
         if not kept:
             return y
-        # PDF-46 I.2 — whole bullets only; inflate measure (estimator is short
-        # on multi-line theme cards) and never paint past CONTENT_BOTTOM.
+        # PDF-46 I.2 — whole bullets only; never paint past CONTENT_BOTTOM.
+        #
+        # Мерка приведена к тому, что рисуется (шаг 16, 07.6). Прежняя мерила
+        # весь блок одним куском на FS_BODY с межстрочным 1.2 и отбивкой 6 pt
+        # между **всеми** строками, а рисуются они иначе: строки «Где видно…» и
+        # «Всего по теме…» — кеглем подписи, внутренние отбивки 1 pt,
+        # межстрочный 1.12. Сверху лежал ещё запас 1.18 «на всякий случай».
+        #
+        # Замер на финальном прогоне: оценка превышала факт в 1.7–1.8 раза, и
+        # страница-продолжение, вмещающая три тематических блока, принимала два.
+        # Отсюда пять страниц «Россия — резюме аудита», заполненных на 18–62 %.
         page_avail = max(0, CONTENT_BOTTOM - y - 120_000)
-        measure_slack = 1.18
+        measure_slack = 1.08
 
         def _bullet_block_height(blocks: list[str]) -> int:
-            trial_lines: list[str] = []
+            total = 0
             for b in blocks:
                 parts = _split_structured_bullet(b) or [b]
-                trial_lines.append(f"• {parts[0]}")
-                trial_lines.extend(f"   {p}" for p in parts[1:])
-            trial = "\n".join(trial_lines)
-            raw_h = measure_text_height(
-                trial, CONTENT_W, FS_BODY, line_spacing=1.2, paragraph_spacing_pt=6
-            )
-            return int(raw_h * measure_slack) + 60_000
+                for li, line in enumerate(parts):
+                    text = f"• {line}" if li == 0 else f"   {line}"
+                    _, _, size_pt = _bullet_line_style(line, is_first=(li == 0))
+                    total += measure_text_height(
+                        text, CONTENT_W, size_pt, line_spacing=1.12, paragraph_spacing_pt=0
+                    )
+                    space_before = 6 if li == 0 else 1
+                    space_after = 6 if li == len(parts) - 1 else 1
+                    total += int((space_before + space_after) * EMU_PER_PT)
+            return int(total * measure_slack) + 60_000
 
+        dropped_bullets = 0
+        dropped_lines = 0
         while kept and _bullet_block_height(kept) > page_avail:
             if len(kept) == 1:
                 # Drop whole structural lines from the sole bullet until it fits.
                 parts = _split_structured_bullet(kept[0]) or [kept[0]]
                 while len(parts) > 1 and _bullet_block_height(["\n".join(parts)]) > page_avail:
                     parts.pop()
+                    dropped_lines += 1
                 kept = ["\n".join(parts)] if parts and _bullet_block_height(["\n".join(parts)]) <= page_avail else []
+                if not kept:
+                    dropped_bullets += 1
                 break
             kept.pop()
+            dropped_bullets += 1
+        # Выброшенное содержимое не молчит. Прежде лишние блоки исчезали из
+        # отчёта без следа: подали четыре — нарисовалось два, и узнать об этом
+        # было неоткуда. Пагинация обязана резать по страницам сама, а этот
+        # цикл — последний рубеж, о срабатывании которого надо знать.
+        if dropped_bullets or dropped_lines:
+            record_text_layout(
+                page=self.page,
+                name=f"orion_bullets_dropped_p{self.page}",
+                role="bullets",
+                font_family=FONT,
+                font_size_pt=FS_BODY,
+                box_width=CONTENT_W,
+                box_height=page_avail,
+                available_height=page_avail,
+                required_height=_bullet_block_height(items[:max_items]),
+                measured_lines=len(kept),
+                text_length=sum(len(_safe(b)) for b in items[:max_items]),
+                clipped=True,
+                measurement_uncertain=False,
+                dropped_bullets=dropped_bullets,
+                dropped_lines=dropped_lines,
+            )
         if not kept:
             return y
         text_lines: list[str] = []

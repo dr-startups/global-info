@@ -301,7 +301,11 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 )
                 y += 60_000
             if bullets:
-                ctx.bullets(bullets, y, max_items=3, max_chars=900)
+                # Потолок читаемости, а не ёмкости: сколько блоков влезает,
+                # решает мерка высоты, приведённая к тому, что рисуется
+                # (шаг 16, 07.6). Прежние 3 были ниже реальной ёмкости
+                # страницы-продолжения, и лишнее молча выбрасывалось.
+                ctx.bullets(bullets, y, max_items=6, max_chars=900)
             return
         # PDF-40 G.4/G.5 / PDF-45 — scorecard → narrative → theme cards.
         # Fewer cards per page + higher char budget; overflow continues.
@@ -357,7 +361,8 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             )
             y += 50_000
         if bullets:
-            ctx.bullets(bullets, y, max_items=3, max_chars=900)
+            # См. комментарий выше: потолок читаемости, ёмкость считает мерка.
+            ctx.bullets(bullets, y, max_items=6, max_chars=900)
         return
 
     if template == "orion_golden_serp_screenshot":

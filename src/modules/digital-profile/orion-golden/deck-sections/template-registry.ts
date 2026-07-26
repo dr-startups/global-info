@@ -54,6 +54,15 @@ export type DeckTemplateDef = {
   legend?: string[];
   /** Max dynamic bullets per slide before a continuation is required. */
   maxBulletsPerSlide: number;
+  /**
+   * То же для страницы-продолжения, если её ёмкость измерена отдельно.
+   *
+   * `maxBulletsPerSlide` калибруется по **первой** странице блока, где над
+   * содержимым стоит обвязка: KPI-плитки, нарратив, карточка «Действие». С
+   * шага 13 (D3/D4) продолжения её не несут, и место у них другое. Не
+   * задано — ёмкость продолжения равна ёмкости первой страницы, как было.
+   */
+  maxBulletsPerContinuation?: number;
   /** Max table rows per slide before a continuation is required. */
   maxTableRowsPerSlide: number;
   /** Static grid/typography/spacing/budget spec for this SlideKind. */
@@ -177,6 +186,12 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
     // PDF-46 I.3 — with KPI chrome only 2 multi-line theme cards fit above
     // the footer; overflow continues on the next page (more pages OK).
     maxBulletsPerSlide: 2,
+    // Замер на страницах финального прогона (шаг 16, 07.6): без KPI-плиток,
+    // нарратива и карточки «Действие» страница-продолжение принимает три
+    // тематических блока, занимая ~83 % полосы содержимого. Два оставляли
+    // пустыми от 30 до 70 % листа — пять страниц «Россия — резюме аудита»
+    // подряд, последняя с одним блоком в 115 знаков.
+    maxBulletsPerContinuation: 3,
     maxTableRowsPerSlide: 0,
     layout: layout("two-column", { narrativeCharBudget: 700, itemCharBudget: 860 }),
   },

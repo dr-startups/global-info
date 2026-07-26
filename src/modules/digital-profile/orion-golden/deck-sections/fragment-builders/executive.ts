@@ -39,6 +39,7 @@ import {
   splitClientParagraphs,
   themedClaim,
   uniqueRefs,
+  withContinuations,
   verdictClientLabel,
 } from "./shared";
 import {
@@ -886,8 +887,16 @@ export function buildDigitalProfileOverviewFragment(
         ? body + marker
         : clampClientText(body.replace(/\n/gu, " "), 480) + marker;
     });
+  // Страница отдавала четыре темы риска одним слайдом и никогда не делилась.
+  // На финальном прогоне до клиента дошла **одна**: под шестью KPI-плитками,
+  // нарративом и карточкой «Действие» больше не помещалось, а лишнее рендерер
+  // выбрасывал молча (шаг 16, 07.6). Три темы повышенного внимания из отчёта
+  // просто исчезали.
+  //
+  // `firstPageBullets: 1` — по замеру этой страницы: обвязка оставляет под
+  // блоки около 29 % листа, один тематический блок занимает ~19 %.
   return {
-    slides: [
+    slides: withContinuations(
       makeSlotSlide({
         slot,
         sectionId,
@@ -923,7 +932,9 @@ export function buildDigitalProfileOverviewFragment(
           adverseFindingCount: s.adverseFindingCount,
         },
       }),
-    ],
+      "regional-summary",
+      { firstPageBullets: 1 }
+    ),
     status: "READY",
   };
 }

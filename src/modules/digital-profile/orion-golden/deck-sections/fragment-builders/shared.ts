@@ -10,6 +10,7 @@ import type {
 } from "../contracts";
 import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
 import { DECK_TEMPLATE_REGISTRY, type DeckTemplateId } from "../template-registry";
+import { balanceTailPage } from "../semantic-summary-pagination";
 import {
   normalizeEvidenceRef,
   regionMatches,
@@ -194,12 +195,66 @@ export function makeSlotSlide(input: {
 }
 
 /**
+ * Разложить блоки по страницам: первая — с обвязкой, дальше — без неё.
+ *
+ * Считается и число блоков, и их суммарный объём: разбиение по одному лишь
+ * числу оставляло странице то, что на ней помещалось в шесть раз, и уносило
+ * хвост на отдельный лист.
+ */
+export function packBulletPages(
+  bullets: readonly string[],
+  firstCount: number,
+  contCount: number,
+  itemCharBudget: number
+): string[][] {
+  if (firstCount <= 0) return [[...bullets]];
+  const pages: string[][] = [];
+  let cur: string[] = [];
+  let curChars = 0;
+  let cap = firstCount;
+  let charCap = firstCount * itemCharBudget;
+  const flush = () => {
+    if (cur.length) pages.push(cur);
+    cur = [];
+    curChars = 0;
+    cap = contCount;
+    charCap = contCount * itemCharBudget;
+  };
+  for (const b of bullets) {
+    const size = b.length;
+    if (cur.length > 0 && (cur.length >= cap || curChars + size > charCap)) flush();
+    cur.push(b);
+    curChars += size;
+  }
+  if (cur.length) pages.push(cur);
+
+  // Последний лист не остаётся с одиноким блоком: девять блоков при ёмкости
+  // 2 + 3 давали 2 | 3, 3, 1, и последняя страница уходила почти пустой (на
+  // финальном прогоне — один блок в 115 знаков на весь лист). Правило общее с
+  // пагинатором резюме — второго такого заводить не будем.
+  balanceTailPage(pages, (b) => b.length, contCount * itemCharBudget);
+  return pages.length ? pages : [[]];
+}
+
+/**
  * Chunk oversized bullets/table rows into adjacent continuation slides.
  * PDF-31 B.1b: an over-budget narrative flows to continuation slides as
  * complete-sentence paragraphs instead of being clamped — the full meaning
  * stays in the report, each slide's narrative stays within its budget.
  */
-export function withContinuations(base: SlideContentContract, templateId: DeckTemplateId): SlideContentContract[] {
+export function withContinuations(
+  base: SlideContentContract,
+  templateId: DeckTemplateId,
+  opts?: {
+    /**
+     * Ёмкость первой страницы, когда обвязки на ней больше, чем у шаблона по
+     * умолчанию. Один шаблон обслуживает страницы с разной обвязкой: у обзора
+     * профиля шесть KPI-плиток, нарратив и карточка «Действие», а у
+     * регионального резюме — три плитки.
+     */
+    firstPageBullets?: number;
+  }
+): SlideContentContract[] {
   const tpl = DECK_TEMPLATE_REGISTRY[templateId];
   const slides: SlideContentContract[] = [];
   const bullets = base.content.bullets ?? [];
@@ -207,9 +262,11 @@ export function withContinuations(base: SlideContentContract, templateId: DeckTe
   const narrativeBudget = getClientTextFieldBudgets().narrative;
   const narrative = base.content.narrative ?? "";
 
+  const firstBulletCap = opts?.firstPageBullets ?? tpl.maxBulletsPerSlide;
+  const contBulletCap = tpl.maxBulletsPerContinuation ?? tpl.maxBulletsPerSlide;
   const bulletChunks =
-    tpl.maxBulletsPerSlide > 0 && bullets.length > tpl.maxBulletsPerSlide
-      ? chunk(bullets, tpl.maxBulletsPerSlide)
+    firstBulletCap > 0 && bullets.length > firstBulletCap
+      ? packBulletPages(bullets, firstBulletCap, contBulletCap, tpl.layout.itemCharBudget)
       : [bullets];
   const rowChunks =
     tpl.maxTableRowsPerSlide > 0 && rows.length > tpl.maxTableRowsPerSlide

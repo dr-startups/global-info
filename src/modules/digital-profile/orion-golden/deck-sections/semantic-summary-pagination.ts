@@ -144,6 +144,35 @@ export const CONTINUATION_PAGE_BUDGET_FACTOR = 3;
  * sheet. Density now follows a cumulative page budget — a block only gets a
  * page alone when it does not fit beside anything else.
  */
+/**
+ * Не оставить последний лист с одиноким блоком.
+ *
+ * Разбиение по ёмкости честно заполняет каждую страницу и складывает остаток на
+ * последнюю: девять блоков при ёмкости три дают 3, 3, 3 — и хорошо, а восемь
+ * дают 3, 3, 2, семь — 3, 3, 1. Последний случай и виден читателю как пустой
+ * лист. Хвост добирается за счёт предыдущей страницы; порядок сохраняется,
+ * потому что переносится ровно последний её блок.
+ *
+ * Останавливаемся до того, как сосед станет легче хвоста: менять одну редкую
+ * страницу на другую незачем.
+ */
+export function balanceTailPage<T>(
+  pages: T[][],
+  sizeOf: (item: T) => number,
+  tailCharCap: number
+): void {
+  const charsOf = (page: readonly T[]) => page.reduce((n, b) => n + sizeOf(b), 0);
+  while (pages.length >= 2) {
+    const last = pages[pages.length - 1]!;
+    const prev = pages[pages.length - 2]!;
+    if (prev.length <= 1 || last.length + 1 >= prev.length) break;
+    const moved = prev[prev.length - 1]!;
+    if (charsOf(last) + sizeOf(moved) > tailCharCap) break;
+    prev.pop();
+    last.unshift(moved);
+  }
+}
+
 function packContinuationPages(blocks: SemanticBlock[], bulletBudget: number): SemanticBlock[][] {
   const pageBudget = bulletBudget * CONTINUATION_PAGE_BUDGET_FACTOR;
   const pages: SemanticBlock[][] = [];
@@ -169,6 +198,7 @@ function packContinuationPages(blocks: SemanticBlock[], bulletBudget: number): S
     curChars += size;
   }
   flush();
+  balanceTailPage(pages, (b) => b.text.length, pageBudget);
   return pages;
 }
 

@@ -432,7 +432,22 @@ export function inspectLayoutTelemetry(telemetryPath: string | null | undefined)
     const rows = raw.entries ?? raw.textBoxes ?? [];
     const issues: GeometryIssue[] = [];
     for (const row of rows) {
-      if (row.clipped === true) {
+      const dropped = Number(row.droppedBullets ?? 0) + Number(row.droppedLines ?? 0);
+      if (dropped > 0) {
+        // Не то же самое, что вылезший за рамку текст: содержимое до читателя
+        // не дошло вовсе. Прежде рендерер выбрасывал лишние блоки молча —
+        // подали четыре, нарисовалось два, и узнать было неоткуда
+        // (шаг 16, 07.6).
+        issues.push({
+          page: Number(row.page ?? 0),
+          code: "CONTENT_DROPPED_BY_RENDERER",
+          severity: "CRITICAL",
+          detail:
+            `рендерер выбросил содержимое: блоков=${row.droppedBullets ?? 0} ` +
+            `строк=${row.droppedLines ?? 0} requiredHeight=${row.requiredHeight} ` +
+            `availableHeight=${row.availableHeight} — страницу должна была разбить пагинация`,
+        });
+      } else if (row.clipped === true) {
         const name = String(row.name ?? row.role ?? "").toLowerCase();
         const code = name.includes("status")
           ? "TABLE_STATUS_CLIPPED"
