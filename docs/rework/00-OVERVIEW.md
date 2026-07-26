@@ -84,13 +84,21 @@ gpt-5.5 — каждый вызов клиентского нарратива п
 |---|---|---|
 | 01 | [Целостность доказательств: запрет подмены на mock](01-evidence-integrity-no-mock-substitution.md) | СДЕЛАНО |
 | 02 | [Транспорт GPT и контракт модели](02-gpt-transport-and-model-contract.md) | СДЕЛАНО |
-| 03 | [Глобальный синглтон авторизации Arsenkin](03-arsenkin-live-auth-singleton.md) | ЧАСТИЧНО |
-| 04 | [Покрытие провайдеров и разрыв в compliance](04-provider-coverage-and-compliance-gap.md) | ГОТОВ К РАБОТЕ |
-| 05 | [Синтез claim'ов и вход GPT](05-claim-synthesis-and-gpt-input.md) | ГОТОВ К РАБОТЕ |
-| 06 | [Тематизация: ложные срабатывания регексов](06-theme-classification-false-positives.md) | ГОТОВ К РАБОТЕ |
-| 07 | [Плотность слайдов, пагинация, пустые состояния](07-slide-density-pagination-empty-states.md) | ГОТОВ К РАБОТЕ |
-| 08 | [Долговечная оркестрация вместо `setTimeout`](08-durable-orchestration.md) | ГОТОВ К РАБОТЕ |
-| 09 | [Тестовый контур и CI](09-test-and-ci-foundation.md) | ГОТОВ К РАБОТЕ |
+| 03 | [Глобальный синглтон авторизации Arsenkin](03-arsenkin-live-auth-singleton.md) | ЧАСТИЧНО — симптом купирован и покрыт тестом, корень остаётся |
+| 04 | [Покрытие провайдеров и разрыв в compliance](04-provider-coverage-and-compliance-gap.md) | СДЕЛАНО — решение по комплаенсу: OpenSanctions |
+| 05 | [Синтез claim'ов и вход GPT](05-claim-synthesis-and-gpt-input.md) | СДЕЛАНО в шагах 13/C |
+| 06 | [Тематизация: ложные срабатывания регексов](06-theme-classification-false-positives.md) | СДЕЛАНО |
+| 07 | [Плотность слайдов, пагинация, пустые состояния](07-slide-density-pagination-empty-states.md) | СДЕЛАНО, кроме 07.6 (пустая нижняя треть) |
+| 08 | [Долговечная оркестрация вместо `setTimeout`](08-durable-orchestration.md) | ЗАМЕНЁН шагом 12 |
+| 09 | [Тестовый контур и CI](09-test-and-ci-foundation.md) | СДЕЛАНО |
+| 10 | [Матрица запросов и служебные токены](10-query-matrix-service-tokens.md) | СДЕЛАНО |
+| 11 | [UX прогона и ложные отказы](11-workflow-ux-and-false-failures.md) | СДЕЛАНО |
+| 12 | [Долговечное исполнение: шаг как единица работы](12-durable-step-execution.md) | 12.1–12.4c СДЕЛАНО, остаётся блоб состояния Arsenkin |
+| 13 | [Находки регрессионного прогона](13-regression-run-findings.md) | СДЕЛАНО (этапы 1–5) |
+
+Незакрытое, требующее живого прогона: блоб `arsenkinEnrichmentState` (шаг 12),
+пустая нижняя треть листа (07.6), фикстура визуальных ассетов для
+`smoke:orion-deck-sections`, корень синглтона авторизации Arsenkin (шаг 03).
 
 ---
 
