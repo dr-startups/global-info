@@ -34,6 +34,115 @@ function isWeakSecret(value: string | undefined, minLen = 16): boolean {
   return v.length === 0 || v === DEFAULT_SECRET || v.length < minLen;
 }
 
+/** Готовность одного сборщика и, если он выключен, чего именно не хватает. */
+export interface CapabilityReadiness {
+  capability: string;
+  ready: boolean;
+  /** Только имена переменных, никогда значения. */
+  detail: string;
+}
+
+/**
+ * Готовность сборщиков по конфигурации.
+ *
+ * Появилось после того, как на стенде молча отключились Google и ORION.
+ * Настоящая причина каждый раз одна и та же: включение сборщика собрано из
+ * цепочки переменных, и пропуск любого звена превращает агента в
+ * `NOT_CONFIGURED` — тихо, потому что для самого агента это законный исход.
+ * Пропущенное звено легко не заметить: у ORION их пять.
+ *
+ * Здесь цепочки записаны данными и один раз, а не пересказываются в переписке.
+ * Сводка печатается на старте, поэтому вопрос «почему агент выключен»
+ * закрывается логом запуска.
+ */
+export function describeCapabilityReadiness(env: Env = process.env): CapabilityReadiness[] {
+  const out: CapabilityReadiness[] = [];
+  const has = (name: string) => Boolean((env[name] ?? "").trim());
+  const missing = (...names: string[]) => names.filter((n) => !has(n));
+
+  // Arsenkin. До сих пор эта проверка отсутствовала вовсе — при том что
+  // интеграция платная и без неё отчёт теряет пять поверхностей.
+  const arsenkinOn = bool(env.ARSENKIN_ENABLED);
+  out.push({
+    capability: "Arsenkin (5 агентов обогащения)",
+    ready: arsenkinOn && has("ARSENKIN_API_TOKEN"),
+    detail: !arsenkinOn
+      ? "ARSENKIN_ENABLED не равен true"
+      : has("ARSENKIN_API_TOKEN")
+        ? "готов"
+        : "нет ARSENKIN_API_TOKEN",
+  });
+
+  // Google/ORION через внешний SERP. Ключ читается из
+  // GOOGLE_EXTERNAL_SERP_API_KEY либо из псевдонима SERPER_API_KEY.
+  const serpProvider = (env.GOOGLE_EXTERNAL_SERP_PROVIDER ?? "").trim().toLowerCase();
+  const serpKey = has("GOOGLE_EXTERNAL_SERP_API_KEY") || has("SERPER_API_KEY");
+  const serpReady = serpProvider === "serper" && serpKey;
+  out.push({
+    capability: "ORION Search Profile (поверхности Google)",
+    ready: serpReady,
+    detail: serpReady
+      ? "готов"
+      : serpProvider !== "serper"
+        ? 'GOOGLE_EXTERNAL_SERP_PROVIDER должен быть "serper"'
+        : "нет GOOGLE_EXTERNAL_SERP_API_KEY (или псевдонима SERPER_API_KEY)",
+  });
+
+  const googleStrategy = (env.GOOGLE_SEARCH_PROVIDER ?? "").trim().toLowerCase();
+  const googleReady =
+    bool(env.DIGITAL_PROFILE_GOOGLE_REAL_ENABLED) &&
+    (googleStrategy === "external_serp"
+      ? serpReady
+      : googleStrategy === "custom_search" &&
+        missing("GOOGLE_SEARCH_API_KEY", "GOOGLE_SEARCH_ENGINE_ID").length === 0);
+  out.push({
+    capability: "Google Search (настоящий коннектор)",
+    ready: googleReady,
+    detail: googleReady
+      ? "готов"
+      : !bool(env.DIGITAL_PROFILE_GOOGLE_REAL_ENABLED)
+        ? "DIGITAL_PROFILE_GOOGLE_REAL_ENABLED не равен true"
+        : googleStrategy !== "external_serp" && googleStrategy !== "custom_search"
+          ? 'GOOGLE_SEARCH_PROVIDER должен быть "external_serp" или "custom_search"'
+          : googleStrategy === "custom_search"
+            ? `нет ${missing("GOOGLE_SEARCH_API_KEY", "GOOGLE_SEARCH_ENGINE_ID").join(", ")}`
+            : "внешний SERP не настроен (см. строку ORION)",
+  });
+
+  const yandexReady =
+    bool(env.DIGITAL_PROFILE_YANDEX_REAL_ENABLED) &&
+    missing("YANDEX_SEARCH_API_KEY", "YANDEX_SEARCH_FOLDER_ID").length === 0;
+  out.push({
+    capability: "Yandex Search (Cloud Search API v2)",
+    ready: yandexReady,
+    detail: yandexReady
+      ? "готов"
+      : !bool(env.DIGITAL_PROFILE_YANDEX_REAL_ENABLED)
+        ? "DIGITAL_PROFILE_YANDEX_REAL_ENABLED не равен true"
+        : `нет ${missing("YANDEX_SEARCH_API_KEY", "YANDEX_SEARCH_FOLDER_ID").join(", ")}`,
+  });
+
+  const aiReady = bool(env.DIGITAL_PROFILE_AI_ANALYST_ENABLED) && has("OPENAI_API_KEY");
+  out.push({
+    capability: "AI-аналитик (текст отчёта)",
+    ready: aiReady,
+    detail: aiReady
+      ? "готов"
+      : !bool(env.DIGITAL_PROFILE_AI_ANALYST_ENABLED)
+        ? "DIGITAL_PROFILE_AI_ANALYST_ENABLED не равен true"
+        : "нет OPENAI_API_KEY",
+  });
+
+  const rendererReady = has("RENDERER_URL") || has("DIGITAL_PROFILE_RENDERER_URL");
+  out.push({
+    capability: "Отрисовка PPTX/PDF",
+    ready: rendererReady,
+    detail: rendererReady ? "готов" : "нет RENDERER_URL",
+  });
+
+  return out;
+}
+
 /**
  * Validates the Digital Profile env. Returns errors (critical) + warnings
  * (advisory). Never includes secret values — only variable names.
@@ -197,6 +306,18 @@ export function validateDigitalProfileEnv(
     }
   }
 
+  // Arsenkin: интеграция платная, и до сих пор её здесь не проверяли вовсе.
+  // Включённый флаг без токена — самый дорогой из тихих отказов: прогон дойдёт
+  // до обогащения и там встанет.
+  if (bool(env.ARSENKIN_ENABLED) && !env.ARSENKIN_API_TOKEN?.trim()) {
+    errors.push("ARSENKIN_ENABLED=true, но ARSENKIN_API_TOKEN не задан.");
+  }
+  if (!bool(env.ARSENKIN_ENABLED)) {
+    warnings.push(
+      "ARSENKIN_ENABLED не равен true — пять агентов обогащения Arsenkin выключены, отчёт соберётся без их поверхностей."
+    );
+  }
+
   // REMEDIATION §8.2 — silent offline enrichment in deploy-like envs.
   const offlineWarn = offlineEnrichmentEnvWarning(env);
   if (offlineWarn) warnings.push(offlineWarn);
@@ -212,6 +333,15 @@ export function validateDigitalProfileEnv(
 export function runEnvValidation(env: Env = process.env): void {
   const isProd = (env.NODE_ENV ?? "").toLowerCase() === "production";
   const { errors, warnings } = validateDigitalProfileEnv(env);
+
+  // Сводка готовности — первым делом. Выключенный сборщик виден сразу и с
+  // указанием недостающей переменной, а не через прогон, который вернул
+  // неполный отчёт.
+  for (const c of describeCapabilityReadiness(env)) {
+    console.warn(
+      `[digital-profile][env] ${c.ready ? "ГОТОВ  " : "ВЫКЛ   "} ${c.capability} — ${c.detail}`
+    );
+  }
 
   for (const w of warnings) {
     console.warn(`[digital-profile][env] WARN: ${w}`);
