@@ -505,6 +505,43 @@ async function countLiveEnrichmentProgress(
   }
 }
 
+/**
+ * Заводит строку запуска агента, если её ещё нет.
+ *
+ * Идемпотентно: повторная отправка того же агента в том же прогоне не плодит
+ * вторых строк. Неудача записи прогон не роняет — это отображение хода работы,
+ * а не источник правды конвейера.
+ */
+async function ensureUnifiedAgentRun(input: {
+  id: string;
+  caseId: string;
+  agentName: string;
+  actorId?: string | null;
+  prisma?: PrismaClient;
+}): Promise<void> {
+  try {
+    const prisma = input.prisma ?? (await import("@/server/prisma/client")).prisma;
+    await prisma.agentRun.upsert({
+      where: { id: input.id },
+      update: {},
+      create: {
+        id: input.id,
+        caseId: input.caseId,
+        agentName: input.agentName as never,
+        status: "RUNNING",
+        startedAt: new Date(),
+        triggeredBy: input.actorId ?? null,
+      },
+    });
+  } catch (err) {
+    console.warn(
+      `[unified] строка запуска ${input.agentName} не заведена:`,
+      err instanceof Error ? err.message : err
+    );
+  }
+}
+
+
 async function failTerminal(
   job: UnifiedCollectionJob,
   code: string,
@@ -1040,6 +1077,17 @@ async function stepArsenkin(
               ? ((agent as { tools: import("../providers/arsenkin/flags").ArsenkinToolName[] }).tools)
               : [];
           const agentRunId = `unified-${job.unifiedJobId}-${agentName}`;
+          // Строка запуска заводится ДО отправки: без неё итог агента писать
+          // некуда, и во вкладке «Агенты» пять платных отправок не видны вовсе
+          // (шаг 15, E10). Значения `ARSENKIN_*_REAL` добавлены в перечисление
+          // именно для того, чтобы агенты различались.
+          await ensureUnifiedAgentRun({
+            id: agentRunId,
+            caseId: job.caseId,
+            agentName,
+            actorId: job.requestedBy,
+            prisma: deps.prisma ?? undefined,
+          });
           const started = await startArsenkinCaseAgentDurable({
             caseId: job.caseId,
             agentRunId,

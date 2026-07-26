@@ -82,3 +82,22 @@ describe("пустая поверхность занимает одну стра
     expect(emptySurfaceMergeReason()).toMatch(/поверхность/iu);
   });
 });
+
+/**
+ * Шаг 15, E2 — покрытие слотов считается по манифесту, а не по статическому
+ * списку. Две реализации одного вопроса разошлись: сборщик знал о выведенных
+ * слияниях, а гейт подготовки — нет, и пересборка падала с
+ * «baseSlotCoverage != 36; missing canonical slots: p21_ru_related_2,
+ * p22_ru_related_3».
+ */
+describe("покрытие слотов имеет один источник правды", () => {
+  it("гейт подготовки читает слияния из манифеста", () => {
+    const src = readFileSync(
+      join(process.cwd(), "src/modules/digital-profile/services/canonical-report-prepare.ts"),
+      "utf8"
+    );
+    expect(src).toMatch(/deckManifest\.mergedSlots \?\? \[\]/u);
+    // Статический список больше не источник правды о покрытии.
+    expect(src).not.toMatch(/\.\.\.MERGED_SLOT_IDS/u);
+  });
+});

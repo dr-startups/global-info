@@ -197,6 +197,32 @@ function looksLikeBarePersonName(title: string): boolean {
   return false;
 }
 
+/**
+ * Определительная фраза: «<Имя> — <кто это>».
+ *
+ * Энциклопедический зачин отвечает на вопрос «кто это», а не «что произошло»:
+ *
+ *     «Павел Валерьевич Дуров — российский предприниматель в сфере
+ *      информационных технологий, основатель социальной сети "ВКонтакте"»
+ *
+ * На живом прогоне эта фраза стояла доказательством темы «Офшоры и финансовая
+ * прозрачность» под утверждением «Найдены публикации об офшорных и
+ * корпоративных структурах владения». Утверждение ложное и опасное: клиент
+ * показывает такой отчёт банку (шаг 15, E6).
+ *
+ * Признак — именно **зачин**: до тире стоит голое имя. Суффикс источника
+ * («… — WSJ», «… - The Moscow Times») под правило не подпадает, потому что до
+ * тире там целый заголовок, а не имя.
+ */
+export function looksLikeEncyclopedicLead(title: string): boolean {
+  const t = String(title ?? "").replace(/^[«"]|[»"]$/gu, "").trim();
+  const m = /^(.{3,80}?)\s+[—–]\s+(.{10,})$/u.exec(t);
+  if (!m) return false;
+  const [, head, tail] = m;
+  // До тире — голое имя; после — описание, а не событие.
+  return looksLikeBarePersonName(head!) && /[а-яёa-z]/u.test(tail!);
+}
+
 /** True when a cleaned quote/title ends on a hanging preposition/conjunction. */
 export function hasDanglingTail(text: string): boolean {
   return DANGLING_TAIL_RE.test(String(text ?? "").trim());
@@ -310,6 +336,13 @@ export function isWeakExampleTitle(
     !themeHit
   ) {
     return true;
+  }
+
+  // Энциклопедический зачин («<Имя> — российский предприниматель…») отвечает
+  // на вопрос «кто это», а не «что произошло», и доказательством темы риска
+  // быть не может (шаг 15, E6).
+  if (opts?.theme && ADVERSE_THEME_IDS.has(opts.theme.themeId) && !themeHit) {
+    if (looksLikeEncyclopedicLead(t)) return true;
   }
 
   return false;

@@ -51,6 +51,14 @@ enum AgentName {
   RISK_CLASSIFIER
   REPORT_SYNTHESIS
   SEARCH_SURFACES
+  // Агенты Arsenkin (шаг 15, E10). Каждый — отдельная платная отправка, и во
+  // вкладке «Агенты» они должны различаться: свести их к SEARCH_SURFACES
+  // значило бы стереть ровно то, ради чего эта вкладка существует.
+  ARSENKIN_SEARCH_TOP_REAL
+  ARSENKIN_SUGGESTIONS_REAL
+  ARSENKIN_PAA_REAL
+  ARSENKIN_AI_SEARCH_REAL
+  ARSENKIN_URL_AUDIT_REAL
 }
 
 // Stage H3 — additional search surfaces beyond organic results.

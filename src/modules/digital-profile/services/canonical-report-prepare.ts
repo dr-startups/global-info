@@ -36,7 +36,6 @@ import {
 import { digitalProfileConfig } from "../config";
 import {
   CANONICAL_SLOT_IDS,
-  MERGED_SLOT_IDS,
 } from "../orion-golden/deck-sections/canonical-slots";
 import type { ReportDeckManifest } from "../orion-golden/deck-sections/contracts";
 import type { RendererSlide } from "../orion-golden/deck-sections/deck-assembler";
@@ -672,7 +671,14 @@ export async function runCanonicalReportPrepare(
         .filter((s) => !s.isContinuation)
         .map((s) => s.baseSlotId)
     );
-    const coveredSlots = new Set([...presentSlots, ...MERGED_SLOT_IDS]);
+    // Слитые слоты берутся из манифеста, а не из статического списка: слияние
+    // может быть выведено при сборке (пустая поверхность печатается один раз),
+    // и второй источник правды о покрытии разошёлся бы с первым — ровно тот
+    // класс дефектов, что чинился в шагах 12 и 13 (шаг 15, E2).
+    const coveredSlots = new Set([
+      ...presentSlots,
+      ...(deck.assembly.deckManifest.mergedSlots ?? []).map((m) => m.baseSlotId),
+    ]);
     const missingSlots = CANONICAL_SLOT_IDS.filter((id) => !coveredSlots.has(id));
     if (missingSlots.length > 0) {
       throw new CanonicalPrepareBlockedError(
@@ -990,7 +996,14 @@ export async function runCanonicalReportPrepare(
     const presentSlots = new Set(
       deck.assembly.deckManifest.slides.filter((s) => !s.isContinuation).map((s) => s.baseSlotId)
     );
-    const coveredSlots = new Set([...presentSlots, ...MERGED_SLOT_IDS]);
+    // Слитые слоты берутся из манифеста, а не из статического списка: слияние
+    // может быть выведено при сборке (пустая поверхность печатается один раз),
+    // и второй источник правды о покрытии разошёлся бы с первым — ровно тот
+    // класс дефектов, что чинился в шагах 12 и 13 (шаг 15, E2).
+    const coveredSlots = new Set([
+      ...presentSlots,
+      ...(deck.assembly.deckManifest.mergedSlots ?? []).map((m) => m.baseSlotId),
+    ]);
     const missingSlots = CANONICAL_SLOT_IDS.filter((id) => !coveredSlots.has(id));
     if (missingSlots.length > 0) {
       throw new CanonicalPrepareBlockedError(
