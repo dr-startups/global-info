@@ -33,7 +33,6 @@
     "smoke:golden-case": "tsx --test scripts/smoke-golden-case-report.ts",
     "orion:deck-sections-report72": "tsx scripts/run-orion-deck-sections-report72.ts",
     "arsenkin:db-readiness": "tsx scripts/generate-arsenkin-db-readiness.ts",
-    "smoke:all:with-renderer": "docker compose up -d --build renderer && npm run smoke:all",
     "db:audit": "tsx scripts/db-schema-audit.ts",
     "db:deploy:raw": "prisma migrate deploy"
   },
