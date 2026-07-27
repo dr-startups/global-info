@@ -80,7 +80,9 @@ const AMBIGUOUS_SUBMIT_RETRY_MAX = Math.max(
   0,
   Number(process.env.ARSENKIN_AMBIGUOUS_SUBMIT_RETRY_MAX ?? 1) || 1
 );
-const MAX_ACTIVE_SUBMISSIONS = Math.max(1, Number(process.env.ARSENKIN_MAX_CONCURRENT ?? 2) || 2);
+// То же значение, что у общего ограничителя аккаунта: два разных предела на
+// одну и ту же одновременность противоречили бы друг другу.
+const MAX_ACTIVE_SUBMISSIONS = Math.max(1, Number(process.env.ARSENKIN_MAX_CONCURRENT ?? 4) || 4);
 
 export type FullAuditOrchestratorDeps = {
   prisma?: PrismaClient;

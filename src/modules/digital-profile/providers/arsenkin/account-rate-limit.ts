@@ -19,7 +19,16 @@ export function arsenkinAccountLimiterConfig(env: NodeJS.ProcessEnv = process.en
   const configuredLease = Math.max(5_000, Number(env.ARSENKIN_ACCOUNT_LEASE_MS ?? DEFAULT_LEASE_MS) || DEFAULT_LEASE_MS);
   return {
     id: "arsenkin",
-    maxConcurrent: Math.max(1, Number(env.ARSENKIN_MAX_CONCURRENT ?? 2) || 2),
+    /*
+     * Аккаунт допускает пять задач одновременно; приложение использовало две.
+     *
+     * Из-за этого восемь поверхностей первой стадии шли четырьмя волнами
+     * вместо двух, и прогон ждал вдвое дольше без всякой причины со стороны
+     * провайдера. Ставим четыре, а не пять: один слот оставлен про запас —
+     * ограничитель общий на аккаунт, и в него упираются и веб, и воркер, так
+     * что выбирать предел под ноль значит ловить 429 на стыке.
+     */
+    maxConcurrent: Math.max(1, Number(env.ARSENKIN_MAX_CONCURRENT ?? 4) || 4),
     // Conservative default below provider soft-cap to avoid minute-boundary bursts.
     maxRpm: Math.max(1, Math.min(30, Number(env.ARSENKIN_REQUESTS_PER_MINUTE ?? 24) || 24)),
     // Lease must outlive per-request HTTP timeout (AbortSignal).
