@@ -27,9 +27,8 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { delimiter, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { findPythonInterpreter } from "./lib/python";
 
 type Tier = "offline" | "full";
 
@@ -101,18 +100,6 @@ const SMOKES: Smoke[] = [
     about: "замер текста рендерером (нужны Python-пакеты)",
   },
 ];
-
-function pythonInterpreter(): string | null {
-  const pathDirs = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
-  for (const candidate of [process.env.PYTHON, "python3", "python"]) {
-    if (!candidate) continue;
-    if (candidate.includes("/") && existsSync(candidate)) return candidate;
-    for (const dir of pathDirs) {
-      if (existsSync(join(dir, candidate))) return candidate;
-    }
-  }
-  return null;
-}
 
 type Verdict = "PASS" | "FAIL" | "SKIP";
 
@@ -278,7 +265,7 @@ function main(): void {
   const tier: Tier = tierArg;
   // full — это надмножество: смысл уровня в том, что он проверяет больше.
   const selected = SMOKES.filter((s) => (tier === "full" ? true : s.tier === "offline"));
-  const python = pythonInterpreter();
+  const python = findPythonInterpreter();
 
   console.log(`Смоки, уровень «${tier}»: ${selected.length}\n`);
   const results: Result[] = [];

@@ -9,6 +9,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { pythonInterpreter } from "./lib/python";
 import {
   runDeckBuild,
   toRendererPayload,
@@ -586,14 +587,14 @@ async function main(): Promise<void> {
     if (existsSync(pagesDir)) rmSync(pagesDir, { recursive: true, force: true });
     console.log("=== RENDER (existing local python renderer) ===");
     const out = execFileSync(
-      "python",
+      pythonInterpreter(),
       ["scripts/render-orion-golden-artifacts.py", payloadPath, pptxPath, pdfPath, pagesDir],
       { cwd: process.cwd(), encoding: "utf8", env: { ...process.env, PYTHONIOENCODING: "utf-8" } }
     );
     console.log(out.trim());
     // Contact sheet from rendered pages.
     const contactOut = execFileSync(
-      "python",
+      pythonInterpreter(),
       ["-X", "utf8", "scripts/build-contact-sheet.py", pagesDir, join(OUTPUT_ROOT, "contact-sheet.png")],
       { cwd: process.cwd(), encoding: "utf8" }
     );
@@ -606,7 +607,7 @@ async function main(): Promise<void> {
     let manualVisualPassed = false;
     try {
       execFileSync(
-        "python",
+        pythonInterpreter(),
         [
           "-X",
           "utf8",
@@ -634,7 +635,7 @@ async function main(): Promise<void> {
 
     // Geometry report through the EXISTING inspector.
     const geometryJson = execFileSync(
-      "python",
+      pythonInterpreter(),
       ["-X", "utf8", "scripts/inspect-first36-pptx-geometry.py", pptxPath],
       { cwd: process.cwd(), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
     );
@@ -699,7 +700,7 @@ async function main(): Promise<void> {
           if (!existsSync(pdfPath)) return false;
           const pdfPages = Number(
             execFileSync(
-              "python",
+              pythonInterpreter(),
               ["-X", "utf8", "-c", `import fitz,sys;print(len(fitz.open(sys.argv[1])))`, pdfPath],
               { encoding: "utf8" }
             ).trim()
