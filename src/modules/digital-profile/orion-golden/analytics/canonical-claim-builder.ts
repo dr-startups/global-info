@@ -87,7 +87,27 @@ function inferClaimKind(input: {
   subjectMatch: SubjectRelevanceDecision;
   adverse: boolean;
   text: string;
+  /** Типы доказательств, на которых стоит утверждение (данные, а не догадка). */
+  evidenceTypes?: string[];
 }): ClaimKind {
+  /*
+   * Природа записи берётся из данных, а не угадывается по домену.
+   *
+   * Здесь было только сопоставление домена со списком известных баз
+   * (`world-check|dowjones|lexis|…`). Совпадение из комплаенс-базы, у которого
+   * адрес профиля лежит на другом хосте, под регулярку не попадало и уезжало в
+   * `SOURCE_ALLEGATION` — наравне с публикацией. Ниже по течению это привело к
+   * тому, что имя из базы печаталось клиенту как заголовок найденного
+   * материала.
+   *
+   * Запись при этом всегда знала, что она такое: у неё `evidenceType`
+   * = `compliance_hit`. Это ровно правило «состояние — это данные, а не
+   * название» из ENGINEERING.md. Регулярка по домену осталась запасным
+   * вариантом для записей без типа.
+   */
+  if ((input.evidenceTypes ?? []).some((t) => String(t).toLowerCase() === "compliance_hit")) {
+    return "DATABASE_STATUS";
+  }
   if (input.domains.some((d) => OFFICIAL_DOMAIN.test(d))) return "OFFICIAL_RECORD";
   if (input.domains.some((d) => DATABASE_DOMAIN.test(d))) return "DATABASE_STATUS";
   if (input.adverse || /утверждает|сообщает|расследован|alleg/iu.test(input.text)) {
@@ -217,6 +237,7 @@ function buildFromFinding(input: {
     subjectMatch: f.subjectMatch,
     adverse,
     text: blob,
+    evidenceTypes: evidenceItems.map((i) => i.evidenceType),
   });
   // Media never becomes FACT.
   const kind: ClaimKind =
@@ -344,6 +365,7 @@ function buildOrphanMaterialClaims(input: {
       subjectMatch: entry.subjectDecision,
       adverse: true,
       text,
+      evidenceTypes: item?.evidenceType ? [item.evidenceType] : [],
     });
     const materiality = scoreMateriality({
       themeIds: ensuredThemes,

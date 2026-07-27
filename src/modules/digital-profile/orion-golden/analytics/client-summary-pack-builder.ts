@@ -209,8 +209,11 @@ function sourceSuffix(domain: string | undefined): string {
  * материалы, в том числе «Johan Holmstrom»» при проверяемом Anders Holmström:
  * чужое имя выглядело найденным материалом о субъекте.
  *
- * Признак — провайдер записи. Тип утверждения не годится: комплаенс-совпадения
- * приходят как SOURCE_ALLEGATION наравне с публикациями.
+ * Признак — тип утверждения `DATABASE_STATUS`. Сначала здесь стоял обход по
+ * провайдерам: классификатор определял тип по домену и совпадения из баз с
+ * посторонним адресом профиля помечал как SOURCE_ALLEGATION. Классификатор
+ * исправлен (он читает `evidenceType`), поэтому обход убран — признак снова
+ * один и честный. Провайдер нужен только чтобы назвать базу.
  */
 const COMPLIANCE_PROVIDER_CODES = new Set([
   "dow_jones",
@@ -220,11 +223,14 @@ const COMPLIANCE_PROVIDER_CODES = new Set([
 ]);
 
 function complianceProviderOfClaim(claim: CanonicalClaim): string | null {
+  if (claim.claimKind !== "DATABASE_STATUS") return null;
   for (const p of claim.provenance?.providers ?? []) {
     const code = String(p ?? "").toLowerCase();
     if (COMPLIANCE_PROVIDER_CODES.has(code)) return code;
   }
-  return null;
+  // База известна как тип записи, но провайдер не опознан — назвать её всё
+  // равно надо, иначе совпадение снова уедет в «найденные материалы».
+  return "";
 }
 
 /** Вопрос из выдачи («…?») — тоже не публикация, а строка поискового блока. */
@@ -419,7 +425,10 @@ function buildThemeBlock(
   const conclusion = stripInternalLeak(
     facts.length > 0
       ? `Установлено: ${facts[0]!.statement}`
-      : leadComplianceProvider
+      : // Пустая строка значит «запись из базы, но провайдер не опознан» —
+        // это по-прежнему не публикация, поэтому сравнение с null, а не на
+        // истинность.
+        leadComplianceProvider !== null
         ? `В базе ${complianceProviderLabel(leadComplianceProvider)} есть совпадение по имени «${lead.title}»; принадлежность субъекту требует проверки и фактом не является.`
         : looksLikeSearchQuestion(lead.title)
           ? `Среди связанных запросов выдачи встречается вопрос «${lead.title}».`
@@ -475,17 +484,32 @@ function buildInternationalDatabases(
     const top = list.sort(
       (a, b) => LEVEL_RANK[b.materialityLevel] - LEVEL_RANK[a.materialityLevel]
     )[0]!;
-    const name = /rupep/i.test(domain)
-      ? "RuPEP"
-      : /lexis/i.test(domain)
-        ? "LexisNexis"
-        : /dowjones|dow.?jones/i.test(domain)
-          ? "Dow Jones"
-          : /world.?check/i.test(domain)
-            ? "World-Check"
-            : /ofac/i.test(domain)
-              ? "OFAC / sanctions list"
-              : domain;
+    /*
+     * Название базы — из провайдера записи, а не из её адреса.
+     *
+     * Здесь домен сопоставлялся со списком известных баз, а при неудаче
+     * печатался как есть. Из-за этого в разделе «Международные базы» появилась
+     * строка «example.com»: у совпадения адрес профиля лежит на постороннем
+     * хосте. Демо-домен в отчёте поймал сторож клиентского текста.
+     */
+    const providerCode = list
+      .map((c) => complianceProviderOfClaim(c))
+      .find((p): p is string => p !== null && p !== "");
+    const name = providerCode
+      ? complianceProviderLabel(providerCode)
+      : /rupep/i.test(domain)
+        ? "RuPEP"
+        : /lexis/i.test(domain)
+          ? "LexisNexis"
+          : /dowjones|dow.?jones/i.test(domain)
+            ? "Dow Jones"
+            : /world.?check/i.test(domain)
+              ? "World-Check"
+              : /ofac/i.test(domain)
+                ? "OFAC / sanctions list"
+                : // Незнакомый источник называется нейтрально: адрес показывать
+                  // можно только если его вообще позволено называть клиенту.
+                  (clientSafeDomain(domain) ?? "Международная база");
     out.push({
       databaseName: name,
       statusSummary: stripInternalLeak(
