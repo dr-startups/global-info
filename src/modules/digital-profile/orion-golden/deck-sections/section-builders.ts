@@ -56,6 +56,18 @@ export type SectionBuildContext = {
   previousPacks?: Map<FragmentKey, SectionPackV2>;
   /** Build log: which fragments were regenerated vs reused. */
   buildLog?: Array<{ fragmentKey: FragmentKey; action: "REGENERATED" | "REUSED_CACHE" }>;
+  /**
+   * Уже собранные разделы — доступны фрагментам, которые строятся последними.
+   *
+   * Резюме собиралось первым, из тех же исходных находок, что и разделы, а не
+   * из написанных разделов. Поэтому оно пересказывало те же данные другими
+   * словами и расходилось с ними в акцентах, а про раздел, свернувшийся из-за
+   * нехватки данных, не знало вовсе и продолжало обещать его содержание.
+   *
+   * Порядок сборки теперь двухфазный (см. `buildAllSections`), и этому полю
+   * положено быть заполненным только на второй фазе.
+   */
+  builtPacks?: Map<FragmentKey, SectionPackV2>;
 };
 
 const RISK_ORDER: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
@@ -386,14 +398,49 @@ export function buildAppendixSection(ctx: SectionBuildContext): SectionPackV2[] 
   return [buildSectionPackForFragment("APPENDIX_MAIN", ctx)];
 }
 
+/**
+ * Сборка в две фазы: сначала разделы, резюме — последним.
+ *
+ * Раньше порядок сборки совпадал с порядком в отчёте, и резюме собиралось
+ * первым — из тех же исходных находок, что и разделы. Оно не могло опираться
+ * на то, что в разделах действительно написано: пересказывало те же данные
+ * другими словами, расходилось с ними в акцентах и обещало содержание раздела,
+ * который свернулся из-за нехватки данных.
+ *
+ * Порядок вывода при этом не меняется — деку по-прежнему открывает резюме.
+ * Меняется только очерёдность построения, и это разные вещи.
+ */
 export function buildAllSections(ctx: SectionBuildContext): SectionPackV2[] {
+  // Фаза A — разделы. Резюме сюда не входит.
+  const frontMatter = buildFrontMatterSection(ctx);
+  const executiveRest = [
+    buildSectionPackForFragment("RISK_MATRIX", ctx),
+    buildSectionPackForFragment("DIGITAL_PROFILE_OVERVIEW", ctx),
+  ];
+  const ru = buildRuProfileSection(ctx);
+  const uae = buildUaeProfileSection(ctx);
+  const compliance = buildComplianceSection(ctx);
+  const appendix = buildAppendixSection(ctx);
+
+  // Фаза B — резюме, которому уже видно написанное.
+  const builtPacks = new Map<FragmentKey, SectionPackV2>();
+  for (const pack of [...frontMatter, ...executiveRest, ...ru, ...uae, ...compliance, ...appendix]) {
+    builtPacks.set(pack.fragmentKey, pack);
+  }
+  const executiveSummary = buildSectionPackForFragment("EXECUTIVE_SUMMARY", {
+    ...ctx,
+    builtPacks,
+  });
+
+  // Порядок вывода — как в отчёте, а не как в сборке.
   return [
-    ...buildFrontMatterSection(ctx),
-    ...buildExecutiveSection(ctx),
-    ...buildRuProfileSection(ctx),
-    ...buildUaeProfileSection(ctx),
-    ...buildComplianceSection(ctx),
-    ...buildAppendixSection(ctx),
+    ...frontMatter,
+    executiveSummary,
+    ...executiveRest,
+    ...ru,
+    ...uae,
+    ...compliance,
+    ...appendix,
   ];
 }
 
