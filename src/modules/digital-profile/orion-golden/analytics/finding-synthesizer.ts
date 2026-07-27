@@ -8,6 +8,10 @@
  */
 
 import { createHash } from "node:crypto";
+import {
+  clientSafeDomain,
+  clientSafeDomains,
+} from "../../services/composite-serp-merge";
 import type { RawInventoryItem } from "../types";
 import type { RiskLevel } from "../contracts/common";
 import {
@@ -497,7 +501,9 @@ export function buildClientFacingClaim(input: {
   for (const e of examples.slice(0, 2)) {
     const q = quoteForClaim(e.title, 220);
     if (!q || isWeakExampleTitle(q, { theme: input.theme }) || hasDanglingTail(q)) continue;
-    quoteLines.push(e.domain ? `«${q}» — источник ${e.domain}` : `«${q}»`);
+    // Домен называется клиенту только если он не из демо-данных.
+    const safe = clientSafeDomain(e.domain);
+    quoteLines.push(safe ? `«${q}» — источник ${safe}` : `«${q}»`);
   }
 
   const total = pluralRu(input.itemsCount, "материал", "материала", "материалов");
@@ -512,15 +518,15 @@ export function buildClientFacingClaim(input: {
   const framing = baseFraming;
   const anchorDomains = [
     ...new Set(
-      [
+      clientSafeDomains([
         ...examples.map((e) => e.domain),
         ...(input.domains ?? []).map((d) => d.replace(/^www\./iu, "").trim()),
-      ].filter(Boolean)
+      ])
     ),
   ].slice(0, 2);
 
   if (quoteLines.length === 0) {
-    const domainHint = (input.domains ?? []).filter(Boolean).slice(0, 3).join(", ");
+    const domainHint = clientSafeDomains(input.domains ?? []).slice(0, 3).join(", ");
     const gap = domainHint
       ? `По теме ${input.itemsCount} ${total} в источниках ${domainHint}; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.`
       : `По теме ${input.itemsCount} ${total}; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.`;

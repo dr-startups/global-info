@@ -13,6 +13,7 @@ import {
 } from "../contracts/composed-client-summary";
 import { INTERNAL_CLIENT_TOKEN_RE } from "./client-summary-pack-builder";
 import { looksLikeSearchQuery } from "./client-quote-hygiene";
+import { clientSafeDomain } from "../../services/composite-serp-merge";
 
 /** Lead block keeps this many theme sections; the rest remain full text as continuation. */
 const LEAD_THEME_COUNT = 3;
@@ -106,9 +107,12 @@ function composeOverall(pack: ClientSummaryPack): string {
   return parts.join("\n");
 }
 
-/** Parenthetical source attribution, omitted when the domain is unknown. */
+/**
+ * Скобочная отсылка к источнику; опускается, если домен неизвестен или его
+ * нельзя называть клиенту (демо-данные).
+ */
 function sourceSuffix(domain: string | undefined): string {
-  const d = (domain ?? "").trim();
+  const d = clientSafeDomain(domain);
   return d ? ` (${d})` : "";
 }
 

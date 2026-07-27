@@ -9,6 +9,7 @@ import { DECK_TEMPLATE_REGISTRY, RED_MARKER_LABEL } from "../template-registry";
 import type { ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import type { Finding } from "../../contracts/finding";
+import { clientSafeDomain, clientSafeDomains } from "../../../services/composite-serp-merge";
 import { ADVERSE_PATTERNS, NOT_FOUND_PATTERNS } from "../../analytics/surface-analyzers";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
 import {
@@ -292,7 +293,9 @@ export function buildSerpScreenshotFragment(
       frameTone: "red" as const,
     });
     if (f && !explainedFindings.some((x) => x.findingId === f.findingId)) explainedFindings.push(f);
-    if (row.domain && !explainedDomains.includes(row.domain)) explainedDomains.push(row.domain);
+    // Демо-домен не называется клиенту даже как подпись к снимку.
+    const safeRowDomain = clientSafeDomain(row.domain);
+    if (safeRowDomain && !explainedDomains.includes(safeRowDomain)) explainedDomains.push(safeRowDomain);
     if (scoped.evidenceIndex[row.ref]) explainedRefs.push(row.ref);
   }
   explainedFindings.sort((a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0));
@@ -324,7 +327,7 @@ export function buildSerpScreenshotFragment(
       : "На снимке нет сохранённых строк выдачи для описания состава страницы.";
 
   const neutralVisibleDomains = [
-    ...new Set(visibleRows.map((v) => v.domain).filter((d): d is string => Boolean(d))),
+    ...new Set(clientSafeDomains(visibleRows.map((v) => v.domain))),
   ].slice(0, 3);
   // The sidebar footer is narrow: cap the listed domains so the note always
   // ends with a complete phrase instead of clipping mid-sentence.

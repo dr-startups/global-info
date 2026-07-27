@@ -6,6 +6,7 @@
 import type { CanonicalClaim, CanonicalThemeId, MaterialityLevel } from "../contracts/canonical-claim";
 import type { CanonicalClaimsBundle } from "../contracts/canonical-claim";
 import type { RiskLevel } from "../contracts/common";
+import { clientSafeDomain } from "../../services/composite-serp-merge";
 import {
   CLIENT_SUMMARY_PACK_SCHEMA_VERSION,
   ClientSummaryPackSchema,
@@ -188,9 +189,12 @@ function whyItMatters(themeId: CanonicalThemeId): string {
   }
 }
 
-/** Parenthetical source attribution, omitted when the domain is unknown. */
+/**
+ * Скобочная отсылка к источнику; опускается, если домен неизвестен или его
+ * нельзя называть клиенту (демо-данные).
+ */
 function sourceSuffix(domain: string | undefined): string {
-  const d = (domain ?? "").trim();
+  const d = clientSafeDomain(domain);
   return d ? ` (${d})` : "";
 }
 
@@ -251,7 +255,7 @@ function articleFromSelection(
       cleanClaimExcerpt ||
       (cleanTitle
         ? cleanDomain
-          ? `«${cleanTitle}» — источник ${cleanDomain}.`
+          ? `«${cleanTitle}» — источник ${clientSafeDomain(cleanDomain)}.`
           : `«${cleanTitle}».`
         : "Описание материала сохранено в доказательной трассе.")
   );

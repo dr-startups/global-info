@@ -38,7 +38,7 @@ import {
   freshnessFootnote,
   reportDiffClientLine,
 } from "../../../services/report-material-freshness";
-import { isMockClientDomain } from "../../../services/composite-serp-merge";
+import { clientSafeDomains, isMockClientDomain } from "../../../services/composite-serp-merge";
 import { getClientTextFieldBudgets } from "../../client/load-client-text-contract";
 import type { ComposedClientSummary } from "../../contracts/composed-client-summary";
 
@@ -614,7 +614,8 @@ export function buildPageEvidenceView(scoped: ScopedFragmentInput, pageRefs: str
  * claim may cite evidence from other pages/regions.
  */
 export function pageScopedConclusion(f: Finding, view: PageEvidenceView): string {
-  const where = (view.supportDomains.get(f.findingId) ?? []).slice(0, 3);
+  // Демо-домены вычищались только из строк источников, а сюда протекали.
+  const where = clientSafeDomains(view.supportDomains.get(f.findingId) ?? []).slice(0, 3);
   // Было: «тема»: уровень внимания — критический — материалы на этой странице:
   // a, b. Цепочка «двоеточие — тире — двоеточие» читается как строка таблицы,
   // а не как предложение. Теперь это два коротких предложения.
@@ -689,7 +690,7 @@ export function pageRowCompositionBlocks(
     "результатов"
   );
   const domainsNote = composition.topDomains.length
-    ? `; преобладающие источники: ${composition.topDomains.slice(0, 3).join(", ")}`
+    ? `; преобладающие источники: ${enumerateRu(clientSafeDomains(composition.topDomains))}`
     : "";
   return {
     whatWasFound: clampClientText(
@@ -804,7 +805,7 @@ export function enumerateRu(items: string[], max = 3): string {
  * соседние страницы говорить об источниках по-старому.
  */
 export function sourcesSentence(domains: string[], max = 4): string {
-  const list = domains.filter((d) => d && d !== "—" && !isMockClientDomain(d));
+  const list = clientSafeDomains(domains);
   return list.length
     ? `Источники — ${enumerateRu(list, max)}.`
     : "Источники — поисковая выдача; полный перечень в приложении.";
@@ -1086,7 +1087,8 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
 
   // PDF-40 G.2b / PDF-44 H — rebuild from this region's evidence only; skip weak titles.
   const regionalQuotes = titleCandidates.slice(0, 2).map((c) => {
-    const domain = c.domain || domains[0] || "";
+    // Демо-домен не называется клиенту и здесь: цитата остаётся без источника.
+    const domain = clientSafeDomains([c.domain, domains[0]])[0] ?? "";
     return domain ? `«${c.title}» — источник ${domain}` : `«${c.title}»`;
   });
   const lines = String(f.claim ?? "")
@@ -1112,13 +1114,14 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
     const framing = g2bFrame ?? "Найдены публикации по теме:";
     const frame = /:\s*$/u.test(framing) ? framing : `${framing.replace(/[.:]\s*$/u, "")}:`;
     const anchors = [
-      ...new Set(titleCandidates.slice(0, 2).map((c) => c.domain).filter(Boolean)),
+      ...new Set(clientSafeDomains(titleCandidates.slice(0, 2).map((c) => c.domain))),
     ].slice(0, 2);
     const whereLine = anchors.length > 0 ? `Где видно: ${anchors.join(", ")}.` : "";
     claim = [frame, ...regionalQuotes, scale, whereLine, why].filter(Boolean).join("\n");
   } else {
-    const sourceSegment = domains.length
-      ? `По теме в источниках ${domains.slice(0, 3).join(", ")}; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.`
+    const safeDomains = clientSafeDomains(domains);
+    const sourceSegment = safeDomains.length
+      ? `По теме в источниках ${enumerateRu(safeDomains)}; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники.`
       : "По этой теме источники в данном регионе не выделены — см. другие разделы отчёта.";
     claim = String(f.claim ?? "")
       .replace(

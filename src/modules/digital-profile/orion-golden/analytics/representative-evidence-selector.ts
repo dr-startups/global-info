@@ -4,6 +4,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { clientSafeDomain } from "../../services/composite-serp-merge";
 import type { CanonicalClaim, CanonicalThemeId, MaterialityLevel } from "../contracts/canonical-claim";
 import type { CanonicalClaimsBundle } from "../contracts/canonical-claim";
 import {
@@ -102,7 +103,7 @@ export function buildSemanticDisplayExcerpt(claim: CanonicalClaim, maxChars = 48
     candidate = full.replace(/\s+/gu, " ");
   } else if (claim.originalTitle.trim()) {
     candidate = `«${claim.originalTitle.trim()}»${
-      claim.sourceDomains[0] ? ` — источник ${claim.sourceDomains[0]}` : ""
+      clientSafeDomain(claim.sourceDomains[0]) ? ` — источник ${clientSafeDomain(claim.sourceDomains[0])}` : ""
     }. Материал учтён в трассе доказательств.`;
   } else {
     candidate = "Материал учтён в трассе доказательств.";
@@ -129,7 +130,7 @@ export function buildSemanticDisplayExcerpt(claim: CanonicalClaim, maxChars = 48
   if (claim.originalTitle.trim()) {
     return finalizeExcerpt(
       `«${claim.originalTitle.trim()}»${
-        claim.sourceDomains[0] ? ` — источник ${claim.sourceDomains[0]}` : ""
+        clientSafeDomain(claim.sourceDomains[0]) ? ` — источник ${clientSafeDomain(claim.sourceDomains[0])}` : ""
       }. Полный текст сохранён в evidence/trace.`
     );
   }

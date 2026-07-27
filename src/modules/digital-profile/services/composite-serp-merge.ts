@@ -87,6 +87,26 @@ export function isMockClientDomain(domain: string | null | undefined): boolean {
   return MOCK_URL_PATTERN.test(d) || /(^|\.)mock(\.|-)|-mock\./i.test(d);
 }
 
+/**
+ * Домены, которые можно назвать клиенту.
+ *
+ * Фильтр применялся только в двух строках источников, а домены попадают в
+ * клиентский текст ещё из полудюжины мест — цитаты доказательств, вывод по
+ * странице, представительные свидетельства. На золотом кейсе через них
+ * протекало 56 упоминаний демо-доменов. Отбор теперь один на всех: имя демо-
+ * данных не должно оказаться в отчёте, который показывают клиенту.
+ */
+export function clientSafeDomains(domains: Array<string | null | undefined>): string[] {
+  return domains
+    .map((d) => String(d ?? "").trim())
+    .filter((d) => d.length > 0 && d !== "—" && !isMockClientDomain(d));
+}
+
+/** Одиночный домен: `null`, если называть его клиенту нельзя. */
+export function clientSafeDomain(domain: string | null | undefined): string | null {
+  return clientSafeDomains([domain])[0] ?? null;
+}
+
 /** Fail-closed mock/demo filter for SearchResult and SearchSurfaceItem rows. */
 export function isMockBaseRow(row: {
   provider?: string | null;

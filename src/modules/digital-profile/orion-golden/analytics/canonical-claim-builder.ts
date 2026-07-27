@@ -5,6 +5,7 @@
 import { createHash } from "node:crypto";
 import { toDisplayDate } from "../../providers/published-date";
 import { publicDomainOf } from "./public-domain";
+import { clientSafeDomain, clientSafeDomains } from "../../services/composite-serp-merge";
 import type { RawInventoryItem } from "../types";
 import type { Finding } from "../contracts/finding";
 import type { ObservationDispositionLedger } from "../contracts/observation-disposition";
@@ -109,7 +110,7 @@ function qualificationFor(kind: ClaimKind, domains: string[]): string {
   switch (kind) {
     case "SOURCE_ALLEGATION":
       return domains.length
-        ? `Публикация (${domains.slice(0, 2).join(", ")}) содержит утверждения источника; требуется подтверждение по первичным документам. Наличие публикации не подтверждает изложенные обвинения.`
+        ? `Публикация (${clientSafeDomains(domains).slice(0, 2).join(", ")}) содержит утверждения источника; требуется подтверждение по первичным документам. Наличие публикации не подтверждает изложенные обвинения.`
         : "Материал является медийным утверждением источника, а не установленным фактом; требуется проверка по первичным документам.";
     case "DATABASE_STATUS":
       return "Сигнал международной/комплаенс-базы требует сверки идентификаторов и полной карточки; без подтверждения не считается установленным фактом.";
@@ -361,7 +362,7 @@ function buildOrphanMaterialClaims(input: {
     const fullClaimText = [
       themeLabelRu(ensuredThemes[0]!),
       entry.originalTitle
-        ? `«${entry.originalTitle}»${domains[0] ? ` — источник ${domains[0]}` : ""}`
+        ? `«${entry.originalTitle}»${clientSafeDomain(domains[0]) ? ` — источник ${clientSafeDomain(domains[0])}` : ""}`
         : entry.originalSnippet.slice(0, 240),
     ]
       .filter(Boolean)
