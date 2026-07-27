@@ -67,25 +67,69 @@ async function throttle(): Promise<void> {
   lastRequestAt = Date.now();
 }
 
-async function fetchJson(url: string): Promise<unknown> {
-  await throttle();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    const res = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        Accept: "application/json",
-        "User-Agent": providerConfig.wikipedia.userAgent,
-        "Api-User-Agent": providerConfig.wikipedia.userAgent,
-      },
-    });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
+/**
+ * Пауза, которую просит сам сервис.
+ *
+ * Wikimedia отвечает на 429 заголовком `Retry-After` — в секундах либо датой.
+ * Читаем его, а не выдумываем свою задержку; при отсутствии или бессмыслице
+ * берём умеренное значение по умолчанию и ограничиваем сверху, чтобы шаг не
+ * встал на минуты из-за одной цифры в ответе.
+ */
+export function retryAfterMs(res: Response, attempt: number): number {
+  const raw = res.headers.get("retry-after");
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds > 0) return Math.min(seconds * 1000, MAX_RETRY_WAIT_MS);
+  if (raw) {
+    const at = Date.parse(raw);
+    if (Number.isFinite(at)) {
+      const delta = at - Date.now();
+      if (delta > 0) return Math.min(delta, MAX_RETRY_WAIT_MS);
     }
-    return await res.json();
-  } finally {
-    clearTimeout(timer);
+  }
+  return Math.min(1000 * 2 ** attempt, MAX_RETRY_WAIT_MS);
+}
+
+const MAX_RETRY_WAIT_MS = 8_000;
+const MAX_RETRIES = 2;
+
+async function fetchJson(url: string): Promise<unknown> {
+  /*
+   * 429 — это «подожди», а не «не получилось».
+   *
+   * Раньше любой не-200 сразу превращался в ошибку, и один ответ 429 ронял весь
+   * агент проверки Википедии: `PROVIDER_REQUEST_FAILED: HTTP 429`. Сервис при
+   * этом прямо говорит, сколько ждать. Правило проекта здесь то же, что и для
+   * Arsenkin: ожидание — не попытка, и отказ одного источника не должен
+   * обнулять оплаченный сбор.
+   *
+   * Повторяем только то, что имеет смысл повторять: 429 и временные 5xx.
+   * Ошибки запроса (4xx, кроме 429) повторять бессмысленно — ответ не изменится.
+   */
+  for (let attempt = 0; ; attempt += 1) {
+    await throttle();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          Accept: "application/json",
+          "User-Agent": providerConfig.wikipedia.userAgent,
+          "Api-User-Agent": providerConfig.wikipedia.userAgent,
+        },
+      });
+      if (res.ok) return await res.json();
+      const worthRetry = res.status === 429 || res.status === 503 || res.status === 502;
+      if (!worthRetry || attempt >= MAX_RETRIES) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const waitMs = retryAfterMs(res, attempt);
+      clearTimeout(timer);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      continue;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }
 
