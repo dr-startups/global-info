@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v1",
   "slideCount": 49,
-  "totalChars": 41847,
+  "totalChars": 40801,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -44,9 +44,9 @@
       "baseSlotId": "p03_executive",
       "template": "orion_golden_prose",
       "bullets": [
-        "Деловые связи, владение и контрагенты (продолжение). Публикация (kapitalnytt.se, stockholm-kuriren.se) содержит утверждения источника; требуется подтверждение по первичным документам. Наличие публикации не подтверждает изложенные обвинения.",
-        "Санкции, PEP, RCA и compliance-сигналы. По теме «Санкции, PEP, RCA и compliance-сигналы» найдены конкретные материалы, в том числе «Johan Holmstrom». В выборке присутствует материал «Johan Holmstrom»: «Anders Holmström flagged during sanctions screening watchlist review» — источник stockholm-kuriren.se «Nordkap Capital board appoints independent compliance advisor after Anders Holmström probe» — источник reestr-novosti.ru. «Хроника: Anders Holmström flagged during sanctions screening watchlist review» — источник bizdaily-nordic.se. Санкционные и мониторинговые совпадения отрабатываются в первую очередь при KYC и онбординге.",
-        "Репутационные скандалы и негативные сюжеты. По теме «Репутационные скандалы и негативные сюжеты» найдены конкретные материалы, в том числе «Is Anders Holmström under investigation?». Репутационные скандалы и негативные сюжеты «Is Anders Holmström under investigation?» Устойчивые скандальные сюжеты влияют на репутационную оценку даже при отсутствии судебного приговора.",
+        "Санкции, PEP, RCA и compliance-сигналы. Найдены конкретные материалы, в том числе «Johan Holmstrom»: «Хроника: Anders Holmström flagged during sanctions screening watchlist review» — источник bizdaily-nordic.se. Санкционные и мониторинговые совпадения отрабатываются в первую очередь при KYC и онбординге.",
+        "Репутационные скандалы и негативные сюжеты. Найдены конкретные материалы, в том числе «Is Anders Holmström under investigation?». Устойчивые скандальные сюжеты влияют на репутационную оценку даже при отсутствии судебного приговора.",
+        "Семейные и личные связи (риск-релевантные). Найдены конкретные материалы, в том числе «AI overview: Anders Holmström and Nordkap Capital (RU) #3». Семейные и личные связи учитываются, если они меняют профиль риска или переносят негатив на субъекта. Материал является медийным утверждением источника, а не установленным фактом; требуется проверка по первичным документам.",
         "Источники — abudhabi-capital-news.ae, affarsposten.se, bizdaily-nordic.se, delovoy-vestnik.ru и ещё 2."
       ]
     },
@@ -58,7 +58,6 @@
       "baseSlotId": "p03_executive",
       "template": "orion_golden_prose",
       "bullets": [
-        "Семейные и личные связи (риск-релевантные). По теме «Семейные и личные связи (риск-релевантные)» найдены конкретные материалы, в том числе «AI overview: Anders Holmström and Nordkap Capital (RU) #3». Найдены материалы о семейных и деловых связях субъекта: «AI overview: Anders Holmström and Nordkap Capital (RU) #0» «AI overview: Anders Holmström and Nordkap Capital (RU) #1» Всего по теме: 12 материалов. Риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого. Семейные и личные связи учитываются, если они меняют профиль риска или переносят негатив на субъекта. Материал является медийным утверждением источника, а не установленным фактом; требуется проверка по первичным документам.",
         "Единичные существенные публикации вне устойчивых тем в текущем наборе отдельно не выделены.",
         "Отдельные подтверждённые карточки международных баз в клиентском резюме не сформированы либо требуют отдельной сверки."
       ]

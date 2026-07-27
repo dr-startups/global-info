@@ -48,6 +48,7 @@ import {
   type SemanticBlock,
 } from "../semantic-summary-pagination";
 import type { ComposedClientSummary } from "../../contracts/composed-client-summary";
+import { themeBlockText } from "../../analytics/client-summary-composer";
 
 /**
  * §7.2 — compact freshness + change line for surfaces that render narrative/bullets
@@ -355,12 +356,10 @@ export function composeExecutivePageStructure(
 }
 
 function formatSemanticBullet(block: SemanticBlock): string {
-  if (block.heading && block.kind === "theme") {
-    // Heading already leads most composer theme bodies; avoid duplicate title line
-    // when the body starts with the same heading.
-    if (block.text.startsWith(block.heading)) return block.text;
-    return `${block.heading}. ${block.text}`;
-  }
+  // Склейка заголовка с телом — общая с полным текстом резюме
+  // (`themeBlockText`), чтобы дека и артефакт не расходились в том, где
+  // называется тема.
+  if (block.heading && block.kind === "theme") return themeBlockText(block.heading, block.text);
   return block.text;
 }
 

@@ -205,7 +205,9 @@ describe("проверенные факты доходят до текста р�
     expect(themesWithFacts.length).toBeGreaterThan(0);
 
     const theme = themesWithFacts[0]!;
-    expect(theme.conclusion).toContain("установлено");
+    // Регистр не важен: тема больше не называется в начале вывода,
+    // поэтому фраза стала первой в предложении и пишется с заглавной.
+    expect(theme.conclusion.toLowerCase()).toContain("установлено");
     expect(theme.concreteClaims.join(" ")).toContain("Цитата:");
     // Перечень заголовков «В выборке: «...»» вытеснен фактами.
     expect(theme.concreteClaims.some((c) => c.startsWith("В выборке:"))).toBe(false);
@@ -225,7 +227,7 @@ describe("проверенные факты доходят до текста р�
     expect(pack.materialThemes.length).toBeGreaterThan(0);
     for (const theme of pack.materialThemes) {
       expect(theme.concreteClaims.length).toBeGreaterThan(0);
-      expect(theme.conclusion).toContain("найдены конкретные материалы");
+      expect(theme.conclusion.toLowerCase()).toContain("найдены конкретные материалы");
     }
   });
 });

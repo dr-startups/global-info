@@ -176,6 +176,22 @@ function composeThemeSection(
   coveredCheckShapes: Set<string>
 ): ComposedThemeSection {
   const articles = theme.representativeArticles.slice(0, 2);
+  /*
+   * Заголовок, уже названный в выводе темы, отдельным предложением не
+   * повторяется.
+   *
+   * Вывод звучит как «Найдены конкретные материалы, в том числе «X»», а следом
+   * шло предложение про тот же «X» — с названием темы в придачу. Читатель
+   * получал один и тот же заголовок дважды подряд. `articleSentence` умеет
+   * пропускать повторы, но про заголовок из вывода ему никто не сообщал.
+   *
+   * Проверяется вхождение, а не позиция: при наличии проверенных фактов вывод
+   * заголовка не называет, и тогда предложение о нём нужно оставить.
+   */
+  const leadTitle = articles[0]?.title?.trim();
+  if (leadTitle && theme.conclusion.includes(leadTitle)) {
+    alreadyUsedTitles.add(leadTitle.toLowerCase());
+  }
   const articleBits = articles
     .map((a) => articleSentence(a.title, a.domain, a.conciseCompleteDescription, alreadyUsedTitles))
     .filter((s): s is string => Boolean(s));
@@ -198,7 +214,9 @@ function composeThemeSection(
     (c) => !coveredCheckShapes.has(boilerplateShape(c))
   );
   const body = [
-    finishSentence(`${theme.clientTitle}. ${theme.conclusion}`),
+    // Тема не дублируется: она уже заголовок блока, и `formatSemanticBullet`
+    // припишет её к телу, если тело с неё не начинается.
+    finishSentence(theme.conclusion),
     articleBits.join(" "),
     allegation,
     once(theme.whyItMatters),
@@ -268,11 +286,25 @@ function composeNextSteps(pack: ClientSummaryPack): string {
   return [`Следующие проверки.`, ...steps].join(" ");
 }
 
+/**
+ * Заголовок темы и её текст — одной строкой, без повтора заголовка.
+ *
+ * Ответ на этот вопрос жил в двух местах: дека приписывала заголовок к телу
+ * (`formatSemanticBullet`), а сборка полного текста резюме — нет. Пока тело
+ * начиналось с названия темы, расхождение было незаметно; стоило убрать оттуда
+ * дубль — и в полном тексте темы остались без названий.
+ */
+export function themeBlockText(heading: string | undefined, body: string): string {
+  const h = (heading ?? "").trim();
+  if (!h) return body;
+  return body.startsWith(h) ? body : `${h}. ${body}`;
+}
+
 function assembleFullText(
   sections: ComposedClientSummary["sections"],
   continuationThemeIds: CanonicalThemeId[]
 ): string {
-  const themeBlocks = sections.themes.map((t) => t.body);
+  const themeBlocks = sections.themes.map((t) => themeBlockText(t.heading, t.body));
   const lead = themeBlocks.slice(0, LEAD_THEME_COUNT);
   const rest = themeBlocks.slice(LEAD_THEME_COUNT);
   const parts = [

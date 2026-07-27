@@ -357,10 +357,19 @@ function buildThemeBlock(
     concreteClaims.push(...facts.map(factSentence));
   }
   const lead = articles[0]!;
+  /*
+   * Тема здесь не называется.
+   *
+   * Она уже стоит заголовком блока (`clientTitle` → `heading`), и её же
+   * приписывает `formatSemanticBullet`, если тело с неё не начинается. Вместе
+   * с прежним «По теме «X»…» название темы выходило в тексте два, а на одном
+   * блоке и три раза подряд: «Репутационные скандалы… По теме «Репутационные
+   * скандалы…» найдены… Репутационные скандалы… «заголовок»».
+   */
   const conclusion = stripInternalLeak(
     facts.length > 0
-      ? `По теме «${clientTitle}» установлено: ${facts[0]!.statement}`
-      : `По теме «${clientTitle}» найдены конкретные материалы, в том числе «${lead.title}»${sourceSuffix(lead.domain)}.`
+      ? `Установлено: ${facts[0]!.statement}`
+      : `Найдены конкретные материалы, в том числе «${lead.title}»${sourceSuffix(lead.domain)}.`
   );
 
   return {
