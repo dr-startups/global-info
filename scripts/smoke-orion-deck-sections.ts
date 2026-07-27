@@ -486,6 +486,31 @@ describe("canonical coverage and visual assets", () => {
 describe("regression scenario: change only the RU AI fixture (report-72 data)", () => {
   const dir = mkdtempSync(join(tmpdir(), "orion-deck-regr-"));
 
+  /**
+   * ADR-0003 — резюме собирается последним, после всех разделов.
+   *
+   * Раньше порядок сборки совпадал с порядком в отчёте, и резюме строилось
+   * первым: опереться на то, что написано в разделах, оно не могло. Порядок
+   * держится только на том, как написан `buildAllSections`, и без этой
+   * проверки однажды схлопнется обратно молча — текст при этом не покраснеет
+   * ни в одном эталоне, потому что деградация будет смысловой.
+   */
+  it("резюме строится последним, после всех разделов", () => {
+    const build = buildOnce(dir);
+    const order = build.buildLog.map((l) => l.fragmentKey);
+    const summaryAt = order.indexOf("EXECUTIVE_SUMMARY");
+    assert.ok(summaryAt >= 0, "EXECUTIVE_SUMMARY отсутствует в журнале сборки");
+    assert.equal(
+      summaryAt,
+      order.length - 1,
+      `резюме собрано не последним: после него шли ${order.slice(summaryAt + 1).join(", ")}`
+    );
+    // Порядок вывода при этом прежний: деку открывает резюме, а не раздел.
+    const outputOrder = build.packs.map((p) => p.fragmentKey);
+    assert.equal(outputOrder[0], "FRONT_MATTER_MAIN");
+    assert.equal(outputOrder[1], "EXECUTIVE_SUMMARY");
+  });
+
   it("full pipeline: rebuild regenerates only RU AI; unchanged fragments reuse by contentHash", () => {
     // 1. Build all SectionPacks from saved report-72 data; save hashes.
     const build1 = buildOnce(dir);
