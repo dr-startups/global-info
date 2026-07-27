@@ -283,6 +283,9 @@ function buildFromFinding(input: {
   return {
     claimId: claimIdFor([f.findingId, themeIds.join(","), (f.evidenceRefs ?? []).join(",")]),
     subjectId: input.subjectId,
+    // Типы доказательств доносятся до текста: ниже по течению по ним решают,
+    // как назвать запись — публикацией, совпадением из базы или строкой выдачи.
+    evidenceTypes: [...new Set(evidenceItems.map((i) => i.evidenceType).filter(Boolean))],
     fullClaimText,
     displayExcerpt: semanticExcerpt(fullClaimText),
     claimKind: kind,
@@ -393,6 +396,7 @@ function buildOrphanMaterialClaims(input: {
     out.push({
       claimId: claimIdFor(["orphan", entry.rawObservationId, ensuredThemes.join(",")]),
       subjectId: input.subjectId,
+      evidenceTypes: item?.evidenceType ? [item.evidenceType] : [],
       fullClaimText,
       displayExcerpt: semanticExcerpt(fullClaimText),
       claimKind: kind === "FACT" ? "SOURCE_ALLEGATION" : kind,

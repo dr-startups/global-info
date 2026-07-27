@@ -241,6 +241,7 @@ describe("representative-evidence-selector Stage 3", () => {
         "Найдены материалы о коррупционных рисках. «Очень длинное законченное предложение про расследование и конфликт интересов субъекта без обрыва на предлоге» — источник currenttime.tv. Это усиливает вопросы к этике.",
       displayExcerpt: "",
       claimKind: "SOURCE_ALLEGATION",
+      evidenceTypes: ["search_result"],
       subjectMatch: "SUBJECT_MATCH",
       confidence: 0.9,
       themeIds: ["corruption_integrity"],

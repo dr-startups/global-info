@@ -233,10 +233,31 @@ function complianceProviderOfClaim(claim: CanonicalClaim): string | null {
   return "";
 }
 
-/** Вопрос из выдачи («…?») — тоже не публикация, а строка поискового блока. */
-function looksLikeSearchQuestion(title: string): boolean {
-  const t = title.trim();
-  return t.endsWith("?") && t.length <= 120;
+/**
+ * Как назвать запись читателю — по типу доказательства, а не по виду строки.
+ *
+ * Здесь стояла эвристика «строка заканчивается вопросительным знаком, значит
+ * это вопрос из выдачи». Она угадывала: настоящий заголовок статьи тоже бывает
+ * вопросом, а служебная строка ИИ-ответа («AI overview: … #3») под неё не
+ * попадала и уходила в текст как публикация. Тип наблюдения известен на входе
+ * конвейера и теперь доносится до текста полем `evidenceTypes`.
+ *
+ * `null` — обычная публикация: она называется заголовком, как и раньше.
+ */
+function evidenceSentence(types: string[], title: string): string | null {
+  const set = new Set(types.map((t) => String(t).toLowerCase()));
+  if (set.has("ai_answer")) {
+    // Заголовка у ИИ-ответа нет: то, что лежит в поле title, — служебная
+    // строка поверхности, и цитировать её клиенту незачем.
+    return "Тема упоминается в ИИ-ответе поисковой системы; ответ формируется моделью и требует сверки с первоисточником.";
+  }
+  if (set.has("related_query")) {
+    return `Среди связанных запросов выдачи встречается «${title}».`;
+  }
+  if (set.has("suggestion")) {
+    return `Среди поисковых подсказок встречается запрос «${title}».`;
+  }
+  return null;
 }
 
 /**
@@ -352,6 +373,8 @@ function buildThemeBlock(
   const articles: RepresentativeArticle[] = [];
   /** Комплаенс-провайдер записи (или null) — параллельно `articles`. */
   const articleProviders: Array<string | null> = [];
+  /** Типы доказательств записи — параллельно `articles`. */
+  const articleEvidenceTypes: string[][] = [];
   const evidenceRefs = new Set<string>();
   const domains = new Set<string>();
   const concreteClaims: string[] = [];
@@ -378,14 +401,20 @@ function buildThemeBlock(
     // Природа записи известна только здесь, пока на руках сам claim:
     // RepresentativeArticle провайдеров не несёт.
     articleProviders.push(complianceProviderOfClaim(claim));
+    articleEvidenceTypes.push(claim.evidenceTypes ?? []);
     for (const r of article.evidenceRefs) evidenceRefs.add(r);
     // Theme-level domains legitimately aggregate every source behind the theme.
     // Only the per-article attribution must stay tied to its own material.
     if (article.domain) domains.add(article.domain);
     for (const d of claim.sourceDomains) if (d) domains.add(d);
+    // Запись называется по своему типу и здесь: иначе служебная строка
+    // ИИ-ответа снова уходит клиенту как заголовок публикации.
+    const asEvidence = evidenceSentence(claim.evidenceTypes ?? [], article.title);
     concreteClaims.push(
       stripInternalLeak(
-        `В выборке: «${article.title}»${sourceSuffix(article.domain)}. ${article.sourceAllegationOrStatus}`
+        asEvidence
+          ? `${asEvidence} ${article.sourceAllegationOrStatus}`
+          : `В выборке: «${article.title}»${sourceSuffix(article.domain)}. ${article.sourceAllegationOrStatus}`
       )
     );
     if (!qualification) qualification = article.clientQualification;
@@ -422,6 +451,7 @@ function buildThemeBlock(
    * чужое имя из базы и выдавало вопрос читателя за найденный материал.
    */
   const leadComplianceProvider = articleProviders[0] ?? null;
+  const leadEvidenceSentence = evidenceSentence(articleEvidenceTypes[0] ?? [], lead.title);
   const conclusion = stripInternalLeak(
     facts.length > 0
       ? `Установлено: ${facts[0]!.statement}`
@@ -430,9 +460,8 @@ function buildThemeBlock(
         // истинность.
         leadComplianceProvider !== null
         ? `В базе ${complianceProviderLabel(leadComplianceProvider)} есть совпадение по имени «${lead.title}»; принадлежность субъекту требует проверки и фактом не является.`
-        : looksLikeSearchQuestion(lead.title)
-          ? `Среди связанных запросов выдачи встречается вопрос «${lead.title}».`
-          : `Найдены конкретные материалы, в том числе «${lead.title}»${sourceSuffix(lead.domain)}.`
+        : (leadEvidenceSentence ??
+          `Найдены конкретные материалы, в том числе «${lead.title}»${sourceSuffix(lead.domain)}.`)
   );
 
   return {

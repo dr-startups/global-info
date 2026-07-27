@@ -270,6 +270,7 @@ export function sampleCanonicalClaimsBundle(): CanonicalClaimsBundle {
         displayExcerpt:
           "Найдены публикации о коррупционном расследовании: «Sample investigation» — источник news.example",
         claimKind: "SOURCE_ALLEGATION",
+      evidenceTypes: ["search_result"],
         subjectMatch: "SUBJECT_MATCH",
         confidence: 0.85,
         themeIds: ["corruption_integrity", "political_public_exposure"],
