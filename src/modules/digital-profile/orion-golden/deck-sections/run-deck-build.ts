@@ -237,10 +237,15 @@ export function toRendererPayload(input: {
   };
   const usedAssetRefs = new Set<string>();
   const finalSlides = input.rendererSlides.map((raw) => {
+    // Вводный абзац и текст находки склеиваются до переноса строк: перенос
+    // должен видеть весь абзац целиком, иначе он ломает его по границе кусков.
+    const composedNarrative = [raw.narrative, composeFindingProse(raw)]
+      .filter((part): part is string => Boolean(part && part.trim()))
+      .join("\n");
     const s: RendererSlide = {
       ...raw,
-      narrative: raw.narrative
-        ? reflowNarrativeParagraphs(stripFindingMarkers(raw.narrative))
+      narrative: composedNarrative
+        ? reflowNarrativeParagraphs(stripFindingMarkers(composedNarrative))
         : raw.narrative,
       bullets: raw.bullets?.map((b) => reflowThemeBullet(stripFindingMarkers(b))),
     };
@@ -488,14 +493,83 @@ function buildVisualAnalysis(s: RendererSlide): Record<string, unknown> {
   };
 }
 
+/** Оканчивается ли фраза знаком конца предложения. */
+function endsSentence(text: string): boolean {
+  return /[.!?…»)]\s*$/u.test(text.trim());
+}
+
+/** Приписывает точку, если её нет: куски склеиваются в связный абзац. */
+function asSentence(text: string): string {
+  const t = text.trim();
+  if (!t) return "";
+  return endsSentence(t) ? t : `${t}.`;
+}
+
+/**
+ * Текст находки одним абзацем — вместо анкеты из подписей.
+ *
+ * Прежде эти же поля уезжали в буллеты префиксами «Что обнаружено: …»,
+ * «Почему важно: …», «Что проверить: …», одинаково на каждой странице с
+ * данными. Читатель получал бланк проверки, повторённый тридцать раз, и ни одна
+ * страница не читалась как связный текст.
+ *
+ * Найденное и его значение — это одна мысль, а не две графы, поэтому они
+ * склеиваются в абзац. Рекомендация остаётся отдельным предложением в конце:
+ * это вывод, и по нему принимают решение.
+ */
+export function composeFindingProse(s: {
+  whatWasFound?: string;
+  whyItMatters?: string;
+  whatToCheck?: string;
+  /** Уже показанный на странице текст: вводный абзац и буллеты. */
+  narrative?: string;
+  bullets?: string[];
+}): string | undefined {
+  /*
+   * Дедупликация обязательна, а не желательна.
+   *
+   * Строители нередко кладут в `whatWasFound` ровно то, что уже стоит первым
+   * буллетом. Пока текст ехал под подписью «Что обнаружено:», повтор выглядел
+   * как отдельная графа и в глаза не бросался. Стоило подпись убрать — и один
+   * и тот же факт пошёл в абзаце дважды подряд.
+   */
+  const seen = new Set<string>();
+  // Тире и кавычки строители расставляют по-разному («тема» — уровень: …),
+  // поэтому сравнение идёт по словам: пунктуация и регистр отбрасываются, а
+  // пробелы схлопываются. Иначе повтор проходит мимо из-за одного дефиса.
+  const key = (text: string): string =>
+    text
+      .toLowerCase()
+      .replace(/[.,;:!?…«»"'()‐-―-]/gu, " ")
+      .replace(/\s+/gu, " ")
+      .trim();
+  for (const shown of [s.narrative ?? "", ...(s.bullets ?? [])]) {
+    const k = key(shown);
+    if (k) seen.add(k);
+  }
+  const take = (part?: string): string => {
+    if (!part || !part.trim()) return "";
+    const k = key(part);
+    if (!k || seen.has(k)) return "";
+    seen.add(k);
+    return asSentence(part);
+  };
+
+  const paragraph = [take(s.whatWasFound), take(s.whyItMatters)].filter(Boolean).join(" ");
+  const closing = take(s.whatToCheck);
+  const blocks = [paragraph, closing].filter(Boolean);
+  return blocks.length ? blocks.join("\n") : undefined;
+}
+
 function buildRendererBullets(s: RendererSlide): string[] | undefined {
   const bullets: string[] = [...(s.bullets ?? [])];
   // PDF-40 G.1e — methodology stays on the structured no-data layout only;
   // never append it into the client bullet stream (reads as internal jargon
   // and pushes theme cards into the footer).
-  if (s.whatWasFound) bullets.push(`Что обнаружено: ${s.whatWasFound}`);
-  if (s.whyItMatters) bullets.push(`Почему важно: ${s.whyItMatters}`);
-  if (s.whatToCheck) bullets.push(`Что проверить: ${s.whatToCheck}`);
+  //
+  // Текст находки больше сюда не попадает: он идёт абзацем в narrative
+  // (см. composeFindingProse). Происхождение остаётся отдельной строкой —
+  // это не утверждение о субъекте, а ссылка на источник.
   if (s.sourceNote) bullets.push(s.sourceNote);
   return bullets.length ? bullets : undefined;
 }

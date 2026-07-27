@@ -138,7 +138,12 @@ function layout(grid: TemplateLayoutSpec["grid"], overrides: Partial<TemplateLay
 // "нежелат" stem the renderer's row-tone detector matches on.
 export const RED_MARKER_LABEL = "Нежелательный" as const;
 
-const FINDING_BLOCKS = ["Что обнаружено", "Почему важно", "Что проверить", "Источник"];
+// Каркас страницы с находкой. Подписи «Что обнаружено / Почему важно / Что
+// проверить» отсюда убраны: они превращали каждую страницу в бланк проверки, а
+// их содержание теперь идёт связным абзацем (см. composeFindingProse в
+// run-deck-build). Ссылка на источник — не утверждение о субъекте, поэтому
+// остаётся отдельным блоком.
+const FINDING_BLOCKS = ["Источник"];
 
 export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
   cover: {

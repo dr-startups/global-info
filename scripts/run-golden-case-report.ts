@@ -27,6 +27,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { extractClientText, type ClientTextSnapshot } from "./lib/client-text-snapshot";
+import { toRendererPayload } from "../src/modules/digital-profile/orion-golden/deck-sections/run-deck-build";
+import type { ReportDeckManifest } from "../src/modules/digital-profile/orion-golden/deck-sections/contracts";
+import type { RendererSlide } from "../src/modules/digital-profile/orion-golden/deck-sections/deck-assembler";
 
 import {
   runCanonicalReportPrepare,
@@ -317,10 +320,35 @@ export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
     quality: stableQuality(summary),
   };
 
+  /*
+   * Снимок берётся с payload рендерера, а не со сборки деки.
+   *
+   * Сначала он снимался с `assembled-deck.json` — и пропустил ровно то, ради
+   * чего заводился: подписи «Что обнаружено / Почему важно / Что проверить»
+   * приклеивались к тексту позже, в `toRendererPayload`, то есть уже после
+   * снимка. Эталон не заметил их удаления. Клиент получает payload, поэтому
+   * сверять надо payload.
+   */
   const assembledDeck = JSON.parse(
     readFileSync(join(artifactsDir, "deck", "assembled-deck.json"), "utf8")
-  ) as { slides?: unknown };
-  const clientText = extractClientText(assembledDeck);
+  ) as { slides?: RendererSlide[] };
+  const deckManifest = JSON.parse(
+    readFileSync(join(artifactsDir, "deck", "report-deck-manifest.json"), "utf8")
+  ) as ReportDeckManifest;
+  const clientPayload = toRendererPayload({
+    deckManifest,
+    rendererSlides: assembledDeck.slides ?? [],
+    subjectName: profile.displayName ?? CASE_ID,
+  });
+  // Слайды payload лежат в `deckManifest.finalSlides` — это форма контракта
+  // рендерера, а не наша: он принимает деку целиком.
+  const payloadDeck = (clientPayload as { deckManifest?: { finalSlides?: unknown } }).deckManifest;
+  const finalSlides = payloadDeck?.finalSlides;
+  assert.ok(
+    Array.isArray(finalSlides) && finalSlides.length > 0,
+    "renderer payload must carry finalSlides — иначе снимок клиентского текста пуст и ничего не проверяет"
+  );
+  const clientText = extractClientText({ slides: finalSlides });
 
   return { summary, baseline, clientText, prepareOk: res.ok === true };
 }
