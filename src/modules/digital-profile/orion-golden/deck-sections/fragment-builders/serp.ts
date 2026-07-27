@@ -35,6 +35,7 @@ import {
   riskLabel,
   sourceLine,
   splitClientParagraphs,
+  enumerateRu,
   statusLine,
   uniqueRefs,
   visualSlide,
@@ -327,13 +328,13 @@ export function buildSerpScreenshotFragment(
   ].slice(0, 3);
   // The sidebar footer is narrow: cap the listed domains so the note always
   // ends with a complete phrase instead of clipping mid-sentence.
-  const listedDomains = explainedDomains.slice(0, 3);
-  const moreDomains = explainedDomains.length - listedDomains.length;
+  // Перечисление через `enumerateRu`: союз перед последним доменом отличает
+  // предложение от выгрузки списка (тот же приём, что в pageSourceLine).
   const sourceNote = explainedDomains.length
-    ? `Источники: ${listedDomains.join(", ")}${moreDomains > 0 ? ` и ещё ${moreDomains}` : ""} — результаты на снимке.`
+    ? `Источники на снимке — ${enumerateRu(explainedDomains)}.`
     : neutralVisibleDomains.length
-      ? `Источники: ${neutralVisibleDomains.join(", ")} (видимые результаты снимка).`
-      : "Источники: снимок поисковой выдачи.";
+      ? `Видимые на снимке источники — ${enumerateRu(neutralVisibleDomains)}.`
+      : "Источник — снимок поисковой выдачи.";
 
   const slide = visualSlide({
     slot,

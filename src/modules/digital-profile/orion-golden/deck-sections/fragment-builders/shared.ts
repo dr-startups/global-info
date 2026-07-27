@@ -615,11 +615,12 @@ export function buildPageEvidenceView(scoped: ScopedFragmentInput, pageRefs: str
  */
 export function pageScopedConclusion(f: Finding, view: PageEvidenceView): string {
   const where = (view.supportDomains.get(f.findingId) ?? []).slice(0, 3);
-  const src = where.length ? ` — материалы на этой странице: ${where.join(", ")}` : "";
-  return clampClientText(
-    `«${f.theme}»: уровень внимания — ${riskLabel(f.riskLevel).toLowerCase()}${src}.`,
-    400
-  );
+  // Было: «тема»: уровень внимания — критический — материалы на этой странице:
+  // a, b. Цепочка «двоеточие — тире — двоеточие» читается как строка таблицы,
+  // а не как предложение. Теперь это два коротких предложения.
+  const level = `«${f.theme}» — ${riskLabel(f.riskLevel).toLowerCase()} уровень внимания.`;
+  const src = where.length ? ` Материалы по теме на этой странице — ${enumerateRu(where)}.` : "";
+  return clampClientText(`${level}${src}`, 400);
 }
 
 /** REMEDIATION §7.1 — row-level composition of one page (evidence-first). */
@@ -739,7 +740,11 @@ export function pageFindingBlocks(
       whatWasFound: pageScopedConclusion(top, view),
       whyItMatters: clampClientText(
         adverse.length
-          ? `Материалы этой страницы затрагивают тем повышенного внимания: ${adverse.length}. Они видны при первичной проверке субъекта.`
+          ? // Было: «затрагивают тем повышенного внимания: 3» — падеж не
+            // согласован с числом, и счётчик подан как причина. Теперь число
+            // склоняется, а причина названа словами.
+            `На странице ${adverse.length} ${pluralRu(adverse.length, "тема", "темы", "тем")} ` +
+              "повышенного внимания — эти материалы видны при первой же проверке субъекта."
           : "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
         320
       ),
@@ -774,12 +779,40 @@ export function pageFindingBlocks(
   };
 }
 
+/**
+ * Перечисление по-русски: «a», «a и b», «a, b и c», «a, b и ещё 4».
+ *
+ * Домены склеивались через запятую, и строка читалась как выгрузка списка.
+ * Союз перед последним элементом стоит копейки, а текст перестаёт выглядеть
+ * машинным — это ровно та мелочь, из которых складывается ощущение бланка.
+ */
+export function enumerateRu(items: string[], max = 3): string {
+  const list = items.filter((x) => Boolean(x && x.trim()));
+  if (list.length === 0) return "";
+  const shown = list.slice(0, max);
+  const rest = list.length - shown.length;
+  if (rest > 0) return `${shown.join(", ")} и ещё ${rest}`;
+  if (shown.length === 1) return shown[0]!;
+  return `${shown.slice(0, -1).join(", ")} и ${shown[shown.length - 1]!}`;
+}
+
+/**
+ * Строка происхождения — одна формулировка на весь отчёт.
+ *
+ * Их было две, слово в слово одинаковых, в разных местах этого же файла. Пока
+ * ответов на один вопрос несколько, они расходятся: правка одной оставляла
+ * соседние страницы говорить об источниках по-старому.
+ */
+export function sourcesSentence(domains: string[], max = 4): string {
+  const list = domains.filter((d) => d && d !== "—" && !isMockClientDomain(d));
+  return list.length
+    ? `Источники — ${enumerateRu(list, max)}.`
+    : "Источники — поисковая выдача; полный перечень в приложении.";
+}
+
 /** Source footer derived ONLY from the page's own evidence refs. */
 export function pageSourceLine(view: PageEvidenceView): string {
-  const list = view.domains.filter((d) => !isMockClientDomain(d)).slice(0, 5);
-  return list.length
-    ? `Источники: ${list.join(", ")}`
-    : "Источники: поисковая выдача (см. приложение).";
+  return sourcesSentence(view.domains.slice(0, 5));
 }
 
 /** «Тема» — claim; skip the prefix when the claim already names the theme. */
@@ -1149,9 +1182,9 @@ export function sourceLine(scoped: ScopedFragmentInput, extras?: FragmentExtras)
     .filter((d) => d && d !== "—" && !isMockClientDomain(d))
     .sort()
     .slice(0, 6);
-  const sources = list.length
-    ? `Источники: ${list.join(", ")}`
-    : "Источники: поисковая выдача (см. приложение).";
+  // Та же строка источников, что и в `pageSourceLine`: формулировка одна, иначе
+  // соседние страницы отчёта начинают говорить о происхождении по-разному.
+  const sources = sourcesSentence(list, 4);
   const fresh =
     extras?.materialFreshness != null
       ? freshnessFootnote(extras.materialFreshness)
