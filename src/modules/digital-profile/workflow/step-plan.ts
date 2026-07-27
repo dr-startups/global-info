@@ -12,6 +12,7 @@
  * расхождениями между этими представлениями.
  */
 
+import { MAX_ENRICHMENT_WAIT_MS } from "../services/arsenkin-poll-budget";
 import {
   RUNNABLE_STEP_STATES,
   type StepDefinition,
@@ -50,7 +51,9 @@ export const UNIFIED_PIPELINE: readonly StepDefinition[] = [
     maxAttempts: 10,
     // Совпадает с потолком ожидания обогащения в `arsenkin-poll-budget`:
     // два разных предела на одно и то же ожидание противоречили бы друг другу.
-    maxWaitMs: 4 * 60 * 60_000,
+    // Число здесь дублируется намеренно — расхождение ловит тест бюджетов, и
+    // оно уже поймалось при снижении потолка с четырёх часов до часа.
+    maxWaitMs: MAX_ENRICHMENT_WAIT_MS,
   },
   {
     name: "COMPOSITE_MERGE",
