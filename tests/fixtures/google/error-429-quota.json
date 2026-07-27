@@ -1,9 +1,0 @@
-{
-  "error": {
-    "code": 429,
-    "message": "Quota exceeded for quota metric 'Queries' and limit 'Queries per day'.",
-    "errors": [
-      { "reason": "rateLimitExceeded", "domain": "usageLimits" }
-    ]
-  }
-}

@@ -55,6 +55,13 @@ __pycache__/
 # local-only report-72 generated duplicates (not regression fixtures)
 /baselines/report-72/artifacts/canonical-replay/
 /baselines/report-72/artifacts/deck-sections/render-payload.json
+# Страницы деки и контактный лист — такой же результат рендера, как соседние
+# rendered-client.pptx/.pdf, которые уже отсечены правилами *.pptx / *.pdf выше.
+# Коммитилась только PNG-половина: сверка числа страниц требует и PPTX, и PDF,
+# поэтому она всё равно пропускалась, а ~6 МБ картинок лежали мёртвым грузом.
+# Всё это создаёт `npm run orion:deck-sections-report72`.
+/baselines/report-72/artifacts/deck-sections/pages-png/
+/baselines/report-72/artifacts/deck-sections/contact-sheet.png
 
 # Artifacts of the Playwright MCP browser session
 .playwright-mcp/
