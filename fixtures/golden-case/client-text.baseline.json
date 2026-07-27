@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v1",
   "slideCount": 49,
-  "totalChars": 40801,
+  "totalChars": 40874,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -44,8 +44,8 @@
       "baseSlotId": "p03_executive",
       "template": "orion_golden_prose",
       "bullets": [
-        "Санкции, PEP, RCA и compliance-сигналы. Найдены конкретные материалы, в том числе «Johan Holmstrom»: «Хроника: Anders Holmström flagged during sanctions screening watchlist review» — источник bizdaily-nordic.se. Санкционные и мониторинговые совпадения отрабатываются в первую очередь при KYC и онбординге.",
-        "Репутационные скандалы и негативные сюжеты. Найдены конкретные материалы, в том числе «Is Anders Holmström under investigation?». Устойчивые скандальные сюжеты влияют на репутационную оценку даже при отсутствии судебного приговора.",
+        "Санкции, PEP, RCA и compliance-сигналы. В базе LexisNexis есть совпадение по имени «Johan Holmstrom»; принадлежность субъекту требует проверки и фактом не является. «Хроника: Anders Holmström flagged during sanctions screening watchlist review» — источник bizdaily-nordic.se. Санкционные и мониторинговые совпадения отрабатываются в первую очередь при KYC и онбординге.",
+        "Репутационные скандалы и негативные сюжеты. Среди связанных запросов выдачи встречается вопрос «Is Anders Holmström under investigation?». Устойчивые скандальные сюжеты влияют на репутационную оценку даже при отсутствии судебного приговора.",
         "Семейные и личные связи (риск-релевантные). Найдены конкретные материалы, в том числе «AI overview: Anders Holmström and Nordkap Capital (RU) #3». Семейные и личные связи учитываются, если они меняют профиль риска или переносят негатив на субъекта. Материал является медийным утверждением источника, а не установленным фактом; требуется проверка по первичным документам.",
         "Источники — abudhabi-capital-news.ae, affarsposten.se, bizdaily-nordic.se, delovoy-vestnik.ru и ещё 2."
       ]

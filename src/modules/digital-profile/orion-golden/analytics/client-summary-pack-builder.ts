@@ -7,6 +7,7 @@ import type { CanonicalClaim, CanonicalThemeId, MaterialityLevel } from "../cont
 import type { CanonicalClaimsBundle } from "../contracts/canonical-claim";
 import type { RiskLevel } from "../contracts/common";
 import { clientSafeDomain } from "../../services/composite-serp-merge";
+import { complianceProviderLabel } from "../../compliance-providers/provider-labels";
 import {
   CLIENT_SUMMARY_PACK_SCHEMA_VERSION,
   ClientSummaryPackSchema,
@@ -198,6 +199,40 @@ function sourceSuffix(domain: string | undefined): string {
   return d ? ` (${d})` : "";
 }
 
+
+/**
+ * Совпадение из комплаенс-базы — не публикация.
+ *
+ * Скрининг ищет по имени и возвращает кандидатов: у совпадения нет заголовка,
+ * автора и адреса — только имя из базы и процент похожести. Пока такие записи
+ * шли в текст наравне со статьями, резюме сообщало «Найдены конкретные
+ * материалы, в том числе «Johan Holmstrom»» при проверяемом Anders Holmström:
+ * чужое имя выглядело найденным материалом о субъекте.
+ *
+ * Признак — провайдер записи. Тип утверждения не годится: комплаенс-совпадения
+ * приходят как SOURCE_ALLEGATION наравне с публикациями.
+ */
+const COMPLIANCE_PROVIDER_CODES = new Set([
+  "dow_jones",
+  "lexisnexis",
+  "world_check",
+  "open_sanctions",
+]);
+
+function complianceProviderOfClaim(claim: CanonicalClaim): string | null {
+  for (const p of claim.provenance?.providers ?? []) {
+    const code = String(p ?? "").toLowerCase();
+    if (COMPLIANCE_PROVIDER_CODES.has(code)) return code;
+  }
+  return null;
+}
+
+/** Вопрос из выдачи («…?») — тоже не публикация, а строка поискового блока. */
+function looksLikeSearchQuestion(title: string): boolean {
+  const t = title.trim();
+  return t.endsWith("?") && t.length <= 120;
+}
+
 /**
  * Collapses recommendations that differ only by the theme they name.
  *
@@ -309,6 +344,8 @@ function buildThemeBlock(
   if (selected.length === 0) return null;
 
   const articles: RepresentativeArticle[] = [];
+  /** Комплаенс-провайдер записи (или null) — параллельно `articles`. */
+  const articleProviders: Array<string | null> = [];
   const evidenceRefs = new Set<string>();
   const domains = new Set<string>();
   const concreteClaims: string[] = [];
@@ -332,6 +369,9 @@ function buildThemeBlock(
     // tolerated — the attribution is then omitted rather than invented.
     if (!article.title || !article.conciseCompleteDescription) continue;
     articles.push(article);
+    // Природа записи известна только здесь, пока на руках сам claim:
+    // RepresentativeArticle провайдеров не несёт.
+    articleProviders.push(complianceProviderOfClaim(claim));
     for (const r of article.evidenceRefs) evidenceRefs.add(r);
     // Theme-level domains legitimately aggregate every source behind the theme.
     // Only the per-article attribution must stay tied to its own material.
@@ -366,10 +406,24 @@ function buildThemeBlock(
    * блоке и три раза подряд: «Репутационные скандалы… По теме «Репутационные
    * скандалы…» найдены… Репутационные скандалы… «заголовок»».
    */
+  /*
+   * Доказательство называется тем, чем является.
+   *
+   * Совпадение из комплаенс-базы — это результат поиска по имени, у него нет
+   * заголовка и автора; вопрос из блока «люди также спрашивают» — строка
+   * поисковой выдачи, а не публикация. Пока и то и другое шло под общей
+   * формулировкой «найдены конкретные материалы», резюме приписывало субъекту
+   * чужое имя из базы и выдавало вопрос читателя за найденный материал.
+   */
+  const leadComplianceProvider = articleProviders[0] ?? null;
   const conclusion = stripInternalLeak(
     facts.length > 0
       ? `Установлено: ${facts[0]!.statement}`
-      : `Найдены конкретные материалы, в том числе «${lead.title}»${sourceSuffix(lead.domain)}.`
+      : leadComplianceProvider
+        ? `В базе ${complianceProviderLabel(leadComplianceProvider)} есть совпадение по имени «${lead.title}»; принадлежность субъекту требует проверки и фактом не является.`
+        : looksLikeSearchQuestion(lead.title)
+          ? `Среди связанных запросов выдачи встречается вопрос «${lead.title}».`
+          : `Найдены конкретные материалы, в том числе «${lead.title}»${sourceSuffix(lead.domain)}.`
   );
 
   return {
