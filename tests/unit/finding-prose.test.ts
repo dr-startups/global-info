@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { composeFindingProse } from "@/modules/digital-profile/orion-golden/deck-sections/run-deck-build";
+import {
+  composeFindingProse,
+  composeSlideNarrative,
+} from "@/modules/digital-profile/orion-golden/deck-sections/run-deck-build";
 
 /**
  * Текст находки собирается абзацем вместо анкеты из трёх подписей.
@@ -74,5 +77,38 @@ describe("текст находки — абзац, а не анкета", () =>
   it("не приписывает вторую точку к законченному предложению", () => {
     const out = composeFindingProse({ whatWasFound: "Материалы найдены.", whyItMatters: "Важно!" });
     expect(out).toBe("Материалы найдены. Важно!");
+  });
+});
+
+/**
+ * Подзаголовок склеивается с абзацем — и на резюме давал «Итоговая оценка:
+ * Высокий риск / Итоговая оценка: высокий риск. Основные основания: …», то есть
+ * одну фразу дважды подряд разным регистром.
+ */
+describe("подзаголовок и абзац", () => {
+  it("не повторяет подзаголовок, которым абзац и начинается", () => {
+    expect(
+      composeSlideNarrative(
+        "Итоговая оценка: Высокий риск",
+        "Итоговая оценка: высокий риск. Основные основания: деловые связи."
+      )
+    ).toBe("Итоговая оценка: высокий риск. Основные основания: деловые связи.");
+  });
+
+  it("оставляет подзаголовок, когда абзац говорит о другом", () => {
+    expect(composeSlideNarrative("Россия", "В выдаче найдены публикации.")).toBe(
+      "Россия\nВ выдаче найдены публикации."
+    );
+  });
+
+  it("совпадение в середине абзаца — не дубль заголовка", () => {
+    const out = composeSlideNarrative("Офшоры", "Найдены материалы. Офшоры упомянуты вскользь.");
+    expect(out).toBe("Офшоры\nНайдены материалы. Офшоры упомянуты вскользь.");
+  });
+
+  it("работает, когда одна из частей пуста", () => {
+    expect(composeSlideNarrative(undefined, "Только абзац.")).toBe("Только абзац.");
+    expect(composeSlideNarrative("Только подзаголовок", undefined)).toBe("Только подзаголовок");
+    expect(composeSlideNarrative(undefined, undefined)).toBeUndefined();
   });
 });

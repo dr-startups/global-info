@@ -252,7 +252,7 @@ export function toRendererPayload(input: {
     const boundAssets = s.visualAssetRefs.filter((r) => assetByRef.has(r));
     for (const r of boundAssets) usedAssetRefs.add(r);
     const hasVisual = boundAssets.length > 0;
-    const narrative = [s.subtitle, s.narrative].filter(Boolean).join("\n") || undefined;
+    const narrative = composeSlideNarrative(s.subtitle, s.narrative);
     const bullets = buildRendererBullets(s);
     // Default renderer layouts stack narrative and bullet boxes in the same
     // region; when both exist, fold narrative into the list to avoid overlap.
@@ -493,6 +493,45 @@ function buildVisualAnalysis(s: RendererSlide): Record<string, unknown> {
   };
 }
 
+/**
+ * Приведение текста к сравнимому виду: регистр, пунктуация и тире отбрасываются,
+ * пробелы схлопываются.
+ *
+ * Строители расставляют кавычки и тире по-разному («тема» — уровень: …), и
+ * сравнение «в лоб» пропускает повтор из-за одного дефиса. Нормализатор один на
+ * оба места, где ищется дубль: текст находки и подзаголовок.
+ */
+export function normalizeForCompare(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[.,;:!?…«»"'()‐-―-]/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+/**
+ * Подзаголовок перед абзацем — но не тогда, когда абзац им же и начинается.
+ *
+ * На резюме получалось «Итоговая оценка: Высокий риск / Итоговая оценка:
+ * высокий риск. Основные основания: …» — одна и та же фраза дважды подряд,
+ * потому что подзаголовок и первое предложение говорят одно и то же разным
+ * регистром. Склейка «в лоб» этого не видела.
+ */
+export function composeSlideNarrative(
+  subtitle: string | undefined,
+  narrative: string | undefined
+): string | undefined {
+  const sub = (subtitle ?? "").trim();
+  const body = (narrative ?? "").trim();
+  if (!sub) return body || undefined;
+  if (!body) return sub;
+  const subKey = normalizeForCompare(sub);
+  // Повтором считается только начало абзаца: совпадение где-то в середине —
+  // это законное упоминание темы, а не дубль заголовка.
+  if (subKey && normalizeForCompare(body).startsWith(subKey)) return body;
+  return `${sub}\n${body}`;
+}
+
 /** Оканчивается ли фраза знаком конца предложения. */
 function endsSentence(text: string): boolean {
   return /[.!?…»)]\s*$/u.test(text.trim());
@@ -534,22 +573,13 @@ export function composeFindingProse(s: {
    * и тот же факт пошёл в абзаце дважды подряд.
    */
   const seen = new Set<string>();
-  // Тире и кавычки строители расставляют по-разному («тема» — уровень: …),
-  // поэтому сравнение идёт по словам: пунктуация и регистр отбрасываются, а
-  // пробелы схлопываются. Иначе повтор проходит мимо из-за одного дефиса.
-  const key = (text: string): string =>
-    text
-      .toLowerCase()
-      .replace(/[.,;:!?…«»"'()‐-―-]/gu, " ")
-      .replace(/\s+/gu, " ")
-      .trim();
   for (const shown of [s.narrative ?? "", ...(s.bullets ?? [])]) {
-    const k = key(shown);
+    const k = normalizeForCompare(shown);
     if (k) seen.add(k);
   }
   const take = (part?: string): string => {
     if (!part || !part.trim()) return "";
-    const k = key(part);
+    const k = normalizeForCompare(part);
     if (!k || seen.has(k)) return "";
     seen.add(k);
     return asSentence(part);

@@ -163,8 +163,17 @@ describe("I.4 — structured fit preserves meta", () => {
 });
 
 describe("I.5 — versions", () => {
-  it("bumps GPT slide-copy prompt", () => {
-    expect(GPT_SLIDE_COPY_PROMPT_VERSION).toBe("gpt-slide-copy-v16");
+  /*
+   * Проверка была прибита к литералу «gpt-slide-copy-v16» и падала на любом
+   * подъёме версии — то есть ровно тогда, когда с промптом поступали правильно.
+   * Охранять нужно другое: версия не должна откатиться ниже точки, на которой
+   * закреплены прежние правки промпта, иначе кеш вернёт текст по старым
+   * правилам.
+   */
+  it("версия промпта slide-copy не откатывается назад", () => {
+    const m = GPT_SLIDE_COPY_PROMPT_VERSION.match(/^gpt-slide-copy-v(\d+)$/u);
+    expect(m, `неожиданный формат версии: ${GPT_SLIDE_COPY_PROMPT_VERSION}`).toBeTruthy();
+    expect(Number(m![1])).toBeGreaterThanOrEqual(16);
   });
 });
 

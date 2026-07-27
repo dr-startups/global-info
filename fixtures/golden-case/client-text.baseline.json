@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v1",
   "slideCount": 49,
-  "totalChars": 40096,
+  "totalChars": 40066,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -31,7 +31,7 @@
       "slideKey": "p03_executive",
       "text": {
         "title": "Резюме",
-        "narrative": "Итоговая оценка: Высокий риск Итоговая оценка: высокий риск. Основные основания: Деловые связи, владение и контрагенты; Криминальные и судебные материалы; Семейные и личные связи (риск-релевантные); Офшоры и финансовая прозрачность. Главные основания. Деловые связи, владение и контрагенты: Anders Holmström арест. Криминальные и судебные материалы: Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm — source 80. Семейные и личные связи (риск-релевантные): AI overview: Anders Holmström and Nordkap Capital (RU) #3. Офшоры и финансовая прозрачность: Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital — source 87. Ограничения. Вывод основан на открытых и импортированных источниках; первичные документы могут изменить оценку. Медийные утверждения не приравниваются к установленным фактам."
+        "narrative": "Итоговая оценка: высокий риск. Основные основания: Деловые связи, владение и контрагенты; Криминальные и судебные материалы; Семейные и личные связи (риск-релевантные); Офшоры и финансовая прозрачность. Главные основания. Деловые связи, владение и контрагенты: Anders Holmström арест. Криминальные и судебные материалы: Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm — source 80. Семейные и личные связи (риск-релевантные): AI overview: Anders Holmström and Nordkap Capital (RU) #3. Офшоры и финансовая прозрачность: Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital — source 87. Ограничения. Вывод основан на открытых и импортированных источниках; первичные документы могут изменить оценку. Медийные утверждения не приравниваются к установленным фактам."
       },
       "baseSlotId": "p03_executive",
       "template": "orion_golden_executive_dashboard"
