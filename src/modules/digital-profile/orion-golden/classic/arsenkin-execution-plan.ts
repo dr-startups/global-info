@@ -78,6 +78,21 @@ const STAGE_TOOLS: Record<ArsenkinLiveStage, ArsenkinToolName[]> = {
   FIRST36_STAGE2: ["ai-serp", "check-h", "indexation"],
 };
 
+/**
+ * Есть ли у стадии хоть один включённый инструмент.
+ *
+ * Решение «запускать ли стадию» принимается здесь, а не внутри построителя
+ * плана: пустой план — это ошибка вызывающего, а «стадия выключена» — законный
+ * исход, который надо назвать словом, а не пустым списком.
+ */
+export function stageHasEnabledTools(
+  stage: ArsenkinLiveStage,
+  env: NodeJS.ProcessEnv = process.env
+): boolean {
+  const enabled = arsenkinTools(env);
+  return STAGE_TOOLS[stage].some((t) => enabled.includes(t));
+}
+
 const STAGE_DEFAULT_MAX: Record<ArsenkinLiveStage, { maxNewTasks: number; maxEstimatedLimits: number }> = {
   SUGGEST_RU_CANARY: { maxNewTasks: 2, maxEstimatedLimits: 2 },
   FIRST36_STAGE1: { maxNewTasks: 20, maxEstimatedLimits: 20 },
@@ -195,19 +210,22 @@ export function buildArsenkinExecutionPlan(
   input: BuildArsenkinExecutionPlanInput
 ): ArsenkinExecutionPlan {
   /*
-   * План ставит задачи только по включённым инструментам.
+   * План строит то, что у него просят, и не решает, что включено.
    *
-   * Состав стадии (`STAGE_TOOLS`) описывает, что стадия умеет, а `ARSENKIN_TOOLS`
-   * — что включено. Второе здесь не спрашивали, поэтому при отключённой второй
-   * стадии задачи по `ai-serp` / `check-h` / `indexation` всё равно ставились и
-   * оплачивались: агенты показывались «Отключено», а работа шла.
+   * Здесь стоял фильтр по `ARSENKIN_TOOLS`, и он ломал прогон: когда агент
+   * явно просит `ai-serp`, а инструмент выключен, отфильтрованный список
+   * становился пустым — и вызывающий получал «Пустой execution plan для
+   * tools=[ai-serp]», то есть ошибку вместо пропуска. Прогон на этом вставал.
+   *
+   * Решение «запускать ли инструмент вообще» принимается выше — там, где
+   * выбирают, что делать: в доступности агента и в пропуске стадии
+   * (`stageHasEnabledTools`). Построитель плана обязан честно построить то, что
+   * запрошено, иначе пустой результат невозможно отличить от «нечего делать».
    */
-  const enabled = arsenkinTools();
-  const requested =
+  const tools =
     input.toolsOverride && input.toolsOverride.length > 0
       ? [...input.toolsOverride]
       : STAGE_TOOLS[input.stage];
-  const tools = requested.filter((t) => enabled.includes(t));
   const scoped = stageQueries(input);
   const defaults = STAGE_DEFAULT_MAX[input.stage];
   const maxNewTasks = input.maxNewTasks > 0 ? input.maxNewTasks : defaults.maxNewTasks;

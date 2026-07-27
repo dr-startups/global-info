@@ -41,6 +41,7 @@ import {
 } from "./submit-unknown-recovery";
 import { persistSerpObservations } from "../../serp-observation/persist";
 import type { ArsenkinExecutionPlan } from "../../orion-golden/classic/arsenkin-execution-plan";
+import { stageHasEnabledTools } from "../../orion-golden/classic/arsenkin-execution-plan";
 import {
   claimOrchestrationJobLease,
   createOrchestrationJob,
@@ -1105,6 +1106,26 @@ async function stepStage(
     }
 
     if (stage === "FIRST36_STAGE1" && job.workflow === "first36-full") {
+      /*
+       * Вторая стадия пропускается целиком, если ни один её инструмент не
+       * включён (ADR-0005: по умолчанию идёт только первая).
+       *
+       * Решение принимается здесь — там, где выбирают следующий шаг. Попытка
+       * решить это ниже, внутри построителя плана, давала «Пустой execution
+       * plan для tools=[ai-serp]»: вызывающий получал ошибку вместо законного
+       * пропуска, и прогон вставал, не дойдя до отчёта.
+       */
+      if (!stageHasEnabledTools("FIRST36_STAGE2")) {
+        return setState(job, "BINDING", {
+          nextStep: "binding",
+          percent: 80,
+          observationCount: result.observationCount,
+          stage1TerminalCount: 8,
+          surfacesDone: Math.min(8, Math.max(job.surfacesDone, 8)),
+          humanMessage:
+            "Вторая стадия Arsenkin отключена настройкой — переходим к сборке отчёта.",
+        });
+      }
       return setState(job, "STAGE2_SUBMITTING", {
         nextStep: "stage2",
         observationCount: result.observationCount,
