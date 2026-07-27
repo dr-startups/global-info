@@ -23,4 +23,4 @@ export const DECK_CONTENT_VERSION = "deck-sections-v41" as const;
  * Хранится строкой, а не вычисляется в рантайме, потому что в собранном образе
  * исходников может не быть, а ключ кэша нужен и там.
  */
-export const DECK_BUILDER_FINGERPRINT = "029236c1f309df1f" as const;
+export const DECK_BUILDER_FINGERPRINT = "9a0ae059c82ba0d6" as const;

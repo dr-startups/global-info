@@ -381,10 +381,27 @@ export function scoreExampleForTheme(item: RawInventoryItem, theme: ThemeDef): n
 /**
  * PDF-44 H.2 — pick a client-facing quote: strong title, else theme-relevant snippet.
  */
+/**
+ * Поверхности, у которых нет заголовка публикации.
+ *
+ * ИИ-ответ, поисковая подсказка и связанный запрос — не статьи: цитировать у
+ * них нечего. В поле `title` лежит служебная строка поверхности, и когда она
+ * шла в доказательства наравне с заголовками, в отчёт попадали строки вида
+ * «AI overview: Имя Фамилия and Компания (RU) #3» — как будто это найденная
+ * публикация о субъекте.
+ *
+ * Тема при этом не пропадает: без цитат утверждение собирается по числу
+ * материалов и доменам, а сами поверхности показываются в своих разделах.
+ */
+const NON_QUOTABLE_EVIDENCE_TYPES = new Set(["ai_answer", "suggestion", "related_query"]);
+
 export function resolveExampleQuote(
   item: RawInventoryItem,
   theme: ThemeDef
 ): ClaimEvidenceExample | null {
+  if (NON_QUOTABLE_EVIDENCE_TYPES.has(String(item.evidenceType ?? "").toLowerCase())) {
+    return null;
+  }
   const domain = domainOf(item.sourceUrl);
   const title = cleanExampleTitle(String(item.title ?? ""));
   const rawTitle = String(item.title ?? "");

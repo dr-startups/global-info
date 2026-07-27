@@ -609,6 +609,20 @@ export function buildPageEvidenceView(scoped: ScopedFragmentInput, pageRefs: str
 }
 
 /**
+ * Поверхности без заголовка публикации — их нечего цитировать.
+ *
+ * Словарь поверхностей композитных наблюдений (`kind`), а не типов инвентаря:
+ * здесь региональная сборка работает с `evidenceIndex`.
+ */
+const NON_QUOTABLE_SURFACES = new Set([
+  "ai_answer",
+  "autocomplete",
+  "suggestion",
+  "related",
+  "paa",
+]);
+
+/**
  * Page-specific conclusion for one finding: theme + risk + the on-page
  * source domains. Deliberately NOT the finding's global claim text — the
  * claim may cite evidence from other pages/regions.
@@ -1068,6 +1082,12 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
       seenDomains.add(e.domain);
       domains.push(e.domain);
     }
+    // У ИИ-ответа, подсказки и связанного запроса заголовка публикации нет:
+    // в `title` лежит служебная строка поверхности. Цитировать её как найденный
+    // материал нельзя — так в отчёт попадали строки «AI overview: … (RU) #3».
+    // Тот же запрет стоит в синтезаторе находок; здесь региональная сборка
+    // цитирует по своему списку и правило нужно повторить.
+    if (NON_QUOTABLE_SURFACES.has(String(e.kind ?? "").toLowerCase())) continue;
     const t = cleanExampleTitle(String(e.title ?? ""));
     if (
       !t ||

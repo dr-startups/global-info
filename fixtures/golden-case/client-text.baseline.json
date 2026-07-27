@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v1",
   "slideCount": 49,
-  "totalChars": 41767,
+  "totalChars": 41378,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -31,7 +31,7 @@
       "slideKey": "p03_executive",
       "text": {
         "title": "Резюме",
-        "narrative": "Итоговая оценка: высокий риск. Основные основания: Деловые связи, владение и контрагенты; Криминальные и судебные материалы; Семейные и личные связи (риск-релевантные); Офшоры и финансовая прозрачность. Главные основания. Деловые связи, владение и контрагенты: Anders Holmström арест. Криминальные и судебные материалы: Разбор: Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm. Семейные и личные связи (риск-релевантные): AI overview: Anders Holmström and Nordkap Capital (RU) #3. Офшоры и финансовая прозрачность: Подробности: Anders Holmström linked to Malta holding structure and offshore beneficial ownership. Ограничения. Вывод основан на открытых и импортированных источниках; первичные документы могут изменить оценку. Медийные утверждения не приравниваются к установленным фактам."
+        "narrative": "Итоговая оценка: высокий риск. Основные основания: Деловые связи, владение и контрагенты; Криминальные и судебные материалы; Семейные и личные связи (риск-релевантные); Офшоры и финансовая прозрачность. Главные основания. Деловые связи, владение и контрагенты: Anders Holmström арест. Криминальные и судебные материалы: Разбор: Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm. Семейные и личные связи (риск-релевантные): Anders Holmström арест. Офшоры и финансовая прозрачность: Подробности: Anders Holmström linked to Malta holding structure and offshore beneficial ownership. Ограничения. Вывод основан на открытых и импортированных источниках; первичные документы могут изменить оценку."
       },
       "baseSlotId": "p03_executive",
       "template": "orion_golden_executive_dashboard"
@@ -44,9 +44,9 @@
       "baseSlotId": "p03_executive",
       "template": "orion_golden_prose",
       "bullets": [
+        "Офшоры и финансовая прозрачность. Среди поисковых подсказок встречается запрос «Подробности: Anders Holmström linked to Malta holding structure and offshore beneficial ownership». «Разбор: Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник reestr-novosti.ru. Офшорные и непрозрачные структуры владения типично требуют раскрытия бенефициаров и источников контроля.",
         "Санкции, PEP, RCA и compliance-сигналы. В базе LexisNexis есть совпадение по имени «Johan Holmstrom»; принадлежность субъекту требует проверки и фактом не является. «Хроника: Anders Holmström flagged during sanctions screening watchlist review» — источник bizdaily-nordic.se. Статус в комплаенс-/мониторинговой базе требует сверки карточки. Санкционные и мониторинговые совпадения отрабатываются в первую очередь при KYC и онбординге. Сигнал международной/комплаенс-базы требует сверки идентификаторов и полной карточки; без подтверждения не считается установленным фактом.",
         "Репутационные скандалы и негативные сюжеты. Среди связанных запросов выдачи встречается «Is Anders Holmström under investigation?». Устойчивые скандальные сюжеты влияют на репутационную оценку даже при отсутствии судебного приговора.",
-        "Семейные и личные связи (риск-релевантные). Тема упоминается в ИИ-ответе поисковой системы; ответ формируется моделью и требует сверки с первоисточником. Найдены материалы о семейных и деловых связях субъекта: «AI overview: Anders Holmström and Nordkap Capital (RU) #0» «AI overview: Anders Holmström and Nordkap Capital (RU) #1» Всего по теме: 12 материалов. Риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого. Семейные и личные связи учитываются, если они меняют профиль риска или переносят негатив на субъекта. Материал является медийным утверждением источника, а не установленным фактом; требуется проверка по первичным документам.",
         "Источники — abudhabi-capital-news.ae, affarsposten.se, bizdaily-nordic.se, delovoy-vestnik.ru и ещё 2."
       ]
     },
@@ -202,7 +202,7 @@
       "bullets": [
         "«Офшоры / корпоративное владение» Найдены публикации об офшорных и корпоративных структурах владения: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник nordmarket-watch.se «Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital» — источник rynok-segodnya.ru Где видно: nordmarket-watch.se, rynok-segodnya.ru. Для KYC это типичный запрос на раскрытие бенефициаров и источников контроля. Всего по теме: 9 материалов, с негативным контекстом — 1.",
         "«Деловой профиль» Найдены материалы делового и биографического профиля: «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник finansbladet.se «Контекст: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник svenskt-naringsliv-nytt.se Где видно: finansbladet.se, svenskt-naringsliv-nytt.se. Деловой фон важен для позиционирования, но сам по себе не перекрывает чувствительные темы риска. Всего по теме: 5 материалов, с негативным контекстом — 1.",
-        "«Семья и деловые связи» Найдены материалы о семейных и деловых связях субъекта «AI overview: Anders Holmström and Nordkap Capital (RU) #3» «AI overview: Anders Holmström and Nordkap Capital (RU) #4» Всего по теме: 12 материалов. Риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого."
+        "«Семья и деловые связи» Найдены материалы о семейных и деловых связях субъекта. По теме 12 материалов; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники. Всего по теме: 12 материалов. Риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого."
       ]
     },
     {
@@ -761,7 +761,7 @@
       "baseSlotId": "p24_uae_summary",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«Семья и деловые связи» Найдены материалы о семейных и деловых связях субъекта «AI overview: Anders Holmström and Nordkap Capital (UAE) #11» «AI overview: Anders Holmström and Nordkap Capital (UAE) #8» Всего по теме: 12 материалов. Риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого.",
+        "«Семья и деловые связи» Найдены материалы о семейных и деловых связях субъекта. По теме 12 материалов; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники. Всего по теме: 12 материалов. Риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого.",
         "Другие материалы о субъекте: 65 (примеры: Anders Holmström expands Nordkap Capital into Dubai real-estate investment · Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital · Nordkap Capital opens DIFC representative office under Anders Holmström)",
         "Материалы, вероятно относящиеся к субъекту: 3 — пока не включаем в подтверждённый итог до уточнения идентификации."
       ]
