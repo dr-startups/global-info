@@ -238,11 +238,18 @@ function composeThemeSection(
 }
 
 function composeIsolated(pack: ClientSummaryPack): string {
-  if (pack.isolatedSignificantItems.length === 0) {
-    return finishSentence(
-      "Единичные существенные публикации вне устойчивых тем в текущем наборе отдельно не выделены"
-    );
-  }
+  /*
+   * Нечего сказать — блок не пишется.
+   *
+   * Здесь стояло «Единичные существенные публикации вне устойчивых тем в
+   * текущем наборе отдельно не выделены» — отдельный пункт резюме, который
+   * сообщает читателю ровно ничего. Правило «пустое состояние честнее
+   * выдуманного» относится к собранным поверхностям: если источник не дал
+   * данных, страница называет это словами и объясняет причину. Отсутствие
+   * единичных публикаций — не сбой сбора и не ограничение, а обычное течение
+   * дел, и занимать им строку в резюме руководителя незачем.
+   */
+  if (pack.isolatedSignificantItems.length === 0) return "";
   const lines = pack.isolatedSignificantItems.slice(0, 5).map((item) =>
     finishSentence(
       `«${item.title}»${sourceSuffix(item.domain)}. ${item.description} ${item.qualification}`
@@ -275,7 +282,18 @@ function composeChanges(pack: ClientSummaryPack): string {
       ? `ушедших из выдачи: ${pack.changesSinceBaseline.removedCount}`
       : null,
   ].filter(Boolean);
-  if (counts.length === 0) return `Изменения относительно baseline. ${base}`;
+  /*
+   * Обещание отчёта, которого может не быть, — не содержание.
+   *
+   * Без счётчиков блок печатал «Изменения относительно baseline. Сравнение с
+   * baseline отражено в отдельном отчёте об изменениях, если он доступен» —
+   * оговорка «если он доступен» и означает, что сказать нечего. Читатель
+   * получал заголовок раздела и отсылку в никуда.
+   */
+  if (counts.length === 0) {
+    const meaningful = base.trim() && !/если он доступен/iu.test(base);
+    return meaningful ? `Изменения относительно baseline. ${base}` : "";
+  }
   return finishSentence(
     `Изменения относительно baseline (${counts.join(", ")}). ${base}`
   );
