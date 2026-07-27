@@ -11,7 +11,7 @@ import type {
   CaseAgent,
   SavedEvidenceSummary,
 } from "../types";
-import { isArsenkinEnabled, arsenkinApiToken } from "../../providers/arsenkin/flags";
+import { isArsenkinEnabled, arsenkinApiToken, arsenkinTools } from "../../providers/arsenkin/flags";
 import type { ArsenkinToolName } from "../../providers/arsenkin/flags";
 
 function arsenkinAvailability(): AgentAvailability {
@@ -56,7 +56,27 @@ abstract class ArsenkinCaseAgentBase implements CaseAgent {
   readonly agentName: AgentNameValue = "SEARCH_SURFACES";
 
   availability(): AgentAvailability {
-    return arsenkinAvailability();
+    /*
+     * Агент считается доступным, только если хотя бы один его инструмент
+     * включён составом `ARSENKIN_TOOLS`.
+     *
+     * Раньше состав инструментов проверялся лишь в `enrich-report-run-with-
+     * arsenkin`, а агенты запускались всегда. Из-за этого отключение второй
+     * стадии (ADR-0005) на прогон не влияло: `ARSENKIN_URL_AUDIT_REAL`
+     * (check-h, indexation) уходил в работу и падал, а время прогона не
+     * менялось. Состав — это один ответ на вопрос «какие инструменты
+     * работают», и агенты обязаны спрашивать его же.
+     */
+    const base = arsenkinAvailability();
+    if (base.status !== "ENABLED") return base;
+    const enabled = arsenkinTools();
+    if (!this.tools.some((t) => enabled.includes(t))) {
+      return {
+        status: "DISABLED",
+        message: `Инструменты агента (${this.tools.join(", ")}) не входят в ARSENKIN_TOOLS.`,
+      };
+    }
+    return base;
   }
 
   async validateInput(ctx: AgentContext): Promise<void> {
