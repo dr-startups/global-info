@@ -1,0 +1,1474 @@
+{
+  "version": "client-text-snapshot-v1",
+  "slideCount": 49,
+  "totalChars": 50594,
+  "slides": [
+    {
+      "slideKey": "p01_cover",
+      "text": {
+        "title": "Отчёт о цифровом профиле — Anders Holmström",
+        "narrative": "Конфиденциально. Подготовлено для внутреннего использования клиента."
+      },
+      "baseSlotId": "p01_cover",
+      "template": "orion_golden_cover"
+    },
+    {
+      "slideKey": "p02_toc",
+      "text": {
+        "title": "Содержание отчёта"
+      },
+      "baseSlotId": "p02_toc",
+      "template": "orion_golden_toc",
+      "bullets": [
+        "Резюме для руководства — стр. 3–10",
+        "Цифровой профиль — Россия — стр. 11–32",
+        "Цифровой профиль — ОАЭ и международный контур — стр. 33–45",
+        "Комплаенс-проверка — стр. 46–48",
+        "Приложение — стр. 49–49"
+      ]
+    },
+    {
+      "slideKey": "p03_executive",
+      "text": {
+        "title": "Резюме",
+        "subtitle": "Итоговая оценка: Высокий риск",
+        "narrative": "Итоговая оценка: высокий риск. Основные основания: Деловые связи, владение и контрагенты; Криминальные и судебные материалы; Семейные и личные связи (риск-релевантные); Офшоры и финансовая прозрачность. Главные основания. Деловые связи, владение и контрагенты: Anders Holmström арест. Криминальные и судебные материалы: Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm — source 80. Семейные и личные связи (риск-релевантные): AI overview: Anders Holmström and Nordkap Capital (RU) #3. Офшоры и финансовая прозрачность: Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital — source 87. Ограничения. Вывод основан на открытых и импортированных источниках; первичные документы могут изменить оценку. Медийные утверждения не приравниваются к установленным фактам. Исследованы поисковая выдача, открытые СМИ, комплаенс-базы по регионам RU, UAE, GLOBAL. Данные сформированы по дате сбора в кейсе.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Выводы опираются только на проверенные факты с указанием источника; предварительные сигналы отмечены отдельно."
+      },
+      "baseSlotId": "p03_executive",
+      "template": "orion_golden_executive_dashboard",
+      "bullets": [
+        "Деловые связи, владение и контрагенты. По теме «Деловые связи, владение и контрагенты» найдены конкретные материалы, в том числе «Anders Holmström арест». «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник ru.example «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital — source 25» — источник ru.example. «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник ru.example «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile — source 23» — источник ru.example. В материале сообщается о связанных с субъектом обстоятельствах; утверждения источника не равны установленному факту. Деловые связи и круг связанных лиц могут расширять периметр due diligence. Публикация (ru.example, uae.example) содержит утверждения источника; требуется подтверждение по первичным документам.",
+        "Криминальные и судебные материалы. По теме «Криминальные и судебные материалы» найдены конкретные материалы, в том числе «Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm — source 80» (ru.example). «Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm — source 80» — источник ru.example. «Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm» — источник ru.example. Для банка или партнёра судебные и криминальные сюжеты обычно становятся поводом для расширенной проверки статусов дел и первоисточников. Контекстный материал; не использовать как самостоятельное доказательство риска без дополнительной сверки.",
+        "Санкции, PEP, RCA и compliance-сигналы. По теме «Санкции, PEP, RCA и compliance-сигналы» найдены конкретные материалы, в том числе «Johan Holmstrom» (example.com). В выборке присутствует материал «Johan Holmstrom» (example.com). «Anders Holmström flagged during sanctions screening watchlist review» — источник ru.example «Nordkap Capital board appoints independent compliance advisor after Anders Holmström probe» — источник ru.example. Санкционные и мониторинговые совпадения отрабатываются в первую очередь при KYC и онбординге."
+      ],
+      "kpis": [
+        "Материалов: 314",
+        "О субъекте: 298",
+        "Вероятно о субъекте: 3",
+        "Тем риска: 3",
+        "Ключевых тем: 6"
+      ]
+    },
+    {
+      "slideKey": "p03_executive__cont1",
+      "text": {
+        "title": "Резюме — темы риска (продолжение 1/3)",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+      },
+      "baseSlotId": "p03_executive",
+      "template": "orion_golden_surface_panel",
+      "bullets": [
+        "Деловые связи, владение и контрагенты (продолжение). Наличие публикации не подтверждает изложенные обвинения.",
+        "Офшоры и финансовая прозрачность. По теме «Офшоры и финансовая прозрачность» найдены конкретные материалы, в том числе «Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital — source 87» (ru.example). «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник ru.example «Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital» — источник ru.example. Офшорные и непрозрачные структуры владения типично требуют раскрытия бенефициаров и источников контроля.",
+        "Репутационные скандалы и негативные сюжеты. По теме «Репутационные скандалы и негативные сюжеты» найдены конкретные материалы, в том числе «Is Anders Holmström under investigation?». Репутационные скандалы и негативные сюжеты «Is Anders Holmström under investigation?» Устойчивые скандальные сюжеты влияют на репутационную оценку даже при отсутствии судебного приговора."
+      ]
+    },
+    {
+      "slideKey": "p03_executive__cont2",
+      "text": {
+        "title": "Резюме (продолжение 2/3)"
+      },
+      "baseSlotId": "p03_executive",
+      "template": "orion_golden_surface_panel",
+      "bullets": [
+        "Семейные и личные связи (риск-релевантные). По теме «Семейные и личные связи (риск-релевантные)» найдены конкретные материалы, в том числе «AI overview: Anders Holmström and Nordkap Capital (RU) #3». Найдены материалы о семейных и деловых связях субъекта: «AI overview: Anders Holmström and Nordkap Capital (RU) #0» «AI overview: Anders Holmström and Nordkap Capital (RU) #1» Всего по теме: 12 материалов. Риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого. Семейные и личные связи учитываются, если они меняют профиль риска или переносят негатив на субъекта. Материал является медийным утверждением источника, а не установленным фактом; требуется проверка по первичным документам.",
+        "Единичные существенные публикации вне устойчивых тем в текущем наборе отдельно не выделены.",
+        "Отдельные подтверждённые карточки международных баз в клиентском резюме не сформированы либо требуют отдельной сверки."
+      ]
+    },
+    {
+      "slideKey": "p03_executive__cont3",
+      "text": {
+        "title": "Резюме (продолжение 3/3)"
+      },
+      "baseSlotId": "p03_executive",
+      "template": "orion_golden_surface_panel",
+      "bullets": [
+        "Изменения относительно baseline. Сравнение с baseline отражено в отдельном отчёте об изменениях, если он доступен.",
+        "Следующие проверки. 1) Сверить первоисточники и статус материалов по теме «Деловые связи, владение и контрагенты», «Криминальные и судебные материалы», «Семейные и личные связи (риск-релевантные)», «Офшоры и финансовая прозрачность», «Репутационные скандалы и негативные сюжеты», «Санкции, PEP, RCA и compliance-сигналы». 2) Подготовить согласованную позицию для KYC и партнёрских запросов. 3) Сверить актуальность санкционных и мониторинговых записей по официальным источникам. 4) Подготовить единый пакет документов для KYC и партнёрских запросов."
+      ]
+    },
+    {
+      "slideKey": "p04_risk_dashboard",
+      "text": {
+        "title": "Матрица комплаенс-рисков",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+      },
+      "baseSlotId": "p04_risk_dashboard",
+      "template": "orion_golden_risk_matrix_grid",
+      "bullets": [
+        "Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник ru.example «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital — source 25» — источник ru.example Где видно: ru.example, uae.example. Для банка или партнёра такие сюжеты обычно становятся первым поводом для расширенной проверки. Всего по теме: 12 материалов, с негативным контекстом — 12. Что делать: Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе; недостоверные публикации — вытеснять из топ-20 официальными материалами и добиваться удаления на агрегаторах.",
+        "Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Anders Holmström flagged during sanctions screening watchlist review» — источник ru.example «Nordkap Capital board appoints independent compliance advisor after Anders Holmström probe» — источник ru.example Где видно: ru.example, uae.example. Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC. Всего по теме: 35 материалов, с негативным контекстом — 17. Что делать: Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы.",
+        "3 материала пока отнесены к уровню «вероятно об этом лице» по фамилии и контексту — до уточнения идентификации не включаем их в подтверждённый итог. Принадлежность пока не подтверждена — до уточнения идентификации материал не включаем в итог «об этом лице»."
+      ],
+      "table": {
+        "headers": [
+          "Тема",
+          "Уровень",
+          "Приоритет",
+          "Идентификатор"
+        ],
+        "rows": [
+          [
+            "Криминальные / судебные материалы",
+            "Критический",
+            "P1",
+            "finding-criminal_legal-subject_match-96cd24f2"
+          ],
+          [
+            "PEP / RCA / watchlist-сигналы",
+            "Высокий",
+            "P1",
+            "finding-pep_rca_watchlist-subject_match-3aa0e4c5"
+          ],
+          [
+            "Материалы с вероятной принадлежностью",
+            "Требует подтверждения",
+            "APPENDIX",
+            "сводка"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p04_risk_dashboard__cont1",
+      "text": {
+        "title": "Матрица комплаенс-рисков (продолжение 2/2)"
+      },
+      "baseSlotId": "p04_risk_dashboard",
+      "template": "orion_golden_risk_matrix_grid",
+      "bullets": [
+        "Найдены публикации об офшорных и корпоративных структурах владения: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник ru.example «Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital» — источник ru.example Где видно: ru.example. Для KYC это типичный запрос на раскрытие бенефициаров и источников контроля. Всего по теме: 13 материалов, с негативным контекстом — 1. Что делать: Провести корпоративную проверку структуры владения по реестрам, подготовить документальное подтверждение легальности структуры для KYC-запросов.",
+        "Найдены материалы делового и биографического профиля: «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник ru.example «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile — source 23» — источник ru.example Где видно: ru.example. Деловой фон важен для позиционирования, но сам по себе не перекрывает чувствительные темы риска. Всего по теме: 7 материалов, с негативным контекстом — 1. Что делать: Поддерживать и усиливать позитивный деловой контент (профили, интервью, официальные сайты): он закрепляет верхние позиции выдачи и вытесняет потенциальный негатив.",
+        "Найдены материалы о семейных и деловых связях субъекта «AI overview: Anders Holmström and Nordkap Capital (RU) #0» «AI overview: Anders Holmström and Nordkap Capital (RU) #1» Всего по теме: 12 материалов. Риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого. Что делать: Собрать документальные подтверждения по активам и связям; отслеживать, чтобы негатив в адрес связанных лиц не переносился на профиль субъекта в выдаче."
+      ],
+      "table": {
+        "headers": [
+          "Тема",
+          "Уровень",
+          "Приоритет",
+          "Идентификатор"
+        ],
+        "rows": [
+          [
+            "Офшоры / корпоративное владение",
+            "Средний",
+            "P2",
+            "finding-offshore_corporate-subject_match-ad95a885"
+          ],
+          [
+            "Деловой профиль",
+            "Низкий",
+            "P3",
+            "finding-business_profile-subject_match-222ba7fa"
+          ],
+          [
+            "Семья и деловые связи",
+            "Низкий",
+            "P3",
+            "finding-family_associates-subject_match-0d28bdb7"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p05_profile_dashboard",
+      "text": {
+        "title": "Обзор цифрового профиля",
+        "narrative": "По собранным источникам: 314 материалов из 2 региональных контуров (RU: 228, UAE: 86). Принадлежность каждого материала к проверяемому лицу проверена.",
+        "whatToCheck": "Детализация каждой темы повышенного внимания приведена в матрице рисков и региональных разделах.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI."
+      },
+      "baseSlotId": "p05_profile_dashboard",
+      "template": "orion_golden_metrics_dashboard",
+      "bullets": [
+        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник ru.example «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital — source 25» — источник ru.example Где видно: ru.example, uae.example. Для банка или партнёра такие сюжеты обычно становятся первым поводом для расширенной проверки. [finding-criminal_legal-subject_match-96cd24f2]"
+      ],
+      "kpis": [
+        "Материалов проанализировано: 314",
+        "Связаны с проверяемым лицом: 298",
+        "Вероятно о субъекте: 3",
+        "Требуют идентификации: 8",
+        "Относятся к другим лицам: 5",
+        "Тем повышенного внимания: 3",
+        "Региональные контуры: RU · UAE"
+      ]
+    },
+    {
+      "slideKey": "p05_profile_dashboard__cont1",
+      "text": {
+        "title": "Обзор цифрового профиля (продолжение 2/2)",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI."
+      },
+      "baseSlotId": "p05_profile_dashboard",
+      "template": "orion_golden_metrics_dashboard",
+      "bullets": [
+        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Anders Holmström flagged during sanctions screening watchlist review» — источник ru.example «Nordkap Capital board appoints independent compliance advisor after Anders Holmström probe» — источник ru.example Где видно: ru.example, uae.example. Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC. [finding-pep_rca_watchlist-subject_match-3aa0e4c5]",
+        "«Офшоры / корпоративное владение» Найдены публикации об офшорных и корпоративных структурах владения: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник ru.example «Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital» — источник ru.example Где видно: ru.example. Для KYC это типичный запрос на раскрытие бенефициаров и источников контроля. Всего по теме: 13 материалов, с негативным контекстом — 1. [finding-offshore_corporate-subject_match-ad95a885]"
+      ]
+    },
+    {
+      "slideKey": "p06_ru_toc",
+      "text": {
+        "title": "Россия: Цифровой профиль",
+        "narrative": "Раздел показывает, что увидит банк, инвестор или контрагент в выдаче по региону «Россия»: какие темы формируют риск и что проверить в первую очередь."
+      },
+      "baseSlotId": "p06_ru_toc",
+      "template": "orion_golden_region_divider"
+    },
+    {
+      "slideKey": "p07_ru_summary",
+      "text": {
+        "title": "Россия — резюме аудита",
+        "narrative": "В выдаче по региону «Россия» проверяющий увидит 228 материалов. Подтверждённых тем: 5, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; PEP / RCA / watchlist-сигналы; Офшоры / корпоративное владение.",
+        "whatToCheck": "Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI."
+      },
+      "baseSlotId": "p07_ru_summary",
+      "template": "orion_golden_metrics_dashboard",
+      "bullets": [
+        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital — source 85» — источник ru.example «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital — source 45» — источник ru.example Где видно: ru.example. Для банка или партнёра такие сюжеты обычно становятся первым поводом для расширенной проверки. Всего по теме: 12 материалов, с негативным контекстом — 12. [finding-criminal_legal-subject_match-96cd24f2]",
+        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Anders Holmström — LexisNexis WorldCompliance adverse media hit» — источник compliance.example «Anders Holmström flagged during sanctions screening watchlist review» — источник ru.example Где видно: compliance.example, ru.example. Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC. Всего по теме: 35 материалов, с негативным контекстом — 17. [finding-pep_rca_watchlist-subject_match-3aa0e4c5]"
+      ],
+      "kpis": [
+        "Материалов региона: 228",
+        "Тем повышенного внимания: 3",
+        "Тем подтверждено: 5",
+        "Вероятно о субъекте: 3"
+      ]
+    },
+    {
+      "slideKey": "p07_ru_summary__cont1",
+      "text": {
+        "title": "Россия — резюме аудита (продолжение 2/3)",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI."
+      },
+      "baseSlotId": "p07_ru_summary",
+      "template": "orion_golden_metrics_dashboard",
+      "bullets": [
+        "«Офшоры / корпоративное владение» Найдены публикации об офшорных и корпоративных структурах владения: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник ru.example «Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital» — источник ru.example Где видно: ru.example. Для KYC это типичный запрос на раскрытие бенефициаров и источников контроля. Всего по теме: 13 материалов, с негативным контекстом — 1. [finding-offshore_corporate-subject_match-ad95a885]",
+        "«Деловой профиль» Найдены материалы делового и биографического профиля: «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник ru.example «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile — source 23» — источник ru.example Где видно: ru.example. Деловой фон важен для позиционирования, но сам по себе не перекрывает чувствительные темы риска. Всего по теме: 7 материалов, с негативным контекстом — 1. [finding-business_profile-subject_match-222ba7fa]",
+        "«Семья и деловые связи» Найдены материалы о семейных и деловых связях субъекта «AI overview: Anders Holmström and Nordkap Capital (RU) #3» «AI overview: Anders Holmström and Nordkap Capital (RU) #4» Всего по теме: 12 материалов. Риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого. [finding-family_associates-subject_match-0d28bdb7]"
+      ]
+    },
+    {
+      "slideKey": "p07_ru_summary__cont2",
+      "text": {
+        "title": "Россия — резюме аудита (продолжение 3/3)",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI."
+      },
+      "baseSlotId": "p07_ru_summary",
+      "template": "orion_golden_metrics_dashboard",
+      "bullets": [
+        "Другие материалы о субъекте: 160 (примеры: Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm · Anders Holmström expands Nordkap Capital into private credit markets · Swedish media: Anders Holmström denies wrongdoing in tax inquiry)",
+        "Материалы, вероятно относящиеся к субъекту: 3 — пока не включаем в подтверждённый итог до уточнения идентификации."
+      ]
+    },
+    {
+      "slideKey": "p08_ru_metrics",
+      "text": {
+        "title": "Россия — метрики и проверка URL",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно."
+      },
+      "baseSlotId": "p08_ru_metrics",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "Система",
+          "Показатель",
+          "Объём",
+          "Комментарий"
+        ],
+        "rows": [
+          [
+            "Все системы",
+            "Материалы региона",
+            "228",
+            "по составному набору данных"
+          ],
+          [
+            "Все системы",
+            "Темы повышенного внимания",
+            "3",
+            "см. матрицу рисков"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table",
+      "text": {
+        "title": "Россия — позиции в поисковой выдаче",
+        "narrative": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: ru.example.",
+        "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: ru.example.",
+        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 3. Они видны при первичной проверке субъекта.",
+        "whatToCheck": "Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
+        "statusNote": "Статус: тема подтверждена, уровень внимания — критический; достоверность оценки уверенная.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "№",
+          "Домен",
+          "Заголовок",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "1",
+            "ru.example",
+            "Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm",
+            "Нежелательный"
+          ],
+          [
+            "2",
+            "ru.example",
+            "Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile",
+            "Нейтральный"
+          ],
+          [
+            "3",
+            "ru.example",
+            "Anders Holmström interviewed on Nordic fintech regulation and compliance",
+            "Нежелательный"
+          ],
+          [
+            "4",
+            "ru.example",
+            "Swedish media: Anders Holmström denies wrongdoing in tax inquiry",
+            "Нейтральный"
+          ],
+          [
+            "5",
+            "ru.example",
+            "Anders Holmström real-estate purchases in Stockholm linked to Nordkap Capital vehicle",
+            "Нейтральный"
+          ],
+          [
+            "6",
+            "ru.example",
+            "Whistleblower portal mentions Anders Holmström in connection with Nordkap Capital",
+            "Нейтральный"
+          ],
+          [
+            "7",
+            "ru.example",
+            "Anders Holmström philanthropy foundation tied to Nordkap Capital dividends",
+            "Нейтральный"
+          ],
+          [
+            "8",
+            "ru.example",
+            "Anders Holmström flagged during sanctions screening watchlist review — source 21",
+            "Нежелательный"
+          ],
+          [
+            "9",
+            "ru.example",
+            "Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile — source 23",
+            "Нейтральный"
+          ],
+          [
+            "10",
+            "ru.example",
+            "Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital — source 25",
+            "Нежелательный"
+          ],
+          [
+            "11",
+            "ru.example",
+            "Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital — source 27",
+            "Нежелательный"
+          ],
+          [
+            "12",
+            "ru.example",
+            "Swedish media: Anders Holmström denies wrongdoing in tax inquiry — source 29",
+            "Нейтральный"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table__cont1",
+      "text": {
+        "title": "Россия — позиции в поисковой выдаче (продолжение 2/3)",
+        "narrative": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: ru.example.",
+        "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: ru.example.",
+        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 3. Они видны при первичной проверке субъекта.",
+        "whatToCheck": "Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
+        "statusNote": "Статус: тема подтверждена, уровень внимания — критический; достоверность оценки уверенная.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "№",
+          "Домен",
+          "Заголовок",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "13",
+            "ru.example",
+            "Registry extract: Anders Holmström listed as director of Nordkap Capital — source 31",
+            "Нейтральный"
+          ],
+          [
+            "14",
+            "ru.example",
+            "Analyst note: reputation risk around Anders Holmström and Nordkap Capital — source 33",
+            "Нейтральный"
+          ],
+          [
+            "15",
+            "ru.example",
+            "Whistleblower portal mentions Anders Holmström in connection with Nordkap Capital — source 35",
+            "Нейтральный"
+          ],
+          [
+            "16",
+            "ru.example",
+            "Prosecutors request documents from Anders Holmström regarding Malta SPV — source 37",
+            "Нейтральный"
+          ],
+          [
+            "17",
+            "ru.example",
+            "Credit bureau soft-hit references Anders Holmström, Nordkap Capital — source 39",
+            "Нейтральный"
+          ],
+          [
+            "18",
+            "ru.example",
+            "Anders Holmström flagged during sanctions screening watchlist review — source 41",
+            "Нежелательный"
+          ],
+          [
+            "19",
+            "ru.example",
+            "Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile — source 43",
+            "Нейтральный"
+          ],
+          [
+            "20",
+            "ru.example",
+            "Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital — source 45",
+            "Нежелательный"
+          ],
+          [
+            "21",
+            "ru.example",
+            "Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital — source 47",
+            "Нежелательный"
+          ],
+          [
+            "22",
+            "ru.example",
+            "Swedish media: Anders Holmström denies wrongdoing in tax inquiry — source 49",
+            "Нейтральный"
+          ],
+          [
+            "23",
+            "ru.example",
+            "Registry extract: Anders Holmström listed as director of Nordkap Capital — source 51",
+            "Нейтральный"
+          ],
+          [
+            "24",
+            "ru.example",
+            "Analyst note: reputation risk around Anders Holmström and Nordkap Capital — source 53",
+            "Нейтральный"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p09_ru_serp_table__cont2",
+      "text": {
+        "title": "Россия — позиции в поисковой выдаче (продолжение 3/3)",
+        "narrative": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: ru.example.",
+        "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: ru.example.",
+        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 3. Они видны при первичной проверке субъекта.",
+        "whatToCheck": "Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
+        "statusNote": "Статус: тема подтверждена, уровень внимания — критический; достоверность оценки уверенная.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно."
+      },
+      "baseSlotId": "p09_ru_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "№",
+          "Домен",
+          "Заголовок",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "25",
+            "ru.example",
+            "Whistleblower portal mentions Anders Holmström in connection with Nordkap Capital — source 55",
+            "Нейтральный"
+          ],
+          [
+            "26",
+            "ru.example",
+            "Prosecutors request documents from Anders Holmström regarding Malta SPV — source 57",
+            "Нейтральный"
+          ],
+          [
+            "27",
+            "ru.example",
+            "Credit bureau soft-hit references Anders Holmström, Nordkap Capital — source 59",
+            "Нейтральный"
+          ],
+          [
+            "28",
+            "ru.example",
+            "Anders Holmström flagged during sanctions screening watchlist review — source 61",
+            "Нежелательный"
+          ],
+          [
+            "29",
+            "ru.example",
+            "Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile — source 63",
+            "Нейтральный"
+          ],
+          [
+            "30",
+            "ru.example",
+            "Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital — source 65",
+            "Нежелательный"
+          ],
+          [
+            "31",
+            "ru.example",
+            "Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital — source 67",
+            "Нежелательный"
+          ],
+          [
+            "32",
+            "ru.example",
+            "Swedish media: Anders Holmström denies wrongdoing in tax inquiry — source 69",
+            "Нейтральный"
+          ],
+          [
+            "33",
+            "ru.example",
+            "Registry extract: Anders Holmström listed as director of Nordkap Capital — source 71",
+            "Нейтральный"
+          ],
+          [
+            "34",
+            "ru.example",
+            "Analyst note: reputation risk around Anders Holmström and Nordkap Capital — source 73",
+            "Нейтральный"
+          ],
+          [
+            "35",
+            "ru.example",
+            "Whistleblower portal mentions Anders Holmström in connection with Nordkap Capital — source 75",
+            "Нейтральный"
+          ],
+          [
+            "36",
+            "ru.example",
+            "Prosecutors request documents from Anders Holmström regarding Malta SPV — source 77",
+            "Нейтральный"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p10_ru_serp_visual",
+      "text": {
+        "title": "Россия — снимок выдачи",
+        "narrative": "Состояние первой страницы выдачи (Россия).",
+        "whatWasFound": "На снимке выделено результатов повышенного внимания: 3 (ru.example); остальные результаты — нейтральные или деловые.",
+        "whyItMatters": "Выделенные материалы (3) видны при первичной проверке субъекта в этом регионе.",
+        "whatToCheck": "Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
+        "statusNote": "Статус: тема подтверждена, уровень внимания — критический; достоверность оценки уверенная.",
+        "sourceNote": "Источники: ru.example — результаты на снимке."
+      },
+      "baseSlotId": "p10_ru_serp_visual",
+      "template": "orion_golden_serp_screenshot",
+      "highlights": [
+        "«Криминальные / судебные материалы» — выделенный результат ru.example; уровень: критический.",
+        "«PEP / RCA / watchlist-сигналы» — выделенный результат ru.example; уровень: высокий.",
+        "«Офшоры / корпоративное владение» — выделенный результат ru.example; уровень: средний."
+      ]
+    },
+    {
+      "slideKey": "p11_ru_suggestions_yandex",
+      "text": {
+        "title": "Россия — подсказки Яндекса",
+        "whatWasFound": "Подсказок на панели: 10; выделено красным (негативные формулировки): 4.",
+        "whyItMatters": "Негативные подсказки видны пользователю ещё до просмотра результатов: они формируют первое впечатление и подталкивают к поиску компрометирующих материалов.",
+        "whatToCheck": "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "statusNote": "Статус: на странице 4 негативных заголовков; подтверждённая тема по этим строкам не выделена.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Подсказки отражают частотные запросы пользователей и формируют первое впечатление о субъекте."
+      },
+      "baseSlotId": "p11_ru_suggestions_yandex",
+      "template": "orion_golden_surface_panel",
+      "bullets": [
+        "Anders Holmström Nordkap Capital fraud",
+        "Anders Holmström санкции",
+        "Anders Holmström Stockholm court",
+        "Anders Holmström арест"
+      ],
+      "highlights": [
+        "«Потенциально негативные публикации»; требует ручной проверки.",
+        "«Потенциально негативные публикации»; требует ручной проверки.",
+        "«Санкционный контур и связанные лица»; требует ручной проверки.",
+        "«Криминальные / судебные материалы»; требует ручной проверки."
+      ]
+    },
+    {
+      "slideKey": "p12_ru_suggestions_google",
+      "text": {
+        "title": "Россия — подсказки Google",
+        "narrative": "Поисковые подсказки (автодополнение) по запросам о субъекте проверены (Google, Россия): материалов нет — это результат проверки.",
+        "whatToCheck": "Рекомендуем повторить проверку подсказок при следующем обновлении: эта поверхность меняется быстрее остальных.",
+        "methodologyNote": "Отсутствие материалов по поверхности не тождественно отсутствию рисков; указан фактический статус сбора.",
+        "emptyStateReason": "no-suggestions"
+      },
+      "baseSlotId": "p12_ru_suggestions_google",
+      "template": "orion_golden_no_data_compact",
+      "bullets": [
+        "Подсказки формируются поисковыми системами на основе массовых запросов пользователей; негативные формулировки в подсказках видны ещё до просмотра результатов и напрямую влияют на первое впечатление.",
+        "Проверено, материалов нет — это результат проверки на дату отчёта, а не вывод об отсутствии рисков. Находки по другим поисковым системам и регионам приведены на своих страницах."
+      ]
+    },
+    {
+      "slideKey": "p14_ru_images_1",
+      "text": {
+        "title": "Россия — изображения (1)",
+        "whatWasFound": "Показано 6 результатов; из них о субъекте — 6, вероятно о субъекте — 0, негативных заголовков — 0; преобладающие источники: img.example.",
+        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
+        "whatToCheck": "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+      },
+      "baseSlotId": "p14_ru_images_1",
+      "template": "orion_golden_image_grid"
+    },
+    {
+      "slideKey": "p15_ru_images_2",
+      "text": {
+        "title": "Россия — изображения (2)",
+        "whatWasFound": "Показано 6 результатов; из них о субъекте — 6, вероятно о субъекте — 0, негативных заголовков — 0; преобладающие источники: img.example.",
+        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
+        "whatToCheck": "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+      },
+      "baseSlotId": "p15_ru_images_2",
+      "template": "orion_golden_image_grid"
+    },
+    {
+      "slideKey": "p16_ru_images_3",
+      "text": {
+        "title": "Россия — изображения (3)",
+        "whatWasFound": "Показано 4 результата; из них о субъекте — 4, вероятно о субъекте — 0, негативных заголовков — 0; преобладающие источники: img.example.",
+        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
+        "whatToCheck": "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+      },
+      "baseSlotId": "p16_ru_images_3",
+      "template": "orion_golden_image_grid"
+    },
+    {
+      "slideKey": "p17_ru_images_4",
+      "text": {
+        "title": "Россия — изображения (4)",
+        "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
+        "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+        "whatToCheck": "Мониторить изменения выдачи.",
+        "statusNote": "Статус: по данной поверхности выводов о рисках нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "emptyStateReason": "VISUAL_ASSET_UNAVAILABLE"
+      },
+      "baseSlotId": "p17_ru_images_4",
+      "template": "orion_golden_image_grid"
+    },
+    {
+      "slideKey": "p13_ru_wikipedia",
+      "text": {
+        "title": "Россия — Википедия",
+        "narrative": "Фактическая проверка Wikipedia подтверждает наличие статьи о проверяемом субъекте (https://ru.wikipedia.org/wiki/Anders_Holmstrom). В выдаче зафиксированы энциклопедические материалы о проверяемом субъекте (ru.wikipedia.org). Существенных негативных или спорных формулировок в этих карточках не выявлено. Материалов об одноимённых лицах в контуре Россия не зафиксировано.",
+        "whatWasFound": "Проверка Wikipedia (ru): статья найдена «Anders Holmström». URL: https://ru.wikipedia.org/wiki/Anders_Holmstrom В выдаче также есть энциклопедические домены: ru.wikipedia.org.",
+        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
+        "whatToCheck": "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+        "sourceNote": "Источники: ru.wikipedia.org",
+        "methodologyNote": "Раздел фиксирует, как справочные ресурсы идентифицируют субъекта и с кем его могут путать поисковые системы."
+      },
+      "baseSlotId": "p13_ru_wikipedia",
+      "template": "orion_golden_knowledge_panel",
+      "bullets": [
+        "Проверка Wikipedia (ru): статья найдена — https://ru.wikipedia.org/wiki/Anders_Holmstrom «Anders Holmström»."
+      ]
+    },
+    {
+      "slideKey": "p18_ru_knowledge_1",
+      "text": {
+        "title": "Россия — панель знаний",
+        "narrative": "Панель знаний и структурированные блоки поисковых систем по проверяемому субъекту.",
+        "whatWasFound": "Показано 4 результата; из них о субъекте — 4, вероятно о субъекте — 0, негативных заголовков — 0.",
+        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
+        "whatToCheck": "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Раздел фиксирует, как справочные ресурсы идентифицируют субъекта и с кем его могут путать поисковые системы."
+      },
+      "baseSlotId": "p18_ru_knowledge_1",
+      "template": "orion_golden_knowledge_panel"
+    },
+    {
+      "slideKey": "p19_ru_knowledge_2",
+      "text": {
+        "title": "Россия — AI-ответы поисковых систем",
+        "whatWasFound": "Показано 12 результатов; из них о субъекте — 12, вероятно о субъекте — 0, негативных заголовков — 0.",
+        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
+        "whatToCheck": "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Ответы AI-сервисов приводятся полностью, без сокращений; интерпретация даётся отдельным блоком."
+      },
+      "baseSlotId": "p19_ru_knowledge_2",
+      "template": "orion_golden_surface_panel",
+      "bullets": [
+        "AI overview: Anders Holmström and Nordkap Capital (RU) #0",
+        "AI overview: Anders Holmström and Nordkap Capital (RU) #1",
+        "AI overview: Anders Holmström and Nordkap Capital (RU) #2",
+        "AI overview: Anders Holmström and Nordkap Capital (RU) #3",
+        "AI overview: Anders Holmström and Nordkap Capital (RU) #4",
+        "AI overview: Anders Holmström and Nordkap Capital (RU) #5"
+      ]
+    },
+    {
+      "slideKey": "p19_ru_knowledge_2__cont1",
+      "text": {
+        "title": "Россия — AI-ответы поисковых систем (продолжение 2/2)",
+        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Ответы AI-сервисов приводятся полностью, без сокращений; интерпретация даётся отдельным блоком."
+      },
+      "baseSlotId": "p19_ru_knowledge_2",
+      "template": "orion_golden_surface_panel",
+      "bullets": [
+        "AI overview: Anders Holmström and Nordkap Capital (RU) #6",
+        "AI overview: Anders Holmström and Nordkap Capital (RU) #7",
+        "Knowledge panel: Anders Holmström",
+        "Knowledge panel: Anders Holmström",
+        "Knowledge panel: Anders Holmström",
+        "Knowledge panel: Anders Holmström"
+      ]
+    },
+    {
+      "slideKey": "p20_ru_related_1",
+      "text": {
+        "title": "Россия — связанные запросы (1)",
+        "whatWasFound": "Показано 8 результатов; из них о субъекте — 6, вероятно о субъекте — 0, негативных заголовков — 2.",
+        "whyItMatters": "На странице есть негативные заголовки (2) — они влияют на первое впечатление при проверке, даже если тема ещё не выделена отдельным выводом.",
+        "whatToCheck": "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "statusNote": "Статус: на странице 2 негативных заголовков; подтверждённая тема по этим строкам не выделена.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+      },
+      "baseSlotId": "p20_ru_related_1",
+      "template": "orion_golden_surface_panel",
+      "bullets": [
+        "Is Anders Holmström under investigation?"
+      ]
+    },
+    {
+      "slideKey": "p21_ru_related_2",
+      "text": {
+        "title": "Россия — связанные запросы (2)",
+        "whatWasFound": "Показано 8 результатов; из них о субъекте — 8, вероятно о субъекте — 0, негативных заголовков — 0.",
+        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
+        "whatToCheck": "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+      },
+      "baseSlotId": "p21_ru_related_2",
+      "template": "orion_golden_surface_panel",
+      "bullets": [
+        "Has Anders Holmström been sanctioned?"
+      ]
+    },
+    {
+      "slideKey": "p22_ru_related_3",
+      "text": {
+        "title": "Россия — связанные запросы (3)",
+        "whatWasFound": "Показано 8 результатов; из них о субъекте — 8, вероятно о субъекте — 0, негативных заголовков — 0.",
+        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
+        "whatToCheck": "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+      },
+      "baseSlotId": "p22_ru_related_3",
+      "template": "orion_golden_surface_panel",
+      "bullets": [
+        "Related question 16 about Anders Holmström?",
+        "Related question 17 about Anders Holmström?",
+        "Related question 18 about Anders Holmström?",
+        "Related question 19 about Anders Holmström?",
+        "Related question 20 about Anders Holmström?",
+        "Related question 21 about Anders Holmström?",
+        "Related question 22 about Anders Holmström?",
+        "Related question 23 about Anders Holmström?"
+      ]
+    },
+    {
+      "slideKey": "p23_uae_toc",
+      "text": {
+        "title": "ОАЭ: Цифровой профиль",
+        "narrative": "Раздел показывает, что увидит банк, инвестор или контрагент в выдаче по региону «ОАЭ / международный»: какие темы формируют риск и что проверить в первую очередь."
+      },
+      "baseSlotId": "p23_uae_toc",
+      "template": "orion_golden_region_divider"
+    },
+    {
+      "slideKey": "p24_uae_summary",
+      "text": {
+        "title": "ОАЭ — резюме аудита",
+        "narrative": "В выдаче по региону «ОАЭ / международный» проверяющий увидит 86 материалов. Подтверждённых тем: 3, из них повышенного внимания: 2. Ключевые темы для проверки: Криминальные / судебные материалы; PEP / RCA / watchlist-сигналы.",
+        "whatToCheck": "Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI."
+      },
+      "baseSlotId": "p24_uae_summary",
+      "template": "orion_golden_metrics_dashboard",
+      "bullets": [
+        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital» — источник uae.example «Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital — UAE source 34» — источник uae.example Где видно: uae.example. Для банка или партнёра такие сюжеты обычно становятся первым поводом для расширенной проверки. Всего по теме: 12 материалов, с негативным контекстом — 12. [finding-criminal_legal-subject_match-96cd24f2]",
+        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Anders Holmström referenced in UAE PEP/RCA compliance screening — UAE source 11» — источник uae.example «Anders Holmström — Dow Jones Risk & Compliance PEP/RCA match» — источник compliance.example Где видно: uae.example, compliance.example. Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC. Всего по теме: 35 материалов, с негативным контекстом — 17. [finding-pep_rca_watchlist-subject_match-3aa0e4c5]"
+      ],
+      "kpis": [
+        "Материалов региона: 86",
+        "Тем повышенного внимания: 2",
+        "Тем подтверждено: 3",
+        "Вероятно о субъекте: 3"
+      ]
+    },
+    {
+      "slideKey": "p24_uae_summary__cont1",
+      "text": {
+        "title": "ОАЭ — резюме аудита (продолжение 2/2)",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI."
+      },
+      "baseSlotId": "p24_uae_summary",
+      "template": "orion_golden_metrics_dashboard",
+      "bullets": [
+        "«Семья и деловые связи» Найдены материалы о семейных и деловых связях субъекта «AI overview: Anders Holmström and Nordkap Capital (UAE) #11» «AI overview: Anders Holmström and Nordkap Capital (UAE) #8» Всего по теме: 12 материалов. Риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого. [finding-family_associates-subject_match-0d28bdb7]",
+        "Другие материалы о субъекте: 65 (примеры: Anders Holmström expands Nordkap Capital into Dubai real-estate investment · Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital · Nordkap Capital opens DIFC representative office under Anders Holmström)",
+        "Материалы, вероятно относящиеся к субъекту: 3 — пока не включаем в подтверждённый итог до уточнения идентификации."
+      ]
+    },
+    {
+      "slideKey": "p25_uae_metrics",
+      "text": {
+        "title": "ОАЭ — метрики покрытия",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно."
+      },
+      "baseSlotId": "p25_uae_metrics",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "Система",
+          "Показатель",
+          "Объём",
+          "Комментарий"
+        ],
+        "rows": [
+          [
+            "Все системы",
+            "Материалы региона",
+            "86",
+            "по составному набору данных"
+          ],
+          [
+            "Все системы",
+            "Темы повышенного внимания",
+            "2",
+            "см. матрицу рисков"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p26_uae_serp_table",
+      "text": {
+        "title": "ОАЭ — позиции в поисковой выдаче",
+        "narrative": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: uae.example.",
+        "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: uae.example.",
+        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 2. Они видны при первичной проверке субъекта.",
+        "whatToCheck": "Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
+        "statusNote": "Статус: тема подтверждена, уровень внимания — критический; достоверность оценки уверенная.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно."
+      },
+      "baseSlotId": "p26_uae_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "№",
+          "Домен",
+          "Заголовок",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "1",
+            "uae.example",
+            "Anders Holmström expands Nordkap Capital into Dubai real-estate investment",
+            "Нейтральный"
+          ],
+          [
+            "2",
+            "uae.example",
+            "Anders Holmström referenced in UAE PEP/RCA compliance screening",
+            "Нежелательный"
+          ],
+          [
+            "3",
+            "uae.example",
+            "Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital affiliate",
+            "Нейтральный"
+          ],
+          [
+            "4",
+            "uae.example",
+            "Nordkap Capital opens DIFC representative office under Anders Holmström",
+            "Нейтральный"
+          ],
+          [
+            "5",
+            "uae.example",
+            "Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital",
+            "Нежелательный"
+          ],
+          [
+            "6",
+            "uae.example",
+            "UAE company registry: Anders Holmström director of Nordkap Capital MENA Ltd",
+            "Нейтральный"
+          ],
+          [
+            "7",
+            "uae.example",
+            "Anders Holmström attends Abu Dhabi finance forum for Nordkap Capital",
+            "Нейтральный"
+          ],
+          [
+            "8",
+            "uae.example",
+            "Sanctions screening vendor flags Anders Holmström for secondary review",
+            "Нежелательный"
+          ],
+          [
+            "9",
+            "uae.example",
+            "Nordkap Capital Dubai entity leases office in DIFC; Anders Holmström signatory",
+            "Нейтральный"
+          ],
+          [
+            "10",
+            "uae.example",
+            "Arabic-language profile of Anders Holmström, founder of Nordkap Capital",
+            "Нейтральный"
+          ],
+          [
+            "11",
+            "uae.example",
+            "Anders Holmström expands Nordkap Capital into Dubai real-estate investment — UAE source 10",
+            "Нейтральный"
+          ],
+          [
+            "12",
+            "uae.example",
+            "Anders Holmström referenced in UAE PEP/RCA compliance screening — UAE source 11",
+            "Нежелательный"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p26_uae_serp_table__cont1",
+      "text": {
+        "title": "ОАЭ — позиции в поисковой выдаче (продолжение 2/3)",
+        "narrative": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: uae.example.",
+        "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: uae.example.",
+        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 2. Они видны при первичной проверке субъекта.",
+        "whatToCheck": "Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
+        "statusNote": "Статус: тема подтверждена, уровень внимания — критический; достоверность оценки уверенная.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно."
+      },
+      "baseSlotId": "p26_uae_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "№",
+          "Домен",
+          "Заголовок",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "13",
+            "uae.example",
+            "Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital affiliate — UAE source 12",
+            "Нейтральный"
+          ],
+          [
+            "14",
+            "uae.example",
+            "Nordkap Capital opens DIFC representative office under Anders Holmström — UAE source 13",
+            "Нейтральный"
+          ],
+          [
+            "15",
+            "uae.example",
+            "Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital — UAE source 14",
+            "Нежелательный"
+          ],
+          [
+            "16",
+            "uae.example",
+            "UAE company registry: Anders Holmström director of Nordkap Capital MENA Ltd — UAE source 15",
+            "Нейтральный"
+          ],
+          [
+            "17",
+            "uae.example",
+            "Anders Holmström attends Abu Dhabi finance forum for Nordkap Capital — UAE source 16",
+            "Нейтральный"
+          ],
+          [
+            "18",
+            "uae.example",
+            "Sanctions screening vendor flags Anders Holmström for secondary review — UAE source 17",
+            "Нежелательный"
+          ],
+          [
+            "19",
+            "uae.example",
+            "Nordkap Capital Dubai entity leases office in DIFC; Anders Holmström signatory — UAE source 18",
+            "Нейтральный"
+          ],
+          [
+            "20",
+            "uae.example",
+            "Arabic-language profile of Anders Holmström, founder of Nordkap Capital — UAE source 19",
+            "Нейтральный"
+          ],
+          [
+            "21",
+            "uae.example",
+            "Anders Holmström expands Nordkap Capital into Dubai real-estate investment — UAE source 20",
+            "Нейтральный"
+          ],
+          [
+            "22",
+            "uae.example",
+            "Anders Holmström referenced in UAE PEP/RCA compliance screening — UAE source 21",
+            "Нежелательный"
+          ],
+          [
+            "23",
+            "uae.example",
+            "Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital affiliate — UAE source 22",
+            "Нейтральный"
+          ],
+          [
+            "24",
+            "uae.example",
+            "Nordkap Capital opens DIFC representative office under Anders Holmström — UAE source 23",
+            "Нейтральный"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p26_uae_serp_table__cont2",
+      "text": {
+        "title": "ОАЭ — позиции в поисковой выдаче (продолжение 3/3)",
+        "narrative": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: uae.example.",
+        "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: uae.example.",
+        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 2. Они видны при первичной проверке субъекта.",
+        "whatToCheck": "Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
+        "statusNote": "Статус: тема подтверждена, уровень внимания — критический; достоверность оценки уверенная.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно."
+      },
+      "baseSlotId": "p26_uae_serp_table",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "№",
+          "Домен",
+          "Заголовок",
+          "Оценка"
+        ],
+        "rows": [
+          [
+            "25",
+            "uae.example",
+            "Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital — UAE source 24",
+            "Нежелательный"
+          ],
+          [
+            "26",
+            "uae.example",
+            "UAE company registry: Anders Holmström director of Nordkap Capital MENA Ltd — UAE source 25",
+            "Нейтральный"
+          ],
+          [
+            "27",
+            "uae.example",
+            "Anders Holmström attends Abu Dhabi finance forum for Nordkap Capital — UAE source 26",
+            "Нейтральный"
+          ],
+          [
+            "28",
+            "uae.example",
+            "Sanctions screening vendor flags Anders Holmström for secondary review — UAE source 27",
+            "Нежелательный"
+          ],
+          [
+            "29",
+            "uae.example",
+            "Nordkap Capital Dubai entity leases office in DIFC; Anders Holmström signatory — UAE source 28",
+            "Нейтральный"
+          ],
+          [
+            "30",
+            "uae.example",
+            "Arabic-language profile of Anders Holmström, founder of Nordkap Capital — UAE source 29",
+            "Нейтральный"
+          ],
+          [
+            "31",
+            "uae.example",
+            "Anders Holmström expands Nordkap Capital into Dubai real-estate investment — UAE source 30",
+            "Нейтральный"
+          ],
+          [
+            "32",
+            "uae.example",
+            "Anders Holmström referenced in UAE PEP/RCA compliance screening — UAE source 31",
+            "Нежелательный"
+          ],
+          [
+            "33",
+            "uae.example",
+            "Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital affiliate — UAE source 32",
+            "Нейтральный"
+          ],
+          [
+            "34",
+            "uae.example",
+            "Nordkap Capital opens DIFC representative office under Anders Holmström — UAE source 33",
+            "Нейтральный"
+          ],
+          [
+            "35",
+            "uae.example",
+            "Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital — UAE source 34",
+            "Нежелательный"
+          ],
+          [
+            "36",
+            "uae.example",
+            "UAE company registry: Anders Holmström director of Nordkap Capital MENA Ltd — UAE source 35",
+            "Нейтральный"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p27_uae_serp_visual",
+      "text": {
+        "title": "ОАЭ — снимок выдачи",
+        "narrative": "Состояние первой страницы выдачи (ОАЭ / международный). Выделенные результаты — в выдаче Google; по Яндексу сохранённых результатов в наборе нет.",
+        "whatWasFound": "На снимке выделено результатов повышенного внимания: 1 (uae.example); остальные результаты — нейтральные или деловые.",
+        "whyItMatters": "Выделенные материалы (1) видны при первичной проверке субъекта в этом регионе. Выделенные результаты — в выдаче Google; по Яндексу сохранённых результатов в наборе нет.",
+        "whatToCheck": "Запросить первичные карточки комплаенс-баз, подтвердить или опровергнуть принадлежность каждого совпадения; для ложных совпадений — направить запрос на корректировку записи у оператора базы.",
+        "statusNote": "Статус: тема подтверждена, уровень внимания — высокий; достоверность оценки высокая.",
+        "sourceNote": "Источники: uae.example — результаты на снимке."
+      },
+      "baseSlotId": "p27_uae_serp_visual",
+      "template": "orion_golden_serp_screenshot",
+      "highlights": [
+        "«PEP / RCA / watchlist-сигналы» — выделенный результат uae.example; уровень: высокий."
+      ]
+    },
+    {
+      "slideKey": "p28_uae_suggestions",
+      "text": {
+        "title": "ОАЭ — подсказки поиска",
+        "whatWasFound": "Подсказок на панели: 10; выделено красным (негативные формулировки): 1.",
+        "whyItMatters": "Негативные подсказки видны пользователю ещё до просмотра результатов: они формируют первое впечатление и подталкивают к поиску компрометирующих материалов.",
+        "whatToCheck": "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Подсказки отражают частотные запросы пользователей и формируют первое впечатление о субъекте."
+      },
+      "baseSlotId": "p28_uae_suggestions",
+      "template": "orion_golden_surface_panel",
+      "bullets": [
+        "Anders Holmström Dubai Nordkap Capital",
+        "Anders Holmström DIFC",
+        "Anders Holmström UAE PEP",
+        "Anders Holmström Abu Dhabi",
+        "Nordkap Capital Dubai office",
+        "Anders Holmström Gulf investment",
+        "Anders Holmström Dubai query 6",
+        "Anders Holmström Dubai query 7",
+        "Anders Holmström Dubai query 8",
+        "Anders Holmström Dubai query 9"
+      ],
+      "highlights": [
+        "«Сигналы PEP / RCA»; требует ручной проверки."
+      ]
+    },
+    {
+      "slideKey": "p30_uae_images",
+      "text": {
+        "title": "ОАЭ — изображения в поиске",
+        "whatWasFound": "Показано 6 результатов; из них о субъекте — 6, вероятно о субъекте — 0, негативных заголовков — 0; преобладающие источники: img.example.",
+        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
+        "whatToCheck": "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+      },
+      "baseSlotId": "p30_uae_images",
+      "template": "orion_golden_image_grid"
+    },
+    {
+      "slideKey": "p29_uae_wikipedia",
+      "text": {
+        "title": "ОАЭ — Википедия",
+        "narrative": "Поверхность не собиралась в этом прогоне. Это не результат проверки «материалов нет» — сбор не запускался или был пропущен.",
+        "whatToCheck": "Рекомендуем проверить наличие статьи вручную; при отсутствии — рассмотреть создание нейтральной биографической статьи, при наличии — контролировать корректность её содержимого.",
+        "methodologyNote": "Отсутствие материалов по поверхности не тождественно отсутствию рисков; указан фактический статус сбора.",
+        "emptyStateReason": "no-identity-data"
+      },
+      "baseSlotId": "p29_uae_wikipedia",
+      "template": "orion_golden_no_data_compact",
+      "bullets": [
+        "Википедия и энциклопедические карточки — ключевой источник «официальной» биографии: их содержимое поисковые системы используют в панелях знаний и ответах ИИ.",
+        "Статус отражает факт сбора на дату отчёта, а не вывод об отсутствии рисков."
+      ]
+    },
+    {
+      "slideKey": "p31_uae_knowledge",
+      "text": {
+        "title": "ОАЭ — панель знаний и AI Overview",
+        "whatWasFound": "Показано 4 результата; из них о субъекте — 4, вероятно о субъекте — 0, негативных заголовков — 0.",
+        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
+        "whatToCheck": "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение).",
+        "methodologyNote": "Ответы AI-сервисов приводятся полностью, без сокращений; интерпретация даётся отдельным блоком."
+      },
+      "baseSlotId": "p31_uae_knowledge",
+      "template": "orion_golden_surface_panel",
+      "bullets": [
+        "AI overview: Anders Holmström and Nordkap Capital (UAE) #8",
+        "AI overview: Anders Holmström and Nordkap Capital (UAE) #9",
+        "AI overview: Anders Holmström and Nordkap Capital (UAE) #10",
+        "AI overview: Anders Holmström and Nordkap Capital (UAE) #11"
+      ]
+    },
+    {
+      "slideKey": "p32_uae_related",
+      "text": {
+        "title": "ОАЭ — связанные запросы",
+        "whatWasFound": "Показано 12 результатов; из них о субъекте — 11, вероятно о субъекте — 0, негативных заголовков — 0.",
+        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
+        "whatToCheck": "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+      },
+      "baseSlotId": "p32_uae_related",
+      "template": "orion_golden_surface_panel",
+      "bullets": [
+        "Is Anders Holmström expanding to Dubai?",
+        "Does Nordkap Capital operate in the UAE?",
+        "Is Anders Holmström listed in UAE compliance databases?",
+        "What is Anders Holmström's role at Nordkap Capital MENA?",
+        "UAE related question 4 about Anders Holmström?",
+        "UAE related question 5 about Anders Holmström?",
+        "UAE related question 6 about Anders Holmström?",
+        "UAE related question 7 about Anders Holmström?",
+        "UAE related question 8 about Anders Holmström?",
+        "UAE related question 9 about Anders Holmström?"
+      ]
+    },
+    {
+      "slideKey": "p33_compliance_toc",
+      "text": {
+        "title": "Комплаенс — сводка баз данных",
+        "narrative": "Проверено записей комплаенс-контура: 2. Потенциальных совпадений в базах: 2; подтверждённых совпадений нет — каждое требует ручной верификации.",
+        "whatToCheck": "Верифицировать каждое потенциальное совпадение вручную: сопоставить идентификаторы субъекта с записью базы.",
+        "sourceNote": "Источник: комплаенс-базы (существующий контур, без расширения источников).",
+        "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно."
+      },
+      "baseSlotId": "p33_compliance_toc",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "База данных",
+          "Тип совпадения",
+          "Оценка совпадения",
+          "Статус проверки"
+        ],
+        "rows": [
+          [
+            "Dow Jones",
+            "PEP (политически значимое лицо)",
+            "78/100",
+            "Требует ручной проверки"
+          ],
+          [
+            "LexisNexis",
+            "Негативные публикации",
+            "64/100",
+            "Подтверждено"
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p34_dow_jones",
+      "text": {
+        "title": "Dow Jones — профиль",
+        "narrative": "Профиль по данным Dow Jones: существующий комплаенс-контент, источники не расширялись.",
+        "whatWasFound": "Потенциальное совпадение категории «PEP (политически значимое лицо)» с оценкой 78/100; совпадение не подтверждено и требует ручной проверки.",
+        "whyItMatters": "Категория PEP влияет на уровень комплаенс-контроля при онбординге и мониторинге клиента.",
+        "whatToCheck": "Запросить полную запись Dow Jones и сверить идентификаторы субъекта.",
+        "sourceNote": "Источник: Dow Jones (существующий контур).",
+        "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно."
+      },
+      "baseSlotId": "p34_dow_jones",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "Параметр",
+          "Значение"
+        ],
+        "rows": [
+          [
+            "Совпадение по имени",
+            "Holmstrom, Johan"
+          ],
+          [
+            "Категория",
+            "PEP (политически значимое лицо)"
+          ],
+          [
+            "Оценка совпадения",
+            "78/100"
+          ],
+          [
+            "Статус",
+            "Требует ручной проверки"
+          ],
+          [
+            "Почему важно",
+            "Категория PEP влияет на уровень комплаенс-контроля при онбординге и мониторинге клиента."
+          ],
+          [
+            "Что сделать",
+            "Запросить полную запись Dow Jones и сверить идентификаторы субъекта."
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "p35_lexis_visual",
+      "text": {
+        "title": "LexisNexis — страница профиля",
+        "narrative": "Страница профиля LexisNexis. Визуальный экспорт страницы в текущем наборе недоступен; содержимое записи приведено в текстовом виде без потерь. Вторая страница профиля из отчёта v72 объединена с этой: отдельного содержимого у неё нет.",
+        "whatWasFound": "Потенциальное совпадение категории «Негативные публикации» с оценкой 64/100; совпадение не подтверждено и требует ручной проверки.",
+        "whyItMatters": "Негативные публикации в базе увеличивают репутационный риск и требуют проверки первоисточников.",
+        "whatToCheck": "Запросить полную запись LexisNexis и проверить первоисточники публикаций.",
+        "sourceNote": "Источник: LexisNexis (существующий контур).",
+        "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно.",
+        "emptyStateReason": "VISUAL_ASSET_UNAVAILABLE"
+      },
+      "baseSlotId": "p35_lexis_visual",
+      "template": "orion_golden_search_table",
+      "table": {
+        "headers": [
+          "Параметр",
+          "Значение"
+        ],
+        "rows": [
+          [
+            "Совпадение по имени",
+            "Johan Holmstrom"
+          ],
+          [
+            "Категория",
+            "Негативные публикации"
+          ],
+          [
+            "Оценка совпадения",
+            "64/100"
+          ],
+          [
+            "Статус",
+            "Подтверждено"
+          ],
+          [
+            "Почему важно",
+            "Негативные публикации в базе увеличивают репутационный риск и требуют проверки первоисточников."
+          ],
+          [
+            "Что сделать",
+            "Запросить полную запись LexisNexis и проверить первоисточники публикаций."
+          ],
+          [
+            "Визуальный экспорт",
+            "Недоступен в текущем наборе; данные приведены в текстовом виде без потерь."
+          ]
+        ]
+      }
+    },
+    {
+      "slideKey": "appendix_main_base",
+      "text": {
+        "title": "Приложение: материалы, требующие идентификации",
+        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+      },
+      "baseSlotId": "slot_appendix_main",
+      "template": "orion_golden_executive_card",
+      "bullets": [
+        "«Деловой профиль» Найдены материалы делового и биографического профиля: «Anders Holmström stops 32 shots in playoff hockey win» — источник nhl.example Где видно: nhl.example. Деловой фон важен для позиционирования, но сам по себе не перекрывает чувствительные темы риска. Всего по теме: 1 материал. [finding-business_profile-ambiguous-495438e4]",
+        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Holmstrom, Johan» — источник example.com Где видно: example.com. Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC. Всего по теме: 1 материал. [finding-pep_rca_watchlist-ambiguous-ec1e1cce]"
+      ]
+    }
+  ]
+}

@@ -26,6 +26,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { extractClientText, type ClientTextSnapshot } from "./lib/client-text-snapshot";
+
 import {
   runCanonicalReportPrepare,
   type CanonicalPrepareInput,
@@ -53,6 +55,12 @@ import {
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const FIXTURE_DIR = join(ROOT, "fixtures", "golden-case");
 const BASELINE_PATH = join(FIXTURE_DIR, "baseline.json");
+/**
+ * Эталон клиентского текста. Числовой эталон рядом сверяет счётчики и метрики
+ * качества и переживает полную переписку формулировок незамеченной; этот —
+ * следит за словами. Нужен шагам переработки текста отчёта (ADR 0002–0004).
+ */
+const CLIENT_TEXT_BASELINE_PATH = join(FIXTURE_DIR, "client-text.baseline.json");
 const PROFILE_PATH = join(FIXTURE_DIR, "subject-profile.json");
 const COMPLIANCE_HITS_PATH = join(FIXTURE_DIR, "compliance-hits.json");
 const ANALYST_OVERRIDES_PATH = join(FIXTURE_DIR, "analyst-overrides.json");
@@ -194,6 +202,7 @@ function stableQuality(summary: ReportQualitySummary): GoldenBaseline["quality"]
 export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
   summary: ReportQualitySummary;
   baseline: GoldenBaseline;
+  clientText: ClientTextSnapshot;
   prepareOk: boolean;
 }> {
   const rows = buildGoldenCaseObservations();
@@ -308,7 +317,12 @@ export async function runGoldenCasePrepare(artifactsDir: string): Promise<{
     quality: stableQuality(summary),
   };
 
-  return { summary, baseline, prepareOk: res.ok === true };
+  const assembledDeck = JSON.parse(
+    readFileSync(join(artifactsDir, "deck", "assembled-deck.json"), "utf8")
+  ) as { slides?: unknown };
+  const clientText = extractClientText(assembledDeck);
+
+  return { summary, baseline, clientText, prepareOk: res.ok === true };
 }
 
 function printSummary(summary: ReportQualitySummary): void {
@@ -392,7 +406,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
 
   const dirA = mkdtempSync(join(tmpdir(), "golden-case-a-"));
   try {
-    const { summary, baseline, prepareOk } = await runGoldenCasePrepare(dirA);
+    const { summary, baseline, clientText, prepareOk } = await runGoldenCasePrepare(dirA);
     assert.equal(prepareOk, true, "canonical prepare must succeed");
     printSummary(summary);
 
@@ -400,13 +414,18 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       const dirB = mkdtempSync(join(tmpdir(), "golden-case-b-"));
       try {
         const second = await runGoldenCasePrepare(dirB);
-        const d = diffJson(baseline, second.baseline);
+        // Текст сверяется наравне со счётчиками: эталон формулировок имеет
+        // смысл, только если два прогона дают одни и те же слова.
+        const d = [
+          ...diffJson(baseline, second.baseline),
+          ...diffJson(clientText, second.clientText).map((l) => `clientText.${l}`),
+        ];
         if (d.length) {
           console.error("DETERMINISM FAIL — two runs differ:");
           for (const line of d.slice(0, 40)) console.error(`  ${line}`);
           return 1;
         }
-        console.log("determinism: OK (two runs identical)");
+        console.log("determinism: OK (two runs identical, включая клиентский текст)");
       } finally {
         rmSync(dirB, { recursive: true, force: true });
       }
@@ -414,7 +433,9 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
 
     if (updateBaseline) {
       writeJson(BASELINE_PATH, baseline);
+      writeJson(CLIENT_TEXT_BASELINE_PATH, clientText);
       console.log(`baseline updated: ${BASELINE_PATH}`);
+      console.log(`client text baseline updated: ${CLIENT_TEXT_BASELINE_PATH}`);
       return 0;
     }
 
@@ -433,6 +454,30 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       return 1;
     }
     console.log("baseline: OK");
+
+    // Эталон клиентского текста. Отдельный от числового: переработка
+    // формулировок (ADR 0002–0004) обязана быть видна как осознанная правка
+    // эталона, а не проехать незамеченной под зелёными счётчиками.
+    if (!existsSync(CLIENT_TEXT_BASELINE_PATH)) {
+      console.error(`client text baseline missing: ${CLIENT_TEXT_BASELINE_PATH}`);
+      console.error("Run with --update-baseline to create it.");
+      return 1;
+    }
+    const expectedText = JSON.parse(
+      readFileSync(CLIENT_TEXT_BASELINE_PATH, "utf8")
+    ) as ClientTextSnapshot;
+    const textDiffs = diffJson(expectedText, clientText);
+    if (textDiffs.length) {
+      console.error("CLIENT TEXT BASELINE MISMATCH:");
+      for (const line of textDiffs.slice(0, 60)) console.error(`  ${line}`);
+      console.error(`(всего расхождений: ${textDiffs.length})`);
+      console.error("Если формулировки менялись намеренно — перезапишите эталон:");
+      console.error("  NETWORK_CALLS=0 npx tsx scripts/run-golden-case-report.ts --update-baseline");
+      return 1;
+    }
+    console.log(
+      `client text baseline: OK (${clientText.slideCount} слайдов, ${clientText.totalChars} знаков)`
+    );
     return 0;
   } finally {
     rmSync(dirA, { recursive: true, force: true });

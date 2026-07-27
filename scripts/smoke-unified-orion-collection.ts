@@ -1,15 +1,26 @@
 /**
  * Offline acceptance for unified ORION + Arsenkin collection.
  * NETWORK_CALLS=0 — no live Arsenkin / Yandex / Serper.
+ *
+ * Хранилище прогонов переводится в файловый режим до первого импорта стора:
+ * `getUnifiedCollectionJobStoreMode()` читает переменную в момент вызова, но
+ * полагаться на порядок вызовов незачем — режим объявляется здесь.
+ *
+ * Смок назывался офлайновым и при этом писал строку в `dp_unified_collection_jobs`
+ * через Prisma. На машине разработчика он проходил за счёт оставшейся базы, а в
+ * CI, где Postgres не поднимается вовсе, шаг «офлайн-смоки» пройти не мог.
+ * Файловый режим для того и оставлен (см. комментарий в самом сторе).
  */
 
+process.env.UNIFIED_COLLECTION_JOB_STORE = "file";
+
 import assert from "node:assert/strict";
-import { ensureSmokeCase } from "./lib/ensure-smoke-case";
 import { describe, it, before } from "node:test";
 import { join } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 import {
   deleteUnifiedCollectionJobForTests,
+  getUnifiedCollectionJobStoreMode,
   loadUnifiedCollectionJob,
   readUnifiedArtifact,
 } from "../src/modules/digital-profile/services/unified-collection-job-store";
@@ -136,14 +147,21 @@ async function drainJob(caseId: string, deps: Parameters<typeof runUnifiedCollec
 describe("unified orion arsenkin collection", () => {
   before(async () => {
     process.env.NETWORK_CALLS = "0";
-    // Джоба ссылается на кейс внешним ключом: без него смок падает на чужой
-    // машине, а на машине разработчика проходит за счёт оставшихся строк.
-    for (const id of SMOKE_CASE_IDS) await ensureSmokeCase(id);
+    // Кейс-заглушка в базе больше не нужна: в файловом режиме прогон лежит
+    // в `storage/`, а внешнего ключа на `cases`, ради которого она заводилась,
+    // здесь нет.
     await deleteUnifiedCollectionJobForTests(CASE_ID);
   });
 
   it("NETWORK_CALLS=0", () => {
     assert.equal(process.env.NETWORK_CALLS, "0");
+  });
+
+  it("офлайновый смок не ходит в базу: хранилище прогонов файловое", () => {
+    // Проверка защищает сам контракт офлайновости. Стоит режиму вернуться в
+    // `db`, смок снова начнёт зависеть от Postgres — и это будет видно здесь,
+    // а не в CI без базы.
+    assert.equal(getUnifiedCollectionJobStoreMode(), "file");
   });
 
   it("five Arsenkin agents registered as REAL", () => {

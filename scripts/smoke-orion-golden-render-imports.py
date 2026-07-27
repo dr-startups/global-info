@@ -159,6 +159,9 @@ def main() -> int:
     try:
         import pptx  # noqa: F401
     except ImportError:
+        # `# SKIP` — общий формат для сводки раннера (scripts/run-smokes.ts):
+        # пропуск обязан быть виден в конце прогона, а не только здесь.
+        print("# SKIP отрисовка шаблонов — не установлен python-pptx")
         print(
             f"smoke-orion-golden-render-imports: ok audit={len(list(PKG.glob('*.py')))} render={mode}"
         )
@@ -170,6 +173,8 @@ def main() -> int:
     from orion_golden_render.visual import _render_visual_with_sidebar  # noqa: F401
 
     mode = _try_render()
+    if mode.startswith("skipped"):
+        print(f"# SKIP отрисовка шаблонов — {mode}")
     print(f"smoke-orion-golden-render-imports: ok audit={len(list(PKG.glob('*.py')))} render={mode}")
     return 0
 

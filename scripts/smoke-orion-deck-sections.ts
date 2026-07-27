@@ -90,7 +90,7 @@ const skippedForAssets: string[] = [];
 /** Объявляет проверку, требующую метаданных ассетов. */
 function itWithAssets(name: string, fn: () => void | Promise<void>): void {
   if (!assetsAvailable) {
-    skippedForAssets.push(name);
+    skippedForAssets.push(`${name} — нет метаданных ассетов`);
     it(`${name} [ПРОПУЩЕНА: нет метаданных ассетов]`, () => {
       /* Проверка не выполнена и заявлена как невыполненная. */
     });
@@ -99,18 +99,17 @@ function itWithAssets(name: string, fn: () => void | Promise<void>): void {
   it(name, fn);
 }
 
+/**
+ * Сводка пропусков печатается всегда, а не только когда нет метаданных ассетов.
+ *
+ * Прежнее условие `if (!assetsAvailable)` прятало пропуск сверки числа страниц:
+ * метаданные на месте, а отрендеренных артефактов нет — и проверка тихо не
+ * выполнялась. Формат `# SKIP` разбирает раннер (`scripts/run-smokes.ts`) и
+ * сводит пропуски всех смоков в один список.
+ */
 process.on("exit", () => {
-  if (!assetsAvailable) {
-    console.error(
-      [
-        "",
-        `[smoke:orion-deck-sections] ПРОПУЩЕНО ПРОВЕРОК: ${skippedForAssets.length}`,
-        ...skippedForAssets.map((n) => `  · ${n}`),
-        "",
-        assetsMissingReason,
-      ].join("\n")
-    );
-  }
+  for (const item of skippedForAssets) console.log(`# SKIP ${item}`);
+  if (!assetsAvailable) console.log(`# SKIP причина: ${assetsMissingReason}`);
 });
 
 function makeCtx(): Omit<SectionBuildContext, "previousPacks" | "buildLog"> {
