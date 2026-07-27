@@ -3,6 +3,8 @@
  * Canary and Full are independent; never mix run selection or counters.
  */
 
+import { arsenkinTools } from "./flags";
+
 export type ArsenkinWorkflowType = "SUGGEST_RU_CANARY" | "FIRST36_FULL";
 
 export type ArsenkinWorkflowSlug = "suggest-canary" | "first36-full";
@@ -34,6 +36,26 @@ export const FIRST36_FULL_SURFACE_SLOTS: FullFirst36SurfaceSlot[] = [
 ];
 
 export const FIRST36_FULL_EXPECTED_SURFACES = FIRST36_FULL_SURFACE_SLOTS.length; // 12
+
+/**
+ * Слоты, которых действительно ждут при текущем составе `ARSENKIN_TOOLS`.
+ *
+ * Ожидаемое число поверхностей было прибито к полному списку — двенадцати. С
+ * отключённой второй стадией (ADR-0005) их может быть максимум восемь, поэтому
+ * гейт завершения не выполнялся никогда: прогон ждал четыре недостающие
+ * поверхности до самого потолка ожидания, и отчёт не начинал собираться.
+ * Симптом выглядел издевательски — агенты помечены «Отключено», но прогон их
+ * всё равно ждёт.
+ *
+ * Ждать надо ровно того, что включено. Состав инструментов — один ответ на
+ * вопрос «что работает», и гейт обязан спрашивать его же.
+ */
+export function first36SlotsForEnabledTools(
+  env: NodeJS.ProcessEnv = process.env
+): FullFirst36SurfaceSlot[] {
+  const enabled = arsenkinTools(env);
+  return FIRST36_FULL_SURFACE_SLOTS.filter((slot) => enabled.includes(slot.tool));
+}
 export const SUGGEST_CANARY_EXPECTED_SURFACES = 2;
 
 export function workflowTypeToSlug(t: ArsenkinWorkflowType): ArsenkinWorkflowSlug {
@@ -45,8 +67,13 @@ export function workflowSlugToType(s: ArsenkinWorkflowSlug | string): ArsenkinWo
   return "FIRST36_FULL";
 }
 
-export function expectedSurfaceCountForWorkflow(t: ArsenkinWorkflowType): number {
-  return t === "SUGGEST_RU_CANARY" ? SUGGEST_CANARY_EXPECTED_SURFACES : FIRST36_FULL_EXPECTED_SURFACES;
+export function expectedSurfaceCountForWorkflow(
+  t: ArsenkinWorkflowType,
+  env: NodeJS.ProcessEnv = process.env
+): number {
+  return t === "SUGGEST_RU_CANARY"
+    ? SUGGEST_CANARY_EXPECTED_SURFACES
+    : first36SlotsForEnabledTools(env).length;
 }
 
 export function isFirst36FullReportRunId(reportRunId: string): boolean {
@@ -126,18 +153,21 @@ export function evaluateFullAuditCompletionGate(input: CompletionGateInput): Com
   if (input.workflowType !== "FIRST36_FULL") {
     return { ok: false, code: "WORKFLOW_NOT_FULL", detail: input.workflowType };
   }
-  if (input.expectedSurfaceCount !== FIRST36_FULL_EXPECTED_SURFACES) {
+  // Ждём ровно те поверхности, инструменты которых включены (см.
+  // `first36SlotsForEnabledTools`), а не весь список из двенадцати.
+  const needed = first36SlotsForEnabledTools().length;
+  if (input.expectedSurfaceCount !== needed) {
     return {
       ok: false,
       code: "EXPECTED_SURFACE_MISMATCH",
-      detail: `expected=${input.expectedSurfaceCount} need=${FIRST36_FULL_EXPECTED_SURFACES}`,
+      detail: `expected=${input.expectedSurfaceCount} need=${needed}`,
     };
   }
-  if (input.terminalSurfaceCount < FIRST36_FULL_EXPECTED_SURFACES) {
+  if (input.terminalSurfaceCount < needed) {
     return {
       ok: false,
       code: "TERMINAL_SURFACE_INCOMPLETE",
-      detail: `${input.terminalSurfaceCount}/${FIRST36_FULL_EXPECTED_SURFACES}`,
+      detail: `${input.terminalSurfaceCount}/${needed}`,
     };
   }
   if (input.terminalSurfaceCount === 0) {

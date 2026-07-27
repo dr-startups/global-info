@@ -5,6 +5,7 @@
 
 import { createHash } from "node:crypto";
 import type { ArsenkinToolName } from "../../providers/arsenkin/flags";
+import { arsenkinTools } from "../../providers/arsenkin/flags";
 import {
   planArsenkinExactTasks,
   type PlannedExactRequest,
@@ -193,10 +194,20 @@ export function evaluateExecutionPlanBudget(plan: ArsenkinExecutionPlan): {
 export function buildArsenkinExecutionPlan(
   input: BuildArsenkinExecutionPlanInput
 ): ArsenkinExecutionPlan {
-  const tools =
+  /*
+   * План ставит задачи только по включённым инструментам.
+   *
+   * Состав стадии (`STAGE_TOOLS`) описывает, что стадия умеет, а `ARSENKIN_TOOLS`
+   * — что включено. Второе здесь не спрашивали, поэтому при отключённой второй
+   * стадии задачи по `ai-serp` / `check-h` / `indexation` всё равно ставились и
+   * оплачивались: агенты показывались «Отключено», а работа шла.
+   */
+  const enabled = arsenkinTools();
+  const requested =
     input.toolsOverride && input.toolsOverride.length > 0
       ? [...input.toolsOverride]
       : STAGE_TOOLS[input.stage];
+  const tools = requested.filter((t) => enabled.includes(t));
   const scoped = stageQueries(input);
   const defaults = STAGE_DEFAULT_MAX[input.stage];
   const maxNewTasks = input.maxNewTasks > 0 ? input.maxNewTasks : defaults.maxNewTasks;
