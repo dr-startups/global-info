@@ -10,6 +10,10 @@ import { slotsForFragment } from "../canonical-slots";
 import { pickComplianceClientMatchTitle } from "../../../services/compliance-inventory-adapter";
 import { pluralRu } from "../../analytics/finding-synthesizer";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
+// Название базы для читателя живёт в домене провайдеров; здесь только
+// переиспользуется, чтобы не держать вторую карту названий.
+export { complianceProviderLabel } from "../../../compliance-providers/provider-labels";
+import { complianceProviderLabel } from "../../../compliance-providers/provider-labels";
 import {
   VISUAL_ASSET_UNAVAILABLE,
   clampClientText,
@@ -23,32 +27,6 @@ import {
   withContinuations,
 } from "./shared";
 
-const COMPLIANCE_PROVIDER_LABELS: Record<string, string> = {
-  OPEN_SANCTIONS: "OpenSanctions",
-  DOW_JONES: "Dow Jones",
-  LEXISNEXIS: "LexisNexis",
-  WORLD_CHECK: "World-Check",
-};
-/**
- * Название базы для читателя.
- *
- * Незнакомый провайдер раньше печатался как есть, и в таблицу попадал внутренний
- * код: на живом прогоне в колонке «База данных» стояло `OPEN_SANCTIONS`
- * (шаг 15). Подстановка кода — не запасной вариант, а дефект текста, поэтому
- * неизвестное имя приводится к читаемому виду, а не выводится дословно.
- */
-export function complianceProviderLabel(raw: string | null | undefined): string {
-  const key = String(raw ?? "").trim();
-  if (!key) return "База данных";
-  const known = COMPLIANCE_PROVIDER_LABELS[key.toUpperCase()];
-  if (known) return known;
-  // ВНУТРЕННИЙ_КОД → «Внутренний код»: читаемо и не выдаёт себя за название.
-  if (/^[A-Z][A-Z0-9_]*$/u.test(key)) {
-    const words = key.toLowerCase().replace(/_+/gu, " ").trim();
-    return words.charAt(0).toUpperCase() + words.slice(1);
-  }
-  return key;
-}
 
 const COMPLIANCE_CATEGORY_LABELS: Record<string, string> = {
   PEP: "PEP (политически значимое лицо)",
