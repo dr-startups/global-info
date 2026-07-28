@@ -33,6 +33,7 @@ import {
   fitStructuredBullet,
   isAdverse,
   makeSlotSlide,
+  packBulletPages,
   matchGptKeyRisk,
   riskLabel,
   sourceLine,
@@ -656,9 +657,26 @@ export function buildExecutiveSummaryFragment(
   if (contBullets.length > 0) {
     // PDF-46 I.3 — 3 theme blocks per continuation page (block-first; more pages OK).
     const THEME_PER_PAGE = 3;
-    const totalPages = Math.ceil(contBullets.length / THEME_PER_PAGE);
+    // Раскладка общая с остальными страницами буллетов, а не своя.
+    //
+    // Здесь стояла нарезка `slice` по три подряд: четыре блока давали
+    // `ceil(4/3) = 2` страницы вида [3, 1], и последняя уходила под один блок.
+    // На эталонной деке это была страница 5 — «Резюме — темы риска
+    // (продолжение 2/2)» со 175 знаками на целом листе, 24% заполнения.
+    //
+    // `packBulletPages` умеет ровно это: он же добирает хвост из предыдущей
+    // страницы (`balanceTailPage`), чтобы последний лист не остался с
+    // одиноким блоком. Правило было написано дважды — в пагинаторе резюме и
+    // в раскладке буллетов, — а этот третий участник о нём не знал.
+    const pages = packBulletPages(
+      contBullets,
+      THEME_PER_PAGE,
+      THEME_PER_PAGE,
+      DECK_TEMPLATE_REGISTRY["continuation"].layout.itemCharBudget
+    );
+    const totalPages = pages.length;
     for (let pageIdx = 0; pageIdx < totalPages; pageIdx += 1) {
-      const chunk = contBullets.slice(pageIdx * THEME_PER_PAGE, (pageIdx + 1) * THEME_PER_PAGE);
+      const chunk = pages[pageIdx]!;
       const baseTitle = sparse
         ? "Резюме — покрытие и ограничения"
         : "Резюме — темы риска";

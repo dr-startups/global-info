@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v48",
+  "contentVersion": "deck-sections-v49",
   "promptVersion": "executive-summary-v4",
-  "contentHash": "sha256:bf0436781dfafe0fa05bd0e6afc0bd8e180fcbd7a018b8b78fe1a84319e32a90",
+  "contentHash": "sha256:90edba50a7c630008d6efb249024fe07ce3bc367b58614a01384072f650c82f4",
   "inputHash": "sha256:5760d010a6f165f2ab91d39bd96d5b821a826157cf748cbeb8200310a8b418e1:47a302c6d5e8e2ff",
-  "generatedAt": "2026-07-28T14:38:49.014Z",
+  "generatedAt": "2026-07-28T16:30:47.229Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -280,8 +280,7 @@
       "content": {
         "bullets": [
           "«PEP / RCA / watchlist-сигналы»\n4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online.\nПримеры: PEP: Glinka Sergey Mikhaylovich · Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16 million to acquire a Moldovan facility with military potential, purportedly under the EU's auspices • Интернет-издание Власть · Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительство [finding-pep_rca_watchlist-subject_match-dfa7da39]",
-          "«Деловой профиль»\n43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru.\nПримеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... · Glinka Sergei Mikhailovich - TAdviser [finding-business_profile-subject_match-a59d6fee]",
-          "«Семья и деловые связи»\n6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online.\nПримеры: Сергей Глинка · глинка сергей михайлович жена · глинка сергей михайлович дети [finding-family_associates-subject_match-a4427a53]"
+          "«Деловой профиль»\n43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru.\nПримеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... · Glinka Sergei Mikhailovich - TAdviser [finding-business_profile-subject_match-a59d6fee]"
         ],
         "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 2."
       },
@@ -369,6 +368,7 @@
       "title": "Резюме — темы риска (продолжение 2/2)",
       "content": {
         "bullets": [
+          "«Семья и деловые связи»\n6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online.\nПримеры: Сергей Глинка · глинка сергей михайлович жена · глинка сергей михайлович дети [finding-family_associates-subject_match-a4427a53]",
           "«Офшоры / корпоративное владение»\n1 свидетельств (0 негативных) в источниках tadviser.ru.\nПримеры: Глинка Сергей Михайлович [finding-offshore_corporate-subject_match-1b4c64c7]"
         ]
       },
