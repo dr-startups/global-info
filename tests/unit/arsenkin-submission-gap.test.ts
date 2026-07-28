@@ -23,6 +23,19 @@ import { ARSENKIN_REAL_AGENT_NAMES } from "../../src/modules/digital-profile/age
 const JOB = "job-1";
 const runId = (agent: string) => `unified-${JOB}-${agent}`;
 const ALL_RUN_IDS = ARSENKIN_REAL_AGENT_NAMES.map(runId);
+/**
+ * Состав задаётся явно там, где проверяется именно разрыв отправок.
+ *
+ * Иначе проверка зависела бы от значения по умолчанию, а оно с ADR-0005
+ * отключает вторую стадию — и «все пять» перестало быть верным описанием
+ * ожидаемого. Разрыв и состав — два разных вопроса; смешивать их в одной
+ * проверке значит не понять при отказе, который из них сломался.
+ */
+const ALL_TOOLS: NodeJS.ProcessEnv = {
+  ...process.env,
+  ARSENKIN_TOOLS: "check-top,suggest,paa,ai-serp,check-h,indexation",
+};
+const STAGE1_ONLY: NodeJS.ProcessEnv = { ...process.env, ARSENKIN_TOOLS: "check-top,suggest,paa" };
 
 function task(over: Partial<SubmissionGapTask>): SubmissionGapTask {
   return { reportRunId: null, toolName: null, externalTaskId: "ext-1", ...over };
@@ -37,6 +50,7 @@ describe("разрыв между регистрацией и отправкой
         task({ reportRunId: runId("ARSENKIN_SEARCH_TOP_REAL"), toolName: "check-top" }),
         task({ reportRunId: runId("ARSENKIN_SEARCH_TOP_REAL"), toolName: "check-top" }),
       ],
+      env: ALL_TOOLS,
     });
 
     expect(gap.submitted).toEqual(["ARSENKIN_SEARCH_TOP_REAL"]);
@@ -53,6 +67,7 @@ describe("разрыв между регистрацией и отправкой
     const gap = computeArsenkinSubmissionGap({
       enrichmentRunIds: ALL_RUN_IDS,
       tasks: ARSENKIN_REAL_AGENT_NAMES.map((a) => task({ reportRunId: runId(a) })),
+      env: ALL_TOOLS,
     });
     expect(gap.needsSubmit).toEqual([]);
     expect(gap.submitted).toHaveLength(ARSENKIN_REAL_AGENT_NAMES.length);
@@ -64,13 +79,14 @@ describe("разрыв между регистрацией и отправкой
     const gap = computeArsenkinSubmissionGap({
       enrichmentRunIds: ALL_RUN_IDS,
       tasks: [task({ reportRunId: runId("ARSENKIN_PAA_REAL"), externalTaskId: null })],
+      env: ALL_TOOLS,
     });
     expect(gap.submitted).toContain("ARSENKIN_PAA_REAL");
     expect(gap.needsSubmit).not.toContain("ARSENKIN_PAA_REAL");
   });
 
-  it("пустой список прогонов даёт отправку всех пяти", () => {
-    const gap = computeArsenkinSubmissionGap({ enrichmentRunIds: [], tasks: [] });
+  it("пустой список прогонов даёт отправку всех агентов включённого состава", () => {
+    const gap = computeArsenkinSubmissionGap({ enrichmentRunIds: [], tasks: [], env: ALL_TOOLS });
     expect(gap.needsSubmit).toEqual([...ARSENKIN_REAL_AGENT_NAMES]);
     expect(gap.unregistered).toEqual([...ARSENKIN_REAL_AGENT_NAMES]);
     expect(gap.registeredWithoutTask).toEqual([]);
@@ -80,6 +96,7 @@ describe("разрыв между регистрацией и отправкой
     const gap = computeArsenkinSubmissionGap({
       enrichmentRunIds: ALL_RUN_IDS,
       tasks: [task({ reportRunId: "manual-run-42", toolName: "ai-serp" })],
+      env: ALL_TOOLS,
     });
     expect(gap.submitted).toContain("ARSENKIN_AI_SEARCH_REAL");
   });
@@ -90,9 +107,36 @@ describe("разрыв между регистрацией и отправкой
       submitted: [],
       unregistered: ["ARSENKIN_URL_AUDIT_REAL"],
       registeredWithoutTask: ["ARSENKIN_PAA_REAL"],
+      disabled: [],
     });
     expect(lines).toContain("arsenkin-registered-without-task:ARSENKIN_PAA_REAL");
     expect(lines).toContain("arsenkin-unregistered:ARSENKIN_URL_AUDIT_REAL");
+  });
+
+  it("отключённый составом агент не отправляется", () => {
+    const gap = computeArsenkinSubmissionGap({
+      enrichmentRunIds: [],
+      tasks: [],
+      env: STAGE1_ONLY,
+    });
+    expect(gap.disabled).toEqual(["ARSENKIN_AI_SEARCH_REAL", "ARSENKIN_URL_AUDIT_REAL"]);
+    expect(gap.needsSubmit).not.toContain("ARSENKIN_AI_SEARCH_REAL");
+    expect(gap.needsSubmit).not.toContain("ARSENKIN_URL_AUDIT_REAL");
+    expect(gap.needsSubmit).toContain("ARSENKIN_SEARCH_TOP_REAL");
+    expect(describeSubmissionGap(gap)).toContain(
+      "arsenkin-disabled-by-tools:ARSENKIN_AI_SEARCH_REAL,ARSENKIN_URL_AUDIT_REAL"
+    );
+  });
+
+  it("уже отправленные задачи забираются, даже если инструмент выключили посреди прогона", () => {
+    const gap = computeArsenkinSubmissionGap({
+      enrichmentRunIds: ALL_RUN_IDS,
+      tasks: [task({ reportRunId: runId("ARSENKIN_AI_SEARCH_REAL"), toolName: "ai-serp" })],
+      env: STAGE1_ONLY,
+    });
+    // Оплаченный сбор не перестаёт быть оплаченным от смены состава.
+    expect(gap.submitted).toContain("ARSENKIN_AI_SEARCH_REAL");
+    expect(gap.disabled).not.toContain("ARSENKIN_AI_SEARCH_REAL");
   });
 });
 
