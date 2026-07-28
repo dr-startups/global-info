@@ -20,6 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PKG = ROOT / "renderer" / "orion_golden_render"
 sys.path.insert(0, str(ROOT / "renderer"))
 
+from smoke_counters import print_tap_counters  # noqa: E402
+
 
 def _audit_imports() -> list[str]:
     builtin = set(dir(builtins))
@@ -152,8 +154,14 @@ def _try_render() -> str:
 
 
 def main() -> int:
+    # Счётчик выполненных проверок: раннер держит правило «прогон без единой
+    # проверки — провал» на TAP-счётчиках, а без них смок этому правилу
+    # неподотчётен и «ок» ничего не доказывает.
+    done = 0
+
     problems = _audit_imports()
     assert not problems, "missing imports after §9.5 split:\n  " + "\n  ".join(problems)
+    done += 1
 
     mode = "skipped(no-renderer-deps)"
     try:
@@ -165,6 +173,7 @@ def main() -> int:
         print(
             f"smoke-orion-golden-render-imports: ok audit={len(list(PKG.glob('*.py')))} render={mode}"
         )
+        print_tap_counters(passed=done, failed=0, skipped=1)
         return 0
 
     # With python-pptx present, also import modules and optionally render.
@@ -172,10 +181,17 @@ def main() -> int:
     from orion_golden_render.slides import _render_slide  # noqa: F401
     from orion_golden_render.visual import _render_visual_with_sidebar  # noqa: F401
 
+    done += 1  # модули шаблонов импортируются
+
     mode = _try_render()
+    skipped = 0
     if mode.startswith("skipped"):
         print(f"# SKIP отрисовка шаблонов — {mode}")
+        skipped = 1
+    else:
+        done += 1  # дека действительно отрисована
     print(f"smoke-orion-golden-render-imports: ok audit={len(list(PKG.glob('*.py')))} render={mode}")
+    print_tap_counters(passed=done, failed=0, skipped=skipped)
     return 0
 
 

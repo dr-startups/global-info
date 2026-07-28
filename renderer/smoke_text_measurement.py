@@ -19,6 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from smoke_counters import print_tap_counters  # noqa: E402
 from orion_golden_render.common import (
     _trim_dangling_tail,  # noqa: E402
     _close_dangling_lead_in,
@@ -35,10 +36,16 @@ SIZE = 10.5
 
 failures: list[str] = []
 
+#: Счётчик выполненных проверок — раннер обязан видеть, сколько их было.
+passed_checks = 0
+
 
 def check(name: str, ok: bool, detail: str = "") -> None:
+    global passed_checks
     print(f"[{'PASS' if ok else 'FAIL'}] {name}" + (f" — {detail}" if detail else ""))
-    if not ok:
+    if ok:
+        passed_checks += 1
+    else:
         failures.append(name)
 
 
@@ -239,6 +246,7 @@ def main() -> int:
 
 
     print(f"\n{'FAILED (' + str(len(failures)) + ')' if failures else 'PASSED (0 failures)'}")
+    print_tap_counters(passed=passed_checks, failed=len(failures))
     return 1 if failures else 0
 
 

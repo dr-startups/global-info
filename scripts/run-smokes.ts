@@ -99,6 +99,12 @@ const SMOKES: Smoke[] = [
     tier: "full",
     about: "замер текста рендерером (нужны Python-пакеты)",
   },
+  {
+    name: "deck-raster-layout",
+    argv: ["PYTHON", "renderer/smoke_deck_raster_layout.py"],
+    tier: "full",
+    about: "вёрстка по растру: второе мнение о странице (нужны отрендеренные страницы)",
+  },
 ];
 
 type Verdict = "PASS" | "FAIL" | "SKIP";
