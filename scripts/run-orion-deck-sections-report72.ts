@@ -731,7 +731,35 @@ async function main(): Promise<void> {
     console.log(`PDF:  ${existsSync(pdfPath) ? pdfPath : "(fitz fallback not produced)"}`);
     console.log(`geometry: overlaps=${geometry.overlaps.length} overflow=${geometry.overflow.length} clipping=${geometry.clipping.length} empty=${geometry.emptyPages.length}`);
     console.log(`acceptance gates: ${JSON.stringify(acceptance.gates)}`);
+
+    // Переполнение и потеря содержимого — отказ сборки, а не примечание
+    // (ADR-0007, п.5). Ворота считались, писались в файл и печатались, но
+    // прогон завершался нулём при любом их значении: `geometryClean: false`
+    // держался так с начала переработки и никого не останавливал.
+    const failed = failedAcceptanceGates(acceptance.gates);
+    const total = Object.keys(acceptance.gates).length;
+    if (failed.length > 0) {
+      console.error(
+        `\nПРИЁМКА НЕ ПРОЙДЕНА: ${failed.length} из ${total} ворот — ${failed.join(", ")}`
+      );
+      console.error(`Подробности: ${acceptancePath}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`приёмка: пройдено ${total} из ${total} ворот`);
   }
+}
+
+/**
+ * Ворота, которые не пройдены.
+ *
+ * Пустой набор ворот — тоже отказ: «0 провалено из 0» неотличимо от «не
+ * проверяли», а это ровно тот исход, ради которого писался раннер смоков.
+ */
+export function failedAcceptanceGates(gates: Record<string, boolean>): string[] {
+  const names = Object.keys(gates);
+  if (names.length === 0) return ["<ворота не вычислены>"];
+  return names.filter((k) => gates[k] !== true);
 }
 
 const isDirectRun = process.argv[1]?.replace(/\\/gu, "/").endsWith("run-orion-deck-sections-report72.ts");

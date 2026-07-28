@@ -178,6 +178,11 @@
       "title": "ОАЭ — резюме аудита",
       "content": {
         "narrative": "В выдаче по региону «ОАЭ / международный» проверяющий увидит 129 материалов. Подтверждённых тем: 6, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; Внимание по линии безопасности / оборонный контур; PEP / RCA / watchlist-сигналы.",
+        "bullets": [
+          "«Криминальные / судебные материалы»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие» — источник sledst.org\n«CyberCriminal.com» — источник cybercriminal.com.\nГде видно: sledst.org, m.sledst.org. [finding-criminal_legal-subject_match-16447175]"
+        ],
+        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
+        "sourceNote": "Источники — aboutmanchester.co.uk, bmmagazine.co.uk, businessfirstonline.co.uk, cybercriminal.com и ещё 2.",
         "kpis": [
           {
             "label": "Материалов региона",
@@ -199,12 +204,7 @@
             "value": "0",
             "tone": "neutral"
           }
-        ],
-        "bullets": [
-          "«Криминальные / судебные материалы»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие» — источник sledst.org\n«CyberCriminal.com» — источник cybercriminal.com.\nГде видно: sledst.org, m.sledst.org. [finding-criminal_legal-subject_match-16447175]"
-        ],
-        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "sourceNote": "Источники — aboutmanchester.co.uk, bmmagazine.co.uk, businessfirstonline.co.uk, cybercriminal.com и ещё 2."
+        ]
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
