@@ -161,6 +161,12 @@
       "subtitle": "Итоговая оценка: Повышенный риск",
       "content": {
         "narrative": "По итогам проверки открытых источников в отношении Глинка Сергей Михайлович выявлены значимые репутационные риски, требующие внимания. В сводку включены 6 ключевых наблюдений: подтверждённых фактов — 3, предварительных сигналов — 3, гипотез — 0. Оценка охватывает регионы: UAE, RU. Часть материалов в выдаче относится к другому лицу (Михаил Глинка (композитор)) и исключена из выводов о проверяемом субъекте. По отдельным направлениям данные собраны не полностью; ограничения перечислены ниже.",
+        "bullets": [
+          "«Криминальные / судебные материалы»\n7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org.\nПримеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие [finding-criminal_legal-subject_match-16447175]",
+          "«Внимание по линии безопасности / оборонный контур»\n6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news.\nПримеры: Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Сл [finding-security_scrutiny-subject_match-0ae970c7]"
+        ],
+        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
+        "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 2.",
         "kpis": [
           {
             "label": "Материалов",
@@ -187,13 +193,7 @@
             "value": "6",
             "tone": "accent"
           }
-        ],
-        "bullets": [
-          "«Криминальные / судебные материалы»\n7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org.\nПримеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие [finding-criminal_legal-subject_match-16447175]",
-          "«Внимание по линии безопасности / оборонный контур»\n6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news.\nПримеры: Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Сл [finding-security_scrutiny-subject_match-0ae970c7]"
-        ],
-        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 2."
+        ]
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",

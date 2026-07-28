@@ -189,7 +189,10 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         text_w = CONTENT_W - badge_w - 220_000 if pill else int(CONTENT_W * 0.92)
         left = MARGIN_X + 100_000
         pad_y = 100_000
-        headline_h = measure_text_height(headline, text_w, 13, line_spacing=1.15)
+        # Заголовок карточки риска рисуется жирным (`r.font.bold = True` ниже),
+        # поэтому и меряется жирным: от `headline_h` зависит и высота карточки,
+        # и решение «не рисовать карточку, которая не влезает над колонтитулом».
+        headline_h = measure_text_height(headline, text_w, 13, line_spacing=1.15, bold=True)
         # PDF-36 E.2 — a card that cannot fit whole above the footer is not
         # drawn at all (TS pagination carries the rest to the continuation
         # page); a half-card bleeding into the footer reads as a defect.

@@ -23,6 +23,7 @@ from orion_golden_render.common import (
     _trim_dangling_tail,  # noqa: E402
     _close_dangling_lead_in,
     _fit_lines_to_height,
+    _bullet_line_style,
     _font_path,
     assert_render_font_family,
     measure_text_height,
@@ -175,6 +176,67 @@ def main() -> int:
             os.environ["ORION_RENDER_FONT"] = missing
 
     check("старт проходит на исправном составе шрифтов", bool(assert_render_font_family()))
+
+    # --- ADR-0006 шаг 2: начертание доезжает до мест замера ----------------
+    #
+    # `_bullet_block_height` вычислял признак жирности и выбрасывал его
+    # (`_, _, size_pt`), а рисование в 73 строках ниже тот же признак
+    # использовало. Заголовок темы рисовался жирным, мерился обычным.
+    theme_line = "Криминальные / судебные материалы:"
+    bold_flag, _color, size_pt = _bullet_line_style(theme_line, is_first=True)
+    check(
+        "строка-заголовок темы объявлена жирной",
+        bold_flag is True,
+        f"стиль: bold={bold_flag}, size={size_pt}",
+    )
+    plain_flag, _c2, _s2 = _bullet_line_style("Обычная строка доказательства.", is_first=False)
+    check("обычная строка не объявлена жирной", plain_flag is False)
+
+    # Замер обязан различать эти два случая, иначе признак некуда применять.
+    # Ширина взята та, на которой лишние проценты дают лишний перенос: на
+    # широкой колонке короткая строка влезает и так и так, и проверка была бы
+    # тождеством, а не гейтом.
+    long_theme = "Криминальные и судебные материалы по проверяемому лицу за последние три года:"
+    h_theme_bold = measure_text_height(long_theme, 1_600_000, size_pt, bold=True)
+    h_theme_plain = measure_text_height(long_theme, 1_600_000, size_pt, bold=False)
+    check(
+        "заголовок темы жирным требует больше высоты, чем обычным",
+        h_theme_bold > h_theme_plain,
+        f"обычным {h_theme_plain}, жирным {h_theme_bold} "
+        f"(+{(h_theme_bold - h_theme_plain) / h_theme_plain * 100:.0f}%)",
+    )
+
+    # Проводка: признак начертания обязан доехать до замера, а не быть
+    # вычисленным и выброшенным. Именно так он и терялся — `_, _, size_pt` на
+    # замере против `bold, line_color, size_pt` на рисовании, в одном файле, в
+    # семидесяти строках друг от друга. Проверяется по исходнику, потому что
+    # `_bullet_block_height` — замыкание внутри `body()` и снаружи не вызывается.
+    common_src = (Path(__file__).resolve().parent / "orion_golden_render" / "common.py").read_text(
+        encoding="utf-8"
+    )
+    measure_sites = [
+        ln.strip()
+        for ln in common_src.splitlines()
+        if "_bullet_line_style(" in ln and "def " not in ln
+    ]
+    check(
+        "признак начертания не выбрасывается ни на одном месте использования",
+        measure_sites and all(not ln.startswith("_, _,") for ln in measure_sites),
+        f"мест: {len(measure_sites)}",
+    )
+    check(
+        "высота карточки считается по жирному заголовку",
+        "line_spacing=1.15, bold=True" in common_src,
+        "content_card: заголовок рисуется жирным",
+    )
+    exec_src = (Path(__file__).resolve().parent / "orion_golden_render" / "executive.py").read_text(
+        encoding="utf-8"
+    )
+    check(
+        "заголовок карточки риска меряется жирным",
+        "measure_text_height(headline, text_w, 13, line_spacing=1.15, bold=True)" in exec_src,
+    )
+
 
     print(f"\n{'FAILED (' + str(len(failures)) + ')' if failures else 'PASSED (0 failures)'}")
     return 1 if failures else 0

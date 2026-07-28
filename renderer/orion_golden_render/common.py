@@ -967,7 +967,13 @@ class _Ctx:
         inner_w = max(120_000, width - 2 * pad)
         title_h = 0
         if title_s:
-            title_h = measure_text_height(title_s, inner_w, title_size, line_spacing=1.15) + 30_000
+            # Заголовок карточки рисуется жирным (`r.font.bold = True` ниже),
+            # поэтому и меряется жирным. Иначе высота карточки занижается, и
+            # текст выходит за её нижний край.
+            title_h = (
+                measure_text_height(title_s, inner_w, title_size, line_spacing=1.15, bold=True)
+                + 30_000
+            )
         full_body_h = measure_text_height(body_s, inner_w, body_size, line_spacing=1.2) if body_s else 0
         needed = 2 * pad + title_h + full_body_h + 30_000
         # Short client phrases must stay complete; height estimator is conservative and
@@ -1142,9 +1148,20 @@ class _Ctx:
                 parts = _split_structured_bullet(b) or [b]
                 for li, line in enumerate(parts):
                     text = f"• {line}" if li == 0 else f"   {line}"
-                    _, _, size_pt = _bullet_line_style(line, is_first=(li == 0))
+                    # Начертание берётся то же, которым строка будет нарисована
+                    # (ниже, в самом выводе — тот же `_bullet_line_style`).
+                    # Здесь признак жирности выбрасывался: `_, _, size_pt`, — и
+                    # заголовок темы, который рисуется жирным, мерился обычным.
+                    # Жирное шире на 9,6–14,4%, поэтому блок буллетов считался
+                    # ниже, чем печатается, и уезжал за нижнюю границу листа.
+                    bold_line, _, size_pt = _bullet_line_style(line, is_first=(li == 0))
                     total += measure_text_height(
-                        text, CONTENT_W, size_pt, line_spacing=1.12, paragraph_spacing_pt=0
+                        text,
+                        CONTENT_W,
+                        size_pt,
+                        line_spacing=1.12,
+                        paragraph_spacing_pt=0,
+                        bold=bold_line,
                     )
                     space_before = 6 if li == 0 else 1
                     space_after = 6 if li == len(parts) - 1 else 1
