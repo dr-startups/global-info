@@ -124,11 +124,15 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
     recoveryAllowed: Boolean(recovery.recoveryAllowed),
     autoResume,
   });
+  const rebuild = await evaluateUnifiedReportRebuildEligibility({ caseId: id, job });
   const actionState = {
     preserved,
     recoveryAllowed: needsUser,
     recoveryBlockerReason: recovery.recoveryBlockerReason ?? null,
     suggestionsMissingResult: Boolean(suggestionsGap.suggestionsMissingResult),
+    // Пересборка на уже собранных данных — бесплатная альтернатива новому
+    // сбору, и о ней надо знать до того, как предлагать заплатить.
+    rebuildAllowed: Boolean(rebuild.rebuildAllowed),
   };
   const fullAuditBlocked =
     Boolean(job) &&
@@ -144,7 +148,6 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
     (job.stage === "REPORT_READY" || job.stage === "COMPLETED_PARTIAL")
       ? await getCanonicalDownloadAvailability({ caseId: id, jobId: job.unifiedJobId })
       : { pdf: false, pptx: false, contactSheet: false };
-  const rebuild = await evaluateUnifiedReportRebuildEligibility({ caseId: id, job });
   const gptCopyRetry = await evaluateUnifiedGptCopyRetryEligibility({ caseId: id, job });
   return jsonOk({
     job: job

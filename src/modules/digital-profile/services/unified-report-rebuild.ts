@@ -25,6 +25,7 @@ import type {
   UnifiedCollectionJob,
 } from "./unified-collection-types";
 import type { CompositeMergeResult } from "./composite-serp-merge";
+import { isPostCollectionFailure } from "./unified-post-collection-failure";
 import { resolveJobSubjectProfile } from "./job-subject-profile";
 import type { ClassifierSubjectProfile } from "../orion-golden/analytics/subject-resolution-classifier";
 import { stripGptCopyFromSectionPacksOnDisk } from "../orion-golden/deck-sections/run-deck-build";
@@ -103,7 +104,23 @@ export async function evaluateUnifiedReportRebuildEligibility(input: {
   const completed =
     (job.stage === "REPORT_READY" || job.stage === "COMPLETED_PARTIAL") &&
     job.status === "COMPLETED";
-  if (!completed) {
+  /*
+   * Сбор закончен, упала сборка отчёта — пересборка и есть нужное действие.
+   *
+   * Здесь стояло только `completed`, и ровно в том случае, где пересборка
+   * единственно уместна, она была запрещена: оператору оставалась кнопка
+   * «Начать новый аудит с повторным сбором данных», то есть выбросить
+   * оплаченный сбор и заплатить заново из-за ошибки в тексте резюме.
+   *
+   * Целостность входов проверяется ниже — манифест, привязка и составной набор
+   * должны существовать и сходиться по происхождению. Это и есть настоящее
+   * условие пересборки; стадия завершения к нему ничего не добавляла.
+   */
+  const rebuildableFailure =
+    (job.stage === "FAILED_RETRYABLE" || job.stage === "FAILED_TERMINAL") &&
+    job.status !== "RUNNING" &&
+    isPostCollectionFailure(job);
+  if (!completed && !rebuildableFailure) {
     return { rebuildAllowed: false, rebuildBlockerReason: "JOB_NOT_COMPLETED" };
   }
   if (!input.ignoreLease && leaseIsActive(job, now)) {

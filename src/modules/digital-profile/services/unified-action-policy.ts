@@ -41,6 +41,8 @@ export type UnifiedActionState = {
   recoveryAllowed: boolean;
   recoveryBlockerReason: string | null;
   suggestionsMissingResult: boolean;
+  /** Отчёт можно пересобрать на уже собранных данных — платить не за что. */
+  rebuildAllowed?: boolean;
 };
 
 /**
@@ -50,10 +52,17 @@ export type UnifiedActionState = {
  * и прогон при этом не работает. Завершённый прогон сюда попадает намеренно —
  * обновить готовый отчёт можно лишь новым сбором, и подтверждение оплаты для
  * этого уместно.
+ *
+ * Доступная пересборка снимает вопрос: она делает ту же работу на уже
+ * оплаченных данных. Предлагать рядом с ней платный сбор — значит предлагать
+ * заплатить за то, что уже есть. Именно так выглядел отказ на сборке отчёта:
+ * восстановление исчерпало попытки, и единственной кнопкой оставался новый
+ * платный сбор — из-за ошибки в тексте резюме.
  */
 export function paidRecollectionRequired(state: UnifiedActionState): boolean {
   if (!state.preserved) return false;
   if (state.recoveryAllowed) return false;
+  if (state.rebuildAllowed) return false;
   return !isJobWorking(state.recoveryBlockerReason);
 }
 
@@ -64,6 +73,9 @@ export function paidRecollectionRequired(state: UnifiedActionState): boolean {
 export function fullAuditBlockReason(state: UnifiedActionState): string {
   if (state.suggestionsMissingResult) return "USE_SUGGESTIONS_TARGETED_RETRY";
   if (state.recoveryAllowed) return "USE_RECOVERY";
+  // Бесплатное действие называется раньше платного: пересобрать отчёт на уже
+  // собранных данных дешевле и быстрее, чем собирать их заново.
+  if (state.rebuildAllowed) return "USE_REPORT_REBUILD";
   if (isJobWorking(state.recoveryBlockerReason)) return "JOB_ACTIVE";
   if (state.preserved) return "PRESERVED_STAGES_REQUIRE_PAID_RECOLLECTION";
   return "JOB_ACTIVE";
