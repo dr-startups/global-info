@@ -54,11 +54,76 @@ function splitSentences(text: string): string[] {
 }
 
 /**
- * Pack sentences into chunks ≤ maxChars. A single over-long sentence stays whole
- * (no mid-sentence cut) — caller places it alone on a page.
+ * Границы внутри предложения, по которым его можно разложить на два абзаца, не
+ * потеряв ни слова. Порядок — от самой «крупной» паузы к самой мелкой.
+ */
+const CLAUSE_BOUNDARIES = ["; ", " — ", ": ", ", "];
+
+/**
+ * Разложить одно слишком длинное предложение по границам частей.
+ *
+ * Ничего не отбрасывается: части идут дальше отдельными блоками, а
+ * страничная разбивка уже умеет ставить их подряд. Если границ нет вовсе
+ * (одно длинное предложение без запятых), режем по пробелу — это по-прежнему
+ * не потеря текста, а перенос.
+ */
+export function splitOverlongSentence(sentence: string, maxChars: number): string[] {
+  const text = sentence.trim();
+  if (text.length <= maxChars) return text ? [text] : [];
+
+  for (const boundary of CLAUSE_BOUNDARIES) {
+    if (!text.includes(boundary)) continue;
+    const parts = text.split(boundary);
+    const chunks: string[] = [];
+    let buf = "";
+    for (let i = 0; i < parts.length; i += 1) {
+      // Разделитель остаётся при левой части: без него «а» и «б» слиплись бы.
+      const piece = i < parts.length - 1 ? `${parts[i]}${boundary.trimEnd()}` : parts[i]!;
+      const trial = buf ? `${buf} ${piece}` : piece;
+      if (buf && trial.length > maxChars) {
+        chunks.push(buf);
+        buf = piece;
+      } else {
+        buf = trial;
+      }
+    }
+    if (buf) chunks.push(buf);
+    if (chunks.every((c) => c.length <= maxChars)) return chunks;
+  }
+
+  // Последняя мера — граница слова.
+  const words = text.split(/\s+/u);
+  const chunks: string[] = [];
+  let buf = "";
+  for (const w of words) {
+    const trial = buf ? `${buf} ${w}` : w;
+    if (buf && trial.length > maxChars) {
+      chunks.push(buf);
+      buf = w;
+    } else {
+      buf = trial;
+    }
+  }
+  if (buf) chunks.push(buf);
+  return chunks;
+}
+
+/**
+ * Pack sentences into chunks ≤ maxChars.
+ *
+ * Одно предложение длиннее бюджета раскладывается по границам частей, а не
+ * остаётся целым. Прежде оно оставалось, и это роняло весь отчёт: на боевом
+ * прогоне 28.07 тема резюме вышла в 916 знаков при бюджете 900, проверка секций
+ * дала `bullet over budget on p03_executive: 916>900`, обязательная секция
+ * EXECUTIVE_SUMMARY получила FAILED — и сборка деки остановилась целиком.
+ * Отчёта не было вовсе из-за шестнадцати лишних знаков.
+ *
+ * Обещание в имени функции сохранено: ни одно слово не отбрасывается, длинное
+ * предложение переносится на соседний блок — страничная разбивка ставит их
+ * подряд.
  */
 export function packSentencesNoTruncate(text: string, maxChars: number): string[] {
-  const sentences = splitSentences(text);
+  const sentences = splitSentences(text).flatMap((s) => splitOverlongSentence(s, maxChars));
   if (sentences.length === 0) return [];
   const chunks: string[] = [];
   let buf = "";
@@ -87,7 +152,9 @@ function themeToBlocks(
         blockId: theme.themeId,
         themeId: theme.themeId,
         heading: theme.heading,
-        text: theme.body.trim(),
+        // Результат укладки, а не исходный текст: здесь стоял `theme.body`, и
+        // укладка выбрасывалась вместе со своим бюджетом.
+        text: (chunks[0] ?? theme.body).trim(),
         evidenceRefs: [...theme.evidenceRefs],
         articleTitles: [...theme.articleTitles],
         articleDomains: [...theme.articleDomains],
