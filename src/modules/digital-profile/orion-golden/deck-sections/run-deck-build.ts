@@ -481,16 +481,68 @@ function buildVisualAnalysis(s: RendererSlide): Record<string, unknown> {
   )
     .filter(Boolean)
     .join(" ");
+  /*
+   * Каждый блок панели говорит своё.
+   *
+   * Три блока берутся из полей, которые выше по течению перекрываются:
+   * `narrative` начинается с того же, что лежит в `whatWasFound`, а его хвост —
+   * это `whyItMatters`, из которого собран третий блок. На боевом прогоне
+   * 28.07 страница «ОАЭ — изображения в поиске» печатала одно предложение
+   * трижды подряд, и таких страниц в отчёте полтора десятка. Для клиента,
+   * который платит за отчёт, это самый заметный признак халтуры.
+   *
+   * Правило простое: предложение, уже сказанное выше, ниже не повторяется.
+   * Порядок обхода — порядок чтения, поэтому наверху остаётся вывод, а ниже —
+   * только то, что к нему добавляет.
+   */
+  const said = new Set<string>();
+  const headlineConclusion = withoutRepeatedSentences(
+    sidebarSafe(s.whatWasFound, 300) ?? sidebarSafe(s.narrative, 300),
+    said
+  );
+  const whatIsVisible = withoutRepeatedSentences(
+    sidebarSafe(s.narrative, 420) ?? sidebarSafe(s.methodologyNote, 420),
+    said
+  );
+  const clientMeaning = withoutRepeatedSentences(meaning || undefined, said);
   return {
     sidebarMode: explanations.length ? "adverse_explanation" : "context",
-    headlineConclusion: sidebarSafe(s.whatWasFound, 300) ?? sidebarSafe(s.narrative, 300),
-    whatIsVisible: sidebarSafe(s.narrative, 420) ?? sidebarSafe(s.methodologyNote, 420),
-    clientMeaning: meaning || undefined,
+    headlineConclusion,
+    whatIsVisible,
+    clientMeaning,
     highlightExplanations: explanations.slice(0, 2),
     moreSignalsCount: Math.max(0, explanations.length - 2),
     recommendedActions: s.whatToCheck ? [sidebarSafe(s.whatToCheck, 260)] : [],
     provenanceLabel: sidebarSafe(s.sourceNote, 140),
   };
+}
+
+/**
+ * Убирает из текста предложения, уже встречавшиеся раньше, и запоминает
+ * оставшиеся.
+ *
+ * Сравнение — по нормализованному виду (`normalizeForCompare`): кавычки, тире и
+ * регистр у одного и того же предложения в разных блоках отличаются, а смысл
+ * нет. Пустой остаток возвращается как `undefined`, чтобы не осталось
+ * заголовка блока без текста под ним.
+ */
+export function withoutRepeatedSentences(
+  text: string | undefined,
+  said: Set<string>
+): string | undefined {
+  const src = (text ?? "").trim();
+  if (!src) return undefined;
+  const kept: string[] = [];
+  for (const sentence of src.split(/(?<=[.!?…])\s+/u)) {
+    const piece = sentence.trim();
+    if (!piece) continue;
+    const key = normalizeForCompare(piece);
+    if (!key) continue;
+    if (said.has(key)) continue;
+    said.add(key);
+    kept.push(piece);
+  }
+  return kept.length > 0 ? kept.join(" ") : undefined;
 }
 
 /**

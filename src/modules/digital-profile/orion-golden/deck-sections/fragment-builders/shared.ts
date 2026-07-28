@@ -1212,7 +1212,19 @@ export function sourceLine(scoped: ScopedFragmentInput, extras?: FragmentExtras)
     extras?.materialFreshness != null
       ? freshnessFootnote(extras.materialFreshness)
       : undefined;
-  return fresh ? `${sources}. ${fresh.charAt(0).toUpperCase()}${fresh.slice(1)}` : sources;
+  // Точка ставится только там, где её нет. Склейка «в лоб» давала в отчёте
+  // «…и ещё 2.. Данные собраны 28.07.2026» — две точки подряд и предложение без
+  // точки в конце, на трёх страницах боевого прогона 28.07.
+  if (!fresh) return sources;
+  const capitalized = `${fresh.charAt(0).toUpperCase()}${fresh.slice(1)}`;
+  return `${endingWithPeriod(sources)} ${endingWithPeriod(capitalized)}`;
+}
+
+/** Строка, законченная как предложение: без второй точки и без её отсутствия. */
+function endingWithPeriod(text: string): string {
+  const trimmed = text.trim();
+  if (!trimmed) return "";
+  return /[.!?…»)]$/u.test(trimmed) ? trimmed : `${trimmed}.`;
 }
 
 /** §7.2 — one client line about material turnover vs prior report. */
