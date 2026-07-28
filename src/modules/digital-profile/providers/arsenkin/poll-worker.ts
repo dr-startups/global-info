@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import { ArsenkinRequestError, type ArsenkinClient } from "./client";
 import { acquireArsenkinAccountSlot } from "./account-rate-limit";
+import { withArsenkinSubmitSlot } from "./task-slots";
 import { computeLimitsSpent } from "./cost";
 import { hashProviderRequest, type ProviderTaskStore } from "./provider-task-store";
 import { buildSubmitFailureDiagnostics } from "./submit-failure-diagnostics";
@@ -281,6 +282,26 @@ export async function ensureArsenkinTask(
     return row;
   }
 
+  // Постановка задачи — по одной на процесс. Провайдер режет именно
+  // одновременные `/set`: четыре разом дали `429` на все четыре и падение
+  // стадии с `submit_retry_exhausted`. Выигрыша в параллельной постановке нет —
+  // `/set` занимает доли секунды, минуты уходят на ожидание, а оно параллельно.
+  return withArsenkinSubmitSlot(() => submitQueuedArsenkinTask(client, store, input, row, now));
+}
+
+async function submitQueuedArsenkinTask(
+  client: ArsenkinClient,
+  store: ProviderTaskStore,
+  input: EnsureArsenkinTaskInput,
+  queued: ProviderTaskRecord,
+  now: Date
+): Promise<ProviderTaskRecord> {
+  const requestJson: ArsenkinSetTaskRequest = {
+    tools_name: input.toolName,
+    data: input.data,
+  };
+  const requestHash = hashProviderRequest(requestJson);
+  let row = queued;
   const workerId = input.workerId ?? `arsenkin-submit-${process.pid}-${randomUUID().slice(0, 8)}`;
   const claimed = await store.claimForSubmission(
     row.id,

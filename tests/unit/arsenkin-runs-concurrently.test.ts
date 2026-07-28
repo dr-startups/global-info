@@ -10,7 +10,9 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import {
   withArsenkinTaskSlot,
+  withArsenkinSubmitSlot,
   activeArsenkinTaskSlots,
+  activeArsenkinSubmitSlots,
   resetArsenkinTaskSlotsForTest,
 } from "../../src/modules/digital-profile/providers/arsenkin/task-slots";
 import { enqueueCaseAgentWork } from "../../src/modules/digital-profile/services/arsenkin-case-agent-execution/shared";
@@ -102,6 +104,54 @@ describe("слоты задач Arsenkin", () => {
 
     // Следующий вызов не должен ждать вечно освободившийся слот.
     await expect(withArsenkinTaskSlot(async () => "ok")).resolves.toBe("ok");
+  });
+});
+
+describe("постановка задач Arsenkin", () => {
+  beforeEach(() => {
+    resetArsenkinTaskSlotsForTest();
+  });
+
+  it("идёт по одной, даже когда ожидание параллельно", async () => {
+    /*
+     * Замер на боевом прогоне 28.07: четыре одновременных `/set` дали `429 Too
+     * Many Requests` на все четыре, повторы исчерпали бюджет попыток, и стадия
+     * упала с `submit_retry_exhausted`. Выигрыша в параллельной постановке нет:
+     * `/set` занимает 0,3–0,4 с при задаче в 45–105 с.
+     */
+    process.env.ARSENKIN_MAX_CONCURRENT = "4";
+    const gates = Array.from({ length: 4 }, () => deferred());
+    let peak = 0;
+
+    const all = gates.map((g) =>
+      // Ожидание идёт под слотом задачи, постановка — под слотом отправки.
+      withArsenkinTaskSlot(async () => {
+        await withArsenkinSubmitSlot(async () => {
+          peak = Math.max(peak, activeArsenkinSubmitSlots());
+          await g.promise;
+        });
+      })
+    );
+
+    await settle();
+    // Все четыре задачи в работе, но отправка идёт одна.
+    expect(activeArsenkinTaskSlots()).toBe(4);
+    expect(activeArsenkinSubmitSlots()).toBe(1);
+
+    for (const g of gates) g.resolve();
+    await Promise.all(all);
+    expect(peak).toBe(1);
+    expect(activeArsenkinSubmitSlots()).toBe(0);
+  });
+
+  it("освобождает слот отправки после отказа провайдера", async () => {
+    await expect(
+      withArsenkinSubmitSlot(async () => {
+        throw new Error("http_429");
+      })
+    ).rejects.toThrow("http_429");
+    expect(activeArsenkinSubmitSlots()).toBe(0);
+    await expect(withArsenkinSubmitSlot(async () => "ok")).resolves.toBe("ok");
   });
 });
 
