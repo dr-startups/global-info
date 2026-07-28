@@ -5,7 +5,10 @@
  */
 
 import { createHash } from "node:crypto";
-import { ARSENKIN_REAL_AGENT_NAMES } from "../agents/real/real-arsenkin-agents";
+import {
+  ARSENKIN_REAL_AGENT_NAMES,
+  enabledArsenkinAgentNames,
+} from "../agents/real/real-arsenkin-agents";
 
 export const ARSENKIN_ENRICHMENT_STATE_VERSION = "arsenkin-enrichment-state-v1" as const;
 
@@ -135,7 +138,9 @@ export function emptyArsenkinEnrichmentState(input: {
     scheduledAgents: [],
     completedAgents: [],
     failedAgents: [],
-    pendingAgents: [...ARSENKIN_REAL_AGENT_NAMES],
+    // Ждём тех, кто в составе прогона; отключённого составом агента не ждём
+    // вовсе (0f0b2b1), поэтому и в pending ему делать нечего.
+    pendingAgents: enabledArsenkinAgentNames(),
     ingestedAgents: [],
     enrichmentObservationCount: 0,
     enrichmentComplete: false,
@@ -213,7 +218,27 @@ export function buildArsenkinEnrichmentState(input: {
   externalTaskIdToResultHash?: Record<string, string>;
 }): ArsenkinEnrichmentState {
   const byName = new Map(input.agents.map((a) => [a.agentName, a]));
-  const agents = ARSENKIN_REAL_AGENT_NAMES.map((name) => {
+  // Список агентов прогона — это его **состав**, а не каталог.
+  //
+  // Здесь список дополнялся до всех пяти каталожных имён заглушками
+  // `{scheduled: false, terminal: false, ingested: false}`. При составе по
+  // умолчанию (ADR-0005 — работают трое) двое таких фантомов навсегда
+  // оставались нетерминальными, поэтому `allTerminal` и `allIngested` не
+  // становились истинными никогда, а `pendingAgents` показывал пятерых.
+  //
+  // Боевой прогон 28.07: три агента отдали 522 наблюдения, все задачи DONE, а
+  // состояние — `pendingAgents` из пяти, `completedAgents` пустой,
+  // `enrichmentComplete: false`. Стадия ждала того, что уже случилось, и упала
+  // по счётчику простоя.
+  //
+  // Отработавший агент остаётся в списке, даже если состав потом изменили:
+  // оплаченный сбор не перестаёт быть оплаченным.
+  const composition = enabledArsenkinAgentNames();
+  const expectedNames = (composition.length > 0 ? composition : [...ARSENKIN_REAL_AGENT_NAMES]).filter(
+    (n) => (ARSENKIN_REAL_AGENT_NAMES as readonly string[]).includes(n)
+  );
+  const names = [...new Set([...expectedNames, ...input.agents.map((a) => a.agentName)])];
+  const agents = names.map((name) => {
     return (
       byName.get(name) ?? {
         agentName: name,

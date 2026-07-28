@@ -6,7 +6,7 @@ import {
   enrichmentDriftWarnings,
   type ProviderTaskFact,
 } from "../../src/modules/digital-profile/services/arsenkin-progress-derivation";
-import { ARSENKIN_REAL_AGENT_NAMES } from "../../src/modules/digital-profile/agents/real/real-arsenkin-agents";
+import { ARSENKIN_REAL_AGENT_NAMES, enabledArsenkinAgentNames } from "../../src/modules/digital-profile/agents/real/real-arsenkin-agents";
 
 /**
  * Шаг 12.4d, пересмотрен на шаге 16 (K1).
@@ -112,11 +112,32 @@ describe("прогресс выводится из строк задач", () =>
     expect(p.completedAgents).toEqual([]);
   });
 
-  it("полнота требует всех пяти агентов", () => {
-    const four = ARSENKIN_REAL_AGENT_NAMES.slice(0, 4).map((a) => task(a, "DONE"));
-    expect(derive(four).enrichmentComplete).toBe(false);
-    const five = ARSENKIN_REAL_AGENT_NAMES.map((a) => task(a, "DONE"));
-    expect(derive(five).enrichmentComplete).toBe(true);
+  it("полнота требует всех агентов состава, а не всего каталога", () => {
+    // Проверка держала формулировку «все пять», и это оказалось дефектом:
+    // составом по умолчанию (ADR-0005) работают трое, поэтому условие не
+    // становилось истинным никогда. На боевом прогоне 28.07 три агента отдали
+    // 522 наблюдения, все задачи DONE — а стадия ждала пятерых и упала по
+    // счётчику простоя. Свойство теперь про состав.
+    const composition = enabledArsenkinAgentNames();
+    expect(composition.length).toBeGreaterThan(0);
+
+    const all = composition.map((a) => task(a, "DONE"));
+    expect(derive(all).enrichmentComplete).toBe(true);
+
+    const missingOne = composition.slice(0, -1).map((a) => task(a, "DONE"));
+    expect(derive(missingOne).enrichmentComplete).toBe(false);
+  });
+
+  it("агент вне состава полноту не держит", () => {
+    // Отключённый составом не отправляется и не ждётся (0f0b2b1) — значит и
+    // ждать его завершения нельзя.
+    const outside = ARSENKIN_REAL_AGENT_NAMES.filter(
+      (a) => !enabledArsenkinAgentNames().includes(a)
+    );
+    expect(outside.length).toBeGreaterThan(0);
+    const all = enabledArsenkinAgentNames().map((a) => task(a, "DONE"));
+    expect(derive(all).scheduledAgents).not.toContain(outside[0]!);
+    expect(derive(all).enrichmentComplete).toBe(true);
   });
 
   it("пять отправленных, один в работе — ещё не полнота", () => {
