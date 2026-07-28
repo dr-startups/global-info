@@ -97,15 +97,39 @@ export const NON_TERMINAL_TASK = new Set([
   "SUBMIT_UNKNOWN",
 ]);
 
-/** Process-scoped serial queue: LiveExecutionAuthorization is process-scoped. */
-export let caseAgentQueue: Promise<void> = Promise.resolve();
+/**
+ * Очередь на одно исполнение, а не на весь процесс.
+ *
+ * Здесь стояла одна очередь на процесс с объяснением «LiveExecutionAuthorization
+ * is process-scoped». Это объяснение устарело: авторизация переехала в
+ * `AsyncLocalStorage` и действует в пределах цепочки вызовов — в
+ * `live-execution-authorization.ts` об этом сказано прямо («параллельная цепочка
+ * — не вложение и не мешает»). Очередь пережила свою причину и осталась
+ * работать: на живом прогоне пять агентов шли строго друг за другом, первый
+ * собирал данные, остальные четыре стояли в PREPARING, и двенадцать
+ * поверхностей занимали около двадцати минут.
+ *
+ * Что очередь защищала помимо авторизации — это повторный запуск **одного и
+ * того же** исполнения (перезапуск воркера, дозапуск из тика). Эта защита нужна
+ * и сохранена: ключ очереди — `caseId/executionId`. Разные агенты друг друга
+ * больше не ждут; сколько задач Arsenkin идёт одновременно, отвечает
+ * `withArsenkinTaskSlot`.
+ */
+const executionQueues = new Map<string, Promise<void>>();
 
-export function enqueueCaseAgentWork<T>(fn: () => Promise<T>): Promise<T> {
-  const run = caseAgentQueue.then(fn, fn);
-  caseAgentQueue = run.then(
+export function enqueueCaseAgentWork<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const previous = executionQueues.get(key) ?? Promise.resolve();
+  const run = previous.then(fn, fn);
+  const tail = run.then(
     () => undefined,
     () => undefined
   );
+  executionQueues.set(key, tail);
+  // Хвост очереди удаляется, когда он последний: иначе карта растёт на каждое
+  // исполнение и держит их до конца жизни процесса.
+  void tail.then(() => {
+    if (executionQueues.get(key) === tail) executionQueues.delete(key);
+  });
   return run;
 }
 

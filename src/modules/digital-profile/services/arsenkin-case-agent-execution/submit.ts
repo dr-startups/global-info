@@ -34,7 +34,7 @@ export async function runArsenkinCaseAgentWorker(input: {
   executionId: string;
   prisma?: PrismaClient;
 }): Promise<void> {
-  return enqueueCaseAgentWork(async () => {
+  return enqueueCaseAgentWork(`${input.caseId}/${input.executionId}`, async () => {
     const job0 = loadArsenkinCaseAgentExecution(input.caseId, input.executionId);
     if (!job0) {
       console.error(`[arsenkin-case-agent] job not found ${input.caseId}/${input.executionId}`);
@@ -212,10 +212,12 @@ export async function runArsenkinCaseAgentWorker(input: {
           const label = `${info.tool}${info.engine ? `/${info.engine}` : ""}${
             info.region ? `:${info.region}` : ""
           }`;
+          // Задачи идут одновременно, поэтому счётчик — по завершённым, а не по
+          // номеру задачи в плане: номер при одновременном исполнении скачет.
           const summary =
             info.phase === "start"
-              ? `Arsenkin API: задача ${info.index}/${info.total} (${label}) — /set→/check→/get…`
-              : `Arsenkin API: задача ${info.index}/${info.total} (${label}) готова`;
+              ? `Arsenkin API: ${label} — /set→/check→/get… (готово ${info.completed} из ${info.total})`
+              : `Arsenkin API: ${label} готова (${info.completed} из ${info.total})`;
           try {
             await writeAgentRunStatus({
               prisma,
