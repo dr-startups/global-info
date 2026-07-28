@@ -37,7 +37,19 @@ except ImportError:  # pragma: no cover — package-style import inside containe
         sidebar_check_failures,
     )
 
-FONT = "DejaVu Sans"
+# Гарнитура отчёта. Inter — SIL OFL 1.1: встраивание в PPTX/PDF, отдаваемые
+# клиенту, разрешено лицензией и не требует покупки. Кириллица нарисована
+# авторами гарнитуры, а не подставлена запасным шрифтом.
+#
+# До этого стоял DejaVu Sans — системный шрифт Linux по умолчанию. Он не
+# нейтрален: широкие пропорции и характерный рисунок читаются как «документ,
+# свёрстанный чем попало», и для отчёта, который показывают состоятельному
+# клиенту, это видно с первого взгляда (ADR-0006, ADR-0008).
+#
+# Побочно Inter у́же: та же строка занимает 387px против 418px у DejaVu (−7%),
+# а жирное шире обычного на 3,6% вместо ~10%. Текста на странице помещается
+# больше, а разрыв между замером и выводом стал меньше.
+FONT = "Inter"
 FS_TITLE = 26
 FS_SECTION = 22
 FS_SUBTITLE = 13
@@ -199,8 +211,8 @@ def _count_measured_lines(
 #: задаётся как `run.font.bold`; значение — файл, которым это же начертание
 #: замеряется. Одна таблица на оба вопроса: пока их было два, они разошлись.
 _FONT_FILES = {
-    False: "DejaVuSans.ttf",
-    True: "DejaVuSans-Bold.ttf",
+    False: "Inter-Regular.otf",
+    True: "Inter-Bold.otf",
 }
 
 
@@ -222,7 +234,8 @@ def _font_path(bold: bool = False) -> str | None:
         override,
         str(here / "fonts" / filename),
         str(here.parent / "fonts" / filename),
-        f"/usr/share/fonts/truetype/dejavu/{filename}",
+        f"/usr/share/fonts/opentype/inter/{filename}",
+        f"/usr/share/fonts/truetype/inter/{filename}",
         rf"C:\Windows\Fonts\{filename}",
     ]
     for path in candidates:

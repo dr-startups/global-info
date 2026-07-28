@@ -130,14 +130,24 @@ def main() -> int:
 
     # Ширина, на которой лишние проценты дают лишний перенос: именно так
     # заниженный замер выпускает текст за рамку.
-    narrow = 3_000_000
+    # Ширина не зашивается числом: у разных гарнитур жирное шире по-разному
+    # (DejaVu ~10%, Inter ~3,6%), и подобранная под одну ширина на другой
+    # перестаёт давать лишний перенос. Свойство же остаётся тем же — найдётся
+    # ширина, на которой жирное требует больше высоты. Тест держит свойство.
     wrap_sample = "Криминальные и судебные материалы по проверяемому лицу за последние три года"
-    h_reg = measure_text_height(wrap_sample, narrow, 13)
-    h_bold = measure_text_height(wrap_sample, narrow, 13, bold=True)
+    found = next(
+        (
+            (w, measure_text_height(wrap_sample, w, 13), measure_text_height(wrap_sample, w, 13, bold=True))
+            for w in range(700_000, 6_000_001, 50_000)
+            if measure_text_height(wrap_sample, w, 13, bold=True)
+            > measure_text_height(wrap_sample, w, 13)
+        ),
+        None,
+    )
     check(
-        "жирный текст требует больше высоты, чем обычный",
-        h_bold > h_reg,
-        f"обычным {h_reg}, жирным {h_bold} — занижение на {(h_bold - h_reg) / h_bold * 100:.0f}%",
+        "есть ширина, на которой жирный текст требует больше высоты",
+        found is not None,
+        f"ширина {found[0]}: обычным {found[1]}, жирным {found[2]}" if found else "не найдено",
     )
 
     check(
@@ -204,13 +214,21 @@ def main() -> int:
     # широкой колонке короткая строка влезает и так и так, и проверка была бы
     # тождеством, а не гейтом.
     long_theme = "Криминальные и судебные материалы по проверяемому лицу за последние три года:"
-    h_theme_bold = measure_text_height(long_theme, 1_600_000, size_pt, bold=True)
-    h_theme_plain = measure_text_height(long_theme, 1_600_000, size_pt, bold=False)
+    theme_found = next(
+        (
+            (w, measure_text_height(long_theme, w, size_pt), measure_text_height(long_theme, w, size_pt, bold=True))
+            for w in range(700_000, 6_000_001, 50_000)
+            if measure_text_height(long_theme, w, size_pt, bold=True)
+            > measure_text_height(long_theme, w, size_pt)
+        ),
+        None,
+    )
     check(
-        "заголовок темы жирным требует больше высоты, чем обычным",
-        h_theme_bold > h_theme_plain,
-        f"обычным {h_theme_plain}, жирным {h_theme_bold} "
-        f"(+{(h_theme_bold - h_theme_plain) / h_theme_plain * 100:.0f}%)",
+        "заголовок темы жирным где-то требует больше высоты",
+        theme_found is not None,
+        f"ширина {theme_found[0]}: обычным {theme_found[1]}, жирным {theme_found[2]}"
+        if theme_found
+        else "не найдено",
     )
 
     # Проводка: признак начертания обязан доехать до замера, а не быть

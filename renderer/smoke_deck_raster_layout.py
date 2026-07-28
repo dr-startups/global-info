@@ -28,7 +28,7 @@ from PIL import Image, ImageDraw  # noqa: E402
 
 from smoke_counters import print_tap_counters  # noqa: E402
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from orion_golden_render.common import TYPE_SCALE_PT  # noqa: E402
+from orion_golden_render.common import FONT, TYPE_SCALE_PT  # noqa: E402
 from deck_raster_layout import (  # noqa: E402
     CONTENT_BOTTOM,
     SLIDE_H,
@@ -222,6 +222,38 @@ def main() -> int:
             len(widest[1]) <= 4,
             f"страница {widest[0]}: {sorted(widest[1])}",
         )
+
+    # --- Гарнитура в PDF: та же, что мы меряем, и встроена ---------------
+    #
+    # PPTX несёт только имя семейства; рисует его LibreOffice при конвертации.
+    # Если гарнитуры нет в образе, он молча подставит запасную — и клиент
+    # получит документ, набранный не тем, чем мы его мерили. Кириллица при
+    # такой подмене обычно и уезжает.
+    pdf_path = (
+        Path(__file__).resolve().parent.parent
+        / "baselines/report-72/artifacts/deck-sections/rendered-client.pdf"
+    )
+    if not pdf_path.is_file():
+        print("# SKIP гарнитура в PDF — нет отрендеренного PDF")
+    else:
+        import fitz
+
+        doc = fitz.open(str(pdf_path))
+        families, not_embedded = set(), set()
+        for page_no in range(len(doc)):
+            for font in doc.get_page_fonts(page_no):
+                base = str(font[3]).split("+")[-1]
+                families.add(base)
+                if font[1] == "n/a":
+                    not_embedded.add(base)
+        family = FONT.replace(" ", "").lower()
+        foreign = sorted(f for f in families if family not in f.replace(" ", "").lower())
+        check(
+            "в PDF только объявленная гарнитура",
+            not foreign,
+            f"чужие: {foreign}" if foreign else f"найдено: {sorted(families)}",
+        )
+        check("все начертания встроены в PDF", not not_embedded, f"невстроенные: {sorted(not_embedded)}")
 
     print(f"\n{'FAILED (' + str(len(failures)) + ')' if failures else 'PASSED (0 failures)'}")
     print_tap_counters(passed=passed_checks, failed=len(failures))
