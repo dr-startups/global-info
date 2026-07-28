@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -22,7 +23,10 @@ from orion_golden_render.common import (
     _trim_dangling_tail,  # noqa: E402
     _close_dangling_lead_in,
     _fit_lines_to_height,
+    _font_path,
+    assert_render_font_family,
     measure_text_height,
+    text_width_px,
 )
 
 WIDTH = 8_000_000
@@ -99,6 +103,78 @@ def main() -> int:
         _trim_dangling_tail("Дуров, Павел Валерьевич — Википедия")
         == "Дуров, Павел Валерьевич — Википедия",
     )
+
+    # --- ADR-0006: меряем тем начертанием, которым рисуем -------------------
+    #
+    # `_font_path()` отдавал единственный DejaVuSans.ttf на все случаи, а
+    # жирность ставится через python-pptx (`run.font.bold = True`) в двадцати
+    # трёх местах: ширина считалась обычным начертанием, рисовалось жирное —
+    # оно шире. Это и есть «текст выезжает за блоки».
+    bold_sample = "Криминальные / судебные материалы"
+    w_regular = text_width_px(bold_sample, 22, bold=False)
+    w_bold = text_width_px(bold_sample, 22, bold=True)
+    check(
+        "жирное начертание меряется шире обычного",
+        w_bold > w_regular,
+        f"обычным {w_regular}px, жирным {w_bold}px "
+        f"(+{(w_bold - w_regular) / w_regular * 100:.1f}%)",
+    )
+
+    # Ширина, на которой лишние проценты дают лишний перенос: именно так
+    # заниженный замер выпускает текст за рамку.
+    narrow = 3_000_000
+    wrap_sample = "Криминальные и судебные материалы по проверяемому лицу за последние три года"
+    h_reg = measure_text_height(wrap_sample, narrow, 13)
+    h_bold = measure_text_height(wrap_sample, narrow, 13, bold=True)
+    check(
+        "жирный текст требует больше высоты, чем обычный",
+        h_bold > h_reg,
+        f"обычным {h_reg}, жирным {h_bold} — занижение на {(h_bold - h_reg) / h_bold * 100:.0f}%",
+    )
+
+    check(
+        "оба начертания доступны рендереру",
+        _font_path(False) is not None and _font_path(True) is not None,
+        f"regular={_font_path(False)}, bold={_font_path(True)}",
+    )
+    check(
+        "начертания — разные файлы, а не один на оба случая",
+        _font_path(False) != _font_path(True),
+    )
+
+    # Отсутствие шрифта — отказ, а не приблизительный расчёт по числу символов.
+    # Прежде ширина бралась как len(text) * size * 0.58: для пропорционального
+    # шрифта это неверно всегда, а на «шжм» ошибка кратная — и молча.
+    missing = os.environ.get("ORION_RENDER_FONT")
+    try:
+        os.environ["ORION_RENDER_FONT"] = "/nonexistent/font.ttf"
+        import orion_golden_render.common as _c
+
+        real_files = _c._FONT_FILES
+        _c._FONT_FILES = {False: "НетТакогоФайла.ttf", True: "НетТакогоФайла-Bold.ttf"}
+        try:
+            text_width_px("проверка", 11)
+            check("нет шрифта — явная ошибка, а не расчёт наугад", False, "ошибки не было")
+        except RuntimeError as exc:
+            check(
+                "нет шрифта — явная ошибка, а не расчёт наугад",
+                "font missing" in str(exc),
+                str(exc)[:80],
+            )
+        try:
+            assert_render_font_family()
+            check("старт валится, когда начертания нет", False, "старт прошёл")
+        except RuntimeError:
+            check("старт валится, когда начертания нет", True)
+        finally:
+            _c._FONT_FILES = real_files
+    finally:
+        if missing is None:
+            os.environ.pop("ORION_RENDER_FONT", None)
+        else:
+            os.environ["ORION_RENDER_FONT"] = missing
+
+    check("старт проходит на исправном составе шрифтов", bool(assert_render_font_family()))
 
     print(f"\n{'FAILED (' + str(len(failures)) + ')' if failures else 'PASSED (0 failures)'}")
     return 1 if failures else 0

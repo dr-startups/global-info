@@ -137,31 +137,107 @@ def _count_measured_lines(
     text: str,
     width_emu: int,
     font_size_pt: float,
+    bold: bool = False,
 ) -> tuple[int, bool]:
-    """Return (line_count, measurement_uncertain)."""
+    """Return (line_count, measurement_uncertain).
+
+    Второй флаг остаётся ради телеметрии разметки, но «неточно» здесь больше не
+    бывает: замер либо выполнен настоящими метриками, либо не выполнен вовсе и
+    поднял ошибку. Приблизительный расчёт по числу символов убран (ADR-0006).
+    """
+    return _wrapped_line_count(text, width_emu, font_size_pt, bold), False
+
+
+#: Начертания, которыми рендерер и рисует, и меряет. Ключ — то, что в слайде
+#: задаётся как `run.font.bold`; значение — файл, которым это же начертание
+#: замеряется. Одна таблица на оба вопроса: пока их было два, они разошлись.
+_FONT_FILES = {
+    False: "DejaVuSans.ttf",
+    True: "DejaVuSans-Bold.ttf",
+}
+
+
+def _font_path(bold: bool = False) -> str | None:
+    """Файл того начертания, которым текст будет нарисован.
+
+    Прежде функция возвращала единственный `DejaVuSans.ttf` на все случаи, а
+    жирность в слайдах ставится через python-pptx (`run.font.bold = True`) в
+    двадцати трёх местах. Ширина считалась по обычному начертанию, рисовалось
+    жирное — оно шире, и строка не влезала в отведённое место. Замер по
+    образцам отчёта: жирное шире обычного на 9,6–14,4%. Это и есть «текст
+    выезжает за блоки» — заголовки, подписи и первые строки пунктов, то есть
+    ровно те места, где стоит жирность.
+    """
+    filename = _FONT_FILES[bool(bold)]
+    here = Path(__file__).resolve().parent
+    override = os.environ.get("ORION_RENDER_FONT_BOLD" if bold else "ORION_RENDER_FONT")
+    candidates = [
+        override,
+        str(here / "fonts" / filename),
+        str(here.parent / "fonts" / filename),
+        f"/usr/share/fonts/truetype/dejavu/{filename}",
+        rf"C:\Windows\Fonts\{filename}",
+    ]
+    for path in candidates:
+        if path and Path(path).is_file():
+            return path
+    return None
+
+
+def _load_measure_font(font_size_pt: float, bold: bool):
+    """Шрифт для замера — или внятный отказ.
+
+    Приблизительный расчёт «все символы одной ширины» отсюда убран намеренно.
+    Он давал неверную ширину всегда (шрифт пропорциональный), а для строки из
+    «ш», «ж», «м» ошибка кратная — и при этом молчал, то есть выдавал вёрстку,
+    про которую никто не знал, что она посчитана наугад. Тихая неточность здесь
+    дороже явного падения: по тому же правилу в этом проекте
+    `CONTENT_DROPPED_BY_RENDERER` стал CRITICAL.
+    """
+    if Image is None:
+        raise RuntimeError(
+            "ORION render: Pillow недоступен, замер текста невозможен. "
+            "Pillow приходит зависимостью python-pptx — проверьте образ рендерера."
+        )
+    from PIL import ImageFont  # type: ignore
+
+    fp = _font_path(bold)
+    if not fp:
+        weight = "жирное" if bold else "обычное"
+        raise RuntimeError(
+            f"ORION render font missing: нет файла для начертания «{weight}» "
+            f"({_FONT_FILES[bool(bold)]}) — искали в renderer/fonts и системных каталогах"
+        )
+    return ImageFont.truetype(fp, size=max(8, int(round(font_size_pt * 96 / 72))))
+
+
+def text_width_px(text: str, font_size_pt: float, bold: bool = False) -> int:
+    """Ширина строки тем начертанием, которым она будет нарисована.
+
+    Единственный ответ на вопрос «сколько занимает эта строка»: до этого один и
+    тот же цикл переноса жил в `_count_measured_lines` и в
+    `measure_text_height` двумя копиями.
+    """
+    font = _load_measure_font(font_size_pt, bold)
+    bbox = font.getbbox(text)
+    return int(bbox[2] - bbox[0])
+
+
+def _wrapped_line_count(
+    text: str,
+    width_emu: int,
+    font_size_pt: float,
+    bold: bool = False,
+) -> int:
+    """Сколько строк займёт текст в рамке заданной ширины."""
     raw = _safe_preserve_breaks(text)
     if not raw:
-        return 1, False
+        return 1
+    # Slightly narrower than box so PPTX wrap is not underestimated.
     width_px = max(40, int(width_emu / EMU_PER_INCH * 96 * 0.90))
     paragraphs = [p.strip() for p in re.split(r"\n+", raw) if p.strip()] or [""]
+    font = _load_measure_font(font_size_pt, bold)
     total_lines = 0
-    uncertain = False
-    font = None
-    if Image is not None:
-        try:
-            from PIL import ImageFont  # type: ignore
-
-            fp = _font_path()
-            if fp:
-                font = ImageFont.truetype(fp, size=max(8, int(round(font_size_pt * 96 / 72))))
-            else:
-                uncertain = True
-        except Exception:  # noqa: BLE001
-            uncertain = True
-            font = None
-    else:
-        uncertain = True
-
     for para in paragraphs:
         words = para.split(" ")
         if not words:
@@ -171,60 +247,48 @@ def _count_measured_lines(
         lines = 1
         for word in words:
             trial = word if not line else f"{line} {word}"
-            if font is not None:
-                try:
-                    bbox = font.getbbox(trial)
-                    tw = bbox[2] - bbox[0]
-                except Exception:  # noqa: BLE001
-                    tw = int(len(trial) * font_size_pt * 0.58 * 96 / 72)
-                    uncertain = True
-            else:
-                tw = int(len(trial) * font_size_pt * 0.58 * 96 / 72)
-            if tw <= width_px or not line:
+            bbox = font.getbbox(trial)
+            if int(bbox[2] - bbox[0]) <= width_px or not line:
                 line = trial
             else:
                 lines += 1
                 line = word
         total_lines += max(1, lines)
-    return max(1, total_lines), uncertain
-
-
-def _font_path() -> str | None:
-    """Return DejaVu Sans file used for both measurement and PPTX family."""
-    here = Path(__file__).resolve().parent
-    candidates = [
-        os.environ.get("ORION_RENDER_FONT"),
-        str(here / "fonts" / "DejaVuSans.ttf"),
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        r"C:\Windows\Fonts\DejaVuSans.ttf",
-    ]
-    for path in candidates:
-        if path and Path(path).is_file():
-            return path
-    return None
+    return max(1, total_lines)
 
 
 def assert_render_font_family() -> str:
-    """Startup/QA: measurement font must be DejaVu Sans family."""
-    fp = _font_path()
-    if not fp:
-        raise RuntimeError("ORION render font missing: expected DejaVuSans.ttf under renderer/fonts")
-    name = Path(fp).name.lower()
-    if "dejavu" not in name:
-        raise RuntimeError(f"ORION render font mismatch: expected DejaVu Sans, got {fp}")
-    # Optional Linux check
-    try:
-        import subprocess
+    """Старт/QA: шрифт замера совпадает со шрифтом вывода, оба начертания есть.
 
-        out = subprocess.check_output(["fc-match", "DejaVu Sans"], text=True, stderr=subprocess.DEVNULL)
-        if "DejaVu" not in out and "dejavu" not in out.lower():
-            raise RuntimeError(f"fc-match DejaVu Sans unexpected: {out.strip()}")
-    except FileNotFoundError:
-        pass
-    except subprocess.CalledProcessError:
-        pass
-    return fp
+    Прежде проверка требовала именно DejaVu и падала на всём остальном — то
+    есть заодно делала типографику неизменяемой, хотя следила совсем за другим.
+    Требование теперь осмысленное и не мешает сменить гарнитуру (ADR-0008):
+    **чем меряем, тем и рисуем, и оба начертания доступны**. Несовпадение
+    по-прежнему валит старт — молча разъехавшиеся метрики и есть тот дефект,
+    ради которого проверка писалась.
+    """
+    regular = _font_path(False)
+    if not regular:
+        raise RuntimeError(
+            f"ORION render font missing: нет обычного начертания ({_FONT_FILES[False]}) "
+            "в renderer/fonts или системных каталогах"
+        )
+    bold = _font_path(True)
+    if not bold:
+        raise RuntimeError(
+            f"ORION render font missing: нет жирного начертания ({_FONT_FILES[True]}). "
+            "Жирный текст мерился бы обычным начертанием и выезжал за рамку."
+        )
+    # Рисует python-pptx по имени семейства (FONT), меряет PIL по файлу. Если
+    # это разные гарнитуры, замер верен для одной, а на слайде другая.
+    family_token = FONT.replace(" ", "").lower()
+    for path in (regular, bold):
+        if family_token not in Path(path).name.replace(" ", "").lower():
+            raise RuntimeError(
+                f"ORION render font mismatch: рисуем «{FONT}», меряем {path} — "
+                "замер относится не к тому шрифту, которым выводится текст"
+            )
+    return regular
 
 
 def measure_text_height(
@@ -233,8 +297,14 @@ def measure_text_height(
     font_size_pt: float,
     line_spacing: float = 1.2,
     paragraph_spacing_pt: float = 6.0,
+    bold: bool = False,
 ) -> int:
-    """Measure wrapped text height in EMU using real font metrics when available."""
+    """Высота текста в EMU, замеренная тем начертанием, которым он рисуется.
+
+    `bold` обязан совпадать с тем, что ставится тексту в слайде
+    (`run.font.bold`): жирное шире обычного на 9,6–14,4% по образцам отчёта, и
+    расхождение здесь выдавливает строку за рамку.
+    """
     # Переводы строк обязаны дожить до замера. `_safe` схлопывает любые пробелы,
     # включая `\n`, поэтому многострочная карточка мерилась как один абзац:
     # строки «упаковывались» плотнее, чем рисуются, высота выходила заниженной,
@@ -242,44 +312,8 @@ def measure_text_height(
     raw = _safe_preserve_breaks(text)
     if not raw:
         return int(font_size_pt * EMU_PER_PT * line_spacing)
-    # Slightly narrower than box so PPTX wrap is not underestimated.
-    width_px = max(40, int(width_emu / EMU_PER_INCH * 96 * 0.90))
     paragraphs = [p.strip() for p in re.split(r"\n+", raw) if p.strip()] or [""]
-    total_lines = 0
-    font = None
-    if Image is not None:
-        try:
-            from PIL import ImageFont  # type: ignore
-
-            fp = _font_path()
-            if fp:
-                font = ImageFont.truetype(fp, size=max(8, int(round(font_size_pt * 96 / 72))))
-        except Exception:  # noqa: BLE001
-            font = None
-
-    for para in paragraphs:
-        words = para.split(" ")
-        if not words:
-            total_lines += 1
-            continue
-        line = ""
-        lines = 1
-        for word in words:
-            trial = word if not line else f"{line} {word}"
-            if font is not None:
-                try:
-                    bbox = font.getbbox(trial)
-                    tw = bbox[2] - bbox[0]
-                except Exception:  # noqa: BLE001
-                    tw = int(len(trial) * font_size_pt * 0.58 * 96 / 72)
-            else:
-                tw = int(len(trial) * font_size_pt * 0.58 * 96 / 72)
-            if tw <= width_px or not line:
-                line = trial
-            else:
-                lines += 1
-                line = word
-        total_lines += max(1, lines)
+    total_lines = _wrapped_line_count(text, width_emu, font_size_pt, bold)
 
     line_h = font_size_pt * EMU_PER_PT * line_spacing
     para_extra = max(0, len(paragraphs) - 1) * paragraph_spacing_pt * EMU_PER_PT
