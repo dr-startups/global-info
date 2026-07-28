@@ -7,6 +7,7 @@
 import type { ComposedClientSummary } from "../contracts/composed-client-summary";
 import type { CanonicalThemeId } from "../contracts/canonical-claim";
 import { getClientTextFieldBudgets } from "../client/load-client-text-contract";
+import { themeBlockText } from "../analytics/client-summary-composer";
 
 export type SemanticBlockKind =
   | "overall"
@@ -37,12 +38,19 @@ export type SummaryPagePlan = {
   overviewBlocks: SemanticBlock[];
   /** Continuation pages — each is an ordered list of whole semantic blocks. */
   continuationPages: SemanticBlock[][];
+  /**
+   * Блоки, чья **печатная** форма не влезла в бюджет буллета. В норме пуст:
+   * укладка меряет то же, что печатает. Непустым он бывает только если появился
+   * новый способ склейки в обход укладки — тогда виновник назван по имени.
+   */
+  overBudgetBlocks: Array<{ blockId: string; length: number; budget: number }>;
   /** Gates for Stage 6 stop criteria. */
   gates: {
     CLIENT_TEXT_TRUNCATIONS: number;
     CONTINUATION_ADJACENCY: boolean;
     SUMMARY_BLOCKS_PRESERVED: number;
     SUMMARY_BLOCKS_EMITTED: number;
+    SUMMARY_BLOCK_OVER_BUDGET: number;
   };
 };
 
@@ -143,6 +151,52 @@ export function packSentencesNoTruncate(text: string, maxChars: number): string[
 /** Как выглядит заголовок части: у продолжений он длиннее на одно слово. */
 const CONTINUATION_SUFFIX = " (продолжение)";
 
+/** Заголовок продолжения — задаётся здесь и здесь же учитывается в бюджете. */
+function continuationHeading(heading: string | undefined): string | undefined {
+  const h = (heading ?? "").trim();
+  return h ? `${h}${CONTINUATION_SUFFIX}` : undefined;
+}
+
+/**
+ * Что дека печатает для блока — **единственный ответ** на этот вопрос.
+ *
+ * До этого ответов было три: `formatSemanticBullet` в построителе резюме
+ * печатал, `bodyBudgetForTheme` пересказывал ту же склейку арифметикой, и
+ * третья копия жила в тесте. Пока три места отвечают на один вопрос, они
+ * расходятся — это и есть класс дефекта «мерилось одно, печаталось другое».
+ * Теперь печатает и меряется одна функция, и разойтись им негде.
+ */
+export function renderSemanticBlock(
+  block: Pick<SemanticBlock, "kind" | "heading" | "text">
+): string {
+  if (block.heading && block.kind === "theme") return themeBlockText(block.heading, block.text);
+  return block.text;
+}
+
+/**
+ * Сколько знаков тела влезает в бюджет буллета для блока такой формы.
+ *
+ * Накладные расходы не пересказываются арифметикой, а **замеряются** прогоном
+ * через `renderSemanticBlock`: поменяется склейка — поправка поедет за ней
+ * сама. Прежняя версия повторяла формат словами («точка и пробел из
+ * `themeBlockText`»), и следующая склейка вернула бы нас к отказу сборки.
+ */
+function bodyBudgetForBlock(
+  shape: { kind: SemanticBlockKind; heading?: string },
+  bulletBudget: number
+): number {
+  // Односимвольный образец: длина склейки минус его длина и есть накладные.
+  // Символ служебный, а не «x»: заголовок «x» совпал бы с началом тела,
+  // склейка ушла бы по ветке «тело уже начинается с темы», и накладные
+  // вышли бы нулевыми.
+  const probe = "\u0001";
+  const overhead = renderSemanticBlock({ ...shape, text: probe }).length - probe.length;
+  if (overhead <= 0) return bulletBudget;
+  // Абсурдно длинный заголовок не должен обнулить тело: лучше недобрать текста,
+  // чем выдать блок без содержания.
+  return Math.max(80, bulletBudget - overhead);
+}
+
 /**
  * Бюджет тела темы с поправкой на заголовок.
  *
@@ -156,11 +210,10 @@ const CONTINUATION_SUFFIX = " (продолжение)";
  * продолжением. Лучше немного недобрать, чем не собрать отчёт.
  */
 export function bodyBudgetForTheme(heading: string | undefined, bulletBudget: number): number {
-  const h = (heading ?? "").trim();
-  if (!h) return bulletBudget;
-  // «Заголовок (продолжение). » — точка и пробел из `themeBlockText`.
-  const overhead = h.length + CONTINUATION_SUFFIX.length + 2;
-  return Math.max(80, bulletBudget - overhead);
+  return bodyBudgetForBlock(
+    { kind: "theme", heading: continuationHeading(heading) },
+    bulletBudget
+  );
 }
 
 function themeToBlocks(
@@ -191,7 +244,7 @@ function themeToBlocks(
     kind: "theme" as const,
     blockId: `${theme.themeId}__part${i + 1}`,
     themeId: theme.themeId,
-    heading: i === 0 ? theme.heading : `${theme.heading} (продолжение)`,
+    heading: i === 0 ? theme.heading : continuationHeading(theme.heading),
     text,
     evidenceRefs: [...theme.evidenceRefs],
     articleTitles: i === 0 ? [...theme.articleTitles] : [],
@@ -199,22 +252,49 @@ function themeToBlocks(
   }));
 }
 
-function textBlock(
+/**
+ * Блок обычного текста — с той же укладкой, что и тема.
+ *
+ * Раньше текст уходил в деку целиком, минуя бюджет вовсе: замер до этой правки
+ * дал `isolated: 1500>900`, `databases: 1500>900`, `changes: 1500>900`,
+ * `next_steps: 1500>900`. Каждый из них — `bullet over budget`, FAILED у
+ * обязательной секции и отчёт, которого нет. Тема была нарезана, остальные
+ * четыре вида — нет, хотя печатаются тем же буллетом.
+ */
+function textBlocks(
   kind: SemanticBlockKind,
   blockId: string,
   text: string,
+  bulletBudget: number,
   evidenceRefs: string[] = []
-): SemanticBlock | null {
+): SemanticBlock[] {
   const t = text.trim();
-  if (!t) return null;
-  return {
+  if (!t) return [];
+  const chunks = packSentencesNoTruncate(t, bodyBudgetForBlock({ kind }, bulletBudget));
+  if (chunks.length <= 1) {
+    // Идентификатор односоставного блока прежний: короткий текст не должен
+    // менять ни имени блока, ни эталона.
+    return [
+      {
+        kind,
+        blockId,
+        text: (chunks[0] ?? t).trim(),
+        evidenceRefs,
+        articleTitles: [],
+        articleDomains: [],
+      },
+    ];
+  }
+  return chunks.map((chunk, i) => ({
     kind,
-    blockId,
-    text: t,
-    evidenceRefs,
+    blockId: i === 0 ? blockId : `${blockId}__part${i + 1}`,
+    text: chunk,
+    // Ссылки остаются при всех частях — как у тем: продолжение без источников
+    // выглядело бы утверждением без опоры.
+    evidenceRefs: [...evidenceRefs],
     articleTitles: [],
     articleDomains: [],
-  };
+  }));
 }
 
 /** Blocks per continuation page — a page of four bullets stops reading as a list. */
@@ -312,11 +392,23 @@ export function paginateComposedClientSummary(
     themeToBlocks(t, budgets.bullet)
   );
   const trailing = [
-    textBlock("isolated", "isolated", summary.sections.isolatedItems, evidence),
-    textBlock("databases", "databases", summary.sections.internationalDatabases, evidence),
-    textBlock("changes", "changes", summary.sections.changesSinceBaseline, evidence),
-    textBlock("next_steps", "next_steps", summary.sections.nextSteps, evidence),
-  ].filter((b): b is SemanticBlock => Boolean(b));
+    ...textBlocks("isolated", "isolated", summary.sections.isolatedItems, budgets.bullet, evidence),
+    ...textBlocks(
+      "databases",
+      "databases",
+      summary.sections.internationalDatabases,
+      budgets.bullet,
+      evidence
+    ),
+    ...textBlocks(
+      "changes",
+      "changes",
+      summary.sections.changesSinceBaseline,
+      budgets.bullet,
+      evidence
+    ),
+    ...textBlocks("next_steps", "next_steps", summary.sections.nextSteps, budgets.bullet, evidence),
+  ];
 
   // Overview leads with up to N distinct themes (first part of each if split),
   // not N arbitrary blocks — a long theme must not consume all lead slots.
@@ -348,10 +440,15 @@ export function paginateComposedClientSummary(
   // Dashboard shows ≤3 narrative cards — overflow narrative sentences become blocks.
   const narrativeOverflow: SemanticBlock[] = [];
   if (overviewNarrative.length > 3) {
+    // Куски нарратива меряются бюджетом нарратива (1100), а печатаются буллетом
+    // (900) — и склеивались через `join(" ")` вовсе без бюджета. Замер до этой
+    // правки: `overall_overflow: 1796>900`, то есть два куска подряд. Остаток
+    // укладывается заново, уже по бюджету того поля, в котором он печатается.
     const overflowText = overviewNarrative.slice(3).join(" ");
     overviewNarrative = overviewNarrative.slice(0, 3);
-    const ob = textBlock("overall", "overall_overflow", overflowText, evidence);
-    if (ob) narrativeOverflow.push(ob);
+    narrativeOverflow.push(
+      ...textBlocks("overall", "overall_overflow", overflowText, budgets.bullet, evidence)
+    );
   }
 
   const continuationPages = packContinuationPages([...narrativeOverflow, ...rest], budgets.bullet);
@@ -383,15 +480,25 @@ export function paginateComposedClientSummary(
   const sourceSentences = splitSentences(sourceBlob);
   const truncations = sourceSentences.filter((s) => !emittedBlob.includes(s)).length;
 
+  // Единственная проверка на том, что уходит в деку, и стоит она там, где
+  // выбирают работу, — в укладке. Ниже по течению `checkText` увидит ровно эти
+  // же строки, но уже как `bullet over budget` без имени блока и ценой всей
+  // обязательной секции.
+  const overBudgetBlocks = [...overviewBlocks, ...continuationPages.flat()]
+    .map((b) => ({ blockId: b.blockId, length: renderSemanticBlock(b).length, budget: budgets.bullet }))
+    .filter((x) => x.length > x.budget);
+
   return {
     overviewNarrative,
     overviewBlocks,
     continuationPages,
+    overBudgetBlocks,
     gates: {
       CLIENT_TEXT_TRUNCATIONS: truncations,
       CONTINUATION_ADJACENCY: true,
       SUMMARY_BLOCKS_PRESERVED: preserved,
       SUMMARY_BLOCKS_EMITTED: emitted,
+      SUMMARY_BLOCK_OVER_BUDGET: overBudgetBlocks.length,
     },
   };
 }
@@ -402,5 +509,17 @@ export function assertSemanticSummaryGatesPass(plan: SummaryPagePlan): void {
   }
   if (!plan.gates.CONTINUATION_ADJACENCY) {
     throw new Error("CONTINUATION_ADJACENCY=false");
+  }
+  // Блок, проскочивший мимо укладки, останавливает сборку здесь и по имени.
+  // Прежде такой блок доезжал до проверки секций, и заказчик получал
+  // `EXECUTIVE_SUMMARY:FAILED` — отчёт не собирался вовсе, а из текста отказа
+  // не было видно, какой именно блок виноват.
+  if (plan.gates.SUMMARY_BLOCK_OVER_BUDGET !== 0) {
+    const named = plan.overBudgetBlocks
+      .map((b) => `${b.blockId}: ${b.length}>${b.budget}`)
+      .join("; ");
+    throw new Error(
+      `SUMMARY_BLOCK_OVER_BUDGET=${plan.gates.SUMMARY_BLOCK_OVER_BUDGET} (${named})`
+    );
   }
 }

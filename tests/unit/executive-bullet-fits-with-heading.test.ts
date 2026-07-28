@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import {
   paginateComposedClientSummary,
   bodyBudgetForTheme,
+  renderSemanticBlock,
 } from "../../src/modules/digital-profile/orion-golden/deck-sections/semantic-summary-pagination";
 import { themeBlockText } from "../../src/modules/digital-profile/orion-golden/analytics/client-summary-composer";
 import { getClientTextFieldBudgets } from "../../src/modules/digital-profile/orion-golden/client/load-client-text-contract";
@@ -25,11 +26,12 @@ import type { ComposedClientSummary } from "../../src/modules/digital-profile/or
 
 const BUDGETS = getClientTextFieldBudgets();
 
-/** Так же, как это делает `formatSemanticBullet` в построителе резюме. */
-function emittedBullet(block: { kind: string; heading?: string; text: string }): string {
-  if (block.heading && block.kind === "theme") return themeBlockText(block.heading, block.text);
-  return block.text;
-}
+/**
+ * То, что печатает дека. Своей копии здесь больше нет: она была третьим
+ * ответом на вопрос «как выглядит буллет» и могла разойтись с production
+ * незаметно для этого же теста.
+ */
+const emittedBullet = renderSemanticBlock;
 
 function summaryWithTheme(heading: string, body: string): ComposedClientSummary {
   return {

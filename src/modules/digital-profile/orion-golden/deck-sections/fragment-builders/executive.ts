@@ -45,10 +45,10 @@ import {
 import {
   assertSemanticSummaryGatesPass,
   paginateComposedClientSummary,
+  renderSemanticBlock,
   type SemanticBlock,
 } from "../semantic-summary-pagination";
 import type { ComposedClientSummary } from "../../contracts/composed-client-summary";
-import { themeBlockText } from "../../analytics/client-summary-composer";
 
 /**
  * §7.2 — compact freshness + change line for surfaces that render narrative/bullets
@@ -358,9 +358,9 @@ export function composeExecutivePageStructure(
 function formatSemanticBullet(block: SemanticBlock): string {
   // Склейка заголовка с телом — общая с полным текстом резюме
   // (`themeBlockText`), чтобы дека и артефакт не расходились в том, где
-  // называется тема.
-  if (block.heading && block.kind === "theme") return themeBlockText(block.heading, block.text);
-  return block.text;
+  // называется тема. Своей копии здесь больше нет: тем же вызовом укладка
+  // меряет бюджет, поэтому печать и замер разойтись не могут.
+  return renderSemanticBlock(block);
 }
 
 function adverseFindingIdsForExecutive(
