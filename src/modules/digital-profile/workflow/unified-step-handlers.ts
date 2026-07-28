@@ -117,6 +117,33 @@ export function outcomeFromJob(
  * `ORION_PREPARE` и `CLIENT_CONTENT` — две стадии одного шага `REPORT_PREPARE`:
  * обработчик один, и переход между ними для конвейера внутренний.
  */
+/**
+ * Стадия, к которой надо вернуть джобу перед новой попыткой шага.
+ *
+ * Джоба помнит прошлый отказ, а `outcomeFromJob` спрашивает именно её стадию.
+ * Пока вердикт прошлой попытки лежит на джобе, новая попытка получает **чужой**
+ * исход, не начав работы: на боевом прогоне 28.07 шаг `ARSENKIN_ENRICHMENT`
+ * сжёг все десять попыток за 45 секунд с одним и тем же текстом
+ * «41 опросов подряд» — при `pollAttempt`, сброшенном в ноль, и без единой
+ * записи об исполнении в логе.
+ *
+ * На вопрос «упал ли этот шаг» отвечали двое — состояние шага и стадия джобы,
+ * — и шаг проиграть был обязан. Перепостановка шага чинила один ответ из двух.
+ *
+ * Возвращается только для повторяемого отказа: `FAILED_TERMINAL` и отмена
+ * остаются как есть, потому что там граница «нужно решение оператора».
+ *
+ * `null` — сбрасывать нечего.
+ */
+export function stageForRetryAttempt(
+  stepName: string,
+  jobStage: string | null | undefined
+): string | null {
+  if (jobStage !== "FAILED_RETRYABLE") return null;
+  const def = UNIFIED_PIPELINE.find((d) => d.name === stepName);
+  return def ? def.stage : null;
+}
+
 function handlerForStage(deps: UnifiedOrchestratorDeps): StepHandler {
   return async (step: WorkflowStepRow): Promise<StepOutcome> => {
     const before = await loadUnifiedCollectionJob(step.caseId);
@@ -130,6 +157,20 @@ function handlerForStage(deps: UnifiedOrchestratorDeps): StepHandler {
     }
     if (TERMINAL_STAGES.has(before.stage)) {
       return { kind: "done", outputRef: before.compositeDatasetId ?? null };
+    }
+
+    // Вердикт прошлой попытки снимается до начала новой: иначе тик отработает,
+    // а исход всё равно возьмётся из памяти джобы об отказе.
+    const retryStage = stageForRetryAttempt(step.name, before.stage);
+    if (retryStage) {
+      const { patchUnifiedCollectionJob } = await import(
+        "../services/unified-collection-job-store"
+      );
+      await patchUnifiedCollectionJob(step.caseId, {
+        stage: retryStage as UnifiedCollectionJob["stage"],
+        lastError: null,
+        lastErrorCode: null,
+      } as Partial<UnifiedCollectionJob>);
     }
 
     const after = await runUnifiedCollectionTick(step.caseId, deps);
