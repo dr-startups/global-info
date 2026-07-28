@@ -56,6 +56,18 @@ def check(name: str, ok: bool, detail: str = "") -> None:
         failures.append(name)
 
 
+
+def count_first_level(runs_by_page: dict) -> dict:
+    """Фигуры, несущие крупнейший кегль страницы, — её первый уровень."""
+    out: dict = {}
+    for page, runs in runs_by_page.items():
+        if not runs:
+            continue
+        top = max(r[0] for r in runs)
+        out[page] = {r[1] for r in runs if r[0] == top}
+    return out
+
+
 def make_page(path: Path, *, spill: bool = False, outside: bool = False) -> None:
     """Страница с обычной мебелью; при желании — с дефектом."""
     im = Image.new("RGB", (W, H), (255, 255, 255))
@@ -162,6 +174,7 @@ def main() -> int:
 
         used: dict[float, int] = {}
         per_page: dict[int, set] = {}
+        runs_by_page: dict[int, list] = {}
         for idx, slide in enumerate(Presentation(str(pptx_path)).slides, 1):
             for shape in slide.shapes:
                 if not shape.has_text_frame:
@@ -173,12 +186,36 @@ def main() -> int:
                         pt = round(run.font.size.pt, 2)
                         used[pt] = used.get(pt, 0) + 1
                         per_page.setdefault(idx, set()).add(pt)
+                        if (run.text or "").strip():
+                            runs_by_page.setdefault(idx, []).append(
+                                (pt, shape.name or "?")
+                            )
+        first_level_shapes = count_first_level(runs_by_page)
         off = sorted(p for p in used if p not in TYPE_SCALE_PT)
         check(
             "в деке нет кеглей вне шкалы",
             not off,
             f"вне шкалы: {off}" if off else f"использовано ступеней: {sorted(used)}",
         )
+        # Иерархия: на странице ровно один элемент первого уровня — лид или
+        # ключевая цифра, остальное заведомо тише (ADR-0008, п.3). Свойство
+        # соблюдается на всех 45 страницах эталона; проверка держит его,
+        # чтобы следующая правка шаблона не вернула «всё одинаково важно».
+        offenders = [pg for pg, shapes in first_level_shapes.items() if len(shapes) != 1]
+        check(
+            "на каждой странице ровно один элемент первого уровня",
+            not offenders,
+            f"страниц с нарушением: {offenders[:5]}" if offenders else f"страниц: {len(first_level_shapes)}",
+        )
+        # Отрицательный контроль: две фигуры одного крупнейшего кегля — это
+        # нарушение, и проверка обязана его увидеть.
+        synthetic = count_first_level({1: [(22.0, "Заголовок A"), (22.0, "Заголовок Б"), (11.0, "текст")]})
+        check(
+            "две фигуры первого уровня считаются нарушением",
+            len(synthetic[1]) == 2,
+            f"найдено фигур: {sorted(synthetic[1])}",
+        )
+
         widest = max(per_page.items(), key=lambda kv: len(kv[1])) if per_page else (0, set())
         check(
             "на странице не больше четырёх ступеней",
