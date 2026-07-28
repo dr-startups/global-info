@@ -49,6 +49,11 @@ import {
   isSuggestionsTargetedRetryState,
   shouldBlockFullAuditCta,
 } from "./unified-suggestions-retry-ui";
+import {
+  isUnifiedRunTerminal,
+  nextFollowDelayMs,
+  shouldFollowUnifiedRun,
+} from "./unified-run-follow";
 
 type LoadState =
   | { kind: "loading" }
@@ -159,21 +164,8 @@ export function CaseDetailView({
     }
   }, [caseId]);
 
-  const pollUnifiedUntilTerminal = useCallback(async () => {
-    for (let i = 0; i < 120; i++) {
-      await new Promise((r) => setTimeout(r, 500));
-      const { job } = await getUnifiedOrionCollectionStatus(caseId);
-      if (!job) continue;
-      setUnifiedJob(job);
-      const terminal =
-        job.stage === "REPORT_READY" ||
-        job.stage === "COMPLETED_PARTIAL" ||
-        job.stage === "FAILED_TERMINAL" ||
-        job.stage === "FAILED_RETRYABLE" ||
-        job.stage === "CANCELLED" ||
-        job.status === "COMPLETED";
-      if (!terminal) continue;
-      await refreshAgents();
+  const announceTerminalRun = useCallback(
+    (job: UnifiedCollectionJobStatus) => {
       if (job.stage === "REPORT_READY") {
         setBanner({ kind: "ok", text: t("agents.unifiedDone") });
       } else if (job.stage === "COMPLETED_PARTIAL") {
@@ -186,9 +178,61 @@ export function CaseDetailView({
           }`,
         });
       }
-      return;
-    }
-  }, [caseId, refreshAgents, t]);
+    },
+    [t]
+  );
+
+  /*
+   * Страница следит за живым прогоном сама — до конца прогона, а не минуту.
+   *
+   * Здесь стоял цикл на 120 оборотов по 500 мс: ровно шестьдесят секунд, после
+   * чего он молча заканчивался. Прогон идёт около двадцати минут, и всё
+   * оставшееся время шапка показывала снимок первой минуты — «Этап: Базовый
+   * сбор», «Arsenkin scheduled 0/5». Наблюдалось на боевом прогоне 28.07.
+   *
+   * Условие слежения — состояние прогона, а не нажатие кнопки: прогон, начатый
+   * в другой вкладке или до перезагрузки страницы, такой же живой. Срок
+   * следующего вопроса называет сам прогон (`nextPollAt` / `autoResumeAt`) —
+   * раньше него новостей быть не может, и спрашивать чаще незачем.
+   */
+  const followedTerminalRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!shouldFollowUnifiedRun(unifiedJob)) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const tick = async () => {
+      if (cancelled) return;
+      try {
+        const { job } = await getUnifiedOrionCollectionStatus(caseId);
+        if (cancelled || !job) return;
+        setUnifiedJob(job);
+        if (isUnifiedRunTerminal(job)) {
+          // Итог объявляется один раз на прогон: иначе перерисовка вернула бы
+          // баннер, который пользователь уже закрыл.
+          const key = job.unifiedJobId || job.jobId;
+          if (followedTerminalRef.current !== key) {
+            followedTerminalRef.current = key;
+            await refreshAgents();
+            if (!cancelled) announceTerminalRun(job);
+          }
+          return;
+        }
+        timer = setTimeout(() => void tick(), nextFollowDelayMs(job));
+      } catch {
+        // Сбой одного запроса статуса не должен снимать слежение: прогон идёт
+        // на сервере независимо от того, ответила ли нам сеть сию секунду.
+        if (!cancelled) timer = setTimeout(() => void tick(), nextFollowDelayMs(unifiedJob));
+      }
+    };
+
+    timer = setTimeout(() => void tick(), nextFollowDelayMs(unifiedJob));
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [announceTerminalRun, caseId, refreshAgents, unifiedJob]);
 
   const handleRunUnifiedCollection = useCallback(async () => {
     if (auditing || recovering) return;
@@ -217,7 +261,6 @@ export function CaseDetailView({
     setBanner(null);
     try {
       await startUnifiedOrionCollection(caseId);
-      await pollUnifiedUntilTerminal();
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
@@ -231,7 +274,6 @@ export function CaseDetailView({
     auditing,
     recovering,
     caseId,
-    pollUnifiedUntilTerminal,
     tError,
     unifiedJob,
   ]);
@@ -244,7 +286,6 @@ export function CaseDetailView({
     setBanner(null);
     try {
       await startUnifiedOrionCollection(caseId, { confirmPaidRecollection: true });
-      await pollUnifiedUntilTerminal();
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
@@ -254,7 +295,7 @@ export function CaseDetailView({
       const { job } = await getUnifiedOrionCollectionStatus(caseId).catch(() => ({ job: null }));
       if (job) setUnifiedJob(job);
     }
-  }, [auditing, recovering, caseId, pollUnifiedUntilTerminal, tError]);
+  }, [auditing, recovering, caseId, tError]);
 
   const handleRecoverUnifiedCollection = useCallback(async () => {
     if (auditing || recovering) return;
@@ -312,7 +353,6 @@ export function CaseDetailView({
             }
           : prev
       );
-      await pollUnifiedUntilTerminal();
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
@@ -327,7 +367,6 @@ export function CaseDetailView({
     recovering,
     caseId,
     unifiedJob,
-    pollUnifiedUntilTerminal,
     tError,
   ]);
 
@@ -360,7 +399,6 @@ export function CaseDetailView({
             }
           : prev
       );
-      await pollUnifiedUntilTerminal();
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
@@ -377,7 +415,6 @@ export function CaseDetailView({
     retryingGptCopy,
     caseId,
     unifiedJob,
-    pollUnifiedUntilTerminal,
     tError,
   ]);
 
@@ -413,7 +450,6 @@ export function CaseDetailView({
             }
           : prev
       );
-      await pollUnifiedUntilTerminal();
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
@@ -430,7 +466,6 @@ export function CaseDetailView({
     retryingGptCopy,
     caseId,
     unifiedJob,
-    pollUnifiedUntilTerminal,
     tError,
   ]);
 
@@ -485,7 +520,6 @@ export function CaseDetailView({
           ? t("unified.suggestionsReused", { taskId: result.externalTaskId })
           : t("unified.suggestionsSubmitted", { taskId: result.externalTaskId }),
       });
-      await pollUnifiedUntilTerminal();
     } catch (err) {
       const code = err instanceof DigitalProfileApiError ? err.code : "UNKNOWN";
       const msg = err instanceof Error ? err.message : undefined;
@@ -502,7 +536,6 @@ export function CaseDetailView({
     recovering,
     caseId,
     unifiedJob,
-    pollUnifiedUntilTerminal,
     tError,
   ]);
 
