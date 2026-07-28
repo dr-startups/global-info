@@ -3,7 +3,7 @@
   "caseId": "cmreamy2t0002o30f29urzcog",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "generatedAt": "2026-07-28T13:56:51.696Z",
+  "generatedAt": "2026-07-28T14:18:00.034Z",
   "sectionOrder": [
     "FRONT_MATTER",
     "EXECUTIVE",
@@ -64,8 +64,8 @@
       "artifactPath": "section-packs/ru/summary.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:3eddd25c3b4e8316e451b1b79164cc5dda439e294a5977ad5f5434844570e500",
-      "slideCount": 4,
+      "contentHash": "sha256:76ce7d4b94501b8fa94c8042fb78727db927ce6e063b0f8177fb1c1c2fdef436",
+      "slideCount": 5,
       "validationPassed": true
     },
     {
@@ -152,7 +152,7 @@
       "artifactPath": "section-packs/uae/summary.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:262a2ace0bcb2f1a3a6f5967983bad50b6761f1f907aa5f5461d7b3ac4db1117",
+      "contentHash": "sha256:51db3f3038f5005fd274e987cd922e243e838bfea41043dc6fad66ca598eaf22",
       "slideCount": 5,
       "validationPassed": true
     },

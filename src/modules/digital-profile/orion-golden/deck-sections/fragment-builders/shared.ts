@@ -201,30 +201,62 @@ export function makeSlotSlide(input: {
  * числу оставляло странице то, что на ней помещалось в шесть раз, и уносило
  * хвост на отдельный лист.
  */
+/**
+ * Во сколько **нарисованных** строк развернётся блок.
+ *
+ * Структурные строки заданы переводами строки и переносятся всегда, а каждая
+ * из них ещё и переносится по ширине. Счёт по знакам этого не видит:
+ * тематический блок «Заголовок / Найдены публикации по теме: / цитата /
+ * источник» занимает строк много, а знаков мало.
+ */
+export function estimateRenderedLines(text: string, charsPerLine: number): number {
+  if (charsPerLine <= 0) return 1;
+  return text
+    .split("\n")
+    .reduce((n, line) => n + Math.max(1, Math.ceil(line.trim().length / charsPerLine)), 0);
+}
+
 export function packBulletPages(
   bullets: readonly string[],
   firstCount: number,
   contCount: number,
-  itemCharBudget: number
+  itemCharBudget: number,
+  lines?: {
+    /** Ёмкость первой страницы в нарисованных строках. */
+    first: number;
+    /** То же для продолжения. */
+    cont: number;
+    charsPerLine: number;
+  }
 ): string[][] {
   if (firstCount <= 0) return [[...bullets]];
   const pages: string[][] = [];
   let cur: string[] = [];
   let curChars = 0;
+  let curLines = 0;
   let cap = firstCount;
   let charCap = firstCount * itemCharBudget;
+  let lineCap = lines?.first ?? Number.POSITIVE_INFINITY;
   const flush = () => {
     if (cur.length) pages.push(cur);
     cur = [];
     curChars = 0;
+    curLines = 0;
     cap = contCount;
     charCap = contCount * itemCharBudget;
+    lineCap = lines?.cont ?? Number.POSITIVE_INFINITY;
   };
   for (const b of bullets) {
     const size = b.length;
-    if (cur.length > 0 && (cur.length >= cap || curChars + size > charCap)) flush();
+    // Высота — то, по чему ёмкость меряет рендерер. Счёт блоков и знаков
+    // остаётся: он ловит свои случаи, а строки — те, где блоки разного роста.
+    const blockLines = lines ? estimateRenderedLines(b, lines.charsPerLine) : 0;
+    const overflows =
+      cur.length >= cap || curChars + size > charCap || curLines + blockLines > lineCap;
+    if (cur.length > 0 && overflows) flush();
     cur.push(b);
     curChars += size;
+    curLines += blockLines;
   }
   if (cur.length) pages.push(cur);
 
@@ -264,10 +296,27 @@ export function withContinuations(
 
   const firstBulletCap = opts?.firstPageBullets ?? tpl.maxBulletsPerSlide;
   const contBulletCap = tpl.maxBulletsPerContinuation ?? tpl.maxBulletsPerSlide;
-  const bulletChunks =
-    firstBulletCap > 0 && bullets.length > firstBulletCap
-      ? packBulletPages(bullets, firstBulletCap, contBulletCap, tpl.layout.itemCharBudget)
-      : [bullets];
+  const lineModel =
+    tpl.maxBulletLinesPerSlide && tpl.layout.charsPerRenderedLine
+      ? {
+          first: tpl.maxBulletLinesPerSlide,
+          cont: tpl.maxBulletLinesPerContinuation ?? tpl.maxBulletLinesPerSlide,
+          charsPerLine: tpl.layout.charsPerRenderedLine,
+        }
+      : undefined;
+  // Разбивать приходится и тогда, когда блоков не больше предела: два блока
+  // при пределе два всё равно не влезли по высоте и один был выброшен
+  // (страницы 11 и 29 эталона). Условие «блоков больше предела» этот случай
+  // пропускало, потому что смотрело на количество.
+  const needsPaging =
+    firstBulletCap > 0 &&
+    (bullets.length > firstBulletCap ||
+      (lineModel !== undefined &&
+        bullets.reduce((n, b) => n + estimateRenderedLines(b, lineModel.charsPerLine), 0) >
+          lineModel.first));
+  const bulletChunks = needsPaging
+    ? packBulletPages(bullets, firstBulletCap, contBulletCap, tpl.layout.itemCharBudget, lineModel)
+    : [bullets];
   const rowChunks =
     tpl.maxTableRowsPerSlide > 0 && rows.length > tpl.maxTableRowsPerSlide
       ? chunk(rows, tpl.maxTableRowsPerSlide)

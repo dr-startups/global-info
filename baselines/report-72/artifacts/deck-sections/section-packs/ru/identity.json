@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v46",
+  "contentVersion": "deck-sections-v47",
   "promptVersion": "ru-identity-analysis-v4",
   "contentHash": "sha256:a949c8a06aab1469b7f36a00a561da860d5bc6c5ce0b07e9bde8a7f5791484a9",
   "inputHash": "sha256:7f49a211254b2b5373fd123b543261ae7105b4165f4f125a189c0cdad1847fc8:010d19d51d88ae6b",
-  "generatedAt": "2026-07-28T12:55:22.451Z",
+  "generatedAt": "2026-07-28T14:18:00.001Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [],
@@ -44,8 +44,8 @@
         "whatWasFound": "Показано 1 результат; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0; преобладающие источники: ru.wikipedia.org.",
         "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
         "whatToCheck": "Мониторить изменения выдачи.",
-        "sourceNote": "Источники — ru.wikipedia.org.",
-        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет."
+        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+        "sourceNote": "Источники — ru.wikipedia.org."
       },
       "evidenceRefs": [
         "inventory:wiki-2"

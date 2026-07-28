@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v46",
+  "contentVersion": "deck-sections-v47",
   "promptVersion": "uae-serp-screenshot-analysis-v4",
   "contentHash": "sha256:54d0fcc1e4d1170bfbaec28aa0c55a69b02e941523f4c41f83e6df6b95ad546c",
   "inputHash": "sha256:85af08a4b05f4392a585c8dcdc85336cfbe781100f047392eef89920e69b6773:8f3526131ccf39ad",
-  "generatedAt": "2026-07-28T12:55:22.455Z",
+  "generatedAt": "2026-07-28T14:18:00.007Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -223,8 +223,8 @@
         "whatWasFound": "На снимке выделено результатов повышенного внимания: 1 (rupep.org); остальные результаты — нейтральные или деловые.",
         "whyItMatters": "Выделенные материалы (1) видны при первичной проверке субъекта в этом регионе. Выделенные результаты — в выдаче Google; по Яндексу сохранённых результатов в наборе нет.",
         "whatToCheck": "Запросить первичные карточки баз и подтвердить принадлежность совпадений.",
-        "sourceNote": "Источники на снимке — rupep.org.",
         "statusNote": "Статус: тема подтверждена, уровень внимания — средний; достоверность оценки высокая.",
+        "sourceNote": "Источники на снимке — rupep.org.",
         "highlightExplanations": [
           {
             "clientReason": "«PEP / RCA / watchlist-сигналы» — выделенный результат rupep.org; уровень: средний.",

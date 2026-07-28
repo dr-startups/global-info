@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v46",
+  "contentVersion": "deck-sections-v47",
   "promptVersion": "uae-serp-analysis-v4",
   "contentHash": "sha256:c89d639a3a54845d3b75da8e1659ad2c1f864fbaaf2c79b91a996ddc7baff9fc",
   "inputHash": "sha256:85af08a4b05f4392a585c8dcdc85336cfbe781100f047392eef89920e69b6773:00e9bc411f81d76d",
-  "generatedAt": "2026-07-28T12:55:22.455Z",
+  "generatedAt": "2026-07-28T14:18:00.007Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -219,7 +219,6 @@
       "templateId": "serp-table",
       "title": "ОАЭ — позиции в поисковой выдаче",
       "content": {
-        "narrative": "«Криминальные / судебные материалы» — критический уровень внимания.",
         "table": {
           "headers": [
             "№",
@@ -239,8 +238,9 @@
         "whatWasFound": "«Криминальные / судебные материалы» — критический уровень внимания.",
         "whyItMatters": "На странице 3 темы повышенного внимания — эти материалы видны при первой же проверке субъекта.",
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
+        "statusNote": "Статус: тема подтверждена, уровень внимания — критический; достоверность оценки высокая.",
         "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
-        "statusNote": "Статус: тема подтверждена, уровень внимания — критический; достоверность оценки высокая."
+        "narrative": "«Криминальные / судебные материалы» — критический уровень внимания."
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",

@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v46",
+  "contentVersion": "deck-sections-v47",
   "promptVersion": "ru-regional-summary-v4",
-  "contentHash": "sha256:3eddd25c3b4e8316e451b1b79164cc5dda439e294a5977ad5f5434844570e500",
+  "contentHash": "sha256:76ce7d4b94501b8fa94c8042fb78727db927ce6e063b0f8177fb1c1c2fdef436",
   "inputHash": "sha256:4070b3e52f031784e546139346c44ea7eadc7d2fe59fda8071fe70a7dba11e62:6449639705705ceb",
-  "generatedAt": "2026-07-28T12:55:22.444Z",
+  "generatedAt": "2026-07-28T14:17:59.992Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -186,12 +186,6 @@
       "title": "Россия — резюме аудита",
       "content": {
         "narrative": "В выдаче по региону «Россия» проверяющий увидит 214 материалов. Подтверждённых тем: 5, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; Внимание по линии безопасности / оборонный контур; PEP / RCA / watchlist-сигналы.",
-        "bullets": [
-          "«Криминальные / судебные материалы»\nНайдены публикации по теме:\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-criminal_legal-subject_match-16447175]",
-          "«Внимание по линии безопасности / оборонный контур»\nНайдены публикации по теме:\n«Российский бизнесмен Сергей Глинка пытается с помощью румынской Automecanica SA овладеть контрольным пакетом оборонного завода Popeci в Молдове • Портал РЕПОСТ» — источник repost.news\n«Российский бизнесмен Сергей Глинка пытается с помощью румынской Automecanica SA овладеть контрольным пакетом оборонного завода Popeci в Молдове • Портал РуМафия» — источник rumafia.io.\nГде видно: repost.news, rumafia.io. [finding-security_scrutiny-subject_match-0ae970c7]"
-        ],
-        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "sourceNote": "Источники — bitva.wiki, kartoteka.news, kompromat1.online, osnmedia.ru и ещё 2.",
         "kpis": [
           {
             "label": "Материалов региона",
@@ -213,7 +207,12 @@
             "value": "0",
             "tone": "neutral"
           }
-        ]
+        ],
+        "bullets": [
+          "«Криминальные / судебные материалы»\nНайдены публикации по теме:\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-criminal_legal-subject_match-16447175]"
+        ],
+        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
+        "sourceNote": "Источники — bitva.wiki, kartoteka.news, kompromat1.online, osnmedia.ru и ещё 2."
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -291,10 +290,93 @@
       "continuationOf": "p07_ru_summary",
       "continuationIndex": 1,
       "templateId": "regional-summary",
-      "title": "Россия — резюме аудита (продолжение 2/2)",
+      "title": "Россия — резюме аудита (продолжение 2/3)",
       "content": {
         "bullets": [
-          "«PEP / RCA / watchlist-сигналы»\nНайдены публикации по теме:\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
+          "«Внимание по линии безопасности / оборонный контур»\nНайдены публикации по теме:\n«Российский бизнесмен Сергей Глинка пытается с помощью румынской Automecanica SA овладеть контрольным пакетом оборонного завода Popeci в Молдове • Портал РЕПОСТ» — источник repost.news\n«Российский бизнесмен Сергей Глинка пытается с помощью румынской Automecanica SA овладеть контрольным пакетом оборонного завода Popeci в Молдове • Портал РуМафия» — источник rumafia.io.\nГде видно: repost.news, rumafia.io. [finding-security_scrutiny-subject_match-0ae970c7]",
+          "«PEP / RCA / watchlist-сигналы»\nНайдены публикации по теме:\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-pep_rca_watchlist-subject_match-dfa7da39]"
+        ],
+        "sourceNote": "Источники — bitva.wiki, kartoteka.news, kompromat1.online, osnmedia.ru и ещё 2."
+      },
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
+        "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+        "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+        "inventory:ss-cmreb9zhz00ddmm0feohikekq",
+        "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
+        "inventory:ss-cmreb9zi000elmm0fyqi9iclm",
+        "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
+        "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
+        "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
+        "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
+        "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
+        "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
+        "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
+        "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
+        "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
+        "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
+        "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
+        "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+        "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr",
+        "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+        "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
+        "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
+        "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
+        "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
+        "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
+        "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
+        "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
+        "inventory:serp-obs-cmrjsolqp001zvd3w5zpjp2om",
+        "inventory:serp-obs-cmrjsolqw0023vd3w2eoqixj7",
+        "inventory:serp-obs-cmrjsolr20027vd3wxzfboo2x",
+        "inventory:serp-obs-cmrjsolrk002jvd3wopqyvu5g",
+        "inventory:serp-obs-cmrjsolrr002nvd3w3psml6tj",
+        "inventory:serp-obs-cmrjsolrx002rvd3w7k3h8bv0",
+        "inventory:serp-obs-cmrjsols3002vvd3wfs38b7sp",
+        "inventory:serp-obs-cmrjsolsl0037vd3wp23d4o2n",
+        "inventory:serp-obs-cmrjsolsr003bvd3wj9cf1gw7",
+        "inventory:ss-cmreb9zhz00cfmm0fdhgfiqvh",
+        "inventory:ss-cmreb9zhz00cjmm0f03cgzeo5",
+        "inventory:ss-cmreb9zi000dvmm0fhbtw7vrt",
+        "inventory:ss-cmreb9zi100f7mm0f5gkolgg2",
+        "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+        "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+        "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+        "inventory:serp-obs-cmrjsols9002zvd3wjq67psn0",
+        "inventory:serp-obs-cmrjsolr8002bvd3w2uduodae",
+        "inventory:serp-obs-cmrjsolre002fvd3w3wxqml1u",
+        "inventory:serp-obs-cmrjsolsf0033vd3wqx69xqfp",
+        "inventory:serp-obs-cmrjsolqj001vvd3wsurnh57u",
+        "inventory:serp-obs-cmrjsolqc001rvd3watwr1v7v"
+      ],
+      "findingIds": [
+        "finding-criminal_legal-subject_match-16447175",
+        "finding-security_scrutiny-subject_match-0ae970c7",
+        "finding-pep_rca_watchlist-subject_match-dfa7da39",
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-family_associates-subject_match-a4427a53"
+      ],
+      "metrics": {
+        "materials": 214,
+        "findings": 5,
+        "likely": 0,
+        "adverse": 3,
+        "uncategorized": 0
+      },
+      "visualAssetRefs": []
+    },
+    {
+      "schemaVersion": "slide-content-v1",
+      "slideId": "p07_ru_summary__cont2",
+      "baseSlotId": "p07_ru_summary",
+      "sectionId": "RU_PROFILE",
+      "isContinuation": true,
+      "continuationOf": "p07_ru_summary",
+      "continuationIndex": 2,
+      "templateId": "regional-summary",
+      "title": "Россия — резюме аудита (продолжение 3/3)",
+      "content": {
+        "bullets": [
           "«Деловой профиль»\nНайдены публикации по теме:\n«Глинка Сергей Михайлович / Биографии / Битва за Украину» — источник bitva.wiki\n«Российский бизнесмен Сергей Глинка пытается с помощью румынской Automecanica SA овладеть контрольным пакетом оборонного завода Popeci в Молдове • Портал РЕПОСТ» — источник repost.news.\nГде видно: bitva.wiki, repost.news. [finding-business_profile-subject_match-a59d6fee]",
           "«Семья и деловые связи»\nНайдены публикации по теме:\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-family_associates-subject_match-a4427a53]"
         ],

@@ -38,6 +38,20 @@ export type TemplateLayoutSpec = {
   narrativeCharBudget: number;
   /** Character budget per bullet/table cell. */
   itemCharBudget: number;
+  /**
+   * Сколько знаков помещается в одну **нарисованную** строку этого шаблона.
+   *
+   * Нужен, потому что ёмкость страницы у рендерера меряется высотой, а высота
+   * считается по строкам, а не по знакам. Многострочный тематический блок
+   * («Заголовок» / «Найдены публикации по теме:» / цитата / источник) занимает
+   * строк много, а знаков мало — и счётная модель его недооценивает.
+   *
+   * Откалибровано по замеру рендерера на эталонной деке: он сообщил 15,9 и
+   * 18,2 строки для страниц 11 и 29, эта оценка при 85 даёт 16 и 19. Округление
+   * в большую сторону намеренное: лучше разбить страницу раньше, чем потерять
+   * текст.
+   */
+  charsPerRenderedLine?: number;
   /** Pagination rule: what happens when content exceeds the budgets. */
   pagination: "continuation" | "clamp" | "none";
 };
@@ -63,6 +77,21 @@ export type DeckTemplateDef = {
    * задано — ёмкость продолжения равна ёмкости первой страницы, как было.
    */
   maxBulletsPerContinuation?: number;
+  /**
+   * Ёмкость страницы в **нарисованных строках**, а не в блоках.
+   *
+   * Счётный предел («сколько блоков влезает») верен, пока блоки одного роста.
+   * На эталонной деке это не так: два тематических блока по 356 и 537 знаков
+   * развернулись в 15,9 строки при 8,5 доступных, и рендерер выбросил один —
+   * `CONTENT_DROPPED_BY_RENDERER` на страницах 11 и 29. Счётный предел (2) и
+   * знаковый (2×860) при этом соблюдались оба: мерилось количество, печаталась
+   * высота.
+   *
+   * Не задано — ёмкость по-прежнему считается блоками и знаками, как было.
+   */
+  maxBulletLinesPerSlide?: number;
+  /** То же для страницы-продолжения: на ней нет KPI-обвязки, места больше. */
+  maxBulletLinesPerContinuation?: number;
   /** Max table rows per slide before a continuation is required. */
   maxTableRowsPerSlide: number;
   /** Static grid/typography/spacing/budget spec for this SlideKind. */
@@ -197,8 +226,14 @@ export const DECK_TEMPLATE_REGISTRY: Record<DeckTemplateId, DeckTemplateDef> = {
     // пустыми от 30 до 70 % листа — пять страниц «Россия — резюме аудита»
     // подряд, последняя с одним блоком в 115 знаков.
     maxBulletsPerContinuation: 3,
+    // Ёмкость в нарисованных строках — откалибрована по замеру рендерера на
+    // эталонной деке: первая страница сообщила 8,5 доступных строк (2 937 723
+    // требовалось при 1 563 360 доступных), продолжение вмещает три блока в
+    // ~19 строк. Счётного предела мало: блоки бывают вдвое выше обычного.
+    maxBulletLinesPerSlide: 8,
+    maxBulletLinesPerContinuation: 20,
     maxTableRowsPerSlide: 0,
-    layout: layout("two-column", { narrativeCharBudget: 700, itemCharBudget: 860 }),
+    layout: layout("two-column", { narrativeCharBudget: 700, itemCharBudget: 860 , charsPerRenderedLine: 85 }),
   },
   "finding-cards": {
     templateId: "finding-cards",
