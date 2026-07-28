@@ -299,7 +299,33 @@ def inspect_presentation(pptx: Path, *, expect_pages: int | None = None) -> dict
         try:
             telemetry = json.loads(telemetry_path.read_text(encoding="utf-8"))
             for row in telemetry.get("entries") or telemetry.get("textBoxes") or []:
-                if row.get("clipped") is True:
+                dropped = int(row.get("droppedBullets") or 0) + int(row.get("droppedLines") or 0)
+                if dropped > 0:
+                    # Потеря содержимого — не то же самое, что вылезший за рамку
+                    # текст: до читателя блок не дошёл вовсе. Правило записано в
+                    # ENGINEERING.md и реализовано в TS-инспекторе
+                    # (`inspectLayoutTelemetry`), но прогон зовёт этот файл — и
+                    # здесь правила не было. Один вопрос, два ответа, причём
+                    # строгий ответ не исполнялся никогда: на эталонной деке
+                    # выброшенные буллеты страниц 11 и 29 докладывались как
+                    # `text-clipping`.
+                    clipping.append(
+                        {
+                            "page": int(row.get("page") or 0),
+                            "code": "CONTENT_DROPPED_BY_RENDERER",
+                            "severity": "CRITICAL",
+                            "detail": (
+                                f"рендерер выбросил содержимое: "
+                                f"блоков={row.get('droppedBullets') or 0} "
+                                f"строк={row.get('droppedLines') or 0} "
+                                f"requiredHeight={row.get('requiredHeight')} "
+                                f"availableHeight={row.get('availableHeight')} "
+                                f"name={row.get('name') or row.get('role')} "
+                                f"— страницу должна была разбить пагинация"
+                            ),
+                        }
+                    )
+                elif row.get("clipped") is True:
                     clipping.append(
                         {
                             "page": int(row.get("page") or 0),
