@@ -16,6 +16,10 @@ import {
   resetArsenkinTaskSlotsForTest,
 } from "../../src/modules/digital-profile/providers/arsenkin/task-slots";
 import { enqueueCaseAgentWork } from "../../src/modules/digital-profile/services/arsenkin-case-agent-execution/shared";
+import {
+  rateLimitBackoffMs,
+  maxArsenkinRateLimitRetries,
+} from "../../src/modules/digital-profile/providers/arsenkin/poll-worker";
 
 const ORIGINAL = process.env.ARSENKIN_MAX_CONCURRENT;
 
@@ -209,5 +213,37 @@ describe("очередь исполнений агента", () => {
     await expect(
       enqueueCaseAgentWork("case-2/exec-x", async () => "next")
     ).resolves.toBe("next");
+  });
+});
+
+describe("ответ 429 — это «позже», а не «негодный запрос»", () => {
+  it("пауза растёт с числом отказов и не превышает минуты", () => {
+    /*
+     * Прежде здесь стояли неизменные пять секунд: мы стучались в занятый
+     * аккаунт ровно с той частотой, с какой он отказывал.
+     */
+    expect(rateLimitBackoffMs(0)).toBe(5_000);
+    expect(rateLimitBackoffMs(1)).toBe(10_000);
+    expect(rateLimitBackoffMs(2)).toBe(20_000);
+    expect(rateLimitBackoffMs(3)).toBe(40_000);
+    expect(rateLimitBackoffMs(99)).toBe(60_000);
+    expect(rateLimitBackoffMs(-5)).toBe(5_000);
+  });
+
+  it("терпения хватает на минуты занятости, а не на двадцать пять секунд", () => {
+    /*
+     * Задачи Arsenkin идут по полторы минуты; бюджет ожидания должен быть
+     * сопоставим с ними, иначе занятость аккаунта хоронит задачу.
+     */
+    const waits = maxArsenkinRateLimitRetries();
+    let total = 0;
+    for (let i = 0; i < waits; i += 1) total += rateLimitBackoffMs(i);
+    expect(total).toBeGreaterThan(10 * 60_000);
+  });
+
+  it("бюджет ожидания задаётся переменной окружения", () => {
+    expect(maxArsenkinRateLimitRetries({ ...process.env, ARSENKIN_MAX_RATE_LIMIT_RETRIES: "3" })).toBe(3);
+    // Бессмыслица не отключает бюджет — берётся значение по умолчанию.
+    expect(maxArsenkinRateLimitRetries({ ...process.env, ARSENKIN_MAX_RATE_LIMIT_RETRIES: "нет" })).toBe(20);
   });
 });
