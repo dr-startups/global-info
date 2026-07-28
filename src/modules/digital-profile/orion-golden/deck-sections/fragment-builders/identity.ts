@@ -14,6 +14,7 @@ import {
   buildPageEvidenceView,
   claimText,
   clampClientText,
+  clientReadableUrl,
   coverageContent,
   emptyStatusForReason,
   fitClientSentences,
@@ -133,7 +134,7 @@ function dedupeByText(texts: readonly string[]): string[] {
     wikiCheck && checkExists === true
       ? clampClientText(
           `Проверка Wikipedia (${wikiCheck[1].language ?? "—"}): статья найдена${
-            wikiCheck[1].url ? ` — ${wikiCheck[1].url}` : ""
+            wikiCheck[1].url ? ` — ${clientReadableUrl(wikiCheck[1].url)}` : ""
           }${wikiCheck[1].title ? ` «${wikiCheck[1].title}»` : ""}.`,
           400
         )
@@ -166,7 +167,7 @@ function dedupeByText(texts: readonly string[]): string[] {
   const checkNarrative =
     checkExists === true
       ? `Фактическая проверка Wikipedia подтверждает наличие статьи о проверяемом субъекте${
-          wikiCheck?.[1].url ? ` (${wikiCheck[1].url})` : ""
+          wikiCheck?.[1].url ? ` (${clientReadableUrl(wikiCheck[1].url)})` : ""
         }. `
       : checkExists === false
         ? "Фактическая проверка Wikipedia: статья не найдена. "
@@ -186,7 +187,7 @@ function dedupeByText(texts: readonly string[]): string[] {
       ? clampClientText(
           `Проверка Wikipedia (${wikiCheck?.[1].language ?? "—"}): статья найдена` +
             (wikiCheck?.[1].title ? ` «${wikiCheck[1].title}»` : "") +
-            (wikiCheck?.[1].url ? `. URL: ${wikiCheck[1].url}` : ".") +
+            (wikiCheck?.[1].url ? `. URL: ${clientReadableUrl(wikiCheck[1].url)}` : ".") +
             (wikiDomains.length
               ? ` В выдаче также есть энциклопедические домены: ${wikiDomains.join(", ")}.`
               : ""),

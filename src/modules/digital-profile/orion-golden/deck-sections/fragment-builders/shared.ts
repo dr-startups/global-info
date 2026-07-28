@@ -392,6 +392,26 @@ const DANGLING_TAIL_RE =
  * fallback is used only when the slice has no boundary at all, and dangling
  * conjunctions/prepositions are stripped so the text never ends in «…и.».
  */
+/**
+ * Ссылка в человекочитаемом виде.
+ *
+ * Провайдеры собирают адреса через `encodeURIComponent`, и в клиентском отчёте
+ * это выглядело так: «статья найдена —
+ * https://ru.wikipedia.org/wiki/%D0%94%D1%83%D1%80%D0%BE%D0%B2». Читателю
+ * такая строка не говорит ничего, а документ, за который платят, обесценивает
+ * сразу. Машине проценты нужны, человеку — нет; отчёт пишется человеку.
+ *
+ * Если раскодировать не удалось (битая последовательность), остаётся исходная
+ * строка: показать ссылку как есть честнее, чем не показать вовсе.
+ */
+export function clientReadableUrl(url: string): string {
+  try {
+    return decodeURI(url);
+  } catch {
+    return url;
+  }
+}
+
 export function clampClientText(text: string, max: number): string {
   if (text.length <= max) return text;
   const slice = text.slice(0, max);
