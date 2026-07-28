@@ -143,6 +143,25 @@ function firstNonEmpty(values: string[]): string {
   return values.find((v) => v.length > 0) ?? "";
 }
 
+/**
+ * Названия типов риска для клиентского текста.
+ *
+ * Тема провайдера — машинный код (`role.oligarch`, `poi`), и в отчёт он
+ * попадать не должен. Перевод кода в тип риска уже описан таблицей
+ * `TOPIC_PREFIX_TO_RISK`; здесь тип получает имя, которое читает человек.
+ */
+const RISK_TYPE_LABEL_RU: Record<ComplianceRiskType, string> = {
+  SANCTIONS: "санкционные списки",
+  PEP: "публичные должностные лица (PEP)",
+  ADVERSE_MEDIA: "негативные публикации",
+  WATCHLIST: "списки наблюдения",
+  LAW_ENFORCEMENT: "правоохранительные материалы",
+  LEGAL: "судебные и правовые материалы",
+  INSOLVENCY: "несостоятельность",
+  POLITICAL_EXPOSURE: "политическая значимость",
+  OTHER: "прочие основания",
+};
+
 /** Кратко о совпадении: списки, где числится, и роль. */
 export function summarizeEntity(entity: Record<string, unknown>): string {
   const datasets = Array.isArray(entity.datasets)
@@ -151,7 +170,25 @@ export function summarizeEntity(entity: Record<string, unknown>): string {
   const topics = props(entity, "topics");
   const position = firstNonEmpty(props(entity, "position"));
   const parts: string[] = [];
-  if (topics.length > 0) parts.push(`темы: ${topics.join(", ")}`);
+  // Темы называются словами, а не кодами провайдера.
+  //
+  // Здесь стояло `topics.join(", ")`, и в отчёте о Тинькове (28.07, стр. 54)
+  // клиент читал «Темы: sanction, role.oligarch, role.pep, poi». Машинная
+  // строка посреди клиентского текста обесценивает документ целиком, а перевод
+  // этих же кодов в типы риска лежал в двадцати строках выше и не
+  // использовался. Неизвестный код провайдера уходит в «прочие основания»:
+  // общая формулировка честнее машинного кода.
+  //
+  // «Тем нет вовсе» и «тема есть, но незнакомая» — разные случаи:
+  // `riskTypesFromTopics` намеренно отдаёт «прочее» на пустом входе, чтобы
+  // совпадение не исчезло, но писать «темы: прочие основания» там, где тем не
+  // было, значит сообщать о том, чего провайдер не говорил.
+  if (topics.length > 0) {
+    const riskLabels = [
+      ...new Set(riskTypesFromTopics(topics).map((t) => RISK_TYPE_LABEL_RU[t])),
+    ].filter(Boolean);
+    if (riskLabels.length > 0) parts.push(`темы: ${riskLabels.join(", ")}`);
+  }
   if (position) parts.push(`должность: ${position}`);
   if (datasets.length > 0) parts.push(`источники: ${datasets.slice(0, 5).join(", ")}`);
   return parts.length > 0 ? parts.join("; ") : "запись в базе OpenSanctions без дополнительных сведений";
