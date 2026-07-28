@@ -140,11 +140,37 @@ export function packSentencesNoTruncate(text: string, maxChars: number): string[
   return chunks;
 }
 
+/** Как выглядит заголовок части: у продолжений он длиннее на одно слово. */
+const CONTINUATION_SUFFIX = " (продолжение)";
+
+/**
+ * Бюджет тела темы с поправкой на заголовок.
+ *
+ * Укладка считала бюджет по `theme.body`, а в деку уходит склейка заголовка с
+ * телом (`themeBlockText` → «Заголовок. Тело»). Мерилось одно, печаталось
+ * другое — и на живом прогоне заказчика буллеты вышли в 901 и 922 знака при
+ * бюджете 900. Один лишний знак останавливал сборку всего отчёта.
+ *
+ * Поправка берётся по самому длинному варианту заголовка — с пометкой
+ * «(продолжение)»: части нарезаются заранее, и любая из них может оказаться
+ * продолжением. Лучше немного недобрать, чем не собрать отчёт.
+ */
+export function bodyBudgetForTheme(heading: string | undefined, bulletBudget: number): number {
+  const h = (heading ?? "").trim();
+  if (!h) return bulletBudget;
+  // «Заголовок (продолжение). » — точка и пробел из `themeBlockText`.
+  const overhead = h.length + CONTINUATION_SUFFIX.length + 2;
+  return Math.max(80, bulletBudget - overhead);
+}
+
 function themeToBlocks(
   theme: ComposedClientSummary["sections"]["themes"][number],
   bulletBudget: number
 ): SemanticBlock[] {
-  const chunks = packSentencesNoTruncate(theme.body, bulletBudget);
+  const chunks = packSentencesNoTruncate(
+    theme.body,
+    bodyBudgetForTheme(theme.heading, bulletBudget)
+  );
   if (chunks.length <= 1) {
     return [
       {

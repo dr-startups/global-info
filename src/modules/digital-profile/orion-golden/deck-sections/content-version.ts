@@ -13,7 +13,7 @@
  * поднять версию. Забыть больше нельзя, а угадывать «надо ли» не приходится.
  */
 
-export const DECK_CONTENT_VERSION = "deck-sections-v43" as const;
+export const DECK_CONTENT_VERSION = "deck-sections-v44" as const;
 
 /**
  * Отпечаток исходников `fragment-builders/` на момент последнего подъёма
