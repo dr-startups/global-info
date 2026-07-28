@@ -23,6 +23,7 @@ import {
   type VisualAssetsBySlot,
   type V72PageInventoryItem,
 } from "../src/modules/digital-profile/orion-golden/deck-sections";
+import { DECK_CONTENT_VERSION } from "../src/modules/digital-profile/orion-golden/deck-sections/content-version";
 import type { VerifiedFindingBundle } from "../src/modules/digital-profile/orion-golden/contracts/verified-finding-bundle";
 import type { Finding } from "../src/modules/digital-profile/orion-golden/contracts/finding";
 import type { SurfaceAnalysis } from "../src/modules/digital-profile/orion-golden/contracts/surface-analysis";
@@ -348,7 +349,14 @@ async function main(): Promise<void> {
       caseId: inputs.caseId,
       reportRunId: inputs.reportRunId,
       sourceDatasetId: inputs.sourceDatasetId,
-      contentVersion: "deck-sections-v14",
+      // Версия содержимого — та же, что у продукта. Здесь стоял литерал
+      // «deck-sections-v14», и он не двигался, пока ключ уехал на v45: пакеты
+      // секций переиспользуются по совпадению версии, поэтому эталонная дека
+      // тридцать одну версию подряд собиралась из содержимого, построенного
+      // 12:07 в день заморозки. Замер: журнал сборки давал REUSED_CACHE 20 из
+      // 22. Любая правка построителя в этот эталон не доезжала — и проверять
+      // её было нечем.
+      contentVersion: DECK_CONTENT_VERSION,
       subject: { displayName: "Сергей Глинка", aliases: ["Sergey Glinka"] },
       bundle: inputs.mergedBundle,
       surfaceUnits: inputs.surfaceUnits,

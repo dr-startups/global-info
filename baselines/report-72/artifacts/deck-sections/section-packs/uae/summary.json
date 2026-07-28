@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v14",
+  "contentVersion": "deck-sections-v45",
   "promptVersion": "uae-regional-summary-v4",
   "contentHash": "sha256:262a2ace0bcb2f1a3a6f5967983bad50b6761f1f907aa5f5461d7b3ac4db1117",
   "inputHash": "sha256:3042631ee4f0f1ab2c294b23ee597d8d9635daba18c502aa052df78836b084fc:91431df6ffddad5b",
-  "generatedAt": "2026-07-28T12:07:22.290Z",
+  "generatedAt": "2026-07-28T12:50:19.858Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
