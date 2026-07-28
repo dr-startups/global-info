@@ -129,9 +129,25 @@ export async function claimNextStep(input: {
      WHERE s."id" = (
        SELECT c."id"
          FROM "dp_workflow_steps" AS c
-        WHERE c."state" IN ('PENDING', 'WAITING', 'RUNNING')
+        -- Состояние FAILED здесь обязательно. Повторяемый отказ пишет ровно
+        -- «повторить тогда-то, шаг не закончен» (applyStepOutcome: state
+        -- FAILED, nextRunAt = now + backoff, finished false), и кабинет по тем
+        -- же данным обещает пользователю «продолжится само» (autoResumeState
+        -- берёт PENDING, WAITING и FAILED). Выборка же читала три состояния из
+        -- четырёх — и назначенный повтор не наступал никогда.
+        --
+        -- Поймано на боевом прогоне 28.07: база собрана, Arsenkin отдал 522
+        -- наблюдения, а прогон четырнадцать минут стоял на 35 процентах с
+        -- ARSENKIN_ENRICHMENT state=FAILED attempts=1/10 nextRunAt=17:58:16.
+        -- Пользователю оставалось дожимать руками — при обратном правиле.
+        --
+        -- Исчерпанный отказ сюда не попадает: у него nextRunAt = null, и
+        -- условие ниже его отсекает. Это и есть граница между «повторим сами»
+        -- и «нужно решение оператора».
+        WHERE c."state" IN ('PENDING', 'WAITING', 'RUNNING', 'FAILED')
           AND c."nextRunAt" IS NOT NULL
           AND c."nextRunAt" <= ${now}
+          AND c."attempts" < c."maxAttempts"
           AND (c."leaseUntil" IS NULL OR c."leaseUntil" <= ${now})
           AND (${input.jobId ?? null}::text IS NULL OR c."jobId" = ${input.jobId ?? null})
           AND NOT EXISTS (
