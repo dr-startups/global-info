@@ -723,9 +723,14 @@ export function pageRowCompositionBlocks(
     "результата",
     "результатов"
   );
-  const domainsNote = composition.topDomains.length
-    ? `; преобладающие источники: ${enumerateRu(clientSafeDomains(composition.topDomains))}`
-    : "";
+  // Решение «писать перечисление» принимается по тому, что напечатается, а не
+  // по списку до отбора. `clientSafeDomains` убирает «—» и демо-домены, и в
+  // деке report-72 на двух страницах оставалось «преобладающие источники: .» —
+  // двоеточие, за которым нет ни одного названия. Условие смотрело на
+  // `topDomains`, печатался результат отбора: проверялось одно, печаталось
+  // другое.
+  const domainsList = enumerateRu(clientSafeDomains(composition.topDomains));
+  const domainsNote = domainsList ? `; преобладающие источники: ${domainsList}` : "";
   return {
     whatWasFound: clampClientText(
       `Показано ${composition.shown} ${resultWord}; из них о субъекте — ${composition.subjectMatch}, вероятно о субъекте — ${composition.likelySubject}, негативных заголовков — ${composition.adverseHeadlines}${domainsNote}.`,
