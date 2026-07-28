@@ -35,8 +35,24 @@ const PAGE_SCOPED_TEMPLATES = new Set([
 /** Fragments whose serp-table slides carry region-level summary rows. */
 const REGION_SUMMARY_FRAGMENTS = new Set(["RU_SUMMARY", "UAE_SUMMARY", "COMPLIANCE_MAIN"]);
 
-// Domain-like tokens: labels ending in an alphabetic TLD (avoids numbers/dates).
-const DOMAIN_TOKEN_RE = /\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.[a-z]{2,}\b/giu;
+/**
+ * Домены в клиентском тексте. Зона — буквы **или** punycode (`xn--…`).
+ *
+ * Требование «зона состоит только из букв» отсекало кириллические зоны: у
+ * `.рф` она выглядит как `xn--p1ai`, с цифрами и дефисами. На боевом прогоне
+ * 28.07 из строки «Источники — … xn--h1ajim.xn--p1ai …» вырезался обрезок
+ * `xn--h1ajim.xn`; такого домена не существует, среди доказательств страницы
+ * его не было, и обязательная секция `RU_SERP` получила отказ
+ * «sidebar domain not derived from page evidence». Дека не собралась вовсе —
+ * `pageCount: 0`. То есть отчёт с любым источником в зоне `.рф` до клиента не
+ * доходил.
+ *
+ * Буквенная зона требовалась, чтобы не считать доменами даты и числа
+ * («28.07.2026», «3.14»), — это свойство сохранено: punycode-зона обязана
+ * начинаться с `xn--`.
+ */
+export const DOMAIN_TOKEN_RE =
+  /\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:xn--[a-z0-9-]+|[a-z]{2,})\b/giu;
 
 const TEXT_BUDGETS = getClientTextFieldBudgets();
 
