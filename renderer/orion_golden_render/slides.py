@@ -15,6 +15,9 @@ except ImportError:  # pragma: no cover
     Image = None  # type: ignore
 
 from .common import (
+    FS_CARD_TITLE,
+    FS_COVER,
+    FS_SUBTITLE,
     BODY_COLOR,
     CARD_BG,
     CARD_BORDER,
@@ -76,10 +79,10 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         kr.text = "ОТЧЁТ О ЦИФРОВОМ ПРОФИЛЕ"
         kr.font.name = FONT
         kr.font.bold = True
-        kr.font.size = Pt(12)
+        kr.font.size = Pt(FS_BODY)
         kr.font.color.rgb = RGBColor(0xC0, 0x9A, 0x4F)
-        y = ctx.title("ORION Digital Profile", 1_850_000, WHITE, 38)
-        ctx.body(narrative or title, y + 100_000, max_h=900_000, color=RGBColor(0xBF, 0xDB, 0xFE), font_size=14)
+        y = ctx.title("ORION Digital Profile", 1_850_000, WHITE, FS_COVER)
+        ctx.body(narrative or title, y + 100_000, max_h=900_000, color=RGBColor(0xBF, 0xDB, 0xFE), font_size=FS_SUBTITLE)
         rule = ctx.slide.shapes.add_shape(
             1, Emu(MARGIN_X), Emu(5_650_000), Emu(2_400_000), Emu(16_000)
         )
@@ -112,7 +115,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             nr.text = f"{i:02d}"
             nr.font.name = FONT
             nr.font.bold = True
-            nr.font.size = Pt(16)
+            nr.font.size = Pt(FS_CARD_TITLE)
             nr.font.color.rgb = RGBColor(0xC0, 0x9A, 0x4F)
             box = ctx.slide.shapes.add_textbox(
                 Emu(MARGIN_X + 640_000), Emu(ry + 20_000), Emu(CONTENT_W - 640_000), Emu(row_h)
@@ -123,7 +126,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             r = p.add_run()
             r.text = entry
             r.font.name = FONT
-            r.font.size = Pt(13)
+            r.font.size = Pt(FS_SUBTITLE)
             r.font.color.rgb = WHITE
             rule = ctx.slide.shapes.add_shape(
                 1, Emu(MARGIN_X), Emu(ry + row_h - 60_000), Emu(CONTENT_W), Emu(9_000)
@@ -242,7 +245,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             r.text = _safe(title)
             r.font.name = FONT
             r.font.bold = True
-            r.font.size = Pt(36)
+            r.font.size = Pt(FS_COVER)
             r.font.color.rgb = WHITE
             if narrative:
                 ctx.body(
@@ -255,7 +258,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                     w=text_w,
                 )
             return
-        ctx.title(title, 2800000, WHITE, 34)
+        ctx.title(title, 2800000, WHITE, FS_COVER)
         return
 
     if template == "orion_golden_metrics_dashboard":
@@ -357,7 +360,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 tone="warn",
                 title_size=11,
                 skip_if_stub=True,
-                body_size=10.5,
+                body_size=FS_BODY,
             )
             y += 50_000
         if bullets:
@@ -521,7 +524,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 clipped = _clip_words(bullet, 240)
                 r.text = f"• {clipped}"
                 r.font.name = FONT
-                r.font.size = Pt(11)
+                r.font.size = Pt(FS_BODY)
                 r.font.color.rgb = (
                     RGBColor(0xB9, 0x1C, 0x1C) if clipped.startswith("[Н]") else BODY_COLOR
                 )
@@ -544,7 +547,7 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             max_h=1_700_000,
             tone="accent",
             title_size=11,
-            body_size=12,
+            body_size=FS_BODY,
         )
         y += 110_000
         if bullets:

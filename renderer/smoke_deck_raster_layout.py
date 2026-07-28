@@ -27,6 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from PIL import Image, ImageDraw  # noqa: E402
 
 from smoke_counters import print_tap_counters  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from orion_golden_render.common import TYPE_SCALE_PT  # noqa: E402
 from deck_raster_layout import (  # noqa: E402
     CONTENT_BOTTOM,
     SLIDE_H,
@@ -143,6 +145,45 @@ def main() -> int:
             "эталонная дека проходит растровую проверку",
             rep.passed,
             f"проверено страниц: {rep.pages_checked}, дефектов: {len(rep.findings)}",
+        )
+
+    # --- ADR-0008: типографическая шкала закрыта -------------------------
+    #
+    # Замер до шага: шестнадцать разных кеглей в деке, до восьми на странице.
+    # Глаз читает такой набор не как иерархию, а как шум.
+    pptx_path = (
+        Path(__file__).resolve().parent.parent
+        / "baselines/report-72/artifacts/deck-sections/rendered-client.pptx"
+    )
+    if not pptx_path.is_file():
+        print("# SKIP шкала кеглей эталонной деки — нет отрисованного PPTX")
+    else:
+        from pptx import Presentation
+
+        used: dict[float, int] = {}
+        per_page: dict[int, set] = {}
+        for idx, slide in enumerate(Presentation(str(pptx_path)).slides, 1):
+            for shape in slide.shapes:
+                if not shape.has_text_frame:
+                    continue
+                for para in shape.text_frame.paragraphs:
+                    for run in para.runs:
+                        if run.font.size is None:
+                            continue
+                        pt = round(run.font.size.pt, 2)
+                        used[pt] = used.get(pt, 0) + 1
+                        per_page.setdefault(idx, set()).add(pt)
+        off = sorted(p for p in used if p not in TYPE_SCALE_PT)
+        check(
+            "в деке нет кеглей вне шкалы",
+            not off,
+            f"вне шкалы: {off}" if off else f"использовано ступеней: {sorted(used)}",
+        )
+        widest = max(per_page.items(), key=lambda kv: len(kv[1])) if per_page else (0, set())
+        check(
+            "на странице не больше четырёх ступеней",
+            len(widest[1]) <= 4,
+            f"страница {widest[0]}: {sorted(widest[1])}",
         )
 
     print(f"\n{'FAILED (' + str(len(failures)) + ')' if failures else 'PASSED (0 failures)'}")

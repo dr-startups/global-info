@@ -10,6 +10,7 @@ from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Pt
 
 from .common import (
+    FS_SUBTITLE,
     ACCENT,
     ACCENT_SOFT,
     BODY_COLOR,
@@ -136,7 +137,7 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
                 max_h=card_max,
                 tone=tone,
                 title_size=11,
-                body_size=10.5,
+                body_size=FS_BODY,
             )
             fx += col_w + gap
 
@@ -199,7 +200,7 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         remaining = CONTENT_BOTTOM - y - 100_000
         if remaining < max(520_000, pad_y + headline_h + pad_y):
             break
-        detail_font = 10.5
+        detail_font = FS_BODY
         if detail:
             # Grow card to fit complete detail when possible.
             detail_h = measure_text_height(detail, text_w, detail_font, line_spacing=1.2)
@@ -207,7 +208,7 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
             max_h = remaining
             if needed > max_h:
                 # PDF-36 D.3 — font step-down before dropping lines.
-                for candidate in (10, 9.5):
+                for candidate in (FS_CAPTION,):
                     cand_h = measure_text_height(detail, text_w, candidate, line_spacing=1.2)
                     trial = int((pad_y + headline_h + 40_000 + cand_h + pad_y) * 1.12)
                     if trial <= max_h:
@@ -251,7 +252,7 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         r.text = headline
         r.font.name = FONT
         r.font.bold = True
-        r.font.size = Pt(13)
+        r.font.size = Pt(FS_SUBTITLE)
         r.font.color.rgb = NAVY
         text_y = y + pad_y + headline_h + 30_000
         if detail:
@@ -278,7 +279,7 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
                 if li == 0 and line.startswith("«"):
                     bold, line_color, size_pt = False, BODY_COLOR, float(detail_font)
                 elif not bold:
-                    size_pt = float(detail_font) if line_color == BODY_COLOR else FS_CAPTION + 0.5
+                    size_pt = float(detail_font) if line_color == BODY_COLOR else FS_CAPTION
                 r = p.add_run()
                 r.text = line
                 r.font.name = FONT
@@ -292,7 +293,7 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
             bx = MARGIN_X + CONTENT_W - badge_w - 80_000
             by = y + pad_y
             inner_w = badge_w - 140_000
-            pill_size = 10
+            pill_size = FS_CAPTION
             lines = _title_line_estimate(pill, inner_w, pill_size, max_lines=3)
             if len(pill) > 14 or " " in pill:
                 lines = max(lines, 2)
@@ -344,7 +345,7 @@ def _render_profile_overview(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
             rr.text = label
             rr.font.name = FONT
             rr.font.bold = True
-            rr.font.size = Pt(14)
+            rr.font.size = Pt(FS_SUBTITLE)
             rr.font.color.rgb = NAVY
         y += hdr_h + 80_000
         left_bottom = _render_kpi_cards(ctx, left_metrics, MARGIN_X, y, half, cols=2)

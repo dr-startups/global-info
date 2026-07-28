@@ -16,6 +16,9 @@ except ImportError:  # pragma: no cover
     Image = None  # type: ignore
 
 from .common import (
+    TYPE_SCALE_PT,
+    FS_LEAD,
+    FS_SUBTITLE,
     ACCENT,
     ACCENT_SOFT,
     BODY_COLOR,
@@ -174,7 +177,8 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         avail = max_bottom - cy - 160_000 - title_h
         # PDF-36 D.3 — shrink the font 1–1.5 pt before dropping sentences.
         if needed > avail:
-            for candidate in (size - 1, size - 1.5):
+            # Только ступени шкалы: «минус полтора пункта» её нарушало.
+            for candidate in [x for x in reversed(TYPE_SCALE_PT) if x < size]:
                 if candidate < 9.5:
                     break
                 cand_h = measure_text_height(fitted, w - 2 * pad, candidate, line_spacing=1.2)
@@ -213,7 +217,7 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
             r.text = title
             r.font.name = FONT
             r.font.bold = bold_title
-            r.font.size = Pt(10.5)
+            r.font.size = Pt(FS_BODY)
             r.font.color.rgb = NAVY
             cy += 200_000
         bh = measure_text_height(fitted, w - 2 * pad, size, line_spacing=1.2)
@@ -228,7 +232,7 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
         r.font.color.rgb = BODY_COLOR
         cy += bh + gap
 
-    write_block(None, headline, field="headlineConclusion", size=12, required=True)
+    write_block(None, headline, field="headlineConclusion", size=FS_BODY, required=True)
     write_block(mid_title, mid_body, field="whatIsVisible", size=11)
     if meaning and meaning != mid_body and meaning != headline:
         write_block("Что это значит", meaning, field="clientMeaning", size=11)
@@ -244,7 +248,7 @@ def _sidebar_analysis(ctx: _Ctx, slide: dict[str, Any], x: int, y: int, w: int, 
             r = p.add_run()
             r.text = provenance
             r.font.name = FONT
-            r.font.size = Pt(8.5)
+            r.font.size = Pt(FS_CAPTION)
             r.font.color.rgb = MUTED_COLOR
 
 
@@ -292,14 +296,14 @@ def _render_kpi_cards(ctx: _Ctx, metrics: list[dict[str, Any]], x: int, y: int, 
         r0.text = value
         r0.font.name = FONT
         r0.font.bold = True
-        r0.font.size = Pt(20 if len(value) <= 10 else 13 if len(value) <= 22 else 10)
+        r0.font.size = Pt(FS_LEAD if len(value) <= 10 else FS_SUBTITLE if len(value) <= 22 else FS_BODY)
         r0.font.color.rgb = _tone_value_color(tone)
         p1 = tf.add_paragraph()
         p1.space_before = Pt(5)
         r1 = p1.add_run()
         r1.text = label
         r1.font.name = FONT
-        r1.font.size = Pt(10.5)
+        r1.font.size = Pt(FS_BODY)
         r1.font.color.rgb = MUTED_COLOR
     rows = (len(items) + cols - 1) // cols
     return y + rows * card_h + max(0, rows - 1) * gap
@@ -319,7 +323,7 @@ def _render_status_badge(ctx: _Ctx, badge: dict[str, Any] | None, x: int, y: int
     r.text = _clip_words(_safe(badge.get("label")), 48)
     r.font.name = FONT
     r.font.bold = True
-    r.font.size = Pt(14)
+    r.font.size = Pt(FS_SUBTITLE)
     r.font.color.rgb = _tone_value_color(tone)
     return y + h
 
@@ -412,7 +416,7 @@ def _render_analysis_cards_full_width(ctx: _Ctx, slide: dict[str, Any], y: int) 
             min_h=340_000,
             max_h=1_200_000,
             tone="accent",
-            body_size=12,
+            body_size=FS_BODY,
         )
         y += 110_000
     gap = 110_000
@@ -475,7 +479,7 @@ def _render_analysis_cards_full_width(ctx: _Ctx, slide: dict[str, Any], y: int) 
         )
         y += 90_000
     if provenance and y < CONTENT_BOTTOM - 200_000:
-        ctx.body(provenance, y, max_h=300_000, color=MUTED_COLOR, font_size=8.5)
+        ctx.body(provenance, y, max_h=300_000, color=MUTED_COLOR, font_size=FS_CAPTION)
 
 
 def _title_line_estimate(text: str, col_width_emu: int, font_pt: float, max_lines: int = 2) -> int:
@@ -594,7 +598,7 @@ def _add_search_table(
     for i, h in enumerate(heights):
         tbl.rows[i].height = Emu(h)
 
-    def paint(cell: Any, text: str, *, bold: bool = False, color: Any = BODY_COLOR, bg: Any = WHITE, size: float = 10.0, clip: bool = True) -> None:
+    def paint(cell: Any, text: str, *, bold: bool = False, color: Any = BODY_COLOR, bg: Any = WHITE, size: float = FS_CAPTION, clip: bool = True) -> None:
         # Status badges ("● Нежелательный") are complete labels, not clipped
         # prose — the dangling-tail trimmer would strip the word after the dot.
         cell.text = _clip_words(text, 200) if clip else _safe(text)
@@ -620,11 +624,11 @@ def _add_search_table(
         if kind == "header":
             for c in range(cols):
                 label = str(payload[c]) if c < len(payload) else ""
-                paint(tbl.cell(r_idx, c), label, bold=True, color=WHITE, bg=NAVY, size=10.0)
+                paint(tbl.cell(r_idx, c), label, bold=True, color=WHITE, bg=NAVY, size=FS_CAPTION)
         elif kind == "group":
             merged = tbl.cell(r_idx, 0)
             merged.merge(tbl.cell(r_idx, cols - 1))
-            paint(merged, str(payload), bold=True, color=NAVY, bg=ACCENT_SOFT, size=10.0)
+            paint(merged, str(payload), bold=True, color=NAVY, bg=ACCENT_SOFT, size=FS_CAPTION)
         else:
             row = payload
             status = str(row[cols - 1] if len(row) >= cols else "").strip()
@@ -643,6 +647,6 @@ def _add_search_table(
                     dot, tone = _status_tone(val)
                     paint(tbl.cell(r_idx, c), f"{dot} {val}", color=tone, bg=row_bg, size=9.5, clip=False)
                 else:
-                    paint(tbl.cell(r_idx, c), val, bg=row_bg, size=10.0)
+                    paint(tbl.cell(r_idx, c), val, bg=row_bg, size=FS_CAPTION)
 
 

@@ -43,6 +43,53 @@ FS_SECTION = 22
 FS_SUBTITLE = 13
 FS_BODY = 11  # min readable body ≥ 10.5pt
 FS_CAPTION = 9  # footer/provenance 8.5–9pt
+FS_COVER = 36
+FS_LEAD = 20
+FS_CARD_TITLE = 16
+
+#: Типографическая шкала: единственный набор допустимых кеглей (ADR-0008).
+#:
+#: Замер отрисованной деки до этого шага: **шестнадцать** разных кеглей, до
+#: восьми на одной странице, десять ступеней между 8,5 и 14 pt. Такой набор
+#: глаз не читает как иерархию — он читает его как шум, и все блоки выглядят
+#: одинаково важными.
+#:
+#: Шкала была объявлена и раньше (`FS_*`), но не соблюдалась: размеры писались
+#: литералами (`Pt(14)`, `Pt(10.5)`, `Pt(8.5)`), а ступенчатое уменьшение
+#: шрифта порождало 9,5 и 10,5 арифметикой. Один вопрос — два ответа.
+TYPE_SCALE_PT: tuple[float, ...] = (
+    FS_CAPTION,      # 9  — подпись, колонтитул, происхождение
+    FS_BODY,         # 11 — основной текст
+    FS_SUBTITLE,     # 13 — лид, заголовок карточки риска
+    FS_CARD_TITLE,   # 16 — заголовок блока
+    FS_LEAD,         # 20 — заголовок страницы
+    FS_SECTION,      # 22 — заголовок раздела
+    FS_TITLE,        # 26 — крупный заголовок
+    FS_COVER,        # 36 — титул
+)
+
+
+def _scale_steps_below(value: float) -> list[float]:
+    """Ступени шкалы ниже текущей, от крупной к мелкой."""
+    return [s for s in reversed(TYPE_SCALE_PT) if s < value]
+
+
+def scale_pt(value: float) -> float:
+    """Ближайшая ступень шкалы, не крупнее запрошенного размера.
+
+    Уменьшать кегль «на полпункта», чтобы текст влез, шкала не позволяет: по
+    ADR-0008 не влезающий текст сокращается или переносится на следующую
+    страницу, а не ужимается до нечитаемого. Поэтому округление — вниз, к
+    ближайшей объявленной ступени, и ниже подписи опускаться некуда.
+    """
+    smaller = [s for s in TYPE_SCALE_PT if s <= value]
+    return smaller[-1] if smaller else TYPE_SCALE_PT[0]
+
+
+def next_smaller_scale_pt(value: float) -> float | None:
+    """Следующая ступень вниз — для тех мест, где кегль всё же снижают."""
+    smaller = [s for s in TYPE_SCALE_PT if s < value]
+    return smaller[-1] if smaller else None
 
 # Master slide 16:10 (12.8" × 8.0") — matches ORION reference aspect.
 SLIDE_W = 11_704_320
@@ -677,14 +724,14 @@ def _clip_structured_bullet(text: str, max_chars: int) -> str:
 def _bullet_line_style(line: str, *, is_first: bool) -> tuple[bool, RGBColor, float]:
     """Return (bold, color, size_pt) for one line inside a structured bullet."""
     if _META_LINE_RE.match(line):
-        return False, MUTED_COLOR, FS_CAPTION + 0.5
+        return False, MUTED_COLOR, FS_CAPTION
     # Concrete evidence quotes are body text, not theme headers.
     if _QUOTE_SOURCE_RE.match(line):
         return False, BODY_COLOR, float(FS_BODY)
     if is_first and (_THEME_LINE_RE.match(line) or (line.endswith(":") and len(line) <= 80)):
-        return True, NAVY, FS_BODY + 0.5
+        return True, NAVY, FS_BODY
     if is_first and line.startswith("«") and "»" in line[:90] and "источник" not in line.lower():
-        return True, NAVY, FS_BODY + 0.5
+        return True, NAVY, FS_BODY
     return False, BODY_COLOR, float(FS_BODY)
 
 
@@ -843,7 +890,9 @@ class _Ctx:
         # PDF-36 D.3 — before dropping sentences, shrink the font 1–2 pt
         # (min 9pt): full text at 10pt beats a cut paragraph at 11pt.
         if measure_text_height(joined_raw, width, font_size, line_spacing=1.2) > avail:
-            for candidate in (font_size - 1, font_size - 2):
+            # Кегль снижается по объявленной шкале, а не арифметикой:
+            # `- 1` / `- 2` порождали 9,5 и 10,5, которых в шкале нет.
+            for candidate in _scale_steps_below(font_size):
                 if candidate < 9:
                     break
                 if measure_text_height(joined_raw, width, candidate, line_spacing=1.2) <= avail:
@@ -983,14 +1032,14 @@ class _Ctx:
             body_budget = max(100_000, budget - 2 * pad - title_h)
             # PDF-36 D.3 — step the font down (−1/−2 pt, min 9pt) before any
             # text is dropped: +20–30% capacity, imperceptible to the eye.
-            for candidate in (body_size - 1, body_size - 2, 9):
+            for candidate in _scale_steps_below(body_size):
                 if candidate < 9:
                     break
                 if measure_text_height(body_s, inner_w, candidate, line_spacing=1.2) <= body_budget:
                     body_size = candidate
                     break
             else:
-                body_size = max(9, body_size - 2)
+                body_size = next_smaller_scale_pt(body_size) or FS_CAPTION
             body_h = measure_text_height(body_s, inner_w, body_size, line_spacing=1.2)
             if body_h > body_budget:
                 # Prefer dropping whole structural lines over mid-phrase clips.
