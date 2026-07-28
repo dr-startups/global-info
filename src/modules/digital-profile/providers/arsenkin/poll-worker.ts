@@ -286,16 +286,19 @@ export async function ensureArsenkinTask(
   // одновременные `/set`: четыре разом дали `429` на все четыре и падение
   // стадии с `submit_retry_exhausted`. Выигрыша в параллельной постановке нет —
   // `/set` занимает доли секунды, минуты уходят на ожидание, а оно параллельно.
-  return withArsenkinSubmitSlot(() => submitQueuedArsenkinTask(client, store, input, row, now));
+  return withArsenkinSubmitSlot(() => submitQueuedArsenkinTask(client, store, input, row));
 }
 
 async function submitQueuedArsenkinTask(
   client: ArsenkinClient,
   store: ProviderTaskStore,
   input: EnsureArsenkinTaskInput,
-  queued: ProviderTaskRecord,
-  now: Date
+  queued: ProviderTaskRecord
 ): Promise<ProviderTaskRecord> {
+  // Время берётся здесь, а не до очереди отправки: аренда на отправку считается
+  // от этого момента, и со временем, замеренным до ожидания в очереди, она
+  // получилась бы короче на длину ожидания — вплоть до `submit_lease_expired`.
+  const now = new Date();
   const requestJson: ArsenkinSetTaskRequest = {
     tools_name: input.toolName,
     data: input.data,
