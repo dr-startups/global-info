@@ -212,23 +212,6 @@
       "measurementUncertain": false
     },
     {
-      "page": 30,
-      "name": "orion_bullets_dropped_p30",
-      "role": "bullets",
-      "fontFamily": "DejaVu Sans",
-      "fontSizePt": 11,
-      "boxWidth": 10744320,
-      "boxHeight": 1617309,
-      "availableHeight": 1617309,
-      "requiredHeight": 1711975,
-      "measuredLines": 1,
-      "textLength": 503,
-      "clipped": true,
-      "measurementUncertain": false,
-      "droppedBullets": 0,
-      "droppedLines": 1
-    },
-    {
       "page": 34,
       "name": "orion_text_body_p34",
       "role": "text",

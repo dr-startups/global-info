@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v47",
+  "contentVersion": "deck-sections-v48",
   "promptVersion": "ru-regional-summary-v4",
-  "contentHash": "sha256:76ce7d4b94501b8fa94c8042fb78727db927ce6e063b0f8177fb1c1c2fdef436",
+  "contentHash": "sha256:c752a36ff0f74954ee969d220b783fb56c6de1186e1fe59407710aa40ad24a27",
   "inputHash": "sha256:4070b3e52f031784e546139346c44ea7eadc7d2fe59fda8071fe70a7dba11e62:6449639705705ceb",
-  "generatedAt": "2026-07-28T14:17:59.992Z",
+  "generatedAt": "2026-07-28T14:38:48.996Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -293,7 +293,7 @@
       "title": "Россия — резюме аудита (продолжение 2/3)",
       "content": {
         "bullets": [
-          "«Внимание по линии безопасности / оборонный контур»\nНайдены публикации по теме:\n«Российский бизнесмен Сергей Глинка пытается с помощью румынской Automecanica SA овладеть контрольным пакетом оборонного завода Popeci в Молдове • Портал РЕПОСТ» — источник repost.news\n«Российский бизнесмен Сергей Глинка пытается с помощью румынской Automecanica SA овладеть контрольным пакетом оборонного завода Popeci в Молдове • Портал РуМафия» — источник rumafia.io.\nГде видно: repost.news, rumafia.io. [finding-security_scrutiny-subject_match-0ae970c7]",
+          "«Внимание по линии безопасности / оборонный контур»\nНайдены публикации по теме:\n«Российский бизнесмен Сергей Глинка пытается с помощью румынской Automecanica SA овладеть контрольным пакетом оборонного завода Popeci в Молдове • Портал РЕПОСТ» — источник repost.news\n«Сергей Глинка стремится через Automecanica SA взять под контроль молдавский завод Popeci и расширить влияние на оборонку • Портал «Картотека»» — источник kartoteka.news.\nГде видно: repost.news, rumafia.io. [finding-security_scrutiny-subject_match-0ae970c7]",
           "«PEP / RCA / watchlist-сигналы»\nНайдены публикации по теме:\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-pep_rca_watchlist-subject_match-dfa7da39]"
         ],
         "sourceNote": "Источники — bitva.wiki, kartoteka.news, kompromat1.online, osnmedia.ru и ещё 2."

@@ -202,6 +202,61 @@ export function makeSlotSlide(input: {
  * хвост на отдельный лист.
  */
 /**
+ * Отпечаток заголовка: сам сюжет, без хвоста площадки.
+ *
+ * Издания дописывают к заголовку название раздела и сайта через «•», а
+ * мобильные зеркала — ещё и «Версия для печати». Сравнивать надо то, что
+ * читатель воспринимает как сюжет, то есть часть до первого разделителя.
+ */
+export function titleFingerprint(title: string): string {
+  return String(title ?? "")
+    .split(/[•|]/u)[0]!
+    .replace(/[«»"'`]/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Выбрать до `limit` заголовков про **разные** сюжеты.
+ *
+ * Прежде брались просто два лучших по счёту (`slice(0, 2)`), и один сюжет
+ * попадал в блок дважды. На эталонной деке так вышло трижды:
+ *
+ *   · sledst.org и m.sledst.org — мобильное зеркало того же издания, причём
+ *     во втором заголовке хвост «• Версия для печати»;
+ *   · repost.news и rumafia.io — перепечатка с тем же заголовком слово в слово.
+ *
+ * Для отчёта, который показывают банку, это не мелочь: одна публикация
+ * выглядит как два независимых свидетельства. Читатель при этом видит одно и
+ * то же предложение подряд — самый заметный признак выгрузки.
+ *
+ * Ширина охвата не теряется: домены обоих источников по-прежнему называет
+ * строка «Где видно».
+ */
+export function pickDistinctTitles<T extends { title: string }>(
+  candidates: readonly T[],
+  limit: number
+): T[] {
+  const picked: T[] = [];
+  const seen: string[] = [];
+  for (const c of candidates) {
+    if (picked.length >= limit) break;
+    const fp = titleFingerprint(c.title);
+    if (!fp) continue;
+    // Один сюжет — если отпечатки совпали или один целиком начинает другой:
+    // площадки обрезают длинные заголовки по-разному.
+    const duplicate = seen.some(
+      (s) => s === fp || (s.length >= 40 && (s.startsWith(fp) || fp.startsWith(s)))
+    );
+    if (duplicate) continue;
+    seen.push(fp);
+    picked.push(c);
+  }
+  return picked;
+}
+
+/**
  * Во сколько **нарисованных** строк развернётся блок.
  *
  * Структурные строки заданы переводами строки и переносятся всегда, а каждая
@@ -1180,7 +1235,7 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
   const titles = titleCandidates.map((c) => c.title);
 
   // PDF-40 G.2b / PDF-44 H — rebuild from this region's evidence only; skip weak titles.
-  const regionalQuotes = titleCandidates.slice(0, 2).map((c) => {
+  const regionalQuotes = pickDistinctTitles(titleCandidates, 2).map((c) => {
     // Демо-домен не называется клиенту и здесь: цитата остаётся без источника.
     const domain = clientSafeDomains([c.domain, domains[0]])[0] ?? "";
     return domain ? `«${c.title}» — источник ${domain}` : `«${c.title}»`;
