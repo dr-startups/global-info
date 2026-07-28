@@ -8,10 +8,10 @@
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "contentVersion": "deck-sections-v14",
-  "promptVersion": "uae-regional-summary-v1",
-  "contentHash": "sha256:e7a7311507612eb2b501ba544f8f86ca5e41022c85a5bc8984c13803b6803865",
-  "inputHash": "sha256:a42ff5d12db84f487bd1a5ed7f5700f9b07d33b5150ef4aa1aeb86d78cb4713c:21111fd0b8329117",
-  "generatedAt": "2026-07-17T09:49:29.040Z",
+  "promptVersion": "uae-regional-summary-v4",
+  "contentHash": "sha256:262a2ace0bcb2f1a3a6f5967983bad50b6761f1f907aa5f5461d7b3ac4db1117",
+  "inputHash": "sha256:3042631ee4f0f1ab2c294b23ee597d8d9635daba18c502aa052df78836b084fc:91431df6ffddad5b",
+  "generatedAt": "2026-07-28T12:07:22.290Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -159,7 +159,7 @@
       "templateId": "section-divider",
       "title": "ОАЭ: Цифровой профиль",
       "content": {
-        "narrative": "Раздел описывает цифровой профиль субъекта в регионе: ОАЭ / международный."
+        "narrative": "Раздел показывает, что увидит банк, инвестор или контрагент в выдаче по региону «ОАЭ / международный»: какие темы формируют риск и что проверить в первую очередь."
       },
       "evidenceRefs": [],
       "findingIds": [],
@@ -177,20 +177,35 @@
       "templateId": "regional-summary",
       "title": "ОАЭ — резюме аудита",
       "content": {
-        "narrative": "По региону ОАЭ / международный собрано материалов: 129; подтверждённых тем: 6.",
-        "bullets": [
-          "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка. [finding-criminal_legal-subject_match-16447175]",
-          "Внимание по линии безопасности / оборонный контур: 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-security_scrutiny-subject_match-0ae970c7]",
-          "PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
-          "Деловой профиль: 43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru. Примеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... · Glinka Sergei Mikhailovich - TAdviser [finding-business_profile-subject_match-a59d6fee]",
-          "Семья и деловые связи: 6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online. Примеры: Сергей Глинка · глинка сергей михайлович жена · глинка сергей михайлович дети [finding-family_associates-subject_match-a4427a53]",
-          "Офшоры / корпоративное владение: 1 свидетельств (0 негативных) в источниках tadviser.ru. Примеры: Глинка Сергей Михайлович [finding-offshore_corporate-subject_match-1b4c64c7]"
+        "narrative": "В выдаче по региону «ОАЭ / международный» проверяющий увидит 129 материалов. Подтверждённых тем: 6, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; Внимание по линии безопасности / оборонный контур; PEP / RCA / watchlist-сигналы.",
+        "kpis": [
+          {
+            "label": "Материалов региона",
+            "value": "129",
+            "tone": "neutral"
+          },
+          {
+            "label": "Тем повышенного внимания",
+            "value": "3",
+            "tone": "risk"
+          },
+          {
+            "label": "Тем подтверждено",
+            "value": "6",
+            "tone": "accent"
+          },
+          {
+            "label": "Вероятно о субъекте",
+            "value": "0",
+            "tone": "neutral"
+          }
         ],
-        "whatWasFound": "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка.",
-        "whyItMatters": "Обнаружено сигналов повышенного внимания: 3. Они влияют на восприятие субъекта при первичной проверке.",
+        "bullets": [
+          "«Криминальные / судебные материалы»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие» — источник sledst.org\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие» — источник m.sledst.org.\nГде видно: sledst.org, m.sledst.org. [finding-criminal_legal-subject_match-16447175]",
+          "«Внимание по линии безопасности / оборонный контур»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие» — источник sledst.org\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие» — источник m.sledst.org.\nГде видно: sledst.org, m.sledst.org. [finding-security_scrutiny-subject_match-0ae970c7]"
+        ],
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%.",
-        "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk"
+        "sourceNote": "Источники — aboutmanchester.co.uk, bmmagazine.co.uk, businessfirstonline.co.uk, cybercriminal.com и ещё 2."
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -252,7 +267,175 @@
       "metrics": {
         "materials": 129,
         "findings": 6,
-        "adverse": 3
+        "likely": 0,
+        "adverse": 3,
+        "uncategorized": 0
+      },
+      "visualAssetRefs": []
+    },
+    {
+      "schemaVersion": "slide-content-v1",
+      "slideId": "p24_uae_summary__cont1",
+      "baseSlotId": "p24_uae_summary",
+      "sectionId": "UAE_PROFILE",
+      "isContinuation": true,
+      "continuationOf": "p24_uae_summary",
+      "continuationIndex": 1,
+      "templateId": "regional-summary",
+      "title": "ОАЭ — резюме аудита (продолжение 2/3)",
+      "content": {
+        "bullets": [
+          "«PEP / RCA / watchlist-сигналы»\nНайдены публикации по теме:\n«Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16 million to acquire a Moldovan facility with military potential, purportedly under the EU's auspices • Интернет-издание Власть» — источник vlasti.io.\nГде видно: vlasti.io. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
+          "«Деловой профиль»\nНайдены публикации по теме:\n«Businessman Sergei Glinka: biography, family, photos, and his view on the future of transport» — источник bmmagazine.co.uk\n«Businessman Sergey Glinka: Biography, Family, Photos, and Today's Transport Challenges · BUSINESSFIRST» — источник businessfirstonline.co.uk.\nГде видно: bmmagazine.co.uk, businessfirstonline.co.uk. [finding-business_profile-subject_match-a59d6fee]"
+        ],
+        "sourceNote": "Источники — aboutmanchester.co.uk, bmmagazine.co.uk, businessfirstonline.co.uk, cybercriminal.com и ещё 2."
+      },
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
+        "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+        "inventory:ss-cmrebadwt00hkmm0fnkag0v9w",
+        "inventory:ss-cmrebadwu00idmm0fnx76yk6p",
+        "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+        "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+        "inventory:db-cmreb8ztt001zmm0fluvc61al",
+        "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
+        "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+        "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
+        "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
+        "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
+        "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
+        "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
+        "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
+        "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
+        "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
+        "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
+        "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
+        "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+        "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr",
+        "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+        "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
+        "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
+        "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
+        "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
+        "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
+        "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
+        "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
+        "inventory:serp-obs-cmrjsolqp001zvd3w5zpjp2om",
+        "inventory:serp-obs-cmrjsolqw0023vd3w2eoqixj7",
+        "inventory:serp-obs-cmrjsolr20027vd3wxzfboo2x",
+        "inventory:serp-obs-cmrjsolrk002jvd3wopqyvu5g",
+        "inventory:serp-obs-cmrjsolrr002nvd3w3psml6tj",
+        "inventory:serp-obs-cmrjsolrx002rvd3w7k3h8bv0",
+        "inventory:serp-obs-cmrjsols3002vvd3wfs38b7sp",
+        "inventory:serp-obs-cmrjsolsl0037vd3wp23d4o2n",
+        "inventory:serp-obs-cmrjsolsr003bvd3wj9cf1gw7",
+        "inventory:ss-cmrebadwu00hlmm0fexst4rg8",
+        "inventory:ss-cmrebadwu00hnmm0f9hi612mw",
+        "inventory:ss-cmrebadwv00itmm0fe89nzyp4",
+        "inventory:ss-cmrebadwv00iumm0fje1armmu",
+        "inventory:ss-cmrebbrxv012nmm0f1n653sah",
+        "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+        "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+        "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+        "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
+      ],
+      "findingIds": [
+        "finding-criminal_legal-subject_match-16447175",
+        "finding-security_scrutiny-subject_match-0ae970c7",
+        "finding-pep_rca_watchlist-subject_match-dfa7da39",
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-family_associates-subject_match-a4427a53",
+        "finding-offshore_corporate-subject_match-1b4c64c7"
+      ],
+      "metrics": {
+        "materials": 129,
+        "findings": 6,
+        "likely": 0,
+        "adverse": 3,
+        "uncategorized": 0
+      },
+      "visualAssetRefs": []
+    },
+    {
+      "schemaVersion": "slide-content-v1",
+      "slideId": "p24_uae_summary__cont2",
+      "baseSlotId": "p24_uae_summary",
+      "sectionId": "UAE_PROFILE",
+      "isContinuation": true,
+      "continuationOf": "p24_uae_summary",
+      "continuationIndex": 2,
+      "templateId": "regional-summary",
+      "title": "ОАЭ — резюме аудита (продолжение 3/3)",
+      "content": {
+        "bullets": [
+          "«Семья и деловые связи»\nНайдены публикации по теме:\n«Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16 million to acquire a Moldovan facility with military potential, purportedly under the EU's auspices • Интернет-издание Власть» — источник vlasti.io.\nГде видно: vlasti.io. [finding-family_associates-subject_match-a4427a53]",
+          "Офшоры / корпоративное владение\n1 свидетельств (0 негативных) в источниках tadviser.ru.\nПримеры: Глинка Сергей Михайлович [finding-offshore_corporate-subject_match-1b4c64c7]"
+        ],
+        "sourceNote": "Источники — aboutmanchester.co.uk, bmmagazine.co.uk, businessfirstonline.co.uk, cybercriminal.com и ещё 2."
+      },
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
+        "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+        "inventory:ss-cmrebadwt00hkmm0fnkag0v9w",
+        "inventory:ss-cmrebadwu00idmm0fnx76yk6p",
+        "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+        "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+        "inventory:db-cmreb8ztt001zmm0fluvc61al",
+        "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
+        "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+        "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
+        "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
+        "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
+        "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
+        "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
+        "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
+        "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
+        "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
+        "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
+        "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
+        "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+        "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr",
+        "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+        "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
+        "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
+        "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
+        "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
+        "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
+        "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
+        "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
+        "inventory:serp-obs-cmrjsolqp001zvd3w5zpjp2om",
+        "inventory:serp-obs-cmrjsolqw0023vd3w2eoqixj7",
+        "inventory:serp-obs-cmrjsolr20027vd3wxzfboo2x",
+        "inventory:serp-obs-cmrjsolrk002jvd3wopqyvu5g",
+        "inventory:serp-obs-cmrjsolrr002nvd3w3psml6tj",
+        "inventory:serp-obs-cmrjsolrx002rvd3w7k3h8bv0",
+        "inventory:serp-obs-cmrjsols3002vvd3wfs38b7sp",
+        "inventory:serp-obs-cmrjsolsl0037vd3wp23d4o2n",
+        "inventory:serp-obs-cmrjsolsr003bvd3wj9cf1gw7",
+        "inventory:ss-cmrebadwu00hlmm0fexst4rg8",
+        "inventory:ss-cmrebadwu00hnmm0f9hi612mw",
+        "inventory:ss-cmrebadwv00itmm0fe89nzyp4",
+        "inventory:ss-cmrebadwv00iumm0fje1armmu",
+        "inventory:ss-cmrebbrxv012nmm0f1n653sah",
+        "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+        "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+        "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+        "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
+      ],
+      "findingIds": [
+        "finding-criminal_legal-subject_match-16447175",
+        "finding-security_scrutiny-subject_match-0ae970c7",
+        "finding-pep_rca_watchlist-subject_match-dfa7da39",
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-family_associates-subject_match-a4427a53",
+        "finding-offshore_corporate-subject_match-1b4c64c7"
+      ],
+      "metrics": {
+        "materials": 129,
+        "findings": 6,
+        "likely": 0,
+        "adverse": 3,
+        "uncategorized": 0
       },
       "visualAssetRefs": []
     },
@@ -276,20 +459,20 @@
           ],
           "rows": [
             [
-              "—",
+              "Все системы",
               "Материалы региона",
               "129",
               "по составному набору данных"
             ],
             [
-              "—",
+              "Все системы",
               "Темы повышенного внимания",
               "3",
               "см. матрицу рисков"
             ]
           ]
         },
-        "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk"
+        "sourceNote": "Источники — aboutmanchester.co.uk, bmmagazine.co.uk, businessfirstonline.co.uk, cybercriminal.com и ещё 2."
       },
       "evidenceRefs": [],
       "findingIds": [],

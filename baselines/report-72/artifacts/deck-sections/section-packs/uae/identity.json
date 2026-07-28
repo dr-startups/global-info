@@ -8,10 +8,10 @@
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "contentVersion": "deck-sections-v14",
-  "promptVersion": "uae-identity-analysis-v1",
-  "contentHash": "sha256:6dba838162af128e72df4000133bf25e9638f2e03e6b9017e4a8f96f7fe417d5",
-  "inputHash": "sha256:590c65c8325e4e10f8615fc11afc25f7b342fbd89384069e5d9cda919fbe98b5:b4c7dcbc4f5f0192",
-  "generatedAt": "2026-07-17T09:49:29.041Z",
+  "promptVersion": "uae-identity-analysis-v4",
+  "contentHash": "sha256:b2a58a9161b7d13255d582acd1f802268c05b7bc0a49685fe886299ee015aaea",
+  "inputHash": "sha256:43cabac7e18554cb73aeaae85a5769aefa2c0c9a9fa9674cf9ef449b4ede38ec:52d7594f0ef7acb3",
+  "generatedAt": "2026-07-28T12:07:22.292Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [],
@@ -39,13 +39,15 @@
       "templateId": "wikipedia-knowledge",
       "title": "ОАЭ — Википедия",
       "content": {
-        "narrative": "Справочные ресурсы (ОАЭ / международный) корректно идентифицируют проверяемого субъекта; материалов об одноимённых лицах в этом контуре не зафиксировано.",
-        "bullets": [],
-        "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
-        "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+        "narrative": "В выдаче зафиксированы энциклопедические материалы о проверяемом субъекте. Существенных негативных или спорных формулировок в этих карточках не выявлено. Материалов об одноимённых лицах в контуре ОАЭ / международный не зафиксировано.",
+        "bullets": [
+          "Wikipedia"
+        ],
+        "whatWasFound": "Показано 2 результата; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
+        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
         "whatToCheck": "Мониторить изменения выдачи.",
-        "statusNote": "Статус: по данной поверхности выводов о рисках нет.",
-        "sourceNote": "Источники: поисковая выдача (см. приложение)."
+        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+        "sourceNote": "Источники — поисковая выдача; полный перечень в приложении."
       },
       "evidenceRefs": [
         "inventory:wiki-1",
@@ -54,7 +56,8 @@
       "findingIds": [],
       "metrics": {
         "subjectClaims": 0,
-        "identityPollution": 0
+        "identityPollution": 0,
+        "wikipediaCheckExists": -1
       },
       "visualAssetRefs": []
     }

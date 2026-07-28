@@ -8,7 +8,7 @@
     "assemblyValidation": true,
     "coverageReconciliation": true,
     "baseSlotCoverage36": true,
-    "geometryClean": true,
+    "geometryClean": false,
     "manualVisual": true,
     "emptySidebarCountZero": true,
     "noEmptyTitledContainers": true,

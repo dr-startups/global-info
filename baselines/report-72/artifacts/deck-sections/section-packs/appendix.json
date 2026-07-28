@@ -9,9 +9,9 @@
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "contentVersion": "deck-sections-v14",
   "promptVersion": "appendix-deterministic-v1",
-  "contentHash": "sha256:045abe6a1cd4577bd54ecb4f9058f78660694b0de5d0deb6120bd2f027a63a68",
-  "inputHash": "sha256:eb5e9e7c9b2d1d2df2e772f849bcd988738a94e3712e5f7dc8ca46db72e42f88:46d598c0a974ea4e",
-  "generatedAt": "2026-07-17T09:49:29.043Z",
+  "contentHash": "sha256:ba3570d3fdf07aa846dd6cec45d6d07d331df8bb99fa08b667a016dc2121f45c",
+  "inputHash": "sha256:358dfdebc8b6c7b8924b612272fbdac601321df5fd17fd313c4344a23a2ea1b5:97461cd7367504ee",
+  "generatedAt": "2026-07-28T12:07:22.294Z",
   "required": false,
   "status": "READY",
   "sourceFindingIds": [
@@ -74,14 +74,12 @@
       "title": "Приложение: материалы, требующие идентификации",
       "content": {
         "bullets": [
-          "Семья и деловые связи: 1 свидетельств (0 негативных) в источниках ru.wikipedia.org. Примеры: В кого был влюблен Глинка? [finding-family_associates-other_subject-276ddd65]",
-          "Деловой профиль: 3 свидетельств (0 негативных) в источниках instagram.com, youtube.com, vkvideo.ru. Примеры: КНИГИ on Instagram: \"Прекрасная биография. Лаконичная ... · Михаил Глинка.Биография · Композитор Глинка (биографический, реж. Григорий ... [finding-business_profile-other_subject-b434e301]",
-          "Политические связи / публичная экспозиция: 1 свидетельств (0 негативных) в источниках youtube.com. Примеры: М. Глинка - Хор «Славься» из оперы «Жизнь за царя» [finding-political_exposure-other_subject-038d7d26]",
-          "Деловой профиль: 2 свидетельств (0 негативных) в источниках kulturologia.ru, eg.ru. Примеры: Сергей Глинка: транспорт, биотехнологии и инвестиции в Nutriband · Биография и личная жизнь: Ксения Лаврова-Глинка - Экспресс газета [finding-business_profile-ambiguous-7a2d3181]",
-          "Криминальные / судебные материалы: 1 свидетельств (1 негативных) в источниках rucriminal.info. Примеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-criminal_legal-ambiguous-3d33fe91]",
-          "PEP / RCA / watchlist-сигналы: 1 свидетельств (0 негативных) в источниках kulturologia.ru. Примеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром  культуры: О чем жалеет Ксения Лаврова-Глинки [finding-pep_rca_watchlist-ambiguous-976aa8fa]"
+          "Семья и деловые связи\n1 свидетельств (0 негативных) в источниках ru.wikipedia.org.\nПримеры: В кого был влюблен Глинка? [finding-family_associates-other_subject-276ddd65]",
+          "Деловой профиль\n3 свидетельств (0 негативных) в источниках instagram.com, youtube.com, vkvideo.ru.\nПримеры: КНИГИ on Instagram: \"Прекрасная биография. Лаконичная ... · Михаил Глинка.Биография · Композитор Глинка (биографический, реж. Григорий ... [finding-business_profile-other_subject-b434e301]",
+          "Политические связи / публичная экспозиция\n1 свидетельств (0 негативных) в источниках youtube.com.\nПримеры: М. Глинка - Хор «Славься» из оперы «Жизнь за царя» [finding-political_exposure-other_subject-038d7d26]",
+          "Деловой профиль\n2 свидетельств (0 негативных) в источниках kulturologia.ru, eg.ru.\nПримеры: Сергей Глинка: транспорт, биотехнологии и инвестиции в Nutriband · Биография и личная жизнь: Ксения Лаврова-Глинка - Экспресс газета [finding-business_profile-ambiguous-7a2d3181]"
         ],
-        "sourceNote": "Источники: eg.ru, instagram.com, kulturologia.ru, ru.wikipedia.org, rucriminal.info, vkvideo.ru"
+        "sourceNote": "Источники — eg.ru, instagram.com, kulturologia.ru, ru.wikipedia.org и ещё 2."
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczp800atvd9g74u2yw40",
@@ -122,10 +120,12 @@
       "title": "Приложение: материалы, требующие идентификации (продолжение 2/2)",
       "content": {
         "bullets": [
-          "Политические связи / публичная экспозиция: 2 свидетельств (0 негативных) в источниках kulturologia.ru, youtube.com. Примеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром  культуры: О чем жалеет Ксения Лаврова-Глинки · Михаил Глинка \"Скажи,зачем явилась ты\"/Юрий Гуляев [finding-political_exposure-ambiguous-054edc90]",
-          "Внимание по линии безопасности / оборонный контур: 1 свидетельств (1 негативных) в источниках rucriminal.info. Примеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-security_scrutiny-ambiguous-3d33fe91]"
+          "Криминальные / судебные материалы\n1 свидетельств (1 негативных) в источниках rucriminal.info.\nПримеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-criminal_legal-ambiguous-3d33fe91]",
+          "PEP / RCA / watchlist-сигналы\n1 свидетельств (0 негативных) в источниках kulturologia.ru.\nПримеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром культуры: О чем жалеет Ксения Лаврова-Глинки [finding-pep_rca_watchlist-ambiguous-976aa8fa]",
+          "Политические связи / публичная экспозиция\n2 свидетельств (0 негативных) в источниках kulturologia.ru, youtube.com.\nПримеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром культуры: О чем жалеет Ксения Лаврова-Глинки · Михаил Глинка \"Скажи,зачем явилась ты\"/Юрий Гуляев [finding-political_exposure-ambiguous-054edc90]",
+          "Внимание по линии безопасности / оборонный контур\n1 свидетельств (1 негативных) в источниках rucriminal.info.\nПримеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-security_scrutiny-ambiguous-3d33fe91]"
         ],
-        "sourceNote": "Источники: eg.ru, instagram.com, kulturologia.ru, ru.wikipedia.org, rucriminal.info, vkvideo.ru"
+        "sourceNote": "Источники — eg.ru, instagram.com, kulturologia.ru, ru.wikipedia.org и ещё 2."
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczp800atvd9g74u2yw40",

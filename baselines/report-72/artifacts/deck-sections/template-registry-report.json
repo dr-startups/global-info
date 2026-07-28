@@ -1,6 +1,6 @@
 {
   "version": "deck-template-registry-report-v1",
-  "layoutVersion": "deck-templates-layout-v1",
+  "layoutVersion": "deck-templates-layout-v2",
   "templates": [
     {
       "templateId": "cover",
@@ -92,7 +92,7 @@
         "narrativeChars": 600,
         "itemChars": 80,
         "maxBulletsPerSlide": 0,
-        "maxTableRowsPerSlide": 10
+        "maxTableRowsPerSlide": 3
       },
       "pagination": "continuation",
       "staticBlocks": [
@@ -106,7 +106,8 @@
         "Критический",
         "Высокий",
         "Средний",
-        "Низкий"
+        "Низкий",
+        "Требует подтверждения"
       ]
     },
     {
@@ -121,17 +122,14 @@
         "blockGapPt": 10
       },
       "budgets": {
-        "narrativeChars": 500,
-        "itemChars": 360,
-        "maxBulletsPerSlide": 8,
+        "narrativeChars": 700,
+        "itemChars": 860,
+        "maxBulletsPerSlide": 2,
         "maxTableRowsPerSlide": 0
       },
       "pagination": "continuation",
       "staticBlocks": [
         "Обзор региона",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI.",
@@ -150,15 +148,12 @@
       },
       "budgets": {
         "narrativeChars": 600,
-        "itemChars": 360,
+        "itemChars": 860,
         "maxBulletsPerSlide": 6,
         "maxTableRowsPerSlide": 0
       },
       "pagination": "continuation",
       "staticBlocks": [
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": null,
@@ -189,9 +184,10 @@
         "Заголовок",
         "Оценка"
       ],
-      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала.",
+      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно.",
       "legend": [
-        "Потенциально нежелательный",
+        "Нежелательный",
+        "Вероятно",
         "Нейтральный",
         "Позитивный"
       ]
@@ -216,9 +212,6 @@
       "pagination": "continuation",
       "staticBlocks": [
         "Скриншот выдачи",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": null,
@@ -244,9 +237,6 @@
       "pagination": "continuation",
       "staticBlocks": [
         "Поисковые подсказки",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Подсказки отражают частотные запросы пользователей и формируют первое впечатление о субъекте.",
@@ -272,9 +262,6 @@
       "pagination": "continuation",
       "staticBlocks": [
         "Изображения в выдаче",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": null,
@@ -300,9 +287,6 @@
       "pagination": "continuation",
       "staticBlocks": [
         "Википедия и панель знаний",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Раздел фиксирует, как справочные ресурсы идентифицируют субъекта и с кем его могут путать поисковые системы.",
@@ -328,9 +312,6 @@
       "pagination": "continuation",
       "staticBlocks": [
         "AI-ответы поисковых систем",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Ответы AI-сервисов приводятся полностью, без сокращений; интерпретация даётся отдельным блоком.",
@@ -356,9 +337,6 @@
       "pagination": "continuation",
       "staticBlocks": [
         "Связанные запросы",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": null,
@@ -426,7 +404,7 @@
       "budgets": {
         "narrativeChars": 600,
         "itemChars": 400,
-        "maxBulletsPerSlide": 10,
+        "maxBulletsPerSlide": 3,
         "maxTableRowsPerSlide": 12
       },
       "pagination": "continuation",

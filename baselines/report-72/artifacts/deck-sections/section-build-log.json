@@ -4,10 +4,6 @@
     "action": "REGENERATED"
   },
   {
-    "fragmentKey": "EXECUTIVE_SUMMARY",
-    "action": "REGENERATED"
-  },
-  {
     "fragmentKey": "RISK_MATRIX",
     "action": "REGENERATED"
   },
@@ -85,6 +81,10 @@
   },
   {
     "fragmentKey": "APPENDIX_MAIN",
+    "action": "REGENERATED"
+  },
+  {
+    "fragmentKey": "EXECUTIVE_SUMMARY",
     "action": "REGENERATED"
   }
 ]

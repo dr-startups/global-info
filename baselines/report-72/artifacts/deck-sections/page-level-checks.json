@@ -3,9 +3,11 @@
   "tocNoPerLinePageCounts": true,
   "adverseMarkersLabeled": true,
   "noOtherSubjectInNeutralRows": true,
-  "noDuplicatedPageBodies": true,
-  "duplicatedBodies": [],
-  "aiSecurityFindingComplete": true,
+  "noDuplicatedPageBodies": false,
+  "duplicatedBodies": [
+    "p09_ru_serp_table == p26_uae_serp_table"
+  ],
+  "aiSecurityFindingComplete": false,
   "urlAuditCompactRowsNotFullPages": true,
   "emptyStatesExplained": true,
   "continuationsAdjacent": true,

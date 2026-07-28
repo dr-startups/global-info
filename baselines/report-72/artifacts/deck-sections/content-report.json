@@ -1,10 +1,10 @@
 {
   "version": "deck-sections-content-report-v1",
-  "pageCount": 41,
-  "slidesWithFindings": 20,
-  "redMarkerRowsLabeled": 3,
+  "pageCount": 44,
+  "slidesWithFindings": 23,
+  "redMarkerRowsLabeled": 0,
   "tocLines": 5,
-  "emptyStateSlides": 2,
+  "emptyStateSlides": 3,
   "sectionValidation": [
     {
       "fragmentKey": "FRONT_MATTER_MAIN",

@@ -77,16 +77,34 @@ describe("проверка деки", () => {
     ).toEqual([]);
   });
 
-  it("ловит код в базовой деке — проверка работает на настоящих данных", () => {
-    // Дека сохранена до исправления: если правило перестанет срабатывать,
-    // это будет видно здесь, а не на живом клиенте.
+  it("ловит код в настоящих слайдах, а не только в придуманной строке", () => {
+    // Отрицательный контроль: слайды report-72 в том виде, в каком их выдавал
+    // код до исправления 07.8. Фикстура заморожена отдельно и намеренно.
+    //
+    // Прежде контролем служил `assembled-deck.json` — он же эталон текущей
+    // сборки. Один файл отвечал на два вопроса: «что код делает сейчас» и
+    // «что он делал до исправления». Стоило пересобрать эталон, и код из него
+    // исчезал — вместе с проверкой, которая должна была этот код ловить.
+    // Правило проекта: один вопрос — один ответ, поэтому контроль живёт своим
+    // файлом и обновляться вместе с эталоном не может.
+    const deck = JSON.parse(
+      readFileSync(join(process.cwd(), "tests/fixtures/deck-with-internal-codes.json"), "utf8")
+    ) as { slides: Array<Record<string, unknown>> };
+    expect(deck.slides.length).toBeGreaterThan(0);
+    const found = scanDeckForInternalCodes(deck.slides);
+    expect(found.map((f) => f.code)).toContain("VISUAL_ASSET_UNAVAILABLE");
+  });
+
+  it("текущий эталон сборки внутренних кодов не содержит", () => {
+    // Обратная сторона той же проверки: то, что код выдаёт сегодня, обязано
+    // быть чистым. Раньше этого никто не проверял — эталон был обязан код
+    // содержать, и «грязно» было нормой.
     const deck = JSON.parse(
       readFileSync(
         join(process.cwd(), "baselines/report-72/artifacts/deck-sections/assembled-deck.json"),
         "utf8"
       )
     ) as { slides: Array<Record<string, unknown>> };
-    const found = scanDeckForInternalCodes(deck.slides);
-    expect(found.map((f) => f.code)).toContain("VISUAL_ASSET_UNAVAILABLE");
+    expect(scanDeckForInternalCodes(deck.slides)).toEqual([]);
   });
 });

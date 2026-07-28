@@ -11,7 +11,7 @@
       "template": "orion_golden_cover",
       "title": "Отчёт о цифровом профиле — Сергей Глинка",
       "pageNumber": 1,
-      "totalPageCount": 41,
+      "totalPageCount": 44,
       "baseSlotId": "p01_cover",
       "isContinuation": false,
       "narrative": "Конфиденциально. Подготовлено для внутреннего использования клиента.",
@@ -30,15 +30,15 @@
       "template": "orion_golden_toc",
       "title": "Содержание отчёта",
       "pageNumber": 2,
-      "totalPageCount": 41,
+      "totalPageCount": 44,
       "baseSlotId": "p02_toc",
       "isContinuation": false,
       "bullets": [
-        "Резюме для руководства — стр. 3–6",
-        "Цифровой профиль — Россия — стр. 7–25",
-        "Цифровой профиль — ОАЭ и международный контур — стр. 26–36",
-        "Комплаенс-проверка — стр. 37–39",
-        "Приложение — стр. 40–41"
+        "Резюме для руководства — стр. 3–9",
+        "Цифровой профиль — Россия — стр. 10–27",
+        "Цифровой профиль — ОАЭ и международный контур — стр. 28–39",
+        "Комплаенс-проверка — стр. 40–42",
+        "Приложение — стр. 43–44"
       ],
       "evidenceRefs": [],
       "findingIds": [],
@@ -53,15 +53,15 @@
       "sectionKey": "EXECUTIVE",
       "template": "orion_golden_executive_dashboard",
       "title": "Резюме",
-      "subtitle": "Итоговая оценка: ELEVATED",
+      "subtitle": "Итоговая оценка: Повышенный риск",
       "pageNumber": 3,
-      "totalPageCount": 41,
+      "totalPageCount": 44,
       "baseSlotId": "p03_executive",
       "isContinuation": false,
       "narrative": "По итогам проверки открытых источников в отношении Глинка Сергей Михайлович выявлены значимые репутационные риски, требующие внимания. В сводку включены 6 ключевых наблюдений: подтверждённых фактов — 3, предварительных сигналов — 3, гипотез — 0. Оценка охватывает регионы: UAE, RU. Часть материалов в выдаче относится к другому лицу (Михаил Глинка (композитор)) и исключена из выводов о проверяемом субъекте. По отдельным направлениям данные собраны не полностью; ограничения перечислены ниже.",
       "bullets": [
-        "Криминальные / судебные материалы: Предварительный сигнал: Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка ... [finding-criminal_legal-subject_match-16447175]",
-        "Внимание по линии безопасности / оборонный контур: Подтверждённый факт: Внимание по линии безопасности / оборонный контур: 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка ... [finding-security_scrutiny-subject_match-0ae970c7]"
+        "«Криминальные / судебные материалы»\n7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org.\nПримеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие [finding-criminal_legal-subject_match-16447175]",
+        "«Внимание по линии безопасности / оборонный контур»\n6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news.\nПримеры: Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Сл [finding-security_scrutiny-subject_match-0ae970c7]"
       ],
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -129,7 +129,9 @@
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
-        "keyFindings": 6
+        "keyFindings": 6,
+        "sparse": 0,
+        "structureBlocks": 6
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -138,25 +140,51 @@
         "Приоритетные действия"
       ],
       "methodologyNote": "Выводы опираются только на проверенные факты с указанием источника; предварительные сигналы отмечены отдельно.",
-      "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений. Сверить первоисточники и подготовить документированную позицию. Запросить первичные карточки баз и подтвердить принадлежность совпадений.",
-      "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk"
+      "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
+      "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 2.",
+      "kpis": [
+        {
+          "label": "Материалов",
+          "value": "343",
+          "tone": "neutral"
+        },
+        {
+          "label": "О субъекте",
+          "value": "153",
+          "tone": "good"
+        },
+        {
+          "label": "Вероятно о субъекте",
+          "value": "0",
+          "tone": "warn"
+        },
+        {
+          "label": "Тем риска",
+          "value": "3",
+          "tone": "risk"
+        },
+        {
+          "label": "Ключевых тем",
+          "value": "6",
+          "tone": "accent"
+        }
+      ]
     },
     {
       "slideKey": "p03_executive__cont1",
       "sectionKey": "EXECUTIVE",
       "template": "orion_golden_surface_panel",
-      "title": "Резюме — ключевые факты (продолжение)",
+      "title": "Резюме — темы риска (продолжение 1/2)",
       "pageNumber": 4,
-      "totalPageCount": 41,
+      "totalPageCount": 44,
       "baseSlotId": "p03_executive",
       "isContinuation": true,
       "continuationOf": "p03_executive",
       "continuationIndex": 1,
       "bullets": [
-        "PEP / RCA / watchlist-сигналы: Предварительный сигнал: PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
-        "Деловой профиль: Подтверждённый факт: Деловой профиль: 43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru. Примеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... [finding-business_profile-subject_match-a59d6fee]",
-        "Семья и деловые связи: Предварительный сигнал: Семья и деловые связи: 6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online. Примеры: Сергей Глинка · глинка сергей михайлович жена · глинка сергей михайлович дети Регионы: UAE, RU, INTERNATIONAL. Источники: forbes.ru, vlasti.io, kompromat1.online. [finding-family_associates-subject_match-a4427a53]",
-        "Офшоры / корпоративное владение: Подтверждённый факт: Офшоры / корпоративное владение: 1 свидетельств (0 негативных) в источниках tadviser.ru. Примеры: Глинка Сергей Михайлович Регионы: UAE. Источники: tadviser.ru. [finding-offshore_corporate-subject_match-1b4c64c7]"
+        "«PEP / RCA / watchlist-сигналы»\n4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online.\nПримеры: PEP: Glinka Sergey Mikhaylovich · Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16 million to acquire a Moldovan facility with military potential, purportedly under the EU's auspices • Интернет-издание Власть · Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительство [finding-pep_rca_watchlist-subject_match-dfa7da39]",
+        "«Деловой профиль»\n43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru.\nПримеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... · Glinka Sergei Mikhailovich - TAdviser [finding-business_profile-subject_match-a59d6fee]",
+        "«Семья и деловые связи»\n6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online.\nПримеры: Сергей Глинка · глинка сергей михайлович жена · глинка сергей михайлович дети [finding-family_associates-subject_match-a4427a53]"
       ],
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -224,24 +252,119 @@
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
-        "keyFindings": 6
+        "keyFindings": 6,
+        "sparse": 0,
+        "structureBlocks": 6
       },
       "visualAssetRefs": [],
       "staticBlocks": [
         "Продолжение"
       ],
-      "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk"
+      "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 2."
+    },
+    {
+      "slideKey": "p03_executive__cont2",
+      "sectionKey": "EXECUTIVE",
+      "template": "orion_golden_surface_panel",
+      "title": "Резюме — темы риска (продолжение 2/2)",
+      "pageNumber": 5,
+      "totalPageCount": 44,
+      "baseSlotId": "p03_executive",
+      "isContinuation": true,
+      "continuationOf": "p03_executive",
+      "continuationIndex": 2,
+      "bullets": [
+        "«Офшоры / корпоративное владение»\n1 свидетельств (0 негативных) в источниках tadviser.ru.\nПримеры: Глинка Сергей Михайлович [finding-offshore_corporate-subject_match-1b4c64c7]"
+      ],
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
+        "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+        "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+        "inventory:ss-cmrebadwt00hkmm0fnkag0v9w",
+        "inventory:ss-cmrebadwu00idmm0fnx76yk6p",
+        "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+        "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+        "inventory:ss-cmreb9zhz00ddmm0feohikekq",
+        "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
+        "inventory:ss-cmreb9zi000elmm0fyqi9iclm",
+        "inventory:db-cmreb8ztt001zmm0fluvc61al",
+        "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
+        "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+        "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
+        "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
+        "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
+        "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
+        "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
+        "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
+        "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
+        "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
+        "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
+        "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
+        "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+        "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr",
+        "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+        "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
+        "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
+        "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
+        "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
+        "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
+        "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
+        "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
+        "inventory:serp-obs-cmrjsolqp001zvd3w5zpjp2om",
+        "inventory:serp-obs-cmrjsolqw0023vd3w2eoqixj7",
+        "inventory:serp-obs-cmrjsolr20027vd3wxzfboo2x",
+        "inventory:serp-obs-cmrjsolrk002jvd3wopqyvu5g",
+        "inventory:serp-obs-cmrjsolrr002nvd3w3psml6tj",
+        "inventory:serp-obs-cmrjsolrx002rvd3w7k3h8bv0",
+        "inventory:serp-obs-cmrjsols3002vvd3wfs38b7sp",
+        "inventory:serp-obs-cmrjsolsl0037vd3wp23d4o2n",
+        "inventory:serp-obs-cmrjsolsr003bvd3wj9cf1gw7",
+        "inventory:ss-cmreb9zhz00cfmm0fdhgfiqvh",
+        "inventory:ss-cmreb9zhz00cjmm0f03cgzeo5",
+        "inventory:ss-cmreb9zi000dvmm0fhbtw7vrt",
+        "inventory:ss-cmreb9zi100f7mm0f5gkolgg2",
+        "inventory:ss-cmrebadwu00hlmm0fexst4rg8",
+        "inventory:ss-cmrebadwu00hnmm0f9hi612mw",
+        "inventory:ss-cmrebadwv00itmm0fe89nzyp4",
+        "inventory:ss-cmrebadwv00iumm0fje1armmu",
+        "inventory:ss-cmrebbrxv012nmm0f1n653sah",
+        "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+        "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+        "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+        "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
+      ],
+      "findingIds": [
+        "finding-criminal_legal-subject_match-16447175",
+        "finding-security_scrutiny-subject_match-0ae970c7",
+        "finding-pep_rca_watchlist-subject_match-dfa7da39",
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-family_associates-subject_match-a4427a53",
+        "finding-offshore_corporate-subject_match-1b4c64c7"
+      ],
+      "metrics": {
+        "keyFindings": 6,
+        "sparse": 0,
+        "structureBlocks": 6
+      },
+      "visualAssetRefs": [],
+      "staticBlocks": [
+        "Продолжение"
+      ]
     },
     {
       "slideKey": "p04_risk_dashboard",
       "sectionKey": "EXECUTIVE",
       "template": "orion_golden_risk_matrix_grid",
       "title": "Матрица комплаенс-рисков",
-      "pageNumber": 5,
-      "totalPageCount": 41,
+      "pageNumber": 6,
+      "totalPageCount": 44,
       "baseSlotId": "p04_risk_dashboard",
       "isContinuation": false,
-      "bullets": [],
+      "bullets": [
+        "7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org.\nПримеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие\nЧто делать: Проверить статусы дел и первоисточники до принятия решений.",
+        "6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news.\nПримеры: Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Сл\nЧто делать: Сверить первоисточники и подготовить документированную позицию.",
+        "4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online.\nПримеры: PEP: Glinka Sergey Mikhaylovich · Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16 million to acquire a Moldovan facility with military potential, purportedly under the EU's auspices • Интернет-издание Власть · Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительство\nЧто делать: Запросить первичные карточки баз и подтвердить принадлежность совпадений."
+      ],
       "table": {
         "headers": [
           "Тема",
@@ -267,7 +390,118 @@
             "Средний",
             "P2",
             "finding-pep_rca_watchlist-subject_match-dfa7da39"
-          ],
+          ]
+        ]
+      },
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
+        "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+        "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+        "inventory:ss-cmrebadwt00hkmm0fnkag0v9w",
+        "inventory:ss-cmrebadwu00idmm0fnx76yk6p",
+        "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+        "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+        "inventory:ss-cmreb9zhz00ddmm0feohikekq",
+        "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
+        "inventory:ss-cmreb9zi000elmm0fyqi9iclm",
+        "inventory:db-cmreb8ztt001zmm0fluvc61al",
+        "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
+        "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+        "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
+        "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
+        "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
+        "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
+        "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
+        "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
+        "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
+        "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
+        "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
+        "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
+        "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+        "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr",
+        "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+        "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
+        "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
+        "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
+        "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
+        "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
+        "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
+        "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
+        "inventory:serp-obs-cmrjsolqp001zvd3w5zpjp2om",
+        "inventory:serp-obs-cmrjsolqw0023vd3w2eoqixj7",
+        "inventory:serp-obs-cmrjsolr20027vd3wxzfboo2x",
+        "inventory:serp-obs-cmrjsolrk002jvd3wopqyvu5g",
+        "inventory:serp-obs-cmrjsolrr002nvd3w3psml6tj",
+        "inventory:serp-obs-cmrjsolrx002rvd3w7k3h8bv0",
+        "inventory:serp-obs-cmrjsols3002vvd3wfs38b7sp",
+        "inventory:serp-obs-cmrjsolsl0037vd3wp23d4o2n",
+        "inventory:serp-obs-cmrjsolsr003bvd3wj9cf1gw7",
+        "inventory:ss-cmreb9zhz00cfmm0fdhgfiqvh",
+        "inventory:ss-cmreb9zhz00cjmm0f03cgzeo5",
+        "inventory:ss-cmreb9zi000dvmm0fhbtw7vrt",
+        "inventory:ss-cmreb9zi100f7mm0f5gkolgg2",
+        "inventory:ss-cmrebadwu00hlmm0fexst4rg8",
+        "inventory:ss-cmrebadwu00hnmm0f9hi612mw",
+        "inventory:ss-cmrebadwv00itmm0fe89nzyp4",
+        "inventory:ss-cmrebadwv00iumm0fje1armmu",
+        "inventory:ss-cmrebbrxv012nmm0f1n653sah",
+        "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+        "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+        "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+        "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
+      ],
+      "findingIds": [
+        "finding-criminal_legal-subject_match-16447175",
+        "finding-security_scrutiny-subject_match-0ae970c7",
+        "finding-pep_rca_watchlist-subject_match-dfa7da39"
+      ],
+      "metrics": {
+        "themes": 6,
+        "likelyThemes": 0,
+        "page": 1,
+        "pages": 2,
+        "adverse": 3
+      },
+      "visualAssetRefs": [],
+      "staticBlocks": [
+        "Матрица рисков",
+        "Уровень",
+        "Тема",
+        "Статус"
+      ],
+      "legend": [
+        "Критический",
+        "Высокий",
+        "Средний",
+        "Низкий",
+        "Требует подтверждения"
+      ],
+      "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 2."
+    },
+    {
+      "slideKey": "p04_risk_dashboard__cont1",
+      "sectionKey": "EXECUTIVE",
+      "template": "orion_golden_risk_matrix_grid",
+      "title": "Матрица комплаенс-рисков (продолжение 2/2)",
+      "pageNumber": 7,
+      "totalPageCount": 44,
+      "baseSlotId": "p04_risk_dashboard",
+      "isContinuation": true,
+      "continuationOf": "p04_risk_dashboard",
+      "continuationIndex": 1,
+      "bullets": [
+        "43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru.\nПримеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... · Glinka Sergei Mikhailovich - TAdviser\nЧто делать: Поддерживать актуальный позитивный деловой контент.",
+        "6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online.\nПримеры: Сергей Глинка · глинка сергей михайлович жена · глинка сергей михайлович дети\nЧто делать: Собрать документальные подтверждения по активам и связям.",
+        "1 свидетельств (0 негативных) в источниках tadviser.ru.\nПримеры: Глинка Сергей Михайлович\nЧто делать: Заказать корпоративную проверку структуры владения."
+      ],
+      "table": {
+        "headers": [
+          "Тема",
+          "Уровень",
+          "Приоритет",
+          "Идентификатор"
+        ],
+        "rows": [
           [
             "Деловой профиль",
             "Низкий",
@@ -346,16 +580,15 @@
         "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
       ],
       "findingIds": [
-        "finding-criminal_legal-subject_match-16447175",
-        "finding-security_scrutiny-subject_match-0ae970c7",
-        "finding-pep_rca_watchlist-subject_match-dfa7da39",
         "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],
       "metrics": {
         "themes": 6,
-        "adverse": 3
+        "likelyThemes": 0,
+        "page": 2,
+        "pages": 2
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -368,7 +601,8 @@
         "Критический",
         "Высокий",
         "Средний",
-        "Низкий"
+        "Низкий",
+        "Требует подтверждения"
       ]
     },
     {
@@ -376,15 +610,13 @@
       "sectionKey": "EXECUTIVE",
       "template": "orion_golden_metrics_dashboard",
       "title": "Обзор цифрового профиля",
-      "pageNumber": 6,
-      "totalPageCount": 41,
+      "pageNumber": 8,
+      "totalPageCount": 44,
       "baseSlotId": "p05_profile_dashboard",
       "isContinuation": false,
-      "narrative": "Составной набор данных: 343 материалов из 2 региональных контуров (RU: 214, UAE: 129). Идентификация субъекта выполнена для каждого материала.",
+      "narrative": "По собранным источникам: 343 материалов из 2 региональных контуров (RU: 214, UAE: 129). Принадлежность каждого материала к проверяемому лицу проверена.",
       "bullets": [
-        "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка. [finding-criminal_legal-subject_match-16447175]",
-        "Внимание по линии безопасности / оборонный контур: 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-security_scrutiny-subject_match-0ae970c7]",
-        "PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]"
+        "Криминальные / судебные материалы\n7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org.\nПримеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие [finding-criminal_legal-subject_match-16447175]"
       ],
       "evidenceRefs": [],
       "findingIds": [
@@ -398,19 +630,17 @@
       "metrics": {
         "compositeCount": 343,
         "subjectMatchCount": 153,
+        "likelySubjectCount": 0,
         "adverseFindingCount": 3
       },
       "visualAssetRefs": [],
       "staticBlocks": [
         "Обзор региона",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI.",
       "whatToCheck": "Детализация каждой темы повышенного внимания приведена в матрице рисков и региональных разделах.",
-      "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk",
+      "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 2.",
       "kpis": [
         {
           "label": "Материалов проанализировано",
@@ -421,6 +651,11 @@
           "label": "Связаны с проверяемым лицом",
           "value": "153",
           "tone": "good"
+        },
+        {
+          "label": "Вероятно о субъекте",
+          "value": "0",
+          "tone": "warn"
         },
         {
           "label": "Требуют идентификации",
@@ -445,15 +680,53 @@
       ]
     },
     {
+      "slideKey": "p05_profile_dashboard__cont1",
+      "sectionKey": "EXECUTIVE",
+      "template": "orion_golden_metrics_dashboard",
+      "title": "Обзор цифрового профиля (продолжение 2/2)",
+      "pageNumber": 9,
+      "totalPageCount": 44,
+      "baseSlotId": "p05_profile_dashboard",
+      "isContinuation": true,
+      "continuationOf": "p05_profile_dashboard",
+      "continuationIndex": 1,
+      "bullets": [
+        "Внимание по линии безопасности / оборонный контур 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие. [finding-security_scrutiny-subject_match-0ae970c7]",
+        "PEP / RCA / watchlist-сигналы 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich · Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16 million to acquire a Moldovan facility with military potential, purportedly under the EU's auspices • Интернет-издание Власть. [finding-pep_rca_watchlist-subject_match-dfa7da39]"
+      ],
+      "evidenceRefs": [],
+      "findingIds": [
+        "finding-criminal_legal-subject_match-16447175",
+        "finding-security_scrutiny-subject_match-0ae970c7",
+        "finding-pep_rca_watchlist-subject_match-dfa7da39",
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-family_associates-subject_match-a4427a53",
+        "finding-offshore_corporate-subject_match-1b4c64c7"
+      ],
+      "metrics": {
+        "compositeCount": 343,
+        "subjectMatchCount": 153,
+        "likelySubjectCount": 0,
+        "adverseFindingCount": 3
+      },
+      "visualAssetRefs": [],
+      "staticBlocks": [
+        "Обзор региона",
+        "Источник"
+      ],
+      "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI.",
+      "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 2."
+    },
+    {
       "slideKey": "p06_ru_toc",
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_region_divider",
       "title": "Россия: Цифровой профиль",
-      "pageNumber": 7,
-      "totalPageCount": 41,
+      "pageNumber": 10,
+      "totalPageCount": 44,
       "baseSlotId": "p06_ru_toc",
       "isContinuation": false,
-      "narrative": "Раздел описывает цифровой профиль субъекта в регионе: Россия.",
+      "narrative": "Раздел показывает, что увидит банк, инвестор или контрагент в выдаче по региону «Россия»: какие темы формируют риск и что проверить в первую очередь.",
       "evidenceRefs": [],
       "findingIds": [],
       "metrics": {},
@@ -465,17 +738,14 @@
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_metrics_dashboard",
       "title": "Россия — резюме аудита",
-      "pageNumber": 8,
-      "totalPageCount": 41,
+      "pageNumber": 11,
+      "totalPageCount": 44,
       "baseSlotId": "p07_ru_summary",
       "isContinuation": false,
-      "narrative": "По региону Россия собрано материалов: 214; подтверждённых тем: 5.",
+      "narrative": "В выдаче по региону «Россия» проверяющий увидит 214 материалов. Подтверждённых тем: 5, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; Внимание по линии безопасности / оборонный контур; PEP / RCA / watchlist-сигналы.",
       "bullets": [
-        "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка. [finding-criminal_legal-subject_match-16447175]",
-        "Внимание по линии безопасности / оборонный контур: 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-security_scrutiny-subject_match-0ae970c7]",
-        "PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
-        "Деловой профиль: 43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru. Примеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... · Glinka Sergei Mikhailovich - TAdviser [finding-business_profile-subject_match-a59d6fee]",
-        "Семья и деловые связи: 6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online. Примеры: Сергей Глинка · глинка сергей михайлович жена · глинка сергей михайлович дети [finding-family_associates-subject_match-a4427a53]"
+        "«Криминальные / судебные материалы»\nНайдены публикации по теме:\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-criminal_legal-subject_match-16447175]",
+        "«Внимание по линии безопасности / оборонный контур»\nНайдены публикации по теме:\n«Российский бизнесмен Сергей Глинка пытается с помощью румынской Automecanica SA овладеть контрольным пакетом оборонного завода Popeci в Молдове • Портал РЕПОСТ» — источник repost.news\n«Российский бизнесмен Сергей Глинка пытается с помощью румынской Automecanica SA овладеть контрольным пакетом оборонного завода Popeci в Молдове • Портал РуМафия» — источник rumafia.io.\nГде видно: repost.news, rumafia.io. [finding-security_scrutiny-subject_match-0ae970c7]"
       ],
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -538,30 +808,137 @@
       "metrics": {
         "materials": 214,
         "findings": 5,
-        "adverse": 3
+        "likely": 0,
+        "adverse": 3,
+        "uncategorized": 0
       },
       "visualAssetRefs": [],
       "staticBlocks": [
         "Обзор региона",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI.",
-      "whatWasFound": "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка.",
-      "whyItMatters": "Обнаружено сигналов повышенного внимания: 3. Они влияют на восприятие субъекта при первичной проверке.",
       "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-      "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk",
-      "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
+      "sourceNote": "Источники — bitva.wiki, kartoteka.news, kompromat1.online, osnmedia.ru и ещё 2.",
+      "kpis": [
+        {
+          "label": "Материалов региона",
+          "value": "214",
+          "tone": "neutral"
+        },
+        {
+          "label": "Тем повышенного внимания",
+          "value": "3",
+          "tone": "risk"
+        },
+        {
+          "label": "Тем подтверждено",
+          "value": "5",
+          "tone": "accent"
+        },
+        {
+          "label": "Вероятно о субъекте",
+          "value": "0",
+          "tone": "neutral"
+        }
+      ]
+    },
+    {
+      "slideKey": "p07_ru_summary__cont1",
+      "sectionKey": "RU_PROFILE",
+      "template": "orion_golden_metrics_dashboard",
+      "title": "Россия — резюме аудита (продолжение 2/2)",
+      "pageNumber": 12,
+      "totalPageCount": 44,
+      "baseSlotId": "p07_ru_summary",
+      "isContinuation": true,
+      "continuationOf": "p07_ru_summary",
+      "continuationIndex": 1,
+      "bullets": [
+        "«PEP / RCA / watchlist-сигналы»\nНайдены публикации по теме:\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
+        "«Деловой профиль»\nНайдены публикации по теме:\n«Глинка Сергей Михайлович / Биографии / Битва за Украину» — источник bitva.wiki\n«Российский бизнесмен Сергей Глинка пытается с помощью румынской Automecanica SA овладеть контрольным пакетом оборонного завода Popeci в Молдове • Портал РЕПОСТ» — источник repost.news.\nГде видно: bitva.wiki, repost.news. [finding-business_profile-subject_match-a59d6fee]",
+        "«Семья и деловые связи»\nНайдены публикации по теме:\n«Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительством ЕС • Портал Компромат» — источник kompromat1.online.\nГде видно: kompromat1.online. [finding-family_associates-subject_match-a4427a53]"
+      ],
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
+        "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+        "inventory:ss-cmreb9zi000e8mm0f6bdy4cvl",
+        "inventory:ss-cmreb9zhz00ddmm0feohikekq",
+        "inventory:ss-cmreb9zhz00demm0fgrw1vgww",
+        "inventory:ss-cmreb9zi000elmm0fyqi9iclm",
+        "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
+        "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
+        "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
+        "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
+        "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
+        "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
+        "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
+        "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
+        "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
+        "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
+        "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
+        "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+        "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr",
+        "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+        "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
+        "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
+        "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
+        "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
+        "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
+        "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
+        "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
+        "inventory:serp-obs-cmrjsolqp001zvd3w5zpjp2om",
+        "inventory:serp-obs-cmrjsolqw0023vd3w2eoqixj7",
+        "inventory:serp-obs-cmrjsolr20027vd3wxzfboo2x",
+        "inventory:serp-obs-cmrjsolrk002jvd3wopqyvu5g",
+        "inventory:serp-obs-cmrjsolrr002nvd3w3psml6tj",
+        "inventory:serp-obs-cmrjsolrx002rvd3w7k3h8bv0",
+        "inventory:serp-obs-cmrjsols3002vvd3wfs38b7sp",
+        "inventory:serp-obs-cmrjsolsl0037vd3wp23d4o2n",
+        "inventory:serp-obs-cmrjsolsr003bvd3wj9cf1gw7",
+        "inventory:ss-cmreb9zhz00cfmm0fdhgfiqvh",
+        "inventory:ss-cmreb9zhz00cjmm0f03cgzeo5",
+        "inventory:ss-cmreb9zi000dvmm0fhbtw7vrt",
+        "inventory:ss-cmreb9zi100f7mm0f5gkolgg2",
+        "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+        "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+        "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+        "inventory:serp-obs-cmrjsols9002zvd3wjq67psn0",
+        "inventory:serp-obs-cmrjsolr8002bvd3w2uduodae",
+        "inventory:serp-obs-cmrjsolre002fvd3w3wxqml1u",
+        "inventory:serp-obs-cmrjsolsf0033vd3wqx69xqfp",
+        "inventory:serp-obs-cmrjsolqj001vvd3wsurnh57u",
+        "inventory:serp-obs-cmrjsolqc001rvd3watwr1v7v"
+      ],
+      "findingIds": [
+        "finding-criminal_legal-subject_match-16447175",
+        "finding-security_scrutiny-subject_match-0ae970c7",
+        "finding-pep_rca_watchlist-subject_match-dfa7da39",
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-family_associates-subject_match-a4427a53"
+      ],
+      "metrics": {
+        "materials": 214,
+        "findings": 5,
+        "likely": 0,
+        "adverse": 3,
+        "uncategorized": 0
+      },
+      "visualAssetRefs": [],
+      "staticBlocks": [
+        "Обзор региона",
+        "Источник"
+      ],
+      "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI.",
+      "sourceNote": "Источники — bitva.wiki, kartoteka.news, kompromat1.online, osnmedia.ru и ещё 2."
     },
     {
       "slideKey": "p08_ru_metrics",
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_search_table",
       "title": "Россия — метрики и проверка URL",
-      "pageNumber": 9,
-      "totalPageCount": 41,
+      "pageNumber": 13,
+      "totalPageCount": 44,
       "baseSlotId": "p08_ru_metrics",
       "isContinuation": false,
       "table": {
@@ -573,31 +950,31 @@
         ],
         "rows": [
           [
-            "YANDEX",
+            "Яндекс",
             "Проверка URL / индексация",
             "5",
-            "totalCount: 0; subjectMatchCount: 0; otherSubjectCount: 0"
+            "—"
           ],
           [
-            "GOOGLE",
+            "Google",
             "Проверка URL / индексация",
             "5",
-            "totalCount: 0; subjectMatchCount: 0; otherSubjectCount: 0"
+            "—"
           ],
           [
-            "MULTI",
+            "Поисковые системы",
             "Проверка URL / индексация",
             "5",
-            "totalCount: 5; subjectMatchCount: 4; otherSubjectCount: 0"
+            "проверено адресов: 5"
           ],
           [
-            "—",
+            "Все системы",
             "Материалы региона",
             "214",
             "по составному набору данных"
           ],
           [
-            "—",
+            "Все системы",
             "Темы повышенного внимания",
             "3",
             "см. матрицу рисков"
@@ -634,24 +1011,25 @@
         "Заголовок",
         "Оценка"
       ],
-      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала.",
+      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно.",
       "legend": [
-        "Потенциально нежелательный",
+        "Нежелательный",
+        "Вероятно",
         "Нейтральный",
         "Позитивный"
       ],
-      "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk"
+      "sourceNote": "Источники — bitva.wiki, kartoteka.news, kompromat1.online, osnmedia.ru и ещё 2."
     },
     {
       "slideKey": "p09_ru_serp_table",
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_search_table",
       "title": "Россия — позиции в поисковой выдаче",
-      "pageNumber": 10,
-      "totalPageCount": 41,
+      "pageNumber": 14,
+      "totalPageCount": 44,
       "baseSlotId": "p09_ru_serp_table",
       "isContinuation": false,
-      "bullets": [],
+      "narrative": "«Криминальные / судебные материалы» — критический уровень внимания.",
       "table": {
         "headers": [
           "№",
@@ -664,73 +1042,7 @@
             "1",
             "—",
             "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "2",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "3",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "4",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "5",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "6",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "7",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "8",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "9",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "10",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "11",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "12",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
+            "Нежелательный"
           ]
         ]
       },
@@ -792,8 +1104,12 @@
       ],
       "metrics": {
         "datasetCount": 50,
-        "displayedCount": 36,
-        "adverseDisplayed": 1
+        "uniqueMaterials": 1,
+        "displayedCount": 1,
+        "adverseDisplayed": 1,
+        "likelyDisplayed": 0,
+        "pageIndex": 1,
+        "pageCount": 1
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -803,371 +1119,26 @@
         "Заголовок",
         "Оценка"
       ],
-      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала.",
+      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно.",
       "legend": [
-        "Потенциально нежелательный",
+        "Нежелательный",
+        "Вероятно",
         "Нейтральный",
         "Позитивный"
       ],
-      "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический.",
-      "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 1. Они видны при первичной проверке субъекта.",
+      "whatWasFound": "«Криминальные / судебные материалы» — критический уровень внимания.",
+      "whyItMatters": "На странице 1 тема повышенного внимания — эти материалы видны при первой же проверке субъекта.",
       "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-      "sourceNote": "Источники: поисковая выдача (см. приложение).",
-      "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
-    },
-    {
-      "slideKey": "p09_ru_serp_table__cont1",
-      "sectionKey": "RU_PROFILE",
-      "template": "orion_golden_search_table",
-      "title": "Россия — позиции в поисковой выдаче (продолжение 2/3)",
-      "pageNumber": 11,
-      "totalPageCount": 41,
-      "baseSlotId": "p09_ru_serp_table",
-      "isContinuation": true,
-      "continuationOf": "p09_ru_serp_table",
-      "continuationIndex": 1,
-      "bullets": [],
-      "table": {
-        "headers": [
-          "№",
-          "Домен",
-          "Заголовок",
-          "Оценка"
-        ],
-        "rows": [
-          [
-            "13",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "14",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "15",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "16",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "17",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "18",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "19",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "20",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "21",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "22",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "23",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "24",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ]
-        ]
-      },
-      "evidenceRefs": [
-        "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
-        "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
-        "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
-        "inventory:serp-obs-cmrjsdc6600cdvd9gvynaunda",
-        "inventory:serp-obs-cmrjsdc6d00chvd9gcbkvorwo",
-        "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
-        "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
-        "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
-        "inventory:serp-obs-cmrjsdc7300cxvd9gxanvg8jn",
-        "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
-        "inventory:serp-obs-cmrjsczdb003dvd9gxmyjqb8p",
-        "inventory:serp-obs-cmrjsczdh003hvd9gvlsj2u4p",
-        "inventory:serp-obs-cmrjsczdo003lvd9gdb1aen9m",
-        "inventory:serp-obs-cmrjsczdu003pvd9gteaagy2m",
-        "inventory:serp-obs-cmrjscze0003tvd9gvxl02qrc",
-        "inventory:serp-obs-cmrjscze7003xvd9gups2aqly",
-        "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
-        "inventory:serp-obs-cmrjsczek0045vd9gcuisgl98",
-        "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
-        "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
-        "inventory:serp-obs-cmrjscz9k0015vd9gqo6bp8d1",
-        "inventory:serp-obs-cmrjscz9v0019vd9g9uhnex45",
-        "inventory:serp-obs-cmrjscza2001dvd9g5sqot0m6",
-        "inventory:serp-obs-cmrjscza8001hvd9gawc65f0k",
-        "inventory:serp-obs-cmrjsczaf001lvd9gxr0qnaqg",
-        "inventory:serp-obs-cmrjsczam001pvd9gh10qwdoz",
-        "inventory:serp-obs-cmrjsczas001tvd9g7erp79qd",
-        "inventory:serp-obs-cmrjsczaz001xvd9gzmgv31ip",
-        "inventory:serp-obs-cmrjsczb50021vd9gbe5a8wit",
-        "inventory:serp-obs-cmrjsczbc0025vd9gob9ld7u8",
-        "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
-        "inventory:serp-obs-cmrjsczf9004lvd9glj3vakkt",
-        "inventory:serp-obs-cmrjsczfg004pvd9gqyiecjbl",
-        "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
-        "inventory:serp-obs-cmrjsczfs004xvd9gvs7kzgkq",
-        "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
-        "inventory:serp-obs-cmrjsczg50055vd9gpnva0iwp",
-        "inventory:serp-obs-cmrjsczgc0059vd9gxsdkwtc6",
-        "inventory:serp-obs-cmrjsczgi005dvd9g87oqnzke",
-        "inventory:serp-obs-cmrjsczgo005hvd9g3uxslg7y",
-        "inventory:serp-obs-cmrjsczbi0029vd9gikisshot",
-        "inventory:serp-obs-cmrjsczbp002dvd9g79q2nu9n",
-        "inventory:serp-obs-cmrjsczbv002hvd9gqun2ybp6",
-        "inventory:serp-obs-cmrjsczc2002lvd9gc3asn746",
-        "inventory:serp-obs-cmrjsczc8002pvd9gmhc3fpzl",
-        "inventory:serp-obs-cmrjsczcf002tvd9gv5r4s5e7",
-        "inventory:serp-obs-cmrjsczcl002xvd9gn4tmpo53",
-        "inventory:serp-obs-cmrjsczcr0031vd9ghi5pad2i",
-        "inventory:serp-obs-cmrjsczcy0035vd9gbds3eue0",
-        "inventory:serp-obs-cmrjsczd40039vd9gfhls8b76"
-      ],
-      "findingIds": [
-        "finding-criminal_legal-subject_match-16447175",
-        "finding-business_profile-subject_match-a59d6fee"
-      ],
-      "metrics": {
-        "datasetCount": 50,
-        "displayedCount": 36,
-        "adverseDisplayed": 1
-      },
-      "visualAssetRefs": [],
-      "staticBlocks": [
-        "Результаты поиска",
-        "Позиция",
-        "Домен",
-        "Заголовок",
-        "Оценка"
-      ],
-      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала.",
-      "legend": [
-        "Потенциально нежелательный",
-        "Нейтральный",
-        "Позитивный"
-      ],
-      "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-      "sourceNote": "Источники: поисковая выдача (см. приложение).",
-      "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
-    },
-    {
-      "slideKey": "p09_ru_serp_table__cont2",
-      "sectionKey": "RU_PROFILE",
-      "template": "orion_golden_search_table",
-      "title": "Россия — позиции в поисковой выдаче (продолжение 3/3)",
-      "pageNumber": 12,
-      "totalPageCount": 41,
-      "baseSlotId": "p09_ru_serp_table",
-      "isContinuation": true,
-      "continuationOf": "p09_ru_serp_table",
-      "continuationIndex": 2,
-      "bullets": [],
-      "table": {
-        "headers": [
-          "№",
-          "Домен",
-          "Заголовок",
-          "Оценка"
-        ],
-        "rows": [
-          [
-            "25",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "26",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "27",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "28",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "29",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "30",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "31",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "32",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "33",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "34",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "35",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "36",
-            "—",
-            "(без заголовка)",
-            "Потенциально нежелательный"
-          ]
-        ]
-      },
-      "evidenceRefs": [
-        "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
-        "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
-        "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
-        "inventory:serp-obs-cmrjsdc6600cdvd9gvynaunda",
-        "inventory:serp-obs-cmrjsdc6d00chvd9gcbkvorwo",
-        "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
-        "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
-        "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
-        "inventory:serp-obs-cmrjsdc7300cxvd9gxanvg8jn",
-        "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
-        "inventory:serp-obs-cmrjsczdb003dvd9gxmyjqb8p",
-        "inventory:serp-obs-cmrjsczdh003hvd9gvlsj2u4p",
-        "inventory:serp-obs-cmrjsczdo003lvd9gdb1aen9m",
-        "inventory:serp-obs-cmrjsczdu003pvd9gteaagy2m",
-        "inventory:serp-obs-cmrjscze0003tvd9gvxl02qrc",
-        "inventory:serp-obs-cmrjscze7003xvd9gups2aqly",
-        "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
-        "inventory:serp-obs-cmrjsczek0045vd9gcuisgl98",
-        "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
-        "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
-        "inventory:serp-obs-cmrjscz9k0015vd9gqo6bp8d1",
-        "inventory:serp-obs-cmrjscz9v0019vd9g9uhnex45",
-        "inventory:serp-obs-cmrjscza2001dvd9g5sqot0m6",
-        "inventory:serp-obs-cmrjscza8001hvd9gawc65f0k",
-        "inventory:serp-obs-cmrjsczaf001lvd9gxr0qnaqg",
-        "inventory:serp-obs-cmrjsczam001pvd9gh10qwdoz",
-        "inventory:serp-obs-cmrjsczas001tvd9g7erp79qd",
-        "inventory:serp-obs-cmrjsczaz001xvd9gzmgv31ip",
-        "inventory:serp-obs-cmrjsczb50021vd9gbe5a8wit",
-        "inventory:serp-obs-cmrjsczbc0025vd9gob9ld7u8",
-        "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
-        "inventory:serp-obs-cmrjsczf9004lvd9glj3vakkt",
-        "inventory:serp-obs-cmrjsczfg004pvd9gqyiecjbl",
-        "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
-        "inventory:serp-obs-cmrjsczfs004xvd9gvs7kzgkq",
-        "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
-        "inventory:serp-obs-cmrjsczg50055vd9gpnva0iwp",
-        "inventory:serp-obs-cmrjsczgc0059vd9gxsdkwtc6",
-        "inventory:serp-obs-cmrjsczgi005dvd9g87oqnzke",
-        "inventory:serp-obs-cmrjsczgo005hvd9g3uxslg7y",
-        "inventory:serp-obs-cmrjsczbi0029vd9gikisshot",
-        "inventory:serp-obs-cmrjsczbp002dvd9g79q2nu9n",
-        "inventory:serp-obs-cmrjsczbv002hvd9gqun2ybp6",
-        "inventory:serp-obs-cmrjsczc2002lvd9gc3asn746",
-        "inventory:serp-obs-cmrjsczc8002pvd9gmhc3fpzl",
-        "inventory:serp-obs-cmrjsczcf002tvd9gv5r4s5e7",
-        "inventory:serp-obs-cmrjsczcl002xvd9gn4tmpo53",
-        "inventory:serp-obs-cmrjsczcr0031vd9ghi5pad2i",
-        "inventory:serp-obs-cmrjsczcy0035vd9gbds3eue0",
-        "inventory:serp-obs-cmrjsczd40039vd9gfhls8b76"
-      ],
-      "findingIds": [
-        "finding-criminal_legal-subject_match-16447175",
-        "finding-business_profile-subject_match-a59d6fee"
-      ],
-      "metrics": {
-        "datasetCount": 50,
-        "displayedCount": 36,
-        "adverseDisplayed": 1
-      },
-      "visualAssetRefs": [],
-      "staticBlocks": [
-        "Результаты поиска",
-        "Позиция",
-        "Домен",
-        "Заголовок",
-        "Оценка"
-      ],
-      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала.",
-      "legend": [
-        "Потенциально нежелательный",
-        "Нейтральный",
-        "Позитивный"
-      ],
-      "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-      "sourceNote": "Источники: поисковая выдача (см. приложение).",
-      "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
+      "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+      "statusNote": "Статус: тема подтверждена, уровень внимания — критический; достоверность оценки высокая."
     },
     {
       "slideKey": "p10_ru_serp_visual",
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_serp_screenshot",
       "title": "Россия — снимок выдачи",
-      "pageNumber": 13,
-      "totalPageCount": 41,
+      "pageNumber": 15,
+      "totalPageCount": 44,
       "baseSlotId": "p10_ru_serp_visual",
       "isContinuation": false,
       "narrative": "Состояние первой страницы выдачи (Россия).",
@@ -1219,16 +1190,13 @@
       ],
       "staticBlocks": [
         "Скриншот выдачи",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "whatWasFound": "На снимке выделено результатов повышенного внимания: 2 (x.com, rupep.org); остальные результаты — нейтральные или деловые.",
       "whyItMatters": "Выделенные материалы (2) видны при первичной проверке субъекта в этом регионе.",
       "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-      "sourceNote": "Источники: x.com, rupep.org (результаты на снимке).",
-      "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%.",
+      "sourceNote": "Источники на снимке — x.com и rupep.org.",
+      "statusNote": "Статус: тема подтверждена, уровень внимания — критический; достоверность оценки высокая.",
       "highlightExplanations": [
         {
           "clientReason": "«Криминальные / судебные материалы» — выделенный результат x.com; уровень: критический.",
@@ -1245,8 +1213,8 @@
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_surface_panel",
       "title": "Россия — подсказки Яндекса",
-      "pageNumber": 14,
-      "totalPageCount": 41,
+      "pageNumber": 16,
+      "totalPageCount": 44,
       "baseSlotId": "p11_ru_suggestions_yandex",
       "isContinuation": false,
       "bullets": [],
@@ -1264,32 +1232,30 @@
       ],
       "findingIds": [],
       "metrics": {
-        "items": 10
+        "items": 10,
+        "adverseSuggestions": 0
       },
       "visualAssetRefs": [
         "ru_suggestions_yandex"
       ],
       "staticBlocks": [
         "Поисковые подсказки",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Подсказки отражают частотные запросы пользователей и формируют первое впечатление о субъекте.",
-      "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
-      "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+      "whatWasFound": "Показано 10 результатов; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
+      "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
       "whatToCheck": "Мониторить изменения выдачи.",
-      "sourceNote": "Источники: поисковая выдача (см. приложение).",
-      "statusNote": "Статус: по данной поверхности выводов о рисках нет."
+      "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+      "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет."
     },
     {
       "slideKey": "p12_ru_suggestions_google",
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_surface_panel",
       "title": "Россия — подсказки Google",
-      "pageNumber": 15,
-      "totalPageCount": 41,
+      "pageNumber": 17,
+      "totalPageCount": 44,
       "baseSlotId": "p12_ru_suggestions_google",
       "isContinuation": false,
       "bullets": [],
@@ -1305,32 +1271,30 @@
       ],
       "findingIds": [],
       "metrics": {
-        "items": 8
+        "items": 8,
+        "adverseSuggestions": 0
       },
       "visualAssetRefs": [
         "ru_suggestions_google"
       ],
       "staticBlocks": [
         "Поисковые подсказки",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Подсказки отражают частотные запросы пользователей и формируют первое впечатление о субъекте.",
-      "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
-      "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+      "whatWasFound": "Показано 8 результатов; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
+      "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
       "whatToCheck": "Мониторить изменения выдачи.",
-      "sourceNote": "Источники: поисковая выдача (см. приложение).",
-      "statusNote": "Статус: по данной поверхности выводов о рисках нет."
+      "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+      "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет."
     },
     {
       "slideKey": "p14_ru_images_1",
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_image_grid",
       "title": "Россия — изображения (1)",
-      "pageNumber": 16,
-      "totalPageCount": 41,
+      "pageNumber": 18,
+      "totalPageCount": 44,
       "baseSlotId": "p14_ru_images_1",
       "isContinuation": false,
       "bullets": [
@@ -1351,31 +1315,29 @@
         "finding-business_profile-subject_match-a59d6fee"
       ],
       "metrics": {
-        "items": 9
+        "items": 9,
+        "adverseImages": 0
       },
       "visualAssetRefs": [
         "ru_image_grid"
       ],
       "staticBlocks": [
         "Изображения в выдаче",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
-      "whatWasFound": "«Деловой профиль»: уровень внимания — низкий — материалы на этой странице: bitva.wiki, peoples.ru, osnmedia.ru.",
+      "whatWasFound": "«Деловой профиль» — низкий уровень внимания. Материалы по теме на этой странице — bitva.wiki, peoples.ru и osnmedia.ru.",
       "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
       "whatToCheck": "Поддерживать актуальный позитивный деловой контент.",
-      "sourceNote": "Источники: directmedia.ru, labirint.ru, klerk.ru, instagram.com, osnmedia.ru",
-      "statusNote": "Статус: подтверждённая тема; уровень: низкий; уверенность 90%."
+      "sourceNote": "Источники — directmedia.ru, labirint.ru, klerk.ru, instagram.com и ещё 1.",
+      "statusNote": "Статус: тема подтверждена, уровень внимания — низкий; достоверность оценки высокая."
     },
     {
       "slideKey": "p15_ru_images_2",
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_image_grid",
       "title": "Россия — изображения (2)",
-      "pageNumber": 17,
-      "totalPageCount": 41,
+      "pageNumber": 19,
+      "totalPageCount": 44,
       "baseSlotId": "p15_ru_images_2",
       "isContinuation": false,
       "bullets": [
@@ -1397,31 +1359,35 @@
         "finding-business_profile-subject_match-a59d6fee"
       ],
       "metrics": {
-        "items": 9
+        "items": 9,
+        "adverseImages": 1
       },
       "visualAssetRefs": [
         "ru_image_grid_2"
       ],
       "staticBlocks": [
         "Изображения в выдаче",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
-      "whatWasFound": "«Внимание по линии безопасности / оборонный контур»: уровень внимания — высокий — материалы на этой странице: repost.news, rumafia.io.",
-      "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 1. Они видны при первичной проверке субъекта.",
-      "whatToCheck": "Сверить первоисточники и подготовить документированную позицию.",
-      "sourceNote": "Источники: eg.ru, argumentiru.com, kiosk-31.ru, noi.md, kulturologia.ru",
-      "statusNote": "Статус: подтверждённая тема; уровень: высокий; уверенность 90%."
+      "whatWasFound": "Изображения на этой странице: 6; выделено красным (ведут на негативные источники): 1.",
+      "whyItMatters": "Выделенные изображения связаны с негативными источниками и формируют нежелательный визуальный фон в блоке «Картинки»: пользователь видит их до перехода на сайты.",
+      "whatToCheck": "Проверить сайты-источники выделенных изображений и подготовить позицию по каждому негативному материалу.",
+      "sourceNote": "Источники — eg.ru, argumentiru.com, kiosk-31.ru, noi.md и ещё 1.",
+      "statusNote": "Статус: изображений с привязкой к негативным источникам — 1; требуется проверка первоисточников.",
+      "highlightExplanations": [
+        {
+          "clientReason": "«Потенциально негативные публикации» — изображение ведёт на noi.md; требует ручной проверки.",
+          "frameTone": "red"
+        }
+      ]
     },
     {
       "slideKey": "p16_ru_images_3",
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_image_grid",
       "title": "Россия — изображения (3)",
-      "pageNumber": 18,
-      "totalPageCount": 41,
+      "pageNumber": 20,
+      "totalPageCount": 44,
       "baseSlotId": "p16_ru_images_3",
       "isContinuation": false,
       "bullets": [
@@ -1429,44 +1395,45 @@
       ],
       "evidenceRefs": [
         "inventory:ss-cmreb9zi000dumm0fji3fuqlz",
-        "inventory:ss-cmreb9zi000dwmm0frv1ga16q",
         "inventory:ss-cmreb9zi000e9mm0fizup46pp",
         "inventory:ss-cmreb9zi000elmm0fyqi9iclm",
         "inventory:ss-cmreb9zi000emmm0fe9rm3ci1",
         "inventory:ss-cmreb9zi000enmm0fggf4bj6n",
-        "inventory:ss-cmreb9zi000eomm0fza8634az",
-        "inventory:ss-cmreb9zi100f8mm0ft6huvw2e",
-        "inventory:ss-cmreb9zi100f9mm0fo8ub4a5g"
+        "inventory:ss-cmreb9zi100f8mm0ft6huvw2e"
       ],
       "findingIds": [
         "finding-security_scrutiny-subject_match-0ae970c7"
       ],
       "metrics": {
-        "items": 9
+        "items": 6,
+        "adverseImages": 1
       },
       "visualAssetRefs": [
         "ru_image_grid_3"
       ],
       "staticBlocks": [
         "Изображения в выдаче",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
-      "whatWasFound": "«Внимание по линии безопасности / оборонный контур»: уровень внимания — высокий — материалы на этой странице: kartoteka.news.",
-      "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 1. Они видны при первичной проверке субъекта.",
-      "whatToCheck": "Сверить первоисточники и подготовить документированную позицию.",
-      "sourceNote": "Источники: youtube.com, kulturologia.ru, kartoteka.news, dnesnews.ru, cadethistory.ru",
-      "statusNote": "Статус: подтверждённая тема; уровень: высокий; уверенность 90%."
+      "whatWasFound": "Изображения на этой странице: 6; выделено красным (ведут на негативные источники): 1.",
+      "whyItMatters": "Выделенные изображения связаны с негативными источниками и формируют нежелательный визуальный фон в блоке «Картинки»: пользователь видит их до перехода на сайты.",
+      "whatToCheck": "Проверить сайты-источники выделенных изображений и подготовить позицию по каждому негативному материалу.",
+      "sourceNote": "Источники — youtube.com, kulturologia.ru, kartoteka.news, dnesnews.ru и ещё 1.",
+      "statusNote": "Статус: изображений с привязкой к негативным источникам — 1; требуется проверка первоисточников.",
+      "highlightExplanations": [
+        {
+          "clientReason": "«Внимание по линии безопасности / оборонный контур» — изображение ведёт на kartoteka.news; уровень: высокий.",
+          "frameTone": "red"
+        }
+      ]
     },
     {
       "slideKey": "p17_ru_images_4",
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_image_grid",
       "title": "Россия — изображения (4)",
-      "pageNumber": 19,
-      "totalPageCount": 41,
+      "pageNumber": 21,
+      "totalPageCount": 44,
       "baseSlotId": "p17_ru_images_4",
       "isContinuation": false,
       "bullets": [],
@@ -1488,65 +1455,69 @@
         "finding-family_associates-subject_match-a4427a53"
       ],
       "metrics": {
-        "items": 9
+        "items": 9,
+        "adverseImages": 1
       },
       "visualAssetRefs": [
         "ru_image_grid_4"
       ],
       "staticBlocks": [
         "Изображения в выдаче",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
-      "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: kompromat1.online.",
-      "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 2. Они видны при первичной проверке субъекта.",
-      "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-      "sourceNote": "Источники: fb.ru, piter.tv, kompromat1.online, images.example",
-      "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
+      "whatWasFound": "Изображения на этой странице: 6; выделено красным (ведут на негативные источники): 1.",
+      "whyItMatters": "Выделенные изображения связаны с негативными источниками и формируют нежелательный визуальный фон в блоке «Картинки»: пользователь видит их до перехода на сайты.",
+      "whatToCheck": "Проверить сайты-источники выделенных изображений и подготовить позицию по каждому негативному материалу.",
+      "sourceNote": "Источники — fb.ru, piter.tv и kompromat1.online.",
+      "statusNote": "Статус: изображений с привязкой к негативным источникам — 1; требуется проверка первоисточников.",
+      "highlightExplanations": [
+        {
+          "clientReason": "«Криминальные / судебные материалы» — изображение ведёт на kompromat1.online; уровень: критический.",
+          "frameTone": "red"
+        }
+      ]
     },
     {
       "slideKey": "p13_ru_wikipedia",
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_knowledge_panel",
       "title": "Россия — Википедия",
-      "pageNumber": 20,
-      "totalPageCount": 41,
+      "pageNumber": 22,
+      "totalPageCount": 44,
       "baseSlotId": "p13_ru_wikipedia",
       "isContinuation": false,
-      "narrative": "Справочные ресурсы (Россия) корректно идентифицируют проверяемого субъекта; материалов об одноимённых лицах в этом контуре не зафиксировано.",
-      "bullets": [],
+      "narrative": "В выдаче зафиксированы энциклопедические материалы о проверяемом субъекте (ru.wikipedia.org). Существенных негативных или спорных формулировок в этих карточках не выявлено. Материалов об одноимённых лицах в контуре Россия не зафиксировано.",
+      "bullets": [
+        "Глинка (дворянский род) — ru.wikipedia.org"
+      ],
       "evidenceRefs": [
         "inventory:wiki-2"
       ],
       "findingIds": [],
       "metrics": {
         "subjectClaims": 0,
-        "identityPollution": 0
+        "identityPollution": 0,
+        "wikipediaCheckExists": -1
       },
       "visualAssetRefs": [],
       "staticBlocks": [
         "Википедия и панель знаний",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Раздел фиксирует, как справочные ресурсы идентифицируют субъекта и с кем его могут путать поисковые системы.",
-      "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
-      "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+      "whatWasFound": "Показано 1 результат; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0; преобладающие источники: ru.wikipedia.org.",
+      "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
       "whatToCheck": "Мониторить изменения выдачи.",
-      "sourceNote": "Источники: ru.wikipedia.org",
-      "statusNote": "Статус: по данной поверхности выводов о рисках нет."
+      "sourceNote": "Источники — ru.wikipedia.org.",
+      "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет."
     },
     {
       "slideKey": "p18_ru_knowledge_1",
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_knowledge_panel",
       "title": "Россия — панель знаний",
-      "pageNumber": 21,
-      "totalPageCount": 41,
+      "pageNumber": 23,
+      "totalPageCount": 44,
       "baseSlotId": "p18_ru_knowledge_1",
       "isContinuation": false,
       "narrative": "Панель знаний и структурированные блоки поисковых систем по проверяемому субъекту.",
@@ -1562,25 +1533,22 @@
       ],
       "staticBlocks": [
         "Википедия и панель знаний",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Раздел фиксирует, как справочные ресурсы идентифицируют субъекта и с кем его могут путать поисковые системы.",
-      "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
-      "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+      "whatWasFound": "Показано 1 результат; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0; преобладающие источники: .",
+      "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
       "whatToCheck": "Мониторить изменения выдачи.",
-      "sourceNote": "Источники: knowledge.example",
-      "statusNote": "Статус: по данной поверхности выводов о рисках нет."
+      "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+      "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет."
     },
     {
       "slideKey": "p19_ru_knowledge_2",
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_surface_panel",
       "title": "Россия — AI-ответы поисковых систем",
-      "pageNumber": 22,
-      "totalPageCount": 41,
+      "pageNumber": 24,
+      "totalPageCount": 44,
       "baseSlotId": "p19_ru_knowledge_2",
       "isContinuation": false,
       "bullets": [
@@ -1598,17 +1566,14 @@
       "visualAssetRefs": [],
       "staticBlocks": [
         "AI-ответы поисковых систем",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Ответы AI-сервисов приводятся полностью, без сокращений; интерпретация даётся отдельным блоком.",
-      "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
-      "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+      "whatWasFound": "Показано 3 результата; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0; преобладающие источники: .",
+      "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
       "whatToCheck": "Мониторить изменения выдачи.",
-      "sourceNote": "Источники: knowledge.example",
-      "statusNote": "Статус: по данной поверхности выводов о рисках нет.",
+      "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+      "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
       "emptyStateReason": "VISUAL_ASSET_UNAVAILABLE"
     },
     {
@@ -1616,8 +1581,8 @@
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_surface_panel",
       "title": "Россия — связанные запросы (1)",
-      "pageNumber": 23,
-      "totalPageCount": 41,
+      "pageNumber": 25,
+      "totalPageCount": 44,
       "baseSlotId": "p20_ru_related_1",
       "isContinuation": false,
       "bullets": [
@@ -1638,24 +1603,21 @@
       ],
       "staticBlocks": [
         "Связанные запросы",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
-      "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
-      "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+      "whatWasFound": "Показано 4 результата; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
+      "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
       "whatToCheck": "Мониторить изменения выдачи.",
-      "sourceNote": "Источники: поисковая выдача (см. приложение).",
-      "statusNote": "Статус: по данной поверхности выводов о рисках нет."
+      "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+      "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет."
     },
     {
       "slideKey": "p21_ru_related_2",
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_surface_panel",
       "title": "Россия — связанные запросы (2)",
-      "pageNumber": 24,
-      "totalPageCount": 41,
+      "pageNumber": 26,
+      "totalPageCount": 44,
       "baseSlotId": "p21_ru_related_2",
       "isContinuation": false,
       "bullets": [
@@ -1675,24 +1637,21 @@
       ],
       "staticBlocks": [
         "Связанные запросы",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
-      "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
-      "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+      "whatWasFound": "Показано 3 результата; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
+      "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
       "whatToCheck": "Мониторить изменения выдачи.",
-      "sourceNote": "Источники: поисковая выдача (см. приложение).",
-      "statusNote": "Статус: по данной поверхности выводов о рисках нет."
+      "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+      "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет."
     },
     {
       "slideKey": "p22_ru_related_3",
       "sectionKey": "RU_PROFILE",
       "template": "orion_golden_surface_panel",
       "title": "Россия — связанные запросы (3)",
-      "pageNumber": 25,
-      "totalPageCount": 41,
+      "pageNumber": 27,
+      "totalPageCount": 44,
       "baseSlotId": "p22_ru_related_3",
       "isContinuation": false,
       "bullets": [
@@ -1712,27 +1671,24 @@
       ],
       "staticBlocks": [
         "Связанные запросы",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
-      "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
-      "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+      "whatWasFound": "Показано 3 результата; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
+      "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
       "whatToCheck": "Мониторить изменения выдачи.",
-      "sourceNote": "Источники: поисковая выдача (см. приложение).",
-      "statusNote": "Статус: по данной поверхности выводов о рисках нет."
+      "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+      "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет."
     },
     {
       "slideKey": "p23_uae_toc",
       "sectionKey": "UAE_PROFILE",
       "template": "orion_golden_region_divider",
       "title": "ОАЭ: Цифровой профиль",
-      "pageNumber": 26,
-      "totalPageCount": 41,
+      "pageNumber": 28,
+      "totalPageCount": 44,
       "baseSlotId": "p23_uae_toc",
       "isContinuation": false,
-      "narrative": "Раздел описывает цифровой профиль субъекта в регионе: ОАЭ / международный.",
+      "narrative": "Раздел показывает, что увидит банк, инвестор или контрагент в выдаче по региону «ОАЭ / международный»: какие темы формируют риск и что проверить в первую очередь.",
       "evidenceRefs": [],
       "findingIds": [],
       "metrics": {},
@@ -1744,18 +1700,14 @@
       "sectionKey": "UAE_PROFILE",
       "template": "orion_golden_metrics_dashboard",
       "title": "ОАЭ — резюме аудита",
-      "pageNumber": 27,
-      "totalPageCount": 41,
+      "pageNumber": 29,
+      "totalPageCount": 44,
       "baseSlotId": "p24_uae_summary",
       "isContinuation": false,
-      "narrative": "По региону ОАЭ / международный собрано материалов: 129; подтверждённых тем: 6.",
+      "narrative": "В выдаче по региону «ОАЭ / международный» проверяющий увидит 129 материалов. Подтверждённых тем: 6, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; Внимание по линии безопасности / оборонный контур; PEP / RCA / watchlist-сигналы.",
       "bullets": [
-        "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка. [finding-criminal_legal-subject_match-16447175]",
-        "Внимание по линии безопасности / оборонный контур: 6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news. Примеры: Связанный с Россией бизнесмен Сергей Глинка. [finding-security_scrutiny-subject_match-0ae970c7]",
-        "PEP / RCA / watchlist-сигналы: 4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online. Примеры: PEP: Glinka Sergey Mikhaylovich. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
-        "Деловой профиль: 43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru. Примеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... · Glinka Sergei Mikhailovich - TAdviser [finding-business_profile-subject_match-a59d6fee]",
-        "Семья и деловые связи: 6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online. Примеры: Сергей Глинка · глинка сергей михайлович жена · глинка сергей михайлович дети [finding-family_associates-subject_match-a4427a53]",
-        "Офшоры / корпоративное владение: 1 свидетельств (0 негативных) в источниках tadviser.ru. Примеры: Глинка Сергей Михайлович [finding-offshore_corporate-subject_match-1b4c64c7]"
+        "«Криминальные / судебные материалы»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие» — источник sledst.org\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие» — источник m.sledst.org.\nГде видно: sledst.org, m.sledst.org. [finding-criminal_legal-subject_match-16447175]",
+        "«Внимание по линии безопасности / оборонный контур»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие» — источник sledst.org\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие» — источник m.sledst.org.\nГде видно: sledst.org, m.sledst.org. [finding-security_scrutiny-subject_match-0ae970c7]"
       ],
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
@@ -1817,30 +1769,222 @@
       "metrics": {
         "materials": 129,
         "findings": 6,
-        "adverse": 3
+        "likely": 0,
+        "adverse": 3,
+        "uncategorized": 0
       },
       "visualAssetRefs": [],
       "staticBlocks": [
         "Обзор региона",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI.",
-      "whatWasFound": "Криминальные / судебные материалы: 7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org. Примеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка.",
-      "whyItMatters": "Обнаружено сигналов повышенного внимания: 3. Они влияют на восприятие субъекта при первичной проверке.",
       "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-      "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk",
-      "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
+      "sourceNote": "Источники — aboutmanchester.co.uk, bmmagazine.co.uk, businessfirstonline.co.uk, cybercriminal.com и ещё 2.",
+      "kpis": [
+        {
+          "label": "Материалов региона",
+          "value": "129",
+          "tone": "neutral"
+        },
+        {
+          "label": "Тем повышенного внимания",
+          "value": "3",
+          "tone": "risk"
+        },
+        {
+          "label": "Тем подтверждено",
+          "value": "6",
+          "tone": "accent"
+        },
+        {
+          "label": "Вероятно о субъекте",
+          "value": "0",
+          "tone": "neutral"
+        }
+      ]
+    },
+    {
+      "slideKey": "p24_uae_summary__cont1",
+      "sectionKey": "UAE_PROFILE",
+      "template": "orion_golden_metrics_dashboard",
+      "title": "ОАЭ — резюме аудита (продолжение 2/3)",
+      "pageNumber": 30,
+      "totalPageCount": 44,
+      "baseSlotId": "p24_uae_summary",
+      "isContinuation": true,
+      "continuationOf": "p24_uae_summary",
+      "continuationIndex": 1,
+      "bullets": [
+        "«PEP / RCA / watchlist-сигналы»\nНайдены публикации по теме:\n«Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16 million to acquire a Moldovan facility with military potential, purportedly under the EU's auspices • Интернет-издание Власть» — источник vlasti.io.\nГде видно: vlasti.io. [finding-pep_rca_watchlist-subject_match-dfa7da39]",
+        "«Деловой профиль»\nНайдены публикации по теме:\n«Businessman Sergei Glinka: biography, family, photos, and his view on the future of transport» — источник bmmagazine.co.uk\n«Businessman Sergey Glinka: Biography, Family, Photos, and Today's Transport Challenges · BUSINESSFIRST» — источник businessfirstonline.co.uk.\nГде видно: bmmagazine.co.uk, businessfirstonline.co.uk. [finding-business_profile-subject_match-a59d6fee]"
+      ],
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
+        "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+        "inventory:ss-cmrebadwt00hkmm0fnkag0v9w",
+        "inventory:ss-cmrebadwu00idmm0fnx76yk6p",
+        "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+        "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+        "inventory:db-cmreb8ztt001zmm0fluvc61al",
+        "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
+        "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+        "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
+        "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
+        "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
+        "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
+        "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
+        "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
+        "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
+        "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
+        "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
+        "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
+        "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+        "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr",
+        "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+        "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
+        "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
+        "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
+        "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
+        "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
+        "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
+        "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
+        "inventory:serp-obs-cmrjsolqp001zvd3w5zpjp2om",
+        "inventory:serp-obs-cmrjsolqw0023vd3w2eoqixj7",
+        "inventory:serp-obs-cmrjsolr20027vd3wxzfboo2x",
+        "inventory:serp-obs-cmrjsolrk002jvd3wopqyvu5g",
+        "inventory:serp-obs-cmrjsolrr002nvd3w3psml6tj",
+        "inventory:serp-obs-cmrjsolrx002rvd3w7k3h8bv0",
+        "inventory:serp-obs-cmrjsols3002vvd3wfs38b7sp",
+        "inventory:serp-obs-cmrjsolsl0037vd3wp23d4o2n",
+        "inventory:serp-obs-cmrjsolsr003bvd3wj9cf1gw7",
+        "inventory:ss-cmrebadwu00hlmm0fexst4rg8",
+        "inventory:ss-cmrebadwu00hnmm0f9hi612mw",
+        "inventory:ss-cmrebadwv00itmm0fe89nzyp4",
+        "inventory:ss-cmrebadwv00iumm0fje1armmu",
+        "inventory:ss-cmrebbrxv012nmm0f1n653sah",
+        "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+        "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+        "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+        "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
+      ],
+      "findingIds": [
+        "finding-criminal_legal-subject_match-16447175",
+        "finding-security_scrutiny-subject_match-0ae970c7",
+        "finding-pep_rca_watchlist-subject_match-dfa7da39",
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-family_associates-subject_match-a4427a53",
+        "finding-offshore_corporate-subject_match-1b4c64c7"
+      ],
+      "metrics": {
+        "materials": 129,
+        "findings": 6,
+        "likely": 0,
+        "adverse": 3,
+        "uncategorized": 0
+      },
+      "visualAssetRefs": [],
+      "staticBlocks": [
+        "Обзор региона",
+        "Источник"
+      ],
+      "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI.",
+      "sourceNote": "Источники — aboutmanchester.co.uk, bmmagazine.co.uk, businessfirstonline.co.uk, cybercriminal.com и ещё 2."
+    },
+    {
+      "slideKey": "p24_uae_summary__cont2",
+      "sectionKey": "UAE_PROFILE",
+      "template": "orion_golden_metrics_dashboard",
+      "title": "ОАЭ — резюме аудита (продолжение 3/3)",
+      "pageNumber": 31,
+      "totalPageCount": 44,
+      "baseSlotId": "p24_uae_summary",
+      "isContinuation": true,
+      "continuationOf": "p24_uae_summary",
+      "continuationIndex": 2,
+      "bullets": [
+        "«Семья и деловые связи»\nНайдены публикации по теме:\n«Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16 million to acquire a Moldovan facility with military potential, purportedly under the EU's auspices • Интернет-издание Власть» — источник vlasti.io.\nГде видно: vlasti.io. [finding-family_associates-subject_match-a4427a53]",
+        "Офшоры / корпоративное владение\n1 свидетельств (0 негативных) в источниках tadviser.ru.\nПримеры: Глинка Сергей Михайлович [finding-offshore_corporate-subject_match-1b4c64c7]"
+      ],
+      "evidenceRefs": [
+        "inventory:serp-obs-cmrjsczfy0051vd9gga7hxe3u",
+        "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
+        "inventory:ss-cmrebadwt00hkmm0fnkag0v9w",
+        "inventory:ss-cmrebadwu00idmm0fnx76yk6p",
+        "inventory:ss-cmrebadww00k9mm0fmejxlqce",
+        "inventory:ss-cmrebbrxu011nmm0fsupgr6gu",
+        "inventory:db-cmreb8ztt001zmm0fluvc61al",
+        "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
+        "inventory:ss-cmrebbrxu011mmm0fxnxg9pnp",
+        "inventory:serp-obs-cmrjsczee0041vd9gfaqx0z12",
+        "inventory:serp-obs-cmrjsczeq0049vd9gyesxhv71",
+        "inventory:serp-obs-cmrjsczex004dvd9gd7aou5ot",
+        "inventory:serp-obs-cmrjsczf3004hvd9gfqga15dv",
+        "inventory:serp-obs-cmrjsczfm004tvd9gjdt6rs2c",
+        "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
+        "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
+        "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
+        "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
+        "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
+        "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
+        "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr",
+        "inventory:serp-obs-cmrjsczlg008hvd9gog1zncct",
+        "inventory:serp-obs-cmrjsdc5i00c1vd9g3v409tty",
+        "inventory:serp-obs-cmrjsdc5q00c5vd9g7s7j5esb",
+        "inventory:serp-obs-cmrjsdc5z00c9vd9gp5l9a3jx",
+        "inventory:serp-obs-cmrjsdc6j00clvd9grmx000wx",
+        "inventory:serp-obs-cmrjsdc6q00cpvd9g6b2ijkz3",
+        "inventory:serp-obs-cmrjsdc6x00ctvd9gjc1oqvjs",
+        "inventory:serp-obs-cmrjsdc7a00d1vd9ghvae5x4w",
+        "inventory:serp-obs-cmrjsolqp001zvd3w5zpjp2om",
+        "inventory:serp-obs-cmrjsolqw0023vd3w2eoqixj7",
+        "inventory:serp-obs-cmrjsolr20027vd3wxzfboo2x",
+        "inventory:serp-obs-cmrjsolrk002jvd3wopqyvu5g",
+        "inventory:serp-obs-cmrjsolrr002nvd3w3psml6tj",
+        "inventory:serp-obs-cmrjsolrx002rvd3w7k3h8bv0",
+        "inventory:serp-obs-cmrjsols3002vvd3wfs38b7sp",
+        "inventory:serp-obs-cmrjsolsl0037vd3wp23d4o2n",
+        "inventory:serp-obs-cmrjsolsr003bvd3wj9cf1gw7",
+        "inventory:ss-cmrebadwu00hlmm0fexst4rg8",
+        "inventory:ss-cmrebadwu00hnmm0f9hi612mw",
+        "inventory:ss-cmrebadwv00itmm0fe89nzyp4",
+        "inventory:ss-cmrebadwv00iumm0fje1armmu",
+        "inventory:ss-cmrebbrxv012nmm0f1n653sah",
+        "inventory:serp-obs-cmrjsczlt008pvd9g49bjq5dp",
+        "inventory:serp-obs-cmrjsczm5008xvd9gd3shvq46",
+        "inventory:serp-obs-cmrjsczmc0091vd9gv9mvqhd4",
+        "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
+      ],
+      "findingIds": [
+        "finding-criminal_legal-subject_match-16447175",
+        "finding-security_scrutiny-subject_match-0ae970c7",
+        "finding-pep_rca_watchlist-subject_match-dfa7da39",
+        "finding-business_profile-subject_match-a59d6fee",
+        "finding-family_associates-subject_match-a4427a53",
+        "finding-offshore_corporate-subject_match-1b4c64c7"
+      ],
+      "metrics": {
+        "materials": 129,
+        "findings": 6,
+        "likely": 0,
+        "adverse": 3,
+        "uncategorized": 0
+      },
+      "visualAssetRefs": [],
+      "staticBlocks": [
+        "Обзор региона",
+        "Источник"
+      ],
+      "methodologyNote": "Метрики рассчитаны только по материалам, отнесённым к проверяемому лицу; совпадения по однофамильцам исключены из KPI.",
+      "sourceNote": "Источники — aboutmanchester.co.uk, bmmagazine.co.uk, businessfirstonline.co.uk, cybercriminal.com и ещё 2."
     },
     {
       "slideKey": "p25_uae_metrics",
       "sectionKey": "UAE_PROFILE",
       "template": "orion_golden_search_table",
       "title": "ОАЭ — метрики покрытия",
-      "pageNumber": 28,
-      "totalPageCount": 41,
+      "pageNumber": 32,
+      "totalPageCount": 44,
       "baseSlotId": "p25_uae_metrics",
       "isContinuation": false,
       "table": {
@@ -1852,13 +1996,13 @@
         ],
         "rows": [
           [
-            "—",
+            "Все системы",
             "Материалы региона",
             "129",
             "по составному набору данных"
           ],
           [
-            "—",
+            "Все системы",
             "Темы повышенного внимания",
             "3",
             "см. матрицу рисков"
@@ -1879,24 +2023,25 @@
         "Заголовок",
         "Оценка"
       ],
-      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала.",
+      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно.",
       "legend": [
-        "Потенциально нежелательный",
+        "Нежелательный",
+        "Вероятно",
         "Нейтральный",
         "Позитивный"
       ],
-      "sourceNote": "Источники: aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki, bmmagazine.co.uk, businessfirstonline.co.uk"
+      "sourceNote": "Источники — aboutmanchester.co.uk, bmmagazine.co.uk, businessfirstonline.co.uk, cybercriminal.com и ещё 2."
     },
     {
       "slideKey": "p26_uae_serp_table",
       "sectionKey": "UAE_PROFILE",
       "template": "orion_golden_search_table",
       "title": "ОАЭ — позиции в поисковой выдаче",
-      "pageNumber": 29,
-      "totalPageCount": 41,
+      "pageNumber": 33,
+      "totalPageCount": 44,
       "baseSlotId": "p26_uae_serp_table",
       "isContinuation": false,
-      "bullets": [],
+      "narrative": "«Криминальные / судебные материалы» — критический уровень внимания.",
       "table": {
         "headers": [
           "№",
@@ -1909,73 +2054,7 @@
             "1",
             "—",
             "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "2",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "3",
-            "—",
-            "(без заголовка)",
-            "Потенциально нежелательный"
-          ],
-          [
-            "4",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "5",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "6",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "7",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "8",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "9",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "10",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "11",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "12",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
+            "Нежелательный"
           ]
         ]
       },
@@ -2011,8 +2090,12 @@
       ],
       "metrics": {
         "datasetCount": 20,
-        "displayedCount": 20,
-        "adverseDisplayed": 2
+        "uniqueMaterials": 1,
+        "displayedCount": 1,
+        "adverseDisplayed": 1,
+        "likelyDisplayed": 0,
+        "pageIndex": 1,
+        "pageCount": 1
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -2022,148 +2105,26 @@
         "Заголовок",
         "Оценка"
       ],
-      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала.",
+      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно.",
       "legend": [
-        "Потенциально нежелательный",
+        "Нежелательный",
+        "Вероятно",
         "Нейтральный",
         "Позитивный"
       ],
-      "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический.",
-      "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 3. Они видны при первичной проверке субъекта.",
+      "whatWasFound": "«Криминальные / судебные материалы» — критический уровень внимания.",
+      "whyItMatters": "На странице 3 темы повышенного внимания — эти материалы видны при первой же проверке субъекта.",
       "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-      "sourceNote": "Источники: поисковая выдача (см. приложение).",
-      "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
-    },
-    {
-      "slideKey": "p26_uae_serp_table__cont1",
-      "sectionKey": "UAE_PROFILE",
-      "template": "orion_golden_search_table",
-      "title": "ОАЭ — позиции в поисковой выдаче (продолжение 2/2)",
-      "pageNumber": 30,
-      "totalPageCount": 41,
-      "baseSlotId": "p26_uae_serp_table",
-      "isContinuation": true,
-      "continuationOf": "p26_uae_serp_table",
-      "continuationIndex": 1,
-      "bullets": [],
-      "table": {
-        "headers": [
-          "№",
-          "Домен",
-          "Заголовок",
-          "Оценка"
-        ],
-        "rows": [
-          [
-            "13",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "14",
-            "—",
-            "(без заголовка)",
-            "Потенциально нежелательный"
-          ],
-          [
-            "15",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "16",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "17",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "18",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "19",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ],
-          [
-            "20",
-            "—",
-            "(без заголовка)",
-            "Нейтральный"
-          ]
-        ]
-      },
-      "evidenceRefs": [
-        "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
-        "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7",
-        "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
-        "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
-        "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
-        "inventory:serp-obs-cmrjsczhq0065vd9gjcs2xkqz",
-        "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
-        "inventory:serp-obs-cmrjsczi3006dvd9g5asx5cky",
-        "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
-        "inventory:serp-obs-cmrjsczig006lvd9gjdgb1i2n",
-        "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
-        "inventory:serp-obs-cmrjsczit006tvd9gs4uo2h4s",
-        "inventory:serp-obs-cmrjsczj0006xvd9gh4chxgue",
-        "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
-        "inventory:serp-obs-cmrjsczjc0075vd9gkaa14ko2",
-        "inventory:serp-obs-cmrjsczji0079vd9g56ifgukf",
-        "inventory:serp-obs-cmrjsczjo007dvd9g2winxp45",
-        "inventory:serp-obs-cmrjsczjv007hvd9ggkgijmo1",
-        "inventory:serp-obs-cmrjsczk2007lvd9g7fldgn6p",
-        "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr"
-      ],
-      "findingIds": [
-        "finding-criminal_legal-subject_match-16447175",
-        "finding-security_scrutiny-subject_match-0ae970c7",
-        "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-business_profile-subject_match-a59d6fee",
-        "finding-family_associates-subject_match-a4427a53",
-        "finding-offshore_corporate-subject_match-1b4c64c7"
-      ],
-      "metrics": {
-        "datasetCount": 20,
-        "displayedCount": 20,
-        "adverseDisplayed": 2
-      },
-      "visualAssetRefs": [],
-      "staticBlocks": [
-        "Результаты поиска",
-        "Позиция",
-        "Домен",
-        "Заголовок",
-        "Оценка"
-      ],
-      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала.",
-      "legend": [
-        "Потенциально нежелательный",
-        "Нейтральный",
-        "Позитивный"
-      ],
-      "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-      "sourceNote": "Источники: поисковая выдача (см. приложение).",
-      "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
+      "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+      "statusNote": "Статус: тема подтверждена, уровень внимания — критический; достоверность оценки высокая."
     },
     {
       "slideKey": "p27_uae_serp_visual",
       "sectionKey": "UAE_PROFILE",
       "template": "orion_golden_serp_screenshot",
       "title": "ОАЭ — снимок выдачи",
-      "pageNumber": 31,
-      "totalPageCount": 41,
+      "pageNumber": 34,
+      "totalPageCount": 44,
       "baseSlotId": "p27_uae_serp_visual",
       "isContinuation": false,
       "narrative": "Состояние первой страницы выдачи (ОАЭ / международный). Выделенные результаты — в выдаче Google; по Яндексу сохранённых результатов в наборе нет.",
@@ -2191,16 +2152,13 @@
       ],
       "staticBlocks": [
         "Скриншот выдачи",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "whatWasFound": "На снимке выделено результатов повышенного внимания: 1 (rupep.org); остальные результаты — нейтральные или деловые.",
       "whyItMatters": "Выделенные материалы (1) видны при первичной проверке субъекта в этом регионе. Выделенные результаты — в выдаче Google; по Яндексу сохранённых результатов в наборе нет.",
       "whatToCheck": "Запросить первичные карточки баз и подтвердить принадлежность совпадений.",
-      "sourceNote": "Источники: rupep.org (результаты на снимке).",
-      "statusNote": "Статус: подтверждённая тема; уровень: средний; уверенность 90%.",
+      "sourceNote": "Источники на снимке — rupep.org.",
+      "statusNote": "Статус: тема подтверждена, уровень внимания — средний; достоверность оценки высокая.",
       "highlightExplanations": [
         {
           "clientReason": "«PEP / RCA / watchlist-сигналы» — выделенный результат rupep.org; уровень: средний.",
@@ -2213,8 +2171,8 @@
       "sectionKey": "UAE_PROFILE",
       "template": "orion_golden_surface_panel",
       "title": "ОАЭ — подсказки поиска",
-      "pageNumber": 32,
-      "totalPageCount": 41,
+      "pageNumber": 35,
+      "totalPageCount": 44,
       "baseSlotId": "p28_uae_suggestions",
       "isContinuation": false,
       "bullets": [],
@@ -2223,32 +2181,30 @@
       ],
       "findingIds": [],
       "metrics": {
-        "items": 1
+        "items": 1,
+        "adverseSuggestions": 0
       },
       "visualAssetRefs": [
         "uae_suggestions"
       ],
       "staticBlocks": [
         "Поисковые подсказки",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Подсказки отражают частотные запросы пользователей и формируют первое впечатление о субъекте.",
-      "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
-      "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+      "whatWasFound": "Показано 1 результат; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
+      "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
       "whatToCheck": "Мониторить изменения выдачи.",
-      "sourceNote": "Источники: поисковая выдача (см. приложение).",
-      "statusNote": "Статус: по данной поверхности выводов о рисках нет."
+      "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+      "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет."
     },
     {
       "slideKey": "p30_uae_images",
       "sectionKey": "UAE_PROFILE",
       "template": "orion_golden_image_grid",
       "title": "ОАЭ — изображения в поиске",
-      "pageNumber": 33,
-      "totalPageCount": 41,
+      "pageNumber": 36,
+      "totalPageCount": 44,
       "baseSlotId": "p30_uae_images",
       "isContinuation": false,
       "bullets": [
@@ -2274,11 +2230,7 @@
         "inventory:ss-cmrebbrxv012mmm0f2rk7l8mh",
         "inventory:ss-cmrebbrxv012nmm0f1n653sah",
         "inventory:ss-cmrebbrxv012omm0fc40akkn5",
-        "inventory:ss-cmrebbrxw0136mm0fskwehiro",
-        "inventory:ss-cmrebbrxw0135mm0fdebgamof",
-        "inventory:ss-cmrebbrxw0134mm0fv9q15l1o",
         "inventory:ss-cmrebbrxv012ymm0fg1px3drg",
-        "inventory:ss-cmrebbrxw0137mm0f66se53po",
         "inventory:ss-cmrebbrxv012smm0fa99x84cw",
         "inventory:ss-cmrebavri00pdmm0fuh51djil",
         "inventory:ss-cmrebavrk00rnmm0fs3ur2xfz",
@@ -2286,9 +2238,6 @@
         "inventory:ss-cmrebadwv00jrmm0ftcr8on0x",
         "inventory:ss-cmrebadwv00jsmm0fbs8kcegu",
         "inventory:ss-cmrebadww00kamm0fkn0ky5f6",
-        "inventory:ss-cmrebadww00k6mm0f8oq71410",
-        "inventory:ss-cmrebadww00k7mm0f13g9ava4",
-        "inventory:ss-cmrebadww00k8mm0ftw5ljl4n",
         "inventory:ss-cmrebadww00k9mm0fmejxlqce",
         "inventory:ss-cmrebadwu00i9mm0fkgzxybg0",
         "inventory:ss-cmrebadww00kkmm0fq07yecsr",
@@ -2319,35 +2268,53 @@
         "finding-family_associates-subject_match-a4427a53"
       ],
       "metrics": {
-        "items": 49
+        "items": 42,
+        "adverseImages": 4
       },
       "visualAssetRefs": [
         "uae_image_grid"
       ],
       "staticBlocks": [
         "Изображения в выдаче",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
-      "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: cybercriminal.com, sledst.org, m.sledst.org.",
-      "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 3. Они видны при первичной проверке субъекта.",
-      "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-      "sourceNote": "Источники: wikiart.org, instagram.com, facebook.com, youtube.com, pianista-superb.fandom.com",
-      "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%."
+      "whatWasFound": "Изображения на этой странице: 6; выделено красным (ведут на негативные источники): 4.",
+      "whyItMatters": "Выделенные изображения связаны с негативными источниками и формируют нежелательный визуальный фон в блоке «Картинки»: пользователь видит их до перехода на сайты.",
+      "whatToCheck": "Проверить сайты-источники выделенных изображений и подготовить позицию по каждому негативному материалу.",
+      "sourceNote": "Источники — wikiart.org, instagram.com, facebook.com, youtube.com и ещё 1.",
+      "statusNote": "Статус: изображений с привязкой к негативным источникам — 4; требуется проверка первоисточников.",
+      "highlightExplanations": [
+        {
+          "clientReason": "«PEP / RCA / watchlist-сигналы» — изображение ведёт на vlasti.io; уровень: средний.",
+          "frameTone": "red"
+        },
+        {
+          "clientReason": "«Криминальные / судебные материалы» — изображение ведёт на rucriminal.info; требует ручной проверки.",
+          "frameTone": "red"
+        },
+        {
+          "clientReason": "«PEP / RCA / watchlist-сигналы» — изображение ведёт на rupep.org; уровень: средний.",
+          "frameTone": "red"
+        },
+        {
+          "clientReason": "«Криминальные / судебные материалы» — изображение ведёт на cybercriminal.com; уровень: критический.",
+          "frameTone": "red"
+        }
+      ]
     },
     {
       "slideKey": "p29_uae_wikipedia",
       "sectionKey": "UAE_PROFILE",
       "template": "orion_golden_knowledge_panel",
       "title": "ОАЭ — Википедия",
-      "pageNumber": 34,
-      "totalPageCount": 41,
+      "pageNumber": 37,
+      "totalPageCount": 44,
       "baseSlotId": "p29_uae_wikipedia",
       "isContinuation": false,
-      "narrative": "Справочные ресурсы (ОАЭ / международный) корректно идентифицируют проверяемого субъекта; материалов об одноимённых лицах в этом контуре не зафиксировано.",
-      "bullets": [],
+      "narrative": "В выдаче зафиксированы энциклопедические материалы о проверяемом субъекте. Существенных негативных или спорных формулировок в этих карточках не выявлено. Материалов об одноимённых лицах в контуре ОАЭ / международный не зафиксировано.",
+      "bullets": [
+        "Wikipedia"
+      ],
       "evidenceRefs": [
         "inventory:wiki-1",
         "inventory:wiki-3"
@@ -2355,30 +2322,28 @@
       "findingIds": [],
       "metrics": {
         "subjectClaims": 0,
-        "identityPollution": 0
+        "identityPollution": 0,
+        "wikipediaCheckExists": -1
       },
       "visualAssetRefs": [],
       "staticBlocks": [
         "Википедия и панель знаний",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Раздел фиксирует, как справочные ресурсы идентифицируют субъекта и с кем его могут путать поисковые системы.",
-      "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
-      "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+      "whatWasFound": "Показано 2 результата; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
+      "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
       "whatToCheck": "Мониторить изменения выдачи.",
-      "sourceNote": "Источники: поисковая выдача (см. приложение).",
-      "statusNote": "Статус: по данной поверхности выводов о рисках нет."
+      "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+      "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет."
     },
     {
       "slideKey": "p31_uae_knowledge",
       "sectionKey": "UAE_PROFILE",
       "template": "orion_golden_surface_panel",
       "title": "ОАЭ — панель знаний и AI Overview",
-      "pageNumber": 35,
-      "totalPageCount": 41,
+      "pageNumber": 38,
+      "totalPageCount": 44,
       "baseSlotId": "p31_uae_knowledge",
       "isContinuation": false,
       "bullets": [],
@@ -2394,25 +2359,22 @@
       ],
       "staticBlocks": [
         "AI-ответы поисковых систем",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
       "methodologyNote": "Ответы AI-сервисов приводятся полностью, без сокращений; интерпретация даётся отдельным блоком.",
-      "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
-      "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+      "whatWasFound": "Показано 1 результат; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
+      "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
       "whatToCheck": "Мониторить изменения выдачи.",
-      "sourceNote": "Источники: поисковая выдача (см. приложение).",
-      "statusNote": "Статус: по данной поверхности выводов о рисках нет."
+      "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+      "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет."
     },
     {
       "slideKey": "p32_uae_related",
       "sectionKey": "UAE_PROFILE",
       "template": "orion_golden_surface_panel",
       "title": "ОАЭ — связанные запросы",
-      "pageNumber": 36,
-      "totalPageCount": 41,
+      "pageNumber": 39,
+      "totalPageCount": 44,
       "baseSlotId": "p32_uae_related",
       "isContinuation": false,
       "bullets": [],
@@ -2428,27 +2390,24 @@
       ],
       "staticBlocks": [
         "Связанные запросы",
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
-      "whatWasFound": "Существенных материалов среди показанных на этой странице элементов не обнаружено.",
-      "whyItMatters": "Показанные на странице материалы не формируют негативного фона вокруг субъекта.",
+      "whatWasFound": "Показано 1 результат; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
+      "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
       "whatToCheck": "Мониторить изменения выдачи.",
-      "sourceNote": "Источники: поисковая выдача (см. приложение).",
-      "statusNote": "Статус: по данной поверхности выводов о рисках нет."
+      "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+      "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет."
     },
     {
       "slideKey": "p33_compliance_toc",
       "sectionKey": "COMPLIANCE",
       "template": "orion_golden_search_table",
       "title": "Комплаенс — сводка баз данных",
-      "pageNumber": 37,
-      "totalPageCount": 41,
+      "pageNumber": 40,
+      "totalPageCount": 44,
       "baseSlotId": "p33_compliance_toc",
       "isContinuation": false,
-      "narrative": "Проверено записей комплаенс-контура: 90. Потенциальных совпадений в базах: 3; подтверждённых совпадений нет — каждое требует ручной верификации.",
+      "narrative": "Проверено записей комплаенс-контура: 90. Потенциальных совпадений в базах: 1; подтверждённых совпадений нет — каждое требует ручной верификации. По 89 записям совпадений не выявлено — в таблицу они не включены.",
       "table": {
         "headers": [
           "База данных",
@@ -2458,22 +2417,10 @@
         ],
         "rows": [
           [
-            "Dow Jones",
-            "PEP (политически значимое лицо)",
-            "65/100",
-            "Требует ручной проверки"
-          ],
-          [
-            "LexisNexis",
-            "Негативные публикации",
-            "79/100",
-            "Требует ручной проверки"
-          ],
-          [
-            "World-Check",
-            "Санкционные списки",
-            "41/100",
-            "Требует ручной проверки"
+            "База данных",
+            "—",
+            "—",
+            "—"
           ]
         ]
       },
@@ -2568,14 +2515,12 @@
         "inventory:rf-cmreano0e00a1o30fpll4waw5",
         "inventory:rf-cmreano0a009zo30fc9ht1q8g",
         "inventory:rf-cmreano06009xo30fyhy23c7d",
-        "inventory:db-cmreb8ztt001zmm0fluvc61al",
-        "inventory:db-cmreb8ztt0020mm0fdnvu6218",
-        "inventory:db-cmreb8ztt0021mm0fbod9mrpp"
+        "inventory:db-cmreb8ztt001zmm0fluvc61al"
       ],
       "findingIds": [],
       "metrics": {
         "complianceItems": 90,
-        "hits": 3
+        "hits": 1
       },
       "visualAssetRefs": [],
       "staticBlocks": [
@@ -2585,9 +2530,10 @@
         "Заголовок",
         "Оценка"
       ],
-      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала.",
+      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала. «Вероятно» — принадлежность субъекту не подтверждена однозначно.",
       "legend": [
-        "Потенциально нежелательный",
+        "Нежелательный",
+        "Вероятно",
         "Нейтральный",
         "Позитивный"
       ],
@@ -2597,160 +2543,75 @@
     {
       "slideKey": "p34_dow_jones",
       "sectionKey": "COMPLIANCE",
-      "template": "orion_golden_search_table",
+      "template": "orion_golden_no_data_compact",
       "title": "Dow Jones — профиль",
-      "pageNumber": 38,
-      "totalPageCount": 41,
+      "pageNumber": 41,
+      "totalPageCount": 44,
       "baseSlotId": "p34_dow_jones",
       "isContinuation": false,
-      "narrative": "Профиль по данным Dow Jones: существующий комплаенс-контент, источники не расширялись.",
-      "table": {
-        "headers": [
-          "Параметр",
-          "Значение"
-        ],
-        "rows": [
-          [
-            "Совпадение по имени",
-            "Глинка Сергей Михайлович"
-          ],
-          [
-            "Категория",
-            "PEP (политически значимое лицо)"
-          ],
-          [
-            "Оценка совпадения",
-            "65/100"
-          ],
-          [
-            "Статус",
-            "Требует ручной проверки"
-          ],
-          [
-            "Почему важно",
-            "Категория PEP влияет на уровень комплаенс-контроля при онбординге и мониторинге клиента."
-          ],
-          [
-            "Что сделать",
-            "Запросить полную запись Dow Jones и сверить идентификаторы субъекта."
-          ]
-        ]
-      },
-      "evidenceRefs": [
-        "inventory:db-cmreb8ztt001zmm0fluvc61al"
+      "narrative": "Проверка по базе Dow Jones выполнена: записей о субъекте не зафиксировано — это результат проверки на дату отчёта, а не вывод об отсутствии рисков.",
+      "bullets": [
+        "База Dow Jones отвечает на вопрос о статусе политически значимого лица: запись в ней подняла бы уровень контроля при онбординге и мониторинге. В текущем наборе такой записи по субъекту нет."
       ],
+      "evidenceRefs": [],
       "findingIds": [],
       "metrics": {
-        "hits": 1
+        "hits": 0
       },
       "visualAssetRefs": [],
       "staticBlocks": [
-        "Результаты поиска",
-        "Позиция",
-        "Домен",
-        "Заголовок",
-        "Оценка"
+        "Покрытие данных",
+        "Статус сбора",
+        "Что это означает"
       ],
-      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала.",
-      "legend": [
-        "Потенциально нежелательный",
-        "Нейтральный",
-        "Позитивный"
-      ],
-      "whatWasFound": "Потенциальное совпадение категории «PEP (политически значимое лицо)» с оценкой 65/100; совпадение не подтверждено и требует ручной проверки.",
-      "whyItMatters": "Категория PEP влияет на уровень комплаенс-контроля при онбординге и мониторинге клиента.",
-      "whatToCheck": "Запросить полную запись Dow Jones и сверить идентификаторы субъекта.",
-      "sourceNote": "Источник: Dow Jones (существующий контур)."
+      "methodologyNote": "Отсутствие материалов по поверхности не тождественно отсутствию рисков; указан фактический статус сбора.",
+      "whatToCheck": "Повторить сверку по базе Dow Jones при следующем обновлении данных; при появлении записи запросить полную карточку и сверить идентификаторы субъекта.",
+      "sourceNote": "Источник: Dow Jones (существующий контур).",
+      "emptyStateReason": "no-compliance-records"
     },
     {
       "slideKey": "p35_lexis_visual",
       "sectionKey": "COMPLIANCE",
-      "template": "orion_golden_search_table",
+      "template": "orion_golden_no_data_compact",
       "title": "LexisNexis — страница профиля",
-      "pageNumber": 39,
-      "totalPageCount": 41,
+      "pageNumber": 42,
+      "totalPageCount": 44,
       "baseSlotId": "p35_lexis_visual",
       "isContinuation": false,
-      "narrative": "Страница профиля LexisNexis. Визуальный экспорт страницы в текущем офлайн-наборе недоступен (VISUAL_ASSET_UNAVAILABLE); содержимое записи приведено в текстовом виде без потерь. Вторая страница профиля из отчёта v72 объединена с этой: отдельного содержимого у неё нет.",
-      "table": {
-        "headers": [
-          "Параметр",
-          "Значение"
-        ],
-        "rows": [
-          [
-            "Совпадение по имени",
-            "Глинка Сергей Михайлович"
-          ],
-          [
-            "Категория",
-            "Негативные публикации"
-          ],
-          [
-            "Оценка совпадения",
-            "79/100"
-          ],
-          [
-            "Статус",
-            "Требует ручной проверки"
-          ],
-          [
-            "Почему важно",
-            "Негативные публикации в базе увеличивают репутационный риск и требуют проверки первоисточников."
-          ],
-          [
-            "Что сделать",
-            "Запросить полную запись LexisNexis и проверить первоисточники публикаций."
-          ],
-          [
-            "Визуальный экспорт",
-            "Недоступен в текущем офлайн-наборе (VISUAL_ASSET_UNAVAILABLE); данные приведены в текстовом виде без потерь."
-          ]
-        ]
-      },
-      "evidenceRefs": [
-        "inventory:db-cmreb8ztt0020mm0fdnvu6218"
+      "narrative": "Проверка по базе LexisNexis выполнена: записей о субъекте не зафиксировано — это результат проверки на дату отчёта, а не вывод об отсутствии рисков.",
+      "bullets": [
+        "База LexisNexis собирает негативные публикации и правовые сюжеты: запись в ней потребовала бы проверки первоисточников. В текущем наборе такой записи по субъекту нет."
       ],
+      "evidenceRefs": [],
       "findingIds": [],
       "metrics": {
-        "hits": 1
+        "hits": 0
       },
       "visualAssetRefs": [],
       "staticBlocks": [
-        "Результаты поиска",
-        "Позиция",
-        "Домен",
-        "Заголовок",
-        "Оценка"
+        "Покрытие данных",
+        "Статус сбора",
+        "Что это означает"
       ],
-      "methodologyNote": "Домены выводятся из URL источника; оценка присваивается по содержанию материала.",
-      "legend": [
-        "Потенциально нежелательный",
-        "Нейтральный",
-        "Позитивный"
-      ],
-      "whatWasFound": "Потенциальное совпадение категории «Негативные публикации» с оценкой 79/100; совпадение не подтверждено и требует ручной проверки.",
-      "whyItMatters": "Негативные публикации в базе увеличивают репутационный риск и требуют проверки первоисточников.",
-      "whatToCheck": "Запросить полную запись LexisNexis и проверить первоисточники публикаций.",
+      "methodologyNote": "Отсутствие материалов по поверхности не тождественно отсутствию рисков; указан фактический статус сбора.",
+      "whatToCheck": "Повторить сверку по базе LexisNexis при следующем обновлении данных; при появлении записи запросить полную карточку и сверить идентификаторы субъекта.",
       "sourceNote": "Источник: LexisNexis (существующий контур).",
-      "emptyStateReason": "VISUAL_ASSET_UNAVAILABLE"
+      "emptyStateReason": "no-compliance-records"
     },
     {
       "slideKey": "appendix_main_base",
       "sectionKey": "APPENDIX",
       "template": "orion_golden_executive_card",
       "title": "Приложение: материалы, требующие идентификации",
-      "pageNumber": 40,
-      "totalPageCount": 41,
+      "pageNumber": 43,
+      "totalPageCount": 44,
       "baseSlotId": "slot_appendix_main",
       "isContinuation": false,
       "bullets": [
-        "Семья и деловые связи: 1 свидетельств (0 негативных) в источниках ru.wikipedia.org. Примеры: В кого был влюблен Глинка? [finding-family_associates-other_subject-276ddd65]",
-        "Деловой профиль: 3 свидетельств (0 негативных) в источниках instagram.com, youtube.com, vkvideo.ru. Примеры: КНИГИ on Instagram: \"Прекрасная биография. Лаконичная ... · Михаил Глинка.Биография · Композитор Глинка (биографический, реж. Григорий ... [finding-business_profile-other_subject-b434e301]",
-        "Политические связи / публичная экспозиция: 1 свидетельств (0 негативных) в источниках youtube.com. Примеры: М. Глинка - Хор «Славься» из оперы «Жизнь за царя» [finding-political_exposure-other_subject-038d7d26]",
-        "Деловой профиль: 2 свидетельств (0 негативных) в источниках kulturologia.ru, eg.ru. Примеры: Сергей Глинка: транспорт, биотехнологии и инвестиции в Nutriband · Биография и личная жизнь: Ксения Лаврова-Глинка - Экспресс газета [finding-business_profile-ambiguous-7a2d3181]",
-        "Криминальные / судебные материалы: 1 свидетельств (1 негативных) в источниках rucriminal.info. Примеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-criminal_legal-ambiguous-3d33fe91]",
-        "PEP / RCA / watchlist-сигналы: 1 свидетельств (0 негативных) в источниках kulturologia.ru. Примеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром  культуры: О чем жалеет Ксения Лаврова-Глинки [finding-pep_rca_watchlist-ambiguous-976aa8fa]"
+        "Семья и деловые связи\n1 свидетельств (0 негативных) в источниках ru.wikipedia.org.\nПримеры: В кого был влюблен Глинка? [finding-family_associates-other_subject-276ddd65]",
+        "Деловой профиль\n3 свидетельств (0 негативных) в источниках instagram.com, youtube.com, vkvideo.ru.\nПримеры: КНИГИ on Instagram: \"Прекрасная биография. Лаконичная ... · Михаил Глинка.Биография · Композитор Глинка (биографический, реж. Григорий ... [finding-business_profile-other_subject-b434e301]",
+        "Политические связи / публичная экспозиция\n1 свидетельств (0 негативных) в источниках youtube.com.\nПримеры: М. Глинка - Хор «Славься» из оперы «Жизнь за царя» [finding-political_exposure-other_subject-038d7d26]",
+        "Деловой профиль\n2 свидетельств (0 негативных) в источниках kulturologia.ru, eg.ru.\nПримеры: Сергей Глинка: транспорт, биотехнологии и инвестиции в Nutriband · Биография и личная жизнь: Ксения Лаврова-Глинка - Экспресс газета [finding-business_profile-ambiguous-7a2d3181]"
       ],
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczp800atvd9g74u2yw40",
@@ -2779,27 +2640,26 @@
       },
       "visualAssetRefs": [],
       "staticBlocks": [
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
-      "sourceNote": "Источники: eg.ru, instagram.com, kulturologia.ru, ru.wikipedia.org, rucriminal.info, vkvideo.ru"
+      "sourceNote": "Источники — eg.ru, instagram.com, kulturologia.ru, ru.wikipedia.org и ещё 2."
     },
     {
       "slideKey": "appendix_main_base__cont1",
       "sectionKey": "APPENDIX",
       "template": "orion_golden_executive_card",
       "title": "Приложение: материалы, требующие идентификации (продолжение 2/2)",
-      "pageNumber": 41,
-      "totalPageCount": 41,
+      "pageNumber": 44,
+      "totalPageCount": 44,
       "baseSlotId": "slot_appendix_main",
       "isContinuation": true,
       "continuationOf": "appendix_main_base",
       "continuationIndex": 1,
       "bullets": [
-        "Политические связи / публичная экспозиция: 2 свидетельств (0 негативных) в источниках kulturologia.ru, youtube.com. Примеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром  культуры: О чем жалеет Ксения Лаврова-Глинки · Михаил Глинка \"Скажи,зачем явилась ты\"/Юрий Гуляев [finding-political_exposure-ambiguous-054edc90]",
-        "Внимание по линии безопасности / оборонный контур: 1 свидетельств (1 негативных) в источниках rucriminal.info. Примеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-security_scrutiny-ambiguous-3d33fe91]"
+        "Криминальные / судебные материалы\n1 свидетельств (1 негативных) в источниках rucriminal.info.\nПримеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-criminal_legal-ambiguous-3d33fe91]",
+        "PEP / RCA / watchlist-сигналы\n1 свидетельств (0 негативных) в источниках kulturologia.ru.\nПримеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром культуры: О чем жалеет Ксения Лаврова-Глинки [finding-pep_rca_watchlist-ambiguous-976aa8fa]",
+        "Политические связи / публичная экспозиция\n2 свидетельств (0 негативных) в источниках kulturologia.ru, youtube.com.\nПримеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром культуры: О чем жалеет Ксения Лаврова-Глинки · Михаил Глинка \"Скажи,зачем явилась ты\"/Юрий Гуляев [finding-political_exposure-ambiguous-054edc90]",
+        "Внимание по линии безопасности / оборонный контур\n1 свидетельств (1 негативных) в источниках rucriminal.info.\nПримеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-security_scrutiny-ambiguous-3d33fe91]"
       ],
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczp800atvd9g74u2yw40",
@@ -2828,12 +2688,9 @@
       },
       "visualAssetRefs": [],
       "staticBlocks": [
-        "Что обнаружено",
-        "Почему важно",
-        "Что проверить",
         "Источник"
       ],
-      "sourceNote": "Источники: eg.ru, instagram.com, kulturologia.ru, ru.wikipedia.org, rucriminal.info, vkvideo.ru"
+      "sourceNote": "Источники — eg.ru, instagram.com, kulturologia.ru, ru.wikipedia.org и ещё 2."
     }
   ],
   "rejections": []

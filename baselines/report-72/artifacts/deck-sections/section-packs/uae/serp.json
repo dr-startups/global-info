@@ -8,10 +8,10 @@
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "contentVersion": "deck-sections-v14",
-  "promptVersion": "uae-serp-analysis-v1",
-  "contentHash": "sha256:11b28dd6c40dfd695aa468ed8d80662d08bb1349d8824390fdea3f765ac6ff87",
-  "inputHash": "sha256:f2a911466d9a6953604a113f4f1a83607a5c9fbe353bf1dd7da868ceb92995e1:e16837effc069f19",
-  "generatedAt": "2026-07-17T09:49:29.040Z",
+  "promptVersion": "uae-serp-analysis-v4",
+  "contentHash": "sha256:c89d639a3a54845d3b75da8e1659ad2c1f864fbaaf2c79b91a996ddc7baff9fc",
+  "inputHash": "sha256:85af08a4b05f4392a585c8dcdc85336cfbe781100f047392eef89920e69b6773:00e9bc411f81d76d",
+  "generatedAt": "2026-07-28T12:07:22.290Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -231,82 +231,16 @@
               "1",
               "—",
               "(без заголовка)",
-              "Нейтральный"
-            ],
-            [
-              "2",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
-            ],
-            [
-              "3",
-              "—",
-              "(без заголовка)",
-              "Потенциально нежелательный"
-            ],
-            [
-              "4",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
-            ],
-            [
-              "5",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
-            ],
-            [
-              "6",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
-            ],
-            [
-              "7",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
-            ],
-            [
-              "8",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
-            ],
-            [
-              "9",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
-            ],
-            [
-              "10",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
-            ],
-            [
-              "11",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
-            ],
-            [
-              "12",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
+              "Нежелательный"
             ]
           ]
         },
-        "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический.",
-        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 3. Они видны при первичной проверке субъекта.",
+        "whatWasFound": "«Криминальные / судебные материалы» — критический уровень внимания.",
+        "whyItMatters": "На странице 3 темы повышенного внимания — эти материалы видны при первой же проверке субъекта.",
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%.",
-        "sourceNote": "Источники: поисковая выдача (см. приложение).",
-        "bullets": []
+        "statusNote": "Статус: тема подтверждена, уровень внимания — критический; достоверность оценки высокая.",
+        "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+        "narrative": "«Криминальные / судебные материалы» — критический уровень внимания."
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
@@ -340,119 +274,12 @@
       ],
       "metrics": {
         "datasetCount": 20,
-        "displayedCount": 20,
-        "adverseDisplayed": 2
-      },
-      "visualAssetRefs": []
-    },
-    {
-      "schemaVersion": "slide-content-v1",
-      "slideId": "p26_uae_serp_table__cont1",
-      "baseSlotId": "p26_uae_serp_table",
-      "sectionId": "UAE_PROFILE",
-      "isContinuation": true,
-      "continuationOf": "p26_uae_serp_table",
-      "continuationIndex": 1,
-      "templateId": "serp-table",
-      "title": "ОАЭ — позиции в поисковой выдаче (продолжение 2/2)",
-      "content": {
-        "table": {
-          "headers": [
-            "№",
-            "Домен",
-            "Заголовок",
-            "Оценка"
-          ],
-          "rows": [
-            [
-              "13",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
-            ],
-            [
-              "14",
-              "—",
-              "(без заголовка)",
-              "Потенциально нежелательный"
-            ],
-            [
-              "15",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
-            ],
-            [
-              "16",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
-            ],
-            [
-              "17",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
-            ],
-            [
-              "18",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
-            ],
-            [
-              "19",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
-            ],
-            [
-              "20",
-              "—",
-              "(без заголовка)",
-              "Нейтральный"
-            ]
-          ]
-        },
-        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%.",
-        "sourceNote": "Источники: поисковая выдача (см. приложение).",
-        "bullets": []
-      },
-      "evidenceRefs": [
-        "inventory:serp-obs-cmrjsczgv005lvd9gp9aryn4c",
-        "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7",
-        "inventory:serp-obs-cmrjsczh7005tvd9gr00bvdq8",
-        "inventory:serp-obs-cmrjsczhd005xvd9g1xmh3ysu",
-        "inventory:serp-obs-cmrjsczhk0061vd9gszwpvqsg",
-        "inventory:serp-obs-cmrjsczhq0065vd9gjcs2xkqz",
-        "inventory:serp-obs-cmrjsczhx0069vd9gxll5vo22",
-        "inventory:serp-obs-cmrjsczi3006dvd9g5asx5cky",
-        "inventory:serp-obs-cmrjsczia006hvd9gp5b7y3wz",
-        "inventory:serp-obs-cmrjsczig006lvd9gjdgb1i2n",
-        "inventory:serp-obs-cmrjsczin006pvd9gek7pbb6v",
-        "inventory:serp-obs-cmrjsczit006tvd9gs4uo2h4s",
-        "inventory:serp-obs-cmrjsczj0006xvd9gh4chxgue",
-        "inventory:serp-obs-cmrjsczj60071vd9gexc6yian",
-        "inventory:serp-obs-cmrjsczjc0075vd9gkaa14ko2",
-        "inventory:serp-obs-cmrjsczji0079vd9g56ifgukf",
-        "inventory:serp-obs-cmrjsczjo007dvd9g2winxp45",
-        "inventory:serp-obs-cmrjsczjv007hvd9ggkgijmo1",
-        "inventory:serp-obs-cmrjsczk2007lvd9g7fldgn6p",
-        "inventory:serp-obs-cmrjsczk8007pvd9gxygp3xqr"
-      ],
-      "findingIds": [
-        "finding-criminal_legal-subject_match-16447175",
-        "finding-security_scrutiny-subject_match-0ae970c7",
-        "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-business_profile-subject_match-a59d6fee",
-        "finding-family_associates-subject_match-a4427a53",
-        "finding-offshore_corporate-subject_match-1b4c64c7"
-      ],
-      "metrics": {
-        "datasetCount": 20,
-        "displayedCount": 20,
-        "adverseDisplayed": 2
+        "uniqueMaterials": 1,
+        "displayedCount": 1,
+        "adverseDisplayed": 1,
+        "likelyDisplayed": 0,
+        "pageIndex": 1,
+        "pageCount": 1
       },
       "visualAssetRefs": []
     }

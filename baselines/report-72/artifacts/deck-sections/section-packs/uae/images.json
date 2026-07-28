@@ -8,10 +8,10 @@
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "contentVersion": "deck-sections-v14",
-  "promptVersion": "uae-images-analysis-v1",
-  "contentHash": "sha256:10813c648fae2a2abec77fd77a1c676b1b6a01a39594f9f21974d5366549af98",
-  "inputHash": "sha256:e4aa908603cd735921e63d4f93994141de56d08bbfb4997437512786def5638d:363a0451c9dd30a4",
-  "generatedAt": "2026-07-17T09:49:29.041Z",
+  "promptVersion": "uae-images-analysis-v4",
+  "contentHash": "sha256:0aa47e0dca45a0d024a3b3cda63ce46674a0b11cbfe9efdc28cee41a087bcce8",
+  "inputHash": "sha256:00b1862981e6cb663e33d6e6a8684a0966afee828ca6f39746aafa269d54cad5:ac3d94820f3e4011",
+  "generatedAt": "2026-07-28T12:07:22.291Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -244,11 +244,29 @@
           "CyberCriminal.com | Sergei Glinka – CyberCriminal.com",
           "Относится к другому лицу: Glinka - Fragments from the opera \"Ruslan and Ludmila\""
         ],
-        "whatWasFound": "«Криминальные / судебные материалы»: уровень внимания — критический — материалы на этой странице: cybercriminal.com, sledst.org, m.sledst.org.",
-        "whyItMatters": "Материалы этой страницы затрагивают тем повышенного внимания: 3. Они видны при первичной проверке субъекта.",
-        "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "statusNote": "Статус: подтверждённая тема; уровень: критический; уверенность 90%.",
-        "sourceNote": "Источники: wikiart.org, instagram.com, facebook.com, youtube.com, pianista-superb.fandom.com"
+        "whatWasFound": "Изображения на этой странице: 6; выделено красным (ведут на негативные источники): 4.",
+        "whyItMatters": "Выделенные изображения связаны с негативными источниками и формируют нежелательный визуальный фон в блоке «Картинки»: пользователь видит их до перехода на сайты.",
+        "whatToCheck": "Проверить сайты-источники выделенных изображений и подготовить позицию по каждому негативному материалу.",
+        "statusNote": "Статус: изображений с привязкой к негативным источникам — 4; требуется проверка первоисточников.",
+        "sourceNote": "Источники — wikiart.org, instagram.com, facebook.com, youtube.com и ещё 1.",
+        "highlightExplanations": [
+          {
+            "clientReason": "«PEP / RCA / watchlist-сигналы» — изображение ведёт на vlasti.io; уровень: средний.",
+            "frameTone": "red"
+          },
+          {
+            "clientReason": "«Криминальные / судебные материалы» — изображение ведёт на rucriminal.info; требует ручной проверки.",
+            "frameTone": "red"
+          },
+          {
+            "clientReason": "«PEP / RCA / watchlist-сигналы» — изображение ведёт на rupep.org; уровень: средний.",
+            "frameTone": "red"
+          },
+          {
+            "clientReason": "«Криминальные / судебные материалы» — изображение ведёт на cybercriminal.com; уровень: критический.",
+            "frameTone": "red"
+          }
+        ]
       },
       "evidenceRefs": [
         "inventory:ss-cmrebbrxv012rmm0fwdjuvdds",
@@ -264,11 +282,7 @@
         "inventory:ss-cmrebbrxv012mmm0f2rk7l8mh",
         "inventory:ss-cmrebbrxv012nmm0f1n653sah",
         "inventory:ss-cmrebbrxv012omm0fc40akkn5",
-        "inventory:ss-cmrebbrxw0136mm0fskwehiro",
-        "inventory:ss-cmrebbrxw0135mm0fdebgamof",
-        "inventory:ss-cmrebbrxw0134mm0fv9q15l1o",
         "inventory:ss-cmrebbrxv012ymm0fg1px3drg",
-        "inventory:ss-cmrebbrxw0137mm0f66se53po",
         "inventory:ss-cmrebbrxv012smm0fa99x84cw",
         "inventory:ss-cmrebavri00pdmm0fuh51djil",
         "inventory:ss-cmrebavrk00rnmm0fs3ur2xfz",
@@ -276,9 +290,6 @@
         "inventory:ss-cmrebadwv00jrmm0ftcr8on0x",
         "inventory:ss-cmrebadwv00jsmm0fbs8kcegu",
         "inventory:ss-cmrebadww00kamm0fkn0ky5f6",
-        "inventory:ss-cmrebadww00k6mm0f8oq71410",
-        "inventory:ss-cmrebadww00k7mm0f13g9ava4",
-        "inventory:ss-cmrebadww00k8mm0ftw5ljl4n",
         "inventory:ss-cmrebadww00k9mm0fmejxlqce",
         "inventory:ss-cmrebadwu00i9mm0fkgzxybg0",
         "inventory:ss-cmrebadww00kkmm0fq07yecsr",
@@ -309,7 +320,8 @@
         "finding-family_associates-subject_match-a4427a53"
       ],
       "metrics": {
-        "items": 49
+        "items": 42,
+        "adverseImages": 4
       },
       "visualAssetRefs": [
         "uae_image_grid"
@@ -318,7 +330,7 @@
   ],
   "metrics": {
     "datasetCount": 94,
-    "displayedCount": 49,
+    "displayedCount": 42,
     "adverseDatasetCount": 3,
     "adverseDisplayedCount": 3
   },
@@ -347,11 +359,7 @@
       "inventory:ss-cmrebbrxv012mmm0f2rk7l8mh",
       "inventory:ss-cmrebbrxv012nmm0f1n653sah",
       "inventory:ss-cmrebbrxv012omm0fc40akkn5",
-      "inventory:ss-cmrebbrxw0136mm0fskwehiro",
-      "inventory:ss-cmrebbrxw0135mm0fdebgamof",
-      "inventory:ss-cmrebbrxw0134mm0fv9q15l1o",
       "inventory:ss-cmrebbrxv012ymm0fg1px3drg",
-      "inventory:ss-cmrebbrxw0137mm0f66se53po",
       "inventory:ss-cmrebbrxv012smm0fa99x84cw",
       "inventory:ss-cmrebavri00pdmm0fuh51djil",
       "inventory:ss-cmrebavrk00rnmm0fs3ur2xfz",
@@ -359,9 +367,6 @@
       "inventory:ss-cmrebadwv00jrmm0ftcr8on0x",
       "inventory:ss-cmrebadwv00jsmm0fbs8kcegu",
       "inventory:ss-cmrebadww00kamm0fkn0ky5f6",
-      "inventory:ss-cmrebadww00k6mm0f8oq71410",
-      "inventory:ss-cmrebadww00k7mm0f13g9ava4",
-      "inventory:ss-cmrebadww00k8mm0ftw5ljl4n",
       "inventory:ss-cmrebadww00k9mm0fmejxlqce",
       "inventory:ss-cmrebadwu00i9mm0fkgzxybg0",
       "inventory:ss-cmrebadww00kkmm0fq07yecsr",
