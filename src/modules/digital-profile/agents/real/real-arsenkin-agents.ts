@@ -207,3 +207,17 @@ export function isArsenkinAgentEnabled(
   const enabled = arsenkinTools(env);
   return tools.some((t) => enabled.includes(t));
 }
+
+/**
+ * Состав прогона: агенты, которые при нынешнем наборе инструментов работают.
+ *
+ * Знаменатель прогресса в кабинете был записан числом `5` — шестью литералами
+ * в одной функции. При составе по умолчанию (ADR-0005 — только первая стадия)
+ * работают трое, а панель показывала «scheduled 3/5 · completed 3/5» и
+ * выглядела недоделанным прогоном на исправном. Сколько агентов в деле —
+ * вопрос к составу, и ответ на него уже есть здесь; литерал в интерфейсе был
+ * вторым ответом на него же.
+ */
+export function enabledArsenkinAgentNames(env: NodeJS.ProcessEnv = process.env): string[] {
+  return ARSENKIN_REAL_AGENT_NAMES.filter((name) => isArsenkinAgentEnabled(name, env));
+}

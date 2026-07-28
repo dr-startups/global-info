@@ -13,24 +13,28 @@ import {
   isSuggestionsTargetedRetryState,
   shouldShowGeneralRecoveryCta,
 } from "./unified-suggestions-retry-ui";
+import { arsenkinProgressLine } from "./arsenkin-progress-line";
 
 function arsenkinProgress(job: UnifiedCollectionJobStatus | null): string {
-  if (!job) return "scheduled 0/5 · completed 0/5 · ingested 0/5";
+  const plannedAgents = job?.arsenkinPlannedAgents;
+  if (!job) return arsenkinProgressLine({ plannedAgents });
   const st = job.arsenkinEnrichmentState;
   if (st) {
-    const s = st.scheduledAgents?.length ?? 0;
-    const c = st.completedAgents?.length ?? 0;
-    const i = st.ingestedAgents?.length ?? 0;
-    const suffix = st.enrichmentComplete
-      ? "complete"
-      : st.pendingAgents?.length
-        ? "pending"
-        : "incomplete";
-    return `scheduled ${Math.min(5, s)}/5 · completed ${Math.min(5, c)}/5 · ingested ${Math.min(5, i)}/5 (${suffix})`;
+    return arsenkinProgressLine({
+      plannedAgents,
+      scheduledAgents: st.scheduledAgents,
+      completedAgents: st.completedAgents,
+      ingestedAgents: st.ingestedAgents,
+      pendingAgents: st.pendingAgents,
+      enrichmentComplete: st.enrichmentComplete,
+    });
   }
-  const n = job.enrichmentRunIds?.length ?? 0;
-  if (n > 0) return `scheduled ${Math.min(5, n)}/5 · completed 0/5 · ingested 0/5 (incomplete)`;
-  return "scheduled 0/5 · completed 0/5 · ingested 0/5";
+  // Состояния обогащения ещё нет: о постановке известно только по прогонам.
+  const scheduledAgents = job.enrichmentRunIds ?? [];
+  if (scheduledAgents.length > 0) {
+    return arsenkinProgressLine({ plannedAgents, scheduledAgents, enrichmentComplete: false });
+  }
+  return arsenkinProgressLine({ plannedAgents });
 }
 
 function isRenderRecovery(job: UnifiedCollectionJobStatus | null): boolean {

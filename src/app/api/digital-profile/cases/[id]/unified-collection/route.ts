@@ -23,6 +23,7 @@ import { evaluateUnifiedReportRebuildEligibility } from "@/modules/digital-profi
 import { evaluateUnifiedGptCopyRetryEligibility } from "@/modules/digital-profile/services/unified-gpt-copy-retry";
 import { withSuggestionsGapStatus } from "@/modules/digital-profile/services/unified-suggestions-gap";
 import { getCanonicalDownloadAvailability } from "@/modules/digital-profile/services/canonical-report-artifacts";
+import { enabledArsenkinAgentNames } from "@/modules/digital-profile/agents/real/real-arsenkin-agents";
 import {
   NO_AUTO_RESUME,
   autoResumeState,
@@ -173,6 +174,9 @@ export const GET = withModule(async (req: NextRequest, ctx: RouteContext) => {
           createdAt: job.createdAt,
           updatedAt: job.updatedAt,
           completedAt: job.completedAt,
+          // Состав прогона называет сервер: в кабинете он был записан числом,
+          // и при трёх работающих агентах панель показывала «3/5».
+          arsenkinPlannedAgents: enabledArsenkinAgentNames(),
           arsenkinEnrichmentState: job.arsenkinEnrichmentState
             ? {
                 scheduledAgents: job.arsenkinEnrichmentState.scheduledAgents,

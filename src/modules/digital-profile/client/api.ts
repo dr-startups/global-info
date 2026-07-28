@@ -1368,6 +1368,12 @@ export type UnifiedCollectionJobStatus = {
   createdAt?: string;
   updatedAt?: string;
   completedAt?: string | null;
+  /**
+   * Агенты, включённые составом прогона: знаменатель прогресса Arsenkin.
+   * Раньше он был литералом `5` в интерфейсе, и при составе по умолчанию
+   * (работают трое) исправный прогон показывался как «3/5».
+   */
+  arsenkinPlannedAgents?: string[];
   /** Arsenkin contract — schedule ≠ complete. */
   arsenkinEnrichmentState?: {
     scheduledAgents: string[];
