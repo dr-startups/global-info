@@ -354,6 +354,36 @@ function factSentence(fact: VerifiedFact): string {
   return stripInternalLeak(`${fact.statement} Цитата: «${fact.quote}»${attribution}.`);
 }
 
+/**
+ * Утверждение факта в том виде, в каком его читает клиент, — со своим
+ * источником.
+ *
+ * Здесь стояло просто `Установлено: ${statement}`, а источник факта терялся:
+ * следом в блок подставлялись статьи, отобранные **отдельным** участником. В
+ * отчёте о Тинькове (28.07, стр.3) это выглядело так — утверждение приписано
+ * Forbes, а единственная ссылка рядом ведёт на биографическую статью ria.ru.
+ *
+ * Сам факт прослеживается верно (`sourceDomain: forbes.ru`, `sourceUrl` есть),
+ * но клиенту показывался не тот ответ на вопрос «чем это подтверждается».
+ * Правило «любое утверждение прослеживается до наблюдения с URL» с точки зрения
+ * читателя нарушалось.
+ *
+ * Домен проходит тот же отбор, что и остальной клиентский текст: демо-имя не
+ * называется.
+ */
+export function factConclusionSentence(fact: VerifiedFact): string {
+  const statement = stripInternalLeak(String(fact.statement ?? "").trim());
+  const domain = clientSafeDomain(fact.sourceDomain ?? null);
+  if (!statement) return "";
+  if (domain) {
+    // Точка ставится после скобки: закрывающая скобка предложение не
+    // заканчивает, и «…США (forbes.ru)» без точки читается как обрыв.
+    return `Установлено: ${statement.replace(/[.\s]+$/u, "")} (${domain}).`;
+  }
+  const ending = /[.!?…»]$/u.test(statement) ? "" : ".";
+  return `Установлено: ${statement}${ending}`;
+}
+
 function buildThemeBlock(
   themeId: CanonicalThemeId,
   selection: RepresentativeEvidenceSelection,
@@ -454,7 +484,7 @@ function buildThemeBlock(
   const leadEvidenceSentence = evidenceSentence(articleEvidenceTypes[0] ?? [], lead.title);
   const conclusion = stripInternalLeak(
     facts.length > 0
-      ? `Установлено: ${facts[0]!.statement}`
+      ? factConclusionSentence(facts[0]!)
       : // Пустая строка значит «запись из базы, но провайдер не опознан» —
         // это по-прежнему не публикация, поэтому сравнение с null, а не на
         // истинность.
