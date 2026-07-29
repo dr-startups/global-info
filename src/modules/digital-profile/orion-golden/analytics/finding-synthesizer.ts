@@ -12,6 +12,7 @@ import {
   clientSafeDomain,
   clientSafeDomains,
 } from "../../services/composite-serp-merge";
+import { pickDistinctTitles } from "./distinct-stories";
 import type { RawInventoryItem } from "../types";
 import type { RiskLevel } from "../contracts/common";
 import {
@@ -515,7 +516,16 @@ export function buildClientFacingClaim(input: {
   // PDF-46/47 — up to 2 full quotes (never mid-cut); second evidence is kept
   // when it adds a distinct risk angle (e.g. FБК/Приходько + Guardian).
   const quoteLines: string[] = [];
-  for (const e of examples.slice(0, 2)) {
+  // Два примера — но про разные сюжеты.
+  //
+  // Здесь стояло `examples.slice(0, 2)`: два первых подряд, без вопроса, не
+  // одна ли это публикация. В отчёте о Тинькове (28.07, стр.5) так вышло —
+  // «Oleg Tinkov Net Worth…» и «Oleg Tinkov: Oleg Tinkov Net Worth… -
+  // Goodreturns» с одного goodreturns.in: одна статья предъявлена как два
+  // свидетельства, и читатель видит одно предложение дважды подряд.
+  //
+  // Правило общее с построителем региональных резюме — оно одно на оба места.
+  for (const e of pickDistinctTitles(examples, 2)) {
     const q = quoteForClaim(e.title, 220);
     if (!q || isWeakExampleTitle(q, { theme: input.theme }) || hasDanglingTail(q)) continue;
     // Домен называется клиенту только если он не из демо-данных.
