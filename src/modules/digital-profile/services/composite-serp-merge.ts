@@ -1,3 +1,4 @@
+import { domainToUnicode } from "node:url";
 /**
  * Composite SERP merge: base (manifest IDs only) + Arsenkin enrichment.
  * Dedupes client rows while preserving multi-provider provenance.
@@ -99,7 +100,38 @@ export function isMockClientDomain(domain: string | null | undefined): boolean {
 export function clientSafeDomains(domains: Array<string | null | undefined>): string[] {
   return domains
     .map((d) => String(d ?? "").trim())
-    .filter((d) => d.length > 0 && d !== "—" && !isMockClientDomain(d));
+    .filter((d) => d.length > 0 && d !== "—" && !isMockClientDomain(d))
+    // Кириллические зоны хранятся в punycode: `xn--h1ajim.xn--p1ai` вместо
+    // «руни.рф». В отчёте о Тинькове (28.07, стр.20) клиент читал машинную
+    // запись. Отбор и показ — один вопрос, поэтому читаемый вид даётся здесь,
+    // а не приписывается в каждом из тридцати мест печати.
+    //
+    // Сверка с индексом доказательств не ломается: она приводит обе формы к
+    // punycode (`normalizeDomainForCompare` в проверке секций), а перевод
+    // обратим.
+    .map((d) => toReadableDomain(d));
+}
+
+/** Punycode → читаемая запись; всё прочее без изменений. */
+function toReadableDomain(domain: string): string {
+  if (!domain.includes("xn--")) return domain;
+  return domainToUnicode(domain) || domain;
+}
+
+/**
+ * Домен в том виде, в каком его читает человек.
+ *
+ * Кириллические зоны хранятся в punycode: `xn--h1ajim.xn--p1ai` вместо
+ * «руни.рф». В отчёте о Тинькове (28.07, стр.20) клиент видел именно машинную
+ * запись. Формально она верна, но документ показывают человеку.
+ *
+ * Отбор тот же, что и у `clientSafeDomain`: демо-имя не называется. Перевод
+ * обратим (`domainToASCII`), поэтому сверка с индексом доказательств, где
+ * домены лежат в punycode, продолжает работать — см.
+ * `cyrillic-domain-is-readable-and-verifiable`.
+ */
+export function clientReadableDomain(domain: string | null | undefined): string | null {
+  return clientSafeDomain(domain);
 }
 
 /** Одиночный домен: `null`, если называть его клиенту нельзя. */

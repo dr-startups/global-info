@@ -1,3 +1,4 @@
+import { domainToASCII } from "node:url";
 /**
  * Section-level QA — every SectionPack must pass before assembly.
  * A failed pack never reaches the DeckAssembler.
@@ -51,8 +52,11 @@ const REGION_SUMMARY_FRAGMENTS = new Set(["RU_SUMMARY", "UAE_SUMMARY", "COMPLIAN
  * («28.07.2026», «3.14»), — это свойство сохранено: punycode-зона обязана
  * начинаться с `xn--`.
  */
+// Границы заданы просмотрами, а не `\b`: в JS `\b` считает словом только
+// ASCII, поэтому перед кириллической буквой она не срабатывает вовсе и
+// «руни.рф» не опознавался как домен.
 export const DOMAIN_TOKEN_RE =
-  /\b[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)*\.(?:xn--[a-z0-9-]+|[a-z]{2,})\b/giu;
+  /(?<![\p{L}0-9.-])[\p{L}0-9][\p{L}0-9-]*(?:\.[\p{L}0-9-]+)*\.(?:xn--[a-z0-9-]+|\p{L}{2,})(?![\p{L}0-9-])/giu;
 
 const TEXT_BUDGETS = getClientTextFieldBudgets();
 
@@ -218,7 +222,7 @@ export function validateSectionPack(input: {
       const allowed = new Set<string>();
       for (const [ref, e] of Object.entries(input.evidenceIndex)) {
         if (!e.domain || e.domain === "—") continue;
-        if (normRefs.has(normalizeEvidenceRef(ref))) allowed.add(e.domain.toLowerCase());
+        if (normRefs.has(normalizeEvidenceRef(ref))) allowed.add(normalizeDomainForCompare(e.domain));
       }
       const dynamicTexts = [
         slide.content.whatWasFound,
@@ -227,7 +231,12 @@ export function validateSectionPack(input: {
       ].filter((t): t is string => Boolean(t));
       for (const text of dynamicTexts) {
         for (const m of text.matchAll(DOMAIN_TOKEN_RE)) {
-          const domain = m[0].toLowerCase();
+          // Сверяется нормализованная форма: клиенту домен показывается
+          // читаемым («руни.рф»), а в индексе доказательств он лежит в
+          // punycode. Без приведения к одной форме читаемая запись выглядела
+          // бы «не выведенной из доказательств» — той же ценой, что уже стоил
+          // обрезок `xn--h1ajim.xn`: отказ обязательной секции и пустая дека.
+          const domain = normalizeDomainForCompare(m[0]);
           if (!allowed.has(domain)) {
             issues.push(
               `sidebar domain not derived from page evidence on ${slide.slideId}: ${domain}`
@@ -239,6 +248,13 @@ export function validateSectionPack(input: {
   }
 
   return { fragmentKey: pack.fragmentKey, passed: issues.length === 0, issues };
+}
+
+/** Одна форма домена для сверки: нижний регистр и punycode. */
+function normalizeDomainForCompare(domain: string): string {
+  const d = String(domain ?? "").trim().toLowerCase();
+  if (!d) return "";
+  return domainToASCII(d) || d;
 }
 
 function stripFindingMarkers(text: string): string {
