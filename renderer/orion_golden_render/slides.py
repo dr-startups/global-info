@@ -15,25 +15,37 @@ except ImportError:  # pragma: no cover
     Image = None  # type: ignore
 
 from .common import (
+    ACCENT,
+    BULLET_GLYPH,
     FS_CARD_TITLE,
     FS_COVER,
+    FS_LEAD,
     FS_SUBTITLE,
     BODY_COLOR,
     CARD_BG,
     CARD_BORDER,
     CONTENT_BOTTOM,
     CONTENT_W,
+    COVER_BG,
+    COVER_SUBTITLE,
+    CYAN,
     FONT,
     FS_BODY,
     FS_CAPTION,
     FS_SECTION,
+    FS_TITLE,
     MARGIN_X,
     MUTED_COLOR,
     NAVY,
+    SLIDE_H,
+    TONE_RISK,
+    VIOLET,
     WHITE,
     _Ctx,
     _clip_words,
+    _embed_cover_portrait,
     _embed_image,
+    _first_visual_asset,
     _resolve_image_bytes,
     _safe,
     _safe_preserve_breaks,
@@ -44,12 +56,49 @@ from .executive import (
     _render_profile_overview,
     _render_risk_matrix_grid,
 )
+from .layout_cleeq import (
+    alternating_color,
+    content_stage,
+    render_action_block,
+    render_hero_metrics_row,
+    render_metric_tiles,
+)
 from .visual import (
     _add_search_table,
     _render_kpi_cards,
     _render_status_badge,
     _render_visual_with_sidebar,
+    _tone_value_color,
 )
+
+
+def _draw_cleeq_cover_art(ctx: _Ctx) -> None:
+    """Абстрактные полосы бренда справа — обложка без портрета субъекта.
+
+    Полосы держатся в границах листа и внутри боковых полей. В исходной ветке
+    они уходили за правый край (навылет), и на эталонной деке это давало пять
+    `out-of-bounds` от инспектора геометрии, две «пустые панели» от ручной
+    визуальной проверки и два дефекта растровой — то есть обложка одна валила
+    три приёмочных ворот из девятнадцати. Обрез — приём хороший, но он должен
+    быть решением, объявленным проверке, а не её обходом.
+    """
+    right = 11_350_000
+    bands = [
+        (7_100_000, 520_000, right - 7_100_000, 2_300_000, ACCENT),
+        (7_900_000, 1_450_000, right - 7_900_000, 2_400_000, VIOLET),
+        (8_700_000, 2_500_000, right - 8_700_000, 1_700_000, CYAN),
+        (7_450_000, 3_800_000, right - 7_450_000, 1_150_000, ACCENT),
+        (8_900_000, 4_600_000, right - 8_900_000, 1_450_000, VIOLET),
+    ]
+    for x, y, w, h, color in bands:
+        shape = ctx.slide.shapes.add_shape(5, Emu(x), Emu(y), Emu(w), Emu(h))
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = color
+        shape.line.fill.background()
+        try:
+            shape.adjustments[0] = 0.5
+        except Exception:  # noqa: BLE001
+            pass
 
 def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, Any]]) -> None:
     template = str(slide.get("template") or "")
@@ -69,70 +118,129 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     primary = assets.get(str(refs[0])) if refs else None
 
     if template == "orion_golden_cover":
+        # Обложка cleeq: чернильный лист, словесный знак, зелёный надзаголовок,
+        # имя субъекта крупно, метаданные и чип. Справа — портрет субъекта из
+        # выдачи, а если превью нет, абстрактные полосы бренда.
         ctx.dark_bg()
-        # Design v2 cover: gold kicker → large title → subject line → meta rule.
-        kicker = ctx.slide.shapes.add_textbox(
-            Emu(MARGIN_X), Emu(1_450_000), Emu(CONTENT_W), Emu(300_000)
+        portrait = _first_visual_asset(list(refs), assets) or primary
+        if _embed_cover_portrait(ctx, portrait):
+            # Полотно слева, чтобы подпись читалась поверх плитки портрета.
+            veil = ctx.slide.shapes.add_shape(1, Emu(0), Emu(0), Emu(6_200_000), Emu(SLIDE_H))
+            veil.fill.solid()
+            veil.fill.fore_color.rgb = COVER_BG
+            veil.line.fill.background()
+        else:
+            _draw_cleeq_cover_art(ctx)
+        brand = ctx.slide.shapes.add_textbox(
+            Emu(MARGIN_X), Emu(420_000), Emu(4_800_000), Emu(320_000)
         )
-        kp = kicker.text_frame.paragraphs[0]
-        kr = kp.add_run()
-        kr.text = "ОТЧЁТ О ЦИФРОВОМ ПРОФИЛЕ"
+        br = brand.text_frame.paragraphs[0].add_run()
+        br.text = "cleeq"
+        br.font.name = FONT
+        br.font.bold = True
+        br.font.size = Pt(FS_SUBTITLE)
+        br.font.color.rgb = WHITE
+        hero = (title or "Цифровой профиль").strip()
+        for sep in (" — ", " – ", " - "):
+            if sep in hero:
+                hero = hero.split(sep, 1)[-1].strip() or hero
+                break
+        kicker = ctx.slide.shapes.add_textbox(
+            Emu(MARGIN_X), Emu(3_250_000), Emu(5_800_000), Emu(280_000)
+        )
+        kr = kicker.text_frame.paragraphs[0].add_run()
+        kr.text = "Цифровой профиль"
         kr.font.name = FONT
         kr.font.bold = True
         kr.font.size = Pt(FS_BODY)
-        kr.font.color.rgb = RGBColor(0xC0, 0x9A, 0x4F)
-        y = ctx.title("ORION Digital Profile", 1_850_000, WHITE, FS_COVER)
-        ctx.body(narrative or title, y + 100_000, max_h=900_000, color=RGBColor(0xBF, 0xDB, 0xFE), font_size=FS_SUBTITLE)
-        rule = ctx.slide.shapes.add_shape(
-            1, Emu(MARGIN_X), Emu(5_650_000), Emu(2_400_000), Emu(16_000)
+        kr.font.color.rgb = ACCENT
+        name_box = ctx.slide.shapes.add_textbox(
+            Emu(MARGIN_X), Emu(3_600_000), Emu(5_900_000), Emu(1_400_000)
         )
-        rule.fill.solid()
-        rule.fill.fore_color.rgb = RGBColor(0xC0, 0x9A, 0x4F)
-        rule.line.fill.background()
+        ntf = name_box.text_frame
+        ntf.word_wrap = True
+        nr = ntf.paragraphs[0].add_run()
+        nr.text = _safe(hero)
+        nr.font.name = FONT
+        nr.font.bold = True
+        nr.font.size = Pt(FS_COVER)
+        nr.font.color.rgb = WHITE
         ctx.body(
-            "Клиентский аудит · предварительная оценка · конфиденциально",
-            5_800_000,
-            max_h=400000,
-            color=MUTED_COLOR,
+            narrative or "Конфиденциально. Подготовлено для внутреннего использования клиента.",
+            5_050_000,
+            max_h=600_000,
+            color=COVER_SUBTITLE,
+            w=5_800_000,
+            font_size=FS_SUBTITLE,
         )
+        # Чип держится над границей контентной области: ниже неё чернил быть не
+        # должно, и растровая проверка ловит это по отрисованной странице.
+        chip = ctx.slide.shapes.add_shape(
+            5, Emu(MARGIN_X), Emu(5_760_000), Emu(3_400_000), Emu(320_000)
+        )
+        chip.fill.solid()
+        chip.fill.fore_color.rgb = RGBColor(0x1A, 0x24, 0x1A)
+        chip.line.fill.background()
+        try:
+            chip.adjustments[0] = 0.5
+        except Exception:  # noqa: BLE001
+            pass
+        chip_t = ctx.slide.shapes.add_textbox(
+            Emu(MARGIN_X + 120_000), Emu(5_810_000), Emu(3_100_000), Emu(240_000)
+        )
+        ctr = chip_t.text_frame.paragraphs[0].add_run()
+        ctr.text = "Аудит · стратегия · конфиденциально"
+        ctr.font.name = FONT
+        ctr.font.size = Pt(FS_BODY)
+        ctr.font.color.rgb = ACCENT
         return
 
     if template == "orion_golden_toc":
-        # PDF-36 E.5 — structured TOC: gold index numbers + hairline rows
-        # instead of a plain bullet list.
-        ctx.dark_bg()
-        y = ctx.title("Содержание отчёта", 400000, WHITE, FS_SECTION)
+        # Содержание cleeq: мятный лист, белая сцена, зелёные и фиолетовые
+        # номера разделов, названия чернилами по волосяным линейкам.
+        ctx.light_bg()
+        y = ctx.title("Содержание отчёта", 320_000, NAVY, FS_TITLE)
         entries = [
             _clip_words(b, 110)
             for b in (bullets or ["Резюме", "Россия", "ОАЭ", "Compliance", "LexisNexis", "Рекомендации"])
         ][:10]
-        row_h = min(560_000, max(420_000, (CONTENT_BOTTOM - y - 200_000) // max(1, len(entries))))
-        ry = y + 150_000
+        stage_top = y + 80_000
+        stage_bottom = content_stage(ctx, stage_top)
+        row_h = min(560_000, max(380_000, (stage_bottom - stage_top - 280_000) // max(1, len(entries))))
+        ry = stage_top + 120_000
         for i, entry in enumerate(entries, start=1):
-            num = ctx.slide.shapes.add_textbox(Emu(MARGIN_X), Emu(ry), Emu(560_000), Emu(row_h))
-            np_ = num.text_frame.paragraphs[0]
-            nr = np_.add_run()
+            num = ctx.slide.shapes.add_textbox(
+                Emu(MARGIN_X + 60_000), Emu(ry), Emu(700_000), Emu(row_h)
+            )
+            nr = num.text_frame.paragraphs[0].add_run()
             nr.text = f"{i:02d}"
             nr.font.name = FONT
             nr.font.bold = True
-            nr.font.size = Pt(FS_CARD_TITLE)
-            nr.font.color.rgb = RGBColor(0xC0, 0x9A, 0x4F)
+            nr.font.size = Pt(FS_LEAD)
+            nr.font.color.rgb = alternating_color(i - 1)
             box = ctx.slide.shapes.add_textbox(
-                Emu(MARGIN_X + 640_000), Emu(ry + 20_000), Emu(CONTENT_W - 640_000), Emu(row_h)
+                Emu(MARGIN_X + 820_000),
+                Emu(ry + 40_000),
+                Emu(CONTENT_W - 900_000),
+                Emu(row_h - 60_000),
             )
             tf = box.text_frame
             tf.word_wrap = True
-            p = tf.paragraphs[0]
-            r = p.add_run()
+            r = tf.paragraphs[0].add_run()
             r.text = entry
             r.font.name = FONT
+            r.font.bold = True
             r.font.size = Pt(FS_SUBTITLE)
-            r.font.color.rgb = WHITE
+            r.font.color.rgb = NAVY
             rule = ctx.slide.shapes.add_shape(
-                1, Emu(MARGIN_X), Emu(ry + row_h - 60_000), Emu(CONTENT_W), Emu(9_000)
+                1,
+                Emu(MARGIN_X + 60_000),
+                Emu(ry + row_h - 40_000),
+                Emu(CONTENT_W - 120_000),
+                Emu(9_000),
             )
             rule.fill.solid()
-            rule.fill.fore_color.rgb = RGBColor(0x24, 0x33, 0x52)
+            rule.fill.fore_color.rgb = CARD_BORDER
             rule.line.fill.background()
             ry += row_h
         return
@@ -150,73 +258,45 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         return
 
     if template == "orion_golden_executive_card":
+        # Страница-документ cleeq: заголовок снаружи, всё содержимое — на одной
+        # белой сцене. Карточек внутри сцены нет: белое на белом не читается как
+        # отдельный блок, и вместо иерархии выходит рябь из рамок.
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY, FS_SECTION)
         metrics = [m for m in (slide.get("metrics") or []) if isinstance(m, dict)]
         if metrics:
-            y = _render_kpi_cards(ctx, metrics[:4], MARGIN_X, y, CONTENT_W, cols=4) + 100_000
-        if variant == "accent-headline" and narrative.strip():
-            # Accent-headline: the lead sentence in an accent card, the rest
-            # of the narrative below it, then the detail bullets.
-            narr_full = narrative.strip()
-            sentences = re.split(r"(?<=[.!?…])\s+", narr_full)
-            lead = sentences[0] if sentences else narr_full
-            rest = " ".join(sentences[1:]).strip()
-            y = ctx.content_card(
-                title=None,
-                text=_clip_words(lead, 420),
-                x=MARGIN_X,
-                y=y,
-                width=CONTENT_W,
-                min_h=360_000,
-                max_h=1_100_000,
-                tone="accent",
-                body_size=13,
+            metrics_bottom = render_hero_metrics_row(
+                ctx, metrics[:4], MARGIN_X, y, CONTENT_W, tone_value_color=_tone_value_color
             )
-            y += 100_000
+            y = metrics_bottom + 140_000
+        content_stage(ctx, y, top=metrics_bottom + 40_000 if metrics else None)
+        narr = narrative.strip()
+        if variant == "accent-headline" and narr:
+            # Accent-headline: the lead sentence leads the page, the rest of the
+            # narrative follows, then the detail bullets.
+            sentences = re.split(r"(?<=[.!?…])\s+", narr)
+            lead = sentences[0] if sentences else narr
+            rest = " ".join(sentences[1:]).strip()
+            y = ctx.body(lead, y, max_h=1_100_000, bold=True) + 60_000
             if rest:
-                y = ctx.content_card(
-                    title=None,
-                    text=_clip_words(rest, 1400),
-                    x=MARGIN_X,
-                    y=y,
-                    width=CONTENT_W,
-                    min_h=320_000,
+                y = ctx.body(
+                    rest,
+                    y,
                     max_h=min(2_400_000, CONTENT_BOTTOM - y - (1_200_000 if bullets else 100_000)),
-                    tone="neutral",
-                    body_size=11,
-                )
-                y += 100_000
+                ) + 60_000
             if bullets:
                 ctx.bullets(bullets, y, max_items=6, max_chars=900)
             return
-        narr = narrative.strip()
         if narr and not bullets:
-            y = ctx.content_card(
-                title=None,
-                text=_clip_words(narr, 1800),
-                x=MARGIN_X,
-                y=y,
-                width=CONTENT_W,
-                min_h=400_000,
-                max_h=min(3_200_000, CONTENT_BOTTOM - y - 100_000),
-                tone="neutral",
-                body_size=11,
-            )
+            ctx.body(narr, y, max_h=min(3_200_000, CONTENT_BOTTOM - y - 100_000), bold=True)
             return
         if narr:
-            y = ctx.content_card(
-                title=None,
-                text=_clip_words(narr, 1200),
-                x=MARGIN_X,
-                y=y,
-                width=CONTENT_W,
-                min_h=320_000,
+            y = ctx.body(
+                narr,
+                y,
                 max_h=min(2_000_000, CONTENT_BOTTOM - y - (1_200_000 if bullets else 100_000)),
-                tone="neutral",
-                body_size=11,
-            )
-            y += 100_000
+                bold=True,
+            ) + 60_000
         if bullets:
             ctx.bullets(bullets, y, max_items=6, max_chars=900)
         return
@@ -228,16 +308,26 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     if template == "orion_golden_region_divider":
         ctx.dark_bg()
         if variant == "hero":
-            # Hero divider: tall gold bar + large title + lead paragraph.
+            # Разделитель cleeq: зелёный столб, фиолетовая засечка, крупный титул.
             bar = ctx.slide.shapes.add_shape(
-                5, Emu(MARGIN_X), Emu(2_450_000), Emu(110_000), Emu(1_600_000)
+                5, Emu(MARGIN_X), Emu(2_200_000), Emu(140_000), Emu(2_200_000)
             )
             bar.fill.solid()
-            bar.fill.fore_color.rgb = RGBColor(0xC0, 0x9A, 0x4F)
+            bar.fill.fore_color.rgb = ACCENT
             bar.line.fill.background()
-            text_x = MARGIN_X + 300_000
-            text_w = CONTENT_W - 300_000
-            box = ctx.slide.shapes.add_textbox(Emu(text_x), Emu(2_450_000), Emu(text_w), Emu(900_000))
+            try:
+                bar.adjustments[0] = 0.5
+            except Exception:  # noqa: BLE001
+                pass
+            accent = ctx.slide.shapes.add_shape(
+                5, Emu(MARGIN_X + 220_000), Emu(2_200_000), Emu(90_000), Emu(700_000)
+            )
+            accent.fill.solid()
+            accent.fill.fore_color.rgb = VIOLET
+            accent.line.fill.background()
+            text_x = MARGIN_X + 420_000
+            text_w = CONTENT_W - 420_000
+            box = ctx.slide.shapes.add_textbox(Emu(text_x), Emu(2_250_000), Emu(text_w), Emu(1_100_000))
             tf = box.text_frame
             tf.word_wrap = True
             p = tf.paragraphs[0]
@@ -250,10 +340,10 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
             if narrative:
                 ctx.body(
                     narrative,
-                    3_450_000,
+                    3_500_000,
                     max_h=1_500_000,
-                    color=RGBColor(0xBF, 0xDB, 0xFE),
-                    font_size=13,
+                    color=COVER_SUBTITLE,
+                    font_size=FS_SUBTITLE,
                     x=text_x,
                     w=text_w,
                 )
@@ -267,104 +357,51 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
         badge = slide.get("statusBadge") if isinstance(slide.get("statusBadge"), dict) else None
         if badge:
             y = _render_status_badge(ctx, badge, MARGIN_X, y, CONTENT_W) + 80_000
-        if variant == "kpi-first":
-            # KPI-first: headline numbers lead the page, the narrative and the
-            # action follow — same content, inverted visual hierarchy.
-            metrics_kf = [m for m in (slide.get("metrics") or []) if isinstance(m, dict)]
-            if metrics_kf:
-                y = _render_kpi_cards(ctx, metrics_kf[:6], MARGIN_X, y, CONTENT_W, cols=3) + 100_000
-            if narrative:
-                # PDF-36 E.4 — cards height-fit; no 420-char starvation.
-                y = ctx.content_card(
-                    title=None,
-                    text=narrative,
-                    x=MARGIN_X,
-                    y=y,
-                    width=CONTENT_W,
-                    min_h=260_000,
-                    max_h=1_100_000,
-                    tone="neutral",
-                    body_size=11,
-                )
-                y += 80_000
-            actions_kf = [a for a in (slide.get("actions") or []) if isinstance(a, dict)]
-            if actions_kf:
-                y = ctx.content_card(
-                    title="Действие",
-                    text=_safe(actions_kf[0].get("label")),
-                    x=MARGIN_X,
-                    y=y,
-                    width=CONTENT_W,
-                    min_h=260_000,
-                    max_h=1_000_000,
-                    tone="warn",
-                    title_size=11,
-                    skip_if_stub=True,
-                    body_size=11,
-                )
-                y += 60_000
-            if bullets:
-                # Потолок читаемости, а не ёмкости: сколько блоков влезает,
-                # решает мерка высоты, приведённая к тому, что рисуется
-                # (шаг 16, 07.6). Прежние 3 были ниже реальной ёмкости
-                # страницы-продолжения, и лишнее молча выбрасывалось.
-                ctx.bullets(bullets, y, max_items=6, max_chars=900)
-            return
-        # PDF-40 G.4/G.5 / PDF-45 — scorecard → narrative → theme cards.
-        # Fewer cards per page + higher char budget; overflow continues.
+        # Страница метрик cleeq: ключевая цифра ведёт страницу, остальное лежит
+        # на одной сцене. Вариант `kpi-first` отдельной веткой больше не нужен —
+        # цифры ведут страницу всегда, и это ровно то, ради чего он заводился.
+        #
+        # Порядок содержимого прежний: метрики → нарратив → действие → темы.
+        # Ёмкость тоже прежняя: ряд метрик той же высоты, что раньше, а сцена
+        # рисуется под текстом и его не двигает.
         metrics = [m for m in (slide.get("metrics") or []) if isinstance(m, dict)]
         if metrics:
-            y = _render_kpi_cards(ctx, metrics[:6], MARGIN_X, y, CONTENT_W, cols=3) + 80_000
+            y = render_hero_metrics_row(
+                ctx, metrics[:4], MARGIN_X, y, CONTENT_W, tone_value_color=_tone_value_color
+            )
+            if len(metrics) > 4:
+                y = render_metric_tiles(
+                    ctx,
+                    metrics[4:7],
+                    MARGIN_X,
+                    y + 80_000,
+                    CONTENT_W,
+                    tone_value_color=_tone_value_color,
+                )
+            metrics_bottom = y
+            y += 140_000
+        # Уголки — метка «сцены выводов» в языке cleeq.
+        content_stage(
+            ctx,
+            y,
+            top=metrics_bottom + 40_000 if metrics else None,
+            corner_marks=True,
+        )
         if narrative:
-            y = ctx.content_card(
-                title=None,
-                text=narrative,
-                x=MARGIN_X,
-                y=y,
-                width=CONTENT_W,
-                min_h=220_000,
+            y = ctx.body(
+                narrative,
+                y,
                 max_h=900_000 if metrics else 1_100_000,
-                tone="neutral",
-                body_size=11,
-            )
-            y += 70_000
+                bold=True,
+            ) + 70_000
         actions = [a for a in (slide.get("actions") or []) if isinstance(a, dict)]
-        if actions and not bullets:
-            # Action card only when there is room; with theme bullets the action
-            # is already in whatToCheck / cont pages — avoid crowding.
-            y = ctx.content_card(
-                title="Действие",
-                text=_safe(actions[0].get("label")),
-                x=MARGIN_X,
-                y=y,
-                width=CONTENT_W,
-                min_h=220_000,
-                max_h=1_000_000,
-                tone="warn",
-                title_size=11,
-                skip_if_stub=True,
-                body_size=11,
+        if actions and (not bullets or (CONTENT_BOTTOM - y) > 1_800_000):
+            y = render_action_block(
+                ctx, _safe(actions[0].get("label")), y, max_h=1_000_000
             )
-            y += 50_000
-        elif actions and bullets and (CONTENT_BOTTOM - y) > 1_800_000:
-            y = ctx.content_card(
-                title="Действие",
-                text=_safe(actions[0].get("label")),
-                x=MARGIN_X,
-                y=y,
-                width=CONTENT_W,
-                min_h=200_000,
-                # 520 000 EMU оставляли под текст меньше строки, и рекомендация
-                # вырождалась в одно слово (шаг 13, D3).
-                max_h=1_000_000,
-                tone="warn",
-                title_size=11,
-                skip_if_stub=True,
-                body_size=FS_BODY,
-            )
-            y += 50_000
         if bullets:
-            # См. комментарий выше: потолок читаемости, ёмкость считает мерка.
+            # Потолок читаемости, а не ёмкости: сколько блоков влезает, решает
+            # мерка высоты, приведённая к тому, что рисуется (шаг 16, 07.6).
             ctx.bullets(bullets, y, max_items=6, max_chars=900)
         return
 
@@ -467,6 +504,9 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     if template == "orion_golden_search_table":
         ctx.light_bg()
         y = ctx.title(title, 280000, NAVY, FS_SECTION)
+        # Сцена под таблицей: строки таблицы лежат на белой плоскости, а не
+        # висят на мятном фоне.
+        content_stage(ctx, y)
         if narrative:
             # Keep 1–2 complete sentences above the table; never end on «как/и/с».
             intro = _safe(narrative)
@@ -522,12 +562,10 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 p.space_after = Pt(5)
                 r = p.add_run()
                 clipped = _clip_words(bullet, 240)
-                r.text = f"• {clipped}"
+                r.text = f"{BULLET_GLYPH} {clipped}"
                 r.font.name = FONT
                 r.font.size = Pt(FS_BODY)
-                r.font.color.rgb = (
-                    RGBColor(0xB9, 0x1C, 0x1C) if clipped.startswith("[Н]") else BODY_COLOR
-                )
+                r.font.color.rgb = TONE_RISK if clipped.startswith("[Н]") else BODY_COLOR
         return
 
     if template == "orion_golden_no_data_compact":
@@ -609,14 +647,15 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
     # orion_golden_prose (continuation themes) + default section / appendix
     ctx.light_bg()
     y = ctx.title(title, 280000, NAVY, FS_SECTION)
+    content_stage(ctx, y)
     # PDF-36 D.3 / PDF-47 — page bottom is the real budget; theme cards need
     # the full 900-char structured budget (520 starved nested-quote bullets).
     short_narrative = _clip_words(narrative, 900) if narrative else ""
     if short_narrative and not bullets:
-        ctx.body(short_narrative, y, max_h=CONTENT_BOTTOM - y - 100000)
+        ctx.body(short_narrative, y, max_h=CONTENT_BOTTOM - y - 100000, bold=True)
         return
     if short_narrative:
-        y = ctx.body(short_narrative, y, max_h=1100000)
+        y = ctx.body(short_narrative, y, max_h=1100000, bold=True)
         y = y + 80000
     if bullets:
         ctx.bullets(bullets, y, max_items=9, max_chars=900)

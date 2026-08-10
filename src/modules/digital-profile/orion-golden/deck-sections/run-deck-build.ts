@@ -393,6 +393,17 @@ export function toRendererPayload(input: {
       assetRefs: boundAssets,
     };
   });
+  // Портрет на обложку. Обложка — структурный шаблон без аналитической боковой
+  // панели, поэтому привязка ассета здесь не включает проверки, которые следят
+  // за соответствием панели её доказательствам.
+  if (assetByRef.has("cover_portrait")) {
+    usedAssetRefs.add("cover_portrait");
+    for (const slide of finalSlides) {
+      if (slide.template === "orion_golden_cover") {
+        slide.assetRefs = ["cover_portrait"];
+      }
+    }
+  }
   return {
     reportSpec: {
       version: "deck-sections-report-spec-v1",

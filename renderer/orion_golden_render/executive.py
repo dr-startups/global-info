@@ -40,6 +40,15 @@ from .common import (
     _split_structured_bullet,
     measure_text_height,
 )
+from .layout_cleeq import (
+    bars_color,
+    content_stage,
+    draw_level_bars,
+    render_action_block,
+    render_hero_metrics_row,
+    stage_heading,
+    tone_to_bars,
+)
 from .visual import (
     _render_kpi_cards,
     _render_status_badge,
@@ -70,34 +79,27 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
         if buf and len(paras) < 3:
             paras.append(buf)
         paras = paras[:3] or [_clip_words(_safe(raw_narrative), 420)]
-    left_w = int(CONTENT_W * 0.62)
-    right_w = CONTENT_W - left_w - 120_000
-    left_x = MARGIN_X
-    right_x = MARGIN_X + left_w + 120_000
-    cy = y
-    for para in paras:
-        # PDF-36 D.3 — content_card height-fits with font step-down; the old
-        # 420-char pre-clip starved the §7.2 line and lead conclusions.
-        cy = ctx.content_card(
-            title=None,
-            text=_safe(para),
-            x=left_x,
-            y=cy,
-            width=left_w,
-            min_h=240_000,
-            max_h=1_100_000,
-            tone="neutral",
-            body_size=11,
-        )
-        cy += 50_000
+    # Резюме в языке cleeq: ключевые цифры ведут страницу, всё остальное лежит
+    # на одной белой сцене — лид, темы, следующий шаг. Прежняя раскладка (текст
+    # слева, метрики справа, две карточки внизу) держала одно и то же
+    # содержимое в четырёх рамках разного тона: рамки читались как иерархия,
+    # которой между ними нет.
     metrics = [m for m in (slide.get("metrics") or []) if isinstance(m, dict)]
-    _render_kpi_cards(ctx, metrics[:4], right_x, y, right_w, cols=2)
-    bottom_y = max(cy, y + 1_600_000) + 40_000
+    metrics_bottom = y
+    if metrics:
+        metrics_bottom = render_hero_metrics_row(
+            ctx, metrics[:4], MARGIN_X, y, CONTENT_W, tone_value_color=_tone_value_color
+        )
+        y = metrics_bottom + 140_000
+    content_stage(ctx, y, top=metrics_bottom + 40_000 if metrics else None, corner_marks=True)
+    for idx, para in enumerate(paras):
+        # PDF-36 D.3 — высоту считает мерка, а не предварительная обрезка по
+        # знакам: 420 знаков морили строку §7.2 и выводы лида.
+        y = ctx.body(_safe(para), y, max_h=1_100_000, bold=idx == 0) + 30_000
     findings = [f for f in (slide.get("keyFindings") or []) if isinstance(f, dict)][:2]
     actions = [a for a in (slide.get("actions") or []) if isinstance(a, dict)][:1]
-    cards: list[tuple[str, str, str]] = []
+    theme_bullets: list[str] = []
     for finding in findings:
-        tone = str(finding.get("tone") or "warn")
         detail = _safe(finding.get("detail") or "")
         headline = _safe(finding.get("headline") or "")
         # Prefer detail; avoid duplicating headline when detail already starts with it.
@@ -107,39 +109,21 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
             text = detail
         else:
             text = headline
-        # Keep structured newlines; content_card drops whole lines if tight.
+        # Keep structured newlines; ctx.bullets drops whole lines if tight.
         text = _clip_structured_bullet(text, 900) or text
-        cards.append(("Риск", text, tone))
+        if text:
+            theme_bullets.append(text)
+    if theme_bullets:
+        y = stage_heading(ctx, "Коротко по итогам аудита", y)
+        y = ctx.bullets(theme_bullets, y, max_items=len(theme_bullets), max_chars=900) + 40_000
     if actions:
-        act = actions[0]
-        label = _safe(act.get("label"))
-        # Keep a complete sentence for the narrow action card — never mid-phrase.
-        text = label
-        if len(text) > 280:
-            punct = max(text.rfind(". "), text.rfind("! "), text.rfind("? "), text.rfind("; "))
+        label = _safe(actions[0].get("label"))
+        # Полная фраза или ничего: оборванная рекомендация не рекомендация.
+        if len(label) > 280:
+            punct = max(label.rfind(". "), label.rfind("! "), label.rfind("? "), label.rfind("; "))
             if punct > 60:
-                text = text[: punct + 1].strip()
-            # else keep full label — card font-steps down rather than mid-cut
-        cards.append(("Следующий шаг", text, "accent"))
-    if cards:
-        gap = 80_000
-        col_w = (CONTENT_W - gap * (len(cards) - 1)) // max(1, len(cards))
-        fx = MARGIN_X
-        card_max = min(2_200_000, max(720_000, CONTENT_BOTTOM - bottom_y - 40_000))
-        for card_title, text, tone in cards:
-            ctx.content_card(
-                title=card_title,
-                text=text,
-                x=fx,
-                y=bottom_y,
-                width=col_w,
-                min_h=520_000,
-                max_h=card_max,
-                tone=tone,
-                title_size=11,
-                body_size=FS_BODY,
-            )
-            fx += col_w + gap
+                label = label[: punct + 1].strip()
+        render_action_block(ctx, label, y, max_h=1_000_000, heading="Следующий шаг")
 
 
 def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> None:
@@ -298,8 +282,13 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
             if len(pill) > 14 or " " in pill:
                 lines = max(lines, 2)
             line_h = int(pill_size * 12_700 * 1.35)
-            need = lines * line_h + 60_000
-            bh = min(max(360_000, need + 140_000), max(360_000, h - 2 * pad_y))
+            filled = tone_to_bars(tone, pill)
+            # Шкале степени нужна своя полоса под словом уровня: делений пять,
+            # высота 90 000 плюс отбивка. Без этого запаса шкала ложилась прямо
+            # на слово и читалась как зачёркивание.
+            bars_h = 130_000
+            need = lines * line_h + 60_000 + bars_h
+            bh = min(max(420_000, need + 140_000), max(420_000, h - 2 * pad_y))
             # Soft tone fill, no hard border — a stroked plate was reading as
             # a mid-text strike-through after LibreOffice PDF conversion.
             ctx.card(by, h=bh, x=bx, w=badge_w, fill=_tone_fill(tone), border=None)
@@ -315,7 +304,23 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
             br.font.name = FONT
             br.font.bold = True
             br.font.size = Pt(pill_size)
-            br.font.color.rgb = _tone_value_color(tone)
+            # Цвет слова — от самой степени, а не от тона карточки: тон у темы
+            # часто не задан, и общий цвет метрик (зелёный) на слове
+            # «Критический» читался бы как «всё в порядке».
+            br.font.color.rgb = bars_color(filled)
+            # Шкала степени cleeq: пять делений под словом уровня. Слово
+            # остаётся — шкала показывает то же самое, но с одного взгляда и
+            # в сравнении с соседними темами.
+            bars_w = 5 * 120_000 + 4 * 30_000
+            bars_y = by + 70_000 + lines * line_h + 40_000
+            if bars_y + 90_000 <= by + bh - 40_000:
+                draw_level_bars(
+                    ctx,
+                    bx + (badge_w - bars_w) // 2,
+                    bars_y,
+                    filled=filled,
+                    hot=bars_color(filled),
+                )
         y += h + 50_000
         if y > CONTENT_BOTTOM - 360_000:
             break

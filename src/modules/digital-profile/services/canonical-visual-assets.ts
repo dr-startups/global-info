@@ -676,6 +676,13 @@ export async function buildCanonicalVisualAssets(input: {
   const uaeImages = images.filter((it) => regionOf(it.region) === "UAE");
   const imageSlots = ["p14_ru_images_1", "p15_ru_images_2", "p16_ru_images_3", "p17_ru_images_4"];
   const ruImageChunks = chunk(ruImages, 6).slice(0, 4);
+  /**
+   * Первое разрешившееся RU-превью уходит на обложку (`cover_portrait`) —
+   * квадрат со скруглёнными углами справа от имени субъекта. Своего поиска
+   * ради обложки не делается: берётся уже собранное превью, и если его нет,
+   * обложка рисует абстрактную графику бренда, а не пустую рамку.
+   */
+  let coverPortraitPushed = false;
   const buildGrid = async (
     rows: RawInventoryItem[],
     assetRef: string,
@@ -711,6 +718,21 @@ export async function buildCanonicalVisualAssets(input: {
     });
     const png = await svgToPngBase64(buildImageGridSvg({ title, items: gridItems }));
     const visibleItems = rows.slice(0, 6).map(toVisibleItem);
+    if (!coverPortraitPushed) {
+      const portraitIdx = gridItems.findIndex((it) => Boolean(it.previewBase64));
+      const portraitB64 = portraitIdx >= 0 ? gridItems[portraitIdx]?.previewBase64 : undefined;
+      if (portraitB64) {
+        push({
+          assetRef: "cover_portrait",
+          kind: "cover_portrait",
+          title: "Портрет субъекта",
+          caption: "Фото из поисковой выдачи",
+          imageData: portraitB64,
+          evidenceRefs: visibleItems.slice(portraitIdx, portraitIdx + 1).map((v) => v.ref),
+        });
+        coverPortraitPushed = true;
+      }
+    }
     const asset: RendererAssetEntry = {
       assetRef,
       kind: "image_grid",

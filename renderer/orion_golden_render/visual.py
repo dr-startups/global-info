@@ -33,6 +33,7 @@ from .common import (
     FS_CAPTION,
     GOOD_BG,
     MARGIN_X,
+    METRIC_ACCENT,
     MUTED_COLOR,
     NAVY,
     RISK_BG,
@@ -258,13 +259,25 @@ def _tone_fill(tone: str) -> RGBColor:
 
 
 def _tone_value_color(tone: str) -> RGBColor:
-    return {"risk": TONE_RISK, "warn": TONE_WARN, "good": TONE_GOOD}.get(tone, NAVY)
+    # Нейтральная метрика окрашена брендовым зелёным: цифра — то, ради чего
+    # плитку смотрят, и она обязана быть заметнее подписи под ней.
+    return {
+        "risk": TONE_RISK,
+        "warn": TONE_WARN,
+        "good": TONE_GOOD,
+        "neutral": METRIC_ACCENT,
+    }.get(tone, METRIC_ACCENT)
 
 
 def _render_kpi_cards(ctx: _Ctx, metrics: list[dict[str, Any]], x: int, y: int, width: int, cols: int = 2) -> int:
     items = [m for m in metrics if isinstance(m, dict) and _safe(m.get("value"))][:6]
     if not items:
         return y
+    # Геометрия плитки осталась прежней намеренно. В cleeq-варианте плитка выше
+    # (900 000) и с большим зазором (100 000); замер показал цену: на стр.30
+    # рендерер выбросил две строки (1 494 449 при 1 294 368), потому что ёмкость
+    # страницы в строках объявлена в TS-шаблоне и откалибрована по нынешней
+    # высоте обвязки. Воздух вокруг цифр не стоит потерянного содержимого.
     gap = 80_000
     card_w = (width - gap * (cols - 1)) // cols
     card_h = 780_000
@@ -278,16 +291,21 @@ def _render_kpi_cards(ctx: _Ctx, metrics: list[dict[str, Any]], x: int, y: int, 
         # Keep room for Russian status phrases like «Данные не собраны» / «0 / 10».
         value = _clip_words(_safe(m.get("value")), 36)
         label = _clip_words(_safe(m.get("label")), 28)
-        ctx.card(row_y, h=card_h, x=cx, w=card_w, fill=_tone_fill(tone), border=None)
-        # Tone stripe on the left edge (design v2) — reads at a glance.
+        # Белая плитка на мятном листе + скруглённая полоса тона: плитка
+        # читается как отдельная плоскость, а не как заливка тоном.
+        ctx.card(row_y, h=card_h, x=cx, w=card_w, fill=WHITE, border=None, radius=0.1)
         stripe = ctx.slide.shapes.add_shape(
-            5, Emu(cx + 45_000), Emu(row_y + 120_000), Emu(45_000), Emu(card_h - 240_000)
+            5, Emu(cx + 55_000), Emu(row_y + 120_000), Emu(60_000), Emu(card_h - 240_000)
         )
         stripe.fill.solid()
         stripe.fill.fore_color.rgb = _tone_value_color(tone)
         stripe.line.fill.background()
+        try:
+            stripe.adjustments[0] = 0.5
+        except Exception:  # noqa: BLE001
+            pass
         box = ctx.slide.shapes.add_textbox(
-            Emu(cx + 160_000), Emu(row_y + 100_000), Emu(card_w - 230_000), Emu(card_h - 180_000)
+            Emu(cx + 180_000), Emu(row_y + 100_000), Emu(card_w - 250_000), Emu(card_h - 180_000)
         )
         tf = box.text_frame
         tf.word_wrap = True
@@ -624,7 +642,10 @@ def _add_search_table(
         if kind == "header":
             for c in range(cols):
                 label = str(payload[c]) if c < len(payload) else ""
-                paint(tbl.cell(r_idx, c), label, bold=True, color=WHITE, bg=NAVY, size=FS_CAPTION)
+                # Шапка таблицы — зелёная полоса cleeq. Текст на ней чернилами,
+                # а не белым: белое по #24D875 даёт контраст 1,8:1, то есть
+                # заголовок столбца пришлось бы угадывать.
+                paint(tbl.cell(r_idx, c), label, bold=True, color=NAVY, bg=ACCENT, size=FS_CAPTION)
         elif kind == "group":
             merged = tbl.cell(r_idx, 0)
             merged.merge(tbl.cell(r_idx, cols - 1))

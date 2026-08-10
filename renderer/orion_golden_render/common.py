@@ -17,6 +17,7 @@ import fitz
 from pptx import Presentation
 from pptx.dml.color import RGBColor
 from pptx.enum.text import MSO_ANCHOR, PP_ALIGN
+from pptx.oxml.ns import qn
 from pptx.util import Emu, Pt
 
 try:
@@ -113,24 +114,45 @@ FOOTER_Y = SLIDE_H - 440_000
 # multi-line theme cards; keep a wide safety band).
 CONTENT_BOTTOM = SLIDE_H - 1_100_000
 
-NAVY = RGBColor(0x0B, 0x1A, 0x33)
-TITLE_COLOR = RGBColor(0xF8, 0xFA, 0xFC)
-BODY_COLOR = RGBColor(0x33, 0x41, 0x55)
-MUTED_COLOR = RGBColor(0x64, 0x74, 0x8B)
-ACCENT = RGBColor(0x3B, 0x82, 0xF6)
-CARD_BG = RGBColor(0xF8, 0xFA, 0xFC)
-CARD_BORDER = RGBColor(0xE2, 0xE8, 0xF0)
+# Визуальная система cleeq (https://cleeq.ru) — только краска.
+#
+# Прежняя палитра (тёмно-синий + золото) досталась от «ORION Golden design
+# system v2». Смена палитры не трогает ни сбор, ни клиентский текст: это
+# именно те токены, которыми красят фон, карточки и акценты.
+#
+# Основной зелёный #24D875, чернила #101510, фиолетовый #AE7AFF,
+# мятный лист #F6F8F4.
+COVER_BG = RGBColor(0x10, 0x15, 0x10)
+PAGE_BG = RGBColor(0xF6, 0xF8, 0xF4)
+NAVY = RGBColor(0x10, 0x15, 0x10)
+TITLE_COLOR = RGBColor(0xF7, 0xF9, 0xF5)
+BODY_COLOR = RGBColor(0x10, 0x15, 0x10)
+MUTED_COLOR = RGBColor(0x5B, 0x66, 0x5E)
+ACCENT = RGBColor(0x24, 0xD8, 0x75)
+VIOLET = RGBColor(0xAE, 0x7A, 0xFF)
+CYAN = RGBColor(0x5B, 0xC8, 0xFF)
+CARD_BG = RGBColor(0xFF, 0xFF, 0xFF)
+CARD_BORDER = RGBColor(0xD8, 0xE3, 0xDA)
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
-ACCENT_SOFT = RGBColor(0xEF, 0xF6, 0xFF)
-WARN_BG = RGBColor(0xFF, 0xF7, 0xED)
-RISK_BG = RGBColor(0xFE, 0xF2, 0xF2)
-GOOD_BG = RGBColor(0xEC, 0xFD, 0xF5)
-TONE_RISK = RGBColor(0xB9, 0x1C, 0x1C)
-TONE_WARN = RGBColor(0xC2, 0x41, 0x0C)
-TONE_GOOD = RGBColor(0x04, 0x78, 0x57)
-# ORION Golden design system v2: premium gold accent + dark-page hairlines.
-GOLD = RGBColor(0xC0, 0x9A, 0x4F)
-DARK_RULE = RGBColor(0x24, 0x33, 0x52)
+ACCENT_SOFT = RGBColor(0xE0, 0xFB, 0xEC)
+VIOLET_SOFT = RGBColor(0xF0, 0xEE, 0xFF)
+WARN_BG = RGBColor(0xFC, 0xF4, 0xF1)
+RISK_BG = RGBColor(0xFF, 0xF1, 0xF0)
+GOOD_BG = RGBColor(0xE0, 0xFB, 0xEC)
+TONE_RISK = RGBColor(0xE1, 0x3D, 0x3D)
+TONE_WARN = RGBColor(0xE3, 0x8A, 0x24)
+TONE_GOOD = RGBColor(0x19, 0x64, 0x48)
+METRIC_ACCENT = RGBColor(0x24, 0xD8, 0x75)
+#: Акцент заголовка. Имя осталось прежним, чтобы не переписывать два десятка
+#: мест ради переименования краски: теперь это зелёный cleeq, а не золото.
+GOLD = ACCENT
+DARK_RULE = RGBColor(0x24, 0x2C, 0x24)
+COVER_SUBTITLE = RGBColor(0xC8, 0xD4, 0xCA)
+STAGE_SHADOW = RGBColor(0xE4, 0xEB, 0xE4)
+
+#: Маркер пункта — квадрат cleeq вместо точки. Глиф есть в Inter (U+25AA), и
+#: ширина у него та же, что у «•», поэтому замер строки не меняется.
+BULLET_GLYPH = "▪"
 
 # REMEDIATION §6.1 — pattern sourced from client_text_contract.json
 FORBIDDEN = renderer_strip_re()
@@ -388,19 +410,20 @@ def _fit_text_to_height(
     max_h: int,
     *,
     line_spacing: float = 1.2,
+    bold: bool = False,
 ) -> str:
     """Clip text so measured height fits max_h. Prefer complete sentences; never bare ellipsis stubs."""
     raw = _safe(text)
     if not raw:
         return ""
-    if measure_text_height(raw, width_emu, font_size_pt, line_spacing=line_spacing) <= max_h:
+    if measure_text_height(raw, width_emu, font_size_pt, line_spacing=line_spacing, bold=bold) <= max_h:
         return raw
     # Prefer longest prefix that ends on a sentence boundary.
     sentences = re.split(r"(?<=[.!?…])\s+", raw)
     kept: list[str] = []
     for sent in sentences:
         trial = " ".join(kept + [sent]).strip()
-        if measure_text_height(trial, width_emu, font_size_pt, line_spacing=line_spacing) <= max_h:
+        if measure_text_height(trial, width_emu, font_size_pt, line_spacing=line_spacing, bold=bold) <= max_h:
             kept.append(sent)
         else:
             break
@@ -413,7 +436,7 @@ def _fit_text_to_height(
     while lo <= hi:
         mid = (lo + hi) // 2
         trial = " ".join(words[:mid])
-        if measure_text_height(trial, width_emu, font_size_pt, line_spacing=line_spacing) <= max_h:
+        if measure_text_height(trial, width_emu, font_size_pt, line_spacing=line_spacing, bold=bold) <= max_h:
             best = trial
             lo = mid + 1
         else:
@@ -784,7 +807,7 @@ class _Ctx:
         )
         bp = brand.text_frame.paragraphs[0]
         br = bp.add_run()
-        br.text = "ORION · Конфиденциально"
+        br.text = "cleeq · Конфиденциально"
         br.font.name = FONT
         br.font.size = Pt(FS_CAPTION)
         br.font.color.rgb = MUTED_COLOR
@@ -806,13 +829,15 @@ class _Ctx:
         self.dark = True
         fill = self.slide.background.fill
         fill.solid()
-        fill.fore_color.rgb = NAVY
+        fill.fore_color.rgb = COVER_BG
 
     def light_bg(self) -> None:
         self.dark = False
         fill = self.slide.background.fill
         fill.solid()
-        fill.fore_color.rgb = WHITE
+        # Мятный лист cleeq вместо белого: белые карточки на нём читаются как
+        # отдельные плоскости, а не как продолжение фона.
+        fill.fore_color.rgb = PAGE_BG
 
     def title(
         self,
@@ -823,19 +848,30 @@ class _Ctx:
         *,
         accent: bool = True,
     ) -> int:
-        # Gold accent tick aligned with the first title line (design v2).
+        # Зелёная засечка cleeq у первой строки заголовка.
+        #
+        # Отступ заголовка от неё увеличен со 165 000 до 200 000 EMU, а сама
+        # засечка стала шире и со скруглением. Высота полосы заголовка при этом
+        # не меняется (`return y + 950_000` ниже): ёмкость страницы в строках
+        # объявлена в TS-шаблоне и откалибрована по замеру рендерера, поэтому
+        # сдвигать содержимое вниз ради воздуха нельзя — это выдавило бы блок
+        # за нижнюю границу листа.
         text_x = MARGIN_X
         text_w = CONTENT_W
         if accent:
-            bar_h = int(size * EMU_PER_PT * 1.05)
+            bar_h = int(size * EMU_PER_PT * 1.15)
             bar = self.slide.shapes.add_shape(
-                5, Emu(MARGIN_X), Emu(y + 55_000), Emu(55_000), Emu(bar_h)
+                5, Emu(MARGIN_X), Emu(y + 40_000), Emu(70_000), Emu(bar_h)
             )
             bar.fill.solid()
-            bar.fill.fore_color.rgb = GOLD
+            bar.fill.fore_color.rgb = ACCENT
             bar.line.fill.background()
-            text_x = MARGIN_X + 165_000
-            text_w = CONTENT_W - 165_000
+            try:
+                bar.adjustments[0] = 0.5
+            except Exception:  # noqa: BLE001
+                pass
+            text_x = MARGIN_X + 200_000
+            text_w = CONTENT_W - 200_000
         box = self.slide.shapes.add_textbox(Emu(text_x), Emu(y), Emu(text_w), Emu(900000))
         tf = box.text_frame
         tf.word_wrap = True
@@ -858,14 +894,16 @@ class _Ctx:
         fill: RGBColor = CARD_BG,
         border: RGBColor | None = CARD_BORDER,
         radius: float = 0.055,
-    ) -> None:
+    ):
+        """Рисует карточку и возвращает фигуру — вызывающему может понадобиться
+        погасить у неё тень, которую LibreOffice подставляет по умолчанию."""
         left = MARGIN_X if x is None else x
         width = CONTENT_W if w is None else w
         avail = max(200_000, min(h, CONTENT_BOTTOM - y))
-        # 5 = rounded rectangle: soft corners across every card (design v2).
+        # 5 = rounded rectangle: мягкие углы cleeq на всех карточках.
         shape = self.slide.shapes.add_shape(5, Emu(left), Emu(y), Emu(width), Emu(avail))
         try:
-            shape.adjustments[0] = radius
+            shape.adjustments[0] = max(radius, 0.08)
         except Exception:  # noqa: BLE001
             pass
         try:
@@ -879,6 +917,7 @@ class _Ctx:
         else:
             shape.line.color.rgb = border
             shape.line.width = Pt(0.75)
+        return shape
 
     def body(
         self,
@@ -890,8 +929,14 @@ class _Ctx:
         x: int | None = None,
         w: int | None = None,
         font_size: int = FS_BODY,
+        bold: bool = False,
     ) -> int:
-        """Render body text and return actual bottom Y from measured content height."""
+        """Render body text and return actual bottom Y from measured content height.
+
+        `bold` обязан совпадать с начертанием, которым текст будет нарисован:
+        он и рисует, и меряет (ADR-0006). Лид на «сцене» cleeq — жирный, и
+        мерить его обычным начертанием значит занизить высоту абзаца.
+        """
         left = MARGIN_X if x is None else x
         width = CONTENT_W if w is None else w
         avail = max(200000, min(max_h, CONTENT_BOTTOM - y))
@@ -902,16 +947,16 @@ class _Ctx:
         joined_raw = "\n".join(chunks[:8])
         # PDF-36 D.3 — before dropping sentences, shrink the font 1–2 pt
         # (min 9pt): full text at 10pt beats a cut paragraph at 11pt.
-        if measure_text_height(joined_raw, width, font_size, line_spacing=1.2) > avail:
+        if measure_text_height(joined_raw, width, font_size, line_spacing=1.2, bold=bold) > avail:
             # Кегль снижается по объявленной шкале, а не арифметикой:
             # `- 1` / `- 2` порождали 9,5 и 10,5, которых в шкале нет.
             for candidate in _scale_steps_below(font_size):
                 if candidate < 9:
                     break
-                if measure_text_height(joined_raw, width, candidate, line_spacing=1.2) <= avail:
+                if measure_text_height(joined_raw, width, candidate, line_spacing=1.2, bold=bold) <= avail:
                     font_size = candidate
                     break
-        fitted = _fit_text_to_height(joined_raw, width, font_size, avail, line_spacing=1.2)
+        fitted = _fit_text_to_height(joined_raw, width, font_size, avail, line_spacing=1.2, bold=bold)
         fitted = _trim_dangling_tail(fitted)
         dangling = re.compile(
             r"(?:\bв\s+т\.?\s*ч\.?|\bс\s+[А-ЯA-Z]\.?|\b(?:как|что|чтобы|и|а|или|по|на|в|с)\b|,|;|—|–|-)\s*$",
@@ -922,7 +967,7 @@ class _Ctx:
             kept_s: list[str] = []
             for sent in sentences:
                 trial = " ".join(kept_s + [sent]).strip()
-                if measure_text_height(trial, width, font_size, line_spacing=1.2) <= avail:
+                if measure_text_height(trial, width, font_size, line_spacing=1.2, bold=bold) <= avail:
                     kept_s.append(sent)
                 else:
                     break
@@ -941,9 +986,9 @@ class _Ctx:
         if not kept:
             return y
         joined = "\n".join(kept)
-        needed = measure_text_height(joined, width, font_size, line_spacing=1.2, paragraph_spacing_pt=8)
+        needed = measure_text_height(joined, width, font_size, line_spacing=1.2, paragraph_spacing_pt=8, bold=bold)
         box_h = min(avail, max(needed + 40_000, int(font_size * EMU_PER_PT)))
-        measured_lines, uncertain = _count_measured_lines(joined, width, font_size)
+        measured_lines, uncertain = _count_measured_lines(joined, width, font_size, bold)
         # Clipping = placed text does not fit the box. Fitting/truncating source is not layout overflow.
         clipped = needed > avail
         record_text_layout(
@@ -976,6 +1021,7 @@ class _Ctx:
             r = p.add_run()
             r.text = chunk
             r.font.name = FONT
+            r.font.bold = bold
             r.font.size = Pt(font_size)
             r.font.color.rgb = color
         return y + box_h
@@ -1011,7 +1057,7 @@ class _Ctx:
         }.get(tone, CARD_BG)
         # Design v2: card titles pick up the tone colour instead of flat navy.
         title_color = {
-            "accent": RGBColor(0x1D, 0x4E, 0xD8),
+            "accent": TONE_GOOD,
             "warn": TONE_WARN,
             "risk": TONE_RISK,
             "good": TONE_GOOD,
@@ -1123,7 +1169,12 @@ class _Ctx:
             cx = x + col * (chip_w + gap)
             tone = str(m.get("tone") or "neutral")
             fill = {"risk": RISK_BG, "warn": WARN_BG, "good": GOOD_BG}.get(tone, CARD_BG)
-            value_color = {"risk": TONE_RISK, "warn": TONE_WARN, "good": TONE_GOOD}.get(tone, NAVY)
+            value_color = {
+                "risk": TONE_RISK,
+                "warn": TONE_WARN,
+                "good": TONE_GOOD,
+                "neutral": METRIC_ACCENT,
+            }.get(tone, METRIC_ACCENT)
             value = _clip_words(_safe(m.get("value")), 36)
             label = _clip_words(_safe(m.get("label")), 28)
             self.card(row_y, h=chip_h, x=cx, w=chip_w, fill=fill)
@@ -1209,7 +1260,7 @@ class _Ctx:
             for b in blocks:
                 parts = _split_structured_bullet(b) or [b]
                 for li, line in enumerate(parts):
-                    text = f"• {line}" if li == 0 else f"   {line}"
+                    text = f"{BULLET_GLYPH} {line}" if li == 0 else f"   {line}"
                     # Начертание берётся то же, которым строка будет нарисована
                     # (ниже, в самом выводе — тот же `_bullet_line_style`).
                     # Здесь признак жирности выбрасывался: `_, _, size_pt`, — и
@@ -1272,7 +1323,7 @@ class _Ctx:
         text_lines: list[str] = []
         for b in kept:
             parts = _split_structured_bullet(b) or [b]
-            text_lines.append(f"• {parts[0]}")
+            text_lines.append(f"{BULLET_GLYPH} {parts[0]}")
             text_lines.extend(f"   {p}" for p in parts[1:])
         text = "\n".join(text_lines)
         needed = _bullet_block_height(kept)
@@ -1286,7 +1337,7 @@ class _Ctx:
         tf = box.text_frame
         tf.word_wrap = True
         first_para = True
-        for bullet in kept:
+        for bi, bullet in enumerate(kept):
             lines = _split_structured_bullet(bullet) or [bullet]
             for li, line in enumerate(lines):
                 p = tf.paragraphs[0] if first_para else tf.add_paragraph()
@@ -1298,13 +1349,45 @@ class _Ctx:
                 # Fallback color arg only for flat single-line bullets.
                 if len(lines) == 1 and color != BODY_COLOR:
                     line_color = color
+                if li == 0:
+                    # Маркер — отдельный прогон, чтобы квадрат был цветным, а
+                    # текст пункта — чернилами. Замер этого не касается: строка
+                    # меряется целиком, вместе с маркером и пробелом.
+                    marker = p.add_run()
+                    marker.text = f"{BULLET_GLYPH} "
+                    marker.font.name = FONT
+                    marker.font.bold = bold
+                    marker.font.size = Pt(size_pt)
+                    marker.font.color.rgb = ACCENT if bi % 2 == 0 else VIOLET
                 r = p.add_run()
-                r.text = f"• {line}" if li == 0 else f"   {line}"
+                r.text = line if li == 0 else f"   {line}"
                 r.font.name = FONT
                 r.font.bold = bold
                 r.font.size = Pt(size_pt)
                 r.font.color.rgb = line_color
         return y + min(avail, needed + 60_000)
+
+
+def disable_shape_shadow(shape) -> None:
+    """Погасить мягкую тень, которую LibreOffice рисует фигуре по умолчанию.
+
+    Одного пустого `<a:effectLst/>` мало: python-pptx кладёт каждой фигуре
+    ссылку на эффект темы (`<a:effectRef idx="2">`), и конвертер выполняет
+    именно её. Тень размывается примерно на десять точек за границей фигуры —
+    для карточки посреди листа это незаметно, а для сцены, доходящей до нижней
+    границы полосы контента, это чернила ниже границы, и растровая проверка
+    видит их (ADR-0007).
+    """
+    try:
+        shape.shadow.inherit = False
+    except Exception:  # noqa: BLE001
+        pass
+    style = shape._element.find(qn("p:style"))
+    if style is None:
+        return
+    ref = style.find(qn("a:effectRef"))
+    if ref is not None:
+        ref.set("idx", "0")
 
 
 def _asset_map(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -1387,3 +1470,79 @@ def _first_visual_asset(refs: list[Any], assets: dict[str, dict[str, Any]]) -> d
     return None
 
 
+
+
+def _rounded_portrait_png(
+    raw: bytes, size_px: int = 900, radius_ratio: float = 0.14
+) -> bytes | None:
+    """Квадратное фото со скруглёнными углами — портрет на обложке.
+
+    Широкая сетка изображений (~1200×680) — это коллаж; из него берётся область
+    первой карточки, иначе на обложку попал бы кусок сетки, а не лицо.
+    """
+    if Image is None:
+        return None
+    try:
+        from PIL import ImageDraw
+    except ImportError:  # pragma: no cover
+        return None
+    try:
+        with Image.open(io.BytesIO(raw)) as src:
+            im = src.convert("RGBA")
+        w, h = im.size
+        if w >= 900 and h >= 500 and (w / max(h, 1)) > 1.35:
+            sx, sy = w / 1200.0, h / 680.0
+            box = (
+                int(48 * sx),
+                int(88 * sy),
+                int((48 + 344) * sx),
+                int((88 + 144) * sy),
+            )
+            im = im.crop(box)
+            w, h = im.size
+        side = min(w, h)
+        if side < 32:
+            return None
+        left = (w - side) // 2
+        top = (h - side) // 2
+        im = im.crop((left, top, left + side, top + side)).resize(
+            (size_px, size_px), Image.Resampling.LANCZOS
+        )
+        radius = max(8, int(size_px * radius_ratio))
+        mask = Image.new("L", (size_px, size_px), 0)
+        ImageDraw.Draw(mask).rounded_rectangle(
+            (0, 0, size_px - 1, size_px - 1), radius=radius, fill=255
+        )
+        out = Image.new("RGBA", (size_px, size_px), (0, 0, 0, 0))
+        out.paste(im, (0, 0), mask)
+        buf = io.BytesIO()
+        out.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _embed_cover_portrait(ctx: _Ctx, asset: dict[str, Any] | None) -> bool:
+    """Портрет субъекта на обложке: квадрат в зелёной и фиолетовой рамке."""
+    raw = _resolve_image_bytes(asset)
+    if not raw:
+        return False
+    png = _rounded_portrait_png(raw)
+    if not png:
+        return False
+    side = 4_000_000
+    left = 7_050_000
+    top = 1_450_000
+    for pad, color in ((220_000, VIOLET), (110_000, ACCENT)):
+        d = side + pad * 2
+        frame = ctx.slide.shapes.add_shape(5, Emu(left - pad), Emu(top - pad), Emu(d), Emu(d))
+        frame.fill.background()
+        frame.line.color.rgb = color
+        frame.line.width = Pt(2.0)
+        try:
+            frame.adjustments[0] = 0.14
+        except Exception:  # noqa: BLE001
+            pass
+    stream = io.BytesIO(png)
+    ctx.slide.shapes.add_picture(stream, Emu(left), Emu(top), width=Emu(side), height=Emu(side))
+    return True
