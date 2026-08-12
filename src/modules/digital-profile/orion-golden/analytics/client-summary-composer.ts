@@ -75,9 +75,14 @@ function composeScope(pack: ClientSummaryPack): string {
   const regions = pack.scope.regions.length
     ? pack.scope.regions.join(", ")
     : "доступные региональные контуры";
-  const sources = pack.scope.sourceClasses.length
-    ? pack.scope.sourceClasses.join(", ")
-    : "открытые источники";
+  // Глубина выдачи называется там же, где класс источника: клиент должен
+  // прочитать «результаты поиска (ТОП-20)», а не «поисковая выдача» — иначе
+  // фраза обещает проверку всей выдачи, а проверен её первый разворот.
+  const depth = pack.scope.searchDepthTopN;
+  const sourceClasses = pack.scope.sourceClasses.map((s) =>
+    depth && /^поисковая выдача$/iu.test(s.trim()) ? `результаты поиска (ТОП-${depth})` : s
+  );
+  const sources = sourceClasses.length ? sourceClasses.join(", ") : "открытые источники";
   const period = pack.scope.period.collectedLabel || "по дате сбора в кейсе";
   const newest = pack.scope.period.newestLabel
     ? ` Наиболее свежий материал в наборе: ${pack.scope.period.newestLabel}.`

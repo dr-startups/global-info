@@ -374,6 +374,7 @@ export function sampleClientSummaryPack(): ClientSummaryPack {
       regions: ["RU", "UAE"],
       sourceClasses: ["поисковая выдача", "открытые СМИ"],
       surfaces: ["organic", "compliance"],
+      searchDepthTopN: 20,
       period: { collectedLabel: "по дате сбора в кейсе", newestLabel: null },
       coverageLimitations: [],
     },

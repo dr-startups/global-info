@@ -161,6 +161,25 @@ function base(
   };
 }
 
+/**
+ * Позиция в выдаче по разрезу «регион × движок».
+ *
+ * Фикстура моделирует настоящую выдачу, а в ней у каждой строки есть номер.
+ * Порядок генерации и есть порядок выдачи: заглавные материалы идут первыми,
+ * «набивка» уходит в хвост — то есть ниже двадцатой позиции, куда проверяющий
+ * не заглядывает. Без позиций золотой кейс не мог проверить правило ТОП-20:
+ * материал без номера в предмет аудита не берётся.
+ */
+function rankCounter(): (region: string, engine: string) => number {
+  const byLane = new Map<string, number>();
+  return (region, engine) => {
+    const lane = `${region}|${engine}`;
+    const next = (byLane.get(lane) ?? 0) + 1;
+    byLane.set(lane, next);
+    return next;
+  };
+}
+
 function slug(s: string): string {
   return s
     .toLowerCase()
@@ -172,6 +191,7 @@ function slug(s: string): string {
 /** Build the golden-case composite corpus (~300 rows). Deterministic. */
 export function buildGoldenCaseObservations(): CompositeObservation[] {
   const rows: CompositeObservation[] = [];
+  const nextRank = rankCounter();
   let n = 0;
   const id = () => {
     n += 1;
@@ -195,6 +215,7 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
         url: `https://${host(RU_SOURCE_HOSTS, i)}/${slug(title)}-${i}`,
         title,
         snippet: `${title}. Context: ${COMPANY}, Stockholm fintech, identity anchors for subject resolution.`,
+        rank: nextRank("RU", engine),
         evidenceRefs: [`searchResult:sr-ru-o-${i}`],
         baseSearchResultId: `sr-ru-o-${i}`,
         riskLabel: /tax|sanction|offshore|whistle|prosecut|probe|hearing/i.test(title)
@@ -220,6 +241,7 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
         url: `https://${host(RU_SOURCE_HOSTS, i)}/${slug(theme)}-${i}`,
         title: `${COVERAGE_ANGLES[i % COVERAGE_ANGLES.length]}: ${theme}`,
         snippet: `${theme}. Материал издания ${host(RU_SOURCE_HOSTS, i)} о ${SUBJECT} и ${COMPANY}.`,
+        rank: nextRank("RU", engine),
         evidenceRefs: [`searchResult:sr-ru-pad-${i}`],
         baseSearchResultId: `sr-ru-pad-${i}`,
       })
@@ -241,6 +263,7 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
         url: `https://${host(UAE_SOURCE_HOSTS, i)}/${slug(title)}-${i}`,
         title,
         snippet: `${title}. UAE market context for ${SUBJECT}.`,
+        rank: nextRank("UAE", "GOOGLE"),
         evidenceRefs: [`searchResult:sr-uae-o-${i}`],
         baseSearchResultId: `sr-uae-o-${i}`,
         riskLabel: /PEP|sanction|compliance/i.test(title) ? "adverse" : null,
@@ -261,6 +284,7 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
         url: `https://${host(UAE_SOURCE_HOSTS, i)}/${slug(theme)}-${i}`,
         title: `${COVERAGE_ANGLES[i % COVERAGE_ANGLES.length]}: ${theme}`,
         snippet: `${theme}. Материал издания ${host(UAE_SOURCE_HOSTS, i)} о ${SUBJECT}.`,
+        rank: nextRank("UAE", "GOOGLE"),
         evidenceRefs: [`searchResult:sr-uae-pad-${i}`],
         baseSearchResultId: `sr-uae-pad-${i}`,
       })
@@ -281,6 +305,7 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
         url: `https://nordic-hockey-report.se/holmstrom-${i}`,
         title: NAMESAKE_TITLES[i]!,
         snippet: `${NAMESAKE_TITLES[i]!}. Hockey goaltender — not the fintech founder.`,
+        rank: nextRank("RU", "GOOGLE"),
         evidenceRefs: [`searchResult:sr-ns-${i}`],
         baseSearchResultId: `sr-ns-${i}`,
       })
@@ -320,6 +345,7 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
         url: row.url,
         title: row.title,
         snippet: row.snippet,
+        rank: nextRank("RU", "GOOGLE"),
         evidenceRefs: [`searchResult:sr-likely-${i}`],
         baseSearchResultId: `sr-likely-${i}`,
       })
@@ -549,6 +575,11 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
   }
 
   // --- Exactly 2 compliance hits ---
+  //
+  // Позиции у этих двух строк заданы числом, а не счётчиком разреза: это
+  // выдача по узкой пробе («имя + compliance»), где счётчик разреза уже ушёл за
+  // двадцатую строку, а в самой пробе скрин-база стоит на первой странице.
+  // Позиция в выдаче считается внутри запроса, а не по разрезу целиком.
   rows.push(
     base({
       key: `organic|ru|google|q|https://worldcompliance-screening.ae/lexis-${id()}`,
@@ -556,6 +587,7 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
       surface: "organic",
       region: "RU",
       engine: "GOOGLE",
+      rank: 6,
       providers: ["serper"],
       primaryProvider: "serper",
       url: "https://worldcompliance-screening.ae/lexisnexis/holmstrom-1",
@@ -573,6 +605,7 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
       surface: "organic",
       region: "UAE",
       engine: "GOOGLE",
+      rank: 4,
       providers: ["serper"],
       primaryProvider: "serper",
       url: "https://worldcompliance-screening.ae/dowjones/holmstrom-2",

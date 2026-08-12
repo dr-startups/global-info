@@ -307,6 +307,11 @@ export function compositeObservationsToInventory(input: {
         surface,
         queryText: obs.query,
         provider,
+        // Позиция в выдаче и назначение запроса — то, по чему определяется
+        // предмет аудита (ТОП-20). Без них аналитика видит корпус как плоский
+        // список и не отличает первую строку выдачи от сороковой.
+        rank: obs.rank,
+        queryPurpose: obs.queryPurpose,
         // Source lineage for §1.3 override matching. Do NOT put searchResult:*
         // into evidenceRefs — composite builder would drop the inventory: fallback
         // and break deck evidenceIndex / assembly validation.

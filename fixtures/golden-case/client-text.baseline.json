@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v1",
-  "slideCount": 51,
-  "totalChars": 41283,
+  "slideCount": 49,
+  "totalChars": 40328,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -21,17 +21,17 @@
       "template": "orion_golden_toc",
       "bullets": [
         "Резюме для руководства — стр. 3–9",
-        "Цифровой профиль — Россия — стр. 10–33",
-        "Цифровой профиль — ОАЭ и международный контур — стр. 34–47",
-        "Комплаенс-проверка — стр. 48–50",
-        "Приложение — стр. 51–51"
+        "Цифровой профиль — Россия — стр. 10–32",
+        "Цифровой профиль — ОАЭ и международный контур — стр. 33–45",
+        "Комплаенс-проверка — стр. 46–48",
+        "Приложение — стр. 49–49"
       ]
     },
     {
       "slideKey": "p03_executive",
       "text": {
         "title": "Резюме",
-        "narrative": "Итоговая оценка: высокий риск. Основные основания: Деловые связи, владение и контрагенты; Криминальные и судебные материалы; Семейные и личные связи (риск-релевантные); Офшоры и финансовая прозрачность. Главные основания. Деловые связи, владение и контрагенты: Anders Holmström арест. Криминальные и судебные материалы: Разбор: Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm. Семейные и личные связи (риск-релевантные): Anders Holmström арест. Офшоры и финансовая прозрачность: Подробности: Anders Holmström linked to Malta holding structure and offshore beneficial ownership. Ограничения. Вывод основан на открытых и импортированных источниках; первичные документы могут изменить оценку."
+        "narrative": "Итоговая оценка: высокий риск. Основные основания: Деловые связи, владение и контрагенты; Криминальные и судебные материалы; Семейные и личные связи (риск-релевантные); Офшоры и финансовая прозрачность. Главные основания. Деловые связи, владение и контрагенты: Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital. Криминальные и судебные материалы: Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm. Семейные и личные связи (риск-релевантные): Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital. Офшоры и финансовая прозрачность: Разбор: Anders Holmström linked to Malta holding structure and offshore beneficial ownership. Ограничения. Вывод основан на открытых и импортированных источниках; первичные документы могут изменить оценку. Медийные утверждения не приравниваются к установленным фактам."
       },
       "baseSlotId": "p03_executive",
       "template": "orion_golden_executive_dashboard"
@@ -44,9 +44,8 @@
       "baseSlotId": "p03_executive",
       "template": "orion_golden_prose",
       "bullets": [
-        "Офшоры и финансовая прозрачность. Среди поисковых подсказок встречается запрос «Подробности: Anders Holmström linked to Malta holding structure and offshore beneficial ownership». «Разбор: Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник reestr-novosti.ru. Офшорные и непрозрачные структуры владения типично требуют раскрытия бенефициаров и источников контроля.",
-        "Санкции, PEP, RCA и compliance-сигналы. В базе LexisNexis есть совпадение по имени «Johan Holmstrom»; принадлежность субъекту требует проверки и фактом не является. «Хроника: Anders Holmström flagged during sanctions screening watchlist review» — источник bizdaily-nordic.se. Статус в комплаенс-/мониторинговой базе требует сверки карточки. Санкционные и мониторинговые совпадения отрабатываются в первую очередь при KYC и онбординге. Сигнал международной/комплаенс-базы требует сверки идентификаторов и полной карточки; без подтверждения не считается установленным фактом.",
-        "Репутационные скандалы и негативные сюжеты. Среди связанных запросов выдачи встречается «Is Anders Holmström under investigation?». Устойчивые скандальные сюжеты влияют на репутационную оценку даже при отсутствии судебного приговора.",
+        "Офшоры и финансовая прозрачность. Найдены конкретные материалы, в том числе «Разбор: Anders Holmström linked to Malta holding structure and offshore beneficial ownership» (reestr-novosti.ru). Офшорные и непрозрачные структуры владения типично требуют раскрытия бенефициаров и источников контроля.",
+        "Санкции, PEP, RCA и compliance-сигналы. В базе LexisNexis есть совпадение по имени «Johan Holmstrom»; принадлежность субъекту требует проверки и фактом не является. Статус в комплаенс-/мониторинговой базе требует сверки карточки. Санкционные и мониторинговые совпадения отрабатываются в первую очередь при KYC и онбординге. Сигнал международной/комплаенс-базы требует сверки идентификаторов и полной карточки; без подтверждения не считается установленным фактом.",
         "Источники — abudhabi-capital-news.ae, affarsposten.se, bizdaily-nordic.se, delovoy-vestnik.ru и ещё 2."
       ]
     },
@@ -59,7 +58,7 @@
       "template": "orion_golden_prose",
       "bullets": [
         "Международные базы и официальные источники. Dow Jones. По открытым/импортированным данным есть сигнал, связанный с записью «Holmstrom, Johan». Сигнал международной/комплаенс-базы требует сверки идентификаторов и полной карточки; без подтверждения не считается установленным фактом. LexisNexis. По открытым/импортированным данным есть сигнал, связанный с записью «Johan Holmstrom». Сигнал международной/комплаенс-базы требует сверки идентификаторов и полной карточки; без подтверждения не считается установленным фактом.",
-        "Следующие проверки. 1) Сверить первоисточники и статус материалов по теме «Деловые связи, владение и контрагенты», «Криминальные и судебные материалы», «Семейные и личные связи (риск-релевантные)», «Офшоры и финансовая прозрачность», «Репутационные скандалы и негативные сюжеты», «Санкции, PEP, RCA и compliance-сигналы». 2) Подготовить согласованную позицию для KYC и партнёрских запросов. 3) Сверить актуальность санкционных и мониторинговых записей по официальным источникам. 4) Подготовить единый пакет документов для KYC и партнёрских запросов."
+        "Следующие проверки. 1) Сверить первоисточники и статус материалов по теме «Деловые связи, владение и контрагенты», «Криминальные и судебные материалы», «Семейные и личные связи (риск-релевантные)», «Офшоры и финансовая прозрачность», «Санкции, PEP, RCA и compliance-сигналы». 2) Подготовить согласованную позицию для KYC и партнёрских запросов. 3) Сверить актуальность санкционных и мониторинговых записей по официальным источникам. 4) Подготовить единый пакет документов для KYC и партнёрских запросов."
       ]
     },
     {
@@ -81,13 +80,13 @@
             "Криминальные / судебные материалы",
             "Критический",
             "P1",
-            "finding-criminal_legal-subject_match-bdf782ee"
+            "finding-criminal_legal-subject_match-b76d3781"
           ],
           [
             "PEP / RCA / watchlist-сигналы",
             "Высокий",
             "P1",
-            "finding-pep_rca_watchlist-subject_match-0b40c407"
+            "finding-pep_rca_watchlist-subject_match-9af0d094"
           ],
           [
             "Материалы с вероятной принадлежностью",
@@ -117,19 +116,13 @@
             "Офшоры / корпоративное владение",
             "Средний",
             "P2",
-            "finding-offshore_corporate-subject_match-40e17d20"
+            "finding-offshore_corporate-subject_match-4cc9cf0d"
           ],
           [
             "Деловой профиль",
             "Низкий",
             "P3",
-            "finding-business_profile-subject_match-2b9ec74a"
-          ],
-          [
-            "Семья и деловые связи",
-            "Низкий",
-            "P3",
-            "finding-family_associates-subject_match-0d28bdb7"
+            "finding-business_profile-subject_match-15a54088"
           ]
         ]
       }
@@ -138,7 +131,7 @@
       "slideKey": "p05_profile_dashboard",
       "text": {
         "title": "Обзор цифрового профиля",
-        "narrative": "По собранным источникам: 314 материалов из 2 региональных контуров (RU: 228, UAE: 86). Принадлежность каждого материала к проверяемому лицу проверена. Детализация каждой темы повышенного внимания приведена в матрице рисков и региональных разделах."
+        "narrative": "Предмет аудита — результаты поиска ТОП-20 в Яндексе и Google (Россия, ОАЭ) и международные базы: 71 материал. По собранным источникам: 314 материалов из 2 региональных контуров (RU: 228, UAE: 86). Принадлежность каждого материала к проверяемому лицу проверена. Детализация каждой темы повышенного внимания приведена в матрице рисков и региональных разделах."
       },
       "baseSlotId": "p05_profile_dashboard",
       "template": "orion_golden_metrics_dashboard",
@@ -171,57 +164,46 @@
       "slideKey": "p07_ru_summary",
       "text": {
         "title": "Россия — резюме аудита",
-        "narrative": "В выдаче по региону «Россия» проверяющий увидит 228 материалов. Подтверждённых тем: 5, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; PEP / RCA / watchlist-сигналы; Офшоры / корпоративное владение. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
+        "narrative": "В выдаче по региону «Россия» проверяющий увидит 228 материалов. Подтверждённых тем: 4, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; PEP / RCA / watchlist-сигналы; Офшоры / корпоративное владение. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
       },
       "baseSlotId": "p07_ru_summary",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Комментарий: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник stockholm-kuriren.se «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник kapitalnytt.se Где видно: stockholm-kuriren.se, kapitalnytt.se. Для банка или партнёра такие сюжеты обычно становятся первым поводом для расширенной проверки. Всего по теме: 10 материалов, с негативным контекстом — 10."
+        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Комментарий: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник stockholm-kuriren.se «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник kapitalnytt.se Где видно: stockholm-kuriren.se, kapitalnytt.se. Для банка или партнёра такие сюжеты обычно становятся первым поводом для расширенной проверки. Всего по теме: 5 материалов, с негативным контекстом — 5."
       ]
     },
     {
       "slideKey": "p07_ru_summary__cont1",
       "text": {
-        "title": "Россия — резюме аудита (продолжение 2/5)"
+        "title": "Россия — резюме аудита (продолжение 2/4)"
       },
       "baseSlotId": "p07_ru_summary",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Хроника: Anders Holmström flagged during sanctions screening watchlist review» — источник bizdaily-nordic.se «Anders Holmström flagged during sanctions screening watchlist review» — источник stockholm-kuriren.se Где видно: bizdaily-nordic.se, stockholm-kuriren.se. Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC. Всего по теме: 29 материалов, с негативным контекстом — 15."
+        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Хроника: Anders Holmström flagged during sanctions screening watchlist review» — источник bizdaily-nordic.se «Anders Holmström flagged during sanctions screening watchlist review» — источник stockholm-kuriren.se Где видно: bizdaily-nordic.se, stockholm-kuriren.se. Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC. Всего по теме: 14 материалов, с негативным контекстом — 10."
       ]
     },
     {
       "slideKey": "p07_ru_summary__cont2",
       "text": {
-        "title": "Россия — резюме аудита (продолжение 3/5)"
+        "title": "Россия — резюме аудита (продолжение 3/4)"
       },
       "baseSlotId": "p07_ru_summary",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«Офшоры / корпоративное владение» Найдены публикации об офшорных и корпоративных структурах владения: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник nordmarket-watch.se «Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital» — источник rynok-segodnya.ru Где видно: nordmarket-watch.se, rynok-segodnya.ru. Для KYC это типичный запрос на раскрытие бенефициаров и источников контроля. Всего по теме: 9 материалов, с негативным контекстом — 1."
+        "«Офшоры / корпоративное владение» Найдены публикации об офшорных и корпоративных структурах владения: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник nordmarket-watch.se «Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital» — источник rynok-segodnya.ru Где видно: nordmarket-watch.se, rynok-segodnya.ru. Для KYC это типичный запрос на раскрытие бенефициаров и источников контроля. Всего по теме: 4 материала, с негативным контекстом — 1."
       ]
     },
     {
       "slideKey": "p07_ru_summary__cont3",
       "text": {
-        "title": "Россия — резюме аудита (продолжение 4/5)"
+        "title": "Россия — резюме аудита (продолжение 4/4)"
       },
       "baseSlotId": "p07_ru_summary",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«Деловой профиль» Найдены материалы делового и биографического профиля: «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник finansbladet.se «Контекст: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник svenskt-naringsliv-nytt.se Где видно: finansbladet.se, svenskt-naringsliv-nytt.se. Деловой фон важен для позиционирования, но сам по себе не перекрывает чувствительные темы риска. Всего по теме: 5 материалов, с негативным контекстом — 1.",
-        "«Семья и деловые связи» Найдены материалы о семейных и деловых связях субъекта. По теме 12 материалов; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники. Всего по теме: 12 материалов. Риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого."
-      ]
-    },
-    {
-      "slideKey": "p07_ru_summary__cont4",
-      "text": {
-        "title": "Россия — резюме аудита (продолжение 5/5)"
-      },
-      "baseSlotId": "p07_ru_summary",
-      "template": "orion_golden_metrics_dashboard",
-      "bullets": [
-        "Другие материалы о субъекте: 160 (примеры: Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm · Anders Holmström expands Nordkap Capital into private credit markets · Swedish media: Anders Holmström denies wrongdoing in tax inquiry)",
+        "«Деловой профиль» Найдены материалы делового и биографического профиля: «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник finansbladet.se «Контекст: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник svenskt-naringsliv-nytt.se Где видно: finansbladet.se, svenskt-naringsliv-nytt.se. Деловой фон важен для позиционирования, но сам по себе не перекрывает чувствительные темы риска. Всего по теме: 3 материала, с негативным контекстом — 1.",
+        "Другие материалы о субъекте: 29 (примеры: Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm · Anders Holmström expands Nordkap Capital into private credit markets · Swedish media: Anders Holmström denies wrongdoing in tax inquiry)",
         "Материалы, вероятно относящиеся к субъекту: 3 — пока не включаем в подтверждённый итог до уточнения идентификации."
       ]
     },
@@ -262,13 +244,13 @@
       "slideKey": "p09_ru_serp_table",
       "text": {
         "title": "Россия — позиции в поисковой выдаче",
-        "narrative": "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — stockholm-kuriren.se. На странице 3 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
+        "narrative": "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — kapitalnytt.se. На странице 3 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
       "bullets": [
-        "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — stockholm-kuriren.se. На странице 3 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
-        "Источники — affarsposten.se, finansbladet.se, delovoy-vestnik.ru, bizdaily-nordic.se и ещё 1."
+        "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — kapitalnytt.se. На странице 3 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
+        "Источники — stockholm-kuriren.se, finansbladet.se, nordmarket-watch.se, delovoy-vestnik.ru и ещё 1."
       ],
       "table": {
         "headers": [
@@ -280,8 +262,8 @@
         "rows": [
           [
             "1",
-            "affarsposten.se",
-            "Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm",
+            "stockholm-kuriren.se",
+            "Anders Holmström flagged during sanctions screening watchlist review",
             "Нежелательный"
           ],
           [
@@ -292,62 +274,62 @@
           ],
           [
             "3",
+            "nordmarket-watch.se",
+            "Anders Holmström linked to Malta holding structure and offshore beneficial ownership",
+            "Нежелательный"
+          ],
+          [
+            "4",
             "delovoy-vestnik.ru",
             "Anders Holmström interviewed on Nordic fintech regulation and compliance",
             "Нежелательный"
           ],
           [
-            "4",
-            "bizdaily-nordic.se",
-            "Swedish media: Anders Holmström denies wrongdoing in tax inquiry",
-            "Нейтральный"
-          ],
-          [
             "5",
-            "affarsposten.se",
-            "Anders Holmström real-estate purchases in Stockholm linked to Nordkap Capital vehicle",
+            "granskaren.se",
+            "Nordkap Capital raises Series B; Anders Holmström remains controlling shareholder",
             "Нейтральный"
           ],
           [
             "6",
-            "finansbladet.se",
-            "Whistleblower portal mentions Anders Holmström in connection with Nordkap Capital",
-            "Нейтральный"
+            "kapitalnytt.se",
+            "Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital",
+            "Нежелательный"
           ],
           [
             "7",
+            "rynok-segodnya.ru",
+            "Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital",
+            "Нежелательный"
+          ],
+          [
+            "8",
+            "worldcompliance-screening.ae",
+            "Anders Holmström — LexisNexis WorldCompliance adverse media hit",
+            "Нежелательный"
+          ],
+          [
+            "9",
             "delovoy-vestnik.ru",
             "Anders Holmström philanthropy foundation tied to Nordkap Capital dividends",
             "Нейтральный"
           ],
           [
-            "8",
+            "10",
+            "reestr-novosti.ru",
+            "Nordkap Capital board appoints independent compliance advisor after Anders Holmström probe",
+            "Нежелательный"
+          ],
+          [
+            "11",
             "bizdaily-nordic.se",
             "Хроника: Anders Holmström flagged during sanctions screening watchlist review",
             "Нежелательный"
           ],
           [
-            "9",
+            "12",
             "svenskt-naringsliv-nytt.se",
             "Контекст: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile",
-            "Нейтральный"
-          ],
-          [
-            "10",
-            "stockholm-kuriren.se",
-            "Комментарий: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital",
-            "Нежелательный"
-          ],
-          [
-            "11",
-            "finansbladet.se",
-            "Хроника: Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital",
-            "Нежелательный"
-          ],
-          [
-            "12",
-            "kapitalnytt.se",
-            "Контекст: Swedish media: Anders Holmström denies wrongdoing in tax inquiry",
             "Нейтральный"
           ]
         ]
@@ -357,13 +339,13 @@
       "slideKey": "p09_ru_serp_table__cont1",
       "text": {
         "title": "Россия — позиции в поисковой выдаче (продолжение 2/3)",
-        "narrative": "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — bizdaily-nordic.se. На странице 3 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
+        "narrative": "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — stockholm-kuriren.se. На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
       "bullets": [
-        "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — bizdaily-nordic.se. На странице 3 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
-        "Источники — rynok-segodnya.ru, bizdaily-nordic.se, svenskt-naringsliv-nytt.se, stockholm-kuriren.se и ещё 1."
+        "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — stockholm-kuriren.se. На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
+        "Источники — stockholm-kuriren.se, finansbladet.se, granskaren.se, kapitalnytt.se и ещё 1."
       ],
       "table": {
         "headers": [
@@ -375,74 +357,74 @@
         "rows": [
           [
             "13",
+            "stockholm-kuriren.se",
+            "Комментарий: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital",
+            "Нежелательный"
+          ],
+          [
+            "14",
+            "finansbladet.se",
+            "Хроника: Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital",
+            "Нежелательный"
+          ],
+          [
+            "15",
+            "granskaren.se",
+            "Nordkap Capital annual report signed by Anders Holmström",
+            "Нейтральный"
+          ],
+          [
+            "16",
+            "kapitalnytt.se",
+            "Контекст: Swedish media: Anders Holmström denies wrongdoing in tax inquiry",
+            "Нейтральный"
+          ],
+          [
+            "17",
+            "kapitalnytt.se",
+            "Prosecutors request documents from Anders Holmström regarding Malta SPV",
+            "Нейтральный"
+          ],
+          [
+            "18",
             "rynok-segodnya.ru",
             "Комментарий: Registry extract: Anders Holmström listed as director of Nordkap Capital",
             "Нейтральный"
           ],
           [
-            "14",
-            "bizdaily-nordic.se",
-            "Хроника: Analyst note: reputation risk around Anders Holmström and Nordkap Capital",
-            "Нейтральный"
-          ],
-          [
-            "15",
-            "svenskt-naringsliv-nytt.se",
-            "Контекст: Whistleblower portal mentions Anders Holmström in connection with Nordkap Capital",
-            "Нейтральный"
-          ],
-          [
-            "16",
-            "stockholm-kuriren.se",
-            "Комментарий: Prosecutors request documents from Anders Holmström regarding Malta SPV",
-            "Нейтральный"
-          ],
-          [
-            "17",
-            "finansbladet.se",
-            "Хроника: Credit bureau soft-hit references Anders Holmström, Nordkap Capital",
-            "Нейтральный"
-          ],
-          [
-            "18",
-            "kapitalnytt.se",
-            "Контекст: Anders Holmström flagged during sanctions screening watchlist review",
-            "Нежелательный"
-          ],
-          [
             "19",
             "rynok-segodnya.ru",
-            "Комментарий: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile",
+            "Credit bureau soft-hit references Anders Holmström, Nordkap Capital",
             "Нейтральный"
           ],
           [
             "20",
             "bizdaily-nordic.se",
-            "Хроника: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital",
-            "Нежелательный"
+            "Хроника: Analyst note: reputation risk around Anders Holmström and Nordkap Capital",
+            "Нейтральный"
           ],
           [
             "21",
-            "svenskt-naringsliv-nytt.se",
-            "Контекст: Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital",
+            "pravo-obzor.ru",
+            "Подробности: Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm",
             "Нежелательный"
           ],
           [
             "22",
-            "stockholm-kuriren.se",
-            "Комментарий: Swedish media: Anders Holmström denies wrongdoing in tax inquiry",
+            "svenskt-naringsliv-nytt.se",
+            "Контекст: Whistleblower portal mentions Anders Holmström in connection with Nordkap Capital",
             "Нейтральный"
           ],
           [
             "23",
-            "finansbladet.se",
-            "Хроника: Registry extract: Anders Holmström listed as director of Nordkap Capital",
-            "Нейтральный"
+            "reestr-novosti.ru",
+            "Разбор: Anders Holmström linked to Malta holding structure and offshore beneficial ownership",
+            "Нежелательный"
           ],
           [
             "24",
-            "kapitalnytt.se",
-            "Контекст: Analyst note: reputation risk around Anders Holmström and Nordkap Capital",
+            "stockholm-kuriren.se",
+            "Комментарий: Prosecutors request documents from Anders Holmström regarding Malta SPV",
             "Нейтральный"
           ]
         ]
@@ -452,13 +434,13 @@
       "slideKey": "p09_ru_serp_table__cont2",
       "text": {
         "title": "Россия — позиции в поисковой выдаче (продолжение 3/3)",
-        "narrative": "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — kapitalnytt.se. На странице 3 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
+        "narrative": "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — bizdaily-nordic.se. На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
       },
       "baseSlotId": "p09_ru_serp_table",
       "template": "orion_golden_search_table",
       "bullets": [
-        "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — kapitalnytt.se. На странице 3 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
-        "Источники — rynok-segodnya.ru, bizdaily-nordic.se, svenskt-naringsliv-nytt.se, stockholm-kuriren.se и ещё 1."
+        "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — bizdaily-nordic.se. На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
+        "Источники — affarsposten.se, finansbladet.se, nordmarket-watch.se, kapitalnytt.se и ещё 1."
       ],
       "table": {
         "headers": [
@@ -470,74 +452,74 @@
         "rows": [
           [
             "25",
-            "rynok-segodnya.ru",
-            "Комментарий: Whistleblower portal mentions Anders Holmström in connection with Nordkap Capital",
+            "affarsposten.se",
+            "Обзор: Nordkap Capital raises Series B; Anders Holmström remains controlling shareholder",
             "Нейтральный"
           ],
           [
             "26",
-            "bizdaily-nordic.se",
-            "Хроника: Prosecutors request documents from Anders Holmström regarding Malta SPV",
+            "finansbladet.se",
+            "Хроника: Credit bureau soft-hit references Anders Holmström, Nordkap Capital",
             "Нейтральный"
           ],
           [
             "27",
-            "svenskt-naringsliv-nytt.se",
-            "Контекст: Credit bureau soft-hit references Anders Holmström, Nordkap Capital",
-            "Нейтральный"
+            "nordmarket-watch.se",
+            "Подробности: Anders Holmström interviewed on Nordic fintech regulation and compliance",
+            "Нежелательный"
           ],
           [
             "28",
-            "stockholm-kuriren.se",
-            "Комментарий: Anders Holmström flagged during sanctions screening watchlist review",
+            "kapitalnytt.se",
+            "Контекст: Anders Holmström flagged during sanctions screening watchlist review",
             "Нежелательный"
           ],
           [
             "29",
-            "finansbladet.se",
-            "Хроника: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile",
+            "granskaren.se",
+            "Разбор: Anders Holmström expands Nordkap Capital into private credit markets",
             "Нейтральный"
           ],
           [
             "30",
-            "kapitalnytt.se",
-            "Контекст: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital",
-            "Нежелательный"
+            "rynok-segodnya.ru",
+            "Комментарий: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile",
+            "Нейтральный"
           ],
           [
             "31",
-            "rynok-segodnya.ru",
-            "Комментарий: Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital",
+            "delovoy-vestnik.ru",
+            "Обзор: Nordkap Capital board appoints independent compliance advisor after Anders Holmström probe",
             "Нежелательный"
           ],
           [
             "32",
             "bizdaily-nordic.se",
-            "Хроника: Swedish media: Anders Holmström denies wrongdoing in tax inquiry",
-            "Нейтральный"
+            "Хроника: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital",
+            "Нежелательный"
           ],
           [
             "33",
-            "svenskt-naringsliv-nytt.se",
-            "Контекст: Registry extract: Anders Holmström listed as director of Nordkap Capital",
+            "pravo-obzor.ru",
+            "Подробности: Anders Holmström real-estate purchases in Stockholm linked to Nordkap Capital vehicle",
             "Нейтральный"
           ],
           [
             "34",
-            "stockholm-kuriren.se",
-            "Комментарий: Analyst note: reputation risk around Anders Holmström and Nordkap Capital",
+            "svenskt-naringsliv-nytt.se",
+            "Контекст: Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital",
             "Нейтральный"
           ],
           [
             "35",
-            "finansbladet.se",
-            "Хроника: Whistleblower portal mentions Anders Holmström in connection with Nordkap Capital",
+            "reestr-novosti.ru",
+            "Разбор: Anders Holmström speaks at fintech summit about AML controls",
             "Нейтральный"
           ],
           [
             "36",
-            "kapitalnytt.se",
-            "Контекст: Prosecutors request documents from Anders Holmström regarding Malta SPV",
+            "stockholm-kuriren.se",
+            "Комментарий: Swedish media: Anders Holmström denies wrongdoing in tax inquiry",
             "Нейтральный"
           ]
         ]
@@ -752,35 +734,24 @@
       "slideKey": "p24_uae_summary",
       "text": {
         "title": "ОАЭ — резюме аудита",
-        "narrative": "В выдаче по региону «ОАЭ / международный» проверяющий увидит 86 материалов. Подтверждённых тем: 3, из них повышенного внимания: 2. Ключевые темы для проверки: Криминальные / судебные материалы; PEP / RCA / watchlist-сигналы. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
+        "narrative": "В выдаче по региону «ОАЭ / международный» проверяющий увидит 86 материалов. Подтверждённых тем: 2, все — повышенного внимания. Ключевые темы для проверки: Криминальные / судебные материалы; PEP / RCA / watchlist-сигналы. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
       },
       "baseSlotId": "p24_uae_summary",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Разбор: Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital» — источник difc-briefing.ae «Подробности: Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital» — источник dubai-market-daily.ae Где видно: difc-briefing.ae. Для банка или партнёра такие сюжеты обычно становятся первым поводом для расширенной проверки. Всего по теме: 10 материалов, с негативным контекстом — 10."
+        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital» — источник difc-briefing.ae «Подробности: Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital» — источник dubai-market-daily.ae Где видно: difc-briefing.ae, dubai-market-daily.ae. Для банка или партнёра такие сюжеты обычно становятся первым поводом для расширенной проверки. Всего по теме: 5 материалов, с негативным контекстом — 5."
       ]
     },
     {
       "slideKey": "p24_uae_summary__cont1",
       "text": {
-        "title": "ОАЭ — резюме аудита (продолжение 2/3)"
+        "title": "ОАЭ — резюме аудита (продолжение 2/2)"
       },
       "baseSlotId": "p24_uae_summary",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Комментарий: Anders Holmström referenced in UAE PEP/RCA compliance screening» — источник emirates-ledger.ae «Хроника: Anders Holmström referenced in UAE PEP/RCA compliance screening» — источник khaleej-finance-post.ae Где видно: emirates-ledger.ae, khaleej-finance-post.ae. Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC. Всего по теме: 29 материалов, с негативным контекстом — 15.",
-        "«Семья и деловые связи» Найдены материалы о семейных и деловых связях субъекта. По теме 12 материалов; отдельный заголовок с сутью риска в выдаче не выделен — сверить первоисточники. Всего по теме: 12 материалов. Риск в том, что негатив вокруг связанных лиц переносится на профиль проверяемого."
-      ]
-    },
-    {
-      "slideKey": "p24_uae_summary__cont2",
-      "text": {
-        "title": "ОАЭ — резюме аудита (продолжение 3/3)"
-      },
-      "baseSlotId": "p24_uae_summary",
-      "template": "orion_golden_metrics_dashboard",
-      "bullets": [
-        "Другие материалы о субъекте: 65 (примеры: Anders Holmström expands Nordkap Capital into Dubai real-estate investment · Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital · Nordkap Capital opens DIFC representative office under Anders Holmström)",
+        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Контекст: Anders Holmström referenced in UAE PEP/RCA compliance screening» — источник abudhabi-capital-news.ae «Sanctions screening vendor flags Anders Holmström for secondary review» — источник emirates-ledger.ae Где видно: abudhabi-capital-news.ae, emirates-ledger.ae. Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC. Всего по теме: 14 материалов, с негативным контекстом — 10.",
+        "Другие материалы о субъекте: 14 (примеры: Anders Holmström expands Nordkap Capital into Dubai real-estate investment · Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital · Nordkap Capital opens DIFC representative office under Anders Holmström)",
         "Материалы, вероятно относящиеся к субъекту: 3 — пока не включаем в подтверждённый итог до уточнения идентификации."
       ]
     },
@@ -821,13 +792,13 @@
       "slideKey": "p26_uae_serp_table",
       "text": {
         "title": "ОАЭ — позиции в поисковой выдаче",
-        "narrative": "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — difc-briefing.ae. На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
+        "narrative": "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — difc-briefing.ae и dubai-market-daily.ae. На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
       },
       "baseSlotId": "p26_uae_serp_table",
       "template": "orion_golden_search_table",
       "bullets": [
-        "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — difc-briefing.ae. На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
-        "Источники — gulf-business-review.ae, emirates-ledger.ae, dubai-market-daily.ae, khaleej-finance-post.ae и ещё 1."
+        "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — difc-briefing.ae и dubai-market-daily.ae. На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
+        "Источники — emirates-ledger.ae, worldcompliance-screening.ae, difc-briefing.ae, abudhabi-capital-news.ae и ещё 1."
       ],
       "table": {
         "headers": [
@@ -839,75 +810,75 @@
         "rows": [
           [
             "1",
-            "gulf-business-review.ae",
-            "Anders Holmström expands Nordkap Capital into Dubai real-estate investment",
-            "Нейтральный"
-          ],
-          [
-            "2",
             "emirates-ledger.ae",
             "Anders Holmström referenced in UAE PEP/RCA compliance screening",
             "Нежелательный"
           ],
           [
+            "2",
+            "worldcompliance-screening.ae",
+            "Anders Holmström — Dow Jones Risk & Compliance PEP/RCA match",
+            "Нежелательный"
+          ],
+          [
             "3",
-            "dubai-market-daily.ae",
-            "Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital affiliate",
-            "Нейтральный"
-          ],
-          [
-            "4",
-            "khaleej-finance-post.ae",
-            "Nordkap Capital opens DIFC representative office under Anders Holmström",
-            "Нейтральный"
-          ],
-          [
-            "5",
             "difc-briefing.ae",
             "Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital",
             "Нежелательный"
           ],
           [
-            "6",
-            "abudhabi-capital-news.ae",
-            "UAE company registry: Anders Holmström director of Nordkap Capital MENA Ltd",
-            "Нейтральный"
-          ],
-          [
-            "7",
-            "gulf-business-review.ae",
-            "Anders Holmström attends Abu Dhabi finance forum for Nordkap Capital",
-            "Нейтральный"
-          ],
-          [
-            "8",
+            "4",
             "emirates-ledger.ae",
             "Sanctions screening vendor flags Anders Holmström for secondary review",
             "Нежелательный"
           ],
           [
-            "9",
+            "5",
+            "abudhabi-capital-news.ae",
+            "Контекст: Anders Holmström referenced in UAE PEP/RCA compliance screening",
+            "Нежелательный"
+          ],
+          [
+            "6",
+            "gulf-business-review.ae",
+            "Обзор: Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital affiliate",
+            "Нейтральный"
+          ],
+          [
+            "7",
+            "emirates-ledger.ae",
+            "Комментарий: Nordkap Capital opens DIFC representative office under Anders Holmström",
+            "Нейтральный"
+          ],
+          [
+            "8",
             "dubai-market-daily.ae",
-            "Nordkap Capital Dubai entity leases office in DIFC; Anders Holmström signatory",
+            "Подробности: Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital",
+            "Нежелательный"
+          ],
+          [
+            "9",
+            "khaleej-finance-post.ae",
+            "Хроника: UAE company registry: Anders Holmström director of Nordkap Capital MENA Ltd",
             "Нейтральный"
           ],
           [
             "10",
-            "khaleej-finance-post.ae",
-            "Arabic-language profile of Anders Holmström, founder of Nordkap Capital",
+            "difc-briefing.ae",
+            "Разбор: Anders Holmström attends Abu Dhabi finance forum for Nordkap Capital",
             "Нейтральный"
           ],
           [
             "11",
-            "difc-briefing.ae",
-            "Разбор: Anders Holmström expands Nordkap Capital into Dubai real-estate investment",
-            "Нейтральный"
+            "abudhabi-capital-news.ae",
+            "Контекст: Sanctions screening vendor flags Anders Holmström for secondary review",
+            "Нежелательный"
           ],
           [
             "12",
-            "abudhabi-capital-news.ae",
-            "Контекст: Anders Holmström referenced in UAE PEP/RCA compliance screening",
-            "Нежелательный"
+            "gulf-business-review.ae",
+            "Обзор: Nordkap Capital Dubai entity leases office in DIFC; Anders Holmström signatory",
+            "Нейтральный"
           ]
         ]
       }
@@ -916,13 +887,13 @@
       "slideKey": "p26_uae_serp_table__cont1",
       "text": {
         "title": "ОАЭ — позиции в поисковой выдаче (продолжение 2/3)",
-        "narrative": "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — dubai-market-daily.ae. На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
+        "narrative": "Показано 12 результатов; из них о субъекте — 12, вероятно о субъекте — 0, негативных заголовков — 2; преобладающие источники: abudhabi-capital-news.ae, difc-briefing.ae, dubai-market-daily.ae и ещё 1. На странице есть негативные заголовки (2) — они влияют на первое впечатление при проверке, даже если тема ещё не выделена отдельным выводом. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно»."
       },
       "baseSlotId": "p26_uae_serp_table",
       "template": "orion_golden_search_table",
       "bullets": [
-        "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — dubai-market-daily.ae. На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
-        "Источники — gulf-business-review.ae, emirates-ledger.ae, dubai-market-daily.ae, khaleej-finance-post.ae и ещё 1."
+        "Показано 12 результатов; из них о субъекте — 12, вероятно о субъекте — 0, негативных заголовков — 2; преобладающие источники: abudhabi-capital-news.ae, difc-briefing.ae, dubai-market-daily.ae и ещё 1. На странице есть негативные заголовки (2) — они влияют на первое впечатление при проверке, даже если тема ещё не выделена отдельным выводом. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "Источники — emirates-ledger.ae, dubai-market-daily.ae, khaleej-finance-post.ae, difc-briefing.ae и ещё 1."
       ],
       "table": {
         "headers": [
@@ -934,74 +905,74 @@
         "rows": [
           [
             "13",
-            "gulf-business-review.ae",
-            "Обзор: Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital affiliate",
-            "Нейтральный"
-          ],
-          [
-            "14",
-            "emirates-ledger.ae",
-            "Комментарий: Nordkap Capital opens DIFC representative office under Anders Holmström",
-            "Нейтральный"
-          ],
-          [
-            "15",
-            "dubai-market-daily.ae",
-            "Подробности: Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital",
-            "Нежелательный"
-          ],
-          [
-            "16",
-            "khaleej-finance-post.ae",
-            "Хроника: UAE company registry: Anders Holmström director of Nordkap Capital MENA Ltd",
-            "Нейтральный"
-          ],
-          [
-            "17",
-            "difc-briefing.ae",
-            "Разбор: Anders Holmström attends Abu Dhabi finance forum for Nordkap Capital",
-            "Нейтральный"
-          ],
-          [
-            "18",
-            "abudhabi-capital-news.ae",
-            "Контекст: Sanctions screening vendor flags Anders Holmström for secondary review",
-            "Нежелательный"
-          ],
-          [
-            "19",
-            "gulf-business-review.ae",
-            "Обзор: Nordkap Capital Dubai entity leases office in DIFC; Anders Holmström signatory",
-            "Нейтральный"
-          ],
-          [
-            "20",
             "emirates-ledger.ae",
             "Комментарий: Arabic-language profile of Anders Holmström, founder of Nordkap Capital",
             "Нейтральный"
           ],
           [
-            "21",
+            "14",
             "dubai-market-daily.ae",
             "Подробности: Anders Holmström expands Nordkap Capital into Dubai real-estate investment",
             "Нейтральный"
           ],
           [
-            "22",
+            "15",
             "khaleej-finance-post.ae",
             "Хроника: Anders Holmström referenced in UAE PEP/RCA compliance screening",
-            "Нежелательный"
+            "Нейтральный"
           ],
           [
-            "23",
+            "16",
             "difc-briefing.ae",
             "Разбор: Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital affiliate",
             "Нейтральный"
           ],
           [
-            "24",
+            "17",
             "abudhabi-capital-news.ae",
             "Контекст: Nordkap Capital opens DIFC representative office under Anders Holmström",
+            "Нейтральный"
+          ],
+          [
+            "18",
+            "gulf-business-review.ae",
+            "Обзор: Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital",
+            "Нежелательный"
+          ],
+          [
+            "19",
+            "emirates-ledger.ae",
+            "Комментарий: UAE company registry: Anders Holmström director of Nordkap Capital MENA Ltd",
+            "Нейтральный"
+          ],
+          [
+            "20",
+            "dubai-market-daily.ae",
+            "Подробности: Anders Holmström attends Abu Dhabi finance forum for Nordkap Capital",
+            "Нейтральный"
+          ],
+          [
+            "21",
+            "khaleej-finance-post.ae",
+            "Хроника: Sanctions screening vendor flags Anders Holmström for secondary review",
+            "Нежелательный"
+          ],
+          [
+            "22",
+            "difc-briefing.ae",
+            "Разбор: Nordkap Capital Dubai entity leases office in DIFC; Anders Holmström signatory",
+            "Нейтральный"
+          ],
+          [
+            "23",
+            "abudhabi-capital-news.ae",
+            "Контекст: Arabic-language profile of Anders Holmström, founder of Nordkap Capital",
+            "Нейтральный"
+          ],
+          [
+            "24",
+            "gulf-business-review.ae",
+            "Обзор: Anders Holmström expands Nordkap Capital into Dubai real-estate investment",
             "Нейтральный"
           ]
         ]
@@ -1011,13 +982,13 @@
       "slideKey": "p26_uae_serp_table__cont2",
       "text": {
         "title": "ОАЭ — позиции в поисковой выдаче (продолжение 3/3)",
-        "narrative": "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — difc-briefing.ae и gulf-business-review.ae. На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе."
+        "narrative": "Показано 12 результатов; из них о субъекте — 9, вероятно о субъекте — 0, негативных заголовков — 2; преобладающие источники: dubai-market-daily.ae, khaleej-finance-post.ae, emirates-ledger.ae и ещё 1. На странице есть негативные заголовки (2) — они влияют на первое впечатление при проверке, даже если тема ещё не выделена отдельным выводом. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно»."
       },
       "baseSlotId": "p26_uae_serp_table",
       "template": "orion_golden_search_table",
       "bullets": [
-        "«Криминальные / судебные материалы» — критический уровень внимания. Материалы по теме на этой странице — difc-briefing.ae и gulf-business-review.ae. На странице 2 темы повышенного внимания — эти материалы видны при первой же проверке субъекта. Проверить актуальные статусы дел по картотекам судов и официальным источникам; собрать документы о прекращении/исходе.",
-        "Источники — gulf-business-review.ae, emirates-ledger.ae, dubai-market-daily.ae, khaleej-finance-post.ae и ещё 1."
+        "Показано 12 результатов; из них о субъекте — 9, вероятно о субъекте — 0, негативных заголовков — 2; преобладающие источники: dubai-market-daily.ae, khaleej-finance-post.ae, emirates-ledger.ae и ещё 1. На странице есть негативные заголовки (2) — они влияют на первое впечатление при проверке, даже если тема ещё не выделена отдельным выводом. Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "Источники — emirates-ledger.ae, dubai-market-daily.ae, khaleej-finance-post.ae, difc-briefing.ae и ещё 1."
       ],
       "table": {
         "headers": [
@@ -1029,74 +1000,74 @@
         "rows": [
           [
             "25",
-            "gulf-business-review.ae",
-            "Обзор: Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital",
-            "Нежелательный"
+            "emirates-ledger.ae",
+            "Комментарий: Anders Holmström referenced in UAE PEP/RCA compliance screening",
+            "Нейтральный"
           ],
           [
             "26",
-            "emirates-ledger.ae",
-            "Комментарий: UAE company registry: Anders Holmström director of Nordkap Capital MENA Ltd",
-            "Нейтральный"
-          ],
-          [
-            "27",
-            "dubai-market-daily.ae",
-            "Подробности: Anders Holmström attends Abu Dhabi finance forum for Nordkap Capital",
-            "Нейтральный"
-          ],
-          [
-            "28",
-            "khaleej-finance-post.ae",
-            "Хроника: Sanctions screening vendor flags Anders Holmström for secondary review",
-            "Нежелательный"
-          ],
-          [
-            "29",
-            "difc-briefing.ae",
-            "Разбор: Nordkap Capital Dubai entity leases office in DIFC; Anders Holmström signatory",
-            "Нейтральный"
-          ],
-          [
-            "30",
-            "abudhabi-capital-news.ae",
-            "Контекст: Arabic-language profile of Anders Holmström, founder of Nordkap Capital",
-            "Нейтральный"
-          ],
-          [
-            "31",
-            "gulf-business-review.ae",
-            "Обзор: Anders Holmström expands Nordkap Capital into Dubai real-estate investment",
-            "Нейтральный"
-          ],
-          [
-            "32",
-            "emirates-ledger.ae",
-            "Комментарий: Anders Holmström referenced in UAE PEP/RCA compliance screening",
-            "Нежелательный"
-          ],
-          [
-            "33",
             "dubai-market-daily.ae",
             "Подробности: Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital affiliate",
             "Нейтральный"
           ],
           [
-            "34",
+            "27",
             "khaleej-finance-post.ae",
             "Хроника: Nordkap Capital opens DIFC representative office under Anders Holmström",
             "Нейтральный"
           ],
           [
-            "35",
+            "28",
             "difc-briefing.ae",
             "Разбор: Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital",
             "Нежелательный"
           ],
           [
-            "36",
+            "29",
             "abudhabi-capital-news.ae",
             "Контекст: UAE company registry: Anders Holmström director of Nordkap Capital MENA Ltd",
+            "Нейтральный"
+          ],
+          [
+            "30",
+            "gulf-business-review.ae",
+            "Обзор: Anders Holmström attends Abu Dhabi finance forum for Nordkap Capital",
+            "Нейтральный"
+          ],
+          [
+            "31",
+            "emirates-ledger.ae",
+            "Комментарий: Sanctions screening vendor flags Anders Holmström for secondary review",
+            "Нежелательный"
+          ],
+          [
+            "32",
+            "dubai-market-daily.ae",
+            "Подробности: Nordkap Capital Dubai entity leases office in DIFC; Anders Holmström signatory",
+            "Нейтральный"
+          ],
+          [
+            "33",
+            "khaleej-finance-post.ae",
+            "Хроника: Arabic-language profile of Anders Holmström, founder of Nordkap Capital",
+            "Нейтральный"
+          ],
+          [
+            "34",
+            "gulf-business-review.ae",
+            "Anders Holmström expands Nordkap Capital into Dubai real-estate investment",
+            "Нейтральный"
+          ],
+          [
+            "35",
+            "dubai-market-daily.ae",
+            "Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital affiliate",
+            "Нейтральный"
+          ],
+          [
+            "36",
+            "khaleej-finance-post.ae",
+            "Nordkap Capital opens DIFC representative office under Anders Holmström",
             "Нейтральный"
           ]
         ]
@@ -1337,7 +1308,6 @@
       "baseSlotId": "slot_appendix_main",
       "template": "orion_golden_executive_card",
       "bullets": [
-        "«Деловой профиль» Найдены материалы делового и биографического профиля: «Anders Holmström stops 32 shots in playoff hockey win» — источник nordic-hockey-report.se Где видно: nordic-hockey-report.se. Деловой фон важен для позиционирования, но сам по себе не перекрывает чувствительные темы риска. Всего по теме: 1 материал.",
         "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Holmstrom, Johan» Всего по теме: 1 материал. Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC.",
         "Источники — abudhabi-capital-news.ae, affarsposten.se, bizdaily-nordic.se, difc-briefing.ae и ещё 2."
       ]

@@ -137,7 +137,22 @@ export function buildSerpFragment(
   // противоположные оценки. Материал в таблице один; оценка у него —
   // сильнейшая из всех наблюдений этого материала.
   const merged = mergeSerpRowsByMaterial(refs, scoped);
-  const displayed = merged.slice(0, 36);
+  // Таблица выдачи читается сверху вниз как сама выдача: сначала то, что
+  // проверяющий увидит первым. Раньше порядок был порядком сбора, и при
+  // обрезке до 36 строк со страницы мог уйти материал с первой позиции ради
+  // тридцатого. Материалы без позиции (старые прогоны, поверхности без
+  // номеров) уходят в конец — придумывать им место в выдаче нельзя.
+  const rankOfGroup = (group: { refs: string[] }): number => {
+    const ranks = group.refs
+      .map((ref) => scoped.evidenceIndex[ref]?.rank)
+      .filter((r): r is number => typeof r === "number" && r > 0);
+    return ranks.length > 0 ? Math.min(...ranks) : Number.MAX_SAFE_INTEGER;
+  };
+  const displayed = merged
+    .map((group, index) => ({ group, index, rank: rankOfGroup(group) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map((x) => x.group)
+    .slice(0, 36);
   const displayedRefs = displayed.flatMap((g) => g.refs);
   const rows = displayed.map((group, i) => {
     const e = scoped.evidenceIndex[group.refs[0]!] ?? {};

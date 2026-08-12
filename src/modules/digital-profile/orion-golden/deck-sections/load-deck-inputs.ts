@@ -29,6 +29,8 @@ type CompositeObservationRow = {
   url?: string;
   title?: string;
   domain?: string;
+  /** Позиция в выдаче, если поисковик её сообщил. */
+  rank?: number;
   evidenceRefs: string[];
 };
 
@@ -158,6 +160,25 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
   const providerDelta = readJson<{ baseCount: number; arsenkinObservationCount: number }>(
     join(analyticsDir, "provider-delta.json")
   );
+  // Область анализа: сколько материалов вошло в предмет аудита (ТОП-20 плюс
+  // международные базы). Артефакт появился позже самой колоды, поэтому его
+  // отсутствие не валит сборку — страница тогда просто не называет это число,
+  // а не печатает вместо него размер всего собранного корпуса.
+  const analysisScopePath = join(analyticsDir, "analysis-scope.json");
+  const analysisScope = existsSync(analysisScopePath)
+    ? readJson<{
+        analyzed?: number;
+        topN?: number;
+        lanes?: Array<{ lane?: string; analyzed?: number }>;
+      }>(analysisScopePath)
+    : null;
+  const analysisLanes = (analysisScope?.lanes ?? [])
+    .filter((l) => typeof l.analyzed === "number" && l.analyzed > 0 && typeof l.lane === "string")
+    .map((l) => {
+      const [engine = "", region = ""] = String(l.lane).split("|");
+      return { engine, region, analyzed: l.analyzed as number };
+    })
+    .filter((l) => l.engine && l.region);
   const observations = readJson<{
     observations: CompositeObservationRow[];
     baseCount: number;
@@ -252,6 +273,12 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
         kind: obs.surface,
         region: obs.region,
         engine: obs.engine,
+        // Один материал встречается по нескольким запросам с разными
+        // позициями; видимость определяет лучшая из них.
+        rank:
+          typeof obs.rank === "number"
+            ? Math.min(obs.rank, evidenceIndex[ref]?.rank ?? obs.rank)
+            : evidenceIndex[ref]?.rank,
         subjectDecision: subjectDecision ?? decisionByRef.get(ref) ?? evidenceIndex[ref]?.subjectDecision,
       };
     }
@@ -425,6 +452,10 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     baseCount: observations.baseCount,
     enrichmentCount: providerDelta.arsenkinObservationCount,
     compositeCount: observations.compositeCount,
+    analyzedCount:
+      typeof analysisScope?.analyzed === "number" ? analysisScope.analyzed : undefined,
+    analysisTopN: typeof analysisScope?.topN === "number" ? analysisScope.topN : undefined,
+    analysisLanes: analysisLanes.length > 0 ? analysisLanes : undefined,
     // Same unit as compositeCount (observation rows), not inventory decisions.
     subjectMatchCount: identityCounts.subjectMatchCount,
     likelySubjectCount: identityCounts.likelySubjectCount,

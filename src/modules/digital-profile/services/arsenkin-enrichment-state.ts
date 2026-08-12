@@ -72,6 +72,13 @@ export type ArsenkinIngestedObservation = {
   kind?: "organic" | "suggestion" | "paa" | "other" | "URL_FETCH_STATUS";
   /** Fine-grained surface for composite/deck routing (ai_answer, organic, …). */
   surface?: string;
+  /**
+   * Позиция в выдаче (1-based). У Arsenkin позиция не приходит отдельным полем —
+   * ею является порядок элементов в ответе `SEARCH_TOP`, и терять его нельзя:
+   * по позиции определяется, попал ли материал в ТОП-20, который и есть
+   * предмет аудита.
+   */
+  rank?: number;
   providerTaskId?: string | null;
   riskLabel?: string | null;
   /** Provenance required for ingested rows. */

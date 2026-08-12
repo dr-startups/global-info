@@ -163,8 +163,10 @@ function toRow(
 ): CompositeObservationRow {
   const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
   const evidenceRefs = normalizeEvidenceRefs(meta.evidenceRefs, `inventory:${item.inventoryId}`);
+  const rawRank = typeof meta.rank === "number" ? meta.rank : Number(meta.rank);
   return {
     observationKey: key,
+    ...(Number.isFinite(rawRank) && rawRank > 0 ? { rank: Math.trunc(rawRank) } : {}),
     provider: String(item.provider ?? "unknown").toLowerCase(),
     providers: [String(item.provider ?? "unknown").toLowerCase()],
     engine: mapEngineBucket(String(meta.engine ?? item.provider ?? "")),

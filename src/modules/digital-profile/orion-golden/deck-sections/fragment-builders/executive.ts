@@ -24,6 +24,7 @@ import type {
 import {
   RISK_ORDER,
   VISUAL_ASSET_UNAVAILABLE,
+  auditScopeLine,
   bulletWithFindingId,
   changeSinceLastReportLine,
   chunk,
@@ -248,8 +249,14 @@ export function composeExecutivePageStructure(
       : undefined;
   const changeLine = changeSinceLastReportLine(opts?.extras);
   // PDF-40 G.3 — coverage as a client sentence, not an internal «карта покрытия».
+  //
+  // Первым идёт предмет аудита: читатель должен узнать глубину проверки раньше,
+  // чем размер собранного корпуса, иначе большое число «собрано» читается как
+  // объём аудита.
+  const scopeLine = auditScopeLine(ms, { withRemainder: true });
   const coverage = clampClientText(
     [
+      scopeLine ? `${scopeLine} ` : "",
       `По собранным источникам: ${ms.compositeCount} ${materialWord}, из них уверенно об этом лице — ${ms.subjectMatchCount}`,
       regionBits.length > 0 ? ` (${regionBits.join("; ")})` : "",
       surfaces.length > 0 ? `. Смотрели: ${surfaces.slice(0, 7).join(", ")}` : "",
@@ -258,7 +265,9 @@ export function composeExecutivePageStructure(
       changeLine ? `. ${changeLine}` : "",
       ".",
     ].join(""),
-    450
+    // Бюджет абзаца поднят ровно на длину фразы об области аудита: она
+    // добавляется к покрытию, а не вытесняет из него «Смотрели» и свежесть.
+    450 + (scopeLine ? scopeLine.length + 1 : 0)
   );
 
   const likelyN = ms.likelySubjectCount ?? 0;
@@ -428,7 +437,7 @@ export function buildExecutiveSummaryFromComposed(
     content: {
       narrative,
       kpis: [
-        { label: "Материалов", value: String(ms.compositeCount), tone: "neutral" },
+        { label: "Материалов собрано", value: String(ms.compositeCount), tone: "neutral" },
         { label: "О субъекте", value: String(ms.subjectMatchCount), tone: "good" },
         {
           label: "Вероятно о субъекте",
@@ -610,7 +619,7 @@ export function buildExecutiveSummaryFragment(
       // Right-column KPI cards on the executive dashboard: the headline
       // numbers of the whole audit at a glance (short labels — narrow cards).
       kpis: [
-        { label: "Материалов", value: String(ms.compositeCount), tone: "neutral" },
+        { label: "Материалов собрано", value: String(ms.compositeCount), tone: "neutral" },
         { label: "О субъекте", value: String(ms.subjectMatchCount), tone: "good" },
         {
           label: "Вероятно о субъекте",
@@ -918,12 +927,19 @@ export function buildDigitalProfileOverviewFragment(
         slot,
         sectionId,
         content: {
-          narrative: `По собранным источникам: ${s.compositeCount} материалов из ${regions.length} региональных контуров (${regions
-            .map(([r, n]) => `${r}: ${n}`)
-            .join(", ")}). Принадлежность каждого материала к проверяемому лицу проверена.`,
+          // «Проанализировано» относится к предмету аудита, а собрано всегда
+          // шире: смешивать эти два числа под одной подписью нельзя.
+          narrative: [
+            auditScopeLine(s),
+            `По собранным источникам: ${s.compositeCount} материалов из ${regions.length} региональных контуров (${regions
+              .map(([r, n]) => `${r}: ${n}`)
+              .join(", ")}). Принадлежность каждого материала к проверяемому лицу проверена.`,
+          ]
+            .filter(Boolean)
+            .join(" "),
           // Labels fit the KPI card budget (28 chars) without clipping.
           kpis: [
-            { label: "Материалов проанализировано", value: String(s.compositeCount), tone: "neutral" },
+            { label: "Материалов собрано", value: String(s.compositeCount), tone: "neutral" },
             { label: "Связаны с проверяемым лицом", value: String(s.subjectMatchCount), tone: "good" },
             {
               label: "Вероятно о субъекте",

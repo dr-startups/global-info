@@ -169,7 +169,11 @@ function adaptSearchTop(
     return { ok: true, emptyValid: true, observations: [], warnings: ["SEARCH_TOP:EMPTY_VALID"] };
   }
   const observations: ArsenkinIngestedObservation[] = [];
-  for (const raw of items.slice(0, 50)) {
+  // Позиция в выдаче — это порядок элементов ответа: отдельного поля позиции
+  // Arsenkin не отдаёт. Провайдер уже отсортировал их так, как показывает
+  // поисковик, и вопрос «входит ли материал в ТОП-20» решается этим порядком.
+  // Позиция берётся из явного поля, когда провайдер его прислал.
+  for (const [index, raw] of items.slice(0, 50).entries()) {
     if (!isPlainObject(raw)) {
       return { ok: false, code: "ARSENKIN_SCHEMA_INVALID", message: "SEARCH_TOP item must be object" };
     }
@@ -183,6 +187,7 @@ function adaptSearchTop(
       };
     }
     const query = asString(raw.query ?? response.query ?? "");
+    const reportedRank = Number(raw.position ?? raw.rank ?? raw.pos ?? NaN);
     observations.push(
       withProvenance(
         {
@@ -194,6 +199,7 @@ function adaptSearchTop(
           url: url || undefined,
           title: title || undefined,
           snippet: asString(raw.snippet ?? raw.description) || undefined,
+          rank: Number.isFinite(reportedRank) && reportedRank > 0 ? reportedRank : index + 1,
           sourceUrlOrQuery: url || query || null,
         },
         ctx,

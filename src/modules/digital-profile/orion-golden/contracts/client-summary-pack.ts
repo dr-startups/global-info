@@ -79,6 +79,12 @@ export const ClientSummaryPackSchema = ContractEnvelopeSchema.extend({
     regions: z.array(z.string()),
     sourceClasses: z.array(z.string()),
     surfaces: z.array(z.string()),
+    /**
+     * Глубина выдачи, вошедшая в аудит: 20 — «результаты поиска (ТОП-20)».
+     * `null` — область не объявлена (прогон старше правила), и тогда сводка
+     * молчит о глубине, а не придумывает её.
+     */
+    searchDepthTopN: z.number().int().positive().nullable().default(null),
     period: z.object({
       collectedLabel: z.string(),
       newestLabel: z.string().nullable(),

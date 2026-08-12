@@ -104,6 +104,14 @@ async function loadEvidenceSupplement(): Promise<EvidenceSupplementBundle | null
   ) as EvidenceSupplementBundle;
   // Fill empty imageData with a deterministic offline PNG (keeps git fixture small).
   for (const shot of bundle.serpScreenshots ?? []) {
+    // Снимок выдачи старше тридцати дней в отчёт не берётся — правило продукта
+    // (`SERP_SCREENSHOT_MAX_AGE_MS`), и оно верное. Но у фикстуры дата записана
+    // числом, поэтому кейс переставал проходить сам по себе через месяц после
+    // заморозки: 31 июля смок покраснел, ничего в коде не меняя. Золотой кейс
+    // проверяет логику отчёта, а не календарь, поэтому снимок датируется
+    // временем прогона — правило свежести при этом остаётся живым и проверяется
+    // отдельно (`serp-screenshot-freshness`).
+    shot.capturedAt = new Date().toISOString();
     if (shot.imageData && shot.imageData.length >= 80) continue;
     shot.imageData = await svgToPngBase64(
       buildSurfacePanelSvg({

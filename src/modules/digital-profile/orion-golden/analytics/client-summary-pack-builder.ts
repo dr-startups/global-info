@@ -74,6 +74,8 @@ export type ClientSummaryPackBuildInput = {
     collectedLabel?: string;
     newestLabel?: string | null;
     coverageLimitations?: string[];
+    /** Глубина выдачи, вошедшая в аудит (`analysis-scope`). */
+    searchDepthTopN?: number | null;
   };
   changesSinceBaseline?: {
     summary?: string;
@@ -764,6 +766,7 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
       "ai_answers",
       "compliance",
     ],
+    searchDepthTopN: input.scope?.searchDepthTopN ?? null,
     period: {
       collectedLabel: input.scope?.collectedLabel ?? "по дате сбора в кейсе",
       newestLabel: input.scope?.newestLabel ?? null,

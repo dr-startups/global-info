@@ -144,7 +144,7 @@
       "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 2.",
       "kpis": [
         {
-          "label": "Материалов",
+          "label": "Материалов собрано",
           "value": "343",
           "tone": "neutral"
         },
@@ -643,7 +643,7 @@
       "sourceNote": "Источники — aboutmanchester.co.uk, argumenti.ru, audit-it.ru, bitva.wiki и ещё 2.",
       "kpis": [
         {
-          "label": "Материалов проанализировано",
+          "label": "Материалов собрано",
           "value": "343",
           "tone": "neutral"
         },

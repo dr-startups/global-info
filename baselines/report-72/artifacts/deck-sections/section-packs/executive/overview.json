@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v54",
+  "contentVersion": "deck-sections-v56",
   "promptVersion": "digital-profile-overview-deterministic-v1",
-  "contentHash": "sha256:d0d001dae13a5df41f656e3b73184ff70eb8df1eedc45fc0bc32e485d00a9a23",
+  "contentHash": "sha256:eaaccdeb0b690099827f30f42d2e5626e214881244bda8533efb9a0fcb1ee750",
   "inputHash": "sha256:5760d010a6f165f2ab91d39bd96d5b821a826157cf748cbeb8200310a8b418e1:45526b70f5304877",
-  "generatedAt": "2026-08-10T22:07:23.612Z",
+  "generatedAt": "2026-08-12T21:28:52.958Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -162,7 +162,7 @@
         "narrative": "По собранным источникам: 343 материалов из 2 региональных контуров (RU: 214, UAE: 129). Принадлежность каждого материала к проверяемому лицу проверена.",
         "kpis": [
           {
-            "label": "Материалов проанализировано",
+            "label": "Материалов собрано",
             "value": "343",
             "tone": "neutral"
           },

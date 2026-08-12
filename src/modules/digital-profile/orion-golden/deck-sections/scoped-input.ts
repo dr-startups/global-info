@@ -26,6 +26,21 @@ export type MetricSnapshot = {
   baseCount: number;
   enrichmentCount: number;
   compositeCount: number;
+  /**
+   * Предмет аудита: сколько материалов вошло в анализ — ТОП-20 выдачи плюс
+   * международные базы (`analysis-scope.json`). Это не то же самое, что
+   * `compositeCount`: собрано всегда шире, чем видно в выдаче, и страница
+   * обязана называть оба числа своими словами, а не выдавать одно за другое.
+   */
+  analyzedCount?: number;
+  /** Глубина выдачи, объявленная клиенту (обычно 20). */
+  analysisTopN?: number;
+  /**
+   * Разрезы «движок × регион», давшие материал в аудит. Отчёт называет
+   * поисковики и страны по этому списку, а не по заготовленной фразе: если
+   * выдачу по региону собрать не удалось, обещать её проверку нельзя.
+   */
+  analysisLanes?: Array<{ engine: string; region: string; analyzed: number }>;
   subjectMatchCount: number;
   /** Surname+context / shared domain — visible but not KPI (§2.1). */
   likelySubjectCount: number;
@@ -76,6 +91,12 @@ export type ScopedEvidenceIndex = Record<
     language?: string;
     /** Subject-resolution decision for this evidence ref (§2.1). */
     subjectDecision?: string;
+    /**
+     * Позиция материала в выдаче — то, что сообщил поисковик. Нужна там, где
+     * страница говорит о видимости: таблица выдачи начинается с того, что
+     * проверяющий увидит первым, а не с того, что первым собралось.
+     */
+    rank?: number;
   }
 >;
 

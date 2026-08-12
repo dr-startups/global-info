@@ -37,6 +37,21 @@ export type CompositeObservation = {
   snippet?: string;
   suggestion?: string;
   question?: string;
+  /**
+   * Позиция материала в выдаче — то, по чему определяется ТОП-20.
+   *
+   * До этого позиция терялась на слиянии: провайдеры её пишут
+   * (`SearchResult.rank`, порядок массива у Arsenkin), а composite-строка её не
+   * несла, и аналитика не могла отличить первую строку выдачи от сороковой.
+   * При склейке дубликатов остаётся лучшая (минимальная) позиция: материал
+   * виден там, где он выше.
+   */
+  rank?: number;
+  /**
+   * Назначение запроса из плана (`subject_lookup`, `adverse_lookup`, …).
+   * Нужно, чтобы отличать выдачу по имени субъекта от целевых проб.
+   */
+  queryPurpose?: string;
   providers: string[];
   primaryProvider: string;
   evidenceRefs: string[];
@@ -248,6 +263,8 @@ export async function mergeCompositeSerp(input: {
     suggestion?: string;
     question?: string;
     kind?: "organic" | "suggestion" | "paa" | "other" | "URL_FETCH_STATUS";
+    /** Позиция в выдаче (1-based) — порядок элементов ответа провайдера. */
+    rank?: number;
     /** Producing Arsenkin tool (ai-serp / check-h / …) — used as surface hint. */
     tool?: string | null;
     /** Fine-grained surface when adapter sets it (ai_answer / organic / …). */
@@ -289,6 +306,14 @@ export async function mergeCompositeSerp(input: {
       existing.baseSearchSurfaceItemId = row.baseSearchSurfaceItemId;
     }
     if (row.fromCaseCorpus) existing.fromCaseCorpus = true;
+    // Лучшая позиция и известное назначение запроса не теряются при склейке:
+    // один и тот же материал приходит от нескольких провайдеров, и вопрос
+    // «виден ли он в ТОП-20» решается по самой высокой из позиций.
+    if (typeof row.rank === "number" && Number.isFinite(row.rank)) {
+      existing.rank =
+        typeof existing.rank === "number" ? Math.min(existing.rank, row.rank) : row.rank;
+    }
+    if (!existing.queryPurpose && row.queryPurpose) existing.queryPurpose = row.queryPurpose;
     // Prefer fine-grained Arsenkin surfaces (ai_answer) over generic organic.
     if (
       row.surface &&
@@ -364,15 +389,34 @@ export async function mergeCompositeSerp(input: {
       const provider = attr.provider;
       if (provider === "yandex") yandex += 1;
       if (provider === "serper") serper += 1;
-      const key = organicKey("RU", engine, r.query?.queryText ?? "", r.url ?? "");
+      // Регион и запрос берутся из того, что записал сборщик
+      // (`orion-search-profile-service`: `orionRegion`, `query`, `queryPurpose`,
+      // `rank`). Раньше здесь стояло `region: "RU"` литералом, и вся базовая
+      // органика ОАЭ читалась как российская — на отчёте это выглядело как
+      // одинаковая выдача в двух регионах. Запрос брался из связи `query`,
+      // которой у строк ORION-профиля нет, поэтому текст запроса терялся.
+      const rm = (r.rawMetadata ?? {}) as Record<string, unknown>;
+      const queryText =
+        String(rm.query ?? rm.orionQuery ?? r.query?.queryText ?? "").trim() || "";
+      const region =
+        normalizeCompositeRegion(
+          typeof rm.orionRegion === "string"
+            ? rm.orionRegion
+            : typeof rm.region === "string"
+              ? rm.region
+              : null
+        ) ?? "RU";
+      const key = organicKey(region, engine, queryText, r.url ?? "");
       add(
         {
           key,
           kind: "organic",
           surface: "organic",
-          region: "RU",
+          region,
           engine,
-          query: r.query?.queryText ?? "",
+          query: queryText,
+          rank: typeof r.rank === "number" && r.rank > 0 ? r.rank : undefined,
+          queryPurpose: String(rm.queryPurpose ?? "").trim() || undefined,
           url: r.url ?? undefined,
           title: r.title ?? undefined,
           snippet: r.snippet ?? undefined,
@@ -533,6 +577,7 @@ export async function mergeCompositeSerp(input: {
         snippet: obs.snippet,
         suggestion: obs.suggestion,
         question: obs.question,
+        rank: typeof obs.rank === "number" && obs.rank > 0 ? obs.rank : undefined,
         providers: ["arsenkin"],
         primaryProvider: "arsenkin",
         evidenceRefs: obs.providerTaskId ? [`providerTask:${obs.providerTaskId}`] : [],

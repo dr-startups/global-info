@@ -34,8 +34,8 @@
       "ambiguous": 2,
       "otherSubject": 5,
       "insufficient": 6,
-      "verifiedFindings": 5,
-      "ambiguousFindings": 2,
+      "verifiedFindings": 4,
+      "ambiguousFindings": 1,
       "appliedOverrides": 3
     },
     "gpt": {
@@ -67,8 +67,8 @@
       }
     },
     "slides": {
-      "total": 51,
-      "withContent": 47,
+      "total": 49,
+      "withContent": 45,
       "emptyState": [
         {
           "slotId": "p12_ru_suggestions_google",

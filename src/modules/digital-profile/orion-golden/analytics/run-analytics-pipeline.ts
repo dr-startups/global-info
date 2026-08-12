@@ -36,6 +36,7 @@ import {
 } from "./subject-resolution-classifier";
 import { resolveSubjectWithDerivedContext } from "./subject-context-miner";
 import { runSurfaceAnalyzers, ADVERSE_PATTERNS } from "./surface-analyzers";
+import { resolveAnalysisScope, type AnalysisScopeSummary } from "./analysis-scope";
 import { synthesizeFindings, type FindingSynthesisResult } from "./finding-synthesizer";
 import { buildBenchmarkTrace, type BenchmarkTrace } from "./benchmark-trace";
 import {
@@ -456,6 +457,28 @@ export async function runOrionAnalyticsPipeline(
   composite.providerDelta.newAdverseFindingCount = newAdverse;
   void enrichmentRefs;
 
+  // 2d. Область анализа: предмет аудита — ТОП-20 выдачи и международные базы.
+  //
+  // Разбор личности (кто на материале) идёт по всему собранному: страницы
+  // подсказок, изображений и похожих запросов остаются в отчёте и обязаны
+  // честно говорить, о субъекте ли материал. А темы риска и итоговая оценка
+  // строятся только по предмету аудита — иначе вывод опирается на то, чего
+  // проверяющий в выдаче не увидит.
+  const scope = resolveAnalysisScope(input.items);
+  emit("analysis-scope.json", {
+    ...scope.summary,
+    caseId: input.caseId,
+    datasetId,
+    excluded: scope.outOfScope.slice(0, 500).map((d) => ({
+      evidenceRef: d.evidenceRef,
+      reason: d.reason,
+      lane: d.lane,
+      rank: d.rank,
+      title: d.item.title,
+      url: d.item.sourceUrl ?? null,
+    })),
+  });
+
   // 3. Typed surface analyzers.
   const surfaceAnalyses = runSurfaceAnalyzers({
     caseId: input.caseId,
@@ -472,7 +495,7 @@ export async function runOrionAnalyticsPipeline(
   let synthesis = synthesizeFindings({
     caseId: input.caseId,
     datasetId,
-    items: input.items,
+    items: scope.inScope,
     resolutionByRef,
     sourceHashes,
     coverageLimitations: [...new Set(coverageLimitations)].slice(0, 3),
@@ -609,6 +632,9 @@ export async function runOrionAnalyticsPipeline(
     synthesis,
     provenance: composite.provenance,
     kpiFindingIds: promotedFindingIds,
+    outOfScopeByRef: new Map(
+      scope.outOfScope.map((d) => [d.evidenceRef, String(d.reason)])
+    ),
   });
   assertDispositionGatesPass(dispositionLedger);
   const dispositionSummary = buildDispositionSummary(dispositionLedger);
@@ -670,6 +696,9 @@ export async function runOrionAnalyticsPipeline(
     scope: {
       regions: regions.length > 0 ? regions : ["RU", "UAE"],
       coverageLimitations: executiveSummaryInput.dataGaps?.map((g) => g.detail) ?? [],
+      // Резюме обязано назвать глубину, на которой работал аудит: это то же
+      // число, по которому отсекалась область анализа.
+      searchDepthTopN: scope.summary.topN,
     },
   });
   assertClientSummaryPackGatesPass(clientSummaryPack);

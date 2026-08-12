@@ -16,6 +16,7 @@ import {
   regionMatches,
   resolveEmptySurfaceCollection,
   type EmptySurfaceCollectionStatus,
+  type MetricSnapshot,
   type ScopedFragmentInput,
   type SurfaceCollectionHint,
 } from "../scoped-input";
@@ -1294,6 +1295,56 @@ export function sourceLine(scoped: ScopedFragmentInput, extras?: FragmentExtras)
   if (!fresh) return sources;
   const capitalized = `${fresh.charAt(0).toUpperCase()}${fresh.slice(1)}`;
   return `${endingWithPeriod(sources)} ${endingWithPeriod(capitalized)}`;
+}
+
+/** Предложный падеж: «в Яндексе и Google» — как в резюме отчёта. */
+const SCOPE_ENGINE_LABELS: Record<string, string> = {
+  YANDEX: "Яндексе",
+  GOOGLE: "Google",
+};
+
+/** Порядок перечисления фиксирован: формулировка не должна плавать от прогона. */
+const SCOPE_ENGINE_ORDER = ["YANDEX", "GOOGLE"];
+
+const SCOPE_REGION_LABELS: Record<string, string> = {
+  RU: "Россия",
+  UAE: "ОАЭ",
+  INTERNATIONAL: "международный контур",
+  GLOBAL: "глобальный контур",
+};
+
+/**
+ * Предмет аудита одной фразой: что именно проверялось.
+ *
+ * Отчёт анализирует ТОП-20 выдачи и международные базы, а собирает шире —
+ * подсказки, картинки, видео, хвост выдачи. Без этой фразы страница выглядит
+ * как аудит всего собранного корпуса, и любое число на ней читается не тем
+ * знаменателем. Поисковики и регионы называются по факту прогона
+ * (`analysisLanes`), а не заготовленной строкой: не собрали регион — не
+ * обещаем его проверку.
+ *
+ * Возвращает `undefined`, если область анализа неизвестна (старый прогон без
+ * `analysis-scope.json`): выдумывать охват нельзя.
+ */
+export function auditScopeLine(ms: MetricSnapshot, opts?: { withRemainder?: boolean }): string | undefined {
+  const analyzed = ms.analyzedCount;
+  if (typeof analyzed !== "number" || analyzed <= 0) return undefined;
+  const topN = ms.analysisTopN ?? 20;
+  const lanes = (ms.analysisLanes ?? []).filter((l) => l.analyzed > 0);
+  const engines = [...new Set(lanes.map((l) => l.engine.toUpperCase()))]
+    .sort((a, b) => SCOPE_ENGINE_ORDER.indexOf(a) - SCOPE_ENGINE_ORDER.indexOf(b))
+    .map((e) => SCOPE_ENGINE_LABELS[e])
+    .filter((x): x is string => Boolean(x));
+  const regions = [...new Set(lanes.map((l) => SCOPE_REGION_LABELS[l.region.toUpperCase()]))].filter(
+    (x): x is string => Boolean(x)
+  );
+  const where = engines.length > 0 ? ` в ${engines.join(" и ")}` : "";
+  const geo = regions.length > 0 ? ` (${regions.join(", ")})` : "";
+  const head =
+    `Предмет аудита — результаты поиска ТОП-${topN}${where}${geo} и международные базы: ` +
+    `${analyzed} ${pluralRu(analyzed, "материал", "материала", "материалов")}.`;
+  if (!opts?.withRemainder) return head;
+  return `${head} Остальное собранное показано в отчёте, но темы риска по нему не строились.`;
 }
 
 /** Строка, законченная как предложение: без второй точки и без её отсутствия. */

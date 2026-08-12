@@ -13,6 +13,12 @@ export const CompositeObservationRowSchema = z.object({
   url: z.string().optional(),
   title: z.string().optional(),
   domain: z.string().optional(),
+  /**
+   * Позиция в выдаче, как её сообщил поисковик. Отсутствует у поверхностей без
+   * позиций (подсказки, базы) и у старых прогонов — тогда порядок строк
+   * остаётся тем, в котором материал собран, а не выдуманным номером.
+   */
+  rank: z.number().int().positive().optional(),
   evidenceRefs: z.array(z.string()),
   provenanceOwner: z.enum(["base", "enrichment", "legacy"]),
 });

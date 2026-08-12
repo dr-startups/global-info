@@ -199,6 +199,36 @@ function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
 }
 
+/**
+ * Предмет аудита из `analysis-scope.json` — то же чтение, что и в живом пути
+ * (`loadDeckInputsFromAnalyticsDir`). Артефакта нет у прогонов, снятых до
+ * правила ТОП-20: тогда страницы просто молчат о глубине.
+ */
+function analysisScopeMetrics(): Pick<
+  MetricSnapshot,
+  "analyzedCount" | "analysisTopN" | "analysisLanes"
+> {
+  const path = join(ANALYTICS_DIR, "analysis-scope.json");
+  if (!existsSync(path)) return {};
+  const scope = readJson<{
+    analyzed?: number;
+    topN?: number;
+    lanes?: Array<{ lane?: string; analyzed?: number }>;
+  }>(path);
+  const lanes = (scope.lanes ?? [])
+    .filter((l) => typeof l.analyzed === "number" && l.analyzed > 0 && typeof l.lane === "string")
+    .map((l) => {
+      const [engine = "", region = ""] = String(l.lane).split("|");
+      return { engine, region, analyzed: l.analyzed as number };
+    })
+    .filter((l) => l.engine && l.region);
+  return {
+    analyzedCount: typeof scope.analyzed === "number" ? scope.analyzed : undefined,
+    analysisTopN: typeof scope.topN === "number" ? scope.topN : undefined,
+    analysisLanes: lanes.length > 0 ? lanes : undefined,
+  };
+}
+
 export function loadReport72DeckInputs() {
   const bundle = readJson<VerifiedFindingBundle>(join(ANALYTICS_DIR, "verified-finding-bundle.json"));
   const ambiguous = readJson<Finding[]>(join(ANALYTICS_DIR, "ambiguous-findings.json"));
@@ -322,6 +352,10 @@ export function loadReport72DeckInputs() {
       (f) => f.subjectMatch === "SUBJECT_MATCH" && (RISK_ORDER[f.riskLevel] ?? 0) >= 2
     ).length,
     perRegionCounts,
+    // Область анализа читается так же, как в живом пути: без неё страницы
+    // проходили растровую проверку без фразы о ТОП-20, то есть вёрстка
+    // проверялась не на том тексте, который увидит клиент.
+    ...analysisScopeMetrics(),
   };
 
   return {
