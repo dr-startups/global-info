@@ -262,11 +262,14 @@ async function buildSerpSnapshotAsset(input: {
   const asset: RendererAssetEntry = {
     assetRef: input.assetRef,
     kind: "serp_screenshot",
+    // Заголовок и подпись называют содержимое, а не способ его отрисовки:
+    // в снимке настоящие строки выдачи, и «синтетический» рядом с ними клиент
+    // читает как «выдумано». Источник данных остаётся в подвале самой картинки.
     title:
       input.region === "UAE"
-        ? "ОАЭ — синтетический снимок выдачи"
-        : "Россия — синтетический снимок выдачи",
-    caption: "Синтетический снимок на основе сохранённых результатов API",
+        ? "ОАЭ — результаты поисковой выдачи"
+        : "Россия — результаты поисковой выдачи",
+    caption: "Результаты поисковой выдачи на момент сбора",
     imageData: png.toString("base64"),
     evidenceRefs: visibleItems.map((v) => v.ref),
   };
@@ -619,7 +622,7 @@ export async function buildCanonicalVisualAssets(input: {
       assetRef,
       kind: "knowledge_panel",
       title,
-      caption: "Ответ ИИ-поиска по запросам о субъекте (синтетическая карточка на основе API)",
+      caption: "Ответ ИИ-поиска по запросам о субъекте",
       imageData: png,
       evidenceRefs: visibleItems.map((v) => v.ref),
     };

@@ -10,7 +10,7 @@ import {
   observationToResultView,
 } from "./resolve-observation-highlights";
 import {
-  SYNTHETIC_API_SERP_CAPTION,
+  SERP_SNAPSHOT_CAPTION,
   type PersistedSerpObservation,
 } from "./types";
 
@@ -121,7 +121,7 @@ export function buildSyntheticSerpViewModelFromObservations(input: {
     },
     width: 1400,
     height: 900,
-    footerNote: SYNTHETIC_API_SERP_CAPTION,
+    footerNote: SERP_SNAPSHOT_CAPTION,
     sourceLabel,
   };
 }
@@ -190,7 +190,7 @@ export async function createSyntheticSerpAssetFromObservations(input: {
       mimeType: "image/png",
       width: vm.width,
       height: vm.height,
-      caption: SYNTHETIC_API_SERP_CAPTION,
+      caption: SERP_SNAPSHOT_CAPTION,
       status: "READY",
       observations: {
         create: input.observations.map((o) => ({
@@ -205,7 +205,7 @@ export async function createSyntheticSerpAssetFromObservations(input: {
     assetId: row.id,
     storageKey,
     sha256: digest,
-    caption: SYNTHETIC_API_SERP_CAPTION,
+    caption: SERP_SNAPSHOT_CAPTION,
     observationIds: input.observations.map((o) => o.id),
     png,
   };

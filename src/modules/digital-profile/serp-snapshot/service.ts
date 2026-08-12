@@ -63,10 +63,20 @@ function buildTitle(themeCount: number, language: SerpLanguage): string {
   return `Search result links lead to adverse publications covering ${themeCount} ${word}`;
 }
 
+/**
+ * Левая подпись подвала снимка.
+ *
+ * Формулировка «синтетический снимок… не является реальным скриншотом» стояла
+ * на картинке, где каждая строка — настоящий результат поисковика, и работала
+ * против самих данных: клиент читал её как «здесь всё выдумано». Происхождение
+ * при этом никуда не делось — справа в том же подвале печатается `sourceLabel`
+ * («Источник: реальные данные Yandex Search API», а для демо-данных прямо
+ * «Источник: demo/mock-данные»), и именно он остаётся честной пометкой.
+ */
 function footerNote(language: SerpLanguage): string {
   return language === "ru"
-    ? "Синтетический снимок, сформированный из сохранённых результатов поиска. Не является реальным скриншотом выдачи."
-    : "Synthetic snapshot generated from stored search evidence. Not a live SERP screenshot.";
+    ? "Результаты поисковой выдачи на момент сбора"
+    : "Search results at the time of collection";
 }
 
 /**

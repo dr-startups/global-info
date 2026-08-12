@@ -80,10 +80,13 @@ function buildSingleEngineViewModel(input: {
     },
     width: 1400,
     height: 900,
+    // Подвал снимка называет предмет, а не способ отрисовки: строки в снимке —
+    // настоящая выдача, и слово «синтетический» рядом с ними читается как
+    // «выдумано». Источник данных печатается справа (`sourceLabel`).
     footerNote:
       language === "ru"
-        ? "Синтетический снимок на основе сохранённых результатов поиска"
-        : "Synthetic snapshot from stored search results",
+        ? "Результаты поисковой выдачи на момент сбора"
+        : "Search results at the time of collection",
     sourceLabel: input.engine === "YANDEX" ? "Яндекс" : "Google",
   };
 }
