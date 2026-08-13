@@ -29,6 +29,7 @@ import {
   CANONICAL_SLOT_IDS,
   EXPLICIT_SLOT_MERGES,
 } from "./canonical-slots";
+import { withoutRepeatedSentences } from "./run-deck-build";
 import { emptySurfaceMergeReason } from "./empty-surface-collapse";
 
 export type AssemblyRejection = {
@@ -242,6 +243,23 @@ export function assembleDeck(input: {
     }))
     .sort((a, b) => a.pageNumber - b.pageNumber);
 
+  /*
+   * Пояснение темы печатается один раз на весь отчёт.
+   *
+   * Текст находки собирается один раз и переиспользуется всюду, где тема
+   * появляется: в матрице рисков, в обзоре профиля и в резюме каждого региона.
+   * Из-за этого один и тот же абзац — «Найдены публикации… Для банка или
+   * партнёра такие сюжеты обычно становятся первым поводом для расширенной
+   * проверки» — печатался в отчёте четыре раза дословно. Для читателя это
+   * главный признак отчёта, собранного шаблоном, а не написанного.
+   *
+   * Порядок обхода — порядок чтения: объяснение остаётся там, где встретилось
+   * первым (в матрице рисков), а региональные страницы сохраняют своё —
+   * материалы и числа своего контура. Пустая после вычистки строка выбрасывается
+   * вместе со своим маркером.
+   */
+  const saidInDeck = new Set<string>();
+
   // 12/13/14. Renderer slide model with global footer counters + manifest.
   const rendererSlides: RendererSlide[] = acceptedSlides.map(({ slide }, i) => {
     const tpl = DECK_TEMPLATE_REGISTRY[slide.templateId as DeckTemplateId];
@@ -265,7 +283,11 @@ export function assembleDeck(input: {
       continuationOf: slide.continuationOf ?? undefined,
       continuationIndex: slide.continuationIndex ?? undefined,
       narrative: slide.content.narrative,
-      bullets: isToc ? toc.map((t) => t.title) : slide.content.bullets,
+      bullets: isToc
+        ? toc.map((t) => t.title)
+        : (slide.content.bullets ?? [])
+            .map((b) => withoutRepeatedSentences(b, saidInDeck))
+            .filter((b): b is string => Boolean(b && b.trim())),
       table: slide.content.table,
       evidenceRefs: slide.evidenceRefs,
       findingIds: slide.findingIds,
