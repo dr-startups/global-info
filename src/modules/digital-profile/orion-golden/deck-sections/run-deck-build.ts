@@ -523,7 +523,13 @@ function buildVisualAnalysis(s: RendererSlide): Record<string, unknown> {
     clientMeaning,
     highlightExplanations: explanations.slice(0, 2),
     moreSignalsCount: Math.max(0, explanations.length - 2),
-    recommendedActions: s.whatToCheck ? [sidebarSafe(s.whatToCheck, 260)] : [],
+    // Рекомендация тоже подчиняется правилу «каждый блок говорит своё». На
+    // странице «AI-ответы» она дословно повторяла нарратив: одна и та же
+    // фраза печаталась дважды на одном экране.
+    recommendedActions: (() => {
+      const action = withoutRepeatedSentences(sidebarSafe(s.whatToCheck, 260), said);
+      return action ? [action] : [];
+    })(),
     provenanceLabel: sidebarSafe(s.sourceNote, 140),
   };
 }
