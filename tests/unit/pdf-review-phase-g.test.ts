@@ -182,7 +182,7 @@ describe("G.3 / G.4 — executive and regional structure", () => {
       {}
     );
     const summary = out.slides.find((s) => s.templateId === "regional-summary")!;
-    expect(summary.content.narrative).toMatch(/проверяющий увидит/u);
+    expect(summary.content.narrative).toMatch(/собрано/u);
     expect(summary.content.kpis?.length).toBeGreaterThanOrEqual(3);
     expect(summary.content.whatWasFound).toBeUndefined();
   });

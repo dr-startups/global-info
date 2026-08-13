@@ -124,11 +124,16 @@ describe("B.2 + C.5 — regional summary counters and diff line", () => {
   const summary = out.slides.find((s) => s.templateId === "regional-summary")!;
 
   it("narrative explains both counters in one formula", () => {
-    expect(summary.content.narrative).toMatch(/проверяющий увидит/u);
+    // Прежде здесь требовалось «проверяющий увидит N материалов». Обещание
+    // было ложным: аудит смотрит ТОП-20 по каждому запросу, а проверяющий
+    // видит двадцать строк выдачи, а не весь собранный корпус. Собранное
+    // называется собранным.
+    expect(summary.content.narrative).toMatch(/собрано/u);
+    expect(summary.content.narrative).not.toMatch(/проверяющий увидит/u);
     expect(summary.content.narrative).toMatch(
       /[Пп]одтверждённых тем: 2, из них повышенного внимания: 1/u
     );
-    expect(summary.content.kpis?.some((k) => k.label === "Материалов региона")).toBe(true);
+    expect(summary.content.kpis?.some((k) => k.label === "Собрано по региону")).toBe(true);
   });
 
   it("regional summary bullets quote only regional sources for cross-regional findings", () => {

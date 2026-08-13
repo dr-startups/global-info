@@ -592,8 +592,16 @@ export function findingBlocks(
  * PDF-36 D.4 — human phrasing instead of the telegraph string
  * «Статус: …; уровень: …; уверенность 90%.» repeated verbatim across pages.
  */
+/**
+ * Строка оценки внизу страницы поверхности.
+ *
+ * Слово «Статус:» ушло: это язык нашей приёмки, а не отчёта. Эталон отрасли
+ * (`docs/etalon-orion-razbor.md`) не пишет клиенту служебных префиксов вовсе —
+ * там внизу страницы стоит объяснение, зачем поверхность важна. Смысл строки
+ * не меняется: она называет уровень внимания и надёжность оценки.
+ */
 export function statusLine(top: Finding | undefined): string {
-  if (!top) return "Статус: по данной поверхности выводов о рисках нет.";
+  if (!top) return "Тем риска по этой поверхности не выявлено.";
   const kind =
     top.confidence >= 0.7 ? "тема подтверждена" : "сигнал предварительный";
   const conf =
@@ -602,7 +610,8 @@ export function statusLine(top: Finding | undefined): string {
       : top.confidence >= 0.6
         ? "достоверность оценки уверенная"
         : "оценка требует подтверждения";
-  return `Статус: ${kind}, уровень внимания — ${riskLabel(top.riskLevel).toLowerCase()}; ${conf}.`;
+  const head = kind.charAt(0).toUpperCase() + kind.slice(1);
+  return `${head}, уровень внимания — ${riskLabel(top.riskLevel).toLowerCase()}; ${conf}.`;
 }
 
 export function normalizeEvidenceUrl(url: string | undefined): string {
@@ -803,10 +812,18 @@ export function pageRowCompositionBlocks(
           : "Мониторить изменения выдачи."),
       220
     ),
+    // Клиенту говорим о странице, а не о том, что с ней сделала наша сборка.
+    // «Состав страницы описан по строкам таблицы; отдельного тематического
+    // вывода нет» — фраза из приёмки: она сообщает читателю ровно ноль.
     statusNote:
       composition.adverseHeadlines > 0
-        ? `Статус: на странице ${composition.adverseHeadlines} негативных заголовков; подтверждённая тема по этим строкам не выделена.`
-        : "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
+        ? `На этой странице ${composition.adverseHeadlines} ${pluralRu(
+            composition.adverseHeadlines,
+            "негативный заголовок",
+            "негативных заголовка",
+            "негативных заголовков"
+          )} — их видно до перехода к самим материалам, поэтому они формируют первое впечатление.`
+        : "Негативных заголовков на этой странице нет.",
     sourceNote: pageSourceLine(view),
   };
 }

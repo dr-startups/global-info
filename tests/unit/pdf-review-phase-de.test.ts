@@ -46,13 +46,13 @@ describe("D.4 — statusLine human phrasing", () => {
       riskLevel: "critical",
     } as never);
     expect(line).not.toMatch(/уверенность \d+%/u);
-    expect(line).toMatch(/тема подтверждена/u);
+    expect(line).toMatch(/[Тт]ема подтверждена/u);
     expect(line).toMatch(/достоверность оценки высокая/u);
   });
 
   it("preliminary signal below 0.7 confidence", () => {
     const line = statusLine({ confidence: 0.5, riskLevel: "medium" } as never);
-    expect(line).toMatch(/сигнал предварительный/u);
+    expect(line).toMatch(/[Сс]игнал предварительный/u);
     expect(line).toMatch(/оценка требует подтверждения/u);
   });
 });

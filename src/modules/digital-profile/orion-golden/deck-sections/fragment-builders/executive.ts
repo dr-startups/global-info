@@ -931,9 +931,17 @@ export function buildDigitalProfileOverviewFragment(
           // шире: смешивать эти два числа под одной подписью нельзя.
           narrative: [
             auditScopeLine(s),
-            `По собранным источникам: ${s.compositeCount} материалов из ${regions.length} региональных контуров (${regions
-              .map(([r, n]) => `${r}: ${n}`)
-              .join(", ")}). Принадлежность каждого материала к проверяемому лицу проверена.`,
+            `По собранным источникам: ${s.compositeCount} ${pluralRu(
+              s.compositeCount,
+              "материал",
+              "материала",
+              "материалов"
+            )} из ${regions.length} ${pluralRu(
+              regions.length,
+              "регионального контура",
+              "региональных контуров",
+              "региональных контуров"
+            )} (${regions.map(([r, n]) => `${r}: ${n}`).join(", ")}). Принадлежность каждого материала к проверяемому лицу проверена.`,
           ]
             .filter(Boolean)
             .join(" "),

@@ -74,6 +74,19 @@ export function buildRegionalSummaryFragment(
   const metricsSlot = slots.find((s) => s.templateId === "serp-table")!;
   const regionKey = key.startsWith("RU_") ? "RU" : "UAE";
   const materialCount = scoped.metricSnapshot.perRegionCounts[regionKey] ?? 0;
+  /**
+   * Сколько материалов региона вошло в предмет аудита.
+   *
+   * Раньше страница обещала: «в выдаче по региону „Россия" проверяющий увидит
+   * 404 материала». Это неправда дважды: аудит смотрит ТОП-20 по каждому
+   * запросу, а не весь собранный корпус, и проверяющий увидит двадцать строк
+   * выдачи, а не четыреста. Собранное и проверенное — два разных числа, и
+   * называть их надо порознь.
+   */
+  const analyzedInRegion = (scoped.metricSnapshot.analysisLanes ?? [])
+    .filter((lane) => lane.region.toUpperCase() === regionKey)
+    .reduce((sum, lane) => sum + lane.analyzed, 0);
+  const topN = scoped.metricSnapshot.analysisTopN ?? 20;
   const uncategorized = uncategorizedBulletForRegion(regionKey, extras);
 
   const slides: SlideContentContract[] = [
@@ -186,7 +199,14 @@ export function buildRegionalSummaryFragment(
       content: {
         narrative: fitClientSentences(
           [
-            `В выдаче по региону «${regionLabel}» проверяющий увидит ${materialCount} ${materialWord}.`,
+            analyzedInRegion > 0
+              ? `Предмет аудита по региону «${regionLabel}» — ТОП-${topN} выдачи: ${analyzedInRegion} ${pluralRu(
+                  analyzedInRegion,
+                  "материал",
+                  "материала",
+                  "материалов"
+                )}; всего по региону собрано ${materialCount}.`
+              : `По региону «${regionLabel}» собрано ${materialCount} ${materialWord}.`,
             `${themesPhrase.charAt(0).toUpperCase()}${themesPhrase.slice(1)}.`,
             themeLead,
           ],
@@ -194,7 +214,17 @@ export function buildRegionalSummaryFragment(
         ),
         // Scorecard-lite KPIs (ORION GSM regional audit vibe).
         kpis: [
-          { label: "Материалов региона", value: String(materialCount), tone: "neutral" },
+          // Плитка называет то же, что и текст рядом: собрано — это собрано.
+          ...(analyzedInRegion > 0
+            ? [
+                {
+                  label: `В аудите (ТОП-${topN})`,
+                  value: String(analyzedInRegion),
+                  tone: "neutral" as const,
+                },
+              ]
+            : []),
+          { label: "Собрано по региону", value: String(materialCount), tone: "neutral" as const },
           {
             label: "Тем повышенного внимания",
             value: String(adverseN),

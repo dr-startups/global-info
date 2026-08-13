@@ -84,7 +84,7 @@ export function buildImagesFragment(
               ),
               // The generic page status says "no risk conclusions" when the
               // page findings are empty — contradicting the red frames above.
-              statusNote: `Статус: изображений с привязкой к негативным источникам — ${sidebar.adverseRows.length}; требуется проверка первоисточников.`,
+              statusNote: `Изображений, ведущих на негативные источники, — ${sidebar.adverseRows.length}; каждое требует сверки с первоисточником.`,
               whatToCheck: clampClientText(
                 "Проверить сайты-источники выделенных изображений и подготовить позицию по каждому негативному материалу.",
                 220
