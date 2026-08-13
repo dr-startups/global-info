@@ -31,9 +31,19 @@ import type {
   SearchProviderResult,
 } from "./types";
 import { domainOf } from "./types";
+import { resolveSearchDepth } from "./search-depth";
 import type { ProviderCapabilities } from "../search-surfaces/types";
 
 const MAX_PER_PAGE = 10;
+
+/**
+ * Потолок глубины на один запрос.
+ *
+ * API отдаёт по десять результатов на страницу и листается постранично, так что
+ * глубина ограничена не форматом ответа, а здравым смыслом: пять страниц — это
+ * уже вдвое глубже, чем смотрит человек. Аудит просит двадцать.
+ */
+const YANDEX_MAX_RESULTS_PER_QUERY = 50;
 
 function decodeEntities(value: string): string {
   return value
@@ -105,10 +115,11 @@ export class YandexSearchProvider implements SearchProvider {
       };
     }
 
-    const limit = Math.min(
-      request.limit ?? providerConfig.yandex.resultsPerQuery,
-      providerConfig.yandex.resultsPerQuery
-    );
+    const limit = resolveSearchDepth({
+      requested: request.limit,
+      fallback: providerConfig.yandex.resultsPerQuery,
+      max: YANDEX_MAX_RESULTS_PER_QUERY,
+    });
     const results: SearchProviderResult[] = [];
 
     try {
