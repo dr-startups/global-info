@@ -271,7 +271,9 @@ export function validateDigitalProfileEnv(
         );
       }
     } else if (strategy === "external_serp") {
-      if (!env.GOOGLE_EXTERNAL_SERP_PROVIDER) {
+      // Выбор внешней выдачи читается так же через умолчания: незаданная
+      // переменная означает `serper`, а не «не выбрано».
+      if (!stringSetting("GOOGLE_EXTERNAL_SERP_PROVIDER", env)) {
         warnings.push(
           "GOOGLE_SEARCH_PROVIDER=external_serp but GOOGLE_EXTERNAL_SERP_PROVIDER is not selected; the real Google provider will resolve to NOT_CONFIGURED."
         );

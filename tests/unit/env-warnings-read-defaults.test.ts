@@ -27,9 +27,12 @@ describe("предупреждения окружения читают те же
     expect(warnings.join("\n")).not.toContain("GOOGLE_SEARCH_ENGINE_ID");
   });
 
-  it("не объявляет стратегию Google невыбранной, когда работает значение по умолчанию", () => {
+  it("не жалуется на Google ни одним словом, когда всё работает на умолчаниях", () => {
+    // Проверка нарочно широкая: точечная («не содержит вот эту фразу»)
+    // пропустила соседнюю такую же ошибку в том же блоке — сырое чтение
+    // GOOGLE_EXTERNAL_SERP_PROVIDER, до которого раньше не доходила очередь.
     const { warnings } = validateDigitalProfileEnv(DEPLOY_ENV_WITH_SECRETS_ONLY);
-    expect(warnings.join("\n")).not.toContain("GOOGLE_SEARCH_PROVIDER is not set");
+    expect(warnings.filter((w) => /google/i.test(w))).toEqual([]);
   });
 
   it("не помечает прогон офлайновым, когда обогащение включено по умолчанию", () => {
