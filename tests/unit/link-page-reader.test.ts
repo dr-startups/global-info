@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   extractPageTitle,
   extractPublishedAt,
+  extractPublishedSummary,
   extractReadableText,
   isLinkReadingEnabled,
   readLinkPage,
@@ -106,5 +107,41 @@ describe("выключатель чтения", () => {
   it("включается только явно", () => {
     expect(isLinkReadingEnabled({ DIGITAL_PROFILE_LINK_READING: "true" } as never)).toBe(true);
     expect(isLinkReadingEnabled({ DIGITAL_PROFILE_LINK_READING: "maybe" } as never)).toBe(false);
+  });
+});
+
+describe("страницы, которые рисуются скриптами", () => {
+  const now = () => new Date("2026-08-14T02:00:00.000Z");
+  const shell = (meta: string) =>
+    `<html><head><title>Заголовок</title>${meta}</head><body><div id="root"></div></body></html>`;
+
+  it("читает описание, которое страница published для роботов", async () => {
+    // Половина отказов живого прогона: vk.ru, dzen.ru, rbc.ru отдают пустую
+    // оболочку, но кладут в разметку описание для поисковиков.
+    const description = "Подробное описание материала для поисковых систем. ".repeat(6);
+    const res = await readLinkPage("https://example.com/a", {
+      fetchImpl: (async () => ({
+        ok: true,
+        status: 200,
+        text: async () => shell(`<meta property="og:description" content="${description}">`),
+      })) as never,
+      now,
+    });
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.text).toContain("Подробное описание материала");
+  });
+
+  it("без описания честно признаёт, что текста нет", async () => {
+    const res = await readLinkPage("https://example.com/a", {
+      fetchImpl: (async () => ({ ok: true, status: 200, text: async () => shell("") })) as never,
+      now,
+    });
+    expect(res.ok === false && res.failure).toBe("empty_text");
+  });
+
+  it("берёт articleBody из JSON-LD", () => {
+    const body = "Текст статьи в структурированной разметке страницы. ".repeat(5);
+    expect(extractPublishedSummary(`<script type="application/ld+json">{"articleBody":"${body}"}</script>`))
+      .toContain("Текст статьи в структурированной разметке");
   });
 });

@@ -99,6 +99,36 @@ export function extractPublishedAt(html: string): string | undefined {
   return undefined;
 }
 
+
+/**
+ * Что страница сама говорит о себе роботам.
+ *
+ * Половина отказов на живом прогоне — не блокировка, а пустой ответ: `vk.ru`,
+ * `dzen.ru`, `rbc.ru` и им подобные рисуют содержимое скриптами уже в
+ * браузере, и в исходном HTML текста нет. Но эти же сайты кладут в разметку
+ * описание для поисковиков — `og:description`, `description`, `articleBody`
+ * из JSON-LD. Это опубликовано самой страницей и предназначено ровно для
+ * чтения машиной.
+ *
+ * Такой текст короче статьи, и решение по нему слабее. Зато оно основано на
+ * том, что страница написала о себе, а не на заголовке из выдачи.
+ */
+export function extractPublishedSummary(html: string): string {
+  const patterns = [
+    /<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']{40,})["']/i,
+    /<meta[^>]+name=["']description["'][^>]+content=["']([^"']{40,})["']/i,
+    /"articleBody"\s*:\s*"([^"]{40,})"/i,
+    /"description"\s*:\s*"([^"]{40,})"/i,
+  ];
+  const parts: string[] = [];
+  for (const re of patterns) {
+    const m = html.match(re);
+    const value = m?.[1]?.trim();
+    if (value) parts.push(extractReadableText(value, 2000));
+  }
+  return [...new Set(parts)].join(" ").trim();
+}
+
 type FetchLike = (
   input: string,
   init?: { signal?: AbortSignal; headers?: Record<string, string>; redirect?: "follow" }
@@ -126,7 +156,13 @@ export async function readLinkPage(
     const res = await fetchImpl(url, {
       signal: controller.signal,
       redirect: "follow",
-      headers: { accept: "text/html,application/xhtml+xml" },
+      // Представляемся честно. Сайт вправе отказать роботу, и такой отказ мы
+      // записываем как есть — выдавать себя за браузер, чтобы обойти защиту,
+      // не будем: это чужое решение о доступе к их страницам.
+      headers: {
+        accept: "text/html,application/xhtml+xml",
+        "user-agent": "DigitalProfileAudit/1.0 (репутационный аудит; чтение публичных страниц)",
+      },
     });
     if (!res.ok) {
       const failure: LinkReadFailure =
@@ -143,7 +179,13 @@ export async function readLinkPage(
         readAt,
       };
     }
-    const text = extractReadableText(html);
+    let text = extractReadableText(html);
+    if (text.length < 200) {
+      // Страница отрисовывается скриптами: берём то, что она сама published
+      // для роботов. Меньше статьи, но это её собственные слова.
+      const summary = extractPublishedSummary(html);
+      if (summary.length >= 200) text = summary;
+    }
     if (text.length < 200) {
       return { ok: false, url, failure: "empty_text", message: "текста на странице нет", readAt };
     }
