@@ -11,6 +11,7 @@
  */
 
 import { offlineEnrichmentEnvWarning } from "./offline-enrichment-guard";
+import { isLinkReadingEnabled } from "../services/link-page-reader";
 import { boolSetting, stringSetting } from "./defaults";
 
 type Env = Record<string, string | undefined>;
@@ -121,6 +122,26 @@ export function describeCapabilityReadiness(env: Env = process.env): CapabilityR
       : !boolSetting("DIGITAL_PROFILE_YANDEX_REAL_ENABLED", env)
         ? "DIGITAL_PROFILE_YANDEX_REAL_ENABLED не равен true"
         : `нет ${missing("YANDEX_SEARCH_API_KEY", "YANDEX_SEARCH_FOLDER_ID").join(", ")}`,
+  });
+
+  /**
+   * Чтение страниц по ссылкам ТОП-20.
+   *
+   * Единственный сборщик, выключенный по умолчанию: он открывает чужие
+   * страницы и гоняет их текст через модель, а это деньги за каждый отчёт.
+   * Состояние печатается в сводке, потому что вопрос «почему темы всё ещё из
+   * справочника» иначе решается перепиской, а не логом запуска.
+   */
+  const linkReadingOn = isLinkReadingEnabled(env as NodeJS.ProcessEnv);
+  const linkReadingReady = linkReadingOn && has("OPENAI_API_KEY");
+  out.push({
+    capability: "Чтение страниц (разбор ссылок ТОП-20)",
+    ready: linkReadingReady,
+    detail: linkReadingReady
+      ? "готов"
+      : !linkReadingOn
+        ? "DIGITAL_PROFILE_LINK_READING не равен true — темы берутся из справочника рубрик"
+        : "нет OPENAI_API_KEY",
   });
 
   const aiReady = boolSetting("DIGITAL_PROFILE_AI_ANALYST_ENABLED", env) && has("OPENAI_API_KEY");
