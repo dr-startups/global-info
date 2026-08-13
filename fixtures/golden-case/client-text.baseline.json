@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v1",
   "slideCount": 49,
-  "totalChars": 37573,
+  "totalChars": 37627,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -542,7 +542,7 @@
     {
       "slideKey": "p11_ru_suggestions_yandex",
       "text": {
-        "title": "Россия — подсказки Яндекса"
+        "title": "Россия — подсказки Яндекса: 4 негативные формулировки"
       },
       "baseSlotId": "p11_ru_suggestions_yandex",
       "template": "orion_golden_prose",
@@ -925,7 +925,7 @@
     {
       "slideKey": "p28_uae_suggestions",
       "text": {
-        "title": "ОАЭ — подсказки поиска"
+        "title": "ОАЭ — подсказки поиска: 1 негативная формулировка"
       },
       "baseSlotId": "p28_uae_suggestions",
       "template": "orion_golden_prose",

@@ -1650,12 +1650,21 @@ export function visualSlide(input: {
   noDataReason?: string;
   /** Контур страницы («Яндекс, Россия») — чтобы пустой статус не звучал глобально. */
   noDataScopeLabel?: string;
+  /**
+   * Заголовок-вывод вместо названия раздела.
+   *
+   * Эталон отрасли даёт читателю итог в заголовке; страница с данными обязана
+   * говорить, что на ней нашли. Пустая страница заголовок не переопределяет:
+   * обещать вывод там, где данных нет, нельзя.
+   */
+  title?: string;
 }): SlideContentContract {
   const refs = assetsFor(input.extras, input.slot.slotId);
   if (refs.length > 0) {
     return makeSlotSlide({
       slot: input.slot,
       sectionId: input.sectionId,
+      ...(input.title ? { title: input.title } : {}),
       content: input.content,
       evidenceRefs: input.evidenceRefs,
       findingIds: input.findingIds,

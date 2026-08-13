@@ -7,6 +7,7 @@ import type { FragmentKey, SectionType, SlideContentContract } from "../contract
 import type { ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
+import { pluralRu } from "../../analytics/finding-synthesizer";
 import {
   adverseVisualSidebar,
   buildPageEvidenceView,
@@ -51,12 +52,31 @@ export function buildSuggestionsFragment(
     // Sidebar strictly scoped to the queries displayed on THIS page.
     const view = buildPageEvidenceView(scoped, refs);
     const sidebar = adverseVisualSidebar(slot.slotId, extras, scoped, "подсказка");
+    // Заголовок называет вывод страницы: сколько подсказок и есть ли среди них
+    // негативные. Прежде стояло название раздела, и читателю приходилось
+    // искать этот же вывод в тексте под картинкой.
+    const shownCount = sidebar.visibleRows.length || suggestionLines.length;
+    const adverseCount = sidebar.adverseRows.length;
+    const verdictTitle =
+      shownCount > 0
+        ? `${slot.title}: ${
+            adverseCount > 0
+              ? `${adverseCount} ${pluralRu(
+                  adverseCount,
+                  "негативная формулировка",
+                  "негативные формулировки",
+                  "негативных формулировок"
+                )}`
+              : "негативных формулировок нет"
+          }`
+        : undefined;
     slides.push(
       visualSlide({
         slot,
         sectionId,
         extras,
         scoped,
+        ...(verdictTitle ? { title: verdictTitle } : {}),
         content: {
           bullets: bullets.length ? bullets : suggestionLines,
           ...pageFindingBlocks(scoped, view),
