@@ -116,6 +116,24 @@ export function pickSerpTableQuery(
   })[0]![0];
 }
 
+/**
+ * Одна позиция — один материал.
+ *
+ * В выдаче не бывает двух третьих строк. В живом отчёте они появились: материал,
+ * найденный несколькими запросами, получал подпись одного запроса и номер из
+ * другого, и страница показывала две первых позиции и четыре вторых. Позиция
+ * теперь считается внутри выбранного запроса, а это — последняя защита на
+ * случай данных, где запрос не записан.
+ */
+export function dropDuplicateRanks<T extends { rank: number }>(rows: T[]): T[] {
+  const seen = new Set<number>();
+  return rows.filter((row) => {
+    if (seen.has(row.rank)) return false;
+    seen.add(row.rank);
+    return true;
+  });
+}
+
 /** Наблюдения одного материала — в одну строку, в порядке первого появления. */
 export function mergeSerpRowsByMaterial(
   refs: string[],
@@ -184,12 +202,6 @@ export function buildSerpFragment(
   // проверяющий увидит первым. Материалы без позиции (старые прогоны,
   // поверхности без номеров) в таблицу не попадают — придумывать им место в
   // выдаче нельзя.
-  const rankOfGroup = (group: { refs: string[] }): number => {
-    const ranks = group.refs
-      .map((ref) => scoped.evidenceIndex[ref]?.rank)
-      .filter((r): r is number => typeof r === "number" && r > 0);
-    return ranks.length > 0 ? Math.min(...ranks) : Number.MAX_SAFE_INTEGER;
-  };
   const engineOfGroup = (group: { refs: string[] }): string | null => {
     for (const ref of group.refs) {
       const e = normalizeSerpEngine(scoped.evidenceIndex[ref]?.engine);
@@ -203,6 +215,28 @@ export function buildSerpFragment(
       if (e?.query) return { query: e.query, queryPurpose: e.queryPurpose };
     }
     return {};
+  };
+  /**
+   * Позиция материала в выдаче по конкретному запросу.
+   *
+   * Считать её «лучшей по всем наблюдениям» нельзя: материал, найденный
+   * несколькими запросами, получал подпись одного запроса и номер из другого —
+   * и в таблице появлялись две первых позиции и четыре вторых. В выдаче по
+   * одному запросу позиция уникальна, и таблица обязана это сохранять.
+   */
+  const rankInQuery = (group: { refs: string[] }, query: string | null): number => {
+    const ranks = group.refs
+      .filter((ref) => {
+        if (!query) return true;
+        const q = scoped.evidenceIndex[ref]?.query;
+        // Наблюдения без записанного запроса относим к выбранному: у старых
+        // наборов данных запроса нет вовсе, и отбрасывать их значит потерять
+        // таблицу целиком.
+        return !q || q === query;
+      })
+      .map((ref) => scoped.evidenceIndex[ref]?.rank)
+      .filter((r): r is number => typeof r === "number" && r > 0);
+    return ranks.length > 0 ? Math.min(...ranks) : Number.MAX_SAFE_INTEGER;
   };
 
   // Одна таблица — один поисковик и один запрос: это страница выдачи, которую
@@ -230,11 +264,12 @@ export function buildSerpFragment(
       const scopedGroups = query
         ? groups.filter((g) => (queryOfGroup(g).query ?? query) === query)
         : groups;
-      const ranked = scopedGroups
-        .map((group, index) => ({ group, index, rank: rankOfGroup(group) }))
-        .filter((x) => x.rank <= SERP_TABLE_TOP_N)
-        .sort((a, b) => a.rank - b.rank || a.index - b.index)
-        .slice(0, SERP_TABLE_TOP_N);
+      const ranked = dropDuplicateRanks(
+        scopedGroups
+          .map((group, index) => ({ group, index, rank: rankInQuery(group, query) }))
+          .filter((x) => x.rank <= SERP_TABLE_TOP_N)
+          .sort((a, b) => a.rank - b.rank || a.index - b.index)
+      ).slice(0, SERP_TABLE_TOP_N);
       if (ranked.length > 0) return { engine, query, displayed: ranked, positional: true };
       // Прогоны, собранные до того, как позиция стала сохраняться, позиций не
       // несут вовсе. Показать такую выдачу можно, назвать её ТОП-20 — нет:

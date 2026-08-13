@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  dropDuplicateRanks,
   normalizeSerpEngine,
   pickSerpTableQuery,
 } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
@@ -49,5 +50,26 @@ describe("pickSerpTableQuery", () => {
   it("без запросов не выдумывает подпись колонке", () => {
     expect(pickSerpTableQuery([])).toBeNull();
     expect(pickSerpTableQuery([{ query: "  " }])).toBeNull();
+  });
+});
+
+
+describe("dropDuplicateRanks", () => {
+  it("оставляет один материал на позицию", () => {
+    // Дефект живого отчёта: на странице стояли две первых позиции и четыре
+    // вторых — материал, найденный несколькими запросами, брал подпись одного
+    // запроса и номер из другого.
+    const rows = [
+      { rank: 1, domain: "wikipedia" },
+      { rank: 1, domain: "interros" },
+      { rank: 2, domain: "rbc" },
+      { rank: 2, domain: "yandex" },
+    ];
+    expect(dropDuplicateRanks(rows).map((r) => r.domain)).toEqual(["wikipedia", "rbc"]);
+  });
+
+  it("сохраняет порядок и не трогает уникальные позиции", () => {
+    const rows = [{ rank: 3 }, { rank: 1 }, { rank: 7 }];
+    expect(dropDuplicateRanks(rows).map((r) => r.rank)).toEqual([3, 1, 7]);
   });
 });
