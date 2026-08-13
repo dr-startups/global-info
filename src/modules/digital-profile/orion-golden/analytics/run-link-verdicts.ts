@@ -24,6 +24,7 @@ import {
   type VerdictSummary,
 } from "../contracts/link-verdict";
 import { analyzeLinkPages, type LinkVerdictInput } from "./link-verdict-analyst";
+import { clusterVerdictThemes } from "./link-theme-clustering";
 import { isLinkReadingEnabled, readLinkPage, type LinkPageRead } from "../../services/link-page-reader";
 
 /** Сколько ссылок читаем за прогон. Предел, а не цель. */
@@ -126,11 +127,15 @@ export async function runLinkVerdicts(input: {
   }
 
   const verdicts = await analyze(analystInputs);
+  // Второй проход: формулировки страниц сводятся в темы отчёта. Без него на
+  // живом прогоне вышло 73 темы на 75 публикаций — по теме на страницу.
+  const summary = summarizeLinkVerdicts(verdicts);
+  const themes = await clusterVerdictThemes(verdicts);
   return {
     schemaVersion: LINK_VERDICT_SCHEMA_VERSION,
     caseId: input.caseId,
     requested: links.length,
     verdicts,
-    summary: summarizeLinkVerdicts(verdicts),
+    summary: { ...summary, themes },
   };
 }
