@@ -73,6 +73,49 @@ export function serpMaterialKey(e: {
   return url ? `url:${url}` : `domain:${domain}`;
 }
 
+/** Сколько строк выдачи показывает таблица: глубина аудита, не больше. */
+export const SERP_TABLE_TOP_N = 20;
+
+const SERP_ENGINE_LABELS: Record<string, string> = { YANDEX: "Яндекс", GOOGLE: "Google" };
+const SERP_ENGINE_ORDER = ["YANDEX", "GOOGLE"];
+
+/** Ярлык поисковика в том виде, в котором его можно показать клиенту. */
+export function normalizeSerpEngine(raw: string | undefined): string | null {
+  const e = String(raw ?? "").toUpperCase();
+  if (e.includes("YANDEX")) return "YANDEX";
+  if (e.includes("GOOGLE") || e.includes("SERPER")) return "GOOGLE";
+  return null;
+}
+
+/**
+ * Запрос, выдачу по которому показывает таблица поисковика.
+ *
+ * Таблица — это одна страница выдачи, а не сводка по всем запросам сразу.
+ * Смешав запросы, мы получили бы две строки с позицией 1 и номер, который
+ * ничего не значит. Поэтому на каждый поисковик берётся один запрос: сначала
+ * тот, что искал субъекта по имени, при равенстве — давший больше материала,
+ * а на совсем равных — первый по алфавиту, чтобы отчёт был воспроизводим.
+ */
+export function pickSerpTableQuery(
+  rows: Array<{ query?: string; queryPurpose?: string }>
+): string | null {
+  const stats = new Map<string, { count: number; subject: boolean }>();
+  for (const r of rows) {
+    const q = String(r.query ?? "").trim();
+    if (!q) continue;
+    const stat = stats.get(q) ?? { count: 0, subject: false };
+    stat.count += 1;
+    if (String(r.queryPurpose ?? "") === "subject_lookup") stat.subject = true;
+    stats.set(q, stat);
+  }
+  if (stats.size === 0) return null;
+  return [...stats.entries()].sort((a, b) => {
+    if (a[1].subject !== b[1].subject) return a[1].subject ? -1 : 1;
+    if (a[1].count !== b[1].count) return b[1].count - a[1].count;
+    return a[0].localeCompare(b[0], "ru");
+  })[0]![0];
+}
+
 /** Наблюдения одного материала — в одну строку, в порядке первого появления. */
 export function mergeSerpRowsByMaterial(
   refs: string[],
@@ -138,23 +181,80 @@ export function buildSerpFragment(
   // сильнейшая из всех наблюдений этого материала.
   const merged = mergeSerpRowsByMaterial(refs, scoped);
   // Таблица выдачи читается сверху вниз как сама выдача: сначала то, что
-  // проверяющий увидит первым. Раньше порядок был порядком сбора, и при
-  // обрезке до 36 строк со страницы мог уйти материал с первой позиции ради
-  // тридцатого. Материалы без позиции (старые прогоны, поверхности без
-  // номеров) уходят в конец — придумывать им место в выдаче нельзя.
+  // проверяющий увидит первым. Материалы без позиции (старые прогоны,
+  // поверхности без номеров) в таблицу не попадают — придумывать им место в
+  // выдаче нельзя.
   const rankOfGroup = (group: { refs: string[] }): number => {
     const ranks = group.refs
       .map((ref) => scoped.evidenceIndex[ref]?.rank)
       .filter((r): r is number => typeof r === "number" && r > 0);
     return ranks.length > 0 ? Math.min(...ranks) : Number.MAX_SAFE_INTEGER;
   };
-  const displayed = merged
-    .map((group, index) => ({ group, index, rank: rankOfGroup(group) }))
-    .sort((a, b) => a.rank - b.rank || a.index - b.index)
-    .map((x) => x.group)
-    .slice(0, 36);
+  const engineOfGroup = (group: { refs: string[] }): string | null => {
+    for (const ref of group.refs) {
+      const e = normalizeSerpEngine(scoped.evidenceIndex[ref]?.engine);
+      if (e) return e;
+    }
+    return null;
+  };
+  const queryOfGroup = (group: { refs: string[] }): { query?: string; queryPurpose?: string } => {
+    for (const ref of group.refs) {
+      const e = scoped.evidenceIndex[ref];
+      if (e?.query) return { query: e.query, queryPurpose: e.queryPurpose };
+    }
+    return {};
+  };
+
+  // Одна таблица — один поисковик и один запрос: это страница выдачи, которую
+  // видит человек. Сводка по всем запросам сразу давала номера, за которыми
+  // не стоит ничего: две первых позиции в одном столбце и «36-я строка» там,
+  // где аудит обещает ТОП-20.
+  //
+  // Материалы, у которых поисковик не записан (прогоны до того, как источник
+  // стал сохраняться), собираются в таблицу без имени движка. Выбросить их
+  // значило бы отдать клиенту пустую страницу там, где выдача есть.
+  const byEngine = new Map<string, typeof merged>();
+  for (const group of merged) {
+    const engine = engineOfGroup(group) ?? "";
+    const list = byEngine.get(engine) ?? [];
+    list.push(group);
+    byEngine.set(engine, list);
+  }
+  const engineTables = [...byEngine.entries()]
+    .sort(
+      (a, b) =>
+        (SERP_ENGINE_ORDER.indexOf(a[0]) + 1 || 99) - (SERP_ENGINE_ORDER.indexOf(b[0]) + 1 || 99)
+    )
+    .map(([engine, groups]) => {
+      const query = pickSerpTableQuery(groups.map((g) => queryOfGroup(g)));
+      const scopedGroups = query
+        ? groups.filter((g) => (queryOfGroup(g).query ?? query) === query)
+        : groups;
+      const ranked = scopedGroups
+        .map((group, index) => ({ group, index, rank: rankOfGroup(group) }))
+        .filter((x) => x.rank <= SERP_TABLE_TOP_N)
+        .sort((a, b) => a.rank - b.rank || a.index - b.index)
+        .slice(0, SERP_TABLE_TOP_N);
+      if (ranked.length > 0) return { engine, query, displayed: ranked, positional: true };
+      // Прогоны, собранные до того, как позиция стала сохраняться, позиций не
+      // несут вовсе. Показать такую выдачу можно, назвать её ТОП-20 — нет:
+      // строки нумеруются порядком сбора, и заголовок это признаёт.
+      const unranked = scopedGroups
+        .map((group, index) => ({ group, index, rank: index + 1 }))
+        .slice(0, SERP_TABLE_TOP_N);
+      return { engine, query, displayed: unranked, positional: false };
+    })
+    .filter((t) => t.displayed.length > 0);
+
+  // Материалы без поисковика показываются только когда показывать больше
+  // нечего. Рядом с названными таблицами такая страница ничего не сообщает:
+  // ни где стоял материал, ни в каком поисковике его видно.
+  const namedTables = engineTables.filter((t) => t.engine);
+  const tables = namedTables.length > 0 ? namedTables : engineTables;
+
+  const displayed = tables.flatMap((t) => t.displayed.map((x) => x.group));
   const displayedRefs = displayed.flatMap((g) => g.refs);
-  const rows = displayed.map((group, i) => {
+  const rowOf = (group: { refs: string[] }, rank: number): string[] => {
     const e = scoped.evidenceIndex[group.refs[0]!] ?? {};
     // A row is marked when its evidence backs an adverse finding OR its own
     // title carries an adverse pattern (sanctions/criminal/court wording) —
@@ -173,31 +273,45 @@ export function buildSerpFragment(
     // Red marker must always carry its label; domain comes from evidence URL.
     // LIKELY (§2.1) → «Вероятно» — visible but not confirmed-subject KPI.
     const rating = adverse ? RED_MARKER_LABEL : likely ? "Вероятно" : "Нейтральный";
-    return [
-      String(i + 1),
-      e.domain ?? domainOfUrl(e.url),
-      e.title ?? "(без заголовка)",
-      rating,
-    ];
-  });
+    // Номер строки — настоящая позиция в выдаче, а не счётчик строк таблицы.
+    // Счётчик выдавал «24-е место в Яндексе» там, где материал стоял третьим
+    // по другому запросу.
+    return [String(rank), e.domain ?? domainOfUrl(e.url), e.title ?? "(без заголовка)", rating];
+  };
   // §7.1: each continuation page gets its own row-scoped sidebar (not a blank
   // strip of the first page's finding blocks).
   const maxRows =
     DECK_TEMPLATE_REGISTRY["serp-table"].maxTableRowsPerSlide > 0
       ? DECK_TEMPLATE_REGISTRY["serp-table"].maxTableRowsPerSlide
       : 12;
-  const rowChunks = chunk(rows, maxRows);
-  // Ссылки страницы — все наблюдения её строк: доказательная трасса не должна
-  // терять дубли, даже когда читателю они показаны одной строкой.
-  const refChunks = chunk(
-    displayed.map((g) => g.refs),
-    maxRows
-  ).map((c) => c.flat());
+  // Страницы не смешивают поисковики: каждая таблица листается отдельно и
+  // подписана своим поисковиком и запросом.
+  const pages: Array<{ title: string; rows: string[][]; refs: string[] }> = [];
+  for (const table of tables) {
+    const label = table.engine ? SERP_ENGINE_LABELS[table.engine] ?? table.engine : null;
+    const tableRows = table.displayed.map((x) => rowOf(x.group, x.rank));
+    const tableRefs = table.displayed.map((x) => x.group.refs);
+    const rowChunks = chunk(tableRows, maxRows);
+    const refChunks = chunk(tableRefs, maxRows).map((c) => c.flat());
+    for (let i = 0; i < rowChunks.length; i += 1) {
+      const suffix = rowChunks.length > 1 ? ` (${i + 1}/${rowChunks.length})` : "";
+      // Заголовок начинается с региона, и он же начинает предложение: «ОАЭ»
+      // приходит меткой раздела, а «международный» — строчным.
+      const region = regionLabel.charAt(0).toUpperCase() + regionLabel.slice(1);
+      const depth = table.positional ? `, ТОП-${SERP_TABLE_TOP_N}` : ": собранная выдача";
+      const head = label ? `${region} — ${label}${depth}` : `${region} — выдача${table.positional ? `, ТОП-${SERP_TABLE_TOP_N}` : ""}`;
+      pages.push({
+        title: `${head}${suffix}`,
+        rows: rowChunks[i] ?? [],
+        refs: refChunks[i] ?? [],
+      });
+    }
+  }
   const slides: SlideContentContract[] = [];
   const baseSlideId = slot.slotId;
-  for (let i = 0; i < rowChunks.length; i += 1) {
-    const pageRefs = refChunks[i] ?? [];
-    const pageRows = rowChunks[i] ?? [];
+  for (let i = 0; i < pages.length; i += 1) {
+    const pageRefs = pages[i]!.refs;
+    const pageRows = pages[i]!.rows;
     const view = buildPageEvidenceView(scoped, pageRefs);
     // Renderer `orion_golden_search_table` paints only `narrative` above the
     // table (not whatWasFound/bullets when rows exist) — put the §7.1 sidebar
@@ -206,10 +320,7 @@ export function buildSerpFragment(
     const slide = makeSlotSlide({
       slot,
       sectionId,
-      title:
-        i === 0
-          ? undefined
-          : `${slot.title} (продолжение ${i + 1}/${rowChunks.length})`,
+      title: pages[i]!.title,
       content: {
         table: { headers: ["№", "Домен", "Заголовок", "Оценка"], rows: pageRows },
         ...pageBlocks,
@@ -224,7 +335,7 @@ export function buildSerpFragment(
         adverseDisplayed: pageRows.filter((r) => r[3] === RED_MARKER_LABEL).length,
         likelyDisplayed: pageRows.filter((r) => r[3] === "Вероятно").length,
         pageIndex: i + 1,
-        pageCount: rowChunks.length,
+        pageCount: pages.length,
       },
     });
     if (i === 0) {

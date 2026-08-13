@@ -31,6 +31,9 @@ type CompositeObservationRow = {
   domain?: string;
   /** Позиция в выдаче, если поисковик её сообщил. */
   rank?: number;
+  /** Запрос, по которому материал показался, и его назначение из плана. */
+  query?: string;
+  queryPurpose?: string;
   evidenceRefs: string[];
 };
 
@@ -279,6 +282,11 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           typeof obs.rank === "number"
             ? Math.min(obs.rank, evidenceIndex[ref]?.rank ?? obs.rank)
             : evidenceIndex[ref]?.rank,
+        // Запрос запоминается первый: материал мог показаться по нескольким,
+        // и подпись колонки берётся у того, где он виден выше (строки идут в
+        // порядке лучшей позиции).
+        query: evidenceIndex[ref]?.query ?? obs.query,
+        queryPurpose: evidenceIndex[ref]?.queryPurpose ?? obs.queryPurpose,
         subjectDecision: subjectDecision ?? decisionByRef.get(ref) ?? evidenceIndex[ref]?.subjectDecision,
       };
     }

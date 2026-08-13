@@ -164,9 +164,13 @@ function toRow(
   const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
   const evidenceRefs = normalizeEvidenceRefs(meta.evidenceRefs, `inventory:${item.inventoryId}`);
   const rawRank = typeof meta.rank === "number" ? meta.rank : Number(meta.rank);
+  const queryText = String(meta.queryText ?? meta.query ?? item.query ?? "").trim();
+  const queryPurpose = String(meta.queryPurpose ?? "").trim();
   return {
     observationKey: key,
     ...(Number.isFinite(rawRank) && rawRank > 0 ? { rank: Math.trunc(rawRank) } : {}),
+    ...(queryText ? { query: queryText } : {}),
+    ...(queryPurpose ? { queryPurpose } : {}),
     provider: String(item.provider ?? "unknown").toLowerCase(),
     providers: [String(item.provider ?? "unknown").toLowerCase()],
     engine: mapEngineBucket(String(meta.engine ?? item.provider ?? "")),

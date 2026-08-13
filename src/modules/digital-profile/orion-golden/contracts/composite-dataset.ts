@@ -19,6 +19,16 @@ export const CompositeObservationRowSchema = z.object({
    * остаётся тем, в котором материал собран, а не выдуманным номером.
    */
   rank: z.number().int().positive().optional(),
+  /**
+   * Текст запроса, по которому материал показался.
+   *
+   * Позиция без запроса ничего не значит: «третья строка» — третья по какому
+   * запросу? Отчёт обещает аудит выдачи по названному набору запросов, и
+   * таблица позиций строится по разрезу «запрос × поисковик».
+   */
+  query: z.string().optional(),
+  /** Назначение запроса из плана — отличает выдачу по имени от целевой пробы. */
+  queryPurpose: z.string().optional(),
   evidenceRefs: z.array(z.string()),
   provenanceOwner: z.enum(["base", "enrichment", "legacy"]),
 });
