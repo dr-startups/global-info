@@ -921,11 +921,28 @@ export function buildDigitalProfileOverviewFragment(
   //
   // `firstPageBullets: 1` — по замеру этой страницы: обвязка оставляет под
   // блоки около 29 % листа, один тематический блок занимает ~19 %.
+  /*
+   * Заголовок обзора — вывод, а не название страницы.
+   *
+   * «Обзор цифрового профиля» не сообщает читателю ничего; эталон отрасли на
+   * этом месте пишет итог, который видно, не читая страницу целиком.
+   */
+  const adverseCount = scoped.findings.filter(isAdverse).length;
+  const overviewTitle =
+    adverseCount > 0
+      ? `Цифровой профиль: ${adverseCount} ${pluralRu(
+          adverseCount,
+          "тема",
+          "темы",
+          "тем"
+        )} повышенного внимания`
+      : "Цифровой профиль: тем повышенного внимания не выявлено";
   return {
     slides: withContinuations(
       makeSlotSlide({
         slot,
         sectionId,
+        title: overviewTitle,
         content: {
           // «Проанализировано» относится к предмету аудита, а собрано всегда
           // шире: смешивать эти два числа под одной подписью нельзя.
