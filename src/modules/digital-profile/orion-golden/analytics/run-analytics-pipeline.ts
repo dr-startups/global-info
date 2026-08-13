@@ -37,6 +37,7 @@ import {
 import { resolveSubjectWithDerivedContext } from "./subject-context-miner";
 import { runSurfaceAnalyzers, ADVERSE_PATTERNS } from "./surface-analyzers";
 import { resolveAnalysisScope, type AnalysisScopeSummary } from "./analysis-scope";
+import { runLinkVerdicts } from "./run-link-verdicts";
 import { synthesizeFindings, type FindingSynthesisResult } from "./finding-synthesizer";
 import { buildBenchmarkTrace, type BenchmarkTrace } from "./benchmark-trace";
 import {
@@ -477,6 +478,22 @@ export async function runOrionAnalyticsPipeline(
       title: d.item.title,
       url: d.item.sourceUrl ?? null,
     })),
+  });
+
+  // 2e. Чтение ссылок предмета аудита.
+  //
+  // Тема материала до сих пор выбиралась по заголовку и сниппету — по двум
+  // строкам, которые показал поисковик. Здесь страницы читаются целиком, и
+  // решение по каждой выносится с цитатами. Шаг выключен по умолчанию: он
+  // ходит на чужие сайты и в модель, а это деньги за каждый отчёт.
+  const linkVerdicts = await runLinkVerdicts({
+    caseId: input.caseId,
+    subject: { fullName: subject.displayName, aliases: subject.aliases ?? [] },
+    items: scope.inScope,
+  });
+  emit("link-verdicts.json", {
+    ...linkVerdicts,
+    datasetId,
   });
 
   // 3. Typed surface analyzers.
