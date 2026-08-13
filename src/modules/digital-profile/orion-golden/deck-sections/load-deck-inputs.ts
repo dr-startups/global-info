@@ -189,8 +189,19 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           theme?: string;
           quotes?: Array<{ text?: string }>;
         }>;
+        summary?: {
+          unread?: number;
+          themes?: Array<{ theme?: string; count?: number; adverseCount?: number }>;
+        };
       }>(linkVerdictsPath)
     : null;
+  const linkThemes = (linkVerdicts?.summary?.themes ?? [])
+    .filter((t) => typeof t.theme === "string" && t.theme.trim() && (t.count ?? 0) > 0)
+    .map((t) => ({
+      theme: String(t.theme).trim(),
+      count: Number(t.count ?? 0),
+      adverseCount: Number(t.adverseCount ?? 0),
+    }));
 
   const analysisScopePath = join(analyticsDir, "analysis-scope.json");
   const analysisScope = existsSync(analysisScopePath)
@@ -513,6 +524,8 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
       typeof analysisScope?.analyzed === "number" ? analysisScope.analyzed : undefined,
     analysisTopN: typeof analysisScope?.topN === "number" ? analysisScope.topN : undefined,
     analysisLanes: analysisLanes.length > 0 ? analysisLanes : undefined,
+    linkThemes: linkThemes.length > 0 ? linkThemes : undefined,
+    linkUnreadCount: linkVerdicts?.summary?.unread,
     // Same unit as compositeCount (observation rows), not inventory decisions.
     subjectMatchCount: identityCounts.subjectMatchCount,
     likelySubjectCount: identityCounts.likelySubjectCount,

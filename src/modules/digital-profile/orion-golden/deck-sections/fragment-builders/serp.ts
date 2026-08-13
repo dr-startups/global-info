@@ -9,6 +9,7 @@ import { DECK_TEMPLATE_REGISTRY, RED_MARKER_LABEL } from "../template-registry";
 import type { ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import type { Finding } from "../../contracts/finding";
+import { pluralRu } from "../../analytics/finding-synthesizer";
 import { clientSafeDomain, clientSafeDomains } from "../../../services/composite-serp-merge";
 import { ADVERSE_PATTERNS, NOT_FOUND_PATTERNS } from "../../analytics/surface-analyzers";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
@@ -344,6 +345,29 @@ export function buildSerpFragment(
     }
   }
   const queriesLine = subjectQueriesLine(scoped);
+  /*
+   * Страница тем: о чём именно нежелательные публикации.
+   *
+   * Эталон отрасли ставит её сразу после списка ссылок и печатает рядом с
+   * каждой темой число публикаций. Числа сходятся с метрикой выше — это и
+   * делает таблицу проверяемой, а не декоративной.
+   *
+   * Темы приходят из чтения страниц. Если чтение выключено, страницы нет:
+   * рубрики из справочника показывать под таким заголовком нельзя, они не
+   * отвечают на вопрос «о чём публикация».
+   */
+  const linkThemes = (scoped.metricSnapshot.linkThemes ?? []).filter((t) => t.count > 0);
+  const themesPage =
+    linkThemes.length > 0
+      ? {
+          title: `${regionLabel.charAt(0).toUpperCase()}${regionLabel.slice(1)} — о чём публикации в ТОП-${SERP_TABLE_TOP_N}`,
+          rows: linkThemes
+            .slice(0, 12)
+            .map((t) => [t.theme, String(t.count), String(t.adverseCount)]),
+          unread: scoped.metricSnapshot.linkUnreadCount ?? 0,
+        }
+      : null;
+
   const slides: SlideContentContract[] = [];
   const baseSlideId = slot.slotId;
   for (let i = 0; i < pages.length; i += 1) {
@@ -388,6 +412,36 @@ export function buildSerpFragment(
         continuationIndex: i,
       });
     }
+  }
+  if (themesPage) {
+    const adverseTotal = linkThemes.reduce((n, t) => n + t.adverseCount, 0);
+    const unreadNote =
+      themesPage.unread > 0
+        ? ` ${themesPage.unread} ${pluralRu(themesPage.unread, "страница", "страницы", "страниц")} не открылись — они в подсчёт тем не вошли.`
+        : "";
+    slides.push({
+      ...makeSlotSlide({
+        slot,
+        sectionId,
+        title: themesPage.title,
+        content: {
+          narrative:
+            `Публикации из ТОП-${SERP_TABLE_TOP_N} прочитаны, и каждая отнесена к теме по своему содержанию. ` +
+            `Нежелательных публикаций: ${adverseTotal}.${unreadNote}`,
+          table: {
+            headers: ["Тема", "Публикаций", "Из них нежелательных"],
+            rows: themesPage.rows,
+          },
+        },
+        evidenceRefs: [],
+        findingIds: [],
+        metrics: { themes: linkThemes.length, adverseTotal, unread: themesPage.unread },
+      }),
+      slideId: `${baseSlideId}__themes`,
+      isContinuation: true,
+      continuationOf: baseSlideId,
+      continuationIndex: slides.length,
+    });
   }
   return { slides, status: "READY" };
 }

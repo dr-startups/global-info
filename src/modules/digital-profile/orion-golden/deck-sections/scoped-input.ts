@@ -41,6 +41,15 @@ export type MetricSnapshot = {
    * выдачу по региону собрать не удалось, обещать её проверку нельзя.
    */
   analysisLanes?: Array<{ engine: string; region: string; analyzed: number }>;
+  /**
+   * Темы, собранные по прочитанным страницам: формулировка и сколько
+   * публикаций её подтверждают. Эталон отрасли показывает такую таблицу сразу
+   * после списка ссылок — она отвечает на вопрос «о чём именно нежелательные
+   * публикации», и её числа сходятся с метрикой выше.
+   */
+  linkThemes?: Array<{ theme: string; count: number; adverseCount: number }>;
+  /** Сколько страниц не удалось прочитать — честная часть покрытия. */
+  linkUnreadCount?: number;
   subjectMatchCount: number;
   /** Surname+context / shared domain — visible but not KPI (§2.1). */
   likelySubjectCount: number;
