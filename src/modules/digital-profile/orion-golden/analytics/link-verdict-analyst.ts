@@ -1,0 +1,173 @@
+/**
+ * Решение по одной прочитанной странице.
+ *
+ * Модель получает **текст страницы**, а не заголовок из выдачи, и отвечает
+ * структурой, а не прозой. Форма решения описана в
+ * `contracts/link-verdict.ts`; здесь — как эту форму получают.
+ *
+ * Что модели НЕ даётся намеренно:
+ *
+ * — **Наш справочник рубрик.** Тема должна называть то, о чём публикация
+ *   («Судебный спор с бывшей супругой»), а не выбираться из восьми готовых
+ *   ярлыков. Ровно из-за справочника телеинтервью 2015 года оказалось в теме
+ *   «Криминальные / судебные материалы».
+ * — **Оценка других страниц.** Каждое решение принимается по своей странице:
+ *   иначе одна громкая публикация красит соседние.
+ *
+ * Что требуется жёстко:
+ *
+ * — **Цитата под нежелательным выводом.** Без неё вывод — мнение модели, а не
+ *   факт со страницы, и он понижается до неясного (`requireQuotedAdverse`).
+ * — **Решение о принадлежности.** Однофамилец — главная ошибка таких отчётов,
+ *   и модель обязана назвать её прямо, а не растворить в тексте.
+ * — **Честность о непрочитанном.** Если страница не открылась, решение по ней
+ *   не выдумывается: тональность нейтральная, принадлежность «неясно», причина
+ *   записана.
+ */
+
+import {
+  LINK_VERDICT_SCHEMA_VERSION,
+  LinkVerdictSchema,
+  requireQuotedAdverse,
+  type LinkVerdict,
+} from "../contracts/link-verdict";
+import { callOpenAiStrictJson } from "../gpt/openai-json-client";
+import type { LinkPageRead } from "../../services/link-page-reader";
+
+export const LINK_VERDICT_PROMPT_VERSION = "link-verdict-prompt-v1" as const;
+
+const SYSTEM_PROMPT = `Ты аналитик проверки деловой репутации. Тебе дают текст одной веб-страницы и данные проверяемого лица.
+
+Верни СТРОГО JSON:
+{
+  "subjectMatch": "subject" | "likely" | "other" | "unclear",
+  "tone": "adverse" | "neutral" | "supportive",
+  "theme": "<о чём эта публикация, одной фразой на русском, 4-120 знаков>",
+  "quotes": [{"text": "<дословная цитата со страницы, 10-400 знаков>"}],
+  "publishedAt": "<дата публикации, если она есть на странице, иначе не указывай>"
+}
+
+Правила:
+1. subjectMatch — про то, о ТОМ ЛИ человеке страница. "other" — если это однофамилец или тёзка. "unclear" — если по тексту не определить. Не выдавай предположение за уверенность.
+2. tone — как эта публикация выглядит для банка или контрагента при проверке. "adverse" — если она создаёт вопросы: суды, санкции, расследования, конфликты, обвинения. "supportive" — если это официальная или деловая публикация, работающая на репутацию. Иначе "neutral".
+3. theme — назови СОДЕРЖАНИЕ публикации, а не её жанр. Плохо: "Криминальные материалы". Хорошо: "Судебный спор с бывшей супругой о разделе активов".
+4. quotes — только дословные фрагменты из данного текста. Если tone="adverse", хотя бы одна цитата обязательна: вывод должен опираться на текст, а не на общее впечатление.
+5. Не оценивай другие страницы, о которых можешь знать. Только эту.
+6. Если текст не позволяет судить — subjectMatch="unclear", tone="neutral", theme описывает страницу нейтрально.`;
+
+export type LinkVerdictInput = {
+  evidenceRef: string;
+  url: string;
+  domain?: string;
+  rank?: number;
+  query?: string;
+  /** Заголовок и сниппет из выдачи — контекст, но не основание вывода. */
+  serpTitle?: string;
+  serpSnippet?: string;
+  subject: { fullName: string; aliases?: string[] };
+  page: LinkPageRead;
+};
+
+/** Решение по непрочитанной странице: честное «не знаем», а не догадка. */
+export function unreadVerdict(input: LinkVerdictInput): LinkVerdict {
+  const failure = input.page.ok ? undefined : input.page.failure;
+  return LinkVerdictSchema.parse({
+    schemaVersion: LINK_VERDICT_SCHEMA_VERSION,
+    evidenceRef: input.evidenceRef,
+    url: input.url,
+    domain: input.domain,
+    rank: input.rank,
+    query: input.query,
+    subjectMatch: "unclear",
+    tone: "neutral",
+    theme: (input.serpTitle ?? "Страница не открылась").slice(0, 120) || "Страница не открылась",
+    quotes: [],
+    readFailure: failure ?? "not_fetched",
+    readAt: input.page.readAt,
+  });
+}
+
+/**
+ * Получить решение по прочитанной странице.
+ *
+ * Отказ модели — не повод выдумать вывод: он превращается в то же честное
+ * «не знаем», что и непрочитанная страница.
+ */
+export async function analyzeLinkPage(
+  input: LinkVerdictInput,
+  deps: { call?: typeof callOpenAiStrictJson } = {}
+): Promise<LinkVerdict> {
+  if (!input.page.ok) return unreadVerdict(input);
+  const call = deps.call ?? callOpenAiStrictJson;
+  let raw: unknown;
+  try {
+    raw = await call({
+      systemPrompt: SYSTEM_PROMPT,
+      userPayload: {
+        subject: { fullName: input.subject.fullName, aliases: input.subject.aliases ?? [] },
+        page: {
+          url: input.url,
+          domain: input.domain,
+          titleFromPage: input.page.title,
+          titleFromSerp: input.serpTitle,
+          text: input.page.text,
+        },
+      },
+      maxOutputTokens: 700,
+    });
+  } catch {
+    return unreadVerdict({ ...input, page: { ...input.page, ok: false, failure: "not_fetched", message: "модель не ответила" } as LinkPageRead });
+  }
+
+  const body = (raw ?? {}) as Record<string, unknown>;
+  const parsed = LinkVerdictSchema.safeParse({
+    schemaVersion: LINK_VERDICT_SCHEMA_VERSION,
+    evidenceRef: input.evidenceRef,
+    url: input.url,
+    domain: input.domain,
+    rank: input.rank,
+    query: input.query,
+    subjectMatch: body.subjectMatch,
+    tone: body.tone,
+    theme: typeof body.theme === "string" ? body.theme.trim().slice(0, 120) : undefined,
+    quotes: Array.isArray(body.quotes)
+      ? body.quotes
+          .map((q) => (q && typeof q === "object" ? String((q as { text?: unknown }).text ?? "") : ""))
+          .filter((t) => t.trim().length >= 10)
+          .slice(0, 3)
+          .map((t) => ({ text: t.trim().slice(0, 400) }))
+      : [],
+    publishedAt:
+      typeof body.publishedAt === "string" && body.publishedAt.trim()
+        ? body.publishedAt.trim()
+        : input.page.publishedAt,
+    readAt: input.page.readAt,
+  });
+  if (!parsed.success) return unreadVerdict(input);
+  return requireQuotedAdverse(parsed.data);
+}
+
+/**
+ * Решения по всем ссылкам страницы выдачи.
+ *
+ * Порядок сохраняется, чтобы решение можно было положить рядом со строкой
+ * таблицы. Параллельность ограничена: страницы читаются с чужих сайтов, и
+ * бить по ним пачкой — плохой тон и быстрый бан.
+ */
+export async function analyzeLinkPages(
+  inputs: LinkVerdictInput[],
+  deps: { call?: typeof callOpenAiStrictJson; concurrency?: number } = {}
+): Promise<LinkVerdict[]> {
+  const concurrency = Math.max(1, Math.min(deps.concurrency ?? 4, 8));
+  const out: LinkVerdict[] = new Array(inputs.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(concurrency, inputs.length) }, async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= inputs.length) return;
+      out[i] = await analyzeLinkPage(inputs[i]!, deps);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
