@@ -101,16 +101,31 @@ export type SerpProviderAttributionResult = {
 };
 
 /**
- * Exact fallback contract (deterministic precedence):
- * 1. persisted normalized observation provider
- * 2. base manifest provider
- * 3. AgentRun provider/type
- * 4. ProviderTask lineage
- * 5. surfaceProvider
- * 6. query.engine
+ * Кто собрал эту строку выдачи.
+ *
+ * Порядок один и тот же всегда, и правило у него простое: **сначала то, что
+ * записано про саму строку, и только потом то, что известно про прогон**.
+ *
+ * 1. provider из сохранённого наблюдения
+ * 2. engine / source / происхождение задачи — поля самой строки
+ * 3. provider агента
+ * 4. provider поверхности
+ * 5. engine запроса
+ * 6. подсказка манифеста прогона — последняя, и только когда она однозначна
  * 7. UNKNOWN
  *
- * SearchResult path must accept ProviderTask/AgentRun/manifest context — not query alone.
+ * Подсказка манифеста стояла второй, и это стоило нам целого поисковика.
+ * Манифест перечисляет провайдеров всего прогона, вызывающий брал оттуда
+ * первого подходящего — то есть **одно и то же значение подставлялось каждой
+ * строке**. Первым в манифесте шёл `yandex`, и 216 строк Google получили ярлык
+ * «Яндекс», хотя в поле `engine` у каждой из них стояло `GOOGLE`. В отчёте это
+ * выглядело как «Google не собрался»: строка предмета аудита называла один
+ * поисковик, таблица показывала яндексовую выдачу, а собранная гугловая
+ * растворялась в ней без следа.
+ *
+ * Признак таких ошибок — сигнал уровня прогона, применённый к отдельной
+ * строке. Здесь он теперь последний и работает только когда поисковик в
+ * прогоне был один: тогда выбирать не из чего и ошибиться нельзя.
  */
 export function resolveSerpProviderAttribution(input: {
   /** 1 — persisted normalized observation provider */
@@ -131,14 +146,15 @@ export function resolveSerpProviderAttribution(input: {
 }): SerpProviderAttributionResult {
   const ordered: Array<{ value: string | null | undefined; source: SerpProviderAttributionSource }> = [
     { value: input.observationProvider, source: "persisted_observation_provider" },
-    { value: input.manifestProviderHint, source: "base_manifest_provider" },
-    { value: input.agentRunProvider, source: "agent_run_provider" },
     {
       value: input.providerTaskLineage ?? input.engine ?? input.source,
       source: "provider_task_lineage",
     },
+    { value: input.agentRunProvider, source: "agent_run_provider" },
     { value: input.surfaceProvider, source: "surface_provider" },
     { value: input.queryEngine, source: "query_engine" },
+    // Последней и только однозначной: см. объяснение над функцией.
+    { value: input.manifestProviderHint, source: "base_manifest_provider" },
   ];
 
   let winner: SerpProviderAttributionResult | null = null;

@@ -360,6 +360,20 @@ export async function mergeCompositeSerp(input: {
             where: { id: { in: resultIds } },
             include: { query: true },
           });
+    // Подсказка манифеста годится только когда поисковик в прогоне был один:
+    // это знание о прогоне, а не о строке, и подставлять его каждой строке
+    // подряд значит переклеивать ярлыки. Ровно так вся выдача Google однажды
+    // стала яндексовой (см. `resolveSerpProviderAttribution`).
+    const manifestSearchProviders = [
+      ...new Set(
+        (input.manifest.actualProviders ?? [])
+          .map((p) => String(p.providerId ?? ""))
+          .filter((id) => /yandex|serper|google/i.test(id))
+      ),
+    ];
+    const unambiguousManifestProvider =
+      manifestSearchProviders.length === 1 ? manifestSearchProviders[0]! : null;
+
     for (const r of results) {
       if (isMockBaseRow({ source: r.source, title: r.title, url: r.url })) {
         skippedMockBaseIds.push(r.id);
@@ -372,9 +386,7 @@ export async function mergeCompositeSerp(input: {
       const attr = resolveSerpProviderAttribution({
         observationProvider:
           meta && typeof meta.provider === "string" ? meta.provider : null,
-        manifestProviderHint:
-          input.manifest.actualProviders?.find((p) => /yandex|serper|google/i.test(p.providerId ?? ""))
-            ?.providerId ?? null,
+        manifestProviderHint: unambiguousManifestProvider,
         agentRunProvider:
           meta && typeof meta.agentRunProvider === "string" ? meta.agentRunProvider : null,
         providerTaskLineage:
