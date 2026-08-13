@@ -5,7 +5,7 @@ import {
 } from "@/modules/digital-profile/orion-golden/analytics/run-link-verdicts";
 import type { LinkPageRead } from "@/modules/digital-profile/services/link-page-reader";
 
-const ON = { DIGITAL_PROFILE_LINK_READING: "true" } as NodeJS.ProcessEnv;
+const ON = { DIGITAL_PROFILE_LINK_READING: "true" } as unknown as NodeJS.ProcessEnv;
 
 function item(over: Record<string, unknown> = {}) {
   return {
@@ -63,7 +63,7 @@ describe("шаг чтения ссылок", () => {
       subject,
       items: [item()] as never,
       deps: {
-        env: {} as NodeJS.ProcessEnv,
+        env: {} as unknown as NodeJS.ProcessEnv,
         read: async () => {
           touched = true;
           return page;
@@ -86,7 +86,7 @@ describe("шаг чтения ссылок", () => {
       deps: {
         env: ON,
         read: async (url) => ({ ...page, url }),
-        analyze: (async (inputs) =>
+        analyze: (async (inputs: Array<{ evidenceRef: string; url: string; rank?: number }>) =>
           inputs.map((i, idx) => ({
             schemaVersion: "link-verdict-v1" as const,
             evidenceRef: i.evidenceRef,

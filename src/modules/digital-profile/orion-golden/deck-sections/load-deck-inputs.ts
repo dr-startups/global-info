@@ -167,6 +167,31 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
   // международные базы). Артефакт появился позже самой колоды, поэтому его
   // отсутствие не валит сборку — страница тогда просто не называет это число,
   // а не печатает вместо него размер всего собранного корпуса.
+  /*
+   * Решения по прочитанным ссылкам.
+   *
+   * Оценка материала в таблице выдачи до сих пор ставилась по заголовку: если
+   * в нём попадались слова про суд или санкции — «Нежелательный». Так
+   * телеинтервью 2015 года получило красную метку, а страница санкционного
+   * списка без ключевых слов — зелёную. Решение, вынесенное по тексту
+   * страницы, точнее заголовка и потому переопределяет его.
+   *
+   * Файла может не быть: чтение ссылок выключено по умолчанию, и старые
+   * прогоны его не знают. Тогда всё работает как раньше.
+   */
+  const linkVerdictsPath = join(analyticsDir, "link-verdicts.json");
+  const linkVerdicts = existsSync(linkVerdictsPath)
+    ? readJson<{
+        verdicts?: Array<{
+          evidenceRef?: string;
+          subjectMatch?: string;
+          tone?: string;
+          theme?: string;
+          quotes?: Array<{ text?: string }>;
+        }>;
+      }>(linkVerdictsPath)
+    : null;
+
   const analysisScopePath = join(analyticsDir, "analysis-scope.json");
   const analysisScope = existsSync(analysisScopePath)
     ? readJson<{
@@ -289,6 +314,30 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
         queryPurpose: evidenceIndex[ref]?.queryPurpose ?? obs.queryPurpose,
         subjectDecision: subjectDecision ?? decisionByRef.get(ref) ?? evidenceIndex[ref]?.subjectDecision,
       };
+    }
+  }
+
+  /*
+   * Решение по прочитанной странице сильнее заголовка.
+   *
+   * Оценка в таблице выдачи ставилась по словам в заголовке: «суд», «санкции»,
+   * «арест». Так телеинтервью 2015 года получило метку «Нежелательный», а
+   * страница санкционного списка без этих слов — «Нейтральный». Решение
+   * вынесено по тексту страницы и с цитатой, поэтому оно и назначает оценку.
+   *
+   * Материал, признанный чужим («это однофамилец»), перестаёт быть
+   * подтверждением чего-либо о субъекте — независимо от того, что решил
+   * классификатор по заголовку.
+   */
+  for (const v of linkVerdicts?.verdicts ?? []) {
+    const ref = String(v.evidenceRef ?? "");
+    if (!ref || !evidenceIndex[ref]) continue;
+    const quoted = (v.quotes ?? []).some((q) => String(q?.text ?? "").trim().length > 0);
+    if (v.tone === "adverse" && quoted) evidenceIndex[ref].adverse = true;
+    if (v.tone === "supportive" || v.tone === "neutral") evidenceIndex[ref].adverse = false;
+    if (v.subjectMatch === "other") {
+      evidenceIndex[ref].adverse = false;
+      evidenceIndex[ref].subjectDecision = "OTHER_SUBJECT";
     }
   }
 
