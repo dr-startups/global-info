@@ -221,7 +221,14 @@ export function validateDigitalProfileEnv(
 
   // Provider keys — only checked when the provider is enabled.
   if (boolSetting("DIGITAL_PROFILE_REAL_CONNECTORS_ENABLED", env)) {
-    if (boolSetting("DIGITAL_PROFILE_GOOGLE_ENABLED", env)) {
+    // Ключи Programmable Search нужны только выбранной стратегии
+    // `custom_search`. При работе через внешнюю выдачу (значение по умолчанию)
+    // их отсутствие — норма, а предупреждение о них печаталось при каждом
+    // запуске и приучало не читать этот блок.
+    if (
+      boolSetting("DIGITAL_PROFILE_GOOGLE_ENABLED", env) &&
+      stringSetting("GOOGLE_SEARCH_PROVIDER", env) === "custom_search"
+    ) {
       if (!env.GOOGLE_SEARCH_API_KEY || !env.GOOGLE_SEARCH_ENGINE_ID) {
         warnings.push(
           "Google provider is enabled but GOOGLE_SEARCH_API_KEY / GOOGLE_SEARCH_ENGINE_ID are missing; it will resolve to NOT_CONFIGURED."
@@ -248,7 +255,11 @@ export function validateDigitalProfileEnv(
 
   // Stage N2 — real Google connector (independent dedicated flag + strategy).
   if (boolSetting("DIGITAL_PROFILE_GOOGLE_REAL_ENABLED", env)) {
-    const strategy = (env.GOOGLE_SEARCH_PROVIDER ?? "").trim().toLowerCase();
+    // Стратегия читается через слой умолчаний — тем же способом, каким её
+    // читает рабочий код. Сырое чтение отсюда сообщало «стратегия не выбрана»
+    // при работающем провайдере: переменная не задана, а значение по умолчанию
+    // (`external_serp`) этой проверке не было видно.
+    const strategy = stringSetting("GOOGLE_SEARCH_PROVIDER", env);
     if (strategy !== "custom_search" && strategy !== "external_serp") {
       warnings.push(
         "DIGITAL_PROFILE_GOOGLE_REAL_ENABLED=true but GOOGLE_SEARCH_PROVIDER is not set to 'custom_search' or 'external_serp'; the real Google provider will resolve to DISABLED."
