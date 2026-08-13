@@ -193,9 +193,23 @@ export function buildRegionalSummaryFragment(
         : []),
     ];
     const materialWord = pluralRu(materialCount, "материал", "материала", "материалов");
+    /*
+     * Заголовок страницы — вывод, а не название раздела.
+     *
+     * В эталоне отрасли (`docs/etalon-orion-razbor.md`) читатель узнаёт итог
+     * аудита, прочитав одни заголовки: «Результаты поиска на первых 2
+     * страницах Google и Яндекса содержат нежелательные данные». У нас на
+     * этом месте стояло «Россия — резюме аудита» — ярлык, который не сообщает
+     * ничего.
+     */
+    const verdictTitle =
+      adverseN > 0
+        ? `${regionLabel}: в выдаче есть материалы повышенного внимания`
+        : `${regionLabel}: материалов повышенного внимания в выдаче не найдено`;
     const base = makeSlotSlide({
       slot: summarySlot,
       sectionId,
+      title: verdictTitle,
       content: {
         narrative: fitClientSentences(
           [
