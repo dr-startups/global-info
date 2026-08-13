@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v1",
   "slideCount": 49,
-  "totalChars": 37671,
+  "totalChars": 37779,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -572,7 +572,7 @@
     {
       "slideKey": "p14_ru_images_1",
       "text": {
-        "title": "Россия — изображения (1)"
+        "title": "Россия — изображения (1): негативных источников нет"
       },
       "baseSlotId": "p14_ru_images_1",
       "template": "orion_golden_prose",
@@ -584,7 +584,7 @@
     {
       "slideKey": "p15_ru_images_2",
       "text": {
-        "title": "Россия — изображения (2)"
+        "title": "Россия — изображения (2): негативных источников нет"
       },
       "baseSlotId": "p15_ru_images_2",
       "template": "orion_golden_prose",
@@ -596,7 +596,7 @@
     {
       "slideKey": "p16_ru_images_3",
       "text": {
-        "title": "Россия — изображения (3)"
+        "title": "Россия — изображения (3): негативных источников нет"
       },
       "baseSlotId": "p16_ru_images_3",
       "template": "orion_golden_prose",
@@ -947,7 +947,7 @@
     {
       "slideKey": "p30_uae_images",
       "text": {
-        "title": "ОАЭ — изображения в поиске"
+        "title": "ОАЭ — изображения в поиске: негативных источников нет"
       },
       "baseSlotId": "p30_uae_images",
       "template": "orion_golden_prose",

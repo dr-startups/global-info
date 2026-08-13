@@ -7,6 +7,7 @@ import type { FragmentKey, SectionType } from "../contracts";
 import type { ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
+import { pluralRu } from "../../analytics/finding-synthesizer";
 import {
   adverseVisualSidebar,
   buildPageEvidenceView,
@@ -62,11 +63,30 @@ export function buildImagesFragment(
       if (pageDomainSet.size === 0) return true;
       return domains.some((d) => pageDomainSet.has(d));
     });
+    // Четыре страницы картинок подряд отличались только числами внутри текста,
+    // и читатель видел четыре одинаковых заголовка. Заголовок теперь называет
+    // вывод именно этой страницы.
+    const shown = sidebar.visibleRows.length;
+    const adverse = sidebar.adverseRows.length;
+    const verdictTitle =
+      shown > 0
+        ? `${slot.title}: ${
+            adverse > 0
+              ? `${adverse} ${pluralRu(
+                  adverse,
+                  "изображение ведёт на негативный источник",
+                  "изображения ведут на негативные источники",
+                  "изображений ведут на негативные источники"
+                )}`
+              : "негативных источников нет"
+          }`
+        : undefined;
     return visualSlide({
       slot,
       sectionId,
       extras,
       scoped,
+      ...(verdictTitle ? { title: verdictTitle } : {}),
       content: {
         bullets: pageClaims.map((c) => clampClientText(claimText(c), 400)),
         ...pageBlocks,
