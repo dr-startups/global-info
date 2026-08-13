@@ -36,6 +36,7 @@ import {
   riskLabel,
   sourceLine,
   splitClientParagraphs,
+  subjectQueriesLine,
   enumerateRu,
   statusLine,
   uniqueRefs,
@@ -342,6 +343,7 @@ export function buildSerpFragment(
       });
     }
   }
+  const queriesLine = subjectQueriesLine(scoped);
   const slides: SlideContentContract[] = [];
   const baseSlideId = slot.slotId;
   for (let i = 0; i < pages.length; i += 1) {
@@ -359,7 +361,9 @@ export function buildSerpFragment(
       content: {
         table: { headers: ["№", "Домен", "Заголовок", "Оценка"], rows: pageRows },
         ...pageBlocks,
-        narrative: pageBlocks.whatWasFound,
+        // Клиент должен видеть, по чему смотрели: без набора запросов позиция
+        // в таблице — число без знаменателя (см. `docs/etalon-orion-razbor.md`).
+        narrative: [queriesLine, pageBlocks.whatWasFound].filter(Boolean).join(" "),
       },
       evidenceRefs: pageRefs,
       findingIds: view.findings.map((f) => f.findingId),

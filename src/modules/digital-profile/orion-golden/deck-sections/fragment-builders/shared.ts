@@ -1364,6 +1364,39 @@ export function auditScopeLine(ms: MetricSnapshot, opts?: { withRemainder?: bool
   return `${head} Остальное собранное показано в отчёте, но темы риска по нему не строились.`;
 }
 
+/**
+ * По каким запросам смотрели выдачу.
+ *
+ * Эталон отрасли печатает набор запросов на каждой странице поверхности —
+ * и это не украшение: без него метрика «столько-то материалов в ТОП-20»
+ * не имеет знаменателя, а читатель не знает, что именно спрашивали.
+ *
+ * Набор берётся из самих доказательств: это запросы, которыми искали субъекта
+ * по имени. Прицельные запросы (деловой, медийный, негативный) сюда не входят
+ * — по ним выдача не показывается как «страница, которую видит человек».
+ */
+export function subjectQueriesLine(
+  scoped: ScopedFragmentInput,
+  limit = 5
+): string | undefined {
+  const byQuery = new Map<string, number>();
+  for (const e of Object.values(scoped.evidenceIndex)) {
+    const q = String(e.query ?? "").trim();
+    if (!q) continue;
+    if (e.queryPurpose && e.queryPurpose !== "subject_lookup") continue;
+    byQuery.set(q, (byQuery.get(q) ?? 0) + 1);
+  }
+  if (byQuery.size === 0) return undefined;
+  const queries = [...byQuery.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru"))
+    .slice(0, limit)
+    .map(([q]) => q);
+  const word = pluralRu(queries.length, "запросу", "запросам", "запросам");
+  return `Выдача проверена по ${queries.length} ${word}: ${queries
+    .map((q) => `«${q}»`)
+    .join(", ")}.`;
+}
+
 /** Строка, законченная как предложение: без второй точки и без её отсутствия. */
 function endingWithPeriod(text: string): string {
   const trimmed = text.trim();

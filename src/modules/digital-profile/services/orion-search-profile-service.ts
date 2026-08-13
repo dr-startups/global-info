@@ -13,6 +13,12 @@ import { Prisma, SearchEngine } from "@prisma/client";
 import { prisma } from "@/server/prisma/client";
 import { externalGoogleSerpProvider } from "../providers/external-google-serp-provider";
 import { providerConfig } from "../providers/config";
+import {
+  SUBJECT_QUERY_LIMIT,
+  buildSubjectQuerySet,
+  type SubjectQuerySet,
+} from "../search-surfaces/subject-query-set";
+import { serperAutocomplete } from "../providers/serper-surfaces";
 import { yandexSearchProvider } from "../providers/yandex-search-provider";
 import type { SearchProviderRequest, SearchProviderResult } from "../providers/types";
 import { normalizeUrl } from "./evidence-service";
@@ -71,6 +77,12 @@ export interface OrionRegionRunSummary {
 export interface OrionProfileRunResult {
   plan: OrionQuerySpec[];
   queryPlanId: string;
+  /**
+   * Набор запросов аудита по каждому региональному контуру — что именно
+   * спрашивали у поисковика и откуда взялся каждый запрос. Отчёт печатает
+   * этот набор клиенту: без него доля и глубина висят без знаменателя.
+   */
+  querySets: SubjectQuerySet[];
   regions: OrionRegionRunSummary[];
   organicInserted: number;
   surfacesInserted: number;
@@ -397,11 +409,98 @@ function deriveCollectionStatus(
   return { status: "NOT_QUERIED", message: "Region not queried in this run." };
 }
 
+/**
+ * Набор запросов аудита по региону: имя субъекта плюс самые популярные
+ * производные от него.
+ *
+ * Популярность спрашиваем у самого поисковика — одним вызовом автодополнения
+ * по имени. Это один платный запрос на контур, и он определяет, что вообще
+ * будет предметом аудита: остальные запросы плана (деловой, медийный,
+ * негативный) остаются источником тем риска, но метрику и таблицу позиций
+ * задаёт этот набор.
+ *
+ * Отказ автодополнения не ломает прогон: набор достраивается перестановками
+ * ФИО, и в артефакте видно, что подсказок не было.
+ */
+async function buildRegionQuerySet(
+  subject: CaseSubjectInfo,
+  region: OrionRegionCode,
+  capturedAt: string
+): Promise<SubjectQuerySet> {
+  const profile = regionProfile(region);
+  const parsed = parseSubjectName(subject.fullName);
+  const suggestions: Array<{ text: string; engine: string; region: string; rank: number }> = [];
+  try {
+    const run = await serperAutocomplete(
+      {
+        caseId: subject.caseId ?? "",
+        subjectFullName: subject.fullName,
+        aliases: subject.aliases ?? [],
+        query: subject.fullName,
+        language: profile.language,
+        region: profile.googleGl,
+        limit: SUBJECT_QUERY_LIMIT * 4,
+      },
+      region
+    );
+    if (run.status === "SUCCESS") {
+      for (const item of run.items) {
+        suggestions.push({
+          text: String(item.title ?? ""),
+          engine: "GOOGLE",
+          region,
+          rank: item.rank ?? suggestions.length + 1,
+        });
+      }
+    }
+  } catch {
+    // Подсказки — удобство, а не условие сбора: молча падаем на перестановки.
+  }
+  return buildSubjectQuerySet({
+    profile: {
+      fullName: subject.fullName,
+      firstName: parsed.givenName ?? undefined,
+      lastName: parsed.surname ?? undefined,
+      patronymic: parsed.patronymic ?? undefined,
+      variants: subject.aliases ?? [],
+    },
+    suggestions,
+    region,
+    language: profile.language,
+    capturedAt,
+    limit: SUBJECT_QUERY_LIMIT,
+  });
+}
+
 export async function runOrionSearchProfile(
   caseId: string,
   options: OrionProfileRunOptions = {}
 ): Promise<OrionProfileRunResult> {
   const subject = await loadCaseSubject(caseId);
+  // Набор запросов собирается до плана: именно он определяет, выдачу по чему
+  // мы аудируем. Дата фиксации общая для всех контуров — это дата прогона.
+  const capturedAt = new Date().toISOString();
+  const plannedRegions =
+    options.regions ??
+    (
+      buildOrionQueryPlanDetailed(
+        {
+          fullName: subject.fullName,
+          aliases: subject.aliases,
+          targetRegions: subject.targetRegions,
+          location: subject.location,
+        },
+        { maxPrimaryPerRegion: 1, includeRiskProbes: false }
+      ).plan.map((q) => q.region)
+    ).filter((r, i, all) => all.indexOf(r) === i);
+  const querySets: SubjectQuerySet[] = [];
+  for (const region of plannedRegions) {
+    querySets.push(await buildRegionQuerySet(subject, region, capturedAt));
+  }
+  const primaryQueriesByRegion = Object.fromEntries(
+    querySets.map((set) => [set.region, set.queries.map((q) => q.query)])
+  ) as Partial<Record<OrionRegionCode, string[]>>;
+
   const detailedPlan = buildOrionQueryPlanDetailed(
     {
       fullName: subject.fullName,
@@ -410,6 +509,7 @@ export async function runOrionSearchProfile(
       location: subject.location,
     },
     {
+      primaryQueriesByRegion,
       maxPrimaryPerRegion: options.maxPrimaryPerRegion ?? providerConfig.orion.maxPrimaryQueriesPerRegion,
       includeRiskProbes:
         options.includeRiskProbes ??
@@ -497,6 +597,7 @@ export async function runOrionSearchProfile(
   warnings.push(...detailedPlan.warnings);
   return {
     queryPlanId: detailedPlan.queryPlanId,
+    querySets,
     plan,
     regions: regionSummaries,
     organicInserted,

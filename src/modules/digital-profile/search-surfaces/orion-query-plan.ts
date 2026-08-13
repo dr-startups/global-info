@@ -73,6 +73,16 @@ export interface OrionQueryPlanOptions {
    * Business, media and wikipedia anchors are added on top of this cap.
    */
   maxPrimaryPerRegion?: number;
+  /**
+   * Готовый набор запросов аудита на регион — то, что реально набирает
+   * проверяющий.
+   *
+   * Механические перестановки ФИО остаются страховкой: они не знают, что
+   * именно спрашивают о субъекте на самом деле. Когда набор собран из
+   * подсказок поисковика (`search-surfaces/subject-query-set.ts`), плановые
+   * строки строятся по нему, а перестановки не используются.
+   */
+  primaryQueriesByRegion?: Partial<Record<OrionRegionCode, string[]>>;
   includeRiskProbes?: boolean;
   regions?: OrionRegionCode[];
 }
@@ -337,7 +347,7 @@ export function buildOrionQueryPlanDetailed(
 
   for (const region of regions) {
     if (region === "RU") {
-      const base = ruBaseVariants(profile).slice(0, maxPrimary);
+      const base = (options.primaryQueriesByRegion?.RU ?? ruBaseVariants(profile)).slice(0, maxPrimary);
       for (const b of base) {
         const subjectRow = mkRow({
           queryPlanId,
@@ -428,7 +438,7 @@ export function buildOrionQueryPlanDetailed(
       continue;
     }
 
-    const base = enBaseVariants(profile).slice(0, maxPrimary);
+    const base = (options.primaryQueriesByRegion?.[region] ?? enBaseVariants(profile)).slice(0, maxPrimary);
     const context = Array.from(new Set(profile.regionHints)).slice(0, 2);
     for (const b of base) {
       const row = mkRow({
