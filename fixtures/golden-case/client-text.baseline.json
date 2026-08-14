@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v1",
   "slideCount": 48,
-  "totalChars": 39447,
+  "totalChars": 41564,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -286,81 +286,94 @@
       "table": {
         "headers": [
           "№",
-          "Домен",
+          "Ссылка",
           "Заголовок",
+          "Тип источника",
           "Оценка"
         ],
         "rows": [
           [
             "1",
-            "stockholm-kuriren.se",
+            "stockholm-kuriren.se/anders-holmstr-m-flagged-during-sanction…",
             "Anders Holmström flagged during sanctions screening watchlist review",
+            "—",
             "Нежелательный"
           ],
           [
             "2",
-            "nordmarket-watch.se",
+            "nordmarket-watch.se/anders-holmstr-m-linked-to-malta-holding-…",
             "Anders Holmström linked to Malta holding structure and offshore beneficial ownership",
+            "—",
             "Нежелательный"
           ],
           [
             "3",
-            "granskaren.se",
+            "granskaren.se/nordkap-capital-raises-series-b-anders-holmstr-…",
             "Nordkap Capital raises Series B; Anders Holmström remains controlling shareholder",
+            "—",
             "Нейтральный"
           ],
           [
             "4",
-            "kapitalnytt.se",
+            "kapitalnytt.se/stockholm-court-schedules-hearing-involving-an…",
             "Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital",
+            "—",
             "Нежелательный"
           ],
           [
             "5",
-            "rynok-segodnya.ru",
+            "rynok-segodnya.ru/beneficial-ownership-disclosure-lists-ander…",
             "Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital",
+            "—",
             "Нежелательный"
           ],
           [
             "7",
-            "reestr-novosti.ru",
+            "reestr-novosti.ru/nordkap-capital-board-appoints-independent-…",
             "Nordkap Capital board appoints independent compliance advisor after Anders Holmström probe",
+            "—",
             "Нежелательный"
           ],
           [
             "11",
-            "granskaren.se",
+            "granskaren.se/nordkap-capital-annual-report-signed-by-anders-…",
             "Nordkap Capital annual report signed by Anders Holmström",
+            "—",
             "Нейтральный"
           ],
           [
             "12",
-            "kapitalnytt.se",
+            "kapitalnytt.se/prosecutors-request-documents-from-anders-holm…",
             "Prosecutors request documents from Anders Holmström regarding Malta SPV",
+            "—",
             "Нейтральный"
           ],
           [
             "13",
-            "rynok-segodnya.ru",
+            "rynok-segodnya.ru/credit-bureau-soft-hit-references-anders-ho…",
             "Credit bureau soft-hit references Anders Holmström, Nordkap Capital",
+            "—",
             "Нейтральный"
           ],
           [
             "14",
-            "pravo-obzor.ru",
+            "pravo-obzor.ru/anders-holmstr-m-founder-of-nordkap-capital-fa…",
             "Подробности: Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm",
+            "—",
             "Нежелательный"
           ],
           [
             "15",
-            "reestr-novosti.ru",
+            "reestr-novosti.ru/anders-holmstr-m-linked-to-malta-holding-st…",
             "Разбор: Anders Holmström linked to Malta holding structure and offshore beneficial ownership",
+            "—",
             "Нежелательный"
           ],
           [
             "16",
-            "affarsposten.se",
+            "affarsposten.se/nordkap-capital-raises-series-b-anders-holmst…",
             "Обзор: Nordkap Capital raises Series B; Anders Holmström remains controlling shareholder",
+            "—",
             "Нейтральный"
           ]
         ]
@@ -381,33 +394,38 @@
       "table": {
         "headers": [
           "№",
-          "Домен",
+          "Ссылка",
           "Заголовок",
+          "Тип источника",
           "Оценка"
         ],
         "rows": [
           [
             "17",
-            "nordmarket-watch.se",
+            "nordmarket-watch.se/anders-holmstr-m-interviewed-on-nordic-fi…",
             "Подробности: Anders Holmström interviewed on Nordic fintech regulation and compliance",
+            "—",
             "Нежелательный"
           ],
           [
             "18",
-            "granskaren.se",
+            "granskaren.se/anders-holmstr-m-expands-nordkap-capital-into-p…",
             "Разбор: Anders Holmström expands Nordkap Capital into private credit markets",
+            "—",
             "Нейтральный"
           ],
           [
             "19",
-            "delovoy-vestnik.ru",
+            "delovoy-vestnik.ru/nordkap-capital-board-appoints-independent…",
             "Обзор: Nordkap Capital board appoints independent compliance advisor after Anders Holmström probe",
+            "—",
             "Нежелательный"
           ],
           [
             "20",
-            "pravo-obzor.ru",
+            "pravo-obzor.ru/anders-holmstr-m-real-estate-purchases-in-stoc…",
             "Подробности: Anders Holmström real-estate purchases in Stockholm linked to Nordkap Capital vehicle",
+            "—",
             "Нейтральный"
           ]
         ]
@@ -428,81 +446,94 @@
       "table": {
         "headers": [
           "№",
-          "Домен",
+          "Ссылка",
           "Заголовок",
+          "Тип источника",
           "Оценка"
         ],
         "rows": [
           [
             "2",
-            "finansbladet.se",
+            "finansbladet.se/anders-holmstr-m-ceo-of-nordkap-capital-ab-fi…",
             "Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile",
+            "—",
             "Нейтральный"
           ],
           [
             "3",
-            "delovoy-vestnik.ru",
+            "delovoy-vestnik.ru/anders-holmstr-m-interviewed-on-nordic-fin…",
             "Anders Holmström interviewed on Nordic fintech regulation and compliance",
+            "—",
             "Нежелательный"
           ],
           [
             "6",
-            "worldcompliance-screening.ae",
+            "worldcompliance-screening.ae/lexisnexis/holmstrom-1",
             "Anders Holmström — LexisNexis WorldCompliance adverse media hit",
+            "—",
             "Нежелательный"
           ],
           [
             "7",
-            "delovoy-vestnik.ru",
+            "delovoy-vestnik.ru/anders-holmstr-m-philanthropy-foundation-t…",
             "Anders Holmström philanthropy foundation tied to Nordkap Capital dividends",
+            "—",
             "Нейтральный"
           ],
           [
             "8",
-            "bizdaily-nordic.se",
+            "bizdaily-nordic.se/anders-holmstr-m-flagged-during-sanctions-…",
             "Хроника: Anders Holmström flagged during sanctions screening watchlist review",
+            "—",
             "Нежелательный"
           ],
           [
             "9",
-            "svenskt-naringsliv-nytt.se",
+            "svenskt-naringsliv-nytt.se/anders-holmstr-m-ceo-of-nordkap-ca…",
             "Контекст: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile",
+            "—",
             "Нейтральный"
           ],
           [
             "10",
-            "stockholm-kuriren.se",
+            "stockholm-kuriren.se/stockholm-court-schedules-hearing-involv…",
             "Комментарий: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital",
+            "—",
             "Нежелательный"
           ],
           [
             "11",
-            "finansbladet.se",
+            "finansbladet.se/beneficial-ownership-disclosure-lists-anders-…",
             "Хроника: Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital",
+            "—",
             "Нежелательный"
           ],
           [
             "12",
-            "kapitalnytt.se",
+            "kapitalnytt.se/swedish-media-anders-holmstr-m-denies-wrongdoi…",
             "Контекст: Swedish media: Anders Holmström denies wrongdoing in tax inquiry",
+            "—",
             "Нейтральный"
           ],
           [
             "13",
-            "rynok-segodnya.ru",
+            "rynok-segodnya.ru/registry-extract-anders-holmstr-m-listed-as…",
             "Комментарий: Registry extract: Anders Holmström listed as director of Nordkap Capital",
+            "—",
             "Нейтральный"
           ],
           [
             "14",
-            "bizdaily-nordic.se",
+            "bizdaily-nordic.se/analyst-note-reputation-risk-around-anders…",
             "Хроника: Analyst note: reputation risk around Anders Holmström and Nordkap Capital",
+            "—",
             "Нейтральный"
           ],
           [
             "15",
-            "svenskt-naringsliv-nytt.se",
+            "svenskt-naringsliv-nytt.se/whistleblower-portal-mentions-ande…",
             "Контекст: Whistleblower portal mentions Anders Holmström in connection with Nordkap Capital",
+            "—",
             "Нейтральный"
           ]
         ]
@@ -523,39 +554,45 @@
       "table": {
         "headers": [
           "№",
-          "Домен",
+          "Ссылка",
           "Заголовок",
+          "Тип источника",
           "Оценка"
         ],
         "rows": [
           [
             "16",
-            "stockholm-kuriren.se",
+            "stockholm-kuriren.se/prosecutors-request-documents-from-ander…",
             "Комментарий: Prosecutors request documents from Anders Holmström regarding Malta SPV",
+            "—",
             "Нейтральный"
           ],
           [
             "17",
-            "finansbladet.se",
+            "finansbladet.se/credit-bureau-soft-hit-references-anders-holm…",
             "Хроника: Credit bureau soft-hit references Anders Holmström, Nordkap Capital",
+            "—",
             "Нейтральный"
           ],
           [
             "18",
-            "kapitalnytt.se",
+            "kapitalnytt.se/anders-holmstr-m-flagged-during-sanctions-scre…",
             "Контекст: Anders Holmström flagged during sanctions screening watchlist review",
+            "—",
             "Нежелательный"
           ],
           [
             "19",
-            "rynok-segodnya.ru",
+            "rynok-segodnya.ru/anders-holmstr-m-ceo-of-nordkap-capital-ab-…",
             "Комментарий: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile",
+            "—",
             "Нейтральный"
           ],
           [
             "20",
-            "bizdaily-nordic.se",
+            "bizdaily-nordic.se/stockholm-court-schedules-hearing-involvin…",
             "Хроника: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital",
+            "—",
             "Нежелательный"
           ]
         ]
@@ -885,81 +922,94 @@
       "table": {
         "headers": [
           "№",
-          "Домен",
+          "Ссылка",
           "Заголовок",
+          "Тип источника",
           "Оценка"
         ],
         "rows": [
           [
             "2",
-            "emirates-ledger.ae",
+            "emirates-ledger.ae/anders-holmstr-m-referenced-in-uae-pep-rca…",
             "Anders Holmström referenced in UAE PEP/RCA compliance screening",
+            "—",
             "Нежелательный"
           ],
           [
             "4",
-            "worldcompliance-screening.ae",
+            "worldcompliance-screening.ae/dowjones/holmstrom-2",
             "Anders Holmström — Dow Jones Risk & Compliance PEP/RCA match",
+            "—",
             "Нежелательный"
           ],
           [
             "5",
-            "difc-briefing.ae",
+            "difc-briefing.ae/gulf-press-anders-holmstr-m-courts-gulf-fami…",
             "Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital",
+            "—",
             "Нежелательный"
           ],
           [
             "8",
-            "emirates-ledger.ae",
+            "emirates-ledger.ae/sanctions-screening-vendor-flags-anders-ho…",
             "Sanctions screening vendor flags Anders Holmström for secondary review",
+            "—",
             "Нежелательный"
           ],
           [
             "12",
-            "abudhabi-capital-news.ae",
+            "abudhabi-capital-news.ae/anders-holmstr-m-referenced-in-uae-p…",
             "Контекст: Anders Holmström referenced in UAE PEP/RCA compliance screening",
+            "—",
             "Нежелательный"
           ],
           [
             "13",
-            "gulf-business-review.ae",
+            "gulf-business-review.ae/dubai-free-zone-filing-lists-anders-h…",
             "Обзор: Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital affiliate",
+            "—",
             "Нейтральный"
           ],
           [
             "14",
-            "emirates-ledger.ae",
+            "emirates-ledger.ae/nordkap-capital-opens-difc-representative-…",
             "Комментарий: Nordkap Capital opens DIFC representative office under Anders Holmström",
+            "—",
             "Нейтральный"
           ],
           [
             "15",
-            "dubai-market-daily.ae",
+            "dubai-market-daily.ae/gulf-press-anders-holmstr-m-courts-gulf…",
             "Подробности: Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital",
+            "—",
             "Нежелательный"
           ],
           [
             "16",
-            "khaleej-finance-post.ae",
+            "khaleej-finance-post.ae/uae-company-registry-anders-holmstr-m…",
             "Хроника: UAE company registry: Anders Holmström director of Nordkap Capital MENA Ltd",
+            "—",
             "Нейтральный"
           ],
           [
             "17",
-            "difc-briefing.ae",
+            "difc-briefing.ae/anders-holmstr-m-attends-abu-dhabi-finance-f…",
             "Разбор: Anders Holmström attends Abu Dhabi finance forum for Nordkap Capital",
+            "—",
             "Нейтральный"
           ],
           [
             "18",
-            "abudhabi-capital-news.ae",
+            "abudhabi-capital-news.ae/sanctions-screening-vendor-flags-and…",
             "Контекст: Sanctions screening vendor flags Anders Holmström for secondary review",
+            "—",
             "Нежелательный"
           ],
           [
             "19",
-            "gulf-business-review.ae",
+            "gulf-business-review.ae/nordkap-capital-dubai-entity-leases-o…",
             "Обзор: Nordkap Capital Dubai entity leases office in DIFC; Anders Holmström signatory",
+            "—",
             "Нейтральный"
           ]
         ]
@@ -980,15 +1030,17 @@
       "table": {
         "headers": [
           "№",
-          "Домен",
+          "Ссылка",
           "Заголовок",
+          "Тип источника",
           "Оценка"
         ],
         "rows": [
           [
             "20",
-            "emirates-ledger.ae",
+            "emirates-ledger.ae/arabic-language-profile-of-anders-holmstr-…",
             "Комментарий: Arabic-language profile of Anders Holmström, founder of Nordkap Capital",
+            "—",
             "Нейтральный"
           ]
         ]

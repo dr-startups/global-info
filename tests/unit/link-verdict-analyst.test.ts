@@ -148,3 +148,69 @@ describe("непрочитанная страница", () => {
     expect(v.quotes).toEqual([]);
   });
 });
+
+describe("тип источника в решении по ссылке", () => {
+  it("берётся у модели, когда она назвала значение из списка", async () => {
+    const verdict = await analyzeLinkPage(
+      {
+        evidenceRef: "inventory:1",
+        url: "https://kapitalnytt.se/article",
+        domain: "kapitalnytt.se",
+        subject: { fullName: "Иван Иванов" },
+        page: {
+          ok: true,
+          text: "Текст страницы о субъекте.",
+          title: "Заголовок",
+          readAt: "2026-08-14T10:00:00.000Z",
+        } as never,
+      },
+      {
+        call: async () => ({
+          subjectMatch: "subject",
+          tone: "neutral",
+          theme: "Деловая заметка об инвестициях",
+          sourceType: "Новостное СМИ",
+          quotes: [],
+        }),
+      }
+    );
+    expect(verdict.sourceType).toBe("Новостное СМИ");
+  });
+
+  it("выдуманный моделью тип не проходит, но домен спасает", async () => {
+    const verdict = await analyzeLinkPage(
+      {
+        evidenceRef: "inventory:2",
+        url: "https://ru.wikipedia.org/wiki/Иванов",
+        domain: "ru.wikipedia.org",
+        subject: { fullName: "Иван Иванов" },
+        page: {
+          ok: true,
+          text: "Энциклопедическая статья.",
+          readAt: "2026-08-14T10:00:00.000Z",
+        } as never,
+      },
+      {
+        call: async () => ({
+          subjectMatch: "subject",
+          tone: "neutral",
+          theme: "Биографическая справка",
+          sourceType: "какой-то свой тип",
+          quotes: [],
+        }),
+      }
+    );
+    expect(verdict.sourceType).toBe("Энциклопедия / справочник");
+  });
+
+  it("непрочитанная страница получает тип по домену", () => {
+    const verdict = unreadVerdict({
+      evidenceRef: "inventory:3",
+      url: "https://vk.com/id1",
+      domain: "vk.com",
+      subject: { fullName: "Иван Иванов" },
+      page: { ok: false, failure: "blocked", readAt: "2026-08-14T10:00:00.000Z" } as never,
+    });
+    expect(verdict.sourceType).toBe("Соцсеть");
+  });
+});

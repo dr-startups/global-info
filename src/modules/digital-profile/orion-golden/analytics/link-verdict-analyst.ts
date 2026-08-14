@@ -33,8 +33,9 @@ import {
 } from "../contracts/link-verdict";
 import { callOpenAiStrictJson } from "../gpt/openai-json-client";
 import type { LinkPageRead } from "../../services/link-page-reader";
+import { SOURCE_TYPES, normalizeSourceType, sourceTypeFromDomain } from "./source-type";
 
-export const LINK_VERDICT_PROMPT_VERSION = "link-verdict-prompt-v1" as const;
+export const LINK_VERDICT_PROMPT_VERSION = "link-verdict-prompt-v2" as const;
 
 const SYSTEM_PROMPT = `Ты аналитик проверки деловой репутации. Тебе дают текст одной веб-страницы и данные проверяемого лица.
 
@@ -43,6 +44,7 @@ const SYSTEM_PROMPT = `Ты аналитик проверки деловой р�
   "subjectMatch": "subject" | "likely" | "other" | "unclear",
   "tone": "adverse" | "neutral" | "supportive",
   "theme": "<о чём эта публикация, одной фразой на русском, 4-120 знаков>",
+  "sourceType": "<что это за площадка, ровно одно значение из списка ниже>",
   "quotes": [{"text": "<дословная цитата со страницы, 10-400 знаков>"}],
   "publishedAt": "<дата публикации, если она есть на странице, иначе не указывай>"
 }
@@ -51,9 +53,10 @@ const SYSTEM_PROMPT = `Ты аналитик проверки деловой р�
 1. subjectMatch — про то, о ТОМ ЛИ человеке страница. "other" — если это однофамилец или тёзка. "unclear" — если по тексту не определить. Не выдавай предположение за уверенность.
 2. tone — как эта публикация выглядит для банка или контрагента при проверке. "adverse" — если она создаёт вопросы: суды, санкции, расследования, конфликты, обвинения. "supportive" — если это официальная или деловая публикация, работающая на репутацию. Иначе "neutral".
 3. theme — назови СОДЕРЖАНИЕ публикации, а не её жанр. Плохо: "Криминальные материалы". Хорошо: "Судебный спор с бывшей супругой о разделе активов".
-4. quotes — только дословные фрагменты из данного текста. Если tone="adverse", хотя бы одна цитата обязательна: вывод должен опираться на текст, а не на общее впечатление.
-5. Не оценивай другие страницы, о которых можешь знать. Только эту.
-6. Если текст не позволяет судить — subjectMatch="unclear", tone="neutral", theme описывает страницу нейтрально.`;
+4. sourceType — ровно одно значение из списка: ${SOURCE_TYPES.join(" | ")}. Смотри на саму площадку, а не на тему материала: запись в санкционном реестре и статья о санкциях в газете — разные типы источника.
+5. quotes — только дословные фрагменты из данного текста. Если tone="adverse", хотя бы одна цитата обязательна: вывод должен опираться на текст, а не на общее впечатление.
+6. Не оценивай другие страницы, о которых можешь знать. Только эту.
+7. Если текст не позволяет судить — subjectMatch="unclear", tone="neutral", theme описывает страницу нейтрально.`;
 
 export type LinkVerdictInput = {
   evidenceRef: string;
@@ -81,6 +84,8 @@ export function unreadVerdict(input: LinkVerdictInput): LinkVerdict {
     subjectMatch: "unclear",
     tone: "neutral",
     theme: (input.serpTitle ?? "Страница не открылась").slice(0, 120) || "Страница не открылась",
+    // Страницу не прочитали — тип берём по домену, если он очевиден.
+    sourceType: sourceTypeFromDomain(input.domain),
     quotes: [],
     readFailure: failure ?? "not_fetched",
     readAt: input.page.readAt,
@@ -130,6 +135,9 @@ export async function analyzeLinkPage(
     subjectMatch: body.subjectMatch,
     tone: body.tone,
     theme: typeof body.theme === "string" ? body.theme.trim().slice(0, 120) : undefined,
+    sourceType:
+      normalizeSourceType(typeof body.sourceType === "string" ? body.sourceType : undefined) ??
+      sourceTypeFromDomain(input.domain),
     quotes: Array.isArray(body.quotes)
       ? body.quotes
           .map((q) => (q && typeof q === "object" ? String((q as { text?: unknown }).text ?? "") : ""))

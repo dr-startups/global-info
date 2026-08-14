@@ -20,6 +20,7 @@ import type {
   SurfaceCollectionHint,
 } from "./scoped-input";
 import { normalizeCoverageSurface } from "./scoped-input";
+import { normalizeSourceType } from "../analytics/source-type";
 import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
 
 type CompositeObservationRow = {
@@ -232,6 +233,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           subjectMatch?: string;
           tone?: string;
           theme?: string;
+          sourceType?: string;
           quotes?: Array<{ text?: string }>;
         }>;
         summary?: {
@@ -399,6 +401,9 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
       evidenceIndex[ref].adverse = false;
       evidenceIndex[ref].subjectDecision = "OTHER_SUBJECT";
     }
+    // Тип источника определён по самой странице — он сильнее догадки по домену.
+    const sourceType = normalizeSourceType(v.sourceType);
+    if (sourceType) evidenceIndex[ref].sourceType = sourceType;
   }
 
   // Enrich compliance_hit entries with typed match metadata (provider /

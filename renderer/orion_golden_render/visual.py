@@ -555,7 +555,7 @@ def _add_search_table(
     if len(hdr) >= 5 and re.search(r"запрос|query", hdr[0], re.I):
         hdr = hdr[1:]
         data_rows = [r[1:] if len(r) > 1 else r for r in data_rows]
-    cols = max(1, min(4, len(hdr)))
+    cols = max(1, min(5, len(hdr)))
     headers = hdr
     groups = groups or []
 
@@ -581,6 +581,11 @@ def _add_search_table(
     # position width.
     if cols == 2:
         prop = [0.24, 0.76]
+    elif cols == 5:
+        # Позиция | Ссылка | Заголовок | Тип источника | Оценка.
+        # Адрес занимает больше домена — по нему материал открывают вручную,
+        # поэтому он должен помещаться целиком, а не обрываться на середине.
+        prop = [0.05, 0.27, 0.36, 0.16, 0.16]
     elif headers and len(str(headers[0]).strip()) > 3:
         prop = [0.14, 0.26, 0.42, 0.18][:cols]
     else:
@@ -605,6 +610,11 @@ def _add_search_table(
             heights.append(group_h)
         else:
             lines = _title_line_estimate(str(payload[2]) if len(payload) > 2 else "", title_col_w, body_pt)
+            # Высота строки — по самой высокой ячейке. Адрес переносится так же,
+            # как заголовок, и если мерить только заголовок, длинная ссылка
+            # вылезет за пределы своей строки.
+            if cols >= 5 and len(payload) > 1:
+                lines = max(lines, _title_line_estimate(str(payload[1]), widths[1], body_pt))
             heights.append(lines * line_h + pad)
 
     table_rows = len(plan)

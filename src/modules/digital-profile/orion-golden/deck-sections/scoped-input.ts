@@ -114,6 +114,12 @@ export type ScopedEvidenceIndex = Record<
     query?: string;
     /** Назначение запроса из плана (`subject_lookup`, `adverse_lookup`, …). */
     queryPurpose?: string;
+    /**
+     * Что за площадка стоит за ссылкой: реестр, СМИ, блог, соцсеть. Значение
+     * из закрытого списка `analytics/source-type.ts` — его называет модель,
+     * прочитавшая страницу, иначе оно выводится по домену.
+     */
+    sourceType?: string;
   }
 >;
 

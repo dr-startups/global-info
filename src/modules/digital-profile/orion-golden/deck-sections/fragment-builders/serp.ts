@@ -12,6 +12,7 @@ import type { Finding } from "../../contracts/finding";
 import { pluralRu } from "../../analytics/finding-synthesizer";
 import { clientSafeDomain, clientSafeDomains } from "../../../services/composite-serp-merge";
 import { ADVERSE_PATTERNS, NOT_FOUND_PATTERNS } from "../../analytics/surface-analyzers";
+import { resolveSourceType } from "../../analytics/source-type";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
 import {
   RISK_ORDER,
@@ -77,6 +78,38 @@ export function serpMaterialKey(e: {
 
 /** Сколько строк выдачи показывает таблица: глубина аудита, не больше. */
 export const SERP_TABLE_TOP_N = 20;
+
+/**
+ * Колонки таблицы выдачи.
+ *
+ * Ссылка стоит вместо домена: домен — её начало, а проверяющему нужен адрес,
+ * по которому можно открыть материал. Тип источника отвечает на вопрос, ради
+ * которого читатель и открывает ссылку: запись в санкционном реестре, статья
+ * в СМИ и пост в блоге требуют разной реакции, а в таблице выглядят одинаково.
+ */
+export const SERP_TABLE_HEADERS = ["№", "Ссылка", "Заголовок", "Тип источника", "Оценка"];
+
+/** Длиннее этого адрес перестаёт читаться и ломает ширину колонки. */
+const LINK_MAX_CHARS = 62;
+
+/**
+ * Адрес для клиента: без протокола и без хвоста параметров, но целиком до
+ * последнего значимого сегмента — по нему материал находится вручную.
+ */
+export function clientLink(url: string | undefined, domain: string | undefined): string {
+  const raw = String(url ?? "").trim();
+  if (!raw) return domain ?? "—";
+  let text = raw.replace(/^https?:\/\//iu, "").replace(/\/$/u, "");
+  try {
+    const parsed = new URL(raw);
+    text = `${parsed.hostname.replace(/^www\./u, "")}${parsed.pathname.replace(/\/$/u, "")}`;
+    text = decodeURIComponent(text);
+  } catch {
+    // Не URL — печатаем как есть, обрезав по длине.
+  }
+  if (text.length <= LINK_MAX_CHARS) return text;
+  return `${text.slice(0, LINK_MAX_CHARS - 1)}…`;
+}
 
 const SERP_ENGINE_LABELS: Record<string, string> = { YANDEX: "Яндекс", GOOGLE: "Google" };
 const SERP_ENGINE_ORDER = ["YANDEX", "GOOGLE"];
@@ -340,7 +373,13 @@ export function buildSerpFragment(
     // Номер строки — настоящая позиция в выдаче, а не счётчик строк таблицы.
     // Счётчик выдавал «24-е место в Яндексе» там, где материал стоял третьим
     // по другому запросу.
-    return [String(rank), e.domain ?? domainOfUrl(e.url), e.title ?? "(без заголовка)", rating];
+    return [
+      String(rank),
+      clientLink(e.url, e.domain),
+      e.title ?? "(без заголовка)",
+      resolveSourceType({ fromVerdict: e.sourceType, domain: e.domain ?? domainOfUrl(e.url) }) ?? "—",
+      rating,
+    ];
   };
   // §7.1: each continuation page gets its own row-scoped sidebar (not a blank
   // strip of the first page's finding blocks).
@@ -410,7 +449,7 @@ export function buildSerpFragment(
       sectionId,
       title: pages[i]!.title,
       content: {
-        table: { headers: ["№", "Домен", "Заголовок", "Оценка"], rows: pageRows },
+        table: { headers: [...SERP_TABLE_HEADERS], rows: pageRows },
         ...pageBlocks,
         // Клиент должен видеть, по чему смотрели: без набора запросов позиция
         // в таблице — число без знаменателя (см. `docs/etalon-orion-razbor.md`).
