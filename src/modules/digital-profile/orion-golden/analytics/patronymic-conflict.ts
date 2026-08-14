@@ -22,7 +22,26 @@
  * выражение молча не срабатывало бы ни на одном отчестве.
  */
 const PATRONYMIC_RE =
-  /(?<!\p{L})(\p{L}{2,}(?:ович|евич|ьевич|ич|овна|евна|ьевна|ична|инична))(?!\p{L})/gu;
+  /(?<!\p{L})(\p{L}{2,}(?:ович|евич|ьевич|овна|евна|ьевна|ична|инична))(?!\p{L})/gu;
+
+/**
+ * Короткие отчества на «-ич» перечислены поимённо.
+ *
+ * Общее окончание «-ич» ловило обычные слова: «москвич», «кулич», «паралич»,
+ * «экономич…» — и объявляло материал чужим с уверенностью 0,9. Настоящих
+ * коротких отчеств немного, и список закрывает вопрос без ложных срабатываний.
+ */
+const SHORT_PATRONYMICS = new Set([
+  "ильич",
+  "кузьмич",
+  "лукич",
+  "фомич",
+  "саввич",
+  "никитич",
+  "ильинична",
+  "кузьминична",
+]);
+const SHORT_PATRONYMIC_RE = /(?<!\p{L})(\p{L}{3,})(?!\p{L})/gu;
 
 /** Насколько близко к фамилии отчество считается относящимся к ней. */
 const ADJACENCY_CHARS = 40;
@@ -71,15 +90,30 @@ export function conflictingPatronymics(
   }
   if (windows.length === 0) return [];
 
+  /*
+   * Слова ищутся в целом тексте, а окно решает только, засчитывать ли находку.
+   *
+   * Раньше текст резался по символам ровно на границе окна, и регулярное
+   * выражение читало обрубок как отдельное слово: от «Абусаидович» оставалось
+   * «идович», от «экономический» — «экономич». Такой обрубок не совпадал с
+   * собственным отчеством субъекта и объявлялся чужим — с уверенностью 0,9,
+   * то есть материал выбрасывался из аудита как «про другое лицо». На разборе
+   * живого прогона так потерялись 30 материалов из 41, включая статью о самом
+   * субъекте в Википедии.
+   */
+  const nearSurname = (at: number, length: number): boolean =>
+    windows.some(([start, end]) => at < end && at + length > start);
+
   const found = new Set<string>();
-  for (const [start, end] of windows) {
-    const slice = haystack.slice(start, end);
-    for (const m of slice.matchAll(PATRONYMIC_RE)) {
-      const candidate = norm(m[1] ?? "");
-      if (candidate.length <= 3) continue;
-      if (own.has(candidate)) continue;
-      found.add(candidate);
-    }
+  for (const m of haystack.matchAll(PATRONYMIC_RE)) {
+    const candidate = norm(m[1] ?? "");
+    if (candidate.length <= 3 || own.has(candidate)) continue;
+    if (nearSurname(m.index ?? 0, candidate.length)) found.add(candidate);
+  }
+  for (const m of haystack.matchAll(SHORT_PATRONYMIC_RE)) {
+    const candidate = norm(m[1] ?? "");
+    if (!SHORT_PATRONYMICS.has(candidate) || own.has(candidate)) continue;
+    if (nearSurname(m.index ?? 0, candidate.length)) found.add(candidate);
   }
   return [...found];
 }

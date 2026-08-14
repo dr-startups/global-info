@@ -96,6 +96,44 @@ function failBatch(status: SurfaceFetchStatus, error?: string): SerperSurfaceBat
   return { status, items: [], error };
 }
 
+/**
+ * Готовый ответ Google — та самая поверхность, ради которой в отчёте есть
+ * страница «ИИ-ответы поисковых систем».
+ *
+ * Ответ приходит тем же вызовом, что и органика, отдельных денег не стоит, но
+ * полем `answerBox` мы не читали вовсе: страница отчёта сообщала «поверхность
+ * не собиралась», хотя ответ лежал в разобранном ответе провайдера.
+ * Пользователь такой блок видит первым и часто им и ограничивается — не
+ * показать его значит пропустить самое заметное.
+ */
+export function answerBoxItem(
+  raw: unknown,
+  ctx: { query: string; region: OrionRegionCode; language: string; capturedAt: string }
+): SerperSurfaceItem | null {
+  if (!raw || typeof raw !== "object") return null;
+  const box = raw as Record<string, unknown>;
+  const text = String(box.answer ?? box.snippet ?? "").trim();
+  // Без текста ответа показывать нечего: заголовок сам по себе не ответ.
+  if (!text) return null;
+  const url = String(box.link ?? "").trim() || null;
+  return {
+    kind: "knowledgePanel",
+    query: ctx.query,
+    region: ctx.region,
+    language: ctx.language,
+    rank: 1,
+    title: String(box.title ?? "").trim() || "Ответ поисковой системы",
+    snippet: text,
+    url,
+    domain: url ? domainOf(url) : null,
+    thumbnailUrl: null,
+    imageUrl: null,
+    videoUrl: null,
+    sourcePageUrl: url,
+    rawMetadataSafe: { source: "serper", surface: "answerBox", capturedAt: ctx.capturedAt },
+  };
+}
+
 export async function serperOrganicWithExtras(
   request: SearchProviderRequest,
   region: OrionRegionCode,
@@ -183,6 +221,24 @@ export async function serperOrganicWithExtras(
         },
       });
     }
+
+    /*
+     * Готовый ответ Google — та самая поверхность, ради которой в отчёте есть
+     * страница «ИИ-ответы поисковых систем».
+     *
+     * Ответ приходит тем же вызовом, что и органика, отдельных денег не стоит,
+     * но полем `answerBox` мы не читали вовсе: страница отчёта сообщала
+     * «поверхность не собиралась», хотя ответ был в разобранном ответе
+     * провайдера. Пользователь такой блок видит первым и часто им и
+     * ограничивается — не показать его значит пропустить самое заметное.
+     */
+    const answer = answerBoxItem(raw.answerBox, {
+      query: request.query,
+      region,
+      language: request.language ?? profile.language,
+      capturedAt,
+    });
+    if (answer) items.push(answer);
 
     return { status: "SUCCESS", items };
   } catch (err) {

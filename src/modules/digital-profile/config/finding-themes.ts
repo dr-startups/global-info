@@ -87,6 +87,29 @@ function compileRegex(source: string, flags: string, label: string): RegExp {
   }
 }
 
+/**
+ * Ключевое слово темы совпадает с началом слова, а не с любой его серединой.
+ *
+ * Слова тем заданы основами: «уголов», «суд», «минист». Без границы слева
+ * «суд» находился внутри «го-**суд**-арственной», и любая биография с
+ * упоминанием Государственной думы становилась «криминальными и судебными
+ * материалами»; «минист» находился внутри «ад-**минист**-рация». На разборе
+ * живого прогона так набралось 27 материалов по криминальной теме, среди
+ * которых не было ни одного судебного сюжета — зато были «Структура | Совет
+ * Федерации» и «20 самых богатых людей России».
+ *
+ * `\b` здесь бесполезен: в JavaScript он определён на латинице и кириллицу не
+ * видит. Поэтому граница задаётся просмотром назад по букве.
+ */
+function withWordStart(source: string): string {
+  return `(?<!\\p{L})(?:${source})`;
+}
+
+/** Просмотр назад по букве требует режима Unicode. */
+function withUnicode(flags: string): string {
+  return flags.includes("u") ? flags : `${flags}u`;
+}
+
 /** Universal default theme set — no case-specific «транспортный контур» tuning. */
 export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
   return {
@@ -106,7 +129,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
         themeId: "criminal_legal",
         label: "Криминальные / судебные материалы",
         keywords:
-          "уголов|criminal|арест|arrest|обыск|розыск|прокур|следств|sledstvie|rucriminal|компромат|суд(?!острое)|court",
+          "уголов|criminal|арест|arrest|обыск|розыск|прокур|следств|sledstvie|rucriminal|компромат|суд(?!острое|ьб)|court",
         flags: "iu",
         baseRisk: "high",
         recommendedAction:
@@ -156,7 +179,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
         themeId: "financial_claims",
         label: "Финансовые претензии / долговые споры",
         keywords:
-          "банкрот|bankrupt|долг\\w*|debt|взыскан|неисполнен|lawsuit|претенз|арбитражн\\w* иск|неплатеж",
+          "банкрот|bankrupt|долг(?:а|ам|ами|ах|и|ов|у)?(?!\\p{L})|задолженност|debt|взыскан|неисполнен|lawsuit|претенз|арбитражн\\w* иск|неплатеж",
         flags: "iu",
         baseRisk: "medium",
         recommendedAction:
@@ -176,7 +199,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
       },
     ],
     adversePatterns:
-      "санкц|sanction|watch.?list|уголов|criminal|арест|arrest|суд|court|прокур|мошенн|fraud|коррупц|corrupt|отмыв|launder|обыск|розыск|компромат|скандал|расследован|investigat|adverse|безопасн.*служб|спецслужб|security service|national security|фсб|fsb",
+      "санкц|sanction|watch.?list|уголов|criminal|арест|arrest|суд(?!острое|ьб)|court|прокур|мошенн|fraud|коррупц|corrupt|отмыв|launder|обыск|розыск|компромат|скандал|расследован|investigat|adverse|безопасн.*служб|спецслужб|security service|national security|фсб|fsb",
     adverseFlags: "iu",
     unverifiedDomains: "rucriminal|sledstvie|compromat|kompromat",
     unverifiedDomainsFlags: "iu",
@@ -190,7 +213,7 @@ export function getDefaultFindingThemesConfigJson(): FindingThemesConfigJson {
     positivePatterns:
       "биограф|biography|pioneer|интервью|interview|эксперт|expert|forbes|достижени",
     positiveFlags: "iu",
-    assertionPatterns: "подтвержден|подтверждено|confirmed|установлен[оа]?\\b|введены",
+    assertionPatterns: "подтвержден|подтверждено|confirmed|установлен[оа]?(?!\\p{L})|введены",
     assertionFlags: "iu",
     denialPatterns:
       "отклонил|опроверг|не вводил|не подтвержд|отрицает|denied|dismissed|снял обвинени",
@@ -215,7 +238,11 @@ export function compileFindingThemesConfig(
   const themes: ThemeDef[] = cfg.themes.map((t) => ({
     themeId: t.themeId,
     label: t.label,
-    keywords: compileRegex(t.keywords, t.flags, `themes[${t.themeId}].keywords`),
+    keywords: compileRegex(
+      withWordStart(t.keywords),
+      t.flags.includes("u") ? t.flags : `${t.flags}u`,
+      `themes[${t.themeId}].keywords`
+    ),
     baseRisk: t.baseRisk,
     recommendedAction: t.recommendedAction,
   }));
@@ -227,8 +254,8 @@ export function compileFindingThemesConfig(
     overridePath: meta.overridePath,
     themes,
     adversePatterns: compileRegex(
-      cfg.adversePatterns,
-      cfg.adverseFlags,
+      withWordStart(cfg.adversePatterns),
+      withUnicode(cfg.adverseFlags),
       "adversePatterns"
     ),
     unverifiedDomains: compileRegex(
@@ -247,23 +274,23 @@ export function compileFindingThemesConfig(
       "reputableDomains"
     ),
     unverifiedClaimPatterns: compileRegex(
-      cfg.unverifiedClaimPatterns ?? defaults.unverifiedClaimPatterns!,
-      cfg.unverifiedClaimFlags,
+      withWordStart(cfg.unverifiedClaimPatterns ?? defaults.unverifiedClaimPatterns!),
+      withUnicode(cfg.unverifiedClaimFlags),
       "unverifiedClaimPatterns"
     ),
     positivePatterns: compileRegex(
-      cfg.positivePatterns ?? defaults.positivePatterns!,
-      cfg.positiveFlags,
+      withWordStart(cfg.positivePatterns ?? defaults.positivePatterns!),
+      withUnicode(cfg.positiveFlags),
       "positivePatterns"
     ),
     assertionPatterns: compileRegex(
-      cfg.assertionPatterns ?? defaults.assertionPatterns!,
-      cfg.assertionFlags,
+      withWordStart(cfg.assertionPatterns ?? defaults.assertionPatterns!),
+      withUnicode(cfg.assertionFlags),
       "assertionPatterns"
     ),
     denialPatterns: compileRegex(
-      cfg.denialPatterns ?? defaults.denialPatterns!,
-      cfg.denialFlags,
+      withWordStart(cfg.denialPatterns ?? defaults.denialPatterns!),
+      withUnicode(cfg.denialFlags),
       "denialPatterns"
     ),
   };

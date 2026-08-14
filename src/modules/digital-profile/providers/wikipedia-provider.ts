@@ -49,13 +49,56 @@ function baseTitle(title: string): string {
   return normalizeName(title.replace(/\s*\([^)]*\)\s*$/, ""));
 }
 
-function isMatch(title: string, targets: string[]): boolean {
-  const t = baseTitle(title);
+function nameTokens(value: string): string[] {
+  return baseTitle(value)
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((t) => t.length >= 2);
+}
+
+/**
+ * Статья о субъекте — та, где названы и фамилия, и имя.
+ *
+ * Правило сравнения было «одна строка начинается с другой», и оно принимало
+ * страницу-разрешение неоднозначностей «Керимов» за статью о Сулеймане
+ * Абусаидовиче Керимове: «керимов сулейман абусаидович» действительно
+ * начинается с «керимов». В отчёт уходила ссылка на список однофамильцев с
+ * подписью «статья найдена» — то есть проверка личности подтверждалась
+ * страницей, где о субъекте нет ни слова.
+ *
+ * Одной фамилии мало; отчество не обязательно — в английской Википедии
+ * субъект называется «Suleyman Kerimov», без него.
+ */
+export function isMatch(title: string, targets: string[]): boolean {
+  const titleTokens = new Set(nameTokens(title));
+  if (titleTokens.size === 0) return false;
   return targets.some((target) => {
-    const n = normalizeName(target);
-    if (!n) return false;
-    return t === n || t.startsWith(n) || n.startsWith(t);
+    const tokens = nameTokens(target);
+    if (tokens.length === 0) return false;
+    if (tokens.length === 1) return titleTokens.has(tokens[0]!);
+    return tokens.slice(0, 2).every((t) => titleTokens.has(t));
   });
+}
+
+/**
+ * Лучший кандидат, а не первый попавшийся: поиск Википедии ставит первой
+ * страницу-разрешение неоднозначностей, и «найти первое совпадение» означало
+ * взять её. Совпадений считаем по числу совпавших частей имени.
+ */
+export function pickWikipediaCandidate<T extends { title: string }>(
+  candidates: readonly T[],
+  targets: string[]
+): T | null {
+  let best: { c: T; score: number } | null = null;
+  for (const c of candidates) {
+    if (!isMatch(c.title, targets)) continue;
+    const titleTokens = new Set(nameTokens(c.title));
+    const score = Math.max(
+      ...targets.map((t) => nameTokens(t).filter((tok) => titleTokens.has(tok)).length),
+      0
+    );
+    if (!best || score > best.score) best = { c, score };
+  }
+  return best?.c ?? null;
 }
 
 // --- rate-limit hook -------------------------------------------------------
@@ -176,7 +219,7 @@ export class WikipediaProvider {
       snippet: (s.snippet ?? "").replace(/<[^>]*>/g, ""),
     }));
 
-    const matched = candidates.find((c) => isMatch(c.title, terms)) ?? null;
+    const matched = pickWikipediaCandidate(candidates, terms);
 
     let extract: string | null = null;
     let url: string | null = null;

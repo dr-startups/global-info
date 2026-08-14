@@ -19,6 +19,7 @@ import type {
   MetricSnapshot,
   SurfaceCollectionHint,
 } from "./scoped-input";
+import { normalizeCoverageSurface } from "./scoped-input";
 import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
 
 type CompositeObservationRow = {
@@ -133,6 +134,50 @@ export type CanonicalDeckInputs = {
   /** REMEDIATION §7.4 — coverage cells for empty-state copy (optional). */
   surfaceCollectionHints: SurfaceCollectionHint[];
 };
+
+/**
+ * «Проверено, ИИ-ответа нет» вместо «поверхность не собиралась».
+ *
+ * Готовый ответ и панель знаний приходят тем же ответом Google, что и
+ * органика: если по региону есть строки органики Google, ответ провайдера был
+ * получен и разобран. Значит, отсутствие ИИ-блока — это результат проверки, а
+ * не пропущенный сбор, и страница отчёта обязана говорить именно так: разница
+ * между «не смотрели» и «смотрели, пусто» — это разница между дырой в
+ * покрытии и фактом.
+ *
+ * Подсказка не выдумывается там, где сбор действительно не удался: если о
+ * поверхности уже есть запись о статусе, она сильнее выведенной.
+ */
+export function googleAnswerProbeHints(
+  observations: Array<{ surface: string; region: string; engine?: string }>,
+  existing: SurfaceCollectionHint[]
+): SurfaceCollectionHint[] {
+  const isGoogle = (engine?: string): boolean => /GOOGLE|SERPER/iu.test(String(engine ?? ""));
+  const probedRegions = new Set<string>();
+  const answeredRegions = new Set<string>();
+  for (const o of observations) {
+    const region = mapRegionBucket(o.region);
+    if (!region) continue;
+    const surface = normalizeCoverageSurface(o.surface);
+    if (surface === "organic" && isGoogle(o.engine)) probedRegions.add(region);
+    if (surface === "ai_answers") answeredRegions.add(region);
+  }
+  const alreadyKnown = new Set(
+    existing
+      .filter((h) => normalizeCoverageSurface(h.surface) === "ai_answers")
+      .map((h) => mapRegionBucket(h.region ?? ""))
+  );
+  return [...probedRegions]
+    .filter((region) => !answeredRegions.has(region) && !alreadyKnown.has(region))
+    .sort()
+    .map((region) => ({
+      surface: "ai_answers",
+      region,
+      status: "NO_RESULTS",
+      errorCode: null,
+      provider: "GOOGLE",
+    }));
+}
 
 function readJson<T>(path: string): T {
   return JSON.parse(readFileSync(path, "utf8")) as T;
@@ -273,6 +318,10 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
       // non-fatal: fall back to observation evidenceRefs
     }
   }
+  surfaceCollectionHints = [
+    ...surfaceCollectionHints,
+    ...googleAnswerProbeHints(observations.observations, surfaceCollectionHints),
+  ];
 
   const identityCounts = countIdentityByObservation({
     observationRefGroups,
