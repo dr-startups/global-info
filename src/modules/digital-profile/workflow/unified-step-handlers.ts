@@ -159,6 +159,29 @@ function handlerForStage(deps: UnifiedOrchestratorDeps): StepHandler {
       return { kind: "done", outputRef: before.compositeDatasetId ?? null };
     }
 
+    /*
+     * Шаг, который джоба уже переросла, работу не запускает.
+     *
+     * Обработчик один на все шаги, и он выполняет **текущую** стадию джобы, а
+     * не свою. Пока сборка отчёта идёт шесть минут, ждущий шаг обогащения
+     * просыпается по своему расписанию, вызывает тот же тик — и отчёт
+     * собирается второй раз, параллельно. На живом прогоне это видно по логу:
+     * чтение ста двадцати страниц и отрисовка отработали дважды с промежутком
+     * ровно в паузу опроса. Отчёт при этом выходил верный, но платили за него
+     * вдвое.
+     *
+     * Правило то же, по которому шаг признаётся сделанным после тика
+     * (`outcomeFromJob`): джоба ушла дальше — шаг сделан. Просто спрашиваем об
+     * этом до работы, а не после.
+     */
+    const stepPosition = stepDefinition(step.name)?.position ?? 0;
+    if (jobStagePosition(before.stage) > stepPosition) {
+      return {
+        kind: "done",
+        outputRef: before.compositeDatasetId ?? before.baseReportRunId ?? null,
+      };
+    }
+
     // Вердикт прошлой попытки снимается до начала новой: иначе тик отработает,
     // а исход всё равно возьмётся из памяти джобы об отказе.
     const retryStage = stageForRetryAttempt(step.name, before.stage);
