@@ -42,15 +42,17 @@ export function buildSuggestionsFragment(
         : null;
     const slotUnits = engine ? units.filter((u) => (u.engine ?? "").toUpperCase() === engine) : units;
     const refs = slotUnits.flatMap((u) => u.evidenceRefs);
-    const bullets = slotUnits
-      .flatMap((u) => u.claims)
-      .map((c) => clampClientText(claimText(c), 400));
-    const suggestionLines = refs
-      .map((r) => scoped.evidenceIndex[r]?.title)
-      .filter((t): t is string => Boolean(t))
-      .slice(0, 10);
-    // Sidebar strictly scoped to the queries displayed on THIS page.
-    const view = buildPageEvidenceView(scoped, refs);
+    const claims = slotUnits.flatMap((u) => u.claims);
+    const bullets = claims.map((c) => clampClientText(claimText(c), 400));
+    const lineRefs = refs.filter((r) => Boolean(scoped.evidenceIndex[r]?.title)).slice(0, 10);
+    const suggestionLines = lineRefs.map((r) => String(scoped.evidenceIndex[r]?.title));
+    // Описание считает то, что напечатано на этой странице, а не весь набор
+    // ссылок поверхности: печатались отобранные строки, а счёт шёл по всем, и
+    // под пятью строками стояло «показано двадцать семь».
+    const view = buildPageEvidenceView(
+      scoped,
+      bullets.length ? claims.flatMap((c) => c.evidenceRefs) : lineRefs
+    );
     const sidebar = adverseVisualSidebar(slot.slotId, extras, scoped, "подсказка");
     // Заголовок называет вывод страницы: сколько подсказок и есть ли среди них
     // негативные. Прежде стояло название раздела, и читателю приходилось

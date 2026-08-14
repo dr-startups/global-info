@@ -137,8 +137,9 @@ const CYR_TO_LAT: Record<string, string> = {
   ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
 };
 
-function hasCyrillic(value: string): boolean {
-  return /[\u0400-\u04FF]/.test(value);
+/** \u0415\u0441\u0442\u044C \u043B\u0438 \u0432 \u0441\u0442\u0440\u043E\u043A\u0435 \u043A\u0438\u0440\u0438\u043B\u043B\u0438\u0446\u0430 \u2014 \u043F\u0440\u0438\u0437\u043D\u0430\u043A \u043F\u0438\u0441\u044C\u043C\u0435\u043D\u043D\u043E\u0441\u0442\u0438 \u0437\u0430\u043F\u0440\u043E\u0441\u0430. */
+export function hasCyrillic(value: string): boolean {
+  return /[\u0400-\u04FF]/u.test(String(value ?? ""));
 }
 
 function normalizeQuery(q: string): string {
@@ -222,9 +223,24 @@ function toSubjectProfile(subject: QuerySubject): OrionQuerySubjectProfile {
   };
 }
 
+/**
+ * Фамилия — якорь личности, и в латинице тоже.
+ *
+ * Якорями были кириллическая фамилия и полное латинское написание целиком.
+ * Из-за этого запрос из подсказок зарубежного контура — «kirkorov filipp
+ * songs» — считался запросом без привязки к субъекту и вычёркивался из плана:
+ * в ОАЭ оставались только механические строки «Имя Фамилия company/news».
+ */
 function hasStrongIdentityAnchor(query: string, profile: OrionQuerySubjectProfile): boolean {
   const q = normalizeQuery(query);
-  const strong = [profile.fullName, profile.lastName, ...profile.latinVariants, ...profile.cyrillicVariants]
+  const strong = [
+    profile.fullName,
+    profile.lastName,
+    transliterateRuToEn(profile.fullName),
+    transliterateRuToEn(profile.lastName),
+    ...profile.latinVariants,
+    ...profile.cyrillicVariants,
+  ]
     .map(normalizeQuery)
     .filter(Boolean);
   return strong.some((t) => q.includes(t));
@@ -315,14 +331,23 @@ function ruBaseVariants(profile: OrionQuerySubjectProfile): string[] {
   return Array.from(new Set(out.filter(Boolean)));
 }
 
+/**
+ * Латинские написания имени — страховка, когда подсказок поисковика нет.
+ *
+ * Порядок частей здесь тот же, что и в ФИО: «Фамилия Имя Отчество». Раньше
+ * перестановки собирались так, будто части идут по-западному, и в зарубежный
+ * контур уходили «Durov Valerevich» и «Valerevich Durov Pavel» — сочетания,
+ * которых человек не набирает: отчество за пределами русскоязычной среды не
+ * используют вовсе. Остаются два написания: полное и привычное западному
+ * читателю «Имя Фамилия».
+ */
 function enBaseVariants(profile: OrionQuerySubjectProfile): string[] {
   const out = new Set<string>();
   for (const v of profile.latinVariants) out.add(v);
   const p = (profile.latinVariants[0] ?? "").split(/\s+/).filter(Boolean);
   if (p.length >= 3) {
-    out.add(`${p[0]} ${p[2]}`);
     out.add(`${p[0]} ${p[1]} ${p[2]}`);
-    out.add(`${p[2]} ${p[0]} ${p[1]}`);
+    out.add(`${p[1]} ${p[0]}`);
   } else if (p.length === 2) {
     out.add(`${p[0]} ${p[1]}`);
     out.add(`${p[1]} ${p[0]}`);
@@ -344,6 +369,7 @@ export function buildOrionQueryPlanDetailed(
     `${profile.fullName}|${regions.join(",")}|${options.includeRiskProbes ? "risk1" : "risk0"}`
   )}`;
   const rows: OrionQuerySpec[] = [];
+  let cyrillicInLatinContour = 0;
 
   for (const region of regions) {
     if (region === "RU") {
@@ -438,8 +464,23 @@ export function buildOrionQueryPlanDetailed(
       continue;
     }
 
-    const base = (options.primaryQueriesByRegion?.[region] ?? enBaseVariants(profile)).slice(0, maxPrimary);
-    const context = Array.from(new Set(profile.regionHints)).slice(0, 2);
+    /*
+     * Зарубежный контур ищет латиницей.
+     *
+     * Набор запросов приходит из подсказок поисковика (`subject-query-set.ts`),
+     * и там же стоит основной фильтр письменности. Здесь — вторая застава: план
+     * решает, что уйдёт в поиск, и кириллическая строка с `gl=ae` меряет не тот
+     * интернет независимо от того, кто её принёс.
+     */
+    const requested = options.primaryQueriesByRegion?.[region] ?? enBaseVariants(profile);
+    const latinOnly = requested.filter((q) => !hasCyrillic(q));
+    if (latinOnly.length < requested.length) {
+      cyrillicInLatinContour += requested.length - latinOnly.length;
+    }
+    const base = (latinOnly.length > 0 ? latinOnly : enBaseVariants(profile)).slice(0, maxPrimary);
+    const context = Array.from(new Set(profile.regionHints))
+      .filter((hint) => !hasCyrillic(hint))
+      .slice(0, 2);
     for (const b of base) {
       const row = mkRow({
         queryPlanId,
@@ -556,6 +597,7 @@ export function buildOrionQueryPlanDetailed(
   const warnings: string[] = [];
   if (weakQuerySuppressedCount > 0) warnings.push("weak_identity_queries_suppressed");
   if (regionHintCount === 0) warnings.push("region_hints_missing");
+  if (cyrillicInLatinContour > 0) warnings.push("cyrillic_queries_dropped_in_latin_region");
   return {
     queryPlanId,
     plan,

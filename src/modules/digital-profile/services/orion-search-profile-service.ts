@@ -25,7 +25,9 @@ import { normalizeUrl } from "./evidence-service";
 import { createManySearchSurfaceItems } from "./search-surface-service";
 import {
   buildOrionQueryPlanDetailed,
+  hasCyrillic,
   queriesForRegionPurpose,
+  transliterateRuToEn,
   type OrionQuerySpec,
   type OrionRegionCode,
 } from "../search-surfaces/orion-query-plan";
@@ -428,7 +430,19 @@ async function buildRegionQuerySet(
   capturedAt: string
 ): Promise<SubjectQuerySet> {
   const profile = regionProfile(region);
-  const parsed = parseSubjectName(subject.fullName);
+  /*
+   * В зарубежном контуре субъекта ищут латиницей.
+   *
+   * Набор строился от кириллического ФИО во всех контурах, и в ОАЭ уходили
+   * запросы вида «киркоров филипп бедросович дети». Google с параметрами ОАЭ
+   * отвечал на них теми же русскими страницами, что и российский контур:
+   * раздел про ОАЭ повторял российский, а то, что о субъекте видно за
+   * рубежом, в отчёт не попадало.
+   */
+  const latinContour = profile.language !== "ru";
+  const searchName = latinContour ? latinNameOf(subject) : subject.fullName;
+  const variants = (subject.aliases ?? []).filter((a) => !latinContour || !hasCyrillic(a));
+  const parsed = parseSubjectName(searchName);
   const suggestions: Array<{ text: string; engine: string; region: string; rank: number }> = [];
   try {
     const run = await serperAutocomplete(
@@ -436,7 +450,7 @@ async function buildRegionQuerySet(
         caseId: subject.caseId ?? "",
         subjectFullName: subject.fullName,
         aliases: subject.aliases ?? [],
-        query: subject.fullName,
+        query: searchName,
         language: profile.language,
         region: profile.googleGl,
         limit: SUBJECT_QUERY_LIMIT * 4,
@@ -458,11 +472,11 @@ async function buildRegionQuerySet(
   }
   return buildSubjectQuerySet({
     profile: {
-      fullName: subject.fullName,
+      fullName: searchName,
       firstName: parsed.givenName ?? undefined,
       lastName: parsed.surname ?? undefined,
       patronymic: parsed.patronymic ?? undefined,
-      variants: subject.aliases ?? [],
+      variants,
     },
     suggestions,
     region,
@@ -470,6 +484,21 @@ async function buildRegionQuerySet(
     capturedAt,
     limit: SUBJECT_QUERY_LIMIT,
   });
+}
+
+/**
+ * Латинское написание имени: готовое из псевдонимов, иначе транслитерация.
+ * Псевдоним предпочтительнее — его написал человек, знающий, как субъекта
+ * пишут в зарубежных источниках.
+ */
+function latinNameOf(subject: CaseSubjectInfo): string {
+  const alias = (subject.aliases ?? [])
+    .map((a) => String(a ?? "").trim())
+    .find((a) => a.length > 0 && !hasCyrillic(a));
+  if (alias) return alias;
+  return hasCyrillic(subject.fullName)
+    ? transliterateRuToEn(subject.fullName)
+    : subject.fullName;
 }
 
 export async function runOrionSearchProfile(

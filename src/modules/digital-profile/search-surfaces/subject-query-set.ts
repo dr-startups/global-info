@@ -18,12 +18,26 @@
  * Модуль чистый: ни сети, ни LLM, ни обращения к базе.
  */
 
-import { transliterateRuToEn } from "./orion-query-plan";
+import { hasCyrillic, transliterateRuToEn } from "./orion-query-plan";
 
 export const SUBJECT_QUERY_SET_VERSION = "subject-query-set-v1" as const;
 
 /** Сколько запросов уходит в аудит. Пять — как в эталоне. */
 export const SUBJECT_QUERY_LIMIT = 5;
+
+/**
+ * Письменность контура.
+ *
+ * В выдаче ОАЭ и международного контура запрос набирают латиницей. Кириллица
+ * там измеряет не тот интернет: «киркоров филипп бедросович дети» в Google с
+ * параметрами ОАЭ возвращает те же русские страницы, что и российский контур,
+ * и раздел отчёта об ОАЭ повторяет российский вместо того, чтобы показать, что
+ * о субъекте видно за рубежом.
+ *
+ * Правило одностороннее: в латинском контуре кириллицы быть не должно, а в
+ * русском латинский запрос («филипп киркоров instagram») законен и остаётся.
+ */
+export type QueryScript = "cyrillic" | "latin";
 
 /** Откуда взялся запрос — это часть отчёта, а не служебная пометка. */
 export type SubjectQueryOrigin =
@@ -46,7 +60,8 @@ export type RejectedSubjectQuery = {
     | "missing_subject_tokens"
     | "foreign_person"
     | "too_long"
-    | "over_limit";
+    | "over_limit"
+    | "wrong_script";
 };
 
 export type SubjectQuerySet = {
@@ -77,10 +92,18 @@ export type SubjectQuerySetInput = {
   language: string;
   capturedAt: string;
   limit?: number;
+  /** По умолчанию выводится из языка контура: `ru` — кириллица, иначе латиница. */
+  script?: QueryScript;
 };
 
 /** Длиннее этого запрос перестаёт быть тем, что набирает человек. */
 const MAX_QUERY_CHARS = 80;
+
+/** Письменность контура: явная, иначе по языку. */
+export function scriptForLanguage(language: string, override?: QueryScript): QueryScript {
+  if (override) return override;
+  return String(language ?? "").toLowerCase().startsWith("ru") ? "cyrillic" : "latin";
+}
 
 export function normalizeSubjectQuery(value: string): string {
   return String(value ?? "")
@@ -168,6 +191,7 @@ export function buildSubjectQuerySet(input: SubjectQuerySetInput): SubjectQueryS
   const limit = Math.max(1, input.limit ?? SUBJECT_QUERY_LIMIT);
   const profile = input.profile;
   const fullName = String(profile.fullName ?? "").trim();
+  const script = scriptForLanguage(input.language, input.script);
 
   const queries: SubjectQuery[] = [];
   const rejected: RejectedSubjectQuery[] = [];
@@ -178,6 +202,10 @@ export function buildSubjectQuerySet(input: SubjectQuerySetInput): SubjectQueryS
     if (!text) return false;
     const normalized = normalizeSubjectQuery(text);
     if (!normalized) return false;
+    if (script === "latin" && hasCyrillic(text)) {
+      rejected.push({ query: text, reason: "wrong_script" });
+      return false;
+    }
     if (seen.has(normalized)) {
       rejected.push({ query: text, reason: "duplicate" });
       return false;
@@ -203,6 +231,12 @@ export function buildSubjectQuerySet(input: SubjectQuerySetInput): SubjectQueryS
   for (const s of suggestions) {
     const text = String(s.text ?? "").trim();
     if (!text) continue;
+    // Отказ фиксируется по самой подсказке: если сначала дописать к ней имя, в
+    // журнале окажется строка, которой поисковик не предлагал.
+    if (script === "latin" && hasCyrillic(text)) {
+      rejected.push({ query: text, reason: "wrong_script" });
+      continue;
+    }
     const tokens = tokensOf(text);
     const hasSurname = hasAnyForm(tokens, profile.lastName) || hasAnyForm(tokens, fullName.split(/\s+/)[0]);
     if (!hasSurname) {

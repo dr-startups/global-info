@@ -28,6 +28,7 @@ import {
 import type { Finding } from "../../contracts/finding";
 import type { SurfaceClaim } from "../../contracts/surface-analysis";
 import { ADVERSE_PATTERNS } from "../../analytics/surface-analyzers";
+import { VISUAL_ASSET_UNAVAILABLE } from "../slide-markers";
 import {
   cleanExampleTitle,
   isWeakExampleTitle,
@@ -152,7 +153,7 @@ export type FragmentBuildOutput = {
   emptyStateReason?: string;
 };
 
-export const VISUAL_ASSET_UNAVAILABLE = "VISUAL_ASSET_UNAVAILABLE" as const;
+export { VISUAL_ASSET_UNAVAILABLE };
 
 export const RISK_ORDER: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
 

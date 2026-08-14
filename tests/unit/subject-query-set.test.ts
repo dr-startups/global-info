@@ -151,3 +151,64 @@ describe("buildSubjectQuerySet", () => {
     expect(normalizeSubjectQuery("  «Глинка,   Сергей» ")).toBe("глинка сергей");
   });
 });
+
+describe("письменность контура", () => {
+  const LATIN = {
+    fullName: "Glinka Sergei Mikhailovich",
+    firstName: "Sergei",
+    lastName: "Glinka",
+    patronymic: "Mikhailovich",
+  };
+
+  it("в зарубежный контур кириллическая подсказка не попадает", () => {
+    const set = buildSubjectQuerySet({
+      profile: LATIN,
+      suggestions: [
+        suggestion("глинка сергей дети", 1, "GOOGLE"),
+        suggestion("sergei glinka biography", 2, "GOOGLE"),
+      ],
+      region: "UAE",
+      language: "en",
+      capturedAt: AT,
+    });
+    expect(set.queries.map((q) => q.query)).not.toContain("глинка сергей дети");
+    expect(set.queries.some((q) => q.query === "sergei glinka biography")).toBe(true);
+    expect(set.rejected).toContainEqual({ query: "глинка сергей дети", reason: "wrong_script" });
+  });
+
+  it("хвост подсказки на кириллице не дописывается к латинскому имени", () => {
+    const set = buildSubjectQuerySet({
+      profile: LATIN,
+      suggestions: [suggestion("биография", 1, "GOOGLE")],
+      region: "UAE",
+      language: "en",
+      capturedAt: AT,
+    });
+    expect(set.queries.every((q) => !/[Ѐ-ӿ]/u.test(q.query))).toBe(true);
+  });
+
+  it("в российском контуре латинский запрос законен и остаётся", () => {
+    const set = buildSubjectQuerySet({
+      profile: PROFILE,
+      suggestions: [suggestion("глинка сергей instagram", 1)],
+      region: "RU",
+      language: "ru",
+      capturedAt: AT,
+    });
+    expect(set.queries.some((q) => q.query === "глинка сергей instagram")).toBe(true);
+    expect(set.rejected.some((r) => r.reason === "wrong_script")).toBe(false);
+  });
+
+  it("письменность можно задать явно, не полагаясь на язык", () => {
+    const set = buildSubjectQuerySet({
+      profile: PROFILE,
+      suggestions: [suggestion("глинка сергей дети", 1)],
+      region: "RU",
+      language: "ru",
+      script: "latin",
+      capturedAt: AT,
+    });
+    expect(set.queries).toHaveLength(0);
+    expect(set.rejected.every((r) => r.reason === "wrong_script")).toBe(true);
+  });
+});

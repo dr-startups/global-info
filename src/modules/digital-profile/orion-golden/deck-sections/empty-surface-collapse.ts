@@ -18,6 +18,8 @@
  * Модуль чистый.
  */
 
+import { VISUAL_ASSET_UNAVAILABLE } from "./slide-markers";
+
 export type SlotMerge = {
   baseSlotId: string;
   mergedInto: string;
@@ -45,7 +47,7 @@ export function collapseEmptySurfaceSlots<T extends CollapsibleSlide>(
   slides: readonly T[]
 ): CollapseResult<T> {
   if (slides.length <= 1) return { slides: [...slides], mergedSlots: [] };
-  const allEmpty = slides.every((s) => Boolean(s.emptyStateReason));
+  const allEmpty = slides.every((s) => isMissingSurfacePage(s));
   if (!allEmpty) return { slides: [...slides], mergedSlots: [] };
 
   const [first, ...rest] = slides;
@@ -57,6 +59,20 @@ export function collapseEmptySurfaceSlots<T extends CollapsibleSlide>(
       reason: emptySurfaceMergeReason(),
     })),
   };
+}
+
+/**
+ * Страница «поверхность не дала материала».
+ *
+ * Пометка «нет картинки» (`VISUAL_ASSET_UNAVAILABLE`) сюда не относится:
+ * материал на такой странице есть, он показан текстом. На прогоне без снимков
+ * это стоило содержимого — четырнадцать связанных запросов схлопывались в одну
+ * страницу с пятью строками, а причина слияния сообщала клиенту, что
+ * поверхность ничего не дала.
+ */
+function isMissingSurfacePage(slide: CollapsibleSlide): boolean {
+  const reason = slide.emptyStateReason;
+  return Boolean(reason) && reason !== VISUAL_ASSET_UNAVAILABLE;
 }
 
 /** Причина слияния для поверхности, у которой не оказалось данных. */

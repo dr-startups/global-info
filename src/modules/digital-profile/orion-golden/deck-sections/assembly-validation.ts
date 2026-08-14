@@ -187,6 +187,11 @@ export function validateAssembly(input: {
   for (const slide of rendererSlides) {
     if (slide.visualAssetRefs.length === 0) continue;
     if (!SIDEBAR_TEMPLATES.has(slide.template)) continue;
+    // Вывод, значение и рекомендация принадлежат первой странице блока:
+    // продолжение несёт остаток перечня, и повторять на нём тот же вывод — то
+    // самое дублирование, которое из отчёта убирали. Спрашивать сайдбар с
+    // продолжения значит требовать повтора.
+    if (slide.isContinuation) continue;
     const hasConclusion = Boolean(slide.whatWasFound?.trim());
     const hasMeaning = Boolean(
       slide.whyItMatters?.trim() || slide.statusNote?.trim() || slide.narrative?.trim()

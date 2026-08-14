@@ -1,21 +1,149 @@
 /**
- * Independent surface fragment builders — canonical-slot aware.
- * Split from fragment-builders.ts (REMEDIATION §9.5) — mechanical move only.
+ * Страницы «Связанные запросы» (Россия — три листа, ОАЭ — один).
+ *
+ * Правило страницы одно: **описание считает то, что напечатано**. Раньше в
+ * буллеты уходил один набор (отобранные риск-строки), а в описание — счёт
+ * другого (все ссылки поверхности, до отбора и до обрезки по ёмкости листа).
+ * На приёмке это видно сразу: показаны четыре запроса, под ними написано «три»,
+ * на соседнем листе показаны два и написано «три». Поэтому страница теперь
+ * строится от строк: сколько строк напечатано, столько и названо.
+ *
+ * Вывод по находке здесь не печатается намеренно. Находки формулируются про
+ * публикации («найдены материалы, в которых…»), а на этой странице не
+ * публикации, а запросы — фразы, которые поисковик предлагает набрать следующими.
  */
 
-import type { FragmentKey, SectionType } from "../contracts";
-import type { ScopedFragmentInput } from "../scoped-input";
+import type { FragmentKey, SectionType, SlideBody } from "../contracts";
+import type { ScopedEvidenceIndex, ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
+import { ADVERSE_PATTERNS } from "../../analytics/surface-analyzers";
+import { pluralRu } from "../../analytics/finding-synthesizer";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
 import { collapseEmptySurfaceSlots } from "../empty-surface-collapse";
 import {
   buildPageEvidenceView,
-  claimText,
   clampClientText,
   distribute,
-  pageFindingBlocks,
+  isAdverse,
+  makeSlotSlide,
+  pageSourceLine,
   visualSlide,
 } from "./shared";
+
+/** Сколько запросов помещается на лист — ёмкость шаблона `related-queries`. */
+export const RELATED_QUERIES_PER_PAGE = 10;
+
+export type RelatedRow = {
+  ref: string;
+  /** Текст запроса — то, что печатается строкой на листе. */
+  text: string;
+  adverse: boolean;
+};
+
+function normalizeQueryText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[«»"'`?!.,]/gu, "")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+/**
+ * Строки поверхности: по одной на запрос, без повторов.
+ *
+ * Один и тот же связанный запрос приходит от двух поисковых систем и от
+ * нескольких запросов набора. В отчёте он должен стоять один раз: повтор в
+ * списке читается как отдельная находка.
+ */
+export function uniqueRelatedRows(
+  refs: string[],
+  evidenceIndex: ScopedEvidenceIndex,
+  adverseRefs: ReadonlySet<string>
+): RelatedRow[] {
+  const seen = new Set<string>();
+  const rows: RelatedRow[] = [];
+  for (const ref of refs) {
+    const entry = evidenceIndex[ref];
+    const text = String(entry?.title ?? "").trim();
+    if (!text) continue;
+    const key = normalizeQueryText(text);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    rows.push({
+      ref,
+      text,
+      adverse: entry?.adverse === true || adverseRefs.has(ref) || ADVERSE_PATTERNS.test(text),
+    });
+  }
+  return rows;
+}
+
+/**
+ * Обрезка по ёмкости раздела: сначала все запросы с негативной формулировкой,
+ * затем остальные по порядку выдачи. Порядок внутри отчёта сохраняется — это
+ * список, а не рейтинг.
+ *
+ * Молча терять строки нельзя: сколько собрано и сколько вошло, страница
+ * называет отдельно.
+ */
+export function fitRelatedRows(
+  rows: RelatedRow[],
+  capacity: number
+): { rows: RelatedRow[]; dropped: number } {
+  if (capacity <= 0) return { rows: [], dropped: rows.length };
+  if (rows.length <= capacity) return { rows, dropped: 0 };
+  const keep = new Set<number>();
+  rows.forEach((row, i) => {
+    if (row.adverse && keep.size < capacity) keep.add(i);
+  });
+  rows.forEach((_, i) => {
+    if (keep.size < capacity) keep.add(i);
+  });
+  const kept = rows.filter((_, i) => keep.has(i));
+  return { rows: kept, dropped: rows.length - kept.length };
+}
+
+/**
+ * Описание страницы. Считает ровно напечатанные строки; собранное по региону
+ * названо отдельным числом, чтобы «10» на листе не читалось как «всего десять».
+ */
+export function relatedCompositionBlocks(input: {
+  shown: number;
+  adverseShown: number;
+  collected: number;
+  keptInReport: number;
+}): Partial<SlideBody> {
+  const queryWord = pluralRu(input.shown, "запрос", "запроса", "запросов");
+  const trimmed = input.keptInReport < input.collected;
+  const scope = trimmed
+    ? `Собрано связанных запросов по региону: ${input.collected}; в отчёт вошли ${input.keptInReport} — все с негативной формулировкой и остальные по порядку выдачи.`
+    : `Собрано связанных запросов по региону: ${input.collected} — показаны все.`;
+  return {
+    whatWasFound: clampClientText(
+      `${scope} На этой странице — ${input.shown} ${queryWord}; с негативной формулировкой среди них — ${input.adverseShown}.`,
+      400
+    ),
+    whyItMatters: clampClientText(
+      input.adverseShown > 0
+        ? "Связанные запросы поисковик предлагает набрать следующими: негативная формулировка в этом блоке уводит читателя к нежелательным материалам ещё до того, как он их искал."
+        : "Связанные запросы поисковик предлагает набрать следующими: негативных формулировок среди них нет, к нежелательным материалам блок не уводит.",
+      320
+    ),
+    whatToCheck: clampClientText(
+      "Проверять блок при обновлении: состав связанных запросов меняется вместе с выдачей.",
+      220
+    ),
+    statusNote:
+      input.adverseShown > 0
+        ? `На этой странице ${input.adverseShown} ${pluralRu(
+            input.adverseShown,
+            "запрос",
+            "запроса",
+            "запросов"
+          )} с негативной формулировкой.`
+        : "Запросов с негативной формулировкой на этой странице нет.",
+  };
+}
 
 export function buildRelatedQueriesFragment(
   key: FragmentKey,
@@ -26,33 +154,58 @@ export function buildRelatedQueriesFragment(
 ): FragmentBuildOutput {
   const slots = slotsForFragment(key);
   const units = scoped.surfaceUnits.filter((u) => u.surface === "paa_related");
-  const claims = units.flatMap((u) => u.claims);
   const refs = units.flatMap((u) => u.evidenceRefs);
-  const claimChunks = distribute(claims, slots.length);
-  const refChunks = distribute(refs, slots.length);
+  const adverseRefs = new Set<string>();
+  for (const f of scoped.findings.filter(isAdverse)) {
+    for (const r of f.evidenceRefs) adverseRefs.add(r);
+  }
+  const collected = uniqueRelatedRows(refs, scoped.evidenceIndex, adverseRefs);
+  const fitted = fitRelatedRows(collected, slots.length * RELATED_QUERIES_PER_PAGE);
+  // Страниц под запросы — сколько нужно, а не сколько слотов: два запроса,
+  // разложенные на три листа, оставляют третий лист без единой строки.
+  const usedPages = Math.min(slots.length, Math.max(1, fitted.rows.length));
+  const pages = distribute(fitted.rows, usedPages);
+
   const slides = slots.map((slot, i) => {
-    const lines = refChunks[i]
-      .map((r) => scoped.evidenceIndex[r]?.title)
-      .filter((t): t is string => Boolean(t))
-      .slice(0, 10);
-    // Sidebar strictly scoped to the related queries displayed on THIS page.
-    const view = buildPageEvidenceView(scoped, refChunks[i]);
+    const rows = pages[i] ?? [];
+    if (rows.length === 0 && collected.length > 0) {
+      // Слот блока, на который материала не хватило. Статус «не собиралось»
+      // здесь был бы неправдой: собрано, показано, просто уместилось раньше.
+      return makeSlotSlide({
+        slot,
+        sectionId,
+        content: {
+          narrative: `Все связанные запросы, собранные по региону «${regionLabel}», показаны на предыдущих страницах блока: их ${collected.length}.`,
+          sourceNote: pageSourceLine(buildPageEvidenceView(scoped, [])),
+        },
+        evidenceRefs: [],
+        findingIds: [],
+        metrics: { items: 0, adverseQueries: 0 },
+      });
+    }
+    const pageRefs = rows.map((r) => r.ref);
+    const view = buildPageEvidenceView(scoped, pageRefs);
     return visualSlide({
       slot,
       sectionId,
       extras,
       scoped,
       content: {
-        bullets: claimChunks[i].length
-          ? claimChunks[i].map((c) => clampClientText(claimText(c), 400))
-          : lines,
-        ...pageFindingBlocks(scoped, view),
+        bullets: rows.map((r) => clampClientText(r.text, 220)),
+        ...relatedCompositionBlocks({
+          shown: rows.length,
+          adverseShown: rows.filter((r) => r.adverse).length,
+          collected: collected.length,
+          keptInReport: fitted.rows.length,
+        }),
+        sourceNote: pageSourceLine(view),
       },
-      evidenceRefs: refChunks[i],
+      evidenceRefs: pageRefs,
       findingIds: view.findings.map((f) => f.findingId),
-      metrics: { items: refChunks[i].length },
-      noUnderlyingData: refs.length === 0,
+      metrics: { items: rows.length, adverseQueries: rows.filter((r) => r.adverse).length },
+      noUnderlyingData: collected.length === 0,
       noDataReason: "no-related",
+      noDataScopeLabel: regionLabel,
     });
   });
   // Пустая поверхность занимает одну страницу, а не три одинаковые (шаг 15, E2).

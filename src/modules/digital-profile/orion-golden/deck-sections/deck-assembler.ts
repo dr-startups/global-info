@@ -31,6 +31,7 @@ import {
 } from "./canonical-slots";
 import { withoutRepeatedSentences } from "./run-deck-build";
 import { emptySurfaceMergeReason } from "./empty-surface-collapse";
+import { dropEmptyContinuations } from "./continuation-cleanup";
 
 export type AssemblyRejection = {
   fragmentKey: string;
@@ -39,7 +40,9 @@ export type AssemblyRejection = {
     | "FOREIGN_REPORT_RUN"
     | "STALE_DATASET"
     | "SECTION_QA_FAILED"
-    | "EMPTY_VALID_OMITTED";
+    | "EMPTY_VALID_OMITTED"
+    /** Продолжение осталось без содержимого после вычистки повторов. */
+    | "EMPTY_CONTINUATION_DROPPED";
   detail: string;
 };
 
@@ -197,12 +200,55 @@ export function assembleDeck(input: {
     return { deckManifest: emptyManifest(input), rendererSlides: [], rejections, errors };
   }
 
+  /*
+   * Пояснение темы печатается один раз на весь отчёт.
+   *
+   * Текст находки собирается один раз и переиспользуется всюду, где тема
+   * появляется: в матрице рисков, в обзоре профиля и в резюме каждого региона.
+   * Из-за этого один и тот же абзац — «Найдены публикации… Для банка или
+   * партнёра такие сюжеты обычно становятся первым поводом для расширенной
+   * проверки» — печатался в отчёте четыре раза дословно. Для читателя это
+   * главный признак отчёта, собранного шаблоном, а не написанного.
+   *
+   * Порядок обхода — порядок чтения: объяснение остаётся там, где встретилось
+   * первым (в матрице рисков), а региональные страницы сохраняют своё —
+   * материалы и числа своего контура. Пустая после вычистки строка выбрасывается
+   * вместе со своим маркером.
+   *
+   * Вычистка идёт до нумерации: продолжение, у которого после неё не осталось
+   * ничего, кроме заголовка, — пустой лист, и он не должен получить ни номера
+   * страницы, ни строки в оглавлении.
+   */
+  const saidInDeck = new Set<string>();
+  const dedupedSlides = acceptedSlides.map(({ slide, pack }) => {
+    if (slide.templateId === "toc") return { slide, pack };
+    const bullets = (slide.content.bullets ?? [])
+      .map((b) => withoutRepeatedSentences(b, saidInDeck))
+      .filter((b): b is string => Boolean(b && b.trim()));
+    return { slide: { ...slide, content: { ...slide.content, bullets } }, pack };
+  });
+  const packBySlideId = new Map(dedupedSlides.map(({ slide, pack }) => [slide.slideId, pack]));
+  const cleanup = dropEmptyContinuations(dedupedSlides.map(({ slide }) => slide));
+  const finalSlides = cleanup.slides.map((slide) => ({
+    slide,
+    pack: packBySlideId.get(slide.slideId)!,
+  }));
+  // Выброшенный лист называется вслух: страница исчезла из отчёта, и это
+  // должно быть видно в разборе сборки, а не только в разнице номеров.
+  for (const slideId of cleanup.dropped) {
+    rejections.push({
+      fragmentKey: packBySlideId.get(slideId)?.fragmentKey ?? "UNKNOWN",
+      reason: "EMPTY_CONTINUATION_DROPPED",
+      detail: slideId,
+    });
+  }
+
   // 9/10. Global page index and section page ranges (assembler-owned).
-  const total = acceptedSlides.length;
+  const total = finalSlides.length;
   const slideRefs: DeckSlideRef[] = [];
   const sectionRanges = new Map<string, { first: number; last: number }>();
   const canonicalIdSet = new Set(CANONICAL_SLOT_IDS);
-  acceptedSlides.forEach(({ slide, pack }, i) => {
+  finalSlides.forEach(({ slide, pack }, i) => {
     const page = i + 1;
     // Explicit page accounting: every page is a canonical base slot, a
     // continuation of one, or an explained optional extra — never an
@@ -243,25 +289,8 @@ export function assembleDeck(input: {
     }))
     .sort((a, b) => a.pageNumber - b.pageNumber);
 
-  /*
-   * Пояснение темы печатается один раз на весь отчёт.
-   *
-   * Текст находки собирается один раз и переиспользуется всюду, где тема
-   * появляется: в матрице рисков, в обзоре профиля и в резюме каждого региона.
-   * Из-за этого один и тот же абзац — «Найдены публикации… Для банка или
-   * партнёра такие сюжеты обычно становятся первым поводом для расширенной
-   * проверки» — печатался в отчёте четыре раза дословно. Для читателя это
-   * главный признак отчёта, собранного шаблоном, а не написанного.
-   *
-   * Порядок обхода — порядок чтения: объяснение остаётся там, где встретилось
-   * первым (в матрице рисков), а региональные страницы сохраняют своё —
-   * материалы и числа своего контура. Пустая после вычистки строка выбрасывается
-   * вместе со своим маркером.
-   */
-  const saidInDeck = new Set<string>();
-
   // 12/13/14. Renderer slide model with global footer counters + manifest.
-  const rendererSlides: RendererSlide[] = acceptedSlides.map(({ slide }, i) => {
+  const rendererSlides: RendererSlide[] = finalSlides.map(({ slide }, i) => {
     const tpl = DECK_TEMPLATE_REGISTRY[slide.templateId as DeckTemplateId];
     const isToc = slide.templateId === "toc";
     const pickedVariant = input.layoutVariants?.get(slide.slideId);
@@ -283,11 +312,8 @@ export function assembleDeck(input: {
       continuationOf: slide.continuationOf ?? undefined,
       continuationIndex: slide.continuationIndex ?? undefined,
       narrative: slide.content.narrative,
-      bullets: isToc
-        ? toc.map((t) => t.title)
-        : (slide.content.bullets ?? [])
-            .map((b) => withoutRepeatedSentences(b, saidInDeck))
-            .filter((b): b is string => Boolean(b && b.trim())),
+      // Повторы уже вычищены выше, до нумерации страниц.
+      bullets: isToc ? toc.map((t) => t.title) : (slide.content.bullets ?? []),
       table: slide.content.table,
       evidenceRefs: slide.evidenceRefs,
       findingIds: slide.findingIds,
@@ -349,7 +375,7 @@ export function assembleDeck(input: {
 
   // Every page outside "canonical base slots + their continuations" gets an
   // explicit owner and reason (e.g. the optional appendix).
-  const packBySlide = new Map(acceptedSlides.map(({ slide, pack }) => [slide.slideId, pack]));
+  const packBySlide = new Map(finalSlides.map(({ slide, pack }) => [slide.slideId, pack]));
   const optionalBaseIds = new Set(
     slideRefs.filter((s) => s.pageKind === "optional_extra").map((s) => s.slideId)
   );
