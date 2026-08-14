@@ -211,12 +211,35 @@ export function buildSerpFragment(
     }
     return null;
   };
-  const queryOfGroup = (group: { refs: string[] }): { query?: string; queryPurpose?: string } => {
+  /**
+   * Все запросы, которыми найден материал, а не первый попавшийся.
+   *
+   * Материал в выдаче виден по нескольким запросам сразу: «suleyman kerimov»,
+   * «kerimov suleyman» и «Suleyman Abusaidovich Kerimov» приводят к одной и той
+   * же странице. Сведение по материалу оставляло за ним запрос того наблюдения,
+   * что оказалось первым, и таблица ТОП-20 показывала семь строк из двадцати:
+   * остальные восемнадцать материалов «принадлежали» другим запросам. Из
+   * двадцати материалов первой двадцатки по «suleyman kerimov» первым
+   * наблюдением этот запрос был записан ровно у одного.
+   */
+  const queriesOfGroup = (group: { refs: string[] }): Map<string, string | undefined> => {
+    const out = new Map<string, string | undefined>();
     for (const ref of group.refs) {
       const e = scoped.evidenceIndex[ref];
-      if (e?.query) return { query: e.query, queryPurpose: e.queryPurpose };
+      if (e?.query && !out.has(e.query)) out.set(e.query, e.queryPurpose);
     }
-    return {};
+    return out;
+  };
+  /**
+   * Входит ли материал в выдачу по выбранному запросу.
+   *
+   * Наблюдения без записанного запроса относим к любому: у старых наборов
+   * данных запроса нет вовсе, и отбрасывать их значит потерять таблицу целиком.
+   */
+  const groupInQuery = (group: { refs: string[] }, query: string | null): boolean => {
+    if (!query) return true;
+    const queries = queriesOfGroup(group);
+    return queries.size === 0 || queries.has(query);
   };
   /**
    * Позиция материала в выдаче по конкретному запросу.
@@ -262,10 +285,14 @@ export function buildSerpFragment(
         (SERP_ENGINE_ORDER.indexOf(a[0]) + 1 || 99) - (SERP_ENGINE_ORDER.indexOf(b[0]) + 1 || 99)
     )
     .map(([engine, groups]) => {
-      const query = pickSerpTableQuery(groups.map((g) => queryOfGroup(g)));
-      const scopedGroups = query
-        ? groups.filter((g) => (queryOfGroup(g).query ?? query) === query)
-        : groups;
+      // Запрос выбирается по числу материалов, которые он показал, поэтому в
+      // счёт идёт каждая пара «материал — запрос», а не один запрос на материал.
+      const query = pickSerpTableQuery(
+        groups.flatMap((g) =>
+          [...queriesOfGroup(g)].map(([q, queryPurpose]) => ({ query: q, queryPurpose }))
+        )
+      );
+      const scopedGroups = groups.filter((g) => groupInQuery(g, query));
       const ranked = dropDuplicateRanks(
         scopedGroups
           .map((group, index) => ({ group, index, rank: rankInQuery(group, query) }))
