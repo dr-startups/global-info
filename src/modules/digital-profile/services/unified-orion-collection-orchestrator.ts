@@ -800,13 +800,38 @@ export async function pumpResumableUnifiedCollections(deps: UnifiedOrchestratorD
   return jobs.length;
 }
 
+/** Сколько джоба считается «в работе» без признаков жизни. */
+export const JOB_LEASE_MS = 120_000;
+
+/** Через сколько лиза продлевается: треть срока — запас на две осечки. */
+export const JOB_LEASE_HEARTBEAT_MS = Math.floor(JOB_LEASE_MS / 3);
+
 export async function runUnifiedCollectionTick(
   caseId: string,
   deps: UnifiedOrchestratorDeps = {}
 ): Promise<UnifiedCollectionJob | null> {
   const ownerId = `unified-${process.pid}-${randomUUID().slice(0, 6)}`;
-  const claimed = await claimUnifiedJobLease({ caseId, ownerId, leaseMs: 120_000, now: deps.now?.() });
+  const claimed = await claimUnifiedJobLease({ caseId, ownerId, leaseMs: JOB_LEASE_MS, now: deps.now?.() });
   if (!claimed) return await loadUnifiedCollectionJob(caseId);
+
+  /*
+   * Лиза джобы продлевается, пока тик работает.
+   *
+   * Лиза берётся на две минуты, а сборка отчёта идёт шесть: чтение ста
+   * двадцати страниц, разбор моделью, отрисовка. Подборщик прогонов
+   * (`pumpResumableUnifiedCollections`) опрашивает джобы каждые пять секунд;
+   * как только лиза истекала, он запускал **второй тик той же джобы**, и
+   * отчёт собирался параллельно сам с собой. На трёх прогонах подряд это
+   * видно по логу: чтение ссылок и отрисовка отработали дважды с промежутком
+   * около двух минут — ровно столько живёт лиза.
+   *
+   * Продление берёт ту же лизу тем же владельцем: если её всё-таки отобрали,
+   * продление не пройдёт и не вернёт работу себе обманом.
+   */
+  const heartbeat = setInterval(() => {
+    void claimUnifiedJobLease({ caseId, ownerId, leaseMs: JOB_LEASE_MS }).catch(() => {});
+  }, JOB_LEASE_HEARTBEAT_MS);
+  (heartbeat as unknown as { unref?: () => void }).unref?.();
 
   try {
     let job = claimed;
@@ -845,6 +870,7 @@ export async function runUnifiedCollectionTick(
     }
     return await loadUnifiedCollectionJob(caseId);
   } finally {
+    clearInterval(heartbeat);
     await releaseUnifiedJobLease(caseId, ownerId);
   }
 }
