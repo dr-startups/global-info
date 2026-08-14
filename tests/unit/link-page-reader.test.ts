@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  LINK_READER_USER_AGENT,
   extractPageTitle,
   extractPublishedAt,
   extractPublishedSummary,
@@ -143,5 +144,23 @@ describe("страницы, которые рисуются скриптами",
     const body = "Текст статьи в структурированной разметке страницы. ".repeat(5);
     expect(extractPublishedSummary(`<script type="application/ld+json">{"articleBody":"${body}"}</script>`))
       .toContain("Текст статьи в структурированной разметке");
+  });
+});
+
+describe("как читатель представляется сайту", () => {
+  it("заголовок запроса — только латиница: кириллица роняет fetch до сети", () => {
+    // Значение HTTP-заголовка — байтовая строка. Русское пояснение в
+    // user-agent роняло каждый запрос с ByteString-ошибкой, и в трёх прогонах
+    // подряд ни одна из ста двадцати страниц не была прочитана.
+    expect(LINK_READER_USER_AGENT).toMatch(/^[\x20-\x7E]+$/u);
+    expect(LINK_READER_USER_AGENT).toContain("DigitalProfileAudit");
+  });
+
+  it("не выдаёт себя за браузер", () => {
+    expect(LINK_READER_USER_AGENT).not.toMatch(/mozilla|chrome|safari|webkit/i);
+  });
+
+  it("заголовок принимается настоящим Headers без исключения", () => {
+    expect(() => new Headers({ "user-agent": LINK_READER_USER_AGENT })).not.toThrow();
   });
 });

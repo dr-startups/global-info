@@ -72,8 +72,12 @@ export type LinkVerdictInput = {
 };
 
 /** Решение по непрочитанной странице: честное «не знаем», а не догадка. */
-export function unreadVerdict(input: LinkVerdictInput): LinkVerdict {
-  const failure = input.page.ok ? undefined : input.page.failure;
+export function unreadVerdict(
+  input: LinkVerdictInput,
+  override?: { failure: "analysis_failed"; detail: string }
+): LinkVerdict {
+  const failure = override?.failure ?? (input.page.ok ? undefined : input.page.failure);
+  const detail = override?.detail ?? (input.page.ok ? undefined : input.page.message);
   return LinkVerdictSchema.parse({
     schemaVersion: LINK_VERDICT_SCHEMA_VERSION,
     evidenceRef: input.evidenceRef,
@@ -88,6 +92,7 @@ export function unreadVerdict(input: LinkVerdictInput): LinkVerdict {
     sourceType: sourceTypeFromDomain(input.domain),
     quotes: [],
     readFailure: failure ?? "not_fetched",
+    failureDetail: detail ? String(detail).slice(0, 200) : undefined,
     readAt: input.page.readAt,
   });
 }
@@ -120,8 +125,13 @@ export async function analyzeLinkPage(
       },
       maxOutputTokens: 700,
     });
-  } catch {
-    return unreadVerdict({ ...input, page: { ...input.page, ok: false, failure: "not_fetched", message: "модель не ответила" } as LinkPageRead });
+  } catch (err) {
+    // Отказ модели — не то же самое, что закрытая страница. Раньше оба случая
+    // писались как «not_fetched», и по артефакту нельзя было понять, где чинить.
+    return unreadVerdict(input, {
+      failure: "analysis_failed",
+      detail: err instanceof Error ? err.message : "модель не ответила",
+    });
   }
 
   const body = (raw ?? {}) as Record<string, unknown>;
@@ -151,7 +161,12 @@ export async function analyzeLinkPage(
         : input.page.publishedAt,
     readAt: input.page.readAt,
   });
-  if (!parsed.success) return unreadVerdict(input);
+  if (!parsed.success) {
+    return unreadVerdict(input, {
+      failure: "analysis_failed",
+      detail: parsed.error.issues[0]?.message ?? "ответ модели не прошёл проверку",
+    });
+  }
   return requireQuotedAdverse(parsed.data);
 }
 

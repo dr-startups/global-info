@@ -41,6 +41,8 @@ export const LinkReadFailureSchema = z.enum([
   "not_found",
   "empty_text",
   "timeout",
+  /** Страница прочитана, но разбор не состоялся — модель не ответила. */
+  "analysis_failed",
 ]);
 
 export const LinkQuoteSchema = z.object({
@@ -76,6 +78,12 @@ export const LinkVerdictSchema = z.object({
   publishedAt: z.string().optional(),
   /** Не удалось прочитать — вывод сделан по заголовку и сниппету. */
   readFailure: LinkReadFailureSchema.optional(),
+  /**
+   * Техническая причина отказа одной строкой — для разбора прогона, не для
+   * клиента. Без неё сто двадцать отказов подряд выглядели одинаково, и
+   * поломка в заголовке запроса три прогона пряталась за словом «не открылась».
+   */
+  failureDetail: z.string().max(200).optional(),
   /** Когда страница была прочитана. */
   readAt: z.string(),
 });

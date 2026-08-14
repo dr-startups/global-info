@@ -27,6 +27,21 @@ import type { LinkReadFailureSchema } from "../orion-golden/contracts/link-verdi
 type LinkReadFailure = z.infer<typeof LinkReadFailureSchema>;
 
 export const LINK_PAGE_READ_TIMEOUT_MS = 12_000;
+
+/**
+ * Как мы представляемся чужому сайту.
+ *
+ * Честно и **только латиницей**. Значение заголовка HTTP — байтовая строка;
+ * кириллица в нём роняет `fetch` до выхода в сеть, с сообщением про ByteString.
+ * Здесь стояло русское пояснение, и из-за него не прочиталась ни одна страница
+ * ни в одном прогоне: в отчёте все сто двадцать ссылок значились
+ * «не открылись», хотя запроса к ним не было вовсе.
+ *
+ * Выдавать себя за браузер по-прежнему не будем: сайт вправе отказать роботу,
+ * и такой отказ мы записываем как есть.
+ */
+export const LINK_READER_USER_AGENT =
+  "DigitalProfileAudit/1.0 (+reputation audit; reads public pages)";
 /** Больше этого со страницы не берём: тексту статьи столько не нужно. */
 export const LINK_PAGE_MAX_BYTES = 1_500_000;
 /** Предел извлечённого текста — вход модели, а не архив страницы. */
@@ -156,12 +171,9 @@ export async function readLinkPage(
     const res = await fetchImpl(url, {
       signal: controller.signal,
       redirect: "follow",
-      // Представляемся честно. Сайт вправе отказать роботу, и такой отказ мы
-      // записываем как есть — выдавать себя за браузер, чтобы обойти защиту,
-      // не будем: это чужое решение о доступе к их страницам.
       headers: {
         accept: "text/html,application/xhtml+xml",
-        "user-agent": "DigitalProfileAudit/1.0 (репутационный аудит; чтение публичных страниц)",
+        "user-agent": LINK_READER_USER_AGENT,
       },
     });
     if (!res.ok) {

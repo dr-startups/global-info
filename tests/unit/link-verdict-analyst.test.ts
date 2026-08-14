@@ -214,3 +214,40 @@ describe("тип источника в решении по ссылке", () => 
     expect(verdict.sourceType).toBe("Соцсеть");
   });
 });
+
+describe("причина отказа записывается", () => {
+  it("отказ модели отличается от закрытой страницы", async () => {
+    const verdict = await analyzeLinkPage(
+      {
+        evidenceRef: "inventory:9",
+        url: "https://example.org/a",
+        domain: "example.org",
+        subject: { fullName: "Иван Иванов" },
+        page: { ok: true, text: "Текст страницы.", readAt: "2026-08-14T10:00:00.000Z" } as never,
+      },
+      {
+        call: async () => {
+          throw new Error("429 rate limit");
+        },
+      }
+    );
+    expect(verdict.readFailure).toBe("analysis_failed");
+    expect(verdict.failureDetail).toContain("429");
+  });
+
+  it("причина отказа чтения доходит до артефакта", () => {
+    const verdict = unreadVerdict({
+      evidenceRef: "inventory:10",
+      url: "https://example.org/b",
+      subject: { fullName: "Иван Иванов" },
+      page: {
+        ok: false,
+        failure: "blocked",
+        message: "HTTP 403",
+        readAt: "2026-08-14T10:00:00.000Z",
+      } as never,
+    });
+    expect(verdict.readFailure).toBe("blocked");
+    expect(verdict.failureDetail).toBe("HTTP 403");
+  });
+});
