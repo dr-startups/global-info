@@ -28,6 +28,7 @@ import { clusterVerdictThemes } from "./link-theme-clustering";
 import { isLinkReadingEnabled, readLinkPage, type LinkPageRead } from "../../services/link-page-reader";
 import { readLinks, type LinkReadingReport } from "./link-reading-agent";
 import { auditLinkVerdicts, type VerdictAuditReport } from "./link-verdict-audit-agent";
+import { transliterateRuToEn } from "../../search-surfaces/orion-query-plan";
 
 /** Сколько ссылок читаем за прогон. Предел, а не цель. */
 export const LINK_VERDICT_MAX_LINKS = 120;
@@ -168,7 +169,13 @@ export async function runLinkVerdicts(input: {
       evidenceRef: i.evidenceRef,
       text: i.page.ok ? i.page.text : undefined,
     })),
-    subjectNames: [input.subject.fullName, ...(input.subject.aliases ?? [])],
+    // Латинское написание нужно наравне с русским: половина прочитанного —
+    // зарубежные страницы, где фамилия стоит транслитом.
+    subjectNames: [
+      input.subject.fullName,
+      transliterateRuToEn(input.subject.fullName),
+      ...(input.subject.aliases ?? []),
+    ],
   });
   const verdicts = audited.verdicts;
   // Второй проход: формулировки страниц сводятся в темы отчёта. Без него на

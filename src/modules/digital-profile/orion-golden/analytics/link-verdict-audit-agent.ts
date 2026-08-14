@@ -70,13 +70,35 @@ export function quoteFoundInText(quote: string, pageText: string): boolean {
   return normalize(pageText).includes(needle);
 }
 
-/** Упомянут ли субъект в тексте страницы — по фамилии и её латинскому виду. */
+/**
+ * Упомянут ли субъект в тексте страницы.
+ *
+ * Якорь — фамилия, а не ФИО целиком. Страницы почти никогда не пишут «Греф
+ * Герман Оскарович» подряд: в тексте стоит «Герман Греф» или просто «Греф».
+ * Проверка по полной строке отвергала половину прочитанного — сорок семь
+ * решений из девяноста двух на живом прогоне, — и материал терялся не потому,
+ * что он о другом человеке, а потому что имя написано иначе.
+ *
+ * Проверка остаётся полом, а не потолком: она ловит случай «на странице этого
+ * человека нет вовсе». Отличить субъекта от полного однофамильца — работа
+ * модели, которая видела текст.
+ */
 export function subjectMentioned(pageText: string, names: readonly string[]): boolean {
   const haystack = normalize(pageText);
   return names
-    .map((n) => normalize(n))
-    .filter((n) => n.length >= 3)
+    .flatMap((n) => nameAnchors(n))
+    .filter((n) => n.length >= 4)
     .some((n) => haystack.includes(n));
+}
+
+/**
+ * Куски имени, по которым его узнают в тексте: строка целиком и каждое слово
+ * длиной от четырёх букв. Короткие слова («ван», «де») якорем не служат.
+ */
+function nameAnchors(name: string): string[] {
+  const whole = normalize(name);
+  if (!whole) return [];
+  return [whole, ...whole.split(" ").filter((w) => w.length >= 4)];
 }
 
 /**
