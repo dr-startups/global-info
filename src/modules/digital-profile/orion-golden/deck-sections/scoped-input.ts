@@ -48,6 +48,12 @@ export type MetricSnapshot = {
    * публикации», и её числа сходятся с метрикой выше.
    */
   linkThemes?: Array<{ theme: string; count: number; adverseCount: number }>;
+  /**
+   * Те же темы, но по контурам выдачи. Российская страница отчёта обязана
+   * показывать российские числа: общий свод отвечал на её вопрос числами из
+   * выдачи ОАЭ.
+   */
+  linkThemesByRegion?: Record<string, Array<{ theme: string; count: number; adverseCount: number }>>;
   /** Сколько страниц не удалось прочитать — честная часть покрытия. */
   linkUnreadCount?: number;
   /**

@@ -422,7 +422,19 @@ export function buildSerpFragment(
    * рубрики из справочника показывать под таким заголовком нельзя, они не
    * отвечают на вопрос «о чём публикация».
    */
-  const linkThemes = (scoped.metricSnapshot.linkThemes ?? []).filter((t) => t.count > 0);
+  /*
+   * Темы берутся по своему контуру.
+   *
+   * Свод по всему прогону стоял и на российской странице, и на странице ОАЭ —
+   * одинаковый. Российский раздел отвечал на вопрос «о чём публикации в ТОП-20
+   * России» числами, в которых половина материала из международной выдачи.
+   * Общего свода нет только у старых прогонов — тогда берём его как раньше.
+   */
+  const regionKey = key.startsWith("RU_") ? "RU" : "UAE";
+  const byRegion = scoped.metricSnapshot.linkThemesByRegion?.[regionKey];
+  const linkThemes = (byRegion ?? scoped.metricSnapshot.linkThemes ?? []).filter(
+    (t) => t.count > 0
+  );
   const themesPage =
     linkThemes.length > 0
       ? {

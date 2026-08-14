@@ -22,9 +22,11 @@ import {
   summarizeLinkVerdicts,
   type LinkVerdict,
   type VerdictSummary,
+  type VerdictThemeSummary,
 } from "../contracts/link-verdict";
 import { analyzeLinkPages, type LinkVerdictInput } from "./link-verdict-analyst";
-import { clusterVerdictThemes } from "./link-theme-clustering";
+import { resolveThemeLabels, summarizeThemesWithLabels } from "./link-theme-clustering";
+import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
 import { isLinkReadingEnabled, readLinkPage, type LinkPageRead } from "../../services/link-page-reader";
 import { readLinks, type LinkReadingReport } from "./link-reading-agent";
 import { auditLinkVerdicts, type VerdictAuditReport } from "./link-verdict-audit-agent";
@@ -45,6 +47,12 @@ export type LinkVerdictRunResult = {
   reading: LinkReadingReport;
   /** Отчёт агента проверки: что снято и почему. */
   audit: VerdictAuditReport;
+  /**
+   * Темы по контурам выдачи. Российская и международная страницы отчёта
+   * показывают своё: свод по всему прогону отвечал на вопрос «о чём публикации
+   * в ТОП-20 России» числами из выдачи ОАЭ.
+   */
+  themesByRegion: Record<string, VerdictThemeSummary[]>;
   /**
    * Чтение не сработало вовсе: запрошены страницы, прочитано ноль.
    *
@@ -77,9 +85,15 @@ function domainOf(url: string | null | undefined): string | undefined {
 export function linksToRead(
   items: RawInventoryItem[],
   limit = LINK_VERDICT_MAX_LINKS
-): Array<{ item: RawInventoryItem; url: string; rank?: number; query?: string }> {
+): Array<{ item: RawInventoryItem; url: string; rank?: number; query?: string; region?: string }> {
   const seen = new Set<string>();
-  const rows: Array<{ item: RawInventoryItem; url: string; rank?: number; query?: string }> = [];
+  const rows: Array<{
+    item: RawInventoryItem;
+    url: string;
+    rank?: number;
+    query?: string;
+    region?: string;
+  }> = [];
   for (const item of items) {
     const url = String(item.sourceUrl ?? "").trim();
     if (!/^https?:\/\//iu.test(url)) continue;
@@ -93,6 +107,7 @@ export function linksToRead(
       url,
       rank: Number.isFinite(rank) && rank > 0 ? rank : undefined,
       query: typeof meta.queryText === "string" ? meta.queryText : undefined,
+      region: item.region ? mapRegionBucket(item.region) : undefined,
     });
   }
   return rows
@@ -135,6 +150,7 @@ export async function runLinkVerdicts(input: {
     summary: empty,
     reading: emptyReading,
     audit: emptyAudit,
+    themesByRegion: {} as Record<string, VerdictThemeSummary[]>,
   };
   if (!isLinkReadingEnabled(input.deps?.env ?? process.env)) {
     return { ...base, skippedReason: "disabled", requested: 0, readOk: 0, readingBroken: false };
@@ -155,6 +171,7 @@ export async function runLinkVerdicts(input: {
     domain: domainOf(link.url),
     rank: link.rank,
     query: link.query,
+    region: link.region,
     serpTitle: link.item.title ?? undefined,
     serpSnippet: link.item.snippet ?? undefined,
     subject: input.subject,
@@ -181,7 +198,16 @@ export async function runLinkVerdicts(input: {
   // Второй проход: формулировки страниц сводятся в темы отчёта. Без него на
   // живом прогоне вышло 73 темы на 75 публикаций — по теме на страницу.
   const summary = summarizeLinkVerdicts(verdicts);
-  const themes = await clusterVerdictThemes(verdicts);
+  // Словарь тем общий на прогон, числа — свои у каждого контура.
+  const labels = await resolveThemeLabels(verdicts);
+  const themes = summarizeThemesWithLabels(verdicts, labels);
+  const regions = [...new Set(verdicts.map((v) => v.region).filter((r): r is string => Boolean(r)))];
+  const themesByRegion = Object.fromEntries(
+    regions.map((region) => [
+      region,
+      summarizeThemesWithLabels(verdicts.filter((v) => v.region === region), labels),
+    ])
+  );
   return {
     schemaVersion: LINK_VERDICT_SCHEMA_VERSION,
     caseId: input.caseId,
@@ -190,6 +216,7 @@ export async function runLinkVerdicts(input: {
     readingBroken: reading.report.status === "BROKEN",
     reading: reading.report,
     audit: audited.report,
+    themesByRegion,
     verdicts,
     summary: { ...summary, themes },
   };

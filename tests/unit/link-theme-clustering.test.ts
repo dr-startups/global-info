@@ -3,6 +3,7 @@ import {
   applyThemeGroups,
   clusterVerdictThemes,
   themesForClustering,
+  summarizeThemesWithLabels,
 } from "@/modules/digital-profile/orion-golden/analytics/link-theme-clustering";
 import type { LinkVerdict } from "@/modules/digital-profile/orion-golden/contracts/link-verdict";
 
@@ -139,5 +140,57 @@ describe("группировка целиком", () => {
     });
     expect(res.map((t) => t.theme)).toEqual(["Вторая половина", "Первая половина"]);
     expect(res.reduce((n, t) => n + t.count, 0)).toBe(12);
+  });
+});
+
+describe("темы по контурам", () => {
+  const verdict = (over: Record<string, unknown>) =>
+    ({
+      schemaVersion: "link-verdict-v1",
+      evidenceRef: `inventory:${over.url}`,
+      url: String(over.url),
+      subjectMatch: "subject",
+      tone: over.tone ?? "neutral",
+      theme: String(over.theme),
+      quotes: [],
+      readAt: "2026-08-14T10:00:00.000Z",
+      ...over,
+    }) as never;
+
+  const verdicts = [
+    verdict({ url: "a", region: "RU", theme: "Судебный спор о разделе активов", tone: "adverse" }),
+    verdict({ url: "b", region: "RU", theme: "Судебный спор о разделе активов" }),
+    verdict({ url: "c", region: "UAE", theme: "Санкции США и ЕС", tone: "adverse" }),
+    verdict({ url: "d", region: "UAE", theme: "Санкции США и ЕС", tone: "adverse" }),
+  ];
+
+  it("каждый контур считает своё, названия тем общие", () => {
+    const labels = new Map<string, string>();
+    const ru = summarizeThemesWithLabels(
+      verdicts.filter((v) => (v as { region?: string }).region === "RU"),
+      labels
+    );
+    const uae = summarizeThemesWithLabels(
+      verdicts.filter((v) => (v as { region?: string }).region === "UAE"),
+      labels
+    );
+    expect(ru.map((t) => [t.theme, t.count, t.adverseCount])).toEqual([
+      ["Судебный спор о разделе активов", 2, 1],
+    ]);
+    expect(uae.map((t) => [t.theme, t.count, t.adverseCount])).toEqual([["Санкции США и ЕС", 2, 2]]);
+  });
+
+  it("общий словарь тем применяется к любому подмножеству", () => {
+    const labels = new Map([
+      ["Судебный спор о разделе активов", "Судебные и правовые сюжеты"],
+      ["Санкции США и ЕС", "Санкционный контур"],
+    ]);
+    const all = summarizeThemesWithLabels(verdicts, labels);
+    expect(all.map((t) => t.theme)).toEqual(["Санкционный контур", "Судебные и правовые сюжеты"]);
+  });
+
+  it("материал о другом лице в свод не идёт", () => {
+    const foreign = [verdict({ url: "e", region: "RU", theme: "Однофамилец", subjectMatch: "other" })];
+    expect(summarizeThemesWithLabels(foreign, new Map())).toEqual([]);
   });
 });

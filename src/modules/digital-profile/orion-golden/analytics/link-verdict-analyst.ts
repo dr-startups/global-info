@@ -64,6 +64,7 @@ export type LinkVerdictInput = {
   domain?: string;
   rank?: number;
   query?: string;
+  region?: string;
   /** Заголовок и сниппет из выдачи — контекст, но не основание вывода. */
   serpTitle?: string;
   serpSnippet?: string;
@@ -85,6 +86,7 @@ export function unreadVerdict(
     domain: input.domain,
     rank: input.rank,
     query: input.query,
+    region: input.region,
     subjectMatch: "unclear",
     tone: "neutral",
     theme: (input.serpTitle ?? "Страница не открылась").slice(0, 120) || "Страница не открылась",
@@ -142,6 +144,7 @@ export async function analyzeLinkPage(
     domain: input.domain,
     rank: input.rank,
     query: input.query,
+    region: input.region,
     subjectMatch: body.subjectMatch,
     tone: body.tone,
     theme: typeof body.theme === "string" ? body.theme.trim().slice(0, 120) : undefined,

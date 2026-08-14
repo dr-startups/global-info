@@ -59,6 +59,8 @@ export const LinkVerdictSchema = z.object({
   /** Позиция в выдаче и запрос — чтобы решение можно было привязать к странице. */
   rank: z.number().int().positive().optional(),
   query: z.string().optional(),
+  /** Контур выдачи (RU / UAE): темы страницы отчёта считаются по своему региону. */
+  region: z.string().optional(),
   subjectMatch: LinkSubjectMatchSchema,
   tone: LinkToneSchema,
   /**

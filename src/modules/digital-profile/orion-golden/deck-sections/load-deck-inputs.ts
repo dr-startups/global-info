@@ -241,6 +241,10 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           unread?: number;
           themes?: Array<{ theme?: string; count?: number; adverseCount?: number }>;
         };
+        themesByRegion?: Record<
+          string,
+          Array<{ theme?: string; count?: number; adverseCount?: number }>
+        >;
         reading?: {
           status?: string;
           requested?: number;
@@ -251,6 +255,22 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
         };
       }>(linkVerdictsPath)
     : null;
+  const themeRows = (
+    rows: Array<{ theme?: string; count?: number; adverseCount?: number }> | undefined
+  ) =>
+    (rows ?? [])
+      .filter((t) => typeof t.theme === "string" && t.theme.trim() && (t.count ?? 0) > 0)
+      .map((t) => ({
+        theme: String(t.theme).trim(),
+        count: Number(t.count ?? 0),
+        adverseCount: Number(t.adverseCount ?? 0),
+      }));
+  const linkThemesByRegion = Object.fromEntries(
+    Object.entries(linkVerdicts?.themesByRegion ?? {}).map(([region, rows]) => [
+      mapRegionBucket(region),
+      themeRows(rows),
+    ])
+  );
   const linkThemes = (linkVerdicts?.summary?.themes ?? [])
     .filter((t) => typeof t.theme === "string" && t.theme.trim() && (t.count ?? 0) > 0)
     .map((t) => ({
@@ -588,6 +608,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     analysisTopN: typeof analysisScope?.topN === "number" ? analysisScope.topN : undefined,
     analysisLanes: analysisLanes.length > 0 ? analysisLanes : undefined,
     linkThemes: linkThemes.length > 0 ? linkThemes : undefined,
+    linkThemesByRegion,
     linkUnreadCount: linkVerdicts?.summary?.unread,
     linkReadingLine: linkVerdicts?.reading
       ? linkReadingClientLine({

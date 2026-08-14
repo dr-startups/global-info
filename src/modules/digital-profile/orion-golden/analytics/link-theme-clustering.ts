@@ -122,12 +122,76 @@ export async function clusterVerdictThemes(
   verdicts: LinkVerdict[],
   deps: { call?: typeof callOpenAiStrictJson } = {}
 ): Promise<VerdictThemeSummary[]> {
+  const labels = await resolveThemeLabels(verdicts, deps);
+  return summarizeThemesWithLabels(verdicts, labels);
+}
+
+/**
+ * Названия тем отчёта: формулировка страницы → тема, под которой она встанет.
+ *
+ * Считается один раз на весь прогон, а применяется и к прогону целиком, и к
+ * каждому контуру отдельно. Иначе российская и международная страницы тем
+ * назывались бы по-разному для одного и того же материала: словарь тем должен
+ * быть общим, а числа — своими.
+ */
+export async function resolveThemeLabels(
+  verdicts: LinkVerdict[],
+  deps: { call?: typeof callOpenAiStrictJson } = {}
+): Promise<Map<string, string>> {
   const themes = themesForClustering(verdicts);
-  if (themes.length <= THEME_CLUSTER_TARGET_MAX) {
-    return applyThemeGroups({ themes, groups: [], verdicts });
+  const groups = await resolveThemeGroups(themes, deps);
+  const labels = new Map<string, string>();
+  for (const group of groups) {
+    const label = String(group.theme ?? "").trim();
+    if (!label) continue;
+    for (const index of group.members ?? []) {
+      const theme = themes.find((t) => t.index === index);
+      if (theme) labels.set(theme.theme, label);
+    }
   }
+  return labels;
+}
+
+/** Свод тем по подмножеству решений: те же названия, свои числа. */
+export function summarizeThemesWithLabels(
+  verdicts: LinkVerdict[],
+  labels: ReadonlyMap<string, string>
+): VerdictThemeSummary[] {
+  const byLabel = new Map<string, VerdictThemeSummary>();
+  for (const v of verdicts) {
+    if (v.subjectMatch !== "subject") continue;
+    const own = v.theme.trim();
+    if (!own) continue;
+    const label = labels.get(own) ?? own;
+    const bucket = byLabel.get(label) ?? { theme: label, count: 0, adverseCount: 0, examples: [] };
+    bucket.count += 1;
+    if (v.tone === "adverse") bucket.adverseCount += 1;
+    if (bucket.examples.length < 5) {
+      bucket.examples.push({ url: v.url, domain: v.domain, rank: v.rank });
+    }
+    byLabel.set(label, bucket);
+  }
+  return [...byLabel.values()]
+    .map((t) => ({
+      ...t,
+      examples: [...t.examples].sort(
+        (a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER)
+      ),
+    }))
+    .sort(
+      (a, b) =>
+        b.adverseCount - a.adverseCount ||
+        b.count - a.count ||
+        a.theme.localeCompare(b.theme, "ru")
+    );
+}
+
+async function resolveThemeGroups(
+  themes: ThemeInput[],
+  deps: { call?: typeof callOpenAiStrictJson }
+): Promise<Array<{ theme: string; members: number[] }>> {
+  if (themes.length <= THEME_CLUSTER_TARGET_MAX) return [];
   const call = deps.call ?? callOpenAiStrictJson;
-  let groups: Array<{ theme: string; members: number[] }> = [];
   try {
     const raw = (await call({
       systemPrompt: SYSTEM_PROMPT,
@@ -136,16 +200,16 @@ export async function clusterVerdictThemes(
       },
       maxOutputTokens: 1200,
     })) as { groups?: unknown };
-    if (Array.isArray(raw?.groups)) {
-      groups = raw.groups
-        .filter((g): g is Record<string, unknown> => Boolean(g) && typeof g === "object")
-        .map((g) => ({
-          theme: String(g.theme ?? ""),
-          members: Array.isArray(g.members) ? g.members.map((n) => Number(n)) : [],
-        }));
-    }
+    if (!Array.isArray(raw?.groups)) return [];
+    return raw.groups
+      .filter((g): g is Record<string, unknown> => Boolean(g) && typeof g === "object")
+      .map((g) => ({
+        theme: String(g.theme ?? ""),
+        members: Array.isArray(g.members) ? g.members.map((n) => Number(n)) : [],
+      }));
   } catch {
-    groups = [];
+    // Отказ модели не ломает отчёт: темы останутся в том виде, в каком их
+    // сформулировали по страницам.
+    return [];
   }
-  return applyThemeGroups({ themes, groups, verdicts });
 }
