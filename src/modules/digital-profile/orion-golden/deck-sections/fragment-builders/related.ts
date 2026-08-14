@@ -27,6 +27,9 @@ import {
   isAdverse,
   makeSlotSlide,
   pageSourceLine,
+  panelComposition,
+  panelCompositionLine,
+  panelRows,
   visualSlide,
 } from "./shared";
 
@@ -38,6 +41,8 @@ export type RelatedRow = {
   /** Текст запроса — то, что печатается строкой на листе. */
   text: string;
   adverse: boolean;
+  /** Принадлежность строки субъекту, если она известна. */
+  decision?: string;
 };
 
 function normalizeQueryText(text: string): string {
@@ -73,6 +78,7 @@ export function uniqueRelatedRows(
       ref,
       text,
       adverse: entry?.adverse === true || adverseRefs.has(ref) || ADVERSE_PATTERNS.test(text),
+      decision: entry?.subjectDecision,
     });
   }
   return rows;
@@ -108,23 +114,29 @@ export function fitRelatedRows(
  * названо отдельным числом, чтобы «10» на листе не читалось как «всего десять».
  */
 export function relatedCompositionBlocks(input: {
-  shown: number;
-  adverseShown: number;
+  rows: readonly RelatedRow[];
   collected: number;
-  keptInReport: number;
+  /** Строки взяты со снимка панели — значит, и говорим о панели. */
+  fromPanel: boolean;
 }): Partial<SlideBody> {
-  const queryWord = pluralRu(input.shown, "запрос", "запроса", "запросов");
-  const trimmed = input.keptInReport < input.collected;
-  const scope = trimmed
-    ? `Собрано связанных запросов по региону: ${input.collected}; в отчёт вошли ${input.keptInReport} — все с негативной формулировкой и остальные по порядку выдачи.`
-    : `Собрано связанных запросов по региону: ${input.collected} — показаны все.`;
+  const composition = panelComposition(
+    input.rows.map((r) => ({ ...r, decision: r.decision }))
+  );
+  const adverseShown = composition.adverse;
   return {
     whatWasFound: clampClientText(
-      `${scope} На этой странице — ${input.shown} ${queryWord}; с негативной формулировкой среди них — ${input.adverseShown}.`,
+      panelCompositionLine({
+        composition,
+        collected: input.collected,
+        nounOne: "связанный запрос",
+        nounFew: "связанных запроса",
+        nounMany: "связанных запросов",
+        place: input.fromPanel ? "на панели" : "на этой странице",
+      }),
       400
     ),
     whyItMatters: clampClientText(
-      input.adverseShown > 0
+      adverseShown > 0
         ? "Связанные запросы поисковик предлагает набрать следующими: негативная формулировка в этом блоке уводит читателя к нежелательным материалам ещё до того, как он их искал."
         : "Связанные запросы поисковик предлагает набрать следующими: негативных формулировок среди них нет, к нежелательным материалам блок не уводит.",
       320
@@ -134,9 +146,9 @@ export function relatedCompositionBlocks(input: {
       220
     ),
     statusNote:
-      input.adverseShown > 0
-        ? `На этой странице ${input.adverseShown} ${pluralRu(
-            input.adverseShown,
+      adverseShown > 0
+        ? `На этой странице ${adverseShown} ${pluralRu(
+            adverseShown,
             "запрос",
             "запроса",
             "запросов"
@@ -167,7 +179,16 @@ export function buildRelatedQueriesFragment(
   const pages = distribute(fitted.rows, usedPages);
 
   const slides = slots.map((slot, i) => {
-    const rows = pages[i] ?? [];
+    /*
+     * Показанные строки берём со снимка панели, когда он есть.
+     *
+     * Панель рисуется отдельно от построителя и раскладывает запросы по
+     * страницам по-своему: на третьем листе она нарисовала две строки, а
+     * описание рядом считало три — свои. Клиент сверяет текст с картинкой,
+     * поэтому источник чисел — картинка.
+     */
+    const fromPanel = panelRows(slot.slotId, extras, scoped);
+    const rows: RelatedRow[] = fromPanel.length > 0 ? fromPanel : (pages[i] ?? []);
     if (rows.length === 0 && collected.length > 0) {
       // Слот блока, на который материала не хватило. Статус «не собиралось»
       // здесь был бы неправдой: собрано, показано, просто уместилось раньше.
@@ -193,10 +214,9 @@ export function buildRelatedQueriesFragment(
       content: {
         bullets: rows.map((r) => clampClientText(r.text, 220)),
         ...relatedCompositionBlocks({
-          shown: rows.length,
-          adverseShown: rows.filter((r) => r.adverse).length,
+          rows,
           collected: collected.length,
-          keptInReport: fitted.rows.length,
+          fromPanel: fromPanel.length > 0,
         }),
         sourceNote: pageSourceLine(view),
       },

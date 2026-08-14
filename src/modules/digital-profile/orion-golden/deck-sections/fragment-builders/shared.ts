@@ -1738,6 +1738,122 @@ export function findingForVisibleRow(row: VisibleAssetItem, scoped: ScopedFragme
  * level), plus the refs the visual actually draws. Shared by the image grids
  * and the suggestion/related panels (ORION style: every red frame explained).
  */
+export type PanelRow = {
+  ref: string;
+  /** Текст строки — ровно то, что нарисовано на панели. */
+  text: string;
+  adverse: boolean;
+  decision?: string;
+};
+
+/**
+ * Строки, нарисованные на панели-снимке.
+ *
+ * Клиент читает страницу так: смотрит картинку и сверяет её с описанием
+ * рядом. Пока текст считал свой набор строк, а панель рисовала свой, эти два
+ * числа расходились: на панели десять подсказок, в описании «показано 7»; на
+ * панели две строки связанных запросов, в описании «показаны 3». Панель — то,
+ * что видно, поэтому она и есть источник чисел для описания.
+ */
+export function panelRows(
+  slotId: string,
+  extras: FragmentExtras,
+  scoped: ScopedFragmentInput
+): PanelRow[] {
+  const rows = (extras.visualAssets?.[slotId] ?? []).flatMap((a) => a.visibleItems ?? []);
+  const out: PanelRow[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const text = String(row.title ?? "").trim();
+    if (!text || seen.has(text.toLowerCase())) continue;
+    seen.add(text.toLowerCase());
+    const evidence = scoped.evidenceIndex[row.ref];
+    out.push({
+      ref: row.ref,
+      text,
+      // Негативная строка — та, что выделена красным на самой панели. Считать
+      // по своим признакам нельзя: заголовок страницы берёт число у панели, и
+      // «4 негативные формулировки» в заголовке спорили бы с «5» в тексте.
+      adverse: row.adverse === true,
+      decision: evidence?.subjectDecision,
+    });
+  }
+  return out;
+}
+
+export type PanelComposition = {
+  shown: number;
+  subject: number;
+  likely: number;
+  other: number;
+  unresolved: number;
+  adverse: number;
+};
+
+export function panelComposition(rows: readonly PanelRow[]): PanelComposition {
+  const count = (decision: string): number => rows.filter((r) => r.decision === decision).length;
+  const subject = count("SUBJECT_MATCH");
+  const likely = count("LIKELY_SUBJECT");
+  const other = count("OTHER_SUBJECT");
+  return {
+    shown: rows.length,
+    subject,
+    likely,
+    other,
+    unresolved: rows.length - subject - likely - other,
+    adverse: rows.filter((r) => r.adverse).length,
+  };
+}
+
+/**
+ * Состав панели словами: сколько строк показано и что это за строки.
+ *
+ * Разбор по принадлежности обязателен — на панели подсказок рядом с
+ * субъектом стоят строки о полных тёзках, и без этого читатель считает их
+ * запросами о проверяемом лице.
+ */
+export function panelCompositionLine(input: {
+  composition: PanelComposition;
+  collected: number;
+  /** «подсказка» / «запрос» — в родительном падеже множественного числа. */
+  nounOne: string;
+  nounFew: string;
+  nounMany: string;
+  /** Где показаны строки: на снимке панели или просто на странице. */
+  place?: string;
+}): string {
+  const c = input.composition;
+  const noun = pluralRu(c.shown, input.nounOne, input.nounFew, input.nounMany);
+  const place = input.place ?? "на панели";
+  // Тире вместо глагола: «показано 1 подсказка» и «показано 2 подсказки» —
+  // рассогласование, а согласовывать глагол пришлось бы по роду каждого
+  // существительного, которое сюда передадут.
+  const head =
+    input.collected > c.shown
+      ? `Собрано ${input.collected}, ${place} — ${c.shown} ${noun}`
+      : `${place.charAt(0).toUpperCase()}${place.slice(1)} — ${c.shown} ${noun}`;
+  const parts: string[] = [];
+  if (c.subject > 0) {
+    parts.push(`${c.subject} ${pluralRu(c.subject, "относится", "относятся", "относятся")} к субъекту`);
+  }
+  if (c.likely > 0) parts.push(`${c.likely} вероятно о субъекте`);
+  if (c.other > 0) parts.push(`${c.other} — о других лицах`);
+  // «Требуют уточнения» говорим только рядом с разобранными строками. Если
+  // принадлежность не определялась вовсе, эта фраза выдаёт отсутствие данных
+  // за результат проверки — и пугает читателя на ровном месте.
+  if (c.unresolved > 0 && c.unresolved < c.shown) {
+    parts.push(
+      `${c.unresolved} ${pluralRu(c.unresolved, "требует", "требуют", "требуют")} уточнения принадлежности`
+    );
+  }
+  const breakdown = parts.length > 0 ? `: ${enumerateRu(parts, 4)}` : "";
+  const adverse =
+    c.adverse > 0
+      ? ` С негативной формулировкой — ${c.adverse}.`
+      : " Негативных формулировок нет.";
+  return `${head}${breakdown}.${adverse}`;
+}
+
 export function adverseVisualSidebar(
   slotId: string,
   extras: FragmentExtras,

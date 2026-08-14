@@ -45,9 +45,9 @@ function build(scoped: ScopedFragmentInput) {
   return buildRelatedQueriesFragment("RU_RELATED", "RU_PROFILE", "Россия", scoped, {});
 }
 
-/** «На этой странице — N запроса/ов» из описания страницы. */
+/** Сколько строк названо в описании страницы. */
 function statedCount(text: string | undefined): number {
-  const m = /На этой странице — (\d+)/u.exec(String(text ?? ""));
+  const m = /(?:на панели|на этой странице) — (\d+)/iu.exec(String(text ?? ""));
   return m ? Number(m[1]) : -1;
 }
 
@@ -121,7 +121,7 @@ describe("страница связанных запросов", () => {
   it("собранное по региону названо отдельным числом, а не подменено показанным", () => {
     const scoped = scopedWith(Array.from({ length: 6 }, (_, i) => ({ text: `запрос ${i + 1}` })));
     const [first] = build(scoped).slides;
-    expect(first!.content.whatWasFound).toContain("Собрано связанных запросов по региону: 6");
+    expect(first!.content.whatWasFound).toContain("Собрано 6");
   });
 
   it("когда собрано больше, чем вмещает раздел, потеря названа вслух", () => {
@@ -132,8 +132,8 @@ describe("страница связанных запросов", () => {
     const { slides } = build(scoped);
     const printed = slides.flatMap((s) => s.content.bullets ?? []);
     expect(printed).toHaveLength(3 * RELATED_QUERIES_PER_PAGE);
-    expect(slides[0]!.content.whatWasFound).toContain(`Собрано связанных запросов по региону: ${total}`);
-    expect(slides[0]!.content.whatWasFound).toContain("в отчёт вошли 30");
+    expect(slides[0]!.content.whatWasFound).toContain(`Собрано ${total}`);
+    expect(statedCount(slides[0]!.content.whatWasFound)).toBe(slides[0]!.content.bullets!.length);
     // Негативная формулировка стояла последней и обязана уцелеть.
     expect(printed).toContain(`запрос ${total}`);
   });

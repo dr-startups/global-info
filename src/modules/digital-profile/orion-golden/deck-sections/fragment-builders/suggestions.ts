@@ -3,7 +3,7 @@
  * Split from fragment-builders.ts (REMEDIATION §9.5) — mechanical move only.
  */
 
-import type { FragmentKey, SectionType, SlideContentContract } from "../contracts";
+import type { FragmentKey, SectionType, SlideBody, SlideContentContract } from "../contracts";
 import type { ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import type { FragmentBuildOutput, FragmentExtras } from "./shared";
@@ -14,6 +14,9 @@ import {
   claimText,
   clampClientText,
   pageFindingBlocks,
+  panelComposition,
+  panelCompositionLine,
+  panelRows,
   visualSlide,
 } from "./shared";
 
@@ -54,6 +57,38 @@ export function buildSuggestionsFragment(
       bullets.length ? claims.flatMap((c) => c.evidenceRefs) : lineRefs
     );
     const sidebar = adverseVisualSidebar(slot.slotId, extras, scoped, "подсказка");
+    /*
+     * Числа страницы — про строки панели, потому что панель и есть то, что
+     * читатель видит. На приёмке панель рисовала десять подсказок, а описание
+     * рядом говорило «показано 7»: текст считал свой набор строк. Разбор по
+     * принадлежности тоже обязателен — среди подсказок стоят строки о полных
+     * тёзках, и без этого они читаются как запросы о субъекте.
+     */
+    const shown = panelRows(slot.slotId, extras, scoped);
+    const panelBlocks: Partial<SlideBody> =
+      shown.length > 0
+        ? {
+            whatWasFound: clampClientText(
+              panelCompositionLine({
+                composition: panelComposition(shown),
+                collected: refs.length,
+                nounOne: "подсказка",
+                nounFew: "подсказки",
+                nounMany: "подсказок",
+              }),
+              400
+            ),
+            whyItMatters: clampClientText(
+              sidebar.adverseRows.length > 0
+                ? "Негативные подсказки видны пользователю ещё до просмотра результатов: они формируют первое впечатление и подталкивают к поиску компрометирующих материалов."
+                : "Подсказки показывают, что чаще всего ищут о субъекте: негативных формулировок среди показанных строк нет.",
+              320
+            ),
+            ...(sidebar.explanations.length
+              ? { highlightExplanations: sidebar.explanations }
+              : {}),
+          }
+        : {};
     // Заголовок называет вывод страницы: сколько подсказок и есть ли среди них
     // негативные. Прежде стояло название раздела, и читателю приходилось
     // искать этот же вывод в тексте под картинкой.
@@ -80,21 +115,15 @@ export function buildSuggestionsFragment(
         scoped,
         ...(verdictTitle ? { title: verdictTitle } : {}),
         content: {
-          bullets: bullets.length ? bullets : suggestionLines,
+          // Список под панелью — те же строки, что и на панели: два разных
+          // перечня на одной странице читатель сверяет вручную.
+          bullets: shown.length > 0
+            ? shown.map((r) => clampClientText(r.text, 220))
+            : bullets.length
+              ? bullets
+              : suggestionLines,
           ...pageFindingBlocks(scoped, view),
-          ...(sidebar.explanations.length
-            ? {
-                whatWasFound: clampClientText(
-                  `Подсказок на панели: ${sidebar.visibleRows.length}; выделено красным (негативные формулировки): ${sidebar.adverseRows.length}.`,
-                  400
-                ),
-                whyItMatters: clampClientText(
-                  "Негативные подсказки видны пользователю ещё до просмотра результатов: они формируют первое впечатление и подталкивают к поиску компрометирующих материалов.",
-                  320
-                ),
-                highlightExplanations: sidebar.explanations,
-              }
-            : {}),
+          ...panelBlocks,
         },
         evidenceRefs: [...new Set([...refs, ...sidebar.gridRefs])],
         findingIds: [
