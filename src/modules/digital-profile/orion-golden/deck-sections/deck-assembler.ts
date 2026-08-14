@@ -33,6 +33,28 @@ import { withoutRepeatedSentences } from "./run-deck-build";
 import { emptySurfaceMergeReason } from "./empty-surface-collapse";
 import { dropEmptyContinuations } from "./continuation-cleanup";
 
+/**
+ * Страницы, где строки — данные, а не наша проза.
+ *
+ * Вычистка повторов заведена против одного и того же **пояснения темы**,
+ * напечатанного в матрице рисков, в обзоре профиля и в резюме региона. Списки
+ * поверхностей — другое: подсказка Google, дословно совпавшая с подсказкой
+ * Яндекса, это два факта, а не повтор. На прогоне вычистка съедала такие
+ * строки, и на странице оставалось три запроса из десяти нарисованных на
+ * панели — при том, что описание рядом считало десять.
+ */
+export function isDataRowTemplate(templateId: string): boolean {
+  return DATA_ROW_TEMPLATES.has(templateId);
+}
+
+const DATA_ROW_TEMPLATES = new Set<string>([
+  "related-queries",
+  "suggestions",
+  "ai-overview",
+  "image-grid",
+  "serp-table",
+]);
+
 export type AssemblyRejection = {
   fragmentKey: string;
   reason:
@@ -221,7 +243,9 @@ export function assembleDeck(input: {
    */
   const saidInDeck = new Set<string>();
   const dedupedSlides = acceptedSlides.map(({ slide, pack }) => {
-    if (slide.templateId === "toc") return { slide, pack };
+    if (slide.templateId === "toc" || isDataRowTemplate(slide.templateId)) {
+      return { slide, pack };
+    }
     const bullets = (slide.content.bullets ?? [])
       .map((b) => withoutRepeatedSentences(b, saidInDeck))
       .filter((b): b is string => Boolean(b && b.trim()));

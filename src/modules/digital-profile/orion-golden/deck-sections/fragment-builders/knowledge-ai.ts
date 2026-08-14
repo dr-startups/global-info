@@ -18,6 +18,19 @@ import {
   withContinuations,
 } from "./shared";
 
+/** Строки списка без дословных повторов, порядок сохраняется. */
+function uniqueByText(texts: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const text of texts) {
+    const key = text.toLowerCase().replace(/\s+/gu, " ").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+  }
+  return out;
+}
+
 export function buildKnowledgeAiFragment(
   key: FragmentKey,
   sectionId: SectionType,
@@ -30,11 +43,15 @@ export function buildKnowledgeAiFragment(
   const aiClaims = aiUnits.flatMap((u) => u.claims);
   // Source answers are never truncated: full claim text; pagination is done
   // via continuations, not by cutting text.
-  const aiBullets = aiClaims.map(claimText);
-  const aiTitles = aiUnits
-    .flatMap((u) => u.evidenceRefs)
-    .map((r) => scoped.evidenceIndex[r]?.title)
-    .filter((t): t is string => Boolean(t));
+  // Один и тот же ответ приходит от нескольких запросов: в списке он должен
+  // стоять один раз. Дословный повтор строки читается как второй ответ.
+  const aiBullets = uniqueByText(aiClaims.map(claimText));
+  const aiTitles = uniqueByText(
+    aiUnits
+      .flatMap((u) => u.evidenceRefs)
+      .map((r) => scoped.evidenceIndex[r]?.title)
+      .filter((t): t is string => Boolean(t))
+  );
   const slides: SlideContentContract[] = [];
 
   const panelSlot = slots.find((s) => s.templateId === "wikipedia-knowledge");

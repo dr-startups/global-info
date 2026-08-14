@@ -733,7 +733,6 @@
         "AI overview: Anders Holmström and Nordkap Capital (RU) #2",
         "AI overview: Anders Holmström and Nordkap Capital (RU) #3",
         "AI overview: Anders Holmström and Nordkap Capital (RU) #4",
-        "AI overview: Anders Holmström and Nordkap Capital (RU) #5",
         "Источники — поисковая выдача; полный перечень в приложении."
       ]
     },
@@ -745,6 +744,7 @@
       "baseSlotId": "p19_ru_knowledge_2",
       "template": "orion_golden_prose",
       "bullets": [
+        "AI overview: Anders Holmström and Nordkap Capital (RU) #5",
         "AI overview: Anders Holmström and Nordkap Capital (RU) #6",
         "AI overview: Anders Holmström and Nordkap Capital (RU) #7",
         "Knowledge panel: Anders Holmström",

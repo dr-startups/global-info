@@ -8,6 +8,7 @@ import {
   type FragmentExtras,
 } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
 import type { ScopedFragmentInput } from "@/modules/digital-profile/orion-golden/deck-sections/scoped-input";
+import { isDataRowTemplate } from "@/modules/digital-profile/orion-golden/deck-sections/deck-assembler";
 
 /**
  * Приёмка: на панели десять подсказок, в описании рядом «показано 7»; на
@@ -166,5 +167,23 @@ describe("негативные строки", () => {
     const extras = extrasWithPanel("p11_ru_suggestions_yandex", [{ i: 0 }, { i: 1 }], titles);
     const rows = panelRows("p11_ru_suggestions_yandex", extras, scoped);
     expect(rows.filter((r) => r.adverse)).toHaveLength(0);
+  });
+});
+
+describe("списки поверхностей не чистятся как проза", () => {
+  it("строки-данные не подпадают под вычистку повторов", () => {
+    // Вычистка заведена против пояснения темы, напечатанного в отчёте
+    // трижды. Подсказка Google, дословно совпавшая с подсказкой Яндекса, —
+    // это два факта, а не повтор: на прогоне из десяти строк панели на
+    // странице оставалось три.
+    for (const template of ["related-queries", "suggestions", "ai-overview", "image-grid", "serp-table"]) {
+      expect(isDataRowTemplate(template)).toBe(true);
+    }
+  });
+
+  it("страницы с нашей прозой вычищаются по-прежнему", () => {
+    for (const template of ["regional-summary", "risk-matrix", "executive-summary", "finding-cards"]) {
+      expect(isDataRowTemplate(template)).toBe(false);
+    }
   });
 });
