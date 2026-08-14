@@ -214,6 +214,34 @@ export async function completeStep(input: {
   });
 }
 
+/**
+ * Продлевает лизу работающего шага.
+ *
+ * Лиза выдаётся на две минуты, а сборка отчёта идёт шесть: чтение ста
+ * двадцати страниц, разбор моделью, отрисовка. По истечении лизы шаг снова
+ * становится свободным, и второй воркер берёт его в работу — тот же отчёт
+ * собирается второй раз параллельно. На живом прогоне это видно по логу:
+ * чтение ссылок отработало дважды с промежутком ровно в лизу, то есть за один
+ * отчёт заплачено дважды.
+ *
+ * Продление идёт только своей лизы: `leaseOwner` в условии обязателен, иначе
+ * воркер, у которого шаг уже отобрали, вернул бы его себе.
+ */
+export async function renewStepLease(
+  stepId: string,
+  ownerId: string,
+  leaseMs: number,
+  deps: { prisma?: PrismaClient; now?: () => Date } = {}
+): Promise<boolean> {
+  const prisma = deps.prisma ?? (await getPrisma());
+  const now = deps.now?.() ?? new Date();
+  const res = await prisma.workflowStep.updateMany({
+    where: { id: stepId, leaseOwner: ownerId },
+    data: { leaseUntil: new Date(now.getTime() + leaseMs) },
+  });
+  return res.count > 0;
+}
+
 /** Освобождает лизу, не меняя состояния — для аварийного выхода из тика. */
 export async function releaseStepLease(stepId: string, ownerId: string, prismaClient?: PrismaClient): Promise<void> {
   const prisma = prismaClient ?? (await getPrisma());
