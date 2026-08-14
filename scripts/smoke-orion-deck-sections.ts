@@ -548,9 +548,16 @@ describe("regression scenario: change only the RU AI fixture (report-72 data)", 
     // 4. Rebuild.
     const build3 = buildOnce(dir, ctx3);
 
-    // 5a. Only the RU AI fragment regenerated; UAE and COMPLIANCE reused.
+    // 5a. Пересобирается только российская часть, которой касается правка:
+    // страница ИИ-ответов и резюме региона. Резюме зависит от всех поверхностей
+    // своего региона — на его слоте метрик стоит таблица покрытия, где у ИИ-
+    // ответов своя строка с объёмом. ОАЭ и комплаенс не трогаются.
     const regenerated = build3.buildLog.filter((l) => l.action === "REGENERATED").map((l) => l.fragmentKey);
-    assert.deepEqual(regenerated, ["RU_KNOWLEDGE_AI"], `regenerated: ${regenerated.join(",")}`);
+    assert.deepEqual(
+      [...regenerated].sort(),
+      ["RU_KNOWLEDGE_AI", "RU_SUMMARY"],
+      `regenerated: ${regenerated.join(",")}`
+    );
     for (const key of ["UAE_SERP", "UAE_SUMMARY", "UAE_IMAGES", "COMPLIANCE_MAIN"] as const) {
       assert.equal(
         build3.buildLog.find((l) => l.fragmentKey === key)?.action,

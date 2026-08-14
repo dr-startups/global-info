@@ -21,10 +21,22 @@ import {
  * версию надо поднять.
  */
 
-const BUILDERS_DIR = join(
+const SECTIONS_DIR = join(
   process.cwd(),
-  "src/modules/digital-profile/orion-golden/deck-sections/fragment-builders"
+  "src/modules/digital-profile/orion-golden/deck-sections"
 );
+const BUILDERS_DIR = join(SECTIONS_DIR, "fragment-builders");
+
+/**
+ * Файлы вне `fragment-builders/`, от которых тоже зависит содержимое страниц.
+ *
+ * `section-builders.ts` решает, какие данные вообще дойдут до построителя:
+ * правка области фрагмента меняет отчёт ровно так же, как правка самого
+ * построителя, но отпечаток её не замечал. Найдено на разборе: таблица
+ * покрытия региона годами не получала поверхностей выдачи именно из-за
+ * области, и починка прошла бы мимо проверки версии.
+ */
+const EXTRA_SOURCES = ["section-builders.ts", "canonical-slots.ts", "continuation-cleanup.ts"];
 
 /** Отпечаток исходников построителей: имя файла + содержимое, в порядке имён. */
 function fingerprintBuilders(): string {
@@ -32,6 +44,10 @@ function fingerprintBuilders(): string {
   for (const name of readdirSync(BUILDERS_DIR).filter((f) => f.endsWith(".ts")).sort()) {
     h.update(name);
     h.update(readFileSync(join(BUILDERS_DIR, name)));
+  }
+  for (const name of [...EXTRA_SOURCES].sort()) {
+    h.update(name);
+    h.update(readFileSync(join(SECTIONS_DIR, name)));
   }
   return h.digest("hex").slice(0, 16);
 }

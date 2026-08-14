@@ -75,6 +75,26 @@ const RISK_ORDER: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3
 // therefore required; only the appendix has no canonical slot.
 const OPTIONAL_FRAGMENTS: FragmentKey[] = ["APPENDIX_MAIN"];
 
+/**
+ * Поверхности, из которых строится таблица покрытия региона.
+ *
+ * Резюме региона получало только проверку URL, а таблица на соседнем слоте
+ * перечисляет поверхности выдачи — результаты, подсказки, связанные запросы,
+ * изображения, справочники, ИИ-ответы. Строк по ним не появлялось никогда:
+ * они были отфильтрованы до построителя. На живом прогоне, где проверки URL
+ * не было, страница «ОАЭ — метрики покрытия» состояла из заголовка и двух
+ * строк, повторяющих числа предыдущей страницы.
+ */
+const COVERAGE_TABLE_SURFACES: SurfaceKind[] = [
+  "url_audit",
+  "organic",
+  "suggestions",
+  "paa_related",
+  "images",
+  "wikipedia",
+  "ai_answers",
+];
+
 function fragmentScope(key: FragmentKey): FragmentScope {
   const ruScope = (surfaces: SurfaceKind[] | null): FragmentScope => ({
     regions: ["RU"],
@@ -108,9 +128,10 @@ function fragmentScope(key: FragmentKey): FragmentScope {
         findingIds: null,
       };
     case "RU_SUMMARY":
-      // All regional findings + url_audit units (compact check-h/indexation
-      // rows on the metrics slot p08).
-      return { ...ruScope([]), unitSurfaces: ["url_audit"] };
+      // Все находки региона плюс поверхности, из которых собрана таблица
+      // покрытия на слоте метрик (p08 / p25): сколько собрано на каждой
+      // поверхности и сколько там негативного.
+      return { ...ruScope([]), unitSurfaces: COVERAGE_TABLE_SURFACES };
     case "RU_SERP":
     case "RU_SERP_SCREENSHOT":
       return ruScope(["organic"]);
@@ -125,7 +146,7 @@ function fragmentScope(key: FragmentKey): FragmentScope {
     case "RU_RELATED":
       return ruScope(["paa_related"]);
     case "UAE_SUMMARY":
-      return { ...uaeScope([]), unitSurfaces: ["url_audit"] };
+      return { ...uaeScope([]), unitSurfaces: COVERAGE_TABLE_SURFACES };
     case "UAE_SERP":
     case "UAE_SERP_SCREENSHOT":
       return uaeScope(["organic"]);
