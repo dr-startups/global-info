@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { unreadVerdict } from "@/modules/digital-profile/orion-golden/analytics/link-verdict-analyst";
 import {
   linksToRead,
   runLinkVerdicts,
@@ -115,5 +116,64 @@ describe("шаг чтения ссылок", () => {
       deps: { env: ON },
     });
     expect(res.skippedReason).toBe("no-links");
+  });
+});
+
+describe("нулевое чтение — это поломка, а не свойство интернета", () => {
+  const items = [
+    { inventoryId: "1", sourceUrl: "https://example.org/a", title: "Первый материал выдачи", rawMetadata: { rank: 1 } },
+    { inventoryId: "2", sourceUrl: "https://example.org/b", title: "Второй материал выдачи", rawMetadata: { rank: 2 } },
+  ] as never[];
+  const env = { DIGITAL_PROFILE_LINK_READING: "true" } as unknown as NodeJS.ProcessEnv;
+
+  it("ни одной прочитанной страницы — признак поднят", async () => {
+    const res = await runLinkVerdicts({
+      caseId: "c1",
+      subject: { fullName: "Иван Иванов" },
+      items,
+      deps: {
+        env,
+        read: async (url: string) => ({
+          ok: false,
+          url,
+          failure: "not_fetched",
+          message: "ByteString",
+          readAt: "2026-08-14T10:00:00.000Z",
+        }),
+        analyze: async (inputs) => inputs.map((i) => unreadVerdict(i)),
+      },
+    });
+    expect(res.requested).toBe(2);
+    expect(res.readOk).toBe(0);
+    expect(res.readingBroken).toBe(true);
+  });
+
+  it("хотя бы одна прочитанная страница — поломки нет", async () => {
+    const res = await runLinkVerdicts({
+      caseId: "c1",
+      subject: { fullName: "Иван Иванов" },
+      items,
+      deps: {
+        env,
+        read: async (url: string) =>
+          url.endsWith("/a")
+            ? { ok: true, url, text: "Текст страницы.", readAt: "2026-08-14T10:00:00.000Z" }
+            : { ok: false, url, failure: "blocked", message: "HTTP 403", readAt: "2026-08-14T10:00:00.000Z" },
+        analyze: async (inputs) => inputs.map((i) => unreadVerdict(i)),
+      },
+    });
+    expect(res.readOk).toBe(1);
+    expect(res.readingBroken).toBe(false);
+  });
+
+  it("выключенный шаг поломкой не считается", async () => {
+    const res = await runLinkVerdicts({
+      caseId: "c1",
+      subject: { fullName: "Иван Иванов" },
+      items,
+      deps: { env: {} as unknown as NodeJS.ProcessEnv },
+    });
+    expect(res.skippedReason).toBe("disabled");
+    expect(res.readingBroken).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   LINK_READER_USER_AGENT,
   extractPageTitle,
@@ -162,5 +162,50 @@ describe("как читатель представляется сайту", () =
 
   it("заголовок принимается настоящим Headers без исключения", () => {
     expect(() => new Headers({ "user-agent": LINK_READER_USER_AGENT })).not.toThrow();
+  });
+});
+
+describe("чтение через настоящий fetch", () => {
+  /**
+   * Проверка сквозная и без сети: поднимаем свой сервер на localhost и читаем
+   * его тем же кодом, что ходит на чужие сайты. Тест на одну константу
+   * сторожит одну константу; здесь строится и уходит весь запрос целиком —
+   * так ловится любая ошибка в заголовках, а не только та, что уже случилась.
+   */
+  const PAGE = `<html><head><title>Проверка</title></head><body><p>${"Текст страницы. ".repeat(40)}</p></body></html>`;
+  let server: import("node:http").Server;
+  let base = "";
+  const seenHeaders: Record<string, string | undefined> = {};
+
+  beforeAll(async () => {
+    const { createServer } = await import("node:http");
+    server = createServer((req, res) => {
+      seenHeaders["user-agent"] = req.headers["user-agent"];
+      seenHeaders.accept = req.headers.accept as string | undefined;
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(PAGE);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const addr = server.address();
+    base = typeof addr === "object" && addr ? `http://127.0.0.1:${addr.port}` : "";
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it("страница читается целиком, а запрос не падает на заголовках", async () => {
+    const res = await readLinkPage(`${base}/article`);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.title).toBe("Проверка");
+      expect(res.text).toContain("Текст страницы.");
+    }
+  });
+
+  it("сайт видит, кто к нему пришёл", async () => {
+    await readLinkPage(`${base}/article`);
+    expect(seenHeaders["user-agent"]).toBe(LINK_READER_USER_AGENT);
+    expect(seenHeaders.accept).toContain("text/html");
   });
 });

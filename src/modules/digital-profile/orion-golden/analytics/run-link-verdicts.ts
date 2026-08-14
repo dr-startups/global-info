@@ -36,6 +36,17 @@ export type LinkVerdictRunResult = {
   /** Почему шаг ничего не сделал, если не сделал. */
   skippedReason?: "disabled" | "no-links";
   requested: number;
+  /** Сколько страниц удалось прочитать. Ноль при непустом запросе — поломка. */
+  readOk: number;
+  /**
+   * Чтение не сработало вовсе: запрошены страницы, прочитано ноль.
+   *
+   * Отдельный признак, а не вывод из двух чисел: прогон с нулевым чтением
+   * три раза подряд считался успешным, потому что «ни одна страница не
+   * открылась» выглядело как свойство интернета, а не как поломка у нас. На
+   * деле падал сам запрос — из-за кириллицы в заголовке.
+   */
+  readingBroken: boolean;
   verdicts: LinkVerdict[];
   summary: VerdictSummary;
 };
@@ -102,17 +113,21 @@ export async function runLinkVerdicts(input: {
     summary: empty,
   };
   if (!isLinkReadingEnabled(input.deps?.env ?? process.env)) {
-    return { ...base, skippedReason: "disabled", requested: 0 };
+    return { ...base, skippedReason: "disabled", requested: 0, readOk: 0, readingBroken: false };
   }
   const links = linksToRead(input.items, input.deps?.limit ?? LINK_VERDICT_MAX_LINKS);
-  if (links.length === 0) return { ...base, skippedReason: "no-links", requested: 0 };
+  if (links.length === 0) {
+    return { ...base, skippedReason: "no-links", requested: 0, readOk: 0, readingBroken: false };
+  }
 
   const read = input.deps?.read ?? ((url: string) => readLinkPage(url));
   const analyze = input.deps?.analyze ?? analyzeLinkPages;
 
   const analystInputs: LinkVerdictInput[] = [];
+  let readOk = 0;
   for (const link of links) {
     const page = await read(link.url);
+    if (page.ok) readOk += 1;
     analystInputs.push({
       evidenceRef: `inventory:${link.item.inventoryId}`,
       url: link.url,
@@ -135,6 +150,8 @@ export async function runLinkVerdicts(input: {
     schemaVersion: LINK_VERDICT_SCHEMA_VERSION,
     caseId: input.caseId,
     requested: links.length,
+    readOk,
+    readingBroken: links.length > 0 && readOk === 0,
     verdicts,
     summary: { ...summary, themes },
   };

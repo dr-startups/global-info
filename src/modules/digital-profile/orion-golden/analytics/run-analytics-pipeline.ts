@@ -495,6 +495,26 @@ export async function runOrionAnalyticsPipeline(
     ...linkVerdicts,
     datasetId,
   });
+  /*
+   * Ноль прочитанных страниц при непустом запросе — это поломка у нас, и она
+   * обязана быть слышна.
+   *
+   * Три прогона подряд отчёт сообщал, что все сто двадцать ссылок «не
+   * открылись», а на самом деле падал сам запрос: в заголовке была кириллица.
+   * Отличить одно от другого по тихому артефакту было нельзя, поэтому теперь
+   * такой прогон кричит в лог — там же, где видно всё остальное.
+   */
+  if (linkVerdicts.readingBroken) {
+    const detail = linkVerdicts.verdicts.find((v) => v.failureDetail)?.failureDetail;
+    console.error(
+      `[digital-profile][ссылки] ЧТЕНИЕ НЕ РАБОТАЕТ: запрошено ${linkVerdicts.requested} страниц, прочитано 0` +
+        (detail ? `. Первая причина: ${detail}` : "")
+    );
+  } else if (linkVerdicts.requested > 0) {
+    console.log(
+      `[digital-profile][ссылки] прочитано ${linkVerdicts.readOk} из ${linkVerdicts.requested} страниц`
+    );
+  }
 
   // 3. Typed surface analyzers.
   const surfaceAnalyses = runSurfaceAnalyzers({
