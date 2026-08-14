@@ -26,6 +26,8 @@ import {
 import { analyzeLinkPages, type LinkVerdictInput } from "./link-verdict-analyst";
 import { clusterVerdictThemes } from "./link-theme-clustering";
 import { isLinkReadingEnabled, readLinkPage, type LinkPageRead } from "../../services/link-page-reader";
+import { readLinks, type LinkReadingReport } from "./link-reading-agent";
+import { auditLinkVerdicts, type VerdictAuditReport } from "./link-verdict-audit-agent";
 
 /** Сколько ссылок читаем за прогон. Предел, а не цель. */
 export const LINK_VERDICT_MAX_LINKS = 120;
@@ -38,6 +40,10 @@ export type LinkVerdictRunResult = {
   requested: number;
   /** Сколько страниц удалось прочитать. Ноль при непустом запросе — поломка. */
   readOk: number;
+  /** Отчёт агента чтения: причины отказов, повторы, статус шага. */
+  reading: LinkReadingReport;
+  /** Отчёт агента проверки: что снято и почему. */
+  audit: VerdictAuditReport;
   /**
    * Чтение не сработало вовсе: запрошены страницы, прочитано ноль.
    *
@@ -106,11 +112,28 @@ export async function runLinkVerdicts(input: {
   };
 }): Promise<LinkVerdictRunResult> {
   const empty: VerdictSummary = { total: 0, adverse: 0, unread: 0, themes: [] };
+  const emptyReading: LinkReadingReport = {
+    status: "NO_LINKS",
+    requested: 0,
+    read: 0,
+    failed: 0,
+    retried: 0,
+    byReason: {},
+  };
+  const emptyAudit: VerdictAuditReport = {
+    checked: 0,
+    quotesDropped: 0,
+    adverseDowngraded: 0,
+    subjectDowngraded: 0,
+    changes: [],
+  };
   const base = {
     schemaVersion: LINK_VERDICT_SCHEMA_VERSION,
     caseId: input.caseId,
     verdicts: [] as LinkVerdict[],
     summary: empty,
+    reading: emptyReading,
+    audit: emptyAudit,
   };
   if (!isLinkReadingEnabled(input.deps?.env ?? process.env)) {
     return { ...base, skippedReason: "disabled", requested: 0, readOk: 0, readingBroken: false };
@@ -123,25 +146,31 @@ export async function runLinkVerdicts(input: {
   const read = input.deps?.read ?? ((url: string) => readLinkPage(url));
   const analyze = input.deps?.analyze ?? analyzeLinkPages;
 
-  const analystInputs: LinkVerdictInput[] = [];
-  let readOk = 0;
-  for (const link of links) {
-    const page = await read(link.url);
-    if (page.ok) readOk += 1;
-    analystInputs.push({
-      evidenceRef: `inventory:${link.item.inventoryId}`,
-      url: link.url,
-      domain: domainOf(link.url),
-      rank: link.rank,
-      query: link.query,
-      serpTitle: link.item.title ?? undefined,
-      serpSnippet: link.item.snippet ?? undefined,
-      subject: input.subject,
-      page,
-    });
-  }
+  // Агент чтения: приносит текст, повторяет срывы связи, отвечает за статус.
+  const reading = await readLinks(links.map((l) => l.url), { read });
+  const analystInputs: LinkVerdictInput[] = links.map((link, i) => ({
+    evidenceRef: `inventory:${link.item.inventoryId}`,
+    url: link.url,
+    domain: domainOf(link.url),
+    rank: link.rank,
+    query: link.query,
+    serpTitle: link.item.title ?? undefined,
+    serpSnippet: link.item.snippet ?? undefined,
+    subject: input.subject,
+    page: reading.outcomes[i]!.page,
+  }));
 
-  const verdicts = await analyze(analystInputs);
+  const rawVerdicts = await analyze(analystInputs);
+  // Агент проверки: сверяет цитаты и принадлежность с текстом страницы.
+  const audited = auditLinkVerdicts({
+    verdicts: rawVerdicts,
+    sources: analystInputs.map((i) => ({
+      evidenceRef: i.evidenceRef,
+      text: i.page.ok ? i.page.text : undefined,
+    })),
+    subjectNames: [input.subject.fullName, ...(input.subject.aliases ?? [])],
+  });
+  const verdicts = audited.verdicts;
   // Второй проход: формулировки страниц сводятся в темы отчёта. Без него на
   // живом прогоне вышло 73 темы на 75 публикаций — по теме на страницу.
   const summary = summarizeLinkVerdicts(verdicts);
@@ -150,8 +179,10 @@ export async function runLinkVerdicts(input: {
     schemaVersion: LINK_VERDICT_SCHEMA_VERSION,
     caseId: input.caseId,
     requested: links.length,
-    readOk,
-    readingBroken: links.length > 0 && readOk === 0,
+    readOk: reading.report.read,
+    readingBroken: reading.report.status === "BROKEN",
+    reading: reading.report,
+    audit: audited.report,
     verdicts,
     summary: { ...summary, themes },
   };

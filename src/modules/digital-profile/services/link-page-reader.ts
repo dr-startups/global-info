@@ -24,7 +24,7 @@
 import type { z } from "zod";
 import type { LinkReadFailureSchema } from "../orion-golden/contracts/link-verdict";
 
-type LinkReadFailure = z.infer<typeof LinkReadFailureSchema>;
+export type LinkReadFailure = z.infer<typeof LinkReadFailureSchema>;
 
 export const LINK_PAGE_READ_TIMEOUT_MS = 12_000;
 

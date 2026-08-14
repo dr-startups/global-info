@@ -21,6 +21,7 @@ import type {
 } from "./scoped-input";
 import { normalizeCoverageSurface } from "./scoped-input";
 import { normalizeSourceType } from "../analytics/source-type";
+import { linkReadingClientLine } from "../analytics/link-reading-agent";
 import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
 
 type CompositeObservationRow = {
@@ -239,6 +240,14 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
         summary?: {
           unread?: number;
           themes?: Array<{ theme?: string; count?: number; adverseCount?: number }>;
+        };
+        reading?: {
+          status?: string;
+          requested?: number;
+          read?: number;
+          failed?: number;
+          retried?: number;
+          byReason?: Record<string, number>;
         };
       }>(linkVerdictsPath)
     : null;
@@ -580,6 +589,16 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     analysisLanes: analysisLanes.length > 0 ? analysisLanes : undefined,
     linkThemes: linkThemes.length > 0 ? linkThemes : undefined,
     linkUnreadCount: linkVerdicts?.summary?.unread,
+    linkReadingLine: linkVerdicts?.reading
+      ? linkReadingClientLine({
+          status: (linkVerdicts.reading.status ?? "NO_LINKS") as never,
+          requested: Number(linkVerdicts.reading.requested ?? 0),
+          read: Number(linkVerdicts.reading.read ?? 0),
+          failed: Number(linkVerdicts.reading.failed ?? 0),
+          retried: Number(linkVerdicts.reading.retried ?? 0),
+          byReason: linkVerdicts.reading.byReason ?? {},
+        })
+      : undefined,
     // Same unit as compositeCount (observation rows), not inventory decisions.
     subjectMatchCount: identityCounts.subjectMatchCount,
     likelySubjectCount: identityCounts.likelySubjectCount,

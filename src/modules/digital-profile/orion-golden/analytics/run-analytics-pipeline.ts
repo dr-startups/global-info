@@ -38,6 +38,7 @@ import { resolveSubjectWithDerivedContext } from "./subject-context-miner";
 import { runSurfaceAnalyzers, ADVERSE_PATTERNS } from "./surface-analyzers";
 import { resolveAnalysisScope, type AnalysisScopeSummary } from "./analysis-scope";
 import { runLinkVerdicts } from "./run-link-verdicts";
+import { verdictAuditLogLine } from "./link-verdict-audit-agent";
 import { synthesizeFindings, type FindingSynthesisResult } from "./finding-synthesizer";
 import { buildBenchmarkTrace, type BenchmarkTrace } from "./benchmark-trace";
 import {
@@ -505,15 +506,22 @@ export async function runOrionAnalyticsPipeline(
    * такой прогон кричит в лог — там же, где видно всё остальное.
    */
   if (linkVerdicts.readingBroken) {
-    const detail = linkVerdicts.verdicts.find((v) => v.failureDetail)?.failureDetail;
+    const detail = linkVerdicts.reading.firstFailureDetail;
     console.error(
       `[digital-profile][ссылки] ЧТЕНИЕ НЕ РАБОТАЕТ: запрошено ${linkVerdicts.requested} страниц, прочитано 0` +
         (detail ? `. Первая причина: ${detail}` : "")
     );
   } else if (linkVerdicts.requested > 0) {
+    const r = linkVerdicts.reading;
+    const reasons = Object.entries(r.byReason)
+      .map(([reason, n]) => `${reason}: ${n}`)
+      .join(", ");
     console.log(
-      `[digital-profile][ссылки] прочитано ${linkVerdicts.readOk} из ${linkVerdicts.requested} страниц`
+      `[digital-profile][ссылки] прочитано ${r.read} из ${r.requested}` +
+        (r.retried > 0 ? `, повторов ${r.retried}` : "") +
+        (reasons ? `; отказы — ${reasons}` : "")
     );
+    console.log(verdictAuditLogLine(linkVerdicts.audit));
   }
 
   // 3. Typed surface analyzers.

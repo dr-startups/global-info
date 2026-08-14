@@ -50,6 +50,11 @@ export type MetricSnapshot = {
   linkThemes?: Array<{ theme: string; count: number; adverseCount: number }>;
   /** Сколько страниц не удалось прочитать — честная часть покрытия. */
   linkUnreadCount?: number;
+  /**
+   * Строка о покрытии чтения: сколько страниц прочитано из запрошенных и
+   * почему остальные — нет. Отчёт обязан говорить, чего он не прочитал.
+   */
+  linkReadingLine?: string;
   subjectMatchCount: number;
   /** Surname+context / shared domain — visible but not KPI (§2.1). */
   likelySubjectCount: number;

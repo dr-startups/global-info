@@ -481,8 +481,13 @@ export function buildSerpFragment(
   }
   if (themesPage) {
     const adverseTotal = linkThemes.reduce((n, t) => n + t.adverseCount, 0);
-    const unreadNote =
-      themesPage.unread > 0
+    // Покрытие называется словами агента чтения: сколько прочитано и почему
+    // остальные — нет. «N не открылись» скрывает разницу между отказом сайта
+    // и поломкой у нас, а эталон отрасли пишет причины прямо.
+    const readingLine = scoped.metricSnapshot.linkReadingLine;
+    const unreadNote = readingLine
+      ? ` ${readingLine}`
+      : themesPage.unread > 0
         ? ` ${themesPage.unread} ${pluralRu(themesPage.unread, "страница", "страницы", "страниц")} не открылись — они в подсчёт тем не вошли.`
         : "";
     slides.push({
