@@ -76,3 +76,44 @@ describe("ссылка для клиента", () => {
     expect(clientLink("", undefined)).toBe("—");
   });
 });
+
+describe("запасной список по доменам", () => {
+  /**
+   * Прогон 14.08: столбец «Тип источника» пустовал у 24 строк из 120, и почти
+   * все — крупные издания. Страницы не прочитались (429 и пустой текст), а
+   * домен их не узнавал: прочерк напротив «АиФ» читателю ничего не сообщает.
+   */
+  const known: Array<[string, string]> = [
+    ["rbc.ru", "Новостное СМИ"],
+    ["aif.ru", "Новостное СМИ"],
+    ["gazeta.ru", "Новостное СМИ"],
+    ["ntv.ru", "Новостное СМИ"],
+    ["mk.ru", "Новостное СМИ"],
+    ["starhit.ru", "Новостное СМИ"],
+    ["ura.news", "Новостное СМИ"],
+    ["news.liga.net", "Новостное СМИ"],
+    ["imdb.com", "Энциклопедия / справочник"],
+    ["tadviser.ru", "Энциклопедия / справочник"],
+    ["xfirm.ru", "База данных / реестр"],
+    ["prima-inform.ru", "База данных / реестр"],
+    ["ofk-of-timati.orgs.biz", "База данных / реестр"],
+    ["yandex.ru", "Агрегатор / каталог"],
+  ];
+
+  it("узнаёт площадки, чья природа известна без чтения", () => {
+    for (const [domain, type] of known) {
+      expect(sourceTypeFromDomain(domain), domain).toBe(type);
+    }
+  });
+
+  it("незнакомому домену тип не выдумывает", () => {
+    for (const domain of ["memoryon.net", "needspec.ru", "hrbooking.com", "example.org"]) {
+      expect(sourceTypeFromDomain(domain), domain).toBeUndefined();
+    }
+  });
+
+  it("«news» засчитывается меткой домена, а не куском чужого слова", () => {
+    expect(sourceTypeFromDomain("news.example.com")).toBe("Новостное СМИ");
+    expect(sourceTypeFromDomain("newsroom.company.com")).toBeUndefined();
+  });
+});
