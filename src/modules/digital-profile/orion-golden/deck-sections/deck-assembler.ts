@@ -29,7 +29,7 @@ import {
   CANONICAL_SLOT_IDS,
   EXPLICIT_SLOT_MERGES,
 } from "./canonical-slots";
-import { withoutRepeatedSentences } from "./run-deck-build";
+import { dedupSlideBullets } from "./boilerplate-commentary";
 import { emptySurfaceMergeReason } from "./empty-surface-collapse";
 import { dropEmptyContinuations } from "./continuation-cleanup";
 
@@ -64,9 +64,14 @@ export type AssemblyRejection = {
     | "SECTION_QA_FAILED"
     | "EMPTY_VALID_OMITTED"
     /** Продолжение осталось без содержимого после вычистки повторов. */
-    | "EMPTY_CONTINUATION_DROPPED";
+    | "EMPTY_CONTINUATION_DROPPED"
+    /** Вычистка сняла бы со страницы больше трети текста — не применена. */
+    | "BOILERPLATE_DEDUP_SKIPPED";
   detail: string;
 };
+
+/** Снятое предложение с указанием страницы — для разбора сборки. */
+export type DedupRemoval = { slideId: string; sentence: string };
 
 /** Unified slide model in the existing renderer's slide shape. */
 export type RendererSlide = {
@@ -115,6 +120,12 @@ export type DeckAssemblyResult = {
   rendererSlides: RendererSlide[];
   rejections: AssemblyRejection[];
   errors: string[];
+  /**
+   * Что вычистка сняла и с какой страницы. Пустой список — обычное дело;
+   * непустой должен быть читаемым, иначе укоротившуюся страницу не с чем
+   * сверить.
+   */
+  dedupRemovals: DedupRemoval[];
 };
 
 export function assembleDeck(input: {
@@ -139,7 +150,13 @@ export function assembleDeck(input: {
     errors.push(
       `required sections failed: ${input.manifest.requiredSectionsFailed.join("; ")} — build stopped`
     );
-    return { deckManifest: emptyManifest(input), rendererSlides: [], rejections, errors };
+    return {
+      deckManifest: emptyManifest(input),
+      rendererSlides: [],
+      rejections,
+      errors,
+      dedupRemovals: [],
+    };
   }
 
   // 1–5. Verify lineage per pack; reject foreign/stale; drop EMPTY_VALID optionals.
@@ -204,7 +221,13 @@ export function assembleDeck(input: {
   }
 
   if (errors.length > 0) {
-    return { deckManifest: emptyManifest(input), rendererSlides: [], rejections, errors };
+    return {
+      deckManifest: emptyManifest(input),
+      rendererSlides: [],
+      rejections,
+      errors,
+      dedupRemovals: [],
+    };
   }
 
   // 8. slideId / baseSlotId uniqueness.
@@ -219,7 +242,13 @@ export function assembleDeck(input: {
     }
   }
   if (errors.length > 0) {
-    return { deckManifest: emptyManifest(input), rendererSlides: [], rejections, errors };
+    return {
+      deckManifest: emptyManifest(input),
+      rendererSlides: [],
+      rejections,
+      errors,
+      dedupRemovals: [],
+    };
   }
 
   /*
@@ -232,24 +261,45 @@ export function assembleDeck(input: {
    * проверки» — печатался в отчёте четыре раза дословно. Для читателя это
    * главный признак отчёта, собранного шаблоном, а не написанного.
    *
-   * Порядок обхода — порядок чтения: объяснение остаётся там, где встретилось
-   * первым (в матрице рисков), а региональные страницы сохраняют своё —
-   * материалы и числа своего контура. Пустая после вычистки строка выбрасывается
-   * вместе со своим маркером.
+   * Снимается при этом **только объявленная присказка** — список ведут сами
+   * построители ([[boilerplate-commentary]]). Цитата, источник, «Где видно» и
+   * счётчики темы не снимаются никогда, даже если совпали дословно: на прогоне
+   * 14.08 слепое сравнение предложений опустошило страницу резюме по ОАЭ и
+   * оборвало цитату на середине.
+   *
+   * Сверх белого списка стоит потолок: вычистка не вправе снять со страницы
+   * больше трети текста. Перебор — вычистка на этой странице отменяется целиком
+   * и называет себя в разборе сборки.
    *
    * Вычистка идёт до нумерации: продолжение, у которого после неё не осталось
    * ничего, кроме заголовка, — пустой лист, и он не должен получить ни номера
    * страницы, ни строки в оглавлении.
    */
   const saidInDeck = new Set<string>();
+  const dedupRemovals: DedupRemoval[] = [];
   const dedupedSlides = acceptedSlides.map(({ slide, pack }) => {
     if (slide.templateId === "toc" || isDataRowTemplate(slide.templateId)) {
       return { slide, pack };
     }
-    const bullets = (slide.content.bullets ?? [])
-      .map((b) => withoutRepeatedSentences(b, saidInDeck))
-      .filter((b): b is string => Boolean(b && b.trim()));
-    return { slide: { ...slide, content: { ...slide.content, bullets } }, pack };
+    const source = slide.content.bullets ?? [];
+    const result = dedupSlideBullets(source, saidInDeck);
+    if (result.skippedByCeiling) {
+      rejections.push({
+        fragmentKey: pack.fragmentKey,
+        reason: "BOILERPLATE_DEDUP_SKIPPED",
+        detail: `${slide.slideId}: сняли бы ${result.wouldRemoveChars} из ${source.join("\n").length} символов`,
+      });
+      return { slide, pack };
+    }
+    if (result.removed.length === 0) return { slide, pack };
+
+    for (const sentence of result.removed) {
+      dedupRemovals.push({ slideId: slide.slideId, sentence });
+    }
+    return {
+      slide: { ...slide, content: { ...slide.content, bullets: result.bullets } },
+      pack,
+    };
   });
   const packBySlideId = new Map(dedupedSlides.map(({ slide, pack }) => [slide.slideId, pack]));
   const cleanup = dropEmptyContinuations(dedupedSlides.map(({ slide }) => slide));
@@ -451,7 +501,7 @@ export function assembleDeck(input: {
       .digest("hex")}`,
   };
 
-  return { deckManifest, rendererSlides, rejections, errors };
+  return { deckManifest, rendererSlides, rejections, errors, dedupRemovals };
 }
 
 /**

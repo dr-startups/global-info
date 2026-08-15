@@ -19,6 +19,7 @@ import { validateAssembly, type AssemblyValidationReport } from "./assembly-vali
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import { getClientTextContract } from "../client/load-client-text-contract";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
+import { normalizeForCompare } from "./text-compare";
 
 export type DeckBuildResult = {
   packs: SectionPackV2[];
@@ -563,20 +564,11 @@ export function withoutRepeatedSentences(
 }
 
 /**
- * Приведение текста к сравнимому виду: регистр, пунктуация и тире отбрасываются,
- * пробелы схлопываются.
- *
- * Строители расставляют кавычки и тире по-разному («тема» — уровень: …), и
- * сравнение «в лоб» пропускает повтор из-за одного дефиса. Нормализатор один на
- * оба места, где ищется дубль: текст находки и подзаголовок.
+ * Нормализатор живёт в `text-compare`, чтобы им могли пользоваться и сборщик
+ * деки, и вычистка присказок, не замыкая импорты в кольцо. Здесь оставлен
+ * ре-экспорт: на него ссылаются проверки панели.
  */
-export function normalizeForCompare(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[.,;:!?…«»"'()‐-―-]/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim();
-}
+export { normalizeForCompare };
 
 /**
  * Подзаголовок перед абзацем — но не тогда, когда абзац им же и начинается.
