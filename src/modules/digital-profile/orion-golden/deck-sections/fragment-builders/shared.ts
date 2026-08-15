@@ -29,6 +29,8 @@ import type { Finding } from "../../contracts/finding";
 import type { SurfaceClaim } from "../../contracts/surface-analysis";
 import { ADVERSE_PATTERNS } from "../../analytics/surface-analyzers";
 import { VISUAL_ASSET_UNAVAILABLE } from "../slide-markers";
+import { clampQuotedLine, closeDanglingQuote } from "../quote-integrity";
+import { normalizeForCompare } from "../text-compare";
 import {
   cleanExampleTitle,
   isWeakExampleTitle,
@@ -467,6 +469,11 @@ export function clientReadableUrl(url: string): string {
 
 export function clampClientText(text: string, max: number): string {
   if (text.length <= max) return text;
+  // Цитата укорачивается внутри кавычек, с сохранением источника: обычная
+  // обрезка по пробелу уносила закрывающую ёлочку вместе с «— источник …», и
+  // утверждение оставалось без происхождения.
+  const asQuote = clampQuotedLine(text, max);
+  if (asQuote !== undefined) return asQuote;
   const slice = text.slice(0, max);
   const boundaries = [slice.lastIndexOf(". "), slice.lastIndexOf(" · "), slice.lastIndexOf("; ")];
   const cut = Math.max(...boundaries);
@@ -475,6 +482,9 @@ export function clampClientText(text: string, max: number): string {
   out = out.replace(/[\s·;,.]+$/u, "");
   out = out.replace(DANGLING_TAIL_RE, "").replace(/[\s·;,.]+$/u, "");
   if (!out) return "";
+  // Кавычка, открытая до места реза, закрывается многоточием: висящая ёлочка
+  // читается как наше утверждение, а не как сокращённая цитата.
+  out = closeDanglingQuote(out);
   // Точка ставится только там, где резали по границе предложения. Прежде она
   // дописывалась всегда, и обрубок выдавался за законченную мысль: в отчёт
   // попадали «Для банка или партнёра такие.», «Деловой фон.», «Всего.»
@@ -502,12 +512,17 @@ export function fitStructuredBullet(text: string, maxChars: number): string {
     /^«.*(?:«|\s)(?:из-за|и|в|во|на|по|с|со|о|об|and|or|of|the|to|for|with|from|by|over)\s*»/iu;
   const incompleteQuoteRe = /^«.*[,;:]\s*»/u;
 
+  const isQuoteLine = (l: string) => /^«/u.test(l) && /источник/iu.test(l);
   let lines = raw
     .split("\n")
     .map((l) => l.trim())
     .filter(Boolean)
     .filter((l) => !incompleteMetaRe.test(l) && !danglingCountRe.test(l))
     .filter((l) => !danglingQuoteRe.test(l) && !incompleteQuoteRe.test(l));
+  // Пересказ живёт при своей цитате: строка «О чём: …» без цитаты выше
+  // объясняет неизвестно что. Проверка стоит до подгонки по бюджету — сирота
+  // не должна доживать до отчёта и в тех блоках, что и так помещаются.
+  lines = lines.filter((l, i) => !/^О чём:/u.test(l) || isQuoteLine(lines[i - 1] ?? ""));
 
   const lenOf = (ls: string[]) => ls.join("\n").length;
   if (lenOf(lines) <= maxChars) {
@@ -519,7 +534,11 @@ export function fitStructuredBullet(text: string, maxChars: number): string {
     /^(Для банка|Банки |Это усиливает|Риск в том|Деловой фон|Что делать:)/u.test(l);
   const isWhere = (l: string) => /^Где видно:/u.test(l);
   const isScale = (l: string) => /^(Всего по теме:|В корпусе:)/u.test(l);
-  const isQuote = (l: string) => /^«/.test(l) && /источник/iu.test(l);
+  const isQuote = isQuoteLine;
+  const isGist = (l: string) => /^О чём:/u.test(l);
+  const dropGistAfter = (list: string[], idx: number): void => {
+    if (isGist(list[idx] ?? "")) list.splice(idx, 1);
+  };
 
   // PDF-49 — evidence quotes are last to drop (why/where/scale go first).
   // Previously the 2nd quote was sacrificed before meta, so ФБК/currenttime vanished.
@@ -534,10 +553,14 @@ export function fitStructuredBullet(text: string, maxChars: number): string {
     while (lenOf(kept) > maxChars) {
       const idx = kept.findIndex((l) => pred(l, kept));
       if (idx < 0) break;
+      const wasQuote = isQuote(kept[idx] ?? "");
       kept.splice(idx, 1);
+      if (wasQuote) dropGistAfter(kept, idx);
     }
   }
   while (lenOf(kept) > maxChars && kept.length > 2) kept.pop();
+  // Ещё раз после подгонки: цитату мог унести общий сброс хвоста.
+  kept = kept.filter((l, i) => !isGist(l) || isQuote(kept[i - 1] ?? ""));
   if (lenOf(kept) > maxChars) {
     const first = kept[0] ?? "";
     kept = first.length <= maxChars ? [first] : [clampClientText(first, maxChars)];
@@ -938,7 +961,7 @@ export function pageSourceLine(view: PageEvidenceView): string {
  * источника и превращали строку доказательства в нечитаемую ленту.
  */
 const STRUCTURED_TAIL_RE =
-  /(?=(?:Всего по теме:|В корпусе:|Где видно:|Что делать:|Для банка|Банки |Это усиливает|Риск в том|Деловой фон))/u;
+  /(?=(?:Всего по теме:|В корпусе:|Где видно:|Что делать:|О чём:|Для банка|Банки |Это усиливает|Риск в том|Деловой фон))/u;
 
 /** Разбить строку по служебным врезкам, сохранив порядок. */
 function splitStructuredTail(line: string): string[] {
@@ -986,7 +1009,11 @@ export function reflowThemeBullet(text: string): string {
     }
     return /^«[^»]{2,80}»\s+(?:Найдены|Есть публикации|В открытой)/u.test(l);
   };
-  const quoteLines = existing.filter((l) => /^«[^»]{8,}»\s*—\s*источник\b/u.test(l));
+  // `\b` в JavaScript определён на ASCII и после кириллического «источник»
+  // границы не находит вовсе: строка-цитата не опознавалась, уже размеченный
+  // блок каждый раз пересобирался заново — и всё, что стояло между цитатами,
+  // при пересборке терялось.
+  const quoteLines = existing.filter((l) => /^«[^»]{8,}»\s*—\s*источник(?!\p{L})/u.test(l));
   if (
     quoteLines.length >= 1 &&
     existing.length >= 3 &&
@@ -1019,11 +1046,24 @@ export function reflowThemeBullet(text: string): string {
       framing = `${framing.replace(/[.:]\s*$/u, "")}:`;
     }
     if (framing) out.push(framing);
-    out.push(...quotes);
+    // Цитата идёт вместе со своим пересказом: строка «О чём: …» объясняет
+    // именно её, и, оторванная от цитаты, объясняет неизвестно что. Прежде всё,
+    // что стояло между цитатами, при пересборке пропадало.
+    const matches = [...rest.matchAll(quoteRe)];
     let lastEnd = 0;
-    for (const m of rest.matchAll(quoteRe)) {
-      lastEnd = (m.index ?? 0) + m[0].length;
-    }
+    matches.forEach((m, i) => {
+      const start = m.index ?? 0;
+      const end = start + m[0].length;
+      out.push(m[0].trim());
+      const nextStart = i + 1 < matches.length ? matches[i + 1]!.index ?? rest.length : rest.length;
+      const between = rest.slice(end, nextStart).trim();
+      if (/^О чём:/u.test(between)) {
+        out.push(between);
+        lastEnd = nextStart;
+      } else {
+        lastEnd = end;
+      }
+    });
     const tail = rest.slice(lastEnd).trim();
     if (tail) out.push(...splitStructuredTail(tail));
   } else {
@@ -1146,6 +1186,45 @@ export function themedClaim(f: Finding): string {
   return reflowThemeBullet(withTheme);
 }
 
+/** Доля кириллицы, начиная с которой строка считается русской. */
+const CYRILLIC_SHARE_RU = 0.4;
+
+function cyrillicShare(text: string): number {
+  const letters = text.replace(/[^\p{L}]/gu, "");
+  if (!letters) return 0;
+  return letters.replace(/[^\p{Script=Cyrillic}]/gu, "").length / letters.length;
+}
+
+/**
+ * Строка «О чём: …» под иноязычной цитатой.
+ *
+ * Переводить цитату нельзя: в кавычках клиенту показали бы слова, которых
+ * источник не писал, и неточность перевода стала бы нашим утверждением о факте.
+ * Поэтому оригинал остаётся дословным, а рядом идёт изложение — явно наше,
+ * отдельной строкой и по-русски.
+ *
+ * Ставится только там, где без неё не обойтись:
+ *
+ *   - цитата не по-русски. Русскому заголовку пересказ не нужен и выглядит
+ *     издевательством;
+ *   - изложение само по-русски. Английская «тема» под английской цитатой не
+ *     помогает никому;
+ *   - изложение говорит не то же самое. Модель иногда возвращает темой сам
+ *     заголовок страницы («Timur Yunusov - IMDb»), и такая строка удваивает
+ *     цитату вместо того, чтобы её объяснить.
+ */
+export function quoteGistLine(title: string, gist: string | undefined): string | undefined {
+  const text = String(gist ?? "").trim();
+  if (!text) return undefined;
+  if (cyrillicShare(title) >= CYRILLIC_SHARE_RU) return undefined;
+  if (cyrillicShare(text) < CYRILLIC_SHARE_RU) return undefined;
+  const a = normalizeForCompare(title);
+  const b = normalizeForCompare(text);
+  if (!b || a.includes(b) || b.includes(a)) return undefined;
+  // Пересказ длиной с абзац выдавил бы саму цитату под обрезку.
+  return `О чём: ${clampClientText(text, 160)}`;
+}
+
 /**
  * B.3 — regional pages must not quote foreign-region sources. Cross-regional
  * findings carry globally aggregated «Источники: …» / «Примеры заголовков: …»
@@ -1164,9 +1243,16 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
   const themeDef = getFindingThemes().find(
     (t) => t.label === f.theme || f.theme.toLowerCase().includes(t.label.toLowerCase())
   );
+  const adverseTheme = isAdverse(f);
 
   const domains: string[] = [];
-  const titleCandidates: Array<{ title: string; domain: string; score: number }> = [];
+  const titleCandidates: Array<{
+    title: string;
+    domain: string;
+    score: number;
+    /** О чём публикация — из решения по прочитанной странице. */
+    gist?: string;
+  }> = [];
   const seenDomains = new Set<string>();
   const seenTitles = new Set<string>();
   for (const ref of f.evidenceRefs) {
@@ -1183,6 +1269,13 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
     // Тот же запрет стоит в синтезаторе находок; здесь региональная сборка
     // цитирует по своему списку и правило нужно повторить.
     if (NON_QUOTABLE_SURFACES.has(String(e.kind ?? "").toLowerCase())) continue;
+    // Тема повышенного внимания не цитирует материал, чью страницу прочитали и
+    // признали нейтральной. Тему назначает словарь ключевых слов по заголовку,
+    // и «суд» в заголовке телеинтервью тянет его в криминальный блок; решение
+    // же вынесено по тексту страницы и знает, что там на самом деле.
+    if (adverseTheme && (e.readVerdictTone === "neutral" || e.readVerdictTone === "supportive")) {
+      continue;
+    }
     const t = cleanExampleTitle(String(e.title ?? ""));
     if (
       !t ||
@@ -1195,16 +1288,23 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
     seenTitles.add(t.toLowerCase());
     let score = t.split(/\s+/u).length >= 6 ? 2 : 1;
     if (themeDef?.keywords.test(t)) score += 8;
-    titleCandidates.push({ title: t, domain: e.domain ?? domains[0] ?? "", score });
+    titleCandidates.push({
+      title: t,
+      domain: e.domain ?? domains[0] ?? "",
+      score,
+      ...(e.verdictTheme ? { gist: e.verdictTheme } : {}),
+    });
   }
   titleCandidates.sort((a, b) => b.score - a.score);
   const titles = titleCandidates.map((c) => c.title);
 
   // PDF-40 G.2b / PDF-44 H — rebuild from this region's evidence only; skip weak titles.
-  const regionalQuotes = pickDistinctTitles(titleCandidates, 2).map((c) => {
+  const regionalQuotes = pickDistinctTitles(titleCandidates, 2).flatMap((c) => {
     // Демо-домен не называется клиенту и здесь: цитата остаётся без источника.
     const domain = clientSafeDomains([c.domain, domains[0]])[0] ?? "";
-    return domain ? `«${c.title}» — источник ${domain}` : `«${c.title}»`;
+    const quote = domain ? `«${c.title}» — источник ${domain}` : `«${c.title}»`;
+    const gist = quoteGistLine(c.title, c.gist);
+    return gist ? [quote, gist] : [quote];
   });
   const lines = String(f.claim ?? "")
     .replace(/\r\n/gu, "\n")
@@ -1852,6 +1952,37 @@ export function panelCompositionLine(input: {
       ? ` С негативной формулировкой — ${c.adverse}.`
       : " Негативных формулировок нет.";
   return `${head}${breakdown}.${adverse}`;
+}
+
+/**
+ * Статусная строка страницы, у которой есть панель.
+ *
+ * Считает то же, что читатель видит, — строки панели. На прогоне 14.08 стр. 44
+ * говорила разом «негативных формулировок нет» (по десяти строкам панели) и «на
+ * этой странице 1 негативный заголовок» (по сорока четырём собранным строкам):
+ * два числа о разных наборах, поданные как одно про одну страницу.
+ *
+ * Собранный набор при этом не замалчивается. Если негатив есть в нём, но не
+ * попал на панель, строка говорит об этом прямо — иначе исчезнет факт, ради
+ * которого страницу и читают.
+ */
+export function panelStatusLine(input: {
+  shownAdverse: number;
+  /** Негативные строки во всём собранном наборе, если он больше панели. */
+  collectedAdverse?: number;
+  nounOne: string;
+  nounFew: string;
+  nounMany: string;
+}): string {
+  const noun = (n: number): string => pluralRu(n, input.nounOne, input.nounFew, input.nounMany);
+  if (input.shownAdverse > 0) {
+    return `На этой странице ${input.shownAdverse} ${noun(input.shownAdverse)} с негативной формулировкой — их видно до перехода к самим материалам, поэтому они формируют первое впечатление.`;
+  }
+  const hidden = input.collectedAdverse ?? 0;
+  if (hidden > 0) {
+    return `Среди показанных строк негативных формулировок нет; в собранном наборе — ${hidden} ${noun(hidden)}.`;
+  }
+  return "Строк с негативной формулировкой на этой странице нет.";
 }
 
 export function adverseVisualSidebar(

@@ -433,6 +433,16 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     // Тип источника определён по самой странице — он сильнее догадки по домену.
     const sourceType = normalizeSourceType(v.sourceType);
     if (sourceType) evidenceIndex[ref].sourceType = sourceType;
+    // Тон прочитанной страницы запоминается отдельно: по нему темы повышенного
+    // внимания отбирают, что можно цитировать. Словарь ключевых слов работает
+    // по заголовку и о содержимом страницы не знает.
+    if (v.tone === "adverse" || v.tone === "neutral" || v.tone === "supportive") {
+      evidenceIndex[ref].readVerdictTone = v.tone;
+    }
+    // «О чём публикация» одной русской фразой — из решения по прочитанной
+    // странице. Иноязычная цитата печатается дословно, а эта строка идёт рядом.
+    const theme = String(v.theme ?? "").trim();
+    if (theme) evidenceIndex[ref].verdictTheme = theme;
   }
 
   // Enrich compliance_hit entries with typed match metadata (provider /

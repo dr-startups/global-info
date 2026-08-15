@@ -54,6 +54,9 @@ function extrasWithPanel(slotId: string, visible: Array<{ i: number; adverse?: b
         {
           assetRef: `${slotId}-panel`,
           kind: "surface_panel",
+          // Без картинки слайд уходит в запасную карточку и заголовок-вывод
+          // не ставит — а проверяем мы именно согласие заголовка с панелью.
+          hasImage: true,
           visibleItems: visible.map((v) => ({
             ref: `inventory:s${v.i}`,
             title: titles[v.i],
@@ -185,5 +188,47 @@ describe("списки поверхностей не чистятся как п�
     for (const template of ["regional-summary", "risk-matrix", "executive-summary", "finding-cards"]) {
       expect(isDataRowTemplate(template)).toBe(false);
     }
+  });
+});
+
+describe("статус страницы не спорит с панелью", () => {
+  const titles = ["timur ildarovich yunusov", "yunusov", "yunus yunusov"];
+
+  it("панель без негатива — статус говорит о панели, а собранное называет отдельно", () => {
+    // Стр. 44 прогона 14.08: заголовок «негативных формулировок нет» и рядом
+    // «на этой странице 1 негативный заголовок». Числа были про разные наборы —
+    // десять строк панели и сорок четыре собранные строки.
+    const scoped = scopedSurface("suggestions", [
+      { text: titles[0]!, decision: "SUBJECT_MATCH" },
+      { text: titles[1]!, decision: "LIKELY_SUBJECT" },
+      { text: titles[2]!, decision: "OTHER_SUBJECT" },
+      // Четвёртая строка собрана, но на панель не попала — и она негативная.
+      { text: "yunusov суд", decision: "SUBJECT_MATCH" },
+    ]);
+    (scoped.evidenceIndex["inventory:s3"] as { adverse?: boolean }).adverse = true;
+    const extras = extrasWithPanel("p28_uae_suggestions", [{ i: 0 }, { i: 1 }, { i: 2 }], titles);
+    const { slides } = buildSuggestionsFragment("UAE_SUGGESTIONS", "UAE_PROFILE", "ОАЭ", scoped, extras);
+    const page = slides.find((s) => s.slideId === "p28_uae_suggestions")!;
+    const status = page.content.statusNote ?? "";
+    // Статус про то, что на странице видно, и он не противоречит заголовку.
+    expect(status).toContain("Среди показанных строк негативных формулировок нет");
+    expect(page.title).toContain("негативных формулировок нет");
+    expect(status).not.toContain("1 негативный заголовок");
+  });
+
+  it("негатив на панели — статус называет его числом с панели", () => {
+    const scoped = scopedSurface("suggestions", [
+      { text: titles[0]!, decision: "SUBJECT_MATCH" },
+      { text: titles[1]!, decision: "SUBJECT_MATCH" },
+    ]);
+    const extras = extrasWithPanel(
+      "p28_uae_suggestions",
+      [{ i: 0, adverse: true }, { i: 1 }],
+      titles
+    );
+    const { slides } = buildSuggestionsFragment("UAE_SUGGESTIONS", "UAE_PROFILE", "ОАЭ", scoped, extras);
+    const page = slides.find((s) => s.slideId === "p28_uae_suggestions")!;
+    expect(page.content.statusNote).toContain("1 подсказка с негативной формулировкой");
+    expect(page.title).toContain("1 негативная формулировка");
   });
 });

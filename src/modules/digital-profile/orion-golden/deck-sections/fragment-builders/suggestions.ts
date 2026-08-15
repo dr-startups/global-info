@@ -13,10 +13,12 @@ import {
   buildPageEvidenceView,
   claimText,
   clampClientText,
+  composePageRowComposition,
   pageFindingBlocks,
   panelComposition,
   panelCompositionLine,
   panelRows,
+  panelStatusLine,
   visualSlide,
 } from "./shared";
 
@@ -65,12 +67,24 @@ export function buildSuggestionsFragment(
      * тёзках, и без этого они читаются как запросы о субъекте.
      */
     const shown = panelRows(slot.slotId, extras, scoped);
+    const panelStats = panelComposition(shown);
+    // Негатив в собранном наборе считается по строкам страницы целиком: если он
+    // есть, но на панель не попал, статусная строка скажет об этом отдельно —
+    // молча потерять его нельзя, а выдать за увиденное читателем тем более.
+    const collectedAdverse = composePageRowComposition(scoped, view.refs).adverseHeadlines;
     const panelBlocks: Partial<SlideBody> =
       shown.length > 0
         ? {
+            statusNote: panelStatusLine({
+              shownAdverse: panelStats.adverse,
+              collectedAdverse,
+              nounOne: "подсказка",
+              nounFew: "подсказки",
+              nounMany: "подсказок",
+            }),
             whatWasFound: clampClientText(
               panelCompositionLine({
-                composition: panelComposition(shown),
+                composition: panelStats,
                 collected: refs.length,
                 nounOne: "подсказка",
                 nounFew: "подсказки",
@@ -79,7 +93,7 @@ export function buildSuggestionsFragment(
               400
             ),
             whyItMatters: clampClientText(
-              sidebar.adverseRows.length > 0
+              panelStats.adverse > 0
                 ? "Негативные подсказки видны пользователю ещё до просмотра результатов: они формируют первое впечатление и подталкивают к поиску компрометирующих материалов."
                 : "Подсказки показывают, что чаще всего ищут о субъекте: негативных формулировок среди показанных строк нет.",
               320
@@ -92,8 +106,11 @@ export function buildSuggestionsFragment(
     // Заголовок называет вывод страницы: сколько подсказок и есть ли среди них
     // негативные. Прежде стояло название раздела, и читателю приходилось
     // искать этот же вывод в тексте под картинкой.
-    const shownCount = sidebar.visibleRows.length || suggestionLines.length;
-    const adverseCount = sidebar.adverseRows.length;
+    // Заголовок считает по тем же строкам, что и текст под ним: панель после
+    // склейки одинаковых строк, а не сырой перечень видимых элементов. Иначе
+    // «4 негативные формулировки» в заголовке спорят с «3» в описании.
+    const shownCount = shown.length || sidebar.visibleRows.length || suggestionLines.length;
+    const adverseCount = shown.length > 0 ? panelStats.adverse : sidebar.adverseRows.length;
     const verdictTitle =
       shownCount > 0
         ? `${slot.title}: ${
