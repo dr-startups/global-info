@@ -6,9 +6,11 @@
 import type { ReportDeckManifest, ReportSectionManifest, SectionPackV2 } from "./contracts";
 import { REQUIRED_SECTIONS } from "./contracts";
 import type { RendererSlide } from "./deck-assembler";
+import { isDataRowTemplate } from "./deck-assembler";
 import { normalizeEvidenceRef, regionMatches, type ScopedEvidenceIndex } from "./scoped-input";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import { scanDeckForInternalCodes } from "./internal-code-scan";
+import { quoteIntegrityProblems } from "./quote-integrity";
 
 /** Renderer templates that draw the analytical sidebar next to a visual. */
 const SIDEBAR_TEMPLATES = new Set([
@@ -270,6 +272,34 @@ export function validateAssembly(input: {
     }
   }
   checks.noMateriallyEmptyPages = materiallyEmptyPages === 0;
+
+  /*
+   * 4б. Цитата доходит до читателя целой.
+   *
+   * Отчёт цитирует источники дословно, и обрывок в кавычках — это уже не
+   * цитата, а наше утверждение неизвестного происхождения. На прогоне 14.08
+   * вычистка повторов оставила на странице `«ИП Юнусов Тимур Ильдарович
+   * зарегистрирован 25.12.2008.` — без закрывающей кавычки и без источника,
+   * который шёл следующим предложением.
+   *
+   * Ворота проверяют три вещи разом: кавычки закрыты, у цитаты назван источник,
+   * блок не кончается предлогом. Причина у них общая — текст режут где попало,
+   * — а признаки разные, поэтому названы отдельно в перечне нарушений.
+   */
+  let quoteIntegrityOk = true;
+  for (const slide of rendererSlides) {
+    // Страницы-перечни цитируют не источник, а поверхность: подсказка и
+    // связанный запрос стоят в кавычках, но источник у них один на всю
+    // страницу — поисковая система, и названа она в описании страницы.
+    if (isDataRowTemplate(templateBySlot.get(slide.slideKey) ?? "")) continue;
+    for (const bullet of slide.bullets ?? []) {
+      for (const problem of quoteIntegrityProblems(bullet)) {
+        quoteIntegrityOk = false;
+        issues.push(`${problem} on ${slide.slideKey}`);
+      }
+    }
+  }
+  checks.quotesWholeAndSourced = quoteIntegrityOk;
 
   // 5. Explicit page accounting: every page is a canonical base slot, a
   //    continuation, or an explained optional extra.

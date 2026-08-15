@@ -468,17 +468,29 @@ describe("canonical coverage and visual assets", () => {
     assert.doesNotMatch(blob, /на этом снимке/i);
     assert.match(blob, /недоступен/i);
     // Validation for the report-72 build (with assets) stays green.
+    const validation = validateAssembly({
+      manifest: result.manifest,
+      deckManifest: result.assembly.deckManifest,
+      rendererSlides: result.assembly.rendererSlides,
+      packs: result.packs,
+      bundle: inputs.mergedBundle,
+      baseObservationCountBefore: inputs.baseCountBefore,
+      baseObservationCountAfter: inputs.baseCountAfter,
+    });
+    assert.equal(validation.checks.canonicalBaseSlotCoverage, true);
+    /*
+     * Цитата доходит до читателя целой.
+     *
+     * Ворота проверяют закрытые кавычки, названный источник и отсутствие обрыва
+     * на предлоге. Проверка перечислена здесь поимённо: молчаливо исчезнувшие
+     * ворота выглядят точно так же, как ворота, которым нечего сказать.
+     */
     assert.equal(
-      validateAssembly({
-        manifest: result.manifest,
-        deckManifest: result.assembly.deckManifest,
-        rendererSlides: result.assembly.rendererSlides,
-        packs: result.packs,
-        bundle: inputs.mergedBundle,
-        baseObservationCountBefore: inputs.baseCountBefore,
-        baseObservationCountAfter: inputs.baseCountAfter,
-      }).checks.canonicalBaseSlotCoverage,
-      true
+      validation.checks.quotesWholeAndSourced,
+      true,
+      `цитаты в деке разорваны: ${validation.issues
+        .filter((i) => /quote|mid-phrase/i.test(i))
+        .join(" | ")}`
     );
   });
 });
