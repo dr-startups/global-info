@@ -16,6 +16,7 @@ import { validateSectionPack, type SectionValidationReport } from "./section-val
 import { buildReportSectionManifest } from "./section-manifest";
 import { assembleDeck, type DeckAssemblyResult, type RendererSlide } from "./deck-assembler";
 import { validateAssembly, type AssemblyValidationReport } from "./assembly-validation";
+import { buildLinkUsageTrace, linkUsageLogLine } from "./link-usage-trace";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import { getClientTextContract } from "../client/load-client-text-contract";
 import { reflowNarrativeParagraphs, reflowThemeBullet } from "./fragment-builders/shared";
@@ -158,6 +159,9 @@ export function runDeckBuild(input: {
         sourceDatasetId: ctx.sourceDatasetId,
         slides: assembly.rendererSlides,
         rejections: assembly.rejections,
+        // Что сняла вычистка повторов — чтобы укоротившуюся страницу было с чем
+        // сверить, а не только заметить, что она стала короче.
+        dedupRemovals: assembly.dedupRemovals,
       },
       null,
       2
@@ -187,6 +191,23 @@ export function runDeckBuild(input: {
     "utf8"
   );
   artifacts["assembly-validation-report.json"] = assemblyReportPath;
+
+  /*
+   * След «что сказала модель о ссылке → что дошло до отчёта».
+   *
+   * Между решением по прочитанной странице и напечатанной страницей лежит
+   * десяток отборов, и по готовому отчёту нельзя понять, почему ссылки в нём
+   * нет: её не прочитали, вывод понизили или цитату забраковали. След отвечает
+   * на это одной строкой на ссылку и живёт рядом с декой.
+   */
+  const usageTrace = buildLinkUsageTrace({
+    evidenceIndex: ctx.evidenceIndex,
+    slides: assembly.rendererSlides,
+  });
+  const usagePath = join(input.outputRoot, "link-usage-trace.json");
+  writeFileSync(usagePath, JSON.stringify(usageTrace, null, 2), "utf8");
+  artifacts["link-usage-trace.json"] = usagePath;
+  if (usageTrace.summary.total > 0) console.log(linkUsageLogLine(usageTrace));
 
   const buildLogPath = join(input.outputRoot, "section-build-log.json");
   writeFileSync(buildLogPath, JSON.stringify(buildLog, null, 2), "utf8");
