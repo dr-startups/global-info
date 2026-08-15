@@ -72,6 +72,25 @@ export type LinkVerdictInput = {
   page: LinkPageRead;
 };
 
+/**
+ * Тема решения, которую заведомо примет схема.
+ *
+ * Схема требует от темы минимум четыре знака, а тема непрочитанной страницы
+ * берётся из заголовка выдачи. Заголовок в один-три знака — «РБК», «МК», «ТВ» —
+ * давал тему короче минимума, и `parse` бросал прямо в разборе ссылок. Одна
+ * такая строка убивала весь прогон: кейс DPA-2026-0031 встал на
+ * CANONICAL_PREPARE_FAILED, не собрав ничего.
+ *
+ * Короткий заголовок — не ошибка данных, а обычная выдача. Значит, чинить надо
+ * не данные, а место, где они превращаются в тему.
+ */
+export const UNREAD_THEME_FALLBACK = "Страница не открылась";
+
+export function safeVerdictTheme(raw: string | undefined, fallback = UNREAD_THEME_FALLBACK): string {
+  const text = String(raw ?? "").trim().slice(0, 120);
+  return text.length >= 4 ? text : fallback;
+}
+
 /** Решение по непрочитанной странице: честное «не знаем», а не догадка. */
 export function unreadVerdict(
   input: LinkVerdictInput,
@@ -89,7 +108,7 @@ export function unreadVerdict(
     region: input.region,
     subjectMatch: "unclear",
     tone: "neutral",
-    theme: (input.serpTitle ?? "Страница не открылась").slice(0, 120) || "Страница не открылась",
+    theme: safeVerdictTheme(input.serpTitle),
     // Страницу не прочитали — тип берём по домену, если он очевиден.
     sourceType: sourceTypeFromDomain(input.domain),
     quotes: [],
@@ -147,7 +166,12 @@ export async function analyzeLinkPage(
     region: input.region,
     subjectMatch: body.subjectMatch,
     tone: body.tone,
-    theme: typeof body.theme === "string" ? body.theme.trim().slice(0, 120) : undefined,
+    // Короткая тема от модели не повод выбросить решение целиком: вместе с ним
+    // ушли бы тональность, принадлежность и цитаты, добытые чтением страницы.
+    theme: safeVerdictTheme(
+      typeof body.theme === "string" ? body.theme : undefined,
+      safeVerdictTheme(input.serpTitle)
+    ),
     sourceType:
       normalizeSourceType(typeof body.sourceType === "string" ? body.sourceType : undefined) ??
       sourceTypeFromDomain(input.domain),
@@ -191,7 +215,24 @@ export async function analyzeLinkPages(
     for (;;) {
       const i = next++;
       if (i >= inputs.length) return;
-      out[i] = await analyzeLinkPage(inputs[i]!, deps);
+      const item = inputs[i]!;
+      try {
+        out[i] = await analyzeLinkPage(item, deps);
+      } catch (err) {
+        /*
+         * Одна ссылка не роняет прогон.
+         *
+         * `Promise.all` доносит отказ любого разбора до самого верха, и стадия
+         * падала целиком: сто девятнадцать разобранных решений выбрасывались
+         * из-за сто двадцатого. Отчёт, собранный без одной ссылки, несравнимо
+         * лучше отчёта, не собранного вовсе, — а причина отказа остаётся в
+         * самом решении, а не теряется.
+         */
+        out[i] = unreadVerdict(item, {
+          failure: "analysis_failed",
+          detail: err instanceof Error ? err.message : "разбор ссылки не состоялся",
+        });
+      }
     }
   });
   await Promise.all(workers);

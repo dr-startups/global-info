@@ -1694,6 +1694,21 @@ async function stepPrepare(
     const message = err instanceof Error ? err.message : String(err);
     const code =
       err instanceof CanonicalPrepareBlockedError ? err.code : "CANONICAL_PREPARE_FAILED";
+    /*
+     * Провал прогона называется вслух, в логе.
+     *
+     * Отказ записывался в саму джобу и виден был только в интерфейсе. В логе
+     * при этом не появлялось ни строки: подборщик каждые пять секунд печатал
+     * «подобрано прогонов: 1», и упавший прогон выглядел точно так же, как
+     * идущий. Кейс DPA-2026-0031 простоял так больше получаса.
+     *
+     * Сообщение обрезано: разбор схемы приносит абзац JSON, а в логе нужен
+     * признак, по которому видно, куда смотреть.
+     */
+    console.error(
+      `[unified] прогон остановлен: кейс=${job.caseId} джоба=${job.unifiedJobId} ` +
+        `стадия=${job.stage} код=${code} — ${message.replace(/\s+/gu, " ").slice(0, 300)}`
+    );
     const enrichmentObs = await readUnifiedArtifact<{ enrichmentRunIds?: string[] }>(
       job.caseId,
       job.unifiedJobId,
