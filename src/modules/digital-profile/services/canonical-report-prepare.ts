@@ -85,6 +85,8 @@ export type CanonicalPrepareBlockerCode =
   | "STALE_ARTIFACT"
   | "SUBJECT_PROFILE_MISSING"
   | "ASSEMBLY_FAILED"
+  /** Текст сборки испорчен системно — отдавать клиенту нельзя. */
+  | "ASSEMBLY_QA_FAILED"
   | "REQUIRED_SECTION_FAILED"
   | "RENDER_FAILED"
   | "GPT_COPY_RESUME_INPUTS_MISSING"
@@ -671,6 +673,23 @@ export async function runCanonicalReportPrepare(
         `required sections failed: ${deck.manifest.requiredSectionsFailed.join(", ")}`
       );
     }
+    /*
+     * Ворота качества текста останавливают сборку — но только при системной
+     * поломке.
+     *
+     * Прежде проверки сборки не блокировали ничего: отчёт с `passed: false`
+     * уходил клиенту, и ворота были лампочкой. Блокировать по любому
+     * срабатыванию тоже нельзя — ложный случай остановил бы платный прогон на
+     * последнем шаге. Поэтому решает существенность: дефект, задевший три
+     * страницы и больше, означает поломку механизма.
+     */
+    const blocking = deck.assemblyValidation?.blocking ?? [];
+    if (blocking.length > 0) {
+      throw new CanonicalPrepareBlockedError(
+        "ASSEMBLY_QA_FAILED",
+        `качество текста сборки: ${blocking.join("; ")}`
+      );
+    }
 
     const presentSlots = new Set(
       deck.assembly.deckManifest.slides
@@ -996,6 +1015,23 @@ export async function runCanonicalReportPrepare(
       throw new CanonicalPrepareBlockedError(
         "REQUIRED_SECTION_FAILED",
         `required sections failed: ${deck.manifest.requiredSectionsFailed.join(", ")}`
+      );
+    }
+    /*
+     * Ворота качества текста останавливают сборку — но только при системной
+     * поломке.
+     *
+     * Прежде проверки сборки не блокировали ничего: отчёт с `passed: false`
+     * уходил клиенту, и ворота были лампочкой. Блокировать по любому
+     * срабатыванию тоже нельзя — ложный случай остановил бы платный прогон на
+     * последнем шаге. Поэтому решает существенность: дефект, задевший три
+     * страницы и больше, означает поломку механизма.
+     */
+    const blocking = deck.assemblyValidation?.blocking ?? [];
+    if (blocking.length > 0) {
+      throw new CanonicalPrepareBlockedError(
+        "ASSEMBLY_QA_FAILED",
+        `качество текста сборки: ${blocking.join("; ")}`
       );
     }
 

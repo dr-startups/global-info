@@ -26,9 +26,57 @@ export type AssemblyValidationReport = {
   passed: boolean;
   issues: string[];
   checks: Record<string, boolean>;
+  /**
+   * Проверки, из-за которых сборку нельзя отдавать клиенту.
+   *
+   * Раньше проверки качества текста не останавливали ничего: отчёт с
+   * `passed: false` уходил как есть, и ворота были лампочкой, а не воротами. Но
+   * и «любая непройденная проверка блокирует» не годится — на прогоне 73
+   * сборку остановило бы ложное срабатывание на адресе `leonid_mihelson`.
+   *
+   * Поэтому блокирует существенность, а не факт: единичный сомнительный случай
+   * записывается и живёт в разборе, а поломка, задевшая несколько страниц,
+   * означает, что сломан сам текстовый конвейер, — такую сборку клиент видеть
+   * не должен.
+   */
+  blocking: string[];
 };
 
+/**
+ * Со скольких задетых страниц дефект текста считается системным.
+ *
+ * Один спорный блок — вопрос к формулировке. Три и больше — вопрос к
+ * механизму: именно так выглядела вычистка повторов, оборвавшая цитаты сразу
+ * на нескольких страницах отчёта.
+ */
+export const SYSTEMIC_DEFECT_PAGES = 3;
+
 const RISK_ORDER: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
+
+/**
+ * Какие дефекты текста останавливают сборку.
+ *
+ * Отдельной функцией, чтобы порог можно было проверить в лоб, не собирая ради
+ * этого манифест с пакетами и находками.
+ */
+export function blockingIssues(input: {
+  quoteDefectSlides: ReadonlySet<string>;
+  codeSlides: ReadonlySet<string>;
+}): string[] {
+  const out: string[] = [];
+  const name = (s: ReadonlySet<string>): string => [...s].slice(0, 5).join(", ");
+  if (input.quoteDefectSlides.size >= SYSTEMIC_DEFECT_PAGES) {
+    out.push(
+      `цитаты разорваны на ${input.quoteDefectSlides.size} страницах: ${name(input.quoteDefectSlides)}`
+    );
+  }
+  if (input.codeSlides.size >= SYSTEMIC_DEFECT_PAGES) {
+    out.push(
+      `внутренние коды в клиентском тексте на ${input.codeSlides.size} страницах: ${name(input.codeSlides)}`
+    );
+  }
+  return out;
+}
 
 export function validateAssembly(input: {
   manifest: ReportSectionManifest;
@@ -287,6 +335,7 @@ export function validateAssembly(input: {
    * — а признаки разные, поэтому названы отдельно в перечне нарушений.
    */
   let quoteIntegrityOk = true;
+  const quoteDefectSlides = new Set<string>();
   for (const slide of rendererSlides) {
     // Страницы-перечни цитируют не источник, а поверхность: подсказка и
     // связанный запрос стоят в кавычках, но источник у них один на всю
@@ -295,6 +344,7 @@ export function validateAssembly(input: {
     for (const bullet of slide.bullets ?? []) {
       for (const problem of quoteIntegrityProblems(bullet)) {
         quoteIntegrityOk = false;
+        quoteDefectSlides.add(slide.slideKey);
         issues.push(`${problem} on ${slide.slideKey}`);
       }
     }
@@ -437,5 +487,18 @@ export function validateAssembly(input: {
   checks.sectionQaAllPassed = input.manifest.entries.every((e) => e.validationPassed);
   if (!checks.sectionQaAllPassed) issues.push("some manifest entries did not pass section QA");
 
-  return { passed: issues.length === 0, issues, checks };
+  /*
+   * Что останавливает сборку.
+   *
+   * Целость структуры проверяется раньше и роняет прогон сама
+   * (`ASSEMBLY_FAILED`). Здесь — качество текста, и блокирует оно по
+   * существенности: дефект, задевший несколько страниц, означает поломку
+   * механизма, а не спорную формулировку.
+   */
+  const blocking = blockingIssues({
+    quoteDefectSlides,
+    codeSlides: new Set(internalCodes.map((f) => f.slide)),
+  });
+
+  return { passed: issues.length === 0, issues, checks, blocking };
 }

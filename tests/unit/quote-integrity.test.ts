@@ -9,6 +9,10 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  SYSTEMIC_DEFECT_PAGES,
+  blockingIssues,
+} from "@/modules/digital-profile/orion-golden/deck-sections/assembly-validation";
+import {
   clampQuotedLine,
   closeDanglingQuote,
   quoteIntegrityProblems,
@@ -181,5 +185,39 @@ describe("вложенные кавычки внутри цитаты", () => {
     expect(quoteIntegrityProblems(bullet).some((p) => p.startsWith("quote without a source"))).toBe(
       true
     );
+  });
+});
+
+describe("ворота останавливают сборку по существенности", () => {
+  /**
+   * Прежде проверки сборки не блокировали ничего: отчёт с `passed: false` уходил
+   * клиенту. Блокировать по любому срабатыванию тоже нельзя — на прогоне 73
+   * платный прогон остановило бы ложное срабатывание на адресе.
+   */
+  it("порог назван числом, а не спрятан в условии", () => {
+    expect(SYSTEMIC_DEFECT_PAGES).toBe(3);
+  });
+
+  const pages = (n: number) => new Set(Array.from({ length: n }, (_, i) => `p${i + 1}`));
+
+  it("один дефект записывается, но сборку не валит", () => {
+    expect(blockingIssues({ quoteDefectSlides: pages(1), codeSlides: pages(0) })).toEqual([]);
+    expect(blockingIssues({ quoteDefectSlides: pages(2), codeSlides: pages(0) })).toEqual([]);
+  });
+
+  it("дефект на трёх страницах означает поломку механизма", () => {
+    const out = blockingIssues({ quoteDefectSlides: pages(3), codeSlides: pages(0) });
+    expect(out.some((b) => b.startsWith("цитаты разорваны"))).toBe(true);
+    expect(out[0]).toContain("p1, p2, p3");
+  });
+
+  it("внутренние коды считаются по тому же правилу", () => {
+    expect(blockingIssues({ quoteDefectSlides: pages(0), codeSlides: pages(2) })).toEqual([]);
+    const out = blockingIssues({ quoteDefectSlides: pages(0), codeSlides: pages(4) });
+    expect(out.some((b) => b.startsWith("внутренние коды"))).toBe(true);
+  });
+
+  it("целая сборка ничего не блокирует", () => {
+    expect(blockingIssues({ quoteDefectSlides: pages(0), codeSlides: pages(0) })).toEqual([]);
   });
 });
