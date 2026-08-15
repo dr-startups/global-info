@@ -10,6 +10,7 @@ import { slotsForFragment } from "../canonical-slots";
 import { pluralRu } from "../../analytics/finding-synthesizer";
 import type { FragmentBuildOutput, FragmentExtras, UncategorizedMaterialsExtras } from "./shared";
 import { looksLikeSurfaceBlockHeading } from "../../analytics/client-quote-hygiene";
+import { quoteForClaim } from "../../analytics/finding-synthesizer";
 import {
   bulletWithFindingId,
   claimText,
@@ -27,6 +28,17 @@ import {
   uniqueRefs,
   withContinuations,
 } from "./shared";
+
+/**
+ * Сколько знаков даётся заголовку-примеру.
+ *
+ * Восемьдесят резали «Dubai Free Zone filing lists Anders Holmström as UBO of
+ * Nordkap Capital affiliate» посередине — на слове «Capital». Теперь заголовок
+ * либо помещается целиком, либо не печатается вовсе, и бюджет подобран так,
+ * чтобы обычный заголовок выдачи помещался: строка примеров всё равно одна на
+ * три названия.
+ */
+const EXAMPLE_TITLE_BUDGET = 120;
 
 function uncategorizedBulletForRegion(
   regionKey: string,
@@ -48,15 +60,21 @@ function uncategorizedBulletForRegion(
     }
   }
   if (count === 0) return null;
-  // Примером материала не может быть подпись служебного блока выдачи:
-  // «Картинки по запросу "Юнусов Тимур Ильдарович"» — это надпись поисковика
-  // над плиткой изображений, у неё нет ни автора, ни содержания.
+  /*
+   * Пример материала — целая фраза, а не обрывок.
+   *
+   * Подпись служебного блока выдачи («Картинки по запросу "…"») материалом не
+   * является: у неё нет ни автора, ни содержания. Обрезанный поисковиком
+   * заголовок — тоже: в отчёте 73 строка примеров кончалась «Почетные граждане
+   * / Аппарат Губернатора Ямало-Ненецкого...», и читателю из неё не следует
+   * ничего. Правило то же, что и в блоках тем: целое или ничего.
+   */
   const titles = examples
-    .map((e) => e.title.trim())
+    .map((e) => quoteForClaim(e.title.trim(), EXAMPLE_TITLE_BUDGET))
     .filter((t) => Boolean(t) && !looksLikeSurfaceBlockHeading(t))
     .slice(0, 3);
   const examplesNote = titles.length
-    ? ` (примеры: ${titles.map((t) => clampClientText(t, 80)).join(" · ")})`
+    ? ` (примеры: ${titles.join(" · ")})`
     : "";
   return {
     bullet: `Другие материалы о субъекте: ${count}${examplesNote}`,

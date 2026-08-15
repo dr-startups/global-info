@@ -14,6 +14,7 @@ import {
   pageQuoteForClient,
 } from "@/modules/digital-profile/orion-golden/analytics/client-quote-hygiene";
 import { findInternalCodes } from "@/modules/digital-profile/orion-golden/deck-sections/internal-code-scan";
+import { localizedThemedClaim } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
 import {
   isWeakExampleTitle,
   quoteForClaim,
@@ -100,5 +101,59 @@ describe("машинные имена наборов данных", () => {
       findInternalCodes("Всего по теме: 1 материал. [finding-criminal_legal-subject_match-ae9b4bfe]")
     ).toEqual([]);
     expect(findInternalCodes("finding-pep_rca_watchlist-subject_match-dfa7da39")).toEqual([]);
+  });
+});
+
+describe("адрес в клиентском тексте кодом не считается", () => {
+  /**
+   * Прогон 73: проверка сборки объявила `leonid_mihelson` внутренним кодом. Это
+   * часть адреса `banki.ru/news/story/person/leonid_mihelson` в колонке ссылок
+   * таблицы выдачи — подчёркивание там законно, это путь к материалу.
+   */
+  it("подчёркивание в пути адреса законно", () => {
+    expect(findInternalCodes("banki.ru/news/story/person/leonid_mihelson")).toEqual([]);
+    expect(
+      findInternalCodes("https://sanctions.lursoft.lv/person/leonid_viktorovich_mikhelson")
+    ).toEqual([]);
+  });
+
+  it("имя набора рядом с адресом всё равно ловится", () => {
+    expect(
+      findInternalCodes("источники: ext_gb_coh_psc — см. opensanctions.org/entities/Q1")
+    ).toEqual(["ext_gb_coh_psc"]);
+  });
+});
+
+describe("проверка Википедии — не публикация", () => {
+  /**
+   * Прогон 73: «Wikipedia (en): статья не найдена» стояло в кавычках
+   * доказательством темы «Деловой профиль». Заголовок у такой записи собираем
+   * мы сами, и отсутствие статьи было предъявлено как найденный материал.
+   */
+  it("запись проверки не попадает в цитаты темы", () => {
+    const finding = {
+      findingId: "finding-business_profile-ambiguous-test",
+      theme: "Деловой профиль",
+      claim: "Найдены материалы делового и биографического профиля:\nВсего по теме: 1 материал.",
+      riskLevel: "low",
+      regions: ["RU", "UAE"],
+      evidenceRefs: ["inventory:wiki"],
+      sourceDomains: ["en.wikipedia.org"],
+    } as unknown as Parameters<typeof localizedThemedClaim>[0];
+    const scoped = {
+      findings: [finding],
+      surfaceUnits: [],
+      evidenceIndex: {
+        "inventory:wiki": {
+          title: "Wikipedia (en): статья не найдена",
+          domain: "en.wikipedia.org",
+          region: "RU",
+          kind: "wikipedia_check",
+        },
+      },
+      scope: { regions: ["RU"] },
+      metricSnapshot: {},
+    } as unknown as Parameters<typeof localizedThemedClaim>[1];
+    expect(localizedThemedClaim(finding, scoped)).not.toContain("статья не найдена");
   });
 });

@@ -13,6 +13,7 @@ import {
 } from "../contracts/composed-client-summary";
 import { INTERNAL_CLIENT_TOKEN_RE } from "./client-summary-pack-builder";
 import { looksLikeSearchQuery } from "./client-quote-hygiene";
+import { quoteForClaim } from "./finding-synthesizer";
 import { clientSafeDomain } from "../../services/composite-serp-merge";
 
 /** Lead block keeps this many theme sections; the rest remain full text as continuation. */
@@ -139,6 +140,17 @@ function articleSentence(
   const key = title.trim().toLowerCase();
   if (alreadyUsedTitles.has(key)) return null;
   alreadyUsedTitles.add(key);
+  /*
+   * Обрезанный поисковиком заголовок в кавычки не берётся.
+   *
+   * В резюме для руководства — на третьей странице отчёта — стояло «Михельсон
+   * Леонид Викторович (ИНН 773600432474): в каких...». Многоточие поисковика
+   * снималось, и обрывок выглядел законченной цитатой; читатель первым делом
+   * видит фразу, из которой ничего не следует. Правило то же, что и в блоках
+   * тем: цитируем целое или не цитируем вовсе — описание темы рядом остаётся.
+   */
+  const quotable = quoteForClaim(title, 220);
+  if (!quotable) return finishSentence(description);
   // Prefer concrete description when it already names title/domain.
   if (description.includes(title) || description.includes(domain)) {
     return finishSentence(description);
@@ -152,7 +164,7 @@ function articleSentence(
     );
   }
   return finishSentence(
-    `В выборке присутствует материал «${title}»${sourceSuffix(domain)}. ${description}`
+    `В выборке присутствует материал «${quotable}»${sourceSuffix(domain)}. ${description}`
   );
 }
 

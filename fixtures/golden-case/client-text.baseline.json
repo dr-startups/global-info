@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v1",
   "slideCount": 49,
-  "totalChars": 42863,
+  "totalChars": 42873,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -852,7 +852,7 @@
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
         "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Контекст: Anders Holmström referenced in UAE PEP/RCA compliance screening» — источник abudhabi-capital-news.ae «Sanctions screening vendor flags Anders Holmström for secondary review» — источник emirates-ledger.ae Где видно: abudhabi-capital-news.ae, emirates-ledger.ae. Всего по теме: 14 материалов, с негативным контекстом — 10.",
-        "Другие материалы о субъекте: 14 (примеры: Anders Holmström expands Nordkap Capital into Dubai real-estate investment · Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital · Nordkap Capital opens DIFC representative office under Anders Holmström)",
+        "Другие материалы о субъекте: 14 (примеры: Anders Holmström expands Nordkap Capital into Dubai real-estate investment · Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital affiliate · Nordkap Capital opens DIFC representative office under Anders Holmström)",
         "Материалы, вероятно относящиеся к субъекту: 3 — пока не включаем в подтверждённый итог до уточнения идентификации."
       ]
     },

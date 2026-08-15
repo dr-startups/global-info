@@ -190,3 +190,58 @@ describe("точка не всегда конец предложения", () =>
     ).toBe("The owner turned $100M into $1.4B in four years.");
   });
 });
+
+describe("цитата со страницы сильнее любого заголовка", () => {
+  /**
+   * Прогон 73: блоки тем напечатали 7 цитат со страниц и 18 заголовков, и
+   * заголовки оказались негодные — «Leonid Mikhelson - OpenSanctions», «Л
+   * михельсон, кто его жена?». У двадцати одной такой ссылки годная цитата со
+   * страницы была: вес 6 против «до 10» у заголовка с попаданием в ключевые
+   * слова темы означал, что заголовок обгоняет проверенное предложение.
+   */
+  const FINDING = {
+    findingId: "finding-pep_rca_watchlist-subject_match-test",
+    theme: "PEP / RCA / watchlist-сигналы",
+    claim:
+      "Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA):\nВсего по теме: 2 материала.",
+    riskLevel: "high",
+    regions: ["RU", "UAE"],
+    evidenceRefs: ["inventory:keyword-title", "inventory:page-quote"],
+    sourceDomains: ["opensanctions.org", "fr.wikipedia.org"],
+  } as unknown as Finding;
+
+  const scoped = {
+    findings: [FINDING],
+    surfaceUnits: [],
+    evidenceIndex: {
+      // Заголовок бьёт прямо в ключевые слова темы, но ничего не утверждает.
+      "inventory:keyword-title": {
+        title: "Leonid Mikhelson - Sanctions record - OpenSanctions",
+        domain: "opensanctions.org",
+        region: "RU",
+      },
+      // Страница прочитана, предложение целое и по делу.
+      "inventory:page-quote": {
+        title: "Leonid Mikhelson",
+        domain: "fr.wikipedia.org",
+        region: "RU",
+        pageQuote:
+          "Son nom est cite en novembre 2017 dans les revelations des Paradise Papers concernant des avoirs offshore",
+      },
+    },
+    scope: { regions: ["RU"] },
+    metricSnapshot: {},
+  } as unknown as ScopedFragmentInput;
+
+  it("страница цитируется первой, даже когда заголовок бьёт в ключевые слова", () => {
+    const claim = localizedThemedClaim(FINDING, scoped);
+    const first = claim.split("\n").find((l) => l.startsWith("«") && l.includes("источник"));
+    expect(first).toContain("Paradise Papers");
+  });
+
+  it("голое имя с ярлыком площадки цитатой не становится вперёд страницы", () => {
+    const claim = localizedThemedClaim(FINDING, scoped);
+    const lines = claim.split("\n").filter((l) => l.startsWith("«") && l.includes("источник"));
+    expect(lines[0]).not.toContain("OpenSanctions");
+  });
+});
