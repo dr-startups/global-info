@@ -392,8 +392,27 @@ export function buildSerpFragment(
     // A row is marked when its evidence backs an adverse finding OR its own
     // title carries an adverse pattern (sanctions/criminal/court wording) —
     // clearly negative rows must never show a green "Нейтральный" badge.
+    /*
+     * Красная метка ставится по самой странице, а не по её теме.
+     *
+     * Строка красилась, если ссылка входит в доказательства любой негативной
+     * находки, — независимо от того, что показала прочитанная страница. В
+     * отчёте 72 из двенадцати строк первой таблицы семь оказались
+     * «Нежелательными», и это биографии: «Дети Алишера Усманова: есть ли у него
+     * дети», «Биография Алишера Бурхановича Усманова». Две страницы модель
+     * прямо признала благоприятными — и они всё равно были красными.
+     *
+     * Решение по прочитанной странице сильнее: она читалась целиком, а
+     * принадлежность к теме и слова в заголовке — лишь признаки.
+     */
     const adverse = group.refs.some((ref) => {
       const ev = scoped.evidenceIndex[ref] ?? {};
+      // Решение по прочитанной странице действует в обе стороны: нейтральную и
+      // благоприятную оно снимает с красной метки, нежелательную — ставит.
+      // Вывод «нежелательно» без подтверждённой цитаты сюда не доходит: его
+      // понижает `requireQuotedAdverse` ещё в аудите решений.
+      if (ev.readVerdictTone === "neutral" || ev.readVerdictTone === "supportive") return false;
+      if (ev.readVerdictTone === "adverse") return true;
       return (
         ev.adverse === true ||
         adverseRefSet.has(ref) ||

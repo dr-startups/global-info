@@ -142,3 +142,45 @@ describe("ТОП-20 без дыр в нумерации", () => {
     expect(printed).toEqual(["Первый", "Второй"]);
   });
 });
+
+describe("оценка строки берётся у прочитанной страницы", () => {
+  /**
+   * Отчёт 72: из двенадцати строк первой таблицы семь были «Нежелательными», и
+   * это биографии. Строка красилась, если ссылка входит в доказательства любой
+   * негативной находки, — независимо от того, что показала сама страница. Две
+   * страницы модель прямо признала благоприятными, и они всё равно были
+   * красными.
+   */
+  const RATING_COL = SERP_TABLE_HEADERS.indexOf("Оценка");
+
+  function scopedWithTone(tone: string | undefined, title: string): ScopedFragmentInput {
+    const scoped = scopedSerp([{ rank: 1, title, url: "https://svpressa.ru/1", query: QUERY }]);
+    const e = scoped.evidenceIndex["inventory:s0"] as {
+      adverse?: boolean;
+      readVerdictTone?: string;
+    };
+    // Заголовок несёт слово «суд» — словарь красит такую строку сам.
+    if (tone) e.readVerdictTone = tone;
+    return scoped;
+  }
+
+  it("страница, признанная благоприятной, красной не становится", () => {
+    const rows = tableRows(scopedWithTone("supportive", "Биография: суд признал дело сфабрикованным"));
+    expect(rows[0]![RATING_COL]).not.toBe("Нежелательный");
+  });
+
+  it("нейтральная — тоже", () => {
+    const rows = tableRows(scopedWithTone("neutral", "Биография: суд признал дело сфабрикованным"));
+    expect(rows[0]![RATING_COL]).not.toBe("Нежелательный");
+  });
+
+  it("непрочитанная страница по-прежнему судится по заголовку", () => {
+    const rows = tableRows(scopedWithTone(undefined, "Суд арестовал активы предпринимателя"));
+    expect(rows[0]![RATING_COL]).toBe("Нежелательный");
+  });
+
+  it("страница, признанная нежелательной, остаётся красной", () => {
+    const rows = tableRows(scopedWithTone("adverse", "Нейтрально звучащий заголовок"));
+    expect(rows[0]![RATING_COL]).toBe("Нежелательный");
+  });
+});
