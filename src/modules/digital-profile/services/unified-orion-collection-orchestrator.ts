@@ -803,6 +803,15 @@ export async function pumpResumableUnifiedCollections(deps: UnifiedOrchestratorD
 /** Сколько джоба считается «в работе» без признаков жизни. */
 export const JOB_LEASE_MS = 120_000;
 
+/**
+ * Предельный возраст прогона. Дольше — он не жив, а висит.
+ *
+ * Самое долгое законное ожидание — обогащение Arsenkin, и оно измеряется
+ * десятками минут. Шесть часов дают запас на порядок и при этом не дают
+ * мёртвой джобе занимать подборщик вечно.
+ */
+export const UNIFIED_RUN_MAX_MS = 6 * 60 * 60 * 1000;
+
 /** Через сколько лиза продлевается: треть срока — запас на две осечки. */
 export const JOB_LEASE_HEARTBEAT_MS = Math.floor(JOB_LEASE_MS / 3);
 
@@ -835,6 +844,37 @@ export async function runUnifiedCollectionTick(
 
   try {
     let job = claimed;
+    /*
+     * Прогон, идущий шестой час, мёртв — и его надо закрыть, а не опрашивать
+     * вечно.
+     *
+     * Подборщик берёт джобы в активных стадиях каждые пять секунд. Джоба,
+     * застрявшая в такой стадии, остаётся в выборке навсегда: в логе вторые
+     * сутки шло «подобрано прогонов: 1» от кейса, который никуда не двигался.
+     * Вреда от него мало, но признак «работа идёт» он делает бессмысленным — и
+     * оператор не видит, что прогон давно не жив.
+     *
+     * Шесть часов заведомо больше любого законного ожидания: самое долгое —
+     * обогащение Arsenkin, и оно измеряется десятками минут.
+     */
+    const startedMs = job.startedAt ? Date.parse(job.startedAt) : NaN;
+    const nowMs = deps.now?.().getTime() ?? Date.now();
+    const ageMs = Number.isFinite(startedMs) ? nowMs - startedMs : 0;
+    if (ageMs > UNIFIED_RUN_MAX_MS) {
+      console.error(
+        `[unified] прогон остановлен по возрасту: кейс=${job.caseId} джоба=${job.unifiedJobId} ` +
+          `стадия=${job.stage} возраст=${Math.round(ageMs / 60000)} мин`
+      );
+      return await patchUnifiedCollectionJob(caseId, {
+        stage: "FAILED_TERMINAL",
+        status: "FAILED",
+        lastError:
+          "Прогон не продвигался дольше шести часов и остановлен. Запустите сбор заново — данные предыдущих этапов сохранены.",
+        lastErrorCode: "STALE_NO_PROGRESS",
+        completedAt: new Date().toISOString(),
+        warnings: [...job.warnings, "STALE_NO_PROGRESS"],
+      });
+    }
     if (job.cancelRequested) {
       return await patchUnifiedCollectionJob(caseId, {
         stage: "CANCELLED",
@@ -1724,6 +1764,8 @@ async function stepPrepare(
     const isAssemblyFailure =
       code === "ASSEMBLY_FAILED" ||
       code === "REQUIRED_SECTION_FAILED" ||
+      // Испорченный текст сборки чинится пересборкой: данные сбора целы.
+      code === "ASSEMBLY_QA_FAILED" ||
       /required sections failed/i.test(message);
     const assemblySparse = isAssemblyFailure && linkageIncomplete;
 
