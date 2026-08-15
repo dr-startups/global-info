@@ -62,6 +62,16 @@ export type CompositeObservation = {
    */
   ranksByProvider?: Record<string, number>;
   /**
+   * Чья позиция записана в `rank` — имя провайдера из `ranksByProvider`.
+   *
+   * Таблица ТОП-20 отчёта имеет право печатать только позиции родного
+   * поисковика: список Яндекса — из выдачи Яндекса, список Google — из
+   * Serper. Обогатитель здесь не участвует — обогащать в списке выдачи
+   * нечего, а его собственная нумерация (без спецблоков) дырявит таблицу
+   * чужими местами.
+   */
+  rankSource?: string;
+  /**
    * Назначение запроса из плана (`subject_lookup`, `adverse_lookup`, …).
    * Нужно, чтобы отличать выдачу по имени субъекта от целевых проб.
    */
@@ -126,16 +136,22 @@ export function rankInOneScale(row: {
   rank?: number;
   primaryProvider?: string;
   ranksByProvider?: Record<string, number>;
-}): number | undefined {
+}): { rank: number; source: string } | undefined {
   const ranks = row.ranksByProvider ?? {};
   const isEngine = (p: string): boolean => /yandex|serper|google/i.test(p);
   const primary = row.primaryProvider ?? "";
-  if (primary && typeof ranks[primary] === "number") return ranks[primary];
+  if (primary && typeof ranks[primary] === "number") {
+    return { rank: ranks[primary], source: primary };
+  }
   const engine = Object.entries(ranks).find(([p]) => isEngine(p));
-  if (engine) return engine[1];
-  const any = Object.values(ranks);
-  if (any.length > 0) return Math.min(...any);
-  return row.rank;
+  if (engine) return { rank: engine[1], source: engine[0] };
+  const entries = Object.entries(ranks);
+  if (entries.length > 0) {
+    const best = entries.reduce((a, b) => (b[1] < a[1] ? b : a));
+    return { rank: best[1], source: best[0] };
+  }
+  // Строка до разложения по провайдерам: источник позиции неизвестен.
+  return typeof row.rank === "number" ? { rank: row.rank, source: "unknown" } : undefined;
 }
 
 export function isMockClientDomain(domain: string | null | undefined): boolean {
@@ -656,7 +672,9 @@ export async function mergeCompositeSerp(input: {
     if (row.providers.includes("yandex") || row.providers.includes("serper")) {
       row.primaryProvider = row.providers.includes("yandex") ? "yandex" : "serper";
     }
-    row.rank = rankInOneScale(row);
+    const scaled = rankInOneScale(row);
+    row.rank = scaled?.rank;
+    row.rankSource = scaled?.source;
   }
 
   const observations = [...map.values()];

@@ -22,7 +22,7 @@ describe("позиция берётся у поисковика, котором�
         primaryProvider: "yandex",
         ranksByProvider: { yandex: 2, arsenkin: 1 },
       })
-    ).toBe(2);
+    ).toEqual({ rank: 2, source: "yandex" });
   });
 
   it("обогатитель не задаёт позицию, если поисковик её сообщил", () => {
@@ -31,21 +31,28 @@ describe("позиция берётся у поисковика, котором�
         primaryProvider: "yandex",
         ranksByProvider: { arsenkin: 1, serper: 7 },
       })
-    ).toBe(7);
+    ).toEqual({ rank: 7, source: "serper" });
   });
 
   it("без основного поисковика берётся любой другой поисковик", () => {
-    expect(rankInOneScale({ ranksByProvider: { arsenkin: 3, serper: 11 } })).toBe(11);
+    expect(rankInOneScale({ ranksByProvider: { arsenkin: 3, serper: 11 } })).toEqual({
+      rank: 11,
+      source: "serper",
+    });
   });
 
-  it("набор данных от одного обогатителя таблицу не теряет", () => {
+  it("набор данных от одного обогатителя таблицу не теряет — и честно назван", () => {
     // Старые прогоны собирались одним Arsenkin: отбросить его позицию значит
-    // остаться вовсе без нумерации.
-    expect(rankInOneScale({ ranksByProvider: { arsenkin: 4 } })).toBe(4);
+    // остаться вовсе без нумерации. Источник при этом записан — таблица сама
+    // решит, печатать ли такую позицию.
+    expect(rankInOneScale({ ranksByProvider: { arsenkin: 4 } })).toEqual({
+      rank: 4,
+      source: "arsenkin",
+    });
   });
 
-  it("без разложенных позиций остаётся то, что было", () => {
-    expect(rankInOneScale({ rank: 5 })).toBe(5);
+  it("без разложенных позиций остаётся то, что было, с неизвестным источником", () => {
+    expect(rankInOneScale({ rank: 5 })).toEqual({ rank: 5, source: "unknown" });
     expect(rankInOneScale({})).toBeUndefined();
   });
 
@@ -56,8 +63,9 @@ describe("позиция берётся у поисковика, котором�
       primaryProvider: "yandex",
       ranksByProvider: { yandex: i + 1, ...(i % 3 === 0 ? { arsenkin: Math.max(1, i) } : {}) },
     }));
-    const ranks = rows.map((r) => rankInOneScale(r));
+    const ranks = rows.map((r) => rankInOneScale(r)?.rank);
     expect(new Set(ranks).size).toBe(20);
     expect(ranks).toEqual(Array.from({ length: 20 }, (_, i) => i + 1));
+    for (const r of rows) expect(rankInOneScale(r)?.source).toBe("yandex");
   });
 });

@@ -13,6 +13,13 @@ import { Prisma, SearchEngine } from "@prisma/client";
 import { prisma } from "@/server/prisma/client";
 import { externalGoogleSerpProvider } from "../providers/external-google-serp-provider";
 import { providerConfig } from "../providers/config";
+/**
+ * Глубина аудита выдачи. Одно число на весь конвейер: столько же обещает
+ * клиенту таблица ТОП-20 (`SERP_TABLE_TOP_N`). Импортировать саму константу
+ * деки отсюда нельзя — сервис сбора не должен зависеть от слоя отчёта, — но
+ * тест сверяет оба числа между собой.
+ */
+export const SERP_AUDIT_DEPTH = 20;
 import {
   SUBJECT_QUERY_LIMIT,
   buildSubjectQuerySet,
@@ -252,7 +259,7 @@ async function runRegionOrganic(
   const limit = Math.max(
     providerConfig.google.resultsPerQuery,
     providerConfig.yandex.resultsPerQuery,
-    20
+    SERP_AUDIT_DEPTH
   );
   const runtime = resolveRuntimeStrategy({ mode: runtimeMode, requestedBy: runtimeMode ? "request" : "default" });
   const allowYandex = runtime.mode !== "mock_only" && runtime.steps.some((s) => s.providerId === "yandex");
@@ -332,7 +339,18 @@ async function runRegionSurfaces(
     return { surfaces: [], googleStatus: "NOT_CONFIGURED" };
   }
 
-  const limit = Math.min(20, providerConfig.google.resultsPerQuery);
+  /*
+   * Глубина аудита — не настройка провайдера.
+   *
+   * Здесь стояло `min(20, resultsPerQuery)`: при умолчании в десять результатов
+   * Serper собирал ТОП-10, и обе Google-таблицы отчёта — Россия и ОАЭ —
+   * показывали десять строк там, где аудит обещает двадцать. Дыру закрывал
+   * Arsenkin со своей нумерацией, и в таблице появлялись чужие позиции.
+   *
+   * Аудит обещает ТОП-20, значит запрос обязан просить не меньше двадцати:
+   * `resultsPerQuery` остаётся способом попросить БОЛЬШЕ, но не меньше.
+   */
+  const limit = Math.max(SERP_AUDIT_DEPTH, providerConfig.google.resultsPerQuery);
   const all: SearchSurfaceInput[] = [];
   let anySuccess = false;
 

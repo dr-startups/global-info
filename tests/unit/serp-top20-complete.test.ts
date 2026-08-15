@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import {
   OTHER_SUBJECT_LABEL,
   SERP_TABLE_HEADERS,
+  SERP_TABLE_TOP_N,
   buildSerpFragment,
 } from "@/modules/digital-profile/orion-golden/deck-sections/fragment-builders/serp";
 import type { ScopedFragmentInput } from "@/modules/digital-profile/orion-golden/deck-sections/scoped-input";
@@ -182,5 +183,53 @@ describe("оценка строки берётся у прочитанной с�
   it("страница, признанная нежелательной, остаётся красной", () => {
     const rows = tableRows(scopedWithTone("adverse", "Нейтрально звучащий заголовок"));
     expect(rows[0]![RATING_COL]).toBe("Нежелательный");
+  });
+});
+
+describe("списки ТОП-20 — только из выдачи родного поисковика", () => {
+  /**
+   * Список Яндекса собирается из выдачи Яндекса, список Google — из Serper.
+   * Обогатитель в списках не участвует: его нумерация без спецблоков дырявит
+   * таблицу чужими местами. Отчёт 75: «Россия — Google» показала шесть строк
+   * с дырами из позиций Arsenkin при ровной нумерации Serper тех же запросов.
+   */
+  function scopedWithSources(
+    rows: Array<Row & { rankSource?: string }>
+  ): ScopedFragmentInput {
+    const scoped = scopedSerp(rows);
+    rows.forEach((r, i) => {
+      if (r.rankSource) {
+        (scoped.evidenceIndex[`inventory:s${i}`] as { rankSource?: string }).rankSource =
+          r.rankSource;
+      }
+    });
+    return scoped;
+  }
+
+  it("позиция от обогатителя в таблицу не попадает", () => {
+    const rows = [
+      { rank: 1, title: "Родной первый", url: "https://a.ru/1", query: QUERY, rankSource: "yandex" },
+      { rank: 2, title: "Чужая нумерация", url: "https://b.ru/2", query: QUERY, rankSource: "arsenkin" },
+      { rank: 3, title: "Родной третий", url: "https://c.ru/3", query: QUERY, rankSource: "yandex" },
+    ];
+    const printed = tableRows(scopedWithSources(rows));
+    expect(printed.map((r) => r[2])).toEqual(["Родной первый", "Родной третий"]);
+  });
+
+  it("старый набор без источника позиции таблицу не теряет", () => {
+    const rows = [
+      { rank: 1, title: "Первый", url: "https://a.ru/1", query: QUERY },
+      { rank: 2, title: "Второй", url: "https://b.ru/2", query: QUERY, rankSource: "unknown" },
+    ];
+    expect(tableRows(scopedWithSources(rows)).map((r) => r[0])).toEqual(["1", "2"]);
+  });
+});
+
+describe("глубина аудита одна на сбор и на отчёт", () => {
+  it("сбор Serper обязан просить не меньше, чем обещает таблица", async () => {
+    const { SERP_AUDIT_DEPTH } = await import(
+      "@/modules/digital-profile/services/orion-search-profile-service"
+    );
+    expect(SERP_AUDIT_DEPTH).toBe(SERP_TABLE_TOP_N);
   });
 });

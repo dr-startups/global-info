@@ -35,6 +35,8 @@ type CompositeObservationRow = {
   domain?: string;
   /** Позиция в выдаче, если поисковик её сообщил. */
   rank?: number;
+  /** Чья позиция записана в `rank` (yandex / serper / arsenkin / unknown). */
+  rankSource?: string;
   /** Запрос, по которому материал показался, и его назначение из плана. */
   query?: string;
   queryPurpose?: string;
@@ -399,6 +401,14 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           typeof obs.rank === "number"
             ? Math.min(obs.rank, evidenceIndex[ref]?.rank ?? obs.rank)
             : evidenceIndex[ref]?.rank,
+        // Источник позиции едет вместе с ней: таблица ТОП-20 печатает только
+        // позиции родного поисковика, и без этого признака ей не отличить
+        // нумерацию Яндекса от нумерации обогатителя.
+        rankSource:
+          typeof obs.rank === "number" &&
+          obs.rank <= (evidenceIndex[ref]?.rank ?? Number.MAX_SAFE_INTEGER)
+            ? obs.rankSource ?? evidenceIndex[ref]?.rankSource
+            : evidenceIndex[ref]?.rankSource,
         // Запрос запоминается первый: материал мог показаться по нескольким,
         // и подпись колонки берётся у того, где он виден выше (строки идут в
         // порядке лучшей позиции).

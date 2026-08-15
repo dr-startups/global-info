@@ -294,7 +294,19 @@ export function snippetToClientHeadline(snippet: string): string {
  * Never publish «…visa over» / «…из-за» / «…Фамилии,».
  */
 export function quoteForClaim(title: string, budget = 220): string {
-  const raw = String(title ?? "").trim();
+  /*
+   * Многоточие посреди заголовка — тот же обрыв, что и в конце.
+   *
+   * Поисковик режет заголовок и приклеивает подпись издания: «Геннадий
+   * Тимченко: биография предпринимателя... - Новости Mail». Признак обрыва
+   * ловил многоточие только в конце строки, и такой заголовок проходил как
+   * целый — в отчёте 75 он стоял в резюме для руководства и в матрице рисков.
+   * Всё, что идёт после многоточия, — подпись, а не содержание: отрезаем её и
+   * дальше разбираем строку как обычный обрезанный заголовок.
+   */
+  const raw = String(title ?? "")
+    .trim()
+    .replace(/(\.\.\.|…)\s*[-–—|·]\s*[^-–—|·]{1,40}$/u, "$1");
   const t = cleanExampleTitle(raw);
   if (!t || t.length < 12 || hasDanglingTail(t) || isIncompleteClientQuote(t)) return "";
   // Идентификаторы наборов данных — не слова источника: «…источники:
@@ -302,6 +314,9 @@ export function quoteForClaim(title: string, budget = 220): string {
   if (looksLikeMachineDump(t)) return "";
   // SERP «…» titles: keep only when clean recovered a complete sentence.
   if (SERP_TRUNCATED_RE.test(raw) && !/[.!?»]$/u.test(t)) return "";
+  // Многоточие уцелело внутри строки после чистки — заголовок разорван так,
+  // что целого предложения из него не собрать.
+  if (/(\.\.\.|…)/u.test(t)) return "";
   if (t.length <= budget) return t;
   const slice = t.slice(0, budget);
   const cut = Math.max(
@@ -412,7 +427,20 @@ export function scoreExampleForTheme(item: RawInventoryItem, theme: ThemeDef): n
  * Тема при этом не пропадает: без цитат утверждение собирается по числу
  * материалов и доменам, а сами поверхности показываются в своих разделах.
  */
-const NON_QUOTABLE_EVIDENCE_TYPES = new Set(["ai_answer", "suggestion", "related_query"]);
+const NON_QUOTABLE_EVIDENCE_TYPES = new Set([
+  "ai_answer",
+  "suggestion",
+  "related_query",
+  /*
+   * Проверка Википедии — наш результат, а не публикация.
+   *
+   * У записи без статьи заголовок собираем мы сами: «Wikipedia (en): статья не
+   * найдена». В отчётах 73 и 75 эта строка стояла в кавычках доказательством
+   * темы «Деловой профиль» — отсутствие статьи предъявлялось как найденный
+   * материал.
+   */
+  "wikipedia_check",
+]);
 
 export function resolveExampleQuote(
   item: RawInventoryItem,

@@ -300,8 +300,32 @@ export function buildSerpFragment(
    * и в таблице появлялись две первых позиции и четыре вторых. В выдаче по
    * одному запросу позиция уникальна, и таблица обязана это сохранять.
    */
-  const rankInQuery = (group: { refs: string[] }, query: string | null): number => {
+  /*
+   * Список ТОП-20 — только из выдачи родного поисковика.
+   *
+   * Список Яндекса собирается из выдачи Яндекса, список Google — из Serper.
+   * Обогатитель (Arsenkin) в списках не участвует: обогащать в перечне выдачи
+   * нечего, а его собственная нумерация — без спецблоков — дырявит таблицу
+   * чужими местами. В отчёте 75 таблица «Россия — Google» показала шесть строк
+   * с дырами именно из его позиций, при том что Serper для тех же запросов
+   * отдал ровную нумерацию.
+   *
+   * Позиция без названного источника (старые наборы) остаётся допустимой:
+   * иначе прогоны, собранные до появления признака, потеряли бы таблицы.
+   */
+  const ENGINE_RANK_SOURCE: Record<string, RegExp> = {
+    YANDEX: /yandex/i,
+    GOOGLE: /serper|google/i,
+  };
+  const rankFromOwnEngine = (ref: string, engine: string): boolean => {
+    const src = scoped.evidenceIndex[ref]?.rankSource;
+    if (!src || src === "unknown") return true;
+    const own = ENGINE_RANK_SOURCE[engine];
+    return own ? own.test(src) : true;
+  };
+  const rankInQuery = (group: { refs: string[] }, query: string | null, engine: string): number => {
     const rankOf = (ref: string): number | undefined => {
+      if (!rankFromOwnEngine(ref, engine)) return undefined;
       const r = scoped.evidenceIndex[ref]?.rank;
       return typeof r === "number" && r > 0 ? r : undefined;
     };
@@ -364,7 +388,7 @@ export function buildSerpFragment(
       const scopedGroups = groups.filter((g) => groupInQuery(g, query));
       const ranked = dropDuplicateRanks(
         scopedGroups
-          .map((group, index) => ({ group, index, rank: rankInQuery(group, query) }))
+          .map((group, index) => ({ group, index, rank: rankInQuery(group, query, engine) }))
           .filter((x) => x.rank <= SERP_TABLE_TOP_N)
           .sort((a, b) => a.rank - b.rank || a.index - b.index)
       ).slice(0, SERP_TABLE_TOP_N);
