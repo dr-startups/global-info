@@ -7,9 +7,14 @@
  *
  * Отрицательные признаки личности (`wrongPatronymics`) в системе есть, но их
  * заполняет оператор вручную. На свежем кейсе они пусты, поэтому защиты не было
- * вовсе. При этом конфликт **выводится**: если рядом с фамилией субъекта стоит
+ * вовсе. При этом конфликт **выводится**: если при имени субъекта стоит
  * отчество, отличное от его собственного, речь идёт о другом человеке. В
  * русской именной тройке это решающий признак, а не повод для сомнений.
+ *
+ * Именно при имени, а не просто рядом с фамилией. Биография субъекта называет
+ * родню — «Отец — бизнесмен Ильдар Вахитович Юнусов», «Дед Тимати — Вахит
+ * Закирович Юнусов», — и фамилия там своя. На прогоне 14.08 такое соседство
+ * отправило в «другое лицо» 27 материалов, включая статью о самом субъекте.
  *
  * Модуль чистый: ни сети, ни БД, ни модели.
  */
@@ -22,7 +27,22 @@
  * выражение молча не срабатывало бы ни на одном отчестве.
  */
 const PATRONYMIC_RE =
-  /(?<!\p{L})(\p{L}{2,}(?:ович|евич|ьевич|овна|евна|ьевна|ична|инична))(?!\p{L})/gu;
+  /(?<!\p{L})(\p{L}{2,}(?:ович|евич|ьевич|овна|евна|ьевна|ична|инична)(?:а|у|ем|е|ы|ой)?)(?!\p{L})/gu;
+
+/**
+ * Отчество в именительном падеже.
+ *
+ * В тексте отчество склоняется: «дело Юнусова Тимура Ахметовича». Без
+ * приведения к начальной форме такая запись не совпадает ни с собственным
+ * отчеством субъекта — и объявляется чужой, — ни с чужим, если сравнивать
+ * наоборот. Обе ошибки одинаково плохи, поэтому падеж снимается до сравнения.
+ */
+function baseForm(word: string): string {
+  const m = word.match(
+    /^(\p{L}+?(?:ович|евич|ьевич|овна|евна|ьевна|ична|инична))(?:а|у|ем|е|ы|ой)?$/u
+  );
+  return m?.[1] ?? word;
+}
 
 /**
  * Короткие отчества на «-ич» перечислены поимённо.
@@ -46,8 +66,48 @@ const SHORT_PATRONYMIC_RE = /(?<!\p{L})(\p{L}{3,})(?!\p{L})/gu;
 /** Насколько близко к фамилии отчество считается относящимся к ней. */
 const ADJACENCY_CHARS = 40;
 
+/**
+ * Основа имени для сравнения с падежными формами.
+ *
+ * Русское имя склоняется, и у части имён при этом выпадает беглая гласная:
+ * Павел → Павла, Павлом. Сравнение целым словом такие формы теряет, поэтому
+ * сверяется начало: у коротких имён три буквы, у длинных — все, кроме двух
+ * последних. Хвост добирается отдельно, до четырёх букв, — этого хватает на
+ * творительный падеж («Александром»).
+ */
+function nameStem(name: string): string {
+  return name.slice(0, name.length <= 5 ? 3 : name.length - 2);
+}
+
+function escapeRe(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+/**
+ * Кириллица соседних алфавитов приводится к русской.
+ *
+ * Украинская и белорусская запись отличается несколькими буквами: «Тимур
+ * Ільдарович ЮНУСОВ» на украинской странице — тот же субъект, но «ільдарович»
+ * не совпадало с «ильдарович» и объявлялось чужим отчеством. Материал при этом
+ * из тех, ради которых аудит и делают.
+ */
+const CYRILLIC_VARIANTS: Record<string, string> = {
+  ё: "е",
+  і: "и",
+  ї: "и",
+  є: "е",
+  ґ: "г",
+  ў: "у",
+  "'": "",
+  ʼ: "",
+};
+
 function norm(text: string): string {
-  return text.toLowerCase().replace(/ё/gu, "е").replace(/\s+/gu, " ").trim();
+  return text
+    .toLowerCase()
+    .replace(/[ёіїєґў'ʼ]/gu, (c) => CYRILLIC_VARIANTS[c] ?? c)
+    .replace(/\s+/gu, " ")
+    .trim();
 }
 
 /**
@@ -59,13 +119,22 @@ function norm(text: string): string {
  */
 export function conflictingPatronymics(
   text: string,
-  subject: { lastName: string; lastNameVariants?: string[]; patronymics: string[] }
+  subject: {
+    lastName: string;
+    lastNameVariants?: string[];
+    patronymics: string[];
+    /**
+     * Имена субъекта. Без них конфликт не выводится вовсе: биография называет
+     * родню по имени-отчеству, и одной фамилии рядом мало.
+     */
+    firstNames?: string[];
+  }
 ): string[] {
   const haystack = norm(text);
   if (!haystack) return [];
 
   const own = new Set(
-    subject.patronymics.map(norm).filter((p) => p.length > 3)
+    subject.patronymics.map((p) => baseForm(norm(p))).filter((p) => p.length > 3)
   );
   // Без собственного отчества сравнивать не с чем: молчим, а не гадаем.
   if (own.size === 0) return [];
@@ -104,16 +173,44 @@ export function conflictingPatronymics(
   const nearSurname = (at: number, length: number): boolean =>
     windows.some(([start, end]) => at < end && at + length > start);
 
+  /*
+   * Отчество считается чужим только в тройке с именем субъекта.
+   *
+   * Соседства с фамилией мало. Энциклопедическая статья о самом субъекте
+   * называет родню: «Дед Тимати — Вахит Закирович Юнусов», «бизнесмена Ильдара
+   * Вахитовича и Симоны Яковлевны Юнусовой». Фамилия там своя, отчества чужие —
+   * и на прогоне 14.08 статья РУВИКИ о субъекте была помечена как «о другом
+   * лице» с уверенностью 0,9, а рядом с ней ещё двадцать шесть материалов.
+   *
+   * Опасность, ради которой правило заводилось, выглядит иначе: «Дуров Павел
+   * **Юрьевич**» при отчестве Валерьевич — совпали и фамилия, и имя. Значит,
+   * решает не близость к фамилии, а связка «имя субъекта + чужое отчество»:
+   * у деда имя другое, и статья остаётся статьёй о субъекте.
+   */
+  const givenStems = [...new Set((subject.firstNames ?? []).map(norm).filter((n) => n.length >= 3))]
+    .map(nameStem)
+    .filter(Boolean);
+  // Имени субъекта не знаем — выводить конфликт не из чего.
+  if (givenStems.length === 0) return [];
+  const givenBefore = new RegExp(
+    `(?<!\\p{L})(?:${givenStems.map(escapeRe).join("|")})\\p{L}{0,4}\\s+$`,
+    "u"
+  );
+  const inSubjectTriple = (at: number): boolean =>
+    givenBefore.test(haystack.slice(Math.max(0, at - 24), at));
+
   const found = new Set<string>();
   for (const m of haystack.matchAll(PATRONYMIC_RE)) {
-    const candidate = norm(m[1] ?? "");
+    const candidate = baseForm(norm(m[1] ?? ""));
     if (candidate.length <= 3 || own.has(candidate)) continue;
-    if (nearSurname(m.index ?? 0, candidate.length)) found.add(candidate);
+    const at = m.index ?? 0;
+    if (nearSurname(at, candidate.length) && inSubjectTriple(at)) found.add(candidate);
   }
   for (const m of haystack.matchAll(SHORT_PATRONYMIC_RE)) {
     const candidate = norm(m[1] ?? "");
     if (!SHORT_PATRONYMICS.has(candidate) || own.has(candidate)) continue;
-    if (nearSurname(m.index ?? 0, candidate.length)) found.add(candidate);
+    const at = m.index ?? 0;
+    if (nearSurname(at, candidate.length) && inSubjectTriple(at)) found.add(candidate);
   }
   return [...found];
 }
@@ -121,7 +218,12 @@ export function conflictingPatronymics(
 /** Есть ли рядом с фамилией субъекта чужое отчество. */
 export function hasPatronymicConflict(
   text: string,
-  subject: { lastName: string; lastNameVariants?: string[]; patronymics: string[] }
+  subject: {
+    lastName: string;
+    lastNameVariants?: string[];
+    patronymics: string[];
+    firstNames?: string[];
+  }
 ): boolean {
   return conflictingPatronymics(text, subject).length > 0;
 }
