@@ -76,8 +76,17 @@ export function quoteIntegrityProblems(bullet: string): string[] {
     // семьдесят шесть символов.
     if (index === 0) return;
     if (!line.startsWith(OPEN)) return;
-    const closing = line.indexOf(CLOSE);
-    if (closing < 0) return; // уже посчитано незакрытой кавычкой
+    /*
+     * Закрывающая кавычка цитаты — последняя в строке, а не первая.
+     *
+     * Внутри цитаты бывают свои кавычки: «Усманов подал иск в связи с
+     * «политически мотивированными» расследованиями» — источник iz.ru. По
+     * первой ёлочке хвостом оказывалось «расследованиями…», источник за ним не
+     * виден, и ворота объявляли цитату безымянной. На прогоне 72 это дало
+     * ложное нарушение.
+     */
+    const closing = line.lastIndexOf(CLOSE);
+    if (closing <= 0) return; // уже посчитано незакрытой кавычкой
     const tail = line.slice(closing + 1).trim();
     if (attributionFollows(tail) || blockNamesSources(body)) return;
     problems.push(`quote without a source: ${short(line)}`);
