@@ -11,6 +11,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   PREVIEW_USER_AGENT,
+  openGraphImage,
   tryFetchImagePreview,
   type PreviewFailureReason,
 } from "@/modules/digital-profile/orion-golden/assets/media-asset-svg";
@@ -87,5 +88,48 @@ describe("запрос за превью", () => {
     expect(await tryFetchImagePreview(undefined, { fetchImpl: fetchImpl as never })).toBeUndefined();
     expect(await tryFetchImagePreview("не ссылка", { fetchImpl: fetchImpl as never })).toBeUndefined();
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe("страница вместо картинки", () => {
+  /**
+   * Часть площадок отдаёт по адресу изображения свою страницу-обёртку. Раньше
+   * такой ответ отбрасывался и плитка оставалась пустой; страница почти всегда
+   * объявляет собственную картинку в `og:image`.
+   */
+  const page = `<html><head>
+    <meta property="og:image" content="/img/cover.jpg">
+  </head></html>`;
+
+  it("берётся картинка, объявленная страницей", () => {
+    expect(openGraphImage(page, "https://example.org/a/b")).toBe("https://example.org/img/cover.jpg");
+  });
+
+  it("абсолютный адрес остаётся как есть", () => {
+    expect(
+      openGraphImage('<meta name="twitter:image" content="https://cdn.example/x.png">', "https://a.ru/")
+    ).toBe("https://cdn.example/x.png");
+  });
+
+  it("без объявления — честный отказ", () => {
+    expect(openGraphImage("<html><head></head></html>", "https://a.ru/")).toBeUndefined();
+  });
+
+  it("по объявленной картинке ходим ровно один раз", async () => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (u: string) => {
+      calls.push(u);
+      return calls.length === 1
+        ? response({ type: "text/html", body: new TextEncoder().encode(page) })
+        : response({ type: "text/html", body: new TextEncoder().encode(page) });
+    });
+    const reasons: PreviewFailureReason[] = [];
+    await tryFetchImagePreview("https://example.org/a/b", {
+      fetchImpl: fetchImpl as never,
+      onFailure: (_u, r) => reasons.push(r),
+    });
+    // Первый запрос — страница, второй — объявленная картинка; дальше не идём.
+    expect(calls).toEqual(["https://example.org/a/b", "https://example.org/img/cover.jpg"]);
+    expect(reasons).toEqual(["not_an_image"]);
   });
 });

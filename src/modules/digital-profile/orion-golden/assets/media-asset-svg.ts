@@ -84,6 +84,38 @@ function writePreviewCache(cacheDir: string | undefined, url: string, b64: strin
  * что и читатель страниц, — и в буквах ASCII: кириллица в значении заголовка
  * роняет запрос ещё до отправки.
  */
+/**
+ * Потолок размера превью.
+ *
+ * Два мегабайта отсекали обычные снимки с современных сайтов: в отчёте 73 одна
+ * плитка пустовала именно поэтому. Картинка всё равно сразу ужимается до
+ * 320×200, поэтому потолок нужен только против явно аномальных файлов.
+ */
+const MAX_PREVIEW_BYTES = 8_000_000;
+
+/**
+ * Картинка, которую страница объявляет своей: `og:image` или `twitter:image`.
+ *
+ * Относительный адрес разворачивается по адресу самой страницы — иначе
+ * «/img/cover.jpg» не запросить.
+ */
+export function openGraphImage(html: string, pageUrl: string): string | undefined {
+  const m =
+    html.match(
+      /<meta[^>]+(?:property|name)=["'](?:og:image(?::secure_url)?|twitter:image(?::src)?)["'][^>]*\scontent=["']([^"']+)["']/iu
+    ) ??
+    html.match(
+      /<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name)=["'](?:og:image(?::secure_url)?|twitter:image(?::src)?)["']/iu
+    );
+  const raw = m?.[1]?.trim();
+  if (!raw) return undefined;
+  try {
+    return new URL(raw, pageUrl).toString();
+  } catch {
+    return undefined;
+  }
+}
+
 export const PREVIEW_USER_AGENT =
   "DigitalProfileAudit/1.0 (+reputation audit; fetches public preview images)";
 
@@ -102,8 +134,11 @@ export async function tryFetchImagePreview(
   opts?: Pick<ImagePreviewFetchOptions, "timeoutMs" | "fetchImpl" | "cacheDir"> & {
     /** Причина отказа — чтобы пустая плитка не была немой. */
     onFailure?: (url: string, reason: PreviewFailureReason) => void;
+    /** Глубина перехода по `og:image`; больше одного шага не делаем. */
+    depth?: number;
   }
 ): Promise<string | undefined> {
+  const depth = opts?.depth ?? 0;
   if (!url || !/^https?:\/\//i.test(url)) return undefined;
   const fail = (reason: PreviewFailureReason): undefined => {
     opts?.onFailure?.(url, reason);
@@ -123,12 +158,23 @@ export async function tryFetchImagePreview(
     });
     clearTimeout(timeout);
     if (!res.ok) return fail(`http_${res.status}` as PreviewFailureReason);
-    // Страница вместо картинки: декодировать HTML бессмысленно, а отказ по
-    // причине «не картинка» сразу называет, что произошло.
     const type = String(res.headers?.get?.("content-type") ?? "");
-    if (type && !/^image\//i.test(type)) return fail("not_an_image");
     const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length > 2_000_000) return fail("too_large");
+    /*
+     * Страница вместо картинки — не тупик.
+     *
+     * Часть площадок отдаёт по адресу изображения свою страницу-обёртку. Раньше
+     * такой ответ просто отбрасывался, и плитка оставалась пустой. Страница
+     * почти всегда объявляет собственную картинку в `og:image` — берём её, один
+     * раз и без рекурсии.
+     */
+    if (type && !/^image\//i.test(type)) {
+      if (!/html/i.test(type) || depth > 0) return fail("not_an_image");
+      const declared = openGraphImage(buf.toString("utf8").slice(0, 512_000), url);
+      if (!declared) return fail("not_an_image");
+      return await tryFetchImagePreview(declared, { ...opts, depth: 1 });
+    }
+    if (buf.length > MAX_PREVIEW_BYTES) return fail("too_large");
     const png = await sharp(buf).rotate().resize(320, 200, { fit: "inside" }).png().toBuffer();
     const b64 = png.toString("base64");
     writePreviewCache(opts?.cacheDir, url, b64);
