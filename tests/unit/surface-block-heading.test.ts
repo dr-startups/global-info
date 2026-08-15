@@ -8,8 +8,16 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { looksLikeSurfaceBlockHeading } from "@/modules/digital-profile/orion-golden/analytics/client-quote-hygiene";
-import { isWeakExampleTitle } from "@/modules/digital-profile/orion-golden/analytics/finding-synthesizer";
+import {
+  looksLikeMachineDump,
+  looksLikeSurfaceBlockHeading,
+  pageQuoteForClient,
+} from "@/modules/digital-profile/orion-golden/analytics/client-quote-hygiene";
+import { findInternalCodes } from "@/modules/digital-profile/orion-golden/deck-sections/internal-code-scan";
+import {
+  isWeakExampleTitle,
+  quoteForClaim,
+} from "@/modules/digital-profile/orion-golden/analytics/finding-synthesizer";
 
 describe("подписи блоков выдачи", () => {
   const headings = [
@@ -49,5 +57,48 @@ describe("подписи блоков выдачи", () => {
     // Отсеивается именно подпись блока, а не любое упоминание изображений.
     expect(looksLikeSurfaceBlockHeading("Картинки с суда над Тимати опубликованы")).toBe(false);
     expect(looksLikeSurfaceBlockHeading("Новости о запросе прокуратуры")).toBe(false);
+  });
+});
+
+describe("машинные имена наборов данных", () => {
+  /**
+   * Отчёт 72, приложение, трижды: «Темы: судебные и правовые материалы…
+   * источники: ext_gb_coh_psc, us_trade_csl, eu_fsf, ru_billionaires_2021,
+   * ru_navalny35» — идентификаторы наборов, поданные клиенту в кавычках как
+   * слова источника. Читателю они не сообщают ничего.
+   */
+  const dump =
+    "Темы: судебные и правовые материалы, санкционные списки; должность: chairperson; источники: ext_gb_coh_psc, us_trade_csl, eu_fsf, ru_billionaires_2021, ru_navalny35";
+
+  it("узнаются по подчёркиванию: в прозе его не бывает", () => {
+    expect(looksLikeMachineDump(dump)).toBe(true);
+    expect(looksLikeMachineDump("источники: us_ofac_sdn")).toBe(true);
+  });
+
+  it("в цитату не проходят ни одним путём", () => {
+    expect(pageQuoteForClient(dump)).toBe("");
+    expect(quoteForClaim(dump, 400)).toBe("");
+  });
+
+  it("обычный текст не задевает", () => {
+    expect(looksLikeMachineDump("Санкции ЕС и США против предпринимателя")).toBe(false);
+    expect(looksLikeMachineDump("Проверка PEP / RCA по спискам наблюдения")).toBe(false);
+  });
+
+  it("внутренние коды ловятся проверкой деки в любом регистре", () => {
+    expect(findInternalCodes("сбой VISUAL_ASSET_UNAVAILABLE на странице")).toEqual([
+      "VISUAL_ASSET_UNAVAILABLE",
+    ]);
+    expect(findInternalCodes("источники: ext_gb_coh_psc, us_trade_csl")).toEqual([
+      "ext_gb_coh_psc",
+      "us_trade_csl",
+    ]);
+  });
+
+  it("маркер находки кодом не считается: до бумаги он не доходит", () => {
+    expect(
+      findInternalCodes("Всего по теме: 1 материал. [finding-criminal_legal-subject_match-ae9b4bfe]")
+    ).toEqual([]);
+    expect(findInternalCodes("finding-pep_rca_watchlist-subject_match-dfa7da39")).toEqual([]);
   });
 });

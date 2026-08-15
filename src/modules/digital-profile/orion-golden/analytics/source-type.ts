@@ -45,10 +45,10 @@ export type SourceType = (typeof SOURCE_TYPES)[number];
  * тип по обрывкам адреса нельзя, столбец читают как факт.
  */
 const RU_MEDIA =
-  /(^|\.)(rbc\.ru|ria\.ru|tass\.ru|interfax\.ru|kommersant\.ru|vedomosti\.ru|iz\.ru|lenta\.ru|gazeta\.ru|aif\.ru|mk\.ru|kp\.ru|ntv\.ru|1tv\.ru|vesti\.ru|rt\.com|rg\.ru|fontanka\.ru|forbes\.ru|banki\.ru|secretmag\.ru|the-village\.ru|meduza\.io|novayagazeta\.ru|republic\.ru|dw\.com|bbc\.(?:com|co\.uk)|currenttime\.tv|svoboda\.org|radio1\.ru|ura\.news|regnum\.ru|znak\.com|66\.ru|e1\.ru|360tv\.ru|life\.ru|starhit\.ru|womanhit\.ru|novochag\.ru|vokrug\.tv|spletnik\.ru|peopletalk\.ru|hellomagazine\.ru|7days\.ru|eg\.ru|dni\.ru|pravda\.ru|liga\.net|pravda\.com\.ua|unian\.(?:net|ua)|censor\.net)$/iu;
+  /(^|\.)(rbc\.ru|ria\.ru|tass\.ru|interfax\.ru|kommersant\.ru|vedomosti\.ru|iz\.ru|lenta\.ru|gazeta\.ru|aif\.ru|mk\.ru|kp\.ru|ntv\.ru|1tv\.ru|vesti\.ru|rt\.com|rg\.ru|fontanka\.ru|forbes\.ru|banki\.ru|secretmag\.ru|the-village\.ru|meduza\.io|novayagazeta\.ru|republic\.ru|dw\.com|bbc\.(?:com|co\.uk)|currenttime\.tv|svoboda\.org|radio1\.ru|ura\.news|regnum\.ru|znak\.com|66\.ru|e1\.ru|360tv\.ru|life\.ru|starhit\.ru|womanhit\.ru|novochag\.ru|vokrug\.tv|spletnik\.ru|peopletalk\.ru|hellomagazine\.ru|7days\.ru|eg\.ru|dni\.ru|pravda\.ru|liga\.net|svpressa\.ru|ko\.ru|secretmag\.ru|expert\.ru|profile\.ru|vc\.ru|pravda\.com\.ua|unian\.(?:net|ua)|censor\.net)$/iu;
 
 const REFERENCE_SITES =
-  /(^|\.)(imdb\.com|kinopoisk\.ru|tadviser\.(?:ru|com)|allmusic\.com|discogs\.com|last\.fm|musicbrainz\.org|genius\.com|peoples\.ru|24smi\.org|uznayvse\.ru|biographe\.ru|biografguru\.ru)$/iu;
+  /(^|\.)(imdb\.com|kinopoisk\.ru|tadviser\.(?:ru|com)|allmusic\.com|discogs\.com|last\.fm|musicbrainz\.org|genius\.com|peoples\.ru|24smi\.org|uznayvse\.ru|biographe\.ru|biografguru\.ru|whoiswho\.dp\.ru|persons-info\.com|viperson\.ru)$/iu;
 
 const REGISTRY_SITES =
   /(^|\.)(zachestnyibiznes\.ru|sbis\.ru|spark-interfax\.ru|kartoteka\.ru|synapsenet\.ru|xfirm\.ru|prima-inform\.ru|egrul\.nalog\.ru|nalog\.gov\.ru|fedresurs\.ru|kad\.arbitr\.ru|sudact\.ru|fssp\.gov\.ru|orgs\.biz)$/iu;

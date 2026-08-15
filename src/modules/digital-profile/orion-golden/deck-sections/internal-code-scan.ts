@@ -24,22 +24,42 @@
 const INTERNAL_CODE = /\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/gu;
 
 /**
+ * Идентификатор набора данных в нижнем регистре — `ext_gb_coh_psc`,
+ * `us_trade_csl`, `ru_billionaires_2021`.
+ *
+ * Прежде такие имена считались законными: «приходят в нижнем регистре и под
+ * правило не подпадают». Решение оказалось неверным — в отчёте 72 они трижды
+ * стояли в кавычках как слова источника: «…источники: ext_gb_coh_psc,
+ * us_trade_csl, eu_fsf, ru_billionaires_2021, ru_navalny35». Читателю такое имя
+ * не сообщает ровно ничего, независимо от регистра.
+ *
+ * Подчёркивание между буквами и цифрами — надёжный признак: в русской и
+ * английской прозе его не бывает.
+ */
+const DATASET_CODE = /\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b/gu;
+
+/**
  * Строки, которые выглядят как код, но им не являются.
  *
- * Названия наборов данных санкционных списков (`us_ofac_sdn`) приходят в
- * нижнем регистре и под правило не подпадают; здесь — исключения в верхнем.
+ * Составные термины due diligence законны и в отчёте нужны.
  */
 const ALLOWED = new Set<string>(["ID_CARD", "PEP_RCA"]);
 
 /** Найденные в тексте внутренние коды (без повторов, в порядке появления). */
 export function findInternalCodes(text: string | null | undefined): string[] {
-  const value = String(text ?? "");
-  if (!value) return [];
+  // Маркер находки — служебная связь блока с доказательной базой. Встречается
+  // и в скобках в конце блока, и голым — колонкой таблицы матрицы рисков. До
+  // бумаги он не доходит ни в том, ни в другом виде: в отчёте 72 строка
+  // «finding-» не встречается ни разу, отрисовщик её снимает.
+  const value = String(text ?? "").replace(/\[?finding-[\p{L}\d_-]+\]?/gu, " ");
+  if (!value.trim()) return [];
   const found: string[] = [];
-  for (const m of value.matchAll(INTERNAL_CODE)) {
-    const code = m[0];
-    if (ALLOWED.has(code) || found.includes(code)) continue;
-    found.push(code);
+  for (const re of [INTERNAL_CODE, DATASET_CODE]) {
+    for (const m of value.matchAll(re)) {
+      const code = m[0];
+      if (ALLOWED.has(code) || found.includes(code)) continue;
+      found.push(code);
+    }
   }
   return found;
 }
