@@ -1,7 +1,7 @@
 {
   "version": "client-text-snapshot-v1",
-  "slideCount": 48,
-  "totalChars": 41564,
+  "slideCount": 49,
+  "totalChars": 42863,
   "slides": [
     {
       "slideKey": "p01_cover",
@@ -21,10 +21,10 @@
       "template": "orion_golden_toc",
       "bullets": [
         "Резюме для руководства — стр. 3–9",
-        "Цифровой профиль — Россия — стр. 10–32",
-        "Цифровой профиль — ОАЭ и международный контур — стр. 33–44",
-        "Комплаенс-проверка — стр. 45–47",
-        "Приложение — стр. 48–48"
+        "Цифровой профиль — Россия — стр. 10–33",
+        "Цифровой профиль — ОАЭ и международный контур — стр. 34–45",
+        "Комплаенс-проверка — стр. 46–48",
+        "Приложение — стр. 49–49"
       ]
     },
     {
@@ -57,7 +57,7 @@
       "baseSlotId": "p03_executive",
       "template": "orion_golden_prose",
       "bullets": [
-        "Международные базы и официальные источники. Dow Jones. По открытым/импортированным данным есть сигнал, связанный с записью «Holmstrom, Johan». LexisNexis. По открытым/импортированным данным есть сигнал, связанный с записью «Johan Holmstrom».",
+        "Международные базы и официальные источники. Dow Jones. По открытым/импортированным данным есть сигнал, связанный с записью «Holmstrom, Johan». Сигнал международной/комплаенс-базы требует сверки идентификаторов и полной карточки; без подтверждения не считается установленным фактом. LexisNexis. По открытым/импортированным данным есть сигнал, связанный с записью «Johan Holmstrom». Сигнал международной/комплаенс-базы требует сверки идентификаторов и полной карточки; без подтверждения не считается установленным фактом.",
         "Следующие проверки. 1) Сверить первоисточники и статус материалов по теме «Деловые связи, владение и контрагенты», «Криминальные и судебные материалы», «Семейные и личные связи (риск-релевантные)», «Офшоры и финансовая прозрачность», «Санкции, PEP, RCA и compliance-сигналы». 2) Подготовить согласованную позицию для KYC и партнёрских запросов. 3) Сверить актуальность санкционных и мониторинговых записей по официальным источникам. 4) Подготовить единый пакет документов для KYC и партнёрских запросов."
       ]
     },
@@ -169,29 +169,40 @@
       "baseSlotId": "p07_ru_summary",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Комментарий: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник stockholm-kuriren.se «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник kapitalnytt.se Где видно: stockholm-kuriren.se, kapitalnytt.se."
+        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Комментарий: Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник stockholm-kuriren.se «Stockholm court schedules hearing involving Anders Holmström of Nordkap Capital» — источник kapitalnytt.se Где видно: stockholm-kuriren.se, kapitalnytt.se. Всего по теме: 5 материалов, с негативным контекстом — 5."
       ]
     },
     {
       "slideKey": "p07_ru_summary__cont1",
       "text": {
-        "title": "Россия: в выдаче есть материалы повышенного внимания (продолжение 2/3)"
+        "title": "Россия: в выдаче есть материалы повышенного внимания (продолжение 2/4)"
       },
       "baseSlotId": "p07_ru_summary",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Хроника: Anders Holmström flagged during sanctions screening watchlist review» — источник bizdaily-nordic.se «Anders Holmström flagged during sanctions screening watchlist review» — источник stockholm-kuriren.se Где видно: bizdaily-nordic.se, stockholm-kuriren.se."
+        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Хроника: Anders Holmström flagged during sanctions screening watchlist review» — источник bizdaily-nordic.se «Anders Holmström flagged during sanctions screening watchlist review» — источник stockholm-kuriren.se Где видно: bizdaily-nordic.se, stockholm-kuriren.se. Всего по теме: 14 материалов, с негативным контекстом — 10."
+      ]
+    },
+    {
+      "slideKey": "p07_ru_summary__cont2",
+      "text": {
+        "title": "Россия: в выдаче есть материалы повышенного внимания (продолжение 3/4)"
+      },
+      "baseSlotId": "p07_ru_summary",
+      "template": "orion_golden_metrics_dashboard",
+      "bullets": [
+        "«Офшоры / корпоративное владение» Найдены публикации об офшорных и корпоративных структурах владения: «Anders Holmström linked to Malta holding structure and offshore beneficial ownership» — источник nordmarket-watch.se «Beneficial ownership disclosure lists Anders Holmström for Nordkap Capital» — источник rynok-segodnya.ru Где видно: nordmarket-watch.se, rynok-segodnya.ru. Всего по теме: 4 материала, с негативным контекстом — 1."
       ]
     },
     {
       "slideKey": "p07_ru_summary__cont3",
       "text": {
-        "title": "Россия: в выдаче есть материалы повышенного внимания (продолжение 3/3)"
+        "title": "Россия: в выдаче есть материалы повышенного внимания (продолжение 4/4)"
       },
       "baseSlotId": "p07_ru_summary",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«Деловой профиль» Найдены материалы делового и биографического профиля: «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник finansbladet.se «Контекст: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник svenskt-naringsliv-nytt.se Где видно: finansbladet.se, svenskt-naringsliv-nytt.se.",
+        "«Деловой профиль» Найдены материалы делового и биографического профиля: «Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник finansbladet.se «Контекст: Anders Holmström, CEO of Nordkap Capital AB — fintech investor profile» — источник svenskt-naringsliv-nytt.se Где видно: finansbladet.se, svenskt-naringsliv-nytt.se. Всего по теме: 3 материала, с негативным контекстом — 1.",
         "Другие материалы о субъекте: 29 (примеры: Anders Holmström, founder of Nordkap Capital, faces tax-fraud probe in Stockholm · Anders Holmström expands Nordkap Capital into private credit markets · Swedish media: Anders Holmström denies wrongdoing in tax inquiry)",
         "Материалы, вероятно относящиеся к субъекту: 3 — пока не включаем в подтверждённый итог до уточнения идентификации."
       ]
@@ -311,7 +322,7 @@
             "granskaren.se/nordkap-capital-raises-series-b-anders-holmstr-…",
             "Nordkap Capital raises Series B; Anders Holmström remains controlling shareholder",
             "—",
-            "Нейтральный"
+            "О другом лице"
           ],
           [
             "4",
@@ -829,7 +840,7 @@
       "baseSlotId": "p24_uae_summary",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital» — источник difc-briefing.ae «Подробности: Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital» — источник dubai-market-daily.ae Где видно: difc-briefing.ae, dubai-market-daily.ae."
+        "«Криминальные / судебные материалы» Найдены публикации, в которых субъект связывается с судебными и криминальными сюжетами: «Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital» — источник difc-briefing.ae «Подробности: Gulf press: Anders Holmström courts Gulf family offices for Nordkap Capital» — источник dubai-market-daily.ae Где видно: difc-briefing.ae, dubai-market-daily.ae. Всего по теме: 5 материалов, с негативным контекстом — 5."
       ]
     },
     {
@@ -840,8 +851,9 @@
       "baseSlotId": "p24_uae_summary",
       "template": "orion_golden_metrics_dashboard",
       "bullets": [
-        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Контекст: Anders Holmström referenced in UAE PEP/RCA compliance screening» — источник abudhabi-capital-news.ae «Sanctions screening vendor flags Anders Holmström for secondary review» — источник emirates-ledger.ae Где видно: abudhabi-capital-news.ae, emirates-ledger.ae.",
-        "Другие материалы о субъекте: 14 (примеры: Anders Holmström expands Nordkap Capital into Dubai real-estate investment · Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital · Nordkap Capital opens DIFC representative office under Anders Holmström)"
+        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Контекст: Anders Holmström referenced in UAE PEP/RCA compliance screening» — источник abudhabi-capital-news.ae «Sanctions screening vendor flags Anders Holmström for secondary review» — источник emirates-ledger.ae Где видно: abudhabi-capital-news.ae, emirates-ledger.ae. Всего по теме: 14 материалов, с негативным контекстом — 10.",
+        "Другие материалы о субъекте: 14 (примеры: Anders Holmström expands Nordkap Capital into Dubai real-estate investment · Dubai Free Zone filing lists Anders Holmström as UBO of Nordkap Capital · Nordkap Capital opens DIFC representative office under Anders Holmström)",
+        "Материалы, вероятно относящиеся к субъекту: 3 — пока не включаем в подтверждённый итог до уточнения идентификации."
       ]
     },
     {
@@ -1281,7 +1293,7 @@
       "baseSlotId": "slot_appendix_main",
       "template": "orion_golden_executive_card",
       "bullets": [
-        "«PEP / RCA / watchlist-сигналы» Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Holmstrom, Johan» Всего по теме: 1 материал.",
+        "«PEP / RCA / watchlist-сигналы» — принадлежность не разобрана Найдены материалы, связывающие субъекта с санкционными и мониторинговыми списками (PEP/RCA): «Holmstrom, Johan» Всего по теме: 1 материал. Банки и комплаенс-команды отрабатывают такие сигналы в первую очередь при KYC.",
         "Источники — abudhabi-capital-news.ae, affarsposten.se, bizdaily-nordic.se, difc-briefing.ae и ещё 2."
       ]
     }
