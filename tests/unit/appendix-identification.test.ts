@@ -44,15 +44,21 @@ const scoped = {
 } as unknown as ScopedFragmentInput;
 
 describe("степень идентификации в заголовке приложения", () => {
-  it("одинаковых заголовков подряд не остаётся", () => {
+  it("одинаковые блоки различаются степенью идентификации", () => {
     const { slides } = buildAppendixFragment("APPENDIX", scoped);
-    const heads = slides
-      .flatMap((s) => s.content.bullets ?? [])
-      .map((b) => b.split("\n")[0]!);
-    expect(new Set(heads).size).toBe(heads.length);
-    expect(heads.some((h) => h.includes("вероятно о субъекте"))).toBe(true);
-    expect(heads.some((h) => h.includes("о другом лице"))).toBe(true);
-    expect(heads.some((h) => h.includes("принадлежность не разобрана"))).toBe(true);
+    const blocks = slides.flatMap((s) => s.content.bullets ?? []);
+    // Название темы остаётся заголовком и не ломается меткой.
+    const heads = blocks.map((b) => b.split("\n")[0]!);
+    for (const h of heads) expect(h).toMatch(/^«[^»]+»$/u);
+    // Различает блоки вторая строка — она же объясняет, почему материал здесь.
+    const marks = blocks.map((b) => b.split("\n")[1]!);
+    expect(marks.every((m) => m.startsWith("Принадлежность: "))).toBe(true);
+    expect(marks.some((m) => m.includes("вероятно о субъекте"))).toBe(true);
+    expect(marks.some((m) => m.includes("о другом лице"))).toBe(true);
+    expect(marks.some((m) => m === "Принадлежность: не разобрана.")).toBe(true);
+    // Тема плюс степень идентификации вместе уникальны: мнимого повтора нет.
+    const pairs = blocks.map((b) => b.split("\n").slice(0, 2).join(" / "));
+    expect(new Set(pairs).size).toBe(pairs.length);
   });
 
   it("материалы одной темы идут подряд", () => {
@@ -85,6 +91,14 @@ describe("степень идентификации в заголовке при
 
   it("пометку второй раз не дописывает", () => {
     const once = withIdentificationLabel("«Тема»\nтекст", "OTHER_SUBJECT");
+    expect(once).toBe("«Тема»\nПринадлежность: о другом лице.\nтекст");
     expect(withIdentificationLabel(once, "OTHER_SUBJECT")).toBe(once);
+  });
+
+  it("заголовок с продолжением на той же строке не трогает", () => {
+    // Метка ставится только под чистым названием темы: иначе она разрывает
+    // фразу, как это вышло в отчёте 72.
+    const claim = "«Тема» Найдены материалы делового профиля:\nтекст";
+    expect(withIdentificationLabel(claim, "OTHER_SUBJECT")).toBe(claim);
   });
 });
