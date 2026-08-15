@@ -101,6 +101,25 @@ export function isQuotableEvidence(text: string | null | undefined): boolean {
  * длина как у запроса. «pavel valeryevich durov arrested», «дуров суд сегодня»
  * — это строки автодополнения, и подавать их как материал нельзя (шаг 13, C2).
  */
+/**
+ * Заголовок служебного блока выдачи — не публикация.
+ *
+ * «Картинки по запросу "Тимати биография"» — это подпись, которую поисковик
+ * рисует над плиткой изображений. Автора у неё нет, содержания тоже: она лишь
+ * повторяет запрос. На прогоне 14.08 такая строка стояла доказательством в
+ * пяти блоках отчёта, в том числе в резюме для руководства и в матрице рисков.
+ *
+ * Перечислены формы всех поверхностей, которые собирает конвейер, — картинки,
+ * видео, новости, похожие и связанные запросы, — в русском и английском виде:
+ * страница ОАЭ отдаёт те же блоки по-английски.
+ */
+const SURFACE_BLOCK_HEADING =
+  /^\s*(?:картинки|изображения|видео|новости|товары|карты)\s+по\s+запросу(?!\p{L})|^\s*(?:похожие|связанные|другие)\s+(?:запросы|результаты)(?!\p{L})|^\s*(?:images|videos|news|results)\s+for(?!\p{L})|^\s*(?:people\s+also\s+(?:ask|search\s+for)|related\s+searches|searches\s+related\s+to)(?!\p{L})/iu;
+
+export function looksLikeSurfaceBlockHeading(text: string | null | undefined): boolean {
+  return SURFACE_BLOCK_HEADING.test(String(text ?? ""));
+}
+
 export function looksLikeSearchQuery(text: string | null | undefined): boolean {
   const value = String(text ?? "").trim();
   if (!value || value.length > 80) return false;

@@ -9,6 +9,7 @@ import type { ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import { pluralRu } from "../../analytics/finding-synthesizer";
 import type { FragmentBuildOutput, FragmentExtras, UncategorizedMaterialsExtras } from "./shared";
+import { looksLikeSurfaceBlockHeading } from "../../analytics/client-quote-hygiene";
 import {
   bulletWithFindingId,
   claimText,
@@ -47,9 +48,12 @@ function uncategorizedBulletForRegion(
     }
   }
   if (count === 0) return null;
+  // Примером материала не может быть подпись служебного блока выдачи:
+  // «Картинки по запросу "Юнусов Тимур Ильдарович"» — это надпись поисковика
+  // над плиткой изображений, у неё нет ни автора, ни содержания.
   const titles = examples
     .map((e) => e.title.trim())
-    .filter(Boolean)
+    .filter((t) => Boolean(t) && !looksLikeSurfaceBlockHeading(t))
     .slice(0, 3);
   const examplesNote = titles.length
     ? ` (примеры: ${titles.map((t) => clampClientText(t, 80)).join(" · ")})`

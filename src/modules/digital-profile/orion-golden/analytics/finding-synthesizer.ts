@@ -36,7 +36,7 @@ import {
 } from "../../config/finding-themes";
 import { domainOf } from "./composite-dataset-builder";
 import { mapRegionBucket, mapSurfaceBucket } from "../classic/composite-serp-overlay-merge";
-import { looksLikeSearchQuery } from "./client-quote-hygiene";
+import { looksLikeSearchQuery, looksLikeSurfaceBlockHeading } from "./client-quote-hygiene";
 import { themeHitIsNegated } from "./negated-theme-hit";
 
 export type { ThemeDef };
@@ -145,7 +145,15 @@ const CLIENT_THEME_FRAMING: Record<string, string> = {
     "Найдены материалы с акцентом на безопасность и оборонный контур",
 };
 
-const CLIENT_THEME_WHY: Record<string, string> = {
+/**
+ * Пояснение «почему это важно» — шаблонная присказка темы.
+ *
+ * Экспортируется, потому что сборщик деки вычищает повторы только по объявленным
+ * присказкам ([[boilerplate-commentary]]): всё, чего нет в таком списке,
+ * неприкосновенно. Раньше вычистка сравнивала предложения вслепую и снимала
+ * цитаты вместе с источниками.
+ */
+export const CLIENT_THEME_WHY: Record<string, string> = {
   criminal_legal:
     "Для банка или партнёра такие сюжеты обычно становятся первым поводом для расширенной проверки.",
   pep_rca_watchlist:
@@ -324,6 +332,9 @@ export function isWeakExampleTitle(
   // на живом прогоне «дуров суд сегодня» попало в приложение как доказательство
   // криминальной темы (шаг 15, E5).
   if (looksLikeSearchQuery(t)) return true;
+  // Подпись служебного блока выдачи («Картинки по запросу "…"») повторяет
+  // запрос и ничего не утверждает: цитировать её как материал нельзя.
+  if (looksLikeSurfaceBlockHeading(t)) return true;
   // PDF-46 I.1 — provider-truncated SERP «…»: weak unless a full sentence remains.
   if (SERP_TRUNCATED_RE.test(raw.trim()) && !/[.!?»]$/u.test(t)) return true;
 
