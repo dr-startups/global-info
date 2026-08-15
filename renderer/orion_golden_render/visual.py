@@ -530,6 +530,12 @@ def _status_tone(status: str) -> tuple[str, "RGBColor"]:
     # LIKELY_SUBJECT (§2.1) and manual-review statuses — amber, not green.
     if "вероятн" in s or "проверк" in s or "требует" in s or "pep" in s:
         return "●", RGBColor(0xC2, 0x41, 0x0C)
+    # Материал о другом лице занимает своё место в выдаче, но оценкой субъекта
+    # не является: полый маркер и серый цвет отличают его и от негатива, и от
+    # зелёного «всё в порядке». Зелёный здесь читался бы как одобрение
+    # однофамильца.
+    if "друго" in s:
+        return "○", RGBColor(0x94, 0xA3, 0xB8)
     # E.6 — neutral verdicts read gray, green stays for explicit positives.
     if "нейтрал" in s or s in {"·", "—", "-", ""}:
         return "●", RGBColor(0x64, 0x74, 0x8B)

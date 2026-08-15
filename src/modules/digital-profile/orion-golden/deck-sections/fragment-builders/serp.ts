@@ -89,6 +89,24 @@ export const SERP_TABLE_TOP_N = 20;
  */
 export const SERP_TABLE_HEADERS = ["№", "Ссылка", "Заголовок", "Тип источника", "Оценка"];
 
+/**
+ * Оценка материала о другом лице.
+ *
+ * Однофамилец занимает своё место в выдаче, и вычёркивать его строку нельзя:
+ * аудит обещает ТОП-20, а дыра в нумерации читается как потеря данных. Но и
+ * «Нейтральный» ему не годится — это оценка материала о субъекте.
+ */
+export const OTHER_SUBJECT_LABEL = "О другом лице" as const;
+
+/**
+ * Номер колонки с оценкой — считается из заголовков, а не пишется числом.
+ *
+ * Когда в таблицу добавили «Тип источника», счётчики страницы остались смотреть
+ * в четвёртую колонку и считали типы источников вместо оценок: на прогоне 14.08
+ * `adverseDisplayed` был нулём на всех страницах выдачи.
+ */
+const RATING_COLUMN = SERP_TABLE_HEADERS.indexOf("Оценка");
+
 /** Длиннее этого адрес перестаёт читаться и ломает ширину колонки. */
 const LINK_MAX_CHARS = 62;
 
@@ -283,18 +301,36 @@ export function buildSerpFragment(
    * одному запросу позиция уникальна, и таблица обязана это сохранять.
    */
   const rankInQuery = (group: { refs: string[] }, query: string | null): number => {
-    const ranks = group.refs
-      .filter((ref) => {
-        if (!query) return true;
-        const q = scoped.evidenceIndex[ref]?.query;
-        // Наблюдения без записанного запроса относим к выбранному: у старых
-        // наборов данных запроса нет вовсе, и отбрасывать их значит потерять
-        // таблицу целиком.
-        return !q || q === query;
-      })
-      .map((ref) => scoped.evidenceIndex[ref]?.rank)
-      .filter((r): r is number => typeof r === "number" && r > 0);
-    return ranks.length > 0 ? Math.min(...ranks) : Number.MAX_SAFE_INTEGER;
+    const rankOf = (ref: string): number | undefined => {
+      const r = scoped.evidenceIndex[ref]?.rank;
+      return typeof r === "number" && r > 0 ? r : undefined;
+    };
+    const best = (refs: string[]): number => {
+      const ranks = refs.map(rankOf).filter((r): r is number => r !== undefined);
+      return ranks.length > 0 ? Math.min(...ranks) : Number.MAX_SAFE_INTEGER;
+    };
+    if (!query) return best(group.refs);
+
+    /*
+     * Позиция берётся у наблюдения по этому самому запросу.
+     *
+     * Раньше к выбранному запросу относили и наблюдения без записанного запроса
+     * — ради старых наборов данных. На прогоне 14.08 это дало таблице чужие
+     * места: страница Википедии стояла второй по запросу таблицы, но у неё было
+     * наблюдение без запроса с позицией 1, и в отчёте она встала первой. Место
+     * 2 при этом никем не занималось, и в нумерации ТОП-20 зияли дыры 2, 11 и
+     * 12 — клиент видел семнадцать строк там, где обещано двадцать.
+     */
+    const exact = group.refs.filter((ref) => scoped.evidenceIndex[ref]?.query === query);
+    if (exact.length > 0) return best(exact);
+    // Материал, у которого запрос записан, но другой, к этой таблице не
+    // относится: показывать его здесь значит придумать ему место в выдаче.
+    if (group.refs.some((ref) => scoped.evidenceIndex[ref]?.query)) {
+      return Number.MAX_SAFE_INTEGER;
+    }
+    // Запроса нет ни у одного наблюдения — набор данных собран до того, как
+    // запрос стал сохраняться. Такой материал в таблице нужен.
+    return best(group.refs);
   };
 
   // Одна таблица — один поисковик и один запрос: это страница выдачи, которую
@@ -367,9 +403,26 @@ export function buildSerpFragment(
     const likely = group.refs.some(
       (ref) => scoped.evidenceIndex[ref]?.subjectDecision === "LIKELY_SUBJECT"
     );
+    /*
+     * Материал о другом лице занимает своё место в выдаче и называется прямо.
+     *
+     * Аудит обещает ТОП-20 и обязан показать двадцать строк: строка, вычеркнутая
+     * из таблицы, оставляет дыру в нумерации, и читатель считает её потерей
+     * данных. Однофамилец при этом не должен выглядеть материалом о субъекте —
+     * поэтому у него своя оценка, а не «Нейтральный».
+     */
+    const other =
+      group.refs.length > 0 &&
+      group.refs.every((ref) => scoped.evidenceIndex[ref]?.subjectDecision === "OTHER_SUBJECT");
     // Red marker must always carry its label; domain comes from evidence URL.
     // LIKELY (§2.1) → «Вероятно» — visible but not confirmed-subject KPI.
-    const rating = adverse ? RED_MARKER_LABEL : likely ? "Вероятно" : "Нейтральный";
+    const rating = other
+      ? OTHER_SUBJECT_LABEL
+      : adverse
+        ? RED_MARKER_LABEL
+        : likely
+          ? "Вероятно"
+          : "Нейтральный";
     // Номер строки — настоящая позиция в выдаче, а не счётчик строк таблицы.
     // Счётчик выдавал «24-е место в Яндексе» там, где материал стоял третьим
     // по другому запросу.
@@ -473,8 +526,10 @@ export function buildSerpFragment(
         datasetCount: refs.length,
         uniqueMaterials: merged.length,
         displayedCount: pageRows.length,
-        adverseDisplayed: pageRows.filter((r) => r[3] === RED_MARKER_LABEL).length,
-        likelyDisplayed: pageRows.filter((r) => r[3] === "Вероятно").length,
+        adverseDisplayed: pageRows.filter((r) => r[RATING_COLUMN] === RED_MARKER_LABEL).length,
+        likelyDisplayed: pageRows.filter((r) => r[RATING_COLUMN] === "Вероятно").length,
+        otherSubjectDisplayed: pageRows.filter((r) => r[RATING_COLUMN] === OTHER_SUBJECT_LABEL)
+          .length,
         pageIndex: i + 1,
         pageCount: pages.length,
       },
