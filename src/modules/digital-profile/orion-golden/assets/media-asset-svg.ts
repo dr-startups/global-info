@@ -36,6 +36,12 @@ export type ImagePreviewFetchOptions = {
   /** Injected fetch for offline tests. */
   fetchImpl?: typeof fetch;
   nowMs?: () => number;
+  /**
+   * Почему очередное превью не получено. Пустая плитка в отчёте должна быть
+   * объяснима: без причины «источник не отдал изображение» неотличимо от
+   * «мы не спросили».
+   */
+  onFailure?: (url: string, reason: PreviewFailureReason) => void;
 };
 
 function previewCacheKey(url: string): string {
@@ -68,30 +74,67 @@ function writePreviewCache(cacheDir: string | undefined, url: string, b64: strin
  * Fetch one image preview. Disk cache first; NETWORK_CALLS=0 without inject →
  * placeholder (no network). Failures never throw (§5.2).
  */
+/**
+ * Кто мы для чужого сервера.
+ *
+ * Запрос за картинкой уходил вовсе без `User-Agent`, и крупные площадки такие
+ * запросы отклоняют: Викимедиа отвечает 403 без описательного агента, за ним —
+ * CDN ТАСС и другие. В отчёте 72 из шести плиток на странице изображений три
+ * были пустыми: Википедия, ТАСС, МГИМО. Представляемся честно, тем же именем,
+ * что и читатель страниц, — и в буквах ASCII: кириллица в значении заголовка
+ * роняет запрос ещё до отправки.
+ */
+export const PREVIEW_USER_AGENT =
+  "DigitalProfileAudit/1.0 (+reputation audit; fetches public preview images)";
+
+/** Почему превью не получено — строкой для разбора прогона, не для клиента. */
+export type PreviewFailureReason =
+  | "no_url"
+  | "offline"
+  | `http_${number}`
+  | "not_an_image"
+  | "too_large"
+  | "decode_failed"
+  | "network";
+
 export async function tryFetchImagePreview(
   url: string | undefined,
-  opts?: Pick<ImagePreviewFetchOptions, "timeoutMs" | "fetchImpl" | "cacheDir">
+  opts?: Pick<ImagePreviewFetchOptions, "timeoutMs" | "fetchImpl" | "cacheDir"> & {
+    /** Причина отказа — чтобы пустая плитка не была немой. */
+    onFailure?: (url: string, reason: PreviewFailureReason) => void;
+  }
 ): Promise<string | undefined> {
   if (!url || !/^https?:\/\//i.test(url)) return undefined;
+  const fail = (reason: PreviewFailureReason): undefined => {
+    opts?.onFailure?.(url, reason);
+    return undefined;
+  };
   const cached = readPreviewCache(opts?.cacheDir, url);
   if (cached) return cached;
-  if (process.env.NETWORK_CALLS === "0" && !opts?.fetchImpl) return undefined;
+  if (process.env.NETWORK_CALLS === "0" && !opts?.fetchImpl) return fail("offline");
   try {
     const controller = new AbortController();
     const timeoutMs = opts?.timeoutMs ?? 5000;
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     const fetchImpl = opts?.fetchImpl ?? fetch;
-    const res = await fetchImpl(url, { signal: controller.signal });
+    const res = await fetchImpl(url, {
+      signal: controller.signal,
+      headers: { "user-agent": PREVIEW_USER_AGENT, accept: "image/*" },
+    });
     clearTimeout(timeout);
-    if (!res.ok) return undefined;
+    if (!res.ok) return fail(`http_${res.status}` as PreviewFailureReason);
+    // Страница вместо картинки: декодировать HTML бессмысленно, а отказ по
+    // причине «не картинка» сразу называет, что произошло.
+    const type = String(res.headers?.get?.("content-type") ?? "");
+    if (type && !/^image\//i.test(type)) return fail("not_an_image");
     const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length > 2_000_000) return undefined;
+    if (buf.length > 2_000_000) return fail("too_large");
     const png = await sharp(buf).rotate().resize(320, 200, { fit: "inside" }).png().toBuffer();
     const b64 = png.toString("base64");
     writePreviewCache(opts?.cacheDir, url, b64);
     return b64;
-  } catch {
-    return undefined;
+  } catch (err) {
+    return fail(err instanceof Error && /decode|unsupported/i.test(err.message) ? "decode_failed" : "network");
   }
 }
 
@@ -124,6 +167,7 @@ export async function fetchImagePreviewsWithBudget(
           timeoutMs: opts?.timeoutMs,
           fetchImpl: opts?.fetchImpl,
           cacheDir: opts?.cacheDir,
+          onFailure: opts?.onFailure,
         })
       );
     }

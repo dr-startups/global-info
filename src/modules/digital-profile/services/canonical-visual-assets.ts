@@ -364,12 +364,25 @@ export async function buildCanonicalVisualAssets(input: {
   await assertSharpAvailable();
 
   const fetchPreviews = input.fetchImagePreviews ?? process.env.NETWORK_CALLS !== "0";
+  /*
+   * Отказы превью считаются по причинам, а не тонут поштучно.
+   *
+   * Пустая плитка в отчёте говорит «источник не отдал изображение», и по ней
+   * не отличить запрет площадки от нашей ошибки. В отчёте 72 три плитки из
+   * шести были пустыми — Википедия, ТАСС, МГИМО, — и причина (запрос уходил
+   * без `User-Agent`, а Викимедиа отвечает на такие 403) не была видна нигде.
+   */
+  const previewFailures = new Map<string, number>();
   const previewOpts: ImagePreviewFetchOptions = {
     concurrency: 4,
     timeoutMs: 5000,
     budgetMs: 30_000,
     ...input.previewFetch,
     cacheDir: input.previewFetch?.cacheDir ?? input.previewCacheDir,
+    onFailure: (_url, reason) => {
+      previewFailures.set(reason, (previewFailures.get(reason) ?? 0) + 1);
+      input.previewFetch?.onFailure?.(_url, reason);
+    },
   };
   const assets: RendererAssetEntry[] = [];
   const visualAssets: VisualAssetsBySlot = {};
@@ -769,6 +782,15 @@ export async function buildCanonicalVisualAssets(input: {
     )
   ) {
     counts.imageGrids += 1;
+  }
+
+  // Строка о превью — рядом со строкой о чтении ссылок: обе отвечают на вопрос
+  // «чего в отчёте нет и почему».
+  if (previewFailures.size > 0) {
+    const parts = [...previewFailures.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([reason, n]) => `${reason}: ${n}`);
+    console.log(`[digital-profile][превью] не получено изображений — ${parts.join(", ")}`);
   }
 
   return { assets, visualAssets, counts, failed };
