@@ -48,6 +48,20 @@ export type CompositeObservation = {
    */
   rank?: number;
   /**
+   * Позиция по каждому провайдеру отдельно.
+   *
+   * Провайдеры нумеруют одну и ту же выдачу по-разному: Яндекс считает все
+   * блоки (плитка картинок занимает место), Arsenkin — только органику. Пока
+   * позиции сливались минимумом, две системы координат смешивались: материал,
+   * второй у Яндекса и первый у Arsenkin, становился первым и сталкивался с
+   * чужой первой позицией, а вторая пустела. В отчёте 73 таблица ТОП-20 имела
+   * дубли на местах 1, 7, 10 и дыры на 9, 13, 17.
+   *
+   * Разложенные по провайдерам позиции позволяют выбрать одну систему координат
+   * и объяснить выбор.
+   */
+  ranksByProvider?: Record<string, number>;
+  /**
    * Назначение запроса из плана (`subject_lookup`, `adverse_lookup`, …).
    * Нужно, чтобы отличать выдачу по имени субъекта от целевых проб.
    */
@@ -97,6 +111,33 @@ export type CompositeMergeResult = {
 export const MOCK_URL_PATTERN = /example\.|\.example\b|\.invalid\b/i;
 
 /** Domain-only variant for source lines («Источники: …») and evidence domains. */
+/**
+ * Позиция в одной системе отсчёта — той, которой принадлежит выдача.
+ *
+ * Место в выдаче имеет смысл только внутри нумерации одного поисковика.
+ * Обогатитель (Arsenkin) идёт поверх чужой выдачи и нумерует её по-своему;
+ * брать у него позицию значит смешивать шкалы. Поэтому позицию задаёт
+ * поисковик — сначала тот, что признан основным, затем любой другой поисковик,
+ * и лишь если поисковик её не сообщил вовсе, берётся то, что есть: иначе
+ * старые наборы данных, собранные одним обогатителем, потеряли бы таблицу
+ * целиком.
+ */
+export function rankInOneScale(row: {
+  rank?: number;
+  primaryProvider?: string;
+  ranksByProvider?: Record<string, number>;
+}): number | undefined {
+  const ranks = row.ranksByProvider ?? {};
+  const isEngine = (p: string): boolean => /yandex|serper|google/i.test(p);
+  const primary = row.primaryProvider ?? "";
+  if (primary && typeof ranks[primary] === "number") return ranks[primary];
+  const engine = Object.entries(ranks).find(([p]) => isEngine(p));
+  if (engine) return engine[1];
+  const any = Object.values(ranks);
+  if (any.length > 0) return Math.min(...any);
+  return row.rank;
+}
+
 export function isMockClientDomain(domain: string | null | undefined): boolean {
   const d = String(domain ?? "").trim();
   if (!d) return false;
@@ -290,7 +331,18 @@ export async function mergeCompositeSerp(input: {
   const add = (row: CompositeObservation, provider: string) => {
     const existing = map.get(row.key);
     if (!existing) {
-      map.set(row.key, { ...row, providers: [...row.providers] });
+      // Позиция первого провайдера тоже записывается за ним: без этого
+      // материал, впервые увиденный поисковиком и позже дополненный
+      // обогатителем, получал бы позицию обогатителя.
+      const ranksByProvider =
+        typeof row.rank === "number" && Number.isFinite(row.rank)
+          ? { ...(row.ranksByProvider ?? {}), [provider]: row.rank }
+          : row.ranksByProvider;
+      map.set(row.key, {
+        ...row,
+        providers: [...row.providers],
+        ...(ranksByProvider ? { ranksByProvider } : {}),
+      });
       return;
     }
     const providers = Array.from(new Set([...existing.providers, ...row.providers, provider]));
@@ -306,12 +358,10 @@ export async function mergeCompositeSerp(input: {
       existing.baseSearchSurfaceItemId = row.baseSearchSurfaceItemId;
     }
     if (row.fromCaseCorpus) existing.fromCaseCorpus = true;
-    // Лучшая позиция и известное назначение запроса не теряются при склейке:
-    // один и тот же материал приходит от нескольких провайдеров, и вопрос
-    // «виден ли он в ТОП-20» решается по самой высокой из позиций.
+    // Позиция запоминается за тем провайдером, который её сообщил. Сводить их
+    // минимумом нельзя — это разные системы отсчёта (см. `ranksByProvider`).
     if (typeof row.rank === "number" && Number.isFinite(row.rank)) {
-      existing.rank =
-        typeof existing.rank === "number" ? Math.min(existing.rank, row.rank) : row.rank;
+      existing.ranksByProvider = { ...(existing.ranksByProvider ?? {}), [provider]: row.rank };
     }
     if (!existing.queryPurpose && row.queryPurpose) existing.queryPurpose = row.queryPurpose;
     // Prefer fine-grained Arsenkin surfaces (ai_answer) over generic organic.
@@ -606,6 +656,7 @@ export async function mergeCompositeSerp(input: {
     if (row.providers.includes("yandex") || row.providers.includes("serper")) {
       row.primaryProvider = row.providers.includes("yandex") ? "yandex" : "serper";
     }
+    row.rank = rankInOneScale(row);
   }
 
   const observations = [...map.values()];
