@@ -21,6 +21,7 @@ import type {
 } from "./scoped-input";
 import { normalizeCoverageSurface } from "./scoped-input";
 import { normalizeSourceType } from "../analytics/source-type";
+import { pageQuoteForClient } from "../analytics/client-quote-hygiene";
 import { linkReadingClientLine } from "../analytics/link-reading-agent";
 import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
 
@@ -443,6 +444,15 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     // странице. Иноязычная цитата печатается дословно, а эта строка идёт рядом.
     const theme = String(v.theme ?? "").trim();
     if (theme) evidenceIndex[ref].verdictTheme = theme;
+    // Первая годная цитата со страницы: она и станет цитатой в отчёте вместо
+    // обрезанного заголовка выдачи.
+    for (const q of v.quotes ?? []) {
+      const quote = pageQuoteForClient(q?.text);
+      if (quote) {
+        evidenceIndex[ref].pageQuote = quote;
+        break;
+      }
+    }
   }
 
   // Enrich compliance_hit entries with typed match metadata (provider /

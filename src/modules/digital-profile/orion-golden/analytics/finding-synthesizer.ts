@@ -36,7 +36,11 @@ import {
 } from "../../config/finding-themes";
 import { domainOf } from "./composite-dataset-builder";
 import { mapRegionBucket, mapSurfaceBucket } from "../classic/composite-serp-overlay-merge";
-import { looksLikeSearchQuery, looksLikeSurfaceBlockHeading } from "./client-quote-hygiene";
+import {
+  looksLikeMachineDump,
+  looksLikeSearchQuery,
+  looksLikeSurfaceBlockHeading,
+} from "./client-quote-hygiene";
 import { themeHitIsNegated } from "./negated-theme-hit";
 
 export type { ThemeDef };
@@ -179,7 +183,7 @@ export type ClaimEvidenceExample = { title: string; domain: string };
  * / «…из-за» never matched. Use Unicode letter boundaries + multi-word tails.
  */
 const DANGLING_TAIL_RE =
-  /(?:^|[^\p{L}\p{N}_])(?:and|or|of|the|a|an|to|for|with|from|by|over|into|onto|in|on|at|и|в|во|на|по|с|со|о|об|из|из-за|для|как|что|за|к|ко|у|от|до|про|при)\s*$/iu;
+  /(?:^|[^\p{L}\p{N}_])(?:and|or|of|the|a|an|to|for|with|from|by|over|into|onto|in|on|at|due|и|в|во|на|по|с|со|о|об|из|из-за|для|как|что|за|к|ко|у|от|до|про|при|после|перед)\s*$/iu;
 const SERP_TRUNCATED_RE = /(?:\.\.\.|…)\s*$/u;
 const BIO_SEO_RE = /биограф(?:ия|ии)?|личная жизнь|фото|новости|карьера|wiki(?:pedia)?/iu;
 const ADVERSE_THEME_IDS = new Set([
@@ -293,6 +297,9 @@ export function quoteForClaim(title: string, budget = 220): string {
   const raw = String(title ?? "").trim();
   const t = cleanExampleTitle(raw);
   if (!t || t.length < 12 || hasDanglingTail(t) || isIncompleteClientQuote(t)) return "";
+  // Идентификаторы наборов данных — не слова источника: «…источники:
+  // ext_gb_coh_psc, us_trade_csl, eu_fsf» стояло в отчёте цитатой трижды.
+  if (looksLikeMachineDump(t)) return "";
   // SERP «…» titles: keep only when clean recovered a complete sentence.
   if (SERP_TRUNCATED_RE.test(raw) && !/[.!?»]$/u.test(t)) return "";
   if (t.length <= budget) return t;
@@ -584,6 +591,26 @@ export function buildClientFacingClaim(input: {
 const REFERENCE_SOURCE_SUFFIX =
   /\s*[-–—]\s*(?:Википедия|Wikipedia|Wikidata|Циклопедия|Рувики|RuWiki|Энциклопедия[^-–—]*|ПЕРСОНА\s+ТАСС|Telegram\s+Вики|[A-Za-zА-Яа-яЁё ]{0,20}Вики(?:педия)?)\s*$/iu;
 
+/**
+ * Кончается ли текст концом предложения, а не точкой внутри числа или инициала.
+ *
+ * Точка — не всегда граница: «$18.4 billion», «Фонд А.Усманова», «1.4B». Взяв
+ * её за конец предложения, восстановление обрезанного заголовка давало
+ * «Благотворительный Фонд А.» и «Alisher Usmanov is worth is an estimated
+ * $18.» — обрывки, ради устранения которых восстановление и делалось.
+ */
+export function endsWithSentence(text: string): boolean {
+  const t = String(text ?? "").trim();
+  if (!t) return false;
+  if (/[!?…»]$/u.test(t)) return true;
+  if (!/\.$/u.test(t)) return false;
+  // Десятичный разделитель: «$18.», «1.».
+  if (/\d\.$/u.test(t)) return false;
+  // Инициал: «Фонд А.», «J.».
+  if (/(?:^|[\s(«"])\p{Lu}\.$/u.test(t)) return false;
+  return true;
+}
+
 export function cleanExampleTitle(raw: string): string {
   let t = String(raw ?? "").replace(/\s+/gu, " ").trim();
   // Source suffix after a pipe: "Заголовок | Дзен" / "… | Forbes.ru".
@@ -605,7 +632,7 @@ export function cleanExampleTitle(raw: string): string {
   // Search engines truncate long titles with an ellipsis: drop the broken
   // last fragment when a complete sentence remains before it.
   const m = t.match(/^(.*[.!?…»])\s*[^.!?…»]*(?:\.\.\.|…)$/u);
-  if (m && m[1].length >= 20) t = m[1].trim();
+  if (m && m[1].length >= 20 && endsWithSentence(m[1].trim())) t = m[1].trim();
   return t.replace(/\s*(?:\.\.\.|…)\s*$/u, "").trim();
 }
 

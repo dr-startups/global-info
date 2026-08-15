@@ -31,9 +31,11 @@ import { ADVERSE_PATTERNS } from "../../analytics/surface-analyzers";
 import { VISUAL_ASSET_UNAVAILABLE } from "../slide-markers";
 import { clampQuotedLine, closeDanglingQuote } from "../quote-integrity";
 import { normalizeForCompare } from "../text-compare";
+import { pageQuoteForClient } from "../../analytics/client-quote-hygiene";
 import {
   cleanExampleTitle,
   isWeakExampleTitle,
+  quoteForClaim,
   joinTitlesWithinBudget,
   pluralRu,
 } from "../../analytics/finding-synthesizer";
@@ -961,7 +963,7 @@ export function pageSourceLine(view: PageEvidenceView): string {
  * источника и превращали строку доказательства в нечитаемую ленту.
  */
 const STRUCTURED_TAIL_RE =
-  /(?=(?:Всего по теме:|В корпусе:|Где видно:|Что делать:|О чём:|Для банка|Банки |Это усиливает|Риск в том|Деловой фон))/u;
+  /(?=(?:Всего по теме:|В корпусе:|Где видно:|Что делать:|О чём:|Принадлежность:|Для банка|Банки |Это усиливает|Риск в том|Деловой фон))/u;
 
 /** Разбить строку по служебным врезкам, сохранив порядок. */
 function splitStructuredTail(line: string): string[] {
@@ -1276,17 +1278,36 @@ export function localizedThemedClaim(f: Finding, scoped: ScopedFragmentInput): s
     if (adverseTheme && (e.readVerdictTone === "neutral" || e.readVerdictTone === "supportive")) {
       continue;
     }
-    const t = cleanExampleTitle(String(e.title ?? ""));
+    /*
+     * Цитируется прочитанная страница, а не строка выдачи.
+     *
+     * Поисковик режет заголовок по своей ширине, и в отчёт попадали обрывки:
+     * «Алишер Усманов: биография предпринимателя, бизнес, личная», «…в
+     * отношении него после», «lost his mansion in Germany due». Прочитанная
+     * страница даёт целое предложение, и аудитор уже сверил его с текстом
+     * дословно — это и лучшее доказательство, и законченная фраза.
+     *
+     * Если страницу прочитать не удалось, берётся заголовок — но только целый.
+     * Правило отбора здесь то же, что и в синтезаторе находок
+     * (`quoteForClaim`): обрезанный поисковиком заголовок не цитируется вовсе.
+     * Раньше этот путь собирал цитаты сам и все защиты терял — в том числе
+     * потому, что проверку «заголовок обрезан» звали уже на очищенной строке,
+     * где многоточия не осталось.
+     */
+    const rawTitle = String(e.title ?? "");
+    const fromPage = pageQuoteForClient(e.pageQuote);
+    const t = fromPage || quoteForClaim(rawTitle, 220);
     if (
       !t ||
       seenTitles.has(t.toLowerCase()) ||
       /^potential\s+match$/i.test(t) ||
-      isWeakExampleTitle(t, { theme: themeDef })
+      (!fromPage && isWeakExampleTitle(rawTitle, { theme: themeDef }))
     ) {
       continue;
     }
     seenTitles.add(t.toLowerCase());
-    let score = t.split(/\s+/u).length >= 6 ? 2 : 1;
+    // Цитата со страницы сильнее заголовка: она полна и проверена по тексту.
+    let score = fromPage ? 6 : t.split(/\s+/u).length >= 6 ? 2 : 1;
     if (themeDef?.keywords.test(t)) score += 8;
     titleCandidates.push({
       title: t,
