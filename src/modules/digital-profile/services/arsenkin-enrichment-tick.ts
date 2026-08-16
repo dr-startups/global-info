@@ -768,8 +768,8 @@ export async function runDurableArsenkinEnrichmentTick(input: {
     }
 
     // «Стадия не начиналась» — это когда не зарегистрирован ни один агент **из
-    // тех, кому положено работать**. Сравнение с полным списком из пяти после
-    // ADR-0005 никогда не совпадало бы: двое отключены составом, и отказ уходил
+    // тех, кому положено работать**. Сравнение с полным списком из пяти
+    // никогда не совпадало бы: двое отключены составом, и отказ уходил
     // бы в менее точный ARSENKIN_NO_TASKS_TO_POLL.
     const expectedAgentCount = ARSENKIN_REAL_AGENT_NAMES.length - gap.disabled.length;
     if (gap.unregistered.length > 0 && gap.unregistered.length === expectedAgentCount) {
@@ -940,7 +940,7 @@ export async function runDurableArsenkinEnrichmentTick(input: {
      * Отключённый составом агент — законченный исход, а не незавершённая
      * работа.
      *
-     * Без этого прогон при составе по умолчанию (ADR-0005: только первая
+     * Без этого прогон при составе по умолчанию (только первая
      * стадия) не завершался вовсе: агенты `ai-serp` и `check-h`/`indexation`
      * никогда бы не стали терминальными, а `enrichmentComplete` требует
      * терминальности всех пяти. Условие «нет ни одной задачи» здесь

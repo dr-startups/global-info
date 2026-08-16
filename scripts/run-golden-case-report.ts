@@ -61,7 +61,7 @@ const BASELINE_PATH = join(FIXTURE_DIR, "baseline.json");
 /**
  * Эталон клиентского текста. Числовой эталон рядом сверяет счётчики и метрики
  * качества и переживает полную переписку формулировок незамеченной; этот —
- * следит за словами. Нужен шагам переработки текста отчёта (ADR 0002–0004).
+ * следит за словами. Нужен любой работе над текстом отчёта.
  */
 const CLIENT_TEXT_BASELINE_PATH = join(FIXTURE_DIR, "client-text.baseline.json");
 const PROFILE_PATH = join(FIXTURE_DIR, "subject-profile.json");
@@ -492,7 +492,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
     console.log("baseline: OK");
 
     // Эталон клиентского текста. Отдельный от числового: переработка
-    // формулировок (ADR 0002–0004) обязана быть видна как осознанная правка
+    // формулировок обязана быть видна как осознанная правка
     // эталона, а не проехать незамеченной под зелёными счётчиками.
     if (!existsSync(CLIENT_TEXT_BASELINE_PATH)) {
       console.error(`client text baseline missing: ${CLIENT_TEXT_BASELINE_PATH}`);
