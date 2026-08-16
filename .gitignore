@@ -65,3 +65,7 @@ __pycache__/
 
 # Artifacts of the Playwright MCP browser session
 .playwright-mcp/
+
+# Локальные разрешения Claude Code: пути машины, идентификаторы реальных дел и
+# SQL по ним. Определения агентов рядом (.claude/agents/) — общие и коммитятся.
+/.claude/settings.local.json
