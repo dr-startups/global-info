@@ -11,23 +11,26 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { join } from "node:path";
 import { pythonInterpreter } from "./lib/python";
 import {
+  loadDeckInputsFromAnalyticsDir,
   runDeckBuild,
   toRendererPayload,
   buildCoverageReconciliation,
   DECK_TEMPLATE_REGISTRY,
   TEMPLATE_LAYOUT_VERSION,
   RED_MARKER_LABEL,
+  type CanonicalDeckInputs,
   type RendererAssetEntry,
   type ScopedEvidenceIndex,
-  type MetricSnapshot,
   type VisualAssetsBySlot,
   type V72PageInventoryItem,
 } from "../src/modules/digital-profile/orion-golden/deck-sections";
 import { DECK_CONTENT_VERSION } from "../src/modules/digital-profile/orion-golden/deck-sections/content-version";
-import type { VerifiedFindingBundle } from "../src/modules/digital-profile/orion-golden/contracts/verified-finding-bundle";
-import type { Finding } from "../src/modules/digital-profile/orion-golden/contracts/finding";
-import type { SurfaceAnalysis } from "../src/modules/digital-profile/orion-golden/contracts/surface-analysis";
 import type { VisibleAssetItem } from "../src/modules/digital-profile/orion-golden/deck-sections/canonical-slots";
+import type {
+  ExecutiveSummaryExtras,
+  UncategorizedMaterialsExtras,
+} from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
+import type { ComposedClientSummary } from "../src/modules/digital-profile/orion-golden/contracts/composed-client-summary";
 import { classifyObservationHighlight } from "../src/modules/digital-profile/serp-observation/resolve-observation-highlights";
 import type { PersistedSerpObservation } from "../src/modules/digital-profile/serp-observation/types";
 import {
@@ -73,55 +76,36 @@ const SLOT_ASSET_BINDING: Record<string, string[]> = {
   p32_uae_related: ["uae_related"],
 };
 
-type CompositeObservationRow = {
-  surface: string;
-  region: string;
-  engine?: string;
-  url?: string;
-  title?: string;
-  domain?: string;
-  evidenceRefs: string[];
-};
-
-let compositeObservationIndexCache: Map<string, CompositeObservationRow> | null = null;
-
-/** Ref → composite observation row (url/domain/engine) for asset resolution. */
-function compositeObservationIndex(): Map<string, CompositeObservationRow> {
-  if (compositeObservationIndexCache) return compositeObservationIndexCache;
-  const file = readJson<{ observations: CompositeObservationRow[] }>(
-    join(ANALYTICS_DIR, "composite-serp-observations.json")
-  );
-  const byRef = new Map<string, CompositeObservationRow>();
-  for (const o of file.observations) for (const r of o.evidenceRefs) byRef.set(r, o);
-  compositeObservationIndexCache = byRef;
-  return byRef;
-}
-
 /**
- * Resolve the rows actually visible on a bound asset, including the adverse
- * (red-frame) marking. The marking is reproduced with the SAME pure highlight
- * classifier the synthetic SERP snapshot generator used — no re-analysis, no
- * network, no DB.
+ * Строки, видимые на привязанном ассете, вместе с красной рамкой.
+ *
+ * Индекс здесь тот же, которым построители печатают страницу: собственный
+ * индекс скрипта не разрешал `inventory:`-ссылки, и панель с четырьмя
+ * запросами отдавала ноль строк с текстом — а страница рядом печатала
+ * «0 связанных запросов». Рамка воспроизводится тем же чистым классификатором,
+ * которым её ставил генератор снимка, — без пересчёта, без сети и без базы.
  */
-function resolveVisibleItems(evidenceRefs: string[] | undefined): VisibleAssetItem[] | undefined {
+function resolveVisibleItems(
+  evidenceRefs: string[] | undefined,
+  evidenceIndex: ScopedEvidenceIndex
+): VisibleAssetItem[] | undefined {
   if (!evidenceRefs?.length) return undefined;
-  const byRef = compositeObservationIndex();
   return evidenceRefs.map((ref) => {
-    const o = byRef.get(ref);
-    if (!o) return { ref };
+    const e = evidenceIndex[ref];
+    if (!e) return { ref };
     const hl = classifyObservationHighlight({
-      url: o.url ?? null,
-      domain: o.domain ?? null,
-      title: o.title ?? null,
+      url: e.url ?? null,
+      domain: e.domain ?? null,
+      title: e.title ?? null,
       snippet: null,
     } as unknown as PersistedSerpObservation);
     return {
       ref,
-      url: o.url,
-      domain: o.domain,
-      title: o.title,
-      engine: o.engine,
-      region: o.region,
+      url: e.url,
+      domain: e.domain,
+      title: e.title,
+      engine: e.engine,
+      region: e.region,
       adverse: hl.isHighlighted,
       themeTitle: hl.themeTitle ?? undefined,
     };
@@ -143,7 +127,7 @@ export class MissingDeckAssetFixture extends Error {
  * (а его нет у всех, кроме одной машины), берётся обезличенная фикстура из
  * baselines. Если нет ни того ни другого — ошибка с объяснением, а не ENOENT.
  */
-export function loadReportAssets(evidenceIndex?: ScopedEvidenceIndex): {
+export function loadReportAssets(evidenceIndex: ScopedEvidenceIndex): {
   assets: RendererAssetEntry[];
   visualAssets: VisualAssetsBySlot;
 } {
@@ -165,20 +149,15 @@ export function loadReportAssets(evidenceIndex?: ScopedEvidenceIndex): {
       .filter((a): a is RendererAssetEntry => Boolean(a))
       .map((a) => {
         const evidenceRefs = Array.isArray(a.evidenceRefs) ? a.evidenceRefs.map(String) : undefined;
-        const visibleItems = resolveVisibleItems(evidenceRefs);
-        // Domains actually visible on the asset: from the resolved rows first,
-        // falling back to the run's full evidence index (the fragment's scoped
-        // slice may not contain the exact observation ids the synthetic
-        // snapshot was built from).
-        const resolvedDomains = (visibleItems ?? [])
-          .map((v) => v.domain)
-          .filter((d): d is string => Boolean(d));
-        const indexDomains = evidenceIndex
-          ? (evidenceRefs ?? [])
-              .map((r) => evidenceIndex[r]?.domain)
-              .filter((d): d is string => Boolean(d))
-          : [];
-        const evidenceDomains = [...new Set([...resolvedDomains, ...indexDomains])];
+        const visibleItems = resolveVisibleItems(evidenceRefs, evidenceIndex);
+        // Домены, видимые на ассете: из разрешённых строк. Второй перебор по
+        // индексу здесь стоял, пока индексов было два, и добавить он уже ничего
+        // не может — строки разрешаются тем же индексом.
+        const evidenceDomains = [
+          ...new Set(
+            (visibleItems ?? []).map((v) => v.domain).filter((d): d is string => Boolean(d))
+          ),
+        ];
         return {
           assetRef: a.assetRef,
           kind: String(a.kind ?? "visual"),
@@ -195,182 +174,18 @@ export function loadReportAssets(evidenceIndex?: ScopedEvidenceIndex): {
   return { assets, visualAssets };
 }
 
-function readJson<T>(path: string): T {
-  return JSON.parse(readFileSync(path, "utf8")) as T;
-}
-
 /**
- * Предмет аудита из `analysis-scope.json` — то же чтение, что и в живом пути
- * (`loadDeckInputsFromAnalyticsDir`). Артефакта нет у прогонов, снятых до
- * правила ТОП-20: тогда страницы просто молчат о глубине.
+ * Вход деки — тем же загрузчиком, что и у продукта.
+ *
+ * Здесь стоял второй загрузчик: индекс он строил из сырых `obs.evidenceRefs`,
+ * KPI считал по решениям инвентаря и `composite-serp-provenance.json` не читал
+ * вовсе. Приёмка мерила деку тем, чего продукт никогда не собирает, — и
+ * приняла страницу, где под снимком панели с четырьмя запросами стояло
+ * «0 связанных запросов». В скрипте остаётся только фикстура самого прогона:
+ * субъект, привязка ассетов, рендер и ворота.
  */
-function analysisScopeMetrics(): Pick<
-  MetricSnapshot,
-  "analyzedCount" | "analysisTopN" | "analysisLanes"
-> {
-  const path = join(ANALYTICS_DIR, "analysis-scope.json");
-  if (!existsSync(path)) return {};
-  const scope = readJson<{
-    analyzed?: number;
-    topN?: number;
-    lanes?: Array<{ lane?: string; analyzed?: number }>;
-  }>(path);
-  const lanes = (scope.lanes ?? [])
-    .filter((l) => typeof l.analyzed === "number" && l.analyzed > 0 && typeof l.lane === "string")
-    .map((l) => {
-      const [engine = "", region = ""] = String(l.lane).split("|");
-      return { engine, region, analyzed: l.analyzed as number };
-    })
-    .filter((l) => l.engine && l.region);
-  return {
-    analyzedCount: typeof scope.analyzed === "number" ? scope.analyzed : undefined,
-    analysisTopN: typeof scope.topN === "number" ? scope.topN : undefined,
-    analysisLanes: lanes.length > 0 ? lanes : undefined,
-  };
-}
-
-export function loadReport72DeckInputs() {
-  const bundle = readJson<VerifiedFindingBundle>(join(ANALYTICS_DIR, "verified-finding-bundle.json"));
-  const ambiguous = readJson<Finding[]>(join(ANALYTICS_DIR, "ambiguous-findings.json"));
-  const surfaceAnalysis = readJson<Record<string, SurfaceAnalysis>>(
-    join(ANALYTICS_DIR, "surface-analysis.json")
-  );
-  const executiveSummary = readJson<{
-    verdict: string;
-    executiveConclusion: string;
-    keyFindings: Array<{
-      findingId: string;
-      title: string;
-      factualBasis: string;
-      clientImpact: string;
-      recommendedAction: string;
-    }>;
-    priorityActions: string[];
-    identityCaveats: string[];
-    dataLimitations: string[];
-  }>(join(ANALYTICS_DIR, "executive-summary.json"));
-  const binding = readJson<{
-    baseReportRunId: string;
-    datasetId: string;
-    caseId: string;
-  }>(join(ANALYTICS_DIR, "report-data-binding.json"));
-  const providerDelta = readJson<{
-    baseCount: number;
-    arsenkinObservationCount: number;
-  }>(join(ANALYTICS_DIR, "provider-delta.json"));
-  const observations = readJson<{
-    observations: CompositeObservationRow[];
-    baseCount: number;
-    compositeCount: number;
-  }>(join(ANALYTICS_DIR, "composite-serp-observations.json"));
-  const subjectResolution = readJson<{
-    items: Array<{ decision: string }>;
-  }>(join(ANALYTICS_DIR, "subject-resolution.json"));
-
-  // Merge verified + ambiguous findings: appendix scope needs AMBIGUOUS items,
-  // KPI protection is enforced by fragment scopes and section QA.
-  const mergedBundle: VerifiedFindingBundle = {
-    ...bundle,
-    findings: [...bundle.findings, ...ambiguous],
-  };
-
-  const surfaceUnits = Object.values(surfaceAnalysis).flatMap((sa) => sa.units);
-
-  const evidenceIndex: ScopedEvidenceIndex = {};
-  const knownEvidenceRefs = new Set<string>();
-  const perRegionCounts: Record<string, number> = {};
-  for (const obs of observations.observations) {
-    const regionKey = obs.region === "RU" ? "RU" : "UAE";
-    perRegionCounts[regionKey] = (perRegionCounts[regionKey] ?? 0) + 1;
-    for (const ref of obs.evidenceRefs) {
-      knownEvidenceRefs.add(ref);
-      evidenceIndex[ref] = {
-        url: obs.url,
-        domain: obs.domain,
-        title: obs.title,
-        kind: obs.surface,
-        region: obs.region,
-        engine: obs.engine,
-      };
-    }
-  }
-  for (const f of mergedBundle.findings) for (const r of f.evidenceRefs) knownEvidenceRefs.add(r);
-
-  // Enrich compliance database hits with typed match metadata from the run's
-  // existing evidence inventory (provider, category, score, review status) —
-  // needed for evidence-backed compliance tables instead of bare titles.
-  const inventoryPath = join(RUN_DIR, "full-evidence-inventory.json");
-  if (existsSync(inventoryPath)) {
-    const inventory = readJson<{
-      items: Array<{
-        inventoryId?: string;
-        evidenceType?: string;
-        rawMetadata?: {
-          provider?: string;
-          matchType?: string;
-          matchScore?: number;
-          reviewStatus?: string;
-        };
-      }>;
-    }>(inventoryPath);
-    for (const item of inventory.items ?? []) {
-      if (item.evidenceType !== "compliance_hit" || !item.inventoryId) continue;
-      const ref = `inventory:${item.inventoryId}`;
-      const entry = evidenceIndex[ref];
-      if (!entry) continue;
-      entry.providerLabel = item.rawMetadata?.provider;
-      entry.matchCategory = item.rawMetadata?.matchType;
-      entry.matchScore = item.rawMetadata?.matchScore;
-      entry.reviewStatus = item.rawMetadata?.reviewStatus;
-    }
-  }
-  for (const u of surfaceUnits) {
-    for (const r of u.evidenceRefs) knownEvidenceRefs.add(r);
-    for (const c of u.claims) for (const r of c.evidenceRefs) knownEvidenceRefs.add(r);
-  }
-
-  const decisions = subjectResolution.items.reduce<Record<string, number>>((acc, i) => {
-    acc[i.decision] = (acc[i.decision] ?? 0) + 1;
-    return acc;
-  }, {});
-
-  const RISK_ORDER: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, critical: 4 };
-  const metricSnapshot: MetricSnapshot = {
-    metricSnapshotId: `${binding.datasetId}-metrics`,
-    datasetId: binding.datasetId,
-    reportRunId: binding.baseReportRunId,
-    baseCount: observations.baseCount,
-    enrichmentCount: providerDelta.arsenkinObservationCount,
-    compositeCount: observations.compositeCount,
-    // Replay loader: inventory tallies OK for baseline parity; live path uses
-    // loadDeckInputsFromAnalyticsDir (observation-scoped KPI).
-    subjectMatchCount: decisions.SUBJECT_MATCH ?? 0,
-    likelySubjectCount: decisions.LIKELY_SUBJECT ?? 0,
-    ambiguousCount: decisions.AMBIGUOUS ?? 0,
-    otherSubjectCount: decisions.OTHER_SUBJECT ?? 0,
-    adverseFindingCount: bundle.findings.filter(
-      (f) => f.subjectMatch === "SUBJECT_MATCH" && (RISK_ORDER[f.riskLevel] ?? 0) >= 2
-    ).length,
-    perRegionCounts,
-    // Область анализа читается так же, как в живом пути: без неё страницы
-    // проходили растровую проверку без фразы о ТОП-20, то есть вёрстка
-    // проверялась не на том тексте, который увидит клиент.
-    ...analysisScopeMetrics(),
-  };
-
-  return {
-    caseId: binding.caseId,
-    reportRunId: binding.baseReportRunId,
-    sourceDatasetId: binding.datasetId,
-    mergedBundle,
-    surfaceUnits,
-    evidenceIndex,
-    knownEvidenceRefs,
-    metricSnapshot,
-    executiveSummary,
-    baseCountBefore: providerDelta.baseCount,
-    baseCountAfter: observations.baseCount,
-  };
+export function loadReport72DeckInputs(): CanonicalDeckInputs {
+  return loadDeckInputsFromAnalyticsDir(ANALYTICS_DIR);
 }
 
 async function main(): Promise<void> {
@@ -396,7 +211,17 @@ async function main(): Promise<void> {
       surfaceUnits: inputs.surfaceUnits,
       metricSnapshot: inputs.metricSnapshot,
       evidenceIndex: inputs.evidenceIndex,
-      extras: { executiveSummary: inputs.executiveSummary, visualAssets },
+      // Состав extras — тот же, что у живого пути: приёмка обязана мерить то,
+      // что печатает продукт, а не собственный набор входов.
+      extras: {
+        executiveSummary: inputs.executiveSummary as unknown as ExecutiveSummaryExtras,
+        composedClientSummary:
+          (inputs.composedClientSummary as unknown as ComposedClientSummary) ?? undefined,
+        surfaceCollectionHints: inputs.surfaceCollectionHints,
+        uncategorizedMaterials:
+          (inputs.uncategorizedMaterials as UncategorizedMaterialsExtras | null) ?? undefined,
+        visualAssets,
+      },
     },
     bundleForValidation: inputs.mergedBundle,
     knownEvidenceRefs: inputs.knownEvidenceRefs,
@@ -736,6 +561,10 @@ async function main(): Promise<void> {
         regionScopeIsolation: result.assemblyValidation?.checks.regionScopeIsolation ?? false,
         sourceFooterFromSidebarEvidence:
           result.assemblyValidation?.checks.sourceFooterFromSidebarEvidence ?? false,
+        // Страница не спорит со своей панелью. Отсутствие ключа — отказ, а не
+        // пропуск: проверка без входа выглядит точно так же, как пройденная.
+        panelPagesMatchDrawnRows:
+          result.assemblyValidation?.checks.panelPagesMatchDrawnRows ?? false,
         page13FooterListsHighlightDomains: pageLevelChecks.page13FooterListsHighlightDomains,
         page31NoRuCriminalEvidence: pageLevelChecks.page31NoRuCriminalEvidence,
         pageParity: (() => {

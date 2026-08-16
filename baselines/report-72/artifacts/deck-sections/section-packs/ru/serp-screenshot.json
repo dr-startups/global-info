@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v56",
+  "contentVersion": "deck-sections-v83",
   "promptVersion": "ru-serp-screenshot-analysis-v4",
-  "contentHash": "sha256:eb95a672c69ff5b4b998286fc11038c60a33fb5f2bc027ac39718e2dc9f4ac6f",
-  "inputHash": "sha256:139a67872932a8f81c4b51b6dc1c4442d654e0b4f8a63cd33190dfdce788d429:3678c7fbc6275637",
-  "generatedAt": "2026-08-12T21:28:52.971Z",
+  "contentHash": "sha256:85e25d7b19b5273545016b3ea45a884e027c7fc2f3448971f20487b65c936534",
+  "inputHash": "sha256:2ab2fef00e0de3b2948186bb3ac014da5a471aaa57adbc432da61d1e5811087a:b335d3f343321c30",
+  "generatedAt": "2026-08-16T22:00:49.311Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -337,8 +337,8 @@
         "whatWasFound": "На снимке выделено результатов повышенного внимания: 2 (x.com, rupep.org); остальные результаты — нейтральные или деловые.",
         "whyItMatters": "Выделенные материалы (2) видны при первичной проверке субъекта в этом регионе.",
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
-        "statusNote": "Статус: тема подтверждена, уровень внимания — критический; достоверность оценки высокая.",
         "sourceNote": "Источники на снимке — x.com и rupep.org.",
+        "statusNote": "Тема подтверждена, уровень внимания — критический; достоверность оценки высокая.",
         "highlightExplanations": [
           {
             "clientReason": "«Криминальные / судебные материалы» — выделенный результат x.com; уровень: критический.",

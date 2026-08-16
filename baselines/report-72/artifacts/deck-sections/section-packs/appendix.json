@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v56",
+  "contentVersion": "deck-sections-v83",
   "promptVersion": "appendix-deterministic-v1",
-  "contentHash": "sha256:ba3570d3fdf07aa846dd6cec45d6d07d331df8bb99fa08b667a016dc2121f45c",
-  "inputHash": "sha256:358dfdebc8b6c7b8924b612272fbdac601321df5fd17fd313c4344a23a2ea1b5:97461cd7367504ee",
-  "generatedAt": "2026-08-12T21:28:52.983Z",
+  "contentHash": "sha256:55aab50f9c2d03ed4286e6af27a6e3c1321423f545b679d607999bcaf93a3574",
+  "inputHash": "sha256:ba569f7d19bd1eb88f55a406b86a0b25312c259e28eb9abd8b77000d9b5d0d39:a566c2a991543b72",
+  "generatedAt": "2026-08-16T22:00:49.335Z",
   "required": false,
   "status": "READY",
   "sourceFindingIds": [
@@ -74,10 +74,10 @@
       "title": "Приложение: материалы, требующие идентификации",
       "content": {
         "bullets": [
-          "Семья и деловые связи\n1 свидетельств (0 негативных) в источниках ru.wikipedia.org.\nПримеры: В кого был влюблен Глинка? [finding-family_associates-other_subject-276ddd65]",
+          "Внимание по линии безопасности / оборонный контур\n1 свидетельств (1 негативных) в источниках rucriminal.info.\nПримеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-security_scrutiny-ambiguous-3d33fe91]",
+          "Деловой профиль\n2 свидетельств (0 негативных) в источниках kulturologia.ru, eg.ru.\nПримеры: Сергей Глинка: транспорт, биотехнологии и инвестиции в Nutriband · Биография и личная жизнь: Ксения Лаврова-Глинка - Экспресс газета [finding-business_profile-ambiguous-7a2d3181]",
           "Деловой профиль\n3 свидетельств (0 негативных) в источниках instagram.com, youtube.com, vkvideo.ru.\nПримеры: КНИГИ on Instagram: \"Прекрасная биография. Лаконичная ... · Михаил Глинка.Биография · Композитор Глинка (биографический, реж. Григорий ... [finding-business_profile-other_subject-b434e301]",
-          "Политические связи / публичная экспозиция\n1 свидетельств (0 негативных) в источниках youtube.com.\nПримеры: М. Глинка - Хор «Славься» из оперы «Жизнь за царя» [finding-political_exposure-other_subject-038d7d26]",
-          "Деловой профиль\n2 свидетельств (0 негативных) в источниках kulturologia.ru, eg.ru.\nПримеры: Сергей Глинка: транспорт, биотехнологии и инвестиции в Nutriband · Биография и личная жизнь: Ксения Лаврова-Глинка - Экспресс газета [finding-business_profile-ambiguous-7a2d3181]"
+          "Криминальные / судебные материалы\n1 свидетельств (1 негативных) в источниках rucriminal.info.\nПримеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-criminal_legal-ambiguous-3d33fe91]"
         ],
         "sourceNote": "Источники — eg.ru, instagram.com, kulturologia.ru, ru.wikipedia.org и ещё 2."
       },
@@ -94,14 +94,14 @@
         "inventory:ss-cmreb9zi100ezmm0fsu4gfbqx"
       ],
       "findingIds": [
-        "finding-family_associates-other_subject-276ddd65",
-        "finding-business_profile-other_subject-b434e301",
-        "finding-political_exposure-other_subject-038d7d26",
+        "finding-security_scrutiny-ambiguous-3d33fe91",
         "finding-business_profile-ambiguous-7a2d3181",
+        "finding-business_profile-other_subject-b434e301",
         "finding-criminal_legal-ambiguous-3d33fe91",
-        "finding-pep_rca_watchlist-ambiguous-976aa8fa",
         "finding-political_exposure-ambiguous-054edc90",
-        "finding-security_scrutiny-ambiguous-3d33fe91"
+        "finding-political_exposure-other_subject-038d7d26",
+        "finding-family_associates-other_subject-276ddd65",
+        "finding-pep_rca_watchlist-ambiguous-976aa8fa"
       ],
       "metrics": {
         "items": 8
@@ -120,10 +120,10 @@
       "title": "Приложение: материалы, требующие идентификации (продолжение 2/2)",
       "content": {
         "bullets": [
-          "Криминальные / судебные материалы\n1 свидетельств (1 негативных) в источниках rucriminal.info.\nПримеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-criminal_legal-ambiguous-3d33fe91]",
-          "PEP / RCA / watchlist-сигналы\n1 свидетельств (0 негативных) в источниках kulturologia.ru.\nПримеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром культуры: О чем жалеет Ксения Лаврова-Глинки [finding-pep_rca_watchlist-ambiguous-976aa8fa]",
           "Политические связи / публичная экспозиция\n2 свидетельств (0 негативных) в источниках kulturologia.ru, youtube.com.\nПримеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром культуры: О чем жалеет Ксения Лаврова-Глинки · Михаил Глинка \"Скажи,зачем явилась ты\"/Юрий Гуляев [finding-political_exposure-ambiguous-054edc90]",
-          "Внимание по линии безопасности / оборонный контур\n1 свидетельств (1 негативных) в источниках rucriminal.info.\nПримеры: European defense industry to the tune of Glinka's March - Russian Criminal [finding-security_scrutiny-ambiguous-3d33fe91]"
+          "Политические связи / публичная экспозиция\n1 свидетельств (0 негативных) в источниках youtube.com.\nПримеры: М. Глинка - Хор «Славься» из оперы «Жизнь за царя» [finding-political_exposure-other_subject-038d7d26]",
+          "Семья и деловые связи\n1 свидетельств (0 негативных) в источниках ru.wikipedia.org.\nПримеры: В кого был влюблен Глинка? [finding-family_associates-other_subject-276ddd65]",
+          "PEP / RCA / watchlist-сигналы\n1 свидетельств (0 негативных) в источниках kulturologia.ru.\nПримеры: Бросила мужа-миллионера, вышла замуж за бедного артиста и стала министром культуры: О чем жалеет Ксения Лаврова-Глинки [finding-pep_rca_watchlist-ambiguous-976aa8fa]"
         ],
         "sourceNote": "Источники — eg.ru, instagram.com, kulturologia.ru, ru.wikipedia.org и ещё 2."
       },
@@ -140,14 +140,14 @@
         "inventory:ss-cmreb9zi100ezmm0fsu4gfbqx"
       ],
       "findingIds": [
-        "finding-family_associates-other_subject-276ddd65",
-        "finding-business_profile-other_subject-b434e301",
-        "finding-political_exposure-other_subject-038d7d26",
+        "finding-security_scrutiny-ambiguous-3d33fe91",
         "finding-business_profile-ambiguous-7a2d3181",
+        "finding-business_profile-other_subject-b434e301",
         "finding-criminal_legal-ambiguous-3d33fe91",
-        "finding-pep_rca_watchlist-ambiguous-976aa8fa",
         "finding-political_exposure-ambiguous-054edc90",
-        "finding-security_scrutiny-ambiguous-3d33fe91"
+        "finding-political_exposure-other_subject-038d7d26",
+        "finding-family_associates-other_subject-276ddd65",
+        "finding-pep_rca_watchlist-ambiguous-976aa8fa"
       ],
       "metrics": {
         "items": 8

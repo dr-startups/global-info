@@ -19,6 +19,7 @@
     "sidebarScopeSubsets": true,
     "regionScopeIsolation": true,
     "sourceFooterFromSidebarEvidence": true,
+    "panelPagesMatchDrawnRows": true,
     "page13FooterListsHighlightDomains": true,
     "page31NoRuCriminalEvidence": true,
     "pageParity": true

@@ -2,11 +2,9 @@
   "version": "deck-page-level-checks-v1",
   "tocNoPerLinePageCounts": true,
   "adverseMarkersLabeled": true,
-  "noOtherSubjectInNeutralRows": true,
-  "noDuplicatedPageBodies": false,
-  "duplicatedBodies": [
-    "p09_ru_serp_table == p26_uae_serp_table"
-  ],
+  "noOtherSubjectInNeutralRows": false,
+  "noDuplicatedPageBodies": true,
+  "duplicatedBodies": [],
   "aiSecurityFindingComplete": false,
   "urlAuditCompactRowsNotFullPages": true,
   "emptyStatesExplained": true,

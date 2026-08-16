@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v56",
+  "contentVersion": "deck-sections-v83",
   "promptVersion": "uae-identity-analysis-v4",
-  "contentHash": "sha256:b2a58a9161b7d13255d582acd1f802268c05b7bc0a49685fe886299ee015aaea",
-  "inputHash": "sha256:43cabac7e18554cb73aeaae85a5769aefa2c0c9a9fa9674cf9ef449b4ede38ec:52d7594f0ef7acb3",
-  "generatedAt": "2026-08-12T21:28:52.981Z",
+  "contentHash": "sha256:7a8a338c374e1013d53be16010decde6bcbac78ad3ae5c1e1a9ff6af89c1dbed",
+  "inputHash": "sha256:27b09fab0ad794f37aa11d6014e3a27f02f46a4612eaf98d5d6909317252579e:39da35ace6e206c5",
+  "generatedAt": "2026-08-16T22:00:49.328Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [],
@@ -41,13 +41,14 @@
       "content": {
         "narrative": "В выдаче зафиксированы энциклопедические материалы о проверяемом субъекте. Существенных негативных или спорных формулировок в этих карточках не выявлено. Материалов об одноимённых лицах в контуре ОАЭ / международный не зафиксировано.",
         "bullets": [
+          "Wikipedia",
           "Wikipedia"
         ],
         "whatWasFound": "Показано 2 результата; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
         "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
         "whatToCheck": "Мониторить изменения выдачи.",
-        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
-        "sourceNote": "Источники — поисковая выдача; полный перечень в приложении."
+        "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+        "statusNote": "Негативных заголовков на этой странице нет."
       },
       "evidenceRefs": [
         "inventory:wiki-1",

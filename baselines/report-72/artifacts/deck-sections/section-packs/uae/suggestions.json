@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v56",
+  "contentVersion": "deck-sections-v83",
   "promptVersion": "uae-suggestions-analysis-v4",
-  "contentHash": "sha256:339e0dd6e5960ffff39f7ccf98751f2104a029296dba29e63a86da576a35449d",
-  "inputHash": "sha256:b4bc22b61f68335b335d959bbbe36576ca6baedf50618609e63128144d532ba8:6fda2276f0ffe006",
-  "generatedAt": "2026-08-12T21:28:52.980Z",
+  "contentHash": "sha256:c5c8d2d015cdf234876835fee7513a74bdfb512475f4e831c2ffe49f641ea038",
+  "inputHash": "sha256:abcfe0f5af61d774620592f5a09b036831d681744e753f64c040ae76fbf07c72:95a69b6c4b17ea3d",
+  "generatedAt": "2026-08-16T22:00:49.327Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [],
@@ -35,14 +35,16 @@
       "continuationOf": null,
       "continuationIndex": null,
       "templateId": "suggestions",
-      "title": "ОАЭ — подсказки поиска",
+      "title": "ОАЭ — подсказки поиска: негативных формулировок нет",
       "content": {
-        "bullets": [],
-        "whatWasFound": "Показано 1 результат; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
-        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
-        "whatToCheck": "Мониторить изменения выдачи.",
-        "statusNote": "Статус: состав страницы описан по строкам таблицы; отдельного тематического вывода нет.",
-        "sourceNote": "Источники — поисковая выдача; полный перечень в приложении."
+        "bullets": [
+          "glinka sergey mikhaylovich"
+        ],
+        "whatWasFound": "На панели — 1 подсказка: 1 относится к субъекту. Негативных формулировок нет.",
+        "whyItMatters": "Подсказки показывают, что чаще всего ищут о субъекте: негативных формулировок среди показанных строк нет.",
+        "whatToCheck": "Сверить заголовки и домены с профилем субъекта; уточнить принадлежность строк со статусом «Вероятно».",
+        "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
+        "statusNote": "Строк с негативной формулировкой на этой странице нет."
       },
       "evidenceRefs": [
         "inventory:serp-obs-cmrjscznn009tvd9gy2tleds7"

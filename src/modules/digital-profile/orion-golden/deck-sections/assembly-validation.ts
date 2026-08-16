@@ -8,6 +8,7 @@ import { REQUIRED_SECTIONS } from "./contracts";
 import type { RendererSlide } from "./deck-assembler";
 import { isDataRowTemplate } from "./deck-assembler";
 import { normalizeEvidenceRef, regionMatches, type ScopedEvidenceIndex } from "./scoped-input";
+import type { VisualAssetsBySlot } from "./canonical-slots";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import { scanDeckForInternalCodes } from "./internal-code-scan";
 import { quoteIntegrityProblems } from "./quote-integrity";
@@ -21,6 +22,9 @@ const SIDEBAR_TEMPLATES = new Set([
 
 /** Templates allowed to be structurally sparse (framework pages). */
 const STRUCTURAL_TEMPLATES = new Set(["cover", "toc", "section-divider"]);
+
+/** Шаблоны, которые печатают строками то же, что нарисовано на их панели. */
+const PANEL_ROW_TEMPLATES = new Set(["related-queries", "suggestions"]);
 
 export type AssemblyValidationReport = {
   passed: boolean;
@@ -62,6 +66,8 @@ const RISK_ORDER: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3
 export function blockingIssues(input: {
   quoteDefectSlides: ReadonlySet<string>;
   codeSlides: ReadonlySet<string>;
+  /** Страницы, чей текст спорит с нарисованной на них панелью. */
+  panelMismatchSlides?: ReadonlySet<string>;
 }): string[] {
   const out: string[] = [];
   const name = (s: ReadonlySet<string>): string => [...s].slice(0, 5).join(", ");
@@ -74,6 +80,10 @@ export function blockingIssues(input: {
     out.push(
       `внутренние коды в клиентском тексте на ${input.codeSlides.size} страницах: ${name(input.codeSlides)}`
     );
+  }
+  const panels = input.panelMismatchSlides ?? new Set<string>();
+  if (panels.size >= SYSTEMIC_DEFECT_PAGES) {
+    out.push(`панели не сходятся с текстом на ${panels.size} страницах: ${name(panels)}`);
   }
   return out;
 }
@@ -88,6 +98,12 @@ export function validateAssembly(input: {
   baseObservationCountAfter: number;
   /** Full run evidence index for sidebar-scope checks. */
   evidenceIndex?: ScopedEvidenceIndex;
+  /**
+   * Панели, привязанные к слотам. Без них проверка «страница не спорит со
+   * своей панелью» не выполняется — и ключа в `checks` не появляется, чтобы
+   * невыполненная проверка не выглядела пройденной.
+   */
+  visualAssets?: VisualAssetsBySlot;
 }): AssemblyValidationReport {
   const issues: string[] = [];
   const checks: Record<string, boolean> = {};
@@ -452,6 +468,76 @@ export function validateAssembly(input: {
   }
   checks.sourceFooterFromSidebarEvidence = footerOk;
 
+  /*
+   * 9. Страница не спорит со своей панелью.
+   *
+   * Ни одна проверка не сравнивала страницу с её же картинкой: сайдбар
+   * заполнен («0 связанных запросов» — тоже текст), ассет привязан — значит
+   * «содержимое есть». Так девятнадцать ворот приняли деку, где под снимком
+   * панели с четырьмя запросами стояло «0 связанных запросов».
+   *
+   * Условий два, и первое важнее. «Джойн жив» ловит сам дефект: панель
+   * записала ссылки, а разрешить не удалось ни одну — значит, сломано
+   * разрешение ссылок, и обе стороны сравнения покажут ноль. Второе условие —
+   * «ноль при нарисованных»: равенства счётов здесь не требуем, это работа
+   * построителя (`panelRows`), и дублировать её тут значило бы завести второй
+   * ответ на тот же вопрос.
+   *
+   * Обе проверки смотрят только на страницы запросов и подсказок, и это
+   * граница, а не экономия. Их строки отбираются по тексту ещё до записи
+   * ассета, поэтому строка без текста там означает поломку. У сетки картинок и
+   * панели знаний всё наоборот: строки пишутся без отбора, у картинки в выдаче
+   * заголовка часто нет вовсе (плитка потому и подписана «Изображение из
+   * поиска»), а у строки, известной только `imageUrl`, нет и адреса. Считать
+   * такую страницу поломкой значит останавливать здоровый оплаченный прогон на
+   * последней стадии — ровно то, чего ворота не вправе делать.
+   *
+   * Разрешённой считается строка с заголовком или адресом — то же определение,
+   * которым проверяется индекс загрузчика: ссылка без того и другого никуда не
+   * разрешилась.
+   */
+  const panelMismatchSlides = new Set<string>();
+  if (input.visualAssets) {
+    const slidesByBaseSlot = new Map<string, RendererSlide[]>();
+    const templateByBaseSlot = new Map<string, string>();
+    for (const slide of rendererSlides) {
+      const kin = slidesByBaseSlot.get(slide.baseSlotId);
+      if (kin) kin.push(slide);
+      else slidesByBaseSlot.set(slide.baseSlotId, [slide]);
+      if (!slide.isContinuation) {
+        templateByBaseSlot.set(slide.baseSlotId, templateBySlot.get(slide.slideKey) ?? "");
+      }
+    }
+    for (const [slotId, metas] of Object.entries(input.visualAssets)) {
+      if (!PANEL_ROW_TEMPLATES.has(templateByBaseSlot.get(slotId) ?? "")) continue;
+      let titledRows = 0;
+      for (const meta of metas) {
+        const rows = meta.visibleItems ?? [];
+        titledRows += rows.filter((v) => Boolean(String(v.title ?? "").trim())).length;
+        const resolved = rows.filter((v) =>
+          Boolean(String(v.title ?? "").trim() || String(v.url ?? "").trim())
+        ).length;
+        const recorded = meta.evidenceRefs?.length ?? 0;
+        if (recorded > 0 && resolved === 0) {
+          panelMismatchSlides.add(slotId);
+          issues.push(
+            `панель ${slotId} (${meta.assetRef}): записано ${recorded} ссылок, ни одна не разрешилась в видимую строку`
+          );
+        }
+      }
+      if (titledRows === 0) continue;
+      for (const slide of slidesByBaseSlot.get(slotId) ?? []) {
+        if (slide.isContinuation || slide.visualAssetRefs.length === 0) continue;
+        if ((slide.bullets ?? []).some((b) => b.trim())) continue;
+        panelMismatchSlides.add(slide.slideKey);
+        issues.push(
+          `страница ${slide.slideKey}: на панели ${titledRows} строк, напечатано ноль`
+        );
+      }
+    }
+    checks.panelPagesMatchDrawnRows = panelMismatchSlides.size === 0;
+  }
+
   // No stale packs: manifest hash must match pack hash for every entry.
   const packByKey = new Map(input.packs.map((p) => [p.fragmentKey, p]));
   let staleOk = true;
@@ -498,6 +584,7 @@ export function validateAssembly(input: {
   const blocking = blockingIssues({
     quoteDefectSlides,
     codeSlides: new Set(internalCodes.map((f) => f.slide)),
+    panelMismatchSlides,
   });
 
   return { passed: issues.length === 0, issues, checks, blocking };

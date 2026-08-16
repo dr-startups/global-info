@@ -182,6 +182,7 @@ export function runDeckBuild(input: {
       baseObservationCountBefore: input.baseObservationCountBefore,
       baseObservationCountAfter: input.baseObservationCountAfter,
       evidenceIndex: ctx.evidenceIndex,
+      visualAssets: ctx.extras.visualAssets,
     });
   }
   const assemblyReportPath = join(input.outputRoot, "assembly-validation-report.json");

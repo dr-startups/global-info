@@ -19,12 +19,15 @@
     "unexplainedAdverseMarkerCountZero": true,
     "visualCardsResolvedOrLabeled": true,
     "noMateriallyEmptyPages": true,
+    "quotesWholeAndSourced": true,
     "pageAccountingComplete": true,
     "sidebarScopeSubsets": true,
     "regionScopeIsolation": true,
     "sourceFooterFromSidebarEvidence": true,
+    "panelPagesMatchDrawnRows": true,
     "noStalePacks": true,
     "packSelfContainedLineage": true,
     "sectionQaAllPassed": true
-  }
+  },
+  "blocking": []
 }

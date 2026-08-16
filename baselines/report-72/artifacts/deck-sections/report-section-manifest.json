@@ -3,7 +3,7 @@
   "caseId": "cmreamy2t0002o30f29urzcog",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "generatedAt": "2026-08-12T21:28:53.009Z",
+  "generatedAt": "2026-08-16T22:02:46.609Z",
   "sectionOrder": [
     "FRONT_MATTER",
     "EXECUTIVE",
@@ -31,7 +31,7 @@
       "artifactPath": "section-packs/executive/summary.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:37e308d37639cebad73db4a8a773c8946f165231928cf9fd5afd0d9853b0b646",
+      "contentHash": "sha256:e7cad47d9cf38aeeec2e1521feb0800371440af7d66b6a1ff90f131ee64b413b",
       "slideCount": 3,
       "validationPassed": true
     },
@@ -53,7 +53,7 @@
       "artifactPath": "section-packs/executive/overview.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:eaaccdeb0b690099827f30f42d2e5626e214881244bda8533efb9a0fcb1ee750",
+      "contentHash": "sha256:73c97be6c53bdd772e6f33523805712f18fad9c15ce57a0fac8159d65d28507e",
       "slideCount": 2,
       "validationPassed": true
     },
@@ -64,7 +64,7 @@
       "artifactPath": "section-packs/ru/summary.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:c752a36ff0f74954ee969d220b783fb56c6de1186e1fe59407710aa40ad24a27",
+      "contentHash": "sha256:c8103a36bf4421d2ad17577d44cd7d4744366676ba31e94dc8688c5f2f836fd2",
       "slideCount": 5,
       "validationPassed": true
     },
@@ -75,8 +75,8 @@
       "artifactPath": "section-packs/ru/serp.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:33d2bf8e6081dcc96a39365d9f86082569faad796a1120f692cfda616caf84f8",
-      "slideCount": 1,
+      "contentHash": "sha256:6cb70fe37b40a63f0df8adfdba51b4c87046a692f65240b05201be340e17d1d4",
+      "slideCount": 3,
       "validationPassed": true
     },
     {
@@ -86,7 +86,7 @@
       "artifactPath": "section-packs/ru/serp-screenshot.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:eb95a672c69ff5b4b998286fc11038c60a33fb5f2bc027ac39718e2dc9f4ac6f",
+      "contentHash": "sha256:85e25d7b19b5273545016b3ea45a884e027c7fc2f3448971f20487b65c936534",
       "slideCount": 1,
       "validationPassed": true
     },
@@ -97,7 +97,7 @@
       "artifactPath": "section-packs/ru/suggestions.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:26af31e73b58ac7a5ee9c45924e057c9a6ae7449188d23303557bce00d063738",
+      "contentHash": "sha256:efed23009d8cff9244fefa944c50c8c7f1827e49a705ee2646a61ff8bb565af3",
       "slideCount": 2,
       "validationPassed": true
     },
@@ -108,7 +108,7 @@
       "artifactPath": "section-packs/ru/images.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:b9f4b5bb6ee20d376b3f09ac1749dc32e98ecd2a46eebc4d7b0f2d749396100d",
+      "contentHash": "sha256:32e7f48017dea9fb96e58b24ada1f02eb2d7f2c30635e7dd49f50aab01baea6b",
       "slideCount": 4,
       "validationPassed": true
     },
@@ -119,7 +119,7 @@
       "artifactPath": "section-packs/ru/identity.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:a949c8a06aab1469b7f36a00a561da860d5bc6c5ce0b07e9bde8a7f5791484a9",
+      "contentHash": "sha256:42982ef09a2e3b41253c424463470aba5d9a1f1de5ae67823c0c998cd4b1b617",
       "slideCount": 1,
       "validationPassed": true
     },
@@ -130,7 +130,7 @@
       "artifactPath": "section-packs/ru/ai.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:e08445ffe437903d0ea9108d9d059f20f0cfa7eb04790afda1939b8a0e889904",
+      "contentHash": "sha256:0941002a227934f77e229af55362953ad627fce379420267e944e1e23e89f386",
       "slideCount": 2,
       "validationPassed": true
     },
@@ -141,7 +141,7 @@
       "artifactPath": "section-packs/ru/related.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:3571f8a5d79708f76584f40128121c848e22e5ea879e9e7b403d85704a59621d",
+      "contentHash": "sha256:acc2ac012599d4534739b7cf94af5a7986f6364e8a67490be1281aec830347cd",
       "slideCount": 3,
       "validationPassed": true
     },
@@ -152,7 +152,7 @@
       "artifactPath": "section-packs/uae/summary.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:e28a1a588a12ba14ad2841275c2d6261844b4886fe18918ea2a7aa841695b33d",
+      "contentHash": "sha256:b7da299c1875cb5e847a698ac0f224058dde4d82c0d0309731b158365c0fe26c",
       "slideCount": 5,
       "validationPassed": true
     },
@@ -163,8 +163,8 @@
       "artifactPath": "section-packs/uae/serp.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:c89d639a3a54845d3b75da8e1659ad2c1f864fbaaf2c79b91a996ddc7baff9fc",
-      "slideCount": 1,
+      "contentHash": "sha256:ef2b0e64ddeb2dda26e3c33699e14486b85f6f12134c4072b837c2bae2ee4950",
+      "slideCount": 2,
       "validationPassed": true
     },
     {
@@ -174,7 +174,7 @@
       "artifactPath": "section-packs/uae/serp-screenshot.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:54d0fcc1e4d1170bfbaec28aa0c55a69b02e941523f4c41f83e6df6b95ad546c",
+      "contentHash": "sha256:04fadca6b128e5c57991761941b6dd4e3498fe9291ff5ecadfb3a60b966095ce",
       "slideCount": 1,
       "validationPassed": true
     },
@@ -185,7 +185,7 @@
       "artifactPath": "section-packs/uae/suggestions.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:339e0dd6e5960ffff39f7ccf98751f2104a029296dba29e63a86da576a35449d",
+      "contentHash": "sha256:c5c8d2d015cdf234876835fee7513a74bdfb512475f4e831c2ffe49f641ea038",
       "slideCount": 1,
       "validationPassed": true
     },
@@ -196,7 +196,7 @@
       "artifactPath": "section-packs/uae/images.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:0aa47e0dca45a0d024a3b3cda63ce46674a0b11cbfe9efdc28cee41a087bcce8",
+      "contentHash": "sha256:71ba126b0c7bf8c4d3bb8af93d03381ed96a3cb61b2311a42c0fec94a3bb1ebc",
       "slideCount": 1,
       "validationPassed": true
     },
@@ -207,7 +207,7 @@
       "artifactPath": "section-packs/uae/identity.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:b2a58a9161b7d13255d582acd1f802268c05b7bc0a49685fe886299ee015aaea",
+      "contentHash": "sha256:7a8a338c374e1013d53be16010decde6bcbac78ad3ae5c1e1a9ff6af89c1dbed",
       "slideCount": 1,
       "validationPassed": true
     },
@@ -218,7 +218,7 @@
       "artifactPath": "section-packs/uae/ai.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:5f4af0e3b2270b0dba3603e53dc0be2be65a8eafd7e973a706601bf05c288c35",
+      "contentHash": "sha256:fc6a8d020b879ff93ef774acafb32b58b0b5be75afc62f63ba0f512f91c18de7",
       "slideCount": 1,
       "validationPassed": true
     },
@@ -229,7 +229,7 @@
       "artifactPath": "section-packs/uae/related.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:fb3439edb1be7923c553157bbb6e925102f2063f6fb3972621041886166a47b4",
+      "contentHash": "sha256:cc4bc57e8da1aadbadfa4c42e1f54d782aaee5a5c09811aa10386913ff8582cb",
       "slideCount": 1,
       "validationPassed": true
     },
@@ -251,7 +251,7 @@
       "artifactPath": "section-packs/appendix.json",
       "required": false,
       "status": "READY",
-      "contentHash": "sha256:ba3570d3fdf07aa846dd6cec45d6d07d331df8bb99fa08b667a016dc2121f45c",
+      "contentHash": "sha256:55aab50f9c2d03ed4286e6af27a6e3c1321423f545b679d607999bcaf93a3574",
       "slideCount": 2,
       "validationPassed": true
     }

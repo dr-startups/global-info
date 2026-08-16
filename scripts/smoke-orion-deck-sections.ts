@@ -47,6 +47,11 @@ import {
   loadReportAssets,
 } from "./run-orion-deck-sections-report72";
 import type { SectionValidationReport } from "../src/modules/digital-profile/orion-golden/deck-sections";
+import type {
+  ExecutiveSummaryExtras,
+  UncategorizedMaterialsExtras,
+} from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
+import type { ComposedClientSummary } from "../src/modules/digital-profile/orion-golden/contracts/composed-client-summary";
 import { migratePack } from "./migrate-section-packs-v2-to-v3";
 
 const inputs = loadReport72DeckInputs();
@@ -123,7 +128,19 @@ function makeCtx(): Omit<SectionBuildContext, "previousPacks" | "buildLog"> {
     surfaceUnits: structuredClone(inputs.surfaceUnits),
     metricSnapshot: inputs.metricSnapshot,
     evidenceIndex: inputs.evidenceIndex,
-    extras: { executiveSummary: inputs.executiveSummary, visualAssets },
+    // Состав extras — тот же, что у живого пути и у реплея. Смок, знающий не
+    // весь состав, — заготовка того самого расхождения, которое чинил этот шаг:
+    // подсказки покрытия отдаёт продуктовый загрузчик, и без них страница
+    // пустой поверхности говорит «не собиралась» вместо «проверено, пусто».
+    extras: {
+      executiveSummary: inputs.executiveSummary as unknown as ExecutiveSummaryExtras,
+      composedClientSummary:
+        (inputs.composedClientSummary as unknown as ComposedClientSummary) ?? undefined,
+      surfaceCollectionHints: inputs.surfaceCollectionHints,
+      uncategorizedMaterials:
+        (inputs.uncategorizedMaterials as UncategorizedMaterialsExtras | null) ?? undefined,
+      visualAssets,
+    },
   };
 }
 
@@ -440,6 +457,26 @@ describe("canonical coverage and visual assets", () => {
       assert.notEqual(s.emptyStateReason, "VISUAL_ASSET_UNAVAILABLE");
     }
     assert.equal(build.assemblyValidation?.checks.noPlaceholderWithAvailableAsset, true);
+  });
+
+  /*
+   * Сквозная проверка джойна «ассет ↔ индекс» на полной сборке.
+   *
+   * Подробности разложены по юнит-тестам; здесь — одна ассерция на то, что
+   * строки панелей и строки таблицы выдачи доезжают до собранной деки. Ровно
+   * это и было сломано, когда приёмка собирала вход собственным загрузчиком:
+   * под панелью с четырьмя запросами печатался ноль, а таблица ТОП-20
+   * состояла из одной строки.
+   */
+  itWithAssets("строки панелей и таблицы выдачи доезжают до собранной деки", () => {
+    const bySlot = new Map(build.assembly.rendererSlides.map((s) => [s.slideKey, s]));
+    assert.equal((bySlot.get("p20_ru_related_1")?.bullets ?? []).length, 4);
+    assert.equal((bySlot.get("p11_ru_suggestions_yandex")?.bullets ?? []).length, 10);
+    const serpRows = build.assembly.rendererSlides
+      .filter((s) => s.baseSlotId === "p09_ru_serp_table")
+      .reduce((n, s) => n + (s.table?.rows.length ?? 0), 0);
+    assert.ok(serpRows > 1, `таблица выдачи России вырождена: строк ${serpRows}`);
+    assert.equal(build.assemblyValidation?.checks.panelPagesMatchDrawnRows, true);
   });
 
   itWithAssets("missing visual asset falls back to explicit VISUAL_ASSET_UNAVAILABLE only", () => {
@@ -885,8 +922,13 @@ describe("sidebar evidence scope (fail closed)", () => {
     for (const s of ruSuggestions.slides) {
       if (s.findingIds.length === 0) {
         const found = s.content.whatWasFound ?? "";
+        // Разбор строк у страницы с панелью пишется словами панели («На панели
+        // — 10 подсказок: …»), у страницы без панели — словами страницы
+        // («Показано 10…»). Требование одно: не заглушка, а состав показанного.
         assert.ok(
-          found.includes("не обнаружено") || /Показано \d+/u.test(found),
+          found.includes("не обнаружено") ||
+            /Показано \d+/u.test(found) ||
+            /на панели — \d+/iu.test(found),
           `${s.slideId}: empty findings must be no-finding OR row-composition, got: ${found.slice(0, 120)}`
         );
       }
