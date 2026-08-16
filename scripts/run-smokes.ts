@@ -100,6 +100,12 @@ const SMOKES: Smoke[] = [
     about: "замер текста рендерером (нужны Python-пакеты)",
   },
   {
+    name: "search-table-layout",
+    argv: ["PYTHON", "renderer/smoke_search_table_layout.py"],
+    tier: "full",
+    about: "ширины колонок и высоты строк клиентских таблиц (нужны Python-пакеты)",
+  },
+  {
     name: "deck-raster-layout",
     argv: ["PYTHON", "renderer/smoke_deck_raster_layout.py"],
     tier: "full",

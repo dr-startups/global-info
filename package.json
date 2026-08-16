@@ -12,6 +12,7 @@
     "ci:smokes": "tsx scripts/run-smokes.ts --tier offline",
     "ci:smokes:full": "tsx scripts/run-smokes.ts --tier full",
     "smoke:renderer-text": "$(command -v python3 || command -v python) renderer/smoke_text_measurement.py",
+    "smoke:search-table-layout": "$(command -v python3 || command -v python) renderer/smoke_search_table_layout.py",
     "smoke:orion-golden-render-imports": "$(command -v python3 || command -v python) scripts/smoke-orion-golden-render-imports.py",
     "ci": "npm run typecheck && npm test && npm run ci:smokes",
     "ci:full": "npm run typecheck && npm test && npm run ci:smokes:full && npm run db:audit",

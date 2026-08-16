@@ -501,7 +501,13 @@ def _render_analysis_cards_full_width(ctx: _Ctx, slide: dict[str, Any], y: int) 
 
 
 def _title_line_estimate(text: str, col_width_emu: int, font_pt: float, max_lines: int = 2) -> int:
-    """Word-aware line estimate mirroring TS search-results-pagination.ts."""
+    """Word-aware line estimate for one table cell, capped at `max_lines`.
+
+    The only place a table row height is decided — the TS mirror this used to
+    quote is gone. The estimate is deliberately coarse: a single oversized
+    token (a URL with no spaces) counts as `max_lines` at any column width, so
+    column proportions, not this function, are what keep addresses readable.
+    """
     text = (text or "").strip()
     if not text:
         return 1
@@ -581,26 +587,45 @@ def _add_search_table(
         for r in data_rows:
             plan.append(("data", r))
 
-    # Column widths (Позиция | Домен | Заголовок | Статус) — spec §4 proportions.
-    # Two-column tables (Параметр | Значение) need a readable label column, and
-    # a textual first column (e.g. «База данных») needs more than the numeric
-    # position width.
+    # Ширины колонок выбираются по смыслу заголовков, а не по их длине.
+    # Прежний признак `len(headers[0]) > 3` был прокси вопроса «первая колонка
+    # номерная?», и прокси ошибался в обе стороны: «Тема» (4 буквы) уходила в
+    # номерную ветку и получала 14 % ширины при двух счётчиках на 86 %, а
+    # «Поз.» — в текстовую и получала 14 % под двузначное число.
     if cols == 2:
         prop = [0.24, 0.76]
     elif cols == 5:
-        # Позиция | Ссылка | Заголовок | Тип источника | Оценка.
-        # Адрес занимает больше домена — по нему материал открывают вручную,
-        # поэтому он должен помещаться целиком, а не обрываться на середине.
-        prop = [0.05, 0.27, 0.36, 0.16, 0.16]
-    elif headers and len(str(headers[0]).strip()) > 3:
-        prop = [0.14, 0.26, 0.42, 0.18][:cols]
-    else:
+        # № | Ссылка | Заголовок | Тип источника | Оценка.
+        # Адрес обрезан строителем до 62 символов и всё равно переносится — не
+        # обрывается, а именно переносится. Доли подобраны по настоящим метрикам
+        # шрифта, а не по приблизительной модели `_title_line_estimate`: самый
+        # широкий 62-символьный адрес деки — 432 px при 10pt, и за вычетом полей
+        # ячейки (2×91 440 EMU) 0.22 оставляет ему 229 px на строку, то есть он
+        # укладывается в бюджет двух строк по суммарной ширине. Гарантии «не
+        # больше двух строк» здесь нет и быть не может: LibreOffice рвёт адрес
+        # после «/», и обрывок первой строки может пропасть почти впустую —
+        # в эталоне такие адреса рисуются тремя строками (так же было и на
+        # прежних 0.27), запас страницы это покрывает. На 0.20 запаса не
+        # оставалось совсем: строка растягивалась по содержимому и таблица
+        # выезжала за границу контента. Настоящая линия обороны тут —
+        # растровый смок: объявленная геометрия растяжения строки не видит.
+        # Освободившиеся у адреса проценты уходят заголовку: его читают
+        # глазами, а адрес открывают ссылкой.
+        prop = [0.05, 0.22, 0.44, 0.15, 0.14]
+    elif cols == 3:
+        # Текст плюс счётчики («Тема | Публикаций | Из них нежелательных»):
+        # ведёт текстовая колонка. 0.60 держит тему предельной длины (120
+        # символов, 868 px при 10pt) в двух строках, 0.20 вмещает самый длинный
+        # заголовок счётчика в одну.
+        prop = [0.60, 0.20, 0.20]
+    elif headers and re.search(r"^\s*(№|поз)", str(headers[0]), re.I):
         prop = [0.07, 0.22, 0.53, 0.18][:cols]
+    else:
+        prop = [0.14, 0.26, 0.42, 0.18][:cols]
     widths = [max(500_000, int(CONTENT_W * p)) for p in prop]
     leftover = CONTENT_W - sum(widths)
     if leftover != 0 and widths:
         widths[2 if cols > 2 else len(widths) - 1] += leftover
-    title_col_w = widths[2] if cols > 2 else widths[-1]
 
     # Per-row heights.
     body_pt = 10.0
@@ -615,12 +640,16 @@ def _add_search_table(
         elif kind == "group":
             heights.append(group_h)
         else:
-            lines = _title_line_estimate(str(payload[2]) if len(payload) > 2 else "", title_col_w, body_pt)
-            # Высота строки — по самой высокой ячейке. Адрес переносится так же,
-            # как заголовок, и если мерить только заголовок, длинная ссылка
-            # вылезет за пределы своей строки.
-            if cols >= 5 and len(payload) > 1:
-                lines = max(lines, _title_line_estimate(str(payload[1]), widths[1], body_pt))
+            # Высота строки — по самой высокой ячейке, по всем колонкам сразу.
+            # Списка «измеряемых колонок» здесь нет намеренно: он расходился с
+            # пропорциями (мерили колонку 2 — а текст жил в колонке 0) и строка
+            # объявлялась в разы ниже своего содержимого.
+            lines = max(
+                _title_line_estimate(
+                    str(payload[c]) if c < len(payload) else "", widths[c], body_pt
+                )
+                for c in range(cols)
+            )
             heights.append(lines * line_h + pad)
 
     table_rows = len(plan)
