@@ -22,6 +22,8 @@ import {
   isAdverse,
   localizedThemedClaim,
   makeSlotSlide,
+  readShareDenominator,
+  readShareRegionalSentence,
   sourceLine,
   splitClientParagraphs,
   statusLine,
@@ -110,6 +112,14 @@ export function buildRegionalSummaryFragment(
     .reduce((sum, lane) => sum + lane.analyzed, 0);
   const topN = scoped.metricSnapshot.analysisTopN ?? 20;
   const uncategorized = uncategorizedBulletForRegion(regionKey, extras);
+  // Доля негатива среди прочитанных страниц региона — предложением и теми же
+  // числами в машинных полях, чтобы приёмка сверяла слова с числами, не
+  // разбирая текст. Полей нет, когда мерить было нечего.
+  const readShare = scoped.metricSnapshot.linkReadByRegion?.[regionKey];
+  const readShareSentence = readShareRegionalSentence(scoped.metricSnapshot, regionKey);
+  const readShareMetrics: Record<string, number> = readShare
+    ? { linkRead: readShareDenominator(readShare), linkAdverse: readShare.adverseRead }
+    : {};
 
   const slides: SlideContentContract[] = [
     makeSlotSlide({
@@ -149,7 +159,7 @@ export function buildRegionalSummaryFragment(
         slot: summarySlot,
         sectionId,
         content: {
-          narrative: `По региону ${regionLabel} собрано и проанализировано материалов: ${materialCount}. Подтверждённых тем повышенного внимания, однозначно связанных с проверяемым лицом, по итогам идентификации не выявлено.`,
+          narrative: `По региону ${regionLabel} собрано и проанализировано материалов: ${materialCount}. Подтверждённых тем повышенного внимания, однозначно связанных с проверяемым лицом, по итогам идентификации не выявлено. ${readShareSentence}`,
           bullets: [
             "Каждый материал прошёл проверку принадлежности: учитываются только публикации, уверенно связанные с проверяемым лицом.",
             ...(uncategorized ? [uncategorized.bullet] : []),
@@ -175,6 +185,7 @@ export function buildRegionalSummaryFragment(
           materials: materialCount,
           findings: 0,
           uncategorized: uncategorized?.count ?? 0,
+          ...readShareMetrics,
         },
       })
     );
@@ -245,8 +256,12 @@ export function buildRegionalSummaryFragment(
               : `По региону «${regionLabel}» собрано ${materialCount} ${materialWord}.`,
             `${themesPhrase.charAt(0).toUpperCase()}${themesPhrase.slice(1)}.`,
             themeLead,
+            readShareSentence,
           ],
-          500
+          // Бюджет поднят ровно на длину добавленной фразы: не влезшее
+          // предложение `fitClientSentences` отбрасывает молча, и доля вытеснила
+          // бы ключевые темы вместо того, чтобы встать рядом с ними.
+          500 + readShareSentence.length + 1
         ),
         // Scorecard-lite KPIs (ORION GSM regional audit vibe).
         kpis: [
@@ -294,6 +309,7 @@ export function buildRegionalSummaryFragment(
         likely: likelyN,
         adverse: adverseN,
         uncategorized: uncategorized?.count ?? 0,
+        ...readShareMetrics,
       },
     });
     slides.push(...withContinuations(base, "regional-summary"));

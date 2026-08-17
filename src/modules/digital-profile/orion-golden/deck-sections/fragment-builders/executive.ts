@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import type { SlideBody, SlideContentContract, SectionType } from "../contracts";
 import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
 import { DECK_TEMPLATE_REGISTRY } from "../template-registry";
-import type { ScopedFragmentInput } from "../scoped-input";
+import type { MetricSnapshot, ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import type { Finding } from "../../contracts/finding";
 import { pluralRu } from "../../analytics/finding-synthesizer";
@@ -36,6 +36,8 @@ import {
   makeSlotSlide,
   packBulletPages,
   matchGptKeyRisk,
+  readShareExecutiveLine,
+  REGION_CLIENT_LABELS,
   riskLabel,
   sourceLine,
   splitClientParagraphs,
@@ -74,7 +76,7 @@ export function executiveFreshnessChangeVisibleLine(
 }
 
 const EXEC_FRESHNESS_CHANGE_RE =
-  /данные собраны|самый свежий материал|Новых материалов с прошлого отчёта/i;
+  /данные собраны|самый свежий материал|Новых материалов с прошлого отчёта|Негатив среди прочитанных/i;
 
 /** Drop §7.2 sentences so they can be re-placed as their own short paragraph. */
 function stripExecutiveFreshnessChangeSentences(text: string): string {
@@ -82,16 +84,44 @@ function stripExecutiveFreshnessChangeSentences(text: string): string {
     .replace(/[^.?!\n]*данные собраны[^.?!\n]*[.?!]?/giu, " ")
     .replace(/[^.?!\n]*самый свежий материал[^.?!\n]*[.?!]?/giu, " ")
     .replace(/[^.?!\n]*Новых материалов с прошлого отчёта[^.?!\n]*[.?!]?/giu, " ")
+    // Строка доли зачищается тем же проходом: пост-проход применяется дважды
+    // (после стадии 2 и после кэша), и без этого она удвоилась бы.
+    .replace(/[^.?!\n]*Негатив среди прочитанных[^.?!\n]*[.?!]?/giu, " ")
     .replace(/\s+/gu, " ")
     .replace(/\s+([,;:.])/gu, "$1")
     .trim();
+}
+
+/** §7.2 умещается в карточку резюме; строка доли к этому бюджету не относится. */
+const EXEC_FRESHNESS_CARD_BUDGET = 220;
+
+/**
+ * Короткая карточка видимых фактов резюме: §7.2 и доля негатива среди
+ * прочитанных страниц.
+ *
+ * Строка доли не клампится никогда — обрезанное число это не сокращение, а
+ * ложь. Тесниться в общем бюджете приходится части §7.2, у которой смысл
+ * сохраняется и в укороченном виде.
+ */
+function executiveVisibleFactsLine(
+  extras?: FragmentExtras,
+  ms?: MetricSnapshot
+): string | undefined {
+  const fresh = executiveFreshnessChangeVisibleLine(extras);
+  const share = ms ? readShareExecutiveLine(ms) : undefined;
+  const parts = [
+    fresh ? clampClientText(fresh, EXEC_FRESHNESS_CARD_BUDGET) : undefined,
+    share,
+  ].filter((x): x is string => Boolean(x));
+  return parts.length > 0 ? parts.join(" ") : undefined;
 }
 
 /** Must stay ≤ client-text-contract narrative budget (900). */
 const EXEC_NARRATIVE_BUDGET = 900;
 
 /**
- * Ensure §7.2 copy is present as its own short narrative paragraph.
+ * Ensure the visible-facts card (§7.2 + доля негатива среди прочитанных
+ * страниц) is present as its own short narrative paragraph.
  * The executive dashboard clips long cards (~420 chars / height) — folding into
  * the lead paragraph (PDF 28) hid the line; a dedicated short card stays visible.
  * Total narrative is clamped to the section-QA budget so «Дожать GPT» cannot
@@ -99,11 +129,11 @@ const EXEC_NARRATIVE_BUDGET = 900;
  */
 export function ensureExecutiveFreshnessChangeInNarrative(
   narrative: string,
-  extras?: FragmentExtras
+  extras?: FragmentExtras,
+  ms?: MetricSnapshot
 ): string {
-  const line = executiveFreshnessChangeVisibleLine(extras);
-  if (!line) return narrative;
-  const shortLine = clampClientText(line, 220);
+  const shortLine = executiveVisibleFactsLine(extras, ms);
+  if (!shortLine) return narrative;
   const paras = narrative
     .split("\n")
     .map((p) => stripExecutiveFreshnessChangeSentences(p))
@@ -124,7 +154,7 @@ export function ensureExecutiveFreshnessChangeInNarrative(
       break;
     }
   }
-  // Slot 1: short §7.2 card between lead conclusion and portrait/coverage.
+  // Slot 1: short visible-facts card between lead conclusion and portrait/coverage.
   return [lead, shortLine, ...rest].filter(Boolean).join("\n");
 }
 
@@ -138,9 +168,9 @@ function isMeaningfulExecNarrativePara(text: string): boolean {
 }
 
 /**
- * Post-pass after GPT/cache: re-assert §7.2 on EXECUTIVE_SUMMARY slides.
- * Stage-2 / SKIPPED_CACHED can replace narrative with one long paragraph and
- * drop the dedicated short card (PDF 29).
+ * Post-pass after GPT/cache: re-assert the visible-facts card (§7.2 + доля
+ * негатива) on EXECUTIVE_SUMMARY slides. Stage-2 / SKIPPED_CACHED can replace
+ * narrative with one long paragraph and drop the dedicated short card (PDF 29).
  */
 export function applyExecutiveFreshnessChangeToPacks<
   T extends {
@@ -155,8 +185,8 @@ export function applyExecutiveFreshnessChangeToPacks<
       };
     }>;
   },
->(packs: T[], extras?: FragmentExtras): T[] {
-  const line = executiveFreshnessChangeVisibleLine(extras);
+>(packs: T[], extras?: FragmentExtras, ms?: MetricSnapshot): T[] {
+  const line = executiveVisibleFactsLine(extras, ms);
   if (!line) return packs;
   return packs.map((pack) => {
     if (pack.fragmentKey !== "EXECUTIVE_SUMMARY") return pack;
@@ -178,7 +208,8 @@ export function applyExecutiveFreshnessChangeToPacks<
           ...slide.content,
           narrative: ensureExecutiveFreshnessChangeInNarrative(
             String(slide.content.narrative ?? ""),
-            extras
+            extras,
+            ms
           ),
         },
       };
@@ -199,13 +230,6 @@ const EXEC_SURFACE_LABELS: Record<string, string> = {
   ai_answers: "ИИ-ответы",
   compliance: "комплаенс-базы",
   url_audit: "проверка URL",
-};
-
-const EXEC_REGION_LABELS: Record<string, string> = {
-  RU: "Россия",
-  UAE: "ОАЭ",
-  INTERNATIONAL: "международный контур",
-  GLOBAL: "глобальный контур",
 };
 
 /** REMEDIATION §7.3 — structured executive page blocks (вывод → факты → действия). */
@@ -231,11 +255,7 @@ export function composeExecutivePageStructure(
   const materialWord = pluralRu(ms.compositeCount, "материал", "материала", "материалов");
   const regionBits = Object.entries(ms.perRegionCounts ?? {})
     .filter(([, n]) => typeof n === "number" && n > 0)
-    .map(([r, n]) => `${EXEC_REGION_LABELS[String(r).toUpperCase()] ?? r} — ${n}`);
-  const overviewBits = (es.regionalOverview ?? [])
-    .filter((r) => (r.totalCount ?? 0) > 0 || /собра|материал|негатив/i.test(r.oneLiner))
-    .map((r) => r.oneLiner)
-    .slice(0, 2);
+    .map(([r, n]) => `${REGION_CLIENT_LABELS[String(r).toUpperCase()] ?? r} — ${n}`);
   const surfaces = [
     ...new Set(
       scoped.surfaceUnits
@@ -260,7 +280,11 @@ export function composeExecutivePageStructure(
       `По собранным источникам: ${ms.compositeCount} ${materialWord}, из них уверенно об этом лице — ${ms.subjectMatchCount}`,
       regionBits.length > 0 ? ` (${regionBits.join("; ")})` : "",
       surfaces.length > 0 ? `. Смотрели: ${surfaces.slice(0, 7).join(", ")}` : "",
-      overviewBits.length > 0 ? `. ${overviewBits.join(" ")}` : "",
+      // Словарный процент `regionalOverview.oneLiner` здесь больше не
+      // печатается: он отвечает на тот же вопрос «какая доля негативна» другим
+      // определением — по субъектным материалам региона, а не по прочитанным
+      // страницам, — и уже расходился с ним (7 % при нуле прочитанных страниц).
+      // Доля негатива в резюме одна, и она едет строкой видимых фактов.
       fresh ? `. ${fresh.charAt(0).toUpperCase()}${fresh.slice(1)}` : "",
       changeLine ? `. ${changeLine}` : "",
       ".",
@@ -415,12 +439,13 @@ export function buildExecutiveSummaryFromComposed(
       ? riskLevel
       : "по открытым источникам";
 
-  // Do not clamp composed narrative (§6: CLIENT_TEXT_TRUNCATIONS=0). Fold §7.2
-  // into the packed overview when it fits; otherwise it rides as a continuation block.
-  const freshLine = executiveFreshnessChangeVisibleLine(extras);
+  // Do not clamp composed narrative (§6: CLIENT_TEXT_TRUNCATIONS=0). Fold the
+  // visible-facts card (§7.2 + доля негатива) into the packed overview when it
+  // fits; the post-pass re-asserts it on the pack in any case.
+  const factsLine = executiveVisibleFactsLine(extras, ms);
   let narrative = plan.overviewNarrative.join("\n");
-  if (freshLine) {
-    const trial = narrative ? `${narrative}\n${freshLine}` : freshLine;
+  if (factsLine) {
+    const trial = narrative ? `${narrative}\n${factsLine}` : factsLine;
     if (trial.length <= EXEC_NARRATIVE_BUDGET) {
       narrative = trial;
     }
@@ -605,7 +630,7 @@ export function buildExecutiveSummaryFragment(
   }
   // Dense GPT path often omits coverage; sourceNote is not drawn on the
   // executive dashboard — fold §7.2 into the visible narrative card.
-  narrative = ensureExecutiveFreshnessChangeInNarrative(narrative, extras);
+  narrative = ensureExecutiveFreshnessChangeInNarrative(narrative, extras, ms);
   // Base slide feeds the executive dashboard layout (conclusion + top risk
   // cards); the remaining key findings continue on an adjacent slide so no
   // finding is lost visually.

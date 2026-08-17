@@ -220,7 +220,7 @@ export async function runDeckBuildWithGptCopy(input: {
   }
 
   // After GPT/cache — §7.2 must stay a short dedicated narrative card on p03.
-  packs = applyExecutiveFreshnessChangeToPacks(packs, ctx.extras);
+  packs = applyExecutiveFreshnessChangeToPacks(packs, ctx.extras, ctx.metricSnapshot);
 
   // Level 2.5 — the composer's per-slide layout picks reach the assembler as
   // a presentation-only map; SectionPack content and hashes stay untouched.
@@ -309,7 +309,8 @@ export async function runDeckGptCopyRetry(input: {
 
   const packsWithFreshness = applyExecutiveFreshnessChangeToPacks(
     enhanced.packs,
-    ctx.extras
+    ctx.extras,
+    ctx.metricSnapshot
   );
 
   mkdirSync(input.outputRoot, { recursive: true });

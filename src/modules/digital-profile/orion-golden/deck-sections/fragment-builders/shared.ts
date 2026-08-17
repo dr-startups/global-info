@@ -16,6 +16,7 @@ import {
   regionMatches,
   resolveEmptySurfaceCollection,
   type EmptySurfaceCollectionStatus,
+  type LinkReadRegionCounts,
   type MetricSnapshot,
   type ScopedFragmentInput,
   type SurfaceCollectionHint,
@@ -63,7 +64,16 @@ export type ExecutiveSummaryExtras = {
   priorityActions: string[];
   identityCaveats: string[];
   dataLimitations: string[];
-  /** Optional regional one-liners from the executive-summary stage artifact. */
+  /**
+   * Optional regional one-liners from the executive-summary stage artifact.
+   *
+   * В клиентский текст не подмешиваются: их процент («негативные материалы — 3
+   * из 42 (7 %)») считается по субъектным материалам региона и отвечает на тот
+   * же вопрос, что доля негатива среди прочитанных страниц, другим
+   * определением. Двух ответов на один вопрос в отчёте быть не должно —
+   * печатается только доля по прочитанному (`readShareExecutiveLine`).
+   * Артефакт поле сохраняет: его читают гарды и разбор прогона.
+   */
   regionalOverview?: Array<{
     region: string;
     oneLiner: string;
@@ -1467,7 +1477,8 @@ const SCOPE_ENGINE_LABELS: Record<string, string> = {
 /** Порядок перечисления фиксирован: формулировка не должна плавать от прогона. */
 const SCOPE_ENGINE_ORDER = ["YANDEX", "GOOGLE"];
 
-const SCOPE_REGION_LABELS: Record<string, string> = {
+/** Как регион называется в клиентском тексте — одно место на всю деку. */
+export const REGION_CLIENT_LABELS: Record<string, string> = {
   RU: "Россия",
   UAE: "ОАЭ",
   INTERNATIONAL: "международный контур",
@@ -1496,7 +1507,7 @@ export function auditScopeLine(ms: MetricSnapshot, opts?: { withRemainder?: bool
     .sort((a, b) => SCOPE_ENGINE_ORDER.indexOf(a) - SCOPE_ENGINE_ORDER.indexOf(b))
     .map((e) => SCOPE_ENGINE_LABELS[e])
     .filter((x): x is string => Boolean(x));
-  const regions = [...new Set(lanes.map((l) => SCOPE_REGION_LABELS[l.region.toUpperCase()]))].filter(
+  const regions = [...new Set(lanes.map((l) => REGION_CLIENT_LABELS[l.region.toUpperCase()]))].filter(
     (x): x is string => Boolean(x)
   );
   const where = engines.length > 0 ? ` в ${engines.join(" и ")}` : "";
@@ -1506,6 +1517,90 @@ export function auditScopeLine(ms: MetricSnapshot, opts?: { withRemainder?: bool
     `${analyzed} ${pluralRu(analyzed, "материал", "материала", "материалов")}.`;
   if (!opts?.withRemainder) return head;
   return `${head} Остальное собранное показано в отчёте, но темы риска по нему не строились.`;
+}
+
+/**
+ * Знаменатель доли: прочитанные страницы региона минус признанные чужими.
+ *
+ * Определение одно на все места счёта — и на фразу страницы региона, и на
+ * строку резюме, и на машинное поле слайда, которым приёмка сверяет слова с
+ * числами. Разъехавшись, они дали бы клиенту два разных «из скольких».
+ */
+export function readShareDenominator(counts: LinkReadRegionCounts): number {
+  return counts.read - counts.readOther;
+}
+
+/**
+ * Доля негатива в процентах.
+ *
+ * «0 %» имеет право означать только измеренный ноль: при ненулевом числителе
+ * округление вниз до нуля превратило бы найденный негатив в его отсутствие,
+ * поэтому нижняя граница — единица.
+ */
+function readSharePercent(adverseRead: number, denominator: number): number {
+  if (adverseRead === 0) return 0;
+  return Math.max(1, Math.round((adverseRead / denominator) * 100));
+}
+
+/**
+ * Доля негатива среди прочитанных страниц региона — фразой для страницы
+ * профиля региона.
+ *
+ * База печатается в той же фразе: «83 %» от шести прочитанных и «83 %» от
+ * шестидесяти читаются одинаково, а весят по-разному. Числа — региональные:
+ * глобальная строка покрытия чтения рядом с региональной долей давала бы два
+ * несопоставимых числа, поэтому она остаётся на странице тем.
+ *
+ * Каждое состояние без доли названо своей причиной — «страниц не читали»,
+ * «прочитать не удалось» и «всё прочитанное о других людях» отвечают на разные
+ * вопросы читателя, и подменять их нулём нельзя.
+ */
+export function readShareRegionalSentence(ms: MetricSnapshot, regionKey: string): string {
+  const b = ms.linkReadByRegion?.[regionKey];
+  if (!b || b.requested === 0) {
+    return "Доля негатива среди прочитанных страниц не приводится: страницы выдачи в этом прогоне не читались.";
+  }
+  if (b.read === 0) {
+    return `Прочитать страницы выдачи региона не удалось (запрошено ${b.requested}, прочитано 0) — доля негатива не приводится.`;
+  }
+  const denominator = readShareDenominator(b);
+  if (denominator <= 0) {
+    return `Все прочитанные страницы региона (${b.read}) отнесены к другим лицам; доля негатива о проверяемом лице не приводится.`;
+  }
+  const head =
+    `Негатив среди прочитанных страниц региона: ${b.adverseRead} из ${denominator} ` +
+    `(${readSharePercent(b.adverseRead, denominator)}%); прочитано ${b.read} из ${b.requested} отобранных.`;
+  return b.readOther > 0
+    ? `${head} Страницы о других людях (${b.readOther}) в долю не входят.`
+    : head;
+}
+
+/** Порядок контуров в резюме фиксирован — формулировка не плавает от прогона. */
+const READ_SHARE_REGION_ORDER = ["RU", "UAE"];
+
+/**
+ * Та же доля одной строкой для резюме — по регионам, где есть что делить.
+ *
+ * Регион без прочитанных страниц о субъекте в строке не упоминается: честное
+ * отсутствие уже сказано на его собственной странице, а повторять его в резюме
+ * каждого прогона без чтения — шум. Если делить нечего нигде, строки нет вовсе.
+ */
+export function readShareExecutiveLine(ms: MetricSnapshot): string | undefined {
+  const parts: string[] = [];
+  for (const regionKey of READ_SHARE_REGION_ORDER) {
+    const b = ms.linkReadByRegion?.[regionKey];
+    if (!b) continue;
+    const denominator = readShareDenominator(b);
+    if (denominator <= 0) continue;
+    parts.push(
+      `${REGION_CLIENT_LABELS[regionKey] ?? regionKey} — ${readSharePercent(
+        b.adverseRead,
+        denominator
+      )}% (${b.adverseRead} из ${denominator})`
+    );
+  }
+  if (parts.length === 0) return undefined;
+  return `Негатив среди прочитанных страниц: ${parts.join(", ")}.`;
 }
 
 /**

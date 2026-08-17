@@ -16,6 +16,7 @@ import type { Finding } from "../contracts/finding";
 import type { SurfaceAnalysis } from "../contracts/surface-analysis";
 import type {
   ScopedEvidenceIndex,
+  LinkReadRegionCounts,
   MetricSnapshot,
   SurfaceCollectionHint,
 } from "./scoped-input";
@@ -106,6 +107,52 @@ export function countIdentityByObservation(input: {
     otherSubjectCount,
     insufficientCount,
   };
+}
+
+/**
+ * Прочитано и негативно — по региональным контурам, по уникальным страницам.
+ *
+ * Считается по строкам вердиктов, а не по индексу наблюдений: флаг `adverse` в
+ * индексе взводится и для страниц с вероятной принадлежностью, а
+ * `readVerdictTone` о принадлежности не знает вовсе. Точный предикат «эта
+ * страница прочитана, она о субъекте и она нежелательна» есть только у самого
+ * вердикта — «упрощение» до скана индекса разведёт числитель со страницей тем.
+ *
+ * «Прочитано» задаётся данными: пустой `readFailure`. Вердикт непрочитанной
+ * страницы — честное «не знаем», а не оценка, и в долю не входит.
+ *
+ * Одна ссылка считается один раз: инвариант «страница входит ровно в одну
+ * тему» живёт в кластеризации тем, и метрика региона не должна от него
+ * зависеть. Корзины — те же `RU`/`UAE`, что и у тем: вердикт без региона и
+ * вердикт чужого контура в региональные числа не попадают, ровно как их темы
+ * не попадают в региональную таблицу тем.
+ */
+export function countLinkReadByRegion(
+  verdicts: Array<{
+    evidenceRef?: string;
+    region?: string;
+    subjectMatch?: string;
+    tone?: string;
+    readFailure?: string;
+  }>
+): Record<string, LinkReadRegionCounts> {
+  const counts: Record<string, LinkReadRegionCounts> = {};
+  const seen = new Set<string>();
+  for (const v of verdicts) {
+    const ref = String(v.evidenceRef ?? "").trim();
+    if (!ref || seen.has(ref)) continue;
+    seen.add(ref);
+    if (!v.region) continue;
+    const bucket = mapRegionBucket(v.region);
+    if (bucket !== "RU" && bucket !== "UAE") continue;
+    const row = (counts[bucket] ??= { requested: 0, read: 0, readOther: 0, adverseRead: 0 });
+    row.requested += 1;
+    if (v.readFailure) continue;
+    row.read += 1;
+    if (v.subjectMatch === "other") row.readOther += 1;
+    else if (v.subjectMatch === "subject" && v.tone === "adverse") row.adverseRead += 1;
+  }
+  return counts;
 }
 
 export type UncategorizedMaterialsDeckInput = {
@@ -234,11 +281,14 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     ? readJson<{
         verdicts?: Array<{
           evidenceRef?: string;
+          region?: string;
           subjectMatch?: string;
           tone?: string;
           theme?: string;
           sourceType?: string;
           quotes?: Array<{ text?: string }>;
+          /** Заполнено — страницу прочитать не удалось; решения по ней нет. */
+          readFailure?: string;
         }>;
         summary?: {
           unread?: number;
@@ -434,6 +484,16 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
   for (const v of linkVerdicts?.verdicts ?? []) {
     const ref = String(v.evidenceRef ?? "");
     if (!ref || !evidenceIndex[ref]) continue;
+    /*
+     * Непрочитанная страница решения не приносит.
+     *
+     * Страницу не открыли — модель честно отвечает «не знаем»: `unclear`,
+     * `neutral`, темой становится заголовок выдачи. Применённый наравне с
+     * настоящим, такой вердикт гасил словарную метку «Нежелательный» и писал
+     * `readVerdictTone`, по которому потребители отличают прочитанную страницу
+     * от непрочитанной. Про заблокированную страницу словарь — всё, что есть.
+     */
+    if (v.readFailure) continue;
     const quoted = (v.quotes ?? []).some((q) => String(q?.text ?? "").trim().length > 0);
     if (v.tone === "adverse" && quoted) evidenceIndex[ref].adverse = true;
     if (v.tone === "supportive" || v.tone === "neutral") evidenceIndex[ref].adverse = false;
@@ -639,6 +699,11 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     analysisLanes: analysisLanes.length > 0 ? analysisLanes : undefined,
     linkThemes: linkThemes.length > 0 ? linkThemes : undefined,
     linkThemesByRegion,
+    // Поля нет вовсе, когда чтения в прогоне не было: отсутствие метрики и
+    // измеренный ноль — разные утверждения перед клиентом.
+    linkReadByRegion: linkVerdicts
+      ? countLinkReadByRegion(linkVerdicts.verdicts ?? [])
+      : undefined,
     linkUnreadCount: linkVerdicts?.summary?.unread,
     linkReadingLine: linkVerdicts?.reading
       ? linkReadingClientLine({
