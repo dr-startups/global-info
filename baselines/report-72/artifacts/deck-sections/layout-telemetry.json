@@ -62,6 +62,36 @@
       "measurementUncertain": false
     },
     {
+      "page": 6,
+      "name": "orion_risk_matrix_p6",
+      "role": "cards",
+      "fontFamily": "Inter",
+      "fontSizePt": 11,
+      "boxWidth": 10744320,
+      "boxHeight": 4454144,
+      "availableHeight": 5025200,
+      "requiredHeight": 4454144,
+      "measuredLines": 4,
+      "textLength": 653,
+      "clipped": false,
+      "measurementUncertain": false
+    },
+    {
+      "page": 7,
+      "name": "orion_risk_matrix_p7",
+      "role": "cards",
+      "fontFamily": "Inter",
+      "fontSizePt": 11,
+      "boxWidth": 10744320,
+      "boxHeight": 2227072,
+      "availableHeight": 5025200,
+      "requiredHeight": 2227072,
+      "measuredLines": 2,
+      "textLength": 272,
+      "clipped": false,
+      "measurementUncertain": false
+    },
+    {
       "page": 8,
       "name": "orion_text_body_p8",
       "role": "text",

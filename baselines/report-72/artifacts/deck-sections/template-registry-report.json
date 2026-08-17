@@ -90,9 +90,9 @@
       },
       "budgets": {
         "narrativeChars": 600,
-        "itemChars": 80,
+        "itemChars": 320,
         "maxBulletsPerSlide": 0,
-        "maxTableRowsPerSlide": 3
+        "maxTableRowsPerSlide": 4
       },
       "pagination": "continuation",
       "staticBlocks": [

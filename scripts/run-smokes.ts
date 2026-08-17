@@ -106,6 +106,12 @@ const SMOKES: Smoke[] = [
     about: "ширины колонок и высоты строк клиентских таблиц (нужны Python-пакеты)",
   },
   {
+    name: "risk-matrix-cards",
+    argv: ["PYTHON", "renderer/smoke_risk_matrix_cards.py"],
+    tier: "full",
+    about: "карточки матрицы рисков: нарисовано всё, потеря слышна (нужны Python-пакеты)",
+  },
+  {
     name: "deck-raster-layout",
     argv: ["PYTHON", "renderer/smoke_deck_raster_layout.py"],
     tier: "full",

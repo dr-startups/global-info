@@ -362,9 +362,10 @@
       "baseSlotId": "p04_risk_dashboard",
       "isContinuation": false,
       "bullets": [
-        "7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org.\nПримеры: Глинка Сергей (ИНН 773800015809) в реестре... · Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие\nЧто делать: Проверить статусы дел и первоисточники до принятия решений.",
-        "6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news.\nПримеры: Связанный с Россией бизнесмен Сергей Глинка ... · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие • Версия для печати • Следствие · Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Сл\nЧто делать: Сверить первоисточники и подготовить документированную позицию.",
-        "4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online.\nПримеры: PEP: Glinka Sergey Mikhaylovich · Sergey Glinka, a previous associate of sanctioned oligarchs, allocated €16 million to acquire a Moldovan facility with military potential, purportedly under the EU's auspices • Интернет-издание Власть · Бывший партнер олигархов, находящихся под санкциями, Сергей Глинка: 16 миллионов евро на захват молдавского завода с военными возможностями под покровительство\nЧто делать: Запросить первичные карточки баз и подтвердить принадлежность совпадений."
+        "7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org.\nЧто делать: Проверить статусы дел и первоисточники до принятия решений.",
+        "6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news.\nЧто делать: Сверить первоисточники и подготовить документированную позицию.",
+        "4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online.\nЧто делать: Запросить первичные карточки баз и подтвердить принадлежность совпадений.",
+        "43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru.\nЧто делать: Поддерживать актуальный позитивный деловой контент."
       ],
       "table": {
         "headers": [
@@ -391,6 +392,12 @@
             "Средний",
             "P2",
             "finding-pep_rca_watchlist-subject_match-dfa7da39"
+          ],
+          [
+            "Деловой профиль",
+            "Низкий",
+            "P3",
+            "finding-business_profile-subject_match-a59d6fee"
           ]
         ]
       },
@@ -454,7 +461,8 @@
       "findingIds": [
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
-        "finding-pep_rca_watchlist-subject_match-dfa7da39"
+        "finding-pep_rca_watchlist-subject_match-dfa7da39",
+        "finding-business_profile-subject_match-a59d6fee"
       ],
       "metrics": {
         "themes": 6,
@@ -491,9 +499,8 @@
       "continuationOf": "p04_risk_dashboard",
       "continuationIndex": 1,
       "bullets": [
-        "43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru.\nПримеры: Biography of Glinka Sergei - A Transportation Pioneer Few ... · Бизнесмен Сергей Глинка - биография, личная жизнь и ... · Glinka Sergei Mikhailovich - TAdviser\nЧто делать: Поддерживать актуальный позитивный деловой контент.",
-        "6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online.\nПримеры: Сергей Глинка · глинка сергей михайлович жена · глинка сергей михайлович дети\nЧто делать: Собрать документальные подтверждения по активам и связям.",
-        "1 свидетельств (0 негативных) в источниках tadviser.ru.\nПримеры: Глинка Сергей Михайлович\nЧто делать: Заказать корпоративную проверку структуры владения."
+        "6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online.\nЧто делать: Собрать документальные подтверждения по активам и связям.",
+        "1 свидетельств (0 негативных) в источниках tadviser.ru.\nЧто делать: Заказать корпоративную проверку структуры владения."
       ],
       "table": {
         "headers": [
@@ -503,12 +510,6 @@
           "Идентификатор"
         ],
         "rows": [
-          [
-            "Деловой профиль",
-            "Низкий",
-            "P3",
-            "finding-business_profile-subject_match-a59d6fee"
-          ],
           [
             "Семья и деловые связи",
             "Низкий",
@@ -581,7 +582,6 @@
         "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
       ],
       "findingIds": [
-        "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],

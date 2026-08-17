@@ -506,6 +506,13 @@ async function main(): Promise<void> {
       ["-X", "utf8", "scripts/inspect-first36-pptx-geometry.py", pptxPath],
       { cwd: process.cwd(), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 }
     );
+    // Телеметрию пишет сам рендер (рядом с PNG); её же читает инспектор выше.
+    const layoutTelemetryPath = join(OUTPUT_ROOT, "layout-telemetry.json");
+    const layoutTelemetry = existsSync(layoutTelemetryPath)
+      ? (JSON.parse(readFileSync(layoutTelemetryPath, "utf8")) as {
+          entries?: Array<Record<string, unknown>>;
+        })
+      : null;
     const geometryPath = join(OUTPUT_ROOT, "geometry-report.json");
     writeFileSync(geometryPath, geometryJson, "utf8");
     const geometry = JSON.parse(geometryJson) as {
@@ -565,6 +572,12 @@ async function main(): Promise<void> {
         // пропуск: проверка без входа выглядит точно так же, как пройденная.
         panelPagesMatchDrawnRows:
           result.assemblyValidation?.checks.panelPagesMatchDrawnRows ?? false,
+        // Карточные страницы матрицы обязаны отчитаться о нарисованном:
+        // без их телеметрии CONTENT_DROPPED_BY_RENDERER судить нечего.
+        riskMatrixTelemetryPresent: riskMatrixTelemetryPresent(
+          result.assembly.rendererSlides,
+          layoutTelemetry
+        ),
         page13FooterListsHighlightDomains: pageLevelChecks.page13FooterListsHighlightDomains,
         page31NoRuCriminalEvidence: pageLevelChecks.page31NoRuCriminalEvidence,
         pageParity: (() => {
@@ -612,6 +625,32 @@ async function main(): Promise<void> {
     }
     console.log(`приёмка: пройдено ${total} из ${total} ворот`);
   }
+}
+
+/**
+ * Каждая карточная страница матрицы отчиталась о нарисованном.
+ *
+ * Правило «выброшенное рендерером содержимое поднимает
+ * CONTENT_DROPPED_BY_RENDERER» исполняется только там, куда поступает
+ * телеметрия. Карточная сетка матрицы записей не писала — и страница теряла
+ * тему при зелёной приёмке. Отсутствие записи (или самой телеметрии) — отказ,
+ * а не пропуск: проверка без входа выглядит ровно так же, как пройденная,
+ * поэтому и дека без страниц матрицы считается непроверенной.
+ */
+export function riskMatrixTelemetryPresent(
+  rendererSlides: ReadonlyArray<{ template?: string; pageNumber?: number }>,
+  telemetry: { entries?: Array<Record<string, unknown>> } | null | undefined
+): boolean {
+  const riskPages = rendererSlides
+    .filter((s) => String(s.template ?? "").startsWith("orion_golden_risk_matrix"))
+    .map((s) => s.pageNumber);
+  if (riskPages.length === 0) return false;
+  const reported = new Set(
+    (telemetry?.entries ?? [])
+      .filter((e) => String(e.name ?? "").startsWith("orion_risk_matrix"))
+      .map((e) => Number(e.page))
+  );
+  return riskPages.every((page) => reported.has(Number(page)));
 }
 
 /**

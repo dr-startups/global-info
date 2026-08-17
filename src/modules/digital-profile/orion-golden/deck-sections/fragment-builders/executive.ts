@@ -554,7 +554,15 @@ export function buildExecutiveSummaryFragment(
   // continuation page carries the full detail.
   // PDF-40 G.2b/G.3 — concrete evidence first (quotes + источник); GPT advice
   // is a short trailing line, never a replacement for the factual basis.
-  const cardTexts = es.keyFindings.map((k) => {
+  /**
+   * Тематический блок резюме: тема, фактура, объяснение риска, «Что делать».
+   *
+   * `factLines` ограничивает фактуру для узких карточек первой страницы;
+   * страница-продолжение берёт её целиком. Объяснение риска от модели живёт
+   * только здесь: карточка матрицы стала сводкой, и без этой строки
+   * `keyRisks[].explanation` не печатался бы в отчёте вовсе.
+   */
+  const themeBullet = (k: ExecutiveSummaryExtras["keyFindings"][number], factLines?: number) => {
     const finding = scoped.findings.find((f) => f.findingId === k.findingId);
     const concrete = finding
       ? claimBodyWithoutTheme(finding)
@@ -563,27 +571,20 @@ export function buildExecutiveSummaryFragment(
           .trim();
     const risk = matchGptKeyRisk(k.title, gpt?.keyRisks);
     // Keep framing + up to 2 quote lines (+ scale); drop a long why-tail if tight.
-    const core = concrete
-      .split("\n")
-      .filter((ln) => ln.trim().length > 0)
-      .slice(0, 4)
-      .join("\n");
+    const core = factLines
+      ? concrete
+          .split("\n")
+          .filter((ln) => ln.trim().length > 0)
+          .slice(0, factLines)
+          .join("\n")
+      : concrete;
     const lines = [`«${k.title}»`, core];
+    if (risk?.explanation) lines.push(risk.explanation);
     if (risk?.advice) lines.push(`Что делать: ${risk.advice}`);
     return bulletWithFindingId(lines.filter(Boolean).join("\n"), k.findingId, 900);
-  });
-  const bullets = es.keyFindings.map((k) => {
-    const finding = scoped.findings.find((f) => f.findingId === k.findingId);
-    const concrete = finding
-      ? claimBodyWithoutTheme(finding)
-      : String(k.factualBasis ?? "")
-          .replace(/^Подтверждённый факт:\s*/iu, "")
-          .trim();
-    const risk = matchGptKeyRisk(k.title, gpt?.keyRisks);
-    const lines = [`«${k.title}»`, concrete];
-    if (risk?.advice) lines.push(`Что делать: ${risk.advice}`);
-    return bulletWithFindingId(lines.filter(Boolean).join("\n"), k.findingId, 900);
-  });
+  };
+  const cardTexts = es.keyFindings.map((k) => themeBullet(k, 4));
+  const bullets = es.keyFindings.map((k) => themeBullet(k));
   // Sparse but complete collection: keep a client-safe page that states
   // there are no confirmed findings — never invent risks. Still show
   // coverage / LIKELY / namesake / recommendations (§7.3).
@@ -737,11 +738,6 @@ export function buildExecutiveSummaryFragment(
   return { slides, status: "READY" };
 }
 
-/**
- * Cards that fit on one risk-matrix page with typical GPT detail length.
- * PDF-46 I.3 — three full cards above the footer; overflow → continuations.
- */
-const RISK_MATRIX_PAGE_CAPACITY = 3;
 /** Always keep ≥1 first-page slot for LIKELY when any exist (§2.1 visibility). */
 const RISK_MATRIX_LIKELY_RESERVED = 1;
 /**
@@ -750,26 +746,63 @@ const RISK_MATRIX_LIKELY_RESERVED = 1;
  */
 export const RISK_MATRIX_LIKELY_AGGREGATE_ID = "finding-likely-aggregate";
 
+/** Ёмкость и текстовый бюджет карточек матрицы объявлены только реестром. */
+const RISK_MATRIX_TEMPLATE = DECK_TEMPLATE_REGISTRY["risk-matrix"];
+/**
+ * Сколько знаков даётся строке «в чём проблема».
+ *
+ * Две нарисованных строки тела карточки при ширине текстовой колонки: столько
+ * помещается, не поднимая карточку выше расчётной высоты, по которой считалась
+ * ёмкость страницы.
+ */
+const RISK_MATRIX_PROBLEM_CHARS = 160;
+/** Подпись строки действия — она же считается в бюджете, поэтому объявлена раз. */
+const RISK_MATRIX_ACTION_PREFIX = "Что делать: ";
+const LIKELY_CAVEAT =
+  "Принадлежность пока не подтверждена — до уточнения идентификации материал не включаем в итог «об этом лице».";
+
+/**
+ * Тело карточки матрицы: сводка, а не выписка.
+ *
+ * Строка статистики синтезатора идёт дословно — числа остаются с одним
+ * источником правды. Цитаты, «Примеры: …» и «Где видно: …» в карточку не
+ * попадают никогда: они уже напечатаны в тематических блоках региональных
+ * резюме, и матрица их дублировала, раздувая карточку до 575 знаков.
+ *
+ * Объяснение риска от модели (`risk.explanation`) печатается в резюме, а не
+ * здесь: карточке нужна одна строка «в чём проблема», а не две.
+ */
 function riskMatrixDetail(f: Finding, extras?: FragmentExtras): string {
-  // PDF-40 G.1b / PDF-46 I.4 — headline shows theme; keep structured lines whole.
-  const claim = claimBodyWithoutTheme(f);
-  if (f.subjectMatch === "LIKELY_SUBJECT") {
-    return fitStructuredBullet(
-      [
-        claim,
-        "Принадлежность пока не подтверждена — до уточнения идентификации материал не включаем в итог «об этом лице».",
-      ].join("\n"),
-      900
-    );
+  // PDF-40 G.1b — headline уже показывает тему, поэтому строка темы снимается.
+  const claimLines = claimBodyWithoutTheme(f).split("\n").map((l) => l.trim());
+  let head = claimLines[0] ?? "";
+  if (head.endsWith(":")) {
+    // Первой строкой претензии бывает не статистика, а ввод к цитатам
+    // («Найдены публикации по теме:»). Цитат в сводке нет — значит, нет и
+    // обещания: строкой «в чём проблема» становится масштаб темы, он из той же
+    // претензии и несёт числа. Нет и его — двоеточие просто снимается.
+    const scale = claimLines.find((l) => /^(Всего по теме|В корпусе):/u.test(l));
+    head = scale ?? `${head.slice(0, -1)}.`;
   }
-  const risk = matchGptKeyRisk(f.theme, extras?.gptCaseAnalysis?.keyRisks);
-  if (risk) {
-    return fitStructuredBullet(
-      [claim, risk.explanation, `Что делать: ${risk.advice}`].join("\n"),
-      900
-    );
+  const problem = clampClientText(head, RISK_MATRIX_PROBLEM_CHARS);
+  const lines = [problem];
+  if (f.subjectMatch === "LIKELY_SUBJECT" && f.findingId !== RISK_MATRIX_LIKELY_AGGREGATE_ID) {
+    // У темы с неподтверждённой принадлежностью действие одно — уточнить её,
+    // и оговорка говорит об этом полнее рекомендации. У агрегата претензия
+    // сама объясняет статус, второй раз повторять его незачем.
+    lines.push(LIKELY_CAVEAT);
+  } else {
+    const advice = matchGptKeyRisk(f.theme, extras?.gptCaseAnalysis?.keyRisks)?.advice;
+    // Что осталось от бюджета реестра после строки «в чём проблема» и переноса.
+    const budget =
+      RISK_MATRIX_TEMPLATE.layout.itemCharBudget -
+      problem.length -
+      RISK_MATRIX_ACTION_PREFIX.length -
+      "\n".length;
+    const action = clampClientText((advice ?? f.recommendedAction ?? "").trim(), budget);
+    if (action) lines.push(`${RISK_MATRIX_ACTION_PREFIX}${action}`);
   }
-  return fitStructuredBullet([claim, `Что делать: ${f.recommendedAction}`].join("\n"), 900);
+  return fitStructuredBullet(lines.join("\n"), RISK_MATRIX_TEMPLATE.layout.itemCharBudget);
 }
 
 function riskMatrixRow(f: Finding): string[] {
@@ -795,7 +828,7 @@ function riskMatrixSlideFindingIds(findings: Finding[]): string[] {
 export function packRiskMatrixPages(
   confirmed: Finding[],
   likely: Finding[],
-  pageCapacity = RISK_MATRIX_PAGE_CAPACITY,
+  pageCapacity = RISK_MATRIX_TEMPLATE.maxTableRowsPerSlide,
   likelyReserved = RISK_MATRIX_LIKELY_RESERVED
 ): Finding[][] {
   const conf = [...confirmed].sort(
@@ -805,18 +838,60 @@ export function packRiskMatrixPages(
     (a, b) => (RISK_ORDER[b.riskLevel] ?? 0) - (RISK_ORDER[a.riskLevel] ?? 0)
   );
   if (conf.length === 0 && lik.length === 0) return [];
-  if (lik.length === 0) {
-    const pages: Finding[][] = [];
-    for (let i = 0; i < conf.length; i += pageCapacity) pages.push(conf.slice(i, i + pageCapacity));
-    return pages;
-  }
   const reserve = Math.min(likelyReserved, lik.length, pageCapacity);
-  const confOnFirst = Math.max(0, pageCapacity - reserve);
-  const first = [...conf.slice(0, confOnFirst), ...lik.slice(0, reserve)];
-  const rest = [...conf.slice(confOnFirst), ...lik.slice(reserve)];
+  const confOnFirst = Math.min(conf.length, Math.max(0, pageCapacity - reserve));
+  /*
+   * Остаток первой страницы добирается вероятными: резерв — это минимум под
+   * «Требует подтверждения», а не потолок листа.
+   *
+   * Отсюда же следует, что помещающийся целиком набор не делится: при
+   * `conf + lik ≤ ёмкости` на первую страницу уходят все подтверждённые и все
+   * вероятные. Пока добора не было, резерв резал лист по `ёмкость − резерв`, и
+   * одна подтверждённая тема с двумя вероятными раскладывалась в [1, 2] — две
+   * страницы под три карточки.
+   */
+  const likOnFirst = Math.min(lik.length, pageCapacity - confOnFirst);
+  const first = [...conf.slice(0, confOnFirst), ...lik.slice(0, likOnFirst)];
+  const rest = [...conf.slice(confOnFirst), ...lik.slice(likOnFirst)];
   const pages: Finding[][] = [first];
   for (let i = 0; i < rest.length; i += pageCapacity) pages.push(rest.slice(i, i + pageCapacity));
-  return pages.filter((p) => p.length > 0);
+  return unlonelyTail(pages.filter((p) => p.length > 0));
+}
+
+/**
+ * Последняя страница матрицы не остаётся с одной карточкой.
+ *
+ * Пять тем при ёмкости четыре давали [4, 1]: лист под одну карточку читается
+ * как брошенный. С предыдущей страницы переносится ровно одна тема.
+ *
+ * Две оговорки, обе — из разбора составов с вероятными темами:
+ *
+ * 1. С двухкарточной страницы не переносим ничего: одинокий хвост сменился бы
+ *    одинокой предыдущей страницей, то есть правило сработало бы против себя.
+ *    Если при такой ёмкости хвост неизбежен, он остаётся — это честнее.
+ * 2. Первая страница не отдаёт **единственную** вероятную тему: резерв держит
+ *    «Требует подтверждения» на виду. Когда вероятных на ней несколько (или
+ *    переносим не с первой страницы), ограничения нет — видимость сохраняется
+ *    и без него.
+ *
+ * `balanceTailPage` здесь намеренно не переиспользуется: он выравнивает
+ * страницы до почти равных ([4, 1] → [2, 3]) и отменил бы само сжатие матрицы.
+ * Вопрос тут другой — «не одинокий хвост», а не «равные страницы».
+ */
+function unlonelyTail(pages: Finding[][]): Finding[][] {
+  const last = pages.at(-1);
+  const prev = pages.at(-2);
+  if (!last || !prev || last.length !== 1 || prev.length < 3) return pages;
+  const isOnlyLikelyOnFirstPage = (idx: number): boolean =>
+    pages.length === 2 &&
+    prev[idx]!.subjectMatch === "LIKELY_SUBJECT" &&
+    !prev.some((f, j) => j !== idx && f.subjectMatch === "LIKELY_SUBJECT");
+  for (let i = prev.length - 1; i >= 0; i -= 1) {
+    if (isOnlyLikelyOnFirstPage(i)) continue;
+    last.unshift(...prev.splice(i, 1));
+    return pages;
+  }
+  return pages;
 }
 
 export function buildRiskMatrixFragment(

@@ -36,9 +36,11 @@ from .common import (
     _clip_structured_bullet,
     _clip_words,
     _safe,
+    _safe_preserve_breaks,
     _fit_lines_to_height,
     _split_structured_bullet,
     measure_text_height,
+    record_text_layout,
 )
 from .layout_cleeq import (
     bars_color,
@@ -132,9 +134,14 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
     findings = [f for f in (slide.get("keyFindings") or []) if isinstance(f, dict)]
     if not findings:
         bullets = [_safe(b) for b in slide.get("bullets") or [] if _safe(b)]
-        findings = [{"headline": b.split("—")[0].strip()[:60], "detail": b, "tone": "warn"} for b in bullets[:6]]
+        findings = [{"headline": b.split("—")[0].strip()[:60], "detail": b, "tone": "warn"} for b in bullets]
     badge_w = 1_900_000
-    for finding in findings[:6]:
+    # Сколько карточек на листе — решает пагинация построителя (реестр
+    # шаблонов). Рендерер отвечает только за то, влезает ли карточка целиком;
+    # свой срез списка был вторым ответом на чужой вопрос.
+    drawn = 0
+    grid_top = y
+    for finding in findings:
         tone = str(finding.get("tone") or "warn")
         pill = _safe(finding.get("status") or finding.get("severity") or "")
         if len(pill) > 28:
@@ -142,7 +149,11 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         headline = _safe(finding.get("headline") or "Тема")
         if len(headline) > 72:
             headline = _clip_words(headline, 72)
-        detail = _clip_structured_bullet(_safe(finding.get("detail") or ""), 900)
+        # Переносы — структура карточки, а не оформление: по ним отделяется
+        # строка «Что делать» и по ним же меряется высота. `_safe` схлопывал их
+        # первым делом, вся строчная логика ниже становилась мёртвой, карточка
+        # раздувалась и последняя на странице не рисовалась вовсе.
+        detail = _clip_structured_bullet(_safe_preserve_breaks(finding.get("detail") or ""), 900)
         # PDF-40 G.1b — drop a leading «Theme» line that duplicates the headline.
         detail_lines = _split_structured_bullet(detail) or ([detail] if detail else [])
         if detail_lines and detail_lines[0].startswith("«"):
@@ -227,6 +238,10 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         if y + h > CONTENT_BOTTOM:
             break
         ctx.card(y, h=h, fill=_tone_fill(tone))
+        # Счёт нарисованного стоит здесь, в точке рисования: посчитанное в
+        # другом месте разойдётся с нарисованным, и телеметрия снова перестанет
+        # быть свидетельством.
+        drawn += 1
         # Headline
         box = ctx.slide.shapes.add_textbox(Emu(left), Emu(y + pad_y), Emu(text_w), Emu(max(headline_h + 20_000, 160_000)))
         tf = box.text_frame
@@ -324,7 +339,28 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         y += h + 50_000
         if y > CONTENT_BOTTOM - 360_000:
             break
-
+    # Карточка, не влезшая целиком, не рисуется — это решение рендерера, и о
+    # нём обязан узнать контур: запись читает инспектор геометрии и превращает
+    # ненулевую потерю в CONTENT_DROPPED_BY_RENDERER. Пока записи не было,
+    # страница теряла тему при зелёной приёмке. Запись пишется всегда, а не
+    # только при потере: её отсутствие приёмка считает отказом, иначе «нет
+    # записей» неотличимо от «потерь нет».
+    used = max(0, y - grid_top)
+    record_text_layout(
+        page=ctx.page,
+        name=f"orion_risk_matrix_p{ctx.page}",
+        role="cards",
+        font_family=FONT,
+        font_size_pt=FS_BODY,
+        box_width=CONTENT_W,
+        box_height=used,
+        available_height=max(0, CONTENT_BOTTOM - grid_top),
+        required_height=used,
+        measured_lines=drawn,
+        text_length=sum(len(_safe(f.get("detail") or "")) for f in findings),
+        clipped=drawn < len(findings),
+        dropped_bullets=len(findings) - drawn,
+    )
 
 
 def _render_profile_overview(ctx: _Ctx, slide: dict[str, Any], title: str) -> None:

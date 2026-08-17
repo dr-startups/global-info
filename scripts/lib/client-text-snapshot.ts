@@ -40,6 +40,14 @@ export type ClientTextSlide = {
    * пустых страниц и панелей не были закреплены эталоном вовсе.
    */
   actions?: string[];
+  /**
+   * Текст карточек матрицы рисков и исполнительного дашборда — то, что
+   * нарисовано на карточке, а не строка таблицы-провода. Пока снимок его не
+   * читал, формулировки карточек не были закреплены эталоном вовсе: у
+   * риск-слайдов в снимок попадала одна таблица, и переписать карточку можно
+   * было молча.
+   */
+  keyFindings?: Array<{ headline: string; status: string; detail: string }>;
   table?: { headers: string[]; rows: string[][] };
   highlights?: string[];
 };
@@ -52,7 +60,7 @@ export type ClientTextSnapshot = {
   slides: ClientTextSlide[];
 };
 
-export const CLIENT_TEXT_SNAPSHOT_VERSION = "client-text-snapshot-v1";
+export const CLIENT_TEXT_SNAPSHOT_VERSION = "client-text-snapshot-v2";
 
 /**
  * Пробелы схлопываются, края обрезаются. Перенос строки внутри абзаца — это
@@ -96,6 +104,17 @@ export function extractClientText(deck: { slides?: unknown }): ClientTextSnapsho
       if (actions.length) slide.actions = actions;
     }
 
+    if (Array.isArray(raw.keyFindings)) {
+      const cards = (raw.keyFindings as Array<Record<string, unknown>>)
+        .map((k) => ({
+          headline: norm(k.headline),
+          status: norm(k.status),
+          detail: norm(k.detail),
+        }))
+        .filter((k) => k.headline || k.status || k.detail);
+      if (cards.length) slide.keyFindings = cards;
+    }
+
     if (Array.isArray(raw.kpis)) {
       const kpis = (raw.kpis as Array<Record<string, unknown>>)
         .map((k) => `${norm(k.label)}: ${norm(k.value)}`.trim())
@@ -129,6 +148,7 @@ export function extractClientText(deck: { slides?: unknown }): ClientTextSnapsho
       ...(s.bullets ?? []),
       ...(s.kpis ?? []),
       ...(s.actions ?? []),
+      ...(s.keyFindings ?? []).flatMap((k) => [k.headline, k.status, k.detail]),
       ...(s.highlights ?? []),
       ...(s.table ? [...s.table.headers, ...s.table.rows.flat()] : []),
     ];

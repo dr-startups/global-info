@@ -20,6 +20,7 @@
     "regionScopeIsolation": true,
     "sourceFooterFromSidebarEvidence": true,
     "panelPagesMatchDrawnRows": true,
+    "riskMatrixTelemetryPresent": true,
     "page13FooterListsHighlightDomains": true,
     "page31NoRuCriminalEvidence": true,
     "pageParity": true
