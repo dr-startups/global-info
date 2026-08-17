@@ -9,7 +9,23 @@
     "matchType": "PEP",
     "matchScore": 78,
     "reviewStatus": "PENDING",
-    "riskTypes": ["PEP"],
+    "riskTypes": [
+      "PEP"
+    ],
+    "aliases": [
+      "Holmström, Johan",
+      "Johan A. Holmstrom",
+      "Й. Хольмстрём"
+    ],
+    "countries": [
+      "Швеция",
+      "Мальта"
+    ],
+    "datesOfBirth": [
+      "1975-04-02"
+    ],
+    "confidence": "MEDIUM",
+    "profileId": "DJ-PEP-778120",
     "summary": "Potential PEP match in Dow Jones Risk & Compliance (fixture).",
     "profileUrl": "https://example.com/dow-jones/golden-dj-pep-1"
   },
@@ -23,7 +39,14 @@
     "matchType": "ADVERSE_MEDIA",
     "matchScore": 64,
     "reviewStatus": "MATCH_CONFIRMED",
-    "riskTypes": ["ADVERSE_MEDIA"],
+    "riskTypes": [
+      "ADVERSE_MEDIA"
+    ],
+    "countries": [
+      "Швеция"
+    ],
+    "confidence": "HIGH",
+    "profileId": "LN-AM-441907",
     "summary": "Adverse media hit in LexisNexis (fixture).",
     "profileUrl": "https://example.com/lexisnexis/golden-ln-am-1"
   }

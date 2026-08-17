@@ -133,6 +133,22 @@ export type ScopedEvidenceIndex = Record<
     matchScore?: number;
     /** Compliance databases: review status (e.g. PENDING). */
     reviewStatus?: string;
+    /**
+     * Поля карточки записи комплаенс-базы: они уже лежат в
+     * `dp_database_profiles`, и страница базы печатает их вместо счётчика.
+     * Каждое опционально: старый артефакт без них читается как «поля нет», а
+     * отсутствующее поле не печатается вовсе — прочерк утверждал бы, что поля
+     * нет в самой записи.
+     */
+    aliases?: string[];
+    countries?: string[];
+    datesOfBirth?: string[];
+    /** LOW / MEDIUM / HIGH — уверенность сопоставления с субъектом. */
+    confidence?: string;
+    /** Идентификатор записи у провайдера — для запроса полной карточки. */
+    profileId?: string;
+    /** Сводка записи провайдера (client-safe, без машинных кодов тем). */
+    summary?: string;
     /** WikipediaCheck.exists — factual check, not SERP domain inference. */
     wikipediaExists?: boolean;
     /** WikipediaCheck.language (ru / en / …). */
@@ -223,6 +239,23 @@ export type SurfaceCollectionHint = {
   status: string;
   errorCode?: string | null;
   provider?: string;
+};
+
+/**
+ * Итог скрининга по одной комплаенс-базе — последний ран из
+ * `dp_compliance_screening_runs`, переложенный в `compliance-inventory.json`.
+ *
+ * Признак — данные, а не название: есть строка рана — проверка была, нет
+ * строки — не была. Без этого страница базы не могла отличить «проверено,
+ * совпадений нет» от «проверка не выполнялась» и печатала первое всегда.
+ */
+export type ComplianceScreeningRecord = {
+  provider: string;
+  /** SUCCESS | FAILED | NOT_CONFIGURED | DISABLED | PROVIDER_ERROR. */
+  status: string;
+  hitCount: number;
+  finishedAt?: string | null;
+  errorCode?: string | null;
 };
 
 export type EmptySurfaceCollectionStatus = {

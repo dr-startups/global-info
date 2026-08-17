@@ -137,6 +137,7 @@ function makeCtx(): Omit<SectionBuildContext, "previousPacks" | "buildLog"> {
       composedClientSummary:
         (inputs.composedClientSummary as unknown as ComposedClientSummary) ?? undefined,
       surfaceCollectionHints: inputs.surfaceCollectionHints,
+      complianceScreenings: inputs.complianceScreenings,
       uncategorizedMaterials:
         (inputs.uncategorizedMaterials as UncategorizedMaterialsExtras | null) ?? undefined,
       visualAssets,

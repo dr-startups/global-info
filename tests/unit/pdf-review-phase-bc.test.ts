@@ -212,15 +212,24 @@ describe("B.2 + C.4 — compliance table", () => {
   };
   const out = buildComplianceFragment("COMPLIANCE" as never, scoped as never, {} as never);
 
-  it("summary narrative explains records without matches (B.2)", () => {
+  /**
+   * B.2 переехал на другое основание. Клэрифаер «По 3 записям совпадений не
+   * выявлено» объяснял разницу между метрикой поверхности (`totalCount`, куда
+   * входят внутренние находки) и числом строк таблицы. Число записей теперь
+   * считается по самим записям баз и со строками совпадает — объяснять нечего,
+   * а метрика поверхности больше не цитируется как «записи баз».
+   */
+  it("summary narrative counts database records, not the surface metric (B.2)", () => {
     const summary = out.slides[0]!;
-    expect(summary.content.narrative).toMatch(/По 3 записям совпадений не выявлено/);
+    expect(summary.content.narrative).toMatch(/Записей о субъекте в комплаенс-базах: 2/);
+    expect(summary.content.narrative).not.toMatch(/По 3 записям совпадений не выявлено/);
+    expect(summary.content.table?.rows.length).toBe(2);
   });
 
   it("multiple provider records become banded groups, not one flat param list (C.4)", () => {
-    const lexis = out.slides.find((s) =>
-      String(s.content.narrative ?? "").includes("LexisNexis")
-    )!;
+    // Слайд выбирается по слоту: сводная страница теперь тоже называет базы в
+    // нарративе, и поиск подстрокой находил бы её.
+    const lexis = out.slides.find((s) => s.slideId === "p35_lexis_visual")!;
     const table = lexis.content.table!;
     expect(table.groups?.length).toBeGreaterThanOrEqual(2);
     expect(table.groups![0]!.qTag).toBe("Запись 1 из 2");
@@ -241,14 +250,15 @@ describe("B.2 + C.4 — compliance table", () => {
       { ...scoped, evidenceIndex: {} } as never,
       {} as never
     );
-    const dow = empty.slides.find((s) =>
-      String(s.content.narrative ?? "").includes("Dow Jones")
-    )!;
+    const dow = empty.slides.find((s) => s.slideId === "p34_dow_jones")!;
 
     it("вместо таблицы из прозы — пустое состояние", () => {
       expect(dow.templateId).toBe("coverage-empty-state");
       expect(dow.content.table).toBeUndefined();
-      expect(dow.content.narrative).toMatch(/записей о субъекте не зафиксировано/);
+      // Без записи о проверке страница говорит «проверка не выполнялась», а не
+      // «проверка выполнена, записей нет»: второе — утверждение о проверке,
+      // данных о которой нет.
+      expect(dow.content.narrative).toMatch(/не выполнялась/);
     });
 
     it("не утверждает значимость категории PEP без единой записи", () => {
@@ -258,14 +268,14 @@ describe("B.2 + C.4 — compliance table", () => {
     });
 
     it("рекомендация выполнима: нечего запрашивать — нечего и сверять", () => {
-      expect(dow.content.whatToCheck).toMatch(/Повторить сверку/);
+      // «Повторить сверку» невыполнима там, где сверки не было: рекомендация
+      // называет то, чем состояние лечится, — доступ или ручной импорт.
+      expect(dow.content.whatToCheck).toMatch(/подключить официальный доступ|импортировать/i);
       expect(dow.content.whatToCheck).not.toMatch(/^Запросить полную запись/);
     });
 
     it("страница с записями остаётся таблицей", () => {
-      const lexis = out.slides.find((s) =>
-        String(s.content.narrative ?? "").includes("LexisNexis")
-      )!;
+      const lexis = out.slides.find((s) => s.slideId === "p35_lexis_visual")!;
       expect(lexis.content.table?.rows.length).toBeGreaterThan(0);
     });
   });

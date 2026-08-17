@@ -248,7 +248,13 @@ function extrasHash(key: FragmentKey, extras: FragmentExtras): string {
             : null,
         }
       : key === "COMPLIANCE_MAIN"
-        ? extras.complianceNarrative ?? null
+        ? {
+            narrative: extras.complianceNarrative ?? null,
+            // Итог скрининга выбирает формулировку пустой страницы базы —
+            // значит, он вход фрагмента, и его изменение обязано пересобрать
+            // пакет, а не взяться из кэша.
+            screenings: extras.complianceScreenings ?? [],
+          }
         : key === "RU_SUMMARY" || key === "UAE_SUMMARY"
           ? extras.uncategorizedMaterials ?? null
           : null;

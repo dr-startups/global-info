@@ -175,9 +175,17 @@ function assertComplianceSlides(artifactsDir: string): void {
     (p34!.whatWasFound ?? "").includes("Потенциальное совпадение"),
     `p34 Dow Jones card empty: ${p34!.whatWasFound}`
   );
+  // Хит LexisNexis золотого кейса подтверждён аналитиком (`MATCH_CONFIRMED`) —
+  // и страница обязана говорить об этом, а не звать его потенциальным. Прежде
+  // здесь требовалось «Потенциальное совпадение», то есть проверка закрепляла
+  // расхождение таблицы («Подтверждено») с прозой того же слайда.
   assert.ok(
-    (p35!.whatWasFound ?? "").includes("Потенциальное совпадение"),
+    (p35!.whatWasFound ?? "").includes("подтверждено аналитиком"),
     `p35 LexisNexis card empty: ${p35!.whatWasFound}`
+  );
+  assert.ok(
+    !(p35!.whatWasFound ?? "").includes("не подтверждено"),
+    `p35 подтверждённое совпадение названо неподтверждённым: ${p35!.whatWasFound}`
   );
 }
 

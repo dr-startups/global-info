@@ -218,6 +218,7 @@ async function main(): Promise<void> {
         composedClientSummary:
           (inputs.composedClientSummary as unknown as ComposedClientSummary) ?? undefined,
         surfaceCollectionHints: inputs.surfaceCollectionHints,
+        complianceScreenings: inputs.complianceScreenings,
         uncategorizedMaterials:
           (inputs.uncategorizedMaterials as UncategorizedMaterialsExtras | null) ?? undefined,
         visualAssets,
@@ -578,6 +579,13 @@ async function main(): Promise<void> {
           result.assembly.rendererSlides,
           layoutTelemetry
         ),
+        // Сводная комплаенс-таблица называет базы. Ожидаемое число строк
+        // считается по наблюдениям артефактов, а не по выходу построителя:
+        // ворота, меряющие тем же индексом, зелены вакуумно.
+        complianceRowsNameTheirBases: complianceRowsNameTheirBases(
+          result.assembly.rendererSlides,
+          ANALYTICS_DIR
+        ),
         page13FooterListsHighlightDomains: pageLevelChecks.page13FooterListsHighlightDomains,
         page31NoRuCriminalEvidence: pageLevelChecks.page31NoRuCriminalEvidence,
         pageParity: (() => {
@@ -625,6 +633,46 @@ async function main(): Promise<void> {
     }
     console.log(`приёмка: пройдено ${total} из ${total} ворот`);
   }
+}
+
+/**
+ * В сводной комплаенс-таблице каждая строка называет свою базу.
+ *
+ * На прогоне 72 три записи (Dow Jones, LexisNexis, World-Check) схлопывались
+ * дедупом в одну строку «База данных | — | — | —»: провайдер приходит в
+ * наблюдении полем `engine`, а построитель читал только обогащение, которого в
+ * замороженных артефактах нет. Ожидаемое число строк берётся из самих
+ * наблюдений — если считать его по выходу построителя, ворота подтвердят любую
+ * поломку сами себе. Отсутствие входа — отказ, а не пропуск.
+ */
+export function complianceRowsNameTheirBases(
+  rendererSlides: ReadonlyArray<{
+    baseSlotId?: string;
+    isContinuation?: boolean;
+    table?: { rows: string[][] };
+  }>,
+  analyticsDir: string
+): boolean {
+  const observationsPath = join(analyticsDir, "composite-serp-observations.json");
+  if (!existsSync(observationsPath)) return false;
+  const observations = (
+    JSON.parse(readFileSync(observationsPath, "utf8")) as {
+      observations?: Array<{ surface?: string; engine?: string; title?: string }>;
+    }
+  ).observations ?? [];
+  const expected = new Set(
+    observations
+      .filter((o) => o.surface === "compliance_hit")
+      .map((o) => `${String(o.engine ?? "").toUpperCase()}|${String(o.title ?? "").toLowerCase()}`)
+  );
+  const summary = rendererSlides.find(
+    (s) => s.baseSlotId === "p33_compliance_toc" && !s.isContinuation
+  );
+  const rows = summary?.table?.rows ?? [];
+  if (expected.size === 0) return false;
+  if (rows.length !== expected.size) return false;
+  // «База данных» — подпись колонки; в ячейке она означает, что базу не назвали.
+  return rows.every((row) => Boolean(row[0]?.trim()) && row[0] !== "База данных");
 }
 
 /**

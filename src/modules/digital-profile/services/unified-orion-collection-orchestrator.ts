@@ -1709,6 +1709,11 @@ async function stepPrepare(
               searchResult: preparePrisma.searchResult,
               searchSurfaceItem: preparePrisma.searchSurfaceItem,
               databaseProfile: preparePrisma.databaseProfile,
+              // Итоги скринингов — единственный источник различия «проверено,
+              // совпадений нет» и «проверка не выполнялась» на страницах баз.
+              // Без делегата артефакт пишет пустой список, и страница честно,
+              // но неверно сообщает, что проверки не было.
+              complianceScreeningRun: preparePrisma.complianceScreeningRun,
               riskFinding: preparePrisma.riskFinding,
               wikipediaCheck: preparePrisma.wikipediaCheck,
               serpCapture: preparePrisma.serpCapture,

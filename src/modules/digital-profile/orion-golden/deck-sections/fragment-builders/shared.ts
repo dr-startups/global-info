@@ -15,6 +15,7 @@ import {
   normalizeEvidenceRef,
   regionMatches,
   resolveEmptySurfaceCollection,
+  type ComplianceScreeningRecord,
   type EmptySurfaceCollectionStatus,
   type LinkReadRegionCounts,
   type MetricSnapshot,
@@ -117,6 +118,15 @@ export type FragmentExtras = {
   composedClientSummary?: ComposedClientSummary;
   /** Existing compliance client copy (no source expansion). */
   complianceNarrative?: string[];
+  /**
+   * Итоги скрининга по комплаенс-базам этого прогона.
+   *
+   * Страница базы без записей выбирает по ним одну из трёх формулировок:
+   * «проверено — совпадений нет», «проверка не выполнена — причина» и
+   * «проверка не выполнялась». Данные, а не конфигурация: чтение окружения
+   * сделало бы клиентский текст зависимым от машины сборки.
+   */
+  complianceScreenings?: ComplianceScreeningRecord[];
   /** Typed visual assets bound per canonical slot. */
   visualAssets?: VisualAssetsBySlot;
   /** Holistic GPT case analysis (client-safe, optional). */

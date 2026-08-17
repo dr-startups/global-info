@@ -61,7 +61,10 @@ import {
 } from "./report-quality-summary";
 import {
   resolveComplianceInventoryItems,
+  resolveComplianceScreenings,
   type ComplianceInventoryPrisma,
+  type ComplianceScreeningPrisma,
+  type ComplianceScreeningRunRow,
   type DatabaseProfileHitInput,
 } from "./compliance-inventory-adapter";
 import type {
@@ -133,6 +136,7 @@ export type CanonicalPrepareInput = {
    */
   prisma?: (Partial<ReportQualityPrismaCounts> &
     Partial<ComplianceInventoryPrisma> &
+    Partial<ComplianceScreeningPrisma> &
     Partial<AnalystOverridesPrisma> &
     Partial<EvidenceSupplementPrisma> & {
       searchResult?: ReportQualityPrismaCounts["searchResult"] &
@@ -144,6 +148,11 @@ export type CanonicalPrepareInput = {
    * Pass `[]` to force an empty compliance surface.
    */
   complianceHits?: DatabaseProfileHitInput[] | null;
+  /**
+   * Offline/fixture compliance screening runs. Задают ветвь пустой страницы
+   * базы: «проверено — совпадений нет» / «не выполнена» / «не выполнялась».
+   */
+  complianceScreenings?: ComplianceScreeningRunRow[] | null;
   /** Offline/fixture analyst overrides (§1.3). When set, skips prisma load. */
   analystOverrides?: AnalystOverridesBundle | null;
   /** Offline/fixture WikipediaCheck + SERP screenshots (§1.4). */
@@ -650,6 +659,7 @@ export async function runCanonicalReportPrepare(
           gptCaseAnalysis: caseAnalysis ?? undefined,
           uncategorizedMaterials: deckInputs.uncategorizedMaterials ?? undefined,
           surfaceCollectionHints: deckInputs.surfaceCollectionHints,
+          complianceScreenings: deckInputs.complianceScreenings,
           ...deckFreshnessExtras,
         },
       },
@@ -756,6 +766,15 @@ export async function runCanonicalReportPrepare(
             }
           : null,
     });
+    // Итоги скринингов едут в тот же артефакт: без них страница базы не может
+    // отличить «проверено, совпадений нет» от «проверка не выполнялась».
+    const complianceScreenings = await resolveComplianceScreenings({
+      caseId: input.caseId,
+      screenings: input.complianceScreenings,
+      prisma: input.prisma?.complianceScreeningRun
+        ? { complianceScreeningRun: input.prisma.complianceScreeningRun }
+        : null,
+    });
     const items = [...serpItems, ...complianceItems, ...supplement.wikipediaItems];
     writeFileSync(
       join(analyticsDir, "compliance-inventory.json"),
@@ -765,6 +784,7 @@ export async function runCanonicalReportPrepare(
           caseId: input.caseId,
           count: complianceItems.length,
           items: complianceItems,
+          screenings: complianceScreenings,
         },
         null,
         2
@@ -985,6 +1005,7 @@ export async function runCanonicalReportPrepare(
           gptCaseAnalysis: gptLayer?.caseAnalysis ?? undefined,
           uncategorizedMaterials: deckInputs.uncategorizedMaterials ?? undefined,
           surfaceCollectionHints: deckInputs.surfaceCollectionHints,
+          complianceScreenings: deckInputs.complianceScreenings,
           ...deckFreshnessExtras,
         },
       },

@@ -38,7 +38,8 @@ from orion_golden_render.common import (  # noqa: E402
     SLIDE_W,
     _Ctx,
 )
-from orion_golden_render.visual import _add_search_table  # noqa: E402
+from orion_golden_render.common import text_width_px  # noqa: E402
+from orion_golden_render.visual import _add_search_table, _status_tone  # noqa: E402
 
 # Наборы заголовков, которые сегодня посылают построители секций.
 HDR_SERP = ["№", "Ссылка", "Заголовок", "Тип источника", "Оценка"]
@@ -62,6 +63,20 @@ BODY_PT = 10.0
 LINE_H = int(BODY_PT * EMU_PER_PT * 1.2)
 PAD = int(6 * EMU_PER_PT)
 CHAR_W_10PT = int(BODY_PT * EMU_PER_PT * 0.52)
+
+# Самая длинная законная ячейка статуса: у прогона, чей статус проверки в
+# артефактах не зафиксирован, печатается именно она.
+STATUS_UNRECORDED = "Не подтверждено (статус в артефактах прогона не зафиксирован)"
+COMPLIANCE_ROW = ["OpenSanctions", "PEP (политически значимое лицо)", "71/100", STATUS_UNRECORDED]
+
+#: Зелёный `_status_tone` по умолчанию — тот самый «всё в порядке».
+#: Сравнивается строкой: RGBColor — подкласс tuple, и сравнение с числом
+#: всегда ложно, то есть проверка «не зелёный» была бы тождеством.
+GREEN_OK = "047857"
+
+#: Поля ячейки python-pptx: по 0.1″ с каждой стороны.
+CELL_MARGINS_EMU = 2 * 91_440
+EMU_PER_PX = 9525
 
 failures: list[str] = []
 
@@ -101,6 +116,26 @@ def shares_of(widths: list[int]) -> list[float]:
 
 def fmt(widths: list[int]) -> str:
     return ", ".join(f"{w} ({w / CONTENT_W:.3f})" for w in widths)
+
+
+def lines_needed(text: str, width_emu: int, pt: float, bold: bool = False) -> int:
+    """Во сколько строк ляжет текст в колонке такой ширины.
+
+    Меряется настоящими метриками шрифта, а не моделью `_title_line_estimate`:
+    та упирается в потолок «две строки» и на длинной ячейке отвечает «две»
+    всегда — то есть проверка через неё была бы тождеством.
+    """
+    usable = max(1, width_emu - CELL_MARGINS_EMU)
+    lines = 1
+    cur = ""
+    for word in text.split():
+        trial = f"{cur} {word}".strip()
+        if text_width_px(trial, pt, bold) * EMU_PER_PX <= usable:
+            cur = trial
+        else:
+            lines += 1
+            cur = word
+    return lines
 
 
 def main() -> int:
@@ -153,19 +188,14 @@ def main() -> int:
     )
 
     # --- Т4. Таблицы вне задачи не тронуты ----------------------------------
-    # Метрики региона и комплаенс сохраняют сегодняшние доли: их пропорции тоже
-    # кривые, но это отдельный пункт бэклога, а не эта правка.
+    # Метрики региона сохраняют сегодняшние доли: их пропорции тоже кривые, но
+    # это отдельный пункт бэклога, а не эта правка.
     expected_four = [0.14, 0.26, 0.42, 0.18]
     for label, headers, rows in (
         (
             "метрики региона",
             HDR_METRICS,
             [["Яндекс", "Найдено страниц", "312", "Проверено вручную 20 первых"]],
-        ),
-        (
-            "комплаенс",
-            HDR_COMPLIANCE,
-            [["OpenSanctions", "Совпадение по имени", "0.71", "Требует проверки"]],
         ),
     ):
         w = widths_of(headers, rows)
@@ -214,6 +244,87 @@ def main() -> int:
             total == CONTENT_W,
             f"сумма {total}, ширина контента {CONTENT_W}",
         )
+
+    # --- Т8. Комплаенс-сводка: своя ветка долей -------------------------------
+    # Общая четырёхколоночная ветка отдавала «Оценке совпадения» 42 % под
+    # «78/100», а «Статусу проверки» — 18 % под строку из шести слов. Доли
+    # выверены настоящими метриками шрифта: самая длинная законная ячейка
+    # статуса — «Не подтверждено (статус в артефактах прогона не зафиксирован)».
+    w_comp = widths_of(HDR_COMPLIANCE, [COMPLIANCE_ROW])
+    s_comp = shares_of(w_comp)
+    expected_compliance = [0.16, 0.30, 0.18, 0.36]
+    check(
+        "Т8а: доли комплаенс-сводки — своя ветка 0.16 / 0.30 / 0.18 / 0.36",
+        len(s_comp) == 4
+        and all(abs(s_comp[i] - expected_compliance[i]) <= 0.005 for i in range(4)),
+        f"{fmt(w_comp)}",
+    )
+    check(
+        "Т8б: «Статус проверки» шире «Оценки совпадения»",
+        w_comp[3] > w_comp[2],
+        f"статус {w_comp[3]}, оценка {w_comp[2]}",
+    )
+    # Строка статуса рисуется бейджем: «● » впереди и кегль 9.5.
+    status_lines = lines_needed(f"● {STATUS_UNRECORDED}", w_comp[3], 9.5)
+    check(
+        "Т8в: самая длинная законная ячейка статуса укладывается в две строки",
+        status_lines <= 2,
+        f"{status_lines} строк(и) при ширине {w_comp[3]}",
+    )
+    for i, (label, text, bold) in enumerate(
+        (
+            ("База данных", "OpenSanctions", False),
+            ("Тип совпадения", "Импортированный отчёт LexisNexis", False),
+            ("Оценка совпадения", HDR_COMPLIANCE[2], True),
+        )
+    ):
+        n = lines_needed(text, w_comp[i], 10.0, bold)
+        check(
+            f"Т8г: колонка «{label}» держит «{text}» в одну строку",
+            n == 1,
+            f"{n} строк(и) при ширине {w_comp[i]}",
+        )
+
+    # --- Т9. Бейдж статуса ----------------------------------------------------
+    # Незнакомое слово в `_status_tone` зелёное по умолчанию, и подтверждённый
+    # комплаенс-риск рисовался цветом «всё в порядке».
+    _, tone_confirmed = _status_tone("Подтверждено аналитиком")
+    check(
+        "Т9а: «Подтверждено аналитиком» — не зелёный бейдж",
+        str(tone_confirmed) != GREEN_OK,
+        f"цвет {tone_confirmed}",
+    )
+    _, tone_unrecorded = _status_tone(STATUS_UNRECORDED)
+    check(
+        "Т9б: незафиксированный статус — не зелёный бейдж",
+        str(tone_unrecorded) != GREEN_OK,
+        f"цвет {tone_unrecorded}",
+    )
+
+    # --- Т10. Подсветка строки — только от статусной колонки ------------------
+    # В карточке записи последняя колонка называется «Значение». Пока подсветка
+    # смотрела на её текст, янтарь доставался строке «Категория: Требует ручной
+    # классификации», а строка настоящего статуса оставалась белой.
+    card = build_table(
+        HDR_PAIR,
+        [
+            ["Совпадение по имени", "Глинка Сергей Михайлович"],
+            ["Категория", "Требует ручной классификации"],
+            ["Статус проверки", STATUS_UNRECORDED],
+        ],
+    )
+    card_fills = {str(card.cell(r, 1).fill.fore_color.rgb) for r in range(1, 4)}
+    check(
+        "Т10а: строки карточки записи не подсвечиваются по колонке «Значение»",
+        card_fills == {"FFFFFF"},
+        f"фоны строк: {sorted(card_fills)}",
+    )
+    serp = build_table(HDR_SERP, [["1", LINK_62, TITLE_SERP, "СМИ", "Нежелательный"]])
+    check(
+        "Т10б: нежелательная строка выдачи подсветку сохраняет",
+        str(serp.cell(1, 1).fill.fore_color.rgb) != "FFFFFF",
+        f"фон строки: {serp.cell(1, 1).fill.fore_color.rgb}",
+    )
 
     print(f"\n{'FAILED (' + str(len(failures)) + ')' if failures else 'PASSED (0 failures)'}")
     print_tap_counters(passed=passed_checks, failed=len(failures))

@@ -19,6 +19,7 @@ import type {
   LinkReadRegionCounts,
   MetricSnapshot,
   SurfaceCollectionHint,
+  ComplianceScreeningRecord,
 } from "./scoped-input";
 import { normalizeCoverageSurface } from "./scoped-input";
 import { normalizeSourceType } from "../analytics/source-type";
@@ -185,6 +186,8 @@ export type CanonicalDeckInputs = {
   uncategorizedMaterials: UncategorizedMaterialsDeckInput | null;
   /** REMEDIATION §7.4 — coverage cells for empty-state copy (optional). */
   surfaceCollectionHints: SurfaceCollectionHint[];
+  /** Последний ран скрининга по каждой базе; пусто — проверок в прогоне не было. */
+  complianceScreenings: ComplianceScreeningRecord[];
 };
 
 /**
@@ -445,6 +448,16 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
         kind: obs.surface,
         region: obs.region,
         engine: obs.engine,
+        // Комплаенс-запись называет свою базу тем, что о ней известно
+        // наблюдению: провайдер приходит в `engine`. Пока построитель читал
+        // только обогащение из `compliance-inventory.json`, реплей прогона без
+        // этого файла схлопывал три базы в одну безымянную строку, а страницы
+        // Dow Jones и LexisNexis объявляли «записей не зафиксировано» при
+        // фактических записях в этих базах.
+        providerLabel:
+          obs.surface === "compliance_hit"
+            ? obs.engine ?? evidenceIndex[ref]?.providerLabel
+            : evidenceIndex[ref]?.providerLabel,
         // Один материал встречается по нескольким запросам с разными
         // позициями; видимость определяет лучшая из них.
         rank:
@@ -526,7 +539,9 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
   }
 
   // Enrich compliance_hit entries with typed match metadata (provider /
-  // category / score / review) so p33–p36 tables are evidence-backed.
+  // category / score / review / поля карточки) so p33–p36 tables are
+  // evidence-backed.
+  let complianceScreenings: ComplianceScreeningRecord[] = [];
   // Written by runCanonicalReportPrepare / analytics after the adapter runs.
   const complianceInventoryPath = join(analyticsDir, "compliance-inventory.json");
   if (existsSync(complianceInventoryPath)) {
@@ -542,27 +557,43 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
             matchCategory?: string;
             matchScore?: number;
             reviewStatus?: string;
+            aliases?: string[];
+            countries?: string[];
+            datesOfBirth?: string[];
+            confidence?: string;
+            profileId?: string;
+            summary?: string;
+            profileUrl?: string;
           };
         }>;
+        screenings?: ComplianceScreeningRecord[];
       }>(complianceInventoryPath);
       for (const item of inventory.items ?? []) {
         if (item.evidenceType !== "compliance_hit" || !item.inventoryId) continue;
         const ref = `inventory:${item.inventoryId}`;
         const existing = evidenceIndex[ref] ?? {};
+        const meta = item.rawMetadata ?? {};
         evidenceIndex[ref] = {
           ...existing,
           kind: "compliance_hit",
           title: item.title ?? existing.title,
-          providerLabel: item.rawMetadata?.provider ?? existing.providerLabel,
-          matchCategory:
-            item.rawMetadata?.matchCategory ??
-            item.rawMetadata?.matchType ??
-            existing.matchCategory,
-          matchScore: item.rawMetadata?.matchScore ?? existing.matchScore,
-          reviewStatus: item.rawMetadata?.reviewStatus ?? existing.reviewStatus,
+          providerLabel: meta.provider ?? existing.providerLabel,
+          matchCategory: meta.matchCategory ?? meta.matchType ?? existing.matchCategory,
+          matchScore: meta.matchScore ?? existing.matchScore,
+          reviewStatus: meta.reviewStatus ?? existing.reviewStatus,
+          aliases: meta.aliases ?? existing.aliases,
+          countries: meta.countries ?? existing.countries,
+          datesOfBirth: meta.datesOfBirth ?? existing.datesOfBirth,
+          confidence: meta.confidence ?? existing.confidence,
+          profileId: meta.profileId ?? existing.profileId,
+          summary: meta.summary ?? existing.summary,
+          // Адрес карточки записи — это и есть URL данного доказательства;
+          // второго поля под него заводить незачем.
+          url: meta.profileUrl ?? existing.url,
         };
         knownEvidenceRefs.add(ref);
       }
+      complianceScreenings = (inventory.screenings ?? []).filter((s) => Boolean(s?.provider));
     } catch {
       // Missing/unreadable enrichment is non-fatal; fragment falls back to titles.
     }
@@ -749,5 +780,6 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     baseCountAfter: observations.baseCount,
     uncategorizedMaterials,
     surfaceCollectionHints,
+    complianceScreenings,
   };
 }
