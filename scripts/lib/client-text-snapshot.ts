@@ -34,6 +34,12 @@ export type ClientTextSlide = {
   text: Record<string, string>;
   bullets?: string[];
   kpis?: string[];
+  /**
+   * Текст карточек «Что проверить» — рекомендация приходит в макет отдельным
+   * полем, а не текстовым. Пока снимок его не читал, формулировки рекомендаций
+   * пустых страниц и панелей не были закреплены эталоном вовсе.
+   */
+  actions?: string[];
   table?: { headers: string[]; rows: string[][] };
   highlights?: string[];
 };
@@ -83,6 +89,13 @@ export function extractClientText(deck: { slides?: unknown }): ClientTextSnapsho
       : [];
     if (bullets.length) slide.bullets = bullets;
 
+    if (Array.isArray(raw.actions)) {
+      const actions = (raw.actions as Array<Record<string, unknown>>)
+        .map((a) => norm(a?.label))
+        .filter(Boolean);
+      if (actions.length) slide.actions = actions;
+    }
+
     if (Array.isArray(raw.kpis)) {
       const kpis = (raw.kpis as Array<Record<string, unknown>>)
         .map((k) => `${norm(k.label)}: ${norm(k.value)}`.trim())
@@ -115,6 +128,7 @@ export function extractClientText(deck: { slides?: unknown }): ClientTextSnapsho
       ...Object.values(s.text),
       ...(s.bullets ?? []),
       ...(s.kpis ?? []),
+      ...(s.actions ?? []),
       ...(s.highlights ?? []),
       ...(s.table ? [...s.table.headers, ...s.table.rows.flat()] : []),
     ];

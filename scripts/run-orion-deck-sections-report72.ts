@@ -595,10 +595,11 @@ async function main(): Promise<void> {
     console.log(`geometry: overlaps=${geometry.overlaps.length} overflow=${geometry.overflow.length} clipping=${geometry.clipping.length} empty=${geometry.emptyPages.length}`);
     console.log(`acceptance gates: ${JSON.stringify(acceptance.gates)}`);
 
-    // Переполнение и потеря содержимого — отказ сборки, а не примечание
-    // (ADR-0007, п.5). Ворота считались, писались в файл и печатались, но
-    // прогон завершался нулём при любом их значении: `geometryClean: false`
-    // держался так с начала переработки и никого не останавливал.
+    // Переполнение и потеря содержимого — отказ сборки, а не примечание.
+    // Ворота считались, писались в файл и печатались, но прогон завершался
+    // нулём при любом их значении: `geometryClean: false` держался так с
+    // начала переработки и никого не останавливал. Зелёный код возврата при
+    // красных воротах — это приёмка, которая ничего не принимает.
     const failed = failedAcceptanceGates(acceptance.gates);
     const total = Object.keys(acceptance.gates).length;
     if (failed.length > 0) {

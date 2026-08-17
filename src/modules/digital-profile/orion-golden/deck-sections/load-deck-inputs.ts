@@ -579,6 +579,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           url?: string | null;
           language?: string | null;
           pageTitle?: string | null;
+          lastChecked?: string | null;
         }>;
         serpScreenshots?: Array<{
           id?: string;
@@ -599,6 +600,9 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
           url: w.url ?? existing.url,
           wikipediaExists: Boolean(w.exists),
           language: w.language ?? existing.language,
+          // Дата самой проверки: страница Википедии печатает её словами, и
+          // подставлять вместо неё дату сборки отчёта было бы неточностью.
+          checkedAt: w.lastChecked ?? existing.checkedAt,
           region: lang.startsWith("ru") ? "RU" : lang ? "UAE" : existing.region,
         };
         knownEvidenceRefs.add(ref);

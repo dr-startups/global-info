@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v84",
+  "contentVersion": "deck-sections-v85",
   "promptVersion": "uae-identity-analysis-v4",
-  "contentHash": "sha256:7a8a338c374e1013d53be16010decde6bcbac78ad3ae5c1e1a9ff6af89c1dbed",
+  "contentHash": "sha256:54b2238cd63070282f33ff56e173f53b7d8de27730a8d0470f3869c79745a35f",
   "inputHash": "sha256:27b09fab0ad794f37aa11d6014e3a27f02f46a4612eaf98d5d6909317252579e:39da35ace6e206c5",
-  "generatedAt": "2026-08-16T23:46:55.053Z",
+  "generatedAt": "2026-08-17T02:53:02.017Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [],
@@ -36,36 +36,26 @@
       "isContinuation": false,
       "continuationOf": null,
       "continuationIndex": null,
-      "templateId": "wikipedia-knowledge",
+      "templateId": "coverage-empty-state",
       "title": "ОАЭ — Википедия",
       "content": {
-        "narrative": "В выдаче зафиксированы энциклопедические материалы о проверяемом субъекте. Существенных негативных или спорных формулировок в этих карточках не выявлено. Материалов об одноимённых лицах в контуре ОАЭ / международный не зафиксировано.",
+        "narrative": "Наличие статьи о субъекте в Википедии и связанных энциклопедических материалов проверено: материалов нет — это результат проверки.",
         "bullets": [
-          "Wikipedia",
-          "Wikipedia"
+          "Статья в Википедии — опорный источник «официальной» биографии: её содержимое поисковые системы показывают в панелях знаний и используют в ответах ИИ, а СМИ и контрагенты сверяются с ней в первую очередь.",
+          "Проверено, материалов нет — это результат проверки на дату отчёта, а не вывод об отсутствии рисков."
         ],
-        "whatWasFound": "Показано 2 результата; из них о субъекте — 0, вероятно о субъекте — 0, негативных заголовков — 0.",
-        "whyItMatters": "На странице есть результаты выдачи; отдельной подтверждённой темы повышенного внимания среди показанных строк не выделено.",
-        "whatToCheck": "Мониторить изменения выдачи.",
-        "sourceNote": "Источники — поисковая выдача; полный перечень в приложении.",
-        "statusNote": "Негативных заголовков на этой странице нет."
+        "whatToCheck": "Мы предлагаем проверить наличие статьи вручную: при отсутствии — рассмотреть создание нейтральной биографической статьи, при наличии — контролировать корректность её содержимого."
       },
-      "evidenceRefs": [
-        "inventory:wiki-1",
-        "inventory:wiki-3"
-      ],
+      "evidenceRefs": [],
       "findingIds": [],
-      "metrics": {
-        "subjectClaims": 0,
-        "identityPollution": 0,
-        "wikipediaCheckExists": -1
-      },
-      "visualAssetRefs": []
+      "metrics": {},
+      "visualAssetRefs": [],
+      "emptyStateReason": "no-identity-data"
     }
   ],
   "metrics": {
     "datasetCount": 2,
-    "displayedCount": 2,
+    "displayedCount": 0,
     "adverseDatasetCount": 0,
     "adverseDisplayedCount": 0
   },
@@ -74,10 +64,7 @@
     "reportRunIds": [
       "orion-canary-1783980828528"
     ],
-    "evidenceRefs": [
-      "inventory:wiki-1",
-      "inventory:wiki-3"
-    ]
+    "evidenceRefs": []
   },
   "validation": {
     "passed": true,

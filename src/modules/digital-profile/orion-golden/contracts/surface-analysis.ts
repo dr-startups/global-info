@@ -34,6 +34,20 @@ export const SurfaceAnalysisUnitSchema = z.object({
   metrics: z.array(SurfaceMetricSchema),
   claims: z.array(SurfaceClaimSchema),
   evidenceRefs: z.array(z.string()),
+  /**
+   * Which of `evidenceRefs` are «nothing found» markers rather than collected
+   * rows — the named counterpart of the `emptyMarkerCount` metric.
+   *
+   * Признак маркера выводится по заголовку **и сниппету** записи инвентаря, а
+   * сниппета в индексе доказательств нет: на прогоне 72 маркер называется
+   * «Wikipedia» и от материала по заголовку неотличим. Пока потребители
+   * выводили признак сами, страница ОАЭ печатала маркеры как энциклопедические
+   * материалы. Ответ даёт тот, у кого есть данные, — анализатор.
+   *
+   * Необязательно: артефакты прогонов, снятые до появления поля, его не несут,
+   * и тогда потребитель не знает ответа — но и не выдумывает его.
+   */
+  emptyMarkerRefs: z.array(z.string()).optional(),
 });
 
 export const SurfaceAnalysisSchema = ContractEnvelopeSchema.extend({

@@ -123,6 +123,10 @@ function buildUnit(acc: UnitAccumulator, lookup: ResolutionLookup): SurfaceAnaly
     ],
     claims,
     evidenceRefs: acc.items.map(refOf),
+    // Не только сколько маркеров, но и какие именно: потребителю (странице
+    // поверхности) нужно не печатать их плитками, а по заголовку он их не
+    // отличит — «не найдено» стоит в сниппете, которого у него нет.
+    emptyMarkerRefs: acc.items.filter(isEmptyMarker).map(refOf),
   };
 }
 

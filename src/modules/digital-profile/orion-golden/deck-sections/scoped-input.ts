@@ -137,6 +137,12 @@ export type ScopedEvidenceIndex = Record<
     wikipediaExists?: boolean;
     /** WikipediaCheck.language (ru / en / …). */
     language?: string;
+    /**
+     * Когда проверка выполнялась (ISO). Страница печатает эту дату, а не дату
+     * подготовки отчёта: пересборка старого прогона не должна выдавать старую
+     * проверку за сегодняшнюю.
+     */
+    checkedAt?: string;
     /** Subject-resolution decision for this evidence ref (§2.1). */
     subjectDecision?: string;
     /**

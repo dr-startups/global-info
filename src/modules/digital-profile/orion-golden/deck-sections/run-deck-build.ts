@@ -262,7 +262,16 @@ export function toRendererPayload(input: {
   const finalSlides = input.rendererSlides.map((raw) => {
     // Вводный абзац и текст находки склеиваются до переноса строк: перенос
     // должен видеть весь абзац целиком, иначе он ломает его по границе кусков.
-    const composedNarrative = [raw.narrative, composeFindingProse(raw)]
+    //
+    // Рекомендация в этот абзац не подмешивается там, где макет печатает её
+    // собственной карточкой: на странице пустого состояния «Мы предлагаем …»
+    // стояло дважды — в «Статусе сбора» и в «Что проверить».
+    const composedNarrative = [
+      raw.narrative,
+      composeFindingProse(
+        raw.template === "orion_golden_no_data_compact" ? { ...raw, whatToCheck: undefined } : raw
+      ),
+    ]
       .filter((part): part is string => Boolean(part && part.trim()))
       .join("\n");
     const s: RendererSlide = {
