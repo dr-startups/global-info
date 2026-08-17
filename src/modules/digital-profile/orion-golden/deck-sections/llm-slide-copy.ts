@@ -314,6 +314,21 @@ export function isHonestEmptyStateSlide(slide: SlideContentContract): boolean {
   return false;
 }
 
+/**
+ * Резюме, собранное композером, стадия 2 не переписывает.
+ *
+ * Текст резюме отвечается один раз — композером; модель поверх уже теряла
+ * карточку (PDF 29) и была единственным участником, способным подставить в
+ * резюме сюжет, которого нет в `link-verdicts.json`: гарды стадии 2 сверяют
+ * домены и цитаты, а название темы не закрепляют никак. Признак — данные
+ * слайда: метрику `composedSummary` ставит построитель ровно на этой ветке.
+ */
+export function isComposedSummaryPack(pack: SectionPackV2): boolean {
+  return pack.slides.some(
+    (s) => !s.isContinuation && Number(s.metrics?.composedSummary ?? 0) > 0
+  );
+}
+
 /** Offline metric for §7.5 — field fill + length-vs-budget on data slides. */
 export type SlideCopyDensityStats = {
   dataSlides: number;
@@ -828,6 +843,15 @@ export async function enhanceSectionPacksWithGptCopy(input: {
 
     if (prompt.deterministic) {
       report.status = "SKIPPED_DETERMINISTIC";
+      byKey.set(pack.fragmentKey, { pack, report });
+      continue;
+    }
+    // Тот же случай: текст уже написан детерминированно, только признак не у
+    // фрагмента целиком, а у пака — составленное резюме бывает не в каждом
+    // прогоне. Пак не штампуется вовсе, чтобы остаться байт в байт прежним.
+    if (isComposedSummaryPack(pack)) {
+      report.status = "SKIPPED_DETERMINISTIC";
+      report.detail = "composed-summary";
       byKey.set(pack.fragmentKey, { pack, report });
       continue;
     }

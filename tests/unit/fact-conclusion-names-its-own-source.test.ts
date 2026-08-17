@@ -1,5 +1,5 @@
 /**
- * Утверждение предъявляется вместе со своим источником.
+ * Утверждение предъявляется вместе со своим источником — и без трафарета.
  *
  * Боевой отчёт 28.07 (Тиньков), страница 3, тема «Криминальные и судебные
  * материалы»:
@@ -22,17 +22,24 @@
  * ответ. Правило проекта — «любое утверждение прослеживается до наблюдения с
  * URL» — с точки зрения читателя нарушалось.
  *
- * Свойство: если у факта есть источник, он назван рядом с утверждением.
+ * Слово «Установлено:» при этом обещало больше, чем у нас есть: публикация
+ * сообщает, а не устанавливает, и эталон отрасли такого трафарета не знает.
+ * Источник, названный рядом, говорит то же самое без обещания.
+ *
+ * Свойство: если у факта есть источник, он назван рядом с утверждением, и
+ * никакого трафарета перед утверждением нет.
  */
 
 import { describe, expect, it } from "vitest";
 import { factConclusionSentence } from "../../src/modules/digital-profile/orion-golden/analytics/client-summary-pack-builder";
 import type { VerifiedFact } from "../../src/modules/digital-profile/orion-golden/gpt/fact-extraction";
 
+const STATEMENT =
+  "Forbes сообщает, что весной 2020 года в Лондоне был выдан ордер на арест Олега Тинькова из-за претензий налоговой службы США.";
+
 function fact(over: Partial<VerifiedFact> = {}): VerifiedFact {
   return {
-    statement:
-      "Forbes сообщает, что весной 2020 года в Лондоне был выдан ордер на арест Олега Тинькова из-за претензий налоговой службы США.",
+    statement: STATEMENT,
     quote:
       "Весной 2020 года в Лондоне был выдан ордер на арест Олега Тинькова из-за претензий налоговой службы США",
     status: "source_allegation",
@@ -46,16 +53,13 @@ function fact(over: Partial<VerifiedFact> = {}): VerifiedFact {
 
 describe("утверждение и его источник", () => {
   it("наблюдавшийся случай: рядом с утверждением назван forbes.ru", () => {
-    const s = factConclusionSentence(fact());
-    expect(s).toContain("Установлено:");
-    expect(s).toContain("ордер на арест");
-    expect(s).toContain("forbes.ru");
+    expect(factConclusionSentence(fact())).toBe(
+      "Forbes сообщает, что весной 2020 года в Лондоне был выдан ордер на арест Олега Тинькова из-за претензий налоговой службы США (forbes.ru)."
+    );
   });
 
   it("источник не выдумывается, когда его нет", () => {
-    const s = factConclusionSentence(fact({ sourceDomain: "" }));
-    expect(s).toContain("Установлено:");
-    expect(s).not.toMatch(/\(\s*\)/u);
+    expect(factConclusionSentence(fact({ sourceDomain: "" }))).toBe(STATEMENT);
   });
 
   it("демо-домен клиенту не называется", () => {
@@ -64,9 +68,11 @@ describe("утверждение и его источник", () => {
     expect(s).not.toContain("demo.example");
   });
 
-  it("предложение заканчивается точкой", () => {
-    for (const d of ["forbes.ru", ""]) {
-      expect(factConclusionSentence(fact({ sourceDomain: d }))).toMatch(/\.$/u);
+  it("трафарета перед утверждением нет ни на одном пути", () => {
+    for (const d of ["forbes.ru", "", "demo.example"]) {
+      const s = factConclusionSentence(fact({ sourceDomain: d }));
+      expect(s).not.toContain("Установлено:");
+      expect(s).toMatch(/\.$/u);
     }
   });
 });

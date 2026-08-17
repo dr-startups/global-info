@@ -1,23 +1,53 @@
 /**
  * Stage 5 — deterministic ClientSummaryComposer over ClientSummaryPack.
- * Produces ORION-density Russian client prose. No renderer wiring. No LLM required.
+ *
+ * Produces ORION-density Russian client prose; no LLM. The result
+ * (`composed-client-summary.json`) is what the deck prints as the executive
+ * summary, so this is the single place where the wording of that summary is
+ * decided.
+ *
+ * Два мира тематических блоков. Есть прочитанные страницы — резюме говорит
+ * сюжетами из `link-verdicts.json`, теми же строками, что печатает страница «о
+ * чём публикации в ТОП-20». Тема претензий, чьи страницы прочитаны, из резюме
+ * уходит: прочитанная страница сильнее заголовка выдачи. Не прочитаны —
+ * остаётся словарный блок и честно называет своё основание.
  */
 
-import type { ClientSummaryPack } from "../contracts/client-summary-pack";
-import type { CanonicalThemeId } from "../contracts/canonical-claim";
+import type { ClientReadPlot, ClientSummaryPack } from "../contracts/client-summary-pack";
 import {
   COMPOSED_CLIENT_SUMMARY_SCHEMA_VERSION,
   ComposedClientSummarySchema,
   type ComposedClientSummary,
   type ComposedThemeSection,
 } from "../contracts/composed-client-summary";
-import { INTERNAL_CLIENT_TOKEN_RE } from "./client-summary-pack-builder";
+import {
+  CLIENT_MATERIAL_QUALIFICATION,
+  INTERNAL_CLIENT_TOKEN_RE,
+} from "./client-summary-pack-builder";
 import { looksLikeSearchQuery } from "./client-quote-hygiene";
-import { quoteForClaim } from "./finding-synthesizer";
+import { pluralRu, quoteForClaim } from "./finding-synthesizer";
 import { clientSafeDomain } from "../../services/composite-serp-merge";
 
 /** Lead block keeps this many theme sections; the rest remain full text as continuation. */
 const LEAD_THEME_COUNT = 3;
+
+/**
+ * Основание словарного блока на прогоне с чтением: его страницы прочитать не
+ * удалось. Без этой фразы остаточный блок неотличим от блока, за которым стоит
+ * прочитанная страница.
+ */
+const UNREAD_THEME_BASIS =
+  "Страницы по этой теме прочитать не удалось, тема приведена по заголовкам выдачи.";
+
+/**
+ * Честный ответ, когда прочитанные страницы негатива не подтвердили.
+ *
+ * Пустой раздел тем читается как потеря содержимого; строка называет причину и
+ * отсылает туда, где перечислены все темы публикаций.
+ */
+const NO_ADVERSE_PLOTS_NOTE =
+  "Существенных негативных сюжетов среди прочитанных страниц не выявлено; " +
+  "полный перечень тем публикаций — на страницах «о чём публикации в ТОП-20».";
 
 const INCOMPLETE_SENTENCE_RE =
   /(?:^|[.!?…]\s+)[^.!?…»)]*(?:\b(?:и|в|во|на|по|с|со|о|об|из|из-за|для|как|что|and|or|of|the|to|for|with)\s*|[,:;—–-])$/iu;
@@ -101,13 +131,25 @@ function composeOverall(pack: ClientSummaryPack): string {
   const risk = riskLabelRu(pack.overallAssessment.riskLevel);
   const reasons = pack.overallAssessment.reasons.slice(0, 4).map(finishSentence);
   const limitations = pack.overallAssessment.limitations.slice(0, 2).map(finishSentence);
+  /*
+   * На пути сюжетов основания называет сама оценка, и второй раз они не
+   * печатаются.
+   *
+   * `reasons` — это темы претензий, собранные по заголовкам выдачи. Рядом с
+   * оценкой, которая уже перечислила сюжеты прочитанных страниц, они и лишние,
+   * и не о том: карточка выходила с названиями дважды подряд, а числа сюжета
+   * стояли и в ней, и в его же блоке ниже. Признак — данные пакета, а не разбор
+   * собственного текста.
+   */
   const parts = [
     finishSentence(
       pack.overallAssessment.conclusion.includes("Итоговая оценка")
         ? pack.overallAssessment.conclusion
         : `Итоговая оценка: ${risk} риск. ${pack.overallAssessment.conclusion}`
     ),
-    reasons.length ? `Главные основания. ${reasons.join(" ")}` : "",
+    reasons.length > 0 && pack.readPlots.length === 0
+      ? `Главные основания. ${reasons.join(" ")}`
+      : "",
     limitations.length ? `Ограничения. ${limitations.join(" ")}` : "",
   ].filter(Boolean);
   return parts.join("\n");
@@ -186,11 +228,81 @@ export function boilerplateShape(text: string): string {
     .trim();
 }
 
+/**
+ * Оговорка и общий совет печатаются один раз на резюме.
+ *
+ * Читатель уже видел их в предыдущем блоке — повторять дословно значит
+ * превращать резюме в бланк. Отбор общий для блоков сюжетов и словарных тем:
+ * оговорка у них одна и та же строка.
+ */
+function makeOnce(seenBoilerplate: Set<string>): (sentence: string) => string {
+  return (sentence: string): string => {
+    const s = finishSentence(sentence);
+    if (!s) return "";
+    const shape = boilerplateShape(s);
+    if (seenBoilerplate.has(shape)) return "";
+    seenBoilerplate.add(shape);
+    return s;
+  };
+}
+
+/**
+ * Блок сюжета: название, счётная фраза, источники, до двух цитат, оговорка.
+ *
+ * Числа берутся из пакета, а тот — из строки артефакта: пересчитывать их здесь
+ * нельзя, иначе таблица тем и резюме разойдутся на первом краевом случае.
+ */
+function composeReadPlotSection(
+  plot: ClientReadPlot,
+  once: (sentence: string) => string
+): ComposedThemeSection {
+  const publications = `${plot.count} ${pluralRu(
+    plot.count,
+    "публикация",
+    "публикации",
+    "публикаций"
+  )}`;
+  const counted =
+    plot.adverseCount > 0
+      ? `По сюжету прочитано ${publications}, ${plot.adverseCount} из них ${pluralRu(
+          plot.adverseCount,
+          "нежелательная",
+          "нежелательные",
+          "нежелательных"
+        )}.`
+      : `По сюжету прочитано ${publications}.`;
+  const body = [
+    counted,
+    plot.sourceDomains.length > 0 ? `Источники: ${plot.sourceDomains.join(", ")}.` : "",
+    ...plot.quotes.map((q) =>
+      q.domain ? `«${q.text}» — источник ${q.domain}.` : `«${q.text}».`
+    ),
+    once(CLIENT_MATERIAL_QUALIFICATION),
+  ]
+    .filter(Boolean)
+    .map(finishSentence)
+    .join(" ");
+
+  return {
+    themeId: plot.plotId,
+    kind: "read_plot",
+    heading: plot.title,
+    body,
+    evidenceRefs: [...plot.evidenceRefs],
+    // Заголовков публикаций у сюжета нет: цитаты сверены аудитором дословно по
+    // тексту страницы, и заголовок выдачи им не нужен.
+    articleTitles: [],
+    articleDomains: [...plot.sourceDomains],
+  };
+}
+
 function composeThemeSection(
   theme: ClientSummaryPack["materialThemes"][number],
   alreadyUsedTitles: Set<string>,
-  seenBoilerplate: Set<string>,
-  coveredCheckShapes: Set<string>
+  once: (sentence: string) => string,
+  coveredCheckShapes: Set<string>,
+  /** Основание блока на прогоне с чтением; пусто на прогоне без него. */
+  basisLine = ""
 ): ComposedThemeSection {
   const articles = theme.representativeArticles.slice(0, 2);
   /*
@@ -212,16 +324,6 @@ function composeThemeSection(
   const articleBits = articles
     .map((a) => articleSentence(a.title, a.domain, a.conciseCompleteDescription, alreadyUsedTitles))
     .filter((s): s is string => Boolean(s));
-  // Оговорку и общий совет читатель уже видел в предыдущей теме — повторять их
-  // дословно значит превращать резюме в бланк.
-  const once = (sentence: string): string => {
-    const s = finishSentence(sentence);
-    if (!s) return "";
-    const shape = boilerplateShape(s);
-    if (seenBoilerplate.has(shape)) return "";
-    seenBoilerplate.add(shape);
-    return s;
-  };
   const allegation = articles[0]
     ? once(articles[0].sourceAllegationOrStatus)
     : once(theme.concreteClaims[0] ?? theme.conclusion);
@@ -239,12 +341,16 @@ function composeThemeSection(
     once(theme.whyItMatters),
     ownChecks.length ? once(`Что проверить: ${ownChecks.join(" ")}`) : "",
     once(theme.qualification),
+    // Основание не проходит через `once`: оно объясняет **этот** блок, и
+    // читатель следующего остаточного блока обязан прочитать его снова.
+    basisLine,
   ]
     .filter(Boolean)
     .join(" ");
 
   return {
     themeId: theme.themeId,
+    kind: "claims",
     heading: theme.clientTitle,
     body,
     materialityLevel: theme.materialityLevel,
@@ -337,7 +443,7 @@ export function themeBlockText(heading: string | undefined, body: string): strin
 
 function assembleFullText(
   sections: ComposedClientSummary["sections"],
-  continuationThemeIds: CanonicalThemeId[]
+  continuationThemeIds: string[]
 ): string {
   const themeBlocks = sections.themes.map((t) => themeBlockText(t.heading, t.body));
   const lead = themeBlocks.slice(0, LEAD_THEME_COUNT);
@@ -363,12 +469,18 @@ function assembleFullText(
 /**
  * Count assertions that mention a publication/domain but lack evidenceRefs on the section.
  * Composer only emits theme bodies bound to pack evidence — unsupported = missing refs.
+ *
+ * Правило «цитата без заголовка публикации» на блок сюжета не распространяется:
+ * его цитаты взяты с прочитанной страницы и сверены с её текстом аудитором
+ * вердиктов дословно, а заголовка выдачи у сюжета нет вовсе.
  */
 function countUnsupportedAssertions(sections: ComposedThemeSection[]): number {
   let n = 0;
   for (const s of sections) {
     if (s.evidenceRefs.length === 0) n += 1;
-    if (/«[^»]{8,}»/.test(s.body) && s.articleTitles.length === 0) n += 1;
+    if (s.kind !== "read_plot" && /«[^»]{8,}»/.test(s.body) && s.articleTitles.length === 0) {
+      n += 1;
+    }
   }
   return n;
 }
@@ -378,28 +490,62 @@ export function composeClientSummary(
 ): ComposedClientSummary {
   const pack = input.pack;
   const alreadyUsedTitles = new Set<string>();
+  const once = makeOnce(new Set<string>());
+  const coveredCheckShapes = new Set(pack.nextSteps.map(boilerplateShape));
 
+  // Предикат пути — данные артефакта, а не флаг конфигурации: есть сюжеты
+  // прочитанных страниц — резюме говорит ими.
+  const hasReadPlots = pack.readPlots.length > 0;
+  const plotRefs = new Set(pack.readPlots.flatMap((p) => p.evidenceRefs));
+  const plotSections = pack.readPlots
+    .filter((p) => p.adverseCount > 0)
+    .map((p) => composeReadPlotSection(p, once));
+
+  // Тема, чьи наблюдения вошли в сюжет (в том числе нейтральный), уже
+  // прочитана — печатать её по заголовкам выдачи значило бы вернуть
+  // «телеинтервью в криминальной рубрике» на уровень резюме.
+  const residualThemes = pack.materialThemes.filter(
+    (t) => !t.evidenceRefs.some((r) => plotRefs.has(r))
+  );
   // Sort themes: CRITICAL/HIGH first, then by title — deterministic.
-  const rank = (m: string) =>
+  const rank = (m: string | undefined) =>
     m === "CRITICAL" ? 0 : m === "HIGH" ? 1 : m === "MEDIUM" ? 2 : 3;
-  const themesSorted = [...pack.materialThemes].sort((a, b) => {
+  const themesSorted = [...residualThemes].sort((a, b) => {
     const d = rank(a.materialityLevel) - rank(b.materialityLevel);
     if (d !== 0) return d;
     return a.themeId.localeCompare(b.themeId);
   });
 
-  const seenBoilerplate = new Set<string>();
-  const coveredCheckShapes = new Set(pack.nextSteps.map(boilerplateShape));
-  const themeSections = themesSorted.map((t) =>
-    composeThemeSection(t, alreadyUsedTitles, seenBoilerplate, coveredCheckShapes)
-  );
+  const themeSections = [
+    ...plotSections,
+    ...themesSorted.map((t) =>
+      composeThemeSection(
+        t,
+        alreadyUsedTitles,
+        once,
+        coveredCheckShapes,
+        // Блок комплаенс-базы держится на записи базы, а не на публикациях:
+        // «страницы прочитать не удалось» о нём сказало бы неправду.
+        hasReadPlots && t.representativeArticles[0]?.claimKind !== "DATABASE_STATUS"
+          ? UNREAD_THEME_BASIS
+          : ""
+      )
+    ),
+  ];
   const continuationThemeIds = themeSections
     .slice(LEAD_THEME_COUNT)
     .map((t) => t.themeId);
 
   const sections = {
     scope: composeScope(pack),
-    overallAssessment: composeOverall(pack),
+    overallAssessment: [
+      composeOverall(pack),
+      // Материалы были, а печатать в тематических блоках нечего — это надо
+      // сказать словами, а не оставить пустое место.
+      hasReadPlots && themeSections.length === 0 ? NO_ADVERSE_PLOTS_NOTE : "",
+    ]
+      .filter(Boolean)
+      .join("\n"),
     auditShortHeading: "Коротко по итогам аудита" as const,
     themes: themeSections,
     isolatedItems: composeIsolated(pack),
@@ -410,25 +556,41 @@ export function composeClientSummary(
 
   const fullText = assembleFullText(sections, continuationThemeIds);
 
-  const requiredThemeIds = pack.materialThemes.map((t) => t.themeId);
-  const covered = requiredThemeIds.filter((id) =>
-    themeSections.some((s) => s.themeId === id && s.evidenceRefs.length > 0)
+  /*
+   * Тема пакета покрыта, если у неё есть свой блок **или** её наблюдения вошли
+   * в сюжет. Сравнение ссылок точное: обе стороны пишет один конвейер в одном
+   * пространстве `inventory:*` (`run-link-verdicts` и канонические претензии
+   * строятся из тех же материалов). Изменится форма ссылки хоть с одной
+   * стороны — покрытие станет нулевым, и все темы уйдут в остаток; проверять
+   * при смене формата надо именно это.
+   */
+  const covered = pack.materialThemes.filter(
+    (t) =>
+      themeSections.some((s) => s.themeId === t.themeId && s.evidenceRefs.length > 0) ||
+      t.evidenceRefs.some((r) => plotRefs.has(r))
   );
   const coverage =
-    requiredThemeIds.length === 0
+    pack.materialThemes.length === 0
       ? 100
-      : Math.round((covered.length / requiredThemeIds.length) * 10000) / 100;
+      : Math.round((covered.length / pack.materialThemes.length) * 10000) / 100;
 
+  // Блок сюжета конкретен доменами своих страниц: заголовков публикаций у него
+  // нет по построению.
   const concreteExamples =
     themeSections.length === 0 ||
-    themeSections.every((s) => s.articleTitles.length > 0 || /«[^»]{8,}»/.test(s.body));
+    themeSections.every(
+      (s) =>
+        (s.kind === "read_plot" ? s.articleDomains.length > 0 : s.articleTitles.length > 0) ||
+        /«[^»]{8,}»/.test(s.body)
+    );
 
   const techTokens = countTechnicalTokens(fullText);
   const incomplete = countIncompleteSentences(fullText);
   const unsupported = countUnsupportedAssertions(themeSections);
 
-  // Sparse honest path: no invented themes.
-  if (pack.materialThemes.length === 0) {
+  // Sparse honest path: no invented themes. Печатать нечего и не из чего:
+  // ни блоков, ни тем претензий за ними.
+  if (themeSections.length === 0 && pack.materialThemes.length === 0) {
     const sparseText = [
       sections.overallAssessment,
       sections.scope,

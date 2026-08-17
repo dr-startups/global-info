@@ -81,8 +81,10 @@ export function applyThemeGroups(input: {
     if (members.length === 0) continue;
     for (const m of members) claimed.add(m);
     const memberThemes = new Set(members.map((m) => themeByIndex.get(m)!.theme));
-    const examples = input.verdicts
-      .filter((v) => v.subjectMatch === "subject" && memberThemes.has(v.theme.trim()))
+    const own = input.verdicts.filter(
+      (v) => v.subjectMatch === "subject" && memberThemes.has(v.theme.trim())
+    );
+    const examples = [...own]
       .sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER))
       .slice(0, 5)
       .map((v) => ({ url: v.url, domain: v.domain, rank: v.rank }));
@@ -90,6 +92,9 @@ export function applyThemeGroups(input: {
       theme: label.slice(0, 90),
       count: members.reduce((n, m) => n + themeByIndex.get(m)!.count, 0),
       adverseCount: members.reduce((n, m) => n + themeByIndex.get(m)!.adverseCount, 0),
+      // Состав темы отчёта — состав её участников: группировка складывает
+      // страницы, а не пересчитывает их заново.
+      evidenceRefs: own.map((v) => v.evidenceRef),
       examples,
     });
   }
@@ -97,11 +102,19 @@ export function applyThemeGroups(input: {
   // Неразобранное не исчезает: остаётся собственной темой.
   for (const t of input.themes) {
     if (claimed.has(t.index)) continue;
-    const examples = input.verdicts
-      .filter((v) => v.subjectMatch === "subject" && v.theme.trim() === t.theme)
+    const own = input.verdicts.filter(
+      (v) => v.subjectMatch === "subject" && v.theme.trim() === t.theme
+    );
+    const examples = own
       .slice(0, 5)
       .map((v) => ({ url: v.url, domain: v.domain, rank: v.rank }));
-    out.push({ theme: t.theme, count: t.count, adverseCount: t.adverseCount, examples });
+    out.push({
+      theme: t.theme,
+      count: t.count,
+      adverseCount: t.adverseCount,
+      evidenceRefs: own.map((v) => v.evidenceRef),
+      examples,
+    });
   }
 
   return out.sort(
@@ -163,9 +176,16 @@ export function summarizeThemesWithLabels(
     const own = v.theme.trim();
     if (!own) continue;
     const label = labels.get(own) ?? own;
-    const bucket = byLabel.get(label) ?? { theme: label, count: 0, adverseCount: 0, examples: [] };
+    const bucket = byLabel.get(label) ?? {
+      theme: label,
+      count: 0,
+      adverseCount: 0,
+      evidenceRefs: [],
+      examples: [],
+    };
     bucket.count += 1;
     if (v.tone === "adverse") bucket.adverseCount += 1;
+    bucket.evidenceRefs.push(v.evidenceRef);
     if (bucket.examples.length < 5) {
       bucket.examples.push({ url: v.url, domain: v.domain, rank: v.rank });
     }

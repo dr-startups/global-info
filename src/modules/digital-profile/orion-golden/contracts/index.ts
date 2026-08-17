@@ -1,6 +1,8 @@
 /**
  * Stage 1 ORION Classic versioned contracts.
- * Types + Zod validators only — not wired into ThemeSet / composer / render.
+ *
+ * Types + Zod validators only; the artifacts they describe are produced by the
+ * analytics pipeline and read by the deck (see each contract's own header).
  */
 
 export * from "./common";

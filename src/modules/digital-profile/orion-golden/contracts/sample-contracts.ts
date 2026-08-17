@@ -368,7 +368,7 @@ export function sampleRepresentativeEvidenceSelection(): RepresentativeEvidenceS
 export function sampleClientSummaryPack(): ClientSummaryPack {
   return {
     ...envelope,
-    schemaVersion: "client-summary-pack-v1",
+    schemaVersion: "client-summary-pack-v2",
     subjectId: "subject-sample",
     scope: {
       regions: ["RU", "UAE"],
@@ -424,6 +424,7 @@ export function sampleClientSummaryPack(): ClientSummaryPack {
         sourceDomains: ["news.example"],
       },
     ],
+    readPlots: [],
     isolatedSignificantItems: [],
     internationalDatabases: [],
     changesSinceBaseline: {
@@ -445,6 +446,7 @@ export function sampleClientSummaryPack(): ClientSummaryPack {
       MATERIAL_THEMES_MISSING: 0,
       CLIENT_ASSERTIONS_WITHOUT_EVIDENCE: 0,
       INTERNAL_TOKENS_IN_CLIENT_FIELDS: 0,
+      READ_PLOTS_WITHOUT_EVIDENCE: 0,
     },
   };
 }
@@ -452,7 +454,7 @@ export function sampleClientSummaryPack(): ClientSummaryPack {
 export function sampleComposedClientSummary(): ComposedClientSummary {
   return {
     ...envelope,
-    schemaVersion: "composed-client-summary-v1",
+    schemaVersion: "composed-client-summary-v2",
     subjectId: "subject-sample",
     fullText:
       "Итоговая оценка: высокий риск. Основные основания: Коррупционные и этические риски.\n\n" +
@@ -477,6 +479,7 @@ export function sampleComposedClientSummary(): ComposedClientSummary {
       themes: [
         {
           themeId: "corruption_integrity",
+          kind: "claims",
           heading: "Коррупционные и этические риски",
           body:
             "Коррупционные и этические риски. По теме найдены конкретные материалы, в том числе «Sample investigation» (news.example). " +

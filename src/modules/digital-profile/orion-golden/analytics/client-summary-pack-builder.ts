@@ -1,26 +1,36 @@
 /**
  * Stage 4 — build ClientSummaryPack from CanonicalClaims + RepresentativeEvidence.
- * Not wired to production renderer/composer yet.
+ *
+ * The pack is the only typed input of stage 5 (`client-summary-composer`),
+ * whose `composed-client-summary.json` the deck loads and prints as the
+ * executive summary. Two worlds meet here: claims (themes of the dictionary,
+ * built from search results) and read plots (stories the model wrote per page
+ * we actually read). Plots are copied verbatim from `link-verdicts.json` — the
+ * same rows the «о чём публикации в ТОП-20» page prints.
  */
 
+import { createHash } from "node:crypto";
 import type { CanonicalClaim, CanonicalThemeId, MaterialityLevel } from "../contracts/canonical-claim";
 import type { CanonicalClaimsBundle } from "../contracts/canonical-claim";
 import type { RiskLevel } from "../contracts/common";
-import { clientSafeDomain } from "../../services/composite-serp-merge";
+import { clientSafeDomain, clientSafeDomains } from "../../services/composite-serp-merge";
 import { complianceProviderLabel } from "../../compliance-providers/provider-labels";
 import {
   CLIENT_SUMMARY_PACK_SCHEMA_VERSION,
   ClientSummaryPackSchema,
   type ClientSummaryPack,
   type ClientMaterialTheme,
+  type ClientReadPlot,
   type RepresentativeArticle,
   type ClientIsolatedItem,
   type InternationalDatabaseEntry,
 } from "../contracts/client-summary-pack";
+import type { LinkVerdict, VerdictThemeSummary } from "../contracts/link-verdict";
 import type { RepresentativeEvidenceSelection } from "../contracts/representative-evidence";
 import { themeLabelRu } from "./canonical-themes";
 import {
   isQuotableEvidence,
+  pageQuoteForClient,
   stripPromotionalTail,
 } from "./client-quote-hygiene";
 import type { VerifiedFact } from "../gpt/fact-extraction";
@@ -39,6 +49,21 @@ const DATABASE_DOMAIN =
 /** Tokens that must never appear in client-facing pack fields. */
 export const INTERNAL_CLIENT_TOKEN_RE =
   /\b(?:findingId|reportRunId|datasetId|sourceDatasetId|inventoryReportRunId|schemaVersion|contentVersion|promptVersion|subjectMatch|promotionPriority|evidenceRef|storageRef|observationKey|compositeDigest|ORION_GPT|llm-suggested|SUBJECT_MATCH|LIKELY_SUBJECT|OTHER_SUBJECT|INSUFFICIENT_IDENTIFIERS|APPENDIX|KEEP_PRIMARY|KEEP_SUPPORTING)\b|inventory:[a-z0-9_-]+|claim-[a-f0-9]{8,}|finding-[a-z0-9_]+-|sha256:[a-f0-9]+|\/storage\/|prisma\.|rawMetadata/iu;
+
+/**
+ * Проекция результата чтения ссылок для стадии 4.
+ *
+ * Строки тем приходят как есть — названия и числа сюжетов берутся отсюда и
+ * нигде не пересчитываются. Решения нужны только за тем, чем строка сама не
+ * располагает: цитатами, доменами и позицией страницы в выдаче.
+ */
+export type ClientSummaryVerdictInput = {
+  themes: readonly VerdictThemeSummary[];
+  verdicts: readonly Pick<
+    LinkVerdict,
+    "evidenceRef" | "domain" | "rank" | "tone" | "subjectMatch" | "quotes"
+  >[];
+};
 
 export type ClientSummaryPackBuildInput = {
   caseId: string;
@@ -67,6 +92,8 @@ export type ClientSummaryPackBuildInput = {
    * скандалы … установлено: родился 10 октября 1984 года» (step 06.3).
    */
   factsProcessedThemes?: readonly string[];
+  /** Результат чтения ссылок; отсутствует на прогоне без чтения. */
+  linkVerdicts?: ClientSummaryVerdictInput;
   scope?: {
     regions?: string[];
     sourceClasses?: string[];
@@ -103,6 +130,7 @@ function collectClientStrings(pack: Omit<ClientSummaryPack, "gates" | "trace" | 
   isolatedSignificantItems: ClientIsolatedItem[];
   internationalDatabases: InternationalDatabaseEntry[];
   nextSteps: string[];
+  readPlots: ClientReadPlot[];
   scope: ClientSummaryPack["scope"];
   changesSinceBaseline: ClientSummaryPack["changesSinceBaseline"];
 }): string[] {
@@ -144,6 +172,13 @@ function collectClientStrings(pack: Omit<ClientSummaryPack, "gates" | "trace" | 
     push(d.databaseName);
     push(d.statusSummary);
     push(d.qualification);
+  }
+  // Названия сюжетов и их цитаты клиент читает наравне с остальным: правило
+  // «служебной строки в клиентском тексте нет» действует и на них.
+  for (const p of pack.readPlots) {
+    push(p.title);
+    push(p.sourceDomains);
+    for (const q of p.quotes) push(q.text);
   }
   return out;
 }
@@ -199,6 +234,16 @@ export const CLIENT_SUMMARY_THEME_WHY: Readonly<Record<string, string>> = {
 /** Запасное пояснение для темы, которой нет в таблице. */
 export const CLIENT_SUMMARY_THEME_WHY_FALLBACK =
   "Тема учитывается при оценке комплаенс- и репутационных рисков сделки.";
+
+/**
+ * Оговорка о том, что публикация не равна установленному факту.
+ *
+ * Объявлена здесь один раз: её ставит и блок темы претензий, и блок сюжета в
+ * композере, а `once(...)` вычищает повтор по точному тексту — две копии
+ * разошлись бы, и оговорка напечаталась бы дважды.
+ */
+export const CLIENT_MATERIAL_QUALIFICATION =
+  "Сведения требуют проверки по первичным документам; наличие публикации не подтверждает изложенные обвинения.";
 
 function whyItMatters(themeId: CanonicalThemeId): string {
   return CLIENT_SUMMARY_THEME_WHY[themeId] ?? CLIENT_SUMMARY_THEME_WHY_FALLBACK;
@@ -384,6 +429,10 @@ function factSentence(fact: VerifiedFact): string {
  *
  * Домен проходит тот же отбор, что и остальной клиентский текст: демо-имя не
  * называется.
+ *
+ * Трафарета «Установлено:» здесь больше нет: публикация сообщает, а не
+ * устанавливает, — обещание проверенности утверждение не выдерживало, а
+ * названный рядом источник говорит то же самое честно.
  */
 export function factConclusionSentence(fact: VerifiedFact): string {
   const statement = stripInternalLeak(String(fact.statement ?? "").trim());
@@ -392,10 +441,10 @@ export function factConclusionSentence(fact: VerifiedFact): string {
   if (domain) {
     // Точка ставится после скобки: закрывающая скобка предложение не
     // заканчивает, и «…США (forbes.ru)» без точки читается как обрыв.
-    return `Установлено: ${statement.replace(/[.\s]+$/u, "")} (${domain}).`;
+    return `${statement.replace(/[.\s]+$/u, "")} (${domain}).`;
   }
   const ending = /[.!?…»]$/u.test(statement) ? "" : ".";
-  return `Установлено: ${statement}${ending}`;
+  return `${statement}${ending}`;
 }
 
 function buildThemeBlock(
@@ -515,9 +564,7 @@ function buildThemeBlock(
     concreteClaims,
     representativeArticles: articles,
     whyItMatters: whyItMatters(themeId),
-    qualification:
-      qualification ||
-      "Сведения требуют проверки по первичным документам; наличие публикации не подтверждает изложенные обвинения.",
+    qualification: qualification || CLIENT_MATERIAL_QUALIFICATION,
     recommendedChecks: [
       stripInternalLeak(
         `Сверить первоисточники и статус материалов по теме «${clientTitle}».`
@@ -528,6 +575,88 @@ function buildThemeBlock(
     evidenceRefs: [...evidenceRefs],
     sourceDomains: [...domains],
   };
+}
+
+/**
+ * Идентификатор сюжета.
+ *
+ * Название сюжета — вольная фраза модели: его нельзя ни отнести к словарю тем,
+ * ни поставить в ключ, не рискуя пробелами и кавычками. Хэш названия устойчив
+ * между прогонами (одна строка — один идентификатор) и не притворяется темой
+ * словаря.
+ */
+function readPlotId(title: string): string {
+  return `plot:${createHash("sha256").update(title).digest("hex").slice(0, 12)}`;
+}
+
+/**
+ * Сюжеты прочитанных страниц.
+ *
+ * Название, `count` и `adverseCount` копируются из строки артефакта дословно —
+ * их печатает и страница «о чём публикации в ТОП-20», и два счётчика на один
+ * вопрос разошлись бы на первом краевом случае. Из решений берётся то, чего в
+ * строке нет: домены участников и до двух цитат.
+ *
+ * Порядок участников — нежелательные впереди, внутри по позиции в выдаче: он
+ * же задаёт и порядок доменов, и выбор цитат, поэтому расходиться им негде.
+ */
+function buildReadPlots(input: ClientSummaryVerdictInput): ClientReadPlot[] {
+  const subjectByRef = new Map(
+    input.verdicts.filter((v) => v.subjectMatch === "subject").map((v) => [v.evidenceRef, v])
+  );
+  return input.themes.map((row) => {
+    const participants = row.evidenceRefs
+      .map((ref) => subjectByRef.get(ref))
+      .filter((v): v is ClientSummaryVerdictInput["verdicts"][number] => Boolean(v))
+      .sort(
+        (a, b) =>
+          Number(b.tone === "adverse") - Number(a.tone === "adverse") ||
+          (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER) ||
+          a.evidenceRef.localeCompare(b.evidenceRef)
+      );
+    const quotes: ClientReadPlot["quotes"] = [];
+    for (const v of participants) {
+      if (quotes.length >= 2) break;
+      // Гигиена та же, что у остального клиентского текста: обрывок выдачи и
+      // выгрузка таблицы не цитируются, и тогда блок живёт числами и доменами.
+      const text = (v.quotes ?? []).map((q) => pageQuoteForClient(q.text)).find(Boolean);
+      if (!text) continue;
+      quotes.push({
+        text,
+        domain: clientSafeDomain(v.domain) ?? "",
+        evidenceRef: v.evidenceRef,
+      });
+    }
+    return {
+      plotId: readPlotId(row.theme),
+      title: row.theme,
+      count: row.count,
+      adverseCount: row.adverseCount,
+      evidenceRefs: [...row.evidenceRefs],
+      // Тот же отбор, что и у остальных строк «Источники: …»: демо-домен не
+      // называется, кириллическая зона показывается человеческой записью.
+      sourceDomains: [...new Set(clientSafeDomains(participants.map((v) => v.domain)))],
+      quotes,
+    };
+  });
+}
+
+/**
+ * Сюжет, который не сводится к наблюдениям прогона.
+ *
+ * Ноль ссылок — сюжет ничем не подтверждён; ссылка, которой нет среди решений,
+ * означает, что состав строки собран не этим прогоном. И то и другое — путь, по
+ * которому в отчёт попадает выдуманный сюжет, поэтому это отказ сборки, а не
+ * тихая правка.
+ */
+function countReadPlotsWithoutEvidence(
+  plots: ClientReadPlot[],
+  verdicts: ClientSummaryVerdictInput["verdicts"]
+): number {
+  const known = new Set(verdicts.map((v) => v.evidenceRef));
+  return plots.filter(
+    (p) => p.evidenceRefs.length === 0 || p.evidenceRefs.some((r) => !known.has(r))
+  ).length;
 }
 
 function buildInternationalDatabases(
@@ -616,18 +745,23 @@ function buildOverallAssessment(
   subjectId: string,
   themes: ClientMaterialTheme[],
   allEvidence: string[],
-  overallVerdict?: string
+  overallVerdict?: string,
+  /** Негативные сюжеты прочитанных страниц — основания на пути с чтением. */
+  adversePlots: ClientReadPlot[] = []
 ): ClientSummaryPack["overallAssessment"] {
   const levels = themes.map((t) => t.materialityLevel);
   const riskLevel = riskFromMateriality(levels);
   // One verdict per report: prefer the authoritative one when supplied.
   const authoritative = overallVerdict ? verdictSentenceLabel(overallVerdict) : null;
-  const topTitles = themes
-    .slice(0, 4)
-    .map((t) => t.clientTitle)
-    .join("; ");
+  // Прочитанная страница сильнее заголовка и здесь: пока есть негативные
+  // сюжеты, основания называются ими, а не рубриками словаря.
+  const topTitles = (
+    adversePlots.length > 0
+      ? adversePlots.slice(0, 4).map((p) => p.title)
+      : themes.slice(0, 4).map((t) => t.clientTitle)
+  ).join("; ");
   const conclusion = stripInternalLeak(
-    riskLevel === "none"
+    riskLevel === "none" && adversePlots.length === 0
       ? `По собранным открытым источникам существенных рисковых тем по субъекту не выделено; вывод ограничен доступностью данных.`
       : `Итоговая оценка: ${
           authoritative ??
@@ -747,22 +881,35 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
     input.claimsBundle.claims.filter((c) => c.subjectMatch !== "OTHER_SUBJECT")
   );
 
+  const readPlots = input.linkVerdicts ? buildReadPlots(input.linkVerdicts) : [];
+  // Нейтральный сюжет в резюме не печатается — о рисках в нём говорить нечего,
+  // а полный перечень тем стоит на странице «о чём публикации в ТОП-20».
+  const adversePlots = readPlots.filter((p) => p.adverseCount > 0);
+
   const allEvidence = [
-    ...new Set(materialThemes.flatMap((t) => t.evidenceRefs)),
+    ...new Set([
+      ...materialThemes.flatMap((t) => t.evidenceRefs),
+      ...readPlots.flatMap((p) => p.evidenceRefs),
+    ]),
   ];
   const overallAssessment = buildOverallAssessment(
     input.subjectId,
     materialThemes,
     allEvidence,
-    input.overallVerdict
+    input.overallVerdict,
+    adversePlots
   );
 
-  const nextSteps = collapseRecommendations(
-    materialThemes.flatMap((t) => t.recommendedChecks).concat([
-      "Сверить актуальность санкционных и мониторинговых записей по официальным источникам.",
-      "Подготовить единый пакет документов для KYC и партнёрских запросов.",
-    ])
-  ).slice(0, 8);
+  const nextSteps = collapseRecommendations([
+    // Форма та же, что у проверок темы: `collapseRecommendations` склеит их в
+    // одну строку, перечислив и сюжеты, и оставшиеся темы.
+    ...adversePlots.map((p) =>
+      stripInternalLeak(`Сверить первоисточники и статус материалов по теме «${p.title}».`)
+    ),
+    ...materialThemes.flatMap((t) => t.recommendedChecks),
+    "Сверить актуальность санкционных и мониторинговых записей по официальным источникам.",
+    "Подготовить единый пакет документов для KYC и партнёрских запросов.",
+  ]).slice(0, 8);
 
   const scope = {
     regions: input.scope?.regions ?? ["RU", "UAE"],
@@ -806,6 +953,7 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
     scope,
     overallAssessment,
     materialThemes,
+    readPlots,
     isolatedSignificantItems,
     internationalDatabases,
     changesSinceBaseline,
@@ -825,10 +973,16 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
     }
   }
 
+  const plotsWithoutEvidence = countReadPlotsWithoutEvidence(
+    readPlots,
+    input.linkVerdicts?.verdicts ?? []
+  );
+
   const valid =
     missing === 0 &&
     assertionsWithoutEvidence === 0 &&
     internalTokenHits === 0 &&
+    plotsWithoutEvidence === 0 &&
     materialThemes.every(
       (t) =>
         // An unknown domain is not an integrity failure — the attribution is
@@ -848,6 +1002,7 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
     scope,
     overallAssessment,
     materialThemes,
+    readPlots,
     isolatedSignificantItems,
     internationalDatabases,
     changesSinceBaseline,
@@ -869,17 +1024,22 @@ export function buildClientSummaryPack(input: ClientSummaryPackBuildInput): Clie
       MATERIAL_THEMES_MISSING: missing,
       CLIENT_ASSERTIONS_WITHOUT_EVIDENCE: assertionsWithoutEvidence,
       INTERNAL_TOKENS_IN_CLIENT_FIELDS: internalTokenHits,
+      READ_PLOTS_WITHOUT_EVIDENCE: plotsWithoutEvidence,
     },
   };
 
   return ClientSummaryPackSchema.parse(pack);
 }
 
+/**
+ * Сначала — ворота с именем, и только потом сводное `VALID`.
+ *
+ * `CLIENT_SUMMARY_PACK_VALID` складывается из остальных ворот, поэтому проверка
+ * его первым сообщала «CLIENT_SUMMARY_PACK_VALID=false» и ни слова о причине —
+ * а причина в тексте отказа и есть единственное, что нужно читателю лога.
+ */
 export function assertClientSummaryPackGatesPass(pack: ClientSummaryPack): void {
   const g = pack.gates;
-  if (!g.CLIENT_SUMMARY_PACK_VALID) {
-    throw new Error("CLIENT_SUMMARY_PACK_VALID=false");
-  }
   if (g.MATERIAL_THEMES_MISSING !== 0) {
     throw new Error(`MATERIAL_THEMES_MISSING=${g.MATERIAL_THEMES_MISSING}`);
   }
@@ -890,5 +1050,11 @@ export function assertClientSummaryPackGatesPass(pack: ClientSummaryPack): void 
   }
   if (g.INTERNAL_TOKENS_IN_CLIENT_FIELDS !== 0) {
     throw new Error(`INTERNAL_TOKENS_IN_CLIENT_FIELDS=${g.INTERNAL_TOKENS_IN_CLIENT_FIELDS}`);
+  }
+  if (g.READ_PLOTS_WITHOUT_EVIDENCE !== 0) {
+    throw new Error(`READ_PLOTS_WITHOUT_EVIDENCE=${g.READ_PLOTS_WITHOUT_EVIDENCE}`);
+  }
+  if (!g.CLIENT_SUMMARY_PACK_VALID) {
+    throw new Error("CLIENT_SUMMARY_PACK_VALID=false");
   }
 }

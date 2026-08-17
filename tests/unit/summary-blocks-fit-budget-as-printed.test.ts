@@ -42,12 +42,23 @@ function printedByDeck(block: { kind: string; heading?: string; text: string }):
   return block.text;
 }
 
-const SENTENCE =
-  "Публикация описывает эпизод с участием проверяемого лица и приводит ссылку на источник. ";
-
-/** Текст заданной длины из целых предложений — как приходит из композитора. */
+/**
+ * Текст не короче заданной длины из **различимых** предложений.
+ *
+ * Здесь повторялось одно и то же предложение, и проверка «слова целы» на таком
+ * тексте потерю не видела: выброшенный кусок состоял из слов, которые всё
+ * равно оставались в соседних копиях. Каждое предложение теперь своё, и
+ * пропажа любого из них видна и по словам, и счётчиком обрезок.
+ */
 function longText(chars: number): string {
-  return SENTENCE.repeat(Math.ceil(chars / SENTENCE.length) + 1).slice(0, chars);
+  const sentences: string[] = [];
+  let length = 0;
+  for (let n = 1; length < chars; n += 1) {
+    const s = `Публикация ${n} описывает эпизод${n} с участием проверяемого лица и приводит ссылку${n} на источник.`;
+    sentences.push(s);
+    length += s.length + 1;
+  }
+  return sentences.join(" ");
 }
 
 function summaryWith(over: Partial<ComposedClientSummary["sections"]>): ComposedClientSummary {
@@ -91,6 +102,7 @@ const CASES: Array<[string, ComposedClientSummary]> = [
       themes: [
         {
           themeId: "criminal_judicial",
+          kind: "claims",
           heading: "Криминальные / судебные материалы",
           body: longText(1500),
           materialityLevel: "CRITICAL",
@@ -116,6 +128,11 @@ describe("блок резюме меряется в том виде, в како
 
     it(`${name}: перенос, а не обрезка — слова целы`, () => {
       const plan = paginateComposedClientSummary(summary);
+      // Ворота спрашиваются первыми: сверка слов ниже — сеть с крупной ячейкой.
+      // Она сравнивает мультимножества, поэтому слово, выброшенное из части
+      // продолжения, остаётся видимым в соседнем предложении и потерю не ловит;
+      // счётчик обрезок ищет предложение целиком и видит её сразу.
+      expect(plan.gates.CLIENT_TEXT_TRUNCATIONS).toBe(0);
       const emittedWords = [
         ...plan.overviewNarrative,
         ...emittedBlocks(plan).map((b) => b.text),

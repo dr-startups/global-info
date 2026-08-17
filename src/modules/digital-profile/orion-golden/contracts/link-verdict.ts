@@ -107,6 +107,17 @@ export type VerdictThemeSummary = {
   count: number;
   /** Из них нежелательных. */
   adverseCount: number;
+  /**
+   * Наблюдения, из которых тема собрана, — все до одного.
+   *
+   * Резюме называет темы прочитанных страниц сюжетами и обязано вести от
+   * каждого сюжета к наблюдению с URL и доменом. `examples` для этого не
+   * годится: там до пяти адресов и нет ссылок на наблюдения, поэтому состав
+   * темы из замороженного артефакта было не восстановить. Инвариант —
+   * `evidenceRefs.length === count`: это одно и то же множество, посчитанное
+   * двумя способами.
+   */
+  evidenceRefs: string[];
   /** Ссылки-примеры в порядке позиции в выдаче. */
   examples: Array<{ url: string; domain?: string; rank?: number }>;
 };
@@ -144,10 +155,12 @@ export function summarizeLinkVerdicts(verdicts: LinkVerdict[]): VerdictSummary {
       theme: key,
       count: 0,
       adverseCount: 0,
+      evidenceRefs: [],
       examples: [],
     };
     bucket.count += 1;
     if (v.tone === "adverse") bucket.adverseCount += 1;
+    bucket.evidenceRefs.push(v.evidenceRef);
     if (bucket.examples.length < 5) {
       bucket.examples.push({ url: v.url, domain: v.domain, rank: v.rank });
     }

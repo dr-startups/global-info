@@ -5,7 +5,6 @@
  */
 
 import type { ComposedClientSummary } from "../contracts/composed-client-summary";
-import type { CanonicalThemeId } from "../contracts/canonical-claim";
 import { getClientTextFieldBudgets } from "../client/load-client-text-contract";
 import { themeBlockText } from "../analytics/client-summary-composer";
 
@@ -22,7 +21,8 @@ export type SemanticBlock = {
   kind: SemanticBlockKind;
   /** Stable id for tests/trace (themeId or kind). */
   blockId: string;
-  themeId?: CanonicalThemeId;
+  /** Тема словаря или сюжет прочитанных страниц (`plot:<хэш>`). */
+  themeId?: string;
   heading?: string;
   /** Complete client text for this block (never mid-truncated). */
   text: string;
@@ -300,6 +300,9 @@ function textBlocks(
 /** Blocks per continuation page — a page of four bullets stops reading as a list. */
 export const MAX_BLOCKS_PER_CONTINUATION_PAGE = 3;
 
+/** Идентификатор блока, в который уходит нарратив, не влезший в карточки. */
+const NARRATIVE_OVERFLOW_BLOCK_ID = "overall_overflow";
+
 /**
  * Characters a continuation page may hold, as a multiple of the per-bullet
  * budget. Three bullets of full budget is what the layout already supports —
@@ -376,6 +379,68 @@ function packContinuationPages(blocks: SemanticBlock[], bulletBudget: number): S
 }
 
 /**
+ * Сколько предложений составленного резюме не доехало до разложенного плана.
+ *
+ * Это единственный ответ на вопрос «дошёл ли текст до клиента целиком», и по
+ * нему `assertSemanticSummaryGatesPass` останавливает сборку. Функция вынесена
+ * из укладки и экспортирована именно поэтому: укладка по построению ничего не
+ * выбрасывает, значит на законном входе метрика всегда ноль — и проверить, что
+ * она **умеет** дать не-ноль, можно только скормив ей план с потерей.
+ *
+ * Две вещи, которые сравнение обязано различать:
+ *
+ * — **Перенос — не потеря.** Сверхдлинное предложение раскладывается по частям
+ *   (`splitOverlongSentence`), и части становятся отдельными блоками:
+ *   «Источники: a.se, b.se,» и «c.se.». Пока сравнение шло по одной склейке
+ *   всех блоков подряд, такой перенос считался обрезкой — ворота останавливали
+ *   сборку ровно за то, ради чего разложение и делалось. Части одного блока
+ *   (общий идентификатор до `__part`) склеиваются обратно.
+ * — **Секции сравниваются порознь.** Блок, чей текст кончается кавычкой без
+ *   точки, склеивался в исходнике с первым предложением следующей секции —
+ *   такого «предложения» нет ни в одном блоке, и ворота падали на здоровом
+ *   прогоне.
+ */
+export function countClientTextTruncations(
+  summary: ComposedClientSummary,
+  plan: Pick<SummaryPagePlan, "overviewNarrative" | "overviewBlocks" | "continuationPages">
+): number {
+  const flat = (text: string): string => text.replace(/\s+/gu, " ").trim();
+  const sourceUnits = [
+    summary.sections.overallAssessment,
+    summary.sections.scope,
+    ...summary.sections.themes.map((t) => t.body),
+    summary.sections.isolatedItems,
+    summary.sections.internationalDatabases,
+    summary.sections.changesSinceBaseline,
+    summary.sections.nextSteps,
+  ];
+
+  const partsByBlock = new Map<string, string[]>();
+  for (const b of [...plan.overviewBlocks, ...plan.continuationPages.flat()]) {
+    const base = b.blockId.replace(/__part\d+$/u, "");
+    const parts = partsByBlock.get(base) ?? [];
+    parts.push(b.text);
+    partsByBlock.set(base, parts);
+  }
+  const emittedStreams = [
+    // Нарратив и его остаток — один поток: остаток продолжает те же предложения.
+    flat(
+      [
+        ...plan.overviewNarrative,
+        ...(partsByBlock.get(NARRATIVE_OVERFLOW_BLOCK_ID) ?? []),
+      ].join(" ")
+    ),
+    ...[...partsByBlock.entries()]
+      .filter(([base]) => base !== NARRATIVE_OVERFLOW_BLOCK_ID)
+      .map(([, parts]) => flat(parts.join(" "))),
+  ];
+
+  return sourceUnits
+    .flatMap((unit) => splitSentences(unit))
+    .filter((s) => !emittedStreams.some((stream) => stream.includes(flat(s)))).length;
+}
+
+/**
  * Build a page plan from a composed client summary.
  * Overview keeps overall + scope narrative and up to 3 lead theme blocks;
  * remaining blocks go to adjacent continuation pages (never dropped).
@@ -447,7 +512,13 @@ export function paginateComposedClientSummary(
     const overflowText = overviewNarrative.slice(3).join(" ");
     overviewNarrative = overviewNarrative.slice(0, 3);
     narrativeOverflow.push(
-      ...textBlocks("overall", "overall_overflow", overflowText, budgets.bullet, evidence)
+      ...textBlocks(
+        "overall",
+        NARRATIVE_OVERFLOW_BLOCK_ID,
+        overflowText,
+        budgets.bullet,
+        evidence
+      )
     );
   }
 
@@ -462,23 +533,11 @@ export function paginateComposedClientSummary(
     (summary.sections.nextSteps.trim() ? 1 : 0);
   const emitted = overviewBlocks.length + continuationPages.reduce((n, p) => n + p.length, 0);
 
-  // Truncation = any source sentence missing from emitted text.
-  const sourceBlob = [
-    summary.sections.overallAssessment,
-    summary.sections.scope,
-    ...summary.sections.themes.map((t) => t.body),
-    summary.sections.isolatedItems,
-    summary.sections.internationalDatabases,
-    summary.sections.changesSinceBaseline,
-    summary.sections.nextSteps,
-  ].join("\n");
-  const emittedBlob = [
-    ...overviewNarrative,
-    ...overviewBlocks.map((b) => b.text),
-    ...continuationPages.flatMap((p) => p.map((b) => b.text)),
-  ].join("\n");
-  const sourceSentences = splitSentences(sourceBlob);
-  const truncations = sourceSentences.filter((s) => !emittedBlob.includes(s)).length;
+  const truncations = countClientTextTruncations(summary, {
+    overviewNarrative,
+    overviewBlocks,
+    continuationPages,
+  });
 
   // Единственная проверка на том, что уходит в деку, и стоит она там, где
   // выбирают работу, — в укладке. Ниже по течению `checkText` увидит ровно эти

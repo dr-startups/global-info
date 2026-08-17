@@ -720,7 +720,7 @@ export async function runOrionAnalyticsPipeline(
   });
   emit("extracted-facts.json", factExtraction);
 
-  // Stage 4 — ClientSummaryPack (typed summary input; not wired to renderer).
+  // Stage 4 — ClientSummaryPack (typed input of the summary the deck prints).
   const regions = [
     ...new Set(input.items.map((i) => String(i.region || "").toUpperCase()).filter(Boolean)),
   ];
@@ -733,6 +733,12 @@ export async function runOrionAnalyticsPipeline(
     representative: representative.selection,
     factsByTheme: factExtraction.factsByTheme,
     factsProcessedThemes: factExtraction.diagnostics.processedThemeIds,
+    // Сюжеты резюме — те же строки, что печатает страница «о чём публикации в
+    // ТОП-20»: свод уже посчитан, пересчитывать его нельзя.
+    linkVerdicts: {
+      themes: linkVerdicts.summary.themes,
+      verdicts: linkVerdicts.verdicts,
+    },
     // Single source of truth for the verdict — the badge and the summary
     // sentence must not answer differently (step 07.9).
     ...(executiveSummary.output?.verdict
@@ -748,7 +754,8 @@ export async function runOrionAnalyticsPipeline(
   });
   assertClientSummaryPackGatesPass(clientSummaryPack);
 
-  // Stage 5 — deterministic client summary composer (not wired to renderer).
+  // Stage 5 — deterministic client summary composer; its output is what the
+  // deck prints as the executive summary.
   const composedClientSummary = composeClientSummary({ pack: clientSummaryPack });
   assertComposedSummaryGatesPass(composedClientSummary);
 
