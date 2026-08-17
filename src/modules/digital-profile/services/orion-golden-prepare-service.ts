@@ -26,6 +26,7 @@ import {
   runCanonicalReportPrepare,
   CanonicalPrepareBlockedError,
 } from "./canonical-report-prepare";
+import { resolvePreparePrismaBundle } from "./prepare-prisma-bundle";
 
 export type OrionGoldenPrepareSummary = {
   ok: boolean;
@@ -184,6 +185,11 @@ async function executePrepare(input: {
     `[orion-golden-prepare] canonical start caseId=${input.caseId} jobId=${input.jobId} dir=${artifactsDir}`
   );
   try {
+    // Пересборка обязана перечитать базу: подтверждение аналитика, итоги
+    // скринингов, проверка Wikipedia и оверрайды сделаны после прошлой
+    // подготовки, и снимок прошлого прогона о них не знает. Резолвер
+    // отрабатывает до первой записи на диск — отказ ничего не теряет.
+    const prisma = await resolvePreparePrismaBundle();
     const res = await runCanonicalReportPrepare({
       caseId: input.caseId,
       unifiedJobId: input.jobId,
@@ -191,6 +197,7 @@ async function executePrepare(input: {
       binding,
       merge,
       subjectProfile: null,
+      prisma,
     });
     const completed: PrepareRunRecord = {
       caseId: input.caseId,
@@ -205,9 +212,15 @@ async function executePrepare(input: {
       pptx: res.pptx ?? null,
       pageCount: res.pageCount,
       queueReady: true,
-      warnings: res.requiredSectionsFailed.length
-        ? [`required sections failed: ${res.requiredSectionsFailed.join(", ")}`]
-        : [],
+      // Предупреждения качества (в том числе `link-verdicts-lost:*`) с этого
+      // пути иначе не видны нигде: у сервисной пересборки нет джобы, в
+      // warnings которой они попадают на пути воркера.
+      warnings: [
+        ...(res.qualityWarnings ?? []),
+        ...(res.requiredSectionsFailed.length
+          ? [`required sections failed: ${res.requiredSectionsFailed.join(", ")}`]
+          : []),
+      ],
     };
     persistRun(completed);
     console.log(

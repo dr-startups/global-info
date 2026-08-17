@@ -54,6 +54,7 @@ import {
   runCanonicalReportPrepare,
   CanonicalPrepareBlockedError,
 } from "./canonical-report-prepare";
+import { resolvePreparePrismaBundle } from "./prepare-prisma-bundle";
 import {
   buildReportQualitySummary,
   buildReportQualityWarnings,
@@ -1675,22 +1676,14 @@ async function stepPrepare(
     }
   }
 
-  // Prefer injected deps.prisma; fall back to the server client so rebuild/tick
-  // without explicit deps still loads WikipediaCheck / SerpCapture / profiles.
-  let preparePrisma: PrismaClient | null = deps.prisma ?? null;
-  if (!preparePrisma) {
-    try {
-      preparePrisma = (await import("@/server/prisma/client")).prisma;
-    } catch {
-      preparePrisma = null;
-    }
-  }
-
   // Default = canonical job-scoped pipeline. There is NO legacy composer path:
   // a disabled/blocked canonical prepare fails closed and never falls back.
   const runPrepare =
     deps.runPrepare ??
     (async ({ caseId, binding: b, merge: m }) => {
+      // Список делегатов собирает один модуль: перечисление руками уже делало
+      // источник мёртвым на живом прогоне, оставаясь зелёным в тестах.
+      const preparePrisma = await resolvePreparePrismaBundle(deps.prisma);
       const res = await runCanonicalReportPrepare({
         caseId,
         unifiedJobId: job.unifiedJobId,
@@ -1704,21 +1697,7 @@ async function stepPrepare(
           : resumeFromRender
             ? "render"
             : "full",
-        prisma: preparePrisma
-          ? {
-              searchResult: preparePrisma.searchResult,
-              searchSurfaceItem: preparePrisma.searchSurfaceItem,
-              databaseProfile: preparePrisma.databaseProfile,
-              // Итоги скринингов — единственный источник различия «проверено,
-              // совпадений нет» и «проверка не выполнялась» на страницах баз.
-              // Без делегата артефакт пишет пустой список, и страница честно,
-              // но неверно сообщает, что проверки не было.
-              complianceScreeningRun: preparePrisma.complianceScreeningRun,
-              riskFinding: preparePrisma.riskFinding,
-              wikipediaCheck: preparePrisma.wikipediaCheck,
-              serpCapture: preparePrisma.serpCapture,
-            }
-          : null,
+        prisma: preparePrisma,
       });
       return {
         prepareDatasetId: res.prepareDatasetId,
@@ -1779,6 +1758,12 @@ async function stepPrepare(
         "render-checkpoint:RENDER",
         "CANONICAL_PREPARE_BLOCKED",
       ]);
+    }
+
+    // Недоступная база — авария у нас, а не результат сбора: собранное цело,
+    // платить заново не за что, поэтому прогон возвращается к этому шагу сам.
+    if (code === "PREPARE_DB_UNAVAILABLE") {
+      return await failRetryable(job, code, message, ["CANONICAL_PREPARE_BLOCKED"]);
     }
 
     // Assembly/section QA failures are retryable when collection data is intact
@@ -1898,9 +1883,10 @@ async function stepPrepare(
       });
       reportQuality = toJobReportQuality(summary);
       await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "report-quality-summary.json", summary);
-      if (qualityWarnings.length === 0) {
-        qualityWarnings = buildReportQualityWarnings(summary);
-      }
+      // Слияние, а не «или-или»: подготовка приносит свои потери
+      // (`link-verdicts-lost:*`) даже когда сводка качества не записалась, и
+      // непустой список от неё не должен прятать предупреждения сводки.
+      qualityWarnings = mergeJobWarnings(qualityWarnings, buildReportQualityWarnings(summary));
     } else {
       // Ensure the full artifact is present even when prepare already wrote it
       // (idempotent overwrite from the same source of truth).
@@ -1913,9 +1899,7 @@ async function stepPrepare(
         });
         await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "report-quality-summary.json", summary);
         reportQuality = toJobReportQuality(summary);
-        if (qualityWarnings.length === 0) {
-          qualityWarnings = buildReportQualityWarnings(summary);
-        }
+        qualityWarnings = mergeJobWarnings(qualityWarnings, buildReportQualityWarnings(summary));
       }
     }
   } catch {

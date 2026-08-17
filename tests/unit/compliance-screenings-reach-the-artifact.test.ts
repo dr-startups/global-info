@@ -91,18 +91,23 @@ describe("итоги скринингов для артефакта", () => {
     expect(latestScreeningPerProvider(rows)[0]!.status).toBe("SUCCESS");
   });
 
-  it("живой путь передаёт делегат ранов в подготовку отчёта", () => {
-    // Утверждение булево намеренно: содержимое файла в тексте расхождения
+  it("живые пути берут делегаты из общего бандла, а не перечисляют их сами", () => {
+    // Утверждения булевы намеренно: содержимое файла в тексте расхождения
     // читать невозможно.
-    const orchestrator = readFileSync(
-      join(
-        process.cwd(),
-        "src/modules/digital-profile/services/unified-orion-collection-orchestrator.ts"
-      ),
+    const bundle = readFileSync(
+      join(process.cwd(), "src/modules/digital-profile/services/prepare-prisma-bundle.ts"),
       "utf8"
     );
-    expect(orchestrator.includes("complianceScreeningRun: preparePrisma.complianceScreeningRun")).toBe(
-      true
-    );
+    expect(bundle.includes("complianceScreeningRun")).toBe(true);
+    for (const callSite of [
+      "src/modules/digital-profile/services/unified-orion-collection-orchestrator.ts",
+      "src/modules/digital-profile/services/orion-golden-prepare-service.ts",
+    ]) {
+      const source = readFileSync(join(process.cwd(), callSite), "utf8");
+      expect([callSite, source.includes("resolvePreparePrismaBundle")]).toEqual([callSite, true]);
+      // Второй список делегатов — ровно тот дефект, из-за которого итоги
+      // скринингов не доезжали до артефакта на живом прогоне.
+      expect([callSite, source.includes("complianceScreeningRun")]).toEqual([callSite, false]);
+    }
   });
 });

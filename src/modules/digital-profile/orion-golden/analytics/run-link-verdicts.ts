@@ -16,9 +16,12 @@
  * прямо: «из 20 ссылок 2 нежелательные, 7 неактуальных и 2 — не открываются».
  */
 
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { RawInventoryItem } from "../types";
 import {
   LINK_VERDICT_SCHEMA_VERSION,
+  LinkVerdictSetSchema,
   summarizeLinkVerdicts,
   type LinkVerdict,
   type VerdictSummary,
@@ -113,6 +116,89 @@ export function linksToRead(
   return rows
     .sort((a, b) => (a.rank ?? Number.MAX_SAFE_INTEGER) - (b.rank ?? Number.MAX_SAFE_INTEGER))
     .slice(0, limit);
+}
+
+/** Почему купленный артефакт нельзя переиспользовать. */
+type LinkVerdictReuseLossReason =
+  | "unreadable"
+  | "schema-mismatch"
+  | "invalid"
+  | "foreign-case";
+
+export type LinkVerdictReuse =
+  | { status: "reuse"; result: LinkVerdictRunResult; previousDatasetId: string | null }
+  | { status: "lost"; reason: LinkVerdictReuseLossReason; previousVerdictCount: number }
+  | { status: "none" };
+
+/**
+ * Купленное чтение прошлого прогона этой же джобы.
+ *
+ * У вердиктов нет базы: прочитанные страницы и решения модели живут только в
+ * `link-verdicts.json`, и пересоздать их можно лишь заплатив ещё раз. Поэтому
+ * пересборка отчёта их переиспользует — и по той же причине переиспользование
+ * узкое: чужой кейс (скопированный каталог), чужая версия схемы и
+ * неразобранное содержимое реюзом не считаются.
+ *
+ * `readOk` в условия не входит намеренно: прогон со сломанным чтением —
+ * купленный и честно размеченный результат, заморозить его лучше, чем затереть
+ * пустым. Лечится он новым сбором, а не молчаливой повторной тратой.
+ */
+export function loadReusableLinkVerdicts(
+  artifactsDir: string,
+  input: { caseId: string }
+): LinkVerdictReuse {
+  const path = join(artifactsDir, "link-verdicts.json");
+  if (!existsSync(path)) return { status: "none" };
+
+  let raw: Record<string, unknown>;
+  try {
+    raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+  } catch {
+    // Сколько решений было в нечитаемом файле — неизвестно, и выдумывать
+    // число нельзя; что файл был и пропал — сказать обязаны.
+    return { status: "lost", reason: "unreadable", previousVerdictCount: 0 };
+  }
+
+  const previousVerdictCount = Array.isArray(raw.verdicts) ? raw.verdicts.length : 0;
+  // Схема проверяется раньше пустоты: артефакт чужой версии мог хранить
+  // решения под другим ключом, и «пустой» он только на наш взгляд — считать
+  // его пустотой значило бы затереть купленное молча.
+  if (raw.schemaVersion !== LINK_VERDICT_SCHEMA_VERSION) {
+    return { status: "lost", reason: "schema-mismatch", previousVerdictCount };
+  }
+  // Пустой артефакт своей схемы (шаг был выключен или ссылок не нашлось)
+  // покупкой не был: следующую попытку по-прежнему решает флаг.
+  if (previousVerdictCount === 0) return { status: "none" };
+  if (raw.caseId !== input.caseId) {
+    return { status: "lost", reason: "foreign-case", previousVerdictCount };
+  }
+
+  const parsed = LinkVerdictSetSchema.safeParse(raw);
+  const summary = raw.summary as VerdictSummary | undefined;
+  const reading = raw.reading as LinkReadingReport | undefined;
+  const audit = raw.audit as VerdictAuditReport | undefined;
+  if (!parsed.success || !summary || !Array.isArray(summary.themes) || !reading || !audit) {
+    return { status: "lost", reason: "invalid", previousVerdictCount };
+  }
+
+  return {
+    status: "reuse",
+    previousDatasetId: typeof raw.datasetId === "string" ? raw.datasetId : null,
+    result: {
+      schemaVersion: LINK_VERDICT_SCHEMA_VERSION,
+      caseId: input.caseId,
+      requested: Number(raw.requested ?? parsed.data.verdicts.length),
+      readOk: Number(raw.readOk ?? 0),
+      reading,
+      audit,
+      themesByRegion: (raw.themesByRegion ?? {}) as Record<string, VerdictThemeSummary[]>,
+      readingBroken: Boolean(raw.readingBroken),
+      verdicts: parsed.data.verdicts,
+      summary,
+      // `skippedReason` не переносится сознательно: одно поле не может значить
+      // и «шаг пропущен», и «результат куплен раньше».
+    },
+  };
 }
 
 export async function runLinkVerdicts(input: {

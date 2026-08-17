@@ -37,7 +37,7 @@ import {
 import { resolveSubjectWithDerivedContext } from "./subject-context-miner";
 import { runSurfaceAnalyzers, ADVERSE_PATTERNS } from "./surface-analyzers";
 import { resolveAnalysisScope, type AnalysisScopeSummary } from "./analysis-scope";
-import { runLinkVerdicts } from "./run-link-verdicts";
+import { loadReusableLinkVerdicts, runLinkVerdicts } from "./run-link-verdicts";
 import { verdictAuditLogLine } from "./link-verdict-audit-agent";
 import { synthesizeFindings, type FindingSynthesisResult } from "./finding-synthesizer";
 import { buildBenchmarkTrace, type BenchmarkTrace } from "./benchmark-trace";
@@ -153,6 +153,12 @@ export type AnalyticsPipelineResult = {
   filterLossMatrix: FilterLossMatrix;
   reportDataBinding: ReportDataBinding;
   artifactPaths: Record<string, string>;
+  /**
+   * Машинные предупреждения о потерях содержимого (`link-verdicts-lost:*`).
+   * Рождаются здесь и не зависят от успеха записи сводки качества — иначе
+   * потеря исчезала бы вместе с отказом записи.
+   */
+  qualityWarnings: string[];
 };
 
 function sha256(text: string): string {
@@ -333,6 +339,7 @@ export async function runOrionAnalyticsPipeline(
 ): Promise<AnalyticsPipelineResult> {
   mkdirSync(input.artifactsDir, { recursive: true });
   const artifactPaths: Record<string, string> = {};
+  const qualityWarnings: string[] = [];
   const hashes: Array<{ name: string; sha256: string }> = [];
   const emit = (name: string, value: unknown) => {
     const { path, sha256: h } = writeArtifact(input.artifactsDir, name, value);
@@ -487,15 +494,62 @@ export async function runOrionAnalyticsPipeline(
   // строкам, которые показал поисковик. Здесь страницы читаются целиком, и
   // решение по каждой выносится с цитатами. Шаг выключен по умолчанию: он
   // ходит на чужие сайты и в модель, а это деньги за каждый отчёт.
-  const linkVerdicts = await runLinkVerdicts({
-    caseId: input.caseId,
-    subject: { fullName: subject.displayName, aliases: subject.aliases ?? [] },
-    items: scope.inScope,
-  });
+  //
+  // Купленное чтение сильнее флага. Страницы читаются один раз за сбор:
+  // `DIGITAL_PROFILE_LINK_READING` разрешает только **первую** покупку, а
+  // готовый артефакт джобы переиспользуется при любом его значении. Иначе
+  // пересборка отчёта либо затирала решения пустым артефактом (флаг выключен),
+  // либо молча покупала их заново (флаг включён) — и второе никто не замечал,
+  // потому что отчёт от этого не ломается, просто дорожает.
+  const reusable = loadReusableLinkVerdicts(input.artifactsDir, { caseId: input.caseId });
+  const linkVerdicts =
+    reusable.status === "reuse"
+      ? reusable.result
+      : await runLinkVerdicts({
+          caseId: input.caseId,
+          subject: { fullName: subject.displayName, aliases: subject.aliases ?? [] },
+          items: scope.inScope,
+        });
+  // Купленное было, переиспользовать не вышло — прежние решения подменены, и
+  // неважно, пустым результатом или новой покупкой: в первом случае отчёт
+  // обеднел, во втором за то же чтение заплатили второй раз. Условие «новый
+  // результат пуст» здесь стояло бы вторым ответом на вопрос «подменили ли
+  // купленное» и прятало бы ровно тот случай, за которым никто не следит.
+  const supersededVerdicts = reusable.status === "lost" ? reusable : null;
   emit("link-verdicts.json", {
     ...linkVerdicts,
     datasetId,
+    ...(reusable.status === "reuse"
+      ? {
+          reuse: {
+            reusedAt: new Date().toISOString(),
+            previousDatasetId: reusable.previousDatasetId,
+          },
+        }
+      : {}),
+    ...(supersededVerdicts
+      ? {
+          superseded: {
+            reason: supersededVerdicts.reason,
+            previousVerdictCount: supersededVerdicts.previousVerdictCount,
+          },
+        }
+      : {}),
   });
+  if (supersededVerdicts) {
+    qualityWarnings.push(`link-verdicts-lost:${supersededVerdicts.reason}`);
+    // Числу в логе верят: у нечитаемого файла решений не сосчитать, и «было
+    // решений: 0» прочиталось бы как «терять было нечего».
+    const previously =
+      supersededVerdicts.reason === "unreadable"
+        ? "сколько решений было — неизвестно"
+        : `в прежнем артефакте было решений: ${supersededVerdicts.previousVerdictCount}`;
+    console.error(
+      `[digital-profile][ссылки] КУПЛЕННОЕ ПОДМЕНЕНО: ` +
+        `link-verdicts-lost:${supersededVerdicts.reason}; ` +
+        `${previously}; новых решений: ${linkVerdicts.verdicts.length}`
+    );
+  }
   /*
    * Ноль прочитанных страниц при непустом запросе — это поломка у нас, и она
    * обязана быть слышна.
@@ -505,7 +559,22 @@ export async function runOrionAnalyticsPipeline(
    * Отличить одно от другого по тихому артефакту было нельзя, поэтому теперь
    * такой прогон кричит в лог — там же, где видно всё остальное.
    */
-  if (linkVerdicts.readingBroken) {
+  if (reusable.status === "reuse") {
+    // Строка нужна на живом прогоне: по ней видно, что новых трат на чтение
+    // не было, а решения в отчёте — прежние.
+    console.log(
+      `[digital-profile][ссылки] решения прошлого прогона переиспользованы: ` +
+        `${linkVerdicts.verdicts.length}; страницы не перечитывались`
+    );
+    // Заморозить сломанное чтение можно, спрятать — нет: тревога живёт в
+    // каждом прогоне, который на этих решениях стоит.
+    if (linkVerdicts.readingBroken) {
+      console.error(
+        `[digital-profile][ссылки] ЧТЕНИЕ НЕ РАБОТАЛО в прогоне, чьи решения переиспользованы: ` +
+          `запрошено ${linkVerdicts.requested} страниц, прочитано 0 — решения вынесены по заголовкам`
+      );
+    }
+  } else if (linkVerdicts.readingBroken) {
     const detail = linkVerdicts.reading.firstFailureDetail;
     console.error(
       `[digital-profile][ссылки] ЧТЕНИЕ НЕ РАБОТАЕТ: запрошено ${linkVerdicts.requested} страниц, прочитано 0` +
@@ -852,6 +921,7 @@ export async function runOrionAnalyticsPipeline(
     filterLossMatrix,
     reportDataBinding,
     artifactPaths,
+    qualityWarnings,
   };
 }
 

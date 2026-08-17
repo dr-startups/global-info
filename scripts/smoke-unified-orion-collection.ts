@@ -28,6 +28,7 @@ import {
   startUnifiedOrionCollection,
   runUnifiedCollectionTick,
 } from "../src/modules/digital-profile/services/unified-orion-collection-orchestrator";
+import { CanonicalPrepareBlockedError } from "../src/modules/digital-profile/services/canonical-report-prepare";
 import { assertReportReadyGates } from "../src/modules/digital-profile/services/report-ready-gates";
 import { mergeCompositeSerp, buildReportDataBinding } from "../src/modules/digital-profile/services/composite-serp-merge";
 import { listAgentDefinitions, getAgent } from "../src/modules/digital-profile/agents/registry";
@@ -411,6 +412,46 @@ describe("unified orion arsenkin collection", () => {
     const job = await drainJob(caseId, deps);
     assert.equal(job?.stage, "FAILED_TERMINAL");
     assert.equal(job?.lastErrorCode, "REPORT_READY_GATE_FAILED");
+  });
+
+  /*
+   * Недоступная база на подготовке — наша авария, а не результат сбора.
+   *
+   * Собранное цело, платить заново не за что, поэтому прогон возвращается к
+   * этому шагу сам. Терминальная ветка здесь была бы дороже отказа: она
+   * закрывает джобу и требует человека.
+   */
+  it("недоступная база на подготовке → возврат к шагу, а не терминал", async () => {
+    const caseId = "unified-smoke-db-unavailable";
+    await deleteUnifiedCollectionJobForTests(caseId);
+    const deps = {
+      autoSchedule: false as const,
+      fixtureBaseRows,
+      runFullAudit: async () => mockFullAuditReal(),
+      runArsenkinEnrichment: async () => ({
+        arsenkinReportRunId: "a1",
+        enrichmentRunIds: ARSENKIN_REAL_AGENT_NAMES.map((n, i) => `a${i + 1}`),
+        coverage: { ...emptyCoverage(12), measured: 12, progressRatio: 1 },
+        observations: [],
+        enrichmentComplete: true,
+      }),
+      runPrepare: async () => {
+        throw new CanonicalPrepareBlockedError(
+          "PREPARE_DB_UNAVAILABLE",
+          "prisma client unavailable"
+        );
+      },
+    };
+    await startUnifiedOrionCollection({ caseId, requestedBy: "smoke", deps });
+    for (let i = 0; i < 20; i += 1) {
+      const ticked = await runUnifiedCollectionTick(caseId, deps);
+      if (!ticked || ticked.stage === "FAILED_RETRYABLE" || ticked.stage === "FAILED_TERMINAL") break;
+    }
+    const job = await loadUnifiedCollectionJob(caseId);
+    assert.equal(job?.stage, "FAILED_RETRYABLE");
+    assert.equal(job?.lastErrorCode, "PREPARE_DB_UNAVAILABLE");
+    // Ссылки прежнего отчёта эта ветка не трогает.
+    assert.equal(job?.reportLinks?.pdf ?? null, null);
   });
 
   it("idempotent start does not create second active job", async () => {

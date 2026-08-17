@@ -93,7 +93,9 @@ export type CanonicalPrepareBlockerCode =
   | "REQUIRED_SECTION_FAILED"
   | "RENDER_FAILED"
   | "GPT_COPY_RESUME_INPUTS_MISSING"
-  | "GPT_COPY_CALLER_UNAVAILABLE";
+  | "GPT_COPY_CALLER_UNAVAILABLE"
+  /** Базы нет — отчёт без неё отрицал бы выполненный скрининг (см. `prepare-prisma-bundle`). */
+  | "PREPARE_DB_UNAVAILABLE";
 
 export class CanonicalPrepareBlockedError extends Error {
   code: CanonicalPrepareBlockerCode;
@@ -529,6 +531,12 @@ export async function runCanonicalReportPrepare(
   let assemblyHash: string | null = null;
   let rendererAssets: RendererAssetEntry[] = [];
   let visualAssetWarning: string | null = null;
+  /**
+   * Потери, названные самой аналитикой (`link-verdicts-lost:*`). Живут отдельно
+   * от сводки качества: её запись глотает любой отказ и вернула бы `{}`, а
+   * предупреждение о потерянном содержимом обязано дойти до оператора.
+   */
+  let analyticsQualityWarnings: string[] = [];
 
   if (resumeFrom === "render") {
     const reused = loadReusableAssembledDeck({
@@ -811,7 +819,7 @@ export async function runCanonicalReportPrepare(
       status: "OK",
     })) as unknown as Parameters<typeof runOrionAnalyticsPipeline>[0]["coverageRows"];
 
-    await runOrionAnalyticsPipeline({
+    const analytics = await runOrionAnalyticsPipeline({
       caseId: input.caseId,
       inventoryReportRunId: baseReportRunId,
       items,
@@ -830,6 +838,7 @@ export async function runCanonicalReportPrepare(
             }
           : null,
     });
+    analyticsQualityWarnings = analytics.qualityWarnings;
 
     // Synthetic API-derived visuals (ORION style): SERP snapshots, suggestion /
     // related / AI panels, image grids — built from the same inventory the
@@ -1121,6 +1130,7 @@ export async function runCanonicalReportPrepare(
           baseSlotCoverage,
           requiredSectionsFailed,
           ...quality,
+          qualityWarnings: [...analyticsQualityWarnings, ...(quality.qualityWarnings ?? [])],
         };
       }
     } catch {
@@ -1245,5 +1255,7 @@ export async function runCanonicalReportPrepare(
     baseSlotCoverage,
     requiredSectionsFailed,
     ...quality,
+    // Потери аналитики не зависят от того, записалась ли сводка качества.
+    qualityWarnings: [...analyticsQualityWarnings, ...(quality.qualityWarnings ?? [])],
   };
 }
