@@ -57,6 +57,23 @@ export type DiagnosticsBundleResult = {
   skippedOversizeCount: number;
 };
 
+/**
+ * Пропущенное называется поимённо, а не только считается.
+ *
+ * Молчаливый счётчик уже стоил неверного диагноза: по `skippedOversizeCount`
+ * разбор живого прогона решил, что лимит 2 МБ «срезал» телеметрию рендерера, —
+ * хотя на живом пути её тогда не было вовсе. Счётчик не отвечает на вопрос
+ * «чего в бандле нет», а имя отвечает.
+ */
+type SkippedFiles = {
+  oversize: Array<{ path: string; sizeBytes: number }>;
+  binary: string[];
+  /** Файлы, до которых дошёл обход, но не хватило места под потолком. */
+  fileCap: string[];
+  /** Увиденные обходом, но не прочитанные: исчезли, права, сбой диска. */
+  unreadable: string[];
+};
+
 function isUnderDir(child: string, parent: string): boolean {
   const rel = relative(parent, child);
   return Boolean(rel) && !rel.startsWith("..") && !rel.includes(`..${sep}`);
@@ -72,8 +89,16 @@ function shouldSkipDir(name: string): boolean {
   );
 }
 
-function walkFiles(root: string): string[] {
-  const out: string[] = [];
+/**
+ * Обход отдаёт размер вместе с путём: он уже измерен здесь, и второй `statSync`
+ * в цикле сборки был вторым ответом на тот же вопрос — плюс ещё одним молчаливым
+ * пропуском, если ответы расходились.
+ */
+function walkFiles(root: string): {
+  files: Array<{ path: string; sizeBytes: number }>;
+  truncated: boolean;
+} {
+  const out: Array<{ path: string; sizeBytes: number }> = [];
   const stack = [root];
   while (stack.length > 0 && out.length < MAX_FILES * 2) {
     const dir = stack.pop()!;
@@ -96,10 +121,10 @@ function walkFiles(root: string): string[] {
         stack.push(full);
         continue;
       }
-      if (st.isFile()) out.push(full);
+      if (st.isFile()) out.push({ path: full, sizeBytes: st.size });
     }
   }
-  return out;
+  return { files: out, truncated: stack.length > 0 };
 }
 
 export function redactDiagnosticsJson(value: unknown): unknown {
@@ -161,8 +186,7 @@ export async function buildUnifiedDiagnosticsBundle(input: {
 
   const zip = new JSZip();
   let includedCount = 0;
-  let skippedBinaryCount = 0;
-  let skippedOversizeCount = 0;
+  const skipped: SkippedFiles = { oversize: [], binary: [], fileCap: [], unreadable: [] };
 
   // Always include a sanitized job snapshot from the case-level job.json if present.
   const caseJobPath = join(root, "..", "job.json");
@@ -177,8 +201,11 @@ export async function buildUnifiedDiagnosticsBundle(input: {
     }
   }
 
-  for (const filePath of walkFiles(root)) {
-    if (includedCount >= MAX_FILES) break;
+  const walked = walkFiles(root);
+  // Потолок считается по обходу каталога: `job.json` лежит вне корня и входит
+  // всегда, поэтому места в бюджете не занимает.
+  let includedFromWalk = 0;
+  for (const { path: filePath, sizeBytes } of walked.files) {
     if (!isUnderDir(filePath, root) && filePath !== root) {
       // walk only under root; defensive
       if (!filePath.startsWith(root)) continue;
@@ -188,49 +215,73 @@ export async function buildUnifiedDiagnosticsBundle(input: {
       const i = base.lastIndexOf(".");
       return i >= 0 ? base.slice(i) : "";
     })();
+    const rel = relative(root, filePath).split(sep).join("/");
     if (BINARY_EXT.has(ext)) {
-      skippedBinaryCount += 1;
+      skipped.binary.push(rel);
       continue;
     }
     if (ext && !TEXT_EXT.has(ext)) {
       // Unknown extension — skip (fail-closed vs leaking binaries).
-      skippedBinaryCount += 1;
+      skipped.binary.push(rel);
       continue;
     }
-    let st;
-    try {
-      st = statSync(filePath);
-    } catch {
+    if (sizeBytes > MAX_FILE_BYTES) {
+      // Лимит защищает поддержку от base64-вложений в JSON (render-payload.json
+      // и report-assets.json — около 3 МБ, почти целиком картинки), поэтому он
+      // остаётся; молчать о пропуске нельзя.
+      skipped.oversize.push({ path: rel, sizeBytes });
       continue;
     }
-    if (st.size > MAX_FILE_BYTES) {
-      skippedOversizeCount += 1;
+    // Учёт пропуска идёт до потолка, а не после: иначе остаток обхода не
+    // попадал ни в зип, ни в списки, и счётчики отвечали неправду ровно на
+    // вопрос, ради которого манифест и заводился.
+    if (includedFromWalk >= MAX_FILES) {
+      skipped.fileCap.push(rel);
       continue;
     }
     let raw: Buffer;
     try {
       raw = readFileSync(filePath);
     } catch {
+      // Файл виден обходом, но не прочитан (исчез между обходом и чтением,
+      // права, сбой диска). Молчаливый пропуск сделал бы неполный бандл
+      // неотличимым от полного — ровно так счётчик без имён однажды увёл разбор
+      // блокера H3 не туда.
+      skipped.unreadable.push(rel);
       continue;
     }
-    const rel = relative(root, filePath).split(sep).join("/");
     zip.file(rel, sanitizeFileContent(filePath, raw));
     includedCount += 1;
+    includedFromWalk += 1;
   }
+
+  skipped.oversize.sort((a, b) => a.path.localeCompare(b.path));
+  skipped.binary.sort((a, b) => a.localeCompare(b));
+  skipped.fileCap.sort((a, b) => a.localeCompare(b));
+  skipped.unreadable.sort((a, b) => a.localeCompare(b));
+  // Достигнутый потолок перестаёт быть неотличимым от «всё вошло»: полный
+  // бандл ровно на 400 файлов переполнением не является.
+  const fileCapReached = skipped.fileCap.length > 0 || walked.truncated;
 
   zip.file(
     "bundle-manifest.json",
     `${JSON.stringify(
       redactDeep({
-        version: "unified-diagnostics-bundle-v1",
+        version: "unified-diagnostics-bundle-v2",
         caseId: input.caseId,
         unifiedJobId: job.unifiedJobId,
         stage: job.stage,
         status: job.status,
         warnings: job.warnings ?? [],
         includedCount,
-        skippedBinaryCount,
-        skippedOversizeCount,
+        skippedBinaryCount: skipped.binary.length,
+        skippedOversizeCount: skipped.oversize.length,
+        skippedBinary: skipped.binary,
+        skippedOversize: skipped.oversize,
+        skippedFileCap: skipped.fileCap,
+        skippedUnreadableCount: skipped.unreadable.length,
+        skippedUnreadable: skipped.unreadable,
+        fileCapReached,
         generatedAt: new Date().toISOString(),
       }),
       null,
@@ -244,7 +295,7 @@ export async function buildUnifiedDiagnosticsBundle(input: {
     zipBuffer,
     fileName: `diagnostics-${safeId}.zip`,
     includedCount,
-    skippedBinaryCount,
-    skippedOversizeCount,
+    skippedBinaryCount: skipped.binary.length,
+    skippedOversizeCount: skipped.oversize.length,
   };
 }

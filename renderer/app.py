@@ -19,6 +19,7 @@ import hashlib
 import os
 import shutil
 import tempfile
+import threading
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -111,6 +112,11 @@ class OrionManifestRenderResponse(BaseModel):
     pages: list[OrionManifestPage]
     pdfExportMode: str | None = None
     warnings: list[str] = []
+    # Layout telemetry is part of the contract: without it the caller cannot
+    # tell whether the renderer dropped whole blocks off a page. Only
+    # /orion/render-golden collects it; the other endpoints sharing this model
+    # leave it null rather than inventing an empty "nothing was lost".
+    layoutTelemetry: dict | None = None
 
 
 class OrionReportSpecRenderRequest(BaseModel):
@@ -192,6 +198,22 @@ def orion_render_client_storyboard(req: OrionClientStoryboardRenderRequest) -> O
     )
 
 
+# Layout telemetry lives in a module-level list of the renderer package, and
+# FastAPI runs synchronous endpoints in a thread pool: two concurrent golden
+# renders would interleave their entries and each render's reset() would wipe
+# what the other had collected. The gate on the caller's side stands on that
+# telemetry, so it must belong to exactly one document — renders are serialized.
+#
+# The trade is deliberate and worth naming: this lock is GLOBAL, not per case,
+# because the telemetry list is global. Step leases are per case, so two cases
+# do reach ORION_PREPARE at the same time; "the second request waits instead of
+# failing" holds only while waiting plus rendering fits the caller's budget
+# (300s in postGoldenRender). Past that the caller fails loudly with
+# RENDER_FAILED and resumes from its RENDER checkpoint — no silent truncation.
+# The `with` block releases the lock even when the render raises.
+_GOLDEN_RENDER_LOCK = threading.Lock()
+
+
 @app.post("/orion/render-golden", response_model=OrionManifestRenderResponse)
 def orion_render_golden(req: OrionGoldenRenderRequest) -> OrionManifestRenderResponse:
     """Render ORION Golden ReportSpec + deck manifest into PPTX/PDF/PNG pages (R10)."""
@@ -201,7 +223,8 @@ def orion_render_golden(req: OrionGoldenRenderRequest) -> OrionManifestRenderRes
             "deckManifest": req.deckManifest,
             "assets": req.assets,
         }
-        result = render_orion_golden(payload)
+        with _GOLDEN_RENDER_LOCK:
+            result = render_orion_golden(payload)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"ORION Golden render failed: {exc}") from exc
     return OrionManifestRenderResponse(
@@ -211,6 +234,7 @@ def orion_render_golden(req: OrionGoldenRenderRequest) -> OrionManifestRenderRes
         pages=[OrionManifestPage(**page) for page in result.get("pages") or []],
         pdfExportMode=str(result.get("pdfExportMode") or "unknown"),
         warnings=list(result.get("warnings") or []),
+        layoutTelemetry=result.get("layoutTelemetry"),
     )
 
 

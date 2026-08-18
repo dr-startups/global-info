@@ -40,10 +40,12 @@ import {
 import type { ReportDeckManifest } from "../orion-golden/deck-sections/contracts";
 import type { RendererSlide } from "../orion-golden/deck-sections/deck-assembler";
 import {
+  publishRenderedClientArtifacts,
   renderCanonicalDeck,
   sanitizeRendererClientError,
   type DeckRenderAdapter,
 } from "./render-deck-artifacts";
+import { judgeRenderTelemetry } from "./render-telemetry-gate";
 import type { CompositeMergeResult, CompositeObservation } from "./composite-serp-merge";
 import type { ReportDataBinding } from "./unified-collection-types";
 import { mapSurfaceBucket } from "../orion-golden/classic/composite-serp-overlay-merge";
@@ -94,6 +96,10 @@ export type CanonicalPrepareBlockerCode =
   | "ASSEMBLY_QA_FAILED"
   | "REQUIRED_SECTION_FAILED"
   | "RENDER_FAILED"
+  /** Рендерер выбросил целые блоки — отчёт с потерянными находками не выдаётся. */
+  | "CONTENT_DROPPED_BY_RENDERER"
+  /** Настоящий рендер прошёл, а телеметрии нет: потери непроверяемы. */
+  | "RENDER_TELEMETRY_MISSING"
   | "GPT_COPY_RESUME_INPUTS_MISSING"
   | "GPT_COPY_CALLER_UNAVAILABLE"
   /** Базы нет — отчёт без неё отрицал бы выполненный скрининг (см. `prepare-prisma-bundle`). */
@@ -1131,7 +1137,15 @@ export async function runCanonicalReportPrepare(
         status?: string;
         assemblyHash?: string;
       };
-      if (cp.status === "SUCCEEDED" && assemblyHash && cp.assemblyHash === assemblyHash) {
+      // Суд телеметрии до раннего возврата. Отказ суда — не провал прогона, а
+      // «реюзу нельзя»: ниже пойдёт обычный ре-рендер, и судить будут уже его.
+      // Иначе прежний рендер без телеметрии (сделанный до появления ворот)
+      // проскальзывал бы мимо них вечно.
+      const reuseVerdict =
+        cp.status === "SUCCEEDED" && assemblyHash && cp.assemblyHash === assemblyHash
+          ? judgeRenderTelemetry(renderDir)
+          : null;
+      if (reuseVerdict && !reuseVerdict.blocker) {
         writeRenderCheckpoint(input.artifactsDir, {
           ...cp,
           status: "SUCCEEDED",
@@ -1154,7 +1168,11 @@ export async function runCanonicalReportPrepare(
           baseSlotCoverage,
           requiredSectionsFailed,
           ...quality,
-          qualityWarnings: [...analyticsQualityWarnings, ...(quality.qualityWarnings ?? [])],
+          qualityWarnings: [
+            ...analyticsQualityWarnings,
+            ...reuseVerdict.warnings,
+            ...(quality.qualityWarnings ?? []),
+          ],
         };
       }
     } catch {
@@ -1206,22 +1224,55 @@ export async function runCanonicalReportPrepare(
     throw new CanonicalPrepareBlockedError("RENDER_FAILED", `render failed: ${safe}`);
   }
 
-  // Real HTTP/local adapters must produce client files. Injected offline fakes
-  // may return pageCount/renderer only (no on-disk PDF/PPTX).
+  /*
+   * Один ответ на вопрос «состоялся ли настоящий рендер»: адаптер называет
+   * себя сам, и офлайн-фейк подготовки объявляет себя фейком. Настоящий
+   * рендерер обязан положить клиентские файлы на диск и обязан отчитаться
+   * телеметрией; с фейка не требуют ни того, ни другого — рендера не было,
+   * терять было нечего. Пока ответов было два (имя адаптера для одного
+   * требования, файлы на диске для другого), они расходились на фейке,
+   * который файлы всё-таки оставил.
+   */
   const isOfflineFake = /^fake\b/i.test(rendered.renderer ?? "");
-  if (!rendered.pdf && !rendered.pptx && !isOfflineFake) {
-    writeRenderCheckpoint(input.artifactsDir, {
-      version: "render-checkpoint-v1",
-      stage: "RENDER",
-      status: "FAILED",
-      assemblyHash,
-      errorCode: "RENDER_FAILED",
-      updatedAt: new Date().toISOString(),
-    });
-    throw new CanonicalPrepareBlockedError(
-      "RENDER_FAILED",
-      "render failed: renderer returned no client artifacts"
-    );
+  let renderTelemetryWarnings: string[] = [];
+  if (!isOfflineFake) {
+    if (!rendered.pdf && !rendered.pptx) {
+      writeRenderCheckpoint(input.artifactsDir, {
+        version: "render-checkpoint-v1",
+        stage: "RENDER",
+        status: "FAILED",
+        assemblyHash,
+        errorCode: "RENDER_FAILED",
+        updatedAt: new Date().toISOString(),
+      });
+      throw new CanonicalPrepareBlockedError(
+        "RENDER_FAILED",
+        "render failed: renderer returned no client artifacts"
+      );
+    }
+
+    // Ворота потерь. Порогов здесь нет: их знает общий классификатор строк
+    // телеметрии, и правило блокировки описано в `render-telemetry-gate.ts`.
+    const verdict = judgeRenderTelemetry(renderDir);
+    if (verdict.blocker) {
+      writeRenderCheckpoint(input.artifactsDir, {
+        version: "render-checkpoint-v1",
+        stage: "RENDER",
+        status: "FAILED",
+        assemblyHash,
+        caseId: input.caseId,
+        unifiedJobId: input.unifiedJobId,
+        errorCode: verdict.blocker,
+        updatedAt: new Date().toISOString(),
+      });
+      throw new CanonicalPrepareBlockedError(verdict.blocker, verdict.detail);
+    }
+    renderTelemetryWarnings = verdict.warnings;
+
+    // Суд пройден — только теперь черновики рендера занимают конечные имена и
+    // становятся скачиваемым документом. Забракованный рендер остаётся
+    // черновиком: принятый прежде отчёт переживает неудачную пересборку.
+    rendered = publishRenderedClientArtifacts(renderDir, rendered);
   }
 
   const renderCount = 1;
@@ -1280,6 +1331,10 @@ export async function runCanonicalReportPrepare(
     requiredSectionsFailed,
     ...quality,
     // Потери аналитики не зависят от того, записалась ли сводка качества.
-    qualityWarnings: [...analyticsQualityWarnings, ...(quality.qualityWarnings ?? [])],
+    qualityWarnings: [
+      ...analyticsQualityWarnings,
+      ...renderTelemetryWarnings,
+      ...(quality.qualityWarnings ?? []),
+    ],
   };
 }

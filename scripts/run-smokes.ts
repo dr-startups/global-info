@@ -125,6 +125,13 @@ const SMOKES: Smoke[] = [
     about: "слова о чтении на листе: покрытие над таблицей тем и доля на странице региона (нужны Python-пакеты)",
   },
   {
+    name: "layout-telemetry-response",
+    argv: ["PYTHON", "renderer/smoke_layout_telemetry_reaches_response.py"],
+    tier: "full",
+    about:
+      "телеметрия разметки в ответе /orion/render-golden и её целость при параллельных рендерах (нужны Python-пакеты)",
+  },
+  {
     name: "deck-raster-layout",
     argv: ["PYTHON", "renderer/smoke_deck_raster_layout.py"],
     tier: "full",

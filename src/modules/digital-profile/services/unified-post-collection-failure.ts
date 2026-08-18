@@ -26,6 +26,12 @@ const POST_COLLECTION_ERROR_CODES: ReadonlySet<string> = new Set([
   "RENDER_FAILED",
   "PRE_RENDER_DATA_GATE_FAILED",
   "GPT_COPY_FAILED",
+  // Ворота телеметрии рендерера: документ испорчен, сбор цел и оплачен.
+  // Лечится ровно пересборкой — рендер бесплатен и детерминирован, а в окне
+  // деплоя (новое приложение, старый рендерер без телеметрии) ре-рендер
+  // проходит сам.
+  "CONTENT_DROPPED_BY_RENDERER",
+  "RENDER_TELEMETRY_MISSING",
 ]);
 
 /** Формулировки, по которым отказ опознаётся, когда код не проставлен. */

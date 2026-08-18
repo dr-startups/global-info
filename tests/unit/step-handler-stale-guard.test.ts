@@ -73,4 +73,19 @@ describe("шаг, который джоба переросла", () => {
     await unifiedStepHandlers()["COMPOSITE_MERGE"]!(step("COMPOSITE_MERGE"));
     expect(tick).toHaveBeenCalledTimes(1);
   });
+
+  it("терминальный прогон работу не перезапускает", async () => {
+    const { unifiedStepHandlers } = await import(
+      "@/modules/digital-profile/workflow/unified-step-handlers"
+    );
+    tick.mockClear();
+    // Отсутствие автоматического повтора после терминального отказа держится
+    // именно здесь: позиция `FAILED_TERMINAL` в конвейере нулевая, и проверка
+    // «джоба ушла дальше шага» такой прогон не ловит. Без короткого замыкания
+    // проснувшийся шаг подготовки запустил бы платный тик заново.
+    loadJob.mockResolvedValue(job("FAILED_TERMINAL"));
+    const outcome = await unifiedStepHandlers()["REPORT_PREPARE"]!(step("REPORT_PREPARE"));
+    expect(tick).not.toHaveBeenCalled();
+    expect(outcome.kind).toBe("done");
+  });
 });

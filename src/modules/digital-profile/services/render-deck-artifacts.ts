@@ -13,8 +13,8 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import {
   toRendererPayload,
   type RendererAssetEntry,
@@ -22,6 +22,31 @@ import {
 import type { ReportDeckManifest } from "../orion-golden/deck-sections/contracts";
 import type { RendererSlide } from "../orion-golden/deck-sections/deck-assembler";
 import { digitalProfileConfig } from "../config";
+
+/**
+ * Имя файла телеметрии одно на оба пути рендера: локальный python пишет его
+ * сам (`scripts/render-orion-golden-artifacts.py`), HTTP — здесь.
+ */
+export const LAYOUT_TELEMETRY_FILE = "layout-telemetry.json";
+
+/**
+ * Конечные имена клиентских документов — их знает и отдаёт на скачивание
+ * `canonical-report-artifacts.ts`.
+ */
+const CLIENT_PPTX_FILE = "rendered-client.pptx";
+const CLIENT_PDF_FILE = "rendered-client.pdf";
+
+/**
+ * Рендер пишет черновики, а конечные имена занимает только после суда.
+ *
+ * Иначе забракованный воротами документ уже лежит там, куда смотрят
+ * `reportLinks`: пересборка ловит исключение, возвращает джобу в
+ * `REPORT_READY` с прежними ссылками — и по кнопке скачивания уезжает дека с
+ * потерянными карточками. Происхождение байтов проверка скачивания не знает и
+ * знать не может, поэтому байты и не должны там оказываться.
+ */
+const PENDING_CLIENT_PPTX_FILE = "rendered-client.pending.pptx";
+const PENDING_CLIENT_PDF_FILE = "rendered-client.pending.pdf";
 
 export type DeckRenderInput = {
   deckManifest: ReportDeckManifest;
@@ -50,6 +75,8 @@ type GoldenHttpResult = {
   pages?: Array<{ pageNumber: number; contentBase64: string }>;
   pdfExportMode?: string;
   warnings?: string[];
+  /** Renderer layout telemetry — the evidence the loss gate judges. */
+  layoutTelemetry?: unknown;
 };
 
 export type HttpRenderDeps = {
@@ -114,11 +141,17 @@ function writePayload(input: DeckRenderInput): {
   });
   const payloadPath = join(input.outputRoot, "render-payload.json");
   writeFileSync(payloadPath, JSON.stringify(payload), "utf8");
-  const pptxPath = join(input.outputRoot, "rendered-client.pptx");
-  const pdfPath = join(input.outputRoot, "rendered-client.pdf");
+  const pptxPath = join(input.outputRoot, PENDING_CLIENT_PPTX_FILE);
+  const pdfPath = join(input.outputRoot, PENDING_CLIENT_PDF_FILE);
   const pagesDir = join(input.outputRoot, "pages-png");
   if (existsSync(pagesDir)) rmSync(pagesDir, { recursive: true, force: true });
   mkdirSync(pagesDir, { recursive: true });
+  // Телеметрия и черновики прошлого рендера пережили бы неудачный или
+  // неполный новый — и ворота осудили бы не тот документ, а публикация вынесла
+  // бы под конечным именем прошлые байты.
+  rmSync(join(input.outputRoot, LAYOUT_TELEMETRY_FILE), { force: true });
+  rmSync(pptxPath, { force: true });
+  rmSync(pdfPath, { force: true });
   return { payload, payloadPath, pptxPath, pdfPath, pagesDir };
 }
 
@@ -142,6 +175,28 @@ function finishFromFiles(
     contactSheet: existsSync(contactSheet) ? contactSheet : undefined,
     pageCount: pngPages,
     renderer,
+  };
+}
+
+/**
+ * Переносит клиентские документы под конечные имена. Зовётся подготовкой
+ * отчёта после суда телеметрии — до него забракованный рендер не должен быть
+ * скачиваемым (см. комментарий у `PENDING_CLIENT_PPTX_FILE`).
+ */
+export function publishRenderedClientArtifacts(
+  outputRoot: string,
+  rendered: DeckRenderResult
+): DeckRenderResult {
+  const move = (from: string | undefined, finalName: string): string | undefined => {
+    if (!from) return undefined;
+    const to = join(outputRoot, finalName);
+    if (resolve(from) !== resolve(to)) renameSync(from, to);
+    return to;
+  };
+  return {
+    ...rendered,
+    pptx: move(rendered.pptx, CLIENT_PPTX_FILE),
+    pdf: move(rendered.pdf, CLIENT_PDF_FILE),
   };
 }
 
@@ -282,6 +337,15 @@ export async function renderDeckViaHttp(
     writeFileSync(
       join(pagesDir, `page-${String(page.pageNumber).padStart(2, "0")}.png`),
       Buffer.from(page.contentBase64, "base64")
+    );
+  }
+  // Транспорт не сочиняет: нет поля в ответе — нет файла на диске. Пустую
+  // телеметрию ворота прочли бы как «проверено, потерь нет».
+  if (json.layoutTelemetry) {
+    writeFileSync(
+      join(input.outputRoot, LAYOUT_TELEMETRY_FILE),
+      JSON.stringify(json.layoutTelemetry, null, 2),
+      "utf8"
     );
   }
   writeFileSync(
