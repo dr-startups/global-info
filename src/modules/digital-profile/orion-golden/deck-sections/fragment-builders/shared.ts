@@ -1624,6 +1624,51 @@ export function readShareExecutiveLine(ms: MetricSnapshot): string | undefined {
 }
 
 /**
+ * Запрос в сравнимом виде: регистр и лишние пробелы — свойства написания.
+ *
+ * Тот же ответ, что уже дан на уровне ключей наблюдений (`norm()` слияния и
+ * `compositeObservationKey`): там запрос давно приводится к нижнему регистру, а
+ * дека сравнивала строки как есть. На прогоне 76 это дало один дефект с двумя
+ * противоположными исходами: в ОАЭ запрос таблицы совпал со строкой
+ * обогатителя посимвольно и впустил его нумерацию, а в России «Рашников Виктор
+ * Филиппович» не совпал с «рашников виктор филиппович» — и материалы того же
+ * запроса в таблицу не вошли.
+ */
+export function normalizeSerpQuery(raw: string | null | undefined): string {
+  return String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/gu, " ");
+}
+
+/** Один ли это запрос — независимо от написания. */
+export function sameSerpQuery(a: string | null | undefined, b: string | null | undefined): boolean {
+  const left = normalizeSerpQuery(a);
+  return left.length > 0 && left === normalizeSerpQuery(b);
+}
+
+/**
+ * Печатная форма запроса: самое частое написание, при равенстве — по алфавиту.
+ *
+ * Отчёт обязан быть воспроизводимым: два прогона на одних данных дают одни
+ * слова, поэтому «первое попавшееся написание» здесь не годится.
+ */
+export function serpQueryDisplayForm(spellings: string[]): string | null {
+  const counts = new Map<string, number>();
+  for (const raw of spellings) {
+    // Двойной пробел внутри запроса — не другое написание, а мусор: печатать
+    // его клиенту незачем, а регистр сохраняется, он часть написания.
+    const q = String(raw ?? "").trim().replace(/\s+/gu, " ");
+    if (!q) continue;
+    counts.set(q, (counts.get(q) ?? 0) + 1);
+  }
+  const sorted = [...counts.entries()].sort(
+    (a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru")
+  );
+  return sorted.length > 0 ? sorted[0]![0] : null;
+}
+
+/**
  * По каким запросам смотрели выдачу.
  *
  * Эталон отрасли печатает набор запросов на каждой странице поверхности —
@@ -1633,23 +1678,38 @@ export function readShareExecutiveLine(ms: MetricSnapshot): string | undefined {
  * Набор берётся из самих доказательств: это запросы, которыми искали субъекта
  * по имени. Прицельные запросы (деловой, медийный, негативный) сюда не входят
  * — по ним выдача не показывается как «страница, которую видит человек».
+ *
+ * Отдельно от фразы, потому что решать «печатать ли справку» надо по составу
+ * набора: перечень из одного запроса, уже названного заголовком таблицы,
+ * ничего не добавляет.
  */
-export function subjectQueriesLine(
-  scoped: ScopedFragmentInput,
-  limit = 5
-): string | undefined {
-  const byQuery = new Map<string, number>();
+export function subjectQueries(scoped: ScopedFragmentInput, limit = 5): string[] {
+  // Написания одного запроса — один запрос: иначе строка печатала «Рашников
+  // Виктор Филиппович» и «рашников виктор филиппович» как два разных.
+  const spellingsByQuery = new Map<string, string[]>();
   for (const e of Object.values(scoped.evidenceIndex)) {
     const q = String(e.query ?? "").trim();
     if (!q) continue;
     if (e.queryPurpose && e.queryPurpose !== "subject_lookup") continue;
-    byQuery.set(q, (byQuery.get(q) ?? 0) + 1);
+    const key = normalizeSerpQuery(q);
+    const spellings = spellingsByQuery.get(key) ?? [];
+    spellings.push(q);
+    spellingsByQuery.set(key, spellings);
   }
-  if (byQuery.size === 0) return undefined;
-  const queries = [...byQuery.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ru"))
+  return [...spellingsByQuery.values()]
+    .map((spellings) => ({ display: serpQueryDisplayForm(spellings)!, count: spellings.length }))
+    .sort((a, b) => b.count - a.count || a.display.localeCompare(b.display, "ru"))
     .slice(0, limit)
-    .map(([q]) => q);
+    .map((q) => q.display);
+}
+
+/** Та же справка одной фразой. */
+export function subjectQueriesLine(
+  scoped: ScopedFragmentInput,
+  limit = 5
+): string | undefined {
+  const queries = subjectQueries(scoped, limit);
+  if (queries.length === 0) return undefined;
   const word = pluralRu(queries.length, "запросу", "запросам", "запросам");
   return `Выдача проверена по ${queries.length} ${word}: ${queries
     .map((q) => `«${q}»`)

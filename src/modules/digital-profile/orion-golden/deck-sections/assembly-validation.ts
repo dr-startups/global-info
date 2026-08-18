@@ -12,6 +12,13 @@ import type { VisualAssetsBySlot } from "./canonical-slots";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import { scanDeckForInternalCodes } from "./internal-code-scan";
 import { quoteIntegrityProblems } from "./quote-integrity";
+import {
+  SERP_TABLE_TOP_N,
+  rankSourceBelongsToEngine,
+  serpMaterialKey,
+} from "./fragment-builders/serp";
+import { sameSerpQuery } from "./fragment-builders/shared";
+import { NOT_FOUND_PATTERNS } from "../analytics/surface-analyzers";
 
 /** Renderer templates that draw the analytical sidebar next to a visual. */
 const SIDEBAR_TEMPLATES = new Set([
@@ -44,6 +51,14 @@ export type AssemblyValidationReport = {
    * не должен.
    */
   blocking: string[];
+  /**
+   * Проверки, которые на этом наборе данных выполнить нечем.
+   *
+   * Тихий пропуск неотличим от пройденной проверки — ровно так выглядела бы
+   * зелёная приёмка на прогоне, где нужного признака в артефактах нет. Пропуск
+   * объявляется строкой и виден в отчёте.
+   */
+  skipped: string[];
 };
 
 /**
@@ -88,6 +103,144 @@ export function blockingIssues(input: {
   return out;
 }
 
+/**
+ * Строка выдачи так, как её видит артефакт наблюдений.
+ *
+ * Ровно те поля, которые нужны сверке: ворота читают наблюдения, а не индекс
+ * доказательств, которым таблица собрана.
+ */
+export type SerpObservationForGate = {
+  engine?: string;
+  surface?: string;
+  region?: string;
+  query?: string;
+  rank?: number;
+  rankSource?: string;
+  url?: string;
+  title?: string;
+  domain?: string;
+};
+
+/** Домен в сравнимом виде: без схемы, без www, в нижнем регистре. */
+function bareDomain(raw: string | undefined): string {
+  return String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//u, "")
+    .replace(/^www\./u, "");
+}
+
+/** Домен из напечатанной ссылки: `clientLink` печатает «домен/путь» без www. */
+function printedDomain(link: string): string {
+  return bareDomain(link).split("/")[0]!.trim();
+}
+
+/**
+ * Печатная таблица выдачи сверяется с артефактом наблюдений — в обе стороны.
+ *
+ * Прогон 76: страница «ОАЭ — Google, ТОП-20» печатала двенадцать строк с
+ * нумерацией обогатителя, а три настоящие позиции Serper (3 opensanctions.org,
+ * 4 bloomberg.com, 10 wikidata.org) не печатала вовсе — при двадцати двух
+ * зелёных воротах. Сверять таблицу тем же индексом доказательств, которым она
+ * собрана, бессмысленно: сломанный тракт согласится сам с собой, — поэтому
+ * входом служат наблюдения, а движок и запрос берутся из напечатанного пакета,
+ * а не пересчитываются заново.
+ *
+ * Допустимые потери названы поимённо: дубль позиции (в выдаче двух третьих
+ * строк не бывает, печатается одна) и маркер «ничего не найдено» — он не
+ * строка выдачи.
+ */
+export function serpPrintMatchesObservations(input: {
+  rendererSlides: ReadonlyArray<RendererSlide>;
+  observations: ReadonlyArray<SerpObservationForGate>;
+}): { issues: string[]; skipped: string[] } {
+  const issues: string[] = [];
+  const skipped: string[] = [];
+  type PrintedRow = { rank: number; domain: string; slideKey: string };
+  const tables = new Map<
+    string,
+    { engine: string; query: string; region: string | null; rows: PrintedRow[] }
+  >();
+  for (const slide of input.rendererSlides) {
+    const engine = String(slide.metrics?.serpEngine ?? "");
+    const query = String(slide.metrics?.serpQuery ?? "");
+    // Сверяются только позиционные таблицы. У движка без единой своей позиции
+    // таблица честно вырождается в «собранную выдачу», и её номера — порядок
+    // сбора: прочитанные как позиции, они дали бы «позиция N не подтверждена»
+    // на каждой строке здорового прогона и уронили бы приёмку.
+    const positional = Number(slide.metrics?.serpPositional ?? 0) === 1;
+    if (!engine || !query || !positional || !slide.table) continue;
+    const region =
+      slide.sectionKey === "RU_PROFILE" ? "RU" : slide.sectionKey === "UAE_PROFILE" ? "UAE" : null;
+    const key = `${slide.sectionKey}|${engine}|${query.trim().toLowerCase()}`;
+    const table = tables.get(key) ?? { engine, query, region, rows: [] };
+    for (const row of slide.table.rows) {
+      const rank = Number(row[0]);
+      if (!Number.isFinite(rank) || rank <= 0) continue;
+      table.rows.push({ rank, domain: printedDomain(String(row[1] ?? "")), slideKey: slide.slideKey });
+    }
+    tables.set(key, table);
+  }
+  if (tables.size === 0) {
+    skipped.push(
+      "сверка печатной таблицы выдачи с наблюдениями пропущена: в деке нет позиционных таблиц выдачи"
+    );
+    return { issues, skipped };
+  }
+  const datasetNamesRankSource = input.observations.some(
+    (o) => Boolean(o.rankSource) && o.rankSource !== "unknown"
+  );
+  if (!datasetNamesRankSource) {
+    skipped.push(
+      "сверка печатной таблицы выдачи с наблюдениями пропущена: в наблюдениях нет поля rankSource (набор собран до его появления)"
+    );
+    return { issues, skipped };
+  }
+  for (const table of tables.values()) {
+    // Наблюдения этой самой пары «движок × запрос» с позицией своего движка.
+    const owned = input.observations.filter(
+      (o) =>
+        String(o.surface ?? "organic") === "organic" &&
+        String(o.engine ?? "").toUpperCase() === table.engine.toUpperCase() &&
+        sameSerpQuery(o.query, table.query) &&
+        rankSourceBelongsToEngine(o.rankSource, table.engine) &&
+        typeof o.rank === "number" &&
+        o.rank >= 1 &&
+        o.rank <= SERP_TABLE_TOP_N &&
+        (table.region === null || regionMatches(table.region, String(o.region ?? table.region))) &&
+        !NOT_FOUND_PATTERNS.test(`${o.title ?? ""} ${o.domain ?? ""}`)
+    );
+    // Наблюдения одного материала сводятся в одну строку с лучшей позицией —
+    // тем же ключом, что и в построителе.
+    const materials = new Map<string, { rank: number; domain: string }>();
+    for (const o of owned) {
+      const key = serpMaterialKey(o);
+      const domain = bareDomain(o.domain);
+      const known = materials.get(key);
+      if (!known || o.rank! < known.rank) materials.set(key, { rank: o.rank!, domain });
+    }
+    const printedPairs = new Set(table.rows.map((r) => `${r.rank}|${r.domain}`));
+    const printedRanks = new Set(table.rows.map((r) => r.rank));
+    const expectedPairs = new Set([...materials.values()].map((m) => `${m.rank}|${m.domain}`));
+    for (const row of table.rows) {
+      if (expectedPairs.has(`${row.rank}|${row.domain}`)) continue;
+      issues.push(
+        `страница ${row.slideKey}: позиция ${row.rank} (${row.domain || "без адреса"}) не подтверждена наблюдением ${table.engine} по запросу «${table.query}»`
+      );
+    }
+    for (const m of materials.values()) {
+      if (printedPairs.has(`${m.rank}|${m.domain}`)) continue;
+      // Место занято другим материалом того же ранга: дубль позиции —
+      // допустимая потеря, печатается один из двух.
+      if (printedRanks.has(m.rank)) continue;
+      issues.push(
+        `таблица ${table.engine} «${table.query}»: наблюдение ${m.domain || "без адреса"} (позиция ${m.rank}) не напечатано`
+      );
+    }
+  }
+  return { issues, skipped };
+}
+
 export function validateAssembly(input: {
   manifest: ReportSectionManifest;
   deckManifest: ReportDeckManifest;
@@ -104,9 +257,17 @@ export function validateAssembly(input: {
    * невыполненная проверка не выглядела пройденной.
    */
   visualAssets?: VisualAssetsBySlot;
+  /**
+   * Строки выдачи из артефакта наблюдений — вход сверки печати с данными.
+   *
+   * Отсутствуют — проверки нет вовсе и ключа в `checks` не появляется: ворота
+   * без входа выглядят точно так же, как пройденные.
+   */
+  serpObservations?: ReadonlyArray<SerpObservationForGate>;
 }): AssemblyValidationReport {
   const issues: string[] = [];
   const checks: Record<string, boolean> = {};
+  const skipped: string[] = [];
   const { deckManifest, rendererSlides } = input;
 
   // All required sections present.
@@ -538,6 +699,22 @@ export function validateAssembly(input: {
     checks.panelPagesMatchDrawnRows = panelMismatchSlides.size === 0;
   }
 
+  /*
+   * 10. Напечатанная таблица выдачи сходится с наблюдениями.
+   *
+   * Смотрит в обе стороны и читает артефакт, а не индекс доказательств
+   * (см. `serpPrintMatchesObservations`).
+   */
+  if (input.serpObservations) {
+    const serp = serpPrintMatchesObservations({
+      rendererSlides,
+      observations: input.serpObservations,
+    });
+    checks.serpTableRanksFromOwnEngine = serp.issues.length === 0;
+    issues.push(...serp.issues.slice(0, 20));
+    skipped.push(...serp.skipped);
+  }
+
   // No stale packs: manifest hash must match pack hash for every entry.
   const packByKey = new Map(input.packs.map((p) => [p.fragmentKey, p]));
   let staleOk = true;
@@ -587,5 +764,5 @@ export function validateAssembly(input: {
     panelMismatchSlides,
   });
 
-  return { passed: issues.length === 0, issues, checks, blocking };
+  return { passed: issues.length === 0, issues, checks, blocking, skipped };
 }

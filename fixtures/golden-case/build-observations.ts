@@ -642,7 +642,19 @@ export function buildGoldenCaseObservations(): CompositeObservation[] {
   if (rows.length < 280 || rows.length > 340) {
     throw new Error(`golden-case observation count out of band: ${rows.length}`);
   }
-  return rows;
+  /*
+   * Позиция несёт имя того, чью нумерацию она означает.
+   *
+   * Живое слияние вычисляет это поле само (`rankInOneScale`): у базовой строки
+   * источник — её провайдер. Корпус без него был бы набором «старого образца», и
+   * ни таблица родного движка, ни ворота сверки печати с наблюдениями на золотом
+   * кейсе не работали бы вовсе — оба молча пропускали бы проверку.
+   */
+  return rows.map((row) =>
+    typeof row.rank === "number" && row.rank > 0 && !row.rankSource
+      ? { ...row, rankSource: row.primaryProvider }
+      : row
+  );
 }
 
 export function goldenCaseObservationStats(rows: CompositeObservation[]): Record<string, number> {

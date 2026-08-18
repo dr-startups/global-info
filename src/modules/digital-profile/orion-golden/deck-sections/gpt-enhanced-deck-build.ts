@@ -19,6 +19,7 @@ import {
   runDeckBuild,
   type DeckBuildResult,
 } from "./run-deck-build";
+import type { SerpObservationForGate } from "./assembly-validation";
 import {
   enhanceSectionPacksWithGptCopy,
   type GptSlideCopyReport,
@@ -127,6 +128,8 @@ export async function runDeckBuildWithGptCopy(input: {
    * SectionPacks cannot short-circuit as SKIPPED_CACHED (unified «Пересобрать»).
    */
   forceGptCopy?: boolean;
+  /** Наблюдения выдачи для сверки печатной таблицы с артефактом. */
+  serpObservations?: ReadonlyArray<SerpObservationForGate>;
 }): Promise<GptDeckBuildResult> {
   const buildLog: DeckBuildResult["buildLog"] = [];
   const previousPacks = loadPreviousPacks(input.outputRoot);
@@ -238,6 +241,7 @@ export async function runDeckBuildWithGptCopy(input: {
     prebuiltPacks: packs,
     prebuiltBuildLog: buildLog,
     layoutVariants,
+    serpObservations: input.serpObservations,
   });
   if (gptReport) {
     result.artifacts["gpt-report-copy.json"] = join(input.outputRoot, "gpt-report-copy.json");
@@ -267,6 +271,8 @@ export async function runDeckGptCopyRetry(input: {
   baseObservationCountBefore: number;
   baseObservationCountAfter: number;
   gpt: GptDeckLayer;
+  /** Наблюдения выдачи для сверки печатной таблицы с артефактом. */
+  serpObservations?: ReadonlyArray<SerpObservationForGate>;
 }): Promise<GptDeckBuildResult> {
   const previousPacks = loadPreviousPacks(input.outputRoot);
   const packs = packsInArtifactOrder(previousPacks);
@@ -330,6 +336,7 @@ export async function runDeckGptCopyRetry(input: {
     prebuiltPacks: packsWithFreshness,
     prebuiltBuildLog: buildLog,
     layoutVariants: loadCompositionLayoutsFromDisk(input.outputRoot),
+    serpObservations: input.serpObservations,
   });
   result.artifacts["gpt-report-copy.json"] = join(
     input.outputRoot,

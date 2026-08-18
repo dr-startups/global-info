@@ -15,7 +15,11 @@ import { buildAllSections, type SectionBuildContext } from "./section-builders";
 import { validateSectionPack, type SectionValidationReport } from "./section-validation";
 import { buildReportSectionManifest } from "./section-manifest";
 import { assembleDeck, type DeckAssemblyResult, type RendererSlide } from "./deck-assembler";
-import { validateAssembly, type AssemblyValidationReport } from "./assembly-validation";
+import {
+  validateAssembly,
+  type AssemblyValidationReport,
+  type SerpObservationForGate,
+} from "./assembly-validation";
 import { buildLinkUsageTrace, linkUsageLogLine } from "./link-usage-trace";
 import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle";
 import { getClientTextContract } from "../client/load-client-text-contract";
@@ -82,6 +86,8 @@ export function runDeckBuild(input: {
   prebuiltBuildLog?: DeckBuildResult["buildLog"];
   /** Level 2.5 — slideId → layout variant picked by the GPT composer. */
   layoutVariants?: ReadonlyMap<string, string>;
+  /** Наблюдения выдачи для сверки печатной таблицы с артефактом. */
+  serpObservations?: ReadonlyArray<SerpObservationForGate>;
 }): DeckBuildResult {
   const buildLog: DeckBuildResult["buildLog"] = input.prebuiltBuildLog ?? [];
   const artifacts: Record<string, string> = {};
@@ -183,6 +189,7 @@ export function runDeckBuild(input: {
       baseObservationCountAfter: input.baseObservationCountAfter,
       evidenceIndex: ctx.evidenceIndex,
       visualAssets: ctx.extras.visualAssets,
+      serpObservations: input.serpObservations,
     });
   }
   const assemblyReportPath = join(input.outputRoot, "assembly-validation-report.json");

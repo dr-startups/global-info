@@ -181,9 +181,12 @@ function toRow(
   const rawRank = typeof meta.rank === "number" ? meta.rank : Number(meta.rank);
   const queryText = String(meta.queryText ?? meta.query ?? item.query ?? "").trim();
   const queryPurpose = String(meta.queryPurpose ?? "").trim();
+  const rankSource = String(meta.rankSource ?? "").trim();
   return {
     observationKey: key,
     ...(Number.isFinite(rawRank) && rawRank > 0 ? { rank: Math.trunc(rawRank) } : {}),
+    // Источник позиции без позиции не существует: поле едет вместе с рангом.
+    ...(Number.isFinite(rawRank) && rawRank > 0 && rankSource ? { rankSource } : {}),
     ...(queryText ? { query: queryText } : {}),
     ...(queryPurpose ? { queryPurpose } : {}),
     provider: String(item.provider ?? "unknown").toLowerCase(),

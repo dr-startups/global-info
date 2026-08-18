@@ -27,7 +27,7 @@ import { pageQuoteForClient } from "../analytics/client-quote-hygiene";
 import type { LinkReadingReport } from "../analytics/link-reading-agent";
 import { mapRegionBucket } from "../classic/composite-serp-overlay-merge";
 
-type CompositeObservationRow = {
+export type CompositeObservationRow = {
   observationKey?: string;
   surface: string;
   region: string;
@@ -188,6 +188,14 @@ export type CanonicalDeckInputs = {
   surfaceCollectionHints: SurfaceCollectionHint[];
   /** Последний ран скрининга по каждой базе; пусто — проверок в прогоне не было. */
   complianceScreenings: ComplianceScreeningRecord[];
+  /**
+   * Строки наблюдений как есть, до сборки индекса доказательств.
+   *
+   * Ими ворота сборки сверяют напечатанную таблицу выдачи: мерить её тем же
+   * индексом, которым она собрана, бессмысленно — сломанный тракт согласится
+   * сам с собой.
+   */
+  serpObservations: CompositeObservationRow[];
 };
 
 /**
@@ -712,15 +720,30 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
         count: Number(raw.count ?? 0) || 0,
         byRegion,
       };
+      /*
+       * Вторичная ингестия дополняет индекс, а не переписывает его.
+       *
+       * Запись примера несёт только заголовок, домен и регион. Записанная
+       * поверх наблюдения, она стирала позицию, запрос и движок: на прогоне 76
+       * в примеры «прочих материалов» ОАЭ попали серперные строки 3
+       * (opensanctions.org), 4 (bloomberg.com) и 10 (wikidata.org) — после
+       * перезаписи у них не осталось запроса таблицы, они выпали из ТОП-20, а
+       * освободившиеся места заняла нумерация обогатителя. Соседний цикл
+       * `topExamples` эту охрану имел с самого начала.
+       */
       for (const [region, bucket] of Object.entries(byRegion)) {
         for (const ex of bucket.examples) {
           knownEvidenceRefs.add(ex.evidenceRef);
-          evidenceIndex[ex.evidenceRef] = {
-            title: ex.title,
-            domain: ex.domain,
-            kind: "uncategorized",
-            region: mapRegionBucket(region),
-          };
+          const known = evidenceIndex[ex.evidenceRef];
+          evidenceIndex[ex.evidenceRef] = known
+            ? { ...known, uncategorizedExample: true }
+            : {
+                title: ex.title,
+                domain: ex.domain,
+                kind: "uncategorized",
+                region: mapRegionBucket(region),
+                uncategorizedExample: true,
+              };
         }
       }
       for (const ex of raw.topExamples ?? []) {
@@ -732,6 +755,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
             domain: ex.domain ? String(ex.domain) : undefined,
             kind: "uncategorized",
             region: ex.region ? mapRegionBucket(ex.region) : undefined,
+            uncategorizedExample: true,
           };
         }
       }
@@ -800,5 +824,6 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
     uncategorizedMaterials,
     surfaceCollectionHints,
     complianceScreenings,
+    serpObservations: observations.observations,
   };
 }

@@ -239,6 +239,9 @@ async function main(): Promise<void> {
     outputRoot: OUTPUT_ROOT,
     baseObservationCountBefore: inputs.baseCountBefore,
     baseObservationCountAfter: inputs.baseCountAfter,
+    // Наблюдения для сверки печатной таблицы выдачи — вход тех же ворот, что
+    // работают на живом пути.
+    serpObservations: inputs.serpObservations,
   });
 
   // Coverage reconciliation: 36 canonical slots + 43 v72 baseline pages.
@@ -301,6 +304,9 @@ async function main(): Promise<void> {
   if (result.assemblyValidation && !result.assemblyValidation.passed) {
     console.log("issues:", result.assemblyValidation.issues);
   }
+  // Объявленный пропуск обязан быть видимым: тихо пропущенная проверка
+  // выглядит ровно так же, как пройденная.
+  for (const skip of result.assemblyValidation?.skipped ?? []) console.log(`skip: ${skip}`);
 
   // Static template layer report (g: concrete registry per SlideKind).
   const templateReport = {
@@ -601,6 +607,11 @@ async function main(): Promise<void> {
         // пропуск: проверка без входа выглядит точно так же, как пройденная.
         panelPagesMatchDrawnRows:
           result.assemblyValidation?.checks.panelPagesMatchDrawnRows ?? false,
+        // Печатная таблица выдачи сходится с наблюдениями. На эталоне 72
+        // признака `rankSource` в артефактах нет — проверка объявляет пропуск
+        // строкой отчёта, а не молчит.
+        serpTableRanksFromOwnEngine:
+          result.assemblyValidation?.checks.serpTableRanksFromOwnEngine ?? false,
         // Карточные страницы матрицы обязаны отчитаться о нарисованном:
         // без их телеметрии CONTENT_DROPPED_BY_RENDERER судить нечего.
         riskMatrixTelemetryPresent: riskMatrixTelemetryPresent(

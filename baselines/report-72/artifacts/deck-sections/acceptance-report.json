@@ -20,6 +20,7 @@
     "regionScopeIsolation": true,
     "sourceFooterFromSidebarEvidence": true,
     "panelPagesMatchDrawnRows": true,
+    "serpTableRanksFromOwnEngine": true,
     "riskMatrixTelemetryPresent": true,
     "complianceRowsNameTheirBases": true,
     "noOtherSubjectInNeutralRows": true,

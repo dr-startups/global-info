@@ -326,6 +326,11 @@ export function compositeObservationsToInventory(input: {
         // предмет аудита (ТОП-20). Без них аналитика видит корпус как плоский
         // список и не отличает первую строку выдачи от сороковой.
         rank: obs.rank,
+        // Чья это позиция. Источник вычислен один раз на слиянии
+        // (`rankInOneScale`) и дальше едет данными: без него таблица ТОП-20 не
+        // отличает нумерацию поисковика от нумерации обогатителя, а её защита
+        // «только свои позиции» становится истинной вакуумно.
+        rankSource: obs.rankSource,
         queryPurpose: obs.queryPurpose,
         // Source lineage for §1.3 override matching. Do NOT put searchResult:*
         // into evidenceRefs — composite builder would drop the inventory: fallback
@@ -678,6 +683,7 @@ export async function runCanonicalReportPrepare(
       outputRoot: deckDir,
       baseObservationCountBefore: deckInputs.baseCountBefore,
       baseObservationCountAfter: deckInputs.baseCountAfter,
+      serpObservations: deckInputs.serpObservations,
       gpt: { caller: gptCallerOnce, caseAnalysis },
     });
 
@@ -1040,6 +1046,7 @@ export async function runCanonicalReportPrepare(
       outputRoot: deckDir,
       baseObservationCountBefore: deckInputs.baseCountBefore,
       baseObservationCountAfter: deckInputs.baseCountAfter,
+      serpObservations: deckInputs.serpObservations,
       gpt: gptLayer,
       forceGptCopy,
     });

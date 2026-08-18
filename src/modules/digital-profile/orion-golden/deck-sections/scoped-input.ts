@@ -131,6 +131,16 @@ export type ScopedEvidenceIndex = Record<
     region?: string;
     /** Search engine the observation was captured from (YANDEX/GOOGLE). */
     engine?: string;
+    /**
+     * Ссылка числится примером «прочих материалов» своего региона.
+     *
+     * Признак принадлежности к перечню, а не описание материала: региональное
+     * резюме цитирует такие ссылки, и по этому признаку они попадают в область
+     * фрагмента. Раньше признаком служил `kind: "uncategorized"`, который
+     * ингестия записывала поверх наблюдения — вместе с ним стирались позиция,
+     * запрос и движок строки выдачи.
+     */
+    uncategorizedExample?: boolean;
     /** Compliance databases: human-readable provider name (Dow Jones, ...). */
     providerLabel?: string;
     /** Compliance databases: match category (PEP / ADVERSE_MEDIA / SANCTIONS). */
@@ -600,7 +610,7 @@ export function buildScopedInput(input: {
     // REMEDIATION §3.2 — themeless subject materials are not attached to
     // findings/units; admit them by region so regional summaries can cite them
     // without failing sidebar-scope QA.
-    if (entry.kind === "uncategorized") {
+    if (entry.uncategorizedExample === true) {
       if (
         input.scope.regions == null ||
         input.scope.regions.some((r) => regionMatches(r, entry.region))

@@ -25,3 +25,41 @@ export function resolveSearchDepth(input: {
   const safeMax = Math.max(1, Math.trunc(input.max));
   return Math.max(1, Math.min(wanted, safeMax));
 }
+
+/**
+ * Провайдеры, у которых глубина сверх умолчания стоит отдельных денег.
+ *
+ * У Serper запрос с `num` 11–100 списывает два кредита вместо одного. У Яндекса
+ * глубина входит в стоимость запроса: страницы по десять документов, платится
+ * сам запрос.
+ */
+const DEPTH_IS_BILLED: Record<OrganicSearchProvider, boolean> = {
+  serper: true,
+  yandex: false,
+};
+
+/** Провайдеры органической выдачи, у которых сбор просит глубину. */
+export type OrganicSearchProvider = "serper" | "yandex";
+
+/**
+ * Сколько результатов просить у провайдера по одному запросу сбора.
+ *
+ * Ограничение глубины — денежное, а не смысловое, и ответ здесь один на оба
+ * условия. Дорогая глубина просится только там, где отчёт её обещает: по
+ * запросам об имени субъекта строятся позиционные таблицы ТОП-N, а пробы
+ * (негативная, деловая, медийная) в них не попадают вовсе. Бесплатная глубина
+ * не экономится: урезанная проба — это вдвое меньший корпус без всякой выгоды.
+ *
+ * `undefined` означает «глубина по умолчанию провайдера»: у каждого адаптера
+ * она своя, и второе число здесь было бы вторым ответом на тот же вопрос.
+ */
+export function organicSearchDepth(input: {
+  provider: OrganicSearchProvider;
+  /** Назначение запроса из плана (`subject_lookup`, `adverse_lookup`, …). */
+  purpose: string;
+  /** Глубина, которую отчёт обещает клиенту таблицей выдачи. */
+  auditDepth: number;
+}): number | undefined {
+  if (!DEPTH_IS_BILLED[input.provider]) return input.auditDepth;
+  return input.purpose === "subject_lookup" ? input.auditDepth : undefined;
+}

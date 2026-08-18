@@ -11,11 +11,20 @@
 import { parseSerperDate } from "./published-date";
 import { providerConfig } from "./config";
 import { postJson, ProviderHttpError, toProviderError } from "./http";
+import { resolveSearchDepth } from "./search-depth";
 import type { ProviderRunResult, SearchProviderRequest, SearchProviderResult } from "./types";
 import { domainOf } from "./types";
 
 /** Hardcoded endpoint — never read from env (SSRF guard). */
 export const SERPER_SEARCH_ENDPOINT = "https://google.serper.dev/search";
+
+/**
+ * Потолок глубины на один запрос — предел самого API.
+ *
+ * Просить глубже 10 у Serper стоит два кредита за запрос вместо одного,
+ * поэтому глубину заказывает вызывающий по назначению запроса, а не настройка.
+ */
+const SERPER_MAX_RESULTS_PER_QUERY = 100;
 
 export interface SerperOrganicItem {
   title?: string;
@@ -40,7 +49,7 @@ export function buildSerperSearchBody(
     q: request.query,
     gl: (request.region ?? cfg.gl).toLowerCase(),
     hl: request.language ?? cfg.hl,
-    num: Math.min(Math.max(1, num), 100),
+    num: Math.min(Math.max(1, num), SERPER_MAX_RESULTS_PER_QUERY),
   };
 }
 
@@ -81,10 +90,16 @@ export function normalizeSerperResponse(
 
 export async function serperSearch(request: SearchProviderRequest): Promise<ProviderRunResult> {
   const ext = providerConfig.google.external;
-  const limit = Math.min(
-    request.limit ?? providerConfig.google.resultsPerQuery,
-    providerConfig.google.resultsPerQuery
-  );
+  // Настройка провайдера — глубина по умолчанию, а не потолок: аудит просит
+  // ТОП-20, и просьба вызывающего сильнее умолчания. Потолок задаёт API
+  // (Serper принимает `num` до 100). Пока здесь стоял `Math.min(запрошено,
+  // настройка)`, в сеть уходило `num: 10` при просьбе о двадцати, и отчёт
+  // называл первую страницу выдачи аудитом ТОП-20.
+  const limit = resolveSearchDepth({
+    requested: request.limit,
+    fallback: providerConfig.google.resultsPerQuery,
+    max: SERPER_MAX_RESULTS_PER_QUERY,
+  });
 
   try {
     const raw = await postJson(SERPER_SEARCH_ENDPOINT, buildSerperSearchBody(request, limit), {

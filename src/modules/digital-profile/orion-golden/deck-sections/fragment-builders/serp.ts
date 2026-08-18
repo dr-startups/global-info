@@ -38,7 +38,11 @@ import {
   pageSourceLine,
   riskLabel,
   sourceLine,
+  normalizeSerpQuery,
+  sameSerpQuery,
+  serpQueryDisplayForm,
   splitClientParagraphs,
+  subjectQueries,
   subjectQueriesLine,
   enumerateRu,
   statusLine,
@@ -131,12 +135,20 @@ export function clientLink(url: string | undefined, domain: string | undefined):
 }
 
 const SERP_ENGINE_LABELS: Record<string, string> = { YANDEX: "Яндекс", GOOGLE: "Google" };
+/** «Выдача Яндекса», но «выдача Google»: русское имя склоняется, латинское нет. */
+const SERP_ENGINE_LABELS_GENITIVE: Record<string, string> = { YANDEX: "Яндекса", GOOGLE: "Google" };
 const SERP_ENGINE_ORDER = ["YANDEX", "GOOGLE"];
 
 /** Поисковик так, как его называет клиентский текст: «Google», «Яндекс». */
 export function serpEngineLabel(raw: string | undefined): string | null {
   const engine = normalizeSerpEngine(raw);
   return engine ? SERP_ENGINE_LABELS[engine] ?? engine : null;
+}
+
+/** Поисковик в родительном падеже: «выдача Яндекса», «выдача Google». */
+export function serpEngineLabelGenitive(raw: string | undefined): string | null {
+  const engine = normalizeSerpEngine(raw);
+  return engine ? SERP_ENGINE_LABELS_GENITIVE[engine] ?? engine : null;
 }
 
 /** Ярлык поисковика в том виде, в котором его можно показать клиенту. */
@@ -156,21 +168,124 @@ export function normalizeSerpEngine(raw: string | undefined): string | null {
 export function pickSerpTableQuery(
   rows: Array<{ query?: string; queryPurpose?: string }>
 ): string | null {
-  const stats = new Map<string, { count: number; subject: boolean }>();
+  // Написания одного запроса складываются в один счёт: регистр запроса не
+  // меняет, и разведённые по регистру половины делали выбор случайным.
+  const stats = new Map<string, { count: number; subject: boolean; spellings: string[] }>();
   for (const r of rows) {
     const q = String(r.query ?? "").trim();
     if (!q) continue;
-    const stat = stats.get(q) ?? { count: 0, subject: false };
+    const key = normalizeSerpQuery(q);
+    const stat = stats.get(key) ?? { count: 0, subject: false, spellings: [] };
     stat.count += 1;
+    stat.spellings.push(q);
     if (String(r.queryPurpose ?? "") === "subject_lookup") stat.subject = true;
-    stats.set(q, stat);
+    stats.set(key, stat);
   }
   if (stats.size === 0) return null;
-  return [...stats.entries()].sort((a, b) => {
+  const best = [...stats.entries()].sort((a, b) => {
     if (a[1].subject !== b[1].subject) return a[1].subject ? -1 : 1;
     if (a[1].count !== b[1].count) return b[1].count - a[1].count;
     return a[0].localeCompare(b[0], "ru");
-  })[0]![0];
+  })[0]!;
+  return serpQueryDisplayForm(best[1].spellings);
+}
+
+/**
+ * Чья это нумерация — своя для этого поисковика или чужая.
+ *
+ * Список Яндекса собирается из выдачи Яндекса, список Google — из Serper.
+ * Обогатитель (Arsenkin) в списках не участвует: обогащать в перечне выдачи
+ * нечего, а его собственная нумерация — без спецблоков — дырявит таблицу
+ * чужими местами. В отчёте 76 таблица «ОАЭ — Google» показала девятнадцать
+ * строк, из которых двенадцать несли его нумерацию.
+ *
+ * Тем же правилом ворота сборки сверяют напечатанное с наблюдениями: два
+ * ответа на вопрос «чей это ранг» разошлись бы в первую же неделю.
+ */
+export function rankSourceBelongsToEngine(
+  rankSource: string | undefined,
+  engine: string
+): boolean {
+  const own = ENGINE_RANK_SOURCE[engine];
+  if (!rankSource || rankSource === "unknown") return false;
+  return own ? own.test(rankSource) : true;
+}
+
+const ENGINE_RANK_SOURCE: Record<string, RegExp> = {
+  YANDEX: /yandex/i,
+  GOOGLE: /serper|google/i,
+};
+
+/**
+ * Номера, которых в собранной двадцатке нет, — компактным перечнем: «1–3, 5».
+ *
+ * Пустая строка означает полную таблицу: подпись о потерях появляется только
+ * там, где потери есть.
+ */
+export function missingSerpRanks(printed: number[], topN = SERP_TABLE_TOP_N): string {
+  const present = new Set(printed);
+  const missing: number[] = [];
+  for (let rank = 1; rank <= topN; rank += 1) if (!present.has(rank)) missing.push(rank);
+  if (missing.length === 0) return "";
+  const parts: string[] = [];
+  let start = missing[0]!;
+  let prev = start;
+  for (const rank of missing.slice(1)) {
+    if (rank === prev + 1) {
+      prev = rank;
+      continue;
+    }
+    parts.push(start === prev ? String(start) : `${start}–${prev}`);
+    start = rank;
+    prev = rank;
+  }
+  parts.push(start === prev ? String(start) : `${start}–${prev}`);
+  return parts.join(", ");
+}
+
+/**
+ * Проза страницы выдачи, разложенная по важности печати.
+ *
+ * Шаблон `orion_golden_search_table` рисует **два первых законченных
+ * предложения** нарратива, поэтому порядок здесь — не оформление, а выбор
+ * того, что увидит читатель. Перед выводом страницы стоит только то, без чего
+ * таблица читается неверно: по какому запросу собрана выдача (иначе номер
+ * строки — число без знаменателя, а выделение на снимке соседней страницы
+ * выглядит противоречием) и почему в нумерации дыры. Всё остальное — после
+ * вывода: тематическая строка это заключение, а перечень запросов — справка.
+ *
+ * Справка не печатается, когда ничего не добавляет: при единственном запросе
+ * прогона она дословно повторяет заголовок выдачи («Показана выдача Google по
+ * запросу «X». Выдача проверена по 1 запросу: «X».») и вытесняет с листа
+ * вывод.
+ */
+export function serpTablePageProse(input: {
+  /** Название поисковика в родительном падеже: «Яндекса», «Google». */
+  engineLabel: string | null;
+  query: string | null;
+  /** Перечень несобранных номеров; пусто — таблица полная. */
+  missing: string;
+  /** Справка о наборе запросов прогона и сам набор, по которому она решается. */
+  queriesLine?: string;
+  subjectQueries?: string[];
+}): { head: string; tail?: string } {
+  const parts: string[] = [];
+  if (input.query) {
+    const engine = input.engineLabel ? `выдача ${input.engineLabel}` : "выдача";
+    parts.push(`Показана ${engine} по запросу «${input.query}».`);
+  }
+  if (input.missing) {
+    parts.push(
+      `Позиции ${input.missing} в собранных данных отсутствуют: эти строки потеряны при сборе, а не пусты в выдаче.`
+    );
+  }
+  const queries = input.subjectQueries ?? [];
+  const repeatsTableQuery = queries.length === 1 && sameSerpQuery(queries[0], input.query);
+  const tail = input.queriesLine && !repeatsTableQuery ? input.queriesLine : undefined;
+  // Заголовка выдачи нет вовсе (набор без запросов) — тогда справка и есть всё,
+  // что о запросах известно, и она встаёт первой строкой, как стояла раньше.
+  if (!input.query && tail) return { head: tail };
+  return { head: parts.join(" "), ...(tail ? { tail } : {}) };
 }
 
 /**
@@ -255,16 +370,22 @@ export function buildSerpFragment(
   // противоположные оценки. Материал в таблице один; оценка у него —
   // сильнейшая из всех наблюдений этого материала.
   const merged = mergeSerpRowsByMaterial(refs, scoped);
-  // Таблица выдачи читается сверху вниз как сама выдача: сначала то, что
-  // проверяющий увидит первым. Материалы без позиции (старые прогоны,
-  // поверхности без номеров) в таблицу не попадают — придумывать им место в
-  // выдаче нельзя.
-  const engineOfGroup = (group: { refs: string[] }): string | null => {
-    for (const ref of group.refs) {
-      const e = normalizeSerpEngine(scoped.evidenceIndex[ref]?.engine);
-      if (e) return e;
-    }
-    return null;
+  /*
+   * Набор данных называет источник позиции — свойство набора, а не строки.
+   *
+   * Построчное «источник не назван — значит, свой» было той лазейкой, через
+   * которую в таблицу ОАЭ прогона 76 вошла нумерация обогатителя: признак не
+   * доезжал до деки вовсе, и защита пропускала весь набор целиком. Наборы, где
+   * источника нет ни у одной строки, собраны до появления признака — они
+   * работают как раньше; в смешанном наборе безымянная позиция не печатается.
+   */
+  const datasetNamesRankSource = refs.some((ref) => {
+    const src = scoped.evidenceIndex[ref]?.rankSource;
+    return Boolean(src) && src !== "unknown";
+  });
+  const rankFromOwnEngine = (ref: string, engine: string): boolean => {
+    if (!datasetNamesRankSource) return true;
+    return rankSourceBelongsToEngine(scoped.evidenceIndex[ref]?.rankSource, engine);
   };
   /**
    * Все запросы, которыми найден материал, а не первый попавшийся.
@@ -272,18 +393,22 @@ export function buildSerpFragment(
    * Материал в выдаче виден по нескольким запросам сразу: «suleyman kerimov»,
    * «kerimov suleyman» и «Suleyman Abusaidovich Kerimov» приводят к одной и той
    * же странице. Сведение по материалу оставляло за ним запрос того наблюдения,
-   * что оказалось первым, и таблица ТОП-20 показывала семь строк из двадцати:
-   * остальные восемнадцать материалов «принадлежали» другим запросам. Из
-   * двадцати материалов первой двадцатки по «suleyman kerimov» первым
-   * наблюдением этот запрос был записан ровно у одного.
+   * что оказалось первым, и таблица ТОП-20 показывала семь строк из двадцати.
+   * Написания одного запроса считаются одним запросом: регистр — свойство
+   * написания, а не запроса.
    */
-  const queriesOfGroup = (group: { refs: string[] }): Map<string, string | undefined> => {
-    const out = new Map<string, string | undefined>();
-    for (const ref of group.refs) {
+  const queriesOfRefs = (
+    groupRefs: string[]
+  ): Array<{ query: string; queryPurpose?: string }> => {
+    const out = new Map<string, { query: string; queryPurpose?: string }>();
+    for (const ref of groupRefs) {
       const e = scoped.evidenceIndex[ref];
-      if (e?.query && !out.has(e.query)) out.set(e.query, e.queryPurpose);
+      const q = String(e?.query ?? "").trim();
+      if (!q) continue;
+      const key = normalizeSerpQuery(q);
+      if (!out.has(key)) out.set(key, { query: q, queryPurpose: e?.queryPurpose });
     }
-    return out;
+    return [...out.values()];
   };
   /**
    * Входит ли материал в выдачу по выбранному запросу.
@@ -291,74 +416,47 @@ export function buildSerpFragment(
    * Наблюдения без записанного запроса относим к любому: у старых наборов
    * данных запроса нет вовсе, и отбрасывать их значит потерять таблицу целиком.
    */
-  const groupInQuery = (group: { refs: string[] }, query: string | null): boolean => {
+  const groupInQuery = (groupRefs: string[], query: string | null): boolean => {
     if (!query) return true;
-    const queries = queriesOfGroup(group);
-    return queries.size === 0 || queries.has(query);
+    const queries = queriesOfRefs(groupRefs);
+    return queries.length === 0 || queries.some((q) => sameSerpQuery(q.query, query));
   };
   /**
-   * Позиция материала в выдаче по конкретному запросу.
+   * Позиция материала в выдаче по конкретному запросу и в этом поисковике.
    *
    * Считать её «лучшей по всем наблюдениям» нельзя: материал, найденный
    * несколькими запросами, получал подпись одного запроса и номер из другого —
    * и в таблице появлялись две первых позиции и четыре вторых. В выдаче по
    * одному запросу позиция уникальна, и таблица обязана это сохранять.
    */
-  /*
-   * Список ТОП-20 — только из выдачи родного поисковика.
-   *
-   * Список Яндекса собирается из выдачи Яндекса, список Google — из Serper.
-   * Обогатитель (Arsenkin) в списках не участвует: обогащать в перечне выдачи
-   * нечего, а его собственная нумерация — без спецблоков — дырявит таблицу
-   * чужими местами. В отчёте 75 таблица «Россия — Google» показала шесть строк
-   * с дырами именно из его позиций, при том что Serper для тех же запросов
-   * отдал ровную нумерацию.
-   *
-   * Позиция без названного источника (старые наборы) остаётся допустимой:
-   * иначе прогоны, собранные до появления признака, потеряли бы таблицы.
-   */
-  const ENGINE_RANK_SOURCE: Record<string, RegExp> = {
-    YANDEX: /yandex/i,
-    GOOGLE: /serper|google/i,
-  };
-  const rankFromOwnEngine = (ref: string, engine: string): boolean => {
-    const src = scoped.evidenceIndex[ref]?.rankSource;
-    if (!src || src === "unknown") return true;
-    const own = ENGINE_RANK_SOURCE[engine];
-    return own ? own.test(src) : true;
-  };
-  const rankInQuery = (group: { refs: string[] }, query: string | null, engine: string): number => {
+  const rankInQuery = (groupRefs: string[], query: string | null, engine: string): number => {
     const rankOf = (ref: string): number | undefined => {
       if (!rankFromOwnEngine(ref, engine)) return undefined;
       const r = scoped.evidenceIndex[ref]?.rank;
       return typeof r === "number" && r > 0 ? r : undefined;
     };
-    const best = (refs: string[]): number => {
-      const ranks = refs.map(rankOf).filter((r): r is number => r !== undefined);
+    const best = (candidates: string[]): number => {
+      const ranks = candidates.map(rankOf).filter((r): r is number => r !== undefined);
       return ranks.length > 0 ? Math.min(...ranks) : Number.MAX_SAFE_INTEGER;
     };
-    if (!query) return best(group.refs);
-
+    // Запроса нет ни у одного наблюдения таблицы — набор собран до того, как
+    // запрос стал сохраняться; тогда позиция это всё, что о материале есть.
+    if (!query) return best(groupRefs);
     /*
      * Позиция берётся у наблюдения по этому самому запросу.
      *
      * Раньше к выбранному запросу относили и наблюдения без записанного запроса
      * — ради старых наборов данных. На прогоне 14.08 это дало таблице чужие
      * места: страница Википедии стояла второй по запросу таблицы, но у неё было
-     * наблюдение без запроса с позицией 1, и в отчёте она встала первой. Место
-     * 2 при этом никем не занималось, и в нумерации ТОП-20 зияли дыры 2, 11 и
-     * 12 — клиент видел семнадцать строк там, где обещано двадцать.
+     * наблюдение без запроса с позицией 1, и в отчёте она встала первой. В
+     * прогоне 76 тем же путём печатался «7 lenta.ru» — ранг безымянной строки
+     * агентского сборщика, а настоящая седьмая позиция запроса выбрасывалась
+     * как дубль.
      */
-    const exact = group.refs.filter((ref) => scoped.evidenceIndex[ref]?.query === query);
-    if (exact.length > 0) return best(exact);
-    // Материал, у которого запрос записан, но другой, к этой таблице не
-    // относится: показывать его здесь значит придумать ему место в выдаче.
-    if (group.refs.some((ref) => scoped.evidenceIndex[ref]?.query)) {
-      return Number.MAX_SAFE_INTEGER;
-    }
-    // Запроса нет ни у одного наблюдения — набор данных собран до того, как
-    // запрос стал сохраняться. Такой материал в таблице нужен.
-    return best(group.refs);
+    const exact = groupRefs.filter((ref) =>
+      sameSerpQuery(scoped.evidenceIndex[ref]?.query, query)
+    );
+    return exact.length > 0 ? best(exact) : Number.MAX_SAFE_INTEGER;
   };
 
   // Одна таблица — один поисковик и один запрос: это страница выдачи, которую
@@ -369,12 +467,25 @@ export function buildSerpFragment(
   // Материалы, у которых поисковик не записан (прогоны до того, как источник
   // стал сохраняться), собираются в таблицу без имени движка. Выбросить их
   // значило бы отдать клиенту пустую страницу там, где выдача есть.
-  const byEngine = new Map<string, typeof merged>();
+  //
+  // Раскладывается по движкам не группа целиком, а её наблюдения: страница,
+  // найденная обоими поисковиками, стоит в обеих таблицах со своими номерами.
+  // Пока группа уезжала к движку первого наблюдения, второй поисковик получал
+  // на её месте дыру.
+  const byEngine = new Map<string, Array<{ refs: string[]; engineRefs: string[] }>>();
   for (const group of merged) {
-    const engine = engineOfGroup(group) ?? "";
-    const list = byEngine.get(engine) ?? [];
-    list.push(group);
-    byEngine.set(engine, list);
+    const refsByEngine = new Map<string, string[]>();
+    for (const ref of group.refs) {
+      const engine = normalizeSerpEngine(scoped.evidenceIndex[ref]?.engine) ?? "";
+      const list = refsByEngine.get(engine) ?? [];
+      list.push(ref);
+      refsByEngine.set(engine, list);
+    }
+    for (const [engine, engineRefs] of refsByEngine) {
+      const list = byEngine.get(engine) ?? [];
+      list.push({ refs: group.refs, engineRefs });
+      byEngine.set(engine, list);
+    }
   }
   const engineTables = [...byEngine.entries()]
     .sort(
@@ -384,15 +495,15 @@ export function buildSerpFragment(
     .map(([engine, groups]) => {
       // Запрос выбирается по числу материалов, которые он показал, поэтому в
       // счёт идёт каждая пара «материал — запрос», а не один запрос на материал.
-      const query = pickSerpTableQuery(
-        groups.flatMap((g) =>
-          [...queriesOfGroup(g)].map(([q, queryPurpose]) => ({ query: q, queryPurpose }))
-        )
-      );
-      const scopedGroups = groups.filter((g) => groupInQuery(g, query));
+      const query = pickSerpTableQuery(groups.flatMap((g) => queriesOfRefs(g.engineRefs)));
+      const scopedGroups = groups.filter((g) => groupInQuery(g.engineRefs, query));
       const ranked = dropDuplicateRanks(
         scopedGroups
-          .map((group, index) => ({ group, index, rank: rankInQuery(group, query, engine) }))
+          .map((group, index) => ({
+            group,
+            index,
+            rank: rankInQuery(group.engineRefs, query, engine),
+          }))
           .filter((x) => x.rank <= SERP_TABLE_TOP_N)
           .sort((a, b) => a.rank - b.rank || a.index - b.index)
       ).slice(0, SERP_TABLE_TOP_N);
@@ -413,8 +524,6 @@ export function buildSerpFragment(
   const namedTables = engineTables.filter((t) => t.engine);
   const tables = namedTables.length > 0 ? namedTables : engineTables;
 
-  const displayed = tables.flatMap((t) => t.displayed.map((x) => x.group));
-  const displayedRefs = displayed.flatMap((g) => g.refs);
   const rowOf = (group: { refs: string[] }, rank: number): string[] => {
     const e = scoped.evidenceIndex[group.refs[0]!] ?? {};
     // A row is marked when its evidence backs an adverse finding OR its own
@@ -487,30 +596,77 @@ export function buildSerpFragment(
     DECK_TEMPLATE_REGISTRY["serp-table"].maxTableRowsPerSlide > 0
       ? DECK_TEMPLATE_REGISTRY["serp-table"].maxTableRowsPerSlide
       : 12;
+  const queriesLine = subjectQueriesLine(scoped);
+  const queryList = subjectQueries(scoped);
   // Страницы не смешивают поисковики: каждая таблица листается отдельно и
   // подписана своим поисковиком и запросом.
-  const pages: Array<{ title: string; rows: string[][]; refs: string[] }> = [];
+  const pages: Array<{
+    title: string;
+    rows: string[][];
+    refs: string[];
+    /** Первые предложения страницы: чья это выдача и чего в ней не хватает. */
+    lead: string;
+    /** Справка после вывода страницы; печатается не всегда. */
+    note?: string;
+    engine: string;
+    query: string | null;
+    /**
+     * Номера строк — позиции выдачи, а не порядок сбора.
+     *
+     * У движка без единой своей позиции таблица честно вырождается в
+     * «собранную выдачу», и ворота сверки печати с наблюдениями обязаны
+     * отличать её от позиционной: прочитанные как позиции, порядковые номера
+     * дали бы «позиция N не подтверждена» на каждой строке здорового прогона.
+     */
+    positional: boolean;
+  }> = [];
   for (const table of tables) {
     const label = serpEngineLabel(table.engine);
     const tableRows = table.displayed.map((x) => rowOf(x.group, x.rank));
     const tableRefs = table.displayed.map((x) => x.group.refs);
     const rowChunks = chunk(tableRows, maxRows);
     const refChunks = chunk(tableRefs, maxRows).map((c) => c.flat());
+    const printedRanks = table.positional ? table.displayed.map((x) => x.rank) : [];
+    const missing = table.positional ? missingSerpRanks(printedRanks) : "";
+    const prose = serpTablePageProse({
+      engineLabel: serpEngineLabelGenitive(table.engine),
+      query: table.query,
+      missing,
+      queriesLine,
+      subjectQueries: queryList,
+    });
     for (let i = 0; i < rowChunks.length; i += 1) {
       const suffix = rowChunks.length > 1 ? ` (${i + 1}/${rowChunks.length})` : "";
       // Заголовок начинается с региона, и он же начинает предложение: «ОАЭ»
       // приходит меткой раздела, а «международный» — строчным.
       const region = regionLabel.charAt(0).toUpperCase() + regionLabel.slice(1);
-      const depth = table.positional ? `, ТОП-${SERP_TABLE_TOP_N}` : ": собранная выдача";
-      const head = label ? `${region} — ${label}${depth}` : `${region} — выдача${table.positional ? `, ТОП-${SERP_TABLE_TOP_N}` : ""}`;
+      /*
+       * Неполная таблица называет фактический диапазон.
+       *
+       * Позиции, не записанные при сборе, вернуть нечем: дыры 1, 2, 3, 5 в
+       * таблице «Россия — Google» прогона 76 — это строки, которых нет в
+       * данных. Под заголовком «ТОП-20» они читаются как пустые места выдачи,
+       * то есть как факт о субъекте, — поэтому заголовок говорит, что собрано,
+       * а строка под таблицей объясняет, почему остального нет.
+       */
+      const range =
+        table.positional && missing
+          ? `: позиции ${Math.min(...printedRanks)}–${Math.max(...printedRanks)}`
+          : "";
+      const depth = table.positional ? `, ТОП-${SERP_TABLE_TOP_N}${range}` : ": собранная выдача";
+      const head = label ? `${region} — ${label}${depth}` : `${region} — выдача${table.positional ? `, ТОП-${SERP_TABLE_TOP_N}${range}` : ""}`;
       pages.push({
         title: `${head}${suffix}`,
         rows: rowChunks[i] ?? [],
         refs: refChunks[i] ?? [],
+          lead: prose.head,
+        ...(prose.tail ? { note: prose.tail } : {}),
+        engine: table.engine,
+        query: table.query,
+        positional: table.positional,
       });
     }
   }
-  const queriesLine = subjectQueriesLine(scoped);
   /*
    * Страница тем: о чём именно нежелательные публикации.
    *
@@ -563,9 +719,12 @@ export function buildSerpFragment(
       content: {
         table: { headers: [...SERP_TABLE_HEADERS], rows: pageRows },
         ...pageBlocks,
-        // Клиент должен видеть, по чему смотрели: без набора запросов позиция
-        // в таблице — число без знаменателя (см. `docs/etalon-orion-razbor.md`).
-        narrative: [queriesLine, pageBlocks.whatWasFound].filter(Boolean).join(" "),
+        // Клиент должен видеть, чью выдачу смотрит: без запроса позиция в
+        // таблице — число без знаменателя, а противоречие со снимком соседней
+        // страницы необъяснимо (см. `docs/etalon-orion-razbor.md`).
+        narrative: [pages[i]!.lead, pageBlocks.whatWasFound, pages[i]!.note]
+          .filter(Boolean)
+          .join(" "),
       },
       evidenceRefs: pageRefs,
       findingIds: view.findings.map((f) => f.findingId),
@@ -579,6 +738,11 @@ export function buildSerpFragment(
           .length,
         pageIndex: i + 1,
         pageCount: pages.length,
+        // Движок и запрос таблицы — печатный факт, а не пересчёт: ворота
+        // сверяют напечатанные номера с наблюдениями по этой самой паре.
+        ...(pages[i]!.engine ? { serpEngine: pages[i]!.engine } : {}),
+        ...(pages[i]!.query ? { serpQuery: pages[i]!.query! } : {}),
+        serpPositional: pages[i]!.positional ? 1 : 0,
       },
     });
     if (i === 0) {

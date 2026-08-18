@@ -8,11 +8,11 @@
  * Classifies evidence deterministically (R1.1.3 rules). No LLM, no scraping.
  */
 
-import { createHash } from "node:crypto";
 import { Prisma, SearchEngine } from "@prisma/client";
 import { prisma } from "@/server/prisma/client";
 import { externalGoogleSerpProvider } from "../providers/external-google-serp-provider";
 import { providerConfig } from "../providers/config";
+import { organicSearchDepth, type OrganicSearchProvider } from "../providers/search-depth";
 /**
  * Глубина аудита выдачи. Одно число на весь конвейер: столько же обещает
  * клиенту таблица ТОП-20 (`SERP_TABLE_TOP_N`). Импортировать саму константу
@@ -29,6 +29,7 @@ import { serperAutocomplete } from "../providers/serper-surfaces";
 import { yandexSearchProvider } from "../providers/yandex-search-provider";
 import type { SearchProviderRequest, SearchProviderResult } from "../providers/types";
 import { normalizeUrl } from "./evidence-service";
+import { searchResultDedupHash } from "./search-result-identity";
 import { createManySearchSurfaceItems } from "./search-surface-service";
 import {
   buildOrionQueryPlanDetailed,
@@ -55,10 +56,6 @@ import {
 import type { SearchSurfaceInput, SearchSurfaceType } from "../search-surfaces/types";
 import { loadCaseSubject, type CaseSubjectInfo } from "../agents/mock/mock-utils";
 import type { ProviderRuntimeMode } from "../types";
-
-function sha256(value: string): string {
-  return createHash("sha256").update(value).digest("hex");
-}
 
 export interface OrionProfileRunOptions {
   regions?: OrionRegionCode[];
@@ -219,7 +216,14 @@ async function persistOrganicResults(
       engine,
       url: r.url,
       normalizedUrl: normUrl,
-      dedupHash: sha256(`${normUrl}|${querySpec.query}|${orionRegion}`),
+      // Движок — часть идентичности строки: без него Яндекс, отработав по
+      // запросу первым, вычёркивал строки Google того же адреса.
+      dedupHash: searchResultDedupHash({
+        engine,
+        normalizedUrl: normUrl,
+        query: querySpec.query,
+        region: orionRegion,
+      }),
       title: r.title || null,
       snippet: r.snippet || null,
       rank: r.rank,
@@ -236,7 +240,17 @@ async function persistOrganicResults(
         identityStrictness: querySpec.identityStrictness,
         orionRegion,
         region: orionRegion,
-        providerLimit: providerConfig.google.resultsPerQuery,
+        // Глубина, которую просили у провайдера по этому запросу: настройка
+        // сама по себе её больше не определяет.
+        providerLimit:
+          organicSearchDepth({
+            provider: engine === "GOOGLE" ? "serper" : "yandex",
+            purpose: querySpec.purpose,
+            auditDepth: SERP_AUDIT_DEPTH,
+          }) ??
+          (engine === "GOOGLE"
+            ? providerConfig.google.resultsPerQuery
+            : providerConfig.yandex.resultsPerQuery),
         ...(r.rawMetadata as object),
       } as Prisma.InputJsonValue,
     };
@@ -256,11 +270,6 @@ async function runRegionOrganic(
   let googleStatus = "NOT_QUERIED";
   let yandexStatus = "NOT_QUERIED";
   const profile = regionProfile(region);
-  const limit = Math.max(
-    providerConfig.google.resultsPerQuery,
-    providerConfig.yandex.resultsPerQuery,
-    SERP_AUDIT_DEPTH
-  );
   const runtime = resolveRuntimeStrategy({ mode: runtimeMode, requestedBy: runtimeMode ? "request" : "default" });
   const allowYandex = runtime.mode !== "mock_only" && runtime.steps.some((s) => s.providerId === "yandex");
   const allowGoogle = runtime.mode !== "mock_only" && runtime.steps.some((s) => s.providerId === "google");
@@ -273,6 +282,19 @@ async function runRegionOrganic(
 
   for (const spec of queries) {
     if (!organicPurposes.has(spec.purpose)) continue;
+    // Глубина заказывается на каждый провайдер отдельно: у одного она стоит
+    // денег, у другого нет (`organicSearchDepth`).
+    const withDepth = (
+      base: SearchProviderRequest,
+      provider: OrganicSearchProvider
+    ): SearchProviderRequest => {
+      const depth = organicSearchDepth({
+        provider,
+        purpose: spec.purpose,
+        auditDepth: SERP_AUDIT_DEPTH,
+      });
+      return depth === undefined ? base : { ...base, limit: depth };
+    };
     const req: SearchProviderRequest = {
       caseId,
       subjectFullName: subject.fullName,
@@ -280,12 +302,11 @@ async function runRegionOrganic(
       query: spec.query,
       language: spec.language,
       region: profile.googleGl,
-      limit,
     };
 
     const wantsYandex = spec.providerPreference.includes("yandex");
     if (wantsYandex && allowYandex && profile.yandexSupported && yandexReady()) {
-      const run = await yandexSearchProvider.search(req);
+      const run = await yandexSearchProvider.search(withDepth(req, "yandex"));
       if (run.status === "SUCCESS") {
         yandexStatus = "COLLECTED";
         organic += await persistOrganicResults(caseId, "YANDEX", run.results, region, spec);
@@ -302,11 +323,9 @@ async function runRegionOrganic(
 
     const wantsGoogle = spec.providerPreference.includes("google") || spec.providerPreference.includes("serper");
     if (wantsGoogle && allowGoogle && googleReady()) {
-      const run = await externalGoogleSerpProvider.search({
-        ...req,
-        region: profile.googleGl,
-        language: profile.googleHl,
-      });
+      const run = await externalGoogleSerpProvider.search(
+        withDepth({ ...req, region: profile.googleGl, language: profile.googleHl }, "serper")
+      );
       if (run.status === "SUCCESS") {
         googleStatus = "COLLECTED";
         organic += await persistOrganicResults(caseId, "GOOGLE", run.results, region, spec);

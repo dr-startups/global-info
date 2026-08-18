@@ -25,9 +25,13 @@
     "regionScopeIsolation": true,
     "sourceFooterFromSidebarEvidence": true,
     "panelPagesMatchDrawnRows": true,
+    "serpTableRanksFromOwnEngine": true,
     "noStalePacks": true,
     "packSelfContainedLineage": true,
     "sectionQaAllPassed": true
   },
-  "blocking": []
+  "blocking": [],
+  "skipped": [
+    "сверка печатной таблицы выдачи с наблюдениями пропущена: в деке нет позиционных таблиц выдачи"
+  ]
 }
