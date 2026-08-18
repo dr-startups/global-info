@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  linkReadingClientLine,
   readLinks,
   summarizeReads,
 } from "@/modules/digital-profile/orion-golden/analytics/link-reading-agent";
@@ -90,48 +89,5 @@ describe("порядок и статус", () => {
 
   it("всё прочитано — статус в порядке", () => {
     expect(summarizeReads([{ url: "a", attempts: 1, page: ok("a") }]).status).toBe("OK");
-  });
-});
-
-describe("строка о покрытии для клиента", () => {
-  it("называет непрочитанное и его причины", () => {
-    const line = linkReadingClientLine({
-      status: "PARTIAL",
-      requested: 20,
-      read: 15,
-      failed: 5,
-      retried: 2,
-      byReason: { blocked: 3, not_found: 1, timeout: 1 },
-    });
-    expect(line).toContain("Прочитано 15 страниц из 20");
-    expect(line).toContain("3 закрыли доступ");
-    expect(line).toContain("1 не существует");
-    expect(line).toContain("1 не ответили");
-  });
-
-  it("полная поломка названа поломкой, а не свойством интернета", () => {
-    const line = linkReadingClientLine({
-      status: "BROKEN",
-      requested: 120,
-      read: 0,
-      failed: 120,
-      retried: 0,
-      byReason: { not_fetched: 120 },
-    });
-    expect(line).toContain("Прочитать страницы не удалось");
-    expect(line).toContain("по заголовкам выдачи");
-  });
-
-  it("без ссылок строки нет", () => {
-    expect(
-      linkReadingClientLine({
-        status: "NO_LINKS",
-        requested: 0,
-        read: 0,
-        failed: 0,
-        retried: 0,
-        byReason: {},
-      })
-    ).toBe("");
   });
 });

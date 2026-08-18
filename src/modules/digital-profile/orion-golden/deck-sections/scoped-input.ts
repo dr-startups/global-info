@@ -13,6 +13,7 @@ import type { VerifiedFindingBundle } from "../contracts/verified-finding-bundle
 import type { Finding } from "../contracts/finding";
 import type { SurfaceAnalysisUnit } from "../contracts/surface-analysis";
 import type { SurfaceKind } from "../contracts/common";
+import type { LinkReadingReport } from "../analytics/link-reading-agent";
 
 export type SubjectProfileInput = {
   displayName: string;
@@ -85,10 +86,15 @@ export type MetricSnapshot = {
   /** Сколько страниц не удалось прочитать — честная часть покрытия. */
   linkUnreadCount?: number;
   /**
-   * Строка о покрытии чтения: сколько страниц прочитано из запрошенных и
-   * почему остальные — нет. Отчёт обязан говорить, чего он не прочитал.
+   * Отчёт агента чтения целиком: сколько запрошено, сколько прочитано и по
+   * каким причинам отказано.
+   *
+   * Раньше здесь лежала готовая клиентская строка. Из неё нельзя было собрать
+   * ни абсолют при полном чтении, ни оговорку внутри того предложения, которое
+   * шаблон печатает: строка была написана до того, как стало известно, куда
+   * она попадёт. Состояние — это данные, а слова по ним собирает построитель.
    */
-  linkReadingLine?: string;
+  linkReading?: LinkReadingReport;
   subjectMatchCount: number;
   /** Surname+context / shared domain — visible but not KPI (§2.1). */
   likelySubjectCount: number;

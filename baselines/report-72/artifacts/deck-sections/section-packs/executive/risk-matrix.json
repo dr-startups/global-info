@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v88",
+  "contentVersion": "deck-sections-v89",
   "promptVersion": "risk-matrix-deterministic-v2",
   "contentHash": "sha256:1d1af6b79f13ec8c7e85ab0a5d0680f120ec47f3f7351cd5a4e8365bef73a602",
   "inputHash": "sha256:0dbfe468dd493994e2972792abef8c6cd68af5ab72b47448d1c88bc4e3706a8e:4e2a55cc5e62b499",
-  "generatedAt": "2026-08-18T04:07:16.046Z",
+  "generatedAt": "2026-08-18T05:06:39.207Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [

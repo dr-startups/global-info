@@ -9,7 +9,7 @@ import { DECK_TEMPLATE_REGISTRY, RED_MARKER_LABEL } from "../template-registry";
 import type { ScopedFragmentInput } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import type { Finding } from "../../contracts/finding";
-import { pluralRu } from "../../analytics/finding-synthesizer";
+import { linkReadingThemesIntro } from "../../analytics/link-reading-agent";
 import { clientSafeDomain, clientSafeDomains } from "../../../services/composite-serp-merge";
 import { ADVERSE_PATTERNS, NOT_FOUND_PATTERNS } from "../../analytics/surface-analyzers";
 import { resolveSourceType } from "../../analytics/source-type";
@@ -597,24 +597,22 @@ export function buildSerpFragment(
   }
   if (themesPage) {
     const adverseTotal = linkThemes.reduce((n, t) => n + t.adverseCount, 0);
-    // Покрытие называется словами агента чтения: сколько прочитано и почему
-    // остальные — нет. «N не открылись» скрывает разницу между отказом сайта
-    // и поломкой у нас, а эталон отрасли пишет причины прямо.
-    const readingLine = scoped.metricSnapshot.linkReadingLine;
-    const unreadNote = readingLine
-      ? ` ${readingLine}`
-      : themesPage.unread > 0
-        ? ` ${themesPage.unread} ${pluralRu(themesPage.unread, "страница", "страницы", "страниц")} не открылись — они в подсчёт тем не вошли.`
-        : "";
+    // Утверждение и оговорка о его неполноте — одно целое, и целиком помещаются
+    // в те два предложения, которые печатает шаблон. Слова собирает агент
+    // чтения: они принадлежат тем же числам, что и его отчёт.
+    const reading = scoped.metricSnapshot.linkReading;
     slides.push({
       ...makeSlotSlide({
         slot,
         sectionId,
         title: themesPage.title,
         content: {
-          narrative:
-            `Публикации из ТОП-${SERP_TABLE_TOP_N} прочитаны, и каждая отнесена к теме по своему содержанию. ` +
-            `Нежелательных публикаций: ${adverseTotal}.${unreadNote}`,
+          narrative: linkReadingThemesIntro({
+            report: reading,
+            adverseTotal,
+            topN: SERP_TABLE_TOP_N,
+            unread: themesPage.unread,
+          }),
           table: {
             headers: ["Тема", "Публикаций", "Из них нежелательных"],
             rows: themesPage.rows,
@@ -622,7 +620,14 @@ export function buildSerpFragment(
         },
         evidenceRefs: [],
         findingIds: [],
-        metrics: { themes: linkThemes.length, adverseTotal, unread: themesPage.unread },
+        // Машинное зеркало фразы: база и прочитанное существуют числами, а не
+        // только словами в предложении.
+        metrics: {
+          themes: linkThemes.length,
+          adverseTotal,
+          unread: themesPage.unread,
+          ...(reading ? { read: reading.read, requested: reading.requested } : {}),
+        },
       }),
       slideId: `${baseSlideId}__themes`,
       isContinuation: true,

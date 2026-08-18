@@ -7,11 +7,11 @@
   "datasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "contentVersion": "deck-sections-v88",
+  "contentVersion": "deck-sections-v89",
   "promptVersion": "uae-regional-summary-v4",
-  "contentHash": "sha256:81bd1b102c9b3339a2872802207eadddedc21e9be25a94f14663eebd44f7b21b",
+  "contentHash": "sha256:86a84dec2c6090f0cf2c8741a62ba2994c9c15ffa88f0b5bbf9473603a52bcbb",
   "inputHash": "sha256:8779d78ebd8ae9b1450cf6459d5001067b5a5e28b7489b2e1f1e74cf8003e4f6:af23da0ded0bad96",
-  "generatedAt": "2026-08-18T04:07:16.088Z",
+  "generatedAt": "2026-08-18T05:06:39.248Z",
   "required": true,
   "status": "READY",
   "sourceFindingIds": [
@@ -327,12 +327,13 @@
       "templateId": "regional-summary",
       "title": "ОАЭ / международный: в выдаче есть материалы повышенного внимания",
       "content": {
-        "narrative": "По региону «ОАЭ / международный» собрано 97 материалов. Подтверждённых тем: 6, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; Внимание по линии безопасности / оборонный контур; PEP / RCA / watchlist-сигналы. Доля негатива среди прочитанных страниц не приводится: страницы выдачи в этом прогоне не читались.",
+        "narrative": "По региону «ОАЭ / международный» собрано 97 материалов. Подтверждённых тем: 6, из них повышенного внимания: 3. Ключевые темы для проверки: Криминальные / судебные материалы; Внимание по линии безопасности / оборонный контур; PEP / RCA / watchlist-сигналы.",
         "bullets": [
           "«Криминальные / судебные материалы»\nНайдены публикации по теме:\n«Russian businessman Sergei Glinka is attempting to gain control of the Popeci defense plant in Moldova through the Romanian company Automecanica SA • Следствие» — источник sledst.org\n«CyberCriminal.com» — источник cybercriminal.com.\nГде видно: sledst.org, m.sledst.org. [finding-criminal_legal-subject_match-16447175]"
         ],
         "whatToCheck": "Проверить статусы дел и первоисточники до принятия решений.",
         "sourceNote": "Источники — aboutmanchester.co.uk, alamy.com, amazon.de, audit-it.ru и ещё 2.",
+        "statusNote": "Доля негатива среди прочитанных страниц не приводится: страницы выдачи в этом прогоне не читались.",
         "kpis": [
           {
             "label": "Собрано по региону",

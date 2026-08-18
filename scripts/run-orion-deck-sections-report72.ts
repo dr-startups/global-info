@@ -607,6 +607,12 @@ async function main(): Promise<void> {
         ),
         page13FooterListsHighlightDomains: pageLevelChecks.page13FooterListsHighlightDomains,
         page31NoRuCriminalEvidence: pageLevelChecks.page31NoRuCriminalEvidence,
+        // Страницы регионов говорят о чтении. На эталоне это честная ветка
+        // «не читались» — ворота не вакуумны, а числовую ветку закрепляют
+        // юниты и смок: артефактов чтения у report-72 нет.
+        regionalPagesCarryReadingStatus: regionalPagesCarryReadingStatus(
+          (payload.deckManifest as { finalSlides: Array<Record<string, unknown>> }).finalSlides
+        ),
         // Методология страницы проверки доехала до листа, а не только до
         // полезной нагрузки: этот зазор и пропустил регресс.
         wikipediaCheckTextInPdf: wikipediaCheckTextInPdf(
@@ -724,6 +730,28 @@ export function riskMatrixTelemetryPresent(
       .map((e) => Number(e.page))
   );
   return riskPages.every((page) => reported.has(Number(page)));
+}
+
+/**
+ * Страницы регионов несут строку о чтении в полезной нагрузке рендерера.
+ *
+ * Носитель фразы — `statusNote`, и он проходит длинную цепочку: построитель →
+ * пакет → ассемблер → полезная нагрузка → лист. На живом прогоне 76 фраза
+ * умирала в середине этой цепочки молча, поэтому проверяется именно то, что
+ * получает рендерер. Отсутствие поля — провал, а не пропуск: страница региона
+ * без слов о чтении выглядит ровно так же, как страница, где чтения не было.
+ */
+export function regionalPagesCarryReadingStatus(
+  finalSlides: ReadonlyArray<Record<string, unknown>>
+): boolean {
+  const pages = finalSlides.filter(
+    (s) =>
+      String(s.template ?? "") === "orion_golden_metrics_dashboard" &&
+      /_summary$/u.test(String(s.baseSlotId ?? "")) &&
+      s.isContinuation !== true
+  );
+  if (pages.length === 0) return false;
+  return pages.every((s) => /прочитан|читал/iu.test(String(s.statusNote ?? "")));
 }
 
 /**

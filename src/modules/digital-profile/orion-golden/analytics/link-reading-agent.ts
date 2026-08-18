@@ -21,6 +21,7 @@
  *   свои: очередь ограничена, между попытками пауза.
  */
 
+import { pluralRu } from "./finding-synthesizer";
 import {
   readLinkPage,
   type LinkPageRead,
@@ -61,12 +62,62 @@ export type LinkReadingReport = {
   firstFailureDetail?: string;
 };
 
-/** Клиентская строка о покрытии: отчёт обязан говорить, чего он не прочитал. */
-export function linkReadingClientLine(report: LinkReadingReport): string {
-  if (report.status === "NO_LINKS") return "";
-  if (report.status === "BROKEN") {
-    return `Прочитать страницы не удалось: запрошено ${report.requested}, прочитано 0. Выводы по ссылкам сделаны по заголовкам выдачи.`;
+/**
+ * Интро страницы тем: что прочитано, чем это ограничено и сколько из этого
+ * нежелательного.
+ *
+ * Не больше двух предложений, и это не стилистика: `orion_golden_search_table`
+ * печатает над таблицей ровно два полных предложения, а всё остальное
+ * отбрасывает без записи. Оговорка о неполноте — часть утверждения, а не
+ * украшение: если она не помещается, сокращать надо утверждение. Поэтому
+ * строку покрытия и слова о темах собирает один помощник, а не два — и здесь,
+ * рядом с местом, где эти числа родились.
+ *
+ * Числа покрытия — глобальные, по всему отчёту, а «нежелательных публикаций» —
+ * региональное. Пометка «по отчёту» стоит именно для этого: без неё читатель
+ * региональной страницы делит региональное число на глобальное.
+ *
+ * Абсолют «публикации прочитаны» разрешён только при полном чтении и только
+ * вместе с числами: на прогоне 76 он был напечатан при 74 прочитанных из 120.
+ */
+export function linkReadingThemesIntro(input: {
+  report?: LinkReadingReport;
+  /** Сумма нежелательных публикаций по темам региона. */
+  adverseTotal: number;
+  /** Глубина выдачи, которую называет страница. */
+  topN: number;
+  /** Непрочитанное по своду прогона — единственный источник для легаси-входа. */
+  unread: number;
+}): string {
+  const { report, adverseTotal, topN } = input;
+  if (!report || report.requested === 0) {
+    // Легаси-артефакт: темы есть, отчёта о чтении нет. Абсолюта тогда нет
+    // вовсе — подтвердить его нечем.
+    const unreadNote =
+      input.unread > 0
+        ? ` ${input.unread} ${pluralRu(input.unread, "страница", "страницы", "страниц")} не открылись — они в подсчёт тем не вошли.`
+        : "";
+    return `Каждая прочитанная публикация отнесена к теме по её содержанию, нежелательных публикаций: ${adverseTotal}.${unreadNote}`;
   }
+  if (report.failed === 0 && report.read === report.requested) {
+    return (
+      `Публикации из ТОП-${topN} прочитаны (${report.read} из ${report.requested}), ` +
+      `каждая отнесена к теме по её содержанию. Нежелательных публикаций: ${adverseTotal}.`
+    );
+  }
+  const reasons = unreadReasons(report);
+  const tail = reasons ? ` Из непрочитанных: ${reasons}.` : "";
+  return (
+    `Из ${report.requested} отобранных по отчёту страниц прочитано ${report.read}; ` +
+    `каждая прочитанная отнесена к теме по её содержанию, нежелательных публикаций: ${adverseTotal}.${tail}`
+  );
+}
+
+/**
+ * Причины отказов словами. «N не открылись» скрывает разницу между отказом
+ * сайта и поломкой у нас, а отчёт обязан говорить, чего он не прочитал.
+ */
+function unreadReasons(report: LinkReadingReport): string {
   const blocked = report.byReason.blocked ?? 0;
   const notFound = report.byReason.not_found ?? 0;
   const empty = report.byReason.empty_text ?? 0;
@@ -76,16 +127,7 @@ export function linkReadingClientLine(report: LinkReadingReport): string {
   if (notFound > 0) parts.push(`${notFound} не существует`);
   if (empty > 0) parts.push(`${empty} без читаемого текста`);
   if (other > 0) parts.push(`${other} не ответили`);
-  const tail = parts.length > 0 ? ` Из непрочитанных: ${parts.join(", ")}.` : "";
-  return `Прочитано ${report.read} ${plural(report.read)} из ${report.requested}.${tail}`;
-}
-
-function plural(n: number): string {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return "страница";
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "страницы";
-  return "страниц";
+  return parts.join(", ");
 }
 
 /** Сводка по итогам чтения — она же статус шага. */

@@ -430,6 +430,11 @@ export function toRendererPayload(input: {
       // Visual layouts render the structured sidebar panel; the KPI dashboard
       // draws narrative/KPI/action cards; plain layouts get the merged list.
       bullets: isDashboard || hasVisual ? undefined : isMetricsDashboard ? s.bullets : mergedBullets,
+      // Статусная строка (доля прочитанного на странице региона) печатается
+      // только там, где макет её рисует. Отдать её остальным шаблонам значило
+      // бы передать текст, который никто не нарисует, — та самая беззвучная
+      // потеря, ради которой этот носитель и заводился.
+      statusNote: isMetricsDashboard ? s.statusNote : undefined,
       keyFindings,
       actions,
       metrics,

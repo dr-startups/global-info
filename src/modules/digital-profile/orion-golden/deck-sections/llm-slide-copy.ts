@@ -40,6 +40,12 @@ import { isWeakExampleTitle } from "../analytics/finding-synthesizer";
 import { fixSubjectNameOrder } from "../analytics/russian-name-order";
 
 /**
+ * v18 — правило чисел в основном промпте: всё, что посчитано, остаётся вместе
+ * со своей базой. Требование «сохранив ВСЕ факты, числа» жило только в промпте
+ * ремонта, а основной о числах не говорил ничего — и модель выбрасывала долю
+ * и её основание, считая это редактурой. Теперь это ещё и проверяется
+ * (`rejectDroppedNumbers`), но модели дешевле знать заранее, чем ловить отказ.
+ *
  * v17 — снята нижняя граница длины и требование заполнить все поля.
  *
  * Инструкция плотности жила в двух местах сразу: в промптах фрагментов
@@ -52,7 +58,7 @@ import { fixSubjectNameOrder } from "../analytics/russian-name-order";
  * Версия входит в ключ кеша: без подъёма переиспользовался бы текст,
  * написанный по прежним правилам.
  */
-export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v17";
+export const GPT_SLIDE_COPY_PROMPT_VERSION = "gpt-slide-copy-v18";
 
 /** Mirrors section-validation budgets — from client-text-contract (§6.1). */
 export const GPT_SLIDE_COPY_FIELD_BUDGETS = (() => {
@@ -292,6 +298,7 @@ const COPY_INSTRUCTIONS = [
   "СТРОГО ЗАПРЕЩЕНО упоминать в клиентском тексте процесс подготовки отчёта и источник данных для тебя: слова «черновик», «черновой», «переданный фрагмент», «переданные данные», «scoped», «findings» и любые рассуждения о том, что в черновике чего-то нет или что страницу не следует чем-то наполнять. Клиент видит только выводы о субъекте и фактах, а не твою работу с материалами.",
   "Лимиты длины (верхняя граница с зазором до бюджета валидации): narrative до 1050, каждый bullet до 860, whatWasFound до 480, whyItMatters до 380, whatToCheck до 260.",
   "Длина — следствие материала, а не цель: не добирай объём общими фразами и повторами, чтобы заполнить блок.",
+  "СОХРАНЯЙ ВСЕ ЧИСЛА черновика вместе с их основанием: проценты, доли вида «15 из 50», базы «прочитано 50 из 86 отобранных», счётчики материалов и лет. Переписать формулировку можно, выбросить число или его базу — нельзя: поле с потерянным числом отклоняется целиком и клиент увидит черновик.",
   "НИКОГДА не обрывай цитату или предложение посередине и не оставляй пустые ярлыки вроде «Что делать:.» / «Всего по теме:.» / «Где видно:.» / «контекстом —.». Либо полная фраза с числом/доменом, либо опусти строку целиком.",
   "Не используй заголовки/snippet, обрезанные поисковиком (хвост «…» / «из-за» / «главы в» / «Фамилии,»): либо полная закрытая формулировка, либо опусти цитату.",
   "Пиши КЛИЕНТСКИМ языком консультанта: тема риска → конкретика из заголовков статей → источник (домен) → коротко почему важно. Запрещены внутренние формулировки: «KPI», «тематический блок», «составной набор данных».",
@@ -492,6 +499,33 @@ export function rejectDroppedEvidenceQuotes(draft: string, next: string): string
   return null;
 }
 
+/** Числовые токены текста: целые и дробные, включая проценты и годы. */
+function numberTokens(text: string): string[] {
+  return [...String(text ?? "").matchAll(/\d+(?:[.,]\d+)?/gu)].map((m) => m[0]);
+}
+
+/**
+ * Число и его база, единожды посчитанные, моделью не переписываются.
+ *
+ * На живом прогоне стадия 2 приняла переписку, потерявшую «(30%)» и базу
+ * «из 86 отобранных»: гарды сверяли домены и цитаты, а числа не защищало
+ * ничто. Гейт закрывает это одним правилом для всех переписываемых полей —
+ * реестр защищённых слотов пришлось бы держать в согласии с построителями, а
+ * признак на паке выключил бы полезную переписку целиком.
+ *
+ * Направление одно — только потеря. Числа, добавленные моделью, не блокируем:
+ * сочинение фактов ограничено запретом на новые факты, а двусторонняя проверка
+ * резала бы безвредные перечисления. Поле, которого в черновике не было, гейт
+ * не проверяет: сравнивать не с чем.
+ */
+export function rejectDroppedNumbers(draft: string, next: string): string | null {
+  const present = new Set(numberTokens(next));
+  for (const token of numberTokens(draft)) {
+    if (!present.has(token)) return `dropped-number:${token}`;
+  }
+  return null;
+}
+
 export function contentHashOf(slides: SlideContentContract[]): string {
   return `sha256:${createHash("sha256").update(JSON.stringify(slides)).digest("hex")}`;
 }
@@ -601,7 +635,9 @@ function applyOverrides(input: {
       const normalized = fixName(
         field === "narrative" ? reflowNarrativeParagraphs(value.trim()) : value.trim()
       );
-      const reason = rejectReason(normalized, budget, allowed);
+      const reason =
+        rejectReason(normalized, budget, allowed) ??
+        rejectDroppedNumbers(slide.content[field] ?? "", normalized);
       if (reason) {
         rejectedFields.push(`${slide.slideId}.${field}:${reason}`);
         return;
@@ -620,14 +656,27 @@ function applyOverrides(input: {
     if (o.bullets && !continuationBases.has(slide.slideId)) {
       const draftBullets = slide.content.bullets ?? [];
       const reflowed = o.bullets.map((b) => fixName(reflowThemeBullet(b.trim())));
-      const reasons = reflowed
-        .map(
-          (b, i) =>
-            rejectReason(b, TEXT_BUDGETS.bullet, allowed) ??
-            rejectWeakQuoteLines(b) ??
-            rejectDroppedEvidenceQuotes(draftBullets[i] ?? "", b)
-        )
-        .filter((r): r is string => Boolean(r));
+      /*
+       * Сверка идёт по объединению списков, а не по ответу модели.
+       *
+       * Пока цикл шёл по возвращённым буллетам, хвост черновика не с чем было
+       * сравнить: модель отдавала один буллет вместо двух, список заменялся
+       * целиком, и числа с цитатами выброшенных уходили без единого отказа.
+       * Отсутствующий буллет сверяется с пустой строкой — потеря буллета есть
+       * потеря всего, что в нём было сказано.
+       */
+      const reasons: string[] = [];
+      for (let i = 0; i < Math.max(draftBullets.length, reflowed.length); i += 1) {
+        const draft = draftBullets[i] ?? "";
+        const next = reflowed[i];
+        const reason =
+          (next === undefined
+            ? null
+            : rejectReason(next, TEXT_BUDGETS.bullet, allowed) ?? rejectWeakQuoteLines(next)) ??
+          rejectDroppedEvidenceQuotes(draft, next ?? "") ??
+          rejectDroppedNumbers(draft, next ?? "");
+        if (reason) reasons.push(reason);
+      }
       if (reasons.length > 0) {
         rejectedFields.push(`${slide.slideId}.bullets:${reasons[0]}`);
       } else {

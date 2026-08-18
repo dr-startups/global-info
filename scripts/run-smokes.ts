@@ -119,6 +119,12 @@ const SMOKES: Smoke[] = [
       "рендерер не печатает пустоту: ножницы буллета, телеметрия потери, карточки страницы проверки (нужны Python-пакеты)",
   },
   {
+    name: "reading-lines-on-page",
+    argv: ["PYTHON", "renderer/smoke_reading_lines_reach_the_page.py"],
+    tier: "full",
+    about: "слова о чтении на листе: покрытие над таблицей тем и доля на странице региона (нужны Python-пакеты)",
+  },
+  {
     name: "deck-raster-layout",
     argv: ["PYTHON", "renderer/smoke_deck_raster_layout.py"],
     tier: "full",

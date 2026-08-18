@@ -520,6 +520,19 @@ def _render_slide(ctx: _Ctx, slide: dict[str, Any], assets: dict[str, dict[str, 
                 max_h=900_000 if metrics else 1_100_000,
                 bold=True,
             ) + 70_000
+        # Статусная строка страницы региона: доля негатива среди прочитанного и
+        # база, по которой она посчитана. Своей строкой, а не хвостом нарратива:
+        # подгонка по высоте отбрасывает предложения с конца молча, и на живом
+        # прогоне так исчезал целый абзац.
+        status_note = _safe(slide.get("statusNote") or "")
+        if status_note:
+            y = ctx.body(
+                status_note,
+                y,
+                max_h=500_000,
+                color=MUTED_COLOR,
+                font_size=FS_CAPTION,
+            ) + 60_000
         actions = [a for a in (slide.get("actions") or []) if isinstance(a, dict)]
         if actions and (not bullets or (CONTENT_BOTTOM - y) > 1_800_000):
             y = render_action_block(

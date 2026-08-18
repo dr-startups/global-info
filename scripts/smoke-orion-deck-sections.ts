@@ -53,6 +53,7 @@ import type {
 } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
 import type { ComposedClientSummary } from "../src/modules/digital-profile/orion-golden/contracts/composed-client-summary";
 import { migratePack } from "./migrate-section-packs-v2-to-v3";
+import { printedIntroSentences } from "./lib/search-table-intro";
 
 const inputs = loadReport72DeckInputs();
 
@@ -1330,5 +1331,98 @@ describe("B-0 offline v2->v3 migration (lineage-safe)", () => {
     const { pack, reject } = migratePack({ legacy, manifest });
     assert.equal(pack, undefined);
     assert.ok(reject && /hash/u.test(reject));
+  });
+});
+
+/*
+ * Ветка «чтение состоялось» офлайн-контурами не исполняется: ни у report-72,
+ * ни у золотого кейса нет артефакта чтения ссылок. Поэтому счётчики здесь
+ * синтетические и уровня живого прогона — **только числа**, без имён и
+ * материалов реального дела. Без этого сценария вся числовая половина
+ * честности чтения не проверяется ни одной командой до следующего прогона.
+ */
+describe("страницы говорят, сколько прочитано", () => {
+  const READING = {
+    status: "PARTIAL" as const,
+    requested: 120,
+    read: 74,
+    failed: 46,
+    retried: 3,
+    byReason: { blocked: 23, empty_text: 17, not_fetched: 6 },
+  };
+  const THEMES = [
+    { theme: "Криминальные / судебные материалы", count: 20, adverseCount: 10 },
+    { theme: "Деловая репутация", count: 12, adverseCount: 5 },
+  ];
+
+  function ctxWithReading(): SectionBuildContext {
+    const ctx = makeCtx();
+    return {
+      ...ctx,
+      buildLog: [],
+      metricSnapshot: {
+        ...ctx.metricSnapshot,
+        linkReading: READING,
+        linkUnreadCount: 46,
+        linkReadByRegion: {
+          RU: { requested: 86, read: 50, readOther: 0, adverseRead: 15 },
+          UAE: { requested: 34, read: 24, readOther: 0, adverseRead: 12 },
+        },
+        linkThemesByRegion: { RU: THEMES, UAE: THEMES },
+      },
+    } as SectionBuildContext;
+  }
+
+  it("страница тем печатает базу, прочитанное и причины в первых двух предложениях", () => {
+    const ctx = ctxWithReading();
+    const scoped = {
+      subject: ctx.subject,
+      findings: [],
+      surfaceUnits: ctx.surfaceUnits.filter((u) => u.surface === "organic"),
+      metricSnapshot: ctx.metricSnapshot,
+      scope: fragmentScope("RU_SERP"),
+      evidenceIndex: ctx.evidenceIndex,
+    };
+    const out = buildSerpFragment("RU_SERP", "RU_PROFILE", "Россия", scoped as never);
+    const themes = out.slides.find((x) => x.slideId.endsWith("__themes"));
+    assert.ok(themes, "страница тем обязана появиться при непустых темах региона");
+    const narrative = String(themes.content.narrative);
+    const printed = printedIntroSentences(narrative);
+    assert.equal(printed.length, 2);
+    assert.equal(printed.join(" "), narrative, "покрытие не должно выходить за печатаемые два предложения");
+    assert.match(printed[0]!, /120/u);
+    assert.match(printed[0]!, /74/u);
+    assert.match(printed[1]!, /23 закрыли доступ/u);
+    assert.equal(themes.metrics.requested, 120);
+    assert.equal(themes.metrics.read, 74);
+    for (const sentence of narrative.split(/(?<=[.!?…])\s+/u)) {
+      if (!/прочитаны/u.test(sentence)) continue;
+      assert.match(sentence, /\(\d+ из \d+\)/u, `абсолют без базы: ${sentence}`);
+    }
+  });
+
+  it("страницы регионов несут долю и базу в statusNote, а нарратив о чтении молчит", () => {
+    const ctx = ctxWithReading();
+    const packs = [...buildRuProfileSection(ctx), ...buildUaeProfileSection(ctx)];
+    const expected: Record<string, string> = {
+      RU_SUMMARY:
+        "Негатив среди прочитанных страниц региона: 15 из 50 (30%); прочитано 50 из 86 отобранных.",
+      UAE_SUMMARY:
+        "Негатив среди прочитанных страниц региона: 12 из 24 (50%); прочитано 24 из 34 отобранных.",
+    };
+    for (const [key, sentence] of Object.entries(expected)) {
+      const pack = packs.find((x) => x.fragmentKey === key);
+      assert.ok(pack, `пак ${key} обязан собраться`);
+      const base = pack.slides.find(
+        (x) => x.templateId === "regional-summary" && !x.isContinuation
+      );
+      assert.ok(base, `страница резюме ${key} обязана быть`);
+      assert.equal(base.content.statusNote, sentence);
+      assert.equal(base.metrics.linkRequested, key === "RU_SUMMARY" ? 86 : 34);
+      assert.doesNotMatch(String(base.content.narrative ?? ""), /прочитан/iu);
+      for (const cont of pack.slides.filter((x) => x.isContinuation)) {
+        assert.equal(cont.content.statusNote, undefined, "продолжение доли не повторяет");
+      }
+    }
   });
 });

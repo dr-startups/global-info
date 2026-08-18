@@ -112,13 +112,25 @@ export function buildRegionalSummaryFragment(
     .reduce((sum, lane) => sum + lane.analyzed, 0);
   const topN = scoped.metricSnapshot.analysisTopN ?? 20;
   const uncategorized = uncategorizedBulletForRegion(regionKey, extras);
-  // Доля негатива среди прочитанных страниц региона — предложением и теми же
-  // числами в машинных полях, чтобы приёмка сверяла слова с числами, не
-  // разбирая текст. Полей нет, когда мерить было нечего.
+  /*
+   * Доля негатива среди прочитанных страниц региона — предложением и теми же
+   * числами в машинных полях, чтобы приёмка сверяла слова с числами, не
+   * разбирая текст. Полей нет, когда мерить было нечего.
+   *
+   * Печатный носитель фразы — `content.statusNote`, а не нарратив. Нарратив
+   * переписывает стадия 2 (на живом прогоне она выбросила и процент, и базу
+   * «прочитано 50 из 86 отобранных») и подгоняет по высоте рендерер, отбрасывая
+   * предложения с конца. statusNote не уходит модели, не принимается от неё и
+   * печатается своей строкой.
+   */
   const readShare = scoped.metricSnapshot.linkReadByRegion?.[regionKey];
   const readShareSentence = readShareRegionalSentence(scoped.metricSnapshot, regionKey);
   const readShareMetrics: Record<string, number> = readShare
-    ? { linkRead: readShareDenominator(readShare), linkAdverse: readShare.adverseRead }
+    ? {
+        linkRead: readShareDenominator(readShare),
+        linkAdverse: readShare.adverseRead,
+        linkRequested: readShare.requested,
+      }
     : {};
 
   const slides: SlideContentContract[] = [
@@ -159,7 +171,8 @@ export function buildRegionalSummaryFragment(
         slot: summarySlot,
         sectionId,
         content: {
-          narrative: `По региону ${regionLabel} собрано и проанализировано материалов: ${materialCount}. Подтверждённых тем повышенного внимания, однозначно связанных с проверяемым лицом, по итогам идентификации не выявлено. ${readShareSentence}`,
+          narrative: `По региону ${regionLabel} собрано и проанализировано материалов: ${materialCount}. Подтверждённых тем повышенного внимания, однозначно связанных с проверяемым лицом, по итогам идентификации не выявлено.`,
+          statusNote: readShareSentence,
           bullets: [
             "Каждый материал прошёл проверку принадлежности: учитываются только публикации, уверенно связанные с проверяемым лицом.",
             ...(uncategorized ? [uncategorized.bullet] : []),
@@ -256,13 +269,10 @@ export function buildRegionalSummaryFragment(
               : `По региону «${regionLabel}» собрано ${materialCount} ${materialWord}.`,
             `${themesPhrase.charAt(0).toUpperCase()}${themesPhrase.slice(1)}.`,
             themeLead,
-            readShareSentence,
           ],
-          // Бюджет поднят ровно на длину добавленной фразы: не влезшее
-          // предложение `fitClientSentences` отбрасывает молча, и доля вытеснила
-          // бы ключевые темы вместо того, чтобы встать рядом с ними.
-          500 + readShareSentence.length + 1
+          500
         ),
+        statusNote: readShareSentence,
         // Scorecard-lite KPIs (ORION GSM regional audit vibe).
         kpis: [
           // Плитка называет то же, что и текст рядом: собрано — это собрано.
