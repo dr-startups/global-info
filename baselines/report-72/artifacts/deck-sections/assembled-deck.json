@@ -364,8 +364,7 @@
       "bullets": [
         "7 свидетельств (5 негативных) в источниках audit-it.ru, x.com, m.sledst.org, sledst.org.\nЧто делать: Проверить статусы дел и первоисточники до принятия решений.",
         "6 свидетельств (1 негативных) в источниках x.com, m.sledst.org, sledst.org, repost.news.\nЧто делать: Сверить первоисточники и подготовить документированную позицию.",
-        "4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online.\nЧто делать: Запросить первичные карточки баз и подтвердить принадлежность совпадений.",
-        "43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru.\nЧто делать: Поддерживать актуальный позитивный деловой контент."
+        "4 свидетельств (2 негативных) в источниках rupep.org, vlasti.io, kompromat1.online.\nЧто делать: Запросить первичные карточки баз и подтвердить принадлежность совпадений."
       ],
       "table": {
         "headers": [
@@ -392,12 +391,6 @@
             "Средний",
             "P2",
             "finding-pep_rca_watchlist-subject_match-dfa7da39"
-          ],
-          [
-            "Деловой профиль",
-            "Низкий",
-            "P3",
-            "finding-business_profile-subject_match-a59d6fee"
           ]
         ]
       },
@@ -461,8 +454,7 @@
       "findingIds": [
         "finding-criminal_legal-subject_match-16447175",
         "finding-security_scrutiny-subject_match-0ae970c7",
-        "finding-pep_rca_watchlist-subject_match-dfa7da39",
-        "finding-business_profile-subject_match-a59d6fee"
+        "finding-pep_rca_watchlist-subject_match-dfa7da39"
       ],
       "metrics": {
         "themes": 6,
@@ -499,6 +491,7 @@
       "continuationOf": "p04_risk_dashboard",
       "continuationIndex": 1,
       "bullets": [
+        "43 свидетельств (1 негативных) в источниках highways.today, klerk.ru, tadviser.com, techcult.ru.\nЧто делать: Поддерживать актуальный позитивный деловой контент.",
         "6 свидетельств (2 негативных) в источниках forbes.ru, vlasti.io, kompromat1.online.\nЧто делать: Собрать документальные подтверждения по активам и связям.",
         "1 свидетельств (0 негативных) в источниках tadviser.ru.\nЧто делать: Заказать корпоративную проверку структуры владения."
       ],
@@ -510,6 +503,12 @@
           "Идентификатор"
         ],
         "rows": [
+          [
+            "Деловой профиль",
+            "Низкий",
+            "P3",
+            "finding-business_profile-subject_match-a59d6fee"
+          ],
           [
             "Семья и деловые связи",
             "Низкий",
@@ -582,6 +581,7 @@
         "inventory:serp-obs-cmrjsczh1005pvd9gnuu5e9j7"
       ],
       "findingIds": [
+        "finding-business_profile-subject_match-a59d6fee",
         "finding-family_associates-subject_match-a4427a53",
         "finding-offshore_corporate-subject_match-1b4c64c7"
       ],

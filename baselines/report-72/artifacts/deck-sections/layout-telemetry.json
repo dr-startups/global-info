@@ -68,13 +68,14 @@
       "fontFamily": "Inter",
       "fontSizePt": 11,
       "boxWidth": 10744320,
-      "boxHeight": 4454144,
+      "boxHeight": 2868351,
       "availableHeight": 5025200,
-      "requiredHeight": 4454144,
-      "measuredLines": 4,
-      "textLength": 653,
+      "requiredHeight": 2868351,
+      "measuredLines": 6,
+      "textLength": 493,
       "clipped": false,
-      "measurementUncertain": false
+      "measurementUncertain": false,
+      "drawnBlocks": 3
     },
     {
       "page": 7,
@@ -83,13 +84,14 @@
       "fontFamily": "Inter",
       "fontSizePt": 11,
       "boxWidth": 10744320,
-      "boxHeight": 2227072,
+      "boxHeight": 2868351,
       "availableHeight": 5025200,
-      "requiredHeight": 2227072,
-      "measuredLines": 2,
-      "textLength": 272,
+      "requiredHeight": 2868351,
+      "measuredLines": 6,
+      "textLength": 432,
       "clipped": false,
-      "measurementUncertain": false
+      "measurementUncertain": false,
+      "drawnBlocks": 3
     },
     {
       "page": 8,

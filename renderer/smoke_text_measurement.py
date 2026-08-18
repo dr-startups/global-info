@@ -26,7 +26,9 @@ from orion_golden_render.common import (
     _fit_lines_to_height,
     _bullet_line_style,
     _font_path,
+    _wrapped_line_count,
     assert_render_font_family,
+    font_line_step_emu,
     measure_text_height,
     text_width_px,
 )
@@ -68,8 +70,14 @@ def main() -> int:
         "иначе высота карточки занижается и текст вылезает за неё",
     )
 
+    # Мера у фиттера — от вызывающего: он обязан решать «что влезло» тем же
+    # прибором, которым посчитан бюджет. Пока внутри был зашит межстрочный 1,2,
+    # карточка мерилась одним, а её страховка — другим.
+    def measure(text: str) -> int:
+        return measure_text_height(text, WIDTH, SIZE)
+
     budget = int(h_one * 2.2)
-    fitted = _fit_lines_to_height(three_lines, WIDTH, SIZE, budget)
+    fitted = _fit_lines_to_height(three_lines, budget, measure)
     check(
         "лишние строки отбрасываются целиком",
         fitted.count("\n") < three_lines.count("\n") and fitted.split("\n")[0] == one_line,
@@ -77,7 +85,7 @@ def main() -> int:
     )
     check(
         "первая строка сохраняется даже при нулевом бюджете",
-        _fit_lines_to_height(three_lines, WIDTH, SIZE, 1) == one_line,
+        _fit_lines_to_height(three_lines, 1, measure) == one_line,
     )
 
     check(
@@ -110,6 +118,58 @@ def main() -> int:
         "заголовок без конечной пунктуации не получает её",
         _trim_dangling_tail("Дуров, Павел Валерьевич — Википедия")
         == "Дуров, Павел Валерьевич — Википедия",
+    )
+
+    # --- шаг строки берётся из метрик шрифта, а не из кегля ------------------
+    #
+    # Внешняя опора для карточной меры: замер по растру эталона
+    # (`pages-png/page-06.png`, 144 dpi) даёт 34 px между началами соседних
+    # абзацев тела 11 pt — 2 pt межабзацной отбивки и 30 px самой строки,
+    # то есть 190 500 EMU. Множитель 1,12, выставленный абзацу при отрисовке,
+    # относится к натуральной строке шрифта (у Inter ~1,21 em), а не к кеглю:
+    # посчитанный от кегля шаг вышел бы 139 700 или 156 464 — на 18–27 % ниже
+    # нарисованного, и карточка получила бы вместо запаса недостачу.
+    RASTER_LINE_STEP = 190_500
+    step = font_line_step_emu(11, 1.12)
+    check(
+        "шаг строки 11 pt совпадает с растровым замером эталона (±8 %)",
+        abs(step - RASTER_LINE_STEP) <= RASTER_LINE_STEP * 0.08,
+        f"шаг {step} EMU против замеренных {RASTER_LINE_STEP}",
+    )
+    check(
+        "шаг строки не выведен из одного кегля",
+        step > int(11 * 12_700 * 1.12) and step > int(11 * 12_700),
+        f"шаг {step}, кегль×1,12 = {int(11 * 12_700 * 1.12)}",
+    )
+    check(
+        # Допуск в один EMU — цена округления результата до целого; свойство
+        # проверяется то же: шаг растёт вместе с кеглем, а не зашит числом.
+        "шаг строки пропорционален кеглю",
+        abs(font_line_step_emu(22, 1.12) - 2 * font_line_step_emu(11, 1.12)) <= 2,
+        f"11 pt → {font_line_step_emu(11, 1.12)}, 22 pt → {font_line_step_emu(22, 1.12)}",
+    )
+
+    # --- неразрывный токен ломается по знакам, а не считается одной строкой --
+    #
+    # Домены, транслитерации и адреса приезжают в текст без пробелов: PPTX
+    # ломает такой токен по знакам, а счёт строк объявлял его одной строкой
+    # любой длины — мера занижалась во столько раз, во сколько токен шире
+    # рамки. Прежде это прятал тройной запас карточной меры; после его снятия
+    # прятать нечем.
+    NARROW = 2_000_000
+    token = "moskovskij-mezhdunarodnyj-universitet-imeni-nekrasova.example.com"
+    # Нижняя граница берётся от полной ширины рамки: сколько раз токен в неё не
+    # влез, столько строк он займёт минимум при любом переносе.
+    times_wider = text_width_px(token, 11) / (NARROW / 914_400 * 96)
+    check(
+        "неразрывный токен шире рамки занимает больше одной строки",
+        _wrapped_line_count(token, NARROW, 11) >= int(times_wider),
+        f"строк {_wrapped_line_count(token, NARROW, 11)}, токен шире рамки в {times_wider:.1f} раза",
+    )
+    check(
+        "высота неразрывного токена выше высоты короткого слова",
+        measure_text_height(token, NARROW, 11) > measure_text_height("слово", NARROW, 11),
+        f"токен {measure_text_height(token, NARROW, 11)}, слово {measure_text_height('слово', NARROW, 11)}",
     )
 
     # --- меряем тем начертанием, которым рисуем -----------------------------

@@ -92,7 +92,7 @@
         "narrativeChars": 600,
         "itemChars": 320,
         "maxBulletsPerSlide": 0,
-        "maxTableRowsPerSlide": 4
+        "maxTableRowsPerSlide": 3
       },
       "pagination": "continuation",
       "staticBlocks": [

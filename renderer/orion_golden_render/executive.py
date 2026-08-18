@@ -18,6 +18,7 @@ from .common import (
     CARD_BORDER,
     CONTENT_BOTTOM,
     CONTENT_W,
+    EMU_PER_PT,
     FONT,
     FS_BODY,
     FS_CAPTION,
@@ -31,14 +32,17 @@ from .common import (
     WARN_BG,
     WHITE,
     _Ctx,
-    _META_LINE_RE,
     _bullet_line_style,
     _clip_structured_bullet,
     _clip_words,
+    _close_dangling_lead_in,
     _safe,
     _safe_preserve_breaks,
     _fit_lines_to_height,
     _split_structured_bullet,
+    _structured_bullet_body,
+    _wrapped_line_count,
+    font_line_step_emu,
     measure_text_height,
     record_text_layout,
 )
@@ -128,6 +132,89 @@ def _render_executive_dashboard(ctx: _Ctx, slide: dict[str, Any], title: str) ->
         render_action_block(ctx, label, y, max_h=1_000_000, heading="Следующий шаг")
 
 
+#: Межстрочный, который выставляется абзацам тела карточки при отрисовке.
+_CARD_LINE_SPACING = 1.12
+#: Единственный запас карточной меры.
+#:
+#: Общая `measure_text_height` держит свой запас ×1,18 «на всякий случай», а
+#: карточка брала сверху ещё ×1,12 — вместе с межстрочным 1,2 вместо
+#: нарисованного 1,12 это давало треть лишней высоты: на растре эталона под
+#: последней строкой карточки оставалось 41–42 px пустоты при паддинге 16 px.
+#: Здесь запас один и назван: перенос PPTX чуть агрессивнее замера PIL, и
+#: несколько процентов на это нужны — но именно несколько.
+_CARD_MEASURE_SLACK = 1.06
+
+
+def _card_paragraph_spacing(index: int) -> tuple[int, int]:
+    """Отбивки абзаца строки тела карточки в пунктах: до и после.
+
+    Объявлены отдельно, потому что их читают двое — замер и вывод; разойдутся
+    они, и высота карточки перестанет совпадать с нарисованной.
+    """
+    return (0 if index == 0 else 1), 1
+
+
+def _card_line_style(line: str, index: int, detail_font: float) -> tuple[bool, RGBColor, float]:
+    """Начертание, цвет и кегль строки тела карточки.
+
+    Один ответ на замер и на вывод. Разъедутся стороны хоть на одной ветке —
+    и высота поедет на конкретных карточках: мета-строка («Всего по теме:»,
+    «Где видно:») рисуется кеглем подписи, а мерилась в составе тела кеглем
+    основного текста.
+    """
+    bold, line_color, size_pt = _bullet_line_style(line, is_first=(index == 0))
+    if index == 0 and line.startswith("«"):
+        return False, BODY_COLOR, float(detail_font)
+    if not bold:
+        return False, line_color, float(detail_font) if line_color == BODY_COLOR else FS_CAPTION
+    return bold, line_color, size_pt
+
+
+def _card_body_height(detail: str, text_w: int, detail_font: float) -> int:
+    """Высота тела карточки — по тем строкам, кеглям и отбивкам, какими оно рисуется.
+
+    Общая `measure_text_height` сюда не годится: она меряет тело одним куском
+    одним кеглем, межстрочным 1,2 и отбивкой абзаца 6 pt, а рисуется оно
+    построчно — своим кеглем на строку, межстрочным 1,12 и отбивками 0/1 и
+    1 pt. Умножать её результат на ещё один запас тем более незачем: разница
+    была третью высоты карточки, и «лишняя» карточка уезжала на следующую
+    страницу с пустого листа.
+
+    Умолчания `measure_text_height` при этом не трогаются: у неё десятки
+    потребителей на всех шаблонах, и смена умолчаний — пересчёт всей деки.
+    Путь буллетов решён так же: локальной мерой «как рисуется».
+    """
+    lines = _split_structured_bullet(detail) or ([detail] if detail else [])
+    total = 0
+    for index, line in enumerate(lines):
+        bold, _color, size_pt = _card_line_style(line, index, detail_font)
+        total += _wrapped_line_count(line, text_w, size_pt, bold) * font_line_step_emu(
+            size_pt, _CARD_LINE_SPACING, bold
+        )
+        total += sum(_card_paragraph_spacing(index)) * EMU_PER_PT
+    return int(total * _CARD_MEASURE_SLACK)
+
+
+def _dropped_line_count(before: str, after: str) -> int:
+    """Сколько строк тела не доехало до листа при резе `before` → `after`.
+
+    `before` — то, что обязано было доехать: тело уже без обрубков модели и без
+    повисшего ввода. Уборка этих заглушек — не потеря содержимого, и посчитать
+    её потерей значит поднять CRITICAL там, где ничего не пропало: обоим
+    инспекторам достаточно ненулевого `droppedLines`, чтобы остановить выдачу
+    отчёта. Тем же правилом живёт учёт потерь в `ctx.bullets`.
+
+    Укороченная строка считается снятой целиком: её хвост до клиента не дошёл
+    так же, как целая строка, а «полстроки» телеметрии выразить нечем.
+    """
+    before_lines = [ln for ln in before.split("\n") if ln.strip()]
+    after_lines = [ln for ln in after.split("\n") if ln.strip()]
+    dropped = max(0, len(before_lines) - len(after_lines))
+    if not dropped and len("".join(after_lines)) < len("".join(before_lines)):
+        return 1
+    return dropped
+
+
 def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> None:
     ctx.light_bg()
     y = ctx.title(title or "Матрица рисков", 240000, NAVY, FS_SECTION)
@@ -140,6 +227,9 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
     # шаблонов). Рендерер отвечает только за то, влезает ли карточка целиком;
     # свой срез списка был вторым ответом на чужой вопрос.
     drawn = 0
+    drawn_lines = 0
+    dropped_lines = 0
+    stepped_down = False
     grid_top = y
     for finding in findings:
         tone = str(finding.get("tone") or "warn")
@@ -153,7 +243,14 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         # строка «Что делать» и по ним же меряется высота. `_safe` схлопывал их
         # первым делом, вся строчная логика ниже становилась мёртвой, карточка
         # раздувалась и последняя на странице не рисовалась вовсе.
-        detail = _clip_structured_bullet(_safe_preserve_breaks(finding.get("detail") or ""), 900)
+        raw_detail = _safe_preserve_breaks(finding.get("detail") or "")
+        detail = _clip_structured_bullet(raw_detail, 900)
+        # Бюджет знаков рендерера — такой же рез, как страховка по высоте, и
+        # молчать о нём нельзя. Живой построитель в него не упирается (его
+        # бюджет — 320 знаков), а замороженный пак старого прогона и чужой пак
+        # упираются: с июльских карточек уезжала треть текста при чистой
+        # телеметрии.
+        dropped_lines += _dropped_line_count(_structured_bullet_body(raw_detail), detail)
         # PDF-40 G.1b — drop a leading «Theme» line that duplicates the headline.
         detail_lines = _split_structured_bullet(detail) or ([detail] if detail else [])
         if detail_lines and detail_lines[0].startswith("«"):
@@ -161,13 +258,6 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
             head_core = headline.split("—")[0].strip().lower()
             if theme_core and (theme_core in head_core or head_core in theme_core):
                 detail_lines = detail_lines[1:]
-                detail = "\n".join(detail_lines)
-        # G.1d — drop Example line first when the card is tight (never clip mid-glyph).
-        if any(ln.lower().startswith(("пример:", "примеры:")) for ln in detail_lines):
-            without_ex = [ln for ln in detail_lines if not ln.lower().startswith(("пример:", "примеры:"))]
-            if without_ex:
-                detail_lines = without_ex
-                # Prefer full body without examples; restore only if height allows later.
                 detail = "\n".join(detail_lines)
         # Мерить надо ровно то, что будет нарисовано. При отрисовке текст
         # прогоняется через _split_structured_bullet, и тот может раздробить
@@ -198,37 +288,30 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         detail_font = FS_BODY
         if detail:
             # Grow card to fit complete detail when possible.
-            detail_h = measure_text_height(detail, text_w, detail_font, line_spacing=1.2)
-            needed = int((pad_y + headline_h + 40_000 + detail_h + pad_y) * 1.12)
+            detail_h = _card_body_height(detail, text_w, detail_font)
+            needed = pad_y + headline_h + 40_000 + detail_h + pad_y
             max_h = remaining
             if needed > max_h:
                 # PDF-36 D.3 — font step-down before dropping lines.
                 for candidate in (FS_CAPTION,):
-                    cand_h = measure_text_height(detail, text_w, candidate, line_spacing=1.2)
-                    trial = int((pad_y + headline_h + 40_000 + cand_h + pad_y) * 1.12)
+                    cand_h = _card_body_height(detail, text_w, candidate)
+                    trial = pad_y + headline_h + 40_000 + cand_h + pad_y
                     if trial <= max_h:
                         detail_font = candidate
                         detail_h = cand_h
                         needed = trial
+                        # Защита сработала: содержимое доехало целиком, но
+                        # клиент видит карточку мельче соседних. Это и есть
+                        # `clipped` по определению §8 — и до сих пор оно было
+                        # немым, потому что признак выставлялся по факту
+                        # потери, то есть означал прямо противоположное.
+                        stepped_down = True
                         break
-            if needed > max_h:
-                # PDF-46 I.2 — drop whole structural lines only; never mid-cut.
-                core_lines = [
-                    ln
-                    for ln in (_split_structured_bullet(detail) or [detail])
-                    if not _META_LINE_RE.match(ln)
-                ]
-                while core_lines:
-                    core = "\n".join(core_lines)
-                    detail_h = measure_text_height(core, text_w, detail_font, line_spacing=1.2)
-                    needed = int((pad_y + headline_h + 40_000 + detail_h + pad_y) * 1.12)
-                    if needed <= max_h:
-                        detail = core
-                        break
-                    core_lines.pop()
-                else:
-                    # Cannot fit even a minimal card — leave for continuation.
-                    break
+            # Карточка либо влезает целиком, либо не рисуется и уходит
+            # пагинации (E.2). Прежде здесь стоял третий ответ на вопрос «что
+            # в карточке»: цикл выбрасывал мета-строки и попами с конца снимал
+            # строки, пока карточка не влезет, — молча. На живой странице он
+            # съел «Что делать», а телеметрия ничего об этом не сказала.
             if needed > max_h:
                 break
             h = min(max_h, needed)
@@ -258,10 +341,23 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
             rem = max(120_000, y + h - text_y - pad_y)
             # Страховка на случай остаточной погрешности замера: короб текста
             # не может быть выше карточки, поэтому лишние строки отбрасываются
-            # целиком, а не обрезаются посередине.
-            detail = _fit_lines_to_height(detail, text_w, detail_font, rem)
-            if not detail:
-                continue
+            # целиком, а не обрезаются посередине. Мера у неё та же, которой
+            # посчитана карточка, — иначе она снимала бы строки, которые на
+            # листе помещались.
+            fitted = _fit_lines_to_height(
+                detail, rem, lambda text: _card_body_height(text, text_w, detail_font)
+            )
+            # Снятая здесь строка до клиента не дошла — считается как потеря и
+            # блокирует выдачу. Пустое тело при этом не пропускает карточку:
+            # она уже нарисована и заняла свою высоту, а `continue` уводил от
+            # бейджа и от приращения y, и следующая карточка ложилась поверх.
+            dropped_lines += _dropped_line_count(detail, fitted)
+            # Уборка повисшего ввода — после счёта. Двоеточие без продолжения
+            # снимается и тогда, когда по высоте влезло всё: посчитанная
+            # потерей, эта уборка останавливала выдачу здорового отчёта.
+            detail = _close_dangling_lead_in(fitted)
+        # Условие повторяется: на фиттере тело могло опустеть целиком.
+        if detail:
             box = ctx.slide.shapes.add_textbox(Emu(left), Emu(text_y), Emu(text_w), Emu(rem))
             tf = box.text_frame
             tf.word_wrap = True
@@ -271,14 +367,15 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
             for li, line in enumerate(draw_lines):
                 p = tf.paragraphs[0] if first else tf.add_paragraph()
                 first = False
-                p.space_before = Pt(0 if li == 0 else 1)
-                p.space_after = Pt(1)
-                p.line_spacing = 1.12
-                bold, line_color, size_pt = _bullet_line_style(line, is_first=(li == 0))
-                if li == 0 and line.startswith("«"):
-                    bold, line_color, size_pt = False, BODY_COLOR, float(detail_font)
-                elif not bold:
-                    size_pt = float(detail_font) if line_color == BODY_COLOR else FS_CAPTION
+                space_before, space_after = _card_paragraph_spacing(li)
+                p.space_before = Pt(space_before)
+                p.space_after = Pt(space_after)
+                p.line_spacing = _CARD_LINE_SPACING
+                bold, line_color, size_pt = _card_line_style(line, li, detail_font)
+                # Строки переноса, а не структурные: поле схемы называется
+                # «сколько строк намерено», и все остальные его производители
+                # пишут туда именно перенос.
+                drawn_lines += _wrapped_line_count(line, text_w, size_pt, bold)
                 r = p.add_run()
                 r.text = line
                 r.font.name = FONT
@@ -356,10 +453,17 @@ def _render_risk_matrix_grid(ctx: _Ctx, slide: dict[str, Any], title: str) -> No
         box_height=used,
         available_height=max(0, CONTENT_BOTTOM - grid_top),
         required_height=used,
-        measured_lines=drawn,
+        measured_lines=drawn_lines,
         text_length=sum(len(_safe(f.get("detail") or "")) for f in findings),
-        clipped=drawn < len(findings),
+        # `clipped` и `dropped_*` отвечают на разные вопросы. Первый — «защита
+        # сработала»: карточке понижен кегль, но содержимое доехало целиком.
+        # Второй — «содержимое потеряно». Пока клип выставлялся по факту
+        # потери, он значил ровно противоположное записанному в §8, а
+        # понижение кегля не было слышно вовсе.
+        clipped=stepped_down,
         dropped_bullets=len(findings) - drawn,
+        dropped_lines=dropped_lines,
+        drawn_blocks=drawn,
     )
 
 

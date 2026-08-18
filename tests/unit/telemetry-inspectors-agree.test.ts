@@ -60,6 +60,18 @@ describe("инспекторы телеметрии и потеря содерж
     expect(issues.map((i) => i.code)).not.toContain("text-clipping");
   });
 
+  it("снятая строка внутри нарисованного блока — тоже потеря", () => {
+    // Страховка фиттера внутри карточки матрицы снимает строки целиком: блок
+    // на листе есть, но «Что делать» до клиента не дошло. Оба инспектора
+    // судят сумму `droppedBullets + droppedLines`, поэтому потеря без единого
+    // выброшенного блока обязана блокировать так же.
+    const lines = { ...DROPPED, droppedBullets: 0, droppedLines: 2 };
+    const issues = inspectLayoutTelemetry(telemetryFile([lines]));
+    expect(issues.map((i) => i.code)).toContain("CONTENT_DROPPED_BY_RENDERER");
+    expect(issues[0]!.severity).toBe("CRITICAL");
+    expect(issues.map((i) => i.code)).not.toContain("text-clipping");
+  });
+
   it("обрезка без потери остаётся обрезкой", () => {
     const clippedOnly = { ...DROPPED, droppedBullets: 0, droppedLines: 0 };
     const issues = inspectLayoutTelemetry(telemetryFile([clippedOnly]));

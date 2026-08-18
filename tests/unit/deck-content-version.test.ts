@@ -35,19 +35,41 @@ const BUILDERS_DIR = join(SECTIONS_DIR, "fragment-builders");
  * построителя, но отпечаток её не замечал. Найдено на разборе: таблица
  * покрытия региона годами не получала поверхностей выдачи именно из-за
  * области, и починка прошла бы мимо проверки версии.
+ *
+ * `template-registry.ts` — по той же причине: в нём живут ёмкости страниц и
+ * бюджеты знаков. Ёмкость матрицы 4 → 3 изменила раскладку карточек и
+ * `contentHash` секции, а отпечаток не дрогнул — паки со старой раскладкой
+ * приехали бы из кэша под новый рендерер.
  */
-const EXTRA_SOURCES = ["section-builders.ts", "canonical-slots.ts", "continuation-cleanup.ts"];
+const EXTRA_SOURCES = [
+  "section-builders.ts",
+  "canonical-slots.ts",
+  "continuation-cleanup.ts",
+  "template-registry.ts",
+];
 
-/** Отпечаток исходников построителей: имя файла + содержимое, в порядке имён. */
-function fingerprintBuilders(): string {
+/** Исходники, из которых считается отпечаток, — в порядке хеширования. */
+function fingerprintSources(): Array<{ name: string; path: string }> {
+  return [
+    ...readdirSync(BUILDERS_DIR)
+      .filter((f) => f.endsWith(".ts"))
+      .sort()
+      .map((name) => ({ name, path: join(BUILDERS_DIR, name) })),
+    ...[...EXTRA_SOURCES].sort().map((name) => ({ name, path: join(SECTIONS_DIR, name) })),
+  ];
+}
+
+/**
+ * Отпечаток исходников построителей: имя файла + содержимое, в порядке имён.
+ *
+ * Чтение отдаётся параметром, чтобы проверка «правка такого-то файла двигает
+ * отпечаток» была настоящей: подменённое содержимое обязано менять результат.
+ */
+function fingerprintBuilders(read: (path: string) => Buffer | string = readFileSync): string {
   const h = createHash("sha256");
-  for (const name of readdirSync(BUILDERS_DIR).filter((f) => f.endsWith(".ts")).sort()) {
+  for (const { name, path } of fingerprintSources()) {
     h.update(name);
-    h.update(readFileSync(join(BUILDERS_DIR, name)));
-  }
-  for (const name of [...EXTRA_SOURCES].sort()) {
-    h.update(name);
-    h.update(readFileSync(join(SECTIONS_DIR, name)));
+    h.update(read(path));
   }
   return h.digest("hex").slice(0, 16);
 }
@@ -67,6 +89,18 @@ describe("версия содержимого деки не отстаёт от 
         `  DECK_BUILDER_FINGERPRINT = "${actual}"`,
       ].join("\n")
     ).toBe(DECK_BUILDER_FINGERPRINT);
+  });
+
+  it("правка реестра шаблонов двигает отпечаток", () => {
+    // Реестр — часть содержимого страниц, а не настройка сборки: в нём живут
+    // ёмкости страниц и бюджеты знаков. Ёмкость матрицы 4 → 3 изменила
+    // раскладку карточек и `contentHash` секции, а отпечаток остался прежним —
+    // паки со старой раскладкой приехали бы из кэша под новый рендерер.
+    const registry = join(SECTIONS_DIR, "template-registry.ts");
+    const patched = fingerprintBuilders((path) =>
+      path === registry ? `${readFileSync(path, "utf8")}\n// правка` : readFileSync(path)
+    );
+    expect(patched).not.toBe(fingerprintBuilders());
   });
 
   it("версия названа так, как её ждёт кэш", () => {

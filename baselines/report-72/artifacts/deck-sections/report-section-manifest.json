@@ -3,7 +3,7 @@
   "caseId": "cmreamy2t0002o30f29urzcog",
   "reportRunId": "orion-canary-1783980828528",
   "sourceDatasetId": "composite-cmreamy2t0002o30f29urzcog-59139ee6683b",
-  "generatedAt": "2026-08-18T13:04:16.859Z",
+  "generatedAt": "2026-08-18T21:18:49.474Z",
   "sectionOrder": [
     "FRONT_MATTER",
     "EXECUTIVE",
@@ -42,7 +42,7 @@
       "artifactPath": "section-packs/executive/risk-matrix.json",
       "required": true,
       "status": "READY",
-      "contentHash": "sha256:1d1af6b79f13ec8c7e85ab0a5d0680f120ec47f3f7351cd5a4e8365bef73a602",
+      "contentHash": "sha256:cd6c2db7d63b83b5b5ffa9a6c1cccdf9c77a9e4b4df6ea3f5b3147a522944591",
       "slideCount": 2,
       "validationPassed": true
     },

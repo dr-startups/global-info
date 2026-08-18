@@ -10,8 +10,9 @@ import json
 import os
 import re
 import tempfile
+from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import fitz
 from pptx import Presentation
@@ -190,6 +191,7 @@ def record_text_layout(
     measurement_uncertain: bool = False,
     dropped_bullets: int = 0,
     dropped_lines: int = 0,
+    drawn_blocks: int | None = None,
 ) -> None:
     entry: dict[str, Any] = {
         "page": page,
@@ -206,6 +208,11 @@ def record_text_layout(
         "clipped": clipped,
         "measurementUncertain": measurement_uncertain,
     }
+    # Блоков на странице бывает больше одного (карточная сетка), и это не то
+    # же самое, что число строк: пока карточки писались в `measuredLines`,
+    # поле схемы «сколько строк намерено» отвечало на чужой вопрос.
+    if drawn_blocks is not None:
+        entry["drawnBlocks"] = drawn_blocks
     # Потеря содержимого — не то же самое, что вылезший за рамку текст, и
     # называется отдельно (шаг 16, 07.6).
     if dropped_bullets or dropped_lines:
@@ -295,6 +302,35 @@ def _load_measure_font(font_size_pt: float, bold: bool):
     return ImageFont.truetype(fp, size=max(8, int(round(font_size_pt * 96 / 72))))
 
 
+#: Кегль, на котором снимается натуральная высота строки начертания.
+#:
+#: PIL округляет ascent/descent до целых пикселей, а рабочие кегли мелкие: на
+#: 15 px (это 11 pt) отношение выходит 1,267 вместо 1,211 — лишние 4,6 % на
+#: каждой строке. От кегля отношение не зависит, поэтому снимается один раз на
+#: крупном размере: 750 pt — это ровно 1000 px, где округление незаметно.
+_LINE_METRIC_PT = 750.0
+
+
+@lru_cache(maxsize=4)
+def _natural_line_ratio(bold: bool) -> float:
+    """Натуральная высота строки начертания в долях кегля (у Inter ~1,21)."""
+    font = _load_measure_font(_LINE_METRIC_PT, bold)
+    ascent, descent = font.getmetrics()
+    return (ascent + descent) / (_LINE_METRIC_PT * 96 / 72)
+
+
+def font_line_step_emu(font_size_pt: float, line_spacing: float, bold: bool = False) -> int:
+    """Шаг строки: натуральная строка начертания × выставленный межстрочный.
+
+    Межстрочный, который ставится абзацу (`p.line_spacing`), — множитель к
+    натуральной строке шрифта, а не к кеглю. Замер по растру эталона: тело
+    11 pt с межстрочным 1,12 идёт шагом 190 500 EMU, а «кегль × 1,12» дало бы
+    156 464 — на 18 % меньше нарисованного. Мера, посчитанная от кегля, обещает
+    больше строк, чем помещается, и текст уезжает за блок.
+    """
+    return int(font_size_pt * EMU_PER_PT * _natural_line_ratio(bold) * line_spacing)
+
+
 def text_width_px(text: str, font_size_pt: float, bold: bool = False) -> int:
     """Ширина строки тем начертанием, которым она будет нарисована.
 
@@ -330,6 +366,19 @@ def _wrapped_line_count(
         line = ""
         lines = 1
         for word in words:
+            word_box = font.getbbox(word)
+            word_px = int(word_box[2] - word_box[0])
+            if word_px > width_px:
+                # Токен без пробелов шире рамки (домен, транслитерация, адрес)
+                # PPTX ломает по знакам. Прежний счёт объявлял его одной
+                # строкой любой длины, и мера занижалась во столько раз, во
+                # сколько он шире рамки. Хвост токена считается занявшим свою
+                # строку целиком: где именно он оборвётся, знает только вывод.
+                if line:
+                    lines += 1
+                lines += -(-word_px // width_px) - 1
+                line = ""
+                continue
             trial = word if not line else f"{line} {word}"
             bbox = font.getbbox(trial)
             if int(bbox[2] - bbox[0]) <= width_px or not line:
@@ -493,12 +542,23 @@ def _safe(text: object) -> str:
     return val.strip()
 
 
-def _fit_lines_to_height(text: str, width_emu: int, size_pt: float, budget_emu: int) -> str:
+def _fit_lines_to_height(text: str, budget_emu: int, measure: Callable[[str], int]) -> str:
     """Оставляет столько целых строк, сколько помещается по высоте.
 
     Строка отбрасывается целиком: обрезка посередине даёт обрубок, который
     читается как сбой. Если не помещается даже первая, она остаётся — пустая
     карточка хуже плотной.
+
+    Мера приходит от вызывающего и обязана быть той же, которой посчитан
+    бюджет. Пока внутри был зашит межстрочный 1,2, страховка решала «что
+    влезло» не тем прибором, которым мерился блок, — и выбрасывала строки,
+    которые на листе помещались.
+
+    Уборка повисшего ввода (`_close_dangling_lead_in`) осталась вызывающему:
+    здесь она снималась всегда, а не только после реза, и разница «строк до /
+    строк после» объявляла потерей чистку, при которой ничего не пропало.
+    Считать потерю надо до гигиены — так же, как её считает
+    `_clip_structured_bullet`, зовущий уборку только на ветке реза.
     """
     lines = [ln for ln in str(text or "").split("\n") if ln.strip()]
     if not lines:
@@ -506,10 +566,10 @@ def _fit_lines_to_height(text: str, width_emu: int, size_pt: float, budget_emu: 
     kept: list[str] = []
     for ln in lines:
         trial = "\n".join(kept + [ln])
-        if measure_text_height(trial, width_emu, size_pt, line_spacing=1.2) > budget_emu and kept:
+        if measure(trial) > budget_emu and kept:
             break
         kept.append(ln)
-    return _close_dangling_lead_in("\n".join(kept))
+    return "\n".join(kept)
 
 
 def _close_dangling_lead_in(text: str) -> str:
