@@ -47,6 +47,7 @@ import {
 import type { CompositeMergeResult, CompositeObservation } from "./composite-serp-merge";
 import type { ReportDataBinding } from "./unified-collection-types";
 import { mapSurfaceBucket } from "../orion-golden/classic/composite-serp-overlay-merge";
+import { disabledSurfaceCoverageCells } from "./arsenkin-enrichment-state";
 import type { RendererAssetEntry } from "../orion-golden/deck-sections/run-deck-build";
 import type { VisualAssetsBySlot } from "../orion-golden/deck-sections/canonical-slots";
 import { buildCanonicalVisualAssets } from "./canonical-visual-assets";
@@ -54,6 +55,7 @@ import { DECK_CONTENT_VERSION } from "../orion-golden/deck-sections/content-vers
 import {
   buildReportQualitySummary,
   buildReportQualityWarnings,
+  readJsonSafe,
   toJobReportQuality,
   type JobReportQuality,
   type ReportQualityPrismaCounts,
@@ -812,12 +814,21 @@ export async function runCanonicalReportPrepare(
       const surface = observationSurfaceBucket(obs);
       coverageSet.set(`${region}|${engine}|${surface}`, { region, engine, surface });
     }
-    const coverageRows = [...coverageSet.values()].map((c) => ({
-      region: c.region,
-      engine: c.engine,
-      surface: c.surface,
-      status: "OK",
-    })) as unknown as Parameters<typeof runOrionAnalyticsPipeline>[0]["coverageRows"];
+    // Наблюдения знают только о собранном. О поверхностях, вопрос о которых в
+    // этом прогоне не задавали, конвейеру рассказывает состояние обогащения —
+    // и только оно: спрашивать текущий состав `ARSENKIN_TOOLS` значило бы
+    // переписать историю старого прогона при его пересборке.
+    const coverageRows = [
+      ...[...coverageSet.values()].map((c) => ({
+        region: c.region,
+        engine: c.engine,
+        surface: c.surface,
+        status: "OK",
+      })),
+      ...disabledSurfaceCoverageCells(
+        readJsonSafe(join(input.artifactsDir, "arsenkin-enrichment-state.json"))
+      ),
+    ] as unknown as Parameters<typeof runOrionAnalyticsPipeline>[0]["coverageRows"];
 
     const analytics = await runOrionAnalyticsPipeline({
       caseId: input.caseId,

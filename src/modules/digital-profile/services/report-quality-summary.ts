@@ -162,7 +162,8 @@ export type ReportQualityPrismaCounts = {
   searchSurfaceItem: { count: (args: { where: { caseId: string } }) => Promise<number> };
 };
 
-function readJsonSafe<T>(path: string): T | null {
+/** Артефакт джобы, которого может не быть (голден, фикстуры): тогда — null. */
+export function readJsonSafe<T>(path: string): T | null {
   if (!existsSync(path)) return null;
   try {
     return JSON.parse(readFileSync(path, "utf8")) as T;

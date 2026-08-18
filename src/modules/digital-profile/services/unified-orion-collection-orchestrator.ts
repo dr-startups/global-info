@@ -23,11 +23,7 @@ import type {
   SurfaceCoverageBreakdown,
   UnifiedCollectionJob,
 } from "./unified-collection-types";
-import {
-  computeCoverageProgress,
-  emptyCoverage,
-  FIRST36_PLANNED_SUPPORTED_SURFACES,
-} from "./unified-collection-types";
+import { computeCoverageProgress } from "./unified-collection-types";
 import {
   assessRealCollection,
   captureBaseCollectionManifest,
@@ -70,7 +66,10 @@ import {
 } from "./job-subject-profile-bootstrap";
 import type { ClassifierSubjectProfile } from "../orion-golden/analytics/subject-resolution-classifier";
 import { invalidateDownstreamAfterEnrichmentIngest } from "./unified-downstream-invalidation";
-import { normalizeArsenkinEnrichmentState } from "./arsenkin-enrichment-state";
+import {
+  normalizeArsenkinEnrichmentState,
+  surfaceCoverageFromEnrichmentState,
+} from "./arsenkin-enrichment-state";
 import type { FullAuditResultDTO } from "./agent-run-service";
 import { ensurePersistedUnifiedBaseReportRun } from "./unified-base-report-run";
 import { ARSENKIN_REAL_AGENT_NAMES } from "../agents/real/real-arsenkin-agents";
@@ -1240,16 +1239,7 @@ async function stepArsenkin(
     unifiedJobId: job.unifiedJobId,
   });
   const enrichmentRunIds = tick.enrichmentRunIds;
-  const planned = FIRST36_PLANNED_SUPPORTED_SURFACES.length;
-  const coverage: SurfaceCoverageBreakdown = {
-    ...emptyCoverage(planned),
-    inFlight: state.pendingAgents.length,
-    measured: state.enrichmentObservationCount > 0 ? Math.min(planned, state.completedAgents.length) : 0,
-    noResults: state.agents.filter((a) => a.terminalKind === "EMPTY_VALID" || a.terminalKind === "NO_RESULTS")
-      .length,
-    failedRetryable: state.failedAgents.length,
-    progressRatio: state.completedAgents.length / ARSENKIN_REAL_AGENT_NAMES.length,
-  };
+  const coverage: SurfaceCoverageBreakdown = surfaceCoverageFromEnrichmentState(state);
 
   await writeUnifiedArtifact(job.caseId, job.unifiedJobId, "arsenkin-enrichment-state.json", state);
   // Keep job-scoped enrichment state even when failing closed (UI + exact resume).

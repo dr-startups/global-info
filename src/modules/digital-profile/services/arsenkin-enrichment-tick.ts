@@ -954,9 +954,15 @@ export async function runDurableArsenkinEnrichmentTick(input: {
       agents.push({
         agentName,
         enrichmentRunId: runId,
+        // `scheduled`/`terminal`/`ingested` остаются истинными намеренно: на них
+        // держатся гейты завершения стадии, и без них прогон снова ждал бы
+        // отключённых вечно. Меняется только **слово исхода**: выключенный
+        // составом инструмент отвечает `DISABLED`, а не «спросили, пусто».
+        // Оффлайн старше состава: там ни один вопрос не задавался вообще, и
+        // весь контур объявляет такую пустоту валидной — это `EMPTY_VALID`.
         scheduled: true,
         terminal: true,
-        terminalKind: "EMPTY_VALID",
+        terminalKind: input.offlineEmptyValid ? "EMPTY_VALID" : "DISABLED",
         ingested: true,
         pendingTaskCount: 0,
         doneTaskCount: 0,

@@ -235,17 +235,27 @@ export type ScopedEvidenceIndex = Record<
 /**
  * REMEDIATION §7.4 — why a surface page is empty.
  * - MEASURED_EMPTY: collection ran, zero materials (honest «проверено, пусто»)
+ * - MEASURED_PARTIAL: одна поисковая система проверена, другую не спрашивали
  * - NOT_COLLECTED: surface was not gathered in this run
  * - COLLECTION_FAILED: agent/provider failed (client-safe reasonLabel only)
  */
 export type EmptySurfaceCollectionKind =
   | "MEASURED_EMPTY"
+  | "MEASURED_PARTIAL"
   | "NOT_COLLECTED"
   | "COLLECTION_FAILED";
 
 export type SurfaceCollectionHint = {
   surface: string;
   region?: string;
+  /**
+   * Поисковая система ячейки покрытия (YANDEX / GOOGLE).
+   *
+   * Без неё «проверено» одной системы распространялось на все: на прогоне 76
+   * разобранная выдача Google превращала страницу в утверждение о проверке
+   * нейро-ответов Яндекса, которых никто не спрашивал.
+   */
+  engine?: string;
   /** Raw coverage status (OK / NO_RESULTS / ERROR / …) — never shown to client. */
   status: string;
   errorCode?: string | null;
@@ -273,6 +283,12 @@ export type EmptySurfaceCollectionStatus = {
   kind: EmptySurfaceCollectionKind;
   /** Human-readable cause for NOT_COLLECTED / FAILED; never internal codes. */
   reasonLabel?: string;
+  /**
+   * Поисковые системы частичного состояния — ключами (YANDEX / GOOGLE).
+   * Клиентские имена подставляет слой текста: здесь данные, не формулировки.
+   */
+  measuredEngines?: string[];
+  notCollectedEngines?: string[];
 };
 
 export type ScopedFragmentInput = {
@@ -361,6 +377,43 @@ export function normalizeCoverageSurface(raw: string): string {
   return s;
 }
 
+/**
+ * Поисковая система, которую клиентский текст умеет назвать.
+ *
+ * Один ответ на вопрос «что это за движок»: по нему и группируются состояния
+ * сбора, и подставляются имена в текст. Всё прочее (MULTI, имя провайдера)
+ * — внутренний токен, и в отчёт он не попадает.
+ */
+export function clientNamedSearchEngine(raw: string | undefined): string | null {
+  const e = String(raw ?? "").toUpperCase();
+  if (e.includes("YANDEX")) return "YANDEX";
+  if (e.includes("GOOGLE") || e.includes("SERPER")) return "GOOGLE";
+  return null;
+}
+
+/** Статус ячейки: сбор по ней состоялся. */
+function isMeasuredStatus(status: string | undefined): boolean {
+  return /^(OK|NO_RESULTS|EMPTY_VALID|SUCCESS|MEASURED)$/i.test(String(status ?? ""));
+}
+
+/**
+ * Статус ячейки: вопрос не задавали.
+ *
+ * Это не сбой: сбоем считается всё, что не белый список и не эти два статуса,
+ * — и «не спрашивали» попало бы в ветвь «не удалось собрать», то есть в другую
+ * ложь.
+ */
+function isNotCollectedStatus(status: string | undefined): boolean {
+  return /^(NOT_COLLECTED|DISABLED)$/i.test(String(status ?? ""));
+}
+
+/** Причина «не собирали» для клиента — без внутренних кодов. */
+function clientNotCollectedLabel(errorCode?: string | null): string {
+  return /DISABLED/i.test(String(errorCode ?? ""))
+    ? "инструмент сбора не входил в состав прогона"
+    : "поверхность не собиралась в этом прогоне";
+}
+
 /** Client-safe failure cause — internal status/errorCode never leak. */
 export function clientCollectionFailureLabel(
   status: string,
@@ -404,14 +457,14 @@ export function resolveEmptySurfaceCollection(
     return regionScope.some((r) => regionMatches(r, h.region));
   });
 
-  const failedHint = hints.find((h) => {
-    const st = String(h.status ?? "").toUpperCase();
-    return (
-      st.length > 0 &&
-      !["OK", "NO_RESULTS", "EMPTY_VALID", "SUCCESS", "MEASURED"].includes(st) &&
-      !/^N\/?A$/i.test(st)
-    );
-  });
+  // Состояние сбора считается по каждой поисковой системе отдельно: «проверено»
+  // печатается только про ту, которую действительно спрашивали. Подсказки без
+  // движка (все прочие поверхности) в разбиение не входят и ведут себя как
+  // раньше.
+  const partial = partialByEngine(hints);
+  if (partial) return partial;
+
+  const failedHint = hints.find((h) => isFailedHint(h));
   if (failedHint) {
     return {
       kind: "COLLECTION_FAILED",
@@ -419,9 +472,9 @@ export function resolveEmptySurfaceCollection(
     };
   }
 
-  const measuredHint = hints.some((h) =>
-    /^(OK|NO_RESULTS|EMPTY_VALID|SUCCESS|MEASURED)$/i.test(String(h.status ?? ""))
-  );
+  const notCollectedHint = hints.find((h) => isNotCollectedStatus(h.status));
+  const notCollectedReason = clientNotCollectedLabel(notCollectedHint?.errorCode);
+  const measuredHint = hints.some((h) => isMeasuredStatus(h.status));
 
   let anyMeasured = measuredHint;
   let anyNotCollected = false;
@@ -441,9 +494,7 @@ export function resolveEmptySurfaceCollection(
   // сбор за пределами регионального скоупа, страница региона честно говорит
   // «выполнено, по региону пусто», а не «не собиралась».
   const measuredElsewhere = (scoped.surfaceCollectionHints ?? []).some(
-    (h) =>
-      normalizeCoverageSurface(h.surface) === surfaceKey &&
-      /^(OK|NO_RESULTS|EMPTY_VALID|SUCCESS|MEASURED)$/i.test(String(h.status ?? ""))
+    (h) => normalizeCoverageSurface(h.surface) === surfaceKey && isMeasuredStatus(h.status)
   );
   if (measuredElsewhere) {
     return {
@@ -452,19 +503,62 @@ export function resolveEmptySurfaceCollection(
     };
   }
 
-  if (units.length === 0 && hints.length === 0) {
-    return {
-      kind: "NOT_COLLECTED",
-      reasonLabel: "поверхность не собиралась в этом прогоне",
-    };
-  }
   if (anyNotCollected || hints.length > 0 || units.length === 0) {
-    return {
-      kind: "NOT_COLLECTED",
-      reasonLabel: "поверхность не собиралась в этом прогоне",
-    };
+    return { kind: "NOT_COLLECTED", reasonLabel: notCollectedReason };
   }
   return { kind: "MEASURED_EMPTY" };
+}
+
+/** Сбой сбора — всё, что не измерение, не «не спрашивали» и не пустой статус. */
+function isFailedHint(hint: SurfaceCollectionHint): boolean {
+  const st = String(hint.status ?? "").toUpperCase();
+  return (
+    st.length > 0 &&
+    !isMeasuredStatus(st) &&
+    !isNotCollectedStatus(st) &&
+    !/^N\/?A$/i.test(st)
+  );
+}
+
+/**
+ * Частичное состояние: по одной поисковой системе сбор был, по другой — нет.
+ *
+ * Внутри одной системы приоритет прежний: сбой сильнее измерения, а измерение
+ * сильнее «не спрашивали» (на прогоне 76 по Google одновременно есть
+ * разобранная выдача и невыполненный запрос к инструменту провайдера — и
+ * разобранная выдача остаётся фактом).
+ */
+function partialByEngine(
+  hints: SurfaceCollectionHint[]
+): EmptySurfaceCollectionStatus | null {
+  const byEngine = new Map<string, SurfaceCollectionHint[]>();
+  for (const h of hints) {
+    const engine = clientNamedSearchEngine(h.engine);
+    if (!engine) continue;
+    const group = byEngine.get(engine);
+    if (group) group.push(h);
+    else byEngine.set(engine, [h]);
+  }
+  if (byEngine.size < 2) return null;
+
+  const measuredEngines: string[] = [];
+  const notCollectedEngines: string[] = [];
+  let reasonLabel: string | undefined;
+  for (const engine of [...byEngine.keys()].sort()) {
+    const group = byEngine.get(engine)!;
+    const failed = group.find((h) => isFailedHint(h));
+    if (!failed && group.some((h) => isMeasuredStatus(h.status))) {
+      measuredEngines.push(engine);
+      continue;
+    }
+    notCollectedEngines.push(engine);
+    if (reasonLabel) continue;
+    reasonLabel = failed
+      ? clientCollectionFailureLabel(failed.status, failed.errorCode)
+      : clientNotCollectedLabel(group.find((h) => isNotCollectedStatus(h.status))?.errorCode);
+  }
+  if (measuredEngines.length === 0 || notCollectedEngines.length === 0) return null;
+  return { kind: "MEASURED_PARTIAL", reasonLabel, measuredEngines, notCollectedEngines };
 }
 
 export function buildScopedInput(input: {

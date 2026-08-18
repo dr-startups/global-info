@@ -21,7 +21,7 @@ import type {
   SurfaceCollectionHint,
   ComplianceScreeningRecord,
 } from "./scoped-input";
-import { normalizeCoverageSurface } from "./scoped-input";
+import { clientNamedSearchEngine, normalizeCoverageSurface } from "./scoped-input";
 import { normalizeSourceType } from "../analytics/source-type";
 import { pageQuoteForClient } from "../analytics/client-quote-hygiene";
 import type { LinkReadingReport } from "../analytics/link-reading-agent";
@@ -217,9 +217,17 @@ export function googleAnswerProbeHints(
     if (surface === "organic" && isGoogle(o.engine)) probedRegions.add(region);
     if (surface === "ai_answers") answeredRegions.add(region);
   }
+  // Заслоняет выведенный факт только запись о **состоявшейся** попытке —
+  // измерение или сбой. Ячейка «не спрашивали» (выключенный инструмент по
+  // другой поисковой системе) его не глушит: иначе честность по одному движку
+  // покупалась бы потерей измеренного факта по другому.
   const alreadyKnown = new Set(
     existing
-      .filter((h) => normalizeCoverageSurface(h.surface) === "ai_answers")
+      .filter(
+        (h) =>
+          normalizeCoverageSurface(h.surface) === "ai_answers" &&
+          !/^(NOT_COLLECTED|DISABLED)$/i.test(String(h.status ?? ""))
+      )
       .map((h) => mapRegionBucket(h.region ?? ""))
   );
   return [...probedRegions]
@@ -231,6 +239,9 @@ export function googleAnswerProbeHints(
       status: "NO_RESULTS",
       errorCode: null,
       provider: "GOOGLE",
+      // Утверждение ограничено разобранной выдачей Google — движок назван,
+      // чтобы страница не выдавала его за проверку нейро-ответов Яндекса.
+      engine: "GOOGLE",
     }));
 }
 
@@ -377,6 +388,7 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
         entries?: Array<{ observationKey?: string; evidenceRefs?: string[] }>;
         nonOkCoverageCells?: Array<{
           region?: string;
+          engine?: string;
           surface?: string;
           status?: string;
           errorCode?: string | null;
@@ -397,6 +409,9 @@ export function loadDeckInputsFromAnalyticsDir(analyticsDir: string): CanonicalD
         .map((c) => ({
           surface: String(c.surface),
           region: c.region ? mapRegionBucket(c.region) : undefined,
+          // Поисковая система нужна пустому состоянию: «проверено» печатается
+          // только про ту, которую действительно спрашивали.
+          engine: clientNamedSearchEngine(c.engine) ?? undefined,
           status: String(c.status),
           errorCode: c.errorCode ?? null,
           provider: c.provider,

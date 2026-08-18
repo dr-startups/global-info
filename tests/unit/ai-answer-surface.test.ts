@@ -11,7 +11,16 @@ describe("статус поверхности ИИ-ответов", () => {
   it("регион с выдачей Google получает «проверено, пусто», а не «не собиралось»", () => {
     const hints = googleAnswerProbeHints([organic("RU", "GOOGLE"), organic("RU", "YANDEX")], []);
     expect(hints).toEqual([
-      { surface: "ai_answers", region: "RU", status: "NO_RESULTS", errorCode: null, provider: "GOOGLE" },
+      {
+        surface: "ai_answers",
+        region: "RU",
+        status: "NO_RESULTS",
+        errorCode: null,
+        provider: "GOOGLE",
+        // Утверждение ограничено разобранной выдачей Google: движок назван,
+        // чтобы страница не выдавала его за проверку нейро-ответов Яндекса.
+        engine: "GOOGLE",
+      },
     ]);
   });
 

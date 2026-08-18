@@ -7,6 +7,7 @@ import type { FragmentKey, SectionType, SlideBody, SlideContentContract } from "
 import { SLIDE_CONTENT_SCHEMA_VERSION } from "../contracts";
 import { DECK_TEMPLATE_REGISTRY, RED_MARKER_LABEL } from "../template-registry";
 import type { ScopedFragmentInput } from "../scoped-input";
+import { clientNamedSearchEngine } from "../scoped-input";
 import { slotsForFragment } from "../canonical-slots";
 import type { Finding } from "../../contracts/finding";
 import { linkReadingThemesIntro } from "../../analytics/link-reading-agent";
@@ -140,10 +141,7 @@ export function serpEngineLabel(raw: string | undefined): string | null {
 
 /** Ярлык поисковика в том виде, в котором его можно показать клиенту. */
 export function normalizeSerpEngine(raw: string | undefined): string | null {
-  const e = String(raw ?? "").toUpperCase();
-  if (e.includes("YANDEX")) return "YANDEX";
-  if (e.includes("GOOGLE") || e.includes("SERPER")) return "GOOGLE";
-  return null;
+  return clientNamedSearchEngine(raw);
 }
 
 /**

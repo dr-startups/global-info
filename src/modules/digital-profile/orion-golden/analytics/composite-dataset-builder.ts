@@ -94,7 +94,22 @@ export type CompositeBuildResult = {
   itemsByObservationKey: Map<string, RawInventoryItem[]>;
 };
 
-const DESTRUCTIVE_STATUSES = new Set(["NO_RESULTS", "ERROR", "HTTP_500", "500", "NOT_SUPPORTED"]);
+/**
+ * Статусы ячеек покрытия, которые записываются в provenance.
+ *
+ * Записываются, но ничего не удаляют: это единственный канал, которым
+ * дека узнаёт, что было с поверхностью. `NOT_COLLECTED` — вопрос не задавали
+ * (инструмент не входил в состав прогона); без него страница не отличила бы
+ * непроверенную поверхность от проверенной и пустой.
+ */
+const RECORDED_COVERAGE_STATUSES = new Set([
+  "NO_RESULTS",
+  "ERROR",
+  "HTTP_500",
+  "500",
+  "NOT_SUPPORTED",
+  "NOT_COLLECTED",
+]);
 
 export function isArsenkinItem(item: RawInventoryItem): boolean {
   const meta = (item.rawMetadata ?? {}) as Record<string, unknown>;
@@ -269,7 +284,7 @@ export function buildAnalyticsCompositeDataset(input: {
 
   // Non-OK coverage statuses are recorded but never remove evidence.
   const nonOkCoverageCells = input.coverageRows.filter((c) =>
-    DESTRUCTIVE_STATUSES.has(String(c.status ?? "").toUpperCase())
+    RECORDED_COVERAGE_STATUSES.has(String(c.status ?? "").toUpperCase())
   );
   if (nonOkCoverageCells.length > 0) {
     warnings.push(`non-ok-coverage-cells:${nonOkCoverageCells.length} (recorded, not destructive)`);

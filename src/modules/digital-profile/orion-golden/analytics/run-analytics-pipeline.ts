@@ -264,12 +264,19 @@ function buildExecutiveSummaryInput(input: {
     compliance: "комплаенс-базы",
   };
   const dataGaps: Array<{ area: string; detail: string }> = [];
-  const notCollected = coverage.filter((c) => c.sampleStatus === "NOT_COLLECTED");
-  for (const c of notCollected) {
-    dataGaps.push({
-      area: `${SURFACE_CLIENT_LABELS[c.surface] ?? c.surface} (${c.region})`,
-      detail: "поверхность не собрана в текущем прогоне",
-    });
+  // Пробел покрытия — это поверхность в регионе, а не ячейка: у одной
+  // поверхности их несколько (по числу поисковых систем), и без склейки
+  // резюме печатало «ответы ИИ-поиска (RU)» дважды подряд.
+  const gapAreas = new Set<string>();
+  for (const c of coverage.filter((x) => x.sampleStatus === "NOT_COLLECTED")) {
+    // «MIXED» — слот без региональной привязки (аудит URL). Его код клиенту
+    // ничего не говорит, а направление строка называет и без региона.
+    const region = c.region === "MIXED" ? "" : c.region;
+    const label = SURFACE_CLIENT_LABELS[c.surface] ?? c.surface;
+    const area = region ? `${label} (${region})` : label;
+    if (gapAreas.has(area)) continue;
+    gapAreas.add(area);
+    dataGaps.push({ area, detail: "поверхность не собрана в текущем прогоне" });
   }
   for (const s of input.missingSources) {
     dataGaps.push({ area: s, detail: "источник отсутствует в инвентаре прогона" });
@@ -789,6 +796,13 @@ export async function runOrionAnalyticsPipeline(
   });
   emit("extracted-facts.json", factExtraction);
 
+  // Одна причина — одна строка ограничения: сюда едут только формулировки, без
+  // направлений, и четыре пробела покрытия давали в резюме одну и ту же фразу
+  // трижды через точку с запятой.
+  const clientCoverageLimitations = [
+    ...new Set(executiveSummaryInput.dataGaps?.map((g) => g.detail) ?? []),
+  ];
+
   // Stage 4 — ClientSummaryPack (typed input of the summary the deck prints).
   const regions = [
     ...new Set(input.items.map((i) => String(i.region || "").toUpperCase()).filter(Boolean)),
@@ -815,7 +829,7 @@ export async function runOrionAnalyticsPipeline(
       : {}),
     scope: {
       regions: regions.length > 0 ? regions : ["RU", "UAE"],
-      coverageLimitations: executiveSummaryInput.dataGaps?.map((g) => g.detail) ?? [],
+      coverageLimitations: clientCoverageLimitations,
       // Резюме обязано назвать глубину, на которой работал аудит: это то же
       // число, по которому отсекалась область анализа.
       searchDepthTopN: scope.summary.topN,
@@ -854,7 +868,7 @@ export async function runOrionAnalyticsPipeline(
     analyticsProvenance: composite.provenance,
     findings: synthesis.bundle.findings,
     kpiFindingIds: promotedFindingIds,
-    coverageLimitations: executiveSummaryInput.dataGaps?.map((g) => g.detail) ?? [],
+    coverageLimitations: clientCoverageLimitations,
     surfaceMetricRows,
   });
   assertFilterLossGatesPass(filterLossMatrix);

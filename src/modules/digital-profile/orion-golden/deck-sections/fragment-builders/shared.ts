@@ -1736,7 +1736,20 @@ export const WIKIPEDIA_ADVICE_UNKNOWN =
  */
 export const COVERAGE_EMPTY_COPY: Record<
   string,
-  { surface: string; measuredWhat: string; why: string; measuredCheck: string }
+  {
+    surface: string;
+    measuredWhat: string;
+    why: string;
+    measuredCheck: string;
+    /**
+     * Слова частичного состояния: что именно проверено у одной поисковой
+     * системы и что не проверялось у другой. Нужны там, где общая формулировка
+     * была бы шире факта: по Google мы читаем разобранную выдачу, но не блок
+     * AI Overview, и обещать его проверку нельзя.
+     */
+    partialMeasuredWhat?: string;
+    partialNotCollectedWhat?: string;
+  }
 > = {
   "no-suggestions": {
     surface: "suggestions",
@@ -1768,6 +1781,8 @@ export const COVERAGE_EMPTY_COPY: Record<
     why: "Ответы ИИ всё чаще заменяют пользователю классическую выдачу: он получает готовый вывод о человеке, не открывая источники, поэтому их содержание критично для репутации.",
     measuredCheck:
       "Рекомендуем отслеживать появление ИИ-ответов при следующих обновлениях: они формируются на основе тех же источников, что и обычная выдача.",
+    partialMeasuredWhat: "готового ответа по запросам о субъекте в разобранной выдаче нет",
+    partialNotCollectedWhat: "нейро-ответы в этом прогоне не проверялись",
   },
   "no-related": {
     surface: "paa_related",
@@ -1823,6 +1838,20 @@ export function narrativeWithScope(measuredWhat: string, scopeLabel?: string): s
   return `${measuredWhat.slice(0, at)} (${label})${measuredWhat.slice(at)}`;
 }
 
+/**
+ * Поисковые системы в предложном падеже: «Яндексе и Google».
+ *
+ * Имена берутся из того же словаря, что и охват аудита в резюме, — второй
+ * список названий разошёлся бы с первым на следующей же правке.
+ */
+function enginesClause(engines: readonly string[] | undefined): string {
+  const named = [...new Set(engines ?? [])]
+    .sort((a, b) => SCOPE_ENGINE_ORDER.indexOf(a) - SCOPE_ENGINE_ORDER.indexOf(b))
+    .map((e) => SCOPE_ENGINE_LABELS[e])
+    .filter((x): x is string => Boolean(x));
+  return named.length > 0 ? named.join(" и ") : "поисковых системах";
+}
+
 /** Exported for §7.4 smokes — builds client-safe empty-state copy. */
 export function coverageContent(
   reason: string,
@@ -1846,6 +1875,24 @@ export function coverageContent(
         "Внутренние коды ошибок в отчёт не выводятся; показана только человекочитаемая причина.",
       ],
       whatToCheck: "Повторить сбор после устранения причины сбоя; до этого не интерпретировать пустую страницу как «проверено, пусто».",
+    };
+  }
+
+  if (kind === "MEASURED_PARTIAL") {
+    const cause = (reasonLabel ?? "инструмент сбора не входил в состав прогона").trim();
+    return {
+      narrative:
+        `В ${enginesClause(status?.measuredEngines)} проверка выполнена: ` +
+        `${copy?.partialMeasuredWhat ?? "материалов нет"}. ` +
+        `В ${enginesClause(status?.notCollectedEngines)} ` +
+        `${copy?.partialNotCollectedWhat ?? "поверхность в этом прогоне не проверялась"}: ${cause}.`,
+      bullets: [
+        copy?.why ??
+          "Непроверенная поверхность не даёт вывода ни о наличии материалов, ни об их отсутствии.",
+        "Непроверенная поверхность — не то же самое, что проверенная и пустая: ответ может показываться пользователям поисковой системы.",
+      ],
+      whatToCheck:
+        "Подключить сбор по непроверенным поисковым системам (инструмент провайдера или официальный API поисковой системы) и повторить проверку.",
     };
   }
 
