@@ -6,6 +6,8 @@
  * — as adverse hits on the audit subject.
  */
 
+import { transliterateRuToLat } from "../orion-golden/identity/transliterate-ru";
+
 export type IdentityConfidence = "HIGH" | "MEDIUM" | "LOW" | "NONE";
 
 export interface SubjectIdentity {
@@ -79,46 +81,10 @@ function normToken(s: string): string {
   return s.toLowerCase().replace(/ё/g, "е").trim();
 }
 
-const CYR_TO_LAT: Record<string, string> = {
-  а: "a",
-  б: "b",
-  в: "v",
-  г: "g",
-  д: "d",
-  е: "e",
-  ё: "e",
-  ж: "zh",
-  з: "z",
-  и: "i",
-  й: "y",
-  к: "k",
-  л: "l",
-  м: "m",
-  н: "n",
-  о: "o",
-  п: "p",
-  р: "r",
-  с: "s",
-  т: "t",
-  у: "u",
-  ф: "f",
-  х: "kh",
-  ц: "ts",
-  ч: "ch",
-  ш: "sh",
-  щ: "shch",
-  ъ: "",
-  ы: "y",
-  ь: "",
-  э: "e",
-  ю: "yu",
-  я: "ya",
-};
-
 function transliterateRuToken(token: string): string {
-  let out = "";
-  for (const ch of normToken(token)) out += CYR_TO_LAT[ch] ?? ch;
-  return out.replace(/[^a-z0-9]/g, "");
+  // Таблица общая с профилем субъекта и классификатором: копия, разошедшаяся в
+  // одной букве, ломает сверку транслитераций молча.
+  return transliterateRuToLat(normToken(token)).replace(/[^a-z0-9]/g, "");
 }
 
 function tokenize(value: string): string[] {

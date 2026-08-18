@@ -14,6 +14,7 @@ import {
   claimText,
   clampClientText,
   composePageRowComposition,
+  otherSubjectBulletText,
   pageFindingBlocks,
   panelComposition,
   panelCompositionLine,
@@ -50,7 +51,12 @@ export function buildSuggestionsFragment(
     const claims = slotUnits.flatMap((u) => u.claims);
     const bullets = claims.map((c) => clampClientText(claimText(c), 400));
     const lineRefs = refs.filter((r) => Boolean(scoped.evidenceIndex[r]?.title)).slice(0, 10);
-    const suggestionLines = lineRefs.map((r) => String(scoped.evidenceIndex[r]?.title));
+    const suggestionLines = lineRefs.map((r) =>
+      otherSubjectBulletText(
+        String(scoped.evidenceIndex[r]?.title),
+        scoped.evidenceIndex[r]?.subjectDecision
+      )
+    );
     // Описание считает то, что напечатано на этой странице, а не весь набор
     // ссылок поверхности: печатались отобранные строки, а счёт шёл по всем, и
     // под пятью строками стояло «показано двадцать семь».
@@ -78,6 +84,7 @@ export function buildSuggestionsFragment(
             statusNote: panelStatusLine({
               shownAdverse: panelStats.adverse,
               collectedAdverse,
+              excludedOtherSubject: panelStats.adverseOther,
               nounOne: "подсказка",
               nounFew: "подсказки",
               nounMany: "подсказок",
@@ -95,7 +102,12 @@ export function buildSuggestionsFragment(
             whyItMatters: clampClientText(
               panelStats.adverse > 0
                 ? "Негативные подсказки видны пользователю ещё до просмотра результатов: они формируют первое впечатление и подталкивают к поиску компрометирующих материалов."
-                : "Подсказки показывают, что чаще всего ищут о субъекте: негативных формулировок среди показанных строк нет.",
+                : panelStats.adverseOther > 0
+                  ? // Рядом напечатана негативная строка о другом лице: голое
+                    // «негативных формулировок нет» спорило бы с ней на одной
+                    // странице.
+                    "Подсказки показывают, что чаще всего ищут о субъекте: негативных формулировок о проверяемом лице среди показанных строк нет."
+                  : "Подсказки показывают, что чаще всего ищут о субъекте: негативных формулировок среди показанных строк нет.",
               320
             ),
             ...(sidebar.explanations.length
@@ -135,7 +147,7 @@ export function buildSuggestionsFragment(
           // Список под панелью — те же строки, что и на панели: два разных
           // перечня на одной странице читатель сверяет вручную.
           bullets: shown.length > 0
-            ? shown.map((r) => clampClientText(r.text, 220))
+            ? shown.map((r) => clampClientText(otherSubjectBulletText(r.text, r.decision), 220))
             : bullets.length
               ? bullets
               : suggestionLines,
@@ -146,7 +158,9 @@ export function buildSuggestionsFragment(
         findingIds: [
           ...new Set([...view.findings.map((f) => f.findingId), ...sidebar.explainedFindingIds]),
         ],
-        metrics: { items: refs.length, adverseSuggestions: sidebar.adverseRows.length },
+        // Метрика считает то же, что заголовок: два ответа на «сколько
+        // негативных подсказок» разошлись бы при первой правке.
+        metrics: { items: refs.length, adverseSuggestions: adverseCount },
         noUnderlyingData: refs.length === 0,
         noDataReason: "no-suggestions",
         // Шаг 13, C11 — страница отвечает за одну поисковую систему в одном

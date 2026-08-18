@@ -23,9 +23,12 @@ import { collapseEmptySurfaceSlots } from "../empty-surface-collapse";
 import {
   buildPageEvidenceView,
   clampClientText,
+  countsTowardSubjectNegative,
   distribute,
   isAdverse,
   makeSlotSlide,
+  otherSubjectBulletText,
+  otherSubjectExclusionSentence,
   pageSourceLine,
   panelComposition,
   panelCompositionLine,
@@ -119,10 +122,12 @@ export function relatedCompositionBlocks(input: {
   /** Строки взяты со снимка панели — значит, и говорим о панели. */
   fromPanel: boolean;
 }): Partial<SlideBody> {
-  const composition = panelComposition(
-    input.rows.map((r) => ({ ...r, decision: r.decision }))
-  );
+  const composition = panelComposition(input.rows);
   const adverseShown = composition.adverse;
+  // Чужая негативная строка напечатана, но профиль субъекта не утяжеляет —
+  // статус говорит об этом словами, иначе исключение выглядит как пропажа.
+  const excluded = composition.adverseOther;
+  const exclusion = excluded > 0 ? ` ${otherSubjectExclusionSentence(excluded)}` : "";
   return {
     whatWasFound: clampClientText(
       panelCompositionLine({
@@ -152,8 +157,10 @@ export function relatedCompositionBlocks(input: {
             "запрос",
             "запроса",
             "запросов"
-          )} с негативной формулировкой.`
-        : "Запросов с негативной формулировкой на этой странице нет.",
+          )} с негативной формулировкой.${exclusion}`
+        : excluded > 0
+          ? `Негативных формулировок о проверяемом лице на этой странице нет.${exclusion}`
+          : "Запросов с негативной формулировкой на этой странице нет.",
   };
 }
 
@@ -212,7 +219,9 @@ export function buildRelatedQueriesFragment(
       extras,
       scoped,
       content: {
-        bullets: rows.map((r) => clampClientText(r.text, 220)),
+        bullets: rows.map((r) =>
+          clampClientText(otherSubjectBulletText(r.text, r.decision), 220)
+        ),
         ...relatedCompositionBlocks({
           rows,
           collected: collected.length,
@@ -222,7 +231,10 @@ export function buildRelatedQueriesFragment(
       },
       evidenceRefs: pageRefs,
       findingIds: view.findings.map((f) => f.findingId),
-      metrics: { items: rows.length, adverseQueries: rows.filter((r) => r.adverse).length },
+      metrics: {
+        items: rows.length,
+        adverseQueries: rows.filter(countsTowardSubjectNegative).length,
+      },
       noUnderlyingData: collected.length === 0,
       noDataReason: "no-related",
       noDataScopeLabel: regionLabel,

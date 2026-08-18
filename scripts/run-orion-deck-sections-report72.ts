@@ -33,6 +33,7 @@ import type {
 } from "../src/modules/digital-profile/orion-golden/deck-sections/fragment-builders/shared";
 import type { ComposedClientSummary } from "../src/modules/digital-profile/orion-golden/contracts/composed-client-summary";
 import { classifyObservationHighlight } from "../src/modules/digital-profile/serp-observation/resolve-observation-highlights";
+import { panelRowWithOwnership } from "../src/modules/digital-profile/services/canonical-visual-assets";
 import type { PersistedSerpObservation } from "../src/modules/digital-profile/serp-observation/types";
 import {
   DECK_ASSET_FIXTURE_MISSING,
@@ -85,10 +86,15 @@ const SLOT_ASSET_BINDING: Record<string, string[]> = {
  * запросами отдавала ноль строк с текстом — а страница рядом печатала
  * «0 связанных запросов». Рамка воспроизводится тем же чистым классификатором,
  * которым её ставил генератор снимка, — без пересчёта, без сети и без базы.
+ *
+ * Принадлежность применяется той же функцией, что и у продукта, и только к
+ * панелям-спискам: снимки выдачи и сетки картинок остаются ownership-blind,
+ * как их рисует `buildCanonicalVisualAssets`.
  */
 function resolveVisibleItems(
   evidenceRefs: string[] | undefined,
-  evidenceIndex: ScopedEvidenceIndex
+  evidenceIndex: ScopedEvidenceIndex,
+  kind: string
 ): VisibleAssetItem[] | undefined {
   if (!evidenceRefs?.length) return undefined;
   return evidenceRefs.map((ref) => {
@@ -100,7 +106,7 @@ function resolveVisibleItems(
       title: e.title ?? null,
       snippet: null,
     } as unknown as PersistedSerpObservation);
-    return {
+    const item: VisibleAssetItem = {
       ref,
       url: e.url,
       domain: e.domain,
@@ -110,6 +116,8 @@ function resolveVisibleItems(
       adverse: hl.isHighlighted,
       themeTitle: hl.themeTitle ?? undefined,
     };
+    if (kind !== "surface_panel") return item;
+    return panelRowWithOwnership({ item, decision: e.subjectDecision }).visible;
   });
 }
 
@@ -150,7 +158,8 @@ export function loadReportAssets(evidenceIndex: ScopedEvidenceIndex): {
       .filter((a): a is RendererAssetEntry => Boolean(a))
       .map((a) => {
         const evidenceRefs = Array.isArray(a.evidenceRefs) ? a.evidenceRefs.map(String) : undefined;
-        const visibleItems = resolveVisibleItems(evidenceRefs, evidenceIndex);
+        const kind = String(a.kind ?? "visual");
+        const visibleItems = resolveVisibleItems(evidenceRefs, evidenceIndex, kind);
         // Домены, видимые на ассете: из разрешённых строк. Второй перебор по
         // индексу здесь стоял, пока индексов было два, и добавить он уже ничего
         // не может — строки разрешаются тем же индексом.
@@ -161,7 +170,7 @@ export function loadReportAssets(evidenceIndex: ScopedEvidenceIndex): {
         ];
         return {
           assetRef: a.assetRef,
-          kind: String(a.kind ?? "visual"),
+          kind,
           title: String(a.title ?? a.assetRef),
           // В фикстуре байтов нет — там уже посчитанный признак.
           hasImage: Boolean(a.imageData) || Boolean(a.storageKey) || a.hasImage === true,
@@ -605,6 +614,10 @@ async function main(): Promise<void> {
           result.assembly.rendererSlides,
           ANALYTICS_DIR
         ),
+        // Строка о другом лице печатается с пометкой на всех поверхностях,
+        // кроме приложения: без неё запрос про композитора-однофамильца
+        // читается как запрос о субъекте.
+        noOtherSubjectInNeutralRows: pageLevelChecks.noOtherSubjectInNeutralRows,
         page13FooterListsHighlightDomains: pageLevelChecks.page13FooterListsHighlightDomains,
         page31NoRuCriminalEvidence: pageLevelChecks.page31NoRuCriminalEvidence,
         // Страницы регионов говорят о чтении. На эталоне это честная ветка

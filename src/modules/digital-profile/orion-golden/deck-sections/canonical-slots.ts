@@ -96,6 +96,23 @@ export type VisibleAssetItem = {
   region?: string;
   /** True when the source snapshot red-frames this row (adverse theme). */
   adverse?: boolean;
+  /**
+   * Формулировка строки негативна, хотя красную рамку с неё сняли.
+   *
+   * Пишется только там, где рамку снимает принадлежность (строка о другом
+   * лице): страница обязана сказать словами, что именно исключено из счёта, —
+   * молча терять негативную строку нельзя. У остальных строк формулировку
+   * выражает `adverse`.
+   */
+  adverseWording?: boolean;
+  /**
+   * Решение subject-resolution по строке — запись, а не источник.
+   *
+   * Дека берёт принадлежность из `evidenceIndex`; здесь она нужна, чтобы
+   * артефакт объяснял сам себя. Читать её назад значило бы завести второй
+   * ответ на тот же вопрос.
+   */
+  subjectDecision?: string;
   /** Client-safe adverse theme title from the highlight classifier. */
   themeTitle?: string;
 };

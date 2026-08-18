@@ -811,7 +811,10 @@ export function composePageRowComposition(
       e.adverse === true ||
       adverseRefSet.has(ref) ||
       ADVERSE_PATTERNS.test(String(e.title ?? ""));
-    if (adverse) adverseHeadlines += 1;
+    // Негативный заголовок о другом лице фон вокруг субъекта не формирует.
+    if (countsTowardSubjectNegative({ adverse, decision: e.subjectDecision })) {
+      adverseHeadlines += 1;
+    }
     const domain =
       e.domain && e.domain !== "—" ? e.domain : domainOfUrl(e.url);
     if (domain && domain !== "—") {
@@ -1908,8 +1911,19 @@ export function emptyStatusForReason(
   return resolveEmptySurfaceCollection(scoped, surface);
 }
 
+/**
+ * Строка, признанная чужой, печатается с пометкой.
+ *
+ * Панель воспроизводит то, что показывает поисковик, поэтому строку о другом
+ * лице не прячут — её называют. Формулировка одна на все пути показа: буллеты
+ * подсказок, связанных запросов и утверждения поверхностей.
+ */
+export function otherSubjectBulletText(text: string, decision: string | undefined): string {
+  return decision === OTHER_SUBJECT_DECISION ? `Относится к другому лицу: ${text}` : text;
+}
+
 export function claimText(c: SurfaceClaim): string {
-  return c.subjectMatch === "OTHER_SUBJECT" ? `Относится к другому лицу: ${c.text}` : c.text;
+  return otherSubjectBulletText(c.text, c.subjectMatch);
 }
 
 export function uniqueRefs(scoped: ScopedFragmentInput): string[] {
@@ -2056,9 +2070,41 @@ export type PanelRow = {
   ref: string;
   /** Текст строки — ровно то, что нарисовано на панели. */
   text: string;
+  /** Строка выделена красным на панели — то, что видит читатель. */
   adverse: boolean;
+  /**
+   * Формулировка негативна, хотя рамку сняла принадлежность.
+   *
+   * Без него исключённая строка исчезла бы молча: у строки о другом лице
+   * панель рамку не рисует, и по одному `adverse` не отличить нейтральную
+   * подсказку от санкционной, снятой со счёта.
+   */
+  adverseWording?: boolean;
   decision?: string;
 };
+
+/** Решение subject-resolution, при котором строка не работает на профиль. */
+export const OTHER_SUBJECT_DECISION = "OTHER_SUBJECT";
+
+/**
+ * Негатив, работающий на профиль субъекта: формулировка × принадлежность.
+ *
+ * Формулировку даёт панель (`adverse` — то, что выделено красным),
+ * принадлежность — subject-resolution через `evidenceIndex`. В счёт входит их
+ * произведение: санкционная подсказка о другом человеке напечатана, но профиль
+ * субъекта ею не утяжеляется. Предикат один на все счётчики страницы — иначе
+ * заголовок, статус и метрика разойдутся при первой же правке.
+ *
+ * На стороне деки это ещё и защита от устаревшего ассета: пересборка из
+ * `gpt-copy` читает `visual-assets-by-slot.json` с диска, и строка может
+ * приехать со старой красной рамкой.
+ */
+export function countsTowardSubjectNegative(row: {
+  adverse: boolean;
+  decision?: string;
+}): boolean {
+  return row.adverse && row.decision !== OTHER_SUBJECT_DECISION;
+}
 
 /**
  * Строки, нарисованные на панели-снимке.
@@ -2089,6 +2135,7 @@ export function panelRows(
       // по своим признакам нельзя: заголовок страницы берёт число у панели, и
       // «4 негативные формулировки» в заголовке спорили бы с «5» в тексте.
       adverse: row.adverse === true,
+      adverseWording: row.adverse === true || row.adverseWording === true,
       decision: evidence?.subjectDecision,
     });
   }
@@ -2101,7 +2148,10 @@ export type PanelComposition = {
   likely: number;
   other: number;
   unresolved: number;
+  /** Негативные строки, которые работают на профиль субъекта. */
   adverse: number;
+  /** Негативные строки о другом лице — напечатаны, но в счёт не входят. */
+  adverseOther: number;
 };
 
 export function panelComposition(rows: readonly PanelRow[]): PanelComposition {
@@ -2115,7 +2165,10 @@ export function panelComposition(rows: readonly PanelRow[]): PanelComposition {
     likely,
     other,
     unresolved: rows.length - subject - likely - other,
-    adverse: rows.filter((r) => r.adverse).length,
+    adverse: rows.filter(countsTowardSubjectNegative).length,
+    adverseOther: rows.filter(
+      (r) => (r.adverseWording ?? r.adverse) && r.decision === OTHER_SUBJECT_DECISION
+    ).length,
   };
 }
 
@@ -2169,6 +2222,21 @@ export function panelCompositionLine(input: {
 }
 
 /**
+ * Предложение об исключённых строках — одно на подсказки и связанные запросы.
+ *
+ * Исключение из счёта обязано быть названо словами: иначе строка про
+ * санкционный список просто исчезает из чисел страницы, и читателю не отличить
+ * «негатива нет» от «негатив есть, но не о проверяемом лице».
+ */
+export function otherSubjectExclusionSentence(excluded: number): string {
+  if (excluded <= 0) return "";
+  const noun = pluralRu(excluded, "строка", "строки", "строк");
+  const verb = pluralRu(excluded, "относится", "относятся", "относятся");
+  const counted = pluralRu(excluded, "входит", "входят", "входят");
+  return `Ещё ${excluded} ${noun} с негативной формулировкой ${verb} к другому лицу и в счёт не ${counted}.`;
+}
+
+/**
  * Статусная строка страницы, у которой есть панель.
  *
  * Считает то же, что читатель видит, — строки панели. На прогоне 14.08 стр. 44
@@ -2184,17 +2252,26 @@ export function panelStatusLine(input: {
   shownAdverse: number;
   /** Негативные строки во всём собранном наборе, если он больше панели. */
   collectedAdverse?: number;
+  /** Негативные строки о другом лице: напечатаны, но из счёта исключены. */
+  excludedOtherSubject?: number;
   nounOne: string;
   nounFew: string;
   nounMany: string;
 }): string {
   const noun = (n: number): string => pluralRu(n, input.nounOne, input.nounFew, input.nounMany);
+  const excluded = input.excludedOtherSubject ?? 0;
+  const tail = excluded > 0 ? ` ${otherSubjectExclusionSentence(excluded)}` : "";
   if (input.shownAdverse > 0) {
-    return `На этой странице ${input.shownAdverse} ${noun(input.shownAdverse)} с негативной формулировкой — их видно до перехода к самим материалам, поэтому они формируют первое впечатление.`;
+    return `На этой странице ${input.shownAdverse} ${noun(input.shownAdverse)} с негативной формулировкой — их видно до перехода к самим материалам, поэтому они формируют первое впечатление.${tail}`;
   }
   const hidden = input.collectedAdverse ?? 0;
   if (hidden > 0) {
-    return `Среди показанных строк негативных формулировок нет; в собранном наборе — ${hidden} ${noun(hidden)}.`;
+    return `Среди показанных строк негативных формулировок нет; в собранном наборе — ${hidden} ${noun(hidden)}.${tail}`;
+  }
+  // Голое «негативных формулировок нет» рядом с напечатанной строкой про
+  // санкционный список читается как враньё, поэтому отрицание называет лицо.
+  if (excluded > 0) {
+    return `Негативных формулировок о проверяемом лице на этой странице нет.${tail}`;
   }
   return "Строк с негативной формулировкой на этой странице нет.";
 }

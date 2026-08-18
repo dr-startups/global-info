@@ -848,6 +848,12 @@ export async function runCanonicalReportPrepare(
       const visuals = await buildCanonicalVisualAssets({
         subjectName: subjectDisplayName,
         items,
+        // Панель рисует то, что говорит текст страницы: строка о другом лице
+        // уходит на снимок нейтральной и с тегом. Решения уже посчитаны
+        // аналитикой выше — второй сверки имён здесь нет.
+        subjectDecisionByRef: Object.fromEntries(
+          analytics.subjectResolution.items.map((i) => [i.evidenceRef, i.decision])
+        ),
         realSerpScreenshots: supplement.serpScreenshots,
         // REMEDIATION §5.2 — resume/rebuild reuses URL→preview without re-fetch.
         previewCacheDir: join(input.artifactsDir, "image-preview-cache"),

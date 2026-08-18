@@ -22,6 +22,7 @@
     "panelPagesMatchDrawnRows": true,
     "riskMatrixTelemetryPresent": true,
     "complianceRowsNameTheirBases": true,
+    "noOtherSubjectInNeutralRows": true,
     "page13FooterListsHighlightDomains": true,
     "page31NoRuCriminalEvidence": true,
     "regionalPagesCarryReadingStatus": true,

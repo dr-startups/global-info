@@ -2,7 +2,7 @@
   "version": "deck-page-level-checks-v1",
   "tocNoPerLinePageCounts": true,
   "adverseMarkersLabeled": true,
-  "noOtherSubjectInNeutralRows": false,
+  "noOtherSubjectInNeutralRows": true,
   "noDuplicatedPageBodies": true,
   "duplicatedBodies": [],
   "aiSecurityFindingComplete": false,

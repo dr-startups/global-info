@@ -19,6 +19,8 @@
  * Модуль чистый: ни сети, ни БД, ни модели.
  */
 
+import { transliterateRuToLat } from "../identity/transliterate-ru";
+
 /**
  * Окончания русских отчеств.
  *
@@ -226,4 +228,159 @@ export function hasPatronymicConflict(
   }
 ): boolean {
   return conflictingPatronymics(text, subject).length > 0;
+}
+
+/**
+ * Ключ отчества: латиница без удвоений.
+ *
+ * Отчество субъекта в профиле записано кириллицей («Филиппович»), а строка
+ * поиска приходит латиницей («viktor filippovich»). Сравнивать их побуквенно
+ * нельзя: собственное отчество объявится чужим, и **своя** негативная подсказка
+ * уедет из профиля — эта ошибка хуже исходной, она прячет негатив, а не
+ * завышает его. Транслитерация берётся оттуда же, откуда профиль порождает свои
+ * написания. Удвоенная согласная при этом — разночтение транслитерации
+ * («filippovich» / «filipovich»), а не другое отчество.
+ */
+function patronymicKey(word: string): string {
+  return transliterateRuToLat(norm(word)).replace(/(.)\1+/gu, "$1");
+}
+
+/**
+ * Окончания отчеств на ключе — общие для обоих алфавитов.
+ *
+ * «ович/евич/ьевич/овна/евна/ична/инична» после транслитерации дают те же
+ * хвосты, что и латинские «ovich/evich/yevich/ievich/ovna/evna/yevna/ichna».
+ */
+const PATRONYMIC_KEY_RE = /(?:ovich|evich|ovna|evna|ichna)$/u;
+
+/**
+ * Порог длины ключа отчества.
+ *
+ * Отсекает короткие совпадения по окончанию. Настоящие короткие отчества в него
+ * не проходят — «Львовна» даёт ключ `lvovna`, шесть букв, — и это промах в
+ * дешёвую сторону: такая строка останется в счёте, тогда как ложная «чужесть»
+ * прячет негатив субъекта. Понижать порог ради редкой формы значит менять
+ * дешёвую ошибку на дорогую.
+ */
+const MIN_PATRONYMIC_KEY = 7;
+
+function levenshtein(a: string, b: string): number {
+  const prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i += 1) {
+    let diagonal = prev[0]!;
+    prev[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const next = Math.min(
+        prev[j]! + 1,
+        prev[j - 1]! + 1,
+        diagonal + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+      diagonal = prev[j]!;
+      prev[j] = next;
+    }
+  }
+  return prev[b.length]!;
+}
+
+/**
+ * Кандидат — вариант собственного отчества, а не чужое.
+ *
+ * «fyodorovich» и «fedorovich» — один человек, записанный двумя школами
+ * транслитерации. Допуск сознательно асимметричен: ложная «чужесть» прячет
+ * негатив субъекта, ложная «свойскость» оставляет строку в счёте — вторая
+ * ошибка дешевле.
+ */
+function isOwnVariant(candidate: string, own: string): boolean {
+  const budget = Math.max(candidate.length, own.length) >= 9 ? 2 : 1;
+  return levenshtein(candidate, own) <= budget;
+}
+
+type QueryLineSubject = {
+  patronymics: string[];
+  /** Имена субъекта: без них связка «имя + отчество» не проверяется. */
+  firstNames?: string[];
+  /** Псевдонимы и транслитерации — там живёт латинская форма отчества. */
+  aliases?: string[];
+};
+
+/**
+ * Структурные отчества субъекта — единственный признак того, что отчество у
+ * него вообще есть.
+ *
+ * Похожие на отчество токены алиасов этому признаку не замена: фамилия по форме
+ * от отчества неотличима («Абрамович», «Рабинович», «Маркович»), и по ней
+ * правило ожило бы у субъекта, отчества которого система не знает вовсе. Вывод
+ * о чужом отчестве стал бы тогда догадкой — а она прячет негатив и печатает
+ * клиенту утверждение, не прослеживаемое до данных.
+ */
+function structuralPatronymicForms(subject: QueryLineSubject): string[] {
+  return subject.patronymics
+    .map((p) => patronymicKey(baseForm(norm(p))))
+    .filter((key) => key.length > 3);
+}
+
+/**
+ * Собственные формы отчества субъекта — из одного места и в обоих алфавитах.
+ *
+ * Структурные `patronymics` кириллические; латинская форма приезжает внутри
+ * транслитерации целой тройки («viktor filippovich rashnikov»), где раскладка
+ * профиля кладёт её в имена. Ключом отчества она узнаётся по окончанию.
+ *
+ * Сюда же попадает фамилия-«отчество» из алиасов — и это нужно: без неё
+ * «roman abramovich sanctions» объявлялось бы строкой о другом лице, потому что
+ * фамилия субъекта не совпадает с его же отчеством.
+ */
+function ownPatronymicForms(subject: QueryLineSubject): string[] {
+  const forms = new Set<string>(structuralPatronymicForms(subject));
+  for (const alias of subject.aliases ?? []) {
+    for (const word of norm(alias).split(/[^\p{L}]+/u)) {
+      const key = patronymicKey(baseForm(word));
+      if (key.length >= MIN_PATRONYMIC_KEY && PATRONYMIC_KEY_RE.test(key)) forms.add(key);
+    }
+  }
+  return [...forms];
+}
+
+/**
+ * Чужие отчества в строке-запросе.
+ *
+ * Правило только для поверхностей-строк: там строка и есть весь материал,
+ * поэтому «имя субъекта + чужое отчество» решает вопрос принадлежности, а
+ * ловушки «биография называет родню» нет по построению. На длинных текстах
+ * работает `conflictingPatronymics` со своими якорями.
+ *
+ * Без собственного отчества вывод не делается вовсе — тот же принцип, что и
+ * выше: молчим, а не гадаем.
+ */
+export function foreignPatronymicsInQueryLine(
+  text: string,
+  subject: QueryLineSubject
+): string[] {
+  // Нет собственного отчества — нет вывода: молчим, а не гадаем.
+  if (structuralPatronymicForms(subject).length === 0) return [];
+
+  const givenStems = [
+    ...new Set((subject.firstNames ?? []).map(norm).filter((n) => n.length >= 3)),
+  ]
+    .map((n) => patronymicKey(nameStem(n)))
+    .filter((s) => s.length >= 3);
+  if (givenStems.length === 0) return [];
+
+  const ownForms = ownPatronymicForms(subject);
+  const words = norm(text).split(/[^\p{L}]+/u).filter(Boolean);
+  const found = new Set<string>();
+  for (let i = 1; i < words.length; i += 1) {
+    const candidate = patronymicKey(baseForm(words[i]!));
+    if (candidate.length < MIN_PATRONYMIC_KEY || !PATRONYMIC_KEY_RE.test(candidate)) continue;
+    // Отчество считается чужим только в тройке с именем субъекта: «рашников
+    // санкции» и «рашников виктор филиппович жена» правилом не задеваются.
+    const before = patronymicKey(words[i - 1]!);
+    const afterSubjectName = givenStems.some(
+      (stem) => before.startsWith(stem) && before.length <= stem.length + 4
+    );
+    if (!afterSubjectName) continue;
+    if (ownForms.some((o) => isOwnVariant(candidate, o))) continue;
+    found.add(words[i]!);
+  }
+  return [...found];
 }

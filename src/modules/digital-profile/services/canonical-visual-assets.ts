@@ -173,6 +173,40 @@ function toVisibleItem(item: RawInventoryItem): VisibleAssetItem {
   };
 }
 
+/** Тег в правой колонке панели — согласован с ярлыком таблицы выдачи. */
+export const OTHER_SUBJECT_PANEL_TAG = "о другом лице";
+
+/**
+ * Строка панели и её запись в артефакте — из одного решения.
+ *
+ * Строка о другом человеке печатается: панель воспроизводит то, что показывает
+ * поисковик, и спрятать её значило бы нарисовать выдачу, которой нет. Но
+ * рисуется она нейтральной и с тегом принадлежности вместо seed-запроса —
+ * красная рамка на ней спорила бы с числом в заголовке страницы, которое эту
+ * строку не считает. Признак негативной формулировки при этом сохраняется
+ * записью: страница называет исключение словами.
+ */
+export function panelRowWithOwnership(input: {
+  item: VisibleAssetItem;
+  decision?: string;
+  meta?: string;
+}): { visible: VisibleAssetItem; svg: { label: string; meta?: string; adverse: boolean } } {
+  const other = input.decision === "OTHER_SUBJECT";
+  const visible: VisibleAssetItem = {
+    ...input.item,
+    ...(other ? { adverse: false, adverseWording: input.item.adverse === true } : {}),
+    ...(input.decision ? { subjectDecision: input.decision } : {}),
+  };
+  return {
+    visible,
+    svg: {
+      label: String(input.item.title ?? "").trim(),
+      meta: other ? OTHER_SUBJECT_PANEL_TAG : input.meta,
+      adverse: visible.adverse === true,
+    },
+  };
+}
+
 function meta(
   asset: RendererAssetEntry,
   visibleItems: VisibleAssetItem[]
@@ -290,6 +324,8 @@ async function buildListPanelAsset(input: {
   slotId: string;
   bind: (slotId: string, meta: VisualAssetMeta) => void;
   push: (asset: RendererAssetEntry) => void;
+  /** Принадлежность строк субъекту: решения subject-resolution по ссылкам. */
+  subjectDecisionByRef?: Record<string, string>;
   /** Test hook (§5.1): force this panel to throw. */
   injectFailureForAssetRef?: string;
 }): Promise<boolean> {
@@ -301,19 +337,23 @@ async function buildListPanelAsset(input: {
   }
   const rows = input.rows.filter((r) => String(r.title ?? "").trim()).slice(0, 10);
   if (rows.length === 0) return false;
-  const visibleItems = rows.map(toVisibleItem);
+  // Нарисованная строка и её запись выводятся вместе: разойтись они не могут.
+  const drawn = rows.map((r) =>
+    panelRowWithOwnership({
+      item: toVisibleItem(r),
+      decision: input.subjectDecisionByRef?.[refOf(r)],
+      meta: input.rowMeta?.(r),
+    })
+  );
+  const visibleItems = drawn.map((d) => d.visible);
   const png = await svgToPngBase64(
     buildSurfacePanelSvg({
       title: input.title,
       subtitle: input.subtitle,
       engineLabel: input.engineLabel,
-      items: rows.map((r, i) => ({
-        label: String(r.title).trim(),
-        meta: input.rowMeta?.(r),
-        // Same red-frame classifier the SERP snapshot uses: negative phrases
-        // are visibly marked on the panel itself (ORION style).
-        adverse: visibleItems[i].adverse,
-      })),
+      // Same red-frame classifier the SERP snapshot uses: negative phrases
+      // are visibly marked on the panel itself (ORION style).
+      items: drawn.map((d) => d.svg),
     })
   );
   const asset: RendererAssetEntry = {
@@ -355,6 +395,13 @@ export async function buildCanonicalVisualAssets(input: {
    * the synthetic snapshot for p10 (RU) / p27 (UAE).
    */
   realSerpScreenshots?: RealSerpScreenshotInput[];
+  /**
+   * Принадлежность строк субъекту: `evidenceRef → решение subject-resolution`.
+   *
+   * Без карты поведение построителя прежнее — вызов без аналитики остаётся
+   * валидным. С картой строка о другом лице уходит на панель нейтральной.
+   */
+  subjectDecisionByRef?: Record<string, string>;
   /** Optional clock for freshness tests. */
   nowMs?: number;
   /** Test-only (§5.1): throw inside the builder for this assetRef. */
@@ -496,6 +543,7 @@ export async function buildCanonicalVisualAssets(input: {
         slotId: "p11_ru_suggestions_yandex",
         bind,
         push,
+        subjectDecisionByRef: input.subjectDecisionByRef,
         injectFailureForAssetRef: input.injectFailureForAssetRef,
       })
     )
@@ -521,6 +569,7 @@ export async function buildCanonicalVisualAssets(input: {
         slotId: "p12_ru_suggestions_google",
         bind,
         push,
+        subjectDecisionByRef: input.subjectDecisionByRef,
         injectFailureForAssetRef: input.injectFailureForAssetRef,
       })
     )
@@ -541,6 +590,7 @@ export async function buildCanonicalVisualAssets(input: {
         slotId: "p28_uae_suggestions",
         bind,
         push,
+        subjectDecisionByRef: input.subjectDecisionByRef,
         injectFailureForAssetRef: input.injectFailureForAssetRef,
       })
     )
@@ -571,6 +621,7 @@ export async function buildCanonicalVisualAssets(input: {
           slotId: relatedSlots[i],
           bind,
           push,
+          subjectDecisionByRef: input.subjectDecisionByRef,
           injectFailureForAssetRef: input.injectFailureForAssetRef,
         })
       )
@@ -592,6 +643,7 @@ export async function buildCanonicalVisualAssets(input: {
         slotId: "p32_uae_related",
         bind,
         push,
+        subjectDecisionByRef: input.subjectDecisionByRef,
         injectFailureForAssetRef: input.injectFailureForAssetRef,
       })
     )

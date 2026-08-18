@@ -23,7 +23,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { conflictingPatronymics } from "./patronymic-conflict";
+import { conflictingPatronymics, foreignPatronymicsInQueryLine } from "./patronymic-conflict";
 import { publicDomainOf } from "./public-domain";
 import type { RawInventoryItem } from "../types";
 import {
@@ -106,6 +106,18 @@ function surfaceOf(item: RawInventoryItem): string {
 /** Soft SERP lines where a full-name phrase is suggestive, not confirmatory. */
 function isSuggestionOrPaaSurface(surface: string): boolean {
   return /suggest|paa|people_also|related/.test(surface);
+}
+
+/**
+ * Поверхности, где строка запроса и есть весь материал.
+ *
+ * Список свой, а не общий с `isSuggestionOrPaaSurface`: тот управляет
+ * повышением до LIKELY_SUBJECT, а живые подсказки приходят с
+ * `surface: "autocomplete"`, которого он не знает, — расширять его здесь
+ * значило бы менять решения шире задачи.
+ */
+function isQueryLineSurface(surface: string): boolean {
+  return /autocomplete|suggest|paa|people_also|related/.test(surface);
 }
 
 /** Домен публикации; служебные схемы доменом не считаются (шаг 13, C2). */
@@ -338,6 +350,21 @@ export function classifySubjectRelevance(
   // кейсе, где отрицательные признаки не заполнены, защиты не было (шаг 13, C9).
   const derivedPatronymicConflicts = conflictingPatronymics(text, subject);
   conflictingIdentifiers.push(...derivedPatronymicConflicts);
+  /*
+   * На поверхностях-строках чужое отчество распознаётся в обоих алфавитах.
+   *
+   * «viktor feliksovich vekselberg ofac» — санкционная подсказка о другом
+   * человеке — получала «недостаточно признаков» (совпало одно имя) и уходила
+   * в негативный профиль субъекта: вывод о чужом отчестве работал только
+   * кириллицей и только рядом с фамилией субъекта, которой в строке нет.
+   * В короткой строке запроса ловушки «биография называет родню» нет по
+   * построению, поэтому связки «имя субъекта + чужое отчество» здесь
+   * достаточно.
+   */
+  const queryLinePatronymicConflicts = isQueryLineSurface(surfaceOf(item))
+    ? foreignPatronymicsInQueryLine(text, subject)
+    : [];
+  conflictingIdentifiers.push(...queryLinePatronymicConflicts);
   for (const n of subject.namesakeNoise) {
     if (n.length > 2 && text.includes(norm(n))) conflictingIdentifiers.push(n);
   }
@@ -364,12 +391,20 @@ export function classifySubjectRelevance(
     decision = "OTHER_SUBJECT";
     reasonCode = "namesake_conflict";
     confidence = 0.9;
-  } else if (derivedPatronymicConflicts.length > 0 && !matchedStrong) {
+  } else if (
+    (derivedPatronymicConflicts.length > 0 || queryLinePatronymicConflicts.length > 0) &&
+    !matchedStrong
+  ) {
     // Именная тройка названа целиком, и отчество в ней чужое. В русской
     // системе имён это решающий признак другого человека, а не повод для
     // сомнений. Сильный идентификатор (ИНН) такой вывод перебивает.
+    // Код причины называет сработавшее правило: по нему в артефактах видно,
+    // строкой запроса выведен конфликт или длинным текстом.
     decision = "OTHER_SUBJECT";
-    reasonCode = "patronymic_conflict";
+    reasonCode =
+      derivedPatronymicConflicts.length > 0
+        ? "patronymic_conflict"
+        : "suggestion_foreign_patronymic";
     confidence = 0.9;
   } else if (hasConflict && hasGivenName) {
     // Both subject identifiers and conflicting identity — ambiguous, review.
